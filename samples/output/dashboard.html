@@ -1,0 +1,25 @@
+<!doctype html><html lang="zh"><head><meta charset="utf-8">
+<title>MergePilot · 执行 Dashboard</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,'Segoe UI','Microsoft YaHei',sans-serif}
+body{background:#0f172a;color:#e2e8f0;padding:32px}
+h1{font-size:26px;margin-bottom:4px} .sub{color:#94a3b8;margin-bottom:24px;font-size:14px}
+.banner{background:#1e293b;border:1px solid #334155;border-radius:12px;padding:20px 24px;margin-bottom:28px;display:flex;align-items:center;gap:16px}
+.banner .v{font-size:22px;font-weight:700}
+.timeline{display:flex;gap:14px;overflow-x:auto;padding-bottom:12px}
+.node{background:#1e293b;border-radius:12px;padding:16px;min-width:220px;border-top:4px solid #334155;position:relative}
+.node .seq{color:#64748b;font-size:12px} .node .agent{font-weight:700;font-size:16px;margin:2px 0 6px}
+.node .sum{font-size:13px;color:#cbd5e1;line-height:1.5}
+.badge{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:700;margin-top:8px}
+.arrow{align-self:center;color:#475569;font-size:22px}
+.section{margin-top:32px} .section h2{font-size:18px;margin-bottom:12px;color:#f1f5f9}
+.findings li{background:#1e293b;border-radius:8px;padding:10px 14px;margin-bottom:8px;list-style:none;font-size:13px;color:#cbd5e1;border-left:3px solid #334155}
+.findings li.crit{border-left-color:#dc2626} .findings li.med{border-left-color:#d97706}
+</style></head><body>
+<h1>MergePilot · 执行 Dashboard</h1>
+<div class="sub">项目 <code>code-audit-20260722-130447</code> · AgentTeams(HiClaw)+ DeepSeek · 自动生成</div>
+<div class="banner"><div class="v" style="color:#059669">✓ MERGE（人审后）</div><div style="color:#94a3b8;font-size:13px">5 个任务 · 全程可审计 · 证据已沉淀</div></div>
+<div class="section"><h2>DAG 执行时间线</h2><div class="timeline"><div class="node" style="border-top-color:#2563eb"><div class="seq">步骤 01</div><div class="agent">reviewer</div><div class="sum">代码安全审查报告: code-audit-20260722-130447-01</div><span class="badge" style="background:#05966922;color:#059669">✓ PASS</span></div><div class="arrow">→</div><div class="node" style="border-top-color:#059669"><div class="seq">步骤 02</div><div class="agent">fixer</div><div class="sum">Fix Result: code-audit-20260722-130447-02</div><span class="badge" style="background:#d9770622;color:#d97706">⚠ HOLD</span></div><div class="arrow">→</div><div class="node" style="border-top-color:#7c3aed"><div class="seq">步骤 03</div><div class="agent">verifier</div><div class="sum">Verification Report: code-audit-20260722-130447-03</div><span class="badge" style="background:#d9770622;color:#d97706">⚠ HOLD</span></div><div class="arrow">→</div><div class="node" style="border-top-color:#059669"><div class="seq">步骤 04</div><div class="agent">fixer</div><div class="sum">Production Deployment Result: code-audit-20260722-130447-04</div><span class="badge" style="background:#05966922;color:#059669">✓ PASS</span></div><div class="arrow">→</div><div class="node" style="border-top-color:#7c3aed"><div class="seq">步骤 05</div><div class="agent">verifier</div><div class="sum">Final Production Code Re-Audit Result</div><span class="badge" style="background:#05966922;color:#059669">✓ PASS</span></div></div></div>
+<div class="section"><h2>Findings(实测)</h2><ul class="findings"><li class="crit">| **security** | 2 | F-001（硬编码生产 API 密钥泄漏, critical/L2）, F-002（SQL 注入漏洞, critical/L2） |</li><li class="med">| **quality** | 1 | F-003（数据库连接未关闭, medium/L0） |</li><li class="crit">| critical | 2 |</li><li class="med">| medium | 1 |</li><li class="crit">| L2（高） | 2 |</li><li class="">| L0（低） | 1 |</li><li class="crit">### F-001: 硬编码 API 密钥泄漏</li><li class="crit">| **severity** | critical |</li><li class="crit">| **risk_level** | **L2** |</li><li class="crit">| **description** | 源代码中硬编码了一个以 `sk-live-` 开头的生产环境 API 密钥。密钥以明文形式存在于代码中，任何能访问该源码的人员均可直接获取该凭证。密钥前缀 `sk-live-` 表明该密钥具有生产环境权限，泄漏后果严重。 |</li><li class="crit">| **suggestion** | 将 API 密钥移至环境变量或安全的密钥管理服务（如 Vault、AWS Secrets Manager），在代码中通过 `os.getenv()` 或类似机制读取。同时立即吊销当前泄漏的密钥并轮换。 |</li><li class="crit">> 根据安全策略，完整密钥已截断处理，仅保留前缀与末尾供识别：`sk-live-***90abcdef`</li></ul></div>
+<div class="sub" style="margin-top:32px">由 make_dashboard.py 从运行证据自动生成 · MergePilot</div>
+</body></html>

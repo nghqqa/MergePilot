@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 本地机密 / 个人配置(绝不提交)
+*.env
+hiclaw-manager.env
+**/credentials/**
+**/credentials.json
+
+# 临时与生成物
+_tmp/
+*.tmp
+_ppt_full.txt
+_ppt_check.txt
+verify_team.txt
+pptx_check.txt
+
+# OS / 编辑器
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

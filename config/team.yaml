@@ -1,0 +1,17 @@
+apiVersion: hiclaw.io/v1beta1
+kind: Team
+metadata:
+  name: mergepilot
+spec:
+  description: 4 runtime agents carrying 6 logical PR review/fix/verify roles
+  leader:
+    name: coordinator
+    model: deepseek-v4-flash
+    runtime: openclaw
+  workers:
+    - name: reviewer
+      model: deepseek-v4-flash
+    - name: fixer
+      model: deepseek-v4-flash
+    - name: verifier
+      model: deepseek-v4-flash
