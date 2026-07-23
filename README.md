@@ -30,6 +30,14 @@ PR 接入 → 任务拆解 → 上下文共享 → Skill/MCP 工具调用 → �
 
 详细:6 Agent 职责见 [`docs/附录A-Agent-Identity清单.md`](docs/附录A-Agent-Identity清单.md);Skill 体系见 [`docs/附录B-Skill清单.md`](docs/附录B-Skill清单.md)。
 
+## 🔥 架构修复(2026-07-23):Manager 必须是 OpenClaw
+
+**根因**:AgentTeams v1.1.2 安装器默认 Manager = QwenPaw(copaw),其消费者/会话管理不可靠 → Manager 从不处理消息、@mention 打错、流程跑偏。
+
+**修复**:安装时选 **Manager 运行时 = OpenClaw**(第 10 步,不要选默认的 QwenPaw)。一个设置,解决所有可靠性问题。
+
+**验证**:全 OpenClaw 架构(Manager + 3 独立 Worker,零 copaw)首次可靠跑通完整闭环:review(6 findings, sast-scan 实测)→ fix(L2 挂人审、中低危自动修)→ verify(重扫全清洁)→ **MERGE ✅**
+
 ## 当前状态(已验证 vs 规划)
 
 **已验证(MVP)**:
