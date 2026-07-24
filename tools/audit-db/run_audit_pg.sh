@@ -2,9 +2,9 @@
 # 起 PolarDB-PG 兼容审计库(PostgreSQL 容器,接 hiclaw-net)+ 建 schema。
 # 用法: MSYS_NO_PATHCONV=1 wsl -- bash /mnt/d/goai/tools/audit-db/run_audit_pg.sh
 set -euo pipefail
-PG_USER=mergepilot
-PG_PASS=mp_audit_2026
-PG_DB=mergepilot_audit
+PG_USER="${PG_USER:-mergepilot}"
+PG_DB="${PG_DB:-mergepilot_audit}"
+: "${PG_PASS:?请通过环境变量提供数据库密码 PG_PASS,例如: PG_PASS=xxx bash run_audit_pg.sh}"
 CTR=audit-pg
 
 docker rm -f "$CTR" 2>/dev/null || true

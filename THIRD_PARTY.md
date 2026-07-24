@@ -24,4 +24,4 @@
 - Worker 不持 GitHub PAT、模型 Key 或云 AccessKey；GitHub PAT 仅在 MCP sidecar，模型 Key 由网关/环境管理。
 - findings、Trace、日志和复盘报告中的 AccessKey、Token、Cookie、私钥必须脱敏。
 - 高风险写操作保留人工审批；写调用应检查现状并记录 SHA、via 与审计事件。
-- `mp_audit_2026` 仅为本地演示数据库密码；`sk-live-...` 仅为确定性扫描 fixture，不是真实密钥。
+- 演示用数据库密码通过环境变量 `PG_PASS` / `PG_PASSWORD`(或整串 `PG_DSN`)注入,脚本不写死密码;`sk-live-...` 仅为确定性扫描 fixture,不是真实密钥。

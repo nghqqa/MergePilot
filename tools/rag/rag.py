@@ -18,12 +18,16 @@ PG_CONFIG = {
     "port": int(os.environ.get("PG_PORT", "5432")),
     "dbname": os.environ.get("PG_DATABASE", "mergepilot_audit"),
     "user": os.environ.get("PG_USER", "mergepilot"),
-    "password": os.environ.get("PG_PASSWORD", "mp_audit_2026"),
+    "password": os.environ.get("PG_PASSWORD"),
 }
 
 
 def connect():
-    return psycopg2.connect(PG_DSN) if PG_DSN else psycopg2.connect(**PG_CONFIG)
+    if PG_DSN:
+        return psycopg2.connect(PG_DSN)
+    if not PG_CONFIG["password"]:
+        sys.exit("ERROR: 请通过环境变量提供数据库密码:PG_PASSWORD=xxx(或整串 PG_DSN)。例如 PG_PASSWORD=xxx python rag.py recall \"...\"")
+    return psycopg2.connect(**PG_CONFIG)
 
 # 经验知识库:每条 = 一个历史 finding + 其修复(issue 文本用于向量检索,fix 召回后复用)
 KNOWLEDGE = [
