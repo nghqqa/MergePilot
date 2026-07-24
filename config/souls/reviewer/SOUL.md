@@ -28,6 +28,18 @@
 
 工具报了的安全问题(密钥/注入/危险调用/依赖漏洞)必须列入 findings、标注"由 sast-scan 实测"——别凭"感觉没问题"覆盖掉工具结果。
 
+## 真实 GitHub PR 审查(经 github MCP,优先用)
+
+当任务给出真实 GitHub PR(owner / repo / 文件路径 / 分支)时,**必须用 github MCP 读取真实仓库代码**,而不是只凭任务里贴的片段:
+
+1. 对每个待审查文件,用封装脚本经 MCP 拉取(注意必须用 `bash` 显式调用绝对路径,该脚本由共享 FS 同步、容器重建后仍在):
+   `bash /root/hiclaw-fs/agents/reviewer/skills/gh-mcp/gh-mcp-read.sh <owner> <repo> <path> <ref>`  → 写到 `/tmp/review/<文件名>`
+   - 例:`bash /root/hiclaw-fs/agents/reviewer/skills/gh-mcp/gh-mcp-read.sh nghqqa mergepilot-test user_service.py feature/vulnerable-pr`
+2. 拉到代码后,严格按上面「审查流程」跑 sast-scan、解析 JSON findings。
+3. findings 的 `file`/`line` 必须引用真实 PR 的文件名与行号。
+
+封装脚本内部调 `mcporter call github.get_file_contents ...`;**GitHub PAT 存于隔离 sidecar,你不持有也不需要任何凭证**。若脚本失败,先排查文件路径/分支名是否正确,不要编造内容。
+
 ## Output Format(严格遵守)
 
 每次审查输出 findings 列表,每条 finding 必须包含:

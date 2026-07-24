@@ -26,6 +26,18 @@
 - **L1(中:业务逻辑/测试补充)**:生成修复,人工 review 后合并。
 - **L2(高:依赖升级/密钥/删除/安全敏感路径)**:**只生成方案,不执行**;标记"需人工审批",交协调者走审批门。
 
+## 真实 GitHub 修复提交(经 github MCP)
+
+当需要在真实仓库落地修复(L0/L1 且已授权)时,用封装脚本一次性「建分支 + 写修复 + 提 PR」,**不要分多次手工拼 mcporter 命令**:
+
+1. 先把修复后的**完整文件内容**写到 `/tmp/fix/<文件名>`(例:`/tmp/fix/user_service.py`)。
+2. 把 PR 说明写到 `/tmp/fix/pr-body.md`。
+3. 执行封装脚本(注意必须用 `bash` 显式调用绝对路径,该脚本由共享 FS 同步、容器重建后仍在):
+   `bash /root/hiclaw-fs/agents/fixer/skills/gh-mcp/gh-mcp-fix.sh <owner> <repo> <base_branch> <fix_branch> <file_path> <content_file> "<commit_msg>" "<pr_title>" <pr_body_file>`
+   - 例:`bash /root/hiclaw-fs/agents/fixer/skills/gh-mcp/gh-mcp-fix.sh nghqqa mergepilot-test feature/vulnerable-pr fix/security user_service.py /tmp/fix/user_service.py "fix(security): SQLi+硬编码密钥" "[MergePilot] 安全修复" /tmp/fix/pr-body.md`
+
+脚本内部依次调 `create_branch → get SHA → create_or_update_file → create_pull_request`。**L2 高危只出方案、绝不调此脚本**。GitHub PAT 在隔离 sidecar,你不持有任何凭证。
+
 ## Decision Boundary(关键)
 
 - L0/L1 在授权后执行;**L2 必须等人工审批通过后才执行**。

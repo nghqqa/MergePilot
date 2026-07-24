@@ -2,7 +2,9 @@
 
 > 这是把 MergePilot 多 Agent 团队在 HiClaw 上重建的**权威步骤手册**(含踩过的坑)。
 > 复赛重建、Demo 环境重置、或新机器复现,都照这个走。
-> 验证日期:2026-07-22(端到端跑通,证据见 `D:\goai\evidence\`)。
+> 验证日期:2026-07-23(首轮 Team 路径与全 OpenClaw 双场景路径均有证据,见 `D:\goai\evidence\`)。
+>
+> 当前保留两条可复现路径:原 Team 路径用于复现首轮 40/40 与 18 份证据；全 OpenClaw 路径由系统 Manager 直接编排 reviewer/fixer/verifier，用于复现 PR #42 / #43 双场景。两条路径都属于 AgentTeams 协同验证。
 
 ---
 
@@ -17,7 +19,7 @@
 ## 1. 核心认知(决定成败,先理解)
 
 1. **多 Agent 协作必须用 Team 机制**。HiClaw 的 Team Leader 有框架自带的**委派工具**(任务拆解 + 路由到 team worker + 共享房间),这是 standalone worker 做不到的——standalone worker 互相 @mention 触发不了对方(LLM 发的是文本,不是 Matrix 真·提及胶囊)。
-2. **Team leader 默认 copaw 运行时**,改不动(team.yaml 里 `runtime: openclaw` 被静默忽略;`update worker` 对 team 成员报 HTTP 409)。**但 copaw 能正常用 DeepSeek**,不用管它。
+2. **原 Team 路径的 coordinator leader 与系统 Manager 是两个不同角色**。首轮证据使用 coordinator leader；新增双场景使用系统 Manager(OpenClaw)直接编排 3 个独立 Worker。不要把两条路径的运行时结论混写。
 3. **team 成员的配置只能通过 team API 改**(`hiclaw apply -f team.yaml`),`hiclaw update worker` 对 team 成员无效。
 
 ---
@@ -82,7 +84,7 @@ wsl -- docker exec hiclaw-controller hiclaw get workers   # 全 Running, deepsee
 
 ---
 
-## 3. 用法(运行闭环)
+## 3. 用法 A:原 Team 路径(首轮基准)
 
 1. **派任务(推荐:走 Manager 路由,最稳)**:
    ```bash
@@ -106,15 +108,27 @@ wsl -- docker exec hiclaw-controller hiclaw get workers   # 全 Running, deepsee
    ```
    (注意目录名带 `-NN` 后缀,不是单一父目录)
 
+## 4. 用法 B:全 OpenClaw 双场景路径
+
+1. 安装 AgentTeams v1.1.2 时将系统 Manager 运行时设为 OpenClaw，并确保 reviewer/fixer/verifier 3 个独立 Worker 均为 OpenClaw。
+2. Demo 前可运行 `bash tools/demo_prepare.sh` 重启 3 个 Worker，减少上下文粘滞对复现的影响。
+3. 将编排脚本复制进 Manager 容器并提交任务:
+   ```bash
+   MSYS_NO_PATHCONV=1 wsl -- bash -c 'docker cp /mnt/d/goai/tools/submit_manager_orchestrate.py hiclaw-manager:/tmp/ && docker exec hiclaw-manager python3 /tmp/submit_manager_orchestrate.py <admin_password>'
+   ```
+4. PR #42 / #43 的原始 findings、fix-plan、verify-report 与 trace 位于 `evidence/mergepilot-openclaw-run/`。PR #43 最终记录为 `HOLD / Do not merge`，不是已执行 `REJECT`。
+
+> 在当前 v1.1.2 本地环境中，OpenClaw Manager 的消息处理更可靠；该结论不外推为所有版本和部署的强制要求。
+
 ---
 
-## 4. 踩坑记录(别重蹈)
+## 5. 踩坑记录(别重蹈)
 
 | 坑 | 现象 | 对策 |
 |---|---|---|
 | `create team --workers <已存在>` | 建重复 worker + 级联删原容器 | 先 delete 干净再 create team |
 | team 成员改不了 | `update worker` 报 HTTP 409 | 用 `apply -f team.yaml` 改 |
-| leader 改不了 openclaw | yaml runtime 被忽略 | 别改,copaw 能用 DeepSeek |
+| Team coordinator 的 runtime 字段未按预期生效 | 原 Team 路径中 yaml runtime 被忽略 | 保留首轮路径；双场景改用 OpenClaw 系统 Manager 直接编排独立 Worker |
 | specialist model 空 / Pending | team 建的 worker 没继承 model | apply team.yaml 补 model |
 | copaw 没 hiclaw-sync | coordinator SOUL 注入后 sync 报错 | 跳过,文件在路径上即可 |
 | `for n in ...` 在 `wsl -- bash -c` 里 | 循环变量被吞($n 空) | 用显式多条命令,别用循环 |
@@ -122,9 +136,10 @@ wsl -- docker exec hiclaw-controller hiclaw get workers   # 全 Running, deepsee
 
 ---
 
-## 5. 当前实例状态(2026-07-22)
+## 6. 当前实例状态(2026-07-23)
 
 - Team `mergepilot`:Active,3/3 Ready
 - coordinator(copaw)+ reviewer/fixer/verifier(openclaw),全 Running,`deepseek-v4-flash`
 - 端到端验证通过:review→fix→verify→(L2 审批)→生产补丁→最终复验(40 项检查)全跑通
 - 证据产物已拉到 `D:\goai\evidence\`(18 文件)
+- 全 OpenClaw 双场景已完成:PR #42 MERGE(人审后)；PR #43 HOLD / Do not merge
