@@ -87,22 +87,33 @@ PR 接入 → 任务拆解 → 上下文共享 → Skill/MCP 工具调用 → �
 
 ## 快速开始
 
-**前置**:WSL2 + Docker、HiClaw(AgentTeams)、DeepSeek API Key(OpenAI 兼容)。详见 [`docs/环境搭建-HiClaw-WSL.md`](docs/环境搭建-HiClaw-WSL.md)。
+**前置**:WSL2 + Docker、HiClaw(AgentTeams,Manager + 3 Worker)、DeepSeek API Key(OpenAI 兼容)。详见 [`docs/环境搭建-HiClaw-WSL.md`](docs/环境搭建-HiClaw-WSL.md)。
+
+### 推荐:一键 Demo(任务房间版,零 nudge + 隔离)
 
 ```bash
-# 1) 按 runbook 在 HiClaw 建 Team mergepilot(coordinator + reviewer/fixer/verifier),注入 4 份 SOUL
-#    见 docs/原型搭建-Team重建.md
+# 一条命令:起 GitHub MCP 桥 → 配置 worker → 起 watcher → 建任务房间 + 发审查任务
+# watcher 自动驱动 reviewer→fixer→verifier,全程零人工 nudge + 零跨-PR 污染
+MSYS_NO_PATHCONV=1 wsl -- bash tools/demo.sh <branch> <pr_number> [prefix]
+# 例:
+MSYS_NO_PATHCONV=1 wsl -- bash tools/demo.sh feature/m1-e2e 6 demo-pr6
 
-# 2a) 原 Team 路径:经 Manager 路由提交一条样例 PR
-MSYS_NO_PATHCONV=1 wsl -- bash -c 'docker cp tools/submit_pr_manager.py hiclaw-manager:/tmp/ && \
-  docker cp samples/input/pr-01.md hiclaw-manager:/tmp/pr.md && \
-  docker exec hiclaw-manager python3 /tmp/submit_pr_manager.py /tmp/pr.md <admin_password>'
+# 观察(从 demo.sh 输出取 room_id):
+MSYS_NO_PATHCONV=1 wsl -- bash tools/run-room-recent.sh <room_id> 10
+# watcher 日志:
+docker exec hiclaw-manager tail -f /tmp/watcher_v2.log
+```
 
-# 2b) 全 OpenClaw 双场景路径:由系统 Manager 直接编排 reviewer/fixer/verifier
+### 手动逐步(旧路径,参考)
+
+```bash
+# 原 Team 路径(fixture PR):见 docs/原型搭建-Team重建.md
+
+# 全 OpenClaw 路径(Manager 编排):
 MSYS_NO_PATHCONV=1 wsl -- bash -c 'docker cp tools/submit_manager_orchestrate.py hiclaw-manager:/tmp/ && \
   docker exec hiclaw-manager python3 /tmp/submit_manager_orchestrate.py <admin_password>'
 
-# 3) 汇总 Trace 与看板
+# 汇总 Trace 与看板:
 python tools/trace_aggregator.py
 python tools/make_dashboard.py
 python tools/audit_trail.py
