@@ -48,6 +48,14 @@ PR 接入 → 任务拆解 → 上下文共享 → Skill/MCP 工具调用 → �
 
 **验证**:Worker 经 MCP 读到 `nghqqa/mergepilot-test` 仓库 `feature/vulnerable-pr` 分支的真实代码(SQLi + 硬编码密钥),与 `sast-scan` 检测点对齐;并已实测完整写链路 —— 建修复分支 `fix/security-hardening`、写入修复版 `user_service.py`、提修复 [PR #2](https://github.com/nghqqa/mergepilot-test/pull/2) 并回读校验修复内容。44 个 GitHub 工具(读 PR、建分支、提 PR、合并等)可用。
 
+### 自主编排与任务隔离(2026-07-25,已验证)
+
+**① handoff 零-nudge(确定性 watcher)**:Manager 的 LLM 编排不可靠(即便 SOUL 有显式状态机,review 后仍停)。改用**确定性 handoff watcher**(`tools/handoff_watcher_v2.py`)——常驻 manager 容器,动态发现 Matrix 房间,检测 `TASK_COMPLETED` 后向下一阶段 worker 发**真 @mention** 驱动(经实测:worker 只认真 mention 胶囊,不认纯文本 @)。已在干净环境端到端验证:一次提交 → review→fix→verify→裁定,全程零人工 nudge。
+
+**② per-task room 任务隔离**:每个 PR 建专属 Matrix 任务房间(`tools/submit_pr_taskroom.py`)→ OpenClaw 按 Matrix 房间隔离 session(session key = `agent:main:matrix:channel:<room_id>`,实测)→ 零跨-PR 上下文污染。已验证全链路在单个隔离任务房间内跑通,不再需要重创 worker。
+
+**关键工程结论**:① LLM 编排本质不可靠,确定性 watcher 是正解(不是 SOUL 状态机);② OpenClaw session 按房间隔离是框架白拿的能力,per-task room 设计天然解决上下文串味;③ worker 只响应真 @mention 胶囊(`formatted_body` + `m.mentions`)。
+
 ## 当前状态(已验证 vs 规划)
 
 **已验证(MVP)**:

@@ -34,7 +34,9 @@
 2. 把 PR 说明写到 `/tmp/fix/pr-body.md`。
 3. 执行封装脚本(注意必须用 `bash` 显式调用绝对路径,该脚本由共享 FS 同步、容器重建后仍在):
    `bash /root/hiclaw-fs/agents/fixer/skills/gh-mcp/gh-mcp-fix.sh <owner> <repo> <base_branch> <fix_branch> <file_path> <content_file> "<commit_msg>" "<pr_title>" <pr_body_file>`
-   - 例:`bash /root/hiclaw-fs/agents/fixer/skills/gh-mcp/gh-mcp-fix.sh nghqqa mergepilot-test feature/vulnerable-pr fix/security user_service.py /tmp/fix/user_service.py "fix(security): SQLi+硬编码密钥" "[MergePilot] 安全修复" /tmp/fix/pr-body.md`
+   - 例:`bash /root/hiclaw-fs/agents/fixer/skills/gh-mcp/gh-mcp-fix.sh nghqqa mergepilot-test feature/vulnerable-pr fix/<任务前缀> user_service.py /tmp/fix/user_service.py "fix(security): SQLi+硬编码密钥" "[MergePilot] 安全修复" /tmp/fix/pr-body.md`
+
+**fix_branch 必须唯一**:用 `fix/<任务前缀>`(当前任务的任务前缀,如 `fix/iso5-pr6`),**严禁复用旧分支名**(复用会导致新 PR `mergeable=dirty`、与旧提交冲突)。每次修复用新分支名。
 
 脚本内部依次调 `create_branch → get SHA → create_or_update_file → create_pull_request`。**L2 高危只出方案、绝不调此脚本**。GitHub PAT 在隔离 sidecar,你不持有任何凭证。
 
