@@ -1,286 +1,370 @@
-# M3-B4 设计 · 审批票据与 Action Outbox
+# M3-B4 设计 v2 · 审批票据与 Action Outbox
 
-> 状态:**设计稿(待复审,未实现)**
-> 目标:M3-B 最后一块 —— 给 L2 动作(merge/revert/close)装上"人工审批票据 + 确定性派发 + 原子执行 + TOCTOU 防护 + 可对账"的闭环。
+> 状态:**设计稿 v2(待复审,未实现)**。**取代 v1**(v1 保留在 git 历史)。
+> 目标:L2 动作(merge/close)的人工审批闭环:绑定来源不可信任 LLM、状态机原子、Gateway EXECUTE-only、崩溃可对账、TOCTOU 防护。
 > 前置:B1/B2/B2.1/B2.2/B3/B3.1/B3.2 已 closed。
 
 ---
 
-## 0. 设计原则(贯穿全文)
+## 0. v2 Changelog(相对 v1 的修订)
 
-1. **PG 是唯一权威状态** —— 票据状态机在 PG,不在内存、不在 LLM、不在 Matrix。
-2. **不信任 LLM 自报的任何东西** —— run_id、PR 号、head SHA 一律以 GitHub 实际状态为准,由确定性 Controller 读回。
-3. **Gateway 是 LLM 边界** —— 它是唯一既接 LLM 又接 GitHub 的组件,所以它的 DB 权限必须最小化(只 EXECUTE 受约束函数,无表级 UPDATE)。
-4. **Outbox 继承 M3-A 幂等** —— 派发意图可重放,执行侧原子去重。
-5. **fail-closed** —— 审计/票据/对账任何环节不可信时,拒绝执行(B3 已为审计做了 fail-closed,B4 把它延伸到 L2 执行)。
+| # | v1 缺陷 | v2 修订 |
+|---|---|---|
+| 1 | `list_pull_requests(head=fix/<run_id>-*)` 假设支持通配 | **不支持通配**。Controller 分页 `list_pull_requests(state=open)` 后本地按 `head.ref` 前缀过滤,要求恰好 1 条;单 PR 用 `pull_request_read(method=get)` |
+| 2 | 文档称"coordinator token 只在 Gateway env" | Controller drain outbox → 必须持 coordinator Bearer token(非 PAT,放 `controller.env`);token 在 Gateway env + Controller env,**不进任何 worker** |
+| 3 | 票据只绑 repo/PR/SHA | 票据绑**完整 canonical payload**(含 mergeMethod/commit_title 等);Gateway 从 claim 返回的 payload 构造上游调用,不信任 call 传入的散参 |
+| 4 | `l2_claim_ticket` 只收 ticket_id,先消耗再比对 | **一次 CAS 同时校验** action+repo+PR+args_hash+expiry;不匹配则票据保持 APPROVED 不消耗;成功返回 canonical payload + execution_id |
+| 5 | 无 execution_id;只对账 UNKNOWN | 加 `execution_id`/`executing_at`;Controller 同时对账 **UNKNOWN + 超时 EXECUTING** |
+| 6 | outbox DISPATCHED 无恢复规则 | DISPATCHED 带 lease;Controller 恢复时按 approval 实际态决定重派/对账/完成;DISPATCHED 非终态 |
+| 7 | 给 Gateway `SELECT approvals`/`INSERT outbox`/reconcile | **真 EXECUTE-only**:Gateway 只 EXECUTE claim/complete/fail/mark_unknown;approver 只 EXECUTE pending_list/approve;outbox 只 Controller 写;reconcile 只 Controller |
+| 8 | SECURITY DEFINER 未硬化 | NOLOGIN owner + 固定 `search_path` + 完全限定表名 + REVOKE PUBLIC EXECUTE + 按 role 精确 GRANT |
+| 9 | task_runs CHECK 无 APPROVAL_PENDING | B4 migration 显式加 `APPROVAL_PENDING` + 状态映射 |
+| 10 | 列了 revert/delete_file | **revert 不直接实现**(bridge 无工具)→ 走"建 revert PR → 正常审批 merge";`delete_file` 保持 disabled |
 
 ---
 
-## 1. 四个必须锁定的设计决策
+## 1. 六个锁定的决策
 
-### 1.1 可信绑定来源:`run_id → branch → PR number → head SHA`
+1. **Controller drain outbox,Gateway 请求驱动**(不加后台 drainer)。Controller 持 coordinator token(非 PAT)。
+2. **Controller 对账 UNKNOWN + 超时 EXECUTING + 滞留 DISPATCHED**;Gateway 只 claim/execute/complete/fail/mark_unknown。
+3. **独立 `mergepilot_approver` 账号**,仅 EXECUTE `l2_pending_list`/`l2_approve`;`approved_by = $(id -un)@$(hostname)`(不直接信 `$USER`);CLI 接收**精确 ticket_id**。
+4. **close** 走 `update_pull_request(state=closed)` 并绑 PR/head SHA;**revert** 暂不实现 → 走"建 revert PR → 正常审批 merge";`delete_file` 保持 disabled。
+5. **TTL**:PENDING 审批期 24h;APPROVED 起执行期默认 1h(可配,上限 24h);EXECUTING 到期**对账不直接 EXPIRED**。
+6. **ticket_id**:
+   ```
+   ticket_id       = tkt-<UUIDv4>
+   attempt_no      = DB 原子分配(per run_id+action)
+   UNIQUE(run_id, action, attempt_no)
+   idempotency_key = sha256(run_id + action + binding_id + attempt_no)
+   ```
+   新 attempt 仅由 Controller 显式动作创建(前次 FAILED 后重试),**不因网络重试自动生成**。
 
-**问题**:fixer(LLM)创建修复分支和 PR,然后"声称"PR 号和 head SHA。但 LLM 可被 prompt injection 误导或幻觉,**不能作为绑定来源**。
+---
 
-**决策:绑定来自 GitHub,由确定性 Controller 读回,不是 fixer 自报。**
-
-绑定链(全是 Controller 主动查 GitHub,被动的是 GitHub 实际状态):
+## 2. 架构总览
 
 ```
-① Controller 为 task 分配 run_id(确定性,task_runs.run_id)
-② Controller 派发 FIX 阶段时,告诉 fixer 分支前缀 fix/<run_id>-<short>(前缀由 Controller 决定,不是 fixer 起名)
-③ fixer 经 gateway 建 fix/<run_id>-* 分支 + PR(gateway 审计 INTENT+RESULT,但不解析 LLM 文本)
-④ Controller 在 FIX 完成后,主动查 GitHub:list_pull_requests(head=fix/<run_id>-*, state=open)
-   → 拿到真实 pr_number + head_sha(权威,非 LLM)
-⑤ Controller 写 run_pr_bindings(run_id, repo, pr_number, fix_branch, head_sha, recorded_at)
-⑥ VERIFY 用此绑定;L2 票据创建时从此表读绑定,写进 approvals.expected_head_sha / pr_number
-⑦ Gateway 执行 merge 前,再查一次 GitHub get_pull_request(pr_number).head.sha
-   与 approvals.expected_head_sha 比对 → 不一致(被 force-push)→ DENY(TOCTOU 防护)
+[Controller] (持 coordinator Bearer token, 不持 PAT)
+   查 GitHub 读权威绑定 → 建 ticket(PENDING)+ outbox(PENDING_DISPATCH)同事务
+   drain outbox: DISPATCHED + lease → 经 Gateway /coordinator/sse 调 L2 工具(带 ticket_id)
+   对账:扫描 UNKNOWN / 超时 EXECUTING / 滞留 DISPATCHED → 查 GitHub → 迁移
+        │
+        ▼ (coordinator Bearer token)
+[Policy Gateway] /coordinator/sse  ── 验 ticket_id → claim(CAS 全载荷)→ 调 bridge → complete/fail/mark_unknown
+        │ (mcp-backend-net)
+        ▼
+[github-mcp bridge] (持 PAT) → GitHub
+
+[approve CLI] (host-only, mergepilot_approver 账号) → l2_approve(ticket_id)
 ```
 
-**新增表 `run_pr_bindings`**:
+**coordinator token 分布**:Gateway env + Controller `controller.env`(chmod 600)。**绝不进 worker**。Controller 用它认证到 Gateway,不用 PAT。
+
+---
+
+## 3. 数据模型 v2
+
+### 3.1 新表 `run_pr_bindings`(Controller 写,GitHub 权威绑定)
+
 ```sql
 CREATE TABLE run_pr_bindings (
-    run_id        TEXT PRIMARY KEY,
-    repo          TEXT NOT NULL,
-    pr_number     INTEGER NOT NULL,
-    fix_branch    TEXT NOT NULL,
-    head_sha      TEXT NOT NULL,        -- FIX 完成时的 GitHub 实际 head
-    recorded_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-    confirmed_at  TIMESTAMPTZ           -- 执行时再确认的 head_sha(若有变化)
+    binding_id   TEXT PRIMARY KEY,          -- bnd-<UUIDv4>
+    run_id       TEXT NOT NULL REFERENCES task_runs(run_id),
+    repo         TEXT NOT NULL,             -- owner/repo
+    pr_number    INTEGER NOT NULL,
+    fix_branch   TEXT NOT NULL,             -- head.ref,如 fix/<run_id>-xxx
+    head_sha     TEXT NOT NULL,             -- FIX 完成时 GitHub 实际 head
+    recorded_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-```
-- 由 Controller 写(FIX 完成后查 GitHub)。
-- 票据创建时读;执行时 Gateway 再查 GitHub 比对(防 TOCTOU)。
-
-### 1.2 `policy_gateway_l2` 账号:只 EXECUTE 受约束函数,不给表级 UPDATE
-
-**问题**:Gateway 若有 `approvals` / `policy_action_outbox` 的表级 UPDATE,被 compromise 的 Gateway 可绕状态机(如把 PENDING 直接标 USED,或改 binding)。
-
-**决策:状态机封装在 PL/pgSQL `SECURITY DEFINER` 函数里;`policy_gateway_l2` 只有 `EXECUTE` 这些函数 + `SELECT approvals`(校验用),无任何表级写。**
-
-函数即唯一的状态转移入口,在 SQL 层强制迁移合法性(CAS + CHECK)。即使 Gateway 的 L2 凭证泄露,也无法越过函数直接改表。
-
-### 1.3 原子状态转换、唯一权威状态、UNKNOWN 对账
-
-**唯一权威状态 = `approvals.status`**:
-```
-PENDING ──approve──→ APPROVED ──claim──→ EXECUTING ──complete──→ USED
-                                  │
-                                  ├── fail ──→ FAILED
-                                  └── timeout ──→ UNKNOWN ──reconcile──→ USED / FAILED
-APPROVED/EXECUTING 超时 expires_at → EXPIRED(终态,不可执行)
+UNIQUE(run_id)                              -- 一个 run 一个 fix PR 绑定
 ```
 
-- **原子 claim**:`UPDATE approvals SET status='EXECUTING' WHERE ticket_id=? AND status='APPROVED' RETURNING *`。0 行 → 已被领/已过期/状态不符 → 拒(防并发双执行)。
-- **UNKNOWN 是非终态中间态**:网络超时(merge 调用了但不知结果)→ 标 UNKNOWN,绝**不**自动重试 merge(L2 动作不可重试,可能已经成功)。必须由对账流程查 GitHub 实际状态后,合法迁移到 USED(已合并)/ FAILED(未合并)。
-- **EXPIRED**:APPROVED/EXECUTING 超 `expires_at` → 对账后标 EXPIRED,终态。
+### 3.2 `approvals` v2(在已有表上 ALTER 加列)
 
-**`policy_action_outbox` 的定位 = 派发意图(非执行权威)**,见 1.4。
-
-### 1.4 outbox 的 EXECUTING 统一(你点出的 gap)
-
-**现状**:`approvals.status` CHECK 含 `EXECUTING`;`policy_action_outbox.status` CHECK **不含** EXECUTING(`PENDING_DISPATCH/DISPATCHED/SUCCEEDED/FAILED/UNKNOWN`)。
-
-**统一决策:执行状态只活在 `approvals`;outbox 只表达派发意图,不需要 EXECUTING。**
-
-| 表 | 角色 | 状态机 | 谁写 |
-|---|---|---|---|
-| `approvals` | **执行权威**(被批准了吗?在执行吗?完成了吗?) | PENDING→APPROVED→EXECUTING→USED/FAILED/UNKNOWN/EXPIRED | Controller 建、CLI approve、Gateway claim/complete/fail |
-| `policy_action_outbox` | **派发意图**(Controller 要 Gateway 执行某 L2 动作,幂等可重放) | PENDING_DISPATCH→DISPATCHED→SUCCEEDED/FAILED/UNKNOWN | Controller 建并 drain,Gateway 回写结果 |
-
-- "原子领取到 EXECUTING" = Gateway 领取 **outbox 行(PENDING_DISPATCH→DISPATCHED)** 后,对 **approvals** 做 APPROVED→EXECUTING 的原子 claim。
-- outbox 的 DISPATCHED 表示"Controller 已派发该调用给 Gateway";SUCCEEDED/FAILED 镜像 approvals 的 USED/FAILED(供 Controller 更新 task_runs)。
-- **outbox 不加 EXECUTING**(执行态归 approvals)。本设计明确两者职责,消除歧义。
-
----
-
-## 2. 数据模型
-
-### 2.1 新增/调整表
-
-- `run_pr_bindings`(新,见 1.1):Controller 写的 GitHub 权威绑定。
-- `approvals`(已存在,B4 启用):票据状态机。无 schema 改动(CHECK 已含 EXECUTING)。
-- `policy_action_outbox`(已存在,B4 启用):派发意图。无 schema 改动(不加 EXECUTING)。
-- `mcp_calls.ticket_id`(已存在):L2 调用的审计行带上 ticket_id,串起审计与票据。
-
-### 2.2 受约束的 DB 函数(`SECURITY DEFINER`,状态机唯一入口)
+已有列保留(ticket_id, run_id, action, repo, pr_number, target_branch, expected_head_sha, revert_commit_sha, status, approved_by, approved_at, expires_at, used_at, result_sha, error, created_at)。新增:
 
 ```sql
--- Controller 账号调用(建票 + 派发)
-CREATE FUNCTION l2_create_ticket(p_run_id, p_action, p_repo, p_pr_number, p_target_branch,
-                                 p_expected_head_sha, p_revert_commit_sha, p_ttl_seconds)
-RETURNS TEXT  -- ticket_id
--- 从 run_pr_bindings 读绑定(拒绝 LLM 自报);写 approvals(PENDING)+ 可选写 outbox;同一事务
--- 生成 ticket_id = "tkt-" + run_id + "-" + action(确定性,幂等)
-
-CREATE FUNCTION l2_pending_list() RETURNS TABLE(...)   -- CLI 列待审批票
-
--- approve CLI 账号调用
-CREATE FUNCTION l2_approve(p_ticket_id, p_approved_by)
--- CAS: UPDATE ... SET status='APPROVED', approved_by, approved_at WHERE status='PENDING' RETURNING
-
--- Gateway 账号(policy_gateway_l2)调用 —— 全部 SECURITY DEFINER,这是它唯一能改票据的途径
-CREATE FUNCTION l2_claim_ticket(p_ticket_id)
-RETURNS TABLE(...)  -- 原子 APPROVED→EXECUTING,返回 binding 供 Gateway 校验 call args;0 行返回 NULL
-CREATE FUNCTION l2_complete_ticket(p_ticket_id, p_result_sha)   -- EXECUTING→USED
-CREATE FUNCTION l2_fail_ticket(p_ticket_id, p_reason)           -- EXECUTING→FAILED
-CREATE FUNCTION l2_mark_unknown(p_ticket_id)                    -- EXECUTING→UNKNOWN(网络超时)
-CREATE FUNCTION l2_reconcile_unknown(p_ticket_id, p_merged bool, p_actual_sha)  -- UNKNOWN→USED/FAILED
+ALTER TABLE approvals ADD COLUMN IF NOT EXISTS binding_id     TEXT REFERENCES run_pr_bindings(binding_id);
+ALTER TABLE approvals ADD COLUMN IF NOT EXISTS attempt_no     INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE approvals ADD COLUMN IF NOT EXISTS canonical_payload JSONB NOT NULL;  -- 完整上游调用参数
+ALTER TABLE approvals ADD COLUMN IF NOT EXISTS args_hash     TEXT NOT NULL;        -- sha256(canonical_payload) 前 16
+ALTER TABLE approvals ADD COLUMN IF NOT EXISTS execution_id  UUID;                 -- claim 时分配
+ALTER TABLE approvals ADD COLUMN IF NOT EXISTS executing_at  TIMESTAMPTZ;          -- claim 时间(对账用)
+ALTER TABLE approvals ADD COLUMN IF NOT EXISTS approval_expires_at TIMESTAMPTZ;    -- PENDING 审批期(24h)
+-- 已有 expires_at 复用为"执行期"(APPROVED 起 1h)
+ALTER TABLE approvals DROP CONSTRAINT IF EXISTS approvals_run_action_attempt_key;
+ALTER TABLE approvals ADD CONSTRAINT approvals_run_action_attempt_key UNIQUE (run_id, action, attempt_no);
 ```
 
-每个函数内部用 `UPDATE ... WHERE status=<expected> RETURNING`(CAS),迁移非法时 RAISE EXCEPTION(函数失败 → Gateway 拒绝执行)。
-
-### 2.3 账号矩阵
-
-| 账号 | 组件 | 权限 | 写票据途径 |
-|---|---|---|---|
-| `mergepilot`(超管,Controller 容器内) | Controller | task_runs/approvals/outbox/bindings 全 DDL/DML | 直接 INSERT + 调 l2_create_ticket |
-| `policy_gateway_audit`(已存在) | Gateway(审计) | INSERT mcp_calls | — |
-| `policy_gateway_l2`(**新**) | Gateway(L2 执行) | **EXECUTE l2_claim/complete/fail/mark_unknown/reconcile** + SELECT approvals + INSERT policy_action_outbox(回写结果) | **只能调函数,无表级 UPDATE** |
-| `mergepilot_approver`(**新**,host-only CLI) | approve CLI | EXECUTE l2_approve + l2_pending_list + SELECT approvals | 只调 l2_approve |
-
-Gateway 拿两张 PG 连接(审计账号 + L2 账号),职责隔离。Controller 与 CLI 在可信环境(容器/host),可用更强账号。
-
----
-
-## 3. 三方职责:谁创建/审批/领取/完成
-
-| 操作 | Controller | approve CLI | Gateway | fixer/LLM |
-|---|---|---|---|---|
-| 建 PENDING 票据 | ✅(查 GitHub 读绑定,调 `l2_create_ticket`) | ❌ | ❌ | ❌ |
-| approve(PENDING→APPROVED) | ❌ | ✅(`l2_approve`,approved_by 取执行环境) | ❌ | ❌ |
-| 派发(outbox PENDING_DISPATCH) | ✅(与建票同事务) | ❌ | ❌ | ❌ |
-| 领取(APPROVED→EXECUTING) | ❌ | ❌ | ✅(`l2_claim_ticket` 原子 CAS) | ❌ |
-| 调 GitHub merge/revert | ❌ | ❌ | ✅(持 coordinator token,经 bridge) | ❌ |
-| 完成(EXECUTING→USED + result_sha) | ❌ | ❌ | ✅(`l2_complete_ticket`) | ❌ |
-| 失败(EXECUTING→FAILED) | ❌ | ❌ | ✅(`l2_fail_ticket`) | ❌ |
-| 超时(EXECUTING→UNKNOWN) | ❌ | ❌ | ✅(`l2_mark_unknown`) | ❌ |
-| 对账(UNKNOWN→USED/FAILED) | ✅(查 GitHub 实际态,调 `l2_reconcile_unknown`) | ❌ | (备选:也可由 Gateway 对账) | ❌ |
-| 回写 outbox(SUCCEEDED/FAILED) | ✅(据 Gateway 结果) | ❌ | (备选) | ❌ |
-| 读 task 状态推进 | ✅ | ❌ | ❌ | ❌ |
-
-**关键不变量**:
-- fixer/LLM **完全无权** 触碰票据(outbox/approvals)—— 它只能建分支/PR,绑定由 Controller 从 GitHub 读回。
-- Gateway **只能** 通过 `l2_*` 函数改票据,不能直接 UPDATE。
-- approve CLI **只能** approve,不能领取/执行(职责分离:审批者 ≠ 执行者)。
-
----
-
-## 4. 端到端流程(正向 merge 场景)
-
+`canonical_payload` 示例(merge):
+```json
+{"owner":"nghqqa","repo":"MergePilot","pullNumber":7,"commit_title":"Merge fix","merge_method":"squash"}
 ```
-[Controller] VERIFY 完成,verifier 裁定需 merge
-    ↓ 查 GitHub:list_pull_requests(head=fix/<run_id>-*) → 真实 pr_number + head_sha
-    ↓ 写 run_pr_bindings(若 FIX 阶段未写)
-    ↓ 事务:l2_create_ticket(run_id, action=merge, repo, pr_number, expected_head_sha, ttl) 
-      → approvals(PENDING) + policy_action_outbox(PENDING_DISPATCH)
-    ↓ task_runs 进入 APPROVAL_PENDING
 
-[approve CLI] host: approve.sh <run_id>
-    ↓ l2_pending_list → 看到 PENDING 票
-    ↓ l2_approve(ticket_id, approved_by=$USER)  → APPROVED
-    ↓ (不执行 GitHub!只改状态)
+### 3.3 `policy_action_outbox` v2(加 lease)
 
-[Controller] drain policy_action_outbox
-    ↓ 看到 PENDING_DISPATCH 且 ticket=APPROVED
-    → 标 DISPATCHED,带 coordinator token 调 Gateway SSE: merge_pull_request(owner,repo,pullNumber,commit_title, approval_ticket=<ticket_id>)
+已有列保留。新增:
+```sql
+ALTER TABLE policy_action_outbox ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMPTZ;
+-- status CHECK 不变(PENDING_DISPATCH/DISPATCHED/SUCCEEDED/FAILED/UNKNOWN)—— 不加 EXECUTING
+```
+**outbox 不加 EXECUTING**(执行态归 approvals)。DISPATCHED 带 `lease_expires_at`;滞留时按 approval 态恢复(§7)。
 
-[Gateway] 收到 merge 调用 + approval_ticket
-    ↓ 1. l2_claim_ticket(ticket_id) 原子 APPROVED→EXECUTING → 拿 binding
-    ↓ 2. 校验 call args 与 binding 一致(repo/pr_number/action 匹配);否则 l2_fail + DENY
-    ↓ 3. TOCTOU:查 GitHub get_pull_request(pr_number).head.sha vs expected_head_sha;不一致 → l2_fail + DENY
-    ↓ 4. 查 expires_at 未过;否则 l2_fail + DENY
-    ↓ 5. 调 GitHub merge(经 bridge)
-       ├─ 成功 → l2_complete_ticket(ticket_id, merge_commit_sha) → USED
-       ├─ 明确失败 → l2_fail_ticket → FAILED
-       └─ 网络超时(不知结果)→ l2_mark_unknown → UNKNOWN(不重试!)
-    ↓ 6. 审计:写 mcp_calls(含 ticket_id,INTENT+RESULT,correlation_id)
+### 3.4 `task_runs` v2(加 APPROVAL_PENDING 状态)
 
-[Controller] 据 Gateway 返回,标 outbox SUCCEEDED/FAILED;task_runs → MERGED / HOLD
-[Controller] 定期对账:UNKNOWN 票据 → 查 GitHub 是否真合并 → l2_reconcile_unknown → USED/FAILED
+```sql
+ALTER TABLE task_runs DROP CONSTRAINT IF EXISTS chk_task_status;
+ALTER TABLE task_runs ADD CONSTRAINT chk_task_status CHECK (
+    status IN ('SUBMITTED','RUNNING','PASS','FAIL','HOLD','MERGED','ROLLED_BACK',
+               'APPROVAL_PENDING')   -- B4 新增
+);
+```
+状态映射:
+```
+VERIFY 完成 + 需 L2      → APPROVAL_PENDING
+approval USED (merge 成功) → MERGED
+approval FAILED / EXPIRED  → HOLD(人工)
+approval UNKNOWN 对账后失败 → HOLD
+close USED                → HOLD/CLOSED(复用 HOLD,current_stage=verified-closed)
+```
+
+### 3.5 mcp_calls(已有)—— B4 让 L2 审计行带 `ticket_id` + `execution_id`(已存在 ticket_id 列,加 execution_id)
+
+```sql
+ALTER TABLE mcp_calls ADD COLUMN IF NOT EXISTS execution_id UUID;
 ```
 
 ---
 
-## 5. UNKNOWN 对账(关键,防误重试)
+## 4. 受约束的 DB 函数(SECURITY DEFINER 硬化)
 
-L2 动作**绝不在 UNKNOWN 后自动重试**(可能已成功 → 二次 merge 报错或副作用)。对账流程:
+### 4.1 硬化模板(所有 l2_* 函数遵循)
 
+```sql
+CREATE ROLE mergepilot_l2_owner NOLOGIN;
+GRANT SELECT, INSERT, UPDATE ON run_pr_bindings, approvals, policy_action_outbox TO mergepilot_l2_owner;
+
+CREATE OR REPLACE FUNCTION l2_claim_ticket(...)
+RETURNS TABLE(...) LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public        -- 固定 search_path
+AS $$
+BEGIN
+  -- 完全限定表名:public.approvals
+  UPDATE public.approvals SET ...
+  WHERE ... AND status='APPROVED' AND ... ;
+END $$;
+REVOKE ALL ON FUNCTION l2_claim_ticket(...) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION l2_claim_ticket(...) TO policy_gateway_l2;
 ```
-Controller 后台扫描 approvals WHERE status='UNKNOWN':
-    查 GitHub:get_pull_request(pr_number).merged === true?
-        ├─ merged=true → l2_reconcile_unknown(ticket, merged=true, actual_sha) → USED
-        └─ merged=false → l2_reconcile_unknown(ticket, merged=false) → FAILED
-            → 决定是否进入人工处理或新票据(不自动重试同票)
-```
 
-EXPIRED 对账类似:超 `expires_at` 的 APPROVED/EXECUTING → 查 GitHub 实际态 → USED/FAILED/EXPIRED。
+### 4.2 函数 → 执行角色(精确授权)
+
+| 函数 | 执行角色 | 作用 |
+|---|---|---|
+| `l2_create_ticket(p_binding_id, p_action, p_canonical_payload, p_ttl_hours)` | `mergepilot`(Controller) | 原子分配 attempt_no;写 approvals(PENDING)+ policy_action_outbox(PENDING_DISPATCH)同事务;返回 ticket_id |
+| `l2_pending_list()` | `mergepilot_approver` | 返回 PENDING 票据(只读,经函数不暴露表 SELECT) |
+| `l2_approve(p_ticket_id, p_approved_by)` | `mergepilot_approver` | CAS PENDING→APPROVED;校验未过审批期;`approved_by` 由 CLI 传入(CLI 取自 `id -un@hostname`) |
+| `l2_claim_ticket(p_ticket_id, p_action, p_repo, p_pr_number, p_args_hash)` | `policy_gateway_l2` | **一次 CAS**:APPROVED→EXECUTING,WHERE 同时校验 action/repo/pr_number/args_hash/expires_at>now();分配 execution_id+executing_at;0 行返回 NULL(票据不消耗);成功 RETURN canonical_payload+execution_id |
+| `l2_complete_ticket(p_ticket_id, p_execution_id, p_result_sha)` | `policy_gateway_l2` | CAS EXECUTING→USED;校验 execution_id 匹配 |
+| `l2_fail_ticket(p_ticket_id, p_execution_id, p_reason)` | `policy_gateway_l2` | CAS EXECUTING→FAILED |
+| `l2_mark_unknown(p_ticket_id, p_execution_id, p_reason)` | `policy_gateway_l2` | CAS EXECUTING→UNKNOWN(网络超时) |
+| `l2_reconcile_unknown(p_ticket_id, p_merged bool, p_actual_sha)` | `mergepilot`(Controller) | UNKNOWN→USED/FAILED(GitHub 实际态) |
+| `l2_reconcile_executing(p_ticket_id, p_merged bool, p_actual_sha)` | `mergepilot`(Controller) | 超时 EXECUTING→USED/FAILED |
+| `l2_expire_pending(p_ticket_id)` | `mergepilot`(Controller) | PENDING 超审批期→EXPIRED |
+
+**关键**:`policy_gateway_l2` 只能调 4 个函数(claim/complete/fail/mark_unknown),**无任何表级权限**(无 SELECT approvals、无 INSERT outbox)。canonical_payload 由 claim 函数 RETURN,不需 SELECT。
+
+### 4.3 账号矩阵 v2
+
+| 账号 | 组件 | 权限 |
+|---|---|---|
+| `mergepilot` | Controller | 全 DML + EXECUTE 全部 l2_* 函数 |
+| `policy_gateway_audit` | Gateway 审计 | INSERT mcp_calls(不变) |
+| `policy_gateway_l2`(**新**) | Gateway L2 | **仅 EXECUTE** claim/complete/fail/mark_unknown |
+| `mergepilot_approver`(**新**) | approve CLI | **仅 EXECUTE** pending_list/approve |
 
 ---
 
-## 6. TOCTOU 防护
+## 5. 绑定发现(修 #1:无通配)
 
-- 票据创建时锁 `expected_head_sha`(merge)/ `revert_commit_sha`(revert)。
-- 执行前 Gateway 再查 GitHub 实际 head,比对。不一致 = 票据批准后分支被改(force-push / 新提交)→ **DENY**,票据 FAILED。
-- 防的是"批准 A 状态、执行 B 状态"。
+Controller 在 FIX 完成后:
+```
+1. list_pull_requests(owner, repo, state=open, perPage=100, page=1..)  # 不带 head 通配
+2. 本地过滤:head.ref STARTS WITH 'fix/<run_id>-'
+3. 恰好 1 条 → 继续;0 条 → task HOLD("无 fix PR");>1 条 → task HOLD("fix PR 不唯一")
+4. pull_request_read(method=get, owner, repo, pullNumber=<那条>) → 拿 head.sha + mergeable_state
+5. 写 run_pr_bindings(binding_id, run_id, repo, pr_number, fix_branch, head_sha)
+```
+**head_sha 来自 GitHub 权威**,不信任 fixer 自报。`pull_request_read(method=get)` 是单 PR 读的真实工具(不是不存在的 get_pull_request)。
 
 ---
 
-## 7. 与现有 gateway.py(B2/B3)的衔接
+## 6. 原子 claim(修 #4:一次 CAS 全校验)
 
-- B2 的 L2 占位(`name in _L2_SET → L2_TICKET_REQUIRED`)改为:若 call 带 `approval_ticket` 参数 → 进入 B4 票据校验流;否则仍 `L2_TICKET_REQUIRED`。
-- 票据校验流复用 B3 的 INTENT-first fail-closed:claim 前先写 mcp_calls INTENT(含 ticket_id),claim 失败/超时也审计。
-- coordinator token 仍只在 Gateway env(B1),Controller 经 Gateway 调 merge(Controller 不持 GitHub PAT,不持 coordinator token)。
+Gateway 收到 `merge_pull_request(..., approval_ticket=<ticket_id>)`:
+```
+1. 从 call args 计算 args_hash(sha256(canonical args))
+2. l2_claim_ticket(ticket_id, action='merge', repo, pr_number, args_hash)
+   内部:UPDATE public.approvals SET status='EXECUTING', execution_id=gen_random_uuid(),
+                                executing_at=now()
+         WHERE ticket_id=? AND status='APPROVED' AND action=? AND repo=? AND pr_number=?
+           AND args_hash=? AND expires_at > now()
+         RETURNING canonical_payload, execution_id, expected_head_sha;
+   → 0 行:返回 NULL(票据保持 APPROVED,未消耗)→ Gateway 返回 POLICY_DENIED reason=CLAIM_MISMATCH
+3. 拿 RETURN 的 canonical_payload → 用它(不是 call 传入的散参)构造上游 merge_pull_request 调用
+4. TOCTOU:再查 GitHub get pull_request head.sha == expected_head_sha;不一致 → l2_fail_ticket + DENY
+5. 调上游 merge
+   ├─ 成功 → l2_complete_ticket(ticket, execution_id, merge_commit_sha) → USED
+   ├─ 明确失败 → l2_fail_ticket → FAILED
+   └─ 网络超时(不知结果)→ l2_mark_unknown → UNKNOWN(不重试!)
+```
+**call 传入的 args 只用于 args_hash 比对,实际执行用票据绑定的 canonical_payload**(防 Controller 侧或传输中被篡改)。
 
 ---
 
-## 8. 验收标准(B4 实现后)
+## 7. 状态机 + 崩溃恢复(修 #5/#6)
+
+### 7.1 approvals 状态机
 
 ```
-绑定来源:Controller 从 GitHub 读 pr_number/head_sha(fixer 自报被忽略)        ✅
-建票:Controller 事务写 approvals(PENDING)+ outbox(PENDING_DISPATCH)            ✅
-approve CLI:host-only,approved_by 取自 $USER,不接参数;只 PENDING→APPROVED     ✅
-账号收敛:policy_gateway_l2 表级 UPDATE/DELETE 被拒(只能 EXECUTE 函数)          ✅
-原子 claim:并发两个 merge 调用同一票,只有一个 APPROVED→EXECUTING              ✅
-TOCTOU:批准后 force-push 改 head_sha → Gateway 执行前 DENY(查 GitHub 比对)    ✅
-过期:超 expires_at 的票 → 拒;对账后 EXPIRED                                    ✅
-UNKNOWN:merge 网络超时 → UNKNOWN,不自动重试;对账查 GitHub → USED/FAILED        ✅
-幂等:重复派发(outbox idempotency_key)不重复执行                                ✅
-失败链:无票/伪造票/过期/目标不符/重复领取 → 全 DENY + 审计                        ✅
-单次性:合法票只成功一次(USED),result_sha 记 merge_commit_sha                   ✅
-审计:每步 INTENT+RESULT 带 ticket_id + correlation_id                            ✅
-退出码:测试 FAIL>0 非零退出                                                       ✅
+PENDING ──approve──→ APPROVED ──claim──→ EXECUTING ──complete──→ USED
+   │                     │                    ├─ fail ──→ FAILED
+   超 approval_expires_at                    └─ timeout ──→ UNKNOWN
+   → EXPIRED                                      │
+                                          Controller 对账(查 GitHub):
+                                          UNKNOWN/超时EXECUTING → USED/FAILED
 ```
 
+### 7.2 policy_action_outbox DISPATCHED 恢复(修 #6)
+
+DISPATCHED **非终态**。Controller 周期扫描 DISPATCHED 行,按其 approval 实际态决定:
+
+| approval.status | 处置 |
+|---|---|
+| USED | outbox → SUCCEEDED |
+| FAILED | outbox → FAILED |
+| UNKNOWN | outbox → UNKNOWN(先对账 approval) |
+| EXECUTING 且 executing_at + 执行超时 < now | 触发 reconcile_executing(GitHub 实际态) |
+| EXECUTING 且未超时 | 继续等 |
+| APPROVED 且 lease_expires_at > now | 继续等(Gateway 还没 claim) |
+| APPROVED 且 lease_expires_at < now | **Gateway 未按时 claim,安全重派**:outbox → PENDING_DISPATCH,attempts++ |
+
+### 7.3 Controller 对账扫描项(修 #5)
+
+- `approvals.status='UNKNOWN'` → `l2_reconcile_unknown`(查 GitHub merged?)。
+- `approvals.status='EXECUTING' AND executing_at < now() - 执行超时` → `l2_reconcile_executing`(查 GitHub merged?)。
+- `approvals.status='PENDING' AND approval_expires_at < now()` → `l2_expire_pending` → EXPIRED → task HOLD。
+- `outbox.status='DISPATCHED'` → 按 §7.2 处置。
+
+**绝不对 L2 动作自动重试**(可能已成功 → 二次 merge)。对账只读 GitHub 实际态,迁移状态。
+
+---
+
+## 8. revert / close / delete_file(决策 #4/#10)
+
+- **close**:`update_pull_request(state=closed)` 进 L2 票据流,绑 PR + head SHA(canonical_payload 含 state=closed)。
+- **revert**:bridge **无 revert 工具**,B4 不直接实现。路径:Controller 检测到需 revert → 派 fixer 用 git revert 建新 `fix/<run_id>-revert-*` 分支 + PR → 走正常 review→verify→审批 merge 路径(复用 merge 票据流,merge_method=merge)。
+- **delete_file**:保持 disabled(policy.yaml 已在 disabled 类)。不借 B4 票据意外开放。
+
+---
+
+## 9. TTL(决策 #5)
+
+- `approval_expires_at` = created_at + 24h(PENDING 审批期,可配)。
+- `expires_at`(执行期)= approved_at + 1h(默认,可配,上限 24h)。
+- EXECUTING 执行超时 = 60s(GitHub merge 调用应有回;超时即对账)。
+- EXECUTING 到期**不直接 EXPIRED**,走 `l2_reconcile_executing`。
+
+---
+
+## 10. ticket_id / attempt(决策 #6)
+
+- `l2_create_ticket` 内:`SELECT max(attempt_no)+1 ... FOR UPDATE`(原子分配)。
+- 新 ticket:`ticket_id=tkt-<UUIDv4>`,`attempt_no` 递增。
+- 仅 Controller 显式调用(前次 FAILED 后的人工/策略重试)。**网络重试不新建 attempt**(由 outbox idempotency_key 去重 + claim CAS 防重复执行)。
+- `idempotency_key = sha256(run_id + action + binding_id + attempt_no)`(outbox UNIQUE)。
+
+---
+
+## 11. 端到端流程(正向 close/merge,含 execution_id)
+
+```
+[Controller] VERIFY 完成 + 需 merge
+  → 绑定发现(§5):list_pull_requests 分页 + 本地过滤 + pull_request_read → run_pr_bindings
+  → l2_create_ticket(binding_id, action=merge, canonical_payload={owner,repo,pullNumber,commit_title,merge_method}, ttl=1h)
+    事务:approvals(PENDING, attempt_no=N, approval_expires_at)+ outbox(PENDING_DISPATCH, idempotency_key)
+  → task_runs = APPROVAL_PENDING
+
+[approve CLI] host: approve.sh <ticket_id>
+  → $(id -un)@$(hostname) 作为 approved_by
+  → l2_approve(ticket_id, approved_by) → APPROVED + expires_at(执行期)
+
+[Controller] drain outbox
+  → PENDING_DISPATCH 且 ticket=APPROVED → 标 DISPATCHED + lease_expires_at=now()+60s
+  → 带 coordinator token 调 Gateway /coordinator/sse: merge_pull_request(approval_ticket=ticket_id, owner, repo, pullNumber, ...)
+    (Controller 传的 args 仅用于 args_hash 比对)
+
+[Gateway] claim(CAS 全载荷)→ canonical_payload + execution_id
+  → TOCTOU 查 GitHub head.sha == expected_head_sha
+  → 用 canonical_payload 调上游 merge
+  → complete/fail/mark_unknown(带 execution_id)
+  → 审计 mcp_calls(ticket_id + execution_id + correlation_id)
+
+[Controller] 据 Gateway 返回 + 对账扫描 → outbox SUCCEEDED/FAILED;task_runs → MERGED/HOLD
+```
+
+---
+
+## 12. 验收标准(B4e)
+
+```
+绑定:list_pull_requests 分页 + 本地 head.ref 过滤,恰好 1 条;0/>1 → HOLD          ✅
+建票:canonical_payload + attempt_no + 同事务 outbox;ticket_id=tkt-UUID            ✅
+approve CLI:独立账号,仅 EXECUTE pending_list/approve;approved_by=id@host         ✅
+账号收敛:policy_gateway_l2 / mergepilot_approver 任何表级 SELECT/INSERT/UPDATE 被拒 ✅
+SECURITY DEFINER:NOLOGIN owner + 固定 search_path + 完全限定表名 + 无 PUBLIC EXECUTE ✅
+claim 一次 CAS:action/repo/PR/args_hash/expiry 全校验;不匹配票据保持 APPROVED     ✅
+canonical_payload:Gateway 用票据载荷构造上游调用,忽略 call 散参                    ✅
+TOCTOU:批准后 force-push 改 head_sha → 执行前 DENY(查 GitHub 比对)              ✅
+并发:两个 merge 同票,只一个 EXECUTING                                             ✅
+EXECUTING 崩溃:Gateway claim 后崩 → 超时 → Controller reconcile_executing → USED/FAILED ✅
+UNKNOWN:网络超时 → UNKNOWN;对账查 GitHub → USED/FAILED;不自动重试               ✅
+outbox DISPATCHED 滞留:lease 过期 + approval=APPROVED → 安全重派;其余按 approval 态 ✅
+task_runs:APPROVAL_PENDING 转换合法(CHECK 已迁移)                                ✅
+revert:不直接实现;走"建 revert PR → 正常 merge";delete_file 仍 disabled           ✅
+幂等:重复派发(idempotency_key)不重复执行                                          ✅
+单次性:合法票只 USED 一次,result_sha 记 merge_commit_sha                          ✅
+失败链:无票/伪造/过期/载荷不符/重复领取 → 全 DENY + 审计(ticket_id+execution_id)  ✅
+退出码:测试 FAIL>0 非零退出                                                        ✅
+```
 证据目录:`evidence/m3b-b4/`。
 
 ---
 
-## 9. 待你拍板/澄清的开放问题
+## 13. 实现顺序(复审通过后)
 
-1. **L2 动作执行触发方**:本设计是 **Controller drain outbox → 调 Gateway**(Gateway 保持纯 proxy,复用 M3-A drain 模式)。备选是给 **Gateway 加后台 drainer**。我倾向前者(Gateway 无状态更易测,Controller 已有 drain 经验)。你认可吗?
+```
+B4a:数据库与权限
+    - run_pr_bindings / approvals v2 列 / outbox lease / task_runs APPROVAL_PENDING / mcp_calls.execution_id
+    - mergepilot_l2_owner(NOLOGIN)+ l2_* 函数(SECURITY DEFINER 硬化)
+    - policy_gateway_l2 / mergepilot_approver 账号(真 EXECUTE-only)+ 自检
+B4b:Gateway 安全边界
+    - L2 调用接票据流:claim(CAS 全载荷)+ canonical_payload 构造上游 + TOCTOU + complete/fail/mark_unknown + 审计
+B4c:Controller 绑定 / drain / 对账
+    - 绑定发现(分页+本地过滤)、l2_create_ticket、drain outbox(lease)、reconcile(UNKNOWN/超时EXECUTING/滞留DISPATCHED)、task_runs 状态推进
+B4d:approve CLI
+    - approve.sh <ticket_id>、l2_approve、pending list、approved_by=id@host
+B4e:E2E + 崩溃恢复
+    - 正向 merge / TOCTOU 拒 / 并发领取 / EXECUTING 崩溃对账 / UNKNOWN 对账 / DISPATCHED 滞留重派 / 全 DENY
+```
 
-2. **对账主体**:Controller 还是 Gateway 跑 UNKNOWN 对账?我倾向 **Controller**(它已持 GitHub 读能力 via Gateway,且负责 task 状态)。Gateway 只做 claim/complete/fail/mark_unknown。
-
-3. **`mergepilot_approver` 账号**:为彻底贯彻"EXECUTE-only",approve CLI 用独立账号(只 `l2_approve`)。还是 host-only CLI 直接用 mergepilot 超管可接受?(CLI 在 host,不暴露给 LLM。)
-
-4. **revert 的 revert_commit_sha 来源**:同 merge 的 head_sha 逻辑 —— Controller 查 GitHub 锁定要 revert 的 commit SHA,不信任 LLM。close 走 update_pull_request(state=closed) 的 L2 路径。确认?
-
-5. **TTL**:`expires_at` 默认值?我建议 APPROVED 后 24h(比赛演示可短到 1h)。EXPIRED 后若仍需执行,必须重新建票(不复活)。
-
-6. **ticket_id 格式**:建议 `tkt-<run_id>-<action>`(确定性,便于审计追溯 + 幂等)。若同 run_id 同 action 需多次尝试(前次 FAILED),后缀 `-<attempt>`。确认?
+每步独立验证 + 证据落盘,沿用"不移动旧标签、新增 closed 标签、commit 无任何 AI 标识"惯例。
 
 ---
 
-## 10. 实现顺序(B4 复审通过后)
+## 14. 待确认(若你还有补充)
 
-```
-B4a:数据模型 + 函数 + 账号(run_pr_bindings、l2_* 函数、policy_gateway_l2/mergepilot_approver 账号 + 自检)
-B4b:Controller 端(查 GitHub 读绑定、l2_create_ticket、drain outbox 调 Gateway、对账 UNKNOWN)
-B4c:Gateway 端(L2 调用接票据流:claim/TOCTOU/complete/fail/mark_unknown + 审计)
-B4d:approve CLI(approve.sh + l2_approve + pending list)
-B4e:验收(正向 merge / TOCTOU 拒 / 并发领取 / UNKNOWN 对账 / 幂等 / 全 DENY 场景)
-```
-
-每步独立验证 + 证据落盘,沿用 B 系列的"不移动旧标签、新增 closed 标签"惯例。
+- 执行超时阈值:merge/close 默认 60s 合理?(GitHub merge 通常秒级,60s 留足余量)
+- `merge_method` 默认值:squash / merge / rebase?我倾向 squash(单 commit,审计干净),但取决于仓库约定。
+- outbox lease 时长:60s 够 Gateway claim?(claim 是本地 DB+上游首个包,秒级)
