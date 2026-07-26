@@ -34,18 +34,35 @@ fi
 grep -iE "CREATE TABLE|CREATE INDEX|CREATE TRIGGER|CREATE FUNCTION|ALTER|ERROR" /tmp/m3b_schema.out | head -20 || true
 echo "  schema OK (phase/decision CHECK 已幂等补齐)"
 
-echo "=== 2b. 收敛 Gateway 专用 INSERT-only 审计账号(始终幂等)==="
-bash /mnt/d/goai/tools/m3b-create-audit-role.sh
+echo "=== 2a. 应用 m3b_b4.sql(B4 票据 schema + l2_* 函数 + owner 收敛,ON_ERROR_STOP)==="
+docker cp /mnt/d/goai/tools/audit-db/m3b_b4.sql audit-pg:/tmp/m3b_b4.sql >/dev/null
+if ! docker exec audit-pg psql -U "$PG_USER" -d "$PG_DB" -v ON_ERROR_STOP=1 -f /tmp/m3b_b4.sql > /tmp/m3b_b4.out 2>&1; then
+  echo "  ❌ B4 schema 失败,中止:"; tail -5 /tmp/m3b_b4.out; exit 1
+fi
+echo "  B4 schema OK (l2_* 函数 owner=mergepilot_l2_owner)"
 
-# B3:gateway 用 policy_gateway_audit(INSERT-only),不再用 mergepilot 超管
+echo "=== 2b. 收敛 Gateway 审计账号(INSERT-only)+ L2 账号(EXECUTE-only)==="
+bash /mnt/d/goai/tools/m3b-create-audit-role.sh
+bash /mnt/d/goai/tools/m3b-b4-create-roles.sh
+
+# 审计 DSN(policy_gateway_audit)
 AUDIT_ENV="$DIR/audit-db.env"
-[ -f "$AUDIT_ENV" ] || { echo "  ❌ 无 audit-db.env(角色脚本应已写);中止"; exit 1; }
+[ -f "$AUDIT_ENV" ] || { echo "  ❌ 无 audit-db.env;中止"; exit 1; }
 PGW_AUDIT_USER=$(grep '^PGW_AUDIT_USER=' "$AUDIT_ENV" | cut -d= -f2-)
 PGW_AUDIT_PASS=$(grep '^PGW_AUDIT_PASS=' "$AUDIT_ENV" | head -1 | cut -d= -f2-)
 PGW_AUDIT_DB=$(grep '^PGW_AUDIT_DB=' "$AUDIT_ENV" | cut -d= -f2-)
 [ -n "$PGW_AUDIT_PASS" ] || { echo "  ❌ audit-db.env 无密码;中止"; exit 1; }
 AUDIT_DSN="postgresql://${PGW_AUDIT_USER}:${PGW_AUDIT_PASS}@audit-pg:5432/${PGW_AUDIT_DB}"
-echo "  AUDIT_DSN user=${PGW_AUDIT_USER} (INSERT-only, pass=<REDACTED>)"
+echo "  AUDIT_DSN user=${PGW_AUDIT_USER} (INSERT-only)"
+
+# L2 DSN(policy_gateway_l2,EXECUTE-only)
+B4_ENV="$DIR/b4-roles.env"
+[ -f "$B4_ENV" ] || { echo "  ❌ 无 b4-roles.env;中止"; exit 1; }
+L2_USER=$(grep '^POLICY_GATEWAY_L2_USER=' "$B4_ENV" | cut -d= -f2-)
+L2_PASS=$(grep '^POLICY_GATEWAY_L2_PASS=' "$B4_ENV" | head -1 | cut -d= -f2-)
+[ -n "$L2_PASS" ] || { echo "  ❌ b4-roles.env 无 L2 密码;中止"; exit 1; }
+L2_DSN="postgresql://${L2_USER}:${L2_PASS}@audit-pg:5432/${PGW_AUDIT_DB}"
+echo "  L2_DSN user=${L2_USER} (EXECUTE-only)"
 
 echo "=== 3. 构建 policy-gateway 镜像(失败即中止,不替换容器)==="
 docker build -t policy-gateway:latest /mnt/d/goai/tools/policy-gateway 2>&1 | tail -3
@@ -56,6 +73,7 @@ docker run -d --name policy-gw --network hiclab-net --restart unless-stopped \
   -e ROLE_TOKENS="$ROLE_TOKENS" \
   -e UPSTREAM_URL="http://github-mcp:8082/sse" \
   -e AUDIT_DSN="$AUDIT_DSN" \
+  -e L2_DSN="$L2_DSN" \
   policy-gateway:latest
 
 echo "=== 5. 挂 mcp-backend-net ===="

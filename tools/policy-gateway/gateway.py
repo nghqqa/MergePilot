@@ -39,7 +39,8 @@ import yaml  # PyYAML
 # ───────────────────────── 配置 ─────────────────────────
 ROLE_TOKENS = json.loads(os.environ.get("ROLE_TOKENS", "{}"))   # {"reviewer":"tok","fixer":"tok","verifier":"tok","coordinator":"tok"}
 UPSTREAM_URL = os.environ.get("UPSTREAM_URL", "http://github-mcp:8082/sse")
-AUDIT_DSN = os.environ.get("AUDIT_DSN", "")                     # postgresql://mergepilot:pw@audit-pg:5432/mergepilot_audit
+AUDIT_DSN = os.environ.get("AUDIT_DSN", "")                     # postgresql://policy_gateway_audit:pw@audit-pg:5432/mergepilot_audit
+L2_DSN = os.environ.get("L2_DSN", "")                           # postgresql://policy_gateway_l2:pw@audit-pg:5432/mergepilot_audit
 LISTEN_HOST = os.environ.get("LISTEN_HOST", "0.0.0.0")
 LISTEN_PORT = int(os.environ.get("LISTEN_PORT", "8083"))
 
@@ -184,11 +185,10 @@ def _get_audit_conn():
 
 
 def audit_event(corr_id, phase, caller, tool, decision, reason_code="",
-                *, args_hash="", ticket_id=None, target_repo="", target_branch="",
+                *, args_hash="", ticket_id=None, execution_id=None, target_repo="", target_branch="",
                 result_status="", http_status=None, git_sha="", run_id="", error=""):
-    """追加一条不可变审计行。返回 True=已持久化,False=未持久化(DSN 空/写失败)。
-    B3:一次调用写 INTENT(策略决策)→ RESULT/ERROR(GitHub 后),共享 correlation_id。
-    不存原始入参/token/文件内容,只存 args_hash。"""
+    """追加一条不可变审计行。返回 True=已持久化,False=未持久化。
+    B3:INTENT→RESULT/ERROR 共享 correlation_id;B4b:带 ticket_id+execution_id。"""
     if not AUDIT_DSN:
         return False
     rid = str(uuid.uuid4())
@@ -199,18 +199,140 @@ def audit_event(corr_id, phase, caller, tool, decision, reason_code="",
                 """
                 INSERT INTO mcp_calls
                   (request_id, correlation_id, phase, ts, caller_agent, tool, decision, reason_code,
-                   policy_version, policy_hash, ticket_id, args_hash,
+                   policy_version, policy_hash, ticket_id, execution_id, args_hash,
                    target_repo, target_branch, result_status, http_status, git_sha, run_id, error)
-                VALUES (%s, %s, %s, now(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, now(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (rid, corr_id, phase, caller, tool, decision, reason_code,
-                 POLICY_VERSION, POLICY_HASH, ticket_id, args_hash,
+                 POLICY_VERSION, POLICY_HASH, ticket_id, execution_id, args_hash,
                  target_repo, target_branch, result_status, http_status, git_sha, run_id, error),
             )
         return True
     except Exception as e:
         print(f"[gateway] audit FAILED [{phase} {decision} {tool}]: {e}", file=sys.stderr, flush=True)
         return False
+
+
+# ───────────────────────── L2 票据连接(B4b)─────────────────────────
+_l2_db = None
+
+
+def _get_l2_conn():
+    global _l2_db
+    if not L2_DSN:
+        return None
+    if _l2_db is None or _l2_db.closed:
+        _l2_db = psycopg2.connect(L2_DSN, connect_timeout=3)
+        _l2_db.autocommit = True
+    return _l2_db
+
+
+def l2_claim_ticket(ticket_id, action, repo, pr_number, args_hash):
+    """调用 SECURITY DEFINER l2_claim_ticket(一次 CAS 全校验)。
+    返回 (status, claim_dict)。
+    status: 'CLAIMED'(成功)/ 'MISMATCH'(0 行,票不匹配)/ 'DB_ERROR'(连接/查询失败)。
+    B4b P1#2:区分 DB 不可用 vs 票不匹配(不混为 CLAIM_MISMATCH)。"""
+    try:
+        conn = _get_l2_conn()
+        if not conn:
+            return ("DB_ERROR", None)
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT execution_id, canonical_payload::text, expected_head_sha, target_branch "
+                "FROM l2_claim_ticket(%s, %s, %s, %s, %s)",
+                (ticket_id, action, repo, pr_number, args_hash))
+            row = cur.fetchone()
+            if row and row[0]:
+                return ("CLAIMED", {"execution_id": str(row[0]),
+                                    "canonical_payload": json.loads(row[1]),
+                                    "expected_head_sha": row[2],
+                                    "target_branch": row[3]})
+        return ("MISMATCH", None)
+    except Exception as e:
+        print(f"[gateway] l2_claim_ticket FAILED: {e}", file=sys.stderr, flush=True)
+        return ("DB_ERROR", None)
+
+
+def l2_call_func(fn, args):
+    """调用一个无返回值的 l2_* 函数(complete/fail/mark_unknown)。返回 True=成功。"""
+    conn = _get_l2_conn()
+    if not conn:
+        return False
+    try:
+        with conn.cursor() as cur:
+            cur.execute(f"SELECT {fn}", args)
+            return cur.fetchone()[0]
+    except Exception as e:
+        print(f"[gateway] l2_{fn} FAILED: {e}", file=sys.stderr, flush=True)
+        return False
+
+
+def canonical_args_hash(args):
+    """与 Controller 完全一致的 canonical hash(Python sort_keys+紧凑,64hex)。
+    **排除 approval_ticket**(它是 gateway 验证参数,不属于上游载荷)。"""
+    clean = {k: v for k, v in args.items() if k != "approval_ticket"}
+    return hashlib.sha256(
+        json.dumps(clean, sort_keys=True, separators=(",", ":"), default=str).encode()
+    ).hexdigest()
+
+
+def l2_exec(sql, args):
+    """执行一个 l2_* 函数(sql 形如 'SELECT l2_complete_ticket(%s,%s::uuid,%s)')。返回首列。"""
+    conn = _get_l2_conn()
+    if not conn:
+        return False
+    try:
+        with conn.cursor() as cur:
+            cur.execute(sql, args)
+            row = cur.fetchone()
+            return row[0] if row else False
+    except Exception as e:
+        print(f"[gateway] l2_exec FAILED [{sql[:50]}]: {e}", file=sys.stderr, flush=True)
+        return False
+
+
+def _derive_l2_action(name, args):
+    """从工具名 + 参数推导 L2 action。merge_pull_request→merge;update_pull_request(state)→close。"""
+    if name == "merge_pull_request":
+        return "merge"
+    if name == "update_pull_request" and "state" in args:
+        return "close"
+    return None
+
+
+def _extract_text(result):
+    """从 CallToolResult 提取文本内容(拼接所有 text content)。"""
+    try:
+        parts = [c.text for c in (result.content or []) if hasattr(c, "text")]
+        return "\n".join(parts)
+    except Exception:
+        return ""
+
+
+def _extract_sha(result):
+    """从结果文本提取 merge commit SHA(如有)。"""
+    m = re.search(r'"sha"\s*:\s*"([0-9a-f]{7,40})"', _extract_text(result))
+    return m.group(1) if m else ""
+
+
+async def _read_pr_upstream(owner, repo_name, pr_num):
+    """查 GitHub PR 实际态(head_sha/state/base),用于 L2 TOCTOU 校验。
+    经上游 pull_request_read(method=get)—— GitHub 权威态,不信任调用方。"""
+    try:
+        res = await upstream.call_tool(
+            "pull_request_read",
+            {"method": "get", "owner": owner, "repo": repo_name, "pullNumber": int(pr_num)})
+        d = json.loads(_extract_text(res))
+        head = d.get("head") or {}
+        base = d.get("base") or {}
+        return {
+            "head_sha": head.get("sha") or d.get("headSha"),
+            "state": d.get("state"),
+            "base": base.get("ref") or d.get("baseRef"),
+        }
+    except Exception as e:
+        print(f"[gateway] TOCTOU read_pr failed: {e}", file=sys.stderr, flush=True)
+        return None
 
 
 # 旧名兼容(handle_sse 的 _deny 还在用)
@@ -295,26 +417,117 @@ async def call_tool(name: str, arguments: dict | None):
         args["query"] = _inject_search_scope(args.get("query", ""))
         print(f"[gateway] search {name} scope-injected: {args['query'][:80]}", flush=True)
 
-    # 4. update_pull_request 混合风险工具:按角色字段白名单
-    #    fixer 仅 title/body;state→L2(任何角色);coordinator 其他字段→PR_FIELD_NOT_ALLOWED
+    # 4. B4b:L2 动作(merge/close)—— 仅 coordinator + 必须有 approval_ticket
+    #    merge_pull_request→merge;update_pull_request(state)→close。走 claim→TOCTOU→上游→complete/fail/mark_unknown。
+    l2_action = _derive_l2_action(name, args)
+    if l2_action:
+        if role != "coordinator":
+            return deny("L2_REQUIRES_COORDINATOR")          # B4b step 1:仅 coordinator
+        if "approval_ticket" not in args:
+            return deny("L2_TICKET_REQUIRED")               # 无票 → 拒(旧占位语义保留)
+        ticket_id = args.get("approval_ticket", "")
+        ahash = canonical_args_hash(args)
+        pr_num = args.get("pullNumber")
+        # 4a. claim(一次 CAS;区分 DB_ERROR vs MISMATCH vs CLAIMED)
+        cstat, claim = l2_claim_ticket(ticket_id, l2_action, repo, pr_num, ahash)
+        if cstat == "DB_ERROR":
+            audit_event(corr_id, "INTENT", role, name, "DENY", "L2_DB_UNAVAILABLE",
+                        args_hash=ahash, target_repo=repo, ticket_id=ticket_id)
+            print(f"[gateway] DENY L2 tool={name} → L2_DB_UNAVAILABLE", flush=True)
+            return _deny_result("L2_DB_UNAVAILABLE", tool=name)
+        if cstat != "CLAIMED" or claim is None:
+            audit_event(corr_id, "INTENT", role, name, "DENY", "CLAIM_MISMATCH",
+                        args_hash=ahash, target_repo=repo, ticket_id=ticket_id)
+            print(f"[gateway] DENY L2 tool={name} ticket={ticket_id[:16]} → CLAIM_MISMATCH", flush=True)
+            return _deny_result("CLAIM_MISMATCH", tool=name)
+        eid = claim["execution_id"]
+        payload = claim["canonical_payload"]
+        # 4b. INTENT 审计 fail-closed
+        if not audit_event(corr_id, "INTENT", role, name, "ALLOW", "L2_CLAIMED",
+                           args_hash=ahash, target_repo=repo, target_branch=claim["target_branch"],
+                           ticket_id=ticket_id, execution_id=eid):
+            l2_exec("SELECT l2_fail_ticket(%s,%s::uuid,%s)",
+                    (ticket_id, eid, "audit INTENT unavailable"))
+            audit_event(corr_id, "ERROR", role, name, "DENY", "AUDIT_UNAVAILABLE",
+                        args_hash=ahash, ticket_id=ticket_id, execution_id=eid,
+                        error="INTENT audit failed; refused to call GitHub")
+            return _deny_result("AUDIT_UNAVAILABLE", tool=name)
+        print(f"[gateway] L2 CLAIMED tool={name} ticket={ticket_id[:16]} eid={eid[:8]}", flush=True)
+        # 4c. TOCTOU(60s 超时;hang → mark_unknown 不留 EXECUTING)
+        try:
+            pr_actual = await asyncio.wait_for(
+                _read_pr_upstream(args.get("owner"), args.get("repo"), pr_num), timeout=60)
+        except (asyncio.TimeoutError, Exception) as e:
+            l2_exec("SELECT l2_mark_unknown(%s,%s::uuid,%s)",
+                    (ticket_id, eid, f"TOCTOU read timeout/error: {str(e)[:80]}"))
+            audit_event(corr_id, "ERROR", role, name, "ERROR", "L2_MARKED_UNKNOWN",
+                        args_hash=ahash, ticket_id=ticket_id, execution_id=eid,
+                        error=f"TOCTOU: {str(e)[:120]}")
+            print(f"[gateway] L2 UNKNOWN tool={name} → TOCTOU timeout/error", flush=True)
+            return _deny_result("L2_TIMEOUT", tool=name)
+        toctou_ok = (pr_actual
+                     and pr_actual.get("head_sha") == claim["expected_head_sha"]
+                     and pr_actual.get("state") == "open"
+                     and pr_actual.get("base") == claim["target_branch"])
+        if not toctou_ok:
+            l2_exec("SELECT l2_fail_ticket(%s,%s::uuid,%s)",
+                    (ticket_id, eid, f"TOCTOU: {pr_actual}"))
+            audit_event(corr_id, "ERROR", role, name, "DENY", "TOCTOU_MISMATCH",
+                        args_hash=ahash, ticket_id=ticket_id, execution_id=eid,
+                        target_repo=repo, target_branch=claim["target_branch"], error=f"actual={pr_actual}")
+            return _deny_result("TOCTOU_MISMATCH", tool=name)
+        # 4d. 从 canonical_payload 构造上游 args
+        upstream_args = {k: v for k, v in payload.items() if k != "approval_ticket"}
+        # 4e. 调上游(60s 超时;timeout/exception → mark_unknown;明确拒绝 → fail;成功 → complete)
+        try:
+            result = await asyncio.wait_for(
+                upstream.call_tool(name, upstream_args), timeout=60)
+            is_err = getattr(result, "is_error", False)
+            if is_err:
+                err_txt = _extract_text(result)[:200]
+                l2_exec("SELECT l2_fail_ticket(%s,%s::uuid,%s)",
+                        (ticket_id, eid, f"upstream reject: {err_txt}"))
+                audit_event(corr_id, "RESULT", role, name, "ERROR", "L2_UPSTREAM_REJECT",
+                            args_hash=ahash, ticket_id=ticket_id, execution_id=eid,
+                            target_repo=repo, result_status="ERROR", error=err_txt)
+            else:
+                sha = _extract_sha(result)
+                # B4b P1#3:检查 complete 的 CAS 返回值;失败 → mark_unknown(防"GitHub 已 merge 但票 EXECUTING")
+                ok = l2_exec("SELECT l2_complete_ticket(%s,%s::uuid,%s)",
+                             (ticket_id, eid, sha or ""))
+                if not ok:
+                    l2_exec("SELECT l2_mark_unknown(%s,%s::uuid,%s)",
+                            (ticket_id, eid, "l2_complete_ticket CAS failed"))
+                    audit_event(corr_id, "ERROR", role, name, "ERROR", "L2_COMPLETE_FAILED",
+                                args_hash=ahash, ticket_id=ticket_id, execution_id=eid,
+                                target_repo=repo, git_sha=sha or "",
+                                error="complete_ticket CAS failed; marked UNKNOWN for reconcile")
+                else:
+                    audit_event(corr_id, "RESULT", role, name, "ALLOW", "L2_COMPLETE",
+                                args_hash=ahash, ticket_id=ticket_id, execution_id=eid,
+                                target_repo=repo, git_sha=sha or "", result_status="OK")
+            return result
+        except (asyncio.TimeoutError, Exception) as e:
+            # 网络超时/中断(请求可能已发,结果未知)→ mark_unknown,绝不自动重试
+            l2_exec("SELECT l2_mark_unknown(%s,%s::uuid,%s)",
+                    (ticket_id, eid, f"network: {str(e)[:120]}"))
+            audit_event(corr_id, "ERROR", role, name, "ERROR", "L2_MARKED_UNKNOWN",
+                        args_hash=ahash, ticket_id=ticket_id, execution_id=eid,
+                        target_repo=repo, error=str(e)[:200])
+            raise
+
+    # 5. update_pull_request 非状态字段(fixer title/body 等):字段白名单
     if name == "update_pull_request":
-        if "state" in args:
-            return deny("L2_TICKET_REQUIRED")
         allowed_fields = _PR_IDENTITY | (_FIXER_PR_FIELDS if role == "fixer" else set())
         unexpected = set(args.keys()) - allowed_fields
         if unexpected:
             return deny("PR_FIELD_NOT_ALLOWED", fields=",".join(sorted(unexpected)))
-        # 通过 → 落到 ALLOW+forward
 
-    # 5. fixer 写操作:base/fix 前缀/受保护分支/路径 denylist(repo allowlist 已在步骤 2)
+    # 6. fixer 写操作:base/fix 前缀/受保护分支/路径 denylist
     if cfg["write_checks"] and name in _FIX_SET:
         reason = _check_write_args(name, args)
         if reason:
             return deny(reason)
-
-    # 6. L2 动作(merge/delete):B2.1 一律要票据,B4 才校验票据
-    if name in _L2_SET and cfg["l2_requires_ticket"]:
-        return deny("L2_TICKET_REQUIRED")
 
     # 7. ALLOW —— B3:写工具 fail-closed(INTENT 必须先持久化才调 GitHub),读工具 fail-open
     is_write = name in _WRITE_SET

@@ -46,7 +46,7 @@ async def main():
                 try:
                     for c in res.content:
                         if hasattr(c, "text"):
-                            print(c.text[:300])
+                            print(c.text)
                 except Exception as e:
                     print(f"<probe call error: {e}>")
                 if getattr(res, "is_error", False):
