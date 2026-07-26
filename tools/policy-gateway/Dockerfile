@@ -11,6 +11,7 @@ COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY gateway.py /app/gateway.py
+COPY policy.yaml /app/policy.yaml
 
 ENV LISTEN_HOST=0.0.0.0 \
     LISTEN_PORT=8083

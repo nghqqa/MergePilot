@@ -1,0 +1,95 @@
+# policy.yaml — MergePilot M3-B 最小权限矩阵(deny-by-default)。
+# 版本进 git,不热改表;gateway 启动时计算 policy_hash = sha256(文件内容)写入每条审计。
+# 任何上游新增工具只要不在此文件显式 allow,对所有角色默认不可见、不可调。
+#
+# 工具分级:
+#   read    — 只读(reviewer/verifier/fixer/coordinator 都可用)
+#   comment — 轻量写:评论/review 请求(reviewer 不给,fixer/coordinator 可用)
+#   fix     — 修复写:建分支/改文件/建 PR(仅 fixer,受 write_checks 约束)
+#   l2      — 破坏性/不可逆:merge/delete/create_repo/fork(仅 coordinator,需审批票据)
+version: "b2-20260726-v1"
+
+# ─── 全局约束(所有写操作都校验)───
+repos:
+  allowlist:
+    - "nghqqa/MergePilot"
+branches:
+  base_allowlist: ["main"]      # PR base / 分支起点只允许 main
+  fix_prefix: "fix/"            # fixer 只能创建/写 fix/* 分支
+  protected: ["main"]           # 禁止直接写/force-push
+file_paths:
+  # 即便在 allowlist 仓库内,这些路径也禁写(密钥/凭证/CI)
+  denylist:
+    - "glob:**/.env*"
+    - "glob:**/*.pem"
+    - "glob:**/*.key"
+    - "glob:**/secrets/**"
+    - "glob:**/.github/workflows/**"
+    - "glob:**/credentials*"
+
+# ─── 工具分类(44 个上游工具)───
+tool_classes:
+  read:
+    - get_me
+    - get_commit
+    - get_file_contents
+    - get_label
+    - get_latest_release
+    - get_release_by_tag
+    - get_tag
+    - get_team_members
+    - get_teams
+    - list_branches
+    - list_commits
+    - list_issues
+    - list_pull_requests
+    - list_releases
+    - list_repository_collaborators
+    - list_tags
+    - list_issue_fields
+    - list_issue_types
+    - search_code
+    - search_commits
+    - search_issues
+    - search_pull_requests
+    - search_repositories
+    - search_users
+    - issue_read
+    - pull_request_read
+  comment:
+    - add_comment_to_pending_review
+    - add_issue_comment
+    - add_reply_to_pull_request_comment
+    - request_copilot_review
+    - pull_request_review_write
+    - assign_copilot_to_issue
+  fix:
+    - create_branch
+    - create_or_update_file
+    - push_files
+    - create_pull_request
+    - update_pull_request
+    - update_pull_request_branch
+    - issue_write
+    - sub_issue_write
+  l2:
+    - merge_pull_request
+    - delete_file
+    - create_repository
+    - fork_repository
+
+# ─── 角色 → 允许的工具类 + 额外约束 ───
+roles:
+  reviewer:
+    classes: [read]
+    # reviewer 纯只读:findings 走 Matrix,不在 GitHub 写任何东西
+  verifier:
+    classes: [read]
+    # verifier 只读目标 PR + fix 分支(B2 不做 PR 编号级 arg 绑定,留 B4 票据绑定)
+  fixer:
+    classes: [read, comment, fix]
+    write_checks: true    # 对 fix 类工具强制:repo/base allowlist + fix/ 前缀 + 路径 denylist
+  coordinator:
+    classes: [read, comment, fix, l2]
+    # l2 类工具:B2 阶段一律 DENY(L2_TICKET_REQUIRED);B4 接审批票据后带 ticket 才放行
+    l2_requires_ticket: true

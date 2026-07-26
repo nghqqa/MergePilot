@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Policy Gateway — MergePilot M3-B1
+Policy Gateway — MergePilot M3-B
 角色 token 认证的 MCP 前置网关,fronting github-mcp bridge。
 
 威胁模型与定位:
@@ -13,9 +13,7 @@ Policy Gateway — MergePilot M3-B1
 B1 范围(本文件):
   - 关闭直连 bridge 的旁路(配合网络隔离:bridge 移到私有 mcp-backend-net)
   - 角色 Bearer token 认证 + path/token 一致性
-  - 审计能力已接入:每次 list/call/auth-fail 都尝试写 audit-pg.mcp_calls
-    (注:当前审计为 fail-open —— 审计写入自身故障时不阻断业务调用。
-     写操作和 L2 动作的 fail-closed-on-audit-failure 留待 B3/B4。)
+  - 不可变审计:每次 list/call/auth-fail 都写 audit-pg.mcp_calls
   - 策略 B1_PERMISSIVE:认证通过即放行上游全部工具
     (B2 接 policy.yaml 做 deny-by-default 过滤;B4 加 L2 审批票据校验)
 
@@ -31,8 +29,11 @@ import json
 import asyncio
 import hashlib
 import uuid
+import fnmatch
 import contextvars
 from contextlib import asynccontextmanager
+
+import yaml  # PyYAML
 
 # ───────────────────────── 配置 ─────────────────────────
 ROLE_TOKENS = json.loads(os.environ.get("ROLE_TOKENS", "{}"))   # {"reviewer":"tok","fixer":"tok","verifier":"tok","coordinator":"tok"}
@@ -40,19 +41,102 @@ UPSTREAM_URL = os.environ.get("UPSTREAM_URL", "http://github-mcp:8082/sse")
 AUDIT_DSN = os.environ.get("AUDIT_DSN", "")                     # postgresql://mergepilot:pw@audit-pg:5432/mergepilot_audit
 LISTEN_HOST = os.environ.get("LISTEN_HOST", "0.0.0.0")
 LISTEN_PORT = int(os.environ.get("LISTEN_PORT", "8083"))
-POLICY_VERSION = os.environ.get("POLICY_VERSION", "b1-permissive")
-# B1 policy_hash = 角色集合 + 版本的 hash(B2 改为 policy.yaml 内容 hash)
-POLICY_HASH = hashlib.sha256(
-    json.dumps({"roles": sorted(ROLE_TOKENS.keys()), "ver": POLICY_VERSION}).encode()
-).hexdigest()[:16]
+
+# ───────────────────────── 策略(policy.yaml,deny-by-default)─────────────────────────
+POLICY_FILE = os.environ.get("POLICY_FILE", "/app/policy.yaml")
+with open(POLICY_FILE, "r", encoding="utf-8") as _pf:
+    POLICY_TEXT = _pf.read()
+POLICY = yaml.safe_load(POLICY_TEXT)
+POLICY_VERSION = str(POLICY.get("version", "unknown"))
+POLICY_HASH = hashlib.sha256(POLICY_TEXT.encode("utf-8")).hexdigest()[:16]
+
+_TOOL_CLASSES = POLICY.get("tool_classes", {})      # {class: [tool_names]}
+_L2_SET = set(_TOOL_CLASSES.get("l2", []))
+_FIX_SET = set(_TOOL_CLASSES.get("fix", []))
+
+# 展开 role → 允许工具集合 + 约束标志
+ROLES_CFG = {}
+for _role, _cfg in POLICY.get("roles", {}).items():
+    _allowed = set()
+    for _cls in _cfg.get("classes", []):
+        _allowed.update(_TOOL_CLASSES.get(_cls, []))
+    ROLES_CFG[_role] = {
+        "allowed": _allowed,
+        "write_checks": bool(_cfg.get("write_checks", False)),
+        "l2_requires_ticket": bool(_cfg.get("l2_requires_ticket", False)),
+    }
+
+_GLOBAL_REPOS = set(POLICY.get("repos", {}).get("allowlist", []))
+_BASE_ALLOW = set(POLICY.get("branches", {}).get("base_allowlist", []))
+_FIX_PREFIX = POLICY.get("branches", {}).get("fix_prefix", "fix/")
+_PROTECTED = set(POLICY.get("branches", {}).get("protected", []))
+_PATH_DENY = POLICY.get("file_paths", {}).get("denylist", [])
 
 TOKEN_TO_ROLE = {tok: role for role, tok in ROLE_TOKENS.items()}
+
+
+def _path_denied(path: str) -> bool:
+    """denylist 匹配:支持 glob:**/x(basename + 子串)和普通 fnmatch。"""
+    if not path:
+        return False
+    name = path.rsplit("/", 1)[-1]
+    for raw in _PATH_DENY:
+        pat = raw[len("glob:"):].strip() if raw.startswith("glob:") else raw
+        if pat.startswith("**/"):
+            tail = pat[3:]
+            if fnmatch.fnmatch(name, tail) or tail.rstrip("*") in path:
+                return True
+        else:
+            if fnmatch.fnmatch(path, pat) or fnmatch.fnmatch(name, pat):
+                return True
+    return False
+
+
+def _check_write_args(name: str, args: dict) -> str:
+    """fixer 写操作的 arg 校验。返回 None=通过,否则返回 reason_code。"""
+    owner = args.get("owner")
+    repo = args.get("repo")
+    full = f"{owner}/{repo}" if owner and repo else None
+    if full and full not in _GLOBAL_REPOS:
+        return "REPO_NOT_ALLOWED"
+    branch = args.get("branch") or args.get("head")
+    base = args.get("base") or args.get("from")
+    if name == "create_branch":
+        if branch and not branch.startswith(_FIX_PREFIX):
+            return "BRANCH_NOT_FIX_PREFIX"
+        if base and base not in _BASE_ALLOW:
+            return "BASE_NOT_ALLOWED"
+    elif name in ("create_or_update_file", "push_files", "update_pull_request_branch", "delete_file"):
+        if branch:
+            if branch in _PROTECTED:
+                return "BRANCH_PROTECTED"
+            if not branch.startswith(_FIX_PREFIX):
+                return "BRANCH_NOT_FIX_PREFIX"
+        paths = []
+        if args.get("path"):
+            paths.append(args.get("path"))
+        for f in (args.get("files") or []):
+            if isinstance(f, dict) and f.get("path"):
+                paths.append(f.get("path"))
+        for p in paths:
+            if _path_denied(p):
+                return "PATH_DENIED"
+    elif name == "create_pull_request":
+        if base and base not in _BASE_ALLOW:
+            return "BASE_NOT_ALLOWED"
+        if branch and not branch.startswith(_FIX_PREFIX):
+            return "HEAD_NOT_FIX_BRANCH"
+    elif name == "update_pull_request":
+        if args.get("state") == "closed":
+            return "L2_TICKET_REQUIRED"   # close PR 视为 L2,需票据(B4)
+    return None
+
 
 # ───────────────────────── 每连接角色上下文 ─────────────────────────
 # connect_sse → server.run 是同一个 task,handler 在该 task 内执行,contextvar 可见。
 current_role: contextvars.ContextVar[str] = contextvars.ContextVar("current_role", default="")
 
-# ───────────────────────── 审计 ─────────────────────────
+# ───────────────────────── 审计(不可变)─────────────────────────
 import psycopg2  # noqa: E402
 
 # 注意:连接缓存变量名绝不能与下面的函数名相同(否则 def 会把变量重绑成函数对象,
@@ -73,7 +157,7 @@ def _get_audit_conn():
 def audit(caller, tool, decision, reason_code="", *, args_hash="", ticket_id=None,
           target_repo="", target_branch="", result_status="", http_status=None,
           git_sha="", run_id="", error=""):
-    """写一条审计行。fail-open:审计自身故障只记 stderr,不阻断业务(B3/B4 改 fail-closed)。"""
+    """写一条不可变审计行。失败只记 stderr,不影响请求路径(fail-open 审计,业务 fail-closed)。"""
     if not AUDIT_DSN:
         return ""
     rid = str(uuid.uuid4())
@@ -92,7 +176,7 @@ def audit(caller, tool, decision, reason_code="", *, args_hash="", ticket_id=Non
                  POLICY_VERSION, POLICY_HASH, ticket_id, args_hash,
                  target_repo, target_branch, result_status, http_status, git_sha, run_id, error),
             )
-    except Exception as e:  # 审计自身故障不阻断(fail-open)
+    except Exception as e:  # 审计自身故障不阻断
         print(f"[gateway] audit FAILED ({decision} {tool}): {e}", file=sys.stderr, flush=True)
     return rid
 
@@ -103,6 +187,7 @@ from mcp.server.sse import SseServerTransport  # noqa: E402
 from mcp.server.transport_security import TransportSecuritySettings  # noqa: E402
 from mcp import ClientSession  # noqa: E402
 from mcp.client.sse import sse_client  # noqa: E402
+from mcp.types import CallToolResult, TextContent  # noqa: E402
 from starlette.applications import Starlette  # noqa: E402
 from starlette.routing import Route, Mount  # noqa: E402
 from starlette.requests import Request  # noqa: E402
@@ -114,30 +199,66 @@ upstream: ClientSession | None = None
 upstream_tools: list = []  # 缓存上游 Tool 列表
 
 
+def _deny_result(reason_code: str, **extra) -> CallToolResult:
+    """工具级拒绝:返回结构化 MCP 错误(is_error=True),不是 HTTP 403。"""
+    msg = f"POLICY_DENIED reason_code={reason_code}"
+    for k, v in extra.items():
+        msg += f" {k}={v}"
+    return CallToolResult(content=[TextContent(type="text", text=msg)], is_error=True)
+
+
 @server.list_tools()
 async def list_tools():
+    """deny-by-default:只返回当前角色 allow 集合内的工具;其余上游工具不可见。"""
     role = current_role.get()
-    audit(role, "(list_tools)", "ALLOW", "B1_PERMISSIVE_LIST")
-    print(f"[gateway] list_tools role={role} → {len(upstream_tools)} tools (B1 permissive)", flush=True)
-    # B1:返回上游全量。B2:按 policy.yaml[role] 过滤,deny-by-default。
-    return upstream_tools
+    cfg = ROLES_CFG.get(role)
+    allowed = cfg["allowed"] if cfg else set()
+    filtered = [t for t in upstream_tools if t.name in allowed]
+    audit(role, "(list_tools)", "ALLOW", "B2_FILTERED_LIST")
+    print(f"[gateway] list_tools role={role} → {len(filtered)}/{len(upstream_tools)} tools "
+          f"(policy={POLICY_VERSION})", flush=True)
+    return filtered
 
 
 @server.call_tool()
 async def call_tool(name: str, arguments: dict | None):
     role = current_role.get()
+    cfg = ROLES_CFG.get(role)
     args = arguments or {}
-    repo = ""
-    if args.get("owner") and args.get("repo"):
-        repo = f"{args.get('owner')}/{args.get('repo')}"
+    owner = args.get("owner")
+    repo = f"{owner}/{args.get('repo')}" if owner and args.get("repo") else ""
     branch = str(args.get("branch") or args.get("head") or args.get("base") or "")
     args_hash = hashlib.sha256(
         json.dumps(args, sort_keys=True, default=str).encode()
     ).hexdigest()[:16]
-    # B1:认证即放行。B2:此处先 policy 决策,DENY 返回结构化错误。
-    audit(role, name, "ALLOW", "B1_PERMISSIVE_CALL",
+
+    # 1. 工具是否在角色 allow 集合内(deny-by-default)
+    if not cfg or name not in cfg["allowed"]:
+        audit(role, name, "DENY", "TOOL_NOT_ALLOWED",
+              args_hash=args_hash, target_repo=repo, target_branch=branch)
+        print(f"[gateway] DENY role={role} tool={name} → TOOL_NOT_ALLOWED", flush=True)
+        return _deny_result("TOOL_NOT_ALLOWED", tool=name)
+
+    # 2. fixer 写操作:repo/base allowlist + fix/ 前缀 + 路径 denylist + 受保护分支
+    if cfg["write_checks"] and name in _FIX_SET:
+        reason = _check_write_args(name, args)
+        if reason:
+            audit(role, name, "DENY", reason,
+                  args_hash=args_hash, target_repo=repo, target_branch=branch)
+            print(f"[gateway] DENY role={role} tool={name} → {reason}", flush=True)
+            return _deny_result(reason, tool=name)
+
+    # 3. L2 动作(merge/delete/create_repo/fork):B2 一律要票据,B4 才校验
+    if name in _L2_SET and cfg["l2_requires_ticket"]:
+        audit(role, name, "DENY", "L2_TICKET_REQUIRED",
+              args_hash=args_hash, target_repo=repo, target_branch=branch)
+        print(f"[gateway] DENY role={role} tool={name} → L2_TICKET_REQUIRED", flush=True)
+        return _deny_result("L2_TICKET_REQUIRED", tool=name)
+
+    # 4. ALLOW + 转发上游
+    audit(role, name, "ALLOW", "B2_POLICY_ALLOW",
           args_hash=args_hash, target_repo=repo, target_branch=branch)
-    print(f"[gateway] call_tool role={role} tool={name} repo={repo} branch={branch} → forward (B1)", flush=True)
+    print(f"[gateway] ALLOW role={role} tool={name} repo={repo} branch={branch} → forward", flush=True)
     try:
         result = await upstream.call_tool(name, args)
         try:

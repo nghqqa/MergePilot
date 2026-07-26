@@ -1,0 +1,17 @@
+=== B2 策略 DENY 审计样本 ===
+              ts               | caller_agent  |         tool          | decision |      reason_code      | policy_version |   policy_hash    
+-------------------------------+---------------+-----------------------+----------+-----------------------+----------------+------------------
+ 2026-07-26 06:44:38.985003+00 | coordinator   | merge_pull_request    | DENY     | L2_TICKET_REQUIRED    | b2-20260726-v1 | e029676319129893
+ 2026-07-26 06:44:37.832592+00 | fixer         | create_or_update_file | DENY     | REPO_NOT_ALLOWED      | b2-20260726-v1 | e029676319129893
+ 2026-07-26 06:44:37.259191+00 | fixer         | create_or_update_file | DENY     | PATH_DENIED           | b2-20260726-v1 | e029676319129893
+ 2026-07-26 06:44:36.706007+00 | fixer         | create_or_update_file | DENY     | BRANCH_PROTECTED      | b2-20260726-v1 | e029676319129893
+ 2026-07-26 06:44:36.112556+00 | fixer         | create_branch         | DENY     | BRANCH_NOT_FIX_PREFIX | b2-20260726-v1 | e029676319129893
+ 2026-07-26 06:42:31.527038+00 | fixer         | create_or_update_file | DENY     | REPO_NOT_ALLOWED      | b2-20260726-v1 | e029676319129893
+ 2026-07-26 06:42:30.992383+00 | fixer         | create_or_update_file | DENY     | PATH_DENIED           | b2-20260726-v1 | e029676319129893
+ 2026-07-26 06:42:30.48133+00  | fixer         | create_or_update_file | DENY     | BRANCH_PROTECTED      | b2-20260726-v1 | e029676319129893
+ 2026-07-26 06:42:29.920534+00 | fixer         | create_branch         | DENY     | BRANCH_NOT_FIX_PREFIX | b2-20260726-v1 | e029676319129893
+ 2026-07-26 06:30:35.037759+00 | reviewer      | (auth)                | DENY     | ROLE_PATH_MISMATCH    | b1-permissive  | 838cceabb0296681
+ 2026-07-26 06:30:34.778509+00 | path=reviewer | (auth)                | DENY     | BAD_TOKEN             | b1-permissive  | 838cceabb0296681
+ 2026-07-26 06:04:45.308985+00 | reviewer      | (auth)                | DENY     | ROLE_PATH_MISMATCH    | b1-permissive  | 838cceabb0296681
+(12 rows)
+

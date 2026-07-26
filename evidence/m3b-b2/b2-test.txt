@@ -1,0 +1,66 @@
+═══════════════════════════════════════════════
+  B2 最小权限矩阵验证 (policy=b2-20260726-v1)
+═══════════════════════════════════════════════
+
+=== A. reviewer 可见工具不含 merge_pull_request / create_branch ===
+  reviewer 可见 26 工具: merge=False create_branch=False get_me=True
+  ✅ reviewer list 过滤正确(无 merge/create_branch,有 get_me,26 工具)
+
+=== B. reviewer get_me → ALLOW ===
+{"login":"nghqqa","id":53132158,"profile_url":"https://github.com/nghqqa","avatar_url":"https://avatars.githubusercontent.com/u/53132158?v=4","details":{"name":"qiu quan an","company":"Jiangxi Normal University","blog":"https://www.nghqqa.cn/","location":"江西上饶","bio":"College of Digital Industry, Ji
+  ✅ reviewer 读调用成功
+
+=== C. fixer 可见工具含 create_branch,不含 merge ===
+  fixer 可见 40 工具: merge=False create_branch=True
+  ✅ fixer list 正确(有 create_branch,无 merge,40 工具)
+
+=== D. fixer create_branch 分支=evil/x(非 fix/)→ DENY BRANCH_NOT_FIX_PREFIX ===
+POLICY_DENIED reason_code=BRANCH_NOT_FIX_PREFIX tool=create_branch
+<is_error=true>
+  ✅ 非 fix/ 分支被拒
+
+=== E. fixer 写 main → DENY BRANCH_PROTECTED ===
+POLICY_DENIED reason_code=BRANCH_PROTECTED tool=create_or_update_file
+<is_error=true>
+  ✅ 写 main 被拒(受保护)
+
+=== F. fixer 写 .env → DENY PATH_DENIED ===
+POLICY_DENIED reason_code=PATH_DENIED tool=create_or_update_file
+<is_error=true>
+  ✅ 写 .env 被拒(路径 denylist)
+
+=== G. fixer 写非 allowlist 仓库 → DENY REPO_NOT_ALLOWED ===
+POLICY_DENIED reason_code=REPO_NOT_ALLOWED tool=create_or_update_file
+<is_error=true>
+  ✅ 非 allowlist 仓库被拒
+
+=== H. coordinator 可见工具含 merge_pull_request ===
+  coordinator 可见 44 工具: merge=True
+  ✅ coordinator 能看到 merge(44 工具)
+
+=== I. coordinator merge → DENY L2_TICKET_REQUIRED(B2 占位)===
+POLICY_DENIED reason_code=L2_TICKET_REQUIRED tool=merge_pull_request
+<is_error=true>
+  ✅ coordinator merge 被拒(L2 需票据,B2 占位)
+
+=== J. 审计 DENY 行(本轮)===
+              ts               | caller_agent |         tool          | decision |      reason_code      
+-------------------------------+--------------+-----------------------+----------+-----------------------
+ 2026-07-26 06:44:38.985003+00 | coordinator  | merge_pull_request    | DENY     | L2_TICKET_REQUIRED
+ 2026-07-26 06:44:37.832592+00 | fixer        | create_or_update_file | DENY     | REPO_NOT_ALLOWED
+ 2026-07-26 06:44:37.259191+00 | fixer        | create_or_update_file | DENY     | PATH_DENIED
+ 2026-07-26 06:44:36.706007+00 | fixer        | create_or_update_file | DENY     | BRANCH_PROTECTED
+ 2026-07-26 06:44:36.112556+00 | fixer        | create_branch         | DENY     | BRANCH_NOT_FIX_PREFIX
+ 2026-07-26 06:42:31.527038+00 | fixer        | create_or_update_file | DENY     | REPO_NOT_ALLOWED
+ 2026-07-26 06:42:30.992383+00 | fixer        | create_or_update_file | DENY     | PATH_DENIED
+ 2026-07-26 06:42:30.48133+00  | fixer        | create_or_update_file | DENY     | BRANCH_PROTECTED
+ 2026-07-26 06:42:29.920534+00 | fixer        | create_branch         | DENY     | BRANCH_NOT_FIX_PREFIX
+ 2026-07-26 06:30:35.037759+00 | reviewer     | (auth)                | DENY     | ROLE_PATH_MISMATCH
+(10 rows)
+
+  策略 DENY 总数: 9
+  ✅ 审计记录了 9 条策略 DENY
+
+═══════════════════════════════════════════════
+  B2 验证: PASS=10 FAIL=0
+═══════════════════════════════════════════════
