@@ -3,13 +3,17 @@
 # 任何上游新增工具只要不在此文件显式 allow,对所有角色默认不可见、不可调。
 #
 # 工具分级:
-#   read    — 只读(reviewer/verifier/fixer/coordinator 都可用)
-#   comment — 轻量写:评论/review 请求(reviewer 不给,fixer/coordinator 可用)
+#   read    — 只读(reviewer/verifier/fixer/coordinator 都可用;带 owner+repo 的统一受 repo allowlist 约束)
+#   comment — 轻量写:评论/review 请求(fixer/coordinator 可用)
 #   fix     — 修复写:建分支/改文件/建 PR(仅 fixer,受 write_checks 约束)
-#   l2      — 破坏性/不可逆:merge/delete/create_repo/fork(仅 coordinator,需审批票据)
-version: "b2-20260726-v1"
+#   l2      — 破坏性/不可逆:merge/delete(仅 coordinator,需审批票据)
+#   disabled — 上游存在但所有角色都不可见(无业务用例或数据扩散风险)
+#
+# update_pull_request 是混合风险工具,不归入任何类;通过 extra_tools 单独授权 +
+# 参数级规则(fixer 仅 title/body;state→L2;其他字段→PR_FIELD_NOT_ALLOWED)。
+version: "b2.1-20260726-v1"
 
-# ─── 全局约束(所有写操作都校验)───
+# ─── 全局约束 ───
 repos:
   allowlist:
     - "nghqqa/MergePilot"
@@ -18,7 +22,6 @@ branches:
   fix_prefix: "fix/"            # fixer 只能创建/写 fix/* 分支
   protected: ["main"]           # 禁止直接写/force-push
 file_paths:
-  # 即便在 allowlist 仓库内,这些路径也禁写(密钥/凭证/CI)
   denylist:
     - "glob:**/.env*"
     - "glob:**/*.pem"
@@ -48,12 +51,11 @@ tool_classes:
     - list_tags
     - list_issue_fields
     - list_issue_types
+    # search_scoped:允许但 query 必须含 repo:<allowlist>(gateway 强制)
     - search_code
     - search_commits
     - search_issues
     - search_pull_requests
-    - search_repositories
-    - search_users
     - issue_read
     - pull_request_read
   comment:
@@ -62,34 +64,39 @@ tool_classes:
     - add_reply_to_pull_request_comment
     - request_copilot_review
     - pull_request_review_write
-    - assign_copilot_to_issue
   fix:
     - create_branch
     - create_or_update_file
     - push_files
     - create_pull_request
-    - update_pull_request
     - update_pull_request_branch
     - issue_write
     - sub_issue_write
   l2:
     - merge_pull_request
     - delete_file
+  disabled:
+    # 无业务用例 / 数据扩散风险 / 启动外部 Agent —— 所有角色不可见
     - create_repository
     - fork_repository
+    - search_repositories
+    - search_users
+    - assign_copilot_to_issue   # 启动 Copilot coding agent,可能产生真实代码/PR
 
-# ─── 角色 → 允许的工具类 + 额外约束 ───
+# ─── 角色 → 允许的工具类 + 额外工具 + 约束 ───
 roles:
   reviewer:
     classes: [read]
     # reviewer 纯只读:findings 走 Matrix,不在 GitHub 写任何东西
   verifier:
     classes: [read]
-    # verifier 只读目标 PR + fix 分支(B2 不做 PR 编号级 arg 绑定,留 B4 票据绑定)
+    # verifier 只读(B2.1 起:带 owner+repo 的读统一受 repo allowlist 约束)
   fixer:
     classes: [read, comment, fix]
-    write_checks: true    # 对 fix 类工具强制:repo/base allowlist + fix/ 前缀 + 路径 denylist
+    extra_tools: [update_pull_request]   # 仅 title/body(state→L2,其他字段拒)
+    write_checks: true
   coordinator:
-    classes: [read, comment, fix, l2]
-    # l2 类工具:B2 阶段一律 DENY(L2_TICKET_REQUIRED);B4 接审批票据后带 ticket 才放行
+    classes: [read, comment, l2]
+    extra_tools: [update_pull_request]   # 仅 state(L2,需票据);其他字段拒
     l2_requires_ticket: true
+    # B2.1:coordinator 不再继承 fix 类(此前 create_or_update_file 等无约束可调 → 已收敛)

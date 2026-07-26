@@ -28,9 +28,13 @@ async def main():
                 for kv in sys.argv[4:]:
                     if "=" in kv:
                         k, v = kv.split("=", 1)
-                        # 数字字面量转 int/float(否则 schema 要求 number 的字段会被
-                        # SDK input validation 在策略检查之前拒掉)
-                        if v.lstrip("-").isdigit():
+                        # 类型转换:bool/数字(否则 schema 要求 boolean/number 的字段会被
+                        # SDK input validation 在策略检查之前拒掉,测不到策略行为)
+                        if v.lower() == "true":
+                            args[k] = True
+                        elif v.lower() == "false":
+                            args[k] = False
+                        elif v.lstrip("-").isdigit():
                             args[k] = int(v)
                         else:
                             try:

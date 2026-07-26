@@ -53,13 +53,16 @@ POLICY_HASH = hashlib.sha256(POLICY_TEXT.encode("utf-8")).hexdigest()[:16]
 _TOOL_CLASSES = POLICY.get("tool_classes", {})      # {class: [tool_names]}
 _L2_SET = set(_TOOL_CLASSES.get("l2", []))
 _FIX_SET = set(_TOOL_CLASSES.get("fix", []))
+# search_scoped:允许但 query 必须含 repo:<allowlist>(防跨仓库搜索)
+_SEARCH_SCOPED = {"search_code", "search_commits", "search_issues", "search_pull_requests"}
 
-# 展开 role → 允许工具集合 + 约束标志
+# 展开 role → 允许工具集合(classes + extra_tools)+ 约束标志
 ROLES_CFG = {}
 for _role, _cfg in POLICY.get("roles", {}).items():
     _allowed = set()
     for _cls in _cfg.get("classes", []):
         _allowed.update(_TOOL_CLASSES.get(_cls, []))
+    _allowed.update(_cfg.get("extra_tools", []))   # update_pull_request 等混合风险工具
     ROLES_CFG[_role] = {
         "allowed": _allowed,
         "write_checks": bool(_cfg.get("write_checks", False)),
@@ -73,6 +76,18 @@ _PROTECTED = set(POLICY.get("branches", {}).get("protected", []))
 _PATH_DENY = POLICY.get("file_paths", {}).get("denylist", [])
 
 TOKEN_TO_ROLE = {tok: role for role, tok in ROLE_TOKENS.items()}
+
+# PR 更新字段白名单(update_pull_request 混合风险工具,按角色分级)
+_PR_IDENTITY = {"owner", "repo", "pullNumber"}
+_FIXER_PR_FIELDS = {"title", "body"}   # fixer 只能改 title/body
+
+
+def _search_scoped_ok(query: str) -> bool:
+    """search 工具的 query 必须把范围限定在 allowlist 仓库内。
+    要求至少一个 repo: 限定符,且所有 repo: 限定符都在 allowlist 中(防 repo:allowlist-X 前缀绕过)。"""
+    import re
+    repos_in_q = set(re.findall(r"repo:(\S+)", query or ""))
+    return bool(repos_in_q) and repos_in_q.issubset(_GLOBAL_REPOS)
 
 
 def _path_denied(path: str) -> bool:
@@ -93,14 +108,11 @@ def _path_denied(path: str) -> bool:
 
 
 def _check_write_args(name: str, args: dict) -> str:
-    """fixer 写操作的 arg 校验。返回 None=通过,否则返回 reason_code。"""
-    owner = args.get("owner")
-    repo = args.get("repo")
-    full = f"{owner}/{repo}" if owner and repo else None
-    if full and full not in _GLOBAL_REPOS:
-        return "REPO_NOT_ALLOWED"
+    """fixer 写操作的 arg 校验。返回 None=通过,否则返回 reason_code。
+    注意:repo allowlist 和 update_pull_request 字段白名单已在 call_tool 全局/特殊处理,
+    此处只做分支/路径约束。"""
     branch = args.get("branch") or args.get("head")
-    base = args.get("base") or args.get("from")
+    base = args.get("base") or args.get("from_branch")   # B2.1:真实参数是 from_branch(此前误用 from)
     if name == "create_branch":
         if branch and not branch.startswith(_FIX_PREFIX):
             return "BRANCH_NOT_FIX_PREFIX"
@@ -126,9 +138,6 @@ def _check_write_args(name: str, args: dict) -> str:
             return "BASE_NOT_ALLOWED"
         if branch and not branch.startswith(_FIX_PREFIX):
             return "HEAD_NOT_FIX_BRANCH"
-    elif name == "update_pull_request":
-        if args.get("state") == "closed":
-            return "L2_TICKET_REQUIRED"   # close PR 视为 L2,需票据(B4)
     return None
 
 
@@ -227,35 +236,51 @@ async def call_tool(name: str, arguments: dict | None):
     args = arguments or {}
     owner = args.get("owner")
     repo = f"{owner}/{args.get('repo')}" if owner and args.get("repo") else ""
-    branch = str(args.get("branch") or args.get("head") or args.get("base") or "")
+    branch = str(args.get("branch") or args.get("head") or args.get("base") or args.get("from_branch") or "")
     args_hash = hashlib.sha256(
         json.dumps(args, sort_keys=True, default=str).encode()
     ).hexdigest()[:16]
 
-    # 1. 工具是否在角色 allow 集合内(deny-by-default)
-    if not cfg or name not in cfg["allowed"]:
-        audit(role, name, "DENY", "TOOL_NOT_ALLOWED",
+    def deny(reason_code, **extra):
+        audit(role, name, "DENY", reason_code,
               args_hash=args_hash, target_repo=repo, target_branch=branch)
-        print(f"[gateway] DENY role={role} tool={name} → TOOL_NOT_ALLOWED", flush=True)
-        return _deny_result("TOOL_NOT_ALLOWED", tool=name)
+        print(f"[gateway] DENY role={role} tool={name} → {reason_code}", flush=True)
+        return _deny_result(reason_code, tool=name, **extra)
 
-    # 2. fixer 写操作:repo/base allowlist + fix/ 前缀 + 路径 denylist + 受保护分支
+    # 1. 工具是否在角色 allow 集合内(deny-by-default;disabled 类的工具对任何角色都不可见)
+    if not cfg or name not in cfg["allowed"]:
+        return deny("TOOL_NOT_ALLOWED")
+
+    # 2. 全局 repo allowlist(所有角色,所有带 owner+repo 的工具,含读)
+    if owner and args.get("repo") and repo not in _GLOBAL_REPOS:
+        return deny("REPO_NOT_ALLOWED", repo=repo)
+
+    # 3. search_scoped:query 必须含 repo:<allowlist>(防跨仓库搜索/数据扩散)
+    if name in _SEARCH_SCOPED and not _search_scoped_ok(args.get("query", "")):
+        return deny("SEARCH_SCOPE_NOT_ALLOWED")
+
+    # 4. update_pull_request 混合风险工具:按角色字段白名单
+    #    fixer 仅 title/body;state→L2(任何角色);coordinator 其他字段→PR_FIELD_NOT_ALLOWED
+    if name == "update_pull_request":
+        if "state" in args:
+            return deny("L2_TICKET_REQUIRED")
+        allowed_fields = _PR_IDENTITY | (_FIXER_PR_FIELDS if role == "fixer" else set())
+        unexpected = set(args.keys()) - allowed_fields
+        if unexpected:
+            return deny("PR_FIELD_NOT_ALLOWED", fields=",".join(sorted(unexpected)))
+        # 通过 → 落到 ALLOW+forward
+
+    # 5. fixer 写操作:base/fix 前缀/受保护分支/路径 denylist(repo allowlist 已在步骤 2)
     if cfg["write_checks"] and name in _FIX_SET:
         reason = _check_write_args(name, args)
         if reason:
-            audit(role, name, "DENY", reason,
-                  args_hash=args_hash, target_repo=repo, target_branch=branch)
-            print(f"[gateway] DENY role={role} tool={name} → {reason}", flush=True)
-            return _deny_result(reason, tool=name)
+            return deny(reason)
 
-    # 3. L2 动作(merge/delete/create_repo/fork):B2 一律要票据,B4 才校验
+    # 6. L2 动作(merge/delete):B2.1 一律要票据,B4 才校验票据
     if name in _L2_SET and cfg["l2_requires_ticket"]:
-        audit(role, name, "DENY", "L2_TICKET_REQUIRED",
-              args_hash=args_hash, target_repo=repo, target_branch=branch)
-        print(f"[gateway] DENY role={role} tool={name} → L2_TICKET_REQUIRED", flush=True)
-        return _deny_result("L2_TICKET_REQUIRED", tool=name)
+        return deny("L2_TICKET_REQUIRED")
 
-    # 4. ALLOW + 转发上游
+    # 7. ALLOW + 转发上游
     audit(role, name, "ALLOW", "B2_POLICY_ALLOW",
           args_hash=args_hash, target_repo=repo, target_branch=branch)
     print(f"[gateway] ALLOW role={role} tool={name} repo={repo} branch={branch} → forward", flush=True)

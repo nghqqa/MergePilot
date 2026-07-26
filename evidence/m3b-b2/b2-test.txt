@@ -1,66 +1,103 @@
 ═══════════════════════════════════════════════
-  B2 最小权限矩阵验证 (policy=b2-20260726-v1)
+  B2 + B2.1 hardening 验证 (policy=b2.1-20260726-v1)
 ═══════════════════════════════════════════════
 
-=== A. reviewer 可见工具不含 merge_pull_request / create_branch ===
-  reviewer 可见 26 工具: merge=False create_branch=False get_me=True
-  ✅ reviewer list 过滤正确(无 merge/create_branch,有 get_me,26 工具)
+=== A. reviewer list 无 merge/create_branch/disabled 工具 ===
+  reviewer(24 工具): merge=False create=False get_me=True disabled可见=0
+  ✅ reviewer 无 merge/create_branch,有 get_me(24)
+  ✅ reviewer 无 disabled 工具可见
 
 === B. reviewer get_me → ALLOW ===
 {"login":"nghqqa","id":53132158,"profile_url":"https://github.com/nghqqa","avatar_url":"https://avatars.githubusercontent.com/u/53132158?v=4","details":{"name":"qiu quan an","company":"Jiangxi Normal University","blog":"https://www.nghqqa.cn/","location":"江西上饶","bio":"College of Digital Industry, Ji
-  ✅ reviewer 读调用成功
+  ✅ reviewer 读成功
 
-=== C. fixer 可见工具含 create_branch,不含 merge ===
-  fixer 可见 40 工具: merge=False create_branch=True
-  ✅ fixer list 正确(有 create_branch,无 merge,40 工具)
+=== C. fixer list 有 create_branch+update_pull_request,无 merge/disabled ===
+  fixer(37 工具): create=True upd=True merge=False disabled可见=0
+  ✅ fixer 有 create_branch+update_pull_request,无 merge(37)
+  ✅ fixer 无 disabled 工具可见
 
-=== D. fixer create_branch 分支=evil/x(非 fix/)→ DENY BRANCH_NOT_FIX_PREFIX ===
-POLICY_DENIED reason_code=BRANCH_NOT_FIX_PREFIX tool=create_branch
+=== D. fixer create_branch(from_branch=evil) → BASE_NOT_ALLOWED [B2.1] ===
 <is_error=true>
-  ✅ 非 fix/ 分支被拒
+  ✅ from_branch=evil 被拒(BASE_NOT_ALLOWED)
 
-=== E. fixer 写 main → DENY BRANCH_PROTECTED ===
-POLICY_DENIED reason_code=BRANCH_PROTECTED tool=create_or_update_file
+=== E. fixer 写 main → BRANCH_PROTECTED ===
 <is_error=true>
-  ✅ 写 main 被拒(受保护)
+  ✅ 写 main 被拒
 
-=== F. fixer 写 .env → DENY PATH_DENIED ===
-POLICY_DENIED reason_code=PATH_DENIED tool=create_or_update_file
+=== F. fixer 写 .env → PATH_DENIED ===
 <is_error=true>
-  ✅ 写 .env 被拒(路径 denylist)
+  ✅ 写 .env 被拒
 
-=== G. fixer 写非 allowlist 仓库 → DENY REPO_NOT_ALLOWED ===
-POLICY_DENIED reason_code=REPO_NOT_ALLOWED tool=create_or_update_file
+=== G. fixer 写非 allowlist repo → REPO_NOT_ALLOWED ===
 <is_error=true>
-  ✅ 非 allowlist 仓库被拒
+  ✅ 非 allowlist repo 被拒
 
-=== H. coordinator 可见工具含 merge_pull_request ===
-  coordinator 可见 44 工具: merge=True
-  ✅ coordinator 能看到 merge(44 工具)
+=== H. coordinator list 有 merge+update_pull_request,无 create_or_update_file ===
+  coordinator(32 工具): merge=True upd=True couf=False cbr=False disabled可见=0
+  ✅ coordinator 有 merge+upd,无 fix 类工具(32)
 
-=== I. coordinator merge → DENY L2_TICKET_REQUIRED(B2 占位)===
-POLICY_DENIED reason_code=L2_TICKET_REQUIRED tool=merge_pull_request
+=== I. coordinator merge → L2_TICKET_REQUIRED ===
 <is_error=true>
-  ✅ coordinator merge 被拒(L2 需票据,B2 占位)
+  ✅ coordinator merge 被拒(L2)
 
-=== J. 审计 DENY 行(本轮)===
-              ts               | caller_agent |         tool          | decision |      reason_code      
--------------------------------+--------------+-----------------------+----------+-----------------------
- 2026-07-26 06:44:38.985003+00 | coordinator  | merge_pull_request    | DENY     | L2_TICKET_REQUIRED
- 2026-07-26 06:44:37.832592+00 | fixer        | create_or_update_file | DENY     | REPO_NOT_ALLOWED
- 2026-07-26 06:44:37.259191+00 | fixer        | create_or_update_file | DENY     | PATH_DENIED
- 2026-07-26 06:44:36.706007+00 | fixer        | create_or_update_file | DENY     | BRANCH_PROTECTED
- 2026-07-26 06:44:36.112556+00 | fixer        | create_branch         | DENY     | BRANCH_NOT_FIX_PREFIX
- 2026-07-26 06:42:31.527038+00 | fixer        | create_or_update_file | DENY     | REPO_NOT_ALLOWED
- 2026-07-26 06:42:30.992383+00 | fixer        | create_or_update_file | DENY     | PATH_DENIED
- 2026-07-26 06:42:30.48133+00  | fixer        | create_or_update_file | DENY     | BRANCH_PROTECTED
- 2026-07-26 06:42:29.920534+00 | fixer        | create_branch         | DENY     | BRANCH_NOT_FIX_PREFIX
- 2026-07-26 06:30:35.037759+00 | reviewer     | (auth)                | DENY     | ROLE_PATH_MISMATCH
-(10 rows)
+=== J2. coordinator create_or_update_file → TOOL_NOT_ALLOWED [B2.1] ===
+<is_error=true>
+  ✅ coordinator 无 fix 类工具(过权修复)
 
-  策略 DENY 总数: 9
-  ✅ 审计记录了 9 条策略 DENY
+=== K. fixer assign_copilot_to_issue → TOOL_NOT_ALLOWED [disabled] ===
+<is_error=true>
+  ✅ assign_copilot_to_issue 被拒(disabled)
+
+=== L. reviewer 读非 allowlist repo → REPO_NOT_ALLOWED [B2.1] ===
+<is_error=true>
+  ✅ reviewer 读非 allowlist repo 被拒
+
+=== M. reviewer search_code 无 repo: → SEARCH_SCOPE_NOT_ALLOWED [B2.1] ===
+<is_error=true>
+  ✅ 无 repo: 限定的搜索被拒
+
+=== N. reviewer search_code repo:allowlist → ALLOW ===
+{"total_count":26,"incomplete_results":false,"items":[{"name":"rag.py","path":"tools/rag/rag.py","sha":"c145693aa00d852ed620f89b00051fb18ac6d785","repository":"nghqqa/MergePilot","text_matches":[{"object_url":"https://api.github.com/repositories/1309491478/contents/tools/rag/rag.py?ref=07af4ccf38b1e
+  ✅ repo:allowlist 限定的搜索放行
+
+=== O. fixer update_pull_request(state=open) → L2_TICKET_REQUIRED ===
+<is_error=true>
+  ✅ state=open 被拒(L2)
+
+=== P. fixer update_pull_request(base=evil) → PR_FIELD_NOT_ALLOWED ===
+<is_error=true>
+  ✅ base 字段被拒
+
+=== Q. fixer update_pull_request(draft=true) → PR_FIELD_NOT_ALLOWED ===
+<is_error=true>
+  ✅ draft 字段被拒
+
+=== R. fixer update_pull_request(title=...) → ALLOW(字段白名单通过)===
+failed to update pull request: PATCH https://api.github.com/repos/nghqqa/MergePilot/pulls/999999: 404 Not Found []
+  ✅ title/body 字段放行(GitHub 对不存在 PR 报错无副作用)
+
+=== S. create_repository / fork_repository 对 coordinator 也不可见 ===
+  ✅ create_repository/fork_repository 对 coordinator 不可见
+
+=== T. 审计 DENY 行(本轮)===
+       reason_code        | count 
+--------------------------+-------
+ REPO_NOT_ALLOWED         |     6
+ L2_TICKET_REQUIRED       |     5
+ PATH_DENIED              |     4
+ TOOL_NOT_ALLOWED         |     4
+ BRANCH_PROTECTED         |     4
+ PR_FIELD_NOT_ALLOWED     |     3
+ ROLE_PATH_MISMATCH       |     2
+ BAD_TOKEN                |     2
+ SEARCH_SCOPE_NOT_ALLOWED |     2
+ BRANCH_NOT_FIX_PREFIX    |     2
+ BASE_NOT_ALLOWED         |     2
+(11 rows)
+
+  策略 DENY 总数: 30
+  ✅ 审计记录了 30 条策略 DENY(≥10)
 
 ═══════════════════════════════════════════════
-  B2 验证: PASS=10 FAIL=0
+  B2+B2.1 验证: PASS=22 FAIL=0
 ═══════════════════════════════════════════════
