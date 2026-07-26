@@ -1,24 +1,29 @@
 ═══════════════════════════════════════════════
-  B2 + B2.1 hardening 验证 (policy=b2.1-20260726-v1)
+  B2+B2.1+B2.2 验证 (policy=b2.2-20260726-v1 hash=d9ec07a7d9b4767f)
 ═══════════════════════════════════════════════
 
-=== A. reviewer list 无 merge/create_branch/disabled 工具 ===
-  reviewer(24 工具): merge=False create=False get_me=True disabled可见=0
-  ✅ reviewer 无 merge/create_branch,有 get_me(24)
+=== A. reviewer list 无写/L2/disabled ===
+  reviewer(20): merge=False create=False get_me=True disabled可见=0
+  ✅ reviewer 无 merge/create_branch,有 get_me(20)
   ✅ reviewer 无 disabled 工具可见
 
 === B. reviewer get_me → ALLOW ===
 {"login":"nghqqa","id":53132158,"profile_url":"https://github.com/nghqqa","avatar_url":"https://avatars.githubusercontent.com/u/53132158?v=4","details":{"name":"qiu quan an","company":"Jiangxi Normal University","blog":"https://www.nghqqa.cn/","location":"江西上饶","bio":"College of Digital Industry, Ji
   ✅ reviewer 读成功
 
-=== C. fixer list 有 create_branch+update_pull_request,无 merge/disabled ===
-  fixer(37 工具): create=True upd=True merge=False disabled可见=0
-  ✅ fixer 有 create_branch+update_pull_request,无 merge(37)
-  ✅ fixer 无 disabled 工具可见
+=== C. fixer list 有 create_branch+update_pull_request,无残留写/disabled ===
+  fixer(30): create=True upd=True issue_write=False upb=False disabled=0
+  ✅ fixer 有 create_branch+upd,无 issue_write/upb(30)
+  ✅ fixer 无 disabled 可见
+
+=== H. coordinator list 有 merge+upd,无 fix 类/disabled ===
+  coordinator(28): merge=True couf=False teams=False disabled=0
+  ✅ coordinator 有 merge,无 fix 类/teams(28)
+  ✅ coordinator 无 disabled 可见
 
 === D. fixer create_branch(from_branch=evil) → BASE_NOT_ALLOWED [B2.1] ===
 <is_error=true>
-  ✅ from_branch=evil 被拒(BASE_NOT_ALLOWED)
+  ✅ from_branch 被拒
 
 === E. fixer 写 main → BRANCH_PROTECTED ===
 <is_error=true>
@@ -32,37 +37,41 @@
 <is_error=true>
   ✅ 非 allowlist repo 被拒
 
-=== H. coordinator list 有 merge+update_pull_request,无 create_or_update_file ===
-  coordinator(32 工具): merge=True upd=True couf=False cbr=False disabled可见=0
-  ✅ coordinator 有 merge+upd,无 fix 类工具(32)
-
-=== I. coordinator merge → L2_TICKET_REQUIRED ===
-<is_error=true>
-  ✅ coordinator merge 被拒(L2)
-
 === J2. coordinator create_or_update_file → TOOL_NOT_ALLOWED [B2.1] ===
 <is_error=true>
-  ✅ coordinator 无 fix 类工具(过权修复)
+  ✅ coordinator 无 fix 类工具
 
-=== K. fixer assign_copilot_to_issue → TOOL_NOT_ALLOWED [disabled] ===
+=== K. fixer assign_copilot_to_issue → TOOL_NOT_ALLOWED ===
 <is_error=true>
-  ✅ assign_copilot_to_issue 被拒(disabled)
+  ✅ assign_copilot 被拒
 
 === L. reviewer 读非 allowlist repo → REPO_NOT_ALLOWED [B2.1] ===
 <is_error=true>
-  ✅ reviewer 读非 allowlist repo 被拒
+  ✅ reviewer 读非 allowlist 被拒
 
-=== M. reviewer search_code 无 repo: → SEARCH_SCOPE_NOT_ALLOWED [B2.1] ===
+=== M. reviewer search_code 纯术语 → ALLOW(gateway 注入 repo scope)===
+{"total_count":27,"incomplete_results":false,"items":[{"name":"rag.py","path":"tools/rag/rag.py","sha":"c145693aa00d852ed620f89b00051fb18ac6d785","repository":"nghqqa/MergePilot","text_matches":[{"object_url":"https://api.github.com/repositories/1309491478/contents/tools/rag/rag.py?ref=743070f5462b5
+  ✅ 纯术语搜索放行(scope 由 gateway 注入)
+
+=== M2. query 含 repo: 限定符 → SEARCH_QUALIFIER_FORBIDDEN [B2.2] ===
 <is_error=true>
-  ✅ 无 repo: 限定的搜索被拒
+  ✅ 用户自带 repo: 被拒
 
-=== N. reviewer search_code repo:allowlist → ALLOW ===
-{"total_count":26,"incomplete_results":false,"items":[{"name":"rag.py","path":"tools/rag/rag.py","sha":"c145693aa00d852ed620f89b00051fb18ac6d785","repository":"nghqqa/MergePilot","text_matches":[{"object_url":"https://api.github.com/repositories/1309491478/contents/tools/rag/rag.py?ref=07af4ccf38b1e
-  ✅ repo:allowlist 限定的搜索放行
+=== M3. repo:allowlist OR password → 拒 [B2.2 关键逃逸] ===
+<is_error=true>
+  ✅ 布尔逃逸被拒(repo: + OR)
+
+=== M4. password OR secret(无 scope)→ SEARCH_OPERATOR_NOT_ALLOWED [B2.2] ===
+<is_error=true>
+  ✅ OR 算子被拒
+
+=== M5. repo:allowlist OR repo:evil/x → 拒 [B2.2] ===
+<is_error=true>
+  ✅ 多 repo OR 被拒
 
 === O. fixer update_pull_request(state=open) → L2_TICKET_REQUIRED ===
 <is_error=true>
-  ✅ state=open 被拒(L2)
+  ✅ state 被拒(L2)
 
 === P. fixer update_pull_request(base=evil) → PR_FIELD_NOT_ALLOWED ===
 <is_error=true>
@@ -74,30 +83,29 @@
 
 === R. fixer update_pull_request(title=...) → ALLOW(字段白名单通过)===
 failed to update pull request: PATCH https://api.github.com/repos/nghqqa/MergePilot/pulls/999999: 404 Not Found []
-  ✅ title/body 字段放行(GitHub 对不存在 PR 报错无副作用)
+  ✅ title 字段放行(GitHub 对不存在 PR 报错无副作用)
 
-=== S. create_repository / fork_repository 对 coordinator 也不可见 ===
-  ✅ create_repository/fork_repository 对 coordinator 不可见
+=== I. coordinator merge → L2_TICKET_REQUIRED ===
+<is_error=true>
+  ✅ coordinator merge 被拒(L2)
 
-=== T. 审计 DENY 行(本轮)===
-       reason_code        | count 
---------------------------+-------
- REPO_NOT_ALLOWED         |     6
- L2_TICKET_REQUIRED       |     5
- PATH_DENIED              |     4
- TOOL_NOT_ALLOWED         |     4
- BRANCH_PROTECTED         |     4
- PR_FIELD_NOT_ALLOWED     |     3
- ROLE_PATH_MISMATCH       |     2
- BAD_TOKEN                |     2
- SEARCH_SCOPE_NOT_ALLOWED |     2
- BRANCH_NOT_FIX_PREFIX    |     2
- BASE_NOT_ALLOWED         |     2
-(11 rows)
+=== T. 审计 DENY(本轮 2026-07-26 07:15:24.910077+00 起)===
+         reason_code         | count 
+-----------------------------+-------
+ SEARCH_QUALIFIER_FORBIDDEN  |     3
+ L2_TICKET_REQUIRED          |     2
+ TOOL_NOT_ALLOWED            |     2
+ PR_FIELD_NOT_ALLOWED        |     2
+ REPO_NOT_ALLOWED            |     2
+ BASE_NOT_ALLOWED            |     1
+ SEARCH_OPERATOR_NOT_ALLOWED |     1
+ PATH_DENIED                 |     1
+ BRANCH_PROTECTED            |     1
+(9 rows)
 
-  策略 DENY 总数: 30
-  ✅ 审计记录了 30 条策略 DENY(≥10)
+  本轮策略 DENY: 15
+  ✅ 审计记录 15 条本轮 DENY
 
 ═══════════════════════════════════════════════
-  B2+B2.1 验证: PASS=22 FAIL=0
+  B2+B2.1+B2.2 验证: PASS=25 FAIL=0
 ═══════════════════════════════════════════════

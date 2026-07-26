@@ -1,9 +1,9 @@
-# M3-B2 证据 · 最小权限矩阵(deny-by-default)+ B2.1 hardening
+# M3-B2 证据 · 最小权限矩阵(deny-by-default)+ B2.1 / B2.2 hardening
 
-> **tool-layer least privilege verified · 3 bypasses fixed · field whitelist · disabled tools**
-> 验证日期:2026-07-26(B2)+ 2026-07-26(B2.1 hardening)
-> policy: `b2.1-20260726-v1` / hash `7022edfa66dfbc29`
-> 标签:`m3b-b2-closed`(B2 基线 07af4cc,不移动)/ `m3b-b2-hardened`(B2.1 hardening)
+> **least privilege verified · search-escape closed · 12 tools disabled · field whitelist**
+> 验证日期:2026-07-26(B2 / B2.1 / B2.2)
+> policy: `b2.2-20260726-v1` / hash `d9ec07a7d9b4767f`
+> 标签:`m3b-b2-closed`(07af4cc)/ `m3b-b2-hardened`(743070f)/ `m3b-b2.2-closed`(本提交,security-closed)
 
 ## 策略分层(B2 后,44 个上游工具)
 
@@ -139,3 +139,55 @@ create_repository / fork_repository 对 coordinator 不可见        ✅
 ### B4 待绑
 
 `update_pull_request` / `create_pull_request` 的 `pullNumber` 应绑定到当前 `run_id` 创建的修复 PR(B4),否则 fixer 仍能修改 allowlist 仓库中的其他 PR。
+
+---
+
+## B2.2 hardening(第二轮代码审查后补强,25/25 PASS)
+
+复审发现 1 个确定的搜索逃逸 + 一组残留过权,全部修复。
+
+### 阻断项 1:搜索 Boolean 逃逸(已闭合)
+
+`_search_scoped_ok` 只验 `repo:` 存在且在 allowlist,但 GitHub 支持 `OR`/`NOT`/括号,`repo:allowlist OR password` 能逃出 scope。
+
+**修复:不信任调用者 scope。** query 只允许纯术语:
+- 含冒号(任何 `word:` 限定符)→ `SEARCH_QUALIFIER_FORBIDDEN`
+- 含括号 → `SEARCH_QUALIFIER_FORBIDDEN`
+- 含 `OR`/`NOT`/`AND` → `SEARCH_OPERATOR_NOT_ALLOWED`
+- **gateway 自己注入** `repo:<allowlist>` 后转发(`_inject_search_scope`)
+
+```
+password                          → ALLOW(gateway 注入 repo:nghqqa/MergePilot)
+repo:nghqqa/MergePilot password   → SEARCH_QUALIFIER_FORBIDDEN  (用户自带 scope)
+repo:allowlist OR password        → SEARCH_QUALIFIER_FORBIDDEN  (布尔逃逸,闭合)
+password OR secret                → SEARCH_OPERATOR_NOT_ALLOWED
+repo:allowlist OR repo:evil/x     → SEARCH_QUALIFIER_FORBIDDEN
+```
+
+### 阻断项 2:残留过权(已禁用)
+
+| 工具 | 原归属 | 禁用理由 |
+|---|---|---|
+| `issue_write` / `sub_issue_write` | fix | 改 Issue 状态/层级,当前修复流程不用,未绑 run_id |
+| `update_pull_request_branch` | fix | 真实更新 PR 分支,未绑 PR+head SHA(B4 绑定后可重开) |
+| `get_teams` / `get_team_members` | read | 组织级读,当前流程不需要 |
+| `list_issue_fields` / `list_issue_types` | read | 可省略 repo 的元数据读,组织级范围 |
+
+disabled 类共 12 个工具,对所有角色不可见。
+
+### 测试脚本加固
+
+- 末尾 `[ "$FAIL" -eq 0 ] || exit 1`:FAIL>0 非零退出(CI/证据收集不可接受失败)。
+- 审计按 `ts > 测试起点` 过滤,不再累计历史 DENY。
+
+### B4 绑定范围(修正)
+
+`create_pull_request` 无 `pullNumber` 输入。正确流程:`head=fix/<run_id>-* → 建 PR → 记录 pullNumber + head SHA → 后续 update/comment/review/merge 全部绑定该 PR`。B4 须覆盖所有带 PR/Issue 编号的写操作,不只 `update_pull_request`。
+
+### 角色可见工具数(B2.2 后)
+
+| 角色 | 可见数 |
+|---|---:|
+| reviewer | 19 |
+| fixer | 31 |
+| coordinator | 28 |

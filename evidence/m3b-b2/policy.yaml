@@ -7,20 +7,20 @@
 #   comment — 轻量写:评论/review 请求(fixer/coordinator 可用)
 #   fix     — 修复写:建分支/改文件/建 PR(仅 fixer,受 write_checks 约束)
 #   l2      — 破坏性/不可逆:merge/delete(仅 coordinator,需审批票据)
-#   disabled — 上游存在但所有角色都不可见(无业务用例或数据扩散风险)
+#   disabled — 上游存在但所有角色都不可见(无业务用例/数据扩散/未绑定 run_id)
 #
 # update_pull_request 是混合风险工具,不归入任何类;通过 extra_tools 单独授权 +
 # 参数级规则(fixer 仅 title/body;state→L2;其他字段→PR_FIELD_NOT_ALLOWED)。
-version: "b2.1-20260726-v1"
+version: "b2.2-20260726-v1"
 
 # ─── 全局约束 ───
 repos:
   allowlist:
     - "nghqqa/MergePilot"
 branches:
-  base_allowlist: ["main"]      # PR base / 分支起点只允许 main
-  fix_prefix: "fix/"            # fixer 只能创建/写 fix/* 分支
-  protected: ["main"]           # 禁止直接写/force-push
+  base_allowlist: ["main"]
+  fix_prefix: "fix/"
+  protected: ["main"]
 file_paths:
   denylist:
     - "glob:**/.env*"
@@ -40,8 +40,6 @@ tool_classes:
     - get_latest_release
     - get_release_by_tag
     - get_tag
-    - get_team_members
-    - get_teams
     - list_branches
     - list_commits
     - list_issues
@@ -49,9 +47,8 @@ tool_classes:
     - list_releases
     - list_repository_collaborators
     - list_tags
-    - list_issue_fields
-    - list_issue_types
-    # search_scoped:允许但 query 必须含 repo:<allowlist>(gateway 强制)
+    # search_scoped:允许但 query 必须纯术语(无限定符/布尔算子),
+    # gateway 自己注入 repo:<allowlist>(不信任调用者 scope)
     - search_code
     - search_commits
     - search_issues
@@ -69,28 +66,32 @@ tool_classes:
     - create_or_update_file
     - push_files
     - create_pull_request
-    - update_pull_request_branch
-    - issue_write
-    - sub_issue_write
   l2:
     - merge_pull_request
     - delete_file
   disabled:
-    # 无业务用例 / 数据扩散风险 / 启动外部 Agent —— 所有角色不可见
+    # 无业务用例 / 数据扩散风险 / 启动外部 Agent / 未绑定 run_id —— 所有角色不可见
     - create_repository
     - fork_repository
     - search_repositories
     - search_users
-    - assign_copilot_to_issue   # 启动 Copilot coding agent,可能产生真实代码/PR
+    - assign_copilot_to_issue
+    # B2.2:fixer 残留写工具,当前修复流程不用且未绑 run_id/PR → 禁用
+    - issue_write
+    - sub_issue_write
+    - update_pull_request_branch   # B4 以 PR+head SHA 绑定后可重新开放
+    # B2.2:reviewer 组织级读 / 可省略 repo 的元数据读,当前流程不需要 → 禁用
+    - get_teams
+    - get_team_members
+    - list_issue_fields
+    - list_issue_types
 
 # ─── 角色 → 允许的工具类 + 额外工具 + 约束 ───
 roles:
   reviewer:
     classes: [read]
-    # reviewer 纯只读:findings 走 Matrix,不在 GitHub 写任何东西
   verifier:
     classes: [read]
-    # verifier 只读(B2.1 起:带 owner+repo 的读统一受 repo allowlist 约束)
   fixer:
     classes: [read, comment, fix]
     extra_tools: [update_pull_request]   # 仅 title/body(state→L2,其他字段拒)
@@ -99,4 +100,3 @@ roles:
     classes: [read, comment, l2]
     extra_tools: [update_pull_request]   # 仅 state(L2,需票据);其他字段拒
     l2_requires_ticket: true
-    # B2.1:coordinator 不再继承 fix 类(此前 create_or_update_file 等无约束可调 → 已收敛)

@@ -28,6 +28,7 @@ import sys
 import json
 import asyncio
 import hashlib
+import re
 import uuid
 import fnmatch
 import contextvars
@@ -82,12 +83,29 @@ _PR_IDENTITY = {"owner", "repo", "pullNumber"}
 _FIXER_PR_FIELDS = {"title", "body"}   # fixer 只能改 title/body
 
 
-def _search_scoped_ok(query: str) -> bool:
-    """search 工具的 query 必须把范围限定在 allowlist 仓库内。
-    要求至少一个 repo: 限定符,且所有 repo: 限定符都在 allowlist 中(防 repo:allowlist-X 前缀绕过)。"""
-    import re
-    repos_in_q = set(re.findall(r"repo:(\S+)", query or ""))
-    return bool(repos_in_q) and repos_in_q.issubset(_GLOBAL_REPOS)
+def _check_search_query(query: str):
+    """search 工具的 query 安全校验。返回 None=通过,或 reason_code。
+    不信任调用者提供的 scope:GitHub 支持 OR/NOT/括号 + repo:/org:/user: 限定符,
+    合法 repo: 的存在不能保证整表达式受约束(repo:allowed OR password 会逃逸)。
+    所以只允许纯术语:禁止任何限定符(含冒号)、括号、布尔算子;scope 由 gateway 注入。"""
+    ql = (query or "").strip()
+    if not ql:
+        return None  # 空 query 合法,gateway 会注入 repo scope
+    if ":" in ql or "(" in ql or ")" in ql:
+        return "SEARCH_QUALIFIER_FORBIDDEN"   # 含限定符(任何 word:)或括号
+    if re.search(r"\b(OR|NOT|AND)\b", ql, re.IGNORECASE):
+        return "SEARCH_OPERATOR_NOT_ALLOWED"
+    return None
+
+
+def _inject_search_scope(query: str) -> str:
+    """gateway 自己追加可信 repo scope(单仓库 allowlist)。
+    多仓库场景需显式策略,当前单仓库直接注入。"""
+    ql = (query or "").strip()
+    if len(_GLOBAL_REPOS) == 1:
+        return f"{ql} repo:{next(iter(_GLOBAL_REPOS))}".strip()
+    # 多仓库:不注入(调用方需显式策略),返回原 query —— 此分支当前不应触发
+    return ql
 
 
 def _path_denied(path: str) -> bool:
@@ -255,9 +273,14 @@ async def call_tool(name: str, arguments: dict | None):
     if owner and args.get("repo") and repo not in _GLOBAL_REPOS:
         return deny("REPO_NOT_ALLOWED", repo=repo)
 
-    # 3. search_scoped:query 必须含 repo:<allowlist>(防跨仓库搜索/数据扩散)
-    if name in _SEARCH_SCOPED and not _search_scoped_ok(args.get("query", "")):
-        return deny("SEARCH_SCOPE_NOT_ALLOWED")
+    # 3. search_scoped:不信任调用者 scope —— 拒限定符/布尔算子,gateway 自己注入 repo:<allowlist>
+    if name in _SEARCH_SCOPED:
+        sreason = _check_search_query(args.get("query", ""))
+        if sreason:
+            return deny(sreason)
+        args = dict(args)  # 不修改原 args;注入可信 scope 后转发
+        args["query"] = _inject_search_scope(args.get("query", ""))
+        print(f"[gateway] search {name} scope-injected: {args['query'][:80]}", flush=True)
 
     # 4. update_pull_request 混合风险工具:按角色字段白名单
     #    fixer 仅 title/body;state→L2(任何角色);coordinator 其他字段→PR_FIELD_NOT_ALLOWED

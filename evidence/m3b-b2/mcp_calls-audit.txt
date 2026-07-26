@@ -1,19 +1,24 @@
-=== B2.1 策略 DENY 审计(按 reason_code)===
-       reason_code        | count 
---------------------------+-------
- REPO_NOT_ALLOWED         |     6
- L2_TICKET_REQUIRED       |     5
- PATH_DENIED              |     4
- TOOL_NOT_ALLOWED         |     4
- BRANCH_PROTECTED         |     4
- PR_FIELD_NOT_ALLOWED     |     3
- ROLE_PATH_MISMATCH       |     2
- BAD_TOKEN                |     2
- SEARCH_SCOPE_NOT_ALLOWED |     2
- BRANCH_NOT_FIX_PREFIX    |     2
- BASE_NOT_ALLOWED         |     2
-(11 rows)
+=== B2.2 DENY 按 reason_code(本轮)===
+         reason_code         | count 
+-----------------------------+-------
+ REPO_NOT_ALLOWED            |     8
+ L2_TICKET_REQUIRED          |     7
+ TOOL_NOT_ALLOWED            |     6
+ PR_FIELD_NOT_ALLOWED        |     5
+ PATH_DENIED                 |     5
+ BRANCH_PROTECTED            |     5
+ SEARCH_QUALIFIER_FORBIDDEN  |     3
+ BASE_NOT_ALLOWED            |     3
+ BAD_TOKEN                   |     2
+ BRANCH_NOT_FIX_PREFIX       |     2
+ SEARCH_SCOPE_NOT_ALLOWED    |     2
+ ROLE_PATH_MISMATCH          |     2
+ SEARCH_OPERATOR_NOT_ALLOWED |     1
+(13 rows)
 
 
-=== policy_version/hash ===
-b2.1-20260726-v1  7022edfa66dfbc29
+=== policy ===
+b1-permissive  hash=838cceabb0296681
+b2.1-20260726-v1  hash=7022edfa66dfbc29
+b2-20260726-v1  hash=e029676319129893
+b2.2-20260726-v1  hash=d9ec07a7d9b4767f
