@@ -37,26 +37,35 @@ ALTER ROLE mergepilot_approver LOGIN PASSWORD '$APV_PW';
 -- B4a.1 P1#4:重置高危角色属性(防漂移:曾被误授 SUPERUSER/BYPASSRLS 等)
 ALTER ROLE policy_gateway_l2   NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION NOINHERIT;
 ALTER ROLE mergepilot_approver NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION NOINHERIT;
--- B4a.2 P1#3:撤销授予这两个账号的全部 membership(防 SET ROLE 越权;NOINHERIT 不够)
+-- B4a.2 P1#3 + B4a.3 P2:撤销授予三个角色(含 mergepilot_l2_owner)的全部 membership(防 SET ROLE 越权)
 DO \$rm\$ DECLARE r record;
 BEGIN
   FOR r IN SELECT rolname FROM pg_auth_members m JOIN pg_roles r2 ON m.roleid=r2.oid
-           WHERE m.member IN ('policy_gateway_l2'::regrole, 'mergepilot_approver'::regrole)
+           WHERE m.member IN ('policy_gateway_l2'::regrole, 'mergepilot_approver'::regrole, 'mergepilot_l2_owner'::regrole)
   LOOP
-    EXECUTE format('REVOKE %I FROM policy_gateway_l2, mergepilot_approver', r.rolname);
+    EXECUTE format('REVOKE %I FROM policy_gateway_l2, mergepilot_approver, mergepilot_l2_owner', r.rolname);
   END LOOP;
 END \$rm\$;
 -- 收敛:撤全部表/序列权限
 REVOKE ALL ON approvals, policy_action_outbox, run_pr_bindings, mcp_calls, task_runs, stage_runs, stage_events, dispatch_outbox, controller_offsets FROM policy_gateway_l2, mergepilot_approver;
 REVOKE ALL ON ALL TABLES IN SCHEMA public FROM policy_gateway_l2, mergepilot_approver;
 REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM policy_gateway_l2, mergepilot_approver;
--- B4a.1 P1#4:撤全部 l2_* 函数 EXECUTE(漂移重置),再只 GRANT 该有的
-DO \$rv\$ DECLARE r record;
+-- B4a.3 P1#A:撤业务函数 EXECUTE(完整 regprocedure 签名 allowlist,不再 LIKE,避免误伤同名 overload)
+DO \$rv\$ DECLARE f text;
 BEGIN
-  FOR r IN SELECT p.oid::regprocedure::text AS f FROM pg_proc p
-           JOIN pg_namespace n ON p.pronamespace=n.oid
-           WHERE p.proname LIKE 'l2\_%' ESCAPE '\' AND n.nspname='public' LOOP
-    EXECUTE format('REVOKE ALL ON FUNCTION %s FROM policy_gateway_l2, mergepilot_approver', r.f);
+  FOREACH f IN ARRAY ARRAY[
+    'l2_create_ticket(text,text,jsonb,text,integer,integer)',
+    'l2_claim_ticket(text,text,text,integer,text)',
+    'l2_complete_ticket(text,uuid,text)',
+    'l2_fail_ticket(text,uuid,text)',
+    'l2_mark_unknown(text,uuid,text)',
+    'l2_approve(text,text)',
+    'l2_pending_list()',
+    'l2_reconcile_unknown(text,boolean,text)',
+    'l2_reconcile_executing(text,boolean,text)',
+    'l2_expire_pending(text)'
+  ] LOOP
+    EXECUTE format('REVOKE ALL ON FUNCTION %s FROM policy_gateway_l2, mergepilot_approver', f::regprocedure::text);
   END LOOP;
 END \$rv\$;
 -- Gateway L2:仅 4 个函数

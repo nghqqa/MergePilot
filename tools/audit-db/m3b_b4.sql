@@ -98,16 +98,26 @@ BEGIN
     RAISE EXCEPTION 'exec TTL 须 1..24h,实际: %', p_exec_ttl_hours;
   END IF;
   IF p_action = 'merge' THEN
-    IF (p_canonical_payload->>'merge_method') IS NULL OR (p_canonical_payload->>'merge_method') NOT IN ('merge','squash','rebase') THEN
+    -- B4a.3 P1#B:JSON 类型校验(jsonb_typeof,不靠 ->> 隐式转文本)
+    IF jsonb_typeof(p_canonical_payload->'merge_method') IS DISTINCT FROM 'string' THEN
+      RAISE EXCEPTION 'merge_method 必须是字符串';
+    END IF;
+    IF jsonb_typeof(p_canonical_payload->'commit_title') IS DISTINCT FROM 'string'
+       OR (p_canonical_payload->>'commit_title') = '' THEN
+      RAISE EXCEPTION 'commit_title 必须是非空字符串';
+    END IF;
+    IF (p_canonical_payload->>'merge_method') NOT IN ('merge','squash','rebase') THEN
       RAISE EXCEPTION 'merge_method 非法(%),允许 merge/squash/rebase', (p_canonical_payload->>'merge_method');
     END IF;
-    IF (p_canonical_payload->>'commit_title') IS NULL THEN RAISE EXCEPTION 'merge 需 commit_title'; END IF;
     IF p_canonical_payload ? 'state' THEN RAISE EXCEPTION 'merge payload 不该含 state'; END IF;
     IF EXISTS (SELECT 1 FROM jsonb_object_keys(p_canonical_payload) k
                WHERE k NOT IN ('owner','repo','pullNumber','commit_title','merge_method')) THEN
       RAISE EXCEPTION 'merge payload 含未知字段';
     END IF;
   ELSIF p_action = 'close' THEN
+    IF jsonb_typeof(p_canonical_payload->'state') IS DISTINCT FROM 'string' THEN
+      RAISE EXCEPTION 'state 必须是字符串';
+    END IF;
     -- IS DISTINCT FROM 正确处理 NULL(缺 state 时 NULL <> 'closed' 是 NULL 不会触发)
     IF (p_canonical_payload->>'state') IS DISTINCT FROM 'closed' THEN RAISE EXCEPTION 'close 需 state=closed'; END IF;
     IF p_canonical_payload ? 'merge_method' THEN RAISE EXCEPTION 'close payload 不该含 merge_method'; END IF;
@@ -115,6 +125,17 @@ BEGIN
                WHERE k NOT IN ('owner','repo','pullNumber','state','title')) THEN
       RAISE EXCEPTION 'close payload 含未知字段';
     END IF;
+  END IF;
+  -- B4a.3 P1#B:公共字段类型 + 正整数(owner/repo 非空字符串;pullNumber 数字且正整数)
+  IF jsonb_typeof(p_canonical_payload->'owner') IS DISTINCT FROM 'string'
+     OR (p_canonical_payload->>'owner') = '' THEN RAISE EXCEPTION 'owner 必须是非空字符串'; END IF;
+  IF jsonb_typeof(p_canonical_payload->'repo') IS DISTINCT FROM 'string'
+     OR (p_canonical_payload->>'repo') = '' THEN RAISE EXCEPTION 'repo 必须是非空字符串'; END IF;
+  IF jsonb_typeof(p_canonical_payload->'pullNumber') IS DISTINCT FROM 'number' THEN
+    RAISE EXCEPTION 'pullNumber 必须是数字(非字符串)';
+  END IF;
+  IF (p_canonical_payload->>'pullNumber') !~ '^[0-9]+$' THEN
+    RAISE EXCEPTION 'pullNumber 必须是正整数';
   END IF;
 
   -- 实现修正 #2:advisory 锁 per (run_id, action),再 MAX+1;UNIQUE 兜底
@@ -269,46 +290,60 @@ REVOKE ALL ON FUNCTION l2_expire_pending(TEXT) FROM PUBLIC;
 -- B4a.2 P1#4:GRANT 必须在 ALTER OWNER 之后。否则 CREATE by mergepilot → GRANT TO mergepilot
 --   = grant-to-self 空操作 → ALTER OWNER 后 mergepilot 丢执行权(只能靠 superuser 旁路)。
 
--- 1. 业务函数 OWNER → mergepilot_l2_owner(NOLOGIN)。**精确 allowlist,绝不用 LIKE 'l2_%'**
---    (B4a.1 的 LIKE 误伤了 pgvector 的 l2_distance/l2_norm/l2_normalize)。
-DO $$ DECLARE r record;
+-- 1. 业务函数 OWNER → mergepilot_l2_owner(NOLOGIN)。**完整 regprocedure 签名 allowlist**
+--    (B4a.3:不再按 proname,避免未来同名 overload 被误伤;签名错会 cast 失败报警)。
+DO $$ DECLARE f text;
 BEGIN
-  FOR r IN SELECT p.oid FROM pg_proc p JOIN pg_namespace n ON p.pronamespace=n.oid
-    WHERE n.nspname='public' AND p.proname IN (
-      'l2_create_ticket','l2_claim_ticket','l2_complete_ticket','l2_fail_ticket',
-      'l2_mark_unknown','l2_approve','l2_pending_list','l2_reconcile_unknown',
-      'l2_reconcile_executing','l2_expire_pending')
-  LOOP
-    EXECUTE format('ALTER FUNCTION %s OWNER TO mergepilot_l2_owner', r.oid::regprocedure::text);
+  FOREACH f IN ARRAY ARRAY[
+    'l2_create_ticket(text,text,jsonb,text,integer,integer)',
+    'l2_claim_ticket(text,text,text,integer,text)',
+    'l2_complete_ticket(text,uuid,text)',
+    'l2_fail_ticket(text,uuid,text)',
+    'l2_mark_unknown(text,uuid,text)',
+    'l2_approve(text,text)',
+    'l2_pending_list()',
+    'l2_reconcile_unknown(text,boolean,text)',
+    'l2_reconcile_executing(text,boolean,text)',
+    'l2_expire_pending(text)'
+  ] LOOP
+    EXECUTE format('ALTER FUNCTION %s OWNER TO mergepilot_l2_owner', f::regprocedure::text);
   END LOOP;
 END $$;
 
--- 2. 恢复 pgvector 函数 owner(被 B4a.1 LIKE 误伤 → 归还 vector 扩展 owner)
+-- 2. 恢复 vector 扩展成员函数 owner(通过 pg_depend deptype='e' 定位,不按名匹配)
 DO $$ DECLARE r record; v_owner text;
 BEGIN
   SELECT rolname INTO v_owner FROM pg_roles WHERE oid=(SELECT extowner FROM pg_extension WHERE extname='vector');
-  IF v_owner IS NOT NULL THEN
-    FOR r IN SELECT p.oid FROM pg_proc p JOIN pg_namespace n ON p.pronamespace=n.oid
-      WHERE n.nspname='public' AND p.proname IN ('l2_distance','l2_norm','l2_normalize')
-    LOOP
-      EXECUTE format('ALTER FUNCTION %s OWNER TO %s', r.oid::regprocedure::text, v_owner);
-    END LOOP;
-  END IF;
+  IF v_owner IS NULL THEN RETURN; END IF;
+  FOR r IN SELECT p.oid::regprocedure::text AS f FROM pg_proc p
+    JOIN pg_depend d ON d.classid='pg_proc'::regclass AND d.objid=p.oid
+                     AND d.refclassid='pg_extension'::regclass AND d.deptype='e'
+    JOIN pg_extension e ON d.refobjid=e.oid
+    WHERE e.extname='vector'
+  LOOP
+    EXECUTE format('ALTER FUNCTION %s OWNER TO %I', r.f, v_owner);
+  END LOOP;
 END $$;
 
 -- 3. 收敛 mergepilot_l2_owner 属性(每次跑都收敛,不只创建时)
 ALTER ROLE mergepilot_l2_owner NOLOGIN NOSUPERUSER NOBYPASSRLS NOINHERIT NOCREATEDB NOCREATEROLE NOREPLICATION;
 
--- 4. REVOKE PUBLIC(再确保,即使 ALTER OWNER 不影响)
-DO $$ DECLARE r record;
+-- 4. REVOKE PUBLIC(完整签名 allowlist)
+DO $$ DECLARE f text;
 BEGIN
-  FOR r IN SELECT p.oid FROM pg_proc p JOIN pg_namespace n ON p.pronamespace=n.oid
-    WHERE n.nspname='public' AND p.proname IN (
-      'l2_create_ticket','l2_claim_ticket','l2_complete_ticket','l2_fail_ticket',
-      'l2_mark_unknown','l2_approve','l2_pending_list','l2_reconcile_unknown',
-      'l2_reconcile_executing','l2_expire_pending')
-  LOOP
-    EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', r.oid::regprocedure::text);
+  FOREACH f IN ARRAY ARRAY[
+    'l2_create_ticket(text,text,jsonb,text,integer,integer)',
+    'l2_claim_ticket(text,text,text,integer,text)',
+    'l2_complete_ticket(text,uuid,text)',
+    'l2_fail_ticket(text,uuid,text)',
+    'l2_mark_unknown(text,uuid,text)',
+    'l2_approve(text,text)',
+    'l2_pending_list()',
+    'l2_reconcile_unknown(text,boolean,text)',
+    'l2_reconcile_executing(text,boolean,text)',
+    'l2_expire_pending(text)'
+  ] LOOP
+    EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', f::regprocedure::text);
   END LOOP;
 END $$;
 

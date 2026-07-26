@@ -47,12 +47,10 @@ SECDEF_OK=$(SU "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON p.pronames
 PUB_OK=$(SU "SELECT count(*) FROM information_schema.role_routine_grants WHERE grantee='PUBLIC' AND routine_name IN ($(echo "$L2FNS" | tr ',' '\n' | sed "s/.*/'&'/" | paste -sd,));")
 [ "${PUB_OK:-0}" = "0" ] && ok "l2_* 函数无 PUBLIC EXECUTE" || bad "PUBLIC 仍有 EXECUTE($PUB_OK)"
 
-# ─── 3. 角色属性 + 成员(无高危属性 + 无角色成员)───
-log ""; log "=== 3. 角色属性/成员 ==="
+# ─── 3. 角色属性(无高危属性;membership 在 4z 用右方向检查,这里不重复旧方向)───
+log ""; log "=== 3. 角色属性 ==="
 ATTR_BAD=$(SU "SELECT count(*) FROM pg_roles WHERE rolname IN ('policy_gateway_l2','mergepilot_approver') AND (rolsuper OR rolbypassrls OR rolcreatedb OR rolcreaterole OR rolreplication OR rolinherit);")
 [ "${ATTR_BAD:-0}" = "0" ] && ok "两账号无 SUPERUSER/BYPASSRLS/CREATEDB/CREATEROLE/REPLICATION/INHERIT" || bad "高危属性残留($ATTR_BAD)"
-MEM_BAD=$(SU "SELECT count(*) FROM pg_auth_members m JOIN pg_roles r ON m.roleid=r.oid WHERE r.rolname IN ('policy_gateway_l2','mergepilot_approver');")
-[ "${MEM_BAD:-0}" = "0" ] && ok "两账号无角色成员关系(不被注入特权)" || bad "有角色成员($MEM_BAD)"
 
 # ─── 4. 全生命周期(含 fail/mark_unknown/reconcile/expire)───
 log ""; log "=== 4. 全状态机 ==="
@@ -162,8 +160,11 @@ chk_reject "approval TTL 1000h 拒" "SELECT l2_create_ticket('bnd-b4atest','merg
 chk_reject "exec TTL 1000h 拒" "SELECT l2_create_ticket('bnd-b4atest','merge','$PAYLOAD'::jsonb,'$ARGS_HASH',24,1000);" "exec TTL"
 chk_reject "merge payload 含 state 拒" "SELECT l2_create_ticket('bnd-b4atest','merge','{\"owner\":\"nghqqa\",\"repo\":\"MergePilot\",\"pullNumber\":99999,\"commit_title\":\"x\",\"merge_method\":\"squash\",\"state\":\"closed\"}'::jsonb,'$ARGS_HASH',24,1);" "state"
 chk_reject "merge payload 未知字段拒" "SELECT l2_create_ticket('bnd-b4atest','merge','{\"owner\":\"nghqqa\",\"repo\":\"MergePilot\",\"pullNumber\":99999,\"commit_title\":\"x\",\"merge_method\":\"squash\",\"unexpected\":1}'::jsonb,'$ARGS_HASH',24,1);" "未知字段"
-chk_reject "close 缺 state 拒" "SELECT l2_create_ticket('bnd-b4atest','close','{\"owner\":\"nghqqa\",\"repo\":\"MergePilot\",\"pullNumber\":99999,\"title\":\"x\"}'::jsonb,'$ARGS_HASH',24,1);" "state=closed"
+chk_reject "close 缺 state 拒" "SELECT l2_create_ticket('bnd-b4atest','close','{\"owner\":\"nghqqa\",\"repo\":\"MergePilot\",\"pullNumber\":99999,\"title\":\"x\"}'::jsonb,'$ARGS_HASH',24,1);" "state"
 chk_reject "action=revert 拒" "SELECT l2_create_ticket('bnd-b4atest','revert','$PAYLOAD'::jsonb,'$ARGS_HASH',24,1);" "merge/close"
+# B4a.3 P1#B:JSON 类型校验(pullNumber 必须数字,commit_title 必须字符串)
+chk_reject "pullNumber 字符串拒" "SELECT l2_create_ticket('bnd-b4atest','merge','{\"owner\":\"nghqqa\",\"repo\":\"MergePilot\",\"pullNumber\":\"99999\",\"commit_title\":\"x\",\"merge_method\":\"squash\"}'::jsonb,'$ARGS_HASH',24,1);" "数字"
+chk_reject "commit_title 对象拒" "SELECT l2_create_ticket('bnd-b4atest','merge','{\"owner\":\"nghqqa\",\"repo\":\"MergePilot\",\"pullNumber\":99999,\"commit_title\":{\"x\":1},\"merge_method\":\"squash\"}'::jsonb,'$ARGS_HASH',24,1);" "字符串"
 
 # 右方向 membership(三账号不被授予任何 role)+ owner 属性
 MEM=$(SU "SELECT count(*) FROM pg_auth_members m WHERE m.member IN ('policy_gateway_l2'::regrole, 'mergepilot_approver'::regrole, 'mergepilot_l2_owner'::regrole);")

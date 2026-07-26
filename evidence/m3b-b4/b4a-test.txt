@@ -15,14 +15,13 @@
   ✅ 10 个函数全 SECURITY DEFINER + search_path=pg_catalog
   ✅ l2_* 函数无 PUBLIC EXECUTE
 
-=== 3. 角色属性/成员 ===
+=== 3. 角色属性 ===
   ✅ 两账号无 SUPERUSER/BYPASSRLS/CREATEDB/CREATEROLE/REPLICATION/INHERIT
-  ✅ 两账号无角色成员关系(不被注入特权)
 
 === 4. 全状态机 ===
   ✅ args_hash 完整 64hex
   ✅ payload repo 与 binding 不一致 → 拒
-  ✅ 建票(tkt-c94a4c7f-2283-4a12-8315-415ff5247fee,PENDING)
+  ✅ 建票(tkt-32734e73-b200-42a6-a320-63b61ecaee1d,PENDING)
   ✅ PENDING
   ✅ attempt_no=1
   ✅ PENDING expires_at=NULL
@@ -64,6 +63,8 @@
   ✅ merge payload 未知字段拒
   ✅ close 缺 state 拒
   ✅ action=revert 拒
+  ✅ pullNumber 字符串拒
+  ✅ commit_title 对象拒
   ✅ 三账号无被授予的 membership(右方向,防 SET ROLE 越权)
   ✅ mergepilot_l2_owner: NOLOGIN + NOINHERIT + 无高危属性
 
@@ -81,5 +82,5 @@
   ✅ gateway 越权 l2_approve 被拒
 
 ═══════════════════════════════════════════════
-  B4a+B4a.1 验收: PASS=60 FAIL=0
+  B4a+B4a.1 验收: PASS=61 FAIL=0
 ═══════════════════════════════════════════════

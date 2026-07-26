@@ -30,6 +30,7 @@
 | `m3b-b3.2-closed` | `661ebd1` | `9a4287c` | B3.2 set -e 回归修复 |
 | `m3b-b4a-closed` | `b4e649e` | `4e4f766` | B4a DB + 函数 + 账号 |
 | `m3b-b4a.1-closed` | `5e92ed7` | `5027271` | B4a.1 owner + payload 一致性 + 漂移收敛 |
+| `m3b-b4a.2-closed` | `3ed91ab` | `d98df28` | B4a.2 pgvector owner 恢复 + payload/hash/TTL 封闭 + GRANT 顺序 + 精确 ACL |
 
 ## 旧 SHA 引用 → 当前 peeled commit(commit body 里互相引用的、现已失效的)
 
