@@ -72,6 +72,18 @@ BEGIN
   FROM public.run_pr_bindings WHERE binding_id=p_binding_id;
   IF NOT FOUND THEN RAISE EXCEPTION 'binding % not found', p_binding_id; END IF;
 
+  -- B4a.1 P1#2:canonical_payload 的 owner/repo/pullNumber 必须与 binding 一致
+  -- (防"票据列批准 PR A、payload 实际指向 PR B")。注意每个 ->> 提取必须显式括号,
+  -- 否则 PG 把 || 和 ->> 错误组合成 "payload ->> ('owner'||'/'||payload) ->> 'repo'"(text ->> unknown)。
+  IF (p_canonical_payload->>'owner') || '/' || (p_canonical_payload->>'repo') IS DISTINCT FROM v_repo THEN
+    RAISE EXCEPTION 'canonical_payload repo (%/%) != binding repo (%)',
+      (p_canonical_payload->>'owner'), (p_canonical_payload->>'repo'), v_repo;
+  END IF;
+  IF COALESCE((p_canonical_payload->>'pullNumber')::int, -1) IS DISTINCT FROM v_pr THEN
+    RAISE EXCEPTION 'canonical_payload pullNumber (%) != binding pr (%)',
+      (p_canonical_payload->>'pullNumber'), v_pr;
+  END IF;
+
   -- 实现修正 #2:advisory 锁 per (run_id, action),再 MAX+1;UNIQUE 兜底
   PERFORM pg_advisory_xact_lock(hashtext(v_run || ':' || p_action));
   SELECT COALESCE(MAX(attempt_no),0)+1 INTO v_attempt
@@ -98,12 +110,17 @@ BEGIN
 END $$;
 REVOKE ALL ON FUNCTION l2_create_ticket(TEXT,TEXT,JSONB,TEXT,INT,INT) FROM PUBLIC;
 
--- ── Approver:列 PENDING 票(只读经函数,不暴露表 SELECT)──
+-- ── Approver:列 PENDING 票(返回完整 payload,审批人能看清 merge_method/commit_title 等)──
+-- B4a.1 改了 RETURNS 列,CREATE OR REPLACE 不能改返回类型,先 DROP(IF EXISTS 幂等)。
+DROP FUNCTION IF EXISTS l2_pending_list();
 CREATE OR REPLACE FUNCTION l2_pending_list()
 RETURNS TABLE(ticket_id TEXT, run_id TEXT, action TEXT, repo TEXT, pr_number INTEGER,
+              canonical_payload JSONB, args_hash TEXT, expected_head_sha TEXT,
+              target_branch TEXT, attempt_no INTEGER,
               created_at TIMESTAMPTZ, approval_expires_at TIMESTAMPTZ)
 LANGUAGE sql SECURITY DEFINER SET search_path = pg_catalog, public AS $$
-  SELECT ticket_id, run_id, action, repo, pr_number, created_at, approval_expires_at
+  SELECT ticket_id, run_id, action, repo, pr_number, canonical_payload, args_hash,
+         expected_head_sha, target_branch, attempt_no, created_at, approval_expires_at
   FROM public.approvals WHERE status='PENDING' ORDER BY created_at;
 $$;
 REVOKE ALL ON FUNCTION l2_pending_list() FROM PUBLIC;
@@ -171,29 +188,36 @@ END $$;
 REVOKE ALL ON FUNCTION l2_mark_unknown(TEXT,UUID,TEXT) FROM PUBLIC;
 
 -- ── Controller:对账(UNKNOWN / 超时 EXECUTING)+ 过期 ──
-CREATE OR REPLACE FUNCTION l2_reconcile_unknown(p_ticket_id TEXT, p_merged BOOLEAN, p_actual_sha TEXT)
+-- p_effect_applied:merge=已 merged;close=PR state=closed(Controller 按 action 判定后传入)
+-- B4a.1 改了参数名(p_merged→p_effect_applied),先 DROP(参数名变更 REPLACE 不支持)。
+DROP FUNCTION IF EXISTS l2_reconcile_unknown(TEXT,BOOLEAN,TEXT);
+DROP FUNCTION IF EXISTS l2_reconcile_executing(TEXT,BOOLEAN,TEXT);
+CREATE OR REPLACE FUNCTION l2_reconcile_unknown(p_ticket_id TEXT, p_effect_applied BOOLEAN, p_actual_sha TEXT)
 RETURNS BOOLEAN LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public AS $$
 BEGIN
-  IF p_merged THEN
+  IF p_effect_applied THEN
     UPDATE public.approvals SET status='USED', used_at=now(), result_sha=COALESCE(p_actual_sha,result_sha)
     WHERE ticket_id=p_ticket_id AND status='UNKNOWN';
   ELSE
-    UPDATE public.approvals SET status='FAILED', error='reconcile: not merged'
+    UPDATE public.approvals SET status='FAILED', error='reconcile: effect not applied'
     WHERE ticket_id=p_ticket_id AND status='UNKNOWN';
   END IF;
   RETURN FOUND;
 END $$;
 REVOKE ALL ON FUNCTION l2_reconcile_unknown(TEXT,BOOLEAN,TEXT) FROM PUBLIC;
 
-CREATE OR REPLACE FUNCTION l2_reconcile_executing(p_ticket_id TEXT, p_merged BOOLEAN, p_actual_sha TEXT)
+-- B4a.1 P2#7:仅对账超时 EXECUTING(executing_at < now()-120s),防提前对账竞态
+CREATE OR REPLACE FUNCTION l2_reconcile_executing(p_ticket_id TEXT, p_effect_applied BOOLEAN, p_actual_sha TEXT)
 RETURNS BOOLEAN LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public AS $$
 BEGIN
-  IF p_merged THEN
+  IF p_effect_applied THEN
     UPDATE public.approvals SET status='USED', used_at=now(), result_sha=COALESCE(p_actual_sha,result_sha)
-    WHERE ticket_id=p_ticket_id AND status='EXECUTING';
+    WHERE ticket_id=p_ticket_id AND status='EXECUTING'
+      AND executing_at < now() - interval '120 seconds';
   ELSE
-    UPDATE public.approvals SET status='FAILED', error='reconcile: not merged after timeout'
-    WHERE ticket_id=p_ticket_id AND status='EXECUTING';
+    UPDATE public.approvals SET status='FAILED', error='reconcile: effect not applied after timeout'
+    WHERE ticket_id=p_ticket_id AND status='EXECUTING'
+      AND executing_at < now() - interval '120 seconds';
   END IF;
   RETURN FOUND;
 END $$;
@@ -214,3 +238,14 @@ GRANT EXECUTE ON FUNCTION l2_reconcile_unknown(TEXT,BOOLEAN,TEXT) TO mergepilot;
 GRANT EXECUTE ON FUNCTION l2_reconcile_executing(TEXT,BOOLEAN,TEXT) TO mergepilot;
 GRANT EXECUTE ON FUNCTION l2_expire_pending(TEXT) TO mergepilot;
 -- 注:policy_gateway_l2 / mergepilot_approver 的 EXECUTE 授权在 m3b-b4-create-roles.sh(账号建好后)
+
+-- B4a.1 P1#1:所有 l2_* 函数 OWNER 改为 mergepilot_l2_owner(NOLOGIN),
+-- 否则 SECURITY DEFINER 实际以建函数的超级用户(mergepilot)权限执行,NOLOGIN 隔离形同虚设。
+DO $$ DECLARE r record;
+BEGIN
+  FOR r IN SELECT p.oid FROM pg_proc p
+           JOIN pg_namespace n ON p.pronamespace=n.oid
+           WHERE p.proname LIKE 'l2\_%' ESCAPE '\' AND n.nspname='public' LOOP
+    EXECUTE format('ALTER FUNCTION %s OWNER TO mergepilot_l2_owner', r.oid::regprocedure::text);
+  END LOOP;
+END $$;

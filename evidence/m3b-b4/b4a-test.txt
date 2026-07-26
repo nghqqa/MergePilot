@@ -1,54 +1,67 @@
 ═══════════════════════════════════════════════
-  B4a 验收(schema + 函数 + EXECUTE-only 账号)
+  B4a + B4a.1 验收
 ═══════════════════════════════════════════════
 
-=== 1. schema 迁移 ===
-  ✅ approvals v2 8 列齐全
+=== 1. schema ===
+  ✅ approvals v2 8 列
   ✅ run_pr_bindings 8 列
-  ✅ outbox lease_expires_at 在
-  ✅ approvals.expires_at 可 NULL(PENDING 阶段)
-  ✅ task_runs CHECK 含 APPROVAL_PENDING
+  ✅ outbox lease_expires_at
+  ✅ expires_at 可 NULL
+  ✅ task_runs APPROVAL_PENDING
 
-=== 2. 函数硬化属性 ===
-  ✅ l2_create_ticket SECURITY DEFINER + search_path=pg_catalog
-  ✅ l2_claim_ticket SECURITY DEFINER + search_path=pg_catalog
-  ✅ l2_complete_ticket SECURITY DEFINER + search_path=pg_catalog
-  ✅ l2_approve SECURITY DEFINER + search_path=pg_catalog
-  ✅ l2_pending_list SECURITY DEFINER + search_path=pg_catalog
-  ✅ l2_reconcile_unknown SECURITY DEFINER + search_path=pg_catalog
+=== 2. 全 l2_* 函数 owner + SECURITY DEFINER + search_path ===
+  owner=mergepilot_l2_owner 的函数数: 10 / 10
+  ✅ 10 个 l2_* 函数 owner 全是 mergepilot_l2_owner(NOLOGIN)
+  ✅ 10 个函数全 SECURITY DEFINER + search_path=pg_catalog
+  ✅ l2_* 函数无 PUBLIC EXECUTE
 
-=== 3. 全生命周期(建票→审批→claim→complete)===
-  args_hash=a043fd43a261cad27cef2844d7a33e411f6908353d503dad3b5c49c98709c33b (len=64)
+=== 3. 角色属性/成员 ===
+  ✅ 两账号无 SUPERUSER/BYPASSRLS/CREATEDB/CREATEROLE/REPLICATION/INHERIT
+  ✅ 两账号无角色成员关系(不被注入特权)
+
+=== 4. 全状态机 ===
   ✅ args_hash 完整 64hex
-  ticket=tkt-c0d05f5f-c368-47ef-a837-e9863449b598
-  ✅ l2_create_ticket 建票(tkt-c0d05f5f-c368-47ef-a837-e9863449b598)
-  ✅ 票据 PENDING
+  ✅ payload repo 与 binding 不一致 → 拒
+  ✅ 建票(tkt-da456e2b-7376-43db-aa7b-ca8f22c810e5,PENDING)
+  ✅ PENDING
   ✅ attempt_no=1
-  ✅ PENDING 阶段 expires_at=NULL
-  ✅ outbox 同事务写 PENDING_DISPATCH
-  ✅ l2_approve(approver 账号)→ APPROVED
-  ✅ APPROVED
-  ✅ approved_by=tester@host
-  ✅ APPROVED 后 expires_at 已写(+1h)
-  claim 错 hash 行数=0
-  ✅ 错误 args_hash → claim 返回 0 行(票据未消耗)
+  ✅ PENDING expires_at=NULL
+  ✅ outbox 同事务 PENDING_DISPATCH
+  ✅ l2_pending_list 返回 canonical_payload(merge_method=squash 可见)
+  ✅ pending_list 返回 expected_head_sha + attempt
+  ✅ approve → APPROVED
+  ✅ approved_by 记录
+  ✅ expires_at 已写(+1h)
+  ✅ 错 args_hash → 0 行
   ✅ 票据仍 APPROVED(CAS 未匹配不消耗)
-  execution_id=eb177a2a-2ec4-4382-bb53-1bf249d6ff32  payload={"repo": "MergePilot", "owner": "nghqqa", "pullNumber": 99999, "commit_title": "merge fix", "merge_method": "squash"}
   ✅ claim 返回 execution_id
-  ✅ claim 返回 canonical_payload(含 merge_method=squash)
-  ✅ 票据 EXECUTING
-  ✅ 重复 claim → 0 行(防并发双执行)
-  ✅ l2_complete_ticket → USED
-  ✅ USED + result_sha=mergesha123
-  ✅ 错误 execution_id 的 complete 被拒
+  ✅ claim 返回 canonical_payload(squash)
+  ✅ EXECUTING
+  ✅ complete → USED
+  ✅ USED + result_sha
+  ✅ 第二票 attempt_no=2(advisory lock+MAX)
+  ✅ fail_ticket → FAILED
+  ✅ FAILED
+  ✅ mark_unknown → UNKNOWN
+  ✅ reconcile_unknown(effect_applied=true)→ USED
+  ✅ reconcile_executing 120s 内 → 拒(防提前对账)
+  ✅ reconcile_executing(超 120s,effect=false)→ FAILED
+  ✅ expire_pending(超审批期)→ EXPIRED
+  ✅ EXPIRED
 
-=== 4. task_runs APPROVAL_PENDING ===
-  ✅ task_runs 可转 APPROVAL_PENDING
+=== 5. 真并发 claim(B4a.1 P2#9)===
+  并发 claim 成功数: 1(应 1)
+  ✅ 并发 claim 只一个成功(原子 CAS)
 
-=== 5. 账号隔离 ===
+=== 6. 漂移收敛 ===
+  ✅ 漂移注入(gateway 被误授 l2_approve)
+  ✅ 重跑角色脚本 → 漂移自动撤销
+
+=== 7. 账号隔离 ===
   ✅ gateway_l2 不能 SELECT approvals
   ✅ approver 不能读 outbox
+  ✅ gateway 越权 l2_approve 被拒
 
 ═══════════════════════════════════════════════
-  B4a 验收: PASS=33 FAIL=0
+  B4a+B4a.1 验收: PASS=44 FAIL=0
 ═══════════════════════════════════════════════

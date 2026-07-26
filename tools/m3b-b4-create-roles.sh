@@ -34,10 +34,22 @@ DO \$do\$ BEGIN
 END \$do\$;
 ALTER ROLE policy_gateway_l2   LOGIN PASSWORD '$L2_PW';
 ALTER ROLE mergepilot_approver LOGIN PASSWORD '$APV_PW';
--- 收敛:撤全部表权限,只留函数 EXECUTE
+-- B4a.1 P1#4:重置高危角色属性(防漂移:曾被误授 SUPERUSER/BYPASSRLS 等)
+ALTER ROLE policy_gateway_l2   NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION NOINHERIT;
+ALTER ROLE mergepilot_approver NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION NOINHERIT;
+-- 收敛:撤全部表/序列权限
 REVOKE ALL ON approvals, policy_action_outbox, run_pr_bindings, mcp_calls, task_runs, stage_runs, stage_events, dispatch_outbox, controller_offsets FROM policy_gateway_l2, mergepilot_approver;
 REVOKE ALL ON ALL TABLES IN SCHEMA public FROM policy_gateway_l2, mergepilot_approver;
 REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM policy_gateway_l2, mergepilot_approver;
+-- B4a.1 P1#4:撤全部 l2_* 函数 EXECUTE(漂移重置),再只 GRANT 该有的
+DO \$rv\$ DECLARE r record;
+BEGIN
+  FOR r IN SELECT p.oid::regprocedure::text AS f FROM pg_proc p
+           JOIN pg_namespace n ON p.pronamespace=n.oid
+           WHERE p.proname LIKE 'l2\_%' ESCAPE '\' AND n.nspname='public' LOOP
+    EXECUTE format('REVOKE ALL ON FUNCTION %s FROM policy_gateway_l2, mergepilot_approver', r.f);
+  END LOOP;
+END \$rv\$;
 -- Gateway L2:仅 4 个函数
 GRANT EXECUTE ON FUNCTION l2_claim_ticket(TEXT,TEXT,TEXT,INTEGER,TEXT)        TO policy_gateway_l2;
 GRANT EXECUTE ON FUNCTION l2_complete_ticket(TEXT,UUID,TEXT)                  TO policy_gateway_l2;

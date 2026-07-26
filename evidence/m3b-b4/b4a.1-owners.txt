@@ -1,0 +1,14 @@
+        proname         |        owner        | secdef 
+------------------------+---------------------+--------
+ l2_approve             | mergepilot_l2_owner | t
+ l2_claim_ticket        | mergepilot_l2_owner | t
+ l2_complete_ticket     | mergepilot_l2_owner | t
+ l2_create_ticket       | mergepilot_l2_owner | t
+ l2_expire_pending      | mergepilot_l2_owner | t
+ l2_fail_ticket         | mergepilot_l2_owner | t
+ l2_mark_unknown        | mergepilot_l2_owner | t
+ l2_pending_list        | mergepilot_l2_owner | t
+ l2_reconcile_executing | mergepilot_l2_owner | t
+ l2_reconcile_unknown   | mergepilot_l2_owner | t
+(10 rows)
+

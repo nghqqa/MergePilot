@@ -1,8 +1,8 @@
 #!/bin/bash
-# m3b-b4a-test.sh — B4a 数据库与权限验收。
-# 全生命周期:绑定→建票(PENDING)→审批(APPROVED)→claim 错误 hash 拒(保持 APPROVED)
-# →claim 正确(EXECUTING,返回 canonical_payload + execution_id)→complete(USED)。
-# 验证:account EXECUTE-only、task_runs APPROVAL_PENDING、SECURITY DEFINER 属性、args_hash 完整 64hex。
+# m3b-b4a-test.sh — B4a + B4a.1 验收(DB schema + 函数 + EXECUTE-only 账号 + 漂移收敛)。
+# 覆盖:全函数 owner=mergepilot_l2_owner、payload/binding 一致性、pending_list 全 payload、
+#       完整状态机(create/approve/claim/complete/fail/mark_unknown/reconcile/expire)、
+#       真并发 claim、漂移收敛、角色属性/成员、reconcile_executing 120s 约束。
 # 退出码:全过 0,否则 1。
 set -uo pipefail
 OUT=/mnt/d/goai/tools/m3b-b4a-test.out
@@ -19,117 +19,155 @@ PG_DB=$(grep '^PG_DATABASE=' "$CTRL" | cut -d= -f2- | tr -d '"'\''[:space:]'); P
 SU_PW=$(grep '^PG_PASS=' "$CTRL" | head -1 | cut -d= -f2- | tr -d '"'\''[:space:]')
 L2_PW=$(grep '^POLICY_GATEWAY_L2_PASS=' "$B4ENV" | head -1 | cut -d= -f2-)
 APV_PW=$(grep '^MERGEPILOT_APPROVER_PASS=' "$B4ENV" | head -1 | cut -d= -f2-)
-
-# 统一 psql 调用:user pw -c sql → 输出(2>&1 保留 permission denied 等错误信息)
-psql_as(){ local u="$1" pw="$2" sql="$3"; docker exec -e PGPASSWORD="$pw" audit-pg psql -U "$u" -d "$PG_DB" -t -A -c "$sql" 2>&1; }
+psql_as(){ docker exec -e PGPASSWORD="$2" audit-pg psql -U "$1" -d "$PG_DB" -t -A -c "$3" 2>&1; }
 SU(){ psql_as "$PG_SU" "$SU_PW" "$1"; }
 L2(){ psql_as policy_gateway_l2 "$L2_PW" "$1"; }
 APV(){ psql_as mergepilot_approver "$APV_PW" "$1"; }
+L2FNS="l2_create_ticket,l2_claim_ticket,l2_complete_ticket,l2_fail_ticket,l2_mark_unknown,l2_approve,l2_pending_list,l2_reconcile_unknown,l2_reconcile_executing,l2_expire_pending"
 
 log "═══════════════════════════════════════════════"
-log "  B4a 验收(schema + 函数 + EXECUTE-only 账号)"
+log "  B4a + B4a.1 验收"
 log "═══════════════════════════════════════════════"
 
-# ─── 1. schema 迁移确认 ───
-log ""; log "=== 1. schema 迁移 ==="
-C1=$(SU "SELECT count(*) FROM information_schema.columns WHERE table_name='approvals' AND column_name IN ('binding_id','attempt_no','canonical_payload','args_hash','execution_id','executing_at','approval_expires_at','exec_ttl_hours');")
-[ "${C1:-0}" = "8" ] && ok "approvals v2 8 列齐全" || bad "approvals v2 列不足($C1/8)"
-C2=$(SU "SELECT count(*) FROM information_schema.columns WHERE table_name='run_pr_bindings';")
-[ "${C2:-0}" = "8" ] && ok "run_pr_bindings 8 列" || bad "run_pr_bindings 列异常($C2)"
-C3=$(SU "SELECT count(*) FROM information_schema.columns WHERE table_name='policy_action_outbox' AND column_name='lease_expires_at';")
-[ "${C3:-0}" = "1" ] && ok "outbox lease_expires_at 在" || bad "outbox 无 lease"
-C4=$(SU "SELECT is_nullable FROM information_schema.columns WHERE table_name='approvals' AND column_name='expires_at';")
-[ "$C4" = "YES" ] && ok "approvals.expires_at 可 NULL(PENDING 阶段)" || bad "expires_at 仍 NOT NULL"
-C5=$(SU "SELECT COUNT(*) FROM pg_constraint WHERE conname='chk_task_status' AND pg_get_constraintdef(oid) LIKE '%APPROVAL_PENDING%';")
-[ "${C5:-0}" = "1" ] && ok "task_runs CHECK 含 APPROVAL_PENDING" || bad "task_runs 无 APPROVAL_PENDING"
+# ─── 1. schema 迁移 ───
+log ""; log "=== 1. schema ==="
+[ "$(SU "SELECT count(*) FROM information_schema.columns WHERE table_name='approvals' AND column_name IN ('binding_id','attempt_no','canonical_payload','args_hash','execution_id','executing_at','approval_expires_at','exec_ttl_hours');")" = "8" ] && ok "approvals v2 8 列" || bad "approvals v2 列不足"
+[ "$(SU "SELECT count(*) FROM information_schema.columns WHERE table_name='run_pr_bindings';")" = "8" ] && ok "run_pr_bindings 8 列" || bad "run_pr_bindings 列数异常"
+[ "$(SU "SELECT count(*) FROM information_schema.columns WHERE table_name='policy_action_outbox' AND column_name='lease_expires_at';")" = "1" ] && ok "outbox lease_expires_at" || bad "outbox 无 lease"
+[ "$(SU "SELECT is_nullable FROM information_schema.columns WHERE table_name='approvals' AND column_name='expires_at';")" = "YES" ] && ok "expires_at 可 NULL" || bad "expires_at NOT NULL"
+[ "$(SU "SELECT count(*) FROM pg_constraint WHERE conname='chk_task_status' AND pg_get_constraintdef(oid) LIKE '%APPROVAL_PENDING%';")" = "1" ] && ok "task_runs APPROVAL_PENDING" || bad "无 APPROVAL_PENDING"
 
-# ─── 2. 函数 SECURITY DEFINER + 固定 search_path ───
-log ""; log "=== 2. 函数硬化属性 ==="
-for fn in l2_create_ticket l2_claim_ticket l2_complete_ticket l2_approve l2_pending_list l2_reconcile_unknown; do
-  ATTR=$(SU "SELECT (prosecdef AND proconfig::text LIKE '%search_path=pg_catalog%') FROM pg_proc p JOIN pg_namespace n ON p.pronamespace=n.oid WHERE p.proname='$fn' AND n.nspname='public' LIMIT 1;")
-  [ "$ATTR" = "t" ] && ok "$fn SECURITY DEFINER + search_path=pg_catalog" || bad "$fn 属性异常: '$ATTR'"
-done
+# ─── 2. 全函数 owner=mergepilot_l2_owner + SECDEF + search_path(B4a.1 P1#1 + P2#5)───
+log ""; log "=== 2. 全 l2_* 函数 owner + SECURITY DEFINER + search_path ==="
+OWNER_OK=$(SU "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON p.pronamespace=n.oid JOIN pg_roles r ON p.proowner=r.oid WHERE p.proname IN ($(echo "$L2FNS" | tr ',' '\n' | sed "s/.*/'&'/" | paste -sd,)) AND n.nspname='public' AND r.rolname='mergepilot_l2_owner';")
+log "  owner=mergepilot_l2_owner 的函数数: $OWNER_OK / 10"
+[ "$OWNER_OK" = "10" ] && ok "10 个 l2_* 函数 owner 全是 mergepilot_l2_owner(NOLOGIN)" || bad "owner 异常($OWNER_OK/10)"
+SECDEF_OK=$(SU "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON p.pronamespace=n.oid WHERE p.proname IN ($(echo "$L2FNS" | tr ',' '\n' | sed "s/.*/'&'/" | paste -sd,)) AND n.nspname='public' AND prosecdef AND proconfig::text LIKE '%search_path=pg_catalog%';")
+[ "$SECDEF_OK" = "10" ] && ok "10 个函数全 SECURITY DEFINER + search_path=pg_catalog" || bad "SECDEF 异常($SECDEF_OK/10)"
+PUB_OK=$(SU "SELECT count(*) FROM information_schema.role_routine_grants WHERE grantee='PUBLIC' AND routine_name IN ($(echo "$L2FNS" | tr ',' '\n' | sed "s/.*/'&'/" | paste -sd,));")
+[ "${PUB_OK:-0}" = "0" ] && ok "l2_* 函数无 PUBLIC EXECUTE" || bad "PUBLIC 仍有 EXECUTE($PUB_OK)"
 
-# ─── 3. 全生命周期 ───
-log ""; log "=== 3. 全生命周期(建票→审批→claim→complete)==="
-# 清理上次残留 + 建测试 task_run(task_runs 无 task_id 列;用 run_id/status/repo/pr_number)+ binding
+# ─── 3. 角色属性 + 成员(无高危属性 + 无角色成员)───
+log ""; log "=== 3. 角色属性/成员 ==="
+ATTR_BAD=$(SU "SELECT count(*) FROM pg_roles WHERE rolname IN ('policy_gateway_l2','mergepilot_approver') AND (rolsuper OR rolbypassrls OR rolcreatedb OR rolcreaterole OR rolreplication OR rolinherit);")
+[ "${ATTR_BAD:-0}" = "0" ] && ok "两账号无 SUPERUSER/BYPASSRLS/CREATEDB/CREATEROLE/REPLICATION/INHERIT" || bad "高危属性残留($ATTR_BAD)"
+MEM_BAD=$(SU "SELECT count(*) FROM pg_auth_members m JOIN pg_roles r ON m.roleid=r.oid WHERE r.rolname IN ('policy_gateway_l2','mergepilot_approver');")
+[ "${MEM_BAD:-0}" = "0" ] && ok "两账号无角色成员关系(不被注入特权)" || bad "有角色成员($MEM_BAD)"
+
+# ─── 4. 全生命周期(含 fail/mark_unknown/reconcile/expire)───
+log ""; log "=== 4. 全状态机 ==="
 SU "DELETE FROM policy_action_outbox WHERE run_id LIKE 'b4atest-%'; DELETE FROM approvals WHERE run_id LIKE 'b4atest-%'; DELETE FROM run_pr_bindings WHERE run_id LIKE 'b4atest-%'; DELETE FROM task_runs WHERE run_id LIKE 'b4atest-%';" >/dev/null 2>&1
 SU "INSERT INTO task_runs(run_id,status,repo,pr_number) VALUES('b4atest-run','SUBMITTED','nghqqa/MergePilot',99999);" >/dev/null 2>&1
-SU "INSERT INTO run_pr_bindings(binding_id,run_id,repo,pr_number,fix_branch,base_branch,head_sha) VALUES('bnd-b4atest','b4atest-run','nghqqa/MergePilot',99999,'fix/b4atest-1','main','deadbeefcafebabe000000000000000000000000');" >/dev/null 2>&1
-
-# canonical_payload + args_hash(完整 64hex,固定 canonical:sort_keys + 紧凑分隔)
+SU "INSERT INTO run_pr_bindings(binding_id,run_id,repo,pr_number,fix_branch,base_branch,head_sha) VALUES('bnd-b4atest','b4atest-run','nghqqa/MergePilot',99999,'fix/b4atest-1','main','deadbeef00000000000000000000000000000000');" >/dev/null 2>&1
 PAYLOAD='{"owner":"nghqqa","repo":"MergePilot","pullNumber":99999,"commit_title":"merge fix","merge_method":"squash"}'
-ARGS_HASH=$(python3 -c "import hashlib,json,sys; print(hashlib.sha256(json.dumps(json.loads(sys.argv[1]),sort_keys=True,separators=(',',':')).encode()).hexdigest())" "$PAYLOAD")
-log "  args_hash=$ARGS_HASH (len=${#ARGS_HASH})"
-[ "${#ARGS_HASH}" = "64" ] && ok "args_hash 完整 64hex" || bad "args_hash 长度异常(${#ARGS_HASH})"
+ARGS_HASH=$(python3 -c "import hashlib,json,sys;print(hashlib.sha256(json.dumps(json.loads(sys.argv[1]),sort_keys=True,separators=(',',':')).encode()).hexdigest())" "$PAYLOAD")
+[ "${#ARGS_HASH}" = "64" ] && ok "args_hash 完整 64hex" || bad "args_hash 长度(${#ARGS_HASH})"
 
-# 3a. 建票(Controller)
+# 4a. payload 与 binding 不一致 → 拒(B4a.1 P1#2)
+BAD_PAYLOAD='{"owner":"evil","repo":"other","pullNumber":1,"commit_title":"x","merge_method":"squash"}'
+BAD_RES=$(SU "SELECT l2_create_ticket('bnd-b4atest','merge','$BAD_PAYLOAD'::jsonb,'$(python3 -c "import hashlib,json,sys;print(hashlib.sha256(json.dumps(json.loads(sys.argv[1]),sort_keys=True,separators=(',',':')).encode()).hexdigest())" "$BAD_PAYLOAD")',24,1);" 2>&1)
+echo "$BAD_RES" | grep -qi "binding repo" && ok "payload repo 与 binding 不一致 → 拒" || { echo "$BAD_RES" | grep -qi "pullNumber" && ok "payload pullNumber 与 binding 不一致 → 拒" || bad "payload/binding 一致性校验失效: $(echo "$BAD_RES"|head -1)"; }
+
+# 4b. 正常建票
 TKT=$(SU "SELECT l2_create_ticket('bnd-b4atest','merge','$PAYLOAD'::jsonb,'$ARGS_HASH',24,1);")
-log "  ticket=$TKT"
-[ -n "$TKT" ] && echo "$TKT" | grep -q "^tkt-" && ok "l2_create_ticket 建票($TKT)" || bad "建票失败: $TKT"
-STATUS=$(SU "SELECT status FROM approvals WHERE ticket_id='$TKT';")
-[ "$STATUS" = "PENDING" ] && ok "票据 PENDING" || bad "状态异常: $STATUS"
-ATT=$(SU "SELECT attempt_no FROM approvals WHERE ticket_id='$TKT';")
-[ "$ATT" = "1" ] && ok "attempt_no=1" || bad "attempt 异常: $ATT"
-EXE=$(SU "SELECT expires_at FROM approvals WHERE ticket_id='$TKT';")
-[ "$EXE" = "" ] && ok "PENDING 阶段 expires_at=NULL" || bad "PENDING expires_at 非 NULL: $EXE"
-OBX=$(SU "SELECT status FROM policy_action_outbox WHERE ticket_id='$TKT';")
-[ "$OBX" = "PENDING_DISPATCH" ] && ok "outbox 同事务写 PENDING_DISPATCH" || bad "outbox 异常: $OBX"
+echo "$TKT" | grep -q "^tkt-" && ok "建票($TKT,PENDING)" || bad "建票失败: $TKT"
+[ "$(SU "SELECT status FROM approvals WHERE ticket_id='$TKT';")" = "PENDING" ] && ok "PENDING" || bad "状态异常"
+[ "$(SU "SELECT attempt_no FROM approvals WHERE ticket_id='$TKT';")" = "1" ] && ok "attempt_no=1" || bad "attempt 异常"
+[ "$(SU "SELECT expires_at IS NULL FROM approvals WHERE ticket_id='$TKT';")" = "t" ] && ok "PENDING expires_at=NULL" || bad "PENDING expires_at 非 NULL"
+[ "$(SU "SELECT status FROM policy_action_outbox WHERE ticket_id='$TKT';")" = "PENDING_DISPATCH" ] && ok "outbox 同事务 PENDING_DISPATCH" || bad "outbox 异常"
 
-# 3b. 审批(approver)
-APR=$(APV "SELECT l2_approve('$TKT','tester@host');")
-[ "$APR" = "t" ] && ok "l2_approve(approver 账号)→ APPROVED" || bad "approve 失败: $APR"
-STATUS=$(SU "SELECT status FROM approvals WHERE ticket_id='$TKT';"); [ "$STATUS" = "APPROVED" ] && ok "APPROVED" || bad "状态: $STATUS"
-APVBY=$(SU "SELECT approved_by FROM approvals WHERE ticket_id='$TKT';"); [ "$APVBY" = "tester@host" ] && ok "approved_by=tester@host" || bad "approved_by: $APVBY"
-EXE2=$(SU "SELECT expires_at > now() FROM approvals WHERE ticket_id='$TKT';"); [ "$EXE2" = "t" ] && ok "APPROVED 后 expires_at 已写(+1h)" || bad "expires_at 未写"
+# 4c. pending_list 返回完整 payload(B4a.1 P1#3)
+PL=$(APV "SELECT canonical_payload->>'merge_method' FROM l2_pending_list() WHERE ticket_id='$TKT';")
+[ "$PL" = "squash" ] && ok "l2_pending_list 返回 canonical_payload(merge_method=squash 可见)" || bad "pending_list 缺 payload: '$PL'"
+PL2=$(APV "SELECT expected_head_sha IS NOT NULL FROM l2_pending_list() WHERE ticket_id='$TKT';")
+[ "$PL2" = "t" ] && ok "pending_list 返回 expected_head_sha + attempt" || bad "pending_list 缺字段"
 
-# 3c. claim 错误 args_hash → 拒,票据保持 APPROVED
+# 4d. 审批
+[ "$(APV "SELECT l2_approve('$TKT','tester@host');")" = "t" ] && ok "approve → APPROVED" || bad "approve 失败"
+[ "$(SU "SELECT approved_by FROM approvals WHERE ticket_id='$TKT';")" = "tester@host" ] && ok "approved_by 记录" || bad "approved_by 缺"
+[ "$(SU "SELECT expires_at > now() FROM approvals WHERE ticket_id='$TKT';")" = "t" ] && ok "expires_at 已写(+1h)" || bad "expires_at 未写"
+
+# 4e. claim 错 hash → 0 行,保持 APPROVED
 WRONG=$(python3 -c "print('a'*64)")
-CL0=$(L2 "SELECT count(*) FROM l2_claim_ticket('$TKT','merge','nghqqa/MergePilot',99999,'$WRONG');")
-log "  claim 错 hash 行数=$CL0"
-[ "$CL0" = "0" ] && ok "错误 args_hash → claim 返回 0 行(票据未消耗)" || bad "错 hash 不该消耗票据"
-ST0=$(SU "SELECT status FROM approvals WHERE ticket_id='$TKT';"); [ "$ST0" = "APPROVED" ] && ok "票据仍 APPROVED(CAS 未匹配不消耗)" || bad "票据被错误消耗: $ST0"
+[ "$(L2 "SELECT count(*) FROM l2_claim_ticket('$TKT','merge','nghqqa/MergePilot',99999,'$WRONG');")" = "0" ] && ok "错 args_hash → 0 行" || bad "错 hash 不该消耗"
+[ "$(SU "SELECT status FROM approvals WHERE ticket_id='$TKT';")" = "APPROVED" ] && ok "票据仍 APPROVED(CAS 未匹配不消耗)" || bad "票据被错误消耗"
 
-# 3d. claim 正确 → EXECUTING + canonical_payload + execution_id
+# 4f. claim 正确 → EXECUTING + payload + execution_id
 CL1=$(L2 "SELECT execution_id || '|' || canonical_payload::text FROM l2_claim_ticket('$TKT','merge','nghqqa/MergePilot',99999,'$ARGS_HASH');")
 EID="${CL1%%|*}"; PAY="${CL1#*|}"
-log "  execution_id=$EID  payload=$PAY"
-[ -n "$EID" ] && echo "$EID" | grep -qE "^[0-9a-f-]{36}$" && ok "claim 返回 execution_id" || bad "claim 未返回 execution_id: $CL1"
-echo "$PAY" | grep -qi "merge_method.*squash" && ok "claim 返回 canonical_payload(含 merge_method=squash)" || bad "payload 异常: $PAY"
-ST1=$(SU "SELECT status FROM approvals WHERE ticket_id='$TKT';"); [ "$ST1" = "EXECUTING" ] && ok "票据 EXECUTING" || bad "状态: $ST1"
+echo "$EID" | grep -qE "^[0-9a-f-]{36}$" && ok "claim 返回 execution_id" || bad "claim 无 execution_id: $CL1"
+echo "$PAY" | grep -qi "merge_method.*squash" && ok "claim 返回 canonical_payload(squash)" || bad "payload 异常"
+[ "$(SU "SELECT status FROM approvals WHERE ticket_id='$TKT';")" = "EXECUTING" ] && ok "EXECUTING" || bad "状态异常"
 
-# 3e. 并发/重复 claim 同票 → 第二次 0 行(已 EXECUTING)
-CL2=$(L2 "SELECT count(*) FROM l2_claim_ticket('$TKT','merge','nghqqa/MergePilot',99999,'$ARGS_HASH');")
-[ "$CL2" = "0" ] && ok "重复 claim → 0 行(防并发双执行)" || bad "重复 claim 不该再消耗"
+# 4g. complete → USED
+[ "$(L2 "SELECT l2_complete_ticket('$TKT','$EID'::uuid,'mergesha123');")" = "t" ] && ok "complete → USED" || bad "complete 失败"
+echo "$(SU "SELECT status||'|'||result_sha FROM approvals WHERE ticket_id='$TKT';")" | grep -q "USED|mergesha123" && ok "USED + result_sha" || bad "complete 状态异常"
 
-# 3f. complete → USED(用 claim 返回的 execution_id)
-COMP=$(L2 "SELECT l2_complete_ticket('$TKT','$EID'::uuid,'mergesha123');")
-[ "$COMP" = "t" ] && ok "l2_complete_ticket → USED" || bad "complete 失败: $COMP"
-ST2=$(SU "SELECT status||'|'||result_sha FROM approvals WHERE ticket_id='$TKT';")
-echo "$ST2" | grep -q "USED|mergesha123" && ok "USED + result_sha=mergesha123" || bad "complete 状态: $ST2"
+# 4h. 第二票:fail 路径
+TKT2=$(SU "SELECT l2_create_ticket('bnd-b4atest','merge','$PAYLOAD'::jsonb,'$ARGS_HASH',24,1);")
+[ "$(SU "SELECT attempt_no FROM approvals WHERE ticket_id='$TKT2';")" = "2" ] && ok "第二票 attempt_no=2(advisory lock+MAX)" || bad "attempt_no 异常"
+APV "SELECT l2_approve('$TKT2','tester@host');" >/dev/null
+CL2=$(L2 "SELECT execution_id FROM l2_claim_ticket('$TKT2','merge','nghqqa/MergePilot',99999,'$ARGS_HASH');")
+[ "$(L2 "SELECT l2_fail_ticket('$TKT2','$CL2'::uuid,'github 409 conflict');")" = "t" ] && ok "fail_ticket → FAILED" || bad "fail 失败"
+[ "$(SU "SELECT status FROM approvals WHERE ticket_id='$TKT2';")" = "FAILED" ] && ok "FAILED" || bad "fail 状态异常"
 
-# 3g. 错误 execution_id 的 complete → 拒(防伪造)
-COMP2=$(L2 "SELECT l2_complete_ticket('$TKT',gen_random_uuid()::uuid,'evil');")
-[ "$COMP2" = "f" ] && ok "错误 execution_id 的 complete 被拒" || bad "execution_id 校验失效"
+# 4i. 第三票:mark_unknown + reconcile_unknown
+TKT3=$(SU "SELECT l2_create_ticket('bnd-b4atest','merge','$PAYLOAD'::jsonb,'$ARGS_HASH',24,1);") ; APV "SELECT l2_approve('$TKT3','tester@host');" >/dev/null
+CL3=$(L2 "SELECT execution_id FROM l2_claim_ticket('$TKT3','merge','nghqqa/MergePilot',99999,'$ARGS_HASH');")
+L2 "SELECT l2_mark_unknown('$TKT3','$CL3'::uuid,'network timeout');" >/dev/null
+[ "$(SU "SELECT status FROM approvals WHERE ticket_id='$TKT3';")" = "UNKNOWN" ] && ok "mark_unknown → UNKNOWN" || bad "mark_unknown 异常"
+SU "SELECT l2_reconcile_unknown('$TKT3',true,'actualsha');" >/dev/null
+[ "$(SU "SELECT status||'|'||result_sha FROM approvals WHERE ticket_id='$TKT3';")" = "USED|actualsha" ] && ok "reconcile_unknown(effect_applied=true)→ USED" || bad "reconcile_unknown 异常"
 
-# ─── 4. task_runs APPROVAL_PENDING 可用 ───
-log ""; log "=== 4. task_runs APPROVAL_PENDING ==="
-TSK=$(SU "UPDATE task_runs SET status='APPROVAL_PENDING' WHERE run_id='b4atest-run' RETURNING status;" 2>&1)
-echo "$TSK" | grep -q "APPROVAL_PENDING" && ok "task_runs 可转 APPROVAL_PENDING" || bad "task_runs APPROVAL_PENDING 被拒: $TSK"
+# 4j. 第四票:超时 EXECUTING reconcile + 120s 约束
+TKT4=$(SU "SELECT l2_create_ticket('bnd-b4atest','merge','$PAYLOAD'::jsonb,'$ARGS_HASH',24,1);") ; APV "SELECT l2_approve('$TKT4','tester@host');" >/dev/null
+CL4=$(L2 "SELECT execution_id FROM l2_claim_ticket('$TKT4','merge','nghqqa/MergePilot',99999,'$ARGS_HASH');")
+# 未过 120s → reconcile_executing 应 0 行(约束)
+REARLY=$(SU "SELECT l2_reconcile_executing('$TKT4',false,'');")
+[ "$REARLY" = "f" ] && ok "reconcile_executing 120s 内 → 拒(防提前对账)" || bad "reconcile_executing 未约束 120s"
+# 手动改 executing_at 模拟超时
+SU "UPDATE approvals SET executing_at = now() - interval '130 seconds' WHERE ticket_id='$TKT4';" >/dev/null
+SU "SELECT l2_reconcile_executing('$TKT4',false,'');" >/dev/null
+[ "$(SU "SELECT status FROM approvals WHERE ticket_id='$TKT4';")" = "FAILED" ] && ok "reconcile_executing(超 120s,effect=false)→ FAILED" || bad "reconcile_executing 异常"
 
-# ─── 5. 账号 EXECUTE-only(再确认)───
-log ""; log "=== 5. 账号隔离 ==="
-TBL=$(L2 "SELECT count(*) FROM approvals;" 2>&1)
-echo "$TBL" | grep -qi "permission denied" && ok "gateway_l2 不能 SELECT approvals" || bad "gateway_l2 不该有 SELECT: $TBL"
-TBL2=$(APV "SELECT count(*) FROM policy_action_outbox;" 2>&1)
-echo "$TBL2" | grep -qi "permission denied" && ok "approver 不能读 outbox" || bad "approver 不该读 outbox: $TBL2"
+# 4k. expire_pending
+TKT5=$(SU "SELECT l2_create_ticket('bnd-b4atest','merge','$PAYLOAD'::jsonb,'$ARGS_HASH',24,1);")
+SU "UPDATE approvals SET approval_expires_at = now() - interval '1 minute' WHERE ticket_id='$TKT5';" >/dev/null
+[ "$(SU "SELECT l2_expire_pending('$TKT5');")" = "t" ] && ok "expire_pending(超审批期)→ EXPIRED" || bad "expire 异常"
+[ "$(SU "SELECT status FROM approvals WHERE ticket_id='$TKT5';")" = "EXPIRED" ] && ok "EXPIRED" || bad "expire 状态异常"
+
+# ─── 5. 真并发 claim(两个并行,只一个成功)───
+log ""; log "=== 5. 真并发 claim(B4a.1 P2#9)==="
+TKT6=$(SU "SELECT l2_create_ticket('bnd-b4atest','merge','$PAYLOAD'::jsonb,'$ARGS_HASH',24,1);") ; APV "SELECT l2_approve('$TKT6','tester@host');" >/dev/null
+L2 "SELECT execution_id FROM l2_claim_ticket('$TKT6','merge','nghqqa/MergePilot',99999,'$ARGS_HASH');" > /tmp/cc1.out 2>&1 &
+L2 "SELECT execution_id FROM l2_claim_ticket('$TKT6','merge','nghqqa/MergePilot',99999,'$ARGS_HASH');" > /tmp/cc2.out 2>&1 &
+wait
+C1=$(grep -cE "^[0-9a-f-]{36}$" /tmp/cc1.out); C2=$(grep -cE "^[0-9a-f-]{36}$" /tmp/cc2.out)
+TOT=$(( ${C1:-0} + ${C2:-0} ))
+log "  并发 claim 成功数: $TOT(应 1)"
+[ "$TOT" = "1" ] && ok "并发 claim 只一个成功(原子 CAS)" || bad "并发 claim 异常($TOT 成功)"
+
+# ─── 6. 漂移收敛:误授函数后重跑脚本 → 自动撤销(B4a.1 P1#4)───
+log ""; log "=== 6. 漂移收敛 ==="
+SU "GRANT EXECUTE ON FUNCTION l2_approve(TEXT,TEXT) TO policy_gateway_l2;" >/dev/null  # 注入漂移:gateway 能 approve
+DRIFT_BEFORE=$(SU "SELECT count(*) FROM information_schema.role_routine_grants WHERE grantee='policy_gateway_l2' AND routine_name='l2_approve';")
+[ "$DRIFT_BEFORE" = "1" ] && ok "漂移注入(gateway 被误授 l2_approve)" || bad "漂移注入失败"
+bash /mnt/d/goai/tools/m3b-b4-create-roles.sh >/dev/null 2>&1
+DRIFT_AFTER=$(SU "SELECT count(*) FROM information_schema.role_routine_grants WHERE grantee='policy_gateway_l2' AND routine_name='l2_approve';")
+[ "$DRIFT_AFTER" = "0" ] && ok "重跑角色脚本 → 漂移自动撤销" || bad "漂移未撤销($DRIFT_AFTER)"
+
+# ─── 7. 账号隔离(再确认;用 capture-to-var 避免 pipefail 把 psql 失败码带进管道)───
+log ""; log "=== 7. 账号隔离 ==="
+T1=$(L2 "SELECT count(*) FROM approvals;"); echo "$T1" | grep -qi "permission denied" && ok "gateway_l2 不能 SELECT approvals" || bad "gateway SELECT 异常: $T1"
+T2=$(APV "SELECT count(*) FROM policy_action_outbox;"); echo "$T2" | grep -qi "permission denied" && ok "approver 不能读 outbox" || bad "approver 读 outbox 异常: $T2"
+T3=$(L2 "SELECT l2_approve('x','y');"); echo "$T3" | grep -qi "permission denied" && ok "gateway 越权 l2_approve 被拒" || bad "越权异常: $T3"
 
 # 清理
 SU "DELETE FROM policy_action_outbox WHERE run_id LIKE 'b4atest-%'; DELETE FROM approvals WHERE run_id LIKE 'b4atest-%'; DELETE FROM run_pr_bindings WHERE run_id LIKE 'b4atest-%'; DELETE FROM task_runs WHERE run_id LIKE 'b4atest-%';" >/dev/null 2>&1
 
 log ""
 log "═══════════════════════════════════════════════"
-log "  B4a 验收: PASS=$PASS FAIL=$FAIL"
+log "  B4a+B4a.1 验收: PASS=$PASS FAIL=$FAIL"
 log "═══════════════════════════════════════════════"
 echo "done -> $OUT (PASS=$PASS FAIL=$FAIL)"
 [ "$FAIL" -eq 0 ] || exit 1
