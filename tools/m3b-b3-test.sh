@@ -74,12 +74,14 @@ log "  收敛后 grants=$CONV"
 [ "$CONV" = "INSERT" ] && ok "drift 后自动收敛回 INSERT-only" || bad "未收敛: $CONV"
 
 # ─── 3 & 7. 写产生 INTENT,与 RESULT 共享 correlation_id ───
+# 用 update_pull_request(title) 打不存在的 PR(999999):仍是写工具(测 fail-closed INTENT),
+# policy 放行(title 字段)→ GitHub 404 → RESULT(is_error)。**不建分支/PR,零 GitHub 污染**。
 log ""; log "=== 3+7. 写产生 INTENT 先于 GitHub;INTENT/RESULT 同 correlation_id ==="
-UNIQ="fix/b3-corr-$$"
-CB=$(docker exec policy-gw python3 /tmp/probe-tools.py fixer --call create_branch owner=nghqqa repo=MergePilot branch="$UNIQ" from_branch=main 2>&1 | head -1)
-echo "$CB" | grep -qiE "ref.*fix/b3-corr" && ok "create_branch 执行成功" || bad "create_branch 失败: $(echo "$CB"|head -c 80)"
+CB=$(docker exec policy-gw python3 /tmp/probe-tools.py fixer --call update_pull_request owner=nghqqa repo=MergePilot pullNumber=999999 title=b3-corr-test 2>&1 | head -1)
+echo "$CB" | head -c 80 >> "$OUT"
+echo "$CB" | grep -qi POLICY_DENIED && bad "update_pull_request 不该被策略拒: $(echo "$CB"|head -c 80)" || ok "写调用通过策略(打到不存在 PR,GitHub 404,无副作用)"
 CORR=$(docker exec audit-pg psql -U "$PG_SU" -d "$PG_DB" -t -A -c \
-  "SELECT correlation_id FROM mcp_calls WHERE caller_agent='fixer' AND tool='create_branch' AND phase='INTENT' AND ts>'$START_TS' ORDER BY ts DESC LIMIT 1;" 2>/dev/null)
+  "SELECT correlation_id FROM mcp_calls WHERE caller_agent='fixer' AND tool='update_pull_request' AND phase='INTENT' AND ts>'$START_TS' ORDER BY ts DESC LIMIT 1;" 2>/dev/null)
 PHASES=$(docker exec audit-pg psql -U "$PG_SU" -d "$PG_DB" -t -A -c \
   "SELECT string_agg(phase,',' ORDER BY phase) FROM mcp_calls WHERE correlation_id='$CORR';" 2>/dev/null)
 log "  corr=$CORR phases=[$PHASES]"
@@ -126,20 +128,15 @@ echo "$RD" | grep -qiE "login|nghqqa" && ok "audit 不可用时,只读仍可执�
 
 log ""
 log "=== 4+5. 坏-DSN 下,写调用 → AUDIT_UNAVAILABLE 且无 GitHub 副作用 ==="
-NOAUDIT_BRANCH="fix/b3-no-side-effect-$$"
-WR=$(docker exec policy-gw-noaudit python3 /tmp/probe-tools.py fixer --call create_branch owner=nghqqa repo=MergePilot branch="$NOAUDIT_BRANCH" from_branch=main 2>&1 | head -3)
+# 用 update_pull_request(title) 打 PR 999999(写工具,测 fail-closed);即便 fail-closed 失效,
+# 打不存在的 PR 也只 404,不建分支/PR,零污染。无副作用的权威证明 = gateway 日志 0 forward。
+WR=$(docker exec policy-gw-noaudit python3 /tmp/probe-tools.py fixer --call update_pull_request owner=nghqqa repo=MergePilot pullNumber=999999 title=no-side-effect 2>&1 | head -3)
 echo "$WR" | tail -1 >> "$OUT"
 echo "$WR" | grep -qiE "POLICY_DENIED.*AUDIT_UNAVAILABLE" && ok "写返回 AUDIT_UNAVAILABLE(fail-closed)" || bad "写应 AUDIT_UNAVAILABLE: $(echo "$WR"|tail -1)"
-# 网关日志不应有 forward
-FWD=$(docker logs policy-gw-noaudit 2>&1 | grep -acE "ALLOW.*→ forward.*create_branch")
-log "  坏-DSN gateway 日志中 create_branch forward 次数: $FWD(应 0)"
-[ "${FWD:-0}" = "0" ] && ok "审计不可用时未转发 GitHub(无副作用)" || bad "审计不可用时仍转发 GitHub!"
-# 直接验 GitHub 上无该分支
-BREX=$(docker exec policy-gw python3 /tmp/probe-tools.py reviewer --call get_file_contents owner=nghqqa repo=MergePilot path=README.md 2>&1 | head -1)
-# 用 list_branches 验证分支不存在(更直接)
-BRCHK=$(docker exec policy-gw python3 /tmp/probe-tools.py reviewer --call list_branches owner=nghqqa repo=MergePilot 2>&1 | grep -c "$NOAUDIT_BRANCH")
-log "  GitHub 上 $NOAUDIT_BRANCH 出现次数: $BRCHK(应 0)"
-[ "${BRCHK:-0}" = "0" ] && ok "GitHub 上无该分支(确认无副作用)" || bad "GitHub 上有该分支(有副作用!)"
+# 网关日志不应有任何 forward(权威证明:未调 GitHub = 无副作用)
+FWD=$(docker logs policy-gw-noaudit 2>&1 | grep -acE "ALLOW.*→ forward")
+log "  坏-DSN gateway 日志中 forward 总次数: $FWD(应 0)"
+[ "${FWD:-0}" = "0" ] && ok "审计不可用时未转发 GitHub(0 forward = 无副作用)" || bad "审计不可用时仍转发 GitHub($FWD 次)!"
 
 # 清理坏-DSN gateway
 docker stop policy-gw-noaudit >/dev/null 2>&1 && docker rm policy-gw-noaudit >/dev/null 2>&1
