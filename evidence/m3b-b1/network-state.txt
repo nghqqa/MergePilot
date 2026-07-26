@@ -1,0 +1,9 @@
+=== B1 网络拓扑 ===
+mcp-backend-net 成员:
+policy-gw github-mcp 
+
+github-mcp 网络(仅 mcp-backend-net):
+   ['mcp-backend-net']
+
+reviewer 直连 bridge:
+  BYPASS_CLOSED: [Errno -3] Temporary failure in name resolution

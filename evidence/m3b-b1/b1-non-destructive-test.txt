@@ -1,0 +1,78 @@
+═══════════════════════════════════════════════
+  B1 非破坏性验证 (gateway 已起,bridge 未割接)
+═══════════════════════════════════════════════
+
+=== A. 无 token 打 /reviewer/sse → 期望 401 BAD_TOKEN ===
+  resp: 401 {"error":"POLICY_DENIED","reason_code":"BAD_TOKEN"}
+  ✅ 无 token → 401 BAD_TOKEN
+
+=== B. reviewer token 打 /coordinator/sse → 期望 401 ROLE_PATH_MISMATCH ===
+  resp: 401 {"error":"POLICY_DENIED","reason_code":"ROLE_PATH_MISMATCH"}
+  ✅ 跨角色 → 401 ROLE_PATH_MISMATCH
+
+=== C. reviewer token 经 mcporter 打 gateway → 期望 list 到工具 ===
+--- 生成的临时 mcporter.json(token 已脱敏)---
+{
+  "mcpServers": {
+    "github": {
+      "baseUrl": "http://policy-gw:8083/reviewer/sse",
+      "headers": {
+        "Authorization": "Bearer <REDACTED>"
+      }
+    }
+  }
+}
+--- mcporter list 输出(前 12 行)---
+github
+
+  /**
+   * Add review comment to the requester's latest pending pull request review. A pending review needs to
+   * already exist to call this (check with the user if not sure).
+   *
+   * @param body The text of the review comment
+   * @param line? The line of the blob in the pull request diff that the comment applies to. For
+   *              multi-line comments, the last line of the range
+   * @param owner Repository owner
+   * @param path The relative path to the file that necessitates a comment
+   * @param pullNumber Pull request number
+  已知工具命中: 5/5 (get_me list_issues create_branch merge_pull_request add_issue_comment)
+  ✅ reviewer 经 gateway list 到完整工具集(5/5 已知工具命中)
+
+=== D. reviewer token 调只读工具(get_me)===
+{
+  "login": "nghqqa",
+  "id": 53132158,
+  "profile_url": "https://github.com/nghqqa",
+  "avatar_url": "https://avatars.githubusercontent.com/u/53132158?v=4",
+  "details": {
+    "name": "qiu quan an",
+    "company": "Jiangxi Normal University",
+  ✅ get_me 调用成功(返回 login)
+
+=== E. audit-pg.mcp_calls 审计行 ===
+  DENY(BAD_TOKEN/MISMATCH)=4  ALLOW=24
+              ts               | caller_agent  |     tool     | decision |    reason_code     
+-------------------------------+---------------+--------------+----------+--------------------
+ 2026-07-26 06:30:36.663016+00 | reviewer      | get_me       | ALLOW    | UPSTREAM_RESULT
+ 2026-07-26 06:30:36.271073+00 | reviewer      | get_me       | ALLOW    | B1_PERMISSIVE_CALL
+ 2026-07-26 06:30:35.81838+00  | reviewer      | (list_tools) | ALLOW    | B1_PERMISSIVE_LIST
+ 2026-07-26 06:30:35.037759+00 | reviewer      | (auth)       | DENY     | ROLE_PATH_MISMATCH
+ 2026-07-26 06:30:34.778509+00 | path=reviewer | (auth)       | DENY     | BAD_TOKEN
+ 2026-07-26 06:30:16.153474+00 | verifier      | get_me       | ALLOW    | UPSTREAM_RESULT
+ 2026-07-26 06:30:15.719163+00 | verifier      | get_me       | ALLOW    | B1_PERMISSIVE_CALL
+ 2026-07-26 06:30:15.309494+00 | fixer         | get_me       | ALLOW    | UPSTREAM_RESULT
+(8 rows)
+
+  ✅ 审计记录了 4 条 DENY(BAD_TOKEN + MISMATCH)
+  ✅ 审计记录了 24 条 ALLOW
+
+═══════════════════════════════════════════════
+  B1 非破坏性验证: PASS=6 FAIL=0
+═══════════════════════════════════════════════
+
+=== F. mcp_calls 不可变烟雾测试(UPDATE 真实行应被触发器拒)===
+ERROR:  mcp_calls is INSERT-only (immutable audit): UPDATE not allowed
+CONTEXT:  PL/pgSQL function mcp_calls_immutable() line 3 at RAISE
+  ✅ mcp_calls UPDATE 被拒(不可变,28 行)
+
+  B1-test PASS=7 FAIL=0

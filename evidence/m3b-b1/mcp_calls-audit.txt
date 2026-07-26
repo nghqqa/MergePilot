@@ -1,0 +1,23 @@
+=== mcp_calls 审计样本(token 轮换后本轮)===
+              ts               | caller_agent  |     tool     | decision |    reason_code     | policy_version 
+-------------------------------+---------------+--------------+----------+--------------------+----------------
+ 2026-07-26 06:30:36.663016+00 | reviewer      | get_me       | ALLOW    | UPSTREAM_RESULT    | b1-permissive
+ 2026-07-26 06:30:36.271073+00 | reviewer      | get_me       | ALLOW    | B1_PERMISSIVE_CALL | b1-permissive
+ 2026-07-26 06:30:35.81838+00  | reviewer      | (list_tools) | ALLOW    | B1_PERMISSIVE_LIST | b1-permissive
+ 2026-07-26 06:30:35.037759+00 | reviewer      | (auth)       | DENY     | ROLE_PATH_MISMATCH | b1-permissive
+ 2026-07-26 06:30:34.778509+00 | path=reviewer | (auth)       | DENY     | BAD_TOKEN          | b1-permissive
+ 2026-07-26 06:30:16.153474+00 | verifier      | get_me       | ALLOW    | UPSTREAM_RESULT    | b1-permissive
+ 2026-07-26 06:30:15.719163+00 | verifier      | get_me       | ALLOW    | B1_PERMISSIVE_CALL | b1-permissive
+ 2026-07-26 06:30:15.309494+00 | fixer         | get_me       | ALLOW    | UPSTREAM_RESULT    | b1-permissive
+ 2026-07-26 06:30:14.928874+00 | fixer         | get_me       | ALLOW    | B1_PERMISSIVE_CALL | b1-permissive
+ 2026-07-26 06:30:14.509386+00 | reviewer      | get_me       | ALLOW    | UPSTREAM_RESULT    | b1-permissive
+ 2026-07-26 06:30:13.79223+00  | reviewer      | get_me       | ALLOW    | B1_PERMISSIVE_CALL | b1-permissive
+ 2026-07-26 06:30:13.788852+00 | reviewer      | (list_tools) | ALLOW    | B1_PERMISSIVE_LIST | b1-permissive
+(12 rows)
+
+
+=== 不可变触发器(UPDATE 被拒)===
+ERROR:  mcp_calls is INSERT-only (immutable audit): UPDATE not allowed
+CONTEXT:  PL/pgSQL function mcp_calls_immutable() line 3 at RAISE
+
+=== decision 分布 ===

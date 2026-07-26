@@ -1,0 +1,45 @@
+═══════════════════════════════════════════════
+  B1 网络割接:封闭直连 bridge 旁路
+═══════════════════════════════════════════════
+
+=== 1. 改写 worker mcporter.json → gateway + 角色 token ===
+   mcporter.json → gateway//sse (+bearer)
+   mcporter.json → gateway//sse (+bearer)
+   mcporter.json → gateway//sse (+bearer)
+  (controller 的 coordinator token 已在 role-tokens.json,B4 接入)
+
+=== 1b. github-mcp 挂 mcp-backend-net(割接前置)===
+  (already on)
+
+=== 2. github-mcp 离开 hiclab-net + hiclaw-net(只留 mcp-backend-net)===
+  (hiclab-net already off)
+  (hiclaw-net already off)
+  github-mcp 现在的网络: mcp-backend-net 
+
+=== 3. 重启 policy-gw ===
+policy-gw
+[gateway] upstream ready: 44 tools (sample: ['add_comment_to_pending_review', 'add_issue_comment', 'add_reply_to_pull_request_comment', 'assign_copilot_to_issue', 'create_branch'])
+
+=== 4a. reviewer 直连 github-mcp:8082 → 期望 BLOCKED ===
+  BLOCKED: [Errno -3] Temporary failure in name resolution
+  ✅ reviewer 无法直连 github-mcp(旁路封闭)
+
+=== 4b. reviewer 经生产 mcporter.json 调 get_me → 期望 OK ===
+{
+  "login": "nghqqa",
+  "id": 53132158,
+  "profile_url": "https://github.com/nghqqa",
+  ✅ reviewer 经 gateway 调用成功(login 返回)
+
+=== 4c. fixer + verifier 各自 token 也通(身份隔离各自独立)===
+  ✅ fixer 经 gateway 调用成功
+  ✅ verifier 经 gateway 调用成功
+
+=== 4d. github-mcp 仅在 mcp-backend-net(与 worker 不共网)===
+  ✅ github-mcp 不在 hiclab-net
+  ✅ github-mcp 不在 hiclaw-net
+  ✅ github-mcp 在 mcp-backend-net
+
+═══════════════════════════════════════════════
+  B1 网络割接验证: PASS=7 FAIL=0
+═══════════════════════════════════════════════
