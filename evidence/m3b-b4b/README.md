@@ -26,18 +26,19 @@
 ### 故障测试(fault-test.txt)13/13
 | # | 场景 | 结果 |
 |---|---|---|
-| 1 | bad audit DSN → AUDIT_UNAVAILABLE | ✅ ticket=FAILED |
-| 2 | PR still open after audit fail | ✅ GitHub 未调 |
-| 3 | PR head SHA unchanged | ✅ |
-| 4 | close → USED(独立 PR2) | ✅ |
-| 5 | TOCTOU 读超时 → FAILED(写未发) | ✅ |
-| 6 | 上游 is_error → FAILED | ✅ |
-| 7 | complete DB_ERROR → EXECUTING | ✅ STATE_COMMIT_PENDING |
-| 8 | 写超时 → UNKNOWN(不重试) | ✅ |
-| 9 | upstream.call_tool entered before timeout | ✅ 证明请求已进入 |
-| 10 | FAULT_INJECT 无 .test_mode → 拒绝启动 | ✅ |
-| 11 | 生产:无 FAULT_INJECT | ✅ |
-| 12 | 生产:无 .test_mode | ✅ |
+| 1 | bad audit DSN → AUDIT_UNAVAILABLE | ✅ |
+| 2 | audit fail 后 ticket=FAILED | ✅ fail_ticket 三态 |
+| 3 | PR still open after audit fail | ✅ GitHub 未调 |
+| 4 | PR head SHA unchanged | ✅ |
+| 5 | close → USED(独立 PR2) | ✅ |
+| 6 | TOCTOU 读超时 → FAILED(写未发) | ✅ |
+| 7 | 上游 is_error → FAILED | ✅ |
+| 8 | complete DB_ERROR → EXECUTING | ✅ STATE_COMMIT_PENDING |
+| 9 | 写超时 → UNKNOWN(不重试) | ✅ |
+| 10 | upstream.call_tool entered before timeout | ✅ 证明请求已进入 |
+| 11 | FAULT_INJECT 无 .test_mode → 拒绝启动 | ✅ |
+| 12 | 生产:无 FAULT_INJECT | ✅ |
+| 13 | 生产:无 .test_mode | ✅ |
 
 ### 审计证据
 - `audit-summary.txt`:10 行(ticket_id+phase+decision+reason_code+action+status)

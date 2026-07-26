@@ -1,6 +1,6 @@
 # 标签 SHA 映射与冻结策略
 
-> 维护日期:2026-07-26
+> 维护日期:2026-07-27
 > 用途:记录一次历史整理(commit 指针整体变化)的原因与旧→新 SHA 映射,并冻结现有标签。
 
 ## 背景:为什么 B1–B3.2 标签的 commit SHA 变了
@@ -32,7 +32,7 @@
 | `m3b-b4a.1-closed` | `5e92ed7` | `5027271` | B4a.1 owner + payload 一致性 + 漂移收敛 |
 | `m3b-b4a.2-closed` | `3ed91ab` | `d98df28` | B4a.2 pgvector owner 恢复 + payload/hash/TTL 封闭 + GRANT 顺序 + 精确 ACL |
 | `m3b-b4a.3-closed` | `f8f1c84` | `242f24e` | B4a.3 完整签名 allowlist + pg_depend pgvector + JSON 类型校验 |
-| `m3b-b4b-closed` | `1d30874` | `1d30874` | B4b Gateway L2 claim 流 + 故障路径覆盖 + FAULT_INJECT test_mode 门(15+13/28) |
+| `m3b-b4b-closed` | `365f873` | `1d30874` | B4b Gateway L2 claim 流 + 故障路径覆盖 + FAULT_INJECT test_mode 门(15+13/28) |
 
 ## 旧 SHA 引用 → 当前 peeled commit(commit body 里互相引用的、现已失效的)
 
