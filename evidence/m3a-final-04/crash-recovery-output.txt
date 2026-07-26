@@ -1,0 +1,38 @@
+═══════════════════════════════════════════════
+  崩溃恢复测试: docker restart mergepilot-controller
+═══════════════════════════════════════════════
+
+=== 1. 重启前计数 ===
+task_runs=3  stage_runs=0  outbox=0  events=70
+
+=== 2. docker restart ===
+mergepilot-controller
+等 20s 恢复...
+
+=== 3. controller 日志(恢复后 25s) ===
+[ctrl] 启动;PG=audit-pg:5432;Matrix=http://hiclaw-controller:6167;POLL=8s
+[ctrl] PG connected
+[ctrl] Matrix login OK (token=bVt7cgihPkdw...)
+
+=== 4. 重启后计数 + 对比 ===
+task_runs:    3 → 3
+stage_runs:   0 → 0
+outbox:       0 → 0
+stage_events: 70 → 70
+
+✅ task_runs 无变化
+✅ stage_runs 无变化
+✅ outbox 无变化
+
+=== 5. 最终 PG 状态 ===
+ run_id | status | current_stage | verdict 
+--------+--------+---------------+---------
+(0 rows)
+ stage | attempt | status 
+-------+---------+--------
+(0 rows)
+
+═══════════════════════════════════════════════
+  PASS=3  FAIL=0
+  ✅ 崩溃恢复测试通过(Controller 重启后无重复派发)
+═══════════════════════════════════════════════

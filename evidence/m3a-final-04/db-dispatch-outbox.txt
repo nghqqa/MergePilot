@@ -1,0 +1,7 @@
+        idempotency_key         |   status   |               matrix_event_id                | retry_count 
+--------------------------------+------------+----------------------------------------------+-------------
+ m3a-final-20260726-04:review:1 | DISPATCHED | $gFthoaEd9DQUCEsgL6PNlOTRKClhOtqmN8f9Z_a7hv0 |           0
+ m3a-final-20260726-04:fix:1    | DISPATCHED | $2hRElMqxVdBPOusjB7CxrwZQ6EgH0fyERJS8iDHjOG0 |           0
+ m3a-final-20260726-04:verify:1 | DISPATCHED | $ZdwJyAGMqzS91_w84ujCT1wI2xCuHCZqa43pHtrHlAI |           0
+(3 rows)
+

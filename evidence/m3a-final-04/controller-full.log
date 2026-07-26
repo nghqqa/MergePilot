@@ -1,0 +1,24 @@
+[ctrl] 启动;PG=audit-pg:5432;Matrix=http://hiclaw-controller:6167;POLL=8s
+[ctrl] PG connected
+[ctrl] Matrix login OK (token=LAmMaAE47Ntp...)
+[ctrl] TASK_SUBMITTED m3a-final-20260726-04 → task_run + review PENDING_DISPATCH
+[ctrl] /sync: 处理了 1 个事件, next_batch=19269
+[ctrl] outbox #9 → reviewer @ !LpcFM7eCJpab6 (eid=$gFthoaEd9DQUCEs)
+[ctrl] /sync: 处理了 1 个事件, next_batch=19284
+[ctrl] reviewer TASK_COMPLETED m3a-final-20260726-04-review → fix PENDING_DISPATCH | PG committed
+[ctrl] /sync: 处理了 4 个事件, next_batch=19373
+[ctrl] outbox #10 → fixer @ !LpcFM7eCJpab6 (eid=$2hRElMqxVdBPOus)
+[ctrl] /sync: 处理了 1 个事件, next_batch=19420
+[ctrl] fixer TASK_COMPLETED m3a-final-20260726-04-fix → verify PENDING_DISPATCH | PG committed
+[ctrl] /sync: 处理了 2 个事件, next_batch=19556
+[ctrl] outbox #11 → verifier @ !LpcFM7eCJpab6 (eid=$ZdwJyAGMqzS91_w)
+[ctrl] /sync: 处理了 1 个事件, next_batch=19571
+[ctrl] m3a-final-20260726-04-verify partial snapshot; waiting for VERDICT
+[ctrl] m3a-final-20260726-04-verify partial snapshot; waiting for VERDICT
+[ctrl] m3a-final-20260726-04-verify VERDICT=FAIL → task HOLD | PG committed
+[ctrl] m3a-final-20260726-04-verify 重复事件(已 COMPLETED)→ DUPLICATE
+[ctrl] m3a-final-20260726-04-verify 重复事件(已 COMPLETED)→ DUPLICATE
+[ctrl] /sync: 处理了 5 个事件, next_batch=19674
+[ctrl] 启动;PG=audit-pg:5432;Matrix=http://hiclaw-controller:6167;POLL=8s
+[ctrl] PG connected
+[ctrl] Matrix login OK (token=LxSAM3nREVqA...)

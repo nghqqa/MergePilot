@@ -1,0 +1,16 @@
+                   event_id                   |   event_type   |                     room_id                      |  sender  |  status   | stage  |            error             
+----------------------------------------------+----------------+--------------------------------------------------+----------+-----------+--------+------------------------------
+ $V5SGGG3guIMro6EDj8BslItK66yZrAc6ri-QEindo94 | TASK_SUBMITTED | !LpcFM7eCJpab6sIbPz:matrix-local.hiclaw.io:18080 | admin    | PROCESSED | review | 
+ $5YfMY3-2TFzJWvLvYlqNUMUIi7gHEnBLyikMG2jtgSA | TASK_COMPLETED | !LpcFM7eCJpab6sIbPz:matrix-local.hiclaw.io:18080 | reviewer | PROCESSED | review | 
+ $Lxjh-WGogznaj1SLpOQ8QxPEbV2c08m-4ZadDqId2uU | TASK_COMPLETED | !LpcFM7eCJpab6sIbPz:matrix-local.hiclaw.io:18080 | reviewer | DUPLICATE | review | 
+ $SKQWPfiypkjUj8J9wS_GpiNJ4d_PUrZV_TDMfpfufQE | TASK_COMPLETED | !LpcFM7eCJpab6sIbPz:matrix-local.hiclaw.io:18080 | reviewer | DUPLICATE | review | 
+ $-J5fIDlAzVQa2AdocCm5u4FRUQ5Ivad7C9D54A2TGvI | TASK_COMPLETED | !LpcFM7eCJpab6sIbPz:matrix-local.hiclaw.io:18080 | reviewer | DUPLICATE | review | 
+ $VSt7q2nXVgMs4NxMJdrAc36IGgUDF9-f_CvvpfKKHm4 | TASK_COMPLETED | !LpcFM7eCJpab6sIbPz:matrix-local.hiclaw.io:18080 | fixer    | PROCESSED | fix    | 
+ $F9cmlBBZeuGP6U4OW-Wiy-Ed74RsEefuA6zr3Cumg5g | TASK_COMPLETED | !LpcFM7eCJpab6sIbPz:matrix-local.hiclaw.io:18080 | fixer    | DUPLICATE | fix    | 
+ $l8NibxusDNWHblljafUQJaQ8tSY6KHeBVuqVdwn2_60 | TASK_COMPLETED | !LpcFM7eCJpab6sIbPz:matrix-local.hiclaw.io:18080 | verifier | PARTIAL   | verify | waiting for explicit VERDICT
+ $JFSFhTPyQJTM79gdqO4a1ARNCmWZn3VbSwSvT0OL2lw | TASK_COMPLETED | !LpcFM7eCJpab6sIbPz:matrix-local.hiclaw.io:18080 | verifier | PARTIAL   | verify | waiting for explicit VERDICT
+ $YlAvcF28raeKQ7yXV9bTa7aptCZW-ct1NawsfhN0rxI | TASK_COMPLETED | !LpcFM7eCJpab6sIbPz:matrix-local.hiclaw.io:18080 | verifier | PROCESSED | verify | 
+ $CqyekJFY5HeyO0EDBiF3qMxrylQzoMPRN5I-DU9wL_s | TASK_COMPLETED | !LpcFM7eCJpab6sIbPz:matrix-local.hiclaw.io:18080 | verifier | DUPLICATE | verify | 
+ $yb87_DnJ0l5-gWFE8G4TnjNj776nAmvY8EaPdW1NpxY | TASK_COMPLETED | !LpcFM7eCJpab6sIbPz:matrix-local.hiclaw.io:18080 | verifier | DUPLICATE | verify | 
+(12 rows)
+

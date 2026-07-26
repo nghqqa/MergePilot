@@ -1,0 +1,5 @@
+        run_id         |                     room_id                      |          repo          | pr_number |     branch     | status | attempt | verdict |          created_at           |          updated_at           | current_stage | last_error 
+-----------------------+--------------------------------------------------+------------------------+-----------+----------------+--------+---------+---------+-------------------------------+-------------------------------+---------------+------------
+ m3a-final-20260726-04 | !LpcFM7eCJpab6sIbPz:matrix-local.hiclaw.io:18080 | nghqqa/mergepilot-test |         6 | feature/m1-e2e | HOLD   |       0 | FAIL    | 2026-07-26 03:50:58.487095+00 | 2026-07-26 03:55:38.898559+00 | verify        | 
+(1 row)
+

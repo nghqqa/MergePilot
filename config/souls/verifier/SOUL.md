@@ -26,11 +26,34 @@
 - 全链路审计不可篡改。
 - **不做最终合并决策**(由 coordinator 依据你的验证报告裁定)。
 
-## Output
+## Output(严格遵守)
 
-- 验证报告:每条原 finding → `resolved: yes/no`、证据、重扫结果。
-- 裁定:`pass` / `fail` / `needs-rollback` / `blocked-needs-approval`。
+### 最终裁定格式(必须包含,Controller 只解析这一行)
+
+完成验证后,在你的 TASK_COMPLETED 消息末尾**必须**附一行结构化裁定:
+
+```
+VERDICT=PASS
+```
+或
+```
+VERDICT=FAIL
+```
+或
+```
+VERDICT=BLOCKED
+```
+
+判定规则:
+- **VERDICT=PASS**:所有 finding 已修复 + 无新问题 + 无 L2 未审批项。
+- **VERDICT=FAIL**:存在未解决的 finding 或引入了新问题。
+- **VERDICT=BLOCKED**:finding 已修复但存在 L2 高风险项(密钥/依赖/删除),需人工审批才能合并。
+
+### 验证报告
+
+- 每条原 finding → `resolved: yes/no`、证据、重扫结果。
 - 失败时附失败信息(供 fixer 重修)。
+- 报告正文中的局部 pass/fail 不影响 VERDICT 的判定;VERDICT 是整体裁定。
 
 ## Collaboration
 

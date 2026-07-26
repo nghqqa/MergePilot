@@ -1,0 +1,36 @@
+═══════════════════════════════════════════════
+  M3-A 验收检查: run_id=m3a-final-20260726-04
+═══════════════════════════════════════════════
+  ✅ task_runs 存在: HOLD|verify|FAIL
+  ✅ task status 合法: HOLD
+  ✅ task verdict(FAIL) 与 status(HOLD) 一致
+
+--- stage_runs ---
+  stage=review attempt=1 status=COMPLETED verdict=
+  stage=fix attempt=1 status=COMPLETED verdict=
+  stage=verify attempt=1 status=COMPLETED verdict=FAIL
+  ✅ review 唯一(1)
+  ✅ fix 唯一(1)
+  ✅ verify 唯一(1)
+  ✅ verify verdict(FAIL) = task verdict(FAIL)
+
+--- dispatch_outbox ---
+  m3a-final-20260726-04:review:1 | DISPATCHED | eid=t
+  m3a-final-20260726-04:fix:1 | DISPATCHED | eid=t
+  m3a-final-20260726-04:verify:1 | DISPATCHED | eid=t
+  ✅ outbox 全部 DISPATCHED
+  ✅ outbox 全部有 matrix_event_id
+
+--- stage_events ---
+  stage_events(本任务): 12 条
+  ✅ stage_events 可按 run_id 查询(12 条)
+  PROCESSED=4  DUPLICATE=6
+  ✅ 有 PROCESSED + DUPLICATE(幂等生效)
+
+--- controller_offsets ---
+  ✅ /sync 游标持久化
+
+═══════════════════════════════════════════════
+  PASS=12  FAIL=0  WARN=0
+  ✅ M3-A 验收通过(全部关键项)
+═══════════════════════════════════════════════
