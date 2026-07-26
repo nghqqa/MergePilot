@@ -55,20 +55,49 @@ EOF
 chmod 600 "$ENVF"
 echo "role policy_gateway_audit converged to INSERT-only on mcp_calls (pass=<REDACTED> len=${#PW})"
 
-# ─── 权限自检(逐项断言,非拼接)───
+# ─── 权限自检(B3.2:用 if out=$(...) 显式处理 psql 退出码,避免 set -e 在预期失败处中止)───
+# 关键:被拒的 SELECT/UPDATE/... 让 psql 返回 1;`out=$(psql ...)` 是 bare 赋值,
+# set -e 会在此中止脚本 → 后续判断不执行 → 角色脚本非零退出 → 部署链 abort。
+# 解法:放进 `if out=$(...)` 条件里(set -e 对条件中的命令不触发),再按退出码分支。
 echo "=== 权限自检 ==="
+SELFTEST_FAIL=0
+
+# INSERT:期望 psql 成功(exit 0)+ "INSERT 0"
 echo -n "  INSERT: "
-docker exec -e PGPASSWORD="$PW" audit-pg psql -U policy_gateway_audit -d "$PG_DB" -t -A -c \
-  "INSERT INTO mcp_calls(request_id,caller_agent,tool,decision,phase) VALUES('permtest-'||md5(random()::text),'selftest','(permtest)','ALLOW','INTENT');" 2>&1 | grep -qi "INSERT 0" && echo "OK ✓" || echo "FAIL"
-chk_deny(){ # var-capture(不直接 pipe),避免 set -e/pipefail 下的显示假阳性
-  local out; out=$(docker exec -e PGPASSWORD="$PW" audit-pg psql -U policy_gateway_audit -d "$PG_DB" -t -A -c "$2" 2>&1)
-  echo -n "  $1: "
-  echo "$out" | grep -qi "permission denied" && echo "DENIED ✓" || echo "ALLOWED(!?): $(echo "$out" | head -1)"
+if ins=$(docker exec -e PGPASSWORD="$PW" audit-pg psql -U policy_gateway_audit -d "$PG_DB" -t -A -c \
+   "INSERT INTO mcp_calls(request_id,caller_agent,tool,decision,phase) VALUES('permtest-'||md5(random()::text),'selftest','(permtest)','ALLOW','INTENT');" 2>&1); then
+  echo "$ins" | grep -qi "INSERT 0" && echo "OK ✓" || { echo "FAIL(无 INSERT 0): $ins"; SELFTEST_FAIL=1; }
+else
+  echo "FAIL(rc=$?): $ins"; SELFTEST_FAIL=1
+fi
+
+# 期望被拒的操作:psql 应失败,且 stderr 含 permission denied
+chk_deny(){
+  local label="$1" sql="$2" out rc
+  echo -n "  $label: "
+  if out=$(docker exec -e PGPASSWORD="$PW" audit-pg psql -U policy_gateway_audit -d "$PG_DB" -t -A -c "$sql" 2>&1); then
+    echo "!!! ALLOWED(应被拒)"; SELFTEST_FAIL=1        # psql 成功 = 权限给了 = 错
+  else
+    rc=$?
+    if echo "$out" | grep -qi "permission denied"; then echo "DENIED ✓ (rc=$rc)"
+    else echo "UNEXPECTED(rc=$rc): $(echo "$out" | head -1)"; SELFTEST_FAIL=1; fi
+  fi
 }
-chk_deny "SELECT"  "SELECT count(*) FROM mcp_calls;"
-chk_deny "UPDATE"  "UPDATE mcp_calls SET decision='X' WHERE false;"
-chk_deny "DELETE"  "DELETE FROM mcp_calls WHERE false;"
+chk_deny "SELECT"   "SELECT count(*) FROM mcp_calls;"
+chk_deny "UPDATE"   "UPDATE mcp_calls SET decision='X' WHERE false;"
+chk_deny "DELETE"   "DELETE FROM mcp_calls WHERE false;"
 chk_deny "TRUNCATE" "TRUNCATE mcp_calls;"
+
+# grants:必须恰好 = INSERT
 echo -n "  grants: "
-docker exec audit-pg psql -U "$PG_SU" -d "$PG_DB" -t -A -c \
-  "SELECT coalesce(string_agg(privilege_type,',' ORDER BY privilege_type),'(none)') FROM information_schema.role_table_grants WHERE table_name='mcp_calls' AND grantee='policy_gateway_audit';" 2>&1
+GR=$(docker exec audit-pg psql -U "$PG_SU" -d "$PG_DB" -t -A -c \
+  "SELECT coalesce(string_agg(privilege_type,',' ORDER BY privilege_type),'(none)') FROM information_schema.role_table_grants WHERE table_name='mcp_calls' AND grantee='policy_gateway_audit';" 2>&1) || { GR="(query failed)"; SELFTEST_FAIL=1; }
+echo "$GR"
+[ "$GR" = "INSERT" ] || { echo "  !!! grants 异常(应 INSERT)"; SELFTEST_FAIL=1; }
+
+# B3.2:任何自检失败 → 非零退出(让 run-policy-gateway.sh 的 set -e 捕获,中止部署)
+if [ "$SELFTEST_FAIL" -ne 0 ]; then
+  echo "!!! 自检失败($SELFTEST_FAIL 项),角色脚本非零退出" >&2
+  exit 1
+fi
+echo "self-test passed (role script exits 0)"

@@ -1,8 +1,8 @@
-# M3-B3 证据 · 不可变审计强化(INSERT-only 账号 + 写 fail-closed)+ B3.1 加固
+# M3-B3 证据 · 不可变审计强化(INSERT-only 账号 + 写 fail-closed)+ B3.1/B3.2 加固
 
-> **gateway INSERT-only DB account · write fail-closed · append-only events · phase CHECK · fail-fast init**
-> 验证日期:2026-07-26(B3 + B3.1)
-> 标签:`m3b-b3-closed`(07f5480)/ `m3b-b3.1-closed`(本提交,证据闭合)
+> **gateway INSERT-only DB account · write fail-closed · append-only events · phase CHECK · fail-fast init · 无 set -e 回归**
+> 验证日期:2026-07-26(B3 + B3.1 + B3.2)
+> 标签:`m3b-b3-closed`(07f5480)/ `m3b-b3.1-closed`(fa5fa70)/ `m3b-b3.2-closed`(本提交)
 
 ## 落地项
 
@@ -112,6 +112,48 @@ drift(GRANT SELECT)→ 角色脚本(无 --force)→ 收敛回 INSERT-only  ✅
 坏 schema 变体 → 脚本 exit 1 + gateway 容器未替换(fail-fast)  ✅
 Bearer 明文扫描 → 计入 FAIL                            ✅
 ```
+
+---
+
+## B3.2 加固(第三轮复审:确定性 set -e 回归,24/24 PASS)
+
+复审发现 `m3b-create-audit-role.sh` 启用 `set -e` 后,**`out=$(psql SELECT)` 在 psql 返回 1(被拒)时直接中止赋值**,后续判断不执行 → 角色脚本非零退出 → `run-policy-gateway.sh` 调用它也 abort,**无法完成正常部署**。19/19 漏掉是因为 drift 测试只看最终 grants、没断言角色脚本退出码。
+
+### 根因
+
+bash `set -e` 对 bare 赋值 `out=$(failing-cmd)` 会中止(赋值的退出码 = 命令替换的退出码)。预期失败的 psql(SELECT 被拒)返回 1 → 赋值中止 → 脚本退出。
+
+### 修复
+
+`chk_deny` / INSERT / grants 改为 `if out=$(...)` 条件式(set -e 对条件中的命令不触发),按退出码分支:
+
+```bash
+chk_deny(){
+  if out=$(psql ... -c "$sql" 2>&1); then
+    echo "!!! ALLOWED"; SELFTEST_FAIL=1        # psql 成功 = 权限给了 = 错
+  else
+    rc=$?
+    grep -qi "permission denied" <<<"$out" && echo "DENIED ✓ (rc=$rc)" \
+      || { echo "UNEXPECTED(rc=$rc)"; SELFTEST_FAIL=1; }
+  fi
+}
+```
+
+- INSERT 期望 psql exit 0 + `INSERT 0`;grants 必须恰好 `INSERT`。
+- 任何自检失败累计 `SELFTEST_FAIL`,脚本 `exit 1`(让 `run-policy-gateway.sh` 的 set -e 捕获,中止部署)。
+
+### B3.2 新增验证(在 24/24 内)
+
+```
+drift 前 grants = INSERT,SELECT(drift 确实生效)        ✅
+角色脚本收敛后 exit 0(set -e 回归修复)               ✅
+收敛后 grants = INSERT                                  ✅
+run-policy-gateway.sh 完整跑 exit 0(角色脚本不再 abort 部署)  ✅
+gateway 容器已替换(正常部署)                          ✅
+gateway 恢复 healthy                                    ✅
+```
+
+drift 收敛在子 shell + `trap REVOKE SELECT ... EXIT` 中执行,保证中断也恢复权限。
 
 ### 约束证据 — `b3.1-constraints.txt`
 

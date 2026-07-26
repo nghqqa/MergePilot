@@ -54,17 +54,24 @@ BADPH=$(docker exec audit-pg psql -U "$PG_SU" -d "$PG_DB" -t -A -c \
   "INSERT INTO mcp_calls(request_id,caller_agent,tool,decision,phase) VALUES('b3bad-'||md5(random()::text),'selftest','(b3phase)','ALLOW','BOGUS');" 2>&1)
 echo "$BADPH" | grep -qiE "violates check|mcp_calls_phase_check" && ok "非法 phase=BOGUS 被 CHECK 拒" || bad "非法 phase 未拒: $(echo "$BADPH"|head -1)"
 
-# ─── 2c. 恢复场景:权限漂移后,角色脚本(无 --force)自动收敛回 INSERT-only(B3.1)───
-log ""; log "=== 2c. drift(GRANT SELECT)→ 角色脚本自动收敛回 INSERT-only ==="
+# ─── 2c. 恢复场景:drift → 角色脚本(无 --force)收敛 + 必须 exit 0(B3.2)───
+log ""; log "=== 2c. drift(GRANT SELECT)→ 角色脚本收敛回 INSERT-only + exit 0 ==="
 docker exec audit-pg psql -U "$PG_SU" -d "$PG_DB" -c "GRANT SELECT ON mcp_calls TO policy_gateway_audit;" >/dev/null 2>&1
 DRIFT=$(docker exec audit-pg psql -U "$PG_SU" -d "$PG_DB" -t -A -c \
   "SELECT coalesce(string_agg(privilege_type,',' ORDER BY privilege_type),'(none)') FROM information_schema.role_table_grants WHERE table_name='mcp_calls' AND grantee='policy_gateway_audit';" 2>/dev/null)
-log "  drift 后 grants=$DRIFT(应含 SELECT)"
-bash /mnt/d/goai/tools/m3b-create-audit-role.sh >/dev/null 2>&1   # 无 --force,env 已存在 → 应收敛
+log "  drift 后 grants=$DRIFT(应 = INSERT,SELECT)"
+[ "$DRIFT" = "INSERT,SELECT" ] && ok "drift 生效(grants=INSERT,SELECT)" || bad "drift 未生效: $DRIFT"
+# 收敛:子 shell + trap 保证中断也恢复 SELECT(gateway 只 INSERT,SELECT 漂移不影响业务但仍收敛)
+CONV_RC=0
+( trap 'docker exec audit-pg psql -U "'"$PG_SU"'" -d "'"$PG_DB"'" -c "REVOKE SELECT ON mcp_calls FROM policy_gateway_audit;" >/dev/null 2>&1' EXIT
+  bash /mnt/d/goai/tools/m3b-create-audit-role.sh ) > /tmp/b3_drift_conv.out 2>&1 || CONV_RC=$?
+log "  角色脚本 exit=$CONV_RC"
+tail -3 /tmp/b3_drift_conv.out >> "$OUT"
+[ "$CONV_RC" -eq 0 ] && ok "角色脚本收敛后 exit 0(B3.2 回归修复)" || bad "角色脚本 exit=$CONV_RC(set -e 回归?)"
 CONV=$(docker exec audit-pg psql -U "$PG_SU" -d "$PG_DB" -t -A -c \
   "SELECT coalesce(string_agg(privilege_type,',' ORDER BY privilege_type),'(none)') FROM information_schema.role_table_grants WHERE table_name='mcp_calls' AND grantee='policy_gateway_audit';" 2>/dev/null)
 log "  收敛后 grants=$CONV"
-[ "$CONV" = "INSERT" ] && ok "drift 后自动收敛回 INSERT-only(env 已存在也重建)" || bad "未收敛: $CONV"
+[ "$CONV" = "INSERT" ] && ok "drift 后自动收敛回 INSERT-only" || bad "未收敛: $CONV"
 
 # ─── 3 & 7. 写产生 INTENT,与 RESULT 共享 correlation_id ───
 log ""; log "=== 3+7. 写产生 INTENT 先于 GitHub;INTENT/RESULT 同 correlation_id ==="
@@ -150,6 +157,20 @@ log "  exit=$FF_RC  gw_before=$GW_BEFORE  gw_after=$GW_AFTER"
 grep -iE "schema 初始化失败|中止" /tmp/b3_ff.out 2>/dev/null | head -1 | sed 's/^/    [broken-script output] /' >> "$OUT"
 [ "$FF_RC" -ne 0 ] && ok "schema 失败 → 脚本非零退出($FF_RC)" || bad "应非零退出,实际 $FF_RC"
 [ "$GW_BEFORE" = "$GW_AFTER" ] && ok "失败后 gateway 容器未被替换(fail-fast)" || bad "失败后 gateway 被替换了!"
+
+# ─── 正常部署:完整 run-policy-gateway.sh → 容器替换 + healthy(B3.2:确认角色脚本不再 abort 部署)───
+log ""; log "=== 正常部署:run-policy-gateway.sh 完整跑 → 容器替换 + healthy ==="
+GW_OLD=$(docker inspect policy-gw --format '{{.Id}}' 2>/dev/null | cut -c1-12)
+bash /mnt/d/goai/tools/run-policy-gateway.sh > /tmp/b3_deploy.out 2>&1; DEPLOY_RC=$?
+sleep 8
+GW_NEW=$(docker inspect policy-gw --format '{{.Id}}' 2>/dev/null | cut -c1-12)
+HEALTH=$(docker inspect policy-gw --format '{{.State.Health.Status}}' 2>/dev/null)
+log "  deploy_rc=$DEPLOY_RC  gw_old=$GW_OLD  gw_new=$GW_NEW  health=$HEALTH"
+[ "$DEPLOY_RC" -eq 0 ] && ok "run-policy-gateway.sh 完整跑 exit 0(角色脚本不再 abort 部署)" || bad "deploy exit=$DEPLOY_RC(可能 set -e 回归)"
+[ "$GW_OLD" != "$GW_NEW" ] && ok "gateway 容器已替换(正常部署)" || bad "容器未替换"
+[ "$HEALTH" = "healthy" ] && ok "gateway 恢复 healthy" || bad "health=$HEALTH"
+# 重新装载探针(新容器 /tmp 为空)
+docker cp /mnt/d/goai/tools/policy-gateway/probe-tools.py policy-gw:/tmp/probe-tools.py >/dev/null 2>&1
 
 log ""
 log "═══════════════════════════════════════════════"

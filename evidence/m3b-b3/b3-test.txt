@@ -18,14 +18,20 @@
   ✅ phase CHECK 约束存在
   ✅ 非法 phase=BOGUS 被 CHECK 拒
 
-=== 2c. drift(GRANT SELECT)→ 角色脚本自动收敛回 INSERT-only ===
-  drift 后 grants=INSERT,SELECT(应含 SELECT)
+=== 2c. drift(GRANT SELECT)→ 角色脚本收敛回 INSERT-only + exit 0 ===
+  drift 后 grants=INSERT,SELECT(应 = INSERT,SELECT)
+  ✅ drift 生效(grants=INSERT,SELECT)
+  角色脚本 exit=0
+  TRUNCATE: DENIED ✓ (rc=1)
+  grants: INSERT
+self-test passed (role script exits 0)
+  ✅ 角色脚本收敛后 exit 0(B3.2 回归修复)
   收敛后 grants=INSERT
-  ✅ drift 后自动收敛回 INSERT-only(env 已存在也重建)
+  ✅ drift 后自动收敛回 INSERT-only
 
 === 3+7. 写产生 INTENT 先于 GitHub;INTENT/RESULT 同 correlation_id ===
   ✅ create_branch 执行成功
-  corr=b94c300f-1694-48fd-912f-39381da52ea8 phases=[INTENT,RESULT]
+  corr=273fa07d-187e-4143-bfe4-8cd8323182ac phases=[INTENT,RESULT]
   ✅ INTENT+RESULT 共享 correlation_id
 
 === 8. 审计不含原始入参/token(只 args_hash)===
@@ -49,7 +55,7 @@
   ✅ 写返回 AUDIT_UNAVAILABLE(fail-closed)
   坏-DSN gateway 日志中 create_branch forward 次数: 0(应 0)
   ✅ 审计不可用时未转发 GitHub(无副作用)
-  GitHub 上 fix/b3-no-side-effect-1206679 出现次数: 0(应 0)
+  GitHub 上 fix/b3-no-side-effect-1242581 出现次数: 0(应 0)
   ✅ GitHub 上无该分支(确认无副作用)
 
 === fail-fast: schema 失败 → 非零退出 + gateway 容器不替换 ===
@@ -58,6 +64,12 @@
   ✅ schema 失败 → 脚本非零退出(1)
   ✅ 失败后 gateway 容器未被替换(fail-fast)
 
+=== 正常部署:run-policy-gateway.sh 完整跑 → 容器替换 + healthy ===
+  deploy_rc=0  gw_old=900425de52fa  gw_new=3fcaef8dc762  health=healthy
+  ✅ run-policy-gateway.sh 完整跑 exit 0(角色脚本不再 abort 部署)
+  ✅ gateway 容器已替换(正常部署)
+  ✅ gateway 恢复 healthy
+
 ═══════════════════════════════════════════════
-  B3 验收: PASS=19 FAIL=0
+  B3 验收: PASS=24 FAIL=0
 ═══════════════════════════════════════════════
