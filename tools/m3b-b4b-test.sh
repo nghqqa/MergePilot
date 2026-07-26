@@ -110,22 +110,69 @@ if [ -z "$PR_NUM" ]; then bad "PR 创建失败: $(echo "$PR_RES"|head -1)"; else
   [ "${R7_AUD:-0}" != "0" ] && ok "merge 成功审计 RESULT(L2_COMPLETE)" || bad "缺 RESULT 审计"
 fi
 
-# ─── 8. 并发:同一合法票两个并行 merge → 只一个 USED ───
-log ""; log "=== 8. 并发 claim(同票)→ 只一个成功 ==="
-# 用一个新的真实 PR(复用刚才的 fix 分支建第二个 PR 或用同一 PR)
-if [ -n "$PR_NUM" ]; then
-  CPAYLOAD="{\"owner\":\"nghqqa\",\"repo\":\"MergePilot\",\"pullNumber\":$PR_NUM,\"commit_title\":\"B4b concurrent\",\"merge_method\":\"squash\"}"
-  CAH=$(chash "$CPAYLOAD")
-  CTKT=$(SU "SELECT l2_create_ticket('bnd-b4b','merge','$CPAYLOAD'::jsonb,'$CAH',24,1);")
-  SU "SELECT l2_approve('$CTKT','b4btest@host');" >/dev/null 2>&1
-  # 两个并行 call(同票)→ claim CAS 只一个 EXECUTING
-  GW merge_pull_request owner=nghqqa repo=MergePilot pullNumber=$PR_NUM commit_title="B4b concurrent" merge_method=squash approval_ticket=$CTKT > /tmp/cc1.out 2>&1 &
-  GW merge_pull_request owner=nghqqa repo=MergePilot pullNumber=$PR_NUM commit_title="B4b concurrent" merge_method=squash approval_ticket=$CTKT > /tmp/cc2.out 2>&1 &
+
+# --- 8. true concurrent mutual exclusion (new PR + same ticket + 2 parallel) ---
+log ""; log "=== 8. true concurrent (same PR + same ticket + 2 parallel) ==="
+CBR="fix/b4b-conc-$$"
+docker exec policy-gw python3 /tmp/probe-tools.py fixer --call create_branch owner=nghqqa repo=MergePilot branch=$CBR from_branch=main 2>&1 | grep -qi ref && log "  branch $CBR created"
+docker exec policy-gw python3 /tmp/probe-tools.py fixer --call create_or_update_file owner=nghqqa repo=MergePilot path=conc-$$.md branch=$CBR content=conc message=conc 2>&1 | grep -qi commit && log "  commit added"
+CPR_RES=$(docker exec policy-gw python3 /tmp/probe-tools.py fixer --call create_pull_request owner=nghqqa repo=MergePilot head=$CBR base=main title="B4b concurrent" body=auto 2>&1)
+CPR_NUM=$(echo "$CPR_RES" | grep -oE 'pull/[0-9]+' | grep -oE '[0-9]+' | head -1)
+if [ -n "$CPR_NUM" ]; then
+  CPR_INFO=$(docker exec policy-gw python3 /tmp/probe-tools.py reviewer --call pull_request_read method=get owner=nghqqa repo=MergePilot pullNumber=$CPR_NUM 2>&1)
+  CHEAD_SHA=$(echo "$CPR_INFO" | grep -oE '[0-9a-f]{40}' | head -1)
+  SU "UPDATE run_pr_bindings SET pr_number=$CPR_NUM, head_sha='$CHEAD_SHA', fix_branch='$CBR' WHERE binding_id='bnd-b4b';" >/dev/null 2>&1
+  CCPAYLOAD="{\"owner\":\"nghqqa\",\"repo\":\"MergePilot\",\"pullNumber\":$CPR_NUM,\"commit_title\":\"conc\",\"merge_method\":\"squash\"}"
+  CCAH=$(chash "$CCPAYLOAD")
+  CCTKT=$(SU "SELECT l2_create_ticket('bnd-b4b','merge','$CCPAYLOAD'::jsonb,'$CCAH',24,1);")
+  SU "SELECT l2_approve('$CCTKT','b4btest@host');" >/dev/null 2>&1
+  GW merge_pull_request owner=nghqqa repo=MergePilot pullNumber=$CPR_NUM commit_title=conc merge_method=squash approval_ticket=$CCTKT > /tmp/conc1.out 2>&1 &
+  GW merge_pull_request owner=nghqqa repo=MergePilot pullNumber=$CPR_NUM commit_title=conc merge_method=squash approval_ticket=$CCTKT > /tmp/conc2.out 2>&1 &
   wait
-  CNT=$(SU "SELECT count(*) FROM mcp_calls WHERE ticket_id='$CTKT' AND reason_code='L2_CLAIMED';")
-  log "  并发 claim 成功数=$CNT(应 1)"
-  [ "$CNT" = "1" ] && ok "并发 merge 只一个 claim 成功(原子 CAS)" || bad "并发异常($CNT)"
+  CLAIMED=$(SU "SELECT count(*) FROM mcp_calls WHERE ticket_id='$CCTKT' AND reason_code='L2_CLAIMED';")
+  CCTKT_ST=$(SU "SELECT status FROM approvals WHERE ticket_id='$CCTKT';")
+  log "  claim_count=$CLAIMED ticket_status=$CCTKT_ST"
+  [ "$CLAIMED" = "1" ] && ok "concurrent: only 1 claim (CAS mutual exclusion)" || bad "concurrent claim count=$CLAIMED"
+  [ "$CCTKT_ST" = "USED" ] && ok "concurrent: winner -> USED" || bad "ticket status=$CCTKT_ST"
+else
+  bad "concurrent PR creation failed"; CPR_NUM=""
 fi
+
+# --- 9. bad L2 DSN -> L2_DB_UNAVAILABLE ---
+log ""; log "=== 9. bad L2 DSN -> L2_DB_UNAVAILABLE ==="
+source /home/ngh/.config/mergepilot/audit-db.env 2>/dev/null; AUDIT_DSN_REF="postgresql://${PGW_AUDIT_USER}:${PGW_AUDIT_PASS}@audit-pg:5432/${PGW_AUDIT_DB}"
+ROLE_TOKENS_REF=$(cat /home/ngh/.config/mergepilot/role-tokens.json)
+docker rm -f policy-gw-nol2 2>/dev/null
+docker run -d --name policy-gw-nol2 --network hiclab-net --restart no \
+  -e ROLE_TOKENS="$ROLE_TOKENS_REF" -e UPSTREAM_URL="http://github-mcp:8082/sse" \
+  -e AUDIT_DSN="$AUDIT_DSN_REF" \
+  -e L2_DSN="postgresql://policy_gateway_l2:wrong@audit-pg-unreachable:5432/mergepilot_audit" \
+  policy-gateway:latest >/dev/null 2>&1
+docker network connect mcp-backend-net policy-gw-nol2 2>/dev/null
+for i in $(seq 1 15); do docker logs policy-gw-nol2 2>&1 | grep -qa "upstream ready" && break; sleep 1; done
+docker cp /mnt/d/goai/tools/policy-gateway/probe-tools.py policy-gw-nol2:/tmp/probe-tools.py >/dev/null 2>&1
+if [ -n "$CPR_NUM" ]; then
+  DPAYLOAD="{\"owner\":\"nghqqa\",\"repo\":\"MergePilot\",\"pullNumber\":$CPR_NUM,\"commit_title\":\"conc\",\"merge_method\":\"squash\"}"
+  DAH=$(chash "$DPAYLOAD")
+  DTKT=$(SU "SELECT l2_create_ticket('bnd-b4b','merge','$DPAYLOAD'::jsonb,'$DAH',24,1);")
+  SU "SELECT l2_approve('$DTKT','b4btest@host');" >/dev/null 2>&1
+  R9=$(docker exec policy-gw-nol2 python3 /tmp/probe-tools.py coordinator --call merge_pull_request owner=nghqqa repo=MergePilot pullNumber=$CPR_NUM commit_title=conc merge_method=squash approval_ticket=$DTKT 2>&1 | head -3)
+  echo "$R9" | grep -qi "L2_DB_UNAVAILABLE" && ok "bad L2 DSN -> L2_DB_UNAVAILABLE (no GitHub call)" || bad "expected L2_DB_UNAVAILABLE: $(echo "$R9"|tail -1)"
+  DST=$(SU "SELECT status FROM approvals WHERE ticket_id='$DTKT';")
+  [ "$DST" = "APPROVED" ] && ok "ticket stays APPROVED when L2 DB unavailable" || bad "ticket status=$DST"
+else
+  bad "skipped bad-L2-DSN (no PR)"
+fi
+docker stop policy-gw-nol2 >/dev/null 2>&1; docker rm policy-gw-nol2 >/dev/null 2>&1
+
+# --- evidence snapshot (before cleanup) ---
+log ""; log "=== evidence snapshot ==="
+mkdir -p /mnt/d/goai/evidence/m3b-b4b
+SU "SELECT ticket_id,status,execution_id,result_sha FROM approvals WHERE run_id LIKE 'b4btest-%' ORDER BY created_at;" > /mnt/d/goai/evidence/m3b-b4b/approvals-snapshot.txt 2>/dev/null
+SU "SELECT reason_code,count(*) FROM mcp_calls WHERE run_id IS NULL AND ticket_id IN (SELECT ticket_id FROM approvals WHERE run_id LIKE 'b4btest-%') GROUP BY reason_code ORDER BY count(*) DESC;" > /mnt/d/goai/evidence/m3b-b4b/audit-summary.txt 2>/dev/null
+ok "evidence snapshot written"
+
+# --- cleanup ---
 
 # 清理(保留审计行;mcp_calls INSERT-only 不删)
 SU "DELETE FROM policy_action_outbox WHERE run_id LIKE 'b4btest-%'; DELETE FROM approvals WHERE run_id LIKE 'b4btest-%'; DELETE FROM run_pr_bindings WHERE run_id LIKE 'b4btest-%'; DELETE FROM task_runs WHERE run_id LIKE 'b4btest-%';" >/dev/null 2>&1

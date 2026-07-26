@@ -41,6 +41,7 @@ ROLE_TOKENS = json.loads(os.environ.get("ROLE_TOKENS", "{}"))   # {"reviewer":"t
 UPSTREAM_URL = os.environ.get("UPSTREAM_URL", "http://github-mcp:8082/sse")
 AUDIT_DSN = os.environ.get("AUDIT_DSN", "")                     # postgresql://policy_gateway_audit:pw@audit-pg:5432/mergepilot_audit
 L2_DSN = os.environ.get("L2_DSN", "")                           # postgresql://policy_gateway_l2:pw@audit-pg:5432/mergepilot_audit
+L2_TIMEOUT_SECONDS = float(os.environ.get("L2_TIMEOUT_SECONDS", "60"))  # TOCTOU 读 + 写调用的超时(默认 60s,测试可设 1-2s)
 LISTEN_HOST = os.environ.get("LISTEN_HOST", "0.0.0.0")
 LISTEN_PORT = int(os.environ.get("LISTEN_PORT", "8083"))
 
@@ -277,18 +278,21 @@ def canonical_args_hash(args):
 
 
 def l2_exec(sql, args):
-    """执行一个 l2_* 函数(sql 形如 'SELECT l2_complete_ticket(%s,%s::uuid,%s)')。返回首列。"""
-    conn = _get_l2_conn()
-    if not conn:
-        return False
+    """执行一个 l2_* 函数。返回 (status, value)。
+    status: 'APPLIED' (CAS 匹配,状态已迁移) / 'CAS_MISMATCH' (返回 false,票状态已变) / 'DB_ERROR' (连接/查询失败)。
+    B4b P1#3:区分 CAS 不匹配 vs DB 异常。DB_ERROR 时后续 mark_unknown 通常也写不进 → 票据保持 EXECUTING。"""
     try:
+        conn = _get_l2_conn()
+        if not conn:
+            return ("DB_ERROR", None)
         with conn.cursor() as cur:
             cur.execute(sql, args)
             row = cur.fetchone()
-            return row[0] if row else False
+            val = row[0] if row else False
+            return ("APPLIED" if val else "CAS_MISMATCH", val)
     except Exception as e:
-        print(f"[gateway] l2_exec FAILED [{sql[:50]}]: {e}", file=sys.stderr, flush=True)
-        return False
+        print(f"[gateway] l2_exec FAILED [{sql[:60]}]: {e}", file=sys.stderr, flush=True)
+        return ("DB_ERROR", None)
 
 
 def _derive_l2_action(name, args):
@@ -453,35 +457,37 @@ async def call_tool(name: str, arguments: dict | None):
                         error="INTENT audit failed; refused to call GitHub")
             return _deny_result("AUDIT_UNAVAILABLE", tool=name)
         print(f"[gateway] L2 CLAIMED tool={name} ticket={ticket_id[:16]} eid={eid[:8]}", flush=True)
-        # 4c. TOCTOU(60s 超时;hang → mark_unknown 不留 EXECUTING)
+        # 4c. TOCTOU 读(L2_TIMEOUT_SECONDS 超时;**超时 → FAILED**:写请求未发,安全失败。不进 UNKNOWN)
         try:
             pr_actual = await asyncio.wait_for(
-                _read_pr_upstream(args.get("owner"), args.get("repo"), pr_num), timeout=60)
+                _read_pr_upstream(args.get("owner"), args.get("repo"), pr_num),
+                timeout=L2_TIMEOUT_SECONDS)
         except (asyncio.TimeoutError, Exception) as e:
-            l2_exec("SELECT l2_mark_unknown(%s,%s::uuid,%s)",
-                    (ticket_id, eid, f"TOCTOU read timeout/error: {str(e)[:80]}"))
-            audit_event(corr_id, "ERROR", role, name, "ERROR", "L2_MARKED_UNKNOWN",
+            st, _ = l2_exec("SELECT l2_fail_ticket(%s,%s::uuid,%s)",
+                            (ticket_id, eid, f"TOCTOU read timeout: {str(e)[:80]}"))
+            audit_event(corr_id, "ERROR", role, name, "DENY",
+                        "L2_TOCTOU_TIMEOUT" if st == "APPLIED" else "STATE_COMMIT_PENDING",
                         args_hash=ahash, ticket_id=ticket_id, execution_id=eid,
-                        error=f"TOCTOU: {str(e)[:120]}")
-            print(f"[gateway] L2 UNKNOWN tool={name} → TOCTOU timeout/error", flush=True)
-            return _deny_result("L2_TIMEOUT", tool=name)
+                        error=f"TOCTOU read timeout: {str(e)[:120]}")
+            print(f"[gateway] DENY L2 tool={name} → TOCTOU_TIMEOUT (FAILED,write 未发)", flush=True)
+            return _deny_result("L2_TOCTOU_TIMEOUT", tool=name)
         toctou_ok = (pr_actual
                      and pr_actual.get("head_sha") == claim["expected_head_sha"]
                      and pr_actual.get("state") == "open"
                      and pr_actual.get("base") == claim["target_branch"])
         if not toctou_ok:
-            l2_exec("SELECT l2_fail_ticket(%s,%s::uuid,%s)",
-                    (ticket_id, eid, f"TOCTOU: {pr_actual}"))
+            st, _ = l2_exec("SELECT l2_fail_ticket(%s,%s::uuid,%s)",
+                            (ticket_id, eid, f"TOCTOU: {pr_actual}"))
             audit_event(corr_id, "ERROR", role, name, "DENY", "TOCTOU_MISMATCH",
                         args_hash=ahash, ticket_id=ticket_id, execution_id=eid,
                         target_repo=repo, target_branch=claim["target_branch"], error=f"actual={pr_actual}")
             return _deny_result("TOCTOU_MISMATCH", tool=name)
         # 4d. 从 canonical_payload 构造上游 args
         upstream_args = {k: v for k, v in payload.items() if k != "approval_ticket"}
-        # 4e. 调上游(60s 超时;timeout/exception → mark_unknown;明确拒绝 → fail;成功 → complete)
+        # 4e. 调上游(L2_TIMEOUT_SECONDS 超时;**写超时 → UNKNOWN**:请求已发,结果未知,绝不重试)
         try:
             result = await asyncio.wait_for(
-                upstream.call_tool(name, upstream_args), timeout=60)
+                upstream.call_tool(name, upstream_args), timeout=L2_TIMEOUT_SECONDS)
             is_err = getattr(result, "is_error", False)
             if is_err:
                 err_txt = _extract_text(result)[:200]
@@ -492,26 +498,26 @@ async def call_tool(name: str, arguments: dict | None):
                             target_repo=repo, result_status="ERROR", error=err_txt)
             else:
                 sha = _extract_sha(result)
-                # B4b P1#3:检查 complete 的 CAS 返回值;失败 → mark_unknown(防"GitHub 已 merge 但票 EXECUTING")
-                ok = l2_exec("SELECT l2_complete_ticket(%s,%s::uuid,%s)",
-                             (ticket_id, eid, sha or ""))
-                if not ok:
-                    l2_exec("SELECT l2_mark_unknown(%s,%s::uuid,%s)",
-                            (ticket_id, eid, "l2_complete_ticket CAS failed"))
-                    audit_event(corr_id, "ERROR", role, name, "ERROR", "L2_COMPLETE_FAILED",
-                                args_hash=ahash, ticket_id=ticket_id, execution_id=eid,
-                                target_repo=repo, git_sha=sha or "",
-                                error="complete_ticket CAS failed; marked UNKNOWN for reconcile")
-                else:
+                # B4b P1#3:三态检查 complete。APPLIED→L2_COMPLETE;否则→STATE_COMMIT_PENDING(B4c 对账)
+                st, _ = l2_exec("SELECT l2_complete_ticket(%s,%s::uuid,%s)",
+                                (ticket_id, eid, sha or ""))
+                if st == "APPLIED":
                     audit_event(corr_id, "RESULT", role, name, "ALLOW", "L2_COMPLETE",
                                 args_hash=ahash, ticket_id=ticket_id, execution_id=eid,
                                 target_repo=repo, git_sha=sha or "", result_status="OK")
+                else:
+                    # complete CAS mismatch 或 DB error → 票据可能仍 EXECUTING → STATE_COMMIT_PENDING(B4c 对账)
+                    audit_event(corr_id, "ERROR", role, name, "ERROR", "STATE_COMMIT_PENDING",
+                                args_hash=ahash, ticket_id=ticket_id, execution_id=eid,
+                                target_repo=repo, git_sha=sha or "",
+                                error=f"complete_ticket {st}; awaiting B4c reconcile")
             return result
         except (asyncio.TimeoutError, Exception) as e:
-            # 网络超时/中断(请求可能已发,结果未知)→ mark_unknown,绝不自动重试
-            l2_exec("SELECT l2_mark_unknown(%s,%s::uuid,%s)",
-                    (ticket_id, eid, f"network: {str(e)[:120]}"))
-            audit_event(corr_id, "ERROR", role, name, "ERROR", "L2_MARKED_UNKNOWN",
+            # 写请求超时/中断(结果未知)→ mark_unknown,绝不自动重试 L2
+            st, _ = l2_exec("SELECT l2_mark_unknown(%s,%s::uuid,%s)",
+                            (ticket_id, eid, f"network: {str(e)[:120]}"))
+            audit_event(corr_id, "ERROR", role, name, "ERROR",
+                        "L2_MARKED_UNKNOWN" if st == "APPLIED" else "STATE_COMMIT_PENDING",
                         args_hash=ahash, ticket_id=ticket_id, execution_id=eid,
                         target_repo=repo, error=str(e)[:200])
             raise
