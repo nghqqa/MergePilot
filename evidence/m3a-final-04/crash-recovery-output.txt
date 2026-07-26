@@ -1,38 +1,55 @@
 ═══════════════════════════════════════════════
-  崩溃恢复测试: docker restart mergepilot-controller
+  崩溃恢复测试: run_id=m3a-final-20260726-04
 ═══════════════════════════════════════════════
 
-=== 1. 重启前计数 ===
-task_runs=3  stage_runs=0  outbox=0  events=70
+=== 0. 前置断言(重启前) ===
+  task_runs=1(预期 1)  stage_runs=3(预期 3)  outbox=3(预期 3)  events=12  task_status=HOLD
+  ✅ 前置数据符合预期
 
-=== 2. docker restart ===
+=== 1. docker restart mergepilot-controller ===
 mergepilot-controller
 等 20s 恢复...
 
-=== 3. controller 日志(恢复后 25s) ===
+=== 2. controller 日志(恢复后 25s) ===
 [ctrl] 启动;PG=audit-pg:5432;Matrix=http://hiclaw-controller:6167;POLL=8s
 [ctrl] PG connected
-[ctrl] Matrix login OK (token=bVt7cgihPkdw...)
+[ctrl] Matrix login OK (token=rZVl5gK2xLPl...)
 
-=== 4. 重启后计数 + 对比 ===
-task_runs:    3 → 3
-stage_runs:   0 → 0
-outbox:       0 → 0
-stage_events: 70 → 70
+=== 3. 重启后状态对比 ===
+  task 终态:   HOLD|FAIL → HOLD|FAIL
+  stage 状态: review:COMPLETED:NULL,fix:COMPLETED:NULL,verify:COMPLETED:FAIL
+              → review:COMPLETED:NULL,fix:COMPLETED:NULL,verify:COMPLETED:FAIL
+  outbox 状态: 不变(3 条 DISPATCHED)
+  events:     12 → 12
 
-✅ task_runs 无变化
-✅ stage_runs 无变化
-✅ outbox 无变化
+=== 4. Controller 日志检查(有无重新派发 review/fix/verify) ===
+  重新派发次数: 0(预期 0)
 
 === 5. 最终 PG 状态 ===
- run_id | status | current_stage | verdict 
---------+--------+---------------+---------
-(0 rows)
- stage | attempt | status 
--------+---------+--------
-(0 rows)
+        run_id         | status | current_stage | verdict 
+-----------------------+--------+---------------+---------
+ m3a-final-20260726-04 | HOLD   | verify        | FAIL
+(1 row)
+ stage  | attempt |  status   | verdict 
+--------+---------+-----------+---------
+ review |       1 | COMPLETED | 
+ fix    |       1 | COMPLETED | 
+ verify |       1 | COMPLETED | FAIL
+(3 rows)
+        idempotency_key         |   status   | has_eid 
+--------------------------------+------------+---------
+ m3a-final-20260726-04:review:1 | DISPATCHED | t
+ m3a-final-20260726-04:fix:1    | DISPATCHED | t
+ m3a-final-20260726-04:verify:1 | DISPATCHED | t
+(3 rows)
+
+✅ task 终态未变化
+✅ stage 状态未变化
+✅ outbox 状态+event_id 未变化
+✅ events 数量未变化(12)
+✅ Controller 未重新派发
 
 ═══════════════════════════════════════════════
-  PASS=3  FAIL=0
-  ✅ 崩溃恢复测试通过(Controller 重启后无重复派发)
+  PASS=5  FAIL=0
+  ✅ 崩溃恢复测试通过(Controller 重启后 m3a-final-20260726-04 状态完整不变)
 ═══════════════════════════════════════════════
