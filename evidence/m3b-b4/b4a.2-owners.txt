@@ -1,0 +1,22 @@
+        proname         |        owner        
+------------------------+---------------------
+ l2_approve             | mergepilot_l2_owner
+ l2_claim_ticket        | mergepilot_l2_owner
+ l2_complete_ticket     | mergepilot_l2_owner
+ l2_create_ticket       | mergepilot_l2_owner
+ l2_distance            | mergepilot
+ l2_distance            | mergepilot
+ l2_distance            | mergepilot
+ l2_expire_pending      | mergepilot_l2_owner
+ l2_fail_ticket         | mergepilot_l2_owner
+ l2_mark_unknown        | mergepilot_l2_owner
+ l2_norm                | mergepilot
+ l2_norm                | mergepilot
+ l2_normalize           | mergepilot
+ l2_normalize           | mergepilot
+ l2_normalize           | mergepilot
+ l2_pending_list        | mergepilot_l2_owner
+ l2_reconcile_executing | mergepilot_l2_owner
+ l2_reconcile_unknown   | mergepilot_l2_owner
+(18 rows)
+

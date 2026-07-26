@@ -14,28 +14,31 @@
 
 ## 当前标签 → commit SHA(权威,2026-07-26 重建后)
 
-| 标签 | 当前 commit SHA | 备注 |
-|---|---|---|
-| `v0.4.0` | `4eb285f` | M2 收口 |
-| `m3a-e2e-pass` | `e045b6d` | M3-A E2E 闭合 |
-| `m3a-evidence-closed` | `b84a541` | M3-A 证据闭合 |
-| `m3b-b1-closed` | `dfa3f88` | B1 封闭旁路 + 角色 token |
-| `m3b-b2-closed` | `5020094` | B2 最小权限矩阵 |
-| `m3b-b2-hardened` | `ee99059` | B2.1 hardening |
-| `m3b-b2.2-closed` | `7a68eb3` | B2.2 搜索逃逸 + 残留过权 |
-| `m3b-b3-closed` | `6837ca3` | B3 INSERT-only 审计 + 写 fail-closed |
-| `m3b-b3.1-closed` | `286ae14` | B3.1 phase CHECK + 恢复幂等 + fail-fast |
-| `m3b-b3.2-closed` | `661ebd1` | B3.2 set -e 回归修复 |
-| `m3b-b4a-closed` | `b4e649e` | B4a DB + 函数 + 账号(重建后新加) |
+标签均为 annotated tag,有 **tag object SHA** 与指向的 **peeled commit SHA** 两个值。下表"commit SHA"列是 **peeled commit**(里程碑代码实际所在);`git rev-parse <tag>` 给的是 tag object,`git rev-list -1 <tag>` 给的是 peeled commit。
 
-## 旧 SHA 引用 → 当前 SHA(commit body 里互相引用的、现已失效的)
+| 标签 | tag object SHA | **peeled commit SHA** | 备注 |
+|---|---|---|---|
+| `v0.4.0` | `4eb285f` | `d13eaae` | M2 收口 |
+| `m3a-e2e-pass` | `e045b6d` | `8db5b9f` | M3-A E2E 闭合 |
+| `m3a-evidence-closed` | `b84a541` | `72a7005` | M3-A 证据闭合 |
+| `m3b-b1-closed` | `dfa3f88` | `710ac0a` | B1 封闭旁路 + 角色 token |
+| `m3b-b2-closed` | `5020094` | `de6f09d` | B2 最小权限矩阵 |
+| `m3b-b2-hardened` | `ee99059` | `eca5510` | B2.1 hardening |
+| `m3b-b2.2-closed` | `7a68eb3` | `61c2d87` | B2.2 搜索逃逸 + 残留过权 |
+| `m3b-b3-closed` | `6837ca3` | `618ac81` | B3 INSERT-only 审计 + 写 fail-closed |
+| `m3b-b3.1-closed` | `286ae14` | `081dcd6` | B3.1 phase CHECK + 恢复幂等 + fail-fast |
+| `m3b-b3.2-closed` | `661ebd1` | `9a4287c` | B3.2 set -e 回归修复 |
+| `m3b-b4a-closed` | `b4e649e` | `4e4f766` | B4a DB + 函数 + 账号 |
+| `m3b-b4a.1-closed` | `5e92ed7` | `5027271` | B4a.1 owner + payload 一致性 + 漂移收敛 |
 
-| commit body 里引用的旧 SHA | 对应标签 | 当前实际 SHA |
+## 旧 SHA 引用 → 当前 peeled commit(commit body 里互相引用的、现已失效的)
+
+| commit body 里引用的旧 SHA | 对应标签 | 当前实际 peeled commit |
 |---|---|---|
-| `m3b-b2-closed (07af4cc)` | m3b-b2-closed | `5020094` |
-| `m3b-b2-hardened (743070f)` | m3b-b2-hardened | `ee99059` |
-| `m3b-b3-closed (07f5480)` | m3b-b3-closed | `6837ca3` |
-| `m3b-b3.1-closed (fa5fa70)` | m3b-b3.1-closed | `286ae14` |
+| `m3b-b2-closed (07af4cc)` | m3b-b2-closed | `de6f09d` |
+| `m3b-b2-hardened (743070f)` | m3b-b2-hardened | `eca5510` |
+| `m3b-b3-closed (07f5480)` | m3b-b3-closed | `618ac81` |
+| `m3b-b3.1-closed (fa5fa70)` | m3b-b3.1-closed | `081dcd6` |
 
 这些旧 SHA 出现在某些 commit 的 message 文本里(如"Does NOT move m3b-b3-closed (07f5480)"),仅作历史说明,指向的对象已不存在。**追溯里程碑请用标签名**(标签名未变且权威),不要用 body 里的旧 SHA。
 

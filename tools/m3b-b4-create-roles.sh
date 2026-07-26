@@ -37,6 +37,15 @@ ALTER ROLE mergepilot_approver LOGIN PASSWORD '$APV_PW';
 -- B4a.1 P1#4:重置高危角色属性(防漂移:曾被误授 SUPERUSER/BYPASSRLS 等)
 ALTER ROLE policy_gateway_l2   NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION NOINHERIT;
 ALTER ROLE mergepilot_approver NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE NOREPLICATION NOINHERIT;
+-- B4a.2 P1#3:撤销授予这两个账号的全部 membership(防 SET ROLE 越权;NOINHERIT 不够)
+DO \$rm\$ DECLARE r record;
+BEGIN
+  FOR r IN SELECT rolname FROM pg_auth_members m JOIN pg_roles r2 ON m.roleid=r2.oid
+           WHERE m.member IN ('policy_gateway_l2'::regrole, 'mergepilot_approver'::regrole)
+  LOOP
+    EXECUTE format('REVOKE %I FROM policy_gateway_l2, mergepilot_approver', r.rolname);
+  END LOOP;
+END \$rm\$;
 -- 收敛:撤全部表/序列权限
 REVOKE ALL ON approvals, policy_action_outbox, run_pr_bindings, mcp_calls, task_runs, stage_runs, stage_events, dispatch_outbox, controller_offsets FROM policy_gateway_l2, mergepilot_approver;
 REVOKE ALL ON ALL TABLES IN SCHEMA public FROM policy_gateway_l2, mergepilot_approver;

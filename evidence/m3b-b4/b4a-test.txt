@@ -22,7 +22,7 @@
 === 4. 全状态机 ===
   ✅ args_hash 完整 64hex
   ✅ payload repo 与 binding 不一致 → 拒
-  ✅ 建票(tkt-da456e2b-7376-43db-aa7b-ca8f22c810e5,PENDING)
+  ✅ 建票(tkt-c94a4c7f-2283-4a12-8315-415ff5247fee,PENDING)
   ✅ PENDING
   ✅ attempt_no=1
   ✅ PENDING expires_at=NULL
@@ -49,6 +49,24 @@
   ✅ expire_pending(超审批期)→ EXPIRED
   ✅ EXPIRED
 
+=== 4z. B4a.2 加固 ===
+  ✅ pgvector 函数 owner 未被污染(allowlist 生效)
+  ✅ pgvector 函数 owner = mergepilot(扩展 owner)
+  ✅ l2_reconcile_unknown 显式 grant mergepilot EXECUTE(非 superuser 旁路)
+  ✅ l2_create_ticket 显式 grant mergepilot
+  ✅ l2_claim_ticket grantee=policy_gateway_l2
+  ✅ l2_approve grantee=mergepilot_approver
+  ✅ merge_method=octopus 拒
+  ✅ args_hash 非 64hex 拒
+  ✅ approval TTL 1000h 拒
+  ✅ exec TTL 1000h 拒
+  ✅ merge payload 含 state 拒
+  ✅ merge payload 未知字段拒
+  ✅ close 缺 state 拒
+  ✅ action=revert 拒
+  ✅ 三账号无被授予的 membership(右方向,防 SET ROLE 越权)
+  ✅ mergepilot_l2_owner: NOLOGIN + NOINHERIT + 无高危属性
+
 === 5. 真并发 claim(B4a.1 P2#9)===
   并发 claim 成功数: 1(应 1)
   ✅ 并发 claim 只一个成功(原子 CAS)
@@ -63,5 +81,5 @@
   ✅ gateway 越权 l2_approve 被拒
 
 ═══════════════════════════════════════════════
-  B4a+B4a.1 验收: PASS=44 FAIL=0
+  B4a+B4a.1 验收: PASS=60 FAIL=0
 ═══════════════════════════════════════════════

@@ -84,6 +84,39 @@ BEGIN
       (p_canonical_payload->>'pullNumber'), v_pr;
   END IF;
 
+  -- B4a.2 P1#2:封闭 action-specific payload + args_hash 格式 + TTL 边界(不只校验身份)
+  IF p_action NOT IN ('merge','close') THEN
+    RAISE EXCEPTION 'action 必须 merge/close(revert 走 PR 路径)';
+  END IF;
+  IF p_args_hash !~ '^[0-9a-f]{64}$' THEN
+    RAISE EXCEPTION 'args_hash 必须 64hex(完整 sha256),实际: %', p_args_hash;
+  END IF;
+  IF p_approval_ttl_hours IS NULL OR p_approval_ttl_hours NOT BETWEEN 1 AND 24 THEN
+    RAISE EXCEPTION 'approval TTL 须 1..24h,实际: %', p_approval_ttl_hours;
+  END IF;
+  IF p_exec_ttl_hours IS NULL OR p_exec_ttl_hours NOT BETWEEN 1 AND 24 THEN
+    RAISE EXCEPTION 'exec TTL 须 1..24h,实际: %', p_exec_ttl_hours;
+  END IF;
+  IF p_action = 'merge' THEN
+    IF (p_canonical_payload->>'merge_method') IS NULL OR (p_canonical_payload->>'merge_method') NOT IN ('merge','squash','rebase') THEN
+      RAISE EXCEPTION 'merge_method 非法(%),允许 merge/squash/rebase', (p_canonical_payload->>'merge_method');
+    END IF;
+    IF (p_canonical_payload->>'commit_title') IS NULL THEN RAISE EXCEPTION 'merge 需 commit_title'; END IF;
+    IF p_canonical_payload ? 'state' THEN RAISE EXCEPTION 'merge payload 不该含 state'; END IF;
+    IF EXISTS (SELECT 1 FROM jsonb_object_keys(p_canonical_payload) k
+               WHERE k NOT IN ('owner','repo','pullNumber','commit_title','merge_method')) THEN
+      RAISE EXCEPTION 'merge payload 含未知字段';
+    END IF;
+  ELSIF p_action = 'close' THEN
+    -- IS DISTINCT FROM 正确处理 NULL(缺 state 时 NULL <> 'closed' 是 NULL 不会触发)
+    IF (p_canonical_payload->>'state') IS DISTINCT FROM 'closed' THEN RAISE EXCEPTION 'close 需 state=closed'; END IF;
+    IF p_canonical_payload ? 'merge_method' THEN RAISE EXCEPTION 'close payload 不该含 merge_method'; END IF;
+    IF EXISTS (SELECT 1 FROM jsonb_object_keys(p_canonical_payload) k
+               WHERE k NOT IN ('owner','repo','pullNumber','state','title')) THEN
+      RAISE EXCEPTION 'close payload 含未知字段';
+    END IF;
+  END IF;
+
   -- 实现修正 #2:advisory 锁 per (run_id, action),再 MAX+1;UNIQUE 兜底
   PERFORM pg_advisory_xact_lock(hashtext(v_run || ':' || p_action));
   SELECT COALESCE(MAX(attempt_no),0)+1 INTO v_attempt
@@ -232,20 +265,56 @@ BEGIN
 END $$;
 REVOKE ALL ON FUNCTION l2_expire_pending(TEXT) FROM PUBLIC;
 
--- Controller(mergepilot,已存在账号)可调 create/reconcile/expire
+-- ════════════ OWNER 收敛 + 精确 GRANT(顺序:OWNER → REVOKE PUBLIC → GRANT)════════════
+-- B4a.2 P1#4:GRANT 必须在 ALTER OWNER 之后。否则 CREATE by mergepilot → GRANT TO mergepilot
+--   = grant-to-self 空操作 → ALTER OWNER 后 mergepilot 丢执行权(只能靠 superuser 旁路)。
+
+-- 1. 业务函数 OWNER → mergepilot_l2_owner(NOLOGIN)。**精确 allowlist,绝不用 LIKE 'l2_%'**
+--    (B4a.1 的 LIKE 误伤了 pgvector 的 l2_distance/l2_norm/l2_normalize)。
+DO $$ DECLARE r record;
+BEGIN
+  FOR r IN SELECT p.oid FROM pg_proc p JOIN pg_namespace n ON p.pronamespace=n.oid
+    WHERE n.nspname='public' AND p.proname IN (
+      'l2_create_ticket','l2_claim_ticket','l2_complete_ticket','l2_fail_ticket',
+      'l2_mark_unknown','l2_approve','l2_pending_list','l2_reconcile_unknown',
+      'l2_reconcile_executing','l2_expire_pending')
+  LOOP
+    EXECUTE format('ALTER FUNCTION %s OWNER TO mergepilot_l2_owner', r.oid::regprocedure::text);
+  END LOOP;
+END $$;
+
+-- 2. 恢复 pgvector 函数 owner(被 B4a.1 LIKE 误伤 → 归还 vector 扩展 owner)
+DO $$ DECLARE r record; v_owner text;
+BEGIN
+  SELECT rolname INTO v_owner FROM pg_roles WHERE oid=(SELECT extowner FROM pg_extension WHERE extname='vector');
+  IF v_owner IS NOT NULL THEN
+    FOR r IN SELECT p.oid FROM pg_proc p JOIN pg_namespace n ON p.pronamespace=n.oid
+      WHERE n.nspname='public' AND p.proname IN ('l2_distance','l2_norm','l2_normalize')
+    LOOP
+      EXECUTE format('ALTER FUNCTION %s OWNER TO %s', r.oid::regprocedure::text, v_owner);
+    END LOOP;
+  END IF;
+END $$;
+
+-- 3. 收敛 mergepilot_l2_owner 属性(每次跑都收敛,不只创建时)
+ALTER ROLE mergepilot_l2_owner NOLOGIN NOSUPERUSER NOBYPASSRLS NOINHERIT NOCREATEDB NOCREATEROLE NOREPLICATION;
+
+-- 4. REVOKE PUBLIC(再确保,即使 ALTER OWNER 不影响)
+DO $$ DECLARE r record;
+BEGIN
+  FOR r IN SELECT p.oid FROM pg_proc p JOIN pg_namespace n ON p.pronamespace=n.oid
+    WHERE n.nspname='public' AND p.proname IN (
+      'l2_create_ticket','l2_claim_ticket','l2_complete_ticket','l2_fail_ticket',
+      'l2_mark_unknown','l2_approve','l2_pending_list','l2_reconcile_unknown',
+      'l2_reconcile_executing','l2_expire_pending')
+  LOOP
+    EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC', r.oid::regprocedure::text);
+  END LOOP;
+END $$;
+
+-- 5. GRANT(OWNER 之后,非 grant-to-self)。Controller(mergepilot)调 create/reconcile/expire。
 GRANT EXECUTE ON FUNCTION l2_create_ticket(TEXT,TEXT,JSONB,TEXT,INT,INT) TO mergepilot;
 GRANT EXECUTE ON FUNCTION l2_reconcile_unknown(TEXT,BOOLEAN,TEXT) TO mergepilot;
 GRANT EXECUTE ON FUNCTION l2_reconcile_executing(TEXT,BOOLEAN,TEXT) TO mergepilot;
 GRANT EXECUTE ON FUNCTION l2_expire_pending(TEXT) TO mergepilot;
--- 注:policy_gateway_l2 / mergepilot_approver 的 EXECUTE 授权在 m3b-b4-create-roles.sh(账号建好后)
-
--- B4a.1 P1#1:所有 l2_* 函数 OWNER 改为 mergepilot_l2_owner(NOLOGIN),
--- 否则 SECURITY DEFINER 实际以建函数的超级用户(mergepilot)权限执行,NOLOGIN 隔离形同虚设。
-DO $$ DECLARE r record;
-BEGIN
-  FOR r IN SELECT p.oid FROM pg_proc p
-           JOIN pg_namespace n ON p.pronamespace=n.oid
-           WHERE p.proname LIKE 'l2\_%' ESCAPE '\' AND n.nspname='public' LOOP
-    EXECUTE format('ALTER FUNCTION %s OWNER TO mergepilot_l2_owner', r.oid::regprocedure::text);
-  END LOOP;
-END $$;
+-- 注:policy_gateway_l2 / mergepilot_approver 的 EXECUTE 授权在 m3b-b4-create-roles.sh(账号建好后,同样在 OWNER 之后)

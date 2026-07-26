@@ -136,6 +136,41 @@ SU "UPDATE approvals SET approval_expires_at = now() - interval '1 minute' WHERE
 [ "$(SU "SELECT l2_expire_pending('$TKT5');")" = "t" ] && ok "expire_pending(超审批期)→ EXPIRED" || bad "expire 异常"
 [ "$(SU "SELECT status FROM approvals WHERE ticket_id='$TKT5';")" = "EXPIRED" ] && ok "EXPIRED" || bad "expire 状态异常"
 
+# ─── 4z. B4a.2 加固:pgvector owner 恢复 + 精确 ACL + payload/hash/TTL 封闭 + 右方向 membership ───
+log ""; log "=== 4z. B4a.2 加固 ==="
+# pgvector owner 恢复(不应是 mergepilot_l2_owner)
+PGV=$(SU "SELECT count(*) FROM pg_proc p JOIN pg_roles r ON p.proowner=r.oid JOIN pg_namespace n ON p.pronamespace=n.oid WHERE p.proname IN ('l2_distance','l2_norm','l2_normalize') AND n.nspname='public' AND r.rolname='mergepilot_l2_owner';")
+[ "${PGV:-0}" = "0" ] && ok "pgvector 函数 owner 未被污染(allowlist 生效)" || bad "pgvector 仍被改成 l2_owner($PGV)"
+PGV_OK=$(SU "SELECT count(*) FROM pg_proc p JOIN pg_roles r ON p.proowner=r.oid JOIN pg_namespace n ON p.pronamespace=n.oid WHERE p.proname IN ('l2_distance','l2_norm','l2_normalize') AND n.nspname='public' AND r.rolname='mergepilot';")
+[ "${PGV_OK:-0}" != "0" ] && ok "pgvector 函数 owner = mergepilot(扩展 owner)" || bad "pgvector owner 未恢复到 mergepilot"
+
+# 精确 ACL(不靠 superuser 旁路)
+ACL_REC=$(SU "SELECT count(*) FROM information_schema.role_routine_grants WHERE routine_name='l2_reconcile_unknown' AND grantee='mergepilot';")
+[ "${ACL_REC:-0}" = "1" ] && ok "l2_reconcile_unknown 显式 grant mergepilot EXECUTE(非 superuser 旁路)" || bad "reconcile 缺 mergepilot 显式 EXECUTE($ACL_REC)"
+ACL_CRT=$(SU "SELECT count(*) FROM information_schema.role_routine_grants WHERE routine_name='l2_create_ticket' AND grantee='mergepilot';")
+[ "${ACL_CRT:-0}" = "1" ] && ok "l2_create_ticket 显式 grant mergepilot" || bad "create 缺 mergepilot EXECUTE"
+ACL_CLM=$(SU "SELECT count(*) FROM information_schema.role_routine_grants WHERE routine_name='l2_claim_ticket' AND grantee='policy_gateway_l2';")
+[ "${ACL_CLM:-0}" = "1" ] && ok "l2_claim_ticket grantee=policy_gateway_l2" || bad "claim ACL 异常"
+ACL_APV=$(SU "SELECT count(*) FROM information_schema.role_routine_grants WHERE routine_name='l2_approve' AND grantee='mergepilot_approver';")
+[ "${ACL_APV:-0}" = "1" ] && ok "l2_approve grantee=mergepilot_approver" || bad "approve ACL 异常"
+
+# payload/hash/TTL 封闭(负向)
+chk_reject(){ local label="$1" sql="$2" pat="$3" res; res=$(SU "$sql" 2>&1); echo "$res" | grep -qi "$pat" && ok "$label" || bad "$label 未拒: $(echo "$res"|head -1)"; }
+chk_reject "merge_method=octopus 拒" "SELECT l2_create_ticket('bnd-b4atest','merge','{\"owner\":\"nghqqa\",\"repo\":\"MergePilot\",\"pullNumber\":99999,\"commit_title\":\"x\",\"merge_method\":\"octopus\"}'::jsonb,'$ARGS_HASH',24,1);" "merge_method"
+chk_reject "args_hash 非 64hex 拒" "SELECT l2_create_ticket('bnd-b4atest','merge','$PAYLOAD'::jsonb,'tooshort',24,1);" "64hex"
+chk_reject "approval TTL 1000h 拒" "SELECT l2_create_ticket('bnd-b4atest','merge','$PAYLOAD'::jsonb,'$ARGS_HASH',1000,1);" "approval TTL"
+chk_reject "exec TTL 1000h 拒" "SELECT l2_create_ticket('bnd-b4atest','merge','$PAYLOAD'::jsonb,'$ARGS_HASH',24,1000);" "exec TTL"
+chk_reject "merge payload 含 state 拒" "SELECT l2_create_ticket('bnd-b4atest','merge','{\"owner\":\"nghqqa\",\"repo\":\"MergePilot\",\"pullNumber\":99999,\"commit_title\":\"x\",\"merge_method\":\"squash\",\"state\":\"closed\"}'::jsonb,'$ARGS_HASH',24,1);" "state"
+chk_reject "merge payload 未知字段拒" "SELECT l2_create_ticket('bnd-b4atest','merge','{\"owner\":\"nghqqa\",\"repo\":\"MergePilot\",\"pullNumber\":99999,\"commit_title\":\"x\",\"merge_method\":\"squash\",\"unexpected\":1}'::jsonb,'$ARGS_HASH',24,1);" "未知字段"
+chk_reject "close 缺 state 拒" "SELECT l2_create_ticket('bnd-b4atest','close','{\"owner\":\"nghqqa\",\"repo\":\"MergePilot\",\"pullNumber\":99999,\"title\":\"x\"}'::jsonb,'$ARGS_HASH',24,1);" "state=closed"
+chk_reject "action=revert 拒" "SELECT l2_create_ticket('bnd-b4atest','revert','$PAYLOAD'::jsonb,'$ARGS_HASH',24,1);" "merge/close"
+
+# 右方向 membership(三账号不被授予任何 role)+ owner 属性
+MEM=$(SU "SELECT count(*) FROM pg_auth_members m WHERE m.member IN ('policy_gateway_l2'::regrole, 'mergepilot_approver'::regrole, 'mergepilot_l2_owner'::regrole);")
+[ "${MEM:-0}" = "0" ] && ok "三账号无被授予的 membership(右方向,防 SET ROLE 越权)" || bad "有 membership($MEM)"
+OWN_BAD=$(SU "SELECT count(*) FROM pg_roles WHERE rolname='mergepilot_l2_owner' AND (rolsuper OR rolbypassrls OR rolcreatedb OR rolcreaterole OR rolreplication OR rolinherit OR rolcanlogin);")
+[ "${OWN_BAD:-0}" = "0" ] && ok "mergepilot_l2_owner: NOLOGIN + NOINHERIT + 无高危属性" || bad "l2_owner 属性异常($OWN_BAD)"
+
 # ─── 5. 真并发 claim(两个并行,只一个成功)───
 log ""; log "=== 5. 真并发 claim(B4a.1 P2#9)==="
 TKT6=$(SU "SELECT l2_create_ticket('bnd-b4atest','merge','$PAYLOAD'::jsonb,'$ARGS_HASH',24,1);") ; APV "SELECT l2_approve('$TKT6','tester@host');" >/dev/null
