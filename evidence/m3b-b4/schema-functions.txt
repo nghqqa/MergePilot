@@ -1,0 +1,68 @@
+=== B4a l2_* 函数清单 ===
+        proname         | secdef |                                                                            args                                                                            
+------------------------+--------+------------------------------------------------------------------------------------------------------------------------------------------------------------
+ l2_approve             | t      | p_ticket_id text, p_approved_by text
+ l2_claim_ticket        | t      | p_ticket_id text, p_action text, p_repo text, p_pr_number integer, p_args_hash text
+ l2_complete_ticket     | t      | p_ticket_id text, p_execution_id uuid, p_result_sha text
+ l2_create_ticket       | t      | p_binding_id text, p_action text, p_canonical_payload jsonb, p_args_hash text, p_approval_ttl_hours integer DEFAULT 24, p_exec_ttl_hours integer DEFAULT 1
+ l2_distance            | f      | vector, vector
+ l2_distance            | f      | halfvec, halfvec
+ l2_distance            | f      | sparsevec, sparsevec
+ l2_expire_pending      | t      | p_ticket_id text
+ l2_fail_ticket         | t      | p_ticket_id text, p_execution_id uuid, p_reason text
+ l2_mark_unknown        | t      | p_ticket_id text, p_execution_id uuid, p_reason text
+ l2_norm                | f      | halfvec
+ l2_norm                | f      | sparsevec
+ l2_normalize           | f      | vector
+ l2_normalize           | f      | halfvec
+ l2_normalize           | f      | sparsevec
+ l2_pending_list        | t      | 
+ l2_reconcile_executing | t      | p_ticket_id text, p_merged boolean, p_actual_sha text
+ l2_reconcile_unknown   | t      | p_ticket_id text, p_merged boolean, p_actual_sha text
+(18 rows)
+
+
+=== 函数 → 执行角色(EXECUTE 授权)===
+      routine_name      |       grantee       
+------------------------+---------------------
+ l2_distance            | PUBLIC
+ l2_distance            | PUBLIC
+ l2_distance            | PUBLIC
+ l2_norm                | PUBLIC
+ l2_norm                | PUBLIC
+ l2_normalize           | PUBLIC
+ l2_normalize           | PUBLIC
+ l2_normalize           | PUBLIC
+ l2_approve             | mergepilot
+ l2_claim_ticket        | mergepilot
+ l2_complete_ticket     | mergepilot
+ l2_create_ticket       | mergepilot
+ l2_distance            | mergepilot
+ l2_distance            | mergepilot
+ l2_distance            | mergepilot
+ l2_expire_pending      | mergepilot
+ l2_fail_ticket         | mergepilot
+ l2_mark_unknown        | mergepilot
+ l2_norm                | mergepilot
+ l2_norm                | mergepilot
+ l2_normalize           | mergepilot
+ l2_normalize           | mergepilot
+ l2_normalize           | mergepilot
+ l2_pending_list        | mergepilot
+ l2_reconcile_executing | mergepilot
+ l2_reconcile_unknown   | mergepilot
+ l2_approve             | mergepilot_approver
+ l2_pending_list        | mergepilot_approver
+ l2_claim_ticket        | policy_gateway_l2
+ l2_complete_ticket     | policy_gateway_l2
+ l2_fail_ticket         | policy_gateway_l2
+ l2_mark_unknown        | policy_gateway_l2
+(32 rows)
+
+
+=== task_runs CHECK ===
+                                                                            pg_get_constraintdef                                                                             
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ CHECK ((status = ANY (ARRAY['SUBMITTED'::text, 'RUNNING'::text, 'PASS'::text, 'FAIL'::text, 'HOLD'::text, 'MERGED'::text, 'ROLLED_BACK'::text, 'APPROVAL_PENDING'::text])))
+(1 row)
+

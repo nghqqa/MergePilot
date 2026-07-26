@@ -1,0 +1,54 @@
+═══════════════════════════════════════════════
+  B4a 验收(schema + 函数 + EXECUTE-only 账号)
+═══════════════════════════════════════════════
+
+=== 1. schema 迁移 ===
+  ✅ approvals v2 8 列齐全
+  ✅ run_pr_bindings 8 列
+  ✅ outbox lease_expires_at 在
+  ✅ approvals.expires_at 可 NULL(PENDING 阶段)
+  ✅ task_runs CHECK 含 APPROVAL_PENDING
+
+=== 2. 函数硬化属性 ===
+  ✅ l2_create_ticket SECURITY DEFINER + search_path=pg_catalog
+  ✅ l2_claim_ticket SECURITY DEFINER + search_path=pg_catalog
+  ✅ l2_complete_ticket SECURITY DEFINER + search_path=pg_catalog
+  ✅ l2_approve SECURITY DEFINER + search_path=pg_catalog
+  ✅ l2_pending_list SECURITY DEFINER + search_path=pg_catalog
+  ✅ l2_reconcile_unknown SECURITY DEFINER + search_path=pg_catalog
+
+=== 3. 全生命周期(建票→审批→claim→complete)===
+  args_hash=a043fd43a261cad27cef2844d7a33e411f6908353d503dad3b5c49c98709c33b (len=64)
+  ✅ args_hash 完整 64hex
+  ticket=tkt-c0d05f5f-c368-47ef-a837-e9863449b598
+  ✅ l2_create_ticket 建票(tkt-c0d05f5f-c368-47ef-a837-e9863449b598)
+  ✅ 票据 PENDING
+  ✅ attempt_no=1
+  ✅ PENDING 阶段 expires_at=NULL
+  ✅ outbox 同事务写 PENDING_DISPATCH
+  ✅ l2_approve(approver 账号)→ APPROVED
+  ✅ APPROVED
+  ✅ approved_by=tester@host
+  ✅ APPROVED 后 expires_at 已写(+1h)
+  claim 错 hash 行数=0
+  ✅ 错误 args_hash → claim 返回 0 行(票据未消耗)
+  ✅ 票据仍 APPROVED(CAS 未匹配不消耗)
+  execution_id=eb177a2a-2ec4-4382-bb53-1bf249d6ff32  payload={"repo": "MergePilot", "owner": "nghqqa", "pullNumber": 99999, "commit_title": "merge fix", "merge_method": "squash"}
+  ✅ claim 返回 execution_id
+  ✅ claim 返回 canonical_payload(含 merge_method=squash)
+  ✅ 票据 EXECUTING
+  ✅ 重复 claim → 0 行(防并发双执行)
+  ✅ l2_complete_ticket → USED
+  ✅ USED + result_sha=mergesha123
+  ✅ 错误 execution_id 的 complete 被拒
+
+=== 4. task_runs APPROVAL_PENDING ===
+  ✅ task_runs 可转 APPROVAL_PENDING
+
+=== 5. 账号隔离 ===
+  ✅ gateway_l2 不能 SELECT approvals
+  ✅ approver 不能读 outbox
+
+═══════════════════════════════════════════════
+  B4a 验收: PASS=33 FAIL=0
+═══════════════════════════════════════════════
