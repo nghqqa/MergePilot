@@ -165,12 +165,14 @@ else
 fi
 docker stop policy-gw-nol2 >/dev/null 2>&1; docker rm policy-gw-nol2 >/dev/null 2>&1
 
-# --- evidence snapshot (before cleanup) ---
+# --- evidence snapshot (before cleanup; not counted as PASS) ---
 log ""; log "=== evidence snapshot ==="
 mkdir -p /mnt/d/goai/evidence/m3b-b4b
 SU "SELECT ticket_id,status,execution_id,result_sha FROM approvals WHERE run_id LIKE 'b4btest-%' ORDER BY created_at;" > /mnt/d/goai/evidence/m3b-b4b/approvals-snapshot.txt 2>/dev/null
-SU "SELECT reason_code,count(*) FROM mcp_calls WHERE run_id IS NULL AND ticket_id IN (SELECT ticket_id FROM approvals WHERE run_id LIKE 'b4btest-%') GROUP BY reason_code ORDER BY count(*) DESC;" > /mnt/d/goai/evidence/m3b-b4b/audit-summary.txt 2>/dev/null
-ok "evidence snapshot written"
+SU "SELECT m.ticket_id,m.phase,m.decision,m.reason_code,a.action,a.status FROM mcp_calls m JOIN approvals a ON m.ticket_id=a.ticket_id WHERE a.run_id LIKE 'b4btest-%' ORDER BY m.ticket_id,m.ts;" > /mnt/d/goai/evidence/m3b-b4b/audit-summary.txt 2>/dev/null
+AUD_LINES=$(wc -l < /mnt/d/goai/evidence/m3b-b4b/audit-summary.txt 2>/dev/null || echo 0)
+log "  snapshot written (audit=$AUD_LINES rows)"
+[ "${AUD_LINES:-0}" -gt 0 ] && log "  audit evidence non-empty" || { log "  !!! audit evidence EMPTY"; FAIL=$((FAIL+1)); }
 
 # --- cleanup ---
 

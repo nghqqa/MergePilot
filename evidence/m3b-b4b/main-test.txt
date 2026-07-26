@@ -1,0 +1,52 @@
+═══════════════════════════════════════════════
+  B4b Gateway 边界验收
+═══════════════════════════════════════════════
+
+=== 1. coordinator merge 缺 approval_ticket → L2_TICKET_REQUIRED ===
+  ✅ 缺票 → L2_TICKET_REQUIRED
+
+=== 2. 伪造票 → CLAIM_MISMATCH ===
+  ✅ 伪造票 → CLAIM_MISMATCH(不调 GitHub)
+
+=== 3. 合法票 claim → TOCTOU(PR 不存在)→ FAILED ===
+  ticket=tkt-4a2e7aed-84ae-4144-b61b-4c729564f40e status=APPROVED
+  ✅ PR 不存在 → TOCTOU_MISMATCH + 票 FAILED
+  ✅ TOCTOU 失败后票=FAILED
+
+=== 4. call 与票 args_hash 不匹配 → CLAIM_MISMATCH(票不消耗) ===
+  ✅ commit_title 不同 → hash 不匹配 → CLAIM_MISMATCH
+  ✅ hash 不匹配时票保持 APPROVED(未消耗)
+
+=== 5. 过期票(执行期已过)→ CLAIM_MISMATCH ===
+  ✅ 过期票 → CLAIM_MISMATCH(expires_at 检查)
+
+=== 6. 审计 INTENT 带 ticket_id+execution_id ===
+  ✅ TOCTOU DENY 审计有 ticket_id(ERROR phase)
+  ✅ 审计行带 ticket_id + execution_id(B4b)
+
+=== 7. 成功 merge(真实 fix 分支 + PR → USED) ===
+  分支 fix/b4b-merge-2509017 已建
+  commit 已加
+  PR number=19 head_sha=1383ab3eddfb...
+  merge 结果: {"sha":"6f2fc450f4b21876ccd5117517862972c84feeea","merged":true,"message":"Pull   票=USED
+  ✅ 成功 merge → USED
+  ✅ merge 成功审计 RESULT(L2_COMPLETE)
+
+=== 8. true concurrent (same PR + same ticket + 2 parallel) ===
+  branch fix/b4b-conc-2509017 created
+  commit added
+  claim_count=1 ticket_status=USED
+  ✅ concurrent: only 1 claim (CAS mutual exclusion)
+  ✅ concurrent: winner -> USED
+
+=== 9. bad L2 DSN -> L2_DB_UNAVAILABLE ===
+  ✅ bad L2 DSN -> L2_DB_UNAVAILABLE (no GitHub call)
+  ✅ ticket stays APPROVED when L2 DB unavailable
+
+=== evidence snapshot ===
+  snapshot written (audit=10 rows)
+  audit evidence non-empty
+
+═══════════════════════════════════════════════
+  B4b 验收: PASS=15 FAIL=0
+═══════════════════════════════════════════════

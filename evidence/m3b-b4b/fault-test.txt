@@ -1,0 +1,46 @@
+PR=24 head=5da2b47e6eae
+═══════════════════════════════════════════════
+  B4b fault-path coverage
+═══════════════════════════════════════════════
+
+=== 1. bad audit DSN → AUDIT_UNAVAILABLE + PR 仍 open ===
+  ✅ bad audit DSN → AUDIT_UNAVAILABLE
+  ✅ ticket=FAILED after audit fail
+  ✅ PR still open (GitHub not called)
+  ✅ PR head SHA unchanged
+
+=== 1b. close → USED (independent PR2) ===
+  close PR=25 ticket=USED
+  ✅ close → USED
+
+=== fault: toctou_timeout ===
+  toctou_timeout: ticket=FAILED audit=L2_TOCTOU_TIMEOUT upstream_called=0
+  ✅ TOCTOU read timeout → FAILED (write not sent)
+
+=== fault: upstream_error ===
+  upstream_error: ticket=FAILED audit=L2_UPSTREAM_REJECT upstream_called=0
+  ✅ upstream is_error → FAILED
+
+=== fault: complete_error ===
+  complete_error: ticket=EXECUTING audit=STATE_COMMIT_PENDING upstream_called=0
+  ✅ complete DB_ERROR → EXECUTING (STATE_COMMIT_PENDING)
+
+=== fault: write_timeout ===
+  write_timeout: ticket=UNKNOWN audit=L2_MARKED_UNKNOWN upstream_called=1
+  ✅ write timeout → UNKNOWN (no retry)
+  ✅ upstream.call_tool entered before timeout
+
+=== 7. FAULT_INJECT without .test_mode → refuse to start ===
+  ✅ FAULT_INJECT without .test_mode → refuse to start
+
+=== 8. production gateway clean (no FAULT_INJECT, no .test_mode) ===
+  ✅ production gateway: FAULT_INJECT not set
+  ✅ production gateway: /tmp/.test_mode absent
+
+=== evidence snapshot ===
+  approvals + audit (10 lines) written to evidence/m3b-b4b/
+  audit evidence non-empty (10 rows)
+
+═══════════════════════════════════════════════
+  B4b fault-path: PASS=13 FAIL=0
+═══════════════════════════════════════════════

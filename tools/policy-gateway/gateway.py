@@ -41,7 +41,13 @@ ROLE_TOKENS = json.loads(os.environ.get("ROLE_TOKENS", "{}"))   # {"reviewer":"t
 UPSTREAM_URL = os.environ.get("UPSTREAM_URL", "http://github-mcp:8082/sse")
 AUDIT_DSN = os.environ.get("AUDIT_DSN", "")                     # postgresql://policy_gateway_audit:pw@audit-pg:5432/mergepilot_audit
 L2_DSN = os.environ.get("L2_DSN", "")                           # postgresql://policy_gateway_l2:pw@audit-pg:5432/mergepilot_audit
-L2_TIMEOUT_SECONDS = float(os.environ.get("L2_TIMEOUT_SECONDS", "60"))  # TOCTOU 读 + 写调用的超时(默认 60s,测试可设 1-2s)
+L2_TIMEOUT_SECONDS = float(os.environ.get("L2_TIMEOUT_SECONDS", "60"))
+# 测试故障注入:仅在 /tmp/.test_mode 存在时激活(生产无此文件 → 设了也拒绝启动)
+FAULT_INJECT = os.environ.get("FAULT_INJECT", "")
+if FAULT_INJECT:
+    if not os.path.exists("/tmp/.test_mode"):
+        raise SystemExit("FAULT_INJECT requires /tmp/.test_mode; refusing to start in production")
+    print(f"[gateway] WARNING: FAULT_INJECT={FAULT_INJECT} (test mode)", flush=True)
 LISTEN_HOST = os.environ.get("LISTEN_HOST", "0.0.0.0")
 LISTEN_PORT = int(os.environ.get("LISTEN_PORT", "8083"))
 
@@ -446,19 +452,21 @@ async def call_tool(name: str, arguments: dict | None):
             return _deny_result("CLAIM_MISMATCH", tool=name)
         eid = claim["execution_id"]
         payload = claim["canonical_payload"]
-        # 4b. INTENT 审计 fail-closed
+        # 4b. INTENT 审计 fail-closed(三态:fail_ticket 返回也检查)
         if not audit_event(corr_id, "INTENT", role, name, "ALLOW", "L2_CLAIMED",
                            args_hash=ahash, target_repo=repo, target_branch=claim["target_branch"],
                            ticket_id=ticket_id, execution_id=eid):
-            l2_exec("SELECT l2_fail_ticket(%s,%s::uuid,%s)",
-                    (ticket_id, eid, "audit INTENT unavailable"))
+            fst, _ = l2_exec("SELECT l2_fail_ticket(%s,%s::uuid,%s)",
+                             (ticket_id, eid, "audit INTENT unavailable"))
             audit_event(corr_id, "ERROR", role, name, "DENY", "AUDIT_UNAVAILABLE",
                         args_hash=ahash, ticket_id=ticket_id, execution_id=eid,
-                        error="INTENT audit failed; refused to call GitHub")
+                        error=f"INTENT audit failed; fail_ticket={fst}")
             return _deny_result("AUDIT_UNAVAILABLE", tool=name)
         print(f"[gateway] L2 CLAIMED tool={name} ticket={ticket_id[:16]} eid={eid[:8]}", flush=True)
-        # 4c. TOCTOU 读(L2_TIMEOUT_SECONDS 超时;**超时 → FAILED**:写请求未发,安全失败。不进 UNKNOWN)
+        # 4c. TOCTOU 读(超时→FAILED;故障注入:toctou_timeout 在 try 内 raise 被捕获)
         try:
+            if FAULT_INJECT == "toctou_timeout":
+                raise asyncio.TimeoutError("fault inject: toctou_timeout")
             pr_actual = await asyncio.wait_for(
                 _read_pr_upstream(args.get("owner"), args.get("repo"), pr_num),
                 timeout=L2_TIMEOUT_SECONDS)
@@ -469,7 +477,7 @@ async def call_tool(name: str, arguments: dict | None):
                         "L2_TOCTOU_TIMEOUT" if st == "APPLIED" else "STATE_COMMIT_PENDING",
                         args_hash=ahash, ticket_id=ticket_id, execution_id=eid,
                         error=f"TOCTOU read timeout: {str(e)[:120]}")
-            print(f"[gateway] DENY L2 tool={name} → TOCTOU_TIMEOUT (FAILED,write 未发)", flush=True)
+            print(f"[gateway] DENY L2 → TOCTOU_TIMEOUT (FAILED,write 未发)", flush=True)
             return _deny_result("L2_TOCTOU_TIMEOUT", tool=name)
         toctou_ok = (pr_actual
                      and pr_actual.get("head_sha") == claim["expected_head_sha"]
@@ -484,36 +492,50 @@ async def call_tool(name: str, arguments: dict | None):
             return _deny_result("TOCTOU_MISMATCH", tool=name)
         # 4d. 从 canonical_payload 构造上游 args
         upstream_args = {k: v for k, v in payload.items() if k != "approval_ticket"}
-        # 4e. 调上游(L2_TIMEOUT_SECONDS 超时;**写超时 → UNKNOWN**:请求已发,结果未知,绝不重试)
+        # 4e. 调上游(故障注入;write_timeout 用极短 timeout 让 upstream.call_tool 被调用后超时)
         try:
-            result = await asyncio.wait_for(
-                upstream.call_tool(name, upstream_args), timeout=L2_TIMEOUT_SECONDS)
+            if FAULT_INJECT == "upstream_error":
+                result = CallToolResult(
+                    content=[TextContent(type="text", text='{"message":"409 not mergeable"}')],
+                    is_error=True)
+            elif FAULT_INJECT == "complete_error":
+                # fake write success(不调 GitHub),让流程走到 complete 注入点
+                result = CallToolResult(
+                    content=[TextContent(type="text", text='{"sha":"a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"}')],
+                    is_error=False)
+            else:
+                # write_timeout: 极短 timeout 让 upstream.call_tool 被实际调用后再超时(证明"请求已发")
+                wt = 0.001 if FAULT_INJECT == "write_timeout" else L2_TIMEOUT_SECONDS
+                print(f"[gateway] L2 WRITE tool={name} → calling upstream (timeout={wt}s)", flush=True)
+                result = await asyncio.wait_for(
+                    upstream.call_tool(name, upstream_args), timeout=wt)
             is_err = getattr(result, "is_error", False)
             if is_err:
                 err_txt = _extract_text(result)[:200]
-                l2_exec("SELECT l2_fail_ticket(%s,%s::uuid,%s)",
-                        (ticket_id, eid, f"upstream reject: {err_txt}"))
-                audit_event(corr_id, "RESULT", role, name, "ERROR", "L2_UPSTREAM_REJECT",
+                fst, _ = l2_exec("SELECT l2_fail_ticket(%s,%s::uuid,%s)",
+                                 (ticket_id, eid, f"upstream reject: {err_txt}"))
+                audit_event(corr_id, "RESULT", role, name, "ERROR",
+                            "L2_UPSTREAM_REJECT" if fst == "APPLIED" else "STATE_COMMIT_PENDING",
                             args_hash=ahash, ticket_id=ticket_id, execution_id=eid,
                             target_repo=repo, result_status="ERROR", error=err_txt)
             else:
                 sha = _extract_sha(result)
-                # B4b P1#3:三态检查 complete。APPLIED→L2_COMPLETE;否则→STATE_COMMIT_PENDING(B4c 对账)
-                st, _ = l2_exec("SELECT l2_complete_ticket(%s,%s::uuid,%s)",
-                                (ticket_id, eid, sha or ""))
+                if FAULT_INJECT == "complete_error":
+                    st = "DB_ERROR"
+                else:
+                    st, _ = l2_exec("SELECT l2_complete_ticket(%s,%s::uuid,%s)",
+                                    (ticket_id, eid, sha or ""))
                 if st == "APPLIED":
                     audit_event(corr_id, "RESULT", role, name, "ALLOW", "L2_COMPLETE",
                                 args_hash=ahash, ticket_id=ticket_id, execution_id=eid,
                                 target_repo=repo, git_sha=sha or "", result_status="OK")
                 else:
-                    # complete CAS mismatch 或 DB error → 票据可能仍 EXECUTING → STATE_COMMIT_PENDING(B4c 对账)
                     audit_event(corr_id, "ERROR", role, name, "ERROR", "STATE_COMMIT_PENDING",
                                 args_hash=ahash, ticket_id=ticket_id, execution_id=eid,
                                 target_repo=repo, git_sha=sha or "",
                                 error=f"complete_ticket {st}; awaiting B4c reconcile")
             return result
         except (asyncio.TimeoutError, Exception) as e:
-            # 写请求超时/中断(结果未知)→ mark_unknown,绝不自动重试 L2
             st, _ = l2_exec("SELECT l2_mark_unknown(%s,%s::uuid,%s)",
                             (ticket_id, eid, f"network: {str(e)[:120]}"))
             audit_event(corr_id, "ERROR", role, name, "ERROR",
