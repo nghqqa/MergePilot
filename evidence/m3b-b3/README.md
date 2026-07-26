@@ -1,8 +1,8 @@
-# M3-B3 证据 · 不可变审计强化(INSERT-only 账号 + 写 fail-closed)
+# M3-B3 证据 · 不可变审计强化(INSERT-only 账号 + 写 fail-closed)+ B3.1 加固
 
-> **gateway INSERT-only DB account · write fail-closed on audit · append-only INTENT/RESULT events**
-> 验证日期:2026-07-26
-> 标签:`m3b-b3-closed`
+> **gateway INSERT-only DB account · write fail-closed · append-only events · phase CHECK · fail-fast init**
+> 验证日期:2026-07-26(B3 + B3.1)
+> 标签:`m3b-b3-closed`(07f5480)/ `m3b-b3.1-closed`(本提交,证据闭合)
 
 ## 落地项
 
@@ -76,4 +76,56 @@ grants(policy_gateway_audit on mcp_calls): INSERT
 ## 范围
 
 B3 已闭合:**INSERT-only 审计账号 + 写 fail-closed + 追加式 correlation_id 事件 + 多仓库启动断言**。
+B3.1 已闭合:**phase CHECK 约束 + 恢复幂等收敛 + init fail-fast + 测试逐项断言/凭证扫描**。
 待做:B4(审批票据 + policy_action_outbox,B4 用单独账号不复用审计账号)、B5(负向证据全集)。
+
+---
+
+## B3.1 加固(复审后补强,19/19 PASS)
+
+复审发现 3 个 P1 + 2 个 P2,全部修复。
+
+### P1 修复
+
+| # | 问题 | 修复 |
+|---|---|---|
+| ① | 运行库无 `phase` CHECK(`CREATE TABLE IF NOT EXISTS` 不改已有表,迁移只 ADD COLUMN)→ 可插入任意 phase | 幂等 `DO $$ ... ADD CONSTRAINT mcp_calls_phase_check CHECK (phase IS NULL OR phase IN ('INTENT','RESULT','ERROR'))` + 同理 `mcp_calls_decision_check` |
+| ② | `m3b-create-audit-role.sh` 在 audit-db.env 已存在时跳过 GRANT/REVOKE → 卷重建/权限漂移后无法收敛 | 始终幂等执行角色 + 授权收敛;`--force` 仅轮换密码;env 复用时同步密码 `ALTER ROLE` |
+| ③ | `run-policy-gateway.sh` 无 `set -e`、psql 无 `ON_ERROR_STOP` → init 失败仍替换 gateway | `set -euo pipefail` + schema psql `ON_ERROR_STOP=1` 显式失败检查;init 全过才 `docker rm/run` |
+
+### P2 修复
+
+| # | 问题 | 修复 |
+|---|---|---|
+| ④ | 权限断言把 UPDATE/DELETE/TRUNCATE 拼接后 grep 一次 → 任一被拒就 PASS(假绿) | `chk_priv` 逐项断言:SELECT/UPDATE/DELETE/TRUNCATE 各自必须 `permission denied` |
+| ⑤ | 脚本打印密码前 8 位 | 只输出 `pass=<REDACTED> len=N`;轮换 audit 密码 + 重启 gateway |
+
+非阻断:`REVOKE CREATE, TEMP ON DATABASE mergepilot_audit FROM PUBLIC`(收窄 PUBLIC)。
+
+### B3.1 新增验证(在 19/19 内)
+
+```
+SELECT/UPDATE/DELETE/TRUNCATE 各自 → permission denied  (逐项,4 项)
+mcp_calls_phase_check 约束存在                         ✅
+INSERT phase='BOGUS' → violates check                  ✅
+drift(GRANT SELECT)→ 角色脚本(无 --force)→ 收敛回 INSERT-only  ✅
+坏 schema 变体 → 脚本 exit 1 + gateway 容器未替换(fail-fast)  ✅
+Bearer 明文扫描 → 计入 FAIL                            ✅
+```
+
+### 约束证据 — `b3.1-constraints.txt`
+
+```
+mcp_calls_decision_check | CHECK (decision IN ('ALLOW','DENY','ERROR'))
+mcp_calls_phase_check    | CHECK (phase IS NULL OR phase IN ('INTENT','RESULT','ERROR'))
+policy_gateway_audit     | INSERT  (唯一权限)
+```
+
+### 关键坑
+
+| # | 问题 | 修复 |
+|---|---|---|
+| ① | `current_setting('pw')` 读 GUC,但 `-v pw=` 设 psql var;DO block 内不插值 → 角色没建成密码却落盘 | 非引用 heredoc 展开 `$PW` + `ON_ERROR_STOP=1` |
+| ② | `INSERT...RETURNING` 需 SELECT 权限(已 revoke)→ 自检假失败 | 自检去 RETURNING |
+| ③ | 首次 DDL 失败后 gateway 持旧密码 → 审计连不上 → 写全 fail-closed | 修 DDL 后重建 gateway 读新 env |
+| ④ | `chk_deny` 直接 pipe 在 set -e/pipefail 下显示假 ALLOWED | var-capture 再 grep(与测试 chk_priv 一致) |

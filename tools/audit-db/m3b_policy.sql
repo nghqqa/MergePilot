@@ -37,6 +37,20 @@ CREATE INDEX IF NOT EXISTS idx_mcp_calls_caller  ON mcp_calls(caller_agent, ts);
 CREATE INDEX IF NOT EXISTS idx_mcp_calls_decision ON mcp_calls(decision, ts);
 CREATE INDEX IF NOT EXISTS idx_mcp_calls_corr    ON mcp_calls(correlation_id);  -- B3:按调用聚合 INTENT+RESULT
 
+-- B3.1:幂等补 CHECK 约束。CREATE TABLE IF NOT EXISTS 不修改已存在的表,
+-- 迁移只 ADD COLUMN;运行库因此缺 phase CHECK(可插入任意 phase)。此处幂等补齐。
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='mcp_calls_phase_check' AND conrelid='mcp_calls'::regclass) THEN
+    ALTER TABLE mcp_calls ADD CONSTRAINT mcp_calls_phase_check
+      CHECK (phase IS NULL OR phase IN ('INTENT','RESULT','ERROR'));
+  END IF;
+END $$;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='mcp_calls_decision_check' AND conrelid='mcp_calls'::regclass) THEN
+    ALTER TABLE mcp_calls ADD CONSTRAINT mcp_calls_decision_check CHECK (decision IN ('ALLOW','DENY','ERROR'));
+  END IF;
+END $$;
+
 -- B3:防篡改约束(即便用超管账号也拒绝 UPDATE/DELETE/ALTER 已存在的行)
 -- 用触发器拦截 mcp_calls 的 UPDATE/DELETE(INSERT-only)
 CREATE OR REPLACE FUNCTION mcp_calls_immutable() RETURNS trigger AS $$

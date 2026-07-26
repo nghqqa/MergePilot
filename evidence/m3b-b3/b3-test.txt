@@ -5,14 +5,27 @@
 === 1. policy_gateway_audit INSERT 成功 ===
   ✅ audit 账号 INSERT 成功
 
-=== 2. UPDATE/DELETE/TRUNCATE 被拒 + grants=INSERT-only ===
-  UPDATE=permission denied DELETE=permission denied TRUNCATE=permission denied grants=INSERT
-  ✅ UPDATE/DELETE/TRUNCATE 被权限拒绝
+=== 2. UPDATE/DELETE/TRUNCATE 逐项被拒 + grants=INSERT-only ===
+  ✅ SELECT → permission denied
+  ✅ UPDATE → permission denied
+  ✅ DELETE → permission denied
+  ✅ TRUNCATE → permission denied
+  grants=INSERT
   ✅ 授权仅 INSERT
+
+=== 2b. phase CHECK 约束:非法 phase 插入被拒 ===
+  mcp_calls_phase_check 存在: 1
+  ✅ phase CHECK 约束存在
+  ✅ 非法 phase=BOGUS 被 CHECK 拒
+
+=== 2c. drift(GRANT SELECT)→ 角色脚本自动收敛回 INSERT-only ===
+  drift 后 grants=INSERT,SELECT(应含 SELECT)
+  收敛后 grants=INSERT
+  ✅ drift 后自动收敛回 INSERT-only(env 已存在也重建)
 
 === 3+7. 写产生 INTENT 先于 GitHub;INTENT/RESULT 同 correlation_id ===
   ✅ create_branch 执行成功
-  corr=67b713cb-a569-4359-9f7b-f6fdeb14be65 phases=[INTENT,RESULT]
+  corr=b94c300f-1694-48fd-912f-39381da52ea8 phases=[INTENT,RESULT]
   ✅ INTENT+RESULT 共享 correlation_id
 
 === 8. 审计不含原始入参/token(只 args_hash)===
@@ -36,9 +49,15 @@
   ✅ 写返回 AUDIT_UNAVAILABLE(fail-closed)
   坏-DSN gateway 日志中 create_branch forward 次数: 0(应 0)
   ✅ 审计不可用时未转发 GitHub(无副作用)
-  GitHub 上 fix/b3-no-side-effect-1088248 出现次数: 0(应 0)
+  GitHub 上 fix/b3-no-side-effect-1206679 出现次数: 0(应 0)
   ✅ GitHub 上无该分支(确认无副作用)
 
+=== fail-fast: schema 失败 → 非零退出 + gateway 容器不替换 ===
+  exit=1  gw_before=900425de52fa  gw_after=900425de52fa
+    [broken-script output]   ❌ schema 初始化失败,中止(不替换 gateway):
+  ✅ schema 失败 → 脚本非零退出(1)
+  ✅ 失败后 gateway 容器未被替换(fail-fast)
+
 ═══════════════════════════════════════════════
-  B3 验收: PASS=11 FAIL=0
+  B3 验收: PASS=19 FAIL=0
 ═══════════════════════════════════════════════

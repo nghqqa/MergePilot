@@ -1,0 +1,14 @@
+=== B3.1 phase CHECK 约束 ===
+         conname          |                                       pg_get_constraintdef                                        
+--------------------------+---------------------------------------------------------------------------------------------------
+ mcp_calls_decision_check | CHECK ((decision = ANY (ARRAY['ALLOW'::text, 'DENY'::text, 'ERROR'::text])))
+ mcp_calls_phase_check    | CHECK (((phase IS NULL) OR (phase = ANY (ARRAY['INTENT'::text, 'RESULT'::text, 'ERROR'::text]))))
+(2 rows)
+
+
+=== policy_gateway_audit 权限 ===
+       grantee        | privilege_type 
+----------------------+----------------
+ policy_gateway_audit | INSERT
+(1 row)
+

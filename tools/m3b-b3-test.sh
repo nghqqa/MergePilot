@@ -29,16 +29,42 @@ INS=$(docker exec -e PGPASSWORD="$PGW_PASS" audit-pg psql -U policy_gateway_audi
   "INSERT INTO mcp_calls(request_id,correlation_id,phase,caller_agent,tool,decision,reason_code) VALUES('b3test-'||md5(random()::text),'b3selftest','INTENT','selftest','(b3permtest)','ALLOW','SELFTEST');" 2>&1)
 echo "$INS" | grep -qi "INSERT 0" && ok "audit 账号 INSERT 成功" || bad "INSERT 失败: $INS"
 
-# ─── 2. UPDATE/DELETE/TRUNCATE 被权限拒绝 + 授权只有 INSERT ───
-log ""; log "=== 2. UPDATE/DELETE/TRUNCATE 被拒 + grants=INSERT-only ==="
-UPD=$(docker exec -e PGPASSWORD="$PGW_PASS" audit-pg psql -U policy_gateway_audit -d "$PG_DB" -t -A -c "UPDATE mcp_calls SET decision='X' WHERE false;" 2>&1)
-DEL=$(docker exec -e PGPASSWORD="$PGW_PASS" audit-pg psql -U policy_gateway_audit -d "$PG_DB" -t -A -c "DELETE FROM mcp_calls WHERE false;" 2>&1)
-TRC=$(docker exec -e PGPASSWORD="$PGW_PASS" audit-pg psql -U policy_gateway_audit -d "$PG_DB" -t -A -c "TRUNCATE mcp_calls;" 2>&1)
+# ─── 2. UPDATE/DELETE/TRUNCATE 逐项被拒 + 授权只有 INSERT(B3.1:不拼接)───
+log ""; log "=== 2. UPDATE/DELETE/TRUNCATE 逐项被拒 + grants=INSERT-only ==="
+chk_priv(){ # $1=label $2=sql → 期望 permission denied
+  local out; out=$(docker exec -e PGPASSWORD="$PGW_PASS" audit-pg psql -U policy_gateway_audit -d "$PG_DB" -t -A -c "$2" 2>&1)
+  echo "$out" | grep -qi "permission denied" && { ok "$1 → permission denied"; } || { bad "$1 未拒: $(echo "$out"|head -1)"; }
+}
+chk_priv "SELECT"  "SELECT count(*) FROM mcp_calls;"
+chk_priv "UPDATE"  "UPDATE mcp_calls SET decision='X' WHERE false;"
+chk_priv "DELETE"  "DELETE FROM mcp_calls WHERE false;"
+chk_priv "TRUNCATE" "TRUNCATE mcp_calls;"
 GRANTS=$(docker exec audit-pg psql -U "$PG_SU" -d "$PG_DB" -t -A -c \
-  "SELECT string_agg(privilege_type,',' ORDER BY privilege_type) FROM information_schema.role_table_grants WHERE table_name='mcp_calls' AND grantee='policy_gateway_audit';" 2>/dev/null)
-log "  UPDATE=$(echo $UPD|grep -oE 'permission denied'|head -1) DELETE=$(echo $DEL|grep -oE 'permission denied'|head -1) TRUNCATE=$(echo $TRC|grep -oE 'permission denied'|head -1) grants=$GRANTS"
-echo "$UPD$DEL$TRC" | grep -qi "permission denied" && ok "UPDATE/DELETE/TRUNCATE 被权限拒绝" || bad "写权限未拒"
+  "SELECT coalesce(string_agg(privilege_type,',' ORDER BY privilege_type),'(none)') FROM information_schema.role_table_grants WHERE table_name='mcp_calls' AND grantee='policy_gateway_audit';" 2>/dev/null)
+log "  grants=$GRANTS"
 [ "$GRANTS" = "INSERT" ] && ok "授权仅 INSERT" || bad "授权异常: $GRANTS"
+
+# ─── 2b. phase CHECK 约束存在 + 非法 phase 被拒(B3.1)───
+log ""; log "=== 2b. phase CHECK 约束:非法 phase 插入被拒 ==="
+PCHECK=$(docker exec audit-pg psql -U "$PG_SU" -d "$PG_DB" -t -A -c \
+  "SELECT count(*) FROM pg_constraint WHERE conname='mcp_calls_phase_check' AND conrelid='mcp_calls'::regclass;" 2>/dev/null)
+log "  mcp_calls_phase_check 存在: $PCHECK"
+[ "${PCHECK:-0}" = "1" ] && ok "phase CHECK 约束存在" || bad "phase CHECK 缺失"
+BADPH=$(docker exec audit-pg psql -U "$PG_SU" -d "$PG_DB" -t -A -c \
+  "INSERT INTO mcp_calls(request_id,caller_agent,tool,decision,phase) VALUES('b3bad-'||md5(random()::text),'selftest','(b3phase)','ALLOW','BOGUS');" 2>&1)
+echo "$BADPH" | grep -qiE "violates check|mcp_calls_phase_check" && ok "非法 phase=BOGUS 被 CHECK 拒" || bad "非法 phase 未拒: $(echo "$BADPH"|head -1)"
+
+# ─── 2c. 恢复场景:权限漂移后,角色脚本(无 --force)自动收敛回 INSERT-only(B3.1)───
+log ""; log "=== 2c. drift(GRANT SELECT)→ 角色脚本自动收敛回 INSERT-only ==="
+docker exec audit-pg psql -U "$PG_SU" -d "$PG_DB" -c "GRANT SELECT ON mcp_calls TO policy_gateway_audit;" >/dev/null 2>&1
+DRIFT=$(docker exec audit-pg psql -U "$PG_SU" -d "$PG_DB" -t -A -c \
+  "SELECT coalesce(string_agg(privilege_type,',' ORDER BY privilege_type),'(none)') FROM information_schema.role_table_grants WHERE table_name='mcp_calls' AND grantee='policy_gateway_audit';" 2>/dev/null)
+log "  drift 后 grants=$DRIFT(应含 SELECT)"
+bash /mnt/d/goai/tools/m3b-create-audit-role.sh >/dev/null 2>&1   # 无 --force,env 已存在 → 应收敛
+CONV=$(docker exec audit-pg psql -U "$PG_SU" -d "$PG_DB" -t -A -c \
+  "SELECT coalesce(string_agg(privilege_type,',' ORDER BY privilege_type),'(none)') FROM information_schema.role_table_grants WHERE table_name='mcp_calls' AND grantee='policy_gateway_audit';" 2>/dev/null)
+log "  收敛后 grants=$CONV"
+[ "$CONV" = "INSERT" ] && ok "drift 后自动收敛回 INSERT-only(env 已存在也重建)" || bad "未收敛: $CONV"
 
 # ─── 3 & 7. 写产生 INTENT,与 RESULT 共享 correlation_id ───
 log ""; log "=== 3+7. 写产生 INTENT 先于 GitHub;INTENT/RESULT 同 correlation_id ==="
@@ -111,12 +137,27 @@ log "  GitHub 上 $NOAUDIT_BRANCH 出现次数: $BRCHK(应 0)"
 # 清理坏-DSN gateway
 docker stop policy-gw-noaudit >/dev/null 2>&1 && docker rm policy-gw-noaudit >/dev/null 2>&1
 
+# ─── fail-fast: 坏 schema 变体 → 脚本非零退出 + 不替换现有 gateway(B3.1)───
+log ""; log "=== fail-fast: schema 失败 → 非零退出 + gateway 容器不替换 ==="
+GW_BEFORE=$(docker inspect policy-gw --format '{{.Id}}' 2>/dev/null | cut -c1-12)
+echo "BROKEN SYNTAX ;;; NOT SQL ;;" > /tmp/b3_broken_schema.sql
+sed 's#/mnt/d/goai/tools/audit-db/m3b_policy.sql#/tmp/b3_broken_schema.sql#g' \
+  /mnt/d/goai/tools/run-policy-gateway.sh > /tmp/b3_run_broken.sh
+bash /tmp/b3_run_broken.sh >/tmp/b3_ff.out 2>&1; FF_RC=$?
+GW_AFTER=$(docker inspect policy-gw --format '{{.Id}}' 2>/dev/null | cut -c1-12)
+rm -f /tmp/b3_broken_schema.sql /tmp/b3_run_broken.sh
+log "  exit=$FF_RC  gw_before=$GW_BEFORE  gw_after=$GW_AFTER"
+grep -iE "schema 初始化失败|中止" /tmp/b3_ff.out 2>/dev/null | head -1 | sed 's/^/    [broken-script output] /' >> "$OUT"
+[ "$FF_RC" -ne 0 ] && ok "schema 失败 → 脚本非零退出($FF_RC)" || bad "应非零退出,实际 $FF_RC"
+[ "$GW_BEFORE" = "$GW_AFTER" ] && ok "失败后 gateway 容器未被替换(fail-fast)" || bad "失败后 gateway 被替换了!"
+
 log ""
 log "═══════════════════════════════════════════════"
 log "  B3 验收: PASS=$PASS FAIL=$FAIL"
 log "═══════════════════════════════════════════════"
 if grep -rEo 'Bearer [A-Za-z0-9_-]{20,}' "$OUT" 2>/dev/null | head -1 | grep -q .; then
-  echo "  !!! 输出含 Bearer 明文 !!!" >> "$OUT"
+  echo "  ❌ 输出含 Bearer 明文(凭证扫描失败)" >> "$OUT"
+  FAIL=$((FAIL+1))
 fi
 echo "done -> $OUT (PASS=$PASS FAIL=$FAIL)"
 [ "$FAIL" -eq 0 ] || exit 1
