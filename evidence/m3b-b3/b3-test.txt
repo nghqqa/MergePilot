@@ -1,0 +1,44 @@
+═══════════════════════════════════════════════
+  B3 验收(独立 INSERT-only 账号 + 写 fail-closed)
+═══════════════════════════════════════════════
+
+=== 1. policy_gateway_audit INSERT 成功 ===
+  ✅ audit 账号 INSERT 成功
+
+=== 2. UPDATE/DELETE/TRUNCATE 被拒 + grants=INSERT-only ===
+  UPDATE=permission denied DELETE=permission denied TRUNCATE=permission denied grants=INSERT
+  ✅ UPDATE/DELETE/TRUNCATE 被权限拒绝
+  ✅ 授权仅 INSERT
+
+=== 3+7. 写产生 INTENT 先于 GitHub;INTENT/RESULT 同 correlation_id ===
+  ✅ create_branch 执行成功
+  corr=67b713cb-a569-4359-9f7b-f6fdeb14be65 phases=[INTENT,RESULT]
+  ✅ INTENT+RESULT 共享 correlation_id
+
+=== 8. 审计不含原始入参/token(只 args_hash)===
+  含疑似敏感:0  args_hash 非法格式:0  (mcp_calls 无 content/args 列,只 args_hash)
+  ✅ 审计无原始内容/token,args_hash 为 16 位 hex
+
+=== 9. coordinator merge 仍 → L2_TICKET_REQUIRED ===
+<is_error=true>
+  ✅ L2 仍需票据(B3 不放行)
+
+=== 4+5+6. 坏-DSN gateway(audit 不可用)===
+[gateway] policy_version=b2.2-20260726-v1 policy_hash=d9ec07a7d9b4767f
+[gateway] roles=['coordinator', 'fixer', 'reviewer', 'verifier'] upstream=http://github-mcp:8082/sse
+[gateway] upstream ready: 44 tools (sample: ['add_comment_to_pending_review', 'add_issue_comment', 'add_reply_to_pull_request_comment', 'assign_copilot_to_issue', 'create_branch'])
+
+=== 6. 坏-DSN 下,只读调用仍可执行(get_me)===
+{"login":"nghqqa","id":53132158,"profile_url":"https://github.com/nghqqa","avata  ✅ audit 不可用时,只读仍可执行
+
+=== 4+5. 坏-DSN 下,写调用 → AUDIT_UNAVAILABLE 且无 GitHub 副作用 ===
+<is_error=true>
+  ✅ 写返回 AUDIT_UNAVAILABLE(fail-closed)
+  坏-DSN gateway 日志中 create_branch forward 次数: 0(应 0)
+  ✅ 审计不可用时未转发 GitHub(无副作用)
+  GitHub 上 fix/b3-no-side-effect-1088248 出现次数: 0(应 0)
+  ✅ GitHub 上无该分支(确认无副作用)
+
+═══════════════════════════════════════════════
+  B3 验收: PASS=11 FAIL=0
+═══════════════════════════════════════════════

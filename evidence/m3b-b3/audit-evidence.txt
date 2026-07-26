@@ -1,0 +1,22 @@
+=== B3 correlation_id 配对(INTENT+RESULT 同 id)===
+   corr   | phase  | caller_agent |         tool          | decision |   reason_code    
+----------+--------+--------------+-----------------------+----------+------------------
+ 0929eba8 | INTENT | fixer        | (list_tools)          | ALLOW    | B2_FILTERED_LIST
+ 093c353e | INTENT | fixer        | create_branch         | DENY     | BASE_NOT_ALLOWED
+ 16339829 | INTENT | fixer        | create_or_update_file | DENY     | REPO_NOT_ALLOWED
+ 16f5da4b | INTENT | fixer        | (list_tools)          | ALLOW    | B2_FILTERED_LIST
+ 1959e448 | RESULT | fixer        | create_branch         | ALLOW    | UPSTREAM_RESULT
+ 1959e448 | INTENT | fixer        | create_branch         | ALLOW    | POLICY_ALLOW
+ 1ebb23bc | INTENT | fixer        | create_or_update_file | DENY     | PATH_DENIED
+ 29bcdc8b | RESULT | fixer        | create_branch         | ALLOW    | UPSTREAM_RESULT
+ 29bcdc8b | INTENT | fixer        | create_branch         | ALLOW    | POLICY_ALLOW
+ 3277f2e1 | INTENT | fixer        | (list_tools)          | ALLOW    | B2_FILTERED_LIST
+(10 rows)
+
+
+=== policy_gateway_audit 授权(应仅 INSERT)===
+ privilege_type 
+----------------
+ INSERT
+(1 row)
+

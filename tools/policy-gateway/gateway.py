@@ -54,6 +54,8 @@ POLICY_HASH = hashlib.sha256(POLICY_TEXT.encode("utf-8")).hexdigest()[:16]
 _TOOL_CLASSES = POLICY.get("tool_classes", {})      # {class: [tool_names]}
 _L2_SET = set(_TOOL_CLASSES.get("l2", []))
 _FIX_SET = set(_TOOL_CLASSES.get("fix", []))
+# 写工具集(comment/fix/l2/update_pull_request):B3 起审计 fail-closed(INTENT 必须先持久化才调 GitHub)
+_WRITE_SET = (set(_TOOL_CLASSES.get("comment", [])) | _FIX_SET | _L2_SET | {"update_pull_request"})
 # search_scoped:允许但 query 必须含 repo:<allowlist>(防跨仓库搜索)
 _SEARCH_SCOPED = {"search_code", "search_commits", "search_issues", "search_pull_requests"}
 
@@ -181,12 +183,14 @@ def _get_audit_conn():
     return _audit_db
 
 
-def audit(caller, tool, decision, reason_code="", *, args_hash="", ticket_id=None,
-          target_repo="", target_branch="", result_status="", http_status=None,
-          git_sha="", run_id="", error=""):
-    """写一条不可变审计行。失败只记 stderr,不影响请求路径(fail-open 审计,业务 fail-closed)。"""
+def audit_event(corr_id, phase, caller, tool, decision, reason_code="",
+                *, args_hash="", ticket_id=None, target_repo="", target_branch="",
+                result_status="", http_status=None, git_sha="", run_id="", error=""):
+    """追加一条不可变审计行。返回 True=已持久化,False=未持久化(DSN 空/写失败)。
+    B3:一次调用写 INTENT(策略决策)→ RESULT/ERROR(GitHub 后),共享 correlation_id。
+    不存原始入参/token/文件内容,只存 args_hash。"""
     if not AUDIT_DSN:
-        return ""
+        return False
     rid = str(uuid.uuid4())
     try:
         conn = _get_audit_conn()
@@ -194,18 +198,24 @@ def audit(caller, tool, decision, reason_code="", *, args_hash="", ticket_id=Non
             cur.execute(
                 """
                 INSERT INTO mcp_calls
-                  (request_id, ts, caller_agent, tool, decision, reason_code,
+                  (request_id, correlation_id, phase, ts, caller_agent, tool, decision, reason_code,
                    policy_version, policy_hash, ticket_id, args_hash,
                    target_repo, target_branch, result_status, http_status, git_sha, run_id, error)
-                VALUES (%s, now(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, now(), %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
-                (rid, caller, tool, decision, reason_code,
+                (rid, corr_id, phase, caller, tool, decision, reason_code,
                  POLICY_VERSION, POLICY_HASH, ticket_id, args_hash,
                  target_repo, target_branch, result_status, http_status, git_sha, run_id, error),
             )
-    except Exception as e:  # 审计自身故障不阻断
-        print(f"[gateway] audit FAILED ({decision} {tool}): {e}", file=sys.stderr, flush=True)
-    return rid
+        return True
+    except Exception as e:
+        print(f"[gateway] audit FAILED [{phase} {decision} {tool}]: {e}", file=sys.stderr, flush=True)
+        return False
+
+
+# 旧名兼容(handle_sse 的 _deny 还在用)
+def audit(caller, tool, decision, reason_code="", **kw):
+    return audit_event(str(uuid.uuid4()), "INTENT", caller, tool, decision, reason_code, **kw)
 
 
 # ───────────────────────── MCP server(proxy 语义)─────────────────────────
@@ -259,9 +269,12 @@ async def call_tool(name: str, arguments: dict | None):
         json.dumps(args, sort_keys=True, default=str).encode()
     ).hexdigest()[:16]
 
+    corr_id = str(uuid.uuid4())  # B3:一次调用的 INTENT/RESULT/ERROR 共享同一 id
+    audit_kw = dict(args_hash=args_hash, target_repo=repo, target_branch=branch)
+
     def deny(reason_code, **extra):
-        audit(role, name, "DENY", reason_code,
-              args_hash=args_hash, target_repo=repo, target_branch=branch)
+        # 策略 DENY:尽力记 INTENT(fail-open,审计挂也不放行被拒调用)
+        audit_event(corr_id, "INTENT", role, name, "DENY", reason_code, **audit_kw)
         print(f"[gateway] DENY role={role} tool={name} → {reason_code}", flush=True)
         return _deny_result(reason_code, tool=name, **extra)
 
@@ -303,23 +316,35 @@ async def call_tool(name: str, arguments: dict | None):
     if name in _L2_SET and cfg["l2_requires_ticket"]:
         return deny("L2_TICKET_REQUIRED")
 
-    # 7. ALLOW + 转发上游
-    audit(role, name, "ALLOW", "B2_POLICY_ALLOW",
-          args_hash=args_hash, target_repo=repo, target_branch=branch)
-    print(f"[gateway] ALLOW role={role} tool={name} repo={repo} branch={branch} → forward", flush=True)
+    # 7. ALLOW —— B3:写工具 fail-closed(INTENT 必须先持久化才调 GitHub),读工具 fail-open
+    is_write = name in _WRITE_SET
+    if is_write:
+        intent_ok = audit_event(corr_id, "INTENT", role, name, "ALLOW", "POLICY_ALLOW", **audit_kw)
+        if not intent_ok:
+            # fail-closed:绝不在 INTENT 未持久化时调 GitHub。尽力补一条 ERROR(可能也挂)。
+            audit_event(corr_id, "ERROR", role, name, "DENY", "AUDIT_UNAVAILABLE",
+                        **audit_kw, error="INTENT audit write failed; refused to call GitHub")
+            print(f"[gateway] DENY role={role} tool={name} → AUDIT_UNAVAILABLE (no GitHub call)", flush=True)
+            return _deny_result("AUDIT_UNAVAILABLE", tool=name)
+        print(f"[gateway] ALLOW role={role} tool={name} repo={repo} branch={branch} "
+              f"→ forward (intent logged corr={corr_id[:8]})", flush=True)
+    else:
+        # 读/search/list 等:fail-open 记 INTENT(失败也放行)
+        audit_event(corr_id, "INTENT", role, name, "ALLOW", "READ_ALLOW", **audit_kw)
+    # 调 GitHub
     try:
         result = await upstream.call_tool(name, args)
         try:
             is_err = getattr(result, "is_error", False)
-            audit(role, name, "ALLOW" if not is_err else "ERROR",
-                  "UPSTREAM_RESULT", args_hash=args_hash, target_repo=repo,
-                  target_branch=branch, result_status="ERROR" if is_err else "OK")
+            audit_event(corr_id, "RESULT", role, name,
+                        "ALLOW" if not is_err else "ERROR", "UPSTREAM_RESULT",
+                        **audit_kw, result_status="ERROR" if is_err else "OK")
         except Exception:
             pass
         return result
     except Exception as e:
-        audit(role, name, "ERROR", "UPSTREAM_FAIL", args_hash=args_hash,
-              target_repo=repo, target_branch=branch, error=str(e)[:200])
+        audit_event(corr_id, "ERROR", role, name, "ERROR", "UPSTREAM_FAIL",
+                    **audit_kw, error=str(e)[:200])
         raise
 
 
@@ -367,6 +392,12 @@ async def messages_app(scope, receive, send):
 async def lifespan(app):
     """启动时建一个共享上游 client session,缓存 tool 列表;关闭时清理。"""
     global upstream, upstream_tools
+    # B3:search scope 注入当前只支持单仓库 allowlist;多仓库会静默放行未限定 query,启动即拒绝。
+    if len(_GLOBAL_REPOS) != 1:
+        raise RuntimeError(
+            f"search scope requires exactly one allowlisted repo, got {len(_GLOBAL_REPOS)}; "
+            "multi-repo needs structured scope composition (not implemented)"
+        )
     print(f"[gateway] policy_version={POLICY_VERSION} policy_hash={POLICY_HASH}", flush=True)
     print(f"[gateway] roles={sorted(ROLE_TOKENS.keys())} upstream={UPSTREAM_URL}", flush=True)
     # 带重试的上游连接(bridge 可能晚于 gateway 起来)

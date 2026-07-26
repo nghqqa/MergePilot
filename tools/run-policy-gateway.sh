@@ -19,7 +19,6 @@ PG_USER=${PG_USER:-mergepilot}; PG_DB=${PG_DB:-mergepilot_audit}
 [ -n "$PG_PASS" ] || { echo "controller.env 里没 PG_PASS"; exit 1; }
 
 ROLE_TOKENS=$(python3 -c "import json;print(json.dumps(json.load(open('$TOKENS_FILE'))))")
-AUDIT_DSN="postgresql://${PG_USER}:${PG_PASS}@audit-pg:5432/${PG_DB}"
 
 echo "=== 1. 建 mcp-backend-net(幂等)==="
 docker network create --driver bridge mcp-backend-net 2>/dev/null && echo "  created" || echo "  exists"
@@ -27,9 +26,25 @@ docker network create --driver bridge mcp-backend-net 2>/dev/null && echo "  cre
 echo "=== 1b. github-mcp 挂 mcp-backend-net(非破坏:额外网络;割接后 bridge 仅经此网可达)==="
 docker network connect mcp-backend-net github-mcp 2>/dev/null && echo "  connected" || echo "  (already on)"
 
-echo "=== 2. 应用 m3b_policy.sql(建 mcp_calls/approvals/policy_action_outbox,幂等)==="
+echo "=== 2. 应用 m3b_policy.sql(建表 + B3 加 correlation_id/phase,幂等)==="
 docker cp /mnt/d/goai/tools/audit-db/m3b_policy.sql audit-pg:/tmp/m3b_policy.sql
-docker exec audit-pg psql -U "$PG_USER" -d "$PG_DB" -f /tmp/m3b_policy.sql 2>&1 | grep -iE "CREATE TABLE|CREATE INDEX|CREATE TRIGGER|CREATE FUNCTION|ERROR" | head -20
+docker exec audit-pg psql -U "$PG_USER" -d "$PG_DB" -f /tmp/m3b_policy.sql 2>&1 | grep -iE "CREATE TABLE|CREATE INDEX|CREATE TRIGGER|CREATE FUNCTION|ALTER|ERROR" | head -20
+
+echo "=== 2b. 创建 Gateway 专用 INSERT-only 审计账号(B3)==="
+bash /mnt/d/goai/tools/m3b-create-audit-role.sh
+
+# B3:gateway 用 policy_gateway_audit(INSERT-only),不再用 mergepilot 超管
+AUDIT_ENV="$DIR/audit-db.env"
+if [ -f "$AUDIT_ENV" ]; then
+  PGW_AUDIT_USER=$(grep '^PGW_AUDIT_USER=' "$AUDIT_ENV" | cut -d= -f2-)
+  PGW_AUDIT_PASS=$(grep '^PGW_AUDIT_PASS=' "$AUDIT_ENV" | head -1 | cut -d= -f2-)
+  PGW_AUDIT_DB=$(grep '^PGW_AUDIT_DB=' "$AUDIT_ENV" | cut -d= -f2-)
+  AUDIT_DSN="postgresql://${PGW_AUDIT_USER}:${PGW_AUDIT_PASS}@audit-pg:5432/${PGW_AUDIT_DB}"
+  echo "  AUDIT_DSN user=${PGW_AUDIT_USER} (INSERT-only)"
+else
+  echo "  (warn: 无 audit-db.env,gateway 将 audit OFF;先跑 m3b-create-audit-role.sh)"
+  AUDIT_DSN=""
+fi
 
 echo "=== 3. 构建 policy-gateway 镜像 ==="
 docker build -t policy-gateway:latest /mnt/d/goai/tools/policy-gateway 2>&1 | tail -3

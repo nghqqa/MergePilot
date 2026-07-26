@@ -7,16 +7,18 @@
 --
 -- 备:调用方身份固定 4 角色(reviewer/fixer/verifier/coordinator),不允许自定义。
 
--- ─── mcp_calls:不可变 MCP 调用审计(B1 起写)───
+-- ─── mcp_calls:不可变 MCP 调用审计(B1 起写;B3 加 correlation_id + phase)───
 CREATE TABLE IF NOT EXISTS mcp_calls (
     request_id    TEXT PRIMARY KEY,
+    correlation_id TEXT,                               -- B3:一次调用的 INTENT/RESULT/ERROR 共享同一 id
+    phase         TEXT CHECK (phase IN ('INTENT','RESULT','ERROR')),  -- B3:追加式事件阶段
     ts            TIMESTAMPTZ NOT NULL DEFAULT now(),
     caller_agent  TEXT NOT NULL,                       -- reviewer/fixer/verifier/coordinator/path=..(auth fail 时)
     tool          TEXT NOT NULL,                       -- 工具名或 (list_tools)/(auth)
     decision      TEXT NOT NULL CHECK (decision IN ('ALLOW','DENY','ERROR')),
-    reason_code   TEXT,                                -- B1_PERMISSIVE_CALL / BAD_TOKEN / ROLE_PATH_MISMATCH / TOOL_NOT_ALLOWED / ...
-    policy_version TEXT,                               -- b1-permissive / policy.yaml 的 version 字段
-    policy_hash   TEXT,                                -- policy.yaml 内容 hash(B1: 角色集合 hash)
+    reason_code   TEXT,                                -- B1_PERMISSIVE_CALL / BAD_TOKEN / AUDIT_UNAVAILABLE / ...
+    policy_version TEXT,                               -- policy.yaml 的 version 字段
+    policy_hash   TEXT,                                -- policy.yaml 内容 hash
     ticket_id     TEXT,                                -- L2 动作关联的审批票据(B4)
     args_hash     TEXT,                                -- 入参 sha256 前 16 位(不含敏感原文)
     target_repo   TEXT,
@@ -27,9 +29,13 @@ CREATE TABLE IF NOT EXISTS mcp_calls (
     run_id        TEXT,
     error         TEXT
 );
+-- 迁移:已有库补列(B3)
+ALTER TABLE mcp_calls ADD COLUMN IF NOT EXISTS correlation_id TEXT;
+ALTER TABLE mcp_calls ADD COLUMN IF NOT EXISTS phase TEXT;
 CREATE INDEX IF NOT EXISTS idx_mcp_calls_ts      ON mcp_calls(ts);
 CREATE INDEX IF NOT EXISTS idx_mcp_calls_caller  ON mcp_calls(caller_agent, ts);
 CREATE INDEX IF NOT EXISTS idx_mcp_calls_decision ON mcp_calls(decision, ts);
+CREATE INDEX IF NOT EXISTS idx_mcp_calls_corr    ON mcp_calls(correlation_id);  -- B3:按调用聚合 INTENT+RESULT
 
 -- B3:防篡改约束(即便用超管账号也拒绝 UPDATE/DELETE/ALTER 已存在的行)
 -- 用触发器拦截 mcp_calls 的 UPDATE/DELETE(INSERT-only)
