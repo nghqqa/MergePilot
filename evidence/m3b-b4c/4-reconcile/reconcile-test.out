@@ -1,0 +1,108 @@
+═══════════════════════════════════════════════
+  B4c-4 延迟对账验收
+═══════════════════════════════════════════════
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 957B 0.0s done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/python:3.12-slim
+#2 DONE 5.6s
+
+#3 [internal] load .dockerignore
+#3 transferring context: 2B 0.0s done
+#3 DONE 0.1s
+
+#4 [1/7] FROM docker.io/library/python:3.12-slim@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de
+#4 DONE 0.0s
+
+#5 [internal] load build context
+#5 transferring context: 62.02kB 0.0s done
+#5 DONE 0.1s
+
+#6 [2/7] RUN pip install --no-cache-dir       psycopg2-binary==2.9.12       mcp==1.28.1       httpx==0.28.1       anyio==4.14.2
+#6 CACHED
+
+#7 [3/7] COPY controller.py /app/controller.py
+#7 DONE 0.1s
+
+#8 [4/7] COPY gateway_client.py /app/gateway_client.py
+#8 DONE 0.1s
+
+#9 [5/7] COPY test_gateway_schema.py /app/test_gateway_schema.py
+#9 DONE 0.1s
+
+#10 [6/7] COPY test_startup_pgwait.py /app/test_startup_pgwait.py
+#10 DONE 0.2s
+
+#11 [7/7] WORKDIR /app
+#11 DONE 0.1s
+
+#12 exporting to image
+#12 exporting layers
+#12 exporting layers 0.3s done
+#12 writing image sha256:c9f0920d14bec3bff9a89cda48564ffba064e14f8ae8803919b3a6daac94b974 done
+#12 naming to docker.io/library/mergepilot-controller:latest 0.0s done
+#12 DONE 0.4s
+  ✅ controller.py 容器内==仓库
+
+=== 1. UNKNOWN + 未合并 → FAILED ===
+  分支 fix/b4c4-unkfail-4627-x 建好
+  commit 加好
+  approval=FAILED outbox=FAILED task=HOLD(PR 未 merged → FAILED)
+  ✅ UNKNOWN + 未合并 → FAILED
+  ✅ outbox → FAILED(收敛)
+  ✅ task → HOLD(收敛)
+
+=== 2. UNKNOWN + 已合并 → USED ===
+  分支 fix/b4c4-unkused-4627-x 建好
+  commit 加好
+  approval=USED outbox=SUCCEEDED task=MERGED(PR 已 merged → USED + 收敛)
+  ✅ UNKNOWN + 已合并 → USED
+  ✅ outbox → SUCCEEDED(收敛)
+  ✅ task → MERGED(收敛)
+
+=== 3. PENDING 过期 → EXPIRED + HOLD ===
+  分支 fix/b4c4-expire-4627-x 建好
+  commit 加好
+  approval=EXPIRED outbox=FAILED task=HOLD
+  ✅ PENDING 过期 → EXPIRED
+  ✅ outbox → FAILED
+  ✅ task → HOLD
+
+=== 4. 滞留 DISPATCHED(approval=USED)→ outbox SUCCEEDED ===
+  分支 fix/b4c4-stranded-4627-x 建好
+  commit 加好
+  outbox=SUCCEEDED(approval=USED,outbox 滞留 DISPATCHED → 应 SUCCEEDED)
+  ✅ 滞留 DISPATCHED(approval=USED)→ SUCCEEDED
+
+=== 5. 新鲜 UNKNOWN(executing_at<120s)不对账 ===
+  分支 fix/b4c4-fresh-4627-x 建好
+  commit 加好
+  approval=UNKNOWN(新鲜 UNKNOWN → 应仍 UNKNOWN,不对账)
+  ✅ 新鲜 UNKNOWN 不对账(executing_at<120s,防竞态)
+
+=== 6. GitHub RETRY(bad gateway)→ 所有状态不变 ===
+  分支 fix/b4c4-retry-4627-x 建好
+  commit 加好
+  approval=UNKNOWN outbox=PENDING_DISPATCH(RETRY → 应不变)
+  ✅ approval 仍 UNKNOWN(RETRY 不迁移)
+  ✅ outbox 不变(RETRY 不收敛)
+
+=== 6.5. stale EXPIRED → outbox FAILED + CONCURRENT_STATE_CHANGE(task CAS 对称) ===
+  分支 fix/b4c4-expstale-4627-x 建好
+  commit 加好
+  approval=EXPIRED outbox=FAILED task=HOLD err=ticket EXPIRED | CONCURRENT_STATE_CHANGE: task 已脱离 APPROVAL_PENDING/l2_awaiting_
+  ✅ approval → EXPIRED
+  ✅ outbox → FAILED
+  ✅ task 不被覆盖(仍 HOLD,CAS 失败)
+  ✅ outbox.error 含 'ticket EXPIRED'
+  ✅ outbox.error 含 CONCURRENT_STATE_CHANGE(对称 CAS)
+
+=== 5. 凭证扫描 ===
+  ✅ 无凭证泄漏
+
+═══════════════════════════════════════════════
+  B4c-4 验收: PASS=20 FAIL=0
+═══════════════════════════════════════════════

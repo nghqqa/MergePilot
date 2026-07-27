@@ -909,18 +909,99 @@ def _advance_outbox_unknown(oid, ticket_id, reason):
     conn.commit()
 
 
+def _reconcile_ticket(ticket_id, run_id, action, astatus, pr_num, repo):
+    """B4c-4:对账单张 UNKNOWN/超时EXECUTING 票。读 GitHub 权威态 → l2_reconcile_*。
+    effect_applied:merge→prd.merged;close→state==closed AND NOT merged(收紧 #7)。
+    返回 bool(l2_reconcile_* 返回值):True=已迁移(USED/FAILED),False=未迁移/读失败(下轮重试)。"""
+    import gateway_client
+    owner, _, repo_name = repo.partition("/")
+    rstatus, prd = gateway_client.gateway_read_pr(owner, repo_name, pr_num)
+    if rstatus == "RETRY":
+        return False   # 读失败,下轮重试
+    if action == "close":
+        effect_applied = (prd["state"] == "closed" and not prd["merged"])
+    else:  # merge
+        effect_applied = prd["merged"]
+    actual_sha = prd.get("merge_commit_sha") or prd.get("head_sha") or ""
+    conn = ensure_pg()
+    try:
+        with conn.cursor() as cur:
+            if astatus == "UNKNOWN":
+                cur.execute("SELECT l2_reconcile_unknown(%s,%s,%s)", (ticket_id, effect_applied, actual_sha))
+            else:  # EXECUTING
+                cur.execute("SELECT l2_reconcile_executing(%s,%s,%s)", (ticket_id, effect_applied, actual_sha))
+            ok_bool = cur.fetchone()[0]
+        conn.commit()
+        new_st = "USED" if effect_applied else "FAILED"
+        print(f"[ctrl][L2] reconcile {ticket_id[:16]} {astatus}→{new_st if ok_bool else '(未迁移)'} (effect={effect_applied})")
+        return bool(ok_bool)
+    except Exception as e:
+        conn.rollback()
+        print(f"[ctrl][L2] reconcile {ticket_id[:16]} 异常: {e}")
+        return False
+
+
 def reconcile_l2():
-    """UNKNOWN/超时EXECUTING/滞留DISPATCHED/过期 状态收敛(读 GitHub 实际态)。B4c-0.1 占位。"""
+    """B4c-4(+4.1):延迟对账 + 过期收敛 + 全状态收敛(读 GitHub 实际态,**绝不自动重 merge**)。
+    ① UNKNOWN/EXECUTING 且 executing_at<now()-120s(延迟防竞态;B4c-4.1 P1-1:UNKNOWN 也需延迟)
+       → gateway_read_pr → l2_reconcile_* → **复用 _advance_outbox_by_approval 收敛 outbox+task**(P1-2);
+    ③ PENDING 过期 → l2_expire_pending → EXPIRED + outbox FAILED + task HOLD;
+    ④ APPROVED 过期 → l2_expire_approved → EXPIRED + outbox FAILED + task HOLD;
+    ⑤ 滞留 outbox(DISPATCHED 或 UNKNOWN)+ approval 已终结(USED/FAILED)
+       → **复用 _advance_outbox_by_approval**(P1-3:读 action + action-aware task 推进 + 完整 CAS)。"""
+    # ① + ②:UNKNOWN/超时EXECUTING 延迟对账(B4c-4.1:两者都需 executing_at<now()-120s)
     conn = ensure_pg()
     with conn.cursor() as cur:
-        cur.execute("""SELECT
-            (SELECT count(*) FROM approvals WHERE status='UNKNOWN'),
-            (SELECT count(*) FROM approvals WHERE status='EXECUTING' AND executing_at < now() - interval '120 seconds'),
-            (SELECT count(*) FROM policy_action_outbox WHERE status='DISPATCHED');""")
-        unk, exe, disp = cur.fetchone()
+        cur.execute("""SELECT a.ticket_id, a.run_id, a.action, a.status, a.pr_number, a.repo, o.id
+                       FROM approvals a JOIN policy_action_outbox o ON a.ticket_id=o.ticket_id
+                       WHERE a.executing_at IS NOT NULL AND a.executing_at < now() - interval '120 seconds'
+                         AND a.status IN ('UNKNOWN','EXECUTING')
+                         AND a.pr_number IS NOT NULL AND a.repo IS NOT NULL
+                       LIMIT 10""")
+        reconcile_items = cur.fetchall()
     conn.commit()
-    if unk or exe or disp:
-        print(f"[ctrl][L2-stub] reconcile_l2: UNKNOWN={unk} 超时EXECUTING={exe} 滞留DISPATCHED={disp}(B4c-4 实现后处理)")
+    for ticket_id, run_id, action, astatus, pr_num, repo, oid in reconcile_items:
+        changed = _reconcile_ticket(ticket_id, run_id, action, astatus, pr_num, repo)
+        if changed:
+            # B4c-4.1 P1-2:对账后复用 _advance_outbox_by_approval 收敛 outbox+task(action-aware + 完整 CAS)
+            _advance_outbox_by_approval(oid, ticket_id, action, None)
+
+    # ③ + ④:过期 PENDING/APPROVED → EXPIRED + outbox FAILED + task HOLD
+    conn = ensure_pg()
+    with conn.cursor() as cur:
+        cur.execute("""SELECT ticket_id FROM approvals
+                       WHERE status='PENDING' AND approval_expires_at < now()""")
+        for (tid,) in cur.fetchall():
+            cur.execute("SELECT l2_expire_pending(%s)", (tid,))
+        cur.execute("""SELECT ticket_id FROM approvals
+                       WHERE status='APPROVED' AND expires_at IS NOT NULL AND expires_at < now()""")
+        for (tid,) in cur.fetchall():
+            cur.execute("SELECT l2_expire_approved(%s)", (tid,))
+        cur.execute("""SELECT a.ticket_id, a.run_id FROM approvals a
+                       WHERE a.status='EXPIRED'
+                         AND EXISTS (SELECT 1 FROM policy_action_outbox o WHERE o.ticket_id=a.ticket_id AND o.status != 'FAILED')""")
+        for tid, run_id in cur.fetchall():
+            # B4c-4.2 P1:task 用**完整 CAS**(approval_required+APPROVAL_PENDING+l2_awaiting_approval);
+            # CAS 失败(rowcount=0)→ 不覆盖 task,outbox.error 追加 CONCURRENT_STATE_CHANGE(对称于 drain USED/FAILED)
+            cur.execute("UPDATE task_runs SET status='HOLD', current_stage='l2_expired', last_error='ticket EXPIRED', updated_at=now() WHERE run_id=%s AND approval_required=TRUE AND status='APPROVAL_PENDING' AND current_stage='l2_awaiting_approval'", (run_id,))
+            exp_err = "ticket EXPIRED"
+            if cur.rowcount == 0:
+                exp_err = "ticket EXPIRED | CONCURRENT_STATE_CHANGE: task 已脱离 APPROVAL_PENDING/l2_awaiting_approval,未覆盖"
+            cur.execute("UPDATE policy_action_outbox SET status='FAILED', completed_at=now(), error=%s WHERE ticket_id=%s AND status != 'FAILED'", (exp_err[:300], tid))
+            print(f"[ctrl][L2] expire {tid[:16]} → outbox FAILED" + (" (task CAS 失败,未覆盖)" if cur.rowcount == 0 else " + task HOLD"))
+    conn.commit()
+
+    # ⑤ 滞留 outbox(DISPATCHED 或 UNKNOWN)+ approval 已终结(USED/FAILED)
+    #   B4c-4.1 P1-3:复用 _advance_outbox_by_approval(action-aware + 完整 CAS,不再手写映射)
+    conn = ensure_pg()
+    with conn.cursor() as cur:
+        cur.execute("""SELECT o.id, o.ticket_id, a.action
+                       FROM policy_action_outbox o JOIN approvals a ON o.ticket_id=a.ticket_id
+                       WHERE o.status IN ('DISPATCHED','UNKNOWN') AND a.status IN ('USED','FAILED')""")
+        stranded = cur.fetchall()
+    conn.commit()
+    for oid, ticket_id, action in stranded:
+        _advance_outbox_by_approval(oid, ticket_id, action, "reconcile stranded convergence")
 
 
 # ── 主循环(故障域分离,复审 #3;L2 维护始终运行,B4c-0.1 #3)──
