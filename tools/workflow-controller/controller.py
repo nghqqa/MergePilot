@@ -822,17 +822,91 @@ def initiate_l2_pending():
                 pass
 
 
-def drain_l2_outbox():
-    """policy_action_outbox:PENDING_DISPATCH+APPROVED → DISPATCHED+lease → Gateway merge → 推进。B4c-0.1 占位。"""
+L2_ACTION_TOOL = {"merge": "merge_pull_request", "close": "update_pull_request"}
+
+
+def _advance_outbox_by_approval(oid, ticket_id, action, gw_err):
+    """B4c-3 边界②:Gateway 返回/超时后读 **approvals 权威态**(Gateway 的 l2_* 已写 status),不猜 HTTP/MCP 返回。
+    B4c-3.1 P1-1 action-aware:merge USED→task MERGED/l2_done;close USED→task HOLD/verified-closed(设计 §3.4)。
+    B4c-3.1 P1-2 task 终态推进用**完整 CAS**(approval_required+APPROVAL_PENDING+l2_awaiting_approval);
+      CAS 失败(rowcount=0)→ outbox error 记 CONCURRENT_STATE_CHANGE,**不静默当成功**(防旧回调覆盖新阶段)。
+    边界③:UNKNOWN/EXECUTING/APPROVED 绝不自动重 merge。"""
     conn = ensure_pg()
     with conn.cursor() as cur:
-        cur.execute("""SELECT count(*) FROM policy_action_outbox o
-                       JOIN approvals a ON o.ticket_id=a.ticket_id
-                       WHERE o.status='PENDING_DISPATCH' AND a.status='APPROVED';""")
-        n = cur.fetchone()[0]
+        cur.execute("SELECT status, result_sha, run_id FROM approvals WHERE ticket_id=%s", (ticket_id,))
+        r = cur.fetchone()
+        if not r:
+            conn.commit(); return
+        astatus, result_sha, run_id = r
+        cas_clause = "approval_required=TRUE AND status='APPROVAL_PENDING' AND current_stage='l2_awaiting_approval'"
+        if astatus == "USED":
+            cur.execute("UPDATE policy_action_outbox SET status='SUCCEEDED', result_sha=%s, completed_at=now() WHERE id=%s", (result_sha, oid))
+            if action == "close":
+                cur.execute(f"UPDATE task_runs SET status='HOLD', current_stage='verified-closed', updated_at=now() WHERE run_id=%s AND {cas_clause}", (run_id,))
+            else:  # merge
+                cur.execute(f"UPDATE task_runs SET status='MERGED', current_stage='l2_done', updated_at=now() WHERE run_id=%s AND {cas_clause}", (run_id,))
+            if cur.rowcount == 0:
+                cur.execute("UPDATE policy_action_outbox SET error=%s WHERE id=%s", ("CONCURRENT_STATE_CHANGE: task 已脱离 APPROVAL_PENDING/l2_awaiting_approval,未覆盖"[:200], oid))
+        elif astatus == "FAILED":
+            # B4c-3.2 对称 CAS:task UPDATE 先于 outbox.error,rowcount=0 → outbox.error 追加 CONCURRENT_STATE_CHANGE
+            cur.execute(f"UPDATE task_runs SET status='HOLD', current_stage='l2_drain_failed', last_error=%s, updated_at=now() WHERE run_id=%s AND {cas_clause}", ((f"{action} FAILED: {gw_err or ''}")[:300], run_id))
+            err_msg = (gw_err or f"{action} FAILED")
+            if cur.rowcount == 0:
+                err_msg = f"{err_msg} | CONCURRENT_STATE_CHANGE: task 未同步(已脱离 APPROVAL_PENDING/l2_awaiting_approval)"
+            cur.execute("UPDATE policy_action_outbox SET status='FAILED', completed_at=now(), error=%s WHERE id=%s", (err_msg[:300], oid))
+        elif astatus == "UNKNOWN":
+            cur.execute("UPDATE policy_action_outbox SET status='UNKNOWN', error=%s WHERE id=%s", ((gw_err or "marked unknown")[:200], oid))
+            # task 留 APPROVAL_PENDING,交 B4c-4 对账(绝不重 merge)
+        # EXECUTING / APPROVED → outbox 留 DISPATCHED(不动),lease/对账兜底
     conn.commit()
-    if n:
-        print(f"[ctrl][L2-stub] drain_l2_outbox: {n} 个 APPROVED 票待派发(B4c-3 实现后处理)")
+    print(f"[ctrl][L2] drain ticket={ticket_id[:16]} action={action} → approval={astatus}" + (f" (gw_err={gw_err[:60]})" if gw_err else ""))
+
+
+def drain_l2_outbox():
+    """B4c-3 lease drain:PENDING_DISPATCH+APPROVED(或 lease 过期的 DISPATCHED+APPROVED 安全重派)
+    → DISPATCHED+lease → Gateway 调用 → 读 approvals 权威态推进。
+    边界:① 领取事务调 Gateway **前提交**;② Gateway 返回后读 approvals.status 权威态;③ UNKNOWN/EXECUTING 绝不重 merge。
+    B4c-3.1:**逐条领取**(LIMIT 1,每条 lease 在其 Gateway 调用前刷新,防批量 lease 提前过期);
+    **attempts 每次真实派发 +1**(首派 0→1,lease 过期重派 1→2;SKIP LOCKED 未取得的不加)。"""
+    import gateway_client
+    for _ in range(10):   # 每次 drain 最多处理 10 条(逐条,防批量 lease 提前过期)
+        conn = ensure_pg()
+        with conn.cursor() as cur:
+            cur.execute("""SELECT o.id, o.ticket_id, a.canonical_payload, a.action
+                           FROM policy_action_outbox o JOIN approvals a ON o.ticket_id=a.ticket_id
+                           WHERE (o.status='PENDING_DISPATCH' AND a.status='APPROVED')
+                              OR (o.status='DISPATCHED' AND o.lease_expires_at IS NOT NULL AND o.lease_expires_at < now() AND a.status='APPROVED')
+                           ORDER BY o.id FOR UPDATE SKIP LOCKED LIMIT 1""")
+            item = cur.fetchone()
+            if not item:
+                conn.commit(); break
+            oid, ticket_id, payload, action = item
+            # 每次真实派发 attempts +1(首派 + lease 重派都 +1;SKIP LOCKED 未取得的不在 items,不加)
+            cur.execute("""UPDATE policy_action_outbox SET status='DISPATCHED',
+                             lease_expires_at = now() + make_interval(secs => %s),
+                             dispatched_at = now(), attempts = attempts + 1
+                           WHERE id=%s""", (L2_LEASE_SECONDS, oid))
+        conn.commit()   # 边界①:提交领取(逐条),释放 FOR UPDATE,再调 Gateway
+        tool = L2_ACTION_TOOL.get(action)
+        if not tool:
+            _advance_outbox_unknown(oid, ticket_id, f"未知 action {action}"); continue
+        call_args = dict(payload) if isinstance(payload, dict) else {}
+        call_args["approval_ticket"] = ticket_id
+        gw_err = None
+        try:
+            gateway_client.gateway_call(tool, call_args, timeout=L2_GW_TIMEOUT)
+        except Exception as e:
+            gw_err = f"{type(e).__name__}: {str(e)[:120]}"   # 超时/网络;不猜结果,下面读权威态
+        # 边界②:读 approvals 权威态推进(边界③:UNKNOWN/EXECUTING 不重 merge)
+        _advance_outbox_by_approval(oid, ticket_id, action, gw_err)
+
+
+def _advance_outbox_unknown(oid, ticket_id, reason):
+    """未知 action → outbox UNKNOWN(不调 Gateway)。"""
+    conn = ensure_pg()
+    with conn.cursor() as cur:
+        cur.execute("UPDATE policy_action_outbox SET status='UNKNOWN', error=%s WHERE id=%s", (reason[:200], oid))
+    conn.commit()
 
 
 def reconcile_l2():

@@ -1,0 +1,125 @@
+═══════════════════════════════════════════════
+  B4c-3 lease drain 验收
+═══════════════════════════════════════════════
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 957B done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/python:3.12-slim
+#2 DONE 5.8s
+
+#3 [internal] load .dockerignore
+#3 transferring context: 2B done
+#3 DONE 0.0s
+
+#4 [1/7] FROM docker.io/library/python:3.12-slim@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de
+#4 DONE 0.0s
+
+#5 [internal] load build context
+#5 transferring context: 55.62kB 0.0s done
+#5 DONE 0.0s
+
+#6 [2/7] RUN pip install --no-cache-dir       psycopg2-binary==2.9.12       mcp==1.28.1       httpx==0.28.1       anyio==4.14.2
+#6 CACHED
+
+#7 [3/7] COPY controller.py /app/controller.py
+#7 DONE 0.1s
+
+#8 [4/7] COPY gateway_client.py /app/gateway_client.py
+#8 DONE 0.1s
+
+#9 [5/7] COPY test_gateway_schema.py /app/test_gateway_schema.py
+#9 DONE 0.1s
+
+#10 [6/7] COPY test_startup_pgwait.py /app/test_startup_pgwait.py
+#10 DONE 0.1s
+
+#11 [7/7] WORKDIR /app
+#11 DONE 0.1s
+
+#12 exporting to image
+#12 exporting layers
+#12 exporting layers 0.3s done
+#12 writing image sha256:244d16f7fe9d8e534fec42e205299b69aa47316248a10baeb6e1201e51897a83 done
+#12 naming to docker.io/library/mergepilot-controller:latest 0.0s done
+#12 DONE 0.3s
+  ✅ controller.py 容器内==仓库
+  ✅ gateway_client.py 容器内==仓库
+
+=== 1. USED → MERGED(真 merge) ===
+  分支 fix/b4c3-used-39680-x 建好
+  commit 加好
+  ✅ 票 APPROVED(待 drain)
+  approval=USED outbox=SUCCEEDED task=MERGED sha=e746ececf3f6
+  ✅ approval → USED
+  ✅ outbox → SUCCEEDED
+  ✅ task → MERGED
+  ✅ result_sha 记录(merge commit)
+
+=== 2. FAILED → HOLD(fault gateway upstream_error) ===
+  分支 fix/b4c3-failed-39680-x 建好
+  commit 加好
+  approval=FAILED outbox=FAILED task=HOLD
+  ✅ approval → FAILED(fault upstream_error)
+  ✅ outbox → FAILED
+  ✅ task → HOLD
+
+=== 3. UNKNOWN → outbox UNKNOWN,不重派(交 B4c-4) ===
+  分支 fix/b4c3-unknown-39680-x 建好
+  commit 加好
+  approval=UNKNOWN outbox=UNKNOWN task=APPROVAL_PENDING attempts=1
+  ✅ approval → UNKNOWN(write_timeout)
+  ✅ outbox → UNKNOWN(不重派,交 B4c-4 对账)
+  ✅ task 留 APPROVAL_PENDING(不 HOLD,等对账)
+  ✅ UNKNOWN 不被重 merge(再 drain 仍 UNKNOWN)
+
+=== 4. lease 写入 + crash 后滞留(bad gateway) ===
+  分支 fix/b4c3-crash-39680-x 建好
+  commit 加好
+  outbox=DISPATCHED lease_set=t approval=APPROVED attempts=1
+  ✅ lease_expires_at 已写入(领取时)
+  ✅ outbox 留 DISPATCHED(crash 后滞留,等 lease 恢复)
+  ✅ approval 仍 APPROVED(Gateway 未 claim,未发生 merge)
+  ✅ attempts=1(首次领取)
+  lease 过期重派后: outbox=SUCCEEDED approval=USED attempts=2
+  ✅ lease 重派 +1 → attempts 1→2(每次真实派发计数,审计可区分派发次数)
+
+=== 5. 并发 drain(SKIP LOCKED,只一个领取) ===
+  分支 fix/b4c3-conc-39680-x 建好
+  commit 加好
+  并发后: outbox=DISPATCHED attempts=1
+  ✅ 并发领取只 +1(SKIP LOCKED 互斥)
+  ✅ outbox DISPATCHED(领一次)
+
+=== 6. close USED → HOLD/verified-closed(非 MERGED) ===
+  分支 fix/b4c3-close-39680-close 建好
+  commit 加好
+  approval=USED task=HOLD stage=verified-closed
+  ✅ close → approval USED
+  ✅ close USED → task HOLD(非 MERGED)
+  ✅ close USED → current_stage=verified-closed
+
+=== 7. stale callback → CONCURRENT_STATE_CHANGE(task CAS 失败不覆盖) ===
+  分支 fix/b4c3-stale-39680-x 建好
+  commit 加好
+  task=HOLD stage=l2_awaiting_approval outbox_err=CONCURRENT_STATE_CHANGE: task 已脱离 APPROVAL_PENDING
+  ✅ task 不被覆盖(仍 HOLD,未变 MERGED)
+  ✅ outbox 记 CONCURRENT_STATE_CHANGE(CAS 失败可见)
+
+=== 8. FAILED stale → outbox FAILED + CONCURRENT_STATE_CHANGE(对称 CAS) ===
+  分支 fix/b4c3-failstale-39680-x 建好
+  commit 加好
+  task=HOLD outbox=FAILED err=GatewayError: tool=merge_pull_request 返回 is_error: {"message":"409 not mergeable
+  ✅ task 不被覆盖(仍 HOLD)
+  ✅ outbox=FAILED(上游失败已记)
+  ✅ outbox.error 含 CONCURRENT_STATE_CHANGE(CAS 失败可见,对称于 USED)
+  ✅ outbox.error 同时含上游失败原因
+
+=== 6. 凭证扫描 ===
+  ✅ 无凭证泄漏
+
+═══════════════════════════════════════════════
+  B4c-3 验收: PASS=31 FAIL=0
+═══════════════════════════════════════════════
