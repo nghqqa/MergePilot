@@ -446,6 +446,26 @@ def _gateway_reachable(timeout=5):
         return False
 
 
+def _wait_for_pg(max_attempts=30, delay=2):
+    """B4c-2.2:等 PG ready(SELECT 1 成功)。返回 (conn, ready)。ready=True 时 conn 可用。
+    提取为独立函数便于单元测试(monkeypatch ensure_pg/time.sleep)。
+    ready 标志(仅 SELECT 1 成功后 True;异常 conn=None)——不用 conn is not None。"""
+    conn = None; ready = False
+    for _ in range(max_attempts):
+        try:
+            conn = ensure_pg()
+            with conn.cursor() as _c:
+                _c.execute("SELECT 1")
+            ready = True
+            break
+        except psycopg2.OperationalError as e:
+            conn = None
+            reset_pg()
+            print(f"[ctrl] startup: PG 未就绪({str(e)[:80]}),{delay}s 后重试...")
+            time.sleep(delay)
+    return conn, ready
+
+
 def startup_assert_l2():
     """fail-closed 启动断言(B4c-0.1 #3):
     - 非法 L2_MERGE_ENABLED 值 → 拒启动(不静默当 false)。
@@ -457,7 +477,10 @@ def startup_assert_l2():
         sys.exit(f"[ctrl] FATAL: L2_MERGE_ENABLED='{_L2_RAW}' 非法(允许:0/1/true/false/yes/no/on/off)")
 
     # 是否存在"需要维护但尚未终结"的审批 run
-    conn = ensure_pg()
+    # B4c-2.2:等 PG ready(_wait_for_pg,提取为独立函数;ready 标志仅 SELECT 1 成功后 True)
+    conn, ready = _wait_for_pg()
+    if not ready:
+        sys.exit("[ctrl] FATAL: PG 60s 内未就绪(startup_assert)—— 先起 audit-pg")
     with conn.cursor() as cur:
         cur.execute("""SELECT count(*) FROM task_runs
                        WHERE approval_required AND status NOT IN ('PASS','FAIL','HOLD','MERGED','ROLLED_BACK');""")
@@ -640,6 +663,85 @@ def discover_binding_for_run(run_id):
     return _atomic_advance(run_id, "FOUND", {"pr_number": pr_num}, candidate=cand)
 
 
+def _hold_ticket_atomic(run_id, status, reason):
+    """B4c-2.2:建票异常路径(22023 第二事务)原子置 task HOLD。**完整 CAS**:
+    approval_required=TRUE AND status='APPROVAL_PENDING' AND current_stage='l2_awaiting_ticket'
+    (不只检查 stage,防覆盖已非 APPROVAL_PENDING 的任务)。"""
+    conn = ensure_pg()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", ("ticket:" + run_id,))
+            cur.fetchone()
+            cur.execute("SELECT approval_required, status, current_stage FROM task_runs WHERE run_id=%s FOR UPDATE", (run_id,))
+            t = cur.fetchone()
+            if not t:
+                conn.commit(); return (status, {"reason": reason, "note": "task 消失"})
+            ar, status_db, cstage = t
+            if not (ar and status_db == "APPROVAL_PENDING" and cstage == "l2_awaiting_ticket"):
+                conn.commit(); return ("CONCURRENT", {"reason": f"task 已变 status={status_db} stage={cstage}", "orig": status})
+            cur.execute("UPDATE task_runs SET status='HOLD', current_stage='l2_ticket_failed', last_error=%s, updated_at=now() WHERE run_id=%s",
+                        (f"{status}: {reason}"[:300], run_id))
+        conn.commit()
+        return (status, {"reason": reason})
+    except Exception as e:
+        conn.rollback()
+        return ("RETRY", {"reason": f"_hold_ticket_atomic 异常: {e}"})
+
+
+def create_ticket_for_run(run_id):
+    """B4c-2(+2.2):固化双源 SHA(承 discover)→ canonical_payload + args_hash → l2_ensure_ticket 幂等建票
+    (活动票返回旧的;同事务 outbox)→ 推进 l2_awaiting_approval。
+    **B4c-2.2 P1:全部在同一锁事务内**(ticket:<run_id> xact lock + SELECT task FOR UPDATE + 完整 CAS +
+    binding 查询 + HOLD/l2_ensure_ticket/推进),无跨事务窗口:
+      无 binding → 同事务 HOLD_NO_BINDING;
+      l2_ensure_ticket 抛 22023 → (rollback 后)_hold_ticket_atomic 第二事务 HOLD_TICKET_CONFLICT;
+      瞬时 DB 错 → RETRY。
+    返回 (status, info)。"""
+    import gateway_client
+    conn = ensure_pg()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", ("ticket:" + run_id,))
+            cur.fetchone()
+            # 完整 CAS(同事务)
+            cur.execute("SELECT approval_required, status, current_stage FROM task_runs WHERE run_id=%s FOR UPDATE", (run_id,))
+            t = cur.fetchone()
+            if not t:
+                conn.commit(); return ("CONCURRENT", {"reason": "task 消失"})
+            ar, status, cstage = t
+            if not (ar and status == "APPROVAL_PENDING" and cstage == "l2_awaiting_ticket"):
+                conn.commit(); return ("CONCURRENT", {"reason": f"task 已变 status={status} stage={cstage}"})
+            # binding 查询 **在同一事务内**(B4c-2.2 P1)
+            cur.execute("SELECT binding_id, repo, pr_number, base_branch, head_sha FROM run_pr_bindings WHERE run_id=%s", (run_id,))
+            b = cur.fetchone()
+            if not b:
+                cur.execute("UPDATE task_runs SET status='HOLD', current_stage='l2_ticket_failed', last_error=%s, updated_at=now() WHERE run_id=%s",
+                            ("HOLD_NO_BINDING: 无 binding(应先经 l2_binding 发现)"[:300], run_id))
+                conn.commit()
+                return ("HOLD_NO_BINDING", {"reason": "无 binding(应先经 l2_binding 发现)"})
+            binding_id, repo, pr_num, base_ref, head_sha = b
+            owner, _, repo_name = repo.partition("/")
+            payload = {"owner": owner, "repo": repo_name, "pullNumber": int(pr_num),
+                       "commit_title": f"Merge fix {run_id}", "merge_method": "squash"}
+            args_hash = gateway_client.canonical_args_hash(payload)
+            cur.execute("SELECT l2_ensure_ticket(%s, 'merge', %s::jsonb, %s, 24, 1)",
+                        (binding_id, json.dumps(payload), args_hash))
+            ticket_id = cur.fetchone()[0]
+            cur.execute("UPDATE task_runs SET current_stage='l2_awaiting_approval', updated_at=now() WHERE run_id=%s", (run_id,))
+        conn.commit()
+        return ("CREATED", {"ticket_id": ticket_id, "binding_id": binding_id,
+                            "args_hash": args_hash[:12], "pr_number": pr_num, "payload": payload})
+    except psycopg2.Error as e:
+        # B4c-2.1 P1-2:按 pgcode 分类。22023(payload/hash/TTL 确定性冲突)→ HOLD_TICKET_CONFLICT(第二事务,完整 CAS)
+        conn.rollback()
+        if getattr(e, "pgcode", None) == "22023":
+            return _hold_ticket_atomic(run_id, "HOLD_TICKET_CONFLICT", f"l2_ensure_ticket 22023: {str(e)[:200]}")
+        return ("RETRY", {"reason": f"建票 DB 错误(pgcode={e.pgcode}): {str(e)[:150]}"})
+    except Exception as e:
+        conn.rollback()
+        return ("RETRY", {"reason": f"建票失败: {e}"})
+
+
 def initiate_l2_pending():
     """扫 approval_required AND status='APPROVAL_PENDING' AND current_stage='l2_binding':
     B4c-1.1 绑定发现。**per-run session advisory lock**(pg_advisory_lock)序列化多 Controller 发现,
@@ -650,6 +752,10 @@ def initiate_l2_pending():
                        WHERE approval_required AND status='APPROVAL_PENDING' AND current_stage='l2_binding'
                        ORDER BY updated_at LIMIT 10""")
         runs = [r[0] for r in cur.fetchall()]
+        cur.execute("""SELECT run_id FROM task_runs
+                       WHERE approval_required AND status='APPROVAL_PENDING' AND current_stage='l2_awaiting_ticket'
+                       ORDER BY updated_at LIMIT 10""")
+        ticket_runs = [r[0] for r in cur.fetchall()]
     conn.commit()
     for run_id in runs:
         # per-run session advisory lock(跨 Controller 序列化整个 discover;crash 时连接断开自动释放)
@@ -669,7 +775,7 @@ def initiate_l2_pending():
                 print(f"[ctrl][L2] {run_id} 绑定 0 PR(attempts={info.get('attempts')}/{info.get('max')}),下轮重试")
             elif st == "HOLD":
                 print(f"[ctrl][L2] {run_id} HOLD: {info}")
-            elif st in ("RETRY", "RETRY_HEAD_UNSETTLED"):
+            elif st in ("RETRY", "RETRY_HEAD_UNSETTLED", "RETRY_INCONSISTENT"):
                 print(f"[ctrl][L2] {run_id} {st}({info.get('reason','')}),不累加,下轮重试")
             elif st == "CONCURRENT":
                 print(f"[ctrl][L2] {run_id} CONCURRENT({info.get('reason','')}),跳过")
@@ -680,6 +786,36 @@ def initiate_l2_pending():
                 lc2 = ensure_pg()
                 with lc2.cursor() as cur:
                     cur.execute("SELECT pg_advisory_unlock(hashtext(%s))", ("disc:" + run_id,))
+                    cur.fetchone()
+                lc2.commit()
+            except Exception:
+                pass
+
+    # B4c-2:l2_awaiting_ticket → 幂等建票(per-run session advisory lock)
+    for run_id in ticket_runs:
+        lc = ensure_pg()
+        try:
+            with lc.cursor() as cur:
+                cur.execute("SELECT pg_advisory_lock(hashtext(%s))", ("ticket:" + run_id,))
+                cur.fetchone()
+            lc.commit()
+        except Exception as e:
+            print(f"[ctrl][L2] {run_id} ticket advisory_lock 异常: {e}"); continue
+        try:
+            st, info = create_ticket_for_run(run_id)
+            if st == "CREATED":
+                print(f"[ctrl][L2] {run_id} 建票 {st}: ticket={str(info.get('ticket_id',''))[:20]} pr={info.get('pr_number')} hash={info.get('args_hash')} → l2_awaiting_approval")
+            elif st == "CONCURRENT":
+                print(f"[ctrl][L2] {run_id} 建票 CONCURRENT({info.get('reason','')}),跳过")
+            elif st in ("HOLD_NO_BINDING", "HOLD_TICKET_CONFLICT"):
+                print(f"[ctrl][L2] {run_id} 建票 HOLD: {st} {info}")
+            else:   # RETRY
+                print(f"[ctrl][L2] {run_id} 建票 {st}({info.get('reason','')}),下轮重试")
+        finally:
+            try:
+                lc2 = ensure_pg()
+                with lc2.cursor() as cur:
+                    cur.execute("SELECT pg_advisory_unlock(hashtext(%s))", ("ticket:" + run_id,))
                     cur.fetchone()
                 lc2.commit()
             except Exception:

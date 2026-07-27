@@ -1,5 +1,5 @@
 #!/bin/bash
-# m3b-b4c1-discover.sh — B4c-1.1 绑定发现验收(权威身份 + branch 双源 + 原子 CAS + RETRY 不累计)。
+# m3b-b4c1-discover.sh — B4c-1.2 绑定发现验收(权威身份 + branch 双源 + 原子 CAS + RETRY 不累计)。
 # 停 controller loop,用 docker run --rm 一次性容器调 discover(避免 loop 竞争 + CAS 需 current_stage=l2_binding);
 # NOT_FOUND 走 loop(重启 controller)。discover 经 GATEWAY_URL 可注入坏值测 RETRY。
 # 覆盖:FOUND(权威 head_sha==PR head==branch sha)/ 幂等 / UPDATED / AMBIGUOUS→HOLD /
@@ -31,7 +31,7 @@ restore(){ docker start "$NAME" >/dev/null 2>&1 || true; cleanup_runs; }
 trap restore EXIT
 
 log "═══════════════════════════════════════════════"
-log "  B4c-1.1 绑定发现验收(权威身份 + branch 双源 + CAS + RETRY)"
+log "  B4c-1.2 绑定发现验收(权威身份 + branch 双源 + CAS + RETRY)"
 log "═══════════════════════════════════════════════"
 for i in $(seq 1 30); do docker exec audit-pg pg_isready -U "$PG_SU" -d "$PG_DB" >/dev/null 2>&1 && break; sleep 2; done
 docker cp /mnt/d/goai/mergepilot-os/tools/policy-gateway/probe-tools.py policy-gw:/tmp/probe-tools.py >/dev/null 2>&1

@@ -1,0 +1,108 @@
+═══════════════════════════════════════════════
+  B4c-2 幂等建票验收
+═══════════════════════════════════════════════
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 957B done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/python:3.12-slim
+#2 DONE 5.2s
+
+#3 [internal] load .dockerignore
+#3 transferring context: 2B done
+#3 DONE 0.0s
+
+#4 [1/7] FROM docker.io/library/python:3.12-slim@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de
+#4 DONE 0.0s
+
+#5 [internal] load build context
+#5 transferring context: 53.65kB 0.0s done
+#5 DONE 0.0s
+
+#6 [2/7] RUN pip install --no-cache-dir       psycopg2-binary==2.9.12       mcp==1.28.1       httpx==0.28.1       anyio==4.14.2
+#6 CACHED
+
+#7 [3/7] COPY controller.py /app/controller.py
+#7 DONE 0.1s
+
+#8 [4/7] COPY gateway_client.py /app/gateway_client.py
+#8 DONE 0.1s
+
+#9 [5/7] COPY test_gateway_schema.py /app/test_gateway_schema.py
+#9 DONE 0.1s
+
+#10 [6/7] COPY test_startup_pgwait.py /app/test_startup_pgwait.py
+#10 DONE 0.1s
+
+#11 [7/7] WORKDIR /app
+#11 DONE 0.1s
+
+#12 exporting to image
+#12 exporting layers
+#12 exporting layers 0.2s done
+#12 writing image sha256:a7d881de440c506a2e09d640c9917718a660a21923979bf5e91e5a84e14795d7 done
+#12 naming to docker.io/library/mergepilot-controller:latest 0.0s done
+#12 DONE 0.2s
+  ✅ controller.py 容器内==仓库
+  ✅ gateway_client.py 容器内==仓库
+  controller loop stopped(direct discover+create_ticket via one-shot)
+
+=== 1. discover → FOUND,create_ticket → CREATED ===
+  分支 fix/b4c2-found-116725-extra 建好
+  commit 加好(ticket-found-116725.md)
+  ✅ discover → FOUND(binding + l2_awaiting_ticket)
+  ✅ binding 已建(bnd-1fa96d0f-a86c-4cc8-916d-a960cfdce62d)
+  create_ticket: STATUS=CREATED
+  ✅ create_ticket → CREATED
+  ✅ approvals 票已建(tkt-813e103e-cf41-4952-a118-b3e344e1250e)
+  ✅ approvals.status=PENDING
+  ✅ outbox.status=PENDING_DISPATCH(同事务)
+  ✅ task → l2_awaiting_approval(推进)
+  ✅ attempt_no=1(首建)
+
+=== 2. args_hash 契约(payload 复算 == approvals.args_hash) ===
+  recompute=c7a9c83226b40462efaea5bc2ab4db9a3b38098de33e62bfbcfc0944d63e44f1
+  approvals.args_hash=c7a9c83226b40462efaea5bc2ab4db9a3b38098de33e62bfbcfc0944d63e44f1
+  ✅ args_hash 契约一致(建票 hash == 独立复算;Gateway drain 时 canonical_args_hash 同源)
+  ✅ args_hash 完整 64hex
+
+=== 3. 幂等:重复建票 → 同票 ===
+  ✅ 重复 create_ticket → CREATED(l2_ensure_ticket 返回活动票)
+  ✅ 同 ticket_id(幂等,不新建)
+  ✅ attempt_no 仍 1(未新建 attempt)
+  ✅ approvals 仍 1 行(无重复)
+  ✅ outbox 仍 1 行(无重复派发)
+
+=== 4. CAS CONCURRENT(阶段已改不建票) ===
+  ✅ 阶段已改 → CONCURRENT
+  ✅ 未新建票(CAS 失败不写)
+
+=== 5. HOLD_NO_BINDING:无 binding → task HOLD(不每 tick 重复) ===
+  create_ticket: STATUS=HOLD_NO_BINDING
+  ✅ 无 binding → HOLD_NO_BINDING
+  ✅ DB status=HOLD(原子置)
+  ✅ current_stage=l2_ticket_failed
+  ✅ 无票
+  ✅ 无 outbox
+
+=== 6. HOLD_TICKET_CONFLICT:旧票 payload/hash 不一致 → 22023 → HOLD ===
+  旧票 tkt-813e103e-cf41-4952-a118-b3e344e1250e args_hash 已 corrupt: deadbeef26b4...
+  create_ticket: STATUS=HOLD_TICKET_CONFLICT
+  ✅ 旧票 hash 不一致 → HOLD_TICKET_CONFLICT(22023,不重试)
+  ✅ DB status=HOLD
+  ✅ current_stage=l2_ticket_failed
+  ✅ 无第二张票(仍 1 张)
+  ✅ 旧票不变(仍 PENDING,未被修改)
+
+=== 7. PG-wait 行为单元(_wait_for_pg + startup SystemExit) ===
+B4c-2.2 PG-wait unit: PASS=7 FAIL=0
+  ✅ PG-wait 单元 PASS(30 次重试/ready=False/conn=None/第5次成功/startup SystemExit)
+
+=== 5. 凭证扫描 ===
+  ✅ 无凭证泄漏
+
+═══════════════════════════════════════════════
+  B4c-2 验收: PASS=31 FAIL=0
+═══════════════════════════════════════════════
