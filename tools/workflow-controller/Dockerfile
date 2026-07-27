@@ -8,6 +8,7 @@ RUN pip install --no-cache-dir \
       anyio==4.14.2
 COPY controller.py /app/controller.py
 COPY gateway_client.py /app/gateway_client.py
+COPY test_gateway_schema.py /app/test_gateway_schema.py
 WORKDIR /app
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
   CMD python3 -c "import psycopg2,os; psycopg2.connect(host=os.environ.get('PG_HOST','audit-pg'),port=5432,dbname=os.environ.get('PG_DATABASE','mergepilot_audit'),user=os.environ.get('PG_USER','mergepilot'),password=os.environ['PG_PASS']).close()" || exit 1

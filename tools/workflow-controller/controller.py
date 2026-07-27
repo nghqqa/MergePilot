@@ -12,7 +12,7 @@
   ADMIN_PW, PG_PASS, PG_HOST(默认 audit-pg), PG_PORT(5432),
   PG_DATABASE(mergepilot_audit), PG_USER(mergepilot), MATRIX_HS(hiclaw-controller:6167)
 """
-import os, sys, json, time, re, hashlib, psycopg2, urllib.request, urllib.error
+import os, sys, json, time, re, hashlib, uuid, psycopg2, urllib.request, urllib.error
 
 # ── 配置 ──
 ADMIN   = "admin"
@@ -484,20 +484,206 @@ def startup_assert_l2():
     print(f"[ctrl] L2_MERGE_ENABLED={mode};未终结审批 run={pending_l2};Gateway={GATEWAY_URL if need_gateway else '(未启用)'};reconcile_age={L2_RECONCILE_AGE}s")
 
 
-# ── B4c L2 主循环函数(B4c-1..4 填充实现;B4c-0.1 为安全 no-op 占位,不抛错)──
-# 事务边界契约(B4c-0.1 #4):每个扫描函数只读 SELECT 后必须 commit() 释放事务,防 idle-in-transaction。
-#   B4c-1+ 的写路径(建票/drain/reconcile)各自开短事务,显式 commit/rollback,不复用扫描事务。
-def initiate_l2_pending():
-    """扫 approval_required=TRUE 且 status='APPROVAL_PENDING' AND current_stage IN('l2_binding','l2_awaiting_ticket'):
-    绑定发现(B4c-1)+ 幂等建票 l2_ensure_ticket(B4c-2)。B4c-0.1 占位。"""
+# ── B4c L2 主循环函数(B4c-1.1:权威身份 + 原子 CAS + branch 双源)──
+# 事务边界(B4c-0.1 #4 / B4c-1.1 P1-3):Gateway 调用不持 PG 事务;
+#   binding 写入 + 阶段推进 + attempts++ 同一短事务(SELECT task FOR UPDATE + CAS current_stage=l2_binding)。
+def _atomic_advance(run_id, status, info, candidate=None):
+    """B4c-1.1 P1-3:原子推进 task 状态(单短事务,advisory_xact_lock per run + SELECT FOR UPDATE + CAS)。
+    status 分支:FOUND/UPDATED(写 binding + l2_awaiting_ticket)/ NOT_FOUND(attempts++达阈值→HOLD)/
+      AMBIGUOUS|HOLD_*(→HOLD)/ RETRY|RETRY_HEAD_UNSETTLED|CONCURRENT(不动,下轮重试)。
+    candidate:FOUND 时的权威绑定数据{pr_num,head_sha,head_ref,base_ref,repo}。
+    返回 (status, info)(写库后)。CONCURRENT=CAS 失败(task 已被并发推进)。"""
+    conn = ensure_pg()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", ("disc:" + run_id,))
+            cur.fetchone()
+            cur.execute("SELECT approval_required, status, current_stage FROM task_runs WHERE run_id=%s FOR UPDATE", (run_id,))
+            t = cur.fetchone()
+            if not t:
+                conn.commit(); return ("CONCURRENT", {"reason": "task 消失"})
+            ar, status_db, cstage = t
+            cas_ok = bool(ar) and status_db == 'APPROVAL_PENDING' and cstage == 'l2_binding'
+            if status in ("RETRY", "RETRY_HEAD_UNSETTLED", "RETRY_INCONSISTENT", "CONCURRENT"):
+                conn.commit()
+                return (status, info)   # 不动(不累加,下轮重试)
+            if not cas_ok:
+                conn.commit()
+                return ("CONCURRENT", {"reason": f"task 已变 status={status_db} stage={cstage}", **(info or {})})
+            if status in ("FOUND", "UPDATED") and candidate:
+                pr_num = candidate["pr_num"]; head_sha = candidate["head_sha"]
+                head_ref = candidate["head_ref"]; base_ref = candidate["base_ref"]; repo = candidate["repo"]
+                cur.execute("SELECT binding_id, pr_number, fix_branch, base_branch, repo, head_sha FROM run_pr_bindings WHERE run_id=%s", (run_id,))
+                ex = cur.fetchone()
+                if ex:
+                    ebid, epr, ebr, eba, erepo, esha = ex
+                    if epr == pr_num and ebr == head_ref and eba == base_ref and erepo == repo:
+                        if esha != head_sha:
+                            cur.execute("UPDATE run_pr_bindings SET head_sha=%s, repo=%s, recorded_at=now() WHERE binding_id=%s", (head_sha, repo, ebid))
+                            out = ("UPDATED", {"binding_id": ebid, "head_sha": head_sha, "pr_number": pr_num})
+                        else:
+                            out = ("FOUND", {"binding_id": ebid, "head_sha": esha, "pr_number": pr_num})
+                        cur.execute("UPDATE task_runs SET current_stage='l2_awaiting_ticket', l2_discovery_attempts=0, updated_at=now() WHERE run_id=%s", (run_id,))
+                    else:
+                        # B4c-1.2 P1-1:身份冲突 → 同事务置 HOLD(否则每 tick 重复冲突)
+                        cur.execute("UPDATE task_runs SET status='HOLD', current_stage='l2_binding_failed', last_error=%s, updated_at=now() WHERE run_id=%s",
+                                    (f"HOLD_BINDING_CONFLICT existing_pr={epr} existing_branch={ebr} new_pr={pr_num} new_branch={head_ref}", run_id))
+                        out = ("HOLD_BINDING_CONFLICT", {"existing": ebid, "existing_pr": epr, "new_pr": pr_num,
+                                                          "reason": "PR 身份(pr/branch/base/repo)变更,不静默覆盖"})
+                else:
+                    bid = "bnd-" + str(uuid.uuid4())
+                    cur.execute("""INSERT INTO run_pr_bindings(binding_id,run_id,repo,pr_number,fix_branch,base_branch,head_sha)
+                                   VALUES(%s,%s,%s,%s,%s,%s,%s)""", (bid, run_id, repo, pr_num, head_ref, base_ref, head_sha))
+                    out = ("FOUND", {"binding_id": bid, "head_sha": head_sha, "pr_number": pr_num})
+                    cur.execute("UPDATE task_runs SET current_stage='l2_awaiting_ticket', l2_discovery_attempts=0, updated_at=now() WHERE run_id=%s", (run_id,))
+            elif status == "NOT_FOUND":
+                cur.execute("UPDATE task_runs SET l2_discovery_attempts=l2_discovery_attempts+1, updated_at=now() WHERE run_id=%s", (run_id,))
+                cur.execute("SELECT l2_discovery_attempts FROM task_runs WHERE run_id=%s", (run_id,))
+                attempts = cur.fetchone()[0]
+                if attempts >= L2_DISCOVERY_MAX:
+                    cur.execute("UPDATE task_runs SET status='HOLD', current_stage='l2_binding_failed', last_error=%s, updated_at=now() WHERE run_id=%s",
+                                (f"无 fix PR(达重试上限 {attempts})", run_id))
+                    out = ("HOLD", {"reason": f"无 fix PR attempts={attempts}", "attempts": attempts})
+                else:
+                    out = ("NOT_FOUND", {"attempts": attempts, "max": L2_DISCOVERY_MAX})
+            else:   # AMBIGUOUS | HOLD_*
+                reason = status + (" " + json.dumps(info, default=str) if info else "")
+                cur.execute("UPDATE task_runs SET status='HOLD', current_stage='l2_binding_failed', last_error=%s, updated_at=now() WHERE run_id=%s", (reason[:300], run_id))
+                out = (status, info)
+        conn.commit()
+        return out
+    except Exception as e:
+        conn.rollback()
+        return ("RETRY", {"reason": f"_atomic_advance 异常: {e}"})
+
+
+def discover_binding_for_run(run_id):
+    """B4c-1.2:GitHub 权威绑定发现 + 原子推进。返回 (status, info)。
+    P1-2 全字段严格(gateway_read_pr/branch 已强制 40hex + 字段必存在);
+    P1-3 binding 写入+阶段推进同一短事务(_atomic_advance CAS),冲突也同事务置 HOLD;
+    P1-4 PR head.sha == branch ref sha 双源校验;
+    B4c-1.2 P1-3 已有 binding:**直验**其 PR(identity+state+branch 双源 SHA),list 仅用于检测**额外**匹配 PR;
+      已绑定 open PR + list 返回 0 匹配(缓存/瞬态不一致)→ RETRY_INCONSISTENT(不累计 NOT_FOUND);
+      list 出现额外匹配 PR → AMBIGUOUS。"""
+    import gateway_client
+
+    def validate_pr(pr_num):
+        """权威读回 + 严格身份 + branch 双源。返回 (status, info, candidate)。status=OK 时 candidate 含绑定数据。"""
+        rstatus, prd = gateway_client.gateway_read_pr(owner, repo_name, pr_num)
+        if rstatus == "RETRY":
+            return ("RETRY", {"reason": "pull_request_read 失败"}, None)
+        head_sha = prd["head_sha"]; base_ref = prd["base"]; state = prd["state"]
+        head_ref = prd["head_ref"]; head_repo = prd["head_repo_full_name"]
+        if state != "open":
+            return ("HOLD_PR_NOT_OPEN", {"pr_number": pr_num, "state": state}, None)
+        if base_ref != "main":
+            return ("HOLD_IDENTITY", {"reason": f"base_ref={base_ref} 非 main", "pr_number": pr_num}, None)
+        if not head_ref.startswith(f"fix/{run_id}-"):
+            return ("HOLD_IDENTITY", {"reason": f"head_ref={head_ref} 不匹配 fix/{run_id}-", "pr_number": pr_num}, None)
+        if prd["pr_number"] != pr_num:
+            return ("RETRY", {"reason": "PR 返回 number 与请求不一致"}, None)
+        if head_repo != repo:
+            return ("HOLD_IDENTITY", {"reason": f"head.repo={head_repo} != 目标 {repo}(防 fork PR)", "pr_number": pr_num}, None)
+        bstatus, branch_sha = gateway_client.gateway_read_branch(owner, repo_name, head_ref)
+        if bstatus == "RETRY":
+            return ("RETRY", {"reason": "list_branches 失败/未找到 branch"}, None)
+        if branch_sha != head_sha:
+            return ("RETRY_HEAD_UNSETTLED", {"pr_head": head_sha, "branch_sha": branch_sha, "reason": "PR head.sha != branch ref sha"}, None)
+        return ("OK", None, {"pr_num": pr_num, "head_sha": head_sha, "head_ref": head_ref, "base_ref": base_ref, "repo": repo})
+
+    # Phase 1: repo + existing binding(短事务)
     conn = ensure_pg()
     with conn.cursor() as cur:
-        cur.execute("""SELECT count(*) FROM task_runs
-                       WHERE approval_required AND status='APPROVAL_PENDING' AND current_stage='l2_binding';""")
-        n = cur.fetchone()[0]
+        cur.execute("SELECT repo FROM task_runs WHERE run_id=%s", (run_id,))
+        row = cur.fetchone()
+        cur.execute("SELECT binding_id, pr_number FROM run_pr_bindings WHERE run_id=%s", (run_id,))
+        existing = cur.fetchone()
     conn.commit()
-    if n:
-        print(f"[ctrl][L2-stub] initiate_l2_pending: {n} 个 run 待绑定/建票(B4c-1/B4c-2 实现后处理)")
+    if not row or not row[0]:
+        return _atomic_advance(run_id, "HOLD_NO_REPO", {"reason": "task 无 repo"})
+    repo = row[0]
+    owner, _, repo_name = repo.partition("/")
+    if not owner or not repo_name:
+        return _atomic_advance(run_id, "HOLD_NO_REPO", {"reason": f"repo 非法: {repo}"})
+
+    if existing:
+        # 已有 binding:直验其 PR(identity+state+branch 双源),不靠 list 判存在
+        ebid, epr = existing
+        st, info, cand = validate_pr(epr)
+        if st != "OK":
+            info = dict(info or {}); info.setdefault("existing", ebid)
+            return _atomic_advance(run_id, st, info)
+        # list 仅检测**额外**匹配 PR(防 AMBIGUOUS 漏检)
+        lstatus, prs = gateway_client.gateway_list_prs(owner, repo_name, run_id)
+        if lstatus == "RETRY":
+            return _atomic_advance(run_id, "RETRY", {"reason": "list_pull_requests 失败(检测额外 PR)"})
+        extra = [p["number"] for p in prs if p.get("number") != epr]
+        if extra:
+            return _atomic_advance(run_id, "AMBIGUOUS", {"bound_pr": epr, "extra_prs": extra, "count": len(prs)})
+        # 已绑定 open PR 但 list 返回 0 匹配 → 缓存/瞬态不一致 → RETRY_INCONSISTENT(不累计 NOT_FOUND)
+        if len(prs) == 0:
+            return _atomic_advance(run_id, "RETRY_INCONSISTENT", {"reason": f"bound PR {epr} open 但 list 返回 0 匹配", "bound_pr": epr})
+        return _atomic_advance(run_id, "FOUND", {"pr_number": epr}, candidate=cand)
+
+    # 无 existing binding → list 主导
+    lstatus, prs = gateway_client.gateway_list_prs(owner, repo_name, run_id)
+    if lstatus == "RETRY":
+        return _atomic_advance(run_id, "RETRY", {"reason": "list_pull_requests 失败"})
+    if lstatus == "AMBIGUOUS":
+        return _atomic_advance(run_id, "AMBIGUOUS", {"count": len(prs), "prs": [p.get("number") for p in prs]})
+    if lstatus == "NOT_FOUND":
+        return _atomic_advance(run_id, "NOT_FOUND", {})
+    pr = prs[0]; pr_num = pr["number"]
+    st, info, cand = validate_pr(pr_num)
+    if st != "OK":
+        return _atomic_advance(run_id, st, info)
+    return _atomic_advance(run_id, "FOUND", {"pr_number": pr_num}, candidate=cand)
+
+
+def initiate_l2_pending():
+    """扫 approval_required AND status='APPROVAL_PENDING' AND current_stage='l2_binding':
+    B4c-1.1 绑定发现。**per-run session advisory lock**(pg_advisory_lock)序列化多 Controller 发现,
+    防一次真实 NOT_FOUND 被并发累计多次。discover 内部 _atomic_advance 做 CAS 原子写推进。"""
+    conn = ensure_pg()
+    with conn.cursor() as cur:
+        cur.execute("""SELECT run_id FROM task_runs
+                       WHERE approval_required AND status='APPROVAL_PENDING' AND current_stage='l2_binding'
+                       ORDER BY updated_at LIMIT 10""")
+        runs = [r[0] for r in cur.fetchall()]
+    conn.commit()
+    for run_id in runs:
+        # per-run session advisory lock(跨 Controller 序列化整个 discover;crash 时连接断开自动释放)
+        lc = ensure_pg()
+        try:
+            with lc.cursor() as cur:
+                cur.execute("SELECT pg_advisory_lock(hashtext(%s))", ("disc:" + run_id,))
+                cur.fetchone()
+            lc.commit()
+        except Exception as e:
+            print(f"[ctrl][L2] {run_id} advisory_lock 异常: {e}"); continue
+        try:
+            st, info = discover_binding_for_run(run_id)
+            if st in ("FOUND", "UPDATED"):
+                print(f"[ctrl][L2] {run_id} 绑定 {st}: {str(info.get('binding_id',''))[:16]} pr={info.get('pr_number')} head={str(info.get('head_sha',''))[:12]} → l2_awaiting_ticket")
+            elif st == "NOT_FOUND":
+                print(f"[ctrl][L2] {run_id} 绑定 0 PR(attempts={info.get('attempts')}/{info.get('max')}),下轮重试")
+            elif st == "HOLD":
+                print(f"[ctrl][L2] {run_id} HOLD: {info}")
+            elif st in ("RETRY", "RETRY_HEAD_UNSETTLED"):
+                print(f"[ctrl][L2] {run_id} {st}({info.get('reason','')}),不累加,下轮重试")
+            elif st == "CONCURRENT":
+                print(f"[ctrl][L2] {run_id} CONCURRENT({info.get('reason','')}),跳过")
+            else:   # AMBIGUOUS / HOLD_PR_NOT_OPEN / HOLD_IDENTITY / HOLD_NO_REPO / HOLD_BINDING_CONFLICT
+                print(f"[ctrl][L2] {run_id} HOLD: {st} {info}")
+        finally:
+            try:
+                lc2 = ensure_pg()
+                with lc2.cursor() as cur:
+                    cur.execute("SELECT pg_advisory_unlock(hashtext(%s))", ("disc:" + run_id,))
+                    cur.fetchone()
+                lc2.commit()
+            except Exception:
+                pass
 
 
 def drain_l2_outbox():

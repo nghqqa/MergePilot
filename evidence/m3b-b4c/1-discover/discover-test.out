@@ -1,0 +1,120 @@
+═══════════════════════════════════════════════
+  B4c-1.1 绑定发现验收(权威身份 + branch 双源 + CAS + RETRY)
+═══════════════════════════════════════════════
+  controller loop stopped(direct discover via one-shot)
+
+=== 0. build image + container source hash + schema unit ===
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 901B done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/python:3.12-slim
+#2 DONE 3.6s
+
+#3 [internal] load .dockerignore
+#3 transferring context: 2B done
+#3 DONE 0.0s
+
+#4 [1/6] FROM docker.io/library/python:3.12-slim@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de
+#4 DONE 0.0s
+
+#5 [internal] load build context
+#5 transferring context: 115B done
+#5 DONE 0.0s
+
+#6 [5/6] COPY test_gateway_schema.py /app/test_gateway_schema.py
+#6 CACHED
+
+#7 [2/6] RUN pip install --no-cache-dir       psycopg2-binary==2.9.12       mcp==1.28.1       httpx==0.28.1       anyio==4.14.2
+#7 CACHED
+
+#8 [3/6] COPY controller.py /app/controller.py
+#8 CACHED
+
+#9 [4/6] COPY gateway_client.py /app/gateway_client.py
+#9 CACHED
+
+#10 [6/6] WORKDIR /app
+#10 CACHED
+
+#11 exporting to image
+#11 exporting layers done
+#11 writing image sha256:87b08e184b18da1230103ef95aa52cc72d5a04bd25bf5e54aef0e2a934e1e90a done
+#11 naming to docker.io/library/mergepilot-controller:latest done
+#11 DONE 0.0s
+  ✅ controller.py 容器内 == 仓库(镜像对应当前 commit)
+  ✅ gateway_client.py 容器内 == 仓库(镜像对应当前 commit)
+  ✅ test_gateway_schema.py 容器内 == 仓库(镜像对应当前 commit)
+B4c-1.2 schema unit: PASS=36 FAIL=0
+  ✅ schema 单元 PASS(40hex/number-bool/head_repo 缺失/short-sha 负向)
+
+=== 1. FOUND: 1 PR → 绑定(head_sha==PR head==branch sha) ===
+  分支 fix/b4c1-found-285755-extra 建好
+  commit 加好(disc-found-285755.md)
+  PR#54 head=7bae2e03755a branch=7bae2e03755a
+  ✅ PR head.sha == branch ref sha(双源一致,可固化)
+  discover: STATUS=FOUND
+  ✅ FOUND: discover 返回 FOUND
+  ✅ binding head_sha == GitHub 权威(双源校验过)
+  ✅ binding pr_number==54
+  ✅ FOUND → 推进 current_stage=l2_awaiting_ticket(原子 CAS)
+
+=== 2. 幂等:重复 discover → 同 binding(无重复行) ===
+  ✅ 重复 discover 返回 FOUND
+  ✅ 同 binding_id(幂等)
+  ✅ 无新行(仍 1 条)
+
+=== 3. UPDATED: stored head 不一致 → 刷新回 GitHub 真值 ===
+  ✅ stored≠GitHub → UPDATED
+  ✅ 刷新回 GitHub 真值(不静默保留假值)
+  ✅ 假值已覆盖
+
+=== 4. AMBIGUOUS: 2 fix PR → HOLD ===
+  分支 fix/b4c1-ambig-285755-one 建好
+  commit 加好(disc-ambig-a-285755.md)
+  分支 fix/b4c1-ambig-285755-two 建好
+  commit 加好(disc-ambig-b-285755.md)
+  ✅ 2 PR → AMBIGUOUS
+  ✅ AMBIGUOUS → task HOLD
+  ✅ AMBIGUOUS 未写 binding
+
+=== 5. RETRY: Gateway 不可达 → 不累计 l2_discovery_attempts ===
+  discover(bad gw): STATUS=RETRY
+  ✅ Gateway 不可达 → RETRY
+  ✅ RETRY 不累计 attempts(0→0)
+  ✅ RETRY 后 task 仍 APPROVAL_PENDING(未误 HOLD)
+
+=== 6. NOT_FOUND: 0 PR 累计 attempts → loop 达阈值 HOLD ===
+  ✅ 0 PR → NOT_FOUND(查询成功且确实为零)
+  ✅ NOT_FOUND 累计 attempts 0→1
+  等 loop 处理(最多 ~150s)...
+  ✅ NOT_FOUND loop → HOLD(stage=l2_binding_failed)
+
+=== 8. binding conflict → DB HOLD(同事务,不重复) ===
+  分支 fix/b4c1-conflict-285755-extra 建好
+  commit 加好(disc-conflict-285755.md)
+  预置 binding(pr=57 但 fix_branch=WRONG)已就绪
+  discover: STATUS=HOLD_BINDING_CONFLICT
+  DB: status=HOLD stage=l2_binding_failed err=HOLD_BINDING_CONFLICT existing_pr=57 existing_bran
+  ✅ conflict → HOLD_BINDING_CONFLICT
+  ✅ DB status=HOLD(同事务迁移)
+  ✅ current_stage=l2_binding_failed
+  ✅ last_error 含 HOLD_BINDING_CONFLICT
+
+=== 9. CAS CONCURRENT(current_stage≠l2_binding → 不动) ===
+  分支 fix/b4c1-concurrent-285755-extra 建好
+  commit 加好(disc-conc-285755.md)
+  discover: STATUS=CONCURRENT
+  ✅ 阶段已改 → CONCURRENT(不写)
+  ✅ task 未被改动(仍 APPROVAL_PENDING/l2_awaiting_ticket)
+  ✅ 未写 binding(CAS 失败不写)
+
+=== 10. 凭证扫描 + GitHub 残留记录 ===
+  ✅ 无凭证泄漏
+  GitHub 残留(一次性 fix/b4c1-* 分支+PR,待具备 close 权限后清理): 记录于 github-residue.txt
+
+═══════════════════════════════════════════════
+  B4c-1.2 验收: PASS=32 FAIL=0
+═══════════════════════════════════════════════

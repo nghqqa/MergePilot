@@ -1,0 +1,44 @@
+== _is_sha40 ==
+  ✅ True
+  ✅ short rejected
+  ✅ non-hex rejected
+  ✅ None rejected
+== _parse_bool ==
+  ✅ _parse_bool(True)=True exp=True
+  ✅ _parse_bool(False)=False exp=False
+  ✅ _parse_bool('true')=True exp=True
+  ✅ _parse_bool('False')=False exp=False
+  ✅ _parse_bool('1')=True exp=True
+  ✅ _parse_bool('0')=False exp=False
+  ✅ _parse_bool(1)=True exp=True
+  ✅ _parse_bool(0)=False exp=False
+  ✅ _parse_bool('maybe')=None exp=None
+  ✅ _parse_bool(None)=None exp=None
+== gateway_read_pr OK(全字段合法) ==
+  ✅ valid → OK
+== gateway_read_pr 负向(缺/伪造 → RETRY) ==
+  ✅ 短 head_sha → RETRY
+  ✅ 非 hex head_sha → RETRY
+  ✅ number 缺失 → RETRY(不 fallback 到请求参数)
+  ✅ number=bool → RETRY
+  ✅ state 缺失 → RETRY
+  ✅ head.repo 缺失 → RETRY(不接受 fork 绕过)
+  ✅ head.repo.full_name 缺失 → RETRY
+  ✅ base_ref 缺失 → RETRY(不补默认 main)
+  ✅ merged 缺失 → RETRY(不默认 false)
+  ✅ head_ref 缺失 → RETRY
+  ✅ is_error → RETRY
+  ✅ 顶层非对象 → RETRY
+== gateway_read_branch 40hex ==
+  ✅ branch 40hex → OK
+  ✅ branch 短 sha → RETRY
+  ✅ branch 非 hex → RETRY
+== gateway_list_prs malformed → RETRY ==
+  ✅ head 非 dict → RETRY
+  ✅ ref 非 str → RETRY
+  ✅ number=bool → RETRY
+  ✅ 非 JSON → RETRY
+  ✅ 顶层 dict 非 list → RETRY(不误判 NOT_FOUND)
+  ✅ 空数组 → NOT_FOUND(查询成功且确为 0)
+
+B4c-1.2 schema unit: PASS=36 FAIL=0
