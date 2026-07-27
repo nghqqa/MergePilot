@@ -1,0 +1,12 @@
+tkt-76472cb4-51de-4c10-9ea1-7315ccfad61d|merge_pull_request|ALLOW|L2_CLAIMED|
+tkt-76472cb4-51de-4c10-9ea1-7315ccfad61d|merge_pull_request|ALLOW|L2_COMPLETE|
+tkt-7b80280d-259d-4017-b0dd-f5fce49abd01|merge_pull_request|ALLOW|L2_CLAIMED|
+tkt-7b80280d-259d-4017-b0dd-f5fce49abd01|merge_pull_request|ALLOW|L2_COMPLETE|
+tkt-3bae9fcd-0529-430f-b0eb-11c9c54a97a9|merge_pull_request|ALLOW|L2_CLAIMED|
+tkt-3bae9fcd-0529-430f-b0eb-11c9c54a97a9|merge_pull_request|ALLOW|L2_COMPLETE|
+tkt-190e1e13-c637-4737-b2c0-94978914f209|merge_pull_request|DENY|CLAIM_MISMATCH|
+tkt-9fc94dde-7714-424e-a71e-2ebca65d4037|merge_pull_request|DENY|CLAIM_MISMATCH|
+tkt-0d9a6dd7-5909-4b94-9d90-fe2cf1b51f1a|merge_pull_request|ALLOW|L2_CLAIMED|
+tkt-0d9a6dd7-5909-4b94-9d90-fe2cf1b51f1a|merge_pull_request|ALLOW|L2_COMPLETE|
+tkt-fe2bc26f-f29b-41a6-9bde-2418029e0fb8|merge_pull_request|ALLOW|L2_CLAIMED|
+tkt-fe2bc26f-f29b-41a6-9bde-2418029e0fb8|merge_pull_request|ALLOW|L2_COMPLETE|

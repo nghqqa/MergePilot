@@ -1,0 +1,80 @@
+[ctrl] 启动;PG=audit-pg:5432;Matrix=http://hiclaw-controller:6167;POLL=8s;L2_MERGE_ENABLED=off
+[ctrl] Matrix login OK
+[ctrl] PG connected
+[ctrl] L2_MERGE_ENABLED=off;未终结审批 run=0;Gateway=(未启用);reconcile_age=120s
+[ctrl] 启动;PG=audit-pg:5432;Matrix=http://hiclaw-controller:6167;POLL=8s;L2_MERGE_ENABLED=off
+[ctrl] Matrix login OK
+[ctrl] startup: PG 未就绪(connection to server at "audit-pg" (172.22.0.4), port 5432 failed: Connection re),2s 后重试...
+[ctrl] startup: PG 未就绪(connection to server at "audit-pg" (172.22.0.4), port 5432 failed: FATAL:  the d),2s 后重试...
+[ctrl] startup: PG 未就绪(connection to server at "audit-pg" (172.22.0.4), port 5432 failed: FATAL:  the d),2s 后重试...
+[ctrl] PG connected
+[ctrl] L2_MERGE_ENABLED=off;未终结审批 run=0;Gateway=(未启用);reconcile_age=120s
+[ctrl] 启动;PG=audit-pg:5432;Matrix=http://hiclaw-controller:6167;POLL=8s;L2_MERGE_ENABLED=off
+[ctrl] Matrix login OK
+[ctrl] PG connected
+[ctrl] L2_MERGE_ENABLED=off;未终结审批 run=0;Gateway=(未启用);reconcile_age=120s
+[ctrl] 启动;PG=audit-pg:5432;Matrix=http://hiclaw-controller:6167;POLL=8s;L2_MERGE_ENABLED=off
+[ctrl] Matrix login OK
+[ctrl] startup: PG 未就绪(connection to server at "audit-pg" (172.22.0.4), port 5432 failed: FATAL:  the d),2s 后重试...
+[ctrl] PG connected
+[ctrl] L2_MERGE_ENABLED=off;未终结审批 run=0;Gateway=(未启用);reconcile_age=120s
+[ctrl] 启动;PG=audit-pg:5432;Matrix=http://hiclaw-controller:6167;POLL=8s;L2_MERGE_ENABLED=off
+[ctrl] Matrix login OK
+[ctrl] startup: PG 未就绪(connection to server at "audit-pg" (172.22.0.5), port 5432 failed: FATAL:  the d),2s 后重试...
+[ctrl] PG connected
+[ctrl] L2_MERGE_ENABLED=off;未终结审批 run=0;Gateway=(未启用);reconcile_age=120s
+[ctrl] 启动;PG=audit-pg:5432;Matrix=http://hiclaw-controller:6167;POLL=8s;L2_MERGE_ENABLED=off
+[ctrl] Matrix login OK
+[ctrl] startup: PG 未就绪(connection to server at "audit-pg" (172.22.0.4), port 5432 failed: Connection re),2s 后重试...
+[ctrl] startup: PG 未就绪(connection to server at "audit-pg" (172.22.0.4), port 5432 failed: FATAL:  the d),2s 后重试...
+[ctrl] PG connected
+[ctrl] L2_MERGE_ENABLED=off;未终结审批 run=0;Gateway=(未启用);reconcile_age=120s
+[ctrl] 启动;PG=audit-pg:5432;Matrix=http://hiclaw-controller:6167;POLL=8s;L2_MERGE_ENABLED=off
+[ctrl] Matrix login OK
+[ctrl] PG connected
+[ctrl] L2_MERGE_ENABLED=off;未终结审批 run=8;Gateway=http://policy-gw:8083;reconcile_age=120s
+[ctrl] 启动;PG=audit-pg:5432;Matrix=http://hiclaw-controller:6167;POLL=8s;L2_MERGE_ENABLED=off
+[ctrl][L2] b4c5-conc-74862 CONCURRENT(task 已变 status=APPROVAL_PENDING stage=l2_awaiting_ticket),跳过
+[ctrl][L2] b4c5-crash-74862 建票 CONCURRENT(task 已变 status=APPROVAL_PENDING stage=l2_awaiting_approval),跳过
+[ctrl] Matrix login OK
+[ctrl] PG connected
+[ctrl] L2_MERGE_ENABLED=off;未终结审批 run=2;Gateway=http://policy-gw:8083;reconcile_age=120s
+[ctrl] 启动;PG=audit-pg:5432;Matrix=http://hiclaw-controller:6167;POLL=8s;L2_MERGE_ENABLED=off
+[ctrl][L2] drain ticket=tkt-c8bc7b9c-f9a action=merge → approval=USED
+[ctrl] Matrix login OK
+[ctrl] PG connected
+[ctrl] L2_MERGE_ENABLED=off;未终结审批 run=2;Gateway=http://policy-gw:8083;reconcile_age=120s
+[ctrl] 启动;PG=audit-pg:5432;Matrix=http://hiclaw-controller:6167;POLL=8s;L2_MERGE_ENABLED=off
+[ctrl][L2] b4c5-conc-95726 CONCURRENT(task 已变 status=APPROVAL_PENDING stage=l2_awaiting_ticket),跳过
+[ctrl] Matrix login OK
+[ctrl][L2] drain ticket=tkt-d492de5f-343 action=merge → approval=USED
+[ctrl] PG connected
+[ctrl] L2_MERGE_ENABLED=off;未终结审批 run=0;Gateway=(未启用);reconcile_age=120s
+[ctrl] 启动;PG=audit-pg:5432;Matrix=http://hiclaw-controller:6167;POLL=8s;L2_MERGE_ENABLED=off
+[ctrl] Matrix login OK
+[ctrl] PG connected
+[ctrl] L2_MERGE_ENABLED=off;未终结审批 run=2;Gateway=http://policy-gw:8083;reconcile_age=120s
+[ctrl] 启动;PG=audit-pg:5432;Matrix=http://hiclaw-controller:6167;POLL=8s;L2_MERGE_ENABLED=off
+[ctrl][L2] drain ticket=tkt-14d7e2bc-140 action=merge → approval=USED
+[ctrl] Matrix login OK
+[ctrl] PG connected
+[ctrl] L2_MERGE_ENABLED=off;未终结审批 run=2;Gateway=http://policy-gw:8083;reconcile_age=120s
+[ctrl] 启动;PG=audit-pg:5432;Matrix=http://hiclaw-controller:6167;POLL=8s;L2_MERGE_ENABLED=off
+[ctrl][L2] b4c5-conc-116445 CONCURRENT(task 已变 status=APPROVAL_PENDING stage=l2_awaiting_ticket),跳过
+[ctrl] Matrix login OK
+[ctrl][L2] b4c5-conc-116445 建票 CREATED: ticket=tkt-0d66b421-09e7-48 pr=134 hash=b7c3c43697b6 → l2_awaiting_approval
+[ctrl][L2] drain ticket=tkt-0d66b421-09e action=merge → approval=USED
+[ctrl] PG connected
+[ctrl] L2_MERGE_ENABLED=off;未终结审批 run=0;Gateway=(未启用);reconcile_age=120s
+[ctrl] 启动;PG=audit-pg:5432;Matrix=http://hiclaw-controller:6167;POLL=8s;L2_MERGE_ENABLED=off
+[ctrl] Matrix login OK
+[ctrl] PG connected
+[ctrl] L2_MERGE_ENABLED=off;未终结审批 run=2;Gateway=http://policy-gw:8083;reconcile_age=120s
+[ctrl] 启动;PG=audit-pg:5432;Matrix=http://hiclaw-controller:6167;POLL=8s;L2_MERGE_ENABLED=off
+[ctrl][L2] drain ticket=tkt-0d9a6dd7-590 action=merge → approval=USED
+[ctrl] Matrix login OK
+[ctrl] PG connected
+[ctrl] L2_MERGE_ENABLED=off;未终结审批 run=2;Gateway=http://policy-gw:8083;reconcile_age=120s
+[ctrl] 启动;PG=audit-pg:5432;Matrix=http://hiclaw-controller:6167;POLL=8s;L2_MERGE_ENABLED=off
+[ctrl][L2] b4c5-conc-141131 CONCURRENT(task 已变 status=APPROVAL_PENDING stage=l2_awaiting_ticket),跳过
+[ctrl] Matrix login OK

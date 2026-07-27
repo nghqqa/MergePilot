@@ -1,0 +1,38 @@
+[ctrl] PG connected
+[ctrl][L2] b4c5-e2e-141131 绑定 FOUND: bnd-6b8e3631-f81 pr=135 head=264f7d858cf7 → l2_awaiting_ticket
+[ctrl][L2] b4c5-e2e-141131 建票 CREATED: ticket=tkt-76472cb4-51de-4c pr=135 hash=0ca08dea7090 → l2_awaiting_approval
+[ctrl] PG connected
+[ctrl][L2] drain ticket=tkt-76472cb4-51d action=merge → approval=USED
+[ctrl] PG connected
+[ctrl][L2] b4c5-execfail-141131 绑定 FOUND: bnd-5c593964-0b5 pr=136 head=bfd30bdadd1b → l2_awaiting_ticket
+[ctrl][L2] b4c5-execfail-141131 建票 CREATED: ticket=tkt-0270ac9e-f179-4e pr=136 hash=6a892eae60b2 → l2_awaiting_approval
+[ctrl] PG connected
+[ctrl][L2] reconcile tkt-0270ac9e-f17 EXECUTING→FAILED (effect=False)
+[ctrl][L2] drain ticket=tkt-0270ac9e-f17 action=merge → approval=FAILED
+[ctrl] PG connected
+[ctrl][L2] b4c5-execused-141131 绑定 FOUND: bnd-1073c294-833 pr=137 head=20292c1f7fd0 → l2_awaiting_ticket
+[ctrl][L2] b4c5-execused-141131 建票 CREATED: ticket=tkt-7b80280d-259d-40 pr=137 hash=eb632ebabda3 → l2_awaiting_approval
+[ctrl] PG connected
+[ctrl][L2] reconcile tkt-7b80280d-259 EXECUTING→USED (effect=True)
+[ctrl][L2] drain ticket=tkt-7b80280d-259 action=merge → approval=USED
+[ctrl] PG connected
+[ctrl][L2] b4c5-noremerge-141131 绑定 FOUND: bnd-03e8d259-cab pr=138 head=97e48c3bd391 → l2_awaiting_ticket
+[ctrl][L2] b4c5-noremerge-141131 建票 CREATED: ticket=tkt-3bae9fcd-0529-43 pr=138 hash=c8796193643d → l2_awaiting_approval
+[ctrl] PG connected
+[ctrl][L2] reconcile tkt-3bae9fcd-052 UNKNOWN→USED (effect=True)
+[ctrl][L2] drain ticket=tkt-3bae9fcd-052 action=merge → approval=USED
+[ctrl] PG connected
+[ctrl] PG connected
+[ctrl][L2] b4c5-denyexpire-141131 绑定 FOUND: bnd-aa32a7ec-74e pr=139 head=4d58876d47f8 → l2_awaiting_ticket
+[ctrl][L2] b4c5-denyexpire-141131 建票 CREATED: ticket=tkt-190e1e13-c637-47 pr=139 hash=cc6c5a8ab7fe → l2_awaiting_approval
+[ctrl] PG connected
+[ctrl][L2] drain ticket=tkt-190e1e13-c63 action=merge → approval=APPROVED (gw_err=GatewayError: tool=merge_pull_request 返回 is_error: POLICY_DE)
+[ctrl][L2] expire tkt-190e1e13-c63 → outbox FAILED + task HOLD
+[ctrl] PG connected
+[ctrl][L2] b4c5-mismatch-141131 绑定 FOUND: bnd-074fd70a-88e pr=140 head=d373cc5df42b → l2_awaiting_ticket
+[ctrl][L2] b4c5-mismatch-141131 建票 CREATED: ticket=tkt-9fc94dde-7714-42 pr=140 hash=684fab1c19c8 → l2_awaiting_approval
+[ctrl] PG connected
+[ctrl][L2] b4c5-crash-141131 绑定 FOUND: bnd-826adf28-0fb pr=141 head=541ae6c8f066 → l2_awaiting_ticket
+[ctrl][L2] b4c5-crash-141131 建票 CREATED: ticket=tkt-0d9a6dd7-5909-4b pr=141 hash=737a88506f79 → l2_awaiting_approval
+[ctrl] PG connected
+[ctrl][L2] drain ticket=tkt-0d9a6dd7-590 action=merge → approval=APPROVED (gw_err=GatewayError: ExceptionGroup: unhandled errors in a TaskGrou)

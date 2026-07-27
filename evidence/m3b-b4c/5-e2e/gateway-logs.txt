@@ -1,0 +1,60 @@
+[gateway] list_tools role=fixer → 30/44 tools (policy=b2.2-20260726-v1)
+[gateway] SSE connect role=fixer path=/fixer/sse → ACCEPT
+INFO:     127.0.0.1:33870 - "GET /fixer/sse HTTP/1.1" 200 OK
+INFO:     127.0.0.1:33878 - "POST /messages/?session_id=df04d45dc73147cab036de4426896945 HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:33878 - "POST /messages/?session_id=df04d45dc73147cab036de4426896945 HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:33878 - "POST /messages/?session_id=df04d45dc73147cab036de4426896945 HTTP/1.1" 202 Accepted
+[gateway] ALLOW role=fixer tool=create_pull_request repo=nghqqa/MergePilot branch=fix/b4c5-conc-141131-x → forward (intent logged corr=086797c5)
+INFO:     127.0.0.1:33878 - "POST /messages/?session_id=df04d45dc73147cab036de4426896945 HTTP/1.1" 202 Accepted
+[gateway] list_tools role=fixer → 30/44 tools (policy=b2.2-20260726-v1)
+[gateway] SSE connect role=coordinator path=/coordinator/sse → ACCEPT
+INFO:     172.22.0.2:46034 - "GET /coordinator/sse HTTP/1.1" 200 OK
+INFO:     172.22.0.2:46038 - "POST /messages/?session_id=7b21793c304442dd8f51188bc14a567e HTTP/1.1" 202 Accepted
+INFO:     172.22.0.2:46038 - "POST /messages/?session_id=7b21793c304442dd8f51188bc14a567e HTTP/1.1" 202 Accepted
+INFO:     172.22.0.2:46038 - "POST /messages/?session_id=7b21793c304442dd8f51188bc14a567e HTTP/1.1" 202 Accepted
+INFO:     172.22.0.2:46038 - "POST /messages/?session_id=7b21793c304442dd8f51188bc14a567e HTTP/1.1" 202 Accepted
+[gateway] list_tools role=coordinator → 28/44 tools (policy=b2.2-20260726-v1)
+[gateway] SSE connect role=coordinator path=/coordinator/sse → ACCEPT
+INFO:     172.22.0.2:46048 - "GET /coordinator/sse HTTP/1.1" 200 OK
+INFO:     172.22.0.2:46062 - "POST /messages/?session_id=c3a711c465364e3281decea319f100e6 HTTP/1.1" 202 Accepted
+INFO:     172.22.0.2:46062 - "POST /messages/?session_id=c3a711c465364e3281decea319f100e6 HTTP/1.1" 202 Accepted
+INFO:     172.22.0.2:46062 - "POST /messages/?session_id=c3a711c465364e3281decea319f100e6 HTTP/1.1" 202 Accepted
+INFO:     172.22.0.2:46062 - "POST /messages/?session_id=c3a711c465364e3281decea319f100e6 HTTP/1.1" 202 Accepted
+[gateway] list_tools role=coordinator → 28/44 tools (policy=b2.2-20260726-v1)
+[gateway] SSE connect role=coordinator path=/coordinator/sse → ACCEPT
+INFO:     172.22.0.2:46068 - "GET /coordinator/sse HTTP/1.1" 200 OK
+INFO:     172.22.0.2:46084 - "POST /messages/?session_id=b5d5095a6f954f1f83ea179d2970696e HTTP/1.1" 202 Accepted
+INFO:     172.22.0.2:46084 - "POST /messages/?session_id=b5d5095a6f954f1f83ea179d2970696e HTTP/1.1" 202 Accepted
+INFO:     172.22.0.2:46084 - "POST /messages/?session_id=b5d5095a6f954f1f83ea179d2970696e HTTP/1.1" 202 Accepted
+INFO:     172.22.0.2:46084 - "POST /messages/?session_id=b5d5095a6f954f1f83ea179d2970696e HTTP/1.1" 202 Accepted
+[gateway] list_tools role=coordinator → 28/44 tools (policy=b2.2-20260726-v1)
+[gateway] SSE connect role=coordinator path=/coordinator/sse → ACCEPT
+INFO:     172.22.0.9:46924 - "GET /coordinator/sse HTTP/1.1" 200 OK
+INFO:     172.22.0.9:46928 - "POST /messages/?session_id=4485f3aeec164ff5aaa37e79a1e98d29 HTTP/1.1" 202 Accepted
+INFO:     172.22.0.9:46928 - "POST /messages/?session_id=4485f3aeec164ff5aaa37e79a1e98d29 HTTP/1.1" 202 Accepted
+INFO:     172.22.0.9:46928 - "POST /messages/?session_id=4485f3aeec164ff5aaa37e79a1e98d29 HTTP/1.1" 202 Accepted
+INFO:     172.22.0.9:46928 - "POST /messages/?session_id=4485f3aeec164ff5aaa37e79a1e98d29 HTTP/1.1" 202 Accepted
+[gateway] list_tools role=coordinator → 28/44 tools (policy=b2.2-20260726-v1)
+[gateway] SSE connect role=coordinator path=/coordinator/sse → ACCEPT
+INFO:     172.22.0.9:46934 - "GET /coordinator/sse HTTP/1.1" 200 OK
+INFO:     172.22.0.9:46940 - "POST /messages/?session_id=6640523e04a049e5ae142e7fdc8aa217 HTTP/1.1" 202 Accepted
+INFO:     172.22.0.9:46940 - "POST /messages/?session_id=6640523e04a049e5ae142e7fdc8aa217 HTTP/1.1" 202 Accepted
+INFO:     172.22.0.9:46940 - "POST /messages/?session_id=6640523e04a049e5ae142e7fdc8aa217 HTTP/1.1" 202 Accepted
+INFO:     172.22.0.9:46940 - "POST /messages/?session_id=6640523e04a049e5ae142e7fdc8aa217 HTTP/1.1" 202 Accepted
+[gateway] list_tools role=coordinator → 28/44 tools (policy=b2.2-20260726-v1)
+[gateway] SSE connect role=coordinator path=/coordinator/sse → ACCEPT
+INFO:     172.22.0.9:46942 - "GET /coordinator/sse HTTP/1.1" 200 OK
+INFO:     172.22.0.9:46950 - "POST /messages/?session_id=b44449399d3f4289a9622003eb682344 HTTP/1.1" 202 Accepted
+INFO:     172.22.0.9:46950 - "POST /messages/?session_id=b44449399d3f4289a9622003eb682344 HTTP/1.1" 202 Accepted
+INFO:     172.22.0.9:46950 - "POST /messages/?session_id=b44449399d3f4289a9622003eb682344 HTTP/1.1" 202 Accepted
+INFO:     172.22.0.9:46950 - "POST /messages/?session_id=b44449399d3f4289a9622003eb682344 HTTP/1.1" 202 Accepted
+[gateway] list_tools role=coordinator → 28/44 tools (policy=b2.2-20260726-v1)
+[gateway] SSE connect role=coordinator path=/coordinator/sse → ACCEPT
+INFO:     172.22.0.2:45952 - "GET /coordinator/sse HTTP/1.1" 200 OK
+INFO:     172.22.0.2:45966 - "POST /messages/?session_id=948d191128ee489db25ae221dae51270 HTTP/1.1" 202 Accepted
+INFO:     172.22.0.2:45966 - "POST /messages/?session_id=948d191128ee489db25ae221dae51270 HTTP/1.1" 202 Accepted
+INFO:     172.22.0.2:45966 - "POST /messages/?session_id=948d191128ee489db25ae221dae51270 HTTP/1.1" 202 Accepted
+[gateway] L2 CLAIMED tool=merge_pull_request ticket=tkt-fe2bc26f-f29 eid=5f2ce40b
+[gateway] L2 WRITE tool=merge_pull_request → calling upstream (timeout=60.0s)
+INFO:     172.22.0.2:45966 - "POST /messages/?session_id=948d191128ee489db25ae221dae51270 HTTP/1.1" 202 Accepted
+[gateway] list_tools role=coordinator → 28/44 tools (policy=b2.2-20260726-v1)

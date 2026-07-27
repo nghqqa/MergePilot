@@ -1,0 +1,9 @@
+b4c5 E2E residue branches (real GitHub PRs created/merged on nghqqa/MergePilot):
+b4c5-conc-141131|0|MERGED
+b4c5-crash-141131|0|MERGED
+b4c5-denyexpire-141131|0|HOLD
+b4c5-e2e-141131|0|MERGED
+b4c5-execfail-141131|0|HOLD
+b4c5-execused-141131|0|MERGED
+b4c5-mismatch-141131|0|APPROVAL_PENDING
+b4c5-noremerge-141131|0|MERGED
