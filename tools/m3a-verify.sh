@@ -1,8 +1,18 @@
 #!/bin/bash
 # m3a-verify.sh — M3-A 强化验收(12 项)。验证 PG 状态 + 证据一致性。
-# 用法: bash m3a-verify.sh <run_id>
+# 用法: bash m3a-verify.sh <run_id> [--allow-approval-pending]
+#   --allow-approval-pending:把 APPROVAL_PENDING 视为合法中间态(B4c 审批流)。
+#     默认关——保持 M3-A 终态语义,不削弱白名单(复审 #8)。
 set -uo pipefail
-RUN_ID="${1:?用法: m3a-verify.sh <run_id>}"
+ALLOW_AP=0
+RUN_ID=""
+for a in "$@"; do
+  case "$a" in
+    --allow-approval-pending) ALLOW_AP=1 ;;
+    *) [ -z "$RUN_ID" ] && RUN_ID="$a" ;;
+  esac
+done
+[ -n "$RUN_ID" ] || { echo "用法: m3a-verify.sh <run_id> [--allow-approval-pending]"; exit 1; }
 PSQL="docker exec audit-pg psql -U mergepilot -d mergepilot_audit -t -A"
 
 PASS=0; FAIL=0; WARN=0
@@ -21,15 +31,22 @@ STATUS=$(echo "$ROW" | cut -d'|' -f1)
 STAGE=$(echo "$ROW" | cut -d'|' -f2)
 VERDICT=$(echo "$ROW" | cut -d'|' -f3)
 
-# 2. task status 合法
-if [ "$STATUS" = "PASS" ] || [ "$STATUS" = "HOLD" ] || [ "$STATUS" = "FAIL" ] || [ "$STATUS" = "MERGED" ] || [ "$STATUS" = "ROLLED_BACK" ]; then
+# 2. task status 合法(B4c:--allow-approval-pending 时 APPROVAL_PENDING 视为合法中间态)
+VALID=0
+case "$STATUS" in
+  PASS|HOLD|FAIL|MERGED|ROLLED_BACK) VALID=1 ;;
+  APPROVAL_PENDING) [ "$ALLOW_AP" = "1" ] && VALID=1 ;;
+esac
+if [ "$VALID" = "1" ]; then
   ok "task status 合法: $STATUS"
 else
-  fail "task status 非法: $STATUS"
+  fail "task status 非法: $STATUS${STATUS:+$([ "$STATUS" = "APPROVAL_PENDING" ] && echo ' —— 需 --allow-approval-pending')}"
 fi
 
-# 3. task verdict 与 status 一致
-if [ "$STATUS" = "PASS" ] && [ "$VERDICT" != "PASS" ]; then
+# 3. task verdict 与 status 一致(APPROVAL_PENDING 是 B4c 中间态,verdict=PASS 正常)
+if [ "$STATUS" = "APPROVAL_PENDING" ]; then
+  ok "task APPROVAL_PENDING(B4c 审批中间态;verdict=$VERDICT)"
+elif [ "$STATUS" = "PASS" ] && [ "$VERDICT" != "PASS" ]; then
   fail "task verdict($VERDICT) 与 status(PASS) 不一致"
 elif [ "$STATUS" = "HOLD" ] && [ "$VERDICT" != "blocked-needs-approval" ] && [ "$VERDICT" != "FAIL" ]; then
   fail "task verdict($VERDICT) 与 status(HOLD) 不一致(应为 blocked-needs-approval 或 FAIL)"

@@ -1,0 +1,14 @@
+run_id|text||not null||extended|||
+room_id|text||||extended|||
+repo|text||||extended|||
+pr_number|integer||||plain|||
+branch|text||||extended|||
+status|text|||'RUNNING'::text|extended|||
+attempt|integer|||0|plain|||
+verdict|text||||extended|||
+created_at|timestamp with time zone|||now()|plain|||
+updated_at|timestamp with time zone|||now()|plain|||
+current_stage|text||||extended|||
+last_error|text||||extended|||
+approval_required|boolean||not null|false|plain|||
+l2_discovery_attempts|integer||not null|0|plain|||

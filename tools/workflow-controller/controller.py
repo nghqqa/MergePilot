@@ -27,6 +27,24 @@ ADMIN_PW = os.environ.get("ADMIN_PW", "")
 POLL_INTERVAL = int(os.environ.get("POLL_INTERVAL", "8"))
 SYNC_TIMEOUT  = int(os.environ.get("SYNC_TIMEOUT", "30000"))
 
+# ── B4c L2 审批流配置(复审:gating 默认关;Coordinator 持 token 调 Gateway,不持 PAT) ──
+# L2_MERGE_ENABLED 语义(B4c-0.1 #3):**只决定新 run 的 approval_required 默认值**(TASK_SUBMITTED 时写)。
+#   L2 维护循环(initiate/drain/reconcile)始终运行——函数内部按 approval_required=TRUE 过滤,
+#   故已持久化 approval_required=TRUE 的 run 在开关关闭/重启后仍被维护,不卡死。
+#   非法值(不在 {0,1,true,false,yes,no,on,off})→ startup_assert_l2 启动失败,不静默当 false。
+_L2_RAW = os.environ.get("L2_MERGE_ENABLED", "0").strip().lower()
+_L2_TRUE = {"1", "true", "yes", "on"}
+_L2_FALSE = {"0", "false", "no", "off"}
+L2_MERGE_ENABLED = _L2_RAW in _L2_TRUE
+L2_MERGE_ENABLED_INVALID = _L2_RAW not in _L2_TRUE and _L2_RAW not in _L2_FALSE
+GATEWAY_URL      = os.environ.get("GATEWAY_URL", "http://policy-gw:8083")
+COORDINATOR_TOKEN = os.environ.get("COORDINATOR_TOKEN", "")
+# 与 l2_reconcile_executing 内 SQL 的 `interval '120 seconds'` 保持一致(UNKNOWN/超时EXECUTING 延迟对账阈值,复审 #6)
+L2_RECONCILE_AGE  = int(os.environ.get("L2_RECONCILE_AGE", "120"))
+L2_LEASE_SECONDS  = int(os.environ.get("L2_LEASE_SECONDS", "60"))   # outbox DISPATCHED lease
+L2_DISCOVERY_MAX  = int(os.environ.get("L2_DISCOVERY_MAX", "3"))    # 0-PR 有界重试上限 → HOLD
+L2_GW_TIMEOUT     = int(os.environ.get("L2_GW_TIMEOUT", "60"))      # 单次 Gateway MCP 调用总超时(含 SSE+initialize)
+
 NEXT_STAGE = {"review": "fix", "fix": "verify"}
 NEXT_AGENT = {"review": "fixer", "fix": "verifier"}
 STAGE_TPL = {
@@ -82,7 +100,7 @@ def ensure_matrix_login():
     _token = resp.get("access_token")
     if not _token:
         raise MatrixUnavailable("login 返回无 token")
-    print(f"[ctrl] Matrix login OK (token={_token[:12]}...)")
+    print("[ctrl] Matrix login OK")
     return _token
 
 def matrix_sync(since=None, timeout=30000):
@@ -161,10 +179,10 @@ def process_event(event_id, room_id, sender, body, ts):
             run_id = payload.get("run_id", "")
             if not run_id:
                 mark_error(cur, event_id, "no run_id"); conn.commit(); return
-            cur.execute("""INSERT INTO task_runs(run_id, room_id, repo, pr_number, branch, status, current_stage)
-                           VALUES(%s, %s, %s, %s, %s, 'RUNNING', 'review')
+            cur.execute("""INSERT INTO task_runs(run_id, room_id, repo, pr_number, branch, status, current_stage, approval_required)
+                           VALUES(%s, %s, %s, %s, %s, 'RUNNING', 'review', %s)
                            ON CONFLICT(run_id) DO NOTHING""", (
-                run_id, room_id, payload.get("repo"), payload.get("pr_number"), payload.get("branch")))
+                run_id, room_id, payload.get("repo"), payload.get("pr_number"), payload.get("branch"), L2_MERGE_ENABLED))
             cur.execute("""INSERT INTO stage_runs(run_id, stage, agent, attempt, status, started_at)
                            VALUES(%s, 'review', 'reviewer', 1, 'PENDING_DISPATCH', now())
                            ON CONFLICT(run_id, stage, attempt) DO NOTHING""", (run_id,))
@@ -264,12 +282,30 @@ def process_event(event_id, room_id, sender, body, ts):
 
             cur.execute("UPDATE stage_runs SET status='COMPLETED', completed_at=now(), verdict=%s WHERE id=%s",
                         (verdict, current[0]))
-            cur.execute("UPDATE task_runs SET status=%s, verdict=%s, updated_at=now() WHERE run_id=%s",
-                        ('PASS' if verdict == 'PASS' else 'HOLD', verdict, run_id))
+            # B4c(复审 #1/#2):verify PASS 且 run 级 approval_required=TRUE → 写持久化待办
+            #   task=APPROVAL_PENDING + current_stage='l2_binding'。**不在事件事务内调 Gateway**
+            #   (/sync 游标照推进,Gateway 临时不可达不会让事件报错卡死任务)。绑定发现/建票/drain
+            #   由主循环 initiate_l2_pending 异步完成(独立故障域,复审 #3)。
+            # approval_required=FALSE → 旧行为:verify PASS → task PASS(L2 关闭,不退化)。
+            if verdict == "PASS":
+                cur.execute("SELECT approval_required FROM task_runs WHERE run_id=%s", (run_id,))
+                _ar = cur.fetchone()
+                if _ar and _ar[0]:
+                    cur.execute("UPDATE task_runs SET status='APPROVAL_PENDING', verdict=%s, current_stage='l2_binding', updated_at=now() WHERE run_id=%s",
+                                (verdict, run_id))
+                    _task_status = "APPROVAL_PENDING"
+                else:
+                    cur.execute("UPDATE task_runs SET status='PASS', verdict=%s, updated_at=now() WHERE run_id=%s",
+                                (verdict, run_id))
+                    _task_status = "PASS"
+            else:
+                cur.execute("UPDATE task_runs SET status='HOLD', verdict=%s, updated_at=now() WHERE run_id=%s",
+                            (verdict, run_id))
+                _task_status = "HOLD"
             mark_processed(cur, event_id)
             update_event_meta(cur, event_id, run_id, "verify")
             conn.commit()
-            print(f"[ctrl] {run_id}-verify VERDICT={verdict} → task {'PASS' if verdict=='PASS' else 'HOLD'} | PG committed")
+            print(f"[ctrl] {run_id}-verify VERDICT={verdict} → task {_task_status} | PG committed")
         except Exception as e:
             conn.rollback()
             mark_error(cur, event_id, str(e)); conn.commit()
@@ -383,35 +419,166 @@ def consume_events():
     if event_count:
         print(f"[ctrl] /sync: 处理了 {event_count} 个事件, next_batch={next_batch[:16] if next_batch else 'none'}")
 
-# ── 主循环 ──
+# ════════════════════════════════════════════════════════════════════
+# B4c · L2 审批流(Controller 侧)
+# ════════════════════════════════════════════════════════════════════
+# 设计(M3-B4 v2 §11 + 复审 9 条):
+#   verify PASS + approval_required → task APPROVAL_PENDING + current_stage='l2_binding'
+#     → initiate_l2_pending():discover_binding(B4c-1)→ l2_ensure_ticket(B4c-2)
+#   approve CLI → APPROVED
+#     → drain_l2_outbox():DISPATCHED+lease → Gateway merge → 推进 outbox/task(B4c-3)
+#   reconcile_l2():UNKNOWN/超时EXECUTING/滞留DISPATCHED/过期(B4c-4)
+# 绝不自动重试 UNKNOWN L2 动作;绑定来源不信任 LLM(GitHub 读回)。
+
+def _gateway_reachable(timeout=5):
+    """TCP 连通性探测 policy-gw host:port(不验鉴权——鉴权在首次真实 MCP 调用时验)。
+    返回 True/False。用于 startup_assert:容器不可达即 fail-closed。"""
+    import socket
+    from urllib.parse import urlparse
+    try:
+        u = urlparse(GATEWAY_URL)
+        host = u.hostname; port = u.port or 80
+        if not host:
+            return False
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def startup_assert_l2():
+    """fail-closed 启动断言(B4c-0.1 #3):
+    - 非法 L2_MERGE_ENABLED 值 → 拒启动(不静默当 false)。
+    - 若存在非终态 approval_required=TRUE 的 run,但缺 COORDINATOR_TOKEN/GATEWAY_URL/Gateway 不可达 →
+      拒启动(否则这些 run 永久卡死,无人维护)。
+    - L2_MERGE_ENABLED=1(新 run 默认进审批流)→ 额外要求 token/url/Gateway 连通/l2 函数可 EXECUTE。
+    L2 维护循环本身始终运行(函数按 approval_required 过滤),开关只管新 run 默认值。"""
+    if L2_MERGE_ENABLED_INVALID:
+        sys.exit(f"[ctrl] FATAL: L2_MERGE_ENABLED='{_L2_RAW}' 非法(允许:0/1/true/false/yes/no/on/off)")
+
+    # 是否存在"需要维护但尚未终结"的审批 run
+    conn = ensure_pg()
+    with conn.cursor() as cur:
+        cur.execute("""SELECT count(*) FROM task_runs
+                       WHERE approval_required AND status NOT IN ('PASS','FAIL','HOLD','MERGED','ROLLED_BACK');""")
+        pending_l2 = cur.fetchone()[0]
+    conn.commit()  # 释放只读事务(防 idle-in-transaction)
+
+    need_gateway = bool(pending_l2) or L2_MERGE_ENABLED
+    if need_gateway:
+        if not COORDINATOR_TOKEN:
+            sys.exit(f"[ctrl] FATAL: 有 {pending_l2} 个未终结审批 run(L2_MERGE_ENABLED={'on' if L2_MERGE_ENABLED else 'off'}),但缺 COORDINATOR_TOKEN → 这些 run 会卡死")
+        if not GATEWAY_URL:
+            sys.exit("[ctrl] FATAL: 审批流需要 GATEWAY_URL")
+        if not _gateway_reachable():
+            sys.exit(f"[ctrl] FATAL: Gateway {GATEWAY_URL} 不可达(TCP 探测失败)—— 先起 policy-gw")
+        with conn.cursor() as cur:
+            cur.execute("SELECT has_function_privilege('mergepilot','l2_ensure_ticket(text,text,jsonb,text,integer,integer)','EXECUTE'),"
+                        "       has_function_privilege('mergepilot','l2_expire_approved(text)','EXECUTE');")
+            ok = cur.fetchone()
+        conn.commit()
+        if not ok or not (ok[0] and ok[1]):
+            sys.exit(f"[ctrl] FATAL: L2 函数不可 EXECUTE(ensure={ok[0] if ok else None} expire={ok[1] if ok else None});先应用 m3b_b4c.sql")
+
+    mode = "on" if L2_MERGE_ENABLED else "off"
+    print(f"[ctrl] L2_MERGE_ENABLED={mode};未终结审批 run={pending_l2};Gateway={GATEWAY_URL if need_gateway else '(未启用)'};reconcile_age={L2_RECONCILE_AGE}s")
+
+
+# ── B4c L2 主循环函数(B4c-1..4 填充实现;B4c-0.1 为安全 no-op 占位,不抛错)──
+# 事务边界契约(B4c-0.1 #4):每个扫描函数只读 SELECT 后必须 commit() 释放事务,防 idle-in-transaction。
+#   B4c-1+ 的写路径(建票/drain/reconcile)各自开短事务,显式 commit/rollback,不复用扫描事务。
+def initiate_l2_pending():
+    """扫 approval_required=TRUE 且 status='APPROVAL_PENDING' AND current_stage IN('l2_binding','l2_awaiting_ticket'):
+    绑定发现(B4c-1)+ 幂等建票 l2_ensure_ticket(B4c-2)。B4c-0.1 占位。"""
+    conn = ensure_pg()
+    with conn.cursor() as cur:
+        cur.execute("""SELECT count(*) FROM task_runs
+                       WHERE approval_required AND status='APPROVAL_PENDING' AND current_stage='l2_binding';""")
+        n = cur.fetchone()[0]
+    conn.commit()
+    if n:
+        print(f"[ctrl][L2-stub] initiate_l2_pending: {n} 个 run 待绑定/建票(B4c-1/B4c-2 实现后处理)")
+
+
+def drain_l2_outbox():
+    """policy_action_outbox:PENDING_DISPATCH+APPROVED → DISPATCHED+lease → Gateway merge → 推进。B4c-0.1 占位。"""
+    conn = ensure_pg()
+    with conn.cursor() as cur:
+        cur.execute("""SELECT count(*) FROM policy_action_outbox o
+                       JOIN approvals a ON o.ticket_id=a.ticket_id
+                       WHERE o.status='PENDING_DISPATCH' AND a.status='APPROVED';""")
+        n = cur.fetchone()[0]
+    conn.commit()
+    if n:
+        print(f"[ctrl][L2-stub] drain_l2_outbox: {n} 个 APPROVED 票待派发(B4c-3 实现后处理)")
+
+
+def reconcile_l2():
+    """UNKNOWN/超时EXECUTING/滞留DISPATCHED/过期 状态收敛(读 GitHub 实际态)。B4c-0.1 占位。"""
+    conn = ensure_pg()
+    with conn.cursor() as cur:
+        cur.execute("""SELECT
+            (SELECT count(*) FROM approvals WHERE status='UNKNOWN'),
+            (SELECT count(*) FROM approvals WHERE status='EXECUTING' AND executing_at < now() - interval '120 seconds'),
+            (SELECT count(*) FROM policy_action_outbox WHERE status='DISPATCHED');""")
+        unk, exe, disp = cur.fetchone()
+    conn.commit()
+    if unk or exe or disp:
+        print(f"[ctrl][L2-stub] reconcile_l2: UNKNOWN={unk} 超时EXECUTING={exe} 滞留DISPATCHED={disp}(B4c-4 实现后处理)")
+
+
+# ── 主循环(故障域分离,复审 #3;L2 维护始终运行,B4c-0.1 #3)──
+#   域 A(PG-驱动 L2):绑定/建票/drain/对账 —— 始终运行(按 approval_required 自过滤),Matrix 挂也照跑。
+#   域 B(Matrix):login/consume/dispatch —— 独立;Matrix 不可用不阻断 L2 恢复。
 def run_forever():
     backoff = 1
-    print(f"[ctrl] 启动;PG={PG_HOST}:{PG_PORT};Matrix={MATRIX_HS};POLL={POLL_INTERVAL}s")
+    print(f"[ctrl] 启动;PG={PG_HOST}:{PG_PORT};Matrix={MATRIX_HS};POLL={POLL_INTERVAL}s;L2_MERGE_ENABLED={'on' if L2_MERGE_ENABLED else 'off'}")
     while True:
+        # ── 故障域 A:PG-驱动 L2(始终运行,不 gated by 开关;函数内部按 approval_required 过滤)──
         try:
             ensure_pg()
+            initiate_l2_pending()
+            drain_l2_outbox()
+            reconcile_l2()
+        except psycopg2.OperationalError as e:
+            print(f"[ctrl] L2 域 PG degraded: {e}; reconnecting in {backoff}s")
+            reset_pg()
+            time.sleep(backoff); backoff = min(backoff * 2, 30)
+            continue
+        except Exception as e:
+            print(f"[ctrl] L2 域 unexpected: {type(e).__name__}: {e}; retry in 5s")
+            time.sleep(5)
+
+        # ── 故障域 B:Matrix(login/consume/dispatch)──
+        try:
             ensure_matrix_login()
             consume_events()
             drain_outbox()
             backoff = 1
-            time.sleep(POLL_INTERVAL)
         except MatrixUnavailable as e:
-            print(f"[ctrl] Matrix degraded: {e}; backoff={backoff}s")
-            time.sleep(backoff)
-            backoff = min(backoff * 2, 30)
-        except psycopg2.OperationalError as e:
-            print(f"[ctrl] PG degraded: {e}; reconnecting in {backoff}s")
-            reset_pg()
-            time.sleep(backoff)
-            backoff = min(backoff * 2, 30)
+            print(f"[ctrl] Matrix degraded: {e}; backoff={backoff}s (L2 域继续运行)")
+            time.sleep(backoff); backoff = min(backoff * 2, 30)
+            continue
         except MatrixRejected as e:
             print(f"[ctrl] Matrix rejected: {e}; skip")
-            time.sleep(POLL_INTERVAL)
+        except psycopg2.OperationalError as e:
+            print(f"[ctrl] Matrix 域 PG degraded: {e}; reconnecting in {backoff}s")
+            reset_pg()
+            time.sleep(backoff); backoff = min(backoff * 2, 30)
+            continue
         except Exception as e:
-            print(f"[ctrl] unexpected: {type(e).__name__}: {e}; retry in 5s")
+            print(f"[ctrl] Matrix 域 unexpected: {type(e).__name__}: {e}; retry in 5s")
             time.sleep(5)
+
+        time.sleep(POLL_INTERVAL)
 
 if __name__ == "__main__":
     if not ADMIN_PW or not PG_PASS:
         print("ERROR: 需 ADMIN_PW + PG_PASS 环境变量"); sys.exit(1)
+    startup_assert_l2()
+    # B4c-0.2:部署预检模式——仅跑 startup_assert_l2 后 exit 0/1,供 start 脚本替换前
+    #   用同一镜像+env 预检(startup_assert 失败时上面已 sys.exit 非零)。通过后才替换旧容器。
+    if os.environ.get("STARTUP_CHECK_ONLY", "0").strip().lower() in ("1", "true", "yes"):
+        print("[ctrl] STARTUP_CHECK_ONLY: startup_assert passed → exit 0")
+        sys.exit(0)
     run_forever()

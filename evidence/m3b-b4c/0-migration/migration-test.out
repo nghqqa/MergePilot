@@ -1,0 +1,82 @@
+═══════════════════════════════════════════════
+  B4c-0 migration 验收
+═══════════════════════════════════════════════
+
+=== wait for PG ready ===
+  PG ready (poll 1)
+
+=== 0. 源码 sha256 一致性(mergepilot-os ↔ tools 镜像) ===
+  ✅ workflow-controller/controller.py 一致(1e1f7c255eb9a594)
+  ✅ audit-db/m3b_b4c.sql 一致(37baed744388fdf4)
+  ✅ policy-gateway/gateway.py 一致(0513fc3c70cc19bb)
+
+=== 1. migration 幂等应用 ===
+  ✅ 首次应用成功
+  ✅ 二次应用幂等(无错)
+
+=== 2. task_runs: approval_required + l2_discovery_attempts ===
+  ✅ approval_required boolean DEFAULT false
+  ✅ l2_discovery_attempts integer DEFAULT 0
+
+=== 3. 未终结票据唯一索引 uq_active_ticket_per_binding_action ===
+  ✅ 唯一索引存在
+  ✅ partial(5 未终结态:PENDING/APPROVED/EXECUTING/UNKNOWN/USED)
+
+=== 4. l2_ensure_ticket / l2_expire_approved: owner + GRANT ===
+  ✅ l2_ensure_ticket owner=mergepilot_l2_owner(NOLOGIN)
+  ✅ l2_ensure_ticket 无 PUBLIC EXECUTE
+  ✅ l2_ensure_ticket GRANT EXECUTE TO mergepilot(字面条目)
+  ✅ l2_expire_approved owner=mergepilot_l2_owner(NOLOGIN)
+  ✅ l2_expire_approved 无 PUBLIC EXECUTE
+  ✅ l2_expire_approved GRANT EXECUTE TO mergepilot(字面条目)
+
+=== 5. setup 测试数据 ===
+  ✅ 测试数据就绪(bnd-b4c0 / b4c0test-run, approval_required=TRUE)
+
+=== 6. l2_ensure_ticket 幂等 ===
+  tkt1=tkt-d3508da8-1d4d-413f-a77d-5a1b94812e13 tkt2=tkt-d3508da8-1d4d-413f-a77d-5a1b94812e13 attempt=1
+  ✅ 重复 ensure 返回同 ticket_id(幂等)
+  ✅ attempt_no=1(未新建 attempt)
+  ✅ 仅 1 条活动 PENDING 票
+
+=== 7. 活动票据唯一索引兜底(直接插第 2 条 PENDING → 拒) ===
+  ✅ 第 2 条活动票被唯一索引拒绝
+
+=== 8. l2_expire_approved(APPROVED 过期 → EXPIRED) ===
+  ✅ l2_approve → APPROVED
+  ✅ l2_expire_approved 返回 true
+  ✅ APPROVED 过期 → EXPIRED
+  ✅ 未过期的 APPROVED 不迁移(返回 false)
+
+=== 8.5 USED/UNKNOWN 态:ensure 不新建(FAILED 才建新 attempt) ===
+  used_tkt=tkt-b07fd7b7-dcf1-4221-9b47-4d3b3023bc92 ensure2=tkt-b07fd7b7-dcf1-4221-9b47-4d3b3023bc92 rows=1
+  ✅ USED 态:ensure 返回同票(不新建)
+  ✅ USED 态未新建 attempt(仍 1 行)
+  ✅ UNKNOWN 态:ensure 返回同票(待对账,不新建)
+  ✅ UNKNOWN 态未新建 attempt
+  ✅ FAILED 态:ensure 建新 attempt(允许重试)
+  ✅ FAILED 后总行数=2(新 attempt)
+
+=== 8.6 ensure payload/hash 不一致 → 抛错 ===
+  ✅ payload 不一致 → 抛错(不返回旧票)
+
+=== 8.6b ensure TTL 不一致 → 抛错(22023 非重试) ===
+  ✅ exec_ttl 不一致(1→2)→ 抛错
+  ✅ approval_ttl 不一致(24→12)→ 抛错
+  ✅ payload/hash/TTL 全一致 → 幂等返回旧票(不抛错)
+
+=== 8.7 真并发 ensure(两 psql 并行)→ 同票 ===
+  conc_a=tkt-0dedda5d-b83b-4d7a-b983-da581ce00c59 conc_b=tkt-0dedda5d-b83b-4d7a-b983-da581ce00c59 total=1
+  ✅ 并发 ensure 返回同 ticket_id
+  ✅ 并发只建 1 张票(advisory 锁串行化)
+
+=== 9. 回归(APPROVAL_PENDING CHECK / current_stage=l2_binding) ===
+  ✅ chk_task_status 含 APPROVAL_PENDING
+  ✅ current_stage 接受 'l2_binding'(待办标记)
+
+=== evidence snapshot ===
+  snapshot: task_runs-schema / l2-functions-owners / active-ticket-index
+
+═══════════════════════════════════════════════
+  B4c-0 验收: PASS=38 FAIL=0
+═══════════════════════════════════════════════

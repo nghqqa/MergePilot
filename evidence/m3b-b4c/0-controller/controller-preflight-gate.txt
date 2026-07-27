@@ -1,0 +1,10 @@
+=== build controller image (ctx=/mnt/d/goai/mergepilot-os/tools/workflow-controller) ===
+#10 exporting to image
+#10 exporting layers done
+#10 writing image sha256:6e9ef5283acbfdf3fd568797d3a3da3e661563c81c2d2e2e161faf662b6e59b7 done
+#10 naming to docker.io/library/mergepilot-controller:latest done
+#10 DONE 0.0s
+=== wait for audit-pg ready + migration check ===
+=== preflight: startup_assert_l2 via STARTUP_CHECK_ONLY (L2_MERGE_ENABLED=maybe) ===
+[ctrl] FATAL: L2_MERGE_ENABLED='maybe' 非法(允许:0/1/true/false/yes/no/on/off)
+ERROR: 预检失败(startup_assert_l2 未过)—— **旧容器未动**。

@@ -1,0 +1,22 @@
+=== build controller image (ctx=/tmp/b4c-broken-ctx) ===
+#10 exporting layers
+#10 exporting layers 0.1s done
+#10 writing image sha256:35717e7c757fb374b730e60396cdeb2f7e5d62f2527e325be1267ff79101d220 done
+#10 naming to docker.io/library/mergepilot-controller:latest 0.0s done
+#10 DONE 0.2s
+=== wait for audit-pg ready + migration check ===
+=== preflight: startup_assert_l2 via STARTUP_CHECK_ONLY (L2_MERGE_ENABLED=0) ===
+[ctrl] PG connected
+[ctrl] L2_MERGE_ENABLED=off;未终结审批 run=1;Gateway=http://policy-gw:8083;reconcile_age=120s
+[ctrl] STARTUP_CHECK_ONLY: startup_assert passed → exit 0
+=== preserve old container → mergepilot-controller-rollback (原配置保留) ===
+=== health wait (poll for healthy) ===
+ERROR: 新容器未达 healthy(最后=unhealthy)。日志:
+[ctrl] PG connected
+[ctrl] L2_MERGE_ENABLED=off;未终结审批 run=1;Gateway=http://policy-gw:8083;reconcile_age=120s
+[ctrl] FAULT-INJECT: exit 1 before run_forever (simulating post-startup failure)
+[ctrl] PG connected
+[ctrl] L2_MERGE_ENABLED=off;未终结审批 run=1;Gateway=http://policy-gw:8083;reconcile_age=120s
+[ctrl] FAULT-INJECT: exit 1 before run_forever (simulating post-startup failure)
+[ctrl] PG connected
+!!! 已回滚到原容器(原配置 via rename+start)

@@ -1,0 +1,4 @@
+[ctrl][L2-stub] initiate_l2_pending: 1 个 run 待绑定/建票(B4c-1/B4c-2 实现后处理)
+[ctrl][L2-stub] initiate_l2_pending: 1 个 run 待绑定/建票(B4c-1/B4c-2 实现后处理)
+[ctrl][L2-stub] initiate_l2_pending: 1 个 run 待绑定/建票(B4c-1/B4c-2 实现后处理)
+[ctrl][L2-stub] initiate_l2_pending: 1 个 run 待绑定/建票(B4c-1/B4c-2 实现后处理)

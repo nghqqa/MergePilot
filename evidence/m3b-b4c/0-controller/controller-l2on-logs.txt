@@ -1,0 +1,3 @@
+[ctrl] L2_MERGE_ENABLED=on;未终结审批 run=0;Gateway=http://policy-gw:8083;reconcile_age=120s
+[ctrl] 启动;PG=audit-pg:5432;Matrix=http://hiclaw-controller:6167;POLL=8s;L2_MERGE_ENABLED=on
+[ctrl] Matrix login OK
