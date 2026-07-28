@@ -134,7 +134,7 @@ def gateway_list_prs(owner, repo, run_id, timeout=60, deadline=None):
     while page <= 10:
         if deadline and time.monotonic() > deadline:
             return ("RETRY", [])   # B4c.1.1 #4:整轮预算到期,分页中止
-        _to = min(timeout, max(int(deadline - time.monotonic()), 5)) if deadline else timeout
+        _to = min(timeout, max(deadline - time.monotonic(), 0.1)) if deadline else timeout   # B4c.1.3:无 5s 下限(≤剩余)
         # B4c.1.2:GatewayUnavailable/Denied/GlobalDegraded **透传**(由 discover 开 breaker / HOLD;不再吞成 RETRY)
         text, _ = gateway_call("list_pull_requests",
             {"owner": owner, "repo": repo, "state": "open", "perPage": 100, "page": page}, _to)

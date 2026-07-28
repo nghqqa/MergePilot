@@ -694,7 +694,9 @@ def discover_binding_for_run(run_id, deadline=None):
       + 返回 ("DEGRADED", ...),由 initiate 停止本 tick discover(防连环撞 Gateway)。"""
     import gateway_client
     try:
-        return _discover_binding_for_run_inner(run_id, deadline)
+        result = _discover_binding_for_run_inner(run_id, deadline)
+        _l2_gw_ok()   # B4c.1.3 P2:discover 成功 → 清 breaker failure_count(恢复后重新计数)
+        return result
     except gateway_client.GatewayGlobalDegraded as e:
         _l2_gw_mark_degraded(e.reason_code)
         print(f"[ctrl][L2] {run_id} discover: Gateway GLOBAL_DEGRADED({e.reason_code}) → circuit breaker")
@@ -724,6 +726,16 @@ def _gw_timeout_for(deadline):
 def _budget_exhausted(deadline):
     """B4c.1.2 #3:剩余预算不足以启动新项(<1s)或已过。loop 顶用,防启动后单调用超整轮预算。"""
     return deadline is not None and (deadline - time.monotonic()) < 1.0
+
+
+def _tick_take(budget):
+    """B4c.1.3:从每-tick 共享 item 预算取一项(扣减)。True=有额度(已扣)/无预算限制;False=耗尽。"""
+    if budget is None:
+        return True
+    if budget[0] <= 0:
+        return False
+    budget[0] -= 1
+    return True
 
 
 def _discover_binding_for_run_inner(run_id, deadline=None):
@@ -890,7 +902,7 @@ def create_ticket_for_run(run_id):
         return ("RETRY", {"reason": f"建票失败: {e}"})
 
 
-def initiate_l2_pending(deadline=None):
+def initiate_l2_pending(deadline=None, budget=None):
     """扫 approval_required AND status='APPROVAL_PENDING' AND current_stage='l2_binding':
     B4c-1.1 绑定发现。**per-run session advisory lock**(pg_advisory_lock)序列化多 Controller 发现,
     防一次真实 NOT_FOUND 被并发累计多次。discover 内部 _atomic_advance 做 CAS 原子写推进。"""
@@ -911,7 +923,7 @@ def initiate_l2_pending(deadline=None):
         ticket_runs = [r[0] for r in cur.fetchall()]
     conn.commit()
     for run_id in runs:
-        if _budget_exhausted(deadline):
+        if _budget_exhausted(deadline) or not _tick_take(budget):
             break   # B4c.1 工作预算到期,剩余候选下 tick 处理(已持久化 next_attempt_at)
         if _l2_gw_degraded():
             break   # B4c.1.1 #3:discover 途中 breaker 打开 → 停
@@ -955,7 +967,7 @@ def initiate_l2_pending(deadline=None):
 
     # B4c-2:l2_awaiting_ticket → 幂等建票(per-run session advisory lock)
     for run_id in ticket_runs:
-        if _budget_exhausted(deadline):
+        if _budget_exhausted(deadline) or not _tick_take(budget):
             break   # B4c.1 工作预算到期
         if _l2_gw_degraded():
             break   # B4c.1.1 #3:circuit breaker 打开 → 停建票
@@ -1017,19 +1029,21 @@ def _advance_outbox_by_approval(oid, ticket_id, action, outcome):
             cur.execute("SELECT attempts FROM policy_action_outbox WHERE id=%s", (oid,))
             _ar = cur.fetchone(); delay = _l2_backoff_seconds(_ar[0] if _ar else 0)
             if outcome.kind == "TICKET_DENY":
-                # B4c.1.2 #1:完整 CAS —— **先锁 task FOR UPDATE + 校验 task 仍在 CAS 态**;
-                #   再 l2_reject_approved(approval CAS)。任一 CAS 不成立 → 回滚(approval/outbox 都不动,交下轮)。
-                #   两 CAS 都过 → 同事务 task HOLD(l2_drain_denied)+ outbox FAILED(task 锁内不会并发迁移)。
-                cur.execute("SELECT status, current_stage FROM task_runs WHERE run_id=%s FOR UPDATE", (run_id,))
+                # B4c.1.3:完整三字段 CAS —— 锁 task FOR UPDATE + 校验 approval_required+status+current_stage;
+                #   再 l2_reject_approved(approval CAS);task UPDATE 断言 rowcount==1;**任一不命中 → 回滚,outbox 不动**。
+                cur.execute("SELECT approval_required, status, current_stage FROM task_runs WHERE run_id=%s FOR UPDATE", (run_id,))
                 _tr = cur.fetchone()
-                if not _tr or not (_tr[0] == 'APPROVAL_PENDING' and _tr[1] == 'l2_awaiting_approval'):
-                    conn.rollback()   # task 已并发迁移 → 不终结
+                if not _tr or not (bool(_tr[0]) and _tr[1] == 'APPROVAL_PENDING' and _tr[2] == 'l2_awaiting_approval'):
+                    conn.rollback()   # task 已并发迁移或缺 approval_required → 不终结
                     return None
                 cur.execute("SELECT l2_reject_approved(%s,%s)", (ticket_id, outcome.reason_code))
                 if not cur.fetchone()[0]:
                     conn.rollback()   # approval 已并发迁移(claim/恰好过期)→ 不终结(task/outbox 不动)
                     return None
                 cur.execute(f"UPDATE task_runs SET status='HOLD', current_stage='l2_drain_denied', last_error=%s, updated_at=now() WHERE run_id=%s AND {cas_clause}", (f"preclaim denied:{outcome.reason_code}", run_id))
+                if cur.rowcount != 1:
+                    conn.rollback()   # task CAS 未命中(并发)→ 不终结 outbox
+                    return None
                 cur.execute("UPDATE policy_action_outbox SET status='FAILED', completed_at=now(), last_error_code=%s, error=%s WHERE id=%s", (outcome.reason_code, f"preclaim denied:{outcome.reason_code}", oid))
             elif outcome.kind == "GLOBAL_DEGRADED":
                 # 全局配置故障:退回 PENDING_DISPATCH + 退避;signal 让 drain 本 tick 停消费
@@ -1062,7 +1076,7 @@ def _advance_outbox_by_approval(oid, ticket_id, action, outcome):
     return signal
 
 
-def drain_l2_outbox(deadline=None):
+def drain_l2_outbox(deadline=None, budget=None):
     """B4c-3 lease drain + B4c.1 typed outcome / 退避 / 确定性拒绝 / circuit breaker / 工作预算。
     派发条件:APPROVED 且 expires_at>now 且 (next_retry_at IS NULL OR next_retry_at<=now)。
     边界:① 领取事务调 Gateway 前提交;② 读 approvals.status 权威态;③ UNKNOWN/EXECUTING 不重 merge;
@@ -1074,7 +1088,7 @@ def drain_l2_outbox(deadline=None):
         print(f"[ctrl][L2] drain 跳过:Gateway degraded({_L2_GW['last_error'][:50]}),待恢复")
         return
     for _ in range(L2_MAINTENANCE_MAX_ITEMS):
-        if _budget_exhausted(deadline):
+        if _budget_exhausted(deadline) or not _tick_take(budget):
             break
         conn = ensure_pg()
         with conn.cursor() as cur:
@@ -1095,7 +1109,7 @@ def drain_l2_outbox(deadline=None):
                              dispatched_at = now(), attempts = attempts + 1, next_retry_at = now()
                            WHERE id=%s""", (L2_LEASE_SECONDS, oid))
         conn.commit()   # 边界①:提交领取(逐条),释放 FOR UPDATE,再调 Gateway
-        gw_to = L2_GW_TIMEOUT if not deadline else min(L2_GW_TIMEOUT, max(int(deadline - time.monotonic()), 5))
+        gw_to = _gw_timeout_for(deadline)   # B4c.1.3:统一用 _gw_timeout_for(≤剩余,无 5s 下限)
         tool = L2_ACTION_TOOL.get(action)
         if not tool:
             _advance_outbox_unknown(oid, ticket_id, f"未知 action {action}"); continue
@@ -1157,6 +1171,7 @@ def _reconcile_ticket(ticket_id, run_id, action, astatus, pr_num, repo, oid, dea
     owner, _, repo_name = repo.partition("/")
     try:
         rstatus, prd = gateway_client.gateway_read_pr(owner, repo_name, pr_num, timeout=_gw_timeout_for(deadline))
+        _l2_gw_ok()   # B4c.1.3 P2:reconcile 读成功 → 清 breaker failure_count
     except gateway_client.GatewayGlobalDegraded as e:
         _l2_gw_mark_degraded(e.reason_code)
         print(f"[ctrl][L2] reconcile {ticket_id[:16]}: Gateway GLOBAL_DEGRADED({e.reason_code}) → breaker")
@@ -1195,7 +1210,7 @@ def _reconcile_ticket(ticket_id, run_id, action, astatus, pr_num, repo, oid, dea
         return False
 
 
-def reconcile_l2(deadline=None):
+def reconcile_l2(deadline=None, budget=None):
     """B4c-4(+4.1):延迟对账 + 过期收敛 + 全状态收敛(读 GitHub 实际态,**绝不自动重 merge**)。
     ① UNKNOWN/EXECUTING 且 executing_at<now()-120s(延迟防竞态;B4c-4.1 P1-1:UNKNOWN 也需延迟)
        → gateway_read_pr → l2_reconcile_* → **复用 _advance_outbox_by_approval 收敛 outbox+task**(P1-2);
@@ -1216,7 +1231,7 @@ def reconcile_l2(deadline=None):
         reconcile_items = cur.fetchall()
     conn.commit()
     for ticket_id, run_id, action, astatus, pr_num, repo, oid in reconcile_items:
-        if _budget_exhausted(deadline):
+        if _budget_exhausted(deadline) or not _tick_take(budget):
             break   # B4c.1 工作预算到期,剩余对账项下 tick
         if _l2_gw_degraded():
             break   # B4c.1.1 #3:circuit breaker 打开 → 停对账
@@ -1229,16 +1244,16 @@ def reconcile_l2(deadline=None):
     conn = ensure_pg()
     with conn.cursor() as cur:
         cur.execute("""SELECT ticket_id FROM approvals
-                       WHERE status='PENDING' AND approval_expires_at < now()""")
+                       WHERE status='PENDING' AND approval_expires_at < now() LIMIT 100""")
         for (tid,) in cur.fetchall():
             cur.execute("SELECT l2_expire_pending(%s)", (tid,))
         cur.execute("""SELECT ticket_id FROM approvals
-                       WHERE status='APPROVED' AND expires_at IS NOT NULL AND expires_at < now()""")
+                       WHERE status='APPROVED' AND expires_at IS NOT NULL AND expires_at < now() LIMIT 100""")
         for (tid,) in cur.fetchall():
             cur.execute("SELECT l2_expire_approved(%s)", (tid,))
         cur.execute("""SELECT a.ticket_id, a.run_id FROM approvals a
                        WHERE a.status='EXPIRED'
-                         AND EXISTS (SELECT 1 FROM policy_action_outbox o WHERE o.ticket_id=a.ticket_id AND o.status != 'FAILED')""")
+                         AND EXISTS (SELECT 1 FROM policy_action_outbox o WHERE o.ticket_id=a.ticket_id AND o.status != 'FAILED') LIMIT 100""")
         for tid, run_id in cur.fetchall():
             # B4c-4.2 P1:task 用**完整 CAS**(approval_required+APPROVAL_PENDING+l2_awaiting_approval);
             # CAS 失败(rowcount=0)→ 不覆盖 task,outbox.error 追加 CONCURRENT_STATE_CHANGE(对称于 drain USED/FAILED)
@@ -1256,7 +1271,7 @@ def reconcile_l2(deadline=None):
     with conn.cursor() as cur:
         cur.execute("""SELECT o.id, o.ticket_id, a.action
                        FROM policy_action_outbox o JOIN approvals a ON o.ticket_id=a.ticket_id
-                       WHERE o.status IN ('DISPATCHED','UNKNOWN') AND a.status IN ('USED','FAILED')""")
+                       WHERE o.status IN ('DISPATCHED','UNKNOWN') AND a.status IN ('USED','FAILED') LIMIT 100""")
         stranded = cur.fetchall()
     conn.commit()
     for oid, ticket_id, action in stranded:
@@ -1274,9 +1289,10 @@ def run_forever():
         try:
             ensure_pg()
             l2_deadline = time.monotonic() + L2_MAINTENANCE_BUDGET_SECONDS   # B4c.1 单循环工作预算(共享)
-            initiate_l2_pending(l2_deadline)
-            drain_l2_outbox(l2_deadline)
-            reconcile_l2(l2_deadline)
+            l2_budget = [L2_MAINTENANCE_MAX_ITEMS]   # B4c.1.3:每 tick 共享 item 预算(整轮硬边界,跨阶段)
+            initiate_l2_pending(l2_deadline, l2_budget)
+            drain_l2_outbox(l2_deadline, l2_budget)
+            reconcile_l2(l2_deadline, l2_budget)
         except psycopg2.OperationalError as e:
             print(f"[ctrl] L2 域 PG degraded: {e}; reconnecting in {backoff}s")
             reset_pg()
