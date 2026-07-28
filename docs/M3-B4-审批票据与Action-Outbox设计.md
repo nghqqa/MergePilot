@@ -27,7 +27,7 @@
 
 1. **Controller drain outbox,Gateway 请求驱动**(不加后台 drainer)。Controller 持 coordinator token(非 PAT)。
 2. **Controller 对账 UNKNOWN + 超时 EXECUTING + 滞留 DISPATCHED**;Gateway 只 claim/execute/complete/fail/mark_unknown。
-3. **独立 `mergepilot_approver` 账号**,仅 EXECUTE `l2_pending_list`/`l2_approve`;`approved_by = $(id -un)@$(hostname)`(不直接信 `$USER`);CLI 接收**精确 ticket_id**。
+3. **独立 `mergepilot_approver` 账号**,仅 EXECUTE `l2_pending_list`/`l2_approve`;CLI 接收**精确 ticket_id**。**B4d.1 hardening**:`l2_approve` 改用 `session_user`(认证 DB 登录角色)写 `approved_by`,**忽略** `p_approved_by`(签名不变,故 B4a frozen allowlist 仍有效);逐人身份 = 逐人 LOGIN 角色授予 EXECUTE。原 B4d 的 `id -un@hostname` 派生降级为"主机审计标签",不作强身份(持 approver 密码者无法再借参数冒名)。
 4. **close** 走 `update_pull_request(state=closed)` 并绑 PR/head SHA;**revert** 暂不实现 → 走"建 revert PR → 正常审批 merge";`delete_file` 保持 disabled。
 5. **TTL**:PENDING 审批期 24h;APPROVED 起执行期默认 1h(可配,上限 24h);EXECUTING 到期**对账不直接 EXPIRED**。
 6. **ticket_id**:
@@ -164,7 +164,7 @@ GRANT EXECUTE ON FUNCTION l2_claim_ticket(...) TO policy_gateway_l2;
 |---|---|---|
 | `l2_create_ticket(p_binding_id, p_action, p_canonical_payload, p_ttl_hours)` | `mergepilot`(Controller) | 原子分配 attempt_no;写 approvals(PENDING)+ policy_action_outbox(PENDING_DISPATCH)同事务;返回 ticket_id |
 | `l2_pending_list()` | `mergepilot_approver` | 返回 PENDING 票据(只读,经函数不暴露表 SELECT) |
-| `l2_approve(p_ticket_id, p_approved_by)` | `mergepilot_approver` | CAS PENDING→APPROVED;校验未过审批期;`approved_by` 由 CLI 传入(CLI 取自 `id -un@hostname`) |
+| `l2_approve(p_ticket_id, p_approved_by)` | `mergepilot_approver` | CAS PENDING→APPROVED;校验未过审批期;**B4d.1:`approved_by = session_user`(忽略 `p_approved_by`,签名不变)**;逐人身份 = 逐人 LOGIN 角色 |
 | `l2_claim_ticket(p_ticket_id, p_action, p_repo, p_pr_number, p_args_hash)` | `policy_gateway_l2` | **一次 CAS**:APPROVED→EXECUTING,WHERE 同时校验 action/repo/pr_number/args_hash/expires_at>now();分配 execution_id+executing_at;0 行返回 NULL(票据不消耗);成功 RETURN canonical_payload+execution_id |
 | `l2_complete_ticket(p_ticket_id, p_execution_id, p_result_sha)` | `policy_gateway_l2` | CAS EXECUTING→USED;校验 execution_id 匹配 |
 | `l2_fail_ticket(p_ticket_id, p_execution_id, p_reason)` | `policy_gateway_l2` | CAS EXECUTING→FAILED |
@@ -296,9 +296,9 @@ DISPATCHED **非终态**。Controller 周期扫描 DISPATCHED 行,按其 approva
     事务:approvals(PENDING, attempt_no=N, approval_expires_at)+ outbox(PENDING_DISPATCH, idempotency_key)
   → task_runs = APPROVAL_PENDING
 
-[approve CLI] host: approve.sh <ticket_id>
-  → $(id -un)@$(hostname) 作为 approved_by
-  → l2_approve(ticket_id, approved_by) → APPROVED + expires_at(执行期)
+[approve CLI] host: approve.sh <ticket_id>   (严格 1 参数;多余参数 → exit 2,票保持 PENDING)
+  → B4d.1: approved_by 由 l2_approve 写 session_user(DB 登录角色);CLI 不传、不可伪造
+  → l2_approve(ticket_id) → APPROVED + expires_at(执行期);approved_by = session_user
 
 [Controller] drain outbox
   → PENDING_DISPATCH 且 ticket=APPROVED → 标 DISPATCHED + lease_expires_at=now()+60s

@@ -1,7 +1,12 @@
 ═══════════════════════════════════════════════
-  B4d approve CLI 验收(fixture=nghqqa/MergePilot-e2e-fixture; approve host-by=ngh@DESKTOP-HKN2D82)
+  B4d.1 approve CLI 验收(fixture=nghqqa/MergePilot-e2e-fixture)
 ═══════════════════════════════════════════════
-323cb24adb43e4e391e519edcdc5d134d240520c51f5cbbf4e1c9f47245aba58
+CREATE FUNCTION
+DO
+ALTER ROLE
+REVOKE
+GRANT
+e0d3d4be9b09d89cd1e444d94c8911d6b1e7a639bfce19d4ae47d6ccf6bba08f
 policy-gw-e2e | Up 1 second (health: starting)
 --- 启动日志(尾)---
 [gateway] starting on 0.0.0.0:8083  AUDIT=on
@@ -14,54 +19,68 @@ INFO:     Application startup complete.
 INFO:     Uvicorn running on http://0.0.0.0:8083 (Press CTRL+C to quit)
 
 === 1. list / show / approve 正向 ===
-  分支 fix/b4d-ok-41900 建好
+  分支 fix/b4d-ok-81565 建好
   commit 加好
-  ✅ list 列出 PENDING 票 tkt-dcb54dd8-3d9b-41c2-88a9-89213aa309b8
-ticket:    tkt-dcb54dd8-3d9b-41c2-88a9-89213aa309b8
-run:       b4d-ok-41900
-action:    merge
-repo:      nghqqa/MergePilot-e2e-fixture
-PR:        #9
-head SHA:  5aca5197dc07f7b0ccf967e54812c4721306d6c5
-target:    main
-payload:   {"repo": "MergePilot-e2e-fixture", "owner": "nghqqa", "pullNumber": 9, "commit_title": "b4d ok", "merge_method": "squash"}
-args_hash: 9921c7aef78a7deb017aebe1d387a50082f68b039622ecafd3e12ae46c1ac93a
-attempt:   1
-created:   2026-07-28 02:51:34.139386+00
-expires:   2026-07-29 02:51:34.139386+00  (PENDING 审批期 24h)
-TTL:       23:59:59 remaining
-  ✅ show 展示 repo/PR/head SHA/TTL
-✓ APPROVED tkt-dcb54dd8-3d9b-41c2-88a9-89213aa309b8
-  approved_by = ngh@DESKTOP-HKN2D82  (派生自 id -un@hostname,不可参数伪造)
+  ✅ list 列出 PENDING 票
+ticket:     tkt-4453d16e-5a37-44b2-81ed-67337fb7d067
+run:        b4d-ok-81565
+action:     merge
+repo:       nghqqa/MergePilot-e2e-fixture
+PR:         #22
+head SHA:   7249d2b441aca18a66bc7414e9b3a64ae3105c22
+target:     main
+payload:    {"repo": "MergePilot-e2e-fixture", "owner": "nghqqa", "pullNumber": 22, "commit_title": "b4d ok", "merge_method": "squash"}
+args_hash:  a30d0ceb1cd04751b861bd068b41f1452e4dd2e2a330b3978ffffda39bca812d
+attempt:    1
+created:    2026-07-28 03:54:38.47049+00
+expires:    2026-07-29 03:54:38.47049+00  (PENDING 审批期 24h)
+TTL:        23:59:59 remaining
+approvable: yes
+  ✅ show 展示 repo + approvable=yes(PENDING 未过期)
+✓ APPROVED tkt-4453d16e-5a37-44b2-81ed-67337fb7d067
+  approved_by = mergepilot_approver  (DB session_user = 认证登录角色;不可参数伪造)
   执行期默认 ~1h;Coordinator drain 将在 Gateway claim 后 merge/close。
   ✅ approve → APPROVED
   ✅ DB: 票状态 APPROVED
-  ✅ approved_by = ngh@DESKTOP-HKN2D82(host 派生,正确)
+  ✅ approved_by = mergepilot_approver(session_user,非参数)
   ✅ approve 写入执行期 expires_at(>now)
 
-=== 2. approved_by 不可参数伪造(CLI 无 --by 入口)===
-  ✅ approve.sh: approved_by 硬派生自 id -un@hostname(无参数入口)
-  分支 fix/b4d-forgery-41900 建好
+=== 2. approved_by 不可伪造(session_user 权威)===
+  分支 fix/b4d-forgery-81565 建好
   commit 加好
-  ✅ 伪造参数被忽略,approved_by 仍是 ngh@DESKTOP-HKN2D82
+true
+  ✅ 直调 l2_approve('tkt','EVIL@FORGED') → approved_by 仍为 session_user(参数被忽略)
+  分支 fix/b4d-alt-81565 建好
+  commit 加好
+true
+  ✅ 逐人 DB 登录:第二角色审批 → approved_by=mergepilot_approver_alt
 
-=== 3. 拒绝路径(l2_approve CAS FALSE)===
+=== 3. 拒绝路径 ===
   ✅ 重复审批(已 APPROVED)→ 拒(exit 1)
-  分支 fix/b4d-exp-41900 建好
+  分支 fix/b4d-exp-81565 建好
   commit 加好
-  ✅ 过期票 → 拒(状态仍 PENDING,未迁移)
+  ✅ 过期票 → 拒(状态仍 PENDING)
+  ✅ list 把过期 PENDING 票标 EXPIRED(不可审批)
   ✅ 不存在的 ticket_id → 拒
 ERROR: ticket_id 非法(期望 tkt-<uuid>)
-  ✅ 非法 ticket_id 格式 → CLI 拒(exit 2,防注入)
+  ✅ 非法 ticket_id 格式 → CLI exit 2(防注入)
 
-=== 4. approver 权限边界 ===
+=== 4. 严格参数(多余参数 → exit 2,票 PENDING)===
+  分支 fix/b4d-strictarg-81565 建好
+  commit 加好
+ERROR: approve 仅接受 1 个参数(ticket_id)。多余参数被拒 → 票据保持 PENDING(防伪造审批人)。
+  用法: approve.sh approve <ticket_id>  (approved_by 由 DB session_user 写,无 --by 入口)
+  ✅ approve <tkt> --by=... → exit 2 且票保持 PENDING
+
+=== 5. approver 权限边界 ===
   ✅ approver SELECT approvals → denied
   ✅ approver INSERT approvals → denied
-  ✅ approver EXECUTE l2_pending_list → OK(返回计数 1)
+  ✅ approver EXECUTE l2_pending_list → OK(计数 2)
 
-=== 5. 凭证扫描 ===
+=== 6. 凭证扫描 ===
   ✅ approve.sh 输出无凭证泄漏
 
 ═══════════════════════════════════════════════
-  B4d 验收: PASS=16 FAIL=0
+  B4d.1 验收: PASS=18 FAIL=0
 ═══════════════════════════════════════════════
+  全部 18 项断言通过(无静默跳过)

@@ -1,13 +1,14 @@
-ticket:    tkt-3b047f78-c33c-4f96-a51c-4f49b64757f6
-run:       b4d-exp-41900
-action:    merge
-repo:      nghqqa/MergePilot-e2e-fixture
-PR:        #11
-head SHA:  5d09d41d931aca3337c31ef4d0b8c71c00203d2c
-target:    main
-payload:   {"repo": "MergePilot-e2e-fixture", "owner": "nghqqa", "pullNumber": 11, "commit_title": "b4d exp", "merge_method": "squash"}
-args_hash: f3fe4f22686ad305181b7cf190dbd144878bc55139f8e91a4efbdbe48770cf69
-attempt:   1
-created:   2026-07-28 02:51:49.4625+00
-expires:   2026-07-28 01:51:49.668135+00  (PENDING 审批期 24h)
-TTL:       -01:00:01 remaining
+ticket:     tkt-eec6e446-e5e1-41e7-b6ac-54c13fc20396
+run:        b4d-exp-81565
+action:     merge
+repo:       nghqqa/MergePilot-e2e-fixture
+PR:         #25
+head SHA:   930d577f673b11fc72bbb5fe7a2ae331006b409c
+target:     main
+payload:    {"repo": "MergePilot-e2e-fixture", "owner": "nghqqa", "pullNumber": 25, "commit_title": "b4d exp", "merge_method": "squash"}
+args_hash:  2222b2daf210268beba8cb2802d892c399b18620dd42d682725e8018471de594
+attempt:    1
+created:    2026-07-28 03:55:01.186044+00
+expires:    2026-07-28 02:55:01.421715+00  (PENDING 审批期 24h)
+TTL:        -01:00:08 remaining
+approvable: EXPIRED-not-approvable
