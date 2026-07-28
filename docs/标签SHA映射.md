@@ -60,3 +60,5 @@
 | `m3b-b4c.1.4-closed` | `865e958` | `4be419b` | B4c.1.4:空阶段不消耗预算(_tick_ok/_tick_use)+expiry LIMIT 50+timeout max(rem,0)(7/7) |
 | `m3b-b4c.1.5-closed` | `1ce8c69` | `cdd3337` | B4c.1.5:expiry deadline guard + L2_EXPIRY_BATCH 参数化+校验(6/6) |
 | `m3b-b4c.1.6-closed` | `d90c3d4` | `4e5813c` | B4c.1.6:mid-batch deadline guard(expiry/stranded 批内逐项检查,5/5) |
+| `m3b-b4c.1.6a-closed` | `356d004` | `330d752` | B4c.1.6a:evidence-only — mid-batch deadline 测试确定性命中(monkeypatch;不动 1.6) |
+| `m3b-b4e-closed` | `26d0984` | `63301e8` | B4e:总 E2E(review→fix→verify→approve→drain→MERGED)+崩溃恢复 + UNKNOWN/EXECUTING 对账 + Gateway 降级→恢复(breaker)+ Matrix 非 L2 循环存活(43/43,fixture 隔离,4×L2_CLAIMED/4×L2_COMPLETE 无双 claim) |
