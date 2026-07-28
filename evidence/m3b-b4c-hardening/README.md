@@ -39,6 +39,26 @@ PostgreSQL 唯一权威;Gateway 调用不持 DB 事务;UNKNOWN/EXECUTING 绝不�
 - `db-snapshot.txt`:本测试 run 终态快照。
 - `credential-scan.txt`:无泄漏结论。
 
+## B4c.1.1 修正(复审 P1×7 + 负向矩阵,16/16;tag `m3b-b4c.1.1-closed`)
+
+B4c.1 复审发现 7 阻断缺口 + 证据缺口,B4c.1.1 修复(`m3b_b4c1_1.sql` + controller/gateway_client/start 脚本):
+
+| # | 问题 | 修复 |
+|---|---|---|
+| 1 | RETRY 不重新排队(占满 LIMIT 饿死) | `_atomic_advance`/`create_ticket_for_run` 的 RETRY 路径经 `_l2_requeue` 重排(retry_count++/next_attempt_at=now+backoff) |
+| 2 | reconcile 无公平性/无读失败退避 | reconcile_items 查询加 `next_retry_at<=now`+ORDER+LIMIT MAX_ITEMS;`_reconcile_ticket` 读失败经 `_l2_outbox_backoff` 持久退避 |
+| 3 | breaker 只覆盖 drain;helpers 吞 GlobalDegraded | gateway_list/read helpers 改 `except (Unavailable,Denied)`,**透传 GatewayGlobalDegraded**;discover 包 catcher(开 breaker);initiate/reconcile 顶 + 循环检 `_l2_gw_degraded` |
+| 4 | 预算非硬边界(LIMIT 10,单调用超预算) | initiate/reconcile LIMIT MAX_ITEMS;`_gw_timeout_for` 单调用 ≤ 剩余;`gateway_list_prs` 分页共享 deadline |
+| 5 | deny 无完整 CAS | TICKET_DENY 先 `l2_reject_approved`(查返回;FALSE→回滚不终结)+ 锁 task FOR UPDATE + CAS rowcount + 条件 outbox |
+| 6 | reason 正则 `[A-Z_]+` 截断数字码 → "L" | 改 `[A-Z0-9_]+` |
+| 7 | 预检不要求 B4c.1 migration | startup_assert_l2 + start-controller-container.sh 检 `l2_reject_approved` + 调度列(EXISTS+CASE 防函数缺失 ERROR);lease<timeout+5 → **FATAL**(默认 lease 90);`l2_reject_approved(NULL)` 显式拒 |
+
+`m3b-b4c1_1-hardening.sh` **16/16**:migration/ACL+NULL 拒、deny 回归+#5 并发 CAS(claim 后 deny 不覆盖)、#1 RETRY 重排、#3/#4 drain breaker(首条 TRANSIENT 停本 tick)、#7 预检(lease FATAL/缺 migration FATAL/正常通过)、#4 预算下限(≥1≤MAX_ITEMS)、凭证 clean。结尾 `[PASS-eq 16]&&[FAIL-eq 0]`。
+
+### B4c.1.1 证据文件
+- `b4c11-test.out`:16/16 原始输出 + DB 断言。
+- `credential-scan-b4c11.txt`:无泄漏结论。
+
 ## 后续
 - **B4e**:review→fix→verify→approve→drain→merge 总 E2E + 崩溃恢复录像。
 - **B5**:负向证据 8 项。

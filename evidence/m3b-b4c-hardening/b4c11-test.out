@@ -1,0 +1,97 @@
+═══════════════════════════════════════════════
+  B4c.1.1 修正验收(fixture=nghqqa/MergePilot-e2e-fixture)
+═══════════════════════════════════════════════
+1e68b65e877e5d85aad9b59df39d70d73634fb92af532827909961c285f57918
+policy-gw-e2e | Up Less than a second (health: starting)
+--- 启动日志(尾)---
+[gateway] starting on 0.0.0.0:8083  AUDIT=on
+INFO:     Started server process [1]
+INFO:     Waiting for application startup.
+[gateway] policy_version=e2e-fixture-20260728-v1 policy_hash=8a1f5f0cb829ff3e
+[gateway] roles=['coordinator', 'fixer', 'reviewer', 'verifier'] upstream=http://github-mcp:8082/sse
+[gateway] upstream ready: 44 tools (sample: ['add_comment_to_pending_review', 'add_issue_comment', 'add_reply_to_pull_request_comment', 'assign_copilot_to_issue', 'create_branch'])
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8083 (Press CTRL+C to quit)
+CREATE FUNCTION
+DO
+ALTER ROLE
+REVOKE
+GRANT
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 957B done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/python:3.12-slim
+#2 DONE 4.4s
+
+#3 [internal] load .dockerignore
+#3 transferring context: 2B done
+#3 DONE 0.0s
+
+#4 [1/7] FROM docker.io/library/python:3.12-slim@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de
+#4 DONE 0.0s
+
+#5 [internal] load build context
+#5 transferring context: 157B 0.0s done
+#5 DONE 0.0s
+
+#6 [4/7] COPY gateway_client.py /app/gateway_client.py
+#6 CACHED
+
+#7 [5/7] COPY test_gateway_schema.py /app/test_gateway_schema.py
+#7 CACHED
+
+#8 [3/7] COPY controller.py /app/controller.py
+#8 CACHED
+
+#9 [6/7] COPY test_startup_pgwait.py /app/test_startup_pgwait.py
+#9 CACHED
+
+#10 [2/7] RUN pip install --no-cache-dir       psycopg2-binary==2.9.12       mcp==1.28.1       httpx==0.28.1       anyio==4.14.2
+#10 CACHED
+
+#11 [7/7] WORKDIR /app
+#11 CACHED
+
+#12 exporting to image
+#12 exporting layers done
+#12 writing image sha256:34256644780f8a58ce03e8fb20a408350175f030789a3c820a9f0016fa5ab6a1 done
+#12 naming to docker.io/library/mergepilot-controller:latest done
+#12 DONE 0.0s
+
+=== 1. migration/ACL + l2_reject_approved(NULL) 拒 ===
+  ✅ mergepilot 可 EXECUTE l2_reject_approved
+  ✅ l2_reject_approved(NULL) → 拒(allowlist,不绕过)
+
+=== 2. deny 回归 + #5 并发 CAS(claim 后 deny → outbox 不 FAILED)===
+  ✅ deny: approval→FAILED
+  ✅ deny: outbox→FAILED
+  ✅ deny: stage=l2_drain_denied
+  ✅ #5: approval 已 claim(EXECUTING)→ deny 不覆盖(仍 EXECUTING)
+  ✅ #5: outbox 不被误标 FAILED(仍 DISPATCHED)
+
+=== 3. #1 RETRY 重新排队(不可达 Gateway → next_attempt_at 未来)===
+  ✅ #1: RETRY → l2_next_attempt_at 未来(重新排队)
+  ✅ #1: l2_retry_count=1(累加)
+  ✅ #1: task 仍 l2_binding(未误推进)
+
+=== 4. #3 circuit breaker(drain 不可达 → 首条 TRANSIENT 开 breaker,本 tick 不连环撞)===
+  ✅ #3/#4: drain 首条 TRANSIENT 开 breaker,本 tick 只领 1(sum attempts=1)
+
+=== 5. #7 预检硬门 ===
+  ✅ #7: lease(10)<timeout+5(65) → FATAL
+  ✅ #7: 缺 l2_reject_approved → FATAL(预检拦)
+  ✅ #7: migration 完整时预检通过
+
+=== 6. #4 预算下限(单 tick ≥1 且 ≤ MAX_ITEMS=3)===
+  ✅ #4: 单 tick 处理 1 条(≥1 且 ≤ MAX_ITEMS=3)
+
+=== 7. 凭证扫描 + 收尾 ===
+  ✅ 无凭证泄漏
+
+═══════════════════════════════════════════════
+  B4c.1.1 验收: PASS=16 FAIL=0
+═══════════════════════════════════════════════
+  全部 16 项通过(无静默跳过)

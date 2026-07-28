@@ -65,9 +65,13 @@ for i in $(seq 1 30); do
   docker exec audit-pg pg_isready -U "$PG_SU" -d "$PG_DB" >/dev/null 2>&1 && break
   sleep 2
 done
+# B4c.1.1 #7:预检要求 B4c.1 migration 完整(l2_ensure_ticket + l2_reject_approved + l2_next_attempt_at 调度列)
 if ! docker exec -e PGPASSWORD="$SU_PW" audit-pg psql -U "$PG_SU" -d "$PG_DB" -t -A \
-     -c "SELECT 'l2_ensure_ticket(text,text,jsonb,text,integer,integer)'::regprocedure::oid;" >/dev/null 2>&1; then
-  echo "ERROR: m3b_b4c.sql 未应用(l2_ensure_ticket 不存在)。先跑 m3b-b4c0-migration.sh。(旧容器未动)"
+     -c "SELECT (EXISTS (SELECT 1 FROM pg_proc WHERE proname='l2_ensure_ticket')
+            AND EXISTS (SELECT 1 FROM pg_proc WHERE proname='l2_reject_approved')
+            AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='task_runs' AND column_name='l2_next_attempt_at'));" \
+     2>/dev/null | grep -q "^t$"; then
+  echo "ERROR: B4c/B4c.1 migration 未应用完整(缺 l2_ensure_ticket / l2_reject_approved / l2_next_attempt_at)。依次跑 m3b-b4c0-migration.sh + 应用 m3b_b4c1.sql + m3b_b4c1_1.sql。(旧容器未动)"
   exit 1
 fi
 

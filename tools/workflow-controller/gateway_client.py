@@ -18,6 +18,7 @@
 import os
 import json
 import re
+import time
 import asyncio
 
 GATEWAY_URL = os.environ.get("GATEWAY_URL", "http://policy-gw:8083").rstrip("/")
@@ -58,8 +59,9 @@ _TRANSIENT_REASONS = {"L2_DB_UNAVAILABLE"}
 
 def _classify_error_text(text):
     """从 Gateway is_error 文本(如 'POLICY_DENIED reason_code=CLAIM_MISMATCH …')解析 reason_code,
-    返回 (exc_class, reason_code)。未知/无 reason → (GatewayUnavailable, '')(保守瞬时,不终结票据)。"""
-    m = re.search(r"reason_code=([A-Z_]+)", text or "")
+    返回 (exc_class, reason_code)。未知/无 reason → (GatewayUnavailable, '')(保守瞬时,不终结票据)。
+    B4c.1.1:reason 含数字(如 L2_TICKET_REQUIRED/L2_DB_UNAVAILABLE),正则须 [A-Z0-9_]+(旧 [A-Z_]+ 会截成 'L')。"""
+    m = re.search(r"reason_code=([A-Z0-9_]+)", text or "")
     rc = m.group(1) if m else ""
     if rc in _TICKET_DENY_REASONS:
         return GatewayDenied, rc
@@ -119,20 +121,24 @@ def gateway_call(tool, args, timeout=60):
     return text, is_err
 
 
-def gateway_list_prs(owner, repo, run_id, timeout=60):
+def gateway_list_prs(owner, repo, run_id, timeout=60, deadline=None):
     """分页 list_pull_requests(state=open) + 本地过滤 head.ref STARTS WITH 'fix/<run_id>-'。
     返回 (status, prs):FOUND(1 条,每条已严格校验 head dict + ref str + number int 非 bool)/
        NOT_FOUND(查询成功且确为 0)/ AMBIGUOUS(>1)/ RETRY(网络/认证/schema 异常/缺关键字段)。
     B4c-1.1 P1-1:schema 异常(non-list / head 非 dict / ref 非 str / number 非 int 或为 bool)
-       → RETRY,**绝不误判 NOT_FOUND**(否则会错累计 l2_discovery_attempts 把任务 HOLD)。"""
+       → RETRY,**绝不误判 NOT_FOUND**(否则会错累计 l2_discovery_attempts 把任务 HOLD)。
+    B4c.1.1 #4:deadline(monotonic 绝对)→ 分页共享预算,每页超时 = min(timeout, 剩余),到期返回 RETRY。"""
     prefix = f"fix/{run_id}-"
     matched = []
     page = 1
     while page <= 10:
+        if deadline and time.monotonic() > deadline:
+            return ("RETRY", [])   # B4c.1.1 #4:整轮预算到期,分页中止
+        _to = min(timeout, max(int(deadline - time.monotonic()), 5)) if deadline else timeout
         try:
             text, _ = gateway_call("list_pull_requests",
-                {"owner": owner, "repo": repo, "state": "open", "perPage": 100, "page": page}, timeout)
-        except GatewayError:
+                {"owner": owner, "repo": repo, "state": "open", "perPage": 100, "page": page}, _to)
+        except (GatewayUnavailable, GatewayDenied):   # B4c.1.1:GatewayGlobalDegraded 透传(由 discover/reconcile 开 breaker)
             return ("RETRY", [])
         try:
             items = json.loads(text)
@@ -177,7 +183,7 @@ def gateway_read_branch(owner, repo, branch, timeout=60):
         try:
             text, _ = gateway_call("list_branches",
                 {"owner": owner, "repo": repo, "perPage": 100, "page": page}, timeout)
-        except GatewayError:
+        except (GatewayUnavailable, GatewayDenied):   # B4c.1.1:GatewayGlobalDegraded 透传(开 breaker)
             return ("RETRY", None)
         try:
             items = json.loads(text)
@@ -231,7 +237,7 @@ def gateway_read_pr(owner, repo, pr_num, timeout=60):
     try:
         text, _ = gateway_call("pull_request_read",
             {"method": "get", "owner": owner, "repo": repo, "pullNumber": int(pr_num)}, timeout)
-    except (GatewayError, ValueError, TypeError):
+    except (GatewayUnavailable, GatewayDenied, ValueError, TypeError):   # B4c.1.1:GatewayGlobalDegraded 透传
         return ("RETRY", None)
     try:
         d = json.loads(text)
