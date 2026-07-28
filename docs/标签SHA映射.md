@@ -35,6 +35,7 @@
 | `m3b-b4b-closed` | `365f873` | `1d30874` | B4b Gateway L2 claim 流 + 故障路径覆盖 + FAULT_INJECT test_mode 门(15+13/28) |
 | `m3b-b4c-closed` | `ee298b6` | `e6fbfb5` | B4c Controller L2 审批闭环(发现→建票→drain→对账)+ 并发/崩溃/E2E(42/42) |
 | `m3b-b4d-closed` | `465c35c` | `1df86cf` | B4d approve CLI(host-only,mergepilot_approver,approved_by 不可伪造,16/16 fixture) |
+| `m3b-b4d.1-closed` | `785258f` | `b4456da` | B4d.1 l2_approve session_user 强身份(approved_by 真不可伪造)+ 严格参数/测试完整性/fixture 清理(18/18) |
 
 ## 旧 SHA 引用 → 当前 peeled commit(commit body 里互相引用的、现已失效的)
 
