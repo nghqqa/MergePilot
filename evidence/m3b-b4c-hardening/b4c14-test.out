@@ -1,0 +1,37 @@
+═══════════════════════════════════════════════
+  B4c.1.4(fixture=nghqqa/MergePilot-e2e-fixture)
+═══════════════════════════════════════════════
+ef414ed6538c89bc6eeaa7c23db809ddce28d2b5738a78eabdb27c75a80fea2e
+policy-gw-e2e | Up 4 seconds (health: starting)
+--- 启动日志(尾)---
+[gateway] starting on 0.0.0.0:8083  AUDIT=on
+INFO:     Started server process [1]
+INFO:     Waiting for application startup.
+[gateway] policy_version=e2e-fixture-20260728-v1 policy_hash=8a1f5f0cb829ff3e
+[gateway] roles=['coordinator', 'fixer', 'reviewer', 'verifier'] upstream=http://github-mcp:8082/sse
+[gateway] upstream ready: 44 tools (sample: ['add_comment_to_pending_review', 'add_issue_comment', 'add_reply_to_pull_request_comment', 'assign_copilot_to_issue', 'create_branch'])
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8083 (Press CTRL+C to quit)
+
+=== 1. 空阶段不消耗预算 ===
+[ctrl] PG connected
+BUDGET_AFTER_EMPTY=1
+  ✅ 空 drain 不消耗 budget(budget 仍=1,reconcile 不被饿死)
+[ctrl] PG connected
+[ctrl][L2] drain ticket=tkt-9f390714-5b0 action=merge → approval=APPROVED outcome=TICKET_DENY/CLAIM_MISMATCH
+BUDGET_AFTER_NONEMPTY=0
+  ✅ 非空 drain 消耗 budget(1→0,真实工作扣减)
+
+=== 2. deny 3 字段 CAS(approval_required=FALSE → 回滚)===
+  ✅ approval_required=FALSE → deny 回滚(approval 仍 APPROVED)
+  ✅ outbox 不被标 FAILED
+
+=== 3. fixture 硬门 ===
+  ✅ fixture: 0 PR
+  ✅ fixture: 仅 main
+  ✅ 无泄漏
+
+═══════════════════════════════════════════════
+  B4c.1.4: PASS=7 FAIL=0
+═══════════════════════════════════════════════
+  全部 7 项通过
