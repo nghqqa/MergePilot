@@ -38,6 +38,7 @@
 | `m3b-b4d.1-closed` | `785258f` | `b4456da` | B4d.1 l2_approve session_user 强身份(approved_by 真不可伪造)+ 严格参数/测试完整性/fixture 清理(18/18) |
 | `m3b-b4c.1-closed` | `5c0d603` | `6fe8fcb` | B4c.1 收敛调度加固:确定性拒绝 + typed outcome + 公平调度 + 工作预算 + Gateway circuit breaker/降级(26/26 fixture) |
 | `m3b-b4c.1.1-closed` | `4d02117` | `5c8349e` | B4c.1.1 修正(B4c.1 复审 7 P1):RETRY 重排/reconcile 公平/breaker 全覆盖/预算硬边界/deny CAS/reason 正则/预检 migration(16/16 fixture) |
+| `m3b-b4c.1.2-closed` | `c2fd828` | `bd3a07c` | B4c.1.2 修正(B4c.1.1 复审 3 P1):deny 完整 CAS(锁 task 先)/breaker 覆盖 initiate+reconcile(helpers 透传 Unavailable+Denied)/硬预算(_gw_timeout_for≤剩余+read_branch deadline+config 校验)(13/13,fixture 0 PR/0 branch 硬门) |
 
 ## 旧 SHA 引用 → 当前 peeled commit(commit body 里互相引用的、现已失效的)
 
