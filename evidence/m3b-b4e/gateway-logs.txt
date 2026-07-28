@@ -1,0 +1,80 @@
+INFO:     127.0.0.1:53738 - "POST /messages/?session_id=ae18c150772c43dabece197da86853e8 HTTP/1.1" 202 Accepted
+[gateway] L2 CLAIMED tool=merge_pull_request ticket=tkt-938e597b-e23 eid=7411cde3
+[gateway] L2 WRITE tool=merge_pull_request → calling upstream (timeout=60.0s)
+INFO:     127.0.0.1:53738 - "POST /messages/?session_id=ae18c150772c43dabece197da86853e8 HTTP/1.1" 202 Accepted
+[gateway] list_tools role=coordinator → 28/44 tools (policy=e2e-fixture-20260728-v1)
+[gateway] SSE connect role=coordinator path=/coordinator/sse → ACCEPT
+INFO:     172.22.0.7:51694 - "GET /coordinator/sse HTTP/1.1" 200 OK
+INFO:     172.22.0.7:51706 - "POST /messages/?session_id=d3417c1e686a4702b3bc1b9eab2e8b40 HTTP/1.1" 202 Accepted
+INFO:     172.22.0.7:51706 - "POST /messages/?session_id=d3417c1e686a4702b3bc1b9eab2e8b40 HTTP/1.1" 202 Accepted
+INFO:     172.22.0.7:51706 - "POST /messages/?session_id=d3417c1e686a4702b3bc1b9eab2e8b40 HTTP/1.1" 202 Accepted
+INFO:     172.22.0.7:51706 - "POST /messages/?session_id=d3417c1e686a4702b3bc1b9eab2e8b40 HTTP/1.1" 202 Accepted
+[gateway] list_tools role=coordinator → 28/44 tools (policy=e2e-fixture-20260728-v1)
+[gateway] SSE connect role=fixer path=/fixer/sse → ACCEPT
+INFO:     127.0.0.1:56714 - "GET /fixer/sse HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56720 - "POST /messages/?session_id=0f3f1136359e40ab94a45bbe176b1f9f HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:56720 - "POST /messages/?session_id=0f3f1136359e40ab94a45bbe176b1f9f HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:56720 - "POST /messages/?session_id=0f3f1136359e40ab94a45bbe176b1f9f HTTP/1.1" 202 Accepted
+[gateway] list_tools role=fixer → 30/44 tools (policy=e2e-fixture-20260728-v1)
+[gateway] ALLOW role=fixer tool=create_branch repo=nghqqa/MergePilot-e2e-fixture branch=fix/b4e-deg-513-x → forward (intent logged corr=69d759ac)
+INFO:     127.0.0.1:56720 - "POST /messages/?session_id=0f3f1136359e40ab94a45bbe176b1f9f HTTP/1.1" 202 Accepted
+[gateway] list_tools role=fixer → 30/44 tools (policy=e2e-fixture-20260728-v1)
+[gateway] SSE connect role=fixer path=/fixer/sse → ACCEPT
+INFO:     127.0.0.1:56748 - "GET /fixer/sse HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56756 - "POST /messages/?session_id=7fcad7fac21f4fda9f45a97f576103b0 HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:56756 - "POST /messages/?session_id=7fcad7fac21f4fda9f45a97f576103b0 HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:56756 - "POST /messages/?session_id=7fcad7fac21f4fda9f45a97f576103b0 HTTP/1.1" 202 Accepted
+[gateway] ALLOW role=fixer tool=create_or_update_file repo=nghqqa/MergePilot-e2e-fixture branch=fix/b4e-deg-513-x → forward (intent logged corr=30178c1f)
+INFO:     127.0.0.1:56756 - "POST /messages/?session_id=7fcad7fac21f4fda9f45a97f576103b0 HTTP/1.1" 202 Accepted
+[gateway] list_tools role=fixer → 30/44 tools (policy=e2e-fixture-20260728-v1)
+[gateway] SSE connect role=fixer path=/fixer/sse → ACCEPT
+INFO:     127.0.0.1:56768 - "GET /fixer/sse HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56780 - "POST /messages/?session_id=446a5378838f4a808be85975730e92a0 HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:56780 - "POST /messages/?session_id=446a5378838f4a808be85975730e92a0 HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:56780 - "POST /messages/?session_id=446a5378838f4a808be85975730e92a0 HTTP/1.1" 202 Accepted
+[gateway] ALLOW role=fixer tool=create_pull_request repo=nghqqa/MergePilot-e2e-fixture branch=fix/b4e-deg-513-x → forward (intent logged corr=7161fdd5)
+INFO:     127.0.0.1:56780 - "POST /messages/?session_id=446a5378838f4a808be85975730e92a0 HTTP/1.1" 202 Accepted
+[gateway] list_tools role=fixer → 30/44 tools (policy=e2e-fixture-20260728-v1)
+[gateway] SSE connect role=coordinator path=/coordinator/sse → ACCEPT
+INFO:     172.22.0.7:38324 - "GET /coordinator/sse HTTP/1.1" 200 OK
+INFO:     172.22.0.7:38330 - "POST /messages/?session_id=c1d25205175c41b39f8d33933b6eb998 HTTP/1.1" 202 Accepted
+INFO:     172.22.0.7:38330 - "POST /messages/?session_id=c1d25205175c41b39f8d33933b6eb998 HTTP/1.1" 202 Accepted
+INFO:     172.22.0.7:38330 - "POST /messages/?session_id=c1d25205175c41b39f8d33933b6eb998 HTTP/1.1" 202 Accepted
+INFO:     172.22.0.7:38330 - "POST /messages/?session_id=c1d25205175c41b39f8d33933b6eb998 HTTP/1.1" 202 Accepted
+[gateway] list_tools role=coordinator → 28/44 tools (policy=e2e-fixture-20260728-v1)
+[gateway] SSE connect role=coordinator path=/coordinator/sse → ACCEPT
+INFO:     172.22.0.7:38338 - "GET /coordinator/sse HTTP/1.1" 200 OK
+INFO:     172.22.0.7:38346 - "POST /messages/?session_id=02af618a65a24d57bb4c3e410efb63a3 HTTP/1.1" 202 Accepted
+INFO:     172.22.0.7:38346 - "POST /messages/?session_id=02af618a65a24d57bb4c3e410efb63a3 HTTP/1.1" 202 Accepted
+INFO:     172.22.0.7:38346 - "POST /messages/?session_id=02af618a65a24d57bb4c3e410efb63a3 HTTP/1.1" 202 Accepted
+INFO:     172.22.0.7:38346 - "POST /messages/?session_id=02af618a65a24d57bb4c3e410efb63a3 HTTP/1.1" 202 Accepted
+[gateway] list_tools role=coordinator → 28/44 tools (policy=e2e-fixture-20260728-v1)
+[gateway] SSE connect role=coordinator path=/coordinator/sse → ACCEPT
+INFO:     172.22.0.7:38358 - "GET /coordinator/sse HTTP/1.1" 200 OK
+INFO:     172.22.0.7:38370 - "POST /messages/?session_id=404ed5b29d3f4f098e518c6ca798d992 HTTP/1.1" 202 Accepted
+INFO:     172.22.0.7:38370 - "POST /messages/?session_id=404ed5b29d3f4f098e518c6ca798d992 HTTP/1.1" 202 Accepted
+INFO:     172.22.0.7:38370 - "POST /messages/?session_id=404ed5b29d3f4f098e518c6ca798d992 HTTP/1.1" 202 Accepted
+INFO:     172.22.0.7:38370 - "POST /messages/?session_id=404ed5b29d3f4f098e518c6ca798d992 HTTP/1.1" 202 Accepted
+[gateway] list_tools role=coordinator → 28/44 tools (policy=e2e-fixture-20260728-v1)
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [1]
+[gateway] starting on 0.0.0.0:8083  AUDIT=on
+INFO:     Started server process [1]
+INFO:     Waiting for application startup.
+[gateway] policy_version=e2e-fixture-20260728-v1 policy_hash=8a1f5f0cb829ff3e
+[gateway] roles=['coordinator', 'fixer', 'reviewer', 'verifier'] upstream=http://github-mcp:8082/sse
+[gateway] upstream ready: 44 tools (sample: ['add_comment_to_pending_review', 'add_issue_comment', 'add_reply_to_pull_request_comment', 'assign_copilot_to_issue', 'create_branch'])
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8083 (Press CTRL+C to quit)
+[gateway] SSE connect role=coordinator path=/coordinator/sse → ACCEPT
+INFO:     172.22.0.2:35648 - "GET /coordinator/sse HTTP/1.1" 200 OK
+INFO:     172.22.0.2:35650 - "POST /messages/?session_id=f828fda125034208a068866ef2015acd HTTP/1.1" 202 Accepted
+INFO:     172.22.0.2:35650 - "POST /messages/?session_id=f828fda125034208a068866ef2015acd HTTP/1.1" 202 Accepted
+INFO:     172.22.0.2:35650 - "POST /messages/?session_id=f828fda125034208a068866ef2015acd HTTP/1.1" 202 Accepted
+[gateway] list_tools role=coordinator → 28/44 tools (policy=e2e-fixture-20260728-v1)
+[gateway] L2 CLAIMED tool=merge_pull_request ticket=tkt-246d2a9c-b04 eid=bb345fe3
+[gateway] L2 WRITE tool=merge_pull_request → calling upstream (timeout=60.0s)
+INFO:     172.22.0.2:35650 - "POST /messages/?session_id=f828fda125034208a068866ef2015acd HTTP/1.1" 202 Accepted
+[gateway] list_tools role=coordinator → 28/44 tools (policy=e2e-fixture-20260728-v1)

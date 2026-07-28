@@ -1,0 +1,69 @@
+[ctrl] PG connected
+[ctrl] TASK_SUBMITTED b4e-e2e-513 → task_run + review PENDING_DISPATCH
+[ctrl] PG connected
+[ctrl] reviewer TASK_COMPLETED b4e-e2e-513-review → fix PENDING_DISPATCH | PG committed
+[ctrl] PG connected
+[ctrl] fixer TASK_COMPLETED b4e-e2e-513-fix → verify PENDING_DISPATCH | PG committed
+[ctrl] PG connected
+[ctrl] b4e-e2e-513-verify VERDICT=PASS → task APPROVAL_PENDING | PG committed
+[ctrl] PG connected
+[ctrl][L2] b4e-e2e-513 绑定 FOUND: bnd-2a31b036-b6c pr=136 head=92e174375676 → l2_awaiting_ticket
+[ctrl][L2] b4e-e2e-513 建票 CREATED: ticket=tkt-86057cb9-2b6e-49 pr=136 hash=bc1e27a48b5f → l2_awaiting_approval
+[ctrl] PG connected
+[ctrl][L2] drain ticket=tkt-86057cb9-2b6 action=merge → approval=USED
+[ctrl] PG connected
+[ctrl] TASK_SUBMITTED b4e-crash-513 → task_run + review PENDING_DISPATCH
+[ctrl] PG connected
+[ctrl] reviewer TASK_COMPLETED b4e-crash-513-review → fix PENDING_DISPATCH | PG committed
+[ctrl] PG connected
+[ctrl] fixer TASK_COMPLETED b4e-crash-513-fix → verify PENDING_DISPATCH | PG committed
+[ctrl] PG connected
+[ctrl] b4e-crash-513-verify VERDICT=PASS → task APPROVAL_PENDING | PG committed
+[ctrl] PG connected
+[ctrl][L2] b4e-crash-513 绑定 FOUND: bnd-8e8fc57d-47a pr=137 head=677d8441d9f5 → l2_awaiting_ticket
+[ctrl][L2] b4e-crash-513 建票 CREATED: ticket=tkt-4886464d-b91f-4e pr=137 hash=3a538364ed84 → l2_awaiting_approval
+[ctrl] PG connected
+[ctrl][L2] drain ticket=tkt-4886464d-b91 action=merge → approval=APPROVED outcome=TRANSIENT/
+[ctrl][L2] Gateway TRANSIENT(ExceptionGroup: unhandled errors in a Ta) → circuit breaker 打开,本 tick 停止消费 outbox
+[ctrl] PG connected
+[ctrl] TASK_SUBMITTED b4e-execfail-513 → task_run + review PENDING_DISPATCH
+[ctrl] PG connected
+[ctrl] reviewer TASK_COMPLETED b4e-execfail-513-review → fix PENDING_DISPATCH | PG committed
+[ctrl] PG connected
+[ctrl] fixer TASK_COMPLETED b4e-execfail-513-fix → verify PENDING_DISPATCH | PG committed
+[ctrl] PG connected
+[ctrl] b4e-execfail-513-verify VERDICT=PASS → task APPROVAL_PENDING | PG committed
+[ctrl] PG connected
+[ctrl][L2] b4e-execfail-513 绑定 FOUND: bnd-79982b24-82b pr=138 head=387b64a03f6b → l2_awaiting_ticket
+[ctrl][L2] b4e-execfail-513 建票 CREATED: ticket=tkt-9c15bef0-7d17-4a pr=138 hash=c0ffa52c1ab4 → l2_awaiting_approval
+[ctrl] PG connected
+[ctrl][L2] reconcile tkt-9c15bef0-7d1 EXECUTING→FAILED (effect=False)
+[ctrl][L2] drain ticket=tkt-9c15bef0-7d1 action=merge → approval=FAILED
+[ctrl] PG connected
+[ctrl] TASK_SUBMITTED b4e-execused-513 → task_run + review PENDING_DISPATCH
+[ctrl] PG connected
+[ctrl] reviewer TASK_COMPLETED b4e-execused-513-review → fix PENDING_DISPATCH | PG committed
+[ctrl] PG connected
+[ctrl] fixer TASK_COMPLETED b4e-execused-513-fix → verify PENDING_DISPATCH | PG committed
+[ctrl] PG connected
+[ctrl] b4e-execused-513-verify VERDICT=PASS → task APPROVAL_PENDING | PG committed
+[ctrl] PG connected
+[ctrl][L2] b4e-execused-513 绑定 FOUND: bnd-c634ce2a-ebd pr=139 head=b248ba948869 → l2_awaiting_ticket
+[ctrl][L2] b4e-execused-513 建票 CREATED: ticket=tkt-938e597b-e237-42 pr=139 hash=417a16977fc1 → l2_awaiting_approval
+[ctrl] PG connected
+[ctrl][L2] reconcile tkt-938e597b-e23 UNKNOWN→USED (effect=True)
+[ctrl][L2] drain ticket=tkt-938e597b-e23 action=merge → approval=USED
+[ctrl] PG connected
+[ctrl] PG connected
+[ctrl] TASK_SUBMITTED b4e-deg-513 → task_run + review PENDING_DISPATCH
+[ctrl] PG connected
+[ctrl] reviewer TASK_COMPLETED b4e-deg-513-review → fix PENDING_DISPATCH | PG committed
+[ctrl] PG connected
+[ctrl] fixer TASK_COMPLETED b4e-deg-513-fix → verify PENDING_DISPATCH | PG committed
+[ctrl] PG connected
+[ctrl] b4e-deg-513-verify VERDICT=PASS → task APPROVAL_PENDING | PG committed
+[ctrl] PG connected
+[ctrl][L2] b4e-deg-513 绑定 FOUND: bnd-9723db38-f95 pr=140 head=5f69d1b8637e → l2_awaiting_ticket
+[ctrl][L2] b4e-deg-513 建票 CREATED: ticket=tkt-246d2a9c-b040-4f pr=140 hash=3105e510b36a → l2_awaiting_approval
+[ctrl] PG connected
+[ctrl] TASK_SUBMITTED b4e-matrix-513 → task_run + review PENDING_DISPATCH

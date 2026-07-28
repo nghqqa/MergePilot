@@ -1,0 +1,9 @@
+[ctrl] PG connected
+[ctrl] DEGRADED_NETWORK: Gateway http://policy-gw-e2e:8083 TCP 不可达 → L2 外部调用降级(纯 DB 收敛继续;恢复后自动续)
+[ctrl] L2_MERGE_ENABLED=on;未终结审批 run=2;Gateway=http://policy-gw-e2e:8083;reconcile_min_age=120s;budget=60s×3 DEGRADED_NETWORK
+[ctrl] 启动;PG=audit-pg:5432;Matrix=http://hiclaw-controller:6167;POLL=2s;L2_MERGE_ENABLED=on
+[ctrl][L2] drain 跳过:Gateway degraded(STARTUP:Gateway TCP 不可达),待恢复
+[ctrl] Matrix login OK
+[ctrl] outbox #225 → reviewer @ !W8HACodKff9th (eid=$l93AAXII8SgUiI2)
+[ctrl][L2] drain ticket=tkt-246d2a9c-b04 action=merge → approval=USED
+[ctrl] /sync: 处理了 1 个事件, next_batch=33879
