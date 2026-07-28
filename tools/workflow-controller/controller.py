@@ -44,6 +44,28 @@ L2_RECONCILE_AGE  = int(os.environ.get("L2_RECONCILE_AGE", "120"))
 L2_LEASE_SECONDS  = int(os.environ.get("L2_LEASE_SECONDS", "60"))   # outbox DISPATCHED lease
 L2_DISCOVERY_MAX  = int(os.environ.get("L2_DISCOVERY_MAX", "3"))    # 0-PR 有界重试上限 → HOLD
 L2_GW_TIMEOUT     = int(os.environ.get("L2_GW_TIMEOUT", "60"))      # 单次 Gateway MCP 调用总超时(含 SSE+initialize)
+# B4c.1 瞬时退避(幂等上限内指数;attempts 仅在真实 Gateway 调用时 +1,等待期不长)
+L2_RETRY_BASE_SECONDS = int(os.environ.get("L2_RETRY_BASE_SECONDS", "5"))
+L2_RETRY_MAX_SECONDS  = int(os.environ.get("L2_RETRY_MAX_SECONDS", "300"))
+
+
+class GatewayOutcome:
+    """B4c.1 结构化 drain 结果。kind:
+       SUCCESS(Gateway OK,approval 应已迁移)/ TRANSIENT(网络/超时/L2_DB_UNAVAILABLE → 退避,不终结)/
+       TICKET_DENY(claim 前确定性拒绝 → l2_reject_approved → FAILED/HOLD)/
+       GLOBAL_DEGRADED(全局配置故障 → 退回 outbox + 本 tick 停消费)。"""
+    __slots__ = ("kind", "reason_code", "detail")
+    def __init__(self, kind, reason_code="", detail=""):
+        self.kind = kind; self.reason_code = reason_code; self.detail = detail
+
+
+def _l2_backoff_seconds(retry_count):
+    """min(MAX, BASE * 2 ** min(retry_count, 8))。retry_count 用 outbox.attempts。"""
+    return min(L2_RETRY_MAX_SECONDS, L2_RETRY_BASE_SECONDS * (2 ** min(max(int(retry_count or 0), 0), 8)))
+
+
+# B4c.1 全局降级标志(GLOBAL_DEGRADED 触发;checkpoint 2 扩为带 retry_at 的 circuit breaker)
+_L2_GW_DEGRADED = False
 
 NEXT_STAGE = {"review": "fix", "fix": "verify"}
 NEXT_AGENT = {"review": "fixer", "fix": "verifier"}
@@ -825,21 +847,43 @@ def initiate_l2_pending():
 L2_ACTION_TOOL = {"merge": "merge_pull_request", "close": "update_pull_request"}
 
 
-def _advance_outbox_by_approval(oid, ticket_id, action, gw_err):
-    """B4c-3 边界②:Gateway 返回/超时后读 **approvals 权威态**(Gateway 的 l2_* 已写 status),不猜 HTTP/MCP 返回。
-    B4c-3.1 P1-1 action-aware:merge USED→task MERGED/l2_done;close USED→task HOLD/verified-closed(设计 §3.4)。
-    B4c-3.1 P1-2 task 终态推进用**完整 CAS**(approval_required+APPROVAL_PENDING+l2_awaiting_approval);
-      CAS 失败(rowcount=0)→ outbox error 记 CONCURRENT_STATE_CHANGE,**不静默当成功**(防旧回调覆盖新阶段)。
+def _advance_outbox_by_approval(oid, ticket_id, action, outcome):
+    """B4c-3 边界② + B4c.1 结构化 outcome:Gateway 返回/超时后读 **approvals 权威态**(l2_* 已写 status)。
+    **关键顺序**:先读 approval 状态;只有**仍 APPROVED**(Gateway 未 claim)时才按 outcome 分类;
+    approval 已迁移(USED/FAILED/UNKNOWN/EXECUTING)时**绝不**被 outcome 覆盖(复审 #4)。
+    返回 "DEGRADED"(drain 应本 tick 停消费)或 None。
+    action-aware:merge USED→task MERGED/l2_done;close USED→task HOLD/verified-closed。
+    task 终态用完整 CAS(approval_required+APPROVAL_PENDING+l2_awaiting_approval);CAS 失败→CONCURRENT_STATE_CHANGE。
     边界③:UNKNOWN/EXECUTING/APPROVED 绝不自动重 merge。"""
+    if outcome is None:
+        outcome = GatewayOutcome("SUCCESS")   # 兼容对账收敛调用(无 outcome)
     conn = ensure_pg()
+    signal = None
     with conn.cursor() as cur:
         cur.execute("SELECT status, result_sha, run_id FROM approvals WHERE ticket_id=%s", (ticket_id,))
         r = cur.fetchone()
         if not r:
-            conn.commit(); return
+            conn.commit(); return None
         astatus, result_sha, run_id = r
         cas_clause = "approval_required=TRUE AND status='APPROVAL_PENDING' AND current_stage='l2_awaiting_approval'"
-        if astatus == "USED":
+        if astatus == "APPROVED":
+            # Gateway 未 claim(approval 仍 APPROVED)→ 按 outcome 分类(绝不覆盖已迁移态)
+            cur.execute("SELECT attempts FROM policy_action_outbox WHERE id=%s", (oid,))
+            _ar = cur.fetchone(); delay = _l2_backoff_seconds(_ar[0] if _ar else 0)
+            if outcome.kind == "TICKET_DENY":
+                # B4c.1 确定性拒绝:l2_reject_approved(approval→FAILED)+ outbox FAILED + task HOLD(l2_drain_denied)
+                cur.execute("SELECT l2_reject_approved(%s,%s)", (ticket_id, outcome.reason_code))
+                cur.fetchone()
+                cur.execute(f"UPDATE task_runs SET status='HOLD', current_stage='l2_drain_denied', last_error=%s, updated_at=now() WHERE run_id=%s AND {cas_clause}", (f"preclaim denied:{outcome.reason_code}", run_id))
+                cur.execute("UPDATE policy_action_outbox SET status='FAILED', completed_at=now(), last_error_code=%s, error=%s WHERE id=%s", (outcome.reason_code, f"preclaim denied:{outcome.reason_code}", oid))
+            elif outcome.kind == "GLOBAL_DEGRADED":
+                # 全局配置故障:退回 PENDING_DISPATCH + 退避;signal 让 drain 本 tick 停消费
+                cur.execute("UPDATE policy_action_outbox SET status='PENDING_DISPATCH', last_error_code=%s, error=%s, next_retry_at=now()+make_interval(secs=>%s) WHERE id=%s", (outcome.reason_code, f"global degraded:{outcome.reason_code}", delay, oid))
+                signal = "DEGRADED"
+            else:  # TRANSIENT(网络/超时/L2_DB_UNAVAILABLE)或 SUCCESS-race(未 claim)→ 退避重试
+                # approval 留 APPROVED,outbox 留 DISPATCHED,设 next_retry_at(attempts 已在领取 +1,等待期不再 +)
+                cur.execute("UPDATE policy_action_outbox SET last_error_code=%s, error=%s, next_retry_at=now()+make_interval(secs=>%s) WHERE id=%s", (outcome.kind, outcome.detail[:200], delay, oid))
+        elif astatus == "USED":
             cur.execute("UPDATE policy_action_outbox SET status='SUCCEEDED', result_sha=%s, completed_at=now() WHERE id=%s", (result_sha, oid))
             if action == "close":
                 cur.execute(f"UPDATE task_runs SET status='HOLD', current_stage='verified-closed', updated_at=now() WHERE run_id=%s AND {cas_clause}", (run_id,))
@@ -848,43 +892,48 @@ def _advance_outbox_by_approval(oid, ticket_id, action, gw_err):
             if cur.rowcount == 0:
                 cur.execute("UPDATE policy_action_outbox SET error=%s WHERE id=%s", ("CONCURRENT_STATE_CHANGE: task 已脱离 APPROVAL_PENDING/l2_awaiting_approval,未覆盖"[:200], oid))
         elif astatus == "FAILED":
-            # B4c-3.2 对称 CAS:task UPDATE 先于 outbox.error,rowcount=0 → outbox.error 追加 CONCURRENT_STATE_CHANGE
-            cur.execute(f"UPDATE task_runs SET status='HOLD', current_stage='l2_drain_failed', last_error=%s, updated_at=now() WHERE run_id=%s AND {cas_clause}", ((f"{action} FAILED: {gw_err or ''}")[:300], run_id))
-            err_msg = (gw_err or f"{action} FAILED")
+            # Gateway claim 后失败(approval 已 FAILED):task HOLD(l2_drain_failed)+ outbox FAILED
+            cur.execute(f"UPDATE task_runs SET status='HOLD', current_stage='l2_drain_failed', last_error=%s, updated_at=now() WHERE run_id=%s AND {cas_clause}", ((f"{action} FAILED: {outcome.detail or ''}")[:300], run_id))
+            err_msg = (outcome.detail or f"{action} FAILED")
             if cur.rowcount == 0:
                 err_msg = f"{err_msg} | CONCURRENT_STATE_CHANGE: task 未同步(已脱离 APPROVAL_PENDING/l2_awaiting_approval)"
-            cur.execute("UPDATE policy_action_outbox SET status='FAILED', completed_at=now(), error=%s WHERE id=%s", (err_msg[:300], oid))
+            cur.execute("UPDATE policy_action_outbox SET status='FAILED', completed_at=now(), last_error_code=%s, error=%s WHERE id=%s", ("CLAIM_FAILED", err_msg[:300], oid))
         elif astatus == "UNKNOWN":
-            cur.execute("UPDATE policy_action_outbox SET status='UNKNOWN', error=%s WHERE id=%s", ((gw_err or "marked unknown")[:200], oid))
-            # task 留 APPROVAL_PENDING,交 B4c-4 对账(绝不重 merge)
-        # EXECUTING / APPROVED → outbox 留 DISPATCHED(不动),lease/对账兜底
+            cur.execute("UPDATE policy_action_outbox SET status='UNKNOWN', error=%s WHERE id=%s", ((outcome.detail or "marked unknown")[:200], oid))
+            # task 留 APPROVAL_PENDING,交对账(绝不重 merge)
+        # EXECUTING → outbox 留 DISPATCHED(不动),lease/对账兜底
     conn.commit()
-    print(f"[ctrl][L2] drain ticket={ticket_id[:16]} action={action} → approval={astatus}" + (f" (gw_err={gw_err[:60]})" if gw_err else ""))
+    print(f"[ctrl][L2] drain ticket={ticket_id[:16]} action={action} → approval={astatus}" + (f" outcome={outcome.kind}/{outcome.reason_code}" if outcome and outcome.kind != "SUCCESS" else ""))
+    return signal
 
 
 def drain_l2_outbox():
-    """B4c-3 lease drain:PENDING_DISPATCH+APPROVED(或 lease 过期的 DISPATCHED+APPROVED 安全重派)
-    → DISPATCHED+lease → Gateway 调用 → 读 approvals 权威态推进。
-    边界:① 领取事务调 Gateway **前提交**;② Gateway 返回后读 approvals.status 权威态;③ UNKNOWN/EXECUTING 绝不重 merge。
-    B4c-3.1:**逐条领取**(LIMIT 1,每条 lease 在其 Gateway 调用前刷新,防批量 lease 提前过期);
-    **attempts 每次真实派发 +1**(首派 0→1,lease 过期重派 1→2;SKIP LOCKED 未取得的不加)。"""
+    """B4c-3 lease drain + B4c.1 typed outcome / 退避 / 确定性拒绝。
+    派发条件(B4c.1):APPROVED **且** expires_at>now(防过期 APPROVED 在 reconcile 前被派)
+      **且** (next_retry_at IS NULL OR next_retry_at<=now)(尊重瞬时退避)。
+    边界:① 领取事务调 Gateway 前提交;② Gateway 返回后读 approvals.status 权威态;
+          ③ UNKNOWN/EXECUTING 绝不重 merge;④ 仅 approval 仍 APPROVED 时按 outcome 分类(复审 #4)。
+    attempts 每次真实派发 +1(首派 + lease 重派);等待期(next_retry_at 未来)不领取 ⇒ 不 +1。
+    GLOBAL_DEGRADED → 退回 outbox + 本 tick 停消费(checkpoint 2 扩为持久 circuit breaker + 恢复)。"""
     import gateway_client
     for _ in range(10):   # 每次 drain 最多处理 10 条(逐条,防批量 lease 提前过期)
         conn = ensure_pg()
         with conn.cursor() as cur:
             cur.execute("""SELECT o.id, o.ticket_id, a.canonical_payload, a.action
                            FROM policy_action_outbox o JOIN approvals a ON o.ticket_id=a.ticket_id
-                           WHERE (o.status='PENDING_DISPATCH' AND a.status='APPROVED')
-                              OR (o.status='DISPATCHED' AND o.lease_expires_at IS NOT NULL AND o.lease_expires_at < now() AND a.status='APPROVED')
+                           WHERE a.status='APPROVED' AND a.expires_at > now()
+                             AND (o.next_retry_at IS NULL OR o.next_retry_at <= now())
+                             AND ( (o.status='PENDING_DISPATCH')
+                                OR (o.status='DISPATCHED' AND o.lease_expires_at IS NOT NULL AND o.lease_expires_at < now()) )
                            ORDER BY o.id FOR UPDATE SKIP LOCKED LIMIT 1""")
             item = cur.fetchone()
             if not item:
                 conn.commit(); break
             oid, ticket_id, payload, action = item
-            # 每次真实派发 attempts +1(首派 + lease 重派都 +1;SKIP LOCKED 未取得的不在 items,不加)
+            # 每次真实派发 attempts +1(首派 + lease 重派;SKIP LOCKED 未取得的不在 items,不加);重置 next_retry_at=now(立即再合格;outbox.next_retry_at NOT NULL)
             cur.execute("""UPDATE policy_action_outbox SET status='DISPATCHED',
                              lease_expires_at = now() + make_interval(secs => %s),
-                             dispatched_at = now(), attempts = attempts + 1
+                             dispatched_at = now(), attempts = attempts + 1, next_retry_at = now()
                            WHERE id=%s""", (L2_LEASE_SECONDS, oid))
         conn.commit()   # 边界①:提交领取(逐条),释放 FOR UPDATE,再调 Gateway
         tool = L2_ACTION_TOOL.get(action)
@@ -892,13 +941,22 @@ def drain_l2_outbox():
             _advance_outbox_unknown(oid, ticket_id, f"未知 action {action}"); continue
         call_args = dict(payload) if isinstance(payload, dict) else {}
         call_args["approval_ticket"] = ticket_id
-        gw_err = None
+        outcome = GatewayOutcome("SUCCESS")
         try:
             gateway_client.gateway_call(tool, call_args, timeout=L2_GW_TIMEOUT)
-        except Exception as e:
-            gw_err = f"{type(e).__name__}: {str(e)[:120]}"   # 超时/网络;不猜结果,下面读权威态
-        # 边界②:读 approvals 权威态推进(边界③:UNKNOWN/EXECUTING 不重 merge)
-        _advance_outbox_by_approval(oid, ticket_id, action, gw_err)
+        except gateway_client.GatewayDenied as e:           # 票据级确定性拒绝
+            outcome = GatewayOutcome("TICKET_DENY", e.reason_code, e.detail)
+        except gateway_client.GatewayGlobalDegraded as e:   # 全局配置故障
+            outcome = GatewayOutcome("GLOBAL_DEGRADED", e.reason_code, e.detail)
+        except gateway_client.GatewayUnavailable as e:      # 瞬时(网络/超时/L2_DB_UNAVAILABLE)
+            outcome = GatewayOutcome("TRANSIENT", "", str(e)[:160])
+        except Exception as e:                              # 未分类异常 → 保守瞬时
+            outcome = GatewayOutcome("TRANSIENT", "", f"{type(e).__name__}: {str(e)[:120]}")
+        # 边界②:读 approvals 权威态推进(边界③:UNKNOWN/EXECUTING 不重 merge;④ 仅 APPROVED 按 outcome 分类)
+        sig = _advance_outbox_by_approval(oid, ticket_id, action, outcome)
+        if sig == "DEGRADED":
+            print(f"[ctrl][L2] Gateway GLOBAL_DEGRADED(reason={outcome.reason_code}) → 本 tick 停止消费 outbox")
+            break
 
 
 def _advance_outbox_unknown(oid, ticket_id, reason):
@@ -1001,7 +1059,7 @@ def reconcile_l2():
         stranded = cur.fetchall()
     conn.commit()
     for oid, ticket_id, action in stranded:
-        _advance_outbox_by_approval(oid, ticket_id, action, "reconcile stranded convergence")
+        _advance_outbox_by_approval(oid, ticket_id, action, GatewayOutcome("SUCCESS", "", "reconcile stranded convergence"))
 
 
 # ── 主循环(故障域分离,复审 #3;L2 维护始终运行,B4c-0.1 #3)──

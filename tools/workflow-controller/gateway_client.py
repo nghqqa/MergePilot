@@ -17,6 +17,7 @@
 """
 import os
 import json
+import re
 import asyncio
 
 GATEWAY_URL = os.environ.get("GATEWAY_URL", "http://policy-gw:8083").rstrip("/")
@@ -25,6 +26,47 @@ COORDINATOR_TOKEN = os.environ.get("COORDINATOR_TOKEN", "")
 
 class GatewayError(Exception):
     """Gateway 不可达 / 认证失败 / 超时 / 上游 is_error。调用方应归 RETRY(不混为 0 PR)。"""
+
+
+# ── B4c.1 typed outcome:Controller 按类型决定收敛(终结/退避/降级),不再解析字符串 ──
+class GatewayUnavailable(GatewayError):
+    """瞬时:网络/超时/5xx/L2_DB_UNAVAILABLE。调用方退避重试,**不终结票据**。"""
+
+
+class GatewayDenied(GatewayError):
+    """票据级**确定性**拒绝(claim 前):CLAIM_MISMATCH/REPO_NOT_ALLOWED/L2_TICKET_REQUIRED/INVALID_ACTION。
+    调用方应 l2_reject_approved → approval FAILED / task HOLD。"""
+    def __init__(self, reason_code, detail=""):
+        self.reason_code = reason_code
+        self.detail = detail
+        super().__init__(f"denied:{reason_code} {detail}")
+
+
+class GatewayGlobalDegraded(GatewayError):
+    """全局配置故障:BAD_TOKEN/ROLE_PATH_MISMATCH/TOOL_NOT_ALLOWED/L2_REQUIRES_COORDINATOR。
+    调用方应进入 degraded(本 tick 不再逐张消费票据)。"""
+    def __init__(self, reason_code, detail=""):
+        self.reason_code = reason_code
+        self.detail = detail
+        super().__init__(f"global_degraded:{reason_code} {detail}")
+
+
+_TICKET_DENY_REASONS = {"CLAIM_MISMATCH", "REPO_NOT_ALLOWED", "L2_TICKET_REQUIRED", "INVALID_ACTION"}
+_GLOBAL_DEGRADED_REASONS = {"BAD_TOKEN", "ROLE_PATH_MISMATCH", "TOOL_NOT_ALLOWED", "L2_REQUIRES_COORDINATOR"}
+_TRANSIENT_REASONS = {"L2_DB_UNAVAILABLE"}
+
+
+def _classify_error_text(text):
+    """从 Gateway is_error 文本(如 'POLICY_DENIED reason_code=CLAIM_MISMATCH …')解析 reason_code,
+    返回 (exc_class, reason_code)。未知/无 reason → (GatewayUnavailable, '')(保守瞬时,不终结票据)。"""
+    m = re.search(r"reason_code=([A-Z_]+)", text or "")
+    rc = m.group(1) if m else ""
+    if rc in _TICKET_DENY_REASONS:
+        return GatewayDenied, rc
+    if rc in _GLOBAL_DEGRADED_REASONS:
+        return GatewayGlobalDegraded, rc
+    return GatewayUnavailable, rc   # 含 _TRANSIENT_REASONS(L2_DB_UNAVAILABLE)+ 未知/无 reason
+
 
 
 async def _lifecycle(tool, args):
@@ -53,17 +95,27 @@ def _result_text(res):
 
 
 def gateway_call(tool, args, timeout=60):
-    """调一个 Gateway 工具。返回 (text, is_error)。失败抛 GatewayError。"""
+    """调一个 Gateway 工具。返回 (text, is_error)。失败抛 B4c.1 typed 异常:
+    GatewayDenied(票据级确定性拒绝)/ GatewayUnavailable(瞬时)/ GatewayGlobalDegraded(全局配置故障)。
+    (三者皆 GatewayError 子类,旧 `except GatewayError` 调用方仍兼容。discovery 仍一律归 RETRY。)"""
     if not COORDINATOR_TOKEN:
-        raise GatewayError("COORDINATOR_TOKEN 未配置")
+        raise GatewayGlobalDegraded("BAD_TOKEN", "COORDINATOR_TOKEN 未配置")
     try:
         res = asyncio.run(_call_tool(tool, args or {}, timeout))
+    except asyncio.TimeoutError:
+        raise GatewayUnavailable(f"timeout: tool={tool}")
+    except GatewayError:
+        raise
     except Exception as e:
-        raise GatewayError(f"{type(e).__name__}: {e}")
+        raise GatewayUnavailable(f"{type(e).__name__}: {e}")   # 网络/连接/SSE → 瞬时
     text = _result_text(res)
     is_err = bool(getattr(res, "is_error", False))
     if is_err:
-        raise GatewayError(f"tool={tool} 返回 is_error: {text[:200]}")
+        exc_cls, rc = _classify_error_text(text)
+        detail = f"tool={tool} {text[:160]}"
+        if exc_cls is GatewayUnavailable:
+            raise GatewayUnavailable(detail)
+        raise exc_cls(rc, detail)   # GatewayDenied / GatewayGlobalDegraded
     return text, is_err
 
 
