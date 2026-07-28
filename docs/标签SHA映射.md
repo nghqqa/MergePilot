@@ -59,3 +59,4 @@
 | `m3b-b4c.1.3-closed` | `69e826e` | `e78874d` | B4c.1.3:共享每-tick预算(_tick_take)+deny 3字段CAS+breaker恢复(_l2_gw_ok)+统一_gw_timeout_for+expiry/stranded LIMIT(6/6) |
 | `m3b-b4c.1.4-closed` | `865e958` | `4be419b` | B4c.1.4:空阶段不消耗预算(_tick_ok/_tick_use)+expiry LIMIT 50+timeout max(rem,0)(7/7) |
 | `m3b-b4c.1.5-closed` | `1ce8c69` | `cdd3337` | B4c.1.5:expiry deadline guard + L2_EXPIRY_BATCH 参数化+校验(6/6) |
+| `m3b-b4c.1.6-closed` | `d90c3d4` | `4e5813c` | B4c.1.6:mid-batch deadline guard(expiry/stranded 批内逐项检查,5/5) |
