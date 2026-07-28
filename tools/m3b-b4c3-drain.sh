@@ -3,6 +3,12 @@
 # 覆盖:USED→MERGED(真 merge)/ FAILED→HOLD(fault upstream_error)/ UNKNOWN 不重派(fault write_timeout)/
 #   lease 写入 / crash 后滞留 + lease 过期重派(attempts +1,每次真实派发计数)/ 并发领取 SKIP LOCKED(只胜者 +1)。
 set -uo pipefail
+# ── Step 2 安全门 ──
+# 本脚本在 B4c 闭合时固化于生产仓 nghqqa/MergePilot(frozen 证据脚本)。重跑会写生产仓
+# → 默认拒。重跑需 export ALLOW_PRODUCTION_E2E=1(留痕);或迁 fixture(见 tools/e2e-lib.sh
+# + evidence/m3b-b4c/step2-fixture/)。新 E2E(B4d+)默认走 fixture,不经此门。
+source "$(dirname "$0")/e2e-lib.sh"
+[ "${ALLOW_PRODUCTION_E2E:-0}" = "1" ] || { echo "REFUSED: $0 固化于生产仓 nghqqa/MergePilot;重跑需 ALLOW_PRODUCTION_E2E=1 或迁 fixture(见 e2e-lib.sh)" >&2; exit 2; }
 EV=/mnt/d/goai/mergepilot-os/evidence/m3b-b4c/3-drain
 mkdir -p "$EV"; rm -f "$EV"/*.txt "$EV"/*.out 2>/dev/null || true
 OUT="$EV/drain-test.out"; : > "$OUT"

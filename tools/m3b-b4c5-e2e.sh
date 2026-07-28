@@ -10,6 +10,12 @@
 #   6. Controller 级 DENY/异常:exec-TTL 过期→EXPIRED→HOLD(0 merge);Gateway CLAIM_MISMATCH→不 claim 不 merge。
 # 证据先于清理(run_id/PR/SHA/DB 快照/日志/输出)。绝不重 merge 不变量以 mcp_calls 审计行计数为准。
 set -uo pipefail
+# ── Step 2 安全门 ──
+# 本脚本在 B4c 闭合时固化于生产仓 nghqqa/MergePilot(frozen 证据脚本)。重跑会写生产仓
+# → 默认拒。重跑需 export ALLOW_PRODUCTION_E2E=1(留痕);或迁 fixture(见 tools/e2e-lib.sh
+# + evidence/m3b-b4c/step2-fixture/)。新 E2E(B4d+)默认走 fixture,不经此门。
+source "$(dirname "$0")/e2e-lib.sh"
+[ "${ALLOW_PRODUCTION_E2E:-0}" = "1" ] || { echo "REFUSED: $0 固化于生产仓 nghqqa/MergePilot;重跑需 ALLOW_PRODUCTION_E2E=1 或迁 fixture(见 e2e-lib.sh)" >&2; exit 2; }
 EV=/mnt/d/goai/mergepilot-os/evidence/m3b-b4c/5-e2e
 mkdir -p "$EV"; rm -f "$EV"/*.txt "$EV"/*.out "$EV"/*.log 2>/dev/null || true
 OUT="$EV/e2e-test.out"; : > "$OUT"

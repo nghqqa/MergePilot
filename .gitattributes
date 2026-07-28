@@ -1,0 +1,7 @@
+# 强制 LF 行尾:防 Windows 上 git autocrlf 把脚本/配置改成 CRLF
+# (CRLF 会让 bash 报 "$'do\r': syntax error",见 Step 2 踩坑)。
+*.sh   text eol=lf
+*.py   text eol=lf
+*.sql  text eol=lf
+*.yaml text eol=lf
+*.yml  text eol=lf

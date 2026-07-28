@@ -1,0 +1,89 @@
+# policy-e2e-fixture.yaml — 独立 E2E 测试 Gateway 策略(deny-by-default)。
+# 与生产 policy.yaml 的唯一区别:repos.allowlist 仅含 fixture 仓库。
+# **绝不**含 nghqqa/MergePilot(生产)——测试 Gateway 即使被误指也拒生产仓库,
+#   与 e2e-lib.sh 的 ALLOW_PRODUCTION_E2E 保护门形成纵深防御。
+# 用法:docker run policy-gateway:latest,挂载本文件 + -e POLICY_FILE=/app/policy-e2e-fixture.yaml
+version: "e2e-fixture-20260728-v1"
+
+# ─── 全局约束(仅 fixture)───
+repos:
+  allowlist:
+    - "nghqqa/MergePilot-e2e-fixture"
+branches:
+  base_allowlist: ["main"]
+  fix_prefix: "fix/"
+  protected: ["main"]
+file_paths:
+  denylist:
+    - "glob:**/.env*"
+    - "glob:**/*.pem"
+    - "glob:**/*.key"
+    - "glob:**/secrets/**"
+    - "glob:**/.github/workflows/**"
+    - "glob:**/credentials*"
+
+# ─── 工具分类(与生产一致)───
+tool_classes:
+  read:
+    - get_me
+    - get_commit
+    - get_file_contents
+    - get_label
+    - get_latest_release
+    - get_release_by_tag
+    - get_tag
+    - list_branches
+    - list_commits
+    - list_issues
+    - list_pull_requests
+    - list_releases
+    - list_repository_collaborators
+    - list_tags
+    - search_code
+    - search_commits
+    - search_issues
+    - search_pull_requests
+    - issue_read
+    - pull_request_read
+  comment:
+    - add_comment_to_pending_review
+    - add_issue_comment
+    - add_reply_to_pull_request_comment
+    - request_copilot_review
+    - pull_request_review_write
+  fix:
+    - create_branch
+    - create_or_update_file
+    - push_files
+    - create_pull_request
+  l2:
+    - merge_pull_request
+    - delete_file
+  disabled:
+    - create_repository
+    - fork_repository
+    - search_repositories
+    - search_users
+    - assign_copilot_to_issue
+    - issue_write
+    - sub_issue_write
+    - update_pull_request_branch
+    - get_teams
+    - get_team_members
+    - list_issue_fields
+    - list_issue_types
+
+# ─── 角色(与生产一致)───
+roles:
+  reviewer:
+    classes: [read]
+  verifier:
+    classes: [read]
+  fixer:
+    classes: [read, comment, fix]
+    extra_tools: [update_pull_request]
+    write_checks: true
+  coordinator:
+    classes: [read, comment, l2]
+    extra_tools: [update_pull_request]
+    l2_requires_ticket: true

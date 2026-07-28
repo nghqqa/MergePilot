@@ -1,0 +1,56 @@
+═══════════════════════════════════════════════
+  Step 2 fixture 隔离验收(target=nghqqa/MergePilot-e2e-fixture gw=policy-gw-e2e)
+═══════════════════════════════════════════════
+=== 前置:起测试 Gateway ===
+  生成独立测试令牌 /home/ngh/.config/mergepilot/role-tokens-e2e.json
+c55eeb736561828406ae7cf2eb4ca69b1b1fc92f00630d0d0d1d8ad65e3160de
+policy-gw-e2e | Up 1 second (health: starting)
+--- 启动日志(尾)---
+[gateway] starting on 0.0.0.0:8083  AUDIT=on
+INFO:     Started server process [1]
+INFO:     Waiting for application startup.
+[gateway] policy_version=e2e-fixture-20260728-v1 policy_hash=8a1f5f0cb829ff3e
+[gateway] roles=['coordinator', 'fixer', 'reviewer', 'verifier'] upstream=http://github-mcp:8082/sse
+[gateway] upstream ready: 44 tools (sample: ['add_comment_to_pending_review', 'add_issue_comment', 'add_reply_to_pull_request_comment', 'assign_copilot_to_issue', 'create_branch'])
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8083 (Press CTRL+C to quit)
+[]
+  ✅ 测试 Gateway 可达 fixture(list_pull_requests OK)
+
+=== A. 生产保护门 e2e_guard(目标=生产仓 → 写前拒绝) ===
+REFUSED(e2e_guard): E2E 目标为生产仓库 nghqqa/MergePilot。
+  生产仓曾被 B4c 测试污染(已清理,见 PR #143)。L2 E2E 必须跑在 fixture 仓库
+  (nghqqa/MergePilot-e2e-fixture)。如确需生产 E2E,显式 export ALLOW_PRODUCTION_E2E=1
+  (留审计痕迹)。已中止,**未发生任何 GitHub 写操作**。
+  ✅ e2e_guard 拒生产目标(exit 2,任何 GitHub 写之前)
+WARN(e2e_guard): ALLOW_PRODUCTION_E2E=1 — E2E 直跑生产仓 nghqqa/MergePilot(已留痕)。
+  ✅ ALLOW_PRODUCTION_E2E=1 显式放行(留 WARN 痕)
+  ✅ 默认目标=fixture,guard 放行
+
+=== C. 纵深防御:测试 Gateway fixture-only policy 拒生产仓 ===
+POLICY_DENIED reason_code=REPO_NOT_ALLOWED tool=create_branch repo=nghqqa/MergePilot
+<is_error=true>
+  ✅ 测试 Gateway 拒生产仓 create_branch(REPO_NOT_ALLOWED)
+  ✅ 生产仓未创建该分支(零写)
+
+=== B. fixture 全链(branch/file/PR/merge/close/cleanup)===
+  分支 fix/step2-merge-34681 建好
+  文件 step2-merge-34681.md 建好
+  ✅ fixture: create_branch + create_file + create_pr(#1)
+{"sha":"e2e1e353ab830d8b50211addddd75846c0b2eecb","merged":true,"message":"Pull Request successfully merged"}
+  ✅ fixture: L2 merge(经审批票据)→ PR #1 merged
+  ✅ approval → USED(整链收敛)
+  分支 fix/step2-close-34681 建好
+  文件 step2-close-34681.md 建好
+  ✅ fixture: create_branch + create_file + create_pr(#2)
+{"id":"4147480587","url":"https://github.com/nghqqa/MergePilot-e2e-fixture/pull/2"}
+  ✅ fixture: L2 close(经审批票据)→ PR #2 closed(未 merged)
+  ✅ close approval → USED
+
+=== B3. 残留清理 ===
+  ✅ fixture DB 残留已清(task_runs=0)
+  ✅ 无凭证泄漏
+
+═══════════════════════════════════════════════
+  Step 2 验收: PASS=14 FAIL=0
+═══════════════════════════════════════════════
