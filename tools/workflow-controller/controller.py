@@ -61,6 +61,7 @@ def _validate_l2_config():
     if L2_RETRY_BASE_SECONDS > L2_RETRY_MAX_SECONDS: raise ValueError("L2_RETRY_BASE 须 ≤ L2_RETRY_MAX")
     if L2_DISCOVERY_TIMEOUT_SECONDS < 1: raise ValueError("L2_DISCOVERY_TIMEOUT_SECONDS 须 ≥1")
     if L2_LEASE_SECONDS < 1 or L2_GW_TIMEOUT < 1: raise ValueError("L2_LEASE_SECONDS/L2_GW_TIMEOUT 须 ≥1")
+    if L2_EXPIRY_BATCH < 1 or L2_EXPIRY_BATCH > 500: raise ValueError("L2_EXPIRY_BATCH 须 1..500")
 
 
 class GatewayOutcome:
@@ -1246,20 +1247,24 @@ def reconcile_l2(deadline=None, budget=None):
             # B4c-4.1 P1-2:对账后复用 _advance_outbox_by_approval 收敛 outbox+task(action-aware + 完整 CAS)
             _advance_outbox_by_approval(oid, ticket_id, action, None)
 
+    # B4c.1.5 #1:deadline 到期 → 跳过 expiry/stranded(纯 DB 快操作,延后一 tick 无害;时间硬边界)
+    if _budget_exhausted(deadline):
+        return
+
     # ③ + ④:过期 PENDING/APPROVED → EXPIRED + outbox FAILED + task HOLD
     conn = ensure_pg()
     with conn.cursor() as cur:
         cur.execute("""SELECT ticket_id FROM approvals
-                       WHERE status='PENDING' AND approval_expires_at < now() LIMIT 50""")
+                       WHERE status='PENDING' AND approval_expires_at < now() LIMIT %s""", (L2_EXPIRY_BATCH,))
         for (tid,) in cur.fetchall():
             cur.execute("SELECT l2_expire_pending(%s)", (tid,))
         cur.execute("""SELECT ticket_id FROM approvals
-                       WHERE status='APPROVED' AND expires_at IS NOT NULL AND expires_at < now() LIMIT 50""")
+                       WHERE status='APPROVED' AND expires_at IS NOT NULL AND expires_at < now() LIMIT %s""", (L2_EXPIRY_BATCH,))
         for (tid,) in cur.fetchall():
             cur.execute("SELECT l2_expire_approved(%s)", (tid,))
         cur.execute("""SELECT a.ticket_id, a.run_id FROM approvals a
                        WHERE a.status='EXPIRED'
-                         AND EXISTS (SELECT 1 FROM policy_action_outbox o WHERE o.ticket_id=a.ticket_id AND o.status != 'FAILED') LIMIT 50""")
+                         AND EXISTS (SELECT 1 FROM policy_action_outbox o WHERE o.ticket_id=a.ticket_id AND o.status != 'FAILED') LIMIT %s""", (L2_EXPIRY_BATCH,))
         for tid, run_id in cur.fetchall():
             # B4c-4.2 P1:task 用**完整 CAS**(approval_required+APPROVAL_PENDING+l2_awaiting_approval);
             # CAS 失败(rowcount=0)→ 不覆盖 task,outbox.error 追加 CONCURRENT_STATE_CHANGE(对称于 drain USED/FAILED)
@@ -1277,7 +1282,7 @@ def reconcile_l2(deadline=None, budget=None):
     with conn.cursor() as cur:
         cur.execute("""SELECT o.id, o.ticket_id, a.action
                        FROM policy_action_outbox o JOIN approvals a ON o.ticket_id=a.ticket_id
-                       WHERE o.status IN ('DISPATCHED','UNKNOWN') AND a.status IN ('USED','FAILED') LIMIT 50""")
+                       WHERE o.status IN ('DISPATCHED','UNKNOWN') AND a.status IN ('USED','FAILED') LIMIT %s""", (L2_EXPIRY_BATCH,))
         stranded = cur.fetchall()
     conn.commit()
     for oid, ticket_id, action in stranded:
