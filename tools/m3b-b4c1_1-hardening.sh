@@ -34,7 +34,8 @@ DRUN(){ local GWU="${2:-http://policy-gw-e2e:8083}"; local TK="${3:-$ECOORD}"; l
     -e GATEWAY_URL="$GWU" -e COORDINATOR_TOKEN="$TK" -e L2_MERGE_ENABLED=0 -e L2_GW_TIMEOUT=$TO \
     mergepilot-controller:latest python3 -c "$1" 2>&1 | grep -vE "^Unable to find image|^[0-9a-f]{12}: "; }
 cleanup_db(){ PSQL "DELETE FROM policy_action_outbox WHERE run_id LIKE 'h11-%'; DELETE FROM approvals WHERE run_id LIKE 'h11-%'; DELETE FROM run_pr_bindings WHERE run_id LIKE 'h11-%'; DELETE FROM task_runs WHERE run_id LIKE 'h11-%';" >/dev/null 2>&1 || true; }
-cleanup_fixture(){ for n in $(gh.exe pr list --repo "$(e2e_repo)" --state open --limit 100 -q '.[]|select(.title|test("hard11"))|.number' 2>/dev/null); do gh.exe pr close "$n" --repo "$(e2e_repo)" --delete-branch --comment "B4c.1.1 清理" >/dev/null 2>&1 || true; done; }
+cleanup_fixture(){ for n in $(gh.exe pr list --repo "$(e2e_repo)" --state open --limit 200 --json number,title -q '.[]|select(.title|test("hard11"))|.number' 2>/dev/null); do gh.exe pr close "$n" --repo "$(e2e_repo)" --delete-branch --comment "B4c.1.1 清理" >/dev/null 2>&1 || true; done
+  for b in $(gh.exe api "repos/$(e2e_repo)/branches" --paginate -q '.[].name' 2>/dev/null | grep '^fix/h11'); do gh.exe api -X DELETE "repos/$(e2e_repo)/git/refs/heads/${b//\//%2F}" 2>/dev/null || true; done; }
 trap '{ cleanup_db; cleanup_fixture; docker rm -f policy-gw-e2e 2>/dev/null; docker start mergepilot-controller >/dev/null 2>&1 || true; } EXIT'
 
 log "═══════════════════════════════════════════════"

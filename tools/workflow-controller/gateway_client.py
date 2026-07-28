@@ -135,11 +135,9 @@ def gateway_list_prs(owner, repo, run_id, timeout=60, deadline=None):
         if deadline and time.monotonic() > deadline:
             return ("RETRY", [])   # B4c.1.1 #4:整轮预算到期,分页中止
         _to = min(timeout, max(int(deadline - time.monotonic()), 5)) if deadline else timeout
-        try:
-            text, _ = gateway_call("list_pull_requests",
-                {"owner": owner, "repo": repo, "state": "open", "perPage": 100, "page": page}, _to)
-        except (GatewayUnavailable, GatewayDenied):   # B4c.1.1:GatewayGlobalDegraded 透传(由 discover/reconcile 开 breaker)
-            return ("RETRY", [])
+        # B4c.1.2:GatewayUnavailable/Denied/GlobalDegraded **透传**(由 discover 开 breaker / HOLD;不再吞成 RETRY)
+        text, _ = gateway_call("list_pull_requests",
+            {"owner": owner, "repo": repo, "state": "open", "perPage": 100, "page": page}, _to)
         try:
             items = json.loads(text)
         except Exception:
@@ -174,16 +172,20 @@ def gateway_list_prs(owner, repo, run_id, timeout=60, deadline=None):
     return ("FOUND", matched)
 
 
-def gateway_read_branch(owner, repo, branch, timeout=60):
+def gateway_read_branch(owner, repo, branch, timeout=60, deadline=None):
     """list_branches 分页 + 过滤精确 branch → (status, sha)。第二条权威 SHA 来源(B4c-1.1 P1-4):
     pull_request_read.head.sha 与 branch ref sha 必须一致才写 binding(防 PR-head 缓存导致 SHA 固化错)。
-    status:OK(找到,返回 sha)/ NOT_FOUND(branch 不在列表)/ RETRY(网络/解析/branch 存在但 sha 缺失)。"""
+    status:OK(找到,返回 sha)/ NOT_FOUND(branch 不在列表)/ RETRY(网络/解析/branch 存在但 sha 缺失)。
+    B4c.1.2 #3:deadline(monotonic)→ 分页共享预算,每页超时 = min(timeout, 剩余),到期 RETRY。"""
     page = 1
     while page <= 10:
+        if deadline and time.monotonic() > deadline:
+            return ("RETRY", None)   # B4c.1.2 #3:整轮预算到期,分页中止
+        _to = min(timeout, max(deadline - time.monotonic(), 0.1)) if deadline else timeout
         try:
             text, _ = gateway_call("list_branches",
-                {"owner": owner, "repo": repo, "perPage": 100, "page": page}, timeout)
-        except (GatewayUnavailable, GatewayDenied):   # B4c.1.1:GatewayGlobalDegraded 透传(开 breaker)
+                {"owner": owner, "repo": repo, "perPage": 100, "page": page}, _to)
+        except (ValueError, TypeError):   # B4c.1.2:schema 异常 → RETRY;Unavailable/Denied/GlobalDegraded 透传
             return ("RETRY", None)
         try:
             items = json.loads(text)
@@ -237,7 +239,7 @@ def gateway_read_pr(owner, repo, pr_num, timeout=60):
     try:
         text, _ = gateway_call("pull_request_read",
             {"method": "get", "owner": owner, "repo": repo, "pullNumber": int(pr_num)}, timeout)
-    except (GatewayUnavailable, GatewayDenied, ValueError, TypeError):   # B4c.1.1:GatewayGlobalDegraded 透传
+    except (ValueError, TypeError):   # B4c.1.2:schema 异常 → RETRY;Unavailable/Denied/GlobalDegraded 透传
         return ("RETRY", None)
     try:
         d = json.loads(text)

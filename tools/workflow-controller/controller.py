@@ -52,6 +52,16 @@ L2_MAINTENANCE_BUDGET_SECONDS = int(os.environ.get("L2_MAINTENANCE_BUDGET_SECOND
 L2_DISCOVERY_TIMEOUT_SECONDS  = int(os.environ.get("L2_DISCOVERY_TIMEOUT_SECONDS", "300"))
 
 
+def _validate_l2_config():
+    """B4c.1.2:数值配置校验(正数/上下限/关系)。非法 raise(startup_assert 转 FATAL,防静默停摆/热循环)。"""
+    if L2_MAINTENANCE_MAX_ITEMS < 1: raise ValueError("L2_MAINTENANCE_MAX_ITEMS 须 ≥1")
+    if L2_MAINTENANCE_BUDGET_SECONDS < 1: raise ValueError("L2_MAINTENANCE_BUDGET_SECONDS 须 ≥1")
+    if L2_RETRY_BASE_SECONDS < 1 or L2_RETRY_MAX_SECONDS < 1: raise ValueError("L2_RETRY_* 须 ≥1")
+    if L2_RETRY_BASE_SECONDS > L2_RETRY_MAX_SECONDS: raise ValueError("L2_RETRY_BASE 须 ≤ L2_RETRY_MAX")
+    if L2_DISCOVERY_TIMEOUT_SECONDS < 1: raise ValueError("L2_DISCOVERY_TIMEOUT_SECONDS 须 ≥1")
+    if L2_LEASE_SECONDS < 1 or L2_GW_TIMEOUT < 1: raise ValueError("L2_LEASE_SECONDS/L2_GW_TIMEOUT 须 ≥1")
+
+
 class GatewayOutcome:
     """B4c.1 结构化 drain 结果。kind:
        SUCCESS(Gateway OK,approval 应已迁移)/ TRANSIENT(网络/超时/L2_DB_UNAVAILABLE → 退避,不终结)/
@@ -537,7 +547,12 @@ def startup_assert_l2():
     - 若存在非终态 approval_required=TRUE 的 run,但缺 COORDINATOR_TOKEN/GATEWAY_URL/Gateway 不可达 →
       拒启动(否则这些 run 永久卡死,无人维护)。
     - L2_MERGE_ENABLED=1(新 run 默认进审批流)→ 额外要求 token/url/Gateway 连通/l2 函数可 EXECUTE。
-    L2 维护循环本身始终运行(函数按 approval_required 过滤),开关只管新 run 默认值。"""
+    L2 维护循环本身始终运行(函数按 approval_required 过滤),开关只管新 run 默认值。
+    B4c.1.2:数值配置校验 + migration 检查**始终**(不 gated by need_gateway,防 L2 关闭时放过缺调度列)。"""
+    try:
+        _validate_l2_config()
+    except (ValueError, TypeError) as e:
+        sys.exit(f"[ctrl] FATAL: L2 配置非法: {e}")
     if L2_MERGE_ENABLED_INVALID:
         sys.exit(f"[ctrl] FATAL: L2_MERGE_ENABLED='{_L2_RAW}' 非法(允许:0/1/true/false/yes/no/on/off)")
 
@@ -552,31 +567,29 @@ def startup_assert_l2():
         pending_l2 = cur.fetchone()[0]
     conn.commit()  # 释放只读事务(防 idle-in-transaction)
 
+    # B4c.1.2 #7:migration/lease 校验**始终**(不 gated by need_gateway;防 L2 关闭时放过缺调度列)
+    with conn.cursor() as cur:
+        # 函数缺失时 has_function_privilege(text::regprocedure) 会 ERROR → 用 EXISTS+CASE 短路到 FALSE(干净 FATAL)
+        cur.execute("SELECT "
+                    "(CASE WHEN EXISTS(SELECT 1 FROM pg_proc WHERE proname='l2_ensure_ticket') THEN has_function_privilege('mergepilot','l2_ensure_ticket(text,text,jsonb,text,integer,integer)','EXECUTE') ELSE FALSE END),"
+                    "(CASE WHEN EXISTS(SELECT 1 FROM pg_proc WHERE proname='l2_expire_approved') THEN has_function_privilege('mergepilot','l2_expire_approved(text)','EXECUTE') ELSE FALSE END),"
+                    "(CASE WHEN EXISTS(SELECT 1 FROM pg_proc WHERE proname='l2_reject_approved') THEN has_function_privilege('mergepilot','l2_reject_approved(text,text)','EXECUTE') ELSE FALSE END),"
+                    "(SELECT count(*)::int FROM information_schema.columns WHERE table_schema='public' AND table_name='task_runs'"
+                    " AND column_name IN ('l2_next_attempt_at','l2_retry_count','l2_discovery_deadline_at'));")
+        ok = cur.fetchone()
+    conn.commit()
+    _ensure, _expire, _reject, _sched = (ok + (None, None, None, None))[:4] if ok else (None, None, None, None)
+    if not (_ensure and _expire and _reject and _sched == 3):
+        sys.exit(f"[ctrl] FATAL: B4c/B4c.1 migration 未应用完整(ensure={_ensure} expire={_expire} reject={_reject} sched_cols={_sched}/3);依次应用 m3b_b4.sql + m3b_b4c.sql + m3b_b4c1.sql + m3b_b4c1_1.sql")
+    if L2_LEASE_SECONDS < L2_GW_TIMEOUT + 5:
+        sys.exit(f"[ctrl] FATAL: L2_LEASE_SECONDS({L2_LEASE_SECONDS}) < L2_GW_TIMEOUT+5({L2_GW_TIMEOUT+5});lease 须 ≥ Gateway 超时 + 安全余量(防双发)")
+
     need_gateway = bool(pending_l2) or L2_MERGE_ENABLED
     if need_gateway:
         if not COORDINATOR_TOKEN:
             sys.exit(f"[ctrl] FATAL: 有 {pending_l2} 个未终结审批 run(L2_MERGE_ENABLED={'on' if L2_MERGE_ENABLED else 'off'}),但缺 COORDINATOR_TOKEN → 这些 run 会卡死")
         if not GATEWAY_URL:
             sys.exit("[ctrl] FATAL: 审批流需要 GATEWAY_URL")
-        # migration/函数权限缺失 → fatal(非网络;STARTUP_CHECK_ONLY 仍非零退出,不替换旧容器)
-        # B4c.1.1 #7:预检要求 B4c.1 migration 完整(l2_reject_approved + 调度列),缺则拒启动
-        with conn.cursor() as cur:
-            # B4c.1.1:函数缺失时 has_function_privilege(text::regprocedure) 会 ERROR(非 NULL)→ 用 EXISTS+CASE
-            #   短路到 FALSE(干净 FATAL,而非崩溃 traceback);STARTUP_CHECK_ONLY 非零退出,不替换旧容器。
-            cur.execute("SELECT "
-                        "(CASE WHEN EXISTS(SELECT 1 FROM pg_proc WHERE proname='l2_ensure_ticket') THEN has_function_privilege('mergepilot','l2_ensure_ticket(text,text,jsonb,text,integer,integer)','EXECUTE') ELSE FALSE END),"
-                        "(CASE WHEN EXISTS(SELECT 1 FROM pg_proc WHERE proname='l2_expire_approved') THEN has_function_privilege('mergepilot','l2_expire_approved(text)','EXECUTE') ELSE FALSE END),"
-                        "(CASE WHEN EXISTS(SELECT 1 FROM pg_proc WHERE proname='l2_reject_approved') THEN has_function_privilege('mergepilot','l2_reject_approved(text,text)','EXECUTE') ELSE FALSE END),"
-                        "(SELECT count(*)::int FROM information_schema.columns WHERE table_schema='public' AND table_name='task_runs'"
-                        " AND column_name IN ('l2_next_attempt_at','l2_retry_count','l2_discovery_deadline_at'));")
-            ok = cur.fetchone()
-        conn.commit()
-        _ensure, _expire, _reject, _sched = (ok + (None, None, None, None))[:4] if ok else (None, None, None, None)
-        if not (_ensure and _expire and _reject and _sched == 3):
-            sys.exit(f"[ctrl] FATAL: B4c/B4c.1 migration 未应用完整(ensure={_ensure} expire={_expire} reject={_reject} sched_cols={_sched}/3);依次应用 m3b_b4.sql + m3b_b4c.sql + m3b_b4c1.sql + m3b_b4c1_1.sql")
-        # lease ≥ Gateway 超时 + 安全余量(防 lease 内未完成 → 双发):硬要求(B4c.1.1 minor)
-        if L2_LEASE_SECONDS < L2_GW_TIMEOUT + 5:
-            sys.exit(f"[ctrl] FATAL: L2_LEASE_SECONDS({L2_LEASE_SECONDS}) < L2_GW_TIMEOUT+5({L2_GW_TIMEOUT+5});lease 须 ≥ Gateway 超时 + 安全余量(防双发)")
         # B4c.1: Gateway TCP 不可达 → DEGRADED_NETWORK(**不 fatal**)。纯 DB 收敛继续;恢复后 circuit breaker 自动放行(无需重启)。
         if not _gateway_reachable():
             _l2_gw_mark_degraded("STARTUP:Gateway TCP 不可达", seconds=L2_RETRY_BASE_SECONDS)
@@ -686,11 +699,31 @@ def discover_binding_for_run(run_id, deadline=None):
         _l2_gw_mark_degraded(e.reason_code)
         print(f"[ctrl][L2] {run_id} discover: Gateway GLOBAL_DEGRADED({e.reason_code}) → circuit breaker")
         return ("DEGRADED", {"reason": e.reason_code})
+    except gateway_client.GatewayUnavailable as e:
+        # B4c.1.2 #2:网络/401 瞬时 → 重排该 task + 打开 breaker(本 tick 停 discover,防连环撞)
+        _l2_requeue(run_id, "gw unavailable", "l2_binding")
+        _l2_gw_mark_degraded("UNAVAILABLE", seconds=L2_RETRY_BASE_SECONDS)
+        print(f"[ctrl][L2] {run_id} discover: Gateway unavailable({str(e)[:50]}) → 重排 + circuit breaker")
+        return ("DEGRADED", {"reason": "gateway unavailable"})
+    except gateway_client.GatewayDenied as e:
+        # B4c.1.2 #2:discovery 级确定性拒绝(REPO_NOT_ALLOWED 等)→ HOLD(收敛,不无限重试)
+        _c = ensure_pg()
+        with _c.cursor() as _cur:
+            _cur.execute("UPDATE task_runs SET status='HOLD', current_stage='l2_binding_failed', last_error=%s, updated_at=now() WHERE run_id=%s AND status='APPROVAL_PENDING' AND current_stage='l2_binding'", (f"gateway denied:{e.reason_code}", run_id))
+        _c.commit()
+        print(f"[ctrl][L2] {run_id} discover: Gateway denied({e.reason_code}) → HOLD(收敛,不无限重试)")
+        return ("HOLD", {"reason": f"gateway denied:{e.reason_code}"})
 
 
 def _gw_timeout_for(deadline):
-    """B4c.1.1 #4:剩余预算内的单次 Gateway 超时(min(L2_GW_TIMEOUT, 剩余), 下限 5s)。"""
-    return min(L2_GW_TIMEOUT, max(int(deadline - time.monotonic()), 5)) if deadline else L2_GW_TIMEOUT
+    """B4c.1.2 #3:剩余预算内的单次 Gateway 超时 = min(L2_GW_TIMEOUT, 剩余),**无 5s 下限**(下限 0.1s 防 0)。
+    调用方 loop 已用 _budget_exhausted 确保不在 <1s 时启动新项;故运行中剩余≥0.1s,单调用 ≤ 剩余。"""
+    return min(L2_GW_TIMEOUT, max(deadline - time.monotonic(), 0.1)) if deadline else L2_GW_TIMEOUT
+
+
+def _budget_exhausted(deadline):
+    """B4c.1.2 #3:剩余预算不足以启动新项(<1s)或已过。loop 顶用,防启动后单调用超整轮预算。"""
+    return deadline is not None and (deadline - time.monotonic()) < 1.0
 
 
 def _discover_binding_for_run_inner(run_id, deadline=None):
@@ -720,7 +753,7 @@ def _discover_binding_for_run_inner(run_id, deadline=None):
             return ("RETRY", {"reason": "PR 返回 number 与请求不一致"}, None)
         if head_repo != repo:
             return ("HOLD_IDENTITY", {"reason": f"head.repo={head_repo} != 目标 {repo}(防 fork PR)", "pr_number": pr_num}, None)
-        bstatus, branch_sha = gateway_client.gateway_read_branch(owner, repo_name, head_ref, timeout=_gw_timeout_for(deadline))
+        bstatus, branch_sha = gateway_client.gateway_read_branch(owner, repo_name, head_ref, timeout=_gw_timeout_for(deadline), deadline=deadline)
         if bstatus == "RETRY":
             return ("RETRY", {"reason": "list_branches 失败/未找到 branch"}, None)
         if branch_sha != head_sha:
@@ -878,7 +911,7 @@ def initiate_l2_pending(deadline=None):
         ticket_runs = [r[0] for r in cur.fetchall()]
     conn.commit()
     for run_id in runs:
-        if deadline and time.monotonic() > deadline:
+        if _budget_exhausted(deadline):
             break   # B4c.1 工作预算到期,剩余候选下 tick 处理(已持久化 next_attempt_at)
         if _l2_gw_degraded():
             break   # B4c.1.1 #3:discover 途中 breaker 打开 → 停
@@ -922,7 +955,7 @@ def initiate_l2_pending(deadline=None):
 
     # B4c-2:l2_awaiting_ticket → 幂等建票(per-run session advisory lock)
     for run_id in ticket_runs:
-        if deadline and time.monotonic() > deadline:
+        if _budget_exhausted(deadline):
             break   # B4c.1 工作预算到期
         if _l2_gw_degraded():
             break   # B4c.1.1 #3:circuit breaker 打开 → 停建票
@@ -984,19 +1017,20 @@ def _advance_outbox_by_approval(oid, ticket_id, action, outcome):
             cur.execute("SELECT attempts FROM policy_action_outbox WHERE id=%s", (oid,))
             _ar = cur.fetchone(); delay = _l2_backoff_seconds(_ar[0] if _ar else 0)
             if outcome.kind == "TICKET_DENY":
-                # B4c.1.1 #5:确定性拒绝完整 CAS —— 先 l2_reject_approved(approval CAS APPROVED+未claim+未过期),
-                #   检查返回:FALSE(并发 claim/恰好过期)→ 回滚,不终结 outbox(交正常流/对账);
-                #   再锁 task FOR UPDATE + CAS 推进;outbox FAILED 仅在 approval 确被拒时。
-                cur.execute("SELECT l2_reject_approved(%s,%s)", (ticket_id, outcome.reason_code))
-                rejected = cur.fetchone()[0]
-                if not rejected:
-                    conn.rollback()   # approval 已迁移或恰好过期;outbox 保持 DISPATCHED(lease 兜底),交下轮
+                # B4c.1.2 #1:完整 CAS —— **先锁 task FOR UPDATE + 校验 task 仍在 CAS 态**;
+                #   再 l2_reject_approved(approval CAS)。任一 CAS 不成立 → 回滚(approval/outbox 都不动,交下轮)。
+                #   两 CAS 都过 → 同事务 task HOLD(l2_drain_denied)+ outbox FAILED(task 锁内不会并发迁移)。
+                cur.execute("SELECT status, current_stage FROM task_runs WHERE run_id=%s FOR UPDATE", (run_id,))
+                _tr = cur.fetchone()
+                if not _tr or not (_tr[0] == 'APPROVAL_PENDING' and _tr[1] == 'l2_awaiting_approval'):
+                    conn.rollback()   # task 已并发迁移 → 不终结
                     return None
-                cur.execute("SELECT 1 FROM task_runs WHERE run_id=%s FOR UPDATE", (run_id,))
+                cur.execute("SELECT l2_reject_approved(%s,%s)", (ticket_id, outcome.reason_code))
+                if not cur.fetchone()[0]:
+                    conn.rollback()   # approval 已并发迁移(claim/恰好过期)→ 不终结(task/outbox 不动)
+                    return None
                 cur.execute(f"UPDATE task_runs SET status='HOLD', current_stage='l2_drain_denied', last_error=%s, updated_at=now() WHERE run_id=%s AND {cas_clause}", (f"preclaim denied:{outcome.reason_code}", run_id))
-                _task_synced = cur.rowcount == 1
-                _err = f"preclaim denied:{outcome.reason_code}" + ("" if _task_synced else " | CONCURRENT_STATE_CHANGE: task 已脱离 APPROVAL_PENDING/l2_awaiting_approval,未覆盖")
-                cur.execute("UPDATE policy_action_outbox SET status='FAILED', completed_at=now(), last_error_code=%s, error=%s WHERE id=%s", (outcome.reason_code, _err, oid))
+                cur.execute("UPDATE policy_action_outbox SET status='FAILED', completed_at=now(), last_error_code=%s, error=%s WHERE id=%s", (outcome.reason_code, f"preclaim denied:{outcome.reason_code}", oid))
             elif outcome.kind == "GLOBAL_DEGRADED":
                 # 全局配置故障:退回 PENDING_DISPATCH + 退避;signal 让 drain 本 tick 停消费
                 cur.execute("UPDATE policy_action_outbox SET status='PENDING_DISPATCH', last_error_code=%s, error=%s, next_retry_at=now()+make_interval(secs=>%s) WHERE id=%s", (outcome.reason_code, f"global degraded:{outcome.reason_code}", delay, oid))
@@ -1040,7 +1074,7 @@ def drain_l2_outbox(deadline=None):
         print(f"[ctrl][L2] drain 跳过:Gateway degraded({_L2_GW['last_error'][:50]}),待恢复")
         return
     for _ in range(L2_MAINTENANCE_MAX_ITEMS):
-        if deadline and time.monotonic() > deadline:
+        if _budget_exhausted(deadline):
             break
         conn = ensure_pg()
         with conn.cursor() as cur:
@@ -1127,6 +1161,14 @@ def _reconcile_ticket(ticket_id, run_id, action, astatus, pr_num, repo, oid, dea
         _l2_gw_mark_degraded(e.reason_code)
         print(f"[ctrl][L2] reconcile {ticket_id[:16]}: Gateway GLOBAL_DEGRADED({e.reason_code}) → breaker")
         return False
+    except gateway_client.GatewayUnavailable as e:
+        # B4c.1.2 #2:网络/401 瞬时 → outbox 退避 + 打开 breaker
+        _l2_outbox_backoff(oid, "reconcile unavailable"); _l2_gw_mark_degraded("UNAVAILABLE", seconds=L2_RETRY_BASE_SECONDS)
+        print(f"[ctrl][L2] reconcile {ticket_id[:16]}: Gateway unavailable → 退避 + breaker"); return False
+    except gateway_client.GatewayDenied as e:
+        # B4c.1.2 #2:确定性拒绝(REPO_NOT_ALLOWED 等)→ outbox 退避(不无限撞;UNKNOWN/EXECUTING 票留待人工)
+        _l2_outbox_backoff(oid, f"reconcile denied:{e.reason_code}")
+        print(f"[ctrl][L2] reconcile {ticket_id[:16]}: Gateway denied({e.reason_code}) → 退避"); return False
     if rstatus == "RETRY":
         _l2_outbox_backoff(oid, "reconcile read RETRY")   # B4c.1.1 #2
         return False   # 读失败,退避后下轮重试
@@ -1174,7 +1216,7 @@ def reconcile_l2(deadline=None):
         reconcile_items = cur.fetchall()
     conn.commit()
     for ticket_id, run_id, action, astatus, pr_num, repo, oid in reconcile_items:
-        if deadline and time.monotonic() > deadline:
+        if _budget_exhausted(deadline):
             break   # B4c.1 工作预算到期,剩余对账项下 tick
         if _l2_gw_degraded():
             break   # B4c.1.1 #3:circuit breaker 打开 → 停对账
