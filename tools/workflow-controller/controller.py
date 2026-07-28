@@ -1251,42 +1251,41 @@ def reconcile_l2(deadline=None, budget=None):
     if _budget_exhausted(deadline):
         return
 
-    # ③ + ④:过期 PENDING/APPROVED → EXPIRED + outbox FAILED + task HOLD
+    # ③ + ④ + ⑤:过期 PENDING/APPROVED → EXPIRED;EXPIRED 收敛;滞留 outbox 收敛
+    #   B4c.1.6:每个 DB 批次前 + 逐项前检查 deadline → 到期 commit 已完成 + 跳过(时间硬边界)
     conn = ensure_pg()
     with conn.cursor() as cur:
-        cur.execute("""SELECT ticket_id FROM approvals
-                       WHERE status='PENDING' AND approval_expires_at < now() LIMIT %s""", (L2_EXPIRY_BATCH,))
-        for (tid,) in cur.fetchall():
-            cur.execute("SELECT l2_expire_pending(%s)", (tid,))
-        cur.execute("""SELECT ticket_id FROM approvals
-                       WHERE status='APPROVED' AND expires_at IS NOT NULL AND expires_at < now() LIMIT %s""", (L2_EXPIRY_BATCH,))
-        for (tid,) in cur.fetchall():
-            cur.execute("SELECT l2_expire_approved(%s)", (tid,))
-        cur.execute("""SELECT a.ticket_id, a.run_id FROM approvals a
-                       WHERE a.status='EXPIRED'
-                         AND EXISTS (SELECT 1 FROM policy_action_outbox o WHERE o.ticket_id=a.ticket_id AND o.status != 'FAILED') LIMIT %s""", (L2_EXPIRY_BATCH,))
-        for tid, run_id in cur.fetchall():
-            # B4c-4.2 P1:task 用**完整 CAS**(approval_required+APPROVAL_PENDING+l2_awaiting_approval);
-            # CAS 失败(rowcount=0)→ 不覆盖 task,outbox.error 追加 CONCURRENT_STATE_CHANGE(对称于 drain USED/FAILED)
-            cur.execute("UPDATE task_runs SET status='HOLD', current_stage='l2_expired', last_error='ticket EXPIRED', updated_at=now() WHERE run_id=%s AND approval_required=TRUE AND status='APPROVAL_PENDING' AND current_stage='l2_awaiting_approval'", (run_id,))
-            exp_err = "ticket EXPIRED"
-            if cur.rowcount == 0:
-                exp_err = "ticket EXPIRED | CONCURRENT_STATE_CHANGE: task 已脱离 APPROVAL_PENDING/l2_awaiting_approval,未覆盖"
-            cur.execute("UPDATE policy_action_outbox SET status='FAILED', completed_at=now(), error=%s WHERE ticket_id=%s AND status != 'FAILED'", (exp_err[:300], tid))
-            print(f"[ctrl][L2] expire {tid[:16]} → outbox FAILED" + (" (task CAS 失败,未覆盖)" if cur.rowcount == 0 else " + task HOLD"))
+        if not _budget_exhausted(deadline):
+            cur.execute("""SELECT ticket_id FROM approvals WHERE status='PENDING' AND approval_expires_at < now() LIMIT %s""", (L2_EXPIRY_BATCH,))
+            for (tid,) in cur.fetchall():
+                if _budget_exhausted(deadline): break
+                cur.execute("SELECT l2_expire_pending(%s)", (tid,))
+        if not _budget_exhausted(deadline):
+            cur.execute("""SELECT ticket_id FROM approvals WHERE status='APPROVED' AND expires_at IS NOT NULL AND expires_at < now() LIMIT %s""", (L2_EXPIRY_BATCH,))
+            for (tid,) in cur.fetchall():
+                if _budget_exhausted(deadline): break
+                cur.execute("SELECT l2_expire_approved(%s)", (tid,))
+        if not _budget_exhausted(deadline):
+            cur.execute("""SELECT a.ticket_id, a.run_id FROM approvals a
+                           WHERE a.status='EXPIRED' AND EXISTS (SELECT 1 FROM policy_action_outbox o WHERE o.ticket_id=a.ticket_id AND o.status != 'FAILED') LIMIT %s""", (L2_EXPIRY_BATCH,))
+            for tid, run_id in cur.fetchall():
+                if _budget_exhausted(deadline): break
+                cur.execute("UPDATE task_runs SET status='HOLD', current_stage='l2_expired', last_error='ticket EXPIRED', updated_at=now() WHERE run_id=%s AND approval_required=TRUE AND status='APPROVAL_PENDING' AND current_stage='l2_awaiting_approval'", (run_id,))
+                exp_err = "ticket EXPIRED" + ("" if cur.rowcount else " | CONCURRENT_STATE_CHANGE: task 已脱离 APPROVAL_PENDING/l2_awaiting_approval,未覆盖")
+                cur.execute("UPDATE policy_action_outbox SET status='FAILED', completed_at=now(), error=%s WHERE ticket_id=%s AND status != 'FAILED'", (exp_err[:300], tid))
     conn.commit()
 
     # ⑤ 滞留 outbox(DISPATCHED 或 UNKNOWN)+ approval 已终结(USED/FAILED)
-    #   B4c-4.1 P1-3:复用 _advance_outbox_by_approval(action-aware + 完整 CAS,不再手写映射)
-    conn = ensure_pg()
-    with conn.cursor() as cur:
-        cur.execute("""SELECT o.id, o.ticket_id, a.action
-                       FROM policy_action_outbox o JOIN approvals a ON o.ticket_id=a.ticket_id
-                       WHERE o.status IN ('DISPATCHED','UNKNOWN') AND a.status IN ('USED','FAILED') LIMIT %s""", (L2_EXPIRY_BATCH,))
-        stranded = cur.fetchall()
-    conn.commit()
-    for oid, ticket_id, action in stranded:
-        _advance_outbox_by_approval(oid, ticket_id, action, GatewayOutcome("SUCCESS", "", "reconcile stranded convergence"))
+    if not _budget_exhausted(deadline):
+        conn = ensure_pg()
+        with conn.cursor() as cur:
+            cur.execute("""SELECT o.id, o.ticket_id, a.action FROM policy_action_outbox o JOIN approvals a ON o.ticket_id=a.ticket_id
+                           WHERE o.status IN ('DISPATCHED','UNKNOWN') AND a.status IN ('USED','FAILED') LIMIT %s""", (L2_EXPIRY_BATCH,))
+            stranded = cur.fetchall()
+        conn.commit()
+        for oid, ticket_id, action in stranded:
+            if _budget_exhausted(deadline): break
+            _advance_outbox_by_approval(oid, ticket_id, action, GatewayOutcome("SUCCESS", "", "reconcile stranded convergence"))
 
 
 # ── 主循环(故障域分离,复审 #3;L2 维护始终运行,B4c-0.1 #3)──
