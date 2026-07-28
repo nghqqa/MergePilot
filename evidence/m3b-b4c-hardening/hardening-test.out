@@ -1,0 +1,142 @@
+═══════════════════════════════════════════════
+  B4c.1 收敛与调度加固验收(fixture=nghqqa/MergePilot-e2e-fixture)
+═══════════════════════════════════════════════
+92e0e0d526336f6496229993ab6962f9280667a503c3f14cddc587e759fe098d
+policy-gw-e2e | Up 1 second (health: starting)
+--- 启动日志(尾)---
+[gateway] starting on 0.0.0.0:8083  AUDIT=on
+INFO:     Started server process [1]
+INFO:     Waiting for application startup.
+[gateway] policy_version=e2e-fixture-20260728-v1 policy_hash=8a1f5f0cb829ff3e
+[gateway] roles=['coordinator', 'fixer', 'reviewer', 'verifier'] upstream=http://github-mcp:8082/sse
+[gateway] upstream ready: 44 tools (sample: ['add_comment_to_pending_review', 'add_issue_comment', 'add_reply_to_pull_request_comment', 'assign_copilot_to_issue', 'create_branch'])
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8083 (Press CTRL+C to quit)
+psql:/tmp/m3b_b4c1.sql:14: NOTICE:  column "l2_next_attempt_at" of relation "task_runs" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3b_b4c1.sql:15: NOTICE:  column "l2_retry_count" of relation "task_runs" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3b_b4c1.sql:16: NOTICE:  column "l2_retry_reason" of relation "task_runs" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3b_b4c1.sql:17: NOTICE:  column "l2_discovery_deadline_at" of relation "task_runs" already exists, skipping
+ALTER TABLE
+DO
+psql:/tmp/m3b_b4c1.sql:33: NOTICE:  relation "idx_task_runs_l2_ready" already exists, skipping
+CREATE INDEX
+psql:/tmp/m3b_b4c1.sql:36: NOTICE:  column "last_error_code" of relation "policy_action_outbox" already exists, skipping
+ALTER TABLE
+CREATE FUNCTION
+DO
+ALTER ROLE
+REVOKE
+GRANT
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 957B done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/python:3.12-slim
+#2 DONE 5.1s
+
+#3 [internal] load .dockerignore
+#3 transferring context: 2B done
+#3 DONE 0.0s
+
+#4 [1/7] FROM docker.io/library/python:3.12-slim@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de
+#4 DONE 0.0s
+
+#5 [internal] load build context
+#5 transferring context: 157B 0.0s done
+#5 DONE 0.0s
+
+#6 [3/7] COPY controller.py /app/controller.py
+#6 CACHED
+
+#7 [5/7] COPY test_gateway_schema.py /app/test_gateway_schema.py
+#7 CACHED
+
+#8 [4/7] COPY gateway_client.py /app/gateway_client.py
+#8 CACHED
+
+#9 [6/7] COPY test_startup_pgwait.py /app/test_startup_pgwait.py
+#9 CACHED
+
+#10 [2/7] RUN pip install --no-cache-dir       psycopg2-binary==2.9.12       mcp==1.28.1       httpx==0.28.1       anyio==4.14.2
+#10 CACHED
+
+#11 [7/7] WORKDIR /app
+#11 CACHED
+
+#12 exporting to image
+#12 exporting layers done
+#12 writing image sha256:3f6fe330d98a9aadeea2ffd02d09927ed42ed2b8fdb4eee7cd3ac6872be739bc done
+#12 naming to docker.io/library/mergepilot-controller:latest
+#12 naming to docker.io/library/mergepilot-controller:latest done
+#12 DONE 0.0s
+
+=== 1. migration / ACL ===
+psql:/tmp/m3b_b4c1.sql:14: NOTICE:  column "l2_next_attempt_at" of relation "task_runs" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3b_b4c1.sql:15: NOTICE:  column "l2_retry_count" of relation "task_runs" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3b_b4c1.sql:16: NOTICE:  column "l2_retry_reason" of relation "task_runs" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3b_b4c1.sql:17: NOTICE:  column "l2_discovery_deadline_at" of relation "task_runs" already exists, skipping
+ALTER TABLE
+DO
+CREATE INDEX
+psql:/tmp/m3b_b4c1.sql:33: NOTICE:  relation "idx_task_runs_l2_ready" already exists, skipping
+psql:/tmp/m3b_b4c1.sql:36: NOTICE:  column "last_error_code" of relation "policy_action_outbox" already exists, skipping
+ALTER TABLE
+CREATE FUNCTION
+DO
+ALTER ROLE
+REVOKE
+GRANT
+  ✅ migration 连跑幂等
+  ✅ ready 索引存在
+  ✅ l2_reject_approved owner=mergepilot_l2_owner
+  ✅ mergepilot 可 EXECUTE
+  ✅ approver 不可 EXECUTE
+  ✅ 未知 reason → 拒(22023 allowlist)
+
+=== 2. 确定性拒绝(CLAIM_MISMATCH,不手工中和)===
+  ✅ deny: approval→FAILED
+  ✅ deny: outbox→FAILED
+  ✅ deny: attempts=1
+  ✅ deny: task HOLD(l2_drain_denied)
+  ✅ 再 drain(lease 过期):attempts 仍 1(不重派)
+
+=== 3. 瞬时退避(不可达 Gateway → TRANSIENT,不终结)===
+  ✅ trans: approval 留 APPROVED(未终结)
+  ✅ trans: outbox 留 DISPATCHED
+  ✅ trans: attempts=1(领取一次)
+  ✅ trans: next_retry_at 未来(退避)
+  ✅ trans: last_error_code=TRANSIENT
+  ✅ 立即再 drain:attempts 仍 1(退避期不领取)
+
+=== 4. 公平调度(outbox next_retry_at) ===
+  ✅ next_retry_at 未来 → 不领取(attempts=0)
+  ✅ next_retry_at 到期 → 领取并 merge(task MERGED)
+
+=== 5. 工作预算(单 tick ≤ MAX_ITEMS=3)===
+  ✅ 单 tick 处理 2 条(≤ MAX_ITEMS=3,未一次处理 5)
+  ✅ 下一 tick 处理剩余 2(累计 5)
+
+=== 6. fixture 回归(approve CLI 接入正向链)===
+  ✅ e2e: discover + 建票 → l2_awaiting_approval(ticket=tkt-7d9da369-130a-49...)
+✓ APPROVED tkt-7d9da369-130a-491a-acc3-8c3f30bbd4af
+  approved_by = mergepilot_approver  (DB session_user = 认证登录角色;不可参数伪造)
+  执行期默认 ~1h;Coordinator drain 将在 Gateway claim 后 merge/close。
+  ✅ e2e: approve.sh → APPROVED
+  ✅ e2e: drain → task MERGED(正向全链)
+  ✅ e2e: approved_by=session_user(mergepilot_approver)
+
+=== 7. 凭证扫描 + 收尾 ===
+  ✅ 无凭证泄漏
+
+═══════════════════════════════════════════════
+  B4c.1 验收: PASS=26 FAIL=0
+═══════════════════════════════════════════════
+  全部 26 项通过(无静默跳过)
