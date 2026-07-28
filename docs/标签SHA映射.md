@@ -57,3 +57,4 @@
 - 后续如发现遗漏的 AI 标识需要再次整理历史,**优先在本地修复后重新整体推送**,并**同步更新本文件的 SHA 映射**;不再用 filter-branch + delete 这种重操作(已确保后续 commit 不带 AI 标识,见 `no-ai-identifiers-in-commits` 记忆)。
 - 里程碑追溯:**以标签名为准**;SHA 仅供精确检索。
 | `m3b-b4c.1.3-closed` | `69e826e` | `e78874d` | B4c.1.3:共享每-tick预算(_tick_take)+deny 3字段CAS+breaker恢复(_l2_gw_ok)+统一_gw_timeout_for+expiry/stranded LIMIT(6/6) |
+| `m3b-b4c.1.4-closed` | `865e958` | `4be419b` | B4c.1.4:空阶段不消耗预算(_tick_ok/_tick_use)+expiry LIMIT 50+timeout max(rem,0)(7/7) |
