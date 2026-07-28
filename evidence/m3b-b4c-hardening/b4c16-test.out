@@ -2,10 +2,12 @@
   B4c.1.6(fixture)
 ═══════════════════════════════════════════════
 
-=== 1. mid-batch deadline guard ===
-  mid-batch: expired=0/5 (deadline=now+1.001s)
-  ✅ mid-batch deadline:仅 0/5 过期处理(剩余延期;deadline 批内生效)
-  ✅ 正常 deadline:剩余 5 项在下一 tick 处理(累计 5/5)
+=== 1. mid-batch deadline guard(monkeypatch 确定性) ===
+[ctrl] PG connected
+MOCK_CALLS=7
+  mid-batch: expired=1/5 (monkeypatch: 3 pass then break)
+  ✅ mid-batch deadline:仅 1/5 过期(0<expired<total,break 确定命中)
+  ✅ 正常 deadline:剩余 4 项在下一 tick 处理(累计 5/5)
 
 === 2. fixture 硬门 ===
   ✅ fixture: 0 PR

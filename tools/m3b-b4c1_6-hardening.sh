@@ -32,19 +32,26 @@ mk_ep(){ local RUN="$1"
   local AH=$(PSQL "SELECT l2_create_ticket('bnd-$RUN','merge','$PAY'::jsonb,'$(echo -n $PAY | sha256sum | cut -c1-64)',24,1);" 2>/dev/null)
   PSQL "UPDATE approvals SET approval_expires_at = now() - interval '1 hour' WHERE ticket_id='$AH';" >/dev/null; }
 
-# ═══ 1. mid-batch deadline guard(5 expired PENDING, tight deadline → 部分延期)═══
-log ""; log "=== 1. mid-batch deadline guard ==="
+# ═══ 1. mid-batch deadline guard(monkeypatch _budget_exhausted:前 3 调通过,第 4 调断)═══
+log ""; log "=== 1. mid-batch deadline guard(monkeypatch 确定性) ==="
 for k in 1 2 3 4 5; do mk_ep "h16-mid$k-$TS"; done
-# deadline = now + 1.001s:entry 通过(>1.0);首项 DB 调用(~2ms)后 remaining<1.0 → 第 2 项 break
-DRUN "import time, controller
-controller.reconcile_l2(deadline=time.monotonic()+1.001)" "" 500 >/dev/null
+# Monkeypatch: calls 1-3 = False(entry+section+item1 通过);call 4+ = True(item2 break)
+MID_OUT=$(DRUN "import time, controller
+_n = [0]
+def _mock(dl):
+    _n[0] += 1
+    return _n[0] > 3   # 前 3 次通过,第 4 次起 exhausted
+controller._budget_exhausted = _mock
+controller.reconcile_l2(deadline=time.monotonic()+60)
+print(f'MOCK_CALLS={_n[0]}')" "" 500)
+echo "$MID_OUT" >>"$OUT"
 EXP1=$(PSQL "SELECT count(*) FROM approvals WHERE run_id LIKE 'h16-mid%-%' AND status='EXPIRED';")
 TOTAL=$(PSQL "SELECT count(*) FROM approvals WHERE run_id LIKE 'h16-mid%-%';")
 logf(){ echo "$*" >>"$OUT"; }
-logf "  mid-batch: expired=$EXP1/$TOTAL (deadline=now+1.001s)"
-[ "$EXP1" -lt "$TOTAL" ] && ok "mid-batch deadline:仅 $EXP1/$TOTAL 过期处理(剩余延期;deadline 批内生效)" || bad "mid-batch 未生效: 全 $EXP1 处理(应<$TOTAL)"
+logf "  mid-batch: expired=$EXP1/$TOTAL (monkeypatch: 3 pass then break)"
+[ "$EXP1" -gt 0 ] && [ "$EXP1" -lt "$TOTAL" ] && ok "mid-batch deadline:仅 $EXP1/$TOTAL 过期(0<expired<total,break 确定命中)" || bad "mid-batch: expired=$EXP1/$TOTAL (应 0<x<total)"
 
-# 剩余在正常 deadline 下处理
+# 剩余在正常 deadline(monkeypatch 恢复)下处理
 DRUN "import time, controller
 controller.reconcile_l2(deadline=time.monotonic()+60)" "" 500 >/dev/null
 EXP2=$(PSQL "SELECT count(*) FROM approvals WHERE run_id LIKE 'h16-mid%-%' AND status='EXPIRED';")
