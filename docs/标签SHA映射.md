@@ -68,3 +68,14 @@
 | `m3b-b4c.1.6-closed` | `d90c3d4` | `4e5813c` | B4c.1.6:mid-batch deadline guard(expiry/stranded 批内逐项检查,5/5) |
 | `m3b-b4c.1.6a-closed` | `356d004` | `330d752` | B4c.1.6a:evidence-only — mid-batch deadline 测试确定性命中(monkeypatch;不动 1.6) |
 | `m3b-b4e-closed` | `26d0984` | `63301e8` | B4e:总 E2E(review→fix→verify→approve→drain→MERGED)+崩溃恢复 + UNKNOWN/EXECUTING 对账 + Gateway 降级→恢复(breaker)+ Matrix 非 L2 循环存活(43/43,fixture 隔离,4×L2_CLAIMED/4×L2_COMPLETE 无双 claim) |
+
+## M3-C
+
+| 标签 | tag object | peeled commit | 说明 |
+|---|---|---|---|
+| `m3c-closed` | `ec5438b` | `c8a2433` | M3-C:状态感知失败处理 + 回滚(**child-run 模型**;parent_run_id+revert_run_id,revert 复用正常 drain→MERGED)。POST_MERGE_VERIFY_FAILED 真实入口(process_event,仅 verifier,校验 room/run/repo/pr/result_sha);changed-files/merge-parent/恢复内容由 GitHub get_commit/get_file_contents/list_commits 权威派生(修 EmbeddedResource 内容丢失);L2 前重验 main==bad merge + revert head==parent(冲突/不支持→HOLD)。非破坏幂等迁移(零 DROP TABLE)。**M3-C E2E 33/33×2**;B4 回归未破坏(B4c.1.6 5/5、B4e 43/43、B5 50/50);fresh-DB 完整链 9/9 rc=0 + Schema 断言 19/19 + m3c_state 独立重入 rc=0。⚠️ B4 链 forward-only,技术债 **MIG-B4-001**(M7 空环境最终复现前解决)。下一主线:**M4**。 |
+
+## M3-C 追加说明
+
+- delivery `c8a2433` 的父提交为 `7c12094`(闭合时 origin/main),docs 提交为其子(见下文项目状态)。
+- `m3c-closed` 为 annotated tag,tag object `ec5438b` peeled 到 delivery `c8a2433`。
