@@ -42,11 +42,25 @@ async def main():
                             except ValueError:
                                 args[k] = v
                 res = await s.call_tool(tool, args)
-                # 输出结果文本(便于 grep POLICY_DENIED)
+                # M3-C(需求 4):输出**全部**可读内容 —— TextContent.text(summary/JSON)+ EmbeddedResource
+                #   真实文件内容。get_file_contents 上游返回 [summary, EmbeddedResource(text=<内容>)];
+                #   旧实现只 print summary → e2e 拿不到真实内容。有 resource 时只输出 resource(干净内容),
+                #   否则输出 text(get_commit/list_prs 的 JSON)。
                 try:
-                    for c in res.content:
-                        if hasattr(c, "text"):
-                            print(c.text)
+                    resrc, sums = [], []
+                    for c in (res.content or []):
+                        r = getattr(c, "resource", None)
+                        if r is not None:
+                            t = getattr(r, "text", None)
+                            if isinstance(t, str):
+                                resrc.append(t)
+                            elif isinstance(getattr(r, "blob", None), str):
+                                import base64
+                                resrc.append(base64.b64decode(r.blob).decode("utf-8", "replace"))
+                        elif hasattr(c, "text") and isinstance(getattr(c, "text", None), str):
+                            sums.append(c.text)
+                    for line in (resrc or sums):
+                        print(line)
                 except Exception as e:
                     print(f"<probe call error: {e}>")
                 if getattr(res, "is_error", False):

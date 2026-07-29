@@ -1,0 +1,183 @@
+═══════════════════════════════════════════════
+  M3-C 状态感知失败处理 + 回滚 验收(fixture=nghqqa/MergePilot-e2e-fixture)
+═══════════════════════════════════════════════
+a59423c8e64e65313ff6f21ad966d7e3509b46081324c46e89a6b075543d80ab
+policy-gw-e2e | Up Less than a second (health: starting)
+--- 启动日志(尾)---
+[gateway] starting on 0.0.0.0:8083  AUDIT=on
+INFO:     Started server process [1]
+INFO:     Waiting for application startup.
+[gateway] policy_version=e2e-fixture-20260728-v1 policy_hash=8a1f5f0cb829ff3e
+[gateway] roles=['coordinator', 'fixer', 'reviewer', 'verifier'] upstream=http://github-mcp:8082/sse
+[gateway] upstream ready: 44 tools (sample: ['add_comment_to_pending_review', 'add_issue_comment', 'add_reply_to_pull_request_comment', 'assign_copilot_to_issue', 'create_branch'])
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8083 (Press CTRL+C to quit)
+DO
+psql:/tmp/m3c_state.sql:32: NOTICE:  column "verify_attempt" of relation "task_runs" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3c_state.sql:33: NOTICE:  column "rollback_id" of relation "task_runs" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3c_state.sql:34: NOTICE:  column "parent_run_id" of relation "task_runs" already exists, skipping
+ALTER TABLE
+DO
+DROP INDEX
+psql:/tmp/m3c_state.sql:46: NOTICE:  index "idx_run_pr_bindings_run" does not exist, skipping
+psql:/tmp/m3c_state.sql:75: NOTICE:  relation "rollback_runs" already exists, skipping
+CREATE TABLE
+psql:/tmp/m3c_state.sql:78: NOTICE:  column "parent_run_id" of relation "rollback_runs" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3c_state.sql:79: NOTICE:  column "revert_run_id" of relation "rollback_runs" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3c_state.sql:80: NOTICE:  column "merge_parent_sha" of relation "rollback_runs" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3c_state.sql:81: NOTICE:  column "revert_branch" of relation "rollback_runs" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3c_state.sql:82: NOTICE:  column "revert_pr_number" of relation "rollback_runs" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3c_state.sql:83: NOTICE:  column "revert_ticket_id" of relation "rollback_runs" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3c_state.sql:84: NOTICE:  column "revert_result_sha" of relation "rollback_runs" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3c_state.sql:85: NOTICE:  column "reverify_verdict" of relation "rollback_runs" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3c_state.sql:86: NOTICE:  column "reverify_event_id" of relation "rollback_runs" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3c_state.sql:87: NOTICE:  column "fail_reason" of relation "rollback_runs" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3c_state.sql:88: NOTICE:  column "diff_summary" of relation "rollback_runs" already exists, skipping
+ALTER TABLE
+DO
+DO
+DO
+DO
+DO
+ALTER TABLE
+ALTER TABLE
+DO
+DO
+DO
+CREATE INDEX
+psql:/tmp/m3c_state.sql:146: NOTICE:  relation "idx_rollback_active" already exists, skipping
+psql:/tmp/m3c_state.sql:147: NOTICE:  relation "idx_rollback_parent" already exists, skipping
+CREATE INDEX
+DO
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 957B done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/python:3.12-slim
+#2 DONE 3.6s
+
+#3 [internal] load .dockerignore
+#3 transferring context: 2B done
+#3 DONE 0.0s
+
+#4 [1/7] FROM docker.io/library/python:3.12-slim@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de
+#4 DONE 0.0s
+
+#5 [internal] load build context
+#5 transferring context: 158B 0.0s done
+#5 DONE 0.0s
+
+#6 [4/7] COPY gateway_client.py /app/gateway_client.py
+#6 CACHED
+
+#7 [5/7] COPY test_gateway_schema.py /app/test_gateway_schema.py
+#7 CACHED
+
+#8 [2/7] RUN pip install --no-cache-dir       psycopg2-binary==2.9.12       mcp==1.28.1       httpx==0.28.1       anyio==4.14.2
+#8 CACHED
+
+#9 [3/7] COPY controller.py /app/controller.py
+#9 CACHED
+
+#10 [6/7] COPY test_startup_pgwait.py /app/test_startup_pgwait.py
+#10 CACHED
+
+#11 [7/7] WORKDIR /app
+#11 CACHED
+
+#12 exporting to image
+#12 exporting layers done
+#12 writing image sha256:128a18039eb57f1634be05f121611f2d5bf705ae8951a73d6cbfa023e458e3e9 done
+#12 naming to docker.io/library/mergepilot-controller:latest done
+#12 DONE 0.0s
+
+=== 1. 重复 TASK_COMPLETED → 只一次下一阶段派发 ===
+  fix dispatch=1 fix stage_runs=1 dup events=1
+  ✅ 重复 review COMPLETED → 只 1 条 fix dispatch(idempotency_key)
+  ✅ 只 1 条 fix stage_run(uq_stage_attempt)
+  ✅ 第 2 个事件标 DUPLICATE(event_id PK 去重)
+
+=== 2. 未合并 FAIL → 回退 Fixer(attempt 2/3)===
+  attempt1 FAIL → verify_attempt=1 fix_attempt=2
+  ✅ verify FAIL(attempt 1)→ verify_attempt=1
+  ✅ 回退 fix attempt=2(stage_runs attempt)
+  ✅ 第 2 次 FAIL → verify_attempt=2(仍 <MAX=3 继续重试)
+
+=== 3. 未合并 FAIL ×3(=MAX)→ HOLD,零 revert ===
+  task=HOLD rollback_runs=0
+  ✅ 第 3 次 FAIL(=MAX)→ HOLD(不自动 CLOSE)
+  ✅ 未合并 FAIL 零 revert(未触发回滚)
+
+=== 4. POST_MERGE_VERIFY_FAILED 伪造 result_sha → 拒(经 process_event 真实入口) ===
+  rollback_runs=0 event_status=ERROR
+  ✅ 伪造 result_sha → 不建 rollback_runs
+  ✅ 事件标 ERROR(result_sha 校验拒)
+
+=== 5. 合法 POST_MERGE_VERIFY_FAILED → rollback PENDING + child run ===
+  rollback_runs.status=PENDING child_run=m3c-legit-624029-revert-070b30b1 exists=1
+  ✅ 合法 POST_MERGE_VERIFY_FAILED → rollback_runs PENDING
+  ✅ 建 child revert run(parent_run_id 回链)
+
+=== 6/7/8. 已合并 FAIL → revert child run(container 真 loop)→ REVERTED → reverify PASS → RECOVERED ===
+  bad fix PR=#330 bad_merge_sha=d4c7e0fbc4bc
+  ✅ bad fix PR squash-merge → task MERGED(result_sha 固化)
+  回滚阶段: rollback=REVERT_PR_OPEN child=m3c-rb-624029-revert-d4c7e0fb
+  ✅ PENDING → 冲突检测通过 → 派 fixer 建 revert PR(REVERT_PR_OPEN)
+  revert PR=#331 branch=fix/m3c-rb-624029-revert-d4c7e0fb-x
+  ✅ child revert TASK_COMPLETED → stage COMPLETED
+  ✅ revert PR 发现 + L2 票(merge_method=merge)→ AWAITING_APPROVAL
+✓ APPROVED tkt-ea79d302-7ef5-43ad-b155-6b83b051f436
+  approved_by = mergepilot_approver  (DB session_user = 认证登录角色;不可参数伪造)
+  执行期默认 ~1h;Coordinator drain 将在 Gateway claim 后 merge/close。
+  revert merge 后: parent task=ROLLED_BACK revert_sha=fb1e5ce0fd2e
+  ✅ revert PR 真合并 → parent ROLLED_BACK(决策 8:仅真实 merge 后)
+  ✅ revert_result_sha 固化(child run MERGED)
+  ✅ reverify PASS → rollback RECOVERED
+  ✅ parent current_stage=reverified
+  ✅ fixture main 上 BFILE 已还原为 CLEAN(真 revert 生效)
+
+=== 9. reverify FAIL → HOLD,不二回滚 + 重复 PMF 幂等 ===
+✓ APPROVED tkt-7faa7060-af09-4833-bf3d-e70a963aeafc
+  approved_by = mergepilot_approver  (DB session_user = 认证登录角色;不可参数伪造)
+  执行期默认 ~1h;Coordinator drain 将在 Gateway claim 后 merge/close。
+  reverify FAIL → parent=HOLD rollback=HELD
+  ✅ reverify FAIL → parent HOLD(人工升级)
+  ✅ rollback → HELD
+  重复 PMF 后 rollback_count=1
+  ✅ 重复 PMF → UNIQUE(parent_run,bad_sha)幂等,不二回滚(count=1)
+
+=== 10. 未审批 revert:10a.drain 跳过 PENDING  10b.显式 Gateway → CLAIM_MISMATCH ===
+  10a 未审批 drain: revert 票=PENDING child=APPROVAL_PENDING
+  ✅ 10a: drain 跳过 PENDING 票(未 APPROVED 不 merge)
+  ✅ 10a: child run 未被 merge(无审批不执行)
+  10b 显式 merge: CLAIM=CLAIM_MISMATCH  audit CLAIM_MISMATCH=1
+  ✅ 10b: 显式 Gateway merge(PENDING 票)→ CLAIM_MISMATCH
+
+=== 证据 + 审计 ===
+  ✅ 容器日志已正确保存(非空)
+  ✅ 无凭证格式泄漏
+  ✅ 无 AI 标识
+
+=== 收尾 + 硬门 ===
+  ✅ M3-C DB 残留=0(不污染后续回归)
+  fixture 终态: openPRs=0 branches=main
+  ✅ fixture 0 open PR
+  ✅ fixture 仅 main
+
+═══════════════════════════════════════════════
+  M3-C 验收: PASS=33 / EXPECTED=33  FAIL=0
+═══════════════════════════════════════════════

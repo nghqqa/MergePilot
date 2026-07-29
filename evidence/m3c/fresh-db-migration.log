@@ -1,0 +1,459 @@
+=== fresh-DB migration 链验证(2026-07-29T12:21:06Z)===
+DB=m3c_fresh_test_764521  顺序:init m3_state m3b_policy m3b_b4 m3b_b4c m3b_b4c1 m3b_b4c1_1 m3b_b4d1 m3c_state
+注:m3_state/m3b_policy 是 m3b_b4 的依赖(task_runs/approvals),用户清单未列但必需。
+
+fresh DB 已建:m3c_fresh_test_764521
+--- 第一遍:fresh-DB 建链 ---
+CREATE EXTENSION
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+CREATE TABLE
+psql:/tmp/init.sql:84: NOTICE:  ivfflat index created with little data
+DETAIL:  This will cause low recall.
+HINT:  Drop the index until the table has more data.
+CREATE INDEX
+  [build] 1-init (init.sql): rc=0  ✅
+CREATE TABLE
+psql:/tmp/m3_state.sql:23: NOTICE:  column "current_stage" of relation "task_runs" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3_state.sql:24: NOTICE:  column "last_error" of relation "task_runs" already exists, skipping
+ALTER TABLE
+DO
+CREATE TABLE
+CREATE INDEX
+CREATE INDEX
+CREATE TABLE
+CREATE INDEX
+CREATE TABLE
+CREATE INDEX
+CREATE TABLE
+  [build] 2-m3_state (m3_state.sql): rc=0  ✅
+CREATE TABLE
+psql:/tmp/m3b_policy.sql:33: NOTICE:  column "correlation_id" of relation "mcp_calls" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3b_policy.sql:34: NOTICE:  column "phase" of relation "mcp_calls" already exists, skipping
+ALTER TABLE
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+DO
+DO
+CREATE FUNCTION
+DROP TRIGGER
+psql:/tmp/m3b_policy.sql:61: NOTICE:  trigger "mcp_calls_no_update" for relation "mcp_calls" does not exist, skipping
+CREATE TRIGGER
+DROP TRIGGER
+psql:/tmp/m3b_policy.sql:64: NOTICE:  trigger "mcp_calls_no_delete" for relation "mcp_calls" does not exist, skipping
+CREATE TRIGGER
+CREATE TABLE
+CREATE INDEX
+CREATE INDEX
+CREATE TABLE
+CREATE INDEX
+  [build] 3-policy (m3b_policy.sql): rc=0  ✅
+CREATE EXTENSION
+CREATE TABLE
+CREATE INDEX
+ALTER TABLE
+ALTER TABLE
+ALTER TABLE
+ALTER TABLE
+ALTER TABLE
+ALTER TABLE
+ALTER TABLE
+ALTER TABLE
+ALTER TABLE
+psql:/tmp/m3b_b4.sql:34: NOTICE:  constraint "approvals_run_action_attempt_key" of relation "approvals" does not exist, skipping
+ALTER TABLE
+ALTER TABLE
+ALTER TABLE
+ALTER TABLE
+ALTER TABLE
+ALTER TABLE
+DO
+GRANT
+GRANT
+CREATE FUNCTION
+REVOKE
+psql:/tmp/m3b_b4.sql:169: NOTICE:  function l2_pending_list() does not exist, skipping
+DROP FUNCTION
+CREATE FUNCTION
+REVOKE
+CREATE FUNCTION
+REVOKE
+CREATE FUNCTION
+REVOKE
+CREATE FUNCTION
+REVOKE
+CREATE FUNCTION
+REVOKE
+CREATE FUNCTION
+REVOKE
+psql:/tmp/m3b_b4.sql:247: NOTICE:  function l2_reconcile_unknown(text,pg_catalog.bool,text) does not exist, skipping
+DROP FUNCTION
+psql:/tmp/m3b_b4.sql:248: NOTICE:  function l2_reconcile_executing(text,pg_catalog.bool,text) does not exist, skipping
+DROP FUNCTION
+CREATE FUNCTION
+REVOKE
+CREATE FUNCTION
+REVOKE
+CREATE FUNCTION
+REVOKE
+DO
+DO
+ALTER ROLE
+DO
+GRANT
+GRANT
+GRANT
+GRANT
+  [build] 4-b4 (m3b_b4.sql): rc=0  ✅
+psql:/tmp/m3b_b4c.sql:9: NOTICE:  extension "pgcrypto" already exists, skipping
+CREATE EXTENSION
+ALTER TABLE
+ALTER TABLE
+DO
+BEGIN
+DROP INDEX
+psql:/tmp/m3b_b4c.sql:39: NOTICE:  index "uq_active_ticket_per_binding_action" does not exist, skipping
+CREATE INDEX
+COMMIT
+CREATE FUNCTION
+REVOKE
+CREATE FUNCTION
+REVOKE
+DO
+ALTER ROLE
+REVOKE
+REVOKE
+GRANT
+GRANT
+  [build] 5-b4c (m3b_b4c.sql): rc=0  ✅
+ALTER TABLE
+ALTER TABLE
+ALTER TABLE
+ALTER TABLE
+DO
+CREATE INDEX
+ALTER TABLE
+CREATE FUNCTION
+DO
+ALTER ROLE
+REVOKE
+GRANT
+  [build] 6-b4c1 (m3b_b4c1.sql): rc=0  ✅
+CREATE FUNCTION
+DO
+ALTER ROLE
+REVOKE
+GRANT
+  [build] 7-b4c1_1 (m3b_b4c1_1.sql): rc=0  ✅
+CREATE FUNCTION
+DO
+ALTER ROLE
+REVOKE
+GRANT
+  [build] 8-b4d1 (m3b_b4d1.sql): rc=0  ✅
+DO
+ALTER TABLE
+ALTER TABLE
+ALTER TABLE
+DO
+psql:/tmp/m3c_state.sql:46: NOTICE:  index "idx_run_pr_bindings_run" does not exist, skipping
+DROP INDEX
+CREATE TABLE
+psql:/tmp/m3c_state.sql:78: NOTICE:  column "parent_run_id" of relation "rollback_runs" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3c_state.sql:79: NOTICE:  column "revert_run_id" of relation "rollback_runs" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3c_state.sql:80: NOTICE:  column "merge_parent_sha" of relation "rollback_runs" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3c_state.sql:81: NOTICE:  column "revert_branch" of relation "rollback_runs" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3c_state.sql:82: NOTICE:  column "revert_pr_number" of relation "rollback_runs" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3c_state.sql:83: NOTICE:  column "revert_ticket_id" of relation "rollback_runs" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3c_state.sql:84: NOTICE:  column "revert_result_sha" of relation "rollback_runs" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3c_state.sql:85: NOTICE:  column "reverify_verdict" of relation "rollback_runs" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3c_state.sql:86: NOTICE:  column "reverify_event_id" of relation "rollback_runs" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3c_state.sql:87: NOTICE:  column "fail_reason" of relation "rollback_runs" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3c_state.sql:88: NOTICE:  column "diff_summary" of relation "rollback_runs" already exists, skipping
+ALTER TABLE
+DO
+DO
+DO
+DO
+DO
+psql:/tmp/m3c_state.sql:124: NOTICE:  constraint "chk_rollback_status" of relation "rollback_runs" does not exist, skipping
+ALTER TABLE
+ALTER TABLE
+DO
+DO
+DO
+CREATE INDEX
+CREATE INDEX
+DO
+  [build] 9-m3c (m3c_state.sql): rc=0  ✅
+
+--- 约束/函数断言 ---
+  ✅ FK fk_rollback_parent_run 存在 = 1
+  ✅ FK fk_rollback_revert_run 存在 = 1
+  ✅ FK fk_rollback_revert_ticket 存在 = 1
+  ✅ FK fk_task_runs_parent_run 存在 = 1
+  ✅ UNIQUE uq_rollback_parent_merge = 1
+  ✅ UNIQUE uq_run_pr_bindings_run = 1
+  ✅ CHECK chk_rollback_status 存在 = 1
+  ✅ CHECK chk_rollback_rvsha(40hex) = 1
+  ✅ CHECK chk_rollback_verdict = 1
+  ✅ rollback_runs 表存在 = 1
+  ✅ rollback_runs 无 run_id 列(仅 parent/revert) = 0
+  ✅ rollback_runs 有 parent_run_id = 1
+  ✅ rollback_runs 有 revert_run_id = 1
+  ✅ rollback_runs 有 merge_parent_sha = 1
+  ✅ task_runs 有 verify_attempt/rollback_id/parent_run_id = 3
+  ✅ 函数 l2_create_ticket 存在 = 1
+  ✅ 函数 l2_ensure_ticket 存在 = 1
+  ✅ 函数 l2_approve 存在 = 1
+INSERT 0 1
+INSERT 0 1
+  ✅ AWAITING_APPROVAL 可写入(chk_rollback_status 放行)
+
+--- 第二遍:幂等重入(全链重跑,rc 全 0)---
+CREATE EXTENSION
+psql:/tmp/init.sql:5: NOTICE:  extension "vector" already exists, skipping
+psql:/tmp/init.sql:12: NOTICE:  relation "agents" already exists, skipping
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+psql:/tmp/init.sql:23: NOTICE:  relation "tasks" already exists, skipping
+psql:/tmp/init.sql:37: NOTICE:  relation "findings" already exists, skipping
+CREATE TABLE
+psql:/tmp/init.sql:49: NOTICE:  relation "decisions" already exists, skipping
+psql:/tmp/init.sql:62: NOTICE:  relation "audit_events" already exists, skipping
+CREATE TABLE
+CREATE INDEX
+psql:/tmp/init.sql:64: NOTICE:  relation "idx_audit_task" already exists, skipping
+psql:/tmp/init.sql:65: NOTICE:  relation "idx_audit_ts" already exists, skipping
+CREATE INDEX
+psql:/tmp/init.sql:66: NOTICE:  relation "idx_find_task" already exists, skipping
+CREATE INDEX
+CREATE INDEX
+psql:/tmp/init.sql:67: NOTICE:  relation "idx_dec_task" already exists, skipping
+CREATE TABLE
+psql:/tmp/init.sql:83: NOTICE:  relation "knowledge" already exists, skipping
+psql:/tmp/init.sql:84: NOTICE:  relation "idx_knowledge_vec" already exists, skipping
+CREATE INDEX
+psql:/tmp/m3_state.sql:21: NOTICE:  relation "task_runs" already exists, skipping
+CREATE TABLE
+psql:/tmp/m3_state.sql:23: NOTICE:  column "current_stage" of relation "task_runs" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3_state.sql:24: NOTICE:  column "last_error" of relation "task_runs" already exists, skipping
+ALTER TABLE
+DO
+CREATE TABLE
+psql:/tmp/m3_state.sql:48: NOTICE:  relation "stage_runs" already exists, skipping
+CREATE INDEX
+psql:/tmp/m3_state.sql:52: NOTICE:  relation "uq_stage_attempt" already exists, skipping
+psql:/tmp/m3_state.sql:55: NOTICE:  relation "idx_stage_run" already exists, skipping
+psql:/tmp/m3_state.sql:73: NOTICE:  relation "stage_events" already exists, skipping
+psql:/tmp/m3_state.sql:76: NOTICE:  relation "idx_stage_events_run" already exists, skipping
+CREATE INDEX
+CREATE TABLE
+CREATE INDEX
+CREATE TABLE
+psql:/tmp/m3_state.sql:97: NOTICE:  relation "dispatch_outbox" already exists, skipping
+CREATE INDEX
+psql:/tmp/m3_state.sql:100: NOTICE:  relation "idx_outbox_pending" already exists, skipping
+psql:/tmp/m3_state.sql:109: NOTICE:  relation "controller_offsets" already exists, skipping
+CREATE TABLE
+psql:/tmp/m3b_policy.sql:31: NOTICE:  relation "mcp_calls" already exists, skipping
+psql:/tmp/m3b_policy.sql:33: NOTICE:  column "correlation_id" of relation "mcp_calls" already exists, skipping
+CREATE TABLE
+ALTER TABLE
+psql:/tmp/m3b_policy.sql:34: NOTICE:  column "phase" of relation "mcp_calls" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3b_policy.sql:35: NOTICE:  relation "idx_mcp_calls_ts" already exists, skipping
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+psql:/tmp/m3b_policy.sql:36: NOTICE:  relation "idx_mcp_calls_caller" already exists, skipping
+psql:/tmp/m3b_policy.sql:37: NOTICE:  relation "idx_mcp_calls_decision" already exists, skipping
+psql:/tmp/m3b_policy.sql:38: NOTICE:  relation "idx_mcp_calls_corr" already exists, skipping
+DO
+DO
+CREATE FUNCTION
+DROP TRIGGER
+CREATE TRIGGER
+DROP TRIGGER
+CREATE TRIGGER
+CREATE TABLE
+psql:/tmp/m3b_policy.sql:87: NOTICE:  relation "approvals" already exists, skipping
+CREATE INDEX
+psql:/tmp/m3b_policy.sql:88: NOTICE:  relation "idx_approvals_run" already exists, skipping
+psql:/tmp/m3b_policy.sql:89: NOTICE:  relation "idx_approvals_status" already exists, skipping
+CREATE INDEX
+psql:/tmp/m3b_policy.sql:113: NOTICE:  relation "policy_action_outbox" already exists, skipping
+CREATE TABLE
+CREATE INDEX
+psql:/tmp/m3b_policy.sql:114: NOTICE:  relation "idx_pao_status" already exists, skipping
+CREATE EXTENSION
+psql:/tmp/m3b_b4.sql:7: NOTICE:  extension "pgcrypto" already exists, skipping
+CREATE TABLE
+psql:/tmp/m3b_b4.sql:21: NOTICE:  relation "run_pr_bindings" already exists, skipping
+CREATE INDEX
+psql:/tmp/m3b_b4.sql:22: NOTICE:  relation "uq_run_pr_bindings_run" already exists, skipping
+psql:/tmp/m3b_b4.sql:25: NOTICE:  column "binding_id" of relation "approvals" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3b_b4.sql:26: NOTICE:  column "attempt_no" of relation "approvals" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3b_b4.sql:27: NOTICE:  column "canonical_payload" of relation "approvals" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3b_b4.sql:28: NOTICE:  column "args_hash" of relation "approvals" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3b_b4.sql:29: NOTICE:  column "execution_id" of relation "approvals" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3b_b4.sql:30: NOTICE:  column "executing_at" of relation "approvals" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3b_b4.sql:31: NOTICE:  column "approval_expires_at" of relation "approvals" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3b_b4.sql:32: NOTICE:  column "exec_ttl_hours" of relation "approvals" already exists, skipping
+ALTER TABLE
+ALTER TABLE
+ALTER TABLE
+ALTER TABLE
+psql:/tmp/m3b_b4.sql:38: NOTICE:  column "lease_expires_at" of relation "policy_action_outbox" already exists, skipping
+ALTER TABLE
+ALTER TABLE
+ALTER TABLE
+psql:/tmp/m3b_b4.sql:46: NOTICE:  column "execution_id" of relation "mcp_calls" already exists, skipping
+ALTER TABLE
+DO
+GRANT
+GRANT
+CREATE FUNCTION
+REVOKE
+DROP FUNCTION
+CREATE FUNCTION
+REVOKE
+psql:/tmp/m3b_b4.sql:193: ERROR:  cannot remove parameter defaults from existing function
+HINT:  Use DROP FUNCTION l2_approve(text,text) first.
+  ❌ 幂等失败:m3b_b4.sql
+psql:/tmp/m3b_b4c.sql:9: NOTICE:  extension "pgcrypto" already exists, skipping
+CREATE EXTENSION
+psql:/tmp/m3b_b4c.sql:16: NOTICE:  column "approval_required" of relation "task_runs" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3b_b4c.sql:17: NOTICE:  column "l2_discovery_attempts" of relation "task_runs" already exists, skipping
+ALTER TABLE
+DO
+BEGIN
+DROP INDEX
+CREATE INDEX
+COMMIT
+CREATE FUNCTION
+REVOKE
+CREATE FUNCTION
+REVOKE
+DO
+ALTER ROLE
+REVOKE
+REVOKE
+GRANT
+GRANT
+psql:/tmp/m3b_b4c1.sql:14: NOTICE:  column "l2_next_attempt_at" of relation "task_runs" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3b_b4c1.sql:15: NOTICE:  column "l2_retry_count" of relation "task_runs" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3b_b4c1.sql:16: NOTICE:  column "l2_retry_reason" of relation "task_runs" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3b_b4c1.sql:17: NOTICE:  column "l2_discovery_deadline_at" of relation "task_runs" already exists, skipping
+ALTER TABLE
+DO
+CREATE INDEX
+psql:/tmp/m3b_b4c1.sql:33: NOTICE:  relation "idx_task_runs_l2_ready" already exists, skipping
+psql:/tmp/m3b_b4c1.sql:36: NOTICE:  column "last_error_code" of relation "policy_action_outbox" already exists, skipping
+ALTER TABLE
+CREATE FUNCTION
+DO
+ALTER ROLE
+REVOKE
+GRANT
+CREATE FUNCTION
+DO
+ALTER ROLE
+REVOKE
+GRANT
+CREATE FUNCTION
+DO
+ALTER ROLE
+REVOKE
+GRANT
+DO
+psql:/tmp/m3c_state.sql:32: NOTICE:  column "verify_attempt" of relation "task_runs" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3c_state.sql:33: NOTICE:  column "rollback_id" of relation "task_runs" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3c_state.sql:34: NOTICE:  column "parent_run_id" of relation "task_runs" already exists, skipping
+ALTER TABLE
+DO
+DROP INDEX
+psql:/tmp/m3c_state.sql:46: NOTICE:  index "idx_run_pr_bindings_run" does not exist, skipping
+psql:/tmp/m3c_state.sql:75: NOTICE:  relation "rollback_runs" already exists, skipping
+CREATE TABLE
+psql:/tmp/m3c_state.sql:78: NOTICE:  column "parent_run_id" of relation "rollback_runs" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3c_state.sql:79: NOTICE:  column "revert_run_id" of relation "rollback_runs" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3c_state.sql:80: NOTICE:  column "merge_parent_sha" of relation "rollback_runs" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3c_state.sql:81: NOTICE:  column "revert_branch" of relation "rollback_runs" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3c_state.sql:82: NOTICE:  column "revert_pr_number" of relation "rollback_runs" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3c_state.sql:83: NOTICE:  column "revert_ticket_id" of relation "rollback_runs" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3c_state.sql:84: NOTICE:  column "revert_result_sha" of relation "rollback_runs" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3c_state.sql:85: NOTICE:  column "reverify_verdict" of relation "rollback_runs" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3c_state.sql:86: NOTICE:  column "reverify_event_id" of relation "rollback_runs" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3c_state.sql:87: NOTICE:  column "fail_reason" of relation "rollback_runs" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3c_state.sql:88: NOTICE:  column "diff_summary" of relation "rollback_runs" already exists, skipping
+ALTER TABLE
+DO
+DO
+DO
+DO
+DO
+ALTER TABLE
+ALTER TABLE
+DO
+DO
+DO
+psql:/tmp/m3c_state.sql:146: NOTICE:  relation "idx_rollback_active" already exists, skipping
+CREATE INDEX
+CREATE INDEX
+psql:/tmp/m3c_state.sql:147: NOTICE:  relation "idx_rollback_parent" already exists, skipping
+DO
+  幂等重跑:8/9 文件 rc=0
+  ❌ 幂等有失败(1)
+
+═══════════════════════════════════════════════
+  fresh-DB 验收: PASS=28 FAIL=1
+═══════════════════════════════════════════════
+(fresh DB m3c_fresh_test_764521 已清理)

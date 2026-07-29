@@ -1,0 +1,47 @@
+[ctrl] PG connected
+[ctrl] L2_MERGE_ENABLED=on;未终结审批 run=3;Gateway=http://policy-gw-e2e:8083;reconcile_min_age=120s;budget=60s×3
+[ctrl] 启动;PG=audit-pg:5432;Matrix=http://hiclaw-controller:6167;POLL=2s;L2_MERGE_ENABLED=on
+[ctrl][M3C] m3c-legit-624029 rollback CONFLICT → HOLD(get_commit(070b30b126ed) failed: RETRY)
+[ctrl][M3C] m3c-rb-624029 rollback PENDING → 派 fixer(m3c-rb-624029-revert-d4c7e0fb) 建 revert PR(fix/m3c-rb-624029-revert-d4c7e0fb-x,parent=9b6c38430bce)
+[ctrl] Matrix login OK
+[ctrl] outbox #431 Matrix 不可达 → RETRY(5s): 500 Server error — {"errcode":"M_UNKNOWN","error":"non-create event for room of unknown version in !m3c-624029:matrix-local.hiclaw.io:18080"}
+[ctrl] Matrix degraded: 500 Server error — {"errcode":"M_UNKNOWN","error":"non-create event for room of unknown version in !m3c-624029:matrix-local.hiclaw.io:18080"}; backoff=1s (L2 域继续运行)
+[ctrl] outbox #432 Matrix 不可达 → RETRY(5s): 500 Server error — {"errcode":"M_UNKNOWN","error":"non-create event for room of unknown version in !m3c-624029:matrix-local.hiclaw.io:18080"}
+[ctrl] Matrix degraded: 500 Server error — {"errcode":"M_UNKNOWN","error":"non-create event for room of unknown version in !m3c-624029:matrix-local.hiclaw.io:18080"}; backoff=2s (L2 域继续运行)
+[ctrl] outbox #433 Matrix 不可达 → RETRY(5s): 500 Server error — {"errcode":"M_UNKNOWN","error":"non-create event for room of unknown version in !m3c-624029:matrix-local.hiclaw.io:18080"}
+[ctrl] Matrix degraded: 500 Server error — {"errcode":"M_UNKNOWN","error":"non-create event for room of unknown version in !m3c-624029:matrix-local.hiclaw.io:18080"}; backoff=4s (L2 域继续运行)
+[ctrl][M3C] m3c-rb-624029 revert PR#331(child=m3c-rb-624029-revert-d4c7e0fb) → L2 ticket tkt-ea79d302-7ef → AWAITING_APPROVAL
+[ctrl] outbox #431 Matrix 不可达 → RETRY(10s): 500 Server error — {"errcode":"M_UNKNOWN","error":"non-create event for room of unknown version in !m3c-624029:matrix-local.hiclaw.io:18080"}
+[ctrl] Matrix degraded: 500 Server error — {"errcode":"M_UNKNOWN","error":"non-create event for room of unknown version in !m3c-624029:matrix-local.hiclaw.io:18080"}; backoff=8s (L2 域继续运行)
+[ctrl][L2] drain ticket=tkt-ea79d302-7ef action=merge → approval=USED
+[ctrl][M3C] m3c-rb-624029 revert merged(fb1e5ce0fd2e) → REVERTED + 派 reverify
+[ctrl] outbox #431 Matrix 不可达 → RETRY(20s): 500 Server error — {"errcode":"M_UNKNOWN","error":"non-create event for room of unknown version in !m3c-624029:matrix-local.hiclaw.io:18080"}
+[ctrl] Matrix degraded: 500 Server error — {"errcode":"M_UNKNOWN","error":"non-create event for room of unknown version in !m3c-624029:matrix-local.hiclaw.io:18080"}; backoff=16s (L2 域继续运行)
+[ctrl] PG connected
+[ctrl] L2_MERGE_ENABLED=on;未终结审批 run=3;Gateway=http://policy-gw-e2e:8083;reconcile_min_age=120s;budget=60s×3
+[ctrl] 启动;PG=audit-pg:5432;Matrix=http://hiclaw-controller:6167;POLL=2s;L2_MERGE_ENABLED=on
+[ctrl][M3C] m3c-rvfail-624029 rollback PENDING → 派 fixer(m3c-rvfail-624029-revert-489450a6) 建 revert PR(fix/m3c-rvfail-624029-revert-489450a6-x,parent=c24c876bd71f)
+[ctrl] Matrix login OK
+[ctrl] outbox #431 Matrix 不可达 → RETRY(40s): 500 Server error — {"errcode":"M_UNKNOWN","error":"non-create event for room of unknown version in !m3c-624029:matrix-local.hiclaw.io:18080"}
+[ctrl] Matrix degraded: 500 Server error — {"errcode":"M_UNKNOWN","error":"non-create event for room of unknown version in !m3c-624029:matrix-local.hiclaw.io:18080"}; backoff=1s (L2 域继续运行)
+[ctrl] outbox #432 Matrix 不可达 → RETRY(10s): 500 Server error — {"errcode":"M_UNKNOWN","error":"non-create event for room of unknown version in !m3c-624029:matrix-local.hiclaw.io:18080"}
+[ctrl] Matrix degraded: 500 Server error — {"errcode":"M_UNKNOWN","error":"non-create event for room of unknown version in !m3c-624029:matrix-local.hiclaw.io:18080"}; backoff=2s (L2 域继续运行)
+[ctrl][M3C] m3c-rvfail-624029 revert PR#333(child=m3c-rvfail-624029-revert-489450a6) → L2 ticket tkt-7faa7060-af0 → AWAITING_APPROVAL
+[ctrl] outbox #433 Matrix 不可达 → RETRY(10s): 500 Server error — {"errcode":"M_UNKNOWN","error":"non-create event for room of unknown version in !m3c-624029:matrix-local.hiclaw.io:18080"}
+[ctrl] Matrix degraded: 500 Server error — {"errcode":"M_UNKNOWN","error":"non-create event for room of unknown version in !m3c-624029:matrix-local.hiclaw.io:18080"}; backoff=4s (L2 域继续运行)
+[ctrl][L2] drain ticket=tkt-7faa7060-af0 action=merge → approval=USED
+[ctrl][M3C] m3c-rvfail-624029 revert merged(e470ea497258) → REVERTED + 派 reverify
+[ctrl] outbox #431 Matrix 不可达 → RETRY(60s): 500 Server error — {"errcode":"M_UNKNOWN","error":"non-create event for room of unknown version in !m3c-624029:matrix-local.hiclaw.io:18080"}
+[ctrl] Matrix degraded: 500 Server error — {"errcode":"M_UNKNOWN","error":"non-create event for room of unknown version in !m3c-624029:matrix-local.hiclaw.io:18080"}; backoff=8s (L2 域继续运行)
+[ctrl] PG connected
+[ctrl] L2_MERGE_ENABLED=on;未终结审批 run=3;Gateway=http://policy-gw-e2e:8083;reconcile_min_age=120s;budget=60s×3
+[ctrl] 启动;PG=audit-pg:5432;Matrix=http://hiclaw-controller:6167;POLL=2s;L2_MERGE_ENABLED=on
+[ctrl][M3C] m3c-unapv-624029 rollback PENDING → 派 fixer(m3c-unapv-624029-revert-d438a237) 建 revert PR(fix/m3c-unapv-624029-revert-d438a237-x,parent=d08d376cbc79)
+[ctrl] Matrix login OK
+[ctrl] outbox #432 Matrix 不可达 → RETRY(20s): 500 Server error — {"errcode":"M_UNKNOWN","error":"non-create event for room of unknown version in !m3c-624029:matrix-local.hiclaw.io:18080"}
+[ctrl] Matrix degraded: 500 Server error — {"errcode":"M_UNKNOWN","error":"non-create event for room of unknown version in !m3c-624029:matrix-local.hiclaw.io:18080"}; backoff=1s (L2 域继续运行)
+[ctrl] outbox #432 Matrix 不可达 → RETRY(40s): 500 Server error — {"errcode":"M_UNKNOWN","error":"non-create event for room of unknown version in !m3c-624029:matrix-local.hiclaw.io:18080"}
+[ctrl] Matrix degraded: 500 Server error — {"errcode":"M_UNKNOWN","error":"non-create event for room of unknown version in !m3c-624029:matrix-local.hiclaw.io:18080"}; backoff=2s (L2 域继续运行)
+[ctrl][M3C] m3c-unapv-624029 revert PR#335(child=m3c-unapv-624029-revert-d438a237) → L2 ticket tkt-ccc7a7b7-212 → AWAITING_APPROVAL
+[ctrl] outbox #431 Matrix 不可达 → RETRY(60s): 500 Server error — {"errcode":"M_UNKNOWN","error":"non-create event for room of unknown version in !m3c-624029:matrix-local.hiclaw.io:18080"}
+[ctrl] Matrix degraded: 500 Server error — {"errcode":"M_UNKNOWN","error":"non-create event for room of unknown version in !m3c-624029:matrix-local.hiclaw.io:18080"}; backoff=4s (L2 域继续运行)

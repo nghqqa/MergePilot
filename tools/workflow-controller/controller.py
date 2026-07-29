@@ -52,6 +52,11 @@ L2_MAINTENANCE_BUDGET_SECONDS = int(os.environ.get("L2_MAINTENANCE_BUDGET_SECOND
 L2_DISCOVERY_TIMEOUT_SECONDS  = int(os.environ.get("L2_DISCOVERY_TIMEOUT_SECONDS", "300"))
 L2_EXPIRY_BATCH              = int(os.environ.get("L2_EXPIRY_BATCH", "50"))   # B4c.1.4:expiry/stranded 独立 DB 批量上限(不消耗 gateway item budget,受 deadline 门)
 
+# ── M3-C 状态感知失败处理配置 ──
+# 决策 3:MAX_VERIFY_ATTEMPTS = 总验证次数上限(默认 3)。verify FAIL:已验证次数 < MAX → 回退 Fixer 重试;
+#   达到 MAX → HOLD(不自动 CLOSE;CLOSE 是独立人工 L2 流程)。
+MAX_VERIFY_ATTEMPTS = int(os.environ.get("MAX_VERIFY_ATTEMPTS", "3"))
+
 
 def _validate_l2_config():
     """B4c.1.2:数值配置校验(正数/上下限/关系)。非法 raise(startup_assert 转 FATAL,防静默停摆/热循环)。"""
@@ -62,6 +67,7 @@ def _validate_l2_config():
     if L2_DISCOVERY_TIMEOUT_SECONDS < 1: raise ValueError("L2_DISCOVERY_TIMEOUT_SECONDS 须 ≥1")
     if L2_LEASE_SECONDS < 1 or L2_GW_TIMEOUT < 1: raise ValueError("L2_LEASE_SECONDS/L2_GW_TIMEOUT 须 ≥1")
     if L2_EXPIRY_BATCH < 1 or L2_EXPIRY_BATCH > 500: raise ValueError("L2_EXPIRY_BATCH 须 1..500")
+    if MAX_VERIFY_ATTEMPTS < 1: raise ValueError("MAX_VERIFY_ATTEMPTS 须 ≥1")
 
 
 class GatewayOutcome:
@@ -129,7 +135,9 @@ STAGE_TPL = {
     "fix":    "{p}-fix 完成,修复 PR 见 shared/tasks/{p}-fix/。请用 gh-mcp-read.sh 读修复分支逐项复核。完成写 TASK_COMPLETED: {p}-verify。",
 }
 PAT_SUBMIT  = re.compile(r"TASK_SUBMITTED:\s*(\{.*\})", re.I | re.S)
-PAT_COMPLETE = {s: re.compile(rf"TASK_COMPLETED[:\s]*([A-Za-z0-9\-]+)-{s}", re.I) for s in ("review", "fix", "verify")}
+PAT_COMPLETE = {s: re.compile(rf"TASK_COMPLETED[:\s]*([A-Za-z0-9\-]+)-{s}", re.I) for s in ("review", "fix", "verify", "revert", "reverify")}
+# M3-C:结构化 POST_MERGE_VERIFY_FAILED(仅 verifier)—— JSON payload 紧跟冒号后(真实入口,需求 3)
+PAT_PMF = re.compile(r"POST_MERGE_VERIFY_FAILED\s*:\s*(\{.*?\})\s*\Z", re.I | re.S)
 
 class MatrixUnavailable(Exception): pass
 class MatrixRejected(Exception): pass
@@ -232,12 +240,13 @@ def process_event(event_id, room_id, sender, body, ts):
     # 记录到 stage_events(幂等:event_id PK)
     inserted = False
     try:
+        _etype = ("POST_MERGE_VERIFY_FAILED" if PAT_PMF.search(body)
+                  else ("TASK_SUBMITTED" if PAT_SUBMIT.search(body) else "TASK_COMPLETED"))
         cur.execute("""INSERT INTO stage_events(event_id, room_id, sender, event_type, raw_body, body_sha256, status)
                        VALUES(%s, %s, %s, %s, %s, %s, 'RECEIVED')
                        ON CONFLICT (event_id) DO NOTHING
                        RETURNING event_id""",
-                    (event_id, room_id, sender,
-                     "TASK_SUBMITTED" if PAT_SUBMIT.search(body) else "TASK_COMPLETED",
+                    (event_id, room_id, sender, _etype,
                      body[:2000], hashlib.sha256(body.encode()).hexdigest()[:16]))
         row = cur.fetchone()
         inserted = row is not None
@@ -277,6 +286,72 @@ def process_event(event_id, room_id, sender, body, ts):
             mark_error(cur, event_id, str(e)); conn.commit()
         return
 
+    # 1.5 POST_MERGE_VERIFY_FAILED(M3-C 真实入口,需求 3:仅 verifier;校验 room/run/repo/pr/result_sha)
+    #    纯 DB(不在事件事务调 Gateway,与 process_event 其余分支一致)→ 建 rollback_runs(PENDING,parent_run_id)
+    #    + child task_run(revert_run_id,独占 revert 链)。E2E 经 process_event 驱动,不直接 INSERT stage_events。
+    if PAT_PMF.search(body):
+        try:
+            if sender != "verifier":
+                mark_error(cur, event_id, f"POST_MERGE_VERIFY_FAILED from non-verifier sender={sender}"); conn.commit(); return
+            mpmf = PAT_PMF.search(body)
+            try:
+                payload = json.loads(mpmf.group(1))
+            except Exception:
+                mark_error(cur, event_id, "POST_MERGE_VERIFY_FAILED payload 非 JSON"); conn.commit(); return
+            if not isinstance(payload, dict):
+                mark_error(cur, event_id, "POST_MERGE_VERIFY_FAILED payload 非 object"); conn.commit(); return
+            p_run = payload.get("run_id"); p_repo = payload.get("repo")
+            p_pr = payload.get("pr_number"); p_sha = payload.get("result_sha"); p_room = payload.get("room")
+            if not (p_run and p_repo and p_pr and p_sha and room_id):
+                mark_error(cur, event_id, "POST_MERGE_VERIFY_FAILED 缺字段 run/repo/pr/sha/room"); conn.commit(); return
+            if p_room and p_room != room_id:
+                mark_error(cur, event_id, f"room mismatch payload={p_room} event={room_id}"); conn.commit(); return
+            cur.execute("SELECT status, repo, pr_number, room_id FROM task_runs WHERE run_id=%s FOR UPDATE", (p_run,))
+            _t = cur.fetchone()
+            if not _t:
+                mark_error(cur, event_id, f"unknown run_id={p_run}"); conn.commit(); return
+            t_status, t_repo, t_pr, t_room = _t
+            if t_status != "MERGED":
+                mark_error(cur, event_id, f"task status={t_status} != MERGED"); conn.commit(); return
+            if t_repo != p_repo or int(t_pr or 0) != int(p_pr):
+                mark_error(cur, event_id, f"repo/pr mismatch task={t_repo}#{t_pr} event={p_repo}#{p_pr}"); conn.commit(); return
+            if t_room and t_room != room_id:
+                mark_error(cur, event_id, f"task room mismatch task={t_room} event={room_id}"); conn.commit(); return
+            cur.execute("SELECT result_sha FROM approvals WHERE run_id=%s AND action='merge' AND status='USED' ORDER BY used_at DESC LIMIT 1", (p_run,))
+            _a = cur.fetchone()
+            recorded = _a[0] if _a else None
+            if not recorded or recorded != p_sha:
+                mark_error(cur, event_id, f"result_sha mismatch event={p_sha} recorded={recorded} (forged/spurious, no rollback)")
+                print(f"[ctrl][M3C] {p_run} POST_MERGE_VERIFY_FAILED result_sha mismatch → 拒(不回滚)")
+                conn.commit(); return
+            # 幂等:同 (parent_run,bad_sha) 已有 rollback → DUPLICATE
+            cur.execute("SELECT 1 FROM rollback_runs WHERE parent_run_id=%s AND reverted_merge_sha=%s", (p_run, recorded))
+            if cur.fetchone():
+                mark_duplicate(cur, event_id); update_event_meta(cur, event_id, p_run, "post_merge_fail"); conn.commit(); return
+            child_run = f"{p_run}-revert-{recorded[:8]}"
+            rb_id = "rb-" + str(uuid.uuid4())
+            # 先建 child task_run(parent_run_id 已存在;task_runs.rollback_id 软指向无 FK),
+            # 再建 rollback_runs(revert_run_id FK → task_runs 要求 child 先存在)
+            cur.execute("""INSERT INTO task_runs(run_id, parent_run_id, room_id, repo, pr_number, status, current_stage, approval_required, rollback_id)
+                           VALUES(%s, %s, %s, %s, %s, 'RUNNING', 'rollback_revert', TRUE, %s)
+                           ON CONFLICT (run_id) DO NOTHING""",
+                        (child_run, p_run, room_id, p_repo, int(p_pr), rb_id))
+            cur.execute("""INSERT INTO rollback_runs(rollback_id, parent_run_id, revert_run_id, reverted_merge_sha, repo, pr_number, trigger_event_id, status)
+                           VALUES(%s, %s, %s, %s, %s, %s, %s, 'PENDING')
+                           ON CONFLICT (parent_run_id, reverted_merge_sha) DO NOTHING""",
+                        (rb_id, p_run, child_run, recorded, p_repo, int(p_pr), event_id))
+            cur.execute("UPDATE task_runs SET status='FAIL', current_stage='rollback_pending', rollback_id=%s, last_error='POST_MERGE_VERIFY_FAILED', updated_at=now() WHERE run_id=%s AND status='MERGED'",
+                        (rb_id, p_run))
+            mark_processed(cur, event_id)
+            update_event_meta(cur, event_id, p_run, "post_merge_fail")
+            conn.commit()
+            print(f"[ctrl][M3C] {p_run} POST_MERGE_VERIFY_FAILED (verifier,校验通过) → rollback PENDING (bad merge {recorded[:12]}) child={child_run}")
+        except Exception as e:
+            conn.rollback()
+            print(f"[ctrl][M3C] POST_MERGE_VERIFY_FAILED ingest err: {e}")
+            mark_error(cur, event_id, str(e)[:300]); conn.commit()
+        return
+
     # 2. TASK_COMPLETED(review/fix)
     for stage in ("review", "fix"):
         mt = PAT_COMPLETE[stage].search(body)
@@ -305,13 +380,14 @@ def process_event(event_id, room_id, sender, body, ts):
             ns = NEXT_STAGE.get(stage)
             if ns:
                 na = NEXT_AGENT[stage]
+                _next_attempt = current[1]  # M3-C: attempt 传播(支持 verify FAIL 回退重试;正常流程 current[1]=1 不变)
                 cur.execute("""INSERT INTO stage_runs(run_id, stage, agent, attempt, status)
-                               VALUES(%s, %s, %s, 1, 'PENDING_DISPATCH')
-                               ON CONFLICT(run_id, stage, attempt) DO NOTHING""", (run_id, ns, na))
+                               VALUES(%s, %s, %s, %s, 'PENDING_DISPATCH')
+                               ON CONFLICT(run_id, stage, attempt) DO NOTHING""", (run_id, ns, na, _next_attempt))
                 cur.execute("""INSERT INTO dispatch_outbox(idempotency_key, run_id, room_id, target_agent, target_stage, attempt, body)
-                               VALUES(%s, %s, %s, %s, %s, 1, %s)
+                               VALUES(%s, %s, %s, %s, %s, %s, %s)
                                ON CONFLICT(idempotency_key) DO NOTHING""", (
-                    f"{run_id}:{ns}:1", run_id, room_id, na, ns,
+                    f"{run_id}:{ns}:{_next_attempt}", run_id, room_id, na, ns, _next_attempt,
                     STAGE_TPL[stage].format(p=run_id)))
                 cur.execute("UPDATE task_runs SET current_stage=%s, status='RUNNING', updated_at=now() WHERE run_id=%s", (ns, run_id))
             mark_processed(cur, event_id)
@@ -376,9 +452,36 @@ def process_event(event_id, room_id, sender, body, ts):
                                 (verdict, run_id))
                     _task_status = "PASS"
             else:
-                cur.execute("UPDATE task_runs SET status='HOLD', verdict=%s, updated_at=now() WHERE run_id=%s",
-                            (verdict, run_id))
-                _task_status = "HOLD"
+                # M3-C(决策 3+7):verify FAIL 原子分支 —— 同事务递增 verify_attempt + 决定 retry/HOLD。
+                #   并发幂等:task 已 FOR UPDATE 锁(本函数上方)+ stage_runs(run_id,'fix',attempt) UNIQUE CAS。
+                #   仅处理"未合并"verify FAIL(回退/HOLD);**已合并 FAIL 由结构化 POST_MERGE_VERIFY_FAILED
+                #   事件触发回滚**(见 process_post_merge_failures),普通 Matrix 文本 FAIL 不触发回滚。
+                cur.execute("SELECT verify_attempt FROM task_runs WHERE run_id=%s", (run_id,))
+                _va_row = cur.fetchone()
+                _va = _va_row[0] if _va_row else 0
+                _new_va = _va + 1
+                cur.execute("SELECT attempt FROM stage_runs WHERE id=%s", (current[0],))
+                _vrow = cur.fetchone()
+                _ver_attempt = _vrow[0] if _vrow else 1
+                if _new_va < MAX_VERIFY_ATTEMPTS:
+                    # 回退 Fixer:建 fix attempt = verify_attempt+1 stage_run(UNIQUE CAS)+ dispatch(幂等 key)
+                    _next_fix = _ver_attempt + 1
+                    cur.execute("""INSERT INTO stage_runs(run_id, stage, agent, attempt, status)
+                                   VALUES(%s, 'fix', 'fixer', %s, 'PENDING_DISPATCH')
+                                   ON CONFLICT (run_id, stage, attempt) DO NOTHING""", (run_id, _next_fix))
+                    cur.execute("""INSERT INTO dispatch_outbox(idempotency_key, run_id, room_id, target_agent, target_stage, attempt, body)
+                                   VALUES(%s, %s, %s, 'fixer', 'fix', %s, %s)
+                                   ON CONFLICT (idempotency_key) DO NOTHING""",
+                                (f"{run_id}:fix:{_next_fix}", run_id, room_id, _next_fix,
+                                 f"verify FAIL(第 {_new_va}/{MAX_VERIFY_ATTEMPTS} 次),回退修复。完成写 TASK_COMPLETED: {run_id}-fix。"))
+                    cur.execute("UPDATE task_runs SET verify_attempt=%s, status='RUNNING', current_stage='fix', verdict=%s, last_error=%s, updated_at=now() WHERE run_id=%s",
+                                (_new_va, verdict, f"verify FAIL; retry fix attempt={_next_fix} ({_new_va}/{MAX_VERIFY_ATTEMPTS})", run_id))
+                    _task_status = f"RUNNING(retry fix attempt={_next_fix},{_new_va}/{MAX_VERIFY_ATTEMPTS})"
+                else:
+                    # 达上限 → HOLD(决策 3:不自动 CLOSE;CLOSE 是独立人工 L2 流程)
+                    cur.execute("UPDATE task_runs SET verify_attempt=%s, status='HOLD', current_stage='verify_max_hold', verdict=%s, last_error=%s, updated_at=now() WHERE run_id=%s",
+                                (_new_va, verdict, f"verify FAIL reached MAX_VERIFY_ATTEMPTS={MAX_VERIFY_ATTEMPTS}", run_id))
+                    _task_status = f"HOLD(verify max={MAX_VERIFY_ATTEMPTS})"
             mark_processed(cur, event_id)
             update_event_meta(cur, event_id, run_id, "verify")
             conn.commit()
@@ -386,6 +489,69 @@ def process_event(event_id, room_id, sender, body, ts):
         except Exception as e:
             conn.rollback()
             mark_error(cur, event_id, str(e)); conn.commit()
+        return
+
+    # 4. TASK_COMPLETED(reverify) — M3-C:reverify PASS→RECOVERED(parent 复活)/FAIL→HELD(不二回滚,决策 9)
+    #    reverify 派发在 **parent run**(rollback.revert_run_id 是 child;reverify 验 main 恢复 → 归属原 run)。
+    mtr = PAT_COMPLETE["reverify"].search(body)
+    if mtr and sender == "verifier":
+        rv_run = mtr.group(1)   # parent run
+        vd = re.search(r"(?mi)^\s*VERDICT\s*=\s*(PASS|FAIL|BLOCKED)\s*$", body)
+        verdict = vd.group(1).upper() if vd else "FAIL"
+        try:
+            cur.execute("SELECT rollback_id, revert_run_id FROM rollback_runs WHERE parent_run_id=%s AND status='REVERIFYING' ORDER BY created_at DESC LIMIT 1 FOR UPDATE", (rv_run,))
+            rb = cur.fetchone()
+            if not rb:
+                mark_duplicate(cur, event_id); update_event_meta(cur, event_id, rv_run, "reverify"); conn.commit(); return
+            rb_id, child_run = rb[0], rb[1]
+            if verdict == "PASS":
+                cur.execute("UPDATE rollback_runs SET status='RECOVERED', reverify_verdict='PASS', reverify_event_id=%s, updated_at=now() WHERE rollback_id=%s", (event_id, rb_id))
+                cur.execute("UPDATE task_runs SET status='PASS', current_stage='reverified', last_error='rollback recovered (reverify PASS)', updated_at=now() WHERE run_id=%s", (rv_run,))
+                cur.execute("UPDATE task_runs SET current_stage='reverified', last_error='rollback recovered (reverify PASS)', updated_at=now() WHERE run_id=%s", (child_run,))
+                _rv = "RECOVERED"
+            else:
+                # 决策 9:reverify FAIL → HOLD/人工升级,不生成第二回滚
+                cur.execute("UPDATE rollback_runs SET status='HELD', reverify_verdict='FAIL', reverify_event_id=%s, updated_at=now() WHERE rollback_id=%s", (event_id, rb_id))
+                cur.execute("UPDATE task_runs SET status='HOLD', current_stage='reverify_failed', last_error='reverify FAIL after rollback (human escalation, no 2nd rollback)', updated_at=now() WHERE run_id=%s", (rv_run,))
+                _rv = "HELD(reverify FAIL)"
+            mark_processed(cur, event_id)
+            update_event_meta(cur, event_id, rv_run, "reverify")
+            conn.commit()
+            print(f"[ctrl][M3C] {rv_run}-reverify VERDICT={verdict} → rollback {_rv}")
+        except Exception as e:
+            conn.rollback()
+            mark_error(cur, event_id, str(e)); conn.commit()
+        return
+
+    # 5. TASK_COMPLETED(revert) — child fixer 完成 revert PR 创建(阶段完成只记账;后续由 process_rollback_advance 发现 PR 并建票)
+    mrv = PAT_COMPLETE["revert"].search(body)
+    if mrv and sender == "fixer":
+        run_id = mrv.group(1)
+        try:
+            cur.execute("SELECT status FROM task_runs WHERE run_id=%s FOR UPDATE", (run_id,))
+            task = cur.fetchone()
+            if not task:
+                mark_error(cur, event_id, f"unknown run_id={run_id}"); conn.commit(); return
+            cur.execute("""SELECT id FROM stage_runs
+                           WHERE run_id=%s AND stage='revert'
+                             AND status IN ('RUNNING','PENDING_DISPATCH','DISPATCHED')
+                           ORDER BY attempt DESC LIMIT 1 FOR UPDATE""", (run_id,))
+            current = cur.fetchone()
+            if not current:
+                mark_duplicate(cur, event_id)
+                update_event_meta(cur, event_id, run_id, "revert")
+                conn.commit()
+                print(f"[ctrl] {run_id}-revert 重复事件(已 COMPLETED)→ DUPLICATE")
+                return
+            cur.execute("UPDATE stage_runs SET status='COMPLETED', completed_at=now() WHERE id=%s", (current[0],))
+            mark_processed(cur, event_id)
+            update_event_meta(cur, event_id, run_id, "revert")
+            conn.commit()
+            print(f"[ctrl][M3C] {run_id}-revert → stage COMPLETED")
+        except Exception as e:
+            conn.rollback()
+            print(f"[ctrl][M3C] revert completion err: {e}")
+            mark_error(cur, event_id, str(e)[:300]); conn.commit()
         return
 
     # 非匹配事件
@@ -481,7 +647,7 @@ def consume_events():
             body = evt.get("content", {}).get("body", "") or ""
             ts = evt.get("origin_server_ts", 0)
 
-            if "TASK_SUBMITTED" in body or "TASK_COMPLETED" in body:
+            if "TASK_SUBMITTED" in body or "TASK_COMPLETED" in body or "POST_MERGE_VERIFY_FAILED" in body:
                 process_event(eid, room_id, sender, body, ts)
                 event_count += 1
 
@@ -1288,7 +1454,270 @@ def reconcile_l2(deadline=None, budget=None):
             _advance_outbox_by_approval(oid, ticket_id, action, GatewayOutcome("SUCCESS", "", "reconcile stranded convergence"))
 
 
-# ── 主循环(故障域分离,复审 #3;L2 维护始终运行,B4c-0.1 #3)──
+# ════════════════════════════════════════════════════════════════════
+# M3-C · 状态感知失败处理 + 回滚(POST_MERGE_VERIFY_FAILED → revert child run → ROLLED_BACK → reverify)
+# 架构(决策 2):revert 走 **child run** 模型 —— 原 run(parent)保留原 binding;rollback 建 deterministic
+#   child task_run(parent_run_id 回链),独占 revert binding/ticket/L2 执行链(走正常 drain → MERGED)。
+#   run_pr_bindings UNIQUE(run_id) 保留(child run_id 独立)。
+# 决策:2(仅结构化事件触发)/1(逆向 + 冲突检测)/6(UNIQUE(parent_run_id,reverted_merge_sha))/
+#      4(merge_method=merge)/8(L2 gate,真实 merge 后才 REVERTED)/9(reverify FAIL→HOLD,不二回滚)。
+# 需求 4:changed-files / merge-parent / 恢复内容一律 GitHub 权威(get_commit/get_file_contents/list_commits),
+#        **绝不信任 event.files 或 fixer 自报内容**;EmbeddedResource 真实内容由 gateway_client 解析。
+# 需求 5:L2 前重新验证 main==bad merge、revert PR head 内容==parent;冲突/读失败/不支持 diff → HOLD(fail-closed)。
+# 不改 B4/B5 边界:复用 l2_ensure_ticket / drain_l2_outbox / policy_action_outbox / approvals。
+# ════════════════════════════════════════════════════════════════════
+def _m3c_set_hold_cur(cur, rollback_id, run_id, status, reason):
+    """fail-closed(同事务):rollback → CONFLICT/UNSUPPORTED;**parent task** → HOLD(决策 1/5)。"""
+    cs = "rollback_conflict_hold" if status == "CONFLICT" else "rollback_unsupported_hold"
+    cur.execute("UPDATE rollback_runs SET status=%s, fail_reason=%s, updated_at=now() WHERE rollback_id=%s",
+                (status, reason[:200], rollback_id))
+    cur.execute("UPDATE task_runs SET status='HOLD', current_stage=%s, last_error=%s, updated_at=now() WHERE run_id=%s",
+                (cs, f"rollback {status}: {reason}"[:300], run_id))
+
+def _m3c_set_hold(rollback_id, run_id, status, reason):
+    """fail-closed(独立事务,供 Gateway 调用后)。"""
+    conn = ensure_pg()
+    try:
+        with conn.cursor() as cur:
+            _m3c_set_hold_cur(cur, rollback_id, run_id, status, reason)
+        conn.commit()
+        print(f"[ctrl][M3C] {run_id} rollback {status} → HOLD({reason[:80]})")
+    except Exception:
+        conn.rollback()
+
+def _m3c_diff_verdicts(owner, repo_name, files, parent_sha, deadline=None):
+    """需求 1+5:逐 changed-file 判定 REVERT/CONFLICT/UNSUPPORTED(GitHub 权威内容,parent_sha 处可读=可还原)。
+    - modified/removed:parent 有内容且可读 → REVERT;读失败 → UNSUPPORTED(fail-closed)
+    - added:parent 应 MISSING(revert 需删除)→ REVERT;parent 存在 → UNSUPPORTED
+    - 其他(renamed/copied/...)→ UNSUPPORTED
+    返回 [(path, verdict)]。"""
+    import gateway_client
+    out = []
+    for path, status in files:
+        if not path:
+            continue
+        if status in ("modified", "removed"):
+            pst, _ptxt, _ = gateway_client.gateway_get_file_text(owner, repo_name, path, sha=parent_sha, timeout=L2_GW_TIMEOUT)
+            out.append((path, "REVERT") if pst == "OK" else (path, "UNSUPPORTED"))
+        elif status == "added":
+            pst, _ptxt, _ = gateway_client.gateway_get_file_text(owner, repo_name, path, sha=parent_sha, timeout=L2_GW_TIMEOUT)
+            out.append((path, "REVERT") if pst == "MISSING" else (path, "UNSUPPORTED"))
+        else:
+            out.append((path, "UNSUPPORTED"))
+    return out
+
+def _m3c_verify_revert_contents(owner, repo_name, files, parent_sha, revert_branch):
+    """需求 5(L2 前重验):revert PR head 内容 == parent 内容(逐 changed file)。
+    返回 None(全一致/可放行)或首个不一致 path(冲突/读失败 → 调用方 HOLD)。"""
+    import gateway_client
+    for path, status in files:
+        if not path:
+            continue
+        pst, ptxt, _ = gateway_client.gateway_get_file_text(owner, repo_name, path, sha=parent_sha, timeout=L2_GW_TIMEOUT)
+        rst, rtxt, _ = gateway_client.gateway_get_file_text(owner, repo_name, path, ref=f"refs/heads/{revert_branch}", timeout=L2_GW_TIMEOUT)
+        if status == "added":
+            # added 文件 revert 应删除:parent 与 revert-head 都须 MISSING
+            if pst != "MISSING" or rst != "MISSING":
+                return path
+            continue
+        # modified/removed:内容须一致(读失败亦视为不一致 → HOLD)
+        if pst != "OK" or rst != "OK" or (ptxt or "") != (rtxt or ""):
+            return path
+    return None
+
+def process_rollback(deadline=None, budget=None):
+    """PENDING:GitHub 权威派生 changed-files + merge-parent(需求 4);校验 main==bad merge(需求 5);
+    冲突/不支持/读失败 → HOLD(fail-closed);否则派 fixer(**child run**)建 revert PR → REVERT_PR_OPEN。"""
+    import gateway_client
+    if _l2_gw_degraded():
+        return
+    conn = ensure_pg()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""SELECT rb.rollback_id, rb.parent_run_id, rb.revert_run_id, rb.reverted_merge_sha, rb.repo, t.room_id
+                           FROM rollback_runs rb
+                           JOIN task_runs t ON t.run_id=rb.parent_run_id
+                           WHERE rb.status='PENDING' ORDER BY rb.created_at LIMIT %s""", (L2_MAINTENANCE_MAX_ITEMS,))
+            pendings = cur.fetchall()
+        conn.commit()
+    except Exception:
+        conn.rollback(); return
+    for rb_id, parent_run, child_run, bad_sha, repo, room_id in pendings:
+        if _budget_exhausted(deadline): break
+        owner, _, repo_name = repo.partition("/")
+        if not room_id:
+            _m3c_set_hold(rb_id, parent_run, "CONFLICT", "missing parent room_id")
+            continue
+        # 需求 4:changed files 来自 get_commit(GitHub 权威,不信 event.files)
+        cst, cdict = gateway_client.gateway_get_commit(owner, repo_name, bad_sha, timeout=L2_GW_TIMEOUT)
+        if cst != "OK":
+            _m3c_set_hold(rb_id, parent_run, "CONFLICT", f"get_commit({bad_sha[:12]}) failed: {cst}"); continue
+        files = [(f.get("filename"), f.get("status")) for f in cdict.get("files", []) if isinstance(f, dict)]
+        # 需求 5:main==bad merge(main tip 必须就是 bad_sha;否则 main 已动 → HOLD)
+        mst, mc = gateway_client.gateway_list_commits(owner, repo_name, sha="main", per_page=1, timeout=L2_GW_TIMEOUT)
+        _tip = (mc[0].get("sha", "")[:12] if (mst == "OK" and mc) else "none")
+        if mst != "OK" or not mc or mc[0].get("sha") != bad_sha:
+            _m3c_set_hold(rb_id, parent_run, "CONFLICT", f"main tip != bad_sha (list_commits(main)={mst} tip={_tip})"); continue
+        # 需求 4:merge parent(get_commit 不返 parents → list_commits(bad_sha) 第 2 条)
+        pst, pc = gateway_client.gateway_list_commits(owner, repo_name, sha=bad_sha, per_page=2, timeout=L2_GW_TIMEOUT, deadline=deadline)
+        if pst != "OK" or len(pc) < 2 or pc[0].get("sha") != bad_sha or not pc[1].get("sha"):
+            _m3c_set_hold(rb_id, parent_run, "CONFLICT", f"cannot derive merge parent (list_commits={pst} n={len(pc) if pst == 'OK' else '?'})"); continue
+        parent_sha = pc[1]["sha"]
+        verdicts = _m3c_diff_verdicts(owner, repo_name, files, parent_sha, deadline)
+        blocked = [(p, v) for (p, v) in verdicts if v != "REVERT"]
+        revertible = [p for (p, v) in verdicts if v == "REVERT"]
+        conn = ensure_pg()
+        try:
+            with conn.cursor() as cur:
+                if blocked:
+                    bv = blocked[0][1]
+                    _m3c_set_hold_cur(cur, rb_id, parent_run, "CONFLICT" if bv == "CONFLICT" else "UNSUPPORTED",
+                                      f"{bv} on {blocked[0][0]}: {','.join(p for p, _ in blocked)[:120]}")
+                    conn.commit()
+                    print(f"[ctrl][M3C] {parent_run} rollback {bv} on {blocked[0][0]} → HOLD(不回滚)")
+                    continue
+                # 派 fixer(child run)建 revert PR;revert_branch=fix/<child_run>-x(命中 gateway_list_prs(child) 前缀)
+                rb_branch = f"fix/{child_run}-x"
+                cur.execute("""INSERT INTO stage_runs(run_id, stage, agent, attempt, status)
+                               VALUES(%s, 'revert', 'fixer', 1, 'PENDING_DISPATCH')
+                               ON CONFLICT(run_id, stage, attempt) DO NOTHING""", (child_run,))
+                cur.execute("""UPDATE rollback_runs SET status='REVERT_PR_OPEN', revert_branch=%s, merge_parent_sha=%s, diff_summary=%s, updated_at=now() WHERE rollback_id=%s""",
+                            (rb_branch, parent_sha,
+                             json.dumps({"bad": bad_sha[:12], "parent": parent_sha[:12],
+                                         "files": [{"path": p, "status": s} for p, s in files]}, ensure_ascii=False)[:500], rb_id))
+                cur.execute("""INSERT INTO dispatch_outbox(idempotency_key, run_id, room_id, target_agent, target_stage, attempt, body)
+                               VALUES(%s, %s, %s, 'fixer', 'revert', 1, %s) ON CONFLICT (idempotency_key) DO NOTHING""",
+                            (f"{child_run}:revert:{bad_sha[:8]}", child_run, room_id,
+                             f"POST_MERGE_VERIFY_FAILED: 建 revert PR。分支={rb_branch},base=main,merge_method=merge。"
+                             f"坏 merge={bad_sha[:12]},其 parent={parent_sha[:12]}。将以下文件还原为 parent 内容:{','.join(revertible)}。"
+                             f"完成写 TASK_COMPLETED: {child_run}-revert。"))
+                cur.execute("UPDATE task_runs SET current_stage='rollback_revert_dispatched', updated_at=now() WHERE run_id=%s", (child_run,))
+            conn.commit()
+            print(f"[ctrl][M3C] {parent_run} rollback PENDING → 派 fixer({child_run}) 建 revert PR({rb_branch},parent={parent_sha[:12]})")
+        except Exception as e:
+            conn.rollback(); print(f"[ctrl][M3C] rollback PENDING err {parent_run}: {e}")
+
+def process_rollback_advance(deadline=None):
+    """REVERT_PR_OPEN → (需求 5 L2 前重验 main==bad merge + revert head==parent)→ 发现 revert PR +
+    child binding + L2 merge 票 → child run APPROVAL_PENDING/l2_awaiting_approval → AWAITING_APPROVAL。
+    AWAITING_APPROVAL + child run MERGED(真实 merge,决策 8)→ REVERTED + 派 reverify(parent run)→ REVERIFYING。"""
+    import gateway_client
+    if _l2_gw_degraded():
+        return
+    conn = ensure_pg()
+    # ── REVERT_PR_OPEN ──
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""SELECT rb.rollback_id, rb.parent_run_id, rb.revert_run_id, rb.reverted_merge_sha, rb.repo,
+                                  rb.revert_branch, rb.merge_parent_sha, t.room_id
+                           FROM rollback_runs rb
+                           JOIN task_runs t ON t.run_id=rb.revert_run_id
+                           WHERE rb.status='REVERT_PR_OPEN'
+                           ORDER BY rb.created_at
+                           LIMIT %s""", (L2_MAINTENANCE_MAX_ITEMS,))
+            opens = cur.fetchall()
+        conn.commit()
+    except Exception:
+        conn.rollback(); opens = []
+    for rb_id, parent_run, child_run, bad_sha, repo, rb_branch, parent_sha, room_id in opens:
+        if _budget_exhausted(deadline): break
+        owner, _, repo_name = repo.partition("/")
+        if not room_id:
+            _m3c_set_hold(rb_id, parent_run, "CONFLICT", "missing child room_id")
+            continue
+        # 需求 5:L2 前重新验证 main==bad merge(main tip == bad_sha)
+        mst, mc = gateway_client.gateway_list_commits(owner, repo_name, sha="main", per_page=1, timeout=L2_GW_TIMEOUT)
+        if mst != "OK" or not mc or mc[0].get("sha") != bad_sha:
+            _m3c_set_hold(rb_id, parent_run, "CONFLICT", f"L2-pre main tip != bad_sha ({mst})"); continue
+        # 发现 child 的 revert PR(gateway_list_prs 按 fix/<child_run>- 前缀)
+        lstatus, prs = gateway_client.gateway_list_prs(owner, repo_name, child_run, timeout=L2_GW_TIMEOUT, deadline=deadline)
+        if lstatus == "AMBIGUOUS":
+            _m3c_set_hold(rb_id, parent_run, "CONFLICT", f"ambiguous revert PRs for {child_run}")
+            continue
+        if lstatus != "FOUND" or not prs:
+            continue   # 尚无 PR / RETRY → 下轮
+        revert_prs = [p for p in prs if rb_branch and str(p.get("head", {}).get("ref", "")) == rb_branch] or list(prs)
+        if len(revert_prs) != 1:
+            _m3c_set_hold(rb_id, parent_run, "CONFLICT", f"unexpected revert PR fanout for {child_run}")
+            continue
+        pr_num = revert_prs[0]["number"]
+        rstatus, prd = gateway_client.gateway_read_pr(owner, repo_name, pr_num, timeout=L2_GW_TIMEOUT)
+        head_sha = prd.get("head_sha") if isinstance(prd, dict) else None
+        if rstatus != "OK" or not isinstance(prd, dict) or prd.get("state") != "open" or not isinstance(head_sha, str) or not head_sha:
+            continue
+        # 需求 5:revert PR head 内容 == parent 内容(逐 changed file;读失败/不一致 → HOLD)
+        cst, cdict = gateway_client.gateway_get_commit(owner, repo_name, bad_sha, timeout=L2_GW_TIMEOUT)
+        cfiles = [(f.get("filename"), f.get("status")) for f in (cdict.get("files", []) if cst == "OK" and isinstance(cdict, dict) else []) if isinstance(f, dict)]
+        if parent_sha and cfiles:
+            mismatch = _m3c_verify_revert_contents(owner, repo_name, cfiles, parent_sha, rb_branch)
+            if mismatch:
+                _m3c_set_hold(rb_id, parent_run, "CONFLICT", f"revert head != parent on {mismatch}"); continue
+        # child binding + L2 merge 票(merge_method=merge,决策 4)
+        conn = ensure_pg()
+        try:
+            with conn.cursor() as cur:
+                bid = "bnd-" + child_run
+                cur.execute("""INSERT INTO run_pr_bindings(binding_id, run_id, repo, pr_number, fix_branch, base_branch, head_sha)
+                               VALUES(%s, %s, %s, %s, %s, 'main', %s)
+                               ON CONFLICT (binding_id) DO UPDATE SET head_sha=EXCLUDED.head_sha, pr_number=EXCLUDED.pr_number""",
+                            (bid, child_run, repo, pr_num, rb_branch, head_sha))
+                payload = {"owner": owner, "repo": repo_name, "pullNumber": int(pr_num), "commit_title": f"revert {bad_sha[:12]}", "merge_method": "merge"}
+                ahash = gateway_client.canonical_args_hash(payload)
+                cur.execute("SELECT l2_ensure_ticket(%s, 'merge', %s::jsonb, %s, 24, 1)", (bid, json.dumps(payload), ahash))
+                tkt = cur.fetchone()[0]
+                cur.execute("UPDATE rollback_runs SET status='AWAITING_APPROVAL', revert_pr_number=%s, revert_ticket_id=%s, updated_at=now() WHERE rollback_id=%s", (pr_num, tkt, rb_id))
+                # child run 进 L2 审批链(drain MERGED CAS 命中:approval_required+APPROVAL_PENDING+l2_awaiting_approval)
+                cur.execute("UPDATE task_runs SET status='APPROVAL_PENDING', current_stage='l2_awaiting_approval', approval_required=TRUE, l2_next_attempt_at=now(), updated_at=now() WHERE run_id=%s", (child_run,))
+            conn.commit()
+            print(f"[ctrl][M3C] {parent_run} revert PR#{pr_num}(child={child_run}) → L2 ticket {tkt[:16]} → AWAITING_APPROVAL")
+        except psycopg2.Error as e:
+            conn.rollback()
+            if getattr(e, "pgcode", None) == "22023":
+                _m3c_set_hold(rb_id, parent_run, "CONFLICT", f"L2 ensure_ticket 22023: {str(e)[:160]}")
+            else:
+                print(f"[ctrl][M3C] rollback REVERT_PR_OPEN db err {parent_run}: {e}")
+        except Exception as e:
+            conn.rollback(); print(f"[ctrl][M3C] rollback REVERT_PR_OPEN err {parent_run}: {e}")
+
+    # ── AWAITING_APPROVAL + child run MERGED(真实 merge 后,决策 8)→ REVERTED + 派 reverify(parent)──
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""SELECT rb.rollback_id, rb.parent_run_id, rb.revert_run_id, rb.revert_ticket_id, t.room_id
+                           FROM rollback_runs rb
+                           JOIN task_runs t ON t.run_id=rb.revert_run_id
+                           WHERE rb.status='AWAITING_APPROVAL' AND t.status='MERGED' LIMIT %s""", (L2_MAINTENANCE_MAX_ITEMS,))
+            used = cur.fetchall()
+        conn.commit()
+    except Exception:
+        conn.rollback(); used = []
+    for rb_id, parent_run, child_run, tkt, room_id in used:
+        if _budget_exhausted(deadline): break
+        if not room_id:
+            _m3c_set_hold(rb_id, parent_run, "CONFLICT", "missing reverify room_id")
+            continue
+        conn = ensure_pg()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT result_sha FROM approvals WHERE ticket_id=%s", (tkt,))
+                _r = cur.fetchone()
+                rsha = _r[0] if _r else None
+                cur.execute("UPDATE rollback_runs SET status='REVERTED', revert_result_sha=%s, updated_at=now() WHERE rollback_id=%s AND status='AWAITING_APPROVAL'", (rsha, rb_id))
+                if cur.rowcount == 1 and rsha:
+                    # parent run:FAIL→ROLLED_BACK(坏 merge 已撤销,等 reverify);child run:MERGED→reverify stage
+                    cur.execute("UPDATE task_runs SET status='ROLLED_BACK', current_stage='reverify', last_error='revert merged; reverify pending', updated_at=now() WHERE run_id=%s", (parent_run,))
+                    cur.execute("UPDATE task_runs SET current_stage='reverify', last_error='revert merged; reverify pending', updated_at=now() WHERE run_id=%s", (child_run,))
+                    cur.execute("""INSERT INTO dispatch_outbox(idempotency_key, run_id, room_id, target_agent, target_stage, attempt, body)
+                                   VALUES(%s, %s, %s, 'verifier', 'reverify', 1, %s) ON CONFLICT (idempotency_key) DO NOTHING""",
+                                (f"{parent_run}:reverify:{rsha[:8]}", parent_run, room_id,
+                                 f"revert 已 merge({rsha[:12]}),重新验证 main 是否恢复。完成写 TASK_COMPLETED: {parent_run}-reverify + VERDICT=PASS/FAIL。"))
+                    cur.execute("UPDATE rollback_runs SET status='REVERIFYING' WHERE rollback_id=%s", (rb_id,))
+            conn.commit()
+            print(f"[ctrl][M3C] {parent_run} revert merged({(rsha or '')[:12]}) → REVERTED + 派 reverify")
+        except Exception as e:
+            conn.rollback(); print(f"[ctrl][M3C] rollback ROLLED_BACK err {parent_run}: {e}")
+
+
+
 #   域 A(PG-驱动 L2):绑定/建票/drain/对账 —— 始终运行(按 approval_required 自过滤),Matrix 挂也照跑。
 #   域 B(Matrix):login/consume/dispatch —— 独立;Matrix 不可用不阻断 L2 恢复。
 def run_forever():
@@ -1303,6 +1732,8 @@ def run_forever():
             initiate_l2_pending(l2_deadline, l2_budget)
             drain_l2_outbox(l2_deadline, l2_budget)
             reconcile_l2(l2_deadline, l2_budget)
+            process_rollback(l2_deadline, l2_budget)          # M3-C: PENDING→冲突检测/派 fixer 建 revert PR
+            process_rollback_advance(l2_deadline)  # M3-C: revert PR→L2 票;child MERGED→REVERTED+reverify
         except psycopg2.OperationalError as e:
             print(f"[ctrl] L2 域 PG degraded: {e}; reconnecting in {backoff}s")
             reset_pg()

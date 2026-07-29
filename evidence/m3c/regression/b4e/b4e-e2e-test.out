@@ -1,0 +1,161 @@
+═══════════════════════════════════════════════
+  B4e 总 E2E 验收(fixture=nghqqa/MergePilot-e2e-fixture)
+═══════════════════════════════════════════════
+6c1ff823c411bebfc5f1781422b01a1b5501842645339f72e25666469c994dc9
+policy-gw-e2e | Up 1 second (health: starting)
+--- 启动日志(尾)---
+[gateway] starting on 0.0.0.0:8083  AUDIT=on
+INFO:     Started server process [1]
+INFO:     Waiting for application startup.
+[gateway] policy_version=e2e-fixture-20260728-v1 policy_hash=8a1f5f0cb829ff3e
+[gateway] roles=['coordinator', 'fixer', 'reviewer', 'verifier'] upstream=http://github-mcp:8082/sse
+[gateway] upstream ready: 44 tools (sample: ['add_comment_to_pending_review', 'add_issue_comment', 'add_reply_to_pull_request_comment', 'assign_copilot_to_issue', 'create_branch'])
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8083 (Press CTRL+C to quit)
+psql:/tmp/m3b_b4c1.sql:14: NOTICE:  column "l2_next_attempt_at" of relation "task_runs" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3b_b4c1.sql:15: NOTICE:  column "l2_retry_count" of relation "task_runs" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3b_b4c1.sql:16: NOTICE:  column "l2_retry_reason" of relation "task_runs" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3b_b4c1.sql:17: NOTICE:  column "l2_discovery_deadline_at" of relation "task_runs" already exists, skipping
+ALTER TABLE
+DO
+CREATE INDEX
+psql:/tmp/m3b_b4c1.sql:33: NOTICE:  relation "idx_task_runs_l2_ready" already exists, skipping
+psql:/tmp/m3b_b4c1.sql:36: NOTICE:  column "last_error_code" of relation "policy_action_outbox" already exists, skipping
+ALTER TABLE
+CREATE FUNCTION
+DO
+ALTER ROLE
+REVOKE
+GRANT
+CREATE FUNCTION
+DO
+ALTER ROLE
+REVOKE
+GRANT
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 957B done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/python:3.12-slim
+#2 DONE 7.4s
+
+#3 [internal] load .dockerignore
+#3 transferring context: 2B 0.0s done
+#3 DONE 0.1s
+
+#4 [1/7] FROM docker.io/library/python:3.12-slim@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de
+#4 DONE 0.0s
+
+#5 [internal] load build context
+#5 transferring context: 157B 0.0s done
+#5 DONE 0.1s
+
+#6 [2/7] RUN pip install --no-cache-dir       psycopg2-binary==2.9.12       mcp==1.28.1       httpx==0.28.1       anyio==4.14.2
+#6 CACHED
+
+#7 [3/7] COPY controller.py /app/controller.py
+#7 CACHED
+
+#8 [4/7] COPY gateway_client.py /app/gateway_client.py
+#8 CACHED
+
+#9 [5/7] COPY test_gateway_schema.py /app/test_gateway_schema.py
+#9 CACHED
+
+#10 [6/7] COPY test_startup_pgwait.py /app/test_startup_pgwait.py
+#10 CACHED
+
+#11 [7/7] WORKDIR /app
+#11 CACHED
+
+#12 exporting to image
+#12 exporting layers done
+#12 writing image sha256:23cc92d74b06e62fe97ebb1c3c2ced73d44dc06cbe08d469aac0e80f9862e6e5 done
+#12 naming to docker.io/library/mergepilot-controller:latest done
+#12 DONE 0.0s
+  ✅ 镜像 controller.py == 仓库(无漂移)
+  ✅ 镜像 gateway_client.py == 仓库(无漂移)
+
+=== 1. 全链 E2E: review→fix→verify→discover→ticket→approve.sh→drain→MERGED ===
+  run=b4e-e2e-513 pr=#136 branch=fix/b4e-e2e-513-x
+  ✅ TASK_SUBMITTED(L2=on)→ task RUNNING/review(approval_required=t)
+  ✅ approval_required=TRUE(L2 链生效)
+  ✅ review TASK_COMPLETED → fix(reviewer)
+  ✅ fix TASK_COMPLETED → verify(fixer)
+  ✅ verify VERDICT=PASS → APPROVAL_PENDING/l2_binding(verifier)
+  ✅ initiate_l2_pending: l2_binding → l2_awaiting_approval(发现真 fix PR + 建票)
+  ✅ binding 写入(head_sha=92e174375676,权威读回真 PR)
+  ✅ ticket 建票(单张)
+✓ APPROVED tkt-86057cb9-2b6e-4924-894d-aecb7f4e6567
+  approved_by = mergepilot_approver  (DB session_user = 认证登录角色;不可参数伪造)
+  执行期默认 ~1h;Coordinator drain 将在 Gateway claim 后 merge/close。
+  ✅ approve.sh → APPROVED
+  ✅ approval: PENDING→APPROVED
+  ✅ approved_by=session_user(mergepilot_approver,不可伪造)
+  approval=USED outbox=SUCCEEDED task=MERGED stage=l2_done sha=44c8a79f26fe claims=1 ghPR=MERGED
+  ✅ approval → USED
+  ✅ outbox → SUCCEEDED
+  ✅ task → MERGED
+  ✅ result_sha 固化(merge commit 44c8a79f26fe)
+  ✅ 恰好 1 次 L2_CLAIMED(审计可追溯)
+  ✅ fixture PR → MERGED(真 GitHub 写)
+  stage_runs: fix:COMPLETED, review:COMPLETED, verify:COMPLETED
+  ✅ stage_runs review/fix/verify 全 COMPLETED(全 Agent 链)
+
+=== 2. lease 崩溃恢复:DISPATCHED+lease → 真容器 restart → MERGED ===
+✓ APPROVED tkt-4886464d-b91f-4e4a-bab2-13bc4c303e2d
+  approved_by = mergepilot_approver  (DB session_user = 认证登录角色;不可参数伪造)
+  执行期默认 ~1h;Coordinator drain 将在 Gateway claim 后 merge/close。
+  崩溃点: outbox=DISPATCHED lease_set=t attempts=1(应 DISPATCHED/t/1)
+  ✅ crash 后 outbox 滞留 DISPATCHED
+  ✅ lease 已写入(领取时)
+  ✅ attempts=1(首次领取)
+  恢复后: task=MERGED approval=USED outbox=SUCCEEDED attempts=2 sha=32fcc617f0bb claims=1
+  ✅ 真容器 restart 恢复滞留 DISPATCHED → MERGED
+  ✅ attempts 1→2(lease 重派计数)
+  ✅ approval → USED
+  ✅ 恰好 1 次 L2_CLAIMED(恢复未重 merge)
+
+=== 3a. 超时 EXECUTING(未合并)→ reconcile → FAILED → HOLD ===
+  approval=FAILED outbox=FAILED task=HOLD
+  ✅ EXECUTING 超时(未合并)→ FAILED
+  ✅ outbox → FAILED(收敛)
+  ✅ task → HOLD
+
+=== 3b. UNKNOWN(已合并)→ USED → MERGED + 绝不重 merge ===
+  ✅ UNKNOWN(已合并)→ USED
+  ✅ task → MERGED(收敛)
+  L2_CLAIMED: 收敛前=1  收敛后再 drain/reconcile=1
+  ✅ 绝不重新 merge(L2_CLAIMED 不变=1)
+
+=== 4/5. Gateway 降级→恢复(breaker)+ Matrix 非 L2 循环存活 ===
+✓ APPROVED tkt-246d2a9c-b040-4f42-9ced-13f3ccf3bb1e
+  approved_by = mergepilot_approver  (DB session_user = 认证登录角色;不可参数伪造)
+  执行期默认 ~1h;Coordinator drain 将在 Gateway claim 后 merge/close。
+  降级期: approval=APPROVED outbox=PENDING_DISPATCH next_retry_future=f claims=0 ctrl=running
+  ✅ 降级期 approval 留 APPROVED(未终结)
+  ✅ 降级期 0 次 L2_CLAIMED(breaker 跳过,未撞)
+  ✅ 降级期 Controller 进程存活
+  ✅ Controller 日志见 breaker/DEGRADED(Loop A 降级)
+  Matrix 派发: room=!W8HACodKff9thT3YyI:matrix-local.hiclaw.io:18080 dispatch_outbox(DISPATCHED|RETRY)=1 eid=1
+  ✅ 降级期 Loop B 真 Matrix 派发成功(matrix_event_id,Matrix 非 L2 循环存活)
+  恢复后: task=MERGED sha=203f7b8e5722 claims=1
+  ✅ Gateway 恢复 → breaker 自动恢复 → MERGED
+  ✅ 恰好 1 次 L2_CLAIMED(恢复后单次 merge)
+
+=== 6. 证据固化 ===
+  ✅ 无凭证泄漏
+
+=== 7. 收尾(fixture 0 open PR / 仅 main)+ gate ===
+  fixture 终态: openPRs=0 branches=main
+  ✅ fixture 0 open PR(干净)
+  ✅ fixture 仅 main(0 fix 分支)
+
+═══════════════════════════════════════════════
+  B4e 验收: PASS=43 FAIL=0
+═══════════════════════════════════════════════

@@ -96,6 +96,134 @@ def _result_text(res):
         return ""
 
 
+def _content_text_parts(res):
+    """M3-C(需求 4):提取**全部**可读文本 —— 不只 TextContent.text(那是 github-mcp 的 summary),
+    还含 EmbeddedResource.resource 的真实文件内容(TextResourceContents.text / BlobResourceContents.blob 解码)。
+    返回 [(origin, text)]:origin ∈ {'summary','resource'}。github-mcp get_file_contents 返回
+    [TextContent('successfully downloaded … (SHA: <sha>)'), EmbeddedResource(resource=TextResourceContents(text=<内容>))]。
+    旧 _result_text 只取第一项 summary → 丢真实内容(M3-C 回滚必须读内容做 parent==revert-head 比对)。"""
+    out = []
+    for c in (res.content or []):
+        try:
+            if hasattr(c, "text") and isinstance(getattr(c, "text", None), str):
+                out.append(("summary", c.text))
+                continue
+        except Exception:
+            pass
+        # EmbeddedResource:resource 为 TextResourceContents(.text) 或 BlobResourceContents(.blob base64)
+        res_obj = getattr(c, "resource", None)
+        if res_obj is not None:
+            txt = getattr(res_obj, "text", None)
+            if isinstance(txt, str):
+                out.append(("resource", txt))
+                continue
+            blob = getattr(res_obj, "blob", None)
+            if isinstance(blob, str):
+                try:
+                    import base64
+                    out.append(("resource", base64.b64decode(blob).decode("utf-8", "replace")))
+                except Exception:
+                    out.append(("resource", blob))   # 解码失败 → 返回原始(base64),调用方可判异常
+                continue
+    return out
+
+
+def _result_all_text(res):
+    """拼接全部文本内容(summary + resource),供 JSON 解析(get_commit)或全文检索。"""
+    return "\n".join(t for _, t in _content_text_parts(res))
+
+
+def gateway_get_commit(owner, repo, sha, timeout=60):
+    """M3-C(需求 4):get_commit → (status, commit_dict)。github-mcp 返回单 TextContent(JSON):
+    {sha, files:[{filename,status,additions,deletions,...}], stats, commit{message}}。
+    **注意**:本 github-mcp 实现**不返回 parents**(已实测确认);merge parent 由 gateway_list_commits 派生。
+    status:OK(解析成功)/ RETRY(网络/解析失败)。"""
+    try:
+        text, _ = gateway_call("get_commit", {"owner": owner, "repo": repo, "sha": sha}, timeout)
+    except GatewayError:
+        return ("RETRY", None)
+    try:
+        d = json.loads(text)
+    except Exception:
+        return ("RETRY", None)
+    if not isinstance(d, dict) or not isinstance(d.get("sha"), str):
+        return ("RETRY", None)
+    return ("OK", d)
+
+
+def gateway_list_commits(owner, repo, sha=None, per_page=5, branch=None, timeout=60, deadline=None):
+    """M3-C(需求 4):list_commits → (status, [commit_dict])。用于派生 bad-merge 的 **parent commit**
+    (get_commit 不返回 parents)。list_commits(sha=bad_sha, perPage=2):commits[0]==bad_sha,commits[1]=parent。
+    status:OK(非空 list)/ NOT_FOUND(空)/ RETRY(网络/解析)。"""
+    args = {"owner": owner, "repo": repo, "perPage": int(per_page), "page": 1}
+    if sha:
+        args["sha"] = sha
+    elif branch:
+        args["sha"] = branch
+    _to = min(timeout, max(deadline - time.monotonic(), 0)) if deadline else timeout
+    try:
+        text, _ = gateway_call("list_commits", args, _to)
+    except GatewayError:
+        return ("RETRY", [])
+    try:
+        d = json.loads(text)
+    except Exception:
+        return ("RETRY", [])
+    if isinstance(d, dict):
+        d = d.get("commits") or d.get("data") or []
+    if not isinstance(d, list):
+        return ("RETRY", [])
+    if not d:
+        return ("NOT_FOUND", [])
+    # 每项必须有 sha(str)
+    for c in d:
+        if not isinstance(c, dict) or not isinstance(c.get("sha"), str):
+            return ("RETRY", [])
+    if sha and re.fullmatch(r"[0-9a-fA-F]{7,40}", str(sha)):
+        if not d[0].get("sha", "").lower().startswith(str(sha).lower()):
+            return ("RETRY", [])
+    return ("OK", d)
+
+
+def gateway_get_file_text(owner, repo, path, ref=None, sha=None, timeout=60):
+    """M3-C(需求 4):get_file_contents → (status, content_text, blob_sha)。**真实内容来自 EmbeddedResource**,
+    SHA 从 summary 正则。ref=refs/heads/<branch>;sha=commit SHA。
+    status:OK(有内容)/ MISSING(404/文件不存在)/ ERROR(读失败)/ UNSUPPORTED(目录/非文本资源)。"""
+    args = {"owner": owner, "repo": repo, "path": path}
+    if sha:
+        args["sha"] = sha
+    elif ref:
+        args["ref"] = ref
+    try:
+        res = asyncio.run(_call_tool("get_file_contents", args, timeout))
+    except asyncio.TimeoutError:
+        return ("ERROR", None, None)
+    except GatewayError:
+        return ("ERROR", None, None)
+    except Exception:
+        return ("ERROR", None, None)
+    if bool(getattr(res, "is_error", False)):
+        txt = _result_all_text(res)
+        return ("MISSING", None, None) if ("404" in txt or "Not Found" in txt) else ("ERROR", None, None)
+    parts = _content_text_parts(res)
+    content = None
+    for origin, t in parts:
+        if origin == "resource":
+            content = t
+            break
+    if content is None:
+        # 无 resource(可能是目录 listing 或上游只回 summary)→ 不安全,不臆断内容
+        return ("UNSUPPORTED", None, None)
+    blob_sha = None
+    for origin, t in parts:
+        if origin == "summary":
+            m = re.search(r"SHA:\s*([0-9a-f]{7,40})", t)
+            if m:
+                blob_sha = m.group(1)
+            break
+    return ("OK", content, blob_sha)
+
+
 def gateway_call(tool, args, timeout=60):
     """调一个 Gateway 工具。返回 (text, is_error)。失败抛 B4c.1 typed 异常:
     GatewayDenied(票据级确定性拒绝)/ GatewayUnavailable(瞬时)/ GatewayGlobalDegraded(全局配置故障)。

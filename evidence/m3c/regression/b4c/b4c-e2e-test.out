@@ -1,0 +1,135 @@
+═══════════════════════════════════════════════
+  B4c-5 Controller 闭环验收(并发/崩溃/E2E)
+═══════════════════════════════════════════════
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 957B done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/python:3.12-slim
+#2 DONE 4.2s
+
+#3 [internal] load .dockerignore
+#3 transferring context: 2B done
+#3 DONE 0.0s
+
+#4 [1/7] FROM docker.io/library/python:3.12-slim@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de
+#4 DONE 0.0s
+
+#5 [internal] load build context
+#5 transferring context: 157B 0.0s done
+#5 DONE 0.0s
+
+#6 [3/7] COPY controller.py /app/controller.py
+#6 CACHED
+
+#7 [4/7] COPY gateway_client.py /app/gateway_client.py
+#7 CACHED
+
+#8 [5/7] COPY test_gateway_schema.py /app/test_gateway_schema.py
+#8 CACHED
+
+#9 [6/7] COPY test_startup_pgwait.py /app/test_startup_pgwait.py
+#9 CACHED
+
+#10 [2/7] RUN pip install --no-cache-dir       psycopg2-binary==2.9.12       mcp==1.28.1       httpx==0.28.1       anyio==4.14.2
+#10 CACHED
+
+#11 [7/7] WORKDIR /app
+#11 CACHED
+
+#12 exporting to image
+#12 exporting layers done
+#12 writing image sha256:c9f0920d14bec3bff9a89cda48564ffba064e14f8ae8803919b3a6daac94b974 done
+#12 naming to docker.io/library/mergepilot-controller:latest 0.0s done
+#12 DONE 0.0s
+  ✅ controller.py 容器内==仓库
+  ✅ gateway_client.py 容器内==仓库
+
+=== 1. 全链 E2E: l2_binding → 发现+建票 → approve → drain → MERGED ===
+  分支 fix/b4c5-e2e-141131-x 建好
+  commit 加好
+  run=b4c5-e2e-141131 pr=#135
+  ✅ initiate_l2_pending: l2_binding → l2_awaiting_approval(发现+建票)
+  ✅ binding 写入(head_sha=264f7d858cf7)
+  ✅ ticket 建票(单张)
+  ✅ l2_approve: PENDING → APPROVED
+  approval=USED outbox=SUCCEEDED task=MERGED stage=l2_done sha=69922078a680 claims=1
+  ✅ approval → USED
+  ✅ outbox → SUCCEEDED
+  ✅ task → MERGED
+  ✅ current_stage → l2_done
+  ✅ result_sha 固化(merge commit 69922078a680)
+  ✅ 恰好 1 次 L2_CLAIMED(审计可追溯)
+
+=== 2. 超时 EXECUTING 对账(reconcile_executing;未合并→FAILED / 已合并→USED) ===
+  分支 fix/b4c5-execfail-141131-x 建好
+  commit 加好
+  approval=FAILED outbox=FAILED task=HOLD
+  ✅ EXECUTING 超时(未合并)→ FAILED
+  ✅ outbox → FAILED(收敛)
+  ✅ task → HOLD
+  分支 fix/b4c5-execused-141131-x 建好
+  commit 加好
+  approval=USED outbox=SUCCEEDED task=MERGED
+  ✅ EXECUTING 超时(已合并)→ USED
+  ✅ outbox → SUCCEEDED(收敛)
+  ✅ task → MERGED(收敛)
+
+=== 3. UNKNOWN 对账 + 绝不重新 merge(L2_CLAIMED 计数不变) ===
+  分支 fix/b4c5-noremerge-141131-x 建好
+  commit 加好
+  ✅ UNKNOWN(已合并)→ USED
+  ✅ task → MERGED
+  L2_CLAIMED 计数: 收敛前=1  收敛后再 drain/reconcile 后=1
+  ✅ 绝不重新 merge(L2_CLAIMED 计数不变=1)
+  ✅ USED 后建第二张票被拒(uq_active_ticket_per_binding_action,总数不变=1)
+
+=== 4. Controller 级 DENY:exec-TTL 过期 → EXPIRED → HOLD(0 merge) ===
+  分支 fix/b4c5-denyexpire-141131-x 建好
+  commit 加好
+  approval=EXPIRED outbox=FAILED task=HOLD claims=0
+  ✅ exec-TTL 过期 → EXPIRED(Controller 拒执行)
+  ✅ outbox → FAILED
+  ✅ task → HOLD(未 MERGED)
+  ✅ 0 次 L2_CLAIMED(从未 merge)
+
+=== 5. Gateway CLAIM_MISMATCH 异常 → 不 claim / 不 merge ===
+  分支 fix/b4c5-mismatch-141131-x 建好
+  commit 加好
+  approval=APPROVED task=APPROVAL_PENDING deny=1 claims=0
+  ✅ CLAIM_MISMATCH: 票仍 APPROVED(未 USED)
+  ✅ task 未推进(不 MERGED)
+  ✅ Gateway 拒 claim(CLAIM_MISMATCH 或 0 claim)
+
+=== 6. DISPATCHED lease 后 Controller 崩溃 → 真容器 restart 恢复 ===
+  分支 fix/b4c5-crash-141131-x 建好
+  commit 加好
+  崩溃点: outbox=DISPATCHED lease_set=t attempts=1(应 DISPATCHED/t/1)
+  ✅ crash 后 outbox 滞留 DISPATCHED
+  ✅ lease 已写入(领取时)
+  ✅ attempts=1(首次领取)
+  恢复后: task=MERGED approval=USED outbox=SUCCEEDED attempts=2 sha=37c99b15a992 claims=1
+  ✅ 真容器 restart 恢复滞留 DISPATCHED → MERGED
+  ✅ attempts 1→2(lease 重派计数)
+  ✅ approval → USED
+  ✅ 恰好 1 次 L2_CLAIMED(恢复未重 merge)
+
+=== 7. 双 Controller 并发:1 binding / 1 ticket / 1 merge ===
+  分支 fix/b4c5-conc-141131-x 建好
+  commit 加好
+  并发发现+建票后: bindings=1 tickets=1 stage=l2_awaiting_approval
+  ✅ 并发下恰好 1 binding(uq_run_pr_bindings_run)
+  ✅ 并发下恰好 1 ticket(uq_active_ticket_per_binding_action)
+  并发 drain 后: task=MERGED attempts=1 claims=1
+  ✅ 并发 drain → MERGED
+  ✅ 并发领取只 +1(FOR UPDATE SKIP LOCKED 互斥)
+  ✅ 并发下恰好 1 次 L2_CLAIMED(无重复 merge)
+
+=== 证据固化 ===
+  ✅ 无凭证泄漏
+
+═══════════════════════════════════════════════
+  B4c-5 验收: PASS=42 FAIL=0
+═══════════════════════════════════════════════

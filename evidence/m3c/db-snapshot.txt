@@ -1,0 +1,12 @@
+m3c-dedup-624029|RUNNING|fix|0||||
+m3c-forged-624029|MERGED|l2_done|0||||
+m3c-legit-624029|HOLD|rollback_conflict_hold|0|CONFLICT|070b30b126edac389fa952c1a1ff4b52a2af6995||
+m3c-legit-624029-revert-070b30b1|RUNNING|rollback_revert|0||||
+m3c-max-624029|HOLD|verify_max_hold|3||||
+m3c-rb-624029|PASS|reverified|0|RECOVERED|d4c7e0fbc4bc6703d25866888f7c45457ea2f35d|fb1e5ce0fd2e8e27877f5af11a137ea5c301844a|PASS
+m3c-rb-624029-revert-d4c7e0fb|MERGED|reverified|0||||
+m3c-retry-624029|RUNNING|fix|2||||
+m3c-rvfail-624029|HOLD|reverify_failed|0|HELD|489450a667bbfd992335126ed7c8c84c0bcedc1e|e470ea497258706c234a22faed2608d40b680481|FAIL
+m3c-rvfail-624029-revert-489450a6|MERGED|reverify|0||||
+m3c-unapv-624029|FAIL|rollback_pending|0|AWAITING_APPROVAL|d438a23703f2e368c6ca82c02d920ea15cb96102||
+m3c-unapv-624029-revert-d438a237|APPROVAL_PENDING|l2_awaiting_approval|0||||
