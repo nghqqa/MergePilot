@@ -1,0 +1,21 @@
+=== B5 加固版最终验证 v2(5 项复审修复后) ===
+
+[1] bash -n: SYNTAX_OK
+
+[2] git diff --check: exit=0 clean(仅 CRLF 警告,属 Windows autocrlf 正常)
+    逐文件 trailing-ws 扫描:  行(应为 0)
+
+[3] 连续两次运行(最终版,见 two-runs.md):
+    RUN1: exit=0, PASS=50/EXPECTED=50/FAIL=0, 硬门 PASS
+    RUN2: exit=0, PASS=50/EXPECTED=50/FAIL=0, 硬门 PASS
+
+[4] 复审 5 项修复落地的证据:
+    Fix1 clock_timestamp(TEST_START/TEST_END): 5 处
+    Fix2 精确计数(8 reason_code 精确比较 + DENY total=13): 落地(见 scenario 8)
+    Fix3 独立 upstream(无自证循环):   独立直连 upstream(github-mcp)工具数: 44
+    Fix4 TAMPER 窗口限定: 1 处
+    Fix5 真实 worker hiclab-worker-*:   探针 worker(hiclaw-worker-fixer)网络: hiclab-net hiclaw-net
+
+[5] fixture 终态: open PRs=0, branches=main
+[6] 生产仓 nghqqa/MergePilot 残留: b5 open PRs=0, fix/b5 分支=0
+[7] AI 标识: 无

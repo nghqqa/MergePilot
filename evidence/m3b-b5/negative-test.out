@@ -1,0 +1,126 @@
+═══════════════════════════════════════════════
+  B5 负向证据验收 · 加固版(fixture=nghqqa/MergePilot-e2e-fixture)
+═══════════════════════════════════════════════
+  TEST_START=2026-07-29 01:55:02.583258+00 (审计窗口下界,clock_timestamp)
+
+=== 1. 直连拒:真实 worker ∉ mcp-backend-net;github-mcp 仅在后端网 → 不可达 ===
+  github-mcp 网络: mcp-backend-net
+  探针 worker(hiclaw-worker-fixer)网络: hiclab-net hiclaw-net
+  mcp-backend-net 成员: policy-gw github-mcp policy-gw-e2e
+  worker 直连探针: UNREACHABLE: gaierror: [Errno -3] Temporary failure in name resolution
+  ✅ github-mcp ∈ mcp-backend-net(PAT 仅在后端网)
+  ✅ 真实 worker(hiclaw-worker-fixer)∉ mcp-backend-net(无后端直连权)
+  ✅ 真实 worker(hiclaw-worker-fixer)直连 github-mcp:8082 → UNREACHABLE(网络隔离,PAT 不出后端网)
+3655e1b3cc55e9c0c7b1cdc50191d2f1cf147bd10e4f05356e29add26e5bb176
+policy-gw-e2e | Up 1 second (health: starting)
+--- 启动日志(尾)---
+[gateway] starting on 0.0.0.0:8083  AUDIT=on
+INFO:     Started server process [1]
+INFO:     Waiting for application startup.
+[gateway] policy_version=e2e-fixture-20260728-v1 policy_hash=8a1f5f0cb829ff3e
+[gateway] roles=['coordinator', 'fixer', 'reviewer', 'verifier'] upstream=http://github-mcp:8082/sse
+[gateway] upstream ready: 44 tools (sample: ['add_comment_to_pending_review', 'add_issue_comment', 'add_reply_to_pull_request_comment', 'assign_copilot_to_issue', 'create_branch'])
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8083 (Press CTRL+C to quit)
+  ✅ Gateway(mcp-backend-net)可达上游(对比:仅 Gateway 能到 github-mcp)
+psql:/tmp/m3b_b4c1.sql:14: NOTICE:  column "l2_next_attempt_at" of relation "task_runs" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3b_b4c1.sql:15: NOTICE:  column "l2_retry_count" of relation "task_runs" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3b_b4c1.sql:16: NOTICE:  column "l2_retry_reason" of relation "task_runs" already exists, skipping
+ALTER TABLE
+psql:/tmp/m3b_b4c1.sql:17: NOTICE:  column "l2_discovery_deadline_at" of relation "task_runs" already exists, skipping
+ALTER TABLE
+DO
+CREATE INDEX
+psql:/tmp/m3b_b4c1.sql:33: NOTICE:  relation "idx_task_runs_l2_ready" already exists, skipping
+psql:/tmp/m3b_b4c1.sql:36: NOTICE:  column "last_error_code" of relation "policy_action_outbox" already exists, skipping
+ALTER TABLE
+CREATE FUNCTION
+DO
+ALTER ROLE
+REVOKE
+GRANT
+CREATE FUNCTION
+DO
+ALTER ROLE
+REVOKE
+GRANT
+
+=== 2. list 过滤:各角色完整集合精确比较 + 非 allowlist repo 拒 ===
+  独立直连 upstream(github-mcp)工具数: 44
+  ✅ 各角色 list_tools == policy allowlist ∩ 独立 upstream(精确集合比较,无自证循环)
+  ✅ 非 allowlist repo → REPO_NOT_ALLOWED
+
+=== 3. 跨角色拒 ===
+  cross-role 探针: HTTP 401 {"error":"POLICY_DENIED","reason_code":"ROLE_PATH_MISMATCH"}
+  ✅ fixer token 上 /coordinator/sse → 401 ROLE_PATH_MISMATCH
+  ✅ fixer 调 merge_pull_request → TOOL_NOT_ALLOWED
+
+=== 4. fixer 写约束(精确 reason code;0 GitHub 副作用)===
+  ✅ fixer delete_file(l2)→ TOOL_NOT_ALLOWED
+  ✅ fixer create_branch 非 fix/ → BRANCH_NOT_FIX_PREFIX
+  ✅ fixer 写 main → 精确 BRANCH_PROTECTED(不接受替代)
+  ✅ fixer 写 .env → PATH_DENIED(denylist)
+  ✅ fixer update_pr 带 base(非 title/body)→ PR_FIELD_NOT_ALLOWED
+  ✅ 被拒分支 evil-not-fix 不存在(GitHub 零副作用)
+
+=== 5. 伪造票拒:不存在 ticket + 真实 APPROVED 票 args 篡改 → CLAIM_MISMATCH(0 merge)===
+  ✅ 不存在 ticket → CLAIM_MISMATCH(l2_claim_ticket CAS 0 行)
+  ✅ 伪造票 0 次 L2_CLAIMED(未消耗)
+  ✅ 真实 APPROVED 票 + 篡改 args(commit_title)→ CLAIM_MISMATCH(args_hash CAS 不匹配)
+  ✅ 篡改后票仍 APPROVED(未消耗,EXECUTING 未迁移)
+  ✅ 篡改票 0 次 L2_CLAIMED(未消耗)
+  ✅ fixture PR#206 仍 OPEN(篡改票 0 merge,零副作用)
+
+=== 6a. 过期票拒:expires_at≤now → CLAIM_MISMATCH(票未消耗)===
+  ✅ 过期 ticket → CLAIM_MISMATCH
+  ✅ 过期票未消耗(status 仍 APPROVED)
+  ✅ fixture PR#207 仍 OPEN(过期票 0 merge)
+
+=== 6b. 重复票拒:USED 票再 claim → CLAIM_MISMATCH ===
+  ✅ USED ticket 再 claim → CLAIM_MISMATCH(status!=APPROVED)
+  ✅ fixture PR#208 仍 OPEN(重复 claim 0 merge)
+
+=== 7. 合法票只执行一次:APPROVED→merge→USED;再 claim → CLAIM_MISMATCH ===
+  ✅ 合法 APPROVED 票首次 claim → 放行(merge 执行)
+  首次: approval=USED sha=2370c4bc18c8 claims=1 completes=1 ghPR=MERGED
+  ✅ approval → USED
+  ✅ result_sha 固化(merge commit 2370c4bc18c8)
+  ✅ 恰好 1 次 L2_CLAIMED
+  ✅ 恰好 1 次 L2_COMPLETE
+  ✅ fixture PR#209 → MERGED(真 GitHub 写,单次)
+  ✅ 再 claim 同一 USED 票 → CLAIM_MISMATCH(只执行一次)
+  ✅ 再 claim 后 L2_CLAIMED 仍 =1(无第二次 merge)
+  TEST_END=2026-07-29 01:56:25.07488+00 (审计窗口上界,clock_timestamp)
+
+=== 8. 完整不可篡改审计(INTENT+DENY 精确覆盖 8 reason_code;DENY 无上游 RESULT)===
+  ✅ INTENT+DENY REPO_NOT_ALLOWED = 1(精确=1)
+  ✅ INTENT+DENY ROLE_PATH_MISMATCH = 1(精确=1)
+  ✅ INTENT+DENY TOOL_NOT_ALLOWED = 2(精确=2)
+  ✅ INTENT+DENY BRANCH_NOT_FIX_PREFIX = 1(精确=1)
+  ✅ INTENT+DENY BRANCH_PROTECTED = 1(精确=1)
+  ✅ INTENT+DENY PATH_DENIED = 1(精确=1)
+  ✅ INTENT+DENY PR_FIELD_NOT_ALLOWED = 1(精确=1)
+  ✅ INTENT+DENY CLAIM_MISMATCH = 5(精确=5)
+  ✅ 窗口内 INTENT+DENY 总数 = 13(精确=13,无遗漏/无多余)
+  ✅ 所有 INTENT-DENY 的 correlation 无上游 RESULT/ERROR(拒绝在调上游前,0 副作用)
+  ✅ UPDATE mcp_calls → 触发器拒(mcp_calls_immutable,超管亦不可)
+  ✅ DELETE mcp_calls → 触发器拒(mcp_calls_immutable,超管亦不可)
+  ✅ 反证:窗口内 0 行被篡改为 TAMPER(触发器有效)
+
+=== 证据固化 ===
+
+=== 凭据扫描(script+evidence;真实值逐个搜索 + 已知格式)===
+  ✅ 无真实凭证值泄漏(角色 token + DB 密码逐个精确搜索 script+evidence)
+  ✅ 无已知凭证格式(ghp_/github_pat_/sk-/AKIA/xox)
+
+=== 收尾(fixture 0 open PR / 仅 main)+ 硬门([FAIL=0] && [PASS=EXPECTED_PASS])===
+  fixture 终态: openPRs=0 branches=main
+  ✅ fixture 0 open PR(干净)
+  ✅ fixture 仅 main(0 fix 分支)
+
+═══════════════════════════════════════════════
+  B5 验收: PASS=50 / EXPECTED=50  FAIL=0
+═══════════════════════════════════════════════
+  硬门:[FAIL=0] && [PASS=50=EXPECTED=50] → PASS

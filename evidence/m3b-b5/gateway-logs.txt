@@ -1,0 +1,120 @@
+[gateway] SSE connect role=fixer path=/fixer/sse → ACCEPT
+INFO:     127.0.0.1:42040 - "GET /fixer/sse HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42056 - "POST /messages/?session_id=fb91a9220b1a487ea52d8717abc6ea8c HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:42056 - "POST /messages/?session_id=fb91a9220b1a487ea52d8717abc6ea8c HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:42056 - "POST /messages/?session_id=fb91a9220b1a487ea52d8717abc6ea8c HTTP/1.1" 202 Accepted
+[gateway] ALLOW role=fixer tool=create_or_update_file repo=nghqqa/MergePilot-e2e-fixture branch=fix/b5-exp-19601-x → forward (intent logged corr=02080efe)
+INFO:     127.0.0.1:42056 - "POST /messages/?session_id=fb91a9220b1a487ea52d8717abc6ea8c HTTP/1.1" 202 Accepted
+[gateway] list_tools role=fixer → 30/44 tools (policy=e2e-fixture-20260728-v1)
+[gateway] SSE connect role=fixer path=/fixer/sse → ACCEPT
+INFO:     127.0.0.1:42060 - "GET /fixer/sse HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42070 - "POST /messages/?session_id=01ba230ec4274b95ac1c1c736d386fea HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:42070 - "POST /messages/?session_id=01ba230ec4274b95ac1c1c736d386fea HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:42070 - "POST /messages/?session_id=01ba230ec4274b95ac1c1c736d386fea HTTP/1.1" 202 Accepted
+[gateway] ALLOW role=fixer tool=create_pull_request repo=nghqqa/MergePilot-e2e-fixture branch=fix/b5-exp-19601-x → forward (intent logged corr=fbbcc593)
+INFO:     127.0.0.1:42070 - "POST /messages/?session_id=01ba230ec4274b95ac1c1c736d386fea HTTP/1.1" 202 Accepted
+[gateway] list_tools role=fixer → 30/44 tools (policy=e2e-fixture-20260728-v1)
+[gateway] SSE connect role=coordinator path=/coordinator/sse → ACCEPT
+INFO:     127.0.0.1:51646 - "GET /coordinator/sse HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51656 - "POST /messages/?session_id=de1cfaf953a4447a8af46516b577276a HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:51656 - "POST /messages/?session_id=de1cfaf953a4447a8af46516b577276a HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:51656 - "POST /messages/?session_id=de1cfaf953a4447a8af46516b577276a HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:51656 - "POST /messages/?session_id=de1cfaf953a4447a8af46516b577276a HTTP/1.1" 202 Accepted
+[gateway] list_tools role=coordinator → 28/44 tools (policy=e2e-fixture-20260728-v1)
+[gateway] SSE connect role=coordinator path=/coordinator/sse → ACCEPT
+INFO:     127.0.0.1:51664 - "GET /coordinator/sse HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51678 - "POST /messages/?session_id=d7a476ddd3b144dabdb325e6938b00c9 HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:51678 - "POST /messages/?session_id=d7a476ddd3b144dabdb325e6938b00c9 HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:51678 - "POST /messages/?session_id=d7a476ddd3b144dabdb325e6938b00c9 HTTP/1.1" 202 Accepted
+[gateway] DENY L2 tool=merge_pull_request ticket=tkt-e550f25f-390 → CLAIM_MISMATCH
+INFO:     127.0.0.1:51678 - "POST /messages/?session_id=d7a476ddd3b144dabdb325e6938b00c9 HTTP/1.1" 202 Accepted
+[gateway] list_tools role=coordinator → 28/44 tools (policy=e2e-fixture-20260728-v1)
+[gateway] SSE connect role=fixer path=/fixer/sse → ACCEPT
+INFO:     127.0.0.1:51682 - "GET /fixer/sse HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51688 - "POST /messages/?session_id=c3e51172e72246438bbaf010f6ff0b45 HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:51688 - "POST /messages/?session_id=c3e51172e72246438bbaf010f6ff0b45 HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:51688 - "POST /messages/?session_id=c3e51172e72246438bbaf010f6ff0b45 HTTP/1.1" 202 Accepted
+[gateway] list_tools role=fixer → 30/44 tools (policy=e2e-fixture-20260728-v1)
+[gateway] ALLOW role=fixer tool=create_branch repo=nghqqa/MergePilot-e2e-fixture branch=fix/b5-dup-19601-x → forward (intent logged corr=face4eea)
+INFO:     127.0.0.1:51688 - "POST /messages/?session_id=c3e51172e72246438bbaf010f6ff0b45 HTTP/1.1" 202 Accepted
+[gateway] list_tools role=fixer → 30/44 tools (policy=e2e-fixture-20260728-v1)
+[gateway] SSE connect role=fixer path=/fixer/sse → ACCEPT
+INFO:     127.0.0.1:51698 - "GET /fixer/sse HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51704 - "POST /messages/?session_id=a34b83f9ae64468aa78174c1ffdc9934 HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:51704 - "POST /messages/?session_id=a34b83f9ae64468aa78174c1ffdc9934 HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:51704 - "POST /messages/?session_id=a34b83f9ae64468aa78174c1ffdc9934 HTTP/1.1" 202 Accepted
+[gateway] ALLOW role=fixer tool=create_or_update_file repo=nghqqa/MergePilot-e2e-fixture branch=fix/b5-dup-19601-x → forward (intent logged corr=b51a680e)
+INFO:     127.0.0.1:51704 - "POST /messages/?session_id=a34b83f9ae64468aa78174c1ffdc9934 HTTP/1.1" 202 Accepted
+[gateway] list_tools role=fixer → 30/44 tools (policy=e2e-fixture-20260728-v1)
+[gateway] SSE connect role=fixer path=/fixer/sse → ACCEPT
+INFO:     127.0.0.1:51712 - "GET /fixer/sse HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51724 - "POST /messages/?session_id=9b5ed219dbcb4c68821aa4d3595f35a5 HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:51724 - "POST /messages/?session_id=9b5ed219dbcb4c68821aa4d3595f35a5 HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:51724 - "POST /messages/?session_id=9b5ed219dbcb4c68821aa4d3595f35a5 HTTP/1.1" 202 Accepted
+[gateway] ALLOW role=fixer tool=create_pull_request repo=nghqqa/MergePilot-e2e-fixture branch=fix/b5-dup-19601-x → forward (intent logged corr=5cfc2422)
+INFO:     127.0.0.1:51724 - "POST /messages/?session_id=9b5ed219dbcb4c68821aa4d3595f35a5 HTTP/1.1" 202 Accepted
+[gateway] list_tools role=fixer → 30/44 tools (policy=e2e-fixture-20260728-v1)
+[gateway] SSE connect role=coordinator path=/coordinator/sse → ACCEPT
+INFO:     127.0.0.1:51726 - "GET /coordinator/sse HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51738 - "POST /messages/?session_id=afcecd51ef1e466cb7490985f1f7d82c HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:51738 - "POST /messages/?session_id=afcecd51ef1e466cb7490985f1f7d82c HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:51738 - "POST /messages/?session_id=afcecd51ef1e466cb7490985f1f7d82c HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:51738 - "POST /messages/?session_id=afcecd51ef1e466cb7490985f1f7d82c HTTP/1.1" 202 Accepted
+[gateway] list_tools role=coordinator → 28/44 tools (policy=e2e-fixture-20260728-v1)
+[gateway] SSE connect role=coordinator path=/coordinator/sse → ACCEPT
+INFO:     127.0.0.1:58608 - "GET /coordinator/sse HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58616 - "POST /messages/?session_id=bac5a3adf83045b4ad8561cc82b2e793 HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:58616 - "POST /messages/?session_id=bac5a3adf83045b4ad8561cc82b2e793 HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:58616 - "POST /messages/?session_id=bac5a3adf83045b4ad8561cc82b2e793 HTTP/1.1" 202 Accepted
+[gateway] DENY L2 tool=merge_pull_request ticket=tkt-8193c113-bb4 → CLAIM_MISMATCH
+INFO:     127.0.0.1:58616 - "POST /messages/?session_id=bac5a3adf83045b4ad8561cc82b2e793 HTTP/1.1" 202 Accepted
+[gateway] list_tools role=coordinator → 28/44 tools (policy=e2e-fixture-20260728-v1)
+[gateway] SSE connect role=fixer path=/fixer/sse → ACCEPT
+INFO:     127.0.0.1:58628 - "GET /fixer/sse HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58632 - "POST /messages/?session_id=eb1de94d19e74221a5ae82e354c308c0 HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:58632 - "POST /messages/?session_id=eb1de94d19e74221a5ae82e354c308c0 HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:58632 - "POST /messages/?session_id=eb1de94d19e74221a5ae82e354c308c0 HTTP/1.1" 202 Accepted
+[gateway] list_tools role=fixer → 30/44 tools (policy=e2e-fixture-20260728-v1)
+[gateway] ALLOW role=fixer tool=create_branch repo=nghqqa/MergePilot-e2e-fixture branch=fix/b5-once-19601-x → forward (intent logged corr=1534fd99)
+INFO:     127.0.0.1:58632 - "POST /messages/?session_id=eb1de94d19e74221a5ae82e354c308c0 HTTP/1.1" 202 Accepted
+[gateway] list_tools role=fixer → 30/44 tools (policy=e2e-fixture-20260728-v1)
+[gateway] SSE connect role=fixer path=/fixer/sse → ACCEPT
+INFO:     127.0.0.1:58642 - "GET /fixer/sse HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58650 - "POST /messages/?session_id=a390b1afb852466388e065d7997da169 HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:58650 - "POST /messages/?session_id=a390b1afb852466388e065d7997da169 HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:58650 - "POST /messages/?session_id=a390b1afb852466388e065d7997da169 HTTP/1.1" 202 Accepted
+[gateway] ALLOW role=fixer tool=create_or_update_file repo=nghqqa/MergePilot-e2e-fixture branch=fix/b5-once-19601-x → forward (intent logged corr=8bc9d5f8)
+INFO:     127.0.0.1:58650 - "POST /messages/?session_id=a390b1afb852466388e065d7997da169 HTTP/1.1" 202 Accepted
+[gateway] list_tools role=fixer → 30/44 tools (policy=e2e-fixture-20260728-v1)
+[gateway] SSE connect role=fixer path=/fixer/sse → ACCEPT
+INFO:     127.0.0.1:58658 - "GET /fixer/sse HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58660 - "POST /messages/?session_id=7bd3123e7a3a40da84a6834a48dca8ee HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:58660 - "POST /messages/?session_id=7bd3123e7a3a40da84a6834a48dca8ee HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:58660 - "POST /messages/?session_id=7bd3123e7a3a40da84a6834a48dca8ee HTTP/1.1" 202 Accepted
+[gateway] ALLOW role=fixer tool=create_pull_request repo=nghqqa/MergePilot-e2e-fixture branch=fix/b5-once-19601-x → forward (intent logged corr=a2af7916)
+INFO:     127.0.0.1:58660 - "POST /messages/?session_id=7bd3123e7a3a40da84a6834a48dca8ee HTTP/1.1" 202 Accepted
+[gateway] list_tools role=fixer → 30/44 tools (policy=e2e-fixture-20260728-v1)
+[gateway] SSE connect role=coordinator path=/coordinator/sse → ACCEPT
+INFO:     127.0.0.1:58670 - "GET /coordinator/sse HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58680 - "POST /messages/?session_id=09467aae64ee46e9a6c121ae08f5e551 HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:58680 - "POST /messages/?session_id=09467aae64ee46e9a6c121ae08f5e551 HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:58680 - "POST /messages/?session_id=09467aae64ee46e9a6c121ae08f5e551 HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:58680 - "POST /messages/?session_id=09467aae64ee46e9a6c121ae08f5e551 HTTP/1.1" 202 Accepted
+[gateway] list_tools role=coordinator → 28/44 tools (policy=e2e-fixture-20260728-v1)
+[gateway] SSE connect role=coordinator path=/coordinator/sse → ACCEPT
+INFO:     127.0.0.1:42812 - "GET /coordinator/sse HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42828 - "POST /messages/?session_id=25402b2f98b1428495c4142acfb5432b HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:42828 - "POST /messages/?session_id=25402b2f98b1428495c4142acfb5432b HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:42828 - "POST /messages/?session_id=25402b2f98b1428495c4142acfb5432b HTTP/1.1" 202 Accepted
+[gateway] L2 CLAIMED tool=merge_pull_request ticket=tkt-31305369-16d eid=e9e5bbf7
+[gateway] L2 WRITE tool=merge_pull_request → calling upstream (timeout=60.0s)
+INFO:     127.0.0.1:42828 - "POST /messages/?session_id=25402b2f98b1428495c4142acfb5432b HTTP/1.1" 202 Accepted
+[gateway] list_tools role=coordinator → 28/44 tools (policy=e2e-fixture-20260728-v1)
+[gateway] SSE connect role=coordinator path=/coordinator/sse → ACCEPT
+INFO:     127.0.0.1:42854 - "GET /coordinator/sse HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42858 - "POST /messages/?session_id=e1555c4752af4670acf8e50f220f3c03 HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:42858 - "POST /messages/?session_id=e1555c4752af4670acf8e50f220f3c03 HTTP/1.1" 202 Accepted
+INFO:     127.0.0.1:42858 - "POST /messages/?session_id=e1555c4752af4670acf8e50f220f3c03 HTTP/1.1" 202 Accepted
+[gateway] DENY L2 tool=merge_pull_request ticket=tkt-31305369-16d → CLAIM_MISMATCH
+INFO:     127.0.0.1:42858 - "POST /messages/?session_id=e1555c4752af4670acf8e50f220f3c03 HTTP/1.1" 202 Accepted
+[gateway] list_tools role=coordinator → 28/44 tools (policy=e2e-fixture-20260728-v1)

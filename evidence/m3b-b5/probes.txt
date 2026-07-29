@@ -1,0 +1,6 @@
+worker nets: hiclab-net hiclaw-net
+github-mcp nets: mcp-backend-net
+mcp-backend-net: policy-gw github-mcp policy-gw-e2e
+direct probe: UNREACHABLE: gaierror: [Errno -3] Temporary failure in name resolution
+cross-role probe: HTTP 401 {"error":"POLICY_DENIED","reason_code":"ROLE_PATH_MISMATCH"}
+window: 2026-07-29 01:55:02.583258+00 .. 2026-07-29 01:56:25.07488+00
