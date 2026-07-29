@@ -25,3 +25,18 @@
 - findings、Trace、日志和复盘报告中的 AccessKey、Token、Cookie、私钥必须脱敏。
 - 高风险写操作保留人工审批；写调用应检查现状并记录 SHA、via 与审计事件。
 - 演示用数据库密码通过环境变量 `PG_PASS` / `PG_PASSWORD`(或整串 `PG_DSN`)注入,脚本不写死密码;`sk-live-...` 仅为确定性扫描 fixture,不是真实密钥。
+
+## M4-A 公共 Skill runtime 依赖（核对日期 2026-07-29）
+
+在仓库外隔离 venv 中实际安装并跑通全部 M4-A 测试后固定。许可证逐项核对自 site-packages
+内 dist-info 的许可证文件与元数据（非报告推断）。
+
+| 依赖 | 固定版本 | 用途 | 许可证 | 许可证来源位置 | 传递依赖（pip 自动解析） |
+|---|---|---|---|---|---|
+| `jsonschema` | 4.25.1 | runtime：Skill Contract JSON Schema 校验 | MIT | `jsonschema-4.25.1.dist-info/licenses/COPYING`；METADATA `License-Expression: MIT` | attrs, jsonschema-specifications, referencing, rpds-py |
+| `pytest` | 8.4.2 | dev/test：契约测试运行器 | MIT | `pytest-8.4.2.dist-info/licenses/LICENSE`；Classifier `License :: OSI Approved :: MIT License` | colorama, exceptiongroup, iniconfig, packaging, pluggy, pygments, tomli |
+
+- runtime 清单：`skills/common/requirements.txt`（仅 `jsonschema==4.25.1`）。
+- dev/test 清单：`skills/common/requirements-dev.txt`（`-r requirements.txt` + `pytest==8.4.2`）。
+- 隔离 venv 完整 freeze（含全部传递依赖）记录在 `evidence/m4/m4a/verification.txt`。
+- 不使用 `>=`；所列为实际安装并验证通过的确切版本。
