@@ -51,6 +51,12 @@
 
 这些旧 SHA 出现在某些 commit 的 message 文本里(如"Does NOT move m3b-b3-closed (07f5480)"),仅作历史说明,指向的对象已不存在。**追溯里程碑请用标签名**(标签名未变且权威),不要用 body 里的旧 SHA。
 
+## M3-B5
+
+| 标签 | tag object | peeled commit | 说明 |
+|---|---|---|---|
+| `m3b-b5-closed` | `7e37a88` | `ddbb9b7` | B5 负向证据 ×8，50/50 PASS，fixture 隔离 |
+
 ## 冻结策略(从 2026-07-26 起)
 
 - **现有标签(m3a-* / m3b-* / v0.4.0)冻结,不再移动**。每个 closed 里程碑对应一个不可变标签;后续修正用**新增标签**(如 `m3b-b4a.1-closed`),不动旧标签。
