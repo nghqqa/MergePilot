@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mergepilot.dev/skills/common/schema/request.envelope.schema.json",
+  "title": "MergePilot Skill Request Envelope",
+  "description": "Contract version 1. Strict top-level object; business `input` is a free object validated by each Skill's own schema.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "request_id", "trace_id", "input"],
+  "properties": {
+    "contract_version": { "type": "string", "enum": ["1"] },
+    "request_id": { "type": "string", "minLength": 1 },
+    "trace_id": { "type": "string", "minLength": 1 },
+    "input": { "type": "object" },
+    "timeout_ms": { "type": "integer", "minimum": 1 }
+  }
+}

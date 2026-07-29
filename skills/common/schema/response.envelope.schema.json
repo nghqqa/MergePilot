@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mergepilot.dev/skills/common/schema/response.envelope.schema.json",
+  "title": "MergePilot Skill Response Envelope",
+  "description": "Contract version 1. Strict top-level object (additionalProperties: false). Business `output` is a free object validated by each Skill's own schema; optional `output.verdict` carries a business PASS/FAIL/SKIPPED result distinct from runtime status.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "name", "version", "contract_version", "request_id", "trace_id",
+    "status", "error_code", "warning_codes", "degradations", "message",
+    "output", "evidence", "artifacts", "started_at", "duration_ms",
+    "retryable", "side_effects", "redactions"
+  ],
+  "properties": {
+    "name": { "type": "string", "minLength": 1 },
+    "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "contract_version": { "type": "string", "enum": ["1"] },
+    "request_id": { "type": "string", "minLength": 1 },
+    "trace_id": { "type": "string", "minLength": 1 },
+    "status": { "type": "string", "enum": ["OK", "PARTIAL", "ERROR"] },
+    "error_code": { "type": ["string", "null"] },
+    "warning_codes": { "type": "array", "items": { "type": "string" } },
+    "degradations": { "type": "array", "items": { "type": "object" } },
+    "message": { "type": "string" },
+    "output": { "type": "object" },
+    "truncated": { "type": "boolean" },
+    "evidence": { "type": "array", "items": { "$ref": "#/$defs/evidence_item" } },
+    "artifacts": { "type": "array", "items": { "$ref": "#/$defs/artifact_item" } },
+    "started_at": { "type": "string", "minLength": 1 },
+    "duration_ms": { "type": "integer", "minimum": 0 },
+    "retryable": { "type": "boolean" },
+    "side_effects": { "type": "array", "items": { "$ref": "#/$defs/side_effect_item" } },
+    "redactions": { "type": "array", "items": { "type": "string" } }
+  },
+  "allOf": [
+    {
+      "if": { "required": ["status"], "properties": { "status": { "const": "ERROR" } } },
+      "then": { "properties": { "error_code": { "type": "string", "minLength": 1 } } }
+    },
+    {
+      "if": { "required": ["status"], "properties": { "status": { "const": "OK" } } },
+      "then": { "properties": { "error_code": { "type": "null" } } }
+    },
+    {
+      "if": { "required": ["status"], "properties": { "status": { "const": "PARTIAL" } } },
+      "then": {
+        "properties": { "error_code": { "type": "null" } },
+        "anyOf": [
+          { "properties": { "warning_codes": { "minItems": 1 } } },
+          { "properties": { "degradations": { "minItems": 1 } } }
+        ]
+      }
+    }
+  ],
+  "$defs": {
+    "evidence_item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "ref"],
+      "properties": {
+        "kind": { "type": "string", "minLength": 1 },
+        "ref": { "type": "string", "minLength": 1 }
+      }
+    },
+    "artifact_item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "path"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "path": { "type": "string", "minLength": 1 },
+        "size": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "side_effect_item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "declared"],
+      "properties": {
+        "type": { "type": "string", "enum": ["fs_tmp", "process_exec", "network_read", "network_write", "db_read", "github_write"] },
+        "target": { "type": "string" },
+        "via": { "type": "string" },
+        "declared": { "type": "boolean" }
+      }
+    }
+  }
+}

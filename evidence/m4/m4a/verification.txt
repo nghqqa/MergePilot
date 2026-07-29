@@ -1,0 +1,58 @@
+=== MergePilot M4-A verification ===
+date: 2026-07-29T16:11:01Z
+python: D:\goai\m4a-venv\Scripts\python.exe (Python 3.9.25)
+
+[PASS] deps importable (jsonschema, pytest)
+jsonschema 4.25.1
+pytest 8.4.2
+--- pip freeze (isolated venv, full transitive set) ---
+attrs==26.1.0
+colorama==0.4.6
+exceptiongroup==1.3.1
+iniconfig==2.1.0
+jsonschema==4.25.1
+jsonschema-specifications==2025.9.1
+packaging==26.2
+pluggy==1.6.0
+Pygments==2.20.0
+pytest==8.4.2
+referencing==0.36.2
+rpds-py==0.27.1
+tomli==2.4.1
+typing_extensions==4.16.0
+py_compile OK: 9 files
+[PASS] py_compile (all .py)
+schema meta-valid: request.envelope.schema.json
+schema meta-valid: response.envelope.schema.json
+[PASS] jsonschema Draft 2020-12 meta-validation
+EXPECTED_PASS (from conftest.py) = 75
+round1: passed=75 expected=75 failed=0 rc=0
+round2: passed=75 expected=75 failed=0 rc=0
+round1 tail: ============================= 75 passed in 8.74s ==============================
+round2 tail: ============================= 75 passed in 9.02s ==============================
+[PASS] pytest two consecutive rounds == EXPECTED_PASS, 0 failed, rc 0
+warning: in the working copy of 'THIRD_PARTY.md', LF will be replaced by CRLF the next time Git touches it
+[PASS] git diff --check (tracked whitespace)
+[PASS] git diff --no-index --check (each new file)
+trailing_whitespace_hits=0
+[PASS] no trailing whitespace
+scan_targets: 19 files
+total_hits=0
+[PASS] delivery scan (credential + AI, case-insensitive): 0 hits
+residual_cache_dirs=0 residual_pyc=0
+[PASS] no __pycache__/.pytest_cache/.pyc residue
+git status --short:
+ M THIRD_PARTY.md
+?? evidence/m4/
+?? skills/common/
+?? tests/
+HEAD=aff5336993b4f64d85d016968f66db50cacef48d
+origin/main=aff5336993b4f64d85d016968f66db50cacef48d
+ahead/behind=0	0
+m3c-closed^{}=c8a2433ee80431ba1a662cef13c190b8b7b99cb2
+scan_targets: 1 files
+total_hits=0
+[PASS] verification.txt self-scan: 0 hits
+
+=== SUMMARY ===
+ALL GATES PASSED

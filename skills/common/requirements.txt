@@ -1,0 +1,3 @@
+# MergePilot common Skill runtime dependencies (pinned exact versions).
+# Installed and verified in an isolated venv (see evidence/m4/m4a/).
+jsonschema==4.25.1

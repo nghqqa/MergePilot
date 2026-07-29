@@ -1,0 +1,4 @@
+# MergePilot common Skill development/test dependencies.
+# Pulls in the runtime requirements first, then adds the test runner.
+-r requirements.txt
+pytest==8.4.2
