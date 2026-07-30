@@ -12,8 +12,8 @@
 
 | Skill | 用途 | 调用方 Agent | 依赖工具 | 风险关联 |
 |---|---|---|---|---|
-| DiffParse | 解析 PR diff,产出变更清单与影响面 | Triage | Git/GitHub MCP | — |
-| RiskClassify | 变更风险分级 L0/L1/L2 | Triage, Coordinator | 规则库 + Nacos | 驱动自治策略 |
+| DiffParse | 解析 PR diff,产出变更清单与影响面 | Triage | 调用方提供 unified diff（M4-B 实测） | — |
+| RiskClassify | 变更风险分级 L0/L1/L2 | Triage, Coordinator | 版本化规则库（本地，M4-B 实测） | 建议型·只升不降 |
 | SASTScan | 静态安全扫描 | Reviewer, Verifier | Semgrep | 安全 |
 | SecretScan | 密钥/凭证泄漏检测 | Reviewer, Verifier | Gitleaks | L2 强制 |
 | DepVulnCheck | 依赖漏洞检查 | Reviewer, Verifier | OSV/Trivy | L2 强制 |
@@ -25,6 +25,17 @@
 | Postmortem | 复盘报告 + 经验沉淀 | Verifier | LLM + 知识库 | 自学习闭环 |
 
 复用关系示例:`TestRunner` 同时服务 Fixer 自测与 Verifier 验证;`SASTScan` 同时服务 Reviewer 发现与 Verifier 重扫——每个 Skill 都是跨 Agent 的能力抽象。
+
+---
+
+## M4-B 实现状态（权威，覆盖下方历史设想）
+
+`DiffParse` 与 `RiskClassify` 已在 **M4-B** 完成可复用实现（证据见 `evidence/m4/m4b/`）。以下冻结决策优先于第 1、2 节中的历史描述：
+
+- 两者均复用 M4-A 公共 runtime（`contract_version="1"`、Draft 2020-12 envelope、公共错误码 / 脱敏器 / CLI），核心逻辑框架中立、仅用 Python 标准库（risk-classify 规则校验复用 jsonschema）。
+- `risk-classify` 是**确定性、建议型、只升不降**的聚合器：`risk_level = max(risk_floor, 命中规则最高等级)`；规则独立版本化（`rules/risk-rules.v1.json`，`rules_version="1.0.0"`）；运行时**不读 `policy.yaml`、不接 Nacos、不用作者/团队/信任等级降低风险**；`advisory_only` 恒真，**不输出批准/拒绝/合并结论**；Policy Gateway 始终是最终授权权威。
+- `diff-parse` 本阶段**只接收调用方提供的 unified diff 文本**，不从 GitHub 拉取；输出仅含结构/范围/统计/单向 digest，不含源码或 patch 明文。
+- 因此下文第 1、2 节中关于 `author_trust_level`、`gated_actions` 直接驱动授权、Nacos 动态策略、规则缺失默认 L1、经 Git/GitHub MCP 取 diff 等描述属于**历史设计**，不反映 M4-B 实现。
 
 ---
 
