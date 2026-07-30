@@ -455,11 +455,20 @@ def _emit(env):
             pass
 
 
+def _emit_finalized(env):
+    """Route an envelope through ``_finalize`` (redact + 1 MiB limit + schema
+    check) and then emit it. Every pre-execution / error emission MUST go
+    through this so credential-shaped content in a malformed request envelope
+    can never reach stdout unredacted. Returns the CLI exit code."""
+    env = _finalize(env)
+    _emit(env)
+    return errors.cli_exit_code(env)
+
+
 def _emit_error(error_code, message):
     env = E.build_response(SKILL_NAME, SKILL_VERSION, _UNKNOWN_RID, _UNKNOWN_TID, "ERROR",
                            error_code=error_code, message=message)
-    _emit(env)
-    return errors.exit_code_for_error(error_code)
+    return _emit_finalized(env)
 
 
 def _build_parser():
@@ -476,17 +485,17 @@ def _read_and_validate(args):
     try:
         req = _read_request(args)
     except errors.SkillError as exc:
-        _emit(E.build_response(SKILL_NAME, SKILL_VERSION, _UNKNOWN_RID, _UNKNOWN_TID, "ERROR",
-                               error_code=exc.code, message=exc.message))
-        return None, errors.exit_code_for_error(exc.code), None
+        env = E.build_response(SKILL_NAME, SKILL_VERSION, _UNKNOWN_RID, _UNKNOWN_TID, "ERROR",
+                               error_code=exc.code, message=exc.message)
+        return None, _emit_finalized(env), None
     except Exception as exc:  # noqa: BLE001
         return None, _emit_error(errors.INVALID_INPUT, "cannot read request: %s" % type(exc).__name__), None
     try:
         E.validate_request(req)
     except errors.SkillError as exc:
-        _emit(E.build_response(SKILL_NAME, SKILL_VERSION, _UNKNOWN_RID, _UNKNOWN_TID, "ERROR",
-                               error_code=exc.code, message=exc.message))
-        return None, errors.exit_code_for_error(exc.code), None
+        env = E.build_response(SKILL_NAME, SKILL_VERSION, _UNKNOWN_RID, _UNKNOWN_TID, "ERROR",
+                               error_code=exc.code, message=exc.message)
+        return None, _emit_finalized(env), None
     return req, None, (req["request_id"], req["trace_id"])
 
 
@@ -505,9 +514,9 @@ def _resolve_isolated(args, request_id, trace_id):
     if cap.stdout or cap.stderr:
         _route_captured(cap.stdout, cap.stderr)
     if err is not None:
-        _emit(E.build_response(SKILL_NAME, SKILL_VERSION, request_id, trace_id, "ERROR",
-                               error_code=err.code, message=err.message))
-        return None, errors.exit_code_for_error(err.code)
+        env = E.build_response(SKILL_NAME, SKILL_VERSION, request_id, trace_id, "ERROR",
+                               error_code=err.code, message=err.message)
+        return None, _emit_finalized(env)
     return skill_fn, None
 
 
