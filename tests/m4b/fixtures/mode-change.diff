@@ -1,0 +1,6 @@
+diff --git a/scripts/run.sh b/scripts/run.sh
+old mode 100644
+new mode 100755
+diff --git a/entrypoint b/entrypoint
+old mode 100644
+new mode 120000

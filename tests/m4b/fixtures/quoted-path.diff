@@ -1,0 +1,16 @@
+diff --git "a/docs/my notes.md" "b/docs/my notes.md"
+index 1111111..2222222 100644
+--- "a/docs/my notes.md"
++++ "b/docs/my notes.md"
+@@ -1 +1,3 @@
+ # Notes
++section
++
+diff --git "a/src/caf\303\251.py" "b/src/caf\303\251.py"
+index 1111111..2222222 100644
+--- "a/src/caf\303\251.py"
++++ "b/src/caf\303\251.py"
+@@ -1,2 +1,3 @@
+ def f():
+     x = 1
++    return x

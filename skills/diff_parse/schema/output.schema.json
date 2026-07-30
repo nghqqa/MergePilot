@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mergepilot.dev/skills/diff-parse/schema/output.schema.json",
+  "title": "DiffParse Output",
+  "description": "Structured change context produced by diff-parse (schema_version 1). Contains only structure, ranges, statistics and digests -- never full source or patch text, so untrusted/secret content in the diff cannot leak.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "source", "input_sha256", "complete", "files", "modules_touched", "change_categories", "stats"],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1" },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repo", "base_sha", "head_sha"],
+      "properties": {
+        "repo": { "type": "string" },
+        "base_sha": { "type": "string" },
+        "head_sha": { "type": "string" },
+        "pr_number": { "type": ["integer", "null"] }
+      }
+    },
+    "input_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "complete": { "type": "boolean" },
+    "degradation_reason": { "type": "string" },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "change_type", "additions", "deletions", "binary", "mode_changed", "categories", "hunks"],
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "old_path": { "type": ["string", "null"] },
+          "change_type": { "type": "string", "enum": ["A", "M", "D", "R", "C", "T"] },
+          "additions": { "type": "integer", "minimum": 0 },
+          "deletions": { "type": "integer", "minimum": 0 },
+          "binary": { "type": "boolean" },
+          "mode_changed": { "type": "boolean" },
+          "categories": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+          "hunks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["old_start", "old_count", "new_start", "new_count"],
+              "properties": {
+                "old_start": { "type": "integer", "minimum": 0 },
+                "old_count": { "type": "integer", "minimum": 0 },
+                "new_start": { "type": "integer", "minimum": 0 },
+                "new_count": { "type": "integer", "minimum": 0 }
+              }
+            }
+          }
+        }
+      }
+    },
+    "modules_touched": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+    "change_categories": {
+      "type": "array",
+      "items": { "type": "string", "enum": ["source", "test", "documentation", "dependency", "workflow", "config", "migration", "security_sensitive", "deletion", "binary"] },
+      "uniqueItems": true
+    },
+    "stats": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["files_changed", "additions", "deletions", "hunks", "binary_files"],
+      "properties": {
+        "files_changed": { "type": "integer", "minimum": 0 },
+        "additions": { "type": "integer", "minimum": 0 },
+        "deletions": { "type": "integer", "minimum": 0 },
+        "hunks": { "type": "integer", "minimum": 0 },
+        "binary_files": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

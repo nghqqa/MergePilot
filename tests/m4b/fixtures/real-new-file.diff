@@ -1,0 +1,8 @@
+diff --git a/src/util.py b/src/util.py
+new file mode 100644
+index 0000000..4693ad3
+--- /dev/null
++++ b/src/util.py
+@@ -0,0 +1,2 @@
++def add(a, b):
++    return a + b

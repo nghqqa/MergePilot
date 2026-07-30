@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mergepilot.dev/skills/risk-classify/schema/rules.schema.json",
+  "title": "RiskClassify Ruleset",
+  "description": "Versioned declarative risk rules. Predicates in 'match' are AND-combined; file-wise predicates (category/change_type/binary/path_pattern) match if at least one changed file satisfies them, context-wise predicates (complete_false/empty/min_*/max_*/only_categories) match against the whole change context.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["rules_version", "rules"],
+  "properties": {
+    "rules_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "rules": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["rule_id", "level", "summary", "match"],
+        "properties": {
+          "rule_id": { "type": "string", "minLength": 1, "pattern": "^[A-Z][A-Z0-9_]*$" },
+          "level": { "type": "string", "enum": ["L0", "L1", "L2"] },
+          "summary": { "type": "string", "minLength": 1 },
+          "match": {
+            "type": "object",
+            "minProperties": 1,
+            "additionalProperties": false,
+            "properties": {
+              "category": {
+                "oneOf": [
+                  { "type": "string", "enum": ["source", "test", "documentation", "dependency", "workflow", "config", "migration", "security_sensitive", "deletion", "binary"] },
+                  { "type": "array", "minItems": 1, "items": { "type": "string", "enum": ["source", "test", "documentation", "dependency", "workflow", "config", "migration", "security_sensitive", "deletion", "binary"] } }
+                ]
+              },
+              "change_type": {
+                "oneOf": [
+                  { "type": "string", "enum": ["A", "M", "D", "R", "C", "T"] },
+                  { "type": "array", "minItems": 1, "items": { "type": "string", "enum": ["A", "M", "D", "R", "C", "T"] } }
+                ]
+              },
+              "binary": { "type": "boolean" },
+              "complete_false": { "type": "boolean", "const": true },
+              "empty": { "type": "boolean", "const": true },
+              "path_pattern": { "type": "string", "minLength": 1 },
+              "min_total_changes": { "type": "integer", "minimum": 0 },
+              "max_total_changes": { "type": "integer", "minimum": 0 },
+              "min_additions": { "type": "integer", "minimum": 0 },
+              "min_deletions": { "type": "integer", "minimum": 0 },
+              "min_files": { "type": "integer", "minimum": 0 },
+              "has_uncategorized": { "type": "boolean", "const": true },
+              "only_categories": {
+                "type": "array",
+                "minItems": 1,
+                "items": { "type": "string", "enum": ["source", "test", "documentation", "dependency", "workflow", "config", "migration", "security_sensitive", "deletion", "binary"] }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

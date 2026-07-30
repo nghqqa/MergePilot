@@ -1,0 +1,60 @@
+{
+  "description": "SHA-256 manifest of every M4-B diff fixture. The test suite asserts each fixture file's on-disk SHA-256 against the value recorded here. Real fixtures are produced by tests/m4b/fixtures/gen_real_diffs.py from real git diff output; hand-crafted fixtures are deterministic static files covering edge cases.",
+  "fixtures": {
+    "binary.diff": {
+      "bytes": 313,
+      "sha256": "316a8faede1120f33a9d57d9ea115075e404508d70a43509f6ca6c0ae264686e",
+      "source": "hand-crafted unified diff (deterministic static fixture)"
+    },
+    "malformed.diff": {
+      "bytes": 145,
+      "sha256": "3deb6a77a186ccccbfe72a3128120337fe6f1d9d8ca1f7b08ff38a6a5040c304",
+      "source": "hand-crafted unified diff (deterministic static fixture)"
+    },
+    "mode-change.diff": {
+      "bytes": 146,
+      "sha256": "ffa51dc2748a1658745467bf85fcd54fc116ffd235904b5954f7d47a54ff3c0c",
+      "source": "hand-crafted unified diff (deterministic static fixture)"
+    },
+    "multi-file.diff": {
+      "bytes": 457,
+      "sha256": "5fa52c040ab5815dbd6338836fa874de032ad49ef0ad07d9ca706a439aa55490",
+      "source": "hand-crafted unified diff (deterministic static fixture)"
+    },
+    "no-newline.diff": {
+      "bytes": 387,
+      "sha256": "dd3913ffbf75b27628908c0e992d091c970c003f71b4eab5c728d221a8623671",
+      "source": "hand-crafted unified diff (deterministic static fixture)"
+    },
+    "prompt-injection.diff": {
+      "bytes": 420,
+      "sha256": "71835f13789cb9b6c44764ac8b525263edc9be2d216d1acb975dc85861eaa1d5",
+      "source": "hand-crafted unified diff (deterministic static fixture)"
+    },
+    "quoted-path.diff": {
+      "bytes": 359,
+      "sha256": "2c15468668f534c88d3dd4f9393e42632144de968d9a53d17939e46757576c9c",
+      "source": "hand-crafted unified diff (deterministic static fixture)"
+    },
+    "real-deleted.diff": {
+      "bytes": 187,
+      "sha256": "69226a509a2f800743cc76fa549f3573bd75e4692f88926c1d847016a8f4550c",
+      "source": "real git diff (generated, deterministic for fixed content)"
+    },
+    "real-modified.diff": {
+      "bytes": 209,
+      "sha256": "ddbf51d3bcc473d98b8128c04f083c453ecc75b77065e74fa846fde113a55bdd",
+      "source": "real git diff (generated, deterministic for fixed content)"
+    },
+    "real-new-file.diff": {
+      "bytes": 165,
+      "sha256": "243c3930ba765be2fd8f1025bcf43adb2f15afbec38f37e0552a381c7e4ecc79",
+      "source": "real git diff (generated, deterministic for fixed content)"
+    },
+    "real-rename.diff": {
+      "bytes": 113,
+      "sha256": "6003b630beadef627224dd7268d04a95c76b98af03a53ecaf1a7212d44a6a0b8",
+      "source": "real git diff (generated, deterministic for fixed content)"
+    }
+  }
+}

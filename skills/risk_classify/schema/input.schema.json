@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mergepilot.dev/skills/risk-classify/schema/input.schema.json",
+  "title": "RiskClassify Input",
+  "description": "Business input for the risk-classify Skill (contract_version 1). Consumes a change_context (DiffParse business output shape) plus an optional risk floor.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["change_context"],
+  "properties": {
+    "change_context": {
+      "type": "object",
+      "description": "Structured change context (e.g. diff-parse output). Required structural fields are checked in core."
+    },
+    "risk_floor": { "type": "string", "enum": ["L0", "L1", "L2"] },
+    "expected_rules_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" }
+  }
+}

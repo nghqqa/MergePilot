@@ -1,0 +1,7 @@
+diff --git a/assets/logo.png b/assets/logo.png
+index 11111112222222233333333..444444445555555566666666 100644
+Binary files a/assets/logo.png and b/assets/logo.png differ
+diff --git a/src/icon.dat b/src/icon.dat
+new file mode 100644
+index 0000000..7777777788888888
+Binary files /dev/null and b/src/icon.dat differ

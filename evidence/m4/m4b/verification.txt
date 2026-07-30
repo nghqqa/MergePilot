@@ -1,0 +1,74 @@
+=== MergePilot M4-B verification ===
+date: 2026-07-30T04:14:44Z
+python: D:\goai\m4a-venv\Scripts\python.exe (Python 3.9.25)
+PYTHON=/d/goai/m4a-venv/Scripts/python.exe
+importable: jsonschema
+importable: pytest
+[PASS] deps importable (jsonschema, pytest)
+jsonschema 4.25.1
+pytest 8.4.2
+py_compile OK: 11 files
+[PASS] py_compile (all M4-B .py)
+schema meta-valid: skills/diff_parse/schema\input.schema.json
+schema meta-valid: skills/diff_parse/schema\output.schema.json
+schema meta-valid: skills/risk_classify/schema\input.schema.json
+schema meta-valid: skills/risk_classify/schema\output.schema.json
+schema meta-valid: skills/risk_classify/schema\rules.schema.json
+[PASS] jsonschema Draft 2020-12 meta-validation
+ruleset valid; rules_version=1.0.0 rule_count=16
+[PASS] bundled ruleset conforms to rules.schema.json
+EXPECTED_PASS (tests/m4b/conftest.py) = 96
+m4b round1: passed=96 failed=0 rc=0
+m4b round2: passed=96 failed=0 rc=0
+m4b round1 tail: ============================= 96 passed in 1.40s ==============================
+m4b round2 tail: ============================= 96 passed in 1.37s ==============================
+[PASS] m4b pytest two consecutive rounds == EXPECTED_PASS, 0 failed, rc 0
+M4-A EXPECTED_PASS (tests/skills/conftest.py) = 75
+m4a regression round1: passed=75 failed=0
+m4a regression round2: passed=75 failed=0
+m4a regression round1 tail: 75 passed in 8.23s
+m4a regression round2 tail: 75 passed in 8.31s
+[PASS] m4a regression 75/75 x2, 0 failed (evidence/m4/m4a untouched)
+M3-area changed entries: 0
+[PASS] M3 files unchanged (zero diff)
+skills/common changed files:
+skills/common/runtime/cli.py
+[PASS] skills/common change is cli.py-only (narrow authorization)
+[PASS] tests/skills + evidence/m4/m4a untouched
+scan_targets: 1 files
+total_hits=0
+[PASS] cli.py delivery scan: 0 credential/AI hits
+warning: in the working copy of 'docs/复赛路线图.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/附录B-Skill清单.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/项目状态.md', LF will be replaced by CRLF the next time Git touches it
+[PASS] git diff --check (tracked whitespace)
+[PASS] git diff --no-index --check (each new M4-B source file; .diff data excluded)
+trailing_whitespace_hits=0 (source files only)
+[PASS] no trailing whitespace (source files)
+scan_targets: 36 files
+total_hits=0
+[PASS] delivery scan: 0 credential/AI hits
+residual_cache_dirs=0 residual_pyc=0
+[PASS] no __pycache__/.pytest_cache/.pyc residual
+--- git state ---
+git status --short:
+ M "docs/\345\244\215\350\265\233\350\267\257\347\272\277\345\233\276.md"
+ M "docs/\351\231\204\345\275\225B-Skill\346\270\205\345\215\225.md"
+ M "docs/\351\241\271\347\233\256\347\212\266\346\200\201.md"
+ M skills/common/runtime/cli.py
+?? evidence/m4/m4b/
+?? skills/diff_parse/
+?? skills/risk_classify/
+?? tests/m4b/
+HEAD=199b78d5b5af47dd2cd7dbff4484350d2a508d3b
+origin/main=199b78d5b5af47dd2cd7dbff4484350d2a508d3b
+ahead/behind=0	0
+m4a-runtime-closed^{}=cd1a04a513c5c71bdce4702f62b8dcd52a6ca8ab
+m3c-closed^{}=c8a2433ee80431ba1a662cef13c190b8b7b99cb2
+tag_count=30
+scan_targets: 1 files
+total_hits=0
+[PASS] verification.txt self-scan: 0 hits
+
+=== SUMMARY ===
+ALL GATES PASSED

@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mergepilot.dev/skills/diff-parse/schema/input.schema.json",
+  "title": "DiffParse Input",
+  "description": "Business input for the diff-parse Skill (contract_version 1). The caller supplies a real unified diff text plus repository/SHA provenance. DiffParse does NOT fetch from GitHub.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["repo", "base_sha", "head_sha", "diff_format", "diff_text"],
+  "properties": {
+    "repo": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$"
+    },
+    "base_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "head_sha": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+    "diff_format": { "type": "string", "enum": ["unified"] },
+    "diff_text": { "type": "string" },
+    "pr_number": { "type": "integer", "minimum": 1 },
+    "options": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_files": { "type": "integer", "minimum": 1 },
+        "max_total_lines": { "type": "integer", "minimum": 1 },
+        "max_diff_bytes": { "type": "integer", "minimum": 1 }
+      }
+    }
+  }
+}

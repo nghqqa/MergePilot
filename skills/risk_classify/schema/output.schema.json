@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mergepilot.dev/skills/risk-classify/schema/output.schema.json",
+  "title": "RiskClassify Output",
+  "description": "Advisory risk aggregation (schema_version 1). Deterministic, only-escalate, never an authorization decision.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "rules_version", "risk_level", "risk_rank", "risk_floor", "advisory_only", "reasons", "matched_rules", "recommended_controls", "approval_recommended"],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1" },
+    "rules_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "risk_level": { "type": "string", "enum": ["L0", "L1", "L2"] },
+    "risk_rank": { "type": "integer", "enum": [0, 1, 2] },
+    "risk_floor": { "type": "string", "enum": ["L0", "L1", "L2"] },
+    "advisory_only": { "type": "boolean", "const": true },
+    "reasons": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["rule_id", "level", "summary", "files"],
+        "properties": {
+          "rule_id": { "type": "string", "minLength": 1 },
+          "level": { "type": "string", "enum": ["L0", "L1", "L2"] },
+          "summary": { "type": "string", "minLength": 1 },
+          "files": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "matched_rules": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+    "recommended_controls": {
+      "type": "array",
+      "items": { "type": "string", "enum": ["AUTO_REVIEW_ELIGIBLE", "HUMAN_REVIEW", "L2_APPROVAL_RECOMMENDED"] },
+      "uniqueItems": true
+    },
+    "approval_recommended": { "type": "boolean" }
+  }
+}

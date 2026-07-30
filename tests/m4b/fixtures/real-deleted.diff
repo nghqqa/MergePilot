@@ -1,0 +1,10 @@
+diff --git a/src/legacy.py b/src/legacy.py
+deleted file mode 100644
+index 5f0273b..0000000
+--- a/src/legacy.py
++++ /dev/null
+@@ -1,4 +0,0 @@
+-LEGACY = True
+-
+-def old():
+-    return None
