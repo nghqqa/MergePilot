@@ -1,6 +1,6 @@
 # 第三方依赖、商业服务与数据边界
 
-> 核对日期：2026-07-24。初赛包仅包含可复现原型与证据；复赛部署前应固定容器 digest、工具版本或 Git SHA，并重新检查许可证、价格与安全公告。
+> 核对日期：2026-07-31。初赛包仅包含可复现原型与证据；复赛部署前应固定容器 digest、工具版本或 Git SHA，并重新检查许可证、价格与安全公告。
 
 | 依赖 / 服务 | 当前用途 | 状态 | 边界与替代方案 |
 |---|---|---|---|
@@ -40,3 +40,44 @@
 - dev/test 清单：`skills/common/requirements-dev.txt`（`-r requirements.txt` + `pytest==8.4.2`）。
 - 隔离 venv 完整 freeze（含全部传递依赖）记录在 `evidence/m4/m4a/verification.txt`。
 - 不使用 `>=`；所列为实际安装并验证通过的确切版本。
+
+## M4-C TestRunner 生产容器镜像（核对日期 2026-07-31）
+
+镜像 `mergepilot/test-runner-py` 经 `skills/test_runner/Dockerfile` 构建。Dockerfile 默认固定基础镜像索引 digest，仍允许 deploy 通过 `PYTHON_BASE` 显式覆盖。
+
+| 层 | 内容 | 版本 | 许可证 |
+|---|---|---|---|
+| 基础镜像 | `python:3.9.25-slim` | index `sha256:2d97f6910b16bd338d3060f261f53f144965f755599aab1acda1e13cf1731b1b`；linux/amd64 manifest `sha256:dad5b29e3506c35e0fd222736f4d4ef25d21b219acdd73f7bb41d59996ca8e0d` | PSF-2.0 (Python)；Debian 组件遵循各自许可证 |
+| 容器内生产工具 | `pytest` | 8.4.2（容器内生产工具，非仅 dev） | MIT |
+
+### 镜像 digest
+
+- Registry digest：`sha256:41c6ab6e8dd9a8dcacfad34650df2aa12079ddb6fd844fdaa778d6c5ba7376b0`
+- 生产运行时由 deploy 经 `MERGEPILOT_TR_IMAGE=repository@sha256:<digest>` 提供。
+- 可复现构建：`docker build -t localhost:5000/mergepilot/test-runner-py:1.0.0 -f skills/test_runner/Dockerfile .`
+- 结构化构建证据：`evidence/m4/m4c/image-build.json`；四场景生产链证据：`evidence/m4/m4c/container-e2e.json`。
+
+### 容器 Python 包清单
+
+容器内 `python -m pip freeze`（镜像 digest 如上）：
+
+| 包 | 版本 | 许可证 |
+|---|---:|---|
+| `pytest` | 8.4.2 | MIT |
+| `exceptiongroup` | 1.3.1 | MIT |
+| `iniconfig` | 2.1.0 | MIT |
+| `packaging` | 26.2 | Apache-2.0 OR BSD-2-Clause |
+| `pluggy` | 1.6.0 | MIT |
+| `Pygments` | 2.20.0 | BSD-2-Clause |
+| `tomli` | 2.4.1 | MIT |
+| `typing_extensions` | 4.16.0 | PSF-2.0 |
+
+基础镜像自带 `pip==23.0.1`、`setuptools==79.0.1`、`wheel==0.45.1`；其许可证随 Python 官方基础镜像发行材料核对。
+
+### 离线依赖漏洞 advisory 数据
+
+- 来源：MergePilot 离线本地 advisory 集（人工整理自 OSV/CVE 公开数据）
+- 版本：`2026-07-advisory-snapshot`
+- 覆盖：pypi
+- 数据许可证：CVE 数据为公共领域；OSV 数据遵循 CC-BY 4.0
+- valid_until：2027-01-30

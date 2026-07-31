@@ -65,6 +65,16 @@
 - **复用价值**:Coordinator / Fixer / Verifier 共享同一风险语义
 - **版本**:v1.0;风险策略版本独立管理,支持灰度
 
+## M4-C 实现状态（权威，覆盖下方 SASTScan/SecretScan/DepVulnCheck/TestRunner 历史设想）
+
+`SASTScan` 与 `TestRunner` 已在 **M4-C** 完成可复用实现并通过多轮代码复审加固；87 项测试两轮稳定，四场景真实容器 E2E 通过，现处于待发布状态。证据见 `evidence/m4/m4c/`。以下冻结决策优先于第 3、4、5、7 节历史描述：
+
+- 两者复用 M4-A 公共 runtime（`contract_version="1"`，Draft 2020-12 envelope、公共错误码/脱敏/CLI），**未改 `skills/common`**。
+- **SASTScan = `skills/sast_scan/`**：SecretScan + DepVulnCheck 为其**子能力**（in-process 引擎 secret/ast_python/dep_vuln），不拆独立 Skill。版本化规则 `rules/sast-rules.v1.json`（`rules_version 1.0.0`）+ 独立 `schema/rules.schema.json`（重复 id/非法正则/未知枚举/重复 advisory fail-closed）。输出确定性、去重（`fingerprint`+`finding_id`）；**原始秘密不进入任何 digest**——`evidence_digest`/`fingerprint` 仅基于安全材料，`input_digest` 先把 secret 命中替换为 `<REDACTED:rule_id:length>`。冻结硬上限不可提升；v1 三引擎不可降级；dep 引擎仅匹配 `==` 精确 pin。**不引入** Semgrep/Gitleaks/Trivy/OSV 运行时依赖；dep_vuln 为**离线、本地 advisory 引擎**（非完整/实时）。
+- **TestRunner = `skills/test_runner/`**：**deploy 拥有的信任边界**——workspace/executor/network/env-allowlist/artifact-root 来自 `MERGEPILOT_TR_*` 进程环境（非请求字段，经统一 fail-closed 校验）；请求**无** `command`/`argv`/`workspace_root`/`artifact_globs` 字段（schema 拒绝）；argv 由版本化 profile（`config/runner-profiles.v1.json`，仅 `pytest`）构造，无 shell。**生产 container 镜像由 deploy 提供 digest**（`MERGEPILOT_TR_IMAGE=repository@sha256:<64hex>`，不回退 tag；profile 仅存 `image_repository`）。env 白名单 fail-closed（空 allowlist 允许 0 项）、剥离敏感键；sandbox 副本（symlink/reparse/socket 整体拒）；cleanup fail-closed；退出分类区分业务 FAIL 与运行器 ERROR（`verdict=FAIL`→exit 10；docker 125/126/127 与 pytest 2/3/4→ERROR）；v1 container 网络固定 denied（`--network=none`）。**冻结 artifact 契约**：生产 container 使用 8 MiB tmpfs，`artifacts` 恒为 `[]`；trusted-dev subprocess 才可从受控宿主目录返回相对路径与 digest，schema 与 core 均强制该分支。错误码复用通用五者。
+- 旧 `skills/sast-scan/`（第 3 节及部署态入口）**保持不动**，迁移 SOUL/Controller/README 延后。
+- 下方第 3、4、5、7 节中关于 Semgrep/Gitleaks/Trivy/OSV/CI MCP/`command` 字符串入口等描述属**历史设计**，不反映 M4-C 实现。
+
 ## 3. SASTScan
 
 - **用途**:静态安全扫描,识别注入/XSS/反序列化等代码缺陷。
