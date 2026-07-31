@@ -1,0 +1,14 @@
+{
+  "profiles_version": "1.0.0",
+  "profiles": [
+    {
+      "runner_key": "pytest",
+      "executable": "python",
+      "module": "pytest",
+      "fixed_args": ["-q", "--no-header", "-p", "no:cacheprovider", "--tb=short"],
+      "image_repository": "mergepilot/test-runner-py",
+      "tool_version": "pytest==8.4.2",
+      "network_required": false
+    }
+  ]
+}

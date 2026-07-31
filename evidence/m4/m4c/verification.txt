@@ -1,0 +1,70 @@
+=== MergePilot M4-C verification ===
+date: 2026-07-31T06:49:13Z
+python: D:\goai\m4a-venv\Scripts\python.exe (Python 3.9.25)
+jsonschema 4.25.1
+pytest 8.4.2
+py_compile OK: 19 files
+[PASS] py_compile (all M4-C .py)
+meta-valid: skills/sast_scan/schema\input.schema.json
+meta-valid: skills/sast_scan/schema\output.schema.json
+meta-valid: skills/sast_scan/schema\rules.schema.json
+meta-valid: skills/test_runner/schema\input.schema.json
+meta-valid: skills/test_runner/schema\output.schema.json
+meta-valid: skills/test_runner/schema\runner-profiles.schema.json
+sast ruleset valid; rules_version=1.0.0
+runner profiles valid; profiles_version=1.0.0 profiles=1
+[PASS] schema meta-validation + ruleset/profiles conformance
+EXPECTED_PASS (tests/m4c/conftest.py) = 87
+m4c round1: passed=87 failed=0 rc=0
+m4c round2: passed=87 failed=0 rc=0
+m4c r1 tail: ============================= 87 passed in 14.73s =============================
+m4c r2 tail: ============================= 87 passed in 9.05s ==============================
+[PASS] m4c pytest two rounds == EXPECTED_PASS, 0 failed, rc 0
+m4a regression: passed=75 (expect 75)
+m4b regression: passed=96 (expect 96)
+[PASS] m4a regression 75/75
+[PASS] m4b regression 96/96
+M3/M4-A/M4-B + skills/sast-scan changed entries: 0
+[PASS] M3 + M4-A + M4-B + skills/sast-scan untouched
+skills/common changed entries: 0
+[PASS] skills/common untouched
+warning: in the working copy of 'THIRD_PARTY.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/复赛路线图.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/附录B-Skill清单.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/项目状态.md', LF will be replaced by CRLF the next time Git touches it
+[PASS] git diff --check (tracked whitespace)
+[PASS] git diff --no-index --check (new source files; .diff excluded)
+trailing_whitespace_hits=0 (source files)
+[PASS] no trailing whitespace
+scan_targets: 38 files
+total_hits=0
+[PASS] delivery scan: 0 hits
+scan_targets: 4 files
+total_hits=0
+[PASS] M4-C docs scan: 0 hits
+residual_cache=0 pyc=0
+[PASS] no cache/pyc residue
+--- git state ---
+ M THIRD_PARTY.md
+ M "docs/\345\244\215\350\265\233\350\267\257\347\272\277\345\233\276.md"
+ M "docs/\351\231\204\345\275\225B-Skill\346\270\205\345\215\225.md"
+ M "docs/\351\241\271\347\233\256\347\212\266\346\200\201.md"
+?? evidence/m4/m4c/
+?? skills/sast_scan/
+?? skills/test_runner/
+?? tests/m4c/
+HEAD=871351ad3ce765fe68d147e7134b548beff250bb origin=871351ad3ce765fe68d147e7134b548beff250bb ab=0	0
+tags=31 m4b^{}=07cc3daa890ec2e2ba46096dae3201ec8a8fcd10
+--- container executor E2E ---
+Python 3.9.25 (main, Nov  3 2025, 22:44:01) [MSC v.1929 64 bit (AMD64)] on win32
+Type "help", "copyright", "credits" or "license" for more information.
+>>> 
+container E2E = PASSED (4 scenarios via production CLI; ENOSPC=28; tmpfs /artifacts 8MiB; artifacts=[] by contract)
+[PASS] container E2E and image build evidence valid
+container executor + WSL transport also covered by unit tests (exit classification, argv hardening, path mapping, cleanup, image-digest validation)
+scan_targets: 1 files
+total_hits=0
+[PASS] verification.txt self-scan: 0 hits
+
+=== SUMMARY ===
+ALL GATES PASSED

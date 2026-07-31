@@ -1,0 +1,130 @@
+{
+  "rules_version": "1.0.0",
+  "secret_rules": [
+    {
+      "rule_id": "SECRET_GITHUB_PAT",
+      "pattern": "ghp_[A-Za-z0-9]{36}",
+      "label": "GitHub personal access token (classic)",
+      "severity": "critical",
+      "risk_level": "L2",
+      "remediation": "Revoke the token, rotate via a secret manager, and never commit it to source."
+    },
+    {
+      "rule_id": "SECRET_GITHUB_FINEGRAINED",
+      "pattern": "github_pat_[A-Za-z0-9_]{80,}",
+      "label": "GitHub fine-grained personal access token",
+      "severity": "critical",
+      "risk_level": "L2",
+      "remediation": "Revoke the token and rotate via a secret manager."
+    },
+    {
+      "rule_id": "SECRET_OPENAI_SK",
+      "pattern": "sk-[A-Za-z0-9]{20,}",
+      "label": "OpenAI-style API key",
+      "severity": "critical",
+      "risk_level": "L2",
+      "remediation": "Revoke the key, rotate, and load it from environment or a vault."
+    },
+    {
+      "rule_id": "SECRET_AWS_AKIA",
+      "pattern": "AKIA[A-Z0-9]{16}",
+      "label": "AWS access key id",
+      "severity": "critical",
+      "risk_level": "L2",
+      "remediation": "Revoke the IAM access key and rotate through IAM."
+    },
+    {
+      "rule_id": "SECRET_SLACK_TOKEN",
+      "pattern": "xox[baprs]-[A-Za-z0-9-]{20,}",
+      "label": "Slack token",
+      "severity": "critical",
+      "risk_level": "L2",
+      "remediation": "Revoke the Slack token and rotate via the Slack admin."
+    },
+    {
+      "rule_id": "SECRET_HARDCODED_ASSIGN",
+      "pattern": "(?i)(API_KEY|SECRET_KEY|PASSWORD|PASSWD|TOKEN|ACCESS_TOKEN)[\\s]*[:=][\\s]*('[^']{6,}'|\"[^\"]{6,}\"|\\S{6,})",
+      "label": "Hardcoded credential assignment",
+      "severity": "critical",
+      "risk_level": "L2",
+      "remediation": "Remove the literal; load credentials from environment or a vault."
+    }
+  ],
+  "ast_rules": [
+    {
+      "rule_id": "AST_DANGEROUS_EVAL",
+      "kind": "dangerous_call",
+      "targets": ["eval"],
+      "severity": "high",
+      "risk_level": "L2",
+      "remediation": "Avoid eval(); parse or use a safe literal evaluator."
+    },
+    {
+      "rule_id": "AST_DANGEROUS_EXEC",
+      "kind": "dangerous_call",
+      "targets": ["exec"],
+      "severity": "high",
+      "risk_level": "L2",
+      "remediation": "Avoid exec(); refactor to explicit calls."
+    },
+    {
+      "rule_id": "AST_DANGEROUS_PICKLE_LOAD",
+      "kind": "dangerous_call",
+      "targets": ["pickle.load", "pickle.loads", "yaml.load"],
+      "severity": "high",
+      "risk_level": "L2",
+      "remediation": "Use a safe deserializer; pickle/yaml.load can execute arbitrary code."
+    },
+    {
+      "rule_id": "AST_DANGEROUS_SUBPROCESS_SHELL",
+      "kind": "dangerous_call",
+      "targets": ["subprocess.Popen", "subprocess.run", "subprocess.call", "subprocess.check_output"],
+      "severity": "high",
+      "risk_level": "L2",
+      "remediation": "Pass shell=False and an argv list; never interpolate untrusted input into a command string."
+    },
+    {
+      "rule_id": "AST_SQLI_EXECUTE",
+      "kind": "sqli_execute",
+      "targets": ["execute", "executemany"],
+      "severity": "critical",
+      "risk_level": "L2",
+      "remediation": "Use parameterized queries; never f-string/concatenate untrusted input into SQL."
+    }
+  ],
+  "dep_vuln": {
+    "db_version": "2026-07-advisory-snapshot",
+    "source": "MergePilot offline local advisory set (curated; not a complete or real-time DB)",
+    "covered_ecosystems": ["pypi"],
+    "valid_until": "2027-01-30",
+    "advisories": [
+      {
+        "package": "cryptography",
+        "ecosystem": "pypi",
+        "version": "37.0.0",
+        "id": "CVE-2023-50782",
+        "severity": "high",
+        "fixed_version": "42.0.4",
+        "advisory": "cryptography 37.0.0 has a key-processing vulnerability; upgrade to >=42.0.4."
+      },
+      {
+        "package": "requests",
+        "ecosystem": "pypi",
+        "version": "2.19.0",
+        "id": "CVE-2018-18074",
+        "severity": "high",
+        "fixed_version": "2.20.0",
+        "advisory": "requests 2.19.0 is vulnerable to CVE-2018-18074; upgrade to >=2.20.0."
+      },
+      {
+        "package": "loguru",
+        "ecosystem": "pypi",
+        "version": "0.5.3",
+        "id": "MERGEPILOT-ADV-LOGURU-0053",
+        "severity": "medium",
+        "fixed_version": "0.6.0",
+        "advisory": "loguru 0.5.3 has known issues; upgrade to a current release."
+      }
+    ]
+  }
+}

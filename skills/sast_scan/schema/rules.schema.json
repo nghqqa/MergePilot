@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mergepilot.dev/skills/sast-scan/schema/rules.schema.json",
+  "title": "SASTScan Ruleset",
+  "description": "Versioned declarative SAST rules: secret regex rules, Python AST rules, and an offline local dependency-advisory DB. Loaded by core; invalid regex / duplicate rule_id / unknown enum -> fail-closed.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["rules_version", "secret_rules", "ast_rules", "dep_vuln"],
+  "properties": {
+    "rules_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "secret_rules": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["rule_id", "pattern", "label", "severity", "risk_level", "remediation"],
+        "properties": {
+          "rule_id": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" },
+          "pattern": { "type": "string", "minLength": 1 },
+          "label": { "type": "string", "minLength": 1 },
+          "severity": { "type": "string", "enum": ["critical", "high", "medium", "low"] },
+          "risk_level": { "type": "string", "enum": ["L0", "L1", "L2"] },
+          "remediation": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "ast_rules": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["rule_id", "kind", "targets", "severity", "risk_level", "remediation"],
+        "properties": {
+          "rule_id": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]*$" },
+          "kind": { "type": "string", "enum": ["dangerous_call", "sqli_execute"] },
+          "targets": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+          "severity": { "type": "string", "enum": ["critical", "high", "medium", "low"] },
+          "risk_level": { "type": "string", "enum": ["L0", "L1", "L2"] },
+          "remediation": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "dep_vuln": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["db_version", "source", "covered_ecosystems", "valid_until", "advisories"],
+      "properties": {
+        "db_version": { "type": "string", "minLength": 1 },
+        "source": { "type": "string", "minLength": 1 },
+        "covered_ecosystems": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+        "valid_until": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+        "advisories": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["package", "ecosystem", "version", "id", "severity", "fixed_version", "advisory"],
+            "properties": {
+              "package": { "type": "string", "minLength": 1 },
+              "ecosystem": { "type": "string", "enum": ["pypi", "npm", "go", "maven", "composer", "cargo", "gem"] },
+              "version": { "type": "string", "minLength": 1 },
+              "id": { "type": "string", "minLength": 1 },
+              "severity": { "type": "string", "enum": ["critical", "high", "medium", "low"] },
+              "fixed_version": { "type": "string", "minLength": 1 },
+              "advisory": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    }
+  }
+}

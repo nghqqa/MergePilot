@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mergepilot.dev/skills/test-runner/schema/output.schema.json",
+  "title": "TestRunner Output",
+  "description": "Structured isolated test-run result (schema_version 1). verdict FAIL is a business failure (status=OK, exit 10); TIMEOUT/ERROR are runtime errors (status=ERROR). stdout/stderr are exposed only as capped tails + one-way digests. Container executor always returns artifacts=[] (frozen M4-C v1 contract: tmpfs is ephemeral). Subprocess executor may return artifacts with digests.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "profiles_version", "runner_key", "verdict", "exit_code", "duration_ms", "timed_out", "summary", "stdout_digest", "stderr_digest", "stdout_tail", "stderr_tail", "executor", "isolation", "network_policy", "resource_limits", "truncated", "artifacts"],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1" },
+    "profiles_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "runner_key": { "type": "string", "minLength": 1 },
+    "verdict": { "type": "string", "enum": ["PASS", "FAIL", "TIMEOUT", "ERROR"] },
+    "exit_code": { "type": ["integer", "null"] },
+    "duration_ms": { "type": "integer", "minimum": 0 },
+    "timed_out": { "type": "boolean" },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "passed": { "type": ["integer", "null"] },
+        "failed": { "type": ["integer", "null"] },
+        "skipped": { "type": ["integer", "null"] },
+        "errors": { "type": ["integer", "null"] }
+      }
+    },
+    "stdout_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "stderr_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "stdout_tail": { "type": "string" },
+    "stderr_tail": { "type": "string" },
+    "executor": { "type": "string", "enum": ["subprocess", "container"] },
+    "isolation": { "type": "string", "enum": ["process", "container", "none"] },
+    "network_policy": { "type": "string", "enum": ["denied", "allowed"] },
+    "resource_limits": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "timeout_ms": { "type": "integer", "minimum": 0 },
+        "max_output_bytes": { "type": "integer", "minimum": 0 },
+        "memory": { "type": "string" },
+        "cpus": { "type": "string" },
+        "pids_limit": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "truncated": { "type": "boolean" },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "rel_path", "size", "digest"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "rel_path": { "type": "string", "minLength": 1 },
+          "size": { "type": "integer", "minimum": 0 },
+          "digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "executor": { "const": "container" } } },
+      "then": { "properties": { "artifacts": { "maxItems": 0 } } }
+    }
+  ]
+}

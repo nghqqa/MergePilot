@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mergepilot.dev/skills/sast-scan/schema/input.schema.json",
+  "title": "SASTScan Input",
+  "description": "Business input for the sast-scan Skill (contract_version 1). Preferred mode is inline files (no host access). v1 always runs all three engines (secret/ast_python/dep_vuln); there is no caller-selectable 'engines' field. options may only LOWER the frozen hard limits.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["mode"],
+  "properties": {
+    "mode": { "type": "string", "enum": ["inline", "paths"] },
+    "files": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 2000,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "content"],
+        "properties": {
+          "path": { "type": "string", "minLength": 1, "maxLength": 1024 },
+          "content": { "type": "string" }
+        }
+      }
+    },
+    "paths": { "type": "array", "minItems": 1, "maxItems": 2000, "items": { "type": "string", "minLength": 1, "maxLength": 1024 } },
+    "expected_rules_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "options": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_bytes_per_file": { "type": "integer", "minimum": 1, "maximum": 262144 },
+        "max_total_bytes": { "type": "integer", "minimum": 1, "maximum": 2097152 },
+        "max_findings": { "type": "integer", "minimum": 1, "maximum": 500 },
+        "max_files": { "type": "integer", "minimum": 1, "maximum": 2000 }
+      }
+    }
+  },
+  "allOf": [
+    { "if": { "properties": { "mode": { "const": "inline" } } }, "then": { "required": ["files"] } },
+    { "if": { "properties": { "mode": { "const": "paths" } } }, "then": { "required": ["paths"] } }
+  ]
+}

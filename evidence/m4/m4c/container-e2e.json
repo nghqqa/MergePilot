@@ -1,0 +1,92 @@
+{
+  "date": "2026-07-31",
+  "image_digest": "localhost:5000/mergepilot/test-runner-py@sha256:41c6ab6e8dd9a8dcacfad34650df2aa12079ddb6fd844fdaa778d6c5ba7376b0",
+  "scenarios": [
+    {
+      "scenario": "pass",
+      "status": "OK",
+      "error_code": null,
+      "verdict": "PASS",
+      "exit_code": 0,
+      "executor": "container",
+      "isolation": "container",
+      "network_policy": "denied",
+      "duration_ms": 9389,
+      "side_effects": [
+        "fs_tmp",
+        "process_exec"
+      ],
+      "stdout_tail": ".\n1 passed in 0.04s\n",
+      "stderr_tail": "w\u0000s\u0000l\u0000:\u0000 \u0000�hKm0R \u0000l\u0000o\u0000c\u0000a\u0000l\u0000h\u0000o\u0000s\u0000t\u0000 \u0000�N\u0006tM�n\f�FO*g\\��P0R \u0000W\u0000S\u0000L\u0000\u00020N\u0000A\u0000T\u0000 \u0000!j\u000f_\u000bN�v \u0000W\u0000S\u0000L\u0000 \u0000\rN/e\u0001c \u0000l\u0000o\u0000c\u0000a\u0000l\u0000h\u0000o\u0000s\u0000t\u0000 \u0000�N\u0006t\u00020\r\u0000\n\u0000",
+      "artifacts": [],
+      "envelope_sha256": "7d10fa42852f9e8d8cebdeef9e71fbaa47e644798a99609d36746fa0b93cf6eb",
+      "rc": 0,
+      "residual": 0
+    },
+    {
+      "scenario": "timeout",
+      "status": "ERROR",
+      "error_code": "TIMEOUT",
+      "verdict": "TIMEOUT",
+      "exit_code": 1,
+      "executor": "container",
+      "isolation": "container",
+      "network_policy": "denied",
+      "duration_ms": 5843,
+      "side_effects": [
+        "fs_tmp",
+        "process_exec"
+      ],
+      "stdout_tail": "",
+      "stderr_tail": "w\u0000s\u0000l\u0000:\u0000 \u0000�hKm0R \u0000l\u0000o\u0000c\u0000a\u0000l\u0000h\u0000o\u0000s\u0000t\u0000 \u0000�N\u0006tM�n\f�FO*g\\��P0R \u0000W\u0000S\u0000L\u0000\u00020N\u0000A\u0000T\u0000 \u0000!j\u000f_\u000bN�v \u0000W\u0000S\u0000L\u0000 \u0000\rN/e\u0001c \u0000l\u0000o\u0000c\u0000a\u0000l\u0000h\u0000o\u0000s\u0000t\u0000 \u0000�N\u0006t\u00020\r\u0000\n\u0000",
+      "artifacts": [],
+      "envelope_sha256": "fef97115dd8907eb552f3b6b15cb18fdc7e35c16d1df7b43793454a55a53d947",
+      "rc": 3,
+      "residual": 0
+    },
+    {
+      "scenario": "error",
+      "status": "ERROR",
+      "error_code": "INTERNAL_ERROR",
+      "verdict": "ERROR",
+      "exit_code": 4,
+      "executor": "container",
+      "isolation": "container",
+      "network_policy": "denied",
+      "duration_ms": 718,
+      "side_effects": [
+        "fs_tmp",
+        "process_exec"
+      ],
+      "stdout_tail": "",
+      "stderr_tail": "w\u0000s\u0000l\u0000:\u0000 \u0000�hKm0R \u0000l\u0000o\u0000c\u0000a\u0000l\u0000h\u0000o\u0000s\u0000t\u0000 \u0000�N\u0006tM�n\f�FO*g\\��P0R \u0000W\u0000S\u0000L\u0000\u00020N\u0000A\u0000T\u0000 \u0000!j\u000f_\u000bN�v \u0000W\u0000S\u0000L\u0000 \u0000\rN/e\u0001c \u0000l\u0000o\u0000c\u0000a\u0000l\u0000h\u0000o\u0000s\u0000t\u0000 \u0000�N\u0006t\u00020\r\u0000\n\u0000ImportError while loading conftest '/work/bad/conftest.py'.\nbad/conftest.py:1: in <module>\n    raise ImportError('forced internal error')\nE   ImportError: forced internal error\n",
+      "artifacts": [],
+      "envelope_sha256": "460c8e4df6caaa1c29c9aafd9c568e9cc2d6df0af108ce70f5bbcc51c9742a81",
+      "rc": 1,
+      "residual": 0
+    },
+    {
+      "scenario": "tmpfs_quota",
+      "status": "OK",
+      "error_code": null,
+      "verdict": "PASS",
+      "exit_code": 0,
+      "executor": "container",
+      "isolation": "container",
+      "network_policy": "denied",
+      "duration_ms": 734,
+      "side_effects": [
+        "fs_tmp",
+        "process_exec"
+      ],
+      "stdout_tail": "TMPFS_QUOTA_ERRNO=28\n.\n1 passed in 0.03s\n",
+      "stderr_tail": "w\u0000s\u0000l\u0000:\u0000 \u0000�hKm0R \u0000l\u0000o\u0000c\u0000a\u0000l\u0000h\u0000o\u0000s\u0000t\u0000 \u0000�N\u0006tM�n\f�FO*g\\��P0R \u0000W\u0000S\u0000L\u0000\u00020N\u0000A\u0000T\u0000 \u0000!j\u000f_\u000bN�v \u0000W\u0000S\u0000L\u0000 \u0000\rN/e\u0001c \u0000l\u0000o\u0000c\u0000a\u0000l\u0000h\u0000o\u0000s\u0000t\u0000 \u0000�N\u0006t\u00020\r\u0000\n\u0000",
+      "quota_errno": 28,
+      "artifacts": [],
+      "envelope_sha256": "59fe3b80124320406067153b0114ae91c09a4e3ed230281eab7577b7791e6374",
+      "rc": 0,
+      "residual": 0
+    }
+  ],
+  "all_passed": true
+}

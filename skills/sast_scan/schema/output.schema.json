@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mergepilot.dev/skills/sast-scan/schema/output.schema.json",
+  "title": "SASTScan Output",
+  "description": "Structured, deduplicated, deterministically-ordered SAST findings (schema_version 1). Secret content is never present: messages/evidence_digest carry only redacted summaries or one-way digests.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "rules_version", "input_digest", "complete", "findings", "stats", "engines_used", "dep_vuln_meta"],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1" },
+    "rules_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "input_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "complete": { "type": "boolean" },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["finding_id", "fingerprint", "engine", "rule_id", "category", "severity", "risk_level", "file", "line", "column", "message", "remediation", "evidence_digest"],
+        "properties": {
+          "finding_id": { "type": "string", "pattern": "^finding-[0-9a-f]{16}$" },
+          "fingerprint": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "engine": { "type": "string", "enum": ["secret", "ast_python", "dep_vuln"] },
+          "rule_id": { "type": "string", "minLength": 1 },
+          "category": { "type": "string", "enum": ["secret", "injection", "dangerous_call", "dependency", "quality"] },
+          "severity": { "type": "string", "enum": ["critical", "high", "medium", "low"] },
+          "risk_level": { "type": "string", "enum": ["L0", "L1", "L2"] },
+          "file": { "type": "string", "minLength": 1 },
+          "line": { "type": "integer", "minimum": 0 },
+          "column": { "type": "integer", "minimum": 0 },
+          "message": { "type": "string", "minLength": 1 },
+          "remediation": { "type": "string", "minLength": 1 },
+          "evidence_digest": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+        }
+      }
+    },
+    "stats": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["files_scanned", "findings", "findings_total", "truncated", "dedup_count", "by_severity", "by_engine"],
+      "properties": {
+        "files_scanned": { "type": "integer", "minimum": 0 },
+        "findings": { "type": "integer", "minimum": 0 },
+        "findings_total": { "type": "integer", "minimum": 0 },
+        "truncated": { "type": "boolean" },
+        "truncated_digest": { "type": "string" },
+        "dedup_count": { "type": "integer", "minimum": 0 },
+        "by_severity": { "type": "object" },
+        "by_engine": { "type": "object" }
+      }
+    },
+    "engines_used": { "type": "array", "items": { "type": "string" } },
+    "dep_vuln_meta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["db_version", "source", "covered_ecosystems", "valid_until", "stale"],
+      "properties": {
+        "db_version": { "type": "string" },
+        "source": { "type": "string" },
+        "covered_ecosystems": { "type": "array", "items": { "type": "string" } },
+        "valid_until": { "type": "string" },
+        "stale": { "type": "boolean" }
+      }
+    },
+    "degraded": {
+      "type": "array",
+      "items": { "type": "object", "additionalProperties": false, "required": ["engine", "reason"],
+        "properties": { "engine": { "type": "string" }, "reason": { "type": "string" } } }
+    }
+  }
+}

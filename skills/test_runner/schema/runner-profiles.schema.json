@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mergepilot.dev/skills/test-runner/schema/runner-profiles.schema.json",
+  "title": "TestRunner Runner Profiles",
+  "description": "Versioned runner profiles. Each profile fixes executable/module, the fixed argv prefix, the allowed image repository (production image is deploy-provided as repository@sha256:digest, never a tag), tool version and network requirement. The caller selects a profile and supplies only relative test_paths; no free-form argv.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["profiles_version", "profiles"],
+  "properties": {
+    "profiles_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+    "profiles": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["runner_key", "executable", "module", "fixed_args", "image_repository", "tool_version", "network_required"],
+        "properties": {
+          "runner_key": { "type": "string", "pattern": "^[a-z][a-z0-9_-]*$" },
+          "executable": { "type": "string", "minLength": 1 },
+          "module": { "type": ["string", "null"] },
+          "fixed_args": { "type": "array", "items": { "type": "string" } },
+          "image_repository": { "type": "string", "minLength": 1, "maxLength": 256 },
+          "tool_version": { "type": "string", "minLength": 1 },
+          "network_required": { "type": "boolean", "const": false }
+        }
+      }
+    }
+  }
+}

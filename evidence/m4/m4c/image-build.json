@@ -1,0 +1,24 @@
+{
+  "date": "2026-07-31",
+  "build_command": "docker build -t localhost:5000/mergepilot/test-runner-py:1.0.0 -f skills/test_runner/Dockerfile .",
+  "base_image": {
+    "reference": "python:3.9.25-slim@sha256:2d97f6910b16bd338d3060f261f53f144965f755599aab1acda1e13cf1731b1b",
+    "linux_amd64_manifest": "sha256:dad5b29e3506c35e0fd222736f4d4ef25d21b219acdd73f7bb41d59996ca8e0d"
+  },
+  "image": {
+    "repository": "localhost:5000/mergepilot/test-runner-py",
+    "tag": "1.0.0",
+    "image_id": "sha256:207b1ab702f3d130446e55f4d51ced648ecbb4ef25a433968504999cc2a89af8",
+    "registry_digest": "sha256:41c6ab6e8dd9a8dcacfad34650df2aa12079ddb6fd844fdaa778d6c5ba7376b0"
+  },
+  "pip_freeze": [
+    "exceptiongroup==1.3.1",
+    "iniconfig==2.1.0",
+    "packaging==26.2",
+    "pluggy==1.6.0",
+    "Pygments==2.20.0",
+    "pytest==8.4.2",
+    "tomli==2.4.1",
+    "typing_extensions==4.16.0"
+  ]
+}
