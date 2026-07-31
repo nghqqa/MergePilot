@@ -67,7 +67,7 @@
 
 ## M4-C 实现状态（权威，覆盖下方 SASTScan/SecretScan/DepVulnCheck/TestRunner 历史设想）
 
-`SASTScan` 与 `TestRunner` 已在 **M4-C** 完成可复用实现并通过多轮代码复审加固；87 项测试两轮稳定，四场景真实容器 E2E 通过，现处于待发布状态。证据见 `evidence/m4/m4c/`。以下冻结决策优先于第 3、4、5、7 节历史描述：
+`SASTScan` 与 `TestRunner` 已在 **M4-C** 完成可复用实现并通过多轮代码复审加固，且已由 annotated tag `m4c-sast-test-closed` 发布（peeled `83442be`）；87 项测试两轮稳定，四场景真实容器 E2E 通过。证据见 `evidence/m4/m4c/`。以下冻结决策优先于第 3、4、5、7 节历史描述：
 
 - 两者复用 M4-A 公共 runtime（`contract_version="1"`，Draft 2020-12 envelope、公共错误码/脱敏/CLI），**未改 `skills/common`**。
 - **SASTScan = `skills/sast_scan/`**：SecretScan + DepVulnCheck 为其**子能力**（in-process 引擎 secret/ast_python/dep_vuln），不拆独立 Skill。版本化规则 `rules/sast-rules.v1.json`（`rules_version 1.0.0`）+ 独立 `schema/rules.schema.json`（重复 id/非法正则/未知枚举/重复 advisory fail-closed）。输出确定性、去重（`fingerprint`+`finding_id`）；**原始秘密不进入任何 digest**——`evidence_digest`/`fingerprint` 仅基于安全材料，`input_digest` 先把 secret 命中替换为 `<REDACTED:rule_id:length>`。冻结硬上限不可提升；v1 三引擎不可降级；dep 引擎仅匹配 `==` 精确 pin。**不引入** Semgrep/Gitleaks/Trivy/OSV 运行时依赖；dep_vuln 为**离线、本地 advisory 引擎**（非完整/实时）。
