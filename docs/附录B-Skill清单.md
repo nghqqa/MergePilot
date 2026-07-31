@@ -19,7 +19,7 @@
 | DepVulnCheck | 依赖漏洞检查 | Reviewer, Verifier | OSV/Trivy | L2 强制 |
 | CoverageImpact | 测试覆盖影响分析 | Reviewer | 覆盖率报告 + CI MCP | 质量 |
 | TestRunner | 执行测试套件 | Fixer, Verifier | CI MCP / 容器 | 验证 |
-| PRCreate | 创建 fix PR/commit/评论(幂等) | Fixer | GitHub/GitLab MCP | L2 仅 draft |
+| PRLifecycle | 创建/对账 fix/revert PR，票据化 merge/close | Fixer, Coordinator | Policy Gateway → GitHub MCP | 高风险写 |
 | CaseRetrieval | 历史相似 PR/修复案例 RAG | Fix Planner, Reviewer | PolarDB-PG + pgvector | 知识 |
 | RunbookRag | 规范/Runbook 检索 | Reviewer, Fix Planner | PolarDB-PG + pgvector | 规范约束 |
 | Postmortem | 复盘报告 + 经验沉淀 | Verifier | LLM + 知识库 | 自学习闭环 |
@@ -72,6 +72,13 @@
 - 两者复用 M4-A 公共 runtime（`contract_version="1"`，Draft 2020-12 envelope、公共错误码/脱敏/CLI），**未改 `skills/common`**。
 - **SASTScan = `skills/sast_scan/`**：SecretScan + DepVulnCheck 为其**子能力**（in-process 引擎 secret/ast_python/dep_vuln），不拆独立 Skill。版本化规则 `rules/sast-rules.v1.json`（`rules_version 1.0.0`）+ 独立 `schema/rules.schema.json`（重复 id/非法正则/未知枚举/重复 advisory fail-closed）。输出确定性、去重（`fingerprint`+`finding_id`）；**原始秘密不进入任何 digest**——`evidence_digest`/`fingerprint` 仅基于安全材料，`input_digest` 先把 secret 命中替换为 `<REDACTED:rule_id:length>`。冻结硬上限不可提升；v1 三引擎不可降级；dep 引擎仅匹配 `==` 精确 pin。**不引入** Semgrep/Gitleaks/Trivy/OSV 运行时依赖；dep_vuln 为**离线、本地 advisory 引擎**（非完整/实时）。
 - **TestRunner = `skills/test_runner/`**：**deploy 拥有的信任边界**——workspace/executor/network/env-allowlist/artifact-root 来自 `MERGEPILOT_TR_*` 进程环境（非请求字段，经统一 fail-closed 校验）；请求**无** `command`/`argv`/`workspace_root`/`artifact_globs` 字段（schema 拒绝）；argv 由版本化 profile（`config/runner-profiles.v1.json`，仅 `pytest`）构造，无 shell。**生产 container 镜像由 deploy 提供 digest**（`MERGEPILOT_TR_IMAGE=repository@sha256:<64hex>`，不回退 tag；profile 仅存 `image_repository`）。env 白名单 fail-closed（空 allowlist 允许 0 项）、剥离敏感键；sandbox 副本（symlink/reparse/socket 整体拒）；cleanup fail-closed；退出分类区分业务 FAIL 与运行器 ERROR（`verdict=FAIL`→exit 10；docker 125/126/127 与 pytest 2/3/4→ERROR）；v1 container 网络固定 denied（`--network=none`）。**冻结 artifact 契约**：生产 container 使用 8 MiB tmpfs，`artifacts` 恒为 `[]`；trusted-dev subprocess 才可从受控宿主目录返回相对路径与 digest，schema 与 core 均强制该分支。错误码复用通用五者。
+- **PRLifecycle = `skills/pr_lifecycle/`（M4-D ✅ `m4d-pr-lifecycle-closed`，peeled `1f7e4b4`）**：只接受
+  `ensure_fix_pr`、`ensure_revert_pr`、`merge_pr`、`close_pr` 四个高层动作；
+  role/repo/base/run/Gateway/token/HMAC 均由 deploy 拥有。唯一写链为
+  PRLifecycle → Policy Gateway → github-mcp → GitHub；不接受任意 tool/args、
+  PAT、URL、shell 或本地 git。HMAC 分支与可回读 marker 提供幂等绑定；
+  L2 merge/close 只透传审批票据。54/54×2，真实 fixture 11 场景 E2E 与
+  residue=0 均通过。
 - 旧 `skills/sast-scan/`（第 3 节及部署态入口）**保持不动**，迁移 SOUL/Controller/README 延后。
 - 下方第 3、4、5、7 节中关于 Semgrep/Gitleaks/Trivy/OSV/CI MCP/`command` 字符串入口等描述属**历史设计**，不反映 M4-C 实现。
 

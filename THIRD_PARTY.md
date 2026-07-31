@@ -81,3 +81,19 @@
 - 覆盖：pypi
 - 数据许可证：CVE 数据为公共领域；OSV 数据遵循 CC-BY 4.0
 - valid_until：2027-01-30
+
+## M4-D PRLifecycle 生产 adapter（核对日期 2026-07-31）
+
+`skills/pr_lifecycle/requirements.txt` 仅为 Policy Gateway MCP 生产 adapter
+提供精确依赖；框架中立 core 与 M4-A/B/C 回归仍使用既有 Python 3.9 环境。
+生产 adapter 需要 Python 3.10+，本轮在 Python 3.13.14 和真实 fixture E2E
+runner Python 3.12.13 中验证。
+
+| 依赖 | 精确版本 | 用途 | 许可证 |
+|---|---:|---|---|
+| `mcp` | 1.28.1 | MCP SSE client/session，连接 Policy Gateway | MIT |
+| `httpx` | 0.28.1 | MCP HTTP transport；adapter 固定 `trust_env=false`、不跟随重定向 | BSD-3-Clause |
+| `anyio` | 4.14.2 | MCP SDK 异步运行时依赖 | MIT |
+
+版本权威清单：`skills/pr_lifecycle/requirements.txt`。不使用 `>=`；M4-D
+verification 会校验 exact pins 与实际安装版本一致。
