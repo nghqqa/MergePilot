@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mergepilot.dev/skills/pr-lifecycle/schema/output.schema.json",
+  "title": "PRLifecycle Output",
+  "description": "Structured lifecycle result. Secrets, approval tickets, request content and raw upstream errors are never returned.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "action",
+    "outcome",
+    "effect_state",
+    "repository",
+    "base_branch",
+    "phases",
+    "changed_paths"
+  ],
+  "properties": {
+    "schema_version": {"type": "string", "const": "1"},
+    "action": {
+      "type": "string",
+      "enum": ["ensure_fix_pr", "ensure_revert_pr", "merge_pr", "close_pr"]
+    },
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "CREATED",
+        "EXISTING",
+        "MERGED",
+        "CLOSED",
+        "ALREADY_MERGED",
+        "ALREADY_CLOSED",
+        "ERROR"
+      ]
+    },
+    "effect_state": {
+      "type": "string",
+      "enum": ["NOT_ATTEMPTED", "ATTEMPTED", "CONFIRMED", "UNKNOWN"]
+    },
+    "repository": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+    },
+    "base_branch": {"type": "string", "minLength": 1, "maxLength": 255},
+    "head_branch": {"type": "string", "minLength": 1, "maxLength": 255},
+    "head_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "pull_number": {"type": "integer", "minimum": 1},
+    "pull_url": {"type": "string", "minLength": 1, "maxLength": 2048},
+    "result_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "draft": {"type": "boolean"},
+    "changed_paths": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {"type": "string", "minLength": 1, "maxLength": 1024}
+    },
+    "phases": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "CONFIG_VALIDATED",
+          "REMOTE_READ",
+          "BASE_VERIFIED",
+          "REVERT_VERIFIED",
+          "BRANCH_CREATED",
+          "CONTENT_WRITTEN",
+          "CONTENT_VERIFIED",
+          "PR_CREATED",
+          "PR_RECONCILED",
+          "L2_REQUESTED",
+          "L2_CONFIRMED"
+        ]
+      }
+    },
+    "policy_reason": {
+      "type": "string",
+      "pattern": "^[A-Z0-9_]+$",
+      "maxLength": 80
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "action": {
+            "enum": ["ensure_fix_pr", "ensure_revert_pr"]
+          },
+          "outcome": {"enum": ["CREATED", "EXISTING"]}
+        },
+        "required": ["action", "outcome"]
+      },
+      "then": {
+        "required": [
+          "head_branch",
+          "head_sha",
+          "pull_number",
+          "pull_url",
+          "draft"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "action": {"const": "merge_pr"},
+          "outcome": {"const": "MERGED"}
+        },
+        "required": ["action", "outcome"]
+      },
+      "then": {"required": ["pull_number", "result_sha"]}
+    },
+    {
+      "if": {
+        "properties": {
+          "action": {"enum": ["merge_pr", "close_pr"]},
+          "outcome": {
+            "enum": ["ALREADY_MERGED", "ALREADY_CLOSED", "CLOSED"]
+          }
+        },
+        "required": ["action", "outcome"]
+      },
+      "then": {"required": ["pull_number"]}
+    }
+  ]
+}

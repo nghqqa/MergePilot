@@ -1,0 +1,1 @@
+"""MergePilot PRLifecycle Skill."""

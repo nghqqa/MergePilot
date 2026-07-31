@@ -1,0 +1,271 @@
+{
+  "schema_version": "1",
+  "generated_at": "2026-07-31T09:35:08Z",
+  "target_repository": "nghqqa/MergePilot-e2e-fixture",
+  "fixture_run": "m4d-1785490322",
+  "production_chain": [
+    "python -m skills.pr_lifecycle.run",
+    "core.run",
+    "PolicyGatewayAdapter",
+    "Policy Gateway",
+    "github-mcp",
+    "GitHub fixture"
+  ],
+  "runner": {
+    "image": "policy-gateway:latest",
+    "python": "Python 3.12.13",
+    "dependencies": "1.28.1 0.28.1 4.14.2"
+  },
+  "scenarios": [
+    {
+      "scenario": "fix_create",
+      "passed": true,
+      "status": "OK",
+      "error_code": null,
+      "message": "",
+      "outcome": "CREATED",
+      "effect_state": "CONFIRMED",
+      "phases": [
+        "CONFIG_VALIDATED",
+        "REMOTE_READ",
+        "BASE_VERIFIED",
+        "BRANCH_CREATED",
+        "CONTENT_WRITTEN",
+        "CONTENT_VERIFIED",
+        "PR_CREATED",
+        "PR_RECONCILED"
+      ],
+      "policy_reason": null,
+      "side_effects": [
+        "github_write",
+        "network_read",
+        "network_write"
+      ],
+      "credential_hits": 0,
+      "envelope_sha256": "f134e5b7629ee051ca02753b788b536822cb7e0208724a68f027e0087080346a",
+      "pull_number": 363,
+      "recovery_count": 0,
+      "debug_state": {}
+    },
+    {
+      "scenario": "fix_replay",
+      "passed": true,
+      "status": "OK",
+      "error_code": null,
+      "message": "",
+      "outcome": "EXISTING",
+      "effect_state": "CONFIRMED",
+      "phases": [
+        "CONFIG_VALIDATED",
+        "REMOTE_READ",
+        "BASE_VERIFIED",
+        "CONTENT_VERIFIED",
+        "PR_RECONCILED"
+      ],
+      "policy_reason": null,
+      "side_effects": [
+        "network_read"
+      ],
+      "credential_hits": 0,
+      "envelope_sha256": "69b2da1cb60228e948677ab4361dc457836804ef40e59184d9c33a7a65677948"
+    },
+    {
+      "scenario": "idempotency_conflict",
+      "passed": true,
+      "status": "ERROR",
+      "error_code": "DENIED",
+      "message": "PRL_IDEMPOTENCY_CONFLICT",
+      "outcome": "ERROR",
+      "effect_state": "ATTEMPTED",
+      "phases": [
+        "CONFIG_VALIDATED",
+        "REMOTE_READ",
+        "BASE_VERIFIED"
+      ],
+      "policy_reason": null,
+      "side_effects": [
+        "network_read"
+      ],
+      "credential_hits": 0,
+      "envelope_sha256": "fb02bbee1bf051f187cb4e834492c8a53b0ab8ce9786765ece4470cb132e9f0d"
+    },
+    {
+      "scenario": "forbidden_path",
+      "passed": true,
+      "status": "ERROR",
+      "error_code": "INVALID_INPUT",
+      "message": "PRL_INVALID_INPUT",
+      "outcome": null,
+      "effect_state": null,
+      "phases": [],
+      "policy_reason": null,
+      "side_effects": [],
+      "credential_hits": 0,
+      "envelope_sha256": "8507c6ba2b856cb5e5069a4b9370163c00f1a8b04e47d921de8a4622e01e5f5d"
+    },
+    {
+      "scenario": "role_denial",
+      "passed": true,
+      "status": "ERROR",
+      "error_code": "DENIED",
+      "message": "PRL_ROLE_ACTION_DENIED",
+      "outcome": null,
+      "effect_state": null,
+      "phases": [],
+      "policy_reason": null,
+      "side_effects": [],
+      "credential_hits": 0,
+      "envelope_sha256": "18d06268b794faba30257abcad24660677e4063432639303d3a9518e36b89e7b"
+    },
+    {
+      "scenario": "repo_denial",
+      "passed": true,
+      "status": "ERROR",
+      "error_code": "DENIED",
+      "message": "PRL_POLICY_DENIED",
+      "outcome": "ERROR",
+      "effect_state": "ATTEMPTED",
+      "phases": [
+        "CONFIG_VALIDATED",
+        "REMOTE_READ"
+      ],
+      "policy_reason": "REPO_NOT_ALLOWED",
+      "side_effects": [
+        "network_read"
+      ],
+      "credential_hits": 0,
+      "envelope_sha256": "533c78a78288062e5833d1bc04fd43e5cc8040096c11c5e53c5412651c7c61a6"
+    },
+    {
+      "scenario": "ticket_denial",
+      "passed": true,
+      "status": "ERROR",
+      "error_code": "DENIED",
+      "message": "PRL_POLICY_DENIED",
+      "outcome": "ERROR",
+      "effect_state": "ATTEMPTED",
+      "phases": [
+        "CONFIG_VALIDATED",
+        "REMOTE_READ"
+      ],
+      "policy_reason": "CLAIM_MISMATCH",
+      "side_effects": [
+        "network_read",
+        "network_write"
+      ],
+      "credential_hits": 0,
+      "envelope_sha256": "b371401fadcce45fb06216ae2583bbe4077f05e6765d2330ff9e8163c77615d1"
+    },
+    {
+      "scenario": "close_once",
+      "passed": true,
+      "status": "OK",
+      "error_code": null,
+      "message": "",
+      "outcome": "CLOSED",
+      "effect_state": "CONFIRMED",
+      "phases": [
+        "CONFIG_VALIDATED",
+        "REMOTE_READ",
+        "L2_REQUESTED",
+        "L2_CONFIRMED"
+      ],
+      "policy_reason": null,
+      "side_effects": [
+        "github_write",
+        "network_read",
+        "network_write"
+      ],
+      "credential_hits": 0,
+      "envelope_sha256": "b83b777f293ee3183ae629c982db3cd79fed7b34e5c1be30e7321d6ec1b10178",
+      "setup_outcome": "CREATED",
+      "replay_outcome": "ALREADY_CLOSED",
+      "l2_claimed": 1,
+      "l2_complete": 1,
+      "ticket_status": "USED"
+    },
+    {
+      "scenario": "merge_once",
+      "passed": true,
+      "status": "OK",
+      "error_code": null,
+      "message": "",
+      "outcome": "MERGED",
+      "effect_state": "CONFIRMED",
+      "phases": [
+        "CONFIG_VALIDATED",
+        "REMOTE_READ",
+        "L2_REQUESTED",
+        "L2_CONFIRMED"
+      ],
+      "policy_reason": null,
+      "side_effects": [
+        "github_write",
+        "network_read",
+        "network_write"
+      ],
+      "credential_hits": 0,
+      "envelope_sha256": "09f178b6c8c18d105f8babc303ec234d84863e8483b79bc603cfdab7f7b65986",
+      "replay_outcome": "ALREADY_MERGED",
+      "l2_claimed": 1,
+      "l2_complete": 1,
+      "ticket_status": "USED"
+    },
+    {
+      "scenario": "revert_modified",
+      "passed": true,
+      "status": "OK",
+      "error_code": null,
+      "message": "",
+      "outcome": "CREATED",
+      "effect_state": "CONFIRMED",
+      "phases": [
+        "CONFIG_VALIDATED",
+        "REMOTE_READ",
+        "REVERT_VERIFIED",
+        "REMOTE_READ",
+        "BASE_VERIFIED",
+        "BRANCH_CREATED",
+        "CONTENT_WRITTEN",
+        "CONTENT_VERIFIED",
+        "PR_CREATED",
+        "PR_RECONCILED"
+      ],
+      "policy_reason": null,
+      "side_effects": [
+        "github_write",
+        "network_read",
+        "network_write"
+      ],
+      "credential_hits": 0,
+      "envelope_sha256": "4ddbe6813392b0923526fab212a3fe94f1a388433f39f8f169b19027ff23a149",
+      "pull_number": 365
+    },
+    {
+      "scenario": "revert_added_rejected",
+      "passed": true,
+      "status": "ERROR",
+      "error_code": "DENIED",
+      "message": "PRL_REVERT_DELETE_UNSUPPORTED",
+      "outcome": "ERROR",
+      "effect_state": "ATTEMPTED",
+      "phases": [
+        "CONFIG_VALIDATED",
+        "REMOTE_READ"
+      ],
+      "policy_reason": null,
+      "side_effects": [
+        "network_read"
+      ],
+      "credential_hits": 0,
+      "envelope_sha256": "a7d3b916579503d1a1d42a13bc39cf99450c20180adf940ddec16741cdde692e"
+    }
+  ],
+  "residue": {
+    "open_prs": 0,
+    "fix_branches": 0,
+    "db_rows": 0,
+    "runner_containers": 0
+  },
+  "all_passed": true
+}

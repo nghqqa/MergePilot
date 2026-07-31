@@ -1,0 +1,63 @@
+=== MergePilot M4-D verification ===
+date: 2026-07-31T11:10:32Z
+python: D:\goai\m4a-venv\Scripts\python.exe (Python 3.9.25)
+production adapter python: D:\goai\m4d-venv\Scripts\python.exe (Python 3.13.14)
+py_compile OK: 14 files
+[PASS] py_compile (all M4-D .py)
+meta-valid: skills/pr_lifecycle/schema\input.schema.json
+meta-valid: skills/pr_lifecycle/schema\output.schema.json
+[PASS] Draft 2020-12 schema meta-validation
+exact dependency pins: anyio==4.14.2, httpx==0.28.1, mcp==1.28.1
+[PASS] production adapter dependencies exactly pinned
+production adapter runtime: 3.13.14 (main, Jul 18 2026, 17:10:39) [MSC v.1944 64 bit (AMD64)]
+production dependency versions: {'mcp': '1.28.1', 'httpx': '0.28.1', 'anyio': '4.14.2'}
+[PASS] production adapter Python >=3.10 and exact dependencies installed
+EXPECTED_PASS (tests/m4d/conftest.py) = 54
+m4d round1: passed=54 failed=0 rc=0
+m4d round2: passed=54 failed=0 rc=0
+m4d r1 tail: ============================= 54 passed in 0.23s ==============================
+m4d r2 tail: ============================= 54 passed in 0.24s ==============================
+[PASS] m4d pytest two rounds == EXPECTED_PASS, 0 failed, rc 0
+m4a round1: passed=75 expected=75 rc=0
+m4a round2: passed=75 expected=75 rc=0
+[PASS] m4a regression 75/75 x2
+m4b round1: passed=96 expected=96 rc=0
+m4b round2: passed=96 expected=96 rc=0
+[PASS] m4b regression 96/96 x2
+m4c round1: passed=87 expected=87 rc=0
+m4c round2: passed=87 expected=87 rc=0
+[PASS] m4c regression 87/87 x2
+protected boundary changed entries: 0
+[PASS] M3 + M4-A/B/C + common protected boundaries untouched
+warning: in the working copy of 'THIRD_PARTY.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/复赛路线图.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/附录B-Skill清单.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/项目状态.md', LF will be replaced by CRLF the next time Git touches it
+[PASS] git diff --check (tracked whitespace)
+[PASS] git diff --no-index --check (new source files)
+trailing_whitespace_hits=0
+[PASS] no trailing whitespace
+scan_targets: 26 files
+total_hits=0
+[PASS] delivery/design scan: 0 hits
+residual_cache=0 pyc=0
+[PASS] no cache/pyc residue
+fixture E2E JSON validation: all required scenarios and residue gates passed
+[PASS] fixture GitHub E2E structured evidence valid
+--- git state ---
+ M THIRD_PARTY.md
+ M "docs/\345\244\215\350\265\233\350\267\257\347\272\277\345\233\276.md"
+ M "docs/\351\231\204\345\275\225B-Skill\346\270\205\345\215\225.md"
+ M "docs/\351\241\271\347\233\256\347\212\266\346\200\201.md"
+?? "docs/M4-D-PRLifecycle\350\256\276\350\256\241\345\206\273\347\273\223.md"
+?? evidence/m4/m4d/
+?? skills/pr_lifecycle/
+?? tests/m4d/
+HEAD=5ec056284205efb2d1cec37ea91cc34c67bf752c origin=5ec056284205efb2d1cec37ea91cc34c67bf752c ab=0	0
+tags=32 m4c^{}=83442beb1a1b402a894105e537bc92ed9eb8ba3f
+scan_targets: 1 files
+total_hits=0
+[PASS] verification.txt self-scan: 0 hits
+
+=== SUMMARY ===
+ALL GATES PASSED

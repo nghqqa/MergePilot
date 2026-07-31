@@ -1,0 +1,5 @@
+# PRLifecycle production adapter dependencies (exact versions).
+# Production adapter runtime: Python >=3.10 (MCP SDK requirement).
+mcp==1.28.1
+httpx==0.28.1
+anyio==4.14.2
