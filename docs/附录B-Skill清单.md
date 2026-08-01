@@ -160,18 +160,18 @@
 - **复用价值**:Fixer 用;任何"自动产出代码变更"的 Agent 都可复用
 - **版本**:v1.0
 
-## 9. CaseRetrieval(RAG)
+## 9. CaseRetrieval(RAG) — 已发布 `m4e-case-retrieval-closed`
 
 - **用途**:检索历史相似 PR/修复案例,为根因定位与方案提供先验。
 - **调用条件**:Fix Planner 规划修复时;Reviewer 判断是否已知模式。
-- **入口**:`caseretrieval.search(query, top_k)`
-- **参数**:`{ query: "变更语义+finding", top_k, filters: [repo, severity] }`
-- **返回**:`{ cases: [{pr_url, similarity, summary, applied_fix, outcome}] }`
-- **依赖工具**:PolarDB-PG + pgvector;embedding 模型;知识库 = 历史已合并 PR + 修复案例
-- **失败处理**:向量库不可达降级关键词检索;低相似度(<阈值)不返回避免误导
-- **安全边界**:只检索已脱敏/已合并案例;不跨租户泄露私有仓库明文
-- **复用价值**:Fix Planner + Reviewer 双用;知识库随每次成功合并自增长
-- **版本**:v1.0;索引 schema 版本独立
+- **入口**:`skills.case_retrieval.run.handle`（M4-A 公共 runtime；Draft 2020-12 契约）
+- **参数**:`{ query: "变更语义+finding", top_k(1–20), filters: {category, severity}, min_score }`
+- **返回**:`{ schema_version, results: [{case_id, score, citation:{source_type,source_url,verifiable}, stale, untrusted}], stats, degraded }`
+- **依赖**:`psycopg2-binary==2.9.12`、`fastembed==0.7.4`（`BAAI/bge-small-en-v1.5`,384 维 ONNX）、`pgvector/pgvector:pg16`（PostgreSQL 16）；知识库 = 历史已合并 PR + 修复案例
+- **失败处理**:向量库不可达 → `CASE_RETR_DB_UNAVAILABLE`；超时 → `CASE_RETR_TIMEOUT`；schema 不全 → `CASE_RETR_SCHEMA_UNSUPPORTED`；cleanup 不完整 → `CASE_RETR_MODEL_UNAVAILABLE`（fail-closed）
+- **安全边界**:repo scope/DSN/model/timeouts 全 deploy-owned；`case_retrieval_reader` 只读非特权身份（NOSUPERUSER/NOCREATEROLE/NOCREATEDB/NOREPLICATION/NOBYPASSRLS + `default_transaction_read_only=on`）；SQL `WHERE repo_scope=%s` + core 双层跨 scope fail-closed；NULL scope 永不返回；**`untrusted` 恒为 true**——历史案例为不透明数据,不授权 merge、不替代当次 SAST/TestRunner
+- **复用价值**:Fix Planner + Reviewer 双用；Docker fixture 一次性 E2E（`docker-fixture-e2e.json` schema v2,残留 0/0）
+- **版本**:v1.0（tag `m4e-case-retrieval-closed`,peeled `621e3aa`）；Windows 166/3×2、POSIX 158/11、tree-stub 3/3
 
 ## 10. RunbookRag(RAG)
 

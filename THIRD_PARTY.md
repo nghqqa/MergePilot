@@ -97,3 +97,19 @@ runner Python 3.12.13 中验证。
 
 版本权威清单：`skills/pr_lifecycle/requirements.txt`。不使用 `>=`；M4-D
 verification 会校验 exact pins 与实际安装版本一致。
+
+## M4-E CaseRetrieval 生产依赖（核对日期 2026-08-01）
+
+`skills/case_retrieval/requirements.txt` 为 CaseRetrieval Skill 提供精确
+依赖。生产使用 deploy-owned reader DSN 连接 PostgreSQL/pgvector；本轮真实
+E2E 经一次性 Docker `pgvector/pgvector:pg16` fixture 验证。
+
+| 依赖 | 精确版本 | 用途 | 许可证 |
+|---|---:|---|---|
+| `psycopg2-binary` | 2.9.12 | PostgreSQL/pgvector 只读 reader adapter（`case_retrieval_reader`） | LGPL-3.0 |
+| `fastembed` | 0.7.4 | 嵌入推理（ONNX）；模型 `BAAI/bge-small-en-v1.5`（384 维） | Apache-2.0 (fastembed)；MIT (模型权重，见 [BAAI/bge-small-en-v1.5](https://huggingface.co/BAAI/bge-small-en-v1.5)) |
+| `pgvector/pgvector:pg16` | `sha256:1d533553…` (RepoDigest) | 一次性 Docker fixture 的 PostgreSQL 16 + pgvector 0.8.5 | PostgreSQL License (PG)；pgvector PostgreSQL-3.0 |
+
+版本权威清单：`skills/case_retrieval/requirements.txt`。不使用 `>=`。
+PostgreSQL 16.14 + pgvector 0.8.5；PolarDB-PG 协议兼容，迁移为连接配置切换。
+
