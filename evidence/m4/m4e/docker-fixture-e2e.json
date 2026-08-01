@@ -1,0 +1,21 @@
+{
+  "all_passed": true,
+  "cleanup_ok": true,
+  "container_residual": 0,
+  "core_e2e_all_passed": true,
+  "credential_hits": 0,
+  "database_name": "mergepilot_m4e_fixture",
+  "delivery_digest": "e8b0b902247f9df26415bcede9bd2ee8f45aa6dce0a937049e25ea62720cc734",
+  "env_files_cleaned": true,
+  "fixture_guard_passed": true,
+  "generated_at": "2026-08-01T06:41:35.377862Z",
+  "image_id": "sha256:5fa1d4c74299c466a1a051ed66ce7a44b69cf27b66444a202f7e5592963ed596",
+  "image_reference": "pgvector/pgvector:pg16",
+  "network_residual": 0,
+  "pgvector_e2e_sha256": "505419729fbe2e828b446389606430bd4fdf2bcf6c3bd77d0fa70104fe2b7159",
+  "repo_digest": "pgvector/pgvector@sha256:1d533553fefe4f12e5d80c7b80622ba0c382abb5758856f52983d8789179f0fb",
+  "run_id_summary": "9a737b..len32",
+  "schema_version": "2",
+  "seeder_schema_version": "1",
+  "status": "complete"
+}

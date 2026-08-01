@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mergepilot.dev/skills/case-retrieval/schema/output.schema.json",
+  "title": "CaseRetrieval Output",
+  "description": "Advisory, repo-scoped retrieval results.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "embedding_model",
+    "embedding_version",
+    "complete",
+    "results",
+    "stats",
+    "degraded"
+  ],
+  "properties": {
+    "schema_version": { "const": "1" },
+    "embedding_model": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "embedding_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "maxLength": 32
+    },
+    "complete": { "type": "boolean" },
+    "results": {
+      "type": "array",
+      "maxItems": 20,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "case_id",
+          "score",
+          "category",
+          "severity",
+          "issue_summary",
+          "fix_summary",
+          "citation",
+          "source_version",
+          "created_at",
+          "stale",
+          "untrusted"
+        ],
+        "properties": {
+          "case_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "score": { "type": "number", "minimum": 0, "maximum": 1 },
+          "category": { "type": "string", "minLength": 1, "maxLength": 64 },
+          "severity": { "type": "string", "minLength": 1, "maxLength": 32 },
+          "issue_summary": { "type": "string", "maxLength": 500 },
+          "fix_summary": { "type": "string", "maxLength": 500 },
+          "citation": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["source_id", "source_type", "source_url", "verifiable"],
+            "properties": {
+              "source_id": { "type": "string", "minLength": 1, "maxLength": 512 },
+              "source_type": { "enum": ["pr", "commit", "finding", "unknown"] },
+              "source_url": {
+                "oneOf": [
+                  { "type": "null" },
+                  { "type": "string", "pattern": "^https://", "maxLength": 512 }
+                ]
+              },
+              "verifiable": { "type": "boolean" }
+            }
+          },
+          "source_version": { "type": "string", "minLength": 1, "maxLength": 64 },
+          "created_at": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T.*Z$",
+            "maxLength": 64
+          },
+          "stale": { "type": "boolean" },
+          "untrusted": { "const": true }
+        }
+      }
+    },
+    "stats": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "total_found",
+        "returned",
+        "trusted_available",
+        "repo_scope",
+        "knowledge_base_size"
+      ],
+      "properties": {
+        "total_found": { "type": "integer", "minimum": 0 },
+        "returned": { "type": "integer", "minimum": 0, "maximum": 20 },
+        "trusted_available": { "type": "integer", "minimum": 0 },
+        "repo_scope": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "knowledge_base_size": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "degraded": {
+      "type": "array",
+      "maxItems": 2,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["reason", "type"],
+        "properties": {
+          "reason": {
+            "enum": ["STALE_EMBEDDING_VERSION", "CITATION_UNVERIFIED"]
+          },
+          "type": { "enum": ["stale", "untrusted"] }
+        }
+      }
+    }
+  }
+}

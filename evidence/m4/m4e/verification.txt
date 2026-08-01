@@ -1,0 +1,38 @@
+=== MergePilot M4-E verification ===
+python: Python 3.9.25
+py_compile OK: 24 files
+[PASS] py_compile
+meta-valid: skills/case_retrieval/schema\input.schema.json
+meta-valid: skills/case_retrieval/schema\output.schema.json
+[PASS] schema meta-validation
+structured pgvector E2E evidence valid
+[PASS] structured pgvector E2E evidence
+docker fixture lifecycle evidence valid (digest + sha256 bound)
+[PASS] docker fixture lifecycle evidence
+platform=nt EXPECTED_PASS=166 EXPECTED_SKIP=3
+m4e round1: passed=166 skipped=3 failed=0 rc=0
+m4e round2: passed=166 skipped=3 failed=0 rc=0
+[PASS] M4-E two rounds
+M4-A round1: passed=75 rc=0
+M4-A round2: passed=75 rc=0
+M4-B round1: passed=96 rc=0
+M4-B round2: passed=96 rc=0
+M4-C round1: passed=87 rc=0
+M4-C round2: passed=87 rc=0
+M4-D round1: passed=54 rc=0
+M4-D round2: passed=54 rc=0
+[PASS] protected boundaries
+[PASS] tracked diff check
+[PASS] untracked diff check
+LF-only files verified
+[PASS] LF only
+scan_targets: 32 files
+total_hits=0
+[PASS] delivery credential/identifier scan
+[PASS] no cache residue
+HEAD=38c562f5b5de8489d677505c22d5c5b7e3b5462f
+origin=38c562f5b5de8489d677505c22d5c5b7e3b5462f
+ab=0	0
+tags=33
+[PASS] verification self-scan
+ALL GATES PASSED

@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mergepilot.dev/skills/case-retrieval/schema/input.schema.json",
+  "title": "CaseRetrieval Input",
+  "description": "Read-only advisory case retrieval. Repo scope, DB connection and embedding model are deploy-owned.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["query"],
+  "properties": {
+    "query": { "type": "string", "minLength": 1, "maxLength": 500 },
+    "top_k": { "type": "integer", "minimum": 1, "maximum": 20, "default": 5 },
+    "filters": {
+      "type": "object",
+      "additionalProperties": false,
+      "maxProperties": 2,
+      "properties": {
+        "category": { "type": "string", "enum": ["security", "quality", "performance", "style"] },
+        "severity": { "type": "string", "enum": ["critical", "high", "medium", "low"] }
+      }
+    },
+    "min_score": { "type": "number", "minimum": 0, "maximum": 1, "default": 0 },
+    "expected_embedding_version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" }
+  }
+}

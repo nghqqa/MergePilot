@@ -1,0 +1,66 @@
+{
+  "all_passed": true,
+  "credential_hits": 0,
+  "delivery_digest": "e8b0b902247f9df26415bcede9bd2ee8f45aa6dce0a937049e25ea62720cc734",
+  "deterministic": true,
+  "generated_at": "2026-08-01T06:41:31.865755Z",
+  "missing_scope_subcode": "CASE_RETR_SCOPE_MISSING",
+  "no_match": true,
+  "null_scope_excluded": true,
+  "production_chain": {
+    "entry": "skills.case_retrieval.run.handle",
+    "repo_scope": "repo-alpha",
+    "returned": 2,
+    "status": "OK"
+  },
+  "public_legacy": {
+    "null_scope": 5,
+    "rows": 5
+  },
+  "reader_role": {
+    "bypassrls": false,
+    "createdb": false,
+    "createrole": false,
+    "default_readonly": "on",
+    "replication": false,
+    "superuser": false
+  },
+  "schema_unsupported_subcode": "CASE_RETR_SCHEMA_UNSUPPORTED",
+  "schema_version": "1",
+  "scopes": {
+    "repo-alpha": {
+      "knowledge_base_size": 3,
+      "returned_ids": [
+        "1",
+        "3"
+      ]
+    },
+    "repo-beta": {
+      "knowledge_base_size": 3,
+      "returned_ids": [
+        "4"
+      ]
+    }
+  },
+  "side_effects": [],
+  "stale_observed": true,
+  "statement_timeout": {
+    "elapsed_ms": 100,
+    "pgcode": "57014"
+  },
+  "untrusted_observed": true,
+  "versions": {
+    "fastembed": "0.7.4",
+    "pgvector": "0.8.5",
+    "postgresql": "16.14 (Debian 16.14-1.pgdg12+1)",
+    "psycopg2": "2.9.12"
+  },
+  "write_denials": {
+    "alter": true,
+    "create": true,
+    "delete": true,
+    "insert": true,
+    "truncate": true,
+    "update": true
+  }
+}
