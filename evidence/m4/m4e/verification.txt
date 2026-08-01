@@ -22,6 +22,11 @@ M4-C round2: passed=87 rc=0
 M4-D round1: passed=54 rc=0
 M4-D round2: passed=54 rc=0
 [PASS] protected boundaries
+warning: in the working copy of 'THIRD_PARTY.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/项目状态.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'evidence/m4/m4e/docker-fixture-e2e.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'evidence/m4/m4e/pgvector-e2e.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'evidence/m4/m4e/verification.txt', LF will be replaced by CRLF the next time Git touches it
 [PASS] tracked diff check
 [PASS] untracked diff check
 LF-only files verified
@@ -30,9 +35,9 @@ scan_targets: 32 files
 total_hits=0
 [PASS] delivery credential/identifier scan
 [PASS] no cache residue
-HEAD=38c562f5b5de8489d677505c22d5c5b7e3b5462f
-origin=38c562f5b5de8489d677505c22d5c5b7e3b5462f
+HEAD=9d67ffc188484dfce9d14c0c9cf61d5f16402115
+origin=9d67ffc188484dfce9d14c0c9cf61d5f16402115
 ab=0	0
-tags=33
+tags=34
 [PASS] verification self-scan
 ALL GATES PASSED

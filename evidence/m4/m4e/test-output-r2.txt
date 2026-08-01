@@ -173,4 +173,4 @@ tests/m4e/test_migration.py::test_migration_revokes_target_writes_then_grants_se
 tests/m4e/test_migration.py::test_migration_sets_readonly_limits_and_search_path PASSED [ 99%]
 tests/m4e/test_migration.py::test_migration_contains_no_password_literal PASSED [100%]
 
-======================= 166 passed, 3 skipped in 4.28s ========================
+======================= 166 passed, 3 skipped in 5.71s ========================

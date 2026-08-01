@@ -112,4 +112,3 @@ E2E 经一次性 Docker `pgvector/pgvector:pg16` fixture 验证。
 
 版本权威清单：`skills/case_retrieval/requirements.txt`。不使用 `>=`。
 PostgreSQL 16.14 + pgvector 0.8.5；PolarDB-PG 协议兼容，迁移为连接配置切换。
-

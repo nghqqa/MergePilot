@@ -99,4 +99,3 @@ def test_migration_sets_readonly_limits_and_search_path():
 
 def test_migration_contains_no_password_literal():
     assert "password" not in executable_lines().lower()
-
