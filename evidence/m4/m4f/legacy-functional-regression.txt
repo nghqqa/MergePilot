@@ -1,0 +1,22 @@
+MergePilot M4-A~E legacy functional regression (authoritative platforms)
+generated_at: 2026-08-03T03:33:46Z
+head: ee5158b39c4784798758505a6821b1f266269180
+m4a_venv_python: /mnt/d/goai/m4a-venv/Scripts/python.exe (Python 3.9.25)
+runtime_image: mergepilot-m4f-runtime:demo
+note: Windows suites via m4a-venv (jsonschema 4.25.1, pytest 8.4.2); POSIX via container --init (tini process-tree reaping). Pure functional pytest only; release-scope gates are NOT run.
+
+[suites]
+label	dir	platform	passed	skipped	failed	errors	rc	expected_pass	expected_skip	status
+M4-A	tests/skills	win32 (m4a-venv)	/mnt/d/goai/m4a-venv/Scripts/python.exe -m pytest tests/skills	75	0	0	0	0	75	0	MATCH
+M4-B	tests/m4b	win32 (m4a-venv)	/mnt/d/goai/m4a-venv/Scripts/python.exe -m pytest tests/m4b	96	0	0	0	0	96	0	MATCH
+M4-C	tests/m4c	win32 (m4a-venv)	/mnt/d/goai/m4a-venv/Scripts/python.exe -m pytest tests/m4c	87	0	0	0	0	87	0	MATCH
+M4-D	tests/m4d	win32 (m4a-venv)	/mnt/d/goai/m4a-venv/Scripts/python.exe -m pytest tests/m4d	54	0	0	0	0	54	0	MATCH
+M4-E-win	tests/m4e	win32 (m4a-venv)	/mnt/d/goai/m4a-venv/Scripts/python.exe -m pytest tests/m4e	166	3	0	0	0	166	3	MATCH
+M4-E-posix	tests/m4e	posix (container --init)	docker run --init mergepilot-m4f-runtime:demo -m pytest tests/m4e	158	11	0	0	0	158	11	MATCH
+
+suites_total: 6
+suites_matched: 6
+suites_mismatched: 0
+
+legacy_regression_rc: 0
+LEGACY FUNCTIONAL REGRESSION ALL MATCHED

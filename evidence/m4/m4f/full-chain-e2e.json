@@ -1,0 +1,547 @@
+{
+  "schema": "m4f-full-chain-e2e",
+  "version": "1",
+  "generated_at": "2026-08-03T03:33:15Z",
+  "all_passed": true,
+  "fixture": {
+    "ephemeral": true,
+    "policy_gateway": "deterministic in-memory adapter",
+    "case_retrieval": "real pgvector adapter + deterministic embedding",
+    "external_credentials": false
+  },
+  "runtime_versions": {
+    "python": "3.12.13",
+    "psycopg2": "2.9.12",
+    "jsonschema": "4.25.1",
+    "pytest": "8.4.2"
+  },
+  "source_sha256": {
+    "controller": "afa5a42a5e6315b9865d6cd384fc2d18419ba24b78306c2b21ca6c990b8585b1",
+    "orchestration": "1bcc8d66fa4ddf4999d67b64c400ca76b9f72436932468a20435244a1227d269",
+    "worker": "a5ddbfdb708e064cfb8b3e4be3b57c378b0972d8e64ab38bd6003126b6da2a10",
+    "migration": "d4ea99ae20b8f80d617e46f7797e542001070d3a5a355ad56a800e48e39a540b"
+  },
+  "run": {
+    "run_id": "run-123",
+    "trace_id": "trace-m4f-demo-0001",
+    "revision_binding_id": "rev-9062b7ff285b33a5aa443d7fc56987c3",
+    "snapshot_id": "snap-d3152fd49c9dead558286fe5",
+    "snapshot_job_id": "snapjob-run-123",
+    "skill_job_ids": {
+      "diff-parse": "sj-c3707b923518022704faa982458f3500",
+      "risk-classify": "sj-f8b67f72f9dedb5fac430b7c64e4dd25",
+      "sast-scan": "sj-cade155505c56be6971b0888cca1ef72",
+      "test-runner": "sj-d8fd53e9385c74206ffabe3190daa3a1",
+      "case-retrieval": "sj-1a3bdeae0db8474e215ad8c9d0013f08",
+      "pr-lifecycle": "sj-497f9c0e2ce84d1420785f8a3a31a122"
+    }
+  },
+  "dag": {
+    "diff-parse": [],
+    "sast-scan": [],
+    "case-retrieval": [],
+    "risk-classify": [
+      "diff-parse"
+    ],
+    "test-runner": [
+      "risk-classify",
+      "sast-scan"
+    ],
+    "pr-lifecycle": [
+      "test-runner",
+      "case-retrieval"
+    ]
+  },
+  "checks": {
+    "handled_jobs": 6,
+    "job_count": 6,
+    "all_jobs_succeeded": true,
+    "test_runner_passed": true,
+    "pr_lifecycle_created": true,
+    "control_credentials_in_skill_env": false
+  },
+  "jobs": [
+    {
+      "skill": "case-retrieval",
+      "job_id": "sj-1a3bdeae0db8474e215ad8c9d0013f08",
+      "job_status": "SUCCEEDED",
+      "attempts": 1,
+      "invocation_id": "inv-516cf8c2d98cef826f875c98df1fb11e",
+      "response_status": "OK",
+      "error_code": null,
+      "verdict": null,
+      "output_schema_validated": true,
+      "message": "",
+      "summary": {
+        "complete": true
+      }
+    },
+    {
+      "skill": "diff-parse",
+      "job_id": "sj-c3707b923518022704faa982458f3500",
+      "job_status": "SUCCEEDED",
+      "attempts": 1,
+      "invocation_id": "inv-19ea36fc8897700cc11404930ca9b98f",
+      "response_status": "OK",
+      "error_code": null,
+      "verdict": null,
+      "output_schema_validated": true,
+      "message": "",
+      "summary": {
+        "complete": true
+      }
+    },
+    {
+      "skill": "pr-lifecycle",
+      "job_id": "sj-497f9c0e2ce84d1420785f8a3a31a122",
+      "job_status": "SUCCEEDED",
+      "attempts": 1,
+      "invocation_id": "inv-0127cee83c0f818e1aa5ce794c35a051",
+      "response_status": "OK",
+      "error_code": null,
+      "verdict": null,
+      "output_schema_validated": true,
+      "message": "",
+      "summary": {
+        "outcome": "CREATED"
+      }
+    },
+    {
+      "skill": "risk-classify",
+      "job_id": "sj-f8b67f72f9dedb5fac430b7c64e4dd25",
+      "job_status": "SUCCEEDED",
+      "attempts": 1,
+      "invocation_id": "inv-78e890c29b0e0325953926cdc17f6623",
+      "response_status": "OK",
+      "error_code": null,
+      "verdict": null,
+      "output_schema_validated": true,
+      "message": "",
+      "summary": {
+        "risk_level": "L2"
+      }
+    },
+    {
+      "skill": "sast-scan",
+      "job_id": "sj-cade155505c56be6971b0888cca1ef72",
+      "job_status": "SUCCEEDED",
+      "attempts": 1,
+      "invocation_id": "inv-3cf4c3aa699b4ac76051370b19351ac8",
+      "response_status": "OK",
+      "error_code": null,
+      "verdict": null,
+      "output_schema_validated": true,
+      "message": "",
+      "summary": {
+        "complete": true
+      }
+    },
+    {
+      "skill": "test-runner",
+      "job_id": "sj-d8fd53e9385c74206ffabe3190daa3a1",
+      "job_status": "SUCCEEDED",
+      "attempts": 1,
+      "invocation_id": "inv-088050dc1f190f870d29fe9a92963ff1",
+      "response_status": "OK",
+      "error_code": null,
+      "verdict": "PASS",
+      "output_schema_validated": true,
+      "message": "",
+      "summary": {
+        "verdict": "PASS"
+      }
+    }
+  ],
+  "observations": [
+    {
+      "schema": "mergepilot.observation.v1",
+      "timestamp": "2026-08-03T03:33:08Z",
+      "event": "revision.binding.started",
+      "run_id": "run-123",
+      "trace_id": "trace-m4f-demo-0001"
+    },
+    {
+      "schema": "mergepilot.observation.v1",
+      "timestamp": "2026-08-03T03:33:08Z",
+      "event": "revision.bound",
+      "run_id": "run-123",
+      "trace_id": "trace-m4f-demo-0001",
+      "revision_binding_id": "rev-9062b7ff285b33a5aa443d7fc56987c3",
+      "base_sha": "1111111111111111111111111111111111111111",
+      "head_sha": "2222222222222222222222222222222222222222"
+    },
+    {
+      "schema": "mergepilot.observation.v1",
+      "timestamp": "2026-08-03T03:33:08Z",
+      "event": "snapshot.completed",
+      "run_id": "run-123",
+      "trace_id": "trace-m4f-demo-0001",
+      "snapshot_job_id": "snapjob-run-123",
+      "snapshot_id": "snap-d3152fd49c9dead558286fe5",
+      "item_count": 6
+    },
+    {
+      "schema": "mergepilot.observation.v1",
+      "timestamp": "2026-08-03T03:33:08Z",
+      "event": "skill.enqueued",
+      "run_id": "run-123",
+      "trace_id": "trace-m4f-demo-0001",
+      "skill": "diff-parse",
+      "job_id": "sj-c3707b923518022704faa982458f3500",
+      "depends_on": []
+    },
+    {
+      "schema": "mergepilot.observation.v1",
+      "timestamp": "2026-08-03T03:33:08Z",
+      "event": "skill.enqueued",
+      "run_id": "run-123",
+      "trace_id": "trace-m4f-demo-0001",
+      "skill": "risk-classify",
+      "job_id": "sj-f8b67f72f9dedb5fac430b7c64e4dd25",
+      "depends_on": [
+        "sj-c3707b923518022704faa982458f3500"
+      ]
+    },
+    {
+      "schema": "mergepilot.observation.v1",
+      "timestamp": "2026-08-03T03:33:08Z",
+      "event": "skill.enqueued",
+      "run_id": "run-123",
+      "trace_id": "trace-m4f-demo-0001",
+      "skill": "sast-scan",
+      "job_id": "sj-cade155505c56be6971b0888cca1ef72",
+      "depends_on": []
+    },
+    {
+      "schema": "mergepilot.observation.v1",
+      "timestamp": "2026-08-03T03:33:08Z",
+      "event": "skill.enqueued",
+      "run_id": "run-123",
+      "trace_id": "trace-m4f-demo-0001",
+      "skill": "test-runner",
+      "job_id": "sj-d8fd53e9385c74206ffabe3190daa3a1",
+      "depends_on": [
+        "sj-f8b67f72f9dedb5fac430b7c64e4dd25",
+        "sj-cade155505c56be6971b0888cca1ef72"
+      ]
+    },
+    {
+      "schema": "mergepilot.observation.v1",
+      "timestamp": "2026-08-03T03:33:08Z",
+      "event": "skill.enqueued",
+      "run_id": "run-123",
+      "trace_id": "trace-m4f-demo-0001",
+      "skill": "case-retrieval",
+      "job_id": "sj-1a3bdeae0db8474e215ad8c9d0013f08",
+      "depends_on": []
+    },
+    {
+      "schema": "mergepilot.observation.v1",
+      "timestamp": "2026-08-03T03:33:08Z",
+      "event": "skill.enqueued",
+      "run_id": "run-123",
+      "trace_id": "trace-m4f-demo-0001",
+      "skill": "pr-lifecycle",
+      "job_id": "sj-497f9c0e2ce84d1420785f8a3a31a122",
+      "depends_on": [
+        "sj-d8fd53e9385c74206ffabe3190daa3a1",
+        "sj-1a3bdeae0db8474e215ad8c9d0013f08"
+      ]
+    },
+    {
+      "schema": "mergepilot.observation.v1",
+      "timestamp": "2026-08-03T03:33:08Z",
+      "event": "skill.claimed",
+      "worker_id": "demo-skill-worker",
+      "run_id": "run-123",
+      "trace_id": "trace-m4f-demo-0001",
+      "snapshot_id": "snap-d3152fd49c9dead558286fe5",
+      "job_id": "sj-1a3bdeae0db8474e215ad8c9d0013f08",
+      "skill": "case-retrieval",
+      "skill_version": "1.0.0",
+      "claim_id": "ab5bb2ff-74be-4489-b00f-26f35bd4c9a3",
+      "lease_seconds": 90
+    },
+    {
+      "schema": "mergepilot.observation.v1",
+      "timestamp": "2026-08-03T03:33:09Z",
+      "event": "skill.process.exited",
+      "worker_id": "demo-skill-worker",
+      "run_id": "run-123",
+      "trace_id": "trace-m4f-demo-0001",
+      "snapshot_id": "snap-d3152fd49c9dead558286fe5",
+      "job_id": "sj-1a3bdeae0db8474e215ad8c9d0013f08",
+      "skill": "case-retrieval",
+      "skill_version": "1.0.0",
+      "return_code": 0,
+      "duration_ms": 540,
+      "stdout_bytes": 1176,
+      "stderr_bytes": 0,
+      "stderr_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "schema": "mergepilot.observation.v1",
+      "timestamp": "2026-08-03T03:33:09Z",
+      "event": "skill.completed",
+      "worker_id": "demo-skill-worker",
+      "run_id": "run-123",
+      "trace_id": "trace-m4f-demo-0001",
+      "snapshot_id": "snap-d3152fd49c9dead558286fe5",
+      "job_id": "sj-1a3bdeae0db8474e215ad8c9d0013f08",
+      "skill": "case-retrieval",
+      "skill_version": "1.0.0",
+      "invocation_id": "inv-516cf8c2d98cef826f875c98df1fb11e",
+      "return_code": 0,
+      "output_schema_validated": true,
+      "response_digest": "938aacb7d6aaaffb3bdeb45130371641a378828080674522a6b10e230dec7648"
+    },
+    {
+      "schema": "mergepilot.observation.v1",
+      "timestamp": "2026-08-03T03:33:09Z",
+      "event": "skill.claimed",
+      "worker_id": "demo-skill-worker",
+      "run_id": "run-123",
+      "trace_id": "trace-m4f-demo-0001",
+      "snapshot_id": "snap-d3152fd49c9dead558286fe5",
+      "job_id": "sj-c3707b923518022704faa982458f3500",
+      "skill": "diff-parse",
+      "skill_version": "1.0.0",
+      "claim_id": "58eafcd7-3a2d-4569-a9c3-67b43ef9f878",
+      "lease_seconds": 90
+    },
+    {
+      "schema": "mergepilot.observation.v1",
+      "timestamp": "2026-08-03T03:33:09Z",
+      "event": "skill.process.exited",
+      "worker_id": "demo-skill-worker",
+      "run_id": "run-123",
+      "trace_id": "trace-m4f-demo-0001",
+      "snapshot_id": "snap-d3152fd49c9dead558286fe5",
+      "job_id": "sj-c3707b923518022704faa982458f3500",
+      "skill": "diff-parse",
+      "skill_version": "1.0.0",
+      "return_code": 0,
+      "duration_ms": 365,
+      "stdout_bytes": 1130,
+      "stderr_bytes": 0,
+      "stderr_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "schema": "mergepilot.observation.v1",
+      "timestamp": "2026-08-03T03:33:09Z",
+      "event": "skill.completed",
+      "worker_id": "demo-skill-worker",
+      "run_id": "run-123",
+      "trace_id": "trace-m4f-demo-0001",
+      "snapshot_id": "snap-d3152fd49c9dead558286fe5",
+      "job_id": "sj-c3707b923518022704faa982458f3500",
+      "skill": "diff-parse",
+      "skill_version": "1.0.0",
+      "invocation_id": "inv-19ea36fc8897700cc11404930ca9b98f",
+      "return_code": 0,
+      "output_schema_validated": true,
+      "response_digest": "1115385266f3081c2499882a859c43657b746386b6c0d13b4dc60fc3e5a1116d"
+    },
+    {
+      "schema": "mergepilot.observation.v1",
+      "timestamp": "2026-08-03T03:33:09Z",
+      "event": "skill.claimed",
+      "worker_id": "demo-skill-worker",
+      "run_id": "run-123",
+      "trace_id": "trace-m4f-demo-0001",
+      "snapshot_id": "snap-d3152fd49c9dead558286fe5",
+      "job_id": "sj-cade155505c56be6971b0888cca1ef72",
+      "skill": "sast-scan",
+      "skill_version": "1.0.0",
+      "claim_id": "94011900-8280-4385-83c4-8c95c29f4f9e",
+      "lease_seconds": 90
+    },
+    {
+      "schema": "mergepilot.observation.v1",
+      "timestamp": "2026-08-03T03:33:10Z",
+      "event": "skill.process.exited",
+      "worker_id": "demo-skill-worker",
+      "run_id": "run-123",
+      "trace_id": "trace-m4f-demo-0001",
+      "snapshot_id": "snap-d3152fd49c9dead558286fe5",
+      "job_id": "sj-cade155505c56be6971b0888cca1ef72",
+      "skill": "sast-scan",
+      "skill_version": "1.0.0",
+      "return_code": 0,
+      "duration_ms": 386,
+      "stdout_bytes": 1043,
+      "stderr_bytes": 0,
+      "stderr_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "schema": "mergepilot.observation.v1",
+      "timestamp": "2026-08-03T03:33:10Z",
+      "event": "skill.completed",
+      "worker_id": "demo-skill-worker",
+      "run_id": "run-123",
+      "trace_id": "trace-m4f-demo-0001",
+      "snapshot_id": "snap-d3152fd49c9dead558286fe5",
+      "job_id": "sj-cade155505c56be6971b0888cca1ef72",
+      "skill": "sast-scan",
+      "skill_version": "1.0.0",
+      "invocation_id": "inv-3cf4c3aa699b4ac76051370b19351ac8",
+      "return_code": 0,
+      "output_schema_validated": true,
+      "response_digest": "dc757bba4ada927915fb991b15cc5ffda2294b804b2d67513115bdecb3c6b2d8"
+    },
+    {
+      "schema": "mergepilot.observation.v1",
+      "timestamp": "2026-08-03T03:33:10Z",
+      "event": "skill.claimed",
+      "worker_id": "demo-skill-worker",
+      "run_id": "run-123",
+      "trace_id": "trace-m4f-demo-0001",
+      "snapshot_id": "snap-d3152fd49c9dead558286fe5",
+      "job_id": "sj-f8b67f72f9dedb5fac430b7c64e4dd25",
+      "skill": "risk-classify",
+      "skill_version": "1.0.0",
+      "claim_id": "95f9c8ed-7509-49cd-b9af-6a6d064829a2",
+      "lease_seconds": 90
+    },
+    {
+      "schema": "mergepilot.observation.v1",
+      "timestamp": "2026-08-03T03:33:10Z",
+      "event": "skill.process.exited",
+      "worker_id": "demo-skill-worker",
+      "run_id": "run-123",
+      "trace_id": "trace-m4f-demo-0001",
+      "snapshot_id": "snap-d3152fd49c9dead558286fe5",
+      "job_id": "sj-f8b67f72f9dedb5fac430b7c64e4dd25",
+      "skill": "risk-classify",
+      "skill_version": "1.0.0",
+      "return_code": 0,
+      "duration_ms": 346,
+      "stdout_bytes": 1021,
+      "stderr_bytes": 0,
+      "stderr_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "schema": "mergepilot.observation.v1",
+      "timestamp": "2026-08-03T03:33:10Z",
+      "event": "skill.completed",
+      "worker_id": "demo-skill-worker",
+      "run_id": "run-123",
+      "trace_id": "trace-m4f-demo-0001",
+      "snapshot_id": "snap-d3152fd49c9dead558286fe5",
+      "job_id": "sj-f8b67f72f9dedb5fac430b7c64e4dd25",
+      "skill": "risk-classify",
+      "skill_version": "1.0.0",
+      "invocation_id": "inv-78e890c29b0e0325953926cdc17f6623",
+      "return_code": 0,
+      "output_schema_validated": true,
+      "response_digest": "bf06f2a52a4bb98f2619e7a62c216aad8947d5bd555d6c567cf5001f2df7aaac"
+    },
+    {
+      "schema": "mergepilot.observation.v1",
+      "timestamp": "2026-08-03T03:33:10Z",
+      "event": "skill.claimed",
+      "worker_id": "demo-skill-worker",
+      "run_id": "run-123",
+      "trace_id": "trace-m4f-demo-0001",
+      "snapshot_id": "snap-d3152fd49c9dead558286fe5",
+      "job_id": "sj-d8fd53e9385c74206ffabe3190daa3a1",
+      "skill": "test-runner",
+      "skill_version": "1.0.0",
+      "claim_id": "3bf56867-0bfa-4ac9-80c1-4a0d67cc19b6",
+      "lease_seconds": 90
+    },
+    {
+      "schema": "mergepilot.observation.v1",
+      "timestamp": "2026-08-03T03:33:15Z",
+      "event": "skill.process.exited",
+      "worker_id": "demo-skill-worker",
+      "run_id": "run-123",
+      "trace_id": "trace-m4f-demo-0001",
+      "snapshot_id": "snap-d3152fd49c9dead558286fe5",
+      "job_id": "sj-d8fd53e9385c74206ffabe3190daa3a1",
+      "skill": "test-runner",
+      "skill_version": "1.0.0",
+      "return_code": 0,
+      "duration_ms": 4270,
+      "stdout_bytes": 1303,
+      "stderr_bytes": 0,
+      "stderr_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "schema": "mergepilot.observation.v1",
+      "timestamp": "2026-08-03T03:33:15Z",
+      "event": "skill.completed",
+      "worker_id": "demo-skill-worker",
+      "run_id": "run-123",
+      "trace_id": "trace-m4f-demo-0001",
+      "snapshot_id": "snap-d3152fd49c9dead558286fe5",
+      "job_id": "sj-d8fd53e9385c74206ffabe3190daa3a1",
+      "skill": "test-runner",
+      "skill_version": "1.0.0",
+      "invocation_id": "inv-088050dc1f190f870d29fe9a92963ff1",
+      "return_code": 0,
+      "output_schema_validated": true,
+      "response_digest": "3e691a29df698f0e64f527107fe967b7338df434fceaa1b0ca63259247704970"
+    },
+    {
+      "schema": "mergepilot.observation.v1",
+      "timestamp": "2026-08-03T03:33:15Z",
+      "event": "skill.claimed",
+      "worker_id": "demo-skill-worker",
+      "run_id": "run-123",
+      "trace_id": "trace-m4f-demo-0001",
+      "snapshot_id": "snap-d3152fd49c9dead558286fe5",
+      "job_id": "sj-497f9c0e2ce84d1420785f8a3a31a122",
+      "skill": "pr-lifecycle",
+      "skill_version": "1.0.0",
+      "claim_id": "907e939f-32e0-4763-8f82-ef4c498cf663",
+      "lease_seconds": 90
+    },
+    {
+      "schema": "mergepilot.observation.v1",
+      "timestamp": "2026-08-03T03:33:15Z",
+      "event": "skill.process.exited",
+      "worker_id": "demo-skill-worker",
+      "run_id": "run-123",
+      "trace_id": "trace-m4f-demo-0001",
+      "snapshot_id": "snap-d3152fd49c9dead558286fe5",
+      "job_id": "sj-497f9c0e2ce84d1420785f8a3a31a122",
+      "skill": "pr-lifecycle",
+      "skill_version": "1.0.0",
+      "return_code": 0,
+      "duration_ms": 349,
+      "stdout_bytes": 1262,
+      "stderr_bytes": 0,
+      "stderr_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "schema": "mergepilot.observation.v1",
+      "timestamp": "2026-08-03T03:33:15Z",
+      "event": "skill.completed",
+      "worker_id": "demo-skill-worker",
+      "run_id": "run-123",
+      "trace_id": "trace-m4f-demo-0001",
+      "snapshot_id": "snap-d3152fd49c9dead558286fe5",
+      "job_id": "sj-497f9c0e2ce84d1420785f8a3a31a122",
+      "skill": "pr-lifecycle",
+      "skill_version": "1.0.0",
+      "invocation_id": "inv-0127cee83c0f818e1aa5ce794c35a051",
+      "return_code": 0,
+      "output_schema_validated": true,
+      "response_digest": "7212324f36614cebdac2aaf18c5075a9fe97c2ac81afd53dc167fa439d329167"
+    }
+  ],
+  "residue": {
+    "containers": 0,
+    "networks": 0,
+    "temp_dirs": 0
+  },
+  "runner": {
+    "finalized_at": "2026-08-03T03:33:19+00:00",
+    "demo_rc": 0,
+    "migration_round_1_rc": 0,
+    "migration_round_2_rc": 0,
+    "revision_cut_rc": 0,
+    "complete_purge_race_rc": 0
+  }
+}
