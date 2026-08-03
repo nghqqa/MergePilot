@@ -8,6 +8,8 @@ RUN pip install --no-cache-dir \
       anyio==4.14.2
 COPY controller.py /app/controller.py
 COPY gateway_client.py /app/gateway_client.py
+COPY m4f_controller.py /app/m4f_controller.py
+COPY m4f_ingress.py /app/m4f_ingress.py
 COPY test_gateway_schema.py /app/test_gateway_schema.py
 COPY test_startup_pgwait.py /app/test_startup_pgwait.py
 WORKDIR /app

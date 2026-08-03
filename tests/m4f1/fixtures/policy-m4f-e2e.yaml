@@ -1,0 +1,45 @@
+version: "m4f-agentteams-e2e-v1"
+
+repos:
+  allowlist:
+    - "example/project"
+
+branches:
+  base_allowlist: ["main"]
+  fix_prefix: "fix/"
+  protected: ["main"]
+
+file_paths:
+  denylist:
+    - "glob:**/.env*"
+    - "glob:**/*.pem"
+    - "glob:**/*.key"
+    - "glob:**/secrets/**"
+    - "glob:**/.github/workflows/**"
+
+tool_classes:
+  read:
+    - pull_request_read
+    - list_branches
+    - list_pull_requests
+    - get_file_contents
+    - get_commit
+    - list_commits
+  comment: []
+  fix:
+    - create_branch
+    - push_files
+    - create_pull_request
+  l2: []
+  disabled: []
+
+roles:
+  reviewer:
+    classes: [read]
+  verifier:
+    classes: [read]
+  fixer:
+    classes: [read, fix]
+    write_checks: true
+  coordinator:
+    classes: [read]

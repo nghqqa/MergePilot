@@ -16,6 +16,7 @@ ENV_FILE=/home/ngh/.config/mergepilot/controller.env
 TOKENS_FILE=/home/ngh/.config/mergepilot/role-tokens.json
 BUILD_CTX="${BUILD_CTX:-/mnt/d/goai/mergepilot-os/tools/workflow-controller}"
 L2_MERGE_ENABLED="${L2_MERGE_ENABLED:-0}"
+M4F_ENABLED="${M4F_ENABLED:-0}"
 NAME=mergepilot-controller
 ROLLBACK=${NAME}-rollback
 NET=--network=hiclab-net
@@ -50,7 +51,8 @@ ENV_ARGS=(--env-file "$ENV_FILE"
   -e MATRIX_HS=http://hiclaw-controller:6167
   -e GATEWAY_URL=http://policy-gw:8083
   -e COORDINATOR_TOKEN="$COORD_TOKEN"
-  -e L2_MERGE_ENABLED="$L2_MERGE_ENABLED")
+  -e L2_MERGE_ENABLED="$L2_MERGE_ENABLED"
+  -e M4F_ENABLED="$M4F_ENABLED")
 
 # ─── 1. build ───
 echo "=== build controller image (ctx=$BUILD_CTX) ==="

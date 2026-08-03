@@ -358,15 +358,26 @@ def _is_sha40(s):
     return isinstance(s, str) and len(s) == 40 and all(c in "0123456789abcdef" for c in s)
 
 
-def gateway_read_pr(owner, repo, pr_num, timeout=60):
+def gateway_read_pr(owner, repo, pr_num, timeout=60, *, run_id=None):
     """pull_request_read(method=get) → (status, pr_dict)。status ∈ {'OK','RETRY'}(无 NOT_FOUND)。
     B4c-1.2 P1-2 全字段严格(不补默认值;缺/伪造 → RETRY,绝不假一致):
       head_sha 必须 40hex;PR number 必须来自响应(int 且非 bool,**不 fallback 到请求参数**);
       state/head_ref/head_repo_full_name/base_ref/merged 必须存在且类型正确(merged 不默认 false,缺失→RETRY);
       head_repo 缺失不接受(防 fork PR 绕过)。"""
     try:
-        text, _ = gateway_call("pull_request_read",
-            {"method": "get", "owner": owner, "repo": repo, "pullNumber": int(pr_num)}, timeout)
+        arguments = {
+            "method": "get",
+            "owner": owner,
+            "repo": repo,
+            "pullNumber": int(pr_num),
+        }
+        if run_id is not None:
+            arguments["mergepilot_run_id"] = str(run_id)
+        text, _ = gateway_call("pull_request_read", arguments, timeout)
+    except GatewayError as exc:
+        if type(exc) is GatewayError:
+            return ("RETRY", None)
+        raise
     except (ValueError, TypeError):   # B4c.1.2:schema 异常 → RETRY;Unavailable/Denied/GlobalDegraded 透传
         return ("RETRY", None)
     try:
@@ -388,6 +399,9 @@ def gateway_read_pr(owner, repo, pr_num, timeout=60):
     base_ref = base.get("ref")
     if not isinstance(base_ref, str) or not base_ref:
         return ("RETRY", None)   # base_ref 必须存在
+    base_sha = base.get("sha")
+    if run_id is not None and not _is_sha40(base_sha):
+        return ("RETRY", None)   # M4-F provenance 必须是完整 base commit
     head_ref = head.get("ref")
     if not isinstance(head_ref, str) or not head_ref:
         return ("RETRY", None)   # head_ref 必须存在
@@ -409,7 +423,7 @@ def gateway_read_pr(owner, repo, pr_num, timeout=60):
     mcs = d.get("mergeCommitSha")
     if not isinstance(mcs, str) and isinstance(merge_commit, dict):
         mcs = merge_commit.get("sha")
-    return ("OK", {
+    result = {
         "head_sha": head_sha,
         "state": state,
         "base": base_ref,
@@ -418,7 +432,51 @@ def gateway_read_pr(owner, repo, pr_num, timeout=60):
         "pr_number": pr_number,
         "head_ref": head_ref,
         "head_repo_full_name": head_repo_full_name,
-    })
+    }
+    if _is_sha40(base_sha):
+        result["base_sha"] = base_sha
+    return ("OK", result)
+
+
+def gateway_get_pr_diff(owner, repo, pr_num, timeout=60):
+    """经 Policy Gateway 读取权威 unified diff。"""
+    text, _ = gateway_call(
+        "pull_request_read",
+        {
+            "method": "get_diff",
+            "owner": owner,
+            "repo": repo,
+            "pullNumber": int(pr_num),
+        },
+        timeout,
+    )
+    if not isinstance(text, str):
+        raise GatewayUnavailable("pull_request_read get_diff returned non-text")
+    return text
+
+
+def gateway_get_pr_files(owner, repo, pr_num, timeout=60):
+    """经 Policy Gateway 读取权威 changed-files 列表。"""
+    text, _ = gateway_call(
+        "pull_request_read",
+        {
+            "method": "get_files",
+            "owner": owner,
+            "repo": repo,
+            "pullNumber": int(pr_num),
+            "perPage": 100,
+        },
+        timeout,
+    )
+    try:
+        payload = json.loads(text)
+    except (TypeError, ValueError) as exc:
+        raise GatewayUnavailable("pull_request_read get_files invalid JSON") from exc
+    if isinstance(payload, dict):
+        payload = payload.get("files") or payload.get("data")
+    if not isinstance(payload, list) or not all(isinstance(item, dict) for item in payload):
+        raise GatewayUnavailable("pull_request_read get_files invalid schema")
+    return payload
 
 
 def canonical_args_hash(payload):

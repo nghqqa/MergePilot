@@ -14,6 +14,8 @@
 """
 import os, sys, json, time, re, hashlib, uuid, psycopg2, urllib.request, urllib.error
 
+import m4f_ingress
+
 # ── 配置 ──
 ADMIN   = "admin"
 SERVER  = os.environ.get("MATRIX_SERVER_NAME", "matrix-local.hiclaw.io:18080")
@@ -35,6 +37,13 @@ SYNC_TIMEOUT  = int(os.environ.get("SYNC_TIMEOUT", "30000"))
 _L2_RAW = os.environ.get("L2_MERGE_ENABLED", "0").strip().lower()
 _L2_TRUE = {"1", "true", "yes", "on"}
 _L2_FALSE = {"0", "false", "no", "off"}
+
+_M4F_RAW = os.environ.get("M4F_ENABLED", "0").strip().lower()
+M4F_ENABLED = _M4F_RAW in _L2_TRUE
+M4F_ENABLED_INVALID = _M4F_RAW not in _L2_TRUE and _M4F_RAW not in _L2_FALSE
+M4F_SNAPSHOT_DSN = os.environ.get("M4F_SNAPSHOT_DSN", "").strip()
+M4F_EVENT_LEASE_SECONDS = int(os.environ.get("M4F_EVENT_LEASE_SECONDS", "120"))
+M4F_EVENT_MAX_ATTEMPTS = int(os.environ.get("M4F_EVENT_MAX_ATTEMPTS", "5"))
 L2_MERGE_ENABLED = _L2_RAW in _L2_TRUE
 L2_MERGE_ENABLED_INVALID = _L2_RAW not in _L2_TRUE and _L2_RAW not in _L2_FALSE
 GATEWAY_URL      = os.environ.get("GATEWAY_URL", "http://policy-gw:8083")
@@ -68,6 +77,14 @@ def _validate_l2_config():
     if L2_LEASE_SECONDS < 1 or L2_GW_TIMEOUT < 1: raise ValueError("L2_LEASE_SECONDS/L2_GW_TIMEOUT 须 ≥1")
     if L2_EXPIRY_BATCH < 1 or L2_EXPIRY_BATCH > 500: raise ValueError("L2_EXPIRY_BATCH 须 1..500")
     if MAX_VERIFY_ATTEMPTS < 1: raise ValueError("MAX_VERIFY_ATTEMPTS 须 ≥1")
+    if M4F_ENABLED_INVALID:
+        raise ValueError("M4F_ENABLED 须为显式布尔值")
+    if M4F_EVENT_LEASE_SECONDS < 1 or M4F_EVENT_LEASE_SECONDS > 3600:
+        raise ValueError("M4F_EVENT_LEASE_SECONDS 须 1..3600")
+    if M4F_EVENT_MAX_ATTEMPTS < 1 or M4F_EVENT_MAX_ATTEMPTS > 100:
+        raise ValueError("M4F_EVENT_MAX_ATTEMPTS 须 1..100")
+    if M4F_ENABLED and not M4F_SNAPSHOT_DSN:
+        raise ValueError("M4F_ENABLED=1 时必须配置 M4F_SNAPSHOT_DSN")
 
 
 class GatewayOutcome:
@@ -138,6 +155,7 @@ PAT_SUBMIT  = re.compile(r"TASK_SUBMITTED:\s*(\{.*\})", re.I | re.S)
 PAT_COMPLETE = {s: re.compile(rf"TASK_COMPLETED[:\s]*([A-Za-z0-9\-]+)-{s}", re.I) for s in ("review", "fix", "verify", "revert", "reverify")}
 # M3-C:结构化 POST_MERGE_VERIFY_FAILED(仅 verifier)—— JSON payload 紧跟冒号后(真实入口,需求 3)
 PAT_PMF = re.compile(r"POST_MERGE_VERIFY_FAILED\s*:\s*(\{.*?\})\s*\Z", re.I | re.S)
+PAT_M4F = re.compile(r"M4F_RUN\s*:", re.I)
 
 class MatrixUnavailable(Exception): pass
 class MatrixRejected(Exception): pass
@@ -210,6 +228,7 @@ def send_mention(room_id, user, text):
 
 # ── PG 连接(带重连) ──
 _pg = None
+_m4f_snapshot_pg = None
 def ensure_pg():
     global _pg
     if _pg is not None and not _pg.closed:
@@ -231,6 +250,38 @@ def reset_pg():
         except: pass
     _pg = None
 
+
+def ensure_m4f_snapshot_pg():
+    global _m4f_snapshot_pg
+    if not M4F_ENABLED:
+        raise RuntimeError("M4-F ingress disabled")
+    if _m4f_snapshot_pg is not None and not _m4f_snapshot_pg.closed:
+        try:
+            with _m4f_snapshot_pg.cursor() as cur:
+                cur.execute("SELECT 1")
+                cur.fetchone()
+            return _m4f_snapshot_pg
+        except Exception:
+            try:
+                _m4f_snapshot_pg.close()
+            except Exception:
+                pass
+            _m4f_snapshot_pg = None
+    _m4f_snapshot_pg = psycopg2.connect(M4F_SNAPSHOT_DSN)
+    _m4f_snapshot_pg.autocommit = False
+    print("[ctrl][M4F] snapshot-worker PG connected")
+    return _m4f_snapshot_pg
+
+
+def reset_m4f_snapshot_pg():
+    global _m4f_snapshot_pg
+    if _m4f_snapshot_pg:
+        try:
+            _m4f_snapshot_pg.close()
+        except Exception:
+            pass
+    _m4f_snapshot_pg = None
+
 # ── 事件处理(原子事务) ──
 def process_event(event_id, room_id, sender, body, ts):
     """处理单个 Matrix 事件,在一个 PG 事务内完成状态转换 + outbox。"""
@@ -240,8 +291,15 @@ def process_event(event_id, room_id, sender, body, ts):
     # 记录到 stage_events(幂等:event_id PK)
     inserted = False
     try:
-        _etype = ("POST_MERGE_VERIFY_FAILED" if PAT_PMF.search(body)
-                  else ("TASK_SUBMITTED" if PAT_SUBMIT.search(body) else "TASK_COMPLETED"))
+        _etype = (
+            "M4F_RUN"
+            if PAT_M4F.search(body)
+            else (
+                "POST_MERGE_VERIFY_FAILED"
+                if PAT_PMF.search(body)
+                else ("TASK_SUBMITTED" if PAT_SUBMIT.search(body) else "TASK_COMPLETED")
+            )
+        )
         cur.execute("""INSERT INTO stage_events(event_id, room_id, sender, event_type, raw_body, body_sha256, status)
                        VALUES(%s, %s, %s, %s, %s, %s, 'RECEIVED')
                        ON CONFLICT (event_id) DO NOTHING
@@ -256,6 +314,43 @@ def process_event(event_id, room_id, sender, body, ts):
         return
     if not inserted:
         return  # event_id 已处理(幂等)
+
+    # 0.5 M4-F AgentTeams ingress.  Network/Gateway work is deliberately
+    # deferred to drain_m4f_events; this transaction only durably records the
+    # validated Matrix event.
+    if PAT_M4F.search(body):
+        if sender != ADMIN:
+            mark_error(cur, event_id, "M4F_RUN sender must be admin")
+            conn.commit()
+            return
+        if not M4F_ENABLED:
+            mark_error(cur, event_id, "M4F ingress disabled")
+            conn.commit()
+            return
+        try:
+            payload = m4f_ingress.parse_event(body)
+            canonical = json.dumps(
+                payload,
+                ensure_ascii=False,
+                allow_nan=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            cur.execute(
+                """UPDATE stage_events
+                   SET run_id=%s,stage='m4f',event_type='M4F_RUN',
+                       raw_body=%s,status='M4F_PENDING',error=NULL,
+                       processed_at=NULL
+                   WHERE event_id=%s""",
+                (payload["run_id"], canonical, event_id),
+            )
+            conn.commit()
+            print(f"[ctrl][M4F] {payload['run_id']} ingress queued")
+        except m4f_ingress.M4FIngressError as exc:
+            conn.rollback()
+            mark_error(cur, event_id, str(exc)[:500])
+            conn.commit()
+        return
 
     # 1. TASK_SUBMITTED
     m = PAT_SUBMIT.search(body)
@@ -572,6 +667,113 @@ def update_event_meta(cur, event_id, run_id, stage):
     cur.execute("UPDATE stage_events SET run_id=%s, stage=%s WHERE event_id=%s", (run_id, stage, event_id))
 
 # ── Outbox 派发 ──
+def _m4f_attempt(error):
+    match = re.match(r"attempt=(\d+)\b", error or "")
+    return int(match.group(1)) if match else 0
+
+
+def drain_m4f_events(max_items=1):
+    """Claim and stage durable M4F_RUN Matrix events.
+
+    ``stage_six_skill_run`` is idempotent at every database boundary, so a
+    process crash after a partial stage is safely reclaimed after the lease.
+    """
+    if not M4F_ENABLED:
+        return 0
+    import gateway_client
+
+    handled = 0
+    for _ in range(max(1, int(max_items))):
+        conn = ensure_pg()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """WITH candidate AS (
+                           SELECT event_id
+                           FROM public.stage_events
+                           WHERE event_type='M4F_RUN'
+                             AND (
+                               status='M4F_PENDING'
+                               OR (
+                                 status='M4F_RUNNING'
+                                 AND processed_at < now()-make_interval(secs=>%s)
+                               )
+                             )
+                           ORDER BY received_at,event_id
+                           FOR UPDATE SKIP LOCKED
+                           LIMIT 1
+                       )
+                       UPDATE public.stage_events AS e
+                       SET status='M4F_RUNNING',processed_at=now()
+                       FROM candidate AS c
+                       WHERE e.event_id=c.event_id
+                       RETURNING e.event_id,e.raw_body,e.error""",
+                    (M4F_EVENT_LEASE_SECONDS,),
+                )
+                claimed = cur.fetchone()
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        if not claimed:
+            break
+
+        event_id, raw_body, prior_error = claimed
+        attempt = _m4f_attempt(prior_error) + 1
+        try:
+            payload = m4f_ingress.validate_event(json.loads(raw_body))
+            staged = m4f_ingress.stage_agentteams_event(
+                conn,
+                ensure_m4f_snapshot_pg(),
+                payload,
+                gateway=gateway_client,
+                observer=lambda event: print(
+                    json.dumps(event, ensure_ascii=False, sort_keys=True),
+                    flush=True,
+                ),
+            )
+            with conn.cursor() as cur:
+                cur.execute(
+                    """UPDATE public.stage_events
+                       SET run_id=%s,status='PROCESSED',stage='m4f',
+                           error=NULL,processed_at=now()
+                       WHERE event_id=%s AND status='M4F_RUNNING'""",
+                    (staged.run_id, event_id),
+                )
+            conn.commit()
+            print(f"[ctrl][M4F] {staged.run_id} staged six-Skill DAG")
+        except Exception as exc:
+            try:
+                conn.rollback()
+            except Exception:
+                reset_pg()
+                conn = ensure_pg()
+            try:
+                snapshot_conn = _m4f_snapshot_pg
+                if snapshot_conn is not None:
+                    snapshot_conn.rollback()
+            except Exception:
+                reset_m4f_snapshot_pg()
+            permanent = isinstance(exc, m4f_ingress.M4FIngressError)
+            terminal = permanent or attempt >= M4F_EVENT_MAX_ATTEMPTS
+            state = "ERROR" if terminal else "M4F_PENDING"
+            safe_error = " ".join(str(exc).split())[:420]
+            with conn.cursor() as cur:
+                cur.execute(
+                    """UPDATE public.stage_events
+                       SET status=%s,error=%s,processed_at=now()
+                       WHERE event_id=%s""",
+                    (state, f"attempt={attempt} {type(exc).__name__}: {safe_error}", event_id),
+                )
+            conn.commit()
+            print(
+                f"[ctrl][M4F] event={event_id} attempt={attempt} "
+                f"state={state} error={type(exc).__name__}: {safe_error}"
+            )
+        handled += 1
+    return handled
+
+
 def drain_outbox():
     """处理 PENDING/RETRY 的 outbox 条目。"""
     conn = ensure_pg()
@@ -752,7 +954,38 @@ def startup_assert_l2():
     if L2_LEASE_SECONDS < L2_GW_TIMEOUT + 5:
         sys.exit(f"[ctrl] FATAL: L2_LEASE_SECONDS({L2_LEASE_SECONDS}) < L2_GW_TIMEOUT+5({L2_GW_TIMEOUT+5});lease 须 ≥ Gateway 超时 + 安全余量(防双发)")
 
-    need_gateway = bool(pending_l2) or L2_MERGE_ENABLED
+    if M4F_ENABLED:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT
+                     to_regclass('public.revision_bindings') IS NOT NULL,
+                     to_regclass('public.snapshot_job_outbox') IS NOT NULL,
+                     to_regclass('public.skill_job_outbox') IS NOT NULL,
+                     to_regprocedure('public.bind_revision(text,text,integer,text,text,text,text)') IS NOT NULL,
+                     to_regprocedure('public.enqueue_snapshot_job(text,text)') IS NOT NULL,
+                     to_regprocedure('public.enqueue_skill_job(text,text,text,text,text,integer,text,text[])') IS NOT NULL"""
+            )
+            m4f_ready = cur.fetchone()
+        conn.commit()
+        if not m4f_ready or not all(m4f_ready):
+            sys.exit("[ctrl] FATAL: M4F_ENABLED=1 但 M4-F1 migration/API 未就绪")
+        try:
+            snapshot_conn = ensure_m4f_snapshot_pg()
+            with snapshot_conn.cursor() as cur:
+                cur.execute(
+                    "SELECT has_function_privilege(current_user,'public.claim_snapshot_job(text,text,integer)','EXECUTE')"
+                )
+                snapshot_ready = bool(cur.fetchone()[0])
+            snapshot_conn.commit()
+        except Exception as exc:
+            sys.exit(
+                f"[ctrl] FATAL: M4-F snapshot-worker DSN 不可用: "
+                f"{type(exc).__name__}: {exc}"
+            )
+        if not snapshot_ready:
+            sys.exit("[ctrl] FATAL: snapshot-worker 缺 claim_snapshot_job EXECUTE")
+
+    need_gateway = bool(pending_l2) or L2_MERGE_ENABLED or M4F_ENABLED
     if need_gateway:
         if not COORDINATOR_TOKEN:
             sys.exit(f"[ctrl] FATAL: 有 {pending_l2} 个未终结审批 run(L2_MERGE_ENABLED={'on' if L2_MERGE_ENABLED else 'off'}),但缺 COORDINATOR_TOKEN → 这些 run 会卡死")
@@ -771,6 +1004,12 @@ def startup_assert_l2():
 # ── B4c L2 主循环函数(B4c-1.1:权威身份 + 原子 CAS + branch 双源)──
 # 事务边界(B4c-0.1 #4 / B4c-1.1 P1-3):Gateway 调用不持 PG 事务;
 #   binding 写入 + 阶段推进 + attempts++ 同一短事务(SELECT task FOR UPDATE + CAS current_stage=l2_binding)。
+def _revision_cut_run_id(run_id, repo, pr_number, head_sha):
+    """Deterministic child run id for an externally changed bound revision."""
+    material = f"{run_id}\x00{repo}\x00{pr_number}\x00{head_sha}".encode("utf-8")
+    return f"{run_id[:72]}-rev-{hashlib.sha256(material).hexdigest()[:16]}"
+
+
 def _atomic_advance(run_id, status, info, candidate=None):
     """B4c-1.1 P1-3:原子推进 task 状态(单短事务,advisory_xact_lock per run + SELECT FOR UPDATE + CAS)。
     status 分支:FOUND/UPDATED(写 binding + l2_awaiting_ticket)/ NOT_FOUND(attempts++达阈值→HOLD)/
@@ -809,11 +1048,62 @@ def _atomic_advance(run_id, status, info, candidate=None):
                     ebid, epr, ebr, eba, erepo, esha = ex
                     if epr == pr_num and ebr == head_ref and eba == base_ref and erepo == repo:
                         if esha != head_sha:
-                            cur.execute("UPDATE run_pr_bindings SET head_sha=%s, repo=%s, recorded_at=now() WHERE binding_id=%s", (head_sha, repo, ebid))
-                            out = ("UPDATED", {"binding_id": ebid, "head_sha": head_sha, "pr_number": pr_num})
+                            # M4-F revision cut: a run with immutable revision evidence
+                            # must never have its PR identity/head rewritten in place.
+                            cur.execute("SELECT to_regclass('public.revision_bindings') IS NOT NULL")
+                            has_revision_table = bool(cur.fetchone()[0])
+                            bound = False
+                            if has_revision_table:
+                                cur.execute(
+                                    "SELECT EXISTS(SELECT 1 FROM revision_bindings WHERE run_id=%s)",
+                                    (run_id,),
+                                )
+                                bound = bool(cur.fetchone()[0])
+                            if bound:
+                                child_run = _revision_cut_run_id(run_id, repo, pr_num, head_sha)
+                                child_binding = "bnd-" + str(uuid.uuid4())
+                                cur.execute(
+                                    """INSERT INTO task_runs(
+                                           run_id,room_id,repo,pr_number,branch,status,
+                                           current_stage,attempt,approval_required,verdict,last_error)
+                                       SELECT %s,room_id,%s,%s,branch,'APPROVAL_PENDING',
+                                              'l2_awaiting_ticket',attempt,approval_required,
+                                              NULL,NULL
+                                       FROM task_runs WHERE run_id=%s
+                                       ON CONFLICT(run_id) DO NOTHING""",
+                                    (child_run, repo, pr_num, run_id),
+                                )
+                                cur.execute(
+                                    """INSERT INTO run_pr_bindings(
+                                           binding_id,run_id,repo,pr_number,fix_branch,
+                                           base_branch,head_sha)
+                                       VALUES(%s,%s,%s,%s,%s,%s,%s)
+                                       ON CONFLICT(run_id) DO NOTHING""",
+                                    (child_binding, child_run, repo, pr_num, head_ref, base_ref, head_sha),
+                                )
+                                cur.execute(
+                                    """UPDATE task_runs
+                                       SET status='HOLD',current_stage='revision_superseded',
+                                           last_error=%s,updated_at=now()
+                                       WHERE run_id=%s""",
+                                    (f"external head drift cut to {child_run}", run_id),
+                                )
+                                out = (
+                                    "REVISION_CUT",
+                                    {
+                                        "prior_run_id": run_id,
+                                        "run_id": child_run,
+                                        "head_sha": head_sha,
+                                        "pr_number": pr_num,
+                                    },
+                                )
+                            else:
+                                cur.execute("UPDATE run_pr_bindings SET head_sha=%s, repo=%s, recorded_at=now() WHERE binding_id=%s", (head_sha, repo, ebid))
+                                out = ("UPDATED", {"binding_id": ebid, "head_sha": head_sha, "pr_number": pr_num})
                         else:
                             out = ("FOUND", {"binding_id": ebid, "head_sha": esha, "pr_number": pr_num})
-                        cur.execute("UPDATE task_runs SET current_stage='l2_awaiting_ticket', l2_discovery_attempts=0, l2_retry_count=0, l2_retry_reason=NULL, l2_discovery_deadline_at=NULL, l2_next_attempt_at=now(), updated_at=now() WHERE run_id=%s", (run_id,))
+                        if out[0] != "REVISION_CUT":
+                            cur.execute("UPDATE task_runs SET current_stage='l2_awaiting_ticket', l2_discovery_attempts=0, l2_retry_count=0, l2_retry_reason=NULL, l2_discovery_deadline_at=NULL, l2_next_attempt_at=now(), updated_at=now() WHERE run_id=%s", (run_id,))
                     else:
                         # B4c-1.2 P1-1:身份冲突 → 同事务置 HOLD(否则每 tick 重复冲突)
                         cur.execute("UPDATE task_runs SET status='HOLD', current_stage='l2_binding_failed', last_error=%s, updated_at=now() WHERE run_id=%s",
@@ -1727,6 +2017,7 @@ def run_forever():
         # ── 故障域 A:PG-驱动 L2(始终运行,不 gated by 开关;函数内部按 approval_required 过滤)──
         try:
             ensure_pg()
+            drain_m4f_events(max_items=1)
             l2_deadline = time.monotonic() + L2_MAINTENANCE_BUDGET_SECONDS   # B4c.1 单循环工作预算(共享)
             l2_budget = [L2_MAINTENANCE_MAX_ITEMS]   # B4c.1.3:每 tick 共享 item 预算(整轮硬边界,跨阶段)
             initiate_l2_pending(l2_deadline, l2_budget)

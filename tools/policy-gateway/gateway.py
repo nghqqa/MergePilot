@@ -325,6 +325,19 @@ def _extract_sha(result):
     return m.group(1) if m else ""
 
 
+def _extract_pr_base_sha(result):
+    """提取 PR ``get`` 响应中的权威 base commit SHA。"""
+    try:
+        payload = json.loads(_extract_text(result))
+        base = payload.get("base") if isinstance(payload, dict) else None
+        sha = base.get("sha") if isinstance(base, dict) else None
+        if isinstance(sha, str) and re.fullmatch(r"[0-9a-f]{40}", sha):
+            return sha
+    except Exception:
+        pass
+    return ""
+
+
 async def _read_pr_upstream(owner, repo_name, pr_num):
     """查 GitHub PR 实际态(head_sha/state/base),用于 L2 TOCTOU 校验。
     经上游 pull_request_read(method=get)—— GitHub 权威态,不信任调用方。"""
@@ -393,7 +406,9 @@ async def list_tools():
 async def call_tool(name: str, arguments: dict | None):
     role = current_role.get()
     cfg = ROLES_CFG.get(role)
-    args = arguments or {}
+    args = dict(arguments or {})
+    # M4-F Controller 可附加审计绑定上下文；该字段不会转发给 GitHub MCP。
+    m4f_run_id = args.pop("mergepilot_run_id", "")
     owner = args.get("owner")
     repo = f"{owner}/{args.get('repo')}" if owner and args.get("repo") else ""
     branch = str(args.get("branch") or args.get("head") or args.get("base") or args.get("from_branch") or "")
@@ -402,13 +417,28 @@ async def call_tool(name: str, arguments: dict | None):
     ).hexdigest()[:16]
 
     corr_id = str(uuid.uuid4())  # B3:一次调用的 INTENT/RESULT/ERROR 共享同一 id
-    audit_kw = dict(args_hash=args_hash, target_repo=repo, target_branch=branch)
+    audit_kw = dict(
+        args_hash=args_hash,
+        target_repo=repo,
+        target_branch=branch,
+        run_id=m4f_run_id,
+    )
 
     def deny(reason_code, **extra):
         # 策略 DENY:尽力记 INTENT(fail-open,审计挂也不放行被拒调用)
         audit_event(corr_id, "INTENT", role, name, "DENY", reason_code, **audit_kw)
         print(f"[gateway] DENY role={role} tool={name} → {reason_code}", flush=True)
         return _deny_result(reason_code, tool=name, **extra)
+
+    if m4f_run_id:
+        if (
+            role != "coordinator"
+            or name != "pull_request_read"
+            or args.get("method") != "get"
+        ):
+            return deny("M4F_PROVENANCE_CONTEXT_DENIED")
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", m4f_run_id):
+            return deny("M4F_RUN_ID_INVALID")
 
     # 1. 工具是否在角色 allow 集合内(deny-by-default;disabled 类的工具对任何角色都不可见)
     if not cfg or name not in cfg["allowed"]:
@@ -577,9 +607,21 @@ async def call_tool(name: str, arguments: dict | None):
         result = await upstream.call_tool(name, args)
         try:
             is_err = getattr(result, "is_error", False)
-            audit_event(corr_id, "RESULT", role, name,
-                        "ALLOW" if not is_err else "ERROR", "UPSTREAM_RESULT",
-                        **audit_kw, result_status="ERROR" if is_err else "OK")
+            audit_event(
+                corr_id,
+                "RESULT",
+                role,
+                name,
+                "ALLOW" if not is_err else "ERROR",
+                "UPSTREAM_RESULT",
+                **audit_kw,
+                result_status="ERROR" if is_err else "OK",
+                git_sha=(
+                    _extract_pr_base_sha(result)
+                    if m4f_run_id and not is_err
+                    else ""
+                ),
+            )
         except Exception:
             pass
         return result
