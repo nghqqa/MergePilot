@@ -136,6 +136,19 @@ else
   exit 1
 fi
 
+# m4f1_hotfix_1.sql (post-release P1 concurrency fix) -- applied twice so the
+# fresh-install path carries the same enqueue_* ON CONFLICT DO NOTHING fix as the
+# released-D upgrade path. Idempotent; catalog self-check must PASS each round.
+for _hf_round in 1 2; do
+  if ! docker exec -i "$DB" psql -U fixture_admin -d "$DBNAME" -v ON_ERROR_STOP=1 \
+      < "$DBDIR/m4f1_hotfix_1.sql" >"$TMP_DIR/hotfix-r${_hf_round}.log" 2>&1; then
+    cat "$TMP_DIR/hotfix-r${_hf_round}.log"
+    exit 1
+  fi
+  grep -q "hotfix_1 catalog self-check PASS" "$TMP_DIR/hotfix-r${_hf_round}.log" \
+    || { echo "[at-e2e] hotfix catalog self-check missing (round ${_hf_round})" >&2; exit 1; }
+done
+
 # ── 5. converge minimal ACL (additive only; never lower existing grants) ──
 #    mergepilot (Controller) needs the pre-M4-F Matrix tables it writes through
 #    process_event/drain_m4f_events, plus SELECT on mcp_calls to bind the

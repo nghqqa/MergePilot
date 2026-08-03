@@ -88,6 +88,19 @@ else
   exit 1
 fi
 
+# m4f1_hotfix_1.sql (post-release P1 concurrency fix): enqueue_snapshot_job /
+# enqueue_skill_job must use untargeted ON CONFLICT DO NOTHING. Applied twice
+# (idempotent) so the fresh-install path matches the released-D upgrade path.
+for _hf_round in 1 2; do
+  if ! docker exec -i "$DB" psql -U fixture_admin -d mergepilot_demo -v ON_ERROR_STOP=1 \
+      < "$DBDIR/m4f1_hotfix_1.sql" >"$TMP_DIR/hotfix-r${_hf_round}.log" 2>&1; then
+    cat "$TMP_DIR/hotfix-r${_hf_round}.log"
+    exit 1
+  fi
+  grep -q "hotfix_1 catalog self-check PASS" "$TMP_DIR/hotfix-r${_hf_round}.log" \
+    || { echo "[demo] hotfix catalog self-check missing (round ${_hf_round})" >&2; exit 1; }
+done
+
 # The disposable base chain is installed by fixture_admin, while production's
 # pre-M4-F Controller tables are owned/writable by mergepilot. Reproduce only
 # those existing Controller privileges; M4-F tables remain SD-API-only.

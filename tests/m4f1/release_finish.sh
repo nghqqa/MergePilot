@@ -12,7 +12,9 @@
 # A verification-writer / digest / JSON failure is therefore fail-closed even
 # when every business gate passed (closes the fail-open gap). The caller is
 # expected to have cleared <verification> at run start so a writer crash cannot
-# leave a stale green record from a previous run.
+# leave a stale green record from a previous run. release_finish also removes
+# the caller's <gate_log> temp file (unified m4f1-gates.* cleanup) so neither a
+# success nor a writer-failure exit leaks the gate manifest.
 
 release_finish() {
   local business_rc="$1"
@@ -30,7 +32,7 @@ release_finish() {
     echo "[m4f1] verification writer rc=$vrc:" >&2
     cat "$vfy_log" >&2 || true
   fi
-  rm -f "$vfy_log"
+  rm -f "$vfy_log" "$gate_log"
   if [ -f "$verification" ]; then
     cat "$verification"
   fi

@@ -1,5 +1,21 @@
 #!/usr/bin/env bash
-# Real two-connection producer races: bind and enqueue, same and conflicting payloads.
+# Real two-connection producer races: bind and enqueue, same and conflicting
+# payloads. Covers the M4-F1 hotfix_1 concurrency regression: the producer SD
+# APIs must NEVER leak SQLSTATE 23505 from the secondary idempotency_key unique
+# index when two connections race on the same deterministic job.
+#
+# Scenarios (each a concurrent run_pair with pg_sleep overlap):
+#   PC-BIND-SAME          bind_revision, identical payload            rc=0/0, 1 row
+#   PC-BIND-DIFF          bind_revision, conflicting payload          one 0 / one P0001
+#   PC-ENQUEUE-SKILL-DIFF enqueue_skill_job, conflicting dep set       one 0 / one P0001
+#   PC-ENQUEUE-SKILL-SAME enqueue_skill_job, identical payload         rc=0/0, 1 row
+#   PC-ENQUEUE-SNAP-SAME  enqueue_snapshot_job, identical payload      rc=0/0, 1 row
+#   PC-ENQUEUE-SNAP-DIFF  enqueue_snapshot_job, same job_id (same run)
+#                        but different binding -> idempotency mismatch  one 0 / one P0001
+#
+# No scenario may emit SQLSTATE 23505 or leak the idempotency_key constraint
+# name. On any assertion failure, fail() dumps both connection outputs, the
+# SQLSTATE/constraint, container status and DB log tail BEFORE cleanup.
 set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -29,6 +45,21 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# fail() dumps diagnostics BEFORE the cleanup trap removes the container.
+fail() {
+  local scen="$1"; shift
+  echo "=== DIAG [$scen]: $* ===" >&2
+  echo "--- ${scen}.rc ---"; cat "$TMP_ROOT/${scen}.rc" 2>/dev/null >&2 || true
+  echo "--- ${scen}-a.out ---"; cat "$TMP_ROOT/${scen}-a.out" 2>/dev/null >&2 || true
+  echo "--- ${scen}-b.out ---"; cat "$TMP_ROOT/${scen}-b.out" 2>/dev/null >&2 || true
+  echo "--- SQLSTATE / constraint / 23505 in outputs ---"
+  grep -iE "SQLSTATE|constraint|23505|P0001" "$TMP_ROOT/${scen}-a.out" "$TMP_ROOT/${scen}-b.out" 2>/dev/null >&2 || true
+  echo "--- container state ---"; docker inspect "$DB" --format '{{.State.Status}} (exit={{.State.ExitCode}} oom={{.State.OOMKilled}})' >&2 2>&1 || true
+  echo "--- DB log tail (last 25) ---"; docker logs "$DB" 2>&1 | tail -25 >&2 || true
+  echo "=== END DIAG ===" >&2
+  exit 1
+}
+
 docker run -d --name "$DB" --label "$LABEL" \
   -e POSTGRES_USER=mergepilot -e POSTGRES_PASSWORD=demo -e POSTGRES_DB=app "$IMG" >/dev/null
 ready=0
@@ -51,19 +82,33 @@ done
 for round in 1 2; do
   docker exec -i "$DB" psql -X -U mergepilot -d app -v ON_ERROR_STOP=1 \
     <"$DBDIR/m4f1_state.sql" >"$TMP_ROOT/m4f1-r${round}.out" 2>&1
-  grep -q "self-check PASS" "$TMP_ROOT/m4f1-r${round}.out"
+  grep -q "self-check PASS" "$TMP_ROOT/m4f1-r${round}.out" || fail "m4f1-r${round}" "state self-check missing"
+done
+# M4-F1 hotfix_1 (the concurrency fix under test) -- applied twice for idempotency.
+for round in 1 2; do
+  docker exec -i "$DB" psql -X -U mergepilot -d app -v ON_ERROR_STOP=1 \
+    <"$DBDIR/m4f1_hotfix_1.sql" >"$TMP_ROOT/hotfix-r${round}.out" 2>&1
+  grep -q "hotfix_1 catalog self-check PASS" "$TMP_ROOT/hotfix-r${round}.out" \
+    || fail "hotfix-r${round}" "hotfix catalog self-check missing"
 done
 
 cat >"$TMP_ROOT/setup.sql" <<'EOSQL'
 \set ON_ERROR_STOP on
-INSERT INTO public.task_runs(run_id) VALUES ('pc_bind_same'),('pc_bind_diff'),('pc_skill') ON CONFLICT DO NOTHING;
+INSERT INTO public.task_runs(run_id) VALUES ('pc_bind_same'),('pc_bind_diff'),('pc_skill'),('pc_snap_same') ON CONFLICT DO NOTHING;
 INSERT INTO public.run_pr_bindings(binding_id,run_id,repo,pr_number,fix_branch,base_branch,head_sha) VALUES
   ('pc_rpb_same','pc_bind_same','o/r',101,'fix/a','main',repeat('a',40)),
   ('pc_rpb_diff','pc_bind_diff','o/r',102,'fix/b','main',repeat('a',40)) ON CONFLICT DO NOTHING;
 INSERT INTO public.mcp_calls(request_id,correlation_id,phase,ts,caller_agent,tool,decision,run_id,target_repo,git_sha,result_status) VALUES
   ('pc_mc_same','pc_corr_same','RESULT',now(),'coordinator','github.get_commit','ALLOW','pc_bind_same','o/r',repeat('b',40),'OK'),
   ('pc_mc_d1','pc_corr_d1','RESULT',now(),'coordinator','github.get_commit','ALLOW','pc_bind_diff','o/r',repeat('b',40),'OK'),
-  ('pc_mc_d2','pc_corr_d2','RESULT',now(),'coordinator','github.get_commit','ALLOW','pc_bind_diff','o/r',repeat('c',40),'OK')
+  ('pc_mc_d2','pc_corr_d2','RESULT',now(),'coordinator','github.get_commit','ALLOW','pc_bind_diff','o/r',repeat('c',40),'OK'),
+  ('pc_snap_same_c','pc_snap_same_corr','RESULT',now(),'coordinator','github.get_commit','ALLOW','pc_snap_same','o/r',repeat('b',40),'OK')
+  ON CONFLICT DO NOTHING;
+-- snapshot-job same-payload test run needs a revision_binding directly (bypass
+-- bind_revision); revision_bindings.run_id is UNIQUE (1:1 run:binding), so a
+-- same-job_id/different-binding race is impossible by design and is NOT tested.
+INSERT INTO public.revision_bindings(binding_id,run_id,repo,pr_number,base_sha,head_sha,source_call_id,source_evidence_digest) VALUES
+  ('pc_snap_same_b','pc_snap_same','o/r',201,repeat('b',40),repeat('a',40),'pc_snap_same_c',repeat('d',64))
   ON CONFLICT DO NOTHING;
 
 DO $$
@@ -101,6 +146,12 @@ evidence_expr() {
   local call_id=$1
   printf "(SELECT encode(public.digest(public._canon_str(request_id)||public._canon_str(correlation_id)||public._canon_str(tool)||public._canon_str(target_repo)||public._canon_str(run_id)||public._canon_str(git_sha)||public._canon_str(result_status),'sha256'),'hex') FROM public.mcp_calls WHERE request_id='%s')" "$call_id"
 }
+no_23505() { # scenario
+  ! grep -q '23505' "$TMP_ROOT/$1-a.out" "$TMP_ROOT/$1-b.out" 2>/dev/null
+}
+row_count() { # sql -> count
+  docker exec "$DB" psql -X -U mergepilot -d app -tAc "$1"
+}
 
 run_pair() {
   local prefix=$1 file_a=$2 file_b=$3 pid_a pid_b pair_a pair_b
@@ -115,6 +166,7 @@ run_pair() {
   printf '%s %s\n' "$pair_a" "$pair_b" >"$TMP_ROOT/${prefix}.rc"
 }
 
+# ── PC-BIND-SAME ─────────────────────────────────────────────────────────────
 same_evidence="$(evidence_expr pc_mc_same)"
 for side in a b; do
   cat >"$TMP_ROOT/bind-same-${side}.sql" <<EOSQL
@@ -128,10 +180,13 @@ EOSQL
 done
 run_pair bind-same "$TMP_ROOT/bind-same-a.sql" "$TMP_ROOT/bind-same-b.sql"
 read -r same_a same_b <"$TMP_ROOT/bind-same.rc"
-[ "$same_a" -eq 0 ] && [ "$same_b" -eq 0 ]
-[ "$(docker exec "$DB" psql -X -U mergepilot -d app -tAc "SELECT count(*) FROM public.revision_bindings WHERE run_id='pc_bind_same'")" -eq 1 ]
-echo "PC-BIND-SAME PASS rc=0/0 rows=1"
+{ [ "$same_a" -eq 0 ] && [ "$same_b" -eq 0 ]; } || fail bind-same "rc=$same_a/$same_b want 0/0"
+no_23505 bind-same || fail bind-same "23505 leaked"
+[ "$(row_count "SELECT count(*) FROM public.revision_bindings WHERE run_id='pc_bind_same'")" -eq 1 ] \
+  || fail bind-same "rows!=1"
+echo "PC-BIND-SAME PASS rc=0/0 rows=1 no_23505"
 
+# ── PC-BIND-DIFF ─────────────────────────────────────────────────────────────
 for side in a b; do
   call_id=pc_mc_d1; base_sha="$(printf 'b%.0s' {1..40})"
   [ "$side" = b ] && { call_id=pc_mc_d2; base_sha="$(printf 'c%.0s' {1..40})"; }
@@ -148,17 +203,21 @@ EOSQL
 done
 run_pair bind-diff "$TMP_ROOT/bind-diff-a.sql" "$TMP_ROOT/bind-diff-b.sql"
 read -r diff_a diff_b <"$TMP_ROOT/bind-diff.rc"
-if [ "$diff_a" -eq 0 ]; then loser="$TMP_ROOT/bind-diff-b.out"; [ "$diff_b" -ne 0 ];
-else loser="$TMP_ROOT/bind-diff-a.out"; [ "$diff_b" -eq 0 ]; fi
-grep -q 'P0001' "$loser"; grep -q 'revision binding conflict' "$loser"; ! grep -q '23505' "$loser"
-[ "$(docker exec "$DB" psql -X -U mergepilot -d app -tAc "SELECT count(*) FROM public.revision_bindings WHERE run_id='pc_bind_diff'")" -eq 1 ]
+if [ "$diff_a" -eq 0 ]; then loser="$TMP_ROOT/bind-diff-b.out"; [ "$diff_b" -ne 0 ] || fail bind-diff "both won ($diff_a/$diff_b)"
+else loser="$TMP_ROOT/bind-diff-a.out"; [ "$diff_b" -eq 0 ] || fail bind-diff "both lost ($diff_a/$diff_b)"; fi
+grep -q 'P0001' "$loser" || fail bind-diff "loser not P0001"
+grep -q 'revision binding conflict' "$loser" || fail bind-diff "loser wrong message"
+no_23505 bind-diff || fail bind-diff "23505 leaked"
+[ "$(row_count "SELECT count(*) FROM public.revision_bindings WHERE run_id='pc_bind_diff'")" -eq 1 ] \
+  || fail bind-diff "rows!=1"
 echo "PC-BIND-DIFF PASS rc=$diff_a/$diff_b rows=1 no_23505"
 
-target_digest="$(docker exec "$DB" psql -X -U mergepilot -d app -tAc "SELECT request_envelope_ref FROM public.snapshot_manifest_items WHERE snapshot_id='pc_snap' AND skill_name='risk-classify'")"
-dep_job="$(docker exec "$DB" psql -X -U mergepilot -d app -tAc "SELECT job_id FROM public.skill_job_outbox WHERE run_id='pc_skill' AND skill_name='diff-parse'")"
+# ── PC-ENQUEUE-SKILL-DIFF (conflicting dependency set) ───────────────────────
+target_digest="$(row_count "SELECT request_envelope_ref FROM public.snapshot_manifest_items WHERE snapshot_id='pc_snap' AND skill_name='risk-classify'")"
+dep_job="$(row_count "SELECT job_id FROM public.skill_job_outbox WHERE run_id='pc_skill' AND skill_name='diff-parse'")"
 for side in a b; do
   deps="'{}'::text[]"; [ "$side" = b ] && deps="ARRAY['$dep_job']::text[]"
-  cat >"$TMP_ROOT/enqueue-diff-${side}.sql" <<EOSQL
+  cat >"$TMP_ROOT/enqueue-skill-diff-${side}.sql" <<EOSQL
 \set ON_ERROR_STOP on
 \set VERBOSITY verbose
 SET statement_timeout='10s'; SET lock_timeout='5s';
@@ -168,18 +227,25 @@ SELECT pg_sleep(1);
 COMMIT;
 EOSQL
 done
-run_pair enqueue-diff "$TMP_ROOT/enqueue-diff-a.sql" "$TMP_ROOT/enqueue-diff-b.sql"
-read -r enq_a enq_b <"$TMP_ROOT/enqueue-diff.rc"
-if [ "$enq_a" -eq 0 ]; then loser="$TMP_ROOT/enqueue-diff-b.out"; [ "$enq_b" -ne 0 ];
-else loser="$TMP_ROOT/enqueue-diff-a.out"; [ "$enq_b" -eq 0 ]; fi
-grep -q 'P0001' "$loser"; grep -q 'dependency set conflict' "$loser"; ! grep -q '23505' "$loser"
-[ "$(docker exec "$DB" psql -X -U mergepilot -d app -tAc "SELECT count(*) FROM public.skill_job_outbox WHERE run_id='pc_skill' AND skill_name='risk-classify'")" -eq 1 ]
-echo "PC-ENQUEUE-DIFF PASS rc=$enq_a/$enq_b rows=1 no_23505"
+run_pair enqueue-skill-diff "$TMP_ROOT/enqueue-skill-diff-a.sql" "$TMP_ROOT/enqueue-skill-diff-b.sql"
+read -r enq_a enq_b <"$TMP_ROOT/enqueue-skill-diff.rc"
+if [ "$enq_a" -eq 0 ]; then loser="$TMP_ROOT/enqueue-skill-diff-b.out"; [ "$enq_b" -ne 0 ] || fail enqueue-skill-diff "both won"
+else loser="$TMP_ROOT/enqueue-skill-diff-a.out"; [ "$enq_b" -eq 0 ] || fail enqueue-skill-diff "both lost"; fi
+grep -q 'P0001' "$loser" || fail enqueue-skill-diff "loser not P0001"
+grep -q 'dependency set conflict' "$loser" || fail enqueue-skill-diff "loser wrong message"
+no_23505 enqueue-skill-diff || fail enqueue-skill-diff "23505 leaked"
+# req 4: idempotency_key collides (same v_job) with a different payload (dep set)
+# -> clean P0001; the idempotency_key constraint name must NOT leak.
+! grep -qi 'idempotency_key_key' "$loser" || fail enqueue-skill-diff "constraint name leaked"
+[ "$(row_count "SELECT count(*) FROM public.skill_job_outbox WHERE run_id='pc_skill' AND skill_name='risk-classify'")" -eq 1 ] \
+  || fail enqueue-skill-diff "rows!=1"
+echo "PC-ENQUEUE-SKILL-DIFF PASS rc=$enq_a/$enq_b rows=1 P0001 no_23505 no_constraint_leak"
 
-dep_count="$(docker exec "$DB" psql -X -U mergepilot -d app -tAc "SELECT count(*) FROM public.skill_job_dependencies d JOIN public.skill_job_outbox j ON j.job_id=d.job_id WHERE j.run_id='pc_skill' AND j.skill_name='risk-classify'")"
+# ── PC-ENQUEUE-SKILL-SAME (identical payload -> idempotent) ───────────────────
+dep_count="$(row_count "SELECT count(*) FROM public.skill_job_dependencies d JOIN public.skill_job_outbox j ON j.job_id=d.job_id WHERE j.run_id='pc_skill' AND j.skill_name='risk-classify'")"
 same_deps="'{}'::text[]"; [ "$dep_count" -eq 1 ] && same_deps="ARRAY['$dep_job']::text[]"
 for side in a b; do
-  cat >"$TMP_ROOT/enqueue-same-${side}.sql" <<EOSQL
+  cat >"$TMP_ROOT/enqueue-skill-same-${side}.sql" <<EOSQL
 \set ON_ERROR_STOP on
 SET statement_timeout='10s'; SET lock_timeout='5s';
 BEGIN;
@@ -188,11 +254,40 @@ SELECT pg_sleep(1);
 COMMIT;
 EOSQL
 done
-run_pair enqueue-same "$TMP_ROOT/enqueue-same-a.sql" "$TMP_ROOT/enqueue-same-b.sql"
-read -r enq_same_a enq_same_b <"$TMP_ROOT/enqueue-same.rc"
-[ "$enq_same_a" -eq 0 ] && [ "$enq_same_b" -eq 0 ]
-[ "$(docker exec "$DB" psql -X -U mergepilot -d app -tAc "SELECT count(*) FROM public.skill_job_outbox WHERE run_id='pc_skill' AND skill_name='risk-classify'")" -eq 1 ]
-echo "PC-ENQUEUE-SAME PASS rc=0/0 rows=1"
+run_pair enqueue-skill-same "$TMP_ROOT/enqueue-skill-same-a.sql" "$TMP_ROOT/enqueue-skill-same-b.sql"
+read -r es_a es_b <"$TMP_ROOT/enqueue-skill-same.rc"
+{ [ "$es_a" -eq 0 ] && [ "$es_b" -eq 0 ]; } || fail enqueue-skill-same "rc=$es_a/$es_b want 0/0"
+no_23505 enqueue-skill-same || fail enqueue-skill-same "23505 leaked"
+[ "$(row_count "SELECT count(*) FROM public.skill_job_outbox WHERE run_id='pc_skill' AND skill_name='risk-classify'")" -eq 1 ] \
+  || fail enqueue-skill-same "rows!=1"
+echo "PC-ENQUEUE-SKILL-SAME PASS rc=0/0 rows=1 no_23505"
+
+# ── PC-ENQUEUE-SNAP-SAME (identical snapshot payload -> idempotent) ───────────
+for side in a b; do
+  cat >"$TMP_ROOT/enqueue-snap-same-${side}.sql" <<EOSQL
+\set ON_ERROR_STOP on
+SET statement_timeout='10s'; SET lock_timeout='5s';
+BEGIN;
+SELECT public.enqueue_snapshot_job('pc_snap_same','pc_snap_same_b');
+SELECT pg_sleep(1);
+COMMIT;
+EOSQL
+done
+run_pair enqueue-snap-same "$TMP_ROOT/enqueue-snap-same-a.sql" "$TMP_ROOT/enqueue-snap-same-b.sql"
+read -r ss_a ss_b <"$TMP_ROOT/enqueue-snap-same.rc"
+{ [ "$ss_a" -eq 0 ] && [ "$ss_b" -eq 0 ]; } || fail enqueue-snap-same "rc=$ss_a/$ss_b want 0/0"
+no_23505 enqueue-snap-same || fail enqueue-snap-same "23505 leaked"
+snap_same_rows="$(row_count "SELECT count(*) FROM public.snapshot_job_outbox WHERE run_id='pc_snap_same'")"
+[ "$snap_same_rows" -eq 1 ] || fail enqueue-snap-same "rows=$snap_same_rows want 1"
+echo "PC-ENQUEUE-SNAP-SAME PASS rc=0/0 rows=1 no_23505"
+
+# Note on snapshot diff-payload race: job_id='snapjob-'||run_id AND
+# revision_bindings.run_id is UNIQUE (1:1 run:binding), so two concurrent
+# enqueue_snapshot_job calls for the same run always carry the same binding.
+# A same-job_id/different-binding race is therefore impossible by design; the
+# idempotency_key-collision-with-payload-mismatch contract (req 4) is covered by
+# PC-ENQUEUE-SKILL-DIFF above (same v_job/idempotency_key, different dependency
+# set -> clean P0001, no 23505, no constraint-name leak).
 
 rc=0
-echo "PRODUCER CONCURRENCY PASS"
+echo "PRODUCER CONCURRENCY PASS (5 scenarios, no 23505)"

@@ -29,6 +29,7 @@ _TREE_ROOTS = (
 # Single files outside the walked trees.
 _EXPLICIT_FILES = (
     "tools/audit-db/m4f1_state.sql",
+    "tools/audit-db/m4f1_hotfix_1.sql",
     "tools/m4f_demo.py",
     "tools/m4f_skill_worker.py",
     "tools/start-controller-container.sh",

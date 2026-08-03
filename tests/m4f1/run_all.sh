@@ -19,6 +19,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 RUNTIME_IMAGE="mergepilot-m4f-runtime:demo"
 EVID="$ROOT/evidence/m4/m4f/agentteams-e2e.json"
 VERIFICATION="$ROOT/evidence/m4/m4f/verification.txt"
+# clear any stale gate-manifest temp files from prior runs so the gate-log
+# residue assertion stays authoritative, then allocate this run's manifest.
+find /tmp -maxdepth 1 -name 'm4f1-gates.*' -delete 2>/dev/null || true
 GATE_LOG="$(mktemp /tmp/m4f1-gates.XXXXXX)"
 OVERALL_RC=0
 
@@ -72,6 +75,8 @@ run_gate "release evidence negatives (writer fail-closed + stale cleared)" \
 run_gate "release evidence unit tests" \
   docker run --rm -v "$ROOT:/workspace:ro" --entrypoint python \
     "$RUNTIME_IMAGE" -m pytest -q tests/m4f1/test_release_evidence.py
+run_gate "gate-log cleanup counterexample (P3-1, success + failure)" \
+  bash "$ROOT/tests/m4f1/run_gate_log_cleanup_test.sh"
 run_gate "host Skill worker unit tests" \
   docker run --rm -v "$ROOT:/workspace:ro" --entrypoint python \
     "$RUNTIME_IMAGE" -m pytest -q tests/m4f1/test_runtime.py

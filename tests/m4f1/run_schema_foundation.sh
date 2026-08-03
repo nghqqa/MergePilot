@@ -8,10 +8,12 @@ DBDIR="$ROOT/tools/audit-db"; SQLDIR="$ROOT/tests/m4f1/sql"
 IMG="pgvector/pgvector@sha256:a36250871de0833b8757561c72f2477ef1ddd1101afa4e617fb552e0de514c6b"
 UNIQ="$$-$(date +%s)"; DB="m4f1-sf-${UNIQ}"; LABEL="m4f1-sf-${UNIQ}"
 BASE="init m3_state m3b_policy m3b_b4 m3b_b4c m3b_b4c1 m3b_b4c1_1 m3b_b4d1 m3c_state"
-r1=; r2=; arc=; rc=1
+r1=; r2=; hf1=; hf2=; arc=; rc=1
 TMPDIR="$(mktemp -d)" || { echo "mktemp failed" >&2; exit 1; }
 R1_OUT="$TMPDIR/m4f1_r1.out"
 R2_OUT="$TMPDIR/m4f1_r2.out"
+HF1_OUT="$TMPDIR/hotfix_r1.out"
+HF2_OUT="$TMPDIR/hotfix_r2.out"
 AUDIT_OUT="$TMPDIR/sf.out"
 
 cleanup() {
@@ -49,8 +51,15 @@ echo "=== m4f1 round 2 (idempotency) ==="
 if docker exec -i "$DB" psql -U mergepilot -d mergepilot_audit -v ON_ERROR_STOP=1 < "$DBDIR/m4f1_state.sql" >"$R2_OUT" 2>&1; then r2=0; else r2=1; cat "$R2_OUT"; fi
 echo "m4f1 r2 rc=$r2  $(grep -m1 'self-check PASS' "$R2_OUT" | head -c 60)"
 
+echo "=== m4f1_hotfix_1 round 1 (post-release P1 concurrency fix) ==="
+if docker exec -i "$DB" psql -U mergepilot -d mergepilot_audit -v ON_ERROR_STOP=1 < "$DBDIR/m4f1_hotfix_1.sql" >"$HF1_OUT" 2>&1; then hf1=0; else hf1=1; cat "$HF1_OUT"; fi
+echo "hotfix r1 rc=$hf1  $(grep -m1 'hotfix_1 catalog self-check PASS' "$HF1_OUT" | head -c 60)"
+echo "=== m4f1_hotfix_1 round 2 (idempotency) ==="
+if docker exec -i "$DB" psql -U mergepilot -d mergepilot_audit -v ON_ERROR_STOP=1 < "$DBDIR/m4f1_hotfix_1.sql" >"$HF2_OUT" 2>&1; then hf2=0; else hf2=1; cat "$HF2_OUT"; fi
+echo "hotfix r2 rc=$hf2  $(grep -m1 'hotfix_1 catalog self-check PASS' "$HF2_OUT" | head -c 60)"
+
 echo "=== schema-foundation audit ==="
-if [ "$r1" = 0 ] && [ "$r2" = 0 ]; then
+if [ "$r1" = 0 ] && [ "$r2" = 0 ] && [ "$hf1" = 0 ] && [ "$hf2" = 0 ]; then
   if docker exec -i "$DB" psql -U mergepilot -d mergepilot_audit -v ON_ERROR_STOP=1 < "$SQLDIR/schema_foundation_audit.sql" >"$AUDIT_OUT" 2>&1; then arc=0; else arc=1; fi
   echo "audit rc=$arc  $(grep -m1 'SF-SET PASS' "$AUDIT_OUT" | head -c 60)"
   grep -m1 'SF-WORKER-NO-DML PASS' "$AUDIT_OUT" || true
@@ -58,5 +67,5 @@ if [ "$r1" = 0 ] && [ "$r2" = 0 ]; then
 else
   echo "audit SKIPPED (m4f1 r1/r2 failed)"; arc=skip
 fi
-rc=$([ "$r1" = 0 ] && [ "$r2" = 0 ] && [ "$arc" = 0 ] && echo 0 || echo 1)
-echo "=== SUMMARY r1=$r1 r2=$r2 audit=$arc overall=$rc ==="
+rc=$([ "$r1" = 0 ] && [ "$r2" = 0 ] && [ "$hf1" = 0 ] && [ "$hf2" = 0 ] && [ "$arc" = 0 ] && echo 0 || echo 1)
+echo "=== SUMMARY r1=$r1 r2=$r2 hf1=$hf1 hf2=$hf2 audit=$arc overall=$rc ==="

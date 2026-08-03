@@ -807,7 +807,7 @@ BEGIN
   INSERT INTO public.snapshot_job_outbox(
       job_id,run_id,revision_binding_id,idempotency_key,status,attempts,next_retry_at)
     VALUES (v_job,p_run_id,p_revision_binding_id,v_job,'PENDING',0,now())
-    ON CONFLICT (job_id) DO NOTHING;
+    ON CONFLICT DO NOTHING;
 
   SELECT job_id,run_id,revision_binding_id,idempotency_key INTO v_existing
     FROM public.snapshot_job_outbox WHERE job_id=v_job FOR UPDATE;
@@ -886,7 +886,7 @@ BEGIN
       request_envelope_ref,idempotency_key,status,attempts,next_retry_at)
     VALUES (v_job,p_run_id,p_snapshot_id,p_trace_id,p_skill_name,p_skill_version,p_attempt,
       p_request_envelope_ref,v_job,'PENDING',0,now())
-    ON CONFLICT (job_id) DO NOTHING;
+    ON CONFLICT DO NOTHING;
   GET DIAGNOSTICS v_inserted = ROW_COUNT;
 
   SELECT job_id,run_id,snapshot_id,trace_id,skill_name,skill_version,attempt,
