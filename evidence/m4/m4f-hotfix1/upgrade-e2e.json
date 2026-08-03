@@ -1,7 +1,7 @@
 {
   "schema": "m4f-hotfix1-upgrade-e2e",
-  "generated_at": "2026-08-03T10:36:28Z",
-  "head": "b1da394525117217083b71c8774e6951c0c61bd4",
+  "generated_at": "2026-08-03T11:29:47Z",
+  "head": "0a1714abe5d1e7fc43d4c889303f9fa6b405d42a",
   "baseline_tag_peeled": "ee5158b39c4784798758505a6821b1f266269180",
   "released_d_state": "buggy ON CONFLICT (job_id) extracted from tag m4f-agentteams-demo-closed^{commit}",
   "pre_hotfix_buggy_function_count": 2,

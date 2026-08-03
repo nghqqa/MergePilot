@@ -1,8 +1,8 @@
 MergePilot M4-F hotfix_1 verification
-generated_at: 2026-08-03T10:36:10Z
-head: b1da394525117217083b71c8774e6951c0c61bd4
+generated_at: 2026-08-03T11:29:30Z
+head: 0a1714abe5d1e7fc43d4c889303f9fa6b405d42a
 baseline_tag: m4f-agentteams-demo-closed (peeled ee5158b39c4784798758505a6821b1f266269180)
-delivery_digest: 9afffc3494960705fa678807774c83ed001d24c0146f38e46b292d055afe2d67
+delivery_digest: 04524c63a780367872f5b8ef2099e511afa474b2f113d822506885183ab77301
 delivery_files: 56
 hotfix_surface: tools/audit-db/m4f1_state.sql (corrected) + tools/audit-db/m4f1_hotfix_1.sql
 

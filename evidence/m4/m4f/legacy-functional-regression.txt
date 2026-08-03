@@ -1,6 +1,6 @@
 MergePilot M4-A~E legacy functional regression (authoritative platforms)
-generated_at: 2026-08-03T10:49:17Z
-head: b1da394525117217083b71c8774e6951c0c61bd4
+generated_at: 2026-08-03T11:42:58Z
+head: 0a1714abe5d1e7fc43d4c889303f9fa6b405d42a
 m4a_venv_python: /mnt/d/goai/m4a-venv/Scripts/python.exe (Python 3.9.25)
 runtime_image: mergepilot-m4f-runtime:demo
 note: Windows suites via m4a-venv (jsonschema 4.25.1, pytest 8.4.2); POSIX via container --init (tini process-tree reaping). Pure functional pytest only; release-scope gates are NOT run.
