@@ -1,0 +1,15 @@
+MergePilot M4-F hotfix_1 verification
+generated_at: 2026-08-03T10:36:10Z
+head: b1da394525117217083b71c8774e6951c0c61bd4
+baseline_tag: m4f-agentteams-demo-closed (peeled ee5158b39c4784798758505a6821b1f266269180)
+delivery_digest: 9afffc3494960705fa678807774c83ed001d24c0146f38e46b292d055afe2d67
+delivery_files: 56
+hotfix_surface: tools/audit-db/m4f1_state.sql (corrected) + tools/audit-db/m4f1_hotfix_1.sql
+
+[fresh-install] corrected m4f1_state + hotfix x2 self-check PASS (see fresh-migration.txt)
+[released-D-upgrade] buggy=2 -> post-hotfix buggy=0 fixed=2 (see upgrade-e2e.json)
+[concurrency] 20/20 rounds passed, 23505 leaks=0 (see producer-concurrency-runs.txt)
+
+residue: disposable DBs removed each step; concurrency residue per round in producer-concurrency-runs.txt (all 0/0/0)
+hotfix1_rc: 0
+HOTFIX1 VERIFICATION ALL PASSED

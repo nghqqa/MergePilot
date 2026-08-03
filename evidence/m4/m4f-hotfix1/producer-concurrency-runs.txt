@@ -1,0 +1,25 @@
+=== producer concurrency: 20 rounds (target 0x23505) ===
+generated_at: 2026-08-03T10:36:10Z
+head: b1da394525117217083b71c8774e6951c0c61bd4
+baseline_tag_peeled: ee5158b39c4784798758505a6821b1f266269180
+round 01 rc=0 RESIDUE containers=0 networks=0 temp_dirs=0
+round 02 rc=0 RESIDUE containers=0 networks=0 temp_dirs=0
+round 03 rc=0 RESIDUE containers=0 networks=0 temp_dirs=0
+round 04 rc=0 RESIDUE containers=0 networks=0 temp_dirs=0
+round 05 rc=0 RESIDUE containers=0 networks=0 temp_dirs=0
+round 06 rc=0 RESIDUE containers=0 networks=0 temp_dirs=0
+round 07 rc=0 RESIDUE containers=0 networks=0 temp_dirs=0
+round 08 rc=0 RESIDUE containers=0 networks=0 temp_dirs=0
+round 09 rc=0 RESIDUE containers=0 networks=0 temp_dirs=0
+round 10 rc=0 RESIDUE containers=0 networks=0 temp_dirs=0
+round 11 rc=0 RESIDUE containers=0 networks=0 temp_dirs=0
+round 12 rc=0 RESIDUE containers=0 networks=0 temp_dirs=0
+round 13 rc=0 RESIDUE containers=0 networks=0 temp_dirs=0
+round 14 rc=0 RESIDUE containers=0 networks=0 temp_dirs=0
+round 15 rc=0 RESIDUE containers=0 networks=0 temp_dirs=0
+round 16 rc=0 RESIDUE containers=0 networks=0 temp_dirs=0
+round 17 rc=0 RESIDUE containers=0 networks=0 temp_dirs=0
+round 18 rc=0 RESIDUE containers=0 networks=0 temp_dirs=0
+round 19 rc=0 RESIDUE containers=0 networks=0 temp_dirs=0
+round 20 rc=0 RESIDUE containers=0 networks=0 temp_dirs=0
+summary: rounds=20 pass=20 fail=0 leak_23505=0

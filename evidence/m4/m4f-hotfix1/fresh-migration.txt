@@ -1,0 +1,454 @@
+=== fresh install: base + corrected m4f1_state + hotfix (2 rounds) ===
+generated_at: 2026-08-03T10:36:10Z
+BEGIN
+CREATE EXTENSION
+NOTICE:  extension "pgcrypto" already exists, skipping
+ALTER TABLE
+ALTER TABLE
+ALTER TABLE
+UPDATE 0
+DO
+CREATE TABLE
+CREATE TABLE
+CREATE INDEX
+CREATE INDEX
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE INDEX
+CREATE TABLE
+DO
+CREATE TABLE
+CREATE INDEX
+DO
+DO
+CREATE TABLE
+CREATE INDEX
+CREATE TABLE
+DO
+DO
+DO
+DO
+DO
+CREATE TABLE
+DO
+NOTICE:  constraint "task_runs_active_snapshot_id_fkey" of relation "task_runs" does not exist, skipping
+NOTICE:  constraint "task_runs_active_snapshot_run_fkey" of relation "task_runs" does not exist, skipping
+DO
+INSERT 0 6
+DO
+ALTER ROLE
+ALTER ROLE
+ALTER ROLE
+ALTER ROLE
+ALTER ROLE
+ALTER ROLE
+DO
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+ALTER FUNCTION
+ALTER FUNCTION
+ALTER FUNCTION
+ALTER FUNCTION
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+DROP TRIGGER
+NOTICE:  trigger "trg_transition" for relation "public.task_runs" does not exist, skipping
+CREATE TRIGGER
+NOTICE:  trigger "trg_envelope_immutable" for relation "public.envelope_store" does not exist, skipping
+DROP TRIGGER
+CREATE TRIGGER
+DROP TRIGGER
+NOTICE:  trigger "trg_envelope_digest_check" for relation "public.envelope_store" does not exist, skipping
+CREATE TRIGGER
+NOTICE:  trigger "trg_run_snapshots_immutable" for relation "public.run_snapshots" does not exist, skipping
+DROP TRIGGER
+CREATE TRIGGER
+NOTICE:  trigger "trg_skill_invocations_immutable" for relation "public.skill_invocations" does not exist, skipping
+DROP TRIGGER
+CREATE TRIGGER
+DROP TRIGGER
+NOTICE:  trigger "trg_revision_bindings_immutable" for relation "public.revision_bindings" does not exist, skipping
+CREATE TRIGGER
+NOTICE:  trigger "trg_skill_version_registry_immutable" for relation "public.skill_version_registry" does not exist, skipping
+DROP TRIGGER
+CREATE TRIGGER
+DROP TRIGGER
+NOTICE:  trigger "trg_run_pr_bindings_revision_guard" for relation "public.run_pr_bindings" does not exist, skipping
+CREATE TRIGGER
+NOTICE:  trigger "trg_gate_run_snapshots" for relation "public.run_snapshots" does not exist, skipping
+NOTICE:  trigger "trg_gate_snapshot_job_outbox" for relation "public.snapshot_job_outbox" does not exist, skipping
+NOTICE:  trigger "trg_gate_skill_job_outbox" for relation "public.skill_job_outbox" does not exist, skipping
+NOTICE:  trigger "trg_gate_skill_invocations" for relation "public.skill_invocations" does not exist, skipping
+NOTICE:  trigger "trg_gate_dispatch_outbox" for relation "public.dispatch_outbox" does not exist, skipping
+NOTICE:  trigger "trg_gate_approvals" for relation "public.approvals" does not exist, skipping
+NOTICE:  trigger "trg_gate_policy_action_outbox" for relation "public.policy_action_outbox" does not exist, skipping
+NOTICE:  trigger "trg_gate_stage_runs" for relation "public.stage_runs" does not exist, skipping
+NOTICE:  trigger "trg_gate_rollback_runs" for relation "public.rollback_runs" does not exist, skipping
+DO
+CREATE FUNCTION
+ALTER FUNCTION
+REVOKE
+CREATE FUNCTION
+ALTER FUNCTION
+REVOKE
+CREATE FUNCTION
+ALTER FUNCTION
+REVOKE
+CREATE FUNCTION
+ALTER FUNCTION
+REVOKE
+CREATE FUNCTION
+ALTER FUNCTION
+REVOKE
+CREATE FUNCTION
+ALTER FUNCTION
+REVOKE
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+ALTER FUNCTION
+ALTER FUNCTION
+ALTER FUNCTION
+ALTER FUNCTION
+ALTER FUNCTION
+ALTER FUNCTION
+ALTER FUNCTION
+ALTER FUNCTION
+ALTER FUNCTION
+ALTER FUNCTION
+ALTER FUNCTION
+ALTER FUNCTION
+ALTER FUNCTION
+ALTER FUNCTION
+ALTER FUNCTION
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+NOTICE:  self-check (info, not a gate): gate_owner owns 4 functions; by-name catalog (§16.1/16.2) is authoritative
+DO
+NOTICE:  M4-F1 v2.8 implementation self-check PASS (by-name catalog)
+COMMIT
+BEGIN
+NOTICE:  extension "pgcrypto" already exists, skipping
+CREATE EXTENSION
+NOTICE:  column "trace_id" of relation "task_runs" already exists, skipping
+ALTER TABLE
+NOTICE:  column "active_snapshot_id" of relation "task_runs" already exists, skipping
+ALTER TABLE
+NOTICE:  column "skill_data_state" of relation "task_runs" already exists, skipping
+ALTER TABLE
+UPDATE 0
+DO
+CREATE TABLE
+NOTICE:  relation "envelope_store" already exists, skipping
+CREATE TABLE
+NOTICE:  relation "run_snapshots" already exists, skipping
+CREATE INDEX
+CREATE INDEX
+NOTICE:  relation "uq_run_snapshots_run_digest" already exists, skipping
+NOTICE:  relation "uq_run_snapshots_run_snap" already exists, skipping
+NOTICE:  relation "skill_version_registry" already exists, skipping
+CREATE TABLE
+CREATE TABLE
+NOTICE:  relation "revision_bindings" already exists, skipping
+NOTICE:  relation "purge_requests" already exists, skipping
+CREATE TABLE
+NOTICE:  relation "uq_purge_requests_active_run" already exists, skipping
+CREATE INDEX
+CREATE TABLE
+NOTICE:  relation "snapshot_job_outbox" already exists, skipping
+DO
+CREATE TABLE
+NOTICE:  relation "skill_job_outbox" already exists, skipping
+NOTICE:  relation "uq_skill_job_outbox_run_job" already exists, skipping
+CREATE INDEX
+DO
+DO
+CREATE TABLE
+NOTICE:  relation "skill_job_dependencies" already exists, skipping
+CREATE INDEX
+NOTICE:  relation "idx_skill_job_dependencies_dep" already exists, skipping
+NOTICE:  relation "skill_invocations" already exists, skipping
+CREATE TABLE
+DO
+DO
+DO
+DO
+DO
+NOTICE:  relation "snapshot_manifest_items" already exists, skipping
+CREATE TABLE
+DO
+NOTICE:  constraint "task_runs_active_snapshot_id_fkey" of relation "task_runs" does not exist, skipping
+DO
+INSERT 0 0
+DO
+ALTER ROLE
+ALTER ROLE
+ALTER ROLE
+ALTER ROLE
+ALTER ROLE
+ALTER ROLE
+DO
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+ALTER FUNCTION
+ALTER FUNCTION
+ALTER FUNCTION
+ALTER FUNCTION
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+DROP TRIGGER
+CREATE TRIGGER
+DROP TRIGGER
+CREATE TRIGGER
+DROP TRIGGER
+CREATE TRIGGER
+DROP TRIGGER
+CREATE TRIGGER
+DROP TRIGGER
+CREATE TRIGGER
+DROP TRIGGER
+CREATE TRIGGER
+DROP TRIGGER
+CREATE TRIGGER
+DROP TRIGGER
+CREATE TRIGGER
+DO
+CREATE FUNCTION
+ALTER FUNCTION
+REVOKE
+CREATE FUNCTION
+ALTER FUNCTION
+REVOKE
+CREATE FUNCTION
+ALTER FUNCTION
+REVOKE
+CREATE FUNCTION
+ALTER FUNCTION
+REVOKE
+CREATE FUNCTION
+ALTER FUNCTION
+REVOKE
+CREATE FUNCTION
+ALTER FUNCTION
+REVOKE
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+ALTER FUNCTION
+ALTER FUNCTION
+ALTER FUNCTION
+ALTER FUNCTION
+ALTER FUNCTION
+ALTER FUNCTION
+ALTER FUNCTION
+ALTER FUNCTION
+ALTER FUNCTION
+ALTER FUNCTION
+ALTER FUNCTION
+ALTER FUNCTION
+ALTER FUNCTION
+ALTER FUNCTION
+ALTER FUNCTION
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+REVOKE
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+GRANT
+NOTICE:  self-check (info, not a gate): gate_owner owns 4 functions; by-name catalog (§16.1/16.2) is authoritative
+NOTICE:  M4-F1 v2.8 implementation self-check PASS (by-name catalog)
+DO
+COMMIT
+DO
+ALTER ROLE
+CREATE FUNCTION
+CREATE FUNCTION
+ALTER FUNCTION
+ALTER FUNCTION
+REVOKE
+REVOKE
+GRANT
+GRANT
+DO
+NOTICE:  m4f1_hotfix_1 catalog self-check PASS
+DO
+ALTER ROLE
+CREATE FUNCTION
+CREATE FUNCTION
+ALTER FUNCTION
+ALTER FUNCTION
+REVOKE
+REVOKE
+GRANT
+GRANT
+DO
+NOTICE:  m4f1_hotfix_1 catalog self-check PASS

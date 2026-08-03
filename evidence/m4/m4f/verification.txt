@@ -1,30 +1,21 @@
 MergePilot M4-F release verification
-generated_at: 2026-08-03T03:34:12Z
-head: ee5158b39c4784798758505a6821b1f266269180
+generated_at: 2026-08-03T10:49:46Z
+head: b1da394525117217083b71c8774e6951c0c61bd4
 platform: Linux-5.15.167.4-microsoft-standard-WSL2-x86_64-with-glibc2.35
-delivery_digest: b595e5614c9b2879fa0e4ecc95dc72a96e9c4d9117b88fadae45871c15f4830b
-delivery_files: 53
+delivery_digest: 9afffc3494960705fa678807774c83ed001d24c0146f38e46b292d055afe2d67
+delivery_files: 56
 delivery_scope: M4-F delivery surface (schema/runtime/controller/gateway/worker/tests-m4f1)
 
 [m4f1-run_all gates]
-0	schema foundation and exact ACL
-0	MergePilot JCS Profile fixed oracle
-0	producer SD APIs
-0	producer two-connection concurrency
-0	claim/heartbeat/fail state machines
-0	atomic completion APIs
-0	purge and reference counting
-0	build host runtime fixture
-0	release evidence negatives (writer fail-closed + stale cleared)
-0	release evidence unit tests
+0	gate-log cleanup counterexample (P3-1, success + failure)
 0	host Skill worker unit tests
 0	text/cache/credential/attribution hygiene
 0	M4-F tracked whitespace
 0	six-Skill full-chain Demo, revision cut, complete/purge race
 0	AgentTeams protocol E2E (real Gateway + six Skills + PRLifecycle)
 0	M4-A~E legacy functional regression (authoritative platforms)
-gates_total: 16
-gates_passed: 16
+gates_total: 7
+gates_passed: 7
 gates_failed: 0
 
 [agentteams-e2e]
