@@ -19,6 +19,7 @@ TARGETS = (
     ROOT / "tools/m4f-runtime",
     ROOT / "tests/m4f1",
     ROOT / "evidence/m4/m4f",
+    ROOT / "evidence/m4/m4f-hotfix1",
 )
 SCAN_TARGETS = tuple(
     path for path in TARGETS if path != ROOT / "tools/workflow-controller/controller.py"

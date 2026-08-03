@@ -101,9 +101,9 @@ trap - EXIT
 [ "$after_buggy" = "0" ] || fail "upgrade: post-hotfix still has ON CONFLICT (job_id) ($after_buggy)"
 [ "$after_fixed" = "2" ] || fail "upgrade: post-hotfix missing ON CONFLICT DO NOTHING ($after_fixed)"
 python3 - "$UPG_JSON" "$HEAD" "$TAG_PEEL" "$before_buggy" "$after_buggy" "$after_fixed" <<'PY' || fail "upgrade json write"
-import json, sys, datetime
+import json, sys, datetime, pathlib
 path, head, peel, before, after_b, after_f = sys.argv[1:7]
-json.dump({
+pathlib.Path(path).write_text(json.dumps({
     "schema": "m4f-hotfix1-upgrade-e2e",
     "generated_at": datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00","Z"),
     "head": head,
@@ -114,7 +114,7 @@ json.dump({
     "post_hotfix_fixed_function_count": int(after_f),
     "hotfix_rounds": 2,
     "all_passed": int(before) == 2 and int(after_b) == 0 and int(after_f) == 2,
-}, open(path, "w"), indent=2)
+}, indent=2) + "\n", encoding="utf-8")
 PY
 echo "upgrade-e2e: PASS (buggy=$before_buggy -> after_hotfix buggy=$after_buggy fixed=$after_fixed)"
 

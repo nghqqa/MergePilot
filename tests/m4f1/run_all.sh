@@ -19,10 +19,11 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 RUNTIME_IMAGE="mergepilot-m4f-runtime:demo"
 EVID="$ROOT/evidence/m4/m4f/agentteams-e2e.json"
 VERIFICATION="$ROOT/evidence/m4/m4f/verification.txt"
-# clear any stale gate-manifest temp files from prior runs so the gate-log
-# residue assertion stays authoritative, then allocate this run's manifest.
-find /tmp -maxdepth 1 -name 'm4f1-gates.*' -delete 2>/dev/null || true
-GATE_LOG="$(mktemp /tmp/m4f1-gates.XXXXXX)"
+# Per-run private temp dir: GATE_LOG is allocated inside it so the cleanup trap
+# can rm the EXACT dir without globbing /tmp (which would collide with other
+# run_all instances or with the gate-log cleanup counterexample sub-test).
+RUN_TMP="$(mktemp -d /tmp/m4f1-run-all.XXXXXX)"
+GATE_LOG="$RUN_TMP/gates.tsv"
 OVERALL_RC=0
 
 # clear any stale verification from a previous run before any gate runs
@@ -49,7 +50,9 @@ finish() {
   local rc=$?
   set +e
   release_finish "$rc" "$GATE_LOG" "$EVID" "$VERIFICATION" "$ROOT"
-  exit $?
+  local frc=$?
+  rm -rf -- "$RUN_TMP"
+  exit "$frc"
 }
 trap finish EXIT
 
@@ -91,6 +94,45 @@ run_gate "AgentTeams protocol E2E (real Gateway + six Skills + PRLifecycle)" \
   bash "$ROOT/tests/m4f1/run_agentteams_gateway_e2e.sh"
 run_gate "M4-A~E legacy functional regression (authoritative platforms)" \
   bash "$ROOT/tests/m4f1/run_legacy_functional_regression.sh"
+
+# ── fail-closed GATE_LOG integrity assertion (exactly 17 gates, no dup) ──────
+# Prevents evidence corruption (e.g. a sub-gate colliding with this GATE_LOG)
+# from silently reducing verification.txt below the real gate count.
+python3 - "$GATE_LOG" <<'PYINTEGRITY' || { echo "[m4f1] GATE_LOG integrity FAIL" >&2; OVERALL_RC=1; }
+expected = [
+    "schema foundation and exact ACL",
+    "MergePilot JCS Profile fixed oracle",
+    "producer SD APIs",
+    "producer two-connection concurrency",
+    "claim/heartbeat/fail state machines",
+    "atomic completion APIs",
+    "purge and reference counting",
+    "build host runtime fixture",
+    "release evidence negatives (writer fail-closed + stale cleared)",
+    "release evidence unit tests",
+    "gate-log cleanup counterexample (P3-1, success + failure)",
+    "host Skill worker unit tests",
+    "text/cache/credential/attribution hygiene",
+    "M4-F tracked whitespace",
+    "six-Skill full-chain Demo, revision cut, complete/purge race",
+    "AgentTeams protocol E2E (real Gateway + six Skills + PRLifecycle)",
+    "M4-A~E legacy functional regression (authoritative platforms)",
+]
+import sys
+lines = open(sys.argv[1], encoding="utf-8").read().splitlines()
+names = [ln.split("\t", 1)[1] if "\t" in ln else ln for ln in lines]
+if len(lines) != 17:
+    print("INTEGRITY-FAIL: %d gate lines (expected 17)" % len(lines), file=sys.stderr)
+    sys.exit(1)
+if len(set(names)) != 17:
+    print("INTEGRITY-FAIL: duplicate gate names in GATE_LOG", file=sys.stderr)
+    sys.exit(1)
+missing = [e for e in expected if e not in names]
+if missing:
+    print("INTEGRITY-FAIL: missing gates %s" % missing, file=sys.stderr)
+    sys.exit(1)
+print("GATE_LOG integrity OK: 17/17 gates recorded, no duplicates")
+PYINTEGRITY
 
 if [ "$OVERALL_RC" -ne 0 ]; then
   echo "M4-F1 GATES FAILED rc=$OVERALL_RC" >&2
