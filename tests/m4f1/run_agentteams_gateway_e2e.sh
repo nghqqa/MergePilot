@@ -87,13 +87,11 @@ docker run -d --name "$DB" --network "$NET" --network-alias m4f-pg --label "$LAB
   -e POSTGRES_USER=fixture_admin \
   -e POSTGRES_DB="$DBNAME" \
   "$PG_IMAGE" >/dev/null
-for _ in $(seq 1 60); do
-  if docker exec "$DB" pg_isready -U fixture_admin -d "$DBNAME" >/dev/null 2>&1; then
-    break
-  fi
+for _ in $(seq 1 90); do
+  docker exec "$DB" psql -U fixture_admin -d "$DBNAME" -c "SELECT 1" >/dev/null 2>&1 && break
   sleep 1
 done
-docker exec "$DB" pg_isready -U fixture_admin -d "$DBNAME" >/dev/null
+docker exec "$DB" psql -U fixture_admin -d "$DBNAME" -c "SELECT 1" >/dev/null
 
 # ── 2. minimal-privilege roles: mergepilot + policy_gateway_audit (INSERT-only audit) ──
 docker exec -i "$DB" psql -U fixture_admin -d "$DBNAME" -v ON_ERROR_STOP=1 <<'SQL' >/dev/null
@@ -218,7 +216,11 @@ docker logs "$GW" 2>&1 | tail -3
 # ── 9. AgentTeams driver: real controller.process_event + six-Skill worker ──
 echo "[at-e2e] running AgentTeams protocol E2E driver"
 set +e
+# Run as host UID:GID so evidence files are host-owned, allowing host-side
+# post-processing (delivery_digest, finalize) to read/overwrite. (B-fix)
 docker run --rm --network "$NET" --label "$LABEL" \
+  --user "$(id -u):$(id -g)" \
+  -e HOME=/tmp \
   -v "$ROOT:/workspace:ro" \
   -v "$EVID_DIR:/evidence" \
   -w /workspace \

@@ -1,0 +1,52 @@
+version: "m5-0-candidate-live-v1"
+
+repos:
+  allowlist:
+    - "example/project"
+
+branches:
+  base_allowlist: ["main"]
+  fix_prefix: "fix/"
+  protected: ["main"]
+
+file_paths:
+  denylist:
+    - "glob:**/.env*"
+    - "glob:**/*.pem"
+    - "glob:**/*.key"
+    - "glob:**/secrets/**"
+    - "glob:**/.github/workflows/**"
+
+tool_classes:
+  read:
+    - pull_request_read
+    - list_branches
+    - list_pull_requests
+    - get_file_contents
+    - get_commit
+    - list_commits
+  comment: []
+  fix:
+    - create_branch
+    - push_files
+    - create_pull_request
+  l2: []
+  disabled: []
+
+roles:
+  # Production coordinator identity (unchanged, for backward-compat testing).
+  coordinator:
+    classes: [read]
+  # v2.4 勘误:M5-0 Candidate 专用独立身份。最小权限:仅 read 类
+  # (pull_request_read / get_pr_diff / get_pr_files 等只读工具)。
+  # 不持 GitHub PAT,不复用生产 coordinator token;Gateway 侧由
+  # ROLE_TOKENS 映射独立 m5coordinator token → 此 role。
+  m5coordinator:
+    classes: [read]
+  reviewer:
+    classes: [read]
+  verifier:
+    classes: [read]
+  fixer:
+    classes: [read, fix]
+    write_checks: true

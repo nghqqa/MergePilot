@@ -46,8 +46,290 @@ M4F_EVENT_LEASE_SECONDS = int(os.environ.get("M4F_EVENT_LEASE_SECONDS", "120"))
 M4F_EVENT_MAX_ATTEMPTS = int(os.environ.get("M4F_EVENT_MAX_ATTEMPTS", "5"))
 L2_MERGE_ENABLED = _L2_RAW in _L2_TRUE
 L2_MERGE_ENABLED_INVALID = _L2_RAW not in _L2_TRUE and _L2_RAW not in _L2_FALSE
+
+# ── M5-0 Candidate Controller configuration (design freeze v2.3 §8) ──
+# Backward-compatible defaults: M4F_ONLY_MODE=0 keeps existing behavior.
+_M5_LIVE_RAW = os.environ.get("M4F_LIVE_MODE", "0").strip().lower()
+M4F_LIVE_MODE = _M5_LIVE_RAW in _L2_TRUE
+_M5_ONLY_RAW = os.environ.get("M4F_ONLY_MODE", "0").strip().lower()
+M4F_ONLY_MODE = _M5_ONLY_RAW in _L2_TRUE
+# MATRIX_USER: backward-compat default "admin"; Candidate must set non-admin.
+MATRIX_USER = os.environ.get("MATRIX_USER", "admin")
+# CONTROLLER_CONSUMER_NAME: backward-compat default "controller"; Candidate must set different.
+CONTROLLER_CONSUMER_NAME = os.environ.get("CONTROLLER_CONSUMER_NAME", "controller")
+# Room/sender allowlists: comma-separated; empty = reject all M4F_RUN from /sync.
+M4F_ALLOWED_ROOMS = [r.strip() for r in os.environ.get("M4F_ALLOWED_ROOMS", "").split(",") if r.strip()]
+M4F_ALLOWED_SENDERS = [s.strip() for s in os.environ.get("M4F_ALLOWED_SENDERS", "").split(",") if s.strip()]
+# Run prefix for Candidate scoping (e.g. "m5live-"). Empty = no prefix check (legacy compat).
+M4F_RUN_PREFIX = os.environ.get("M4F_RUN_PREFIX", "").strip()
+# Reserved prefixes for Production drain_outbox exclusion (comma-separated).
+RESERVED_RUN_PREFIXES = [p.strip() for p in os.environ.get("RESERVED_RUN_PREFIXES", "").split(",") if p.strip()]
+# Advisory lock key for Candidate singleton.
+_M5_LOCK_LABEL = "mergepilot:m5-0-candidate"
+_m5_lock_conn = None  # session-level advisory lock connection (independent of _pg)
+# Strict parser regexes (M5-0 §7.2)
+import re as _m5_re
+_M5_RUN_MARKER = "M4F_RUN:"
+_M5_RE_HANDOFF = _m5_re.compile(r"^TASK_COMPLETED: ([A-Za-z0-9._:-]+)-(review|fix|verify)$")
+_M5_RE_VERDICT_LINE = _m5_re.compile(r"(?mi)^\s*VERDICT\s*=\s*(PASS|FAIL|BLOCKED)\s*$")
+_M5_RUN_ID_CHARSET = _m5_re.compile(r"^[A-Za-z0-9._:-]+$")
+_M5_SQL_WILDCARD = _m5_re.compile(r"[%_]")
+# v2.4 Fix 3: prefix must be plain [A-Za-z0-9.-]+ (no underscore=SQL wildcard,
+# no %, no shell metachars, no path separators).
+_M5_PREFIX_CHARSET = _m5_re.compile(r"^[A-Za-z0-9.-]+$")
+
+
+def _m5_prefix_overlap(a, b):
+    """True if a/b are in a parent-child relationship (one is a prefix of the other)."""
+    return a != b and (b.startswith(a) or a.startswith(b))
+
+
+def _validate_m5_candidate():
+    """M5-0A startup assert for Candidate mode. Called only when M4F_ONLY_MODE=1.
+    Validates all Candidate-required config. Fails before Matrix login."""
+    if not M4F_ONLY_MODE:
+        return  # not Candidate mode; skip
+    errors = []
+    if not M4F_ENABLED:
+        errors.append("M4F_ENABLED must be 1 in Candidate mode")
+    if not M4F_LIVE_MODE:
+        errors.append("M4F_LIVE_MODE must be 1 in Candidate mode")
+    if not MATRIX_USER or MATRIX_USER == "admin":
+        errors.append("MATRIX_USER must be explicitly set and not 'admin' in Candidate mode")
+    if not CONTROLLER_CONSUMER_NAME or CONTROLLER_CONSUMER_NAME == "controller":
+        errors.append("CONTROLLER_CONSUMER_NAME must be explicitly set and not 'controller' in Candidate mode")
+    if not M4F_ALLOWED_ROOMS:
+        errors.append("M4F_ALLOWED_ROOMS must be non-empty in Candidate mode")
+    if not M4F_ALLOWED_SENDERS:
+        errors.append("M4F_ALLOWED_SENDERS must be non-empty in Candidate mode")
+    if not M4F_RUN_PREFIX:
+        errors.append("M4F_RUN_PREFIX must be non-empty in Candidate mode")
+    if _M5_SQL_WILDCARD.search(M4F_RUN_PREFIX):
+        errors.append("M4F_RUN_PREFIX must not contain SQL wildcards (% or _)")
+    # v2.4 Fix 3: strict charset (reject shell metachars, path separators, etc.)
+    if M4F_RUN_PREFIX and not _M5_PREFIX_CHARSET.match(M4F_RUN_PREFIX):
+        errors.append("M4F_RUN_PREFIX must match [A-Za-z0-9.-]+ only")
+    # Candidate must NOT have its own prefix in RESERVED (would self-exclude)
+    if M4F_RUN_PREFIX in RESERVED_RUN_PREFIXES:
+        errors.append("M4F_RUN_PREFIX must not appear in RESERVED_RUN_PREFIXES (self-exclusion)")
+    for pfx in RESERVED_RUN_PREFIXES:
+        if _M5_SQL_WILDCARD.search(pfx):
+            errors.append(f"RESERVED_RUN_PREFIXES must not contain SQL wildcards: {pfx}")
+        if not _M5_PREFIX_CHARSET.match(pfx):
+            errors.append(f"RESERVED_RUN_PREFIXES must match [A-Za-z0-9.-]+ only: {pfx}")
+    # v2.4 Fix 3: reject parent-child prefix overlap (M4F_RUN_PREFIX vs RESERVED)
+    for rp in RESERVED_RUN_PREFIXES:
+        if _m5_prefix_overlap(M4F_RUN_PREFIX, rp):
+            errors.append(
+                f"M4F_RUN_PREFIX '{M4F_RUN_PREFIX}' parent-child overlaps RESERVED '{rp}'")
+    # v2.4 Fix 3: reject parent-child overlap WITHIN RESERVED_RUN_PREFIXES
+    for i, a in enumerate(RESERVED_RUN_PREFIXES):
+        for b in RESERVED_RUN_PREFIXES[i + 1:]:
+            if _m5_prefix_overlap(a, b):
+                errors.append(
+                    f"RESERVED_RUN_PREFIXES parent-child overlap: '{a}' vs '{b}'")
+    if errors:
+        for e in errors:
+            print(f"[ctrl][M5-0] FATAL: {e}")
+        raise ValueError(f"M5-0 Candidate config invalid: {len(errors)} errors")
+    # Cutover preflight: verify production Controller has matching RESERVED_RUN_PREFIXES
+    # (read-only check; does NOT output full env or credentials)
+    try:
+        _pf_conn = psycopg2.connect(
+            host=PG_HOST, port=PG_PORT, dbname=PG_DB, user=PG_USER, password=PG_PASS)
+        with _pf_conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM pg_tables WHERE tablename='controller_offsets'")
+            if cur.fetchone():
+                # Check production controller exists and has a different consumer_name
+                cur.execute(
+                    "SELECT consumer_name FROM controller_offsets WHERE consumer_name='controller'")
+                prod_exists = cur.fetchone()
+                if prod_exists and M4F_RUN_PREFIX:
+                    print(f"[ctrl][M5-0] cutover: production controller detected; "
+                          f"Candidate prefix={M4F_RUN_PREFIX}")
+                    # NOTE: production RESERVED_RUN_PREFIXES cannot be read from here;
+                    # the start_candidate_controller.sh preflight script verifies it
+                    # via docker inspect (read-only, env name only, no value output).
+        _pf_conn.close()
+    except Exception:
+        pass  # PG probe is best-effort; advisory lock will catch concurrency issues
+
+
+def acquire_m5_lock():
+    """Acquire session-level advisory lock for Candidate singleton.
+    Uses independent PG connection. Returns True on success, False if locked."""
+    global _m5_lock_conn
+    if _m5_lock_conn and not _m5_lock_conn.closed:
+        return True  # already held
+    _m5_lock_conn = psycopg2.connect(
+        host=PG_HOST, port=PG_PORT, dbname=PG_DB, user=PG_USER, password=PG_PASS,
+        application_name=f"{CONTROLLER_CONSUMER_NAME}-m5-lock")
+    with _m5_lock_conn.cursor() as cur:
+        cur.execute(
+            "SELECT pg_try_advisory_lock(hashtextextended(%s, 0))", (_M5_LOCK_LABEL,))
+        acquired = cur.fetchone()[0]
+    if not acquired:
+        _m5_lock_conn.close()
+        _m5_lock_conn = None
+    return acquired
+
+
+def release_m5_lock():
+    """Release advisory lock and close the lock connection."""
+    global _m5_lock_conn
+    if _m5_lock_conn and not _m5_lock_conn.closed:
+        try:
+            with _m5_lock_conn.cursor() as cur:
+                cur.execute(
+                    "SELECT pg_advisory_unlock(hashtextextended(%s, 0))", (_M5_LOCK_LABEL,))
+                cur.close()
+            _m5_lock_conn.close()
+        except Exception:
+            pass  # PG session disconnect auto-releases
+    _m5_lock_conn = None
+
+
+def check_m5_lock_health():
+    """Check advisory lock connection is still alive. Candidate exits if not."""
+    global _m5_lock_conn
+    if M4F_ONLY_MODE and (_m5_lock_conn is None or _m5_lock_conn.closed):
+        return False
+    if M4F_ONLY_MODE:
+        try:
+            with _m5_lock_conn.cursor() as cur:
+                cur.execute("SELECT 1")
+                cur.fetchone()
+        except Exception:
+            return False
+    return True
+
+
+_M5_RE_FULL_SENDER = re.compile(
+    r"^@([A-Za-z0-9._=/+\-]+):(" + re.escape(SERVER) + r")$")
+
+
+def verify_m5_sender(raw_sender, allowed_localparts):
+    """Verify full Matrix user_id with server_name via strict fullmatch.
+    Returns localpart or None.
+    Rejects: missing @, multiple @, empty localpart, wrong homeserver, not in allowlist."""
+    if not raw_sender or not isinstance(raw_sender, str):
+        return None
+    m = _M5_RE_FULL_SENDER.match(raw_sender)
+    if not m:
+        return None
+    localpart = m.group(1)
+    server = m.group(2)
+    if not localpart or server != SERVER:
+        return None
+    if localpart not in allowed_localparts:
+        return None
+    return localpart
+
+
+def m5_parse_m4f_run(body):
+    """Strict M4F_RUN parser (§7.2). Returns parsed payload dict or None.
+    Only accepts: M4F_RUN: {valid JSON} with no trailing prose.
+    JSON must pass m4f_ingress.validate_event schema check."""
+    if not body.startswith(_M5_RUN_MARKER):
+        return None
+    json_part = body[len(_M5_RUN_MARKER):].strip()
+    if not json_part.startswith("{"):
+        return None
+    if _M5_RUN_MARKER in json_part:
+        return None
+    try:
+        payload = json.loads(json_part)
+    except (json.JSONDecodeError, ValueError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    run_id = payload.get("run_id", "")
+    if not isinstance(run_id, str) or not run_id.startswith(M4F_RUN_PREFIX):
+        return None
+    if not _M5_RUN_ID_CHARSET.match(run_id[len(M4F_RUN_PREFIX):]):
+        return None
+    # Freeze contract: validate via m4f_ingress schema (not just json.loads)
+    try:
+        m4f_ingress.validate_event(payload)
+    except m4f_ingress.M4FIngressError:
+        return None
+    return payload
+
+
+def m5_parse_handoff(body, stage):
+    """Strict TASK_COMPLETED handoff parser (§7.2).
+    For review/fix: body must be exactly 'TASK_COMPLETED: <run_id>-<stage>'.
+    Returns run_id or None."""
+    if not body:
+        return None
+    m = _M5_RE_HANDOFF.match(body)
+    if not m or m.group(2) != stage:
+        return None
+    run_id = m.group(1)
+    if not run_id.startswith(M4F_RUN_PREFIX):
+        return None
+    return run_id
+
+
+def m5_parse_verify(body):
+    """Strict verify handoff parser (§7.2 freeze contract).
+    Accepts:
+      1 line:  TASK_COMPLETED: <run_id>-verify            → (run_id, None) PARTIAL
+      2 lines: TASK_COMPLETED: <run_id>-verify\\nVERDICT=X  → (run_id, "X")
+    Rejects: prose, code blocks, >2 lines, >1 VERDICT, missing TASK_COMPLETED.
+    Returns (run_id, verdict|None) or ("REJECT", reason) or None."""
+    if not body:
+        return None
+    lines = body.strip().splitlines()
+    if len(lines) not in (1, 2):
+        return None  # only 1 or 2 lines allowed
+    # Line 1 must be TASK_COMPLETED: <run_id>-verify (full line match)
+    m1 = _M5_RE_HANDOFF.match(lines[0].strip())
+    if not m1 or m1.group(2) != "verify":
+        return None
+    run_id = m1.group(1)
+    if not run_id.startswith(M4F_RUN_PREFIX):
+        return None
+    if len(lines) == 1:
+        return (run_id, None)  # waiting for VERDICT (PARTIAL)
+    # Line 2 must be exactly VERDICT=PASS|FAIL|BLOCKED
+    vm = re.match(r"^VERDICT=(PASS|FAIL|BLOCKED)$", lines[1].strip())
+    if not vm:
+        return ("REJECT", f"invalid VERDICT line: {lines[1][:50]}")
+    return (run_id, vm.group(1))
+
+
+def _drain_outbox_sql_partition():
+    """Build parameterized SQL WHERE clause for run_id prefix partitioning.
+    Returns (sql_fragment, params_list)."""
+    params = []
+    clauses = ["status IN ('PENDING', 'RETRY')", "next_retry_at <= now()"]
+    if M4F_ONLY_MODE and M4F_RUN_PREFIX:
+        clauses.append("run_id LIKE %s")
+        params.append(M4F_RUN_PREFIX + "%")
+    for pfx in RESERVED_RUN_PREFIXES:
+        clauses.append("run_id NOT LIKE %s")
+        params.append(pfx + "%")
+    return " AND ".join(clauses), params
+
+
+def _drain_m4f_claim_sql_prefix():
+    """Build additional WHERE clause for M4F claim prefix scoping.
+    Returns (sql_fragment, params_list). ``process_event`` persists the parsed
+    run ID before setting M4F_PENDING, so this column is the authoritative
+    partition key for claims.
+    """
+    params = []
+    clause = ""
+    if M4F_RUN_PREFIX:
+        clause = " AND run_id LIKE %s"
+        params.append(M4F_RUN_PREFIX + "%")
+    return clause, params
 GATEWAY_URL      = os.environ.get("GATEWAY_URL", "http://policy-gw:8083")
 COORDINATOR_TOKEN = os.environ.get("COORDINATOR_TOKEN", "")
+# v2.4 勘误:Candidate(M4F_ONLY_MODE=1)使用独立最小权限 GATEWAY_TOKEN(m5coordinator 身份),
+# 不读取生产 COORDINATOR_TOKEN。gateway_client 同样回退 GATEWAY_TOKEN → COORDINATOR_TOKEN。
+GATEWAY_TOKEN = os.environ.get("GATEWAY_TOKEN", "").strip() or COORDINATOR_TOKEN
 # B4c.1: 对账阈值固定为代码常量(与 l2_reconcile_executing SQL `interval '120 seconds'` 一致;安全下限,非部署参数)
 L2_RECONCILE_MIN_AGE_SECONDS = 120
 L2_LEASE_SECONDS  = int(os.environ.get("L2_LEASE_SECONDS", "90"))   # outbox DISPATCHED lease(须 ≥ L2_GW_TIMEOUT+5,启动断言)
@@ -197,7 +479,7 @@ def ensure_matrix_login():
         return _token
     resp = matrix_request("POST", "/_matrix/client/v3/login", {
         "type": "m.login.password",
-        "identifier": {"type": "m.id.user", "user": ADMIN},
+        "identifier": {"type": "m.id.user", "user": MATRIX_USER},
         "password": ADMIN_PW,
     })
     _token = resp.get("access_token")
@@ -283,12 +565,16 @@ def reset_m4f_snapshot_pg():
     _m4f_snapshot_pg = None
 
 # ── 事件处理(原子事务) ──
-def process_event(event_id, room_id, sender, body, ts):
-    """处理单个 Matrix 事件,在一个 PG 事务内完成状态转换 + outbox。"""
+def process_event(event_id, room_id, raw_sender, sender, body, ts):
+    """处理单个 Matrix 事件,在一个 PG 事务内完成状态转换 + outbox。
+
+    v2.4 Fix 1: raw_sender = 完整 @localpart:server(持久化到 stage_events.sender,
+    保留 provenance);sender = 解析出的 localpart(用于 role 校验,同旧语义)。
+    """
     conn = ensure_pg()
     cur = conn.cursor()
 
-    # 记录到 stage_events(幂等:event_id PK)
+    # 记录到 stage_events(幂等:event_id PK)。sender 存完整 @localpart:server。
     inserted = False
     try:
         _etype = (
@@ -304,7 +590,7 @@ def process_event(event_id, room_id, sender, body, ts):
                        VALUES(%s, %s, %s, %s, %s, %s, 'RECEIVED')
                        ON CONFLICT (event_id) DO NOTHING
                        RETURNING event_id""",
-                    (event_id, room_id, sender, _etype,
+                    (event_id, room_id, raw_sender, _etype,
                      body[:2000], hashlib.sha256(body.encode()).hexdigest()[:16]))
         row = cur.fetchone()
         inserted = row is not None
@@ -319,7 +605,17 @@ def process_event(event_id, room_id, sender, body, ts):
     # deferred to drain_m4f_events; this transaction only durably records the
     # validated Matrix event.
     if PAT_M4F.search(body):
-        if sender != ADMIN:
+        # M5-0 Candidate mode: accept M4F_RUN from allowlisted Manager only
+        # (verified sender already checked in consume_events; here we check role)
+        if M4F_ONLY_MODE:
+            # In Candidate mode, sender has already been verified by verify_m5_sender
+            # in consume_events. Only accept M4F_RUN from @manager.
+            if sender != "manager":
+                mark_error(cur, event_id, f"M4F_RUN sender must be manager in Candidate mode (got {sender})")
+                conn.commit()
+                return
+        elif sender != ADMIN:
+            # Legacy mode: only admin sends M4F_RUN (M3/M4-F fixture behavior)
             mark_error(cur, event_id, "M4F_RUN sender must be admin")
             conn.commit()
             return
@@ -687,8 +983,9 @@ def drain_m4f_events(max_items=1):
         conn = ensure_pg()
         try:
             with conn.cursor() as cur:
+                _pf_clause, _pf_params = _drain_m4f_claim_sql_prefix()
                 cur.execute(
-                    """WITH candidate AS (
+                    f"""WITH candidate AS (
                            SELECT event_id
                            FROM public.stage_events
                            WHERE event_type='M4F_RUN'
@@ -698,7 +995,7 @@ def drain_m4f_events(max_items=1):
                                  status='M4F_RUNNING'
                                  AND processed_at < now()-make_interval(secs=>%s)
                                )
-                             )
+                             ){_pf_clause}
                            ORDER BY received_at,event_id
                            FOR UPDATE SKIP LOCKED
                            LIMIT 1
@@ -708,7 +1005,7 @@ def drain_m4f_events(max_items=1):
                        FROM candidate AS c
                        WHERE e.event_id=c.event_id
                        RETURNING e.event_id,e.raw_body,e.error""",
-                    (M4F_EVENT_LEASE_SECONDS,),
+                    [M4F_EVENT_LEASE_SECONDS] + _pf_params,
                 )
                 claimed = cur.fetchone()
             conn.commit()
@@ -778,10 +1075,13 @@ def drain_outbox():
     """处理 PENDING/RETRY 的 outbox 条目。"""
     conn = ensure_pg()
     cur = conn.cursor()
-    cur.execute("""SELECT id, idempotency_key, room_id, target_agent, body, retry_count
-                   FROM dispatch_outbox
-                   WHERE status IN ('PENDING', 'RETRY') AND next_retry_at <= now()
-                   ORDER BY id LIMIT 20""")
+    _where_clause, _where_params = _drain_outbox_sql_partition()
+    cur.execute(
+        f"""SELECT id, idempotency_key, room_id, target_agent, body, retry_count
+           FROM dispatch_outbox
+           WHERE {_where_clause}
+           ORDER BY id LIMIT 20""",
+        _where_params)
     items = cur.fetchall()
     for oid, ikey, room_id, agent, body, rc in items:
         try:
@@ -829,7 +1129,7 @@ def consume_events():
     """使用 /sync 拉取新事件,逐个处理。"""
     conn = ensure_pg()
     cur = conn.cursor()
-    cur.execute("SELECT sync_token FROM controller_offsets WHERE consumer_name='controller'")
+    cur.execute("SELECT sync_token FROM controller_offsets WHERE consumer_name=%s", (CONTROLLER_CONSUMER_NAME,))
     row = cur.fetchone()
     since = row[0] if row else None
 
@@ -839,26 +1139,66 @@ def consume_events():
     event_count = 0
 
     for room_id, room_data in joined.items():
-        # 不按 room 成员过滤(增量 /sync 不返回 state 事件,会导致漏处理)
-        # 直接遍历 timeline 事件,只匹配 TASK_SUBMITTED / TASK_COMPLETED
+        # M4F_ONLY_MODE: skip rooms not in allowlist
+        if M4F_ONLY_MODE and M4F_ALLOWED_ROOMS and room_id not in M4F_ALLOWED_ROOMS:
+            continue
         for evt in room_data.get("timeline", {}).get("events", []):
             if evt.get("type") != "m.room.message":
                 continue
             eid = evt.get("event_id")
-            sender = evt.get("sender", "").split(":")[0].lstrip("@")
+            raw_sender = evt.get("sender", "")
             body = evt.get("content", {}).get("body", "") or ""
             ts = evt.get("origin_server_ts", 0)
 
-            if "TASK_SUBMITTED" in body or "TASK_COMPLETED" in body or "POST_MERGE_VERIFY_FAILED" in body:
-                process_event(eid, room_id, sender, body, ts)
+            # M5-0 Candidate mode: use strict verify_m5_sender + room/sender allowlist
+            if M4F_ONLY_MODE:
+                sender = verify_m5_sender(raw_sender, set(M4F_ALLOWED_SENDERS))
+                if sender is None:
+                    continue  # sender not verified or not allowlisted
+                # M5-0: only M4F_RUN in Candidate mode (no TASK_SUBMITTED/L2/rollback)
+                if M4F_LIVE_MODE and body.startswith(_M5_RUN_MARKER):
+                    # Use strict parser instead of loose substring match
+                    payload = m5_parse_m4f_run(body)
+                    if payload is not None:
+                        process_event(eid, room_id, raw_sender, sender, body, ts)
+                        event_count += 1
+                    else:
+                        # Strict parse failed: record as ERROR, don't enter M4F_PENDING
+                        conn_err = ensure_pg()
+                        with conn_err.cursor() as ec:
+                            ec.execute(
+                                """INSERT INTO stage_events(event_id, room_id, sender, event_type, raw_body, body_sha256, status)
+                                   VALUES(%s, %s, %s, 'M4F_RUN', %s, %s, 'ERROR')
+                                   ON CONFLICT (event_id) DO NOTHING""",
+                                (eid, room_id, raw_sender, body[:2000],
+                                 hashlib.sha256(body.encode()).hexdigest()[:16]))
+                            ec.execute(
+                                "UPDATE stage_events SET error='M5-0 strict parse failed' WHERE event_id=%s",
+                                (eid,))
+                        conn_err.commit()
+                        print(f"[ctrl][M5-0] {eid} strict M4F_RUN parse failed → ERROR")
+                        event_count += 1
+                continue  # Candidate: skip all other event types
+
+            # Legacy mode: original loose substring matching + localpart truncation
+            sender = raw_sender.split(":")[0].lstrip("@")
+
+            # M4F_LIVE_MODE but not ONLY_MODE: also match M4F_RUN from /sync
+            should_process = ("TASK_SUBMITTED" in body or "TASK_COMPLETED" in body
+                              or "POST_MERGE_VERIFY_FAILED" in body)
+            if M4F_LIVE_MODE and not M4F_ONLY_MODE:
+                should_process = should_process or (_M5_RUN_MARKER in body)
+
+            if should_process:
+                process_event(eid, room_id, raw_sender, sender, body, ts)
                 event_count += 1
 
     # 保存游标
     if next_batch:
         cur.execute("""INSERT INTO controller_offsets(consumer_name, sync_token, updated_at)
-                       VALUES('controller', %s, now())
+                       VALUES(%s, %s, now())
                        ON CONFLICT(consumer_name) DO UPDATE SET sync_token=EXCLUDED.sync_token, updated_at=now()""",
-                    (next_batch,))
+                    (CONTROLLER_CONSUMER_NAME, next_batch))
         conn.commit()
 
     if event_count:
@@ -987,8 +1327,12 @@ def startup_assert_l2():
 
     need_gateway = bool(pending_l2) or L2_MERGE_ENABLED or M4F_ENABLED
     if need_gateway:
-        if not COORDINATOR_TOKEN:
-            sys.exit(f"[ctrl] FATAL: 有 {pending_l2} 个未终结审批 run(L2_MERGE_ENABLED={'on' if L2_MERGE_ENABLED else 'off'}),但缺 COORDINATOR_TOKEN → 这些 run 会卡死")
+        # v2.4 勘误:Candidate(M4F_ONLY_MODE)用独立 GATEWAY_TOKEN(m5coordinator),
+        # 不持生产 COORDINATOR_TOKEN。生产 Controller 走 COORDINATOR_TOKEN(向后兼容)。
+        _gw_tok = GATEWAY_TOKEN if M4F_ONLY_MODE else COORDINATOR_TOKEN
+        _gw_name = "GATEWAY_TOKEN" if M4F_ONLY_MODE else "COORDINATOR_TOKEN"
+        if not _gw_tok:
+            sys.exit(f"[ctrl] FATAL: 有 {pending_l2} 个未终结审批 run(L2_MERGE_ENABLED={'on' if L2_MERGE_ENABLED else 'off'}),但缺 {_gw_name} → 这些 run 会卡死")
         if not GATEWAY_URL:
             sys.exit("[ctrl] FATAL: 审批流需要 GATEWAY_URL")
         # B4c.1: Gateway TCP 不可达 → DEGRADED_NETWORK(**不 fatal**)。纯 DB 收敛继续;恢复后 circuit breaker 自动放行(无需重启)。
@@ -2012,9 +2356,56 @@ def process_rollback_advance(deadline=None):
 #   域 B(Matrix):login/consume/dispatch —— 独立;Matrix 不可用不阻断 L2 恢复。
 def run_forever():
     backoff = 1
-    print(f"[ctrl] 启动;PG={PG_HOST}:{PG_PORT};Matrix={MATRIX_HS};POLL={POLL_INTERVAL}s;L2_MERGE_ENABLED={'on' if L2_MERGE_ENABLED else 'off'}")
+    if M4F_ONLY_MODE:
+        print(f"[ctrl][M5-0] Candidate 启动;PG={PG_HOST}:{PG_PORT};Matrix={MATRIX_HS} user={MATRIX_USER};"
+              f"consumer={CONTROLLER_CONSUMER_NAME};prefix={M4F_RUN_PREFIX};POLL={POLL_INTERVAL}s")
+    else:
+        print(f"[ctrl] 启动;PG={PG_HOST}:{PG_PORT};Matrix={MATRIX_HS};POLL={POLL_INTERVAL}s;L2_MERGE_ENABLED={'on' if L2_MERGE_ENABLED else 'off'}")
     while True:
-        # ── 故障域 A:PG-驱动 L2(始终运行,不 gated by 开关;函数内部按 approval_required 过滤)──
+        if M4F_ONLY_MODE:
+            # ── M5-0 Candidate: scoped M4-F only (design freeze v2.3 §11) ──
+            # Advisory lock health check
+            if not check_m5_lock_health():
+                print("[ctrl][M5-0] advisory lock connection lost — exiting")
+                sys.exit(1)
+            try:
+                ensure_pg()
+                drain_m4f_events(max_items=1)
+                # NOTE: M5-0B will add reconcile_m5_skill_to_review + reconcile_m5_handoffs here.
+                # For M5-0A, these are intentionally not implemented (no-op).
+            except psycopg2.OperationalError as e:
+                print(f"[ctrl][M5-0] PG degraded: {e}; reconnecting in {backoff}s")
+                reset_pg()
+                time.sleep(backoff); backoff = min(backoff * 2, 30)
+                continue
+            except Exception as e:
+                print(f"[ctrl][M5-0] Domain A unexpected: {type(e).__name__}: {e}; retry in 5s")
+                time.sleep(5)
+
+            # Domain B: scoped Matrix
+            try:
+                ensure_matrix_login()
+                consume_events()
+                drain_outbox()
+                backoff = 1
+            except MatrixUnavailable as e:
+                print(f"[ctrl][M5-0] Matrix degraded: {e}; backoff={backoff}s")
+                time.sleep(backoff); backoff = min(backoff * 2, 30)
+                continue
+            except psycopg2.OperationalError as e:
+                print(f"[ctrl][M5-0] Matrix 域 PG degraded: {e}; reconnecting in {backoff}s")
+                reset_pg()
+                time.sleep(backoff); backoff = min(backoff * 2, 30)
+                continue
+            except Exception as e:
+                print(f"[ctrl][M5-0] Matrix 域 unexpected: {type(e).__name__}: {e}; retry in 5s")
+                time.sleep(5)
+
+            time.sleep(POLL_INTERVAL)
+            continue  # skip legacy Domain A/B below
+
+        # ── Legacy mode: full controller (Domain A + B) ──
+        # 故障域 A:PG-驱动 L2(始终运行,不 gated by 开关;函数内部按 approval_required 过滤)
         try:
             ensure_pg()
             drain_m4f_events(max_items=1)
@@ -2034,7 +2425,7 @@ def run_forever():
             print(f"[ctrl] L2 域 unexpected: {type(e).__name__}: {e}; retry in 5s")
             time.sleep(5)
 
-        # ── 故障域 B:Matrix(login/consume/dispatch)──
+        # 故障域 B:Matrix(login/consume/dispatch)
         try:
             ensure_matrix_login()
             consume_events()
@@ -2061,9 +2452,29 @@ if __name__ == "__main__":
     if not ADMIN_PW or not PG_PASS:
         print("ERROR: 需 ADMIN_PW + PG_PASS 环境变量"); sys.exit(1)
     startup_assert_l2()
-    # B4c-0.2:部署预检模式——仅跑 startup_assert_l2 后 exit 0/1,供 start 脚本替换前
+    # M5-0A: validate Candidate configuration before any Matrix interaction
+    _validate_m5_candidate()
+    # B4c-0.2:部署预检模式——仅跑 startup_assert 后 exit 0/1,供 start 脚本替换前
     #   用同一镜像+env 预检(startup_assert 失败时上面已 sys.exit 非零)。通过后才替换旧容器。
     if os.environ.get("STARTUP_CHECK_ONLY", "0").strip().lower() in ("1", "true", "yes"):
-        print("[ctrl] STARTUP_CHECK_ONLY: startup_assert passed → exit 0")
+        # M5-0A: verify advisory lock is obtainable, then release
+        if M4F_ONLY_MODE:
+            if acquire_m5_lock():
+                release_m5_lock()
+                print("[ctrl] STARTUP_CHECK_ONLY: startup_assert + advisory lock OK → exit 0")
+            else:
+                print("[ctrl] STARTUP_CHECK_ONLY: advisory lock DENIED → exit 1")
+                sys.exit(1)
+        else:
+            print("[ctrl] STARTUP_CHECK_ONLY: startup_assert passed → exit 0")
         sys.exit(0)
+    # M5-0A: Candidate must acquire advisory lock before Matrix login
+    if M4F_ONLY_MODE:
+        if not acquire_m5_lock():
+            print("[ctrl][M5-0] Candidate advisory lock DENIED — another candidate is running")
+            sys.exit(1)
+        print("[ctrl][M5-0] Candidate advisory lock acquired")
+        import atexit, signal as _sig
+        atexit.register(release_m5_lock)
+        _sig.signal(_sig.SIGTERM, lambda *_: (release_m5_lock(), sys.exit(0)))
     run_forever()

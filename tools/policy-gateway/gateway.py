@@ -431,8 +431,10 @@ async def call_tool(name: str, arguments: dict | None):
         return _deny_result(reason_code, tool=name, **extra)
 
     if m4f_run_id:
+        # M5-0 Candidate uses an independent read-only identity. Provenance
+        # remains restricted to the authoritative PR-read shape below.
         if (
-            role != "coordinator"
+            role not in ("coordinator", "m5coordinator")
             or name != "pull_request_read"
             or args.get("method") != "get"
         ):

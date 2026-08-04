@@ -161,7 +161,9 @@ def main() -> int:
             _event_payload(), ensure_ascii=False, sort_keys=True, separators=(",", ":")
         )
         controller.process_event(
-            "evt-agentteams-1", "!agentteams:fixture", "admin", body, int(time.time() * 1000)
+            "evt-agentteams-1", "!agentteams:fixture",
+            "@admin:" + controller.SERVER, "admin",
+            body, int(time.time() * 1000)
         )
         staged = controller.drain_m4f_events(max_items=1)
 

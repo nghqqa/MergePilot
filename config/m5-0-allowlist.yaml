@@ -1,0 +1,26 @@
+# M5-0 Candidate Controller allowlist template (no credentials).
+# Copy to config/m5-0-allowlist.yaml and fill with deploy-owned values.
+# This file is a TEMPLATE only; the Controller reads env vars, not this file directly.
+version: "m5-0-allowlist-template-v1"
+
+# Matrix user_id allowlist for M5-0 Candidate mode.
+# These are the localparts (without @ or :server) that the Candidate Controller
+# accepts as senders of M4F_RUN and TASK_COMPLETED events.
+# The Candidate Controller's M4F_ALLOWED_SENDERS env var should contain these
+# comma-separated values.
+allowed_senders:
+  manager: "manager"      # @manager:<server>
+  reviewer: "reviewer"    # @reviewer:<server>
+  fixer: "fixer"          # @fixer:<server>
+  verifier: "verifier"    # @verifier:<server>
+
+# Room allowlist: Candidate only processes events from these room_ids.
+# Fill with actual Matrix room_ids created for M5-0 testing.
+allowed_rooms: []
+  # - "!m5live-test:matrix-local.hiclaw.io:18080"
+
+# Run prefix: all M5-0 run_ids must start with this.
+run_prefix: "m5live-"
+
+# Matrix server name for sender verification.
+matrix_server_name: "matrix-local.hiclaw.io:18080"

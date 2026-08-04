@@ -4,6 +4,8 @@
 
 经 coordinator Bearer token 调 Gateway /coordinator/sse 的 github-mcp 工具。
 - 身份 = Authorization Bearer(env COORDINATOR_TOKEN,非 PAT)。
+- v2.4:可选 GATEWAY_ROLE + GATEWAY_TOKEN(M5-0 Candidate 用 m5coordinator 独立身份);
+  不设则回退 coordinator + COORDINATOR_TOKEN(向后兼容,生产 Controller 不变)。
 - token/url 从 env 读,Gateway 侧 path/token 一致性校验仍生效(gateway.py handle_sse)。
 - asyncio.run 桥到 controller 的 sync 主循环(每次调用新 event loop;L2 调用低频,可接受)。
 
@@ -23,6 +25,11 @@ import asyncio
 
 GATEWAY_URL = os.environ.get("GATEWAY_URL", "http://policy-gw:8083").rstrip("/")
 COORDINATOR_TOKEN = os.environ.get("COORDINATOR_TOKEN", "")
+# v2.4 勘误:M5-0 Candidate 使用独立最小权限 Gateway 身份(m5coordinator),
+# 不读取生产 COORDINATOR_TOKEN。生产 Controller 不设这俩 env → 走 coordinator 默认(向后兼容)。
+# GATEWAY_ROLE 决定 SSE 路径 /{role}/sse;Gateway 侧 TOKEN_TO_ROLE 须映射 token→同 role。
+GATEWAY_ROLE = os.environ.get("GATEWAY_ROLE", "coordinator").strip() or "coordinator"
+GATEWAY_TOKEN = os.environ.get("GATEWAY_TOKEN", "").strip() or COORDINATOR_TOKEN
 
 
 class GatewayError(Exception):
@@ -76,8 +83,8 @@ async def _lifecycle(tool, args):
     mcp SDK 懒导入(controller L2 关闭时不强依赖)。"""
     from mcp.client.sse import sse_client
     from mcp import ClientSession
-    async with sse_client(f"{GATEWAY_URL}/coordinator/sse",
-                          headers={"Authorization": f"Bearer {COORDINATOR_TOKEN}"}) as (r, w):
+    async with sse_client(f"{GATEWAY_URL}/{GATEWAY_ROLE}/sse",
+                          headers={"Authorization": f"Bearer {GATEWAY_TOKEN}"}) as (r, w):
         async with ClientSession(r, w) as s:
             await s.initialize()
             return await s.call_tool(tool, args or {})
@@ -228,8 +235,8 @@ def gateway_call(tool, args, timeout=60):
     """调一个 Gateway 工具。返回 (text, is_error)。失败抛 B4c.1 typed 异常:
     GatewayDenied(票据级确定性拒绝)/ GatewayUnavailable(瞬时)/ GatewayGlobalDegraded(全局配置故障)。
     (三者皆 GatewayError 子类,旧 `except GatewayError` 调用方仍兼容。discovery 仍一律归 RETRY。)"""
-    if not COORDINATOR_TOKEN:
-        raise GatewayGlobalDegraded("BAD_TOKEN", "COORDINATOR_TOKEN 未配置")
+    if not GATEWAY_TOKEN:
+        raise GatewayGlobalDegraded("BAD_TOKEN", "GATEWAY_TOKEN/COORDINATOR_TOKEN 未配置")
     try:
         res = asyncio.run(_call_tool(tool, args or {}, timeout))
     except asyncio.TimeoutError:

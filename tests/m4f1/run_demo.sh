@@ -45,13 +45,11 @@ docker run -d --name "$DB" --network "$NET" --network-alias m4f-pg \
   -e POSTGRES_DB=mergepilot_demo \
   "$PG_IMAGE" >/dev/null
 
-for _ in $(seq 1 60); do
-  if docker exec "$DB" pg_isready -U fixture_admin -d mergepilot_demo >/dev/null 2>&1; then
-    break
-  fi
+for _ in $(seq 1 90); do
+  docker exec "$DB" psql -U fixture_admin -d mergepilot_demo -c "SELECT 1" >/dev/null 2>&1 && break
   sleep 1
 done
-docker exec "$DB" pg_isready -U fixture_admin -d mergepilot_demo >/dev/null
+docker exec "$DB" psql -U fixture_admin -d mergepilot_demo -c "SELECT 1" >/dev/null
 
 docker exec -i "$DB" psql -U fixture_admin -d mergepilot_demo -v ON_ERROR_STOP=1 <<'SQL' >/dev/null
 DO $roles$
@@ -132,7 +130,12 @@ INSERT INTO public.mcp_calls(
 SQL
 
 set +e
+# Run as host UID:GID so the evidence file is host-owned (not root), allowing
+# the host-side finalize_demo_evidence.py (run_demo.sh:191) to overwrite it.
+# No sudo, no chmod 777, no root-owned files left in the repo. (B-fix)
 docker run --rm --network "$NET" --label "$LABEL" \
+  --user "$(id -u):$(id -g)" \
+  -e HOME=/tmp \
   -v "$ROOT:/workspace:ro" \
   -v "$EVID_DIR:/evidence" \
   -e M4F_DB_HOST=m4f-pg \
