@@ -1,0 +1,55 @@
+MergePilot M4-F release verification
+generated_at: 2026-08-04T14:03:01Z
+head: c8b4c3dfcc7384675c963a52bd873dd24feeb8f2
+platform: Linux-5.15.167.4-microsoft-standard-WSL2-x86_64-with-glibc2.35
+delivery_digest: b8a72b6dcf0435d4a1cd754b8f2a14a4a598ad5d6d69b8689f67ae28841d9c44
+delivery_files: 56
+delivery_scope: M4-F delivery surface (schema/runtime/controller/gateway/worker/tests-m4f1)
+
+[m4f1-run_all gates]
+0	schema foundation and exact ACL
+0	MergePilot JCS Profile fixed oracle
+0	producer SD APIs
+0	producer two-connection concurrency
+0	claim/heartbeat/fail state machines
+0	atomic completion APIs
+0	purge and reference counting
+0	build host runtime fixture
+0	release evidence negatives (writer fail-closed + stale cleared)
+0	release evidence unit tests
+0	gate-log cleanup counterexample (P3-1, success + failure)
+0	host Skill worker unit tests
+0	text/cache/credential/attribution hygiene
+0	M4-F tracked whitespace
+0	six-Skill full-chain Demo, revision cut, complete/purge race
+0	AgentTeams protocol E2E (real Gateway + six Skills + PRLifecycle)
+0	M4-A~E legacy functional regression (authoritative platforms)
+gates_total: 17
+gates_passed: 17
+gates_failed: 0
+
+[agentteams-e2e]
+migration_round_1_rc: 0
+migration_round_2_rc: 0
+run_rc: 0
+all_passed: True
+secret_leaks: 0
+residue: containers=0 networks=0 temp_dirs=0
+six_skills:
+  diff-parse: SUCCEEDED
+  risk-classify: SUCCEEDED
+  sast-scan: SUCCEEDED
+  test-runner: SUCCEEDED (verdict=PASS)
+  case-retrieval: SUCCEEDED
+  pr-lifecycle: SUCCEEDED (outcome=CREATED)
+delivery_digest_check: OK (recomputed == stored)
+hiclaw_live: False
+external_credentials: False
+
+[legacy-functional-regression]
+legacy_regression_rc: 0
+legacy_suites_matched: 6/6
+legacy_evidence: /mnt/d/goai/_m5_0a_e_final_1785851530/evidence/m4/m4f/legacy-functional-regression.txt
+
+final_rc: 0
+ALL GATES PASSED

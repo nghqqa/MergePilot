@@ -1,8 +1,9 @@
-# M5-0 HiClaw Live 最小闭环设计冻结 v2.3
+# M5-0 HiClaw Live 最小闭环设计冻结 v2.5
 
 ## 1. 状态声明
 
-- **设计冻结 PASS**（v2.1 + v2.2 + v2.3 全部阻断项已精确冻结）
+- **设计冻结 PASS**（v2.1 + v2.2 + v2.3 + v2.4 + v2.5 全部阻断项已精确冻结）
+- **v2.5 极窄勘误**：Candidate provenance 角色校验冲突（详见 §23）
 - **implementation NOT STARTED**
 - **hiclaw_live = false**（M5-0 完成前不得变更为 true）
 - **数据库契约不变**（无新表、新列、新函数、新索引、新 CHECK）
@@ -162,6 +163,8 @@ M5-0 Candidate 使用独立严格解析函数（不影响 Legacy M3 路径的现
 | M4F_RUN_PREFIX | 默认空（不校验前缀） | **必须非空**（推荐 `m5live-`） |
 | RESERVED_RUN_PREFIXES | 默认空（旧部署兼容）；M5-0 cutover 前须显式设为 Candidate 的 M4F_RUN_PREFIX | 默认空（Candidate 不使用此项；由 Production 排除） |
 | MATRIX_SERVER_NAME | `matrix-local.hiclaw.io:18080` | 同左 |
+| GATEWAY_ROLE | 默认空 → gateway_client 回退 `"coordinator"`（生产零改动） | **必须 = `m5coordinator`**（v2.4 勘误，见 §21） |
+| GATEWAY_TOKEN | 默认空 → gateway_client 回退 `COORDINATOR_TOKEN`（生产零改动） | **必须显式设置**；为 Candidate 专用独立 token，**不等于** COORDINATOR_TOKEN，**不是** GitHub PAT |
 
 **关键**：M4F_ONLY_MODE=0 时，生产 Controller 保持现有启动行为（ADMIN=admin, consumer_name=controller），**不得因新配置读取而崩溃**。
 
@@ -302,12 +305,13 @@ def run_forever():
 
 | 规则 | 实现 |
 |---|---|
-| 完整 Matrix user_id 校验 | verify_sender(raw_sender, allowed_localparts)：校验 `localpart:server_name` 格式，server_name 必须 = MATRIX_SERVER_NAME |
+| 完整 Matrix user_id 校验 | verify_m5_sender(raw_sender, allowed_localparts)：校验 `localpart:server_name` 格式，server_name 必须 = MATRIX_SERVER_NAME；完整 raw_sender 持久化到 stage_events.sender（v2.4 Fix 1） |
 | Manager/Worker allowlist | config/m5-0-allowlist.yaml（deploy-owned） |
 | Worker 不持 PAT | mcporter → Policy Gateway → mcp-backend-net 隔离 |
-| Candidate runner 不读 COORDINATOR_TOKEN | 仅持 ADMIN_PW（operator 身份） |
-| Controller 独占 Gateway token | controller env COORDINATOR_TOKEN |
-| GitHub PAT 只在 github-mcp | mcp-backend-net 网络隔离 |
+| **Candidate 独立最小权限 Gateway 身份**（v2.4） | GATEWAY_ROLE=`m5coordinator` + 独立 GATEWAY_TOKEN；Gateway policy `m5coordinator: {classes: [read]}` 仅授权 `pull_request_read`/`list_branches`/`list_pull_requests`/`get_file_contents`/`get_commit`/`list_commits`；详见 §21 |
+| Candidate runner 不读 COORDINATOR_TOKEN | 不接收、不读取生产 COORDINATOR_TOKEN；Gateway 鉴权走独立 GATEWAY_TOKEN |
+| Controller 独占 Gateway token | 生产 controller env COORDINATOR_TOKEN；Candidate env GATEWAY_TOKEN（二者不同值、不同角色） |
+| GitHub PAT 只在 github-mcp | mcp-backend-net 网络隔离；Candidate 经 m4f_ingress→gateway_client 用 m5coordinator 只读身份访问，绝不持 PAT |
 
 ## 17. 真实 GitHub 边界
 
@@ -441,7 +445,94 @@ hiclaw_live = all([
 
 每个增量独立可验。不得提前声明下一增量完成。
 
-## 22. 修改边界
+---
+
+## 22. v2.4 极窄勘误：Candidate Gateway 身份冲突
+
+### 22.1 冲突描述（v2.3 遗留阻断项）
+
+`m4f_ingress.stage_agentteams_event` 必须经 Policy Gateway 调用 `gateway_read_pr`/`gateway_get_pr_diff`/`gateway_get_pr_files`（PR 数据权威来源）。但 v2.3 §16 同时规定 **Candidate runner 不读 COORDINATOR_TOKEN**，而 `gateway_client.py` 硬编码用 `COORDINATOR_TOKEN` 鉴权到 `/coordinator/sse`。二者矛盾：Candidate 要么违反 §16（塞回生产 token），要么无法读 PR（DAG 断链）。
+
+### 22.2 代码级审计结论
+
+Gateway（`tools/policy-gateway/gateway.py`，**禁改**）已原生支持任意独立身份，**无需任何代码改动**：
+
+- `ROLE_TOKENS`（env JSON）→ `TOKEN_TO_ROLE` 反向映射
+- `Route("/{role}/sse", ...)` 通用路由接受任意 role 字符串
+- `handle_sse` 校验 `TOKEN_TO_ROLE[token] == path_role`（token 角色须与路径声明一致）
+
+因此只需 **配置增量**（策略 yaml + env），不需改 gateway.py / m4f_ingress.py / DB 契约。
+
+### 22.3 勘误方案：Candidate 专用 `m5coordinator` 角色
+
+| 项 | 值 |
+|---|---|
+| Gateway 角色 | `m5coordinator`（新增，与生产 `coordinator` 同 `classes: [read]` 但独立 token + 独立身份） |
+| Candidate env | `GATEWAY_ROLE=m5coordinator` + `GATEWAY_TOKEN=<独立随机>`（运行时生成，不写入源码/evidence） |
+| Gateway policy | `m5coordinator: {classes: [read]}`——仅 `pull_request_read`/`list_branches`/`list_pull_requests`/`get_file_contents`/`get_commit`/`list_commits`（M4F ingress 所需只读集） |
+| Gateway ROLE_TOKENS | `{"coordinator":"<prod>", "m5coordinator":"<candidate>"}`——两 token 不同值、映射不同 role |
+| gateway_client.py | `GATEWAY_ROLE` env（默认 `"coordinator"`，向后兼容）+ `GATEWAY_TOKEN` env（默认回退 `COORDINATOR_TOKEN`）；SSE 路径 `f"/{GATEWAY_ROLE}/sse"` |
+
+**关键不变量**：
+1. Candidate 不接收、不读取生产 `COORDINATOR_TOKEN`。
+2. `GATEWAY_TOKEN` ≠ `COORDINATOR_TOKEN`（不同值）。
+3. `GATEWAY_TOKEN` **不是 GitHub PAT**（Candidate 经 Gateway → github-mcp 访问，PAT 只在 github-mcp 网络隔离内）。
+4. `m5coordinator` 仅 `read` 类，无 `comment`/`fix`/`l2` 权限。
+5. 生产 Controller 不设 `GATEWAY_ROLE`/`GATEWAY_TOKEN` → 回退 `coordinator` + `COORDINATOR_TOKEN`，**生产零改动**。
+
+### 22.4 修改边界（v2.4 允许改动的文件集）
+
+| 文件 | 改动 | 禁止 |
+|---|---|---|
+| `tools/workflow-controller/gateway_client.py` | 参数化 `GATEWAY_ROLE`/`GATEWAY_TOKEN`（向后兼容默认） | 不改鉴权协议、不改 Gateway 业务语义 |
+| `tools/start-m5-0-candidate.sh` | 传 `GATEWAY_ROLE=m5coordinator` + `GATEWAY_TOKEN`；前缀 charset + overlap 预检 | 不传 COORDINATOR_TOKEN |
+| `tools/policy-gateway/gateway.py` | **不改** | — |
+| `tools/workflow-controller/m4f_ingress.py` | **不改** | — |
+| DB 契约（m4f1_state.sql 等） | **不改** | 无新表/列/函数/索引/CHECK |
+
+### 22.5 v2.4 验收门（追加到 §20 正向门 H 组）
+
+| 门 | 权威源 | PASS 条件 |
+|---|---|---|
+| H1 | gateway_client.py | `GATEWAY_ROLE` 默认 `"coordinator"`（生产零改动）；Candidate 设 `m5coordinator` 时 SSE 路径 = `/{GATEWAY_ROLE}/sse` |
+| H2 | Candidate 容器 env | 无 `COORDINATOR_TOKEN`；有独立 `GATEWAY_TOKEN` 且 ≠ 生产 coordinator token |
+| H3 | Gateway policy fixture | `m5coordinator: {classes: [read]}` 存在，无 `fix`/`comment`/`l2` |
+| H4 | Gateway audit（mcp_calls） | Candidate PR 读取审计记录 role=`m5coordinator`（非 `coordinator`） |
+| H5 | line-level hygiene | start-m5-0-candidate.sh 实际被扫描；`GATEWAY_TOKEN="$GATEWAY_TOKEN"` 行被行级豁免（非字面量），真 secret 仍被捕获 |
+
+## 23. v2.5 极窄勘误：Candidate provenance 角色校验
+
+### 23.1 实测冲突
+
+v2.4 对 Gateway 通用路由和 token-role 映射的审计是正确的，但遗漏了
+`gateway.py` 的 M4-F provenance 专用校验：只要请求携带
+`mergepilot_run_id`，代码就额外要求 `role == "coordinator"`。因此
+`m5coordinator` 即使仅有 `read` policy，也会在
+`pull_request_read(method=get)` 上被 `M4F_PROVENANCE_CONTEXT_DENIED` 拒绝，
+六 Skill DAG 无法创建。
+
+### 23.2 极窄修正
+
+仅将 provenance 允许角色从 `coordinator` 扩为
+`{coordinator, m5coordinator}`。其余限制保持不变：
+
+1. 带 `mergepilot_run_id` 的调用仍只能是 `pull_request_read`。
+2. `method` 仍必须精确等于 `get`；`get_diff`、`get_files` 等继续拒绝。
+3. role policy 仍在后续执行；`m5coordinator` 仍只有 `read` 类，无
+   `comment`、`fix` 或 `l2`。
+4. `mergepilot_run_id` 格式校验不变。
+5. 生产 `coordinator` 行为和凭据不变。
+
+### 23.3 修改与验收边界
+
+- 允许极窄修改 `tools/policy-gateway/gateway.py` 的 provenance role 条件。
+- 正向门：真实 Gateway 记录 `caller_agent=m5coordinator`，事件进入
+  `PROCESSED`，精确创建六个预期 Skill job。
+- 反例门：`m5coordinator` 携带 `mergepilot_run_id` 调用
+  `pull_request_read(method=get_diff)` 必须返回
+  `M4F_PROVENANCE_CONTEXT_DENIED`。
+
+## 24. 修改边界
 
 ### 预计修改文件
 
@@ -469,7 +560,7 @@ hiclaw_live = all([
 
 ### 禁止修改
 
-m4f1_state.sql / m4f1_hotfix_1.sql / m4f_skill_worker.py / m4f_controller.py / m4f_ingress.py / gateway.py / skills/** / run_all.sh / 已发布 evidence / 已发布 tag / controller.py M3 L2/drain/rollback 核心语义 / DB schema（表/列/函数/索引/CHECK）
+m4f1_state.sql / m4f1_hotfix_1.sql / m4f_skill_worker.py / m4f_controller.py / m4f_ingress.py / skills/** / run_all.sh / 已发布 evidence / 已发布 tag / controller.py M3 L2/drain/rollback 核心语义 / DB schema（表/列/函数/索引/CHECK）。`gateway.py` 仅允许 §23 所述 provenance role 条件极窄修正，其他业务语义禁止修改。
 
 ### 数据库契约
 

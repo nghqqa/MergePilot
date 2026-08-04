@@ -1,0 +1,20 @@
+Manager sent M4F_RUN, Matrix event_id=$9cea6799a9d54bb9bbdc3a315155fd4c:m5test-hs
+GATE PASS: 3. Candidate /sync consumed M4F_RUN (stage_events has real event_id)
+stage_events: event_id=$9cea6799a9d54bb9bbdc3a315155fd4c:m5test-hs sender=@manager:m5test-hs run_id=m5itest-run1 status=PROCESSED
+GATE PASS: 4. event_id matches Matrix send return
+GATE PASS: 5. sender is full @manager:m5test-hs
+GATE PASS: 6. stage_events reaches PROCESSED
+GATE PASS: 7. controller_offsets has m5-0-candidate row
+skill jobs for m5itest-run1: 6; names=case-retrieval,diff-parse,pr-lifecycle,risk-classify,sast-scan,test-runner
+GATE PASS: 8. exactly six expected Skill jobs enqueued
+Gateway audit m5coordinator rows: 19
+GATE PASS: 9. Gateway audit role=m5coordinator
+GATE PASS: 9b. m5coordinator provenance rejects non-get PR reads
+cross_claim mutations: stage_events=0 dispatch_outbox=0
+GATE PASS: 10. Candidate leaves non-prefix stage/outbox rows untouched
+GATE PASS: 11. exact lock backend disconnect causes Candidate non-zero exit
+prod AFTER: 977 2026-08-04T13:06:51.901997527Z
+GATE PASS: 12. Production PID/StartedAt unchanged
+residue: containers=0 networks=0
+=== SUMMARY: PASS=13 FAIL=0 ===
+hiclaw_live=false (isolated mini-HS test stack, not shared production HiClaw)
