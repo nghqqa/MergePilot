@@ -9,6 +9,22 @@ worker 已验证会响应 admin 的真 @mention。在 hiclaw-manager 容器常�
 import sys, json, time, re, os, urllib.request, urllib.error
 HS="http://hiclaw-controller:6167"; ADMIN="admin"; SERVER="matrix-local.hiclaw.io:18080"
 POLL=8
+# M5-0B §14: M5 Candidate runs (m5live-*) are dispatched solely by the Candidate
+# Controller + dispatch_outbox. The watcher MUST NOT create a second dispatch
+# for them. `m5live-` is CODE-FORCED and can never be removed; the env var only
+# APPENDS extra prefixes (P1-5). Exclusion happens at the claim/select stage,
+# before the fired set is touched.
+_M5_FORCED_EXCLUDE=("m5live-",)
+def _build_exclude():
+    extra=[]
+    for p in os.environ.get("M5_WATCHER_EXCLUDE_PREFIXES","").split(","):
+        p=p.strip()
+        if p and p not in _M5_FORCED_EXCLUDE and p not in extra:
+            extra.append(p)
+    return _M5_FORCED_EXCLUDE+tuple(extra)
+_M5_EXCLUDE_PREFIXES=_build_exclude()
+def _m5_excluded(prefix):
+    return any(prefix.startswith(p) for p in _M5_EXCLUDE_PREFIXES)
 
 def req(m,p,t=None,b=None,timeout=30):
     r=urllib.request.Request(HS+p,data=(json.dumps(b).encode() if b else None),method=m)
@@ -61,6 +77,41 @@ TRANSITIONS=[
      "{p}-verify 完成,流水线结束(verify 已出裁定)。"),
 ]
 
+def process_batch(t, seen, fired):
+    """One selection pass over discovered rooms. Extracted from main() so the
+    m5live-* exclusion can be tested end-to-end with mocked I/O (P1-5). Returns
+    the number of @mention sends actually performed."""
+    sends = 0
+    for rid, members in discover_rooms(t):
+        for eid, sender, body, ts in recent(t, rid, 12):
+            if eid in seen:
+                continue
+            seen.add(eid)
+            if sender not in ("reviewer", "fixer", "verifier"):
+                continue
+            for from_stage, pat, next_w, tpl in TRANSITIONS:
+                mt = pat.search(body)
+                if not mt:
+                    continue
+                prefix = mt.group(1)
+                if _m5_excluded(prefix):
+                    continue  # M5-0B §14: m5live-* is the Candidate Controller's sole authority
+                key = (rid, from_stage)
+                if key in fired:
+                    continue
+                fired.add(key)
+                msg = tpl.format(p=prefix)
+                if next_w and (next_w in members):
+                    send_mention(t, rid, next_w, msg)
+                    sends += 1
+                    print(f"[w2] {sender}→{next_w} ({prefix}-{from_stage}) @ {rid[:14]}")
+                elif next_w:
+                    print(f"[w2] {prefix}-{from_stage} 完成,但 {next_w} 不在房间,跳过")
+                else:
+                    print(f"[w2] {prefix}-{from_stage} 完成(终态,流水线结束)")
+    return sends
+
+
 def main():
     pw=os.environ.get("ADMIN_PW") or (sys.argv[1] if len(sys.argv)>1 else "")
     if not pw: print("ERROR: 需 ADMIN_PW"); sys.exit(1)
@@ -75,27 +126,7 @@ def main():
     print(f"[w2] 启动;baseline 屏蔽 {len(seen)} 旧条目;动态发现房间 + 任务房间内 @mention 驱动;阶段幂等去重")
     while True:
         try:
-            for rid,members in discover_rooms(t):
-                for eid,sender,body,ts in recent(t,rid,12):
-                    if eid in seen: continue
-                    seen.add(eid)
-                    if sender not in ("reviewer","fixer","verifier"): continue
-                    for from_stage,pat,next_w,tpl in TRANSITIONS:
-                        mt=pat.search(body)
-                        if not mt: continue
-                        key=(rid,from_stage)
-                        if key in fired:
-                            continue  # 幂等:该房间此阶段已触发过(忽略 worker 重复发的 TASK_COMPLETED)
-                        fired.add(key)
-                        prefix=mt.group(1)
-                        msg=tpl.format(p=prefix)
-                        if next_w and (next_w in members):
-                            send_mention(t,rid,next_w,msg)
-                            print(f"[w2] {sender}→{next_w} ({prefix}-{from_stage}) @ {rid[:14]}")
-                        elif next_w:
-                            print(f"[w2] {prefix}-{from_stage} 完成,但 {next_w} 不在房间,跳过")
-                        else:
-                            print(f"[w2] {prefix}-{from_stage} 完成(终态,流水线结束)")
+            process_batch(t, seen, fired)
         except Exception as e:
             print(f"[w2] loop err: {e}")
         time.sleep(POLL)

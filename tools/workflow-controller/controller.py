@@ -325,6 +325,504 @@ def _drain_m4f_claim_sql_prefix():
         clause = " AND run_id LIKE %s"
         params.append(M4F_RUN_PREFIX + "%")
     return clause, params
+
+
+# ── M5-0B: DAG→review/fix/verify handoff closed loop (design freeze v2.5 §13/§18) ──
+# Only meaningful when M4F_ONLY_MODE (Candidate). Production Controller (M4F_ONLY_MODE=0)
+# never calls reconcile_* (guarded at top of each function + at the Candidate loop).
+_M5_EXPECTED_SKILLS = (
+    "diff-parse", "risk-classify", "sast-scan",
+    "test-runner", "case-retrieval", "pr-lifecycle",
+)
+# Pre-bridge current_stage values (skills dispatched, awaiting completion).
+_M5_PRE_BRIDGE_STAGES = ("m4f", "m4f_snapshot")
+_M5_RECONCILE_LIMIT = int(os.environ.get("M5_RECONCILE_LIMIT", "50"))
+# dispatch body templates — instruct the agent AND state the exact completion
+# marker so the worker emits a strict-parseable handoff.
+_M5_DISPATCH_TPL = {
+    "review": "[M5-0B] run {run_id}: six Skills SUCCEEDED. 请审查变更, findings 写 shared/tasks/{run_id}-review/。完成时精确写一行(无代码块/无解释): TASK_COMPLETED: {run_id}-review",
+    "fix": "[M5-0B] run {run_id}-review 完成。请据 findings 提修复。完成时精确写一行(无代码块/无解释): TASK_COMPLETED: {run_id}-fix",
+    "verify": "[M5-0B] run {run_id}-fix 完成。请复核修复并出裁定。完成时精确写两行(无代码块/无解释):\nTASK_COMPLETED: {run_id}-verify\nVERDICT=PASS|FAIL|BLOCKED",
+}
+# Allowed sender localpart per handoff stage (§5 causal roles).
+_M5_STAGE_SENDER = {"review": "reviewer", "fix": "fixer", "verify": "verifier"}
+# task_runs.current_stage that an incoming handoff stage expects the run to be in.
+_M5_AWAIT_FOR_STAGE = {"review": "m4f_await_review", "fix": "m4f_await_fix", "verify": "m4f_await_verify"}
+
+
+class _M5PayloadConflict(Exception):
+    """Raised when an idempotent upsert finds a conflicting payload (same key,
+    different fields). Triggers a full transaction rollback so task_runs is NOT
+    advanced and the existing row is NOT overwritten (P1-4)."""
+
+
+def _m5_classify_handoff(body):
+    """Strict-classify a TASK_COMPLETED handoff body via the M5-0A parsers (§7.2).
+    Returns one of:
+      (run_id, "review", None)
+      (run_id, "fix", None)
+      (run_id, "verify", None)          # 1-line verify, PARTIAL (no verdict yet)
+      (run_id, "verify", "PASS"|"FAIL"|"BLOCKED")  # 2-line verify with verdict
+      ("REJECT", "verify", reason)      # verify body with an invalid VERDICT line
+      (None, None, None)                # not a strict handoff body at all
+    """
+    if not body:
+        return (None, None, None)
+    for stg in ("review", "fix"):
+        rid = m5_parse_handoff(body, stg)
+        if rid is not None:
+            return (rid, stg, None)
+    res = m5_parse_verify(body)
+    if res is None:
+        return (None, None, None)
+    if isinstance(res, tuple) and len(res) == 2:
+        if res[0] == "REJECT":
+            return ("REJECT", "verify", res[1])
+        return (res[0], "verify", res[1])
+    return (None, None, None)
+
+
+def _m5_mark_event(cur, event_id, status, error=None):
+    """Mark a stage_events row status/error (used by reconcile on success/error)."""
+    if error:
+        cur.execute(
+            "UPDATE stage_events SET status=%s, error=%s, processed_at=now() WHERE event_id=%s",
+            (status, error[:500], event_id))
+    else:
+        cur.execute(
+            "UPDATE stage_events SET status=%s, processed_at=now() WHERE event_id=%s",
+            (status, event_id))
+
+
+def _m5_record_handoff(event_id, room_id, raw_sender, body):
+    """Record one TASK_COMPLETED Matrix event into stage_events using the STRICT
+    parser (never legacy substring). RECEIVED + run_id when the strict parse
+    succeeds and the run_id carries the Candidate prefix; ERROR (fail-closed)
+    otherwise. Does NOT advance stages — reconcile_m5_handoffs is the sole
+    advancement authority (§14)."""
+    run_id, stage, verdict = _m5_classify_handoff(body)
+    conn = ensure_pg()
+    body_sha = hashlib.sha256(body.encode()).hexdigest()[:16]
+    truncated = body[:2000]
+    with conn.cursor() as ec:
+        if run_id is None:
+            ec.execute(
+                """INSERT INTO stage_events(event_id, room_id, sender, event_type, raw_body, body_sha256, status, error)
+                   VALUES(%s, %s, %s, 'TASK_COMPLETED', %s, %s, 'ERROR', 'M5-0B strict parse failed')
+                   ON CONFLICT (event_id) DO NOTHING""",
+                (event_id, room_id, raw_sender, truncated, body_sha))
+            conn.commit()
+            print(f"[ctrl][M5-0B] {event_id} strict handoff parse failed -> ERROR")
+            return
+        if run_id == "REJECT":
+            ec.execute(
+                """INSERT INTO stage_events(event_id, room_id, sender, event_type, stage, raw_body, body_sha256, status, error)
+                   VALUES(%s, %s, %s, 'TASK_COMPLETED', 'verify', %s, %s, 'ERROR', %s)
+                   ON CONFLICT (event_id) DO NOTHING""",
+                (event_id, room_id, raw_sender, truncated, body_sha, str(verdict)[:200]))
+            conn.commit()
+            print(f"[ctrl][M5-0B] {event_id} verify VERDICT rejected -> ERROR")
+            return
+        if not run_id.startswith(M4F_RUN_PREFIX):
+            ec.execute(
+                """INSERT INTO stage_events(event_id, room_id, run_id, sender, event_type, stage, raw_body, body_sha256, status, error)
+                   VALUES(%s, %s, %s, %s, 'TASK_COMPLETED', %s, %s, %s, 'ERROR', 'M5-0B run_id prefix mismatch')
+                   ON CONFLICT (event_id) DO NOTHING""",
+                (event_id, room_id, run_id, raw_sender, stage, truncated, body_sha))
+            conn.commit()
+            print(f"[ctrl][M5-0B] {event_id} run_id {run_id} not in prefix {M4F_RUN_PREFIX} -> ERROR")
+            return
+        ec.execute(
+            """INSERT INTO stage_events(event_id, room_id, run_id, sender, event_type, stage, raw_body, body_sha256, status)
+               VALUES(%s, %s, %s, %s, 'TASK_COMPLETED', %s, %s, %s, 'RECEIVED')
+               ON CONFLICT (event_id) DO NOTHING""",
+            (event_id, room_id, run_id, raw_sender, stage, truncated, body_sha))
+    conn.commit()
+
+
+def _m5_verify_six_skill_binding(cur, run_id):
+    """Verify the EXACT six expected Skills for a run are all SUCCEEDED and each
+    job is bound to a matching schema-validated skill_invocation (P1-2). No
+    broad run-wide count(*) — the join binds each job to its own invocation.
+    Returns (ok, reason). reason=='skill_failed' triggers HOLD; every other
+    non-ok reason is a no-op wait (not ready)."""
+    cur.execute(
+        """SELECT j.skill_name, j.status, j.result_invocation_id, j.job_id, j.skill_version,
+                  i.invocation_id, i.run_id AS i_run, i.job_id AS i_job,
+                  i.skill_name AS i_skill, i.skill_version AS i_ver, i.output_schema_validated
+           FROM skill_job_outbox j
+           LEFT JOIN skill_invocations i ON i.invocation_id = j.result_invocation_id
+           WHERE j.run_id = %s""",
+        (run_id,))
+    rows = cur.fetchall()
+    if len(rows) != 6:
+        return (False, "not_six_jobs")  # raw row count must be exactly 6 (missing/extra/duplicate)
+    seen = set()
+    for (skill_name, status, result_inv, job_id, skill_version,
+         inv_id, i_run, i_job, i_skill, i_ver, i_validated) in rows:
+        if skill_name in seen:
+            return (False, "duplicate_skill")  # duplicate skill_name (extra version/attempt)
+        seen.add(skill_name)
+        if status == "FAILED":
+            return (False, "skill_failed")
+        if status != "SUCCEEDED":
+            return (False, "not_succeeded")
+        if not result_inv:
+            return (False, "no_result_invocation")
+        if inv_id is None:
+            return (False, "invocation_missing")
+        if inv_id != result_inv or i_run != run_id or i_job != job_id:
+            return (False, "invocation_binding")
+        if i_skill != skill_name or i_ver != skill_version:
+            return (False, "invocation_skill_version")
+        if not i_validated:
+            return (False, "invocation_not_validated")
+    if seen != set(_M5_EXPECTED_SKILLS):
+        return (False, "skill_set_mismatch")
+    return (True, "ok")
+
+
+def _m5_insert_stage_run_checked(cur, run_id, stage, agent, attempt):
+    """Idempotent stage_run upsert + payload reconciliation (P1-4). INSERT ON
+    CONFLICT DO NOTHING, then re-read the authoritative row and compare
+    run_id/stage/agent/attempt + a live (pre-terminal) status. Raises
+    _M5PayloadConflict on any mismatch (caller rolls back)."""
+    cur.execute(
+        """INSERT INTO stage_runs(run_id, stage, agent, attempt, status, started_at)
+           VALUES(%s, %s, %s, %s, 'PENDING_DISPATCH', now())
+           ON CONFLICT (run_id, stage, attempt) DO NOTHING""",
+        (run_id, stage, agent, attempt))
+    cur.execute(
+        "SELECT run_id, stage, agent, attempt, status FROM stage_runs "
+        "WHERE run_id=%s AND stage=%s AND attempt=%s",
+        (run_id, stage, attempt))
+    row = cur.fetchone()
+    if row is None:
+        raise _M5PayloadConflict("stage_run %s/%s/%s vanished after upsert" % (run_id, stage, attempt))
+    r_run, r_stage, r_agent, r_attempt, r_status = row
+    if (r_run, r_stage, r_agent, r_attempt) != (run_id, stage, agent, attempt):
+        raise _M5PayloadConflict(
+            "stage_run %s/%s payload mismatch: got %r expected %r"
+            % (run_id, stage, row, (run_id, stage, agent, attempt)))
+    if r_status not in ("PENDING_DISPATCH", "DISPATCHED", "RUNNING"):
+        raise _M5PayloadConflict("stage_run %s/%s status %r not live" % (run_id, stage, r_status))
+
+
+def _m5_insert_dispatch_checked(cur, ikey, run_id, room_id, target_agent,
+                                target_stage, attempt, body):
+    """Idempotent dispatch_outbox upsert + payload reconciliation (P1-4). Re-reads
+    the authoritative row by idempotency_key and compares ALL payload fields."""
+    cur.execute(
+        """INSERT INTO dispatch_outbox(idempotency_key, run_id, room_id, target_agent, target_stage, attempt, body)
+           VALUES(%s, %s, %s, %s, %s, %s, %s)
+           ON CONFLICT (idempotency_key) DO NOTHING""",
+        (ikey, run_id, room_id, target_agent, target_stage, attempt, body))
+    cur.execute(
+        "SELECT idempotency_key, run_id, room_id, target_agent, target_stage, attempt, body "
+        "FROM dispatch_outbox WHERE idempotency_key=%s",
+        (ikey,))
+    row = cur.fetchone()
+    if row is None:
+        raise _M5PayloadConflict("dispatch %s vanished after upsert" % ikey)
+    if tuple(row) != (ikey, run_id, room_id, target_agent, target_stage, attempt, body):
+        raise _M5PayloadConflict(
+            "dispatch %s payload mismatch: got %r expected %r"
+            % (ikey, row, (ikey, run_id, room_id, target_agent, target_stage, attempt, body)))
+
+
+def reconcile_m5_skill_to_review(run_prefix=None, limit=None):
+    """M5-0B §13: for each scoped Candidate run whose six expected Skills are all
+    SUCCEEDED, atomically + idempotently create the review stage + reviewer
+    dispatch and advance current_stage to m4f_await_review. Any terminal Skill
+    failure -> HOLD (m4f_skill_failed), no dispatch. Bounded + stable-sorted;
+    no full-table scan. Production (M4F_ONLY_MODE=0) is a no-op."""
+    if not M4F_ONLY_MODE:
+        return 0
+    pfx = run_prefix if run_prefix is not None else M4F_RUN_PREFIX
+    if not pfx:
+        return 0
+    lim = limit if limit is not None else _M5_RECONCILE_LIMIT
+    conn = ensure_pg()
+    # Candidate read in its own short transaction, closed immediately so the
+    # connection is never left idle-in-transaction between reconcile calls (P1-1).
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT run_id FROM task_runs
+                   WHERE run_id LIKE %s AND status='RUNNING'
+                     AND current_stage IN ('m4f','m4f_snapshot')
+                   ORDER BY run_id LIMIT %s""",
+                (pfx + "%", lim))
+            candidates = [r[0] for r in cur.fetchall()]
+    finally:
+        conn.rollback()
+    bridged = 0
+    for run_id in candidates:
+        try:
+            if _m5_skill_to_review_one(conn, run_id):
+                bridged += 1
+        except _M5PayloadConflict as e:
+            print(f"[ctrl][M5-0B] skill_to_review {run_id} payload conflict: {e}")
+        except Exception as e:
+            print(f"[ctrl][M5-0B] skill_to_review {run_id}: {type(e).__name__}: {e}")
+    return bridged
+
+
+def _m5_skill_to_review_one(conn, run_id):
+    """Per-run skill->review bridge. Locks task_runs first (§13 lock order),
+    checks the exact-six-job->invocation binding (P1-2), then payload-reconciled
+    upserts (P1-4) for review stage + reviewer dispatch + advances stage. Every
+    exit path ends the transaction (P1-1): commit on any write, rollback for a
+    pure read no-op (releases the FOR UPDATE lock)."""
+    wrote = False
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT current_stage, status, room_id FROM task_runs WHERE run_id=%s FOR UPDATE",
+                (run_id,))
+            row = cur.fetchone()
+            if not row:
+                return False
+            current_stage, status, room_id = row
+            if status != "RUNNING" or current_stage not in _M5_PRE_BRIDGE_STAGES:
+                return False  # already bridged / held / not pre-bridge
+            # Idempotency: a review stage_run already exists -> already bridged
+            cur.execute(
+                "SELECT 1 FROM stage_runs WHERE run_id=%s AND stage='review' LIMIT 1",
+                (run_id,))
+            if cur.fetchone():
+                return False
+            # Exact-six-job -> invocation binding (P1-2)
+            ok, reason = _m5_verify_six_skill_binding(cur, run_id)
+            if not ok:
+                if reason == "skill_failed":
+                    cur.execute(
+                        "UPDATE task_runs SET status='HOLD', current_stage='m4f_skill_failed', updated_at=now() "
+                        "WHERE run_id=%s AND status='RUNNING'",
+                        (run_id,))
+                    wrote = True
+                    print(f"[ctrl][M5-0B] {run_id} terminal Skill FAILED -> HOLD (m4f_skill_failed)")
+                # every other reason = not ready (pending/missing/extra/binding) -> no-op wait
+                return False
+            # ---- bridge (payload-reconciled upserts, P1-4) ----
+            _m5_insert_stage_run_checked(cur, run_id, "review", "reviewer", 1)
+            _m5_insert_dispatch_checked(
+                cur, "m5-%s-review-dispatch" % run_id, run_id, room_id,
+                "reviewer", "review", 1, _M5_DISPATCH_TPL["review"].format(run_id=run_id))
+            cur.execute(
+                "UPDATE task_runs SET current_stage='m4f_await_review', updated_at=now() WHERE run_id=%s",
+                (run_id,))
+            wrote = True
+            print(f"[ctrl][M5-0B] {run_id} 6/6 Skills SUCCEEDED -> review PENDING_DISPATCH (m4f_await_review)")
+            return True
+    finally:
+        if wrote:
+            conn.commit()
+        else:
+            conn.rollback()
+
+
+def reconcile_m5_handoffs(run_prefix=None, limit=None):
+    """M5-0B: consume RECEIVED TASK_COMPLETED handoffs (scoped by run prefix) and
+    advance review->fix->verify using the STRICT parser. Sole advancement
+    authority for M5 handoffs (§14). Bounded + stable-sorted. Production no-op."""
+    if not M4F_ONLY_MODE:
+        return 0
+    pfx = run_prefix if run_prefix is not None else M4F_RUN_PREFIX
+    if not pfx:
+        return 0
+    lim = limit if limit is not None else _M5_RECONCILE_LIMIT
+    conn = ensure_pg()
+    # Candidate read in its own short transaction, closed immediately (P1-1).
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT event_id, room_id, sender, raw_body FROM stage_events
+                   WHERE event_type='TASK_COMPLETED' AND status='RECEIVED'
+                     AND run_id LIKE %s
+                   ORDER BY received_at, event_id LIMIT %s""",
+                (pfx + "%", lim))
+            events = cur.fetchall()
+    finally:
+        conn.rollback()
+    processed = 0
+    for event_id, room_id, raw_sender, body in events:
+        try:
+            if _m5_handoff_one(conn, event_id, room_id, raw_sender, body):
+                processed += 1
+        except _M5PayloadConflict as e:
+            print(f"[ctrl][M5-0B] handoff {event_id} payload conflict: {e}")
+        except Exception as e:
+            print(f"[ctrl][M5-0B] handoff {event_id}: {type(e).__name__}: {e}")
+    return processed
+
+
+def _m5_handoff_one(conn, event_id, room_id, raw_sender, body):
+    """Process one RECEIVED handoff (P1-1 lock order: task_runs -> stage_events;
+    P1-3 room/status authoritative; P1-4 payload-reconciled advance). Every exit
+    path ends the transaction (commit on write, rollback for pure read no-op)."""
+    # Unlocked metadata lookup to learn run_id (P1-1: no lock taken yet). The
+    # formal transaction below re-reads + revalidates under the correct lock order.
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT run_id FROM stage_events WHERE event_id=%s", (event_id,))
+            meta = cur.fetchone()
+    finally:
+        conn.rollback()  # close the read-only snapshot immediately
+    if not meta or meta[0] is None:
+        return False
+    run_id = meta[0]
+
+    wrote = False
+    try:
+        with conn.cursor() as cur:
+            # Lock task_runs FIRST (§13 global lock order: task_runs -> children)
+            cur.execute(
+                "SELECT current_stage, status, room_id FROM task_runs WHERE run_id=%s FOR UPDATE",
+                (run_id,))
+            trow = cur.fetchone()
+            if not trow:
+                cur.execute(
+                    "SELECT run_id FROM stage_events WHERE event_id=%s FOR UPDATE", (event_id,))
+                if cur.fetchone():
+                    _m5_mark_event(cur, event_id, "ERROR", "M5-0B unknown run_id")
+                    wrote = True
+                return False
+            t_stage, t_status, t_room = trow
+            # NOW lock the event row (task_runs already locked -> correct order)
+            cur.execute(
+                "SELECT run_id, stage, sender, status FROM stage_events WHERE event_id=%s FOR UPDATE",
+                (event_id,))
+            ev = cur.fetchone()
+            if not ev:
+                return False
+            rec_run_id, rec_stage, rec_sender, rec_status = ev
+            if rec_status != "RECEIVED":
+                return False  # another worker already finalized this event
+            # Strict re-parse + bind to the locked event row
+            cls_run, stage, verdict = _m5_classify_handoff(body)
+            if cls_run is None or cls_run == "REJECT":
+                _m5_mark_event(cur, event_id, "ERROR", "M5-0B strict re-parse failed")
+                wrote = True
+                return False
+            if cls_run != rec_run_id or cls_run != run_id or stage != rec_stage:
+                _m5_mark_event(cur, event_id, "ERROR", "M5-0B run_id/stage drift")
+                wrote = True
+                return False
+            localpart = verify_m5_sender(rec_sender, set(M4F_ALLOWED_SENDERS))
+            if localpart is None or localpart != _M5_STAGE_SENDER.get(stage):
+                _m5_mark_event(cur, event_id, "ERROR",
+                               "M5-0B sender mismatch (%s)" % rec_sender)
+                wrote = True
+                return False
+            # P1-3: room authoritative — event room must equal the task_run room
+            if room_id != t_room:
+                _m5_mark_event(cur, event_id, "ERROR",
+                               "M5-0B room mismatch event=%s task=%s" % (room_id, t_room))
+                wrote = True
+                return False
+            if M4F_ALLOWED_ROOMS and room_id not in M4F_ALLOWED_ROOMS:
+                _m5_mark_event(cur, event_id, "ERROR", "M5-0B room not allowlisted")
+                wrote = True
+                return False
+            # P1-3: advance requires the matching await stage; HOLD/past runs are
+            # idempotent (no resume, no new dispatch) — frozen design §18.
+            expected_await = _M5_AWAIT_FOR_STAGE.get(stage)
+            if t_stage != expected_await:
+                # already past this handoff (replay / out-of-order / finalized run)
+                _m5_mark_event(cur, event_id, "PROCESSED",
+                               "run at %s/%s (no dispatch)" % (t_status, t_stage))
+                wrote = True
+                return True
+            if t_status != "RUNNING":
+                # in the await stage but not RUNNING (e.g. HOLD) -> fail-closed
+                _m5_mark_event(cur, event_id, "ERROR",
+                               "M5-0B run not RUNNING (status=%s)" % t_status)
+                wrote = True
+                return False
+            # ---- advance (payload-reconciled, P1-4; unified helpers) ----
+            if stage == "review":
+                _m5_advance_to_next(cur, event_id, run_id, t_room,
+                                    from_stage="review", next_stage="fix", next_agent="fixer",
+                                    next_dispatch="fix", next_await="m4f_await_fix")
+            elif stage == "fix":
+                _m5_advance_to_next(cur, event_id, run_id, t_room,
+                                    from_stage="fix", next_stage="verify", next_agent="verifier",
+                                    next_dispatch="verify", next_await="m4f_await_verify")
+            else:
+                _m5_advance_verify(cur, event_id, run_id, verdict)
+            wrote = True
+            return True
+    finally:
+        if wrote:
+            conn.commit()
+        else:
+            conn.rollback()
+
+
+def _m5_advance_to_next(cur, event_id, run_id, room_id,
+                        from_stage, next_stage, next_agent, next_dispatch, next_await):
+    """Complete the from_stage (review/fix) and create the next stage_run +
+    dispatch via the unified payload-reconciled helpers (P1-4). Caller has
+    already verified t_stage == await_for(from_stage) and t_status == RUNNING.
+    No commit — the caller's transaction boundary owns that."""
+    cur.execute(
+        """SELECT id FROM stage_runs
+           WHERE run_id=%s AND stage=%s AND status IN ('PENDING_DISPATCH','DISPATCHED','RUNNING')
+           ORDER BY attempt DESC LIMIT 1 FOR UPDATE""",
+        (run_id, from_stage))
+    current = cur.fetchone()
+    if not current:
+        _m5_mark_event(cur, event_id, "ERROR", "M5-0B no active %s stage_run" % from_stage)
+        return
+    cur.execute(
+        "UPDATE stage_runs SET status='COMPLETED', completed_at=now() WHERE id=%s",
+        (current[0],))
+    _m5_insert_stage_run_checked(cur, run_id, next_stage, next_agent, 1)
+    _m5_insert_dispatch_checked(
+        cur, "m5-%s-%s-dispatch" % (run_id, next_dispatch), run_id, room_id,
+        next_agent, next_stage, 1, _M5_DISPATCH_TPL[next_dispatch].format(run_id=run_id))
+    cur.execute(
+        "UPDATE task_runs SET current_stage=%s, updated_at=now() WHERE run_id=%s",
+        (next_await, run_id))
+    _m5_mark_event(cur, event_id, "PROCESSED", None)
+    print(f"[ctrl][M5-0B] {run_id}-{from_stage} COMPLETED -> {next_stage} PENDING_DISPATCH ({next_await})")
+
+
+def _m5_advance_verify(cur, event_id, run_id, verdict):
+    """Advance verify: PARTIAL (no verdict) waits; PASS -> HOLD/m5_verify_passed;
+    FAIL/BLOCKED -> HOLD/m5_verify_failed (no further dispatch). Caller owns the
+    transaction boundary."""
+    if verdict is None:
+        # 1-line verify: partial snapshot, waiting for explicit VERDICT (§7.2)
+        _m5_mark_event(cur, event_id, "PARTIAL", "waiting for explicit VERDICT")
+        print(f"[ctrl][M5-0B] {run_id}-verify partial snapshot; waiting for VERDICT")
+        return
+    cur.execute(
+        """SELECT id FROM stage_runs
+           WHERE run_id=%s AND stage='verify' AND status IN ('PENDING_DISPATCH','DISPATCHED','RUNNING')
+           ORDER BY attempt DESC LIMIT 1 FOR UPDATE""",
+        (run_id,))
+    current = cur.fetchone()
+    if not current:
+        _m5_mark_event(cur, event_id, "ERROR", "M5-0B no active verify stage_run")
+        return
+    cur.execute(
+        "UPDATE stage_runs SET status='COMPLETED', completed_at=now(), verdict=%s WHERE id=%s",
+        (verdict, current[0]))
+    if verdict == "PASS":
+        cur.execute(
+            "UPDATE task_runs SET status='HOLD', current_stage='m5_verify_passed', verdict='PASS', updated_at=now() WHERE run_id=%s",
+            (run_id,))
+        print(f"[ctrl][M5-0B] {run_id}-verify VERDICT=PASS -> HOLD (m5_verify_passed)")
+    else:
+        cur.execute(
+            "UPDATE task_runs SET status='HOLD', current_stage='m5_verify_failed', verdict=%s, updated_at=now() WHERE run_id=%s",
+            (verdict, run_id))
+        print(f"[ctrl][M5-0B] {run_id}-verify VERDICT={verdict} -> HOLD (m5_verify_failed)")
+    _m5_mark_event(cur, event_id, "PROCESSED", None)
+
+
 GATEWAY_URL      = os.environ.get("GATEWAY_URL", "http://policy-gw:8083")
 COORDINATOR_TOKEN = os.environ.get("COORDINATOR_TOKEN", "")
 # v2.4 勘误:Candidate(M4F_ONLY_MODE=1)使用独立最小权限 GATEWAY_TOKEN(m5coordinator 身份),
@@ -1155,7 +1653,7 @@ def consume_events():
                 sender = verify_m5_sender(raw_sender, set(M4F_ALLOWED_SENDERS))
                 if sender is None:
                     continue  # sender not verified or not allowlisted
-                # M5-0: only M4F_RUN in Candidate mode (no TASK_SUBMITTED/L2/rollback)
+                # M5-0A: M4F_RUN ingress (strict parser only)
                 if M4F_LIVE_MODE and body.startswith(_M5_RUN_MARKER):
                     # Use strict parser instead of loose substring match
                     payload = m5_parse_m4f_run(body)
@@ -1178,6 +1676,13 @@ def consume_events():
                         conn_err.commit()
                         print(f"[ctrl][M5-0] {eid} strict M4F_RUN parse failed → ERROR")
                         event_count += 1
+                    continue
+                # M5-0B: TASK_COMPLETED handoff (review/fix/verify). Record via the
+                # STRICT parser (never legacy substring); reconcile_m5_handoffs is
+                # the sole advancement authority. Non-strict bodies -> ERROR.
+                if M4F_LIVE_MODE and body.lstrip().startswith("TASK_COMPLETED:"):
+                    _m5_record_handoff(eid, room_id, raw_sender, body)
+                    event_count += 1
                 continue  # Candidate: skip all other event types
 
             # Legacy mode: original loose substring matching + localpart truncation
@@ -2371,8 +2876,9 @@ def run_forever():
             try:
                 ensure_pg()
                 drain_m4f_events(max_items=1)
-                # NOTE: M5-0B will add reconcile_m5_skill_to_review + reconcile_m5_handoffs here.
-                # For M5-0A, these are intentionally not implemented (no-op).
+                # M5-0B §11 Domain A order: skill→review bridge, then handoff advancement.
+                reconcile_m5_skill_to_review()
+                reconcile_m5_handoffs()
             except psycopg2.OperationalError as e:
                 print(f"[ctrl][M5-0] PG degraded: {e}; reconnecting in {backoff}s")
                 reset_pg()

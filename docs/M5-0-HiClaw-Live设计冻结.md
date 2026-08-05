@@ -4,7 +4,7 @@
 
 - **设计冻结 PASS**（v2.1 + v2.2 + v2.3 + v2.4 + v2.5 + v2.6 全部阻断项已精确冻结）
 - **v2.6 极窄勘误**：Docker 测试/生产 daemon 隔离——同 daemon PID 门替换为 daemon/VHDX 隔离证明（详见 §25）
-- **implementation NOT STARTED**
+- **implementation 进度**：M5-0A 已正式发布（tag `m5-0a-hiclaw-live-candidate-closed`）；M5-0B 已形成未提交实现候选，正在进行 Docker 隔离与最终复审；M5-0C/M5-0D 尚未开始
 - **hiclaw_live = false**（M5-0 完成前不得变更为 true）
 - **数据库契约不变**（无新表、新列、新函数、新索引、新 CHECK）
 - 基线 R = `9a754e231c6d56077799cff8208e0ee6d529337c`

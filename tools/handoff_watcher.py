@@ -10,6 +10,21 @@ import sys, json, time, re, os, urllib.request, urllib.error
 HS = "http://hiclaw-controller:6167"
 ADMIN = "admin"
 POLL = 8  # 秒
+# M5-0B §14: M5 Candidate runs (m5live-*) are dispatched solely by the Candidate
+# Controller + dispatch_outbox. The watcher MUST NOT nudge manager for them.
+# `m5live-` is CODE-FORCED and can never be removed; the env var only APPENDS
+# extra prefixes (P1-5). Exclusion happens at the claim/select stage, before send.
+_M5_FORCED_EXCLUDE = ("m5live-",)
+def _build_exclude():
+    extra = []
+    for p in os.environ.get("M5_WATCHER_EXCLUDE_PREFIXES", "").split(","):
+        p = p.strip()
+        if p and p not in _M5_FORCED_EXCLUDE and p not in extra:
+            extra.append(p)
+    return _M5_FORCED_EXCLUDE + tuple(extra)
+_M5_EXCLUDE_PREFIXES = _build_exclude()
+def _m5_excluded(prefix):
+    return any(prefix.startswith(p) for p in _M5_EXCLUDE_PREFIXES)
 
 def req(method, path, token=None, body=None, timeout=30):
     r = urllib.request.Request(HS+path, data=(json.dumps(body).encode() if body else None), method=method)
@@ -71,6 +86,31 @@ TRANSITIONS = [
      "[handoff-watcher] verifier 完成 {p}-verify。请**立即**汇总出最终裁定:全 PASS 且无 L2→建议 merge;有 L2→hold;有 fail→rollback/hold。"),
 ]
 
+def process_batch(tok, seen, mroom, watched):
+    """One selection pass over watched rooms. Extracted from main() so the
+    m5live-* exclusion can be tested end-to-end with mocked I/O (P1-5). Returns
+    the number of sends actually performed."""
+    sends = 0
+    for rid, members in watched:
+        for eid, sender, body, ts in recent_msgs(tok, rid, 12):
+            if eid in seen:
+                continue
+            seen.add(eid)
+            # 只对 worker 发的 TASK_COMPLETED 反应
+            if sender in ("reviewer", "fixer", "verifier"):
+                for pat, tpl in TRANSITIONS:
+                    m = pat.search(body)
+                    if m:
+                        prefix = m.group(1)
+                        if _m5_excluded(prefix):
+                            continue  # M5-0B §14: m5live-* 是 Candidate Controller 唯一调度权威
+                        msg = tpl.format(p=prefix)
+                        send(tok, mroom, msg)
+                        sends += 1
+                        print(f"[watcher] {sender} TASK_COMPLETED → 派 manager 推进({prefix})")
+    return sends
+
+
 def main():
     pw = os.environ.get("ADMIN_PW") or (sys.argv[1] if len(sys.argv) > 1 else "")
     if not pw:
@@ -82,7 +122,6 @@ def main():
     print(f"[watcher] manager_room={mroom}; watched worker rooms={len(watched)}")
 
     # 基线:只屏蔽 5 分钟前的旧消息(避免反应昨天的 gh-pr1 等);
-    # 近 5 分钟内的 TASK_COMPLETED(含当前刚完成的)+ 未来的都会反应。
     now_ms = time.time() * 1000
     BASELINE_MS = 5 * 60 * 1000
     seen=set()
@@ -94,19 +133,7 @@ def main():
 
     while True:
         try:
-            for rid, members in watched:
-                for eid, sender, body, ts in recent_msgs(tok, rid, 12):
-                    if eid in seen: continue
-                    seen.add(eid)
-                    # 只对 worker 发的 TASK_COMPLETED 反应
-                    if sender in ("reviewer","fixer","verifier"):
-                        for pat, tpl in TRANSITIONS:
-                            m = pat.search(body)
-                            if m:
-                                prefix = m.group(1)
-                                msg = tpl.format(p=prefix)
-                                send(tok, mroom, msg)
-                                print(f"[watcher] {sender} TASK_COMPLETED → 派 manager 推进({prefix})")
+            process_batch(tok, seen, mroom, watched)
         except Exception as e:
             print(f"[watcher] loop error: {e}")
         time.sleep(POLL)
