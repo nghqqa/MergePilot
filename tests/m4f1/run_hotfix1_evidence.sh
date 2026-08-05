@@ -12,6 +12,7 @@ set -Eeuo pipefail
 export PYTHONDONTWRITEBYTECODE=1
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+source "${ROOT}/tools/test-env/mp_guard.sh"  # fail-closed: MergePilot-Test daemon only
 DBDIR="$ROOT/tools/audit-db"
 IMG="pgvector/pgvector@sha256:a36250871de0833b8757561c72f2477ef1ddd1101afa4e617fb552e0de514c6b"
 BASE="init m3_state m3b_policy m3b_b4 m3b_b4c m3b_b4c1 m3b_b4c1_1 m3b_b4d1 m3c_state"

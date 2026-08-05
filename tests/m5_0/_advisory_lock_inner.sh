@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# Inner: runs inside WSL where docker is available. Plain bash, no WSL wrapping.
+# Inner: runs inside the MergePilot-Test WSL2 distro (isolated test daemon).
 set -euo pipefail
+ROOT="/mnt/d/goai/mergepilot-os"
+# MergePilot test-env isolation guard (fail-closed: MergePilot-Test daemon only).
+source "${ROOT}/tools/test-env/mp_guard.sh"
 LOCK_LABEL="mergepilot:m5-0-candidate"
 UNIQ="m5al-$$-$(date +%s)"
 CONTAINER="m5itest-pg-${UNIQ}"

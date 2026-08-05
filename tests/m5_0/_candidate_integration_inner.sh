@@ -10,6 +10,8 @@
 set -euo pipefail
 
 ROOT="/mnt/d/goai/mergepilot-os"
+# MergePilot test-env isolation guard (fail-closed: MergePilot-Test daemon only).
+source "${ROOT}/tools/test-env/mp_guard.sh"
 DBDIR="$ROOT/tools/audit-db"
 GWDIR="$ROOT/tools/policy-gateway"
 FIXDIR="$ROOT/tests/m5_0/fixtures"
@@ -71,8 +73,14 @@ gate() { # gate NAME CONDITION  (CONDITION: 0=pass)
 echo "=== M5-0A real Candidate integration (isolated stack, UNIQ=$UNIQ) ==="
 
 # Record production PID BEFORE (must not change)
-PROD_BEFORE=$(docker inspect mergepilot-controller --format '{{.State.Pid}} {{.State.StartedAt}}' 2>/dev/null || echo "missing")
-echo "prod BEFORE: $PROD_BEFORE"
+# Daemon isolation: under the isolated MergePilot-Test daemon (v2.6), the
+# production controller is NOT visible at all (different dockerd + vhdx). The
+# former same-daemon PID gate is replaced by "no production container visible".
+PROD_VISIBLE_BEFORE=""
+for _c in mergepilot-controller policy-gw audit-pg github-mcp hiclaw-manager hiclaw-controller; do
+  if docker inspect "$_c" >/dev/null 2>&1; then PROD_VISIBLE_BEFORE="$PROD_VISIBLE_BEFORE $_c"; fi
+done
+echo "prod containers visible from test daemon BEFORE: '${PROD_VISIBLE_BEFORE:-none}'"
 
 # ── 1. network + PG ──
 docker network create --label "$LABEL" "$NET" >/dev/null
@@ -421,9 +429,16 @@ gate "11. exact lock backend disconnect causes Candidate non-zero exit" \
   "$([ "$LOCK_BACKENDS" = "1" ] && [ "$CAND_EXIT_CODE" -ne 0 ] && echo 0 || echo 1)"
 
 # ── 10. production PID unchanged ──
-PROD_AFTER=$(docker inspect mergepilot-controller --format '{{.State.Pid}} {{.State.StartedAt}}' 2>/dev/null)
-echo "prod AFTER: $PROD_AFTER"
-gate "12. Production PID/StartedAt unchanged" "$([ "$PROD_BEFORE" = "$PROD_AFTER" ] && echo 0 || echo 1)"
+# Daemon isolation (v2.6): no production container is visible from the test
+# daemon before or after the Candidate run — proof by daemon/VHDX separation,
+# replacing the former same-daemon PID comparison.
+PROD_VISIBLE_AFTER=""
+for _c in mergepilot-controller policy-gw audit-pg github-mcp hiclaw-manager hiclaw-controller; do
+  if docker inspect "$_c" >/dev/null 2>&1; then PROD_VISIBLE_AFTER="$PROD_VISIBLE_AFTER $_c"; fi
+done
+echo "prod containers visible from test daemon AFTER: '${PROD_VISIBLE_AFTER:-none}'"
+gate "12. No production container visible from test daemon (daemon isolation)" \
+  "$([ -z "$PROD_VISIBLE_BEFORE" ] && [ -z "$PROD_VISIBLE_AFTER" ] && echo 0 || echo 1)"
 
 # ── residue ──
 docker rm -f "$CAND" >/dev/null 2>&1 || true

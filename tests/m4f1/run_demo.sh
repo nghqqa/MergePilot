@@ -3,6 +3,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+source "${ROOT}/tools/test-env/mp_guard.sh"  # fail-closed: MergePilot-Test daemon only
 DBDIR="$ROOT/tools/audit-db"
 EVID_DIR="$ROOT/evidence/m4/m4f"
 EVID="$EVID_DIR/full-chain-e2e.json"

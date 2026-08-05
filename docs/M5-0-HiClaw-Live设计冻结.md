@@ -1,9 +1,9 @@
-# M5-0 HiClaw Live 最小闭环设计冻结 v2.5
+# M5-0 HiClaw Live 最小闭环设计冻结 v2.6
 
 ## 1. 状态声明
 
-- **设计冻结 PASS**（v2.1 + v2.2 + v2.3 + v2.4 + v2.5 全部阻断项已精确冻结）
-- **v2.5 极窄勘误**：Candidate provenance 角色校验冲突（详见 §23）
+- **设计冻结 PASS**（v2.1 + v2.2 + v2.3 + v2.4 + v2.5 + v2.6 全部阻断项已精确冻结）
+- **v2.6 极窄勘误**：Docker 测试/生产 daemon 隔离——同 daemon PID 门替换为 daemon/VHDX 隔离证明（详见 §25）
 - **implementation NOT STARTED**
 - **hiclaw_live = false**（M5-0 完成前不得变更为 true）
 - **数据库契约不变**（无新表、新列、新函数、新索引、新 CHECK）
@@ -565,3 +565,71 @@ m4f1_state.sql / m4f1_hotfix_1.sql / m4f_skill_worker.py / m4f_controller.py / m
 ### 数据库契约
 
 **不变。** 无新表、新列、新函数。所有隔离通过参数化 WHERE + 代码分支 + PG advisory lock 实现。
+
+## 25. v2.6 极窄勘误：Docker 测试/生产 daemon 隔离
+
+### 25.1 冲突描述
+
+v2.1–v2.5 的验收门（§20 门 F 组、M5-0A Candidate integration gate 12）建立在
+**测试与生产共用同一 Docker daemon** 的假设上：通过比对 `docker inspect
+mergepilot-controller` 的 PID/StartedAt 前后值来证明 Candidate 不影响生产
+容器。该假设与 v2.6 的 **测试/生产 daemon + VHDX 强隔离** 冲突：
+
+1. 隔离后，测试 daemon（MergePilot-Test）**看不到** 生产容器
+   `mergepilot-controller`——`docker inspect` 返回空，PID 门必然失败。
+2. 自动测试**不得启动或访问** Ubuntu-22.04（生产 WSL），因此 PID 快照
+   无法从自动测试中获取。
+3. 生产健康核验属于 **operator-controlled 发布审计**，不属于自动测试。
+
+### 25.2 极窄修正
+
+用"**测试 daemon 不可见任何生产容器**"替代同 daemon PID 比较：
+
+| 旧（v2.1–v2.5） | 新（v2.6） |
+|---|---|
+| `docker inspect mergepilot-controller` PID/StartedAt 前后对比 | `docker inspect mergepilot-controller`（+其余 5 个生产容器）在**测试 daemon** 中不可见 |
+| 自动测试从生产 daemon 读取 PID | 自动测试**永远不访问生产 daemon**；生产零触碰由"从未启动 Ubuntu-22.04"证明（`wsl -l -v` 前后均 Stopped） |
+
+### 25.3 不变项
+
+- **hiclaw_live = false** 不变。
+- v2.1–v2.5 的所有其他结论不变（严格解析、五层隔离、Candidate advisory lock、
+  skill→review→fix→verify handoff、Gateway v2.5 provenance、精确六 Skill 绑定等）。
+- 数据库契约不变。
+- 生产健康核验仍是发布审计的一部分，但由 **operator** 在
+  `wsl -d Ubuntu-22.04` 中手动执行，不属于自动测试范围。
+
+### 25.4 操作要求
+
+1. **Windows 默认 WSL 必须是 MergePilot-Test**（`wsl --set-default MergePilot-Test`）。
+2. 生产操作必须**显式** `wsl -d Ubuntu-22.04`。
+3. 所有自动测试入口（Git Bash wrapper、PowerShell wrapper）必须强制
+   `wsl.exe -d MergePilot-Test`，不得使用裸 `bash` 或 `wsl.exe -e`。
+4. `mp_guard.sh` 在每个 Docker 测试 inner 脚本的**首个 Docker 命令前**被
+   source：Phase 1（WSL_DISTRO_NAME + hostname）任一不符**立即 exit 2 在
+  任何 Docker 调用前**；Phase 2 做 daemon label/context/DOCKER_HOST/
+   DockerRootDir 只读检查。
+5. `DOCKER_HOST` 只允许空值、`unix:///var/run/docker.sock`、
+   `unix:///run/docker.sock`。
+6. `DOCKER_CONTEXT` 只允许空值或 `default`。
+
+### 25.5 v2.6 验收门（H 组）
+
+| 门 | 权威源 | PASS 条件 |
+|---|---|---|
+| H1 | `wsl -l -v` | 默认 `* MergePilot-Test`；Ubuntu-22.04 前后均 Stopped |
+| H2 | fake-docker sentinel | guard 在 WSL_DISTRO_NAME 不符时 rc=2，sentinel 文件不存在（零 Docker 调用） |
+| H3 | `docker info --format '{{json .Labels}}'` | daemon labels 集合包含 `com.mergepilot.scope=test` |
+| H4 | 每个 tests/m4f1 + tests/m5_0 Docker runner | 首个 Docker 命令前 source `mp_guard.sh`（17 runner 全覆盖） |
+| H5 | 自动测试中无 `wsl.exe -d Ubuntu-22.04` | 生产零访问（生产健康 = operator-controlled，非自动测试） |
+| H6 | canary + residue | canary 唯一 run-ID + label，EXIT-trap 精确清理，residue=0 |
+
+### 25.6 修改边界（v2.6）
+
+- 允许修改 `docs/M5-0-HiClaw-Live设计冻结.md`（本文档）追加 §25。
+- 允许修改测试脚本（`tests/m5_0/*.sh`、`tests/m4f1/*.sh`）追加 guard source
+  + 替换 PID 门为 daemon 隔离门。
+- 允许新增 `tools/test-env/`（guard、wrapper）和 PowerShell 入口。
+- **禁止**修改 controller.py / watcher / SOUL / SQL / Skill / Gateway 业务
+  语义 / 已发布 evidence / docs/项目状态.md / DB schema / 已发布 tag。
+- **禁止** 自动测试中 `wsl.exe -d Ubuntu-22.04` 或读取生产 Docker daemon。

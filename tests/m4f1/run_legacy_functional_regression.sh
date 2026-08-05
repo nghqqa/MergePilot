@@ -24,6 +24,7 @@ set -euo pipefail
 export PYTHONDONTWRITEBYTECODE=1
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+source "${ROOT}/tools/test-env/mp_guard.sh"  # fail-closed: MergePilot-Test daemon only
 VENV_PY="${M4A_VENV_PY:-/mnt/d/goai/m4a-venv/Scripts/python.exe}"
 RUNTIME_IMAGE="${RUNTIME_IMAGE:-mergepilot-m4f-runtime:demo}"
 OUT="$ROOT/evidence/m4/m4f/legacy-functional-regression.txt"

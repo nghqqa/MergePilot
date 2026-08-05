@@ -16,6 +16,7 @@ set -uo pipefail
 export PYTHONDONTWRITEBYTECODE=1
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+source "${ROOT}/tools/test-env/mp_guard.sh"  # fail-closed: MergePilot-Test daemon only
 RUNTIME_IMAGE="mergepilot-m4f-runtime:demo"
 EVID="$ROOT/evidence/m4/m4f/agentteams-e2e.json"
 VERIFICATION="$ROOT/evidence/m4/m4f/verification.txt"
