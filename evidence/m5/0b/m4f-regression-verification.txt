@@ -1,0 +1,60 @@
+MergePilot M4-F release verification (re-verified on commit C)
+generated_at: 2026-08-05T15:10Z
+head: da2b9c7be713ea3008162d5dce7bca909aeedeff
+platform: Linux-5.15.167.4-microsoft-standard-WSL2-x86_64-with-glibc2.35
+runner: tests/m4f1/run_all_test.sh (isolated MergePilot-Test wrapper)
+delivery_digest: 7439b54883aafc92bf95bd414113ed2cf2fabf3e62406c367bdf077d4776a0ee
+delivery_files: 57
+delivery_scope: M4-F delivery surface (schema/runtime/controller/gateway/worker/tests-m4f1)
+
+Published evidence/m4/m4f/** was backed up to an out-of-repo private directory
+before run_all and restored byte-exact afterward (5 files rewritten by run_all,
+all restored; SHA-256 manifest identical pre vs post).
+
+[m4f1-run_all gates]
+0	schema foundation and exact ACL
+0	MergePilot JCS Profile fixed oracle
+0	producer SD APIs
+0	producer two-connection concurrency
+0	claim/heartbeat/fail state machines
+0	atomic completion APIs
+0	purge and reference counting
+0	build host runtime fixture
+0	release evidence negatives (writer fail-closed + stale cleared)
+0	release evidence unit tests
+0	gate-log cleanup counterexample (P3-1, success + failure)
+0	host Skill worker unit tests
+0	text/cache/credential/attribution hygiene
+0	M4-F tracked whitespace
+0	six-Skill full-chain Demo, revision cut, complete/purge race
+0	AgentTeams protocol E2E (real Gateway + six Skills + PRLifecycle)
+0	M4-A~E legacy functional regression (authoritative platforms)
+gates_total: 17
+gates_passed: 17
+gates_failed: 0
+
+[agentteams-e2e]
+migration_round_1_rc: 0
+migration_round_2_rc: 0
+run_rc: 0
+all_passed: True
+secret_leaks: 0
+residue: containers=0 networks=0 temp_dirs=0
+six_skills:
+  diff-parse: SUCCEEDED
+  risk-classify: SUCCEEDED
+  sast-scan: SUCCEEDED
+  test-runner: SUCCEEDED (verdict=PASS)
+  case-retrieval: SUCCEEDED
+  pr-lifecycle: SUCCEEDED (outcome=CREATED)
+delivery_digest_check: OK (recomputed == stored)
+hiclaw_live: False
+external_credentials: False
+
+[legacy-functional-regression]
+legacy_regression_rc: 0
+legacy_suites_matched: 6/6
+legacy_evidence: evidence/m4/m4f/legacy-functional-regression.txt (restored to pre-run bytes)
+
+final_rc: 0
+ALL GATES PASSED

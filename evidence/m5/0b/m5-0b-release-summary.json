@@ -1,0 +1,67 @@
+{
+  "schema": "mergepilot.m5.0b.release-summary.v1",
+  "release": "M5-0B Agent handoff (Reviewer/Fixer/Verifier reconciliation loop)",
+  "head": "da2b9c7be713ea3008162d5dce7bca909aeedeff",
+  "head_subject": "feat: add M5-0B Agent handoff workflow",
+  "parent": "9a4bff9c3fcb7ff583f34c1ea9dee8699863428a",
+  "parent_subject": "test: isolate Docker runners in MergePilot-Test",
+  "base": "124831b45a5cdbeed6fce14824246073ae926166",
+  "origin_main": "124831b45a5cdbeed6fce14824246073ae926166",
+  "generated_at": "2026-08-05T15:10Z",
+  "platform": "Linux-5.15.167.4-microsoft-standard-WSL2-x86_64-with-glibc2.35",
+  "delivery": {
+    "digest": "918691c4364e851117b856339d326b9ea06e6b9e435b6dde03c256509dee9d06",
+    "files": 92,
+    "scope": "M5-0B handoff + isolated test-daemon delivery surface, including M4-F regression base",
+    "manifest_check": "OK",
+    "missing": 0,
+    "unexpected": 0,
+    "m4f_digest": "7439b54883aafc92bf95bd414113ed2cf2fabf3e62406c367bdf077d4776a0ee",
+    "m4f_files": 57,
+    "m4f_subset_of_m5_0b": true,
+    "m4f_delivery_digest_py_modified": false
+  },
+  "gates": {
+    "run_all": {"total": 17, "passed": 17, "failed": 0, "final_rc": 0},
+    "legacy_functional_regression": {"suites_matched": "6/6", "rc": 0},
+    "docker_wsl_isolation": {"passed": 11, "failed": 0, "rc": 0},
+    "m5_0a": {
+      "candidate_integration": {"passed": 13, "failed": 0, "rc": 0},
+      "container_lifecycle": {"passed": 5, "failed": 0, "rc": 0},
+      "advisory_lock": {"passed": 4, "failed": 0, "rc": 0}
+    },
+    "m5_0b": {
+      "handoff_integration": {"passed": 14, "failed": 0, "rc": 0},
+      "concurrency_negative": {"passed": 13, "failed": 0, "rc": 0}
+    }
+  },
+  "unit_tests": {
+    "m5_0b_delivery_digest": {"passed": 71, "failed": 0, "rc": 0},
+    "tests_m5_0_full": {"passed": 184, "failed": 0, "skipped": 0, "rc": 0}
+  },
+  "safety": {
+    "hiclaw_live": false,
+    "secret_leaks": 0,
+    "residue": {"containers": 0, "networks": 0, "temp_dirs": 0},
+    "external_credentials": false
+  },
+  "environment": {
+    "test_distro": "MergePilot-Test",
+    "production_distro": "Ubuntu-22.04",
+    "ubuntu_22_04_before": "Stopped",
+    "ubuntu_22_04_after": "Stopped",
+    "production_docker_accessed": false,
+    "test_daemon_isolation": "separate dockerd + VHDX (MergePilot-Test); production containers invisible from test daemon"
+  },
+  "source_sha256": {
+    "controller_py": "68166471ebcf05adc3a033c3cc5dcb5d7f1efd7b9187fce8a528e45cb7a2c832",
+    "handoff_watcher_py": "d2af74f88e27a7ff7effedc4ec5c247fac9bbf5995474cb58a0ec54800eb6b7c",
+    "handoff_watcher_v2_py": "f0903dceea67887d0be30cf905df893cceb524b6331b2c1d80472479a15e997c",
+    "reviewer_SOUL_md": "6b371e4203645a608715a483c359b0b63d2fe3808f144f73ca32f0f306759a89",
+    "fixer_SOUL_md": "209ae9473c27b65d26b6f391b41075ef5e2993c551f1eaea45dafed3123a6eca",
+    "verifier_SOUL_md": "3e133ec362b837098cd776557888ea4896caa7bc7b062d89775bb797272fef35",
+    "m5_0b_delivery_digest_py": "479d8062bfb74c3dddf22eb9340013201652defe262c23e8a115f4c0004a34ad",
+    "check_hygiene_py": "0ff10766df85f2340ecf7ec28d78cfdcb12201c681c6f5075f9724786484af2e"
+  },
+  "evidence_note": "Evidence files under evidence/m5/0b/ are excluded from the delivery surface (generated artifacts); they do not influence the delivery digest."
+}

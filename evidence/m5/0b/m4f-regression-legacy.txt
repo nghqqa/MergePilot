@@ -1,0 +1,16 @@
+MergePilot M4-A~E legacy functional regression (authoritative platforms)
+generated_at: 2026-08-05T15:10Z
+head: da2b9c7be713ea3008162d5dce7bca909aeedeff
+runner: tests/m4f1/run_all_test.sh (Gate 17, inside MergePilot-Test)
+
+suite    dir            platform            command                                                  passed  skipped  result
+M4-A     tests/skills   win32 (m4a-venv)    /mnt/d/goai/m4a-venv/Scripts/python.exe -m pytest tests/skills   75        0     MATCH
+M4-B     tests/m4b      win32 (m4a-venv)    /mnt/d/goai/m4a-venv/Scripts/python.exe -m pytest tests/m4b      96        0     MATCH
+M4-C     tests/m4c      win32 (m4a-venv)    /mnt/d/goai/m4a-venv/Scripts/python.exe -m pytest tests/m4c      87        0     MATCH
+M4-D     tests/m4d      win32 (m4a-venv)    /mnt/d/goai/m4a-venv/Scripts/python.exe -m pytest tests/m4d      54        0     MATCH
+M4-E-win tests/m4e      win32 (m4a-venv)    /mnt/d/goai/m4a-venv/Scripts/python.exe -m pytest tests/m4e     166        3     MATCH
+M4-E-posix tests/m4e    posix (container --init)  docker run --init mergepilot-m4f-runtime:demo -m pytest tests/m4e  158  11    MATCH
+
+legacy_regression_rc: 0
+legacy_suites_matched: 6/6
+LEGACY FUNCTIONAL REGRESSION ALL MATCHED

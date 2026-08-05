@@ -1,0 +1,29 @@
+MergePilot Docker test-environment isolation proof (v2 — no production access)
+runner: tests/test_env_isolation.sh
+head: da2b9c7be713ea3008162d5dce7bca909aeedeff
+generated_at: 2026-08-05T15:10Z
+test_distro: MergePilot-Test
+production_distro: Ubuntu-22.04 (name only — NEVER passed to wsl.exe -d)
+
+HARD CONSTRAINT: this verification NEVER invokes wsl.exe -d Ubuntu-22.04 and
+never reads the production Docker daemon. Production-untouched is proven by the
+fact that Ubuntu-22.04 is Stopped before AND after.
+
+GATE PASS: 0. Ubuntu-22.04 Stopped BEFORE (no production access)
+GATE PASS: 1a. guard fail-closed rc=2 on WSL_DISTRO_NAME=Ubuntu-22.04
+GATE PASS: 1b. zero docker calls before fail-closed (sentinel=NO)
+GATE PASS: 1c. tcp:// DOCKER_HOST rejected (rc=2)
+GATE PASS: 1d. arbitrary unix socket rejected (rc=2)
+GATE PASS: 2. guard passes inside MergePilot-Test (rc=0)
+GATE PASS: 3. canary visible in TEST daemon (unique name)
+GATE PASS: 4a. no production container visible from test daemon
+GATE PASS: 4b. no hiclaw-worker/manager/controller in test daemon
+GATE PASS: 5. precise canary cleanup (residue=0)
+GATE PASS: 6. Ubuntu-22.04 still Stopped AFTER (production never touched)
+
+=== SUMMARY: PASS=11 FAIL=0 ===
+
+Production containers (mergepilot-controller, policy-gw, audit-pg, github-mcp,
+hiclaw-manager, hiclaw-controller): invisible from test daemon (isolated dockerd
++ VHDX). test daemon exposed zero production container and zero
+hiclaw-worker/manager/controller. Canary cleanup via EXIT trap: residue=0.

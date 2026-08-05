@@ -1,0 +1,34 @@
+M5-0B delivery digest verification (committed C)
+generated_at: 2026-08-05T15:10Z
+head: da2b9c7be713ea3008162d5dce7bca909aeedeff
+parent: 9a4bff9c3fcb7ff583f34c1ea9dee8699863428a
+tool: tests/m5_0/m5_0b_delivery_digest.py (reuses tests/m4f1/delivery_digest.delivery_files verbatim)
+
+[delivery]
+delivery_digest: 918691c4364e851117b856339d326b9ea06e6b9e435b6dde03c256509dee9d06
+delivery_files: 92
+delivery_scope: M5-0B handoff + isolated test-daemon delivery surface, including M4-F regression base
+delivery_digest_pass_1: 918691c4364e851117b856339d326b9ea06e6b9e435b6dde03c256509dee9d06
+delivery_digest_pass_2: 918691c4364e851117b856339d326b9ea06e6b9e435b6dde03c256509dee9d06
+delivery_digest_stable: true (two-pass identical)
+
+[manifest]
+manifest_check: OK (delivery_digest OK files=92)
+manifest_missing: 0
+manifest_unexpected: 0
+surface_equals_manifest: true
+
+[M4-F regression base]
+m4f_digest: 7439b54883aafc92bf95bd414113ed2cf2fabf3e62406c367bdf077d4776a0ee
+m4f_files: 57
+m4f_minus_m5_0b: 0 (M4-F is a strict subset of M5-0B; 57 + 35 = 92)
+m4f1_delivery_digest_py_modified_since_base: false
+
+[exclusion]
+evidence_under_m5_0b_in_surface: false (generated artifacts are excluded; this evidence does not influence the digest)
+digest_independent_of_evidence: true
+
+The delivery digest is recomputable from committed C alone by running:
+  python tests/m5_0/m5_0b_delivery_digest.py .
+The produced_at timestamp of this evidence is NOT the source digest; the digest
+is a function of the 92 delivery-surface file bytes only.

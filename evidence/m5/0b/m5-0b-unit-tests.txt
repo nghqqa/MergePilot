@@ -1,0 +1,29 @@
+M5-0B unit tests (host Python, PYTHONDONTWRITEBYTECODE=1)
+head: da2b9c7be713ea3008162d5dce7bca909aeedeff
+generated_at: 2026-08-05T15:10Z
+
+[tests/m5_0/test_m5_0b_delivery_digest.py]
+.......................................................................  [100%]
+71 passed in 6.28s
+rc: 0
+
+Covers: delivery surface enumeration, M4-F subset invariant, manifest exact
+equality (missing/unexpected), credential fail-closed, generated-artifact
+exclusion, two-pass stability.
+
+[tests/m5_0/ (full suite)]
+........................................................................  [ 78%]
+........................................                                  [100%]
+184 passed in 14.65s
+rc: 0
+
+Note: the task baseline expected 183 passed / 1 skipped. On Windows the
+conditional skip did not trigger and the test ran and passed, so the observed
+result is 184 passed / 0 skipped / 0 failed. Total collected (184) matches.
+
+[tests/m4f1/test_release_evidence.py — environment note]
+This pytest is Gate #9 of run_all.sh (run_all_test.sh line 81) and executes
+INSIDE the $RUNTIME_IMAGE Linux container, not on the Windows host. It passes
+9/9 there as part of the 17/17 authoritative gate (see m4f-regression-verification.txt).
+Running it standalone on Windows fails only due to a host locale issue
+(GBK/UTF-8 subprocess decode + python3 not on PATH), not a commit-C defect.

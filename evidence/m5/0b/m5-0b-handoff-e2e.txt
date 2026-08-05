@@ -1,0 +1,31 @@
+M5-0B handoff closed-loop integration (Reviewer/Fixer/Verifier reconciliation)
+runner: tests/m5_0/run_m5_0b_integration.sh -> wsl_test.sh -> _m5_0b_integration_inner.sh
+head: da2b9c7be713ea3008162d5dce7bca909aeedeff
+parent: 9a4bff9c3fcb7ff583f34c1ea9dee8699863428a
+generated_at: 2026-08-05T15:10Z
+test_distro: MergePilot-Test
+hiclaw_live: false (isolated mini-HS test stack, not shared production HiClaw)
+
+Entry point: controller.process_event M4F_RUN -> six-Skill DAG ->
+reconcile_m5_skill_to_review / reconcile_m5_handoffs / advance_m5_review_run.
+Agent decisions deterministically injected via inject_skill_completion.py.
+
+GATE PASS: 1. Candidate healthy (lock + Matrix login)
+GATE PASS: 2. M4F_RUN /sync'd -> exactly six Skill jobs enqueued
+GATE PASS: 3. inject six-Skill SUCCEEDED + validated invocations
+GATE PASS: 4. skill->review bridge: exactly 1 review stage + 1 reviewer dispatch
+GATE PASS: 5. Reviewer handoff -> fix stage + fixer dispatch (review COMPLETED)
+GATE PASS: 6. Fixer handoff -> verify stage + verifier dispatch
+GATE PASS: 7. Verifier VERDICT=PASS -> HOLD/m5_verify_passed
+GATE PASS: 8. Replay idempotency: no duplicate stage/dispatch
+GATE PASS: 9. Verifier VERDICT=BLOCKED -> HOLD/m5_verify_failed
+GATE PASS: 9b. Verifier VERDICT=FAIL -> HOLD/m5_verify_failed
+GATE PASS: 9c. Verify without VERDICT stays PARTIAL (run not finalized)
+GATE PASS: 10. Non-m5live sentinel rows untouched
+GATE PASS: 11. Wrong-sender handoff fail-closed (ERROR)
+GATE PASS: 12. No production container visible from test daemon (daemon isolation)
+
+=== SUMMARY: PASS=14 FAIL=0 ===
+gates: PASS=14 FAIL=0 COMPLETED=1
+residue: containers=0 networks=0
+secret_leaks: 0

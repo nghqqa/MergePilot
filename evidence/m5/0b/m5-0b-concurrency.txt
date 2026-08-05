@@ -1,0 +1,29 @@
+M5-0B concurrency + negative matrix (real PG concurrency, deterministic negatives)
+runner: tests/m5_0/run_m5_0b_concurrency.sh -> wsl_test.sh -> _concurrency_inner.sh
+head: da2b9c7be713ea3008162d5dce7bca909aeedeff
+parent: 9a4bff9c3fcb7ff583f34c1ea9dee8699863428a
+generated_at: 2026-08-05T15:10Z
+test_distro: MergePilot-Test
+hiclaw_live: false (isolated test PG, not shared production)
+
+Proves the handoff reconciliation is safe under real two-connection concurrency
+and that every binding/room/payload negative fails closed (zero advance, no
+mutating side effects, no lock/idle-in-transaction leak).
+
+GATE PASS: P1-1 concurrent skill->review: one bridge/stage/dispatch, no deadlock
+GATE PASS: P1-1 no lock leak: second conn can lock task_runs after concurrent reconcile
+GATE PASS: P1-1 no idle-in-transaction leak after not-ready no-op
+GATE PASS: P1-2 binding negative (seven_rows_dup): zero stage/dispatch, no advance
+GATE PASS: P1-2 binding negative (no_result_inv): zero stage/dispatch, no advance
+GATE PASS: P1-2 binding negative (inv_not_validated): zero stage/dispatch, no advance
+GATE PASS: P1-2 binding negative (skill_failed): zero stage/dispatch, no advance
+GATE PASS: P1-3 room mismatch -> ERROR, no advance
+GATE PASS: P1-3 HOLD run not resumed, no new dispatch
+GATE PASS: P1-4 dispatch payload conflict -> rollback, no advance, existing row untouched
+GATE PASS: P1-4 stage_run payload conflict -> rollback, no advance, existing agent untouched
+GATE PASS: P1-1 final: no M5 idle-in-transaction connections
+GATE PASS: P1-2 skill_failed -> HOLD/m4f_skill_failed
+
+=== SUMMARY: PASS=13 FAIL=0 ===
+residue: containers=0 networks=0
+secret_leaks: 0
