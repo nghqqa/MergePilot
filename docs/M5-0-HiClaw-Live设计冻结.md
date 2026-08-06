@@ -1,10 +1,11 @@
-# M5-0 HiClaw Live 最小闭环设计冻结 v2.6
+# M5-0 HiClaw Live 最小闭环设计冻结 v2.7
 
 ## 1. 状态声明
 
-- **设计冻结 PASS**（v2.1 + v2.2 + v2.3 + v2.4 + v2.5 + v2.6 全部阻断项已精确冻结）
+- **设计冻结 PASS**（v2.1 + v2.2 + v2.3 + v2.4 + v2.5 + v2.6 + v2.7 全部阻断项已精确冻结）
 - **v2.6 极窄勘误**：Docker 测试/生产 daemon 隔离——同 daemon PID 门替换为 daemon/VHDX 隔离证明（详见 §25）
-- **implementation 进度**：M5-0A 已正式发布（tag `m5-0a-hiclaw-live-candidate-closed`）；M5-0B 已形成未提交实现候选，正在进行 Docker 隔离与最终复审；M5-0C/M5-0D 尚未开始
+- **v2.7 极窄勘误**：M5-0C/M5-0D 范围澄清（M5-0C=10/10 live，非 1 次）、隔离测试 HiClaw 栈边界、fixer 写角色固化、operator 授权前置、三档"真实"定义（详见 §26）
+- **implementation 进度**：M5-0A 已正式发布（tag `m5-0a-hiclaw-live-candidate-closed`）；M5-0B 已正式发布（tag `m5-0b-agent-handoff-closed`，peeled delivery `da2b9c7`=C）；M5-0C/M5-0D 尚未开始
 - **hiclaw_live = false**（M5-0 完成前不得变更为 true）
 - **数据库契约不变**（无新表、新列、新函数、新索引、新 CHECK）
 - 基线 R = `9a754e231c6d56077799cff8208e0ee6d529337c`
@@ -633,3 +634,78 @@ mergepilot-controller` 的 PID/StartedAt 前后值来证明 Candidate 不影响�
 - **禁止**修改 controller.py / watcher / SOUL / SQL / Skill / Gateway 业务
   语义 / 已发布 evidence / docs/项目状态.md / DB schema / 已发布 tag。
 - **禁止** 自动测试中 `wsl.exe -d Ubuntu-22.04` 或读取生产 Docker daemon。
+
+## 26. v2.7 极窄勘误：M5-0C/M5-0D 范围、隔离测试栈、fixer 写角色、operator 授权
+
+### 26.1 M5-0C/M5-0D 范围（reconfirm §21，消除"1 次"歧义）
+
+- **M5-0C = 10/10 真实 live 全链路**（**非 1 次**）。每次 run：真实 Matrix /sync → 6 Skill → Reviewer/Fixer/Verifier 真实 handoff → 真实 GitHub fixture repo 操作；**3 负向全 fail-closed**；PR/branch 每 run 清理（residue=0）；**`hiclaw_live=false`**（M5-0C 不得翻 true）。
+- **M5-0D = M5-0C 的 10/10 稳定性结果汇总 + hiclaw_live 公式评估（§19 全 22 项，含 `consecutive_live_runs>=10` 由 M5-0C 满足）+ 离线 17/17 + legacy 6/6 + OTel/SLS 发布证据 + 独立发布图审计 + annotated tag + push → `hiclaw_live=true`（仅 22 项全满足）**。M5-0D 不产 10 次稳定（那是 M5-0C 的产出）。
+- 任一报告/描述把 M5-0C 写成"1 次跑通"或把"10 次稳定"挪到 M5-0D，均偏离本冻结，须按本节修正回 §21。
+
+### 26.2 隔离测试 HiClaw 栈（MergePilot-Test，非生产 Ubuntu-22.04）
+
+- M5-0C 的 Candidate Controller、HiClaw Manager、Reviewer/Fixer/Verifier agents、Matrix homeserver、Policy Gateway、github-mcp **必须全部部署在 MergePilot-Test 隔离环境**（独立 dockerd + VHDX，见 §25）。
+- **生产 Ubuntu-22.04 WSL/Docker 在 M5-0C 自动测试期间必须保持 Stopped**，不得被自动测试启动、访问或写入（§25.5 H 组门禁继续生效；`mp_guard.sh` fail-closed）。
+- M5-0C 不得把 `MATRIX_HS` 指向生产 `hiclaw-controller:6167`；测试 homeserver 须是 MergePilot-Test 内独立部署的 HiClaw 栈。
+
+### 26.3 三档"真实"定义（禁止混标）
+
+| 档 | 用途 | 真实性 | evidence 标注 |
+|---|---|---|---|
+| (a) `mini_matrix_hs.py` | M5-0A | 真实 Matrix 协议、throwaway 内存、**非生产、非真实 HiClaw** | "isolated mini homeserver fixture，非真实 HiClaw" |
+| (b) 独立测试 HiClaw 全栈 | **M5-0C** | 真实 HiClaw 组件（Higress+Matrix+minio+element+agents）部署于 MergePilot-Test；真实 Matrix event_id；真实 GitHub fixture repo；**`hiclaw_live=false`** | "isolated test HiClaw stack on MergePilot-Test" |
+| (c) 生产 HiClaw | M5-0D `hiclaw_live=true` 的最终对象 | 生产 Ubuntu-22.04 栈；需 operator 显式授权的单次 live 验证 | "production HiClaw（operator-authorized）" |
+
+- **真实 Matrix homeserver ≠ 真实 HiClaw**（HiClaw = 完整栈，见 `start-manager-agent.sh` supervisord 程序集：minio/tuwunel/higress/element/mc-mirror/manager）。
+- evidence **严禁**把 (a) 或 (b) 标为"真实生产 HiClaw 已接入"。
+
+### 26.4 Gateway 写角色边界（fixer 经 pr-lifecycle 写 fixture repo）
+
+**M5-0C real-GitHub 策略入口（独立 template）：`config/m5-0c/real-github-policy.yaml`**（v2.7 独立新增，`repos.allowlist=["nghqqa/MergePilot-e2e-fixture"]`，本地策略测试 `tests/m5_0c/test_m5_0c_policy.py` 16/16 验证）。
+
+> **范围澄清**：`tests/m5_0/fixtures/policy-m5-live-e2e.yaml` 是 **M5-0B 离线 fixture**（`repos.allowlist=["example/project"]` 占位，属 M5-0B delivery surface，**不得改为 fixture repo**，否则破坏 M5-0B 回归与 manifest 精确等价）。M5-0C real 链路的 fixture-repo allowlist **只**在独立 template `config/m5-0c-real-github-policy.yaml` 中；两文件共享角色映射结构（m5coordinator/fixer），但 allowlist 不同。
+
+角色映射（M5-0C real template 与 M5-0B offline fixture 共享）：
+
+| 角色 | classes | 用途 | 写权限 |
+|---|---|---|---|
+| `m5coordinator` | `[read]` | Candidate ingress 读 PR/diff/files | **无写**（禁止 create_branch/push/create_PR） |
+| `reviewer` / `verifier` | `[read]` | 只读审查 | 无写 |
+| `fixer` | `[read, fix]` `write_checks: true` | **仅经 pr-lifecycle Skill** 对 fixture repo `create_branch`/`push_files`/`create_pull_request` | **仅 fixture repo**，`fix/` 前缀，`write_checks` 校验，不自动 merge |
+
+**机器可验边界**（`config/m5-0c-real-github-policy.yaml` 尾注 + `tests/m5_0c/test_m5_0c_policy.py`）：
+`allow(m5coordinator, create_branch)=False`；`allow(fixer, create_branch, fixture, fix/m5live-1)=True`；`allow(fixer, *, 非-fixture-repo)=False`；`allow(fixer, push_files, fixture, main)=False`（protected）；`allow(fixer, create_branch, fixture, feat/x)=False`（非 fix/ 前缀）。
+
+**不变量：**
+1. `m5coordinator` 严格只读，不得直接写 GitHub。
+2. `fixer` 的写**仅限 fixture repo**（`nghqqa/MergePilot-e2e-fixture`，§17），经 pr-lifecycle Skill；不自动 merge。
+3. 禁止任意角色访问生产仓库（`repos.allowlist` 只含 fixture；`example/project` 仅 M5-0B offline fixture 占位，不用于 M5-0C real）。
+4. **GitHub PAT 只注入 github-mcp**（mcp-backend-net 网络隔离）；Candidate/SkillWorker 绝不直接持 PAT；`fixer` 经独立 Gateway token（≠生产 fixer token，≠m5coordinator token，运行时生成）。
+5. 此为**独立 template + 本地测试增量**，**不修改** `tools/policy-gateway/gateway.py` 业务语义、生产 `tools/policy-gateway/policy.yaml`、或 M5-0B `tests/m5_0/fixtures/policy-m5-live-e2e.yaml`。
+
+### 26.5 operator 授权前置（凭据只经外部 env 注入）
+
+M5-0C 实现前 operator 须显式授权并提供（全部 deploy-owned）：
+
+1. **Matrix 测试用户注册**：@manager/@reviewer/@fixer/@verifier/@m5-0-ctrl（在测试 homeserver）+ `HICLAW_REGISTRATION_TOKEN`。
+2. **fixture GitHub PAT**：仅 `nghqqa/MergePilot-e2e-fixture` 权限，注入 github-mcp。
+3. **独立 Gateway tokens**：`m5coordinator` token（read）、`fixer` token（read+fix）——均运行时生成、独立、≠生产对应 token。
+4. **OTel exporter endpoint 或审计捕获 sink**（deploy-owned）。
+5. **失败/超时/崩溃清理权限**：close fixture PR + delete branch + deactivate 测试 Matrix 房间/用户。
+
+**凭据只经外部 env 注入**，不得进入源码、日志、evidence、commit message 或 tag。evidence 只记 sender user_id、event_id、run_id、git_sha、provenance；**不记** token/password/PAT/private key。
+
+### 26.6 不变量不变
+
+- **`hiclaw_live=false` 在 M5-0C**（M5-0D 才评估 true）。
+- Verifier PASS → `HOLD/m5_verify_passed`（**非 COMPLETED**）。
+- **零生产代码/DB 改动**：`controller.py` / `gateway_client.py` / `m4f_ingress.py` / `handoff_watcher*.py` / `gateway.py` 业务语义 / `m4f1_state.sql` / DB 契约 均不改（§24、§22.4 边界继续生效）。M5-0C 读路径已由 M5-0A/B 验证；写路径（fixer）由测试 fixture 配置提供（§26.4）。
+- 不触已发布 evidence / tag / BDC2026 资产 / `hiclaw-data`。
+- 当前凭据缺失（Matrix registration token / mc 凭据，见 Ubuntu-22.04 清理审计）= **M5-0C 实现硬阻塞**，须 operator 先解决。
+
+### 26.7 修改边界（v2.7）
+
+- 允许修改本文档追加 §26；允许修改 `docs/复赛路线图.md`（M5-0C/M5-0D 注释）、`config/m5-0-allowlist.yaml`（注释）、`tests/m5_0/fixtures/policy-m5-live-e2e.yaml`（注释）。
+- **禁止**修改 §26.6 所列生产代码 / DB / evidence / tag。
+- 本节为设计规格勘误，不是已实现事实；所有"必须/须"描述的是 M5-0C 实现前的冻结要求。

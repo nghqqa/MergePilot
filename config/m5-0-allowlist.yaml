@@ -1,6 +1,15 @@
 # M5-0 Candidate Controller allowlist template (no credentials).
 # Copy to config/m5-0-allowlist.yaml and fill with deploy-owned values.
 # This file is a TEMPLATE only; the Controller reads env vars, not this file directly.
+# ── M5-0C 边界（v2.7 §26，template 注释，无凭据）────────────────────────────
+# 作用域：仅 M5-0C 隔离测试栈（MergePilot-Test），非生产 Ubuntu-22.04。
+# 真实性档：独立测试 HiClaw 全栈（非 mini_matrix_hs fixture，非生产 HiClaw）。
+# Gateway 角色：m5coordinator 严格只读（PR/diff/files）；pr-lifecycle 的 GitHub 写
+#   经独立 fixer 角色（classes [read,fix]，仅 fixture repo），m5coordinator 不得写。
+# GitHub PAT：只注入 github-mcp，Candidate/Controller 绝不直接持 PAT。
+# operator 授权前置：Matrix 用户注册 + HICLAW_REGISTRATION_TOKEN + fixture PAT +
+#   独立 Gateway tokens + OTel sink + 失败清理权限（全部 deploy-owned env，不入源码）。
+# 详见 docs/M5-0-HiClaw-Live设计冻结.md §26。M5-0C 阶段 hiclaw_live=false。
 version: "m5-0-allowlist-template-v1"
 
 # Matrix user_id allowlist for M5-0 Candidate mode.

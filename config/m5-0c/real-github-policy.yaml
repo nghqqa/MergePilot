@@ -1,0 +1,82 @@
+# M5-0C real-GitHub Gateway policy template (v2.7 §26.4, independent entry).
+#
+# Independent from tests/m5_0/fixtures/policy-m5-live-e2e.yaml (that file is the
+# M5-0B OFFLINE fixture and keeps repos.allowlist=[example/project] for M5-0B
+# regression; do NOT edit it to nghqqa/MergePilot-e2e-fixture).
+#
+# Scope: M5-0C real Gateway/github-mcp live chain ONLY (10/10 runs).
+#   - Deployed in the MergePilot-Test isolated stack; NOT production Ubuntu-22.04.
+#   - repos.allowlist is exactly nghqqa/MergePilot-e2e-fixture (§17); production
+#     repos are never allowlisted.
+#   - m5coordinator is strictly read-only; it MUST NOT create_branch/push_files/
+#     create_pull_request.
+#   - fixer ([read,fix], write_checks=true) writes ONLY via the pr-lifecycle Skill
+#     against the fixture repo, on fix/ branches, never to main, never auto-merge.
+#   - GitHub PAT is injected ONLY into github-mcp (mcp-backend-net isolation);
+#     Candidate/SkillWorker never hold the PAT; role tokens are deploy-owned env.
+#
+# This file is a TEMPLATE: NO tokens, PAT, password, private key, or registration
+# token. Tokens are injected at deploy time via env (ROLE_TOKENS).
+version: "m5-0c-real-github-policy-template-v1"
+
+repos:
+  allowlist:
+    - "nghqqa/MergePilot-e2e-fixture"
+
+branches:
+  base_allowlist: ["main"]
+  fix_prefix: "fix/"
+  protected: ["main"]
+
+file_paths:
+  denylist:
+    - "glob:**/.env*"
+    - "glob:**/*.pem"
+    - "glob:**/*.key"
+    - "glob:**/secrets/**"
+    - "glob:**/.github/workflows/**"
+
+tool_classes:
+  read:
+    - pull_request_read
+    - list_branches
+    - list_pull_requests
+    - get_file_contents
+    - get_commit
+    - list_commits
+  comment: []
+  fix:
+    - create_branch
+    - push_files
+    - create_pull_request
+  l2: []
+  disabled: []
+
+roles:
+  # Backward-compat reference identity (not used by M5-0C Candidate).
+  coordinator:
+    classes: [read]
+  # M5-0C Candidate ingress: strictly read-only. No fix class => create_branch /
+  # push_files / create_pull_request are DENIED for this role.
+  m5coordinator:
+    classes: [read]
+  reviewer:
+    classes: [read]
+  verifier:
+    classes: [read]
+  # M5-0C fixer: read + fix. Writes go ONLY through pr-lifecycle against the
+  # fixture repo (allowlist), on fix/<...> branches, protected main is denied,
+  # and write_checks=true enforces the file_paths denylist. No auto-merge.
+  fixer:
+    classes: [read, fix]
+    write_checks: true
+
+# Effective boundary (machine-verifiable, see tests/m5_0c/test_m5_0c_policy.py):
+#   allow(m5coordinator, pull_request_read, fixture)   = True
+#   allow(m5coordinator, create_branch,  fixture)      = False  (no fix class)
+#   allow(fixer, create_branch, fixture, fix/m5live-1) = True
+#   allow(fixer, push_files,   fixture, fix/m5live-1)  = True
+#   allow(fixer, create_pull_request, fixture)         = True
+#   allow(fixer, create_branch, OTHER-repo)            = False  (repo not allowlisted)
+#   allow(fixer, push_files,   fixture, main)          = False  (protected)
+#   allow(fixer, create_branch, fixture, feat/x)       = False  (not fix/ prefix)
