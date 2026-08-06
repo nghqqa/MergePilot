@@ -1,3 +1,12 @@
+# M5-0B OFFLINE Gateway policy fixture (released M5-0B delivery surface).
+# repos.allowlist=["example/project"] is an OFFLINE placeholder used by M5-0B
+# regression; do NOT change it to nghqqa/MergePilot-e2e-fixture (would break
+# M5-0B manifest exact-equality and released regression).
+# Role structure (m5coordinator/fixer/reviewer/verifier) is shared with M5-0C.
+# The M5-0C REAL-GitHub policy (allowlist=nghqqa/MergePilot-e2e-fixture) is the
+# INDEPENDENT template at config/m5-0c-real-github-policy.yaml (v2.7 §26.4),
+# validated by tests/m5_0c/test_m5_0c_policy.py.
+# This file does not contain credentials; tokens are injected via env at deploy.
 version: "m5-0-candidate-live-v1"
 
 repos:
