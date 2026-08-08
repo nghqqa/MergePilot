@@ -152,18 +152,29 @@ PYEOF
   # -v would yield an unlabeled volume).
   docker volume create --label "$L_SCOPE" --label "$L_PHASE" --label "$L_RUN" "$VOL" >/dev/null
 
-  C0_MINIO_PW="$(python3 -c 'import secrets;print("c0"+secrets.token_urlsafe(10))')"
-  C0_REG_TOK="$(python3 -c 'import secrets;print("c0reg"+secrets.token_urlsafe(10))')"
-
-  # Embedded: resolved Image ID, main supervisord.conf, named volume (ext4 for RocksDB)
-  docker run -d --name "$CTRL" --network "$NET" --network-alias "m5c-controller" \
-    --label "$L_SCOPE" --label "$L_PHASE" --label "$L_RUN" \
-    -v "$VOL:/data" \
-    -e "HICLAW_MINIO_PASSWORD=$C0_MINIO_PW" \
-    -e "HICLAW_REGISTRATION_TOKEN=$C0_REG_TOK" \
-    --restart=no --entrypoint supervisord \
-    "$EMBEDDED_ID" -n -c /etc/supervisor/supervisord.conf >/dev/null
-  unset C0_MINIO_PW C0_REG_TOK
+  if [ -n "${M5C_SECRET_DIR:-}" ] && [ -f "${M5C_SECRET_DIR}/wrapper.sh" ]; then
+    # C1 secret-file mode: controller reads HICLAW_REGISTRATION_TOKEN / HICLAW_MINIO_PASSWORD
+    # via /secrets/wrapper.sh (read-only bind mount). No -e secret injection; Config.Env
+    # carries only SECRETS_DIR=/secrets. Caller pre-populated $M5C_SECRET_DIR.
+    docker run -d --name "$CTRL" --network "$NET" --network-alias "m5c-controller" \
+      --label "$L_SCOPE" --label "$L_PHASE" --label "$L_RUN" \
+      -v "$VOL:/data" -v "${M5C_SECRET_DIR}:/secrets:ro" \
+      -e "SECRETS_DIR=/secrets" \
+      --restart=no --entrypoint /secrets/wrapper.sh \
+      "$EMBEDDED_ID" >/dev/null
+  else
+    # C0 legacy mode: per-RUN_KEY test creds via -e (backward compat for C0 18/18).
+    C0_MINIO_PW="$(python3 -c 'import secrets;print("c0"+secrets.token_urlsafe(10))')"
+    C0_REG_TOK="$(python3 -c 'import secrets;print("c0reg"+secrets.token_urlsafe(10))')"
+    docker run -d --name "$CTRL" --network "$NET" --network-alias "m5c-controller" \
+      --label "$L_SCOPE" --label "$L_PHASE" --label "$L_RUN" \
+      -v "$VOL:/data" \
+      -e "HICLAW_MINIO_PASSWORD=$C0_MINIO_PW" \
+      -e "HICLAW_REGISTRATION_TOKEN=$C0_REG_TOK" \
+      --restart=no --entrypoint supervisord \
+      "$EMBEDDED_ID" -n -c /etc/supervisor/supervisord.conf >/dev/null
+    unset C0_MINIO_PW C0_REG_TOK
+  fi
 
   # Manager/Worker: resolved Image IDs (exit without creds — C0 expected)
   docker run -d --name "$MGR" --network "$NET" --network-alias "m5c-manager" \
