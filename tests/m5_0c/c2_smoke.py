@@ -415,7 +415,7 @@ def cleanup_gh(cfg, run_key):
 
 def teardown(cfg):
     for c in (cfg or {}).get("containers", []) or CL.get("containers", []):
-        run(["docker", "rm", "-f", c], timeout=30)
+        run(["docker", "rm", "-f", "-v", c], timeout=30)
     if (cfg or {}).get("net") or CL.get("net"):
         run(["docker", "network", "rm", (cfg or {}).get("net") or CL["net"]], timeout=20)
     if CL.get("sdir"):
