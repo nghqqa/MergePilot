@@ -1,0 +1,287 @@
+{
+  "all_pass": true,
+  "docker_state_post": {
+    "c2_containers": "0",
+    "c2_networks": "0",
+    "image_hash": "d2b6fa541e10c3c4",
+    "volume_count": 167,
+    "volume_hash": "6d8f2cdee94ff4029a14eaec285f739e309061aceae888f1cfa796ef3949e677"
+  },
+  "docker_state_pre": {
+    "c2_containers": "0",
+    "c2_networks": "0",
+    "image_hash": "d2b6fa541e10c3c4",
+    "volume_count": 167,
+    "volume_hash": "6d8f2cdee94ff4029a14eaec285f739e309061aceae888f1cfa796ef3949e677"
+  },
+  "evidence_kind": "m5-0c-c3-10x-stability",
+  "final_rc": 0,
+  "gate": "m5-0c-c3",
+  "n_pass": 10,
+  "n_runs": 10,
+  "runs": [
+    {
+      "branch_residue": [],
+      "c2_exit_rc": 0,
+      "direct_gh": {
+        "m5c2-cand-c2-1786203116-56a97b5b": 0,
+        "m5c2-gw-c2-1786203116-56a97b5b": 0
+      },
+      "docker_residue": {
+        "containers": 0,
+        "networks": 0
+      },
+      "duration_s": 150,
+      "final_rc": 0,
+      "fix_pr": 410,
+      "head_sha": "6546657f0d14ebbaeb9e0db24a079ad5f4d87958",
+      "llm": 0,
+      "m4f_event_id": "$2eae8120e2d54eefba8d0cf3f6d973df:m5c2-hs",
+      "negatives": "15/15",
+      "openpr_residue": [],
+      "positives": "22/22",
+      "run": 1,
+      "run_id": "c2-1786203116-56a97b5b",
+      "run_key": "c2-1786203116-56a97b5b",
+      "secret_hits_all0": true,
+      "src_pr": 409
+    },
+    {
+      "branch_residue": [],
+      "c2_exit_rc": 0,
+      "direct_gh": {
+        "m5c2-cand-c2-1786203266-9615fc85": 0,
+        "m5c2-gw-c2-1786203266-9615fc85": 0
+      },
+      "docker_residue": {
+        "containers": 0,
+        "networks": 0
+      },
+      "duration_s": 141,
+      "final_rc": 0,
+      "fix_pr": 412,
+      "head_sha": "a720bccda0d63d3f1369dfb897ede5a4595c56cf",
+      "llm": 0,
+      "m4f_event_id": "$79542579769142cd956c1b80cdc22d17:m5c2-hs",
+      "negatives": "15/15",
+      "openpr_residue": [],
+      "positives": "22/22",
+      "run": 2,
+      "run_id": "c2-1786203266-9615fc85",
+      "run_key": "c2-1786203266-9615fc85",
+      "secret_hits_all0": true,
+      "src_pr": 411
+    },
+    {
+      "branch_residue": [],
+      "c2_exit_rc": 0,
+      "direct_gh": {
+        "m5c2-cand-c2-1786203408-ff115dfa": 0,
+        "m5c2-gw-c2-1786203408-ff115dfa": 0
+      },
+      "docker_residue": {
+        "containers": 0,
+        "networks": 0
+      },
+      "duration_s": 137,
+      "final_rc": 0,
+      "fix_pr": 414,
+      "head_sha": "7ab30a3f9f3b17cf7beb026b0efcf2bcf24978d0",
+      "llm": 0,
+      "m4f_event_id": "$56f02f26b115468688547059470dac8b:m5c2-hs",
+      "negatives": "15/15",
+      "openpr_residue": [],
+      "positives": "22/22",
+      "run": 3,
+      "run_id": "c2-1786203408-ff115dfa",
+      "run_key": "c2-1786203408-ff115dfa",
+      "secret_hits_all0": true,
+      "src_pr": 413
+    },
+    {
+      "branch_residue": [],
+      "c2_exit_rc": 0,
+      "direct_gh": {
+        "m5c2-cand-c2-1786203545-d720d35c": 0,
+        "m5c2-gw-c2-1786203545-d720d35c": 0
+      },
+      "docker_residue": {
+        "containers": 0,
+        "networks": 0
+      },
+      "duration_s": 134,
+      "final_rc": 0,
+      "fix_pr": 416,
+      "head_sha": "59392cd9d2f5ac8325c8fe94b20d0626971374c3",
+      "llm": 0,
+      "m4f_event_id": "$cefe05a95be24441b9d193deaa6a464f:m5c2-hs",
+      "negatives": "15/15",
+      "openpr_residue": [],
+      "positives": "22/22",
+      "run": 4,
+      "run_id": "c2-1786203545-d720d35c",
+      "run_key": "c2-1786203545-d720d35c",
+      "secret_hits_all0": true,
+      "src_pr": 415
+    },
+    {
+      "branch_residue": [],
+      "c2_exit_rc": 0,
+      "direct_gh": {
+        "m5c2-cand-c2-1786203680-1f944c30": 0,
+        "m5c2-gw-c2-1786203680-1f944c30": 0
+      },
+      "docker_residue": {
+        "containers": 0,
+        "networks": 0
+      },
+      "duration_s": 146,
+      "final_rc": 0,
+      "fix_pr": 418,
+      "head_sha": "92416572727ac0f5361f253495f90769b7704ed3",
+      "llm": 0,
+      "m4f_event_id": "$4629f6e037e24d24a63b0b33ec7cce93:m5c2-hs",
+      "negatives": "15/15",
+      "openpr_residue": [],
+      "positives": "22/22",
+      "run": 5,
+      "run_id": "c2-1786203680-1f944c30",
+      "run_key": "c2-1786203680-1f944c30",
+      "secret_hits_all0": true,
+      "src_pr": 417
+    },
+    {
+      "branch_residue": [],
+      "c2_exit_rc": 0,
+      "direct_gh": {
+        "m5c2-cand-c2-1786203826-98a6cc58": 0,
+        "m5c2-gw-c2-1786203826-98a6cc58": 0
+      },
+      "docker_residue": {
+        "containers": 0,
+        "networks": 0
+      },
+      "duration_s": 140,
+      "final_rc": 0,
+      "fix_pr": 420,
+      "head_sha": "f22dad65179e3cba187851f67482f4066c98f9f1",
+      "llm": 0,
+      "m4f_event_id": "$dd45c8f53e0848ae96fb2f4f2b8682af:m5c2-hs",
+      "negatives": "15/15",
+      "openpr_residue": [],
+      "positives": "22/22",
+      "run": 6,
+      "run_id": "c2-1786203826-98a6cc58",
+      "run_key": "c2-1786203826-98a6cc58",
+      "secret_hits_all0": true,
+      "src_pr": 419
+    },
+    {
+      "branch_residue": [],
+      "c2_exit_rc": 0,
+      "direct_gh": {
+        "m5c2-cand-c2-1786203967-55de47c4": 0,
+        "m5c2-gw-c2-1786203967-55de47c4": 0
+      },
+      "docker_residue": {
+        "containers": 0,
+        "networks": 0
+      },
+      "duration_s": 149,
+      "final_rc": 0,
+      "fix_pr": 422,
+      "head_sha": "b28151727f979d614e7c571470e0e538bade2819",
+      "llm": 0,
+      "m4f_event_id": "$a3cd208f63914903b257f7f5d4e76622:m5c2-hs",
+      "negatives": "15/15",
+      "openpr_residue": [],
+      "positives": "22/22",
+      "run": 7,
+      "run_id": "c2-1786203967-55de47c4",
+      "run_key": "c2-1786203967-55de47c4",
+      "secret_hits_all0": true,
+      "src_pr": 421
+    },
+    {
+      "branch_residue": [],
+      "c2_exit_rc": 0,
+      "direct_gh": {
+        "m5c2-cand-c2-1786204116-22473493": 0,
+        "m5c2-gw-c2-1786204116-22473493": 0
+      },
+      "docker_residue": {
+        "containers": 0,
+        "networks": 0
+      },
+      "duration_s": 133,
+      "final_rc": 0,
+      "fix_pr": 424,
+      "head_sha": "9625fbd7b4d897b1f54f8cf26e6cc68f8de3e2fa",
+      "llm": 0,
+      "m4f_event_id": "$bc7c6949208741d9863ef7165c7f6545:m5c2-hs",
+      "negatives": "15/15",
+      "openpr_residue": [],
+      "positives": "22/22",
+      "run": 8,
+      "run_id": "c2-1786204116-22473493",
+      "run_key": "c2-1786204116-22473493",
+      "secret_hits_all0": true,
+      "src_pr": 423
+    },
+    {
+      "branch_residue": [],
+      "c2_exit_rc": 0,
+      "direct_gh": {
+        "m5c2-cand-c2-1786204249-ae1399c4": 0,
+        "m5c2-gw-c2-1786204249-ae1399c4": 0
+      },
+      "docker_residue": {
+        "containers": 0,
+        "networks": 0
+      },
+      "duration_s": 135,
+      "final_rc": 0,
+      "fix_pr": 426,
+      "head_sha": "5cde998aa7de259b86456fb953a6a708a898fbdd",
+      "llm": 0,
+      "m4f_event_id": "$6adc24ad406545b79986d1dddab55903:m5c2-hs",
+      "negatives": "15/15",
+      "openpr_residue": [],
+      "positives": "22/22",
+      "run": 9,
+      "run_id": "c2-1786204249-ae1399c4",
+      "run_key": "c2-1786204249-ae1399c4",
+      "secret_hits_all0": true,
+      "src_pr": 425
+    },
+    {
+      "branch_residue": [],
+      "c2_exit_rc": 0,
+      "direct_gh": {
+        "m5c2-cand-c2-1786204385-e445ff5b": 0,
+        "m5c2-gw-c2-1786204385-e445ff5b": 0
+      },
+      "docker_residue": {
+        "containers": 0,
+        "networks": 0
+      },
+      "duration_s": 152,
+      "final_rc": 0,
+      "fix_pr": 428,
+      "head_sha": "185812e1ba06140fa5278909e5c80f27ed2331ae",
+      "llm": 0,
+      "m4f_event_id": "$16a09d0f5b1c4e1dbdf07c18481dbe9a:m5c2-hs",
+      "negatives": "15/15",
+      "openpr_residue": [],
+      "positives": "22/22",
+      "run": 10,
+      "run_id": "c2-1786204385-e445ff5b",
+      "run_key": "c2-1786204385-e445ff5b",
+      "secret_hits_all0": true,
+      "src_pr": 427
+    }
+  ],
+  "source_commit": "c2f503b20ce6bbb2cd4ee48a4220923fac6628bb",
+  "state_stable": true,
+  "total_duration_s": 1421
+}
