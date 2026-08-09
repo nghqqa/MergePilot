@@ -1,45 +1,54 @@
 #!/usr/bin/env python3
-"""M5-0D D2B-2 OTel/SLS evidence capture.
+"""M5-0D D2B-2 deploy-owned OTel/SLS collector and publisher.
 
-The deploy-owned OTel/SLS collector writes a raw JSON capture outside the
-repository.  This module imports only the raw ``spans`` and ``sls_schema``
-objects, derives ``source_commit`` from git, validates the committed schema,
-and atomically publishes the sanitized evidence file.  It never accepts a
-credential or a caller-supplied source commit.
+The collector queries a deploy-owned HTTP capture sink directly.  Endpoint
+and optional authorization are read from fixed tmpfs files; neither is
+accepted in argv, environment variables, logs, or evidence.  The published
+evidence binds the response bytes, endpoint identity, command, capture
+window, and trace run IDs to the current git HEAD.
 """
 
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import hashlib
 import json
 import os
 import re
+import stat
 import subprocess
 import sys
 import tempfile
+import urllib.parse
+import urllib.request
 from typing import Any
 
 
-ROOT = os.environ.get(
-    "M5_0D_ROOT",
-    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-)
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SCHEMA_FILE = os.path.join(ROOT, "tests", "m5_0d", "schemas", "otel-sls.schema.json")
 EVIDENCE_PATH = os.path.join(ROOT, "evidence", "m5", "0d", "otel-sls.json")
+ENDPOINT_FILE = "/dev/shm/m5d/otel-endpoint"
+AUTH_FILE = "/dev/shm/m5d/otel-auth"
 REQUIRED_SPANS = {"controller.process_event", "skill.pr_lifecycle", "gateway.call_tool"}
-RAW_KEYS = {"spans", "sls_schema"}
 SECRET_RE = re.compile(
     r"ghp_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{82,}"
     r"|access_token|sync_token|registration_token|password|private_key"
     r"|client_secret|bearer\s+[A-Za-z0-9._-]+",
     re.IGNORECASE,
 )
+RUN_ID_RE = re.compile(r"m5live-[A-Za-z0-9.-]+$")
+
+
+def sha256_bytes(value: bytes) -> str:
+    return hashlib.sha256(value).hexdigest()
+
+
+def canonical_bytes(value: Any) -> bytes:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
 def git_head() -> str:
-    """Read the repository HEAD without changing git configuration."""
-
     try:
         result = subprocess.run(
             ["git", "-c", "safe.directory=" + ROOT, "-C", ROOT, "rev-parse", "HEAD"],
@@ -55,127 +64,193 @@ def git_head() -> str:
 
 
 def secret_scan(value: Any) -> bool:
-    """Return True when serialized evidence contains a credential pattern."""
-
     blob = value if isinstance(value, str) else json.dumps(value, sort_keys=True)
     return bool(SECRET_RE.search(blob))
 
 
-def _schema_validate(payload: dict[str, Any], schema_path: str = SCHEMA_FILE) -> tuple[bool, str | None]:
-    """Validate with Draft 2020-12; missing jsonschema is fail-closed."""
+def parse_utc(value: str) -> dt.datetime:
+    if not isinstance(value, str) or not value.endswith("Z"):
+        raise ValueError("timestamp must be UTC Z")
+    parsed = dt.datetime.fromisoformat(value[:-1] + "+00:00")
+    if parsed.tzinfo is None:
+        raise ValueError("timestamp timezone missing")
+    return parsed
 
+
+def read_tmpfs_file(path: str, required: bool = True) -> str:
+    """Read a non-symlink, owner-only tmpfs file with a bounded size."""
+
+    try:
+        info = os.lstat(path)
+    except FileNotFoundError:
+        if required:
+            raise ValueError("required tmpfs file missing: %s" % path)
+        return ""
+    if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
+        raise ValueError("tmpfs path must be a regular non-symlink file")
+    if os.name == "posix" and (info.st_mode & 0o077):
+        raise ValueError("tmpfs file mode must be 0600")
+    if info.st_size <= 0 or info.st_size > 8192:
+        raise ValueError("tmpfs file size invalid")
+    with open(path, encoding="utf-8") as stream:
+        value = stream.read().strip()
+    if not value or "\x00" in value:
+        raise ValueError("tmpfs file content invalid")
+    return value
+
+
+def _schema_validate(payload: dict[str, Any]) -> tuple[bool, str | None]:
     try:
         import jsonschema
     except ImportError:
         return False, "jsonschema validator unavailable"
     try:
-        with open(schema_path, encoding="utf-8") as stream:
+        with open(SCHEMA_FILE, encoding="utf-8") as stream:
             schema = json.load(stream)
         jsonschema.Draft202012Validator(schema).validate(payload)
-    except Exception as exc:  # schema and validation errors are both fatal
-        return False, str(exc)[:200]
+    except Exception as exc:
+        return False, str(exc)[:240]
     return True, None
 
 
-def _outside_root(path: str) -> bool:
-    """Require the raw deploy-owned capture to live outside this repository."""
+def fetch_raw_capture(
+    run_id: str,
+    window_start: str,
+    window_end: str,
+    endpoint_file: str = ENDPOINT_FILE,
+    auth_file: str = AUTH_FILE,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Query the deploy-owned sink and return raw records plus provenance."""
 
-    try:
-        root = os.path.realpath(ROOT)
-        candidate = os.path.realpath(path)
-        return os.path.commonpath([root, candidate]) != root
-    except ValueError:
-        # On Windows, a repo on D:\ and a capture on C:\ have no common
-        # path; different volumes are necessarily outside the repository.
-        return True
-    except OSError:
-        return False
+    endpoint = read_tmpfs_file(endpoint_file)
+    auth = read_tmpfs_file(auth_file, required=False)
+    parsed = urllib.parse.urlsplit(endpoint)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc or parsed.username or parsed.password:
+        raise ValueError("OTel endpoint URL invalid")
+    query = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
+    query.extend((("run_id", run_id), ("start", window_start), ("end", window_end)))
+    request_url = urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urllib.parse.urlencode(query), ""))
+    request = urllib.request.Request(request_url, headers={"Accept": "application/json"})
+    if auth:
+        request.add_header("Authorization", "Bearer " + auth)
+    with urllib.request.urlopen(request, timeout=60) as response:
+        if getattr(response, "status", 200) != 200:
+            raise ValueError("OTel sink returned non-200")
+        raw_bytes = response.read(5 * 1024 * 1024 + 1)
+    if len(raw_bytes) > 5 * 1024 * 1024:
+        raise ValueError("OTel response too large")
+    if secret_scan(raw_bytes.decode("utf-8", "replace")):
+        raise ValueError("secret pattern detected in OTel response")
+    raw = json.loads(raw_bytes.decode("utf-8"))
+    if not isinstance(raw, dict) or set(raw) != {"spans", "sls_schema"}:
+        raise ValueError("OTel response must contain exactly spans and sls_schema")
+    observed = sorted({s.get("run_id") for s in raw.get("spans", []) if isinstance(s, dict) and s.get("run_id")})
+    command = ["capture_otel_sls.py", "--run-id", run_id, "--window-start", window_start, "--window-end", window_end]
+    with open(__file__, "rb") as stream:
+        script_digest = sha256_bytes(stream.read())
+    provenance = {
+        "collector_kind": "deploy-owned-otel-sls",
+        "collector_script_sha256": script_digest,
+        "collector_command_digest": sha256_bytes(canonical_bytes(command)),
+        "collector_endpoint_digest": sha256_bytes(endpoint.encode("utf-8")),
+        "capture_window": {"started_at": window_start, "ended_at": window_end},
+        "captured_at": dt.datetime.now(dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+        "raw_capture_sha256": sha256_bytes(raw_bytes),
+        "trace_run_binding": {"expected_run_id": run_id, "observed_run_ids": observed},
+    }
+    return raw, provenance
 
 
-def load_raw_capture(path: str) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Read a strict raw capture from an external file.
-
-    The raw file is intentionally limited to spans and the deploy-owned SLS
-    schema object.  Source commit and any other top-level claims are derived
-    or rejected rather than trusted.
-    """
-
-    if not _outside_root(path):
-        raise ValueError("raw capture must be outside repository")
-    with open(path, encoding="utf-8") as stream:
-        raw = json.load(stream)
-    if not isinstance(raw, dict) or set(raw) != RAW_KEYS:
-        raise ValueError("raw capture must contain exactly spans and sls_schema")
-    spans = raw.get("spans")
-    sls_schema = raw.get("sls_schema")
-    if not isinstance(spans, list) or not isinstance(sls_schema, dict):
-        raise ValueError("raw spans/sls_schema types invalid")
-    if secret_scan(raw):
-        raise ValueError("secret pattern detected in raw capture")
-    return spans, sls_schema
-
-
-def validate_otel(spans: list[dict[str, Any]], sls_schema: dict[str, Any]) -> tuple[bool, list[str]]:
-    """Derive the OTel/SLS gate from raw span and schema records."""
-
+def validate_otel(
+    spans: list[dict[str, Any]], sls_schema: dict[str, Any], provenance: dict[str, Any]
+) -> tuple[bool, list[str]]:
     errors: list[str] = []
+    names: set[str] = set()
+    expected_run = ((provenance or {}).get("trace_run_binding") or {}).get("expected_run_id")
+    observed_runs: set[str] = set()
+    if not RUN_ID_RE.fullmatch(expected_run or ""):
+        errors.append("expected run_id invalid")
     if not spans:
         errors.append("spans empty")
-    names: set[str] = set()
-    for index, span in enumerate(spans):
+    for index, span in enumerate(spans or []):
         if not isinstance(span, dict):
-            errors.append(f"span[{index}] not object")
+            errors.append("span[%d] not object" % index)
             continue
+        names.add(span.get("name", ""))
+        run_id = span.get("run_id")
+        if isinstance(run_id, str) and run_id:
+            observed_runs.add(run_id)
         for field in ("trace_id", "span_id", "name", "run_id"):
             if not isinstance(span.get(field), str) or not span[field]:
-                errors.append(f"span[{index}] {field} missing")
-        if not isinstance(span.get("attributes"), dict):
-            errors.append(f"span[{index}] attributes invalid")
-        names.add(span.get("name", ""))
+                errors.append("span[%d] %s missing" % (index, field))
         if span.get("status") != "OK":
-            errors.append(f"span[{index}] status={span.get('status')!r}")
+            errors.append("span[%d] status not OK" % index)
+        if not isinstance(span.get("attributes"), dict):
+            errors.append("span[%d] attributes invalid" % index)
     if not REQUIRED_SPANS.issubset(names):
         errors.append("required span names missing")
-    if not isinstance(sls_schema, dict):
-        errors.append("sls_schema not object")
-    else:
-        digest = sls_schema.get("sha256")
-        if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
-            errors.append("sls_schema sha256 invalid")
-        if not isinstance(sls_schema.get("name"), str) or not sls_schema.get("name"):
-            errors.append("sls_schema name missing")
-        if not isinstance(sls_schema.get("version"), str) or not sls_schema.get("version"):
-            errors.append("sls_schema version missing")
-        if not isinstance(sls_schema.get("validated_records"), int) or sls_schema["validated_records"] <= 0:
-            errors.append("sls_schema validated_records invalid")
+    claimed_runs = ((provenance or {}).get("trace_run_binding") or {}).get("observed_run_ids")
+    if sorted(observed_runs) != claimed_runs or observed_runs != {expected_run}:
+        errors.append("trace run binding mismatch")
+    try:
+        start = parse_utc(provenance["capture_window"]["started_at"])
+        end = parse_utc(provenance["capture_window"]["ended_at"])
+        captured = parse_utc(provenance["captured_at"])
+        if not start < end or captured < start:
+            errors.append("capture window invalid")
+    except (KeyError, TypeError, ValueError):
+        errors.append("capture timestamps invalid")
+    # ── Recomputable digests (Fix 4): real comparison, not just 64-hex format. ──
+    cw = (provenance or {}).get("capture_window") or {}
+    otel_command = ["capture_otel_sls.py", "--run-id", str(expected_run or ""),
+                    "--window-start", str(cw.get("started_at") or ""),
+                    "--window-end", str(cw.get("ended_at") or "")]
+    if (provenance or {}).get("collector_command_digest") != sha256_bytes(canonical_bytes(otel_command)):
+        errors.append("collector_command_digest mismatch (recomputed from evidence)")
+    try:
+        with open(__file__, "rb") as stream:
+            otel_script_digest = sha256_bytes(stream.read())
+        if (provenance or {}).get("collector_script_sha256") != otel_script_digest:
+            errors.append("collector_script_sha256 mismatch (recomputed from collector source)")
+    except OSError:
+        errors.append("collector_script_sha256 cannot recompute (source unreadable)")
+    # ── Trust-boundary digests: raw_capture_sha256 (raw OTel sink HTTP bytes)
+    # and collector_endpoint_digest (endpoint read from tmpfs) are not
+    # reconstructable from the sanitized spans/sls_schema. Format-checked only;
+    # integrity rests on the verified collector script + deploy-owned sink. ──
+    for field in (
+        "collector_script_sha256",
+        "collector_command_digest",
+        "collector_endpoint_digest",
+        "raw_capture_sha256",
+    ):
+        if not re.fullmatch(r"[0-9a-f]{64}", str((provenance or {}).get(field, ""))):
+            errors.append("provenance %s invalid" % field)
+    digest = (sls_schema or {}).get("sha256")
+    if not re.fullmatch(r"[0-9a-f]{64}", digest or ""):
+        errors.append("sls_schema sha256 invalid")
+    if not isinstance((sls_schema or {}).get("validated_records"), int) or sls_schema["validated_records"] <= 0:
+        errors.append("sls_schema validated_records invalid")
     return not errors, errors
 
 
-def build_payload(
-    spans: list[dict[str, Any]], sls_schema: dict[str, Any], source_commit: str
-) -> dict[str, Any]:
-    """Build the only evidence shape accepted by the committed schema."""
-
+def build_payload(raw: dict[str, Any], provenance: dict[str, Any], source_commit: str) -> dict[str, Any]:
     return {
         "schema_version": "1",
         "source_commit": source_commit,
-        "spans": spans,
-        "sls_schema": sls_schema,
+        "provenance": provenance,
+        "spans": raw["spans"],
+        "sls_schema": raw["sls_schema"],
     }
 
 
 def publish_otel(
-    spans: list[dict[str, Any]],
-    sls_schema: dict[str, Any],
-    source_commit: str,
-    path: str = EVIDENCE_PATH,
+    raw: dict[str, Any], provenance: dict[str, Any], source_commit: str, path: str = EVIDENCE_PATH
 ) -> tuple[bool, str | None]:
-    """Validate and atomically publish sanitized evidence."""
-
-    payload = build_payload(spans, sls_schema, source_commit)
-    ok, error = validate_otel(spans, sls_schema)
+    ok, errors = validate_otel(raw.get("spans"), raw.get("sls_schema"), provenance)
     if not ok:
-        return False, "; ".join(error or ["raw OTel validation failed"])
+        return False, "; ".join(errors)
+    payload = build_payload(raw, provenance, source_commit)
     ok, error = _schema_validate(payload)
     if not ok:
         return False, error
@@ -201,17 +276,26 @@ def publish_otel(
     return True, None
 
 
-def capture(input_path: str, output_path: str = EVIDENCE_PATH) -> int:
+def capture(run_id: str, window_start: str, window_end: str, output_path: str = EVIDENCE_PATH) -> int:
+    if not RUN_ID_RE.fullmatch(run_id or ""):
+        print("FATAL: run_id must be m5live-*", file=sys.stderr)
+        return 2
+    try:
+        if parse_utc(window_start) >= parse_utc(window_end):
+            raise ValueError("window start must precede end")
+    except ValueError as exc:
+        print("FATAL: %s" % exc, file=sys.stderr)
+        return 2
     source_commit = git_head()
     if not source_commit:
         print("FATAL: cannot resolve git HEAD", file=sys.stderr)
         return 2
     try:
-        spans, sls_schema = load_raw_capture(input_path)
+        raw, provenance = fetch_raw_capture(run_id, window_start, window_end)
     except Exception as exc:
-        print("FAIL: raw capture: %s" % str(exc)[:200], file=sys.stderr)
+        print("FAIL: OTel collector: %s" % str(exc)[:200], file=sys.stderr)
         return 1
-    ok, error = publish_otel(spans, sls_schema, source_commit, output_path)
+    ok, error = publish_otel(raw, provenance, source_commit, output_path)
     if not ok:
         print("FAIL: publish: %s" % (error or "validation failed"), file=sys.stderr)
         return 1
@@ -221,10 +305,11 @@ def capture(input_path: str, output_path: str = EVIDENCE_PATH) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--input", required=True, help="repo-external raw OTel/SLS JSON capture")
-    parser.add_argument("--output", default=EVIDENCE_PATH, help="evidence output path")
+    parser.add_argument("--run-id", required=True)
+    parser.add_argument("--window-start", required=True)
+    parser.add_argument("--window-end", required=True)
     args = parser.parse_args()
-    return capture(args.input, args.output)
+    return capture(args.run_id, args.window_start, args.window_end)
 
 
 if __name__ == "__main__":
