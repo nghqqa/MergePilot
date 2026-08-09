@@ -132,11 +132,98 @@ def test_code_facts_not_hardcoded():
 
 
 def test_semantic_validation_imports():
-    """Finalizer must import + call validate_offline/validate_otel/validate_production."""
+    """Finalizer must import + call validate_offline/validate_otel/validate_production/C3."""
     src = open(os.path.join(HERE, "finalize_m5_0d.py"), encoding="utf-8").read()
     _x("CO.validate_offline" in src, "calls validate_offline")
     _x("CT.validate_otel" in src, "calls validate_otel")
     _x("CP.validate_production" in src, "calls validate_production")
+    _x("CC.validate_summary" in src, "calls C3 validate_summary")
+
+
+# ── C3 tracking policy + clean-tree whitelist (Fix: C3/finalizer conflict) ──
+
+def test_evidence_artifacts_whitelist_exact():
+    """Whitelist must be exactly the 4 evidence artifacts (no more, no less)."""
+    _x(len(F.EVIDENCE_ARTIFACTS) == 4, "exactly 4 evidence artifacts")
+    for p in ("evidence/m5/0c/c3-10x.json", "evidence/m5/0d/offline-regression.json",
+              "evidence/m5/0d/production-live.json", "evidence/m5/0d/otel-sls.json"):
+        _x(p in F.EVIDENCE_ARTIFACTS, "whitelist contains %s" % p)
+
+
+def test_classify_tree_accepts_tracked_c3():
+    """Tracked-modified C3 (D1 history, re-captured at HEAD) + untracked 0d trio
+    is the expected working tree and must be accepted (the conflict resolution)."""
+    ok, err = F._classify_tree([
+        " M evidence/m5/0c/c3-10x.json",
+        "?? evidence/m5/0d/offline-regression.json",
+        "?? evidence/m5/0d/production-live.json",
+        "?? evidence/m5/0d/otel-sls.json",
+    ])
+    _x(ok, "tracked C3 + untracked 0d trio accepted (err=%s)" % err)
+
+
+def test_classify_tree_accepts_untracked_c3():
+    """Post-migration (C3 untracked, repo-external) is also accepted."""
+    ok, err = F._classify_tree(["?? evidence/m5/0c/c3-10x.json"])
+    _x(ok, "untracked C3 accepted (err=%s)" % err)
+
+
+def test_classify_tree_accepts_clean():
+    ok, err = F._classify_tree([])
+    _x(ok, "clean tree accepted (err=%s)" % err)
+
+
+def test_classify_tree_rejects_staged_c3():
+    """Staged C3 (would enter the release commit → source_commit self-reference)
+    must be rejected."""
+    ok, err = F._classify_tree(["M  evidence/m5/0c/c3-10x.json"])
+    _x(not ok and "staged" in err, "staged C3 rejected (err=%s)" % err)
+
+
+def test_classify_tree_rejects_staged_0d():
+    """Staged 0d evidence is also rejected (no evidence in the release commit)."""
+    ok, err = F._classify_tree(["A  evidence/m5/0d/offline-regression.json"])
+    _x(not ok and "staged" in err, "staged 0d evidence rejected (err=%s)" % err)
+
+
+def test_classify_tree_rejects_dirty_unrelated():
+    """A non-evidence tracked modification must be rejected (never silently ignored)."""
+    ok, err = F._classify_tree([" M tools/workflow-controller/controller.py"])
+    _x(not ok and "non-evidence" in err, "dirty unrelated file rejected (err=%s)" % err)
+
+
+def test_classify_tree_rejects_untracked_non_evidence():
+    """An untracked file outside the whitelist (even under evidence/m5/0d/) is rejected."""
+    ok, err = F._classify_tree(["?? evidence/m5/0d/stray.json"])
+    _x(not ok, "untracked non-whitelisted path rejected (err=%s)" % err)
+
+
+def test_c3_source_commit_mismatch_rejected():
+    """C3 with an old source_commit (!= HEAD) fails semantic validation."""
+    import capture_c3_evidence as CC
+    stale = {"gate": "m5-0c-c3", "n_runs": 10, "n_pass": 10, "all_pass": True,
+             "final_rc": 0, "state_stable": True, "docker_state_pre": {}, "docker_state_post": {},
+             "runs": []}
+    ok, errs = CC.validate_summary(stale, "c2f503b20ce6bbb2cd4ee48a4220923fac6628bb",
+                                   "ab77888aeb289a408a9420a505d489c0628e284d")
+    _x(not ok and any("source_commit" in e for e in errs), "old C3 source_commit rejected")
+
+
+def test_missing_evidence_raises():
+    """A missing evidence file must raise (fail-closed), not be silently skipped."""
+    missing = os.path.join(HERE, "__definitely_absent_evidence__.json")
+    _x(not os.path.exists(missing), "precondition: file absent")
+    try:
+        F.read_evidence_toctou_safe(missing); _x(False, "missing evidence must raise")
+    except (OSError, ValueError):
+        print("  PASS: missing evidence raises (fail-closed)")
+
+
+def test_finalizer_binds_c3_in_attestation():
+    """Attestation must record C3 source_commit + digest (explicit binding, not ignored)."""
+    src = open(os.path.join(HERE, "finalize_m5_0d.py"), encoding="utf-8").read()
+    _x("evidence_source_commits" in src, "attestation records per-evidence source_commits")
+    _x('digests["c3"]' in src, "attestation/tag records C3 digest")
 
 
 def main():

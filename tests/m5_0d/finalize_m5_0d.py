@@ -33,11 +33,26 @@ OTEL_PATH = os.path.join(EVIDENCE_DIR, "otel-sls.json")
 PRODUCTION_PATH = os.path.join(EVIDENCE_DIR, "production-live.json")
 C3_PATH = os.path.join(ROOT, "evidence", "m5", "0c", "c3-10x.json")
 
+# Exact evidence artifacts permitted in the working tree (by path). Any other
+# path is a dirty tree. Evidence must NOT be staged for commit (index status
+# must be ' ' = worktree-only, or '?' = untracked): staged evidence would enter
+# the release commit, re-introducing the source_commit self-reference. Evidence
+# integrity is bound by the repo-external attestation (digest + source_commit),
+# NOT by a commit. C3 is tracked from D1 history; it is permitted as a
+# worktree-modified artifact (re-captured at HEAD) OR untracked (post-migration).
+EVIDENCE_ARTIFACTS = frozenset({
+    "evidence/m5/0c/c3-10x.json",
+    "evidence/m5/0d/offline-regression.json",
+    "evidence/m5/0d/production-live.json",
+    "evidence/m5/0d/otel-sls.json",
+})
+
 # Import capture validators + evaluator code_facts loader (same dir)
 sys.path.insert(0, os.path.join(ROOT, "tests", "m5_0d"))
 import capture_offline_evidence as CO  # noqa: E402
 import capture_otel_sls as CT  # noqa: E402
 import capture_production_live as CP  # noqa: E402
+import capture_c3_evidence as CC  # noqa: E402
 import hiclaw_live_runner as H  # noqa: E402
 
 
@@ -49,17 +64,38 @@ def _git_head():
     return s if r.returncode == 0 and len(s) == 40 else ""
 
 
+def _classify_tree(porcelain_lines):
+    """Classify `git status --porcelain -uall` lines. Returns (ok, err).
+
+    Allows ONLY exact evidence artifacts (EVIDENCE_ARTIFACTS), and only when NOT
+    staged for commit. Staged evidence (index status not ' '/'?') is rejected
+    because it would enter the release commit (source_commit self-reference).
+    Any non-evidence path is a dirty tree. Arbitrary tracked modifications are
+    never silently ignored — only the named evidence artifacts are permitted,
+    and each is bound by digest in the attestation."""
+    for ln in porcelain_lines:
+        if len(ln) < 4:
+            continue
+        index_status = ln[0]
+        path = ln[3:].strip().strip('"')
+        if " -> " in path:  # rename: R  old -> new
+            path = path.split(" -> ", 1)[1].strip().strip('"')
+        if path not in EVIDENCE_ARTIFACTS:
+            return False, "dirty tree (non-evidence path): %s" % ln
+        if index_status not in (" ", "?"):
+            return False, "evidence must not be staged for commit: %s" % ln
+    return True, None
+
+
 def _check_clean_tree():
     r = subprocess.run(
-        ["git", "-c", "safe.directory=" + ROOT, "-C", ROOT, "status", "--porcelain"],
+        ["git", "-c", "safe.directory=" + ROOT, "-C", ROOT,
+         "status", "--porcelain", "-uall"],
         capture_output=True, text=True, timeout=15)
     if r.returncode != 0:
         return False, "git status failed"
     lines = [ln for ln in r.stdout.strip().splitlines() if ln.strip()]
-    non_evidence = [ln for ln in lines if not ln.startswith("?? evidence/m5/")]
-    if non_evidence:
-        return False, "dirty tree (non-evidence): %s" % non_evidence[:3]
-    return True, None
+    return _classify_tree(lines)
 
 
 def read_evidence_toctou_safe(path):
@@ -174,6 +210,12 @@ def finalize():
         print("FATAL: C3 source_commit mismatch"); return 2
     digests["c3"] = c3_digest
 
+    # C3 semantic validation (gate/n_runs/n_pass/all_pass/state_stable/per-run
+    # residue) — same domain-validator treatment as offline/OTel/production.
+    c3_ok, c3_errs = CC.validate_summary(c3_data, c3_data.get("source_commit", ""), sc)
+    if not c3_ok:
+        print("FAIL: C3 semantic: %s" % "; ".join(c3_errs)); return 1
+
     # Run evaluator with code_facts from committed code (NOT hardcoded)
     print("\n=== Running hiclaw_live_runner (code_facts from _load_code_facts) ===")
     code_facts = H._load_code_facts()
@@ -200,6 +242,12 @@ def finalize():
         "schema_version": "1", "source_commit": sc,
         "created_at": _dt.datetime.now(_dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
         "evidence_sha256": digests, "evaluator_sha256": eval_digest,
+        "evidence_source_commits": {
+            "offline": parsed["offline"].get("source_commit", ""),
+            "otel": parsed["otel"].get("source_commit", ""),
+            "production": parsed["production"].get("source_commit", ""),
+            "c3": c3_data.get("source_commit", ""),
+        },
         "hiclaw_live": hl, "formulas_true": true_count,
         "formulas_false": false_count, "formulas_unproven": unproven_count,
     }
@@ -231,6 +279,7 @@ def finalize():
     print("offline=%s" % digests["offline"])
     print("otel=%s" % digests["otel"])
     print("production=%s" % digests["production"])
+    print("c3=%s" % digests["c3"])
     print("evaluator=%s" % eval_digest)
     return 0
 
