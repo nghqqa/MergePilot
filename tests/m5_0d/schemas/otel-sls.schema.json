@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mergepilot.dev/m5-0d/schemas/otel-sls.schema.json",
+  "title": "OTel/SLS Observability Evidence (raw spans + schema)",
+  "description": "Evaluator derives observability gate from actual span set + SLS schema hash, NOT from booleans.",
+  "type": "object",
+  "required": ["schema_version", "source_commit", "spans", "sls_schema"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": "1"},
+    "source_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "spans": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["trace_id", "span_id", "name", "status", "run_id", "attributes"], "additionalProperties": false, "properties": {
+      "trace_id":{"type":"string"},"span_id":{"type":"string"},"name":{"type":"string"},"status":{"type":"string"},"run_id":{"type":"string"},"attributes":{"type":"object"}
+    }}},
+    "sls_schema": {"type": "object", "required": ["name", "version", "sha256", "validated_records"], "additionalProperties": false, "properties": {
+      "name":{"type":"string"},"version":{"type":"string"},"sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},"validated_records":{"type":"integer"}
+    }}
+  }
+}

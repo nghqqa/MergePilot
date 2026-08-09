@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mergepilot.dev/m5-0d/schemas/offline-regression.schema.json",
+  "title": "Offline Regression Evidence (raw gate/platform arrays)",
+  "description": "Evaluator derives 17/17 + 6/6 from raw arrays, NOT from passed/total summaries.",
+  "type": "object",
+  "required": ["schema_version", "source_commit", "m4f_gates", "legacy_runs"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": "1"},
+    "source_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "command": {"type": "string"},
+    "started_at": {"type": "string"},
+    "finished_at": {"type": "string"},
+    "m4f_gates": {"type": "array", "minItems": 17, "maxItems": 17, "items": {"type": "object", "required": ["gate_id", "rc", "status", "output_sha256"], "additionalProperties": false, "properties": {
+      "gate_id":{"type":"string"},"rc":{"type":"integer"},"status":{"type":"string"},"output_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"}
+    }}},
+    "legacy_runs": {"type": "array", "minItems": 6, "maxItems": 6, "items": {"type": "object", "required": ["platform_id", "rc", "match", "expected_count", "actual_count", "output_sha256"], "additionalProperties": false, "properties": {
+      "platform_id":{"type":"string"},"rc":{"type":"integer"},"match":{"type":"boolean"},"expected_count":{"type":"integer"},"actual_count":{"type":"integer"},"output_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"}
+    }}}
+  }
+}

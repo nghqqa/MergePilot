@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mergepilot.dev/m5-0d/schemas/production-live.schema.json",
+  "title": "Production Tier-C Live Evidence (strict raw records)",
+  "description": "Raw, non-secret, machine-verifiable records from a production live run. NO precomputed booleans; evaluator derives all formula values from these fields + cross-field relationships.",
+  "type": "object",
+  "required": ["schema_version", "source_commit", "sync_events", "stage_events", "agent_processes", "task_run", "skill_jobs", "mcp_calls", "dispatch_rows", "watcher_config", "injection_scan", "secret_scan", "residue"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": "1"},
+    "source_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "matrix_server_name": {"type": "string"},
+    "sync_events": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["sync_batch_id","event_id","room_id","sender","event_type","body_sha256","received_at","consumer_name"], "additionalProperties": false, "properties": {
+      "sync_batch_id":{"type":"string"},"event_id":{"type":"string"},"room_id":{"type":"string"},"sender":{"type":"string"},
+      "event_type":{"type":"string"},"body_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},"received_at":{"type":"string"},"consumer_name":{"type":"string"}
+    }}},
+    "stage_events": {"type":"array", "minItems": 1, "items": {"type":"object", "required": ["stage_event_id","matrix_event_id","room_id","sender","event_type","stage","status","parsed_run_id","processed_by","error_code"], "additionalProperties": false, "properties": {
+      "stage_event_id":{"type":"string"},"matrix_event_id":{"type":"string"},"room_id":{"type":"string"},"sender":{"type":"string"},
+      "event_type":{"type":"string"},"stage":{"type":"string"},"status":{"type":"string"},"parsed_run_id":{"type":"string"},
+      "processed_by":{"type":"string"},"error_code":{"type":"string"}
+    }}},
+    "agent_processes": {"type":"object", "required": ["manager","reviewer","fixer","verifier"], "additionalProperties": false, "properties": {
+      "manager":{"$ref":"#/$defs/agent"},"reviewer":{"$ref":"#/$defs/agent"},"fixer":{"$ref":"#/$defs/agent"},"verifier":{"$ref":"#/$defs/agent"}
+    }},
+    "task_run": {"type":"object", "required": ["run_id","room_id","status","current_stage","verdict","consumer_name","revision_binding_id","base_sha","head_sha","review_stage_event_id","fix_stage_event_id","verify_stage_event_id"], "additionalProperties": false, "properties": {
+      "run_id":{"type":"string"},"room_id":{"type":"string"},"status":{"type":"string"},"current_stage":{"type":"string"},"verdict":{"type":"string"},
+      "consumer_name":{"type":"string"},"revision_binding_id":{"type":"string"},"base_sha":{"type":"string","pattern":"^[0-9a-f]{40}$"},"head_sha":{"type":"string","pattern":"^[0-9a-f]{40}$"},
+      "review_stage_event_id":{"type":"string"},"fix_stage_event_id":{"type":"string"},"verify_stage_event_id":{"type":"string"}
+    }},
+    "skill_jobs": {"type":"array", "minItems": 6, "maxItems": 6, "items": {"type":"object", "required": ["skill_name","job_id","invocation_id","status","revision_binding_id","output_schema_validated"], "additionalProperties": false, "properties": {
+      "skill_name":{"type":"string"},"job_id":{"type":"string"},"invocation_id":{"type":"string"},"status":{"type":"string"},
+      "revision_binding_id":{"type":"string"},"output_schema_validated":{"type":"boolean"}
+    }}},
+    "mcp_calls": {"type":"array", "items": {"type":"object", "required": ["call_id","caller_agent","tool","decision","revision_binding_id","base_sha","head_sha","upstream_kind","audit_dsn_kind"], "additionalProperties": false, "properties": {
+      "call_id":{"type":"string"},"caller_agent":{"type":"string"},"tool":{"type":"string"},"decision":{"type":"string"},
+      "revision_binding_id":{"type":"string"},"base_sha":{"type":"string","pattern":"^[0-9a-f]{40}$"},"head_sha":{"type":"string","pattern":"^[0-9a-f]{40}$"},
+      "upstream_kind":{"type":"string"},"audit_dsn_kind":{"type":"string"}
+    }}},
+    "dispatch_rows": {"type":"array", "items": {"type": "object", "required": ["dispatch_id","role","stage_event_id","source"], "additionalProperties": false, "properties": {
+      "dispatch_id":{"type":"string"},"role":{"type":"string"},"stage_event_id":{"type":"string"},"source":{"type":"string"}
+    }}},
+    "watcher_config": {"type":"object", "required": ["excluded_prefixes"], "additionalProperties": false, "properties": {"excluded_prefixes":{"type":"array","items":{"type":"string"}}}},
+    "injection_scan": {"type":"object", "required": ["scanned_sources","forbidden_invocations"], "additionalProperties": false, "properties": {
+      "scanned_sources":{"type":"array","items":{"type":"string"}},"forbidden_invocations":{"type":"array","items":{"type":"string"}}
+    }},
+    "secret_scan": {"type":"object", "required": ["scanned_targets","matches"], "additionalProperties": false, "properties": {
+      "scanned_targets":{"type":"array","items":{"type":"string"}},"matches":{"type":"array","items":{"type":"string"}}
+    }},
+    "residue": {"type":"object", "required": ["containers","networks","volumes","temp_dirs","open_prs","branches"], "additionalProperties": false, "properties": {
+      "containers":{"type":"array","items":{"type":"string"}},"networks":{"type":"array","items":{"type":"string"}},
+      "volumes":{"type":"array","items":{"type":"string"}},"temp_dirs":{"type":"array","items":{"type":"string"}},
+      "open_prs":{"type":"array","items":{"type":"string"}},"branches":{"type":"array","items":{"type":"string"}}
+    }}
+  },
+  "$defs": {
+    "agent": {"type":"object", "required": ["role","container_id","image_id","matrix_user_id","started_at","command_digest","log_digest"], "additionalProperties": false, "properties": {
+      "role":{"type":"string"},"container_id":{"type":"string"},"image_id":{"type":"string"},
+      "matrix_user_id":{"type":"string"},"started_at":{"type":"string"},"command_digest":{"type":"string"},"log_digest":{"type":"string"}
+    }}
+  }
+}
