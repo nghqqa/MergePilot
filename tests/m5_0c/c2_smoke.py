@@ -212,6 +212,40 @@ def delete_branch_mcp(cfg, branch, run_key):
                       {"owner": OWNER, "repo": REPO, "branch": branch, "run_key": run_key})
 
 
+# Cleanup tuning. GitHub's PR-close is eventually-consistent: after
+# update_pull_request(state=closed) returns, the bridge may still see the PR
+# open briefly, and c2_delete_test_branch fail-closed-refuses a branch delete
+# while a PR on it is open (open_pr_exists) — which previously left a stale
+# branch that the NEXT run's N5 check detected. cleanup_gh absorbs this with ONE
+# fixed propagation sleep (no extra bridge calls) plus a light delete retry.
+# Each ghmcp_call spawns a docker container (~seconds), so we deliberately avoid
+# per-attempt polling — an earlier polling version spawned ~130 containers/run
+# and blew the C3_TIMEOUT.
+CLEANUP_PROPAGATION_DELAY = 2.0   # fixed sleep after close, lets GitHub propagate
+DELETE_ATTEMPTS = 3               # delete attempts per branch
+DELETE_RETRY_DELAY = 2.0          # seconds between delete retries
+
+
+def _delete_branch_with_retry(cfg, branch, run_key, pr_num, *,
+                              attempts=DELETE_ATTEMPTS, delay=DELETE_RETRY_DELAY,
+                              delete_fn=delete_branch_mcp, close_fn=close_pr_mcp,
+                              sleep=time.sleep):
+    """Delete branch; on bridge refusal open_pr_exists, re-close the PR and retry
+    after delay (propagation happens during the sleep). Returns the final delete
+    response dict. Callable deps are injectable for unit tests. No REST; all
+    GitHub access goes through the bridge (PAT stays in the bridge)."""
+    d = {}
+    for _ in range(attempts):
+        r = delete_fn(cfg, branch, run_key)
+        d = _gj(r) or {}
+        if d.get("deleted") or d.get("already_absent"):
+            return d
+        if d.get("reason") == "open_pr_exists" and pr_num:
+            close_fn(cfg, pr_num)
+        sleep(delay)
+    return d
+
+
 def gateway_call(cfg, role, tok, tool, args):
     r = run(["docker", "run", "--rm", "--network", cfg["net"], "-v", "%s:/workspace:ro" % ROOT,
              "-w", "/workspace", "-e", "C2_GATEWAY=http://m5c2-gw:8083",
@@ -398,17 +432,20 @@ def start_gwhmcp_cand(cfg, toks, pws):
 
 
 def cleanup_gh(cfg, run_key):
-    """Close both PRs (github-mcp update_pull_request) then delete both branches
-    (bridge c2_delete_test_branch). No REST."""
+    """Close both PRs, let GitHub propagate (one fixed sleep — no extra bridge
+    calls), then delete both branches with light retry on open_pr_exists. Absorbs
+    PR-close propagation delay so a transient close no longer leaves a stale
+    branch that fails the next run's N5 stale-branch check. No REST."""
     for label, pr in [("fix", CL.get("pr")), ("src", CL.get("src_pr"))]:
         if pr:
             r = close_pr_mcp(cfg, pr)
             d = _gj(r) or {}
             print("  [cleanup] close %s PR %s -> state=%s" % (label, pr, d.get("state")))
-    for label, br in [("fix", CL.get("branch")), ("src", CL.get("src_branch"))]:
+    time.sleep(CLEANUP_PROPAGATION_DELAY)
+    for label, br, pr in [("fix", CL.get("branch"), CL.get("pr")),
+                          ("src", CL.get("src_branch"), CL.get("src_pr"))]:
         if br:
-            r = delete_branch_mcp(cfg, br, run_key)
-            d = _gj(r) or {}
+            d = _delete_branch_with_retry(cfg, br, run_key, pr)
             print("  [cleanup] delete %s branch %s -> deleted=%s refused=%s reason=%s"
                   % (label, br, d.get("deleted"), d.get("refused"), d.get("reason")))
 

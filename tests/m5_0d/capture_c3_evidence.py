@@ -26,7 +26,7 @@ ROOT = "/mnt/d/goai/mergepilot-os"
 C3_RUNNER = ROOT + "/tests/m5_0c/c3_runner.py"
 EVIDENCE = ROOT + "/evidence/m5/0c/c3-10x.json"
 MARKER = "=== C3 SUMMARY ==="
-C3_TIMEOUT = 1800  # 10 runs ~21min; allow 30min
+C3_TIMEOUT = 2400  # 10 runs ~21min + cleanup_gh propagation/retry margin; allow 40min
 
 _SECRET_RE = re.compile(
     r"ghp_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{82,}"
