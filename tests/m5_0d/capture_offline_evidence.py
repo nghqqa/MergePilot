@@ -23,7 +23,7 @@ import tempfile
 ROOT = os.environ.get("M5_0D_ROOT", os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 SCHEMA_FILE = os.path.join(ROOT, "tests", "m5_0d", "schemas", "offline-regression.schema.json")
 EVIDENCE_PATH = os.path.join(ROOT, "evidence", "m5", "0d", "offline-regression.json")
-RUN_ALL_ENTRY = os.path.join(ROOT, "tests", "m4f1", "run_all_test.sh")
+RUN_ALL_ENTRY = os.path.join(ROOT, "tests", "m4f1", "run_all.sh")
 LEGACY_ENTRY = os.path.join(ROOT, "tests", "m4f1", "run_legacy_functional_regression.sh")
 
 SECRET_RE = re.compile(
@@ -203,6 +203,22 @@ def publish_offline(gates, legacy, source_commit, gate_log_sha256, legacy_sha256
     return True, None
 
 
+def _normalize_evidence_crlf():
+    """Normalize evidence/m4/m4f/ CRLF→LF (working tree only).
+    Root cause: autocrlf=true converts LF→CRLF on checkout; check_hygiene.py
+    has an unconditional CR check. This normalizes WITHOUT changing committed blobs."""
+    import pathlib
+    d = pathlib.Path(ROOT) / "evidence" / "m4" / "m4f"
+    if not d.is_dir():
+        return
+    for f in sorted(d.iterdir()):
+        if f.is_file():
+            raw = f.read_bytes()
+            fixed = raw.replace(b"\r\n", b"\n")
+            if raw != fixed:
+                f.write_bytes(fixed)
+
+
 def capture():
     """Run offline regression + capture + validate + publish."""
     sc = git_head()
@@ -210,49 +226,58 @@ def capture():
         print("FATAL: cannot resolve git HEAD")
         return 2
 
-    # Run M4-F gates (run_all_test.sh via wsl_test.sh)
-    print("=== D2B-1: running M4-F run_all_test.sh (17 gates) ===")
-    fd, gate_log_path = tempfile.mkstemp(prefix="m4f-gates-", suffix=".tsv")
-    os.close(fd)
+    # Pre-run fixes (proven root causes):
+    # 1. Normalize CRLF in evidence/m4/m4f/ (hygiene gate unconditional CR check)
+    _normalize_evidence_crlf()
+    # 2. Clean pycache (hygiene gate unconditional CACHE check)
+    for base in ("skills", "tests", "tools"):
+        bp = os.path.join(ROOT, base)
+        if os.path.isdir(bp):
+            subprocess.run(["bash", "-c",
+                'find "%s" -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null' % bp],
+                capture_output=True, timeout=30)
+    # 3. Set safe.directory via GIT_CONFIG env (whitespace gate runs bare git)
+    #    NOT --global; ephemeral env vars only.
+    env = dict(os.environ)
+    env["GIT_CONFIG_COUNT"] = "1"
+    env["GIT_CONFIG_KEY_0"] = "safe.directory"
+    env["GIT_CONFIG_VALUE_0"] = ROOT
+
+    # Run M4-F gates (run_all.sh inside MergePilot-Test)
+    print("=== D2B-1: running M4-F run_all.sh (17 gates) ===")
     try:
         r1 = subprocess.run(
             ["bash", RUN_ALL_ENTRY],
-            capture_output=True, text=True, timeout=1200)
+            capture_output=True, text=True, timeout=1200, env=env)
         m4f_rc = r1.returncode
     except Exception as e:
         print("FAIL: run_all invocation error: %s" % str(e)[:160])
         return 2
 
-    # The gate log is inside run_all's temp dir; extract from stderr/stdout
-    # run_all.sh writes "GATE_LOG integrity OK: 17/17 gates recorded"
-    # and individual gate PASS/FAIL lines. Parse from stdout.
+    # run_all.sh's run_gate prints PASS to stdout and FAIL to stderr.
+    # Merge both for complete 17-gate parsing.
     print("  run_all rc=%d" % m4f_rc)
+    combined = (r1.stdout or "") + (r1.stderr or "")
     try:
-        gate_log_text = r1.stdout
         gates = parse_gates_from_log(
-            _extract_gate_log_from_stdout(r1.stdout))
+            _extract_gate_log_from_stdout(combined))
     except Exception as e:
         print("FAIL: parse gates: %s" % e)
         return 1
-    finally:
-        try:
-            os.remove(gate_log_path)
-        except Exception:
-            pass
 
     # Run legacy regression
     print("=== D2B-1: running legacy functional regression (6 platforms) ===")
     try:
         r2 = subprocess.run(
             ["bash", LEGACY_ENTRY],
-            capture_output=True, text=True, timeout=600)
+            capture_output=True, text=True, timeout=600, env=env)
         legacy_rc = r2.returncode
     except Exception as e:
         print("FAIL: legacy invocation error: %s" % str(e)[:160])
         return 2
     print("  legacy rc=%d" % legacy_rc)
     try:
-        legacy = parse_legacy_from_output(r2.stdout)
+        legacy = parse_legacy_from_output(r2.stdout or "")
     except Exception as e:
         print("FAIL: parse legacy: %s" % e)
         return 1
@@ -263,9 +288,9 @@ def capture():
         print("FAIL: validation: %s" % "; ".join(errs))
         return 1
 
-    # Compute output hashes (of raw stdout for provenance)
-    gate_sha = hashlib.sha256(r1.stdout.encode("utf-8", "replace")).hexdigest()
-    leg_sha = hashlib.sha256(r2.stdout.encode("utf-8", "replace")).hexdigest()
+    # Compute output hashes (of raw combined output for provenance)
+    gate_sha = hashlib.sha256(combined.encode("utf-8", "replace")).hexdigest()
+    leg_sha = hashlib.sha256((r2.stdout or "").encode("utf-8", "replace")).hexdigest()
 
     # Publish
     ok, perr = publish_offline(gates, legacy, sc, gate_sha, leg_sha, EVIDENCE_PATH)

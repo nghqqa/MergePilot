@@ -167,6 +167,52 @@ def test_validate_source_commit_mismatch():
     _expect(not ok and any("source_commit" in e for e in errs), "SHA mismatch → fail")
 
 
+def _gate_output(gate_names_with_rc):
+    """Build realistic run_all.sh output: header + PASS/FAIL per gate."""
+    lines = []
+    for name, rc in gate_names_with_rc:
+        lines.append("=== M4-F1 gate: %s ===" % name)
+        lines.append("some output")
+        if rc == 0:
+            lines.append("=== M4-F1 gate PASS: %s ===" % name)
+        else:
+            lines.append("=== M4-F1 gate FAIL: %s (rc=%d) ===" % (name, rc))
+    return "\n".join(lines)
+
+
+def test_parse_gates_fail_stderr_only():
+    """FAIL lines appear in stderr (run_gate prints FAIL >&2).
+    When merged with stdout, parser must find all 17."""
+    # Simulate: 15 PASS in stdout + 2 FAIL in stderr
+    stdout_part = _gate_output([(n, 0) for n in C.EXPECTED_GATES[:15]])
+    stderr_part = _gate_output([(n, 1) for n in C.EXPECTED_GATES[15:]])
+    combined = stdout_part + "\n" + stderr_part
+    gates = C.parse_gates_from_log(C._extract_gate_log_from_stdout(combined))
+    _expect(len(gates) == 17, "merged stdout+stderr → 17 gates found")
+    _expect(gates[15]["rc"] == 1, "gate 16 rc=1 (from stderr)")
+    _expect(gates[15]["status"] == "FAIL", "gate 16 status=FAIL")
+
+
+def test_merged_exactly_17():
+    """Merged stdout+stderr with all 17 gates → exactly 17 parsed."""
+    pairs = [(n, 0 if i < 16 else 1) for i, n in enumerate(C.EXPECTED_GATES)]
+    combined = _gate_output(pairs)
+    gates = C.parse_gates_from_log(C._extract_gate_log_from_stdout(combined))
+    _expect(len(gates) == 17, "exactly 17 from merged")
+    _expect(sum(1 for g in gates if g["status"] == "PASS") == 16, "16 PASS")
+    _expect(sum(1 for g in gates if g["status"] == "FAIL") == 1, "1 FAIL")
+
+
+def test_two_fail_gates_no_evidence():
+    """2 FAIL gates → validate fails → no evidence published."""
+    gates = [{"gate_id": n, "rc": 0 if i < 15 else 1,
+              "status": "PASS" if i < 15 else "FAIL"}
+             for i, n in enumerate(C.EXPECTED_GATES)]
+    ok, errs = C.validate_offline(gates, _legacy(), HEAD, HEAD)
+    _expect(not ok, "2 FAIL gates → validate fails")
+    _expect(any("rc" in e for e in errs), "error mentions rc")
+
+
 def test_secret_scan():
     _expect(C.secret_scan("ghp_" + "a" * 36), "PAT detected")
     _expect(not C.secret_scan("clean text"), "clean text ok")
