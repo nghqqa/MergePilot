@@ -43,6 +43,16 @@ GATEWAY_ROLE="${GATEWAY_ROLE:-m5coordinator}"
 L2_MERGE_ENABLED="${L2_MERGE_ENABLED:-0}"
 POLL_INTERVAL="${POLL_INTERVAL:-8}"
 
+# disk guard: host+guest free-space threshold (BEFORE any docker op; fail-closed)
+_MP_DISK_GUARD_SH="$ROOT/tools/hiclab/disk_guard.sh"
+if [ ! -f "$_MP_DISK_GUARD_SH" ]; then
+  echo "ERROR: disk guard module missing: $_MP_DISK_GUARD_SH" >&2
+  exit 2
+fi
+# shellcheck source=/dev/null
+source "$_MP_DISK_GUARD_SH"
+mp_disk_guard || { echo "ERROR: disk guard fail-closed; aborting before any docker op" >&2; exit 2; }
+
 echo "=== M5-0 Candidate Controller startup ==="
 echo "container=$CONTAINER_NAME user=$MATRIX_USER consumer=$CONTROLLER_CONSUMER_NAME prefix=$M4F_RUN_PREFIX"
 

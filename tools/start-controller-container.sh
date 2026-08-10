@@ -72,6 +72,16 @@ ENV_ARGS=(--env-file "$ENV_FILE"
   -e RESERVED_RUN_PREFIXES="$RESERVED_RUN_PREFIXES")
 
 # ─── 1. build ───
+# disk guard: host+guest free-space threshold (BEFORE any docker op; fail-closed)
+_MP_DISK_GUARD_SH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/hiclab/disk_guard.sh"
+if [ ! -f "$_MP_DISK_GUARD_SH" ]; then
+  echo "ERROR: disk guard module missing: $_MP_DISK_GUARD_SH" >&2
+  exit 2
+fi
+# shellcheck source=/dev/null
+source "$_MP_DISK_GUARD_SH"
+mp_disk_guard || { echo "ERROR: disk guard fail-closed; aborting before any docker op" >&2; exit 2; }
+
 echo "=== build controller image (ctx=$BUILD_CTX) ==="
 docker build -t mergepilot-controller:latest "$BUILD_CTX" 2>&1 | tail -5
 
@@ -117,8 +127,22 @@ else
   echo "=== no existing $NAME → fresh run ==="
 fi
 
+# ─── 5a. restart policy: consistent with guarded mode if installed ───
+# If hiclab-guarded-start.service is enabled, mergepilot-controller MUST be
+# restart=no (managed by the supervisor). Otherwise keep the current
+# unless-stopped behavior but explicitly report UNPROTECTED so the boot
+# bypass is visible. Dual management (unless-stopped + supervisor) is forbidden.
+if systemctl is-enabled --quiet hiclab-guarded-start.service 2>/dev/null; then
+  RESTART_POLICY="no"
+  echo "=== guarded mode ACTIVE: restart=no (supervisor-managed) ==="
+else
+  RESTART_POLICY="unless-stopped"
+  echo "=== UNPROTECTED: guarded startup NOT installed; using restart=unless-stopped ===" >&2
+  echo "=== (run tools/hiclab/install_guarded_startup.sh --apply to close the boot bypass) ===" >&2
+fi
+
 # ─── 5. run 新容器(docker run 失败 → set -e → trap 回滚)───
-docker run -d --name "$NAME" $NET --restart unless-stopped "${ENV_ARGS[@]}" mergepilot-controller:latest >/dev/null
+docker run -d --name "$NAME" $NET --restart "$RESTART_POLICY" "${ENV_ARGS[@]}" mergepilot-controller:latest >/dev/null
 
 # ─── 6. 等 Docker health → healthy(非 starting;最长 ~120s)───
 echo "=== health wait (poll for healthy) ==="
