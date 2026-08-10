@@ -21,18 +21,25 @@ It is NOT "complete worker storage hardening". Worker-creation hardening
 
 Because neither a deployed+audited socket proxy nor a confirmed upstream
 disable-auto-create capability exists, ``guarded_start.py`` PROGRAMMATICALLY
-refuses to start ``hiclaw-manager``: ``manager_start_allowed()`` checks for
-the marker files ``/etc/hiclab/proxy-deployed`` and
-``/etc/hiclab/upstream-disable-auto-create``; when neither is present,
-hiclaw-manager is added to the ``blocked`` list, never started, never
-health-gated, and the supervisor emits:
+refuses to start **both** ``hiclaw-controller`` **and** ``hiclaw-manager``
+when no valid capability marker is present. ``manager_start_allowed()``
+checks the marker files; when neither validates:
 
-  ``BLOCKED_UPSTREAM: hiclaw-manager auto-create cannot be hardened``
+  * **0 production containers are started** (no partial stack).
+  * ``hiclaw-controller`` is added to the ``blocked`` list alongside
+    ``hiclaw-manager`` — the controller has docker-socket access and spawns
+    workers / re-spawns containers via the HiClaw platform, constituting
+    the same auto-create bypass as the manager.
+  * If ``hiclaw-controller`` is already running, the guard **stops it**
+    (it cannot be left running as a "previously-running" exception).
+  * The supervisor emits ``BLOCKED_UPSTREAM`` and exits non-zero.
 
-Other base/dependent containers still start in health order. This is code,
-not a documentation rule. D2B-3 therefore remains non-runnable until a
-proxy or upstream capability exists. Manually pre-creating workers does NOT
-satisfy this and does NOT unblock the Manager auto-create path.
+Rollback ordering: ``_rollback()`` stops ``hiclaw-controller`` **first**
+(before other containers), then re-verifies remaining containers are stopped
+(the controller may have re-spawned them before dying).
+
+This is code, not a documentation rule. The full production stack is NOT
+startable without a valid capability marker. D2B-3 remains non-runnable.
 
 ### Production operating restriction (option b)
 

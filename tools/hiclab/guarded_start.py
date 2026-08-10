@@ -271,11 +271,29 @@ def wait_healthy(name, docker_runner, timeout, poll, sleep_fn=None,
 
 
 def _rollback(started_names, docker_runner):
-    """Stop (in reverse order) every container started this round."""
+    """Stop every container started this round.
+
+    hiclaw-controller is stopped FIRST — it has docker-socket access and
+    actively re-spawns containers via the HiClaw platform. After the
+    controller stops, the remaining containers are stopped (reverse start
+    order). Then re-verify: the controller may have re-started others
+    before dying.
+    """
     stopped = []
-    for name in reversed(started_names):
+    names = list(started_names)
+    if "hiclaw-controller" in names:
+        names.remove("hiclaw-controller")
+        if _stop("hiclaw-controller", docker_runner) == 0:
+            stopped.append("hiclaw-controller")
+    for name in reversed(names):
         if _stop(name, docker_runner) == 0:
             stopped.append(name)
+    # Re-verify: controller might have re-spawned before dying
+    if "hiclaw-controller" in stopped:
+        time.sleep(1)
+        for name in started_names:
+            if name != "hiclaw-controller" and _is_running(name, docker_runner):
+                _stop(name, docker_runner)
     return stopped
 
 
@@ -297,12 +315,30 @@ def start_with_health_gate(docker_runner, timeout=90, poll=3, sleep_fn=None,
 
     mgr_ok, mgr_reason = manager_start_allowed(stat_fn=stat_fn,
                                                 read_fn=read_fn)
-    blocked = []
     if not mgr_ok:
-        blocked.append(MANAGER_NAME)
+        # CAPABILITY PREFLIGHT: no valid marker → cannot safely run
+        # hiclaw-controller (docker-socket bypass: spawns workers, restarts
+        # containers) or hiclaw-manager (auto-create). Start 0 production
+        # containers. Stop controller if already running.
+        blocked = [MANAGER_NAME, "hiclaw-controller"]
         sys.stderr.write(
-            "BLOCKED_UPSTREAM: hiclaw-manager auto-create cannot be hardened "
-            "(%s)\n" % mgr_reason)
+            "BLOCKED_UPSTREAM: no capability marker — hiclaw-controller and "
+            "hiclaw-manager cannot be safely started (%s)\n" % mgr_reason)
+        controller_stopped = []
+        if _is_running("hiclaw-controller", docker_runner):
+            _stop("hiclaw-controller", docker_runner)
+            controller_stopped.append("hiclaw-controller")
+            sleep_fn(2)
+            if _is_running("hiclaw-controller", docker_runner):
+                _stop("hiclaw-controller", docker_runner)
+        return {"ok": False, "phase": "preflight",
+                "started_this_round": [],
+                "blocked": blocked, "failed_at": None,
+                "detail": "BLOCKED_UPSTREAM: %s" % mgr_reason,
+                "stopped_on_rollback": controller_stopped,
+                "blocked_reason": mgr_reason}
+
+    blocked = []
 
     def _gate_phase(members):
         for m in members:

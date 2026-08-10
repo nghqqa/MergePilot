@@ -201,42 +201,47 @@ class TestPreviouslyRunning(unittest.TestCase):
         self.assertFalse(result["ok"])
 
 
-class TestManagerBlocked(unittest.TestCase):
-    def test_blocked_without_markers(self):
+class TestCapabilityPreflight(unittest.TestCase):
+    """No valid marker → 0 production containers started; controller stopped
+    if already running (docker-socket bypass)."""
+
+    def test_no_marker_zero_starts(self):
         runner = MockRunner()
         _all_healthy_setup(runner)
         stat_fn, read_fn = _no_markers()
         result = gs.start_with_health_gate(
             runner, timeout=1, poll=0, sleep_fn=lambda _s: None,
             stat_fn=stat_fn, read_fn=read_fn)
+        self.assertFalse(result["ok"])
         self.assertIn("hiclaw-manager", result["blocked"])
-        self.assertNotIn("hiclaw-manager", result["started_this_round"])
-        starts = [c[-1] for c in runner.calls if len(c) > 1 and c[1] == "start"]
-        self.assertNotIn("hiclaw-manager", starts)
+        self.assertIn("hiclaw-controller", result["blocked"])
+        self.assertEqual(result["started_this_round"], [])
+        starts = [c for c in runner.calls if len(c) > 1 and c[1] == "start"]
+        self.assertEqual(len(starts), 0)
 
-    def test_allowed_with_proxy_marker(self):
+    def test_no_marker_stops_running_controller(self):
         runner = MockRunner()
-        _all_healthy_setup(runner)
-        stat_fn, read_fn = _proxy_marker_only()
+        runner._running.add("hiclaw-controller")
+        stat_fn, read_fn = _no_markers()
         result = gs.start_with_health_gate(
             runner, timeout=1, poll=0, sleep_fn=lambda _s: None,
             stat_fn=stat_fn, read_fn=read_fn)
-        self.assertEqual(result["blocked"], [])
-        self.assertIn("hiclaw-manager", result["started_this_round"])
+        self.assertFalse(result["ok"])
+        self.assertIn("hiclaw-controller", result["stopped_on_rollback"])
+        self.assertNotIn("hiclaw-controller", runner._running)
 
-    def test_allowed_with_upstream_marker(self):
+    def test_no_marker_no_partial_stack(self):
         runner = MockRunner()
-        _all_healthy_setup(runner)
-        stat_fn, read_fn = _upstream_marker_only()
+        stat_fn, read_fn = _no_markers()
         result = gs.start_with_health_gate(
             runner, timeout=1, poll=0, sleep_fn=lambda _s: None,
             stat_fn=stat_fn, read_fn=read_fn)
-        self.assertEqual(result["blocked"], [])
-        self.assertIn("hiclaw-manager", result["started_this_round"])
+        self.assertEqual(result["started_this_round"], [])
+        self.assertEqual(result["phase"], "preflight")
+        self.assertIn("BLOCKED_UPSTREAM", result["detail"])
 
-    def test_emits_blocked_message(self):
+    def test_no_marker_emits_blocked_message(self):
         runner = MockRunner()
-        _all_healthy_setup(runner)
         stat_fn, read_fn = _no_markers()
         old_err = sys.stderr
         sys.stderr = io.StringIO()
@@ -248,32 +253,91 @@ class TestManagerBlocked(unittest.TestCase):
         finally:
             sys.stderr = old_err
         self.assertIn("BLOCKED_UPSTREAM", err)
-        self.assertIn("hiclaw-manager auto-create cannot be hardened", err)
+        self.assertIn("hiclaw-controller", err)
+        self.assertIn("hiclaw-manager", err)
 
-    def test_other_containers_start_despite_manager_blocked(self):
+    def test_no_marker_no_workers_started(self):
         runner = MockRunner()
         _all_healthy_setup(runner)
         stat_fn, read_fn = _no_markers()
-        result = gs.start_with_health_gate(
-            runner, timeout=1, poll=0, sleep_fn=lambda _s: None,
-            stat_fn=stat_fn, read_fn=read_fn)
-        self.assertTrue(result["ok"])  # base services succeeded
-        for n in ("audit-pg", "github-mcp", "hiclaw-controller",
-                  "policy-gw", "mergepilot-controller"):
-            self.assertIn(n, result["started_this_round"])
-
-    def test_no_precreated_worker_workaround(self):
-        """Blocked manager must not be faked by starting workers."""
-        runner = MockRunner()
-        _all_healthy_setup(runner)
-        stat_fn, read_fn = _no_markers()
-        result = gs.start_with_health_gate(
+        gs.start_with_health_gate(
             runner, timeout=1, poll=0, sleep_fn=lambda _s: None,
             stat_fn=stat_fn, read_fn=read_fn)
         starts = [c[-1] for c in runner.calls if len(c) > 1 and c[1] == "start"]
         for s in starts:
-            self.assertFalse(s.startswith("hiclaw-worker-"),
-                             "worker started as workaround: %s" % s)
+            self.assertFalse(s.startswith("hiclaw-worker-"))
+
+
+class TestMarkerValidStartup(unittest.TestCase):
+    """Valid marker → original phased startup (all 6, controller included)."""
+
+    def test_valid_marker_starts_all_six(self):
+        runner = MockRunner()
+        _all_healthy_setup(runner)
+        result = gs.start_with_health_gate(
+            runner, timeout=1, poll=0, sleep_fn=lambda _s: None,
+            stat_fn=_V_STAT, read_fn=_V_READ)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["blocked"], [])
+        self.assertEqual(sorted(result["started_this_round"]),
+                         sorted(mc.names()))
+
+    def test_valid_marker_controller_started(self):
+        runner = MockRunner()
+        _all_healthy_setup(runner)
+        result = gs.start_with_health_gate(
+            runner, timeout=1, poll=0, sleep_fn=lambda _s: None,
+            stat_fn=_V_STAT, read_fn=_V_READ)
+        self.assertIn("hiclaw-controller", result["started_this_round"])
+        self.assertIn("hiclaw-manager", result["started_this_round"])
+
+
+class TestRollbackControllerFirst(unittest.TestCase):
+    """Rollback must stop hiclaw-controller BEFORE other containers (it
+    re-spawns them via docker socket)."""
+
+    def test_controller_stopped_first(self):
+        runner = MockRunner()
+        started = ["audit-pg", "github-mcp", "hiclaw-controller",
+                   "policy-gw", "mergepilot-controller"]
+        for n in started:
+            runner._running.add(n)
+        gs._rollback(started, runner)
+        stops = [c[-1] for c in runner.calls if len(c) > 1 and c[1] == "stop"]
+        self.assertEqual(stops[0], "hiclaw-controller")
+
+    def test_all_stopped_after_rollback(self):
+        runner = MockRunner()
+        started = ["audit-pg", "github-mcp", "hiclaw-controller"]
+        for n in started:
+            runner._running.add(n)
+        gs._rollback(started, runner)
+        for n in started:
+            self.assertNotIn(n, runner._running)
+
+    def test_rollback_re_verifies_respawned(self):
+        """After controller stop, re-verify catches containers it re-spawned."""
+        runner = MockRunner()
+        started = ["audit-pg", "hiclaw-controller", "policy-gw"]
+        for n in started:
+            runner._running.add(n)
+        original_stop = gs._stop
+        call_count = [0]
+
+        def tracking_stop(name, dr):
+            rc = original_stop(name, dr)
+            call_count[0] += 1
+            # Simulate controller re-spawning policy-gw before dying
+            if name == "hiclaw-controller":
+                runner._running.add("policy-gw")
+            return rc
+
+        gs._stop = tracking_stop
+        try:
+            gs._rollback(started, runner)
+        finally:
+            gs._stop = original_stop
+        self.assertNotIn("policy-gw", runner._running)
 
 
 class TestMarkerValidation(unittest.TestCase):
@@ -361,29 +425,6 @@ class TestMarkerValidation(unittest.TestCase):
         stat_fn, read_fn = _marker_fns(spec)
         ok, _ = gs.manager_start_allowed(stat_fn=stat_fn, read_fn=read_fn)
         self.assertFalse(ok)
-
-
-class TestAllHealthy(unittest.TestCase):
-    def test_success_all_six_with_markers(self):
-        runner = MockRunner()
-        _all_healthy_setup(runner)
-        result = gs.start_with_health_gate(
-            runner, timeout=1, poll=0, sleep_fn=lambda _s: None,
-            stat_fn=_V_STAT, read_fn=_V_READ)
-        self.assertTrue(result["ok"])
-        self.assertEqual(sorted(result["started_this_round"]),
-                         sorted(mc.names()))
-        self.assertEqual(result["blocked"], [])
-
-    def test_success_five_with_manager_blocked(self):
-        runner = MockRunner()
-        _all_healthy_setup(runner)
-        result = gs.start_with_health_gate(
-            runner, timeout=1, poll=0, sleep_fn=lambda _s: None,
-            stat_fn=_N_STAT, read_fn=_N_READ)
-        self.assertTrue(result["ok"])
-        self.assertEqual(len(result["started_this_round"]), 5)
-        self.assertEqual(result["blocked"], ["hiclaw-manager"])
 
 
 class TestStartedAtParse(unittest.TestCase):
