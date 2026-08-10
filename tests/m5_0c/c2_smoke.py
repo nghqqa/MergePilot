@@ -224,6 +224,8 @@ def delete_branch_mcp(cfg, branch, run_key):
 CLEANUP_PROPAGATION_DELAY = 2.0   # fixed sleep after close, lets GitHub propagate
 DELETE_ATTEMPTS = 3               # delete attempts per branch
 DELETE_RETRY_DELAY = 2.0          # seconds between delete retries
+CONFIRM_GONE_POLLS = 3            # bounded list_branches polls after delete
+CONFIRM_GONE_DELAY = 2.0          # seconds between confirmation polls
 
 
 def _delete_branch_with_retry(cfg, branch, run_key, pr_num, *,
@@ -244,6 +246,44 @@ def _delete_branch_with_retry(cfg, branch, run_key, pr_num, *,
             close_fn(cfg, pr_num)
         sleep(delay)
     return d
+
+
+def _list_branch_names_mcp(cfg):
+    """Return list of branch names via GitHub MCP list_branches, or None on failure."""
+    r = ghmcp_call(cfg, "list_branches", {"owner": OWNER, "repo": REPO})
+    data = _gj(r)
+    if data is None:
+        return None
+    rows = data if isinstance(data, list) else data.get("branches", data.get("data", []))
+    if not isinstance(rows, list):
+        return None
+    return [b.get("name") for b in rows if isinstance(b, dict)]
+
+
+def _verify_branches_gone(cfg, branches, *, list_fn=None,
+                          max_polls=CONFIRM_GONE_POLLS,
+                          delay=CONFIRM_GONE_DELAY, sleep=time.sleep):
+    """Bounded-poll list_branches to confirm ALL given branches are absent.
+
+    Returns (confirmed: bool, residue: list, reason: str).
+    Only QUERIES (never deletes). No REST; uses the existing MCP list_branches
+    tool. Fail-closed: query failure or branch still present after max_polls →
+    confirmed=False with residue listing the stale branches.
+    """
+    list_fn = list_fn or _list_branch_names_mcp
+    remaining = list(branches)
+    for i in range(max_polls):
+        try:
+            names = list_fn(cfg)
+        except Exception:
+            return (False, remaining, "branch-list query raised (poll %d)" % (i + 1))
+        if names is None:
+            return (False, remaining, "branch-list query failed (poll %d)" % (i + 1))
+        remaining = [b for b in remaining if b in names]
+        if not remaining:
+            return (True, [], "confirmed absent (poll %d)" % (i + 1))
+        sleep(delay)
+    return (False, remaining, "still present after %d polls" % max_polls)
 
 
 def gateway_call(cfg, role, tok, tool, args):
@@ -432,22 +472,32 @@ def start_gwhmcp_cand(cfg, toks, pws):
 
 
 def cleanup_gh(cfg, run_key):
-    """Close both PRs, let GitHub propagate (one fixed sleep — no extra bridge
-    calls), then delete both branches with light retry on open_pr_exists. Absorbs
-    PR-close propagation delay so a transient close no longer leaves a stale
-    branch that fails the next run's N5 stale-branch check. No REST."""
+    """Close both PRs, let GitHub propagate (one fixed sleep), then delete both
+    branches with light retry on open_pr_exists, then bounded-verify that each
+    deleted branch has disappeared from the branch list. Returns dict:
+    {clean: bool, residue: list, reason: str}. No REST."""
     for label, pr in [("fix", CL.get("pr")), ("src", CL.get("src_pr"))]:
         if pr:
             r = close_pr_mcp(cfg, pr)
             d = _gj(r) or {}
             print("  [cleanup] close %s PR %s -> state=%s" % (label, pr, d.get("state")))
     time.sleep(CLEANUP_PROPAGATION_DELAY)
+    branches_to_verify = []
     for label, br, pr in [("fix", CL.get("branch"), CL.get("pr")),
                           ("src", CL.get("src_branch"), CL.get("src_pr"))]:
         if br:
             d = _delete_branch_with_retry(cfg, br, run_key, pr)
             print("  [cleanup] delete %s branch %s -> deleted=%s refused=%s reason=%s"
                   % (label, br, d.get("deleted"), d.get("refused"), d.get("reason")))
+            if d.get("deleted") or d.get("already_absent"):
+                branches_to_verify.append(br)
+    if branches_to_verify:
+        confirmed, residue, reason = _verify_branches_gone(cfg, branches_to_verify)
+        print("  [cleanup] verify gone: confirmed=%s residue=%s reason=%s"
+              % (confirmed, residue, reason))
+        if not confirmed:
+            return {"clean": False, "residue": residue, "reason": reason}
+    return {"clean": True, "residue": [], "reason": "ok"}
 
 
 def teardown(cfg):
@@ -680,7 +730,12 @@ def main():
         except Exception as e:
             print("  [diag] audit capture: %s" % e)
         if CL.get("ok_to_clean_gh"):
-            cleanup_gh(cfg, rk)
+            clean_result = cleanup_gh(cfg, rk)
+            if not clean_result.get("clean"):
+                print("  [cleanup] INCOMPLETE: residue=%s reason=%s" % (
+                    clean_result.get("residue"), clean_result.get("reason")))
+                results.append({"test_id": "CLEANUP_PROPAGATION", "passed": False,
+                                "detail": "branch cleanup residue: %s" % clean_result.get("residue")})
         # residue checks BEFORE teardown (bridge still up)
         bl = list_branch_names_mcp(cfg) if cfg else []
         gh_branch_residue = [b for b in [CL.get("branch"), CL.get("src_branch")] if b and b in bl]

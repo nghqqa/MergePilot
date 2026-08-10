@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
-"""Unit tests for c2_smoke cleanup_gh retry logic.
+"""Unit tests for c2_smoke cleanup_gh retry + propagation verification.
 
 Root cause fixed: GitHub PR-close is eventually-consistent; the bridge refuses
 branch delete while a PR is open (open_pr_exists). cleanup_gh now closes PRs,
 waits a fixed propagation delay, then deletes branches with a light retry on
-open_pr_exists. (An earlier per-attempt polling version spawned ~130 containers
-per run and exceeded C3_TIMEOUT.) These tests exercise the retry policy via
-injected callables (no stack, no WSL, no network).
+open_pr_exists. After a successful delete, _verify_branches_gone bounded-polls
+list_branches to confirm the branch has actually disappeared (GitHub delete is
+also eventually-consistent — a branch may linger in list_branches for seconds
+after the delete API returns success).
+
+These tests exercise the retry + verification policy via injected callables
+(no stack, no WSL, no network).
 """
 from __future__ import annotations
 import json
@@ -31,7 +35,7 @@ def _resp(d):
 # ── _delete_branch_with_retry ──
 
 def test_delete_succeeds_first_try():
-    """No propagation delay → 1 delete, no close, no sleep."""
+    """No propagation delay -> 1 delete, no close, no sleep."""
     closes = []; sleeps = []
     d = S._delete_branch_with_retry(
         "cfg", "fix/abc", "rk", 42,
@@ -44,7 +48,7 @@ def test_delete_succeeds_first_try():
 
 
 def test_delete_retries_after_open_pr_recloses():
-    """Bridge refuses open_pr_exists → re-close PR → sleep → retry → deleted."""
+    """Bridge refuses open_pr_exists -> re-close PR -> sleep -> retry -> deleted."""
     del_seq = [{"reason": "open_pr_exists", "refused": True},
                {"deleted": True, "already_absent": False}]
     state = {"i": 0}; reclosed = []
@@ -64,7 +68,7 @@ def test_delete_retries_after_open_pr_recloses():
 
 
 def test_delete_no_pr_does_not_reclose():
-    """pr_num None + refused open_pr_exists → never calls close (nothing to close)."""
+    """pr_num None + refused open_pr_exists -> never calls close (nothing to close)."""
     closes = []
     d = S._delete_branch_with_retry(
         "cfg", "fix/abc", "rk", None, attempts=2, delay=0.001,
@@ -85,7 +89,7 @@ def test_delete_already_absent_is_success():
 
 
 def test_delete_non_open_pr_refusal_not_reclosed():
-    """A refusal that is NOT open_pr_exists (e.g. forbidden) → no re-close, just retry."""
+    """A refusal that is NOT open_pr_exists (e.g. forbidden) -> no re-close, just retry."""
     closes = []
     d = S._delete_branch_with_retry(
         "cfg", "fix/abc", "rk", 42, attempts=2, delay=0.001,
@@ -96,29 +100,135 @@ def test_delete_non_open_pr_refusal_not_reclosed():
     _x(d.get("reason") == "forbidden_403", "returns the refusal reason")
 
 
-# ── cleanup_gh wiring ──
+# ── _verify_branches_gone ──
 
-def test_cleanup_gh_closes_sleeps_then_deletes():
-    """cleanup_gh closes both PRs, sleeps once (propagation), then deletes both
-    branches via _delete_branch_with_retry. Verifies ordering + single sleep."""
-    S.CL = {"pr": 7, "src_pr": 8, "branch": "fix/rk1-aaaaaaaaaaaa", "src_branch": "feature/c2-src-rk1"}
+def test_verify_gone_first_poll():
+    """Branch absent on first list_branches query -> confirmed immediately."""
+    sleeps = []
+    ok, residue, reason = S._verify_branches_gone(
+        "cfg", ["fix/abc", "feature/c2-src-x"],
+        list_fn=lambda c: ["main", "other"],
+        max_polls=3, delay=0.01,
+        sleep=lambda s: sleeps.append(s))
+    _x(ok is True, "confirmed absent on first poll")
+    _x(residue == [], "no residue")
+    _x(len(sleeps) == 0, "no sleep needed")
+
+
+def test_verify_gone_present_then_absent():
+    """Branch present on poll 1, absent on poll 2 -> confirmed after 1 sleep."""
+    poll = {"i": 0}
+
+    def list_fn(c):
+        names = ["main", "fix/abc"] if poll["i"] == 0 else ["main"]
+        poll["i"] += 1
+        return names
+
+    sleeps = []
+    ok, residue, reason = S._verify_branches_gone(
+        "cfg", ["fix/abc"],
+        list_fn=list_fn,
+        max_polls=3, delay=0.01,
+        sleep=lambda s: sleeps.append(s))
+    _x(ok is True, "confirmed absent on poll 2")
+    _x(len(sleeps) == 1, "slept once between polls")
+
+
+def test_verify_gone_still_present_fail_closed():
+    """Branch never disappears -> fail-closed after max_polls."""
+    ok, residue, reason = S._verify_branches_gone(
+        "cfg", ["fix/abc"],
+        list_fn=lambda c: ["main", "fix/abc"],
+        max_polls=3, delay=0.001,
+        sleep=lambda s: None)
+    _x(ok is False, "fail-closed when branch persists")
+    _x("fix/abc" in residue, "residue includes the stale branch")
+
+
+def test_verify_gone_query_none_fail_closed():
+    """list_fn returns None (query failure) -> fail-closed immediately."""
+    ok, residue, reason = S._verify_branches_gone(
+        "cfg", ["fix/abc"],
+        list_fn=lambda c: None,
+        max_polls=3, delay=0.001,
+        sleep=lambda s: None)
+    _x(ok is False, "fail-closed on None query result")
+    _x("fix/abc" in residue, "residue preserved on query failure")
+
+
+def test_verify_gone_query_exception_fail_closed():
+    """list_fn raises -> fail-closed."""
+    ok, residue, reason = S._verify_branches_gone(
+        "cfg", ["fix/abc"],
+        list_fn=lambda c: (_ for _ in ()).throw(RuntimeError("boom")),
+        max_polls=3, delay=0.001,
+        sleep=lambda s: None)
+    _x(ok is False, "fail-closed on query exception")
+    _x("fix/abc" in residue, "residue preserved on exception")
+
+
+# ── cleanup_gh wiring (with verification) ──
+
+def test_cleanup_gh_closes_sleeps_deletes_verifies():
+    """cleanup_gh closes both PRs, sleeps once (propagation), deletes both
+    branches, then verifies both gone. Verifies ordering."""
+    S.CL = {"pr": 7, "src_pr": 8, "branch": "fix/rk1-aaaaaaaaaaaa",
+            "src_branch": "feature/c2-src-rk1"}
     events = []
-    real_sleep, real_close, real_del = S.time.sleep, S.close_pr_mcp, S._delete_branch_with_retry
+    real_sleep = S.time.sleep
+    real_close = S.close_pr_mcp
+    real_del = S._delete_branch_with_retry
+    real_verify = S._verify_branches_gone
     S.time.sleep = lambda s: events.append(("sleep", s))  # type: ignore
     S.close_pr_mcp = lambda cfg, pr: events.append(("close", pr)) or _resp({"state": "closed"})  # type: ignore
     S._delete_branch_with_retry = lambda cfg, br, rk, pr, **kw: events.append(("delete", br, pr)) or {"deleted": True, "already_absent": False}  # type: ignore
+    S._verify_branches_gone = lambda cfg, branches, **kw: events.append(("verify", tuple(branches))) or (True, [], "mock")  # type: ignore
+    try:
+        result = S.cleanup_gh({"net": "x"}, "rk1")
+    finally:
+        S.time.sleep, S.close_pr_mcp, S._delete_branch_with_retry, S._verify_branches_gone = real_sleep, real_close, real_del, real_verify  # type: ignore
+    kinds = [e[0] for e in events]
+    _x(kinds == ["close", "close", "sleep", "delete", "delete", "verify"],
+       "close both PRs -> one sleep -> delete both -> verify (got %s)" % kinds)
+    _x(result.get("clean") is True, "cleanup clean when verify confirms")
+
+
+def test_cleanup_gh_verify_fails_returns_unclean():
+    """Delete succeeds but verify reports branch still present -> clean=False."""
+    S.CL = {"pr": 7, "src_pr": None, "branch": "fix/rk1-aaa", "src_branch": None}
+    _saved = (S._verify_branches_gone, S._delete_branch_with_retry,
+              S.close_pr_mcp, S.time.sleep)
+    S._verify_branches_gone = lambda cfg, branches, **kw: (False, list(branches), "still present")  # type: ignore
+    S._delete_branch_with_retry = lambda cfg, br, rk, pr, **kw: {"deleted": True}  # type: ignore
+    S.close_pr_mcp = lambda cfg, pr: _resp({"state": "closed"})  # type: ignore
+    S.time.sleep = lambda s: None  # type: ignore
+    try:
+        result = S.cleanup_gh({"net": "x"}, "rk1")
+    finally:
+        S._verify_branches_gone, S._delete_branch_with_retry, S.close_pr_mcp, S.time.sleep = _saved  # type: ignore
+    _x(result.get("clean") is False, "unclean when verify fails")
+    _x("fix/rk1-aaa" in result.get("residue", []), "residue includes stale branch")
+
+
+def test_cleanup_gh_already_absent_still_verifies():
+    """already_absent delete result still triggers verification."""
+    S.CL = {"pr": 7, "src_pr": None, "branch": "fix/rk1-aaa", "src_branch": None}
+    verified = {"called": False}
+    _saved = (S._verify_branches_gone, S._delete_branch_with_retry,
+              S.close_pr_mcp, S.time.sleep)
+
+    def track_verify(cfg, branches, **kw):
+        verified["called"] = True
+        return (True, [], "mock")
+    S._verify_branches_gone = track_verify  # type: ignore
+    S._delete_branch_with_retry = lambda cfg, br, rk, pr, **kw: {"already_absent": True}  # type: ignore
+    S.close_pr_mcp = lambda cfg, pr: _resp({"state": "closed"})  # type: ignore
+    S.time.sleep = lambda s: None  # type: ignore
     try:
         S.cleanup_gh({"net": "x"}, "rk1")
     finally:
-        S.time.sleep, S.close_pr_mcp, S._delete_branch_with_retry = real_sleep, real_close, real_del  # type: ignore
-    # ordering: close fix, close src, sleep, delete fix, delete src
-    kinds = [e[0] for e in events]
-    _x(kinds == ["close", "close", "sleep", "delete", "delete"],
-       "close both PRs -> one sleep -> delete both (got %s)" % kinds)
-    _x(len([e for e in events if e[0] == "sleep"]) == 1, "exactly one propagation sleep")
-    deletes = [e for e in events if e[0] == "delete"]
-    _x(deletes == [("delete", "fix/rk1-aaaaaaaaaaaa", 7), ("delete", "feature/c2-src-rk1", 8)],
-       "delete both branches with their bound PR")
+        S._verify_branches_gone, S._delete_branch_with_retry, S.close_pr_mcp, S.time.sleep = _saved  # type: ignore
+    _x(verified["called"] is True, "verify called even for already_absent delete")
 
 
 def main():
