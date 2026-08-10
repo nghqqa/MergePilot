@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import stat as stat_mod
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -94,6 +95,38 @@ class FsOps:
         except FileNotFoundError:
             return True
 
+    def dir_lstat(self, path):
+        """Return dict: existed, is_dir, is_symlink, uid, mode (& 0o777).
+        Uses lstat (does not follow symlinks). Never raises."""
+        try:
+            st = os.lstat(path)
+        except FileNotFoundError:
+            return {"existed": False, "is_dir": False, "is_symlink": False,
+                    "uid": None, "mode": None}
+        except OSError:
+            return {"existed": False, "is_dir": False, "is_symlink": False,
+                    "uid": None, "mode": None}
+        return {"existed": True,
+                "is_dir": stat_mod.S_ISDIR(st.st_mode),
+                "is_symlink": stat_mod.S_ISLNK(st.st_mode),
+                "uid": st.st_uid, "mode": st.st_mode & 0o777}
+
+    def mkdir(self, path, mode=0o755):
+        """Create a single directory with the given mode. Raises on failure."""
+        os.mkdir(path, mode)
+        os.chmod(path, mode)  # enforce mode regardless of umask
+        return True
+
+    def rmdir_if_empty(self, path):
+        """Remove directory only if empty. Returns True if removed, False if
+        not empty/absent (correctly skipped, NOT a failure). Raises on other
+        errors."""
+        try:
+            os.rmdir(path)
+            return True
+        except OSError:
+            return False
+
 
 class DockerOps:
     def __init__(self):
@@ -162,6 +195,8 @@ def take_snapshot(managed, docker, fs, systemd, managed_file, unit_path):
     """Capture the full pre-apply state for exact rollback."""
     snap = {"policies": {}, "managed_file": {}, "unit_file": {},
             "unit_enabled": "not-found"}
+    md_path = os.path.dirname(managed_file) or "."
+    snap["managed_dir"] = {"path": md_path, "state": fs.dir_lstat(md_path)}
     for n in managed:
         pol = docker.get_restart_policy(n)
         snap["policies"][n] = pol if pol is not None else "no"
@@ -232,6 +267,15 @@ def _verify_restored(snap, docker, fs, systemd, managed_file, unit_path,
     if actual_en != snap["unit_enabled"]:
         failures.append("enabled state: %s != %s"
                         % (actual_en, snap["unit_enabled"]))
+    md_snap = snap.get("managed_dir", {})
+    if md_snap and md_snap["state"].get("existed"):
+        try:
+            actual_md = fs.dir_lstat(md_snap["path"])
+        except Exception as exc:
+            failures.append("managed dir lstat raised: %s" % exc)
+            actual_md = {"existed": False}
+        if not actual_md.get("existed"):
+            failures.append("managed dir should still exist")
     return failures
 
 
@@ -259,6 +303,15 @@ def rollback(snap, docker, fs, systemd, managed_file, unit_path, unit_name):
                 mf["bytes"], mode=mf["mode"])
     else:
         _record("remove managed file", fs.remove, managed_file)
+    # Managed dir: remove ONLY if this installer created it (absent in snapshot)
+    # AND it is now empty. Non-empty (other content) -> correctly skipped.
+    md_snap = snap.get("managed_dir", {})
+    md_path = md_snap.get("path")
+    if md_path and not md_snap.get("state", {}).get("existed", True):
+        try:
+            fs.rmdir_if_empty(md_path)  # False = not empty -> OK (not a failure)
+        except Exception as exc:
+            failures.append("managed dir remove raised: %s" % exc)
     uf = snap["unit_file"]
     if uf["existed"]:
         _record("restore unit file", fs.atomic_write, unit_path, uf["bytes"],
@@ -330,6 +383,16 @@ def apply(docker_ops, fs_ops, systemd_ops, unit_path, managed_file,
                     "not handled); apply refused, nothing changed"
                 % snap["unit_enabled"], [])
 
+    # Refuse if managed dir exists but is unsafe (symlink or not a directory).
+    md_snap = snap["managed_dir"]
+    md_state = md_snap["state"]
+    if md_state["existed"] and (md_state["is_symlink"] or not md_state["is_dir"]):
+        return (1, "managed dir %s exists but is %s; apply refused, nothing "
+                    "changed"
+                % (md_snap["path"],
+                   "a symlink" if md_state["is_symlink"] else "not a directory"),
+                [])
+
     def fail_and_rollback(reason):
         try:
             rb_ok, rb_failures = rollback(snap, docker_ops, fs_ops,
@@ -347,6 +410,21 @@ def apply(docker_ops, fs_ops, systemd_ops, unit_path, managed_file,
             if not docker_ops.set_restart(n, "no"):
                 return fail_and_rollback(
                     "docker update --restart=no failed: %s" % n)
+        # Ensure managed dir exists (transactional; only if absent in snapshot).
+        md_path = md_snap["path"]
+        if not md_state["existed"]:
+            if not fs_ops.dir_lstat(md_path)["existed"]:
+                try:
+                    fs_ops.mkdir(md_path, 0o755)
+                except Exception as exc:
+                    return fail_and_rollback(
+                        "managed dir create failed: %s" % exc)
+                new = fs_ops.dir_lstat(md_path)
+                if (not new["existed"] or new["is_symlink"]
+                        or not new["is_dir"] or new.get("uid") != 0
+                        or new.get("mode") != 0o755):
+                    return fail_and_rollback(
+                        "managed dir create verification failed: %s" % new)
         managed_content = ("\n".join(managed) + "\n").encode("utf-8")
         if not fs_ops.atomic_write(managed_file, managed_content):
             return fail_and_rollback("managed file write failed")

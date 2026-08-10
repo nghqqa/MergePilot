@@ -134,6 +134,47 @@ def _probe_exec(name, probe, docker_runner):
     return rc == 0
 
 
+def _probe_docker_health(name, probe, docker_runner):
+    """Two-layer service health probe (no container-internal curl).
+
+    Layer 1 (preferred): Docker Health.Status via
+    ``docker inspect -f '{{.State.Health.Status}}'``. Requires the container
+    to declare a HEALTHCHECK (policy-gw does: a Python socket connect to
+    127.0.0.1:8083). 'healthy' -> True; 'unhealthy'/'starting' -> False.
+
+    Layer 2 (fallback when no valid HEALTHCHECK): a Python socket connect to
+    ``probe['port']`` run via ``docker exec <name> python -c ...``. This
+    mirrors policy-gw's own HEALTHCHECK mechanism (Python socket, not curl).
+
+    Fail-closed: any inspect failure, unparseable output, missing port, or
+    socket failure -> False. Never uses bare running_uptime as a substitute
+    for real service health.
+    """
+    rc, out = docker_runner(["docker", "inspect", "-f",
+                             "{{.State.Health.Status}}", name])
+    if rc == 0:
+        status = (out or "").strip().lower()
+        if status == "healthy":
+            return True
+        if status in ("unhealthy", "starting"):
+            return False
+        # "none", "<no value>", "<nil>", "" -> no valid HEALTHCHECK -> fall
+        # through to the socket layer.
+    # rc != 0 (inspect failed) -> also fall through; socket fail-closes.
+
+    port = probe.get("port")
+    if not isinstance(port, int) or port <= 0:
+        return False  # no healthcheck + no port -> fail-closed
+    argv = ["docker", "exec", name, "python", "-c",
+            ("import socket,sys;s=socket.socket();s.settimeout(2);"
+             "sys.exit(0 if s.connect_ex(('127.0.0.1',%d))==0 else 1)" % port)]
+    try:
+        rc2, _out2 = docker_runner(argv)
+    except Exception:
+        return False
+    return rc2 == 0
+
+
 def _parse_started_at(raw):
     """Parse a docker State.StartedAt string to epoch seconds (float).
 
@@ -203,6 +244,9 @@ def check_health(name, docker_runner, now_fn=None):
     if probe["kind"] == "running_uptime":
         ok = _probe_running_uptime(name, probe, docker_runner, now_fn)
         return (ok, "running_uptime")
+    if probe["kind"] == "docker_health":
+        ok = _probe_docker_health(name, probe, docker_runner)
+        return (ok, "docker_health")
     return (False, "unknown probe kind %r" % probe["kind"])
 
 

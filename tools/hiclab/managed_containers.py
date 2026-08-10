@@ -56,9 +56,7 @@ MANAGED = [
                          "&& curl -sf -o /dev/null "
                          "http://localhost:9000/minio/health/live"]}},
     {"name": "policy-gw", "phase": PHASE_2,
-     "health": {"kind": "exec",
-                "argv": ["sh", "-c",
-                         "curl -sf -o /dev/null http://localhost:8083/"]}},
+     "health": {"kind": "docker_health", "port": 8083}},
     {"name": "mergepilot-controller", "phase": PHASE_2,
      "health": {"kind": "running_uptime", "min_seconds": 5}},
     {"name": "hiclaw-manager", "phase": PHASE_2,

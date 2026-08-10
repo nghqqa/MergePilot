@@ -49,7 +49,8 @@ class TestManifest(unittest.TestCase):
         for m in mc.MANAGED:
             self.assertIn("health", m, "%s missing health probe" % m["name"])
             self.assertIn("kind", m["health"])
-            self.assertIn(m["health"]["kind"], ("exec", "running_uptime"))
+            self.assertIn(m["health"]["kind"],
+                          ("exec", "running_uptime", "docker_health"))
 
     def test_find(self):
         self.assertIsNotNone(mc.find("audit-pg"))

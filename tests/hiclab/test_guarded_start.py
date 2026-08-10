@@ -77,6 +77,8 @@ class MockRunner:
         self._start_rc = {}
         self._stop_rc = {}
         self._started_at = {}
+        self._health_status = {}  # name -> "healthy"/"unhealthy"/"starting"/"<no value>"
+        self._socket_rc = {}      # name -> rc for socket probe
 
     def __call__(self, argv):
         self.calls.append(list(argv))
@@ -86,6 +88,8 @@ class MockRunner:
         if cmd == "inspect":
             name = argv[-1]
             fmt = argv[3] if len(argv) > 3 else ""
+            if "Health.Status" in fmt:
+                return (0, self._health_status.get(name, "<no value>"))
             if "Running" in fmt:
                 return (0, "true" if name in self._running else "false")
             if "StartedAt" in fmt:
@@ -103,15 +107,19 @@ class MockRunner:
             return (self._stop_rc.get(name, 0), "")
         if cmd == "exec":
             name = argv[2]
+            joined = " ".join(str(a) for a in argv[3:5])
+            if "python" in joined and "socket" in " ".join(str(a) for a in argv):
+                return (self._socket_rc.get(name, 1), "")
             return (self._health_rc.get(name, 0), "")
         return (0, "")
 
 
 def _all_healthy_setup(runner):
-    """Mark all managed containers healthy (exec rc=0, uptime old)."""
+    """Mark all managed containers healthy (exec rc=0, uptime old, health=healthy)."""
     for m in mc.MANAGED:
         runner._health_rc[m["name"]] = 0
         runner._started_at[m["name"]] = _old_iso(100)
+        runner._health_status[m["name"]] = "healthy"
 
 
 class TestPhasedOrder(unittest.TestCase):
@@ -155,6 +163,7 @@ class TestHealthFailureRollback(unittest.TestCase):
             runner._health_rc[n] = 0
         runner._started_at["github-mcp"] = _old_iso(100)
         runner._health_rc["policy-gw"] = 1  # phase2 unhealthy
+        runner._health_status["policy-gw"] = "unhealthy"
         runner._health_rc["mergepilot-controller"] = 0
         runner._started_at["mergepilot-controller"] = _old_iso(100)
         result = gs.start_with_health_gate(
@@ -176,6 +185,7 @@ class TestPreviouslyRunning(unittest.TestCase):
                   "mergepilot-controller", "hiclaw-manager"):
             runner._health_rc[n] = 0
             runner._started_at[n] = _old_iso(100)
+            runner._health_status[n] = "healthy"
         result = gs.start_with_health_gate(
             runner, timeout=1, poll=0, sleep_fn=lambda _s: None,
             stat_fn=_V_STAT, read_fn=_V_READ)
@@ -456,6 +466,82 @@ class TestCheckHealthExec(unittest.TestCase):
         runner = MockRunner()
         ok, _ = gs.check_health("bogus", runner)
         self.assertFalse(ok)
+
+
+class TestDockerHealthProbe(unittest.TestCase):
+    """Fix 1: policy-gw Docker Health.Status probe (no container-internal curl)."""
+
+    def test_healthy(self):
+        runner = MockRunner()
+        runner._health_status["policy-gw"] = "healthy"
+        ok, detail = gs.check_health("policy-gw", runner)
+        self.assertTrue(ok)
+        self.assertEqual(detail, "docker_health")
+
+    def test_unhealthy(self):
+        runner = MockRunner()
+        runner._health_status["policy-gw"] = "unhealthy"
+        ok, _ = gs.check_health("policy-gw", runner)
+        self.assertFalse(ok)
+
+    def test_starting(self):
+        runner = MockRunner()
+        runner._health_status["policy-gw"] = "starting"
+        ok, _ = gs.check_health("policy-gw", runner)
+        self.assertFalse(ok)
+
+    def test_no_healthcheck_socket_success(self):
+        """No HEALTHCHECK (<no value>) -> socket fallback succeeds."""
+        runner = MockRunner()
+        runner._health_status["policy-gw"] = "<no value>"
+        runner._socket_rc["policy-gw"] = 0
+        ok, _ = gs.check_health("policy-gw", runner)
+        self.assertTrue(ok)
+
+    def test_no_healthcheck_socket_fail(self):
+        runner = MockRunner()
+        runner._health_status["policy-gw"] = "<no value>"
+        runner._socket_rc["policy-gw"] = 1
+        ok, _ = gs.check_health("policy-gw", runner)
+        self.assertFalse(ok)
+
+    def test_none_status_socket_fallback(self):
+        runner = MockRunner()
+        runner._health_status["policy-gw"] = "none"
+        runner._socket_rc["policy-gw"] = 0
+        ok, _ = gs.check_health("policy-gw", runner)
+        self.assertTrue(ok)
+
+    def test_socket_exception_fail_closed(self):
+        runner = MockRunner()
+        runner._health_status["policy-gw"] = "<no value>"
+
+        def bad_runner(argv):
+            if "python" in " ".join(str(a) for a in argv):
+                raise RuntimeError("exec boom")
+            return (0, "<no value>")
+
+        ok, _ = gs.check_health("policy-gw", bad_runner)
+        self.assertFalse(ok)
+
+    def test_no_port_no_healthcheck_fail_closed(self):
+        """No HEALTHCHECK + no port in probe -> fail-closed."""
+        runner = MockRunner()
+        runner._health_status["bogus"] = "<no value>"
+        ok = gs._probe_docker_health("bogus", {"kind": "docker_health"}, runner)
+        self.assertFalse(ok)
+
+    def test_does_not_use_running_uptime(self):
+        """docker_health must not fall back to running_uptime."""
+        runner = MockRunner()
+        runner._health_status["policy-gw"] = "unhealthy"
+        # running_uptime would see it as running+old -> True; but docker_health
+        # must report False because the healthcheck says unhealthy.
+        runner._running.add("policy-gw")
+        runner._started_at["policy-gw"] = _old_iso(100)
+        ok, detail = gs.check_health("policy-gw", runner)
+        self.assertFalse(ok)
+        self.assertEqual(detail, "docker_health")
 
 
 if __name__ == "__main__":
