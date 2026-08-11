@@ -1,0 +1,344 @@
+{
+  "kind": "hiclaw-v122-true-live-pass",
+  "upstream_version": "v1.2.2",
+  "upstream_source_commit": "849182af8e017168a5a200a87b1062142caf462d",
+  "proxy_source_commit": "e984ef394ce80e3572159f9ebed154518d7565e4",
+  "head_commit": "6e90086aa396571c28c773be220617607d6ccf1c",
+  "worker_image_digest": "sha256:301f9e311654eca203246fa666d63a126244ea8793f700603d2a6d37b7ffea75",
+  "manager_image_digest": "sha256:dd11878943e4a425ff38dcc152c9d44ea0e68d97bac89f711207134b8636c0fb",
+  "passed": 64,
+  "failed": 0,
+  "all_ok": true,
+  "hiclaw_live": true,
+  "roles_tested": [
+    "reviewer",
+    "fixer",
+    "verifier",
+    "manager"
+  ],
+  "name_profile": "agentteams",
+  "environment": "Ubuntu-22.04 production dockerd (true v1.2.2 live)",
+  "checks": [
+    {
+      "name": "v1.2.2 image has AGENTTEAMS_* env",
+      "ok": true,
+      "detail": "AGENTTEAMS_ not found in env output"
+    },
+    {
+      "name": "v1.2.2 image uses agentteams (not hiclab)",
+      "ok": true,
+      "detail": "found hiclab reference in env"
+    },
+    {
+      "name": "proxy self-check (production)",
+      "ok": true,
+      "detail": "self-check ok"
+    },
+    {
+      "name": "proxy socket mode 0600",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "marker written",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[reviewer] create \u2192 201",
+      "ok": true,
+      "detail": "got 201 {\"Id\":\"26bcad1bafa61ccad6446234cc72d10858814074ca7ed09b9096e1ba23daeaf7\",\"Warnin"
+    },
+    {
+      "name": "[reviewer] restart=no",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[reviewer] agent=reviewer",
+      "ok": true,
+      "detail": "got 'reviewer'"
+    },
+    {
+      "name": "[reviewer] hardened=1",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[reviewer] run_id",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[reviewer] scope=prod",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[reviewer] image is v1.2.2 worker",
+      "ok": true,
+      "detail": "img=higress-registry.cn-hangzhou.cr.aliyuncs.com/agentteams/agen"
+    },
+    {
+      "name": "[reviewer] start \u2192 204",
+      "ok": true,
+      "detail": "got 204"
+    },
+    {
+      "name": "[reviewer] inspect \u2192 200",
+      "ok": true,
+      "detail": "got 200"
+    },
+    {
+      "name": "[reviewer] exec-create \u2192 201",
+      "ok": true,
+      "detail": "got 201 {\"Id\":\"db62eb0822018d578d07f66241d5557f6aa1e7ed44a69ee1b16e1"
+    },
+    {
+      "name": "[reviewer] exec registered",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[reviewer] stop?t=10 \u2192 204",
+      "ok": true,
+      "detail": "got 204"
+    },
+    {
+      "name": "[reviewer] delete \u2192 204",
+      "ok": true,
+      "detail": "got 204"
+    },
+    {
+      "name": "[fixer] create \u2192 201",
+      "ok": true,
+      "detail": "got 201 {\"Id\":\"58cad6d6cf6149f600a0ebaff62264c2aa6c0b5c791249fc63efad5c4ea2c1c6\",\"Warnin"
+    },
+    {
+      "name": "[fixer] restart=no",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[fixer] agent=fixer",
+      "ok": true,
+      "detail": "got 'fixer'"
+    },
+    {
+      "name": "[fixer] hardened=1",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[fixer] run_id",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[fixer] scope=prod",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[fixer] image is v1.2.2 worker",
+      "ok": true,
+      "detail": "img=higress-registry.cn-hangzhou.cr.aliyuncs.com/agentteams/agen"
+    },
+    {
+      "name": "[fixer] start \u2192 204",
+      "ok": true,
+      "detail": "got 204"
+    },
+    {
+      "name": "[fixer] inspect \u2192 200",
+      "ok": true,
+      "detail": "got 200"
+    },
+    {
+      "name": "[fixer] exec-create \u2192 201",
+      "ok": true,
+      "detail": "got 201 {\"Id\":\"1f8ae9f999d117fab03d8f23c29aa9e029c3228e1fcc9f1d65634"
+    },
+    {
+      "name": "[fixer] exec registered",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[fixer] stop?t=10 \u2192 204",
+      "ok": true,
+      "detail": "got 204"
+    },
+    {
+      "name": "[fixer] delete \u2192 204",
+      "ok": true,
+      "detail": "got 204"
+    },
+    {
+      "name": "[verifier] create \u2192 201",
+      "ok": true,
+      "detail": "got 201 {\"Id\":\"73126c2d49456216f023208de0ae7d2ac052af15aea1ad93de849538d6a57d11\",\"Warnin"
+    },
+    {
+      "name": "[verifier] restart=no",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[verifier] agent=verifier",
+      "ok": true,
+      "detail": "got 'verifier'"
+    },
+    {
+      "name": "[verifier] hardened=1",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[verifier] run_id",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[verifier] scope=prod",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[verifier] image is v1.2.2 worker",
+      "ok": true,
+      "detail": "img=higress-registry.cn-hangzhou.cr.aliyuncs.com/agentteams/agen"
+    },
+    {
+      "name": "[verifier] start \u2192 204",
+      "ok": true,
+      "detail": "got 204"
+    },
+    {
+      "name": "[verifier] inspect \u2192 200",
+      "ok": true,
+      "detail": "got 200"
+    },
+    {
+      "name": "[verifier] exec-create \u2192 201",
+      "ok": true,
+      "detail": "got 201 {\"Id\":\"a1213b828b9c99a512e17434b2c171e29ff771ef1135f036ff4f1"
+    },
+    {
+      "name": "[verifier] exec registered",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[verifier] stop?t=10 \u2192 204",
+      "ok": true,
+      "detail": "got 204"
+    },
+    {
+      "name": "[verifier] delete \u2192 204",
+      "ok": true,
+      "detail": "got 204"
+    },
+    {
+      "name": "[manager] create \u2192 201",
+      "ok": true,
+      "detail": "got 201"
+    },
+    {
+      "name": "[manager] agent=manager",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[manager] delete \u2192 204",
+      "ok": true,
+      "detail": "got 204"
+    },
+    {
+      "name": "/_ping \u2192 200",
+      "ok": true,
+      "detail": "got 200"
+    },
+    {
+      "name": "image inspect \u2192 200",
+      "ok": true,
+      "detail": "got 200"
+    },
+    {
+      "name": "GET /version \u2192 403",
+      "ok": true,
+      "detail": "got 403"
+    },
+    {
+      "name": "GET /info \u2192 403",
+      "ok": true,
+      "detail": "got 403"
+    },
+    {
+      "name": "GET /events \u2192 403",
+      "ok": true,
+      "detail": "got 403"
+    },
+    {
+      "name": "logs \u2192 403",
+      "ok": true,
+      "detail": "got 403"
+    },
+    {
+      "name": "stats \u2192 403",
+      "ok": true,
+      "detail": "got 403"
+    },
+    {
+      "name": "archive /etc \u2192 403",
+      "ok": true,
+      "detail": "got 403"
+    },
+    {
+      "name": "stop t=5 \u2192 403",
+      "ok": true,
+      "detail": "got 403"
+    },
+    {
+      "name": "delete force=f \u2192 403",
+      "ok": true,
+      "detail": "got 403"
+    },
+    {
+      "name": "wrong name \u2192 403",
+      "ok": true,
+      "detail": "got 403"
+    },
+    {
+      "name": "unknown role \u2192 403",
+      "ok": true,
+      "detail": "got 403"
+    },
+    {
+      "name": "build \u2192 403",
+      "ok": true,
+      "detail": "got 403"
+    },
+    {
+      "name": "container residue=0 (new)",
+      "ok": true,
+      "detail": "new=[]"
+    },
+    {
+      "name": "volume residue=0 (new)",
+      "ok": true,
+      "detail": "new=[]"
+    },
+    {
+      "name": "proxy socket removed",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "marker removed",
+      "ok": true,
+      "detail": ""
+    }
+  ],
+  "timestamp": "2026-08-11T16:34:27Z"
+}
