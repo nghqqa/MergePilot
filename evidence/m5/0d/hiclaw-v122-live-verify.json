@@ -1,0 +1,356 @@
+{
+  "kind": "hiclaw-v122-live-verify",
+  "source_commit": "e984ef394ce80e3572159f9ebed154518d7565e4",
+  "head_commit": "b6b7155d650f558eb8a4ca6a8aaca43e0b102407",
+  "passed": 67,
+  "failed": 0,
+  "all_ok": true,
+  "hiclaw_live": true,
+  "roles_tested": [
+    "reviewer",
+    "fixer",
+    "verifier",
+    "manager"
+  ],
+  "name_profile": "hiclaw",
+  "upstream_version": "v1.1.2 (production images; proxy code is v1.2.2-upgraded)",
+  "environment": "Ubuntu-22.04 production dockerd (live window)",
+  "checks": [
+    {
+      "name": "proxy self-check (production)",
+      "ok": true,
+      "detail": "self-check ok"
+    },
+    {
+      "name": "proxy socket mode 0600",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "marker written+pid+digest",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "derive hiclaw-worker-reviewer \u2192 reviewer",
+      "ok": true,
+      "detail": "got 'reviewer'"
+    },
+    {
+      "name": "derive hiclaw-worker-fixer \u2192 fixer",
+      "ok": true,
+      "detail": "got 'fixer'"
+    },
+    {
+      "name": "derive hiclaw-worker-verifier \u2192 verifier",
+      "ok": true,
+      "detail": "got 'verifier'"
+    },
+    {
+      "name": "derive hiclaw-manager \u2192 manager",
+      "ok": true,
+      "detail": "got 'manager'"
+    },
+    {
+      "name": "derive hiclaw-worker-evil \u2192 None",
+      "ok": true,
+      "detail": "got None"
+    },
+    {
+      "name": "[reviewer] create \u2192 201",
+      "ok": true,
+      "detail": "got 201 {\"Id\":\"a9a11b7431c95beea1e7aadb5371b6faa0f75620ee5cf293d8d1b"
+    },
+    {
+      "name": "[reviewer] restart=no",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[reviewer] agent=reviewer",
+      "ok": true,
+      "detail": "got 'reviewer'"
+    },
+    {
+      "name": "[reviewer] hardened=1",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[reviewer] run_id",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[reviewer] scope=prod",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[reviewer] start \u2192 204",
+      "ok": true,
+      "detail": "got 204"
+    },
+    {
+      "name": "[reviewer] inspect \u2192 200",
+      "ok": true,
+      "detail": "got 200"
+    },
+    {
+      "name": "[reviewer] exec-create \u2192 201",
+      "ok": true,
+      "detail": "got 201"
+    },
+    {
+      "name": "[reviewer] exec registered",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[reviewer] stop?t=10 \u2192 204",
+      "ok": true,
+      "detail": "got 204"
+    },
+    {
+      "name": "[reviewer] delete?force=true \u2192 204",
+      "ok": true,
+      "detail": "got 204"
+    },
+    {
+      "name": "[fixer] create \u2192 201",
+      "ok": true,
+      "detail": "got 201 {\"Id\":\"67ae26b91a45657a8815ef74121f6c264352b3d00a895fbd9f5d3"
+    },
+    {
+      "name": "[fixer] restart=no",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[fixer] agent=fixer",
+      "ok": true,
+      "detail": "got 'fixer'"
+    },
+    {
+      "name": "[fixer] hardened=1",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[fixer] run_id",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[fixer] scope=prod",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[fixer] start \u2192 204",
+      "ok": true,
+      "detail": "got 204"
+    },
+    {
+      "name": "[fixer] inspect \u2192 200",
+      "ok": true,
+      "detail": "got 200"
+    },
+    {
+      "name": "[fixer] exec-create \u2192 201",
+      "ok": true,
+      "detail": "got 201"
+    },
+    {
+      "name": "[fixer] exec registered",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[fixer] stop?t=10 \u2192 204",
+      "ok": true,
+      "detail": "got 204"
+    },
+    {
+      "name": "[fixer] delete?force=true \u2192 204",
+      "ok": true,
+      "detail": "got 204"
+    },
+    {
+      "name": "[verifier] create \u2192 201",
+      "ok": true,
+      "detail": "got 201 {\"Id\":\"1bb9551afdf96e138652b667d89941d7dbf4f0667eab500bc1a5d"
+    },
+    {
+      "name": "[verifier] restart=no",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[verifier] agent=verifier",
+      "ok": true,
+      "detail": "got 'verifier'"
+    },
+    {
+      "name": "[verifier] hardened=1",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[verifier] run_id",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[verifier] scope=prod",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[verifier] start \u2192 204",
+      "ok": true,
+      "detail": "got 204"
+    },
+    {
+      "name": "[verifier] inspect \u2192 200",
+      "ok": true,
+      "detail": "got 200"
+    },
+    {
+      "name": "[verifier] exec-create \u2192 201",
+      "ok": true,
+      "detail": "got 201"
+    },
+    {
+      "name": "[verifier] exec registered",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[verifier] stop?t=10 \u2192 204",
+      "ok": true,
+      "detail": "got 204"
+    },
+    {
+      "name": "[verifier] delete?force=true \u2192 204",
+      "ok": true,
+      "detail": "got 204"
+    },
+    {
+      "name": "[manager] create \u2192 201",
+      "ok": true,
+      "detail": "got 201"
+    },
+    {
+      "name": "[manager] agent=manager",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "[manager] delete \u2192 204",
+      "ok": true,
+      "detail": "got 204"
+    },
+    {
+      "name": "/_ping \u2192 200",
+      "ok": true,
+      "detail": "got 200"
+    },
+    {
+      "name": "image inspect \u2192 200",
+      "ok": true,
+      "detail": "got 200"
+    },
+    {
+      "name": "GET /version \u2192 403",
+      "ok": true,
+      "detail": "got 403"
+    },
+    {
+      "name": "GET /info \u2192 403",
+      "ok": true,
+      "detail": "got 403"
+    },
+    {
+      "name": "GET /events \u2192 403",
+      "ok": true,
+      "detail": "got 403"
+    },
+    {
+      "name": "logs \u2192 403",
+      "ok": true,
+      "detail": "got 403"
+    },
+    {
+      "name": "stats \u2192 403",
+      "ok": true,
+      "detail": "got 403"
+    },
+    {
+      "name": "wait \u2192 403",
+      "ok": true,
+      "detail": "got 403"
+    },
+    {
+      "name": "archive /etc \u2192 403",
+      "ok": true,
+      "detail": "got 403"
+    },
+    {
+      "name": "stop t=5 \u2192 403",
+      "ok": true,
+      "detail": "got 403"
+    },
+    {
+      "name": "delete force=f \u2192 403",
+      "ok": true,
+      "detail": "got 403"
+    },
+    {
+      "name": "wrong name \u2192 403",
+      "ok": true,
+      "detail": "got 403"
+    },
+    {
+      "name": "unknown role \u2192 403",
+      "ok": true,
+      "detail": "got 403"
+    },
+    {
+      "name": "build \u2192 403",
+      "ok": true,
+      "detail": "got 403"
+    },
+    {
+      "name": "networks \u2192 403",
+      "ok": true,
+      "detail": "got 403"
+    },
+    {
+      "name": "no new containers from smoke",
+      "ok": true,
+      "detail": "new=[]"
+    },
+    {
+      "name": "container residue=0 (new)",
+      "ok": true,
+      "detail": "new=[]"
+    },
+    {
+      "name": "volume residue=0 (new)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "proxy socket removed",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "marker removed",
+      "ok": true,
+      "detail": ""
+    }
+  ],
+  "timestamp": "2026-08-11T16:21:21Z"
+}
