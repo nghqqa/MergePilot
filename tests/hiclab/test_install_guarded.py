@@ -226,7 +226,7 @@ class TestSystemctlRollback(unittest.TestCase):
 class TestPostInstallAudit(unittest.TestCase):
     def test_restart_not_no_rolls_back(self):
         docker = MockDocker()
-        docker.audit_overrides = {"hiclaw-manager": "always"}
+        docker.audit_overrides = {mc.MANAGER_NAME: "always"}
         status, detail, rb, d, fs, _s = _run(docker=docker)
         self.assertEqual(status, 1)
         self.assertIn("restart!=no", detail)
@@ -330,14 +330,14 @@ class TestAtomicUnitInstall(unittest.TestCase):
         self.assertIn("Restart=no", c)
         self.assertIn("ExecStart=" + SUP, c)
 
-    def test_managed_file_has_all_names_no_hiclaw_data(self):
+    def test_managed_file_has_all_names_no_data_container(self):
         status, _detail, _rb, _d, fs, _s = _run()
         self.assertEqual(status, 0)
         ex, content, _mode = fs.read_with_mode(MF)
         c = content.decode("utf-8")
         for n in mc.names():
             self.assertIn(n, c)
-        self.assertNotIn("hiclaw-data", c)
+        self.assertNotIn(mc.DATA_NAME, c)
 
 
 class TestFullSuccess(unittest.TestCase):

@@ -144,13 +144,13 @@ class TestHealthFailureRollback(unittest.TestCase):
         runner = MockRunner()
         runner._health_rc["audit-pg"] = 0
         runner._health_rc["github-mcp"] = 0
-        runner._health_rc["hiclaw-controller"] = 1  # unhealthy
+        runner._health_rc["agentteams-controller"] = 1  # unhealthy
         runner._started_at["github-mcp"] = _old_iso(100)
         result = gs.start_with_health_gate(
             runner, timeout=1, poll=0, sleep_fn=lambda _s: None,
             stat_fn=_V_STAT, read_fn=_V_READ)
         self.assertFalse(result["ok"])
-        self.assertEqual(result["failed_at"], "hiclaw-controller")
+        self.assertEqual(result["failed_at"], "agentteams-controller")
         starts = [c[-1] for c in runner.calls if len(c) > 1 and c[1] == "start"]
         for m in mc.phase_members(mc.PHASE_2):
             self.assertNotIn(m["name"], starts)
@@ -159,7 +159,7 @@ class TestHealthFailureRollback(unittest.TestCase):
 
     def test_phase2_unhealthy_stops_this_round(self):
         runner = MockRunner()
-        for n in ("audit-pg", "github-mcp", "hiclaw-controller"):
+        for n in ("audit-pg", "github-mcp", "agentteams-controller"):
             runner._health_rc[n] = 0
         runner._started_at["github-mcp"] = _old_iso(100)
         runner._health_rc["policy-gw"] = 1  # phase2 unhealthy
@@ -181,8 +181,8 @@ class TestPreviouslyRunning(unittest.TestCase):
         runner._running.add("audit-pg")  # already running
         runner._health_rc["audit-pg"] = 0
         runner._started_at["audit-pg"] = _old_iso(100)
-        for n in ("github-mcp", "hiclaw-controller", "policy-gw",
-                  "mergepilot-controller", "hiclaw-manager"):
+        for n in ("github-mcp", "agentteams-controller", "policy-gw",
+                  "mergepilot-controller", "agentteams-manager"):
             runner._health_rc[n] = 0
             runner._started_at[n] = _old_iso(100)
             runner._health_status[n] = "healthy"
@@ -213,22 +213,22 @@ class TestCapabilityPreflight(unittest.TestCase):
             runner, timeout=1, poll=0, sleep_fn=lambda _s: None,
             stat_fn=stat_fn, read_fn=read_fn)
         self.assertFalse(result["ok"])
-        self.assertIn("hiclaw-manager", result["blocked"])
-        self.assertIn("hiclaw-controller", result["blocked"])
+        self.assertIn("agentteams-manager", result["blocked"])
+        self.assertIn("agentteams-controller", result["blocked"])
         self.assertEqual(result["started_this_round"], [])
         starts = [c for c in runner.calls if len(c) > 1 and c[1] == "start"]
         self.assertEqual(len(starts), 0)
 
     def test_no_marker_stops_running_controller(self):
         runner = MockRunner()
-        runner._running.add("hiclaw-controller")
+        runner._running.add("agentteams-controller")
         stat_fn, read_fn = _no_markers()
         result = gs.start_with_health_gate(
             runner, timeout=1, poll=0, sleep_fn=lambda _s: None,
             stat_fn=stat_fn, read_fn=read_fn)
         self.assertFalse(result["ok"])
-        self.assertIn("hiclaw-controller", result["stopped_on_rollback"])
-        self.assertNotIn("hiclaw-controller", runner._running)
+        self.assertIn("agentteams-controller", result["stopped_on_rollback"])
+        self.assertNotIn("agentteams-controller", runner._running)
 
     def test_no_marker_no_partial_stack(self):
         runner = MockRunner()
@@ -253,8 +253,8 @@ class TestCapabilityPreflight(unittest.TestCase):
         finally:
             sys.stderr = old_err
         self.assertIn("BLOCKED_UPSTREAM", err)
-        self.assertIn("hiclaw-controller", err)
-        self.assertIn("hiclaw-manager", err)
+        self.assertIn("agentteams-controller", err)
+        self.assertIn("agentteams-manager", err)
 
     def test_no_marker_no_workers_started(self):
         runner = MockRunner()
@@ -265,7 +265,7 @@ class TestCapabilityPreflight(unittest.TestCase):
             stat_fn=stat_fn, read_fn=read_fn)
         starts = [c[-1] for c in runner.calls if len(c) > 1 and c[1] == "start"]
         for s in starts:
-            self.assertFalse(s.startswith("hiclaw-worker-"))
+            self.assertFalse(s.startswith("agentteams-worker-"))
 
 
 class TestMarkerValidStartup(unittest.TestCase):
@@ -288,27 +288,27 @@ class TestMarkerValidStartup(unittest.TestCase):
         result = gs.start_with_health_gate(
             runner, timeout=1, poll=0, sleep_fn=lambda _s: None,
             stat_fn=_V_STAT, read_fn=_V_READ)
-        self.assertIn("hiclaw-controller", result["started_this_round"])
-        self.assertIn("hiclaw-manager", result["started_this_round"])
+        self.assertIn("agentteams-controller", result["started_this_round"])
+        self.assertIn("agentteams-manager", result["started_this_round"])
 
 
 class TestRollbackControllerFirst(unittest.TestCase):
-    """Rollback must stop hiclaw-controller BEFORE other containers (it
+    """Rollback must stop the controller BEFORE other containers (it
     re-spawns them via docker socket)."""
 
     def test_controller_stopped_first(self):
         runner = MockRunner()
-        started = ["audit-pg", "github-mcp", "hiclaw-controller",
+        started = ["audit-pg", "github-mcp", "agentteams-controller",
                    "policy-gw", "mergepilot-controller"]
         for n in started:
             runner._running.add(n)
         gs._rollback(started, runner)
         stops = [c[-1] for c in runner.calls if len(c) > 1 and c[1] == "stop"]
-        self.assertEqual(stops[0], "hiclaw-controller")
+        self.assertEqual(stops[0], "agentteams-controller")
 
     def test_all_stopped_after_rollback(self):
         runner = MockRunner()
-        started = ["audit-pg", "github-mcp", "hiclaw-controller"]
+        started = ["audit-pg", "github-mcp", "agentteams-controller"]
         for n in started:
             runner._running.add(n)
         gs._rollback(started, runner)
@@ -318,7 +318,7 @@ class TestRollbackControllerFirst(unittest.TestCase):
     def test_rollback_re_verifies_respawned(self):
         """After controller stop, re-verify catches containers it re-spawned."""
         runner = MockRunner()
-        started = ["audit-pg", "hiclaw-controller", "policy-gw"]
+        started = ["audit-pg", "agentteams-controller", "policy-gw"]
         for n in started:
             runner._running.add(n)
         original_stop = gs._stop
@@ -328,7 +328,7 @@ class TestRollbackControllerFirst(unittest.TestCase):
             rc = original_stop(name, dr)
             call_count[0] += 1
             # Simulate controller re-spawning policy-gw before dying
-            if name == "hiclaw-controller":
+            if name == "agentteams-controller":
                 runner._running.add("policy-gw")
             return rc
 

@@ -1,0 +1,19 @@
+{
+  "kind": "d2b3c-live-verify",
+  "source_commit": "6da8f17a199f747f27eb47d732f073de0fc4e1b8",
+  "head_commit": "ba53a89fadf5ea6dd98c88efefd78fd9474903ba",
+  "passed": 0,
+  "failed": 0,
+  "all_ok": false,
+  "hiclaw_live": false,
+  "roles_tested": [
+    "reviewer",
+    "fixer",
+    "verifier",
+    "manager"
+  ],
+  "name_profile": "hiclaw",
+  "environment": "Ubuntu-22.04 production dockerd (live window)",
+  "checks": [],
+  "timestamp": "2026-08-11T15:57:59Z"
+}

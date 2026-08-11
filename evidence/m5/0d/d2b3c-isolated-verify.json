@@ -1,7 +1,7 @@
 {
   "kind": "d2b3c-isolated-verify",
-  "source_commit": "6da8f17a199f747f27eb47d732f073de0fc4e1b8",
-  "head_commit": "6da8f17a199f747f27eb47d732f073de0fc4e1b8",
+  "source_commit": "ba53a89fadf5ea6dd98c88efefd78fd9474903ba",
+  "head_commit": "ba53a89fadf5ea6dd98c88efefd78fd9474903ba",
   "passed": 82,
   "failed": 0,
   "all_ok": true,
@@ -100,7 +100,7 @@
     {
       "name": "[reviewer] exec-create \u2192 201",
       "ok": true,
-      "detail": "got 201 {\"Id\":\"45c1300b0ea8c2d4a76f39c86494756966457e1737c7809ae21718400e6f2730\"}\n"
+      "detail": "got 201 {\"Id\":\"31d5ea1de56eaf84c2ead814b0c470322f202bc5d8aed6786228fffc2f059bbe\"}\n"
     },
     {
       "name": "[reviewer] exec ID registered",
@@ -170,7 +170,7 @@
     {
       "name": "[fixer] exec-create \u2192 201",
       "ok": true,
-      "detail": "got 201 {\"Id\":\"f7e22df0f6b6b031ac8356b8901eb705053b254ec45158daaead9d77c54fac32\"}\n"
+      "detail": "got 201 {\"Id\":\"731216e71a4183643b9752be06e0e027fabf4cdea79090101e4c32330938e5dc\"}\n"
     },
     {
       "name": "[fixer] exec ID registered",
@@ -240,7 +240,7 @@
     {
       "name": "[verifier] exec-create \u2192 201",
       "ok": true,
-      "detail": "got 201 {\"Id\":\"e408356e9f724023c167158eac3906ea8fce53a2d5e311d1178420b234679200\"}\n"
+      "detail": "got 201 {\"Id\":\"bcfe1f8ceed9dde0aa6bd434a9b825ba2c4287f818cde979ef93515323e0ead1\"}\n"
     },
     {
       "name": "[verifier] exec ID registered",
@@ -423,7 +423,7 @@
       "detail": ""
     }
   ],
-  "timestamp": "2026-08-11T15:53:52Z",
+  "timestamp": "2026-08-11T16:09:45Z",
   "hiclaw_live": false,
   "environment": "MergePilot-Test isolated WSL dockerd (not production)"
 }
