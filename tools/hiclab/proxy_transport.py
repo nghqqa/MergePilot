@@ -293,6 +293,33 @@ def _connect_upstream(upstream_socket, timeout=UPSTREAM_CONNECT_TIMEOUT,
         return None
 
 
+def _decode_chunked_simple(data, max_bytes):
+    """Decode a chunked HTTP body into payload bytes (simple parser).
+
+    Used by upstream_inspect which needs the decoded body for JSON parsing.
+    Reads ``size\r\n<data>\r\n`` frames until a 0-length chunk or data ends.
+    """
+    out = b""
+    pos = 0
+    while pos < len(data):
+        nl = data.find(b"\r\n", pos)
+        if nl == -1:
+            break
+        size_line = data[pos:nl]
+        pos = nl + 2
+        try:
+            size = int(size_line.split(b";")[0], 16)
+        except ValueError:
+            break
+        if size == 0:
+            break
+        if len(out) + size > max_bytes:
+            break
+        out += data[pos:pos + size]
+        pos += size + 2  # skip data + CRLF
+    return out
+
+
 def upstream_inspect(upstream_socket, container_name, deadline, connect_fn=None):
     """Perform an authoritative GET /containers/{name}/json against upstream.
 
@@ -318,23 +345,61 @@ def upstream_inspect(upstream_socket, container_name, deadline, connect_fn=None)
         status_parts = lines[0].split(" ", 2)
         if len(status_parts) < 2 or status_parts[1] != "200":
             return None
-        cl = 0
+        # Parse framing: dockerd may use Content-Length OR Transfer-Encoding:
+        # chunked for inspect responses. Handle both.
+        cl = None
+        is_chunked = False
         for line in lines[1:]:
-            if line.lower().startswith("content-length:"):
+            ll = line.lower()
+            if ll.startswith("content-length:"):
                 try:
                     cl = int(line.split(":", 1)[1].strip())
                 except ValueError:
                     return None
-                break
-        if cl > MAX_INSPECT_BYTES:
-            return None
-        body = leftover
-        if len(body) < cl:
-            more = _read_n(usock, cl - len(body), deadline)
-            if more is None:
+            elif ll.startswith("transfer-encoding:") and "chunked" in ll:
+                is_chunked = True
+        if is_chunked:
+            # decode chunked body (leftover + further reads until EOF/0-chunk)
+            raw = leftover
+            # read more until we see the terminating 0-length chunk OR upstream
+            # closes (Connection: close). Use recv loop that collects partial.
+            while b"\r\n0\r\n" not in raw and len(raw) < MAX_INSPECT_BYTES:
+                now = time.monotonic()
+                if now >= deadline:
+                    break
+                timeout = max(0.0, min(deadline - now, 1.0))
+                try:
+                    r, _, _ = select.select([usock], [], [], timeout)
+                except (OSError, ValueError):
+                    break
+                if not r:
+                    continue
+                try:
+                    chunk = usock.recv(65536)
+                except OSError:
+                    break
+                if not chunk:
+                    break  # EOF (Connection: close)
+                raw += chunk
+            body = _decode_chunked_simple(raw, MAX_INSPECT_BYTES)
+        elif cl is not None:
+            if cl > MAX_INSPECT_BYTES:
                 return None
-            body += more
-        body = body[:cl]
+            body = leftover
+            if len(body) < cl:
+                more = _read_n(usock, cl - len(body), deadline)
+                if more is None:
+                    return None
+                body += more
+            body = body[:cl]
+        else:
+            # No Content-Length, not chunked: read until EOF
+            body = leftover
+            while len(body) < MAX_INSPECT_BYTES:
+                more = _read_n(usock, 4096, deadline)
+                if not more:
+                    break
+                body += more
         try:
             return json.loads(body)
         except (ValueError, UnicodeDecodeError):
@@ -367,6 +432,10 @@ def _inspect_authoritative(inspect_body, config, container_name):
     if not isinstance(inspect_body, dict):
         return False
     name = inspect_body.get("Name", "")
+    # Docker prefixes container names with "/" in the inspect Name field
+    # (e.g. "/agentteams-worker-fixer"). Normalize by stripping a leading "/".
+    if isinstance(name, str) and name.startswith("/"):
+        name = name[1:]
     if not isinstance(name, str) or name != container_name:
         return False
     cfg = inspect_body.get("Config")
@@ -749,6 +818,14 @@ def handle_connection(client_sock, upstream_socket, config, exec_registry,
             if body_obj is None:
                 client_sock.sendall(_deny_resp("transform: body not JSON"))
                 return
+            # D2B-3B2 fix: the container name comes from the ?name= query
+            # parameter (decision.name), NOT from the request body's Name
+            # field (which the controller leaves empty). Set it here so
+            # apply_hardening_v2 can derive the agent correctly via
+            # derive_agent_strict(decision.name). Without this, the injected
+            # com.mergepilot.agent label would be wrong, causing subsequent
+            # authoritative inspects to fail.
+            body_obj["Name"] = decision.name
             deny_reason = hp.evaluate_deny(body_obj, config)
             if deny_reason:
                 client_sock.sendall(_deny_resp(deny_reason))
