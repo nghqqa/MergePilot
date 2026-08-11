@@ -22,6 +22,18 @@ import json
 import re
 import time
 import asyncio
+import sys as _sys
+
+# M6-A: OTel instrumentation (fail-closed)
+_OTEL_ENABLED = False
+try:
+    _otel_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "otel")
+    if _otel_dir not in _sys.path:
+        _sys.path.insert(0, _otel_dir)
+    import otel_spans as _otel
+    _OTEL_ENABLED = True
+except ImportError:
+    pass
 
 GATEWAY_URL = os.environ.get("GATEWAY_URL", "http://policy-gw:8083").rstrip("/")
 COORDINATOR_TOKEN = os.environ.get("COORDINATOR_TOKEN", "")
@@ -231,10 +243,27 @@ def gateway_get_file_text(owner, repo, path, ref=None, sha=None, timeout=60):
     return ("OK", content, blob_sha)
 
 
-def gateway_call(tool, args, timeout=60):
+def gateway_call(tool, args, timeout=60, *, run_id="", trace_id="",
+                 agent_role="coordinator"):
     """调一个 Gateway 工具。返回 (text, is_error)。失败抛 B4c.1 typed 异常:
     GatewayDenied(票据级确定性拒绝)/ GatewayUnavailable(瞬时)/ GatewayGlobalDegraded(全局配置故障)。
-    (三者皆 GatewayError 子类,旧 `except GatewayError` 调用方仍兼容。discovery 仍一律归 RETRY。)"""
+    (三者皆 GatewayError 子类,旧 `except GatewayError` 调用方仍兼容。discovery 仍一律归 RETRY。)
+
+    M6-A: optional run_id/trace_id/agent_role enable OTel gateway_span +
+    W3C traceparent header injection. Existing callers that don't pass
+    these kwargs are fully backward-compatible (empty strings = no span).
+    """
+    if _OTEL_ENABLED and (run_id or trace_id):
+        with _otel.gateway_span(run_id=run_id, trace_id=trace_id,
+                                tool=tool, agent_role=agent_role) as _gw_span:
+            res = _gateway_call_inner(tool, args, timeout)
+            _gw_span.set_attribute("mp.final_status", "completed")
+            return res
+    return _gateway_call_inner(tool, args, timeout)
+
+
+def _gateway_call_inner(tool, args, timeout):
+    """Original gateway_call implementation (no OTel)."""
     if not GATEWAY_TOKEN:
         raise GatewayGlobalDegraded("BAD_TOKEN", "GATEWAY_TOKEN/COORDINATOR_TOKEN 未配置")
     try:

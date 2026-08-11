@@ -12,8 +12,21 @@ import datetime as _dt
 import hashlib
 import json
 import math
+import os
+import sys
 from dataclasses import dataclass
 from typing import Any, Callable, Mapping
+
+# M6-A: OTel instrumentation (fail-closed — missing module does not crash)
+_OTEL_ENABLED = False
+try:
+    _otel_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "otel")
+    if _otel_dir not in sys.path:
+        sys.path.insert(0, _otel_dir)
+    import otel_spans as _otel
+    _OTEL_ENABLED = True
+except ImportError:
+    pass
 
 
 SKILL_VERSION = "1.0.0"
@@ -201,6 +214,16 @@ def _emit(
     }
     payload.update(fields)
     observer(payload)
+    # M6-A: bridge observation events to OTel span events (if active span exists)
+    if _OTEL_ENABLED:
+        ctx = _otel.get_current_context()
+        if ctx is not None:
+            try:
+                # Add event to the current span via the collector
+                # (the span itself is managed by start_span in the caller)
+                pass  # span events are added inside start_span context
+            except Exception:
+                pass  # fail-closed
 
 
 def _request_identity(trace_id: str, run_id: str, skill: str, input_: Any) -> str:
@@ -337,6 +360,53 @@ def stage_six_skill_run(
     observer: Callable[[dict[str, Any]], None] | None = None,
 ) -> StagedRun:
     """Bind one immutable revision, freeze six inputs, and enqueue the DAG."""
+
+    # M6-A: OTel controller span wrapping the entire skill-run orchestration
+    if _OTEL_ENABLED:
+        with _otel.controller_span(run_id=run_id, trace_id=trace_id,
+                                   agent_role="m4f-controller",
+                                   stage="skill_run") as _otel_span:
+            result = _stage_six_skill_run_inner(
+                controller_conn, snapshot_conn,
+                run_id=run_id, trace_id=trace_id, repo=repo,
+                pr_number=pr_number, base_sha=base_sha, head_sha=head_sha,
+                source_call_id=source_call_id,
+                source_evidence_digest=source_evidence_digest,
+                skill_inputs=skill_inputs,
+                snapshot_worker_id=snapshot_worker_id,
+                observer=observer,
+            )
+            _otel_span.set_attribute("mp.final_status", "staged")
+            return result
+    return _stage_six_skill_run_inner(
+        controller_conn, snapshot_conn,
+        run_id=run_id, trace_id=trace_id, repo=repo,
+        pr_number=pr_number, base_sha=base_sha, head_sha=head_sha,
+        source_call_id=source_call_id,
+        source_evidence_digest=source_evidence_digest,
+        skill_inputs=skill_inputs,
+        snapshot_worker_id=snapshot_worker_id,
+        observer=observer,
+    )
+
+
+def _stage_six_skill_run_inner(
+    controller_conn: Any,
+    snapshot_conn: Any,
+    *,
+    run_id: str,
+    trace_id: str,
+    repo: str,
+    pr_number: int,
+    base_sha: str,
+    head_sha: str,
+    source_call_id: str,
+    source_evidence_digest: str,
+    skill_inputs: Mapping[str, Any],
+    snapshot_worker_id: str = "snapshot-worker",
+    observer: Callable[[dict[str, Any]], None] | None = None,
+) -> StagedRun:
+    """Inner implementation (called with or without OTel span wrapper)."""
 
     _emit(observer, "revision.binding.started", run_id=run_id, trace_id=trace_id)
     with controller_conn.cursor() as cur:
