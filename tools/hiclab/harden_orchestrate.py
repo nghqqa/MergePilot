@@ -59,7 +59,7 @@ def orchestrate(inspect_obj, kind, agent_name, run_id,
 
     # 3. build argv from FULL inspect contract + env-file + hardening
     argv = worker_argv.build_run_argv_from_inspect(
-        container_name or ("hiclaw-%s-%s" % (kind, agent_name)),
+        container_name or ("agentteams-%s-%s" % (kind, agent_name)),
         inspect, envfile_path, hardening)
     return {
         "argv": argv,

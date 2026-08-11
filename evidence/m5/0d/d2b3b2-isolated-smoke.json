@@ -1,0 +1,220 @@
+{
+  "kind": "d2b3b2-isolated-smoke",
+  "source_commit": "e984ef394ce80e3572159f9ebed154518d7565e4",
+  "passed": 42,
+  "failed": 0,
+  "all_ok": true,
+  "checks": [
+    {
+      "name": "proxy self-check",
+      "ok": true,
+      "detail": "self-check ok"
+    },
+    {
+      "name": "proxy listening socket exists",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "proxy socket mode 0600",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "marker written",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "marker has pid line",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "marker has digest line",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "GET /_ping \u2192 200",
+      "ok": true,
+      "detail": "got 200"
+    },
+    {
+      "name": "create agentteams-worker-fixer \u2192 201",
+      "ok": true,
+      "detail": "got 201 {\"Id\":\"fe76b7fb6eef9c96e6da0a837c8b324ed74190448a3098deaa33ae0a2be18a18\",\"Warnings\":[]}\n"
+    },
+    {
+      "name": "real container restart=no",
+      "ok": true,
+      "detail": "got 'no'"
+    },
+    {
+      "name": "real container label hardened=1",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "real container label agent=fixer",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "real container label run_id",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "real container label scope",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "start worker \u2192 204",
+      "ok": true,
+      "detail": "got 204"
+    },
+    {
+      "name": "inspect worker \u2192 200",
+      "ok": true,
+      "detail": "got 200"
+    },
+    {
+      "name": "stop?t=10 \u2192 204",
+      "ok": true,
+      "detail": "got 204"
+    },
+    {
+      "name": "image inspect (allowlisted) \u2192 200",
+      "ok": true,
+      "detail": "got 200"
+    },
+    {
+      "name": "delete?force=true \u2192 204",
+      "ok": true,
+      "detail": "got 204"
+    },
+    {
+      "name": "GET /version \u2192 403",
+      "ok": true,
+      "detail": "got 403"
+    },
+    {
+      "name": "GET /info \u2192 403",
+      "ok": true,
+      "detail": "got 403"
+    },
+    {
+      "name": "GET /events \u2192 403",
+      "ok": true,
+      "detail": "got 403"
+    },
+    {
+      "name": "GET /containers/x/logs \u2192 403",
+      "ok": true,
+      "detail": "got 403"
+    },
+    {
+      "name": "GET /containers/x/stats \u2192 403",
+      "ok": true,
+      "detail": "got 403"
+    },
+    {
+      "name": "GET /containers/x/changes \u2192 403",
+      "ok": true,
+      "detail": "got 403"
+    },
+    {
+      "name": "POST /containers/x/wait \u2192 403",
+      "ok": true,
+      "detail": "got 403"
+    },
+    {
+      "name": "archive /etc \u2192 403",
+      "ok": true,
+      "detail": "got 403"
+    },
+    {
+      "name": "archive / \u2192 403",
+      "ok": true,
+      "detail": "got 403"
+    },
+    {
+      "name": "archive .. \u2192 403",
+      "ok": true,
+      "detail": "got 403"
+    },
+    {
+      "name": "stop wrong query \u2192 403",
+      "ok": true,
+      "detail": "got 403"
+    },
+    {
+      "name": "stop no query \u2192 403",
+      "ok": true,
+      "detail": "got 403"
+    },
+    {
+      "name": "delete wrong query \u2192 403",
+      "ok": true,
+      "detail": "got 403"
+    },
+    {
+      "name": "delete no query \u2192 403",
+      "ok": true,
+      "detail": "got 403"
+    },
+    {
+      "name": "image wrong digest \u2192 403",
+      "ok": true,
+      "detail": "got 403"
+    },
+    {
+      "name": "wrong name \u2192 403",
+      "ok": true,
+      "detail": "got 403"
+    },
+    {
+      "name": "build \u2192 403",
+      "ok": true,
+      "detail": "got 403"
+    },
+    {
+      "name": "networks create \u2192 403",
+      "ok": true,
+      "detail": "got 403"
+    },
+    {
+      "name": "no stray containers from negatives",
+      "ok": true,
+      "detail": "stray=[]"
+    },
+    {
+      "name": "upstream unavailable \u2192 502",
+      "ok": true,
+      "detail": "got 502"
+    },
+    {
+      "name": "container residue=0",
+      "ok": true,
+      "detail": "left=[]"
+    },
+    {
+      "name": "volume residue=0 (new only)",
+      "ok": true,
+      "detail": "new=set()"
+    },
+    {
+      "name": "proxy socket removed",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "marker removed",
+      "ok": true,
+      "detail": ""
+    }
+  ],
+  "timestamp": "2026-08-11T16:16:20Z"
+}

@@ -42,7 +42,11 @@ UPSTREAM_DISABLE_MARKER = "/etc/hiclab/upstream-disable-auto-create"
 PROXY_MARKER_CONTENT = b"hiclab-proxy:deployed:v1\n"
 UPSTREAM_MARKER_CONTENT = b"hiclab-upstream:disable-auto-create:v1\n"
 
-MANAGER_NAME = "hiclaw-manager"
+# D2B-3 v1.2.2 upgrade: container names derived from managed_containers,
+# which uses the AGENTTEAMS_RESOURCE_PREFIX (default agentteams- for v1.2.2).
+# guarded_start imports mc (managed_containers) at the top of the file.
+MANAGER_NAME = mc.MANAGER_NAME
+CONTROLLER_NAME = mc.CONTROLLER_NAME
 
 
 def _read_file_bytes(path):
@@ -106,6 +110,124 @@ def manager_start_allowed(stat_fn=None, read_fn=None):
         return (True, "upstream disable-auto-create marker valid (%s)"
                 % UPSTREAM_DISABLE_MARKER)
     return (False, "no valid deployed-proxy or upstream-disable marker")
+
+
+# ---------------------------------------------------------------------------
+# D2B-3B1: PID-binding marker validation (design §3.7 / B7).
+#
+# The D2B-3B1 proxy writes a multi-line marker:
+#   hiclab-proxy:deployed:v1\n
+#   pid=<PID>\n
+#   digest=<config-digest>\n
+# This binds the marker to the live proxy process. If the proxy dies, the PID
+# goes stale and this validation rejects the marker (fail-closed: guarded_start
+# then blocks the controller/manager). The legacy single-line marker (just
+# ``hiclab-proxy:deployed:v1\n``) is still accepted by ``validate_marker`` for
+# backward compatibility with the pre-D2B-3B1 contract; this function adds the
+# PID liveness check on top.
+# ---------------------------------------------------------------------------
+
+import re as _re
+
+_PID_LINE_RE = _re.compile(rb"^pid=(\d+)\n", _re.MULTILINE)
+_DIGEST_LINE_RE = _re.compile(rb"^digest=([0-9a-f]+)\n", _re.MULTILINE)
+
+
+def _pid_alive(pid, os_kill=None):
+    """Return True if ``pid`` is a live process. Uses os.kill(pid, 0).
+
+    Returns False on ESRCH (no such process). Re-raises on EPERM (we lack
+    permission to signal — treat as ambiguous; caller decides). The injected
+    ``os_kill`` is for testability.
+    """
+    os_kill = os_kill or os.kill
+    try:
+        os_kill(int(pid), 0)
+        return True
+    except OSError as e:
+        import errno as _errno
+        if e.errno == _errno.ESRCH:
+            return False
+        # EPERM: process exists but we can't signal it — ambiguous; be safe
+        # and treat as alive (the process IS there).
+        if e.errno == _errno.EPERM:
+            return True
+        raise
+
+
+def validate_proxy_marker_alive(path, expected_digest=None, stat_fn=None,
+                                read_fn=None, os_kill=None):
+    """Validate the D2B-3B1 proxy marker AND check the bound PID is alive.
+
+    Returns (ok, reason). Stricter than ``validate_marker``:
+      1. All the same file/mode/content checks (delegates to validate_marker
+         for the first line).
+      2. Additionally parses ``pid=<PID>`` and (optionally) ``digest=<hex>``
+         lines from the full marker content.
+      3. Verifies the PID is a live process (else fail-closed: stale marker).
+      4. If ``expected_digest`` is provided, verifies the marker's digest
+         matches (config-change detection — a marker from a different proxy
+         config is rejected).
+
+    This function does NOT replace ``manager_start_allowed``; deployment code
+    may call it directly when PID-binding is required. The legacy
+    ``manager_start_allowed`` continues to accept the bare v1 marker.
+    """
+    # 1. file/mode/content structural checks (read full bytes here)
+    stat_fn = stat_fn or os.lstat
+    read_fn = read_fn or _read_file_bytes
+    try:
+        st = stat_fn(path)
+    except OSError:
+        return (False, "absent or lstat failed")
+    except Exception as exc:
+        return (False, "stat raised: %s" % exc)
+    try:
+        if stat_mod.S_ISLNK(st.st_mode):
+            return (False, "is symlink")
+        if not stat_mod.S_ISREG(st.st_mode):
+            return (False, "not a regular file")
+        if st.st_uid != 0:
+            return (False, "owner uid=%d (need 0)" % st.st_uid)
+        if (st.st_mode & 0o777) != 0o600:
+            return (False, "mode=%o (need 0600)" % (st.st_mode & 0o777))
+        content = read_fn(path)
+    except OSError:
+        return (False, "read failed")
+    except Exception as exc:
+        return (False, "read raised: %s" % exc)
+    if not content:
+        return (False, "empty")
+    # Must start with the canonical v1 prefix
+    if not content.startswith(PROXY_MARKER_CONTENT):
+        return (False, "missing v1 prefix")
+
+    # 2. parse pid
+    m = _PID_LINE_RE.search(content)
+    if not m:
+        return (False, "missing pid= line")
+    try:
+        pid = int(m.group(1))
+    except ValueError:
+        return (False, "malformed pid")
+    if pid <= 0:
+        return (False, "non-positive pid")
+
+    # 3. parse digest (optional in marker; required if expected_digest given)
+    m = _DIGEST_LINE_RE.search(content)
+    marker_digest = m.group(1).decode("ascii") if m else None
+    if expected_digest is not None:
+        if marker_digest is None:
+            return (False, "marker has no digest; expected %s" % expected_digest)
+        if marker_digest != expected_digest:
+            return (False, "config digest mismatch (stale or wrong proxy)")
+
+    # 4. PID liveness
+    if not _pid_alive(pid, os_kill=os_kill):
+        return (False, "proxy pid=%d not alive (stale marker)" % pid)
+
+    return (True, "proxy marker valid; pid=%d digest=%s"
+            % (pid, marker_digest or "<none>"))
 
 
 def _is_running(name, docker_runner):
@@ -281,18 +403,18 @@ def _rollback(started_names, docker_runner):
     """
     stopped = []
     names = list(started_names)
-    if "hiclaw-controller" in names:
-        names.remove("hiclaw-controller")
-        if _stop("hiclaw-controller", docker_runner) == 0:
-            stopped.append("hiclaw-controller")
+    if CONTROLLER_NAME in names:
+        names.remove(CONTROLLER_NAME)
+        if _stop(CONTROLLER_NAME, docker_runner) == 0:
+            stopped.append(CONTROLLER_NAME)
     for name in reversed(names):
         if _stop(name, docker_runner) == 0:
             stopped.append(name)
     # Re-verify: controller might have re-spawned before dying
-    if "hiclaw-controller" in stopped:
+    if CONTROLLER_NAME in stopped:
         time.sleep(1)
         for name in started_names:
-            if name != "hiclaw-controller" and _is_running(name, docker_runner):
+            if name != CONTROLLER_NAME and _is_running(name, docker_runner):
                 _stop(name, docker_runner)
     return stopped
 
@@ -320,17 +442,18 @@ def start_with_health_gate(docker_runner, timeout=90, poll=3, sleep_fn=None,
         # hiclaw-controller (docker-socket bypass: spawns workers, restarts
         # containers) or hiclaw-manager (auto-create). Start 0 production
         # containers. Stop controller if already running.
-        blocked = [MANAGER_NAME, "hiclaw-controller"]
+        blocked = [MANAGER_NAME, CONTROLLER_NAME]
         sys.stderr.write(
-            "BLOCKED_UPSTREAM: no capability marker — hiclaw-controller and "
-            "hiclaw-manager cannot be safely started (%s)\n" % mgr_reason)
+            "BLOCKED_UPSTREAM: no capability marker — %s and "
+            "%s cannot be safely started (%s)\n"
+            % (CONTROLLER_NAME, MANAGER_NAME, mgr_reason))
         controller_stopped = []
-        if _is_running("hiclaw-controller", docker_runner):
-            _stop("hiclaw-controller", docker_runner)
-            controller_stopped.append("hiclaw-controller")
+        if _is_running(CONTROLLER_NAME, docker_runner):
+            _stop(CONTROLLER_NAME, docker_runner)
+            controller_stopped.append(CONTROLLER_NAME)
             sleep_fn(2)
-            if _is_running("hiclaw-controller", docker_runner):
-                _stop("hiclaw-controller", docker_runner)
+            if _is_running(CONTROLLER_NAME, docker_runner):
+                _stop(CONTROLLER_NAME, docker_runner)
         return {"ok": False, "phase": "preflight",
                 "started_this_round": [],
                 "blocked": blocked, "failed_at": None,
