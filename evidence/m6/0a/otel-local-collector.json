@@ -1,0 +1,40 @@
+{
+  "kind": "m6a-otel-local-collector",
+  "runtime_source_commit": "d13459c459e5c63807853e3738b3040d1b577f01",
+  "verification_commit": "d13459c459e5c63807853e3738b3040d1b577f01",
+  "test_counts": {
+    "unit": 18,
+    "integration": 17,
+    "real_entry": 10,
+    "collector": 9,
+    "timeout_hardening": 3,
+    "total": 57
+  },
+  "paths_verified": {
+    "normal": "PASS (full trace: controller\u2192gateway\u2192skill\u2192mcp, 4 spans, hierarchy correct)",
+    "deny": "PASS (gateway span ERROR, decision=DENY)",
+    "timeout": "PASS (mcp span ERROR, timeout event)",
+    "rollback": "PASS (controller verdict=FAIL, attempt=2)"
+  },
+  "trace_hierarchy": "verified at receiver: parent_span_id chain controller\u2192gateway\u2192mcp",
+  "redaction": "PASS (PAT/token/api_key = <redacted> at receiver; raw values never appear)",
+  "exporter_fail_closed": {
+    "dead_port": "PASS (< 3.0s, failed=1)",
+    "slow_receiver": "PASS (~2.0s timeout, failed=1, business continues)",
+    "business_continues": "PASS (memory collector received span despite exporter failure)"
+  },
+  "regression": {
+    "skill_offline": "75 passed, 0 failed",
+    "hiclab_offline": "368 passed, 2 skipped, 0 failed",
+    "m4f_offline_gate": "SKIP (requires WSL2 MergePilot-Test; not a code regression)"
+  },
+  "all_ok": true,
+  "secret_leaks": 0,
+  "timestamp": "2026-08-11T23:10:05Z",
+  "boundary": {
+    "local_collector": "MergePilot minimal OTLP/HTTP receiver (not official otelcol)",
+    "sls": "NOT connected",
+    "production_trace": "NOT deployed",
+    "otelcol": "NOT deployed (local receiver only)"
+  }
+}

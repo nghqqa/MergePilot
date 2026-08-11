@@ -1,8 +1,9 @@
 # M6-A · OTel 可观测性设计冻结
 
-> 状态：**设计冻结**（design frozen），最小垂直闭环已实现并测试。
+> 状态：**本地 OTLP 闭环已完成**（local collector verified, 57 tests ×2 stable）。
 > 分支：`feat/m6a-otel-observability`（基于 main@b214518）
-> 冻结日期：2026-08-11
+> 更新日期：2026-08-11
+> Evidence：`evidence/m6/0a/otel-local-collector.json`
 > 上游：AgentTeams v1.2.2（commit 849182a），D2B-3 PASSED（hiclaw_live=true）
 
 ---
@@ -95,11 +96,15 @@ controller.process_event (run_id="test-run", stage="review")
 
 ---
 
-## 7. 本地 Collector
+## 7. 本地 Collector（已完成）
 
 - `InMemoryCollector`：线程安全，收集所有 span 到内存列表
-- 测试用：`set_collector(InMemoryCollector())` → 断言 span 结构
-- 生产用（未来）：替换为 OTLP HTTP exporter → 本地 otelcol → SLS
+- `LocalOTLPReceiver`：最小 OTLP/HTTP receiver（127.0.0.1:4318/v1/traces），解析 OTLP JSON，存储 span
+- `DualCollector`：InMemory + OTLPExporter 双写
+- `OTLPExporter`：timeout=2s, fail-closed (不可达 → 静默丢弃)
+- 测试已验证：完整 trace 到达 receiver，parent 链正确，mp.* 属性完整
+- **未部署官方 otelcol**；当前使用 MergePilot 最小 receiver
+- SLS、生产 trace、告警仍未实现
 
 ---
 
