@@ -1,0 +1,213 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="900" viewBox="0 0 1800 900" role="img" aria-labelledby="title desc">
+  <title id="title">MergePilot 多 Agent PR 审修与风险治理架构</title>
+  <desc id="desc">GitHub PR 经确定性 Workflow Controller 编排 Reviewer、Fixer 和 Verifier，调用六个 Skill，通过最小权限 Policy Gateway 和 GitHub MCP 完成审批、合并或回滚。PostgreSQL 与 pgvector 保存状态、Outbox、审计和 RAG 案例。</desc>
+
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f8fbff"/>
+      <stop offset="1" stop-color="#f5f3ff"/>
+    </linearGradient>
+    <linearGradient id="controller" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2563eb"/>
+      <stop offset="1" stop-color="#1d4ed8"/>
+    </linearGradient>
+    <linearGradient id="runtime" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7c3aed"/>
+      <stop offset="1" stop-color="#6d28d9"/>
+    </linearGradient>
+    <linearGradient id="skills" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0891b2"/>
+      <stop offset="1" stop-color="#0e7490"/>
+    </linearGradient>
+    <linearGradient id="governance" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ea580c"/>
+      <stop offset="1" stop-color="#c2410c"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#0f172a" flood-opacity="0.12"/>
+    </filter>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#64748b"/>
+    </marker>
+    <marker id="arrowBlue" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#2563eb"/>
+    </marker>
+    <style>
+      .font { font-family: Inter, "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", Arial, sans-serif; }
+      .title { font-size: 40px; font-weight: 750; fill: #0f172a; }
+      .subtitle { font-size: 19px; fill: #475569; }
+      .lane { font-size: 15px; font-weight: 750; letter-spacing: 1.6px; fill: #64748b; }
+      .card-title { font-size: 23px; font-weight: 750; }
+      .card-body { font-size: 17px; }
+      .small { font-size: 15px; }
+      .tiny { font-size: 13px; }
+      .white { fill: #ffffff; }
+      .ink { fill: #0f172a; }
+      .muted { fill: #475569; }
+      .connector { fill: none; stroke: #64748b; stroke-width: 3; marker-end: url(#arrow); }
+      .state-link { fill: none; stroke: #2563eb; stroke-width: 2.5; stroke-dasharray: 8 7; marker-end: url(#arrowBlue); }
+    </style>
+  </defs>
+
+  <rect width="1800" height="900" rx="30" fill="url(#bg)"/>
+  <path d="M0 170 H1800" stroke="#dbe5f1" stroke-width="2"/>
+
+  <g class="font">
+    <text x="70" y="70" class="title">MergePilot · 多 Agent PR 审修与风险治理闭环</text>
+    <text x="70" y="110" class="subtitle">确定性控制面掌握状态，Agent 负责语义决策，工具层执行最小权限操作，失败进入审批或回滚。</text>
+
+    <g transform="translate(70 132)">
+      <rect width="164" height="28" rx="14" fill="#dbeafe"/>
+      <circle cx="17" cy="14" r="5" fill="#2563eb"/>
+      <text x="30" y="20" class="tiny" fill="#1e40af" font-weight="700">CONTROL PLANE</text>
+      <rect x="176" width="160" height="28" rx="14" fill="#ede9fe"/>
+      <circle cx="193" cy="14" r="5" fill="#7c3aed"/>
+      <text x="206" y="20" class="tiny" fill="#5b21b6" font-weight="700">AGENT RUNTIME</text>
+      <rect x="348" width="154" height="28" rx="14" fill="#cffafe"/>
+      <circle cx="365" cy="14" r="5" fill="#0891b2"/>
+      <text x="378" y="20" class="tiny" fill="#155e75" font-weight="700">SKILL / TOOLS</text>
+      <rect x="514" width="154" height="28" rx="14" fill="#ffedd5"/>
+      <circle cx="531" cy="14" r="5" fill="#ea580c"/>
+      <text x="544" y="20" class="tiny" fill="#9a3412" font-weight="700">GOVERNANCE</text>
+    </g>
+
+    <text x="70" y="215" class="lane">PR 输入</text>
+    <text x="292" y="215" class="lane">确定性控制面</text>
+    <text x="625" y="215" class="lane">语义协作</text>
+    <text x="1005" y="215" class="lane">确定性工具执行</text>
+    <text x="1335" y="215" class="lane">受治理写入</text>
+
+    <!-- GitHub PR -->
+    <g filter="url(#shadow)">
+      <rect x="60" y="275" width="170" height="150" rx="22" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+    </g>
+    <circle cx="145" cy="315" r="22" fill="#111827"/>
+    <path d="M136 307 v18 M136 307 a7 7 0 1 0 0-14 M136 325 a7 7 0 1 0 0 14 M136 316 h18 a7 7 0 1 0 0-14" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
+    <text x="145" y="366" text-anchor="middle" class="card-title ink">GitHub PR</text>
+    <text x="145" y="396" text-anchor="middle" class="small muted">代码 · Diff · 元数据</text>
+
+    <!-- Controller -->
+    <g filter="url(#shadow)">
+      <rect x="285" y="250" width="280" height="200" rx="24" fill="url(#controller)"/>
+    </g>
+    <text x="425" y="294" text-anchor="middle" class="card-title white">Workflow Controller</text>
+    <text x="425" y="327" text-anchor="middle" class="small" fill="#dbeafe">唯一流程状态权威</text>
+    <rect x="317" y="350" width="216" height="68" rx="14" fill="#ffffff" fill-opacity="0.13" stroke="#ffffff" stroke-opacity="0.28"/>
+    <text x="425" y="376" text-anchor="middle" class="small white">状态机 · Outbox · 幂等</text>
+    <text x="425" y="402" text-anchor="middle" class="small white">重试 · 超时 · 崩溃恢复</text>
+
+    <!-- Agent runtime -->
+    <g filter="url(#shadow)">
+      <rect x="620" y="225" width="330" height="250" rx="26" fill="#ffffff" stroke="#c4b5fd" stroke-width="3"/>
+    </g>
+    <rect x="620" y="225" width="330" height="58" rx="24" fill="url(#runtime)"/>
+    <path d="M620 260 H950 V283 H620 Z" fill="url(#runtime)"/>
+    <text x="785" y="261" text-anchor="middle" class="card-title white">AgentTeams / HiClaw</text>
+    <text x="785" y="305" text-anchor="middle" class="tiny" fill="#6d28d9" font-weight="700">可适配 runtime · 非状态权威</text>
+
+    <g>
+      <rect x="650" y="326" width="86" height="78" rx="15" fill="#f5f3ff" stroke="#a78bfa" stroke-width="2"/>
+      <circle cx="693" cy="349" r="12" fill="#7c3aed"/>
+      <text x="693" y="382" text-anchor="middle" class="small ink" font-weight="700">Reviewer</text>
+      <rect x="742" y="326" width="86" height="78" rx="15" fill="#f5f3ff" stroke="#a78bfa" stroke-width="2"/>
+      <circle cx="785" cy="349" r="12" fill="#7c3aed"/>
+      <text x="785" y="382" text-anchor="middle" class="small ink" font-weight="700">Fixer</text>
+      <rect x="834" y="326" width="86" height="78" rx="15" fill="#f5f3ff" stroke="#a78bfa" stroke-width="2"/>
+      <circle cx="877" cy="349" r="12" fill="#7c3aed"/>
+      <text x="877" y="382" text-anchor="middle" class="small ink" font-weight="700">Verifier</text>
+    </g>
+    <rect x="671" y="424" width="228" height="30" rx="15" fill="#fef3c7"/>
+    <text x="785" y="445" text-anchor="middle" class="tiny" fill="#92400e" font-weight="700">当前：隔离 / 候选栈 · hiclaw_live=false</text>
+
+    <!-- Skills -->
+    <g filter="url(#shadow)">
+      <rect x="1005" y="250" width="245" height="200" rx="24" fill="url(#skills)"/>
+    </g>
+    <text x="1127" y="292" text-anchor="middle" class="card-title white">6 Skill DAG</text>
+    <g class="tiny" fill="#ecfeff" font-weight="650">
+      <text x="1035" y="330">01  diff-parse</text>
+      <text x="1035" y="360">02  risk-classify</text>
+      <text x="1035" y="390">03  sast-scan</text>
+      <text x="1137" y="330">04  test-runner</text>
+      <text x="1137" y="360">05  pr-lifecycle</text>
+      <text x="1137" y="390">06  case-retrieval</text>
+    </g>
+    <rect x="1035" y="410" width="185" height="24" rx="12" fill="#ffffff" fill-opacity="0.16"/>
+    <text x="1127" y="427" text-anchor="middle" class="tiny white">Schema · Deadline · Fail-closed</text>
+
+    <!-- Policy Gateway -->
+    <g filter="url(#shadow)">
+      <rect x="1310" y="250" width="225" height="200" rx="24" fill="url(#governance)"/>
+    </g>
+    <text x="1422" y="292" text-anchor="middle" class="card-title white">Policy Gateway</text>
+    <text x="1422" y="326" text-anchor="middle" class="small" fill="#ffedd5">所有写操作的权限门</text>
+    <g class="small white">
+      <text x="1342" y="365">✓ 角色 token</text>
+      <text x="1342" y="393">✓ 最小权限写约束</text>
+      <text x="1342" y="421">✓ L2 人工审批</text>
+    </g>
+
+    <!-- GitHub MCP -->
+    <g filter="url(#shadow)">
+      <rect x="1580" y="275" width="170" height="150" rx="22" fill="#ffffff" stroke="#fb923c" stroke-width="2.5"/>
+    </g>
+    <text x="1665" y="326" text-anchor="middle" class="card-title ink">GitHub MCP</text>
+    <text x="1665" y="358" text-anchor="middle" class="small muted">凭证隔离 sidecar</text>
+    <rect x="1605" y="378" width="120" height="27" rx="13" fill="#dcfce7"/>
+    <text x="1665" y="397" text-anchor="middle" class="tiny" fill="#166534" font-weight="750">Worker 零 PAT</text>
+
+    <!-- Main connectors -->
+    <path d="M230 350 H275" class="connector"/>
+    <path d="M565 350 H610" class="connector"/>
+    <path d="M950 350 H995" class="connector"/>
+    <path d="M1250 350 H1300" class="connector"/>
+    <path d="M1535 350 H1570" class="connector"/>
+
+    <!-- Outcomes -->
+    <path d="M1665 425 V492" class="connector"/>
+    <g filter="url(#shadow)">
+      <rect x="1430" y="505" width="205" height="78" rx="18" fill="#ecfdf5" stroke="#22c55e" stroke-width="2"/>
+      <rect x="1660" y="505" width="110" height="78" rx="18" fill="#fff7ed" stroke="#f97316" stroke-width="2"/>
+    </g>
+    <text x="1532" y="538" text-anchor="middle" class="small" fill="#166534" font-weight="750">APPROVE / MERGE</text>
+    <text x="1532" y="561" text-anchor="middle" class="tiny" fill="#15803d">授权后执行</text>
+    <text x="1715" y="537" text-anchor="middle" class="small" fill="#9a3412" font-weight="750">HOLD</text>
+    <text x="1715" y="560" text-anchor="middle" class="tiny" fill="#c2410c">或 ROLLBACK</text>
+    <path d="M1665 492 H1532 V495" fill="none" stroke="#22c55e" stroke-width="2.5" marker-end="url(#arrow)"/>
+    <path d="M1665 492 H1715 V495" fill="none" stroke="#f97316" stroke-width="2.5" marker-end="url(#arrow)"/>
+
+    <!-- State and evidence plane -->
+    <rect x="60" y="635" width="1710" height="190" rx="28" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+    <text x="90" y="676" class="lane">STATE · EVIDENCE · KNOWLEDGE PLANE</text>
+
+    <g>
+      <rect x="90" y="700" width="480" height="92" rx="18" fill="#eff6ff" stroke="#60a5fa" stroke-width="2"/>
+      <ellipse cx="142" cy="735" rx="24" ry="10" fill="#2563eb"/>
+      <path d="M118 735 V762 C118 776 166 776 166 762 V735" fill="#2563eb"/>
+      <ellipse cx="142" cy="762" rx="24" ry="10" fill="#1d4ed8"/>
+      <text x="190" y="735" class="card-title ink">PostgreSQL 16</text>
+      <text x="190" y="765" class="small muted">任务状态 · 阶段转换 · Outbox · 审批票据</text>
+    </g>
+
+    <g>
+      <rect x="600" y="700" width="480" height="92" rx="18" fill="#f5f3ff" stroke="#a78bfa" stroke-width="2"/>
+      <circle cx="652" cy="746" r="25" fill="#7c3aed"/>
+      <path d="M640 746 h24 M652 734 v24" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
+      <text x="700" y="735" class="card-title ink">审计证据与 Trace</text>
+      <text x="700" y="765" class="small muted">Finding · Decision · Run · source_commit</text>
+    </g>
+
+    <g>
+      <rect x="1110" y="700" width="610" height="92" rx="18" fill="#ecfeff" stroke="#22d3ee" stroke-width="2"/>
+      <circle cx="1162" cy="746" r="25" fill="#0891b2"/>
+      <path d="M1151 751 c10-24 24-24 28-7 c-10 1-18 7-25 15" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
+      <text x="1210" y="735" class="card-title ink">pgvector · Case Retrieval</text>
+      <text x="1210" y="765" class="small muted">历史案例作为不可信参考；不替代当次 SAST、测试与审批</text>
+    </g>
+
+    <!-- State links -->
+    <path d="M425 450 V610 Q425 625 410 625 V690" class="state-link"/>
+    <path d="M1127 450 V595 Q1127 610 1390 610 V690" class="state-link"/>
+    <path d="M1422 450 V620 Q1422 635 925 635 V690" class="state-link"/>
+  </g>
+</svg>
