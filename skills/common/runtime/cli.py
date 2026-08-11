@@ -397,51 +397,82 @@ def run_request(req, skill_fn, *, name=SKILL_NAME, version=SKILL_VERSION, timeou
     request_id = req["request_id"]
     trace_id = req["trace_id"]
 
+    # M6-A: OTel skill span (fail-closed if otel module not available)
+    _otel_ctx = None
+    _otel_span_obj = None
     try:
-        effective_timeout = _resolve_timeout(timeout_ms, req)
-    except errors.SkillError as exc:
-        env = E.build_response(name, version, request_id, trace_id, "ERROR",
-                               error_code=exc.code, message=exc.message,
-                               started_at=started_iso, duration_ms=dur())
+        import sys as _otel_sys
+        _otel_dir = os.path.join(os.path.dirname(os.path.dirname(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "tools", "otel")
+        if _otel_dir not in _otel_sys.path:
+            _otel_sys.path.insert(0, _otel_dir)
+        import otel_spans as _otel_mod
+        _otel_ctx = _otel_mod.skill_span(
+            run_id="", trace_id=trace_id,
+            skill_name=name, skill_version=version,
+            request_id=request_id, agent_role="skill")
+        _otel_span_obj = _otel_ctx.__enter__()
+    except Exception:
+        _otel_ctx = None  # ensure no double-enter
+
+    # M6-A: outer try/finally ensures OTel span is exited on ALL return paths
+    try:
+        try:
+            effective_timeout = _resolve_timeout(timeout_ms, req)
+        except errors.SkillError as exc:
+            env = E.build_response(name, version, request_id, trace_id, "ERROR",
+                                   error_code=exc.code, message=exc.message,
+                                   started_at=started_iso, duration_ms=dur())
+            env = _finalize(env)
+            return env, errors.cli_exit_code(env)
+
+        deadline = Deadline(effective_timeout)
+        ctx = {"request_id": request_id, "trace_id": trace_id, "deadline": deadline,
+               "input": req.get("input") or {}}
+
+        cap = _FdCapture()
+        try:
+            with cap:
+                deadline.check()
+                result = skill_fn(ctx)
+                deadline.check()
+            env = _result_to_envelope(result, name, version, request_id, trace_id, started_iso, started_monotonic)
+        except errors.SkillError as exc:
+            env = E.build_response(name, version, request_id, trace_id, "ERROR",
+                                   error_code=exc.code, message=exc.message,
+                                   started_at=started_iso, duration_ms=dur())
+        except SystemExit:
+            env = E.build_response(name, version, request_id, trace_id, "ERROR",
+                                   error_code=errors.INTERNAL_ERROR, message="skill raised SystemExit",
+                                   started_at=started_iso, duration_ms=dur())
+        except Exception as exc:  # noqa: BLE001
+            env = E.build_response(name, version, request_id, trace_id, "ERROR",
+                                   error_code=errors.INTERNAL_ERROR,
+                                   message="internal error: %s" % type(exc).__name__,
+                                   started_at=started_iso, duration_ms=dur())
+
+        if cap.stdout or cap.stderr:
+            _route_captured(cap.stdout, cap.stderr)
+            ev = list(env.get("evidence") or [])
+            if cap.stdout:
+                ev.append({"kind": "skill_stdout_digest", "ref": "sha256:" + E.sha256_hex(cap.stdout.encode("utf-8", "replace"))})
+            if cap.stderr:
+                ev.append({"kind": "skill_stderr_digest", "ref": "sha256:" + E.sha256_hex(cap.stderr.encode("utf-8", "replace"))})
+            env["evidence"] = ev
+
         env = _finalize(env)
         return env, errors.cli_exit_code(env)
-
-    deadline = Deadline(effective_timeout)
-    ctx = {"request_id": request_id, "trace_id": trace_id, "deadline": deadline,
-           "input": req.get("input") or {}}
-
-    cap = _FdCapture()
-    try:
-        with cap:
-            deadline.check()
-            result = skill_fn(ctx)
-            deadline.check()
-        env = _result_to_envelope(result, name, version, request_id, trace_id, started_iso, started_monotonic)
-    except errors.SkillError as exc:
-        env = E.build_response(name, version, request_id, trace_id, "ERROR",
-                               error_code=exc.code, message=exc.message,
-                               started_at=started_iso, duration_ms=dur())
-    except SystemExit:
-        env = E.build_response(name, version, request_id, trace_id, "ERROR",
-                               error_code=errors.INTERNAL_ERROR, message="skill raised SystemExit",
-                               started_at=started_iso, duration_ms=dur())
-    except Exception as exc:  # noqa: BLE001
-        env = E.build_response(name, version, request_id, trace_id, "ERROR",
-                               error_code=errors.INTERNAL_ERROR,
-                               message="internal error: %s" % type(exc).__name__,
-                               started_at=started_iso, duration_ms=dur())
-
-    if cap.stdout or cap.stderr:
-        _route_captured(cap.stdout, cap.stderr)
-        ev = list(env.get("evidence") or [])
-        if cap.stdout:
-            ev.append({"kind": "skill_stdout_digest", "ref": "sha256:" + E.sha256_hex(cap.stdout.encode("utf-8", "replace"))})
-        if cap.stderr:
-            ev.append({"kind": "skill_stderr_digest", "ref": "sha256:" + E.sha256_hex(cap.stderr.encode("utf-8", "replace"))})
-        env["evidence"] = ev
-
-    env = _finalize(env)
-    return env, errors.cli_exit_code(env)
+    finally:
+        # M6-A: exit OTel skill span on ALL return paths (fail-closed)
+        if _otel_ctx is not None:
+            try:
+                # If the skill produced an ERROR response, mark the span ERROR
+                if 'env' in dir() and isinstance(env, dict) and env.get('status') == 'ERROR':
+                    if _otel_span_obj is not None:
+                        _otel_span_obj.set_status('ERROR')
+                _otel_ctx.__exit__(None, None, None)
+            except Exception:
+                pass
 
 
 def _emit(env):

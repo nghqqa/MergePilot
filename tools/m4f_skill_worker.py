@@ -302,6 +302,21 @@ class SkillWorker:
         if module is None:
             raise SkillWorkerError(f"unknown Skill: {job.skill_name}")
         started = time.monotonic()
+        # M6-A: OTel skill span (fail-closed)
+        _otel_ctx = None
+        try:
+            _otel_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "otel")
+            if _otel_dir not in sys.path:
+                sys.path.insert(0, _otel_dir)
+            import otel_spans as _otel
+            _otel_ctx = _otel.skill_span(
+                run_id=job.run_id, trace_id=job.trace_id,
+                skill_name=job.skill_name, skill_version="1.0",
+                request_id=getattr(job, 'request_id', ''),
+                agent_role="skill-worker")
+            _otel_ctx.__enter__()
+        except Exception:
+            pass  # fail-closed
         try:
             proc = subprocess.run(
                 [self.python_executable, "-m", module],
@@ -315,6 +330,12 @@ class SkillWorker:
             )
         except subprocess.TimeoutExpired as exc:
             raise SkillWorkerError("Skill subprocess timeout") from exc
+        finally:
+            if _otel_ctx is not None:
+                try:
+                    _otel_ctx.__exit__(None, None, None)
+                except Exception:
+                    pass
         duration_ms = int((time.monotonic() - started) * 1000)
         stderr_digest = hashlib.sha256(proc.stderr).hexdigest()
         self._emit(
