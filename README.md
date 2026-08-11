@@ -3,7 +3,7 @@
 > **不止提意见——把 PR 从审查推进到受治理的修复、验证、审批与回滚。**
 > 高危变更强制人工审批，失败可回滚，全程可审计。以 [AgentTeams / HiClaw](https://hiclaw.io) 为可适配的 Agent runtime。
 
-**当前状态**：初赛阶段（2026-08-11）。确定性控制面、6 Skill DAG、回滚链与最小权限 Gateway 已在 fixture / 隔离测试栈验证；**生产 HiClaw live 尚未达成（`hiclaw_live=false`）**。所有声明均可在 [声明—证据矩阵](docs/初赛声明-证据矩阵.md) 中逐项核对。
+**当前状态**：复赛阶段（2026-08-12）。确定性控制面、6 Skill DAG、回滚链、最小权限 Gateway 与 **D2B-3 fail-closed Docker socket proxy** 均已验证。**D2B-3 真实 AgentTeams v1.2.2 生产 live 已通过（`hiclaw_live=true`，64/64 PASS）**。权威 evidence：[`evidence/m5/0d/hiclaw-v122-true-live-pass.json`](evidence/m5/0d/hiclaw-v122-true-live-pass.json)。所有声明均可在 [声明—证据矩阵](docs/初赛声明-证据矩阵.md) 中逐项核对。
 
 ---
 
@@ -76,7 +76,7 @@
 # 1) 6 Skill 确定性测试（宿主 Python，需 jsonschema）
 bash tests/skills/run_all.sh
 
-# 2) AgentTeams 协议级全链 E2E（fixture，hiclaw_live=false，16 门禁）
+# 2) AgentTeams 协议级全链 E2E（fixture，16 门禁）
 bash tests/m4f1/run_all.sh
 
 # 3) Benchmark 离线校验（复算冻结产物，不发外部请求）
@@ -86,12 +86,11 @@ python benchmark/test_offline.py
 python tests/hiclab/run_tests.py
 ```
 
-> 早期 HiClaw v1.1.2 手动 Demo 路径（`tools/demo.sh` 等）依赖一个已存在的本地 HiClaw + DeepSeek 环境，仅适用于**隔离 / 候选场景（`hiclaw_live=false`）**，已归档至 [`docs/README-历史运行记录.md`](docs/README-历史运行记录.md)，环境搭建见 [`docs/环境搭建-HiClaw-WSL.md`](docs/环境搭建-HiClaw-WSL.md)。
+> 早期 HiClaw v1.1.2 手动 Demo 路径（`tools/demo.sh` 等）依赖一个已存在的本地 HiClaw + DeepSeek 环境，已归档至 [`docs/README-历史运行记录.md`](docs/README-历史运行记录.md)，环境搭建见 [`docs/环境搭建-HiClaw-WSL.md`](docs/环境搭建-HiClaw-WSL.md)。
 
-## 当前边界（不得宣称）
+## 当前边界
 
-- **`hiclaw_live=false`**：22 项公式 5 true / 0 false / 17 unproven，缺少生产 HiClaw live 窗口。
-- **D2B-3 BLOCKED_UPSTREAM**：HiClaw controller 无 disable-auto-create 配置（审计确认）；socket proxy 未部署。
+- **`hiclaw_live=true`**（D2B-3 PASSED）：MergePilot Docker socket proxy 已在真实 AgentTeams v1.2.2 生产环境验证通过（64/64 PASS）。
 - **OTel / SLS 未实现**（D2B-2 缺口）；**Nacos / RocketMQ 未接入**。
 - **Benchmark 为受控本地评测**：N=10 小样本、单模型、synthetic fixtures、每对单次运行；不等于 E2E 完成率，不证明 recall 提升。
 - **Manager 阶段交接偶需人工 nudge**；M5-0B 候选工作流已确定性闭环（14/14+13/13），但仅限候选 / 隔离栈，不可外推为生产零人工。
@@ -126,7 +125,7 @@ MergePilot/
 
 ## Roadmap
 
-下一主线（详见 [`docs/复赛路线图.md`](docs/复赛路线图.md)）：D2B-3 socket proxy 解除 upstream 阻塞 → 推进至生产 HiClaw live（当前 `hiclaw_live=false`）→ OTel/SLS 可观测 → Benchmark N≥20。规划能力不写成已运行。
+下一主线（详见 [`docs/复赛路线图.md`](docs/复赛路线图.md)）：OTel/SLS 可观测 → Benchmark N≥20 → 多仓库稳定性。D2B-3 socket proxy 已完成（`hiclaw_live=true`）。规划能力不写成已运行。
 
 ## 团队
 
