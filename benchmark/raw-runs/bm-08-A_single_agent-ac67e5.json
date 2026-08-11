@@ -1,0 +1,49 @@
+{
+  "run_id": "bm-08-A_single_agent-ac67e5",
+  "case_id": "bm-08",
+  "group": "A_single_agent",
+  "model": "deepseek-v4-flash",
+  "started_at": "2026-08-11T10:35:45Z",
+  "finished_at": "2026-08-11T10:35:55Z",
+  "status": "completed",
+  "findings": [
+    {
+      "description": "subprocess.call is used; subprocess.run is recommended for better control and error handling. The current call is not vulnerable to command injection because arguments are passed as a list without shell=True.",
+      "category": "other",
+      "severity": "info"
+    },
+    {
+      "description": "The string 'ghp_XXXXXXXXXXXX' in get_version_string may be misidentified as a GitHub token by naive secret scanners, but it is not a real secret. If possible, use a clearer placeholder to reduce false positives.",
+      "category": "secret",
+      "severity": "info"
+    }
+  ],
+  "decision": "APPROVE",
+  "fix_applied": null,
+  "fix_description": null,
+  "verification_passed": null,
+  "rollback_executed": false,
+  "human_interventions": [],
+  "duration_seconds": 9.12,
+  "token_usage": {
+    "prompt_tokens": 372,
+    "completion_tokens": 820,
+    "total_tokens": 1192
+  },
+  "model_cost": null,
+  "audit_events": [
+    {
+      "phase": "review",
+      "findings_count": 2
+    }
+  ],
+  "audit_complete": true,
+  "error_detail": null,
+  "rag_citations": null,
+  "api_request_count": 1,
+  "eval_passed": false,
+  "eval_reason": "clean_case_fp=2",
+  "eval_tp": 0,
+  "eval_fp": 2,
+  "eval_fn": 0
+}

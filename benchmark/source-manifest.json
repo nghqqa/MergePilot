@@ -1,0 +1,36 @@
+{
+  "generated_at": "2026-08-11T10:34:54Z",
+  "git_head": "4b053efc3cb16fe4558143a1c7bbdd78e2b18073",
+  "model": "deepseek-v4-flash",
+  "timeout_seconds": 120,
+  "token_budget": 4096,
+  "temperature": 0.1,
+  "files": {
+    "benchmark/adapters/base.py": "fe2483eaa1ff67576a76bd9ab71e99bfd5a294bba87a84c41edec3f26ee59545",
+    "benchmark/adapters/single_agent.py": "02d2ba5d963178e5de60c8f2fe6b4926859e3d8bc8f02cb57bdfc0dc1aead03d",
+    "benchmark/adapters/mergepilot.py": "1ab11eb2bb9a653fd804068556cc5ae4602a891a494fdcf2dcccf866c7a227dc",
+    "benchmark/evaluator.py": "61dcaec44fc2d2038a66f26e1bafdeb4f4acd063157d0afd4b0199563e23929b",
+    "benchmark/run_benchmark.py": "c7999ddd44f115b77ef3177be801a171315e03f2f45f015a225da1ec448c0059",
+    "benchmark/summarize_results.py": "e113d8e127a3de0495885b1ad114e3331223b7602cded0ef23dc45ea5111d1a4",
+    "benchmark/gen_smoke_summary.py": "c1874bc184f346d3e3db3123e4796c36d871b02fdf8b8fc63f8ea7482687264f",
+    "benchmark/gen_source_manifest.py": "366062cf155d5a4fec8cdf5ecc036e28c16beafc2ead1325268b8faf0df56eac",
+    "benchmark/validate_dataset.py": "a18b6867c16bb9352d076bc633d7efa364c0274bbd003cc97f44e2dfc4040df7",
+    "benchmark/test_offline.py": "c4fe7feccac859b92d7cdbf9bd178986189272184e5cf0d96d44e60ec5ddd658",
+    "benchmark/dataset/cases.jsonl": "3ad62febd32b4decc55d4f93c8731829c247be1186a6e012fe9b4bbf0248ad6f",
+    "benchmark/schemas/case.schema.json": "c3a49bc99356d21c7e201d870ba72a13ed6bd076ab841d0fa5d0cc0eddd26901",
+    "benchmark/schemas/run-result.schema.json": "98cc1955427897b5e86fe4aae3406577f2a3ae99fcda41558245c0dcb35e4ba2",
+    "benchmark/README.md": "6b462975953e2fc1d8a1b2e06d25737e0e51108102a91fd231f3122e608404ce"
+  },
+  "fixtures": {
+    "bm-01_clean_pr.py": "f42c2bbb21a71d38af5e64c1f7c54760a52e7797497aba50ed22a08b4c763e88",
+    "bm-02_hardcoded_secret.py": "c9280a9b39696f78c70fe56b731121009e1d637d18586584595a912fd7e412f2",
+    "bm-03_sql_injection.py": "f5798a7fd1bfd9c641dfcfd985a1724df36df7d5e9e5abf0c684a6864deca872",
+    "bm-04_dangerous_command.py": "724e9c0ccab03efaec3e230dc3d6a6412a92141cc8a134719649b3f1e67673b1",
+    "bm-05_dependency_vuln.py": "6e4a585b9eba90b7de5c7d088db58d875c9d5d2d3647ab57b327fd1490d37596",
+    "bm-06_test_failure.py": "578040707fb3544955d6a750784448e19c5f0182e89d3dccb3250e757f1f3be5",
+    "bm-07_fix_conflict.py": "ad9aa0907bd8a8758903262dcf6d35b0f3ba9d7520f1c6c2e21d6e1e9df0254b",
+    "bm-08_allowlist_fp.py": "e7305904bab2a8217038a659b45212b1e9c6727fa2fca0d39112061579bd5670",
+    "bm-09_prompt_injection.py": "b35f7a80d767d6bb7f589fc27b7611c8bee575e05e28f9d54d3d19444982d0a8",
+    "bm-10_l2_rollback.py": "22468324c9bac2d56d906d243d0ae17463b5b5ed923aeb93b5be927abecd00fe"
+  }
+}

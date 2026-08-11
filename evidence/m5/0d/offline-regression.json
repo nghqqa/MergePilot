@@ -1,0 +1,159 @@
+{
+  "command": "run_all_test.sh + run_legacy_functional_regression.sh",
+  "legacy_runs": [
+    {
+      "actual_count": 75,
+      "expected_count": 75,
+      "match": true,
+      "output_sha256": "8ed244d8ca3f95df19a7126aca95c67b71465f6b9c1a5a8da469cf5d05b6ebd7",
+      "platform_id": "M4-A/win32 (m4a-venv)",
+      "rc": 0
+    },
+    {
+      "actual_count": 96,
+      "expected_count": 96,
+      "match": true,
+      "output_sha256": "8ed244d8ca3f95df19a7126aca95c67b71465f6b9c1a5a8da469cf5d05b6ebd7",
+      "platform_id": "M4-B/win32 (m4a-venv)",
+      "rc": 0
+    },
+    {
+      "actual_count": 87,
+      "expected_count": 87,
+      "match": true,
+      "output_sha256": "8ed244d8ca3f95df19a7126aca95c67b71465f6b9c1a5a8da469cf5d05b6ebd7",
+      "platform_id": "M4-C/win32 (m4a-venv)",
+      "rc": 0
+    },
+    {
+      "actual_count": 54,
+      "expected_count": 54,
+      "match": true,
+      "output_sha256": "8ed244d8ca3f95df19a7126aca95c67b71465f6b9c1a5a8da469cf5d05b6ebd7",
+      "platform_id": "M4-D/win32 (m4a-venv)",
+      "rc": 0
+    },
+    {
+      "actual_count": 166,
+      "expected_count": 166,
+      "match": true,
+      "output_sha256": "8ed244d8ca3f95df19a7126aca95c67b71465f6b9c1a5a8da469cf5d05b6ebd7",
+      "platform_id": "M4-E-win/win32 (m4a-venv)",
+      "rc": 0
+    },
+    {
+      "actual_count": 158,
+      "expected_count": 158,
+      "match": true,
+      "output_sha256": "8ed244d8ca3f95df19a7126aca95c67b71465f6b9c1a5a8da469cf5d05b6ebd7",
+      "platform_id": "M4-E-posix/posix (container --init)",
+      "rc": 0
+    }
+  ],
+  "m4f_gates": [
+    {
+      "gate_id": "schema foundation and exact ACL",
+      "output_sha256": "343c48215b8d5b5a89cdfff5b3dd2284cac62a4f963599f3b15048620af161ba",
+      "rc": 0,
+      "status": "PASS"
+    },
+    {
+      "gate_id": "MergePilot JCS Profile fixed oracle",
+      "output_sha256": "343c48215b8d5b5a89cdfff5b3dd2284cac62a4f963599f3b15048620af161ba",
+      "rc": 0,
+      "status": "PASS"
+    },
+    {
+      "gate_id": "producer SD APIs",
+      "output_sha256": "343c48215b8d5b5a89cdfff5b3dd2284cac62a4f963599f3b15048620af161ba",
+      "rc": 0,
+      "status": "PASS"
+    },
+    {
+      "gate_id": "producer two-connection concurrency",
+      "output_sha256": "343c48215b8d5b5a89cdfff5b3dd2284cac62a4f963599f3b15048620af161ba",
+      "rc": 0,
+      "status": "PASS"
+    },
+    {
+      "gate_id": "claim/heartbeat/fail state machines",
+      "output_sha256": "343c48215b8d5b5a89cdfff5b3dd2284cac62a4f963599f3b15048620af161ba",
+      "rc": 0,
+      "status": "PASS"
+    },
+    {
+      "gate_id": "atomic completion APIs",
+      "output_sha256": "343c48215b8d5b5a89cdfff5b3dd2284cac62a4f963599f3b15048620af161ba",
+      "rc": 0,
+      "status": "PASS"
+    },
+    {
+      "gate_id": "purge and reference counting",
+      "output_sha256": "343c48215b8d5b5a89cdfff5b3dd2284cac62a4f963599f3b15048620af161ba",
+      "rc": 0,
+      "status": "PASS"
+    },
+    {
+      "gate_id": "build host runtime fixture",
+      "output_sha256": "343c48215b8d5b5a89cdfff5b3dd2284cac62a4f963599f3b15048620af161ba",
+      "rc": 0,
+      "status": "PASS"
+    },
+    {
+      "gate_id": "release evidence negatives (writer fail-closed + stale cleared)",
+      "output_sha256": "343c48215b8d5b5a89cdfff5b3dd2284cac62a4f963599f3b15048620af161ba",
+      "rc": 0,
+      "status": "PASS"
+    },
+    {
+      "gate_id": "release evidence unit tests",
+      "output_sha256": "343c48215b8d5b5a89cdfff5b3dd2284cac62a4f963599f3b15048620af161ba",
+      "rc": 0,
+      "status": "PASS"
+    },
+    {
+      "gate_id": "gate-log cleanup counterexample (P3-1, success + failure)",
+      "output_sha256": "343c48215b8d5b5a89cdfff5b3dd2284cac62a4f963599f3b15048620af161ba",
+      "rc": 0,
+      "status": "PASS"
+    },
+    {
+      "gate_id": "host Skill worker unit tests",
+      "output_sha256": "343c48215b8d5b5a89cdfff5b3dd2284cac62a4f963599f3b15048620af161ba",
+      "rc": 0,
+      "status": "PASS"
+    },
+    {
+      "gate_id": "text/cache/credential/attribution hygiene",
+      "output_sha256": "343c48215b8d5b5a89cdfff5b3dd2284cac62a4f963599f3b15048620af161ba",
+      "rc": 0,
+      "status": "PASS"
+    },
+    {
+      "gate_id": "M4-F tracked whitespace",
+      "output_sha256": "343c48215b8d5b5a89cdfff5b3dd2284cac62a4f963599f3b15048620af161ba",
+      "rc": 0,
+      "status": "PASS"
+    },
+    {
+      "gate_id": "six-Skill full-chain Demo, revision cut, complete/purge race",
+      "output_sha256": "343c48215b8d5b5a89cdfff5b3dd2284cac62a4f963599f3b15048620af161ba",
+      "rc": 0,
+      "status": "PASS"
+    },
+    {
+      "gate_id": "AgentTeams protocol E2E (real Gateway + six Skills + PRLifecycle)",
+      "output_sha256": "343c48215b8d5b5a89cdfff5b3dd2284cac62a4f963599f3b15048620af161ba",
+      "rc": 0,
+      "status": "PASS"
+    },
+    {
+      "gate_id": "M4-A~E legacy functional regression (authoritative platforms)",
+      "output_sha256": "343c48215b8d5b5a89cdfff5b3dd2284cac62a4f963599f3b15048620af161ba",
+      "rc": 0,
+      "status": "PASS"
+    }
+  ],
+  "schema_version": "1",
+  "source_commit": "4b053efc3cb16fe4558143a1c7bbdd78e2b18073"
+}

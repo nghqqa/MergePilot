@@ -1,0 +1,53 @@
+{
+  "run_id": "bm-07-B_mergepilot-1eb484",
+  "case_id": "bm-07",
+  "group": "B_mergepilot",
+  "model": "deepseek-v4-flash",
+  "started_at": "2026-08-11T10:37:45Z",
+  "finished_at": "2026-08-11T10:37:53Z",
+  "status": "completed",
+  "findings": [
+    {
+      "description": "Password hashing uses insecure MD5 with no salt. MD5 is cryptographically broken and unsalted hashes are vulnerable to rainbow table and brute-force attacks. This PR reverts an existing security fix that required bcrypt, reintroducing a critical vulnerability in password storage.",
+      "category": "other",
+      "severity": "critical"
+    }
+  ],
+  "decision": "REJECT",
+  "fix_applied": null,
+  "fix_description": "Replace MD5 hashing with bcrypt. In hash_password, import bcrypt and return bcrypt.hashpw(password.encode(), bcrypt.gensalt()). In verify_password, use bcrypt.checkpw(password.encode(), hashed.encode()) to verify. This restores the previously merged security fix and resolves the merge conflict.",
+  "verification_passed": null,
+  "rollback_executed": false,
+  "human_interventions": [],
+  "duration_seconds": 8.21,
+  "token_usage": {
+    "total_tokens": 1125
+  },
+  "model_cost": null,
+  "audit_events": [
+    {
+      "phase": "review",
+      "findings_count": 1,
+      "decision": "REJECT",
+      "risk_level": "L2"
+    },
+    {
+      "phase": "fix",
+      "status": "described",
+      "is_fixable": true
+    },
+    {
+      "phase": "decision",
+      "decision": "REJECT"
+    }
+  ],
+  "audit_complete": true,
+  "error_detail": null,
+  "rag_citations": null,
+  "api_request_count": 2,
+  "eval_passed": false,
+  "eval_reason": "fn=1",
+  "eval_tp": 0,
+  "eval_fp": 1,
+  "eval_fn": 1
+}

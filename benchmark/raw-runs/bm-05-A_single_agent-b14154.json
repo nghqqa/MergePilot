@@ -1,0 +1,54 @@
+{
+  "run_id": "bm-05-A_single_agent-b14154",
+  "case_id": "bm-05",
+  "group": "A_single_agent",
+  "model": "deepseek-v4-flash",
+  "started_at": "2026-08-11T10:35:22Z",
+  "finished_at": "2026-08-11T10:35:31Z",
+  "status": "completed",
+  "findings": [
+    {
+      "description": "yaml.load(request.data) uses PyYAML unsafe loader, which is vulnerable to arbitrary code execution (CVE-2017-18342) via crafted YAML payloads. An attacker can exploit this endpoint to execute OS commands on the server.",
+      "category": "injection",
+      "severity": "critical"
+    },
+    {
+      "description": "The /proxy endpoint accepts an arbitrary URL from user input and fetches it server-side (requests.get(url)), enabling SSRF. An attacker can target internal services, cloud metadata endpoints, or other restricted network resources.",
+      "category": "other",
+      "severity": "high"
+    },
+    {
+      "description": "The pinned dependencies contain known critical vulnerabilities: flask 0.12.2 (CVE-2019-1010083 DoS), requests 2.19.0 (CVE-2018-18074 credential leak on redirect), pyyaml 3.13 (CVE-2017-18342 RCE), and jinja2 2.10 (CVE-2019-10906 sandbox escape). These should be upgraded to patched versions.",
+      "category": "dependency",
+      "severity": "high"
+    }
+  ],
+  "decision": "REJECT",
+  "fix_applied": null,
+  "fix_description": null,
+  "verification_passed": null,
+  "rollback_executed": false,
+  "human_interventions": [],
+  "duration_seconds": 8.91,
+  "token_usage": {
+    "prompt_tokens": 425,
+    "completion_tokens": 872,
+    "total_tokens": 1297
+  },
+  "model_cost": null,
+  "audit_events": [
+    {
+      "phase": "review",
+      "findings_count": 3
+    }
+  ],
+  "audit_complete": true,
+  "error_detail": null,
+  "rag_citations": null,
+  "api_request_count": 1,
+  "eval_passed": false,
+  "eval_reason": "decision=REJECT_expected=HOLD",
+  "eval_tp": 1,
+  "eval_fp": 2,
+  "eval_fn": 3
+}

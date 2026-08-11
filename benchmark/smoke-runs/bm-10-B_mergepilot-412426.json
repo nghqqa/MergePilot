@@ -1,0 +1,50 @@
+{
+  "run_id": "bm-10-B_mergepilot-412426",
+  "case_id": "bm-10",
+  "group": "B_mergepilot",
+  "model": "deepseek-v4-flash",
+  "started_at": "2026-08-11T10:15:36Z",
+  "finished_at": "2026-08-11T10:15:36Z",
+  "status": "completed",
+  "findings": [
+    {
+      "description": "drop_legacy_columns executes irreversible ALTER TABLE ... DROP COLUMN statements directly against the production database using a hard-coded connection string. There is no dry-run, backup, rollback plan, confirmation gate, or guard against accidental execution. Any mistake permanently destroys production data.",
+      "category": "data-loss",
+      "severity": "critical"
+    },
+    {
+      "description": "cleanup_files calls shutil.rmtree(backup_dir, ignore_errors=True), which deletes the entire backup directory rather than just .bak files. If called after the migration, it removes the only backups/rollback artifacts and can delete unrelated files if BACKUP_DIR is misconfigured.",
+      "category": "data-loss",
+      "severity": "critical"
+    },
+    {
+      "description": "PRODUCTION_DB is a hard-coded production database connection string embedded in source code. Production credentials and endpoints should not be committed; they should be injected via secret-managed environment variables or configuration.",
+      "category": "secret",
+      "severity": "high"
+    },
+    {
+      "description": "The migration has no operational safety controls such as an explicit production environment flag, maintenance window check, or human approval workflow. Running this code as-is could cause accidental destructive changes to production with no recovery path.",
+      "category": "logic-bug",
+      "severity": "high"
+    }
+  ],
+  "decision": "REJECT",
+  "fix_applied": null,
+  "fix_description": "Rewrite the migration and cleanup functions with multiple layers of safety. (1) Remove the hard-coded PRODUCTION_DB connection string; instead read the database URL from a secret-managed environment variable (e.g., DATABASE_URL) and validate it is non-empty. (2) Add an explicit PRODUCTION_ENV check that requires an environment flag like ALLOW_PRODUCTION_MIGRATION=true; abort if not set. (3) Add a dry-run mode that prints the SQL without executing. (4) Before any destructive operation, perform a logical backup (or pg_dump) to a timestamped backup file and verify the backup succeeded. (5) Add an interactive confirmation prompt requiring a human to type the database name and a unique confirmation code before proceeding. (6) Wrap the migration in a transaction and provide an automated rollback script that recreates dropped columns (with known column definitions and types) in case restoration is needed. (7) Replace shutil.rmtree(backup_dir) with a function that only deletes *.bak files using os.listdir and os.remove, and only if the target directory matches a known backup pattern; never delete the top-level backup directory itself. (8) Add a maintenance window check (e.g., validate current time against allowed window) or an explicit override token. (9) Add structured logging and an audit trail recording exactly which columns are dropped and the backup artifact path. (10) Require a code review / L2 approval gate by integrating with a release approval workflow before this script can execute in production. These changes prevent accidental data loss, protect credentials, and provide a recovery path.",
+  "verification_passed": null,
+  "rollback_executed": false,
+  "human_interventions": [],
+  "duration_seconds": 23.8,
+  "token_usage": {
+    "total_tokens": 3457
+  },
+  "model_cost": null,
+  "audit_complete": true,
+  "error_detail": null,
+  "rag_citations": null,
+  "eval_passed": true,
+  "eval_reason": "all_matched",
+  "eval_tp": 3,
+  "eval_fp": 1,
+  "eval_fn": 0
+}

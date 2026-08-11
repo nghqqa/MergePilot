@@ -1,0 +1,54 @@
+{
+  "run_id": "bm-03-A_single_agent-e6783e",
+  "case_id": "bm-03",
+  "group": "A_single_agent",
+  "model": "deepseek-v4-flash",
+  "started_at": "2026-08-11T10:35:12Z",
+  "finished_at": "2026-08-11T10:35:16Z",
+  "status": "completed",
+  "findings": [
+    {
+      "description": "SQL injection vulnerability in search_products: keyword is interpolated into SQL query without parameterization, allowing attackers to manipulate the query (e.g., '%' OR '1'='1) to extract or modify data.",
+      "category": "injection",
+      "severity": "high"
+    },
+    {
+      "description": "SQL injection vulnerability in get_order: order_id is interpolated into SQL query without parameterization, enabling injection via crafted ID values.",
+      "category": "injection",
+      "severity": "high"
+    },
+    {
+      "description": "Database connections are not closed or used with context managers, leading to resource leaks and potential connection exhaustion.",
+      "category": "other",
+      "severity": "medium"
+    }
+  ],
+  "decision": "REJECT",
+  "fix_applied": null,
+  "fix_description": null,
+  "verification_passed": null,
+  "rollback_executed": false,
+  "human_interventions": [],
+  "duration_seconds": 4.57,
+  "token_usage": {
+    "prompt_tokens": 283,
+    "completion_tokens": 195,
+    "total_tokens": 478
+  },
+  "model_cost": null,
+  "audit_events": [
+    {
+      "phase": "review",
+      "findings_count": 3
+    }
+  ],
+  "audit_complete": true,
+  "error_detail": null,
+  "rag_citations": null,
+  "api_request_count": 1,
+  "eval_passed": false,
+  "eval_reason": "decision=REJECT_expected=HOLD",
+  "eval_tp": 2,
+  "eval_fp": 1,
+  "eval_fn": 0
+}

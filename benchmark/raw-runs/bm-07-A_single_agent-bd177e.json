@@ -1,0 +1,54 @@
+{
+  "run_id": "bm-07-A_single_agent-bd177e",
+  "case_id": "bm-07",
+  "group": "A_single_agent",
+  "model": "deepseek-v4-flash",
+  "started_at": "2026-08-11T10:35:36Z",
+  "finished_at": "2026-08-11T10:35:45Z",
+  "status": "completed",
+  "findings": [
+    {
+      "description": "Password hashing uses MD5, a broken and insecure algorithm. MD5 is susceptible to collision attacks, fast brute-force, and rainbow table attacks. This code reverts a previously merged security fix requiring bcrypt, leaving stored passwords vulnerable to compromise.",
+      "category": "other",
+      "severity": "critical"
+    },
+    {
+      "description": "verify_password uses Python's == operator for hash comparison, which is not constant-time and may enable timing side-channel attacks. Use hmac.compare_digest or bcrypt.checkpw for secure verification.",
+      "category": "logic-bug",
+      "severity": "low"
+    },
+    {
+      "description": "This PR appears to conflict with an existing merged security fix that implemented bcrypt password hashing. The code intentionally reverts to MD5, creating a merge conflict and undoing a prior security hardening.",
+      "category": "other",
+      "severity": "high"
+    }
+  ],
+  "decision": "REJECT",
+  "fix_applied": null,
+  "fix_description": null,
+  "verification_passed": null,
+  "rollback_executed": false,
+  "human_interventions": [],
+  "duration_seconds": 9.55,
+  "token_usage": {
+    "prompt_tokens": 313,
+    "completion_tokens": 846,
+    "total_tokens": 1159
+  },
+  "model_cost": null,
+  "audit_events": [
+    {
+      "phase": "review",
+      "findings_count": 3
+    }
+  ],
+  "audit_complete": true,
+  "error_detail": null,
+  "rag_citations": null,
+  "api_request_count": 1,
+  "eval_passed": false,
+  "eval_reason": "fn=1",
+  "eval_tp": 0,
+  "eval_fp": 3,
+  "eval_fn": 1
+}

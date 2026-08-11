@@ -1,0 +1,64 @@
+{
+  "run_id": "bm-10-A_single_agent-920b74",
+  "case_id": "bm-10",
+  "group": "A_single_agent",
+  "model": "deepseek-v4-flash",
+  "started_at": "2026-08-11T10:36:08Z",
+  "finished_at": "2026-08-11T10:36:28Z",
+  "status": "completed",
+  "findings": [
+    {
+      "description": "Production database connection string is hardcoded in source code, exposing internal infrastructure details and potential credentials. Should be provided via environment variable or secret management.",
+      "category": "secret",
+      "severity": "medium"
+    },
+    {
+      "description": "DROP COLUMN statements run directly against the production database without backup, dry-run, or explicit confirmation. This is an irreversible data-loss operation, especially dangerous given the hardcoded production URL.",
+      "category": "data-loss",
+      "severity": "critical"
+    },
+    {
+      "description": "cleanup_files() deletes an entire directory tree from a path controlled by BACKUP_DIR environment variable with no validation. If set to '/', '.', or a sensitive path, it can cause catastrophic data loss. The comment claims it only deletes .bak files.",
+      "category": "data-loss",
+      "severity": "critical"
+    },
+    {
+      "description": "cleanup_files() does not actually delete only .bak files as the comment says; it removes the entire backup directory. Also ignore_errors=True hides errors, making data loss silent.",
+      "category": "logic-bug",
+      "severity": "medium"
+    },
+    {
+      "description": "Missing exception handling: psycopg2 connection and cursor are not closed if an exception occurs, and no context manager is used. This can leak database connections and leave migrations in an uncertain state.",
+      "category": "other",
+      "severity": "low"
+    }
+  ],
+  "decision": "REJECT",
+  "fix_applied": null,
+  "fix_description": null,
+  "verification_passed": null,
+  "rollback_executed": false,
+  "human_interventions": [],
+  "duration_seconds": 19.8,
+  "token_usage": {
+    "prompt_tokens": 442,
+    "completion_tokens": 2290,
+    "total_tokens": 2732
+  },
+  "model_cost": null,
+  "audit_events": [
+    {
+      "phase": "review",
+      "findings_count": 5
+    }
+  ],
+  "audit_complete": true,
+  "error_detail": null,
+  "rag_citations": null,
+  "api_request_count": 1,
+  "eval_passed": true,
+  "eval_reason": "all_matched",
+  "eval_tp": 3,
+  "eval_fp": 2,
+  "eval_fn": 0
+}

@@ -1,0 +1,58 @@
+{
+  "run_id": "bm-02-B_mergepilot-7631f0",
+  "case_id": "bm-02",
+  "group": "B_mergepilot",
+  "model": "deepseek-v4-flash",
+  "started_at": "2026-08-11T10:36:48Z",
+  "finished_at": "2026-08-11T10:37:00Z",
+  "status": "completed",
+  "findings": [
+    {
+      "description": "Hardcoded API key found in source code: 'sk-7928cff15f944ca185c92f7da21c591c'. This exposes credentials to anyone with access to the codebase, allowing unauthorized use of the API. Move the key to an environment variable or secrets manager.",
+      "category": "secret",
+      "severity": "critical"
+    },
+    {
+      "description": "The user_id parameter is directly interpolated into the URL without URL encoding. If user_id is attacker-controlled, it may enable path traversal or manipulation of the request endpoint (e.g., using '../' or extra query parameters). Use request params or URL-encode the value.",
+      "category": "injection",
+      "severity": "medium"
+    }
+  ],
+  "decision": "REJECT",
+  "fix_applied": null,
+  "fix_description": "1) Remove the hardcoded API key and load it from an environment variable or secrets manager, e.g., `import os; API_KEY = os.environ[\"API_KEY\"]`. 2) URL-encode the user_id or pass it as a params value to avoid path traversal/endpoint manipulation, e.g., `requests.get(f\"{BASE_URL}/users/{requests.utils.quote(user_id)}\", ...)` or use `params={\"user_id\": user_id}` if the API supports query parameter style.",
+  "verification_passed": null,
+  "rollback_executed": false,
+  "human_interventions": [],
+  "duration_seconds": 11.4,
+  "token_usage": {
+    "total_tokens": 1744
+  },
+  "model_cost": null,
+  "audit_events": [
+    {
+      "phase": "review",
+      "findings_count": 2,
+      "decision": "REJECT",
+      "risk_level": "L2"
+    },
+    {
+      "phase": "fix",
+      "status": "described",
+      "is_fixable": true
+    },
+    {
+      "phase": "decision",
+      "decision": "REJECT"
+    }
+  ],
+  "audit_complete": true,
+  "error_detail": null,
+  "rag_citations": null,
+  "api_request_count": 2,
+  "eval_passed": false,
+  "eval_reason": "decision=REJECT_expected=HOLD",
+  "eval_tp": 1,
+  "eval_fp": 1,
+  "eval_fn": 0
+}

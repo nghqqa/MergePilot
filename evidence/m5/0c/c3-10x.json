@@ -1,18 +1,18 @@
 {
   "all_pass": true,
   "docker_state_post": {
-    "c2_containers": "0",
-    "c2_networks": "0",
+    "c2_containers": "5",
+    "c2_networks": "1",
     "image_hash": "d2b6fa541e10c3c4",
-    "volume_count": 167,
-    "volume_hash": "6d8f2cdee94ff4029a14eaec285f739e309061aceae888f1cfa796ef3949e677"
+    "volume_count": 308,
+    "volume_hash": "ebd02ae09fd53d7a0952d7ee6037e4067f61a7a2ca604ec11b3f494bc2f066fb"
   },
   "docker_state_pre": {
-    "c2_containers": "0",
-    "c2_networks": "0",
+    "c2_containers": "5",
+    "c2_networks": "1",
     "image_hash": "d2b6fa541e10c3c4",
-    "volume_count": 167,
-    "volume_hash": "6d8f2cdee94ff4029a14eaec285f739e309061aceae888f1cfa796ef3949e677"
+    "volume_count": 308,
+    "volume_hash": "ebd02ae09fd53d7a0952d7ee6037e4067f61a7a2ca604ec11b3f494bc2f066fb"
   },
   "evidence_kind": "m5-0c-c3-10x-stability",
   "final_rc": 0,
@@ -24,216 +24,8 @@
       "branch_residue": [],
       "c2_exit_rc": 0,
       "direct_gh": {
-        "m5c2-cand-c2-1786203116-56a97b5b": 0,
-        "m5c2-gw-c2-1786203116-56a97b5b": 0
-      },
-      "docker_residue": {
-        "containers": 0,
-        "networks": 0
-      },
-      "duration_s": 150,
-      "final_rc": 0,
-      "fix_pr": 410,
-      "head_sha": "6546657f0d14ebbaeb9e0db24a079ad5f4d87958",
-      "llm": 0,
-      "m4f_event_id": "$2eae8120e2d54eefba8d0cf3f6d973df:m5c2-hs",
-      "negatives": "15/15",
-      "openpr_residue": [],
-      "positives": "22/22",
-      "run": 1,
-      "run_id": "c2-1786203116-56a97b5b",
-      "run_key": "c2-1786203116-56a97b5b",
-      "secret_hits_all0": true,
-      "src_pr": 409
-    },
-    {
-      "branch_residue": [],
-      "c2_exit_rc": 0,
-      "direct_gh": {
-        "m5c2-cand-c2-1786203266-9615fc85": 0,
-        "m5c2-gw-c2-1786203266-9615fc85": 0
-      },
-      "docker_residue": {
-        "containers": 0,
-        "networks": 0
-      },
-      "duration_s": 141,
-      "final_rc": 0,
-      "fix_pr": 412,
-      "head_sha": "a720bccda0d63d3f1369dfb897ede5a4595c56cf",
-      "llm": 0,
-      "m4f_event_id": "$79542579769142cd956c1b80cdc22d17:m5c2-hs",
-      "negatives": "15/15",
-      "openpr_residue": [],
-      "positives": "22/22",
-      "run": 2,
-      "run_id": "c2-1786203266-9615fc85",
-      "run_key": "c2-1786203266-9615fc85",
-      "secret_hits_all0": true,
-      "src_pr": 411
-    },
-    {
-      "branch_residue": [],
-      "c2_exit_rc": 0,
-      "direct_gh": {
-        "m5c2-cand-c2-1786203408-ff115dfa": 0,
-        "m5c2-gw-c2-1786203408-ff115dfa": 0
-      },
-      "docker_residue": {
-        "containers": 0,
-        "networks": 0
-      },
-      "duration_s": 137,
-      "final_rc": 0,
-      "fix_pr": 414,
-      "head_sha": "7ab30a3f9f3b17cf7beb026b0efcf2bcf24978d0",
-      "llm": 0,
-      "m4f_event_id": "$56f02f26b115468688547059470dac8b:m5c2-hs",
-      "negatives": "15/15",
-      "openpr_residue": [],
-      "positives": "22/22",
-      "run": 3,
-      "run_id": "c2-1786203408-ff115dfa",
-      "run_key": "c2-1786203408-ff115dfa",
-      "secret_hits_all0": true,
-      "src_pr": 413
-    },
-    {
-      "branch_residue": [],
-      "c2_exit_rc": 0,
-      "direct_gh": {
-        "m5c2-cand-c2-1786203545-d720d35c": 0,
-        "m5c2-gw-c2-1786203545-d720d35c": 0
-      },
-      "docker_residue": {
-        "containers": 0,
-        "networks": 0
-      },
-      "duration_s": 134,
-      "final_rc": 0,
-      "fix_pr": 416,
-      "head_sha": "59392cd9d2f5ac8325c8fe94b20d0626971374c3",
-      "llm": 0,
-      "m4f_event_id": "$cefe05a95be24441b9d193deaa6a464f:m5c2-hs",
-      "negatives": "15/15",
-      "openpr_residue": [],
-      "positives": "22/22",
-      "run": 4,
-      "run_id": "c2-1786203545-d720d35c",
-      "run_key": "c2-1786203545-d720d35c",
-      "secret_hits_all0": true,
-      "src_pr": 415
-    },
-    {
-      "branch_residue": [],
-      "c2_exit_rc": 0,
-      "direct_gh": {
-        "m5c2-cand-c2-1786203680-1f944c30": 0,
-        "m5c2-gw-c2-1786203680-1f944c30": 0
-      },
-      "docker_residue": {
-        "containers": 0,
-        "networks": 0
-      },
-      "duration_s": 146,
-      "final_rc": 0,
-      "fix_pr": 418,
-      "head_sha": "92416572727ac0f5361f253495f90769b7704ed3",
-      "llm": 0,
-      "m4f_event_id": "$4629f6e037e24d24a63b0b33ec7cce93:m5c2-hs",
-      "negatives": "15/15",
-      "openpr_residue": [],
-      "positives": "22/22",
-      "run": 5,
-      "run_id": "c2-1786203680-1f944c30",
-      "run_key": "c2-1786203680-1f944c30",
-      "secret_hits_all0": true,
-      "src_pr": 417
-    },
-    {
-      "branch_residue": [],
-      "c2_exit_rc": 0,
-      "direct_gh": {
-        "m5c2-cand-c2-1786203826-98a6cc58": 0,
-        "m5c2-gw-c2-1786203826-98a6cc58": 0
-      },
-      "docker_residue": {
-        "containers": 0,
-        "networks": 0
-      },
-      "duration_s": 140,
-      "final_rc": 0,
-      "fix_pr": 420,
-      "head_sha": "f22dad65179e3cba187851f67482f4066c98f9f1",
-      "llm": 0,
-      "m4f_event_id": "$dd45c8f53e0848ae96fb2f4f2b8682af:m5c2-hs",
-      "negatives": "15/15",
-      "openpr_residue": [],
-      "positives": "22/22",
-      "run": 6,
-      "run_id": "c2-1786203826-98a6cc58",
-      "run_key": "c2-1786203826-98a6cc58",
-      "secret_hits_all0": true,
-      "src_pr": 419
-    },
-    {
-      "branch_residue": [],
-      "c2_exit_rc": 0,
-      "direct_gh": {
-        "m5c2-cand-c2-1786203967-55de47c4": 0,
-        "m5c2-gw-c2-1786203967-55de47c4": 0
-      },
-      "docker_residue": {
-        "containers": 0,
-        "networks": 0
-      },
-      "duration_s": 149,
-      "final_rc": 0,
-      "fix_pr": 422,
-      "head_sha": "b28151727f979d614e7c571470e0e538bade2819",
-      "llm": 0,
-      "m4f_event_id": "$a3cd208f63914903b257f7f5d4e76622:m5c2-hs",
-      "negatives": "15/15",
-      "openpr_residue": [],
-      "positives": "22/22",
-      "run": 7,
-      "run_id": "c2-1786203967-55de47c4",
-      "run_key": "c2-1786203967-55de47c4",
-      "secret_hits_all0": true,
-      "src_pr": 421
-    },
-    {
-      "branch_residue": [],
-      "c2_exit_rc": 0,
-      "direct_gh": {
-        "m5c2-cand-c2-1786204116-22473493": 0,
-        "m5c2-gw-c2-1786204116-22473493": 0
-      },
-      "docker_residue": {
-        "containers": 0,
-        "networks": 0
-      },
-      "duration_s": 133,
-      "final_rc": 0,
-      "fix_pr": 424,
-      "head_sha": "9625fbd7b4d897b1f54f8cf26e6cc68f8de3e2fa",
-      "llm": 0,
-      "m4f_event_id": "$bc7c6949208741d9863ef7165c7f6545:m5c2-hs",
-      "negatives": "15/15",
-      "openpr_residue": [],
-      "positives": "22/22",
-      "run": 8,
-      "run_id": "c2-1786204116-22473493",
-      "run_key": "c2-1786204116-22473493",
-      "secret_hits_all0": true,
-      "src_pr": 423
-    },
-    {
-      "branch_residue": [],
-      "c2_exit_rc": 0,
-      "direct_gh": {
-        "m5c2-cand-c2-1786204249-ae1399c4": 0,
-        "m5c2-gw-c2-1786204249-ae1399c4": 0
+        "m5c2-cand-c2-1786416015-62f98983": 0,
+        "m5c2-gw-c2-1786416015-62f98983": 0
       },
       "docker_residue": {
         "containers": 0,
@@ -241,47 +33,255 @@
       },
       "duration_s": 135,
       "final_rc": 0,
-      "fix_pr": 426,
-      "head_sha": "5cde998aa7de259b86456fb953a6a708a898fbdd",
+      "fix_pr": 604,
+      "head_sha": "6062b3348473385006fa6bd6d67bfc4d0c3e1e18",
       "llm": 0,
-      "m4f_event_id": "$6adc24ad406545b79986d1dddab55903:m5c2-hs",
+      "m4f_event_id": "$bde67c7ff38f4c2784e2854da1813efb:m5c2-hs",
       "negatives": "15/15",
       "openpr_residue": [],
       "positives": "22/22",
-      "run": 9,
-      "run_id": "c2-1786204249-ae1399c4",
-      "run_key": "c2-1786204249-ae1399c4",
+      "run": 1,
+      "run_id": "c2-1786416015-62f98983",
+      "run_key": "c2-1786416015-62f98983",
       "secret_hits_all0": true,
-      "src_pr": 425
+      "src_pr": 603
     },
     {
       "branch_residue": [],
       "c2_exit_rc": 0,
       "direct_gh": {
-        "m5c2-cand-c2-1786204385-e445ff5b": 0,
-        "m5c2-gw-c2-1786204385-e445ff5b": 0
+        "m5c2-cand-c2-1786416150-b1b97df2": 0,
+        "m5c2-gw-c2-1786416150-b1b97df2": 0
       },
       "docker_residue": {
         "containers": 0,
         "networks": 0
       },
-      "duration_s": 152,
+      "duration_s": 135,
       "final_rc": 0,
-      "fix_pr": 428,
-      "head_sha": "185812e1ba06140fa5278909e5c80f27ed2331ae",
+      "fix_pr": 606,
+      "head_sha": "e6742d501b502a5508c09e199b5eaa1874d776c0",
       "llm": 0,
-      "m4f_event_id": "$16a09d0f5b1c4e1dbdf07c18481dbe9a:m5c2-hs",
+      "m4f_event_id": "$e01250ee55144e2ca54a84ade940f525:m5c2-hs",
+      "negatives": "15/15",
+      "openpr_residue": [],
+      "positives": "22/22",
+      "run": 2,
+      "run_id": "c2-1786416150-b1b97df2",
+      "run_key": "c2-1786416150-b1b97df2",
+      "secret_hits_all0": true,
+      "src_pr": 605
+    },
+    {
+      "branch_residue": [],
+      "c2_exit_rc": 0,
+      "direct_gh": {
+        "m5c2-cand-c2-1786416286-796907fb": 0,
+        "m5c2-gw-c2-1786416286-796907fb": 0
+      },
+      "docker_residue": {
+        "containers": 0,
+        "networks": 0
+      },
+      "duration_s": 138,
+      "final_rc": 0,
+      "fix_pr": 608,
+      "head_sha": "1fc03d6e9d9b700ad86302ad779afd5c7a1f1095",
+      "llm": 0,
+      "m4f_event_id": "$ca576855dc9844be8da12c680eea4ca4:m5c2-hs",
+      "negatives": "15/15",
+      "openpr_residue": [],
+      "positives": "22/22",
+      "run": 3,
+      "run_id": "c2-1786416286-796907fb",
+      "run_key": "c2-1786416286-796907fb",
+      "secret_hits_all0": true,
+      "src_pr": 607
+    },
+    {
+      "branch_residue": [],
+      "c2_exit_rc": 0,
+      "direct_gh": {
+        "m5c2-cand-c2-1786416425-3db0f9e1": 0,
+        "m5c2-gw-c2-1786416425-3db0f9e1": 0
+      },
+      "docker_residue": {
+        "containers": 0,
+        "networks": 0
+      },
+      "duration_s": 136,
+      "final_rc": 0,
+      "fix_pr": 610,
+      "head_sha": "df12f653e8b474131c1beb7170655ead9b03cd5d",
+      "llm": 0,
+      "m4f_event_id": "$f6065027ffb343f88bb3d9bfb7703787:m5c2-hs",
+      "negatives": "15/15",
+      "openpr_residue": [],
+      "positives": "22/22",
+      "run": 4,
+      "run_id": "c2-1786416425-3db0f9e1",
+      "run_key": "c2-1786416425-3db0f9e1",
+      "secret_hits_all0": true,
+      "src_pr": 609
+    },
+    {
+      "branch_residue": [],
+      "c2_exit_rc": 0,
+      "direct_gh": {
+        "m5c2-cand-c2-1786416562-fc11e979": 0,
+        "m5c2-gw-c2-1786416562-fc11e979": 0
+      },
+      "docker_residue": {
+        "containers": 0,
+        "networks": 0
+      },
+      "duration_s": 147,
+      "final_rc": 0,
+      "fix_pr": 612,
+      "head_sha": "bae4952f7c1a2f9a55375ec6c322927a14f61893",
+      "llm": 0,
+      "m4f_event_id": "$9e2d2d5eeb934729ad2c3f8b1d3e8c00:m5c2-hs",
+      "negatives": "15/15",
+      "openpr_residue": [],
+      "positives": "22/22",
+      "run": 5,
+      "run_id": "c2-1786416562-fc11e979",
+      "run_key": "c2-1786416562-fc11e979",
+      "secret_hits_all0": true,
+      "src_pr": 611
+    },
+    {
+      "branch_residue": [],
+      "c2_exit_rc": 0,
+      "direct_gh": {
+        "m5c2-cand-c2-1786416709-98ea221d": 0,
+        "m5c2-gw-c2-1786416709-98ea221d": 0
+      },
+      "docker_residue": {
+        "containers": 0,
+        "networks": 0
+      },
+      "duration_s": 146,
+      "final_rc": 0,
+      "fix_pr": 614,
+      "head_sha": "f695011e46bde6c89ed761f9643f4a7a30b55cb7",
+      "llm": 0,
+      "m4f_event_id": "$771e84d946f64a0fa8169a9160daef67:m5c2-hs",
+      "negatives": "15/15",
+      "openpr_residue": [],
+      "positives": "22/22",
+      "run": 6,
+      "run_id": "c2-1786416709-98ea221d",
+      "run_key": "c2-1786416709-98ea221d",
+      "secret_hits_all0": true,
+      "src_pr": 613
+    },
+    {
+      "branch_residue": [],
+      "c2_exit_rc": 0,
+      "direct_gh": {
+        "m5c2-cand-c2-1786416856-22fe191a": 0,
+        "m5c2-gw-c2-1786416856-22fe191a": 0
+      },
+      "docker_residue": {
+        "containers": 0,
+        "networks": 0
+      },
+      "duration_s": 134,
+      "final_rc": 0,
+      "fix_pr": 616,
+      "head_sha": "e4f3862a0b54e30cc520be6c0422ad087a391f98",
+      "llm": 0,
+      "m4f_event_id": "$a80dc66fb52c4604b479a5ed7688a352:m5c2-hs",
+      "negatives": "15/15",
+      "openpr_residue": [],
+      "positives": "22/22",
+      "run": 7,
+      "run_id": "c2-1786416856-22fe191a",
+      "run_key": "c2-1786416856-22fe191a",
+      "secret_hits_all0": true,
+      "src_pr": 615
+    },
+    {
+      "branch_residue": [],
+      "c2_exit_rc": 0,
+      "direct_gh": {
+        "m5c2-cand-c2-1786416990-7821188c": 0,
+        "m5c2-gw-c2-1786416990-7821188c": 0
+      },
+      "docker_residue": {
+        "containers": 0,
+        "networks": 0
+      },
+      "duration_s": 133,
+      "final_rc": 0,
+      "fix_pr": 618,
+      "head_sha": "af963b00d1b9b67c046446442d0156ee9308476f",
+      "llm": 0,
+      "m4f_event_id": "$d1f74ab9186044bebbb2353f48fd0ff7:m5c2-hs",
+      "negatives": "15/15",
+      "openpr_residue": [],
+      "positives": "22/22",
+      "run": 8,
+      "run_id": "c2-1786416990-7821188c",
+      "run_key": "c2-1786416990-7821188c",
+      "secret_hits_all0": true,
+      "src_pr": 617
+    },
+    {
+      "branch_residue": [],
+      "c2_exit_rc": 0,
+      "direct_gh": {
+        "m5c2-cand-c2-1786417124-b1d0fd83": 0,
+        "m5c2-gw-c2-1786417124-b1d0fd83": 0
+      },
+      "docker_residue": {
+        "containers": 0,
+        "networks": 0
+      },
+      "duration_s": 132,
+      "final_rc": 0,
+      "fix_pr": 620,
+      "head_sha": "6f99a5156ecc1ba8c0fe875f415346b58b22d695",
+      "llm": 0,
+      "m4f_event_id": "$730120d5196946b7bc24486e771e65d0:m5c2-hs",
+      "negatives": "15/15",
+      "openpr_residue": [],
+      "positives": "22/22",
+      "run": 9,
+      "run_id": "c2-1786417124-b1d0fd83",
+      "run_key": "c2-1786417124-b1d0fd83",
+      "secret_hits_all0": true,
+      "src_pr": 619
+    },
+    {
+      "branch_residue": [],
+      "c2_exit_rc": 0,
+      "direct_gh": {
+        "m5c2-cand-c2-1786417257-b52794e5": 0,
+        "m5c2-gw-c2-1786417257-b52794e5": 0
+      },
+      "docker_residue": {
+        "containers": 0,
+        "networks": 0
+      },
+      "duration_s": 138,
+      "final_rc": 0,
+      "fix_pr": 622,
+      "head_sha": "c9ed8933066f2c47b2d06b2a77585798e369c62b",
+      "llm": 0,
+      "m4f_event_id": "$f94fe4d06e0c49ccb2a82fc0999951ed:m5c2-hs",
       "negatives": "15/15",
       "openpr_residue": [],
       "positives": "22/22",
       "run": 10,
-      "run_id": "c2-1786204385-e445ff5b",
-      "run_key": "c2-1786204385-e445ff5b",
+      "run_id": "c2-1786417257-b52794e5",
+      "run_key": "c2-1786417257-b52794e5",
       "secret_hits_all0": true,
-      "src_pr": 427
+      "src_pr": 621
     }
   ],
-  "source_commit": "c2f503b20ce6bbb2cd4ee48a4220923fac6628bb",
+  "source_commit": "4b053efc3cb16fe4558143a1c7bbdd78e2b18073",
   "state_stable": true,
-  "total_duration_s": 1421
+  "total_duration_s": 1380
 }

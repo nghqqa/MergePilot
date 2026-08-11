@@ -1,0 +1,231 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MergePilot Benchmark Run Result",
+  "type": "object",
+  "required": [
+    "run_id",
+    "case_id",
+    "group",
+    "model",
+    "started_at",
+    "finished_at",
+    "status",
+    "findings",
+    "decision",
+    "fix_applied",
+    "verification_passed",
+    "duration_seconds",
+    "token_usage",
+    "model_cost",
+    "rollback_executed",
+    "human_interventions",
+    "audit_complete",
+    "audit_events",
+    "api_request_count"
+  ],
+  "properties": {
+    "run_id": {
+      "type": "string",
+      "description": "Unique per run: bm-XX-group-YYYYMMDD-HHMMSS-nonce"
+    },
+    "case_id": {
+      "type": "string",
+      "pattern": "^bm-[0-9]{2}$"
+    },
+    "group": {
+      "enum": [
+        "A_single_agent",
+        "B_mergepilot"
+      ]
+    },
+    "model": {
+      "type": "string",
+      "description": "Exact model ID used"
+    },
+    "started_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "finished_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "status": {
+      "enum": [
+        "completed",
+        "timeout",
+        "error",
+        "crash",
+        "prerequisite_missing"
+      ]
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "description",
+          "category",
+          "severity"
+        ],
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "info",
+              "low",
+              "medium",
+              "high",
+              "critical"
+            ]
+          },
+          "line_range": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "minItems": 2,
+            "maxItems": 2
+          }
+        }
+      }
+    },
+    "decision": {
+      "enum": [
+        "APPROVE",
+        "HOLD",
+        "REJECT",
+        null
+      ],
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "fix_applied": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "fix_description": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "verification_passed": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "rollback_executed": {
+      "type": "boolean"
+    },
+    "human_interventions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "phase": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    },
+    "duration_seconds": {
+      "type": "number"
+    },
+    "token_usage": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "prompt_tokens": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "completion_tokens": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "total_tokens": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      }
+    },
+    "model_cost": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "description": "USD; null if unavailable"
+    },
+    "audit_complete": {
+      "type": "boolean",
+      "description": "All audit events recorded"
+    },
+    "error_detail": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "rag_citations": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "type": "string"
+      }
+    },
+    "eval_passed": {
+      "type": "boolean"
+    },
+    "eval_reason": {
+      "type": "string"
+    },
+    "eval_tp": {
+      "type": "integer"
+    },
+    "eval_fp": {
+      "type": "integer"
+    },
+    "eval_fn": {
+      "type": "integer"
+    },
+    "audit_events": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "api_request_count": {
+      "type": "integer",
+      "minimum": 0
+    }
+  },
+  "additionalProperties": false
+}

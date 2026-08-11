@@ -1,0 +1,108 @@
+{
+  "kind": "mergepilot-formal-run-manifest",
+  "manifest_version": 1,
+  "generated_at": "2026-08-11T11:08:05Z",
+  "head": "4b053efc3cb16fe4558143a1c7bbdd78e2b18073",
+  "source_manifest_sha256": "0de4917ef4c87bce9c5b634c5050bd3aa8b200907cc6211501478bb99f6db8ff",
+  "raw_files": [
+    {
+      "file": "bm-01-A_single_agent-4d0368.json",
+      "sha256": "80c9bec5fef07acd1ad925075d0be36a080db6c59435fa2cb425de1b31a767e1"
+    },
+    {
+      "file": "bm-01-B_mergepilot-b123ca.json",
+      "sha256": "4e493dd99b6ae454a37c7efd9e96dc6aef3c710dafd46d43b6b7ff325ffa06dc"
+    },
+    {
+      "file": "bm-02-A_single_agent-3b64f7.json",
+      "sha256": "1cfc25a71aee2a855b9850514263346583a9ffcdd2dc0676c27e86dcac473653"
+    },
+    {
+      "file": "bm-02-B_mergepilot-7631f0.json",
+      "sha256": "e224ffae5f1c895c180e3ccb733e328c695b813c371ae47f8a231dc5eb7a6bdf"
+    },
+    {
+      "file": "bm-03-A_single_agent-e6783e.json",
+      "sha256": "bcf3d86798cc54151895aef4e118cf7f475313c84f6e67920e5e67c9e73a2291"
+    },
+    {
+      "file": "bm-03-B_mergepilot-39a221.json",
+      "sha256": "2684b80d5ad4b53e15614deefbbc2684819c0b721cc6f59b4d0a460be745317f"
+    },
+    {
+      "file": "bm-04-A_single_agent-3044ee.json",
+      "sha256": "0530735ae623f4cadd5518073ac2eafda783e5444aa2270d04f731c5ca5f5772"
+    },
+    {
+      "file": "bm-04-B_mergepilot-d5f501.json",
+      "sha256": "b72da2d7f563055cac5dc9268f2e68d8937803c869a57f38042c4c2806842aea"
+    },
+    {
+      "file": "bm-05-A_single_agent-b14154.json",
+      "sha256": "837413876a64d1efac9915ca0fb29517a897ac287d37c2d00afc11755fcd30cb"
+    },
+    {
+      "file": "bm-05-B_mergepilot-4df1f7.json",
+      "sha256": "599813b05bc02fb76d624d7f46be47cb69bbb8aff5aebdad9755a238f6a430a1"
+    },
+    {
+      "file": "bm-06-A_single_agent-b90a20.json",
+      "sha256": "d6cd927041c7cf8a64d8cb14d4b9e21d33f0b4d0814a480e429733fa04671c44"
+    },
+    {
+      "file": "bm-06-B_mergepilot-32cdd4.json",
+      "sha256": "1210c58be47afd58841c945c7bbc7483cf1c6c2b2caa81c436dcce72dc660c58"
+    },
+    {
+      "file": "bm-07-A_single_agent-bd177e.json",
+      "sha256": "3f1197f881412b751dfb9f75dc82bddf347d47eff2691f9e2c3648b4e831d259"
+    },
+    {
+      "file": "bm-07-B_mergepilot-1eb484.json",
+      "sha256": "bb1b4da14392f17e0e3abd8dfedb1251042a3fe51648d0f3256063533e743b02"
+    },
+    {
+      "file": "bm-08-A_single_agent-ac67e5.json",
+      "sha256": "f5c93376cd9a55e797a1a4050a4b6dfbfaa194af8bbdb3a1b65d138b256ef5db"
+    },
+    {
+      "file": "bm-08-B_mergepilot-5157ba.json",
+      "sha256": "1f8fae4f291e1565ded55b57700b6f28a317c41583b0000a76f66b6a17a67583"
+    },
+    {
+      "file": "bm-09-A_single_agent-ce3fca.json",
+      "sha256": "8872bd8dcf1dca19aea4dee727e22c6742ffbfacb0270a03e673f70ded5a4596"
+    },
+    {
+      "file": "bm-09-B_mergepilot-f851f6.json",
+      "sha256": "bc3f685f6d372c1fec9f6ac160ae368c32a3c7c97c8b9490b2cebe1422553110"
+    },
+    {
+      "file": "bm-10-A_single_agent-920b74.json",
+      "sha256": "35f5d97879bc86574b42713d6fa20d1372a1a7a4d07790aa58a00a5096f86c09"
+    },
+    {
+      "file": "bm-10-B_mergepilot-b4e744.json",
+      "sha256": "92f0a7f8377655b653ab8d0aa674009398ec1ed899f197b04dd78a7d47aa77f8"
+    }
+  ],
+  "raw_combined_sha256": "c863ecd683dcfad5076125693ef180398e4393aafb7ca28d436e7242523a25c4",
+  "results_csv_sha256": "86f2432e9011ce08f5c8ef9eb91df74ed8ec82c7fa90d71a98dece075161bbcf",
+  "report_md_sha256": "7162568f737feffb00bea5cf070e0bb185cc1ea227788c79159ffc2ff0356d8f",
+  "formal_summary_json_sha256": "535395a3b41d401581383f420cd53c9a90be1882814ac0b064f9d52966607270",
+  "formal_summary_md_sha256": "eaad42ef952662da166f7489376494fd220c9e3d8d2bcfc82250500baf8b55ef",
+  "freeze_formal_results_py_sha256": "c2e3852b5bd3f3ccd40b7a3fa2d9267a69bf96d6256099bbf87f83a290d860c1",
+  "run_count": 20,
+  "unique_pair_count": 20,
+  "schema_valid_count": 20,
+  "model": "deepseek-v4-flash",
+  "timeout_seconds": 120,
+  "token_budget": 4096,
+  "temperature": 0.1,
+  "total_tokens": 28099,
+  "total_api_requests": 28,
+  "key_absent": true,
+  "external_environment_used": false,
+  "key_absent_note": "Indicates the freeze tool did not access environment credentials, did not read .llm-key, and no adapter / runner / network call was performed. It is a property of the freeze tool's behavior, not a scan of the whole repository.",
+  "external_environment_used_note": "False: the freeze performs no WSL/Docker/GitHub/LLM access. It is a pure offline recompute over committed files."
+}

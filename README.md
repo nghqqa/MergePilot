@@ -12,7 +12,7 @@ MergePilot 是一个面向研发团队的 **多 Agent PR 协同审修系统**。
 
 - **6 类职能**(Coordinator / Triage / Reviewer / Fix Planner / Fixer / Verifier),当前 MVP 由 **4 个运行 Agent** 承载(Triage 合并至 Coordinator、Fix Planner 合并至 Fixer)。
 - **L0/L1/L2 三级风险治理**：低危可自动推进、中危人工复核、**高危仅出方案并强制人工审批**；验证失败进入回滚分支，当前由脚本显式触发。
-- **真实工具**:Reviewer 调用自研 [`sast-scan`](skills/sast-scan/)(正则密钥 + AST 注入 + 依赖漏洞)。
+- **真实工具**:Reviewer 调用自研 SAST（正则密钥 + AST 注入 + 依赖漏洞）。仓库存在两套实现，详见下文 [SAST 两条路径](#sast-两条路径必须区分)：早期 Reviewer/demo 路径 `skills/sast-scan/scan.py`，以及 M4-F 正式 Skill DAG 路径 `skills/sast_scan/`（契约化、87 测试）。
 - **全程可审计**:执行 Trace、审查/修复/验证报告、补丁说明、可视化看板。
 
 ## 为什么
@@ -68,6 +68,10 @@ PR 接入 → 任务拆解 → 上下文共享 → Skill/MCP 工具调用 → �
 - **真实 GitHub MCP 接入(凭证隔离)**:reviewer/fixer/verifier 经 `mcporter` 调用 GitHub 官方 MCP server,**GitHub PAT 仅存于隔离 sidecar,Worker 零 GitHub 凭证**。已验证读 + 写闭环:读到 `mergepilot-test` 的 SQLi + 硬编码密钥代码(命中 sast-scan 检测点)→ 经 MCP 建修复分支、写修复代码、提修复 PR → 经 `merge_pull_request` **合并**(PR #3 已 squash 合并);4 个写操作(create_branch / create_or_update_file / create_pull_request / merge_pull_request)全部实测通过。**并由 Manager 编排，reviewer→fixer→verifier 经 MCP 完成真实 PR #1 端到端审修；阶段交接偶需人工 `nudge`**(reviewer 6 findings、fixer 真实 [PR #3](https://github.com/nghqqa/mergepilot-test/pull/3)、verifier ✅ PASS),证据见 [`docs/项目状态.md`](docs/项目状态.md)
 
 **已验证的生产化底座**：本地 PostgreSQL 16 + pgvector 已完成结构化审计与 RAG 小样本召回，兼容迁移至 PolarDB-PG。**规划中（复赛/生产）**：Nacos、RocketMQ、AgentLoop/SLS 实时可观测、阿里云官方 `alibabacloud-sls-query` Skill。
+
+**正式 Benchmark（N=10×2，已冻结）**：单 Agent vs MergePilot 多角色对比已通过 post-run 机器复算冻结。infrastructure completion=20/20；A precision/F1=36.36%/48.00%、B precision/F1=57.14%/63.16%、recall 同为 70.59%；B token 高 32.95%、API 请求 +80%、decision accuracy B=40% 低于 A=50%。**受控本地评测（controlled local orchestration），非真实 Gateway/controller/GitHub/HiClaw E2E**；不证明多角色提高 recall；C3 10/10 为独立真实隔离栈证据。详见 [`benchmark/formal-summary.md`](benchmark/formal-summary.md)。
+
+**HiClaw 边界（统一表述）**：核心架构是 PG 权威状态机 → Outbox/审批/回滚 → 最小权限 Gateway → 6 Skill DAG → 多角色 handoff → GitHub MCP。**HiClaw 是当前适配的 Agent runtime 之一**。M5-0A/B/C 在候选/隔离测试栈（mini Matrix homeserver + MergePilot-Test 隔离 dockerd）验证；C3 10/10 使用 MergePilot-Test 隔离栈 + 真实 Gateway/GitHub MCP/fixture repo。**`hiclaw_live=false`**——不是真实生产 HiClaw live；D2B-3 受 upstream auto-create 能力阻塞（HiClaw controller 无 disable-auto-create 配置，审计确认）。不把未验证的生产能力写成核心既成事实。
 
 > 不得将规划能力表述为当前已运行。
 >
@@ -127,12 +131,35 @@ MergePilot/
 ├── LICENSE                      # Apache 2.0
 ├── THIRD_PARTY.md               # 依赖、费用、数据与替代方案
 ├── config/                      # team.yaml + 4 个运行 Agent 的 SOUL.md
-├── skills/sast-scan/            # 真实 SAST Skill(纯标准库)
+├── skills/sast-scan/            # 早期 Reviewer/demo SAST 路径（见下"SAST 两条路径"）
+├── skills/sast_scan/            # M4-F 正式 Skill DAG SAST 路径（契约化、87 测试）
+├── skills/                      # diff_parse / risk_classify / test_runner / pr_lifecycle / case_retrieval / common
 ├── tools/                       # 触发 / Trace / 看板 / 审计 / 房间运维
 ├── samples/                     # 样例 PR / fixture 输入 + 首轮实跑证据输出
 ├── evidence/                    # 提交包内附双场景 findings/fix/verify/trace
 └── docs/                        # 环境搭建、Team 重建 runbook、Demo 剧本、设计附录 A/B
 ```
+
+## SAST 两条路径（必须区分）
+
+仓库内存在两套 SAST 实现，**任何"已验证属性"都只对应其中一套，不得互相外推**：
+
+### A. M4-F 正式 Skill DAG 路径（新版，契约化）
+
+- skill name：`sast-scan`
+- Python 模块：`skills.sast_scan.run`
+- worker mapping：`tools/m4f_skill_worker.py`（六 Skill DAG 之一）
+- 覆盖测试：M4-C 的 **87 项确定性测试**（含 secret fail-closed、deadline、组件级路径安全、trusted-config、网络隔离、cleanup fail-closed）
+- 拥有：JSON Schema 输入/输出、统一 envelope、凭证脱敏、1 MiB 上限、退出码分类
+
+### B. 早期 Reviewer/demo 兼容路径（旧版）
+
+- 入口：`skills/sast-scan/scan.py`（单文件、137 行、直接 stdout JSON）
+- 当前 `config/souls/reviewer/SOUL.md` 仍引用它
+- 早期 PR #1/#3 demo 使用该类路径
+- **没有**契约、schema、fail-closed、1 MiB 限制、凭证脱敏等加固属性
+
+**统一两套实现（让 SOUL/Reviewer 切到新版）列为初赛后技术债，本轮不做。** 上述新版属性**不得外推**到旧版；旧版**没有 87 项测试**。
 
 ## 工具链
 

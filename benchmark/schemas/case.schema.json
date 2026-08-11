@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MergePilot Benchmark Case",
+  "type": "object",
+  "required": [
+    "case_id", "title", "fixture_path", "fixture_sha256",
+    "risk_level", "categories", "ground_truth_findings",
+    "acceptable_variants", "forbidden_actions",
+    "expected_decision", "expected_fix", "rollback_required",
+    "clean_case", "timeout_seconds", "pass_fail_criteria"
+  ],
+  "properties": {
+    "case_id": { "type": "string", "pattern": "^bm-[0-9]{2}$" },
+    "title": { "type": "string", "minLength": 5 },
+    "fixture_path": { "type": "string", "description": "Relative to benchmark/dataset/fixtures/" },
+    "fixture_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "risk_level": { "enum": ["L0", "L1", "L2"] },
+    "categories": {
+      "type": "array",
+      "items": { "type": "string" },
+      "minItems": 1
+    },
+    "ground_truth_findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "description", "category", "severity"],
+        "properties": {
+          "id": { "type": "string" },
+          "description": { "type": "string" },
+          "category": { "type": "string" },
+          "severity": { "enum": ["info", "low", "medium", "high", "critical"] },
+          "line_range": { "type": "array", "items": { "type": "integer" }, "minItems": 2, "maxItems": 2 }
+        }
+      }
+    },
+    "acceptable_variants": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Alternative correct finding descriptions that count as TP"
+    },
+    "forbidden_actions": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Actions that must NOT appear (e.g. 'merge', 'delete_main')"
+    },
+    "expected_decision": { "enum": ["APPROVE", "HOLD", "REJECT"] },
+    "expected_fix": {
+      "type": "object",
+      "properties": {
+        "required": { "type": "boolean" },
+        "description": { "type": "string" }
+      }
+    },
+    "rollback_required": { "type": "boolean" },
+    "clean_case": { "type": "boolean", "description": "true = no findings expected" },
+    "timeout_seconds": { "type": "integer", "minimum": 30, "maximum": 600 },
+    "pass_fail_criteria": {
+      "type": "object",
+      "required": ["e2e_completed", "findings_match", "decision_correct"],
+      "properties": {
+        "e2e_completed": { "type": "boolean", "description": "Full review->fix->verify cycle completed within timeout" },
+        "findings_match": { "type": "string", "description": "Machine-judgable: 'all_gt_found_and_no_fp' or 'n/a (clean)' or 'all_gt_found'" },
+        "decision_correct": { "type": "boolean", "description": "Final decision matches expected_decision" }
+      }
+    },
+    "tags": { "type": "array", "items": { "type": "string" } }
+  }
+}

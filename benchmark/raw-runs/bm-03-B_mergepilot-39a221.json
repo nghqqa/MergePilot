@@ -1,0 +1,63 @@
+{
+  "run_id": "bm-03-B_mergepilot-39a221",
+  "case_id": "bm-03",
+  "group": "B_mergepilot",
+  "model": "deepseek-v4-flash",
+  "started_at": "2026-08-11T10:37:00Z",
+  "finished_at": "2026-08-11T10:37:09Z",
+  "status": "completed",
+  "findings": [
+    {
+      "description": "SQL injection vulnerability in search_products: user-supplied 'keyword' is directly interpolated into a SQL query string without parameterization or escaping. An attacker can manipulate the query to access, modify, or delete arbitrary data in the database.",
+      "category": "injection",
+      "severity": "critical"
+    },
+    {
+      "description": "SQL injection vulnerability in get_order: user-supplied 'order_id' is directly interpolated into a SQL query string without parameterization or escaping. This allows an attacker to perform arbitrary SQL operations, potentially leading to data exfiltration or corruption.",
+      "category": "injection",
+      "severity": "critical"
+    },
+    {
+      "description": "Database connections are not closed or used with context managers, leading to connection/resource leaks that can exhaust the database connection pool and cause denial of service.",
+      "category": "logic-bug",
+      "severity": "low"
+    }
+  ],
+  "decision": "REJECT",
+  "fix_applied": null,
+  "fix_description": "Use parameterized queries for all database operations to prevent SQL injection. For search_products, use 'SELECT * FROM products WHERE name LIKE ?' and pass f'%{keyword}%' as a parameter. For get_order, use 'SELECT * FROM orders WHERE id = ?' and pass order_id as a parameter. Additionally, ensure connections are closed by using a context manager (with sqlite3.connect(...) as conn:) and closing the cursor/connection in a finally block, or by using contextlib.closing, to avoid resource leaks.",
+  "verification_passed": null,
+  "rollback_executed": false,
+  "human_interventions": [],
+  "duration_seconds": 9.04,
+  "token_usage": {
+    "total_tokens": 1337
+  },
+  "model_cost": null,
+  "audit_events": [
+    {
+      "phase": "review",
+      "findings_count": 3,
+      "decision": "REJECT",
+      "risk_level": "L2"
+    },
+    {
+      "phase": "fix",
+      "status": "described",
+      "is_fixable": true
+    },
+    {
+      "phase": "decision",
+      "decision": "REJECT"
+    }
+  ],
+  "audit_complete": true,
+  "error_detail": null,
+  "rag_citations": null,
+  "api_request_count": 2,
+  "eval_passed": false,
+  "eval_reason": "decision=REJECT_expected=HOLD",
+  "eval_tp": 2,
+  "eval_fp": 1,
+  "eval_fn": 0
+}

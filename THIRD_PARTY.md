@@ -1,5 +1,13 @@
 # 第三方依赖、商业服务与数据边界
 
+## Agent 开发规则来源
+
+- **HERO Anti-OverDefense**：项目根目录 `AGENTS.md` 的反过度防御规则基于
+  `wanshuiyin/HERO-Anti-OverDefense`，MIT License；核对日期 2026-08-11，
+  固定上游提交 `536c85f480c4b3912240d58d3f207af86cc97aa5`。本项目增加了 MergePilot
+  专属范围说明，保留凭据隔离、Gateway 最小权限、fail-closed、evidence 完整性及
+  生产/测试环境隔离等真实安全边界。
+
 > 核对日期：2026-07-31。初赛包仅包含可复现原型与证据；复赛部署前应固定容器 digest、工具版本或 Git SHA，并重新检查许可证、价格与安全公告。
 
 | 依赖 / 服务 | 当前用途 | 状态 | 边界与替代方案 |

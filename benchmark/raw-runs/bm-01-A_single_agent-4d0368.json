@@ -1,0 +1,59 @@
+{
+  "run_id": "bm-01-A_single_agent-4d0368",
+  "case_id": "bm-01",
+  "group": "A_single_agent",
+  "model": "deepseek-v4-flash",
+  "started_at": "2026-08-11T10:34:54Z",
+  "finished_at": "2026-08-11T10:35:03Z",
+  "status": "completed",
+  "findings": [
+    {
+      "description": "Functions assume each item is a dict with 'price' and 'name' keys and that 'price' is numeric. Missing keys cause KeyError; non-numeric prices cause TypeError. Consider validating input.",
+      "category": "logic-bug",
+      "severity": "low"
+    },
+    {
+      "description": "Tax rate is hardcoded (0.08), which reduces flexibility and may cause incorrect totals if the rate changes. Consider passing it as a parameter or configuring it.",
+      "category": "other",
+      "severity": "info"
+    },
+    {
+      "description": "Receipt formatting is slightly misaligned because the first header line uses two spaces between columns while item lines use one space before the dollar sign. This is a cosmetic issue, not a bug.",
+      "category": "other",
+      "severity": "info"
+    },
+    {
+      "description": "No validation for negative prices or unreasonably large inputs, which could lead to unexpected totals or performance issues with very large item lists.",
+      "category": "logic-bug",
+      "severity": "info"
+    }
+  ],
+  "decision": "APPROVE",
+  "fix_applied": null,
+  "fix_description": null,
+  "verification_passed": null,
+  "rollback_executed": false,
+  "human_interventions": [],
+  "duration_seconds": 8.23,
+  "token_usage": {
+    "prompt_tokens": 306,
+    "completion_tokens": 717,
+    "total_tokens": 1023
+  },
+  "model_cost": null,
+  "audit_events": [
+    {
+      "phase": "review",
+      "findings_count": 4
+    }
+  ],
+  "audit_complete": true,
+  "error_detail": null,
+  "rag_citations": null,
+  "api_request_count": 1,
+  "eval_passed": false,
+  "eval_reason": "clean_case_fp=4",
+  "eval_tp": 0,
+  "eval_fp": 4,
+  "eval_fn": 0
+}

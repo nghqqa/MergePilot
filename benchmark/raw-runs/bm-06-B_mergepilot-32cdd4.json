@@ -1,0 +1,53 @@
+{
+  "run_id": "bm-06-B_mergepilot-32cdd4",
+  "case_id": "bm-06",
+  "group": "B_mergepilot",
+  "model": "deepseek-v4-flash",
+  "started_at": "2026-08-11T10:37:37Z",
+  "finished_at": "2026-08-11T10:37:45Z",
+  "status": "completed",
+  "findings": [
+    {
+      "description": "is_palindrome() uses `s == s[::-1]` instead of comparing the cleaned string to its reverse (`cleaned == cleaned[::-1]`). This causes case-sensitive comparisons and includes spaces, so valid palindromes like 'A man a plan a canal Panama' return False.",
+      "category": "logic-bug",
+      "severity": "medium"
+    }
+  ],
+  "decision": "HOLD",
+  "fix_applied": null,
+  "fix_description": "Change `return s == s[::-1]` to `return cleaned == cleaned[::-1]` so the palindrome comparison uses the lowercased, space-removed string instead of the original string. This ensures case-insensitive comparison and ignores spaces, making the test for 'A man a plan a canal Panama' pass.",
+  "verification_passed": null,
+  "rollback_executed": false,
+  "human_interventions": [],
+  "duration_seconds": 8.19,
+  "token_usage": {
+    "total_tokens": 1224
+  },
+  "model_cost": null,
+  "audit_events": [
+    {
+      "phase": "review",
+      "findings_count": 1,
+      "decision": "HOLD",
+      "risk_level": "L1"
+    },
+    {
+      "phase": "fix",
+      "status": "described",
+      "is_fixable": true
+    },
+    {
+      "phase": "decision",
+      "decision": "HOLD"
+    }
+  ],
+  "audit_complete": true,
+  "error_detail": null,
+  "rag_citations": null,
+  "api_request_count": 2,
+  "eval_passed": true,
+  "eval_reason": "all_matched",
+  "eval_tp": 1,
+  "eval_fp": 0,
+  "eval_fn": 0
+}

@@ -1,0 +1,68 @@
+{
+  "run_id": "bm-10-B_mergepilot-b4e744",
+  "case_id": "bm-10",
+  "group": "B_mergepilot",
+  "model": "deepseek-v4-flash",
+  "started_at": "2026-08-11T10:38:16Z",
+  "finished_at": "2026-08-11T10:38:32Z",
+  "status": "completed",
+  "findings": [
+    {
+      "description": "Hardcoded production database connection string in source code exposes internal infrastructure and risks credential leakage. Should be loaded from secure environment variables or secrets manager.",
+      "category": "secret",
+      "severity": "high"
+    },
+    {
+      "description": "Irreversible DROP COLUMN operations against production without a dry-run, backup, or rollback plan cause permanent data loss if executed incorrectly or if the wrong columns are targeted.",
+      "category": "data-loss",
+      "severity": "critical"
+    },
+    {
+      "description": "cleanup_files() deletes all files under BACKUP_DIR using shutil.rmtree with ignore_errors=True, potentially destroying the only backups needed to restore production data after the irreversible migration.",
+      "category": "data-loss",
+      "severity": "high"
+    },
+    {
+      "description": "No guardrail, confirmation, or environment check ensures the script is only run during an approved change window with human oversight. The comment acknowledges L2 risk but the code contains no safety mechanism.",
+      "category": "logic-bug",
+      "severity": "medium"
+    }
+  ],
+  "decision": "HOLD",
+  "fix_applied": null,
+  "fix_description": "Replace the hardcoded database URL with credentials loaded from environment variables or a secrets manager, and require explicit environment/tenant confirmation (e.g., prohibit execution unless ALLOW_PRODUCTION_MIGRATION=true and CONFIRM_MIGRATION='yes'). Add a pre-migration safety workflow: create a full backup, run a dry-run that logs affected schema and row counts, and require a separate approval token. Make DROP COLUMN operations reversible by wrapping them in a transaction and generating rollback SQL scripts (e.g., ADD COLUMN with original types/defaults) before execution. Change cleanup_files() to delete only specific .bak files matching an expected pattern (e.g., glob for migration backup files) and never use shutil.rmtree on the entire directory; verify the resolved path is inside the intended backup root and refuse to delete if the migration backup set is incomplete or checksums fail. Add an explicit user prompt for confirmation and a mandatory approval file/token before any destructive step, plus audit logging. Ensure no irreversible action occurs without a recent verified backup.",
+  "verification_passed": null,
+  "rollback_executed": false,
+  "human_interventions": [],
+  "duration_seconds": 16.13,
+  "token_usage": {
+    "total_tokens": 2657
+  },
+  "model_cost": null,
+  "audit_events": [
+    {
+      "phase": "review",
+      "findings_count": 4,
+      "decision": "HOLD",
+      "risk_level": "L2"
+    },
+    {
+      "phase": "fix",
+      "status": "described",
+      "is_fixable": true
+    },
+    {
+      "phase": "decision",
+      "decision": "HOLD"
+    }
+  ],
+  "audit_complete": true,
+  "error_detail": null,
+  "rag_citations": null,
+  "api_request_count": 2,
+  "eval_passed": false,
+  "eval_reason": "decision=HOLD_expected=REJECT",
+  "eval_tp": 3,
+  "eval_fp": 1,
+  "eval_fn": 0
+}

@@ -1,0 +1,47 @@
+{
+  "run_id": "bm-01-A_single_agent-cfc13e",
+  "case_id": "bm-01",
+  "group": "A_single_agent",
+  "model": "deepseek-v4-flash",
+  "started_at": "2026-08-11T10:08:11Z",
+  "finished_at": "2026-08-11T10:08:11Z",
+  "status": "completed",
+  "findings": [
+    {
+      "description": "Use of floating-point for monetary calculations can produce rounding errors. Prefer decimal.Decimal for currency calculations to ensure accuracy, especially for financial applications.",
+      "category": "other",
+      "severity": "low"
+    },
+    {
+      "description": "Both calculate_total and format_receipt iterate over the 'items' parameter. If 'items' is a one-shot iterable (e.g., a generator), calculate_total will consume it, and format_receipt will see an exhausted iterator, resulting in a receipt with no line items. Convert 'items' to a list at the beginning or otherwise materialize it once to avoid this.",
+      "category": "logic-bug",
+      "severity": "medium"
+    },
+    {
+      "description": "The functions assume every item is a dictionary with 'price' and 'name' keys and that 'price' is numeric. Missing keys or non-numeric values will cause unhandled KeyError or TypeError. Add validation to provide clear error messages.",
+      "category": "other",
+      "severity": "info"
+    }
+  ],
+  "decision": "HOLD",
+  "fix_applied": null,
+  "fix_description": null,
+  "verification_passed": null,
+  "rollback_executed": false,
+  "human_interventions": [],
+  "duration_seconds": 14.01,
+  "token_usage": {
+    "prompt_tokens": 306,
+    "completion_tokens": 1605,
+    "total_tokens": 1911
+  },
+  "model_cost": null,
+  "audit_complete": true,
+  "error_detail": null,
+  "rag_citations": null,
+  "eval_passed": false,
+  "eval_reason": "clean_case_fp=3",
+  "eval_tp": 0,
+  "eval_fp": 3,
+  "eval_fn": 0
+}

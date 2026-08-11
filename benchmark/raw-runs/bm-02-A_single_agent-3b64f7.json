@@ -1,0 +1,59 @@
+{
+  "run_id": "bm-02-A_single_agent-3b64f7",
+  "case_id": "bm-02",
+  "group": "A_single_agent",
+  "model": "deepseek-v4-flash",
+  "started_at": "2026-08-11T10:35:03Z",
+  "finished_at": "2026-08-11T10:35:12Z",
+  "status": "completed",
+  "findings": [
+    {
+      "description": "Hardcoded API key in source code exposes sensitive credentials. Anyone with access to the code can retrieve this key and abuse the API. The key must be removed immediately, revoked, and replaced with a secure environment variable or secret manager.",
+      "category": "secret",
+      "severity": "critical"
+    },
+    {
+      "description": "The user_id parameter is interpolated directly into the URL without validation or encoding. A malicious value could include path traversal sequences (e.g., '../') or query parameters, altering the request path or target endpoint.",
+      "category": "injection",
+      "severity": "high"
+    },
+    {
+      "description": "HTTP requests do not specify a timeout. A slow or unresponsive server can cause the application to hang indefinitely, potentially leading to resource exhaustion or denial of service.",
+      "category": "logic-bug",
+      "severity": "low"
+    },
+    {
+      "description": "The response status is not checked (e.g., using raise_for_status() or checking resp.status_code). Unexpected API responses (4xx/5xx) will be silently treated as successful, leading to potential data corruption or incorrect application behavior.",
+      "category": "logic-bug",
+      "severity": "low"
+    }
+  ],
+  "decision": "REJECT",
+  "fix_applied": null,
+  "fix_description": null,
+  "verification_passed": null,
+  "rollback_executed": false,
+  "human_interventions": [],
+  "duration_seconds": 9.13,
+  "token_usage": {
+    "prompt_tokens": 306,
+    "completion_tokens": 737,
+    "total_tokens": 1043
+  },
+  "model_cost": null,
+  "audit_events": [
+    {
+      "phase": "review",
+      "findings_count": 4
+    }
+  ],
+  "audit_complete": true,
+  "error_detail": null,
+  "rag_citations": null,
+  "api_request_count": 1,
+  "eval_passed": false,
+  "eval_reason": "decision=REJECT_expected=HOLD",
+  "eval_tp": 1,
+  "eval_fp": 3,
+  "eval_fn": 0
+}

@@ -1,0 +1,52 @@
+{
+  "run_id": "bm-10-A_single_agent-f6ab25",
+  "case_id": "bm-10",
+  "group": "A_single_agent",
+  "model": "deepseek-v4-flash",
+  "started_at": "2026-08-11T10:14:50Z",
+  "finished_at": "2026-08-11T10:14:50Z",
+  "status": "completed",
+  "findings": [
+    {
+      "description": "Production database connection string is hardcoded in the source code (PRODUCTION_DB). This exposes internal infrastructure details, complicates configuration management, and risks accidental connection to the wrong environment. It should be read from environment variables or a secure secret manager.",
+      "category": "other",
+      "severity": "low"
+    },
+    {
+      "description": "The migration drops columns from the production database without any backup, dry-run, or verification. This is an irreversible operation that can cause permanent data loss if the wrong columns are targeted or if the migration is misapplied. No safety checks (e.g., confirm before proceeding, rollback plan) are present.",
+      "category": "data-loss",
+      "severity": "critical"
+    },
+    {
+      "description": "cleanup_files() uses shutil.rmtree(backup_dir, ignore_errors=True) on a directory derived from an environment variable. If BACKUP_DIR is misconfigured (e.g., empty, '/', or a critical path), it can delete an unintended directory tree. Additionally, deleting backups immediately after an irreversible migration removes the only means of rollback, increasing data-loss risk.",
+      "category": "data-loss",
+      "severity": "high"
+    },
+    {
+      "description": "The database connection and cursor are not closed in a finally block. If any execute() or commit() raises an exception, the connection and cursor may leak, exhausting database connections. The function also lacks any exception handling or logging, making failures silent and hard to debug.",
+      "category": "logic-bug",
+      "severity": "medium"
+    }
+  ],
+  "decision": "REJECT",
+  "fix_applied": null,
+  "fix_description": null,
+  "verification_passed": null,
+  "rollback_executed": false,
+  "human_interventions": [],
+  "duration_seconds": 12.83,
+  "token_usage": {
+    "prompt_tokens": 442,
+    "completion_tokens": 1360,
+    "total_tokens": 1802
+  },
+  "model_cost": null,
+  "audit_complete": true,
+  "error_detail": null,
+  "rag_citations": null,
+  "eval_passed": false,
+  "eval_reason": "fn=1",
+  "eval_tp": 2,
+  "eval_fp": 2,
+  "eval_fn": 1
+}

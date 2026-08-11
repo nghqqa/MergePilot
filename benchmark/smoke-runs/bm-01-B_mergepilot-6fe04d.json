@@ -1,0 +1,29 @@
+{
+  "run_id": "bm-01-B_mergepilot-6fe04d",
+  "case_id": "bm-01",
+  "group": "B_mergepilot",
+  "model": "deepseek-v4-flash",
+  "started_at": "2026-08-11T10:13:10Z",
+  "finished_at": "2026-08-11T10:13:10Z",
+  "status": "completed",
+  "findings": [],
+  "decision": "APPROVE",
+  "fix_applied": null,
+  "fix_description": null,
+  "verification_passed": null,
+  "rollback_executed": false,
+  "human_interventions": [],
+  "duration_seconds": 7.9,
+  "token_usage": {
+    "total_tokens": 1060
+  },
+  "model_cost": null,
+  "audit_complete": true,
+  "error_detail": null,
+  "rag_citations": null,
+  "eval_passed": true,
+  "eval_reason": "clean_approved",
+  "eval_tp": 0,
+  "eval_fp": 0,
+  "eval_fn": 0
+}
