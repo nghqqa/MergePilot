@@ -355,6 +355,13 @@ def classify_request(method, raw_path, config, exec_registry, body=None,
         # name must be ASCII, no traversal
         if not _is_safe_name(name):
             return Decision("deny", "unsafe name chars: %r" % name[:32])
+        # D2B-3C: reject worker names whose agent suffix is not a known role.
+        # derive_agent_strict returns None for unknown agents (e.g.
+        # agentteams-worker-evil) — deny at classify, never create a container
+        # with an unparseable identity.
+        if hp.derive_agent_strict(name) is None:
+            return Decision("deny",
+                            "unknown agent role in name: %r" % name[:32])
         return Decision("transform", "create %s" % kind, body=body,
                         name=name)
 
