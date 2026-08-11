@@ -1,6 +1,6 @@
 # UPSTREAM_BLOCKED: HiClaw worker-creation hardening
 
-## Status: PASSED — D2B-3 v1.2.2 production live verified (2026-08-12)
+## Status: PASSED — D2B-3 v1.2.2 production live verified (2026-08-11)
 
 **Socket-proxy daemon IS implemented and deployed.** The MergePilot Docker
 Socket Proxy (`tools/hiclab/docker_socket_proxy.py` + `proxy_transport.py`)
@@ -51,7 +51,7 @@ deployed (the proxy handles all creates).
 Previously BLOCKED_UPSTREAM (option b): no socket-proxy daemon was
 implemented; Manager auto-create was FORBIDDEN; only manual
 `create_hardened_worker.sh` was permitted. That status was superseded by
-the D2B-3 v1.2.2 production live pass on 2026-08-12.
+the D2B-3 v1.2.2 production live pass on 2026-08-11.
 
 ### Programmatic enforcement (retained)
 

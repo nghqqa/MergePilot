@@ -3,7 +3,7 @@
 > **不止提意见——把 PR 从审查推进到受治理的修复、验证、审批与回滚。**
 > 高危变更强制人工审批，失败可回滚，全程可审计。以 [AgentTeams / HiClaw](https://hiclaw.io) 为可适配的 Agent runtime。
 
-**当前状态**：复赛阶段（2026-08-12）。确定性控制面、6 Skill DAG、回滚链、最小权限 Gateway 与 **D2B-3 fail-closed Docker socket proxy** 均已验证。**D2B-3 真实 AgentTeams v1.2.2 生产 live 已通过（`hiclaw_live=true`，64/64 PASS）**。权威 evidence：[`evidence/m5/0d/hiclaw-v122-true-live-pass.json`](evidence/m5/0d/hiclaw-v122-true-live-pass.json)。所有声明均可在 [声明—证据矩阵](docs/初赛声明-证据矩阵.md) 中逐项核对。
+**当前状态**：复赛阶段（2026-08-11）。确定性控制面、6 Skill DAG、回滚链、最小权限 Gateway 与 **D2B-3 fail-closed Docker socket proxy** 均已验证。**D2B-3 真实 AgentTeams v1.2.2 生产 live 已通过（`hiclaw_live=true`，64/64 PASS）**。权威 evidence：[`evidence/m5/0d/hiclaw-v122-true-live-pass.json`](evidence/m5/0d/hiclaw-v122-true-live-pass.json)。所有声明均可在 [声明—证据矩阵](docs/初赛声明-证据矩阵.md) 中逐项核对。
 
 ---
 
