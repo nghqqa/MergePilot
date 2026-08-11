@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1800" height="900" viewBox="0 0 1800 900" role="img" aria-labelledby="title desc">
   <title id="title">MergePilot 多 Agent PR 审修与风险治理架构</title>
-  <desc id="desc">GitHub PR 经确定性 Workflow Controller 编排 Reviewer、Fixer 和 Verifier，调用六个 Skill，通过最小权限 Policy Gateway 和 GitHub MCP 完成审批、合并或回滚。PostgreSQL 与 pgvector 保存状态、Outbox、审计和 RAG 案例。</desc>
+  <desc id="desc">GitHub PR 经确定性 Workflow Controller 编排 Reviewer、Fixer 和 Verifier，调用六个 Skill。Policy Gateway 阻止未授权写入或授权 GitHub MCP 执行合并与回滚。PostgreSQL 保存状态与 Outbox，pgvector 提供案例检索，审计平面记录完整 Trace。</desc>
 
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
@@ -163,18 +163,17 @@
     <path d="M1250 350 H1300" class="connector"/>
     <path d="M1535 350 H1570" class="connector"/>
 
-    <!-- Outcomes -->
-    <path d="M1665 425 V492" class="connector"/>
+    <!-- Governance outcomes: Gateway decides; MCP only executes authorized writes -->
+    <path d="M1422 450 V495" fill="none" stroke="#f97316" stroke-width="2.5" marker-end="url(#arrow)"/>
+    <path d="M1665 425 V495" fill="none" stroke="#22c55e" stroke-width="2.5" marker-end="url(#arrow)"/>
     <g filter="url(#shadow)">
-      <rect x="1430" y="505" width="205" height="78" rx="18" fill="#ecfdf5" stroke="#22c55e" stroke-width="2"/>
-      <rect x="1660" y="505" width="110" height="78" rx="18" fill="#fff7ed" stroke="#f97316" stroke-width="2"/>
+      <rect x="1310" y="505" width="225" height="78" rx="18" fill="#fff7ed" stroke="#f97316" stroke-width="2"/>
+      <rect x="1580" y="505" width="170" height="78" rx="18" fill="#ecfdf5" stroke="#22c55e" stroke-width="2"/>
     </g>
-    <text x="1532" y="538" text-anchor="middle" class="small" fill="#166534" font-weight="750">APPROVE / MERGE</text>
-    <text x="1532" y="561" text-anchor="middle" class="tiny" fill="#15803d">授权后执行</text>
-    <text x="1715" y="537" text-anchor="middle" class="small" fill="#9a3412" font-weight="750">HOLD</text>
-    <text x="1715" y="560" text-anchor="middle" class="tiny" fill="#c2410c">或 ROLLBACK</text>
-    <path d="M1665 492 H1532 V495" fill="none" stroke="#22c55e" stroke-width="2.5" marker-end="url(#arrow)"/>
-    <path d="M1665 492 H1715 V495" fill="none" stroke="#f97316" stroke-width="2.5" marker-end="url(#arrow)"/>
+    <text x="1422" y="538" text-anchor="middle" class="small" fill="#9a3412" font-weight="750">HOLD / 待审批</text>
+    <text x="1422" y="561" text-anchor="middle" class="tiny" fill="#c2410c">拒绝或等待 L2 授权</text>
+    <text x="1665" y="538" text-anchor="middle" class="small" fill="#166534" font-weight="750">MERGE / REVERT</text>
+    <text x="1665" y="561" text-anchor="middle" class="tiny" fill="#15803d">仅执行已授权写入</text>
 
     <!-- State and evidence plane -->
     <rect x="60" y="635" width="1710" height="190" rx="28" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
@@ -190,24 +189,24 @@
     </g>
 
     <g>
-      <rect x="600" y="700" width="480" height="92" rx="18" fill="#f5f3ff" stroke="#a78bfa" stroke-width="2"/>
-      <circle cx="652" cy="746" r="25" fill="#7c3aed"/>
-      <path d="M640 746 h24 M652 734 v24" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
-      <text x="700" y="735" class="card-title ink">审计证据与 Trace</text>
-      <text x="700" y="765" class="small muted">Finding · Decision · Run · source_commit</text>
+      <rect x="600" y="700" width="620" height="92" rx="18" fill="#ecfeff" stroke="#22d3ee" stroke-width="2"/>
+      <circle cx="652" cy="746" r="25" fill="#0891b2"/>
+      <path d="M641 751 c10-24 24-24 28-7 c-10 1-18 7-25 15" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
+      <text x="700" y="735" class="card-title ink">pgvector · Case Retrieval</text>
+      <text x="700" y="765" class="small muted">历史案例仅作参考；不替代当次验证</text>
     </g>
 
     <g>
-      <rect x="1110" y="700" width="610" height="92" rx="18" fill="#ecfeff" stroke="#22d3ee" stroke-width="2"/>
-      <circle cx="1162" cy="746" r="25" fill="#0891b2"/>
-      <path d="M1151 751 c10-24 24-24 28-7 c-10 1-18 7-25 15" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
-      <text x="1210" y="735" class="card-title ink">pgvector · Case Retrieval</text>
-      <text x="1210" y="765" class="small muted">历史案例作为不可信参考；不替代当次 SAST、测试与审批</text>
+      <rect x="1250" y="700" width="470" height="92" rx="18" fill="#f5f3ff" stroke="#a78bfa" stroke-width="2"/>
+      <circle cx="1302" cy="746" r="25" fill="#7c3aed"/>
+      <path d="M1290 746 h24 M1302 734 v24" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
+      <text x="1350" y="735" class="card-title ink">审计证据与 Trace</text>
+      <text x="1350" y="765" class="small muted">Finding · Decision · Run · source_commit</text>
     </g>
 
     <!-- State links -->
     <path d="M425 450 V610 Q425 625 410 625 V690" class="state-link"/>
-    <path d="M1127 450 V595 Q1127 610 1390 610 V690" class="state-link"/>
-    <path d="M1422 450 V620 Q1422 635 925 635 V690" class="state-link"/>
+    <path d="M1127 450 V690" class="state-link"/>
+    <path d="M1535 420 H1555 V610 Q1555 625 1500 625 V690" class="state-link"/>
   </g>
 </svg>
