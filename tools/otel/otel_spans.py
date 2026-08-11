@@ -385,3 +385,166 @@ def mcp_span(run_id: str, trace_id: str, correlation_id: str = "",
     with start_span("mcp.upstream", run_id=run_id, trace_id=trace_id,
                     agent_role=agent_role, **attrs) as span:
         yield span
+
+
+# ---------------------------------------------------------------------------
+# W3C traceparent propagation (HTTP header format)
+# ---------------------------------------------------------------------------
+#
+# Format: version-trace_id-parent_id-trace_flags
+#   version:    2 hex chars (always "00")
+#   trace_id:   32 hex chars (lowercase)
+#   parent_id:  16 hex chars (lowercase)
+#   trace_flags: 2 hex chars ("00" = not sampled, "01" = sampled)
+#
+# We map the MergePilot SpanContext to/from this format so that spans can
+# propagate across HTTP boundaries (Gateway → MCP) and back.
+
+TRACEPARENT_HEADER = "traceparent"
+
+
+def to_traceparent(ctx: SpanContext, sampled: bool = True) -> str:
+    """Serialize a SpanContext to a W3C traceparent header value."""
+    flags = "01" if sampled else "00"
+    return "00-%s-%s-%s" % (ctx.trace_id, ctx.span_id, flags)
+
+
+def from_traceparent(value: str, run_id: str = "") -> Optional[SpanContext]:
+    """Parse a W3C traceparent header into a SpanContext.
+
+    Returns None if the value is malformed (fail-closed: do not propagate
+    a broken context).
+    """
+    if not value or not isinstance(value, str):
+        return None
+    parts = value.strip().split("-")
+    if len(parts) != 4:
+        return None
+    _ver, trace_id, span_id, _flags = parts
+    if len(trace_id) != 32 or len(span_id) != 16:
+        return None
+    try:
+        int(trace_id, 16)
+        int(span_id, 16)
+    except ValueError:
+        return None
+    return SpanContext(trace_id=trace_id, span_id=span_id, run_id=run_id)
+
+
+def inject_headers(headers: dict, ctx: SpanContext = None,
+                   run_id: str = ""):
+    """Inject traceparent + mp.run_id into an HTTP headers dict.
+
+    Modifies ``headers`` in place and returns it. If no context is given,
+    uses the current thread-local context.
+    """
+    ctx = ctx or get_current_context()
+    if ctx is None:
+        return headers
+    headers[TRACEPARENT_HEADER] = to_traceparent(ctx)
+    if run_id or ctx.run_id:
+        headers["X-MP-Run-Id"] = run_id or ctx.run_id
+    return headers
+
+
+def extract_context(headers: dict, run_id: str = "") -> Optional[SpanContext]:
+    """Extract a SpanContext from HTTP headers (traceparent + X-MP-Run-Id).
+
+    Returns None if no valid traceparent is found.
+    """
+    tp = None
+    for k, v in headers.items():
+        if k.lower() == TRACEPARENT_HEADER:
+            tp = v
+            break
+    if tp is None:
+        return None
+    # run_id from X-MP-Run-Id header or fallback
+    for k, v in headers.items():
+        if k.lower() == "x-mp-run-id":
+            run_id = run_id or v
+            break
+    return from_traceparent(tp, run_id=run_id)
+
+
+# ---------------------------------------------------------------------------
+# OTLP HTTP exporter (sends spans to a local otelcol / compatible receiver)
+# ---------------------------------------------------------------------------
+
+
+class OTLPExporter:
+    """Sends completed spans to an OTLP/HTTP receiver.
+
+    Fail-closed: if the receiver is unreachable, the export is silently
+    dropped (logged to stderr). Business logic is never blocked by export
+    failures.
+    """
+
+    def __init__(self, endpoint: str = "http://localhost:4318/v1/traces",
+                 timeout: float = 2.0):
+        self.endpoint = endpoint
+        self.timeout = timeout
+        self._failed = 0
+        self._sent = 0
+
+    def export(self, span: SpanRecord):
+        """Export a single span. Non-blocking on failure."""
+        import urllib.request
+        import urllib.error
+        payload = json.dumps({
+            "resourceSpans": [{
+                "resource": {"attributes": [{
+                    "key": "service.name",
+                    "value": {"stringValue": "mergepilot"}
+                }]},
+                "scopeSpans": [{
+                    "spans": [self._span_to_otlp(span)]
+                }]
+            }]
+        }).encode("utf-8")
+        try:
+            req = urllib.request.Request(
+                self.endpoint, data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST")
+            urllib.request.urlopen(req, timeout=self.timeout)
+            self._sent += 1
+        except Exception:
+            self._failed += 1
+
+    def _span_to_otlp(self, span: SpanRecord):
+        """Convert SpanRecord to OTLP JSON span format."""
+        return {
+            "traceId": span.trace_id,
+            "spanId": span.span_id,
+            "parentSpanId": span.parent_span_id or "",
+            "name": span.name,
+            "kind": "SPAN_KIND_INTERNAL",
+            "startTimeUnixNano": str(int(span.start_time * 1e9)),
+            "endTimeUnixNano": str(int((span.end_time or time.time()) * 1e9)),
+            "status": {
+                "code": 1 if span.status == "OK" else (2 if span.status == "ERROR" else 0),
+            },
+            "attributes": [
+                {"key": k, "value": {"stringValue": str(v)}}
+                for k, v in span.attributes.items()
+            ],
+        }
+
+
+class DualCollector:
+    """Sends spans to both InMemoryCollector (for tests) and OTLPExporter
+    (for local otelcol). Fail-closed on exporter errors."""
+
+    def __init__(self, memory: InMemoryCollector = None,
+                 exporter: OTLPExporter = None):
+        self.memory = memory or InMemoryCollector()
+        self.exporter = exporter
+
+    def add_span(self, span: SpanRecord):
+        self.memory.add_span(span)
+        if self.exporter is not None:
+            try:
+                self.exporter.export(span)
+            except Exception:
+                pass  # fail-closed
