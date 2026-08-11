@@ -1,186 +1,156 @@
-# MergePilot · 多 Agent PR 审修闭环
+# MergePilot · 多 Agent PR 审修与风险治理闭环
 
-> **不止提意见——闭环修复,高危人控。**
-> 把每一个 Pull Request 当作一次“代码事故”：Manager 编排多 Agent 推进审查 → 修复 → 验证，高风险变更强制人工审批，失败回滚执行链已实测，全程可审计。
-> 以 **[AgentTeams / HiClaw](https://hiclaw.io)**(多 Agent 协同框架)为基点构建。
+> **不止提意见——把 PR 从审查推进到受治理的修复、验证、审批与回滚。**
+> 高危变更强制人工审批，失败可回滚，全程可审计。以 [AgentTeams / HiClaw](https://hiclaw.io) 为可适配的 Agent runtime。
+
+**当前状态**：初赛阶段（2026-08-11）。确定性控制面、6 Skill DAG、回滚链与最小权限 Gateway 已在 fixture / 隔离测试栈验证；**生产 HiClaw live 尚未达成（`hiclaw_live=false`）**。所有声明均可在 [声明—证据矩阵](docs/初赛声明-证据矩阵.md) 中逐项核对。
 
 ---
 
-## 这是什么
+## 为什么需要 MergePilot
 
-MergePilot 是一个面向研发团队的 **多 Agent PR 协同审修系统**。它不是"只提意见的 PR Bot",而是一个多 Agent 团队,把 PR 从接入一直推进到**可审计的合并**:
+- **单 Agent 审查只提意见，不做闭环**：误报堆积，修复仍靠人，验证与合并无人兜底。
+- **高风险变更缺边界**：密钥、依赖升级、危险删除缺少审批、回滚与审计，难以满足合规。
+- **LLM 编排本质不可靠**：阶段交接、幂等、崩溃恢复、并发隔离不能交给 Prompt 自觉。
+- **凭证必须收敛**：让 Worker 零凭证是真实安全要求，不是可选项。
+- **MergePilot 的方式**：确定性控制面 + Agent 语义决策 + 工具层权限门 + 失败可回滚 + 全程结构化审计。
 
-- **6 类职能**(Coordinator / Triage / Reviewer / Fix Planner / Fixer / Verifier),当前 MVP 由 **4 个运行 Agent** 承载(Triage 合并至 Coordinator、Fix Planner 合并至 Fixer)。
-- **L0/L1/L2 三级风险治理**：低危可自动推进、中危人工复核、**高危仅出方案并强制人工审批**；验证失败进入回滚分支，当前由脚本显式触发。
-- **真实工具**:Reviewer 调用自研 SAST（正则密钥 + AST 注入 + 依赖漏洞）。仓库存在两套实现，详见下文 [SAST 两条路径](#sast-两条路径必须区分)：早期 Reviewer/demo 路径 `skills/sast-scan/scan.py`，以及 M4-F 正式 Skill DAG 路径 `skills/sast_scan/`（契约化、87 测试）。
-- **全程可审计**:执行 Trace、审查/修复/验证报告、补丁说明、可视化看板。
+## 系统架构
 
-## 为什么
-
-- PR review 排队是研发效率瓶颈;现有 AI 工具只提意见,不做闭环修复。
-- 依赖升级、密钥、删除等高风险变更缺少审批、回滚与审计边界,难以满足合规。
-- MergePilot 的差异:**把修复纳入可治理闭环**——做完,并管住高危。
-
-## 架构(8 段闭环 + 2 条回路)
-
+```mermaid
+flowchart LR
+    PR["GitHub PR"] --> WC["Workflow Controller<br/>状态机 · Outbox · 幂等 / 重试 / 恢复"]
+    subgraph RT["可适配 Agent runtime（AgentTeams / HiClaw — 非状态权威）"]
+        REV["Reviewer"]
+        FIX["Fixer"]
+        VER["Verifier"]
+    end
+    WC --> REV
+    WC --> FIX
+    WC --> VER
+    REV --> SKILLS["6 Skill DAG<br/>diff-parse · risk-classify · sast-scan<br/>test-runner · pr-lifecycle · case-retrieval"]
+    FIX --> SKILLS
+    VER --> SKILLS
+    SKILLS --> GW["Policy Gateway<br/>最小权限 · 角色 token · 写约束 · fail-closed"]
+    GW --> MCP["GitHub MCP（凭证隔离 sidecar）"]
+    MCP --> ACT["L2 审批 / 合并 / 回滚"]
+    WC -.-> PG[("PostgreSQL 16 + pgvector<br/>状态 · Outbox · 审计 · 决策 · RAG 案例")]
+    SKILLS -.-> PG
 ```
-PR 接入 → 任务拆解 → 上下文共享 → Skill/MCP 工具调用 → 验证 → 证据沉淀 → 审批/回滚 → RAG 沉淀
-                ↑ Review–Fix 协商回路 / Fix–Verify 回退回路 ↓
-```
 
-详细:6 Agent 职责见 [`docs/附录A-Agent-Identity清单.md`](docs/附录A-Agent-Identity清单.md);Skill 体系见 [`docs/附录B-Skill清单.md`](docs/附录B-Skill清单.md)。
+- **唯一事实来源**是 PostgreSQL 状态机 + Outbox（Controller 持有任务状态、阶段转换、事件去重、超时与恢复）。
+- **AgentTeams / HiClaw** 是当前适配的 Agent runtime 之一，负责语义决策与协作，**不是状态权威**。
+- Agent 职责见 [`docs/附录A-Agent-Identity清单.md`](docs/附录A-Agent-Identity清单.md)，Skill 体系见 [`docs/附录B-Skill清单.md`](docs/附录B-Skill清单.md)。
 
-## 当前环境的运行时经验(2026-07-23)
+## 已验证能力
 
-**现象**:在当前本地 AgentTeams v1.1.2 环境中，默认 QwenPaw Manager 出现消费者/会话处理不可靠。
+| 能力 | 结果 | 证据 |
+|---|---|---|
+| 状态机 + Outbox + L2 审批 + 故障恢复 / 回滚 | B4e **43/43**、B5 **50/50**、M3-C **33/33** | [evidence/m3b-b4e/](evidence/m3b-b4e/README.md) · [evidence/m3b-b5/](evidence/m3b-b5/README.md) · [evidence/m3c/](evidence/m3c/README.md) |
+| 最小权限 Policy Gateway | 8 类负向全 fail-closed（50/50） | [evidence/m3b-b5/](evidence/m3b-b5/README.md) |
+| 6 Skill DAG（确定性子进程，非 LLM 自主调用） | diff-parse/risk-classify/sast-scan/test-runner/pr-lifecycle/case-retrieval，共 **481** 项测试 | [evidence/m4/](evidence/m4/) |
+| AgentTeams 全链协议 E2E | **16/16** 门禁 + **6/6** 回归；6 Skill 全 SUCCEEDED | [evidence/m4/m4f/verification.txt](evidence/m4/m4f/verification.txt) |
+| 真实 GitHub MCP（审查→修复→验证→合并） | PR #1 审查 → 修复 PR #3，5/5 resolved，squash 合并 | [docs/项目状态.md](docs/项目状态.md) |
+| PostgreSQL 16 + pgvector（审计 / RAG） | 5 tasks / 6 findings / 3 decisions / 9 audit events；Docker E2E `all_passed=true` | [evidence/m4/m4e/](evidence/m4/m4e/README.md) |
+| HiClaw 隔离 C3 十轮稳定性 | **10/10 PASS**（MergePilot-Test 隔离栈） | [evidence/m5/0c/c3-10x.json](evidence/m5/0c/c3-10x.json) |
+| D2B-1 离线回归 | **17/17 + 6/6** | [evidence/m5/0d/offline-regression.json](evidence/m5/0d/offline-regression.json) |
 
-**处理**:安装时将 Manager 运行时切换为 OpenClaw。该配置在本环境中让 review→fix→verify 处理稳定；这是环境范围内的验证结论，不作为所有版本和部署的普遍要求。
+## Benchmark（N=10×2，已冻结 · post-run 机器复算）
 
-**验证**:全 OpenClaw 架构(Manager + 3 独立 Worker)完成双场景：PR #42 发现 6 项问题并最终 MERGE(人审后)；PR #43 发现 4 项问题、确认 3+ 已知 CVE，裁定 HOLD 并明确 Do not merge。
+单 Agent（A）vs MergePilot 多角色（B），同模型 `deepseek-v4-flash`、synthetic fixtures、每对单次运行。
 
-### GitHub MCP 接入经验(2026-07-24)
+| 指标 | A 单 Agent | B MergePilot | Δ |
+|---|---:|---:|---:|
+| precision | 36.36% | 57.14% | +20.78 pp |
+| **recall** | **70.59%** | **70.59%** | **0** |
+| F1 | 48.00% | 63.16% | +15.16 pp |
+| decision accuracy | 50.00% | 40.00% | **−10.00 pp** |
+| false positives | 21 | 9 | −12 |
+| tokens | 12062 | 16037 | +32.95% |
+| API requests | 10 | 18 | +80% |
+| infrastructure completion | 10/10 | 10/10 | 20/20 |
+| semantic case pass | 2/10 | 3/10 | 5/20 |
 
-**目标**:让 Reviewer/Fixer 经 `mcporter` 读取真实 GitHub PR 与源码,且 Worker 不持有 GitHub 凭证(与 quickstart Step 7「Higress 托管 MCP、PAT 集中保管、Worker 用 mcporter」的架构目标一致)。
+> 这是 **controlled local orchestration（受控本地编排），不是真实 Gateway/controller/GitHub/HiClaw E2E**。
+> 改善主要来自 FP 从 21 降至 9；**recall 两组相同，不证明多角色提高 recall**；B 的 decision accuracy 低于 A，风险处置校准仍需改进。
+> C3 10/10 是独立的真实隔离栈证据，不与本 Benchmark 混为一项。详见 [`benchmark/formal-summary.md`](benchmark/formal-summary.md)。
 
-**遇到的问题**:官方 `setup-mcp-server.sh` / 安装器 `setup-higress.sh` 通过 `PUT /v1/mcpServer` 把工具定义(`rawConfigurations` + `accessToken`)写入 Higress。在本机 v1.1.2 环境中,该 PUT 返回 200 并回显配置,但 `rawConfigurations` 不持久化(GET 回空),mcp-server 插件拿不到工具/凭证,请求被透传到 `api.github.com` 返回 400。安装器与 setup 脚本使用同一段写入代码,因此重装未必能解决。
+## 安全与可靠性
 
-**采用的方案(凭证隔离桥)**:自建 `github-mcp-bridge` 镜像,以 `mcp-proxy` 把 GitHub 官方 MCP server(stdio)桥接为网络 SSE 服务,**GitHub PAT 仅存在于桥容器 env**(经 `--pass-environment` 转发给 stdio 子进程)。Worker 经 `mcporter` 连 `http://github-mcp:8082/sse`,**不持有任何 GitHub 凭证**——保住了「Worker 零凭证」的安全属性。该结论限定于当前本地环境与版本。
-
-**验证**:Worker 经 MCP 读到 `nghqqa/mergepilot-test` 仓库 `feature/vulnerable-pr` 分支的真实代码(SQLi + 硬编码密钥),与 `sast-scan` 检测点对齐;并已实测完整写链路 —— 建修复分支 `fix/security-hardening`、写入修复版 `user_service.py`、提修复 [PR #2](https://github.com/nghqqa/mergepilot-test/pull/2) 并回读校验修复内容。44 个 GitHub 工具(读 PR、建分支、提 PR、合并等)可用。
-
-### 自主编排与任务隔离(2026-07-25,已验证)
-
-**① handoff 零-nudge(确定性 watcher)**:Manager 的 LLM 编排不可靠(即便 SOUL 有显式状态机,review 后仍停)。改用**确定性 handoff watcher**(`tools/handoff_watcher_v2.py`)——常驻 manager 容器,动态发现 Matrix 房间,检测 `TASK_COMPLETED` 后向下一阶段 worker 发**真 @mention** 驱动(经实测:worker 只认真 mention 胶囊,不认纯文本 @)。已在干净环境端到端验证:一次提交 → review→fix→verify→裁定,全程零人工 nudge。
-
-**② per-task room 任务隔离**:每个 PR 建专属 Matrix 任务房间(`tools/submit_pr_taskroom.py`)→ OpenClaw 按 Matrix 房间隔离 session(session key = `agent:main:matrix:channel:<room_id>`,实测)→ 零跨-PR 上下文污染。已验证全链路在单个隔离任务房间内跑通,不再需要重创 worker。
-
-**关键工程结论**:① LLM 编排本质不可靠,确定性 watcher 是正解(不是 SOUL 状态机);② OpenClaw session 按房间隔离是框架白拿的能力,per-task room 设计天然解决上下文串味;③ worker 只响应真 @mention 胶囊(`formatted_body` + `m.mentions`)。
-
-## 当前状态(已验证 vs 规划)
-
-**已验证(MVP)**:
-- 4 个运行 Agent 在 HiClaw + DeepSeek 上跑通 review→fix→verify；Manager 负责编排，阶段交接偶需人工 `nudge`
-- Reviewer 调真实 `sast-scan`,findings 标注工具来源
-- 风险分级治理：L2 高危挂人审、批准后执行并合并；**回滚执行链已实测**（坏修复 → sast 判 FAIL → revert commit → 复验 PASS），当前由脚本触发，见 [`evidence/rollback-demo/`](../evidence/rollback-demo/)
-- Verifier 完成 40 项样例检查;产出执行 Trace + 证据产物 + 可视化看板
-- 可靠触发:经系统 Manager 路由(诊断并绕过直戳 leader 的不稳问题)
-- 双场景:PR #42 MERGE(人审后)；PR #43 HOLD / Do not merge，未记录最终 REJECT 动作
-- **真实 GitHub MCP 接入(凭证隔离)**:reviewer/fixer/verifier 经 `mcporter` 调用 GitHub 官方 MCP server,**GitHub PAT 仅存于隔离 sidecar,Worker 零 GitHub 凭证**。已验证读 + 写闭环:读到 `mergepilot-test` 的 SQLi + 硬编码密钥代码(命中 sast-scan 检测点)→ 经 MCP 建修复分支、写修复代码、提修复 PR → 经 `merge_pull_request` **合并**(PR #3 已 squash 合并);4 个写操作(create_branch / create_or_update_file / create_pull_request / merge_pull_request)全部实测通过。**并由 Manager 编排，reviewer→fixer→verifier 经 MCP 完成真实 PR #1 端到端审修；阶段交接偶需人工 `nudge`**(reviewer 6 findings、fixer 真实 [PR #3](https://github.com/nghqqa/mergepilot-test/pull/3)、verifier ✅ PASS),证据见 [`docs/项目状态.md`](docs/项目状态.md)
-
-**已验证的生产化底座**：本地 PostgreSQL 16 + pgvector 已完成结构化审计与 RAG 小样本召回，兼容迁移至 PolarDB-PG。**规划中（复赛/生产）**：Nacos、RocketMQ、AgentLoop/SLS 实时可观测、阿里云官方 `alibabacloud-sls-query` Skill。
-
-**正式 Benchmark（N=10×2，已冻结）**：单 Agent vs MergePilot 多角色对比已通过 post-run 机器复算冻结。infrastructure completion=20/20；A precision/F1=36.36%/48.00%、B precision/F1=57.14%/63.16%、recall 同为 70.59%；B token 高 32.95%、API 请求 +80%、decision accuracy B=40% 低于 A=50%。**受控本地评测（controlled local orchestration），非真实 Gateway/controller/GitHub/HiClaw E2E**；不证明多角色提高 recall；C3 10/10 为独立真实隔离栈证据。详见 [`benchmark/formal-summary.md`](benchmark/formal-summary.md)。
-
-**HiClaw 边界（统一表述）**：核心架构是 PG 权威状态机 → Outbox/审批/回滚 → 最小权限 Gateway → 6 Skill DAG → 多角色 handoff → GitHub MCP。**HiClaw 是当前适配的 Agent runtime 之一**。M5-0A/B/C 在候选/隔离测试栈（mini Matrix homeserver + MergePilot-Test 隔离 dockerd）验证；C3 10/10 使用 MergePilot-Test 隔离栈 + 真实 Gateway/GitHub MCP/fixture repo。**`hiclaw_live=false`**——不是真实生产 HiClaw live；D2B-3 受 upstream auto-create 能力阻塞（HiClaw controller 无 disable-auto-create 配置，审计确认）。不把未验证的生产能力写成核心既成事实。
-
-> 不得将规划能力表述为当前已运行。
->
-> **安全说明**:包内出现的 `sk-live-1234567890abcdef`、`sk-test-*` 等字符串均为确定性 fixture / 测试数据，用于验证密钥检测规则，不是真实凭证。
-
-## 提交包证据索引
-
-| 核查项 | 位置 |
-|---|---|
-| 运行入口 | `tools/submit_pr_manager.py`、`tools/submit_manager_orchestrate.py` |
-| Demo 环境准备 | `tools/demo_prepare.sh` |
-| 依赖与数据边界 | 本 README、`THIRD_PARTY.md` |
-| Agent 配置 | `config/team.yaml`、`config/souls/*/SOUL.md` |
-| 样例输入 | `samples/input/`；提交包另含 `samples/input/fixtures/` |
-| 首轮基准证据 | 提交包 `evidence/code-audit-20260722-*`、`samples/output/dashboard.html` |
-| 双场景证据 | 提交包 `evidence/mergepilot-openclaw-run/`、`docs/双场景验证摘要.md` |
+- **Worker 不持有 GitHub PAT**：PAT 仅存在于 `github-mcp` 隔离 sidecar（私有 `mcp-backend-net`），Worker 经 `mcporter` 零凭证访问。
+- **所有写操作经 Policy Gateway**：角色 token 认证 + 写路径约束 + INSERT-only 审计，跨角色 / 旁路 / 票据伪造均 fail-closed。
+- **L2 高危强制人工审批**：审批票据（room/run/repo/pr/result_sha）+ CAS + 单次执行，未批准不合并。
+- **fail-closed**：8 类负向场景 50/50 全部拒绝；Skill 对 raw secret / 超时 / 依赖故障显式失败，不静默降级。
+- **状态持久化、幂等与恢复**：`idempotency_key` 去重、Controller 崩溃后从 PG 恢复、lease 异常对账、Gateway 降级→恢复（熔断）。
+- **失败可回滚**：合并后验证失败 → `POST_MERGE_VERIFY_FAILED` → child-run revert → 复验（M3-C 33/33）。
+- **证据可溯源**：evidence 绑定 `source_commit`；secret pattern 扫描 `real_credential_hits=0`。
 
 ## 快速开始
 
-**前置**:WSL2 + Docker、HiClaw(AgentTeams,Manager + 3 Worker)、DeepSeek API Key(OpenAI 兼容)。详见 [`docs/环境搭建-HiClaw-WSL.md`](docs/环境搭建-HiClaw-WSL.md)。
+当前**可复现、不依赖生产 HiClaw** 的最短路径：
 
-### 推荐:一键 Demo(任务房间版,零 nudge + 隔离)
-
-```bash
-# 一条命令:起 GitHub MCP 桥 → 配置 worker → 起 watcher → 建任务房间 + 发审查任务
-# watcher 自动驱动 reviewer→fixer→verifier,全程零人工 nudge + 零跨-PR 污染
-MSYS_NO_PATHCONV=1 wsl -- bash tools/demo.sh <branch> <pr_number> [prefix]
-# 例:
-MSYS_NO_PATHCONV=1 wsl -- bash tools/demo.sh feature/m1-e2e 6 demo-pr6
-
-# 观察(从 demo.sh 输出取 room_id):
-MSYS_NO_PATHCONV=1 wsl -- bash tools/run-room-recent.sh <room_id> 10
-# watcher 日志:
-docker exec hiclaw-manager tail -f /tmp/watcher_v2.log
-```
-
-### 手动逐步(旧路径,参考)
+以下 Bash 命令需在 Linux、WSL2 或 Git Bash 环境执行；Python 命令使用项目支持的 Python 环境。
 
 ```bash
-# 原 Team 路径(fixture PR):见 docs/原型搭建-Team重建.md
+# 1) 6 Skill 确定性测试（宿主 Python，需 jsonschema）
+bash tests/skills/run_all.sh
 
-# 全 OpenClaw 路径(Manager 编排):
-MSYS_NO_PATHCONV=1 wsl -- bash -c 'docker cp tools/submit_manager_orchestrate.py hiclaw-manager:/tmp/ && \
-  docker exec hiclaw-manager python3 /tmp/submit_manager_orchestrate.py <admin_password>'
+# 2) AgentTeams 协议级全链 E2E（fixture，hiclaw_live=false，16 门禁）
+bash tests/m4f1/run_all.sh
 
-# 汇总 Trace 与看板:
-python tools/trace_aggregator.py
-python tools/make_dashboard.py
-python tools/audit_trail.py
+# 3) Benchmark 离线校验（复算冻结产物，不发外部请求）
+python benchmark/test_offline.py
+
+# 4) 存储防膨胀 / guarded startup 单测（240 项）
+python tests/hiclab/run_tests.py
 ```
+
+> 早期 HiClaw v1.1.2 手动 Demo 路径（`tools/demo.sh` 等）依赖一个已存在的本地 HiClaw + DeepSeek 环境，仅适用于**隔离 / 候选场景（`hiclaw_live=false`）**，已归档至 [`docs/README-历史运行记录.md`](docs/README-历史运行记录.md)，环境搭建见 [`docs/环境搭建-HiClaw-WSL.md`](docs/环境搭建-HiClaw-WSL.md)。
+
+## 当前边界（不得宣称）
+
+- **`hiclaw_live=false`**：22 项公式 5 true / 0 false / 17 unproven，缺少生产 HiClaw live 窗口。
+- **D2B-3 BLOCKED_UPSTREAM**：HiClaw controller 无 disable-auto-create 配置（审计确认）；socket proxy 未部署。
+- **OTel / SLS 未实现**（D2B-2 缺口）；**Nacos / RocketMQ 未接入**。
+- **Benchmark 为受控本地评测**：N=10 小样本、单模型、synthetic fixtures、每对单次运行；不等于 E2E 完成率，不证明 recall 提升。
+- **Manager 阶段交接偶需人工 nudge**；M5-0B 候选工作流已确定性闭环（14/14+13/13），但仅限候选 / 隔离栈，不可外推为生产零人工。
+- **SAST 新旧两路径并存**：新版 `skills/sast_scan/`（87 测试、schema、fail-closed）与旧版 `skills/sast-scan/scan.py` 并存，新版属性不外推到旧版。
+- **MIG-B4-001**：B4 链迁移非幂等，当前支持路径为 forward-only。
+
+## 证据与文档
+
+- [`docs/初赛证据索引.md`](docs/初赛证据索引.md) — 评审 3 分钟定位任意声明的证据
+- [`docs/初赛声明-证据矩阵.md`](docs/初赛声明-证据矩阵.md) — 逐项声明 vs 限制（唯一措辞权威）
+- [`docs/项目状态.md`](docs/项目状态.md) — 已验证 / 框架能力 / 规划的区分
+- [`docs/复赛路线图.md`](docs/复赛路线图.md) — 后续里程碑与验收标准
+- [`benchmark/formal-summary.md`](benchmark/formal-summary.md) — 正式 Benchmark 冻结结论（机器生成）
+- [`docs/README-历史运行记录.md`](docs/README-历史运行记录.md) — 开发期排障与旧 Demo 路径（归档）
 
 ## 仓库结构
 
 ```
 MergePilot/
-├── README.md
-├── LICENSE                      # Apache 2.0
-├── THIRD_PARTY.md               # 依赖、费用、数据与替代方案
-├── config/                      # team.yaml + 4 个运行 Agent 的 SOUL.md
-├── skills/sast-scan/            # 早期 Reviewer/demo SAST 路径（见下"SAST 两条路径"）
-├── skills/sast_scan/            # M4-F 正式 Skill DAG SAST 路径（契约化、87 测试）
-├── skills/                      # diff_parse / risk_classify / test_runner / pr_lifecycle / case_retrieval / common
-├── tools/                       # 触发 / Trace / 看板 / 审计 / 房间运维
-├── samples/                     # 样例 PR / fixture 输入 + 首轮实跑证据输出
-├── evidence/                    # 提交包内附双场景 findings/fix/verify/trace
-└── docs/                        # 环境搭建、Team 重建 runbook、Demo 剧本、设计附录 A/B
+├── README.md                         # 本文件
+├── LICENSE                            # Apache 2.0
+├── THIRD_PARTY.md                     # 依赖、费用、数据与替代方案
+├── config/                            # team.yaml + Agent SOUL.md
+├── skills/                            # 6 Skill DAG + common runtime + 旧版 sast-scan
+├── tools/                             # 触发 / Trace / 看板 / 审计 / Gateway / 运维
+├── tests/                             # skills / m4f1 / m5_0 / hiclab 等
+├── benchmark/                         # N=10×2 数据集、raw-runs、冻结产物
+├── evidence/                          # 机器可验的运行证据（按里程碑）
+├── samples/                           # 样例 PR / fixture 输入与首轮输出
+└── docs/                              # 设计、状态、路线图、附录、归档
 ```
 
-## SAST 两条路径（必须区分）
+## Roadmap
 
-仓库内存在两套 SAST 实现，**任何"已验证属性"都只对应其中一套，不得互相外推**：
-
-### A. M4-F 正式 Skill DAG 路径（新版，契约化）
-
-- skill name：`sast-scan`
-- Python 模块：`skills.sast_scan.run`
-- worker mapping：`tools/m4f_skill_worker.py`（六 Skill DAG 之一）
-- 覆盖测试：M4-C 的 **87 项确定性测试**（含 secret fail-closed、deadline、组件级路径安全、trusted-config、网络隔离、cleanup fail-closed）
-- 拥有：JSON Schema 输入/输出、统一 envelope、凭证脱敏、1 MiB 上限、退出码分类
-
-### B. 早期 Reviewer/demo 兼容路径（旧版）
-
-- 入口：`skills/sast-scan/scan.py`（单文件、137 行、直接 stdout JSON）
-- 当前 `config/souls/reviewer/SOUL.md` 仍引用它
-- 早期 PR #1/#3 demo 使用该类路径
-- **没有**契约、schema、fail-closed、1 MiB 限制、凭证脱敏等加固属性
-
-**统一两套实现（让 SOUL/Reviewer 切到新版）列为初赛后技术债，本轮不做。** 上述新版属性**不得外推**到旧版；旧版**没有 87 项测试**。
-
-## 工具链
-
-| 组件 | 角色 | 状态 |
-|---|---|---|
-| AgentTeams (HiClaw) | 多 Agent 协同基点(必选) | 已验证 |
-| Higress | AI 网关(LLM/路由),Worker 仅持 consumer-token | 随框架 |
-| DeepSeek `deepseek-v4-flash` | LLM(OpenAI 兼容) | 已验证 |
-| sast-scan | 自研真实 SAST Skill | 已验证 |
-| GitHub MCP(凭证隔离桥) | 真实 GitHub 读/写/合并;GitHub PAT 仅存 sidecar,Worker 经 mcporter 零凭证访问 | 已验证(读+写+合并) |
-| PostgreSQL 16 + pgvector（兼容 PolarDB-PG） | 审计事件/finding/decision 结构化沉淀 + 5 条知识项的小样本经验召回 | 本地已验证；未连接 PolarDB 云实例 |
-| Nacos / RocketMQ / AgentLoop / SLS | 配置治理/消息/实时可观测 | 规划接入 |
-
-## License
-
-[Apache License 2.0](LICENSE)。
+下一主线（详见 [`docs/复赛路线图.md`](docs/复赛路线图.md)）：D2B-3 socket proxy 解除 upstream 阻塞 → 推进至生产 HiClaw live（当前 `hiclaw_live=false`）→ OTel/SLS 可观测 → Benchmark N≥20。规划能力不写成已运行。
 
 ## 团队
 
-队伍「分子」· 邱全安(队长,架构/Agent 编排/风险门)· 彭明(Skill 与 MCP/Demo)· 何斌(基础设施/可观测/文档开源)
+队伍「分子」· 邱全安（队长，架构 / Agent 编排 / 风险门）· 彭明（Skill 与 MCP / Demo）· 何斌（基础设施 / 可观测 / 文档开源）。
 
----
+## License
 
-> 本项目为 [GOAI · Agent Infra 赛道](https://www.goaihz.com/tracks?track=infra)参赛作品。
+[Apache License 2.0](LICENSE)。本作品为 [GOAI Agent Infra 赛道](https://www.goaihz.com/tracks?track=infra)参赛项目。
