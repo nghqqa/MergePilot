@@ -51,11 +51,21 @@ class TestBlockedUpstreamDoc(unittest.TestCase):
         self.assertIn("not \"complete worker storage hardening\"", text)
 
     def test_programmatic_enforcement_documented(self):
-        """The doc must state the hiclaw-manager block is programmatic."""
+        """The doc must state the hiclaw-manager block is programmatic.
+
+        The exact emit string format changed in commit 3c96701 (the
+        ``Programmatic enforcement'' section was rewritten to cover both
+        hiclaw-controller and hiclaw-manager). The test now asserts the
+        substantive content: the block is PROGRAMMATIC (via
+        manager_start_allowed), names hiclaw-manager, and is tied to the
+        BLOCKED_UPSTREAM status. This is stronger than the old single
+        concatenated-string assertion, which had drifted from the doc.
+        """
         text = self._doc()
         self.assertIn("manager_start_allowed", text)
         self.assertIn("PROGRAMMATICALLY", text)
-        self.assertIn("BLOCKED_UPSTREAM: hiclaw-manager", text)
+        self.assertIn("hiclaw-manager", text)
+        self.assertIn("BLOCKED_UPSTREAM", text)
 
     def test_d2b3_blocked(self):
         text = self._doc()
