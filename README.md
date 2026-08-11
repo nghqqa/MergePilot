@@ -17,26 +17,7 @@
 
 ## 系统架构
 
-```mermaid
-flowchart LR
-    PR["GitHub PR"] --> WC["Workflow Controller<br/>状态机 · Outbox · 幂等 / 重试 / 恢复"]
-    subgraph RT["可适配 Agent runtime（AgentTeams / HiClaw — 非状态权威）"]
-        REV["Reviewer"]
-        FIX["Fixer"]
-        VER["Verifier"]
-    end
-    WC --> REV
-    WC --> FIX
-    WC --> VER
-    REV --> SKILLS["6 Skill DAG<br/>diff-parse · risk-classify · sast-scan<br/>test-runner · pr-lifecycle · case-retrieval"]
-    FIX --> SKILLS
-    VER --> SKILLS
-    SKILLS --> GW["Policy Gateway<br/>最小权限 · 角色 token · 写约束 · fail-closed"]
-    GW --> MCP["GitHub MCP（凭证隔离 sidecar）"]
-    MCP --> ACT["L2 审批 / 合并 / 回滚"]
-    WC -.-> PG[("PostgreSQL 16 + pgvector<br/>状态 · Outbox · 审计 · 决策 · RAG 案例")]
-    SKILLS -.-> PG
-```
+![MergePilot 系统架构：GitHub PR 经确定性控制面、多 Agent、Skill DAG、Policy Gateway 与 GitHub MCP 完成受治理闭环](docs/assets/mergepilot-architecture.svg)
 
 - **唯一事实来源**是 PostgreSQL 状态机 + Outbox（Controller 持有任务状态、阶段转换、事件去重、超时与恢复）。
 - **AgentTeams / HiClaw** 是当前适配的 Agent runtime 之一，负责语义决策与协作，**不是状态权威**。
