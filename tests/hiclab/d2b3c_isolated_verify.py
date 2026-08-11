@@ -373,8 +373,9 @@ def _finish(results, all_ok, pre_volumes):
     commit = subprocess.check_output(
         ["git", "-C", "/mnt/d/goai/mergepilot-os", "rev-parse", "HEAD"]
     ).decode().strip()
-    # record the implementation commit (e0341952) the proxy code lives at
-    impl_commit = "e0341952aefebc4ed3ee2ce28f97c7682ce48c9f"
+    # source_commit binds to the HEAD at smoke time (the code actually run).
+    # On this run HEAD = 6da8f17 (includes the unknown-role-deny fix).
+    impl_commit = commit
     evidence = {
         "kind": "d2b3c-isolated-verify",
         "source_commit": impl_commit,
