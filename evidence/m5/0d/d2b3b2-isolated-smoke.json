@@ -1,6 +1,6 @@
 {
   "kind": "d2b3b2-isolated-smoke",
-  "source_commit": "ba53a89fadf5ea6dd98c88efefd78fd9474903ba",
+  "source_commit": "e984ef394ce80e3572159f9ebed154518d7565e4",
   "passed": 42,
   "failed": 0,
   "all_ok": true,
@@ -43,7 +43,7 @@
     {
       "name": "create agentteams-worker-fixer \u2192 201",
       "ok": true,
-      "detail": "got 201 {\"Id\":\"d5fa5a91313b83e8625d601d63c6a4eb4077cfb6a3320ab6b017ebd64aaed90f\",\"Warnings\":[]}\n"
+      "detail": "got 201 {\"Id\":\"fe76b7fb6eef9c96e6da0a837c8b324ed74190448a3098deaa33ae0a2be18a18\",\"Warnings\":[]}\n"
     },
     {
       "name": "real container restart=no",
@@ -216,5 +216,5 @@
       "detail": ""
     }
   ],
-  "timestamp": "2026-08-11T16:09:03Z"
+  "timestamp": "2026-08-11T16:16:20Z"
 }
