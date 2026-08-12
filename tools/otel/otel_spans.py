@@ -153,6 +153,38 @@ class SpanRecord:
         }
 
 
+class DualSLSCollector:
+    """Dual-write collector: InMemoryCollector + SLSExporter.
+
+    Spans are stored in memory (for test assertions) AND enqueued to
+    an SLSExporter (for SLS trace export). The SLS export runs on a
+    background thread and is fail-closed (never blocks the caller).
+
+    Usage:
+        sls_exporter = SLSExporter(config)
+        sls_exporter.start()
+        collector = DualSLSCollector(memory=InMemoryCollector(),
+                                     sls_exporter=sls_exporter)
+        set_collector(collector)
+        # ... run instrumented code ...
+        sls_exporter.stop()  # flush + join
+    """
+
+    def __init__(self, memory: InMemoryCollector = None, sls_exporter=None):
+        self.memory = memory or InMemoryCollector()
+        self.sls_exporter = sls_exporter
+
+    def add_span(self, span: SpanRecord):
+        # Memory store (always)
+        self.memory.add_span(span)
+        # SLS export (background, fail-closed)
+        if self.sls_exporter is not None:
+            try:
+                self.sls_exporter.enqueue(span)
+            except Exception:
+                pass  # fail-closed: export failure never blocks business
+
+
 class InMemoryCollector:
     """Collects spans in-process for testing. Thread-safe."""
 
