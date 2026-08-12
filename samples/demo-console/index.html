@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MergePilot · Demo Console (REPLAY)</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, system-ui, sans-serif; background: #0f172a; color: #e2e8f0; }
+.mode-banner { color: #fff; padding: 6px 20px; font-weight: bold; font-size: 14px; letter-spacing: 1px; }
+.header { background: #1e293b; padding: 12px 20px; display: flex; align-items: center; gap: 16px; }
+.header h1 { font-size: 18px; }
+.header .commit { font-size: 12px; color: #94a3b8; }
+nav { background: #334155; padding: 8px 20px; display: flex; gap: 4px; flex-wrap: wrap; }
+.nav-btn { background: #475569; color: #e2e8f0; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 13px; }
+.nav-btn:hover { background: #64748b; }
+.nav-btn.active { background: #2563eb; }
+.content { padding: 20px; max-width: 1200px; margin: 0 auto; }
+.page { display: none; }
+.page.active { display: block; }
+h2 { margin-bottom: 12px; color: #f1f5f9; border-bottom: 1px solid #334155; padding-bottom: 8px; }
+h3 { margin: 16px 0 8px; color: #cbd5e1; }
+.meta p { margin: 4px 0; }
+.badge { display: inline-block; padding: 2px 10px; border-radius: 12px; color: #fff; font-size: 12px; font-weight: bold; }
+.final-status { font-size: 20px; margin: 12px 0; }
+.skill-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; margin: 12px 0; }
+.skill-card { background: #1e293b; padding: 12px; border-radius: 6px; text-align: center; }
+.skill-role { color: #94a3b8; font-size: 12px; }
+.data-table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+.data-table th, .data-table td { padding: 8px; border: 1px solid #334155; text-align: left; font-size: 13px; }
+.data-table th { background: #1e293b; }
+.boundary-banner { background: #7f1d1d33; border: 1px solid #7f1d1d; padding: 12px; border-radius: 6px; margin: 12px 0; }
+.boundary-banner.warning { background: #78350f33; border-color: #78350f; }
+.timeline { margin: 12px 0; }
+.timeline-bar { display: flex; align-items: center; margin: 4px 0; }
+.timeline-label { width: 250px; font-size: 12px; color: #cbd5e1; }
+.timeline-bar-fill { height: 20px; border-radius: 3px; display: flex; align-items: center; padding: 0 8px; font-size: 11px; color: #fff; min-width: 30px; }
+.timeline-status-ok { background: #16a34a; }
+.timeline-status-error { background: #dc2626; }
+.timeline-status-unset { background: #6b7280; }
+.trace-tree { font-family: monospace; font-size: 13px; }
+.span-node { padding: 4px 0; }
+.span-status-ok { color: #16a34a; }
+.span-status-error { color: #dc2626; }
+.span-status-unset { color: #6b7280; }
+.span-duration { color: #94a3b8; margin-left: 8px; font-size: 11px; }
+.span-status-text { color: #64748b; margin-left: 4px; font-size: 11px; }
+.span-attrs { margin: 4px 0 4px 20px; color: #94a3b8; font-size: 11px; }
+.span-attrs li { list-style: none; }
+.rag-card { background: #1e293b; padding: 12px; border-radius: 6px; margin: 8px 0; }
+.hint { color: #94a3b8; font-size: 13px; font-style: italic; }
+code { background: #0f172a; padding: 1px 4px; border-radius: 3px; font-size: 12px; }
+a { color: #3b82f6; }
+</style>
+</head>
+<body>
+<div class="mode-banner" style="background:#2563eb">MODE: REPLAY</div>
+<div class="header">
+  <h1>MergePilot · Demo Console</h1>
+  <span class="commit">source: <code>7b9b2d0247f3</code></span>
+</div>
+<nav><button class="nav-btn" onclick="showPage('overview')">Overview</button><button class="nav-btn" onclick="showPage('timeline')">Timeline</button><button class="nav-btn" onclick="showPage('findings')">Findings</button><button class="nav-btn" onclick="showPage('rag')">RAG Advisory</button><button class="nav-btn" onclick="showPage('trace')">Trace Tree</button><button class="nav-btn" onclick="showPage('safety')">Policy & Safety</button><button class="nav-btn" onclick="showPage('evidence')">Evidence</button><button class="nav-btn" onclick="showPage('benchmark')">Benchmark</button></nav>
+<div class="content">
+
+    <section id="overview" class="page active">
+      <h2>Overview</h2>
+      <div class="final-status">Final Status: <span class="badge" style="background:#16a34a">MERGED</span></div>
+      <div class="meta">
+        <p><strong>Run:</strong> run-agentteams-1</p>
+        <p><strong>Repo:</strong> test/repo-alpha</p>
+        <p><strong>Trace:</strong> <code>run-agentteams-1</code></p>
+        <p><strong>Source commit:</strong> <code>7b9b2d0247f3</code></p>
+      </div>
+      <h3>6-Skill DAG</h3>
+      <div class="skill-grid"><div class="skill-card"><strong>diff-parse</strong><br><span class="skill-role">reviewer</span><br><span class="badge" style="background:#16a34a">SUCCEEDED</span></div><div class="skill-card"><strong>risk-classify</strong><br><span class="skill-role">reviewer</span><br><span class="badge" style="background:#16a34a">SUCCEEDED</span></div><div class="skill-card"><strong>sast-scan</strong><br><span class="skill-role">reviewer</span><br><span class="badge" style="background:#16a34a">SUCCEEDED</span></div><div class="skill-card"><strong>test-runner</strong><br><span class="skill-role">verifier</span><br><span class="badge" style="background:#16a34a">SUCCEEDED</span></div><div class="skill-card"><strong>case-retrieval</strong><br><span class="skill-role">reviewer</span><br><span class="badge" style="background:#16a34a">SUCCEEDED</span></div><div class="skill-card"><strong>pr-lifecycle</strong><br><span class="skill-role">fixer</span><br><span class="badge" style="background:#16a34a">SUCCEEDED</span></div></div>
+      <h3>Topology</h3>
+      <ul>
+        <li>Policy Gateway: real gateway.py over SSE</li>
+        <li>GitHub upstream: stateful fake GitHub MCP (protocol-real SSE)</li>
+        <li>Case retrieval: real pgvector adapter (deterministic embedding)</li>
+        <li>PR lifecycle: real Policy Gateway as fixer</li>
+      </ul>
+      <div class="boundary-banner">
+        <strong>Honest boundaries:</strong>
+        <code>hiclab_live=False</code> ·
+        <code>runtime_consumes_rag_context=false</code>
+      </div>
+    </section>
+
+    <section id="timeline" class="page">
+      <h2>Workflow Timeline</h2>
+      <p class="hint">Span waterfall ordered by start_time. Durations from OTel SpanRecord.</p>
+      <div class="timeline"><div class="timeline-bar">
+          <span class="timeline-label">matrix.ingress.m4f_run</span>
+          <div class="timeline-bar-fill timeline-status-ok"
+               style="width:5%">0ms</div>
+        </div><div class="timeline-bar">
+          <span class="timeline-label">policy_gateway.revision_provenance</span>
+          <div class="timeline-bar-fill timeline-status-ok"
+               style="width:5%">0ms</div>
+        </div><div class="timeline-bar">
+          <span class="timeline-label">snapshot.revision_bound</span>
+          <div class="timeline-bar-fill timeline-status-ok"
+               style="width:5%">0ms</div>
+        </div><div class="timeline-bar">
+          <span class="timeline-label">skill.diff-parse</span>
+          <div class="timeline-bar-fill timeline-status-ok"
+               style="width:5%">0ms</div>
+        </div><div class="timeline-bar">
+          <span class="timeline-label">skill.risk-classify</span>
+          <div class="timeline-bar-fill timeline-status-ok"
+               style="width:5%">0ms</div>
+        </div><div class="timeline-bar">
+          <span class="timeline-label">skill.sast-scan</span>
+          <div class="timeline-bar-fill timeline-status-ok"
+               style="width:5%">0ms</div>
+        </div><div class="timeline-bar">
+          <span class="timeline-label">skill.test-runner</span>
+          <div class="timeline-bar-fill timeline-status-ok"
+               style="width:5%">0ms</div>
+        </div><div class="timeline-bar">
+          <span class="timeline-label">skill.case-retrieval</span>
+          <div class="timeline-bar-fill timeline-status-ok"
+               style="width:5%">0ms</div>
+        </div><div class="timeline-bar">
+          <span class="timeline-label">skill.pr-lifecycle</span>
+          <div class="timeline-bar-fill timeline-status-ok"
+               style="width:5%">0ms</div>
+        </div><div class="timeline-bar">
+          <span class="timeline-label">release.delivery_integrity</span>
+          <div class="timeline-bar-fill timeline-status-ok"
+               style="width:5%">0ms</div>
+        </div></div>
+    </section>
+
+    <section id="findings" class="page">
+      <h2>Findings &amp; Fixes</h2>
+      <h3>Verifier Result</h3>
+      <p>Verdict: <span class="badge" style="background:#16a34a">PASS</span></p>
+      <h3>Findings (0)</h3>
+      <p class="hint">No inline findings in this evidence set. Skill outputs are stored as response digests in the full-chain E2E evidence.</p>
+      <h3>Fixes (0)</h3>
+      <p class="hint">No inline fixes in this evidence set.</p>
+    </section>
+
+    <section id="rag" class="page">
+      <h2>RAG Advisory</h2>
+      <div class="boundary-banner warning">
+        <strong>Runtime boundary:</strong>
+        <code>runtime_consumes_rag_context=false</code> — RAG results are NOT consumed by
+        core.scan/core.run decision logic. RAG is advisory evidence only.<br>
+        <code>workflow_utility_status=NOT_MEASURABLE_WITH_CURRENT_RUNTIME</code>
+      </div>
+      <div class="rag-card">
+          <h4>reviewer</h4>
+          <p>Status: ok · Hits: 1</p>
+          <p><code>adopted=False</code> · <code>untrusted=True</code></p>
+          <p>No cases retrieved.</p>
+        </div><div class="rag-card">
+          <h4>fixer</h4>
+          <p>Status: ok · Hits: 2</p>
+          <p><code>adopted=False</code> · <code>untrusted=True</code></p>
+          <p>No cases retrieved.</p>
+        </div>
+    </section>
+
+    <section id="trace" class="page">
+      <h2>OTel Trace Tree</h2>
+      <p class="hint">Hierarchical span tree built from parent_span_id. Click nodes to expand attributes.</p>
+      <div class="trace-tree"><div class="span-node" style="margin-left:0px">
+      <span class="span-status span-status-ok">●</span>
+      <strong>matrix.ingress.m4f_run</strong>
+      <span class="span-duration">0ms</span>
+      <span class="span-status-text">OK</span>
+      <ul class="span-attrs"><li><code>entrypoint</code>: controller.process_event</li><li><code>run_id</code>: run-agentteams-1</li><li><code>stage_event.status</code>: PROCESSED</li></ul>
+      
+    </div><div class="span-node" style="margin-left:0px">
+      <span class="span-status span-status-ok">●</span>
+      <strong>policy_gateway.revision_provenance</strong>
+      <span class="span-duration">0ms</span>
+      <span class="span-status-text">OK</span>
+      <ul class="span-attrs"><li><code>audit.bound_revision_results</code>: 1</li><li><code>audit.events</code>: 52</li><li><code>audit.successful_results</code>: 17</li><li><code>control_credential_in_skill</code>: False</li><li><code>github_upstream</code>: stateful protocol fixture (fake GitHub MCP SSE)</li></ul>
+      
+    </div><div class="span-node" style="margin-left:0px">
+      <span class="span-status span-status-ok">●</span>
+      <strong>snapshot.revision_bound</strong>
+      <span class="span-duration">0ms</span>
+      <span class="span-status-text">OK</span>
+      <ul class="span-attrs"><li><code>revision.base_sha</code>: 1111111111111111111111111111111111111111</li><li><code>revision.head_sha</code>: 2222222222222222222222222222222222222222</li><li><code>snapshot.manifest_items</code>: 6</li></ul>
+      
+    </div><div class="span-node" style="margin-left:0px">
+      <span class="span-status span-status-ok">●</span>
+      <strong>skill.diff-parse</strong>
+      <span class="span-duration">0ms</span>
+      <span class="span-status-text">OK</span>
+      <ul class="span-attrs"><li><code>invocation_id</code>: inv-dc6ebd21cfb4b955b9951f57732f4411</li><li><code>job_id</code>: sj-ab8861fda9b6543b337f42fde0081586</li><li><code>job_status</code>: SUCCEEDED</li><li><code>note</code>: real unified-diff parse over Gateway-sourced diff</li><li><code>outcome</code>: </li><li><code>output_schema_validated</code>: True</li><li><code>risk_level</code>: </li><li><code>verdict</code>: </li></ul>
+      
+    </div><div class="span-node" style="margin-left:0px">
+      <span class="span-status span-status-ok">●</span>
+      <strong>skill.risk-classify</strong>
+      <span class="span-duration">0ms</span>
+      <span class="span-status-text">OK</span>
+      <ul class="span-attrs"><li><code>invocation_id</code>: inv-efb53888becf761451e17662c1a10847</li><li><code>job_id</code>: sj-9cfd36a153cf4dc3f29d5997e7ab3127</li><li><code>job_status</code>: SUCCEEDED</li><li><code>note</code>: real rule-based classification (only-raise risk floor)</li><li><code>outcome</code>: </li><li><code>output_schema_validated</code>: True</li><li><code>risk_level</code>: L1</li><li><code>verdict</code>: </li></ul>
+      
+    </div><div class="span-node" style="margin-left:0px">
+      <span class="span-status span-status-ok">●</span>
+      <strong>skill.sast-scan</strong>
+      <span class="span-duration">0ms</span>
+      <span class="span-status-text">OK</span>
+      <ul class="span-attrs"><li><code>invocation_id</code>: inv-2a05a2e22c5abe444fa38cc6fba16b82</li><li><code>job_id</code>: sj-a04bb9bf2ae44ba6289e7381476388a1</li><li><code>job_status</code>: SUCCEEDED</li><li><code>note</code>: real inline SAST over changed files</li><li><code>outcome</code>: </li><li><code>output_schema_validated</code>: True</li><li><code>risk_level</code>: </li><li><code>verdict</code>: </li></ul>
+      
+    </div><div class="span-node" style="margin-left:0px">
+      <span class="span-status span-status-ok">●</span>
+      <strong>skill.test-runner</strong>
+      <span class="span-duration">0ms</span>
+      <span class="span-status-text">OK</span>
+      <ul class="span-attrs"><li><code>invocation_id</code>: inv-e5bee9171e809f78aeadedf34c9c467d</li><li><code>job_id</code>: sj-50884f4f183f0cec826587af6befe72f</li><li><code>job_status</code>: SUCCEEDED</li><li><code>note</code>: real pytest subprocess under trusted dev policy</li><li><code>outcome</code>: </li><li><code>output_schema_validated</code>: True</li><li><code>risk_level</code>: </li><li><code>verdict</code>: PASS</li></ul>
+      
+    </div><div class="span-node" style="margin-left:0px">
+      <span class="span-status span-status-ok">●</span>
+      <strong>skill.case-retrieval</strong>
+      <span class="span-duration">0ms</span>
+      <span class="span-status-text">OK</span>
+      <ul class="span-attrs"><li><code>invocation_id</code>: inv-ab82ecd1758a1d2d26e0da15b890197e</li><li><code>job_id</code>: sj-cfd18c452a30752a2c69f7749f0a6893</li><li><code>job_status</code>: SUCCEEDED</li><li><code>note</code>: real pgvector adapter (deterministic embedding shape)</li><li><code>outcome</code>: </li><li><code>output_schema_validated</code>: True</li><li><code>risk_level</code>: </li><li><code>verdict</code>: </li></ul>
+      
+    </div><div class="span-node" style="margin-left:0px">
+      <span class="span-status span-status-ok">●</span>
+      <strong>skill.pr-lifecycle</strong>
+      <span class="span-duration">0ms</span>
+      <span class="span-status-text">OK</span>
+      <ul class="span-attrs"><li><code>invocation_id</code>: inv-79fda5201099201d80e2396962f1273e</li><li><code>job_id</code>: sj-7f52933245c8a9db433d913b41d4359a</li><li><code>job_status</code>: SUCCEEDED</li><li><code>note</code>: real Policy Gateway over SSE as fixer role</li><li><code>outcome</code>: CREATED</li><li><code>output_schema_validated</code>: True</li><li><code>risk_level</code>: </li><li><code>verdict</code>: </li></ul>
+      
+    </div><div class="span-node" style="margin-left:0px">
+      <span class="span-status span-status-ok">●</span>
+      <strong>release.delivery_integrity</strong>
+      <span class="span-duration">0ms</span>
+      <span class="span-status-text">OK</span>
+      <ul class="span-attrs"><li><code>delivery_digest</code>: 04524c63a780367872f5b8ef2099e511afa474b2f113d822506885183ab77301</li><li><code>delivery_files</code>: 56</li><li><code>secret_leaks</code>: 0</li></ul>
+      
+    </div></div>
+    </section>
+
+    <section id="safety" class="page">
+      <h2>Policy &amp; Safety</h2>
+      <h3>Residue</h3>
+      <ul>
+        <li>Containers: 0</li>
+        <li>Networks: 0</li>
+        <li>Temp dirs: 0</li>
+      </ul>
+      <h3>Secret Scan</h3>
+      <p>secret_leaks: <strong>0</strong></p>
+      <h3>Rollback Events</h3>
+      <p>0 rollback event(s).</p>
+    </section>
+
+    <section id="evidence" class="page">
+      <h2>Evidence &amp; Provenance</h2>
+      <p><strong>Bundle SHA-256:</strong> <code>816f8e718966180446c7c6b94c83f47ed01a86efa32073be14dbd51340e32b40</code></p>
+      <p><strong>Source commit:</strong> <code>7b9b2d0247f3309282f7d50d7a53cb5c9e62cb8e</code></p>
+      <p><strong>Verification commit:</strong> <code>7b9b2d0247f3309282f7d50d7a53cb5c9e62cb8e</code></p>
+      <table class="data-table">
+        <tr><th>Path</th><th>SHA-256</th><th>Description</th></tr>
+        <tr><td>evidence/m4/m4f/agentteams-demo-summary.json</td><td><code>783bd4c7ac61e4514b86d06d...</code></td><td>AgentTeams E2E demo summary</td></tr><tr><td>evidence/m4/m4f/full-chain-e2e.json</td><td><code>7849c4e7caa5fe76e72ecec7...</code></td><td>Full-chain E2E</td></tr><tr><td>evidence/m6/rag/pgvector-isolated-verification.json</td><td><code>3eb864b445e093a0e71f89ee...</code></td><td>RAG pgvector verification</td></tr><tr><td>evidence/m7/benchmark/rag-n20-confirmatory.json</td><td><code>36edc6642bb11f7965610027...</code></td><td>RAG confirmatory benchmark</td></tr><tr><td>evidence/m7/benchmark/rag-n20-offline.json</td><td><code>c0d53c5643f06eaca049b15c...</code></td><td>RAG development calibration</td></tr>
+      </table>
+    </section>
+
+    <section id="benchmark" class="page">
+      <h2>Benchmark Summary</h2>
+      <div class="boundary-banner warning">
+        <strong>Benchmark boundary:</strong> Uses deterministic offline TokenOverlapAdapter (token-Jaccard),
+        NOT real pgvector embeddings. Does NOT claim Reviewer/Fixer accuracy improvement.<br>
+        <code>workflow_utility_status=NOT_MEASURABLE_WITH_CURRENT_RUNTIME</code> ·
+        Retrieval/integration quality ≠ workflow utility.
+      </div>
+      <h3>Confirmatory Held-out</h3>
+      <ul>
+        <li>Dataset: rag-bench-v3-heldout</li>
+        <li>Unique cases: 25</li>
+        <li>Cohorts: {'positive_retrieval': 15, 'abstention': 5, 'fault_injection': 5}</li>
+        <li>hit@1: 1.0</li>
+        <li>hit@3: 1.0</li>
+        <li>MRR: 1.0</li>
+        <li>quality_gate_pass: <strong>True</strong></li>
+        <li>confirmatory_all_ok: <strong>True</strong></li>
+      </ul>
+      <h3>Development Calibration (not confirmatory)</h3>
+      <ul>
+        <li>Dataset: rag-bench-v2</li>
+        <li>Unique cases: 29</li>
+        <li>quality_gate_pass: <strong></strong> (null = not confirmatory)</li>
+      </ul>
+    </section>
+</div>
+<script>
+function showPage(id) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  event.target.classList.add('active');
+}
+document.querySelector('.nav-btn').classList.add('active');
+</script>
+</body>
+</html>
