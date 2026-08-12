@@ -3,7 +3,7 @@
 > **不止提意见——把 PR 从审查推进到受治理的修复、验证、审批与回滚。**
 > 高危变更强制人工审批，失败可回滚，全程可审计。以 [AgentTeams / HiClaw](https://hiclaw.io) 为可适配的 Agent runtime。
 
-**当前状态**：复赛阶段（2026-08-11）。确定性控制面、6 Skill DAG、回滚链、最小权限 Gateway 与 **D2B-3 fail-closed Docker socket proxy** 均已验证。**D2B-3 真实 AgentTeams v1.2.2 生产 live 已通过（`hiclaw_live=true`，64/64 PASS）**。权威 evidence：[`evidence/m5/0d/hiclaw-v122-true-live-pass.json`](evidence/m5/0d/hiclaw-v122-true-live-pass.json)。所有声明均可在 [声明—证据矩阵](docs/初赛声明-证据矩阵.md) 中逐项核对。
+**当前状态**：复赛阶段（2026-08-12）。确定性控制面、6 Skill DAG、回滚链、最小权限 Gateway、**D2B-3 fail-closed Docker socket proxy**、**M6 OTel/SLS 可观测**、**M6-RAG CaseRetrieval pgvector 垂直闭环** 均已验证。**M7-P2 RAG Benchmark** 已完成开发校准（rag-bench-v2）与 held-out 确认性验证（rag-bench-v3-heldout，25 cases，31/31 checks，16/16 预注册质量门控）。**诚实边界**：RAG 结果仅作为 advisory evidence（`adopted=false, untrusted=true`），`core.scan/core.run` 当前不消费 RAG context，workflow utility 不可测（`NOT_MEASURABLE_WITH_CURRENT_RUNTIME`）。Benchmark 使用确定性离线 `TokenOverlapAdapter`，不外推为真实 pgvector/embedding 或生产多仓库效果。M7 尚未整体完成；下一阶段为 M7-P3 Demo Console 与干净环境复现。所有声明均可在 [声明—证据矩阵](docs/初赛声明-证据矩阵.md) 中逐项核对。
 
 ---
 
@@ -91,8 +91,10 @@ python tests/hiclab/run_tests.py
 ## 当前边界
 
 - **`hiclaw_live=true`**（D2B-3 PASSED）：MergePilot Docker socket proxy 已在真实 AgentTeams v1.2.2 生产环境验证通过（64/64 PASS）。
-- **OTel / SLS 未实现**（D2B-2 缺口）；**Nacos / RocketMQ 未接入**。
-- **Benchmark 为受控本地评测**：N=10 小样本、单模型、synthetic fixtures、每对单次运行；不等于 E2E 完成率，不证明 recall 提升。
+- **OTel / SLS 已实现**（M6-A/B 本地 OTLP + SLS 双写验证通过）；**Nacos / RocketMQ 未接入**。
+- **M6-RAG CaseRetrieval**：Reviewer/Fixer 通过 `CaseRetrievalBridge → core.run → PgVectorAdapter → pgvector` 检索历史案例，结果作为 `evidence[]` advisory 附加（`adopted=false, untrusted=true`），**不跳过 Verifier**。`core.scan/core.run` 当前不消费 RAG context。
+- **M7-P2 RAG Benchmark 为确定性离线评测**：使用 `TokenOverlapAdapter`（token-Jaccard），非真实 pgvector embedding。开发校准（v2, N=29）与 held-out 确认性（v3, N=25）分离；`quality_gate_pass=null`（开发校准非确认性），确认性 16/16 预注册门控通过。**不外推为生产多仓库效果，不声称 RAG 提升 Reviewer/Fixer 准确率**。
+- **Benchmark（单 Agent vs 多 Agent）为受控本地评测**：N=10 小样本、单模型、synthetic fixtures、每对单次运行；不等于 E2E 完成率，不证明 recall 提升。
 - **Manager 阶段交接偶需人工 nudge**；M5-0B 候选工作流已确定性闭环（14/14+13/13），但仅限候选 / 隔离栈，不可外推为生产零人工。
 - **SAST 新旧两路径并存**：新版 `skills/sast_scan/`（87 测试、schema、fail-closed）与旧版 `skills/sast-scan/scan.py` 并存，新版属性不外推到旧版。
 - **MIG-B4-001**：B4 链迁移非幂等，当前支持路径为 forward-only。
