@@ -69,11 +69,11 @@ def handle(ctx):
     trusted_workspace = os.environ.get("MERGEPILOT_SAST_WORKSPACE") or None
 
     # M6-RAG: Reviewer advisory retrieval (fail-closed, never blocks scan)
-    # RAG provenance goes into the response envelope's evidence[] field
-    # (already allowed by the common envelope schema), NOT into the Skill's
-    # business output dict (which has its own strict schema).
-    rag_evidence = []
+    # RAG provenance goes into the handler return's evidence[] list, which
+    # _result_to_envelope passes through to the final response envelope's
+    # evidence[] field (allowed by the common envelope schema).
     rag_status = "disabled"
+    rag_evidence_items = []
     try:
         _rag_dir = os.path.join(os.path.dirname(os.path.dirname(
             os.path.dirname(os.path.abspath(__file__)))), "tools", "rag")
@@ -82,7 +82,7 @@ def handle(ctx):
         from rag_retrieval_service import query_for_reviewer, create_adapter_from_env
         trace_id = ctx.get("trace_id", "")
         run_id = os.environ.get("MERGEPILOT_RUN_ID", "")
-        # Build query from actual diff/finding context
+        # Build query from actual diff/finding context (sanitized filenames)
         files = inp.get("files", [])
         query_text = " ".join(
             f.get("path", "").rsplit("/", 1)[-1] for f in files[:10]
@@ -92,12 +92,23 @@ def handle(ctx):
             resp = query_for_reviewer(query_text, run_id, trace_id,
                                       adapter=adapter, timeout_ms=3000)
             rag_status = resp.status
-            rag_evidence = [
-                {"kind": "rag_advisory", "ref": json.dumps(r.to_dict())}
+            rag_evidence_items = [
+                {"kind": "rag_advisory", "ref": json.dumps({
+                    "case_id": r.case_id, "similarity": r.similarity,
+                    "citation_url": r.citation_url, "adopted": r.adopted,
+                    "untrusted": r.untrusted, "status": resp.status,
+                    "fallback_reason": resp.fallback_reason,
+                })}
                 for r in resp.results
             ]
     except Exception:
         rag_status = "retrieval_unavailable"
+        rag_evidence_items = [
+            {"kind": "rag_advisory", "ref": json.dumps({
+                "status": "retrieval_unavailable", "adopted": False,
+                "untrusted": True, "results": [],
+            })}
+        ]
 
     try:
         result = core.scan(
@@ -117,7 +128,7 @@ def handle(ctx):
 
     if result["complete"]:
         return {"status": "OK", "output": result,
-                "rag_evidence": rag_evidence, "rag_status": rag_status}
+                "evidence": rag_evidence_items}
 
     degradations = [{"engine": d.get("engine", "core"), "reason": d.get("reason", "")} for d in result.get("degraded", [])]
     return {
@@ -125,6 +136,7 @@ def handle(ctx):
         "warning_codes": ["SAST_SCAN_PARTIAL"],
         "degradations": degradations,
         "output": result,
+        "evidence": rag_evidence_items,
     }
 
 

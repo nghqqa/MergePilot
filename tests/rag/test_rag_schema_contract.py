@@ -41,18 +41,15 @@ class TestSastScanHandleSchema(unittest.TestCase):
             "input": {"mode": "inline", "files": [{"path": "test.py", "content": "x = 1\n"}]},
         }
         result = handle(ctx)
-        # Handler returns dict with status + output + rag fields
         self.assertIn("status", result)
         self.assertIn("output", result)
-        # RAG fields are in the handler return, NOT inside output
-        self.assertIn("rag_status", result)
-        self.assertIn("rag_evidence", result)
+        # RAG provenance is in evidence[], NOT rag_evidence/rag_status
+        self.assertIn("evidence", result, "handler return missing evidence[]")
+        self.assertNotIn("rag_evidence", result)
+        self.assertNotIn("rag_status", result)
         # output should NOT contain rag fields (schema purity)
         self.assertNotIn("rag_context", result.get("output", {}))
         self.assertNotIn("rag_status", result.get("output", {}))
-        # rag_status should indicate fail-closed (no adapter configured)
-        self.assertIn(result["rag_status"], ("no_history", "disabled",
-                                              "retrieval_unavailable"))
 
 
 class TestPRLifecycleHandleSchema(unittest.TestCase):
@@ -74,16 +71,11 @@ class TestPRLifecycleHandleSchema(unittest.TestCase):
         }
         result = handle(ctx)
         self.assertIn("status", result)
-        # pr_lifecycle requires trusted config (env) to run the actual action;
-        # without it returns ERROR/DENIED. But RAG fields should still be
-        # present in the result (RAG runs before core.run).
-        self.assertIn("rag_status", result,
-                      "rag_status missing from handler return")
-        self.assertIn("rag_evidence", result)
-        # output should NOT contain rag fields
-        output = result.get("output", {})
-        self.assertNotIn("rag_context", output)
-        self.assertNotIn("rag_status", output)
+        # RAG provenance is in evidence[] on all return paths
+        self.assertIn("evidence", result,
+                      "handler return missing evidence[] on %s path" % result.get("status"))
+        self.assertNotIn("rag_evidence", result)
+        self.assertNotIn("rag_status", result)
 
 
 class TestCreateAdapterFromEnv(unittest.TestCase):
