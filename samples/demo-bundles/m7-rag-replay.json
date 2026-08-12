@@ -1,9 +1,9 @@
 {
   "schema_version": "mergepilot.demo-bundle.v1",
   "demo_mode": "REPLAY",
-  "generated_at": "2026-08-12T14:58:13Z",
-  "source_commit": "7e42e1d2d3b4f30b5ff065d67ea474a841d4f348",
-  "verification_commit": "7e42e1d2d3b4f30b5ff065d67ea474a841d4f348",
+  "generated_at": "2026-08-12T15:05:07Z",
+  "source_commit": "8e5aadc26056ffaeea20213a80e3ea7f3480c6b3",
+  "verification_commit": "8e5aadc26056ffaeea20213a80e3ea7f3480c6b3",
   "repo": "test/repo-alpha",
   "pr": {
     "number": 42,
@@ -409,5 +409,5 @@
     "pr_lifecycle": "real Policy Gateway as fixer",
     "hiclaw_live": false
   },
-  "bundle_sha256": "521bdc5fc1f95326699903af9e158ee9669603197c3a5d50162fb42f3e83f2fc"
+  "bundle_sha256": "a9bbc87d953af5c60657f5bb02673d55cf07adf3ef30e43d74f88311a651c3ac"
 }

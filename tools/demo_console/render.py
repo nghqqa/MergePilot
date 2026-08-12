@@ -80,13 +80,21 @@ def render_span_tree_node(node: dict, depth: int = 0) -> str:
     for child in node.get("children", []):
         children_html += render_span_tree_node(child, depth + 1)
 
+    # Build inner content, skipping empty sections to avoid trailing whitespace
+    lines = [
+        f'      <span class="span-status span-status-{status.lower()}">●</span>',
+        f'      <strong>{name}</strong>',
+        f'      <span class="span-duration">{dur}ms</span>',
+        f'      <span class="span-status-text">{_esc(status)}</span>',
+    ]
+    if attr_html:
+        lines.append(f'      {attr_html}')
+    if children_html:
+        lines.append(f'      {children_html}')
+
+    inner = "\n".join(lines)
     return f'''<div class="span-node" style="margin-left:{indent}px">
-      <span class="span-status span-status-{status.lower()}">●</span>
-      <strong>{name}</strong>
-      <span class="span-duration">{dur}ms</span>
-      <span class="span-status-text">{_esc(status)}</span>
-      {attr_html}
-      {children_html}
+{inner}
     </div>'''
 
 
