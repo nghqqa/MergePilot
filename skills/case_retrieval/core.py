@@ -45,13 +45,11 @@ _RE_SHA = re.compile(r"^[0-9a-f]{40}$")
 
 
 class CaseRetrievalError(Exception):
-    def __init__(self, subcode: str, detail: str = "", retryable: bool = False,
-                 pgcode: str | None = None):
+    def __init__(self, subcode: str, detail: str = "", retryable: bool = False):
         super().__init__(subcode)
         self.subcode = subcode
         self.detail = detail
         self.retryable = retryable
-        self.pgcode = pgcode
 
 
 def _check_deadline(deadline) -> None:

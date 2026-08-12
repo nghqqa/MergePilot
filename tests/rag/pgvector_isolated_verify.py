@@ -59,13 +59,13 @@ def main():
     conn = psycopg2.connect(ADMIN_DSN); conn.autocommit = True
     vs = lambda v: "["+",".join(str(x) for x in v)+"]"
     with conn.cursor() as cur:
-        cur.execute("DELETE FROM knowledge WHERE case_id LIKE 'rag-f-%'")
+        cur.execute("DELETE FROM knowledge WHERE task_id LIKE 'rag-f-%'")
         for cid, scope, cat, sev, issue, fix, url, emb in [
             ("rag-f-001","repo-A","sql_injection","high","SQL injection","Use parameterized queries","https://github.com/t/r-A/pull/1",make_emb("sql injection")),
             ("rag-f-002","repo-A","hardcoded_secret","critical","Hardcoded API key","Move to env var","https://github.com/t/r-A/pull/2",make_emb("hardcoded api key secret")),
             ("rag-f-003","repo-B","xss","medium","XSS","HTML encode","https://github.com/t/r-B/pull/3",make_emb("xss")),
         ]:
-            cur.execute("INSERT INTO knowledge (case_id,repo_scope,category,severity,issue,fix,source_pr_url,embedding_model,embedding_version,embedding) VALUES (%s,%s,%s,%s,%s,%s,%s,'BAAI/bge-small-en-v1.5','1.0.0',%s::vector)",(cid,scope,cat,sev,issue,fix,url,vs(emb)))
+            cur.execute("INSERT INTO knowledge (task_id,repo_scope,category,severity,issue,fix,source_pr_url,source_version,embedding_model,embedding_version,embedding) VALUES (%s,%s,%s,%s,%s,%s,%s,'1.0.0','BAAI/bge-small-en-v1.5','1.0.0',%s::vector)",(cid,scope,cat,sev,issue,fix,url,vs(emb)))
     conn.close()
     check("test data inserted", True)
     baseline_threads = threading.active_count() - 1
@@ -168,7 +168,7 @@ def main():
     # (the CLI builds query from filenames like "db.py")
     conn_extra = psycopg2.connect(ADMIN_DSN); conn_extra.autocommit = True
     with conn_extra.cursor() as cur:
-        cur.execute("INSERT INTO knowledge (case_id,repo_scope,category,severity,issue,fix,source_pr_url,embedding_model,embedding_version,embedding) VALUES ('rag-f-cli','repo-A','sql_injection','high','SQL injection in db.py','Use parameterized','https://github.com/t/r-A/pull/9','BAAI/bge-small-en-v1.5','1.0.0',%s::vector)", (vs(make_emb("db.py sql injection")),))
+        cur.execute("INSERT INTO knowledge (task_id,repo_scope,category,severity,issue,fix,source_pr_url,source_version,embedding_model,embedding_version,embedding) VALUES ('rag-f-cli','repo-A','sql_injection','high','SQL injection in db.py','Use parameterized','https://github.com/t/r-A/pull/9','1.0.0','BAAI/bge-small-en-v1.5','1.0.0',%s::vector)", (vs(make_emb("db.py sql injection")),))
     conn_extra.close()
     req = json.dumps({"contract_version":"1","request_id":"req-cli-s","trace_id":"trace-cli-s","input":{"mode":"paths","paths":["src/db.py"]}})
     try:
@@ -303,10 +303,11 @@ def main():
     # CLEANUP
     print("\n=== CLEANUP ===")
     conn3 = psycopg2.connect(ADMIN_DSN); conn3.autocommit=True
-    with conn3.cursor() as c: c.execute("DELETE FROM knowledge WHERE case_id LIKE 'rag-f-%'")
+    with conn3.cursor() as c:
+        c.execute("DELETE FROM knowledge WHERE task_id LIKE 'rag-f-%'")
+        c.execute("SELECT count(*) FROM knowledge WHERE task_id LIKE 'rag-f-%'")
+        remaining = int(c.fetchone()[0])
     conn3.close()
-    rc,out,_=subprocess.run(["docker","exec","m6-rag-pg","psql","-U","postgres","-d","ragtest","-t","-A","-c","SELECT count(*) FROM knowledge WHERE case_id LIKE 'rag-f-%'"],capture_output=True,text=True,timeout=10).stdout.strip(),None,None
-    remaining = int(rc) if str(rc).isdigit() else -1
     measured["test_data_residue"]=remaining
     check("test_data_residue=0", remaining==0, "remaining=%d"%remaining)
     shutil.rmtree("/tmp/rag-sast-ws", ignore_errors=True)
