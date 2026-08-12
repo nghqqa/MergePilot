@@ -356,7 +356,7 @@ def run_confirmatory() -> dict:
     evidence = {
         "kind": "m7-rag-n20-confirmatory-benchmark",
         "benchmark_kind": "rag_retrieval_and_integration",
-        "benchmark_phase": "CONFIRMATORY",
+        "benchmark_phase": "CONFIRMATORY_HELDOUT",
         "quality_gate_status": "PRE_REGISTERED",
         "milestone": "M7-P2-confirmatory",
         "layer": "A",
@@ -448,14 +448,25 @@ def run_confirmatory() -> dict:
 
 
 if __name__ == "__main__":
-    print("CONFIRMATORY BENCHMARK RUNNER")
-    print("This runner executes the held-out confirmatory benchmark.")
-    print("In the design-freeze phase, only the dataset and thresholds are verified.")
+    print("CONFIRMATORY BENCHMARK RUNNER (held-out)")
+    print("dataset: rag-bench-v3-heldout")
     print()
     ev = run_confirmatory()
+
+    # Atomic evidence write
+    ev_path = ROOT / "evidence" / "m7" / "benchmark" / "rag-n20-confirmatory.json"
+    ev_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = str(ev_path) + ".tmp"
+    with open(tmp, "w", encoding="utf-8", newline="\n") as f:
+        json.dump(ev, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+    os.replace(tmp, str(ev_path))
+    print(f"\nevidence written to {ev_path}")
+    print()
     print(json.dumps({
         "confirmatory_all_ok": ev["confirmatory_all_ok"],
         "quality_gate_pass": ev["quality_gate_pass"],
         "execution_all_ok": ev["execution_all_ok"],
         "safety_gate_pass": ev["safety_gate_pass"],
     }, indent=2))
+    sys.exit(0 if ev["confirmatory_all_ok"] else 1)
