@@ -1,0 +1,225 @@
+{
+  "kind": "m7-rag-n20-retrieval-benchmark",
+  "benchmark_kind": "rag_retrieval_and_integration",
+  "benchmark_phase": "DEVELOPMENT_CALIBRATION",
+  "quality_gate_status": "NOT_PRE_REGISTERED",
+  "milestone": "M7-P2-candidate",
+  "layer": "A",
+  "layer_description": "RAG retrieval quality and integration safety",
+  "dataset_version": "rag-bench-v2",
+  "dataset_sha256": "911d26b6eca725cf27ddbed059393fc278905cc21cc7b0d3bdd39cbb81be432c",
+  "unique_case_count": 29,
+  "paired_run_count": 29,
+  "total_arm_executions": 58,
+  "knowledge_base_cases": 20,
+  "category_groups": {
+    "clean": 2,
+    "hardcoded_secret": 2,
+    "sql_injection": 2,
+    "command_injection": 2,
+    "path_traversal": 2,
+    "dependency_vulnerability": 2,
+    "test_failure": 2,
+    "configuration_risk": 2,
+    "prompt_injection": 2,
+    "rollback_risk": 2,
+    "false_positive_allowlist": 1,
+    "no_history": 1,
+    "empty_retrieval": 1,
+    "timeout": 2,
+    "adapter_unavailable": 2,
+    "malformed_result": 1,
+    "cross_repo_adversarial": 1
+  },
+  "cohorts": {
+    "positive_retrieval": 19,
+    "abstention": 5,
+    "fault_injection": 5
+  },
+  "positive_retrieval_case_count": 19,
+  "abstention_case_count": 5,
+  "fault_injection_case_count": 5,
+  "deterministic_seed": 42,
+  "top_k": 5,
+  "min_score": 0.0,
+  "adapter": {
+    "name": "TokenOverlapAdapter",
+    "model": "deterministic-token-jaccard",
+    "version": "v1"
+  },
+  "retrieval_metrics": {
+    "positive_retrieval_case_count": 19,
+    "hit_at_1": 0.9473684210526315,
+    "hit_at_3": 1.0,
+    "mean_reciprocal_rank": 0.9736842105263158,
+    "top1_category_match_rate": 0.9473684210526315,
+    "top1_severity_match_rate": 0.9473684210526315,
+    "top1_incorrect_case_count": 1,
+    "top1_accuracy": 0.9473684210526315,
+    "samples_with_non_gold_in_top_k": 4,
+    "top_k_gold_coverage": 1.0,
+    "retrieved_item_precision_at_k": 0.8859649122807017,
+    "latency_p50_ms": 0.0,
+    "latency_p95_ms": 0.0,
+    "context_bytes_avg": 410.9,
+    "estimated_context_tokens_avg": 102.4,
+    "tokenizer_name": "word-count-heuristic",
+    "tokenizer_version": "v1-simple-div4",
+    "api_token_usage": null
+  },
+  "abstention_metrics": {
+    "abstention_case_count": 5,
+    "abstention_correct_count": 4,
+    "abstention_accuracy": 0.8,
+    "false_positive_on_abstention_count": 1,
+    "scope_leak_count": 0
+  },
+  "fault_resilience_metrics": {
+    "fault_injection_case_count": 5,
+    "timeout_semantics_correct_rate": 1.0,
+    "adapter_unavailable_fail_closed_rate": 1.0,
+    "malformed_result_fail_closed_rate": 1.0,
+    "fault_fallback_accuracy": 1.0
+  },
+  "advisory_schema_metrics": {
+    "advisory_record_schema_valid_rate": 1.0
+  },
+  "runtime_consumes_rag_context": false,
+  "workflow_utility_status": "NOT_MEASURABLE_WITH_CURRENT_RUNTIME",
+  "workflow_utility_not_measurable_reason": "retrieval results are emitted as advisory evidence but are not consumed by core.scan/core.run decision logic",
+  "workflow_utility_metrics": {
+    "reviewer_accuracy_baseline": null,
+    "reviewer_accuracy_rag": null,
+    "fixer_accuracy_baseline": null,
+    "fixer_accuracy_rag": null,
+    "decision_accuracy_delta": null,
+    "finding_f1_delta": null,
+    "adoption_rate": null
+  },
+  "verifier_execution_status": "NOT_MEASURED",
+  "verifier_executed_rate": null,
+  "verifier_preserved": null,
+  "verifier_gate_contract_preserved": true,
+  "database_residue_status": "NOT_APPLICABLE",
+  "active_query_residue": null,
+  "idle_connection_residue": null,
+  "connection_residue": null,
+  "transaction_residue": null,
+  "worker_thread_delta": 0,
+  "temp_dir_residue": 0,
+  "gold_label_leaks": 0,
+  "gold_scan_method": "structural adapter-call and emitted-payload field audit",
+  "gold_scan_targets": [
+    "reviewer_query",
+    "fixer_query",
+    "adapter_call.query",
+    "adapter_call.repo_scope",
+    "adapter_call.top_k",
+    "adapter_call.min_score",
+    "advisory_record",
+    "normalized benchmark result"
+  ],
+  "gold_scan_allowed_adapter_fields": [
+    "query",
+    "repo_scope",
+    "top_k",
+    "min_score"
+  ],
+  "gold_scan_forbidden_fields": [
+    "gold_case_ids",
+    "expected_status",
+    "category_group",
+    "evaluator-only labels"
+  ],
+  "secret_leaks": 0,
+  "determinism_kind": "normalized_semantic_digest",
+  "excluded_volatile_fields": [
+    "latency_ms",
+    "run_id",
+    "timestamp",
+    "trace_id"
+  ],
+  "normalized_digest_run_1": "9f8a80223467024e9f0cc81f22cd4a9125fde268384e39292baf3788bde8bc65",
+  "normalized_digest_run_2": "9f8a80223467024e9f0cc81f22cd4a9125fde268384e39292baf3788bde8bc65",
+  "deterministic_replay_match": true,
+  "execution_all_ok": true,
+  "safety_gate_pass": true,
+  "quality_gate_pass": null,
+  "development_all_ok": true,
+  "confirmatory_all_ok": null,
+  "all_ok_scope": "development_execution_and_safety_only",
+  "all_ok": true,
+  "runner_source_commit": "ab8bde0fddc2477e2ac14a3d82f278a12783e7eb",
+  "source_commit": "ab8bde0fddc2477e2ac14a3d82f278a12783e7eb",
+  "verification_commit": "ab8bde0fddc2477e2ac14a3d82f278a12783e7eb",
+  "checks": [
+    {
+      "name": "gold_label_leaks=0 (structured)",
+      "ok": true,
+      "detail": "leaks=0"
+    },
+    {
+      "name": "unique_case_count >= 20",
+      "ok": true,
+      "detail": "N=29"
+    },
+    {
+      "name": "positive_retrieval_case_count >= 15",
+      "ok": true,
+      "detail": "n=19"
+    },
+    {
+      "name": "abstention_case_count >= 3",
+      "ok": true,
+      "detail": "n=5"
+    },
+    {
+      "name": "fault_injection_case_count >= 3",
+      "ok": true,
+      "detail": "n=5"
+    },
+    {
+      "name": "cohorts sum = total",
+      "ok": true,
+      "detail": "29 vs 29"
+    },
+    {
+      "name": "scope_leak_count=0",
+      "ok": true,
+      "detail": "leaks=0"
+    },
+    {
+      "name": "advisory_record_schema_valid_rate=1.0",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "api_token_usage=null",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "worker_thread_delta=0",
+      "ok": true,
+      "detail": "delta=0"
+    },
+    {
+      "name": "temp_dir_residue=0",
+      "ok": true,
+      "detail": "delta=0"
+    },
+    {
+      "name": "secret_leaks=0",
+      "ok": true,
+      "detail": "found=0"
+    },
+    {
+      "name": "deterministic_replay_match (normalized_semantic_digest)",
+      "ok": true,
+      "detail": ""
+    }
+  ],
+  "passed": 13,
+  "failed": 0,
+  "timestamp": "2026-08-12T13:45:30Z"
+}
