@@ -103,6 +103,41 @@ class RetrievalResponse:
 
 
 # ---------------------------------------------------------------------------
+# RetrievalAdapterFactory: creates adapter from trusted env config
+# ---------------------------------------------------------------------------
+
+def create_adapter_from_env(timeout_ms: int = 5000) -> Any:
+    """Create a retrieval adapter from trusted environment configuration.
+
+    Reads MERGEPILOT_CR_DSN (PostgreSQL DSN for pgvector). If unset,
+    returns None (no_history path). When set, returns a PgVectorBridge
+    wrapping the existing CaseRetrieval PgVectorAdapter.
+
+    This is the production path — Reviewer/Fixer call this instead of
+    passing adapter=None unconditionally.
+    """
+    dsn = os.environ.get("MERGEPILOT_CR_DSN", "")
+    if not dsn:
+        return None  # no_history: adapter not configured
+
+    # Try to import the real PgVectorAdapter
+    try:
+        skills_dir = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "skills")
+        if skills_dir not in sys.path:
+            sys.path.insert(0, skills_dir)
+        from case_retrieval.adapters.pg_vector import PgVectorAdapter
+        # PgVectorAdapter takes a trusted config dict, not a raw DSN string
+        inner = PgVectorAdapter({"dsn": dsn})
+        return PgVectorBridge(adapter=inner, timeout_ms=timeout_ms, dsn=dsn)
+    except Exception:
+        # PgVectorAdapter not available or config invalid
+        # (test environment without psycopg2, or wrong config format)
+        return None
+
+
+# ---------------------------------------------------------------------------
 # Fake retrieval adapter
 # ---------------------------------------------------------------------------
 
@@ -197,40 +232,63 @@ class PgVectorBridge:
                  min_score: float = 0.0) -> list[dict]:
         """Retrieve with bounded timeout.
 
-        Layer 1: PostgreSQL statement_timeout cancels the query server-side.
-        Layer 2: Threading + join ensures wall-clock bound even if the
-        driver hangs.
+        Cancel-safe timeout protocol (no cross-thread close while in use):
+        1. PostgreSQL statement_timeout cancels the query server-side.
+        2. If the worker is still alive after join, call conn.cancel()
+           (psycopg2 cancel-safe) to send a CancelRequest to the server.
+        3. Bounded-wait for the worker to exit (short grace period).
+        4. Only after the worker exits, close the connection.
 
-        After any outcome (success, timeout, error), the connection is
-        closed to prevent residue.
+        If the worker doesn't exit after cancel + grace, we raise
+        TimeoutError and mark the connection as leaked (the daemon
+        thread will eventually clean up on process exit). We do NOT
+        close from another thread while the worker may still be using
+        the connection — that would corrupt the driver state.
         """
         if self.adapter is not None and self.dsn == "":
             # Inner-adapter mode (testing with FakeRetrievalAdapter)
             return self._retrieve_threaded(query, top_k, min_score)
 
         # Production mode: use PG connection with statement_timeout
-        try:
-            conn = self._ensure_connection()
-            if conn is None:
-                raise RuntimeError("no connection")
+        conn = self._ensure_connection()
+        if conn is None:
+            raise RuntimeError("no connection")
 
-            result_box: dict[str, Any] = {}
-            def _pg_worker():
-                try:
-                    # Use the inner adapter which takes the connection
-                    result_box["data"] = self.adapter.retrieve(
-                        query, top_k=top_k, min_score=min_score,
-                        conn=conn)
-                except Exception as e:
-                    result_box["error"] = e
+        result_box: dict[str, Any] = {}
+        def _pg_worker():
+            try:
+                result_box["data"] = self.adapter.retrieve(
+                    query, top_k=top_k, min_score=min_score,
+                    conn=conn)
+            except Exception as e:
+                result_box["error"] = e
 
-            t = threading.Thread(target=_pg_worker, daemon=True)
-            t.start()
-            t.join(timeout=self.timeout_ms / 1000.0 * 1.5)  # 50% grace
+        t = threading.Thread(target=_pg_worker, daemon=True)
+        t.start()
+        join_timeout = self.timeout_ms / 1000.0 * 1.5  # 50% grace
+        t.join(timeout=join_timeout)
 
+        if t.is_alive():
+            # Cancel-safe: send CancelRequest to PostgreSQL (not close)
+            try:
+                conn.cancel()
+            except Exception:
+                pass
+            # Bounded wait for worker to exit after cancel
+            t.join(timeout=2.0)
             if t.is_alive():
-                # statement_timeout should have fired; if not, abandon
-                raise TimeoutError("PG query exceeded %dms" % self.timeout_ms)
+                # Worker didn't exit even after cancel — leak the connection
+                # (daemon thread will clean up). Do NOT close from here.
+                self._conn = None  # detach so close() won't touch it
+                raise TimeoutError(
+                    "PG query exceeded %dms and worker did not exit after cancel"
+                    % self.timeout_ms)
+            # Worker exited after cancel — safe to close
+            self._close_connection()
+            raise TimeoutError("PG query exceeded %dms (cancelled)" % self.timeout_ms)
+
+        # Worker completed normally
+        try:
             if "error" in result_box:
                 raise result_box["error"]
             return result_box.get("data", [])
@@ -256,6 +314,7 @@ class PgVectorBridge:
         t.join(timeout=self.timeout_ms / 1000.0)
 
         if t.is_alive():
+            # No connection to cancel; just report timeout
             raise TimeoutError("adapter query exceeded %dms" % self.timeout_ms)
         if "error" in result_box:
             raise result_box["error"]

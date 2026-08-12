@@ -69,23 +69,35 @@ def handle(ctx):
         raise errors.InvalidInput(problem)
 
     # M6-RAG: Fix Planner advisory retrieval (fail-closed, never blocks fix)
-    rag_context = []
+    # RAG provenance goes into the handler's return dict alongside the
+    # standard fields, NOT into the Skill's business output.
+    rag_evidence = []
     rag_status = "disabled"
     try:
         _rag_dir = os.path.join(os.path.dirname(os.path.dirname(
             os.path.dirname(os.path.abspath(__file__)))), "tools", "rag")
         if _rag_dir not in sys.path:
             sys.path.insert(0, _rag_dir)
-        from rag_retrieval_service import query_for_fixer
+        from rag_retrieval_service import query_for_fixer, create_adapter_from_env
         trace_id = ctx.get("trace_id", "")
         run_id = os.environ.get("MERGEPILOT_RUN_ID", "")
+        # Build query from actual finding context (category/severity), not just action
         action = inp.get("action", "")
-        query_text = f"{action} {' '.join(inp.get('findings', [])[:3])}"[:200]
-        if query_text.strip():
+        findings = inp.get("findings", [])
+        finding_summary = " ".join(
+            str(f) if isinstance(f, str) else f.get("category", "")
+            for f in findings[:5]
+        )[:200]
+        query_text = f"{action} {finding_summary}".strip()[:200]
+        if query_text:
+            adapter = create_adapter_from_env()
             resp = query_for_fixer(query_text, run_id, trace_id,
-                                   timeout_ms=3000)
-            rag_context = [r.to_dict() for r in resp.results]
+                                   adapter=adapter, timeout_ms=3000)
             rag_status = resp.status
+            rag_evidence = [
+                {"kind": "rag_advisory", "ref": json.dumps(r.to_dict())}
+                for r in resp.results
+            ]
     except Exception:
         rag_status = "retrieval_unavailable"
 
@@ -99,6 +111,8 @@ def handle(ctx):
             "message": exc.subcode,
             "retryable": exc.retryable,
             "side_effects": exc.effects,
+            "rag_status": rag_status,
+            "rag_evidence": rag_evidence,
         }
         if exc.output:
             problem = _schema_error(_validator(_OUTPUT_SCHEMA_PATH, "output"), exc.output)
@@ -108,6 +122,8 @@ def handle(ctx):
                     "error_code": errors.INTERNAL_ERROR,
                     "message": core.OUTPUT_SCHEMA_INVALID,
                     "side_effects": exc.effects,
+                    "rag_status": rag_status,
+                    "rag_evidence": rag_evidence,
                 }
             result["output"] = exc.output
         return result
@@ -120,9 +136,11 @@ def handle(ctx):
             "error_code": errors.INTERNAL_ERROR,
             "message": core.OUTPUT_SCHEMA_INVALID,
             "side_effects": side_effects,
+            "rag_status": rag_status,
+            "rag_evidence": rag_evidence,
         }
     return {"status": "OK", "output": output, "side_effects": side_effects,
-            "rag_context": rag_context, "rag_status": rag_status}
+            "rag_evidence": rag_evidence, "rag_status": rag_status}
 
 
 def _safe_id(req, key, default):

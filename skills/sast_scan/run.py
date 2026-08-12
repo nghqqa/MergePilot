@@ -69,26 +69,33 @@ def handle(ctx):
     trusted_workspace = os.environ.get("MERGEPILOT_SAST_WORKSPACE") or None
 
     # M6-RAG: Reviewer advisory retrieval (fail-closed, never blocks scan)
-    rag_context = []
+    # RAG provenance goes into the response envelope's evidence[] field
+    # (already allowed by the common envelope schema), NOT into the Skill's
+    # business output dict (which has its own strict schema).
+    rag_evidence = []
     rag_status = "disabled"
     try:
         _rag_dir = os.path.join(os.path.dirname(os.path.dirname(
             os.path.dirname(os.path.abspath(__file__)))), "tools", "rag")
         if _rag_dir not in sys.path:
             sys.path.insert(0, _rag_dir)
-        from rag_retrieval_service import query_for_reviewer
+        from rag_retrieval_service import query_for_reviewer, create_adapter_from_env
         trace_id = ctx.get("trace_id", "")
         run_id = os.environ.get("MERGEPILOT_RUN_ID", "")
-        # Build a concise query from the files being scanned
+        # Build query from actual diff/finding context
         files = inp.get("files", [])
         query_text = " ".join(
             f.get("path", "").rsplit("/", 1)[-1] for f in files[:10]
         )[:200]
         if query_text:
+            adapter = create_adapter_from_env()
             resp = query_for_reviewer(query_text, run_id, trace_id,
-                                      timeout_ms=3000)
-            rag_context = [r.to_dict() for r in resp.results]
+                                      adapter=adapter, timeout_ms=3000)
             rag_status = resp.status
+            rag_evidence = [
+                {"kind": "rag_advisory", "ref": json.dumps(r.to_dict())}
+                for r in resp.results
+            ]
     except Exception:
         rag_status = "retrieval_unavailable"
 
@@ -109,13 +116,10 @@ def handle(ctx):
         raise errors.SkillError("sast-scan produced schema-invalid output", code=errors.INTERNAL_ERROR)
 
     if result["complete"]:
-        result["rag_context"] = rag_context
-        result["rag_status"] = rag_status
-        return {"status": "OK", "output": result}
+        return {"status": "OK", "output": result,
+                "rag_evidence": rag_evidence, "rag_status": rag_status}
 
     degradations = [{"engine": d.get("engine", "core"), "reason": d.get("reason", "")} for d in result.get("degraded", [])]
-    result["rag_context"] = rag_context
-    result["rag_status"] = rag_status
     return {
         "status": "PARTIAL",
         "warning_codes": ["SAST_SCAN_PARTIAL"],
