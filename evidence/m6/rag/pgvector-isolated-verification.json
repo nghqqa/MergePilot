@@ -1,0 +1,95 @@
+{
+  "kind": "m6-rag-pgvector-isolated-verification",
+  "runtime_source_commit": "0488ba2",
+  "verification_commit": "0488ba257ea148c9560e1cd8e65c8c6b5d0c0017",
+  "database": "isolated-postgres-pgvector",
+  "reviewer_hit": true,
+  "fixer_hit": true,
+  "repo_scope_isolation": true,
+  "timeout_cancel": true,
+  "query_residue": 0,
+  "connection_residue": "bounded",
+  "thread_residue": "no daemon-thread claim",
+  "secret_leaks": 0,
+  "all_ok": true,
+  "passed": 15,
+  "failed": 0,
+  "checks": [
+    {
+      "name": "test cases inserted",
+      "ok": true,
+      "detail": "count=3"
+    },
+    {
+      "name": "bridge created",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "reviewer hit count > 0",
+      "ok": true,
+      "detail": "got 1 results"
+    },
+    {
+      "name": "reviewer has results",
+      "ok": true,
+      "detail": "first result keys: ['case_id', 'score', 'issue', 'fix', 'category', 'severity', 'source_pr_url']"
+    },
+    {
+      "name": "reviewer has category",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "fixer hit count > 0",
+      "ok": true,
+      "detail": "got 1 results"
+    },
+    {
+      "name": "fixer has results",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "empty result count=0",
+      "ok": true,
+      "detail": "got 0"
+    },
+    {
+      "name": "similarity descending",
+      "ok": true,
+      "detail": "only 1 results"
+    },
+    {
+      "name": "repo_scope isolation (no cross-repo)",
+      "ok": true,
+      "detail": "repo-B hits in repo-A scope: 0"
+    },
+    {
+      "name": "timeout returns TimeoutError",
+      "ok": true,
+      "detail": "elapsed=0.20s"
+    },
+    {
+      "name": "timeout bounded wall-clock",
+      "ok": true,
+      "detail": "elapsed=0.20s"
+    },
+    {
+      "name": "no active queries after tests",
+      "ok": true,
+      "detail": "active=1"
+    },
+    {
+      "name": "connection count bounded",
+      "ok": true,
+      "detail": "connections=1"
+    },
+    {
+      "name": "test data deleted",
+      "ok": true,
+      "detail": "remaining=0"
+    }
+  ],
+  "timestamp": "2026-08-12T07:23:18Z"
+}

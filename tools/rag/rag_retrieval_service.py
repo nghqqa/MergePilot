@@ -115,7 +115,7 @@ def create_adapter_from_env(timeout_ms: int = 5000) -> Any:
 
     If MERGEPILOT_CR_DSN is unset, returns None (no_history path).
     """
-    dsn = os.environ.get("MERGEPILOT_CR_DSN", "")
+    dsn = os.environ.get("MERGEPILOT_CR_PG_DSN", "")
     if not dsn:
         return None  # no_history: adapter not configured
 
@@ -162,10 +162,12 @@ class CaseRetrievalBridge:
         """
         from case_retrieval import core as cr_core
 
-        # Build trusted config from env (same loader as the Skill itself)
+        # Build trusted config from env (matching skills.case_retrieval.core
+        # load_trusted_config: uses MERGEPILOT_CR_PG_DSN, not _DSN;
+        # MERGEPILOT_CR_DB_SCHEMA / _DB_TABLE, not _SCHEMA / _TABLE)
         trusted_env = {}
-        for key in ("MERGEPILOT_CR_DSN", "MERGEPILOT_CR_SCHEMA",
-                     "MERGEPILOT_CR_TABLE", "MERGEPILOT_CR_REPO_SCOPE",
+        for key in ("MERGEPILOT_CR_PG_DSN", "MERGEPILOT_CR_DB_SCHEMA",
+                     "MERGEPILOT_CR_DB_TABLE", "MERGEPILOT_CR_REPO_SCOPE",
                      "MERGEPILOT_CR_EMBEDDING_MODEL",
                      "MERGEPILOT_CR_EMBEDDING_VERSION",
                      "MERGEPILOT_CR_CONNECT_TIMEOUT_MS",
@@ -185,19 +187,26 @@ class CaseRetrievalBridge:
         def _worker():
             try:
                 import time as _time
-                deadline_ms = self.timeout_ms
+                start_time = _time.monotonic()
+                timeout_s = self.timeout_ms / 1000.0
+
+                class _Deadline:
+                    def remaining_ms(self_):
+                        return max(0, int((start_time + timeout_s -
+                                           _time.monotonic()) * 1000))
+                    def check(self_):
+                        if _time.monotonic() >= start_time + timeout_s:
+                            raise TimeoutError("deadline exceeded")
+
                 inp = {
-                    "query": query[:500],  # bounded per Skill schema
+                    "query": query[:500],
                     "top_k": min(top_k, 20),
                     "min_score": min_score,
                 }
                 out = cr_core.run(
                     inp,
                     trusted_env=trusted_env or None,
-                    deadline=type("D", (), {
-                        "remaining_ms": lambda: deadline_ms,
-                        "check": lambda: None,
-                    })(),
+                    deadline=_Deadline(),
                 )
                 result_box["data"] = out
             except Exception as e:

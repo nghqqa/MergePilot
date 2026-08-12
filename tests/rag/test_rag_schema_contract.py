@@ -88,16 +88,13 @@ class TestCreateAdapterFromEnv(unittest.TestCase):
 
     def test_with_dsn_attempts_pgvector(self):
         from rag_retrieval_service import create_adapter_from_env
-        os.environ["MERGEPILOT_CR_DSN"] = "postgresql://nonexistent:5432/db"
+        os.environ["MERGEPILOT_CR_PG_DSN"] = "postgresql://nonexistent:5432/db"
         try:
             adapter = create_adapter_from_env()
-            # In test env without psycopg2/pgvector connection, the factory
-            # returns either None (import failure) or a PgVectorBridge
-            # (import succeeded but will fail on actual connect).
-            # Either way, it must not crash.
-            self.assertIsNotNone(adapter)  # PgVectorAdapter import succeeds
+            # Returns a CaseRetrievalBridge if import succeeds, or None if not
+            self.assertIsNotNone(adapter)
         finally:
-            os.environ.pop("MERGEPILOT_CR_DSN", None)
+            os.environ.pop("MERGEPILOT_CR_PG_DSN", None)
 
 
 class TestPgVectorBridgeCancelSafe(unittest.TestCase):
