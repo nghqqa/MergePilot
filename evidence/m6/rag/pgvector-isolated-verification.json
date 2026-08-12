@@ -1,7 +1,7 @@
 {
   "kind": "m6-rag-pgvector-isolated-verification",
-  "runtime_source_commit": "1eb96bb7aaf52b31f2b312b0caa4d2b6023e66c8",
-  "verification_commit": "1eb96bb7aaf52b31f2b312b0caa4d2b6023e66c8",
+  "runtime_source_commit": "0fdbde946e4ccb02931ee8040610dfeeb9aa5ca1",
+  "verification_commit": "0fdbde946e4ccb02931ee8040610dfeeb9aa5ca1",
   "database": "isolated-postgres-pgvector",
   "reviewer_hit": true,
   "reviewer_hit_count": 1,
@@ -16,7 +16,7 @@
   "timeout_status": "retrieval_unavailable",
   "timeout_reason": "timeout",
   "timeout_sqlstate": "57014",
-  "timeout_wall_ms": 616.0,
+  "timeout_wall_ms": 1308.9,
   "post_timeout_success": true,
   "active_query_residue": 0,
   "idle_connection_residue": 0,
@@ -24,6 +24,7 @@
   "transaction_residue": 0,
   "worker_thread_delta": 0,
   "test_data_residue": 0,
+  "temp_dir_residue": 0,
   "secret_scan_targets": [
     "envelope_sast",
     "envelope_pr",
@@ -31,7 +32,7 @@
   ],
   "secret_leaks": 0,
   "all_ok": true,
-  "passed": 29,
+  "passed": 42,
   "failed": 0,
   "checks": [
     {
@@ -65,6 +66,16 @@
       "detail": ""
     },
     {
+      "name": "bridge timeout subcode",
+      "ok": true,
+      "detail": "got CASE_RETR_TIMEOUT"
+    },
+    {
+      "name": "timeout SQLSTATE=57014",
+      "ok": true,
+      "detail": "got 57014"
+    },
+    {
       "name": "timeout status=retrieval_unavailable",
       "ok": true,
       "detail": "got retrieval_unavailable"
@@ -77,7 +88,7 @@
     {
       "name": "timeout bounded <10000ms",
       "ok": true,
-      "detail": "wall=616.0ms"
+      "detail": "wall=1308.9ms"
     },
     {
       "name": "post-timeout success",
@@ -130,19 +141,69 @@
       "detail": ""
     },
     {
+      "name": "sast_scan output schema",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sast_scan envelope schema",
+      "ok": true,
+      "detail": ""
+    },
+    {
       "name": "sast_scan core action executed",
       "ok": true,
       "detail": "status=OK"
     },
     {
-      "name": "pr_lifecycle CLI completed",
+      "name": "pr_lifecycle production CLI completed",
       "ok": true,
-      "detail": "rc=4"
+      "detail": "rc=4 status=ERROR"
+    },
+    {
+      "name": "pr_lifecycle production evidence has pgvector hit",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "pr_lifecycle fixture CLI completed",
+      "ok": true,
+      "detail": "rc=0"
     },
     {
       "name": "pr_lifecycle evidence has rag_advisory",
       "ok": true,
       "detail": ""
+    },
+    {
+      "name": "pr_lifecycle rag hit_count>0",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "pr_lifecycle rag untrusted=true",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "pr_lifecycle rag adopted=false",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "pr_lifecycle output schema",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "pr_lifecycle envelope schema",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "pr_lifecycle core action executed",
+      "ok": true,
+      "detail": "status=OK outcome=CREATED"
     },
     {
       "name": "active_query_residue=0",
@@ -175,10 +236,15 @@
       "detail": "remaining=0"
     },
     {
+      "name": "temp_dir_residue=0",
+      "ok": true,
+      "detail": "remaining=0"
+    },
+    {
       "name": "secret_leaks=0 (scanned)",
       "ok": true,
       "detail": "found 0"
     }
   ],
-  "timestamp": "2026-08-12T10:15:55Z"
+  "timestamp": "2026-08-12T11:48:20Z"
 }
