@@ -1,29 +1,37 @@
 {
   "kind": "m6-rag-pgvector-isolated-verification",
-  "runtime_source_commit": "eeb131c958631802510b52595dc7f94a7f5b147a",
-  "verification_commit": "eeb131c958631802510b52595dc7f94a7f5b147a",
+  "runtime_source_commit": "1eb96bb7aaf52b31f2b312b0caa4d2b6023e66c8",
+  "verification_commit": "1eb96bb7aaf52b31f2b312b0caa4d2b6023e66c8",
   "database": "isolated-postgres-pgvector",
   "reviewer_hit": true,
   "reviewer_hit_count": 1,
   "fixer_hit": true,
-  "fixer_hit_count": 1,
+  "fixer_hit_count": 2,
   "repo_scope_isolation": true,
-  "timeout_via_bridge": true,
+  "skill_cli_sast_pass": true,
+  "skill_cli_pr_lifecycle_pass": true,
+  "envelope_schema_pass": true,
+  "skill_output_schema_pass": true,
+  "core_action_after_rag_pass": true,
   "timeout_status": "retrieval_unavailable",
-  "timeout_reason": "CaseRetrievalError",
-  "timeout_wall_ms": 632.5,
+  "timeout_reason": "timeout",
+  "timeout_sqlstate": "57014",
+  "timeout_wall_ms": 616.0,
   "post_timeout_success": true,
   "active_query_residue": 0,
   "idle_connection_residue": 0,
   "connection_residue": 0,
   "transaction_residue": 0,
   "worker_thread_delta": 0,
-  "baseline_threads": 0,
-  "final_threads": 0,
   "test_data_residue": 0,
+  "secret_scan_targets": [
+    "envelope_sast",
+    "envelope_pr",
+    "evidence"
+  ],
   "secret_leaks": 0,
   "all_ok": true,
-  "passed": 19,
+  "passed": 29,
   "failed": 0,
   "checks": [
     {
@@ -32,62 +40,107 @@
       "detail": ""
     },
     {
-      "name": "reviewer hit_count > 0",
-      "ok": true,
-      "detail": "got 1"
-    },
-    {
-      "name": "reviewer has issue",
+      "name": "reviewer hit",
       "ok": true,
       "detail": ""
     },
     {
-      "name": "reviewer has citation_url",
+      "name": "reviewer citation",
       "ok": true,
       "detail": ""
     },
     {
-      "name": "fixer hit_count > 0",
+      "name": "fixer hit",
       "ok": true,
       "detail": ""
     },
     {
-      "name": "empty result count=0",
+      "name": "empty result",
       "ok": true,
       "detail": ""
     },
     {
-      "name": "similarity descending",
-      "ok": true,
-      "detail": "only 1"
-    },
-    {
-      "name": "no cross-repo",
+      "name": "repo_scope isolation",
       "ok": true,
       "detail": ""
     },
     {
       "name": "timeout status=retrieval_unavailable",
       "ok": true,
-      "detail": "got status=retrieval_unavailable"
+      "detail": "got retrieval_unavailable"
     },
     {
-      "name": "timeout reason indicates cancel",
+      "name": "timeout reason=timeout",
       "ok": true,
-      "detail": "got reason=CaseRetrievalError"
+      "detail": "got timeout"
     },
     {
-      "name": "timeout bounded < 10000ms",
+      "name": "timeout bounded <10000ms",
       "ok": true,
-      "detail": "wall=632.5ms"
+      "detail": "wall=616.0ms"
     },
     {
-      "name": "timeout via CaseRetrievalBridge (not standalone pg_sleep)",
+      "name": "post-timeout success",
       "ok": true,
-      "detail": "bridge returned retrieval_unavailable (not ok/empty)"
+      "detail": ""
     },
     {
-      "name": "post-timeout query succeeds",
+      "name": "sast_scan CLI completed",
+      "ok": true,
+      "detail": "rc=0"
+    },
+    {
+      "name": "sast_scan envelope has evidence[]",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sast_scan evidence has rag_advisory",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sast_scan rag hit_count>0",
+      "ok": true,
+      "detail": "hit=2"
+    },
+    {
+      "name": "sast_scan rag untrusted=true",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sast_scan rag adopted=false",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sast_scan rag has case_id",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sast_scan rag has similarity",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sast_scan rag has citation_url",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sast_scan core action executed",
+      "ok": true,
+      "detail": "status=OK"
+    },
+    {
+      "name": "pr_lifecycle CLI completed",
+      "ok": true,
+      "detail": "rc=4"
+    },
+    {
+      "name": "pr_lifecycle evidence has rag_advisory",
       "ok": true,
       "detail": ""
     },
@@ -120,7 +173,12 @@
       "name": "test_data_residue=0",
       "ok": true,
       "detail": "remaining=0"
+    },
+    {
+      "name": "secret_leaks=0 (scanned)",
+      "ok": true,
+      "detail": "found 0"
     }
   ],
-  "timestamp": "2026-08-12T08:55:09Z"
+  "timestamp": "2026-08-12T10:15:55Z"
 }
