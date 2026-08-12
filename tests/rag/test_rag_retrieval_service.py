@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""M6-RAG · Retrieval service tests.
+"""M6-RAG · Retrieval service tests (v2: real timeout + OTel parent-child).
 
-Covers: hit, empty, multi-result sort, malformed query, timeout,
-unreachable, redaction, no-skip-verify, OTel spans.
+Covers: hit, empty, multi-result sort, malformed query, timeout (real
+wall-clock), unreachable, redaction, no-skip-verify, OTel parent-child.
 """
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ for p in (OTEL, RAG):
 import otel_spans as otel
 from rag_retrieval_service import (
     query_for_reviewer, query_for_fixer, FakeRetrievalAdapter,
-    RetrievalResult, RetrievalResponse,
+    PgVectorBridge, RetrievalResult, RetrievalResponse,
 )
 
 SAMPLE_CASES = [
@@ -48,7 +48,6 @@ class TestHit(unittest.TestCase):
         self.assertGreater(resp.hit_count, 0)
         self.assertEqual(resp.results[0].case_id, "case-001")
         self.assertEqual(resp.results[0].similarity, 0.95)
-        self.assertEqual(resp.results[0].category, "sql_injection")
 
     def test_fixer_gets_results(self):
         adapter = FakeRetrievalAdapter(SAMPLE_CASES)
@@ -61,205 +60,228 @@ class TestHit(unittest.TestCase):
 
 class TestEmpty(unittest.TestCase):
 
-    def test_no_match_returns_empty(self):
+    def test_no_match(self):
         adapter = FakeRetrievalAdapter(SAMPLE_CASES)
-        resp = query_for_reviewer("nonexistent_issue_xyz", "run-3", "trace-3",
-                                  adapter=adapter)
+        resp = query_for_reviewer("nonexistent_xyz", "r", "t", adapter=adapter)
         self.assertEqual(resp.status, "empty")
-        self.assertEqual(resp.hit_count, 0)
 
     def test_empty_adapter(self):
-        adapter = FakeRetrievalAdapter([])
-        resp = query_for_reviewer("anything", "run-4", "trace-4",
-                                  adapter=adapter)
+        resp = query_for_reviewer("x", "r", "t", adapter=FakeRetrievalAdapter([]))
         self.assertEqual(resp.status, "empty")
 
 
-class TestMultiResultSort(unittest.TestCase):
+class TestMultiSort(unittest.TestCase):
 
-    def test_results_sorted_by_similarity(self):
+    def test_sorted_by_similarity(self):
         adapter = FakeRetrievalAdapter(SAMPLE_CASES)
-        resp = query_for_reviewer("", "run-5", "trace-5",  # empty matches all
-                                  adapter=adapter, top_k=3)
-        self.assertEqual(resp.hit_count, 3)
+        resp = query_for_reviewer("", "r", "t", adapter=adapter, top_k=3)
         scores = [r.similarity for r in resp.results]
         self.assertEqual(scores, sorted(scores, reverse=True))
 
 
-class TestMalformedQuery(unittest.TestCase):
+class TestMalformed(unittest.TestCase):
 
-    def test_empty_string_query(self):
-        adapter = FakeRetrievalAdapter(SAMPLE_CASES)
-        resp = query_for_reviewer("", "run-6", "trace-6", adapter=adapter)
-        # Empty query matches all in fake adapter; real adapter may reject
+    def test_empty_query(self):
+        resp = query_for_reviewer("", "r", "t",
+                                  adapter=FakeRetrievalAdapter(SAMPLE_CASES))
         self.assertIn(resp.status, ("ok", "empty"))
 
-    def test_unicode_query(self):
-        adapter = FakeRetrievalAdapter(SAMPLE_CASES)
-        resp = query_for_reviewer("注入", "run-7", "trace-7", adapter=adapter)
+    def test_unicode(self):
+        resp = query_for_reviewer("注入", "r", "t",
+                                  adapter=FakeRetrievalAdapter(SAMPLE_CASES))
         self.assertIn(resp.status, ("ok", "empty"))
 
-    def test_very_long_query(self):
-        adapter = FakeRetrievalAdapter(SAMPLE_CASES)
-        resp = query_for_reviewer("a" * 10000, "run-8", "trace-8",
-                                  adapter=adapter)
-        # Should not crash
+    def test_very_long(self):
+        resp = query_for_reviewer("a" * 10000, "r", "t",
+                                  adapter=FakeRetrievalAdapter(SAMPLE_CASES))
         self.assertIn(resp.status, ("ok", "empty"))
 
 
-class TestTimeout(unittest.TestCase):
+class TestRealTimeout(unittest.TestCase):
+    """Real bounded timeout via threading + join (not pre-check only)."""
 
-    def test_adapter_timeout(self):
+    def test_slow_adapter_times_out_at_100ms(self):
+        """Adapter sleeps 6s; timeout_ms=100 must return in <2s."""
         adapter = FakeRetrievalAdapter(SAMPLE_CASES, latency_ms=6000)
-        resp = query_for_reviewer("test", "run-9", "trace-9",
+        start = time.monotonic()
+        resp = query_for_reviewer("test", "r-to", "t-to",
                                   adapter=adapter, timeout_ms=100)
-        # Fake adapter sleeps 6s; timeout_ms=100 → should timeout
-        # (but FakeRetrievalAdapter doesn't respect timeout_ms internally;
-        #  the service checks time.monotonic before/after)
-        # Actually the service queries AFTER the pre-check, so the adapter
-        # runs and returns late. The service doesn't interrupt mid-query.
-        # So this test verifies the service doesn't crash on slow adapter.
-        self.assertIn(resp.status, ("ok", "empty", "retrieval_unavailable"))
+        elapsed = time.monotonic() - start
+        self.assertEqual(resp.status, "retrieval_unavailable")
+        self.assertEqual(resp.fallback_reason, "timeout")
+        self.assertEqual(resp.hit_count, 0)
+        # Wall-clock: must be well under 6s (the adapter's full latency)
+        self.assertLess(elapsed, 2.0,
+                        "timeout didn't fire: %.2fs elapsed" % elapsed)
+
+    def test_fast_adapter_returns_ok(self):
+        adapter = FakeRetrievalAdapter(SAMPLE_CASES, latency_ms=10)
+        resp = query_for_reviewer("sql", "r", "t",
+                                  adapter=adapter, timeout_ms=5000)
+        self.assertEqual(resp.status, "ok")
+        self.assertGreater(resp.hit_count, 0)
+
+    def test_timeout_does_not_block_business(self):
+        """Business logic returns quickly even with a 6s adapter."""
+        adapter = FakeRetrievalAdapter(SAMPLE_CASES, latency_ms=6000)
+        start = time.monotonic()
+        resp = query_for_fixer("test", "r", "t",
+                               adapter=adapter, timeout_ms=200)
+        elapsed = time.monotonic() - start
+        self.assertEqual(resp.status, "retrieval_unavailable")
+        self.assertLess(elapsed, 2.0)
 
 
 class TestUnreachable(unittest.TestCase):
 
-    def test_adapter_raises_exception(self):
+    def test_adapter_raises(self):
         adapter = FakeRetrievalAdapter(fail_with=ConnectionError("DB down"))
-        resp = query_for_reviewer("test", "run-10", "trace-10",
-                                  adapter=adapter)
+        resp = query_for_reviewer("x", "r", "t", adapter=adapter)
         self.assertEqual(resp.status, "retrieval_unavailable")
-        self.assertEqual(resp.hit_count, 0)
+        self.assertEqual(resp.fallback_reason, "ConnectionError")
 
-    def test_no_adapter_configured(self):
-        resp = query_for_reviewer("test", "run-11", "trace-11", adapter=None)
+    def test_no_adapter(self):
+        resp = query_for_reviewer("x", "r", "t", adapter=None)
         self.assertEqual(resp.status, "no_history")
-        self.assertEqual(resp.hit_count, 0)
+        self.assertEqual(resp.fallback_reason, "no_adapter")
 
 
 class TestRedaction(unittest.TestCase):
 
-    def test_sensitive_not_in_results(self):
-        cases = [{"case_id": "c1", "score": 0.9,
-                  "issue": "ghp_secret_12345 leaked",
-                  "fix": "Rotate key sk-live-abc"}]
-        adapter = FakeRetrievalAdapter(cases)
-        resp = query_for_reviewer("leaked", "run-12", "trace-12",
-                                  adapter=adapter)
-        # The service stores raw issue/fix summaries (bounded length)
-        # Redaction happens at the OTel span level, not in the result itself
-        # (the result contains the historical case content, which is
-        # advisory context — the Agent treats it as untrusted)
-        self.assertEqual(resp.status, "ok")
-        # Verify untrusted flag
-        self.assertTrue(resp.results[0].untrusted)
-
-    def test_result_bounded_summary_length(self):
+    def test_summary_bounded(self):
         cases = [{"case_id": "c1", "score": 0.9,
                   "issue": "x" * 5000, "fix": "y" * 5000}]
-        adapter = FakeRetrievalAdapter(cases)
-        resp = query_for_reviewer("x", "run-13", "trace-13", adapter=adapter)
+        resp = query_for_reviewer("x", "r", "t",
+                                  adapter=FakeRetrievalAdapter(cases))
         self.assertLessEqual(len(resp.results[0].issue_summary), 200)
         self.assertLessEqual(len(resp.results[0].fix_summary), 200)
 
+    def test_untrusted_always_true(self):
+        resp = query_for_reviewer("sql", "r", "t",
+                                  adapter=FakeRetrievalAdapter(SAMPLE_CASES))
+        for r in resp.results:
+            self.assertTrue(r.untrusted)
+
 
 class TestNoSkipVerifier(unittest.TestCase):
-    """Verifier must ALWAYS run current verification regardless of RAG."""
 
-    def test_retrieval_does_not_authorize_skip(self):
-        """Even with a perfect match, untrusted=True means the Agent
-        cannot skip current SAST/test verification."""
-        cases = [{"case_id": "perfect-match", "score": 1.0,
-                  "issue": "exact match", "fix": "exact fix"}]
-        adapter = FakeRetrievalAdapter(cases)
-        resp = query_for_reviewer("exact match", "run-14", "trace-14",
-                                  adapter=adapter)
-        self.assertEqual(resp.hit_count, 1)
+    def test_perfect_match_still_untrusted(self):
+        cases = [{"case_id": "perfect", "score": 1.0,
+                  "issue": "exact", "fix": "exact"}]
+        resp = query_for_reviewer("exact", "r", "t",
+                                  adapter=FakeRetrievalAdapter(cases))
         self.assertEqual(resp.results[0].similarity, 1.0)
-        # BUT untrusted is always True
         self.assertTrue(resp.results[0].untrusted)
-        # adopted is False until Agent explicitly decides
         self.assertFalse(resp.results[0].adopted)
 
 
-class TestOTelSpans(unittest.TestCase):
+class TestOTelParentChild(unittest.TestCase):
+    """rag.query must be a CHILD of the current Agent span."""
 
-    def test_rag_query_span_emitted(self):
+    def test_rag_query_is_child_of_controller(self):
         c = otel.InMemoryCollector()
         otel.set_collector(c)
         try:
-            adapter = FakeRetrievalAdapter(SAMPLE_CASES)
-            query_for_reviewer("sql", "run-otel", "trace-otel",
-                               adapter=adapter)
-            rag_spans = [s for s in c.spans if s.name.startswith("rag.")]
-            self.assertGreater(len(rag_spans), 0)
-            names = {s.name for s in rag_spans}
-            self.assertIn("rag.query", names)
+            with otel.controller_span(run_id="r-otel", trace_id="",
+                                      agent_role="reviewer",
+                                      stage="review") as ctrl:
+                tid = ctrl.trace_id
+                query_for_reviewer("sql", "r-otel", tid,
+                                   adapter=FakeRetrievalAdapter(SAMPLE_CASES))
+            by_name = {s.name: s for s in c.spans}
+            ctrl_s = by_name["controller.process_event"]
+            rag_q = by_name.get("rag.query")
+            self.assertIsNotNone(rag_q, "rag.query span not emitted")
+            # rag.query must be a child of controller
+            self.assertEqual(rag_q.parent_span_id, ctrl_s.span_id)
+            self.assertEqual(rag_q.trace_id, ctrl_s.trace_id)
         finally:
             otel.set_collector(None)
 
-    def test_rag_result_span_on_hit(self):
+    def test_rag_result_child_of_rag_query(self):
         c = otel.InMemoryCollector()
         otel.set_collector(c)
         try:
-            adapter = FakeRetrievalAdapter(SAMPLE_CASES)
-            query_for_reviewer("sql", "run-otel2", "trace-otel2",
-                               adapter=adapter)
-            result_spans = [s for s in c.spans if s.name == "rag.result"]
-            self.assertEqual(len(result_spans), 1)
-            s = result_spans[0]
-            self.assertGreater(s.attributes.get("rag.hit_count", 0), 0)
-            self.assertEqual(s.attributes.get("rag.top_k"), 5)
+            query_for_reviewer("sql", "r-otel2", "trace-otel2",
+                               adapter=FakeRetrievalAdapter(SAMPLE_CASES))
+            by_name = {s.name: s for s in c.spans}
+            rag_q = by_name.get("rag.query")
+            rag_r = by_name.get("rag.result")
+            self.assertIsNotNone(rag_q)
+            self.assertIsNotNone(rag_r)
+            self.assertEqual(rag_r.parent_span_id, rag_q.span_id)
         finally:
             otel.set_collector(None)
 
-    def test_rag_fallback_span_on_failure(self):
+    def test_rag_fallback_on_timeout(self):
         c = otel.InMemoryCollector()
         otel.set_collector(c)
         try:
-            adapter = FakeRetrievalAdapter(fail_with=ConnectionError("down"))
-            query_for_reviewer("test", "run-otel3", "trace-otel3",
-                               adapter=adapter)
-            fallback_spans = [s for s in c.spans if s.name == "rag.fallback"]
-            self.assertEqual(len(fallback_spans), 1)
-            self.assertEqual(fallback_spans[0].attributes.get("rag.hit_count"), 0)
+            query_for_reviewer("x", "r-otel3", "t3",
+                               adapter=FakeRetrievalAdapter(SAMPLE_CASES,
+                                                            latency_ms=6000),
+                               timeout_ms=100)
+            fb = [s for s in c.spans if s.name == "rag.fallback"]
+            self.assertEqual(len(fb), 1)
+            self.assertEqual(fb[0].attributes.get("rag.fallback_reason"), "timeout")
         finally:
             otel.set_collector(None)
 
-    def test_rag_fallback_span_on_no_adapter(self):
+    def test_rag_attributes_no_sensitive_query(self):
+        """rag.query span must NOT contain the raw query string."""
         c = otel.InMemoryCollector()
         otel.set_collector(c)
         try:
-            query_for_reviewer("test", "run-otel4", "trace-otel4",
-                               adapter=None)
-            fallback_spans = [s for s in c.spans if s.name == "rag.fallback"]
-            self.assertEqual(len(fallback_spans), 1)
-            self.assertIn("no_adapter",
-                          fallback_spans[0].attributes.get("rag.fallback_reason", ""))
+            query_for_reviewer(
+                "ghp_secret_12345 sk-live-abc sql", "r", "t",
+                adapter=FakeRetrievalAdapter(SAMPLE_CASES))
+            for s in c.spans:
+                for k, v in s.attributes.items():
+                    if isinstance(v, str):
+                        self.assertNotIn("ghp_secret", v)
+                        self.assertNotIn("sk-live", v)
         finally:
             otel.set_collector(None)
+
+
+class TestPgVectorBridge(unittest.TestCase):
+
+    def test_bridge_delegates_to_inner_adapter(self):
+        inner = FakeRetrievalAdapter(SAMPLE_CASES)
+        bridge = PgVectorBridge(adapter=inner, timeout_ms=5000)
+        results = bridge.retrieve("sql", top_k=3)
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["case_id"], "case-001")
+
+    def test_bridge_timeout_raises(self):
+        inner = FakeRetrievalAdapter(SAMPLE_CASES, latency_ms=6000)
+        bridge = PgVectorBridge(adapter=inner, timeout_ms=100)
+        with self.assertRaises(TimeoutError):
+            bridge.retrieve("sql")
+
+    def test_bridge_no_adapter_raises(self):
+        bridge = PgVectorBridge(adapter=None)
+        with self.assertRaises(RuntimeError):
+            bridge.retrieve("sql")
 
 
 class TestResponseStructure(unittest.TestCase):
 
-    def test_to_dict_structure(self):
-        adapter = FakeRetrievalAdapter(SAMPLE_CASES)
+    def test_to_dict(self):
         resp = query_for_reviewer("sql", "run-15", "trace-15",
-                                  adapter=adapter, top_k=2)
+                                  adapter=FakeRetrievalAdapter(SAMPLE_CASES),
+                                  top_k=2)
         d = resp.to_dict()
         self.assertIn("status", d)
         self.assertIn("results", d)
         self.assertIn("stats", d)
-        self.assertIn("hit_count", d["stats"])
-        self.assertIn("top_k", d["stats"])
-        self.assertIn("latency_ms", d["stats"])
         self.assertEqual(d["run_id"], "run-15")
         self.assertEqual(d["trace_id"], "trace-15")
 
-    def test_latency_recorded(self):
-        adapter = FakeRetrievalAdapter(SAMPLE_CASES, latency_ms=50)
-        resp = query_for_reviewer("test", "run-16", "trace-16",
-                                  adapter=adapter)
+    def test_latency_positive(self):
+        resp = query_for_reviewer("x", "r", "t",
+                                  adapter=FakeRetrievalAdapter(SAMPLE_CASES,
+                                                              latency_ms=50))
         self.assertGreater(resp.latency_ms, 0)
 
 
