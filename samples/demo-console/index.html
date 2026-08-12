@@ -173,70 +173,70 @@ a { color: #3b82f6; }
       <span class="span-duration">0ms</span>
       <span class="span-status-text">OK</span>
       <ul class="span-attrs"><li><code>entrypoint</code>: controller.process_event</li><li><code>run_id</code>: run-agentteams-1</li><li><code>stage_event.status</code>: PROCESSED</li></ul>
-      
+
     </div><div class="span-node" style="margin-left:0px">
       <span class="span-status span-status-ok">●</span>
       <strong>policy_gateway.revision_provenance</strong>
       <span class="span-duration">0ms</span>
       <span class="span-status-text">OK</span>
       <ul class="span-attrs"><li><code>audit.bound_revision_results</code>: 1</li><li><code>audit.events</code>: 52</li><li><code>audit.successful_results</code>: 17</li><li><code>control_credential_in_skill</code>: False</li><li><code>github_upstream</code>: stateful protocol fixture (fake GitHub MCP SSE)</li></ul>
-      
+
     </div><div class="span-node" style="margin-left:0px">
       <span class="span-status span-status-ok">●</span>
       <strong>snapshot.revision_bound</strong>
       <span class="span-duration">0ms</span>
       <span class="span-status-text">OK</span>
       <ul class="span-attrs"><li><code>revision.base_sha</code>: 1111111111111111111111111111111111111111</li><li><code>revision.head_sha</code>: 2222222222222222222222222222222222222222</li><li><code>snapshot.manifest_items</code>: 6</li></ul>
-      
+
     </div><div class="span-node" style="margin-left:0px">
       <span class="span-status span-status-ok">●</span>
       <strong>skill.diff-parse</strong>
       <span class="span-duration">0ms</span>
       <span class="span-status-text">OK</span>
       <ul class="span-attrs"><li><code>invocation_id</code>: inv-dc6ebd21cfb4b955b9951f57732f4411</li><li><code>job_id</code>: sj-ab8861fda9b6543b337f42fde0081586</li><li><code>job_status</code>: SUCCEEDED</li><li><code>note</code>: real unified-diff parse over Gateway-sourced diff</li><li><code>outcome</code>: </li><li><code>output_schema_validated</code>: True</li><li><code>risk_level</code>: </li><li><code>verdict</code>: </li></ul>
-      
+
     </div><div class="span-node" style="margin-left:0px">
       <span class="span-status span-status-ok">●</span>
       <strong>skill.risk-classify</strong>
       <span class="span-duration">0ms</span>
       <span class="span-status-text">OK</span>
       <ul class="span-attrs"><li><code>invocation_id</code>: inv-efb53888becf761451e17662c1a10847</li><li><code>job_id</code>: sj-9cfd36a153cf4dc3f29d5997e7ab3127</li><li><code>job_status</code>: SUCCEEDED</li><li><code>note</code>: real rule-based classification (only-raise risk floor)</li><li><code>outcome</code>: </li><li><code>output_schema_validated</code>: True</li><li><code>risk_level</code>: L1</li><li><code>verdict</code>: </li></ul>
-      
+
     </div><div class="span-node" style="margin-left:0px">
       <span class="span-status span-status-ok">●</span>
       <strong>skill.sast-scan</strong>
       <span class="span-duration">0ms</span>
       <span class="span-status-text">OK</span>
       <ul class="span-attrs"><li><code>invocation_id</code>: inv-2a05a2e22c5abe444fa38cc6fba16b82</li><li><code>job_id</code>: sj-a04bb9bf2ae44ba6289e7381476388a1</li><li><code>job_status</code>: SUCCEEDED</li><li><code>note</code>: real inline SAST over changed files</li><li><code>outcome</code>: </li><li><code>output_schema_validated</code>: True</li><li><code>risk_level</code>: </li><li><code>verdict</code>: </li></ul>
-      
+
     </div><div class="span-node" style="margin-left:0px">
       <span class="span-status span-status-ok">●</span>
       <strong>skill.test-runner</strong>
       <span class="span-duration">0ms</span>
       <span class="span-status-text">OK</span>
       <ul class="span-attrs"><li><code>invocation_id</code>: inv-e5bee9171e809f78aeadedf34c9c467d</li><li><code>job_id</code>: sj-50884f4f183f0cec826587af6befe72f</li><li><code>job_status</code>: SUCCEEDED</li><li><code>note</code>: real pytest subprocess under trusted dev policy</li><li><code>outcome</code>: </li><li><code>output_schema_validated</code>: True</li><li><code>risk_level</code>: </li><li><code>verdict</code>: PASS</li></ul>
-      
+
     </div><div class="span-node" style="margin-left:0px">
       <span class="span-status span-status-ok">●</span>
       <strong>skill.case-retrieval</strong>
       <span class="span-duration">0ms</span>
       <span class="span-status-text">OK</span>
       <ul class="span-attrs"><li><code>invocation_id</code>: inv-ab82ecd1758a1d2d26e0da15b890197e</li><li><code>job_id</code>: sj-cfd18c452a30752a2c69f7749f0a6893</li><li><code>job_status</code>: SUCCEEDED</li><li><code>note</code>: real pgvector adapter (deterministic embedding shape)</li><li><code>outcome</code>: </li><li><code>output_schema_validated</code>: True</li><li><code>risk_level</code>: </li><li><code>verdict</code>: </li></ul>
-      
+
     </div><div class="span-node" style="margin-left:0px">
       <span class="span-status span-status-ok">●</span>
       <strong>skill.pr-lifecycle</strong>
       <span class="span-duration">0ms</span>
       <span class="span-status-text">OK</span>
       <ul class="span-attrs"><li><code>invocation_id</code>: inv-79fda5201099201d80e2396962f1273e</li><li><code>job_id</code>: sj-7f52933245c8a9db433d913b41d4359a</li><li><code>job_status</code>: SUCCEEDED</li><li><code>note</code>: real Policy Gateway over SSE as fixer role</li><li><code>outcome</code>: CREATED</li><li><code>output_schema_validated</code>: True</li><li><code>risk_level</code>: </li><li><code>verdict</code>: </li></ul>
-      
+
     </div><div class="span-node" style="margin-left:0px">
       <span class="span-status span-status-ok">●</span>
       <strong>release.delivery_integrity</strong>
       <span class="span-duration">0ms</span>
       <span class="span-status-text">OK</span>
       <ul class="span-attrs"><li><code>delivery_digest</code>: 04524c63a780367872f5b8ef2099e511afa474b2f113d822506885183ab77301</li><li><code>delivery_files</code>: 56</li><li><code>secret_leaks</code>: 0</li></ul>
-      
+
     </div></div>
     </section>
 

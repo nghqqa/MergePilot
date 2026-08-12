@@ -92,6 +92,16 @@ class TestBundleSHARecomputable(unittest.TestCase):
         recomputed = compute_bundle_sha256(bundle)
         self.assertEqual(stored, recomputed)
 
+    def test_bundle_sha_from_file_recomputable(self):
+        """Reload the saved bundle JSON file and recompute SHA — must match."""
+        bundle_path = ROOT / "samples/demo-bundles/m7-rag-replay.json"
+        with open(bundle_path, "r", encoding="utf-8") as f:
+            loaded = json.load(f)
+        stored = loaded["bundle_sha256"]
+        recomputed = compute_bundle_sha256(loaded)
+        self.assertEqual(stored, recomputed,
+                         "Reloaded bundle SHA must match stored value")
+
     def test_bundle_sha_excludes_volatile(self):
         """Changing generated_at must not change bundle_sha256."""
         bundle1 = build_bundle(str(ROOT))
