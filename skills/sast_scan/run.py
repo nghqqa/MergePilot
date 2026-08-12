@@ -73,7 +73,9 @@ def handle(ctx):
     # _result_to_envelope passes through to the final response envelope's
     # evidence[] field (allowed by the common envelope schema).
     rag_status = "disabled"
-    rag_evidence_items = []
+    rag_fallback_reason = ""
+    rag_hit_count = 0
+    rag_case_items = []
     try:
         _rag_dir = os.path.join(os.path.dirname(os.path.dirname(
             os.path.dirname(os.path.abspath(__file__)))), "tools", "rag")
@@ -82,7 +84,6 @@ def handle(ctx):
         from rag_retrieval_service import query_for_reviewer, create_adapter_from_env
         trace_id = ctx.get("trace_id", "")
         run_id = os.environ.get("MERGEPILOT_RUN_ID", "")
-        # Build query from actual diff/finding context (sanitized filenames)
         files = inp.get("files", [])
         query_text = " ".join(
             f.get("path", "").rsplit("/", 1)[-1] for f in files[:10]
@@ -92,23 +93,30 @@ def handle(ctx):
             resp = query_for_reviewer(query_text, run_id, trace_id,
                                       adapter=adapter, timeout_ms=3000)
             rag_status = resp.status
-            rag_evidence_items = [
-                {"kind": "rag_advisory", "ref": json.dumps({
-                    "case_id": r.case_id, "similarity": r.similarity,
-                    "citation_url": r.citation_url, "adopted": r.adopted,
-                    "untrusted": r.untrusted, "status": resp.status,
-                    "fallback_reason": resp.fallback_reason,
-                })}
+            rag_fallback_reason = resp.fallback_reason
+            rag_hit_count = resp.hit_count
+            rag_case_items = [
+                {"case_id": r.case_id, "similarity": r.similarity,
+                 "citation_url": r.citation_url, "adopted": r.adopted,
+                 "untrusted": r.untrusted}
                 for r in resp.results
             ]
     except Exception:
         rag_status = "retrieval_unavailable"
-        rag_evidence_items = [
-            {"kind": "rag_advisory", "ref": json.dumps({
-                "status": "retrieval_unavailable", "adopted": False,
-                "untrusted": True, "results": [],
-            })}
-        ]
+        rag_fallback_reason = "exception"
+
+    # Always produce at least one rag_advisory summary evidence item
+    rag_evidence_items = [{
+        "kind": "rag_advisory",
+        "ref": json.dumps({
+            "status": rag_status,
+            "fallback_reason": rag_fallback_reason,
+            "hit_count": rag_hit_count,
+            "adopted": False,
+            "untrusted": True,
+            "cases": rag_case_items,
+        })
+    }]
 
     try:
         result = core.scan(

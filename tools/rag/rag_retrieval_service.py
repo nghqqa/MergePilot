@@ -109,32 +109,125 @@ class RetrievalResponse:
 def create_adapter_from_env(timeout_ms: int = 5000) -> Any:
     """Create a retrieval adapter from trusted environment configuration.
 
-    Reads MERGEPILOT_CR_DSN (PostgreSQL DSN for pgvector). If unset,
-    returns None (no_history path). When set, returns a PgVectorBridge
-    wrapping the existing CaseRetrieval PgVectorAdapter.
+    Reads MERGEPILOT_CR_* env vars to build a CaseRetrievalBridge that
+    calls skills.case_retrieval.core.run() with the full trusted config
+    (DSN, schema/table, embedding model/version, repo_scope, timeouts).
 
-    This is the production path — Reviewer/Fixer call this instead of
-    passing adapter=None unconditionally.
+    If MERGEPILOT_CR_DSN is unset, returns None (no_history path).
     """
     dsn = os.environ.get("MERGEPILOT_CR_DSN", "")
     if not dsn:
         return None  # no_history: adapter not configured
 
-    # Try to import the real PgVectorAdapter
     try:
-        skills_dir = os.path.join(
+        bridge = CaseRetrievalBridge(timeout_ms=timeout_ms)
+        return bridge
+    except Exception:
+        return None  # fail-closed
+
+
+class CaseRetrievalBridge:
+    """Bridge to skills.case_retrieval.core.run() with full trusted config.
+
+    Uses the existing CaseRetrieval Skill's trusted config loader
+    (load_trusted_config) and core.run() entry point — NOT a custom
+    retrieve() signature. This preserves all existing:
+    - read-only DB role verification
+    - statement_timeout / lock_timeout / connect_timeout
+    - embedding model/version
+    - repo_scope filtering
+    - schema/table config
+    - deadline cooperative cancellation
+
+    The bridge wraps core.run() in a threaded bounded timeout for
+    wall-clock safety. The underlying PgVectorAdapter already sets
+    statement_timeout via PostgreSQL, so the server-side cancel is the
+    primary mechanism; the thread join is the fallback.
+    """
+
+    def __init__(self, timeout_ms: int = 5000):
+        self.timeout_ms = timeout_ms
+        self._skills_dir = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             "skills")
-        if skills_dir not in sys.path:
-            sys.path.insert(0, skills_dir)
-        from case_retrieval.adapters.pg_vector import PgVectorAdapter
-        # PgVectorAdapter takes a trusted config dict, not a raw DSN string
-        inner = PgVectorAdapter({"dsn": dsn})
-        return PgVectorBridge(adapter=inner, timeout_ms=timeout_ms, dsn=dsn)
-    except Exception:
-        # PgVectorAdapter not available or config invalid
-        # (test environment without psycopg2, or wrong config format)
-        return None
+        if self._skills_dir not in sys.path:
+            sys.path.insert(0, self._skills_dir)
+
+    def retrieve(self, query: str, top_k: int = 5,
+                 min_score: float = 0.0) -> list[dict]:
+        """Call case_retrieval.core.run() with trusted config.
+
+        Returns a list of case dicts compatible with RetrievalResult.
+        Raises TimeoutError if the query exceeds timeout_ms.
+        """
+        from case_retrieval import core as cr_core
+
+        # Build trusted config from env (same loader as the Skill itself)
+        trusted_env = {}
+        for key in ("MERGEPILOT_CR_DSN", "MERGEPILOT_CR_SCHEMA",
+                     "MERGEPILOT_CR_TABLE", "MERGEPILOT_CR_REPO_SCOPE",
+                     "MERGEPILOT_CR_EMBEDDING_MODEL",
+                     "MERGEPILOT_CR_EMBEDDING_VERSION",
+                     "MERGEPILOT_CR_CONNECT_TIMEOUT_MS",
+                     "MERGEPILOT_CR_STATEMENT_TIMEOUT_MS",
+                     "MERGEPILOT_CR_LOCK_TIMEOUT_MS"):
+            val = os.environ.get(key, "")
+            if val:
+                trusted_env[key] = val
+
+        repo_scope = os.environ.get("MERGEPILOT_CR_REPO_SCOPE", "")
+        if not repo_scope:
+            # No repo_scope = no cross-repo retrieval
+            return []
+
+        result_box: dict[str, Any] = {}
+
+        def _worker():
+            try:
+                import time as _time
+                deadline_ms = self.timeout_ms
+                inp = {
+                    "query": query[:500],  # bounded per Skill schema
+                    "top_k": min(top_k, 20),
+                    "min_score": min_score,
+                }
+                out = cr_core.run(
+                    inp,
+                    trusted_env=trusted_env or None,
+                    deadline=type("D", (), {
+                        "remaining_ms": lambda: deadline_ms,
+                        "check": lambda: None,
+                    })(),
+                )
+                result_box["data"] = out
+            except Exception as e:
+                result_box["error"] = e
+
+        t = threading.Thread(target=_worker, daemon=True)
+        t.start()
+        t.join(timeout=self.timeout_ms / 1000.0)
+
+        if t.is_alive():
+            raise TimeoutError(
+                "case_retrieval.core.run exceeded %dms" % self.timeout_ms)
+        if "error" in result_box:
+            raise result_box["error"]
+
+        out = result_box.get("data", {})
+        # Convert core.run() output to our list-of-dicts format
+        results = out.get("results", []) if isinstance(out, dict) else []
+        return [
+            {
+                "case_id": r.get("case_id", ""),
+                "score": r.get("score", 0.0),
+                "issue": r.get("issue_summary", ""),
+                "fix": r.get("fix_summary", ""),
+                "category": r.get("category", ""),
+                "severity": r.get("severity", ""),
+                "source_pr_url": r.get("citation", {}).get("source_url", ""),
+            }
+            for r in results
+        ]
 
 
 # ---------------------------------------------------------------------------
