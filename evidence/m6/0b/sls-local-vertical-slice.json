@@ -1,0 +1,52 @@
+{
+  "kind": "m6b-sls-local-vertical-slice",
+  "source_commit": "43be0bb53a73a90c531369be93a5821fa6a00c3c",
+  "verification_commit": "43be0bb53a73a90c531369be93a5821fa6a00c3c",
+  "total_tests": 79,
+  "test_breakdown": {
+    "m6a_unit": 18,
+    "m6a_integration": 17,
+    "m6a_real_entry": 10,
+    "m6a_collector": 9,
+    "m6a_timeout": 3,
+    "m6b_base": 10,
+    "m6b_vertical_slice": 12
+  },
+  "paths_verified": {
+    "normal": "PASS (controller\u2192skill\u2192gateway at fake SLS, hierarchy + mp.* mapped)",
+    "deny": "PASS (gateway status_code=2, decision=DENY at SLS)",
+    "timeout": "PASS (mcp status_code=2 at SLS)",
+    "rollback": "PASS (controller verdict=FAIL, attempt=2 at SLS)"
+  },
+  "sls_mapping": {
+    "trace_span_parent_ids": "PASS",
+    "run_id": "PASS",
+    "agent_role": "PASS",
+    "skill_name_version": "PASS",
+    "policy_decision": "PASS (ALLOW/DENY)",
+    "duration_ms": "PASS",
+    "status_code": "PASS (1=OK, 2=ERROR)",
+    "parent_span_id_chain": "PASS"
+  },
+  "batch_retry_backpressure": {
+    "batch_64_spans": "PASS (all arrive in one batch)",
+    "retry_on_500": "PASS (retry_count > 0)",
+    "queue_overflow_drop_oldest": "PASS (dropped_batches > 0)",
+    "export_timeout_2s": "PASS"
+  },
+  "redaction": "PASS (PAT/token/AK/SK = <redacted> in SLS payload)",
+  "fail_closed": "PASS (SLS unreachable \u2192 business continues, memory collector receives span)",
+  "fake_sls_receiver": true,
+  "real_sls": false,
+  "sls_credentials_used": false,
+  "all_ok": true,
+  "secret_leaks": 0,
+  "timestamp": "2026-08-12T00:04:51Z",
+  "boundary": {
+    "local_fake_sls": "MergePilot minimal HTTP receiver (NOT real SLS)",
+    "real_sls": "NOT connected",
+    "nacos_rocketmq": "NOT connected",
+    "production_hiclaw": "NOT started",
+    "otelcol": "NOT deployed"
+  }
+}

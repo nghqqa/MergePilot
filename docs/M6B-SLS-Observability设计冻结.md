@@ -1,8 +1,10 @@
 # M6-B · SLS 可观测性设计冻结
 
-> 状态：**设计冻结**（design frozen）。
+> 状态：**本地 SLS 垂直闭环已完成**（fake SLS receiver verified, 79 tests ×2 stable）。
 > 分支：`feat/m6b-sls-observability`（基于 main@27b44dc）
-> 冻结日期：2026-08-11
+> 更新日期：2026-08-11
+> Evidence：`evidence/m6/0b/sls-local-vertical-slice.json`
+> 边界：本地 fake SLS receiver（非真实 SLS），真实 SLS 尚未接入。
 > 前置：M6-A tag `m6a-otel-local-collector-closed`（57 tests PASS）
 
 ---
