@@ -1,0 +1,253 @@
+{
+  "kind": "m7-rag-n20-confirmatory-benchmark",
+  "benchmark_kind": "rag_retrieval_and_integration",
+  "benchmark_phase": "CONFIRMATORY_HELDOUT",
+  "quality_gate_status": "PRE_REGISTERED",
+  "milestone": "M7-P2-confirmatory",
+  "layer": "A",
+  "layer_description": "RAG retrieval quality and integration safety (confirmatory)",
+  "dataset_version": "rag-bench-v3-heldout",
+  "dataset_sha256": "5227c653ef39e718cb315e10cc0571bee60210412f643738b71fb534ee86c98b",
+  "unique_case_count": 25,
+  "paired_run_count": 25,
+  "total_arm_executions": 50,
+  "cohorts": {
+    "positive_retrieval": 15,
+    "abstention": 5,
+    "fault_injection": 5
+  },
+  "positive_retrieval_case_count": 15,
+  "abstention_case_count": 5,
+  "fault_injection_case_count": 5,
+  "deterministic_seed": 99,
+  "top_k": 5,
+  "min_score": 0.0,
+  "adapter": {
+    "name": "TokenOverlapAdapter",
+    "model": "deterministic-token-jaccard",
+    "version": "v1"
+  },
+  "pre_registered_thresholds": {
+    "min_hit_at_1": 0.7,
+    "min_hit_at_3": 0.8,
+    "min_mrr": 0.75,
+    "min_top1_category_match_rate": 0.7,
+    "min_top1_severity_match_rate": 0.7,
+    "min_abstention_accuracy": 0.6,
+    "max_scope_leak_count": 0,
+    "min_timeout_semantics_correct_rate": 1.0,
+    "min_adapter_unavailable_fail_closed_rate": 1.0,
+    "min_malformed_result_fail_closed_rate": 1.0,
+    "min_fault_fallback_accuracy": 1.0,
+    "require_deterministic_replay": true,
+    "max_gold_label_leaks": 0,
+    "max_secret_leaks": 0,
+    "max_worker_thread_delta": 0,
+    "max_temp_dir_residue": 0
+  },
+  "retrieval_metrics": {
+    "positive_retrieval_case_count": 15,
+    "hit_at_1": 1.0,
+    "hit_at_3": 1.0,
+    "mean_reciprocal_rank": 1.0,
+    "top1_category_match_rate": 1.0,
+    "top1_severity_match_rate": 1.0,
+    "top1_incorrect_case_count": 0,
+    "top1_accuracy": 1.0,
+    "samples_with_non_gold_in_top_k": 7,
+    "latency_p50_ms": 0.0,
+    "latency_p95_ms": 0.0,
+    "context_bytes_avg": 527.8,
+    "estimated_context_tokens_avg": 131.5,
+    "tokenizer_name": "word-count-heuristic",
+    "tokenizer_version": "v1-simple-div4",
+    "api_token_usage": null
+  },
+  "abstention_metrics": {
+    "abstention_case_count": 5,
+    "abstention_correct_count": 3,
+    "abstention_accuracy": 0.6,
+    "false_positive_on_abstention_count": 2,
+    "scope_leak_count": 0
+  },
+  "fault_resilience_metrics": {
+    "fault_injection_case_count": 5,
+    "timeout_semantics_correct_rate": 1.0,
+    "adapter_unavailable_fail_closed_rate": 1.0,
+    "malformed_result_fail_closed_rate": 1.0,
+    "fault_fallback_accuracy": 1.0
+  },
+  "advisory_schema_metrics": {
+    "advisory_record_schema_valid_rate": 1.0
+  },
+  "runtime_consumes_rag_context": false,
+  "workflow_utility_status": "NOT_MEASURABLE_WITH_CURRENT_RUNTIME",
+  "workflow_utility_not_measurable_reason": "retrieval results are emitted as advisory evidence but are not consumed by core.scan/core.run decision logic",
+  "workflow_utility_metrics": {
+    "reviewer_accuracy_baseline": null,
+    "reviewer_accuracy_rag": null,
+    "fixer_accuracy_baseline": null,
+    "fixer_accuracy_rag": null,
+    "decision_accuracy_delta": null,
+    "finding_f1_delta": null,
+    "adoption_rate": null
+  },
+  "verifier_execution_status": "NOT_MEASURED",
+  "verifier_executed_rate": null,
+  "verifier_preserved": null,
+  "verifier_gate_contract_preserved": true,
+  "database_residue_status": "NOT_APPLICABLE",
+  "active_query_residue": null,
+  "idle_connection_residue": null,
+  "connection_residue": null,
+  "transaction_residue": null,
+  "worker_thread_delta": 0,
+  "temp_dir_residue": 0,
+  "gold_label_leaks": 0,
+  "gold_scan_method": "structural adapter-call and emitted-payload field audit",
+  "gold_scan_targets": [
+    "reviewer_query",
+    "fixer_query",
+    "adapter_call.query",
+    "adapter_call.repo_scope",
+    "adapter_call.top_k",
+    "adapter_call.min_score",
+    "advisory_record",
+    "normalized benchmark result"
+  ],
+  "secret_leaks": 0,
+  "determinism_kind": "normalized_semantic_digest",
+  "excluded_volatile_fields": [
+    "latency_ms",
+    "run_id",
+    "timestamp",
+    "trace_id"
+  ],
+  "normalized_digest_run_1": "03b81f3ce05fb6bbbb6f9e69308b5266d63cf06f4b71343fc5d9a36ffbf1fa48",
+  "normalized_digest_run_2": "03b81f3ce05fb6bbbb6f9e69308b5266d63cf06f4b71343fc5d9a36ffbf1fa48",
+  "deterministic_replay_match": true,
+  "v2_separation_verified": true,
+  "development_results_not_merged": true,
+  "execution_all_ok": true,
+  "safety_gate_pass": true,
+  "quality_gate_pass": true,
+  "quality_gate_details": [
+    {
+      "name": "hit_at_1",
+      "pass": true,
+      "expected": 0.7,
+      "actual": 1.0
+    },
+    {
+      "name": "hit_at_3",
+      "pass": true,
+      "expected": 0.8,
+      "actual": 1.0
+    },
+    {
+      "name": "mrr",
+      "pass": true,
+      "expected": 0.75,
+      "actual": 1.0
+    },
+    {
+      "name": "top1_category_match",
+      "pass": true,
+      "expected": 0.7,
+      "actual": 1.0
+    },
+    {
+      "name": "top1_severity_match",
+      "pass": true,
+      "expected": 0.7,
+      "actual": 1.0
+    },
+    {
+      "name": "abstention_accuracy",
+      "pass": true,
+      "expected": 0.6,
+      "actual": 0.6
+    },
+    {
+      "name": "scope_leak_count",
+      "pass": true,
+      "expected": 0,
+      "actual": 0
+    },
+    {
+      "name": "timeout_correct_rate",
+      "pass": true,
+      "expected": 1.0,
+      "actual": 1.0
+    },
+    {
+      "name": "adapter_down_rate",
+      "pass": true,
+      "expected": 1.0,
+      "actual": 1.0
+    },
+    {
+      "name": "malformed_rate",
+      "pass": true,
+      "expected": 1.0,
+      "actual": 1.0
+    },
+    {
+      "name": "fault_fallback_accuracy",
+      "pass": true,
+      "expected": 1.0,
+      "actual": 1.0
+    },
+    {
+      "name": "deterministic_replay",
+      "pass": true,
+      "expected": true,
+      "actual": true
+    },
+    {
+      "name": "gold_label_leaks",
+      "pass": true,
+      "expected": 0,
+      "actual": 0
+    },
+    {
+      "name": "secret_leaks",
+      "pass": true,
+      "expected": 0,
+      "actual": 0
+    },
+    {
+      "name": "worker_thread_delta",
+      "pass": true,
+      "expected": 0,
+      "actual": 0
+    },
+    {
+      "name": "temp_dir_residue",
+      "pass": true,
+      "expected": 0,
+      "actual": 0
+    }
+  ],
+  "confirmatory_all_ok": true,
+  "development_all_ok": true,
+  "all_ok_scope": "confirmatory_execution_safety_and_quality",
+  "runner_source_commit": "7f5c64ad5e55b86089584f88dea9355f3cc5fb84",
+  "source_commit": "7f5c64ad5e55b86089584f88dea9355f3cc5fb84",
+  "verification_commit": "7f5c64ad5e55b86089584f88dea9355f3cc5fb84",
+  "checks": [
+    {
+      "name": "v2_separation_clean",
+      "ok": true,
+      "detail": "[]"
+    },
+    {
+      "name": "gold_label_leaks=0",
+      "ok": true,
+      "detail": ""
+    }
+  ],
+  "passed": 2,
+  "failed": 0,
+  "timestamp": "2026-08-12T14:03:30Z"
+}
