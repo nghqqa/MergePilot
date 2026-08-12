@@ -265,7 +265,7 @@ def run_arm(sample: dict, arm: str, run_id: str) -> dict:
 # ── Evaluate by cohort ─────────────────────────────────────────────────────
 
 def evaluate_positive_retrieval(results: list[dict]) -> dict:
-    """Retrieval metrics — denominator = positive_retrieval cases only."""
+    """Retrieval metrics — denominator = positive_retrieval RAG cases only."""
     pos = [r for r in results if r["cohort"] == "positive_retrieval" and r["arm"] == "rag"]
     n = len(pos)
     if n == 0:
@@ -277,9 +277,11 @@ def evaluate_positive_retrieval(results: list[dict]) -> dict:
 
     rrs, h1s, h3s = [], [], []
     top1_cat_match, top1_sev_match = 0, 0
-    error_citations = 0
+    top1_incorrect = 0          # Top-1 case_id not in gold_case_ids
+    non_gold_in_top_k = 0       # Any non-gold case in top-k results
     latencies = []
     context_bytes_list = []
+    top_k_for_citation = TOP_K
 
     for r in pos:
         gold_ids = gold_map.get(r["sample_id"], [])
@@ -295,26 +297,20 @@ def evaluate_positive_retrieval(results: list[dict]) -> dict:
             # Find KB case metadata
             kb_case = next((c for c in KNOWLEDGE_BASE if c["case_id"] == top_case.case_id), None)
             if kb_case:
-                # Map KB category to dataset category_group
-                # KB categories like "sql_injection" match category_group
                 if kb_case["category"] == cat_map.get(r["sample_id"], ""):
                     top1_cat_match += 1
-                # Check severity match against sample's expected severity (not in query)
-                # We check KB severity vs gold case severity
                 gold_case = next((c for c in KNOWLEDGE_BASE if c["case_id"] in gold_ids), None)
                 if gold_case and kb_case["severity"] == gold_case["severity"]:
                     top1_sev_match += 1
-            else:
-                top1_sev_match += 0
-        else:
-            top1_sev_match += 0
 
-        # Error citation
-        if res and gold_ids:
-            if any(c.case_id not in gold_ids for c in res):
-                error_citations += 1
-        elif res and not gold_ids:
-            error_citations += 1
+        # Citation precision metrics (denominator = n positive_retrieval cases)
+        if res:
+            top1_id = res[0].case_id
+            if top1_id not in gold_ids:
+                top1_incorrect += 1
+            top_k_ids = {c.case_id for c in res[:top_k_for_citation]}
+            if top_k_ids - set(gold_ids):
+                non_gold_in_top_k += 1
 
         advisory_bytes = len(r["advisory_json"].encode("utf-8"))
         context_bytes_list.append(advisory_bytes)
@@ -328,7 +324,18 @@ def evaluate_positive_retrieval(results: list[dict]) -> dict:
         "mean_reciprocal_rank": sum(rrs) / n,
         "top1_category_match_rate": top1_cat_match / n,
         "top1_severity_match_rate": top1_sev_match / n,
-        "error_citation_count": error_citations,
+        # Citation precision metrics (replaced error_citation_count)
+        "top1_incorrect_case_count": top1_incorrect,
+        "top1_accuracy": (n - top1_incorrect) / n,
+        "samples_with_non_gold_in_top_k": non_gold_in_top_k,
+        "top_k_gold_coverage": sum(h3s) / n,  # same as hit_at_3 for single-gold
+        "retrieved_item_precision_at_k": (
+            sum(
+                len({c.case_id for c in r["results"][:top_k_for_citation]} & set(gold_map.get(r["sample_id"], [])))
+                / max(1, min(len(r["results"]), top_k_for_citation))
+                for r in pos
+            ) / n
+        ),
         "latency_p50_ms": round(percentile(latencies, 50), 2),
         "latency_p95_ms": round(percentile(latencies, 95), 2),
         "context_bytes_avg": round(sum(context_bytes_list) / n, 1),
@@ -340,17 +347,17 @@ def evaluate_positive_retrieval(results: list[dict]) -> dict:
 
 
 def evaluate_abstention(results: list[dict]) -> dict:
-    """Abstention metrics — correct empty/no_history + no false positives."""
+    """Abstention metrics — denominator = abstention RAG cases only.
+
+    Bug fix: previously counted baseline+RAG arms together (n=10 instead of 5).
+    Now only RAG arm abstention cases are counted.
+    """
     abst = [r for r in results if r["cohort"] == "abstention" and r["arm"] == "rag"]
-    # Also include no_history (baseline adapter) as abstention semantics
-    abst_all = [r for r in results if r["cohort"] == "abstention"]
-    n = len(abst_all)
+    n = len(abst)
 
     correct = 0
     false_positives = 0
     scope_leaks = 0
-
-    expected_map = {s["sample_id"]: s["expected_status"] for s in DATASET}
 
     for r in abst:
         # Abstention is correct when adapter returns empty or no_history
@@ -359,7 +366,6 @@ def evaluate_abstention(results: list[dict]) -> dict:
         # False positive: got results when should have abstained
         if r["hit_count"] > 0:
             false_positives += 1
-            # Check if any result is from wrong scope
             sample = next(s for s in DATASET if s["sample_id"] == r["sample_id"])
             expected_scope = sample["repo_scope"]
             for c in r["results"]:
@@ -547,7 +553,7 @@ def run_benchmark() -> dict:
     # ── Evaluate by cohort ──
     print("\n=== EVALUATION ===")
     pos_metrics = evaluate_positive_retrieval(rag_raw_1)
-    abst_metrics = evaluate_abstention(all_raw)
+    abst_metrics = evaluate_abstention(rag_raw_1)
     fault_metrics = evaluate_fault_injection(rag_raw_1)
     schema_metrics = evaluate_advisory_schema(rag_raw_1)
 
@@ -557,8 +563,13 @@ def run_benchmark() -> dict:
     print(f"    MRR:         {pos_metrics['mean_reciprocal_rank']:.4f}")
     print(f"    cat_match:   {pos_metrics['top1_category_match_rate']:.2%}")
     print(f"    sev_match:   {pos_metrics['top1_severity_match_rate']:.2%}")
+    print(f"    top1_incorrect:      {pos_metrics['top1_incorrect_case_count']}")
+    print(f"    top1_accuracy:       {pos_metrics['top1_accuracy']:.2%}")
+    print(f"    non_gold_in_top_k:   {pos_metrics['samples_with_non_gold_in_top_k']}")
+    print(f"    precision_at_k:      {pos_metrics['retrieved_item_precision_at_k']:.2%}")
     print(f"  Abstention ({abst_metrics['abstention_case_count']} cases):")
     print(f"    accuracy:    {abst_metrics['abstention_accuracy']:.2%}")
+    print(f"    correct:     {abst_metrics['abstention_correct_count']}/{abst_metrics['abstention_case_count']}")
     print(f"    false_pos:   {abst_metrics['false_positive_on_abstention_count']}")
     print(f"    scope_leak:  {abst_metrics['scope_leak_count']}")
     print(f"  Fault injection ({fault_metrics['fault_injection_case_count']} cases):")
@@ -684,6 +695,26 @@ def run_benchmark() -> dict:
         "temp_dir_residue": temp_residue,
 
         "gold_label_leaks": total_leaks,
+        "gold_scan_method": (
+            "structural adapter-call and emitted-payload field audit"
+        ),
+        "gold_scan_targets": [
+            "reviewer_query",
+            "fixer_query",
+            "adapter_call.query",
+            "adapter_call.repo_scope",
+            "adapter_call.top_k",
+            "adapter_call.min_score",
+            "advisory_record",
+            "normalized benchmark result",
+        ],
+        "gold_scan_allowed_adapter_fields": [
+            "query", "repo_scope", "top_k", "min_score",
+        ],
+        "gold_scan_forbidden_fields": [
+            "gold_case_ids", "expected_status", "category_group",
+            "evaluator-only labels",
+        ],
         "secret_leaks": leaks,
 
         "determinism_kind": "normalized_semantic_digest",
@@ -695,6 +726,10 @@ def run_benchmark() -> dict:
         "execution_all_ok": execution_all_ok,
         "safety_gate_pass": safety_gate_pass,
         "quality_gate_pass": None,
+        "quality_gate_status": "NOT_PRE_REGISTERED",
+        "development_all_ok": execution_all_ok and safety_gate_pass,
+        "confirmatory_all_ok": None,
+        "all_ok_scope": "development_execution_and_safety_only",
         "all_ok": execution_all_ok and safety_gate_pass,
 
         "runner_source_commit": commit,

@@ -138,6 +138,31 @@ class TestHitScenario(unittest.TestCase):
         self.assertGreater(m["hit_at_3"], 0)
         self.assertGreater(m["mean_reciprocal_rank"], 0)
 
+    def test_citation_metrics_present(self):
+        """Citation precision metrics must exist (replaced error_citation_count)."""
+        pos = [s for s in DATASET if classify_cohort(s) == "positive_retrieval"]
+        rag_raw = [run_arm(s, "rag", "test") for s in pos]
+        m = evaluate_positive_retrieval(rag_raw)
+        self.assertIn("top1_incorrect_case_count", m)
+        self.assertIn("samples_with_non_gold_in_top_k", m)
+        self.assertIn("top1_accuracy", m)
+        self.assertIn("top_k_gold_coverage", m)
+        self.assertIn("retrieved_item_precision_at_k", m)
+        # Old metric must not exist
+        self.assertNotIn("error_citation_count", m)
+
+    def test_citation_denominator_is_positive_retrieval(self):
+        """All citation metrics have denominator=19 (positive_retrieval only)."""
+        pos = [s for s in DATASET if classify_cohort(s) == "positive_retrieval"]
+        rag_raw = [run_arm(s, "rag", "test") for s in pos]
+        m = evaluate_positive_retrieval(rag_raw)
+        self.assertEqual(m["positive_retrieval_case_count"], 19)
+        # top1_incorrect + (19 - top1_incorrect) = 19
+        self.assertLessEqual(m["top1_incorrect_case_count"], 19)
+        self.assertAlmostEqual(
+            m["top1_accuracy"],
+            (19 - m["top1_incorrect_case_count"]) / 19)
+
 
 class TestAbstentionScenario(unittest.TestCase):
 
@@ -146,6 +171,28 @@ class TestAbstentionScenario(unittest.TestCase):
         s = next(s for s in DATASET if s["sample_id"] == "bm-001")
         r = run_arm(s, "rag", "test")
         self.assertIn(r["status"], ("empty", "ok"))
+
+    def test_abstention_denominator_is_rag_only(self):
+        """Abstention case_count must be 5 (RAG arm only), not 10."""
+        ev = run_benchmark()
+        self.assertEqual(ev["abstention_metrics"]["abstention_case_count"], 5)
+
+    def test_abstention_correct_count(self):
+        ev = run_benchmark()
+        self.assertEqual(ev["abstention_metrics"]["abstention_correct_count"], 4)
+
+    def test_abstention_accuracy(self):
+        ev = run_benchmark()
+        self.assertAlmostEqual(ev["abstention_metrics"]["abstention_accuracy"], 0.8)
+
+    def test_abstention_false_positive_count(self):
+        ev = run_benchmark()
+        self.assertEqual(
+            ev["abstention_metrics"]["false_positive_on_abstention_count"], 1)
+
+    def test_abstention_scope_leak_zero(self):
+        ev = run_benchmark()
+        self.assertEqual(ev["abstention_metrics"]["scope_leak_count"], 0)
 
 
 class TestCrossRepoAdversarial(unittest.TestCase):
@@ -320,6 +367,41 @@ class TestQualityGateSemantics(unittest.TestCase):
         """all_ok = execution_all_ok AND safety_gate_pass only (not quality)."""
         ev = run_benchmark()
         self.assertEqual(ev["all_ok"], ev["execution_all_ok"] and ev["safety_gate_pass"])
+
+    def test_development_all_ok_present(self):
+        ev = run_benchmark()
+        self.assertIn("development_all_ok", ev)
+        self.assertEqual(ev["development_all_ok"],
+                         ev["execution_all_ok"] and ev["safety_gate_pass"])
+
+    def test_confirmatory_all_ok_null(self):
+        ev = run_benchmark()
+        self.assertIsNone(ev["confirmatory_all_ok"])
+
+    def test_all_ok_scope_present(self):
+        ev = run_benchmark()
+        self.assertEqual(ev["all_ok_scope"],
+                         "development_execution_and_safety_only")
+
+    def test_gold_scan_method_present(self):
+        ev = run_benchmark()
+        self.assertIn("gold_scan_method", ev)
+        self.assertIn("structural", ev["gold_scan_method"])
+
+    def test_gold_scan_targets_present(self):
+        ev = run_benchmark()
+        targets = ev["gold_scan_targets"]
+        self.assertIn("reviewer_query", targets)
+        self.assertIn("adapter_call.query", targets)
+        self.assertIn("advisory_record", targets)
+        self.assertIn("normalized benchmark result", targets)
+
+    def test_gold_scan_forbidden_fields_listed(self):
+        ev = run_benchmark()
+        forbidden = ev["gold_scan_forbidden_fields"]
+        self.assertIn("gold_case_ids", forbidden)
+        self.assertIn("expected_status", forbidden)
+        self.assertIn("category_group", forbidden)
 
 
 class TestMetricHelpers(unittest.TestCase):
