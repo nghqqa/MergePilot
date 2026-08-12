@@ -82,6 +82,7 @@ def main():
     # Match CaseRetrievalBridge's canonical import path to avoid loading the
     # same exception class under both case_retrieval.* and skills.case_retrieval.*.
     from case_retrieval.core import CaseRetrievalError, TIMEOUT_SUB
+    from case_retrieval.adapters.pg_vector import PgVectorAdapter
 
     # Bridge queries
     print("\n=== BRIDGE QUERIES ===")
@@ -111,13 +112,22 @@ def main():
     os.environ["MERGEPILOT_CR_STATEMENT_TIMEOUT_MS"] = "1"
     tb = CaseRetrievalBridge(timeout_ms=5000)
     ts=""; tr=""; sqlstate=""; tw=0
+    original_map_db_error = PgVectorAdapter._map_db_error
+
+    def observe_map_db_error(adapter, exc, default="database operation failed"):
+        nonlocal sqlstate
+        observed = str(getattr(exc, "pgcode", None) or "")
+        if observed:
+            sqlstate = observed
+        return original_map_db_error(adapter, exc, default)
+
+    PgVectorAdapter._map_db_error = observe_map_db_error
     try:
         start = time.monotonic()
         try:
             tb.retrieve("sql injection", top_k=5)
             check("bridge timeout raised", False, "query unexpectedly completed")
         except CaseRetrievalError as exc:
-            sqlstate = str(exc.pgcode or "")
             check("bridge timeout subcode", exc.subcode == TIMEOUT_SUB,
                   "got %s" % exc.subcode)
             check("timeout SQLSTATE=57014", sqlstate == "57014",
@@ -134,7 +144,9 @@ def main():
         measured["timeout_status"]=ts; measured["timeout_reason"]=tr
         measured["timeout_sqlstate"]=sqlstate; measured["timeout_wall_ms"]=tw
     except Exception as e: check("timeout test", False, str(e))
-    finally: del os.environ["MERGEPILOT_CR_STATEMENT_TIMEOUT_MS"]
+    finally:
+        PgVectorAdapter._map_db_error = original_map_db_error
+        del os.environ["MERGEPILOT_CR_STATEMENT_TIMEOUT_MS"]
 
     # POST-TIMEOUT recovery
     print("\n=== POST-TIMEOUT RECOVERY ===")
