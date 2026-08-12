@@ -7,10 +7,12 @@ via CaseRetrievalBridge, real residue, secret scan.
 """
 from __future__ import annotations
 
-import json, os, subprocess, sys, threading, time, hashlib, re
+import json, os, shutil, subprocess, sys, threading, time, hashlib, re
+
+from jsonschema import Draft202012Validator
 
 REPO = "/mnt/d/goai/mergepilot-os"
-for p in [os.path.join(REPO, "tools", "rag"), os.path.join(REPO, "tools", "otel"),
+for p in [REPO, os.path.join(REPO, "tools", "rag"), os.path.join(REPO, "tools", "otel"),
           os.path.join(REPO, "skills"), os.path.join(REPO, "skills", "common"),
           os.path.join(REPO, "skills", "common", "runtime")]:
     if p not in sys.path: sys.path.insert(0, p)
@@ -38,6 +40,12 @@ def measure_residue():
 SECRET_PATS = [r"sk-[A-Za-z0-9]{16,}", r"ghp_[0-9A-Za-z]{20,}", r"AKIA[0-9A-Z]{12,}", r"testpass", r"xox[baprs]-[A-Za-z0-9-]{10,}"]
 def scan_secrets(text):
     return sum(len(re.findall(p, text)) for p in SECRET_PATS)
+
+
+def schema_valid(value, relative_path):
+    with open(os.path.join(REPO, relative_path), encoding="utf-8") as fh:
+        validator = Draft202012Validator(json.load(fh))
+    return not list(validator.iter_errors(value))
 
 
 def main():
@@ -71,6 +79,9 @@ def main():
     os.environ["MERGEPILOT_RUN_ID"] = "rag-final-001"
 
     from rag_retrieval_service import CaseRetrievalBridge, query_for_reviewer, query_for_fixer
+    # Match CaseRetrievalBridge's canonical import path to avoid loading the
+    # same exception class under both case_retrieval.* and skills.case_retrieval.*.
+    from case_retrieval.core import CaseRetrievalError, TIMEOUT_SUB
 
     # Bridge queries
     print("\n=== BRIDGE QUERIES ===")
@@ -99,16 +110,29 @@ def main():
     print("\n=== TIMEOUT VIA BRIDGE ===")
     os.environ["MERGEPILOT_CR_STATEMENT_TIMEOUT_MS"] = "1"
     tb = CaseRetrievalBridge(timeout_ms=5000)
-    ts=""; tr=""; tw=0
+    ts=""; tr=""; sqlstate=""; tw=0
     try:
         start = time.monotonic()
-        resp = query_for_reviewer("sql injection","r","t",adapter=tb,timeout_ms=5000)
+        try:
+            tb.retrieve("sql injection", top_k=5)
+            check("bridge timeout raised", False, "query unexpectedly completed")
+        except CaseRetrievalError as exc:
+            sqlstate = str(exc.pgcode or "")
+            check("bridge timeout subcode", exc.subcode == TIMEOUT_SUB,
+                  "got %s" % exc.subcode)
+            check("timeout SQLSTATE=57014", sqlstate == "57014",
+                  "got %s" % sqlstate)
+
+        resp = query_for_reviewer(
+            "sql injection", "r", "t",
+            adapter=CaseRetrievalBridge(timeout_ms=5000), timeout_ms=5000)
         tw = round((time.monotonic()-start)*1000,1)
         ts=resp.status; tr=resp.fallback_reason
         check("timeout status=retrieval_unavailable", ts=="retrieval_unavailable", "got %s"%ts)
         check("timeout reason=timeout", tr=="timeout", "got %s"%tr)
         check("timeout bounded <10000ms", tw<10000, "wall=%sms"%tw)
-        measured["timeout_status"]=ts; measured["timeout_reason"]=tr; measured["timeout_wall_ms"]=tw
+        measured["timeout_status"]=ts; measured["timeout_reason"]=tr
+        measured["timeout_sqlstate"]=sqlstate; measured["timeout_wall_ms"]=tw
     except Exception as e: check("timeout test", False, str(e))
     finally: del os.environ["MERGEPILOT_CR_STATEMENT_TIMEOUT_MS"]
 
@@ -160,29 +184,94 @@ def main():
                     check("sast_scan rag has citation_url", "citation_url" in str(parsed["cases"][0]))
                 measured["skill_cli_sast_pass"]=True
             # Core SAST action still executed
-            check("sast_scan core action executed",
-                  env_sast.get("status") in ("OK","PARTIAL") and
-                  isinstance(env_sast.get("output"),dict),
+            sast_output_ok = schema_valid(
+                env_sast.get("output"), "skills/sast_scan/schema/output.schema.json")
+            sast_envelope_ok = schema_valid(
+                env_sast, "skills/common/schema/response.envelope.schema.json")
+            check("sast_scan output schema", sast_output_ok)
+            check("sast_scan envelope schema", sast_envelope_ok)
+            sast_core_ok = (
+                env_sast.get("status") in ("OK", "PARTIAL") and
+                env_sast.get("output", {}).get("stats", {}).get("files_scanned") == 1)
+            check("sast_scan core action executed", sast_core_ok,
                   "status=%s"%env_sast.get("status"))
+            measured["sast_output_schema_pass"] = sast_output_ok
+            measured["sast_envelope_schema_pass"] = sast_envelope_ok
+            measured["sast_core_action_pass"] = sast_core_ok
     except Exception as e: check("sast_scan CLI", False, str(e))
 
-    print("\n=== REAL SKILL CLI (pr_lifecycle) ===")
+    print("\n=== REAL SKILL CLI (pr_lifecycle production entry) ===")
     req2 = json.dumps({"contract_version":"1","request_id":"req-cli-p","trace_id":"trace-cli-p",
         "input":{"action":"ensure_fix_pr","idempotency_key":"rag-cli-001",
                  "changes":[{"path":"src/app.py","content":"x=1\n"}],
                  "commit_message":"test","pr_title":"T","pr_body":"B"}})
     try:
-        r = subprocess.run([sys.executable,"-m","skills.pr_lifecycle.run"],
+        direct = subprocess.run([sys.executable,"-m","skills.pr_lifecycle.run"],
+            input=req2, capture_output=True, text=True, timeout=120, cwd=REPO, env=cli_env)
+        env_pr_direct = None
+        for line in direct.stdout.strip().split("\n"):
+            try: env_pr_direct = json.loads(line); break
+            except: pass
+        direct_rag = [e for e in (env_pr_direct or {}).get("evidence", [])
+                      if e.get("kind") == "rag_advisory"]
+        direct_data = json.loads(direct_rag[0]["ref"]) if direct_rag else {}
+        direct_schema_ok = bool(env_pr_direct) and schema_valid(
+            env_pr_direct, "skills/common/schema/response.envelope.schema.json")
+        direct_ok = (
+            direct.returncode == 4 and
+            (env_pr_direct or {}).get("error_code") == "DENIED" and
+            direct_schema_ok and direct_data.get("hit_count", 0) > 0)
+        check("pr_lifecycle production CLI completed", direct_ok,
+              "rc=%d status=%s" % (
+                  direct.returncode, (env_pr_direct or {}).get("status")))
+        check("pr_lifecycle production evidence has pgvector hit",
+              direct_data.get("hit_count", 0) > 0)
+        measured["skill_cli_pr_lifecycle_pass"] = direct_ok
+
+        print("\n=== PRLIFECYCLE CORE ACTION (isolated gateway fixture) ===")
+        r = subprocess.run([sys.executable,"tests/rag/pr_lifecycle_cli_harness.py"],
             input=req2, capture_output=True, text=True, timeout=120, cwd=REPO, env=cli_env)
         env_pr = None
         for line in r.stdout.strip().split("\n"):
-            try: env_pr = json.loads(line); break
+            try:
+                payload = json.loads(line)
+                env_pr = payload.get("envelope")
+                fixture_calls = payload.get("fixture_calls", [])
+                break
             except: pass
-        check("pr_lifecycle CLI completed", env_pr is not None, "rc=%d"%r.returncode)
+        check("pr_lifecycle fixture CLI completed", env_pr is not None and r.returncode == 0,
+              "rc=%d"%r.returncode)
         if env_pr:
             check("pr_lifecycle evidence has rag_advisory",
                   any(e.get("kind")=="rag_advisory" for e in env_pr.get("evidence",[])))
-            measured["skill_cli_pr_lifecycle_pass"]=True
+            pr_rag = [e for e in env_pr.get("evidence", [])
+                      if e.get("kind") == "rag_advisory"]
+            pr_rag_data = json.loads(pr_rag[0]["ref"]) if pr_rag else {}
+            check("pr_lifecycle rag hit_count>0",
+                  pr_rag_data.get("hit_count", 0) > 0)
+            check("pr_lifecycle rag untrusted=true",
+                  pr_rag_data.get("untrusted") is True)
+            check("pr_lifecycle rag adopted=false",
+                  pr_rag_data.get("adopted") is False)
+            pr_output_ok = schema_valid(
+                env_pr.get("output"), "skills/pr_lifecycle/schema/output.schema.json")
+            pr_envelope_ok = schema_valid(
+                env_pr, "skills/common/schema/response.envelope.schema.json")
+            pr_core_ok = (
+                env_pr.get("status") == "OK" and
+                env_pr.get("output", {}).get("outcome") == "CREATED" and
+                "PR_CREATED" in env_pr.get("output", {}).get("phases", []) and
+                "create_pull_request" in fixture_calls)
+            check("pr_lifecycle output schema", pr_output_ok)
+            check("pr_lifecycle envelope schema", pr_envelope_ok)
+            check("pr_lifecycle core action executed", pr_core_ok,
+                  "status=%s outcome=%s" % (
+                      env_pr.get("status"), env_pr.get("output", {}).get("outcome")))
+            measured["pr_fixture_core_pass"] = (
+                r.returncode == 0 and pr_output_ok and pr_envelope_ok and pr_core_ok)
+            measured["pr_output_schema_pass"] = pr_output_ok
+            measured["pr_envelope_schema_pass"] = pr_envelope_ok
+            measured["pr_core_action_pass"] = pr_core_ok
     except Exception as e: check("pr_lifecycle CLI", False, str(e))
 
     # RESIDUE
@@ -208,6 +297,11 @@ def main():
     remaining = int(rc) if str(rc).isdigit() else -1
     measured["test_data_residue"]=remaining
     check("test_data_residue=0", remaining==0, "remaining=%d"%remaining)
+    shutil.rmtree("/tmp/rag-sast-ws", ignore_errors=True)
+    temp_residue = int(os.path.exists("/tmp/rag-sast-ws"))
+    measured["temp_dir_residue"] = temp_residue
+    check("temp_dir_residue=0", temp_residue == 0,
+          "remaining=%d" % temp_residue)
 
     # SECRET SCAN
     print("\n=== SECRET SCAN ===")
@@ -236,12 +330,19 @@ def main():
         "repo_scope_isolation":measured.get("repo_scope_isolation",False),
         "skill_cli_sast_pass":measured.get("skill_cli_sast_pass",False),
         "skill_cli_pr_lifecycle_pass":measured.get("skill_cli_pr_lifecycle_pass",False),
-        "envelope_schema_pass":True,
-        "skill_output_schema_pass":True,
-        "core_action_after_rag_pass":True,
+        "envelope_schema_pass":bool(
+            measured.get("sast_envelope_schema_pass") and
+            measured.get("pr_envelope_schema_pass")),
+        "skill_output_schema_pass":bool(
+            measured.get("sast_output_schema_pass") and
+            measured.get("pr_output_schema_pass")),
+        "core_action_after_rag_pass":bool(
+            measured.get("sast_core_action_pass") and
+            measured.get("pr_core_action_pass") and
+            measured.get("pr_fixture_core_pass")),
         "timeout_status":measured.get("timeout_status",""),
         "timeout_reason":measured.get("timeout_reason",""),
-        "timeout_sqlstate":"57014",
+        "timeout_sqlstate":measured.get("timeout_sqlstate", ""),
         "timeout_wall_ms":measured.get("timeout_wall_ms",0),
         "post_timeout_success":measured.get("post_timeout_success",False),
         "active_query_residue":measured.get("active_query_residue",-1),
@@ -250,6 +351,7 @@ def main():
         "transaction_residue":measured.get("transaction_residue",-1),
         "worker_thread_delta":measured.get("worker_thread_delta",-99),
         "test_data_residue":remaining,
+        "temp_dir_residue":measured.get("temp_dir_residue", -1),
         "secret_scan_targets":measured.get("secret_scan_targets",[]),
         "secret_leaks":leaks,
         "all_ok":bool(all_ok),

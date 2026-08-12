@@ -204,6 +204,7 @@ def test_adapter_maps_query_cancel_to_timeout():
             table="knowledge",
         )
     assert raised.value.subcode == core.TIMEOUT_SUB
+    assert raised.value.pgcode == "57014"
 
 
 def test_adapter_rejects_unsafe_identifier():

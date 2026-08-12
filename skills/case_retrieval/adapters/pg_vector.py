@@ -57,7 +57,8 @@ class PgVectorAdapter:
         if isinstance(exc, CaseRetrievalError):
             raise exc
         if self._is_timeout_error(exc):
-            raise CaseRetrievalError(TIMEOUT_SUB, "database timeout")
+            raise CaseRetrievalError(
+                TIMEOUT_SUB, "database timeout", pgcode=exc.pgcode)
         raise CaseRetrievalError(DB_UNAVAILABLE, default)
 
     def _connect(self, deadline=None):
