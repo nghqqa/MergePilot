@@ -187,5 +187,81 @@ class TestCategoryCoverage(unittest.TestCase):
         self.assertFalse(missing, f"missing categories: {missing}")
 
 
+class TestEvidenceSchemaValidation(unittest.TestCase):
+    """Validate the confirmatory evidence JSON structure after execution."""
+
+    @classmethod
+    def setUpClass(cls):
+        """Run the confirmatory benchmark once for all schema tests."""
+        from run_confirmatory import run_confirmatory
+        cls.ev = run_confirmatory()
+
+    def test_quality_gate_details_is_list_of_16(self):
+        qgd = self.ev["quality_gate_details"]
+        self.assertIsInstance(qgd, list)
+        self.assertEqual(len(qgd), 16)
+
+    def test_quality_gate_details_item_fields(self):
+        for q in self.ev["quality_gate_details"]:
+            self.assertIn("name", q)
+            self.assertIn("actual", q)
+            self.assertIn("expected", q)
+            self.assertIn("pass", q)
+
+    def test_checks_is_complete_array(self):
+        checks = self.ev["checks"]
+        self.assertIsInstance(checks, list)
+        # Should have execution + safety + quality checks (not just 2)
+        self.assertGreater(len(checks), 10)
+
+    def test_passed_plus_failed_equals_checks_length(self):
+        checks = self.ev["checks"]
+        passed = self.ev["passed"]
+        failed = self.ev["failed"]
+        self.assertEqual(passed + failed, len(checks))
+
+    def test_confirmatory_all_ok_consistency(self):
+        ev = self.ev
+        expected = (ev["execution_all_ok"]
+                    and ev["safety_gate_pass"]
+                    and ev["quality_gate_pass"])
+        self.assertEqual(ev["confirmatory_all_ok"], expected)
+
+    def test_execution_checks_present(self):
+        self.assertIsInstance(self.ev["execution_checks"], list)
+        self.assertGreater(len(self.ev["execution_checks"]), 0)
+        for c in self.ev["execution_checks"]:
+            self.assertIn("name", c)
+            self.assertIn("ok", c)
+            self.assertIn("actual", c)
+            self.assertIn("expected", c)
+
+    def test_safety_checks_present(self):
+        self.assertIsInstance(self.ev["safety_checks"], list)
+        self.assertGreater(len(self.ev["safety_checks"]), 0)
+        for c in self.ev["safety_checks"]:
+            self.assertIn("name", c)
+            self.assertIn("ok", c)
+            self.assertIn("actual", c)
+            self.assertIn("expected", c)
+
+    def test_runtime_invariants_preserved(self):
+        self.assertFalse(self.ev["runtime_consumes_rag_context"])
+        self.assertEqual(self.ev["workflow_utility_status"],
+                         "NOT_MEASURABLE_WITH_CURRENT_RUNTIME")
+        self.assertEqual(self.ev["verifier_execution_status"], "NOT_MEASURED")
+        self.assertIsNone(self.ev["verifier_executed_rate"])
+        self.assertIsNone(self.ev["verifier_preserved"])
+        self.assertEqual(self.ev["database_residue_status"], "NOT_APPLICABLE")
+
+    def test_gold_and_secret_leaks_zero(self):
+        self.assertEqual(self.ev["gold_label_leaks"], 0)
+        self.assertEqual(self.ev["secret_leaks"], 0)
+
+    def test_workflow_utility_metrics_all_null(self):
+        for k, v in self.ev["workflow_utility_metrics"].items():
+            self.assertIsNone(v, f"{k} should be null")
+
+
 if __name__ == "__main__":
     unittest.main()
