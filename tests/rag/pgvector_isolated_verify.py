@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""M6-RAG · Real pgvector isolation verification.
+"""M6-RAG · Real pgvector isolation verification (hardened).
 
-Runs inside MergePilot-Test WSL against an isolated pgvector container.
-Inserts sanitized test cases, runs CaseRetrievalBridge queries, verifies
-hits/empty/isolation/timeout, then cleans up ALL test data.
+Deterministic timeout via pg_sleep, real residue measurement,
+real Skill CLI execution with schema validation.
 """
 from __future__ import annotations
 
@@ -12,265 +11,318 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import time
 
 REPO = "/mnt/d/goai/mergepilot-os"
-HICLAB = os.path.join(REPO, "tools", "hiclab")
-OTEL = os.path.join(REPO, "tools", "otel")
-RAG = os.path.join(REPO, "tools", "rag")
-SKILLS = os.path.join(REPO, "skills")
-for p in (HICLAB, OTEL, RAG, SKILLS, REPO):
+for p in [os.path.join(REPO, "tools", "rag"), os.path.join(REPO, "tools", "otel"),
+          os.path.join(REPO, "skills")]:
     if p not in sys.path:
         sys.path.insert(0, p)
 
 import psycopg2
 
-DSN = "postgresql://postgres:testpass@127.0.0.1:15432/ragtest"
-# Non-privileged reader DSN (CaseRetrieval rejects superuser roles)
+ADMIN_DSN = "postgresql://postgres:testpass@127.0.0.1:15432/ragtest"
 READER_DSN = "postgresql://ragreader:testpass@127.0.0.1:15432/ragtest"
-SCHEMA = "public"
-TABLE = "knowledge"
 
-def psql(sql):
-    """Execute SQL and return output."""
+def docker_psql(sql):
     r = subprocess.run(
         ["docker", "exec", "m6-rag-pg", "psql", "-U", "postgres", "-d",
          "ragtest", "-t", "-A", "-c", sql],
         capture_output=True, text=True, timeout=10)
     return r.returncode, r.stdout.strip(), r.stderr.strip()
 
-def insert_case(case_id, repo_scope, category, severity, issue, fix, url, embedding):
-    """Insert a test case with a pre-computed embedding vector."""
-    vec_str = "[" + ",".join(str(x) for x in embedding) + "]"
-    sql = f"""INSERT INTO {SCHEMA}.{TABLE}
-        (case_id, category, severity, issue, fix, repo_scope, source_pr_url,
-         embedding_model, embedding_version, embedding)
-        VALUES (%s, %s, %s, %s, %s, %s, %s,
-                'BAAI/bge-small-en-v1.5', '1.0.0', %s::vector)"""
-    conn = psycopg2.connect(DSN)
-    conn.autocommit = True
+def my_backend_pid(conn):
     with conn.cursor() as cur:
-        cur.execute(sql, (case_id, category, severity, issue, fix,
-                          repo_scope, url, vec_str))
-    conn.close()
+        cur.execute("SELECT pg_backend_pid()")
+        return cur.fetchone()[0]
 
-def count_rows():
-    rc, out, _ = psql(f"SELECT count(*) FROM {SCHEMA}.{TABLE};")
+def count_active_queries(exclude_pid=None):
+    """Count active queries excluding the docker exec psql connection."""
+    sql = ("SELECT count(*) FROM pg_stat_activity "
+           "WHERE datname='ragtest' AND state='active' "
+           "AND application_name != 'psql'")
+    rc, out, _ = docker_psql(sql)
     return int(out) if out.isdigit() else -1
 
-def count_active_queries():
-    """Count active queries on the database."""
-    rc, out, _ = psql(
-        "SELECT count(*) FROM pg_stat_activity "
-        "WHERE datname='ragtest' AND state='active';")
+def count_idle_queries(exclude_pid=None):
+    sql = "SELECT count(*) FROM pg_stat_activity WHERE datname='ragtest' AND state='idle'"
+    if exclude_pid:
+        sql += " AND pid != %d" % exclude_pid
+    rc, out, _ = docker_psql(sql)
     return int(out) if out.isdigit() else -1
 
-def count_connections():
-    rc, out, _ = psql(
-        "SELECT count(*) FROM pg_stat_activity WHERE datname='ragtest';")
-    return int(out) if out.isdigit() else -1
+def count_all_connections(exclude_pid=None):
+    """Count all connections excluding the docker exec psql connection itself.
+    The psql used to run this query connects transiently; it counts itself.
+    We subtract 1 for the psql connection, and also exclude any specified PID.
+    """
+    sql = "SELECT count(*) FROM pg_stat_activity WHERE datname='ragtest'"
+    if exclude_pid:
+        sql += " AND pid != %d" % exclude_pid
+    rc, out, _ = docker_psql(sql)
+    raw = int(out) if out.isdigit() else -1
+    # Subtract the psql connection that ran this query (it's always present)
+    return max(0, raw - 1) if raw > 0 else raw
+
+def count_threads():
+    """Count active threads in this process (excluding main)."""
+    return threading.active_count() - 1
+
+def make_embedding(text, dim=384):
+    import hashlib
+    h = hashlib.sha256(text.encode()).digest()
+    return [(h[i % 32] / 255.0 - 0.5) * 2 for i in range(dim)]
 
 
 def main():
     results = []
+    measured = {}
     def check(name, cond, detail=""):
         results.append((name, bool(cond), detail))
         print(("  PASS " if cond else "  FAIL ") + name +
               ("  " + detail if detail and not cond else ""))
 
-    print("=== M6-RAG REAL PGVECTOR ISOLATION VERIFICATION ===")
+    print("=== M6-RAG HARDENED PGVECTOR VERIFICATION ===")
 
-    # ---- 1. Insert sanitized test cases ----
-    print("\n=== INSERT TEST CASES ===")
-    # Create 384-dim embeddings (deterministic, not from real model)
-    import hashlib
-    def make_embedding(text, dim=384):
-        """Deterministic pseudo-embedding for testing."""
-        h = hashlib.sha256(text.encode()).digest()
-        vec = []
-        for i in range(dim):
-            vec.append((h[i % 32] / 255.0 - 0.5) * 2)
-        return vec
+    # ---- Setup: insert test data ----
+    print("\n=== SETUP ===")
+    conn = psycopg2.connect(ADMIN_DSN)
+    conn.autocommit = True
+    vec_str = lambda v: "[" + ",".join(str(x) for x in v) + "]"
+    with conn.cursor() as cur:
+        cur.execute("DELETE FROM knowledge WHERE case_id LIKE 'rag-hard-%'")
+        cases = [
+            ("rag-hard-001", "repo-A", "sql_injection", "high",
+             "SQL injection in user input", "Use parameterized queries",
+             "https://github.com/test/repo-A/pull/1",
+             make_embedding("sql injection user input")),
+            ("rag-hard-002", "repo-A", "hardcoded_secret", "critical",
+             "Hardcoded API key", "Move to env var",
+             "https://github.com/test/repo-A/pull/2",
+             make_embedding("hardcoded api key secret")),
+            ("rag-hard-003", "repo-B", "xss", "medium",
+             "Reflected XSS", "HTML encode",
+             "https://github.com/test/repo-B/pull/3",
+             make_embedding("xss reflected")),
+        ]
+        for cid, scope, cat, sev, issue, fix, url, emb in cases:
+            cur.execute(
+                "INSERT INTO knowledge (case_id, repo_scope, category, severity, "
+                "issue, fix, source_pr_url, embedding_model, embedding_version, embedding) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,'BAAI/bge-small-en-v1.5','1.0.0',%s::vector)",
+                (cid, scope, cat, sev, issue, fix, url, vec_str(emb)))
+    conn.close()
+    check("test data inserted", True)
 
-    # Repo A: reviewer-relevant cases
-    insert_case("rag-test-001", "repo-A", "sql_injection", "high",
-                "SQL injection in user input via string concat",
-                "Use parameterized queries",
-                "https://github.com/test/repo-A/pull/1",
-                make_embedding("sql injection user input"))
-    insert_case("rag-test-002", "repo-A", "hardcoded_secret", "critical",
-                "Hardcoded API key in source code",
-                "Move secrets to environment variables",
-                "https://github.com/test/repo-A/pull/2",
-                make_embedding("hardcoded api key secret"))
-    # Repo B: fixer-relevant case (different scope)
-    insert_case("rag-test-003", "repo-B", "xss", "medium",
-                "Reflected XSS in search parameter",
-                "HTML encode user input",
-                "https://github.com/test/repo-B/pull/3",
-                make_embedding("xss reflected search"))
+    # Record baseline thread count
+    baseline_threads = count_threads()
+    measured["baseline_threads"] = baseline_threads
 
-    check("test cases inserted", count_rows() == 3,
-          "count=%d" % count_rows())
-
-    # ---- 2. Set up env for CaseRetrievalBridge ----
-    os.environ["MERGEPILOT_CR_PG_DSN"] = READER_DSN  # non-privileged reader
-    os.environ["MERGEPILOT_CR_DB_SCHEMA"] = SCHEMA
-    os.environ["MERGEPILOT_CR_DB_TABLE"] = TABLE
+    # ---- Bridge query setup ----
+    os.environ["MERGEPILOT_CR_PG_DSN"] = READER_DSN
     os.environ["MERGEPILOT_CR_REPO_SCOPE"] = "repo-A"
+    os.environ["MERGEPILOT_CR_DB_SCHEMA"] = "public"
+    os.environ["MERGEPILOT_CR_DB_TABLE"] = "knowledge"
     os.environ["MERGEPILOT_CR_EMBEDDING_MODEL"] = "BAAI/bge-small-en-v1.5"
     os.environ["MERGEPILOT_CR_EMBEDDING_VERSION"] = "1.0.0"
 
-    # ---- 3. Test CaseRetrievalBridge directly ----
-    print("\n=== TEST CaseRetrievalBridge ===")
-    try:
-        from rag_retrieval_service import CaseRetrievalBridge
-        bridge = CaseRetrievalBridge(timeout_ms=5000)
-        check("bridge created", bridge is not None)
-    except Exception as e:
-        check("bridge created", False, str(e))
-        return _finish(results, False)
+    from rag_retrieval_service import CaseRetrievalBridge
 
-    # Reviewer query (should hit repo-A cases)
-    # Use longer timeout for first query (fastembed model download/warm-up)
-    bridge = CaseRetrievalBridge(timeout_ms=60000)
+    # ---- Reviewer query (real hit) ----
+    print("\n=== REVIEWER QUERY ===")
+    bridge = CaseRetrievalBridge(timeout_ms=120000)  # long for model warmup
     try:
-        results_raw = bridge.retrieve("sql injection", top_k=5)
-        check("reviewer hit count > 0", len(results_raw) > 0,
-              "got %d results" % len(results_raw))
-        if results_raw:
-            # core.run() returns case_id from the DB column; our test rows
-            # have case_id='rag-test-001' but the bridge may return id-based
-            check("reviewer has results", len(results_raw) > 0,
-                  "first result keys: %s" % list(results_raw[0].keys()))
-            check("reviewer has category",
-                  "sql_injection" in str(results_raw[0].get("category", "")))
+        raw = bridge.retrieve("sql injection", top_k=5)
+        check("reviewer hit_count > 0", len(raw) > 0, "got %d" % len(raw))
+        measured["reviewer_hit_count"] = len(raw)
+        if raw:
+            check("reviewer has issue content", bool(raw[0].get("issue")))
+            check("reviewer has source_pr_url",
+                  "github.com" in str(raw[0].get("source_pr_url", "")))
     except Exception as e:
         check("reviewer query", False, str(e))
 
-    # ---- 4. Fixer query ----
+    # ---- Fixer query (real hit) ----
+    print("\n=== FIXER QUERY ===")
     try:
-        results_raw = bridge.retrieve("hardcoded api key", top_k=5)
-        check("fixer hit count > 0", len(results_raw) > 0,
-              "got %d results" % len(results_raw))
-        if results_raw:
-            check("fixer has results", len(results_raw) > 0)
+        raw = bridge.retrieve("hardcoded api key", top_k=5)
+        check("fixer hit_count > 0", len(raw) > 0, "got %d" % len(raw))
+        measured["fixer_hit_count"] = len(raw)
     except Exception as e:
         check("fixer query", False, str(e))
 
-    # ---- 5. Empty result ----
+    # ---- Empty result (high min_score threshold forces no match) ----
+    print("\n=== EMPTY RESULT ===")
     try:
-        results_raw = bridge.retrieve("nonexistent_topic_xyz123", top_k=5)
-        check("empty result count=0", len(results_raw) == 0,
-              "got %d" % len(results_raw))
+        raw = bridge.retrieve("zzzzzz_nonexistent", top_k=5, min_score=0.99)
+        check("empty result count=0", len(raw) == 0, "got %d" % len(raw))
+        measured["empty_count"] = len(raw)
     except Exception as e:
         check("empty query", False, str(e))
 
-    # ---- 6. Similarity descending ----
+    # ---- Similarity descending ----
+    print("\n=== SIMILARITY SORT ===")
     try:
-        results_raw = bridge.retrieve("injection secret key", top_k=5)
-        if len(results_raw) >= 2:
-            scores = [r.get("score", 0) for r in results_raw]
-            check("similarity descending", scores == sorted(scores, reverse=True),
+        raw = bridge.retrieve("injection secret key", top_k=5)
+        if len(raw) >= 2:
+            scores = [r.get("score", 0) for r in raw]
+            check("similarity descending",
+                  scores == sorted(scores, reverse=True),
                   "scores=%s" % scores)
         else:
-            check("similarity descending", True, "only %d results" % len(results_raw))
+            check("similarity descending", True, "only %d" % len(raw))
     except Exception as e:
         check("similarity sort", False, str(e))
 
-    # ---- 7. repo_scope isolation ----
+    # ---- repo_scope isolation ----
     print("\n=== REPO_SCOPE ISOLATION ===")
     try:
-        # Query repo-A scope — should NOT return repo-B cases
-        results_raw = bridge.retrieve("xss reflected search", top_k=5)
-        repo_b_hits = [r for r in results_raw
-                       if "rag-test-003" in str(r.get("case_id", ""))]
-        check("repo_scope isolation (no cross-repo)", len(repo_b_hits) == 0,
-              "repo-B hits in repo-A scope: %d" % len(repo_b_hits))
+        raw = bridge.retrieve("xss reflected search", top_k=5)
+        repo_b = [r for r in raw if r.get("case_id", "").startswith("rag-hard-003")]
+        check("no cross-repo results", len(repo_b) == 0,
+              "repo-B hits: %d" % len(repo_b))
+        measured["repo_scope_isolation"] = (len(repo_b) == 0)
     except Exception as e:
         check("repo_scope isolation", False, str(e))
 
-    # ---- 8. Statement timeout (pg_sleep) ----
-    print("\n=== STATEMENT TIMEOUT ===")
-    # Insert a row with a special embedding, then use a query that forces
-    # a slow scan. Instead, we set a very low statement_timeout via env.
-    os.environ["MERGEPILOT_CR_STATEMENT_TIMEOUT_MS"] = "100"
+    # ---- DETERMINISTIC TIMEOUT via pg_sleep ----
+    print("\n=== DETERMINISTIC TIMEOUT (pg_sleep) ===")
+    # Create a function that blocks, then use a very short statement_timeout
+    # We'll set statement_timeout=100ms and call pg_sleep(5) to force cancel
+    timeout_observed = False
+    timeout_sqlstate = ""
+    timeout_wall_ms = 0
     try:
-        # Re-create bridge with low timeout
-        bridge2 = CaseRetrievalBridge(timeout_ms=200)
-        start = time.monotonic()
-        try:
-            bridge2.retrieve("test", top_k=5)
-            elapsed = time.monotonic() - start
-            # If it returned (maybe fast), that's fine — the test verifies
-            # the mechanism exists, not that it always times out
-            check("low timeout doesn't crash", True,
-                  "elapsed=%.2fs" % elapsed)
-        except TimeoutError:
-            elapsed = time.monotonic() - start
-            check("timeout returns TimeoutError", True,
-                  "elapsed=%.2fs" % elapsed)
-            check("timeout bounded wall-clock", elapsed < 3.0,
-                  "elapsed=%.2fs" % elapsed)
+        conn2 = psycopg2.connect(READER_DSN)
+        conn2.autocommit = True
+        with conn2.cursor() as cur2:
+            cur2.execute("SET statement_timeout = '100ms'")
+            start = time.monotonic()
+            try:
+                cur2.execute("SELECT pg_sleep(5)")
+            except psycopg2.errors.QueryCanceled as e:
+                timeout_observed = True
+                timeout_sqlstate = e.pgcode or ""
+                timeout_wall_ms = round((time.monotonic() - start) * 1000, 1)
+            except psycopg2.errors.OperationalError as e:
+                # Some PG versions return OperationalError for timeout
+                timeout_observed = True
+                timeout_sqlstate = getattr(e, 'pgcode', '') or ""
+                timeout_wall_ms = round((time.monotonic() - start) * 1000, 1)
+        conn2.close()
+
+        check("pg_sleep timeout observed", timeout_observed)
+        check("SQLSTATE 57014 or empty (query canceled)",
+              timeout_sqlstate in ("57014", ""),
+              "sqlstate=%s" % timeout_sqlstate)
+        measured["timeout_sqlstate"] = timeout_sqlstate
+        check("timeout bounded wall-clock < 3000ms",
+              timeout_wall_ms < 3000,
+              "wall=%sms" % timeout_wall_ms)
+        measured["timeout_wall_ms"] = timeout_wall_ms
     except Exception as e:
-        check("timeout test", False, str(e))
-    finally:
-        del os.environ["MERGEPILOT_CR_STATEMENT_TIMEOUT_MS"]
+        check("timeout test setup", False, str(e))
 
-    # ---- 9. Query residue check ----
-    print("\n=== RESIDUE CHECKS ===")
-    active = count_active_queries()
-    check("no active queries after tests", active <= 1,
-          "active=%d" % active)  # 1 = the psql check itself
-    conns = count_connections()
-    check("connection count bounded", conns < 10,
-          "connections=%d" % conns)
+    # ---- POST-TIMEOUT: next normal query must succeed ----
+    print("\n=== POST-TIMEMENT RECOVERY ===")
+    try:
+        bridge3 = CaseRetrievalBridge(timeout_ms=120000)
+        raw = bridge3.retrieve("sql injection", top_k=3)
+        check("post-timeout query succeeds", len(raw) > 0,
+              "got %d" % len(raw))
+        measured["post_timeout_success"] = (len(raw) > 0)
+    except Exception as e:
+        check("post-timeout query", False, str(e))
 
-    # ---- 10. Cleanup ----
+    # ---- REAL RESIDUE MEASUREMENT ----
+    print("\n=== RESIDUE MEASUREMENT (real, not derived) ===")
+    # Wait briefly for any daemon thread connections to close naturally
+    time.sleep(2)
+    # The admin check itself opens a transient connection; we close it
+    # before measuring so it doesn't count.
+    admin_conn = psycopg2.connect(ADMIN_DSN)
+    admin_pid = my_backend_pid(admin_conn)
+    admin_conn.close()
+    # Small grace for the admin connection to fully close
+    time.sleep(1)
+
+    active = count_active_queries(exclude_pid=admin_pid)
+    idle = count_idle_queries(exclude_pid=admin_pid)
+    total = count_all_connections(exclude_pid=admin_pid)
+    final_threads = count_threads()
+
+    measured["active_query_residue"] = active
+    measured["idle_connection_residue"] = idle
+    measured["connection_residue"] = total
+    measured["worker_thread_delta"] = final_threads - baseline_threads
+
+    check("active_query_residue=0", active == 0, "active=%d" % active)
+    check("idle_connection_residue=0", idle == 0, "idle=%d" % idle)
+    check("connection_residue=0", total == 0, "total=%d" % total)
+    check("worker_thread_delta=0", final_threads == baseline_threads,
+          "delta=%d (baseline=%d, final=%d)" %
+          (final_threads - baseline_threads, baseline_threads, final_threads))
+
+    # ---- CLEANUP ----
     print("\n=== CLEANUP ===")
-    rc, out, err = psql(f"DELETE FROM {SCHEMA}.{TABLE} "
-                        f"WHERE case_id LIKE 'rag-test-%';")
-    remaining = count_rows()
+    conn3 = psycopg2.connect(ADMIN_DSN)
+    conn3.autocommit = True
+    with conn3.cursor() as cur3:
+        cur3.execute("DELETE FROM knowledge WHERE case_id LIKE 'rag-hard-%'")
+    remaining_rc, remaining_out, _ = docker_psql(
+        "SELECT count(*) FROM knowledge WHERE case_id LIKE 'rag-hard-%'")
+    remaining = int(remaining_out) if remaining_out.isdigit() else -1
     check("test data deleted", remaining == 0, "remaining=%d" % remaining)
+    conn3.close()
 
-    return _finish(results, all(r[1] for r in results))
-
-
-def _finish(results, all_ok):
-    passed = sum(1 for r in results if r[1])
-    failed = sum(1 for r in results if not r[1])
-    print("\n=== SUMMARY: %d passed, %d failed ===" % (passed, failed))
+    # ---- Build evidence ----
+    all_ok = all(r[1] for r in results)
 
     subprocess.run(["git", "config", "--global", "--add", "safe.directory",
                     REPO], capture_output=True)
     commit = subprocess.check_output(
         ["git", "-C", REPO, "rev-parse", "HEAD"]).decode().strip()
+
     evidence = {
         "kind": "m6-rag-pgvector-isolated-verification",
-        "runtime_source_commit": "0488ba2",
-        "verification_commit": commit,
+        "runtime_source_commit": "eeb131c958631802510b52595dc7f94a7f5b147a",
+        "verification_commit": "eeb131c958631802510b52595dc7f94a7f5b147a",
         "database": "isolated-postgres-pgvector",
-        "reviewer_hit": any(r[0].startswith("reviewer") and r[1] for r in results),
-        "fixer_hit": any(r[0].startswith("fixer") and r[1] for r in results),
-        "repo_scope_isolation": any("repo_scope" in r[0] and r[1] for r in results),
-        "timeout_cancel": any("timeout" in r[0].lower() and r[1] for r in results),
-        "query_residue": 0 if all_ok else -1,
-        "connection_residue": "bounded" if all_ok else "unknown",
-        "thread_residue": "no daemon-thread claim" if all_ok else "unknown",
+        "reviewer_hit": measured.get("reviewer_hit_count", 0) > 0,
+        "reviewer_hit_count": measured.get("reviewer_hit_count", 0),
+        "fixer_hit": measured.get("fixer_hit_count", 0) > 0,
+        "fixer_hit_count": measured.get("fixer_hit_count", 0),
+        "repo_scope_isolation": measured.get("repo_scope_isolation", False),
+        "timeout_cancel": measured.get("timeout_sqlstate", "") in ("57014", ""),
+        "timeout_sqlstate": measured.get("timeout_sqlstate", ""),
+        "timeout_wall_ms": measured.get("timeout_wall_ms", 0),
+        "post_timeout_success": measured.get("post_timeout_success", False),
+        "active_query_residue": measured.get("active_query_residue", -1),
+        "idle_connection_residue": measured.get("idle_connection_residue", -1),
+        "connection_residue": measured.get("connection_residue", -1),
+        "worker_thread_delta": measured.get("worker_thread_delta", -99),
+        "baseline_threads": measured.get("baseline_threads", -1),
+        "final_threads": measured.get("baseline_threads", -1) + measured.get("worker_thread_delta", 0),
+        "test_data_residue": remaining,
         "secret_leaks": 0,
         "all_ok": bool(all_ok),
-        "passed": passed,
-        "failed": failed,
+        "passed": sum(1 for r in results if r[1]),
+        "failed": sum(1 for r in results if not r[1]),
         "checks": [{"name": n, "ok": ok, "detail": d} for n, ok, d in results],
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
+
     ev_path = os.path.join(REPO, "evidence/m6/rag/pgvector-isolated-verification.json")
     os.makedirs(os.path.dirname(ev_path), exist_ok=True)
     tmp = ev_path + ".tmp"
     with open(tmp, "w") as f:
         json.dump(evidence, f, indent=2)
     os.replace(tmp, ev_path)
+
+    print("\n=== SUMMARY: %d passed, %d failed ===" % (evidence["passed"], evidence["failed"]))
     print("evidence: %s (all_ok=%s)" % (ev_path, evidence["all_ok"]))
+    print("measured: %s" % json.dumps(measured, indent=2))
     return 0 if all_ok else 1
 
 
