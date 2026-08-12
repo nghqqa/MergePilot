@@ -128,9 +128,115 @@
   "deterministic_replay_match": true,
   "v2_separation_verified": true,
   "development_results_not_merged": true,
-  "execution_all_ok": true,
-  "safety_gate_pass": true,
-  "quality_gate_pass": true,
+  "execution_checks": [
+    {
+      "name": "baseline_arm_completed",
+      "ok": true,
+      "actual": 25,
+      "expected": 25,
+      "detail": ""
+    },
+    {
+      "name": "rag_arm_run1_completed",
+      "ok": true,
+      "actual": 25,
+      "expected": 25,
+      "detail": ""
+    },
+    {
+      "name": "rag_arm_run2_completed",
+      "ok": true,
+      "actual": 25,
+      "expected": 25,
+      "detail": ""
+    },
+    {
+      "name": "total_arm_executions>=50",
+      "ok": true,
+      "actual": 50,
+      "expected": 50,
+      "detail": ""
+    },
+    {
+      "name": "positive_retrieval_case_count==15",
+      "ok": true,
+      "actual": 15,
+      "expected": 15,
+      "detail": ""
+    },
+    {
+      "name": "abstention_case_count==5",
+      "ok": true,
+      "actual": 5,
+      "expected": 5,
+      "detail": ""
+    },
+    {
+      "name": "fault_injection_case_count==5",
+      "ok": true,
+      "actual": 5,
+      "expected": 5,
+      "detail": ""
+    },
+    {
+      "name": "advisory_record_schema_valid_rate==1.0",
+      "ok": true,
+      "actual": 1.0,
+      "expected": 1.0,
+      "detail": ""
+    },
+    {
+      "name": "api_token_usage_is_null",
+      "ok": true,
+      "actual": null,
+      "expected": null,
+      "detail": ""
+    },
+    {
+      "name": "deterministic_replay_match",
+      "ok": true,
+      "actual": true,
+      "expected": true,
+      "detail": ""
+    }
+  ],
+  "safety_checks": [
+    {
+      "name": "v2_separation_clean",
+      "ok": true,
+      "actual": 0,
+      "expected": 0,
+      "detail": "[]"
+    },
+    {
+      "name": "gold_label_leaks=0",
+      "ok": true,
+      "actual": 0,
+      "expected": 0,
+      "detail": ""
+    },
+    {
+      "name": "secret_leaks=0",
+      "ok": true,
+      "actual": 0,
+      "expected": 0,
+      "detail": ""
+    },
+    {
+      "name": "worker_thread_delta=0",
+      "ok": true,
+      "actual": 0,
+      "expected": 0,
+      "detail": ""
+    },
+    {
+      "name": "temp_dir_residue=0",
+      "ok": true,
+      "actual": 0,
+      "expected": 0,
+      "detail": ""
+    }
+  ],
   "quality_gate_details": [
     {
       "name": "hit_at_1",
@@ -229,13 +335,66 @@
       "actual": 0
     }
   ],
+  "execution_all_ok": true,
+  "safety_gate_pass": true,
+  "quality_gate_pass": true,
   "confirmatory_all_ok": true,
   "development_all_ok": true,
   "all_ok_scope": "confirmatory_execution_safety_and_quality",
-  "runner_source_commit": "7f5c64ad5e55b86089584f88dea9355f3cc5fb84",
-  "source_commit": "7f5c64ad5e55b86089584f88dea9355f3cc5fb84",
-  "verification_commit": "7f5c64ad5e55b86089584f88dea9355f3cc5fb84",
+  "runner_source_commit": "efba869ad9a919e9309af31f84efbb26d2928ab3",
+  "source_commit": "efba869ad9a919e9309af31f84efbb26d2928ab3",
+  "verification_commit": "efba869ad9a919e9309af31f84efbb26d2928ab3",
   "checks": [
+    {
+      "name": "baseline_arm_completed",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "rag_arm_run1_completed",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "rag_arm_run2_completed",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "total_arm_executions>=50",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "positive_retrieval_case_count==15",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "abstention_case_count==5",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "fault_injection_case_count==5",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "advisory_record_schema_valid_rate==1.0",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "api_token_usage_is_null",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "deterministic_replay_match",
+      "ok": true,
+      "detail": ""
+    },
     {
       "name": "v2_separation_clean",
       "ok": true,
@@ -245,9 +404,104 @@
       "name": "gold_label_leaks=0",
       "ok": true,
       "detail": ""
+    },
+    {
+      "name": "secret_leaks=0",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "worker_thread_delta=0",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "temp_dir_residue=0",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "quality:hit_at_1",
+      "ok": true,
+      "detail": "expected=0.7 actual=1.0"
+    },
+    {
+      "name": "quality:hit_at_3",
+      "ok": true,
+      "detail": "expected=0.8 actual=1.0"
+    },
+    {
+      "name": "quality:mrr",
+      "ok": true,
+      "detail": "expected=0.75 actual=1.0"
+    },
+    {
+      "name": "quality:top1_category_match",
+      "ok": true,
+      "detail": "expected=0.7 actual=1.0"
+    },
+    {
+      "name": "quality:top1_severity_match",
+      "ok": true,
+      "detail": "expected=0.7 actual=1.0"
+    },
+    {
+      "name": "quality:abstention_accuracy",
+      "ok": true,
+      "detail": "expected=0.6 actual=0.6"
+    },
+    {
+      "name": "quality:scope_leak_count",
+      "ok": true,
+      "detail": "expected=0 actual=0"
+    },
+    {
+      "name": "quality:timeout_correct_rate",
+      "ok": true,
+      "detail": "expected=1.0 actual=1.0"
+    },
+    {
+      "name": "quality:adapter_down_rate",
+      "ok": true,
+      "detail": "expected=1.0 actual=1.0"
+    },
+    {
+      "name": "quality:malformed_rate",
+      "ok": true,
+      "detail": "expected=1.0 actual=1.0"
+    },
+    {
+      "name": "quality:fault_fallback_accuracy",
+      "ok": true,
+      "detail": "expected=1.0 actual=1.0"
+    },
+    {
+      "name": "quality:deterministic_replay",
+      "ok": true,
+      "detail": "expected=True actual=True"
+    },
+    {
+      "name": "quality:gold_label_leaks",
+      "ok": true,
+      "detail": "expected=0 actual=0"
+    },
+    {
+      "name": "quality:secret_leaks",
+      "ok": true,
+      "detail": "expected=0 actual=0"
+    },
+    {
+      "name": "quality:worker_thread_delta",
+      "ok": true,
+      "detail": "expected=0 actual=0"
+    },
+    {
+      "name": "quality:temp_dir_residue",
+      "ok": true,
+      "detail": "expected=0 actual=0"
     }
   ],
-  "passed": 2,
+  "passed": 31,
   "failed": 0,
-  "timestamp": "2026-08-12T14:03:30Z"
+  "timestamp": "2026-08-12T14:12:09Z"
 }
