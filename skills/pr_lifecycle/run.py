@@ -68,6 +68,57 @@ def handle(ctx):
     if problem:
         raise errors.InvalidInput(problem)
 
+    # M6-RAG: Fix Planner advisory retrieval (fail-closed, never blocks fix)
+    # RAG provenance goes into handler return's evidence[] list, which
+    # _result_to_envelope passes through to the final response envelope.
+    rag_status = "disabled"
+    rag_fallback_reason = ""
+    rag_hit_count = 0
+    rag_case_items = []
+    try:
+        _rag_dir = os.path.join(os.path.dirname(os.path.dirname(
+            os.path.dirname(os.path.abspath(__file__)))), "tools", "rag")
+        if _rag_dir not in sys.path:
+            sys.path.insert(0, _rag_dir)
+        from rag_retrieval_service import query_for_fixer, create_adapter_from_env
+        trace_id = ctx.get("trace_id", "")
+        run_id = os.environ.get("MERGEPILOT_RUN_ID", "")
+        action = inp.get("action", "")
+        changes = inp.get("changes", [])
+        finding_summary = " ".join(
+            ch.get("path", "").rsplit("/", 1)[-1] for ch in changes[:5]
+        )[:200]
+        query_text = f"{action} {finding_summary}".strip()[:200]
+        if query_text:
+            adapter = create_adapter_from_env()
+            resp = query_for_fixer(query_text, run_id, trace_id,
+                                   adapter=adapter, timeout_ms=3000)
+            rag_status = resp.status
+            rag_fallback_reason = resp.fallback_reason
+            rag_hit_count = resp.hit_count
+            rag_case_items = [
+                {"case_id": r.case_id, "similarity": r.similarity,
+                 "citation_url": r.citation_url, "adopted": r.adopted,
+                 "untrusted": r.untrusted}
+                for r in resp.results
+            ]
+    except Exception:
+        rag_status = "retrieval_unavailable"
+        rag_fallback_reason = "exception"
+
+    # Always produce at least one rag_advisory summary evidence item
+    rag_evidence_items = [{
+        "kind": "rag_advisory",
+        "ref": json.dumps({
+            "status": rag_status,
+            "fallback_reason": rag_fallback_reason,
+            "hit_count": rag_hit_count,
+            "adopted": False,
+            "untrusted": True,
+            "cases": rag_case_items,
+        })
+    }]
+
     adapter = _ADAPTER_FACTORY() if _ADAPTER_FACTORY is not None else None
     try:
         output = core.run(inp, adapter=adapter, deadline=ctx.get("deadline"))
@@ -78,6 +129,7 @@ def handle(ctx):
             "message": exc.subcode,
             "retryable": exc.retryable,
             "side_effects": exc.effects,
+            "evidence": rag_evidence_items,
         }
         if exc.output:
             problem = _schema_error(_validator(_OUTPUT_SCHEMA_PATH, "output"), exc.output)
@@ -87,6 +139,7 @@ def handle(ctx):
                     "error_code": errors.INTERNAL_ERROR,
                     "message": core.OUTPUT_SCHEMA_INVALID,
                     "side_effects": exc.effects,
+                    "evidence": rag_evidence_items,
                 }
             result["output"] = exc.output
         return result
@@ -99,8 +152,10 @@ def handle(ctx):
             "error_code": errors.INTERNAL_ERROR,
             "message": core.OUTPUT_SCHEMA_INVALID,
             "side_effects": side_effects,
+            "evidence": rag_evidence_items,
         }
-    return {"status": "OK", "output": output, "side_effects": side_effects}
+    return {"status": "OK", "output": output, "side_effects": side_effects,
+            "evidence": rag_evidence_items}
 
 
 def _safe_id(req, key, default):

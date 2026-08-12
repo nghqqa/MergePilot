@@ -1,0 +1,250 @@
+{
+  "kind": "m6-rag-pgvector-isolated-verification",
+  "runtime_source_commit": "0fdbde946e4ccb02931ee8040610dfeeb9aa5ca1",
+  "verification_commit": "0fdbde946e4ccb02931ee8040610dfeeb9aa5ca1",
+  "database": "isolated-postgres-pgvector",
+  "reviewer_hit": true,
+  "reviewer_hit_count": 1,
+  "fixer_hit": true,
+  "fixer_hit_count": 2,
+  "repo_scope_isolation": true,
+  "skill_cli_sast_pass": true,
+  "skill_cli_pr_lifecycle_pass": true,
+  "envelope_schema_pass": true,
+  "skill_output_schema_pass": true,
+  "core_action_after_rag_pass": true,
+  "timeout_status": "retrieval_unavailable",
+  "timeout_reason": "timeout",
+  "timeout_sqlstate": "57014",
+  "timeout_wall_ms": 1308.9,
+  "post_timeout_success": true,
+  "active_query_residue": 0,
+  "idle_connection_residue": 0,
+  "connection_residue": 0,
+  "transaction_residue": 0,
+  "worker_thread_delta": 0,
+  "test_data_residue": 0,
+  "temp_dir_residue": 0,
+  "secret_scan_targets": [
+    "envelope_sast",
+    "envelope_pr",
+    "evidence"
+  ],
+  "secret_leaks": 0,
+  "all_ok": true,
+  "passed": 42,
+  "failed": 0,
+  "checks": [
+    {
+      "name": "test data inserted",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "reviewer hit",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "reviewer citation",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "fixer hit",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "empty result",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "repo_scope isolation",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "bridge timeout subcode",
+      "ok": true,
+      "detail": "got CASE_RETR_TIMEOUT"
+    },
+    {
+      "name": "timeout SQLSTATE=57014",
+      "ok": true,
+      "detail": "got 57014"
+    },
+    {
+      "name": "timeout status=retrieval_unavailable",
+      "ok": true,
+      "detail": "got retrieval_unavailable"
+    },
+    {
+      "name": "timeout reason=timeout",
+      "ok": true,
+      "detail": "got timeout"
+    },
+    {
+      "name": "timeout bounded <10000ms",
+      "ok": true,
+      "detail": "wall=1308.9ms"
+    },
+    {
+      "name": "post-timeout success",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sast_scan CLI completed",
+      "ok": true,
+      "detail": "rc=0"
+    },
+    {
+      "name": "sast_scan envelope has evidence[]",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sast_scan evidence has rag_advisory",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sast_scan rag hit_count>0",
+      "ok": true,
+      "detail": "hit=2"
+    },
+    {
+      "name": "sast_scan rag untrusted=true",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sast_scan rag adopted=false",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sast_scan rag has case_id",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sast_scan rag has similarity",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sast_scan rag has citation_url",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sast_scan output schema",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sast_scan envelope schema",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "sast_scan core action executed",
+      "ok": true,
+      "detail": "status=OK"
+    },
+    {
+      "name": "pr_lifecycle production CLI completed",
+      "ok": true,
+      "detail": "rc=4 status=ERROR"
+    },
+    {
+      "name": "pr_lifecycle production evidence has pgvector hit",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "pr_lifecycle fixture CLI completed",
+      "ok": true,
+      "detail": "rc=0"
+    },
+    {
+      "name": "pr_lifecycle evidence has rag_advisory",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "pr_lifecycle rag hit_count>0",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "pr_lifecycle rag untrusted=true",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "pr_lifecycle rag adopted=false",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "pr_lifecycle output schema",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "pr_lifecycle envelope schema",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "pr_lifecycle core action executed",
+      "ok": true,
+      "detail": "status=OK outcome=CREATED"
+    },
+    {
+      "name": "active_query_residue=0",
+      "ok": true,
+      "detail": "active=0"
+    },
+    {
+      "name": "idle_connection_residue=0",
+      "ok": true,
+      "detail": "idle=0"
+    },
+    {
+      "name": "connection_residue=0",
+      "ok": true,
+      "detail": "total=0"
+    },
+    {
+      "name": "transaction_residue=0",
+      "ok": true,
+      "detail": "txn=0"
+    },
+    {
+      "name": "worker_thread_delta=0",
+      "ok": true,
+      "detail": "delta=0"
+    },
+    {
+      "name": "test_data_residue=0",
+      "ok": true,
+      "detail": "remaining=0"
+    },
+    {
+      "name": "temp_dir_residue=0",
+      "ok": true,
+      "detail": "remaining=0"
+    },
+    {
+      "name": "secret_leaks=0 (scanned)",
+      "ok": true,
+      "detail": "found 0"
+    }
+  ],
+  "timestamp": "2026-08-12T11:48:20Z"
+}

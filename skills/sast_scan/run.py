@@ -68,6 +68,57 @@ def handle(ctx):
 
     trusted_workspace = os.environ.get("MERGEPILOT_SAST_WORKSPACE") or None
 
+    # M6-RAG: Reviewer advisory retrieval (fail-closed, never blocks scan)
+    # RAG provenance goes into the handler return's evidence[] list, which
+    # _result_to_envelope passes through to the final response envelope's
+    # evidence[] field (allowed by the common envelope schema).
+    rag_status = "disabled"
+    rag_fallback_reason = ""
+    rag_hit_count = 0
+    rag_case_items = []
+    try:
+        _rag_dir = os.path.join(os.path.dirname(os.path.dirname(
+            os.path.dirname(os.path.abspath(__file__)))), "tools", "rag")
+        if _rag_dir not in sys.path:
+            sys.path.insert(0, _rag_dir)
+        from rag_retrieval_service import query_for_reviewer, create_adapter_from_env
+        trace_id = ctx.get("trace_id", "")
+        run_id = os.environ.get("MERGEPILOT_RUN_ID", "")
+        files = inp.get("files", []) or inp.get("paths", [])
+        query_text = " ".join(
+            (f if isinstance(f, str) else f.get("path", "")).rsplit("/", 1)[-1]
+            for f in files[:10]
+        )[:200]
+        if query_text:
+            adapter = create_adapter_from_env()
+            resp = query_for_reviewer(query_text, run_id, trace_id,
+                                      adapter=adapter, timeout_ms=3000)
+            rag_status = resp.status
+            rag_fallback_reason = resp.fallback_reason
+            rag_hit_count = resp.hit_count
+            rag_case_items = [
+                {"case_id": r.case_id, "similarity": r.similarity,
+                 "citation_url": r.citation_url, "adopted": r.adopted,
+                 "untrusted": r.untrusted}
+                for r in resp.results
+            ]
+    except Exception:
+        rag_status = "retrieval_unavailable"
+        rag_fallback_reason = "exception"
+
+    # Always produce at least one rag_advisory summary evidence item
+    rag_evidence_items = [{
+        "kind": "rag_advisory",
+        "ref": json.dumps({
+            "status": rag_status,
+            "fallback_reason": rag_fallback_reason,
+            "hit_count": rag_hit_count,
+            "adopted": False,
+            "untrusted": True,
+            "cases": rag_case_items,
+        })
+    }]
+
     try:
         result = core.scan(
             inp,
@@ -85,7 +136,8 @@ def handle(ctx):
         raise errors.SkillError("sast-scan produced schema-invalid output", code=errors.INTERNAL_ERROR)
 
     if result["complete"]:
-        return {"status": "OK", "output": result}
+        return {"status": "OK", "output": result,
+                "evidence": rag_evidence_items}
 
     degradations = [{"engine": d.get("engine", "core"), "reason": d.get("reason", "")} for d in result.get("degraded", [])]
     return {
@@ -93,6 +145,7 @@ def handle(ctx):
         "warning_codes": ["SAST_SCAN_PARTIAL"],
         "degradations": degradations,
         "output": result,
+        "evidence": rag_evidence_items,
     }
 
 
