@@ -140,23 +140,106 @@ class FakeRetrievalAdapter:
 class PgVectorBridge:
     """Bridge to the existing CaseRetrieval PgVectorAdapter.
 
-    In production, this wraps skills.case_retrieval.adapters.pg_vector.
-    For testing, the FakeRetrievalAdapter is used directly.
+    Adds TWO layers of timeout protection:
+    1. PostgreSQL statement_timeout (set per-session before query)
+    2. Threading + join (wall-clock guard if PG ignore statement_timeout)
 
-    The bridge adds a real bounded timeout by running the retrieve call
-    in a worker thread with a join deadline. If the thread doesn't finish
-    in time, the query is abandoned (the thread is daemonized so it won't
-    block process exit; the DB connection is closed in finally).
+    The bridge also ensures connection cleanup via close() after every
+    query attempt (including timeout).
     """
 
-    def __init__(self, adapter: Any = None, timeout_ms: int = 5000):
+    def __init__(self, adapter: Any = None, timeout_ms: int = 5000,
+                 dsn: str = "", schema: str = "public", table: str = "knowledge"):
         self.adapter = adapter
         self.timeout_ms = timeout_ms
+        self.dsn = dsn
+        self.schema = schema
+        self.table = table
+        self._conn = None
+
+    def _ensure_connection(self):
+        """Lazily connect and set statement_timeout."""
+        if self._conn is not None:
+            return self._conn
+        if not self.dsn:
+            # No DSN → use inner adapter directly (no PG connection)
+            return None
+        try:
+            import psycopg2
+            self._conn = psycopg2.connect(self.dsn, connect_timeout=5)
+            self._conn.set_session(readonly=True, autocommit=False)
+            # Set real statement_timeout (PostgreSQL will cancel the query)
+            with self._conn.cursor() as cur:
+                cur.execute("SET statement_timeout = %s",
+                            (str(self.timeout_ms) + "ms",))
+                cur.execute("SET lock_timeout = '5s'")
+                cur.execute("SET default_transaction_read_only = on")
+            self._conn.commit()
+        except Exception:
+            self._close_connection()
+            raise
+        return self._conn
+
+    def _close_connection(self):
+        """Close and null the connection."""
+        if self._conn is not None:
+            try:
+                self._conn.close()
+            except Exception:
+                pass
+            self._conn = None
+
+    def close(self):
+        """Public cleanup."""
+        self._close_connection()
 
     def retrieve(self, query: str, top_k: int = 5,
                  min_score: float = 0.0) -> list[dict]:
-        """Retrieve with bounded timeout. Raises TimeoutError if the
-        adapter doesn't return within timeout_ms."""
+        """Retrieve with bounded timeout.
+
+        Layer 1: PostgreSQL statement_timeout cancels the query server-side.
+        Layer 2: Threading + join ensures wall-clock bound even if the
+        driver hangs.
+
+        After any outcome (success, timeout, error), the connection is
+        closed to prevent residue.
+        """
+        if self.adapter is not None and self.dsn == "":
+            # Inner-adapter mode (testing with FakeRetrievalAdapter)
+            return self._retrieve_threaded(query, top_k, min_score)
+
+        # Production mode: use PG connection with statement_timeout
+        try:
+            conn = self._ensure_connection()
+            if conn is None:
+                raise RuntimeError("no connection")
+
+            result_box: dict[str, Any] = {}
+            def _pg_worker():
+                try:
+                    # Use the inner adapter which takes the connection
+                    result_box["data"] = self.adapter.retrieve(
+                        query, top_k=top_k, min_score=min_score,
+                        conn=conn)
+                except Exception as e:
+                    result_box["error"] = e
+
+            t = threading.Thread(target=_pg_worker, daemon=True)
+            t.start()
+            t.join(timeout=self.timeout_ms / 1000.0 * 1.5)  # 50% grace
+
+            if t.is_alive():
+                # statement_timeout should have fired; if not, abandon
+                raise TimeoutError("PG query exceeded %dms" % self.timeout_ms)
+            if "error" in result_box:
+                raise result_box["error"]
+            return result_box.get("data", [])
+        finally:
+            self._close_connection()
+
+    def _retrieve_threaded(self, query: str, top_k: int,
+                           min_score: float) -> list[dict]:
+        """Threaded retrieve for inner adapters (no PG connection)."""
         if self.adapter is None:
             raise RuntimeError("no adapter configured")
 

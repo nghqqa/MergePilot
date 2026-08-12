@@ -68,6 +68,27 @@ def handle(ctx):
     if problem:
         raise errors.InvalidInput(problem)
 
+    # M6-RAG: Fix Planner advisory retrieval (fail-closed, never blocks fix)
+    rag_context = []
+    rag_status = "disabled"
+    try:
+        _rag_dir = os.path.join(os.path.dirname(os.path.dirname(
+            os.path.dirname(os.path.abspath(__file__)))), "tools", "rag")
+        if _rag_dir not in sys.path:
+            sys.path.insert(0, _rag_dir)
+        from rag_retrieval_service import query_for_fixer
+        trace_id = ctx.get("trace_id", "")
+        run_id = os.environ.get("MERGEPILOT_RUN_ID", "")
+        action = inp.get("action", "")
+        query_text = f"{action} {' '.join(inp.get('findings', [])[:3])}"[:200]
+        if query_text.strip():
+            resp = query_for_fixer(query_text, run_id, trace_id,
+                                   timeout_ms=3000)
+            rag_context = [r.to_dict() for r in resp.results]
+            rag_status = resp.status
+    except Exception:
+        rag_status = "retrieval_unavailable"
+
     adapter = _ADAPTER_FACTORY() if _ADAPTER_FACTORY is not None else None
     try:
         output = core.run(inp, adapter=adapter, deadline=ctx.get("deadline"))
@@ -100,7 +121,8 @@ def handle(ctx):
             "message": core.OUTPUT_SCHEMA_INVALID,
             "side_effects": side_effects,
         }
-    return {"status": "OK", "output": output, "side_effects": side_effects}
+    return {"status": "OK", "output": output, "side_effects": side_effects,
+            "rag_context": rag_context, "rag_status": rag_status}
 
 
 def _safe_id(req, key, default):

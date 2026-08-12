@@ -68,6 +68,30 @@ def handle(ctx):
 
     trusted_workspace = os.environ.get("MERGEPILOT_SAST_WORKSPACE") or None
 
+    # M6-RAG: Reviewer advisory retrieval (fail-closed, never blocks scan)
+    rag_context = []
+    rag_status = "disabled"
+    try:
+        _rag_dir = os.path.join(os.path.dirname(os.path.dirname(
+            os.path.dirname(os.path.abspath(__file__)))), "tools", "rag")
+        if _rag_dir not in sys.path:
+            sys.path.insert(0, _rag_dir)
+        from rag_retrieval_service import query_for_reviewer
+        trace_id = ctx.get("trace_id", "")
+        run_id = os.environ.get("MERGEPILOT_RUN_ID", "")
+        # Build a concise query from the files being scanned
+        files = inp.get("files", [])
+        query_text = " ".join(
+            f.get("path", "").rsplit("/", 1)[-1] for f in files[:10]
+        )[:200]
+        if query_text:
+            resp = query_for_reviewer(query_text, run_id, trace_id,
+                                      timeout_ms=3000)
+            rag_context = [r.to_dict() for r in resp.results]
+            rag_status = resp.status
+    except Exception:
+        rag_status = "retrieval_unavailable"
+
     try:
         result = core.scan(
             inp,
@@ -85,9 +109,13 @@ def handle(ctx):
         raise errors.SkillError("sast-scan produced schema-invalid output", code=errors.INTERNAL_ERROR)
 
     if result["complete"]:
+        result["rag_context"] = rag_context
+        result["rag_status"] = rag_status
         return {"status": "OK", "output": result}
 
     degradations = [{"engine": d.get("engine", "core"), "reason": d.get("reason", "")} for d in result.get("degraded", [])]
+    result["rag_context"] = rag_context
+    result["rag_status"] = rag_status
     return {
         "status": "PARTIAL",
         "warning_codes": ["SAST_SCAN_PARTIAL"],
