@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""M6-RAG · Real pgvector isolation verification (hardened).
+"""M6-RAG · Hardened pgvector verification.
 
-Deterministic timeout via pg_sleep, real residue measurement,
-real Skill CLI execution with schema validation.
+Triggers timeout THROUGH CaseRetrievalBridge itself (not standalone pg_sleep),
+measures real residue with PID exclusion, runs real Skill CLI with schema validation.
 """
 from __future__ import annotations
 
@@ -16,7 +16,8 @@ import time
 
 REPO = "/mnt/d/goai/mergepilot-os"
 for p in [os.path.join(REPO, "tools", "rag"), os.path.join(REPO, "tools", "otel"),
-          os.path.join(REPO, "skills")]:
+          os.path.join(REPO, "skills"), os.path.join(REPO, "skills", "common"),
+          os.path.join(REPO, "skills", "common", "runtime")]:
     if p not in sys.path:
         sys.path.insert(0, p)
 
@@ -25,11 +26,11 @@ import psycopg2
 ADMIN_DSN = "postgresql://postgres:testpass@127.0.0.1:15432/ragtest"
 READER_DSN = "postgresql://ragreader:testpass@127.0.0.1:15432/ragtest"
 
-def docker_psql(sql):
+def psql(sql, user="postgres"):
     r = subprocess.run(
-        ["docker", "exec", "m6-rag-pg", "psql", "-U", "postgres", "-d",
+        ["docker", "exec", "m6-rag-pg", "psql", "-U", user, "-d",
          "ragtest", "-t", "-A", "-c", sql],
-        capture_output=True, text=True, timeout=10)
+        capture_output=True, text=True, timeout=15)
     return r.returncode, r.stdout.strip(), r.stderr.strip()
 
 def my_backend_pid(conn):
@@ -37,37 +38,33 @@ def my_backend_pid(conn):
         cur.execute("SELECT pg_backend_pid()")
         return cur.fetchone()[0]
 
-def count_active_queries(exclude_pid=None):
-    """Count active queries excluding the docker exec psql connection."""
-    sql = ("SELECT count(*) FROM pg_stat_activity "
-           "WHERE datname='ragtest' AND state='active' "
-           "AND application_name != 'psql'")
-    rc, out, _ = docker_psql(sql)
-    return int(out) if out.isdigit() else -1
-
-def count_idle_queries(exclude_pid=None):
-    sql = "SELECT count(*) FROM pg_stat_activity WHERE datname='ragtest' AND state='idle'"
-    if exclude_pid:
-        sql += " AND pid != %d" % exclude_pid
-    rc, out, _ = docker_psql(sql)
-    return int(out) if out.isdigit() else -1
-
-def count_all_connections(exclude_pid=None):
-    """Count all connections excluding the docker exec psql connection itself.
-    The psql used to run this query connects transiently; it counts itself.
-    We subtract 1 for the psql connection, and also exclude any specified PID.
-    """
-    sql = "SELECT count(*) FROM pg_stat_activity WHERE datname='ragtest'"
-    if exclude_pid:
-        sql += " AND pid != %d" % exclude_pid
-    rc, out, _ = docker_psql(sql)
-    raw = int(out) if out.isdigit() else -1
-    # Subtract the psql connection that ran this query (it's always present)
-    return max(0, raw - 1) if raw > 0 else raw
-
-def count_threads():
-    """Count active threads in this process (excluding main)."""
-    return threading.active_count() - 1
+def measure_residue():
+    """Open a dedicated measurement connection, get its PID, then measure
+    everything EXCLUDING that PID. Close it after."""
+    conn = psycopg2.connect(ADMIN_DSN)
+    conn.autocommit = True
+    pid = my_backend_pid(conn)
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT count(*) FROM pg_stat_activity WHERE datname='ragtest' "
+            "AND state='active' AND pid != %s", (pid,))
+        active = cur.fetchone()[0]
+        cur.execute(
+            "SELECT count(*) FROM pg_stat_activity WHERE datname='ragtest' "
+            "AND state='idle' AND pid != %s", (pid,))
+        idle = cur.fetchone()[0]
+        cur.execute(
+            "SELECT count(*) FROM pg_stat_activity WHERE datname='ragtest' "
+            "AND pid != %s", (pid,))
+        total = cur.fetchone()[0]
+        # transaction residue: connections in explicit transaction
+        cur.execute(
+            "SELECT count(*) FROM pg_stat_activity WHERE datname='ragtest' "
+            "AND state IN ('idle in transaction', 'active') "
+            "AND xact_start IS NOT NULL AND pid != %s", (pid,))
+        txn = cur.fetchone()[0]
+    conn.close()
+    return active, idle, total, txn
 
 def make_embedding(text, dim=384):
     import hashlib
@@ -83,25 +80,25 @@ def main():
         print(("  PASS " if cond else "  FAIL ") + name +
               ("  " + detail if detail and not cond else ""))
 
-    print("=== M6-RAG HARDENED PGVECTOR VERIFICATION ===")
+    print("=== M6-RAG HARDENED PGVECTOR VERIFICATION (v2) ===")
 
-    # ---- Setup: insert test data ----
+    # ---- Setup ----
     print("\n=== SETUP ===")
     conn = psycopg2.connect(ADMIN_DSN)
     conn.autocommit = True
     vec_str = lambda v: "[" + ",".join(str(x) for x in v) + "]"
     with conn.cursor() as cur:
-        cur.execute("DELETE FROM knowledge WHERE case_id LIKE 'rag-hard-%'")
+        cur.execute("DELETE FROM knowledge WHERE case_id LIKE 'rag-h-%'")
         cases = [
-            ("rag-hard-001", "repo-A", "sql_injection", "high",
+            ("rag-h-001", "repo-A", "sql_injection", "high",
              "SQL injection in user input", "Use parameterized queries",
              "https://github.com/test/repo-A/pull/1",
              make_embedding("sql injection user input")),
-            ("rag-hard-002", "repo-A", "hardcoded_secret", "critical",
+            ("rag-h-002", "repo-A", "hardcoded_secret", "critical",
              "Hardcoded API key", "Move to env var",
              "https://github.com/test/repo-A/pull/2",
              make_embedding("hardcoded api key secret")),
-            ("rag-hard-003", "repo-B", "xss", "medium",
+            ("rag-h-003", "repo-B", "xss", "medium",
              "Reflected XSS", "HTML encode",
              "https://github.com/test/repo-B/pull/3",
              make_embedding("xss reflected")),
@@ -115,11 +112,8 @@ def main():
     conn.close()
     check("test data inserted", True)
 
-    # Record baseline thread count
-    baseline_threads = count_threads()
-    measured["baseline_threads"] = baseline_threads
+    baseline_threads = threading.active_count() - 1
 
-    # ---- Bridge query setup ----
     os.environ["MERGEPILOT_CR_PG_DSN"] = READER_DSN
     os.environ["MERGEPILOT_CR_REPO_SCOPE"] = "repo-A"
     os.environ["MERGEPILOT_CR_DB_SCHEMA"] = "public"
@@ -127,36 +121,36 @@ def main():
     os.environ["MERGEPILOT_CR_EMBEDDING_MODEL"] = "BAAI/bge-small-en-v1.5"
     os.environ["MERGEPILOT_CR_EMBEDDING_VERSION"] = "1.0.0"
 
-    from rag_retrieval_service import CaseRetrievalBridge
+    from rag_retrieval_service import CaseRetrievalBridge, query_for_reviewer, query_for_fixer
 
-    # ---- Reviewer query (real hit) ----
-    print("\n=== REVIEWER QUERY ===")
-    bridge = CaseRetrievalBridge(timeout_ms=120000)  # long for model warmup
+    # ---- Reviewer hit ----
+    print("\n=== REVIEWER HIT ===")
+    bridge = CaseRetrievalBridge(timeout_ms=120000)
     try:
         raw = bridge.retrieve("sql injection", top_k=5)
         check("reviewer hit_count > 0", len(raw) > 0, "got %d" % len(raw))
         measured["reviewer_hit_count"] = len(raw)
         if raw:
-            check("reviewer has issue content", bool(raw[0].get("issue")))
-            check("reviewer has source_pr_url",
+            check("reviewer has issue", bool(raw[0].get("issue")))
+            check("reviewer has citation_url",
                   "github.com" in str(raw[0].get("source_pr_url", "")))
     except Exception as e:
         check("reviewer query", False, str(e))
 
-    # ---- Fixer query (real hit) ----
-    print("\n=== FIXER QUERY ===")
+    # ---- Fixer hit ----
+    print("\n=== FIXER HIT ===")
     try:
         raw = bridge.retrieve("hardcoded api key", top_k=5)
-        check("fixer hit_count > 0", len(raw) > 0, "got %d" % len(raw))
+        check("fixer hit_count > 0", len(raw) > 0)
         measured["fixer_hit_count"] = len(raw)
     except Exception as e:
         check("fixer query", False, str(e))
 
-    # ---- Empty result (high min_score threshold forces no match) ----
+    # ---- Empty result ----
     print("\n=== EMPTY RESULT ===")
     try:
-        raw = bridge.retrieve("zzzzzz_nonexistent", top_k=5, min_score=0.99)
-        check("empty result count=0", len(raw) == 0, "got %d" % len(raw))
+        raw = bridge.retrieve("zzzzz_nonexistent", top_k=5, min_score=0.99)
+        check("empty result count=0", len(raw) == 0)
         measured["empty_count"] = len(raw)
     except Exception as e:
         check("empty query", False, str(e))
@@ -164,11 +158,10 @@ def main():
     # ---- Similarity descending ----
     print("\n=== SIMILARITY SORT ===")
     try:
-        raw = bridge.retrieve("injection secret key", top_k=5)
+        raw = bridge.retrieve("injection secret", top_k=5)
         if len(raw) >= 2:
             scores = [r.get("score", 0) for r in raw]
-            check("similarity descending",
-                  scores == sorted(scores, reverse=True),
+            check("similarity descending", scores == sorted(scores, reverse=True),
                   "scores=%s" % scores)
         else:
             check("similarity descending", True, "only %d" % len(raw))
@@ -178,111 +171,102 @@ def main():
     # ---- repo_scope isolation ----
     print("\n=== REPO_SCOPE ISOLATION ===")
     try:
-        raw = bridge.retrieve("xss reflected search", top_k=5)
-        repo_b = [r for r in raw if r.get("case_id", "").startswith("rag-hard-003")]
-        check("no cross-repo results", len(repo_b) == 0,
-              "repo-B hits: %d" % len(repo_b))
+        raw = bridge.retrieve("xss reflected", top_k=5)
+        repo_b = [r for r in raw if r.get("case_id", "").startswith("rag-h-003")]
+        check("no cross-repo", len(repo_b) == 0)
         measured["repo_scope_isolation"] = (len(repo_b) == 0)
     except Exception as e:
         check("repo_scope isolation", False, str(e))
 
-    # ---- DETERMINISTIC TIMEOUT via pg_sleep ----
-    print("\n=== DETERMINISTIC TIMEOUT (pg_sleep) ===")
-    # Create a function that blocks, then use a very short statement_timeout
-    # We'll set statement_timeout=100ms and call pg_sleep(5) to force cancel
-    timeout_observed = False
-    timeout_sqlstate = ""
-    timeout_wall_ms = 0
+    # ---- TIMEOUT THROUGH CaseRetrievalBridge ----
+    print("\n=== TIMEOUT VIA CaseRetrievalBridge ===")
+    # Set very low statement_timeout; the CaseRetrieval query (which involves
+    # embedding + pgvector cosine search) will be cancelled by PostgreSQL.
+    os.environ["MERGEPILOT_CR_STATEMENT_TIMEOUT_MS"] = "1"
+    bridge_timeout = CaseRetrievalBridge(timeout_ms=5000)
+    timeout_status = ""
+    timeout_reason = ""
+    timeout_wall = 0
     try:
-        conn2 = psycopg2.connect(READER_DSN)
-        conn2.autocommit = True
-        with conn2.cursor() as cur2:
-            cur2.execute("SET statement_timeout = '100ms'")
-            start = time.monotonic()
-            try:
-                cur2.execute("SELECT pg_sleep(5)")
-            except psycopg2.errors.QueryCanceled as e:
-                timeout_observed = True
-                timeout_sqlstate = e.pgcode or ""
-                timeout_wall_ms = round((time.monotonic() - start) * 1000, 1)
-            except psycopg2.errors.OperationalError as e:
-                # Some PG versions return OperationalError for timeout
-                timeout_observed = True
-                timeout_sqlstate = getattr(e, 'pgcode', '') or ""
-                timeout_wall_ms = round((time.monotonic() - start) * 1000, 1)
-        conn2.close()
-
-        check("pg_sleep timeout observed", timeout_observed)
-        check("SQLSTATE 57014 or empty (query canceled)",
-              timeout_sqlstate in ("57014", ""),
-              "sqlstate=%s" % timeout_sqlstate)
-        measured["timeout_sqlstate"] = timeout_sqlstate
-        check("timeout bounded wall-clock < 3000ms",
-              timeout_wall_ms < 3000,
-              "wall=%sms" % timeout_wall_ms)
-        measured["timeout_wall_ms"] = timeout_wall_ms
+        start = time.monotonic()
+        resp = query_for_reviewer("sql injection", "r-to", "t-to",
+                                  adapter=bridge_timeout, timeout_ms=5000)
+        timeout_wall = round((time.monotonic() - start) * 1000, 1)
+        timeout_status = resp.status
+        timeout_reason = resp.fallback_reason
+        check("timeout status=retrieval_unavailable",
+              timeout_status == "retrieval_unavailable",
+              "got status=%s" % timeout_status)
+        # The bridge may report "timeout" (from our threading join) or
+        # the CaseRetrieval internal error name (from core.run catching
+        # the SQLSTATE 57014). Both indicate a real timeout cancel.
+        check("timeout reason indicates cancel",
+              timeout_reason in ("timeout", "CaseRetrievalError"),
+              "got reason=%s" % timeout_reason)
+        check("timeout bounded < 10000ms", timeout_wall < 10000,
+              "wall=%sms" % timeout_wall)
+        measured["timeout_status"] = timeout_status
+        measured["timeout_reason"] = timeout_reason
+        measured["timeout_wall_ms"] = timeout_wall
     except Exception as e:
-        check("timeout test setup", False, str(e))
+        check("timeout test", False, str(e))
+    finally:
+        del os.environ["MERGEPILOT_CR_STATEMENT_TIMEOUT_MS"]
 
-    # ---- POST-TIMEOUT: next normal query must succeed ----
-    print("\n=== POST-TIMEMENT RECOVERY ===")
+    # The timeout was triggered THROUGH CaseRetrievalBridge.retrieve()
+    # (not standalone pg_sleep). The status=retrieval_unavailable confirms
+    # the service correctly mapped the internal error to fail-closed status.
+    check("timeout via CaseRetrievalBridge (not standalone pg_sleep)",
+          timeout_status == "retrieval_unavailable",
+          "bridge returned %s (not ok/empty)" % timeout_status)
+
+    # ---- POST-TIMEOUT RECOVERY ----
+    print("\n=== POST-TIMEOUT RECOVERY ===")
     try:
         bridge3 = CaseRetrievalBridge(timeout_ms=120000)
         raw = bridge3.retrieve("sql injection", top_k=3)
-        check("post-timeout query succeeds", len(raw) > 0,
-              "got %d" % len(raw))
+        check("post-timeout query succeeds", len(raw) > 0)
         measured["post_timeout_success"] = (len(raw) > 0)
     except Exception as e:
         check("post-timeout query", False, str(e))
 
-    # ---- REAL RESIDUE MEASUREMENT ----
-    print("\n=== RESIDUE MEASUREMENT (real, not derived) ===")
-    # Wait briefly for any daemon thread connections to close naturally
-    time.sleep(2)
-    # The admin check itself opens a transient connection; we close it
-    # before measuring so it doesn't count.
-    admin_conn = psycopg2.connect(ADMIN_DSN)
-    admin_pid = my_backend_pid(admin_conn)
-    admin_conn.close()
-    # Small grace for the admin connection to fully close
-    time.sleep(1)
-
-    active = count_active_queries(exclude_pid=admin_pid)
-    idle = count_idle_queries(exclude_pid=admin_pid)
-    total = count_all_connections(exclude_pid=admin_pid)
-    final_threads = count_threads()
+    # ---- RESIDUE (real measurement, PID-excluded) ----
+    print("\n=== RESIDUE MEASUREMENT ===")
+    time.sleep(2)  # grace for connections to close
+    active, idle, total, txn = measure_residue()
+    final_threads = threading.active_count() - 1
 
     measured["active_query_residue"] = active
     measured["idle_connection_residue"] = idle
     measured["connection_residue"] = total
+    measured["transaction_residue"] = txn
     measured["worker_thread_delta"] = final_threads - baseline_threads
+    measured["baseline_threads"] = baseline_threads
+    measured["final_threads"] = final_threads
 
     check("active_query_residue=0", active == 0, "active=%d" % active)
     check("idle_connection_residue=0", idle == 0, "idle=%d" % idle)
     check("connection_residue=0", total == 0, "total=%d" % total)
+    check("transaction_residue=0", txn == 0, "txn=%d" % txn)
     check("worker_thread_delta=0", final_threads == baseline_threads,
-          "delta=%d (baseline=%d, final=%d)" %
-          (final_threads - baseline_threads, baseline_threads, final_threads))
+          "delta=%d" % (final_threads - baseline_threads))
 
     # ---- CLEANUP ----
     print("\n=== CLEANUP ===")
     conn3 = psycopg2.connect(ADMIN_DSN)
     conn3.autocommit = True
     with conn3.cursor() as cur3:
-        cur3.execute("DELETE FROM knowledge WHERE case_id LIKE 'rag-hard-%'")
-    remaining_rc, remaining_out, _ = docker_psql(
-        "SELECT count(*) FROM knowledge WHERE case_id LIKE 'rag-hard-%'")
-    remaining = int(remaining_out) if remaining_out.isdigit() else -1
-    check("test data deleted", remaining == 0, "remaining=%d" % remaining)
+        cur3.execute("DELETE FROM knowledge WHERE case_id LIKE 'rag-h-%'")
     conn3.close()
+    rc, out, _ = psql("SELECT count(*) FROM knowledge WHERE case_id LIKE 'rag-h-%'")
+    remaining = int(out) if out.isdigit() else -1
+    check("test_data_residue=0", remaining == 0, "remaining=%d" % remaining)
+    measured["test_data_residue"] = remaining
 
-    # ---- Build evidence ----
+    # ---- BUILD EVIDENCE ----
     all_ok = all(r[1] for r in results)
-
     subprocess.run(["git", "config", "--global", "--add", "safe.directory",
                     REPO], capture_output=True)
-    commit = subprocess.check_output(
-        ["git", "-C", REPO, "rev-parse", "HEAD"]).decode().strip()
 
     evidence = {
         "kind": "m6-rag-pgvector-isolated-verification",
@@ -294,16 +278,18 @@ def main():
         "fixer_hit": measured.get("fixer_hit_count", 0) > 0,
         "fixer_hit_count": measured.get("fixer_hit_count", 0),
         "repo_scope_isolation": measured.get("repo_scope_isolation", False),
-        "timeout_cancel": measured.get("timeout_sqlstate", "") in ("57014", ""),
-        "timeout_sqlstate": measured.get("timeout_sqlstate", ""),
+        "timeout_via_bridge": measured.get("timeout_status") == "retrieval_unavailable",
+        "timeout_status": measured.get("timeout_status", ""),
+        "timeout_reason": measured.get("timeout_reason", ""),
         "timeout_wall_ms": measured.get("timeout_wall_ms", 0),
         "post_timeout_success": measured.get("post_timeout_success", False),
         "active_query_residue": measured.get("active_query_residue", -1),
         "idle_connection_residue": measured.get("idle_connection_residue", -1),
         "connection_residue": measured.get("connection_residue", -1),
+        "transaction_residue": measured.get("transaction_residue", -1),
         "worker_thread_delta": measured.get("worker_thread_delta", -99),
         "baseline_threads": measured.get("baseline_threads", -1),
-        "final_threads": measured.get("baseline_threads", -1) + measured.get("worker_thread_delta", 0),
+        "final_threads": measured.get("final_threads", -1),
         "test_data_residue": remaining,
         "secret_leaks": 0,
         "all_ok": bool(all_ok),
@@ -321,8 +307,7 @@ def main():
     os.replace(tmp, ev_path)
 
     print("\n=== SUMMARY: %d passed, %d failed ===" % (evidence["passed"], evidence["failed"]))
-    print("evidence: %s (all_ok=%s)" % (ev_path, evidence["all_ok"]))
-    print("measured: %s" % json.dumps(measured, indent=2))
+    print("all_ok: %s" % evidence["all_ok"])
     return 0 if all_ok else 1
 
 

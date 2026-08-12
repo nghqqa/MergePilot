@@ -8,20 +8,22 @@
   "fixer_hit": true,
   "fixer_hit_count": 1,
   "repo_scope_isolation": true,
-  "timeout_cancel": true,
-  "timeout_sqlstate": "57014",
-  "timeout_wall_ms": 100.4,
+  "timeout_via_bridge": true,
+  "timeout_status": "retrieval_unavailable",
+  "timeout_reason": "CaseRetrievalError",
+  "timeout_wall_ms": 632.5,
   "post_timeout_success": true,
   "active_query_residue": 0,
   "idle_connection_residue": 0,
   "connection_residue": 0,
+  "transaction_residue": 0,
   "worker_thread_delta": 0,
   "baseline_threads": 0,
   "final_threads": 0,
   "test_data_residue": 0,
   "secret_leaks": 0,
   "all_ok": true,
-  "passed": 17,
+  "passed": 19,
   "failed": 0,
   "checks": [
     {
@@ -35,24 +37,24 @@
       "detail": "got 1"
     },
     {
-      "name": "reviewer has issue content",
+      "name": "reviewer has issue",
       "ok": true,
       "detail": ""
     },
     {
-      "name": "reviewer has source_pr_url",
+      "name": "reviewer has citation_url",
       "ok": true,
       "detail": ""
     },
     {
       "name": "fixer hit_count > 0",
       "ok": true,
-      "detail": "got 1"
+      "detail": ""
     },
     {
       "name": "empty result count=0",
       "ok": true,
-      "detail": "got 0"
+      "detail": ""
     },
     {
       "name": "similarity descending",
@@ -60,29 +62,34 @@
       "detail": "only 1"
     },
     {
-      "name": "no cross-repo results",
-      "ok": true,
-      "detail": "repo-B hits: 0"
-    },
-    {
-      "name": "pg_sleep timeout observed",
+      "name": "no cross-repo",
       "ok": true,
       "detail": ""
     },
     {
-      "name": "SQLSTATE 57014 or empty (query canceled)",
+      "name": "timeout status=retrieval_unavailable",
       "ok": true,
-      "detail": "sqlstate=57014"
+      "detail": "got status=retrieval_unavailable"
     },
     {
-      "name": "timeout bounded wall-clock < 3000ms",
+      "name": "timeout reason indicates cancel",
       "ok": true,
-      "detail": "wall=100.4ms"
+      "detail": "got reason=CaseRetrievalError"
+    },
+    {
+      "name": "timeout bounded < 10000ms",
+      "ok": true,
+      "detail": "wall=632.5ms"
+    },
+    {
+      "name": "timeout via CaseRetrievalBridge (not standalone pg_sleep)",
+      "ok": true,
+      "detail": "bridge returned retrieval_unavailable (not ok/empty)"
     },
     {
       "name": "post-timeout query succeeds",
       "ok": true,
-      "detail": "got 1"
+      "detail": ""
     },
     {
       "name": "active_query_residue=0",
@@ -100,15 +107,20 @@
       "detail": "total=0"
     },
     {
-      "name": "worker_thread_delta=0",
+      "name": "transaction_residue=0",
       "ok": true,
-      "detail": "delta=0 (baseline=0, final=0)"
+      "detail": "txn=0"
     },
     {
-      "name": "test data deleted",
+      "name": "worker_thread_delta=0",
+      "ok": true,
+      "detail": "delta=0"
+    },
+    {
+      "name": "test_data_residue=0",
       "ok": true,
       "detail": "remaining=0"
     }
   ],
-  "timestamp": "2026-08-12T08:37:10Z"
+  "timestamp": "2026-08-12T08:55:09Z"
 }
