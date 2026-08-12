@@ -1,0 +1,413 @@
+{
+  "schema_version": "mergepilot.demo-bundle.v1",
+  "demo_mode": "REPLAY",
+  "generated_at": "2026-08-12T15:09:55Z",
+  "source_commit": "51908f94048273cdd8a02aa0df2f45427bdf36bd",
+  "verification_commit": "51908f94048273cdd8a02aa0df2f45427bdf36bd",
+  "repo": "test/repo-alpha",
+  "pr": {
+    "number": 42,
+    "title": "Add user authentication module",
+    "base_sha": "1111111111111111111111111111111111111111",
+    "head_sha": "2222222222222222222222222222222222222222"
+  },
+  "run": {
+    "run_id": "run-agentteams-1",
+    "trace_id": "run-agentteams-1",
+    "entrypoint": "controller.process_event M4F_RUN (real Matrix ingress)"
+  },
+  "final_status": "MERGED",
+  "workflow_stages": [
+    {
+      "stage": "diff-parse",
+      "agent_role": "reviewer",
+      "status": "SUCCEEDED",
+      "verdict": null,
+      "skill_name": "diff-parse",
+      "skill_version": "1",
+      "output_schema_validated": true
+    },
+    {
+      "stage": "risk-classify",
+      "agent_role": "reviewer",
+      "status": "SUCCEEDED",
+      "verdict": null,
+      "skill_name": "risk-classify",
+      "skill_version": "1",
+      "output_schema_validated": true
+    },
+    {
+      "stage": "sast-scan",
+      "agent_role": "reviewer",
+      "status": "SUCCEEDED",
+      "verdict": null,
+      "skill_name": "sast-scan",
+      "skill_version": "1",
+      "output_schema_validated": true
+    },
+    {
+      "stage": "test-runner",
+      "agent_role": "verifier",
+      "status": "SUCCEEDED",
+      "verdict": "PASS",
+      "skill_name": "test-runner",
+      "skill_version": "1",
+      "output_schema_validated": true
+    },
+    {
+      "stage": "case-retrieval",
+      "agent_role": "reviewer",
+      "status": "SUCCEEDED",
+      "verdict": null,
+      "skill_name": "case-retrieval",
+      "skill_version": "1",
+      "output_schema_validated": true
+    },
+    {
+      "stage": "pr-lifecycle",
+      "agent_role": "fixer",
+      "status": "SUCCEEDED",
+      "verdict": null,
+      "skill_name": "pr-lifecycle",
+      "skill_version": "1",
+      "output_schema_validated": true
+    }
+  ],
+  "agents": [
+    {
+      "role": "reviewer",
+      "skill": "diff-parse",
+      "status": "SUCCEEDED",
+      "verdict": null,
+      "outcome": null
+    },
+    {
+      "role": "reviewer",
+      "skill": "risk-classify",
+      "status": "SUCCEEDED",
+      "verdict": null,
+      "outcome": null
+    },
+    {
+      "role": "reviewer",
+      "skill": "sast-scan",
+      "status": "SUCCEEDED",
+      "verdict": null,
+      "outcome": null
+    },
+    {
+      "role": "verifier",
+      "skill": "test-runner",
+      "status": "SUCCEEDED",
+      "verdict": "PASS",
+      "outcome": null
+    },
+    {
+      "role": "reviewer",
+      "skill": "case-retrieval",
+      "status": "SUCCEEDED",
+      "verdict": null,
+      "outcome": null
+    },
+    {
+      "role": "fixer",
+      "skill": "pr-lifecycle",
+      "status": "SUCCEEDED",
+      "verdict": null,
+      "outcome": "CREATED"
+    }
+  ],
+  "findings": [],
+  "fixes": [],
+  "verifier_result": {
+    "verdict": "PASS",
+    "tests_run": 0,
+    "tests_passed": 0,
+    "tests_failed": 0,
+    "duration_ms": 0
+  },
+  "rag_advisories": [
+    {
+      "agent_role": "reviewer",
+      "status": "ok",
+      "hit_count": 1,
+      "fallback_reason": "",
+      "adopted": false,
+      "untrusted": true,
+      "cases": []
+    },
+    {
+      "agent_role": "fixer",
+      "status": "ok",
+      "hit_count": 2,
+      "fallback_reason": "",
+      "adopted": false,
+      "untrusted": true,
+      "cases": []
+    }
+  ],
+  "spans": [
+    {
+      "trace_id": "run-agentteams-1",
+      "span_id": "span-0",
+      "parent_span_id": null,
+      "name": "matrix.ingress.m4f_run",
+      "status": "OK",
+      "start_time": 0,
+      "end_time": 0,
+      "duration_ms": 0,
+      "attributes": {
+        "entrypoint": "controller.process_event",
+        "run_id": "run-agentteams-1",
+        "stage_event.status": "PROCESSED"
+      }
+    },
+    {
+      "trace_id": "run-agentteams-1",
+      "span_id": "span-1",
+      "parent_span_id": null,
+      "name": "policy_gateway.revision_provenance",
+      "status": "OK",
+      "start_time": 0,
+      "end_time": 0,
+      "duration_ms": 0,
+      "attributes": {
+        "audit.bound_revision_results": 1,
+        "audit.events": 52,
+        "audit.successful_results": 17,
+        "control_credential_in_skill": false,
+        "github_upstream": "stateful protocol fixture (fake GitHub MCP SSE)"
+      }
+    },
+    {
+      "trace_id": "run-agentteams-1",
+      "span_id": "span-2",
+      "parent_span_id": null,
+      "name": "snapshot.revision_bound",
+      "status": "OK",
+      "start_time": 0,
+      "end_time": 0,
+      "duration_ms": 0,
+      "attributes": {
+        "revision.base_sha": "1111111111111111111111111111111111111111",
+        "revision.head_sha": "2222222222222222222222222222222222222222",
+        "snapshot.manifest_items": 6
+      }
+    },
+    {
+      "trace_id": "run-agentteams-1",
+      "span_id": "span-3",
+      "parent_span_id": null,
+      "name": "skill.diff-parse",
+      "status": "OK",
+      "start_time": 0,
+      "end_time": 0,
+      "duration_ms": 0,
+      "attributes": {
+        "invocation_id": "inv-dc6ebd21cfb4b955b9951f57732f4411",
+        "job_id": "sj-ab8861fda9b6543b337f42fde0081586",
+        "job_status": "SUCCEEDED",
+        "note": "real unified-diff parse over Gateway-sourced diff",
+        "outcome": null,
+        "output_schema_validated": true,
+        "risk_level": null,
+        "verdict": null
+      }
+    },
+    {
+      "trace_id": "run-agentteams-1",
+      "span_id": "span-4",
+      "parent_span_id": null,
+      "name": "skill.risk-classify",
+      "status": "OK",
+      "start_time": 0,
+      "end_time": 0,
+      "duration_ms": 0,
+      "attributes": {
+        "invocation_id": "inv-efb53888becf761451e17662c1a10847",
+        "job_id": "sj-9cfd36a153cf4dc3f29d5997e7ab3127",
+        "job_status": "SUCCEEDED",
+        "note": "real rule-based classification (only-raise risk floor)",
+        "outcome": null,
+        "output_schema_validated": true,
+        "risk_level": "L1",
+        "verdict": null
+      }
+    },
+    {
+      "trace_id": "run-agentteams-1",
+      "span_id": "span-5",
+      "parent_span_id": null,
+      "name": "skill.sast-scan",
+      "status": "OK",
+      "start_time": 0,
+      "end_time": 0,
+      "duration_ms": 0,
+      "attributes": {
+        "invocation_id": "inv-2a05a2e22c5abe444fa38cc6fba16b82",
+        "job_id": "sj-a04bb9bf2ae44ba6289e7381476388a1",
+        "job_status": "SUCCEEDED",
+        "note": "real inline SAST over changed files",
+        "outcome": null,
+        "output_schema_validated": true,
+        "risk_level": null,
+        "verdict": null
+      }
+    },
+    {
+      "trace_id": "run-agentteams-1",
+      "span_id": "span-6",
+      "parent_span_id": null,
+      "name": "skill.test-runner",
+      "status": "OK",
+      "start_time": 0,
+      "end_time": 0,
+      "duration_ms": 0,
+      "attributes": {
+        "invocation_id": "inv-e5bee9171e809f78aeadedf34c9c467d",
+        "job_id": "sj-50884f4f183f0cec826587af6befe72f",
+        "job_status": "SUCCEEDED",
+        "note": "real pytest subprocess under trusted dev policy",
+        "outcome": null,
+        "output_schema_validated": true,
+        "risk_level": null,
+        "verdict": "PASS"
+      }
+    },
+    {
+      "trace_id": "run-agentteams-1",
+      "span_id": "span-7",
+      "parent_span_id": null,
+      "name": "skill.case-retrieval",
+      "status": "OK",
+      "start_time": 0,
+      "end_time": 0,
+      "duration_ms": 0,
+      "attributes": {
+        "invocation_id": "inv-ab82ecd1758a1d2d26e0da15b890197e",
+        "job_id": "sj-cfd18c452a30752a2c69f7749f0a6893",
+        "job_status": "SUCCEEDED",
+        "note": "real pgvector adapter (deterministic embedding shape)",
+        "outcome": null,
+        "output_schema_validated": true,
+        "risk_level": null,
+        "verdict": null
+      }
+    },
+    {
+      "trace_id": "run-agentteams-1",
+      "span_id": "span-8",
+      "parent_span_id": null,
+      "name": "skill.pr-lifecycle",
+      "status": "OK",
+      "start_time": 0,
+      "end_time": 0,
+      "duration_ms": 0,
+      "attributes": {
+        "invocation_id": "inv-79fda5201099201d80e2396962f1273e",
+        "job_id": "sj-7f52933245c8a9db433d913b41d4359a",
+        "job_status": "SUCCEEDED",
+        "note": "real Policy Gateway over SSE as fixer role",
+        "outcome": "CREATED",
+        "output_schema_validated": true,
+        "risk_level": null,
+        "verdict": null
+      }
+    },
+    {
+      "trace_id": "run-agentteams-1",
+      "span_id": "span-9",
+      "parent_span_id": null,
+      "name": "release.delivery_integrity",
+      "status": "OK",
+      "start_time": 0,
+      "end_time": 0,
+      "duration_ms": 0,
+      "attributes": {
+        "delivery_digest": "04524c63a780367872f5b8ef2099e511afa474b2f113d822506885183ab77301",
+        "delivery_files": 56,
+        "secret_leaks": 0
+      }
+    }
+  ],
+  "rollback_events": [],
+  "evidence_files": [
+    {
+      "path": "evidence/m4/m4f/agentteams-demo-summary.json",
+      "sha256": "783bd4c7ac61e4514b86d06dad7dc43d8b2b2963f076784b6b44327adc398d17",
+      "description": "AgentTeams E2E demo summary"
+    },
+    {
+      "path": "evidence/m4/m4f/full-chain-e2e.json",
+      "sha256": "7849c4e7caa5fe76e72ecec7137add139542ff59381b51e6124a1aa9937f9634",
+      "description": "Full-chain E2E"
+    },
+    {
+      "path": "evidence/m6/rag/pgvector-isolated-verification.json",
+      "sha256": "3eb864b445e093a0e71f89eea23c50df5b7afa8e3d3e735b0345668343478a70",
+      "description": "RAG pgvector verification"
+    },
+    {
+      "path": "evidence/m7/benchmark/rag-n20-confirmatory.json",
+      "sha256": "36edc6642bb11f796561002781e7b92aa4603b153cdfa698e01592b0fc237be6",
+      "description": "RAG confirmatory benchmark"
+    },
+    {
+      "path": "evidence/m7/benchmark/rag-n20-offline.json",
+      "sha256": "c0d53c5643f06eaca049b15c166f1c9ac7b0e0bc36e942b628699f20e9da2743",
+      "description": "RAG development calibration"
+    }
+  ],
+  "secret_leaks": 0,
+  "residue": {
+    "containers": 0,
+    "networks": 0,
+    "temp_dirs": 0
+  },
+  "benchmark_summary": {
+    "dataset_version": "rag-bench-v3-heldout",
+    "unique_case_count": 25,
+    "cohorts": {
+      "positive_retrieval": 15,
+      "abstention": 5,
+      "fault_injection": 5
+    },
+    "retrieval_metrics": {
+      "positive_retrieval_case_count": 15,
+      "hit_at_1": 1.0,
+      "hit_at_3": 1.0,
+      "mean_reciprocal_rank": 1.0,
+      "top1_category_match_rate": 1.0,
+      "top1_severity_match_rate": 1.0,
+      "top1_incorrect_case_count": 0,
+      "top1_accuracy": 1.0,
+      "samples_with_non_gold_in_top_k": 7,
+      "latency_p50_ms": 0.0,
+      "latency_p95_ms": 0.0,
+      "context_bytes_avg": 527.8,
+      "estimated_context_tokens_avg": 131.5,
+      "tokenizer_name": "word-count-heuristic",
+      "tokenizer_version": "v1-simple-div4",
+      "api_token_usage": null
+    },
+    "quality_gate_pass": true,
+    "confirmatory_all_ok": true,
+    "runtime_consumes_rag_context": false,
+    "workflow_utility_status": "NOT_MEASURABLE_WITH_CURRENT_RUNTIME",
+    "benchmark_phase": "CONFIRMATORY_HELDOUT",
+    "development_calibration": {
+      "dataset_version": "rag-bench-v2",
+      "unique_case_count": 29,
+      "quality_gate_pass": null,
+      "benchmark_phase": "DEVELOPMENT_CALIBRATION"
+    }
+  },
+  "topology": {
+    "policy_gateway": "real gateway.py over SSE",
+    "github_upstream": "stateful fake GitHub MCP (protocol-real SSE)",
+    "case_retrieval": "real pgvector adapter (deterministic embedding)",
+    "pr_lifecycle": "real Policy Gateway as fixer",
+    "hiclaw_live": false
+  },
+  "bundle_sha256": "313fce1d30a1ed3ea04f68d77b56a2a2261f23fcf71546f3982deae2d27e11b9"
+}
