@@ -150,8 +150,11 @@ class CaseRetrievalBridge:
         self._skills_dir = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             "skills")
-        if self._skills_dir not in sys.path:
-            sys.path.insert(0, self._skills_dir)
+        # Also try the repo root (when running as -m skills.xxx.run)
+        for p in (self._skills_dir,
+                  os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))):
+            if p not in sys.path:
+                sys.path.insert(0, p)
 
     def retrieve(self, query: str, top_k: int = 5,
                  min_score: float = 0.0) -> list[dict]:
@@ -160,7 +163,10 @@ class CaseRetrievalBridge:
         Returns a list of case dicts compatible with RetrievalResult.
         Raises TimeoutError if the query exceeds timeout_ms.
         """
-        from case_retrieval import core as cr_core
+        try:
+            from case_retrieval import core as cr_core
+        except ImportError:
+            from skills.case_retrieval import core as cr_core
 
         # Build trusted config from env (matching skills.case_retrieval.core
         # load_trusted_config: uses MERGEPILOT_CR_PG_DSN, not _DSN;
@@ -541,13 +547,28 @@ def _query(agent_role: str, query: str, run_id: str, trace_id: str,
         _emit_result_span(agent_role, run_id, trace_id, resp)
         return resp
 
-    except Exception as e:
+    except TimeoutError:
         elapsed = (time.monotonic() - start) * 1000
         resp = RetrievalResponse(
             results=[], status="retrieval_unavailable",
             latency_ms=round(elapsed, 2),
             run_id=run_id, trace_id=trace_id, top_k=top_k,
-            fallback_reason=type(e).__name__)
+            fallback_reason="timeout")
+        _emit_fallback_span(agent_role, run_id, trace_id,
+                            "timeout", elapsed)
+        return resp
+    except Exception as e:
+        # Check if the exception is a CaseRetrieval timeout (SQLSTATE 57014)
+        subcode = getattr(e, "subcode", None) or ""
+        is_timeout = ("TIMEOUT" in subcode.upper() or
+                      getattr(e, "pgcode", None) == "57014")
+        elapsed = (time.monotonic() - start) * 1000
+        reason = "timeout" if is_timeout else type(e).__name__
+        resp = RetrievalResponse(
+            results=[], status="retrieval_unavailable",
+            latency_ms=round(elapsed, 2),
+            run_id=run_id, trace_id=trace_id, top_k=top_k,
+            fallback_reason=reason)
         _emit_fallback_span(agent_role, run_id, trace_id,
                             type(e).__name__, elapsed)
         return resp

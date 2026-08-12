@@ -84,9 +84,10 @@ def handle(ctx):
         from rag_retrieval_service import query_for_reviewer, create_adapter_from_env
         trace_id = ctx.get("trace_id", "")
         run_id = os.environ.get("MERGEPILOT_RUN_ID", "")
-        files = inp.get("files", [])
+        files = inp.get("files", []) or inp.get("paths", [])
         query_text = " ".join(
-            f.get("path", "").rsplit("/", 1)[-1] for f in files[:10]
+            (f if isinstance(f, str) else f.get("path", "")).rsplit("/", 1)[-1]
+            for f in files[:10]
         )[:200]
         if query_text:
             adapter = create_adapter_from_env()
