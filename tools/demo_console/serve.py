@@ -162,10 +162,10 @@ class ReadOnlyHandler(http.server.SimpleHTTPRequestHandler):
             self._send_simple_error(400, "Transfer-Encoding not supported")
             return
 
-        # Check for duplicate/conflicting Content-Length headers
-        cl_headers = self.headers.get_all("Content-Length")
-        if cl_headers and len(set(cl_headers)) > 1:
-            self._send_simple_error(400, "Conflicting Content-Length")
+        # Check for duplicate Content-Length headers (count-based, not set-based)
+        cl_all = self.headers.get_all("Content-Length")
+        if cl_all and len(cl_all) > 1:
+            self._send_simple_error(400, "Duplicate Content-Length")
             return
 
         # Parse Content-Length strictly
