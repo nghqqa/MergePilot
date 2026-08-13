@@ -24,6 +24,7 @@ if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
 from schema import validate_bundle
+from integrity import verify_bundle_integrity
 
 
 class SnapshotSource:
@@ -63,13 +64,11 @@ class LivePoller(threading.Thread):
     """
 
     def __init__(self, source: SnapshotSource, poll_interval: float = 2.0,
-                 max_consecutive_failures: int = 10,
-                 stop_on_max_failures: bool = True):
+                 max_consecutive_failures: int = 10):
         super().__init__(daemon=True)
         self._source = source
         self._poll_interval = max(1.0, poll_interval)
         self._max_failures = max_consecutive_failures
-        self._stop_on_max = stop_on_max_failures
 
         self._lock = threading.Lock()
         self._current_snapshot: dict | None = None
@@ -139,6 +138,11 @@ class LivePoller(threading.Thread):
             errors = validate_bundle(data)
             if errors:
                 raise ValueError(f"schema validation failed: {errors[:3]}")
+
+            # Verify bundle integrity (bundle_sha256 matches recomputed value)
+            integrity_errors = verify_bundle_integrity(data)
+            if integrity_errors:
+                raise ValueError(f"integrity check failed: {integrity_errors[:3]}")
 
             sha = hashlib.sha256(raw).hexdigest()
 

@@ -35,6 +35,32 @@ from preflight import run_preflight, VALID_MODES
 from live_poller import FileSnapshotSource, LivePoller
 
 
+# Modes as used by the handler layer (uppercase, matching schema demo_mode).
+_MODE_REPLAY = "REPLAY"
+_MODE_LIVE = "ISOLATED_LIVE"
+
+
+def _send_json(handler, status: int, payload: dict) -> None:
+    """Serialize ``payload`` as JSON and send it as an HTTP response.
+
+    Always sets ``Content-Type: application/json`` and
+    ``Cache-Control: no-store`` so API responses are never cached or
+    misinterpreted as HTML.
+    """
+    body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+    handler.send_response(status)
+    handler.send_header("Content-Type", "application/json")
+    handler.send_header("Content-Length", str(len(body)))
+    handler.send_header("Cache-Control", "no-store")
+    handler.end_headers()
+    handler.wfile.write(body)
+
+
+def _send_json_error(handler, status: int, error: str) -> None:
+    """Send a uniform ``{"error": ...}`` JSON error response."""
+    _send_json(handler, status, {"error": error})
+
+
 class ReadOnlyHandler(http.server.SimpleHTTPRequestHandler):
     """Read-only HTTP handler — blocks all write methods."""
 
@@ -57,6 +83,126 @@ class ReadOnlyHandler(http.server.SimpleHTTPRequestHandler):
     def log_message(self, format, *args):
         # Suppress default logging to stderr unless verbose
         pass
+
+
+class LiveApiHandler(ReadOnlyHandler):
+    """HTTP handler for ISOLATED_LIVE mode.
+
+    Adds two live endpoints on top of read-only static file serving:
+
+      GET /api/live/snapshot  → current valid bundle JSON (503 if none)
+      GET /api/live/status    → structured poller status JSON
+
+    All other GET paths fall through to SimpleHTTPRequestHandler (static
+    files). Write methods remain blocked with 405.
+    """
+
+    def do_GET(self):
+        path = self.path.split("?", 1)[0]
+        if path == "/api/live/snapshot":
+            self._handle_snapshot()
+        elif path == "/api/live/status":
+            self._handle_status()
+        elif path.startswith("/api/live/"):
+            # Unknown live API endpoint.
+            _send_json_error(self, 404, f"unknown live API endpoint: {path}")
+        else:
+            # Delegate everything else to static file serving.
+            super().do_GET()
+
+    def _handle_snapshot(self):
+        poller = getattr(self.server, "poller", None)
+        snapshot = poller.current_snapshot if poller is not None else None
+        if snapshot is None:
+            _send_json(self, 503, {
+                "error": "no valid snapshot available",
+                "state": poller.state if poller is not None else "UNAVAILABLE",
+            })
+            return
+        # Serve the current valid bundle. Cache-Control: no-store is set by
+        # _send_json so a stale snapshot is never cached by a client.
+        _send_json(self, 200, snapshot)
+
+    def _handle_status(self):
+        poller = getattr(self.server, "poller", None)
+        if poller is None:
+            _send_json(self, 503, {"error": "live poller not configured"})
+            return
+        stats = poller.get_stats()
+        _send_json(self, 200, {
+            "mode": _MODE_LIVE,
+            "state": stats["state"],
+            "poll_count": stats["poll_count"],
+            "last_poll_at": stats["last_poll_at"],
+            "last_success_at": stats["last_success_at"],
+            "source_snapshot_sha256": stats["source_snapshot_sha256"],
+            "consecutive_failures": stats["consecutive_failures"],
+            "last_error_code": stats["last_error_code"],
+        })
+
+
+class ReplayApiHandler(ReadOnlyHandler):
+    """HTTP handler for REPLAY mode.
+
+    REPLAY serves only static files. Any ``/api/live/*`` request is a
+    client error in REPLAY mode (live endpoints do not exist) and returns
+    a 404 JSON error. All other GET paths delegate to static serving.
+    """
+
+    def do_GET(self):
+        path = self.path.split("?", 1)[0]
+        if path.startswith("/api/live/"):
+            _send_json_error(self, 404, "live API not available in REPLAY mode")
+        else:
+            super().do_GET()
+
+
+def make_handler(poller: LivePoller | None, mode: str):
+    """Return an HTTPRequestHandler class for the given mode.
+
+    - REPLAY         → ReplayApiHandler (static + 404 for /api/live/*)
+    - ISOLATED_LIVE  → LiveApiHandler   (snapshot + status + static fallback)
+
+    The poller is attached to the server instance (see ``create_server``)
+    and read by the handler via ``self.server.poller``.
+    """
+    if mode.upper() == _MODE_LIVE:
+        return LiveApiHandler
+    # Default to REPLAY for any non-live mode.
+    return ReplayApiHandler
+
+
+class _DemoTCPServer(socketserver.TCPServer):
+    """TCPServer that exposes mode + poller to request handlers.
+
+    ``allow_reuse_address`` is enabled so the port can be rebound quickly
+    across test runs. ``poller`` and ``mode`` are read by the handlers.
+    """
+
+    allow_reuse_address = True
+
+    def __init__(self, server_address, RequestHandlerClass, *, mode=None,
+                 poller=None):
+        super().__init__(server_address, RequestHandlerClass)
+        self.mode = mode
+        self.poller = poller
+
+
+def create_server(host: str, port: int, mode: str,
+                  poller: LivePoller | None = None) -> _DemoTCPServer:
+    """Construct a configured TCPServer for the requested mode.
+
+    The caller is responsible for ``serve_forever()`` (typically in a
+    background thread) and for ``shutdown()`` + ``server_close()`` when
+    done. ``port=0`` requests an OS-assigned port, available afterwards
+    via ``server.server_address[1]``.
+
+    The handler class is selected from ``mode`` via ``make_handler``.
+    The ``poller`` is attached to the server so live handlers can read
+    the current snapshot.
+    """
+    handler_cls = make_handler(poller, mode)
+    return _DemoTCPServer((host, port), handler_cls, mode=mode, poller=poller)
 
 
 def _is_loopback(host: str) -> bool:
@@ -88,6 +234,7 @@ def main():
     print(f"Preflight passed: mode={pf['mode']}, source_kind={pf['source_kind']}")
     print(f"  loopback_only={pf['loopback_only']}, read_only={pf['source_read_only']}")
     print(f"  production_resource_accessed={pf['production_resource_accessed']}")
+    print(f"  production_resource_access_status={pf['production_resource_access_status']}")
     print(f"  github_writes_enabled={pf['github_writes_enabled']}")
     print(f"  agent_control_enabled={pf['agent_control_enabled']}")
     print(f"  runtime_consumes_rag_context={pf['runtime_consumes_rag_context']}")
@@ -136,11 +283,11 @@ def main():
 
     os.chdir(str(serve_dir))
 
-    socketserver.TCPServer.allow_reuse_address = True
-    with socketserver.TCPServer((args.host, args.port), ReadOnlyHandler) as httpd:
+    mode_upper = args.mode.upper()
+    with create_server(args.host, args.port, mode_upper, poller=poller) as httpd:
         print(f"Demo Console serving on http://{args.host}:{args.port}")
         print(f"Serving from: {serve_dir}")
-        print(f"Mode: {args.mode.upper()}")
+        print(f"Mode: {mode_upper}")
         print(f"Press Ctrl+C to stop.")
         try:
             httpd.serve_forever()
