@@ -56,6 +56,17 @@ All actual result fields are `null` in design. Expected values in `expected_gate
   "bundle_file_sha256": null,
   "evidence_file_sha256": [],
 
+  "bundle_source_ref": null,
+  "bundle_import_ref": null,
+  "bundle_listed_refs": [],
+  "source_ref_commit": null,
+  "imported_ref_commit": null,
+  "commit_object_available": null,
+  "tree_object_available": null,
+  "checkout_head": null,
+  "checkout_head_matches_spec": null,
+  "checkout_worktree_clean": null,
+
   "page_count": null,
   "pages": [],
 

@@ -129,14 +129,16 @@ On a networked machine (POSIX):
 ```bash
 # Set the reproduction spec commit (frozen after M7-P4 design PR merges)
 REPRO_SPEC_COMMIT="REPLACE_WITH_FULL_MERGE_COMMIT_SHA"
+SOURCE_REF="refs/remotes/origin/main"
 BUNDLE_PATH="mergepilot-${REPRO_SPEC_COMMIT}.bundle"
 
 git fetch origin main
-ACTUAL_MAIN="$(git rev-parse main)"
+ACTUAL_MAIN="$(git rev-parse "$SOURCE_REF")"
 test "$ACTUAL_MAIN" = "$REPRO_SPEC_COMMIT"
 
-git bundle create "$BUNDLE_PATH" main
+git bundle create "$BUNDLE_PATH" "$SOURCE_REF"
 git bundle verify "$BUNDLE_PATH"
+git bundle list-heads "$BUNDLE_PATH"
 sha256sum "$BUNDLE_PATH"
 ```
 
@@ -145,19 +147,23 @@ On a networked machine (Windows PowerShell):
 ```powershell
 # Set the reproduction spec commit
 $ReproSpecCommit = "REPLACE_WITH_FULL_MERGE_COMMIT_SHA"
+$SourceRef = "refs/remotes/origin/main"
 $BundlePath = "mergepilot-$ReproSpecCommit.bundle"
 
 git fetch origin main
-$ActualMain = (git rev-parse main).Trim()
+$ActualMain = (git rev-parse $SourceRef).Trim()
 if ($ActualMain -ne $ReproSpecCommit) {
-    throw "local main does not match reproduction spec commit"
+    throw "origin/main does not match reproduction spec commit"
 }
 
-git bundle create $BundlePath main
+git bundle create $BundlePath $SourceRef
 if ($LASTEXITCODE -ne 0) { throw "git bundle create failed" }
 
 git bundle verify $BundlePath
 if ($LASTEXITCODE -ne 0) { throw "git bundle verify failed" }
+
+git bundle list-heads $BundlePath
+if ($LASTEXITCODE -ne 0) { throw "git bundle list-heads failed" }
 
 Get-FileHash -Algorithm SHA256 $BundlePath
 ```
@@ -167,45 +173,75 @@ Get-FileHash -Algorithm SHA256 $BundlePath
 Bundle clone may not set a default remote HEAD, so explicit detached
 checkout is part of the formal flow.
 
+Bundle contains complete history. A plain `git clone` does not auto-import
+remote-tracking refs into local branches. The offline flow must use explicit
+`git init` + `git fetch` with a refspec.
+
 On the offline machine (POSIX):
 
 ```bash
-# Set the reproduction spec commit
+# Set variables
 REPRO_SPEC_COMMIT="REPLACE_WITH_FULL_MERGE_COMMIT_SHA"
+BUNDLE_SOURCE_REF="refs/remotes/origin/main"
+LOCAL_IMPORT_REF="refs/heads/reproduction-spec"
 BUNDLE_PATH="mergepilot-${REPRO_SPEC_COMMIT}.bundle"
 CHECKOUT_DIR="mergepilot-clean-reproduction"
 
-# Re-verify SHA-256 matches recorded value
+# Re-verify SHA-256
 sha256sum "$BUNDLE_PATH"
 # Verify bundle integrity
 git bundle verify "$BUNDLE_PATH"
-# Clone from bundle
-git clone "$BUNDLE_PATH" "$CHECKOUT_DIR"
-cd "$CHECKOUT_DIR"
-# Detached checkout to the exact commit
-git checkout --detach "$REPRO_SPEC_COMMIT"
+# Initialize empty repo
+git init "$CHECKOUT_DIR"
+# Fetch from bundle using explicit refspec (clone won't import remote-tracking refs)
+git -C "$CHECKOUT_DIR" fetch "$BUNDLE_PATH" \
+  "${BUNDLE_SOURCE_REF}:${LOCAL_IMPORT_REF}"
+# Verify commit object exists
+git -C "$CHECKOUT_DIR" cat-file -e "${REPRO_SPEC_COMMIT}^{commit}"
+# Verify tree object exists
+git -C "$CHECKOUT_DIR" cat-file -e "${REPRO_SPEC_COMMIT}^{tree}"
+# Detached checkout
+git -C "$CHECKOUT_DIR" checkout --detach "$REPRO_SPEC_COMMIT"
 # Verify HEAD matches
-test "$(git rev-parse HEAD)" = "$REPRO_SPEC_COMMIT"
+test "$(git -C "$CHECKOUT_DIR" rev-parse HEAD)" = "$REPRO_SPEC_COMMIT"
+# Verify clean
+test -z "$(git -C "$CHECKOUT_DIR" status --porcelain)"
 ```
 
 On the offline machine (Windows PowerShell):
 
 ```powershell
-# Set the reproduction spec commit
 $ReproSpecCommit = "REPLACE_WITH_FULL_MERGE_COMMIT_SHA"
+$BundleSourceRef = "refs/remotes/origin/main"
+$LocalImportRef = "refs/heads/reproduction-spec"
 $BundlePath = "mergepilot-$ReproSpecCommit.bundle"
 $CheckoutDir = "mergepilot-clean-reproduction"
 
 Get-FileHash -Algorithm SHA256 $BundlePath
 git bundle verify $BundlePath
-git clone $BundlePath $CheckoutDir
-Set-Location $CheckoutDir
-git checkout --detach $ReproSpecCommit
+if ($LASTEXITCODE -ne 0) { throw "bundle verification failed" }
 
-$ActualHead = (git rev-parse HEAD).Trim()
-if ($ActualHead -ne $ReproSpecCommit) {
-    throw "checkout commit mismatch"
-}
+git init $CheckoutDir
+if ($LASTEXITCODE -ne 0) { throw "git init failed" }
+
+$FetchSpec = "${BundleSourceRef}:${LocalImportRef}"
+git -C $CheckoutDir fetch $BundlePath $FetchSpec
+if ($LASTEXITCODE -ne 0) { throw "bundle fetch failed" }
+
+git -C $CheckoutDir cat-file -e "$ReproSpecCommit^{commit}"
+if ($LASTEXITCODE -ne 0) { throw "commit object unavailable" }
+
+git -C $CheckoutDir cat-file -e "$ReproSpecCommit^{tree}"
+if ($LASTEXITCODE -ne 0) { throw "tree object unavailable" }
+
+git -C $CheckoutDir checkout --detach $ReproSpecCommit
+if ($LASTEXITCODE -ne 0) { throw "checkout failed" }
+
+$ActualHead = (git -C $CheckoutDir rev-parse HEAD).Trim()
+if ($ActualHead -ne $ReproSpecCommit) { throw "checkout commit mismatch" }
+
+$Dirty = git -C $CheckoutDir status --porcelain
+if ($Dirty) { throw "checkout is dirty" }
 ```
 
 The offline machine must recompute the bundle SHA-256 and compare with the
