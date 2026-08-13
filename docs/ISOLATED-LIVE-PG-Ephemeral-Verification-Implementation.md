@@ -52,7 +52,10 @@ Functions (defined, not executed in Phase A):
   The password is a function arg, SQL-quote-escaped, never stored on the module.
 - `build_seed_sql() -> str` — deterministic INSERTs for all 5 runs
   (ok/unknown/no-rev/rollback/missing) with the `source_evidence_digest`
-  pre-computed via `compute_revision_digest`.
+  pre-computed via `compute_revision_digest`. For `run-eph-ok` it also inserts
+  5 immutable `audit_events` rows (one per closed-loop step:
+  review/fix/verify/merge/close_pr), matching design §3 Run-1 and exercising
+  the read path on the 9th queried table.
 - `build_cleanup_commands(container_name, label) -> list` — argv arrays for
   `docker rm -f` + `docker ps --filter name=` + `docker network ls/prune
   --filter label=`. Validates name and label before emitting any command.
@@ -82,17 +85,18 @@ Security invariants enforced:
 
 ### Test file (`test_ephemeral_pg.py`)
 
-9 test classes, 83 tests total. `subprocess` is mocked everywhere; no real
-Docker/WSL process is spawned.
+9 test classes, 95 tests total (88 pass, 7 skipped — the 7
+`TestEphemeralPlaceholder` tests unconditionally skip pending Phase B).
+`subprocess` is mocked everywhere; no real Docker/WSL process is spawned.
 
 | Class | Tests | Scope |
 |---|---:|---|
 | `TestExecutionGate` | 7 | env var + daemon gate (mocked subprocess) |
 | `TestMigrationOrder` | 9 | chain length, idempotency rounds, ordering |
 | `TestRoleBootstrap` | 11 | prerequisite + reader role SQL shape |
-| `TestSeedContract` | 13 | 5-run seed satisfies DDL CHECK/FK constraints |
+| `TestSeedContract` | 22 | 5-run seed + 5 `audit_events` satisfy DDL CHECK/FK |
 | `TestRevisionDigest` | 5 | canonical digest algorithm vs `bind_revision` |
-| `TestCommandSafety` | 16 | argv arrays, redaction, name validation |
+| `TestCommandSafety` | 19 | argv arrays, stdin piping, redaction, name validation |
 | `TestCleanupValidation` | 10 | container-name + label targeting |
 | `TestResultClassification` | 5 | skip reasons + classification strings |
 | `TestEphemeralPlaceholder` | 7 | unconditional skip; documents Phase B intent |
@@ -128,6 +132,13 @@ existing `tests/demo_console/test_postgres_source.py`:
 - **`bind_revision()` producer-contract test**: the seed uses the Option B
   direct-admin INSERT fallback, so `revision_producer_contract = NOT_VERIFIED`
   for the seed path. Phase B should attempt `bind_revision()` (Option A) first.
+- **`audit_events` read vs write paths**: the seed SQL inserts 5 synthetic
+  `audit_events` rows for `run-eph-ok` (review/fix/verify/merge/close_pr), so
+  the **reader** path on this table IS exercised by the seed. This does NOT
+  verify the **audit producer** contract (the controller's audit-event write
+  path is never invoked); it only verifies that the seed values are schema-valid
+  and that the reader would surface them. `audit_producer_contract` is therefore
+  NOT_VERIFIED.
 
 ## Count reconciliation note
 

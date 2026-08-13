@@ -368,6 +368,95 @@ class TestSeedContract(unittest.TestCase):
         )
         self.assertIn(expected, self.seed)
 
+    # ── audit_events (run-eph-ok closed-loop trail) ───────────────────────
+    # The tests below isolate the audit_events INSERT block so that action
+    # counting is precise (review/fix/verify also appear in stage_runs /
+    # stage_events / comments, which would inflate a whole-SQL count).
+
+    def _audit_block(self):
+        """Return the text from 'INSERT INTO audit_events' to the next blank line."""
+        start = self.seed.find("INSERT INTO audit_events")
+        self.assertGreater(start, -1, "audit_events INSERT missing from seed")
+        # The statement ends at the first blank line after the INSERT.
+        end = self.seed.find("\n\n", start)
+        self.assertGreater(end, start, "audit_events block terminator not found")
+        return self.seed[start:end]
+
+    def test_seed_contains_insert_into_audit_events(self):
+        self.assertIn("INSERT INTO audit_events", self.seed)
+
+    def test_audit_events_has_exactly_five_success_rows(self):
+        # The audit_events VALUES clause lists exactly 5 tuples (one per
+        # closed-loop step). Count opening parens on value lines within the
+        # block (each tuple begins with "('run-eph-ok',").
+        block = self._audit_block()
+        # Remove the column-list line, then count value tuples.
+        values_idx = block.find("VALUES")
+        values = block[values_idx:]
+        n = values.count("('run-eph-ok'")
+        self.assertEqual(n, 5)
+
+    def test_audit_events_actions_are_the_five_required(self):
+        block = self._audit_block()
+        # Each action is the 3rd field of its tuple: ('run-eph-ok', '<agent>', '<action>', ...
+        actions = re.findall(r"\('run-eph-ok',\s*'[^']+',\s*'([a-z_]+)'", block)
+        self.assertEqual(sorted(actions),
+                         sorted(["review", "fix", "verify", "merge", "close_pr"]))
+
+    def test_audit_events_task_id_all_run_eph_ok(self):
+        block = self._audit_block()
+        # Every tuple's first field must be 'run-eph-ok'.
+        task_ids = re.findall(r"\('([^']+)',\s*'[^']+',\s*'[a-z_]+'", block)
+        self.assertEqual(task_ids, ["run-eph-ok"] * 5)
+
+    def test_audit_events_uses_real_ddl_columns(self):
+        # DDL (init.sql:52): task_id, agent, action, target, detail, sha, via.
+        block = self._audit_block()
+        col_line = block[:block.find("VALUES")]
+        for col in ("task_id", "agent", "action", "target", "detail", "sha", "via"):
+            self.assertIn(col, col_line)
+        # ts is omitted → relies on DEFAULT now(). Assert 'ts' is NOT listed
+        # as a column (word-boundary match so 'task_id' does not match 'ts').
+        cols = re.findall(r"\bts\b", col_line)
+        self.assertEqual(cols, [], "audit_events must omit ts (use DEFAULT now())")
+
+    def test_audit_events_does_not_touch_other_scenarios(self):
+        # audit_events rows exist ONLY for run-eph-ok. The other 4 runs must
+        # not appear in the audit_events block.
+        block = self._audit_block()
+        for other in ("run-eph-unknown", "run-eph-no-rev",
+                      "run-eph-rollback", "run-eph-missing"):
+            self.assertNotIn(other, block)
+        # And no second audit_events INSERT exists elsewhere in the seed.
+        self.assertEqual(self.seed.count("INSERT INTO audit_events"), 1)
+
+    def test_audit_events_agents_match_ddl_comment(self):
+        # init.sql comment: agent ∈ reviewer/fixer/verifier/manager/system.
+        block = self._audit_block()
+        agents = re.findall(r"\('run-eph-ok',\s*'([^']+)'", block)
+        self.assertEqual(sorted(agents),
+                         sorted(["reviewer", "fixer", "verifier", "manager", "system"]))
+
+    def test_audit_events_via_values_match_ddl_comment(self):
+        # init.sql comment: via ∈ github-mcp / sast-scan / matrix / pg.
+        block = self._audit_block()
+        allowed_via = {"github-mcp", "sast-scan", "matrix", "pg"}
+        vias = re.findall(r"',\s*'([a-z-]+)'\s*\);?$", block, re.MULTILINE)
+        # Fallback parse if the line-wrap differs: grab the last quoted token
+        # before ")" on each tuple line.
+        if len(vias) != 5:
+            vias = re.findall(r"'(github-mcp|sast-scan|matrix|pg)'\s*\)", block)
+        self.assertEqual(len(vias), 5)
+        for v in vias:
+            self.assertIn(v, allowed_via)
+
+    def test_audit_events_shas_are_synthetic_40_char_hex(self):
+        block = self._audit_block()
+        shas = re.findall(r"'([0-9a-f]{40})'", block)
+        self.assertEqual(len(shas), 5)
+        for s in shas:
+            self.assertRegex(s, r"^[0-9a-f]{40}$")
+
 
 # ────────────────────────────────────────────────────────────────────────────
 # TestRevisionDigest — canonical algorithm vs bind_revision

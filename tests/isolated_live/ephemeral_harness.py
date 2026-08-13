@@ -340,6 +340,11 @@ def build_seed_sql() -> str:
     when that cannot be called, the harness records
     ``revision_producer_contract=NOT_VERIFIED``. This seed uses the fallback so
     the consumer/read path is exercised regardless.
+
+    run-eph-ok also seeds 5 immutable ``audit_events`` rows (one per closed-loop
+    step: review/fix/verify/merge/close_pr), matching the design §3 Run-1 table.
+    These exercise the read path on the 9th queried table; they do NOT verify
+    the audit producer contract (no controller write path is invoked).
     """
     # Pre-compute the source_evidence_digest for run-eph-ok so the
     # revision_bindings row is internally consistent (the value a
@@ -404,6 +409,26 @@ def build_seed_sql() -> str:
         "       ('evt-eph-ok-r3', 'room-eph-ok', 'run-eph-ok', 'M4F_VERIFY_DISPATCH',\n"
         "        'verify', 'PROCESSED', 'controller');\n"
         "\n"
+        "-- audit_events: one immutable row per closed-loop step for run-eph-ok.\n"
+        "-- DDL (init.sql:52): task_id/agent/action/target/detail/sha/via,\n"
+        "-- ts DEFAULT now(). task_id mirrors run_id (design §3 audit_events.task_id\n"
+        "-- vs run_id). agent per init.sql comment (reviewer/fixer/verifier/manager/\n"
+        "-- system); via per init.sql comment (github-mcp/sast-scan/matrix/pg).\n"
+        "-- sha reuses the synthetic head_sha for merge/close_pr (the commit the\n"
+        "-- reader surfaces as source_commit); review/fix/verify carry the same\n"
+        "-- head since this synthetic run has a single commit.\n"
+        "INSERT INTO audit_events (task_id, agent, action, target, detail, sha, via)\n"
+        "VALUES ('run-eph-ok', 'reviewer', 'review',   'test/repo-alpha#42',\n"
+        "        'synthetic review completed', '%s', 'github-mcp'),\n"
+        "       ('run-eph-ok', 'fixer',    'fix',      'test/repo-alpha#42',\n"
+        "        'synthetic fix applied',    '%s', 'github-mcp'),\n"
+        "       ('run-eph-ok', 'verifier', 'verify',   'test/repo-alpha#42',\n"
+        "        'synthetic verify passed',  '%s', 'sast-scan'),\n"
+        "       ('run-eph-ok', 'manager',  'merge',    'test/repo-alpha#42',\n"
+        "        'synthetic merge succeeded','%s', 'github-mcp'),\n"
+        "       ('run-eph-ok', 'system',   'close_pr', 'test/repo-alpha#42',\n"
+        "        'synthetic pr closed',     '%s', 'github-mcp');\n"
+        "\n"
         "-- ── Run 2: run-eph-unknown (status=NULL) ──\n"
         "INSERT INTO task_runs (run_id, status)\n"
         "VALUES ('run-eph-unknown', NULL);\n"
@@ -440,6 +465,11 @@ def build_seed_sql() -> str:
             base_sha,           # revision_bindings.base_sha
             head_sha,           # revision_bindings.head_sha
             digest,             # source_evidence_digest
+            head_sha,           # audit_events[0] review  — synthetic head_sha
+            head_sha,           # audit_events[1] fix     — synthetic head_sha
+            head_sha,           # audit_events[2] verify  — synthetic head_sha
+            head_sha,           # audit_events[3] merge   — synthetic head_sha
+            head_sha,           # audit_events[4] close_pr— synthetic head_sha
             revert_merge_sha,
         )
     )
