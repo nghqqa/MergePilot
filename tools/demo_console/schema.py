@@ -8,8 +8,17 @@ and the test suite.
 """
 from __future__ import annotations
 
+# Integrity helpers are the single authoritative source for canonical JSON and
+# bundle_sha256. Imported here (and re-exported) so callers can keep doing
+# ``from schema import VOLATILE_FIELDS`` without creating a circular import.
+from integrity import VOLATILE_FIELDS, verify_bundle_integrity  # noqa: F401
+
 BUNDLE_SCHEMA_VERSION = "mergepilot.demo-bundle.v1"
 DEMO_MODE = "REPLAY"
+
+# Valid demo_mode values accepted by the schema. ISOLATED_LIVE was added in
+# Phase 1 for the read-only live snapshot viewer.
+VALID_DEMO_MODES = frozenset({"REPLAY", "ISOLATED_LIVE"})
 
 # Required top-level fields in a DemoBundle
 REQUIRED_FIELDS = {
@@ -38,9 +47,6 @@ REQUIRED_FIELDS = {
     "topology",
 }
 
-# Fields excluded from bundle_sha256 computation (volatile or self-referential)
-VOLATILE_FIELDS = frozenset({"bundle_sha256", "generated_at"})
-
 # Required keys within nested structures
 REQUIRED_PR_KEYS = {"number", "title", "base_sha", "head_sha"}
 REQUIRED_RUN_KEYS = {"run_id", "trace_id", "entrypoint"}
@@ -57,8 +63,13 @@ REQUIRED_BENCHMARK_KEYS = {
 }
 
 
-def validate_bundle(bundle: dict) -> list[str]:
-    """Validate a DemoBundle. Returns list of error strings (empty = valid)."""
+def validate_bundle(bundle: dict, expected_mode: str | None = None) -> list[str]:
+    """Validate a DemoBundle. Returns list of error strings (empty = valid).
+
+    If ``expected_mode`` is provided (e.g. "REPLAY" or "ISOLATED_LIVE"), the
+    bundle's ``demo_mode`` must match it exactly. This prevents a REPLAY bundle
+    from being served in an ISOLATED_LIVE context and vice versa.
+    """
     errors = []
 
     # Top-level required fields
@@ -70,9 +81,27 @@ def validate_bundle(bundle: dict) -> list[str]:
     if bundle.get("schema_version") != BUNDLE_SCHEMA_VERSION:
         errors.append(f"schema_version must be {BUNDLE_SCHEMA_VERSION}")
 
-    # demo_mode
-    if bundle.get("demo_mode") != DEMO_MODE:
-        errors.append(f"demo_mode must be {DEMO_MODE}")
+    # demo_mode: must be one of the valid modes
+    demo_mode = bundle.get("demo_mode")
+    if demo_mode not in VALID_DEMO_MODES:
+        errors.append(
+            f"demo_mode must be one of {sorted(VALID_DEMO_MODES)}, got {demo_mode!r}"
+        )
+
+    # If the caller expects a specific mode, enforce it. A REPLAY bundle must
+    # not be presented as ISOLATED_LIVE, and an ISOLATED_LIVE bundle must not
+    # be presented as REPLAY.
+    if expected_mode is not None:
+        if expected_mode not in VALID_DEMO_MODES:
+            errors.append(
+                f"expected_mode must be one of {sorted(VALID_DEMO_MODES)}, "
+                f"got {expected_mode!r}"
+            )
+        elif demo_mode != expected_mode:
+            errors.append(
+                f"demo_mode mismatch: bundle reports {demo_mode!r} but "
+                f"expected_mode is {expected_mode!r}"
+            )
 
     # Nested structure validation
     pr = bundle.get("pr", {})
@@ -168,5 +197,9 @@ def validate_bundle(bundle: dict) -> list[str]:
     # safety
     if bundle.get("secret_leaks") != 0:
         errors.append("secret_leaks must be 0")
+
+    # Integrity check
+    integrity_errors = verify_bundle_integrity(bundle)
+    errors.extend(integrity_errors)
 
     return errors

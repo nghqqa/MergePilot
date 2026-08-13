@@ -33,7 +33,8 @@ for p in [str(ROOT), str(ROOT / "tools" / "demo_console")]:
     if p not in sys.path:
         sys.path.insert(0, p)
 
-from schema import validate_bundle, REQUIRED_FIELDS, VOLATILE_FIELDS
+from schema import validate_bundle, REQUIRED_FIELDS
+from integrity import VOLATILE_FIELDS
 from bundle_builder import build_bundle, compute_bundle_sha256
 from render import render_html
 

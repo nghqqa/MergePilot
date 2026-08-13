@@ -25,6 +25,16 @@ import sys
 import time
 from pathlib import Path
 
+# Integrity helpers (canonical JSON + bundle_sha256) are centralized in
+# integrity.py to avoid circular imports between schema.py and this module.
+# These names are re-exported here for backward compatibility with callers
+# that still do ``from bundle_builder import compute_bundle_sha256``.
+from integrity import (
+    VOLATILE_FIELDS,
+    canonical_json_without_volatile,
+    compute_bundle_sha256,
+)
+
 # ── Secret scan ────────────────────────────────────────────────────────────
 _SECRET_PATTERNS = [
     re.compile(r"sk-[A-Za-z0-9]{16,}"),
@@ -60,18 +70,6 @@ def verify_evidence_sha(path: str) -> str:
     if not os.path.exists(path):
         raise FileNotFoundError(f"Evidence file missing: {path}")
     return compute_sha256(path)
-
-
-def canonical_json_without_volatile(bundle: dict) -> str:
-    """Canonical JSON for SHA-256, excluding volatile and self-referential fields."""
-    from schema import VOLATILE_FIELDS
-    clean = {k: v for k, v in bundle.items() if k not in VOLATILE_FIELDS}
-    return json.dumps(clean, sort_keys=True, ensure_ascii=False)
-
-
-def compute_bundle_sha256(bundle: dict) -> str:
-    """Compute bundle SHA-256 over canonical JSON (excluding volatile fields)."""
-    return hashlib.sha256(canonical_json_without_volatile(bundle).encode("utf-8")).hexdigest()
 
 
 def build_bundle(root: str) -> dict:
