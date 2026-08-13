@@ -65,7 +65,7 @@ All materials consistently state:
 |-----|--------|----------------|
 | `.env.example` missing | Low — Demo Console needs no env vars | Create minimal stub |
 | `NOTICE` missing | Low — standard Apache-2.0 | Create |
-| `THIRD_PARTY` missing | Low — zero deps | Create "No third-party dependencies" |
+| `THIRD_PARTY` missing | Low — zero third-party Python packages | Create "No third-party Python packages; Git CLI required" |
 
 None of these gaps affect technical integrity or claim accuracy.
 

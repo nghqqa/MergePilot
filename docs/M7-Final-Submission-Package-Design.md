@@ -87,7 +87,7 @@ All boundaries are already present in README, Claim Matrix, and evidence:
 |---|--------|----------|------------|
 | 1 | Create `.env.example` (minimal stub) | Low | No |
 | 2 | Create `NOTICE` (Apache-2.0) | Low | No |
-| 3 | Create `THIRD_PARTY` (zero deps) | Low | No |
+| 3 | Create `THIRD_PARTY` (zero third-party Python packages; Git CLI required) | Low | No |
 | 4 | Demo video recording | Deferred | No |
 | 5 | M7 overall close tag | After above | — |
 

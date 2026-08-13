@@ -3,7 +3,7 @@
 > **不止提意见——把 PR 从审查推进到受治理的修复、验证、审批与回滚。**
 > 高危变更强制人工审批，失败可回滚，全程可审计。以 [AgentTeams / HiClaw](https://hiclaw.io) 为可适配的 Agent runtime。
 
-**当前状态**：**M7 已完成并正式关闭**（tag `m7-closed` → `175541a`，2026-08-13）。M7 包含：M7-P2 RAG N≥20 Benchmark（开发校准 + held-out 确认性 16/16 门控）、M7-P3 证据驱动 REPLAY Demo Console（33 tests, 8 pages, 0 deps）、M7-P3 Showcase Package、M7-P4 干净环境离线复现（`all_ok=true`）、Final Submission Package。确定性控制面、6 Skill DAG、回滚链、最小权限 Gateway、D2B-3 fail-closed Docker socket proxy、M6 OTel/SLS 可观测、M6-RAG CaseRetrieval pgvector 垂直闭环均已验证。**Demo 视频延期**（`DEFERRED_NOT_REQUIRED_FOR_CURRENT_TECHNICAL_GATE`），不影响技术关闭。**诚实边界**：RAG 结果仅作为 advisory evidence（`adopted=false, untrusted=true`），`core.scan/core.run` 当前不消费 RAG context，workflow utility 不可测（`NOT_MEASURABLE_WITH_CURRENT_RUNTIME`）。Demo Console 是 REPLAY 只读工具，不是生产管理后台。ISOLATED_LIVE 未实现。M6-C 真实云 SLS 未完成。Benchmark 使用确定性离线 `TokenOverlapAdapter`，不外推为生产效果。M8 尚未定义。所有声明均可在 [声明—证据矩阵](docs/初赛声明-证据矩阵.md) 中逐项核对。
+**当前状态**：**M7 已完成并正式关闭**（tag `m7-closed` → `175541a`，2026-08-13）。M7 包含：M7-P2 RAG N≥20 Benchmark（开发校准 + held-out 确认性 16/16 门控）、M7-P3 证据驱动 REPLAY Demo Console（33 tests, 8 pages, 零第三方 Python 包）、M7-P3 Showcase Package、M7-P4 干净环境离线复现（`all_ok=true`）、Final Submission Package。确定性控制面、6 Skill DAG、回滚链、最小权限 Gateway、D2B-3 fail-closed Docker socket proxy、M6 OTel/SLS 可观测、M6-RAG CaseRetrieval pgvector 垂直闭环均已验证。**Demo 视频延期**（`DEFERRED_NOT_REQUIRED_FOR_CURRENT_TECHNICAL_GATE`），不影响技术关闭。**诚实边界**：RAG 结果仅作为 advisory evidence（`adopted=false, untrusted=true`），`core.scan/core.run` 当前不消费 RAG context，workflow utility 不可测（`NOT_MEASURABLE_WITH_CURRENT_RUNTIME`）。Demo Console 是 REPLAY 只读工具，不是生产管理后台。ISOLATED_LIVE 未实现。M6-C 真实云 SLS 未完成。Benchmark 使用确定性离线 `TokenOverlapAdapter`，不外推为生产效果。M8 尚未定义。所有声明均可在 [声明—证据矩阵](docs/初赛声明-证据矩阵.md) 中逐项核对。
 
 ---
 
