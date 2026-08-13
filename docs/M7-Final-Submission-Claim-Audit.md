@@ -1,7 +1,7 @@
 # M7 Final Submission Claim Audit
 
 **Status**: Read-only audit of all claims in submission materials
-**Base**: `0bc2e69` (origin/main)
+**Base snapshot at document creation**: `0bc2e69` (historical; origin/main has since advanced to `175541a` = `m7-closed`)
 
 ## Audit Method
 

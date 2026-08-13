@@ -68,7 +68,7 @@
 - [x] git diff --check = 0
 - [x] No overstatement in README or Claim Matrix
 - [x] M7 overall close tag created (`m7-closed` → `175541a`)
-- [x] origin/main = `0bc2e69`
+- [x] origin/main = `175541a` (m7-closed target)
 
 ## Conclusion
 

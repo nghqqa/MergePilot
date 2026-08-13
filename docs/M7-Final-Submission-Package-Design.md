@@ -1,7 +1,7 @@
 # M7 Final Submission Package Design
 
 **Status**: Design (Demo video DEFERRED); these 3 docs pending PR merge
-**Base**: `0bc2e69` (origin/main, M7-P4 evidence merged)
+**Base snapshot at document creation**: `0bc2e69` (historical; origin/main has since advanced to `175541a` = `m7-closed`)
 **M7 baseline**: `m7-closed` (annotated tag → `175541a43d0d2b9a988d69d33de6963946b38c8f`)
 **Created**: 2026-08-13
 
