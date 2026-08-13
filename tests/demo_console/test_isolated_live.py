@@ -167,21 +167,45 @@ def _http_get_json(url: str):
         return e.code, dict(e.headers), parsed
 
 
-def _http_method(url: str, method: str, data: bytes | None = None):
-    """Issue an arbitrary HTTP method, returning (status, parsed_json-or-None)."""
-    req = urllib.request.Request(url, method=method, data=data)
-    try:
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            body = resp.read().decode("utf-8")
-            parsed = json.loads(body) if body else None
-            return resp.status, parsed
-    except urllib.error.HTTPError as e:
-        body = e.read().decode("utf-8")
+def _http_method(url: str, method: str, data: bytes | None = None,
+                 max_attempts: int = 3):
+    """Issue an arbitrary HTTP method, returning (status, parsed_json-or-None).
+
+    On Windows the client frequently resets the connection immediately after a
+    write method is rejected with 405 (the client did not expect a body and
+    closes early), which surfaces as ``ConnectionAbortedError`` /
+    ``ConnectionResetError`` on the urllib side. We retry the request (up to
+    ``max_attempts``) when those transient connection errors occur, with a
+    short sleep between attempts. An ``HTTPError`` (e.g. 405) is NOT retried —
+    it is a real HTTP response and is returned immediately.
+    """
+    last_exc = None
+    for attempt in range(max_attempts):
+        req = urllib.request.Request(url, method=method, data=data)
         try:
-            parsed = json.loads(body) if body else None
-        except json.JSONDecodeError:
-            parsed = None
-        return e.code, parsed
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                body = resp.read().decode("utf-8")
+                parsed = json.loads(body) if body else None
+                return resp.status, parsed
+        except urllib.error.HTTPError as e:
+            body = e.read().decode("utf-8")
+            try:
+                parsed = json.loads(body) if body else None
+            except json.JSONDecodeError:
+                parsed = None
+            return e.code, parsed
+        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError) as e:
+            # Transient connection reset (common on Windows after a 405 to a
+            # write method). Retry once after a short sleep; if it persists,
+            # fall through and surface the last error.
+            last_exc = e
+            time.sleep(0.1)
+            continue
+    # All attempts hit a transient connection error. Re-raise the last one so
+    # the test surfaces the failure rather than silently passing.
+    raise last_exc if last_exc is not None else RuntimeError(
+        "unexpected: no attempt completed and no exception captured"
+    )
 
 
 class TestValidModes(unittest.TestCase):
@@ -597,6 +621,69 @@ class TestHttpWriteMethodsBlocked(unittest.TestCase):
     def test_delete_blocked(self):
         status, _ = _http_method(self._handle.base_url + "/api/live/snapshot", "DELETE")
         self.assertEqual(status, 405)
+
+
+class TestWriteMethodStability(unittest.TestCase):
+    """25. Write-method tests are stable across repeated iterations (Windows).
+
+    On Windows the client frequently resets the connection immediately after a
+    write method is rejected with 405, which previously surfaced as
+    ``ConnectionAbortedError``. The ``_http_method`` helper now retries on
+    transient connection resets, and the serve.py handlers catch
+    ``ConnectionAbortedError`` on write-method paths and return 405 cleanly.
+    This test runs the write-method tests in a loop (5 iterations) and reports
+    pass/fail counts so a flaky connection no longer produces intermittent
+    failures.
+    """
+
+    def setUp(self):
+        self._tmpdir = tempfile.mkdtemp()
+        self._snapshot_path = os.path.join(self._tmpdir, "snapshot.json")
+        _write_json(self._snapshot_path, _make_isolated_live_bundle())
+        self._handle = _start_live_server(self._snapshot_path)
+
+    def tearDown(self):
+        self._handle.stop()
+        shutil.rmtree(self._tmpdir, ignore_errors=True)
+
+    def test_write_methods_stable_over_iterations(self):
+        # Run each write method 5 times against the live server and collect
+        # pass/fail counts. Every attempt must return 405.
+        methods = [
+            ("POST", b"{}"),
+            ("PUT", b"x"),
+            ("PATCH", b"x"),
+            ("DELETE", None),
+        ]
+        iterations = 5
+        results = {}  # method -> (passes, failures)
+        for method, body in methods:
+            passes = 0
+            failures = 0
+            for _ in range(iterations):
+                try:
+                    status, _ = _http_method(
+                        self._handle.base_url + "/api/live/snapshot",
+                        method, body,
+                    )
+                    if status == 405:
+                        passes += 1
+                    else:
+                        failures += 1
+                except Exception:
+                    # A connection error that escaped the retry loop counts as
+                    # a failure (so we surface persistent instability).
+                    failures += 1
+            results[method] = (passes, failures)
+        # Report the counts in the assertion message for diagnostics.
+        summary = ", ".join(
+            f"{m}: {r[0]} pass/{r[1]} fail" for m, r in results.items()
+        )
+        total_failures = sum(r[1] for r in results.values())
+        self.assertEqual(
+            total_failures, 0,
+            f"write-method stability failures: {summary}",
+        )
 
 
 class TestReplayApiLive404(unittest.TestCase):

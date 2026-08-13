@@ -8,8 +8,8 @@ state from a PostgreSQL database and assembles a DemoBundle on the fly. It is
 
 - The FIRST statement after connecting is an explicit
   ``BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY``. All identity
-  checks (database/role/read-only/server/catalog/environment-marker probes) run
-  INSIDE that transaction. On success it ``ROLLBACK``s; on any error it
+  checks (database/role/read-only/server/role/catalog/environment-marker probes)
+  run INSIDE that transaction. On success it ``ROLLBACK``s; on any error it
   ``ROLLBACK``s and closes the connection.
 - Only ``SELECT`` queries are issued inside the read-only transaction.
 - ``psycopg2`` is imported lazily inside ``read_snapshot`` so that REPLAY /
@@ -18,6 +18,13 @@ state from a PostgreSQL database and assembles a DemoBundle on the fly. It is
   exception messages, or logs. All errors are re-raised with a sanitized
   message that carries only a stable error ``code`` and the public identity
   fields.
+
+Environment identity is established via a dedicated single-row
+``environment_identity`` table (see
+:data:`ENVIRONMENT_MARKER_CONTRACT` and
+``migrations/001_environment_identity.sql``), NOT via
+``controller_offsets.sync_token``. The marker is mandatory; the source never
+guesses the environment from hostname.
 
 The assembled bundle declares ``demo_mode = "ISOLATED_LIVE"`` and a
 ``bundle_sha256`` computed by the shared :mod:`integrity` helpers, so it flows
@@ -30,6 +37,7 @@ merged. MergePilot-Test isolated verification has NOT been performed.
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import sys
@@ -70,6 +78,7 @@ STABLE_ERROR_CODES = frozenset({
     "SCHEMA_INCOMPATIBLE",
     "NOT_READ_ONLY",
     "POSTGRES_READ_FAILED",
+    "CONFIG_INVALID",
 })
 
 
@@ -107,6 +116,10 @@ class RunNotFoundError(PostgresSourceError):
 
 class PostgresQueryError(PostgresSourceError):
     """A read query failed. The original (sanitized) detail is attached."""
+
+
+class ConfigInvalidError(PostgresSourceError):
+    """The source was constructed with invalid configuration (CONFIG_INVALID)."""
 
 
 # ── Authoritative schema contract ──────────────────────────────────────────
@@ -254,6 +267,43 @@ SCHEMA_CONTRACT["audit_events"] = frozenset({
     "id", "task_id", "action", "ts", "actor", "detail",
 })
 
+# environment_identity is the ISOLATED_LIVE environment marker table
+# (migrations/001_environment_identity.sql). It is a single-row table with a
+# single column (environment_id); the reader role gets SELECT only.
+SCHEMA_CONTRACT["environment_identity"] = frozenset({
+    "environment_id", "created_at",
+})
+
+
+# ── Environment identity marker contract ────────────────────────────────────
+# ENVIRONMENT_MARKER_CONTRACT is the authoritative description of the trusted
+# environment identity marker table. It replaces the earlier scheme that
+# overloaded controller_offsets.sync_token. The marker is now a dedicated
+# single-row table (environment_identity) whose only column is environment_id.
+#
+# Contract:
+#   - Table name: environment_identity
+#   - Exactly one row, with column: environment_id (TEXT)
+#   - Viewer (reader role) has SELECT only (no INSERT/UPDATE/DELETE/TRUNCATE)
+#   - Probe query: SELECT environment_id FROM environment_identity LIMIT 1
+#
+# Failure modes (all fail-closed → ENVIRONMENT_ID_NOT_VERIFIED except a value
+# mismatch → ENVIRONMENT_ID_MISMATCH):
+#   - Missing table            → ENVIRONMENT_ID_NOT_VERIFIED
+#   - 0 rows                   → ENVIRONMENT_ID_NOT_VERIFIED
+#   - >1 rows                  → ENVIRONMENT_ID_NOT_VERIFIED
+#   - value != expected        → ENVIRONMENT_ID_MISMATCH
+ENVIRONMENT_MARKER_CONTRACT = {
+    "table_name": "environment_identity",
+    "probe_sql": "SELECT environment_id FROM environment_identity LIMIT 1",
+    "expected_row_count": 1,
+    "required_columns": frozenset({"environment_id"}),
+    "viewer_privileges": frozenset({"SELECT"}),
+    "revoked_privileges": frozenset(
+        {"INSERT", "UPDATE", "DELETE", "TRUNCATE"}
+    ),
+}
+
 
 # ── SQL column reference extraction (for migration-contract tests) ──────────
 # Regex that pulls ``table.column`` and bare ``column`` references out of a
@@ -363,16 +413,14 @@ _AUDIT_BY_ACTION_SQL = (
     "GROUP BY action ORDER BY action"
 )
 
-# Environment marker probe. The source looks for a trusted marker row that
-# identifies the database environment as the expected ISOLATED_LIVE viewer
-# target. The marker is a simple key/value in controller_offsets
-# (consumer_name='mergepilot_environment', sync_token=<expected env id>). If no
-# trusted marker exists, the source refuses startup with ENVIRONMENT_ID_NOT_VERIFIED
-# rather than guessing from the hostname.
-_ENV_MARKER_SQL = (
-    "SELECT sync_token FROM controller_offsets "
-    "WHERE consumer_name = 'mergepilot_environment'"
-)
+# Environment marker probe. The source looks for a trusted marker row in the
+# dedicated environment_identity table. The probe is
+#   SELECT environment_id FROM environment_identity LIMIT 1
+# and the result is compared against the caller-supplied expected_environment_id.
+# A missing table, 0 rows, or more than 1 row is treated as
+# ENVIRONMENT_ID_NOT_VERIFIED (fail-closed). A value mismatch is
+# ENVIRONMENT_ID_MISMATCH. See ENVIRONMENT_MARKER_CONTRACT for the contract.
+_ENV_MARKER_SQL = ENVIRONMENT_MARKER_CONTRACT["probe_sql"]
 
 
 class PostgresSnapshotSource(SnapshotSource):
@@ -391,15 +439,29 @@ class PostgresSnapshotSource(SnapshotSource):
         Required value of ``current_user``; anything else is rejected.
     expected_environment_id:
         Required value of the trusted environment marker
-        (``controller_offsets.sync_token`` where
-        ``consumer_name='mergepilot_environment'``). If ``None``, the
-        environment-marker check is skipped (only safe for tests).
+        (``environment_identity.environment_id``, single row). MUST be a
+        non-empty string (constructor and preflight fail-closed otherwise).
+    expected_server_addresses:
+        Required list of allowed ``inet_server_addr()`` values (e.g.
+        ``["127.0.0.1"]``). The connected server's address must be in this
+        set. MUST be a non-empty list at construction time.
+    expected_server_port:
+        Required value of ``inet_server_port()``. MUST be a non-zero int.
+    expected_application_name:
+        Required value of ``current_setting('application_name')``. MUST be a
+        non-empty string.
     query_timeout_seconds:
         Per-session ``statement_timeout`` (and ``lock_timeout`` /
-        ``idle_in_transaction_session_timeout``), in seconds. Default 10.
+        ``idle_in_transaction_session_timeout``), in seconds. Must be a
+        finite number in the range ``[1, 60]``; 0, negative, NaN, Infinity,
+        and None are rejected with CONFIG_INVALID. Default 10.
     """
 
     kind = "POSTGRES_ISOLATED"
+
+    # Bounds for query_timeout_seconds. Must be a finite number in [1, 60].
+    _TIMEOUT_MIN_SECONDS = 1
+    _TIMEOUT_MAX_SECONDS = 60
 
     @property
     def read_only(self) -> bool:
@@ -413,6 +475,9 @@ class PostgresSnapshotSource(SnapshotSource):
         expected_database: str,
         expected_role: str,
         expected_environment_id: str | None = None,
+        expected_server_addresses: list[str] | None = None,
+        expected_server_port: int | None = None,
+        expected_application_name: str | None = None,
         query_timeout_seconds: float = 10.0,
     ):
         # Store the DSN in a single private attribute. __repr__/__str__ are
@@ -421,9 +486,52 @@ class PostgresSnapshotSource(SnapshotSource):
         self._run_id = run_id
         self._expected_database = expected_database
         self._expected_role = expected_role
+
+        # ── expected_environment_id must be a non-empty string ─────────────
+        # The environment marker is mandatory: the source never guesses the
+        # environment identity from hostname. A None/empty/whitespace-only value
+        # is a configuration error (CONFIG_INVALID), not a soft skip.
+        if not isinstance(expected_environment_id, str) or not expected_environment_id.strip():
+            raise ConfigInvalidError(
+                "CONFIG_INVALID: expected_environment_id must be a non-empty "
+                "string (environment marker is mandatory; never guessed)",
+                code="CONFIG_INVALID",
+            )
         self._expected_environment_id = expected_environment_id
-        # statement_timeout / lock_timeout take milliseconds in PostgreSQL.
-        self._timeout_ms = int(max(0.0, float(query_timeout_seconds)) * 1000)
+
+        # ── Server identity hardening ──────────────────────────────────────
+        # expected_server_addresses: a non-empty list of allowed addresses.
+        if not isinstance(expected_server_addresses, list) or not expected_server_addresses:
+            raise ConfigInvalidError(
+                "CONFIG_INVALID: expected_server_addresses must be a non-empty "
+                "list (e.g. ['127.0.0.1'])",
+                code="CONFIG_INVALID",
+            )
+        self._expected_server_addresses = list(expected_server_addresses)
+
+        # expected_server_port: a non-zero int.
+        if not isinstance(expected_server_port, int) or isinstance(
+            expected_server_port, bool
+        ) or expected_server_port == 0:
+            raise ConfigInvalidError(
+                "CONFIG_INVALID: expected_server_port must be a non-zero int",
+                code="CONFIG_INVALID",
+            )
+        self._expected_server_port = expected_server_port
+
+        # expected_application_name: a non-empty string.
+        if not isinstance(expected_application_name, str) or not expected_application_name:
+            raise ConfigInvalidError(
+                "CONFIG_INVALID: expected_application_name must be a non-empty "
+                "string",
+                code="CONFIG_INVALID",
+            )
+        self._expected_application_name = expected_application_name
+
+        # ── Timeout bounds ─────────────────────────────────────────────────
+        # query_timeout_seconds must be a finite number in [1, 60]. Reject 0,
+        # negative, NaN, Infinity, and None with CONFIG_INVALID.
+        self._timeout_ms = self._validate_timeout(query_timeout_seconds)
 
         # Validate run_id shape eagerly so a bad value never reaches a query.
         if not isinstance(run_id, str) or not _RUN_ID_PATTERN.match(run_id):
@@ -445,6 +553,55 @@ class PostgresSnapshotSource(SnapshotSource):
         if len(text) > 40:
             text = text[:40] + "..."
         return repr(text)
+
+    @classmethod
+    def _validate_timeout(cls, query_timeout_seconds) -> int:
+        """Validate query_timeout_seconds and return the timeout in milliseconds.
+
+        Must be a finite number in ``[1, 60]``. Rejects None, bool, strings
+        (even numeric strings), non-numeric values, 0, negatives, NaN, and
+        Infinity with CONFIG_INVALID. Returns the integer milliseconds suitable
+        for ``SET LOCAL statement_timeout``.
+        """
+        # bool is a subclass of int; reject it explicitly so True/False are
+        # never silently accepted as 1/0.
+        if isinstance(query_timeout_seconds, bool) or query_timeout_seconds is None:
+            raise ConfigInvalidError(
+                "CONFIG_INVALID: query_timeout_seconds must be a finite "
+                f"number in [1, 60] (got {query_timeout_seconds!r})",
+                code="CONFIG_INVALID",
+            )
+        # Reject strings explicitly: even a numeric string like "10" is not an
+        # accepted timeout (the contract requires an actual number). This also
+        # avoids the surprising float("10") == 10.0 acceptance path.
+        if isinstance(query_timeout_seconds, str):
+            raise ConfigInvalidError(
+                "CONFIG_INVALID: query_timeout_seconds must be a finite "
+                f"number in [1, 60] (got {query_timeout_seconds!r})",
+                code="CONFIG_INVALID",
+            )
+        # Only accept int/float at this point.
+        if not isinstance(query_timeout_seconds, (int, float)):
+            raise ConfigInvalidError(
+                "CONFIG_INVALID: query_timeout_seconds must be a finite "
+                f"number in [1, 60] (got {query_timeout_seconds!r})",
+                code="CONFIG_INVALID",
+            )
+        timeout = float(query_timeout_seconds)
+        # Reject NaN and Infinity (math.isfinite handles both).
+        if math.isnan(timeout) or math.isinf(timeout):
+            raise ConfigInvalidError(
+                "CONFIG_INVALID: query_timeout_seconds must be a finite "
+                f"number in [1, 60] (got {query_timeout_seconds!r})",
+                code="CONFIG_INVALID",
+            )
+        if timeout < cls._TIMEOUT_MIN_SECONDS or timeout > cls._TIMEOUT_MAX_SECONDS:
+            raise ConfigInvalidError(
+                "CONFIG_INVALID: query_timeout_seconds must be in [1, 60] "
+                f"(got {query_timeout_seconds!r})",
+                code="CONFIG_INVALID",
+            )
+        return int(timeout * 1000)
 
     def __repr__(self) -> str:
         # Never expose the DSN. Expose only the public, non-secret identity.
@@ -468,17 +625,26 @@ class PostgresSnapshotSource(SnapshotSource):
            READ READ ONLY) as the first statement. All identity/catalog checks
            happen INSIDE this transaction.
         4. SET LOCAL timeouts.
-        5. Verify identity inside the txn: current_database(), current_user,
-           transaction_read_only / default_transaction_read_only, server identity
-           (inet_server_addr/port/application_name/server_version_num), schema
-           search_path, required-table catalog probe, and the environment marker.
+        5. Verify identity inside the txn (see :meth:`_verify_identity`):
+           a. current_database(), current_user, read-only flags
+           b. server identity: inet_server_addr() (must be in the configured
+              allowlist; NULL → WRONG_SERVER), inet_server_port(),
+              application_name, server_version_num
+           c. schema / search_path (must be public)
+           d. required-table catalog presence
+           e. reader role hardening: pg_roles privileged-attribute probe +
+              table-level write-privilege probe on task_runs
+           f. schema compatibility runtime catalog probe (column-level)
+           g. environment marker: environment_identity.environment_id (exactly
+              one row, value must match expected_environment_id)
         6. SELECT task_runs / stage_runs / stage_events / revision_bindings /
            run_pr_bindings / mcp_calls / rollback_runs / audit_events counts
            (all parameterized).
         7. Assemble the DemoBundle with demo_mode="ISOLATED_LIVE".
-        8. Compute bundle_sha256.
-        9. ROLLBACK + close.
-        10. Return JSON bytes.
+        8. Scan serialized bundle bytes for secrets; raise if any leak detected.
+        9. Compute bundle_sha256.
+        10. ROLLBACK + close.
+        11. Return JSON bytes.
 
         On ANY error the transaction is rolled back, the connection is closed,
         and a sanitized :class:`PostgresSourceError` (with a stable ``.code``)
@@ -591,8 +757,18 @@ class PostgresSnapshotSource(SnapshotSource):
 
         Every check here runs INSIDE the read-only transaction opened by
         :meth:`read_snapshot`, so all probes see the same snapshot.
+
+        Order of checks:
+          1. Core identity (database, role, read-only flags)
+          2. Server identity (address/port/application_name/version)
+          3. Schema / search_path
+          4. Required-table catalog presence
+          5. Reader role hardening (pg_roles privileged-attribute probe +
+             table-level write-privilege probe on task_runs)
+          6. Schema compatibility runtime catalog probe (column-level)
+          7. Environment marker (trusted identity; never guessed)
         """
-        # ── Core identity (database, role, read-only flags) ────────────────
+        # ── 1. Core identity (database, role, read-only flags) ─────────────
         cur.execute(
             "SELECT current_database(), current_user, "
             "current_setting('transaction_read_only')::boolean, "
@@ -629,12 +805,11 @@ class PostgresSnapshotSource(SnapshotSource):
                 code="NOT_READ_ONLY",
             )
 
-        # ── Server identity (address/port/application_name/version) ────────
+        # ── 2. Server identity (address/port/application_name/version) ─────
         # inet_server_addr()/inet_server_port() report the actual server the
-        # connection landed on. We do NOT guess from hostname: an operator who
-        # needs a specific server must supply expected values. Here we only
-        # record them and reject obviously-wrong server artifacts (NULL addr
-        # via a Unix socket is allowed); a future hardening can pin these.
+        # connection landed on. We do NOT guess from hostname: the operator
+        # supplies expected_server_addresses / expected_server_port /
+        # expected_application_name, and a mismatch is fail-closed WRONG_SERVER.
         cur.execute(
             "SELECT inet_server_addr()::text, inet_server_port(), "
             "current_setting('application_name'), "
@@ -647,6 +822,34 @@ class PostgresSnapshotSource(SnapshotSource):
                 code="WRONG_SERVER",
             )
         server_addr, server_port, application_name, server_version_num = srv
+
+        # NULL inet_server_addr (e.g. a Unix socket) → WRONG_SERVER fail-closed.
+        # We never accept an unidentifiable server address.
+        if not isinstance(server_addr, str) or not server_addr:
+            raise IdentityCheckError(
+                "WRONG_SERVER: inet_server_addr() returned NULL "
+                "(Unix socket / unidentifiable server); a concrete IP address "
+                "matching the configured allowlist is required",
+                code="WRONG_SERVER",
+            )
+        if server_addr not in self._expected_server_addresses:
+            raise IdentityCheckError(
+                "WRONG_SERVER: inet_server_addr() not in expected "
+                f"allowlist (got {self._safe_snippet(server_addr)})",
+                code="WRONG_SERVER",
+            )
+        if server_port != self._expected_server_port:
+            raise IdentityCheckError(
+                "WRONG_SERVER: inet_server_port() mismatch "
+                f"(got {self._safe_snippet(server_port)})",
+                code="WRONG_SERVER",
+            )
+        if application_name != self._expected_application_name:
+            raise IdentityCheckError(
+                "WRONG_SERVER: application_name mismatch "
+                f"(got {self._safe_snippet(application_name)})",
+                code="WRONG_SERVER",
+            )
         # server_version_num is an integer (e.g. 160001 for PG 16.1). We accept
         # the supported major range (12..17) — anything older/newer-than-known
         # is treated as a schema-compatibility risk.
@@ -657,7 +860,7 @@ class PostgresSnapshotSource(SnapshotSource):
                 code="WRONG_SERVER",
             )
 
-        # ── Schema / search_path ───────────────────────────────────────────
+        # ── 3. Schema / search_path ────────────────────────────────────────
         # The read-only viewer must read from the public schema (where the M3/M4
         # migration tables live). A non-public search_path is a sign of a
         # misconfigured or hostile role.
@@ -676,13 +879,14 @@ class PostgresSnapshotSource(SnapshotSource):
                 code="SCHEMA_INCOMPATIBLE",
             )
 
-        # ── Required-table catalog probe ───────────────────────────────────
+        # ── 4. Required-table catalog presence ─────────────────────────────
         # Fail-closed if any table the source reads is missing — a partial
-        # schema means we cannot assemble a correct bundle.
+        # schema means we cannot assemble a correct bundle. This is the
+        # coarse table-existence check; the column-level probe follows.
         required_tables = (
             "task_runs", "stage_runs", "stage_events", "revision_bindings",
             "run_pr_bindings", "mcp_calls", "rollback_runs", "audit_events",
-            "controller_offsets",
+            "environment_identity",
         )
         cur.execute(
             "SELECT tablename FROM pg_tables WHERE schemaname = 'public'"
@@ -696,28 +900,131 @@ class PostgresSnapshotSource(SnapshotSource):
                 code="SCHEMA_INCOMPATIBLE",
             )
 
-        # ── Environment marker (trusted identity; never guessed) ───────────
-        # Look for a trusted marker row identifying the database environment.
-        # If an expected_environment_id was supplied, the marker's value must
-        # match it exactly; otherwise ENVIRONMENT_ID_MISMATCH. If NO marker row
-        # exists at all, the environment is unverified: refuse startup with
-        # ENVIRONMENT_ID_NOT_VERIFIED (do NOT guess from hostname).
+        # ── 5. Reader role hardening ───────────────────────────────────────
+        # The connected role must NOT be a privileged role. Fail-closed if any
+        # of rolsuper/rolcreatedb/rolcreaterole/rolreplication/rolbypassrls is
+        # true — the viewer must be an unprivileged reader.
+        cur.execute(
+            "SELECT rolsuper, rolcreatedb, rolcreaterole, rolreplication, "
+            "rolbypassrls FROM pg_roles WHERE rolname = current_user"
+        )
+        role_row = cur.fetchone()
+        if role_row is None:
+            raise IdentityCheckError(
+                "WRONG_ROLE: could not probe current role privileges in pg_roles",
+                code="WRONG_ROLE",
+            )
+        # Any True privileged attribute → WRONG_ROLE (role has privileged access).
+        for attr_val in role_row:
+            if attr_val is True:
+                raise IdentityCheckError(
+                    "WRONG_ROLE: connected role has a privileged attribute "
+                    "(rolsuper/rolcreatedb/rolcreaterole/rolreplication/"
+                    "rolbypassrls); only an unprivileged reader is allowed",
+                    code="WRONG_ROLE",
+                )
+
+        # Table-level privilege probe: the viewer must NOT have write
+        # privileges on task_runs. If it has INSERT/UPDATE/DELETE/TRUNCATE the
+        # role is too privileged for a read-only viewer.
+        cur.execute(
+            "SELECT has_table_privilege(current_user, 'task_runs', 'INSERT'), "
+            "has_table_privilege(current_user, 'task_runs', 'UPDATE'), "
+            "has_table_privilege(current_user, 'task_runs', 'DELETE'), "
+            "has_table_privilege(current_user, 'task_runs', 'TRUNCATE')"
+        )
+        priv_row = cur.fetchone()
+        if priv_row is None:
+            raise IdentityCheckError(
+                "WRONG_ROLE: could not probe table-level privileges on task_runs",
+                code="WRONG_ROLE",
+            )
+        for priv_val in priv_row:
+            if priv_val is True:
+                raise IdentityCheckError(
+                    "WRONG_ROLE: connected role has write privileges on "
+                    "task_runs (INSERT/UPDATE/DELETE/TRUNCATE); only SELECT "
+                    "is allowed for the read-only viewer",
+                    code="WRONG_ROLE",
+                )
+
+        # ── 6. Schema compatibility — runtime catalog probe ────────────────
+        # For each required table, compare the actual columns (from
+        # information_schema.columns) against the required_columns listed in
+        # SCHEMA_CONTRACT. Missing columns → SCHEMA_INCOMPATIBLE with the
+        # missing column names listed in the detail.
+        self._verify_schema_columns(cur)
+
+        # ── 7. Environment marker (trusted identity; never guessed) ────────
+        # Probe the environment_identity table. The contract requires exactly
+        # one row whose environment_id matches the caller-supplied
+        # expected_environment_id. Missing table (handled by step 4), 0 rows,
+        # or >1 rows → ENVIRONMENT_ID_NOT_VERIFIED. A value mismatch →
+        # ENVIRONMENT_ID_MISMATCH. We never guess the environment from hostname.
         cur.execute(_ENV_MARKER_SQL)
         marker_row = cur.fetchone()
+        # A 0-row result yields marker_row None here (fetchone on an empty set).
         if marker_row is None:
             raise IdentityCheckError(
-                "ENVIRONMENT_ID_NOT_VERIFIED: no trusted environment marker "
-                "(controller_offsets.consumer_name='mergepilot_environment'); "
-                "refusing startup without a verified environment identity",
+                "ENVIRONMENT_ID_NOT_VERIFIED: no environment_identity row "
+                "(0 rows); refusing startup without a verified environment "
+                "identity",
                 code="ENVIRONMENT_ID_NOT_VERIFIED",
             )
         marker_value = marker_row[0]
-        if self._expected_environment_id is not None:
-            if marker_value != self._expected_environment_id:
+        # Count rows to detect >1 (the unique index should prevent it, but
+        # fail-closed regardless). LIMIT 1 above only returns one row, so we
+        # issue a count to verify the table is single-row.
+        cur.execute("SELECT count(*) FROM environment_identity")
+        count_row = cur.fetchone()
+        row_count = int(count_row[0]) if count_row and count_row[0] is not None else 0
+        if row_count == 0:
+            raise IdentityCheckError(
+                "ENVIRONMENT_ID_NOT_VERIFIED: environment_identity has 0 rows; "
+                "refusing startup without a verified environment identity",
+                code="ENVIRONMENT_ID_NOT_VERIFIED",
+            )
+        if row_count > 1:
+            raise IdentityCheckError(
+                "ENVIRONMENT_ID_NOT_VERIFIED: environment_identity has >1 rows "
+                f"({row_count}); a single marker row is required",
+                code="ENVIRONMENT_ID_NOT_VERIFIED",
+            )
+        if marker_value != self._expected_environment_id:
+            raise IdentityCheckError(
+                "ENVIRONMENT_ID_MISMATCH: environment_identity.environment_id "
+                "does not match expected",
+                code="ENVIRONMENT_ID_MISMATCH",
+            )
+
+    def _verify_schema_columns(self, cur) -> None:
+        """Runtime catalog probe: every required column must exist.
+
+        For each table in the required set, SELECT column_name from
+        information_schema.columns and compare against
+        SCHEMA_CONTRACT[table].required_columns. Missing columns →
+        SCHEMA_INCOMPATIBLE with the missing column names listed in the detail.
+        """
+        required_tables_for_columns = (
+            "task_runs", "stage_runs", "revision_bindings",
+            "run_pr_bindings", "rollback_runs", "environment_identity",
+        )
+        for table in required_tables_for_columns:
+            contract_cols = SCHEMA_CONTRACT.get(table)
+            if not contract_cols:
+                continue
+            cur.execute(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_schema = 'public' AND table_name = %s",
+                (table,),
+            )
+            actual = {str(row[0]) for row in cur.fetchall()}
+            missing = sorted(contract_cols - actual)
+            if missing:
                 raise IdentityCheckError(
-                    "ENVIRONMENT_ID_MISMATCH: environment marker does not match "
-                    f"expected (got {self._safe_snippet(marker_value)})",
-                    code="ENVIRONMENT_ID_MISMATCH",
+                    f"SCHEMA_INCOMPATIBLE: table {table!r} is missing required "
+                    f"columns: {missing}",
+                    code="SCHEMA_INCOMPATIBLE",
                 )
 
     # ── Transaction setup ──────────────────────────────────────────────────
@@ -873,12 +1180,23 @@ class PostgresSnapshotSource(SnapshotSource):
         base_sha = rev_base_sha or ""
         head_sha = pr_head_sha or ""
 
-        # source_commit/verification_commit come from the revision cut. If we
-        # have a real head_sha, use it; otherwise null + NOT_AVAILABLE (never
-        # fabricate a SHA, never emit "").
+        # ── Provenance fix ──────────────────────────────────────────────────
+        # source_commit: the target revision's head_sha from revision_bindings
+        #   (the revision the run was cut against). This is the authoritative
+        #   "source" commit.
+        # verification_commit: ALWAYS null for ISOLATED_LIVE. The read-only DB
+        #   viewer does NOT perform or record a verification build/test run, so
+        #   it cannot truthfully report a verification commit. Earlier versions
+        #   incorrectly copied head_sha here; that conflated the target
+        #   revision with a verified artifact.
+        # verification_commit_status: "NOT_AVAILABLE" makes the absence explicit
+        #   so consumers cannot mistake null for "not yet populated".
+        # provenance_status: VERIFIED_FROM_REVISION_BINDINGS when a head_sha is
+        #   available; NOT_AVAILABLE otherwise.
         has_revision_sha = bool(rev_head_sha)
         source_commit = rev_head_sha if has_revision_sha else None
-        verification_commit = rev_head_sha if has_revision_sha else None
+        verification_commit = None
+        verification_commit_status = "NOT_AVAILABLE"
         if has_revision_sha:
             provenance_status = "VERIFIED_FROM_REVISION_BINDINGS"
         else:
@@ -1048,30 +1366,58 @@ class PostgresSnapshotSource(SnapshotSource):
         }
 
         # ── Secret measurement ──────────────────────────────────────────────
-        # secret_scan_status records HOW secret_leaks was determined:
-        #   NOT_MEASURED — for ISOLATED_LIVE we do not run a full secret scan
-        #                  over the DB rows; the bundle bytes are scanned for
-        #                  the known DSN/password markers only (deterministic).
+        # secret_scan_status records HOW secret_leaks was determined. The
+        # ISOLATED_LIVE source runs a PARTIAL_SERIALIZED_BUNDLE_SCAN: a
+        # deterministic regex scan over the serialized bundle bytes for a fixed
+        # set of known secret markers (DSN password=, postgresql://user:pass@,
+        # postgres://user:pass@, sk-*, ghp_*, AKIA*, xox*). It is NOT a full
+        # content scan over every DB row — only the serialized bundle output.
+        #
+        # secret_scan_scope lists exactly which patterns are checked so a
+        # consumer cannot mistake the partial scan for a full scan.
+        #
+        # secret_leaks_detected holds the actual count from the scan (should be
+        # 0; if it is non-zero we raise POSTGRES_READ_FAILED and do NOT emit a
+        # bundle).
+        #
         # secret_leaks stays an integer (0) because the schema strictly requires
-        # secret_leaks == 0; the bundle never contains the DSN (it is a secret
-        # and is never serialized into the bundle), so the deterministic scan
-        # of the serialized bytes always reports 0. This keeps the REPLAY
-        # strict contract unchanged while making the ISOLATED_LIVE measurement
-        # status explicit.
-        secret_scan_status = "NOT_MEASURED"
+        # secret_leaks == 0. For ISOLATED_LIVE it equals secret_leaks_detected
+        # (both are 0 when the scan is clean); if the scan detects any leak we
+        # refuse to emit a bundle at all, so secret_leaks is only ever 0 in a
+        # returned bundle.
+        secret_scan_status = "PARTIAL_SERIALIZED_BUNDLE_SCAN"
+        secret_scan_scope = [
+            "password=",
+            "postgresql://user:pass@",
+            "postgres://user:pass@",
+            "sk-*",
+            "ghp_*",
+            "AKIA*",
+            "xox*",
+        ]
         secret_leaks = 0
 
         # ── Assemble (bundle_sha256 + generated_at added last) ──────────────
+        # NOTE: secret_scan_scope is intentionally NOT added to the bundle yet.
+        # The deterministic secret scan runs over the serialized bundle bytes
+        # FIRST; only after the scan is clean do we attach the scope metadata.
+        # This avoids a false positive where the literal pattern descriptions in
+        # secret_scan_scope (e.g. "postgresql://user:pass@") would match the
+        # scan regexes themselves.
         bundle = {
             "schema_version": "mergepilot.demo-bundle.v1",
             "demo_mode": "ISOLATED_LIVE",
             # generated_at is volatile (excluded from the digest).
             "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            # source_commit / verification_commit: mapped from revision_bindings.
-            # If no revision SHA exists, null + provenance_status=NOT_AVAILABLE
-            # (NEVER an empty string, NEVER a fabricated SHA).
+            # source_commit: mapped from revision_bindings.head_sha (the target
+            # revision). If no revision SHA exists, null + provenance_status=
+            # NOT_AVAILABLE (NEVER an empty string, NEVER a fabricated SHA).
             "source_commit": source_commit,
+            # verification_commit: ALWAYS null for ISOLATED_LIVE — the read-only
+            # viewer does not record a verification build. verification_commit_
+            # status="NOT_AVAILABLE" makes the absence explicit.
             "verification_commit": verification_commit,
+            "verification_commit_status": verification_commit_status,
             # provenance_status records where the commit SHAs came from (or
             # that they are unavailable). ISOLATED_LIVE-only field; REPLAY
             # bundles do not emit it (schema does not require it).
@@ -1093,27 +1439,41 @@ class PostgresSnapshotSource(SnapshotSource):
             # only); secret_leaks stays 0 to honor the strict schema contract.
             "secret_leaks": secret_leaks,
             "secret_scan_status": secret_scan_status,
+            "secret_leaks_detected": secret_leaks,
             "residue": residue,
             "benchmark_summary": benchmark_summary,
             "topology": topology,
         }
 
         # Deterministic secret scan over the serialized bundle bytes. This is a
-        # belt-and-suspenders guarantee that a DSN/password never reaches the
-        # emitted bytes: even if a future change leaked the DSN into the bundle,
-        # this scan would catch it and surface a non-zero secret_leaks (which
-        # the schema would then reject). Because the DSN is never serialized
-        # into the bundle, this is always 0 in practice.
+        # belt-and-suspenders guarantee that a secret never reaches the emitted
+        # bytes: even if a future change leaked the DSN or a token into the
+        # bundle, this scan would catch it. Because secrets are never serialized
+        # into the bundle, this is always 0 in practice. The scan runs BEFORE
+        # secret_scan_scope is attached so the literal pattern descriptions do
+        # not trigger a false positive.
         serialized = json.dumps(
             bundle, sort_keys=True, ensure_ascii=False
         ).encode("utf-8")
         scanned_leaks = self._scan_for_secrets(serialized)
+        # Record the actual detected count on the bundle for transparency.
+        bundle["secret_leaks_detected"] = scanned_leaks
         if scanned_leaks:
-            # A leak was detected in the assembled bundle bytes. This is a
-            # fail-closed invariant violation: do NOT emit a bundle with
-            # secret_leaks=0; report the actual count so schema validation
-            # rejects it. (In practice this never fires.)
-            bundle["secret_leaks"] = scanned_leaks
+            # A leak was detected in the assembled bundle bytes. Fail-closed:
+            # do NOT emit a bundle containing a secret. Raise POSTGRES_READ_
+            # FAILED with a sanitized, stable-code-only message (no raw bytes,
+            # no DSN, no token text).
+            raise PostgresQueryError(
+                "POSTGRES_READ_FAILED: secret leak detected in serialized "
+                f"bundle bytes ({scanned_leaks} match(es)); refusing to emit "
+                "a bundle containing a secret",
+                code="POSTGRES_READ_FAILED",
+            )
+
+        # Now that the scan is clean, attach the secret_scan_scope metadata
+        # (the literal pattern descriptions). This field is metadata only; it
+        # is excluded from the scan above to avoid a self-match false positive.
+        bundle["secret_scan_scope"] = list(secret_scan_scope)
 
         # Compute the digest over canonical JSON excluding volatile fields.
         bundle["bundle_sha256"] = compute_bundle_sha256(bundle)
@@ -1212,11 +1572,15 @@ class PostgresSnapshotSource(SnapshotSource):
 
     @staticmethod
     def _sanitize_text(text: str) -> str:
-        """Strip anything that looks like a DSN from an error string.
+        """Strip anything that looks like a secret from an error string.
 
         psycopg2 / libpq messages occasionally echo the connection string on
-        connect failures. Redact any ``password=...`` fragment wholesale and
-        trim the message so a leaked DSN can never reach a log.
+        connect failures. Redact any ``password=...`` fragment wholesale, any
+        ``postgresql://user:pass@`` / ``postgres://user:pass@`` URI with
+        embedded credentials, and any token-like marker, then trim the message
+        so a leaked secret can never reach a log. The goal is that exception
+        messages NEVER contain raw libpq/psycopg2 error text that might carry
+        a credential — only stable error codes plus redacted detail.
         """
         if not isinstance(text, str):
             try:
@@ -1230,25 +1594,56 @@ class PostgresSnapshotSource(SnapshotSource):
             text,
             flags=re.IGNORECASE,
         )
+        # Redact libpq URI credentials (postgresql://user:pass@... and
+        # postgres://user:pass@...).
+        text = re.sub(
+            r"(postgres(?:ql)?://)([^:/@\s]+):([^:/@\s]+)@",
+            r"\1<REDACTED>:@",
+            text,
+            flags=re.IGNORECASE,
+        )
+        # Redact token-like markers so a leaked key never appears verbatim.
+        text = re.sub(r"\bsk-[A-Za-z0-9]{20,}", "sk-<REDACTED>", text)
+        text = re.sub(r"\bghp_[A-Za-z0-9]{36,}", "ghp_<REDACTED>", text)
+        text = re.sub(r"\bAKIA[0-9A-Z]{16}", "AKIA<REDACTED>", text)
+        text = re.sub(r"\bxox[baprs]-[A-Za-z0-9-]{10,}", "xox-<REDACTED>", text)
         return text
 
     @staticmethod
     def _scan_for_secrets(data: bytes) -> int:
         """Deterministic secret scan over serialized bundle bytes.
 
-        Returns the count of secret markers found. The scan looks for the known
-        DSN password marker and a libpq-style connection string that includes a
-        password. Because the DSN is a secret and is NEVER serialized into the
-        bundle, this returns 0 in practice. The scan exists as a fail-closed
-        guarantee: if a future change leaked the DSN, the count would be > 0
-        and the bundle would fail schema validation (secret_leaks != 0).
+        Returns the count of secret markers found. The scan looks for a fixed
+        set of known secret markers (DSN password=, postgresql://user:pass@,
+        postgres://user:pass@, sk-*, ghp_*, AKIA*, xox*). Because secrets are
+        NEVER serialized into the bundle, this returns 0 in practice. The scan
+        exists as a fail-closed guarantee: if a future change leaked a secret,
+        the count would be > 0 and the source would raise POSTGRES_READ_FAILED.
         """
         if not isinstance(data, (bytes, bytearray)):
             return 0
         text = data.decode("utf-8", errors="replace")
         count = 0
         # password= marker (the canonical DSN secret leak signature).
-        count += len(re.findall(r"password=['\"]?[^'\"\s]+", text, flags=re.IGNORECASE))
+        count += len(re.findall(
+            r"password=['\"]?[^'\"\s]+", text, flags=re.IGNORECASE,
+        ))
+        # postgresql://user:pass@ (libpq URI with embedded credentials).
+        count += len(re.findall(
+            r"postgresql://[^:/@\s]+:[^:/@\s]+@", text, flags=re.IGNORECASE,
+        ))
+        # postgres://user:pass@ (alternate libpq URI scheme).
+        count += len(re.findall(
+            r"postgres://[^:/@\s]+:[^:/@\s]+@", text, flags=re.IGNORECASE,
+        ))
+        # OpenAI-style API keys (sk-...).
+        count += len(re.findall(r"\bsk-[A-Za-z0-9]{20,}", text))
+        # GitHub personal access tokens (ghp_...).
+        count += len(re.findall(r"\bghp_[A-Za-z0-9]{36,}", text))
+        # AWS access key IDs (AKIA...).
+        count += len(re.findall(r"\bAKIA[0-9A-Z]{16}", text))
+        # Slack tokens (xox...).
+        count += len(re.findall(r"\bxox[baprs]-[A-Za-z0-9-]{10,}", text))
         return count
 
     @staticmethod
@@ -1273,7 +1668,9 @@ __all__ = [
     "RunIdError",
     "RunNotFoundError",
     "PostgresQueryError",
+    "ConfigInvalidError",
     "SCHEMA_CONTRACT",
+    "ENVIRONMENT_MARKER_CONTRACT",
     "STABLE_ERROR_CODES",
     "_all_select_templates",
     "_referenced_table_columns",

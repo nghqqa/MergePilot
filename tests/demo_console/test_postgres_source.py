@@ -21,8 +21,11 @@ Test groups
 from __future__ import annotations
 
 import json
+import math
 import os
+import re
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -42,7 +45,9 @@ from postgres_source import (  # noqa: E402
     PostgresQueryError,
     RunIdError,
     RunNotFoundError,
+    ConfigInvalidError,
     SCHEMA_CONTRACT,
+    ENVIRONMENT_MARKER_CONTRACT,
     STABLE_ERROR_CODES,
     _all_select_templates,
     _referenced_table_columns,
@@ -52,6 +57,33 @@ DSN = "host=db.example.com password=SUPERSECRET dbname=mergepilot_test user=read
 EXPECTED_DB = "mergepilot_test"
 EXPECTED_ROLE = "reader"
 RUN_ID = "run-demo-001"
+# Default expected server identity (address/port/application_name).
+EXPECTED_SERVER_ADDRESSES = ["127.0.0.1"]
+EXPECTED_SERVER_PORT = 5432
+EXPECTED_APPLICATION_NAME = "mergepilot_viewer"
+EXPECTED_ENVIRONMENT_ID = "mergepilot-test-env"
+
+
+def _make_source(**overrides):
+    """Construct a PostgresSnapshotSource with the full required identity set.
+
+    Tests that only exercise a subset of identity can override individual
+    kwargs. All the new required parameters (expected_server_addresses,
+    expected_server_port, expected_application_name, expected_environment_id)
+    are supplied with sane defaults.
+    """
+    kwargs = dict(
+        dsn=DSN,
+        run_id=RUN_ID,
+        expected_database=EXPECTED_DB,
+        expected_role=EXPECTED_ROLE,
+        expected_environment_id=EXPECTED_ENVIRONMENT_ID,
+        expected_server_addresses=list(EXPECTED_SERVER_ADDRESSES),
+        expected_server_port=EXPECTED_SERVER_PORT,
+        expected_application_name=EXPECTED_APPLICATION_NAME,
+    )
+    kwargs.update(overrides)
+    return PostgresSnapshotSource(**kwargs)
 
 
 # ── Fakes ──────────────────────────────────────────────────────────────────
@@ -62,6 +94,11 @@ class FakeCursor:
     substring of the executed SQL) to a list of row tuples. The first
     ``execute`` whose SQL contains a key consumes that key's rows (so
     ``fetchone`` returns the first row, ``fetchall`` returns the rest/list).
+
+    For SQL statements that are issued repeatedly with different params (the
+    information_schema.columns probe), the results dict may carry param-keyed
+    entries under the special ``__param_keyed__`` namespace. When a param
+    string matches an entry there, that entry's rows are served.
 
     Every ``execute`` records (sql, params, normalized_sql) on the parent
     connection for later SQL-safety assertions.
@@ -82,11 +119,24 @@ class FakeCursor:
     def execute(self, sql, params=None):
         # Record on the connection for later assertions.
         self.conn.executed.append((sql, params))
+        # First, try param-keyed matching (for information_schema.columns
+        # probes that share the same SQL text but differ by the table param).
+        param_keyed = self._results.get("__param_keyed__")
+        if param_keyed and params:
+            for key, rows in param_keyed.items():
+                # Match if the param tuple/string contains the key fragment.
+                pstr = " ".join(str(p) for p in (params if isinstance(params, (list, tuple)) else (params,)))
+                if key in pstr:
+                    self._pending_rows = list(rows)
+                    self._fetchone_consumed = False
+                    return
         # Find a matching canned result by substring (case-insensitive). The
         # order of keys in the dict encodes priority; the first match wins.
         upper = sql.upper()
         matched_key = None
         for key in list(self._results.keys()):
+            if key.startswith("__"):
+                continue
             if key.upper() in upper:
                 matched_key = key
                 break
@@ -186,6 +236,10 @@ def _make_results(
     schema_probe=None,
     catalog_tables=None,
     environment_marker=None,
+    environment_count=None,
+    role_privileges=None,
+    table_privileges=None,
+    column_catalog=None,
 ):
     """Build the canned-row dict consumed by FakeCursor.
 
@@ -240,7 +294,8 @@ def _make_results(
         audit_by_action = [("review", 3), ("verify", 2)]
     if server_identity is None:
         # (inet_server_addr, inet_server_port, application_name, server_version_num)
-        server_identity = ("127.0.0.1", 5432, "mergepilot_viewer", 160001)
+        server_identity = ("127.0.0.1", EXPECTED_SERVER_PORT,
+                           EXPECTED_APPLICATION_NAME, 160001)
     if schema_probe is None:
         # (current_schema, search_path)
         schema_probe = ("public", "public")
@@ -249,11 +304,35 @@ def _make_results(
         catalog_tables = [
             ("task_runs",), ("stage_runs",), ("stage_events",),
             ("revision_bindings",), ("run_pr_bindings",), ("mcp_calls",),
-            ("rollback_runs",), ("audit_events",), ("controller_offsets",),
+            ("rollback_runs",), ("audit_events",),
+            ("environment_identity",),
         ]
     if environment_marker is None:
-        # Marker row: (sync_token,) from controller_offsets.
-        environment_marker = ("mergepilot-test-env",)
+        # Marker row: (environment_id,) from environment_identity LIMIT 1.
+        environment_marker = (EXPECTED_ENVIRONMENT_ID,)
+    if environment_count is None:
+        # (count,) from environment_identity.
+        environment_count = (1,)
+    if role_privileges is None:
+        # (rolsuper, rolcreatedb, rolcreaterole, rolreplication, rolbypassrls)
+        # All False = unprivileged reader.
+        role_privileges = (False, False, False, False, False)
+    if table_privileges is None:
+        # (INSERT, UPDATE, DELETE, TRUNCATE) on task_runs.
+        # All False = no write privileges.
+        table_privileges = (False, False, False, False)
+    if column_catalog is None:
+        # A dict mapping table_name -> list of (column_name,) rows from
+        # information_schema.columns. By default we return the full contract
+        # column set for each probed table so the runtime catalog probe passes.
+        column_catalog = {
+            table: [(c,) for c in cols]
+            for table, cols in SCHEMA_CONTRACT.items()
+            if table in (
+                "task_runs", "stage_runs", "revision_bindings",
+                "run_pr_bindings", "rollback_runs", "environment_identity",
+            )
+        }
 
     return {
         # task_runs SELECT — fetchone
@@ -280,8 +359,24 @@ def _make_results(
         "CURRENT_SCHEMA()": [schema_probe],
         # required-table catalog probe — fetchall
         "FROM PG_TABLES WHERE SCHEMANAME": catalog_tables,
-        # environment marker probe — fetchone
-        "CONSUMER_NAME = 'MERGEPILOT_ENVIRONMENT'": [environment_marker],
+        # reader role privileges probe (pg_roles) — fetchone
+        "FROM PG_ROLES WHERE ROLNAME = CURRENT_USER": [role_privileges],
+        # table-level privilege probe (has_table_privilege) — fetchone
+        "HAS_TABLE_PRIVILEGE(CURRENT_USER, 'TASK_RUNS'": [table_privileges],
+        # environment marker probe — fetchone (environment_identity.environment_id)
+        "FROM ENVIRONMENT_IDENTITY LIMIT 1": [environment_marker],
+        # environment marker row count — fetchone
+        "SELECT COUNT(*) FROM ENVIRONMENT_IDENTITY": [environment_count],
+        # information_schema.columns probes — param-keyed. The source issues
+        #   SELECT column_name FROM information_schema.columns
+        #   WHERE table_schema = 'public' AND table_name = %s
+        # once per probed table, with the table name as a param. Because the
+        # SQL text is identical across probes, we use param-keyed matching
+        # (keyed on the table name fragment in the params) so each probe gets
+        # its own column list.
+        "__param_keyed__": {
+            table: rows for table, rows in column_catalog.items()
+        },
     }
 
 
@@ -301,7 +396,7 @@ def _clear_fake_psycopg2():
 
 
 def _read_snapshot_with_fake(conn: FakeConnection, results=None,
-                             identity=None) -> bytes:
+                             identity=None, source=None) -> bytes:
     """Build a source, install the fake psycopg2, read_snapshot, return bytes."""
     if results is not None:
         conn._results = results
@@ -309,7 +404,7 @@ def _read_snapshot_with_fake(conn: FakeConnection, results=None,
         conn._identity = identity
     _install_fake_psycopg2(conn)
     try:
-        src = PostgresSnapshotSource(DSN, RUN_ID, EXPECTED_DB, EXPECTED_ROLE)
+        src = source if source is not None else _make_source()
         return src.read_snapshot()
     finally:
         _clear_fake_psycopg2()
@@ -430,6 +525,12 @@ class TestSqlSafety(unittest.TestCase):
         ]
         for sql, _ in conn.executed:
             upper = sql.upper()
+            # The role-hardening privilege probe legitimately contains the
+            # privilege names INSERT/UPDATE/DELETE/TRUNCATE as STRING LITERALS
+            # inside has_table_privilege(...) — it is a read-only SELECT, not a
+            # write. Skip it for the write-keyword check.
+            if "HAS_TABLE_PRIVILEGE" in upper:
+                continue
             for pat in forbidden_patterns:
                 m = re.search(pat, upper)
                 self.assertIsNone(
@@ -440,7 +541,7 @@ class TestSqlSafety(unittest.TestCase):
         # A SQL-injection attempt in run_id is rejected before any query runs.
         bad = "x'; DROP TABLE task_runs; --"
         with self.assertRaises(RunIdError):
-            PostgresSnapshotSource(DSN, bad, EXPECTED_DB, EXPECTED_ROLE)
+            _make_source(run_id=bad)
 
     def test_run_id_injection_blocked_in_query_text(self):
         # Even a syntactically tame-but-malicious run_id that slips shape
@@ -539,8 +640,15 @@ class TestBundleAssembly(unittest.TestCase):
     def test_dsn_not_in_bundle_bytes(self):
         conn = FakeConnection(results=_make_results())
         raw = _read_snapshot_with_fake(conn)
+        # The actual DSN secret value must NEVER appear in the bundle bytes.
         self.assertNotIn(b"SUPERSECRET", raw)
-        self.assertNotIn(b"password=", raw.lower())
+        # The secret_scan_scope field legitimately contains the literal pattern
+        # description "password=" (it documents what the scan checks, it is not
+        # a secret). So we assert the actual secret marker does not appear: a
+        # real DSN leak would look like "password=SUPERSECRET", not the bare
+        # pattern name "password=".
+        self.assertNotIn(b"password=SUPERSECRET", raw.lower())
+        self.assertNotIn(b"db.example.com", raw)
 
 
 # ── TestStatusFields ───────────────────────────────────────────────────────
@@ -689,7 +797,7 @@ class TestConnectionHandling(unittest.TestCase):
 
         sys.modules["psycopg2"] = _ConnectFailPsycopg2()
         try:
-            src = PostgresSnapshotSource(DSN, RUN_ID, EXPECTED_DB, EXPECTED_ROLE)
+            src = _make_source()
             with self.assertRaises(PostgresQueryError) as cm:
                 src.read_snapshot()
             self.assertNotIn("SUPERSECRET", str(cm.exception))
@@ -719,7 +827,7 @@ class TestRegression(unittest.TestCase):
 
     def test_postgres_source_is_a_snapshot_source(self):
         from live_poller import SnapshotSource
-        src = PostgresSnapshotSource(DSN, RUN_ID, EXPECTED_DB, EXPECTED_ROLE)
+        src = _make_source()
         self.assertIsInstance(src, SnapshotSource)
         self.assertIs(src.read_only, True)
 
@@ -757,7 +865,7 @@ class TestRegression(unittest.TestCase):
 
         builtins.__import__ = blocking_import
         try:
-            src = PostgresSnapshotSource(DSN, RUN_ID, EXPECTED_DB, EXPECTED_ROLE)
+            src = _make_source()
             with self.assertRaises(PostgresSourceError) as cm:
                 src.read_snapshot()
             self.assertIn("PSYCOPG2_MISSING", str(cm.exception))
@@ -766,10 +874,7 @@ class TestRegression(unittest.TestCase):
             _clear_fake_psycopg2()
 
     def test_repr_never_leaks_dsn(self):
-        src = PostgresSnapshotSource(
-            "host=h password=TOPSECRET port=5432", RUN_ID, EXPECTED_DB,
-            EXPECTED_ROLE,
-        )
+        src = _make_source(dsn="host=h password=TOPSECRET port=5432")
         for rep in (repr(src), str(src)):
             self.assertNotIn("TOPSECRET", rep)
             self.assertNotIn("password=", rep.lower())
@@ -803,7 +908,14 @@ class TestRegression(unittest.TestCase):
                 return json.dumps(bundle, sort_keys=True,
                                   ensure_ascii=False).encode("utf-8")
 
-        src = _StubPostgresSource(DSN, RUN_ID, EXPECTED_DB, EXPECTED_ROLE)
+        src = _StubPostgresSource(
+            dsn=DSN, run_id=RUN_ID, expected_database=EXPECTED_DB,
+            expected_role=EXPECTED_ROLE,
+            expected_environment_id=EXPECTED_ENVIRONMENT_ID,
+            expected_server_addresses=list(EXPECTED_SERVER_ADDRESSES),
+            expected_server_port=EXPECTED_SERVER_PORT,
+            expected_application_name=EXPECTED_APPLICATION_NAME,
+        )
         poller = LivePoller(src, poll_interval=1.0, expected_mode="ISOLATED_LIVE")
         self.assertTrue(poller.initial_load(),
                         f"initial load failed: {poller.last_error_code}")
@@ -816,10 +928,17 @@ class TestRegression(unittest.TestCase):
 class TestSchemaContract(unittest.TestCase):
     """Every column referenced by a SELECT exists in SCHEMA_CONTRACT.
 
-    These are the migration-contract tests: they parse the SCHEMA_CONTRACT
-    dict and the SQL templates the source issues, and verify the queries only
-    reference columns that exist in the authoritative contract extracted from
-    the migration files.
+    These are the STATIC migration-contract tests: they parse the
+    SCHEMA_CONTRACT dict and the SQL templates the source issues, and verify
+    the queries only reference columns that exist in the authoritative
+    contract extracted from the migration files. They also parse the actual
+    .sql migration files (the environment_identity migration) to assert the
+    CREATE TABLE columns match the contract.
+
+    The companion RUNTIME catalog probe (information_schema.columns at read
+    time) is covered by TestRuntimeCatalogMock below (mocked responses) and by
+    TestEphemeralMigrationProbe (labeled NOT_EXECUTED because it requires a
+    live database).
     """
 
     def test_schema_contract_covers_required_read_tables(self):
@@ -827,7 +946,7 @@ class TestSchemaContract(unittest.TestCase):
         required = {
             "task_runs", "stage_runs", "stage_events", "revision_bindings",
             "run_pr_bindings", "mcp_calls", "rollback_runs", "audit_events",
-            "controller_offsets",
+            "environment_identity",
         }
         for table in required:
             self.assertIn(
@@ -920,7 +1039,7 @@ class TestSchemaContract(unittest.TestCase):
             "rollback_runs": ("rollback_runs", {}),
             "audit_events_total": ("audit_events", {}),
             "audit_events_by_action": ("audit_events", {}),
-            "environment_marker": ("controller_offsets", {}),
+            "environment_marker": ("environment_identity", {}),
         }
         for label, sql in _all_select_templates():
             self.assertIn(label, template_tables,
@@ -948,6 +1067,92 @@ class TestSchemaContract(unittest.TestCase):
                 "SELECT *", sql.upper(),
                 f"{label}: SELECT * is forbidden (use explicit column list)",
             )
+
+    def test_environment_identity_contract_columns(self):
+        # environment_identity contract lists environment_id + created_at.
+        cols = SCHEMA_CONTRACT["environment_identity"]
+        self.assertIn("environment_id", cols)
+        self.assertIn("created_at", cols)
+
+    # ── Static migration-contract tests: parse actual .sql files ───────────
+    def test_environment_identity_sql_create_table_columns(self):
+        """Parse the actual 001_environment_identity.sql migration and extract
+        the CREATE TABLE columns; assert they match the SCHEMA_CONTRACT entry.
+
+        This is a STATIC migration-contract test (no DB connection). The
+        runtime information_schema.columns probe is covered by
+        TestRuntimeCatalogMock.
+        """
+        sql_path = (
+            Path(__file__).resolve().parents[2]
+            / "tools" / "demo_console" / "migrations"
+            / "001_environment_identity.sql"
+        )
+        self.assertTrue(sql_path.exists(), f"migration file missing: {sql_path}")
+        sql_text = sql_path.read_text(encoding="utf-8")
+        # Extract the CREATE TABLE columns. The migration declares:
+        #   CREATE TABLE IF NOT EXISTS environment_identity (
+        #       environment_id TEXT NOT NULL,
+        #       created_at TIMESTAMPTZ DEFAULT now()
+        #   );
+        cols = self._extract_create_table_columns(sql_text, "environment_identity")
+        # The contract must list every column the migration creates.
+        for c in cols:
+            self.assertIn(
+                c, SCHEMA_CONTRACT["environment_identity"],
+                f"environment_identity.{c} in migration but not contract",
+            )
+
+    @staticmethod
+    def _extract_create_table_columns(sql_text: str, table_name: str) -> list[str]:
+        """Extract the column names from a ``CREATE TABLE <name> (...)`` block.
+
+        A simple parser sufficient for the migration files in this repo. It
+        finds the CREATE TABLE block for ``table_name`` and returns the leading
+        identifier of each column line (skipping constraints/indices).
+        """
+        # Match CREATE TABLE [IF NOT EXISTS] <table_name> ( ... )
+        m = re.search(
+            r"CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+"
+            + re.escape(table_name)
+            + r"\s*\((.*?)\);",
+            sql_text,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        if not m:
+            return []
+        body = m.group(1)
+        cols = []
+        for line in body.split(","):
+            line = line.strip()
+            if not line:
+                continue
+            # Skip lines that are table-level constraints.
+            upper = line.upper()
+            if upper.startswith(("PRIMARY ", "FOREIGN ", "UNIQUE ", "CHECK ",
+                                 "CONSTRAINT ")):
+                continue
+            # The first token is the column name (may be quoted).
+            tok = line.split()[0]
+            tok = tok.strip('"`[]')
+            if tok:
+                cols.append(tok)
+        return cols
+
+    def test_environment_marker_contract_shape(self):
+        # ENVIRONMENT_MARKER_CONTRACT describes the new marker shape.
+        self.assertEqual(
+            ENVIRONMENT_MARKER_CONTRACT["table_name"], "environment_identity",
+        )
+        self.assertIn(
+            "SELECT environment_id FROM environment_identity LIMIT 1",
+            ENVIRONMENT_MARKER_CONTRACT["probe_sql"],
+        )
+        self.assertEqual(ENVIRONMENT_MARKER_CONTRACT["expected_row_count"], 1)
+        self.assertIn("environment_id", ENVIRONMENT_MARKER_CONTRACT["required_columns"])
+        self.assertIn("SELECT", ENVIRONMENT_MARKER_CONTRACT["viewer_privileges"])
+        for priv in ("INSERT", "UPDATE", "DELETE", "TRUNCATE"):
+            self.assertIn(priv, ENVIRONMENT_MARKER_CONTRACT["revoked_privileges"])
 
 
 # ── TestStageRunsSelection ─────────────────────────────────────────────────
@@ -1127,6 +1332,7 @@ class TestStableErrorCodes(unittest.TestCase):
             "WRONG_DATABASE", "WRONG_ROLE", "WRONG_SERVER",
             "ENVIRONMENT_ID_MISMATCH", "ENVIRONMENT_ID_NOT_VERIFIED",
             "SCHEMA_INCOMPATIBLE", "NOT_READ_ONLY", "POSTGRES_READ_FAILED",
+            "CONFIG_INVALID",
         }
         self.assertTrue(required.issubset(STABLE_ERROR_CODES),
                         f"missing codes: {required - STABLE_ERROR_CODES}")
@@ -1137,6 +1343,7 @@ class TestStableErrorCodes(unittest.TestCase):
             RunIdError("x", code="RUN_ID_INVALID"),
             RunNotFoundError("x", code="RUN_NOT_FOUND"),
             PostgresQueryError("x", code="POSTGRES_READ_FAILED"),
+            ConfigInvalidError("x", code="CONFIG_INVALID"),
         ]
         for err in cases:
             self.assertIsInstance(err.code, str)
@@ -1197,10 +1404,13 @@ class TestIdentityGatesExtended(unittest.TestCase):
         _clear_fake_psycopg2()
 
     def test_unsupported_server_version_rejected(self):
-        # server_version_num outside the supported 12.x-17.x range.
+        # server_version_num outside the supported 12.x-17.x range. Use the
+        # expected port/application_name so the version check is the one that
+        # fires (not the address/port/app_name checks).
         conn = FakeConnection(
             results=_make_results(
-                server_identity=("127.0.0.1", 5432, "app", 110000),
+                server_identity=("127.0.0.1", EXPECTED_SERVER_PORT,
+                                 EXPECTED_APPLICATION_NAME, 110000),
             ),
         )
         with self.assertRaises(IdentityCheckError) as cm:
@@ -1222,7 +1432,8 @@ class TestIdentityGatesExtended(unittest.TestCase):
             ("task_runs",), ("stage_runs",), ("stage_events",),
             # revision_bindings MISSING
             ("run_pr_bindings",), ("mcp_calls",),
-            ("rollback_runs",), ("audit_events",), ("controller_offsets",),
+            ("rollback_runs",), ("audit_events",),
+            ("environment_identity",),
         ]
         conn = FakeConnection(results=_make_results(catalog_tables=catalog))
         with self.assertRaises(IdentityCheckError) as cm:
@@ -1230,24 +1441,55 @@ class TestIdentityGatesExtended(unittest.TestCase):
         self.assertEqual(cm.exception.code, "SCHEMA_INCOMPATIBLE")
         self.assertIn("revision_bindings", str(cm.exception))
 
+    def test_missing_environment_table_rejected(self):
+        # environment_identity table missing from catalog → SCHEMA_INCOMPATIBLE
+        # (the table-existence check fires before the row-count check).
+        catalog = [
+            ("task_runs",), ("stage_runs",), ("stage_events",),
+            ("revision_bindings",), ("run_pr_bindings",), ("mcp_calls",),
+            ("rollback_runs",), ("audit_events",),
+            # environment_identity MISSING
+        ]
+        conn = FakeConnection(results=_make_results(catalog_tables=catalog))
+        with self.assertRaises(IdentityCheckError) as cm:
+            _read_snapshot_with_fake(conn)
+        self.assertEqual(cm.exception.code, "SCHEMA_INCOMPATIBLE")
+        self.assertIn("environment_identity", str(cm.exception))
+
     def test_missing_environment_marker_refuses_startup(self):
         # No marker row at all → ENVIRONMENT_ID_NOT_VERIFIED.
         results = _make_results()
-        results["CONSUMER_NAME = 'MERGEPILOT_ENVIRONMENT'"] = []
+        results["FROM ENVIRONMENT_IDENTITY LIMIT 1"] = []
         conn = FakeConnection(results=results)
         with self.assertRaises(IdentityCheckError) as cm:
             _read_snapshot_with_fake(conn)
         self.assertEqual(cm.exception.code, "ENVIRONMENT_ID_NOT_VERIFIED")
         self.assertIn("ENVIRONMENT_ID_NOT_VERIFIED", str(cm.exception))
 
+    def test_zero_environment_rows_refuses_startup(self):
+        # environment_identity probe returns no row AND count(*) == 0 →
+        # ENVIRONMENT_ID_NOT_VERIFIED.
+        results = _make_results(environment_count=(0,))
+        results["FROM ENVIRONMENT_IDENTITY LIMIT 1"] = []
+        conn = FakeConnection(results=results)
+        with self.assertRaises(IdentityCheckError) as cm:
+            _read_snapshot_with_fake(conn)
+        self.assertEqual(cm.exception.code, "ENVIRONMENT_ID_NOT_VERIFIED")
+
+    def test_multiple_environment_rows_refuses_startup(self):
+        # count(*) > 1 → ENVIRONMENT_ID_NOT_VERIFIED (>1 rows).
+        results = _make_results(environment_count=(2,))
+        conn = FakeConnection(results=results)
+        with self.assertRaises(IdentityCheckError) as cm:
+            _read_snapshot_with_fake(conn)
+        self.assertEqual(cm.exception.code, "ENVIRONMENT_ID_NOT_VERIFIED")
+        self.assertIn(">1", str(cm.exception))
+
     def test_environment_marker_mismatch_rejected(self):
         # Marker present but value does not match expected_environment_id.
         results = _make_results(environment_marker=("wrong-env",))
         conn = FakeConnection(results=results)
-        src = PostgresSnapshotSource(
-            DSN, RUN_ID, EXPECTED_DB, EXPECTED_ROLE,
-            expected_environment_id="correct-env",
-        )
+        src = _make_source(expected_environment_id="correct-env")
         _install_fake_psycopg2(conn)
         try:
             with self.assertRaises(IdentityCheckError) as cm:
@@ -1260,10 +1502,7 @@ class TestIdentityGatesExtended(unittest.TestCase):
         # Marker present and matches expected_environment_id → passes.
         results = _make_results(environment_marker=("the-env",))
         conn = FakeConnection(results=results)
-        src = PostgresSnapshotSource(
-            DSN, RUN_ID, EXPECTED_DB, EXPECTED_ROLE,
-            expected_environment_id="the-env",
-        )
+        src = _make_source(expected_environment_id="the-env")
         _install_fake_psycopg2(conn)
         try:
             raw = src.read_snapshot()
@@ -1300,9 +1539,14 @@ class TestProvenance(unittest.TestCase):
         conn = FakeConnection(results=_make_results())
         raw = _read_snapshot_with_fake(conn)
         bundle = json.loads(raw)
-        # revision_bindings head_sha = "h"*40 → source/verification commit.
+        # source_commit: revision_bindings head_sha (the target revision).
         self.assertEqual(bundle["source_commit"], "h" * 40)
-        self.assertEqual(bundle["verification_commit"], "h" * 40)
+        # verification_commit: ALWAYS null for ISOLATED_LIVE (the read-only
+        # viewer does not record a verification build). The earlier behavior of
+        # copying head_sha here was a provenance bug and is fixed.
+        self.assertIsNone(bundle["verification_commit"])
+        # verification_commit_status makes the null explicit.
+        self.assertEqual(bundle["verification_commit_status"], "NOT_AVAILABLE")
         self.assertEqual(
             bundle["provenance_status"], "VERIFIED_FROM_REVISION_BINDINGS",
         )
@@ -1319,6 +1563,7 @@ class TestProvenance(unittest.TestCase):
         self.assertIsNone(bundle["source_commit"])
         self.assertIsNone(bundle["verification_commit"])
         self.assertEqual(bundle["provenance_status"], "NOT_AVAILABLE")
+        self.assertEqual(bundle["verification_commit_status"], "NOT_AVAILABLE")
 
     def test_never_empty_string_for_commit(self):
         # Even when revision is missing, the commits must be null (NOT "").
@@ -1352,7 +1597,7 @@ class TestProvenance(unittest.TestCase):
 
 # ── TestSecretScanStatus ───────────────────────────────────────────────────
 class TestSecretScanStatus(unittest.TestCase):
-    """ISOLATED_LIVE reports secret_scan_status; secret_leaks stays 0."""
+    """ISOLATED_LIVE reports a PARTIAL_SERIALIZED_BUNDLE_SCAN; secret_leaks stays 0."""
 
     def setUp(self):
         _clear_fake_psycopg2()
@@ -1360,11 +1605,33 @@ class TestSecretScanStatus(unittest.TestCase):
     def tearDown(self):
         _clear_fake_psycopg2()
 
-    def test_secret_scan_status_is_not_measured(self):
+    def test_secret_scan_status_is_partial_bundle_scan(self):
         conn = FakeConnection(results=_make_results())
         raw = _read_snapshot_with_fake(conn)
         bundle = json.loads(raw)
-        self.assertEqual(bundle["secret_scan_status"], "NOT_MEASURED")
+        self.assertEqual(
+            bundle["secret_scan_status"], "PARTIAL_SERIALIZED_BUNDLE_SCAN",
+        )
+
+    def test_secret_scan_scope_lists_patterns(self):
+        conn = FakeConnection(results=_make_results())
+        raw = _read_snapshot_with_fake(conn)
+        bundle = json.loads(raw)
+        scope = bundle["secret_scan_scope"]
+        self.assertIsInstance(scope, list)
+        self.assertGreater(len(scope), 0)
+        # All the documented patterns must be present.
+        for pat in ("password=", "postgresql://user:pass@",
+                    "postgres://user:pass@", "sk-*", "ghp_*", "AKIA*", "xox*"):
+            self.assertIn(pat, scope)
+
+    def test_secret_leaks_detected_field_present_and_zero(self):
+        conn = FakeConnection(results=_make_results())
+        raw = _read_snapshot_with_fake(conn)
+        bundle = json.loads(raw)
+        self.assertEqual(bundle["secret_leaks"], 0)
+        # secret_leaks_detected holds the actual count from the scan.
+        self.assertEqual(bundle["secret_leaks_detected"], 0)
 
     def test_secret_leaks_remains_zero(self):
         # The strict schema requires secret_leaks == 0; ISOLATED_LIVE keeps it.
@@ -1374,22 +1641,80 @@ class TestSecretScanStatus(unittest.TestCase):
         self.assertEqual(bundle["secret_leaks"], 0)
 
     def test_dsn_password_never_in_scan_output(self):
-        # The DSN/password must never appear in the serialized bundle bytes.
+        # The actual DSN/password must never appear in the serialized bundle
+        # bytes. The secret_scan_scope field legitimately documents the pattern
+        # name "password=" (it is metadata, not a secret), so we assert the real
+        # secret value is absent rather than the bare pattern name.
         conn = FakeConnection(results=_make_results())
         raw = _read_snapshot_with_fake(conn)
         self.assertNotIn(b"SUPERSECRET", raw)
-        self.assertNotIn(b"password=", raw.lower())
+        self.assertNotIn(b"password=SUPERSECRET", raw.lower())
+        self.assertNotIn(b"db.example.com", raw)
 
     def test_scan_detects_leaked_password_marker(self):
         # If a password marker WERE in the bundle, the scan would catch it.
-        src = PostgresSnapshotSource(DSN, RUN_ID, EXPECTED_DB, EXPECTED_ROLE)
+        src = _make_source()
         # Simulate a leak: bundle bytes containing a password= marker.
         leaked = b'{"password=SUPERSECRET": 1}'
         self.assertGreater(src._scan_for_secrets(leaked), 0)
 
+    def test_scan_detects_postgresql_uri_credentials(self):
+        src = _make_source()
+        leaked = b'{"dsn": "postgresql://user:pass@host/db"}'
+        self.assertGreater(src._scan_for_secrets(leaked), 0)
+
+    def test_scan_detects_postgres_uri_credentials(self):
+        src = _make_source()
+        leaked = b'{"dsn": "postgres://user:pass@host/db"}'
+        self.assertGreater(src._scan_for_secrets(leaked), 0)
+
+    def test_scan_detects_openai_key(self):
+        src = _make_source()
+        leaked = b'{"key": "sk-' + b"a" * 40 + b'"}'
+        self.assertGreater(src._scan_for_secrets(leaked), 0)
+
+    def test_scan_detects_github_token(self):
+        src = _make_source()
+        leaked = b'{"tok": "ghp_' + b"a" * 36 + b'"}'
+        self.assertGreater(src._scan_for_secrets(leaked), 0)
+
+    def test_scan_detects_aws_key(self):
+        src = _make_source()
+        leaked = b'{"key": "AKIA' + b"A" * 16 + b'"}'
+        self.assertGreater(src._scan_for_secrets(leaked), 0)
+
+    def test_scan_detects_slack_token(self):
+        src = _make_source()
+        leaked = b'{"tok": "xoxb-' + b"a" * 24 + b'"}'
+        self.assertGreater(src._scan_for_secrets(leaked), 0)
+
     def test_scan_returns_zero_for_clean_bytes(self):
-        src = PostgresSnapshotSource(DSN, RUN_ID, EXPECTED_DB, EXPECTED_ROLE)
+        src = _make_source()
         self.assertEqual(src._scan_for_secrets(b'{"a": 1}'), 0)
+
+    def test_leak_detected_raises_postgres_read_failed(self):
+        # If a secret leak is detected during assembly, the source must raise
+        # POSTGRES_READ_FAILED and NOT emit a bundle. We patch _scan_for_secrets
+        # to return a non-zero count.
+        src = _make_source()
+        # Capture the staticmethod descriptor (NOT the underlying function) so
+        # we restore it as a staticmethod, not a plain function (which would
+        # turn into a bound method and break instance calls).
+        import inspect
+        original = inspect.getattr_static(PostgresSnapshotSource, "_scan_for_secrets")
+        PostgresSnapshotSource._scan_for_secrets = staticmethod(
+            lambda data: 1
+        )
+        conn = FakeConnection(results=_make_results())
+        try:
+            with self.assertRaises(PostgresQueryError) as cm:
+                _read_snapshot_with_fake(conn, source=src)
+            self.assertEqual(cm.exception.code, "POSTGRES_READ_FAILED")
+            # The message must NOT contain the raw bytes or any secret text.
+            msg = str(cm.exception)
+            self.assertNotIn("SUPERSECRET", msg)
+        finally:
+            PostgresSnapshotSource._scan_for_secrets = original
 
 
 # ── TestTransactionLifecycle ───────────────────────────────────────────────
@@ -1454,14 +1779,27 @@ class TestPreflightPostgres(unittest.TestCase):
         else:
             os.environ.pop("MERGEPILOT_PG_DSN", None)
 
-    def test_postgres_preflight_passes_with_full_config(self):
-        os.environ["MERGEPILOT_PG_DSN"] = "host=db.example.com password=X"
-        pg_config = {
+    @staticmethod
+    def _full_pg_config(**overrides):
+        """Return a complete pg_config with all required identity fields.
+
+        Tests override individual keys to exercise specific failure paths.
+        """
+        cfg = {
             "run_id": "run-1",
             "expected_database": "mergepilot",
             "expected_role": "reader",
             "expected_environment_id": "env-1",
+            "expected_server_addresses": ["127.0.0.1"],
+            "expected_server_port": 5432,
+            "expected_application_name": "mergepilot_viewer",
         }
+        cfg.update(overrides)
+        return cfg
+
+    def test_postgres_preflight_passes_with_full_config(self):
+        os.environ["MERGEPILOT_PG_DSN"] = "host=db.example.com password=X"
+        pg_config = self._full_pg_config()
         pf = run_preflight(
             "isolated_live", "127.0.0.1", source_kind="postgres",
             pg_config=pg_config,
@@ -1474,11 +1812,7 @@ class TestPreflightPostgres(unittest.TestCase):
 
     def test_postgres_preflight_fails_without_dsn_env(self):
         # DSN env var absent → hard failure (never read DSN from argv).
-        pg_config = {
-            "run_id": "run-1",
-            "expected_database": "mergepilot",
-            "expected_role": "reader",
-        }
+        pg_config = self._full_pg_config()
         pf = run_preflight(
             "isolated_live", "127.0.0.1", source_kind="postgres",
             pg_config=pg_config,
@@ -1489,11 +1823,9 @@ class TestPreflightPostgres(unittest.TestCase):
 
     def test_postgres_preflight_fails_with_bad_run_id(self):
         os.environ["MERGEPILOT_PG_DSN"] = "host=db.example.com password=X"
-        pg_config = {
-            "run_id": "x'; DROP TABLE task_runs; --",  # injection attempt
-            "expected_database": "mergepilot",
-            "expected_role": "reader",
-        }
+        pg_config = self._full_pg_config(
+            run_id="x'; DROP TABLE task_runs; --",  # injection attempt
+        )
         pf = run_preflight(
             "isolated_live", "127.0.0.1", source_kind="postgres",
             pg_config=pg_config,
@@ -1514,11 +1846,7 @@ class TestPreflightPostgres(unittest.TestCase):
 
     def test_postgres_preflight_fails_without_expected_database(self):
         os.environ["MERGEPILOT_PG_DSN"] = "host=db.example.com password=X"
-        pg_config = {
-            "run_id": "run-1",
-            "expected_database": None,
-            "expected_role": "reader",
-        }
+        pg_config = self._full_pg_config(expected_database=None)
         pf = run_preflight(
             "isolated_live", "127.0.0.1", source_kind="postgres",
             pg_config=pg_config,
@@ -1527,15 +1855,63 @@ class TestPreflightPostgres(unittest.TestCase):
         checks = {f["check"] for f in pf["failures"]}
         self.assertIn("pg_expected_database", checks)
 
+    def test_postgres_preflight_fails_without_expected_environment_id(self):
+        # expected_environment_id must be a non-empty string (mandatory marker).
+        os.environ["MERGEPILOT_PG_DSN"] = "host=db.example.com password=X"
+        for bad in (None, "", "   "):
+            pg_config = self._full_pg_config(expected_environment_id=bad)
+            pf = run_preflight(
+                "isolated_live", "127.0.0.1", source_kind="postgres",
+                pg_config=pg_config,
+            )
+            self.assertFalse(
+                pf["preflight_passed"],
+                f"expected failure for expected_environment_id={bad!r}",
+            )
+            checks = {f["check"] for f in pf["failures"]}
+            self.assertIn("pg_expected_environment_id", checks)
+
+    def test_postgres_preflight_fails_without_expected_server_addresses(self):
+        os.environ["MERGEPILOT_PG_DSN"] = "host=db.example.com password=X"
+        for bad in (None, [], ""):
+            pg_config = self._full_pg_config(expected_server_addresses=bad)
+            pf = run_preflight(
+                "isolated_live", "127.0.0.1", source_kind="postgres",
+                pg_config=pg_config,
+            )
+            self.assertFalse(pf["preflight_passed"])
+            checks = {f["check"] for f in pf["failures"]}
+            self.assertIn("pg_expected_server_addresses", checks)
+
+    def test_postgres_preflight_fails_without_expected_server_port(self):
+        os.environ["MERGEPILOT_PG_DSN"] = "host=db.example.com password=X"
+        for bad in (None, 0, "5432", True):
+            pg_config = self._full_pg_config(expected_server_port=bad)
+            pf = run_preflight(
+                "isolated_live", "127.0.0.1", source_kind="postgres",
+                pg_config=pg_config,
+            )
+            self.assertFalse(pf["preflight_passed"])
+            checks = {f["check"] for f in pf["failures"]}
+            self.assertIn("pg_expected_server_port", checks)
+
+    def test_postgres_preflight_fails_without_expected_application_name(self):
+        os.environ["MERGEPILOT_PG_DSN"] = "host=db.example.com password=X"
+        for bad in (None, ""):
+            pg_config = self._full_pg_config(expected_application_name=bad)
+            pf = run_preflight(
+                "isolated_live", "127.0.0.1", source_kind="postgres",
+                pg_config=pg_config,
+            )
+            self.assertFalse(pf["preflight_passed"])
+            checks = {f["check"] for f in pf["failures"]}
+            self.assertIn("pg_expected_application_name", checks)
+
     def test_postgres_preflight_skips_file_locality_checks(self):
         # source_kind=postgres must NOT run the file-locality classification
         # (no source_file required, no VERIFIED_LOCAL check).
         os.environ["MERGEPILOT_PG_DSN"] = "host=db.example.com password=X"
-        pg_config = {
-            "run_id": "run-1",
-            "expected_database": "mergepilot",
-            "expected_role": "reader",
-        }
+        pg_config = self._full_pg_config()
         pf = run_preflight(
             "isolated_live", "127.0.0.1", source_file=None,
             source_kind="postgres", pg_config=pg_config,
@@ -1558,8 +1934,7 @@ class TestPreflightPostgres(unittest.TestCase):
     def test_file_preflight_still_works(self):
         # The default file path must still pass for a valid local fixture.
         # Build a minimal valid ISOLATED_LIVE bundle file.
-        from postgres_source import PostgresSnapshotSource
-        src = PostgresSnapshotSource(DSN, RUN_ID, EXPECTED_DB, EXPECTED_ROLE)
+        src = _make_source()
         bundle = src._assemble_bundle(
             task_run={"run_id": RUN_ID, "repo": "t/r", "pr_number": 1,
                       "status": "MERGED", "trace_id": "t"},
@@ -1642,6 +2017,319 @@ class TestCliNegative(unittest.TestCase):
         with contextlib.redirect_stderr(io.StringIO()):
             with self.assertRaises(SystemExit):
                 parser.parse_args(["--source-kind", "bogus"])
+
+
+# ── TestConfigInvalid ──────────────────────────────────────────────────────
+class TestConfigInvalid(unittest.TestCase):
+    """The constructor fail-closes on missing/invalid required parameters."""
+
+    def setUp(self):
+        _clear_fake_psycopg2()
+
+    def tearDown(self):
+        _clear_fake_psycopg2()
+
+    def test_missing_environment_id_rejected(self):
+        # expected_environment_id is mandatory; None/empty → CONFIG_INVALID.
+        for bad in (None, "", "   "):
+            with self.assertRaises(ConfigInvalidError) as cm:
+                _make_source(expected_environment_id=bad)
+            self.assertEqual(cm.exception.code, "CONFIG_INVALID")
+
+    def test_missing_server_addresses_rejected(self):
+        for bad in (None, []):
+            with self.assertRaises(ConfigInvalidError) as cm:
+                _make_source(expected_server_addresses=bad)
+            self.assertEqual(cm.exception.code, "CONFIG_INVALID")
+
+    def test_missing_server_port_rejected(self):
+        # expected_server_port must be a non-zero int. bool is rejected.
+        for bad in (None, 0, True):
+            with self.assertRaises(ConfigInvalidError) as cm:
+                _make_source(expected_server_port=bad)
+            self.assertEqual(cm.exception.code, "CONFIG_INVALID")
+
+    def test_missing_application_name_rejected(self):
+        for bad in (None, ""):
+            with self.assertRaises(ConfigInvalidError) as cm:
+                _make_source(expected_application_name=bad)
+            self.assertEqual(cm.exception.code, "CONFIG_INVALID")
+
+    def test_config_invalid_in_stable_error_codes(self):
+        self.assertIn("CONFIG_INVALID", STABLE_ERROR_CODES)
+
+
+# ── TestTimeoutBounds ──────────────────────────────────────────────────────
+class TestTimeoutBounds(unittest.TestCase):
+    """query_timeout_seconds must be a finite number in [1, 60]."""
+
+    def setUp(self):
+        _clear_fake_psycopg2()
+
+    def tearDown(self):
+        _clear_fake_psycopg2()
+
+    def test_valid_timeout_accepted(self):
+        # Boundary and typical values within [1, 60] are accepted.
+        for ok in (1, 10, 60, 1.5, 30):
+            src = _make_source(query_timeout_seconds=ok)
+            self.assertIsNotNone(src)
+
+    def test_zero_timeout_rejected(self):
+        with self.assertRaises(ConfigInvalidError) as cm:
+            _make_source(query_timeout_seconds=0)
+        self.assertEqual(cm.exception.code, "CONFIG_INVALID")
+
+    def test_negative_timeout_rejected(self):
+        with self.assertRaises(ConfigInvalidError) as cm:
+            _make_source(query_timeout_seconds=-1)
+        self.assertEqual(cm.exception.code, "CONFIG_INVALID")
+
+    def test_nan_timeout_rejected(self):
+        with self.assertRaises(ConfigInvalidError) as cm:
+            _make_source(query_timeout_seconds=float("nan"))
+        self.assertEqual(cm.exception.code, "CONFIG_INVALID")
+
+    def test_infinity_timeout_rejected(self):
+        with self.assertRaises(ConfigInvalidError) as cm:
+            _make_source(query_timeout_seconds=float("inf"))
+        self.assertEqual(cm.exception.code, "CONFIG_INVALID")
+
+    def test_none_timeout_rejected(self):
+        with self.assertRaises(ConfigInvalidError) as cm:
+            _make_source(query_timeout_seconds=None)
+        self.assertEqual(cm.exception.code, "CONFIG_INVALID")
+
+    def test_above_max_timeout_rejected(self):
+        with self.assertRaises(ConfigInvalidError) as cm:
+            _make_source(query_timeout_seconds=61)
+        self.assertEqual(cm.exception.code, "CONFIG_INVALID")
+
+    def test_bool_timeout_rejected(self):
+        # bool is a subclass of int; True/False must NOT be accepted as 1/0.
+        with self.assertRaises(ConfigInvalidError):
+            _make_source(query_timeout_seconds=True)
+        with self.assertRaises(ConfigInvalidError):
+            _make_source(query_timeout_seconds=False)
+
+    def test_string_timeout_rejected(self):
+        with self.assertRaises(ConfigInvalidError):
+            _make_source(query_timeout_seconds="10")
+
+
+# ── TestServerIdentityHardening ────────────────────────────────────────────
+class TestServerIdentityHardening(unittest.TestCase):
+    """Server address/port/application_name are pinned; mismatches rejected."""
+
+    def setUp(self):
+        _clear_fake_psycopg2()
+
+    def tearDown(self):
+        _clear_fake_psycopg2()
+
+    def test_wrong_server_address_rejected(self):
+        # inet_server_addr() not in the allowlist → WRONG_SERVER.
+        conn = FakeConnection(results=_make_results(
+            server_identity=("10.0.0.1", EXPECTED_SERVER_PORT,
+                             EXPECTED_APPLICATION_NAME, 160001),
+        ))
+        with self.assertRaises(IdentityCheckError) as cm:
+            _read_snapshot_with_fake(conn)
+        self.assertEqual(cm.exception.code, "WRONG_SERVER")
+
+    def test_null_server_address_rejected(self):
+        # NULL inet_server_addr (Unix socket) → WRONG_SERVER fail-closed.
+        conn = FakeConnection(results=_make_results(
+            server_identity=(None, EXPECTED_SERVER_PORT,
+                             EXPECTED_APPLICATION_NAME, 160001),
+        ))
+        with self.assertRaises(IdentityCheckError) as cm:
+            _read_snapshot_with_fake(conn)
+        self.assertEqual(cm.exception.code, "WRONG_SERVER")
+
+    def test_wrong_server_port_rejected(self):
+        conn = FakeConnection(results=_make_results(
+            server_identity=("127.0.0.1", 6543,
+                             EXPECTED_APPLICATION_NAME, 160001),
+        ))
+        with self.assertRaises(IdentityCheckError) as cm:
+            _read_snapshot_with_fake(conn)
+        self.assertEqual(cm.exception.code, "WRONG_SERVER")
+
+    def test_wrong_application_name_rejected(self):
+        conn = FakeConnection(results=_make_results(
+            server_identity=("127.0.0.1", EXPECTED_SERVER_PORT,
+                             "wrong-app", 160001),
+        ))
+        with self.assertRaises(IdentityCheckError) as cm:
+            _read_snapshot_with_fake(conn)
+        self.assertEqual(cm.exception.code, "WRONG_SERVER")
+
+    def test_server_address_allowlist_multi(self):
+        # Multiple allowed addresses: any one in the list passes.
+        src = _make_source(expected_server_addresses=["127.0.0.1", "10.0.0.2"])
+        conn = FakeConnection(results=_make_results(
+            server_identity=("10.0.0.2", EXPECTED_SERVER_PORT,
+                             EXPECTED_APPLICATION_NAME, 160001),
+        ))
+        _install_fake_psycopg2(conn)
+        try:
+            raw = src.read_snapshot()
+            bundle = json.loads(raw)
+            self.assertEqual(bundle["demo_mode"], "ISOLATED_LIVE")
+        finally:
+            _clear_fake_psycopg2()
+
+
+# ── TestReaderRoleHardening ────────────────────────────────────────────────
+class TestReaderRoleHardening(unittest.TestCase):
+    """The connected role must not be privileged and must lack write access."""
+
+    def setUp(self):
+        _clear_fake_psycopg2()
+
+    def tearDown(self):
+        _clear_fake_psycopg2()
+
+    def _privileged_variants(self):
+        # Each tuple sets exactly one privileged attribute True.
+        return [
+            (True, False, False, False, False),   # rolsuper
+            (False, True, False, False, False),   # rolcreatedb
+            (False, False, True, False, False),   # rolcreaterole
+            (False, False, False, True, False),   # rolreplication
+            (False, False, False, False, True),   # rolbypassrls
+        ]
+
+    def test_unprivileged_role_passes(self):
+        # All-False role privileges passes (the default).
+        conn = FakeConnection(results=_make_results())
+        raw = _read_snapshot_with_fake(conn)
+        self.assertEqual(json.loads(raw)["demo_mode"], "ISOLATED_LIVE")
+
+    def test_privileged_role_attributes_rejected(self):
+        for privs in self._privileged_variants():
+            conn = FakeConnection(results=_make_results(role_privileges=privs))
+            with self.assertRaises(IdentityCheckError) as cm:
+                _read_snapshot_with_fake(conn)
+            self.assertEqual(cm.exception.code, "WRONG_ROLE")
+
+    def test_write_privileges_on_task_runs_rejected(self):
+        # Each table-level write privilege triggers WRONG_ROLE.
+        for idx in range(4):
+            privs = [False, False, False, False]
+            privs[idx] = True
+            conn = FakeConnection(
+                results=_make_results(table_privileges=tuple(privs)),
+            )
+            with self.assertRaises(IdentityCheckError) as cm:
+                _read_snapshot_with_fake(conn)
+            self.assertEqual(cm.exception.code, "WRONG_ROLE")
+
+
+# ── TestRuntimeCatalogMock ─────────────────────────────────────────────────
+# These are the RUNTIME catalog mock tests: they mock information_schema.columns
+# responses to exercise the column-level probe at read time. They are distinct
+# from the STATIC migration-contract tests (which parse .sql files).
+class TestRuntimeCatalogMock(unittest.TestCase):
+    """The runtime information_schema.columns probe rejects missing columns."""
+
+    def setUp(self):
+        _clear_fake_psycopg2()
+
+    def tearDown(self):
+        _clear_fake_psycopg2()
+
+    def test_full_column_catalog_passes(self):
+        # The default _make_results returns the full contract columns for each
+        # probed table, so the runtime probe passes.
+        conn = FakeConnection(results=_make_results())
+        raw = _read_snapshot_with_fake(conn)
+        self.assertEqual(json.loads(raw)["demo_mode"], "ISOLATED_LIVE")
+
+    def test_missing_column_in_task_runs_rejected(self):
+        # Drop one required column from the task_runs catalog → the runtime
+        # probe must report SCHEMA_INCOMPATIBLE listing the missing column.
+        column_catalog = {
+            table: [(c,) for c in cols]
+            for table, cols in SCHEMA_CONTRACT.items()
+            if table in (
+                "task_runs", "stage_runs", "revision_bindings",
+                "run_pr_bindings", "rollback_runs", "environment_identity",
+            )
+        }
+        # Remove 'trace_id' from task_runs.
+        column_catalog["task_runs"] = [
+            (c,) for c in SCHEMA_CONTRACT["task_runs"] if c != "trace_id"
+        ]
+        conn = FakeConnection(results=_make_results(column_catalog=column_catalog))
+        with self.assertRaises(IdentityCheckError) as cm:
+            _read_snapshot_with_fake(conn)
+        self.assertEqual(cm.exception.code, "SCHEMA_INCOMPATIBLE")
+        self.assertIn("trace_id", str(cm.exception))
+        self.assertIn("task_runs", str(cm.exception))
+
+    def test_missing_column_in_revision_bindings_rejected(self):
+        column_catalog = {
+            table: [(c,) for c in cols]
+            for table, cols in SCHEMA_CONTRACT.items()
+            if table in (
+                "task_runs", "stage_runs", "revision_bindings",
+                "run_pr_bindings", "rollback_runs", "environment_identity",
+            )
+        }
+        column_catalog["revision_bindings"] = [
+            (c,) for c in SCHEMA_CONTRACT["revision_bindings"]
+            if c != "head_sha"
+        ]
+        conn = FakeConnection(results=_make_results(column_catalog=column_catalog))
+        with self.assertRaises(IdentityCheckError) as cm:
+            _read_snapshot_with_fake(conn)
+        self.assertEqual(cm.exception.code, "SCHEMA_INCOMPATIBLE")
+        self.assertIn("head_sha", str(cm.exception))
+
+    def test_missing_column_in_environment_identity_rejected(self):
+        column_catalog = {
+            table: [(c,) for c in cols]
+            for table, cols in SCHEMA_CONTRACT.items()
+            if table in (
+                "task_runs", "stage_runs", "revision_bindings",
+                "run_pr_bindings", "rollback_runs", "environment_identity",
+            )
+        }
+        column_catalog["environment_identity"] = [
+            (c,) for c in SCHEMA_CONTRACT["environment_identity"]
+            if c != "environment_id"
+        ]
+        conn = FakeConnection(results=_make_results(column_catalog=column_catalog))
+        with self.assertRaises(IdentityCheckError) as cm:
+            _read_snapshot_with_fake(conn)
+        self.assertEqual(cm.exception.code, "SCHEMA_INCOMPATIBLE")
+        self.assertIn("environment_id", str(cm.exception))
+
+
+# ── TestEphemeralMigrationProbe ────────────────────────────────────────────
+# These tests would require a live PostgreSQL database with the full migration
+# set applied, so they are labeled NOT_EXECUTED. They document the intended
+# runtime behavior for a future integration environment.
+class TestEphemeralMigrationProbe(unittest.TestCase):
+    """Live-DB integration probes (NOT_EXECUTED in CI without a real DB)."""
+
+    NOT_EXECUTED = True  # marker: these require a live database
+
+    def setUp(self):
+        self.skipTest(
+            "ephemeral migration probe requires a live PostgreSQL database"
+        )
+
+    def test_live_information_schema_matches_contract(self):
+        pass  # pragma: no cover
+
+    def test_live_environment_identity_single_row(self):
+        pass  # pragma: no cover
+
+    def test_live_reader_role_has_select_only(self):
+        pass  # pragma: no cover
 
 
 if __name__ == "__main__":

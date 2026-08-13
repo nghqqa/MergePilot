@@ -211,9 +211,12 @@ def run_preflight(mode: str, host: str, source_file: str | None = None,
     - ``"postgres"``: a read-only PostgreSQL source. The file-locality checks
       do NOT apply (the source is a database, not a file); instead preflight
       verifies that the DSN env var is present, ``run_id`` is well-formed, and
-      the expected database/role/env-id are configured. The actual DB identity
-      gate is enforced by ``PostgresSnapshotSource`` at read time; preflight
-      only checks that the required configuration is present and well-formed.
+      the expected database/role/environment-id/server-addresses/server-port/
+      application-name are configured (all mandatory and fail-closed). The
+      actual DB identity/catalog/role gate is enforced by
+      ``PostgresSnapshotSource`` at read time (the "startup probe"); preflight
+      (the "config preflight") only checks that the required configuration is
+      present and well-shaped WITHOUT a DB connection.
     """
     failures = []
 
@@ -307,7 +310,9 @@ def run_preflight(mode: str, host: str, source_file: str | None = None,
                     "detail": (
                         "isolated_live + source_kind=postgres requires a "
                         "pg_config dict (run_id, expected_database, "
-                        "expected_role, expected_environment_id)"
+                        "expected_role, expected_environment_id, "
+                        "expected_server_addresses, expected_server_port, "
+                        "expected_application_name)"
                     ),
                 })
             else:
@@ -315,6 +320,16 @@ def run_preflight(mode: str, host: str, source_file: str | None = None,
                 dsn_env = os.environ.get(_PG_DSN_ENV)
                 expected_database = pg_config.get("expected_database")
                 expected_role = pg_config.get("expected_role")
+                expected_environment_id = pg_config.get(
+                    "expected_environment_id"
+                )
+                expected_server_addresses = pg_config.get(
+                    "expected_server_addresses"
+                )
+                expected_server_port = pg_config.get("expected_server_port")
+                expected_application_name = pg_config.get(
+                    "expected_application_name"
+                )
 
                 # run_id must match the strict allowlist (mirror the source).
                 if not isinstance(run_id, str) or not _RUN_ID_RE.match(run_id):
@@ -345,6 +360,47 @@ def run_preflight(mode: str, host: str, source_file: str | None = None,
                     failures.append({
                         "check": "pg_expected_role",
                         "detail": "pg_config.expected_role is required",
+                    })
+                # expected_environment_id MUST be a non-empty string. The
+                # environment marker is mandatory; the source never guesses the
+                # environment identity from hostname.
+                if not isinstance(expected_environment_id, str) or not expected_environment_id.strip():
+                    failures.append({
+                        "check": "pg_expected_environment_id",
+                        "detail": (
+                            "pg_config.expected_environment_id must be a "
+                            "non-empty string (environment marker is "
+                            "mandatory; never guessed)"
+                        ),
+                    })
+                # expected_server_addresses MUST be a non-empty list.
+                if not isinstance(expected_server_addresses, list) or not expected_server_addresses:
+                    failures.append({
+                        "check": "pg_expected_server_addresses",
+                        "detail": (
+                            "pg_config.expected_server_addresses must be a "
+                            "non-empty list (e.g. ['127.0.0.1'])"
+                        ),
+                    })
+                # expected_server_port MUST be a non-zero int (bool rejected).
+                if (not isinstance(expected_server_port, int)
+                        or isinstance(expected_server_port, bool)
+                        or expected_server_port == 0):
+                    failures.append({
+                        "check": "pg_expected_server_port",
+                        "detail": (
+                            "pg_config.expected_server_port must be a "
+                            "non-zero int"
+                        ),
+                    })
+                # expected_application_name MUST be a non-empty string.
+                if not isinstance(expected_application_name, str) or not expected_application_name.strip():
+                    failures.append({
+                        "check": "pg_expected_application_name",
+                        "detail": (
+                            "pg_config.expected_application_name must be a "
+                            "non-empty string"
+                        ),
                     })
         else:
             # ── File source preflight (classic path) ───────────────────────

@@ -5,6 +5,18 @@
 Serves pre-rendered static HTML on localhost. No write operations,
 no external network. Supports REPLAY (default) and ISOLATED_LIVE modes.
 
+ISOLATED_LIVE startup has two distinct phases:
+
+  1. **config_preflight** (``run_preflight``): checks config presence and
+     shape WITHOUT a DB connection. Verifies the DSN env var is present,
+     ``run_id`` is well-formed, and the expected identity fields are
+     configured. No network, no database round-trip.
+
+  2. **startup_probe** (``poller.initial_load()``): the actual DB
+     identity/catalog/role/initial-snapshot read. This opens a DB connection
+     (for source-kind=postgres) and reads the first snapshot. The server
+     socket is NOT created until this succeeds.
+
 Usage:
     # REPLAY mode (default):
     python tools/demo_console/serve.py [--port 8080]
@@ -116,19 +128,43 @@ def _send_status(poller: LivePoller) -> dict:
 
 
 class ReadOnlyHandler(http.server.SimpleHTTPRequestHandler):
-    """Read-only HTTP handler — blocks all write methods."""
+    """Read-only HTTP handler — blocks all write methods.
+
+    Write methods (PUT/POST/DELETE/PATCH) are blocked with 405. On Windows the
+    client frequently resets the connection after the 405 is sent (the client
+    did not expect a body and closes early), which surfaces as
+    ``ConnectionAbortedError`` when writing the response. We catch that on the
+    write-method paths and treat it as a clean 405 (the client already saw the
+    status line) rather than letting it propagate as a 500-style traceback. On
+    GET paths we deliberately do NOT catch it: a read-path abort is an
+    unexpected condition worth surfacing.
+    """
 
     def do_PUT(self):
-        self.send_error(405, "Method Not Allowed")
+        self._reject_write_method()
 
     def do_POST(self):
-        self.send_error(405, "Method Not Allowed")
+        self._reject_write_method()
 
     def do_DELETE(self):
-        self.send_error(405, "Method Not Allowed")
+        self._reject_write_method()
 
     def do_PATCH(self):
-        self.send_error(405, "Method Not Allowed")
+        self._reject_write_method()
+
+    def _reject_write_method(self):
+        # Send a clean 405. On Windows the client often aborts the connection
+        # immediately after reading the status line (write methods are never
+        # honored), which raises ConnectionAbortedError during the response
+        # write. Catch it here so the handler exits cleanly instead of logging
+        # a connection-error traceback.
+        try:
+            self.send_error(405, "Method Not Allowed")
+        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+            # The client went away mid-response. The 405 status line was already
+            # queued (or the socket is gone); there is nothing more to send.
+            # This is a clean exit for a blocked write method.
+            pass
 
     def end_headers(self):
         self.send_header("Cache-Control", "no-store")
@@ -352,6 +388,18 @@ def main():
                         help="Required environment marker value "
                              "(source-kind=postgres; also via "
                              "MERGEPILOT_PG_ENVIRONMENT_ID)")
+    parser.add_argument("--expected-server-addresses", default=None,
+                        help="Comma-separated allowed inet_server_addr() values "
+                             "(source-kind=postgres; e.g. '127.0.0.1'; also via "
+                             "MERGEPILOT_PG_EXPECTED_SERVER_ADDRESSES)")
+    parser.add_argument("--expected-server-port", type=int, default=None,
+                        help="Required inet_server_port() value "
+                             "(source-kind=postgres; also via "
+                             "MERGEPILOT_PG_EXPECTED_SERVER_PORT)")
+    parser.add_argument("--expected-application-name", default=None,
+                        help="Required application_name value "
+                             "(source-kind=postgres; also via "
+                             "MERGEPILOT_PG_EXPECTED_APPLICATION_NAME)")
     parser.add_argument("--poll-interval", type=float, default=2.0,
                         help="Poll interval in seconds (min 1.0)")
     args = parser.parse_args()
@@ -361,6 +409,26 @@ def main():
     # preflight (and again at read time) so it never appears in process argv.
     pg_config = None
     if args.source_kind == "postgres":
+        # Parse the comma-separated server addresses list.
+        server_addrs = (
+            args.expected_server_addresses
+            or os.environ.get("MERGEPILOT_PG_EXPECTED_SERVER_ADDRESSES")
+        )
+        if server_addrs:
+            server_addrs_list = [
+                a.strip() for a in server_addrs.split(",") if a.strip()
+            ]
+        else:
+            server_addrs_list = []
+        server_port = (
+            args.expected_server_port
+            if args.expected_server_port is not None
+            else (
+                int(os.environ["MERGEPILOT_PG_EXPECTED_SERVER_PORT"])
+                if os.environ.get("MERGEPILOT_PG_EXPECTED_SERVER_PORT")
+                else None
+            )
+        )
         pg_config = {
             "run_id": args.run_id,
             "expected_database": (
@@ -375,21 +443,35 @@ def main():
                 args.expected_environment_id
                 or os.environ.get("MERGEPILOT_PG_ENVIRONMENT_ID")
             ),
+            "expected_server_addresses": server_addrs_list,
+            "expected_server_port": server_port,
+            "expected_application_name": (
+                args.expected_application_name
+                or os.environ.get("MERGEPILOT_PG_EXPECTED_APPLICATION_NAME")
+            ),
         }
 
-    # Run preflight
+    # Run the CONFIG PREFLIGHT: this checks config presence and shape WITHOUT
+    # a DB connection (no network, no database round-trip). It verifies the
+    # DSN env var is present, run_id is well-formed, and the expected identity
+    # fields are configured. The actual DB identity/catalog/initial-snapshot
+    # gate is the STARTUP PROBE (poller.initial_load()) which runs next and
+    # DOES open a DB connection. The two concepts are deliberately distinct:
+    # config_preflight = "is the configuration present and well-shaped?";
+    # startup_probe = "can we actually read a valid first snapshot?".
     pf = run_preflight(
         args.mode, args.host, args.source_file,
         source_kind=args.source_kind, pg_config=pg_config,
     )
 
     if not pf["preflight_passed"]:
-        print("PREFLIGHT FAILED", file=sys.stderr)
+        print("CONFIG PREFLIGHT FAILED", file=sys.stderr)
         for f in pf["failures"]:
             print(f"  {f['check']}: {f['detail']}", file=sys.stderr)
         sys.exit(1)
 
-    print(f"Preflight passed: mode={pf['mode']}, source_kind={pf['source_kind']}")
+    print(f"Config preflight passed: mode={pf['mode']}, "
+          f"source_kind={pf['source_kind']}")
     print(f"  loopback_only={pf['loopback_only']}, read_only={pf['source_read_only']}")
     print(f"  production_resource_accessed={pf['production_resource_accessed']}")
     print(f"  production_resource_access_status={pf['production_resource_access_status']}")
@@ -416,6 +498,9 @@ def main():
                 expected_database=pg_config["expected_database"],
                 expected_role=pg_config["expected_role"],
                 expected_environment_id=pg_config["expected_environment_id"],
+                expected_server_addresses=pg_config["expected_server_addresses"],
+                expected_server_port=pg_config["expected_server_port"],
+                expected_application_name=pg_config["expected_application_name"],
             )
         else:
             source = FileSnapshotSource(args.source_file)
@@ -425,14 +510,17 @@ def main():
             max_consecutive_failures=10,
         )
 
-        # Initial load must succeed before starting server
+        # STARTUP PROBE: the actual DB identity/catalog/initial snapshot read.
+        # This opens a DB connection (for postgres) and reads the first
+        # snapshot. The server socket is NOT created until this succeeds, so a
+        # misconfigured/unknown database never results in a serving listener.
         if not poller.initial_load():
             stats = poller.get_stats()
-            print(f"INITIAL SNAPSHOT LOAD FAILED: state={stats['state']}, "
+            print(f"STARTUP PROBE FAILED: state={stats['state']}, "
                   f"error={stats['last_error_code']}", file=sys.stderr)
             sys.exit(1)
 
-        print(f"Initial snapshot loaded: sha256={poller.current_sha256[:24]}...")
+        print(f"Startup probe succeeded: sha256={poller.current_sha256[:24]}...")
         print(f"  source_kind={source.kind}")
         print(f"  mode_banner=ISOLATED_LIVE")
         print(f"  read_only=true, not_production=true")
