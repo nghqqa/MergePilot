@@ -104,42 +104,58 @@ python -I -B -m unittest discover -s tests/demo_console -p "test_*.py" -v
 ## 4. Source Acquisition Modes
 
 | Mode | `source_acquisition_offline` | Notes |
-|------|------------------------------|-------|
-| GitHub HTTPS clone | `false` | Network used only for source fetch; replay/tests offline |
-| Pre-prepared git bundle | `true` | Must record `source_archive_sha256`; verified offline |
+|------|---:|---|
+| GitHub HTTPS clone | `false` | Network used for source acquisition only; replay/tests offline |
+| Pre-prepared verified git bundle | `true` | Bundle SHA verified before offline checkout |
 
-### Git bundle creation (corrected commands)
+Formal bundle must be based on the frozen `reproduction_spec_commit` (set
+after the M7-P4 design PR merges), not the old `1487620`. The commit
+`1487620` remains as `artifact_baseline_commit` only.
 
-**Create bundle (on networked machine):**
+### Git bundle creation
+
+On a networked machine (POSIX):
+
 ```bash
-# Option A: specific commit
-git bundle create mergepilot-1487620.bundle 148762091447754a50790441144968a12360844f
+# Set the reproduction spec commit (frozen after M7-P4 design PR merges)
+REPRO_SPEC_COMMIT="REPLACE_WITH_FULL_MERGE_COMMIT_SHA"
+BUNDLE_PATH="mergepilot-${REPRO_SPEC_COMMIT}.bundle"
 
-# Option B: all refs (if full history needed)
-git bundle create mergepilot-1487620.bundle --all
+git bundle create "$BUNDLE_PATH" "$REPRO_SPEC_COMMIT"
+git bundle verify "$BUNDLE_PATH"
+sha256sum "$BUNDLE_PATH"
 ```
 
-**Verify bundle integrity:**
-```bash
-git bundle verify mergepilot-1487620.bundle
+On a networked machine (Windows PowerShell):
+
+```powershell
+# Set the reproduction spec commit
+$ReproSpecCommit = "REPLACE_WITH_FULL_MERGE_COMMIT_SHA"
+$BundlePath = "mergepilot-$ReproSpecCommit.bundle"
+
+git bundle create $BundlePath $ReproSpecCommit
+git bundle verify $BundlePath
+Get-FileHash -Algorithm SHA256 $BundlePath
 ```
 
-**Compute SHA-256 (for offline transfer verification):**
-```bash
-# Windows PowerShell:
-Get-FileHash -Algorithm SHA256 mergepilot-1487620.bundle
+### Offline clone from bundle
 
-# POSIX:
-sha256sum mergepilot-1487620.bundle
+On the offline machine (POSIX):
+
+```bash
+# Set the reproduction spec commit
+REPRO_SPEC_COMMIT="REPLACE_WITH_FULL_MERGE_COMMIT_SHA"
+BUNDLE_PATH="mergepilot-${REPRO_SPEC_COMMIT}.bundle"
+
+# Re-verify SHA-256 matches recorded value
+sha256sum "$BUNDLE_PATH"
+# Verify bundle integrity
+git bundle verify "$BUNDLE_PATH"
+# Clone from bundle
+git clone "$BUNDLE_PATH" .
+git checkout "$REPRO_SPEC_COMMIT"
 ```
 
-**Offline clone from bundle:**
-```bash
-git clone mergepilot-1487620.bundle .
-git checkout 148762091447754a50790441144968a12360844f
-```
-
-**Offline SHA re-verification:**
 The offline machine must recompute the bundle SHA-256 and compare with the
 value recorded before transfer. Mismatch = source corrupted.
 

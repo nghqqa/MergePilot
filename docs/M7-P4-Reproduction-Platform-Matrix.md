@@ -69,17 +69,27 @@ specific Python version may that version be added to
 
 ## Source Acquisition
 
-### Mode A: GitHub Clone (network for clone only)
-```
-source_acquisition_mode = "github_https_clone"
-source_acquisition_offline = false
-```
+### GitHub HTTPS Acquisition
 
-### Mode B: Git Bundle (fully offline)
+Network used for source fetch only. Subsequent replay and tests are offline.
 
-**Create (networked machine — POSIX):**
 ```bash
-REPRO_SPEC_COMMIT="<PR merge commit full SHA>"
+# Set the reproduction spec commit
+REPRO_SPEC_COMMIT="REPLACE_WITH_FULL_MERGE_COMMIT_SHA"
+
+git clone https://github.com/nghqqa/MergePilot.git .
+git checkout "$REPRO_SPEC_COMMIT"
+```
+
+Result: `source_acquisition_offline = false`.
+
+### POSIX Bundle Preparation
+
+On a networked machine, create and verify a git bundle.
+
+```bash
+# Set the reproduction spec commit
+REPRO_SPEC_COMMIT="REPLACE_WITH_FULL_MERGE_COMMIT_SHA"
 BUNDLE_PATH="mergepilot-${REPRO_SPEC_COMMIT}.bundle"
 
 git bundle create "$BUNDLE_PATH" "$REPRO_SPEC_COMMIT"
@@ -87,9 +97,13 @@ git bundle verify "$BUNDLE_PATH"
 sha256sum "$BUNDLE_PATH"
 ```
 
-**Create (networked machine — Windows PowerShell):**
+### PowerShell Bundle Preparation
+
+On a networked Windows machine, create and verify a git bundle.
+
 ```powershell
-$ReproSpecCommit = "<PR merge commit full SHA>"
+# Set the reproduction spec commit
+$ReproSpecCommit = "REPLACE_WITH_FULL_MERGE_COMMIT_SHA"
 $BundlePath = "mergepilot-$ReproSpecCommit.bundle"
 
 git bundle create $BundlePath $ReproSpecCommit
@@ -97,21 +111,25 @@ git bundle verify $BundlePath
 Get-FileHash -Algorithm SHA256 $BundlePath
 ```
 
-**Clone (offline machine — POSIX):**
+### Offline Verification and Checkout
+
+On the offline machine, re-verify the bundle SHA, verify integrity, clone, and checkout.
+
 ```bash
-REPRO_SPEC_COMMIT="<PR merge commit full SHA>"
+# Set the reproduction spec commit
+REPRO_SPEC_COMMIT="REPLACE_WITH_FULL_MERGE_COMMIT_SHA"
 BUNDLE_PATH="mergepilot-${REPRO_SPEC_COMMIT}.bundle"
 
-sha256sum "$BUNDLE_PATH"   # Re-verify matches recorded value
+# Re-verify SHA-256 matches the value recorded before transfer
+sha256sum "$BUNDLE_PATH"
+# Verify bundle integrity
+git bundle verify "$BUNDLE_PATH"
+# Clone from bundle
 git clone "$BUNDLE_PATH" .
 git checkout "$REPRO_SPEC_COMMIT"
 ```
 
-```
-source_acquisition_mode = "git_bundle"
-source_acquisition_offline = true
-source_archive_sha256 = "<SHA-256>"
-```
+Result: `source_acquisition_offline = true`, `source_archive_sha256 = "<recorded SHA-256>"`.
 
 ## Competition Demo Paths
 

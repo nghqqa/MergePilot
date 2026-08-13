@@ -38,23 +38,25 @@ cd ~/m7-clean-repro
 
 ### 2.2 Acquire source
 
-**Option A: GitHub clone (requires network for clone only)**
+#### Option A: GitHub clone (requires network for clone only)
 
 ```bash
-# Set the reproduction spec commit (frozen after M7-P4 design PR merges):
-REPRO_SPEC_COMMIT="<PR merge commit full SHA>"
+# Set the reproduction spec commit (frozen after M7-P4 design PR merges)
+REPRO_SPEC_COMMIT="REPLACE_WITH_FULL_MERGE_COMMIT_SHA"
 
 git clone https://github.com/nghqqa/MergePilot.git .
 git checkout "$REPRO_SPEC_COMMIT"
-# source_acquisition_offline = false (network used for clone)
-# Subsequent steps are fully offline.
+# source_acquisition_offline = false
+# Subsequent steps are fully offline
 ```
 
-**Option B: Pre-prepared git bundle (fully offline)**
+#### Option B: Pre-prepared git bundle (fully offline)
 
-Prepare on networked machine (POSIX):
+##### B.1 Prepare bundle on networked machine (POSIX)
+
 ```bash
-REPRO_SPEC_COMMIT="<PR merge commit full SHA>"
+# Set the reproduction spec commit
+REPRO_SPEC_COMMIT="REPLACE_WITH_FULL_MERGE_COMMIT_SHA"
 BUNDLE_PATH="mergepilot-${REPRO_SPEC_COMMIT}.bundle"
 
 git bundle create "$BUNDLE_PATH" "$REPRO_SPEC_COMMIT"
@@ -62,9 +64,11 @@ git bundle verify "$BUNDLE_PATH"
 sha256sum "$BUNDLE_PATH"
 ```
 
-Prepare on networked machine (Windows PowerShell):
+##### B.2 Prepare bundle on networked machine (Windows PowerShell)
+
 ```powershell
-$ReproSpecCommit = "<PR merge commit full SHA>"
+# Set the reproduction spec commit
+$ReproSpecCommit = "REPLACE_WITH_FULL_MERGE_COMMIT_SHA"
 $BundlePath = "mergepilot-$ReproSpecCommit.bundle"
 
 git bundle create $BundlePath $ReproSpecCommit
@@ -72,19 +76,38 @@ git bundle verify $BundlePath
 Get-FileHash -Algorithm SHA256 $BundlePath
 ```
 
-Transfer bundle to offline machine, then (POSIX):
+##### B.3 Offline clone and checkout (POSIX)
+
 ```bash
-REPRO_SPEC_COMMIT="<PR merge commit full SHA>"
+# Set the reproduction spec commit
+REPRO_SPEC_COMMIT="REPLACE_WITH_FULL_MERGE_COMMIT_SHA"
 BUNDLE_PATH="mergepilot-${REPRO_SPEC_COMMIT}.bundle"
 
-# Re-verify SHA-256 matches recorded value:
+# Re-verify SHA-256 matches recorded value
 sha256sum "$BUNDLE_PATH"
-
-# Clone from bundle:
+# Verify bundle integrity
+git bundle verify "$BUNDLE_PATH"
+# Clone from bundle
 git clone "$BUNDLE_PATH" .
 git checkout "$REPRO_SPEC_COMMIT"
 # source_acquisition_offline = true
-# source_archive_sha256 = <recorded SHA-256>
+```
+
+##### B.4 Offline clone and checkout (Windows PowerShell)
+
+```powershell
+# Set the reproduction spec commit
+$ReproSpecCommit = "REPLACE_WITH_FULL_MERGE_COMMIT_SHA"
+$BundlePath = "mergepilot-$ReproSpecCommit.bundle"
+
+# Re-verify SHA-256 matches recorded value
+Get-FileHash -Algorithm SHA256 $BundlePath
+# Verify bundle integrity
+git bundle verify $BundlePath
+# Clone from bundle
+git clone $BundlePath .
+git checkout $ReproSpecCommit
+# source_acquisition_offline = true
 ```
 
 ### 2.3 Verify clean worktree
