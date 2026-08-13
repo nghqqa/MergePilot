@@ -1,12 +1,11 @@
-# M7-P4 Reproduction Evidence Schema (v2 corrected)
+# M7-P4 Reproduction Evidence Schema (v3 corrected)
 
 **Status**: Design only — NOT yet generated
 **Candidate path**: `evidence/m7/reproduction/demo-console-clean-replay.json`
 
 ## Schema Definition
 
-All actual result fields are `null` in the design schema.
-Expected values go in `expected_gates`.
+All actual result fields are `null` in design. Expected values in `expected_gates`.
 
 ```json
 {
@@ -15,6 +14,7 @@ Expected values go in `expected_gates`.
 
   "reproduction_kind": "clean_checkout_offline_replay",
 
+  "artifact_baseline_commit": "148762091447754a50790441144968a12360844f",
   "checkout_commit": null,
   "reproduction_spec_commit": null,
   "source_tag": "m7-p3-demo-console-closed",
@@ -28,6 +28,10 @@ Expected values go in `expected_gates`.
   "source_acquisition_offline": null,
   "source_archive_sha256": null,
 
+  "python_package_dependencies": [],
+  "python_package_dependency_mode": "stdlib_only",
+  "pip_install_required": false,
+  "system_tool_dependencies": ["python", "git"],
   "dependency_bootstrap_offline": null,
   "dependency_bootstrap_requires_network": null,
   "test_execution_offline": null,
@@ -40,9 +44,11 @@ Expected values go in `expected_gates`.
 
   "candidate_minimum_python_version": "3.8",
   "minimum_python_version_status": "NOT_YET_VERIFIED",
-  "supported_python_versions": [],
-  "primary_windows_version": null,
-  "posix_version": null,
+  "historically_exercised_python_versions": ["3.9"],
+  "clean_reproduction_verified_python_versions": [],
+  "clean_reproduction_primary_python_version": null,
+  "planned_primary_python_version": "3.9",
+  "planned_primary_status": "PLANNED_NOT_YET_CLEAN_VERIFIED",
 
   "bundle_source_commit": null,
   "bundle_verification_commit": null,
@@ -77,7 +83,9 @@ Expected values go in `expected_gates`.
     "workflow_utility_status=NOT_MEASURABLE_WITH_CURRENT_RUNTIME",
     "Demo Console is NOT a production management dashboard",
     "M7 NOT overall closed",
-    "Python 3.8 compatibility NOT yet verified (only 3.9 tested)"
+    "Python 3.8 compatibility NOT yet verified",
+    "Git CLI required (bundle_builder uses subprocess git)",
+    "Clean reproduction NOT yet executed on any Python version"
   ],
 
   "expected_gates": {
@@ -95,59 +103,60 @@ Expected values go in `expected_gates`.
 }
 ```
 
-## Provenance Field Rules
+## Field Rules
 
-| Field | Source | Rule |
-|-------|--------|------|
-| `checkout_commit` | Measured at checkout | The origin/main commit checked out |
-| `reproduction_spec_commit` | Current HEAD | Commit containing this Runbook/runner |
-| `bundle_source_commit` | Read from frozen Bundle JSON | `bundle["source_commit"]` — NOT modified |
-| `bundle_verification_commit` | Read from frozen Bundle JSON | `bundle["verification_commit"]` — NOT modified |
-| `bundle_sha256` | Read from frozen Bundle JSON | `bundle["bundle_sha256"]` — internal canonical SHA |
-| `bundle_file_sha256` | Computed at reproduction | SHA-256 of bundle file bytes on disk |
-| `evidence_file_sha256[]` | Computed at reproduction | SHA-256 of file **content** from `git show <commit>:<path>` |
-
-**Critical**: File content SHA-256 ≠ Git blob object ID. Git blob IDs
-include header bytes (`blob <size>\0`). Evidence SHAs are computed over
-raw file content only.
-
-## Source Acquisition Modes
-
-| Mode | `source_acquisition_offline` | When |
-|------|------------------------------|------|
-| GitHub HTTPS clone | `false` | Network used for clone; replay/tests still offline |
-| Pre-prepared git bundle | `true` | Must record `source_archive_sha256` |
-
-## Network Measurement Rules
+### Commit provenance (4 distinct types)
 
 | Field | Source | Design value |
 |-------|--------|-------------|
-| `external_reference_count` | HTML static regex scan | `null` until scanned at reproduction |
-| `observed_external_network_requests` | Browser log / system observer / isolated net | `null` — NOT_MEASURED |
-| `browser_network_observation_status` | — | `"NOT_MEASURED"` |
-| `replay_succeeded_with_network_disabled` | Actual offline test | `null` until tested |
+| `artifact_baseline_commit` | The commit whose tree has frozen artifacts | `1487620...` (fixed) |
+| `checkout_commit` | Actually checked out at reproduction | `null` (should = `reproduction_spec_commit` after merge) |
+| `reproduction_spec_commit` | Commit with final Runbook/schema | `null` (frozen at PR merge) |
+| `bundle_source_commit` | Read from frozen Bundle JSON | `null` (read as-is, not modified) |
+| `bundle_verification_commit` | Read from frozen Bundle JSON | `null` (read as-is, not modified) |
 
-**Rule**: `external_reference_count = 0` (HTML scan) does NOT equal
-`observed_external_network_requests = 0` (network proof). These are
-independent measurements.
+### Dependency classification
+
+| Field | Value | Rule |
+|-------|-------|------|
+| `python_package_dependencies` | `[]` | Zero third-party packages |
+| `python_package_dependency_mode` | `"stdlib_only"` | All imports are stdlib |
+| `pip_install_required` | `false` | No pip needed |
+| `system_tool_dependencies` | `["python", "git"]` | Git CLI needed (subprocess) |
+| `dependency_bootstrap_offline` | `null` | Verified at reproduction |
+
+**Can claim**: "Zero third-party Python packages."
+**Cannot claim**: "Zero external dependencies" (Git CLI required).
+
+### Python version
+
+| Field | Design value | Rule |
+|-------|-------------|------|
+| `candidate_minimum_python_version` | `"3.8"` | Hypothetical |
+| `minimum_python_version_status` | `"NOT_YET_VERIFIED"` | Until tested on 3.8 |
+| `historically_exercised_python_versions` | `["3.9"]` | Demo Console tests ran on 3.9.25 in dev |
+| `clean_reproduction_verified_python_versions` | `[]` | Empty — no clean reproduction yet |
+| `planned_primary_python_version` | `"3.9"` | Plan |
+| `planned_primary_status` | `"PLANNED_NOT_YET_CLEAN_VERIFIED"` | Not yet done |
+
+### Network measurement
+
+| Field | Source | Design value |
+|-------|--------|-------------|
+| `external_reference_count` | HTML scan | `null` |
+| `observed_external_network_requests` | Observer | `null` — `NOT_MEASURED` |
+| `browser_network_observation_status` | — | `"NOT_MEASURED"` |
+
+`external_reference_count = 0` (HTML scan) ≠ `observed_external_network_requests = 0` (network proof).
+
+### Evidence SHA
+
+SHA-256 of file **content bytes** from `git show <commit>:<path>`.
+NOT Git blob object ID (which includes `blob <size>\0` header).
 
 ## Expected vs Actual
 
-- `expected_gates`: Pre-registered expected values (e.g., `expected_tests_run: 33`).
-- Actual result fields (e.g., `tests_run`): `null` until formally executed.
-- `all_ok`: `null` until all gates verified at reproduction time.
-- `status`: `"DESIGN_ONLY"` until reproduction, then `"COMPLETED"`.
-
-## Failure Recording
-
-Each failure in `failures[]`:
-```json
-{
-  "status": "BUNDLE_HASH_MISMATCH",
-  "expected": "313fce1d...",
-  "actual": "abcdef12...",
-  "detail": "Recomputed SHA does not match stored value"
-}
-```
-
-Failures never hidden by `all_ok`. If `failures` is non-empty, `all_ok` must be `false`.
+- `expected_gates`: pre-registered values.
+- Actual fields: `null` until executed.
+- `all_ok`: `null` until all gates verified.
+- `status`: `"DESIGN_ONLY"` → `"COMPLETED"` after reproduction.

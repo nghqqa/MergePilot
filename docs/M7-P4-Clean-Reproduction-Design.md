@@ -1,8 +1,9 @@
-# M7-P4 Clean Environment Offline Reproduction — Design Freeze (v2 corrected)
+# M7-P4 Clean Environment Offline Reproduction — Design Freeze (v3 corrected)
 
 **Status**: Frozen (design-only; no execution this round)
 **Milestone**: M7-P4
-**Base**: `1487620` (origin/main)
+**Artifact baseline commit**: `148762091447754a50790441144968a12360844f`
+**Reproduction spec commit**: `null` (frozen when design PR merges)
 **Branch**: `feat/m7-p4-clean-reproduction`
 **Created**: 2026-08-13
 
@@ -17,30 +18,46 @@ assumptions.
 
 ### 2.1 Source Cleanliness
 
-- Clone or checkout from `origin/main` at pinned SHA (`1487620`).
-- Work in a **new directory** outside the development worktree.
+- Clone or checkout at a pinned commit in a **new directory** outside the
+  development worktree.
 - Worktree must have zero modifications and zero untracked files.
 - Do NOT copy generated artifacts from the development worktree.
 
 ### 2.2 Dependency Cleanliness
 
-Demo Console is **100% Python stdlib** — no pip packages required. All four
-modules (`schema.py`, `bundle_builder.py`, `render.py`, `serve.py`) import
-only stdlib modules (`json`, `hashlib`, `os`, `re`, `sys`, `time`,
-`subprocess`, `pathlib`, `http.server`, `socketserver`, `argparse`,
-`tempfile`, `unittest`).
+Demo Console has **zero third-party Python packages** — no pip install
+required. However, it is NOT accurate to say "zero external dependencies."
 
-- No venv required (but recommended for isolation).
-- No requirements.txt or lock file needed.
-- `dependency_bootstrap_offline = true` (verified at reproduction time).
-- `dependency_bootstrap_requires_network = false`.
+#### Python package dependencies
+
+| Field | Value |
+|-------|-------|
+| `python_package_dependencies` | `[]` (empty) |
+| `python_package_dependency_mode` | `"stdlib_only"` |
+| `pip_install_required` | `false` |
+
+#### System tool dependencies
+
+| Tool | Required by | Notes |
+|------|------------|-------|
+| Python interpreter (3.8+) | All modules | Runs schema/builder/render/serve/tests |
+| Git CLI | `bundle_builder.py`, unittest suite, source checkout | `bundle_builder.py` calls `subprocess.check_output(["git","-C",root,"rev-parse","HEAD"])`; tests verify git blob SHAs |
+| Web browser | Page display only | Not needed for schema/SHA/test verification |
+
+#### NOT required
+
+Docker, PostgreSQL, LLM API, SLS, GitHub (at runtime).
+
+**Can claim**: "Zero third-party Python packages; no pip install needed."
+**Cannot claim**: "Zero external dependencies" or "Only Python needed to
+run all verification" (Git CLI is required for bundle builder and tests).
 
 ### 2.3 Runtime Cleanliness
 
 - Do NOT read environment variables from the development worktree.
 - Do NOT depend on Docker, PostgreSQL, LLM, SLS, or GitHub at runtime.
-- REPLAY static HTML must work with zero network.
-- The local HTTP server (`serve.py`) binds to `127.0.0.1` only.
+- REPLAY static HTML works with zero network.
+- HTTP server binds to `127.0.0.1` only.
 
 ### 2.4 Evidence Integrity
 
@@ -48,7 +65,8 @@ only stdlib modules (`json`, `hashlib`, `os`, `re`, `sys`, `time`,
 - Do NOT regenerate historical evidence.
 - SHA verification: compute SHA-256 over file **content bytes** read via
   `git show <commit>:<path>`, compare with Bundle's recorded SHA-256.
-- **Do NOT confuse file content SHA-256 with Git blob object ID.**
+- **File content SHA-256 ≠ Git blob object ID.** Git blob IDs include
+  header bytes (`blob <size>\0`); content SHA does not.
 - Historical evidence is NOT described as "this run's live results."
 
 ## 3. Reproduction Layers
@@ -61,82 +79,124 @@ Validates:
 - Bundle SHA recomputable (canonical JSON, volatile fields excluded).
 - 5 evidence SHA-256 match (file content bytes from git blob).
 - 8 pages present in HTML.
-- `external_reference_count = 0` (HTML static scan — NOT network observation).
+- `external_reference_count` from HTML static scan (not network proof).
 - REPLAY mode boundary displayed.
 - Findings/Fixes=0 honest explanation present.
-- `secret_leaks=0`.
+- `secret_leaks` scanned.
 
-`artifact_replay_offline` = null until formally verified.
+`artifact_replay_offline` = `null` until formally verified.
 
 ### Layer B: Test Reproduction
 
-Validates using **unittest** (not pytest):
+Uses **unittest** (not pytest):
 ```
 python -I -B -m unittest discover -s tests/demo_console -p "test_*.py" -v
 ```
 - `-I`: isolated mode (no user site-packages, no PYTHONPATH).
 - `-B`: no `__pycache__` generation.
 - No pytest, no `.pytest_cache`.
-- Expected baseline: `expected_tests_run = 33`.
-- Actual results (`tests_run`, `test_failures`, `test_errors`,
-  `test_skipped`) filled only after execution.
-- `git diff --check = 0` after tests.
-- Worktree clean after tests.
-- `test_execution_offline = true` (stdlib only, verified at reproduction).
+- Result fields: `tests_run`, `test_failures`, `test_errors`, `test_skipped`.
+- Expected (in `expected_gates`): `expected_tests_run = 33`.
+- Actual fields `null` until execution.
+- `test_execution_offline` = `null` until verified.
+- `git diff --check = 0` and worktree clean after tests.
 
 ## 4. Source Acquisition Modes
 
 | Mode | `source_acquisition_offline` | Notes |
 |------|------------------------------|-------|
-| GitHub HTTPS clone | `false` | Network used only for source fetch; subsequent replay/tests offline |
-| Pre-prepared git bundle/archive | `true` | Must record `source_archive_sha256`; archive from pinned origin/main commit |
+| GitHub HTTPS clone | `false` | Network used only for source fetch; replay/tests offline |
+| Pre-prepared git bundle | `true` | Must record `source_archive_sha256`; verified offline |
 
-Design phase: source acquisition mode is chosen at reproduction time.
+### Git bundle creation (corrected commands)
+
+**Create bundle (on networked machine):**
+```bash
+# Option A: specific commit
+git bundle create mergepilot-1487620.bundle 148762091447754a50790441144968a12360844f
+
+# Option B: all refs (if full history needed)
+git bundle create mergepilot-1487620.bundle --all
+```
+
+**Verify bundle integrity:**
+```bash
+git bundle verify mergepilot-1487620.bundle
+```
+
+**Compute SHA-256 (for offline transfer verification):**
+```bash
+# Windows PowerShell:
+Get-FileHash -Algorithm SHA256 mergepilot-1487620.bundle
+
+# POSIX:
+sha256sum mergepilot-1487620.bundle
+```
+
+**Offline clone from bundle:**
+```bash
+git clone mergepilot-1487620.bundle .
+git checkout 148762091447754a50790441144968a12360844f
+```
+
+**Offline SHA re-verification:**
+The offline machine must recompute the bundle SHA-256 and compare with the
+value recorded before transfer. Mismatch = source corrupted.
 
 ## 5. Network Proof Semantics
 
 | Field | Source | Design value |
 |-------|--------|-------------|
-| `external_reference_count` | HTML static scan (regex for `src="https://..."`, `<link>`, CDN) | `0` (scanned, verifiable) |
-| `observed_external_network_requests` | Browser network log / system network observer / isolated network env | `null` (NOT_MEASURED in design) |
+| `external_reference_count` | HTML static regex scan | `null` until scanned |
+| `observed_external_network_requests` | Browser/system network observer | `null` — `NOT_MEASURED` |
 | `browser_network_observation_status` | — | `"NOT_MEASURED"` |
-| `replay_succeeded_with_network_disabled` | Actual offline test | `null` until verified |
+| `replay_succeeded_with_network_disabled` | Actual offline test | `null` |
 
-**Rule**: HTML static scan showing 0 external references does NOT prove
-zero network requests. Only a network observer or disabled-network test
-can prove that.
+**Rule**: `external_reference_count = 0` (HTML scan) does NOT equal
+`observed_external_network_requests = 0` (network proof). Independent.
 
 ## 6. Python Version Boundary
 
-| Field | Design value | Rule |
-|-------|-------------|------|
-| `candidate_minimum_python_version` | `"3.8"` | Hypothetical (f-strings, `__future__`) |
-| `minimum_python_version_status` | `"NOT_YET_VERIFIED"` | Until tested on 3.8 |
-| `supported_python_versions` | `[]` (empty) | Filled only after actual platform testing |
-| `primary_windows_version` | `null` | Measured at reproduction |
-| `posix_version` | `null` | Measured at reproduction |
+| Field | Design value |
+|-------|-------------|
+| `candidate_minimum_python_version` | `"3.8"` |
+| `minimum_python_version_status` | `"NOT_YET_VERIFIED"` |
+| `historically_exercised_python_versions` | `["3.9"]` (Windows only — Demo Console tests run on 3.9.25) |
+| `clean_reproduction_verified_python_versions` | `[]` (empty — no clean reproduction executed yet) |
+| `clean_reproduction_primary_python_version` | `null` |
+| `planned_primary_python_version` | `"3.9"` |
+| `planned_primary_status` | `"PLANNED_NOT_YET_CLEAN_VERIFIED"` |
 
-**Verified so far**: Python 3.9.25 (Windows). Only 3.9 may be claimed as
-verified until 3.8 is actually tested.
+**Rules**:
+- Python 3.9 is `HISTORICALLY_EXERCISED` (tests ran on 3.9.25 in development).
+- Only a formal clean reproduction run can add to
+  `clean_reproduction_verified_python_versions`.
+- Python 3.8 is a candidate only — NOT verified.
+- Python 3.10 is NOT listed in `historically_exercised_python_versions`
+  for Demo Console (no Demo Console test run on 3.10 is traceable).
+- `supported_python_versions` remains empty until clean verification.
 
-## 7. Provenance Fields
+## 7. Commit Provenance (4 distinct types)
 
-| Field | Meaning | Source |
-|-------|---------|--------|
-| `checkout_commit` | The origin/main commit checked out for this reproduction | Measured at checkout |
-| `reproduction_spec_commit` | The commit containing this Runbook/runner code | Current HEAD |
+| Field | Meaning | Design value |
+|-------|---------|-------------|
+| `artifact_baseline_commit` | The commit whose tree contains the frozen artifacts (HTML, Bundle, evidence) | `148762091447754a50790441144968a12360844f` |
+| `checkout_commit` | The commit actually checked out for clean reproduction | `null` (measured at reproduction; should equal `reproduction_spec_commit` after merge) |
+| `reproduction_spec_commit` | The commit containing the final Runbook/schema/runner | `null` (frozen when design PR merges to main) |
 | `bundle_source_commit` | From frozen DemoBundle JSON | Read as-is from `bundle["source_commit"]` |
 | `bundle_verification_commit` | From frozen DemoBundle JSON | Read as-is from `bundle["verification_commit"]` |
-| `bundle_sha256` | Internal canonical SHA from bundle | Read from `bundle["bundle_sha256"]` |
-| `bundle_file_sha256` | SHA-256 of bundle file bytes | Computed at reproduction |
-| `evidence_file_sha256[]` | SHA-256 of each evidence file's content | Computed from `git show <commit>:<path>` bytes |
 
-**Rule**: Bundle's internal commit fields are NOT modified for this
-reproduction. They are read as-is from the frozen artifact.
+**Rules**:
+- Formal reproduction should checkout `reproduction_spec_commit` (the final
+  merged commit with these docs), not necessarily `artifact_baseline_commit`.
+- Artifact files must match `artifact_baseline_commit` tree content.
+- M7-P4 docs must come from `reproduction_spec_commit`.
+- Bundle internal C4 provenance (`bundle_source_commit` /
+  `bundle_verification_commit`) is NOT modified for this reproduction.
 
 ## 8. Residue Design
 
-Independent measurements:
+6 independent measurements:
 
 | Field | How measured |
 |-------|-------------|
@@ -147,38 +207,35 @@ Independent measurements:
 | `listening_port_residue` | Verify port 8080 not listening after server stop |
 | `worktree_dirty_after` | `git status --porcelain` after tests |
 
-**No subtract-one heuristic.** Each measured independently before and after.
+**No subtract-one heuristic.** Each measured independently.
 
 HTTP server lifecycle:
 1. Record server PID at start.
 2. Bind to `127.0.0.1` only.
-3. On shutdown (Ctrl+C), verify PID no longer exists.
+3. On shutdown, verify PID no longer exists.
 4. Verify port not listening.
-5. All checks must pass for `server_process_residue = 0`.
 
-## 9. Design-Phase Evidence Example
+## 9. Design-Phase Evidence Status
 
-All actual result fields are `null` in the design schema. Expected values
-go in `expected_gates`.
+All actual result fields are `null`. Expected values in `expected_gates`.
 
 ```json
 {
   "status": "DESIGN_ONLY",
-  "tests_run": null,
-  "test_failures": null,
-  "test_errors": null,
-  "test_skipped": null,
-  "external_network_requests": null,
+  "checkout_commit": null,
+  "reproduction_spec_commit": null,
+  "clean_reproduction_verified_python_versions": [],
+  "dependency_bootstrap_offline": null,
+  "test_execution_offline": null,
   "artifact_replay_offline": null,
-  "test_reproduction_offline": null,
+  "tests_run": null,
+  "observed_external_network_requests": null,
   "all_ok": null,
   "expected_gates": {
     "expected_tests_run": 33,
     "expected_test_failures": 0,
-    "expected_test_errors": 0,
     "expected_external_reference_count": 0,
-    "expected_page_count": 8,
-    "expected_secret_leaks": 0
+    "expected_page_count": 8
   }
 }
 ```
@@ -188,10 +245,10 @@ go in `expected_gates`.
 | Status | Meaning |
 |--------|---------|
 | `SOURCE_CHECKOUT_FAILED` | Clean checkout failed |
-| `COMMIT_MISMATCH` | HEAD SHA ≠ pinned SHA |
+| `COMMIT_MISMATCH` | HEAD SHA ≠ expected commit |
 | `DEPENDENCY_NOT_OFFLINE` | Required network for deps |
 | `BUNDLE_HASH_MISMATCH` | Bundle SHA recomputation failed |
-| `EVIDENCE_HASH_MISMATCH` | Evidence SHA ≠ git blob content SHA |
+| `EVIDENCE_HASH_MISMATCH` | Evidence content SHA ≠ recorded |
 | `SCHEMA_INVALID` | Bundle schema validation failed |
 | `PAGE_MISSING` | Expected HTML page not found |
 | `EXTERNAL_NETWORK_DETECTED` | Network observer detected requests |
@@ -201,17 +258,17 @@ go in `expected_gates`.
 | `WORKTREE_DIRTY` | Worktree modified after tests |
 | `PLATFORM_NOT_SUPPORTED` | OS/Python not supported |
 
-All failures recorded independently — `all_ok` never hides individual failures.
+All failures recorded independently.
 
-## 11. Isolation & Contamination Prevention
+## 11. Conclusion
 
-- Reproduction directory NOT inside `D:\goai\`.
-- No reference to existing venvs under `D:\goai\`.
-- No inherited sensitive env vars (PAT, LLM key, SLS credentials).
-- `-I` flag prevents `PYTHONPATH` and user site-packages contamination.
-- Test artifacts cleaned after measurement.
-- `origin/main` not modified.
-- Frozen Bundle/evidence not modified.
+- **No blocking issues identified** for design freeze.
+- Formal reproduction requires a working Python interpreter and Git CLI.
+- The minimum supported Python version is **NOT yet verified**.
+- Plan: first execute clean reproduction on **Python 3.9**.
+- "stdlib-only" means zero third-party Python packages; it does NOT mean
+  "only Python needed" — Git CLI is a required system tool.
+- Formal offline conclusions must wait until actual execution.
 
 ## 12. Not Yet Done
 
@@ -221,10 +278,5 @@ All failures recorded independently — `all_ok` never hides individual failures
 - ❌ M7 NOT overall closed
 - ❌ ISOLATED_LIVE NOT implemented
 - ❌ Production management dashboard NOT built
-- ❌ Python 3.8 compatibility NOT verified (only 3.9 tested)
-
-## 13. Blocking Issues
-
-**None identified.** Demo Console is stdlib-only, artifacts in git, SHAs
-verified from origin/main. Clean reproduction needs Python 3.8+ and git
-checkout — no external dependencies at runtime.
+- ❌ Python 3.8 compatibility NOT verified
+- ❌ Clean reproduction on any Python version NOT yet done

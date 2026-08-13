@@ -1,22 +1,33 @@
-# M7-P4 Clean Reproduction Runbook (v2 corrected)
+# M7-P4 Clean Reproduction Runbook (v3 corrected)
 
 **Status**: Design only — NOT yet executed
-**Base commit**: `148762091447754a50790441144968a12360844f`
+**Artifact baseline commit**: `148762091447754a50790441144968a12360844f`
 
 ## 1. Prerequisites
 
-- Git CLI
-- Python 3.8+ (stdlib only — no pip packages needed)
-- A web browser (for HTML viewing)
-- **No** Docker, PostgreSQL, LLM API, SLS, or GitHub access required at runtime
-- **No** pip install required (stdlib only)
+### System tools required
+
+| Tool | Required | Reason |
+|------|----------|--------|
+| Python 3.8+ | Yes | Run schema/builder/render/serve/tests |
+| Git CLI | Yes | Source checkout; `bundle_builder.py` calls `git rev-parse HEAD`; tests verify git blob SHAs |
+| Web browser | Optional | Page display (not needed for verification) |
+
+### Python packages
+
+- `python_package_dependencies = []` (empty)
+- `pip_install_required = false`
+- Zero third-party packages. Stdlib only.
+
+### NOT required
+
+Docker, PostgreSQL, LLM API, SLS, GitHub (at runtime).
 
 ## 2. Clean Checkout
 
 ### 2.1 Create isolation directory
 
 ```bash
-# Create a NEW directory OUTSIDE the development worktree
 mkdir -p ~/m7-clean-repro
 cd ~/m7-clean-repro
 ```
@@ -26,31 +37,50 @@ cd ~/m7-clean-repro
 **Option A: GitHub clone (requires network for clone only)**
 ```bash
 git clone https://github.com/nghqqa/MergePilot.git .
-git checkout 148762091447754a50790441144968a12360844f
+git checkout <reproduction_spec_commit>
 # source_acquisition_offline = false (network used for clone)
 # Subsequent steps are fully offline.
 ```
 
 **Option B: Pre-prepared git bundle (fully offline)**
-```bash
-# On a networked machine:
-git bundle create mergepilot-1487620.bundle --all
-sha256sum mergepilot-1487620.bundle
-# Record source_archive_sha256
 
-# On the offline machine:
-git clone mergepilot-1487620.bundle .
-git checkout 148762091447754a50790441144968a12360844f
+Prepare on networked machine:
+```bash
+# Create bundle from specific commit:
+git bundle create mergepilot-<commit>.bundle <commit>
+
+# Or with all refs:
+git bundle create mergepilot-<commit>.bundle --all
+
+# Verify bundle:
+git bundle verify mergepilot-<commit>.bundle
+
+# Record SHA-256:
+# Windows PowerShell:
+Get-FileHash -Algorithm SHA256 mergepilot-<commit>.bundle
+# POSIX:
+sha256sum mergepilot-<commit>.bundle
+```
+
+Transfer bundle to offline machine, then:
+```bash
+# Re-verify SHA-256 matches recorded value:
+sha256sum mergepilot-<commit>.bundle
+
+# Clone from bundle:
+git clone mergepilot-<commit>.bundle .
+git checkout <reproduction_spec_commit>
 # source_acquisition_offline = true
+# source_archive_sha256 = <recorded SHA-256>
 ```
 
 ### 2.3 Verify clean worktree
 
 ```bash
 git status --porcelain
-# Must output nothing (empty = clean)
+# Must output nothing
 git rev-parse HEAD
-# Must output: 148762091447754a50790441144968a12360844f
+# Must output: <reproduction_spec_commit>
 ```
 
 ## 3. Layer A: Artifact Replay Verification
@@ -69,8 +99,8 @@ print('schema_errors:', len(errors))
 recomputed = compute_bundle_sha256(bundle)
 print('sha_match:', bundle['bundle_sha256'] == recomputed)
 print('demo_mode:', bundle['demo_mode'])
-print('source_commit:', bundle['source_commit'])
-print('verification_commit:', bundle['verification_commit'])
+print('bundle_source_commit:', bundle['source_commit'])
+print('bundle_verification_commit:', bundle['verification_commit'])
 "
 ```
 
@@ -82,7 +112,6 @@ import json, hashlib, subprocess
 bundle = json.load(open('samples/demo-bundles/m7-rag-replay.json'))
 commit = subprocess.check_output(['git','rev-parse','HEAD']).decode().strip()
 for ef in bundle['evidence_files']:
-    # Read authoritative bytes from git blob
     blob = subprocess.check_output(['git','show',commit+':'+ef['path']])
     actual = hashlib.sha256(blob).hexdigest()
     status = 'OK' if ef['sha256'] == actual else 'FAIL'
@@ -90,10 +119,9 @@ for ef in bundle['evidence_files']:
 "
 ```
 
-**Note**: This computes SHA-256 of file **content bytes**, not Git blob
-object IDs. Git blob IDs include header bytes; content SHA does not.
+**Note**: SHA-256 is of file **content bytes**, not Git blob object IDs.
 
-### 3.3 Verify HTML (pages, external refs)
+### 3.3 Verify HTML
 
 ```bash
 python -I -B -c "
@@ -101,7 +129,6 @@ import re
 html = open('samples/demo-console/index.html').read()
 pages = re.findall(r'<section[^>]*id=\"([^\"]+)\"', html)
 print('page_count:', len(pages))
-print('pages:', pages)
 ext_src = re.findall(r'src=[\"\\']https?://', html, re.IGNORECASE)
 ext_link = re.findall(r'<link', html)
 print('external_reference_count:', len(ext_src) + len(ext_link))
@@ -111,36 +138,30 @@ print('untrusted_true:', 'untrusted=True' in html)
 "
 ```
 
-**Note**: `external_reference_count = 0` is from HTML static scan.
-It does NOT prove zero network requests. For that, use a network observer
-or disabled-network test (see §5).
+**Note**: `external_reference_count` is from HTML static scan, NOT network proof.
 
-## 4. Layer B: Test Reproduction (unittest, not pytest)
+## 4. Layer B: Test Reproduction (unittest)
 
 ### 4.1 Run tests
 
 ```bash
-# Windows (PowerShell) — single line:
+# Windows (PowerShell):
 python -I -B -m unittest discover -s tests/demo_console -p "test_*.py" -v
 
-# POSIX (bash):
+# POSIX:
 python3 -I -B -m unittest discover -s tests/demo_console -p "test_*.py" -v
 ```
-
-- `-I`: isolated mode (no user site-packages, no PYTHONPATH).
-- `-B`: no `__pycache__` generation.
-- No pytest, no `.pytest_cache`.
 
 ### 4.2 Record results
 
 ```
-tests_run: <actual count from unittest output>
+tests_run: <actual>
 test_failures: <actual>
 test_errors: <actual>
 test_skipped: <actual>
 ```
 
-Expected (in `expected_gates`, NOT in actual result fields):
+Expected (in `expected_gates`, NOT in actual fields):
 ```
 expected_tests_run: 33
 expected_test_failures: 0
@@ -150,112 +171,75 @@ expected_test_errors: 0
 ### 4.3 Post-test verification
 
 ```bash
-git status --porcelain
-# Must be empty (no worktree changes)
-
-git diff --check
-# Must exit 0
-
-# Verify no pycache (should be none with -B)
-find . -type d -name __pycache__ -not -path './.git/*' 2>/dev/null | wc -l
-# Must be 0
-
-# Verify no pytest_cache (should be none — using unittest)
-find . -name .pytest_cache -not -path './.git/*' 2>/dev/null | wc -l
-# Must be 0
+git status --porcelain   # empty
+git diff --check          # exit 0
+find . -type d -name __pycache__ -not -path './.git/*' 2>/dev/null | wc -l  # 0
+find . -name .pytest_cache -not -path './.git/*' 2>/dev/null | wc -l       # 0
 ```
 
-## 5. Network Observation (optional but recommended)
+## 5. Network Observation (optional)
 
-### 5.1 Disabled-network test
+### Disabled-network test
+1. Disable network adapter.
+2. Open `samples/demo-console/index.html`.
+3. Verify all 8 pages render.
+4. Record `replay_succeeded_with_network_disabled`.
 
-1. Disable network adapter (or use isolated network).
-2. Open `samples/demo-console/index.html` in browser.
-3. Verify all 8 pages render correctly.
-4. Record: `replay_succeeded_with_network_disabled = true`.
+### Browser network log
+1. DevTools → Network tab.
+2. Navigate all 8 pages.
+3. Record `observed_external_network_requests`.
 
-### 5.2 Browser network log
-
-1. Open browser DevTools → Network tab.
-2. Navigate through all 8 pages.
-3. Check for any external requests.
-4. Record: `observed_external_network_requests = <count>`.
-
-If no network observer is used:
-```
-browser_network_observation_status = "NOT_MEASURED"
-observed_external_network_requests = null
-```
+If no observer: `browser_network_observation_status = "NOT_MEASURED"`,
+`observed_external_network_requests = null`.
 
 ## 6. Competition Demo Launch
 
-### 6.1 Primary path: local HTTP server
+### Primary: local HTTP server
 
-**Windows (PowerShell):**
 ```powershell
+# Windows:
 cd samples\demo-console
 python -m http.server 8080 --bind 127.0.0.1
-# Open: http://127.0.0.1:8080
-# Ctrl+C to stop
 ```
-
-**POSIX (bash):**
 ```bash
+# POSIX:
 cd samples/demo-console
 python3 -m http.server 8080 --bind 127.0.0.1
-# Open: http://127.0.0.1:8080
-# Ctrl+C to stop
 ```
 
-Or using serve.py (read-only, blocks PUT/POST/DELETE/PATCH):
-```bash
-python tools/demo_console/serve.py --port 8080
-```
-
-### 6.2 Backup path: direct file open
+### Backup: direct file open
 
 ```bash
-# Windows
-start samples\demo-console\index.html
-# macOS
-open samples/demo-console/index.html
-# Linux
-xdg-open samples/demo-console/index.html
+start samples\demo-console\index.html   # Windows
+open samples/demo-console/index.html    # macOS
+xdg-open samples/demo-console/index.html # Linux
 ```
 
-### 6.3 Failure backup: screenshots/video
+### Failure backup: screenshots/video
+**Must state**: "Recording of REPLAY Console, not a live run."
 
-Pre-captured screenshots or recorded video.
-**Must state**: "This is a recording of the REPLAY Console, not a live run."
-
-### 6.4 Server lifecycle verification
-
-After demo:
-1. Press Ctrl+C to stop server.
-2. Verify server PID no longer exists.
-3. Verify port 8080 not listening.
+### Server lifecycle
+1. Record PID at start.
+2. Ctrl+C to stop.
+3. Verify PID gone, port closed.
 4. Record `server_process_residue = 0`, `listening_port_residue = 0`.
 
 ## 7. Reproduction Checklist
 
-- [ ] Clean directory created outside dev worktree
-- [ ] Source acquired (clone or bundle)
-- [ ] `git rev-parse HEAD` matches `1487620...`
+- [ ] Clean directory outside dev worktree
+- [ ] Source acquired (clone or verified bundle)
+- [ ] HEAD matches expected commit
 - [ ] `git status --porcelain` empty
-- [ ] Bundle schema valid (0 errors)
+- [ ] Bundle schema valid
 - [ ] Bundle SHA recomputable
-- [ ] 5 evidence content SHAs match (from git blob bytes)
+- [ ] 5 evidence content SHAs match
 - [ ] 8 HTML pages present
-- [ ] `external_reference_count = 0` (HTML scan)
-- [ ] REPLAY mode banner displayed
-- [ ] adopted=false, untrusted=true displayed
-- [ ] runtime_consumes_rag_context=false displayed
-- [ ] unittest run with `-I -B` flags
-- [ ] tests_run recorded (expected 33)
-- [ ] git diff --check = 0
-- [ ] Worktree clean after tests
-- [ ] No pycache residue (verify with find)
-- [ ] No pytest_cache residue
-- [ ] No temp file residue
-- [ ] Server PID terminated after demo
-- [ ] Port not listening after demo
+- [ ] `external_reference_count` scanned
+- [ ] REPLAY/adopted/untrusted boundaries displayed
+- [ ] unittest with `-I -B`
+- [ ] `tests_run` recorded
+- [ ] `git diff --check = 0`
+- [ ] Worktree clean
+- [ ] No pycache / pytest_cache / temp residue
+- [ ] Server PID terminated, port closed
