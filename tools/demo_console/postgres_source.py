@@ -15,9 +15,10 @@ state from a PostgreSQL database and assembles a DemoBundle on the fly. It is
 - ``psycopg2`` is imported lazily inside ``read_snapshot`` so that REPLAY /
   FILE_FIXTURE deployments never need a database driver installed.
 - The DSN is treated as a secret: it never appears in ``repr``, ``str``,
-  exception messages, or logs. All errors are re-raised with a sanitized
-  message that carries only a stable error ``code`` and the public identity
-  fields.
+  exception messages, or logs. On ANY ``psycopg2``/libpq error the re-raised
+  message carries ONLY a stable error ``code`` and the exception type name —
+  the raw libpq/psycopg2 message (which can echo the connection string on
+  connect failure) is NEVER included, not even after redaction.
 
 Environment identity is established via a dedicated single-row
 ``environment_identity`` table (see
@@ -423,6 +424,71 @@ _AUDIT_BY_ACTION_SQL = (
 _ENV_MARKER_SQL = ENVIRONMENT_MARKER_CONTRACT["probe_sql"]
 
 
+# ── REQUIRED_QUERY_COLUMNS — precise per-table column mapping ────────────────
+# REQUIRED_QUERY_COLUMNS maps each table this source reads to EXACTLY the set of
+# columns actually referenced by the SELECT queries above (and the environment
+# marker probe). This is intentionally narrower than SCHEMA_CONTRACT, which
+# documents every column the migrations create. The runtime
+# information_schema.columns probe checks ONLY these columns: a migration that
+# adds a new column the source does not read must NOT fail the read (a column the
+# query never references can be absent-or-present without affecting correctness).
+#
+# Source of truth: each entry is the literal column list from the corresponding
+# _*_SQL template (and _ENV_MARKER_SQL). If a query's SELECT list changes, this
+# entry must be updated to match.
+REQUIRED_QUERY_COLUMNS: dict[str, frozenset[str]] = {
+    # _TASK_RUN_SQL: run_id, repo, pr_number, branch, status, current_stage,
+    #   attempt, verdict, last_error, created_at, updated_at, trace_id
+    "task_runs": frozenset({
+        "run_id", "repo", "pr_number", "branch", "status", "current_stage",
+        "attempt", "verdict", "last_error", "created_at", "updated_at",
+        "trace_id",
+    }),
+    # _STAGE_RUNS_SQL: id, run_id, stage, agent, attempt, status, started_at,
+    #   completed_at, verdict, detail
+    "stage_runs": frozenset({
+        "id", "run_id", "stage", "agent", "attempt", "status", "started_at",
+        "completed_at", "verdict", "detail",
+    }),
+    # _REVISION_BINDINGS_SQL (alias rb): binding_id, run_id, repo, pr_number,
+    #   base_sha, head_sha, recorded_at
+    "revision_bindings": frozenset({
+        "binding_id", "run_id", "repo", "pr_number", "base_sha", "head_sha",
+        "recorded_at",
+    }),
+    # _RUN_PR_BINDINGS_SQL: repo, pr_number, fix_branch, base_branch, head_sha,
+    #   recorded_at
+    "run_pr_bindings": frozenset({
+        "repo", "pr_number", "fix_branch", "base_branch", "head_sha",
+        "recorded_at",
+    }),
+    # _ROLLBACK_RUNS_SQL: rollback_id, parent_run_id, revert_run_id,
+    #   reverted_merge_sha, repo, pr_number, status, fail_reason,
+    #   revert_result_sha, reverify_verdict, created_at, updated_at
+    "rollback_runs": frozenset({
+        "rollback_id", "parent_run_id", "revert_run_id", "reverted_merge_sha",
+        "repo", "pr_number", "status", "fail_reason", "revert_result_sha",
+        "reverify_verdict", "created_at", "updated_at",
+    }),
+    # _ENV_MARKER_SQL: environment_id
+    "environment_identity": frozenset({"environment_id"}),
+}
+
+
+# Tables whose per-table privileges must be probed at read time (the connected
+# reader role must have SELECT and must NOT have INSERT/UPDATE/DELETE/TRUNCATE
+# on any of them). This is the exhaustive list of tables the source actually
+# queries; it is checked in addition to the pg_roles privileged-attribute probe.
+PRIVILEGE_CHECKED_TABLES = (
+    "task_runs",
+    "stage_runs",
+    "revision_bindings",
+    "run_pr_bindings",
+    "rollback_runs",
+    "environment_identity",
+)
+
+
 class PostgresSnapshotSource(SnapshotSource):
     """Read-only PostgreSQL snapshot source producing an ISOLATED_LIVE bundle.
 
@@ -729,14 +795,20 @@ class PostgresSnapshotSource(SnapshotSource):
                 self._safe_close(conn)
             raise
         except Exception as exc:  # noqa: BLE001 - sanitize everything else
-            # Sanitize: strip any DSN that psycopg2 may embed in the message.
-            # Raise a generic code plus a trimmed, secret-free detail.
-            detail = self._sanitize_text(str(exc))
+            # NEVER include the raw exception message from psycopg2/libpq in the
+            # re-raised error: those messages can echo the connection string
+            # (DSN) on connect failures, and even after regex redaction a
+            # fragment (e.g. the URI scheme "postgresql://") could survive. The
+            # safe, stable surface is the error CODE plus the exception TYPE
+            # name only. The original exception is attached as __cause__ so a
+            # debugger with access to the traceback can still inspect it, but
+            # its text never reaches str(exc) of the raised error.
             if conn is not None:
                 self._safe_rollback(conn)
                 self._safe_close(conn)
             raise PostgresQueryError(
-                f"POSTGRES_READ_FAILED: {type(exc).__name__}: {detail[:200]}",
+                f"POSTGRES_READ_FAILED: {type(exc).__name__} "
+                f"(see server logs; raw detail suppressed to protect the DSN)",
                 code="POSTGRES_READ_FAILED",
             ) from exc
         finally:
@@ -764,8 +836,10 @@ class PostgresSnapshotSource(SnapshotSource):
           3. Schema / search_path
           4. Required-table catalog presence
           5. Reader role hardening (pg_roles privileged-attribute probe +
-             table-level write-privilege probe on task_runs)
-          6. Schema compatibility runtime catalog probe (column-level)
+             per-table privilege probe over ALL six queried tables:
+             SELECT required, INSERT/UPDATE/DELETE/TRUNCATE forbidden)
+          6. Schema compatibility runtime catalog probe (column-level, against
+             REQUIRED_QUERY_COLUMNS)
           7. Environment marker (trusted identity; never guessed)
         """
         # ── 1. Core identity (database, role, read-only flags) ─────────────
@@ -924,29 +998,49 @@ class PostgresSnapshotSource(SnapshotSource):
                     code="WRONG_ROLE",
                 )
 
-        # Table-level privilege probe: the viewer must NOT have write
-        # privileges on task_runs. If it has INSERT/UPDATE/DELETE/TRUNCATE the
-        # role is too privileged for a read-only viewer.
-        cur.execute(
-            "SELECT has_table_privilege(current_user, 'task_runs', 'INSERT'), "
-            "has_table_privilege(current_user, 'task_runs', 'UPDATE'), "
-            "has_table_privilege(current_user, 'task_runs', 'DELETE'), "
-            "has_table_privilege(current_user, 'task_runs', 'TRUNCATE')"
-        )
-        priv_row = cur.fetchone()
-        if priv_row is None:
-            raise IdentityCheckError(
-                "WRONG_ROLE: could not probe table-level privileges on task_runs",
-                code="WRONG_ROLE",
+        # Table-level privilege probe: the viewer must have SELECT and must NOT
+        # have INSERT/UPDATE/DELETE/TRUNCATE on ANY table the source queries.
+        # We probe every table in PRIVILEGE_CHECKED_TABLES (the exhaustive list
+        # of tables this source reads), each via a parameterized query so the
+        # table name is never interpolated into the SQL text.
+        for table in PRIVILEGE_CHECKED_TABLES:
+            # SELECT must be present (True); the viewer must be able to read.
+            cur.execute(
+                "SELECT has_table_privilege(current_user, %s, 'SELECT')",
+                (table,),
             )
-        for priv_val in priv_row:
-            if priv_val is True:
+            sel_row = cur.fetchone()
+            if sel_row is None or sel_row[0] is not True:
                 raise IdentityCheckError(
-                    "WRONG_ROLE: connected role has write privileges on "
-                    "task_runs (INSERT/UPDATE/DELETE/TRUNCATE); only SELECT "
-                    "is allowed for the read-only viewer",
+                    "WRONG_ROLE: connected role lacks SELECT on "
+                    f"{table!r}; the read-only viewer must be able to read "
+                    "every queried table",
                     code="WRONG_ROLE",
                 )
+            # INSERT/UPDATE/DELETE/TRUNCATE must all be absent (False). Any True
+            # → the role has write access and is too privileged.
+            cur.execute(
+                "SELECT has_table_privilege(current_user, %s, 'INSERT'), "
+                "has_table_privilege(current_user, %s, 'UPDATE'), "
+                "has_table_privilege(current_user, %s, 'DELETE'), "
+                "has_table_privilege(current_user, %s, 'TRUNCATE')",
+                (table, table, table, table),
+            )
+            priv_row = cur.fetchone()
+            if priv_row is None:
+                raise IdentityCheckError(
+                    "WRONG_ROLE: could not probe table-level privileges on "
+                    f"{table!r}",
+                    code="WRONG_ROLE",
+                )
+            for priv_val in priv_row:
+                if priv_val is True:
+                    raise IdentityCheckError(
+                        "WRONG_ROLE: connected role has write privileges on "
+                        f"{table!r} (INSERT/UPDATE/DELETE/TRUNCATE); only "
+                        "SELECT is allowed for the read-only viewer",
+                        code="WRONG_ROLE",
+                    )
 
         # ── 6. Schema compatibility — runtime catalog probe ────────────────
         # For each required table, compare the actual columns (from
@@ -1000,26 +1094,25 @@ class PostgresSnapshotSource(SnapshotSource):
     def _verify_schema_columns(self, cur) -> None:
         """Runtime catalog probe: every required column must exist.
 
-        For each table in the required set, SELECT column_name from
-        information_schema.columns and compare against
-        SCHEMA_CONTRACT[table].required_columns. Missing columns →
+        For each table in :data:`REQUIRED_QUERY_COLUMNS`, SELECT column_name
+        from information_schema.columns and compare against the precise set of
+        columns the source's queries actually reference. Missing columns →
         SCHEMA_INCOMPATIBLE with the missing column names listed in the detail.
+
+        Only the columns a query references are checked — a column the source
+        never reads may be absent without failing the read. This keeps the probe
+        decoupled from the full migration column set (SCHEMA_CONTRACT) and
+        coupled only to what the SELECTs in this module actually need.
         """
-        required_tables_for_columns = (
-            "task_runs", "stage_runs", "revision_bindings",
-            "run_pr_bindings", "rollback_runs", "environment_identity",
-        )
-        for table in required_tables_for_columns:
-            contract_cols = SCHEMA_CONTRACT.get(table)
-            if not contract_cols:
-                continue
+        for table in REQUIRED_QUERY_COLUMNS:
+            required_cols = REQUIRED_QUERY_COLUMNS[table]
             cur.execute(
                 "SELECT column_name FROM information_schema.columns "
                 "WHERE table_schema = 'public' AND table_name = %s",
                 (table,),
             )
             actual = {str(row[0]) for row in cur.fetchall()}
-            missing = sorted(contract_cols - actual)
+            missing = sorted(required_cols - actual)
             if missing:
                 raise IdentityCheckError(
                     f"SCHEMA_INCOMPATIBLE: table {table!r} is missing required "
@@ -1574,13 +1667,16 @@ class PostgresSnapshotSource(SnapshotSource):
     def _sanitize_text(text: str) -> str:
         """Strip anything that looks like a secret from an error string.
 
-        psycopg2 / libpq messages occasionally echo the connection string on
-        connect failures. Redact any ``password=...`` fragment wholesale, any
-        ``postgresql://user:pass@`` / ``postgres://user:pass@`` URI with
-        embedded credentials, and any token-like marker, then trim the message
-        so a leaked secret can never reach a log. The goal is that exception
-        messages NEVER contain raw libpq/psycopg2 error text that might carry
-        a credential — only stable error codes plus redacted detail.
+        This is a DEFENSE-IN-DEPTH helper. The primary DSN-secrecy boundary is
+        that :meth:`read_snapshot` NEVER includes the raw psycopg2/libpq
+        exception message in the re-raised :class:`PostgresSourceError` — it
+        surfaces only the stable error ``code`` and the exception type name.
+        This helper exists so that if any internal log path or future caller
+        ever formats a libpq message (which can echo the connection string on
+        connect failures), the result is still safe: it redacts
+        ``password=...`` fragments, ``postgresql://user:pass@`` /
+        ``postgres://user:pass@`` URIs with embedded credentials, and
+        token-like markers.
         """
         if not isinstance(text, str):
             try:
@@ -1672,6 +1768,8 @@ __all__ = [
     "SCHEMA_CONTRACT",
     "ENVIRONMENT_MARKER_CONTRACT",
     "STABLE_ERROR_CODES",
+    "REQUIRED_QUERY_COLUMNS",
+    "PRIVILEGE_CHECKED_TABLES",
     "_all_select_templates",
     "_referenced_table_columns",
 ]

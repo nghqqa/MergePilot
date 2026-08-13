@@ -2,6 +2,7 @@
 
 **Status**: P2 code implementation candidate — local review candidate, not pushed, not merged.
 **Branch**: `feat/isolated-live-p2-postgres`
+**Commit chain**: `6bfa731` → `9ab7fd6` → `f0cad7a` → (new F: ACL/privilege/contract/error-hardening pass)
 **Builds on**: `docs/ISOLATED-LIVE-P1-Implementation.md` (P1 read-only console + `SnapshotSource` interface)
 
 This document specifies the Phase 2 PostgreSQL snapshot source: a
@@ -60,15 +61,29 @@ recorded as an explicit NOT_MEASURED / empty marker (never fabricated).
 
 ### 2.1 Tables read (schema references)
 
-- `task_runs` (m3_state + m4f1 extension: `trace_id`, `active_snapshot_id`, `skill_data_state`)
-- `stage_events` (m3_state: Matrix event dedup + audit)
+The exact columns read from each table are enumerated in
+`REQUIRED_QUERY_COLUMNS` (a precise per-table mapping in
+`postgres_source.py`). The tables read are:
+
+- `task_runs` (m3_state + m4f1 extension: `trace_id`; the run-level status row)
+- `stage_runs` (m3_state: AUTHORITATIVE per-stage execution source — drives
+  `workflow_stages`; latest attempt per stage wins)
+- `stage_events` (m3_state: Matrix event dedup + audit — event counts only)
 - `revision_bindings` (m4f1: immutable one-run-one-revision with `base_sha`/`head_sha`)
 - `run_pr_bindings` (m3b_b4: PR branch identity `fix_branch`/`base_branch`)
 - `mcp_calls` (m3b_policy: immutable INSERT-only gateway audit)
 - `rollback_runs` (m3c: parent/revert run rollback chain)
 - `audit_events` (init.sql: aggregate counts only; keyed by `task_id`)
+- `environment_identity` (`migrations/001_environment_identity.sql`: the
+  trusted single-row environment marker; the source never guesses the
+  environment from hostname)
 
-Tables **not** read by P2 (deliberate boundaries): `stage_runs`, `dispatch_outbox`,
+The six tables in `PRIVILEGE_CHECKED_TABLES` (`task_runs`, `stage_runs`,
+`revision_bindings`, `run_pr_bindings`, `rollback_runs`, `environment_identity`)
+are the ones whose per-table privileges are probed at read time (SELECT must be
+present; INSERT/UPDATE/DELETE/TRUNCATE must be absent).
+
+Tables **not** read by P2 (deliberate boundaries): `dispatch_outbox`,
 `envelope_store`, `run_snapshots`, `skill_job_outbox`, `skill_invocations`,
 `snapshot_manifest_items`, `skill_version_registry`, `purge_requests`,
 `approvals`, `policy_action_outbox`, `knowledge`. These are either internal
@@ -113,6 +128,15 @@ Both read-only flags are required (defense in depth): even though the explicit
 `BEGIN ... READ ONLY` would also constrain writes, the source refuses to
 operate against a session whose defaults are writable.
 
+After the core identity probe, the source runs a per-table privilege probe over
+EVERY table it queries (`task_runs`, `stage_runs`, `revision_bindings`,
+`run_pr_bindings`, `rollback_runs`, `environment_identity`). For each table it
+asserts via parameterized `has_table_privilege(current_user, %s, ...)` queries
+that SELECT is present (`true`) and INSERT/UPDATE/DELETE/TRUNCATE are all absent
+(`false`). Any True write privilege on any queried table → `WRONG_ROLE`
+fail-closed. The table name is always passed as a `%s` parameter, never
+interpolated into the SQL text.
+
 After the identity probe passes, the source opens an explicit transaction:
 
 ```sql
@@ -145,12 +169,31 @@ SET LOCAL idle_in_transaction_session_timeout = <ms>
    word boundaries so column names like `UPDATED_AT` are not false positives).
 4. **Bounded timeouts.** All three session timeouts are `SET LOCAL` to the
    configured ceiling, so a slow/hung query cannot hold resources.
-5. **DSN secrecy.** The DSN is a secret. It is stored once in a private
-   attribute and never appears in `repr`, `str`, exception messages, or logs.
-   `__repr__`/`__str__` expose only `run_id`, `expected_database`,
-   `expected_role`, `kind`. Any `psycopg2`/libpq error string is passed through
-   `_sanitize_text`, which redacts `password=...` fragments to
-   `password=<REDACTED>` before the message is re-raised.
+5. **DSN secrecy / no raw libpq text.** The DSN is a secret. It is stored once
+   in a private attribute and never appears in `repr`, `str`, exception
+   messages, or logs. `__repr__`/`__str__` expose only `run_id`,
+   `expected_database`, `expected_role`, `kind`. On ANY `psycopg2`/libpq error
+   the re-raised `PostgresSourceError` carries ONLY the stable error `code`
+   plus the exception TYPE name — the raw libpq/psycopg2 message (which can
+   echo the connection string verbatim on connect failure) is NEVER included,
+   not even after redaction. The original exception is attached as `__cause__`
+   for debuggers, but its text never reaches the public message. A negative
+   test feeds a DSN like `postgresql://user:SUPERSECRET@host/db` and asserts
+   the raised message contains none of `SUPERSECRET`, `postgresql://`, or
+   `user:`. (`_sanitize_text` remains as defense-in-depth for any internal log
+   path, but it is no longer the primary boundary — non-inclusion is.)
+6. **Precise runtime column probe.** The runtime `information_schema.columns`
+   probe checks ONLY the columns each query actually references, as enumerated
+   in `REQUIRED_QUERY_COLUMNS` (a precise per-table mapping: e.g.
+   `REQUIRED_QUERY_COLUMNS["task_runs"]` lists exactly the columns in the
+   `task_runs` SELECT). This is intentionally narrower than `SCHEMA_CONTRACT`
+   (which documents every column the migrations create): a migration that adds
+   a column the source does not read must NOT fail the read. The static
+   migration-contract tests parse the actual `.sql` files
+   (`m3_state.sql`, `m3b_b4.sql`, `m3c_state.sql`, `m4f1_state.sql`,
+   `001_environment_identity.sql`), extract the CREATE TABLE + ALTER TABLE ADD
+   COLUMN lists, and assert every `REQUIRED_QUERY_COLUMNS` entry is created by
+   a migration — they do NOT compare `SCHEMA_CONTRACT` against itself.
 
 ## 6. DemoBundle assembly rules
 
@@ -220,7 +263,7 @@ python tools/demo_console/serve.py \
     --mode isolated_live \
     --pg-run-id run-abc \
     --pg-database mergepilot_audit \
-    --pg-role mergepilot_readonly \
+    --pg-role mergepilot_reader \
     [--pg-query-timeout 10] \
     --host 127.0.0.1 --port 8080 --poll-interval 2
 ```
@@ -259,22 +302,42 @@ These are **honest absences**, recorded explicitly so a consumer cannot mistake
 - `PostgresSnapshotSource(SnapshotSource)` with `kind="POSTGRES_ISOLATED"`,
   `read_only=True`.
 - Lazy `psycopg2` import; `PSYCOPG2_MISSING` error code.
-- Read-only identity gate (database / user / both read-only flags).
+- Read-only identity gate (database / user / both read-only flags / server
+  identity / schema / catalog / environment marker).
+- Per-table privilege probe over ALL six queried tables (`task_runs`,
+  `stage_runs`, `revision_bindings`, `run_pr_bindings`, `rollback_runs`,
+  `environment_identity`): SELECT must be present, INSERT/UPDATE/DELETE/
+  TRUNCATE must be absent — each probed via parameterized
+  `has_table_privilege` queries.
+- `REQUIRED_QUERY_COLUMNS`: precise per-table column mapping (only the columns
+  each query references). The runtime `information_schema.columns` probe checks
+  exactly these columns, not the full migration column set.
 - `REPEATABLE READ READ ONLY` transaction with `SET LOCAL` timeouts.
-- Six parameterized read queries (task_runs, stage_events,
+- Parameterized read queries (task_runs, stage_runs, stage_events,
   revision_bindings, run_pr_bindings, mcp_calls, rollback_runs, audit_events).
 - DemoBundle assembly with `demo_mode="ISOLATED_LIVE"` + `bundle_sha256`.
-- DSN secrecy: never in `repr`/`str`/exceptions/logs; `_sanitize_text`
-  redaction.
+- DSN secrecy: the DSN never appears in `repr`/`str`/exceptions/logs; on ANY
+  psycopg2/libpq error the re-raised message carries ONLY the stable code +
+  exception type name — the raw libpq message is NEVER included (not even
+  redacted in place).
+- `environment_identity` migration (`001_environment_identity.sql`): `REVOKE ALL
+  FROM PUBLIC` + `GRANT SELECT TO mergepilot_reader` (PUBLIC has no privileges;
+  the canonical viewer role `mergepilot_reader` has SELECT only).
 - Connection lifecycle: `ROLLBACK` + `close()` on success, error, and finally.
-- Mock-based test suite (37 tests, no real DB).
+- Test suite: 296 tests across `tests/demo_console/` (mock + static + ephemeral,
+  mutually exclusive classifications), 6 skipped. Real PostgreSQL verification =
+  NOT_PERFORMED.
 
 **NOT implemented (this candidate)**
 
 - `serve.py` / `preflight.py` CLI + preflight wiring for a DB source
   (requires a `pg_*` source-locality path distinct from the file
-  `VERIFIED_LOCAL` check).
-- MergePilot-Test isolated verification against a real PolarDB-PG instance.
+  `VERIFIED_LOCAL` check). The CLI status is: the `--source-kind` flag accepts
+  `file`/`postgres`, but the postgres path is exercised only via preflight/
+  mock tests, not a live `serve.py` run.
+- MergePilot-Test isolated verification against a real PolarDB-PG instance —
+  NOT_PERFORMED. The ephemeral live-DB tests are gated on `EPHEMERAL_PG_DSN`
+  and report NOT_EXECUTED when it is unset.
 - Production database access / production management dashboard.
 - Dynamic (SPA) pages that poll `/api/live/*` at runtime.
 - Per-skill verdict / inline finding surfacing (would require the

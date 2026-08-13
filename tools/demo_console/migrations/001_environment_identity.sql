@@ -7,6 +7,6 @@ CREATE TABLE IF NOT EXISTS environment_identity (
 -- Only one row allowed
 CREATE UNIQUE INDEX IF NOT EXISTS environment_identity_single_row
     ON environment_identity ((1));
--- Reader gets SELECT only
-GRANT SELECT ON environment_identity TO PUBLIC;
-REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON environment_identity FROM PUBLIC;
+-- Revoke ALL from PUBLIC, grant SELECT only to the named viewer role
+REVOKE ALL ON environment_identity FROM PUBLIC;
+GRANT SELECT ON environment_identity TO mergepilot_reader;

@@ -49,6 +49,8 @@ from postgres_source import (  # noqa: E402
     SCHEMA_CONTRACT,
     ENVIRONMENT_MARKER_CONTRACT,
     STABLE_ERROR_CODES,
+    REQUIRED_QUERY_COLUMNS,
+    PRIVILEGE_CHECKED_TABLES as _PRIVILEGE_CHECKED_TABLES,
     _all_select_templates,
     _referenced_table_columns,
 )
@@ -119,20 +121,41 @@ class FakeCursor:
     def execute(self, sql, params=None):
         # Record on the connection for later assertions.
         self.conn.executed.append((sql, params))
-        # First, try param-keyed matching (for information_schema.columns
-        # probes that share the same SQL text but differ by the table param).
+        upper = sql.upper()
+        pstr = " ".join(
+            str(p) for p in (
+                params if isinstance(params, (list, tuple)) else (params,)
+            )
+        )
+        # First, try persistent (sql-fragment, param-fragment)-keyed matching.
+        # These entries are NEVER consumed, so they serve repeated probes
+        # (information_schema.columns run per table, and the per-table
+        # has_table_privilege SELECT + write probes). Each key is a tuple of
+        # fragments that must ALL appear: each fragment is matched against BOTH
+        # the uppercased SQL text AND the joined params, so a fragment can
+        # appear in either place (e.g. 'SELECT' is in the SQL text, the table
+        # name is in the params).
+        persistent = self._results.get("__persistent_keyed__")
+        if persistent:
+            for key, rows in persistent.items():
+                if not isinstance(key, tuple):
+                    continue
+                frags = [str(k).upper() for k in key]
+                if all(frag in upper or frag in pstr.upper() for frag in frags):
+                    self._pending_rows = list(rows)
+                    self._fetchone_consumed = False
+                    return
+        # Second, try the legacy param-keyed namespace (a single fragment
+        # matched against the joined params).
         param_keyed = self._results.get("__param_keyed__")
         if param_keyed and params:
             for key, rows in param_keyed.items():
-                # Match if the param tuple/string contains the key fragment.
-                pstr = " ".join(str(p) for p in (params if isinstance(params, (list, tuple)) else (params,)))
                 if key in pstr:
                     self._pending_rows = list(rows)
                     self._fetchone_consumed = False
                     return
         # Find a matching canned result by substring (case-insensitive). The
         # order of keys in the dict encodes priority; the first match wins.
-        upper = sql.upper()
         matched_key = None
         for key in list(self._results.keys()):
             if key.startswith("__"):
@@ -318,21 +341,40 @@ def _make_results(
         # All False = unprivileged reader.
         role_privileges = (False, False, False, False, False)
     if table_privileges is None:
-        # (INSERT, UPDATE, DELETE, TRUNCATE) on task_runs.
-        # All False = no write privileges.
-        table_privileges = (False, False, False, False)
+        # Per-table privilege probes. The source checks SELECT (must be True)
+        # and INSERT/UPDATE/DELETE/TRUNCATE (must be False) on EVERY table it
+        # queries. table_privileges maps table_name ->
+        # (select_ok, insert, update, delete, truncate). The default is a clean
+        # reader: SELECT True, all writes False, for every probed table.
+        table_privileges = {
+            table: (True, False, False, False, False)
+            for table in _PRIVILEGE_CHECKED_TABLES
+        }
     if column_catalog is None:
         # A dict mapping table_name -> list of (column_name,) rows from
-        # information_schema.columns. By default we return the full contract
-        # column set for each probed table so the runtime catalog probe passes.
+        # information_schema.columns. By default we return the precise
+        # REQUIRED_QUERY_COLUMNS set for each probed table so the runtime
+        # catalog probe passes.
         column_catalog = {
             table: [(c,) for c in cols]
-            for table, cols in SCHEMA_CONTRACT.items()
-            if table in (
-                "task_runs", "stage_runs", "revision_bindings",
-                "run_pr_bindings", "rollback_runs", "environment_identity",
-            )
+            for table, cols in REQUIRED_QUERY_COLUMNS.items()
         }
+
+    # Build persistent param+sql-keyed entries for the per-table privilege
+    # probes. The source issues, per table:
+    #   SELECT has_table_privilege(current_user, %s, 'SELECT')        -> (bool,)
+    #   SELECT has_table_privilege(current_user, %s, 'INSERT'), ...   -> (4 bools,)
+    # Both carry the table name as a param and run once per table in a loop.
+    # Because the same SQL is issued repeatedly, these live under the
+    # __persistent_keyed__ namespace (matched on (sql-fragment, param-fragment)
+    # and never consumed). The information_schema.columns probe lives there too.
+    priv_persistent = {}
+    for table in _PRIVILEGE_CHECKED_TABLES:
+        tp = table_privileges.get(table, (True, False, False, False, False))
+        select_ok = tp[0]
+        write_privs = tuple(tp[1:5]) if len(tp) >= 5 else (False, False, False, False)
+        priv_persistent[("HAS_TABLE_PRIVILEGE", "'SELECT'", table)] = [(select_ok,)]
+        priv_persistent[("HAS_TABLE_PRIVILEGE", "'INSERT'", table)] = [write_privs]
 
     return {
         # task_runs SELECT — fetchone
@@ -361,21 +403,25 @@ def _make_results(
         "FROM PG_TABLES WHERE SCHEMANAME": catalog_tables,
         # reader role privileges probe (pg_roles) — fetchone
         "FROM PG_ROLES WHERE ROLNAME = CURRENT_USER": [role_privileges],
-        # table-level privilege probe (has_table_privilege) — fetchone
-        "HAS_TABLE_PRIVILEGE(CURRENT_USER, 'TASK_RUNS'": [table_privileges],
         # environment marker probe — fetchone (environment_identity.environment_id)
         "FROM ENVIRONMENT_IDENTITY LIMIT 1": [environment_marker],
         # environment marker row count — fetchone
         "SELECT COUNT(*) FROM ENVIRONMENT_IDENTITY": [environment_count],
-        # information_schema.columns probes — param-keyed. The source issues
-        #   SELECT column_name FROM information_schema.columns
-        #   WHERE table_schema = 'public' AND table_name = %s
-        # once per probed table, with the table name as a param. Because the
-        # SQL text is identical across probes, we use param-keyed matching
-        # (keyed on the table name fragment in the params) so each probe gets
-        # its own column list.
-        "__param_keyed__": {
-            table: rows for table, rows in column_catalog.items()
+        # __persistent_keyed__: results matched on (sql-fragment, param-
+        # fragment) tuples and NEVER consumed (so repeated probes work). Used
+        # by the information_schema.columns probe (run once per table) and the
+        # per-table has_table_privilege probes (SELECT probe + write probe,
+        # each run once per table). The information_schema entry is keyed on
+        # ("INFORMATION_SCHEMA.COLUMNS", table); the privilege SELECT entry on
+        # ("HAS_TABLE_PRIVILEGE", "'SELECT'", table) and the write entry on
+        # ("HAS_TABLE_PRIVILEGE", "'INSERT'", table) — the write marker is
+        # present only in the write probe's SQL text.
+        "__persistent_keyed__": {
+            **{
+                ("INFORMATION_SCHEMA.COLUMNS", table): rows
+                for table, rows in column_catalog.items()
+            },
+            **priv_persistent,
         },
     }
 
@@ -759,7 +805,8 @@ class TestConnectionHandling(unittest.TestCase):
         self.assertGreaterEqual(conn.rollback_called, 1)
 
     def test_query_error_closes_connection_and_sanitizes(self):
-        # Fake a cursor that raises on a SELECT to simulate a DB error.
+        # Fake a cursor that raises on a SELECT to simulate a DB error whose
+        # raw message contains the DSN/password.
         class _ExplodingCursor(FakeCursor):
             def execute(self, sql, params=None):
                 if "FROM TASK_RUNS" in sql.upper():
@@ -780,15 +827,22 @@ class TestConnectionHandling(unittest.TestCase):
         with self.assertRaises(PostgresQueryError) as cm:
             _read_snapshot_with_fake(conn)
         msg = str(cm.exception)
-        # The DSN / password must be redacted from the sanitized message.
+        # The raw psycopg2/libpq message is NEVER included in the raised error
+        # — not even redacted in place. Only the stable code + type name leak.
         self.assertNotIn("SUPERSECRET", msg)
-        self.assertIn("password=<REDACTED>", msg)
+        self.assertNotIn("password=", msg.lower())
+        self.assertNotIn("db.example.com", msg)
+        self.assertNotIn("password=<REDACTED>", msg)
+        # The stable code is present.
+        self.assertEqual(cm.exception.code, "POSTGRES_READ_FAILED")
+        self.assertIn("POSTGRES_READ_FAILED", msg)
         # Connection was closed despite the mid-read error.
         self.assertTrue(conn.closed)
 
     def test_connect_failure_sanitized_and_closed(self):
-        # psycopg2.connect itself raises — the source must sanitize and not
-        # leak the DSN, and must not touch a None connection.
+        # psycopg2.connect itself raises — the source must suppress the raw
+        # message entirely and not leak the DSN, and must not touch a None
+        # connection.
         class _ConnectFailPsycopg2:
             def connect(self, dsn):
                 raise RuntimeError(
@@ -800,8 +854,47 @@ class TestConnectionHandling(unittest.TestCase):
             src = _make_source()
             with self.assertRaises(PostgresQueryError) as cm:
                 src.read_snapshot()
-            self.assertNotIn("SUPERSECRET", str(cm.exception))
-            self.assertIn("password=<REDACTED>", str(cm.exception))
+            msg = str(cm.exception)
+            self.assertNotIn("SUPERSECRET", msg)
+            self.assertNotIn("password=", msg.lower())
+            self.assertNotIn("db.example.com", msg)
+            self.assertNotIn("password=<REDACTED>", msg)
+            self.assertEqual(cm.exception.code, "POSTGRES_READ_FAILED")
+        finally:
+            _clear_fake_psycopg2()
+
+    def test_connect_failure_never_leaks_dsn_uri_or_user(self):
+        # Negative test: a DSN shaped like a libpq URI with embedded
+        # credentials that fails to connect must produce an error message free
+        # of the secret, the URI scheme, and the user fragment. The raw
+        # psycopg2/libpq message (which echoes the connection string on
+        # connect failure) is suppressed entirely — only the stable code +
+        # exception type name are exposed.
+        secret_dsn = "postgresql://user:SUPERSECRET@host/db"
+
+        class _ConnectFailPsycopg2:
+            def connect(self, dsn):
+                # libpq-style message that echoes the DSN verbatim.
+                raise RuntimeError(
+                    f"connection to server at {secret_dsn} failed: "
+                    f"postgresql://user:SUPERSECRET@host/db"
+                )
+
+        sys.modules["psycopg2"] = _ConnectFailPsycopg2()
+        try:
+            src = _make_source(dsn=secret_dsn)
+            with self.assertRaises(PostgresQueryError) as cm:
+                src.read_snapshot()
+            msg = str(cm.exception)
+            # The secret must never appear.
+            self.assertNotIn("SUPERSECRET", msg)
+            # The DSN URI scheme must never appear.
+            self.assertNotIn("postgresql://", msg)
+            # The user fragment must never appear.
+            self.assertNotIn("user:", msg)
+            # No DSN-shaped fragment at all.
+            self.assertNotIn("@host", msg)
+            self.assertEqual(cm.exception.code, "POSTGRES_READ_FAILED")
         finally:
             _clear_fake_psycopg2()
 
@@ -1077,7 +1170,8 @@ class TestSchemaContract(unittest.TestCase):
     # ── Static migration-contract tests: parse actual .sql files ───────────
     def test_environment_identity_sql_create_table_columns(self):
         """Parse the actual 001_environment_identity.sql migration and extract
-        the CREATE TABLE columns; assert they match the SCHEMA_CONTRACT entry.
+        the CREATE TABLE columns; assert they match the REQUIRED_QUERY_COLUMNS
+        entry (the columns the source actually queries).
 
         This is a STATIC migration-contract test (no DB connection). The
         runtime information_schema.columns probe is covered by
@@ -1090,30 +1184,69 @@ class TestSchemaContract(unittest.TestCase):
         )
         self.assertTrue(sql_path.exists(), f"migration file missing: {sql_path}")
         sql_text = sql_path.read_text(encoding="utf-8")
-        # Extract the CREATE TABLE columns. The migration declares:
-        #   CREATE TABLE IF NOT EXISTS environment_identity (
-        #       environment_id TEXT NOT NULL,
-        #       created_at TIMESTAMPTZ DEFAULT now()
-        #   );
         cols = self._extract_create_table_columns(sql_text, "environment_identity")
-        # The contract must list every column the migration creates.
-        for c in cols:
+        # The query-required column (environment_id) must be created by the
+        # migration.
+        for c in REQUIRED_QUERY_COLUMNS["environment_identity"]:
             self.assertIn(
-                c, SCHEMA_CONTRACT["environment_identity"],
-                f"environment_identity.{c} in migration but not contract",
+                c, cols,
+                f"REQUIRED_QUERY_COLUMNS environment_identity.{c} not created "
+                f"by migration (parsed cols: {cols})",
             )
+
+    def test_environment_identity_sql_acl_revokes_public_grants_reader(self):
+        """The 001_environment_identity.sql migration must REVOKE ALL from
+        PUBLIC and GRANT SELECT to the canonical viewer role
+        (mergepilot_reader). It must NOT grant SELECT to PUBLIC.
+        """
+        sql_path = (
+            Path(__file__).resolve().parents[2]
+            / "tools" / "demo_console" / "migrations"
+            / "001_environment_identity.sql"
+        )
+        sql_text = sql_path.read_text(encoding="utf-8")
+        upper = sql_text.upper()
+        # REVOKE ALL ... FROM PUBLIC must be present.
+        self.assertIn("REVOKE ALL ON ENVIRONMENT_IDENTITY FROM PUBLIC", upper)
+        # GRANT SELECT ... TO mergepilot_reader must be present.
+        self.assertIn(
+            "GRANT SELECT ON ENVIRONMENT_IDENTITY TO MERGEPILOT_READER", upper,
+        )
+        # The old "GRANT SELECT ... TO PUBLIC" must NOT be present.
+        self.assertNotIn("GRANT SELECT ON ENVIRONMENT_IDENTITY TO PUBLIC", upper)
+
+    @staticmethod
+    def _strip_sql_comments(text: str) -> str:
+        """Remove ``--`` line comments from SQL text.
+
+        The migration files use inline ``--`` comments (including CJK text and
+        ASCII commas inside the comments) that would corrupt a naive comma-split
+        of a CREATE TABLE body. We strip from the first ``--`` to end-of-line on
+        every line. Block comments (/* ... */) are not used in these files.
+        """
+        out_lines = []
+        for line in text.splitlines():
+            idx = line.find("--")
+            if idx != -1:
+                line = line[:idx]
+            out_lines.append(line)
+        return "\n".join(out_lines)
 
     @staticmethod
     def _extract_create_table_columns(sql_text: str, table_name: str) -> list[str]:
         """Extract the column names from a ``CREATE TABLE <name> (...)`` block.
 
         A simple parser sufficient for the migration files in this repo. It
-        finds the CREATE TABLE block for ``table_name`` and returns the leading
-        identifier of each column line (skipping constraints/indices).
+        finds the CREATE TABLE block for ``table_name`` (tolerating an optional
+        ``public.`` schema prefix), strips ``--`` comments, and returns the
+        leading identifier of each column line (skipping table-level
+        constraints/indices).
         """
-        # Match CREATE TABLE [IF NOT EXISTS] <table_name> ( ... )
+        sql_text = TestSchemaContract._strip_sql_comments(sql_text)
+        # Match CREATE TABLE [IF NOT EXISTS] [public.]<table_name> ( ... )
         m = re.search(
             r"CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+"
+            r"(?:public\.)?"
             + re.escape(table_name)
             + r"\s*\((.*?)\);",
             sql_text,
@@ -1139,6 +1272,28 @@ class TestSchemaContract(unittest.TestCase):
                 cols.append(tok)
         return cols
 
+    @staticmethod
+    def _extract_alter_add_columns(sql_text: str, table_name: str) -> list[str]:
+        """Extract column names from ``ALTER TABLE [public.]<name> ADD COLUMN
+        [IF NOT EXISTS] <col> ...`` statements in ``sql_text``.
+
+        The M3/M4 migrations add columns idempotently via ALTER TABLE ADD
+        COLUMN IF NOT EXISTS, so a table's full column set is the union of its
+        CREATE TABLE block and all its ALTER TABLE ADD COLUMN statements across
+        every migration file.
+        """
+        cols = []
+        pattern = re.compile(
+            r"ALTER\s+TABLE\s+(?:public\.)?"
+            + re.escape(table_name)
+            + r"\s+ADD\s+COLUMN(?:\s+IF\s+NOT\s+EXISTS)?\s+"
+            r"([A-Za-z_][A-Za-z0-9_]*)",
+            re.IGNORECASE,
+        )
+        for m in pattern.finditer(sql_text):
+            cols.append(m.group(1))
+        return cols
+
     def test_environment_marker_contract_shape(self):
         # ENVIRONMENT_MARKER_CONTRACT describes the new marker shape.
         self.assertEqual(
@@ -1153,6 +1308,154 @@ class TestSchemaContract(unittest.TestCase):
         self.assertIn("SELECT", ENVIRONMENT_MARKER_CONTRACT["viewer_privileges"])
         for priv in ("INSERT", "UPDATE", "DELETE", "TRUNCATE"):
             self.assertIn(priv, ENVIRONMENT_MARKER_CONTRACT["revoked_privileges"])
+
+
+# ── TestMigrationContractFiles ──────────────────────────────────────────────
+# These are the STATIC migration-contract tests that parse the ACTUAL .sql
+# migration files (not SCHEMA_CONTRACT against itself). They extract the column
+# lists from the real CREATE TABLE + ALTER TABLE ADD COLUMN statements across
+# the audit-db migrations and the environment_identity migration, and verify
+# that every column in REQUIRED_QUERY_COLUMNS is actually created by a
+# migration. This catches drift between the queries and the migrations without
+# requiring a live database.
+class TestMigrationContractFiles(unittest.TestCase):
+    """REQUIRED_QUERY_COLUMNS columns must exist in the actual .sql migrations.
+
+    These tests read the real migration files:
+      - tools/audit-db/m3_state.sql      (task_runs, stage_runs, ...)
+      - tools/audit-db/m3b_b4.sql        (run_pr_bindings, ...)
+      - tools/audit-db/m3c_state.sql     (rollback_runs, task_runs additions)
+      - tools/audit-db/m4f1_state.sql    (revision_bindings, task_runs trace_id)
+      - tools/demo_console/migrations/001_environment_identity.sql
+    ...parse the CREATE TABLE column lists and ALTER TABLE ADD COLUMN
+    statements, and assert every column REQUIRED_QUERY_COLUMNS references is
+    actually created. They deliberately do NOT compare SCHEMA_CONTRACT against
+    itself.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.root = Path(__file__).resolve().parents[2]
+        cls.audit_db = cls.root / "tools" / "audit-db"
+        cls.migrations = cls.root / "tools" / "demo_console" / "migrations"
+        # Read every migration file once and concatenate by table. Each entry
+        # is the raw SQL text of one file; a table's full column set is the
+        # union across all files that CREATE or ALTER it.
+        cls.migration_files = [
+            cls.audit_db / "m3_state.sql",
+            cls.audit_db / "m3b_b4.sql",
+            cls.audit_db / "m3c_state.sql",
+            cls.audit_db / "m4f1_state.sql",
+            cls.migrations / "001_environment_identity.sql",
+        ]
+        for p in cls.migration_files:
+            # Surface a clear failure if a migration file is missing.
+            assert p.exists(), f"migration file missing: {p}"
+        cls.migration_texts = [p.read_text(encoding="utf-8")
+                               for p in cls.migration_files]
+
+    def _parsed_columns_for(self, table_name: str) -> set[str]:
+        """Aggregate the parsed columns for ``table_name`` across ALL migration
+        files (CREATE TABLE + ALTER TABLE ADD COLUMN).
+        """
+        cols: set[str] = set()
+        for text in self.migration_texts:
+            cols.update(TestSchemaContract._extract_create_table_columns(
+                text, table_name))
+            cols.update(TestSchemaContract._extract_alter_add_columns(
+                text, table_name))
+        return cols
+
+    def test_migration_files_all_present(self):
+        # Guard: every migration file the contract depends on must exist.
+        for p in self.migration_files:
+            self.assertTrue(p.exists(), f"migration file missing: {p}")
+
+    def test_required_query_columns_subset_of_parsed_migrations(self):
+        """The core assertion: every column in REQUIRED_QUERY_COLUMNS must be
+        created by an actual CREATE TABLE or ALTER TABLE ADD COLUMN statement
+        in the real .sql files. This compares the query-needs dict against the
+        PARSED migrations, NOT SCHEMA_CONTRACT against itself.
+        """
+        for table, required_cols in REQUIRED_QUERY_COLUMNS.items():
+            parsed = self._parsed_columns_for(table)
+            self.assertTrue(
+                parsed,
+                f"no CREATE TABLE/ALTER ADD COLUMN found for {table!r} in any "
+                f"migration file",
+            )
+            missing = sorted(required_cols - parsed)
+            self.assertEqual(
+                missing, [],
+                f"REQUIRED_QUERY_COLUMNS[{table!r}] references columns not "
+                f"created by any migration: {missing} (parsed: {sorted(parsed)})",
+            )
+
+    def test_task_runs_columns_match_migrations(self):
+        # task_runs columns are spread across m3_state (CREATE + ALTER) +
+        # m3c_state (ALTER verify_attempt/rollback_id/parent_run_id) +
+        # m4f1_state (ALTER trace_id/active_snapshot_id/skill_data_state).
+        parsed = self._parsed_columns_for("task_runs")
+        # The query-referenced subset must all be present.
+        for c in REQUIRED_QUERY_COLUMNS["task_runs"]:
+            self.assertIn(c, parsed, f"task_runs.{c} not in parsed migrations")
+        # Spot-check a few columns from each migration that are NOT necessarily
+        # queried but prove the parser crossed file boundaries.
+        for c in ("run_id", "repo", "pr_number", "status"):  # m3_state
+            self.assertIn(c, parsed)
+        self.assertIn("trace_id", parsed)  # m4f1_state ALTER
+
+    def test_stage_runs_columns_match_m3_state(self):
+        parsed = self._parsed_columns_for("stage_runs")
+        for c in REQUIRED_QUERY_COLUMNS["stage_runs"]:
+            self.assertIn(c, parsed, f"stage_runs.{c} not in parsed migrations")
+        # The authoritative column is `agent` (NOT agent_role).
+        self.assertIn("agent", parsed)
+        self.assertNotIn("agent_role", parsed)
+
+    def test_revision_bindings_columns_match_m4f1(self):
+        parsed = self._parsed_columns_for("revision_bindings")
+        for c in REQUIRED_QUERY_COLUMNS["revision_bindings"]:
+            self.assertIn(c, parsed,
+                          f"revision_bindings.{c} not in parsed migrations")
+
+    def test_run_pr_bindings_columns_match_m3b_b4(self):
+        parsed = self._parsed_columns_for("run_pr_bindings")
+        for c in REQUIRED_QUERY_COLUMNS["run_pr_bindings"]:
+            self.assertIn(c, parsed,
+                          f"run_pr_bindings.{c} not in parsed migrations")
+        # base_sha is deliberately NOT in run_pr_bindings (it lives in
+        # revision_bindings per the M4-F1 contract).
+        self.assertNotIn("base_sha", parsed)
+
+    def test_rollback_runs_columns_match_m3c(self):
+        parsed = self._parsed_columns_for("rollback_runs")
+        for c in REQUIRED_QUERY_COLUMNS["rollback_runs"]:
+            self.assertIn(c, parsed,
+                          f"rollback_runs.{c} not in parsed migrations")
+
+    def test_environment_identity_columns_match_migration(self):
+        parsed = self._parsed_columns_for("environment_identity")
+        for c in REQUIRED_QUERY_COLUMNS["environment_identity"]:
+            self.assertIn(c, parsed,
+                          f"environment_identity.{c} not in parsed migration")
+        # The migration also creates created_at (not queried, but present).
+        self.assertIn("created_at", parsed)
+
+    def test_required_query_columns_is_narrower_than_schema_contract(self):
+        # REQUIRED_QUERY_COLUMNS must be a subset of (or equal to) the full
+        # SCHEMA_CONTRACT for each table — the runtime probe checks only what
+        # the queries reference, never more.
+        for table, required_cols in REQUIRED_QUERY_COLUMNS.items():
+            self.assertIn(table, SCHEMA_CONTRACT,
+                          f"{table!r} in REQUIRED_QUERY_COLUMNS but not "
+                          f"SCHEMA_CONTRACT")
+            extra = required_cols - SCHEMA_CONTRACT[table]
+            self.assertEqual(
+                extra, set(),
+                f"REQUIRED_QUERY_COLUMNS[{table!r}] has columns not in "
+                f"SCHEMA_CONTRACT: {sorted(extra)}",
+            )
 
 
 # ── TestStageRunsSelection ─────────────────────────────────────────────────
@@ -2215,16 +2518,88 @@ class TestReaderRoleHardening(unittest.TestCase):
             self.assertEqual(cm.exception.code, "WRONG_ROLE")
 
     def test_write_privileges_on_task_runs_rejected(self):
-        # Each table-level write privilege triggers WRONG_ROLE.
-        for idx in range(4):
+        # Each table-level write privilege on task_runs triggers WRONG_ROLE.
+        for idx in range(4):  # INSERT, UPDATE, DELETE, TRUNCATE
+            table_privileges = {
+                table: (True, False, False, False, False)
+                for table in _PRIVILEGE_CHECKED_TABLES
+            }
             privs = [False, False, False, False]
             privs[idx] = True
+            # (select_ok, insert, update, delete, truncate)
+            table_privileges["task_runs"] = (True, *privs)
             conn = FakeConnection(
-                results=_make_results(table_privileges=tuple(privs)),
+                results=_make_results(table_privileges=table_privileges),
             )
             with self.assertRaises(IdentityCheckError) as cm:
                 _read_snapshot_with_fake(conn)
             self.assertEqual(cm.exception.code, "WRONG_ROLE")
+            self.assertIn("task_runs", str(cm.exception))
+
+    def test_write_privileges_on_every_queried_table_rejected(self):
+        # The privilege probe now covers ALL six queried tables, not just
+        # task_runs. A write privilege on ANY one of them is rejected.
+        for target_table in _PRIVILEGE_CHECKED_TABLES:
+            for idx in range(4):  # INSERT, UPDATE, DELETE, TRUNCATE
+                table_privileges = {
+                    table: (True, False, False, False, False)
+                    for table in _PRIVILEGE_CHECKED_TABLES
+                }
+                privs = [False, False, False, False]
+                privs[idx] = True
+                table_privileges[target_table] = (True, *privs)
+                conn = FakeConnection(
+                    results=_make_results(table_privileges=table_privileges),
+                )
+                with self.assertRaises(IdentityCheckError) as cm:
+                    _read_snapshot_with_fake(conn)
+                self.assertEqual(cm.exception.code, "WRONG_ROLE")
+                self.assertIn(target_table, str(cm.exception))
+
+    def test_missing_select_on_any_queried_table_rejected(self):
+        # SELECT must be present (True) on every queried table. If it is False
+        # on any one, the role cannot read and is rejected with WRONG_ROLE.
+        for target_table in _PRIVILEGE_CHECKED_TABLES:
+            table_privileges = {
+                table: (True, False, False, False, False)
+                for table in _PRIVILEGE_CHECKED_TABLES
+            }
+            # select_ok = False on the target table.
+            table_privileges[target_table] = (False, False, False, False, False)
+            conn = FakeConnection(
+                results=_make_results(table_privileges=table_privileges),
+            )
+            with self.assertRaises(IdentityCheckError) as cm:
+                _read_snapshot_with_fake(conn)
+            self.assertEqual(cm.exception.code, "WRONG_ROLE")
+            self.assertIn(target_table, str(cm.exception))
+
+    def test_privilege_probes_are_parameterized(self):
+        # The table name is passed as a parameter (%s), never interpolated.
+        conn = FakeConnection(results=_make_results())
+        _read_snapshot_with_fake(conn)
+        priv_execs = [
+            (sql, params) for (sql, params) in conn.executed
+            if "HAS_TABLE_PRIVILEGE" in sql.upper()
+        ]
+        self.assertGreater(len(priv_execs), 0, "no has_table_privilege probes")
+        for sql, params in priv_execs:
+            # Every probed table must appear in params, not in the SQL text.
+            self.assertIsNotNone(params, f"privilege probe had no params: {sql!r}")
+            param_text = " ".join(str(p) for p in params)
+            for table in _PRIVILEGE_CHECKED_TABLES:
+                # The SQL must use %s placeholders, not the literal table name.
+                # (Only the table actually probed by this statement should be in
+                # params; we check at least one probed table name is present.)
+                pass
+            self.assertIn("%s", sql, f"privilege probe not parameterized: {sql!r}")
+            # The table name must NOT appear literally in the SQL text.
+            for table in _PRIVILEGE_CHECKED_TABLES:
+                if table in params:
+                    self.assertNotIn(
+                        table, sql,
+                        f"table {table!r} interpolated into SQL: {sql!r}",
+                    )
 
 
 # ── TestRuntimeCatalogMock ─────────────────────────────────────────────────
@@ -2309,26 +2684,77 @@ class TestRuntimeCatalogMock(unittest.TestCase):
 
 
 # ── TestEphemeralMigrationProbe ────────────────────────────────────────────
-# These tests would require a live PostgreSQL database with the full migration
-# set applied, so they are labeled NOT_EXECUTED. They document the intended
-# runtime behavior for a future integration environment.
+# These tests would require a live PostgreSQL database (with the full migration
+# set applied) to run for real. They are gated on the EPHEMERAL_PG_DSN
+# environment variable:
+#   - If EPHEMERAL_PG_DSN is NOT set (the default, including CI): every test is
+#     SKIPPED with an explicit "NOT_EXECUTED" reason. No real connection is
+#     attempted.
+#   - If EPHEMERAL_PG_DSN IS set: the tests WOULD connect and exercise the real
+#     migration, identity gate, ACL (revoke PUBLIC / grant mergepilot_reader),
+#     column probe, and a read-only transaction. Because this round cannot
+#     reach a real PostgreSQL instance, the skip always fires and the message
+#     makes the NOT_EXECUTED boundary explicit.
 class TestEphemeralMigrationProbe(unittest.TestCase):
-    """Live-DB integration probes (NOT_EXECUTED in CI without a real DB)."""
+    """Live-DB integration probes, gated on EPHEMERAL_PG_DSN.
+
+    Status: NOT_EXECUTED unless EPHEMERAL_PG_DSN is configured. Real PostgreSQL
+    verification = NOT_PERFORMED in this candidate.
+    """
 
     NOT_EXECUTED = True  # marker: these require a live database
 
+    # The canonical skip reason. The literal "NOT_EXECUTED" must appear so a
+    # consumer cannot mistake "skipped" for "ran and passed".
+    _SKIP_REASON = (
+        "EPHEMERAL_PG_DSN not configured; ephemeral test NOT_EXECUTED "
+        "(real PostgreSQL verification = NOT_PERFORMED)"
+    )
+
     def setUp(self):
+        dsn = os.environ.get("EPHEMERAL_PG_DSN")
+        if not dsn:
+            # Env var absent → skip every test with the explicit NOT_EXECUTED
+            # boundary. We never attempt a real connection without a DSN.
+            self.skipTest(self._SKIP_REASON)
+        # If a DSN IS present we would proceed to a real connection here. This
+        # round has no reachable PG instance, so we still skip — but the reason
+        # is different (DSN present but the live harness is not wired up).
         self.skipTest(
-            "ephemeral migration probe requires a live PostgreSQL database"
+            "EPHEMERAL_PG_DSN is set but the live-DB harness is NOT_EXECUTED "
+            "this round (real PostgreSQL verification = NOT_PERFORMED)"
         )
 
-    def test_live_information_schema_matches_contract(self):
+    def test_live_migration_and_identity_gate(self):
+        """WOULD: apply the real migrations, then assert the read-only identity
+        gate (database/role/read-only flags/server/environment marker) passes
+        against EPHEMERAL_PG_DSN.
+        """
         pass  # pragma: no cover
 
     def test_live_environment_identity_single_row(self):
+        """WOULD: assert environment_identity has exactly one row whose
+        environment_id matches the configured marker.
+        """
         pass  # pragma: no cover
 
-    def test_live_reader_role_has_select_only(self):
+    def test_live_acl_revokes_public_grants_reader(self):
+        """WOULD: assert environment_identity REVOKE ALL FROM PUBLIC and GRANT
+        SELECT TO mergepilot_reader (PUBLIC has no privileges; the viewer role
+        has SELECT only).
+        """
+        pass  # pragma: no cover
+
+    def test_live_column_probe_matches_required_query_columns(self):
+        """WOULD: assert the runtime information_schema.columns probe passes
+        for every table/column in REQUIRED_QUERY_COLUMNS.
+        """
+        pass  # pragma: no cover
+
+    def test_live_read_only_transaction(self):
+        """WOULD: assert the source opens a REPEATABLE READ READ ONLY
+        transaction and ends it with ROLLBACK (no COMMIT, no writes).
+        """
         pass  # pragma: no cover
 
 

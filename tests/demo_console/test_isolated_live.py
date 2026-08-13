@@ -167,45 +167,47 @@ def _http_get_json(url: str):
         return e.code, dict(e.headers), parsed
 
 
-def _http_method(url: str, method: str, data: bytes | None = None,
-                 max_attempts: int = 3):
-    """Issue an arbitrary HTTP method, returning (status, parsed_json-or-None).
+def _http_method(url: str, method: str, data: bytes | None = None):
+    """Issue an arbitrary HTTP method, single-attempt.
 
-    On Windows the client frequently resets the connection immediately after a
-    write method is rejected with 405 (the client did not expect a body and
-    closes early), which surfaces as ``ConnectionAbortedError`` /
-    ``ConnectionResetError`` on the urllib side. We retry the request (up to
-    ``max_attempts``) when those transient connection errors occur, with a
-    short sleep between attempts. An ``HTTPError`` (e.g. 405) is NOT retried —
-    it is a real HTTP response and is returned immediately.
+    Returns ``(status, parsed_json_or_None, retry_count)``.
+
+    There is NO retry logic here: each request is a single attempt. Under
+    normal conditions ``retry_count`` is always 0. A connection reset
+    (``ConnectionAbortedError`` / ``ConnectionResetError`` /
+    ``BrokenPipeError``) is NOT silently retried to make the test pass — it is
+    logged as a diagnostic and re-raised so the caller can surface it as a
+    real failure. This avoids masking genuine instability behind a retry loop.
+
+    An ``HTTPError`` (e.g. 405) is a real HTTP response and is returned
+    immediately (it is not an error condition and is never retried).
     """
-    last_exc = None
-    for attempt in range(max_attempts):
-        req = urllib.request.Request(url, method=method, data=data)
+    retry_count = 0  # single-attempt: always 0
+    req = urllib.request.Request(url, method=method, data=data)
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            body = resp.read().decode("utf-8")
+            parsed = json.loads(body) if body else None
+            return resp.status, parsed, retry_count
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8")
         try:
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                body = resp.read().decode("utf-8")
-                parsed = json.loads(body) if body else None
-                return resp.status, parsed
-        except urllib.error.HTTPError as e:
-            body = e.read().decode("utf-8")
-            try:
-                parsed = json.loads(body) if body else None
-            except json.JSONDecodeError:
-                parsed = None
-            return e.code, parsed
-        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError) as e:
-            # Transient connection reset (common on Windows after a 405 to a
-            # write method). Retry once after a short sleep; if it persists,
-            # fall through and surface the last error.
-            last_exc = e
-            time.sleep(0.1)
-            continue
-    # All attempts hit a transient connection error. Re-raise the last one so
-    # the test surfaces the failure rather than silently passing.
-    raise last_exc if last_exc is not None else RuntimeError(
-        "unexpected: no attempt completed and no exception captured"
-    )
+            parsed = json.loads(body) if body else None
+        except json.JSONDecodeError:
+            parsed = None
+        return e.code, parsed, retry_count
+    except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError) as e:
+        # Do NOT mask a connection reset with a retry. Log it as a diagnostic
+        # and re-raise so the caller reports the failure with the error type.
+        # The serve.py handler still catches ConnectionAbortedError on
+        # write-method paths to return 405 cleanly (see _reject_write_method);
+        # this test helper simply surfaces any reset that escaped that path.
+        print(
+            f"DIAGNOSTIC: {type(e).__name__} on {method} {url} "
+            f"(single-attempt, not retried): {e}",
+            flush=True,
+        )
+        raise
 
 
 class TestValidModes(unittest.TestCase):
@@ -606,21 +608,25 @@ class TestHttpWriteMethodsBlocked(unittest.TestCase):
         shutil.rmtree(self._tmpdir, ignore_errors=True)
 
     def test_post_blocked(self):
-        status, _ = _http_method(self._handle.base_url + "/api/live/snapshot",
-                                 "POST", b"{}")
+        status, _, retries = _http_method(self._handle.base_url + "/api/live/snapshot",
+                                          "POST", b"{}")
         self.assertEqual(status, 405)
+        self.assertEqual(retries, 0)
 
     def test_put_blocked(self):
-        status, _ = _http_method(self._handle.base_url + "/api/live/snapshot", "PUT", b"x")
+        status, _, retries = _http_method(self._handle.base_url + "/api/live/snapshot", "PUT", b"x")
         self.assertEqual(status, 405)
+        self.assertEqual(retries, 0)
 
     def test_patch_blocked(self):
-        status, _ = _http_method(self._handle.base_url + "/api/live/snapshot", "PATCH", b"x")
+        status, _, retries = _http_method(self._handle.base_url + "/api/live/snapshot", "PATCH", b"x")
         self.assertEqual(status, 405)
+        self.assertEqual(retries, 0)
 
     def test_delete_blocked(self):
-        status, _ = _http_method(self._handle.base_url + "/api/live/snapshot", "DELETE")
+        status, _, retries = _http_method(self._handle.base_url + "/api/live/snapshot", "DELETE")
         self.assertEqual(status, 405)
+        self.assertEqual(retries, 0)
 
 
 class TestWriteMethodStability(unittest.TestCase):
@@ -628,12 +634,16 @@ class TestWriteMethodStability(unittest.TestCase):
 
     On Windows the client frequently resets the connection immediately after a
     write method is rejected with 405, which previously surfaced as
-    ``ConnectionAbortedError``. The ``_http_method`` helper now retries on
-    transient connection resets, and the serve.py handlers catch
-    ``ConnectionAbortedError`` on write-method paths and return 405 cleanly.
-    This test runs the write-method tests in a loop (5 iterations) and reports
-    pass/fail counts so a flaky connection no longer produces intermittent
-    failures.
+    ``ConnectionAbortedError``. The serve.py handlers catch
+    ``ConnectionAbortedError`` on write-method paths and return 405 cleanly
+    (``_reject_write_method``); the ``_http_method`` test helper performs NO
+    retry — each request is a single attempt and ``retry_count`` is recorded.
+
+    This test runs the write-method tests in a loop (5 iterations) and:
+      - records ``retry_count`` per request (must be 0 under normal conditions);
+      - asserts that every request returns 405 with ``retry_count == 0``;
+      - FAILS (does NOT mask) if a ``ConnectionAbortedError`` escapes the
+        serve.py handler, surfacing the error type as a diagnostic.
     """
 
     def setUp(self):
@@ -647,8 +657,8 @@ class TestWriteMethodStability(unittest.TestCase):
         shutil.rmtree(self._tmpdir, ignore_errors=True)
 
     def test_write_methods_stable_over_iterations(self):
-        # Run each write method 5 times against the live server and collect
-        # pass/fail counts. Every attempt must return 405.
+        # Run each write method 5 times against the live server. Every attempt
+        # must return 405 with retry_count == 0 (no retries needed).
         methods = [
             ("POST", b"{}"),
             ("PUT", b"x"),
@@ -656,34 +666,57 @@ class TestWriteMethodStability(unittest.TestCase):
             ("DELETE", None),
         ]
         iterations = 5
-        results = {}  # method -> (passes, failures)
+        results = {}        # method -> (passes, failures)
+        retry_counts = {}   # method -> list of retry_count per attempt
+        diagnostics = []    # collected error-type diagnostics (should stay empty)
         for method, body in methods:
             passes = 0
             failures = 0
+            method_retries = []
             for _ in range(iterations):
                 try:
-                    status, _ = _http_method(
+                    status, _, retries = _http_method(
                         self._handle.base_url + "/api/live/snapshot",
                         method, body,
                     )
-                    if status == 405:
+                    method_retries.append(retries)
+                    if status == 405 and retries == 0:
                         passes += 1
                     else:
                         failures += 1
-                except Exception:
-                    # A connection error that escaped the retry loop counts as
-                    # a failure (so we surface persistent instability).
+                except (ConnectionAbortedError, ConnectionResetError,
+                        BrokenPipeError) as e:
+                    # A connection reset escaped the serve.py handler. This is
+                    # a real failure: do NOT mask it with a retry. Record the
+                    # diagnostic so the assertion message names the error type.
+                    diagnostics.append(f"{type(e).__name__} on {method}")
                     failures += 1
+                    method_retries.append(0)  # no retry was attempted
+                except Exception as e:  # noqa: BLE001
+                    diagnostics.append(f"{type(e).__name__} on {method}")
+                    failures += 1
+                    method_retries.append(0)
             results[method] = (passes, failures)
-        # Report the counts in the assertion message for diagnostics.
+            retry_counts[method] = method_retries
+        # Report the counts + retry counts in the assertion message.
         summary = ", ".join(
-            f"{m}: {r[0]} pass/{r[1]} fail" for m, r in results.items()
+            f"{m}: {r[0]} pass/{r[1]} fail "
+            f"(retries={retry_counts[m]})"
+            for m, r in results.items()
         )
         total_failures = sum(r[1] for r in results.values())
+        diag_msg = ("; diagnostics: " + ", ".join(diagnostics)) if diagnostics else ""
         self.assertEqual(
             total_failures, 0,
-            f"write-method stability failures: {summary}",
+            f"write-method stability failures: {summary}{diag_msg}",
         )
+        # Under normal conditions retry_count must be 0 for every attempt.
+        for method, counts in retry_counts.items():
+            self.assertTrue(
+                all(c == 0 for c in counts),
+                f"{method}: non-zero retry_count observed {counts} "
+                f"(retry masking is forbidden)",
+            )
 
 
 class TestReplayApiLive404(unittest.TestCase):
