@@ -11,9 +11,15 @@
   "os_version": "MINGW64_NT-10.0-26200 x64",
   "python_version": "3.9.25",
   "git_version": "git version 2.48.1.windows.1",
+  "git_line_ending_policy": {
+    "git_core_autocrlf_before": "true (inherited from system)",
+    "git_core_autocrlf_effective": "false",
+    "git_core_eol_effective": "lf",
+    "line_ending_policy_applied_before_checkout": true
+  },
   "source_acquisition_mode": "preprepared_verified_git_bundle",
   "source_acquisition_offline": true,
-  "source_archive_sha256": "41b26377a3a454eb6cf810460fa4c17269e038f7c50095d9789c59aa482013ce",
+  "source_archive_sha256": "d1b33f52cc22701a9f6124fac4fccc026c48077579f2891647975d5af2857dea",
   "python_package_dependencies": [],
   "python_package_dependency_mode": "stdlib_only",
   "pip_install_required": false,
@@ -71,6 +77,9 @@
       "match": true
     }
   ],
+  "evidence_sha_checked_count": 5,
+  "evidence_sha_match_count": 5,
+  "evidence_sha_mismatch_count": 0,
   "bundle_source_ref": "refs/remotes/origin/main",
   "bundle_import_ref": "refs/heads/reproduction-spec",
   "bundle_listed_refs": [
@@ -94,11 +103,64 @@
     "evidence",
     "benchmark"
   ],
-  "tests_run": 33,
-  "test_failures": 0,
-  "test_errors": 0,
-  "test_skipped": 0,
+  "test_runs": [
+    {
+      "run_index": 1,
+      "tests_run": 33,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "exit_code": 0,
+      "result_digest": "6b72971e828171f503d51b37ea64cd80b94c38d7b705ef97ab99cb99de4acd17",
+      "volatile_fields_excluded": [
+        "timing_line"
+      ]
+    },
+    {
+      "run_index": 2,
+      "tests_run": 33,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "exit_code": 0,
+      "result_digest": "6b72971e828171f503d51b37ea64cd80b94c38d7b705ef97ab99cb99de4acd17",
+      "volatile_fields_excluded": [
+        "timing_line"
+      ]
+    }
+  ],
   "deterministic_replay_match": true,
+  "artifact_baseline_verification": {
+    "baseline_commit": "148762091447754a50790441144968a12360844f",
+    "checked_paths": [
+      "tools/demo_console/schema.py",
+      "tools/demo_console/bundle_builder.py",
+      "tools/demo_console/render.py",
+      "tools/demo_console/serve.py",
+      "tests/demo_console/test_demo_console.py",
+      "samples/demo-bundles/m7-rag-replay.json",
+      "samples/demo-console/index.html"
+    ],
+    "checked_file_count": 7,
+    "mismatch_count": 0,
+    "byte_exact_match": true,
+    "comparison_method": "git show baseline:path bytes versus clean checkout bytes"
+  },
+  "server_measurement": {
+    "launch_method": "powershell_start_process_direct_python",
+    "server_pid": 44640,
+    "server_bind_address": "127.0.0.1",
+    "server_port": 18080,
+    "server_url": "http://127.0.0.1:18080/",
+    "port_owner_pid": 44640,
+    "port_owner_matches_server": true,
+    "http_status": 200,
+    "http_content_length": 19394,
+    "server_pid_absent_after": true,
+    "port_closed_after": true,
+    "server_process_residue": 0,
+    "listening_port_residue": 0
+  },
   "pycache_residue": 0,
   "test_cache_residue": 0,
   "temp_file_residue": 0,
@@ -106,6 +168,14 @@
   "listening_port_residue": 0,
   "worktree_dirty_after": false,
   "secret_leaks": 0,
+  "cleanup": {
+    "checkout_removed": true,
+    "bundle_removed": true,
+    "temporary_results_removed": true,
+    "temporary_root_removed": true,
+    "server_pid_absent": true,
+    "server_port_closed": true
+  },
   "failures": [],
   "limitations": [
     "REPLAY mode only; ISOLATED_LIVE is not implemented",
@@ -117,7 +187,7 @@
     "Python 3.8 compatibility NOT yet verified",
     "Git CLI required (bundle_builder uses subprocess git)",
     "browser_network_observation_status=NOT_MEASURED; no browser/system network observer used",
-    "Windows core.autocrlf must be set to false for byte-exact evidence SHA match",
+    "Windows core.autocrlf must be set to false and core.eol to lf before checkout for byte-exact SHA match",
     "Local amend history (1136681->9ea8666) exists in design branch; disclosed in commit messages"
   ],
   "expected_gates": {
@@ -127,5 +197,5 @@
     "expected_page_count": 8
   },
   "all_ok": true,
-  "timestamp": "2026-08-13T03:53:38Z"
+  "timestamp": "2026-08-13T04:02:30Z"
 }
