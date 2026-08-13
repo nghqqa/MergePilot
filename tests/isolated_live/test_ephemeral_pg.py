@@ -9,7 +9,7 @@ PostgreSQL server. ``subprocess`` is mocked everywhere so no real ``docker`` /
 
 Test groups
   TestExecutionGate        — env + daemon gate logic (mocked subprocess)
-  TestMigrationOrder       — MIGRATION_CHAIN has 15 entries; idempotency rounds
+  TestMigrationOrder       — MIGRATION_CHAIN has 13 audit-db entries; idempotency rounds
   TestRoleBootstrap        — prerequisite + reader role SQL shape
   TestSeedContract         — 5-run seed SQL satisfies DDL constraints
   TestRevisionDigest       — canonical digest algorithm vs bind_revision
@@ -685,8 +685,8 @@ class TestEphemeralPlaceholder(unittest.TestCase):
         pass  # pragma: no cover
 
     def test_full_migration_chain_applies_cleanly(self):
-        """Phase B: apply all 15 migration applications + 2 ISOLATED_LIVE
-        migrations; verify no error and m4f1 idempotency rounds succeed."""
+        """Phase B: apply all 15 migration-file applications (13 audit-db +
+        2 ISOLATED_LIVE); verify no error and m4f1 idempotency rounds succeed."""
         pass  # pragma: no cover
 
     def test_reader_role_acl_and_read_only_default(self):

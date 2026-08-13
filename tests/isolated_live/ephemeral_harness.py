@@ -98,10 +98,10 @@ ENVIRONMENT_ID_EPHEMERAL = "mergepilot-test-ephemeral"
 # Per the design §1 and run_schema_foundation.sh, m4f1_state and m4f1_hotfix_1
 # are each applied TWICE (idempotency verification). That yields 13 entries:
 #   9 base (init..m3c_state) + 2× m4f1_state + 2× m4f1_hotfix_1 = 13
-# (11 distinct files). The design §1 prose mentions "15 applications" — that
-# inclusive figure counts the two ISOLATED_LIVE migrations (001/002), which are
-# a SEPARATE Phase-3 step here (see ISOLATED_LIVE_MIGRATIONS), NOT part of this
-# chain. The authoritative audit-db count is 13.
+# (11 distinct files). The two ISOLATED_LIVE migrations (001/002) are a SEPARATE
+# Phase-3 step here (see ISOLATED_LIVE_MIGRATIONS), NOT part of this chain, so
+# the total migration-file count is 15 (13 audit-db + 2 ISOLATED_LIVE). The
+# authoritative audit-db count is 13.
 MIGRATION_CHAIN = [
     ("init.sql", "Base schema bootstrap (extensions, initial tables)"),
     ("m3_state.sql", "M3-A workflow controller state (task_runs/stage_runs/...)"),

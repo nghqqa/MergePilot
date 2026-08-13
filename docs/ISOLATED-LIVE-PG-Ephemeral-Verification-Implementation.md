@@ -131,15 +131,24 @@ existing `tests/demo_console/test_postgres_source.py`:
 
 ## Count reconciliation note
 
-The design doc §1 prose says "15 migration applications" but its OWN numbered
-Phase-1 list stops at 13 (`init..m3c_state` = 9, plus `m4f1_state` twice and
-`m4f1_hotfix_1` twice = 13). The "15" is the inclusive total that also counts
-the two ISOLATED_LIVE migrations (`001`/`002`), which are a SEPARATE Phase-3
-step here (`ISOLATED_LIVE_MIGRATIONS`) and are NOT part of `MIGRATION_CHAIN`.
-The authoritative audit-db chain count is therefore **13 applications / 11
-distinct files**, matching `tests/m4f1/run_schema_foundation.sh` (BASE=9, then
-m4f1 round 1/2, then hotfix round 1/2). The unit tests assert this authoritative
-count.
+**Unified terminology** (applied consistently across the design doc, this
+implementation doc, the harness, and the unit tests):
+
+- **audit-db migration applications = 13** (`init..m3c_state` = 9 base, plus
+  `m4f1_state` twice and `m4f1_hotfix_1` twice for idempotency = 13).
+- **distinct audit-db migration files = 11**.
+- **ISOLATED_LIVE migration applications = 2** (`001`/`002`), a SEPARATE
+  Phase-3 step here (`ISOLATED_LIVE_MIGRATIONS`), NOT part of `MIGRATION_CHAIN`.
+- **total migration-file applications = 15** (13 audit-db + 2 ISOLATED_LIVE).
+- **prerequisite roles = 2** (`policy_gateway_l2`, `mergepilot_approver`).
+- **viewer role = 1** (`mergepilot_reader`).
+- **executor operations = 17** (15 migrations + 2 role bootstraps).
+
+`MIGRATION_CHAIN` holds the **13** audit-db applications. The unit tests
+(`test_chain_has_thirteen_audit_db_entries`,
+`test_eleven_distinct_files_present`) assert this authoritative count, matching
+`tests/m4f1/run_schema_foundation.sh` (BASE=9, then m4f1 round 1/2, then hotfix
+round 1/2).
 
 ## Verification classification (unchanged from design §2)
 

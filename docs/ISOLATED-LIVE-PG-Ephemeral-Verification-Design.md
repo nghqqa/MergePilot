@@ -29,7 +29,8 @@ CREATE ROLE policy_gateway_l2 NOLOGIN;
 CREATE ROLE mergepilot_approver NOLOGIN;
 ```
 
-**Phase 1: Audit-db migration chain** (15 migration applications):
+**Phase 1: Audit-db migration chain** (13 migration applications, 11 distinct
+files; m4f1_state and m4f1_hotfix_1 each applied twice for idempotency):
 ```
  1. init
  2. m3_state
@@ -61,13 +62,15 @@ ALTER ROLE mergepilot_reader
     SET default_transaction_read_only = on;
 ```
 
-**Phase 3: ISOLATED_LIVE migrations**:
+**Phase 3: ISOLATED_LIVE migrations** (2 migration applications):
 ```
-14. 001_environment_identity    (GRANT SELECT TO mergepilot_reader)
-15. 002_mergepilot_reader_acl   (GRANT SELECT on 9 tables; REVOKE writes)
+ 1. 001_environment_identity    (GRANT SELECT TO mergepilot_reader)
+ 2. 002_mergepilot_reader_acl   (GRANT SELECT on 9 tables; REVOKE writes)
 ```
 
-**Total**: 15 migration-file applications + 2 prerequisite-role steps + 1 viewer-role bootstrap.
+**Total**: 13 audit-db + 2 ISOLATED_LIVE = 15 migration-file applications
+(11 distinct audit-db files), across 2 prerequisite-role steps + 1
+viewer-role bootstrap.
 
 **m4f1_state and m4f1_hotfix_1 idempotency**: Both are applied **twice** in
 `run_schema_foundation.sh` to verify idempotency. The ephemeral harness MUST
@@ -254,7 +257,7 @@ write pattern.
    CREATE ROLE policy_gateway_l2 NOLOGIN;
    CREATE ROLE mergepilot_approver NOLOGIN;
 
-4. Phase 1: Apply audit-db migrations (15 applications)
+4. Phase 1: Apply audit-db migrations (13 applications, 11 distinct files)
    init → m3_state → m3b_policy → m3b_b4 → m3b_b4c → m3b_b4c1
    → m3b_b4c1_1 → m3b_b4d1 → m3c_state
    → m4f1_state (×2) → m4f1_hotfix_1 (×2)
