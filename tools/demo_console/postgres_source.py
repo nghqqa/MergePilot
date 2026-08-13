@@ -596,11 +596,20 @@ class PostgresSnapshotSource(SnapshotSource):
         # ``current_user`` at read time; a None/empty value is a configuration
         # error (CONFIG_INVALID), not a soft skip. The source verifies
         # ``current_user == expected_role`` exactly (no prefix/wildcard match).
+        # Only the canonical CANONICAL_VIEWER_ROLE ("mergepilot_reader") is
+        # accepted; any other role name is rejected with CONFIG_INVALID.
+        CANONICAL_VIEWER_ROLE = "mergepilot_reader"
         if not isinstance(expected_role, str) or not expected_role.strip():
             raise ConfigInvalidError(
                 "CONFIG_INVALID: expected_role must be a non-empty "
-                "string (the canonical viewer role is mergepilot_reader; the "
-                "role is mandatory and must match current_user exactly)",
+                "string (the canonical viewer role is %s; the "
+                "role is mandatory and must match current_user exactly)" % CANONICAL_VIEWER_ROLE,
+                code="CONFIG_INVALID",
+            )
+        if expected_role.strip() != CANONICAL_VIEWER_ROLE:
+            raise ConfigInvalidError(
+                "CONFIG_INVALID: expected_role must be exactly '%s'; got '%s'" % (
+                    CANONICAL_VIEWER_ROLE, expected_role.strip()),
                 code="CONFIG_INVALID",
             )
         self._expected_role = expected_role

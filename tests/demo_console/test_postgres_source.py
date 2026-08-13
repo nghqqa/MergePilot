@@ -57,7 +57,7 @@ from postgres_source import (  # noqa: E402
 
 DSN = "host=db.example.com password=SUPERSECRET dbname=mergepilot_test user=reader"
 EXPECTED_DB = "mergepilot_test"
-EXPECTED_ROLE = "reader"
+EXPECTED_ROLE = "mergepilot_reader"
 RUN_ID = "run-demo-001"
 # Default expected server identity (address/port/application_name).
 EXPECTED_SERVER_ADDRESSES = ["127.0.0.1"]
@@ -2220,7 +2220,7 @@ class TestPreflightPostgres(unittest.TestCase):
         cfg = {
             "run_id": "run-1",
             "expected_database": "mergepilot",
-            "expected_role": "reader",
+            "expected_role": "mergepilot_reader",
             "expected_environment_id": "env-1",
             "expected_server_addresses": ["127.0.0.1"],
             "expected_server_port": 5432,
@@ -2940,6 +2940,140 @@ class TestEphemeralMigrationProbe(unittest.TestCase):
         COMMIT, no writes).
         """
         pass  # pragma: no cover
+
+
+class TestDeploymentAclMigration(unittest.TestCase):
+    """Static tests for 002_mergepilot_reader_acl.sql and environment_identity ACL."""
+
+    def setUp(self):
+        self._root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        self._acl_path = os.path.join(self._root, "tools", "demo_console", "migrations",
+                                      "002_mergepilot_reader_acl.sql")
+        with open(self._acl_path, encoding="utf-8") as f:
+            self._acl_sql = f.read()
+
+    def test_role_must_pre_exist_fail_closed(self):
+        self.assertIn("mergepilot_reader role does not exist", self._acl_sql)
+        self.assertIn("RAISE EXCEPTION", self._acl_sql)
+
+    def test_grants_usage_on_public(self):
+        self.assertIn("GRANT USAGE ON SCHEMA public TO mergepilot_reader", self._acl_sql)
+
+    def test_grants_select_on_all_9_tables(self):
+        tables = ["task_runs", "stage_runs", "stage_events", "revision_bindings",
+                  "run_pr_bindings", "mcp_calls", "rollback_runs", "audit_events",
+                  "environment_identity"]
+        for t in tables:
+            self.assertIn(f"GRANT SELECT ON {t} TO mergepilot_reader", self._acl_sql,
+                          f"Missing GRANT SELECT on {t}")
+
+    def test_no_write_grants(self):
+        self.assertNotIn("GRANT INSERT", self._acl_sql)
+        self.assertNotIn("GRANT UPDATE", self._acl_sql)
+        self.assertNotIn("GRANT DELETE", self._acl_sql)
+        self.assertNotIn("GRANT TRUNCATE", self._acl_sql)
+
+    def test_revokes_writes_on_all_9_tables(self):
+        tables = ["task_runs", "stage_runs", "stage_events", "revision_bindings",
+                  "run_pr_bindings", "mcp_calls", "rollback_runs", "audit_events",
+                  "environment_identity"]
+        for t in tables:
+            self.assertIn(f"REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON {t} FROM mergepilot_reader",
+                          self._acl_sql, f"Missing REVOKE on {t}")
+
+    def test_revokes_create_on_schema(self):
+        self.assertIn("REVOKE CREATE ON SCHEMA public FROM mergepilot_reader", self._acl_sql)
+
+    def test_environment_identity_revokes_public(self):
+        env_path = os.path.join(self._root, "tools", "demo_console", "migrations",
+                                "001_environment_identity.sql")
+        with open(env_path, encoding="utf-8") as f:
+            env_sql = f.read()
+        self.assertIn("REVOKE ALL ON environment_identity FROM PUBLIC", env_sql)
+        self.assertIn("GRANT SELECT ON environment_identity TO mergepilot_reader", env_sql)
+
+
+class TestCanonicalViewerRole(unittest.TestCase):
+    """The canonical viewer role is fixed as mergepilot_reader."""
+
+    def test_postgres_source_accepts_mergepilot_reader(self):
+        src = PostgresSnapshotSource(
+            dsn="host=h dbname=test user=mergepilot_reader",
+            run_id=RUN_ID,
+            expected_database=EXPECTED_DB,
+            expected_role="mergepilot_reader",
+            expected_environment_id="MergePilot-Test",
+            expected_server_addresses=["127.0.0.1"],
+            expected_server_port=5432,
+            expected_application_name="mergepilot_isolated_live",
+        )
+        self.assertEqual(src._expected_role, "mergepilot_reader")
+
+    def test_postgres_source_rejects_admin(self):
+        with self.assertRaises(ConfigInvalidError) as cm:
+            PostgresSnapshotSource(
+                dsn="host=h dbname=test user=admin",
+                run_id=RUN_ID,
+                expected_database=EXPECTED_DB,
+                expected_role="admin",
+                expected_environment_id="MergePilot-Test",
+                expected_server_addresses=["127.0.0.1"],
+                expected_server_port=5432,
+                expected_application_name="mergepilot_isolated_live",
+            )
+        self.assertIn("mergepilot_reader", str(cm.exception))
+
+    def test_postgres_source_rejects_reader(self):
+        with self.assertRaises(ConfigInvalidError) as cm:
+            PostgresSnapshotSource(
+                dsn="host=h dbname=test user=reader",
+                run_id=RUN_ID,
+                expected_database=EXPECTED_DB,
+                expected_role="reader",
+                expected_environment_id="MergePilot-Test",
+                expected_server_addresses=["127.0.0.1"],
+                expected_server_port=5432,
+                expected_application_name="mergepilot_isolated_live",
+            )
+
+    def test_postgres_source_rejects_empty_role(self):
+        with self.assertRaises(ConfigInvalidError):
+            PostgresSnapshotSource(
+                dsn="host=h dbname=test user=",
+                run_id=RUN_ID,
+                expected_database=EXPECTED_DB,
+                expected_role="",
+                expected_environment_id="MergePilot-Test",
+                expected_server_addresses=["127.0.0.1"],
+                expected_server_port=5432,
+                expected_application_name="mergepilot_isolated_live",
+            )
+
+    def test_postgres_source_rejects_none_role(self):
+        with self.assertRaises(ConfigInvalidError):
+            PostgresSnapshotSource(
+                dsn="host=h dbname=test user=None",
+                run_id=RUN_ID,
+                expected_database=EXPECTED_DB,
+                expected_role=None,
+                expected_environment_id="MergePilot-Test",
+                expected_server_addresses=["127.0.0.1"],
+                expected_server_port=5432,
+                expected_application_name="mergepilot_isolated_live",
+            )
+
+    def test_postgres_source_rejects_superuser(self):
+        with self.assertRaises(ConfigInvalidError):
+            PostgresSnapshotSource(
+                dsn="host=h dbname=test user=postgres",
+                run_id=RUN_ID,
+                expected_database=EXPECTED_DB,
+                expected_role="postgres",
+                expected_environment_id="MergePilot-Test",
+                expected_server_addresses=["127.0.0.1"],
+                expected_server_port=5432,
+                expected_application_name="mergepilot_isolated_live",
+            )
 
 
 if __name__ == "__main__":

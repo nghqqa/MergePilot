@@ -153,17 +153,18 @@ class ReadOnlyHandler(http.server.SimpleHTTPRequestHandler):
         self._reject_write_method()
 
     def _reject_write_method(self):
-        # Send a clean 405. On Windows the client often aborts the connection
-        # immediately after reading the status line (write methods are never
-        # honored), which raises ConnectionAbortedError during the response
-        # write. Catch it here so the handler exits cleanly instead of logging
-        # a connection-error traceback.
+        # Send a minimal 405 without an HTML body to avoid Windows
+        # ConnectionAbortedError. send_error() writes an HTML body which
+        # triggers the client to reset before the body is fully sent.
+        # Instead we craft a bare response with Content-Length: 0.
         try:
-            self.send_error(405, "Method Not Allowed")
+            self.send_response_only(405, "Method Not Allowed")
+            self.send_header("Content-Type", "text/plain")
+            self.send_header("Content-Length", "0")
+            self.send_header("Allow", "GET, HEAD")
+            self.send_header("Connection", "close")
+            self.end_headers()
         except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
-            # The client went away mid-response. The 405 status line was already
-            # queued (or the socket is gone); there is nothing more to send.
-            # This is a clean exit for a blocked write method.
             pass
 
     def end_headers(self):
