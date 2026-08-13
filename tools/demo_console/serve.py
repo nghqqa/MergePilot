@@ -5,6 +5,18 @@
 Serves pre-rendered static HTML on localhost. No write operations,
 no external network. Supports REPLAY (default) and ISOLATED_LIVE modes.
 
+ISOLATED_LIVE startup has two distinct phases:
+
+  1. **config_preflight** (``run_preflight``): checks config presence and
+     shape WITHOUT a DB connection. Verifies the DSN env var is present,
+     ``run_id`` is well-formed, and the expected identity fields are
+     configured. No network, no database round-trip.
+
+  2. **startup_probe** (``poller.initial_load()``): the actual DB
+     identity/catalog/role/initial-snapshot read. This opens a DB connection
+     (for source-kind=postgres) and reads the first snapshot. The server
+     socket is NOT created until this succeeds.
+
 Usage:
     # REPLAY mode (default):
     python tools/demo_console/serve.py [--port 8080]
@@ -21,6 +33,7 @@ import argparse
 import http.server
 import json
 import os
+import socket
 import socketserver
 import sys
 import threading
@@ -116,19 +129,117 @@ def _send_status(poller: LivePoller) -> dict:
 
 
 class ReadOnlyHandler(http.server.SimpleHTTPRequestHandler):
-    """Read-only HTTP handler — blocks all write methods."""
+    """Read-only HTTP handler — blocks all write methods.
+
+    Write methods (PUT/POST/DELETE/PATCH) are blocked with 405 after
+    the request body is fully read and discarded. The body is parsed
+    with strict Content-Length validation: missing/empty = 0, non-numeric
+    or negative = 400, > 1 MiB = 413, chunked = 400. The connection
+    is closed after the response.
+    """
+
+    # Maximum request body size (1 MiB)
+    MAX_BODY_BYTES = 1048576
+    # Server-side read timeout for body drain (seconds)
+    BODY_READ_TIMEOUT = 5.0
 
     def do_PUT(self):
-        self.send_error(405, "Method Not Allowed")
+        self._reject_write_method()
 
     def do_POST(self):
-        self.send_error(405, "Method Not Allowed")
+        self._reject_write_method()
 
     def do_DELETE(self):
-        self.send_error(405, "Method Not Allowed")
+        self._reject_write_method()
 
     def do_PATCH(self):
-        self.send_error(405, "Method Not Allowed")
+        self._reject_write_method()
+
+    def _reject_write_method(self):
+        # Reject ANY non-empty Transfer-Encoding (including chunked)
+        te = self.headers.get("Transfer-Encoding", "")
+        if te.strip():
+            self._send_simple_error(400, "Transfer-Encoding not supported")
+            return
+
+        # Check for duplicate Content-Length headers (count-based, not set-based)
+        cl_all = self.headers.get_all("Content-Length")
+        if cl_all and len(cl_all) > 1:
+            self._send_simple_error(400, "Duplicate Content-Length")
+            return
+
+        # Parse Content-Length strictly
+        cl_header = self.headers.get("Content-Length")
+        if cl_header is None:
+            content_length = 0
+        else:
+            cl_stripped = cl_header.strip()
+            if not cl_stripped:
+                content_length = 0
+            elif not cl_stripped.isdigit():
+                self._send_simple_error(400, "Invalid Content-Length")
+                return
+            else:
+                content_length = int(cl_stripped)
+
+        if content_length < 0:
+            self._send_simple_error(400, "Negative Content-Length")
+            return
+
+        if content_length > self.MAX_BODY_BYTES:
+            self._send_simple_error(413, "Payload Too Large")
+            return
+
+        # Drain the body completely before responding.
+        # Use self.connection.settimeout (not self.rfile._sock) for
+        # portability. Save and restore original timeout.
+        if content_length > 0:
+            remaining = content_length
+            old_timeout = None
+            try:
+                old_timeout = self.connection.gettimeout()
+                self.connection.settimeout(self.BODY_READ_TIMEOUT)
+            except (AttributeError, OSError):
+                pass
+            try:
+                while remaining > 0:
+                    chunk = self.rfile.read(min(remaining, 65536))
+                    if not chunk:
+                        # Body shorter than declared (EOF)
+                        self._send_simple_error(400, "Incomplete request body")
+                        return
+                    remaining -= len(chunk)
+            except socket.timeout:
+                # Stalled body read — return 408
+                self._send_simple_error(408, "Request Timeout")
+                return
+            except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError,
+                    OSError):
+                # Client went away during body read
+                return
+            finally:
+                if old_timeout is not None:
+                    try:
+                        self.connection.settimeout(old_timeout)
+                    except (AttributeError, OSError):
+                        pass
+
+        # Body fully read; send 405
+        self.close_connection = True
+        self._send_simple_error(405, "Method Not Allowed")
+
+    def _send_simple_error(self, code: int, message: str):
+        """Send a minimal HTTP error response without an HTML body."""
+        try:
+            self.send_response_only(code, message)
+            self.send_header("Content-Type", "text/plain")
+            self.send_header("Content-Length", "0")
+            if code == 405:
+                self.send_header("Allow", "GET, HEAD")
+            self.close_connection = True
+            self.end_headers()
+        except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+            pass
 
     def end_headers(self):
         self.send_header("Cache-Control", "no-store")
@@ -329,22 +440,115 @@ def main():
     parser.add_argument("--host", default="127.0.0.1",
                         help="Bind address (loopback only)")
     parser.add_argument("--port", type=int, default=8080)
+    parser.add_argument(
+        "--source-kind", choices=("file", "postgres"), default="file",
+        help="Snapshot source type: file (default) or postgres "
+             "(ISOLATED_LIVE only)",
+    )
     parser.add_argument("--source-file", default=None,
-                        help="Path to snapshot JSON file (required for isolated_live)")
+                        help="Path to snapshot JSON file (required for "
+                             "isolated_live + source-kind=file)")
+    parser.add_argument("--run-id", default=None,
+                        help="task_runs.run_id to read "
+                             "(source-kind=postgres only)")
+    parser.add_argument("--expected-database", default=None,
+                        help="Required current_database() value "
+                             "(source-kind=postgres; also via "
+                             "MERGEPILOT_PG_EXPECTED_DATABASE)")
+    parser.add_argument("--expected-role", default=None,
+                        help="Required current_user value "
+                             "(source-kind=postgres; the canonical viewer "
+                             "role is mergepilot_reader; also via "
+                             "MERGEPILOT_PG_EXPECTED_ROLE). REQUIRED for "
+                             "--source-kind postgres.")
+    parser.add_argument("--expected-environment-id", default=None,
+                        help="Required environment marker value "
+                             "(source-kind=postgres; also via "
+                             "MERGEPILOT_PG_ENVIRONMENT_ID)")
+    parser.add_argument("--expected-server-addresses", default=None,
+                        help="Comma-separated allowed inet_server_addr() values "
+                             "(source-kind=postgres; e.g. '127.0.0.1'; also via "
+                             "MERGEPILOT_PG_EXPECTED_SERVER_ADDRESSES)")
+    parser.add_argument("--expected-server-port", type=int, default=None,
+                        help="Required inet_server_port() value "
+                             "(source-kind=postgres; also via "
+                             "MERGEPILOT_PG_EXPECTED_SERVER_PORT)")
+    parser.add_argument("--expected-application-name", default=None,
+                        help="Required application_name value "
+                             "(source-kind=postgres; also via "
+                             "MERGEPILOT_PG_EXPECTED_APPLICATION_NAME)")
     parser.add_argument("--poll-interval", type=float, default=2.0,
                         help="Poll interval in seconds (min 1.0)")
     args = parser.parse_args()
 
-    # Run preflight
-    pf = run_preflight(args.mode, args.host, args.source_file)
+    # Build the postgres config (only used when source-kind=postgres). The DSN
+    # is NEVER taken from argv — it is read from MERGEPILOT_PG_DSN inside
+    # preflight (and again at read time) so it never appears in process argv.
+    pg_config = None
+    if args.source_kind == "postgres":
+        # Parse the comma-separated server addresses list.
+        server_addrs = (
+            args.expected_server_addresses
+            or os.environ.get("MERGEPILOT_PG_EXPECTED_SERVER_ADDRESSES")
+        )
+        if server_addrs:
+            server_addrs_list = [
+                a.strip() for a in server_addrs.split(",") if a.strip()
+            ]
+        else:
+            server_addrs_list = []
+        server_port = (
+            args.expected_server_port
+            if args.expected_server_port is not None
+            else (
+                int(os.environ["MERGEPILOT_PG_EXPECTED_SERVER_PORT"])
+                if os.environ.get("MERGEPILOT_PG_EXPECTED_SERVER_PORT")
+                else None
+            )
+        )
+        pg_config = {
+            "run_id": args.run_id,
+            "expected_database": (
+                args.expected_database
+                or os.environ.get("MERGEPILOT_PG_EXPECTED_DATABASE")
+            ),
+            "expected_role": (
+                args.expected_role
+                or os.environ.get("MERGEPILOT_PG_EXPECTED_ROLE")
+            ),
+            "expected_environment_id": (
+                args.expected_environment_id
+                or os.environ.get("MERGEPILOT_PG_ENVIRONMENT_ID")
+            ),
+            "expected_server_addresses": server_addrs_list,
+            "expected_server_port": server_port,
+            "expected_application_name": (
+                args.expected_application_name
+                or os.environ.get("MERGEPILOT_PG_EXPECTED_APPLICATION_NAME")
+            ),
+        }
+
+    # Run the CONFIG PREFLIGHT: this checks config presence and shape WITHOUT
+    # a DB connection (no network, no database round-trip). It verifies the
+    # DSN env var is present, run_id is well-formed, and the expected identity
+    # fields are configured. The actual DB identity/catalog/initial-snapshot
+    # gate is the STARTUP PROBE (poller.initial_load()) which runs next and
+    # DOES open a DB connection. The two concepts are deliberately distinct:
+    # config_preflight = "is the configuration present and well-shaped?";
+    # startup_probe = "can we actually read a valid first snapshot?".
+    pf = run_preflight(
+        args.mode, args.host, args.source_file,
+        source_kind=args.source_kind, pg_config=pg_config,
+    )
 
     if not pf["preflight_passed"]:
-        print("PREFLIGHT FAILED", file=sys.stderr)
+        print("CONFIG PREFLIGHT FAILED", file=sys.stderr)
         for f in pf["failures"]:
             print(f"  {f['check']}: {f['detail']}", file=sys.stderr)
         sys.exit(1)
 
-    print(f"Preflight passed: mode={pf['mode']}, source_kind={pf['source_kind']}")
+    print(f"Config preflight passed: mode={pf['mode']}, "
+          f"source_kind={pf['source_kind']}")
     print(f"  loopback_only={pf['loopback_only']}, read_only={pf['source_read_only']}")
     print(f"  production_resource_accessed={pf['production_resource_accessed']}")
     print(f"  production_resource_access_status={pf['production_resource_access_status']}")
@@ -359,21 +563,41 @@ def main():
     # Handle ISOLATED_LIVE mode
     poller = None
     if args.mode == "isolated_live":
-        source = FileSnapshotSource(args.source_file)
+        if args.source_kind == "postgres":
+            # Build the read-only PostgreSQL source. The DSN is read from the
+            # env var here (preflight already verified it is present); it is
+            # never logged and never placed in repr/str.
+            from postgres_source import PostgresSnapshotSource
+            dsn = os.environ["MERGEPILOT_PG_DSN"]
+            source = PostgresSnapshotSource(
+                dsn=dsn,
+                run_id=pg_config["run_id"],
+                expected_database=pg_config["expected_database"],
+                expected_role=pg_config["expected_role"],
+                expected_environment_id=pg_config["expected_environment_id"],
+                expected_server_addresses=pg_config["expected_server_addresses"],
+                expected_server_port=pg_config["expected_server_port"],
+                expected_application_name=pg_config["expected_application_name"],
+            )
+        else:
+            source = FileSnapshotSource(args.source_file)
         poller = LivePoller(
             source,
             poll_interval=max(1.0, args.poll_interval),
             max_consecutive_failures=10,
         )
 
-        # Initial load must succeed before starting server
+        # STARTUP PROBE: the actual DB identity/catalog/initial snapshot read.
+        # This opens a DB connection (for postgres) and reads the first
+        # snapshot. The server socket is NOT created until this succeeds, so a
+        # misconfigured/unknown database never results in a serving listener.
         if not poller.initial_load():
             stats = poller.get_stats()
-            print(f"INITIAL SNAPSHOT LOAD FAILED: state={stats['state']}, "
+            print(f"STARTUP PROBE FAILED: state={stats['state']}, "
                   f"error={stats['last_error_code']}", file=sys.stderr)
             sys.exit(1)
 
-        print(f"Initial snapshot loaded: sha256={poller.current_sha256[:24]}...")
+        print(f"Startup probe succeeded: sha256={poller.current_sha256[:24]}...")
         print(f"  source_kind={source.kind}")
         print(f"  mode_banner=ISOLATED_LIVE")
         print(f"  read_only=true, not_production=true")

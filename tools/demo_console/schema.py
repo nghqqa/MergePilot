@@ -103,6 +103,36 @@ def validate_bundle(bundle: dict, expected_mode: str | None = None) -> list[str]
                 f"expected_mode is {expected_mode!r}"
             )
 
+    # verification_commit: mode-aware. For REPLAY bundles a verification_commit
+    # is still required (the classic contract). For ISOLATED_LIVE bundles,
+    # verification_commit may be null PROVIDED the bundle carries a
+    # verification_commit_status field that makes the absence explicit (e.g.
+    # "NOT_AVAILABLE"). This reflects that the read-only ISOLATED_LIVE viewer
+    # does not perform/record a verification build.
+    verification_commit = bundle.get("verification_commit")
+    if demo_mode == "ISOLATED_LIVE":
+        if verification_commit is None:
+            if "verification_commit_status" not in bundle:
+                errors.append(
+                    "verification_commit is null but "
+                    "verification_commit_status field is missing (ISOLATED_LIVE "
+                    "bundles with a null verification_commit must declare "
+                    "verification_commit_status)"
+                )
+            elif not bundle.get("verification_commit_status"):
+                errors.append(
+                    "verification_commit is null but "
+                    "verification_commit_status is empty (must be a non-empty "
+                    "string such as 'NOT_AVAILABLE')"
+                )
+    # REPLAY (or unknown mode): verification_commit must be present and non-null
+    # (the classic contract). Only enforce this when demo_mode is known.
+    elif demo_mode == "REPLAY":
+        if verification_commit is None:
+            errors.append(
+                "verification_commit must be a non-null value for REPLAY bundles"
+            )
+
     # Nested structure validation
     pr = bundle.get("pr", {})
     if isinstance(pr, dict):
