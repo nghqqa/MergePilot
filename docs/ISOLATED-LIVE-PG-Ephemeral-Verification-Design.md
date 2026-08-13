@@ -1,8 +1,8 @@
-# ISOLATED_LIVE PostgreSQL Ephemeral Verification — Design (Revised)
+# ISOLATED_LIVE PostgreSQL Ephemeral Verification — Design (Final Revised)
 
 **Status**: Design only — not executed, not pushed, not merged
 **Base**: `b2108498e7e1410a386685e987026fbfc33fd52b` (origin/main, P2 merged)
-**Created**: 2026-08-13 (revised)
+**Created**: 2026-08-13 (final revised)
 
 ## 1. Audit Summary
 
@@ -19,37 +19,34 @@
 - **Windows**: no native `psql`; Docker via WSL is the current environment's chosen isolation execution method, not the only possible approach for all environments
 - **pgvector**: required by the full migration chain (init.sql and m4f1 tables depend on it); NOT a direct query dependency of `PostgresSnapshotSource`
 
-### Migration Order (authoritative, from run_schema_foundation.sh)
+### Complete Bootstrap and Migration Order
 
-```
-init
-→ m3_state
-→ m3b_policy
-→ m3b_b4
-→ m3b_b4c
-→ m3b_b4c1
-→ m3b_b4c1_1
-→ m3b_b4d1
-→ m3c_state
-→ m4f1_state      (applied twice — idempotency verification, per m4f1)
-→ m4f1_hotfix_1    (applied twice — idempotency verification, per m4f1)
-→ CREATE ROLE mergepilot_reader (before 001)
-→ 001_environment_identity
-→ 002_mergepilot_reader_acl
+The full execution sequence is:
+
+**Phase 0: Prerequisite roles** (before any audit-db migration, per `run_schema_foundation.sh:43`):
+```sql
+CREATE ROLE policy_gateway_l2 NOLOGIN;
+CREATE ROLE mergepilot_approver NOLOGIN;
 ```
 
-**m4f1_state and m4f1_hotfix_1 idempotency**: Both are applied **twice** in
-`run_schema_foundation.sh` to verify idempotency. The ephemeral harness MUST
-replicate this two-round pattern to be consistent with the authoritative m4f1
-test suite.
+**Phase 1: Audit-db migration chain** (15 migration applications):
+```
+ 1. init
+ 2. m3_state
+ 3. m3b_policy
+ 4. m3b_b4
+ 5. m3b_b4c
+ 6. m3b_b4c1
+ 7. m3b_b4c1_1
+ 8. m3b_b4d1
+ 9. m3c_state
+10. m4f1_state          (round 1)
+11. m4f1_state          (round 2 — idempotency verification, per m4f1)
+12. m4f1_hotfix_1        (round 1)
+13. m4f1_hotfix_1        (round 2 — idempotency verification, per m4f1)
+```
 
-### mergepilot_reader Role Creation
-
-**Order**: Must be created AFTER all audit-db migrations but BEFORE
-`001_environment_identity.sql` (which grants SELECT to this role) and
-`002_mergepilot_reader_acl.sql` (which checks role existence).
-
-**Role definition**:
+**Phase 2: ISOLATED_LIVE viewer role bootstrap**:
 ```sql
 CREATE ROLE mergepilot_reader
     LOGIN PASSWORD '<ephemeral-random-password>'
@@ -64,9 +61,18 @@ ALTER ROLE mergepilot_reader
     SET default_transaction_read_only = on;
 ```
 
-The `SET default_transaction_read_only = on` ensures the role's sessions are
-read-only by default at the PostgreSQL level, independent of the application's
-own `BEGIN READ ONLY` transaction.
+**Phase 3: ISOLATED_LIVE migrations**:
+```
+14. 001_environment_identity    (GRANT SELECT TO mergepilot_reader)
+15. 002_mergepilot_reader_acl   (GRANT SELECT on 9 tables; REVOKE writes)
+```
+
+**Total**: 15 migration-file applications + 2 prerequisite-role steps + 1 viewer-role bootstrap.
+
+**m4f1_state and m4f1_hotfix_1 idempotency**: Both are applied **twice** in
+`run_schema_foundation.sh` to verify idempotency. The ephemeral harness MUST
+replicate this two-round pattern to be consistent with the authoritative m4f1
+test suite.
 
 ### Windows Execution Conditions
 - Docker available only via WSL MergePilot-Test (as root)
@@ -76,20 +82,28 @@ own `BEGIN READ ONLY` transaction.
 
 ## 2. Verification Classification (precise definitions)
 
-| Classification | Definition | Current Status |
+| Classification | Definition | Status |
 |---|---|---|
-| `demo_console_suite_verified` | Full `tests/demo_console/` suite: 337 discovered / 331 passed / 6 skipped / 0 failed | ✅ |
-| `postgres_source_mock_verified` | FakeCursor/FakeConnection mock tests in `test_postgres_source.py` | ✅ (part of above) |
-| `static_migration_verified` | Parse `.sql` files, verify column coverage; no DB connection | ✅ (part of above) |
-| `ephemeral_postgres_verified` | Containerized PostgreSQL on an authorized test daemon: real migrations, real identity gate, real ACL, real read-only transaction, real column probe, real DemoBundle assembly | **DESIGNED, NOT_EXECUTED** |
-| `MergePilot-Test_database_verified` | Connect to actual MergePilot-Test audit database and read real data | **false** (NOT_PERFORMED) |
+| `demo_console_suite_verified` | Full `tests/demo_console/` suite | ✅ 337 discovered / 331 passed / 6 skipped / 0 failed |
+| `postgres_source_suite_verified` | All tests in `test_postgres_source.py` | ✅ 180 discovered / 175 passed / 5 skipped |
+| `postgres_source_mock_verified` | FakeCursor/FakeConnection mock tests (subset of above) | ✅ (majority of 175) |
+| `static_migration_contract_verified` | Parse `.sql` files, verify column coverage (subset of above) | ✅ (TestMigrationContractFiles) |
+| `isolated_live_p1_verified` | P1 ISOLATED_LIVE tests in `test_isolated_live.py` | ✅ 124 discovered / 123 passed / 1 skipped |
+| `ephemeral_postgres_verified` | Containerized PostgreSQL on an authorized test daemon | **DESIGNED, NOT_EXECUTED** |
+| `MergePilot-Test_database_verified` | Connect to actual MergePilot-Test audit database | **false** (NOT_PERFORMED) |
 | `MergePilot-Test_application_integration_verified` | Full application integration with MergePilot-Test runtime | **false** (NOT_PERFORMED) |
 | `production_verified` | Production database access | **false** (never) |
 
-**Note**: The 331 passed tests include 33 REPLAY tests, 123 ISOLATED_LIVE P1 tests
-(with 1 POSIX skip), and 175 PostgresSnapshotSource tests (with 5 ephemeral
-placeholder skips). Not all 331 are mock tests — 33 are REPLAY tests that test
-the original Demo Console without any PostgreSQL involvement.
+**Test breakdown** (mutually exclusive per-file):
+- `test_demo_console.py`: 33 discovered, 33 passed, 0 skipped, 0 failed
+- `test_isolated_live.py`: 124 discovered, 123 passed, 1 skipped (POSIX-only), 0 failed
+- `test_postgres_source.py`: 180 discovered, 175 passed, 5 skipped (ephemeral NOT_EXECUTED placeholders), 0 failed
+- **Total**: 337 discovered, 331 passed, 6 skipped, 0 failed
+
+The 175 passed `test_postgres_source.py` tests are NOT all mock tests — they
+include static migration-contract tests (`TestMigrationContractFiles`) and
+runtime catalog mock tests that parse actual `.sql` files. The mock/static/
+ephemeral split is mutually exclusive within the 180 discovered.
 
 ## 3. Deterministic Synthetic Seed Data
 
@@ -101,16 +115,70 @@ Every FK is resolvable; every SHA is 40-char lowercase hex; every digest is
 
 | Table | Row | Key fields |
 |---|---|---|
-| `task_runs` | 1 | `run_id='run-eph-ok'`, `status='PASS'`, `repo='test/repo-alpha'`, `pr_number=42` |
-| `mcp_calls` | 1 | `request_id='mcp-eph-001'`, `caller_agent='coordinator'`, `tool='create_pull_request'`, `decision='ALLOW'`, `result_status='OK'`, `git_sha='1111111111111111111111111111111111111111'` |
-| `revision_bindings` | 1 | `binding_id='rb-eph-ok'`, `run_id='run-eph-ok'`, `repo='test/repo-alpha'`, `pr_number=42`, `base_sha='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'`, `head_sha='bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'`, `source_call_id='mcp-eph-001'`, `source_evidence_digest='cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc'` |
+| `task_runs` | 1 | `run_id='run-eph-ok'`, `status='PASS'`, `repo='test/repo-alpha'`, `pr_number=42`, `skill_data_state='ACTIVE'` (required by `bind_revision`) |
 | `run_pr_bindings` | 1 | `binding_id='prb-eph-ok'`, `run_id='run-eph-ok'`, `repo='test/repo-alpha'`, `pr_number=42`, `fix_branch='fix/run-eph-ok'`, `base_branch='main'`, `head_sha='bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'` |
-| `stage_runs` | 3 | Rows for stages: `(run_id='run-eph-ok', stage='review', agent='reviewer', attempt=1, status='COMPLETED')`, `(stage='fix', agent='fixer', ...)`, `(stage='verify', agent='verifier', verdict='PASS', ...)` |
-| `stage_events` | 3 | `event_id` in `evt-eph-r1`, `evt-eph-r2`, `evt-eph-r3`; matching `run_id`, `stage`, `status='PROCESSED'` |
+| `mcp_calls` | 1 | `request_id='mcp-eph-001'`, `correlation_id='corr-eph-001'`, `phase='RESULT'`, `caller_agent='coordinator'`, `tool='create_pull_request'`, `decision='ALLOW'`, `result_status='OK'`, `run_id='run-eph-ok'`, `target_repo='test/repo-alpha'`, `git_sha='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'` (= base_sha, required by bind_revision provenance check), `error=NULL` |
+| `revision_bindings` | via `bind_revision()` or direct-admin seed (see §3.1 below) | `binding_id` auto-generated; `run_id='run-eph-ok'`, `repo='test/repo-alpha'`, `pr_number=42`, `base_sha='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'`, `head_sha='bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'`, `source_call_id='mcp-eph-001'`, `source_evidence_digest` = computed per bind_revision algorithm |
+| `stage_runs` | 3 | `(run_id='run-eph-ok', stage='review', agent='reviewer', attempt=1, status='COMPLETED')`, `(stage='fix', agent='fixer', attempt=1, status='COMPLETED')`, `(stage='verify', agent='verifier', attempt=1, status='COMPLETED', verdict='PASS')` |
+| `stage_events` | 3 (see §3.2 for complete fields) | Matching run_id, stage, status='PROCESSED' |
 | `audit_events` | 5 | `task_id='run-eph-ok'`, actions: `'review','fix','verify','merge','close_pr'` |
 | `rollback_runs` | 0 | (none — success run) |
 
 Expected: `final_status='PASS'`, 3 workflow_stages, `source_commit='bbbbbbbb...'`
+
+#### 3.1 Revision Provenance Strategy
+
+**Option A (preferred): Use `bind_revision()` function** — calls the
+producer-side SQL function, which internally validates:
+- `task_runs.skill_data_state = 'ACTIVE'`
+- `run_pr_bindings` repo/pr/head_sha match
+- `mcp_calls` phase='RESULT', decision='ALLOW', result_status='OK',
+  run_id matches, target_repo matches, git_sha matches base_sha
+- Recomputes `source_evidence_digest` using the canonical algorithm:
+  `digest(canon(source_call_id || correlation_id || tool || target_repo || run_id || git_sha || result_status), 'sha256')`
+
+**Option B (fallback): Direct-admin INSERT** — if `bind_revision()` cannot be
+called from the harness (e.g., permission issues with SECURITY DEFINER), the
+harness inserts directly into `revision_bindings` as admin. In this case:
+
+> **revision_producer_contract = NOT_VERIFIED.**
+> The direct-admin seed verifies only the P2 consumer/read path
+> (PostgresSnapshotSource reading the revision_bindings row). The revision
+> producer contract (bind_revision function behavior) is NOT tested.
+
+The harness SHOULD attempt Option A first. If it fails, fall back to Option B
+and explicitly record `revision_producer_contract=NOT_VERIFIED`.
+
+#### 3.2 stage_events Complete Fields
+
+**Success run events**:
+```
+event_id='evt-eph-ok-r1', run_id='run-eph-ok', room_id='room-eph-ok',
+  event_type='M4F_REVIEW_DISPATCH', stage='review', status='PROCESSED',
+  sender='controller', body_sha256=NULL, raw_body=NULL, error=NULL,
+  received_at=now(), processed_at=now()
+
+event_id='evt-eph-ok-r2', run_id='run-eph-ok', room_id='room-eph-ok',
+  event_type='M4F_FIX_DISPATCH', stage='fix', status='PROCESSED',
+  sender='controller', body_sha256=NULL, raw_body=NULL, error=NULL,
+  received_at=now(), processed_at=now()
+
+event_id='evt-eph-ok-r3', run_id='run-eph-ok', room_id='room-eph-ok',
+  event_type='M4F_VERIFY_DISPATCH', stage='verify', status='PROCESSED',
+  sender='controller', body_sha256=NULL, raw_body=NULL, error=NULL,
+  received_at=now(), processed_at=now()
+```
+
+Required NOT NULL fields per DDL: `event_id`, `room_id`, `event_type`, `status`.
+`run_id` is nullable but set for P2 query compatibility.
+
+**Rollback run events**:
+```
+event_id='evt-eph-rb1', run_id='run-eph-rollback', room_id='room-eph-rb',
+  event_type='POST_MERGE_VERIFY_FAILED', stage='verify', status='PROCESSED',
+  sender='verifier', body_sha256=NULL, raw_body=NULL, error='test failure',
+  received_at=now(), processed_at=now()
+```
 
 ### Run 2: Unknown Status (`run-eph-unknown`)
 
@@ -136,8 +204,16 @@ Expected: `source_commit=null`, `provenance_status='NOT_AVAILABLE'`
 | Table | Row | Key fields |
 |---|---|---|
 | `task_runs` | 1 | `run_id='run-eph-rollback'`, `status='ROLLED_BACK'` |
-| `stage_events` | 1 | `event_id='evt-eph-rb1'`, `run_id='run-eph-rollback'`, `event_type='POST_MERGE_VERIFY_FAILED'`, `status='PROCESSED'` |
-| `rollback_runs` | 1 | `rollback_id='rb-eph-rb1'`, `parent_run_id='run-eph-rollback'`, `reverted_merge_sha='dddddddddddddddddddddddddddddddddddddddd'`, `repo='test/repo-alpha'`, `pr_number=42`, `trigger_event_id='evt-eph-rb1'`, `status='COMPLETED'`, `fail_reason='test_failure'` |
+| `stage_events` | 1 | See §3.2 rollback event above |
+| `rollback_runs` | 1 | `rollback_id='rb-eph-rb1'`, `parent_run_id='run-eph-rollback'`, `reverted_merge_sha='dddddddddddddddddddddddddddddddddddddddd'`, `repo='test/repo-alpha'`, `pr_number=42`, `trigger_event_id='evt-eph-rb1'`, `status='REVERTED'`, `fail_reason='test_failure'` |
+
+`rollback_runs.status` must be a valid CHECK constraint value:
+`'PENDING','CONFLICT','UNSUPPORTED','REVERT_PR_OPEN','AWAITING_APPROVAL',
+'REVERTING','REVERTED','REVERIFYING','RECOVERED','HELD'`.
+The seed uses **`'REVERTED'`** (not `'COMPLETED'` which is not in the allowlist).
+
+`task_runs.status='ROLLED_BACK'` is a valid `task_runs` CHECK constraint value
+(`'SUBMITTED','RUNNING','PASS','FAIL','HOLD','MERGED','ROLLED_BACK'`).
 
 Expected: `final_status='ROLLED_BACK'`, `rollback_events` non-empty
 
@@ -174,50 +250,56 @@ write pattern.
 
 2. Wait for readiness (pg_isready)
 
-3. Apply migrations in authoritative order:
+3. Phase 0: Create prerequisite roles
+   CREATE ROLE policy_gateway_l2 NOLOGIN;
+   CREATE ROLE mergepilot_approver NOLOGIN;
+
+4. Phase 1: Apply audit-db migrations (15 applications)
    init → m3_state → m3b_policy → m3b_b4 → m3b_b4c → m3b_b4c1
    → m3b_b4c1_1 → m3b_b4d1 → m3c_state
-   → m4f1_state (round 1) → m4f1_state (round 2: idempotency)
-   → m4f1_hotfix_1 (round 1) → m4f1_hotfix_1 (round 2: idempotency)
+   → m4f1_state (×2) → m4f1_hotfix_1 (×2)
 
-4. CREATE ROLE mergepilot_reader (LOGIN, NOINHERIT, NOSUPERUSER, ...)
-   ALTER ROLE mergepilot_reader SET default_transaction_read_only = on
+5. Phase 2: Create mergepilot_reader
+   CREATE ROLE mergepilot_reader LOGIN ... NOINHERIT NOSUPERUSER ...
+   ALTER ROLE mergepilot_reader SET default_transaction_read_only = on;
 
-5. Apply 001_environment_identity.sql
-
-6. Apply 002_mergepilot_reader_acl.sql
+6. Phase 3: Apply ISOLATED_LIVE migrations
+   001_environment_identity → 002_mergepilot_reader_acl
 
 7. INSERT deterministic seed data (all 5 runs)
 
-8. Measure and freeze expected server identity:
-   - SELECT inet_server_addr()::text  → record actual value
-   - SELECT inet_server_port()        → record actual port
+8. Optionally call bind_revision() for run-eph-ok
+   (or direct-admin INSERT; record which path was used)
+
+9. Measure and freeze expected server identity:
+   - SELECT inet_server_addr()::text → record actual value
+   - SELECT inet_server_port() → record actual port
    - Set application_name in DSN connection string
 
-9. Construct PostgresSnapshotSource with reader DSN
-   (using measured server address/port, expected_application_name)
+10. Construct PostgresSnapshotSource with reader DSN
+    (using measured server address/port, expected_application_name)
 
-10. Verify: initial_load() succeeds for run-eph-ok
+11. Verify: initial_load() succeeds for run-eph-ok
     - bundle schema valid (ISOLATED_LIVE)
     - bundle_sha256 recomputable
     - final_status='PASS'
     - workflow_stages non-empty
     - RAG boundaries (adopted=false, untrusted=true)
 
-11. Test each seed run (ok/unknown/no-rev/rollback/missing)
+12. Test each seed run (ok/unknown/no-rev/rollback/missing)
 
-12. Start loopback HTTP server (port=0, OS-assigned)
+13. Start loopback HTTP server (port=0, OS-assigned)
     - GET /api/live/snapshot → valid JSON
     - GET /api/live/status → all boundary fields
     - POST/PUT/PATCH/DELETE → 405
 
-13. Fail-closed negative tests (each in independent isolation — see §5)
+14. Fail-closed negative tests (each in independent isolation — see §5)
 
-14. Stop server, verify thread/port cleanup
+15. Stop server, verify thread/port cleanup
 
-15. Cleanup (see §6)
+16. Cleanup (see §6)
 
-16. Verify residue
+17. Verify residue
 ```
 
 ### Server Identity Design
@@ -237,21 +319,28 @@ write pattern.
 ## 5. Negative Test Isolation Strategy
 
 Each negative test modifies database state (ACL, marker, role defaults). To
-avoid cross-contamination:
+avoid cross-contamination, each test follows a **modify → verify-fail →
+restore → verify-restored** cycle:
 
-| Test | Isolation Method | Restore |
-|---|---|---|
-| Wrong database | Use a second empty database | N/A (separate DB) |
-| Wrong role (superuser) | Connect as `postgres` superuser | N/A (separate connection) |
-| Write-privileged role | `GRANT INSERT ON task_runs TO mergepilot_reader` | `REVOKE INSERT ON task_runs FROM mergepilot_reader` (admin connection) |
-| Missing environment marker | `DELETE FROM environment_identity` | `INSERT INTO environment_identity (environment_id) VALUES ('mergepilot-test-ephemeral')` (admin connection) |
-| Mismatched marker | `UPDATE environment_identity SET environment_id='wrong'` | Restore original value (admin connection) |
-| Transaction read-only off | `ALTER ROLE mergepilot_reader SET default_transaction_read_only = off` | `ALTER ROLE mergepilot_reader SET default_transaction_read_only = on` (admin connection) |
-| RUN_NOT_FOUND | Query nonexistent run_id | N/A (read-only, no state change) |
+| Test | Modify | Verify Fail | Restore (admin) | Verify Restored (fresh reader) |
+|---|---|---|---|---|
+| Wrong database | Use second empty DB | WRONG_DATABASE | N/A (separate DB) | N/A |
+| Wrong role (superuser) | Connect as postgres | WRONG_ROLE (superuser) | N/A | N/A |
+| Write-privileged role | `GRANT INSERT ON task_runs TO mergepilot_reader` | WRONG_ROLE | `REVOKE INSERT ON task_runs FROM mergepilot_reader` | Fresh reader connection → succeeds |
+| Missing marker | `DELETE FROM environment_identity` | ENVIRONMENT_ID_NOT_VERIFIED | `INSERT INTO environment_identity ...` | Fresh reader → LIVE |
+| Mismatched marker | `UPDATE environment_identity SET environment_id='wrong'` | ENVIRONMENT_ID_MISMATCH | Restore original value | Fresh reader → LIVE |
+| Transaction read-only off | `ALTER ROLE ... SET default_transaction_read_only=off` | NOT_READ_ONLY | `ALTER ROLE ... SET default_transaction_read_only=on` | Fresh reader → LIVE |
+| RUN_NOT_FOUND | Query nonexistent run_id | RUN_NOT_FOUND | N/A (read-only) | N/A |
 
-Each negative test runs in a `try/finally` that restores the original state
-via an admin connection. The admin connection is separate from the reader
-connection and uses the container's superuser credentials.
+### Restore Verification Gate
+
+After each restore, the harness opens a **fresh reader connection** and
+verifies that a normal `initial_load()` succeeds (state=LIVE). This proves
+the restore was effective.
+
+**If restore fails**: the harness MUST fail the entire suite. The
+`finally` block that performs restore is NOT permitted to swallow
+exceptions — any restore/cleanup exception propagates as a test failure.
 
 ## 6. Cleanup Contract
 
