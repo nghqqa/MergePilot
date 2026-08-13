@@ -114,6 +114,16 @@ after the M7-P4 design PR merges), not the old `1487620`. The commit
 
 ### Git bundle creation
 
+The bundle is created from the named ref `origin/main` (not a bare SHA,
+which git refuses to bundle standalone). Before creation, verify that
+`origin/main` precisely equals the frozen `reproduction_spec_commit`.
+
+**Do NOT use `git bundle create "$BUNDLE_PATH" "$REPRO_SPEC_COMMIT"`** —
+a bare SHA produces `fatal: Refusing to create empty bundle`.
+
+**`--all` works but includes all refs/tags** — use only as a diagnostic
+fallback, not as the formal minimal reproduction bundle.
+
 On a networked machine (POSIX):
 
 ```bash
@@ -121,7 +131,11 @@ On a networked machine (POSIX):
 REPRO_SPEC_COMMIT="REPLACE_WITH_FULL_MERGE_COMMIT_SHA"
 BUNDLE_PATH="mergepilot-${REPRO_SPEC_COMMIT}.bundle"
 
-git bundle create "$BUNDLE_PATH" "$REPRO_SPEC_COMMIT"
+git fetch origin main
+ACTUAL_MAIN="$(git rev-parse main)"
+test "$ACTUAL_MAIN" = "$REPRO_SPEC_COMMIT"
+
+git bundle create "$BUNDLE_PATH" main
 git bundle verify "$BUNDLE_PATH"
 sha256sum "$BUNDLE_PATH"
 ```
@@ -133,12 +147,25 @@ On a networked machine (Windows PowerShell):
 $ReproSpecCommit = "REPLACE_WITH_FULL_MERGE_COMMIT_SHA"
 $BundlePath = "mergepilot-$ReproSpecCommit.bundle"
 
-git bundle create $BundlePath $ReproSpecCommit
+git fetch origin main
+$ActualMain = (git rev-parse main).Trim()
+if ($ActualMain -ne $ReproSpecCommit) {
+    throw "local main does not match reproduction spec commit"
+}
+
+git bundle create $BundlePath main
+if ($LASTEXITCODE -ne 0) { throw "git bundle create failed" }
+
 git bundle verify $BundlePath
+if ($LASTEXITCODE -ne 0) { throw "git bundle verify failed" }
+
 Get-FileHash -Algorithm SHA256 $BundlePath
 ```
 
 ### Offline clone from bundle
+
+Bundle clone may not set a default remote HEAD, so explicit detached
+checkout is part of the formal flow.
 
 On the offline machine (POSIX):
 
@@ -146,14 +173,39 @@ On the offline machine (POSIX):
 # Set the reproduction spec commit
 REPRO_SPEC_COMMIT="REPLACE_WITH_FULL_MERGE_COMMIT_SHA"
 BUNDLE_PATH="mergepilot-${REPRO_SPEC_COMMIT}.bundle"
+CHECKOUT_DIR="mergepilot-clean-reproduction"
 
 # Re-verify SHA-256 matches recorded value
 sha256sum "$BUNDLE_PATH"
 # Verify bundle integrity
 git bundle verify "$BUNDLE_PATH"
 # Clone from bundle
-git clone "$BUNDLE_PATH" .
-git checkout "$REPRO_SPEC_COMMIT"
+git clone "$BUNDLE_PATH" "$CHECKOUT_DIR"
+cd "$CHECKOUT_DIR"
+# Detached checkout to the exact commit
+git checkout --detach "$REPRO_SPEC_COMMIT"
+# Verify HEAD matches
+test "$(git rev-parse HEAD)" = "$REPRO_SPEC_COMMIT"
+```
+
+On the offline machine (Windows PowerShell):
+
+```powershell
+# Set the reproduction spec commit
+$ReproSpecCommit = "REPLACE_WITH_FULL_MERGE_COMMIT_SHA"
+$BundlePath = "mergepilot-$ReproSpecCommit.bundle"
+$CheckoutDir = "mergepilot-clean-reproduction"
+
+Get-FileHash -Algorithm SHA256 $BundlePath
+git bundle verify $BundlePath
+git clone $BundlePath $CheckoutDir
+Set-Location $CheckoutDir
+git checkout --detach $ReproSpecCommit
+
+$ActualHead = (git rev-parse HEAD).Trim()
+if ($ActualHead -ne $ReproSpecCommit) {
+    throw "checkout commit mismatch"
+}
 ```
 
 The offline machine must recompute the bundle SHA-256 and compare with the

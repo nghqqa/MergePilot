@@ -85,51 +85,77 @@ Result: `source_acquisition_offline = false`.
 
 ### POSIX Bundle Preparation
 
-On a networked machine, create and verify a git bundle.
+On a networked machine, create and verify a git bundle from the named ref
+`origin/main`. A bare SHA produces `fatal: Refusing to create empty bundle`;
+always use the named ref.
 
 ```bash
 # Set the reproduction spec commit
 REPRO_SPEC_COMMIT="REPLACE_WITH_FULL_MERGE_COMMIT_SHA"
 BUNDLE_PATH="mergepilot-${REPRO_SPEC_COMMIT}.bundle"
 
-git bundle create "$BUNDLE_PATH" "$REPRO_SPEC_COMMIT"
+git fetch origin main
+ACTUAL_MAIN="$(git rev-parse main)"
+test "$ACTUAL_MAIN" = "$REPRO_SPEC_COMMIT"
+
+git bundle create "$BUNDLE_PATH" main
 git bundle verify "$BUNDLE_PATH"
 sha256sum "$BUNDLE_PATH"
 ```
 
 ### PowerShell Bundle Preparation
 
-On a networked Windows machine, create and verify a git bundle.
+On a networked Windows machine, create and verify a git bundle from
+`origin/main`.
 
 ```powershell
 # Set the reproduction spec commit
 $ReproSpecCommit = "REPLACE_WITH_FULL_MERGE_COMMIT_SHA"
 $BundlePath = "mergepilot-$ReproSpecCommit.bundle"
 
-git bundle create $BundlePath $ReproSpecCommit
+git fetch origin main
+$ActualMain = (git rev-parse main).Trim()
+if ($ActualMain -ne $ReproSpecCommit) {
+    throw "local main does not match reproduction spec commit"
+}
+
+git bundle create $BundlePath main
+if ($LASTEXITCODE -ne 0) { throw "git bundle create failed" }
+
 git bundle verify $BundlePath
+if ($LASTEXITCODE -ne 0) { throw "git bundle verify failed" }
+
 Get-FileHash -Algorithm SHA256 $BundlePath
 ```
 
 ### Offline Verification and Checkout
 
-On the offline machine, re-verify the bundle SHA, verify integrity, clone, and checkout.
+On the offline machine, re-verify the bundle SHA, verify integrity, clone,
+and perform a detached checkout (bundle clone may lack default HEAD).
 
 ```bash
 # Set the reproduction spec commit
 REPRO_SPEC_COMMIT="REPLACE_WITH_FULL_MERGE_COMMIT_SHA"
 BUNDLE_PATH="mergepilot-${REPRO_SPEC_COMMIT}.bundle"
+CHECKOUT_DIR="mergepilot-clean-reproduction"
 
 # Re-verify SHA-256 matches the value recorded before transfer
 sha256sum "$BUNDLE_PATH"
 # Verify bundle integrity
 git bundle verify "$BUNDLE_PATH"
 # Clone from bundle
-git clone "$BUNDLE_PATH" .
-git checkout "$REPRO_SPEC_COMMIT"
+git clone "$BUNDLE_PATH" "$CHECKOUT_DIR"
+cd "$CHECKOUT_DIR"
+# Detached checkout
+git checkout --detach "$REPRO_SPEC_COMMIT"
+# Verify HEAD matches
+test "$(git rev-parse HEAD)" = "$REPRO_SPEC_COMMIT"
 ```
 
 Result: `source_acquisition_offline = true`, `source_archive_sha256 = "<recorded SHA-256>"`.
+
+**Note**: `--all` works as a diagnostic fallback but includes all refs/tags
+— not recommended for the formal minimal reproduction bundle.
 
 ## Competition Demo Paths
 

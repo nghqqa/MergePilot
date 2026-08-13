@@ -52,14 +52,22 @@ git checkout "$REPRO_SPEC_COMMIT"
 
 #### Option B: Pre-prepared git bundle (fully offline)
 
+The bundle is created from the named ref `origin/main` (not a bare SHA).
+A bare SHA produces `fatal: Refusing to create empty bundle`.
+Before creation, verify that `origin/main` equals `reproduction_spec_commit`.
+
 ##### B.1 Prepare bundle on networked machine (POSIX)
 
 ```bash
-# Set the reproduction spec commit
+# Set the reproduction spec commit (frozen after M7-P4 design PR merges)
 REPRO_SPEC_COMMIT="REPLACE_WITH_FULL_MERGE_COMMIT_SHA"
 BUNDLE_PATH="mergepilot-${REPRO_SPEC_COMMIT}.bundle"
 
-git bundle create "$BUNDLE_PATH" "$REPRO_SPEC_COMMIT"
+git fetch origin main
+ACTUAL_MAIN="$(git rev-parse main)"
+test "$ACTUAL_MAIN" = "$REPRO_SPEC_COMMIT"
+
+git bundle create "$BUNDLE_PATH" main
 git bundle verify "$BUNDLE_PATH"
 sha256sum "$BUNDLE_PATH"
 ```
@@ -71,8 +79,18 @@ sha256sum "$BUNDLE_PATH"
 $ReproSpecCommit = "REPLACE_WITH_FULL_MERGE_COMMIT_SHA"
 $BundlePath = "mergepilot-$ReproSpecCommit.bundle"
 
-git bundle create $BundlePath $ReproSpecCommit
+git fetch origin main
+$ActualMain = (git rev-parse main).Trim()
+if ($ActualMain -ne $ReproSpecCommit) {
+    throw "local main does not match reproduction spec commit"
+}
+
+git bundle create $BundlePath main
+if ($LASTEXITCODE -ne 0) { throw "git bundle create failed" }
+
 git bundle verify $BundlePath
+if ($LASTEXITCODE -ne 0) { throw "git bundle verify failed" }
+
 Get-FileHash -Algorithm SHA256 $BundlePath
 ```
 
@@ -82,14 +100,19 @@ Get-FileHash -Algorithm SHA256 $BundlePath
 # Set the reproduction spec commit
 REPRO_SPEC_COMMIT="REPLACE_WITH_FULL_MERGE_COMMIT_SHA"
 BUNDLE_PATH="mergepilot-${REPRO_SPEC_COMMIT}.bundle"
+CHECKOUT_DIR="mergepilot-clean-reproduction"
 
 # Re-verify SHA-256 matches recorded value
 sha256sum "$BUNDLE_PATH"
 # Verify bundle integrity
 git bundle verify "$BUNDLE_PATH"
 # Clone from bundle
-git clone "$BUNDLE_PATH" .
-git checkout "$REPRO_SPEC_COMMIT"
+git clone "$BUNDLE_PATH" "$CHECKOUT_DIR"
+cd "$CHECKOUT_DIR"
+# Detached checkout — bundle clone may lack default HEAD
+git checkout --detach "$REPRO_SPEC_COMMIT"
+# Verify HEAD matches
+test "$(git rev-parse HEAD)" = "$REPRO_SPEC_COMMIT"
 # source_acquisition_offline = true
 ```
 
@@ -99,14 +122,18 @@ git checkout "$REPRO_SPEC_COMMIT"
 # Set the reproduction spec commit
 $ReproSpecCommit = "REPLACE_WITH_FULL_MERGE_COMMIT_SHA"
 $BundlePath = "mergepilot-$ReproSpecCommit.bundle"
+$CheckoutDir = "mergepilot-clean-reproduction"
 
-# Re-verify SHA-256 matches recorded value
 Get-FileHash -Algorithm SHA256 $BundlePath
-# Verify bundle integrity
 git bundle verify $BundlePath
-# Clone from bundle
-git clone $BundlePath .
-git checkout $ReproSpecCommit
+git clone $BundlePath $CheckoutDir
+Set-Location $CheckoutDir
+git checkout --detach $ReproSpecCommit
+
+$ActualHead = (git rev-parse HEAD).Trim()
+if ($ActualHead -ne $ReproSpecCommit) {
+    throw "checkout commit mismatch"
+}
 # source_acquisition_offline = true
 ```
 
