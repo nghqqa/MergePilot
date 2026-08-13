@@ -329,14 +329,59 @@ def main():
     parser.add_argument("--host", default="127.0.0.1",
                         help="Bind address (loopback only)")
     parser.add_argument("--port", type=int, default=8080)
+    parser.add_argument(
+        "--source-kind", choices=("file", "postgres"), default="file",
+        help="Snapshot source type: file (default) or postgres "
+             "(ISOLATED_LIVE only)",
+    )
     parser.add_argument("--source-file", default=None,
-                        help="Path to snapshot JSON file (required for isolated_live)")
+                        help="Path to snapshot JSON file (required for "
+                             "isolated_live + source-kind=file)")
+    parser.add_argument("--run-id", default=None,
+                        help="task_runs.run_id to read "
+                             "(source-kind=postgres only)")
+    parser.add_argument("--expected-database", default=None,
+                        help="Required current_database() value "
+                             "(source-kind=postgres; also via "
+                             "MERGEPILOT_PG_EXPECTED_DATABASE)")
+    parser.add_argument("--expected-role", default=None,
+                        help="Required current_user value "
+                             "(source-kind=postgres; also via "
+                             "MERGEPILOT_PG_EXPECTED_ROLE)")
+    parser.add_argument("--expected-environment-id", default=None,
+                        help="Required environment marker value "
+                             "(source-kind=postgres; also via "
+                             "MERGEPILOT_PG_ENVIRONMENT_ID)")
     parser.add_argument("--poll-interval", type=float, default=2.0,
                         help="Poll interval in seconds (min 1.0)")
     args = parser.parse_args()
 
+    # Build the postgres config (only used when source-kind=postgres). The DSN
+    # is NEVER taken from argv — it is read from MERGEPILOT_PG_DSN inside
+    # preflight (and again at read time) so it never appears in process argv.
+    pg_config = None
+    if args.source_kind == "postgres":
+        pg_config = {
+            "run_id": args.run_id,
+            "expected_database": (
+                args.expected_database
+                or os.environ.get("MERGEPILOT_PG_EXPECTED_DATABASE")
+            ),
+            "expected_role": (
+                args.expected_role
+                or os.environ.get("MERGEPILOT_PG_EXPECTED_ROLE")
+            ),
+            "expected_environment_id": (
+                args.expected_environment_id
+                or os.environ.get("MERGEPILOT_PG_ENVIRONMENT_ID")
+            ),
+        }
+
     # Run preflight
-    pf = run_preflight(args.mode, args.host, args.source_file)
+    pf = run_preflight(
+        args.mode, args.host, args.source_file,
+        source_kind=args.source_kind, pg_config=pg_config,
+    )
 
     if not pf["preflight_passed"]:
         print("PREFLIGHT FAILED", file=sys.stderr)
@@ -359,7 +404,21 @@ def main():
     # Handle ISOLATED_LIVE mode
     poller = None
     if args.mode == "isolated_live":
-        source = FileSnapshotSource(args.source_file)
+        if args.source_kind == "postgres":
+            # Build the read-only PostgreSQL source. The DSN is read from the
+            # env var here (preflight already verified it is present); it is
+            # never logged and never placed in repr/str.
+            from postgres_source import PostgresSnapshotSource
+            dsn = os.environ["MERGEPILOT_PG_DSN"]
+            source = PostgresSnapshotSource(
+                dsn=dsn,
+                run_id=pg_config["run_id"],
+                expected_database=pg_config["expected_database"],
+                expected_role=pg_config["expected_role"],
+                expected_environment_id=pg_config["expected_environment_id"],
+            )
+        else:
+            source = FileSnapshotSource(args.source_file)
         poller = LivePoller(
             source,
             poll_interval=max(1.0, args.poll_interval),

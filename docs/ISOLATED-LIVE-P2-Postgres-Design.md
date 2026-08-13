@@ -76,9 +76,11 @@ runtime plumbing or contain data not exposed to the read-only viewer.
 
 ## 3. Driver choice (psycopg2, lazy import)
 
-- **Driver**: `psycopg2-binary==2.9.12`, already a declared dependency of
-  other repo components (`skills/case_retrieval`, `tools/policy-gateway`,
-  `tools/rag`).
+- **Driver**: `psycopg2-binary==2.9.12`. `psycopg2-binary` is used by other
+  PostgreSQL subsystems in the repository (`skills/case_retrieval`,
+  `tools/policy-gateway`, `tools/rag`); `POSTGRES_ISOLATED` requires explicit
+  optional installation (it is NOT pulled in automatically for REPLAY/FILE
+  deployments).
 - **Lazy import**: `import psycopg2` happens **inside** `read_snapshot()`, not
   at module top. REPLAY and FILE_FIXTURE deployments never execute that path,
   so they never need the driver installed. The test suite monkeypatches

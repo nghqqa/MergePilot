@@ -256,7 +256,12 @@ class LivePoller(threading.Thread):
         except Exception as e:
             with self._lock:
                 self.consecutive_failures += 1
-                self.last_error_code = type(e).__name__
+                # Prefer a stable error code carried on the exception (e.g.
+                # PostgresSourceError.code) over the raw class name. Sources
+                # that emit stable codes get machine-readable error reporting;
+                # other sources fall back to type(e).__name__ as before.
+                err_code = getattr(e, "code", None)
+                self.last_error_code = err_code if isinstance(err_code, str) and err_code else type(e).__name__
 
                 if self.consecutive_failures >= self._max_failures:
                     self._state = "DEGRADED"
