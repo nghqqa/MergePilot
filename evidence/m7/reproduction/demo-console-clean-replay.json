@@ -1,0 +1,131 @@
+{
+  "kind": "m7-p4-clean-reproduction",
+  "status": "COMPLETED",
+  "reproduction_kind": "clean_checkout_offline_replay",
+  "artifact_baseline_commit": "148762091447754a50790441144968a12360844f",
+  "checkout_commit": "c424975c95e857e72bd223a089c7940d2fe61dfd",
+  "reproduction_spec_commit": "c424975c95e857e72bd223a089c7940d2fe61dfd",
+  "source_tag": "m7-p3-demo-console-closed",
+  "clean_checkout_path_kind": "isolated_directory_outside_dev_worktree",
+  "platform": "windows",
+  "os_version": "MINGW64_NT-10.0-26200 x64",
+  "python_version": "3.9.25",
+  "git_version": "git version 2.48.1.windows.1",
+  "source_acquisition_mode": "preprepared_verified_git_bundle",
+  "source_acquisition_offline": true,
+  "source_archive_sha256": "41b26377a3a454eb6cf810460fa4c17269e038f7c50095d9789c59aa482013ce",
+  "python_package_dependencies": [],
+  "python_package_dependency_mode": "stdlib_only",
+  "pip_install_required": false,
+  "system_tool_dependencies": [
+    "python",
+    "git"
+  ],
+  "dependency_bootstrap_offline": true,
+  "dependency_bootstrap_requires_network": false,
+  "test_execution_offline": true,
+  "artifact_replay_offline": true,
+  "browser_network_observation_status": "NOT_MEASURED",
+  "observed_external_network_requests": null,
+  "replay_succeeded_with_network_disabled": null,
+  "external_reference_count": 0,
+  "candidate_minimum_python_version": "3.8",
+  "minimum_python_version_status": "NOT_YET_VERIFIED",
+  "historically_exercised_python_versions": [
+    "3.9"
+  ],
+  "clean_reproduction_verified_python_versions": [
+    "3.9.25"
+  ],
+  "clean_reproduction_primary_python_version": "3.9.25",
+  "planned_primary_python_version": "3.9",
+  "planned_primary_status": "CLEAN_VERIFIED",
+  "bundle_source_commit": "51908f94048273cdd8a02aa0df2f45427bdf36bd",
+  "bundle_verification_commit": "51908f94048273cdd8a02aa0df2f45427bdf36bd",
+  "bundle_sha256": "313fce1d30a1ed3ea04f68d77b56a2a2261f23fcf71546f3982deae2d27e11b9",
+  "bundle_file_sha256": "2f16c5cc631f87f17d650ddb4fd4afffc4b2d97bc8494283a441ea3ccc799c6e",
+  "evidence_file_sha256": [
+    {
+      "path": "evidence/m4/m4f/agentteams-demo-summary.json",
+      "sha256": "783bd4c7ac61e4514b86d06dad7dc43d8b2b2963f076784b6b44327adc398d17",
+      "match": true
+    },
+    {
+      "path": "evidence/m4/m4f/full-chain-e2e.json",
+      "sha256": "7849c4e7caa5fe76e72ecec7137add139542ff59381b51e6124a1aa9937f9634",
+      "match": true
+    },
+    {
+      "path": "evidence/m6/rag/pgvector-isolated-verification.json",
+      "sha256": "3eb864b445e093a0e71f89eea23c50df5b7afa8e3d3e735b0345668343478a70",
+      "match": true
+    },
+    {
+      "path": "evidence/m7/benchmark/rag-n20-confirmatory.json",
+      "sha256": "36edc6642bb11f796561002781e7b92aa4603b153cdfa698e01592b0fc237be6",
+      "match": true
+    },
+    {
+      "path": "evidence/m7/benchmark/rag-n20-offline.json",
+      "sha256": "c0d53c5643f06eaca049b15c166f1c9ac7b0e0bc36e942b628699f20e9da2743",
+      "match": true
+    }
+  ],
+  "bundle_source_ref": "refs/remotes/origin/main",
+  "bundle_import_ref": "refs/heads/reproduction-spec",
+  "bundle_listed_refs": [
+    "c424975c95e857e72bd223a089c7940d2fe61dfd refs/remotes/origin/main"
+  ],
+  "source_ref_commit": "c424975c95e857e72bd223a089c7940d2fe61dfd",
+  "imported_ref_commit": "c424975c95e857e72bd223a089c7940d2fe61dfd",
+  "commit_object_available": true,
+  "tree_object_available": true,
+  "checkout_head": "c424975c95e857e72bd223a089c7940d2fe61dfd",
+  "checkout_head_matches_spec": true,
+  "checkout_worktree_clean": true,
+  "page_count": 8,
+  "pages": [
+    "overview",
+    "timeline",
+    "findings",
+    "rag",
+    "trace",
+    "safety",
+    "evidence",
+    "benchmark"
+  ],
+  "tests_run": 33,
+  "test_failures": 0,
+  "test_errors": 0,
+  "test_skipped": 0,
+  "deterministic_replay_match": true,
+  "pycache_residue": 0,
+  "test_cache_residue": 0,
+  "temp_file_residue": 0,
+  "server_process_residue": 0,
+  "listening_port_residue": 0,
+  "worktree_dirty_after": false,
+  "secret_leaks": 0,
+  "failures": [],
+  "limitations": [
+    "REPLAY mode only; ISOLATED_LIVE is not implemented",
+    "Findings/Fixes=0; evidence stores digests, not inline findings",
+    "runtime_consumes_rag_context=false; RAG advisory only",
+    "workflow_utility_status=NOT_MEASURABLE_WITH_CURRENT_RUNTIME",
+    "Demo Console is NOT a production management dashboard",
+    "M7 NOT overall closed",
+    "Python 3.8 compatibility NOT yet verified",
+    "Git CLI required (bundle_builder uses subprocess git)",
+    "browser_network_observation_status=NOT_MEASURED; no browser/system network observer used",
+    "Windows core.autocrlf must be set to false for byte-exact evidence SHA match",
+    "Local amend history (1136681->9ea8666) exists in design branch; disclosed in commit messages"
+  ],
+  "expected_gates": {
+    "expected_tests_run": 33,
+    "expected_test_failures": 0,
+    "expected_external_reference_count": 0,
+    "expected_page_count": 8
+  },
+  "all_ok": true,
+  "timestamp": "2026-08-13T03:53:38Z"
+}
