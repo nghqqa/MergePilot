@@ -354,10 +354,11 @@ These are **honest absences**, recorded explicitly so a consumer cannot mistake
   accepts `--source-kind postgres`, constructs the source, runs the config
   preflight, and performs `poller.initial_load()` before serving), but real
   execution against a live DB is NOT verified — see "NOT verified" below.
-- Test suite: 306 tests across `tests/demo_console/` (mock + static + ephemeral
-  placeholders, mutually exclusive per-file classifications), 6 skipped.
-  Per-file: `test_postgres_source.py` 167 (5 ephemeral placeholder skips),
-  `test_isolated_live.py` 106 (1 skipped), `test_demo_console.py` 33. Real
+- Test suite: 337 discovered across `tests/demo_console/` (mock + static + ephemeral
+  placeholders, mutually exclusive per-file classifications). 331 passed, 6 skipped, 0 failed.
+  Per-file: `test_postgres_source.py` 180 (5 ephemeral placeholder skips),
+  `test_isolated_live.py` 124 (1 skipped), `test_demo_console.py` 33.
+  Skipped tests are NOT counted as passed. Real
   PostgreSQL verification = NOT_PERFORMED.
 
 **NOT verified (this candidate)**

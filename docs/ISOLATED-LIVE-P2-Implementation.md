@@ -2,7 +2,7 @@
 
 **Status**: P2 code implementation candidate — local review candidate, not pushed, not merged.
 **Branch**: `feat/isolated-live-p2-postgres`
-**Commit chain**: `6bfa731` → `9ab7fd6` → `f0cad7a` → F (ACL/privilege/contract/error-hardening pass) → G (9-table query/privilege scope, `m3b_policy`+`init` migration tests, `from None` exception chain, required `expected_role`=mergepilot_reader, unconditional ephemeral placeholders)
+**Commit chain**: `6bfa731` → `9ab7fd6` → `f0cad7a` → F → G → H → I → J → K → L → M
 
 This is a local implementation candidate for review. It has **not** been pushed
 to the remote, is not on an open PR, and is not merged. Nothing here is tagged
@@ -161,18 +161,25 @@ No files under `evidence/`, `samples/`, or any frozen path were touched.
 ```
 python -I -B -W error::ResourceWarning -m unittest discover \
     -s tests/demo_console -p "test_*.py"
-Ran 306 tests in ~13s
+Ran 337 tests in ~27s
 OK (skipped=6)
 ```
 
+- **total discovered**: 337
+- **passed**: 331
+- **skipped**: 6
+- **failed**: 0
+
+Skipped tests are NOT counted as passed.
+
 Per-file (mutually exclusive classification by file):
 
-- `test_postgres_source.py` — 167 tests (5 skipped: unconditional ephemeral
-  placeholders).
-- `test_isolated_live.py` — 106 tests (1 skipped).
-- `test_demo_console.py` — 33 tests.
-
-Total: 306 tests, 6 skipped.
+| File | Discovered | Passed | Skipped | Failed |
+|------|-----------|--------|---------|--------|
+| `test_demo_console.py` | 33 | 33 | 0 | 0 |
+| `test_isolated_live.py` | 124 | 123 | 1 (POSIX-only) | 0 |
+| `test_postgres_source.py` | 180 | 175 | 5 (ephemeral NOT_EXECUTED placeholders) | 0 |
+| **Total** | **337** | **331** | **6** | **0** |
 
 Test classification (mutually exclusive):
 
