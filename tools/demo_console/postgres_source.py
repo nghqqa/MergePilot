@@ -82,6 +82,8 @@ STABLE_ERROR_CODES = frozenset({
     "CONFIG_INVALID",
 })
 
+CANONICAL_VIEWER_ROLE = "mergepilot_reader"
+
 
 class PostgresSourceError(Exception):
     """Sanitized error raised by :class:`PostgresSnapshotSource`.
@@ -598,7 +600,6 @@ class PostgresSnapshotSource(SnapshotSource):
         # ``current_user == expected_role`` exactly (no prefix/wildcard match).
         # Only the canonical CANONICAL_VIEWER_ROLE ("mergepilot_reader") is
         # accepted; any other role name is rejected with CONFIG_INVALID.
-        CANONICAL_VIEWER_ROLE = "mergepilot_reader"
         if not isinstance(expected_role, str) or not expected_role.strip():
             raise ConfigInvalidError(
                 "CONFIG_INVALID: expected_role must be a non-empty "

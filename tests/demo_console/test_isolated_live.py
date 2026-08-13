@@ -197,23 +197,11 @@ def _http_method(url: str, method: str, data: bytes | None = None):
             parsed = None
         return e.code, parsed, retry_count
     except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError) as e:
-        # On Windows, PATCH/POST/PUT/DELETE requests to http.server can
-        # trigger ConnectionAbortedError at the client because the TCP
-        # stack resets the connection after the server sends 405 + Connection:
-        # close. This is a known Windows http.client limitation, not a server
-        # bug. The server-side _reject_write_method already catches the error
-        # and returns 405 cleanly; the client just doesn't always see it.
-        # We treat this as a platform-specific known limitation for write
-        # methods (PATCH/POST/PUT/DELETE) and return 405 with a diagnostic.
-        if method in ("PATCH", "POST", "PUT", "DELETE"):
-            print(
-                f"PLATFORM_LIMITATION: {type(e).__name__} on {method} {url} "
-                f"(Windows TCP reset after 405; server returned 405 cleanly). "
-                f"Treating as 405 — retry_count=0.",
-                flush=True,
-            )
-            return 405, None, 0
-        # For GET/HEAD: re-raise (should never happen in normal operation)
+        # Connection reset means the client never received an HTTP response.
+        # This is a real failure — do NOT fake a 405, retry, or skip.
+        # The server-side _reject_write_method drains the request body and
+        # sends 405 cleanly; if the client still sees a reset, that's a bug
+        # to fix, not a platform quirk to mask.
         raise
 
 

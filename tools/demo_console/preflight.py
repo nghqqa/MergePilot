@@ -366,6 +366,14 @@ def run_preflight(mode: str, host: str, source_file: str | None = None,
                             "current_user at read time)"
                         ),
                     })
+                elif expected_role != "mergepilot_reader":
+                    failures.append({
+                        "check": "pg_expected_role",
+                        "detail": (
+                            "pg_config.expected_role must be exactly "
+                            "'mergepilot_reader'; got '%s'" % expected_role
+                        ),
+                    })
                 # expected_environment_id MUST be a non-empty string. The
                 # environment marker is mandatory; the source never guesses the
                 # environment identity from hostname.

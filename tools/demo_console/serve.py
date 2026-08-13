@@ -153,16 +153,27 @@ class ReadOnlyHandler(http.server.SimpleHTTPRequestHandler):
         self._reject_write_method()
 
     def _reject_write_method(self):
-        # Send a minimal 405 without an HTML body to avoid Windows
-        # ConnectionAbortedError. send_error() writes an HTML body which
-        # triggers the client to reset before the body is fully sent.
-        # Instead we craft a bare response with Content-Length: 0.
+        # Drain the request body BEFORE responding. On Windows, if the
+        # client sends a body (POST/PUT/PATCH with Content-Length > 0)
+        # and the server responds without reading it, the TCP stack may
+        # reset the connection (WinError 10053), causing the client to
+        # see ConnectionAbortedError instead of the 405. By draining the
+        # body first, we keep the connection in a clean state.
+        content_length = int(self.headers.get("Content-Length", 0))
+        if content_length > 0:
+            # Read and discard the body (cap at 1MB to prevent abuse)
+            max_read = min(content_length, 1048576)
+            try:
+                self.rfile.read(max_read)
+            except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
+                pass  # Body already gone; still try to send 405
+
+        # Send minimal 405 with empty body
         try:
             self.send_response_only(405, "Method Not Allowed")
             self.send_header("Content-Type", "text/plain")
             self.send_header("Content-Length", "0")
             self.send_header("Allow", "GET, HEAD")
-            self.send_header("Connection", "close")
             self.end_headers()
         except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
             pass
