@@ -151,7 +151,7 @@ All actual result fields are `null` in design. Expected values in `expected_gate
 
 ### Evidence SHA
 
-SHA-256 of file **content bytes** from `git show <commit>:<path>`.
+SHA-256 of file **content bytes** from `git show REPRO_SPEC_COMMIT:path`.
 NOT Git blob object ID (which includes `blob <size>\0` header).
 
 ## Expected vs Actual

@@ -7,7 +7,7 @@
 | Dimension | Primary | Backup | Failure Backup |
 |-----------|---------|--------|----------------|
 | **OS** | Windows 10/11 (PowerShell) | MergePilot-Test WSL (bash) | Any OS with Python + Git |
-| **Python** | 3.9.x (planned) | 3.10.x (candidate) | 3.8+ (NOT_YET_VERIFIED) |
+| **Python** | 3.9.x (planned, PLANNED_NOT_YET_CLEAN_VERIFIED) | 3.10.x (candidate) | Other (NOT_YET_VERIFIED) |
 | **Git CLI** | Required | Required | Required |
 | **Browser** | Chrome/Edge | Firefox | Direct file open |
 | **HTTP server** | `python -m http.server --bind 127.0.0.1` | `serve.py` | Direct file open |
@@ -22,8 +22,8 @@
 ## System Tool Dependencies
 
 | Tool | Required by | Cannot omit |
-|------|------------|-------------|
-| Python 3.8+ | All modules (schema/builder/render/serve/tests) | Yes |
+|------|------------|------------|
+| Python interpreter | All modules (schema/builder/render/serve/tests) | Yes |
 | Git CLI | `bundle_builder.py` (calls `git rev-parse HEAD`), unittest suite (verifies git blob SHAs), source checkout | Yes |
 | Browser | Page display only | No (verification works without browser) |
 
@@ -77,22 +77,34 @@ source_acquisition_offline = false
 
 ### Mode B: Git Bundle (fully offline)
 
-**Create (networked machine):**
+**Create (networked machine — POSIX):**
 ```bash
-git bundle create mergepilot-<commit>.bundle <commit>
-# or:
-git bundle create mergepilot-<commit>.bundle --all
-git bundle verify mergepilot-<commit>.bundle
-# Windows: Get-FileHash -Algorithm SHA256 mergepilot-<commit>.bundle
-# POSIX: sha256sum mergepilot-<commit>.bundle
+REPRO_SPEC_COMMIT="<PR merge commit full SHA>"
+BUNDLE_PATH="mergepilot-${REPRO_SPEC_COMMIT}.bundle"
+
+git bundle create "$BUNDLE_PATH" "$REPRO_SPEC_COMMIT"
+git bundle verify "$BUNDLE_PATH"
+sha256sum "$BUNDLE_PATH"
 ```
 
-**Clone (offline machine):**
+**Create (networked machine — Windows PowerShell):**
+```powershell
+$ReproSpecCommit = "<PR merge commit full SHA>"
+$BundlePath = "mergepilot-$ReproSpecCommit.bundle"
+
+git bundle create $BundlePath $ReproSpecCommit
+git bundle verify $BundlePath
+Get-FileHash -Algorithm SHA256 $BundlePath
+```
+
+**Clone (offline machine — POSIX):**
 ```bash
-# Re-verify SHA-256:
-sha256sum mergepilot-<commit>.bundle
-git clone mergepilot-<commit>.bundle .
-git checkout <reproduction_spec_commit>
+REPRO_SPEC_COMMIT="<PR merge commit full SHA>"
+BUNDLE_PATH="mergepilot-${REPRO_SPEC_COMMIT}.bundle"
+
+sha256sum "$BUNDLE_PATH"   # Re-verify matches recorded value
+git clone "$BUNDLE_PATH" .
+git checkout "$REPRO_SPEC_COMMIT"
 ```
 
 ```

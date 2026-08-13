@@ -64,7 +64,7 @@ run all verification" (Git CLI is required for bundle builder and tests).
 - Read Bundle and evidence from the frozen source tree (git checkout).
 - Do NOT regenerate historical evidence.
 - SHA verification: compute SHA-256 over file **content bytes** read via
-  `git show <commit>:<path>`, compare with Bundle's recorded SHA-256.
+  `git show REPRO_SPEC_COMMIT:path`, compare with Bundle's recorded SHA-256.
 - **File content SHA-256 ≠ Git blob object ID.** Git blob IDs include
   header bytes (`blob <size>\0`); content SHA does not.
 - Historical evidence is NOT described as "this run's live results."
@@ -193,6 +193,18 @@ value recorded before transfer. Mismatch = source corrupted.
 - M7-P4 docs must come from `reproduction_spec_commit`.
 - Bundle internal C4 provenance (`bundle_source_commit` /
   `bundle_verification_commit`) is NOT modified for this reproduction.
+
+### Provenance Execution Order
+
+1. Merge M7-P4 design PR to main.
+2. Freeze the PR merge commit as `reproduction_spec_commit`.
+3. Create a git bundle containing that commit.
+4. On the offline machine, verify the bundle file SHA-256 matches the
+   recorded value.
+5. Checkout `reproduction_spec_commit`.
+6. Verify artifact files (HTML, Bundle, evidence) still match
+   `artifact_baseline_commit` (`1487620`) tree content.
+7. Do NOT modify DemoBundle internal C4 provenance.
 
 ## 8. Residue Design
 

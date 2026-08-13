@@ -9,9 +9,13 @@
 
 | Tool | Required | Reason |
 |------|----------|--------|
-| Python 3.8+ | Yes | Run schema/builder/render/serve/tests |
+| Python interpreter | Yes | Run schema/builder/render/serve/tests |
 | Git CLI | Yes | Source checkout; `bundle_builder.py` calls `git rev-parse HEAD`; tests verify git blob SHAs |
 | Web browser | Optional | Page display (not needed for verification) |
+
+**Planned primary Python version**: 3.9 (`PLANNED_NOT_YET_CLEAN_VERIFIED`).
+**Minimum supported version**: NOT_YET_VERIFIED.
+**Candidate minimum**: 3.8 (hypothetical, not tested).
 
 ### Python packages
 
@@ -35,41 +39,50 @@ cd ~/m7-clean-repro
 ### 2.2 Acquire source
 
 **Option A: GitHub clone (requires network for clone only)**
+
 ```bash
+# Set the reproduction spec commit (frozen after M7-P4 design PR merges):
+REPRO_SPEC_COMMIT="<PR merge commit full SHA>"
+
 git clone https://github.com/nghqqa/MergePilot.git .
-git checkout <reproduction_spec_commit>
+git checkout "$REPRO_SPEC_COMMIT"
 # source_acquisition_offline = false (network used for clone)
 # Subsequent steps are fully offline.
 ```
 
 **Option B: Pre-prepared git bundle (fully offline)**
 
-Prepare on networked machine:
+Prepare on networked machine (POSIX):
 ```bash
-# Create bundle from specific commit:
-git bundle create mergepilot-<commit>.bundle <commit>
+REPRO_SPEC_COMMIT="<PR merge commit full SHA>"
+BUNDLE_PATH="mergepilot-${REPRO_SPEC_COMMIT}.bundle"
 
-# Or with all refs:
-git bundle create mergepilot-<commit>.bundle --all
-
-# Verify bundle:
-git bundle verify mergepilot-<commit>.bundle
-
-# Record SHA-256:
-# Windows PowerShell:
-Get-FileHash -Algorithm SHA256 mergepilot-<commit>.bundle
-# POSIX:
-sha256sum mergepilot-<commit>.bundle
+git bundle create "$BUNDLE_PATH" "$REPRO_SPEC_COMMIT"
+git bundle verify "$BUNDLE_PATH"
+sha256sum "$BUNDLE_PATH"
 ```
 
-Transfer bundle to offline machine, then:
+Prepare on networked machine (Windows PowerShell):
+```powershell
+$ReproSpecCommit = "<PR merge commit full SHA>"
+$BundlePath = "mergepilot-$ReproSpecCommit.bundle"
+
+git bundle create $BundlePath $ReproSpecCommit
+git bundle verify $BundlePath
+Get-FileHash -Algorithm SHA256 $BundlePath
+```
+
+Transfer bundle to offline machine, then (POSIX):
 ```bash
+REPRO_SPEC_COMMIT="<PR merge commit full SHA>"
+BUNDLE_PATH="mergepilot-${REPRO_SPEC_COMMIT}.bundle"
+
 # Re-verify SHA-256 matches recorded value:
-sha256sum mergepilot-<commit>.bundle
+sha256sum "$BUNDLE_PATH"
 
 # Clone from bundle:
-git clone mergepilot-<commit>.bundle .
-git checkout <reproduction_spec_commit>
+git clone "$BUNDLE_PATH" .
+git checkout "$REPRO_SPEC_COMMIT"
 # source_acquisition_offline = true
 # source_archive_sha256 = <recorded SHA-256>
 ```
@@ -80,7 +93,7 @@ git checkout <reproduction_spec_commit>
 git status --porcelain
 # Must output nothing
 git rev-parse HEAD
-# Must output: <reproduction_spec_commit>
+# Must output the reproduction spec commit SHA
 ```
 
 ## 3. Layer A: Artifact Replay Verification
