@@ -136,36 +136,48 @@ Get-FileHash -Algorithm SHA256 $BundlePath
 
 ### Offline Verification and Checkout
 
-On the offline machine, re-verify the bundle SHA, verify integrity, then
-use explicit `git init` + `git fetch` with a refspec. Bundle contains
-complete history. A plain `git clone` does not auto-import remote-tracking
-refs into local branches.
+On the offline machine, re-verify the bundle SHA, then use explicit
+`git init` + `git bundle verify` (inside repo) + `git fetch` with a
+refspec. Bundle contains complete history. A plain `git clone` does not
+auto-import remote-tracking refs into local branches.
+
+Note: `git bundle verify` requires a Git repository. SHA-256 file check
+does not. `BUNDLE_PATH` must be an absolute path because `git -C`
+changes the working directory.
 
 ```bash
 # Set variables
 REPRO_SPEC_COMMIT="REPLACE_WITH_FULL_MERGE_COMMIT_SHA"
 BUNDLE_SOURCE_REF="refs/remotes/origin/main"
 LOCAL_IMPORT_REF="refs/heads/reproduction-spec"
-BUNDLE_PATH="mergepilot-${REPRO_SPEC_COMMIT}.bundle"
+BUNDLE_PATH="$(pwd)/mergepilot-${REPRO_SPEC_COMMIT}.bundle"
 CHECKOUT_DIR="mergepilot-clean-reproduction"
 
-# Re-verify SHA-256
+# File integrity check (does not need a Git repo)
 sha256sum "$BUNDLE_PATH"
-# Verify bundle integrity
-git bundle verify "$BUNDLE_PATH"
-# Initialize empty repo
+
+# Initialize empty repo (needed for git bundle verify)
 git init "$CHECKOUT_DIR"
-# Fetch from bundle using explicit refspec (clone won't import remote-tracking refs)
+
+# Verify bundle integrity inside the repo
+git -C "$CHECKOUT_DIR" bundle verify "$BUNDLE_PATH"
+
+# Fetch from bundle using explicit refspec
 git -C "$CHECKOUT_DIR" fetch "$BUNDLE_PATH" \
   "${BUNDLE_SOURCE_REF}:${LOCAL_IMPORT_REF}"
+
 # Verify commit object exists
 git -C "$CHECKOUT_DIR" cat-file -e "${REPRO_SPEC_COMMIT}^{commit}"
 # Verify tree object exists
 git -C "$CHECKOUT_DIR" cat-file -e "${REPRO_SPEC_COMMIT}^{tree}"
+
 # Detached checkout
 git -C "$CHECKOUT_DIR" checkout --detach "$REPRO_SPEC_COMMIT"
+
 # Verify HEAD matches
 test "$(git -C "$CHECKOUT_DIR" rev-parse HEAD)" = "$REPRO_SPEC_COMMIT"
+# Verify imported ref matches
+test "$(git -C "$CHECKOUT_DIR" rev-parse "$LOCAL_IMPORT_REF")" = "$REPRO_SPEC_COMMIT"
 # Verify clean
 test -z "$(git -C "$CHECKOUT_DIR" status --porcelain)"
 ```
