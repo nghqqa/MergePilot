@@ -22,6 +22,7 @@ if _HERE not in sys.path:
 
 from schema import validate_bundle
 from integrity import verify_bundle_integrity
+from postgres_source import CANONICAL_VIEWER_ROLE
 
 
 VALID_MODES = frozenset({"replay", "isolated_live"})
@@ -368,10 +369,7 @@ def run_preflight(mode: str, host: str, source_file: str | None = None,
                     })
                 else:
                     # Import canonical role from the single contract source
-                    try:
-                        from postgres_source import CANONICAL_VIEWER_ROLE
-                    except ImportError:
-                        CANONICAL_VIEWER_ROLE = "mergepilot_reader"
+                    from postgres_source import CANONICAL_VIEWER_ROLE
                     if expected_role != CANONICAL_VIEWER_ROLE:
                         failures.append({
                             "check": "pg_expected_role",

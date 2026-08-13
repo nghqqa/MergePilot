@@ -607,10 +607,11 @@ class PostgresSnapshotSource(SnapshotSource):
                 "role is mandatory and must match current_user exactly)" % CANONICAL_VIEWER_ROLE,
                 code="CONFIG_INVALID",
             )
-        if expected_role.strip() != CANONICAL_VIEWER_ROLE:
+        # Strict equality: reject any whitespace-padded variant
+        if expected_role != CANONICAL_VIEWER_ROLE:
             raise ConfigInvalidError(
                 "CONFIG_INVALID: expected_role must be exactly '%s'; got '%s'" % (
-                    CANONICAL_VIEWER_ROLE, expected_role.strip()),
+                    CANONICAL_VIEWER_ROLE, expected_role),
                 code="CONFIG_INVALID",
             )
         self._expected_role = expected_role

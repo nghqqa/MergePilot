@@ -863,6 +863,54 @@ class TestWriteBodyHandling(unittest.TestCase):
         finally:
             sock.close()
 
+    def test_stalled_body_returns_408_then_next_request_ok(self):
+        """Content-Length declared larger than body sent; server returns 408
+        in bounded time; subsequent independent request still gets 405."""
+        # First connection: declare large body, send only partial
+        sock1 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock1.settimeout(8.0)
+        sock1.connect(("127.0.0.1", self._port))
+        try:
+            sock1.sendall(b"POST / HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: 1000000\r\n\r\nsmall")
+            # Read response (should be 408 within BODY_READ_TIMEOUT=5s)
+            response = b""
+            try:
+                while b"\r\n" not in response:
+                    chunk = sock1.recv(4096)
+                    if not chunk:
+                        break
+                    response += chunk
+            except socket.timeout:
+                pass
+            status_line = response.split(b"\r\n", 1)[0].decode("utf-8", "replace")
+            parts = status_line.split(" ", 2)
+            code = int(parts[1]) if len(parts) >= 2 and parts[1].isdigit() else 0
+            self.assertIn(code, (408, 400), f"Expected 408 or 400 for stalled body, got {code}")
+        finally:
+            sock1.close()
+        # Second independent connection must succeed with 405
+        code2, _ = self._raw_request("DELETE")
+        self.assertEqual(code2, 405, "Server must still serve after stalled connection")
+
+    def test_duplicate_content_length_returns_400(self):
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(5.0)
+        sock.connect(("127.0.0.1", self._port))
+        try:
+            sock.sendall(b"POST / HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: 5\r\nContent-Length: 10\r\n\r\nhello")
+            response = b""
+            while b"\r\n" not in response:
+                chunk = sock.recv(4096)
+                if not chunk:
+                    break
+                response += chunk
+            status_line = response.split(b"\r\n", 1)[0].decode("utf-8", "replace")
+            parts = status_line.split(" ", 2)
+            code = int(parts[1]) if len(parts) >= 2 and parts[1].isdigit() else 0
+            self.assertEqual(code, 400)
+        finally:
+            sock.close()
+
 
 class TestPreflightCanonicalRole(unittest.TestCase):
     """Preflight must reject all roles except mergepilot_reader."""

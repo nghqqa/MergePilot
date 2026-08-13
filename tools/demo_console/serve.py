@@ -156,10 +156,16 @@ class ReadOnlyHandler(http.server.SimpleHTTPRequestHandler):
         self._reject_write_method()
 
     def _reject_write_method(self):
-        # Reject chunked transfer encoding
+        # Reject ANY non-empty Transfer-Encoding (including chunked)
         te = self.headers.get("Transfer-Encoding", "")
-        if te and te.lower() != "identity":
-            self._send_simple_error(400, "Chunked Transfer-Encoding not supported")
+        if te.strip():
+            self._send_simple_error(400, "Transfer-Encoding not supported")
+            return
+
+        # Check for duplicate/conflicting Content-Length headers
+        cl_headers = self.headers.get_all("Content-Length")
+        if cl_headers and len(set(cl_headers)) > 1:
+            self._send_simple_error(400, "Conflicting Content-Length")
             return
 
         # Parse Content-Length strictly
@@ -184,25 +190,39 @@ class ReadOnlyHandler(http.server.SimpleHTTPRequestHandler):
             self._send_simple_error(413, "Payload Too Large")
             return
 
-        # Drain the body completely before responding
+        # Drain the body completely before responding.
+        # Use self.connection.settimeout (not self.rfile._sock) for
+        # portability. Save and restore original timeout.
         if content_length > 0:
             remaining = content_length
+            old_timeout = None
             try:
-                self.rfile._sock.settimeout(self.BODY_READ_TIMEOUT)
+                old_timeout = self.connection.gettimeout()
+                self.connection.settimeout(self.BODY_READ_TIMEOUT)
             except (AttributeError, OSError):
                 pass
             try:
                 while remaining > 0:
                     chunk = self.rfile.read(min(remaining, 65536))
                     if not chunk:
-                        # Body shorter than declared
+                        # Body shorter than declared (EOF)
                         self._send_simple_error(400, "Incomplete request body")
                         return
                     remaining -= len(chunk)
-            except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError,
-                    OSError, socket.timeout):
-                # Client went away during body read — cannot send response
+            except socket.timeout:
+                # Stalled body read — return 408
+                self._send_simple_error(408, "Request Timeout")
                 return
+            except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError,
+                    OSError):
+                # Client went away during body read
+                return
+            finally:
+                if old_timeout is not None:
+                    try:
+                        self.connection.settimeout(old_timeout)
+                    except (AttributeError, OSError):
+                        pass
 
         # Body fully read; send 405
         self.close_connection = True
