@@ -25,11 +25,34 @@ from integrity import verify_bundle_integrity
 
 VALID_MODES = frozenset({"replay", "isolated_live"})
 
-_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+# IPv4-loopback only. The P1 demo server is a single-machine HTTP server
+# bound to an IPv4 loopback address; IPv6 loopback (::1) is NOT implemented.
+# Any host not in this set is rejected (including ::1, ::, 0.0.0.0, LAN IPs).
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost"})
 
 
 def _is_loopback(host: str) -> bool:
     return host.lower() in _LOOPBACK_HOSTS
+
+
+# --- Windows drive type constants (mirror Win32 GetDriveTypeW codes) -------
+DRIVE_UNKNOWN = 0
+DRIVE_NO_ROOT_DIR = 1
+DRIVE_REMOVABLE = 2
+DRIVE_FIXED = 3
+DRIVE_REMOTE = 4
+DRIVE_CDROM = 5
+DRIVE_RAMDISK = 6
+
+_DRIVE_TYPE_NAMES = {
+    DRIVE_UNKNOWN: "DRIVE_UNKNOWN",
+    DRIVE_NO_ROOT_DIR: "DRIVE_NO_ROOT_DIR",
+    DRIVE_REMOVABLE: "DRIVE_REMOVABLE",
+    DRIVE_FIXED: "DRIVE_FIXED",
+    DRIVE_REMOTE: "DRIVE_REMOTE",
+    DRIVE_CDROM: "DRIVE_CDROM",
+    DRIVE_RAMDISK: "DRIVE_RAMDISK",
+}
 
 
 def _is_http_url(source: str) -> bool:
@@ -41,29 +64,126 @@ def _is_file_uri(source: str) -> bool:
 
 
 def _is_unc_path(source: str) -> bool:
-    """Detect UNC paths: \\server\share or //server/share (Windows network)."""
+    r"""Detect UNC paths: \\server\share or //server/share (Windows network)."""
     # Normalize backslashes to forward slashes for a uniform check.
     norm = source.replace("\\", "/")
     return norm.startswith("//")
 
 
-def _is_windows_mapped_drive(source: str) -> bool:
-    """Detect a Windows mapped-drive path of the form ``X:\\path``.
-
-    Mapped drives (e.g. ``D:\\``) can point at either a local volume or a
-    network share mounted as a drive letter. Detecting that reliably from
-    Python requires Win32 APIs (``GetVolumeInformation`` /
-    ``GetDriveType``) which are not guaranteed to be available across the
-    environments that run this code. We report such sources as
-    ``NOT_MEASURED`` rather than attempting (and possibly failing) a
-    fall-closed classification.
-    """
+def _is_windows_drive_letter_path(source: str) -> bool:
+    """Detect a Windows drive-letter path of the form ``X:\\path``."""
     if len(source) < 2:
         return False
     if source[1] not in (":",):  # drive letters are followed by ':'
         return False
     # First char must be an ASCII letter (A-Z, a-z).
     return source[0].isalpha()
+
+
+def _win32_get_drive_type(root_pathname: str) -> int:
+    """Call kernel32.GetDriveTypeW and return its integer code.
+
+    Returns DRIVE_UNKNOWN (0) if the Win32 API is unavailable (e.g. on a
+    non-Windows host or a stripped-down runtime). Callers treat any
+    DRIVE_UNKNOWN / DRIVE_NO_ROOT_DIR / exception as NOT_MEASURED.
+    """
+    # Import ctypes lazily so this module imports cleanly on POSIX (where
+    # ctypes.windll does not exist).
+    import ctypes
+
+    # `windll` only exists on Windows. Guarding keeps the import portable.
+    if not hasattr(ctypes, "windll"):
+        return DRIVE_UNKNOWN
+    try:
+        GetDriveTypeW = ctypes.windll.kernel32.GetDriveTypeW
+        GetDriveTypeW.restype = ctypes.c_uint
+        GetDriveTypeW.argtypes = [ctypes.c_wchar_p]
+        return int(GetDriveTypeW(root_pathname))
+    except (OSError, AttributeError):
+        return DRIVE_UNKNOWN
+
+
+def classify_source_locality(path: str) -> dict:
+    """Classify a snapshot source path as local vs. network-backed.
+
+    Returns a dict with:
+
+    - ``status``: one of
+        ``VERIFIED_LOCAL``          — a local fixed volume (DRIVE_FIXED on
+                                      Windows, or a regular file on POSIX)
+        ``NETWORK_PATH_REJECTED``   — UNC, mapped network drive, etc.
+        ``UNSUPPORTED_DRIVE_TYPE``  — removable / CD-ROM / RAM disk
+        ``POSIX_LOCAL_CANDIDATE``   — POSIX path that exists; not verified
+                                      by a Win32-style drive-type check
+        ``NOT_MEASURED``            — Win32 could not classify (DRIVE_UNKNOWN,
+                                      DRIVE_NO_ROOT_DIR, or API failure); the
+                                      file does not exist; or POSIX fail-closed
+    - ``drive_type``: symbolic name of the Win32 drive type, or ``None``
+    - ``drive_type_code``: the integer Win32 code, or ``None``
+    - ``failure``: a human-readable failure detail, or ``None`` when the
+      source is VERIFIED_LOCAL
+
+    Fail-closed invariants maintained by callers:
+    - ``NOT_MEASURED`` NEVER coexists with ``preflight_passed=true``.
+    - ``source_is_local_file=true`` ONLY when ``status == VERIFIED_LOCAL``.
+    """
+    result = {
+        "status": "NOT_MEASURED",
+        "drive_type": None,
+        "drive_type_code": None,
+        "failure": None,
+    }
+
+    # UNC paths are always network-backed regardless of platform.
+    if _is_unc_path(path):
+        result["status"] = "NETWORK_PATH_REJECTED"
+        result["failure"] = (
+            "UNC/network paths (\\\\server\\share or //server/share) are "
+            "forbidden; use a local filesystem path only"
+        )
+        return result
+
+    is_windows = sys.platform == "win32" or os.name == "nt"
+
+    if is_windows and _is_windows_drive_letter_path(path):
+        # Query the Win32 drive type for the drive root, e.g. "C:\\".
+        drive_root = path[:3]  # e.g. "C:\\"
+        code = _win32_get_drive_type(drive_root)
+        name = _DRIVE_TYPE_NAMES.get(code, f"UNKNOWN_CODE_{code}")
+        result["drive_type"] = name
+        result["drive_type_code"] = code
+
+        if code == DRIVE_FIXED:
+            result["status"] = "VERIFIED_LOCAL"
+            result["failure"] = None
+        elif code == DRIVE_REMOTE:
+            result["status"] = "NETWORK_PATH_REJECTED"
+            result["failure"] = "NETWORK_DRIVE_REJECTED"
+        elif code in (DRIVE_REMOVABLE, DRIVE_CDROM, DRIVE_RAMDISK):
+            result["status"] = "UNSUPPORTED_DRIVE_TYPE"
+            result["failure"] = (
+                f"unsupported drive type {name} for source {path!r}; "
+                "only fixed local volumes (DRIVE_FIXED) are accepted"
+            )
+        else:
+            # DRIVE_UNKNOWN, DRIVE_NO_ROOT_DIR, or any unmapped code: we
+            # could not classify, so fail-closed via NOT_MEASURED.
+            result["status"] = "NOT_MEASURED"
+            result["failure"] = "SOURCE_LOCALITY_NOT_MEASURED"
+        return result
+
+    # POSIX (non-Windows) path. We can only confirm the file exists; we have
+    # no portable Win32-style drive-type check, so we mark it as a candidate
+    # and fail-closed via NOT_MEASURED (POSIX_LOCALITY_NOT_VERIFIED).
+    if os.path.isfile(path):
+        result["status"] = "POSIX_LOCAL_CANDIDATE"
+        result["failure"] = "POSIX_LOCALITY_NOT_VERIFIED"
+    else:
+        # File does not exist (or is not a regular file); the caller's own
+        # source_exists / source_is_regular_file checks will surface this.
+        result["status"] = "NOT_MEASURED"
+        result["failure"] = "SOURCE_LOCALITY_NOT_MEASURED"
+    return result
 
 
 def run_preflight(mode: str, host: str, source_file: str | None = None) -> dict:
@@ -80,12 +200,22 @@ def run_preflight(mode: str, host: str, source_file: str | None = None) -> dict:
             "detail": f"mode must be one of {sorted(VALID_MODES)}, got '{mode}'",
         })
 
-    # Loopback check
+    # Loopback check (IPv4-loopback only; IPv6 ::1 is NOT implemented).
     loopback_ok = _is_loopback(host)
     if not loopback_ok:
+        host_lower = host.lower() if isinstance(host, str) else host
+        if host_lower == "::1":
+            detail = (
+                "P1 server is IPv4-loopback only; IPv6 ::1 not implemented"
+            )
+        else:
+            detail = (
+                f"host must be IPv4 loopback (127.0.0.1/localhost), got '{host}'; "
+                "the P1 server is IPv4-loopback only and never binds off-machine"
+            )
         failures.append({
             "check": "loopback_only",
-            "detail": f"host must be loopback (127.0.0.1/localhost/::1), got '{host}'",
+            "detail": detail,
         })
 
     # Source checks (only for isolated_live)
@@ -107,13 +237,15 @@ def run_preflight(mode: str, host: str, source_file: str | None = None) -> dict:
 
     # source_locality_status records how confidently we classified the
     # snapshot source as a local (non-network) path:
-    #   VERIFIED_LOCAL       — a local filesystem path on a non-removable,
-    #                          non-network backing store (regular local file)
-    #   NETWORK_PATH_REJECTED — UNC/URI/URL source that was refused
-    #   NOT_MEASURED         — a Windows mapped drive (e.g. D:\) whose local
-    #                          vs. network backing store cannot be verified
-    #                          portably; allowed but unverified.
+    #   VERIFIED_LOCAL          — a local fixed volume (DRIVE_FIXED)
+    #   NETWORK_PATH_REJECTED   — UNC / mapped network drive / URI / URL
+    #   UNSUPPORTED_DRIVE_TYPE  — removable / CD-ROM / RAM disk
+    #   POSIX_LOCAL_CANDIDATE   — POSIX path exists but not Win32-verified
+    #   NOT_MEASURED            — Win32 could not classify, or POSIX fail-closed
     source_locality_status = None
+    source_drive_type = None
+    source_drive_type_code = None
+    source_locality_measurement_status = "NOT_MEASURED"
 
     if mode == "isolated_live":
         if not source_file:
@@ -174,21 +306,39 @@ def run_preflight(mode: str, host: str, source_file: str | None = None) -> dict:
                 source_kind = "FILE_FIXTURE"
                 source_read_only = True  # file read is inherently read-only
                 source_path_kind = "LOCAL_FILE"
-                source_is_local_file = True
                 source_is_network_path = False
 
-                # Classify source locality. A Windows mapped drive (e.g.
-                # D:\) may back onto a network share; we cannot reliably tell
-                # from a portable stdlib call, so we mark it NOT_MEASURED and
-                # still allow it (rather than fail-closed on every drive
-                # letter, which would break legitimate local-volume sources).
-                # All other local paths are VERIFIED_LOCAL.
-                if _is_windows_mapped_drive(source_file):
-                    source_locality_status = "NOT_MEASURED"
-                else:
-                    source_locality_status = "VERIFIED_LOCAL"
+                # Classify source locality via Win32 drive-type check (or
+                # POSIX fallback). The classifier is fail-closed: only
+                # VERIFIED_LOCAL yields source_is_local_file=true; any other
+                # status (including NOT_MEASURED) is recorded as a preflight
+                # failure so the server never starts on an unverified source.
+                locality = classify_source_locality(resolved)
+                source_locality_status = locality["status"]
+                source_drive_type = locality["drive_type"]
+                source_drive_type_code = locality["drive_type_code"]
 
-                # Try to parse as JSON
+                if locality["status"] == "VERIFIED_LOCAL":
+                    source_is_local_file = True
+                    source_locality_measurement_status = "MEASURED"
+                else:
+                    # Fail-closed: any non-VERIFIED_LOCAL status blocks
+                    # startup. NOT_MEASURED must NEVER coexist with
+                    # preflight_passed=true.
+                    source_is_local_file = False
+                    source_locality_measurement_status = "NOT_MEASURED"
+                    failures.append({
+                        "check": "source_locality",
+                        "detail": (
+                            f"source locality not verified: status="
+                            f"{locality['status']} "
+                            f"drive_type={locality['drive_type']} "
+                            f"code={locality['drive_type_code']}; "
+                            f"{locality['failure'] or 'only DRIVE_FIXED local volumes are accepted'}"
+                        ),
+                    })
+
+                # Try to parse as JSON (only attempted for regular files).
                 try:
                     with open(resolved, "r", encoding="utf-8") as f:
                         data = json.load(f)
@@ -206,9 +356,7 @@ def run_preflight(mode: str, host: str, source_file: str | None = None) -> dict:
                     # Validate schema with mode isolation: a REPLAY bundle
                     # must not be served in an ISOLATED_LIVE context. This
                     # block only runs under mode == "isolated_live", so the
-                    # expected mode is fixed to ISOLATED_LIVE. (When preflight
-                    # is extended to validate a replay bundle directly, that
-                    # path passes expected_mode="REPLAY".)
+                    # expected mode is fixed to ISOLATED_LIVE.
                     schema_errors = validate_bundle(
                         data, expected_mode="ISOLATED_LIVE")
                     if schema_errors:
@@ -252,26 +400,19 @@ def run_preflight(mode: str, host: str, source_file: str | None = None) -> dict:
         "source_is_local_file": source_is_local_file,
         "source_is_network_path": source_is_network_path,
         "source_path_resolved": source_path_resolved,
-        # Source locality classification. VERIFIED_LOCAL for regular local
-        # files, NETWORK_PATH_REJECTED for refused UNC/URI/URL sources, and
-        # NOT_MEASURED for Windows mapped drives whose backing store cannot
-        # be classified portably (see note below).
+        # Source locality classification. VERIFIED_LOCAL for a DRIVE_FIXED
+        # local volume; NETWORK_PATH_REJECTED for refused UNC/URI/URL/mapped
+        # network drives; UNSUPPORTED_DRIVE_TYPE for removable/CD/RAM;
+        # POSIX_LOCAL_CANDIDATE for POSIX paths (fail-closed to NOT_MEASURED);
+        # NOT_MEASURED when Win32 could not classify. NOT_MEASURED never
+        # coexists with preflight_passed=true.
         "source_locality_status": source_locality_status,
+        "source_drive_type": source_drive_type,
+        "source_drive_type_code": source_drive_type_code,
+        "source_locality_measurement_status": source_locality_measurement_status,
         # Network observation provenance (not measured by the read-only console)
         "browser_network_observation_status": browser_network_observation_status,
         "observed_external_network_requests": observed_external_network_requests,
         "checked_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "failures": failures,
-        # Limitation note: Windows mapped drives (e.g. D:\) are reported as
-        # source_locality_status=NOT_MEASURED. Distinguishing a local volume
-        # from a network share mounted as a drive letter requires Win32 APIs
-        # (GetDriveType/GetVolumeInformation) that are not guaranteed across
-        # run environments, so we do not fail-closed on every drive letter.
-        # Such sources are allowed but their locality is explicitly unverified.
-        "source_locality_limitation": (
-            "Windows mapped-drive sources are classified NOT_MEASURED: the "
-            "console cannot portably determine whether a drive letter backs "
-            "onto a local volume or a network share, so it does not "
-            "fail-closed on drive-letter paths."
-        ),
     }

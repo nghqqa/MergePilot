@@ -55,6 +55,17 @@ class SnapshotSource:
     def kind(self) -> str:
         raise NotImplementedError
 
+    @property
+    def read_only(self) -> bool:
+        """Whether this source is read-only.
+
+        Defaults to True. A future read/write source may override this to
+        declare False; the status API surfaces it so consumers can tell a
+        read-only fixture apart from a live (potentially mutating) source
+        without assuming.
+        """
+        return True
+
 
 class FileSnapshotSource(SnapshotSource):
     """Read snapshots from a JSON file on disk."""
@@ -146,6 +157,10 @@ class LivePoller(threading.Thread):
         source SHA-256 under one lock acquisition, so a status reader sees a
         consistent point-in-time view (no torn read between stats and the
         snapshot being replaced by another thread).
+
+        ``source_kind`` and ``source_read_only`` are read from the actual
+        ``SnapshotSource`` (never hardcoded), so future source types report
+        their own kind and read-only status.
         """
         with self._lock:
             return {
@@ -159,6 +174,11 @@ class LivePoller(threading.Thread):
                 "expected_mode": self._expected_mode,
                 "current_snapshot": self._current_snapshot,
                 "current_sha256": self._current_sha256,
+                # Source identity is sourced from the actual SnapshotSource
+                # instance (self._source.kind / self._source.read_only), not a
+                # hardcoded constant, so custom sources report truthfully.
+                "source_kind": self._source.kind,
+                "source_read_only": getattr(self._source, "read_only", True),
             }
 
     def initial_load(self) -> bool:

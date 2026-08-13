@@ -82,10 +82,12 @@ def _send_status(poller: LivePoller) -> dict:
     snapshot = view.get("current_snapshot") or {}
 
     return {
-        # Identity / source
+        # Identity / source — source_kind and source_read_only come from the
+        # actual SnapshotSource via the poller view (never hardcoded), so a
+        # custom source type reports its own kind and read-only status.
         "mode": _MODE_LIVE,
-        "source_kind": "FILE_FIXTURE",
-        "source_read_only": True,
+        "source_kind": view.get("source_kind", "UNKNOWN"),
+        "source_read_only": view.get("source_read_only", True),
         "not_production": True,
         # Poller state (atomic snapshot)
         "poller_state": view["state"],
@@ -252,9 +254,11 @@ def create_server(host: str, port: int, mode: str,
 
     Hardening (fail-closed):
 
-    - ``host`` must be loopback. Non-loopback bind addresses (0.0.0.0, ::,
-      LAN IPs) raise ValueError — the demo console never exposes itself off
-      the local machine.
+    - ``host`` must be IPv4 loopback (``127.0.0.1`` or ``localhost``).
+      Non-loopback bind addresses (``0.0.0.0``, ``::``, LAN IPs) raise
+      ValueError — the demo console never exposes itself off the local
+      machine. IPv6 loopback (``::1``) is also rejected: the P1 server is
+      IPv4-loopback only and IPv6 ::1 is NOT implemented.
     - ``mode`` must be one of the known modes; anything else raises
       ValueError via ``make_handler`` (no silent REPLAY fallback).
     - ISOLATED_LIVE requires a poller (the live endpoints read it); a missing
@@ -263,9 +267,17 @@ def create_server(host: str, port: int, mode: str,
       non-None poller raises ValueError to catch configuration mistakes.
     """
     if not _is_loopback(host):
+        host_lower = host.lower() if isinstance(host, str) else host
+        if host_lower == "::1":
+            reason = "P1 server is IPv4-loopback only; IPv6 ::1 not implemented"
+        else:
+            reason = (
+                "the demo console is IPv4-loopback only and never binds "
+                "off-machine"
+            )
         raise ValueError(
-            f"host must be loopback (127.0.0.1/localhost/::1), got {host!r}; "
-            "the demo console is local-only and never binds off-machine"
+            f"host must be IPv4 loopback (127.0.0.1/localhost), got {host!r}; "
+            f"{reason}"
         )
 
     mode_u = mode.upper() if isinstance(mode, str) else mode
@@ -288,7 +300,14 @@ def create_server(host: str, port: int, mode: str,
 
 
 def _is_loopback(host: str) -> bool:
-    return host.lower() in ("127.0.0.1", "localhost", "::1")
+    """IPv4-loopback only.
+
+    The P1 demo server binds a single-machine HTTP listener and is
+    IPv4-loopback only; IPv6 loopback (``::1``) is NOT implemented.
+    Only ``127.0.0.1`` and ``localhost`` are accepted. Any other host —
+    including ``::1``, ``::``, ``0.0.0.0``, and LAN IPs — is rejected.
+    """
+    return host.lower() in ("127.0.0.1", "localhost")
 
 
 def shutdown_poller(poller: LivePoller, timeout: float = 5.0) -> bool:

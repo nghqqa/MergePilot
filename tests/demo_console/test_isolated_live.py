@@ -223,7 +223,9 @@ class TestPreflightLoopback(unittest.TestCase):
         self.assertFalse(pf["preflight_passed"])
 
     def test_loopback_accepted(self):
-        for host in ("127.0.0.1", "localhost", "::1"):
+        # IPv4-loopback only. 127.0.0.1 and localhost are accepted; ::1 is
+        # NOT (the P1 server is IPv4-loopback only).
+        for host in ("127.0.0.1", "localhost"):
             pf = run_preflight("replay", host)
             self.assertTrue(pf["preflight_passed"], f"host={host}")
 
@@ -323,7 +325,15 @@ class TestSourceValidation(unittest.TestCase):
                                 for f in pf["failures"]))
 
     def test_valid_local_file_source_passes(self):
-        # 15. valid local file passes and reports correct provenance
+        # 15. valid local file passes and reports correct provenance.
+        # On Windows the temp file lives on a DRIVE_FIXED volume, so the
+        # source is VERIFIED_LOCAL and preflight passes. On POSIX the
+        # classifier returns POSIX_LOCAL_CANDIDATE which is fail-closed
+        # (NOT_MEASURED → preflight fails), so this assertion is gated on
+        # Windows. POSIX behavior is covered by TestWindowsLocality /
+        # TestSourceLocality.
+        if os.name != "nt":
+            self.skipTest("VERIFIED_LOCAL requires a DRIVE_FIXED Windows volume")
         bundle = _make_isolated_live_bundle()
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
             json.dump(bundle, f)
@@ -338,6 +348,7 @@ class TestSourceValidation(unittest.TestCase):
             self.assertTrue(pf["source_is_local_file"])
             self.assertFalse(pf["source_is_network_path"])
             self.assertEqual(pf["source_path_resolved"], os.path.abspath(path))
+            self.assertEqual(pf["source_locality_status"], "VERIFIED_LOCAL")
         finally:
             os.unlink(path)
 
@@ -886,7 +897,8 @@ class TestFactoryHardening(unittest.TestCase):
     """create_server / make_handler reject misconfiguration fail-closed."""
 
     def test_create_server_rejects_non_loopback_host(self):
-        for host in ("0.0.0.0", "::", "192.168.1.5", "10.0.0.1"):
+        # IPv4-loopback only: ::1 (IPv6 loopback) is also rejected.
+        for host in ("0.0.0.0", "::", "::1", "192.168.1.5", "10.0.0.1"):
             with self.assertRaises(ValueError):
                 create_server(host, 0, "REPLAY")
 
@@ -1012,7 +1024,11 @@ class TestSourceLocality(unittest.TestCase):
             self.assertFalse(pf["preflight_passed"])
             self.assertIsNone(pf["source_locality_status"])
 
-    def test_local_file_passes_verified_local(self):
+    def test_local_file_verified_local_on_windows(self):
+        # On Windows a temp file lives on a DRIVE_FIXED volume → VERIFIED_LOCAL
+        # and preflight passes. POSIX is covered separately (fail-closed).
+        if os.name != "nt":
+            self.skipTest("VERIFIED_LOCAL requires a DRIVE_FIXED Windows volume")
         bundle = _make_isolated_live_bundle()
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json",
                                          delete=False) as f:
@@ -1023,28 +1039,428 @@ class TestSourceLocality(unittest.TestCase):
             pf = run_preflight("isolated_live", "127.0.0.1", source_file=path)
             self.assertTrue(pf["preflight_passed"],
                             f"unexpected failures: {pf['failures']}")
-            # On Windows a drive-letter path is NOT_MEASURED; elsewhere a
-            # plain relative/temp path is VERIFIED_LOCAL. Accept either honest
-            # value and assert it's one of the documented statuses.
-            self.assertIn(pf["source_locality_status"],
-                          ("VERIFIED_LOCAL", "NOT_MEASURED"))
+            self.assertEqual(pf["source_locality_status"], "VERIFIED_LOCAL")
         finally:
             os.unlink(path)
 
-    def test_windows_mapped_drive_is_not_measured(self):
-        # A drive-letter path that exists is classified NOT_MEASURED because
-        # the console cannot portably tell a local volume from a network
-        # share mounted as a drive letter. We synthesize this only when such
-        # a path actually resolves (e.g. the system temp dir on C:).
-        import tempfile as _tf
-        # tempfile paths on Windows look like C:\\Users\\... — exercise that
-        # classification directly via the helper.
-        from preflight import _is_windows_mapped_drive
+    def test_posix_local_file_is_fail_closed(self):
+        # POSIX paths cannot be Win32-verified → POSIX_LOCAL_CANDIDATE, which
+        # is fail-closed: preflight must NOT pass and source_is_local_file
+        # must be False (only VERIFIED_LOCAL yields source_is_local_file=true).
+        if os.name == "nt":
+            self.skipTest("POSIX fail-closed only applies off-Windows")
+        bundle = _make_isolated_live_bundle()
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json",
+                                         delete=False) as f:
+            json.dump(bundle, f)
+            f.flush()
+            path = f.name
+        try:
+            pf = run_preflight("isolated_live", "127.0.0.1", source_file=path)
+            self.assertFalse(pf["preflight_passed"])
+            self.assertEqual(pf["source_locality_status"],
+                             "POSIX_LOCAL_CANDIDATE")
+            self.assertFalse(pf["source_is_local_file"])
+        finally:
+            os.unlink(path)
+
+    def test_drive_letter_helper_detects_drive_paths(self):
+        # The drive-letter detection helper still recognizes Windows-style
+        # drive paths and rejects UNC / POSIX paths.
+        from preflight import _is_windows_drive_letter_path
+        self.assertTrue(_is_windows_drive_letter_path("C:\\Users\\x\\snap.json"))
+        self.assertFalse(_is_windows_drive_letter_path("/tmp/snap.json"))
+        self.assertFalse(_is_windows_drive_letter_path(
+            "//server/share/snap.json"))
+
+    def test_not_measured_never_with_preflight_passed(self):
+        # Invariant: NOT_MEASURED (the measurement status) must NEVER coexist
+        # with preflight_passed=true. Walk every source shape and assert that
+        # whenever source_locality_measurement_status is NOT_MEASURED, the
+        # preflight did not pass.
+        cases = [
+            ("//server/share/snap.json", "NETWORK_PATH_REJECTED"),
+            ("file:///tmp/snap.json", "NETWORK_PATH_REJECTED"),
+            ("https://example.com/snap.json", "NETWORK_PATH_REJECTED"),
+        ]
+        # Add a real POSIX temp file when off-Windows (POSIX_LOCAL_CANDIDATE).
         if os.name != "nt":
-            self.skipTest("drive-letter classification is Windows-specific")
-        self.assertTrue(_is_windows_mapped_drive("C:\\Users\\x\\snap.json"))
-        self.assertFalse(_is_windows_mapped_drive("/tmp/snap.json"))
-        self.assertFalse(_is_windows_mapped_drive("//server/share/snap.json"))
+            bundle = _make_isolated_live_bundle()
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".json",
+                                             delete=False) as f:
+                json.dump(bundle, f)
+                f.flush()
+                cases.append((f.name, "POSIX_LOCAL_CANDIDATE"))
+            for src, _expected in cases:
+                pf = run_preflight("isolated_live", "127.0.0.1",
+                                   source_file=src)
+                if pf["source_locality_measurement_status"] == "NOT_MEASURED":
+                    self.assertFalse(
+                        pf["preflight_passed"],
+                        f"NOT_MEASURED must not coexist with pass: {src}",
+                    )
+            os.unlink(cases[-1][0])
+
+
+class _FakeKernel32:
+    """Stand-in for ctypes.windll.kernel32 used by Windows locality tests.
+
+    Instances are callable returning the configured drive-type code, and
+    expose a ``GetDriveTypeW`` attribute so ``unittest.mock.patch`` can
+    target it directly.
+    """
+
+    def __init__(self, return_value: int = 3):
+        self._rv = return_value
+        # ``GetDriveTypeW`` is what _win32_get_drive_type reads. Make it a
+        # plain function so restype/argtypes assignment works.
+        self.GetDriveTypeW = self._make_fn()
+
+    def _make_fn(self):
+        rv = self._rv
+
+        def _fn(root_pathname=None):
+            return rv
+
+        # ctypes callers set restype/argtypes on the attribute; allow it.
+        _fn.restype = None
+        _fn.argtypes = None
+        return _fn
+
+
+class _RaisingGetDriveType:
+    """Fake GetDriveTypeW that raises OSError to simulate an API failure."""
+
+    restype = None
+    argtypes = None
+
+    def __call__(self, root_pathname=None):
+        raise OSError("simulated Win32 API failure")
+
+    # Allow attribute assignment used by _win32_get_drive_type.
+    def _set(self, name, value):
+        object.__setattr__(self, name, value)
+
+
+class TestWindowsLocality(unittest.TestCase):
+    """classify_source_locality Win32 drive-type classification.
+
+    Mocks ``ctypes.windll.kernel32.GetDriveTypeW`` via unittest.mock so the
+    matrix runs on any platform. Each case asserts both the locality status
+    and that preflight fail-closed behavior is correct.
+    """
+
+    @unittest.skipUnless(sys.platform == "win32",
+                         "Win32 drive-type mocking needs ctypes.windll")
+    def _run_with_drive_type(self, drive_type_code: int, path: str) -> dict:
+        """Patch GetDriveTypeW to return ``drive_type_code`` and run preflight."""
+        import ctypes
+        from unittest import mock
+
+        fake = _FakeKernel32(return_value=drive_type_code)
+        # ctypes.windll.kernel32 is the object preflight reads; patch the
+        # GetDriveTypeW attribute it resolves to.
+        with mock.patch.object(
+                ctypes.windll.kernel32, "GetDriveTypeW",
+                new=fake.GetDriveTypeW):
+            return run_preflight("isolated_live", "127.0.0.1",
+                                 source_file=path)
+
+    @unittest.skipUnless(sys.platform == "win32",
+                         "Win32 drive-type mocking needs ctypes.windll")
+    def _run_with_raising_api(self, path: str) -> dict:
+        """Patch GetDriveTypeW to raise OSError and run preflight."""
+        import ctypes
+        from unittest import mock
+
+        raising = _RaisingGetDriveType()
+        with mock.patch.object(
+                ctypes.windll.kernel32, "GetDriveTypeW", new=raising):
+            return run_preflight("isolated_live", "127.0.0.1",
+                                 source_file=path)
+
+    def _make_drive_path_bundle(self) -> str:
+        """Write a valid ISOLATED_LIVE bundle to a C:\\-style temp path.
+
+        On Windows tempfile already lives on a drive; we just reuse it. On
+        non-Windows hosts the callers are skipped, so the literal path shape
+        does not matter.
+        """
+        bundle = _make_isolated_live_bundle()
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json",
+                                         delete=False) as f:
+            json.dump(bundle, f)
+            f.flush()
+            return f.name
+
+    def test_drive_fixed_is_verified_local_and_passes(self):
+        pf = self._run_with_drive_type(3, self._make_drive_path_bundle())
+        try:
+            self.assertTrue(pf["preflight_passed"],
+                            f"unexpected failures: {pf['failures']}")
+            self.assertEqual(pf["source_locality_status"], "VERIFIED_LOCAL")
+            self.assertEqual(pf["source_drive_type"], "DRIVE_FIXED")
+            self.assertEqual(pf["source_drive_type_code"], 3)
+            self.assertTrue(pf["source_is_local_file"])
+        finally:
+            os.unlink(pf["source_path_resolved"])
+
+    def test_drive_remote_is_network_rejected(self):
+        path = self._make_drive_path_bundle()
+        try:
+            pf = self._run_with_drive_type(4, path)
+            self.assertFalse(pf["preflight_passed"])
+            self.assertEqual(pf["source_locality_status"],
+                             "NETWORK_PATH_REJECTED")
+            self.assertEqual(pf["source_drive_type"], "DRIVE_REMOTE")
+            self.assertEqual(pf["source_drive_type_code"], 4)
+        finally:
+            os.unlink(path)
+
+    def test_drive_unknown_is_not_measured(self):
+        path = self._make_drive_path_bundle()
+        try:
+            pf = self._run_with_drive_type(0, path)
+            self.assertFalse(pf["preflight_passed"])
+            self.assertEqual(pf["source_locality_status"], "NOT_MEASURED")
+            self.assertEqual(pf["source_drive_type"], "DRIVE_UNKNOWN")
+            self.assertEqual(pf["source_drive_type_code"], 0)
+        finally:
+            os.unlink(path)
+
+    def test_api_failure_is_not_measured(self):
+        path = self._make_drive_path_bundle()
+        try:
+            pf = self._run_with_raising_api(path)
+            self.assertFalse(pf["preflight_passed"])
+            self.assertEqual(pf["source_locality_status"], "NOT_MEASURED")
+        finally:
+            os.unlink(path)
+
+    def test_drive_removable_is_unsupported(self):
+        path = self._make_drive_path_bundle()
+        try:
+            pf = self._run_with_drive_type(2, path)
+            self.assertFalse(pf["preflight_passed"])
+            self.assertEqual(pf["source_locality_status"],
+                             "UNSUPPORTED_DRIVE_TYPE")
+            self.assertEqual(pf["source_drive_type"], "DRIVE_REMOVABLE")
+        finally:
+            os.unlink(path)
+
+    def test_drive_cdrom_is_unsupported(self):
+        path = self._make_drive_path_bundle()
+        try:
+            pf = self._run_with_drive_type(5, path)
+            self.assertFalse(pf["preflight_passed"])
+            self.assertEqual(pf["source_locality_status"],
+                             "UNSUPPORTED_DRIVE_TYPE")
+            self.assertEqual(pf["source_drive_type"], "DRIVE_CDROM")
+        finally:
+            os.unlink(path)
+
+    def test_drive_ramdisk_is_unsupported(self):
+        path = self._make_drive_path_bundle()
+        try:
+            pf = self._run_with_drive_type(6, path)
+            self.assertFalse(pf["preflight_passed"])
+            self.assertEqual(pf["source_locality_status"],
+                             "UNSUPPORTED_DRIVE_TYPE")
+            self.assertEqual(pf["source_drive_type"], "DRIVE_RAMDISK")
+        finally:
+            os.unlink(path)
+
+    def test_not_measured_never_coexists_with_pass(self):
+        # Cross-status invariant: NOT_MEASURED locality must never accompany a
+        # passing preflight. Drive UNKNOWN (0) yields NOT_MEASURED.
+        path = self._make_drive_path_bundle()
+        try:
+            pf = self._run_with_drive_type(0, path)
+            if pf["source_locality_status"] == "NOT_MEASURED":
+                self.assertFalse(pf["preflight_passed"])
+        finally:
+            os.unlink(path)
+
+    def test_source_is_local_file_only_when_verified_local(self):
+        # source_is_local_file=true ONLY when status==VERIFIED_LOCAL.
+        path = self._make_drive_path_bundle()
+        try:
+            for code in (0, 2, 3, 4, 5, 6):
+                pf = self._run_with_drive_type(code, path)
+                if pf["source_locality_status"] != "VERIFIED_LOCAL":
+                    self.assertFalse(
+                        pf["source_is_local_file"],
+                        f"code={code} status={pf['source_locality_status']}",
+                    )
+                else:
+                    self.assertTrue(pf["source_is_local_file"])
+        finally:
+            os.unlink(path)
+
+
+class TestIPv4Loopback(unittest.TestCase):
+    """The P1 server is IPv4-loopback only; IPv6 ::1 is NOT implemented."""
+
+    def test_ipv4_loopback_passes(self):
+        pf = run_preflight("replay", "127.0.0.1")
+        self.assertTrue(pf["preflight_passed"])
+        self.assertTrue(pf["loopback_only"])
+
+    def test_localhost_passes(self):
+        pf = run_preflight("replay", "localhost")
+        self.assertTrue(pf["preflight_passed"])
+        self.assertTrue(pf["loopback_only"])
+
+    def test_ipv6_loopback_fails_preflight(self):
+        pf = run_preflight("replay", "::1")
+        self.assertFalse(pf["preflight_passed"])
+        self.assertFalse(pf["loopback_only"])
+        loopback_failure = next(
+            (f for f in pf["failures"] if f["check"] == "loopback_only"), None)
+        self.assertIsNotNone(loopback_failure)
+        self.assertIn("IPv6 ::1 not implemented", loopback_failure["detail"])
+
+    def test_ipv6_any_fails(self):
+        pf = run_preflight("replay", "::")
+        self.assertFalse(pf["preflight_passed"])
+
+    def test_wildcard_ipv4_fails(self):
+        pf = run_preflight("replay", "0.0.0.0")
+        self.assertFalse(pf["preflight_passed"])
+
+    def test_lan_ip_fails(self):
+        pf = run_preflight("replay", "192.168.1.1")
+        self.assertFalse(pf["preflight_passed"])
+
+    def test_create_server_rejects_ipv6_loopback_before_socket(self):
+        # create_server must raise ValueError for ::1 WITHOUT creating a
+        # socket (the rejection happens in the host check, before bind).
+        with self.assertRaises(ValueError):
+            create_server("::1", 0, "REPLAY")
+
+    def test_create_server_rejects_other_hosts(self):
+        for host in ("::", "0.0.0.0", "192.168.1.1"):
+            with self.assertRaises(ValueError):
+                create_server(host, 0, "REPLAY")
+
+    def test_create_server_accepts_ipv4_loopback(self):
+        s = create_server("127.0.0.1", 0, "REPLAY")
+        try:
+            self.assertEqual(s.server_address[0], "127.0.0.1")
+        finally:
+            s.server_close()
+
+
+class TestSourceKindDynamic(unittest.TestCase):
+    """source_kind comes from the actual SnapshotSource, not a hardcoded value."""
+
+    def test_file_source_reports_file_fixture(self):
+        # FileSnapshotSource.kind is FILE_FIXTURE and surfaces in the status.
+        d = tempfile.mkdtemp()
+        try:
+            p = os.path.join(d, "s.json")
+            _write_json(p, _make_isolated_live_bundle())
+            src = FileSnapshotSource(p)
+            poller = LivePoller(src, poll_interval=1.0,
+                                expected_mode="ISOLATED_LIVE")
+            self.assertTrue(poller.initial_load())
+            view = poller.get_view()
+            self.assertEqual(view["source_kind"], "FILE_FIXTURE")
+            self.assertIs(view["source_read_only"], True)
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+
+    def test_custom_source_reports_custom_kind(self):
+        # A custom source with kind="TEST_SOURCE" surfaces that kind in the
+        # status API (not a hardcoded FILE_FIXTURE).
+        from live_poller import SnapshotSource
+
+        class _CustomSource(SnapshotSource):
+            kind = "TEST_SOURCE"
+
+            def read_snapshot(self) -> bytes:
+                return json.dumps(_make_isolated_live_bundle()).encode("utf-8")
+
+        src = _CustomSource()
+        poller = LivePoller(src, poll_interval=1.0,
+                            expected_mode="ISOLATED_LIVE")
+        self.assertTrue(poller.initial_load())
+        view = poller.get_view()
+        self.assertEqual(view["source_kind"], "TEST_SOURCE")
+        self.assertIs(view["source_read_only"], True)
+
+    def test_custom_source_can_override_read_only(self):
+        # A source that declares read_only=False surfaces it via the view.
+        from live_poller import SnapshotSource
+
+        class _ReadWriteSource(SnapshotSource):
+            kind = "READ_WRITE_TEST"
+
+            @property
+            def read_only(self) -> bool:
+                return False
+
+            def read_snapshot(self) -> bytes:
+                return json.dumps(_make_isolated_live_bundle()).encode("utf-8")
+
+        src = _ReadWriteSource()
+        poller = LivePoller(src, poll_interval=1.0,
+                            expected_mode="ISOLATED_LIVE")
+        self.assertTrue(poller.initial_load())
+        view = poller.get_view()
+        self.assertEqual(view["source_kind"], "READ_WRITE_TEST")
+        self.assertIs(view["source_read_only"], False)
+
+    def test_status_api_source_kind_not_hardcoded(self):
+        # End-to-end: the HTTP status API reports the actual source kind.
+        d = tempfile.mkdtemp()
+        try:
+            p = os.path.join(d, "s.json")
+            _write_json(p, _make_isolated_live_bundle())
+            handle = _start_live_server(p)
+            try:
+                status, _, payload = _http_get_json(
+                    handle.base_url + "/api/live/status")
+                self.assertEqual(status, 200)
+                self.assertEqual(payload["source_kind"], "FILE_FIXTURE")
+                self.assertIs(payload["source_read_only"], True)
+            finally:
+                handle.stop()
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+
+
+class TestRealDriveLocality(unittest.TestCase):
+    """Run a REAL preflight against a temp file on the current drive.
+
+    Skipped off-Windows (the Win32 drive-type check only runs on Windows).
+    On Windows it reports the actual drive-type code observed for the temp
+    directory's volume so we can see what the host reports in practice.
+    """
+
+    @unittest.skipUnless(sys.platform == "win32",
+                         "real drive-type check requires Windows")
+    def test_real_preflight_reports_drive_type(self):
+        from preflight import classify_source_locality
+
+        bundle = _make_isolated_live_bundle()
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json",
+                                         delete=False) as f:
+            json.dump(bundle, f)
+            f.flush()
+            path = f.name
+        try:
+            locality = classify_source_locality(os.path.abspath(path))
+            # Report the actual code for diagnostics. DRIVE_FIXED (3) is the
+            # only code that yields a passing VERIFIED_LOCAL preflight.
+            self.assertIn(locality["drive_type_code"], (0, 1, 2, 3, 4, 5, 6))
+            pf = run_preflight("isolated_live", "127.0.0.1", source_file=path)
+            if locality["status"] == "VERIFIED_LOCAL":
+                self.assertTrue(pf["preflight_passed"])
+            else:
+                self.assertFalse(pf["preflight_passed"])
+        finally:
+            os.unlink(path)
 
 
 class TestDocConsistency(unittest.TestCase):

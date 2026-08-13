@@ -2,7 +2,7 @@
 
 **Status**: P1 implementation candidate — local review candidate, not pushed, not merged.
 **Branch**: `feat/isolated-live-p1`
-**Commit chain**: `28fdd85` → `50156ba` → (new commit)
+**Commit chain**: `28fdd85` → `50156ba` → `c874c6a` → (new commit)
 
 This is a local implementation candidate for review. It has not been pushed to
 the remote, is not on an open PR, and is not merged. Nothing here is tagged or
@@ -28,10 +28,11 @@ never overwrite the last valid one.
 - **Mode isolation**: a poller/preflight configured for one mode rejects the
   other mode's bundles (`demo_mode` mismatch → `MODE_MISMATCH`)
 - **Fail-closed preflight**: all checks must pass before the server starts
-- **Loopback-only read-only HTTP server**: blocks POST/PUT/PATCH/DELETE,
-  binds `127.0.0.1`/`localhost`/`::1` only
+- **IPv4-loopback-only read-only HTTP server**: blocks POST/PUT/PATCH/DELETE,
+  binds `127.0.0.1`/`localhost` only. IPv6 loopback (`::1`) is NOT implemented.
 - **Factory hardening**: `create_server`/`make_handler` reject non-loopback
-  hosts, unknown modes, and mode/poller misconfigurations with `ValueError`
+  hosts (including `::1`, `::`, `0.0.0.0`, LAN IPs), unknown modes, and
+  mode/poller misconfigurations with `ValueError`
 - **Fixture/file snapshot polling**: `FileSnapshotSource` reads JSON snapshots
   at fixed intervals
 - **DemoBundle schema + integrity validation**: every snapshot is validated
@@ -39,9 +40,14 @@ never overwrite the last valid one.
 - **Invalid snapshot preservation**: corrupt / integrity-invalid / wrong-mode
   snapshots never overwrite the last valid one
 - **Atomic status view**: `LivePoller.get_view()` returns stats + snapshot +
-  SHA in a single locked read
+  SHA + `source_kind`/`source_read_only` (sourced from the actual
+  `SnapshotSource`, never hardcoded) in a single locked read
+- **Windows source locality classification**: `classify_source_locality` uses
+  `kernel32.GetDriveTypeW` to classify the source drive; only `DRIVE_FIXED`
+  yields a passing `VERIFIED_LOCAL` (see schema below)
 - **Structured preflight result**: full field set including
-  `source_locality_status` (see schema below)
+  `source_locality_status`, `source_drive_type`, `source_drive_type_code`,
+  and `source_locality_measurement_status` (see schema below)
 - **Poller statistics**: `poll_count`, `last_poll_at`, `last_success_at`,
   `source_snapshot_sha256`, `consecutive_failures`, `last_error_code`, `state`
 - **State machine**: `INIT` → `LIVE` → `STALE` (on transient failure) →
@@ -60,6 +66,9 @@ never overwrite the last valid one.
 - **Write / control operations** — none. No GitHub writes, no agent lifecycle
   control, no merge/rollback control. All write HTTP methods return 405.
 - **External LLM API calls** — none.
+- **IPv6 loopback (`::1`)** — not implemented. The P1 server is IPv4-loopback
+  only (`127.0.0.1`/`localhost`); `::1` is rejected by preflight and by
+  `create_server`.
 - **Multi-tenant support** — none.
 - **M8** — not defined. No M8 tag or release exists.
 
@@ -67,12 +76,12 @@ never overwrite the last valid one.
 
 | File | Purpose |
 |------|---------|
-| `tools/demo_console/preflight.py` | Fail-closed preflight, mode isolation, `source_locality_status` |
-| `tools/demo_console/live_poller.py` | `SnapshotSource`, `FileSnapshotSource`, `LivePoller` (mode isolation, `get_view`) |
-| `tools/demo_console/serve.py` | Server factory hardening, full status contract, shutdown timeout |
+| `tools/demo_console/preflight.py` | Fail-closed preflight, mode isolation, IPv4-loopback-only, `classify_source_locality` (Win32 `GetDriveTypeW`), `source_locality_status` |
+| `tools/demo_console/live_poller.py` | `SnapshotSource` (`read_only` property), `FileSnapshotSource`, `LivePoller` (mode isolation, `get_view` with dynamic `source_kind`/`source_read_only`) |
+| `tools/demo_console/serve.py` | IPv4-loopback-only server factory hardening, dynamic `source_kind`/`source_read_only` in status contract, shutdown timeout |
 | `tools/demo_console/schema.py` | `validate_bundle(expected_mode=...)` mode enforcement |
 | `tools/demo_console/integrity.py` | Canonical JSON + `bundle_sha256` (single source of truth) |
-| `tests/demo_console/test_isolated_live.py` | Real-HTTP integration tests + new mode/status/factory/shutdown/locality/doc suites |
+| `tests/demo_console/test_isolated_live.py` | Real-HTTP integration tests + new mode/status/factory/shutdown/locality/IPv4/dynamic-kind/doc suites |
 | `docs/ISOLATED-LIVE-P1-Implementation.md` | This document |
 
 ## CLI
@@ -89,6 +98,20 @@ python tools/demo_console/serve.py \
     --port 8080 \
     --poll-interval 2
 ```
+
+## Network binding
+
+The P1 demo server is **IPv4-loopback only**. Only `127.0.0.1` and `localhost`
+are accepted bind hosts, enforced identically in preflight and in
+`create_server`:
+
+- `127.0.0.1` — accepted
+- `localhost` — accepted
+- `::1` (IPv6 loopback) — **rejected**. The P1 server is IPv4-loopback only;
+  IPv6 `::1` is not implemented. Preflight surfaces
+  `"P1 server is IPv4-loopback only; IPv6 ::1 not implemented"`.
+- `::`, `0.0.0.0`, LAN IPs (e.g. `192.168.1.1`) — **rejected**. The console
+  never binds off-machine.
 
 ## Bundle mode / integrity contract
 
@@ -112,6 +135,39 @@ bundle **excluding** volatile fields (`bundle_sha256`, `generated_at`).
 single authoritative digest, shared by the builder, schema, preflight, and
 poller.
 
+## Source locality (Windows drive classification)
+
+`classify_source_locality(path)` determines whether a snapshot source path
+backs onto a local volume, using `kernel32.GetDriveTypeW` on Windows. The
+classification is **fail-closed**: only `VERIFIED_LOCAL` yields
+`source_is_local_file=true` and a passing preflight.
+
+Win32 drive-type codes and their handling:
+
+| Code | Constant | Status | Passes preflight? |
+|------|----------|--------|-------------------|
+| 0 | `DRIVE_UNKNOWN` | `NOT_MEASURED` | no |
+| 1 | `DRIVE_NO_ROOT_DIR` | `NOT_MEASURED` | no |
+| 2 | `DRIVE_REMOVABLE` | `UNSUPPORTED_DRIVE_TYPE` | no |
+| 3 | `DRIVE_FIXED` | `VERIFIED_LOCAL` | **yes** |
+| 4 | `DRIVE_REMOTE` | `NETWORK_PATH_REJECTED` (`NETWORK_DRIVE_REJECTED`) | no |
+| 5 | `DRIVE_CDROM` | `UNSUPPORTED_DRIVE_TYPE` | no |
+| 6 | `DRIVE_RAMDISK` | `UNSUPPORTED_DRIVE_TYPE` | no |
+
+Additional rules:
+
+- UNC paths (`\\server\share` or `//server/share`) → `NETWORK_PATH_REJECTED`.
+- `http(s)://` URLs and `file://` URIs → `NETWORK_PATH_REJECTED`.
+- If the Win32 API raises (`OSError`) → `NOT_MEASURED` (fail-closed).
+- POSIX (non-Windows): a regular file is classified `POSIX_LOCAL_CANDIDATE`
+  with failure `POSIX_LOCALITY_NOT_VERIFIED`, mapped to `NOT_MEASURED` →
+  fail-closed. There is no portable Win32-style drive-type check off Windows.
+
+Fail-closed invariants:
+
+- `NOT_MEASURED` **never** coexists with `preflight_passed=true`.
+- `source_is_local_file=true` **only** when `status == VERIFIED_LOCAL`.
+
 ## Preflight result schema
 
 ```json
@@ -130,32 +186,44 @@ poller.
   "source_path_kind": "LOCAL_FILE",
   "source_is_local_file": true,
   "source_is_network_path": false,
-  "source_path_resolved": "/abs/path/to/snapshot.json",
+  "source_path_resolved": "C:\\abs\\path\\to\\snapshot.json",
   "source_locality_status": "VERIFIED_LOCAL",
+  "source_drive_type": "DRIVE_FIXED",
+  "source_drive_type_code": 3,
+  "source_locality_measurement_status": "MEASURED",
   "browser_network_observation_status": "NOT_MEASURED",
   "observed_external_network_requests": null,
   "checked_at": "2026-08-13T...",
-  "failures": [],
-  "source_locality_limitation": "Windows mapped-drive sources are classified NOT_MEASURED ..."
+  "failures": []
 }
 ```
 
 `source_locality_status` values:
 
-- `VERIFIED_LOCAL` — a regular local filesystem path whose source is a local
-  file (non-drive-letter path on a local volume).
+- `VERIFIED_LOCAL` — a regular local file on a `DRIVE_FIXED` volume. The only
+  status that sets `source_is_local_file=true` and passes preflight.
 - `NETWORK_PATH_REJECTED` — a UNC path (`\\server\share` / `//server/share`),
-  a `file://` URI, or an `http(s)://` URL. These are refused.
-- `NOT_MEASURED` — a Windows mapped drive (e.g. `D:\`). The console cannot
-  portably determine whether a drive letter backs onto a local volume or a
-  network share, so it does not fail-closed on every drive-letter path. Such
-  sources are allowed but their locality is explicitly unverified. The
-  `source_locality_limitation` field documents this.
+  a mapped network drive (`DRIVE_REMOTE`), a `file://` URI, or an
+  `http(s)://` URL. These are refused.
+- `UNSUPPORTED_DRIVE_TYPE` — `DRIVE_REMOVABLE`, `DRIVE_CDROM`, or
+  `DRIVE_RAMDISK`. Refused.
+- `POSIX_LOCAL_CANDIDATE` — a POSIX path that exists as a regular file, but
+  whose backing store cannot be Win32-verified. Fail-closed to
+  `NOT_MEASURED`.
+- `NOT_MEASURED` — `DRIVE_UNKNOWN`, `DRIVE_NO_ROOT_DIR`, a Win32 API failure,
+  or the POSIX fail-closed mapping. **Never** coexists with
+  `preflight_passed=true`.
+
+`source_locality_measurement_status` is `MEASURED` only when the source was
+successfully classified as `VERIFIED_LOCAL`; otherwise `NOT_MEASURED`.
 
 ## Status API contract (`GET /api/live/status`)
 
 The status endpoint returns the full browser-observable contract, read in a
-single atomic snapshot via `poller.get_view()`:
+single atomic snapshot via `poller.get_view()`. `source_kind` and
+`source_read_only` come from the **actual** `SnapshotSource` (via
+`view.get("source_kind", "UNKNOWN")` / `view.get("source_read_only", True)`),
+not a hardcoded constant — so a future source type reports its own kind.
 
 ```json
 {
@@ -199,6 +267,9 @@ Field semantics:
 - `bundle_sha256` equals the bundle's internal `bundle_sha256` field.
 - `source_snapshot_sha256` equals the SHA-256 of the raw snapshot bytes read
   from disk.
+- `source_kind` is read from `SnapshotSource.kind` (e.g. `FILE_FIXTURE`); a
+  custom source reports its own kind.
+- `source_read_only` is read from `SnapshotSource.read_only` (default `True`).
 
 ## Served pages
 
@@ -213,7 +284,12 @@ but the user-facing pages themselves remain static REPLAY HTML.
 - Mode is fixed at startup; cannot be switched at runtime.
 - ISOLATED_LIVE requires `--source-file`; missing source → exit 1.
 - `http(s)://`, `file://`, and UNC/network source paths are forbidden.
-- Non-loopback hosts are rejected (preflight and `create_server`).
+- Bind host must be IPv4 loopback (`127.0.0.1`/`localhost`); `::1`, `::`,
+  `0.0.0.0`, and LAN IPs are rejected (preflight and `create_server`).
+- Source must back onto a `DRIVE_FIXED` local volume (`VERIFIED_LOCAL`).
+  Removable/CD/RAM drives are unsupported; mapped network drives
+  (`DRIVE_REMOTE`) are rejected; an unclassifiable drive (`DRIVE_UNKNOWN` /
+  API failure) is fail-closed (`NOT_MEASURED` → preflight fails).
 - Unknown modes raise `ValueError` (no silent REPLAY fallback).
 - Write HTTP methods return 405.
 - `runtime_consumes_rag_context=false` always.
