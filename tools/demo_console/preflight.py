@@ -366,14 +366,20 @@ def run_preflight(mode: str, host: str, source_file: str | None = None,
                             "current_user at read time)"
                         ),
                     })
-                elif expected_role != "mergepilot_reader":
-                    failures.append({
-                        "check": "pg_expected_role",
-                        "detail": (
-                            "pg_config.expected_role must be exactly "
-                            "'mergepilot_reader'; got '%s'" % expected_role
-                        ),
-                    })
+                else:
+                    # Import canonical role from the single contract source
+                    try:
+                        from postgres_source import CANONICAL_VIEWER_ROLE
+                    except ImportError:
+                        CANONICAL_VIEWER_ROLE = "mergepilot_reader"
+                    if expected_role != CANONICAL_VIEWER_ROLE:
+                        failures.append({
+                            "check": "pg_expected_role",
+                            "detail": (
+                                "pg_config.expected_role must be exactly "
+                                "'%s'; got '%s'" % (CANONICAL_VIEWER_ROLE, expected_role)
+                            ),
+                        })
                 # expected_environment_id MUST be a non-empty string. The
                 # environment marker is mandatory; the source never guesses the
                 # environment identity from hostname.

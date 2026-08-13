@@ -46,6 +46,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import socket
 import sys
 import tempfile
 import threading
@@ -741,6 +742,192 @@ class TestReplayApiLive404(unittest.TestCase):
             self._handle.base_url + "/api/live/status")
         self.assertEqual(status, 404)
         self.assertIn("error", payload)
+
+
+class TestUnknownLiveEndpoint(unittest.TestCase):
+    """Unknown /api/live/* subpaths 404 with JSON in ISOLATED_LIVE."""
+
+    def setUp(self):
+        self._tmpdir = tempfile.mkdtemp()
+
+
+class TestWriteBodyHandling(unittest.TestCase):
+    """Raw socket tests for strict write-method body handling."""
+
+    def setUp(self):
+        self._tmpdir = tempfile.mkdtemp()
+        self._snapshot_path = os.path.join(self._tmpdir, "snapshot.json")
+        _write_json(self._snapshot_path, _make_isolated_live_bundle())
+        self._source = FileSnapshotSource(self._snapshot_path)
+        self._poller = LivePoller(self._source, poll_interval=1.0)
+        self._poller.initial_load()
+        self._poller.start()
+        self._server = create_server("127.0.0.1", 0, "isolated_live", poller=self._poller)
+        self._port = self._server.server_address[1]
+        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+        self._thread.start()
+        time.sleep(0.3)
+
+    def tearDown(self):
+        self._server.shutdown()
+        self._server.server_close()
+        self._thread.join(timeout=5)
+        self._poller.stop()
+        self._poller.join(timeout=5)
+        shutil.rmtree(self._tmpdir, ignore_errors=True)
+
+    def _raw_request(self, method: str, path: str = "/",
+                     headers: dict | None = None, body: bytes | None = None,
+                     timeout: float = 5.0) -> tuple[int, str]:
+        """Send a raw HTTP request via socket. Returns (status_code, status_text)."""
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(timeout)
+        sock.connect(("127.0.0.1", self._port))
+        lines = [f"{method} {path} HTTP/1.1"]
+        if headers:
+            for k, v in headers.items():
+                lines.append(f"{k}: {v}")
+        if body is not None and "Content-Length" not in (headers or {}):
+            lines.append(f"Content-Length: {len(body)}")
+        lines.append("Host: 127.0.0.1")
+        lines.append("")
+        request = "\r\n".join(lines).encode() + b"\r\n"
+        if body:
+            request += body
+        try:
+            sock.sendall(request)
+            # Read the status line
+            response = b""
+            while b"\r\n" not in response:
+                chunk = sock.recv(4096)
+                if not chunk:
+                    break
+                response += chunk
+            status_line = response.split(b"\r\n", 1)[0].decode("utf-8", "replace")
+            parts = status_line.split(" ", 2)
+            code = int(parts[1]) if len(parts) >= 2 and parts[1].isdigit() else 0
+            text = parts[2] if len(parts) >= 3 else ""
+            return code, text
+        finally:
+            sock.close()
+
+    def test_normal_post_with_body_returns_405(self):
+        code, _ = self._raw_request("POST", body=b'{"key":"value"}')
+        self.assertEqual(code, 405)
+
+    def test_normal_put_with_body_returns_405(self):
+        code, _ = self._raw_request("PUT", body=b"update data")
+        self.assertEqual(code, 405)
+
+    def test_normal_patch_with_body_returns_405(self):
+        code, _ = self._raw_request("PATCH", body=b"patch data")
+        self.assertEqual(code, 405)
+
+    def test_delete_without_body_returns_405(self):
+        code, _ = self._raw_request("DELETE")
+        self.assertEqual(code, 405)
+
+    def test_malformed_content_length_returns_400(self):
+        code, _ = self._raw_request("POST", headers={"Content-Length": "abc"})
+        self.assertEqual(code, 400)
+
+    def test_negative_content_length_returns_400(self):
+        code, _ = self._raw_request("POST", headers={"Content-Length": "-5"})
+        self.assertEqual(code, 400)
+
+    def test_oversized_content_length_returns_413(self):
+        code, _ = self._raw_request("POST", headers={"Content-Length": str(2 * 1048576)})
+        self.assertEqual(code, 413)
+
+    def test_chunked_transfer_encoding_returns_400(self):
+        code, _ = self._raw_request("POST", headers={"Transfer-Encoding": "chunked"},
+                                     body=b"0\r\n\r\n")
+        self.assertEqual(code, 400)
+
+    def test_405_has_allow_header(self):
+        """405 response must include Allow: GET, HEAD."""
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(5.0)
+        sock.connect(("127.0.0.1", self._port))
+        try:
+            sock.sendall(b"DELETE / HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n")
+            response = b""
+            while b"\r\n\r\n" not in response:
+                chunk = sock.recv(4096)
+                if not chunk:
+                    break
+                response += chunk
+            self.assertIn(b"405", response)
+            self.assertIn(b"Allow:", response)
+            self.assertIn(b"GET, HEAD", response)
+        finally:
+            sock.close()
+
+
+class TestPreflightCanonicalRole(unittest.TestCase):
+    """Preflight must reject all roles except mergepilot_reader."""
+
+    def test_preflight_rejects_reader(self):
+        pf = run_preflight("isolated_live", "127.0.0.1", source_kind="postgres",
+                           pg_config={"run_id": "run-1", "expected_database": "db",
+                                      "expected_role": "reader",
+                                      "expected_environment_id": "env-1",
+                                      "expected_server_addresses": ["127.0.0.1"],
+                                      "expected_server_port": 5432,
+                                      "expected_application_name": "app"})
+        self.assertFalse(pf["preflight_passed"])
+        self.assertTrue(any(f["check"] == "pg_expected_role" for f in pf["failures"]))
+
+    def test_preflight_rejects_admin(self):
+        pf = run_preflight("isolated_live", "127.0.0.1", source_kind="postgres",
+                           pg_config={"run_id": "run-1", "expected_database": "db",
+                                      "expected_role": "admin",
+                                      "expected_environment_id": "env-1",
+                                      "expected_server_addresses": ["127.0.0.1"],
+                                      "expected_server_port": 5432,
+                                      "expected_application_name": "app"})
+        self.assertFalse(pf["preflight_passed"])
+
+    def test_preflight_rejects_postgres(self):
+        pf = run_preflight("isolated_live", "127.0.0.1", source_kind="postgres",
+                           pg_config={"run_id": "run-1", "expected_database": "db",
+                                      "expected_role": "postgres",
+                                      "expected_environment_id": "env-1",
+                                      "expected_server_addresses": ["127.0.0.1"],
+                                      "expected_server_port": 5432,
+                                      "expected_application_name": "app"})
+        self.assertFalse(pf["preflight_passed"])
+
+    def test_preflight_rejects_padded_role(self):
+        pf = run_preflight("isolated_live", "127.0.0.1", source_kind="postgres",
+                           pg_config={"run_id": "run-1", "expected_database": "db",
+                                      "expected_role": " mergepilot_reader ",
+                                      "expected_environment_id": "env-1",
+                                      "expected_server_addresses": ["127.0.0.1"],
+                                      "expected_server_port": 5432,
+                                      "expected_application_name": "app"})
+        self.assertFalse(pf["preflight_passed"])
+
+    def test_preflight_rejects_empty_role(self):
+        pf = run_preflight("isolated_live", "127.0.0.1", source_kind="postgres",
+                           pg_config={"run_id": "run-1", "expected_database": "db",
+                                      "expected_role": "",
+                                      "expected_environment_id": "env-1",
+                                      "expected_server_addresses": ["127.0.0.1"],
+                                      "expected_server_port": 5432,
+                                      "expected_application_name": "app"})
+        self.assertFalse(pf["preflight_passed"])
+
+    def test_preflight_accepts_exact_mergepilot_reader(self):
+        pf = run_preflight("isolated_live", "127.0.0.1", source_kind="postgres",
+                           pg_config={"run_id": "run-1", "expected_database": "db",
+                                      "expected_role": "mergepilot_reader",
+                                      "expected_environment_id": "env-1",
+                                      "expected_server_addresses": ["127.0.0.1"],
+                                      "expected_server_port": 5432,
+                                      "expected_application_name": "app"})
+        role_failures = [f for f in pf["failures"] if f["check"] == "pg_expected_role"]
+        self.assertEqual(len(role_failures), 0)
 
 
 class TestUnknownLiveEndpoint(unittest.TestCase):

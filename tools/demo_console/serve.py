@@ -33,6 +33,7 @@ import argparse
 import http.server
 import json
 import os
+import socket
 import socketserver
 import sys
 import threading
@@ -130,15 +131,17 @@ def _send_status(poller: LivePoller) -> dict:
 class ReadOnlyHandler(http.server.SimpleHTTPRequestHandler):
     """Read-only HTTP handler — blocks all write methods.
 
-    Write methods (PUT/POST/DELETE/PATCH) are blocked with 405. On Windows the
-    client frequently resets the connection after the 405 is sent (the client
-    did not expect a body and closes early), which surfaces as
-    ``ConnectionAbortedError`` when writing the response. We catch that on the
-    write-method paths and treat it as a clean 405 (the client already saw the
-    status line) rather than letting it propagate as a 500-style traceback. On
-    GET paths we deliberately do NOT catch it: a read-path abort is an
-    unexpected condition worth surfacing.
+    Write methods (PUT/POST/DELETE/PATCH) are blocked with 405 after
+    the request body is fully read and discarded. The body is parsed
+    with strict Content-Length validation: missing/empty = 0, non-numeric
+    or negative = 400, > 1 MiB = 413, chunked = 400. The connection
+    is closed after the response.
     """
+
+    # Maximum request body size (1 MiB)
+    MAX_BODY_BYTES = 1048576
+    # Server-side read timeout for body drain (seconds)
+    BODY_READ_TIMEOUT = 5.0
 
     def do_PUT(self):
         self._reject_write_method()
@@ -153,27 +156,67 @@ class ReadOnlyHandler(http.server.SimpleHTTPRequestHandler):
         self._reject_write_method()
 
     def _reject_write_method(self):
-        # Drain the request body BEFORE responding. On Windows, if the
-        # client sends a body (POST/PUT/PATCH with Content-Length > 0)
-        # and the server responds without reading it, the TCP stack may
-        # reset the connection (WinError 10053), causing the client to
-        # see ConnectionAbortedError instead of the 405. By draining the
-        # body first, we keep the connection in a clean state.
-        content_length = int(self.headers.get("Content-Length", 0))
-        if content_length > 0:
-            # Read and discard the body (cap at 1MB to prevent abuse)
-            max_read = min(content_length, 1048576)
-            try:
-                self.rfile.read(max_read)
-            except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
-                pass  # Body already gone; still try to send 405
+        # Reject chunked transfer encoding
+        te = self.headers.get("Transfer-Encoding", "")
+        if te and te.lower() != "identity":
+            self._send_simple_error(400, "Chunked Transfer-Encoding not supported")
+            return
 
-        # Send minimal 405 with empty body
+        # Parse Content-Length strictly
+        cl_header = self.headers.get("Content-Length")
+        if cl_header is None:
+            content_length = 0
+        else:
+            cl_stripped = cl_header.strip()
+            if not cl_stripped:
+                content_length = 0
+            elif not cl_stripped.isdigit():
+                self._send_simple_error(400, "Invalid Content-Length")
+                return
+            else:
+                content_length = int(cl_stripped)
+
+        if content_length < 0:
+            self._send_simple_error(400, "Negative Content-Length")
+            return
+
+        if content_length > self.MAX_BODY_BYTES:
+            self._send_simple_error(413, "Payload Too Large")
+            return
+
+        # Drain the body completely before responding
+        if content_length > 0:
+            remaining = content_length
+            try:
+                self.rfile._sock.settimeout(self.BODY_READ_TIMEOUT)
+            except (AttributeError, OSError):
+                pass
+            try:
+                while remaining > 0:
+                    chunk = self.rfile.read(min(remaining, 65536))
+                    if not chunk:
+                        # Body shorter than declared
+                        self._send_simple_error(400, "Incomplete request body")
+                        return
+                    remaining -= len(chunk)
+            except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError,
+                    OSError, socket.timeout):
+                # Client went away during body read — cannot send response
+                return
+
+        # Body fully read; send 405
+        self.close_connection = True
+        self._send_simple_error(405, "Method Not Allowed")
+
+    def _send_simple_error(self, code: int, message: str):
+        """Send a minimal HTTP error response without an HTML body."""
         try:
-            self.send_response_only(405, "Method Not Allowed")
+            self.send_response_only(code, message)
             self.send_header("Content-Type", "text/plain")
             self.send_header("Content-Length", "0")
-            self.send_header("Allow", "GET, HEAD")
+            if code == 405:
+                self.send_header("Allow", "GET, HEAD")
+            self.close_connection = True
             self.end_headers()
         except (ConnectionAbortedError, ConnectionResetError, BrokenPipeError):
             pass
