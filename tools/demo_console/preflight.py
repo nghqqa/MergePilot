@@ -359,7 +359,12 @@ def run_preflight(mode: str, host: str, source_file: str | None = None,
                 if not expected_role:
                     failures.append({
                         "check": "pg_expected_role",
-                        "detail": "pg_config.expected_role is required",
+                        "detail": (
+                            "pg_config.expected_role is required (the "
+                            "canonical viewer role is mergepilot_reader; the "
+                            "role is mandatory and verified against "
+                            "current_user at read time)"
+                        ),
                     })
                 # expected_environment_id MUST be a non-empty string. The
                 # environment marker is mandatory; the source never guesses the

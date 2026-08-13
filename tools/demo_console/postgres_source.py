@@ -450,6 +450,12 @@ REQUIRED_QUERY_COLUMNS: dict[str, frozenset[str]] = {
         "id", "run_id", "stage", "agent", "attempt", "status", "started_at",
         "completed_at", "verdict", "detail",
     }),
+    # _STAGE_EVENTS_SQL: event_id, run_id, sender, event_type, stage, status,
+    #   error, received_at, processed_at
+    "stage_events": frozenset({
+        "event_id", "run_id", "sender", "event_type", "stage", "status",
+        "error", "received_at", "processed_at",
+    }),
     # _REVISION_BINDINGS_SQL (alias rb): binding_id, run_id, repo, pr_number,
     #   base_sha, head_sha, recorded_at
     "revision_bindings": frozenset({
@@ -462,6 +468,14 @@ REQUIRED_QUERY_COLUMNS: dict[str, frozenset[str]] = {
         "repo", "pr_number", "fix_branch", "base_branch", "head_sha",
         "recorded_at",
     }),
+    # _MCP_CALLS_SQL: request_id, correlation_id, phase, ts, caller_agent,
+    #   tool, decision, reason_code, target_repo, target_branch,
+    #   result_status, git_sha, error
+    "mcp_calls": frozenset({
+        "request_id", "correlation_id", "phase", "ts", "caller_agent", "tool",
+        "decision", "reason_code", "target_repo", "target_branch",
+        "result_status", "git_sha", "error",
+    }),
     # _ROLLBACK_RUNS_SQL: rollback_id, parent_run_id, revert_run_id,
     #   reverted_merge_sha, repo, pr_number, status, fail_reason,
     #   revert_result_sha, reverify_verdict, created_at, updated_at
@@ -470,6 +484,10 @@ REQUIRED_QUERY_COLUMNS: dict[str, frozenset[str]] = {
         "repo", "pr_number", "status", "fail_reason", "revert_result_sha",
         "reverify_verdict", "created_at", "updated_at",
     }),
+    # _AUDIT_TOTAL_SQL + _AUDIT_BY_ACTION_SQL: the aggregate queries reference
+    #   only task_id (WHERE filter) and action (SELECT/GROUP BY). count(*) does
+    #   not name a column.
+    "audit_events": frozenset({"task_id", "action"}),
     # _ENV_MARKER_SQL: environment_id
     "environment_identity": frozenset({"environment_id"}),
 }
@@ -482,9 +500,12 @@ REQUIRED_QUERY_COLUMNS: dict[str, frozenset[str]] = {
 PRIVILEGE_CHECKED_TABLES = (
     "task_runs",
     "stage_runs",
+    "stage_events",
     "revision_bindings",
     "run_pr_bindings",
+    "mcp_calls",
     "rollback_runs",
+    "audit_events",
     "environment_identity",
 )
 
@@ -502,7 +523,11 @@ class PostgresSnapshotSource(SnapshotSource):
     expected_database:
         Required value of ``current_database()``; anything else is rejected.
     expected_role:
-        Required value of ``current_user``; anything else is rejected.
+        Required value of ``current_user``; anything else is rejected. This is
+        a mandatory parameter with no default: the canonical viewer role for
+        ISOLATED_LIVE is the fixed ``mergepilot_reader`` (the migration grants
+        SELECT to exactly that role). The source verifies
+        ``current_user == expected_role`` exactly.
     expected_environment_id:
         Required value of the trusted environment marker
         (``environment_identity.environment_id``, single row). MUST be a
@@ -550,7 +575,34 @@ class PostgresSnapshotSource(SnapshotSource):
         # overridden below to ensure it can never leak.
         self._dsn = dsn
         self._run_id = run_id
+
+        # ── expected_database must be a non-empty string ───────────────────
+        # The canonical viewer role for ISOLATED_LIVE is the fixed
+        # ``mergepilot_reader`` (the migration grants SELECT to exactly that
+        # role). expected_database is mandatory; a None/empty value is a
+        # configuration error (CONFIG_INVALID), not a soft skip.
+        if not isinstance(expected_database, str) or not expected_database.strip():
+            raise ConfigInvalidError(
+                "CONFIG_INVALID: expected_database must be a non-empty "
+                "string (the target database name is mandatory)",
+                code="CONFIG_INVALID",
+            )
         self._expected_database = expected_database
+
+        # ── expected_role must be a non-empty string ───────────────────────
+        # The canonical viewer role for ISOLATED_LIVE is the fixed
+        # ``mergepilot_reader`` (the migration grants SELECT to exactly that
+        # role). expected_role is mandatory and is verified against
+        # ``current_user`` at read time; a None/empty value is a configuration
+        # error (CONFIG_INVALID), not a soft skip. The source verifies
+        # ``current_user == expected_role`` exactly (no prefix/wildcard match).
+        if not isinstance(expected_role, str) or not expected_role.strip():
+            raise ConfigInvalidError(
+                "CONFIG_INVALID: expected_role must be a non-empty "
+                "string (the canonical viewer role is mergepilot_reader; the "
+                "role is mandatory and must match current_user exactly)",
+                code="CONFIG_INVALID",
+            )
         self._expected_role = expected_role
 
         # ── expected_environment_id must be a non-empty string ─────────────
@@ -725,7 +777,7 @@ class PostgresSnapshotSource(SnapshotSource):
                 "PSYCOPG2_MISSING: psycopg2 is required for the PostgreSQL "
                 "snapshot source but is not installed",
                 code="PSYCOPG2_MISSING",
-            ) from e
+            ) from None
 
         conn = None
         try:
@@ -800,9 +852,10 @@ class PostgresSnapshotSource(SnapshotSource):
             # (DSN) on connect failures, and even after regex redaction a
             # fragment (e.g. the URI scheme "postgresql://") could survive. The
             # safe, stable surface is the error CODE plus the exception TYPE
-            # name only. The original exception is attached as __cause__ so a
-            # debugger with access to the traceback can still inspect it, but
-            # its text never reaches str(exc) of the raised error.
+            # name only. The original exception is NOT chained (``from None``)
+            # so the raw psycopg2/libpq message and traceback never reach the
+            # public exception's ``__cause__``/``__context__`` and cannot be
+            # surfaced by ``traceback.format_exception`` on the raised error.
             if conn is not None:
                 self._safe_rollback(conn)
                 self._safe_close(conn)
@@ -810,7 +863,7 @@ class PostgresSnapshotSource(SnapshotSource):
                 f"POSTGRES_READ_FAILED: {type(exc).__name__} "
                 f"(see server logs; raw detail suppressed to protect the DSN)",
                 code="POSTGRES_READ_FAILED",
-            ) from exc
+            ) from None
         finally:
             # Defensive belt-and-suspenders close. If we returned normally the
             # connection was already closed in the success path's rollback,
@@ -836,7 +889,7 @@ class PostgresSnapshotSource(SnapshotSource):
           3. Schema / search_path
           4. Required-table catalog presence
           5. Reader role hardening (pg_roles privileged-attribute probe +
-             per-table privilege probe over ALL six queried tables:
+             per-table privilege probe over ALL nine queried tables:
              SELECT required, INSERT/UPDATE/DELETE/TRUNCATE forbidden)
           6. Schema compatibility runtime catalog probe (column-level, against
              REQUIRED_QUERY_COLUMNS)

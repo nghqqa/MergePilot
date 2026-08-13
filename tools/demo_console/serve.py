@@ -382,8 +382,10 @@ def main():
                              "MERGEPILOT_PG_EXPECTED_DATABASE)")
     parser.add_argument("--expected-role", default=None,
                         help="Required current_user value "
-                             "(source-kind=postgres; also via "
-                             "MERGEPILOT_PG_EXPECTED_ROLE)")
+                             "(source-kind=postgres; the canonical viewer "
+                             "role is mergepilot_reader; also via "
+                             "MERGEPILOT_PG_EXPECTED_ROLE). REQUIRED for "
+                             "--source-kind postgres.")
     parser.add_argument("--expected-environment-id", default=None,
                         help="Required environment marker value "
                              "(source-kind=postgres; also via "

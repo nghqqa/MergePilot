@@ -898,6 +898,52 @@ class TestConnectionHandling(unittest.TestCase):
         finally:
             _clear_fake_psycopg2()
 
+    def test_connect_failure_traceback_chain_has_no_dsn(self):
+        # The raw psycopg2/libpq exception must NOT be chained: the raised
+        # PostgresQueryError uses ``from None`` so the original exception's
+        # message (which echoes the connection string) never reaches the
+        # traceback chain. We use traceback.format_exception() to get the FULL
+        # chain (cause/context included) and assert NONE of the secret markers
+        # appear anywhere in the formatted output — not just in str(exc).
+        import traceback as _tb
+        secret_dsn = "postgresql://user:SUPERSECRET@host/db"
+
+        class _ConnectFailPsycopg2:
+            def connect(self, dsn):
+                # libpq-style message that echoes the DSN verbatim.
+                raise RuntimeError(
+                    f"connection to server at {secret_dsn} failed: "
+                    f"postgresql://user:SUPERSECRET@host/db password=leaked"
+                )
+
+        sys.modules["psycopg2"] = _ConnectFailPsycopg2()
+        try:
+            src = _make_source(dsn=secret_dsn)
+            with self.assertRaises(PostgresQueryError) as cm:
+                src.read_snapshot()
+            exc = cm.exception
+            # The __cause__ must be None (raise ... from None) — the raw
+            # psycopg2/libpq exception is NOT chained.
+            self.assertIsNone(exc.__cause__)
+            # Format the FULL exception chain. Because __cause__ is None and
+            # there is no implicit __context__ carrying the raw message, the
+            # formatted traceback contains only the PostgresQueryError.
+            formatted = "".join(_tb.format_exception(type(exc), exc, exc.__traceback__))
+            # NONE of these secret markers may appear anywhere in the formatted
+            # traceback chain.
+            self.assertNotIn("SUPERSECRET", formatted)
+            self.assertNotIn("postgresql://", formatted)
+            self.assertNotIn("postgres://", formatted)
+            # password= with an actual leaked value (not the bare word). A real
+            # leak would look like "password=leaked" or "password=SUPERSECRET".
+            self.assertNotIn("password=leaked", formatted)
+            self.assertNotIn("password=SUPERSECRET", formatted)
+            # The stable code is still present on the public error.
+            self.assertEqual(exc.code, "POSTGRES_READ_FAILED")
+            self.assertIn("POSTGRES_READ_FAILED", formatted)
+        finally:
+            _clear_fake_psycopg2()
+
 
 # ── TestRegression ─────────────────────────────────────────────────────────
 class TestRegression(unittest.TestCase):
@@ -1051,6 +1097,56 @@ class TestSchemaContract(unittest.TestCase):
                 len(SCHEMA_CONTRACT[table]), 0,
                 f"SCHEMA_CONTRACT[{table!r}] is empty",
             )
+
+    def test_required_query_columns_covers_all_nine_tables(self):
+        # REQUIRED_QUERY_COLUMNS must enumerate ALL nine queried tables (the
+        # six original + stage_events, mcp_calls, audit_events). Each entry
+        # must be a non-empty frozenset so the runtime column probe checks at
+        # least one column per table.
+        expected = {
+            "task_runs", "stage_runs", "stage_events", "revision_bindings",
+            "run_pr_bindings", "mcp_calls", "rollback_runs", "audit_events",
+            "environment_identity",
+        }
+        self.assertEqual(
+            set(REQUIRED_QUERY_COLUMNS), expected,
+            f"REQUIRED_QUERY_COLUMNS keys mismatch: got "
+            f"{sorted(REQUIRED_QUERY_COLUMNS)}, expected {sorted(expected)}",
+        )
+        for table, cols in REQUIRED_QUERY_COLUMNS.items():
+            self.assertIsInstance(cols, frozenset)
+            self.assertGreater(
+                len(cols), 0,
+                f"REQUIRED_QUERY_COLUMNS[{table!r}] is empty",
+            )
+
+    def test_privilege_checked_tables_covers_all_nine(self):
+        # PRIVILEGE_CHECKED_TABLES must enumerate ALL nine queried tables so
+        # the read-time privilege probe (SELECT required, writes forbidden)
+        # covers every table the source reads.
+        expected = {
+            "task_runs", "stage_runs", "stage_events", "revision_bindings",
+            "run_pr_bindings", "mcp_calls", "rollback_runs", "audit_events",
+            "environment_identity",
+        }
+        self.assertEqual(
+            set(_PRIVILEGE_CHECKED_TABLES), expected,
+            f"PRIVILEGE_CHECKED_TABLES mismatch: got "
+            f"{sorted(_PRIVILEGE_CHECKED_TABLES)}, expected {sorted(expected)}",
+        )
+        # No duplicate entries.
+        self.assertEqual(
+            len(_PRIVILEGE_CHECKED_TABLES),
+            len(set(_PRIVILEGE_CHECKED_TABLES)),
+            "PRIVILEGE_CHECKED_TABLES has duplicate entries",
+        )
+        # The privilege-checked set must be a subset of the
+        # REQUIRED_QUERY_COLUMNS keys (every probed table is read, though not
+        # every read table needs columns probed — here they coincide).
+        self.assertTrue(
+            set(_PRIVILEGE_CHECKED_TABLES).issubset(REQUIRED_QUERY_COLUMNS),
+            "PRIVILEGE_CHECKED_TABLES has a table not in REQUIRED_QUERY_COLUMNS",
+        )
 
     def test_task_runs_contract_matches_migrations(self):
         # task_runs accumulates columns across m3_state + m3c_state + m4f1_state.
@@ -1322,10 +1418,12 @@ class TestMigrationContractFiles(unittest.TestCase):
     """REQUIRED_QUERY_COLUMNS columns must exist in the actual .sql migrations.
 
     These tests read the real migration files:
-      - tools/audit-db/m3_state.sql      (task_runs, stage_runs, ...)
+      - tools/audit-db/m3_state.sql      (task_runs, stage_runs, stage_events, ...)
       - tools/audit-db/m3b_b4.sql        (run_pr_bindings, ...)
       - tools/audit-db/m3c_state.sql     (rollback_runs, task_runs additions)
       - tools/audit-db/m4f1_state.sql    (revision_bindings, task_runs trace_id)
+      - tools/audit-db/m3b_policy.sql    (mcp_calls — immutable gateway audit)
+      - tools/audit-db/init.sql          (audit_events, findings, decisions)
       - tools/demo_console/migrations/001_environment_identity.sql
     ...parse the CREATE TABLE column lists and ALTER TABLE ADD COLUMN
     statements, and assert every column REQUIRED_QUERY_COLUMNS references is
@@ -1340,12 +1438,16 @@ class TestMigrationContractFiles(unittest.TestCase):
         cls.migrations = cls.root / "tools" / "demo_console" / "migrations"
         # Read every migration file once and concatenate by table. Each entry
         # is the raw SQL text of one file; a table's full column set is the
-        # union across all files that CREATE or ALTER it.
+        # union across all files that CREATE or ALTER it. Seven files total:
+        # m3_state, m3b_b4, m3c_state, m4f1_state, m3b_policy, init,
+        # 001_environment_identity.
         cls.migration_files = [
             cls.audit_db / "m3_state.sql",
             cls.audit_db / "m3b_b4.sql",
             cls.audit_db / "m3c_state.sql",
             cls.audit_db / "m4f1_state.sql",
+            cls.audit_db / "m3b_policy.sql",
+            cls.audit_db / "init.sql",
             cls.migrations / "001_environment_identity.sql",
         ]
         for p in cls.migration_files:
@@ -1433,6 +1535,33 @@ class TestMigrationContractFiles(unittest.TestCase):
         for c in REQUIRED_QUERY_COLUMNS["rollback_runs"]:
             self.assertIn(c, parsed,
                           f"rollback_runs.{c} not in parsed migrations")
+
+    def test_mcp_calls_columns_match_m3b_policy(self):
+        # mcp_calls is defined in m3b_policy.sql (immutable INSERT-only gateway
+        # audit). The query-referenced columns must all be present.
+        parsed = self._parsed_columns_for("mcp_calls")
+        self.assertTrue(
+            parsed,
+            "no CREATE TABLE/ALTER ADD COLUMN found for mcp_calls in any "
+            "migration file (expected m3b_policy.sql)",
+        )
+        for c in REQUIRED_QUERY_COLUMNS["mcp_calls"]:
+            self.assertIn(c, parsed,
+                          f"mcp_calls.{c} not in parsed migrations")
+
+    def test_audit_events_columns_match_init(self):
+        # audit_events is defined in init.sql (legacy/external table keyed by
+        # task_id). The query-referenced columns (task_id, action) must all be
+        # present.
+        parsed = self._parsed_columns_for("audit_events")
+        self.assertTrue(
+            parsed,
+            "no CREATE TABLE/ALTER ADD COLUMN found for audit_events in any "
+            "migration file (expected init.sql)",
+        )
+        for c in REQUIRED_QUERY_COLUMNS["audit_events"]:
+            self.assertIn(c, parsed,
+                          f"audit_events.{c} not in parsed migrations")
 
     def test_environment_identity_columns_match_migration(self):
         parsed = self._parsed_columns_for("environment_identity")
@@ -2339,6 +2468,24 @@ class TestConfigInvalid(unittest.TestCase):
                 _make_source(expected_environment_id=bad)
             self.assertEqual(cm.exception.code, "CONFIG_INVALID")
 
+    def test_missing_expected_role_rejected(self):
+        # expected_role is mandatory and has no default (the canonical viewer
+        # role is the fixed mergepilot_reader). None/empty/whitespace →
+        # CONFIG_INVALID. The source verifies current_user == expected_role
+        # exactly, so an empty role can never be accepted.
+        for bad in (None, "", "   "):
+            with self.assertRaises(ConfigInvalidError) as cm:
+                _make_source(expected_role=bad)
+            self.assertEqual(cm.exception.code, "CONFIG_INVALID")
+
+    def test_missing_expected_database_rejected(self):
+        # expected_database is mandatory; None/empty/whitespace →
+        # CONFIG_INVALID.
+        for bad in (None, "", "   "):
+            with self.assertRaises(ConfigInvalidError) as cm:
+                _make_source(expected_database=bad)
+            self.assertEqual(cm.exception.code, "CONFIG_INVALID")
+
     def test_missing_server_addresses_rejected(self):
         for bad in (None, []):
             with self.assertRaises(ConfigInvalidError) as cm:
@@ -2537,7 +2684,7 @@ class TestReaderRoleHardening(unittest.TestCase):
             self.assertIn("task_runs", str(cm.exception))
 
     def test_write_privileges_on_every_queried_table_rejected(self):
-        # The privilege probe now covers ALL six queried tables, not just
+        # The privilege probe now covers ALL nine queried tables, not just
         # task_runs. A write privilege on ANY one of them is rejected.
         for target_table in _PRIVILEGE_CHECKED_TABLES:
             for idx in range(4):  # INSERT, UPDATE, DELETE, TRUNCATE
@@ -2627,15 +2774,11 @@ class TestRuntimeCatalogMock(unittest.TestCase):
         # probe must report SCHEMA_INCOMPATIBLE listing the missing column.
         column_catalog = {
             table: [(c,) for c in cols]
-            for table, cols in SCHEMA_CONTRACT.items()
-            if table in (
-                "task_runs", "stage_runs", "revision_bindings",
-                "run_pr_bindings", "rollback_runs", "environment_identity",
-            )
+            for table, cols in REQUIRED_QUERY_COLUMNS.items()
         }
         # Remove 'trace_id' from task_runs.
         column_catalog["task_runs"] = [
-            (c,) for c in SCHEMA_CONTRACT["task_runs"] if c != "trace_id"
+            (c,) for c in REQUIRED_QUERY_COLUMNS["task_runs"] if c != "trace_id"
         ]
         conn = FakeConnection(results=_make_results(column_catalog=column_catalog))
         with self.assertRaises(IdentityCheckError) as cm:
@@ -2647,14 +2790,10 @@ class TestRuntimeCatalogMock(unittest.TestCase):
     def test_missing_column_in_revision_bindings_rejected(self):
         column_catalog = {
             table: [(c,) for c in cols]
-            for table, cols in SCHEMA_CONTRACT.items()
-            if table in (
-                "task_runs", "stage_runs", "revision_bindings",
-                "run_pr_bindings", "rollback_runs", "environment_identity",
-            )
+            for table, cols in REQUIRED_QUERY_COLUMNS.items()
         }
         column_catalog["revision_bindings"] = [
-            (c,) for c in SCHEMA_CONTRACT["revision_bindings"]
+            (c,) for c in REQUIRED_QUERY_COLUMNS["revision_bindings"]
             if c != "head_sha"
         ]
         conn = FakeConnection(results=_make_results(column_catalog=column_catalog))
@@ -2666,14 +2805,10 @@ class TestRuntimeCatalogMock(unittest.TestCase):
     def test_missing_column_in_environment_identity_rejected(self):
         column_catalog = {
             table: [(c,) for c in cols]
-            for table, cols in SCHEMA_CONTRACT.items()
-            if table in (
-                "task_runs", "stage_runs", "revision_bindings",
-                "run_pr_bindings", "rollback_runs", "environment_identity",
-            )
+            for table, cols in REQUIRED_QUERY_COLUMNS.items()
         }
         column_catalog["environment_identity"] = [
-            (c,) for c in SCHEMA_CONTRACT["environment_identity"]
+            (c,) for c in REQUIRED_QUERY_COLUMNS["environment_identity"]
             if c != "environment_id"
         ]
         conn = FakeConnection(results=_make_results(column_catalog=column_catalog))
@@ -2682,78 +2817,127 @@ class TestRuntimeCatalogMock(unittest.TestCase):
         self.assertEqual(cm.exception.code, "SCHEMA_INCOMPATIBLE")
         self.assertIn("environment_id", str(cm.exception))
 
+    def test_missing_column_in_stage_events_rejected(self):
+        # stage_events is one of the 9 probed tables. Dropping one of its
+        # required query columns → SCHEMA_INCOMPATIBLE.
+        column_catalog = {
+            table: [(c,) for c in cols]
+            for table, cols in REQUIRED_QUERY_COLUMNS.items()
+        }
+        column_catalog["stage_events"] = [
+            (c,) for c in REQUIRED_QUERY_COLUMNS["stage_events"]
+            if c != "received_at"
+        ]
+        conn = FakeConnection(results=_make_results(column_catalog=column_catalog))
+        with self.assertRaises(IdentityCheckError) as cm:
+            _read_snapshot_with_fake(conn)
+        self.assertEqual(cm.exception.code, "SCHEMA_INCOMPATIBLE")
+        self.assertIn("received_at", str(cm.exception))
+        self.assertIn("stage_events", str(cm.exception))
+
+    def test_missing_column_in_mcp_calls_rejected(self):
+        # mcp_calls is one of the 9 probed tables. Dropping one of its
+        # required query columns → SCHEMA_INCOMPATIBLE.
+        column_catalog = {
+            table: [(c,) for c in cols]
+            for table, cols in REQUIRED_QUERY_COLUMNS.items()
+        }
+        column_catalog["mcp_calls"] = [
+            (c,) for c in REQUIRED_QUERY_COLUMNS["mcp_calls"]
+            if c != "decision"
+        ]
+        conn = FakeConnection(results=_make_results(column_catalog=column_catalog))
+        with self.assertRaises(IdentityCheckError) as cm:
+            _read_snapshot_with_fake(conn)
+        self.assertEqual(cm.exception.code, "SCHEMA_INCOMPATIBLE")
+        self.assertIn("decision", str(cm.exception))
+        self.assertIn("mcp_calls", str(cm.exception))
+
+    def test_missing_column_in_audit_events_rejected(self):
+        # audit_events is one of the 9 probed tables. Dropping one of its
+        # required query columns → SCHEMA_INCOMPATIBLE.
+        column_catalog = {
+            table: [(c,) for c in cols]
+            for table, cols in REQUIRED_QUERY_COLUMNS.items()
+        }
+        column_catalog["audit_events"] = [
+            (c,) for c in REQUIRED_QUERY_COLUMNS["audit_events"]
+            if c != "action"
+        ]
+        conn = FakeConnection(results=_make_results(column_catalog=column_catalog))
+        with self.assertRaises(IdentityCheckError) as cm:
+            _read_snapshot_with_fake(conn)
+        self.assertEqual(cm.exception.code, "SCHEMA_INCOMPATIBLE")
+        self.assertIn("action", str(cm.exception))
+        self.assertIn("audit_events", str(cm.exception))
+
 
 # ── TestEphemeralMigrationProbe ────────────────────────────────────────────
-# These tests would require a live PostgreSQL database (with the full migration
-# set applied) to run for real. They are gated on the EPHEMERAL_PG_DSN
-# environment variable:
-#   - If EPHEMERAL_PG_DSN is NOT set (the default, including CI): every test is
-#     SKIPPED with an explicit "NOT_EXECUTED" reason. No real connection is
-#     attempted.
-#   - If EPHEMERAL_PG_DSN IS set: the tests WOULD connect and exercise the real
-#     migration, identity gate, ACL (revoke PUBLIC / grant mergepilot_reader),
-#     column probe, and a read-only transaction. Because this round cannot
-#     reach a real PostgreSQL instance, the skip always fires and the message
-#     makes the NOT_EXECUTED boundary explicit.
+# These tests are PURE PLACEHOLDERS documenting what a future ephemeral
+# PostgreSQL harness would exercise. They are SKIPPED UNCONDITIONALLY: the
+# harness that would apply the migrations and open a real read-only connection
+# is NOT implemented in this candidate. The skip fires regardless of whether
+# EPHEMERAL_PG_DSN is set — even if a DSN is configured, there is no harness to
+# consume it. Every test reports the same explicit NOT_EXECUTED reason so a
+# consumer cannot mistake "skipped" for "ran and passed".
 class TestEphemeralMigrationProbe(unittest.TestCase):
-    """Live-DB integration probes, gated on EPHEMERAL_PG_DSN.
+    """Placeholder for a future ephemeral PostgreSQL harness (NOT_EXECUTED).
 
-    Status: NOT_EXECUTED unless EPHEMERAL_PG_DSN is configured. Real PostgreSQL
-    verification = NOT_PERFORMED in this candidate.
+    Status: NOT_EXECUTED. The ephemeral harness (apply migrations, open a real
+    read-only connection, exercise the identity gate / ACL / column probe /
+    read-only transaction) is NOT implemented. These tests are pure
+    placeholders that document what such a harness would do; they are skipped
+    unconditionally with reason "Ephemeral PostgreSQL harness not yet
+    implemented; NOT_EXECUTED".
     """
 
     NOT_EXECUTED = True  # marker: these require a live database
 
-    # The canonical skip reason. The literal "NOT_EXECUTED" must appear so a
-    # consumer cannot mistake "skipped" for "ran and passed".
+    # The canonical, unconditional skip reason. The literal "NOT_EXECUTED" must
+    # appear so a consumer cannot mistake "skipped" for "ran and passed". This
+    # is a placeholder: even if EPHEMERAL_PG_DSN is set, the harness is not
+    # implemented, so every test still skips with this reason.
     _SKIP_REASON = (
-        "EPHEMERAL_PG_DSN not configured; ephemeral test NOT_EXECUTED "
-        "(real PostgreSQL verification = NOT_PERFORMED)"
+        "Ephemeral PostgreSQL harness not yet implemented; NOT_EXECUTED"
     )
 
     def setUp(self):
-        dsn = os.environ.get("EPHEMERAL_PG_DSN")
-        if not dsn:
-            # Env var absent → skip every test with the explicit NOT_EXECUTED
-            # boundary. We never attempt a real connection without a DSN.
-            self.skipTest(self._SKIP_REASON)
-        # If a DSN IS present we would proceed to a real connection here. This
-        # round has no reachable PG instance, so we still skip — but the reason
-        # is different (DSN present but the live harness is not wired up).
-        self.skipTest(
-            "EPHEMERAL_PG_DSN is set but the live-DB harness is NOT_EXECUTED "
-            "this round (real PostgreSQL verification = NOT_PERFORMED)"
-        )
+        # Unconditional skip. We do NOT consult EPHEMERAL_PG_DSN: there is no
+        # harness to consume it even if it were set. This is an honest
+        # placeholder, not a gated integration test.
+        self.skipTest(self._SKIP_REASON)
 
     def test_live_migration_and_identity_gate(self):
-        """WOULD: apply the real migrations, then assert the read-only identity
-        gate (database/role/read-only flags/server/environment marker) passes
-        against EPHEMERAL_PG_DSN.
+        """Placeholder: a future harness would apply the real migrations, then
+        assert the read-only identity gate (database/role/read-only flags/
+        server/environment marker) passes against a live database.
         """
         pass  # pragma: no cover
 
     def test_live_environment_identity_single_row(self):
-        """WOULD: assert environment_identity has exactly one row whose
-        environment_id matches the configured marker.
+        """Placeholder: a future harness would assert environment_identity has
+        exactly one row whose environment_id matches the configured marker.
         """
         pass  # pragma: no cover
 
     def test_live_acl_revokes_public_grants_reader(self):
-        """WOULD: assert environment_identity REVOKE ALL FROM PUBLIC and GRANT
-        SELECT TO mergepilot_reader (PUBLIC has no privileges; the viewer role
-        has SELECT only).
+        """Placeholder: a future harness would assert environment_identity
+        REVOKE ALL FROM PUBLIC and GRANT SELECT TO mergepilot_reader (PUBLIC
+        has no privileges; the viewer role has SELECT only).
         """
         pass  # pragma: no cover
 
     def test_live_column_probe_matches_required_query_columns(self):
-        """WOULD: assert the runtime information_schema.columns probe passes
-        for every table/column in REQUIRED_QUERY_COLUMNS.
+        """Placeholder: a future harness would assert the runtime
+        information_schema.columns probe passes for every table/column in
+        REQUIRED_QUERY_COLUMNS.
         """
         pass  # pragma: no cover
 
     def test_live_read_only_transaction(self):
-        """WOULD: assert the source opens a REPEATABLE READ READ ONLY
-        transaction and ends it with ROLLBACK (no COMMIT, no writes).
+        """Placeholder: a future harness would assert the source opens a
+        REPEATABLE READ READ ONLY transaction and ends it with ROLLBACK (no
+        COMMIT, no writes).
         """
         pass  # pragma: no cover
 
