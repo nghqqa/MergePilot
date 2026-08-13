@@ -1,13 +1,18 @@
 # M7 Final Submission Package Design
 
 **Status**: Design (Demo video DEFERRED); these 3 docs pending PR merge
-**Base**: `0bc2e69` (origin/main, M7-P4 evidence merged)
+**Base snapshot at document creation**: `0bc2e69` (historical; origin/main has since advanced to `175541a` = `m7-closed`)
+**M7 baseline**: `m7-closed` (annotated tag → `175541a43d0d2b9a988d69d33de6963946b38c8f`)
 **Created**: 2026-08-13
 
 > **Note**: M7-P2/P3/P4 technical evidence is already in origin/main.
-> These three Final Submission documents themselves are NOT yet in main
-> until this PR merges. Do not claim "all final materials are in main"
-> until merge is complete.
+> M7 is formally closed by annotated tag `m7-closed` (peeled target
+> `175541a43d0d2b9a988d69d33de6963946b38c8f`). Subsequent docs-only
+> commits may advance origin/main but do not change the frozen tag.
+> The tag annotation's "zero external deps" refers to zero third-party
+> Python packages only; Git CLI is required for provenance, bundle
+> verification, and SHA checks. Static REPLAY HTML has no CDN/LLM/DB
+> runtime dependency.
 
 ## 1. Current State Summary
 
@@ -18,7 +23,7 @@
 | M7-P3 Showcase Package | ✅ Merged (PR #153) | Runbook, Portfolio, Claim Matrix, Checklist |
 | M7-P4 Clean Reproduction | ✅ Merged (PR #155) | `all_ok=true`, Windows Python 3.9.25 |
 | Demo Video | ⏸ **DEFERRED** | Not recorded; not required for current technical gate |
-| M7 Overall Close | ❌ Not created | Awaiting video decision |
+| M7 Overall Close | ✅ Closed (`m7-closed` → `175541a`) | Demo video DEFERRED, not a technical gate |
 
 ## 2. Existing Materials Audit
 
@@ -87,9 +92,9 @@ All boundaries are already present in README, Claim Matrix, and evidence:
 |---|--------|----------|------------|
 | 1 | Create `.env.example` (minimal stub) | Low | No |
 | 2 | Create `NOTICE` (Apache-2.0) | Low | No |
-| 3 | Create `THIRD_PARTY` (zero deps) | Low | No |
+| 3 | Create `THIRD_PARTY` (zero third-party Python packages; Git CLI required) | Low | No |
 | 4 | Demo video recording | Deferred | No |
-| 5 | M7 overall close tag | After above | — |
+| 5 | M7 overall close tag | ✅ Done (`m7-closed` → `175541a`) | — |
 
 **None of items 1-3 block M7 technical closure.** They are packaging
  niceties for formal submission.

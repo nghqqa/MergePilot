@@ -1,7 +1,7 @@
 # M7 Final Submission Claim Audit
 
 **Status**: Read-only audit of all claims in submission materials
-**Base**: `0bc2e69` (origin/main)
+**Base snapshot at document creation**: `0bc2e69` (historical; origin/main has since advanced to `175541a` = `m7-closed`)
 
 ## Audit Method
 
@@ -57,7 +57,7 @@ All materials consistently state:
 | M7-P4 `all_ok` from origin/main | `true` ✅ |
 | Protected evidence (M3-M6) diff | 0 ✅ |
 | Secret scan across all M7 evidence | 0 ✅ |
-| M7 overall close tag | Does NOT exist ✅ |
+| M7 overall close tag | `m7-closed` → `175541a` ✅ |
 
 ## Gaps
 
@@ -65,7 +65,7 @@ All materials consistently state:
 |-----|--------|----------------|
 | `.env.example` missing | Low — Demo Console needs no env vars | Create minimal stub |
 | `NOTICE` missing | Low — standard Apache-2.0 | Create |
-| `THIRD_PARTY` missing | Low — zero deps | Create "No third-party dependencies" |
+| `THIRD_PARTY` missing | Low — zero third-party Python packages | Create "No third-party Python packages; Git CLI required" |
 
 None of these gaps affect technical integrity or claim accuracy.
 

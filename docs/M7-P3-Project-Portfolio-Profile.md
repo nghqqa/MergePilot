@@ -1,7 +1,20 @@
 # M7-P3 Project Portfolio Profile
 
-**Status**: Active (positioning material for resume / interview / competition)
-**Milestone**: M7-P3
+> **M7 已完成并正式关闭 (tag `m7-closed` → `175541a`, 2026-08-13)。**
+> 本文档从 M7 进行中状态转为关闭状态归档；技术内容保持不变，仅更新状态框架。
+
+## M7 完成总结
+
+- **关闭状态**: M7-P2 / P3 / P4 全部 merged；annotated tag `m7-closed` → peeled `175541a`。
+- **已完成内容**:
+  - M7-P2 RAG Benchmark（开发校准 rag-bench-v2 + held-out 确认 rag-bench-v3-heldout，16/16 预注册质量门控全过）。
+  - M7-P3 Project Portfolio Profile（本文档）与配套 Claim Matrix。
+  - M7-P4 Demo Console（REPLAY 模式，SHA 证据链 + `bundle_sha256`）。
+- **DEFERRED**: Demo video（演示视频）**DEFERRED** — 非阻塞项，留待后续录制；不影响 M7 关闭。
+- **后续**: M8 未定义（no scope / no schedule）。
+
+**Status**: Closed — M7 已完成并正式关闭 (tag `m7-closed` → `175541a`).
+**Milestone**: M7-P3 (closed)
 **Scope rule**: Every statement below is tagged with what it is. The four tags
 are used consistently:
 
