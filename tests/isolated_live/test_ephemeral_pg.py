@@ -134,14 +134,13 @@ class TestExecutionGate(unittest.TestCase):
 # ────────────────────────────────────────────────────────────────────────────
 class TestMigrationOrder(unittest.TestCase):
     """MIGRATION_CHAIN: 13 audit-db applications (9 base + m4f1 x2 + hotfix x2),
-    matching run_schema_foundation.sh and design doc §1's numbered list.
+    11 distinct files. Plus 2 ISOLATED_LIVE migrations (001/002) in a separate
+    Phase 3 = 15 total migration-file applications. Plus 2 role bootstrap
+    operations (prerequisite + reader) = 17 executor operations.
 
-    Note on counts: the design doc §1 prose says "15 migration applications"
-    but its OWN numbered Phase-1 list stops at 13 (init..m3c = 9, plus m4f1_state
-    twice and m4f1_hotfix_1 twice = 13). The "15" in the prose is the inclusive
-    total that also counts the two ISOLATED_LIVE migrations (001/002), which
-    are a SEPARATE phase here (ISOLATED_LIVE_MIGRATIONS). The authoritative
-    count is therefore 13 audit-db applications with 11 distinct files.
+    Audit-db applications = 13. ISOLATED_LIVE applications = 2.
+    Total migration-file applications = 15. Distinct files = 11.
+    Executor operations = 17 (15 migrations + 2 role bootstraps).
     """
 
     def test_chain_has_thirteen_audit_db_entries(self):
@@ -446,7 +445,6 @@ class TestCommandSafety(unittest.TestCase):
     def test_migration_commands_are_not_shell_strings(self):
         cmds = build_migration_commands("ctr", "db", "user", "/repo/root")
         for cmd in cmds:
-            # No element is a shell pipeline / && string.
             joined = " ".join(cmd)
             self.assertNotIn(";", joined)
             self.assertNotIn("&&", joined)
@@ -456,6 +454,41 @@ class TestCommandSafety(unittest.TestCase):
         cmds = build_migration_commands("ctr", "db", "user", "/repo/root")
         for cmd in cmds:
             self.assertIn("ON_ERROR_STOP=1", cmd)
+
+    def test_migration_commands_use_stdin_not_host_path(self):
+        """argv must contain '-f -' (stdin), NOT a host file path."""
+        cmds = build_migration_commands("ctr", "db", "user", "/repo/root")
+        for cmd in cmds:
+            self.assertIn("-f", cmd)
+            # The token after -f must be "-" (stdin), not a host path
+            idx = cmd.index("-f")
+            self.assertEqual(cmd[idx + 1], "-")
+
+    def test_migration_commands_no_host_path_in_argv(self):
+        """No Windows/host path appears anywhere in the argv."""
+        cmds = build_migration_commands("ctr", "db", "user", "D:\\repo\\root")
+        for cmd in cmds:
+            for tok in cmd:
+                # No drive-letter path, no backslash path, no /repo/root
+                self.assertFalse(
+                    "\\" in tok or tok.startswith("D:") or "/repo/" in tok or
+                    "audit-db" in tok or tok.endswith(".sql"),
+                    f"Host path leaked into argv: {tok}"
+                )
+
+    def test_migration_commands_shell_true_never_used(self):
+        """The function signature must not accept or use shell=True.
+        This is a structural test: build_migration_commands returns lists
+        of lists (argv arrays), never strings. subprocess callers must
+        pass these arrays directly."""
+        cmds = build_migration_commands("ctr", "db", "user", "/repo/root")
+        for cmd in cmds:
+            # Every element must be a list (not a string)
+            self.assertIsInstance(cmd, list)
+            # No element contains shell metacharacters as a single token
+            for tok in cmd:
+                self.assertNotIn("`", tok)
+                self.assertNotIn("$(", tok)
 
     def test_cleanup_commands_returns_list_of_arrays(self):
         cmds = build_cleanup_commands("m6rag-eph-1234567890",

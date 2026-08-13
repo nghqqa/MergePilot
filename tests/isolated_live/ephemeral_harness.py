@@ -228,44 +228,44 @@ def build_migration_commands(container: str, db_name: str, user: str,
     """Return one argv array per migration application in MIGRATION_CHAIN.
 
     Each returned element is a list of strings suitable for
-    ``subprocess.run(element)`` — never a shell string. The migration file is
-    piped to psql via stdin redirection performed by the caller (we return the
-    ``--file``/stdin form as a fixed argv; the caller opens the file). We use
-    ``psql ... -f <path>`` so the file content never passes through a shell.
+    ``subprocess.run(element, input=sql_bytes)`` — never a shell string.
+    The migration SQL is piped to psql via **stdin** (``-f -``) rather than
+    a host file path. The host file path would not exist inside the container;
+    using stdin avoids the host-path-as-container-path problem entirely.
+
+    The caller (Phase B executor) reads each migration file's bytes on the
+    HOST side and passes them to ``subprocess.run(cmd, input=sql_bytes,
+    check=True)``. This function returns the argv only — the caller is
+    responsible for reading the file and providing ``input=``.
 
     Parameters
     ----------
     container:
-        Target container name (validated by the caller; this function does not
-        re-validate, but the command shape makes injection impossible anyway
-        since each token is a separate argv element).
+        Target container name.
     db_name, user:
-        Connection target. Defaults match the m4f1 foundation script
-        (``mergepilot_audit`` / ``mergepilot``).
+        Connection target.
     root_path:
-        Repo root; migration files live under ``<root_path>/tools/audit-db``.
+        Repo root; used by the caller to locate the SQL files on the host.
 
     Returns
     -------
     list of list[str]
-        ``len == len(MIGRATION_CHAIN)`` (15). Element i applies
-        ``MIGRATION_CHAIN[i][0]``.
+        ``len == len(MIGRATION_CHAIN)`` (13 audit-db applications).
+        Each element ends with ``"-f", "-"`` (read SQL from stdin).
     """
-    dbdir = os.path.join(root_path, "tools", "audit-db")
     commands = []
-    for filename, _desc in MIGRATION_CHAIN:
-        path = os.path.join(dbdir, filename)
-        # psql argv: docker exec -i <container> psql -U <user> -d <db> -v ON_ERROR_STOP=1 -f <path>
-        # The file is read on the HOST side and piped to docker exec stdin in
-        # Phase B; here we emit the canonical argv. ON_ERROR_STOP=1 makes any
-        # SQL error abort non-zero (fail-fast, no half-applied schema).
+    for _filename, _desc in MIGRATION_CHAIN:
+        # psql argv: docker exec -i <container> psql -U <user> -d <db>
+        #   -v ON_ERROR_STOP=1 -f -  (read SQL from stdin)
+        # The caller reads the host file and passes bytes via input=.
+        # No host path appears in the argv.
         commands.append([
             "docker", "exec", "-i", container,
             "psql",
             "-U", user,
             "-d", db_name,
             "-v", "ON_ERROR_STOP=1",
-            "-f", path,
+            "-f", "-",
         ])
     return commands
 
