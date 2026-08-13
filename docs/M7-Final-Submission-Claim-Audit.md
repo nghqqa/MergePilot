@@ -57,7 +57,7 @@ All materials consistently state:
 | M7-P4 `all_ok` from origin/main | `true` ✅ |
 | Protected evidence (M3-M6) diff | 0 ✅ |
 | Secret scan across all M7 evidence | 0 ✅ |
-| M7 overall close tag | Does NOT exist ✅ |
+| M7 overall close tag | `m7-closed` → `175541a` ✅ |
 
 ## Gaps
 

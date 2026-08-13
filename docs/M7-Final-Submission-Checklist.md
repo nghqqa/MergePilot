@@ -28,7 +28,7 @@
 - [x] `adopted=false`, `untrusted=true`, `runtime_consumes_rag_context=false`
 - [x] `workflow_utility_status=NOT_MEASURABLE_WITH_CURRENT_RUNTIME`
 - [x] Findings/Fixes=0 honest explanation
-- [x] Zero external dependencies (no CDN, no npm, no network)
+- [x] Zero third-party Python packages (no CDN, no npm, no network for REPLAY HTML; Git CLI required for builder/tests)
 - [x] Launch: `python -m http.server 8080 --bind 127.0.0.1` (1 command)
 
 ## Showcase Materials
@@ -58,7 +58,7 @@
 
 - [ ] `.env.example` — Low priority (Demo Console needs no env vars)
 - [ ] `NOTICE` — Low priority (Apache-2.0 standard)
-- [ ] `THIRD_PARTY` — Low priority (zero third-party deps)
+- [ ] `THIRD_PARTY` — Low priority (zero third-party Python packages; Git CLI required)
 - [x] **Demo video** — **DEFERRED** (`DEFERRED_NOT_REQUIRED_FOR_CURRENT_TECHNICAL_GATE`)
 
 ## Integrity Gates
@@ -67,7 +67,7 @@
 - [x] No secret leaks in any evidence or HTML
 - [x] git diff --check = 0
 - [x] No overstatement in README or Claim Matrix
-- [x] No M7 overall close tag created (correctly deferred)
+- [x] M7 overall close tag created (`m7-closed` → `175541a`)
 - [x] origin/main = `0bc2e69`
 
 ## Conclusion
