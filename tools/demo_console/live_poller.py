@@ -23,8 +23,25 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
-from schema import validate_bundle
+from schema import validate_bundle, VALID_DEMO_MODES
 from integrity import verify_bundle_integrity
+
+
+class _ModeMismatchError(Exception):
+    """Raised when a bundle's demo_mode does not match the poller's expected mode.
+
+    Carrying a dedicated exception type lets ``_poll_once`` translate it into
+    the stable, machine-readable ``MODE_MISMATCH`` error code (rather than the
+    generic ``ValueError`` used for schema/integrity failures).
+    """
+
+    def __init__(self, actual, expected):
+        self.actual = actual
+        self.expected = expected
+        super().__init__(
+            f"demo_mode mismatch: bundle reports {actual!r} but poller "
+            f"expected {expected!r}"
+        )
 
 
 class SnapshotSource:
@@ -64,11 +81,23 @@ class LivePoller(threading.Thread):
     """
 
     def __init__(self, source: SnapshotSource, poll_interval: float = 2.0,
-                 max_consecutive_failures: int = 10):
+                 max_consecutive_failures: int = 10,
+                 expected_mode: str = "ISOLATED_LIVE"):
         super().__init__(daemon=True)
         self._source = source
         self._poll_interval = max(1.0, poll_interval)
         self._max_failures = max_consecutive_failures
+
+        # Mode isolation: the poller only accepts bundles whose demo_mode
+        # matches expected_mode. This prevents an ISOLATED_LIVE poller from
+        # ever adopting a REPLAY bundle (and vice versa). The value is
+        # validated up front so a misconfigured poller fails fast.
+        if expected_mode not in VALID_DEMO_MODES:
+            raise ValueError(
+                f"expected_mode must be one of {sorted(VALID_DEMO_MODES)}, "
+                f"got {expected_mode!r}"
+            )
+        self._expected_mode = expected_mode
 
         self._lock = threading.Lock()
         self._current_snapshot: dict | None = None
@@ -110,6 +139,28 @@ class LivePoller(threading.Thread):
                 "state": self._state,
             }
 
+    def get_view(self) -> dict:
+        """Return an atomic, single-locked snapshot of all poller state.
+
+        Combines the stats with the current snapshot dict and the current
+        source SHA-256 under one lock acquisition, so a status reader sees a
+        consistent point-in-time view (no torn read between stats and the
+        snapshot being replaced by another thread).
+        """
+        with self._lock:
+            return {
+                "poll_count": self.poll_count,
+                "last_poll_at": self.last_poll_at,
+                "last_success_at": self.last_success_at,
+                "source_snapshot_sha256": self._current_sha256,
+                "consecutive_failures": self.consecutive_failures,
+                "last_error_code": self.last_error_code,
+                "state": self._state,
+                "expected_mode": self._expected_mode,
+                "current_snapshot": self._current_snapshot,
+                "current_sha256": self._current_sha256,
+            }
+
     def initial_load(self) -> bool:
         """Attempt first snapshot load. Returns True on success."""
         return self._poll_once()
@@ -134,8 +185,17 @@ class LivePoller(threading.Thread):
             raw = self._source.read_snapshot()
             data = json.loads(raw.decode("utf-8"))
 
-            # Validate against DemoBundle schema
-            errors = validate_bundle(data)
+            # Mode isolation: detect a demo_mode mismatch BEFORE generic
+            # schema validation so the recorded error code is the specific,
+            # machine-readable "MODE_MISMATCH" rather than a generic
+            # ValueError. A poller configured for ISOLATED_LIVE must never
+            # adopt a REPLAY bundle.
+            if data.get("demo_mode") != self._expected_mode:
+                raise _ModeMismatchError(
+                    data.get("demo_mode"), self._expected_mode)
+
+            # Validate against DemoBundle schema, enforcing expected_mode.
+            errors = validate_bundle(data, expected_mode=self._expected_mode)
             if errors:
                 raise ValueError(f"schema validation failed: {errors[:3]}")
 
@@ -155,6 +215,23 @@ class LivePoller(threading.Thread):
                 self.last_success_at = now
 
             return True
+
+        except _ModeMismatchError:
+            with self._lock:
+                self.consecutive_failures += 1
+                # Distinct, stable error code for mode-mismatch failures so
+                # consumers can tell a mode isolation rejection apart from
+                # a generic schema/integrity failure.
+                self.last_error_code = "MODE_MISMATCH"
+
+                if self.consecutive_failures >= self._max_failures:
+                    self._state = "DEGRADED"
+                elif self._current_snapshot is None:
+                    self._state = "INIT"
+                else:
+                    self._state = "STALE"
+
+            return False
 
         except Exception as e:
             with self._lock:

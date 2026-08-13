@@ -64,7 +64,7 @@ from preflight import run_preflight, VALID_MODES
 from schema import validate_bundle, VALID_DEMO_MODES
 from integrity import compute_bundle_sha256, verify_bundle_integrity
 from live_poller import FileSnapshotSource, LivePoller
-from serve import create_server
+from serve import create_server, make_handler, shutdown_poller
 
 # The shipped REPLAY bundle is a complete, schema-valid DemoBundle. The test
 # helpers clone it and flip demo_mode + recompute the SHA to produce a valid
@@ -547,12 +547,13 @@ class TestHttpLiveStatus(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(headers.get("Content-Type"), "application/json")
         self.assertEqual(headers.get("Cache-Control"), "no-store")
-        for key in ("mode", "state", "poll_count", "last_poll_at",
+        # The status contract names the poller state field "poller_state".
+        for key in ("mode", "poller_state", "poll_count", "last_poll_at",
                     "last_success_at", "source_snapshot_sha256",
                     "consecutive_failures", "last_error_code"):
             self.assertIn(key, payload, f"missing status key: {key}")
         self.assertEqual(payload["mode"], "ISOLATED_LIVE")
-        self.assertEqual(payload["state"], "LIVE")
+        self.assertEqual(payload["poller_state"], "LIVE")
         self.assertGreaterEqual(payload["poll_count"], 1)
 
 
@@ -682,6 +683,397 @@ class TestIntegrityHelpers(unittest.TestCase):
             compute_bundle_sha256(b1),
             compute_bundle_sha256(b2),
         )
+
+
+def _make_replay_bundle(**overrides) -> dict:
+    """Return a valid REPLAY bundle (demo_mode=REPLAY) with a correct SHA.
+
+    Used by mode-isolation tests that need a structurally-valid bundle of the
+    "other" mode to feed to a poller/preflight configured for ISOLATED_LIVE.
+    """
+    bundle = _load_replay_bundle()
+    bundle["demo_mode"] = "REPLAY"
+    bundle.update(overrides)
+    bundle["bundle_sha256"] = compute_bundle_sha256(bundle)
+    return bundle
+
+
+class TestModeIsolation(unittest.TestCase):
+    """A poller/preflight configured for one mode must reject the other mode's
+    bundles, preserving the last valid snapshot and reporting MODE_MISMATCH."""
+
+    def setUp(self):
+        self._tmpdir = tempfile.mkdtemp()
+        self._snapshot_path = os.path.join(self._tmpdir, "snapshot.json")
+
+    def tearDown(self):
+        shutil.rmtree(self._tmpdir, ignore_errors=True)
+
+    def test_isolated_live_preflight_rejects_replay_bundle(self):
+        # Preflight expects ISOLATED_LIVE; a REPLAY bundle must be rejected
+        # for demo_mode mismatch (surfaced under source_schema_valid).
+        bundle = _make_replay_bundle()
+        _write_json(self._snapshot_path, bundle)
+        pf = run_preflight("isolated_live", "127.0.0.1",
+                           source_file=self._snapshot_path)
+        self.assertFalse(pf["preflight_passed"],
+                         f"unexpected pass: {pf['failures']}")
+        self.assertTrue(
+            any(f["check"] == "source_schema_valid" for f in pf["failures"]),
+            f"expected source_schema_valid failure; got {pf['failures']}",
+        )
+
+    def test_poller_initial_load_rejects_replay_bundle(self):
+        # A poller with expected_mode="ISOLATED_LIVE" must fail initial load
+        # on a REPLAY bundle and stay snapshot-less.
+        _write_json(self._snapshot_path, _make_replay_bundle())
+        src = FileSnapshotSource(self._snapshot_path)
+        poller = LivePoller(src, poll_interval=1.0,
+                            expected_mode="ISOLATED_LIVE")
+        self.assertFalse(poller.initial_load())
+        self.assertIsNone(poller.current_snapshot)
+        self.assertEqual(poller.last_error_code, "MODE_MISMATCH")
+
+    def test_valid_then_replay_preserves_last_valid_and_marks_stale(self):
+        # Start LIVE on a valid ISOLATED_LIVE bundle, then swap in a REPLAY
+        # bundle: the last valid snapshot is preserved, state -> STALE, and
+        # the error code is MODE_MISMATCH (not a generic ValueError).
+        _write_json(self._snapshot_path, _make_isolated_live_bundle())
+        src = FileSnapshotSource(self._snapshot_path)
+        poller = LivePoller(src, poll_interval=1.0,
+                            expected_mode="ISOLATED_LIVE")
+        self.assertTrue(poller.initial_load())
+        valid_snapshot = poller.current_snapshot
+        valid_sha = poller.current_sha256
+
+        _write_json(self._snapshot_path, _make_replay_bundle())
+        ok = poller._poll_once()
+
+        self.assertFalse(ok)
+        self.assertEqual(poller.current_snapshot, valid_snapshot)
+        self.assertEqual(poller.current_sha256, valid_sha)
+        self.assertEqual(poller.state, "STALE")
+        self.assertEqual(poller.last_error_code, "MODE_MISMATCH")
+
+    def test_mode_mismatch_reaches_degraded_after_threshold(self):
+        # Repeated mode-mismatch failures must drive the poller to DEGRADED
+        # once the consecutive-failure threshold is reached.
+        _write_json(self._snapshot_path, _make_replay_bundle())
+        src = FileSnapshotSource(self._snapshot_path)
+        poller = LivePoller(src, poll_interval=1.0,
+                            expected_mode="ISOLATED_LIVE",
+                            max_consecutive_failures=3)
+        # No valid snapshot ever loaded: each poll is a fresh mismatch.
+        poller._poll_once()
+        poller._poll_once()
+        self.assertEqual(poller.state, "INIT")
+        self.assertEqual(poller.last_error_code, "MODE_MISMATCH")
+        poller._poll_once()
+        self.assertEqual(poller.state, "DEGRADED")
+        self.assertEqual(poller.last_error_code, "MODE_MISMATCH")
+
+    def test_recovery_valid_isolated_live_after_mismatch(self):
+        # After a mode mismatch leaves the poller STALE, a subsequent valid
+        # ISOLATED_LIVE bundle must restore LIVE and clear the error code.
+        _write_json(self._snapshot_path, _make_isolated_live_bundle())
+        src = FileSnapshotSource(self._snapshot_path)
+        poller = LivePoller(src, poll_interval=1.0,
+                            expected_mode="ISOLATED_LIVE")
+        self.assertTrue(poller.initial_load())
+
+        _write_json(self._snapshot_path, _make_replay_bundle())
+        self.assertFalse(poller._poll_once())
+        self.assertEqual(poller.state, "STALE")
+
+        _write_json(self._snapshot_path,
+                    _make_isolated_live_bundle(final_status="HELD"))
+        self.assertTrue(poller._poll_once())
+        self.assertEqual(poller.state, "LIVE")
+        self.assertEqual(poller.last_error_code, "")
+        self.assertEqual(poller.consecutive_failures, 0)
+
+
+class TestStatusContract(unittest.TestCase):
+    """GET /api/live/status must expose the full browser-observable contract."""
+
+    REQUIRED_KEYS = {
+        "mode", "source_kind", "source_read_only", "not_production",
+        "poller_state", "poll_count", "last_poll_at", "last_success_at",
+        "source_snapshot_sha256", "bundle_sha256", "consecutive_failures",
+        "last_error_code", "github_writes_enabled", "agent_control_enabled",
+        "runtime_consumes_rag_context", "production_resource_accessed",
+        "production_resource_access_status",
+        "browser_network_observation_status",
+        "observed_external_network_requests",
+        "dynamic_pages_consume_live_api",
+    }
+
+    def setUp(self):
+        self._tmpdir = tempfile.mkdtemp()
+        self._snapshot_path = os.path.join(self._tmpdir, "snapshot.json")
+        self._bundle = _make_isolated_live_bundle()
+        _write_json(self._snapshot_path, self._bundle)
+        self._handle = _start_live_server(self._snapshot_path)
+
+    def tearDown(self):
+        self._handle.stop()
+        shutil.rmtree(self._tmpdir, ignore_errors=True)
+
+    def _status(self):
+        status, _, payload = _http_get_json(
+            self._handle.base_url + "/api/live/status")
+        self.assertEqual(status, 200)
+        return payload
+
+    def test_status_has_all_required_fields(self):
+        payload = self._status()
+        missing = self.REQUIRED_KEYS - set(payload.keys())
+        self.assertEqual(missing, set(), f"missing status keys: {missing}")
+
+    def test_poller_state_matches_actual_state(self):
+        payload = self._status()
+        # The server's poller_state must reflect the real poller.state.
+        self.assertEqual(payload["poller_state"], self._handle.poller.state)
+        self.assertEqual(payload["poller_state"], "LIVE")
+
+    def test_bundle_sha256_equals_bundle_internal_value(self):
+        payload = self._status()
+        self.assertEqual(payload["bundle_sha256"],
+                         self._bundle["bundle_sha256"])
+
+    def test_source_snapshot_sha256_equals_file_sha(self):
+        # source_snapshot_sha256 is the SHA-256 of the raw snapshot bytes
+        # on disk (the file content the poller read).
+        with open(self._snapshot_path, "rb") as f:
+            raw = f.read()
+        import hashlib
+        expected = hashlib.sha256(raw).hexdigest()
+        payload = self._status()
+        self.assertEqual(payload["source_snapshot_sha256"], expected)
+
+    def test_dynamic_pages_consume_live_api_is_false(self):
+        payload = self._status()
+        self.assertIs(payload["dynamic_pages_consume_live_api"], False)
+
+    def test_not_measured_and_null_fields_accurate(self):
+        payload = self._status()
+        # production access: refused but not measured → null + NOT_MEASURED
+        self.assertIsNone(payload["production_resource_accessed"])
+        self.assertEqual(payload["production_resource_access_status"],
+                         "NOT_MEASURED")
+        # browser network observation: not instrumented
+        self.assertEqual(payload["browser_network_observation_status"],
+                         "NOT_MEASURED")
+        self.assertIsNone(payload["observed_external_network_requests"])
+        # hard negatives
+        self.assertIs(payload["github_writes_enabled"], False)
+        self.assertIs(payload["agent_control_enabled"], False)
+        self.assertIs(payload["runtime_consumes_rag_context"], False)
+        self.assertIs(payload["source_read_only"], True)
+        self.assertIs(payload["not_production"], True)
+
+    def test_status_snapshot_is_atomic(self):
+        # get_view() reads stats + snapshot under one lock; verify the
+        # bundle_sha256 and source_snapshot_sha256 are mutually consistent
+        # (both present and well-formed) for a LIVE poller.
+        view = self._handle.poller.get_view()
+        self.assertEqual(view["current_snapshot"]["bundle_sha256"],
+                         self._bundle["bundle_sha256"])
+        self.assertEqual(view["current_sha256"], view["source_snapshot_sha256"])
+
+
+class TestFactoryHardening(unittest.TestCase):
+    """create_server / make_handler reject misconfiguration fail-closed."""
+
+    def test_create_server_rejects_non_loopback_host(self):
+        for host in ("0.0.0.0", "::", "192.168.1.5", "10.0.0.1"):
+            with self.assertRaises(ValueError):
+                create_server(host, 0, "REPLAY")
+
+    def test_create_server_rejects_unknown_mode(self):
+        with self.assertRaises(ValueError):
+            create_server("127.0.0.1", 0, "production")
+
+    def test_make_handler_rejects_unknown_mode(self):
+        with self.assertRaises(ValueError):
+            make_handler(None, "bogus")
+
+    def test_create_server_isolated_live_requires_poller(self):
+        with self.assertRaises(ValueError):
+            create_server("127.0.0.1", 0, "ISOLATED_LIVE", poller=None)
+
+    def test_create_server_replay_rejects_poller(self):
+        # REPLAY must not be handed a poller — that's a config mistake.
+        src = FileSnapshotSource(os.path.join(tempfile.gettempdir(), "x.json"))
+        poller = LivePoller(src, poll_interval=1.0,
+                            expected_mode="ISOLATED_LIVE")
+        try:
+            with self.assertRaises(ValueError):
+                create_server("127.0.0.1", 0, "REPLAY", poller=poller)
+        finally:
+            # Never started; stop is a no-op but keeps things tidy.
+            poller.stop()
+
+    def test_create_server_accepts_valid_configs(self):
+        # REPLAY with no poller is fine.
+        s1 = create_server("127.0.0.1", 0, "REPLAY")
+        s1.server_close()
+        # ISOLATED_LIVE with a poller is fine.
+        d = tempfile.mkdtemp()
+        try:
+            p = os.path.join(d, "s.json")
+            _write_json(p, _make_isolated_live_bundle())
+            src = FileSnapshotSource(p)
+            poller = LivePoller(src, poll_interval=1.0,
+                                expected_mode="ISOLATED_LIVE")
+            self.assertTrue(poller.initial_load())
+            s2 = create_server("127.0.0.1", 0, "ISOLATED_LIVE", poller=poller)
+            s2.server_close()
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+
+
+class TestShutdown(unittest.TestCase):
+    """Poller shutdown: normal join vs. timeout reporting."""
+
+    def setUp(self):
+        self._tmpdir = tempfile.mkdtemp()
+        self._snapshot_path = os.path.join(self._tmpdir, "snapshot.json")
+        _write_json(self._snapshot_path, _make_isolated_live_bundle())
+
+    def tearDown(self):
+        shutil.rmtree(self._tmpdir, ignore_errors=True)
+
+    def test_normal_shutdown_not_alive_after_join(self):
+        src = FileSnapshotSource(self._snapshot_path)
+        poller = LivePoller(src, poll_interval=1.0,
+                            expected_mode="ISOLATED_LIVE")
+        self.assertTrue(poller.initial_load())
+        poller.start()
+        time.sleep(0.3)
+        clean = shutdown_poller(poller, timeout=5)
+        self.assertTrue(clean)
+        self.assertFalse(poller.is_alive())
+        self.assertEqual(poller.state, "STOPPED")
+
+    def test_simulated_timeout_reports_failure(self):
+        # A poller subclass whose stop() never sets the stop event simulates a
+        # thread that ignores shutdown. join() must time out and
+        # shutdown_poller must report failure (False), mirroring what main()
+        # checks before printing POLLER_SHUTDOWN_TIMEOUT.
+        src = FileSnapshotSource(self._snapshot_path)
+
+        class _UnstoppablePoller(LivePoller):
+            def stop(self):
+                # Intentionally do NOT set the stop event.
+                pass
+
+        poller = _UnstoppablePoller(src, poll_interval=1.0,
+                                    expected_mode="ISOLATED_LIVE")
+        self.assertTrue(poller.initial_load())
+        poller.start()
+        time.sleep(0.3)
+        clean = shutdown_poller(poller, timeout=1.0)
+        self.assertFalse(clean, "expected shutdown_poller to report timeout")
+        self.assertTrue(poller.is_alive(),
+                        "poller should still be alive after a timeout")
+        # Force-terminate the leaked thread so the test process can exit: set
+        # the real stop event on the base class and join with a longer grace.
+        LivePoller.stop(poller)
+        poller.join(timeout=5)
+
+
+class TestSourceLocality(unittest.TestCase):
+    """source_locality_status classifies local vs. rejected-network sources."""
+
+    def test_unc_path_rejected(self):
+        pf = run_preflight("isolated_live", "127.0.0.1",
+                           source_file="//server/share/snap.json")
+        self.assertFalse(pf["preflight_passed"])
+        self.assertEqual(pf["source_locality_status"], "NETWORK_PATH_REJECTED")
+
+    def test_file_uri_rejected(self):
+        pf = run_preflight("isolated_live", "127.0.0.1",
+                           source_file="file:///tmp/snap.json")
+        self.assertFalse(pf["preflight_passed"])
+        self.assertEqual(pf["source_locality_status"], "NETWORK_PATH_REJECTED")
+
+    def test_http_url_rejected(self):
+        pf = run_preflight("isolated_live", "127.0.0.1",
+                           source_file="https://example.com/snap.json")
+        self.assertFalse(pf["preflight_passed"])
+        self.assertEqual(pf["source_locality_status"], "NETWORK_PATH_REJECTED")
+
+    def test_directory_rejected_keeps_null_locality(self):
+        # A directory fails source_is_regular_file before locality is
+        # classified; source_locality_status stays None (not VERIFIED_LOCAL).
+        with tempfile.TemporaryDirectory() as d:
+            pf = run_preflight("isolated_live", "127.0.0.1", source_file=d)
+            self.assertFalse(pf["preflight_passed"])
+            self.assertIsNone(pf["source_locality_status"])
+
+    def test_local_file_passes_verified_local(self):
+        bundle = _make_isolated_live_bundle()
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json",
+                                         delete=False) as f:
+            json.dump(bundle, f)
+            f.flush()
+            path = f.name
+        try:
+            pf = run_preflight("isolated_live", "127.0.0.1", source_file=path)
+            self.assertTrue(pf["preflight_passed"],
+                            f"unexpected failures: {pf['failures']}")
+            # On Windows a drive-letter path is NOT_MEASURED; elsewhere a
+            # plain relative/temp path is VERIFIED_LOCAL. Accept either honest
+            # value and assert it's one of the documented statuses.
+            self.assertIn(pf["source_locality_status"],
+                          ("VERIFIED_LOCAL", "NOT_MEASURED"))
+        finally:
+            os.unlink(path)
+
+    def test_windows_mapped_drive_is_not_measured(self):
+        # A drive-letter path that exists is classified NOT_MEASURED because
+        # the console cannot portably tell a local volume from a network
+        # share mounted as a drive letter. We synthesize this only when such
+        # a path actually resolves (e.g. the system temp dir on C:).
+        import tempfile as _tf
+        # tempfile paths on Windows look like C:\\Users\\... — exercise that
+        # classification directly via the helper.
+        from preflight import _is_windows_mapped_drive
+        if os.name != "nt":
+            self.skipTest("drive-letter classification is Windows-specific")
+        self.assertTrue(_is_windows_mapped_drive("C:\\Users\\x\\snap.json"))
+        self.assertFalse(_is_windows_mapped_drive("/tmp/snap.json"))
+        self.assertFalse(_is_windows_mapped_drive("//server/share/snap.json"))
+
+
+class TestDocConsistency(unittest.TestCase):
+    """The implementation doc must make honest, non-overclaimed statements."""
+
+    DOC_PATH = ROOT / "docs" / "ISOLATED-LIVE-P1-Implementation.md"
+
+    def setUp(self):
+        with open(self.DOC_PATH, "r", encoding="utf-8") as f:
+            self.text = f.read()
+
+    def test_no_phase_1_complete_claim(self):
+        self.assertNotIn("Phase 1 complete", self.text)
+        self.assertNotIn("phase 1 complete", self.text)
+
+    def test_no_production_accessed_false_positive_claim(self):
+        # The doc must not claim production_resource_accessed=false (a positive
+        # "clean" claim). It is null / NOT_MEASURED.
+        self.assertNotIn("production_resource_accessed=false", self.text)
+        self.assertNotIn("production_resource_accessed = false", self.text)
+
+    def test_has_dynamic_pages_consume_live_api_false(self):
+        self.assertIn("dynamic_pages_consume_live_api=false", self.text)
+
+    def test_mentions_static_pages_not_dynamically_refreshed(self):
+        # The doc must state the served pages are static (frozen REPLAY HTML)
+        # and are NOT dynamically refreshed/consuming the API.
+        self.assertIn("static", self.text.lower())
+        self.assertIn("frozen", self.text.lower())
 
 
 if __name__ == "__main__":

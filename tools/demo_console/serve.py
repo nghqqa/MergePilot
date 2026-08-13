@@ -61,6 +61,58 @@ def _send_json_error(handler, status: int, error: str) -> None:
     _send_json(handler, status, {"error": error})
 
 
+def _send_status(poller: LivePoller) -> dict:
+    """Build the full browser-observable ISOLATED_LIVE status contract.
+
+    Uses ``poller.get_view()`` so every field is read in a single locked
+    snapshot (no torn read between stats and the live bundle). Every field
+    is honest about what the read-only console actually does:
+
+    - No writes, no control, no RAG consumption, no production access.
+    - ``production_resource_accessed`` is ``null`` (not false) and its
+      companion ``*_status`` is ``NOT_MEASURED``: the console refuses
+      production access but does not actively measure it.
+    - Browser network observation is ``NOT_MEASURED``: the console does not
+      instrument outbound browser traffic; ``observed_external_network_requests``
+      is therefore ``null``.
+    - ``dynamic_pages_consume_live_api`` is ``false``: the served pages are
+      static frozen REPLAY HTML, not a SPA that polls the live API.
+    """
+    view = poller.get_view()
+    snapshot = view.get("current_snapshot") or {}
+
+    return {
+        # Identity / source
+        "mode": _MODE_LIVE,
+        "source_kind": "FILE_FIXTURE",
+        "source_read_only": True,
+        "not_production": True,
+        # Poller state (atomic snapshot)
+        "poller_state": view["state"],
+        "poll_count": view["poll_count"],
+        "last_poll_at": view["last_poll_at"],
+        "last_success_at": view["last_success_at"],
+        "source_snapshot_sha256": view["source_snapshot_sha256"],
+        "bundle_sha256": snapshot.get("bundle_sha256"),
+        "consecutive_failures": view["consecutive_failures"],
+        "last_error_code": view["last_error_code"],
+        # Hard negatives: the console performs none of these.
+        "github_writes_enabled": False,
+        "agent_control_enabled": False,
+        "runtime_consumes_rag_context": False,
+        # Production access: refused, not measured. null + NOT_MEASURED so
+        # the absence of measurement is explicit, never mistaken for clean.
+        "production_resource_accessed": None,
+        "production_resource_access_status": "NOT_MEASURED",
+        # Browser-side network observation: not instrumented by the console.
+        "browser_network_observation_status": "NOT_MEASURED",
+        "observed_external_network_requests": None,
+        # The served pages are static frozen REPLAY HTML; they do not
+        # dynamically consume the live API.
+        "dynamic_pages_consume_live_api": False,
+    }
+
+
 class ReadOnlyHandler(http.server.SimpleHTTPRequestHandler):
     """Read-only HTTP handler — blocks all write methods."""
 
@@ -128,17 +180,7 @@ class LiveApiHandler(ReadOnlyHandler):
         if poller is None:
             _send_json(self, 503, {"error": "live poller not configured"})
             return
-        stats = poller.get_stats()
-        _send_json(self, 200, {
-            "mode": _MODE_LIVE,
-            "state": stats["state"],
-            "poll_count": stats["poll_count"],
-            "last_poll_at": stats["last_poll_at"],
-            "last_success_at": stats["last_success_at"],
-            "source_snapshot_sha256": stats["source_snapshot_sha256"],
-            "consecutive_failures": stats["consecutive_failures"],
-            "last_error_code": stats["last_error_code"],
-        })
+        _send_json(self, 200, _send_status(poller))
 
 
 class ReplayApiHandler(ReadOnlyHandler):
@@ -163,13 +205,20 @@ def make_handler(poller: LivePoller | None, mode: str):
     - REPLAY         → ReplayApiHandler (static + 404 for /api/live/*)
     - ISOLATED_LIVE  → LiveApiHandler   (snapshot + status + static fallback)
 
-    The poller is attached to the server instance (see ``create_server``)
-    and read by the handler via ``self.server.poller``.
+    Unknown modes raise ValueError rather than silently defaulting to REPLAY:
+    a typo'd mode must surface as a hard failure, not silently degrade to a
+    different handler. The poller is attached to the server instance (see
+    ``create_server``) and read by the handler via ``self.server.poller``.
     """
-    if mode.upper() == _MODE_LIVE:
+    mode_u = mode.upper() if isinstance(mode, str) else mode
+    if mode_u == _MODE_LIVE:
         return LiveApiHandler
-    # Default to REPLAY for any non-live mode.
-    return ReplayApiHandler
+    if mode_u == _MODE_REPLAY:
+        return ReplayApiHandler
+    raise ValueError(
+        f"unknown mode {mode!r}; must be one of "
+        f"{sorted({_MODE_REPLAY, _MODE_LIVE})}"
+    )
 
 
 class _DemoTCPServer(socketserver.TCPServer):
@@ -200,13 +249,58 @@ def create_server(host: str, port: int, mode: str,
     The handler class is selected from ``mode`` via ``make_handler``.
     The ``poller`` is attached to the server so live handlers can read
     the current snapshot.
+
+    Hardening (fail-closed):
+
+    - ``host`` must be loopback. Non-loopback bind addresses (0.0.0.0, ::,
+      LAN IPs) raise ValueError — the demo console never exposes itself off
+      the local machine.
+    - ``mode`` must be one of the known modes; anything else raises
+      ValueError via ``make_handler`` (no silent REPLAY fallback).
+    - ISOLATED_LIVE requires a poller (the live endpoints read it); a missing
+      poller raises ValueError.
+    - REPLAY must NOT receive a poller (REPLAY serves static files only); a
+      non-None poller raises ValueError to catch configuration mistakes.
     """
+    if not _is_loopback(host):
+        raise ValueError(
+            f"host must be loopback (127.0.0.1/localhost/::1), got {host!r}; "
+            "the demo console is local-only and never binds off-machine"
+        )
+
+    mode_u = mode.upper() if isinstance(mode, str) else mode
+
+    if mode_u == _MODE_LIVE:
+        if poller is None:
+            raise ValueError(
+                "ISOLATED_LIVE mode requires a poller; got poller=None"
+            )
+    elif mode_u == _MODE_REPLAY:
+        if poller is not None:
+            raise ValueError(
+                "REPLAY mode does not use a poller; "
+                f"got poller={poller!r}"
+            )
+    # Unknown modes are rejected by make_handler below.
+
     handler_cls = make_handler(poller, mode)
     return _DemoTCPServer((host, port), handler_cls, mode=mode, poller=poller)
 
 
 def _is_loopback(host: str) -> bool:
     return host.lower() in ("127.0.0.1", "localhost", "::1")
+
+
+def shutdown_poller(poller: LivePoller, timeout: float = 5.0) -> bool:
+    """Stop and join the poller; return True if it shut down cleanly.
+
+    Used by ``main()`` and directly testable. A poller that does not honor
+    its stop event within ``timeout`` seconds returns False so the caller
+    can report ``POLLER_SHUTDOWN_TIMEOUT`` and exit non-zero.
+    """
+    poller.stop()
+    poller.join(timeout=timeout)
+    return not poller.is_alive()
 
 
 def main():
@@ -277,8 +371,7 @@ def main():
     if not (serve_dir / "index.html").exists():
         print(f"Error: {serve_dir}/index.html not found.", file=sys.stderr)
         if poller:
-            poller.stop()
-            poller.join(timeout=3)
+            shutdown_poller(poller, timeout=3)
         sys.exit(1)
 
     os.chdir(str(serve_dir))
@@ -295,8 +388,13 @@ def main():
             print("\nStopping...")
         finally:
             if poller:
-                poller.stop()
-                poller.join(timeout=5)
+                if not shutdown_poller(poller, timeout=5):
+                    # The poller thread did not honor the stop event within
+                    # the grace period. Report the failure explicitly and
+                    # exit non-zero so supervisors/jobs can detect it. Do
+                    # NOT print "Poller stopped" — it did not stop.
+                    print("POLLER_SHUTDOWN_TIMEOUT", file=sys.stderr)
+                    return 1
                 stats = poller.get_stats()
                 print(f"Poller stopped: state={stats['state']}, "
                       f"polls={stats['poll_count']}, "
