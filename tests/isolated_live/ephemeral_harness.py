@@ -60,7 +60,7 @@ from postgres_source import CANONICAL_VIEWER_ROLE  # noqa: E402
 # reproducibility guarantee.
 IMAGE_DIGEST = (
     "pgvector/pgvector@sha256:"
-    "a36250871de0833b8757561c72f2477ef1dd1101afa4a617fb552e0de514c6b"
+    "a36250871de0833b8757561c72f2477ef1ddd1101afa4e617fb552e0de514c6b"
 )
 
 # The ONLY Docker daemon authorized to run the ephemeral container. Production
@@ -146,25 +146,113 @@ _SQL_PASSWORD_RE = re.compile(
 
 
 # ── Execution gate ─────────────────────────────────────────────────────────
+# Phase B hardening (Fix 2): the authorization gate verifies, in order:
+#   1. EPHEMERAL_PG_VERIFY == "1" (exact) — no Docker probe if unset
+#   2. MergePilot-Test exists in `wsl -l -v` AND is initially Running
+#   3. Ubuntu-22.04 state is recorded but NEVER invoked
+#   4. all Docker commands go through `wsl -u root -d MergePilot-Test -- docker`
+#   5. DOCKER_HOST is empty or a local unix socket
+#   6. docker context endpoint == unix:///var/run/docker.sock (no TCP/SSH/remote)
+#   7. daemon fingerprint (Server ID, Name, Root Dir, Version) is present
+#   8. IMAGE_DIGEST is cached locally
+# The result carries a structured, secret-free fingerprint for pre/post compare.
+_APPROVED_ENDPOINT = "unix:///var/run/docker.sock"
+
+
+def _run_wsl_text(argv: list, timeout: int = 15) -> tuple[int, str, str] | None:
+    """Run a wsl.exe command, return (rc, stdout, stderr) or None on OS error."""
+    try:
+        cp = subprocess.run(
+            ["wsl.exe"] + argv,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            timeout=timeout, check=False,
+        )
+    except FileNotFoundError:
+        return None
+    except subprocess.TimeoutExpired:
+        return None
+    except OSError:
+        return None
+    return (
+        cp.returncode,
+        cp.stdout.decode("utf-8", "replace") if cp.stdout else "",
+        cp.stderr.decode("utf-8", "replace") if cp.stderr else "",
+    )
+
+
+def _wsl_distro_states() -> dict:
+    """Return {distro_name: state} from `wsl -l -v` (read-only). Empty on error.
+
+    Robust parsing (Fix 1, second review round):
+    - Handles UTF-16LE/NUL-style output from wsl.exe (strips NUL bytes; the
+      caller's _run_wsl_text already decodes, but defensive NUL-strip is kept).
+    - Strips an optional leading ``*`` (marks the default distro) and
+      surrounding whitespace before parsing — so a default distro line like
+      ``* MergePilot-Test  Stopped  2`` parses with name ``MergePilot-Test``,
+      not ``* MergePilot-Test``.
+    - Header-agnostic: does NOT require an English ``NAME`` header; it simply
+      ignores any line whose trailing three tokens are not
+      ``<name> <Running|Stopped> <version>``. This means malformed/header/blank
+      lines are ignored rather than mis-parsed.
+    - distro names may contain spaces (the state is the second-to-last token,
+      version the last; the name is everything before).
+    - Fail-closed: if parsing is unreliable for a line, that line contributes
+      nothing (no guessing).
+    """
+    res = _run_wsl_text(["-l", "-v"])
+    if res is None:
+        return {}
+    _rc, out, _err = res
+    states: dict = {}
+    for line in out.splitlines():
+        # Strip UTF-16 NULs defensively, then whitespace.
+        clean = line.replace("\x00", "").strip()
+        if not clean:
+            continue
+        # Remove a leading '*' (default-distro marker) plus following space(s).
+        if clean.startswith("*"):
+            clean = clean.lstrip("*").strip()
+        parts = clean.split()
+        # Require at least 3 tokens: <name...> <state> <version>.
+        if len(parts) < 3:
+            continue
+        state = parts[-2]
+        # Accept ONLY Running|Stopped (case-insensitive) as the state token.
+        if state.lower() not in ("running", "stopped"):
+            continue
+        # Version (last token) must be an integer.
+        if not parts[-1].isdigit():
+            continue
+        name = " ".join(parts[:-2]).strip()
+        if not name:
+            continue
+        # Preserve the canonical casing of the state as emitted.
+        states[name] = state
+    return states
+
+
 def check_execution_auth() -> dict:
     """Return whether the ephemeral harness is authorized to execute.
 
-    Authorization requires BOTH:
-      1. ``EPHEMERAL_PG_VERIFY=1`` in the environment (explicit opt-in; the
-         string "1" exactly — "0", "true", "yes", unset, etc. are all NOT
-         authorized). This is a two-key rule: an accidental env var alone must
-         never start a container.
-      2. The authorized Docker daemon (``MergePilot-Test``) is reachable as
-         root. This is checked via ``wsl -u root -d MergePilot-Test docker
-         info``. Production daemons (Ubuntu-22.04) are never probed.
+    Phase B authorization (Fix 2) — all of the following must hold, checked in
+    order, fail-closed at the first miss (NO Docker command runs if an earlier
+    gate fails):
 
-    Returns a dict ``{"authorized": bool, "reason": str}``. The reason is safe
-    to log (it never contains a secret). This function NEVER raises on a
-    daemon-check failure — it returns ``authorized=False`` so the caller can
-    skip cleanly.
+      1. ``EPHEMERAL_PG_VERIFY == "1"`` (exact string; "0"/"true"/unset refuse).
+      2. MergePilot-Test is present in ``wsl -l -v`` AND its initial state is
+         ``Running`` (a Stopped distro is NOT implicitly started; the harness
+         refuses). Ubuntu-22.04 state is recorded but NEVER invoked.
+      3. The Docker context endpoint is exactly ``unix:///var/run/docker.sock``
+         (TCP/SSH/remote endpoints are refused). ``DOCKER_HOST`` (read inside
+         the distro) must be empty or a local unix socket.
+      4. The daemon fingerprint (Server ID, Name, Docker Root Dir, Version) is
+         present and returned for pre/post-execution comparison.
+      5. ``IMAGE_DIGEST`` is cached locally (no pull).
 
-    Phase A note: this function is defined and callable, but Phase A does NOT
-    start a container even when authorized. Container startup is Phase B.
+    Returns a dict with at least ``{"authorized": bool, "reason": str}``. When
+    authorized, it also carries ``"fingerprint"`` (a secret-free dict) for the
+    executor to save pre-execution and compare after cleanup. The reason is
+    safe to log. This function NEVER raises — it returns ``authorized=False``.
     """
     flag = os.environ.get("EPHEMERAL_PG_VERIFY", "")
     if flag != "1":
@@ -172,54 +260,140 @@ def check_execution_auth() -> dict:
             "authorized": False,
             "reason": (
                 "EPHEMERAL_PG_VERIFY is not set to '1' (got %r); ephemeral "
-                "execution is NOT authorized" % flag
+                "execution is NOT authorized; no Docker command was issued"
+                % flag
             ),
         }
 
-    # Daemon reachability probe. Array arguments only — never shell=True.
-    # We probe the authorized WSL distribution explicitly so a default-distro
-    # docker can never satisfy the check.
-    try:
-        completed = subprocess.run(
-            ["wsl", "-u", "root", "-d", AUTHORIZED_DAEMON, "docker", "info"],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            # Fail fast — a hung daemon probe must not stall the test suite.
-            timeout=15,
-            check=False,
-        )
-    except FileNotFoundError:
+    # Gate 2: distro states (read-only; does NOT start any distro).
+    states = _wsl_distro_states()
+    ubuntu_state = states.get("Ubuntu-22.04", "UNKNOWN")
+    if AUTHORIZED_DAEMON not in states:
         return {
             "authorized": False,
-            "reason": "wsl executable not found; cannot reach %s daemon"
-                      % AUTHORIZED_DAEMON,
+            "reason": ("%s not present in `wsl -l -v`; NOT authorized "
+                       "(Ubuntu-22.04 state recorded: %s, never invoked)"
+                       % (AUTHORIZED_DAEMON, ubuntu_state)),
+            "ubuntu_state": ubuntu_state,
         }
-    except subprocess.TimeoutExpired:
+    if states[AUTHORIZED_DAEMON] != "Running":
         return {
             "authorized": False,
-            "reason": "timed out probing %s daemon" % AUTHORIZED_DAEMON,
-        }
-    except OSError as exc:
-        # Defensive: never let a subprocess probe failure propagate. The gate
-        # is fail-closed (authorized=False).
-        return {
-            "authorized": False,
-            "reason": "could not probe %s daemon: %s"
-                      % (AUTHORIZED_DAEMON, type(exc).__name__),
+            "reason": ("%s initial state is %s (must be Running); NOT "
+                       "authorized — distro is NOT implicitly started"
+                       % (AUTHORIZED_DAEMON, states[AUTHORIZED_DAEMON])),
+            "ubuntu_state": ubuntu_state,
         }
 
-    if completed.returncode != 0:
-        return {
-            "authorized": False,
-            "reason": "%s daemon not reachable (docker info rc=%d)"
-                      % (AUTHORIZED_DAEMON, completed.returncode),
-        }
+    # Gate 3: Docker endpoint via the authorized distro.
+    ep_res = _run_wsl_text(
+        ["-u", "root", "-d", AUTHORIZED_DAEMON, "--",
+         "docker", "context", "inspect", "--format", "{{.Endpoints.docker.Host}}"],
+        timeout=15)
+    if ep_res is None:
+        return {"authorized": False,
+                "reason": "could not probe docker context endpoint (wsl/docker error)",
+                "ubuntu_state": ubuntu_state}
+    ep_rc, ep_out, _ep_err = ep_res
+    if ep_rc != 0:
+        return {"authorized": False,
+                "reason": "docker context inspect failed (rc=%d)" % ep_rc,
+                "ubuntu_state": ubuntu_state}
+    endpoint = ep_out.strip()
+    if endpoint != _APPROVED_ENDPOINT:
+        return {"authorized": False,
+                "reason": ("docker endpoint is %s, must be %s (no TCP/SSH/remote)"
+                           % (endpoint, _APPROVED_ENDPOINT)),
+                "ubuntu_state": ubuntu_state}
+    # DOCKER_HOST inside the distro (must be empty or local unix socket).
+    dh_res = _run_wsl_text(
+        ["-u", "root", "-d", AUTHORIZED_DAEMON, "--",
+         "bash", "-c", "echo \"${DOCKER_HOST:-}\""],
+        timeout=10)
+    if dh_res is None:
+        return {"authorized": False,
+                "reason": "could not read DOCKER_HOST in distro",
+                "ubuntu_state": ubuntu_state}
+    _dh_rc, dh_out, _dh_err = dh_res
+    docker_host = dh_out.strip()
+    # DOCKER_HOST allowlist (Fix 2, second review): ONLY empty or the exact
+    # approved local socket. Reject any other unix socket (e.g. /tmp/docker.sock,
+    # /var/run/other.sock), tcp://, ssh://, npipe://, and whitespace variants.
+    if docker_host not in ("", _APPROVED_ENDPOINT):
+        return {"authorized": False,
+                "reason": ("DOCKER_HOST=%r is not empty or exactly %s "
+                           "(no other socket/tcp/ssh/npipe)" % (docker_host, _APPROVED_ENDPOINT)),
+                "ubuntu_state": ubuntu_state}
+
+    # Gate 4: daemon fingerprint.
+    info_res = _run_wsl_text(
+        ["-u", "root", "-d", AUTHORIZED_DAEMON, "--", "docker", "info"],
+        timeout=15)
+    if info_res is None:
+        return {"authorized": False,
+                "reason": "could not probe docker info (wsl/docker error)",
+                "ubuntu_state": ubuntu_state}
+    info_rc, info_out, _info_err = info_res
+    if info_rc != 0:
+        return {"authorized": False,
+                "reason": "docker info failed (rc=%d)" % info_rc,
+                "ubuntu_state": ubuntu_state}
+    fingerprint = _parse_daemon_fingerprint(info_out)
+    missing = [k for k, v in fingerprint.items() if not v]
+    if missing:
+        return {"authorized": False,
+                "reason": "daemon fingerprint missing fields: %s" % missing,
+                "ubuntu_state": ubuntu_state}
+
+    # Gate 5: IMAGE_DIGEST cached + capture the local Image ID (Fix 1, final review).
+    img_res = _run_wsl_text(
+        ["-u", "root", "-d", AUTHORIZED_DAEMON, "--",
+         "docker", "image", "inspect", IMAGE_DIGEST, "--format", "{{.Id}}"],
+        timeout=15)
+    if img_res is None:
+        return {"authorized": False,
+                "reason": "could not probe cached image digest (wsl/docker error)",
+                "ubuntu_state": ubuntu_state}
+    img_rc, img_out, _img_err = img_res
+    if img_rc != 0:
+        return {"authorized": False,
+                "reason": "approved image digest not cached locally (no pull)",
+                "ubuntu_state": ubuntu_state}
+    image_id = img_out.strip()
+    # Must be a valid sha256 Image ID (non-empty, sha256:<hex> or <hex>).
+    if not image_id or not re.match(r"^(sha256:)?[0-9a-f]{12,64}$", image_id):
+        return {"authorized": False,
+                "reason": "image inspect returned an invalid Image ID",
+                "ubuntu_state": ubuntu_state}
 
     return {
         "authorized": True,
-        "reason": "EPHEMERAL_PG_VERIFY=1 and %s daemon reachable"
-                  % AUTHORIZED_DAEMON,
+        "reason": "EPHEMERAL_PG_VERIFY=1, %s Running, endpoint %s, fingerprint ok, "
+                  "image cached" % (AUTHORIZED_DAEMON, _APPROVED_ENDPOINT),
+        "fingerprint": fingerprint,
+        "ubuntu_state": ubuntu_state,
+        "authorized_distro_state": states[AUTHORIZED_DAEMON],
+        "endpoint": endpoint,
+        "docker_host": docker_host,
+        "image_digest": IMAGE_DIGEST,
+        "image_id": image_id,
     }
+
+
+def _parse_daemon_fingerprint(info_text: str) -> dict:
+    """Extract a secret-free fingerprint from `docker info` output."""
+    fp = {"server_id": "", "name": "", "docker_root_dir": "", "version": ""}
+    for line in info_text.splitlines():
+        s = line.strip()
+        if s.startswith("ID:"):
+            fp["server_id"] = s.split(":", 1)[1].strip()
+        elif s.startswith("Server Version:"):
+            fp["version"] = s.split(":", 1)[1].strip()
+        elif s.startswith("Docker Root Dir:"):
+            fp["docker_root_dir"] = s.split(":", 1)[1].strip()
+        elif s.startswith("Name:") and not fp["name"]:
+            fp["name"] = s.split(":", 1)[1].strip()
+    return fp
 
 
 # ── Command builders (all return lists of argv arrays) ─────────────────────
@@ -346,25 +520,48 @@ def build_seed_sql() -> str:
     These exercise the read path on the 9th queried table; they do NOT verify
     the audit producer contract (no controller write path is invoked).
     """
-    # Pre-compute the source_evidence_digest for run-eph-ok so the
-    # revision_bindings row is internally consistent (the value a
-    # bind_revision() call would have recomputed and demanded).
+    # Delegate to the structured parts generator (Fix 7); the parts are built
+    # structurally so the Option A bind_revision ordering is unambiguous, and
+    # their concatenation is byte-identical to the historical monolithic seed.
+    before, option_b, after = build_seed_sql_parts()
+    return before + option_b + after
+
+
+def build_seed_sql_parts():
+    """Return the seed SQL as three structured parts (Phase B, Fix 7).
+
+    This replaces the fragile text-parsing split. The parts are built
+    STRUCTURALLY (not by parsing the final SQL) so that the Option A
+    ``bind_revision()`` ordering is unambiguous:
+
+    - ``before_bind_sql``: environment marker + task_runs/run_pr_bindings/
+      mcp_calls for run-eph-ok (the provenance rows ``bind_revision`` requires).
+      Does NOT contain the ``revision_bindings`` INSERT.
+    - ``option_b_revision_sql``: the direct-admin ``revision_bindings`` INSERT
+      (Option B fallback). Applied ONLY if Option A fails. Contains the
+      ``-- revision_producer_contract = NOT_VERIFIED`` marker.
+    - ``after_bind_sql``: stage_runs/stage_events/audit_events for run-eph-ok,
+      then runs 2-5 (unknown/no-rev/rollback/missing). Does NOT contain the
+      ``revision_bindings`` INSERT.
+
+    ``build_seed_sql()`` returns ``before + option_b + after`` so the existing
+    static-contract tests stay byte-identical.
+    """
     digest = compute_revision_digest(
         source_call_id="mcp-eph-001",
         correlation_id="corr-eph-001",
         tool="create_pull_request",
         target_repo="test/repo-alpha",
         run_id="run-eph-ok",
-        git_sha="a" * 40,  # base_sha (matches mcp_calls.git_sha)
+        git_sha="a" * 40,
         result_status="OK",
     )
+    base_sha = "a" * 40
+    head_sha = "b" * 40
+    revert_merge_sha = "d" * 40
 
-    # 40-char hex SHAs (deterministic, distinct per slot).
-    base_sha = "a" * 40            # run-eph-ok base (== mcp_calls.git_sha)
-    head_sha = "b" * 40            # run-eph-ok head
-    revert_merge_sha = "d" * 40    # run-eph-rollback reverted merge
-
-    return (
+    # ── before_bind_sql ──
+    before_bind_sql = (
         "-- Deterministic synthetic seed (Phase A; all values synthetic).\n"
         "-- environment marker (single row; unique index enforces)\n"
         "INSERT INTO environment_identity (environment_id) VALUES\n"
@@ -388,6 +585,11 @@ def build_seed_sql() -> str:
         "    'create_pull_request', 'ALLOW', 'OK', 'run-eph-ok',\n"
         "    'test/repo-alpha', '%s', NULL);\n"
         "\n"
+        % (ENVIRONMENT_ID_EPHEMERAL, head_sha, base_sha)
+    )
+
+    # ── option_b_revision_sql (Option B fallback; NOT applied if Option A OK) ──
+    option_b_revision_sql = (
         "-- revision_bindings (direct-admin fallback; Option B).\n"
         "-- revision_producer_contract = NOT_VERIFIED when this path is used.\n"
         "INSERT INTO revision_bindings (binding_id, run_id, repo, pr_number,\n"
@@ -395,6 +597,11 @@ def build_seed_sql() -> str:
         "VALUES ('rev-eph-ok-0000000000000000000000000000', 'run-eph-ok',\n"
         "    'test/repo-alpha', 42, '%s', '%s', 'mcp-eph-001', '%s');\n"
         "\n"
+        % (base_sha, head_sha, digest)
+    )
+
+    # ── after_bind_sql ──
+    after_bind_sql = (
         "INSERT INTO stage_runs (run_id, stage, agent, attempt, status, verdict)\n"
         "VALUES ('run-eph-ok', 'review', 'reviewer', 1, 'COMPLETED', NULL),\n"
         "       ('run-eph-ok', 'fix',    'fixer',    1, 'COMPLETED', NULL),\n"
@@ -459,20 +666,15 @@ def build_seed_sql() -> str:
         "-- No task_runs row inserted for the missing run; the reader source\n"
         "-- must return RUN_NOT_FOUND for its run_id. (No INSERT follows.)\n"
         % (
-            ENVIRONMENT_ID_EPHEMERAL,
-            head_sha,
-            base_sha,           # mcp_calls.git_sha == base_sha
-            base_sha,           # revision_bindings.base_sha
-            head_sha,           # revision_bindings.head_sha
-            digest,             # source_evidence_digest
-            head_sha,           # audit_events[0] review  — synthetic head_sha
-            head_sha,           # audit_events[1] fix     — synthetic head_sha
-            head_sha,           # audit_events[2] verify  — synthetic head_sha
-            head_sha,           # audit_events[3] merge   — synthetic head_sha
-            head_sha,           # audit_events[4] close_pr— synthetic head_sha
+            head_sha,           # audit_events[0] review
+            head_sha,           # audit_events[1] fix
+            head_sha,           # audit_events[2] verify
+            head_sha,           # audit_events[3] merge
+            head_sha,           # audit_events[4] close_pr
             revert_merge_sha,
         )
     )
+    return before_bind_sql, option_b_revision_sql, after_bind_sql
 
 
 def build_cleanup_commands(container_name: str, label: str) -> list:
