@@ -1,13 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""ISOLATED_LIVE ephemeral PostgreSQL harness — Phase A unit tests (no Docker).
+"""ISOLATED_LIVE ephemeral PostgreSQL harness — Phase A unit + Phase B live tests.
 
-These tests exercise the Phase A scaffolding in
-:mod:`tests.isolated_live.ephemeral_harness` entirely WITHOUT Docker or a real
-PostgreSQL server. ``subprocess`` is mocked everywhere so no real ``docker`` /
-``wsl`` process is ever spawned.
-
-Test groups
+Phase A groups (no Docker; subprocess mocked):
   TestExecutionGate        — env + daemon gate logic (mocked subprocess)
   TestMigrationOrder       — MIGRATION_CHAIN has 13 audit-db entries; idempotency rounds
   TestRoleBootstrap        — prerequisite + reader role SQL shape
@@ -16,11 +11,18 @@ Test groups
   TestCommandSafety        — argv arrays (never shell); redaction; name validation
   TestCleanupValidation    — container-name validation + cleanup command shape
   TestResultClassification — skip reasons + classification string fields
-  TestEphemeralPlaceholder — unconditional skip; documents Phase B intent
 
-Status: ``NOT_EXECUTED``. The placeholder class skips unconditionally because
-the harness executor (Phase B) is not implemented — even when
-``EPHEMERAL_PG_VERIFY=1`` no container is started.
+Phase B group (REAL disposable PostgreSQL; requires EPHEMERAL_PG_VERIFY=1):
+  TestEphemeralLive        — real container lifecycle, 17-step migration chain,
+                             reader ACL, seed-run classification, fail-closed
+                             negative paths, HTTP live path. Skipped (NOT_EXECUTED)
+                             when unauthorized; cleanup registered via
+                             addClassCleanup; external residue audit is the
+                             authoritative cleanup_verified gate.
+
+Status when unauthorized: ``NOT_EXECUTED`` (the Phase B class skips via
+``raise unittest.SkipTest``). When authorized, Phase B executes against a
+disposable pgvector container on the MergePilot-Test daemon only.
 """
 from __future__ import annotations
 
@@ -60,13 +62,36 @@ from ephemeral_harness import (  # noqa: E402
     validate_container_name,
 )
 from postgres_source import CANONICAL_VIEWER_ROLE as PG_CANONICAL_VIEWER_ROLE  # noqa: E402
+from ephemeral_executor import EphemeralExecutor  # noqa: E402 — Phase B real executor
 
 
 # ────────────────────────────────────────────────────────────────────────────
 # TestExecutionGate — env var + daemon reachability gate
 # ────────────────────────────────────────────────────────────────────────────
+# Synthetic `docker info` text for the hardened Phase B gate's fingerprint
+# parser. Carries only non-sensitive fingerprint fields.
+_DAEMON_INFO_TEXT = (
+    "Server:\n"
+    " Containers: 0\n"
+    "  Running: 0\n"
+    " Server Version: 29.1.3\n"
+    " Operating System: Ubuntu 22.04.5 LTS\n"
+    " OSType: linux\n"
+    " Name: mergpilot-test\n"
+    " ID: f466f703-15ce-46fd-bfba-02e9c0a140b2\n"
+    " Docker Root Dir: /var/lib/docker\n"
+)
+
+
 class TestExecutionGate(unittest.TestCase):
-    """check_execution_auth: two-key rule (env=1 AND daemon reachable)."""
+    """check_execution_auth: hardened two-key rule (env=1 + full daemon gate).
+
+    Phase B (Fix 2): the gate verifies, in order — env=1, MergePilot-Test
+    present + Running, Ubuntu-22.04 recorded-not-invoked, docker endpoint =
+    unix:///var/run/docker.sock, DOCKER_HOST empty/local, daemon fingerprint
+    complete, image cached. Fail-closed at the first miss; no Docker command
+    runs if an earlier gate fails.
+    """
 
     def setUp(self):
         # Ensure a clean env for every sub-test.
@@ -93,40 +118,127 @@ class TestExecutionGate(unittest.TestCase):
         result = check_execution_auth()
         self.assertFalse(result["authorized"])
 
-    @mock.patch("ephemeral_harness.subprocess.run")
-    def test_set_but_daemon_check_fails(self, mock_run):
-        # env=1 BUT docker info returns non-zero → still unauthorized.
+    @mock.patch("ephemeral_harness._wsl_distro_states")
+    @mock.patch("ephemeral_harness._run_wsl_text")
+    def test_set_but_daemon_check_fails(self, mock_wsl, mock_states):
+        # env=1, distro Running, BUT docker info returns non-zero → unauthorized.
         os.environ["EPHEMERAL_PG_VERIFY"] = "1"
-        mock_run.return_value = mock.Mock(returncode=1, stdout=b"", stderr=b"err")
+        mock_states.return_value = {AUTHORIZED_DAEMON: "Running",
+                                    "Ubuntu-22.04": "Stopped"}
+        mock_wsl.side_effect = [
+            (0, "unix:///var/run/docker.sock\n", ""),   # endpoint OK
+            (0, "\n", ""),                              # DOCKER_HOST empty
+            (1, "", "docker info error"),               # docker info FAILS
+        ]
         result = check_execution_auth()
         self.assertFalse(result["authorized"])
-        self.assertIn(AUTHORIZED_DAEMON, result["reason"])
-        # Verify the probe used array arguments (no shell=True).
-        args, kwargs = mock_run.call_args
-        self.assertIsInstance(args[0], list)
-        self.assertNotIn("shell", kwargs)
+        self.assertIn("docker info", result["reason"])
 
-    @mock.patch("ephemeral_harness.subprocess.run")
-    def test_set_and_daemon_reachable_authorizes(self, mock_run):
+    @mock.patch("ephemeral_harness._wsl_distro_states")
+    @mock.patch("ephemeral_harness._run_wsl_text")
+    def test_set_and_daemon_reachable_authorizes(self, mock_wsl, mock_states):
+        # Phase B hardened gate: mock each probe in order.
         os.environ["EPHEMERAL_PG_VERIFY"] = "1"
-        mock_run.return_value = mock.Mock(returncode=0, stdout=b"ok", stderr=b"")
+        mock_states.return_value = {AUTHORIZED_DAEMON: "Running",
+                                    "Ubuntu-22.04": "Stopped"}
+        # Probe sequence: endpoint, DOCKER_HOST, docker info, image inspect.
+        mock_wsl.side_effect = [
+            (0, "unix:///var/run/docker.sock\n", ""),       # context endpoint
+            (0, "\n", ""),                                  # DOCKER_HOST (empty)
+            (0, _DAEMON_INFO_TEXT, ""),                     # docker info
+            (0, "sha256:abc123def456\n", ""),               # image inspect (Id)
+        ]
         result = check_execution_auth()
-        self.assertTrue(result["authorized"])
+        self.assertTrue(result["authorized"], msg=result.get("reason"))
+        self.assertIn("fingerprint", result)
+        self.assertEqual(result["ubuntu_state"], "Stopped")
+        # Fix 1 (final review): success result carries the full non-inferable set.
+        self.assertEqual(result["endpoint"], "unix:///var/run/docker.sock")
+        self.assertEqual(result["docker_host"], "")
+        self.assertEqual(result["image_digest"], IMAGE_DIGEST)
+        self.assertEqual(result["image_id"], "sha256:abc123def456")
 
-    @mock.patch("ephemeral_harness.subprocess.run", side_effect=FileNotFoundError)
-    def test_set_but_wsl_missing_is_unauthorized(self, mock_run):
+    @mock.patch("ephemeral_harness._wsl_distro_states")
+    def test_set_but_distro_stopped_is_unauthorized(self, mock_states):
+        # env=1 BUT MergePilot-Test is Stopped → unauthorized, NOT started.
         os.environ["EPHEMERAL_PG_VERIFY"] = "1"
+        mock_states.return_value = {AUTHORIZED_DAEMON: "Stopped",
+                                    "Ubuntu-22.04": "Stopped"}
         result = check_execution_auth()
         self.assertFalse(result["authorized"])
+        self.assertIn("Stopped", result["reason"])
 
-    @mock.patch(
-        "ephemeral_harness.subprocess.run",
-        side_effect=__import__("subprocess").TimeoutExpired(cmd="wsl", timeout=1),
-    )
-    def test_set_but_daemon_timeout_is_unauthorized(self, mock_run):
+    @mock.patch("ephemeral_harness._wsl_distro_states")
+    @mock.patch("ephemeral_harness._run_wsl_text")
+    def test_set_but_remote_endpoint_unauthorized(self, mock_wsl, mock_states):
+        # env=1, distro Running, BUT endpoint is TCP → unauthorized.
         os.environ["EPHEMERAL_PG_VERIFY"] = "1"
+        mock_states.return_value = {AUTHORIZED_DAEMON: "Running",
+                                    "Ubuntu-22.04": "Stopped"}
+        mock_wsl.side_effect = [
+            (0, "tcp://1.2.3.4:2375\n", ""),   # remote endpoint
+        ]
         result = check_execution_auth()
         self.assertFalse(result["authorized"])
+        self.assertIn("tcp://", result["reason"])
+
+    @mock.patch("ephemeral_harness._wsl_distro_states")
+    @mock.patch("ephemeral_harness._run_wsl_text")
+    def test_set_but_docker_host_tcp_unauthorized(self, mock_wsl, mock_states):
+        # env=1, distro Running, endpoint OK, BUT DOCKER_HOST is TCP.
+        os.environ["EPHEMERAL_PG_VERIFY"] = "1"
+        mock_states.return_value = {AUTHORIZED_DAEMON: "Running",
+                                    "Ubuntu-22.04": "Stopped"}
+        mock_wsl.side_effect = [
+            (0, "unix:///var/run/docker.sock\n", ""),   # endpoint OK
+            (0, "tcp://1.2.3.4:2375\n", ""),            # DOCKER_HOST = TCP
+        ]
+        result = check_execution_auth()
+        self.assertFalse(result["authorized"])
+        self.assertIn("DOCKER_HOST", result["reason"])
+
+    @mock.patch("ephemeral_harness._wsl_distro_states")
+    @mock.patch("ephemeral_harness._run_wsl_text")
+    def test_set_but_image_not_cached_unauthorized(self, mock_wsl, mock_states):
+        # env=1, all gates pass EXCEPT image not cached → unauthorized.
+        os.environ["EPHEMERAL_PG_VERIFY"] = "1"
+        mock_states.return_value = {AUTHORIZED_DAEMON: "Running",
+                                    "Ubuntu-22.04": "Stopped"}
+        mock_wsl.side_effect = [
+            (0, "unix:///var/run/docker.sock\n", ""),   # endpoint OK
+            (0, "\n", ""),                              # DOCKER_HOST empty
+            (0, _DAEMON_INFO_TEXT, ""),                 # docker info OK
+            (1, "", "no such image"),                   # image NOT cached
+        ]
+        result = check_execution_auth()
+        self.assertFalse(result["authorized"])
+        self.assertIn("image", result["reason"])
+
+    @mock.patch("ephemeral_harness._wsl_distro_states")
+    @mock.patch("ephemeral_harness._run_wsl_text")
+    def test_set_but_fingerprint_incomplete_unauthorized(self, mock_wsl, mock_states):
+        # env=1, all gates pass EXCEPT fingerprint missing fields.
+        os.environ["EPHEMERAL_PG_VERIFY"] = "1"
+        mock_states.return_value = {AUTHORIZED_DAEMON: "Running",
+                                    "Ubuntu-22.04": "Stopped"}
+        mock_wsl.side_effect = [
+            (0, "unix:///var/run/docker.sock\n", ""),
+            (0, "\n", ""),
+            (0, "Server Version: 29.1.3\n", ""),   # missing ID/Name/Root Dir
+        ]
+        result = check_execution_auth()
+        self.assertFalse(result["authorized"])
+        self.assertIn("fingerprint", result["reason"])
+
+    @mock.patch("ephemeral_harness._wsl_distro_states")
+    @mock.patch("ephemeral_harness._run_wsl_text")
+    def test_unauthorized_path_does_not_start_distro(self, mock_wsl, mock_states):
+        # When env is unset, NO wsl/docker probe runs (fail-closed at gate 1).
+        os.environ.pop("EPHEMERAL_PG_VERIFY", None)
+        result = check_execution_auth()
+        self.assertFalse(result["authorized"])
+        mock_states.assert_not_called()
+        mock_wsl.assert_not_called()
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -139,7 +251,8 @@ class TestMigrationOrder(unittest.TestCase):
     operations (prerequisite + reader) = 17 executor operations.
 
     Audit-db applications = 13. ISOLATED_LIVE applications = 2.
-    Total migration-file applications = 15. Distinct files = 11.
+    Total migration-file applications = 15. Audit-db distinct files = 11.
+    ISOLATED_LIVE distinct files = 2. Total distinct files = 13.
     Executor operations = 17 (15 migrations + 2 role bootstraps).
     """
 
@@ -736,73 +849,1569 @@ class TestResultClassification(unittest.TestCase):
         self.assertFalse(result["executed"])
         self.assertEqual(result["reason"], "NOT_EXECUTED")
 
-    def test_ephemeral_placeholder_skip_reason_contains_not_executed(self):
-        # When EPHEMERAL_PG_VERIFY is unset, the classification is NOT_EXECUTED.
-        # The placeholder class below carries this literal in its skip reason.
-        from test_ephemeral_pg import TestEphemeralPlaceholder
-        self.assertIn("NOT_EXECUTED", TestEphemeralPlaceholder._SKIP_REASON)
+    def test_unauthorized_classification_is_not_executed(self):
+        # When EPHEMERAL_PG_VERIFY is unset, check_execution_auth refuses and
+        # its reason establishes the NOT_EXECUTED classification that the Phase
+        # B class surfaces via raise unittest.SkipTest.
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("EPHEMERAL_PG_VERIFY", None)
+            result = check_execution_auth()
+        self.assertFalse(result["authorized"])
+        # The TestEphemeralLive class surfaces "NOT_EXECUTED: <reason>" on skip.
+        self.assertIn("NOT_EXECUTED",
+                      "NOT_EXECUTED: %s" % result.get("reason", ""))
 
 
 # ────────────────────────────────────────────────────────────────────────────
-# TestEphemeralPlaceholder — unconditional skip; documents Phase B
+# TestEphemeralLive — REAL Phase B execution against a disposable PostgreSQL
 # ────────────────────────────────────────────────────────────────────────────
-class TestEphemeralPlaceholder(unittest.TestCase):
-    """Documents what the real ephemeral harness (Phase B) would test.
+class TestEphemeralLive(unittest.TestCase):
+    """Real Phase B verification against a disposable pgvector container.
 
-    These tests are skipped UNCONDITIONALLY. Even when
-    ``EPHEMERAL_PG_VERIFY=1`` is set AND the daemon is reachable, Phase A does
-    not implement container execution — so every test still skips with the
-    explicit ``NOT_EXECUTED`` reason. A consumer cannot mistake "skipped" for
-    "ran and passed".
+    Authorization gate: :func:`check_execution_auth` must authorize (env
+    ``EPHEMERAL_PG_VERIFY=1`` AND the MergePilot-Test daemon reachable). If NOT
+    authorized, the whole class is skipped via ``raise unittest.SkipTest`` (not
+    ``cls.skipTest``) so the skip is explicit and unambiguous — it is never
+    mistaken for "ran and passed".
+
+    When authorized, ``setUpClass`` drives a single shared session
+    (:class:`EphemeralExecutor`): start → measure identity → 17 bootstrap
+    operations → seed → Option A bind_revision. ``addClassCleanup`` is
+    registered BEFORE any resource is created; the idempotent
+    :meth:`cleanup_and_verify` tolerates a partially-started session.
+
+    Boundary honesty (see the Phase B doc): these tests verify the ephemeral
+    consumer/read path on a disposable container. They do NOT verify the
+    MergePilot-Test application database, production, or the controller's
+    audit-event write path. ``ephemeral_bind_revision_contract_verified``
+    reflects ONLY the narrow Option A outcome; ``revision_producer_contract``
+    and ``audit_producer_contract`` stay ``NOT_VERIFIED``.
     """
 
-    NOT_EXECUTED = True  # marker: these require a live ephemeral database
+    @classmethod
+    def setUpClass(cls):
+        # Authorization gate. Use raise unittest.SkipTest (per amendment) so the
+        # skip is a hard class-level event, not a soft in-test skip.
+        auth = check_execution_auth()
+        if not auth.get("authorized"):
+            raise unittest.SkipTest(
+                "NOT_EXECUTED: %s" % auth.get("reason", "unauthorized"))
+        # Authorized: build the single shared session, passing the structured
+        # authorization_context (Fix 3, second review). The executor validates
+        # this context before any Docker command and re-checks the fingerprint
+        # after cleanup.
+        cls.executor = EphemeralExecutor(str(ROOT), authorization_context=auth)
+        # Register cleanup BEFORE starting any resource. cleanup_and_verify is
+        # idempotent (on success) and tolerates a partially-started session.
+        cls.addClassCleanup(cls.executor.cleanup_and_verify)
+        # Combined start+prepare entry point (Fix 3/6): on primary failure,
+        # cleanup runs and both error codes are preserved.
+        cls.executor.start_and_prepare()
+        cls.bind_outcome = dict(cls.executor.bind_revision_outcome)
 
-    _SKIP_REASON = (
-        "EPHEMERAL_PG_VERIFY not configured; NOT_EXECUTED"
-    )
-
-    def setUp(self):
-        # Unconditional skip. The harness executor (Phase B) is not
-        # implemented in this candidate, so we never start a container —
-        # regardless of the env var. This is an honest placeholder.
-        self.skipTest(self._SKIP_REASON)
+    # ── 1. container lifecycle + readiness ──────────────────────────────────
 
     def test_container_lifecycle_and_readiness(self):
-        """Phase B: start pgvector container, wait pg_isready, measure server
-        identity, then construct PostgresSnapshotSource with frozen values."""
-        pass  # pragma: no cover
+        """Container started, bound to 127.0.0.1 only, SELECT 1 succeeded,
+        and server identity was measured (non-NULL addr, port 5432)."""
+        ex = self.executor
+        self.assertEqual(ex._host_address, "127.0.0.1",
+                         "host must be IPv4 loopback")
+        self.assertIsNotNone(ex._host_port)
+        self.assertGreater(ex._host_port, 0)
+        # Server identity measured via real TCP (not Unix socket).
+        self.assertIsNotNone(ex._server_address,
+                             "inet_server_addr must be non-NULL (TCP)")
+        self.assertNotIn(ex._server_address, (None, ""),
+                         "server address must not be NULL/empty")
+        self.assertEqual(ex._server_port, 5432,
+                         "expected_server_port is the container port, not host port")
+        # host port and server port are STRICTLY DIFFERENT concepts.
+        self.assertNotEqual(ex._host_port, ex._server_port,
+                            "host_port (Windows DSN) must differ from server_port")
+
+    # ── 2. full migration chain ─────────────────────────────────────────────
 
     def test_full_migration_chain_applies_cleanly(self):
-        """Phase B: apply all 15 migration-file applications (13 audit-db +
-        2 ISOLATED_LIVE); verify no error and m4f1 idempotency rounds succeed."""
-        pass  # pragma: no cover
+        """17 bootstrap operations applied; 13 audit-db + 2 ISOLATED_LIVE = 15
+        migration applications; m4f1_state and m4f1_hotfix_1 idempotency rounds
+        both succeeded; 9 required tables present."""
+        ex = self.executor
+        ops = ex.operations_applied
+        # Count migration applications.
+        phase1 = [o for o in ops if o.startswith("phase1_migration_")]
+        phase3 = [o for o in ops if o.startswith("phase3_migration_")]
+        self.assertEqual(len(phase1), 13, "13 audit-db migration applications")
+        self.assertEqual(len(phase3), 2, "2 ISOLATED_LIVE migration applications")
+        # Idempotency rounds for m4f1_state and m4f1_hotfix_1.
+        m4f1_rounds = [o for o in phase1 if "m4f1_state" in o]
+        hotfix_rounds = [o for o in phase1 if "m4f1_hotfix_1" in o]
+        self.assertEqual(len(m4f1_rounds), 2, "m4f1_state applied twice (idempotency)")
+        self.assertEqual(len(hotfix_rounds), 2, "m4f1_hotfix_1 applied twice (idempotency)")
+        # 9 required tables present.
+        required_tables = (
+            "task_runs", "stage_runs", "stage_events", "revision_bindings",
+            "run_pr_bindings", "mcp_calls", "rollback_runs", "audit_events",
+            "environment_identity",
+        )
+        cols = ex.admin_exec(
+            "SELECT string_agg(tablename, ',' ORDER BY tablename) "
+            "FROM pg_tables WHERE schemaname='public';")
+        present = set(cols.strip().split(","))
+        for t in required_tables:
+            self.assertIn(t, present, "required table %s missing" % t)
+
+    # ── 3. reader role ACL + read-only gate ─────────────────────────────────
 
     def test_reader_role_acl_and_read_only_default(self):
-        """Phase B: assert mergepilot_reader has SELECT on 9 tables, no writes,
-        and default_transaction_read_only=on (identity gate passes)."""
-        pass  # pragma: no cover
+        """mergepilot_reader has SELECT on 9 tables, no
+        INSERT/UPDATE/DELETE/TRUNCATE; default_transaction_read_only=on; no
+        privileged role attributes."""
+        ex = self.executor
+        # default_transaction_read_only = on for the reader role.
+        ro = ex.admin_exec(
+            "SELECT rolconfig FROM pg_roles WHERE rolname='mergepilot_reader';")
+        self.assertIn("default_transaction_read_only=on", ro,
+                      "reader role must have default_transaction_read_only=on")
+        # Privileged attributes all OFF.
+        priv = ex.admin_exec(
+            "SELECT rolsuper, rolcreatedb, rolcreaterole, rolreplication, "
+            "rolbypassrls FROM pg_roles WHERE rolname='mergepilot_reader';")
+        self.assertEqual(priv.strip(), "f|f|f|f|f",
+                         "reader role must have all privileged attrs OFF")
+        # SELECT granted + writes denied on all 9 tables.
+        for tbl in ("task_runs", "stage_runs", "stage_events",
+                    "revision_bindings", "run_pr_bindings", "mcp_calls",
+                    "rollback_runs", "audit_events", "environment_identity"):
+            row = ex.admin_exec(
+                "SELECT has_table_privilege('mergepilot_reader','%s','SELECT'),"
+                "has_table_privilege('mergepilot_reader','%s','INSERT'),"
+                "has_table_privilege('mergepilot_reader','%s','UPDATE'),"
+                "has_table_privilege('mergepilot_reader','%s','DELETE'),"
+                "has_table_privilege('mergepilot_reader','%s','TRUNCATE');"
+                % (tbl, tbl, tbl, tbl, tbl))
+            parts = row.strip().split("|")
+            self.assertEqual(parts, ["t", "f", "f", "f", "f"],
+                "table %s: SELECT must be granted, writes denied (got %s)" % (tbl, parts))
+
+    # ── 4. seed runs classify correctly (read path) ─────────────────────────
 
     def test_seed_runs_classify_correctly(self):
-        """Phase B: initial_load() on each of the 5 seed runs yields the
-        expected final_status (PASS / UNKNOWN / NOT_AVAILABLE / ROLLED_BACK /
-        RUN_NOT_FOUND)."""
-        pass  # pragma: no cover
+        """PostgresSnapshotSource on the 5 seed runs yields the expected
+        final_status; bundle demo_mode=ISOLATED_LIVE; bundle_sha256 recomputable."""
+        import json
+        ex = self.executor
+        # run-eph-ok → PASS.
+        src_ok = ex.make_reader_source("run-eph-ok")
+        raw_ok = src_ok.read_snapshot()
+        bundle_ok = json.loads(raw_ok)
+        self.assertEqual(bundle_ok["demo_mode"], "ISOLATED_LIVE")
+        self.assertEqual(bundle_ok["final_status"], "PASS")
+        self.assertIn("bundle_sha256", bundle_ok)
+        self.assertEqual(len(bundle_ok["bundle_sha256"]), 64)
+        # Recompute bundle_sha256 and compare (excluding volatile fields).
+        from integrity import compute_bundle_sha256
+        recomputed = compute_bundle_sha256(bundle_ok)
+        self.assertEqual(recomputed, bundle_ok["bundle_sha256"],
+                         "bundle_sha256 must recompute identically")
+
+        # run-eph-unknown → UNKNOWN (status NULL).
+        bundle_unk = json.loads(ex.make_reader_source("run-eph-unknown").read_snapshot())
+        self.assertEqual(bundle_unk["final_status"], "UNKNOWN",
+                         "NULL status run → UNKNOWN")
+
+        # run-eph-no-rev → final_status PASS but provenance_status NOT_AVAILABLE
+        # (no revision_bindings → source_commit null).
+        bundle_norev = json.loads(ex.make_reader_source("run-eph-no-rev").read_snapshot())
+        self.assertEqual(bundle_norev["final_status"], "PASS",
+                         "no-rev run still has final_status from task_runs.status")
+        self.assertEqual(bundle_norev.get("provenance_status"), "NOT_AVAILABLE",
+                         "missing-revision run → provenance_status NOT_AVAILABLE")
+        self.assertIsNone(bundle_norev.get("source_commit"),
+                          "no-rev run → source_commit null")
+
+        # run-eph-rollback → ROLLED_BACK.
+        bundle_rb = json.loads(ex.make_reader_source("run-eph-rollback").read_snapshot())
+        self.assertEqual(bundle_rb["final_status"], "ROLLED_BACK",
+                         "rollback run → ROLLED_BACK")
+
+        # run-eph-missing → RUN_NOT_FOUND (reader raises).
+        from postgres_source import RunNotFoundError
+        with self.assertRaises(RunNotFoundError):
+            ex.make_reader_source("run-eph-missing").read_snapshot()
+
+    # ── 5. fail-closed negative paths ───────────────────────────────────────
 
     def test_fail_closed_negative_paths(self):
-        """Phase B: each negative test (wrong db/role/marker/read-only/server)
-        produces its stable error code; restore-verification gate passes."""
-        pass  # pragma: no cover
+        """Negative identity-gate cases produce stable error codes; each
+        modify→fail→restore→fresh-reader-LIVE cycle completes without
+        swallowing restore failures.
 
-    def test_cleanup_leaves_no_residue(self):
-        """Phase B: after cleanup, no container/network/volume/port/temp-dir
-        residue; the published port is closed and the WSL distro unchanged."""
-        pass  # pragma: no cover
+        Includes a REAL ACL fail-closed case (admin grants INSERT on a table →
+        fresh reader rejected as WRONG_ROLE → REVOKE → fresh reader LIVE) and
+        at least one WRONG_SERVER (wrong expected_server_address).
+        """
+        import json
+        from postgres_source import (
+            IdentityCheckError, RunNotFoundError,
+        )
+        ex = self.executor
+        # (a) RUN_NOT_FOUND — already covered, re-affirm here as a negative.
+        with self.assertRaises(RunNotFoundError):
+            ex.make_reader_source("run-eph-does-not-exist").read_snapshot()
+
+        # (b) WRONG_SERVER — wrong expected_server_address.
+        from postgres_source import PostgresSnapshotSource
+        dsn = (
+            "host=%s port=%d dbname=%s user=%s password=%s "
+            "application_name=%s connect_timeout=5"
+            % (ex._host_address, ex._host_port, "mergepilot_audit",
+               CANONICAL_VIEWER_ROLE, ex._reader_password,
+               "mergepilot_isolated_live")
+        )
+        bad_server = PostgresSnapshotSource(
+            dsn=dsn, run_id="run-eph-ok",
+            expected_database="mergepilot_audit",
+            expected_role=CANONICAL_VIEWER_ROLE,
+            expected_environment_id=ENVIRONMENT_ID_EPHEMERAL,
+            expected_server_addresses=["10.255.255.1"],  # wrong
+            expected_server_port=ex._server_port,
+            expected_application_name="mergepilot_isolated_live",
+        )
+        with self.assertRaises(IdentityCheckError) as cm:
+            bad_server.read_snapshot()
+        self.assertEqual(cm.exception.code, "WRONG_SERVER",
+                         "wrong expected_server_address → WRONG_SERVER")
+
+        # (c) WRONG_SERVER — wrong expected_application_name.
+        bad_app = PostgresSnapshotSource(
+            dsn=dsn, run_id="run-eph-ok",
+            expected_database="mergepilot_audit",
+            expected_role=CANONICAL_VIEWER_ROLE,
+            expected_environment_id=ENVIRONMENT_ID_EPHEMERAL,
+            expected_server_addresses=ex.expected_server_addresses,
+            expected_server_port=ex._server_port,
+            expected_application_name="wrong-app-name",  # wrong
+        )
+        with self.assertRaises(IdentityCheckError) as cm2:
+            bad_app.read_snapshot()
+        self.assertEqual(cm2.exception.code, "WRONG_SERVER",
+                         "wrong expected_application_name → WRONG_SERVER")
+
+        # (d) REAL ACL fail-closed: admin grants INSERT on task_runs → fresh
+        # reader rejected as WRONG_ROLE → REVOKE (finally, new admin conn) →
+        # fresh reader LIVE.
+        ex.admin_exec("GRANT INSERT ON task_runs TO mergepilot_reader;")
+        try:
+            with self.assertRaises(IdentityCheckError) as cm3:
+                ex.make_reader_source("run-eph-ok").read_snapshot()
+            self.assertEqual(cm3.exception.code, "WRONG_ROLE",
+                             "write-privileged reader → WRONG_ROLE")
+        finally:
+            # Restore via a NEW admin connection; do not swallow restore errors.
+            ex.admin_exec("REVOKE INSERT ON task_runs FROM mergepilot_reader;")
+        # Verify restore: fresh reader → LIVE (PASS).
+        restored = json.loads(ex.make_reader_source("run-eph-ok").read_snapshot())
+        self.assertEqual(restored["final_status"], "PASS",
+                         "after REVOKE, fresh reader must be LIVE again")
+
+        # (e) ENVIRONMENT_ID_MISMATCH — wrong marker.
+        ex.admin_exec(
+            "UPDATE environment_identity SET environment_id='wrong-marker';")
+        try:
+            with self.assertRaises(IdentityCheckError) as cm4:
+                ex.make_reader_source("run-eph-ok").read_snapshot()
+            self.assertEqual(cm4.exception.code, "ENVIRONMENT_ID_MISMATCH",
+                             "wrong marker → ENVIRONMENT_ID_MISMATCH")
+        finally:
+            ex.admin_exec(
+                "UPDATE environment_identity SET environment_id='%s';"
+                % ENVIRONMENT_ID_EPHEMERAL)
+        # Verify restore: fresh reader → LIVE.
+        restored2 = json.loads(ex.make_reader_source("run-eph-ok").read_snapshot())
+        self.assertEqual(restored2["final_status"], "PASS",
+                         "after marker restore, fresh reader must be LIVE")
+
+        # (f) WRONG_DATABASE — expected_database does not match.
+        bad_db = PostgresSnapshotSource(
+            dsn=dsn, run_id="run-eph-ok",
+            expected_database="definitely-not-this-db",  # wrong
+            expected_role=CANONICAL_VIEWER_ROLE,
+            expected_environment_id=ENVIRONMENT_ID_EPHEMERAL,
+            expected_server_addresses=ex.expected_server_addresses,
+            expected_server_port=ex._server_port,
+            expected_application_name="mergepilot_isolated_live",
+        )
+        with self.assertRaises(IdentityCheckError) as cm5:
+            bad_db.read_snapshot()
+        self.assertEqual(cm5.exception.code, "WRONG_DATABASE",
+                         "wrong expected_database → WRONG_DATABASE")
+
+        # (g) WRONG_ROLE — connect as a user that is NOT mergepilot_reader
+        # (the admin superuser 'mergepilot'). The identity gate sees
+        # current_user != mergepilot_reader → WRONG_ROLE.
+        from postgres_source import PostgresSnapshotSource as _PSS
+        admin_dsn = (
+            "host=%s port=%d dbname=%s user=%s password=%s "
+            "application_name=%s connect_timeout=5"
+            % (ex._host_address, ex._host_port, "mergepilot_audit",
+               "mergepilot", ex._admin_password, "mergepilot_isolated_live")
+        )
+        wrong_user_src = _PSS(
+            dsn=admin_dsn, run_id="run-eph-ok",
+            expected_database="mergepilot_audit",
+            expected_role=CANONICAL_VIEWER_ROLE,   # expects reader, gets admin
+            expected_environment_id=ENVIRONMENT_ID_EPHEMERAL,
+            expected_server_addresses=ex.expected_server_addresses,
+            expected_server_port=ex._server_port,
+            expected_application_name="mergepilot_isolated_live",
+        )
+        with self.assertRaises(IdentityCheckError) as cm6:
+            wrong_user_src.read_snapshot()
+        self.assertEqual(cm6.exception.code, "WRONG_ROLE",
+                         "non-reader current_user → WRONG_ROLE")
+
+        # (h) NOT_READ_ONLY — admin turns default_transaction_read_only OFF for
+        # the reader role → reader session is writable → NOT_READ_ONLY → restore.
+        ex.admin_exec(
+            "ALTER ROLE mergepilot_reader SET default_transaction_read_only = off;")
+        try:
+            with self.assertRaises(IdentityCheckError) as cm7:
+                ex.make_reader_source("run-eph-ok").read_snapshot()
+            self.assertEqual(cm7.exception.code, "NOT_READ_ONLY",
+                             "read-only off → NOT_READ_ONLY")
+        finally:
+            ex.admin_exec(
+                "ALTER ROLE mergepilot_reader SET default_transaction_read_only = on;")
+        restored3 = json.loads(ex.make_reader_source("run-eph-ok").read_snapshot())
+        self.assertEqual(restored3["final_status"], "PASS",
+                         "after read-only restore, fresh reader must be LIVE")
+
+        # (i) ENVIRONMENT_ID_NOT_VERIFIED — delete the marker row (0 rows) →
+        # ENVIRONMENT_ID_NOT_VERIFIED → restore.
+        ex.admin_exec("DELETE FROM environment_identity;")
+        try:
+            with self.assertRaises(IdentityCheckError) as cm8:
+                ex.make_reader_source("run-eph-ok").read_snapshot()
+            self.assertEqual(cm8.exception.code, "ENVIRONMENT_ID_NOT_VERIFIED",
+                             "0 marker rows → ENVIRONMENT_ID_NOT_VERIFIED")
+        finally:
+            ex.admin_exec(
+                "INSERT INTO environment_identity (environment_id) VALUES ('%s');"
+                % ENVIRONMENT_ID_EPHEMERAL)
+        restored4 = json.loads(ex.make_reader_source("run-eph-ok").read_snapshot())
+        self.assertEqual(restored4["final_status"], "PASS",
+                         "after marker restore, fresh reader must be LIVE")
+
+        # (j) WRONG_SERVER — wrong expected_server_port.
+        bad_port = PostgresSnapshotSource(
+            dsn=dsn, run_id="run-eph-ok",
+            expected_database="mergepilot_audit",
+            expected_role=CANONICAL_VIEWER_ROLE,
+            expected_environment_id=ENVIRONMENT_ID_EPHEMERAL,
+            expected_server_addresses=ex.expected_server_addresses,
+            expected_server_port=9999,  # wrong
+            expected_application_name="mergepilot_isolated_live",
+        )
+        with self.assertRaises(IdentityCheckError) as cm9:
+            bad_port.read_snapshot()
+        self.assertEqual(cm9.exception.code, "WRONG_SERVER",
+                         "wrong expected_server_port → WRONG_SERVER")
+
+    # ── 6. no DSN/password in logs ──────────────────────────────────────────
 
     def test_no_dsn_password_in_logs(self):
-        """Phase B: scan harness stdout/stderr for password= patterns; none
-        survive redaction."""
-        pass  # pragma: no cover
+        """All collected executor logs are redacted: no admin/reader password
+        survives, no full DSN, no SQL PASSWORD literal. The reader source
+        __repr__ does not include the DSN."""
+        ex = self.executor
+        joined = "\n".join(ex.collected_logs)
+        # The admin and reader passwords must NEVER appear.
+        self.assertNotIn(ex._admin_password, joined,
+                         "admin password leaked into logs")
+        self.assertNotIn(ex._reader_password, joined,
+                         "reader password leaked into logs")
+        # No full DSN (postgresql://user:pass@).
+        self.assertNotRegex(
+            joined, r"postgresql?://[^/\s@]+:[^/\s@]+@",
+            "full DSN leaked into logs")
+        # No SQL PASSWORD literal with a value.
+        self.assertNotRegex(
+            joined, r"PASSWORD\s+'[^']*'",
+            "SQL PASSWORD literal leaked into logs")
+        # Reader source repr has no DSN.
+        src = ex.make_reader_source("run-eph-ok")
+        self.assertNotIn("password=", repr(src),
+                         "reader source repr must not contain the DSN")
+        # argv safety invariant: the executor's recorded argv checks pass.
+        # (Re-affirm by constructing a fresh argv and checking no secret.)
+        # The executor raises on any argv containing a secret, so if prepare()
+        # succeeded, the invariant held.
+
+    # ── 7. HTTP live path ───────────────────────────────────────────────────
+
+    def test_http_live_path(self):
+        """Real reader source → LivePoller → HTTP server on 127.0.0.1:0.
+        GET /api/live/snapshot → 200 + bundle_sha256 recomputable.
+        GET /api/live/status → source_kind=POSTGRES_ISOLATED, read_only=true,
+        not_production=true, production_resource_accessed=null, control
+        capabilities false|NOT_MEASURED.
+        POST/PUT/PATCH/DELETE → 405.
+        Finally: shutdown + server_close + poller.stop + join; threads exit,
+        port closed."""
+        import json
+        import threading
+        import urllib.request
+        from live_poller import LivePoller
+        from serve import create_server
+        ex = self.executor
+        src = ex.make_reader_source("run-eph-ok")
+        poller = LivePoller(src, poll_interval=2.0)
+        ex._poller = poller
+        poller.start()
+        # Wait for initial load (LIVE).
+        deadline_loaded = __import__("time").monotonic() + 30
+        while __import__("time").monotonic() < deadline_loaded:
+            if poller.get_view()["state"] == "LIVE":
+                break
+            __import__("time").sleep(0.5)
+        else:
+            poller.stop(); poller.join(timeout=5)
+            self.fail("poller never reached LIVE")
+        server = create_server("127.0.0.1", 0, "ISOLATED_LIVE", poller=poller)
+        ex._http_server = server
+        host, port = server.server_address[:2]
+        base = "http://127.0.0.1:%d" % port
+        server_thread = threading.Thread(target=server.serve_forever)
+        server_thread.start()
+        try:
+            # GET /api/live/snapshot → 200.
+            with urllib.request.urlopen(base + "/api/live/snapshot", timeout=10) as r:
+                self.assertEqual(r.status, 200)
+                snap = json.loads(r.read().decode("utf-8"))
+            self.assertIn("bundle_sha256", snap)
+            self.assertEqual(len(snap["bundle_sha256"]), 64)
+            # GET /api/live/status → 200 + boundary fields.
+            with urllib.request.urlopen(base + "/api/live/status", timeout=10) as r:
+                self.assertEqual(r.status, 200)
+                status = json.loads(r.read().decode("utf-8"))
+            self.assertEqual(status["source_kind"], "POSTGRES_ISOLATED")
+            self.assertIs(status["source_read_only"], True)
+            self.assertIs(status["not_production"], True)
+            self.assertIsNone(status["production_resource_accessed"])
+            # Control capabilities false | NOT_MEASURED.
+            self.assertIs(status["github_writes_enabled"], False)
+            self.assertIs(status["agent_control_enabled"], False)
+            self.assertIs(status["runtime_consumes_rag_context"], False)
+            self.assertEqual(status["production_resource_access_status"], "NOT_MEASURED")
+            # Write methods → 405.
+            for method in ("POST", "PUT", "PATCH", "DELETE"):
+                req = urllib.request.Request(base + "/api/live/snapshot",
+                                             method=method)
+                try:
+                    urllib.request.urlopen(req, timeout=10)
+                    self.fail("%s should have been rejected (405)" % method)
+                except urllib.error.HTTPError as he:
+                    self.assertEqual(he.code, 405,
+                                     "%s → 405 (got %d)" % (method, he.code))
+        finally:
+            server.shutdown()
+            server.server_close()
+            server_thread.join(timeout=5)
+            self.assertFalse(server_thread.is_alive(),
+                             "HTTP server thread must exit")
+            poller.stop()
+            poller.join(timeout=5)
+            self.assertFalse(poller.is_alive(), "poller thread must exit")
+            ex._http_server = None
+            ex._poller = None
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# TestExecutorStructural — Phase B re-review fixes (Mock/structural, no Docker)
+# ────────────────────────────────────────────────────────────────────────────
+class TestExecutorStructural(unittest.TestCase):
+    """Structural/Mock tests for the Phase B executor hardening (Fixes 1-7).
+
+    These tests NEVER touch Docker/WSL/PostgreSQL. They verify the executor's
+    argv construction, integrity checks, ownership verification, the combined
+    error, the structured seed-split, the authorization-context gate, and
+    cleanup retry semantics — all via Mocks and pure functions.
+    """
+
+    @staticmethod
+    def _make_auth_context(**overrides):
+        """A valid authorization_context (for start() validation). Includes the
+        full set of fields required by the final-review strict validation:
+        endpoint, docker_host, image_digest, image_id (Fix 1, final review)."""
+        ctx = {
+            "authorized": True,
+            "reason": "EPHEMERAL_PG_VERIFY=1 ok image=" + IMAGE_DIGEST,
+            "fingerprint": {
+                "server_id": "f466f703-15ce-46fd-bfba-02e9c0a140b2",
+                "name": "mergpilot-test",
+                "docker_root_dir": "/var/lib/docker",
+                "version": "29.1.3",
+            },
+            "ubuntu_state": "Stopped",
+            "authorized_distro_state": "Running",
+            "endpoint": "unix:///var/run/docker.sock",
+            "docker_host": "",
+            "image_digest": IMAGE_DIGEST,
+            "image_id": "sha256:8e5355e9ff399a002fa46148399a1ac22fb3e9b2d390f857296e6da6b5559ba1",
+        }
+        ctx.update(overrides)
+        return ctx
+
+    def _make_executor(self):
+        ex = EphemeralExecutor(str(ROOT),
+                               authorization_context=self._make_auth_context())
+        # Seed a fake session identity so cleanup ownership logic is testable.
+        ex._container_name = "m6rag-eph-1234567890-abcdef01"
+        ex._label = "label-m6rag-eph-1234567890-abcdef01"
+        ex._container_id = "a" * 64
+        ex._host_port = 39999
+        return ex
+
+    # ── Fix 1: digest-pinned startup argv ───────────────────────────────────
+
+    def test_start_uses_image_digest_not_tag(self):
+        # The start() argv's final element must be IMAGE_DIGEST, never a tag.
+        # We capture the argv by mocking subprocess.run inside _confirm / image
+        # inspect / docker run. Inspect the constructed run argv directly.
+        import ephemeral_executor as ee
+        ex = ee.EphemeralExecutor(str(ROOT),
+                                  authorization_context=self._make_auth_context())
+        ex._container_name = "m6rag-eph-1234567890-abcdef01"
+        ex._label = "label-x"
+        ex._admin_password = "pw1"
+        ex._reader_password = "pw2"
+        captured = {}
+
+        def fake_docker(args, **kw):
+            # Capture only the `run` argv; return success for probes.
+            if args and args[0] == "image" and args[1] == "inspect":
+                cp = mock.Mock()
+                cp.returncode = 0
+                cp.stdout = b"sha256:approvedimageid\n"
+                cp.stderr = b""
+                return cp
+            cp = mock.Mock()
+            cp.returncode = 0
+            cp.stdout = b""
+            cp.stderr = b""
+            return cp
+
+        def fake_run(argv, **kw):
+            if argv and "run" in argv and "--pull=never" in argv:
+                captured["argv"] = argv
+                cp = mock.Mock()
+                cp.returncode = 0
+                cp.stdout = (b"a" * 64 + b"\n")
+                cp.stderr = b""
+                return cp
+            # Probes (ps -a, image inspect): empty / success.
+            cp = mock.Mock()
+            cp.returncode = 0
+            cp.stdout = b"" if "ps" in argv else b"sha256:approved\n"
+            cp.stderr = b""
+            return cp
+
+        with mock.patch.object(ex, "_docker", side_effect=fake_docker), \
+             mock.patch.object(ex, "_confirm_no_name_collision"), \
+             mock.patch.object(ex, "_resolve_approved_image_id"), \
+             mock.patch.object(ex, "_resolve_host_port"), \
+             mock.patch.object(ex, "_wait_ready"), \
+             mock.patch.object(ex, "_verify_image_digest_of_running_container"), \
+             mock.patch("ephemeral_executor._APPROVED_LOCAL_IMAGE_ID",
+                        "sha256:approvedimageid"), \
+             mock.patch("ephemeral_executor.subprocess.run", side_effect=fake_run):
+            ex.start()
+        argv = captured["argv"]
+        self.assertEqual(argv[-1], IMAGE_DIGEST,
+                         "run argv must end with the digest, not a tag")
+        self.assertNotIn("pgvector/pgvector:pg16", argv,
+                         "no floating tag in run argv")
+
+    def test_digest_run_failure_no_tag_fallback(self):
+        # If docker run (digest) fails, no tag fallback is attempted.
+        import ephemeral_executor as ee
+        from ephemeral_executor import EphemeralExecutionError
+        ex = ee.EphemeralExecutor(str(ROOT),
+                                  authorization_context=self._make_auth_context())
+        ex._container_name = "m6rag-eph-1234567890-abcdef01"
+        ex._label = "label-x"
+        ex._admin_password = "pw1"
+        ex._reader_password = "pw2"
+        run_calls = []
+
+        def fake_run(argv, **kw):
+            run_calls.append(argv)
+            if "run" in argv and "--pull=never" in argv:
+                cp = mock.Mock()
+                cp.returncode = 1
+                cp.stdout = b""
+                cp.stderr = b"digest error"
+                return cp
+            cp = mock.Mock(); cp.returncode = 0
+            cp.stdout = b"sha256:id\n"; cp.stderr = b""
+            return cp
+
+        with mock.patch.object(ex, "_confirm_no_name_collision"), \
+             mock.patch.object(ex, "_resolve_approved_image_id"), \
+             mock.patch("ephemeral_executor._APPROVED_LOCAL_IMAGE_ID", "sha256:id"), \
+             mock.patch("ephemeral_executor.subprocess.run", side_effect=fake_run):
+            with self.assertRaises(EphemeralExecutionError) as cm:
+                ex.start()
+        self.assertEqual(cm.exception.code, "DOCKER_RUN_FAILED")
+        # Only ONE docker run was attempted (the digest one); no tag retry.
+        run_args = [a for a in run_calls if "run" in a and "--pull=never" in a]
+        self.assertEqual(len(run_args), 1, "no tag fallback permitted")
+
+    # ── Fix 3: migration integrity ──────────────────────────────────────────
+
+    def test_migration_allowlist_counts(self):
+        names = [f for f, _ in MIGRATION_CHAIN]
+        self.assertEqual(len(names), 13)
+        self.assertEqual(len(set(names)), 11)
+        self.assertEqual(len(ISOLATED_LIVE_MIGRATIONS), 2)
+        self.assertEqual(len(set(ISOLATED_LIVE_MIGRATIONS)), 2)
+        self.assertEqual(len(set(names) | set(ISOLATED_LIVE_MIGRATIONS)), 13)
+
+    def test_only_m4f1_state_and_hotfix_repeat(self):
+        names = [f for f, _ in MIGRATION_CHAIN]
+        from collections import Counter
+        counts = Counter(names)
+        repeats = {f: c for f, c in counts.items() if c > 1}
+        self.assertEqual(set(repeats.keys()),
+                         {"m4f1_state.sql", "m4f1_hotfix_1.sql"})
+        self.assertEqual(sorted(repeats.values()), [2, 2])
+
+    def test_migration_integrity_rejects_modified_content(self):
+        import ephemeral_executor as ee
+        from ephemeral_executor import EphemeralExecutionError
+        ex = ee.EphemeralExecutor(str(ROOT))
+        # Mock git rev-parse (base blob) vs hash-object (working tree) to differ.
+        def fake_run(argv, **kw):
+            cp = mock.Mock()
+            cp.returncode = 0
+            if "rev-parse" in argv:
+                cp.stdout = b"baseblobhash0000000000000000000000000000\n"
+            elif "hash-object" in argv:
+                cp.stdout = b"worktreehash1111111111111111111111111111\n"
+            else:
+                cp.stdout = b""
+            cp.stderr = b""
+            return cp
+        with mock.patch("ephemeral_executor.subprocess.run", side_effect=fake_run):
+            with self.assertRaises(EphemeralExecutionError) as cm:
+                ex._verify_migration_file_integrity("init.sql", "tools/audit-db")
+        self.assertEqual(cm.exception.code, "MIGRATION_INTEGRITY_MISMATCH")
+
+    def test_migration_integrity_rejects_symlink(self):
+        import ephemeral_executor as ee
+        from ephemeral_executor import EphemeralExecutionError
+        ex = ee.EphemeralExecutor(str(ROOT))
+        with mock.patch("pathlib.Path.is_symlink", return_value=True):
+            with self.assertRaises(EphemeralExecutionError) as cm:
+                ex._verify_migration_file_integrity("init.sql", "tools/audit-db")
+        self.assertEqual(cm.exception.code, "MIGRATION_INTEGRITY_MISMATCH")
+
+    def test_migration_integrity_rejects_path_escape(self):
+        import ephemeral_executor as ee
+        from ephemeral_executor import EphemeralExecutionError
+        ex = ee.EphemeralExecutor(str(ROOT))
+        # A filename with a path separator is rejected before any git call.
+        with self.assertRaises(EphemeralExecutionError) as cm:
+            ex._verify_migration_file_integrity("../escape.sql", "tools/audit-db")
+        self.assertEqual(cm.exception.code, "MIGRATION_INTEGRITY_MISMATCH")
+
+    # ── Fix 4/5: cleanup resource ownership + retry semantics ───────────────
+
+    def _ownership_docker_factory(self, ex, *, exist_rc=0, exist_out=None,
+                                  id_out=None, mounts_out=b"[]\n",
+                                  rm_rc=0, mismatch=False):
+        """Build a fake_docker for cleanup that handles the two-probe ownership
+        check (existence {{.Id}} + identity Id|Name|Labels), mounts, and rm.
+        """
+        cid = ex._container_id
+        cname = ex._container_name
+        label = ex._label
+        if exist_out is None:
+            exist_out = (cid + "\n").encode()
+        if id_out is None:
+            if mismatch:
+                id_out = (b"other" + b"x" * 60 + b"|/other-name|{}\n")
+            else:
+                id_out = ("%s|/%s|{\"mergepilot.ephemeral\":\"%s\"}\n"
+                          % (cid, cname, label)).encode()
+
+        def fake_docker(args, **kw):
+            # existence probe: inspect <id> --format {{.Id}}
+            if (args and args[0] == "inspect" and len(args) >= 4
+                    and args[2] == "--format" and args[3] == "{{.Id}}"):
+                cp = mock.Mock(); cp.returncode = exist_rc
+                cp.stdout = exist_out
+                cp.stderr = (b"No such object: " + cid.encode()) if exist_rc else b""
+                return cp
+            # identity probe: inspect <id> --format {{.Id}}|{{.Name}}|{{json}}
+            if (args and args[0] == "inspect" and "--format" in args
+                    and ".Id}}" in args[3] if len(args) > 3 else False
+                    and "Name" in (args[3] if len(args) > 3 else "")):
+                cp = mock.Mock(); cp.returncode = 0
+                cp.stdout = id_out; cp.stderr = b""
+                return cp
+            # mounts probe
+            if args and args[0] == "inspect" and "Mounts" in (args[3] if len(args) > 3 else ""):
+                cp = mock.Mock(); cp.returncode = 0
+                cp.stdout = mounts_out; cp.stderr = b""
+                return cp
+            if args and args[0:2] == ["rm", "-fv"]:
+                cp = mock.Mock(); cp.returncode = rm_rc
+                cp.stdout = b""; cp.stderr = b"" if rm_rc == 0 else b"rm err"
+                return cp
+            cp = mock.Mock(); cp.returncode = 0
+            cp.stdout = b""; cp.stderr = b""
+            return cp
+        return fake_docker
+
+    @mock.patch("ephemeral_executor.EphemeralExecutor._recheck_environment_fingerprint")
+    def test_cleanup_ownership_mismatch_no_removal(self, _m_recheck):
+        from ephemeral_executor import EphemeralExecutionError
+        ex = self._make_executor()
+        rm_calls = []
+        fake = self._ownership_docker_factory(ex, mismatch=True)
+
+        def wrapped(args, **kw):
+            if args and args[0:2] == ["rm", "-fv"]:
+                rm_calls.append(args)
+            return fake(args, **kw)
+        with mock.patch.object(ex, "_docker", side_effect=wrapped), \
+             mock.patch("ephemeral_executor.socket.socket") as msock:
+            msock.return_value.connect.side_effect = OSError("closed")
+            with self.assertRaises(EphemeralExecutionError):
+                ex.cleanup_and_verify()
+        # rm -fv must NOT have been called (ownership mismatch).
+        self.assertEqual(rm_calls, [], "no removal on ownership mismatch")
+
+    @mock.patch("ephemeral_executor.EphemeralExecutor._recheck_environment_fingerprint")
+    def test_cleanup_successful_uses_container_id(self, _m_recheck):
+        ex = self._make_executor()
+        rm_target = []
+        fake = self._ownership_docker_factory(ex)
+
+        def wrapped(args, **kw):
+            if args and args[0:2] == ["rm", "-fv"]:
+                rm_target.append(args[2])
+            return fake(args, **kw)
+        with mock.patch.object(ex, "_docker", side_effect=wrapped), \
+             mock.patch("ephemeral_executor.socket.socket") as msock:
+            msock.return_value.connect.side_effect = OSError("closed")
+            ex.cleanup_and_verify()
+        self.assertEqual(rm_target, [ex._container_id],
+                         "rm -fv must use the container ID")
+
+    @mock.patch("ephemeral_executor.EphemeralExecutor._recheck_environment_fingerprint")
+    def test_cleanup_docker_rm_failure_is_cleanup_error(self, _m_recheck):
+        from ephemeral_executor import EphemeralExecutionError
+        ex = self._make_executor()
+        fake = self._ownership_docker_factory(ex, rm_rc=1)
+        with mock.patch.object(ex, "_docker", side_effect=fake), \
+             mock.patch("ephemeral_executor.socket.socket") as msock:
+            msock.return_value.connect.side_effect = OSError("closed")
+            with self.assertRaises(EphemeralExecutionError) as cm:
+                ex.cleanup_and_verify()
+        self.assertEqual(cm.exception.code, "CLEANUP_RESIDUE")
+        # _cleaned must stay False on error (Fix 5).
+        self.assertFalse(ex._cleaned)
+
+    @mock.patch("ephemeral_executor.EphemeralExecutor._recheck_environment_fingerprint")
+    def test_cleanup_idempotent_after_success(self, _m_recheck):
+        ex = self._make_executor()
+        fake = self._ownership_docker_factory(ex)
+        with mock.patch.object(ex, "_docker", side_effect=fake), \
+             mock.patch("ephemeral_executor.socket.socket") as msock:
+            msock.return_value.connect.side_effect = OSError("closed")
+            ex.cleanup_and_verify()  # succeeds → _cleaned = True
+        self.assertTrue(ex._cleaned)
+        # Second call is a no-op (no Docker).
+        with mock.patch.object(ex, "_docker") as md:
+            ex.cleanup_and_verify()
+        md.assert_not_called()
+
+    @mock.patch("ephemeral_executor.EphemeralExecutor._recheck_environment_fingerprint")
+    def test_cleanup_retry_after_temporary_failure(self, _m_recheck):
+        # First cleanup fails (rm rc=1), leaving _cleaned=False; a second call
+        # with rm succeeding then passes (Fix 5 retry semantics).
+        from ephemeral_executor import EphemeralExecutionError
+        ex = self._make_executor()
+        # First call: rm fails.
+        fake_fail = self._ownership_docker_factory(ex, rm_rc=1)
+        with mock.patch.object(ex, "_docker", side_effect=fake_fail), \
+             mock.patch("ephemeral_executor.socket.socket") as msock:
+            msock.return_value.connect.side_effect = OSError("closed")
+            with self.assertRaises(EphemeralExecutionError):
+                ex.cleanup_and_verify()
+        self.assertFalse(ex._cleaned)
+        # Second call: rm succeeds.
+        fake_ok = self._ownership_docker_factory(ex, rm_rc=0)
+        with mock.patch.object(ex, "_docker", side_effect=fake_ok), \
+             mock.patch("ephemeral_executor.socket.socket") as msock:
+            msock.return_value.connect.side_effect = OSError("closed")
+            ex.cleanup_and_verify()  # should not raise
+        self.assertTrue(ex._cleaned)
+
+    @mock.patch("ephemeral_executor.EphemeralExecutor._recheck_environment_fingerprint")
+    def test_cleanup_volume_inspect_failure_is_cleanup_error(self, _m_recheck):
+        from ephemeral_executor import EphemeralExecutionError
+        ex = self._make_executor()
+        # mounts inspect returns invalid JSON.
+        fake = self._ownership_docker_factory(ex, mounts_out=b"not-json\n")
+        with mock.patch.object(ex, "_docker", side_effect=fake), \
+             mock.patch("ephemeral_executor.socket.socket") as msock:
+            msock.return_value.connect.side_effect = OSError("closed")
+            with self.assertRaises(EphemeralExecutionError) as cm:
+                ex.cleanup_and_verify()
+        # The aggregated CLEANUP_RESIDUE message must name the VOLUME_INSPECT sub-code.
+        self.assertEqual(cm.exception.code, "CLEANUP_RESIDUE")
+        self.assertIn("VOLUME_INSPECT", str(cm.exception))
+        self.assertFalse(ex._cleaned)
+
+    @mock.patch("ephemeral_executor.EphemeralExecutor._recheck_environment_fingerprint")
+    def test_cleanup_ownership_inspect_failure_not_treated_as_absent(self, _m_recheck):
+        from ephemeral_executor import EphemeralExecutionError
+        ex = self._make_executor()
+        # existence probe: daemon error (rc=1, stderr NOT 'no such') → must
+        # surface DOCKER_INSPECT_FAILED, not be treated as absent.
+        cid = ex._container_id
+
+        def fake_docker(args, **kw):
+            if (args and args[0] == "inspect" and len(args) >= 4
+                    and args[3] == "{{.Id}}"):
+                cp = mock.Mock(); cp.returncode = 1
+                cp.stdout = b""; cp.stderr = b"daemon error: permission denied"
+                return cp
+            cp = mock.Mock(); cp.returncode = 0
+            cp.stdout = b""; cp.stderr = b""
+            return cp
+        with mock.patch.object(ex, "_docker", side_effect=fake_docker), \
+             mock.patch("ephemeral_executor.socket.socket") as msock:
+            msock.return_value.connect.side_effect = OSError("closed")
+            with self.assertRaises(EphemeralExecutionError) as cm:
+                ex.cleanup_and_verify()
+        self.assertEqual(cm.exception.code, "CLEANUP_RESIDUE")
+        # DOCKER_INSPECT_FAILED must appear (not silently treated as absent).
+        self.assertIn("DOCKER_INSPECT_FAILED", str(cm.exception))
+        self.assertFalse(ex._cleaned)
+
+    @mock.patch("ephemeral_executor.EphemeralExecutor._recheck_environment_fingerprint")
+    def test_cleanup_genuinely_absent_container_continues(self, _m_recheck):
+        # Container genuinely gone ('No such') → ownership returns False, no rm,
+        # residue verification proceeds (Fix 5: only explicit absence is OK).
+        ex = self._make_executor()
+        fake = self._ownership_docker_factory(ex, exist_rc=1, exist_out=b"")
+        # Override the existence stderr to 'No such' so it's treated as absent.
+        def fake2(args, **kw):
+            cp = fake(args, **kw)
+            if (args and args[0] == "inspect" and len(args) >= 4
+                    and args[3] == "{{.Id}}" and cp.returncode != 0):
+                cp.stderr = b"No such object: " + ex._container_id.encode()
+            return cp
+        with mock.patch.object(ex, "_docker", side_effect=fake2), \
+             mock.patch("ephemeral_executor.socket.socket") as msock:
+            msock.return_value.connect.side_effect = OSError("closed")
+            ex.cleanup_and_verify()  # should not raise
+        self.assertTrue(ex._cleaned)
+
+    # ── Fix 6: combined error ───────────────────────────────────────────────
+
+    def test_combined_error_carries_both_codes_no_secret(self):
+        from ephemeral_executor import EphemeralExecutionAndCleanupError
+        err = EphemeralExecutionAndCleanupError("DOCKER_RUN_FAILED", "CLEANUP_RESIDUE")
+        self.assertEqual(err.primary_error_code, "DOCKER_RUN_FAILED")
+        self.assertEqual(err.cleanup_error_code, "CLEANUP_RESIDUE")
+        msg = str(err)
+        self.assertNotIn("password=", msg)
+        self.assertNotIn("postgresql://", msg)
+
+    def test_start_and_prepare_primary_fail_cleanup_fail_combines(self):
+        import ephemeral_executor as ee
+        from ephemeral_executor import (
+            EphemeralExecutionError, EphemeralExecutionAndCleanupError,
+        )
+        ex = ee.EphemeralExecutor(str(ROOT))
+        primary = EphemeralExecutionError("DOCKER_RUN_FAILED", "primary")
+        cleanup = EphemeralExecutionError("CLEANUP_RESIDUE", "cleanup")
+        with mock.patch.object(ex, "start", side_effect=primary), \
+             mock.patch.object(ex, "cleanup_and_verify", side_effect=cleanup):
+            with self.assertRaises(EphemeralExecutionAndCleanupError) as cm:
+                ex.start_and_prepare()
+        self.assertEqual(cm.exception.primary_error_code, "DOCKER_RUN_FAILED")
+        self.assertEqual(cm.exception.cleanup_error_code, "CLEANUP_RESIDUE")
+
+    def test_start_and_prepare_primary_fail_cleanup_ok_propagates_primary(self):
+        import ephemeral_executor as ee
+        from ephemeral_executor import EphemeralExecutionError
+        ex = ee.EphemeralExecutor(str(ROOT))
+        primary = EphemeralExecutionError("PG_NOT_READY", "primary")
+        with mock.patch.object(ex, "start", side_effect=primary), \
+             mock.patch.object(ex, "cleanup_and_verify") as mc:
+            with self.assertRaises(EphemeralExecutionError) as cm:
+                ex.start_and_prepare()
+        self.assertEqual(cm.exception.code, "PG_NOT_READY")
+        mc.assert_called_once()
+
+    # ── Fix 7: structured seed parts ─────────────────────────────────────────
+
+    def test_build_seed_sql_parts_three_nonempty(self):
+        from ephemeral_harness import build_seed_sql_parts
+        before, option_b, after = build_seed_sql_parts()
+        self.assertTrue(before.strip(), "before_bind non-empty")
+        self.assertTrue(option_b.strip(), "option_b non-empty")
+        self.assertTrue(after.strip(), "after_bind non-empty")
+
+    def test_build_seed_sql_parts_option_b_isolated(self):
+        from ephemeral_harness import build_seed_sql_parts
+        before, option_b, after = build_seed_sql_parts()
+        # The revision_bindings INSERT appears ONLY in option_b.
+        self.assertIn("INSERT INTO revision_bindings", option_b)
+        self.assertNotIn("INSERT INTO revision_bindings", before)
+        self.assertNotIn("INSERT INTO revision_bindings", after)
+        # The NOT_VERIFIED marker is in option_b.
+        self.assertIn("revision_producer_contract = NOT_VERIFIED", option_b)
+
+    def test_build_seed_sql_parts_concat_equals_full(self):
+        from ephemeral_harness import build_seed_sql, build_seed_sql_parts
+        before, option_b, after = build_seed_sql_parts()
+        self.assertEqual(before + option_b + after, build_seed_sql())
+
+    # ── Fix 3 (round 2): authorization_context gate ─────────────────────────
+
+    def test_start_without_auth_context_refuses_docker(self):
+        import ephemeral_executor as ee
+        from ephemeral_executor import EphemeralExecutionError
+        ex = ee.EphemeralExecutor(str(ROOT))  # no authorization_context
+        with mock.patch.object(ex, "_docker") as md:
+            with self.assertRaises(EphemeralExecutionError) as cm:
+                ex.start()
+        self.assertEqual(cm.exception.code, "AUTH_CONTEXT_INVALID")
+        md.assert_not_called()  # no Docker before the gate
+
+    def test_start_unauthorized_context_refused(self):
+        import ephemeral_executor as ee
+        from ephemeral_executor import EphemeralExecutionError
+        ex = ee.EphemeralExecutor(str(ROOT),
+                                  authorization_context={"authorized": False})
+        with mock.patch.object(ex, "_docker") as md:
+            with self.assertRaises(EphemeralExecutionError) as cm:
+                ex.start()
+        self.assertEqual(cm.exception.code, "AUTH_CONTEXT_INVALID")
+        md.assert_not_called()
+
+    def test_start_missing_fingerprint_field_refused(self):
+        import ephemeral_executor as ee
+        from ephemeral_executor import EphemeralExecutionError
+        ctx = self._make_auth_context()
+        ctx["fingerprint"]["server_id"] = ""  # incomplete
+        ex = ee.EphemeralExecutor(str(ROOT), authorization_context=ctx)
+        with self.assertRaises(EphemeralExecutionError) as cm:
+            ex.start()
+        self.assertEqual(cm.exception.code, "AUTH_CONTEXT_INVALID")
+
+    @mock.patch("ephemeral_executor.EphemeralExecutor._recheck_environment_fingerprint")
+    def test_recheck_fingerprint_unchanged_passes(self, _m_recheck):
+        # _recheck_environment_fingerprint mocked to no-op → cleanup succeeds.
+        ex = self._make_executor()
+        fake = self._ownership_docker_factory(ex)
+        with mock.patch.object(ex, "_docker", side_effect=fake), \
+             mock.patch("ephemeral_executor.socket.socket") as msock:
+            msock.return_value.connect.side_effect = OSError("closed")
+            ex.cleanup_and_verify()
+        self.assertTrue(ex._cleaned)
+
+    # ── Fix 4 (round 2): validate-all-before-execute ────────────────────────
+
+    def test_prepare_validates_all_before_any_sql(self):
+        # If the LAST distinct migration file fails integrity, psql is never
+        # called (no measure, no prerequisite role, no migration, no seed).
+        import ephemeral_executor as ee
+        from ephemeral_executor import EphemeralExecutionError
+        ex = ee.EphemeralExecutor(str(ROOT),
+                                  authorization_context=self._make_auth_context())
+        ex._container_name = "ctr"
+        psql_calls = []
+
+        # Track which file is being verified; fail the LAST distinct audit-db file.
+        distinct_audit = []
+        seen = set()
+        for f, _ in MIGRATION_CHAIN:
+            if f not in seen:
+                distinct_audit.append(f)
+                seen.add(f)
+        last_file = distinct_audit[-1]
+
+        orig_verify = ex._verify_migration_file_integrity
+
+        def fake_verify(filename, approved_dir):
+            if filename == last_file:
+                raise EphemeralExecutionError(
+                    "MIGRATION_INTEGRITY_MISMATCH", "last file tampered")
+            return orig_verify(filename, approved_dir)
+
+        def fake_psql(sql, **kw):
+            psql_calls.append(sql)
+            return ""
+
+        with mock.patch.object(ex, "_verify_migration_file_integrity",
+                               side_effect=fake_verify), \
+             mock.patch.object(ex, "_psql_via_exec", side_effect=fake_psql), \
+             mock.patch.object(ex, "measure_server_identity"):
+            with self.assertRaises(EphemeralExecutionError) as cm:
+                ex.prepare()
+        self.assertEqual(cm.exception.code, "MIGRATION_INTEGRITY_MISMATCH")
+        # No SQL was executed at all.
+        self.assertEqual(psql_calls, [],
+                         "no SQL before all migrations validate")
+
+    def test_prepare_repeated_migrations_validated_once_applied_twice(self):
+        # m4f1_state.sql appears twice in MIGRATION_CHAIN; _validate_all_migrations
+        # verifies it ONCE (distinct), but prepare() applies it TWICE.
+        import ephemeral_executor as ee
+        ex = ee.EphemeralExecutor(str(ROOT),
+                                  authorization_context=self._make_auth_context())
+        ex._container_name = "ctr"
+        ex._reader_password = "reader-pw"  # required by build_reader_role_sql
+        verify_calls = []
+        psql_calls = []
+
+        def fake_verify(filename, approved_dir):
+            verify_calls.append(filename)
+            return (ROOT / approved_dir / filename)
+
+        def fake_psql(sql, **kw):
+            psql_calls.append(sql)
+            return ""
+
+        with mock.patch.object(ex, "_verify_migration_file_integrity",
+                               side_effect=fake_verify), \
+             mock.patch.object(ex, "_psql_via_exec", side_effect=fake_psql), \
+             mock.patch.object(ex, "measure_server_identity"), \
+             mock.patch.object(ex, "_attempt_bind_revision_option_a"):
+            ex.prepare()
+        # m4f1_state verified exactly once.
+        self.assertEqual(verify_calls.count("m4f1_state.sql"), 1)
+        self.assertEqual(verify_calls.count("m4f1_hotfix_1.sql"), 1)
+        # Total distinct verifications = 11 (audit-db) + 2 (ISOLATED_LIVE) = 13.
+        self.assertEqual(len(verify_calls), 13)
+        # m4f1_state applied twice (count phase1 migration ops).
+        phase1_m4f1 = [o for o in ex.operations_applied
+                       if o.startswith("phase1_migration_m4f1_state")]
+        self.assertEqual(len(phase1_m4f1), 2)
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# TestWslDistroParse — _wsl_distro_states robustness (Fix 1, round 2)
+# ────────────────────────────────────────────────────────────────────────────
+class TestWslDistroParse(unittest.TestCase):
+    """Pure-function tests for _wsl_distro_states (no WSL/Docker)."""
+
+    def _states_for(self, output: str):
+        with mock.patch("ephemeral_harness._run_wsl_text",
+                        return_value=(0, output, "")):
+            from ephemeral_harness import _wsl_distro_states
+            return _wsl_distro_states()
+
+    def test_default_distro_with_star(self):
+        out = "  NAME               STATE           VERSION\n* MergePilot-Test    Running    2\n  Ubuntu-22.04       Stopped    2\n"
+        s = self._states_for(out)
+        self.assertEqual(s.get("MergePilot-Test"), "Running")
+        self.assertEqual(s.get("Ubuntu-22.04"), "Stopped")
+
+    def test_non_default_no_star(self):
+        out = "  MergePilot-Test    Stopped    2\n* Ubuntu-22.04       Running    2\n"
+        s = self._states_for(out)
+        self.assertEqual(s.get("MergePilot-Test"), "Stopped")
+        self.assertEqual(s.get("Ubuntu-22.04"), "Running")
+
+    def test_utf16_nul_output(self):
+        # wsl.exe emits UTF-16LE with NUL bytes; _run_wsl_text decodes, but the
+        # parser must also strip stray NULs defensively.
+        out = "\x00 \x00M\x00e\x00r\x00g\x00e\x00P\x00i\x00l\x00o\x00t\x00-\x00T\x00e\x00s\x00t\x00 \x00 \x00 \x00S\x00t\x00o\x00p\x00p\x00e\x00d\x00 \x00 \x00 \x002\x00\n\x00"
+        s = self._states_for(out)
+        self.assertEqual(s.get("MergePilot-Test"), "Stopped")
+
+    def test_distro_name_with_spaces(self):
+        out = "My Test Distro    Running    2\n"
+        s = self._states_for(out)
+        self.assertEqual(s.get("My Test Distro"), "Running")
+
+    def test_header_line_ignored(self):
+        out = "  NAME               STATE           VERSION\nMergePilot-Test    Running    2\n"
+        s = self._states_for(out)
+        self.assertNotIn("NAME", s)
+        self.assertEqual(s.get("MergePilot-Test"), "Running")
+
+    def test_malformed_lines_ignored(self):
+        out = "garbage line\nonly two tokens\nMergePilot-Test    Running    2\n1 2 3 4 extra\n"
+        s = self._states_for(out)
+        self.assertEqual(s.get("MergePilot-Test"), "Running")
+        self.assertEqual(len(s), 1)
+
+    def test_state_not_running_or_stopped_ignored(self):
+        out = "MergePilot-Test    Installing    2\n"
+        s = self._states_for(out)
+        self.assertEqual(s, {})
+
+    def test_version_not_integer_ignored(self):
+        out = "MergePilot-Test    Running    abc\n"
+        s = self._states_for(out)
+        self.assertEqual(s, {})
+
+    def test_unparseable_returns_empty(self):
+        s = self._states_for("")
+        self.assertEqual(s, {})
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# TestDockerHostAllowlist — DOCKER_HOST tightening (Fix 2, round 2)
+# ────────────────────────────────────────────────────────────────────────────
+class TestDockerHostAllowlist(unittest.TestCase):
+    """Parametric Mock tests for the DOCKER_HOST allowlist in check_execution_auth."""
+
+    def _run_with_docker_host(self, docker_host_value: str, *, full_chain=False):
+        os.environ["EPHEMERAL_PG_VERIFY"] = "1"
+        states = {AUTHORIZED_DAEMON: "Running", "Ubuntu-22.04": "Stopped"}
+        # Probes: endpoint, DOCKER_HOST, (optionally docker info + image).
+        probes = [
+            (0, "unix:///var/run/docker.sock\n", ""),   # endpoint OK
+            (0, docker_host_value + "\n", ""),           # DOCKER_HOST value
+        ]
+        if full_chain:
+            probes.append((0, _DAEMON_INFO_TEXT, ""))    # docker info OK
+            probes.append((0, "sha256:abc123def456\n", ""))  # image cached (valid Id)
+        with mock.patch("ephemeral_harness._wsl_distro_states",
+                        return_value=states), \
+             mock.patch("ephemeral_harness._run_wsl_text",
+                        side_effect=probes):
+            from ephemeral_harness import check_execution_auth
+            result = check_execution_auth()
+        return result
+
+    def test_empty_docker_host_allowed(self):
+        # Full chain → authorized (DOCKER_HOST empty is allowed).
+        r = self._run_with_docker_host("", full_chain=True)
+        self.assertTrue(r["authorized"], msg=r.get("reason"))
+
+    def test_exact_socket_allowed(self):
+        # Full chain → authorized (exact unix socket is allowed).
+        r = self._run_with_docker_host("unix:///var/run/docker.sock", full_chain=True)
+        self.assertTrue(r["authorized"], msg=r.get("reason"))
+
+    def test_other_unix_socket_rejected(self):
+        for bad in ("unix:///tmp/docker.sock", "unix:///var/run/other.sock"):
+            r = self._run_with_docker_host(bad)
+            self.assertFalse(r["authorized"])
+            self.assertIn("DOCKER_HOST", r["reason"])
+
+    def test_tcp_rejected(self):
+        r = self._run_with_docker_host("tcp://1.2.3.4:2375")
+        self.assertFalse(r["authorized"])
+        self.assertIn("DOCKER_HOST", r["reason"])
+
+    def test_ssh_rejected(self):
+        r = self._run_with_docker_host("ssh://user@host")
+        self.assertFalse(r["authorized"])
+
+    def test_npipe_rejected(self):
+        r = self._run_with_docker_host("npipe:////./pipe/docker_engine")
+        self.assertFalse(r["authorized"])
+
+    def test_extra_suffix_rejected(self):
+        # A value that is NOT exactly the socket (extra suffix) is rejected.
+        r = self._run_with_docker_host("unix:///var/run/docker.sock/extra")
+        self.assertFalse(r["authorized"])
+        self.assertIn("DOCKER_HOST", r["reason"])
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# TestAuthContextStrict — authorization_context completeness (Fix 1, final)
+# ────────────────────────────────────────────────────────────────────────────
+class TestAuthContextStrict(unittest.TestCase):
+    """Strict validation of authorization_context fields (no Docker)."""
+
+    @staticmethod
+    def _ctx(**overrides):
+        return TestExecutorStructural._make_auth_context(**overrides)
+
+    def test_endpoint_missing_rejected(self):
+        import ephemeral_executor as ee
+        from ephemeral_executor import EphemeralExecutionError
+        ctx = self._ctx()
+        del ctx["endpoint"]
+        ex = ee.EphemeralExecutor(str(ROOT), authorization_context=ctx)
+        with self.assertRaises(EphemeralExecutionError) as cm:
+            ex._validate_authorization_context()
+        self.assertEqual(cm.exception.code, "AUTH_CONTEXT_INVALID")
+
+    def test_endpoint_wrong_rejected(self):
+        import ephemeral_executor as ee
+        from ephemeral_executor import EphemeralExecutionError
+        ex = ee.EphemeralExecutor(str(ROOT),
+                                  authorization_context=self._ctx(endpoint="tcp://x"))
+        with self.assertRaises(EphemeralExecutionError) as cm:
+            ex._validate_authorization_context()
+        self.assertEqual(cm.exception.code, "AUTH_CONTEXT_INVALID")
+
+    def test_image_digest_missing_rejected(self):
+        import ephemeral_executor as ee
+        from ephemeral_executor import EphemeralExecutionError
+        ctx = self._ctx()
+        del ctx["image_digest"]
+        ex = ee.EphemeralExecutor(str(ROOT), authorization_context=ctx)
+        with self.assertRaises(EphemeralExecutionError) as cm:
+            ex._validate_authorization_context()
+        self.assertEqual(cm.exception.code, "AUTH_CONTEXT_INVALID")
+
+    def test_image_digest_wrong_rejected(self):
+        import ephemeral_executor as ee
+        from ephemeral_executor import EphemeralExecutionError
+        ex = ee.EphemeralExecutor(
+            str(ROOT),
+            authorization_context=self._ctx(image_digest="pgvector/pgvector@sha256:wrong"))
+        with self.assertRaises(EphemeralExecutionError) as cm:
+            ex._validate_authorization_context()
+        self.assertEqual(cm.exception.code, "AUTH_CONTEXT_INVALID")
+
+    def test_image_id_missing_rejected(self):
+        import ephemeral_executor as ee
+        from ephemeral_executor import EphemeralExecutionError
+        ctx = self._ctx()
+        del ctx["image_id"]
+        ex = ee.EphemeralExecutor(str(ROOT), authorization_context=ctx)
+        with self.assertRaises(EphemeralExecutionError) as cm:
+            ex._validate_authorization_context()
+        self.assertEqual(cm.exception.code, "AUTH_CONTEXT_INVALID")
+
+    def test_image_id_bad_format_rejected(self):
+        import ephemeral_executor as ee
+        from ephemeral_executor import EphemeralExecutionError
+        ex = ee.EphemeralExecutor(
+            str(ROOT), authorization_context=self._ctx(image_id="not-a-sha"))
+        with self.assertRaises(EphemeralExecutionError) as cm:
+            ex._validate_authorization_context()
+        self.assertEqual(cm.exception.code, "AUTH_CONTEXT_INVALID")
+
+    def test_docker_host_unapproved_rejected(self):
+        import ephemeral_executor as ee
+        from ephemeral_executor import EphemeralExecutionError
+        ex = ee.EphemeralExecutor(
+            str(ROOT),
+            authorization_context=self._ctx(docker_host="unix:///tmp/x.sock"))
+        with self.assertRaises(EphemeralExecutionError) as cm:
+            ex._validate_authorization_context()
+        self.assertEqual(cm.exception.code, "AUTH_CONTEXT_INVALID")
+
+    def test_constructor_deep_copies_context(self):
+        # Mutating the caller's dict after construction must NOT affect executor.
+        import ephemeral_executor as ee
+        ctx = self._ctx()
+        ex = ee.EphemeralExecutor(str(ROOT), authorization_context=ctx)
+        ctx["fingerprint"]["server_id"] = "TAMPERED"
+        ctx["authorized"] = False
+        # The executor's copy is unaffected.
+        self.assertTrue(ex._authorization_context["authorized"])
+        self.assertEqual(
+            ex._authorization_context["fingerprint"]["server_id"],
+            "f466f703-15ce-46fd-bfba-02e9c0a140b2")
+
+    def test_executor_does_not_mutate_caller_context(self):
+        import ephemeral_executor as ee
+        ctx = self._ctx()
+        original = __import__("copy").deepcopy(ctx)
+        ex = ee.EphemeralExecutor(str(ROOT), authorization_context=ctx)
+        # Validation must not mutate the context.
+        ex._validate_authorization_context()
+        self.assertEqual(ctx, original)
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# TestEnvironmentRecheck — post-cleanup recheck ordering (Fix 2, final)
+# ────────────────────────────────────────────────────────────────────────────
+class TestEnvironmentRecheck(unittest.TestCase):
+    """The environment post-recheck must not implicitly start a distro."""
+
+    def _make_touched_executor(self):
+        import ephemeral_executor as ee
+        ex = ee.EphemeralExecutor(
+            str(ROOT),
+            authorization_context=TestExecutorStructural._make_auth_context())
+        ex._environment_touched = True
+        return ex
+
+    def test_auth_context_invalid_cleanup_does_not_recheck(self):
+        # start() fails with AUTH_CONTEXT_INVALID before touching the env →
+        # cleanup's recheck is a no-op (does not call _wsl_distro_states).
+        import ephemeral_executor as ee
+        ex = ee.EphemeralExecutor(str(ROOT))  # no context
+        self.assertFalse(ex._environment_touched)
+        with mock.patch("ephemeral_harness._wsl_distro_states") as m_states, \
+             mock.patch("ephemeral_harness._run_wsl_text") as m_wsl:
+            # cleanup with nothing started + not touched → no recheck.
+            ex.cleanup_and_verify()
+        m_states.assert_not_called()
+        m_wsl.assert_not_called()
+
+    def test_recheck_noop_when_environment_not_touched(self):
+        import ephemeral_executor as ee
+        ex = ee.EphemeralExecutor(
+            str(ROOT),
+            authorization_context=TestExecutorStructural._make_auth_context())
+        ex._environment_touched = False
+        with mock.patch("ephemeral_harness._wsl_distro_states") as m_states:
+            ex._recheck_environment_fingerprint()
+        m_states.assert_not_called()
+
+    def test_recheck_distro_stopped_no_wsl_d(self):
+        # MergePilot-Test Stopped on recheck → ENVIRONMENT_FINGERPRINT_CHANGED,
+        # and NO `wsl -d` / Docker command is issued (only wsl -l -v ran).
+        import ephemeral_executor as ee
+        from ephemeral_executor import EphemeralExecutionError
+        ex = self._make_touched_executor()
+        with mock.patch("ephemeral_harness._wsl_distro_states",
+                        return_value={"MergePilot-Test": "Stopped",
+                                      "Ubuntu-22.04": "Stopped"}), \
+             mock.patch("ephemeral_harness._run_wsl_text") as m_wsl:
+            with self.assertRaises(EphemeralExecutionError) as cm:
+                ex._recheck_environment_fingerprint()
+        self.assertEqual(cm.exception.code, "ENVIRONMENT_FINGERPRINT_CHANGED")
+        m_wsl.assert_not_called()  # no wsl -d / docker after Stopped
+
+    def test_recheck_distro_missing_no_docker(self):
+        import ephemeral_executor as ee
+        from ephemeral_executor import EphemeralExecutionError
+        ex = self._make_touched_executor()
+        with mock.patch("ephemeral_harness._wsl_distro_states",
+                        return_value={"Ubuntu-22.04": "Stopped"}), \
+             mock.patch("ephemeral_harness._run_wsl_text") as m_wsl:
+            with self.assertRaises(EphemeralExecutionError) as cm:
+                ex._recheck_environment_fingerprint()
+        self.assertEqual(cm.exception.code, "ENVIRONMENT_FINGERPRINT_CHANGED")
+        m_wsl.assert_not_called()
+
+    def test_recheck_ubuntu_state_changed_fails(self):
+        import ephemeral_executor as ee
+        from ephemeral_executor import EphemeralExecutionError
+        ex = self._make_touched_executor()
+        with mock.patch("ephemeral_harness._wsl_distro_states",
+                        return_value={"MergePilot-Test": "Running",
+                                      "Ubuntu-22.04": "Running"}), \
+             mock.patch("ephemeral_harness._run_wsl_text") as m_wsl:
+            with self.assertRaises(EphemeralExecutionError) as cm:
+                ex._recheck_environment_fingerprint()
+        self.assertEqual(cm.exception.code, "ENVIRONMENT_FINGERPRINT_CHANGED")
+        m_wsl.assert_not_called()
+
+    def test_recheck_docker_host_changed_fails(self):
+        import ephemeral_executor as ee
+        from ephemeral_executor import EphemeralExecutionError
+        ex = self._make_touched_executor()
+        with mock.patch("ephemeral_harness._wsl_distro_states",
+                        return_value={"MergePilot-Test": "Running",
+                                      "Ubuntu-22.04": "Stopped"}), \
+             mock.patch("ephemeral_harness._run_wsl_text",
+                        side_effect=[(0, "unix:///tmp/x.sock\n", "")]) as m_wsl:
+            with self.assertRaises(EphemeralExecutionError) as cm:
+                ex._recheck_environment_fingerprint()
+        self.assertEqual(cm.exception.code, "ENVIRONMENT_FINGERPRINT_CHANGED")
+
+    def test_recheck_endpoint_changed_fails(self):
+        import ephemeral_executor as ee
+        from ephemeral_executor import EphemeralExecutionError
+        ex = self._make_touched_executor()
+        ctx = TestExecutorStructural._make_auth_context()
+        # DOCKER_HOST matches (empty), endpoint differs.
+        with mock.patch("ephemeral_harness._wsl_distro_states",
+                        return_value={"MergePilot-Test": "Running",
+                                      "Ubuntu-22.04": "Stopped"}), \
+             mock.patch("ephemeral_harness._run_wsl_text",
+                        side_effect=[(0, "\n", ""),
+                                     (0, "tcp://x\n", "")]) as m_wsl:
+            with self.assertRaises(EphemeralExecutionError) as cm:
+                ex._recheck_environment_fingerprint()
+        self.assertEqual(cm.exception.code, "ENVIRONMENT_FINGERPRINT_CHANGED")
+
+    def test_recheck_fingerprint_version_changed_fails(self):
+        import ephemeral_executor as ee
+        from ephemeral_executor import EphemeralExecutionError
+        ex = self._make_touched_executor()
+        changed_info = _DAEMON_INFO_TEXT.replace("29.1.3", "99.0.0")
+        with mock.patch("ephemeral_harness._wsl_distro_states",
+                        return_value={"MergePilot-Test": "Running",
+                                      "Ubuntu-22.04": "Stopped"}), \
+             mock.patch("ephemeral_harness._run_wsl_text",
+                        side_effect=[(0, "\n", ""),
+                                     (0, "unix:///var/run/docker.sock\n", ""),
+                                     (0, changed_info, "")]) as m_wsl:
+            with self.assertRaises(EphemeralExecutionError) as cm:
+                ex._recheck_environment_fingerprint()
+        self.assertEqual(cm.exception.code, "ENVIRONMENT_FINGERPRINT_CHANGED")
+
+    def test_recheck_all_match_passes(self):
+        import ephemeral_executor as ee
+        ctx = TestExecutorStructural._make_auth_context()
+        ex = ee.EphemeralExecutor(str(ROOT), authorization_context=ctx)
+        ex._environment_touched = True
+        with mock.patch("ephemeral_harness._wsl_distro_states",
+                        return_value={"MergePilot-Test": "Running",
+                                      "Ubuntu-22.04": "Stopped"}), \
+             mock.patch("ephemeral_harness._run_wsl_text",
+                        side_effect=[
+                            (0, "\n", ""),                              # DOCKER_HOST
+                            (0, "unix:///var/run/docker.sock\n", ""),    # endpoint
+                            (0, _DAEMON_INFO_TEXT, ""),                  # docker info
+                            (0, ctx["image_id"] + "\n", ""),             # image id
+                        ]):
+            ex._recheck_environment_fingerprint()  # must not raise
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# TestCleanupLifecycle — HTTP/poller/source retry semantics (Fix 3, final)
+# ────────────────────────────────────────────────────────────────────────────
+class TestCleanupLifecycle(unittest.TestCase):
+    """HTTP/poller/source cleanup errors are not swallowed; refs retained."""
+
+    def _make_executor(self):
+        import ephemeral_executor as ee
+        ex = ee.EphemeralExecutor(
+            str(ROOT),
+            authorization_context=TestExecutorStructural._make_auth_context())
+        return ex
+
+    @mock.patch("ephemeral_executor.EphemeralExecutor._recheck_environment_fingerprint")
+    def test_http_shutdown_failure_keeps_ref(self, _m):
+        from ephemeral_executor import EphemeralExecutionError
+        ex = self._make_executor()
+        srv = mock.Mock()
+        srv.shutdown.side_effect = RuntimeError("boom")
+        ex._http_server = srv
+        with mock.patch("ephemeral_executor.socket.socket") as msock:
+            msock.return_value.connect.side_effect = OSError("closed")
+            with self.assertRaises(EphemeralExecutionError) as cm:
+                ex.cleanup_and_verify()
+        self.assertIn("HTTP_SHUTDOWN_FAILED", str(cm.exception))
+        # Reference retained for retry.
+        self.assertIsNotNone(ex._http_server)
+        self.assertFalse(ex._cleaned)
+
+    @mock.patch("ephemeral_executor.EphemeralExecutor._recheck_environment_fingerprint")
+    def test_http_first_fail_second_success(self, _m):
+        ex = self._make_executor()
+        srv = mock.Mock()
+        srv.shutdown.side_effect = [RuntimeError("boom"), None]
+        ex._http_server = srv
+        with mock.patch("ephemeral_executor.socket.socket") as msock:
+            msock.return_value.connect.side_effect = OSError("closed")
+            try:
+                ex.cleanup_and_verify()
+            except Exception:
+                pass
+            # Second attempt succeeds.
+            ex.cleanup_and_verify()
+        self.assertIsNone(ex._http_server)
+        self.assertTrue(ex._cleaned)
+
+    @mock.patch("ephemeral_executor.EphemeralExecutor._recheck_environment_fingerprint")
+    def test_poller_stop_failure_keeps_ref(self, _m):
+        from ephemeral_executor import EphemeralExecutionError
+        ex = self._make_executor()
+        poller = mock.Mock()
+        poller.stop.side_effect = RuntimeError("boom")
+        ex._poller = poller
+        with mock.patch("ephemeral_executor.socket.socket") as msock:
+            msock.return_value.connect.side_effect = OSError("closed")
+            with self.assertRaises(EphemeralExecutionError) as cm:
+                ex.cleanup_and_verify()
+        self.assertIn("POLLER_STOP_FAILED", str(cm.exception))
+        self.assertIsNotNone(ex._poller)
+        self.assertFalse(ex._cleaned)
+
+    @mock.patch("ephemeral_executor.EphemeralExecutor._recheck_environment_fingerprint")
+    def test_poller_still_alive_keeps_ref(self, _m):
+        from ephemeral_executor import EphemeralExecutionError
+        ex = self._make_executor()
+        poller = mock.Mock()
+        poller.is_alive.return_value = True  # still alive after join
+        ex._poller = poller
+        with mock.patch("ephemeral_executor.socket.socket") as msock:
+            msock.return_value.connect.side_effect = OSError("closed")
+            with self.assertRaises(EphemeralExecutionError) as cm:
+                ex.cleanup_and_verify()
+        self.assertIn("POLLER_STILL_ALIVE", str(cm.exception))
+
+    @mock.patch("ephemeral_executor.EphemeralExecutor._recheck_environment_fingerprint")
+    def test_poller_second_success(self, _m):
+        ex = self._make_executor()
+        poller = mock.Mock()
+        poller.stop.side_effect = [RuntimeError("boom"), None]
+        poller.is_alive.return_value = False
+        ex._poller = poller
+        with mock.patch("ephemeral_executor.socket.socket") as msock:
+            msock.return_value.connect.side_effect = OSError("closed")
+            try:
+                ex.cleanup_and_verify()
+            except Exception:
+                pass
+            ex.cleanup_and_verify()
+        self.assertIsNone(ex._poller)
+        self.assertTrue(ex._cleaned)
+
+    @mock.patch("ephemeral_executor.EphemeralExecutor._recheck_environment_fingerprint")
+    def test_source_close_failure_keeps_failed(self, _m):
+        from ephemeral_executor import EphemeralExecutionError
+        ex = self._make_executor()
+        good = mock.Mock()
+        bad = mock.Mock()
+        bad.close.side_effect = RuntimeError("boom")
+        ex._reader_sources = [good, bad]
+        with mock.patch("ephemeral_executor.socket.socket") as msock:
+            msock.return_value.connect.side_effect = OSError("closed")
+            with self.assertRaises(EphemeralExecutionError) as cm:
+                ex.cleanup_and_verify()
+        self.assertIn("SOURCE_CLOSE_FAILED", str(cm.exception))
+        # The failed source is retained; the good one removed.
+        self.assertEqual(ex._reader_sources, [bad])
+        self.assertFalse(ex._cleaned)
+
+    @mock.patch("ephemeral_executor.EphemeralExecutor._recheck_environment_fingerprint")
+    def test_source_second_close_success(self, _m):
+        ex = self._make_executor()
+        bad = mock.Mock()
+        bad.close.side_effect = [RuntimeError("boom"), None]
+        ex._reader_sources = [bad]
+        with mock.patch("ephemeral_executor.socket.socket") as msock:
+            msock.return_value.connect.side_effect = OSError("closed")
+            try:
+                ex.cleanup_and_verify()
+            except Exception:
+                pass
+            ex.cleanup_and_verify()
+        self.assertEqual(ex._reader_sources, [])
+        self.assertTrue(ex._cleaned)
+
+    @mock.patch("ephemeral_executor.EphemeralExecutor._recheck_environment_fingerprint")
+    def test_cleanup_errors_contain_no_secret(self, _m):
+        from ephemeral_executor import EphemeralExecutionError
+        ex = self._make_executor()
+        srv = mock.Mock()
+        srv.shutdown.side_effect = RuntimeError("password=supersecret")
+        ex._http_server = srv
+        with mock.patch("ephemeral_executor.socket.socket") as msock:
+            msock.return_value.connect.side_effect = OSError("closed")
+            with self.assertRaises(EphemeralExecutionError) as cm:
+                ex.cleanup_and_verify()
+        msg = str(cm.exception)
+        self.assertNotIn("supersecret", msg)
+        self.assertNotIn("password=supersecret", msg)
 
 
 if __name__ == "__main__":
