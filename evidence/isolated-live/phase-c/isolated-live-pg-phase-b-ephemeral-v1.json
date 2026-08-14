@@ -1,0 +1,201 @@
+{
+  "cleanup_result": {
+    "anonymous_volumes_removed": true,
+    "external_residue_audit": "NO_RESIDUE",
+    "host_port_closed": true,
+    "ownership_triple_match": true,
+    "temp_or_secret_file_residue": "none"
+  },
+  "daemon_fingerprint": {
+    "docker_host": "",
+    "docker_root_dir": "/var/lib/docker",
+    "endpoint": "unix:///var/run/docker.sock",
+    "name": "mergpilot-test",
+    "server_id": "f466f703-15ce-46fd-bfba-02e9c0a140b2",
+    "version": "29.1.3"
+  },
+  "evidence_id": "isolated-live-pg-phase-b-ephemeral-v1",
+  "evidence_provenance_mode": "HISTORICAL_PHASE_B_RECORD",
+  "execution_environment": {
+    "anchors": {
+      "execution_commit_committer_date": "2026-08-14T05:27:17Z",
+      "phase_b_pr_merged_at": "2026-08-14T05:45:46Z"
+    },
+    "command_records": [
+      {
+        "command": "EPHEMERAL_PG_VERIFY=1 python -I -B -W error::ResourceWarning -m unittest discover -s tests/isolated_live -p \"test_*.py\"",
+        "ended_at": "2026-08-14",
+        "exit_summary": "Run 1: Ran 168 tests, OK, 0 failed, 0 errors, 0 skipped, ~30.2s; Run 2 (post-doc-update final tree): Ran 168 tests, OK, ~29.9s",
+        "shell_type": "bash",
+        "started_at": "2026-08-14",
+        "timestamp_precision": "date-only historical record; measured durations in exit_summary"
+      },
+      {
+        "command": "python -I -B -W error::ResourceWarning -m unittest discover -s tests/demo_console -p \"test_*.py\"",
+        "ended_at": "2026-08-14",
+        "exit_summary": "Ran 337 tests, OK, 331 passed, 6 skipped, 0 failed",
+        "shell_type": "bash",
+        "started_at": "2026-08-14"
+      }
+    ],
+    "shell_type": "Git Bash (Windows) + wsl.exe bridge to MergePilot-Test",
+    "tool_versions": {
+      "docker_server": "29.1.3",
+      "python": "3.9 (miniconda3)",
+      "wsl": "2"
+    }
+  },
+  "execution_provenance": {
+    "captured_at": "2026-08-14T05:27:17Z",
+    "execution_commit": "c3838707eb9c1c5db38d4bd77aa0a54653d04a14",
+    "execution_ref": "feat/isolated-live-pg-ephemeral-phase-b",
+    "execution_remote_ref_oid": "c3838707eb9c1c5db38d4bd77aa0a54653d04a14",
+    "execution_tree_oid": "7f4cf9fa13d9c493bf212fb52fb7c3e3999f2810",
+    "execution_worktree_clean": true,
+    "execution_worktree_porcelain": ""
+  },
+  "explicit_limitations": [
+    "One-shot synthetic disposable PostgreSQL container only",
+    "Real MergePilot-Test application database NOT accessed",
+    "Production database NOT verified",
+    "Controller audit-event producer NOT verified",
+    "PostgreSQL production scale, concurrency, PolarDB-PG compatibility NOT verified",
+    "M8 NOT implemented / remains undefined"
+  ],
+  "generated_at": "2026-08-14T13:27:17Z",
+  "image_digest": "pgvector/pgvector@sha256:a36250871de0833b8757561c72f2477ef1ddd1101afa4e617fb552e0de514c6b",
+  "local_image_id": "sha256:8e5355e9ff399a002fa46148399a1ac22fb3e9b2d390f857296e6da6b5559ba1",
+  "m7_closed": {
+    "object": "e794c4211c93032287e1bfcf2d0c5c203511e459",
+    "peeled": "175541a43d0d2b9a988d69d33de6963946b38c8f",
+    "unchanged": true
+  },
+  "merge_commit": "3157bdb9681ee9d81f65bb0d8a242fc57c5e90ff",
+  "migration_counts": {
+    "audit_db_applications": 13,
+    "audit_db_distinct_files": 11,
+    "bootstrap_operations": 17,
+    "integrity_check": "each file blob-hash == PHASE_B_BASE_COMMIT 7c5630a6f2f6c5049f028312caf895cf8cd2cbc9 before any SQL",
+    "isolated_live_applications": 2,
+    "isolated_live_distinct_files": 2,
+    "total_applications": 15,
+    "total_distinct_files": 13
+  },
+  "negative_matrix": {
+    "breakdown": {
+      "ENVIRONMENT_ID_MISMATCH": 1,
+      "ENVIRONMENT_ID_NOT_VERIFIED": 1,
+      "NOT_READ_ONLY": 1,
+      "RUN_NOT_FOUND": 1,
+      "WRONG_DATABASE": 1,
+      "WRONG_ROLE": 2,
+      "WRONG_SERVER": 3
+    },
+    "distinct_error_codes": 7,
+    "restore_verification": "each modify->fail->restore->fresh-reader-LIVE",
+    "scenarios": 10
+  },
+  "option_a_bind_revision": {
+    "attempted": true,
+    "ephemeral_bind_revision_contract_verified": true,
+    "error_code": "",
+    "succeeded": true
+  },
+  "parent_commits": [
+    "7c5630a6f2f6c5049f028312caf895cf8cd2cbc9",
+    "c3838707eb9c1c5db38d4bd77aa0a54653d04a14"
+  ],
+  "phase_c_fresh_execution_performed": false,
+  "protected_paths_diff": {
+    "benchmark/": 0,
+    "evidence/": 0,
+    "samples/": 0,
+    "tools/audit-db/": 0
+  },
+  "redaction_policy": {
+    "exceptions_stored": [
+      "stable error codes",
+      "fingerprint fields",
+      "redacted log lines"
+    ],
+    "excluded": [
+      "passwords",
+      "full DSNs",
+      "tokens",
+      "raw SQL PASSWORD literals",
+      "raw subprocess output"
+    ]
+  },
+  "referenced_documents": [
+    "docs/ISOLATED-LIVE-PG-Ephemeral-Verification-PhaseB.md"
+  ],
+  "schema_version": "1.0",
+  "secret_scan_result": {
+    "argv_leak_events": 0,
+    "diff_level_secret_scan": 0,
+    "log_redaction": "redact_secrets applied on collection"
+  },
+  "test_results": {
+    "demo_console_regression": {
+      "discovered": 337,
+      "errors": 0,
+      "failed": 0,
+      "passed": 331,
+      "skipped": 6
+    },
+    "live_run_1": {
+      "discovered": 168,
+      "duration_seconds": 30.2,
+      "errors": 0,
+      "failed": 0,
+      "passed": 168,
+      "resource_warnings": 0,
+      "skipped": 0
+    },
+    "live_run_2": {
+      "discovered": 168,
+      "duration_seconds": 29.9,
+      "errors": 0,
+      "failed": 0,
+      "passed": 168,
+      "resource_warnings": 0,
+      "skipped": 0
+    },
+    "unauthorized_regression": {
+      "class_level_skip_events": 1,
+      "errors": 0,
+      "failed": 0,
+      "live_methods_not_executed": 7,
+      "loader_discovered_test_methods": 168,
+      "non_live_test_methods_passed": 161,
+      "runner_reported_testsRun": 161
+    }
+  },
+  "verification_classifications": {
+    "M8": "undefined",
+    "MergePilot-Test_application_integration_verified": false,
+    "MergePilot-Test_database_verified": false,
+    "audit_producer_contract": "NOT_VERIFIED",
+    "ephemeral_postgres_verified": true,
+    "production_verified": false,
+    "revision_producer_contract": "NOT_VERIFIED"
+  },
+  "wsl_state_snapshots": {
+    "authorized_distro_final_state": "Stopped",
+    "authorized_distro_initial_state": "Stopped",
+    "explicit_authorized_start": {
+      "authorized_by": "user explicit grant (Phase B execution round)",
+      "performed": true
+    },
+    "final_wsl_state": {
+      "mergepilot_test": "Stopped",
+      "ubuntu_22_04": "Stopped"
+    },
+    "initial_wsl_state": {
+      "mergepilot_test": "Stopped",
+      "ubuntu_22_04": "Stopped"
+    },
+    "ubuntu_22_04_final_state": "Stopped",
+    "ubuntu_22_04_initial_state": "Stopped"
+  }
+}
