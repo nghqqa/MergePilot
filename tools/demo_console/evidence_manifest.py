@@ -60,6 +60,10 @@ from typing import Any
 # ── Constants ────────────────────────────────────────────────────────────────
 
 SCHEMA_VERSION = "1.0"
+# schema 1.1 (Rev-3 integration design): adds MERGEPILOT_TEST_INTEGRATION_RECORD
+# mode plus db_authorization_context / producer_observation / narrow-flags.
+SCHEMA_VERSION_1_1 = "1.1"
+ALLOWED_SCHEMA_VERSIONS = ("1.0", "1.1")
 EVIDENCE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$")
 COMMIT_SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 IMAGE_DIGEST_RE = re.compile(r"^[a-z0-9][a-z0-9/._-]*@sha256:[0-9a-f]{64}$")
@@ -74,7 +78,32 @@ EVIDENCE_ALLOWLIST_DIR = "evidence/isolated-live/phase-c"
 PHASE_B_EXECUTION_COMMIT = "c3838707eb9c1c5db38d4bd77aa0a54653d04a14"
 PHASE_B_DOC_REF = "docs/ISOLATED-LIVE-PG-Ephemeral-Verification-PhaseB.md"
 
-PROVENANCE_MODES = ("HISTORICAL_PHASE_B_RECORD", "FRESH_PHASE_C_REEXECUTION")
+PROVENANCE_MODES = ("HISTORICAL_PHASE_B_RECORD", "FRESH_PHASE_C_REEXECUTION",
+                    "MERGEPILOT_TEST_INTEGRATION_RECORD")
+
+# Strict mode -> required schema matrix (Rev-3 design §7).
+MODE_REQUIRED_SCHEMA = {
+    "HISTORICAL_PHASE_B_RECORD": "1.0",
+    "FRESH_PHASE_C_REEXECUTION": "1.0",
+    "MERGEPILOT_TEST_INTEGRATION_RECORD": "1.1",
+}
+
+# Container-mode (disposable) data fields that must NEVER appear in a
+# MERGEPILOT_TEST_INTEGRATION_RECORD manifest, and vice versa (integration
+# fields that must never appear in a HISTORICAL manifest). Cross-mode field
+# reuse fails closed with PROVENANCE_MISMATCH.
+_CONTAINER_MODE_FIELDS = ("image_digest", "local_image_id", "daemon_fingerprint")
+_INTEGRATION_MODE_FIELDS = ("db_authorization_context", "producer_observation")
+
+# The merged historical artifact — frozen identity, never rewritten and never
+# re-interpreted under 1.1 rules.
+HISTORICAL_ARTIFACT_REL_PATH = (
+    "evidence/isolated-live/phase-c/"
+    "isolated-live-pg-phase-b-ephemeral-v1.json"
+)
+HISTORICAL_ARTIFACT_SHA256 = (
+    "48a50793cff760d2b0e4dace0a902aeb1317726a4bf857a5245e20805f3c6d3d"
+)
 
 # Frozen boundary classifications (value must EQUAL these exactly).
 BOUNDARY_CLASSIFICATIONS = {
@@ -150,19 +179,26 @@ def validate_identifiers(manifest: dict) -> None:
     _check_commit_sha(m7.get("object"), "m7_closed.object")
     _check_commit_sha(m7.get("peeled"), "m7_closed.peeled")
     image_digest = manifest.get("image_digest")
-    if not isinstance(image_digest, str):
-        raise EvidenceGateError("IDENTIFIER_INVALID", "image_digest not a string")
-    _check_no_ellipsis(image_digest, "image_digest")
-    if not IMAGE_DIGEST_RE.fullmatch(image_digest):
-        raise EvidenceGateError(
-            "IDENTIFIER_INVALID", "image_digest not repo@sha256:<64-hex>")
+    # Container-image fields are only applicable to container-mode records;
+    # MERGEPILOT_TEST_INTEGRATION_RECORD legitimately carries "" (field not
+    # applicable). Validate format whenever a value is present.
+    if image_digest:
+        if not isinstance(image_digest, str):
+            raise EvidenceGateError(
+                "IDENTIFIER_INVALID", "image_digest not a string")
+        _check_no_ellipsis(image_digest, "image_digest")
+        if not IMAGE_DIGEST_RE.fullmatch(image_digest):
+            raise EvidenceGateError(
+                "IDENTIFIER_INVALID", "image_digest not repo@sha256:<64-hex>")
     image_id = manifest.get("local_image_id")
-    if not isinstance(image_id, str):
-        raise EvidenceGateError("IDENTIFIER_INVALID", "local_image_id not a string")
-    _check_no_ellipsis(image_id, "local_image_id")
-    if not IMAGE_ID_RE.fullmatch(image_id):
-        raise EvidenceGateError(
-            "IDENTIFIER_INVALID", "local_image_id not sha256:<64-hex>")
+    if image_id:
+        if not isinstance(image_id, str):
+            raise EvidenceGateError(
+                "IDENTIFIER_INVALID", "local_image_id not a string")
+        _check_no_ellipsis(image_id, "local_image_id")
+        if not IMAGE_ID_RE.fullmatch(image_id):
+            raise EvidenceGateError(
+                "IDENTIFIER_INVALID", "local_image_id not sha256:<64-hex>")
     # Serialized form must never contain ellipsis markers anywhere.
     serialized = json.dumps(manifest, ensure_ascii=False)
     for marker in ELLIPSIS_MARKERS:
@@ -258,6 +294,59 @@ def validate_provenance_mode(manifest: dict) -> None:
         if "wsl_state_snapshots" not in manifest:
             raise EvidenceGateError(
                 "PROVENANCE_MISMATCH", "FRESH mode requires WSL state snapshots")
+    elif mode == "MERGEPILOT_TEST_INTEGRATION_RECORD":
+        # Schema 1.1 mode: must carry the DB authorization context and the
+        # producer-observation record (Rev-3 design §7/§8).
+        if fresh is not True:
+            raise EvidenceGateError(
+                "PROVENANCE_MISMATCH",
+                "MERGEPILOT mode requires phase_c_fresh_execution_performed=true")
+        ctx = manifest.get("db_authorization_context")
+        if not isinstance(ctx, dict) or not ctx:
+            raise EvidenceGateError(
+                "PROVENANCE_MISMATCH",
+                "MERGEPILOT mode requires db_authorization_context")
+        obs = manifest.get("producer_observation")
+        if not isinstance(obs, dict) or not obs:
+            raise EvidenceGateError(
+                "PROVENANCE_MISMATCH",
+                "MERGEPILOT mode requires producer_observation")
+
+
+def detect_cross_mode_reuse(manifest: dict) -> None:
+    """Reject cross-mode field reuse with PROVENANCE_MISMATCH (fail-closed).
+
+    Container-mode data (image digest/ID, docker daemon fingerprint) may
+    never appear in a MERGEPILOT_TEST_INTEGRATION_RECORD; integration fields
+    (db_authorization_context, producer_observation) may never appear in a
+    HISTORICAL_PHASE_B_RECORD. Timestamps/commands/WSL/fingerprint/image
+    values are mode-bound: reusing them across modes is this same failure.
+    """
+    mode = manifest.get("evidence_provenance_mode")
+    if mode == "MERGEPILOT_TEST_INTEGRATION_RECORD":
+        for field in _CONTAINER_MODE_FIELDS:
+            if manifest.get(field):
+                raise EvidenceGateError(
+                    "PROVENANCE_MISMATCH",
+                    "container-mode field %s reused in MERGEPILOT mode" % field)
+    elif mode == "HISTORICAL_PHASE_B_RECORD":
+        for field in _INTEGRATION_MODE_FIELDS:
+            if manifest.get(field):
+                raise EvidenceGateError(
+                    "PROVENANCE_MISMATCH",
+                    "integration field %s present in HISTORICAL mode" % field)
+
+
+def validate_historical_artifact_identity(rel_path: str, sha256: str) -> None:
+    """Pure identity check for the merged historical artifact.
+
+    The merged artifact must match the frozen path + SHA-256 exactly; it is
+    never rewritten and never re-interpreted under 1.1 rules.
+    """
+    if rel_path != HISTORICAL_ARTIFACT_REL_PATH or \
+            sha256 != HISTORICAL_ARTIFACT_SHA256:
+        raise EvidenceGateError(
+            "PROVENANCE_MISMATCH", "historical artifact identity mismatch")
 
 
 # ── Boundary classification validation ───────────────────────────────────────
@@ -346,7 +435,7 @@ def validate_manifest(manifest: dict, *, git_runner=None) -> None:
         if field not in manifest:
             raise EvidenceGateError(
                 "SCHEMA_INVALID", "missing top-level field %s" % field)
-    if manifest.get("schema_version") != SCHEMA_VERSION:
+    if manifest.get("schema_version") not in ALLOWED_SCHEMA_VERSIONS:
         raise EvidenceGateError(
             "SCHEMA_INVALID", "unsupported schema_version")
     if not EVIDENCE_ID_RE.fullmatch(manifest.get("evidence_id", "")):
@@ -355,6 +444,16 @@ def validate_manifest(manifest: dict, *, git_runner=None) -> None:
     validate_identifiers(manifest)
     validate_execution_provenance(manifest, git_runner=git_runner)
     validate_provenance_mode(manifest)
+    # Strict mode -> schema matrix (1.0 validators reject unknown modes
+    # above; here the schema pairing itself is enforced fail-closed).
+    mode = manifest.get("evidence_provenance_mode")
+    required_schema = MODE_REQUIRED_SCHEMA.get(mode)
+    if required_schema is not None and \
+            manifest.get("schema_version") != required_schema:
+        raise EvidenceGateError(
+            "PROVENANCE_MISMATCH",
+            "mode %r requires schema_version %s" % (mode, required_schema))
+    detect_cross_mode_reuse(manifest)
     validate_boundary_classifications(manifest)
     validate_command_records(manifest)
 
@@ -397,7 +496,9 @@ def build_manifest(
         "generated_at": generated_at,
         "evidence_provenance_mode": evidence_provenance_mode,
         "phase_c_fresh_execution_performed":
-            evidence_provenance_mode == "FRESH_PHASE_C_REEXECUTION",
+            evidence_provenance_mode in (
+                "FRESH_PHASE_C_REEXECUTION",
+                "MERGEPILOT_TEST_INTEGRATION_RECORD"),
         "execution_provenance": dict(execution_provenance),
         "merge_commit": merge_commit,
         "parent_commits": list(parent_commits),
@@ -1248,18 +1349,24 @@ def publish_evidence(manifest: dict, *, repo_root: str,
 
 
 __all__ = [
+    "ALLOWED_SCHEMA_VERSIONS",
     "BOUNDARY_CLASSIFICATIONS",
     "EVIDENCE_ALLOWLIST_DIR",
     "EVIDENCE_ID_RE",
     "EvidenceGateError",
     "EvidencePublishError",
+    "HISTORICAL_ARTIFACT_REL_PATH",
+    "HISTORICAL_ARTIFACT_SHA256",
+    "MODE_REQUIRED_SCHEMA",
     "PHASE_B_DOC_REF",
     "PHASE_B_EXECUTION_COMMIT",
     "PROTECTED_PATH_PREFIXES",
     "PROVENANCE_MODES",
     "PublishResult",
     "SCHEMA_VERSION",
+    "SCHEMA_VERSION_1_1",
     "build_manifest",
+    "detect_cross_mode_reuse",
     "publish_evidence",
     "redact_manifest_secrets",
     "snapshot_existing_evidence",
@@ -1267,6 +1374,7 @@ __all__ = [
     "validate_command_records",
     "validate_evidence_target",
     "validate_execution_provenance",
+    "validate_historical_artifact_identity",
     "validate_identifiers",
     "validate_manifest",
     "validate_provenance_mode",
