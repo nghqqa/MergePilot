@@ -1,21 +1,22 @@
-/* ISOLATED_LIVE dynamic refresh engine (Productization Phase 1-E).
+/* ISOLATED_LIVE dynamic refresh engine (Phase 1-E; UI refresh Phase 1-F).
  *
  * Mirrors the Python contract in tools/demo_console/live_refresh.py
  * (serve.py fail-closed-verifies this file against that contract at
  * startup — see verify_js_contract).
  *
- * Hard invariants:
+ * Hard invariants (unchanged by the Phase 1-F UI work):
  *   - Only GET /api/live/status and GET /api/live/snapshot are requested.
  *   - Interval is configurable (URL ?interval_ms= or default) but clamped
  *     to >= 2000 ms; auto-refresh stops after 10 consecutive failures.
  *   - Refresh failures NEVER revert to REPLAY/static/baked/fabricated
- *     data: on engine start the baked REPLAY payload is immediately
- *     replaced by placeholders; after a success the last LIVE data stays
- *     and the banner marks staleness.
+ *     data: on engine start the baked payload is immediately replaced by
+ *     placeholders; after a success the last LIVE data stays and the
+ *     banner marks staleness.
  *   - All 8 pages render from ONE shared snapshot store — no per-page
  *     fetching, no cross-page drift.
  *   - In REPLAY mode /api/live/status answers 404 and the engine never
  *     starts (the static page remains exactly as served).
+ *   - Every dynamic value is HTML-escaped (esc) before entering the DOM.
  */
 (function () {
   'use strict';
@@ -54,6 +55,40 @@
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
+  /* ── status semantics (shared visual language) ─────────────────────── */
+
+  function statusClass(value) {
+    var v = String(value === null || value === undefined ? '' : value)
+      .toUpperCase();
+    if (v === 'SUCCEEDED' || v === 'SUCCESS' || v === 'PASS' ||
+        v === 'PASSED' || v === 'OK' || v === 'COMPLETED' || v === 'TRUE') {
+      return 'st-ok';
+    }
+    if (v === 'FAILED' || v === 'FAIL' || v === 'ERROR' || v === 'FALSE') {
+      return 'st-err';
+    }
+    if (v === 'RUNNING' || v === 'RETRY' || v === 'TIMEOUT') {
+      return 'st-warn';
+    }
+    return 'st-dim';                    /* pending / skipped / unknown */
+  }
+
+  function stChip(value) {
+    return '<span class="st ' + statusClass(value) + '">' +
+      esc(value === null || value === undefined || value === ''
+        ? 'n/a' : value) + '</span>';
+  }
+
+  function kvCell(k, v, mono) {
+    return '<div class="cell"><div class="k">' + esc(k) + '</div>' +
+      '<div class="v' + (mono ? ' mono' : '') + '">' + v + '</div></div>';
+  }
+
+  function metricCell(k, v) {
+    return '<div class="metric"><div class="m-k">' + esc(k) + '</div>' +
+      '<div class="m-v">' + esc(v) + '</div></div>';
+  }
+
   /* ── per-page renderers: all read the SAME `snapshot` store ─────────── */
 
   function renderOverview() {
@@ -62,107 +97,185 @@
     var agents = snapshot.agents || [];
     var fixes = snapshot.fixes || [];
     var vr = snapshot.verifier_result || {};
+    var repo = snapshot.repo || {};
     var cards = agents.map(function (a) {
-      return '<div class="skill-card"><strong>' + esc(a.skill) + '</strong><br>' +
-        '<span class="skill-role">' + esc(a.role) + '</span><br>' +
-        '<span class="badge">' + esc(a.status) + '</span></div>';
+      return '<div class="skill-card">' +
+        '<span class="skill-name">' + esc(a.skill) + '</span>' +
+        '<span class="skill-role">role: ' + esc(a.role) + '</span>' +
+        stChip(a.status) + '</div>';
     }).join('');
-    return '<h2>Overview</h2>' +
-      '<p><strong>run_id:</strong> <code>' + esc(run.run_id) + '</code> · ' +
-      '<strong>PR #' + esc(pr.number) + '</strong> ' + esc(pr.title) + '</p>' +
-      '<p><strong>final_status:</strong> ' + esc(snapshot.final_status) +
-      ' · <strong>stages:</strong> ' + stages.length +
-      ' · <strong>fixes:</strong> ' + fixes.length + '</p>' +
-      '<p><strong>verifier:</strong> ' + esc(vr.status || 'N/A') + '</p>' +
-      '<div class="skill-grid">' + cards + '</div>';
+    return '<div class="panel"><h2>Overview</h2><div class="kv">' +
+      kvCell('run_id', '<code>' + esc(run.run_id) + '</code>', false) +
+      kvCell('PR', esc('#' + pr.number) + ' ' + esc(pr.title), false) +
+      kvCell('repo', esc(repo.full_name || repo.name || 'n/a'), false) +
+      kvCell('final_status', stChip(snapshot.final_status), false) +
+      kvCell('verifier', stChip(vr.status || 'n/a'), false) +
+      kvCell('trace_id', '<code>' + esc(run.trace_id) + '</code>', false) +
+      '</div></div>' +
+      '<div class="panel"><h3>Run metrics</h3><div class="metrics">' +
+      metricCell('stages', stages.length) +
+      metricCell('findings', (snapshot.findings || []).length) +
+      metricCell('fixes', fixes.length) +
+      metricCell('skills', agents.length) +
+      '</div></div>' +
+      '<div class="panel"><h3>Skill execution</h3>' +
+      (cards ? '<div class="skill-grid">' + cards + '</div>'
+             : '<p class="empty-note">no agents recorded</p>') +
+      '</div>' +
+      '<div class="boundary-banner plain"><strong>Read-only viewer:</strong> ' +
+      'this console performs no writes, no agent control and no GitHub ' +
+      'operations. Data is the latest validated ISOLATED_LIVE snapshot.</div>';
   }
 
   function renderTimeline() {
-    var rows = (snapshot.workflow_stages || []).map(function (s) {
-      return '<tr><td>' + esc(s.stage) + '</td><td>' + esc(s.agent_role) +
-        '</td><td>' + esc(s.status) + '</td></tr>';
+    var stages = snapshot.workflow_stages || [];
+    if (!stages.length) {
+      return '<div class="panel"><h2>Timeline</h2>' +
+        '<p class="empty-note">no stages recorded</p></div>';
+    }
+    var items = stages.map(function (s) {
+      var cls = statusClass(s.status);
+      var tl = cls === 'st-ok' ? 'tl-ok'
+        : cls === 'st-err' ? 'tl-err'
+        : cls === 'st-warn' ? 'tl-warn' : '';
+      var when = [s.started_at, s.finished_at].filter(Boolean).join(' → ');
+      return '<li class="' + tl + '"><div class="tl-head">' +
+        '<span class="tl-stage">' + esc(s.stage) + '</span>' +
+        stChip(s.status) +
+        '<span class="tl-meta">' + esc(s.agent_role || '') +
+        (when ? ' · ' + esc(when) : '') + '</span></div></li>';
     }).join('');
-    return '<h2>Timeline</h2><table class="data-table">' +
-      '<tr><th>Stage</th><th>Role</th><th>Status</th></tr>' + rows + '</table>';
+    return '<div class="panel"><h2>Timeline</h2>' +
+      '<ul class="timeline">' + items + '</ul></div>';
   }
 
   function renderFindings() {
-    var rows = (snapshot.findings || []).map(function (f) {
-      return '<tr><td>' + esc(f.finding_id) + '</td><td>' + esc(f.category) +
-        '</td><td>' + esc(f.severity) + '</td><td><code>' + esc(f.file) +
-        '</code></td><td>' + esc(f.message) + '</td></tr>';
+    var findings = snapshot.findings || [];
+    if (!findings.length) {
+      return '<div class="panel"><h2>Findings</h2>' +
+        '<p class="empty-note">no findings recorded</p></div>';
+    }
+    var rows = findings.map(function (f) {
+      var sev = String(f.severity || '').toUpperCase();
+      var rowCls = (sev === 'HIGH' || sev === 'CRITICAL')
+        ? ' class="sev-high"'
+        : (sev === 'MEDIUM' ? ' class="sev-medium"' : '');
+      return '<tr' + rowCls + '><td><code>' + esc(f.finding_id) +
+        '</code></td><td>' + esc(f.category) + '</td><td>' +
+        stChip(f.severity || 'n/a') + '</td><td class="code">' +
+        esc(f.file) + '</td><td>' + esc(f.message) + '</td></tr>';
     }).join('');
-    return '<h2>Findings</h2><table class="data-table">' +
-      '<tr><th>ID</th><th>Category</th><th>Severity</th><th>File</th>' +
-      '<th>Message</th></tr>' + rows + '</table>';
+    return '<div class="panel"><h2>Findings</h2>' +
+      '<table class="data-table"><tr><th>ID</th><th>Category</th>' +
+      '<th>Severity</th><th>File</th><th>Message</th></tr>' + rows +
+      '</table></div>';
   }
 
   function renderRag() {
-    var rows = (snapshot.rag_advisories || []).map(function (r) {
-      return '<tr><td>' + esc(r.agent_role) + '</td><td>' + esc(r.status) +
-        '</td><td>' + esc(r.hit_count) + '</td><td>' + esc(r.adopted) +
-        '</td><td>' + esc(r.untrusted) + '</td></tr>';
+    var advisories = snapshot.rag_advisories || [];
+    var rows = advisories.map(function (r) {
+      return '<tr><td>' + esc(r.agent_role) + '</td><td>' +
+        stChip(r.status || 'n/a') + '</td><td>' + esc(r.hit_count) +
+        '</td><td>' + stChip(r.adopted === false ? 'not adopted' : r.adopted) +
+        '</td><td>' + stChip(r.untrusted ? 'untrusted' : 'trusted-input') +
+        '</td></tr>';
     }).join('');
-    return '<h2>RAG Advisory</h2>' +
-      '<div class="boundary-banner">RAG output is ADVISORY only.</div>' +
-      '<table class="data-table"><tr><th>Role</th><th>Status</th>' +
-      '<th>hit_count</th><th>adopted</th><th>untrusted</th></tr>' +
-      rows + '</table>';
+    return '<div class="panel"><h2>RAG Advisory</h2>' +
+      '<div class="boundary-banner"><strong>Advisory only:</strong> RAG ' +
+      'output is ADVISORY, untrusted context — never a deterministic ' +
+      'conclusion and never auto-applied. adopted=false means the ' +
+      'recommendation was NOT accepted.</div>' +
+      (rows ? '<table class="data-table"><tr><th>Role</th><th>Status</th>' +
+        '<th>hit_count</th><th>Adoption</th><th>Trust</th></tr>' + rows +
+        '</table>' : '<p class="empty-note">no rag advisories recorded</p>') +
+      '</div>';
   }
 
   function renderTrace() {
     var spans = snapshot.spans || [];
+    if (!spans.length) {
+      return '<div class="panel"><h2>Trace Tree</h2>' +
+        '<p class="empty-note">no spans recorded</p></div>';
+    }
     var items = spans.map(function (s) {
-      return '<li><code>' + esc(s.span_id) + '</code> ' + esc(s.name) +
-        ' — ' + esc(s.status) + ' (' + esc(s.start_time) + ' → ' +
-        esc(s.end_time) + ')</li>';
+      return '<li><div class="span-line">' +
+        '<span class="span-name">' + esc(s.name) + '</span>' +
+        stChip(s.status || 'n/a') +
+        '<span class="span-time">' + esc(s.span_id) + ' · ' +
+        esc(s.start_time) + ' → ' + esc(s.end_time) + '</span></div></li>';
     }).join('');
-    return '<h2>Trace Tree</h2><ul>' + items + '</ul>';
+    return '<div class="panel"><h2>Trace Tree</h2>' +
+      '<ul class="tree">' + items + '</ul></div>';
   }
 
   function renderSafety() {
     var residue = snapshot.residue || {};
-    return '<h2>Policy &amp; Safety</h2><h3>Residue</h3><ul>' +
-      '<li>Containers: ' + esc(residue.containers) + '</li>' +
-      '<li>Networks: ' + esc(residue.networks) + '</li>' +
-      '<li>Temp dirs: ' + esc(residue.temp_dirs) + '</li></ul>' +
-      '<h3>Secret Scan</h3><p>secret_leaks: <strong>' +
-      esc(snapshot.secret_leaks) + '</strong></p>' +
-      '<h3>Rollback Events</h3><p>' +
-      (snapshot.rollback_events || []).length + ' rollback event(s).</p>';
+    var rollbacks = snapshot.rollback_events || [];
+    var leaks = snapshot.secret_leaks;
+    var leakOk = leaks === 0 || leaks === '0';
+    return '<div class="panel"><h2>Policy &amp; Safety</h2>' +
+      '<div class="kv">' +
+      kvCell('residue · containers', esc(residue.containers), true) +
+      kvCell('residue · networks', esc(residue.networks), true) +
+      kvCell('residue · temp dirs', esc(residue.temp_dirs), true) +
+      kvCell('secret scan', stChip(leakOk ? 'CLEAN' : 'LEAKS'), false) +
+      kvCell('rollback events', esc(rollbacks.length), true) +
+      '</div></div>' +
+      '<div class="panel"><h3>Rollback events</h3>' +
+      (rollbacks.length
+        ? '<ul class="tree">' + rollbacks.map(function (e) {
+            return '<li><div class="span-line"><span class="span-name">' +
+              esc(e.event || e.stage || 'rollback') + '</span>' +
+              stChip(e.status || 'n/a') + '</div></li>';
+          }).join('') + '</ul>'
+        : '<p class="empty-note">0 rollback event(s)</p>') +
+      '</div>';
   }
 
   function renderEvidence() {
-    var rows = (snapshot.evidence_files || []).map(function (f) {
-      return '<tr><td>' + esc(f.path) + '</td><td><code>' + esc(f.sha256) +
-        '</code></td><td>' + esc(f.description) + '</td></tr>';
+    var files = snapshot.evidence_files || [];
+    var rows = files.map(function (f) {
+      return '<tr><td class="code">' + esc(f.path) + '</td>' +
+        '<td class="code">' + esc(f.sha256) + '</td><td>' +
+        esc(f.description) + '</td></tr>';
     }).join('');
-    return '<h2>Evidence &amp; Provenance</h2>' +
-      '<p><strong>Bundle SHA-256:</strong> <code>' +
-      esc(snapshot.bundle_sha256) + '</code></p>' +
-      '<p><strong>Source commit:</strong> <code>' +
-      esc(snapshot.source_commit) + '</code></p>' +
-      '<p><strong>Verification commit:</strong> <code>' +
-      esc(snapshot.verification_commit) + '</code></p>' +
-      '<table class="data-table"><tr><th>Path</th><th>SHA-256</th>' +
-      '<th>Description</th></tr>' + rows + '</table>';
+    return '<div class="panel"><h2>Evidence &amp; Provenance</h2>' +
+      '<div class="kv">' +
+      kvCell('bundle sha-256', '<code>' + esc(snapshot.bundle_sha256) +
+        '</code>', true) +
+      kvCell('source commit', '<code>' + esc(snapshot.source_commit) +
+        '</code>', true) +
+      kvCell('verification commit', '<code>' +
+        esc(snapshot.verification_commit) + '</code>', true) +
+      kvCell('generated_at', esc(snapshot.generated_at), true) +
+      '</div></div>' +
+      '<div class="panel"><h3>Evidence files</h3>' +
+      (rows ? '<table class="data-table"><tr><th>Path</th><th>SHA-256</th>' +
+        '<th>Description</th></tr>' + rows + '</table>'
+        : '<p class="empty-note">no evidence files recorded</p>') +
+      '</div>' +
+      '<div class="boundary-banner plain">' +
+      '<strong>Provenance only:</strong> bundle integrity is recomputed ' +
+      'server-side; listing evidence here does NOT imply production ' +
+      'verification (production_verified=false).</div>';
   }
 
   function renderBenchmark() {
     var bs = snapshot.benchmark_summary || {};
-    return '<h2>Benchmark Summary</h2>' +
-      '<div class="boundary-banner warning"><strong>Benchmark boundary:' +
-      '</strong> offline adapter only; does NOT claim Reviewer/Fixer ' +
-      'accuracy improvement. <code>' +
-      esc(bs.workflow_utility_status) + '</code> · runtime_consumes_rag' +
-      '_context=<code>' + esc(bs.runtime_consumes_rag_context) +
-      '</code></div>' +
-      '<h3>' + esc(bs.benchmark_phase || '') + '</h3><ul>' +
-      '<li>Dataset: ' + esc(bs.dataset_version) + '</li>' +
-      '<li>Unique cases: ' + esc(bs.unique_case_count) + '</li>' +
-      '<li>quality_gate_pass: <strong>' + esc(bs.quality_gate_pass) +
-      '</strong></li><li>confirmatory_all_ok: <strong>' +
-      esc(bs.confirmatory_all_ok) + '</strong></li></ul>';
+    return '<div class="panel"><h2>Benchmark Summary</h2>' +
+      '<div class="metrics">' +
+      metricCell('dataset', bs.dataset_version) +
+      metricCell('unique cases', bs.unique_case_count) +
+      metricCell('quality gate', bs.quality_gate_pass) +
+      metricCell('confirmatory', bs.confirmatory_all_ok) +
+      '</div></div>' +
+      '<div class="boundary-banner warning">' +
+      '<strong>Benchmark boundary:</strong> offline adapter only; does NOT ' +
+      'claim Reviewer/Fixer accuracy improvement. ' +
+      '<code>runtime_consumes_rag_context=' +
+      esc(bs.runtime_consumes_rag_context) + '</code> · <code>' +
+      esc(bs.workflow_utility_status) + '</code> · phase=' +
+      esc(bs.benchmark_phase) + '</div>';
   }
 
   var RENDERERS = {
@@ -190,10 +303,11 @@
     renderBanner();
   }
 
-  /* ── freshness banner (data time + poll state) ──────────────────────── */
+  /* ── freshness banner (state chip + data time + poll health) ────────── */
 
   function renderBanner() {
     var el = document.getElementById('live-banner');
+    var btn = document.getElementById('live-refresh-btn');
     if (!el) { return; }
     var freshness = (state === 'OK' && snapshot)
       ? (snapshot.generated_at || lastDataTime)
@@ -202,10 +316,15 @@
       ? (statusInfo.poller_state + ' · polls=' + statusInfo.poll_count)
       : 'no poll data';
     el.setAttribute('data-state', state);
-    el.textContent = 'LIVE · state=' + state +
-      ' · data_time=' + (freshness || 'n/a') +
-      ' · poll: ' + poll +
-      ' · failures=' + consecutiveFailures;
+    el.innerHTML = '<span class="chip">' + esc(state) + '</span>' +
+      '<span>data_time=' + esc(freshness || 'n/a') + '</span>' +
+      '<span>poll: ' + esc(poll) + '</span>' +
+      '<span>failures=' + esc(consecutiveFailures) + '</span>';
+    if (btn) {
+      btn.disabled = (state === 'LOADING');
+      btn.textContent = (state === 'STALE')
+        ? 'Resume auto-refresh' : 'Refresh now';
+    }
   }
 
   /* ── fetch cycle (GET only, allowlisted URLs only) ──────────────────── */
@@ -238,6 +357,10 @@
     renderBanner();
   }
 
+  function statusFallbackTime() {
+    return (statusInfo && statusInfo.last_success_at) || null;
+  }
+
   function refreshOnce() {
     return getJson(STATUS_URL)
       .then(function (st) {
@@ -252,7 +375,7 @@
         snapshot = snap;          /* the single shared store */
         consecutiveFailures = 0;
         state = 'OK';
-        lastDataTime = snap.generated_at || st0();
+        lastDataTime = snap.generated_at || statusFallbackTime();
         renderAll();
       })
       .catch(function (err) {
@@ -260,10 +383,6 @@
         else if (err && err.kind === 'json') { registerFailure('json'); }
         else { registerFailure('no_snapshot'); }
       });
-  }
-
-  function st0() {
-    return (statusInfo && statusInfo.last_success_at) || null;
   }
 
   /* ── timer lifecycle: created ONCE, cleaned up on stop/unload ───────── */
