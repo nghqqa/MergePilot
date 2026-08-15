@@ -686,5 +686,230 @@ class TestDockerfileSyntaxGuard(unittest.TestCase):
                         problems)
 
 
+# ── Phase 1-G retry 2: SSE stub send-callable behavior tests ────────────────
+#
+# Real-run root cause (1-G retry BLOCKED): handle_sse read
+# request.scope["send"]; the ASGI scope carries no "send" key, so every
+# GET /sse raised KeyError and returned HTTP 500, and the gateway lifespan
+# exited after 30 failed connect attempts. The fix passes the callable
+# Starlette actually provides (request._send) after an explicit
+# existence/callability check.
+#
+# Hosts running this suite have no mcp/starlette/uvicorn installed (they
+# exist only in the container images), so the loader below injects
+# minimal stand-ins into sys.modules and then imports the REAL
+# upstream_stub.py: the module's own code — including the real handle_sse
+# — executes unmodified against the fakes. The fake Request scope
+# deliberately omits "send", mirroring the real Starlette scope, so these
+# tests would fail against the old implementation with the very KeyError
+# observed in the container. No Docker, no WSL, no network.
+
+class _FakeSseRequest:
+    """Minimal stand-in for starlette.requests.Request.
+
+    The scope intentionally has NO "send" key (true in real Starlette);
+    ``_send`` is attached only when the caller wants a valid callable.
+    """
+
+    def __init__(self, *, with_send=True, send_value=None):
+        self.scope = {"type": "http", "method": "GET", "path": "/sse"}
+
+        async def _receive():
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        self.receive = _receive
+        if with_send:
+            self._send = send_value
+
+
+def _load_upstream_stub():
+    """Import the real upstream_stub.py under fake mcp/starlette deps.
+
+    Returns (module, recorded) where ``recorded`` captures every
+    interaction: connect_sse arguments, server.run arguments, streams,
+    initialization options, registered handlers, and route wiring.
+    """
+    import asyncio  # noqa: F401  (kept local: only these tests need it)
+    import importlib.util
+    import types
+
+    recorded = {}
+
+    class _FakeServer:
+        def __init__(self, name):
+            recorded["server_name"] = name
+
+        def list_tools(self):
+            def deco(fn):
+                recorded["list_tools_handler"] = fn
+                return fn
+            return deco
+
+        def call_tool(self):
+            def deco(fn):
+                recorded["call_tool_handler"] = fn
+                return fn
+            return deco
+
+        async def run(self, read_stream, write_stream, init_options):
+            recorded["server_run"] = (read_stream, write_stream,
+                                      init_options)
+
+        def create_initialization_options(self):
+            recorded["init_options"] = object()
+            return recorded["init_options"]
+
+    class _FakeConnectSSE:
+        def __init__(self, transport):
+            self._transport = transport
+
+        async def __aenter__(self):
+            recorded["connect_sse_args"] = self._transport.connect_args
+            return None
+
+        async def __aexit__(self, *exc):
+            recorded["connect_sse_exited"] = True
+            return False
+
+    class _FakeSseTransport:
+        def __init__(self, messages_path):
+            recorded["messages_path"] = messages_path
+            self.connect_args = None
+
+        def connect_sse(self, scope, receive, send):
+            self.connect_args = (scope, receive, send)
+            return _FakeConnectSSE(self)
+
+        def get_read_stream(self):
+            recorded["read_stream"] = object()
+            return recorded["read_stream"]
+
+        def get_write_stream(self):
+            recorded["write_stream"] = object()
+            return recorded["write_stream"]
+
+        async def handle_post_message(self, request):
+            return None
+
+    class _Route:
+        def __init__(self, path, endpoint, **kw):
+            recorded.setdefault("routes", []).append(("Route", path))
+
+    class _Mount:
+        def __init__(self, path, app, **kw):
+            recorded.setdefault("routes", []).append(("Mount", path))
+
+    class _Starlette:
+        def __init__(self, routes=None, **kw):
+            recorded["app_routes_count"] = len(routes or [])
+
+    stub_path = ROOT / "tools" / "policy-gateway" / "upstream_stub.py"
+    injected = {}
+    try:
+        mcp_mod = types.ModuleType("mcp")
+        mcp_server_mod = types.ModuleType("mcp.server")
+        mcp_sse_mod = types.ModuleType("mcp.server.sse")
+        mcp_server_mod.Server = _FakeServer
+        mcp_sse_mod.SseServerTransport = _FakeSseTransport
+        mcp_mod.server = mcp_server_mod
+        mcp_server_mod.sse = mcp_sse_mod
+
+        starlette_mod = types.ModuleType("starlette")
+        st_app_mod = types.ModuleType("starlette.applications")
+        st_routing_mod = types.ModuleType("starlette.routing")
+        st_app_mod.Starlette = _Starlette
+        st_routing_mod.Route = _Route
+        st_routing_mod.Mount = _Mount
+
+        uvicorn_mod = types.ModuleType("uvicorn")
+        uvicorn_mod.run = lambda *a, **k: None
+
+        for name, mod in (
+                ("mcp", mcp_mod), ("mcp.server", mcp_server_mod),
+                ("mcp.server.sse", mcp_sse_mod),
+                ("starlette", starlette_mod),
+                ("starlette.applications", st_app_mod),
+                ("starlette.routing", st_routing_mod),
+                ("uvicorn", uvicorn_mod)):
+            sys.modules[name] = mod
+            injected[name] = mod
+
+        spec = importlib.util.spec_from_file_location(
+            "upstream_stub_under_test", stub_path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module, recorded
+    finally:
+        for name in injected:
+            sys.modules.pop(name, None)
+
+
+class TestUpstreamStubSendCallable(unittest.TestCase):
+    """The 1-G retry 2 fix: handle_sse must pass a REAL send callable."""
+
+    def _run(self, coro):
+        import asyncio
+        return asyncio.run(coro)
+
+    def test_handle_sse_passes_request_send_to_connect_sse(self):
+        module, recorded = _load_upstream_stub()
+
+        async def send_callable(message):
+            return None
+
+        request = _FakeSseRequest(with_send=True, send_value=send_callable)
+        # Precondition mirroring real Starlette: no "send" in the scope.
+        self.assertNotIn("send", request.scope)
+
+        self._run(module.handle_sse(request))   # no KeyError possible now
+
+        args = recorded["connect_sse_args"]
+        self.assertIs(request.scope, args[0])
+        self.assertIs(request.receive, args[1])
+        self.assertIs(send_callable, args[2])
+        self.assertTrue(recorded["connect_sse_exited"])
+
+        read_stream, write_stream, init_options = recorded["server_run"]
+        self.assertIs(recorded["read_stream"], read_stream)
+        self.assertIs(recorded["write_stream"], write_stream)
+        self.assertIs(recorded["init_options"], init_options)
+
+    def test_handle_sse_fails_closed_when_send_missing(self):
+        module, _recorded = _load_upstream_stub()
+        request = _FakeSseRequest(with_send=False)
+        self.assertFalse(hasattr(request, "_send"))
+        with self.assertRaises(RuntimeError) as cm:
+            self._run(module.handle_sse(request))
+        message = str(cm.exception).lower()
+        self.assertIn("send callable", message)
+        # The error is a static string: no request data can leak.
+        for forbidden in ("authorization", "token", "header", "bearer"):
+            self.assertNotIn(forbidden, message)
+
+    def test_handle_sse_fails_closed_when_send_not_callable(self):
+        module, _recorded = _load_upstream_stub()
+        request = _FakeSseRequest(with_send=True, send_value="not-callable")
+        with self.assertRaises(RuntimeError):
+            self._run(module.handle_sse(request))
+
+    def test_stub_source_no_longer_reads_scope_send(self):
+        source = (ROOT / "tools" / "policy-gateway" /
+                  "upstream_stub.py").read_text(encoding="utf-8")
+        self.assertNotIn('request.scope["send"]', source)
+        self.assertNotIn("request.scope['send']", source)
+        self.assertIn("_send", source)
+
+    def test_zero_tool_contract_via_loaded_module(self):
+        module, recorded = _load_upstream_stub()
+        self.assertEqual("mergepilot-isolated-upstream-stub",
+                         recorded["server_name"])
+        self.assertEqual([], self._run(recorded["list_tools_handler"]()))
+        with self.assertRaises(ValueError):
+            self._run(recorded["call_tool_handler"]("anything", {}))
+        # /sse route plus the /messages/ mount are both wired.
+        self.assertEqual([("Route", "/sse"), ("Mount", "/messages/")],
+                         recorded["routes"])
+
+
 if __name__ == "__main__":
     unittest.main()
