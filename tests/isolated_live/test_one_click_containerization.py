@@ -40,6 +40,16 @@ from one_click_startup import (  # noqa: E402
     validate_compose_config,
 )
 
+# Retry v2: the demo-console runtime inputs are caller-provided — the seeded
+# run_id and the postgres bridge IP MEASURED after the healthcheck passes.
+_TEST_RUN_ID = "caller-provided-run-001"
+_TEST_BRIDGE_IP = "172.18.0.2"
+
+
+def _start_kwargs():
+    return {"demo_console_run_id": _TEST_RUN_ID,
+            "demo_console_pg_server_addresses": _TEST_BRIDGE_IP}
+
 try:
     import yaml  # type: ignore
     _HAVE_YAML = True
@@ -130,8 +140,29 @@ class TestComposeYml(unittest.TestCase):
             self.assertIn(name, self.yml["services"])
 
     def test_builder_matches_yml_services(self):
-        cfg = build_compose_config(demo_console_run_id="test-run-1")
+        cfg = build_compose_config(demo_console_run_id=_TEST_RUN_ID,
+                                   demo_console_pg_server_addresses=_TEST_BRIDGE_IP)
         self.assertEqual(set(cfg["services"]), set(self.yml["services"]))
+
+    def test_demo_console_env_contract_in_yml(self):
+        # Retry v2 Fix 1 + Fix 2: the yml declares the container bind context
+        # and the five PG expected identity params; SERVER_ADDRESSES uses
+        # required variable interpolation (measured bridge IP, never a
+        # hardcoded literal).
+        env = self.yml["services"]["demo-console"]["environment"]
+        self.assertEqual(env["MERGEPILOT_BIND_CONTEXT"], "container")
+        self.assertEqual(env["MERGEPILOT_PG_EXPECTED_DATABASE"], "mergepilot_audit")
+        self.assertEqual(env["MERGEPILOT_PG_ENVIRONMENT_ID"],
+                         "mergepilot-test-ephemeral")
+        self.assertEqual(env["MERGEPILOT_PG_EXPECTED_SERVER_PORT"], "5432")
+        self.assertEqual(env["MERGEPILOT_PG_EXPECTED_APPLICATION_NAME"],
+                         "mergepilot_isolated_live_reader")
+        addr = str(env["MERGEPILOT_PG_EXPECTED_SERVER_ADDRESSES"])
+        self.assertIn("${MERGEPILOT_PG_EXPECTED_SERVER_ADDRESSES", addr)
+        self.assertIn("is required", addr)
+        # The measured-IP literal must NOT be baked into the yml.
+        text = COMPOSE_PATH.read_text(encoding="utf-8")
+        self.assertNotIn("172.18.", text)
 
     def test_postgres_digest_pinned(self):
         self.assertEqual(self.yml["services"]["postgres"]["image"],
@@ -338,8 +369,11 @@ class TestOrchestrator(unittest.TestCase):
         self.assertIn("--health-retries", pg)
 
     def test_only_demo_console_publishes(self):
-        pub = plan_service_run("demo-console",
-                               image_ref=get_built_image_identity("demo-console"))
+        pub = plan_service_run(
+            "demo-console",
+            image_ref=get_built_image_identity("demo-console"),
+            demo_console_env=oc._demo_console_environment(
+                _TEST_RUN_ID, _TEST_BRIDGE_IP))
         self.assertIn("-p", pub)
         self.assertEqual(pub[pub.index("-p") + 1], "127.0.0.1:8600:8600")
         for service in ("policy-gateway", "controller", "preflight"):
@@ -348,6 +382,43 @@ class TestOrchestrator(unittest.TestCase):
             self.assertNotIn("-p", plan, service)
         pg = plan_service_run("postgres", image_ref=oc.PGVECTOR_IMAGE_DIGEST)
         self.assertNotIn("-p", pg)
+
+    def test_demo_console_run_plan_carries_full_env_contract(self):
+        # Retry v2: the orchestrated demo-console run must inject the entrypoint
+        # contract — bind context AND the five PG expected identity params.
+        plan = plan_service_run(
+            "demo-console",
+            image_ref=get_built_image_identity("demo-console"),
+            demo_console_env=oc._demo_console_environment(
+                _TEST_RUN_ID, _TEST_BRIDGE_IP))
+        joined = " ".join(plan)
+        for pair in ("MERGEPILOT_MODE=isolated_live",
+                     "MERGEPILOT_SOURCE_KIND=postgres",
+                     "MERGEPILOT_RUN_ID=%s" % _TEST_RUN_ID,
+                     "MERGEPILOT_EXPECTED_ROLE=mergepilot_reader",
+                     "MERGEPILOT_BIND_CONTEXT=container",
+                     "MERGEPILOT_HOST=0.0.0.0",
+                     "MERGEPILOT_PORT=8600",
+                     "MERGEPILOT_PG_EXPECTED_DATABASE=mergepilot_audit",
+                     "MERGEPILOT_PG_ENVIRONMENT_ID=mergepilot-test-ephemeral",
+                     "MERGEPILOT_PG_EXPECTED_SERVER_ADDRESSES=%s" % _TEST_BRIDGE_IP,
+                     "MERGEPILOT_PG_EXPECTED_SERVER_PORT=5432",
+                     "MERGEPILOT_PG_EXPECTED_APPLICATION_NAME="
+                     "mergepilot_isolated_live_reader"):
+            self.assertIn(pair, joined)
+        assert_argv_safe(plan)
+
+    def test_demo_console_run_requires_env(self):
+        # Fail-closed: a demo-console plan without the env contract is
+        # CONFIG_INVALID (the container would otherwise die at entrypoint
+        # validation with a less diagnosable error).
+        _gate(self, plan_service_run, "demo-console",
+              image_ref=get_built_image_identity("demo-console"),
+              code="CONFIG_INVALID")
+
+    def test_demo_console_env_rejects_alias_address(self):
+        with self.assertRaises(oc.StartupGateError):
+            oc._demo_console_environment(_TEST_RUN_ID, "postgres")
 
     def test_preflight_env_in_network(self):
         plan = plan_service_run("preflight",
@@ -368,25 +439,43 @@ class TestOrchestrator(unittest.TestCase):
                   code="CONFIG_INVALID")
 
     def test_plans_never_contain_shell_metachars(self):
-        plans = plan_orchestrated_start(env_file="postgres.env")
+        plans = plan_orchestrated_start(env_file="postgres.env", **_start_kwargs())
         for plan in plans:
             joined = " ".join(plan)
             for ch in (";", "|", "&", "`", "$("):
                 self.assertNotIn(ch, joined)
 
     def test_plans_no_dsn_or_password(self):
-        plans = plan_orchestrated_start(env_file="postgres.env")
+        plans = plan_orchestrated_start(env_file="postgres.env", **_start_kwargs())
         for plan in plans:
             assert_argv_safe(plan)
 
     def test_full_start_order(self):
-        plans = plan_orchestrated_start(env_file="postgres.env")
+        plans = plan_orchestrated_start(env_file="postgres.env", **_start_kwargs())
         self.assertEqual(len(plans), 6)  # network + 5 services
         self.assertEqual(plans[0][0], "network")
         names = [p[p.index("--name") + 1] for p in plans[1:]]
         expected = ["mergepilot-isolated-%s-1" % s
                     for s in oc.SERVICE_ORDER]
         self.assertEqual(names, expected)
+
+    def test_full_start_requires_demo_console_inputs(self):
+        # Fail-closed: run_id and measured bridge IP are REQUIRED — no
+        # defaults, no inference.
+        oc._builtin_registry.clear()
+        for service in BUILT_SERVICES:
+            hexid = ("".join(format(ord(c) & 0xF, "x") for c in service) * 8)[:64]
+            record_built_image_identity(service, "sha256:" + hexid)
+        try:
+            _gate(self, plan_orchestrated_start, env_file="postgres.env",
+                  code="CONFIG_INVALID")
+            _gate(self, plan_orchestrated_start, env_file="postgres.env",
+                  demo_console_run_id=_TEST_RUN_ID, code="CONFIG_INVALID")
+            _gate(self, plan_orchestrated_start, env_file="postgres.env",
+                  demo_console_pg_server_addresses=_TEST_BRIDGE_IP,
+                  code="CONFIG_INVALID")
+        finally:
+            oc._builtin_registry.clear()
 
     def test_full_start_requires_recorded_identities(self):
         oc._builtin_registry.clear()
@@ -422,9 +511,11 @@ class TestOrchestrator(unittest.TestCase):
         # Pure planning: no subprocess, no socket, no docker invocation.
         with mock.patch("subprocess.run") as sr, \
                 mock.patch("socket.socket") as ss:
-            plan_orchestrated_start(env_file="postgres.env")
+            plan_orchestrated_start(env_file="postgres.env", **_start_kwargs())
             plan_orchestrated_cleanup()
-            validate_compose_config(build_compose_config(demo_console_run_id="test-run-1"))
+            validate_compose_config(
+                build_compose_config(demo_console_run_id=_TEST_RUN_ID,
+                                     demo_console_pg_server_addresses=_TEST_BRIDGE_IP))
         sr.assert_not_called()
         ss.assert_not_called()
 
@@ -439,7 +530,7 @@ class TestNoTwinOrHostSubstitution(unittest.TestCase):
             hexid = ("".join(format(ord(c) & 0xF, "x") for c in service) * 8)[:64]
             record_built_image_identity(service, "sha256:" + hexid)
         try:
-            plans = plan_orchestrated_start()
+            plans = plan_orchestrated_start(**_start_kwargs())
             for plan in plans:
                 joined = " ".join(plan)
                 self.assertNotIn("twin", joined.lower())
@@ -453,8 +544,13 @@ class TestNoTwinOrHostSubstitution(unittest.TestCase):
             record_built_image_identity(service, "sha256:" + hexid)
         try:
             for service in BUILT_SERVICES:
+                kwargs = {}
+                if service == "demo-console":
+                    kwargs["demo_console_env"] = oc._demo_console_environment(
+                        _TEST_RUN_ID, _TEST_BRIDGE_IP)
                 plan = plan_service_run(
-                    service, image_ref=get_built_image_identity(service))
+                    service, image_ref=get_built_image_identity(service),
+                    **kwargs)
                 if service == "demo-console":
                     self.assertIn("-p", plan)
                     self.assertEqual(plan[plan.index("-p") + 1],

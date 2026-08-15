@@ -30,7 +30,15 @@ ENV PYTHONUNBUFFERED=1 \
     MERGEPILOT_PG_PORT=5432 \
     MERGEPILOT_PG_DATABASE=mergepilot_audit
 # The reader DSN is taken from MERGEPILOT_PG_DSN (env) — never from argv.
-# The entrypoint validates MERGEPILOT_MODE/SOURCE_KIND/RUN_ID/EXPECTED_ROLE
-# from the environment and refuses to run in REPLAY mode.
+# The entrypoint validates from the environment and refuses to run in REPLAY
+# mode: MERGEPILOT_MODE / MERGEPILOT_SOURCE_KIND / MERGEPILOT_RUN_ID /
+# MERGEPILOT_EXPECTED_ROLE / MERGEPILOT_BIND_CONTEXT (host|container;
+# 0.0.0.0 allowed ONLY in container mode) / MERGEPILOT_HOST /
+# MERGEPILOT_PORT, plus the five PostgreSQL expected identity params
+# (MERGEPILOT_PG_EXPECTED_DATABASE, MERGEPILOT_PG_ENVIRONMENT_ID,
+# MERGEPILOT_PG_EXPECTED_SERVER_ADDRESSES — the MEASURED bridge IP, never
+# hardcoded —, MERGEPILOT_PG_EXPECTED_SERVER_PORT,
+# MERGEPILOT_PG_EXPECTED_APPLICATION_NAME). None of them get image-level
+# defaults: a missing value is a CONFIG_INVALID failure, not a fallback.
 EXPOSE 8600
 ENTRYPOINT ["python", "-u", "/app/demo_console_entrypoint.py"]

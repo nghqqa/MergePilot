@@ -1,32 +1,35 @@
-"""Demo-console container entrypoint (Phase 1-D retry fix).
+"""Demo-console container entrypoint (Phase 1-D retry v2).
 
 Bridges environment variables to the serve.py CLI for ISOLATED_LIVE mode.
 REFUSES to run in REPLAY mode — a missing/misconfigured environment is a
 CONFIG_INVALID failure, never a silent fallback to static file serving.
 
 Required environment:
-  MERGEPILOT_MODE          must be exactly "isolated_live" (case-insensitive
-                           input; compared lowercased; REPLAY is REJECTED)
+  MERGEPILOT_MODE          must be exactly "isolated_live" (case-insensitive;
+                           REPLAY is REJECTED)
   MERGEPILOT_SOURCE_KIND   must be exactly "postgres" (case-insensitive)
-  MERGEPILOT_RUN_ID        non-empty; validated against ^[a-zA-Z0-9_-]+$;
-                           MUST be provided by the caller (no default,
-                           no inference, no hardcoded value)
-  MERGEPILOT_EXPECTED_ROLE must be exactly "mergepilot_reader" (the canonical
-                           viewer role; any other value is CONFIG_INVALID)
-  MERGEPILOT_HOST          optional; default "0.0.0.0" (container-internal
-                           listen address). Allowed values: 127.0.0.1,
-                           localhost, or 0.0.0.0 (the container must accept
-                           connections from the Docker bridge network; the
-                           HOST-side port publish remains 127.0.0.1-only,
-                           enforced by the compose/orchestrator layer).
-  MERGEPILOT_PORT          optional; default 8600
+  MERGEPILOT_RUN_ID        non-empty; ^[a-zA-Z0-9_-]+$; caller-provided
+  MERGEPILOT_EXPECTED_ROLE must be exactly "mergepilot_reader"
+  MERGEPILOT_BIND_CONTEXT  "host" or "container" (validated; NOT inferred
+                           from the host value). In container mode,
+                           MERGEPILOT_HOST=0.0.0.0 is allowed (Docker
+                           bridge). In host mode, only 127.0.0.1/localhost.
+  MERGEPILOT_HOST          bind address; validated against the context
+  MERGEPILOT_PORT          valid TCP port (default 8600)
+
+PostgreSQL expected identity (Fix 2 — all REQUIRED, no defaults):
+  MERGEPILOT_PG_EXPECTED_DATABASE          must be "mergepilot_audit"
+  MERGEPILOT_PG_ENVIRONMENT_ID            must match the isolated seed marker
+  MERGEPILOT_PG_EXPECTED_SERVER_ADDRESSES  caller-measured bridge IP (not
+                                           hardcoded; comma-separated)
+  MERGEPILOT_PG_EXPECTED_SERVER_PORT       must be a valid port int
+  MERGEPILOT_PG_EXPECTED_APPLICATION_NAME must be "mergepilot_isolated_live_reader"
 
 The serve.py argv is built as a plain list[str] (never shell) and is passed
-through assert_argv_safe to guarantee no DSN/password/SQL PASSWORD literal
-or token leaks into the process arguments.
+through assert_argv_safe. The 5 PG expected fields are forwarded via their
+existing serve.py env-var contract (NOT placed in argv).
 
-Exit codes: 0 = launched (exec); 1 = CONFIG_INVALID (message to stderr,
-already redacted).
+Exit codes: 0 = launched (exec); 1 = CONFIG_INVALID.
 """
 
 from __future__ import annotations
@@ -41,22 +44,31 @@ for _p in (str(_HERE),):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-# Import the argv safety check from one_click_startup (already in /app).
-# The Dockerfile copies one_click_startup.py alongside this file.
 from one_click_startup import assert_argv_safe, redact  # noqa: E402
 
 REQUIRED_MODE = "isolated_live"
 REQUIRED_SOURCE_KIND = "postgres"
 REQUIRED_ROLE = "mergepilot_reader"
-# Container-internal listen address: 0.0.0.0 is the normal container bind
-# (the container must accept connections from the Docker bridge). The
-# HOST-side port publish is separately enforced as 127.0.0.1-only by the
-# compose config and the orchestrator — these are two DIFFERENT addresses.
-DEFAULT_HOST = "0.0.0.0"
+REQUIRED_DATABASE = "mergepilot_audit"
+REQUIRED_APP_NAME = "mergepilot_isolated_live_reader"
+
 DEFAULT_PORT = 8600
 
 _RUN_ID_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
-_ALLOWED_LISTEN_HOSTS = frozenset({"0.0.0.0", "127.0.0.1", "localhost"})
+
+# Bind context (Fix 1): explicit, NOT inferred from host value.
+_VALID_BIND_CONTEXTS = frozenset({"host", "container"})
+_HOST_MODE_HOSTS = frozenset({"127.0.0.1", "localhost"})
+_CONTAINER_MODE_HOSTS = frozenset({"0.0.0.0", "127.0.0.1", "localhost"})
+
+# 5 PG expected identity env vars (Fix 2).
+_PG_EXPECTED_ENV_KEYS = (
+    "MERGEPILOT_PG_EXPECTED_DATABASE",
+    "MERGEPILOT_PG_ENVIRONMENT_ID",
+    "MERGEPILOT_PG_EXPECTED_SERVER_ADDRESSES",
+    "MERGEPILOT_PG_EXPECTED_SERVER_PORT",
+    "MERGEPILOT_PG_EXPECTED_APPLICATION_NAME",
+)
 
 
 class EntrypointConfigError(Exception):
@@ -76,7 +88,7 @@ def _validate_env(environ=None) -> dict:
     """
     env = environ if environ is not None else os.environ
 
-    # Mode: must be isolated_live. REPLAY or anything else is rejected.
+    # Mode
     mode = env.get("MERGEPILOT_MODE", "").strip().lower()
     if not mode:
         raise EntrypointConfigError(
@@ -84,61 +96,70 @@ def _validate_env(environ=None) -> dict:
             "(REPLAY fallback is forbidden)")
     if mode == "replay":
         raise EntrypointConfigError(
-            "MERGEPILOT_MODE=replay is REJECTED in the isolated stack; "
-            "this container must run isolated_live")
+            "MERGEPILOT_MODE=replay is REJECTED in the isolated stack")
     if mode != REQUIRED_MODE:
         raise EntrypointConfigError(
             "MERGEPILOT_MODE must be %r (got %r)" % (REQUIRED_MODE, mode))
 
-    # Source kind: must be postgres.
+    # Source kind
     kind = env.get("MERGEPILOT_SOURCE_KIND", "").strip().lower()
     if not kind:
-        raise EntrypointConfigError(
-            "MERGEPILOT_SOURCE_KIND is not set; a postgres source is "
-            "required for isolated_live")
+        raise EntrypointConfigError("MERGEPILOT_SOURCE_KIND is not set")
     if kind != REQUIRED_SOURCE_KIND:
         raise EntrypointConfigError(
-            "MERGEPILOT_SOURCE_KIND must be %r (got %r); no fallback "
-            "to file-based sources is permitted"
+            "MERGEPILOT_SOURCE_KIND must be %r (got %r)"
             % (REQUIRED_SOURCE_KIND, kind))
 
-    # Run ID: non-empty, strict charset.
+    # Run ID
     run_id = env.get("MERGEPILOT_RUN_ID", "").strip()
     if not run_id:
         raise EntrypointConfigError(
             "MERGEPILOT_RUN_ID is not set; a seeded run_id is required "
-            "(hardcoding a run_id is forbidden; it must come from the "
-            "caller)")
+            "(hardcoding is forbidden)")
     if not _RUN_ID_RE.fullmatch(run_id):
         raise EntrypointConfigError(
             "MERGEPILOT_RUN_ID must match ^[a-zA-Z0-9_-]+$ (got %r)"
             % run_id[:20])
 
-    # Expected role: must be the canonical viewer role exactly.
+    # Expected role
     role = env.get("MERGEPILOT_EXPECTED_ROLE", "").strip()
     if not role:
-        raise EntrypointConfigError(
-            "MERGEPILOT_EXPECTED_ROLE is not set; the canonical viewer "
-            "role is required")
+        raise EntrypointConfigError("MERGEPILOT_EXPECTED_ROLE is not set")
     if role != REQUIRED_ROLE:
         raise EntrypointConfigError(
             "MERGEPILOT_EXPECTED_ROLE must be %r (got %r)"
             % (REQUIRED_ROLE, role))
 
-    # Host: container-internal listen address. 0.0.0.0 is the normal
-    # container bind (Docker bridge routing); 127.0.0.1/localhost are for
-    # loopback-only edge cases. LAN-specific addresses are rejected (the
-    # container does not know the host's LAN). The HOST-side publish is
-    # a SEPARATE address enforced by the compose/orchestrator as
-    # 127.0.0.1-only.
-    host = env.get("MERGEPILOT_HOST", DEFAULT_HOST).strip() or DEFAULT_HOST
-    if host not in _ALLOWED_LISTEN_HOSTS:
+    # Bind context (Fix 1): explicit, validated, NOT inferred from host.
+    bind_context = env.get("MERGEPILOT_BIND_CONTEXT", "").strip().lower()
+    if not bind_context:
         raise EntrypointConfigError(
-            "MERGEPILOT_HOST must be 0.0.0.0 (container listen), "
-            "127.0.0.1, or localhost (got %r); LAN-specific addresses "
-            "are not valid container listen addresses" % host)
+            "MERGEPILOT_BIND_CONTEXT is not set; must be 'host' or "
+            "'container' (the context is explicit, never inferred from "
+            "the host value)")
+    if bind_context not in _VALID_BIND_CONTEXTS:
+        raise EntrypointConfigError(
+            "MERGEPILOT_BIND_CONTEXT must be 'host' or 'container' "
+            "(got %r)" % bind_context)
 
-    # Port: valid TCP port.
+    # Host: validated AGAINST the bind context.
+    host = env.get("MERGEPILOT_HOST", "").strip()
+    if not host:
+        raise EntrypointConfigError("MERGEPILOT_HOST is not set")
+    allowed = (_CONTAINER_MODE_HOSTS if bind_context == "container"
+               else _HOST_MODE_HOSTS)
+    if host not in allowed:
+        if bind_context == "container":
+            raise EntrypointConfigError(
+                "MERGEPILOT_HOST must be 0.0.0.0/127.0.0.1/localhost in "
+                "container mode (got %r); LAN addresses are not valid "
+                "container listen addresses" % host)
+        raise EntrypointConfigError(
+            "MERGEPILOT_HOST must be 127.0.0.1/localhost in host mode "
+            "(got %r); set MERGEPILOT_BIND_CONTEXT=container for Docker "
+            "bridge 0.0.0.0" % host)
+
+    # Port
     port_s = env.get("MERGEPILOT_PORT", str(DEFAULT_PORT)).strip()
     try:
         port = int(port_s)
@@ -147,24 +168,89 @@ def _validate_env(environ=None) -> dict:
             "MERGEPILOT_PORT must be an integer (got %r)" % port_s[:10]
         ) from None
     if not (0 < port < 65536):
+        raise EntrypointConfigError("MERGEPILOT_PORT out of range: %d" % port)
+
+    # ── Fix 2: 5 PG expected identity params (all REQUIRED) ─────────────
+    pg_database = env.get("MERGEPILOT_PG_EXPECTED_DATABASE", "").strip()
+    if not pg_database:
         raise EntrypointConfigError(
-            "MERGEPILOT_PORT out of range: %d" % port)
+            "MERGEPILOT_PG_EXPECTED_DATABASE is not set")
+    if pg_database != REQUIRED_DATABASE:
+        raise EntrypointConfigError(
+            "MERGEPILOT_PG_EXPECTED_DATABASE must be %r (got %r)"
+            % (REQUIRED_DATABASE, pg_database))
+
+    pg_env_id = env.get("MERGEPILOT_PG_ENVIRONMENT_ID", "").strip()
+    if not pg_env_id:
+        raise EntrypointConfigError(
+            "MERGEPILOT_PG_ENVIRONMENT_ID is not set (the environment "
+            "marker is mandatory; never guessed)")
+
+    pg_server_addrs = env.get(
+        "MERGEPILOT_PG_EXPECTED_SERVER_ADDRESSES", "").strip()
+    if not pg_server_addrs:
+        raise EntrypointConfigError(
+            "MERGEPILOT_PG_EXPECTED_SERVER_ADDRESSES is not set (the "
+            "orchestrator must measure the postgres container's bridge IP "
+            "and inject it; hardcoding is forbidden)")
+    # Validate as comma-separated IP list.
+    for addr in pg_server_addrs.split(","):
+        addr = addr.strip()
+        if not addr:
+            continue
+        if not re.fullmatch(r"[0-9.]+", addr):
+            raise EntrypointConfigError(
+                "MERGEPILOT_PG_EXPECTED_SERVER_ADDRESSES contains a "
+                "non-IPv4 entry: %r" % addr[:20])
+
+    pg_server_port_s = env.get(
+        "MERGEPILOT_PG_EXPECTED_SERVER_PORT", "").strip()
+    if not pg_server_port_s:
+        raise EntrypointConfigError(
+            "MERGEPILOT_PG_EXPECTED_SERVER_PORT is not set")
+    try:
+        pg_server_port = int(pg_server_port_s)
+    except ValueError:
+        raise EntrypointConfigError(
+            "MERGEPILOT_PG_EXPECTED_SERVER_PORT must be an integer"
+        ) from None
+    if not (0 < pg_server_port < 65536):
+        raise EntrypointConfigError(
+            "MERGEPILOT_PG_EXPECTED_SERVER_PORT out of range: %d"
+            % pg_server_port)
+
+    pg_app_name = env.get(
+        "MERGEPILOT_PG_EXPECTED_APPLICATION_NAME", "").strip()
+    if not pg_app_name:
+        raise EntrypointConfigError(
+            "MERGEPILOT_PG_EXPECTED_APPLICATION_NAME is not set")
+    if pg_app_name != REQUIRED_APP_NAME:
+        raise EntrypointConfigError(
+            "MERGEPILOT_PG_EXPECTED_APPLICATION_NAME must be %r (got %r)"
+            % (REQUIRED_APP_NAME, pg_app_name))
 
     return {
         "mode": REQUIRED_MODE,
         "source_kind": REQUIRED_SOURCE_KIND,
         "run_id": run_id,
         "expected_role": role,
+        "bind_context": bind_context,
         "host": host,
         "port": port,
+        "pg_expected_database": pg_database,
+        "pg_environment_id": pg_env_id,
+        "pg_expected_server_addresses": pg_server_addrs,
+        "pg_expected_server_port": pg_server_port,
+        "pg_expected_application_name": pg_app_name,
     }
 
 
 def build_serve_argv(config: dict) -> list:
     """Build the serve.py CLI argv from validated config.
 
-    Returns a list[str]; the caller must pass it to exec directly (never
-    through a shell). The argv is checked by assert_argv_safe.
+    Only the core flags go into argv. The 5 PG expected identity fields
+    are forwarded via their existing serve.py env-var contract (NOT argv,
+    keeping argv minimal and secret-safe).
     """
     argv = [
         sys.executable, "-u", "/app/serve.py",
@@ -186,9 +272,11 @@ def main() -> int:
         print(redact(str(exc)), file=sys.stderr, flush=True)
         return 1
     argv = build_serve_argv(config)
-    # Replace this process with serve.py (no intermediate shell).
+    # MERGEPILOT_BIND_CONTEXT and the 5 PG expected vars are already in
+    # the process environment; serve.py reads them from env. The entrypoint
+    # does NOT duplicate them into argv.
     os.execv(argv[0], argv)
-    return 0  # unreachable when exec succeeds
+    return 0
 
 
 if __name__ == "__main__":

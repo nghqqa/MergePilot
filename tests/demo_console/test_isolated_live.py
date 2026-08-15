@@ -52,6 +52,7 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest import mock
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -1724,6 +1725,105 @@ class TestIPv4Loopback(unittest.TestCase):
             self.assertEqual(s.server_address[0], "127.0.0.1")
         finally:
             s.server_close()
+
+
+class TestBindContext(unittest.TestCase):
+    """Phase 1-D retry v2 Fix 1: MERGEPILOT_BIND_CONTEXT host vs container.
+
+    host mode (the default): strictly IPv4 loopback — unchanged P1 semantics.
+    container mode: additionally allows 0.0.0.0 as the CONTAINER-INTERNAL
+    listen address (Docker bridge routing). The HOST-side publish stays
+    127.0.0.1-only and is enforced by compose/orchestrator, not here.
+    """
+
+    def test_default_context_is_host(self):
+        # Unset -> host semantics: 0.0.0.0 rejected, loopback accepted.
+        env = {k: v for k, v in os.environ.items()
+               if k != "MERGEPILOT_BIND_CONTEXT"}
+        with mock.patch.dict(os.environ, env, clear=True):
+            pf = run_preflight("replay", "0.0.0.0")
+            self.assertFalse(pf["preflight_passed"])
+            pf2 = run_preflight("replay", "127.0.0.1")
+            self.assertTrue(pf2["preflight_passed"])
+
+    def test_explicit_host_context_rejects_0000(self):
+        with mock.patch.dict(os.environ, {"MERGEPILOT_BIND_CONTEXT": "host"}):
+            pf = run_preflight("replay", "0.0.0.0")
+            self.assertFalse(pf["preflight_passed"])
+            self.assertFalse(pf["loopback_only"])
+            with self.assertRaises(ValueError):
+                create_server("0.0.0.0", 0, "REPLAY")
+
+    def test_container_context_allows_0000_preflight(self):
+        with mock.patch.dict(os.environ,
+                             {"MERGEPILOT_BIND_CONTEXT": "container"}):
+            pf = run_preflight("replay", "0.0.0.0")
+            self.assertTrue(pf["preflight_passed"])
+            self.assertTrue(pf["loopback_only"])
+
+    def test_container_context_allows_0000_create_server(self):
+        # The container-context acceptance path must reach server
+        # construction; the real socket bind is stubbed so the test never
+        # opens an off-machine listener on the HOST test runner.
+        with mock.patch.dict(os.environ,
+                             {"MERGEPILOT_BIND_CONTEXT": "container"}), \
+                mock.patch("socketserver.TCPServer.__init__",
+                           return_value=None):
+            s = create_server("0.0.0.0", 0, "REPLAY")
+        self.assertEqual(s.mode, "REPLAY")
+        self.assertIsNone(s.poller)
+
+    def test_container_context_keeps_loopback_valid(self):
+        with mock.patch.dict(os.environ,
+                             {"MERGEPILOT_BIND_CONTEXT": "container"}):
+            for h in ("127.0.0.1", "localhost"):
+                pf = run_preflight("replay", h)
+                self.assertTrue(pf["preflight_passed"], h)
+
+    def test_container_context_rejects_lan(self):
+        with mock.patch.dict(os.environ,
+                             {"MERGEPILOT_BIND_CONTEXT": "container"}):
+            for bad in ("192.168.1.1", "10.0.0.1", "172.16.0.1"):
+                pf = run_preflight("replay", bad)
+                self.assertFalse(pf["preflight_passed"], bad)
+                loopback_failure = next(
+                    (f for f in pf["failures"]
+                     if f["check"] == "loopback_only"), None)
+                self.assertIsNotNone(loopback_failure, bad)
+                self.assertIn("container listen", loopback_failure["detail"])
+                with self.assertRaises(ValueError):
+                    create_server(bad, 0, "REPLAY")
+
+    def test_container_context_still_rejects_ipv6(self):
+        with mock.patch.dict(os.environ,
+                             {"MERGEPILOT_BIND_CONTEXT": "container"}):
+            for bad in ("::1", "::"):
+                pf = run_preflight("replay", bad)
+                self.assertFalse(pf["preflight_passed"], bad)
+                with self.assertRaises(ValueError):
+                    create_server(bad, 0, "REPLAY")
+        # The ::1 failure names the IPv6 reason in BOTH contexts.
+        with mock.patch.dict(os.environ,
+                             {"MERGEPILOT_BIND_CONTEXT": "container"}):
+            pf = run_preflight("replay", "::1")
+        loopback_failure = next(f for f in pf["failures"]
+                                if f["check"] == "loopback_only")
+        self.assertIn("IPv6 ::1 not implemented", loopback_failure["detail"])
+
+    def test_invalid_context_rejected_fail_closed(self):
+        for bad in ("docker", "auto", "1", "hostx"):
+            with mock.patch.dict(os.environ,
+                                 {"MERGEPILOT_BIND_CONTEXT": bad}):
+                with self.assertRaises(ValueError):
+                    create_server("127.0.0.1", 0, "REPLAY")
+                with self.assertRaises(ValueError):
+                    run_preflight("replay", "127.0.0.1")
+
+    def test_context_case_insensitive(self):
+        with mock.patch.dict(os.environ,
+                             {"MERGEPILOT_BIND_CONTEXT": "Container"}):
+            pf = run_preflight("replay", "0.0.0.0")
+            self.assertTrue(pf["preflight_passed"])
 
 
 class TestSourceKindDynamic(unittest.TestCase):
