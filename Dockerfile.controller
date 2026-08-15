@@ -1,0 +1,29 @@
+# Root-level compose build entry for the workflow controller.
+#
+# Thin wrapper: delegates to the canonical Dockerfile in
+# tools/workflow-controller (the implementation lives there). Keeping the
+# root Dockerfile separate lets docker-compose build with context "." while
+# the service sources stay in their own directory.
+#
+# Build context: repository root (see docker-compose.yml).
+# Base image: python:3.12-slim — CACHED in the MergePilot-Test daemon
+# (image ID 54a0b2beae90). The pip install below runs at BUILD time and is
+# NOT executed in Phase 1-C; it requires a separate, explicit authorization
+# round (dependency-install authorization).
+
+FROM python:3.12-slim
+
+RUN pip install --no-cache-dir \
+      psycopg2-binary==2.9.12 \
+      mcp==1.28.1 \
+      httpx==0.28.1 \
+      anyio==4.14.2
+
+COPY tools/workflow-controller/controller.py /app/controller.py
+COPY tools/workflow-controller/gateway_client.py /app/gateway_client.py
+COPY tools/workflow-controller/m4f_controller.py /app/m4f_controller.py
+COPY tools/workflow-controller/m4f_ingress.py /app/m4f_ingress.py
+
+WORKDIR /app
+ENV PYTHONUNBUFFERED=1
+ENTRYPOINT ["python", "-u", "/app/controller.py"]

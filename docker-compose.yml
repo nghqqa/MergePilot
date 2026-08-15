@@ -1,0 +1,101 @@
+# ISOLATED_LIVE one-click stack (productization Phase 1-C).
+#
+# Contract (enforced by tools/demo_console/one_click_startup.py and
+# tests/isolated_live/test_one_click_containerization.py):
+#   - postgres uses the digest-pinned pgvector image; every other service
+#     is BUILT locally (pull_policy: never) — no unpinned remote tags.
+#   - all services share the internal-only bridge network "isolated".
+#   - ONLY demo-console publishes a port, bound to 127.0.0.1.
+#     postgres / controller / policy-gateway / preflight publish NOTHING.
+#   - dependency order: postgres (healthy) -> policy-gateway -> controller
+#     -> demo-console -> preflight.
+#   - preflight reaches PostgreSQL INSIDE the internal network
+#     (host=postgres) — no twin container, no host-process substitute.
+#   - no persistent volumes; the stack is one-shot.
+#
+# NOTE (dependency installs): the three Python service images and the
+# preflight image require pip install at BUILD time. That install is NOT
+# performed in Phase 1-C (code-only); it needs a separate, explicit
+# authorization round. The Dockerfiles below are the declared build recipe.
+
+name: mergepilot-isolated
+
+services:
+  postgres:
+    image: pgvector/pgvector@sha256:a36250871de0833b8757561c72f2477ef1ddd1101afa4e617fb552e0de514c6b
+    pull_policy: never
+    env_file: postgres.env          # created by the orchestrator (SecretFile)
+    environment:
+      PGDATA: /tmp/pgdata
+    networks:
+      - isolated
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mergepilot -d mergepilot_audit"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    # ports: deliberately ABSENT — postgres is never published.
+
+  policy-gateway:
+    build:
+      context: tools/policy-gateway
+      dockerfile: Dockerfile
+    pull_policy: never
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - isolated
+    # ports: deliberately ABSENT.
+
+  controller:
+    build:
+      context: tools/workflow-controller
+      dockerfile: Dockerfile
+    pull_policy: never
+    depends_on:
+      postgres:
+        condition: service_healthy
+      policy-gateway:
+        condition: service_started
+    networks:
+      - isolated
+    # ports: deliberately ABSENT.
+
+  demo-console:
+    build:
+      context: .
+      dockerfile: Dockerfile.demo-console
+    pull_policy: never
+    depends_on:
+      controller:
+        condition: service_started
+    networks:
+      - isolated
+    ports:
+      - "127.0.0.1:8600:8600"       # the ONLY published port; loopback only.
+
+  preflight:
+    build:
+      context: .
+      dockerfile: Dockerfile.preflight
+    pull_policy: never
+    depends_on:
+      demo-console:
+        condition: service_started
+    networks:
+      - isolated
+    environment:
+      # preflight reaches PostgreSQL INSIDE the internal network.
+      MERGEPILOT_PG_HOST: postgres
+      MERGEPILOT_PG_PORT: "5432"
+      MERGEPILOT_DEMO_CONSOLE_URL: http://demo-console:8600
+    restart: "no"
+    # ports: deliberately ABSENT.
+
+networks:
+  isolated:
+    driver: bridge
+    internal: true
+
+volumes: {}
