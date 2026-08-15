@@ -722,15 +722,19 @@ class _FakeSseRequest:
             self._send = send_value
 
 
-def _load_upstream_stub():
+def _load_upstream_stub(source_text=None):
     """Import the real upstream_stub.py under fake mcp/starlette deps.
 
     Returns (module, recorded) where ``recorded`` captures every
-    interaction: connect_sse arguments, server.run arguments, streams,
-    initialization options, registered handlers, and route wiring.
+    interaction: connect_sse arguments, the yielded stream pair,
+    server.run arguments, initialization options, registered handlers,
+    and route wiring. ``source_text`` (optional) imports that text
+    instead of the repo file — used by the negative mutation test; the
+    text goes to a temp file, never the worktree.
     """
     import asyncio  # noqa: F401  (kept local: only these tests need it)
     import importlib.util
+    import tempfile
     import types
 
     recorded = {}
@@ -760,12 +764,22 @@ def _load_upstream_stub():
             return recorded["init_options"]
 
     class _FakeConnectSSE:
+        """Mirrors mcp 1.28.1 (measured in the image): the context manager
+        YIELDS the (read_stream, write_stream) pair.
+
+        The fake transport deliberately does NOT implement
+        get_read_stream()/get_write_stream() — the 1-G retry 3 real-run
+        AttributeError must be reproducible against this fake."""
+
         def __init__(self, transport):
             self._transport = transport
 
         async def __aenter__(self):
             recorded["connect_sse_args"] = self._transport.connect_args
-            return None
+            recorded["yielded_streams"] = (
+                self._transport.read_stream, self._transport.write_stream)
+            return (self._transport.read_stream,
+                    self._transport.write_stream)
 
         async def __aexit__(self, *exc):
             recorded["connect_sse_exited"] = True
@@ -775,18 +789,12 @@ def _load_upstream_stub():
         def __init__(self, messages_path):
             recorded["messages_path"] = messages_path
             self.connect_args = None
+            self.read_stream = object()
+            self.write_stream = object()
 
         def connect_sse(self, scope, receive, send):
             self.connect_args = (scope, receive, send)
             return _FakeConnectSSE(self)
-
-        def get_read_stream(self):
-            recorded["read_stream"] = object()
-            return recorded["read_stream"]
-
-        def get_write_stream(self):
-            recorded["write_stream"] = object()
-            return recorded["write_stream"]
 
         async def handle_post_message(self, request):
             return None
@@ -834,11 +842,26 @@ def _load_upstream_stub():
             sys.modules[name] = mod
             injected[name] = mod
 
-        spec = importlib.util.spec_from_file_location(
-            "upstream_stub_under_test", stub_path)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        return module, recorded
+        if source_text is None:
+            import_path = stub_path
+        else:
+            import os
+            import pathlib
+            with tempfile.NamedTemporaryFile(
+                    mode="w", suffix=".py", delete=False,
+                    encoding="utf-8") as tmp:
+                tmp.write(source_text)
+            import_path = pathlib.Path(tmp.name)
+        try:
+            spec = importlib.util.spec_from_file_location(
+                "upstream_stub_under_test", import_path)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            return module, recorded
+        finally:
+            if source_text is not None:
+                import os
+                os.unlink(str(import_path))
     finally:
         for name in injected:
             sys.modules.pop(name, None)
@@ -869,9 +892,13 @@ class TestUpstreamStubSendCallable(unittest.TestCase):
         self.assertIs(send_callable, args[2])
         self.assertTrue(recorded["connect_sse_exited"])
 
+        # server.run must receive EXACTLY the streams the transport's
+        # context manager yielded (mcp 1.28.1 contract), plus the
+        # initialization options object.
         read_stream, write_stream, init_options = recorded["server_run"]
-        self.assertIs(recorded["read_stream"], read_stream)
-        self.assertIs(recorded["write_stream"], write_stream)
+        yielded_read, yielded_write = recorded["yielded_streams"]
+        self.assertIs(yielded_read, read_stream)
+        self.assertIs(yielded_write, write_stream)
         self.assertIs(recorded["init_options"], init_options)
 
     def test_handle_sse_fails_closed_when_send_missing(self):
@@ -898,6 +925,61 @@ class TestUpstreamStubSendCallable(unittest.TestCase):
         self.assertNotIn('request.scope["send"]', source)
         self.assertNotIn("request.scope['send']", source)
         self.assertIn("_send", source)
+
+    def test_stub_source_has_no_stream_accessors(self):
+        # The pinned mcp 1.28.1 transport has no get_read_stream /
+        # get_write_stream; their absence in source is the retry-4 fix.
+        source = (ROOT / "tools" / "policy-gateway" /
+                  "upstream_stub.py").read_text(encoding="utf-8")
+        self.assertNotIn("get_read_stream(", source)
+        self.assertNotIn("get_write_stream(", source)
+        self.assertIn("as (read_stream, write_stream)", source)
+
+    def test_mutation_old_stream_accessors_reproduce_attributeerror(self):
+        # Negative mutation, fully in-memory (worktree untouched): revert
+        # the shipped handler to the retry-3 shape (call the nonexistent
+        # get_*_stream accessors) and run it through the SAME harness.
+        # The fake transport — mirroring mcp 1.28.1 — has no such methods,
+        # so the mutated handler must raise AttributeError. The shipped
+        # handler under the identical harness must pass.
+        source = (ROOT / "tools" / "policy-gateway" /
+                  "upstream_stub.py").read_text(encoding="utf-8")
+        start = source.find("async def handle_sse")
+        end = source.find("app = Starlette")
+        old_body = (
+            "async def handle_sse(request):\n"
+            "    send = getattr(request, \"_send\", None)\n"
+            "    if not callable(send):\n"
+            "        raise RuntimeError(\"no send\")\n"
+            "    async with sse.connect_sse(request.scope, "
+            "request.receive, send):\n"
+            "        await server.run(sse.get_read_stream(),\n"
+            "                         sse.get_write_stream(),\n"
+            "                         server.create_initialization_options())"
+            "\n\n\n"
+        )
+        mutant = source[:start] + old_body + source[end:]
+        self.assertIn("get_read_stream(", mutant)
+
+        async def send_callable(message):
+            return None
+
+        # Shipped handler: same harness, clean run (also re-proves the
+        # Retry-2 send-callable guarantees alongside the stream unpack).
+        good_module, good_recorded = _load_upstream_stub()
+        good_request = _FakeSseRequest(with_send=True,
+                                       send_value=send_callable)
+        self._run(good_module.handle_sse(good_request))
+        self.assertIs(send_callable, good_recorded["connect_sse_args"][2])
+        self.assertIsNotNone(good_recorded["server_run"])
+
+        # Mutant: identical harness, must fail with AttributeError.
+        mutant_module, _ = _load_upstream_stub(source_text=mutant)
+        mutant_request = _FakeSseRequest(with_send=True,
+                                         send_value=send_callable)
+        with self.assertRaises(AttributeError) as cm:
+            self._run(mutant_module.handle_sse(mutant_request))
+        self.assertIn("get_read_stream", str(cm.exception))
 
     def test_zero_tool_contract_via_loaded_module(self):
         module, recorded = _load_upstream_stub()
