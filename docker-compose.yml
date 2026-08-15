@@ -38,8 +38,12 @@ services:
 
   policy-gateway:
     build:
-      context: tools/policy-gateway
-      dockerfile: Dockerfile
+      # Retry v3: build context unified with the builder/orchestrator
+      # contract (root wrapper Dockerfile) — five-layer consistency; the
+      # canonical thin Dockerfile in tools/policy-gateway/ stays for
+      # standalone subdir builds.
+      context: .
+      dockerfile: Dockerfile.policy-gateway
     pull_policy: never
     depends_on:
       postgres:
@@ -47,20 +51,53 @@ services:
     networks:
       - isolated
     # ports: deliberately ABSENT.
+    # Retry v3 Fix 3: UPSTREAM_URL (non-secret) points at the in-container
+    # zero-tool stub so the gateway's real lifespan completes inside the
+    # isolated network (no github-mcp exists here by design). The
+    # healthcheck probes the gateway's own listen port: uvicorn binds only
+    # AFTER the upstream session is up, so healthy == fully started — an
+    # exited or still-retrying gateway never reports healthy (no standby).
+    environment:
+      UPSTREAM_URL: "http://127.0.0.1:8084/sse"
+    healthcheck:
+      test: ["CMD", "python", "/app/healthcheck.py"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   controller:
     build:
-      context: tools/workflow-controller
-      dockerfile: Dockerfile
+      # Retry v3: build context unified with the builder/orchestrator
+      # contract (root wrapper Dockerfile) — five-layer consistency.
+      context: .
+      dockerfile: Dockerfile.controller
     pull_policy: never
     depends_on:
       postgres:
         condition: service_healthy
       policy-gateway:
-        condition: service_started
+        condition: service_healthy
     networks:
       - isolated
     # ports: deliberately ABSENT.
+    # Retry v3 Fix 3: the secrets PG_PASS/ADMIN_PW (controller.py refuses
+    # to start without them) travel via the orchestrator-created secret
+    # env-file — never compose literals. The non-secret DB coordinates are
+    # explicit: the code default PG_HOST='audit-pg' does not exist in this
+    # stack. Healthcheck = TCP to the configured PostgreSQL from inside
+    # the container (the controller has no listen port); an exited
+    # controller never reports healthy.
+    env_file: controller.env        # created by the orchestrator (secrets)
+    environment:
+      PG_HOST: postgres
+      PG_PORT: "5432"
+      PG_DATABASE: mergepilot_audit
+      PG_USER: mergepilot
+    healthcheck:
+      test: ["CMD", "python", "/app/healthcheck.py"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   demo-console:
     build:
@@ -68,10 +105,21 @@ services:
       dockerfile: Dockerfile.demo-console
     pull_policy: never
     depends_on:
+      # Retry v3: healthy, not merely started — the full stack requires the
+      # controller (and transitively the policy-gateway) to pass their real
+      # healthchecks before the console starts.
       controller:
-        condition: service_started
+        condition: service_healthy
     networks:
       - isolated
+    # Review-gap Fix 3: REAL demo-console readiness — loopback HTTP probe of
+    # /api/live/status (200 + JSON + POSTGRES_ISOLATED + source_read_only +
+    # startup snapshot). preflight waits for THIS, not for 'started'.
+    healthcheck:
+      test: ["CMD", "python", "/app/console_healthcheck.py"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     environment:
       # Entrypoint contract: ISOLATED_LIVE mode, postgres source, canonical
       # reader role, and a CALLER-PROVIDED run_id. REPLAY is refused (no
@@ -108,8 +156,11 @@ services:
       dockerfile: Dockerfile.preflight
     pull_policy: never
     depends_on:
+      # Review-gap Fix 3: the gate matrix runs only after the demo-console
+      # is genuinely READY (its own fail-closed http_endpoint gate still
+      # re-verifies the endpoint in-network).
       demo-console:
-        condition: service_started
+        condition: service_healthy
     networks:
       - isolated
     environment:

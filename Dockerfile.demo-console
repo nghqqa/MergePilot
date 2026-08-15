@@ -23,6 +23,16 @@ COPY tools/demo_console/one_click_startup.py /app/one_click_startup.py
 COPY tools/demo_console/mergepilot_integration.py /app/mergepilot_integration.py
 COPY tools/demo_console/evidence_manifest.py /app/evidence_manifest.py
 COPY tools/demo_console_entrypoint.py /app/demo_console_entrypoint.py
+# Review-gap Fix 3: in-container readiness probe (loopback-only HTTP against
+# /api/live/status; healthy requires 200 + valid JSON + POSTGRES_ISOLATED +
+# source_read_only + an available startup snapshot).
+COPY tools/demo_console/console_healthcheck.py /app/console_healthcheck.py
+# Retry v3 Fix 2 + Phase 1-E protected-path fix: the dynamic console lives
+# in tools/demo_console/live_assets (NON-protected path — samples/ is in
+# evidence_manifest.PROTECTED_PATH_PREFIXES and stays REPLAY-frozen). It is
+# shipped to the FIXED allowlisted container path /app/live-console that
+# the entrypoint passes as --serve-dir. Nothing is copied from samples/.
+COPY tools/demo_console/live_assets /app/live-console
 
 WORKDIR /app
 ENV PYTHONUNBUFFERED=1 \

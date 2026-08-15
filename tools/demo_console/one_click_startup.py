@@ -27,6 +27,7 @@ Frozen truth boundaries (unchanged by anything in this module):
 from __future__ import annotations
 
 import copy as _copy
+import ipaddress
 import json
 import re
 from pathlib import Path
@@ -57,6 +58,24 @@ READER_ROLE = "mergepilot_reader"
 ENVIRONMENT_MARKER = "mergepilot-test-ephemeral"
 APP_NAME = "mergepilot_isolated_live_reader"
 SOURCE_KIND_ISOLATED = "POSTGRES_ISOLATED"
+
+# Phase 1-D retry v3 Fix 3 — controller / policy-gateway runtime contract,
+# extracted from the ACTUAL service code (no guessed variable names):
+#   controller.py requires: PG_HOST (default 'audit-pg' — must be overridden
+#   to the in-network alias 'postgres'), PG_PORT, PG_DATABASE, PG_USER,
+#   and the secrets PG_PASS + ADMIN_PW (it refuses to start without them).
+#   gateway.py requires: UPSTREAM_URL (an MCP SSE endpoint it can actually
+#   reach; the default 'github-mcp' host does not exist in the isolated
+#   stack). LISTEN_HOST/LISTEN_PORT have safe defaults.
+CONTROLLER_PG_USER = "mergepilot"
+GATEWAY_LISTEN_PORT = 8083
+# The isolated-stack upstream: an IN-CONTAINER, zero-tool MCP SSE stub that
+# the gateway entrypoint starts on container loopback. It is NOT a separate
+# service, NOT a host process and NOT a postgres twin — it exists solely so
+# the gateway's real lifespan (which demands a reachable upstream) can
+# complete inside the isolated network. It serves ZERO tools: the gateway
+# proxies nothing and performs no external access.
+GATEWAY_ISOLATED_UPSTREAM_URL = "http://127.0.0.1:8084/sse"
 
 # Services and their dependency order (topological).
 SERVICE_ORDER = ("postgres", "policy-gateway", "controller",
@@ -96,6 +115,83 @@ class StartupCleanupError(Exception):
         self.cleanup_codes = tuple(cleanup_codes)
         super().__init__("primary=%s cleanup=%s"
                          % (primary_code, ",".join(self.cleanup_codes) or "none"))
+
+
+# ── Server-address canonicalization (Phase 1-D retry v3 Fix 1) ───────────────
+
+def canonicalize_server_address(value) -> str:
+    """Canonicalize ONE measured/expected server address to a bare IPv4.
+
+    Why this exists: PostgreSQL's ``inet_server_addr()`` text form may carry
+    a netmask suffix depending on build (``172.18.0.2/32``), while callers
+    naturally configure bare addresses (``172.18.0.2``). Both sides of the
+    identity comparison are normalized through THIS single shared function,
+    so ``172.18.0.2`` and ``172.18.0.2/32`` are the same address. The SQL
+    side additionally prefers ``host(inet_server_addr())`` (bare form at the
+    source); this function is the defensive Python-side twin of that.
+
+    Parsing uses the standard ``ipaddress`` module — never ``split('/')``
+    and never string ``replace``. Fail-closed (``ValueError`` with a stable
+    ``CONFIG_INVALID`` prefix):
+
+      - non-string / empty values
+      - hostnames and network aliases (``postgres``, ``db.example``)
+      - IPv6 addresses (the contract is IPv4-only)
+      - CIDR netmasks other than /32 (an address allowlist, not a subnet
+        allowlist — ``172.18.0.0/16`` is rejected)
+      - malformed values
+    """
+    if not isinstance(value, str):
+        raise ValueError(
+            "CONFIG_INVALID: server address must be a string (got %s)"
+            % type(value).__name__)
+    text = value.strip()
+    if not text:
+        raise ValueError("CONFIG_INVALID: server address is empty")
+    try:
+        iface = ipaddress.ip_interface(text)
+    except ValueError:
+        raise ValueError(
+            "CONFIG_INVALID: server address %r is not a valid IPv4 host "
+            "(hostnames, network aliases and malformed values are rejected)"
+            % text) from None
+    if iface.version != 4:
+        raise ValueError(
+            "CONFIG_INVALID: server address %r is IPv6; the ISOLATED_LIVE "
+            "identity contract is IPv4-only" % text)
+    if iface.network.prefixlen != 32:
+        raise ValueError(
+            "CONFIG_INVALID: server address %r carries a CIDR netmask; "
+            "only bare single-host addresses (or /32) are allowed" % text)
+    return str(iface.ip)
+
+
+def canonicalize_server_address_list(value) -> list:
+    """Canonicalize a comma-separated string OR an iterable to bare IPv4s.
+
+    Returns a new list, de-duplicated preserving first-seen order. Raises
+    ``ValueError`` (stable ``CONFIG_INVALID`` prefix) on any invalid entry
+    or an empty input. Shared by the compose builder, the Docker-CLI
+    orchestrator, the demo-console entrypoint and PostgresSnapshotSource —
+    one contract, one implementation.
+    """
+    if isinstance(value, str):
+        items = [seg for seg in (part.strip() for part in value.split(","))
+                 if seg]
+    elif isinstance(value, (list, tuple)):
+        items = list(value)
+    else:
+        raise ValueError(
+            "CONFIG_INVALID: server address list must be a comma-separated "
+            "string or a list (got %s)" % type(value).__name__)
+    if not items:
+        raise ValueError("CONFIG_INVALID: server address list is empty")
+    canonical: list = []
+    for item in items:
+        addr = canonicalize_server_address(item)
+        if addr not in canonical:
+            canonical.append(addr)
+    return canonical
 
 
 # ── Redaction + argv safety ──────────────────────────────────────────────────
@@ -174,6 +270,87 @@ class SecretFile:
         return self._path.exists()
 
 
+class ControllerSecretFile:
+    """Secret env-file for the workflow-controller service (retry v3 Fix 3).
+
+    Carries the two secrets controller.py refuses to start without
+    (extracted from its own ``__main__`` gate): ``PG_PASS`` (the PostgreSQL
+    admin password — same secret class as POSTGRES_PASSWORD) and ``ADMIN_PW``
+    (the Matrix admin password used only by the unreachable-by-design
+    Matrix domain; a random per-session value in the isolated stack).
+
+    Same transport guarantees as :class:`SecretFile`: fixed file name
+    (``controller.env``), values never in argv/logs, 0600 where enforceable,
+    refuses to overwrite, idempotent delete.
+
+    Injection hardening (review-gap Fix 4): both values are FULLY validated
+    BEFORE the directory is created or any byte is written — a failed
+    validation leaves zero residue. Values must be non-empty strings
+    containing no ``\\r``, ``\\n`` or NUL (the only characters that could
+    fold into additional env-file lines). Exceptions never carry the secret
+    values themselves.
+    """
+
+    _NAME = "controller.env"
+
+    def __init__(self, directory: Path):
+        self._dir = Path(directory)
+        self._path = self._dir / self._NAME
+
+    @property
+    def path(self) -> Path:
+        return self._path
+
+    @staticmethod
+    def _validate_secret(name: str, value) -> None:
+        """Validate one secret BEFORE any filesystem effect (fail-closed).
+
+        Raises StartupGateError(CONFIG_INVALID) on: non-string, empty /
+        whitespace-only, or any value containing CR/LF/NUL (env-file line
+        injection vectors). The error message names the FIELD only — the
+        value never appears in exceptions or logs.
+        """
+        if not isinstance(value, str):
+            raise StartupGateError(
+                "CONFIG_INVALID",
+                "%s must be a string (got %s)" % (name, type(value).__name__))
+        if not value.strip():
+            raise StartupGateError("CONFIG_INVALID",
+                                   "%s must be non-empty" % name)
+        for idx, ch in enumerate(value):
+            if ch in ("\r", "\n", "\0"):
+                raise StartupGateError(
+                    "CONFIG_INVALID",
+                    "%s contains a rejected control character at offset %d "
+                    "(CR/LF/NUL are env-file line-injection vectors)"
+                    % (name, idx))
+
+    def write(self, pg_pass: str, admin_pw: str) -> None:
+        # FULL validation of BOTH values first — a failure below leaves no
+        # directory and no file behind.
+        self._validate_secret("pg_pass", pg_pass)
+        self._validate_secret("admin_pw", admin_pw)
+        if self._path.exists():
+            raise StartupGateError("SECRET_FILE_EXISTS",
+                                   "refusing to overwrite an existing "
+                                   "controller secret file")
+        self._dir.mkdir(parents=True, exist_ok=True)
+        content = ("PG_PASS=%s\n"
+                   "ADMIN_PW=%s\n" % (pg_pass, admin_pw))
+        self._path.write_text(content, encoding="utf-8")
+        try:
+            self._path.chmod(0o600)
+        except OSError:
+            pass  # Windows: recorded honestly in capability, not enforced
+
+    def delete(self) -> None:
+        if self._path.exists():
+            self._path.unlink()
+
+    def exists(self) -> bool:
+        return self._path.exists()
+
+
 # ── docker-compose configuration ─────────────────────────────────────────────
 
 def _validate_demo_console_runtime_inputs(demo_console_run_id: str,
@@ -189,7 +366,9 @@ def _validate_demo_console_runtime_inputs(demo_console_run_id: str,
     measured AFTER postgres is healthy and injected by the orchestrator;
     hardcoding it (or substituting the network alias ``postgres``) is
     rejected because the expected-identity gate compares it against the
-    real ``inet_server_addr()`` observed at connection time.
+    real ``inet_server_addr()`` observed at connection time. Entries may be
+    bare (``172.18.0.2``) or single-host CIDR (``172.18.0.2/32``) — both
+    canonicalize to the same bare IPv4 via the shared canonicalizer.
     """
     if not demo_console_run_id or not demo_console_run_id.strip():
         raise StartupGateError(
@@ -208,16 +387,10 @@ def _validate_demo_console_runtime_inputs(demo_console_run_id: str,
             "inference); the orchestrator must measure the postgres "
             "container's bridge IP after postgres is healthy and inject it "
             "(hardcoding is forbidden)")
-    for addr in demo_console_pg_server_addresses.split(","):
-        addr = addr.strip()
-        if not addr:
-            continue
-        if not re.fullmatch(r"(?:\d{1,3}\.){3}\d{1,3}", addr):
-            raise StartupGateError(
-                "CONFIG_INVALID",
-                "demo_console_pg_server_addresses entries must be IPv4 "
-                "addresses measured on the bridge network (got %r); the "
-                "network alias is not an address" % addr[:40])
+    try:
+        canonicalize_server_address_list(demo_console_pg_server_addresses)
+    except ValueError as exc:
+        raise StartupGateError("CONFIG_INVALID", str(exc)) from None
 
 
 def _demo_console_environment(demo_console_run_id: str,
@@ -227,10 +400,13 @@ def _demo_console_environment(demo_console_run_id: str,
     Shared by ``build_compose_config`` (compose path) and
     ``plan_orchestrated_start`` (Docker-CLI path) so the two paths can never
     drift. Non-secret values only; the reader DSN travels separately via the
-    secret env-file and is never placed here.
+    secret env-file and is never placed here. Server addresses are emitted
+    in CANONICAL bare-IPv4 form (``172.18.0.2/32`` → ``172.18.0.2``).
     """
     _validate_demo_console_runtime_inputs(demo_console_run_id,
                                           demo_console_pg_server_addresses)
+    canonical_addrs = ",".join(
+        canonicalize_server_address_list(demo_console_pg_server_addresses))
     return {
         "MERGEPILOT_MODE": "isolated_live",
         "MERGEPILOT_SOURCE_KIND": "postgres",
@@ -241,16 +417,46 @@ def _demo_console_environment(demo_console_run_id: str,
         "MERGEPILOT_PORT": str(DEMO_CONSOLE_PORT),
         "MERGEPILOT_PG_EXPECTED_DATABASE": DB_NAME,
         "MERGEPILOT_PG_ENVIRONMENT_ID": ENVIRONMENT_MARKER,
-        "MERGEPILOT_PG_EXPECTED_SERVER_ADDRESSES":
-            demo_console_pg_server_addresses,
+        "MERGEPILOT_PG_EXPECTED_SERVER_ADDRESSES": canonical_addrs,
         "MERGEPILOT_PG_EXPECTED_SERVER_PORT": "5432",
         "MERGEPILOT_PG_EXPECTED_APPLICATION_NAME": APP_NAME,
+    }
+
+
+def _controller_environment() -> dict:
+    """Non-secret controller env (single source of truth, retry v3 Fix 3).
+
+    Variable names are extracted from tools/workflow-controller/controller.py
+    (PG_HOST/PG_PORT/PG_DATABASE/PG_USER). The secrets PG_PASS/ADMIN_PW are
+    NOT here — they travel via the controller secret env-file.
+    """
+    return {
+        "PG_HOST": "postgres",       # in-network alias; the code default
+                                     # 'audit-pg' does not exist in this stack
+        "PG_PORT": "5432",
+        "PG_DATABASE": DB_NAME,
+        "PG_USER": CONTROLLER_PG_USER,
+    }
+
+
+def _gateway_environment() -> dict:
+    """Non-secret policy-gateway env (single source of truth, Fix 3).
+
+    UPSTREAM_URL is required by gateway.py's lifespan (it exits after 30
+    failed connect attempts). In the isolated stack it points at the
+    in-container zero-tool stub — a REAL, reachable endpoint — so the
+    gateway genuinely runs and its healthcheck is meaningful. Non-secret:
+    it is a loopback URL.
+    """
+    return {
+        "UPSTREAM_URL": GATEWAY_ISOLATED_UPSTREAM_URL,
     }
 
 
 def build_compose_config(*, demo_console_port: int = DEMO_CONSOLE_PORT,
                          project_name: str = "mergepilot-isolated",
                          admin_password_secret: str = "<secret-file>",
+                         controller_secret: str = "<controller-secret-file>",
                          demo_console_run_id: str = "",
                          demo_console_pg_server_addresses: str = "",
                          ) -> dict:
@@ -300,23 +506,64 @@ def build_compose_config(*, demo_console_port: int = DEMO_CONSOLE_PORT,
                 "postgres": {"condition": "service_healthy"},
             },
             "networks": ["isolated"],
+            # Retry v3 Fix 3: UPSTREAM_URL (non-secret) points at the
+            # in-container zero-tool stub so the real lifespan completes.
+            # The healthcheck probes the gateway's own listen port — uvicorn
+            # only binds AFTER the upstream session is established, so
+            # healthy means fully up (an exited/retrying gateway never
+            # reports healthy; there is no standby state).
+            "environment": _gateway_environment(),
+            "healthcheck": {
+                "test": ["CMD", "python", "/app/healthcheck.py"],
+                "interval": _HEALTHCHECK_INTERVAL,
+                "timeout": _HEALTHCHECK_TIMEOUT,
+                "retries": _HEALTHCHECK_RETRIES,
+            },
         },
         "controller": {
             "build": {"context": ".", "dockerfile": "Dockerfile.controller"},
             "pull_policy": "never",
             "depends_on": {
                 "postgres": {"condition": "service_healthy"},
-                "policy-gateway": {"condition": "service_started"},
+                "policy-gateway": {"condition": "service_healthy"},
             },
             "networks": ["isolated"],
+            # Retry v3 Fix 3: secrets (PG_PASS/ADMIN_PW) travel via the
+            # orchestrator-created secret env-file, never compose literals;
+            # the non-secret DB coordinates are explicit (the code default
+            # PG_HOST='audit-pg' does not exist in this stack).
+            "env_file": controller_secret,
+            "environment": _controller_environment(),
+            # Real liveness: the controller has no listen port, so the probe
+            # is a TCP connect from INSIDE the container to the configured
+            # PostgreSQL — passing means the container is alive AND the DB
+            # path is up. An exited controller never reports healthy.
+            "healthcheck": {
+                "test": ["CMD", "python", "/app/healthcheck.py"],
+                "interval": _HEALTHCHECK_INTERVAL,
+                "timeout": _HEALTHCHECK_TIMEOUT,
+                "retries": _HEALTHCHECK_RETRIES,
+            },
         },
         "demo-console": {
             "build": {"context": ".", "dockerfile": "Dockerfile.demo-console"},
             "pull_policy": "never",
             "depends_on": {
-                "controller": {"condition": "service_started"},
+                # Retry v3: healthy, not merely started — the full stack
+                # requires controller (and transitively gateway) to pass
+                # their real healthchecks before the console starts.
+                "controller": {"condition": "service_healthy"},
             },
             "networks": ["isolated"],
+            # Review-gap Fix 3: REAL readiness — loopback HTTP probe of
+            # /api/live/status (200 + JSON + POSTGRES_ISOLATED +
+            # source_read_only + startup snapshot available).
+            "healthcheck": {
+                "test": ["CMD", "python", "/app/console_healthcheck.py"],
+                "interval": _HEALTHCHECK_INTERVAL,
+                "timeout": _HEALTHCHECK_TIMEOUT,
+                "retries": _HEALTHCHECK_RETRIES,
+            },
             # Entrypoint contract (demo_console_entrypoint.py): ISOLATED_LIVE
             # mode, postgres source, canonical reader role, CALLER-PROVIDED
             # run_id and MEASURED bridge IP, explicit container bind context.
@@ -332,7 +579,10 @@ def build_compose_config(*, demo_console_port: int = DEMO_CONSOLE_PORT,
             "build": {"context": ".", "dockerfile": "Dockerfile.preflight"},
             "pull_policy": "never",
             "depends_on": {
-                "demo-console": {"condition": "service_started"},
+                # Review-gap Fix 3: run the gate matrix only after the
+                # demo-console is genuinely READY (the matrix's own
+                # fail-closed http_endpoint gate still re-verifies).
+                "demo-console": {"condition": "service_healthy"},
             },
             "networks": ["isolated"],
             "environment": {
@@ -395,6 +645,53 @@ def validate_compose_config(config: dict) -> None:
     # Healthcheck present on postgres.
     if "healthcheck" not in services["postgres"]:
         raise StartupGateError("COMPOSE_INVALID", "postgres lacks healthcheck")
+    # Retry v3 Fix 3 (+ review-gap Fix 3): controller, policy-gateway and
+    # demo-console must carry REAL healthchecks — an exited or
+    # still-retrying service must never be treated as standby/healthy.
+    for name in ("controller", "policy-gateway", "demo-console"):
+        if "healthcheck" not in services[name]:
+            raise StartupGateError("COMPOSE_INVALID",
+                                   "%s lacks healthcheck" % name)
+    # Healthy-edge dependency conditions (review-gap Fix 3 + v3 Fix 3):
+    # the dependent services wait for REAL readiness, never 'started'.
+    for svc, dep in (("controller", "policy-gateway"),
+                     ("demo-console", "controller"),
+                     ("preflight", "demo-console")):
+        cond = ((services[svc].get("depends_on") or {})
+                .get(dep, {}).get("condition"))
+        if cond != "service_healthy":
+            raise StartupGateError(
+                "COMPOSE_INVALID",
+                "%s must depend on %s service_healthy (got %r)"
+                % (svc, dep, cond))
+    # Retry v3 Fix 3: controller secrets ride the secret env-file (never
+    # compose literals); its non-secret DB coordinates must be explicit.
+    ctrl = services["controller"]
+    if not ctrl.get("env_file"):
+        raise StartupGateError("COMPOSE_INVALID",
+                               "controller lacks secret env_file")
+    ctrl_env = ctrl.get("environment") or {}
+    for key, value in _controller_environment().items():
+        if ctrl_env.get(key) != value:
+            raise StartupGateError(
+                "COMPOSE_INVALID",
+                "controller env %s must be %r (got %r)"
+                % (key, value, ctrl_env.get(key)))
+    for secret_key in ("PG_PASS", "ADMIN_PW"):
+        if secret_key in ctrl_env:
+            raise StartupGateError(
+                "COMPOSE_INVALID",
+                "controller secret %s must travel via env_file, never the "
+                "compose environment" % secret_key)
+    # Retry v3 Fix 3: the gateway must declare its upstream explicitly.
+    gw_env = services["policy-gateway"].get("environment") or {}
+    if not gw_env.get("UPSTREAM_URL"):
+        raise StartupGateError("COMPOSE_INVALID",
+                               "policy-gateway lacks UPSTREAM_URL")
+    if "AUDIT_DSN" in gw_env or "L2_DSN" in gw_env:
+        raise StartupGateError(
+            "COMPOSE_INVALID",
+            "policy-gateway DSNs are secrets and must travel via env_file")
     # Internal-only network (no external exposure beyond the loopback port).
     net = config.get("networks", {}).get("isolated", {})
     if net.get("internal") is not True:
@@ -581,10 +878,20 @@ _SERVICE_FLAGS = {
     "postgres": (["postgres"], None,
                  ["pg_isready", "-U", "mergepilot",
                   "-d", DB_NAME]),
-    "policy-gateway": (["policy-gateway"], None, None),
-    "controller": (["controller"], None, None),
+    # Retry v3 Fix 3: REAL healthchecks for controller/gateway. Both probe
+    # via the /app/healthcheck.py file shipped in their images (exec-form,
+    # no shell quoting hazards). The gateway probe is a TCP connect to its
+    # own listen port — uvicorn only binds after the upstream session is
+    # up, so healthy == fully started. The controller probe is a TCP connect
+    # to the configured PostgreSQL from inside the container. An exited
+    # service never reports healthy (there is no standby state).
+    "policy-gateway": (["policy-gateway"], None,
+                       ["python", "/app/healthcheck.py"]),
+    "controller": (["controller"], None,
+                   ["python", "/app/healthcheck.py"]),
     "demo-console": (["demo-console"],
-                     "%s:%d:8600" % (LOOPBACK_BIND, DEMO_CONSOLE_PORT), None),
+                     "%s:%d:8600" % (LOOPBACK_BIND, DEMO_CONSOLE_PORT),
+                     ["python", "/app/console_healthcheck.py"]),
     "preflight": (["preflight"], None, None),
 }
 
@@ -598,18 +905,21 @@ def plan_network_create() -> list:
 def plan_service_run(service: str, *, image_ref: str,
                      env_file: str | None = None,
                      declared_pg_image: str | None = None,
-                     demo_console_env: dict | None = None) -> list:
+                     demo_console_env: dict | None = None,
+                     controller_env: dict | None = None,
+                     gateway_env: dict | None = None) -> list:
     """argv array (docker sub-args) to run one service per the contract.
 
     ``image_ref`` is the digest/image-ID (never a floating tag). The plan
     encodes: internal network + alias, pull never, restart no, no published
-    ports except demo-console loopback, healthcheck (postgres), env-file for
-    postgres, and the in-network preflight environment.
+    ports except demo-console loopback, healthchecks (postgres, controller,
+    policy-gateway), secret env-files (postgres, controller), and the
+    in-network preflight environment.
 
-    ``demo_console_env`` is REQUIRED for the demo-console service (the full
-    entrypoint contract incl. bind context and the five PostgreSQL expected
-    identity params). Non-secret values only; ``assert_argv_safe`` rejects a
-    DSN or password smuggled into the values.
+    ``demo_console_env`` / ``controller_env`` / ``gateway_env`` are REQUIRED
+    for their respective services (the extracted entrypoint contracts —
+    fail-closed CONFIG_INVALID when missing). Non-secret values only;
+    ``assert_argv_safe`` rejects a DSN or password smuggled into the values.
     """
     if service not in _SERVICE_FLAGS:
         raise StartupGateError("CONFIG_INVALID",
@@ -627,6 +937,38 @@ def plan_service_run(service: str, *, image_ref: str,
             "(entrypoint contract: mode/source-kind/run_id/role/bind "
             "context + five PG expected identity params); use "
             "_demo_console_environment() to build it")
+    if service == "controller" and not controller_env:
+        raise StartupGateError(
+            "CONFIG_INVALID",
+            "controller_env is required for the controller service "
+            "(PG_HOST/PG_PORT/PG_DATABASE/PG_USER; secrets PG_PASS/ADMIN_PW "
+            "travel via the controller secret env-file)")
+    if service == "controller":
+        # Review-gap Fix 1: the controller secret env-file is part of the
+        # service contract, not an optional extra. Missing/None/blank/
+        # non-string → CONFIG_INVALID. The message never echoes the path
+        # value (a path leak narrows a secret's location).
+        if not isinstance(env_file, str) or not env_file.strip():
+            raise StartupGateError(
+                "CONFIG_INVALID",
+                "controller requires the secret env-file path (a non-empty "
+                "string carrying PG_PASS/ADMIN_PW via the SecretFile "
+                "transport)")
+    if service == "policy-gateway" and not gateway_env:
+        raise StartupGateError(
+            "CONFIG_INVALID",
+            "gateway_env is required for the policy-gateway service "
+            "(UPSTREAM_URL — non-secret; the gateway lifespan exits without "
+            "a reachable upstream)")
+    for env in (demo_console_env, controller_env, gateway_env):
+        if env:
+            for key in env:
+                if key in ("PG_PASS", "ADMIN_PW", "AUDIT_DSN", "L2_DSN",
+                           "MERGEPILOT_PG_DSN"):
+                    raise StartupGateError(
+                        "CONFIG_INVALID",
+                        "secret %s must travel via the secret env-file, "
+                        "never -e argv" % key)
     aliases, publish, healthcheck = _SERVICE_FLAGS[service]
     argv = ["run", "-d",
             "--name", "mergepilot-isolated-%s-1" % service,
@@ -639,17 +981,31 @@ def plan_service_run(service: str, *, image_ref: str,
         argv += ["-e", "PGDATA=/tmp/pgdata"]
         if env_file:
             argv += ["--env-file", env_file]
-        if healthcheck:
-            argv += ["--health-cmd", " ".join(healthcheck),
-                     "--health-interval", _HEALTHCHECK_INTERVAL,
-                     "--health-timeout", _HEALTHCHECK_TIMEOUT,
-                     "--health-retries", str(_HEALTHCHECK_RETRIES)]
+    if service == "controller":
+        # Validated above (Fix 1): env_file is a non-empty string here and
+        # lands in the plan exactly once (asserted post-construction).
+        argv += ["--env-file", env_file]
+        if argv.count("--env-file") != 1:
+            raise StartupGateError(
+                "CONFIG_INVALID",
+                "controller plan must carry exactly one --env-file")
+    if healthcheck:
+        argv += ["--health-cmd", " ".join(healthcheck),
+                 "--health-interval", _HEALTHCHECK_INTERVAL,
+                 "--health-timeout", _HEALTHCHECK_TIMEOUT,
+                 "--health-retries", str(_HEALTHCHECK_RETRIES)]
     if service == "preflight":
         argv += ["-e", "MERGEPILOT_PG_HOST=postgres",
                  "-e", "MERGEPILOT_PG_PORT=5432",
                  "-e", "MERGEPILOT_DEMO_CONSOLE_URL=http://demo-console:8600"]
         if declared_pg_image:
             argv += ["-e", "MERGEPILOT_DECLARED_PG_IMAGE=%s" % declared_pg_image]
+    if controller_env:
+        for key in sorted(controller_env):
+            argv += ["-e", "%s=%s" % (key, controller_env[key])]
+    if gateway_env:
+        for key in sorted(gateway_env):
+            argv += ["-e", "%s=%s" % (key, gateway_env[key])]
     if demo_console_env:
         for key in sorted(demo_console_env):
             argv += ["-e", "%s=%s" % (key, demo_console_env[key])]
@@ -672,26 +1028,49 @@ def plan_build(service: str) -> list:
 
 
 def plan_orchestrated_start(env_file: str | None = None, *,
+                            controller_env_file: str,
                             demo_console_run_id: str = "",
                             demo_console_pg_server_addresses: str = ""
                             ) -> list:
     """Full start plan: [network create, run postgres, run gateway, run
     controller, run demo-console, run preflight] as argv arrays in strict
     dependency order. The caller executes them sequentially and waits for
-    the postgres healthcheck between step 2 and 3 (mirroring depends_on).
+    each healthcheck before the next dependent step (mirroring depends_on:
+    postgres healthy → gateway healthy → controller healthy → demo-console
+    healthy → preflight).
+
+    ``controller_env_file`` (the controller secret env-file carrying
+    PG_PASS/ADMIN_PW via the SecretFile transport) is REQUIRED. Missing,
+    None, blank or non-string → StartupGateError(CONFIG_INVALID) raised
+    BEFORE any plan (not even the network-create plan) is generated. The
+    error message never echoes the path value.
 
     ``demo_console_run_id`` (the seeded run_id) and
     ``demo_console_pg_server_addresses`` (the postgres bridge IP MEASURED
     after the healthcheck passed) are REQUIRED — no defaults, no inference.
+    ``env_file`` is the postgres secret env-file.
     """
+    # Review-gap Fix 1: validate the controller secret env-file FIRST —
+    # fail-closed before _demo_console_environment() or any plan is built.
+    if not isinstance(controller_env_file, str) or \
+            not controller_env_file.strip():
+        raise StartupGateError(
+            "CONFIG_INVALID",
+            "controller_env_file is required (a non-empty string path to "
+            "the SecretFile-transport env-file carrying the controller "
+            "secrets); refusing to plan any start without it")
     demo_env = _demo_console_environment(
         demo_console_run_id, demo_console_pg_server_addresses)
     plans = [plan_network_create()]
     plans.append(plan_service_run(
         "postgres", image_ref=PGVECTOR_IMAGE_DIGEST, env_file=env_file))
-    for service in ("policy-gateway", "controller"):
-        plans.append(plan_service_run(
-            service, image_ref=get_built_image_identity(service)))
+    plans.append(plan_service_run(
+        "policy-gateway", image_ref=get_built_image_identity("policy-gateway"),
+        gateway_env=_gateway_environment()))
+    plans.append(plan_service_run(
+        "controller", image_ref=get_built_image_identity("controller"),
+        controller_env=_controller_environment(),
+        env_file=controller_env_file))
     plans.append(plan_service_run(
         "demo-console", image_ref=get_built_image_identity("demo-console"),
         demo_console_env=demo_env))
@@ -720,9 +1099,13 @@ __all__ = [
     "BUILT_SERVICE_BASE_IMAGE",
     "BUILT_SERVICE_BASE_IMAGE_ID",
     "BUILT_SERVICES",
+    "CONTROLLER_PG_USER",
+    "ControllerSecretFile",
     "DB_NAME",
     "DEMO_CONSOLE_PORT",
     "ENVIRONMENT_MARKER",
+    "GATEWAY_ISOLATED_UPSTREAM_URL",
+    "GATEWAY_LISTEN_PORT",
     "LOOPBACK_BIND",
     "ORCHESTRATOR_NETWORK",
     "PGVECTOR_IMAGE_DIGEST",
@@ -736,6 +1119,8 @@ __all__ = [
     "assert_argv_safe",
     "build_compose_config",
     "built_identity_registry",
+    "canonicalize_server_address",
+    "canonicalize_server_address_list",
     "compose_dependency_order",
     "compose_ports_binding",
     "get_built_image_identity",

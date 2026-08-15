@@ -549,7 +549,7 @@ def assert_live_status_contract(status: dict) -> None:
         ("github_writes_enabled", False),
         ("agent_control_enabled", False),
         ("runtime_consumes_rag_context", False),
-        ("dynamic_pages_consume_live_api", False),
+        ("dynamic_pages_consume_live_api", True),
     )
     for key, expected in checks:
         actual = status.get(key, "<missing>")

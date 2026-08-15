@@ -44,7 +44,11 @@ for _p in (str(_HERE),):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from one_click_startup import assert_argv_safe, redact  # noqa: E402
+from one_click_startup import (  # noqa: E402
+    assert_argv_safe,
+    canonicalize_server_address_list,
+    redact,
+)
 
 REQUIRED_MODE = "isolated_live"
 REQUIRED_SOURCE_KIND = "postgres"
@@ -53,6 +57,14 @@ REQUIRED_DATABASE = "mergepilot_audit"
 REQUIRED_APP_NAME = "mergepilot_isolated_live_reader"
 
 DEFAULT_PORT = 8600
+
+# Retry v3 Fix 2 + Phase 1-E protected-path fix: the image ships the dynamic
+# console (from tools/demo_console/live_assets, a NON-protected path —
+# samples/ is protected and stays REPLAY-frozen) at this FIXED allowlisted
+# path. The entrypoint verifies dir + index.html BEFORE exec and passes
+# --serve-dir explicitly; a missing bundle is a stable CONFIG_INVALID,
+# never a fallback.
+CONTAINER_SERVE_DIR = "/app/live-console"
 
 _RUN_ID_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 
@@ -193,15 +205,14 @@ def _validate_env(environ=None) -> dict:
             "MERGEPILOT_PG_EXPECTED_SERVER_ADDRESSES is not set (the "
             "orchestrator must measure the postgres container's bridge IP "
             "and inject it; hardcoding is forbidden)")
-    # Validate as comma-separated IP list.
-    for addr in pg_server_addrs.split(","):
-        addr = addr.strip()
-        if not addr:
-            continue
-        if not re.fullmatch(r"[0-9.]+", addr):
-            raise EntrypointConfigError(
-                "MERGEPILOT_PG_EXPECTED_SERVER_ADDRESSES contains a "
-                "non-IPv4 entry: %r" % addr[:20])
+    # Retry v3 Fix 1: validate via the ONE shared canonicalizer — a bare
+    # 172.18.0.2 and a single-host 172.18.0.2/32 are the same address;
+    # hostnames/aliases, IPv6, non-/32 CIDR and malformed values rejected.
+    try:
+        pg_server_addrs_canonical = ",".join(
+            canonicalize_server_address_list(pg_server_addrs))
+    except ValueError as exc:
+        raise EntrypointConfigError(str(exc)) from None
 
     pg_server_port_s = env.get(
         "MERGEPILOT_PG_EXPECTED_SERVER_PORT", "").strip()
@@ -239,10 +250,30 @@ def _validate_env(environ=None) -> dict:
         "port": port,
         "pg_expected_database": pg_database,
         "pg_environment_id": pg_env_id,
-        "pg_expected_server_addresses": pg_server_addrs,
+        "pg_expected_server_addresses": pg_server_addrs_canonical,
         "pg_expected_server_port": pg_server_port,
         "pg_expected_application_name": pg_app_name,
     }
+
+
+def _verify_container_serve_dir(serve_dir: str = CONTAINER_SERVE_DIR) -> str:
+    """Fail-closed existence check for the container static bundle (Fix 2).
+
+    Returns the verified path. Raises EntrypointConfigError (stable
+    CONFIG_INVALID) when the directory or its index.html is missing — the
+    entrypoint refuses to exec serve.py rather than letting it start a DB
+    poller against a bundle that can never be served. No fallback path and
+    no REPLAY mode exists.
+    """
+    path = Path(serve_dir)
+    if not path.is_dir():
+        raise EntrypointConfigError(
+            "container serve dir %s is missing (the image must COPY "
+            "tools/demo_console/live_assets there)" % serve_dir)
+    if not (path / "index.html").is_file():
+        raise EntrypointConfigError(
+            "container serve dir %s has no index.html" % serve_dir)
+    return serve_dir
 
 
 def build_serve_argv(config: dict) -> list:
@@ -250,7 +281,9 @@ def build_serve_argv(config: dict) -> list:
 
     Only the core flags go into argv. The 5 PG expected identity fields
     are forwarded via their existing serve.py env-var contract (NOT argv,
-    keeping argv minimal and secret-safe).
+    keeping argv minimal and secret-safe). In container mode the FIXED
+    allowlisted --serve-dir is passed explicitly (retry v3 Fix 2); host
+    mode keeps serve.py's repo-layout default.
     """
     argv = [
         sys.executable, "-u", "/app/serve.py",
@@ -261,6 +294,8 @@ def build_serve_argv(config: dict) -> list:
         "--host", config["host"],
         "--port", str(config["port"]),
     ]
+    if config.get("bind_context") == "container":
+        argv += ["--serve-dir", CONTAINER_SERVE_DIR]
     assert_argv_safe(argv)
     return argv
 
@@ -268,6 +303,8 @@ def build_serve_argv(config: dict) -> list:
 def main() -> int:
     try:
         config = _validate_env()
+        if config["bind_context"] == "container":
+            _verify_container_serve_dir()
     except EntrypointConfigError as exc:
         print(redact(str(exc)), file=sys.stderr, flush=True)
         return 1

@@ -2957,6 +2957,19 @@ def run_forever():
 if __name__ == "__main__":
     if not ADMIN_PW or not PG_PASS:
         print("ERROR: 需 ADMIN_PW + PG_PASS 环境变量"); sys.exit(1)
+    # ISOLATED_LIVE readiness contract (Phase 1-D retry v3 review-gap Fix 2):
+    # clear any stale sentinel FIRST (a restarted container never inherits
+    # the previous boot's readiness), then create it atomically ONLY after
+    # every startup assertion passed and the run loop is about to start.
+    # Disabled unless CONTROLLER_READY_SENTINEL is set (stack deployments).
+    import readiness as _readiness
+    _ready_path = ""
+    try:
+        _ready_path = _readiness.readiness_path()
+    except ValueError as _exc:
+        print("ERROR: %s" % _exc); sys.exit(1)
+    if _ready_path:
+        _readiness.clear_stale_sentinel(_ready_path)
     startup_assert_l2()
     # M5-0A: validate Candidate configuration before any Matrix interaction
     _validate_m5_candidate()
@@ -2983,4 +2996,8 @@ if __name__ == "__main__":
         import atexit, signal as _sig
         atexit.register(release_m5_lock)
         _sig.signal(_sig.SIGTERM, lambda *_: (release_m5_lock(), sys.exit(0)))
+    if _ready_path:
+        # All startup assertions passed; the controller is entering the run
+        # loop — THIS is the earliest point readiness may be signalled.
+        _readiness.mark_ready(_ready_path)
     run_forever()

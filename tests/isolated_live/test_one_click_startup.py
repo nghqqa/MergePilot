@@ -145,7 +145,10 @@ class TestComposeConfig(unittest.TestCase):
         self.assertEqual(deps["postgres"]["condition"], "service_healthy")
         deps = cfg["services"]["controller"]["depends_on"]
         self.assertEqual(deps["postgres"]["condition"], "service_healthy")
-        self.assertEqual(deps["policy-gateway"]["condition"], "service_started")
+        # v3 Fix 3: healthy, not merely started.
+        self.assertEqual(deps["policy-gateway"]["condition"], "service_healthy")
+        deps = cfg["services"]["demo-console"]["depends_on"]
+        self.assertEqual(deps["controller"]["condition"], "service_healthy")
 
     def test_ports_binding_audit_hook(self):
         cfg = build_compose_config(demo_console_run_id="test-run-1",

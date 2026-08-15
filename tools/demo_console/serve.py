@@ -88,8 +88,11 @@ def _send_status(poller: LivePoller) -> dict:
     - Browser network observation is ``NOT_MEASURED``: the console does not
       instrument outbound browser traffic; ``observed_external_network_requests``
       is therefore ``null``.
-    - ``dynamic_pages_consume_live_api`` is ``false``: the served pages are
-      static frozen REPLAY HTML, not a SPA that polls the live API.
+    - ``dynamic_pages_consume_live_api`` is ``true`` (Phase 1-E): the eight
+      pages carry a dynamic-refresh engine (live-refresh.js) that polls the
+      two read-only live endpoints and re-renders every view from the ONE
+      shared snapshot. In REPLAY mode the engine never starts (the live
+      endpoints 404) and the frozen HTML stays as served.
     """
     view = poller.get_view()
     snapshot = view.get("current_snapshot") or {}
@@ -124,7 +127,7 @@ def _send_status(poller: LivePoller) -> dict:
         "observed_external_network_requests": None,
         # The served pages are static frozen REPLAY HTML; they do not
         # dynamically consume the live API.
-        "dynamic_pages_consume_live_api": False,
+        "dynamic_pages_consume_live_api": True,
     }
 
 
@@ -432,6 +435,72 @@ def _is_loopback(host: str) -> bool:
     return host.lower() in ("127.0.0.1", "localhost")
 
 
+# ── Serve-directory contract (Phase 1-D retry v3 Fix 2) ──────────────────────
+# The container image ships the static console at a FIXED allowlisted path
+# (Dockerfile.demo-console: COPY tools/demo_console/live_assets /app/live-console)
+# and the entrypoint passes --serve-dir explicitly. Host/P1 invocations keep
+# the legacy repo-layout default. There is NEVER a fallback to a nonexistent
+# /samples/... path and NEVER a fallback to REPLAY.
+
+_CONTAINER_SERVE_ROOT = Path("/app")
+# Resolved twin so a resolved candidate can be compared flavour-consistently
+# on every platform (on a Windows host both sides land on the same drive).
+_CONTAINER_SERVE_ROOT_RESOLVED = _CONTAINER_SERVE_ROOT.resolve()
+
+
+def _legacy_serve_dir() -> Path:
+    """Repo-layout default: <repo>/samples/demo-console (host/P1 usage)."""
+    return Path(_HERE).resolve().parent.parent / "samples" / "demo-console"
+
+
+def _resolve_serve_dir(explicit):
+    """Resolve and validate the serve directory (fail-closed, Fix 2).
+
+    ``None`` → the legacy repo-layout default (host/P1 invocations, tests).
+    An explicit value must be an ABSOLUTE path containing no ``..`` segment
+    and must be EITHER the legacy default OR inside the container serve
+    root (``/app``). Anything else — ``/etc``, ``/tmp``, relative paths,
+    traversal payloads — is rejected with a stable CONFIG_INVALID
+    ValueError before any socket is created.
+    """
+    if explicit is None:
+        return _legacy_serve_dir()
+    if not isinstance(explicit, str) or not explicit.strip():
+        raise ValueError(
+            "CONFIG_INVALID: --serve-dir must be a non-empty absolute path"
+        )
+    raw = explicit.strip()
+    candidate = Path(raw)
+    # POSIX-style absolute (/app/...) is absolute in the container; on a
+    # Windows host pathlib reports it as drive-relative, so accept the
+    # leading-slash form explicitly (the container root check below is
+    # flavour-consistent because both sides use the same leading slash).
+    if not (candidate.is_absolute() or raw.startswith("/")):
+        raise ValueError(
+            "CONFIG_INVALID: --serve-dir must be absolute (got %r)"
+            % explicit[:60])
+    if ".." in candidate.parts:
+        raise ValueError(
+            "CONFIG_INVALID: --serve-dir must not contain '..' (got %r)"
+            % explicit[:60])
+    resolved = candidate.resolve()
+    legacy = _legacy_serve_dir()
+    allowed = resolved == legacy
+    if not allowed:
+        try:
+            resolved.relative_to(_CONTAINER_SERVE_ROOT_RESOLVED)
+            allowed = True
+        except (ValueError, TypeError):
+            allowed = False
+    if not allowed:
+        raise ValueError(
+            "CONFIG_INVALID: --serve-dir %r is outside the allowlist "
+            "(container root %s or the repo-layout default)"
+            % (explicit[:60], _CONTAINER_SERVE_ROOT)
+        )
+    return resolved
+
+
 # Bind context (Phase 1-D retry v2): ``host`` (default, P1 single-machine
 # semantics) vs ``container`` (demo-console runs inside a Docker container on
 # the internal-only bridge network). In container mode the CONTAINER listens
@@ -524,6 +593,13 @@ def main():
                              "MERGEPILOT_PG_EXPECTED_APPLICATION_NAME)")
     parser.add_argument("--poll-interval", type=float, default=2.0,
                         help="Poll interval in seconds (min 1.0)")
+    parser.add_argument(
+        "--serve-dir", default=None,
+        help="Static console directory. None (default) uses the repo "
+             "layout; in containers the entrypoint passes the fixed "
+             "allowlisted path /app/live-console (retry v3 Fix 2 + Phase "
+             "1-E protected-path fix)"
+    )
     args = parser.parse_args()
 
     # Build the postgres config (only used when source-kind=postgres). The DSN
@@ -601,9 +677,29 @@ def main():
     print(f"  agent_control_enabled={pf['agent_control_enabled']}")
     print(f"  runtime_consumes_rag_context={pf['runtime_consumes_rag_context']}")
 
-    # Determine serve directory
-    root = Path(_HERE).resolve().parent.parent
-    serve_dir = root / "samples" / "demo-console"
+    # Determine serve directory (retry v3 Fix 2: allowlisted, fail-closed —
+    # never a nonexistent /samples/... guess, never a REPLAY fallback).
+    serve_dir = _resolve_serve_dir(args.serve_dir)
+
+    # Phase 1-E: fail-closed dynamic-refresh contract gate. The shipped
+    # live-refresh.js is validated against the Python contract BEFORE the
+    # server socket is created — a JS that requests a non-allowlisted URL,
+    # uses a non-GET method, misses timer cleanup, misses a page binding,
+    # or carries REPLAY-fallback markers can never be served.
+    from live_refresh import RefreshContractError, verify_js_contract
+    _js_path = serve_dir / "live-refresh.js"
+    try:
+        _js_source = _js_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        print(f"CONFIG_INVALID: live-refresh.js missing from serve dir "
+              f"({type(exc).__name__})", file=sys.stderr)
+        sys.exit(1)
+    try:
+        verify_js_contract(_js_source)
+    except RefreshContractError as exc:
+        print(f"CONFIG_INVALID: live-refresh.js violates the dynamic "
+              f"refresh contract: {exc}", file=sys.stderr)
+        sys.exit(1)
 
     # Handle ISOLATED_LIVE mode
     poller = None
@@ -657,7 +753,8 @@ def main():
 
     # Serve
     if not (serve_dir / "index.html").exists():
-        print(f"Error: {serve_dir}/index.html not found.", file=sys.stderr)
+        print(f"CONFIG_INVALID: {serve_dir}/index.html not found.",
+              file=sys.stderr)
         if poller:
             shutdown_poller(poller, timeout=3)
         sys.exit(1)

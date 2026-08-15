@@ -48,7 +48,8 @@ _TEST_BRIDGE_IP = "172.18.0.2"
 
 def _start_kwargs():
     return {"demo_console_run_id": _TEST_RUN_ID,
-            "demo_console_pg_server_addresses": _TEST_BRIDGE_IP}
+            "demo_console_pg_server_addresses": _TEST_BRIDGE_IP,
+            "controller_env_file": "controller.env"}
 
 try:
     import yaml  # type: ignore
@@ -173,9 +174,11 @@ class TestComposeYml(unittest.TestCase):
             self.assertEqual(svc.get("pull_policy"), "never", name)
 
     def test_build_contexts_declared(self):
+        # v3: ALL services build from the repo-root context with the root
+        # wrapper Dockerfiles — unified with the builder/orchestrator.
         builds = {
-            "policy-gateway": ("tools/policy-gateway", "Dockerfile"),
-            "controller": ("tools/workflow-controller", "Dockerfile"),
+            "policy-gateway": (".", "Dockerfile.policy-gateway"),
+            "controller": (".", "Dockerfile.controller"),
             "demo-console": (".", "Dockerfile.demo-console"),
             "preflight": (".", "Dockerfile.preflight"),
         }
@@ -217,15 +220,18 @@ class TestComposeYml(unittest.TestCase):
         self.assertEqual(
             deps["controller"]["depends_on"]["postgres"]["condition"],
             "service_healthy")
+        # v3 Fix 3: healthy, not merely started — controller waits for the
+        # gateway's REAL healthcheck, demo-console for controller's.
         self.assertEqual(
             deps["controller"]["depends_on"]["policy-gateway"]["condition"],
-            "service_started")
+            "service_healthy")
         self.assertEqual(
             deps["demo-console"]["depends_on"]["controller"]["condition"],
-            "service_started")
+            "service_healthy")
+        # Review-gap Fix 3: preflight waits for REAL demo-console readiness.
         self.assertEqual(
             deps["preflight"]["depends_on"]["demo-console"]["condition"],
-            "service_started")
+            "service_healthy")
 
     def test_preflight_env_in_network(self):
         env = self.yml["services"]["preflight"]["environment"]
@@ -376,9 +382,15 @@ class TestOrchestrator(unittest.TestCase):
                 _TEST_RUN_ID, _TEST_BRIDGE_IP))
         self.assertIn("-p", pub)
         self.assertEqual(pub[pub.index("-p") + 1], "127.0.0.1:8600:8600")
-        for service in ("policy-gateway", "controller", "preflight"):
-            plan = plan_service_run(service,
-                                    image_ref=get_built_image_identity(service))
+        for service, env_kwargs in (
+                ("policy-gateway", {"gateway_env": oc._gateway_environment()}),
+                ("controller",
+                 {"controller_env": oc._controller_environment(),
+                  "env_file": "controller.env"}),
+                ("preflight", {})):
+            plan = plan_service_run(
+                service, image_ref=get_built_image_identity(service),
+                **env_kwargs)
             self.assertNotIn("-p", plan, service)
         pg = plan_service_run("postgres", image_ref=oc.PGVECTOR_IMAGE_DIGEST)
         self.assertNotIn("-p", pg)
@@ -468,10 +480,13 @@ class TestOrchestrator(unittest.TestCase):
             record_built_image_identity(service, "sha256:" + hexid)
         try:
             _gate(self, plan_orchestrated_start, env_file="postgres.env",
+                  controller_env_file="controller.env",
                   code="CONFIG_INVALID")
             _gate(self, plan_orchestrated_start, env_file="postgres.env",
+                  controller_env_file="controller.env",
                   demo_console_run_id=_TEST_RUN_ID, code="CONFIG_INVALID")
             _gate(self, plan_orchestrated_start, env_file="postgres.env",
+                  controller_env_file="controller.env",
                   demo_console_pg_server_addresses=_TEST_BRIDGE_IP,
                   code="CONFIG_INVALID")
         finally:
@@ -479,7 +494,9 @@ class TestOrchestrator(unittest.TestCase):
 
     def test_full_start_requires_recorded_identities(self):
         oc._builtin_registry.clear()
-        _gate(self, plan_orchestrated_start, code="CONFIG_INVALID")
+        _gate(self, plan_orchestrated_start,
+              controller_env_file="controller.env",
+              code="CONFIG_INVALID")
 
     def test_cleanup_plan_reverse_order_then_network(self):
         plans = plan_orchestrated_cleanup()
@@ -548,6 +565,11 @@ class TestNoTwinOrHostSubstitution(unittest.TestCase):
                 if service == "demo-console":
                     kwargs["demo_console_env"] = oc._demo_console_environment(
                         _TEST_RUN_ID, _TEST_BRIDGE_IP)
+                elif service == "controller":
+                    kwargs["controller_env"] = oc._controller_environment()
+                    kwargs["env_file"] = "controller.env"
+                elif service == "policy-gateway":
+                    kwargs["gateway_env"] = oc._gateway_environment()
                 plan = plan_service_run(
                     service, image_ref=get_built_image_identity(service),
                     **kwargs)

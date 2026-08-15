@@ -115,8 +115,9 @@ class TestValidConfig(unittest.TestCase):
         env = dict(GOOD_ENV,
                    MERGEPILOT_PG_EXPECTED_SERVER_ADDRESSES="172.18.0.2, 172.18.0.3")
         c = _validate_env(env)
+        # v3 Fix 1: canonical form (bare IPv4, comma-joined without spaces)
         self.assertEqual(c["pg_expected_server_addresses"],
-                         "172.18.0.2, 172.18.0.3")
+                         "172.18.0.2,172.18.0.3")
 
 
 # ── Fix 1: bind context rejections ───────────────────────────────────────────
