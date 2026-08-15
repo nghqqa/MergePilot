@@ -1,0 +1,19 @@
+# Root-level compose build entry for the policy gateway.
+#
+# Thin wrapper delegating to tools/policy-gateway/Dockerfile (canonical).
+# Build context: repository root (see docker-compose.yml).
+# Base image: python:3.12-slim — CACHED in the MergePilot-Test daemon.
+# pip install at BUILD time only; NOT executed in Phase 1-C (needs separate
+# dependency-install authorization).
+
+FROM python:3.12-slim
+
+COPY tools/policy-gateway/requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
+
+COPY tools/policy-gateway/gateway.py /app/gateway.py
+COPY tools/policy-gateway/policy.yaml /app/policy.yaml
+
+WORKDIR /app
+ENV PYTHONUNBUFFERED=1
+ENTRYPOINT ["python", "-u", "/app/gateway.py"]
