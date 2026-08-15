@@ -33,5 +33,6 @@ COPY tools/controller_entrypoint.py /app/controller_entrypoint.py
 COPY tools/demo_console/one_click_startup.py /app/one_click_startup.py
 
 WORKDIR /app
-ENV PYTHONUNBUFFERED=1 \n    CONTROLLER_READY_SENTINEL=/tmp/mergepilot-controller.ready
+ENV PYTHONUNBUFFERED=1 \
+    CONTROLLER_READY_SENTINEL=/tmp/mergepilot-controller.ready
 ENTRYPOINT ["python", "-u", "/app/controller_entrypoint.py"]

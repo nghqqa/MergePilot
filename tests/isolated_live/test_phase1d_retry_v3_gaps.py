@@ -527,5 +527,164 @@ class TestAstAndStubBoundaries(unittest.TestCase):
         self.assertIn("application_integration_verified = false", ocsrc)
 
 
+# ── Phase 1-G retry: fail-closed Dockerfile syntax guard ────────────────────
+#
+# Root cause of the 1-G BLOCKED round: Dockerfile.controller carried a
+# LITERAL backslash-n inside an ENV instruction ("ENV A=1 \n    B=2"),
+# which the Docker daemon rejects with 'can't find = in "\\n"' BEFORE any
+# build step. No static test parsed the deliverable Dockerfiles, so the
+# defect merged. The guard below parses logical instructions the way the
+# daemon does — whole-line comments stripped, trailing-backslash
+# continuations joined — so a literal \n inside an instruction is caught
+# while a \n inside a COMMENT is not (a plain full-text grep would fail
+# both directions). Pure file parsing: no Docker daemon, no WSL.
+
+DELIVERABLE_DOCKERFILES = [
+    ROOT / "Dockerfile.controller",
+    ROOT / "Dockerfile.policy-gateway",
+    ROOT / "Dockerfile.demo-console",
+    ROOT / "Dockerfile.preflight",
+]
+
+
+def _dockerfile_logical_lines(text):
+    """Yield (first_lineno, instruction) logical Dockerfile lines.
+
+    Mirrors the daemon's pre-parse rules closely enough for guarding:
+      - a physical line whose first non-space char is ``#`` is a comment
+        and is dropped BEFORE any content check;
+      - a line ending with a backslash (immediately before the newline)
+        continues onto the next physical line (joined with one space);
+      - blank lines are dropped.
+    A file ending mid-continuation still yields its partial line so the
+    caller can judge it (the daemon would reject such a tail anyway).
+    """
+    logical = []
+    buf = None
+    buf_line = 0
+    for lineno, raw_line in enumerate(text.splitlines(), start=1):
+        line = raw_line.rstrip("\r")
+        stripped = line.lstrip()
+        if buf is None:
+            if not stripped or stripped.startswith("#"):
+                continue
+            buf = stripped
+            buf_line = lineno
+        else:
+            buf += " " + stripped
+        if buf.endswith("\\"):
+            buf = buf[:-1]
+            continue
+        logical.append((buf_line, buf.strip()))
+        buf = None
+    if buf is not None:
+        logical.append((buf_line, buf.strip()))
+    return logical
+
+
+def _dockerfile_guard_violations(text):
+    """Return human-readable violations for one Dockerfile's text."""
+    problems = []
+    for lineno, instruction in _dockerfile_logical_lines(text):
+        if "\\n" in instruction:
+            problems.append(
+                "line %d: literal \\n inside instruction %r"
+                % (lineno, instruction[:60]))
+        parts = instruction.split(None, 1)
+        verb = parts[0].upper()
+        if verb == "ENV" and len(parts) == 2:
+            for token in parts[1].split():
+                if "=" not in token:
+                    problems.append(
+                        "line %d: ENV token without '=': %r"
+                        % (lineno, token))
+                    continue
+                key, _, value = token.partition("=")
+                if not key:
+                    problems.append(
+                        "line %d: ENV token with empty key: %r"
+                        % (lineno, token))
+                if " " in value:
+                    problems.append(
+                        "line %d: ENV value contains space (unclosed "
+                        "continuation?): %r" % (lineno, token))
+    return problems
+
+
+class TestDockerfileSyntaxGuard(unittest.TestCase):
+    """Fail-closed static parse of the four deliverable Dockerfiles."""
+
+    def test_no_literal_backslash_n_in_any_deliverable_dockerfile(self):
+        for path in DELIVERABLE_DOCKERFILES:
+            text = path.read_text(encoding="utf-8")
+            problems = _dockerfile_guard_violations(text)
+            self.assertEqual(
+                [], problems,
+                msg="%s: %s" % (path.name, problems))
+
+    def test_env_tokens_are_key_value_in_all_dockerfiles(self):
+        for path in DELIVERABLE_DOCKERFILES:
+            text = path.read_text(encoding="utf-8")
+            envs = [ins for _ln, ins in _dockerfile_logical_lines(text)
+                    if ins.split(None, 1)[0].upper() == "ENV"]
+            self.assertTrue(envs, msg="%s has no ENV" % path.name)
+            for ins in envs:
+                for token in ins.split(None, 1)[1].split():
+                    self.assertIn("=", token,
+                                  msg="%s: %r" % (path.name, ins))
+                    key, _, value = token.partition("=")
+                    self.assertTrue(key and " " not in value,
+                                    msg="%s: %r" % (path.name, token))
+
+    def test_controller_env_exact_contents(self):
+        text = (ROOT / "Dockerfile.controller").read_text(encoding="utf-8")
+        envs = [ins for _ln, ins in _dockerfile_logical_lines(text)
+                if ins.split(None, 1)[0].upper() == "ENV"]
+        self.assertEqual(1, len(envs), msg=envs)
+        tokens = envs[0].split()[1:]
+        self.assertEqual(
+            {"PYTHONUNBUFFERED=1",
+             "CONTROLLER_READY_SENTINEL=/tmp/mergepilot-controller.ready"},
+            set(tokens))
+        # The repair itself: a REAL newline continuation, not a literal \n.
+        normalized = text.replace("\r\n", "\n")
+        self.assertIn(
+            "ENV PYTHONUNBUFFERED=1 \\\n"
+            "    CONTROLLER_READY_SENTINEL=/tmp/mergepilot-controller.ready",
+            normalized)
+
+    def test_guard_rejects_mutated_literal_newline(self):
+        # Mutate the now-legal continuation into the exact 1-G defect:
+        # a single physical line carrying a literal backslash-n.
+        good = ("WORKDIR /app\n"
+                "ENV PYTHONUNBUFFERED=1 \\\n"
+                "    CONTROLLER_READY_SENTINEL=/tmp/x.ready\n"
+                "ENTRYPOINT [\"python\", \"/app/e.py\"]\n")
+        self.assertEqual([], _dockerfile_guard_violations(good))
+        bad = good.replace("1 \\\n    ", "1 \\n    ")
+        problems = _dockerfile_guard_violations(bad)
+        self.assertTrue(problems, msg="guard accepted literal \\n")
+        self.assertIn("literal \\n", problems[0])
+
+    def test_guard_rejects_env_token_without_equals(self):
+        bad = "ENV BARE_TOKEN PYTHONUNBUFFERED=1\n"
+        problems = _dockerfile_guard_violations(bad)
+        self.assertTrue(any("without '='" in p for p in problems), problems)
+
+    def test_guard_ignores_comments_proving_not_a_grep(self):
+        # A literal \n inside a COMMENT must NOT be flagged; a full-text
+        # grep guard would fail this (over-reject) — and the mirrored
+        # case below proves comment-stripping cannot hide a real defect.
+        commented = ("# ENV PYTHONUNBUFFERED=1 \\n    SENTINEL=x\n"
+                     "ENV PYTHONUNBUFFERED=1\n")
+        self.assertEqual([], _dockerfile_guard_violations(commented))
+        hidden = ("# harmless comment\n"
+                  "ENV PYTHONUNBUFFERED=1 \\n    SENTINEL=x\n")
+        problems = _dockerfile_guard_violations(hidden)
+        self.assertTrue(problems, msg="comment hid a real defect")
+        self.assertTrue(any("literal \\n" in p for p in problems),
+                        problems)
+
+
 if __name__ == "__main__":
     unittest.main()
