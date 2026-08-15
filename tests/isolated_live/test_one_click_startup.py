@@ -50,16 +50,16 @@ def _gate(testcase, fn, *args, code, **kwargs):
 class TestComposeConfig(unittest.TestCase):
 
     def test_default_config_valid(self):
-        cfg = build_compose_config()
+        cfg = build_compose_config(demo_console_run_id="test-run-1")
         validate_compose_config(cfg)
 
     def test_all_five_services_present(self):
-        cfg = build_compose_config()
+        cfg = build_compose_config(demo_console_run_id="test-run-1")
         for name in SERVICE_ORDER:
             self.assertIn(name, cfg["services"])
 
     def test_postgres_image_digest_pinned(self):
-        cfg = build_compose_config()
+        cfg = build_compose_config(demo_console_run_id="test-run-1")
         self.assertEqual(cfg["services"]["postgres"]["image"],
                          oc.PGVECTOR_IMAGE_DIGEST)
         self.assertIn("sha256:", cfg["services"]["postgres"]["image"])
@@ -68,13 +68,13 @@ class TestComposeConfig(unittest.TestCase):
         self.assertRegex(digest, r"^[0-9a-f]{64}$")
 
     def test_no_implicit_pull_anywhere(self):
-        cfg = build_compose_config()
+        cfg = build_compose_config(demo_console_run_id="test-run-1")
         for name, svc in cfg["services"].items():
             self.assertEqual(svc.get("pull_policy"), "never",
                              "service %s allows implicit pull" % name)
 
     def test_only_postgres_has_literal_image(self):
-        cfg = build_compose_config()
+        cfg = build_compose_config(demo_console_run_id="test-run-1")
         for name, svc in cfg["services"].items():
             if name == "postgres":
                 continue
@@ -82,34 +82,41 @@ class TestComposeConfig(unittest.TestCase):
                              "service %s uses an unpinned image" % name)
 
     def test_postgres_never_published(self):
-        cfg = build_compose_config()
+        cfg = build_compose_config(demo_console_run_id="test-run-1")
         self.assertNotIn("ports", cfg["services"]["postgres"])
 
     def test_demo_console_loopback_only(self):
-        cfg = build_compose_config()
+        cfg = build_compose_config(demo_console_run_id="test-run-1")
         ports = cfg["services"]["demo-console"]["ports"]
         self.assertEqual(len(ports), 1)
         bind = ports[0].split(":")[0]
         self.assertEqual(bind, "127.0.0.1")
-        for bad in ("0.0.0.0", "::", "192.168.1.5", "10.0.0.1"):
+        # HOST-side publish must be loopback only. 0.0.0.0 may appear in the
+        # environment as the CONTAINER-INTERNAL listen address (required for
+        # Docker bridge routing); it must NEVER appear in a ports: publish.
+        for bad in ("::", "192.168.1.5", "10.0.0.1"):
             self.assertNotIn(bad, json.dumps(cfg))
+        for name, svc in cfg["services"].items():
+            for p in (svc.get("ports") or []):
+                self.assertNotIn("0.0.0.0", str(p),
+                                 "host publish must not be 0.0.0.0: %s" % name)
 
     def test_no_volumes(self):
-        cfg = build_compose_config()
+        cfg = build_compose_config(demo_console_run_id="test-run-1")
         self.assertEqual(cfg.get("volumes"), {})
 
     def test_internal_network(self):
-        cfg = build_compose_config()
+        cfg = build_compose_config(demo_console_run_id="test-run-1")
         self.assertTrue(cfg["networks"]["isolated"]["internal"])
 
     def test_healthcheck_present(self):
-        cfg = build_compose_config()
+        cfg = build_compose_config(demo_console_run_id="test-run-1")
         hc = cfg["services"]["postgres"]["healthcheck"]
         self.assertIn("pg_isready", hc["test"][-1])
         self.assertEqual(int(hc["retries"]), 10)
 
     def test_dependency_order_chain(self):
-        cfg = build_compose_config()
+        cfg = build_compose_config(demo_console_run_id="test-run-1")
         order = compose_dependency_order(cfg)
         self.assertEqual(order[0], "postgres")
         self.assertEqual(order[-1], "preflight")
@@ -121,7 +128,7 @@ class TestComposeConfig(unittest.TestCase):
                 self.assertLess(order.index(dep), order.index(name))
 
     def test_dependency_conditions(self):
-        cfg = build_compose_config()
+        cfg = build_compose_config(demo_console_run_id="test-run-1")
         deps = cfg["services"]["policy-gateway"]["depends_on"]
         self.assertEqual(deps["postgres"]["condition"], "service_healthy")
         deps = cfg["services"]["controller"]["depends_on"]
@@ -129,7 +136,7 @@ class TestComposeConfig(unittest.TestCase):
         self.assertEqual(deps["policy-gateway"]["condition"], "service_started")
 
     def test_ports_binding_audit_hook(self):
-        cfg = build_compose_config()
+        cfg = build_compose_config(demo_console_run_id="test-run-1")
         bindings = compose_ports_binding(cfg)
         self.assertEqual(list(bindings.keys()), ["demo-console"])
         self.assertTrue(all(b.startswith("127.0.0.1:")
@@ -138,7 +145,7 @@ class TestComposeConfig(unittest.TestCase):
     # ── negative config cases ───────────────────────────────────────────────
 
     def _mutated(self, **mutate):
-        cfg = build_compose_config()
+        cfg = build_compose_config(demo_console_run_id="test-run-1")
         for path, value in mutate.items():
             obj = cfg
             keys = path.split(".")
@@ -148,7 +155,7 @@ class TestComposeConfig(unittest.TestCase):
         return cfg
 
     def test_missing_service_rejected(self):
-        cfg = build_compose_config()
+        cfg = build_compose_config(demo_console_run_id="test-run-1")
         del cfg["services"]["controller"]
         _gate(self, validate_compose_config, cfg, code="COMPOSE_INVALID")
 
@@ -162,44 +169,44 @@ class TestComposeConfig(unittest.TestCase):
         _gate(self, validate_compose_config, cfg, code="COMPOSE_INVALID")
 
     def test_unpinned_image_on_other_service_rejected(self):
-        cfg = build_compose_config()
+        cfg = build_compose_config(demo_console_run_id="test-run-1")
         cfg["services"]["controller"]["image"] = "some/image:latest"
         _gate(self, validate_compose_config, cfg, code="COMPOSE_INVALID")
 
     def test_postgres_published_rejected(self):
-        cfg = build_compose_config()
+        cfg = build_compose_config(demo_console_run_id="test-run-1")
         cfg["services"]["postgres"]["ports"] = ["5432:5432"]
         _gate(self, validate_compose_config, cfg, code="BIND_NOT_LOOPBACK")
 
     def test_non_loopback_bind_rejected(self):
         for bad in ("0.0.0.0:8600:8600", ":::8600:8600", "192.168.0.1:8600:8600"):
-            cfg = build_compose_config()
+            cfg = build_compose_config(demo_console_run_id="test-run-1")
             cfg["services"]["demo-console"]["ports"] = [bad]
             _gate(self, validate_compose_config, cfg, code="BIND_NOT_LOOPBACK")
 
     def test_other_service_published_rejected(self):
-        cfg = build_compose_config()
+        cfg = build_compose_config(demo_console_run_id="test-run-1")
         cfg["services"]["controller"]["ports"] = ["127.0.0.1:9999:9999"]
         _gate(self, validate_compose_config, cfg, code="BIND_NOT_LOOPBACK")
 
     def test_missing_healthcheck_rejected(self):
-        cfg = build_compose_config()
+        cfg = build_compose_config(demo_console_run_id="test-run-1")
         del cfg["services"]["postgres"]["healthcheck"]
         _gate(self, validate_compose_config, cfg, code="COMPOSE_INVALID")
 
     def test_wrong_dependencies_rejected(self):
-        cfg = build_compose_config()
+        cfg = build_compose_config(demo_console_run_id="test-run-1")
         cfg["services"]["demo-console"]["depends_on"] = {
             "postgres": {"condition": "service_healthy"}}
         _gate(self, validate_compose_config, cfg, code="COMPOSE_INVALID")
 
     def test_external_network_rejected(self):
-        cfg = build_compose_config()
+        cfg = build_compose_config(demo_console_run_id="test-run-1")
         cfg["networks"]["isolated"]["internal"] = False
         _gate(self, validate_compose_config, cfg, code="COMPOSE_INVALID")
 
     def test_volumes_rejected(self):
-        cfg = build_compose_config()
+        cfg = build_compose_config(demo_console_run_id="test-run-1")
         cfg["volumes"] = {"pgdata": {}}
         _gate(self, validate_compose_config, cfg, code="COMPOSE_INVALID")
 
@@ -210,7 +217,7 @@ class TestComposeConfig(unittest.TestCase):
               code="CONFIG_INVALID")
 
     def test_circular_dependency_detected(self):
-        cfg = build_compose_config()
+        cfg = build_compose_config(demo_console_run_id="test-run-1")
         cfg["services"]["postgres"]["depends_on"] = {
             "preflight": {"condition": "service_started"}}
         _gate(self, compose_dependency_order, cfg, code="COMPOSE_INVALID")
@@ -276,7 +283,7 @@ class TestPreflightMatrix(unittest.TestCase):
 
     def test_unauthorized_path_zero_real_calls(self):
         # Pure config/validation performs zero subprocess/network calls.
-        cfg = build_compose_config()
+        cfg = build_compose_config(demo_console_run_id="test-run-1")
         validate_compose_config(cfg)
         compose_dependency_order(cfg)
         out = run_preflight_gates(self._checks())

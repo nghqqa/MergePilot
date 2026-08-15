@@ -72,6 +72,20 @@ services:
         condition: service_started
     networks:
       - isolated
+    environment:
+      # Entrypoint contract: ISOLATED_LIVE mode, postgres source, canonical
+      # reader role, and a CALLER-PROVIDED run_id. REPLAY is refused (no
+      # fallback). The run_id is NEVER hardcoded here; it must be injected
+      # via the environment when the stack is started.
+      MERGEPILOT_MODE: isolated_live
+      MERGEPILOT_SOURCE_KIND: postgres
+      MERGEPILOT_RUN_ID: ${MERGEPILOT_RUN_ID:?MERGEPILOT_RUN_ID is required}
+      MERGEPILOT_EXPECTED_ROLE: mergepilot_reader
+      # Container-internal listen address (the container must accept
+      # connections from the Docker bridge). The HOST-side publish remains
+      # 127.0.0.1-only (see ports below).
+      MERGEPILOT_HOST: "0.0.0.0"
+      MERGEPILOT_PORT: "8600"
     ports:
       - "127.0.0.1:8600:8600"       # the ONLY published port; loopback only.
 
