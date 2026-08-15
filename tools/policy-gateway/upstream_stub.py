@@ -50,8 +50,18 @@ async def call_tool(name, arguments):
 
 
 async def handle_sse(request):
-    async with sse.connect_sse(request.scope, request.receive,
-                               request.scope["send"]):
+    # Starlette carries the ASGI send callable on the Request object
+    # (``request._send``), NOT in the scope: the previous direct scope
+    # lookup of the send callable raised KeyError and turned every /sse
+    # request into an HTTP 500 in the real 1-G container run. Fail closed
+    # if the callable is absent — the error is a static string that never
+    # echoes request data (headers, Authorization, tokens).
+    send = getattr(request, "_send", None)
+    if not callable(send):
+        raise RuntimeError(
+            "upstream stub: request carries no ASGI send callable "
+            "(starlette Request._send missing); refusing to serve /sse")
+    async with sse.connect_sse(request.scope, request.receive, send):
         await server.run(sse.get_read_stream(), sse.get_write_stream(),
                          server.create_initialization_options())
 
