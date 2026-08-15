@@ -429,9 +429,11 @@ class TestModeSemantics(unittest.TestCase):
             HTML_SOURCE)
 
     def test_live_asset_mode_banner_is_isolated_live(self):
-        self.assertIn(
-            '<div class="mode-banner" style="background:#2563eb">'
-            "MODE: ISOLATED_LIVE</div>", HTML_SOURCE)
+        # Phase 1-F markup: the mode badge is a .mode-banner element in the
+        # topbar; the semantic contract (visible ISOLATED_LIVE) is exact.
+        self.assertRegex(
+            HTML_SOURCE,
+            r'<span class="mode-banner">MODE: ISOLATED_LIVE</span>')
 
     def test_live_asset_never_claims_replay(self):
         self.assertNotIn("MODE: REPLAY", HTML_SOURCE)
@@ -460,6 +462,94 @@ class TestModeSemantics(unittest.TestCase):
             self.skipTest("git unavailable")
         self.assertEqual(out.stdout.strip(), "",
                          "samples/ must be byte-identical to origin/main")
+
+
+# ── Phase 1-F UI structure ───────────────────────────────────────────────────
+
+class TestUiStructure(unittest.TestCase):
+    """Dashboard layout contract (Phase 1-F)."""
+
+    def test_sidebar_nav_binds_all_eight_views(self):
+        import re
+        targets = re.findall(
+            r'class="nav-btn[^"]*" data-target="(\w+)"', HTML_SOURCE)
+        self.assertEqual(targets, list(PAGES))
+        # Exactly one nav button starts active (overview).
+        self.assertEqual(
+            HTML_SOURCE.count('class="nav-btn active"'), 1)
+
+    def test_viewport_meta_present(self):
+        self.assertIn(
+            '<meta name="viewport" content="width=device-width, '
+            'initial-scale=1">', HTML_SOURCE)
+
+    def test_mobile_overflow_guards_present(self):
+        # Page-level horizontal overflow is blocked; the ONLY horizontal
+        # scroll surface is the collapsed nav itself on narrow screens.
+        self.assertIn("overflow-x: hidden", HTML_SOURCE)
+        self.assertIn("@media (max-width: 880px)", HTML_SOURCE)
+        self.assertIn("minmax(0, 1fr)", HTML_SOURCE)
+        # Long values (SHAs, paths, messages) wrap instead of exploding
+        # the layout.
+        self.assertIn("overflow-wrap: anywhere", HTML_SOURCE)
+
+    def test_state_chip_styles_for_all_seven_states(self):
+        for state, cls in (
+                ("OK", "st-ok"), ("LOADING", None), ("STALE", None),
+                ("HTTP_ERROR", None), ("JSON_ERROR", None),
+                ("NO_SNAPSHOT", None), ("INIT", None)):
+            self.assertIn('data-state="%s"' % state, HTML_SOURCE + JS_SOURCE)
+        for cls in ("st-ok", "st-warn", "st-err", "st-dim"):
+            self.assertIn(".%s" % cls, HTML_SOURCE)
+
+    def test_boolean_status_chip_semantics_are_reachable(self):
+        self.assertIn(
+            "value === null || value === undefined ? '' : value",
+            JS_SOURCE,
+        )
+        self.assertIn("v === 'TRUE'", JS_SOURCE)
+        self.assertIn("v === 'FALSE'", JS_SOURCE)
+        self.assertNotIn("String(value || '')", JS_SOURCE)
+        self.assertNotIn("v === 'True'", JS_SOURCE)
+        self.assertNotIn("v === 'False'", JS_SOURCE)
+
+    def test_refresh_control_semantics_in_js(self):
+        # Disabled during LOADING; STALE relabels to a resume action.
+        self.assertIn("btn.disabled = (state === 'LOADING');", JS_SOURCE)
+        self.assertIn("'Resume auto-refresh'", JS_SOURCE)
+
+    def test_no_cdn_or_external_resources(self):
+        import re
+        for blob, name in ((HTML_SOURCE, "html"), (JS_SOURCE, "js")):
+            self.assertIsNone(
+                re.search(r'https?://(?!127\.0\.0\.1|localhost)',
+                          blob), name)
+        self.assertNotIn("@import", HTML_SOURCE)
+        self.assertNotIn("fonts.googleapis", HTML_SOURCE)
+
+    def test_all_dynamic_interpolations_are_escaped(self):
+        import re
+        # Any '+ identifier.chain +' string-concat interpolation that is
+        # not wrapped in esc(…) is an escaping bug.
+        raw = re.findall(r"\+\s*(?!esc\()[a-z_][\w.]*\.[\w]+\s*\+",
+                         JS_SOURCE)
+        self.assertEqual(raw, [])
+        # esc() neutralizes the five HTML-significant characters.
+        self.assertIn("replace(/&/g, '&amp;')", JS_SOURCE)
+        self.assertIn("replace(/</g, '&lt;')", JS_SOURCE)
+        self.assertIn("replace(/>/g, '&gt;')", JS_SOURCE)
+        self.assertIn("&quot;", JS_SOURCE)
+        self.assertIn("&#39;", JS_SOURCE)
+
+    def test_banner_is_structured_with_role_status(self):
+        self.assertIn('id="live-banner"', HTML_SOURCE)
+        self.assertIn('role="status"', HTML_SOURCE)
+
+    def test_panels_and_boundary_banners_present(self):
+        for cls in ("panel", "kv", "metrics", "boundary-banner",
+                    "timeline", "tree", "skill-grid", "data-table"):
+            self.assertIn(cls, HTML_SOURCE)
+            self.assertIn(cls, JS_SOURCE)
 
 
 # ── serve.py fail-closed startup gate ────────────────────────────────────────
