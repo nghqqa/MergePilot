@@ -365,11 +365,15 @@ def create_server(host: str, port: int, mode: str,
 
     Hardening (fail-closed):
 
-    - ``host`` must be IPv4 loopback (``127.0.0.1`` or ``localhost``).
-      Non-loopback bind addresses (``0.0.0.0``, ``::``, LAN IPs) raise
-      ValueError — the demo console never exposes itself off the local
+    - ``host`` must be IPv4 loopback (``127.0.0.1`` or ``localhost``) in
+      host mode. Non-loopback bind addresses (``0.0.0.0``, ``::``, LAN IPs)
+      raise ValueError — the demo console never exposes itself off the local
       machine. IPv6 loopback (``::1``) is also rejected: the P1 server is
-      IPv4-loopback only and IPv6 ::1 is NOT implemented.
+      IPv4-loopback only and ::1 is NOT implemented.
+      In container mode (``MERGEPILOT_BIND_CONTEXT=container``), ``0.0.0.0``
+      is additionally accepted as the container-internal listen address for
+      Docker bridge routing; the HOST-side port publish remains
+      127.0.0.1-only (enforced by compose/orchestrator, not here).
     - ``mode`` must be one of the known modes; anything else raises
       ValueError via ``make_handler`` (no silent REPLAY fallback).
     - ISOLATED_LIVE requires a poller (the live endpoints read it); a missing
@@ -377,17 +381,24 @@ def create_server(host: str, port: int, mode: str,
     - REPLAY must NOT receive a poller (REPLAY serves static files only); a
       non-None poller raises ValueError to catch configuration mistakes.
     """
-    if not _is_loopback(host):
+    _bind_context = _get_bind_context()
+    if not _is_valid_bind(host, _bind_context):
         host_lower = host.lower() if isinstance(host, str) else host
         if host_lower == "::1":
             reason = "P1 server is IPv4-loopback only; IPv6 ::1 not implemented"
+        elif _bind_context == "container":
+            reason = (
+                "container listen must be 0.0.0.0, 127.0.0.1, or localhost; "
+                "LAN-specific addresses are not valid container listen addresses"
+            )
         else:
             reason = (
                 "the demo console is IPv4-loopback only and never binds "
-                "off-machine"
+                "off-machine (set MERGEPILOT_BIND_CONTEXT=container for "
+                "Docker bridge 0.0.0.0)"
             )
         raise ValueError(
-            f"host must be IPv4 loopback (127.0.0.1/localhost), got {host!r}; "
+            f"host {host!r} not valid for bind context {_bind_context!r}; "
             f"{reason}"
         )
 
@@ -411,7 +422,7 @@ def create_server(host: str, port: int, mode: str,
 
 
 def _is_loopback(host: str) -> bool:
-    """IPv4-loopback only.
+    """IPv4-loopback only (host mode).
 
     The P1 demo server binds a single-machine HTTP listener and is
     IPv4-loopback only; IPv6 loopback (``::1``) is NOT implemented.
@@ -419,6 +430,40 @@ def _is_loopback(host: str) -> bool:
     including ``::1``, ``::``, ``0.0.0.0``, and LAN IPs — is rejected.
     """
     return host.lower() in ("127.0.0.1", "localhost")
+
+
+# Bind context (Phase 1-D retry v2): ``host`` (default, P1 single-machine
+# semantics) vs ``container`` (demo-console runs inside a Docker container on
+# the internal-only bridge network). In container mode the CONTAINER listens
+# on ``0.0.0.0`` (required for Docker bridge routing); the HOST-side port
+# publish remains 127.0.0.1-only, enforced by the compose/orchestrator layer.
+_BIND_CONTEXT_ENV = "MERGEPILOT_BIND_CONTEXT"
+_VALID_BIND_CONTEXTS = frozenset({"host", "container"})
+_CONTAINER_LISTEN_HOSTS = frozenset({"0.0.0.0", "127.0.0.1", "localhost"})
+
+
+def _get_bind_context() -> str:
+    """Read the bind context from env; default ``host``; validate."""
+    ctx = os.environ.get(_BIND_CONTEXT_ENV, "host").strip().lower()
+    if ctx not in _VALID_BIND_CONTEXTS:
+        raise ValueError(
+            f"{_BIND_CONTEXT_ENV} must be 'host' or 'container' (got {ctx!r})"
+        )
+    return ctx
+
+
+def _is_valid_bind(host: str, context: str) -> bool:
+    """Context-aware bind-address validation (fail-closed).
+
+    ``context='host'``: IPv4 loopback only (127.0.0.1/localhost).
+    ``context='container'``: additionally allows 0.0.0.0 (the container's
+    listen address for Docker bridge routing). LAN IPs are ALWAYS rejected
+    in both contexts. The HOST-side port publish is enforced separately.
+    """
+    host_lower = host.lower() if isinstance(host, str) else host
+    if context == "container":
+        return host_lower in _CONTAINER_LISTEN_HOSTS
+    return host_lower in ("127.0.0.1", "localhost")
 
 
 def shutdown_poller(poller: LivePoller, timeout: float = 5.0) -> bool:

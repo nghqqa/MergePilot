@@ -176,10 +176,83 @@ class SecretFile:
 
 # ── docker-compose configuration ─────────────────────────────────────────────
 
+def _validate_demo_console_runtime_inputs(demo_console_run_id: str,
+                                          demo_console_pg_server_addresses: str
+                                          ) -> None:
+    """Fail-closed validation of the caller-provided demo-console inputs.
+
+    ``demo_console_run_id``: the seeded task_runs.run_id — REQUIRED, no
+    default, no inference (hardcoding a run_id is forbidden).
+
+    ``demo_console_pg_server_addresses``: the postgres container's MEASURED
+    bridge IP (comma-separated for multiple entries) — REQUIRED. It must be
+    measured AFTER postgres is healthy and injected by the orchestrator;
+    hardcoding it (or substituting the network alias ``postgres``) is
+    rejected because the expected-identity gate compares it against the
+    real ``inet_server_addr()`` observed at connection time.
+    """
+    if not demo_console_run_id or not demo_console_run_id.strip():
+        raise StartupGateError(
+            "CONFIG_INVALID",
+            "demo_console_run_id is required (no default, no inference); "
+            "the caller must provide the seeded run_id")
+    if not re.fullmatch(r"[a-zA-Z0-9_-]+", demo_console_run_id):
+        raise StartupGateError(
+            "CONFIG_INVALID",
+            "demo_console_run_id must match ^[a-zA-Z0-9_-]+$")
+    if not demo_console_pg_server_addresses or \
+            not demo_console_pg_server_addresses.strip():
+        raise StartupGateError(
+            "CONFIG_INVALID",
+            "demo_console_pg_server_addresses is required (no default, no "
+            "inference); the orchestrator must measure the postgres "
+            "container's bridge IP after postgres is healthy and inject it "
+            "(hardcoding is forbidden)")
+    for addr in demo_console_pg_server_addresses.split(","):
+        addr = addr.strip()
+        if not addr:
+            continue
+        if not re.fullmatch(r"(?:\d{1,3}\.){3}\d{1,3}", addr):
+            raise StartupGateError(
+                "CONFIG_INVALID",
+                "demo_console_pg_server_addresses entries must be IPv4 "
+                "addresses measured on the bridge network (got %r); the "
+                "network alias is not an address" % addr[:40])
+
+
+def _demo_console_environment(demo_console_run_id: str,
+                              demo_console_pg_server_addresses: str) -> dict:
+    """The demo-console container environment (single source of truth).
+
+    Shared by ``build_compose_config`` (compose path) and
+    ``plan_orchestrated_start`` (Docker-CLI path) so the two paths can never
+    drift. Non-secret values only; the reader DSN travels separately via the
+    secret env-file and is never placed here.
+    """
+    _validate_demo_console_runtime_inputs(demo_console_run_id,
+                                          demo_console_pg_server_addresses)
+    return {
+        "MERGEPILOT_MODE": "isolated_live",
+        "MERGEPILOT_SOURCE_KIND": "postgres",
+        "MERGEPILOT_RUN_ID": demo_console_run_id,
+        "MERGEPILOT_EXPECTED_ROLE": READER_ROLE,
+        "MERGEPILOT_BIND_CONTEXT": "container",
+        "MERGEPILOT_HOST": "0.0.0.0",
+        "MERGEPILOT_PORT": str(DEMO_CONSOLE_PORT),
+        "MERGEPILOT_PG_EXPECTED_DATABASE": DB_NAME,
+        "MERGEPILOT_PG_ENVIRONMENT_ID": ENVIRONMENT_MARKER,
+        "MERGEPILOT_PG_EXPECTED_SERVER_ADDRESSES":
+            demo_console_pg_server_addresses,
+        "MERGEPILOT_PG_EXPECTED_SERVER_PORT": "5432",
+        "MERGEPILOT_PG_EXPECTED_APPLICATION_NAME": APP_NAME,
+    }
+
+
 def build_compose_config(*, demo_console_port: int = DEMO_CONSOLE_PORT,
                          project_name: str = "mergepilot-isolated",
                          admin_password_secret: str = "<secret-file>",
                          demo_console_run_id: str = "",
+                         demo_console_pg_server_addresses: str = "",
                          ) -> dict:
     """Build the five-service compose configuration as a pure dict.
 
@@ -195,17 +268,11 @@ def build_compose_config(*, demo_console_port: int = DEMO_CONSOLE_PORT,
       - passwords travel via the env-file (secret file), never argv
       - ``demo_console_run_id`` is REQUIRED (no default, no inference);
         missing/empty/invalid charset -> CONFIG_INVALID (fail-closed)
+      - ``demo_console_pg_server_addresses`` is REQUIRED (the MEASURED
+        postgres bridge IP; hardcoding or alias substitution is rejected)
     """
-    if not demo_console_run_id or not demo_console_run_id.strip():
-        raise StartupGateError(
-            "CONFIG_INVALID",
-            "demo_console_run_id is required (no default, no inference); "
-            "the caller must provide the seeded run_id")
-    import re as _re
-    if not _re.fullmatch(r"[a-zA-Z0-9_-]+", demo_console_run_id):
-        raise StartupGateError(
-            "CONFIG_INVALID",
-            "demo_console_run_id must match ^[a-zA-Z0-9_-]+$")
+    demo_env = _demo_console_environment(
+        demo_console_run_id, demo_console_pg_server_addresses)
     if not (0 < demo_console_port < 65536):
         raise StartupGateError("CONFIG_INVALID", "demo_console_port out of range")
     services = {
@@ -250,20 +317,13 @@ def build_compose_config(*, demo_console_port: int = DEMO_CONSOLE_PORT,
                 "controller": {"condition": "service_started"},
             },
             "networks": ["isolated"],
-            "environment": {
-                # Entrypoint contract (demo_console_entrypoint.py):
-                # ISOLATED_LIVE mode, postgres source, canonical reader role,
-                # CALLER-PROVIDED run_id. REPLAY is refused (no fallback).
-                # The container listens on 0.0.0.0 internally (required for
-                # Docker bridge routing); the HOST-side publish stays
-                # 127.0.0.1-only (see ports below).
-                "MERGEPILOT_MODE": "isolated_live",
-                "MERGEPILOT_SOURCE_KIND": "postgres",
-                "MERGEPILOT_RUN_ID": demo_console_run_id,
-                "MERGEPILOT_EXPECTED_ROLE": READER_ROLE,
-                "MERGEPILOT_HOST": "0.0.0.0",
-                "MERGEPILOT_PORT": str(DEMO_CONSOLE_PORT),
-            },
+            # Entrypoint contract (demo_console_entrypoint.py): ISOLATED_LIVE
+            # mode, postgres source, canonical reader role, CALLER-PROVIDED
+            # run_id and MEASURED bridge IP, explicit container bind context.
+            # REPLAY is refused (no fallback). The container listens on
+            # 0.0.0.0 internally (required for Docker bridge routing); the
+            # HOST-side publish stays 127.0.0.1-only (see ports below).
+            "environment": demo_env,
             "ports": [
                 "%s:%d:8600" % (LOOPBACK_BIND, demo_console_port),
             ],
@@ -537,13 +597,19 @@ def plan_network_create() -> list:
 
 def plan_service_run(service: str, *, image_ref: str,
                      env_file: str | None = None,
-                     declared_pg_image: str | None = None) -> list:
+                     declared_pg_image: str | None = None,
+                     demo_console_env: dict | None = None) -> list:
     """argv array (docker sub-args) to run one service per the contract.
 
     ``image_ref`` is the digest/image-ID (never a floating tag). The plan
     encodes: internal network + alias, pull never, restart no, no published
     ports except demo-console loopback, healthcheck (postgres), env-file for
     postgres, and the in-network preflight environment.
+
+    ``demo_console_env`` is REQUIRED for the demo-console service (the full
+    entrypoint contract incl. bind context and the five PostgreSQL expected
+    identity params). Non-secret values only; ``assert_argv_safe`` rejects a
+    DSN or password smuggled into the values.
     """
     if service not in _SERVICE_FLAGS:
         raise StartupGateError("CONFIG_INVALID",
@@ -554,6 +620,13 @@ def plan_service_run(service: str, *, image_ref: str,
         raise StartupGateError("CONFIG_INVALID",
                                "image_ref must be sha256:<64-hex> digest/ID "
                                "(floating tags rejected)")
+    if service == "demo-console" and not demo_console_env:
+        raise StartupGateError(
+            "CONFIG_INVALID",
+            "demo_console_env is required for the demo-console service "
+            "(entrypoint contract: mode/source-kind/run_id/role/bind "
+            "context + five PG expected identity params); use "
+            "_demo_console_environment() to build it")
     aliases, publish, healthcheck = _SERVICE_FLAGS[service]
     argv = ["run", "-d",
             "--name", "mergepilot-isolated-%s-1" % service,
@@ -577,6 +650,9 @@ def plan_service_run(service: str, *, image_ref: str,
                  "-e", "MERGEPILOT_DEMO_CONSOLE_URL=http://demo-console:8600"]
         if declared_pg_image:
             argv += ["-e", "MERGEPILOT_DECLARED_PG_IMAGE=%s" % declared_pg_image]
+    if demo_console_env:
+        for key in sorted(demo_console_env):
+            argv += ["-e", "%s=%s" % (key, demo_console_env[key])]
     if publish:
         argv += ["-p", publish]
     argv.append(image_ref)
@@ -595,17 +671,30 @@ def plan_build(service: str) -> list:
             "-t", "mergepilot-isolated-%s:local" % service, "."]
 
 
-def plan_orchestrated_start(env_file: str | None = None) -> list:
+def plan_orchestrated_start(env_file: str | None = None, *,
+                            demo_console_run_id: str = "",
+                            demo_console_pg_server_addresses: str = ""
+                            ) -> list:
     """Full start plan: [network create, run postgres, run gateway, run
     controller, run demo-console, run preflight] as argv arrays in strict
     dependency order. The caller executes them sequentially and waits for
-    the postgres healthcheck between step 2 and 3 (mirroring depends_on)."""
+    the postgres healthcheck between step 2 and 3 (mirroring depends_on).
+
+    ``demo_console_run_id`` (the seeded run_id) and
+    ``demo_console_pg_server_addresses`` (the postgres bridge IP MEASURED
+    after the healthcheck passed) are REQUIRED — no defaults, no inference.
+    """
+    demo_env = _demo_console_environment(
+        demo_console_run_id, demo_console_pg_server_addresses)
     plans = [plan_network_create()]
     plans.append(plan_service_run(
         "postgres", image_ref=PGVECTOR_IMAGE_DIGEST, env_file=env_file))
-    for service in ("policy-gateway", "controller", "demo-console"):
+    for service in ("policy-gateway", "controller"):
         plans.append(plan_service_run(
             service, image_ref=get_built_image_identity(service)))
+    plans.append(plan_service_run(
+        "demo-console", image_ref=get_built_image_identity("demo-console"),
+        demo_console_env=demo_env))
     plans.append(plan_service_run(
         "preflight", image_ref=get_built_image_identity("preflight"),
         declared_pg_image=PGVECTOR_IMAGE_DIGEST))

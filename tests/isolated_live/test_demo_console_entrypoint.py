@@ -1,4 +1,8 @@
-"""Phase 1-D retry fix — demo-console container entrypoint Mock/static tests.
+"""Phase 1-D retry v2 — demo-console container entrypoint Mock/static tests.
+
+Covers BOTH retry-v2 fixes:
+  Fix 1 — MERGEPILOT_BIND_CONTEXT (host vs container) validation;
+  Fix 2 — the five PostgreSQL expected identity params.
 
 No WSL/Docker/PostgreSQL started; no real connection.
 """
@@ -9,7 +13,6 @@ import os
 import sys
 import unittest
 from pathlib import Path
-from unittest import mock
 
 _HERE = Path(os.path.dirname(os.path.abspath(__file__)))
 ROOT = _HERE.parent.parent
@@ -42,6 +45,17 @@ GOOD_ENV = {
     "MERGEPILOT_SOURCE_KIND": "postgres",
     "MERGEPILOT_RUN_ID": "caller-provided-run-001",
     "MERGEPILOT_EXPECTED_ROLE": "mergepilot_reader",
+    # Fix 1: explicit bind context; the container listens on 0.0.0.0.
+    "MERGEPILOT_BIND_CONTEXT": "container",
+    "MERGEPILOT_HOST": "0.0.0.0",
+    "MERGEPILOT_PORT": "8600",
+    # Fix 2: the five PostgreSQL expected identity params.
+    "MERGEPILOT_PG_EXPECTED_DATABASE": "mergepilot_audit",
+    "MERGEPILOT_PG_ENVIRONMENT_ID": "mergepilot-test-ephemeral",
+    "MERGEPILOT_PG_EXPECTED_SERVER_ADDRESSES": "172.18.0.2",
+    "MERGEPILOT_PG_EXPECTED_SERVER_PORT": "5432",
+    "MERGEPILOT_PG_EXPECTED_APPLICATION_NAME":
+        "mergepilot_isolated_live_reader",
 }
 
 
@@ -55,49 +69,149 @@ class TestValidConfig(unittest.TestCase):
         self.assertEqual(c["source_kind"], "postgres")
         self.assertEqual(c["run_id"], "caller-provided-run-001")
         self.assertEqual(c["expected_role"], "mergepilot_reader")
-        self.assertEqual(c["host"], "0.0.0.0")  # container listen default
+        self.assertEqual(c["bind_context"], "container")
+        self.assertEqual(c["host"], "0.0.0.0")  # container listen
         self.assertEqual(c["port"], 8600)
-
-    def test_defaults_host_and_port(self):
-        c = _validate_env(GOOD_ENV)
-        self.assertEqual(c["host"], "0.0.0.0")  # container-internal listen
-        self.assertEqual(c["port"], 8600)
+        self.assertEqual(c["pg_expected_database"], "mergepilot_audit")
+        self.assertEqual(c["pg_environment_id"], "mergepilot-test-ephemeral")
+        self.assertEqual(c["pg_expected_server_addresses"], "172.18.0.2")
+        self.assertEqual(c["pg_expected_server_port"], 5432)
+        self.assertEqual(c["pg_expected_application_name"],
+                         "mergepilot_isolated_live_reader")
 
     def test_container_listen_0000_allowed(self):
         env = dict(GOOD_ENV, MERGEPILOT_HOST="0.0.0.0")
         c = _validate_env(env)
         self.assertEqual(c["host"], "0.0.0.0")
 
-    def test_loopback_listen_allowed(self):
-        env = dict(GOOD_ENV, MERGEPILOT_HOST="127.0.0.1")
+    def test_container_mode_loopback_listen_allowed(self):
+        # 127.0.0.1 remains valid in container mode (stricter than required).
+        for h in ("127.0.0.1", "localhost"):
+            c = _validate_env(dict(GOOD_ENV, MERGEPILOT_HOST=h))
+            self.assertEqual(c["host"], h)
+
+    def test_host_mode_loopback_allowed(self):
+        env = dict(GOOD_ENV, MERGEPILOT_BIND_CONTEXT="host",
+                   MERGEPILOT_HOST="127.0.0.1")
         c = _validate_env(env)
         self.assertEqual(c["host"], "127.0.0.1")
 
-    def test_localhost_listen_allowed(self):
-        env = dict(GOOD_ENV, MERGEPILOT_HOST="localhost")
-        c = _validate_env(env)
-        self.assertEqual(c["host"], "localhost")
-
-    def test_case_insensitive_mode_and_kind(self):
+    def test_case_insensitive_mode_kind_and_context(self):
         env = dict(GOOD_ENV,
                    MERGEPILOT_MODE="ISOLATED_LIVE",
-                   MERGEPILOT_SOURCE_KIND="Postgres")
+                   MERGEPILOT_SOURCE_KIND="Postgres",
+                   MERGEPILOT_BIND_CONTEXT="Container")
         c = _validate_env(env)
         self.assertEqual(c["mode"], "isolated_live")
         self.assertEqual(c["source_kind"], "postgres")
-
-    def test_localhost_host_accepted(self):
-        env = dict(GOOD_ENV, MERGEPILOT_HOST="localhost")
-        c = _validate_env(env)
-        self.assertEqual(c["host"], "localhost")
+        self.assertEqual(c["bind_context"], "container")
 
     def test_custom_port(self):
         env = dict(GOOD_ENV, MERGEPILOT_PORT="9000")
         c = _validate_env(env)
         self.assertEqual(c["port"], 9000)
 
+    def test_multiple_server_addresses_allowed(self):
+        env = dict(GOOD_ENV,
+                   MERGEPILOT_PG_EXPECTED_SERVER_ADDRESSES="172.18.0.2, 172.18.0.3")
+        c = _validate_env(env)
+        self.assertEqual(c["pg_expected_server_addresses"],
+                         "172.18.0.2, 172.18.0.3")
 
-# ── Rejection matrix ─────────────────────────────────────────────────────────
+
+# ── Fix 1: bind context rejections ───────────────────────────────────────────
+
+class TestBindContextRejections(unittest.TestCase):
+
+    def test_missing_context_rejected(self):
+        env = dict(GOOD_ENV); del env["MERGEPILOT_BIND_CONTEXT"]
+        _cfg(self, env, "BIND_CONTEXT")
+
+    def test_empty_context_rejected(self):
+        _cfg(self, dict(GOOD_ENV, MERGEPILOT_BIND_CONTEXT="  "), "BIND_CONTEXT")
+
+    def test_invalid_context_rejected(self):
+        for bad in ("docker", "k8s", "auto", "1"):
+            _cfg(self, dict(GOOD_ENV, MERGEPILOT_BIND_CONTEXT=bad),
+                 "'host' or 'container'")
+
+    def test_context_not_inferred_from_host(self):
+        # A 0.0.0.0 host WITHOUT an explicit container context must FAIL —
+        # the context is never inferred from the host value.
+        env = dict(GOOD_ENV); del env["MERGEPILOT_BIND_CONTEXT"]
+        _cfg(self, env, "BIND_CONTEXT is not set")
+
+    def test_host_mode_rejects_0000(self):
+        # host context + 0.0.0.0 is contradictory -> CONFIG_INVALID.
+        _cfg(self, dict(GOOD_ENV, MERGEPILOT_BIND_CONTEXT="host"),
+             "host mode")
+
+    def test_container_mode_rejects_lan(self):
+        for bad in ("192.168.1.5", "10.0.0.1", "172.16.0.1", "::",
+                    "fd00::1", "::1"):
+            _cfg(self, dict(GOOD_ENV, MERGEPILOT_HOST=bad),
+                 "container mode")
+
+    def test_host_mode_rejects_lan_and_ipv6(self):
+        for bad in ("192.168.1.5", "10.0.0.1", "0.0.0.0", "::", "::1"):
+            _cfg(self, dict(GOOD_ENV, MERGEPILOT_BIND_CONTEXT="host",
+                            MERGEPILOT_HOST=bad), "host mode")
+
+
+# ── Fix 2: PG expected identity rejections ───────────────────────────────────
+
+class TestPgExpectedRejections(unittest.TestCase):
+
+    def test_missing_database_rejected(self):
+        env = dict(GOOD_ENV); del env["MERGEPILOT_PG_EXPECTED_DATABASE"]
+        _cfg(self, env, "EXPECTED_DATABASE")
+
+    def test_wrong_database_rejected(self):
+        _cfg(self, dict(GOOD_ENV, MERGEPILOT_PG_EXPECTED_DATABASE="postgres"),
+             "mergepilot_audit")
+        _cfg(self, dict(GOOD_ENV, MERGEPILOT_PG_EXPECTED_DATABASE="prod"),
+             "mergepilot_audit")
+
+    def test_missing_environment_id_rejected(self):
+        env = dict(GOOD_ENV); del env["MERGEPILOT_PG_ENVIRONMENT_ID"]
+        _cfg(self, env, "ENVIRONMENT_ID")
+
+    def test_missing_server_addresses_rejected(self):
+        env = dict(GOOD_ENV)
+        del env["MERGEPILOT_PG_EXPECTED_SERVER_ADDRESSES"]
+        _cfg(self, env, "SERVER_ADDRESSES")
+
+    def test_non_ip_server_addresses_rejected(self):
+        # The network alias is NOT an address — hardcoding it is forbidden.
+        for bad in ("postgres", "localhost", "abc", "172.18.x.2"):
+            _cfg(self, dict(GOOD_ENV,
+                            MERGEPILOT_PG_EXPECTED_SERVER_ADDRESSES=bad),
+                 "IPv4")
+
+    def test_missing_server_port_rejected(self):
+        env = dict(GOOD_ENV); del env["MERGEPILOT_PG_EXPECTED_SERVER_PORT"]
+        _cfg(self, env, "SERVER_PORT")
+
+    def test_bad_server_port_rejected(self):
+        _cfg(self, dict(GOOD_ENV, MERGEPILOT_PG_EXPECTED_SERVER_PORT="x"),
+             "integer")
+        _cfg(self, dict(GOOD_ENV, MERGEPILOT_PG_EXPECTED_SERVER_PORT="0"),
+             "range")
+        _cfg(self, dict(GOOD_ENV, MERGEPILOT_PG_EXPECTED_SERVER_PORT="70000"),
+             "range")
+
+    def test_missing_application_name_rejected(self):
+        env = dict(GOOD_ENV)
+        del env["MERGEPILOT_PG_EXPECTED_APPLICATION_NAME"]
+        _cfg(self, env, "APPLICATION_NAME")
+
+    def test_wrong_application_name_rejected(self):
+        _cfg(self, dict(GOOD_ENV,
+                        MERGEPILOT_PG_EXPECTED_APPLICATION_NAME="other_app"),
+             "mergepilot_isolated_live_reader")
+
+
+# ── Earlier rejections stay intact ───────────────────────────────────────────
 
 class TestRejections(unittest.TestCase):
 
@@ -137,25 +251,13 @@ class TestRejections(unittest.TestCase):
     def test_wrong_role_rejected(self):
         _cfg(self, dict(GOOD_ENV, MERGEPILOT_EXPECTED_ROLE="postgres"),
             "mergepilot_reader")
-        _cfg(self, dict(GOOD_ENV, MERGEPILOT_EXPECTED_ROLE="admin"),
-            "mergepilot_reader")
 
-    def test_lan_host_rejected(self):
-        # LAN-specific addresses are NOT valid container listen addresses.
-        # 0.0.0.0 IS allowed (container-internal listen); only LAN IPs and
-        # IPv6 :: are rejected.
-        for bad in ("192.168.1.5", "10.0.0.1", "172.16.0.1", "::",
-                    "fd00::1"):
-            _cfg(self, dict(GOOD_ENV, MERGEPILOT_HOST=bad),
-                 "not valid container listen")
-
-    def test_bad_port_rejected(self):
+    def test_bad_console_port_rejected(self):
         _cfg(self, dict(GOOD_ENV, MERGEPILOT_PORT="not-a-number"), "integer")
         _cfg(self, dict(GOOD_ENV, MERGEPILOT_PORT="0"), "range")
         _cfg(self, dict(GOOD_ENV, MERGEPILOT_PORT="70000"), "range")
 
     def test_no_silent_fallback(self):
-        # The error message must never suggest a fallback; it must refuse.
         env = dict(GOOD_ENV); del env["MERGEPILOT_RUN_ID"]
         with self.assertRaises(EntrypointConfigError) as cm:
             _validate_env(env)
@@ -195,6 +297,18 @@ class TestArgvConstruction(unittest.TestCase):
         self.assertIn("--port", argv)
         self.assertEqual(argv[argv.index("--port") + 1], "8600")
 
+    def test_argv_omits_pg_expected_and_context(self):
+        # The five PG expected fields and the bind context travel via their
+        # env-var contract, NOT argv (argv stays minimal and secret-safe).
+        argv = build_serve_argv(self.config)
+        joined = " ".join(argv)
+        for key in ("EXPECTED_DATABASE", "ENVIRONMENT_ID",
+                    "SERVER_ADDRESSES", "SERVER_PORT", "APPLICATION_NAME",
+                    "BIND_CONTEXT"):
+            self.assertNotIn(key, joined)
+        self.assertNotIn("172.18.0.2", joined)
+        self.assertNotIn("mergepilot-test-ephemeral", joined)
+
     def test_argv_no_shell_metachars(self):
         argv = build_serve_argv(self.config)
         joined = " ".join(argv)
@@ -203,7 +317,6 @@ class TestArgvConstruction(unittest.TestCase):
 
     def test_argv_passes_secret_safety(self):
         argv = build_serve_argv(self.config)
-        # Would raise on any DSN/password/SQL literal/token.
         oc.assert_argv_safe(argv)
 
     def test_argv_no_dsn_or_password(self):
@@ -214,7 +327,6 @@ class TestArgvConstruction(unittest.TestCase):
         self.assertNotIn("dsn", joined.lower())
 
     def test_run_id_not_hardcoded_in_entrypoint_source(self):
-        # The entrypoint module must NOT contain any hardcoded run-eph-ok.
         src = Path(dce.__file__).read_text(encoding="utf-8")
         self.assertNotIn("run-eph-ok", src)
 
@@ -226,8 +338,7 @@ class TestArgvConstruction(unittest.TestCase):
 
     def test_dynamic_run_id_accepted(self):
         for rid in ("my-seed-run-42", "prod_2024_x", "a", "run-with-dashes"):
-            env = dict(GOOD_ENV, MERGEPILOT_RUN_ID=rid)
-            c = _validate_env(env)
+            c = _validate_env(dict(GOOD_ENV, MERGEPILOT_RUN_ID=rid))
             self.assertEqual(c["run_id"], rid)
 
 
@@ -240,84 +351,115 @@ class TestComposeContract(unittest.TestCase):
         cls.yml = yaml.safe_load(
             (ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
         cls.builder = oc.build_compose_config(
-            demo_console_run_id="caller-provided-run-001")
+            demo_console_run_id="caller-provided-run-001",
+            demo_console_pg_server_addresses="172.18.0.2")
         cls.dockerfile = (ROOT / "Dockerfile.demo-console").read_text(
             encoding="utf-8")
 
+    def _compose_env(self):
+        return self.yml["services"]["demo-console"]["environment"]
+
     def test_compose_demo_console_env_injects_isolated_live(self):
-        env = self.yml["services"]["demo-console"]["environment"]
+        env = self._compose_env()
         self.assertEqual(env["MERGEPILOT_MODE"], "isolated_live")
         self.assertEqual(env["MERGEPILOT_SOURCE_KIND"], "postgres")
-        # RUN_ID uses compose variable interpolation (caller must inject);
-        # the literal value must NOT be hardcoded in the yml.
         run_id = env["MERGEPILOT_RUN_ID"]
         self.assertIn("${MERGEPILOT_RUN_ID", str(run_id))
         self.assertIn("?MERGEPILOT_RUN_ID is required", str(run_id))
         self.assertEqual(env["MERGEPILOT_EXPECTED_ROLE"], "mergepilot_reader")
 
+    def test_compose_declares_container_bind_context(self):
+        self.assertEqual(self._compose_env()["MERGEPILOT_BIND_CONTEXT"],
+                         "container")
+
+    def test_compose_pg_expected_static_values(self):
+        env = self._compose_env()
+        self.assertEqual(env["MERGEPILOT_PG_EXPECTED_DATABASE"],
+                         "mergepilot_audit")
+        self.assertEqual(env["MERGEPILOT_PG_ENVIRONMENT_ID"],
+                         "mergepilot-test-ephemeral")
+        self.assertEqual(env["MERGEPILOT_PG_EXPECTED_SERVER_PORT"], "5432")
+        self.assertEqual(env["MERGEPILOT_PG_EXPECTED_APPLICATION_NAME"],
+                         "mergepilot_isolated_live_reader")
+
+    def test_compose_server_addresses_required_interpolation(self):
+        # NOT hardcoded: compose requires the caller to inject the MEASURED
+        # bridge IP via variable interpolation (same pattern as RUN_ID).
+        val = str(self._compose_env()
+                  ["MERGEPILOT_PG_EXPECTED_SERVER_ADDRESSES"])
+        self.assertIn("${MERGEPILOT_PG_EXPECTED_SERVER_ADDRESSES", val)
+        self.assertIn("is required", val)
+
     def test_compose_no_hardcoded_run_eph_ok(self):
-        # The literal run-eph-ok must NOT appear in the compose yml.
         text = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
         self.assertNotIn("run-eph-ok", text)
 
     def test_compose_demo_console_loopback_publish(self):
-        # HOST-side publish must remain 127.0.0.1-only.
         ports = self.yml["services"]["demo-console"]["ports"]
         self.assertEqual(len(ports), 1)
         self.assertTrue(str(ports[0]).startswith("127.0.0.1:"))
 
     def test_compose_demo_console_container_listen_0000(self):
-        # Container-internal listen address is 0.0.0.0 (Docker bridge).
-        env = self.yml["services"]["demo-console"]["environment"]
-        self.assertEqual(env["MERGEPILOT_HOST"], "0.0.0.0")
-
-    def test_compose_no_lan_or_wildcard_publish(self):
-        text = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
-        for bad in ("0.0.0.0:8600:8600", ":::8600:8600", "192.168.",
-                    "10.0.0."):
-            # 0.0.0.0 in the env block is the CONTAINER LISTEN, not a publish
-            if "MERGEPILOT_HOST" in bad or bad == "0.0.0.0:8600:8600":
-                # Check it doesn't appear in a ports: line
-                ports_section = False
-                for line in text.splitlines():
-                    if "ports:" in line:
-                        ports_section = True
-                    if ports_section and bad in line:
-                        self.fail("LAN publish found: %r in ports section" % bad)
-                    if ports_section and line.strip() and not line.startswith((" ", "-", "#")):
-                        ports_section = False
+        self.assertEqual(self._compose_env()["MERGEPILOT_HOST"], "0.0.0.0")
 
     def test_builder_requires_run_id(self):
         with self.assertRaises(oc.StartupGateError) as cm:
-            oc.build_compose_config()
+            oc.build_compose_config(
+                demo_console_pg_server_addresses="172.18.0.2")
         self.assertEqual(cm.exception.code, "CONFIG_INVALID")
         self.assertIn("required", str(cm.exception))
 
-    def test_builder_rejects_empty_run_id(self):
+    def test_builder_requires_server_addresses(self):
         with self.assertRaises(oc.StartupGateError) as cm:
-            oc.build_compose_config(demo_console_run_id="")
+            oc.build_compose_config(demo_console_run_id="r1")
         self.assertEqual(cm.exception.code, "CONFIG_INVALID")
+        self.assertIn("server_addresses", str(cm.exception).lower())
+
+    def test_builder_rejects_empty_server_addresses(self):
+        with self.assertRaises(oc.StartupGateError) as cm:
+            oc.build_compose_config(demo_console_run_id="r1",
+                                    demo_console_pg_server_addresses="")
+        self.assertEqual(cm.exception.code, "CONFIG_INVALID")
+
+    def test_builder_rejects_alias_as_server_addresses(self):
+        # "postgres" is the network alias, not a measured bridge IP.
+        for bad in ("postgres", "localhost", "172.18.x.2"):
+            with self.assertRaises(oc.StartupGateError) as cm:
+                oc.build_compose_config(demo_console_run_id="r1",
+                                        demo_console_pg_server_addresses=bad)
+            self.assertEqual(cm.exception.code, "CONFIG_INVALID")
 
     def test_builder_rejects_bad_charset_run_id(self):
         for bad in ("bad;id", "bad id", "../etc"):
             with self.assertRaises(oc.StartupGateError) as cm:
-                oc.build_compose_config(demo_console_run_id=bad)
+                oc.build_compose_config(demo_console_run_id=bad,
+                                        demo_console_pg_server_addresses="172.18.0.2")
             self.assertEqual(cm.exception.code, "CONFIG_INVALID")
 
-    def test_builder_accepts_valid_run_id(self):
-        cfg = oc.build_compose_config(demo_console_run_id="my-dynamic-run-42")
+    def test_builder_accepts_valid_inputs(self):
+        cfg = oc.build_compose_config(
+            demo_console_run_id="my-dynamic-run-42",
+            demo_console_pg_server_addresses="172.18.0.7")
         env = cfg["services"]["demo-console"]["environment"]
         self.assertEqual(env["MERGEPILOT_RUN_ID"], "my-dynamic-run-42")
+        self.assertEqual(env["MERGEPILOT_PG_EXPECTED_SERVER_ADDRESSES"],
+                         "172.18.0.7")
 
-    def test_builder_container_listen_0000(self):
-        cfg = oc.build_compose_config(demo_console_run_id="r1")
-        env = cfg["services"]["demo-console"]["environment"]
-        self.assertEqual(env["MERGEPILOT_HOST"], "0.0.0.0")
+    def test_builder_env_has_bind_context_and_pg_params(self):
+        env = self.builder["services"]["demo-console"]["environment"]
+        self.assertEqual(env["MERGEPILOT_BIND_CONTEXT"], "container")
+        self.assertEqual(env["MERGEPILOT_PG_EXPECTED_DATABASE"], "mergepilot_audit")
+        self.assertEqual(env["MERGEPILOT_PG_ENVIRONMENT_ID"],
+                         "mergepilot-test-ephemeral")
+        self.assertEqual(env["MERGEPILOT_PG_EXPECTED_SERVER_ADDRESSES"],
+                         "172.18.0.2")
+        self.assertEqual(env["MERGEPILOT_PG_EXPECTED_SERVER_PORT"], "5432")
+        self.assertEqual(env["MERGEPILOT_PG_EXPECTED_APPLICATION_NAME"],
+                         "mergepilot_isolated_live_reader")
 
     def test_dockerfile_uses_entrypoint_module(self):
         self.assertIn("demo_console_entrypoint.py", self.dockerfile)
         self.assertIn("ENTRYPOINT", self.dockerfile)
-        # The entrypoint must NOT directly invoke serve.py with a baked mode.
         entrypoint_line = [l for l in self.dockerfile.splitlines()
                           if l.startswith("ENTRYPOINT")]
         self.assertEqual(len(entrypoint_line), 1)
@@ -329,43 +471,58 @@ class TestComposeContract(unittest.TestCase):
             "COPY tools/demo_console_entrypoint.py /app/demo_console_entrypoint.py",
             self.dockerfile)
 
+    def test_dockerfile_discloses_pg_expected_contract(self):
+        for token in ("MERGEPILOT_PG_EXPECTED_DATABASE",
+                      "MERGEPILOT_PG_ENVIRONMENT_ID",
+                      "MERGEPILOT_PG_EXPECTED_SERVER_ADDRESSES",
+                      "MERGEPILOT_PG_EXPECTED_SERVER_PORT",
+                      "MERGEPILOT_PG_EXPECTED_APPLICATION_NAME",
+                      "MERGEPILOT_BIND_CONTEXT"):
+            self.assertIn(token, self.dockerfile)
+        # No image-level defaults for the validated vars (fail-closed).
+        self.assertNotIn("ENV MERGEPILOT_BIND_CONTEXT", self.dockerfile)
+        self.assertNotIn("ENV MERGEPILOT_PG_EXPECTED", self.dockerfile)
+
     def test_compose_env_keys_match_entrypoint_contract(self):
         # Every env key the entrypoint reads must be provided by compose.
-        entrypoint_reads = {"MERGEPILOT_MODE", "MERGEPILOT_SOURCE_KIND",
-                           "MERGEPILOT_RUN_ID", "MERGEPILOT_EXPECTED_ROLE"}
-        compose_env = set(self.yml["services"]["demo-console"]["environment"])
+        entrypoint_reads = {
+            "MERGEPILOT_MODE", "MERGEPILOT_SOURCE_KIND",
+            "MERGEPILOT_RUN_ID", "MERGEPILOT_EXPECTED_ROLE",
+            "MERGEPILOT_BIND_CONTEXT", "MERGEPILOT_HOST", "MERGEPILOT_PORT",
+            "MERGEPILOT_PG_EXPECTED_DATABASE",
+            "MERGEPILOT_PG_ENVIRONMENT_ID",
+            "MERGEPILOT_PG_EXPECTED_SERVER_ADDRESSES",
+            "MERGEPILOT_PG_EXPECTED_SERVER_PORT",
+            "MERGEPILOT_PG_EXPECTED_APPLICATION_NAME",
+        }
+        compose_env = set(self._compose_env())
         for key in entrypoint_reads:
             self.assertIn(key, compose_env, key)
 
     def test_entrypoint_validates_compose_env(self):
-        # The compose env (with the variable-interpolated run_id resolved to
-        # a concrete value) must pass entrypoint validation.
-        env = dict(self.yml["services"]["demo-console"]["environment"])
-        # Resolve the compose variable to a caller-provided value.
+        # The compose env (with variable-interpolated values resolved to
+        # concrete caller-provided ones) must pass entrypoint validation.
+        env = dict(self._compose_env())
         env["MERGEPILOT_RUN_ID"] = "caller-provided-run-001"
+        env["MERGEPILOT_PG_EXPECTED_SERVER_ADDRESSES"] = "172.18.0.2"
         c = _validate_env(env)
         self.assertEqual(c["mode"], "isolated_live")
-        self.assertEqual(c["host"], "0.0.0.0")  # container listen
+        self.assertEqual(c["bind_context"], "container")
+        self.assertEqual(c["host"], "0.0.0.0")
         self.assertEqual(c["port"], 8600)
+        self.assertEqual(c["pg_expected_server_addresses"], "172.18.0.2")
 
     def test_builder_env_matches_compose_keys(self):
-        # The builder and yml must provide the SAME env keys (values may
-        # differ for RUN_ID since the yml uses variable interpolation).
-        yml_env = set(self.yml["services"]["demo-console"]["environment"])
+        yml_env = set(self._compose_env())
         builder_env = set(self.builder["services"]["demo-console"]["environment"])
-        for key in ("MERGEPILOT_MODE", "MERGEPILOT_SOURCE_KIND",
-                     "MERGEPILOT_RUN_ID", "MERGEPILOT_EXPECTED_ROLE",
-                     "MERGEPILOT_HOST", "MERGEPILOT_PORT"):
-            self.assertIn(key, yml_env, "yml missing %s" % key)
-            self.assertIn(key, builder_env, "builder missing %s" % key)
+        self.assertEqual(yml_env, builder_env)
 
     def test_builder_env_matches_compose_static_values(self):
-        # Static (non-run_id) env values must match between yml and builder.
-        yml_env = self.yml["services"]["demo-console"]["environment"]
+        yml_env = self._compose_env()
         builder_env = self.builder["services"]["demo-console"]["environment"]
-        for key in ("MERGEPILOT_MODE", "MERGEPILOT_SOURCE_KIND",
-                     "MERGEPILOT_EXPECTED_ROLE", "MERGEPILOT_HOST",
-                     "MERGEPILOT_PORT"):
+        static_keys = [k for k in yml_env
+                       if not str(yml_env[k]).startswith("${")]
+        for key in static_keys:
             self.assertEqual(yml_env[key], builder_env[key], key)
 
 

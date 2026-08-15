@@ -32,6 +32,14 @@ VALID_MODES = frozenset({"replay", "isolated_live"})
 # Any host not in this set is rejected (including ::1, ::, 0.0.0.0, LAN IPs).
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost"})
 
+# Bind context (Phase 1-D retry v2): ``host`` (default, P1 single-machine) vs
+# ``container`` (demo-console inside a Docker container on the internal-only
+# bridge). In container mode the CONTAINER listens on 0.0.0.0; the HOST-side
+# port publish remains 127.0.0.1-only (enforced by compose/orchestrator).
+_BIND_CONTEXT_ENV = "MERGEPILOT_BIND_CONTEXT"
+_VALID_BIND_CONTEXTS = frozenset({"host", "container"})
+_CONTAINER_LISTEN_HOSTS = frozenset({"0.0.0.0", "127.0.0.1", "localhost"})
+
 
 # Environment variable that carries the PostgreSQL DSN for source_kind=postgres.
 # The DSN is a secret and must NEVER be passed via argv or written to config
@@ -45,6 +53,24 @@ _RUN_ID_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
 
 def _is_loopback(host: str) -> bool:
     return host.lower() in _LOOPBACK_HOSTS
+
+
+def _get_bind_context() -> str:
+    """Read the bind context from env; default ``host``; validate."""
+    ctx = os.environ.get(_BIND_CONTEXT_ENV, "host").strip().lower()
+    if ctx not in _VALID_BIND_CONTEXTS:
+        raise ValueError(
+            f"{_BIND_CONTEXT_ENV} must be 'host' or 'container' (got {ctx!r})"
+        )
+    return ctx
+
+
+def _is_valid_bind(host: str, context: str) -> bool:
+    """Context-aware bind validation (mirrors serve.py)."""
+    host_lower = host.lower() if isinstance(host, str) else host
+    if context == "container":
+        return host_lower in _CONTAINER_LISTEN_HOSTS
+    return host_lower in _LOOPBACK_HOSTS
 
 
 # --- Windows drive type constants (mirror Win32 GetDriveTypeW codes) -------
@@ -237,18 +263,26 @@ def run_preflight(mode: str, host: str, source_file: str | None = None,
             ),
         })
 
-    # Loopback check (IPv4-loopback only; IPv6 ::1 is NOT implemented).
-    loopback_ok = _is_loopback(host)
+    # Bind-address check (context-aware; IPv6 ::1 is NOT implemented).
+    bind_context = _get_bind_context()
+    loopback_ok = _is_valid_bind(host, bind_context)
     if not loopback_ok:
         host_lower = host.lower() if isinstance(host, str) else host
         if host_lower == "::1":
             detail = (
                 "P1 server is IPv4-loopback only; IPv6 ::1 not implemented"
             )
+        elif bind_context == "container":
+            detail = (
+                f"container listen must be 0.0.0.0/127.0.0.1/localhost, "
+                f"got '{host}'; LAN-specific addresses are not valid "
+                "container listen addresses"
+            )
         else:
             detail = (
                 f"host must be IPv4 loopback (127.0.0.1/localhost), got '{host}'; "
-                "the P1 server is IPv4-loopback only and never binds off-machine"
+                "the P1 server is IPv4-loopback only and never binds off-machine "
+                "(set MERGEPILOT_BIND_CONTEXT=container for Docker bridge 0.0.0.0)"
             )
         failures.append({
             "check": "loopback_only",

@@ -81,11 +81,24 @@ services:
       MERGEPILOT_SOURCE_KIND: postgres
       MERGEPILOT_RUN_ID: ${MERGEPILOT_RUN_ID:?MERGEPILOT_RUN_ID is required}
       MERGEPILOT_EXPECTED_ROLE: mergepilot_reader
-      # Container-internal listen address (the container must accept
-      # connections from the Docker bridge). The HOST-side publish remains
-      # 127.0.0.1-only (see ports below).
+      # Bind context (retry v2 Fix 1): the CONTAINER listens on 0.0.0.0
+      # (required for Docker bridge routing). The HOST-side publish remains
+      # 127.0.0.1-only (see ports below). The context is EXPLICIT — it is
+      # never inferred from the host value; serve.py/preflight validate
+      # against it (host mode stays strictly loopback).
+      MERGEPILOT_BIND_CONTEXT: container
       MERGEPILOT_HOST: "0.0.0.0"
       MERGEPILOT_PORT: "8600"
+      # PostgreSQL expected identity (retry v2 Fix 2): all five are REQUIRED
+      # by the entrypoint and serve.py config preflight — no defaults, no
+      # inference. SERVER_ADDRESSES is the postgres container's MEASURED
+      # bridge IP (caller-injected after postgres is healthy; hardcoding is
+      # forbidden). The other four are canonical constants of this stack.
+      MERGEPILOT_PG_EXPECTED_DATABASE: mergepilot_audit
+      MERGEPILOT_PG_ENVIRONMENT_ID: mergepilot-test-ephemeral
+      MERGEPILOT_PG_EXPECTED_SERVER_ADDRESSES: ${MERGEPILOT_PG_EXPECTED_SERVER_ADDRESSES:?MERGEPILOT_PG_EXPECTED_SERVER_ADDRESSES is required (measured bridge IP)}
+      MERGEPILOT_PG_EXPECTED_SERVER_PORT: "5432"
+      MERGEPILOT_PG_EXPECTED_APPLICATION_NAME: mergepilot_isolated_live_reader
     ports:
       - "127.0.0.1:8600:8600"       # the ONLY published port; loopback only.
 
