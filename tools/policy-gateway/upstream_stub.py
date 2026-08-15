@@ -61,8 +61,13 @@ async def handle_sse(request):
         raise RuntimeError(
             "upstream stub: request carries no ASGI send callable "
             "(starlette Request._send missing); refusing to serve /sse")
-    async with sse.connect_sse(request.scope, request.receive, send):
-        await server.run(sse.get_read_stream(), sse.get_write_stream(),
+    # mcp 1.28.1 (the version pinned in the image): connect_sse is an
+    # async context manager that YIELDS the (read_stream, write_stream)
+    # pair directly; this transport version has no per-stream accessor
+    # methods (the 1-G retry 3 real run failed on exactly that).
+    async with sse.connect_sse(request.scope, request.receive, send) \
+            as (read_stream, write_stream):
+        await server.run(read_stream, write_stream,
                          server.create_initialization_options())
 
 
