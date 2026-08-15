@@ -1238,9 +1238,9 @@ class TestStatusContract(unittest.TestCase):
         payload = self._status()
         self.assertEqual(payload["source_snapshot_sha256"], expected)
 
-    def test_dynamic_pages_consume_live_api_is_false(self):
+    def test_dynamic_pages_consume_live_api_is_true(self):
         payload = self._status()
-        self.assertIs(payload["dynamic_pages_consume_live_api"], False)
+        self.assertIs(payload["dynamic_pages_consume_live_api"], True)
 
     def test_not_measured_and_null_fields_accurate(self):
         payload = self._status()
@@ -1957,8 +1957,8 @@ class TestDocConsistency(unittest.TestCase):
         self.assertNotIn("production_resource_accessed=false", self.text)
         self.assertNotIn("production_resource_accessed = false", self.text)
 
-    def test_has_dynamic_pages_consume_live_api_false(self):
-        self.assertIn("dynamic_pages_consume_live_api=false", self.text)
+    def test_has_dynamic_pages_consume_live_api_true(self):
+        self.assertIn("dynamic_pages_consume_live_api=true", self.text)
 
     def test_mentions_static_pages_not_dynamically_refreshed(self):
         # The doc must state the served pages are static (frozen REPLAY HTML)

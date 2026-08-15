@@ -12,8 +12,10 @@ as importantly — what it deliberately does not do. It avoids overclaiming.
 ## What this is
 
 `ISOLATED_LIVE` is a read-only mode for the demo console. It serves the same
-static, frozen REPLAY HTML pages as REPLAY mode, plus two additional localhost
-HTTP endpoints that expose a live snapshot of a single local JSON bundle:
+HTML pages as REPLAY mode plus two additional localhost HTTP endpoints that
+expose a live snapshot of a single local JSON bundle. (Phase 1-E update: the
+eight pages now also carry a dynamic-refresh engine — see "Served pages"
+below.)
 
 - `GET /api/live/snapshot` — the current valid bundle JSON (503 if none)
 - `GET /api/live/status` — structured poller/status JSON (full contract below)
@@ -246,7 +248,7 @@ not a hardcoded constant — so a future source type reports its own kind.
   "production_resource_access_status": "NOT_MEASURED",
   "browser_network_observation_status": "NOT_MEASURED",
   "observed_external_network_requests": null,
-  "dynamic_pages_consume_live_api": false
+  "dynamic_pages_consume_live_api": true
 }
 ```
 
@@ -259,11 +261,15 @@ Field semantics:
 - `browser_network_observation_status` is `NOT_MEASURED` and
   `observed_external_network_requests` is `null`: the console does not
   instrument outbound browser traffic.
-- `dynamic_pages_consume_live_api=false`: the served pages are static, frozen
-  REPLAY HTML. There are a fixed set of 8 static pages and they are **not
-  dynamically refreshed** — they do not poll or consume the live API at
-  runtime. The live API exists only for an operator who explicitly requests
-  `/api/live/*`.
+- `dynamic_pages_consume_live_api=true` (Phase 1-E): the served pages carry
+  `live-refresh.js`, a dynamic-refresh engine that GETs only
+  `/api/live/status` and `/api/live/snapshot`, re-renders all 8 views from
+  ONE shared snapshot, clamps its interval to >= 2000 ms, stops after 10
+  consecutive failures (manual refresh restarts), and never falls back to
+  REPLAY/static/baked data. In REPLAY mode the live endpoints 404 and the
+  engine never starts — the frozen HTML stays exactly as served. serve.py
+  fail-closed-verifies the shipped JS against the Python contract
+  (`tools/demo_console/live_refresh.py`) at startup.
 - `bundle_sha256` equals the bundle's internal `bundle_sha256` field.
 - `source_snapshot_sha256` equals the SHA-256 of the raw snapshot bytes read
   from disk.
@@ -273,11 +279,18 @@ Field semantics:
 
 ## Served pages
 
-The console serves a static, frozen set of 8 REPLAY HTML pages from
-`samples/demo-console/`. These pages are pre-rendered and are **not**
-dynamically refreshed. They do not consume the live API. The ISOLATED_LIVE
-endpoints are additive: they expose the live snapshot/status for an operator,
-but the user-facing pages themselves remain static REPLAY HTML.
+The console serves 8 HTML pages from `samples/demo-console/`
+(`overview`, `timeline`, `findings`, `rag`, `trace`, `safety`, `evidence`,
+`benchmark`).
+
+Phase 1-E update — dynamic refresh: in ISOLATED_LIVE mode all 8 pages are
+re-rendered from the ONE shared live snapshot (GET `/api/live/snapshot`),
+with a freshness banner (data time, poll state, failure count) and a manual
+refresh button. On engine start the baked REPLAY payload is immediately
+replaced by placeholders — baked content is never displayed as live data.
+Refresh failures keep the last LIVE data and mark it stale; there is NO
+fallback to REPLAY, static, or fabricated data. In REPLAY mode the engine
+never starts (the live endpoints 404) and the frozen HTML stays as served.
 
 ## Boundaries
 
@@ -296,4 +309,5 @@ but the user-facing pages themselves remain static REPLAY HTML.
 - `github_writes_enabled=false` always.
 - `agent_control_enabled=false` always.
 - `production_resource_accessed=null` / `production_resource_access_status=NOT_MEASURED`.
-- `dynamic_pages_consume_live_api=false` always.
+- `dynamic_pages_consume_live_api=true` in live mode (Phase 1-E; the
+  REPLAY-mode pages remain frozen static HTML).

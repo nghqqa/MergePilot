@@ -23,7 +23,15 @@ COPY tools/workflow-controller/controller.py /app/controller.py
 COPY tools/workflow-controller/gateway_client.py /app/gateway_client.py
 COPY tools/workflow-controller/m4f_controller.py /app/m4f_controller.py
 COPY tools/workflow-controller/m4f_ingress.py /app/m4f_ingress.py
+# Retry v3 Fix 3: healthcheck probe (TCP to the configured PostgreSQL) and
+# the entrypoint validating the extracted env contract (PG_HOST/PG_PORT/
+# PG_DATABASE/PG_USER + secret PG_PASS/ADMIN_PW presence) with a stable
+# CONFIG_INVALID before exec'ing controller.py.
+COPY tools/workflow-controller/healthcheck.py /app/healthcheck.py
+COPY tools/workflow-controller/readiness.py /app/readiness.py
+COPY tools/controller_entrypoint.py /app/controller_entrypoint.py
+COPY tools/demo_console/one_click_startup.py /app/one_click_startup.py
 
 WORKDIR /app
-ENV PYTHONUNBUFFERED=1
-ENTRYPOINT ["python", "-u", "/app/controller.py"]
+ENV PYTHONUNBUFFERED=1 \n    CONTROLLER_READY_SENTINEL=/tmp/mergepilot-controller.ready
+ENTRYPOINT ["python", "-u", "/app/controller_entrypoint.py"]

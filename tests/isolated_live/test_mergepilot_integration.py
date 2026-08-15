@@ -471,7 +471,7 @@ class TestKindAndStatus(unittest.TestCase):
             "production_resource_access_status": "NOT_MEASURED",
             "github_writes_enabled": False, "agent_control_enabled": False,
             "runtime_consumes_rag_context": False,
-            "dynamic_pages_consume_live_api": False,
+            "dynamic_pages_consume_live_api": True,
         })
 
     def test_status_contract_violations(self):
@@ -482,14 +482,14 @@ class TestKindAndStatus(unittest.TestCase):
             "production_resource_access_status": "NOT_MEASURED",
             "github_writes_enabled": False, "agent_control_enabled": False,
             "runtime_consumes_rag_context": False,
-            "dynamic_pages_consume_live_api": False,
+            "dynamic_pages_consume_live_api": True,
         }
         for key, bad in (("source_kind", "POSTGRES_ISOLATED"),
                          ("source_read_only", False),
                          ("not_production", False),
                          ("production_resource_accessed", "yes"),
                          ("github_writes_enabled", True),
-                         ("dynamic_pages_consume_live_api", True)):
+                         ("dynamic_pages_consume_live_api", False)):
             status = dict(base)
             status[key] = bad
             _gate(self, assert_live_status_contract, status,

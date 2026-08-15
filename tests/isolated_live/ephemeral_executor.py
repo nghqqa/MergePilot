@@ -748,10 +748,16 @@ class EphemeralExecutor:
         This sets ``_server_address``/``_server_port`` for
         ``expected_server_*``. NOT done via ``docker exec`` (Unix socket would
         return NULL for inet_server_addr).
+
+        Retry v3 Fix 1: measures ``host(inet_server_addr())`` — the BARE
+        host text — so the measured value is already in canonical form
+        (an inet→text cast may carry a build-dependent ``/32`` netmask
+        suffix; PostgresSnapshotSource canonicalizes both sides of the
+        comparison regardless, keeping Phase B behavior identical).
         """
         conn = self._connect(password=self._admin_password, user=_ADMIN_USER)
         cur = conn.cursor()
-        cur.execute("SELECT inet_server_addr()::text, inet_server_port()")
+        cur.execute("SELECT host(inet_server_addr()), inet_server_port()")
         row = cur.fetchone()
         cur.close()
         conn.close()

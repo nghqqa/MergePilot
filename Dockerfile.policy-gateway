@@ -13,7 +13,16 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY tools/policy-gateway/gateway.py /app/gateway.py
 COPY tools/policy-gateway/policy.yaml /app/policy.yaml
+# Retry v3 Fix 3: healthcheck probe (TCP to the gateway's own listen port —
+# uvicorn binds only AFTER the upstream session is up), the entrypoint
+# validating UPSTREAM_URL/ROLE_TOKENS/LISTEN_* with a stable CONFIG_INVALID,
+# and the in-container loopback-only ZERO-tool MCP SSE stub the isolated
+# stack points UPSTREAM_URL at (no github-mcp exists here by design).
+COPY tools/policy-gateway/healthcheck.py /app/healthcheck.py
+COPY tools/policy-gateway/upstream_stub.py /app/upstream_stub.py
+COPY tools/gateway_entrypoint.py /app/gateway_entrypoint.py
+COPY tools/demo_console/one_click_startup.py /app/one_click_startup.py
 
 WORKDIR /app
 ENV PYTHONUNBUFFERED=1
-ENTRYPOINT ["python", "-u", "/app/gateway.py"]
+ENTRYPOINT ["python", "-u", "/app/gateway_entrypoint.py"]

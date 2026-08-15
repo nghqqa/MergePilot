@@ -95,7 +95,9 @@ def gate_server_identity():
     import psycopg2
     conn = psycopg2.connect(DSN)
     cur = conn.cursor()
-    cur.execute("SELECT inet_server_addr()::text, inet_server_port(), "
+    # Retry v3 Fix 1: host(inet_server_addr()) measures the BARE host text —
+    # an inet→text cast may carry a build-dependent /32 netmask suffix.
+    cur.execute("SELECT host(inet_server_addr()), inet_server_port(), "
                 "current_setting('server_version_num')::int")
     addr, port, ver = cur.fetchone()
     cur.close()

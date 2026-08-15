@@ -52,6 +52,10 @@ if _HERE not in sys.path:
 
 from integrity import compute_bundle_sha256  # noqa: E402
 from live_poller import SnapshotSource  # noqa: E402
+from one_click_startup import (  # noqa: E402
+    canonicalize_server_address,
+    canonicalize_server_address_list,
+)
 
 
 # ── run_id safety ──────────────────────────────────────────────────────────
@@ -630,13 +634,25 @@ class PostgresSnapshotSource(SnapshotSource):
 
         # ── Server identity hardening ──────────────────────────────────────
         # expected_server_addresses: a non-empty list of allowed addresses.
+        # Each entry is CANONICALIZED through the shared one-contract
+        # canonicalizer (retry v3 Fix 1): a bare ``172.18.0.2`` and a
+        # single-host ``172.18.0.2/32`` are the SAME address — PostgreSQL's
+        # ``inet_server_addr()`` text form may carry the netmask suffix
+        # depending on build. Hostnames/aliases, IPv6, non-/32 CIDR and
+        # malformed values are rejected here (fail-closed CONFIG_INVALID),
+        # BEFORE any connection is opened.
         if not isinstance(expected_server_addresses, list) or not expected_server_addresses:
             raise ConfigInvalidError(
                 "CONFIG_INVALID: expected_server_addresses must be a non-empty "
                 "list (e.g. ['127.0.0.1'])",
                 code="CONFIG_INVALID",
             )
-        self._expected_server_addresses = list(expected_server_addresses)
+        try:
+            self._expected_server_addresses = \
+                canonicalize_server_address_list(expected_server_addresses)
+        except ValueError as exc:
+            raise ConfigInvalidError(str(exc), code="CONFIG_INVALID") \
+                from None
 
         # expected_server_port: a non-zero int.
         if not isinstance(expected_server_port, int) or isinstance(
@@ -948,8 +964,14 @@ class PostgresSnapshotSource(SnapshotSource):
         # connection landed on. We do NOT guess from hostname: the operator
         # supplies expected_server_addresses / expected_server_port /
         # expected_application_name, and a mismatch is fail-closed WRONG_SERVER.
+        # Retry v3 Fix 1: the SQL measures ``host(inet_server_addr())`` — the
+        # bare host text — instead of casting the inet value to text (whose
+        # form may carry a ``/32`` netmask suffix depending on build). The
+        # measured value is ADDITIONALLY canonicalized in Python (defensive
+        # twin of the same shared contract), so both sides of the comparison
+        # are normalized: ``172.18.0.2`` and ``172.18.0.2/32`` are the same.
         cur.execute(
-            "SELECT inet_server_addr()::text, inet_server_port(), "
+            "SELECT host(inet_server_addr()), inet_server_port(), "
             "current_setting('application_name'), "
             "current_setting('server_version_num')::int"
         )
@@ -970,7 +992,15 @@ class PostgresSnapshotSource(SnapshotSource):
                 "matching the configured allowlist is required",
                 code="WRONG_SERVER",
             )
-        if server_addr not in self._expected_server_addresses:
+        try:
+            server_addr_canonical = canonicalize_server_address(server_addr)
+        except ValueError:
+            raise IdentityCheckError(
+                "WRONG_SERVER: measured server address %r is not a "
+                "canonicalizable IPv4 host" % server_addr[:40],
+                code="WRONG_SERVER",
+            ) from None
+        if server_addr_canonical not in self._expected_server_addresses:
             raise IdentityCheckError(
                 "WRONG_SERVER: inet_server_addr() not in expected "
                 f"allowlist (got {self._safe_snippet(server_addr)})",
