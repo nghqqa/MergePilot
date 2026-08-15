@@ -96,9 +96,17 @@ class TestFilesComplete(unittest.TestCase):
 
     def test_demo_console_dockerfile_entrypoint_loopback(self):
         body = DOCKERFILES["demo-console"].read_text(encoding="utf-8")
-        self.assertIn("--host", body)
+        # The ENTRYPOINT delegates to demo_console_entrypoint.py which reads
+        # host/port from env (loopback validated there). The Dockerfile still
+        # discloses the loopback contract and the port.
+        self.assertIn("demo_console_entrypoint.py", body)
         self.assertIn("127.0.0.1", body)
         self.assertIn("EXPOSE 8600", body)
+        # No baked --mode in ENTRYPOINT (the entrypoint module handles it).
+        entrypoint_line = [l for l in body.splitlines()
+                          if l.startswith("ENTRYPOINT")]
+        self.assertEqual(len(entrypoint_line), 1)
+        self.assertNotIn("--mode", entrypoint_line[0])
 
     def test_preflight_dockerfile_in_network_env(self):
         body = DOCKERFILES["preflight"].read_text(encoding="utf-8")
@@ -122,7 +130,7 @@ class TestComposeYml(unittest.TestCase):
             self.assertIn(name, self.yml["services"])
 
     def test_builder_matches_yml_services(self):
-        cfg = build_compose_config()
+        cfg = build_compose_config(demo_console_run_id="test-run-1")
         self.assertEqual(set(cfg["services"]), set(self.yml["services"]))
 
     def test_postgres_digest_pinned(self):
@@ -206,9 +214,24 @@ class TestComposeYml(unittest.TestCase):
                 self.assertIn("@sha256:", svc["image"])
 
     def test_yaml_contains_no_lan_or_wildcard_binds(self):
+        # HOST-side port publishes must never use LAN/wildcard/IPv6. The
+        # 0.0.0.0 in MERGEPILOT_HOST is the CONTAINER-INTERNAL listen address
+        # (Docker bridge routing), which is a DIFFERENT address from the
+        # host-side publish. Verify no LAN/wildcard in any ports: line.
         text = COMPOSE_PATH.read_text(encoding="utf-8")
-        for bad in ("0.0.0.0", "::", "192.168.", "10.0."):
+        for bad in ("::", "192.168.", "10.0."):
             self.assertNotIn(bad, text)
+        # Check that 0.0.0.0 appears ONLY in the env block, never in ports.
+        in_ports = False
+        for line in text.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("ports:"):
+                in_ports = True
+                continue
+            if in_ports and stripped.startswith("-") and "0.0.0.0" in stripped:
+                self.fail("0.0.0.0 found in a ports: publish line: %r" % stripped)
+            if in_ports and stripped and not stripped.startswith(("-", "#")) and not line.startswith(" "):
+                in_ports = False
 
     def test_no_twin_or_host_process_path(self):
         # The yml comments say "no twin container, no host-process substitute"
@@ -401,7 +424,7 @@ class TestOrchestrator(unittest.TestCase):
                 mock.patch("socket.socket") as ss:
             plan_orchestrated_start(env_file="postgres.env")
             plan_orchestrated_cleanup()
-            validate_compose_config(build_compose_config())
+            validate_compose_config(build_compose_config(demo_console_run_id="test-run-1"))
         sr.assert_not_called()
         ss.assert_not_called()
 

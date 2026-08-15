@@ -179,6 +179,7 @@ class SecretFile:
 def build_compose_config(*, demo_console_port: int = DEMO_CONSOLE_PORT,
                          project_name: str = "mergepilot-isolated",
                          admin_password_secret: str = "<secret-file>",
+                         demo_console_run_id: str = "",
                          ) -> dict:
     """Build the five-service compose configuration as a pure dict.
 
@@ -186,12 +187,25 @@ def build_compose_config(*, demo_console_port: int = DEMO_CONSOLE_PORT,
       - the ONLY image reference is the digest-pinned pgvector
         (controller/policy-gateway/demo-console/preflight use build contexts
         with ``pull_policy: never`` — no implicit image pulls)
-      - the ONLY published port is demo-console, bound to 127.0.0.1
-        (postgres is NEVER published; inter-service traffic stays on the
-        private compose network)
+      - the ONLY published port is demo-console, bound to 127.0.0.1 on the
+        HOST side (postgres is NEVER published; inter-service traffic stays
+        on the private compose network; the demo-console CONTAINER listens
+        on 0.0.0.0 internally — required for Docker bridge routing)
       - explicit service dependency order with healthcheck-gated conditions
       - passwords travel via the env-file (secret file), never argv
+      - ``demo_console_run_id`` is REQUIRED (no default, no inference);
+        missing/empty/invalid charset -> CONFIG_INVALID (fail-closed)
     """
+    if not demo_console_run_id or not demo_console_run_id.strip():
+        raise StartupGateError(
+            "CONFIG_INVALID",
+            "demo_console_run_id is required (no default, no inference); "
+            "the caller must provide the seeded run_id")
+    import re as _re
+    if not _re.fullmatch(r"[a-zA-Z0-9_-]+", demo_console_run_id):
+        raise StartupGateError(
+            "CONFIG_INVALID",
+            "demo_console_run_id must match ^[a-zA-Z0-9_-]+$")
     if not (0 < demo_console_port < 65536):
         raise StartupGateError("CONFIG_INVALID", "demo_console_port out of range")
     services = {
@@ -236,6 +250,20 @@ def build_compose_config(*, demo_console_port: int = DEMO_CONSOLE_PORT,
                 "controller": {"condition": "service_started"},
             },
             "networks": ["isolated"],
+            "environment": {
+                # Entrypoint contract (demo_console_entrypoint.py):
+                # ISOLATED_LIVE mode, postgres source, canonical reader role,
+                # CALLER-PROVIDED run_id. REPLAY is refused (no fallback).
+                # The container listens on 0.0.0.0 internally (required for
+                # Docker bridge routing); the HOST-side publish stays
+                # 127.0.0.1-only (see ports below).
+                "MERGEPILOT_MODE": "isolated_live",
+                "MERGEPILOT_SOURCE_KIND": "postgres",
+                "MERGEPILOT_RUN_ID": demo_console_run_id,
+                "MERGEPILOT_EXPECTED_ROLE": READER_ROLE,
+                "MERGEPILOT_HOST": "0.0.0.0",
+                "MERGEPILOT_PORT": str(DEMO_CONSOLE_PORT),
+            },
             "ports": [
                 "%s:%d:8600" % (LOOPBACK_BIND, demo_console_port),
             ],

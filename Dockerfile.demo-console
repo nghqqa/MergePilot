@@ -22,6 +22,7 @@ COPY tools/demo_console/schema.py /app/schema.py
 COPY tools/demo_console/one_click_startup.py /app/one_click_startup.py
 COPY tools/demo_console/mergepilot_integration.py /app/mergepilot_integration.py
 COPY tools/demo_console/evidence_manifest.py /app/evidence_manifest.py
+COPY tools/demo_console_entrypoint.py /app/demo_console_entrypoint.py
 
 WORKDIR /app
 ENV PYTHONUNBUFFERED=1 \
@@ -29,5 +30,7 @@ ENV PYTHONUNBUFFERED=1 \
     MERGEPILOT_PG_PORT=5432 \
     MERGEPILOT_PG_DATABASE=mergepilot_audit
 # The reader DSN is taken from MERGEPILOT_PG_DSN (env) — never from argv.
+# The entrypoint validates MERGEPILOT_MODE/SOURCE_KIND/RUN_ID/EXPECTED_ROLE
+# from the environment and refuses to run in REPLAY mode.
 EXPOSE 8600
-ENTRYPOINT ["python", "-u", "/app/serve.py", "--host", "127.0.0.1", "--port", "8600"]
+ENTRYPOINT ["python", "-u", "/app/demo_console_entrypoint.py"]
