@@ -33,6 +33,18 @@ from one_click_startup import (  # noqa: E402
 )
 
 COMPOSE_PATH = ROOT / "docker-compose.yml"
+
+
+def _write_controller_env_file(lines=("PG_PASS=test-pg-pass\n"
+                                       "ADMIN_PW=test-admin-pw\n")):
+    """Contract-valid controller.env in a temp dir (M8-A1 unconditional
+    plan pre-gate requires a REAL readable file)."""
+    import tempfile
+    td = tempfile.mkdtemp(prefix="ctrl-env-")
+    path = Path(td) / "controller.env"
+    path.write_text("".join(lines), encoding="utf-8")
+    return str(path)
+
 DOCKERFILES = {
     "demo-console": ROOT / "Dockerfile.demo-console",
     "controller": ROOT / "Dockerfile.controller",
@@ -697,7 +709,7 @@ class TestHealthchecksAndOrder(unittest.TestCase):
             plans = oc.plan_orchestrated_start(
                 demo_console_run_id="run-1",
                 demo_console_pg_server_addresses="172.18.0.2",
-                controller_env_file="/tmp/controller.env",
+                controller_env_file=_write_controller_env_file(),
                 reader_dsn_env_file="/tmp/demo_console.env")
             by_name = {p[p.index("--name") + 1]: p for p in plans[1:]
                        if "--name" in p}
@@ -708,7 +720,8 @@ class TestHealthchecksAndOrder(unittest.TestCase):
             self.assertIn("UPSTREAM_URL=http://127.0.0.1:8084/sse", gw)
             ctrl = " ".join(by_name["mergepilot-isolated-controller-1"])
             self.assertIn("PG_HOST=postgres", ctrl)
-            self.assertIn("--env-file /tmp/controller.env", ctrl)
+            self.assertIn("--env-file", ctrl)
+            self.assertIn("controller.env", ctrl)
             for plan in plans:
                 oc.assert_argv_safe(plan)
         finally:

@@ -1756,6 +1756,44 @@ def _wait_for_pg(max_attempts=30, delay=2):
     return conn, ready
 
 
+def _assert_m4f_snapshot_identity(snapshot_conn) -> None:
+    """M8-A1 runtime identity gate for the snapshot-worker DSN.
+
+    Read-only catalog probe requiring BOTH:
+      * ``current_user == 'snapshot_worker'`` — cluster superusers (e.g. the
+        initdb ``mergepilot`` role) pass ``has_function_privilege`` for ANY
+        function even without a GRANT, so privilege alone is NOT an
+        identity proof;
+      * ``has_function_privilege(..., 'public.claim_snapshot_job(...)',
+        'EXECUTE') is True``.
+    Any other combination fails closed via ``sys.exit`` BEFORE
+    ``mark_ready``/``run_forever``/any M4F event consumption. The probe is
+    a SELECT followed by ROLLBACK (zero database side effects). Errors are
+    stable, secret-free text: exception paths print only the exception
+    TYPE (never ``str(exc)``, which for connection failures can embed
+    host/user context); no DSN, host or password is ever emitted.
+    """
+    try:
+        with snapshot_conn.cursor() as cur:
+            cur.execute(
+                "SELECT current_user, has_function_privilege("
+                "current_user,"
+                "'public.claim_snapshot_job(text,text,integer)',"
+                "'EXECUTE')"
+            )
+            row = cur.fetchone()
+        snapshot_conn.rollback()
+    except Exception as exc:
+        sys.exit(
+            f"[ctrl] FATAL: M4-F snapshot-worker DSN 不可用: "
+            f"{type(exc).__name__}"
+        )
+    if not row or row[0] != "snapshot_worker" or row[1] is not True:
+        sys.exit(
+            "[ctrl] FATAL: M4-F snapshot 身份门失败: DSN 必须以 "
+            "snapshot_worker 连接且持有 claim_snapshot_job EXECUTE")
+
+
 def startup_assert_l2():
     """fail-closed 启动断言(B4c-0.1 #3):
     - 非法 L2_MERGE_ENABLED 值 → 拒启动(不静默当 false)。
@@ -1814,21 +1852,7 @@ def startup_assert_l2():
         conn.commit()
         if not m4f_ready or not all(m4f_ready):
             sys.exit("[ctrl] FATAL: M4F_ENABLED=1 但 M4-F1 migration/API 未就绪")
-        try:
-            snapshot_conn = ensure_m4f_snapshot_pg()
-            with snapshot_conn.cursor() as cur:
-                cur.execute(
-                    "SELECT has_function_privilege(current_user,'public.claim_snapshot_job(text,text,integer)','EXECUTE')"
-                )
-                snapshot_ready = bool(cur.fetchone()[0])
-            snapshot_conn.commit()
-        except Exception as exc:
-            sys.exit(
-                f"[ctrl] FATAL: M4-F snapshot-worker DSN 不可用: "
-                f"{type(exc).__name__}: {exc}"
-            )
-        if not snapshot_ready:
-            sys.exit("[ctrl] FATAL: snapshot-worker 缺 claim_snapshot_job EXECUTE")
+        _assert_m4f_snapshot_identity(ensure_m4f_snapshot_pg())
 
     need_gateway = bool(pending_l2) or L2_MERGE_ENABLED or M4F_ENABLED
     if need_gateway:

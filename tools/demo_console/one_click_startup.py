@@ -301,6 +301,62 @@ class ControllerSecretFile:
     def path(self) -> Path:
         return self._path
 
+    _DSN_KEY = "M4F_SNAPSHOT_DSN"
+
+    @staticmethod
+    def _validate_m4f_snapshot_dsn(value) -> None:
+        """Fail-closed static validation of the snapshot-worker DSN.
+
+        Contract (M8-A1): non-empty string, strictly single line, no
+        CR/LF/NUL/space/tab; scheme exactly ``postgresql``; username
+        exactly ``snapshot_worker`` (admin/mergepilot rejected); password
+        non-empty; host exactly the isolated service name ``postgres``
+        (multi-host rejected); port exactly 5432; path exactly
+        ``/mergepilot_audit``; no query, no fragment. Only the canonical
+        spelling is accepted (percent-encoded or otherwise equivalent
+        non-canonical forms are rejected). Errors name the field and
+        reason only — the DSN value never appears in exceptions.
+        """
+        import urllib.parse
+        if not isinstance(value, str):
+            raise StartupGateError(
+                "CONFIG_INVALID",
+                "m4f_snapshot_dsn must be a string (got %s)"
+                % type(value).__name__)
+        if not value.strip():
+            raise StartupGateError("CONFIG_INVALID",
+                                   "m4f_snapshot_dsn must be non-empty")
+        for ch in ("\r", "\n", "\0", " ", "\t"):
+            if ch in value:
+                raise StartupGateError(
+                    "CONFIG_INVALID",
+                    "m4f_snapshot_dsn contains a rejected whitespace or "
+                    "control character (env-file injection vector)")
+        parts = urllib.parse.urlsplit(value)
+        problems = []
+        if parts.scheme != "postgresql":
+            problems.append("scheme must be postgresql")
+        if parts.username != "snapshot_worker":
+            problems.append("username must be snapshot_worker")
+        if not parts.password:
+            problems.append("password must be non-empty")
+        if parts.hostname != "postgres":
+            problems.append("host must be postgres")
+        if parts.port != 5432:
+            problems.append("port must be explicitly 5432")
+        if parts.path != "/mergepilot_audit":
+            problems.append("path must be /mergepilot_audit")
+        if parts.query:
+            problems.append("query is forbidden")
+        if parts.fragment:
+            problems.append("fragment is forbidden")
+        if "," in (parts.netloc or ""):
+            problems.append("multi-host is forbidden")
+        if problems:
+            raise StartupGateError(
+                "CONFIG_INVALID",
+                "m4f_snapshot_dsn contract violation: " + "; ".join(problems))
+
     @staticmethod
     def _validate_secret(name: str, value) -> None:
         """Validate one secret BEFORE any filesystem effect (fail-closed).
@@ -325,11 +381,16 @@ class ControllerSecretFile:
                     "(CR/LF/NUL are env-file line-injection vectors)"
                     % (name, idx))
 
-    def write(self, pg_pass: str, admin_pw: str) -> None:
-        # FULL validation of BOTH values first — a failure below leaves no
-        # directory and no file behind.
+    def write(self, pg_pass: str, admin_pw: str,
+              m4f_snapshot_dsn: str | None = None) -> None:
+        # FULL validation of ALL values first — a failure below leaves no
+        # directory and no file behind. The optional third secret rides the
+        # SAME env-file (M8-A1 single-secret-file model: exactly two lines
+        # without it, exactly three with it; never a second env-file).
         self._validate_secret("pg_pass", pg_pass)
         self._validate_secret("admin_pw", admin_pw)
+        if m4f_snapshot_dsn is not None:
+            self._validate_m4f_snapshot_dsn(m4f_snapshot_dsn)
         if self._path.exists():
             raise StartupGateError("SECRET_FILE_EXISTS",
                                    "refusing to overwrite an existing "
@@ -337,6 +398,8 @@ class ControllerSecretFile:
         self._dir.mkdir(parents=True, exist_ok=True)
         content = ("PG_PASS=%s\n"
                    "ADMIN_PW=%s\n" % (pg_pass, admin_pw))
+        if m4f_snapshot_dsn is not None:
+            content += "%s=%s\n" % (self._DSN_KEY, m4f_snapshot_dsn)
         self._path.write_text(content, encoding="utf-8")
         try:
             self._path.chmod(0o600)
@@ -499,6 +562,83 @@ def _demo_console_environment(demo_console_run_id: str,
     }
 
 
+_CONTROLLER_ENV_KEYS_BASE = ("PG_PASS", "ADMIN_PW")
+_CONTROLLER_ENV_KEY_M4F = "M4F_SNAPSHOT_DSN"
+
+
+def _validate_controller_env_file_contract(path, *,
+                                           m4f_event_machinery: bool) -> None:
+    """Unconditionally validate the controller secret env-file contract.
+
+    Strict line-oriented parse (no lenient dotenv semantics): blank lines,
+    comment lines, lines without '=', CR/NUL bytes, duplicate keys and
+    unknown keys are all rejected. The exact key set depends on the
+    feature flag — ``{PG_PASS, ADMIN_PW}`` when the M4F event machinery is
+    off (a present-but-unusable M4F_SNAPSHOT_DSN is a purposeless secret
+    delivery and is rejected), plus ``M4F_SNAPSHOT_DSN`` exactly once when
+    it is on (whose value then passes the full snapshot-worker DSN static
+    contract). Errors name the key and reason only — values (secrets)
+    never appear in exceptions.
+    """
+    allowed = set(_CONTROLLER_ENV_KEYS_BASE)
+    if m4f_event_machinery:
+        allowed.add(_CONTROLLER_ENV_KEY_M4F)
+    try:
+        raw = Path(path).read_text(encoding="utf-8")
+    except OSError:
+        raise StartupGateError(
+            "CONFIG_INVALID",
+            "controller env file unreadable (cannot validate the secret "
+            "contract); refusing to plan any start") from None
+    if "\r" in raw or "\0" in raw:
+        raise StartupGateError(
+            "CONFIG_INVALID",
+            "controller env file contains CR/NUL (injection vector)")
+    seen = {}
+    for lineno, line in enumerate(raw.split("\n"), start=1):
+        if line == "":
+            if lineno == len(raw.split("\n")):
+                continue   # trailing newline after the last entry is normal
+            raise StartupGateError(
+                "CONFIG_INVALID",
+                "controller env file line %d: blank lines are forbidden"
+                % lineno)
+        if line.lstrip().startswith("#"):
+            raise StartupGateError(
+                "CONFIG_INVALID",
+                "controller env file line %d: comment lines are forbidden"
+                % lineno)
+        if "=" not in line:
+            raise StartupGateError(
+                "CONFIG_INVALID",
+                "controller env file line %d: line lacks '='" % lineno)
+        key, value = line.split("=", 1)
+        if key not in allowed:
+            raise StartupGateError(
+                "CONFIG_INVALID",
+                "controller env file line %d: unknown or forbidden key"
+                " (m4f_event_machinery=%s)" % (lineno, m4f_event_machinery))
+        if key in seen:
+            raise StartupGateError(
+                "CONFIG_INVALID",
+                "controller env file line %d: duplicate key" % lineno)
+        if not value:
+            raise StartupGateError(
+                "CONFIG_INVALID",
+                "controller env file line %d: empty value" % lineno)
+        seen[key] = value
+    expected = allowed
+    missing = sorted(expected - set(seen))
+    if missing:
+        raise StartupGateError(
+            "CONFIG_INVALID",
+            "controller env file missing required key(s): %s "
+            "(m4f_event_machinery=%s)" % (missing, m4f_event_machinery))
+    if m4f_event_machinery:
+        ControllerSecretFile._validate_m4f_snapshot_dsn(
+            seen[_CONTROLLER_ENV_KEY_M4F])
+
+
 def _controller_environment() -> dict:
     """Non-secret controller env (single source of truth, retry v3 Fix 3).
 
@@ -538,6 +678,7 @@ def build_compose_config(*, demo_console_port: int = DEMO_CONSOLE_PORT,
                          reader_dsn_secret: str = "<reader-dsn-secret-file>",
                          demo_console_run_id: str = "",
                          demo_console_pg_server_addresses: str = "",
+                         m4f_event_machinery: bool = False,
                          ) -> dict:
     """Build the five-service compose configuration as a pure dict.
 
@@ -611,8 +752,13 @@ def build_compose_config(*, demo_console_port: int = DEMO_CONSOLE_PORT,
             # orchestrator-created secret env-file, never compose literals;
             # the non-secret DB coordinates are explicit (the code default
             # PG_HOST='audit-pg' does not exist in this stack).
+            # M8-A1: the optional M4F_SNAPSHOT_DSN rides the SAME env-file
+            # (third line, written only when the machinery is opted in);
+            # M4F_ENABLED itself is a NON-secret flag injected below.
             "env_file": controller_secret,
-            "environment": _controller_environment(),
+            "environment": dict(
+                _controller_environment(),
+                **({"M4F_ENABLED": "1"} if m4f_event_machinery else {})),
             # Real liveness: the controller has no listen port, so the probe
             # is a TCP connect from INSIDE the container to the configured
             # PostgreSQL — passing means the container is alive AND the DB
@@ -715,6 +861,7 @@ def build_compose_config(*, demo_console_port: int = DEMO_CONSOLE_PORT,
     }
     return {
         "name": project_name,
+        "_m4f_event_machinery": bool(m4f_event_machinery),
         "services": services,
         "networks": {
             "isolated": {"driver": "bridge", "internal": True},
@@ -860,6 +1007,18 @@ def validate_compose_config(config: dict) -> None:
                 "COMPOSE_INVALID",
                 "controller env %s must be %r (got %r)"
                 % (key, value, ctrl_env.get(key)))
+    # M8-A1 opt-in biconditional: M4F_ENABLED appears in the controller
+    # environment IFF the machinery was opted in (never a free env var,
+    # never a default-on).
+    has_m4f = "M4F_ENABLED" in ctrl_env
+    if has_m4f != bool(config.get("_m4f_event_machinery", False)):
+        raise StartupGateError(
+            "COMPOSE_INVALID",
+            "controller M4F_ENABLED must match the m4f_event_machinery "
+            "opt-in flag (got key=%s)" % has_m4f)
+    if has_m4f and ctrl_env.get("M4F_ENABLED") != "1":
+        raise StartupGateError(
+            "COMPOSE_INVALID", "controller M4F_ENABLED must be '1'")
     for secret_key in ("PG_PASS", "ADMIN_PW"):
         if secret_key in ctrl_env:
             raise StartupGateError(
@@ -1124,7 +1283,8 @@ def plan_service_run(service: str, *, image_ref: str,
                      demo_console_env: dict | None = None,
                      controller_env: dict | None = None,
                      gateway_env: dict | None = None,
-                     reader_dsn_env_file: str | None = None) -> list:
+                     reader_dsn_env_file: str | None = None,
+                     m4f_enabled: bool = False) -> list:
     """argv array (docker sub-args) to run one service per the contract.
 
     ``image_ref`` is the digest/image-ID (never a floating tag). The plan
@@ -1250,6 +1410,10 @@ def plan_service_run(service: str, *, image_ref: str,
     if controller_env:
         for key in sorted(controller_env):
             argv += ["-e", "%s=%s" % (key, controller_env[key])]
+    if service == "controller" and m4f_enabled:
+        # M8-A1 opt-in: the ONLY non-secret transmission change. The
+        # snapshot DSN itself rides the existing --env-file (never argv).
+        argv += ["-e", "M4F_ENABLED=1"]
     if gateway_env:
         for key in sorted(gateway_env):
             argv += ["-e", "%s=%s" % (key, gateway_env[key])]
@@ -1329,7 +1493,8 @@ def plan_orchestrated_start(env_file: str | None = None, *,
                             controller_env_file: str,
                             reader_dsn_env_file: str,
                             demo_console_run_id: str = "",
-                            demo_console_pg_server_addresses: str = ""
+                            demo_console_pg_server_addresses: str = "",
+                            m4f_event_machinery: bool = False
                             ) -> list:
     """Full start plan: [network create, run postgres, run gateway, run
     controller, run demo-console, run preflight] as argv arrays in strict
@@ -1364,6 +1529,12 @@ def plan_orchestrated_start(env_file: str | None = None, *,
             "controller_env_file is required (a non-empty string path to "
             "the SecretFile-transport env-file carrying the controller "
             "secrets); refusing to plan any start without it")
+    # M8-A1: the controller secret env-file contract is validated
+    # UNCONDITIONALLY (both feature states), BEFORE the reader-DSN gate
+    # and before ANY plan (network/run/connect/health/preflight) is
+    # generated. The key set is flag-dependent; values are never echoed.
+    _validate_controller_env_file_contract(
+        controller_env_file, m4f_event_machinery=m4f_event_machinery)
     # 1-G stabilization sweep: same fail-closed rule for the reader-DSN
     # secret env-file (demo-console + preflight both refuse to start
     # without MERGEPILOT_PG_DSN, and it may never ride -e argv).
@@ -1386,7 +1557,8 @@ def plan_orchestrated_start(env_file: str | None = None, *,
     plans.append(plan_service_run(
         "controller", image_ref=get_built_image_identity("controller"),
         controller_env=_controller_environment(),
-        env_file=controller_env_file))
+        env_file=controller_env_file,
+        m4f_enabled=m4f_event_machinery))
     plans.append(plan_service_run(
         "demo-console", image_ref=get_built_image_identity("demo-console"),
         demo_console_env=demo_env,

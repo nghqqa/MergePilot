@@ -67,6 +67,17 @@ def _gate(testcase, fn, *args, code, **kwargs):
     return cm.exception
 
 
+def _write_controller_env_file(lines=("PG_PASS=test-pg-pass\n"
+                                       "ADMIN_PW=test-admin-pw\n")):
+    """Contract-valid controller.env in a temp dir (M8-A1 unconditional
+    plan pre-gate requires a REAL readable file)."""
+    import tempfile
+    td = tempfile.mkdtemp(prefix="ctrl-env-")
+    path = Path(td) / "controller.env"
+    path.write_text("".join(lines), encoding="utf-8")
+    return str(path)
+
+
 def _record_identities():
     oc._builtin_registry.clear()
     for service in oc.BUILT_SERVICES:
@@ -132,7 +143,7 @@ class TestControllerEnvFileContract(unittest.TestCase):
 
     def test_orchestrated_controller_plan_env_file_once(self):
         plans = oc.plan_orchestrated_start(
-            controller_env_file="controller.env",
+            controller_env_file=_write_controller_env_file(),
             reader_dsn_env_file="demo_console.env",
             demo_console_run_id="run-1",
             demo_console_pg_server_addresses="172.18.0.2")
@@ -143,7 +154,7 @@ class TestControllerEnvFileContract(unittest.TestCase):
 
     def test_error_messages_do_not_echo_the_path(self):
         exc = _gate(self, oc.plan_orchestrated_start,
-                    controller_env_file="/very/secret/place/x.env",
+                    controller_env_file=_write_controller_env_file(),
                     reader_dsn_env_file="demo_console.env",
                     code="CONFIG_INVALID")
         self.assertNotIn("/very/secret/place/x.env", str(exc))
@@ -419,7 +430,7 @@ class TestDemoReadinessThreeLayerConsistency(unittest.TestCase):
         _record_identities()
         try:
             plans = oc.plan_orchestrated_start(
-                controller_env_file="controller.env",
+                controller_env_file=_write_controller_env_file(),
                 reader_dsn_env_file="demo_console.env",
                 demo_console_run_id="run-1",
                 demo_console_pg_server_addresses="172.18.0.2")
@@ -1454,10 +1465,10 @@ class TestReaderDsnDelivery(unittest.TestCase):
                                   _must_not_run):
             for bad in (None, "", "  ", 42):
                 _gate(self, oc.plan_orchestrated_start,
-                      controller_env_file="controller.env",
+                      controller_env_file=_write_controller_env_file(),
                       reader_dsn_env_file=bad, code="CONFIG_INVALID")
         plans = oc.plan_orchestrated_start(
-            controller_env_file="controller.env",
+            controller_env_file=_write_controller_env_file(),
             reader_dsn_env_file="demo_console.env",
             demo_console_run_id="run-1",
             demo_console_pg_server_addresses="172.18.0.2")
@@ -1891,3 +1902,181 @@ class TestConsoleEdgePlumbing(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ── M8-A1: snapshot DSN secret contract + startup identity gate ─────────────
+
+_GOOD_DSN = ("postgresql://snapshot_worker:testsnap@postgres:5432/"
+             "mergepilot_audit")
+
+
+class TestControllerSecretFileM8A1(unittest.TestCase):
+
+    def test_three_line_write_with_valid_dsn(self):
+        with tempfile.TemporaryDirectory() as td:
+            sf = ControllerSecretFile(Path(td))
+            sf.write("pg-secret", "admin-secret",
+                     m4f_snapshot_dsn=_GOOD_DSN)
+            content = sf.path.read_text(encoding="utf-8")
+            self.assertEqual(
+                "PG_PASS=pg-secret\nADMIN_PW=admin-secret\n"
+                "M4F_SNAPSHOT_DSN=%s\n" % _GOOD_DSN, content)
+
+    def test_two_line_write_still_default(self):
+        with tempfile.TemporaryDirectory() as td:
+            sf = ControllerSecretFile(Path(td))
+            sf.write("pg-secret", "admin-secret")
+            content = sf.path.read_text(encoding="utf-8")
+            self.assertNotIn("M4F_SNAPSHOT_DSN", content)
+            self.assertEqual(2, len(content.strip().splitlines()))
+
+    def test_dsn_negative_matrix(self):
+        bad = (
+            "postgresql://mergepilot:x@postgres:5432/mergepilot_audit",
+            "postgresql://admin:x@postgres:5432/mergepilot_audit",
+            "postgresql+psycopg2://snapshot_worker:x@postgres:5432/mergepilot_audit",
+            "postgresql://snapshot_worker:x@pg01,pg02/mergepilot_audit",
+            "postgresql://snapshot_worker@postgres:5432/mergepilot_audit",
+            "postgresql://snapshot_worker:x@postgres:5433/mergepilot_audit",
+            "postgresql://snapshot_worker:x@postgres:5432/otherdb",
+            "postgresql://snapshot_worker:x@postgres/mergepilot_audit",
+            _GOOD_DSN + "?application_name=leak",
+            _GOOD_DSN + "#frag",
+            "postgresql://snapshot_worker:x y@postgres:5432/mergepilot_audit",
+            "postgresql://snapshot_worker:x\tpostgres:5432/mergepilot_audit",
+            42, "", "   ",
+        )
+        with tempfile.TemporaryDirectory() as td:
+            sf = ControllerSecretFile(Path(td) / "nested")
+            for value in bad:
+                _gate(self, sf.write, "a", "b", m4f_snapshot_dsn=value,
+                      code="CONFIG_INVALID")
+                self.assertFalse(sf.exists(), value)
+                self.assertFalse(sf.path.parent.exists(), value)
+
+    def test_dsn_error_never_carries_value(self):
+        with tempfile.TemporaryDirectory() as td:
+            sf = ControllerSecretFile(Path(td))
+            exc = _gate(
+                self, sf.write, "a", "b",
+                m4f_snapshot_dsn=(
+                    "postgresql://snapshot_worker:leakme@postgres:5432/"
+                    "mergepilot_audit?x=1"),
+                code="CONFIG_INVALID")
+            self.assertNotIn("leakme", str(exc))
+
+    def test_chmod_0600_and_idempotent_delete_with_dsn(self):
+        with tempfile.TemporaryDirectory() as td:
+            sf = ControllerSecretFile(Path(td))
+            sf.write("a", "b", m4f_snapshot_dsn=_GOOD_DSN)
+            self.assertTrue(sf.exists())
+            sf.delete()
+            self.assertFalse(sf.exists())
+            sf.delete()   # idempotent
+
+
+class TestSnapshotIdentityGate(unittest.TestCase):
+    """Fake-connection tests for controller._assert_m4f_snapshot_identity."""
+
+    def _load_controller(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "controller_under_test",
+            ROOT / "tools" / "workflow-controller" / "controller.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+
+    class _FakeCursor:
+        def __init__(self, row):
+            self._row = row
+
+        def execute(self, *a, **k):
+            pass
+
+        def fetchone(self):
+            return self._row
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    class _FakeConn:
+        def __init__(self, row):
+            self._row = row
+            self.rolled_back = False
+
+        def cursor(self):
+            return TestSnapshotIdentityGate._FakeCursor(self._row)
+
+        def rollback(self):
+            self.rolled_back = True
+
+    class _BoomCursor:
+        def execute(self, *a, **k):
+            raise RuntimeError("boom with DSN postgres://x:y@h:1/d")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    class _BoomConn:
+        rolled_back = False
+
+        def cursor(self):
+            return TestSnapshotIdentityGate._BoomCursor()
+
+        def rollback(self):
+            TestSnapshotIdentityGate._BoomConn.rolled_back = True
+
+    def test_snapshot_worker_with_privilege_passes(self):
+        ctrl = self._load_controller()
+        conn = self._FakeConn(("snapshot_worker", True))
+        ctrl._assert_m4f_snapshot_identity(conn)   # no exit
+        self.assertTrue(conn.rolled_back)
+
+    def _expect_exit(self, conn):
+        ctrl = self._load_controller()
+        import contextlib, io
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            with self.assertRaises(SystemExit) as cm:
+                ctrl._assert_m4f_snapshot_identity(conn)
+        return str(cm.exception.code if not isinstance(cm.exception.code,
+                                                       int) else ""), out.getvalue()
+
+    def test_identity_matrix(self):
+        for row, why in (
+                (("mergepilot", True), "superuser+priv"),
+                (("snapshot_worker", False), "no privilege"),
+                ((None,), "no row"),
+                (("snapshot_worker", None), "null privilege")):
+            conn = self._FakeConn(row)
+            _msg, out = self._expect_exit(conn)
+            self.assertIn("身份门失败", _msg + out, why)
+            self.assertNotIn("postgresql://", _msg + out, why)
+            self.assertNotIn("password", (_msg + out).lower(), why)
+
+    def test_query_exception_fail_closed_and_secret_free(self):
+        _msg, out = self._expect_exit(self._BoomConn())
+        self.assertIn("RuntimeError", _msg + out)
+        self.assertNotIn("postgres://x:y", _msg + out)
+
+    def test_gate_precedes_ready_and_drain_in_source(self):
+        src = (ROOT / "tools" / "workflow-controller" /
+               "controller.py").read_text(encoding="utf-8")
+        startup = src.index("def startup_assert_l2")
+        call_site = src.index(
+            "_assert_m4f_snapshot_identity(ensure_m4f_snapshot_pg())")
+        self.assertLess(startup, call_site)
+        # in the __main__ block: startup_assert_l2() runs before the
+        # readiness mark and before run_forever()
+        entry_idx = src.index('if __name__ == "__main__":')
+        order = [entry_idx,
+                 src.index("startup_assert_l2()", entry_idx),
+                 src.index("_readiness.mark_ready", entry_idx),
+                 src.index("run_forever()", entry_idx)]
+        self.assertEqual(order, sorted(order))
