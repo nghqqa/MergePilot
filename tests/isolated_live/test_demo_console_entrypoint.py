@@ -396,9 +396,12 @@ class TestComposeContract(unittest.TestCase):
         self.assertNotIn("run-eph-ok", text)
 
     def test_compose_demo_console_loopback_publish(self):
-        ports = self.yml["services"]["demo-console"]["ports"]
+        # 1-G network design: the console is UNPUBLISHED (internal-only);
+        # the loopback publish lives on the secretless console-edge.
+        self.assertIsNone(self.yml["services"]["demo-console"].get("ports"))
+        ports = self.yml["services"]["console-edge"]["ports"]
         self.assertEqual(len(ports), 1)
-        self.assertTrue(str(ports[0]).startswith("127.0.0.1:"))
+        self.assertEqual(str(ports[0]), "127.0.0.1:8600:8600")
 
     def test_compose_demo_console_container_listen_0000(self):
         self.assertEqual(self._compose_env()["MERGEPILOT_HOST"], "0.0.0.0")

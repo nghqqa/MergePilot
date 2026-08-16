@@ -699,7 +699,8 @@ class TestHealthchecksAndOrder(unittest.TestCase):
                 demo_console_pg_server_addresses="172.18.0.2",
                 controller_env_file="/tmp/controller.env",
                 reader_dsn_env_file="/tmp/demo_console.env")
-            by_name = {p[p.index("--name") + 1]: p for p in plans[1:]}
+            by_name = {p[p.index("--name") + 1]: p for p in plans[1:]
+                       if "--name" in p}
             for svc in ("mergepilot-isolated-controller-1",
                         "mergepilot-isolated-policy-gateway-1"):
                 self.assertIn("--health-cmd", by_name[svc], svc)
@@ -777,9 +778,11 @@ class TestCrossCutting(unittest.TestCase):
         # process, not a separate compose service, and not a postgres twin.
         import yaml
         yml = yaml.safe_load(COMPOSE_PATH.read_text(encoding="utf-8"))
+        # 1-G: console-edge IS a compose service (secretless publication
+        # plumbing); the gateway stub remains in-container only.
         self.assertEqual(set(yml["services"]),
                          {"postgres", "policy-gateway", "controller",
-                          "demo-console", "preflight"})
+                          "demo-console", "console-edge", "preflight"})
         text = COMPOSE_PATH.read_text(encoding="utf-8")
         self.assertNotIn("host-process", text.replace(
             "no host-process substitute", "").replace(

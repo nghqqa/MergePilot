@@ -1,0 +1,30 @@
+# Console-edge publication plumbing image (Phase 1-G network design).
+#
+# Selected experiment-C topology: secret-bearing services stay on the
+# internal-only backend network (Docker silently drops -p publishing on
+# internal networks, so they can never be published directly); this edge
+# is the ONLY component on the publication bridge and the ONLY published
+# port (loopback-only, enforced by compose/orchestrator). It holds NO
+# secrets and proxies exactly ONE fixed in-network upstream.
+#
+# This is publication plumbing, NOT a fifth application service, and
+# does NOT constitute application integration.
+#
+# Build context: repository root (see docker-compose.yml).
+# Base image: python:3.12-slim — CACHED in the MergePilot-Test daemon.
+# NO pip install: the edge is pure Python stdlib.
+
+FROM python:3.12-slim
+
+COPY tools/demo_console/console_edge.py /app/console_edge.py
+COPY tools/demo_console/console_edge_healthcheck.py /app/console_edge_healthcheck.py
+
+WORKDIR /app
+# Non-root: the edge needs no privileges — nobody exists in the slim
+# base image and the copied files are world-readable.
+USER nobody
+ENV PYTHONUNBUFFERED=1
+EXPOSE 8600
+ENTRYPOINT ["python", "-u", "/app/console_edge.py"]
+HEALTHCHECK --interval=5s --timeout=3s --retries=10 \
+    CMD ["python", "/app/console_edge_healthcheck.py"]

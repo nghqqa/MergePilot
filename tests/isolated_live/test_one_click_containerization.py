@@ -198,11 +198,13 @@ class TestComposeYml(unittest.TestCase):
             self.assertIn("isolated", svc["networks"], name)
 
     def test_only_demo_console_publishes_loopback(self):
+        # 1-G network design: ONLY the secretless console-edge publishes,
+        # loopback-only, canonical port; demo-console is UNPUBLISHED.
         for name, svc in self.yml["services"].items():
             ports = svc.get("ports") or []
-            if name == "demo-console":
-                self.assertEqual(len(ports), 1)
-                self.assertTrue(str(ports[0]).startswith("127.0.0.1:"))
+            if name == "console-edge":
+                self.assertEqual(len(ports), 1, name)
+                self.assertEqual(str(ports[0]), "127.0.0.1:8600:8600")
             else:
                 self.assertEqual(ports, [], name)
 
@@ -329,7 +331,7 @@ class TestImageIdentityRegistry(unittest.TestCase):
     def test_built_services_list(self):
         self.assertEqual(set(BUILT_SERVICES),
                          {"policy-gateway", "controller",
-                          "demo-console", "preflight"})
+                          "demo-console", "console-edge", "preflight"})
 
 
 # ── 4. Docker-CLI orchestrator ───────────────────────────────────────────────
@@ -375,15 +377,20 @@ class TestOrchestrator(unittest.TestCase):
         self.assertIn("--health-cmd", pg)
         self.assertIn("--health-retries", pg)
 
-    def test_only_demo_console_publishes(self):
-        pub = plan_service_run(
+    def test_only_console_edge_publishes(self):
+        # 1-G network design: ONLY the edge publishes (loopback, exactly
+        # once); demo-console and every other service publish NOTHING.
+        demo = plan_service_run(
             "demo-console",
             image_ref=get_built_image_identity("demo-console"),
             demo_console_env=oc._demo_console_environment(
                 _TEST_RUN_ID, _TEST_BRIDGE_IP),
             reader_dsn_env_file="demo_console.env")
-        self.assertIn("-p", pub)
-        self.assertEqual(pub[pub.index("-p") + 1], "127.0.0.1:8600:8600")
+        self.assertNotIn("-p", demo)
+        edge = oc.plan_console_edge_run(
+            get_built_image_identity("console-edge"))
+        self.assertEqual(edge.count("-p"), 1)
+        self.assertEqual(edge[edge.index("-p") + 1], "127.0.0.1:8600:8600")
         for service, env_kwargs in (
                 ("policy-gateway", {"gateway_env": oc._gateway_environment()}),
                 ("controller",
@@ -397,6 +404,12 @@ class TestOrchestrator(unittest.TestCase):
             self.assertNotIn("-p", plan, service)
         pg = plan_service_run("postgres", image_ref=oc.PGVECTOR_IMAGE_DIGEST)
         self.assertNotIn("-p", pg)
+        # The GENERIC path must fail-closed for the edge: it would create
+        # it on the internal network as primary and silently drop the
+        # publish (the retry-5 failure mode).
+        _gate(self, plan_service_run, "console-edge",
+              image_ref=get_built_image_identity("console-edge"),
+              code="CONFIG_INVALID")
 
     def test_demo_console_run_plan_carries_full_env_contract(self):
         # Retry v2: the orchestrated demo-console run must inject the entrypoint
@@ -469,12 +482,24 @@ class TestOrchestrator(unittest.TestCase):
 
     def test_full_start_order(self):
         plans = plan_orchestrated_start(env_file="postgres.env", **_start_kwargs())
-        self.assertEqual(len(plans), 6)  # network + 5 services
-        self.assertEqual(plans[0][0], "network")
-        names = [p[p.index("--name") + 1] for p in plans[1:]]
+        # 2 network creates + 6 service runs (incl. console-edge) + 1
+        # edge network-connect = 9.
+        self.assertEqual(len(plans), 9)
+        self.assertEqual(plans[0], oc.plan_network_create())
+        self.assertEqual(plans[1], oc.plan_publication_network_create())
+        run_plans = [p for p in plans[2:] if "--name" in p]
+        connect_plans = [p for p in plans[2:] if "--name" not in p]
+        self.assertEqual(len(connect_plans), 1, connect_plans)
+        self.assertEqual(connect_plans[0],
+                         oc.plan_console_edge_connect_backend())
+        names = [p[p.index("--name") + 1] for p in run_plans]
         expected = ["mergepilot-isolated-%s-1" % s
                     for s in oc.SERVICE_ORDER]
         self.assertEqual(names, expected)
+        edge_idx = next(i for i, p in enumerate(plans)
+                        if "--name" in p and "console-edge-1" in
+                        p[p.index("--name") + 1])
+        self.assertLess(edge_idx, plans.index(connect_plans[0]))
 
     def test_full_start_requires_demo_console_inputs(self):
         # Fail-closed: run_id and measured bridge IP are REQUIRED — no
@@ -509,12 +534,14 @@ class TestOrchestrator(unittest.TestCase):
 
     def test_cleanup_plan_reverse_order_then_network(self):
         plans = plan_orchestrated_cleanup()
-        self.assertEqual(len(plans), 6)
-        names = [p[2] for p in plans[:5]]
+        self.assertEqual(len(plans), 8)   # 6 services + 2 networks
+        names = [p[2] for p in plans[:6]]
         self.assertEqual(names, list(reversed(
             ["mergepilot-isolated-%s-1" % s for s in oc.SERVICE_ORDER])))
-        self.assertEqual(plans[5][0], "network")
-        self.assertEqual(plans[5][2], ORCHESTRATOR_NETWORK)
+        self.assertEqual(plans[6][0], "network")
+        self.assertEqual(plans[6][2], ORCHESTRATOR_NETWORK)
+        self.assertEqual(plans[7][0], "network")
+        self.assertEqual(plans[7][2], oc.PUBLICATION_NETWORK)
 
     def test_build_plans_reference_existing_dockerfiles(self):
         for service in ("controller", "policy-gateway",
@@ -581,15 +608,16 @@ class TestNoTwinOrHostSubstitution(unittest.TestCase):
                     kwargs["gateway_env"] = oc._gateway_environment()
                 if service in ("demo-console", "preflight"):
                     kwargs["reader_dsn_env_file"] = "demo_console.env"
+                if service == "console-edge":
+                    edge = oc.plan_console_edge_run(
+                        get_built_image_identity(service))
+                    self.assertEqual(edge[edge.index("-p") + 1],
+                                     "127.0.0.1:8600:8600")
+                    continue
                 plan = plan_service_run(
                     service, image_ref=get_built_image_identity(service),
                     **kwargs)
-                if service == "demo-console":
-                    self.assertIn("-p", plan)
-                    self.assertEqual(plan[plan.index("-p") + 1],
-                                     "127.0.0.1:8600:8600")
-                else:
-                    self.assertNotIn("-p", plan, service)
+                self.assertNotIn("-p", plan, service)
             pg = plan_service_run("postgres", image_ref=oc.PGVECTOR_IMAGE_DIGEST)
             self.assertNotIn("-p", pg)
         finally:

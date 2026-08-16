@@ -152,8 +152,42 @@ services:
     # env-file (ReaderDsnSecretFile) — never compose literals. Without
     # it the console cannot open its read-only PostgreSQL source.
     env_file: demo_console.env
+    # 1-G network design: Docker silently DROPS port publishing on
+    # internal networks (verified: Ports={"8600/tcp":null}), and the
+    # DSN-bearing console must never gain an external default route
+    # (dual-network egress verified as SECRET_CONTAINER_EGRESS_FAIL).
+    # The console therefore stays internal-only and UNPUBLISHED; the
+    # loopback publication moved to the secretless console-edge below.
+    # ports: deliberately ABSENT.
+
+  # console-edge: SECRETLESS loopback publication plumbing (1-G network
+  # design, experiment C). NOT a fifth application service; does NOT
+  # constitute application integration. It is the ONLY service on the
+  # publication bridge and the ONLY published port in the stack: the
+  # fixed upstream is http://demo-console:8600 (a code constant, never
+  # configurable), methods are GET-only on a strict path whitelist, and
+  # it refuses CONNECT/absolute-URI/arbitrary-Host — it cannot act as an
+  # open proxy. It holds no DSN/password/token/database coordinates
+  # (no env_file, no environment secrets) by design.
+  console-edge:
+    build:
+      context: .
+      dockerfile: Dockerfile.console-edge
+    pull_policy: never
+    depends_on:
+      demo-console:
+        condition: service_healthy
+    networks:
+      - isolated
+      - console-publish
     ports:
       - "127.0.0.1:8600:8600"       # the ONLY published port; loopback only.
+    healthcheck:
+      test: ["CMD", "python", "/app/console_edge_healthcheck.py"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: "no"
 
   preflight:
     build:
@@ -162,9 +196,14 @@ services:
     pull_policy: never
     depends_on:
       # Review-gap Fix 3: the gate matrix runs only after the demo-console
-      # is genuinely READY (its own fail-closed http_endpoint gate still
-      # re-verifies the endpoint in-network).
+      # is genuinely READY (the matrix's own fail-closed http_endpoint
+      # gate still re-verifies the endpoint in-network).
       demo-console:
+        condition: service_healthy
+      # 1-G network design: full-stack readiness requires the publication
+      # edge healthy too (its healthcheck proves the fixed upstream
+      # chain answers 200/POSTGRES_ISOLATED/read-only).
+      console-edge:
         condition: service_healthy
     networks:
       - isolated
@@ -184,5 +223,11 @@ networks:
   isolated:
     driver: bridge
     internal: true
+  # 1-G network design: publication bridge — a NORMAL (non-internal)
+  # bridge so Docker actually wires the loopback port publish. Only the
+  # secretless console-edge attaches here; every secret-bearing service
+  # stays on the internal-only network above.
+  console-publish:
+    driver: bridge
 
 volumes: {}

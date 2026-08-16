@@ -79,7 +79,7 @@ GATEWAY_ISOLATED_UPSTREAM_URL = "http://127.0.0.1:8084/sse"
 
 # Services and their dependency order (topological).
 SERVICE_ORDER = ("postgres", "policy-gateway", "controller",
-                 "demo-console", "preflight")
+                 "demo-console", "console-edge", "preflight")
 
 _HEALTHCHECK_INTERVAL = "5s"
 _HEALTHCHECK_TIMEOUT = "3s"
@@ -647,16 +647,41 @@ def build_compose_config(*, demo_console_port: int = DEMO_CONSOLE_PORT,
             # mode, postgres source, canonical reader role, CALLER-PROVIDED
             # run_id and MEASURED bridge IP, explicit container bind context.
             # REPLAY is refused (no fallback). The container listens on
-            # 0.0.0.0 internally (required for Docker bridge routing); the
-            # HOST-side publish stays 127.0.0.1-only (see ports below).
+            # 0.0.0.0 internally (required for Docker bridge routing).
             # 1-G stabilization sweep: the reader DSN (serve.py reads
             # MERGEPILOT_PG_DSN) travels via this orchestrator-created
             # secret env-file — never compose literals, never -e argv.
+            # 1-G network design: UNPUBLISHED — Docker drops -p on
+            # internal networks and the DSN-bearing console must never
+            # gain an external default route; the loopback publish moved
+            # to the secretless console-edge.
             "env_file": reader_dsn_secret,
             "environment": demo_env,
+            # NOT published: no "ports" key on purpose.
+        },
+        "console-edge": {
+            "build": {"context": ".",
+                      "dockerfile": "Dockerfile.console-edge"},
+            "pull_policy": "never",
+            "depends_on": {
+                "demo-console": {"condition": "service_healthy"},
+            },
+            "networks": ["isolated", "console-publish"],
+            # 1-G network design: SECRETLESS publication plumbing (not a
+            # fifth application service; NOT application integration).
+            # The ONLY published port in the stack, loopback-only.
             "ports": [
                 "%s:%d:8600" % (LOOPBACK_BIND, demo_console_port),
             ],
+            "healthcheck": {
+                "test": ["CMD", "python", "/app/console_edge_healthcheck.py"],
+                "interval": _HEALTHCHECK_INTERVAL,
+                "timeout": _HEALTHCHECK_TIMEOUT,
+                "retries": _HEALTHCHECK_RETRIES,
+            },
+            "restart": "no",
+            # No env_file and no environment by design: the edge holds no
+            # secrets and its upstream is a code constant.
         },
         "preflight": {
             "build": {"context": ".", "dockerfile": "Dockerfile.preflight"},
@@ -666,6 +691,11 @@ def build_compose_config(*, demo_console_port: int = DEMO_CONSOLE_PORT,
                 # demo-console is genuinely READY (the matrix's own
                 # fail-closed http_endpoint gate still re-verifies).
                 "demo-console": {"condition": "service_healthy"},
+                # 1-G network design: full-stack readiness includes the
+                # publication edge healthy (its healthcheck proves the
+                # fixed upstream chain answers 200/POSTGRES_ISOLATED/
+                # read-only).
+                "console-edge": {"condition": "service_healthy"},
             },
             "networks": ["isolated"],
             # 1-G stabilization sweep: preflight's REAL DB gates connect
@@ -688,6 +718,7 @@ def build_compose_config(*, demo_console_port: int = DEMO_CONSOLE_PORT,
         "services": services,
         "networks": {
             "isolated": {"driver": "bridge", "internal": True},
+            "console-publish": {"driver": "bridge"},
         },
         # No volumes: the stack is one-shot; PGDATA lives in-container.
         "volumes": {},
@@ -716,10 +747,13 @@ def validate_compose_config(config: dict) -> None:
         if "image" in svc and name != "postgres":
             raise StartupGateError("COMPOSE_INVALID",
                                    "service %s uses an unpinned image" % name)
-    # Network binding: ONLY demo-console publishes, ONLY on loopback.
+    # 1-G network design: ONLY console-edge publishes, ONLY on loopback,
+    # ONLY on the canonical port. demo-console must NOT publish (Docker
+    # drops -p on internal networks; the DSN-bearing console stays
+    # internal-only and the publish moved to the secretless edge).
     for name, svc in services.items():
         ports = svc.get("ports") or []
-        if ports and name != "demo-console":
+        if ports and name != "console-edge":
             raise StartupGateError("BIND_NOT_LOOPBACK",
                                    "service %s publishes ports" % name)
         for p in ports:
@@ -727,9 +761,70 @@ def validate_compose_config(config: dict) -> None:
             if bind != LOOPBACK_BIND:
                 raise StartupGateError("BIND_NOT_LOOPBACK",
                                        "port bind %r is not %s" % (bind, LOOPBACK_BIND))
-    # Postgres must never be published.
+            host_port = str(p).split(":", 1)[1].split(":")[0]
+            if host_port != str(DEMO_CONSOLE_PORT):
+                raise StartupGateError("BIND_NOT_LOOPBACK",
+                                       "edge publish port must be %d"
+                                       % DEMO_CONSOLE_PORT)
     if "ports" in services["postgres"]:
         raise StartupGateError("BIND_NOT_LOOPBACK", "postgres publishes ports")
+    if "ports" in services["demo-console"]:
+        raise StartupGateError("BIND_NOT_LOOPBACK",
+                               "demo-console must NOT publish (internal-only; "
+                               "use the secretless console-edge)")
+
+    # Network topology (1-G): isolated stays internal-only; the
+    # publication bridge is a NORMAL network; ONLY console-edge may join
+    # the publication bridge; the edge must be on BOTH networks.
+    networks = config.get("networks", {})
+    if networks.get("isolated", {}).get("internal") is not True:
+        raise StartupGateError("COMPOSE_INVALID",
+                               "isolated network must be internal")
+    if networks.get("console-publish", {}).get("internal") is True:
+        raise StartupGateError("COMPOSE_INVALID",
+                               "console-publish must NOT be internal (Docker "
+                               "drops port publishing on internal networks)")
+    if "console-publish" not in networks:
+        raise StartupGateError("COMPOSE_INVALID",
+                               "console-publish network missing")
+    secret_services = ("postgres", "policy-gateway", "controller",
+                       "demo-console", "preflight")
+    for name in secret_services:
+        nets = set(services[name].get("networks") or [])
+        if "console-publish" in nets:
+            raise StartupGateError(
+                "COMPOSE_INVALID",
+                "secret-bearing service %s must not join console-publish"
+                % name)
+        if "isolated" not in nets:
+            raise StartupGateError("COMPOSE_INVALID",
+                                   "service %s must join isolated" % name)
+    edge_nets = set(services["console-edge"].get("networks") or [])
+    if edge_nets != {"isolated", "console-publish"}:
+        raise StartupGateError(
+            "COMPOSE_INVALID",
+            "console-edge must be on exactly [isolated, console-publish]")
+    # The edge carries NO secrets of any kind: no env_file, no environment
+    # at all (its upstream is a code constant).
+    if services["console-edge"].get("env_file"):
+        raise StartupGateError("COMPOSE_INVALID",
+                               "console-edge must not carry an env_file")
+    if services["console-edge"].get("environment"):
+        raise StartupGateError("COMPOSE_INVALID",
+                               "console-edge must not carry environment "
+                               "(fixed-upstream plumbing; secrets/DSN/db "
+                               "coordinates forbidden)")
+    if "healthcheck" not in services["console-edge"]:
+        raise StartupGateError("COMPOSE_INVALID",
+                               "console-edge lacks healthcheck")
+    # Full-stack readiness requires the edge healthy before preflight.
+    edge_cond = ((services["preflight"].get("depends_on") or {})
+                 .get("console-edge", {}).get("condition"))
+    if edge_cond != "service_healthy":
+        raise StartupGateError(
+            "COMPOSE_INVALID",
+            "preflight must depend on console-edge service_healthy "
+            "(full-stack readiness includes the publication edge)")
     # Healthcheck present on postgres.
     if "healthcheck" not in services["postgres"]:
         raise StartupGateError("COMPOSE_INVALID", "postgres lacks healthcheck")
@@ -805,7 +900,8 @@ def validate_compose_config(config: dict) -> None:
         "policy-gateway": {"postgres"},
         "controller": {"postgres", "policy-gateway"},
         "demo-console": {"controller"},
-        "preflight": {"demo-console"},
+        "console-edge": {"demo-console"},
+        "preflight": {"demo-console", "console-edge"},
     }
     for name, expected in expected_deps.items():
         deps = set((services[name].get("depends_on") or {}).keys())
@@ -932,7 +1028,8 @@ def compose_ports_binding(config: dict) -> dict:
 # service -> recorded identity; it is populated by the (authorized) build
 # round and checked by the orchestrator before start.
 
-BUILT_SERVICES = ("policy-gateway", "controller", "demo-console", "preflight")
+BUILT_SERVICES = ("policy-gateway", "controller", "demo-console",
+                  "console-edge", "preflight")
 
 _builtin_registry: dict = {}
 
@@ -973,6 +1070,10 @@ def built_identity_registry() -> dict:
 # ── Docker-CLI orchestrator (Phase 1-C; no compose CLI required) ────────────
 
 ORCHESTRATOR_NETWORK = "mergepilot-isolated-isolated"
+# 1-G network design: the publication bridge is a NORMAL (non-internal)
+# network so Docker actually wires the loopback publish; only the
+# secretless console-edge attaches to it.
+PUBLICATION_NETWORK = "mergepilot-isolated-publication"
 
 _SERVICE_FLAGS = {
     # name: (aliases, publish-spec or None, healthcheck-cmd or None)
@@ -990,9 +1091,13 @@ _SERVICE_FLAGS = {
                        ["python", "/app/healthcheck.py"]),
     "controller": (["controller"], None,
                    ["python", "/app/healthcheck.py"]),
-    "demo-console": (["demo-console"],
-                     "%s:%d:8600" % (LOOPBACK_BIND, DEMO_CONSOLE_PORT),
+    # 1-G network design: the console is UNPUBLISHED (internal-only; the
+    # loopback publish moved to the secretless console-edge).
+    "demo-console": (["demo-console"], None,
                      ["python", "/app/console_healthcheck.py"]),
+    "console-edge": (["console-edge"],
+                     "%s:%d:8600" % (LOOPBACK_BIND, DEMO_CONSOLE_PORT),
+                     ["python", "/app/console_edge_healthcheck.py"]),
     "preflight": (["preflight"], None, None),
 }
 
@@ -1001,6 +1106,16 @@ def plan_network_create() -> list:
     """argv array creating the internal-only network."""
     return ["network", "create", "--internal", "--driver", "bridge",
             ORCHESTRATOR_NETWORK]
+
+
+def plan_publication_network_create() -> list:
+    """argv array creating the publication bridge (NORMAL network).
+
+    1-G network design: Docker silently drops ``-p`` publishing on
+    internal networks, so the loopback publish lives on this normal
+    bridge. Only the secretless console-edge attaches to it."""
+    return ["network", "create", "--driver", "bridge",
+            PUBLICATION_NETWORK]
 
 
 def plan_service_run(service: str, *, image_ref: str,
@@ -1026,6 +1141,16 @@ def plan_service_run(service: str, *, image_ref: str,
     if service not in _SERVICE_FLAGS:
         raise StartupGateError("CONFIG_INVALID",
                                "unknown service %r" % service)
+    if service == "console-edge":
+        # 1-G network design: the edge MUST be created via its dedicated
+        # plan (primary network = the NON-internal publication bridge, or
+        # Docker silently drops the port publish — the retry-5 failure).
+        # Creating it on the internal network first and connecting the
+        # publication bridge afterwards reproduces Ports=null.
+        raise StartupGateError(
+            "CONFIG_INVALID",
+            "console-edge must use plan_console_edge_run (creation on the "
+            "internal network would silently drop the loopback publish)")
     if not image_ref or not re.fullmatch(
             r"(sha256:[0-9a-f]{64}|[a-z0-9][a-z0-9/.-]*@sha256:[0-9a-f]{64})",
             image_ref):
@@ -1138,6 +1263,57 @@ def plan_service_run(service: str, *, image_ref: str,
     return argv
 
 
+def plan_console_edge_run(image_ref: str) -> list:
+    """argv array running the console-edge on the PUBLICATION network.
+
+    Order is the whole point (1-G network design): the edge is CREATED
+    with the normal (non-internal) publication bridge as its primary
+    network together with the loopback publish — only afterwards does
+    plan_console_edge_connect_backend() attach the internal backend.
+    No env-file, no -e values, fixed image, exactly-one loopback publish.
+    """
+    if not image_ref or not re.fullmatch(
+            r"(sha256:[0-9a-f]{64}|[a-z0-9][a-z0-9/.-]*@sha256:[0-9a-f]{64})",
+            image_ref):
+        raise StartupGateError("CONFIG_INVALID",
+                               "image_ref must be sha256:<64-hex> digest/ID "
+                               "(floating tags rejected)")
+    _aliases, publish, healthcheck = _SERVICE_FLAGS["console-edge"]
+    argv = ["run", "-d",
+            "--name", "mergepilot-isolated-console-edge-1",
+            "--network", PUBLICATION_NETWORK,      # PRIMARY: non-internal
+            "--network-alias", "console-edge",
+            "--pull", "never",
+            "--restart", "no",
+            "-p", publish]
+    if healthcheck:
+        argv += ["--health-cmd", " ".join(healthcheck),
+                 "--health-interval", _HEALTHCHECK_INTERVAL,
+                 "--health-timeout", _HEALTHCHECK_TIMEOUT,
+                 "--health-retries", str(_HEALTHCHECK_RETRIES)]
+    argv.append(image_ref)
+    assert_argv_safe(argv)
+    if argv.count("-p") != 1:
+        raise StartupGateError("CONFIG_INVALID",
+                               "console-edge plan must carry exactly one "
+                               "loopback publish")
+    if ORCHESTRATOR_NETWORK in argv:
+        raise StartupGateError("CONFIG_INVALID",
+                               "console-edge must not be created on the "
+                               "internal network (publish would be dropped)")
+    return argv
+
+
+def plan_console_edge_connect_backend() -> list:
+    """argv array attaching the backend-internal network to the edge.
+
+    Runs AFTER the edge container exists (creation+publish already done
+    on the publication bridge). This yields exactly two network
+    memberships: publication (primary) + backend (secondary)."""
+    return ["network", "connect", ORCHESTRATOR_NETWORK,
+            "mergepilot-isolated-console-edge-1"]
+
+
 def plan_build(service: str) -> list:
     """argv array building a service image from its root Dockerfile."""
     dockerfile = "Dockerfile.%s" % service
@@ -1201,7 +1377,7 @@ def plan_orchestrated_start(env_file: str | None = None, *,
             "to plan any start without it")
     demo_env = _demo_console_environment(
         demo_console_run_id, demo_console_pg_server_addresses)
-    plans = [plan_network_create()]
+    plans = [plan_network_create(), plan_publication_network_create()]
     plans.append(plan_service_run(
         "postgres", image_ref=PGVECTOR_IMAGE_DIGEST, env_file=env_file))
     plans.append(plan_service_run(
@@ -1215,6 +1391,9 @@ def plan_orchestrated_start(env_file: str | None = None, *,
         "demo-console", image_ref=get_built_image_identity("demo-console"),
         demo_console_env=demo_env,
         reader_dsn_env_file=reader_dsn_env_file))
+    plans.append(plan_console_edge_run(
+        get_built_image_identity("console-edge")))
+    plans.append(plan_console_edge_connect_backend())
     plans.append(plan_service_run(
         "preflight", image_ref=get_built_image_identity("preflight"),
         declared_pg_image=PGVECTOR_IMAGE_DIGEST,
@@ -1233,6 +1412,7 @@ def plan_orchestrated_cleanup() -> list:
     for service in reversed(SERVICE_ORDER):
         plans.append(["rm", "-fv", "mergepilot-isolated-%s-1" % service])
     plans.append(["network", "rm", ORCHESTRATOR_NETWORK])
+    plans.append(["network", "rm", PUBLICATION_NETWORK])
     return plans
 
 
