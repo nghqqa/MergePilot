@@ -26,6 +26,7 @@ import sys
 from mcp.server import Server
 from mcp.server.sse import SseServerTransport
 from starlette.applications import Starlette
+from starlette.requests import Request
 from starlette.routing import Mount, Route
 import uvicorn
 
@@ -71,9 +72,37 @@ async def handle_sse(request):
                          server.create_initialization_options())
 
 
+class SSEEndpoint:
+    """/sse as a RAW ASGI endpoint class (1-G stabilization sweep).
+
+    Pinned Starlette semantics (read from the image): a Route endpoint
+    that is a plain FUNCTION is wrapped as ``func(request) -> response``
+    — its return value is awaited as the response, so an SSE handler
+    that completes after the client disconnects returns None and the
+    server logs ``TypeError: 'NoneType' object is not callable`` (the
+    retry-5 observation). A CLASS endpoint follows the HTTPEndpoint
+    calling convention — ``await Endpoint(scope, receive, send)``: the
+    class is instantiated with the ASGI args and awaited via
+    ``__await__``/``dispatch`` with NO return-value response handling.
+    Constructing ``Request(scope, receive, send)`` in dispatch also
+    guarantees ``request._send`` exists (pinned Starlette stores the
+    send callable on the Request)."""
+
+    def __init__(self, scope, receive, send):
+        self.scope = scope
+        self.receive = receive
+        self.send = send
+
+    def __await__(self):
+        return self.dispatch().__await__()
+
+    async def dispatch(self):
+        await handle_sse(Request(self.scope, self.receive, self.send))
+
+
 app = Starlette(
     routes=[
-        Route("/sse", endpoint=handle_sse),
+        Route("/sse", endpoint=SSEEndpoint),
         Mount("/messages/", app=sse.handle_post_message),
     ],
 )
