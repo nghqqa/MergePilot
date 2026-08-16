@@ -46,10 +46,26 @@ _TEST_RUN_ID = "caller-provided-run-001"
 _TEST_BRIDGE_IP = "172.18.0.2"
 
 
+def _write_controller_env(lines=("PG_PASS=test-pg-pass\n"
+                                 "ADMIN_PW=test-admin-pw\n")):
+    """Create a contract-valid controller secret env-file in a temp dir.
+
+    M8-A1: plan_orchestrated_start validates the controller.env contract
+    unconditionally, so tests must provide a REAL readable file (exact
+    key set; two lines with the machinery off, three with it on). The
+    values are inert test strings, never real secrets.
+    """
+    import tempfile
+    td = tempfile.mkdtemp(prefix="ctrl-env-")
+    path = Path(td) / "controller.env"
+    path.write_text("".join(lines), encoding="utf-8")
+    return str(path)
+
+
 def _start_kwargs():
     return {"demo_console_run_id": _TEST_RUN_ID,
             "demo_console_pg_server_addresses": _TEST_BRIDGE_IP,
-            "controller_env_file": "controller.env",
+            "controller_env_file": _write_controller_env(),
             "reader_dsn_env_file": "demo_console.env"}
 
 try:
@@ -643,3 +659,195 @@ class TestNoTwinOrHostSubstitution(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ── M8-A1: controller.env contract + opt-in planner matrix ─────────────────
+
+class TestM8A1ControllerEnvContract(unittest.TestCase):
+    """The unconditional plan pre-gate: every failure happens BEFORE
+    plan_network_create is ever touched."""
+
+    def setUp(self):
+        oc._builtin_registry.clear()
+        for service in BUILT_SERVICES:
+            hexid = ("".join(format(ord(c) & 0xF, "x") for c in service) * 8)[:64]
+            record_built_image_identity(service, "sha256:" + hexid)
+
+    def tearDown(self):
+        oc._builtin_registry.clear()
+
+    def _plans_or_gate(self, **kwargs):
+        import tempfile
+        from unittest import mock
+        called = []
+
+        def _boom():
+            called.append(1)
+            return []
+        with mock.patch.object(oc, "plan_network_create", _boom), \
+             mock.patch.object(oc, "plan_publication_network_create",
+                               _boom), \
+             tempfile.TemporaryDirectory():
+            try:
+                plans = plan_orchestrated_start(
+                    env_file="postgres.env", **kwargs)
+            except oc.StartupGateError as exc:
+                self.assertEqual(0, len(called),
+                                 "network_create touched before gate")
+                return exc
+            return plans
+
+    # ── flag=False ────────────────────────────────────────────────────
+
+    def test_flag_false_valid_two_line_file_succeeds(self):
+        path = _write_controller_env()
+        plans = self._plans_or_gate(
+            controller_env_file=path,
+            reader_dsn_env_file="demo_console.env",
+            demo_console_run_id=_TEST_RUN_ID,
+            demo_console_pg_server_addresses=_TEST_BRIDGE_IP)
+        self.assertIsInstance(plans, list)
+
+    def test_flag_false_plan_byte_identical_to_phase1g(self):
+        """Same inputs -> byte-identical plan vs the pre-M8A1 baseline."""
+        path = _write_controller_env()
+        kwargs = dict(
+            controller_env_file=path,
+            reader_dsn_env_file="demo_console.env",
+            demo_console_run_id=_TEST_RUN_ID,
+            demo_console_pg_server_addresses=_TEST_BRIDGE_IP)
+        plans_now = plan_orchestrated_start(env_file="postgres.env",
+                                            **kwargs)
+        # Baseline property: no M4F_ENABLED anywhere, single env-file per
+        # controller, exact step count 9 (2 nets + 6 runs + 1 connect).
+        self.assertEqual(9, len(plans_now))
+        joined = " ".join(" ".join(p) for p in plans_now)
+        self.assertNotIn("M4F_ENABLED", joined)
+        ctrl = next(p for p in plans_now if "--name" in p and
+                    "controller-1" in p[p.index("--name") + 1])
+        self.assertEqual(1, ctrl.count("--env-file"))
+
+    def test_flag_false_three_line_file_rejected(self):
+        path = _write_controller_env((
+            "PG_PASS=test-pg-pass\nADMIN_PW=test-admin-pw\n"
+            "M4F_SNAPSHOT_DSN=postgresql://snapshot_worker:x@postgres:5432/"
+            "mergepilot_audit\n").splitlines(keepends=True))
+        exc = self._plans_or_gate(
+            controller_env_file=path,
+            reader_dsn_env_file="demo_console.env",
+            demo_console_run_id=_TEST_RUN_ID,
+            demo_console_pg_server_addresses=_TEST_BRIDGE_IP)
+        self.assertIsNotNone(exc)
+
+    def test_flag_false_missing_or_duplicate_or_unknown_keys(self):
+        for lines in (
+                ("ADMIN_PW=test-admin-pw\n",),                       # missing PG_PASS
+                ("PG_PASS=test-pg-pass\n",),                          # missing ADMIN_PW
+                ("PG_PASS=a\nPG_PASS=b\nADMIN_PW=c\n",),            # duplicate
+                ("PG_PASS=a\nADMIN_PW=b\nUNKNOWN=x\n",),            # unknown key
+                ("PG_PASS=a\n\nADMIN_PW=b\n",),                     # blank line
+                ("PG_PASS=a\n# comment\nADMIN_PW=b\n",),            # comment
+                ("PG_PASS=a\nADMIN_PW\n",),                          # no '='
+        ):
+            path = _write_controller_env(lines)
+            exc = self._plans_or_gate(
+                controller_env_file=path,
+                reader_dsn_env_file="demo_console.env",
+                demo_console_run_id=_TEST_RUN_ID,
+                demo_console_pg_server_addresses=_TEST_BRIDGE_IP)
+            self.assertIsNotNone(exc, lines)
+
+    def test_failures_do_not_leak_secret_values(self):
+        path = _write_controller_env(("PG_PASS=leakme-pg\n"
+                                      "ADMIN_PW=b\nLEAK=x\n"))
+        exc = self._plans_or_gate(
+            controller_env_file=path,
+            reader_dsn_env_file="demo_console.env",
+            demo_console_run_id=_TEST_RUN_ID,
+            demo_console_pg_server_addresses=_TEST_BRIDGE_IP)
+        self.assertIsNotNone(exc)
+        self.assertNotIn("leakme", str(exc))
+
+    def test_missing_env_file_rejected_before_any_plan(self):
+        exc = self._plans_or_gate(
+            controller_env_file="no/such/controller.env",
+            reader_dsn_env_file="demo_console.env",
+            demo_console_run_id=_TEST_RUN_ID,
+            demo_console_pg_server_addresses=_TEST_BRIDGE_IP)
+        self.assertIsNotNone(exc)
+
+    # ── flag=True ─────────────────────────────────────────────────────
+
+    _GOOD_DSN = ("postgresql://snapshot_worker:testsnap@postgres:5432/"
+                 "mergepilot_audit")
+
+    def test_flag_true_valid_three_line_file_succeeds(self):
+        path = _write_controller_env((
+            "PG_PASS=test-pg-pass\nADMIN_PW=test-admin-pw\n"
+            "M4F_SNAPSHOT_DSN=%s\n" % self._GOOD_DSN,
+            ))
+        plans = plan_orchestrated_start(
+            env_file="postgres.env",
+            controller_env_file=path,
+            reader_dsn_env_file="demo_console.env",
+            demo_console_run_id=_TEST_RUN_ID,
+            demo_console_pg_server_addresses=_TEST_BRIDGE_IP,
+            m4f_event_machinery=True)
+        ctrl = next(p for p in plans if "--name" in p and
+                    "controller-1" in p[p.index("--name") + 1])
+        joined = " ".join(ctrl)
+        # exactly one M4F_ENABLED flag; no DSN in argv
+        self.assertEqual(1, joined.count("M4F_ENABLED=1"))
+        self.assertNotIn(self._GOOD_DSN, joined)
+        self.assertNotIn("M4F_SNAPSHOT_DSN", joined)
+        # still exactly one --env-file
+        self.assertEqual(1, ctrl.count("--env-file"))
+        # all other plans unchanged (no M4F anywhere else)
+        others = " ".join(" ".join(p) for p in plans
+                          if p is not ctrl)
+        self.assertNotIn("M4F_ENABLED", others)
+
+    def test_flag_true_two_line_file_rejected(self):
+        path = _write_controller_env()
+        exc = self._plans_or_gate(
+            controller_env_file=path,
+            reader_dsn_env_file="demo_console.env",
+            demo_console_run_id=_TEST_RUN_ID,
+            demo_console_pg_server_addresses=_TEST_BRIDGE_IP,
+            m4f_event_machinery=True)
+        self.assertIsNotNone(exc)
+
+    def test_flag_true_missing_or_duplicate_dsn_or_unknown(self):
+        for lines in (
+                ("PG_PASS=a\nADMIN_PW=b\n",),                       # missing DSN
+                ("PG_PASS=a\nADMIN_PW=b\n"
+                 "M4F_SNAPSHOT_DSN=%s\nM4F_SNAPSHOT_DSN=%s\n"
+                 % (self._GOOD_DSN, self._GOOD_DSN),),                # duplicate
+                ("PG_PASS=a\nADMIN_PW=b\nM4F_SNAPSHOT_DSN=%s\n"
+                 "EVIL=%s\n" % (self._GOOD_DSN, self._GOOD_DSN),),   # unknown
+                ("PG_PASS=a\nADMIN_PW=b\n"
+                 "M4F_SNAPSHOT_DSN=postgresql://mergepilot:x@postgres:5432/"
+                 "mergepilot_audit\n",),                              # admin user
+        ):
+            path = _write_controller_env(lines)
+            exc = self._plans_or_gate(
+                controller_env_file=path,
+                reader_dsn_env_file="demo_console.env",
+                demo_console_run_id=_TEST_RUN_ID,
+                demo_console_pg_server_addresses=_TEST_BRIDGE_IP,
+                m4f_event_machinery=True)
+            self.assertIsNotNone(exc, lines[0][:40])
+
+    def test_flag_true_dsn_value_not_in_exception(self):
+        path = _write_controller_env((
+            "PG_PASS=a\nADMIN_PW=b\n"
+            "M4F_SNAPSHOT_DSN=postgresql://snapshot_worker:leakme"
+            "@postgres:5432/mergepilot_audit\n",))
+        exc = self._plans_or_gate(
+            controller_env_file=path,
+            reader_dsn_env_file="demo_console.env",
+            demo_console_run_id=_TEST_RUN_ID,
+            demo_console_pg_server_addresses=_TEST_BRIDGE_IP,
+            m4f_event_machinery=True)
+        self.assertIsNotNone(exc)
+        self.assertNotIn("leakme", str(exc))

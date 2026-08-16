@@ -495,3 +495,112 @@ def stage_agentteams_event(
         snapshot_worker_id=snapshot_worker_id,
         observer=observer,
     )
+
+
+# ═══ M8-A1: runtime-owned validation ingress adapter ═════════════════════
+#
+# NOT a Matrix integration. NOT an external production entry. It does NOT
+# prove application integration and must never be cited as such. It exists
+# so the isolated-live stack (which has no Matrix homeserver) can drive
+# the REAL controller event-consumption machinery through the same
+# stage_events contract that consume_events writes.
+#
+# SECURITY DEBT (tracked, deliberate): this adapter runs with the
+# controller's runtime database identity (the admin-class ``mergepilot``
+# role via controller.env PG_PASS) — exactly the same trust domain and
+# identity as consume_events itself. A future stage should introduce a
+# minimal ``m4f_event_ingress`` role with only CONNECT + USAGE + a
+# controlled INSERT on stage_events; until then this file must NOT be
+# described as non-admin.
+#
+# Contract:
+#   * validates the payload with the REAL validate_event (schema gate);
+#   * writes ONE stage_events row with the same end-state semantics
+#     consume_events produces for an accepted M4F_RUN: event_type
+#     'M4F_RUN', status 'M4F_PENDING', canonical JSON raw_body
+#     (sorted keys, compact separators), idempotent via event_id
+#     ON CONFLICT DO NOTHING;
+#   * never calls or imports bind_revision; never touches
+#     revision_bindings;
+#   * parameterized SQL only; no argv-assembled SQL;
+#   * fail-closed on any error (non-zero exit, no partial writes);
+#   * logs only the event_id and run_id prefix — never the full payload.
+
+
+def ingest_m4f_run(payload, conn=None) -> str:
+    """Validate and durably record ONE M4F_RUN event as M4F_PENDING.
+
+    Returns the event_id. ``conn`` defaults to a fresh connection using
+    the controller's runtime identity (same env vars as ensure_pg in
+    controller.py).
+    """
+    import hashlib
+    import json as _json
+    import os
+
+    event = validate_event(payload)
+    canonical = _json.dumps(
+        event, ensure_ascii=False, allow_nan=False, sort_keys=True,
+        separators=(",", ":"))
+    event_id = "ing-" + hashlib.sha256(
+        canonical.encode("utf-8")).hexdigest()[:24]
+
+    if conn is None:
+        import psycopg2
+        conn = psycopg2.connect(
+            host=os.environ.get("PG_HOST", "postgres"),
+            port=int(os.environ.get("PG_PORT", "5432")),
+            dbname=os.environ.get("PG_DATABASE", "mergepilot_audit"),
+            user=os.environ.get("PG_USER", "mergepilot"),
+            password=os.environ["PG_PASS"])
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO stage_events(event_id, room_id, run_id,
+                       sender, event_type, stage, raw_body, body_sha256,
+                       status)
+                   VALUES(%s, %s, %s, %s, 'M4F_RUN', 'm4f', %s, %s,
+                          'M4F_PENDING')
+                   ON CONFLICT (event_id) DO NOTHING
+                   RETURNING event_id""",
+                (event_id, "ingress-adapter", event["run_id"],
+                 "runtime-adapter", canonical,
+                 hashlib.sha256(canonical.encode()).hexdigest()[:16]))
+            row = cur.fetchone()
+        conn.commit()
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        raise
+    if row is None:
+        print(f"[ingest] duplicate event {event_id} (idempotent no-op)")
+    else:
+        print(f"[ingest] event {event_id} run {event['run_id'][:20]} "
+              f"-> M4F_PENDING")
+    return event_id
+
+
+def _adapter_main() -> int:
+    """stdin-driven CLI: one JSON payload per invocation (never argv SQL,
+    never the full event on the command line)."""
+    import json as _json
+    import sys
+    try:
+        payload = _json.loads(sys.stdin.read())
+    except Exception:
+        print("ingest-adapter: stdin must contain one JSON payload",
+              file=sys.stderr)
+        return 2
+    try:
+        ingest_m4f_run(payload)
+    except Exception as exc:
+        print(f"ingest-adapter: rejected ({type(exc).__name__})",
+              file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(_adapter_main())
