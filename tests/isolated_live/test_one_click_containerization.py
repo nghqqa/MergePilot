@@ -49,7 +49,8 @@ _TEST_BRIDGE_IP = "172.18.0.2"
 def _start_kwargs():
     return {"demo_console_run_id": _TEST_RUN_ID,
             "demo_console_pg_server_addresses": _TEST_BRIDGE_IP,
-            "controller_env_file": "controller.env"}
+            "controller_env_file": "controller.env",
+            "reader_dsn_env_file": "demo_console.env"}
 
 try:
     import yaml  # type: ignore
@@ -379,7 +380,8 @@ class TestOrchestrator(unittest.TestCase):
             "demo-console",
             image_ref=get_built_image_identity("demo-console"),
             demo_console_env=oc._demo_console_environment(
-                _TEST_RUN_ID, _TEST_BRIDGE_IP))
+                _TEST_RUN_ID, _TEST_BRIDGE_IP),
+            reader_dsn_env_file="demo_console.env")
         self.assertIn("-p", pub)
         self.assertEqual(pub[pub.index("-p") + 1], "127.0.0.1:8600:8600")
         for service, env_kwargs in (
@@ -387,7 +389,8 @@ class TestOrchestrator(unittest.TestCase):
                 ("controller",
                  {"controller_env": oc._controller_environment(),
                   "env_file": "controller.env"}),
-                ("preflight", {})):
+                ("preflight",
+                 {"reader_dsn_env_file": "demo_console.env"})):
             plan = plan_service_run(
                 service, image_ref=get_built_image_identity(service),
                 **env_kwargs)
@@ -402,7 +405,8 @@ class TestOrchestrator(unittest.TestCase):
             "demo-console",
             image_ref=get_built_image_identity("demo-console"),
             demo_console_env=oc._demo_console_environment(
-                _TEST_RUN_ID, _TEST_BRIDGE_IP))
+                _TEST_RUN_ID, _TEST_BRIDGE_IP),
+            reader_dsn_env_file="demo_console.env")
         joined = " ".join(plan)
         for pair in ("MERGEPILOT_MODE=isolated_live",
                      "MERGEPILOT_SOURCE_KIND=postgres",
@@ -435,7 +439,8 @@ class TestOrchestrator(unittest.TestCase):
     def test_preflight_env_in_network(self):
         plan = plan_service_run("preflight",
                                 image_ref=get_built_image_identity("preflight"),
-                                declared_pg_image=oc.PGVECTOR_IMAGE_DIGEST)
+                                declared_pg_image=oc.PGVECTOR_IMAGE_DIGEST,
+                                reader_dsn_env_file="demo_console.env")
         joined = " ".join(plan)
         self.assertIn("MERGEPILOT_PG_HOST=postgres", joined)
         self.assertIn("http://demo-console:8600", joined)
@@ -481,12 +486,15 @@ class TestOrchestrator(unittest.TestCase):
         try:
             _gate(self, plan_orchestrated_start, env_file="postgres.env",
                   controller_env_file="controller.env",
+                  reader_dsn_env_file="demo_console.env",
                   code="CONFIG_INVALID")
             _gate(self, plan_orchestrated_start, env_file="postgres.env",
                   controller_env_file="controller.env",
+                  reader_dsn_env_file="demo_console.env",
                   demo_console_run_id=_TEST_RUN_ID, code="CONFIG_INVALID")
             _gate(self, plan_orchestrated_start, env_file="postgres.env",
                   controller_env_file="controller.env",
+                  reader_dsn_env_file="demo_console.env",
                   demo_console_pg_server_addresses=_TEST_BRIDGE_IP,
                   code="CONFIG_INVALID")
         finally:
@@ -496,6 +504,7 @@ class TestOrchestrator(unittest.TestCase):
         oc._builtin_registry.clear()
         _gate(self, plan_orchestrated_start,
               controller_env_file="controller.env",
+              reader_dsn_env_file="demo_console.env",
               code="CONFIG_INVALID")
 
     def test_cleanup_plan_reverse_order_then_network(self):
@@ -570,6 +579,8 @@ class TestNoTwinOrHostSubstitution(unittest.TestCase):
                     kwargs["env_file"] = "controller.env"
                 elif service == "policy-gateway":
                     kwargs["gateway_env"] = oc._gateway_environment()
+                if service in ("demo-console", "preflight"):
+                    kwargs["reader_dsn_env_file"] = "demo_console.env"
                 plan = plan_service_run(
                     service, image_ref=get_built_image_identity(service),
                     **kwargs)
@@ -586,7 +597,8 @@ class TestNoTwinOrHostSubstitution(unittest.TestCase):
 
     def test_preflight_network_path_not_host(self):
         plan = plan_service_run("preflight",
-                                image_ref="sha256:" + "ab" * 32)
+                                image_ref="sha256:" + "ab" * 32,
+                                reader_dsn_env_file="demo_console.env")
         joined = " ".join(plan)
         self.assertIn("--network", joined)
         self.assertIn(ORCHESTRATOR_NETWORK, joined)

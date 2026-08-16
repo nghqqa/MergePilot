@@ -147,6 +147,11 @@ services:
       MERGEPILOT_PG_EXPECTED_SERVER_ADDRESSES: ${MERGEPILOT_PG_EXPECTED_SERVER_ADDRESSES:?MERGEPILOT_PG_EXPECTED_SERVER_ADDRESSES is required (measured bridge IP)}
       MERGEPILOT_PG_EXPECTED_SERVER_PORT: "5432"
       MERGEPILOT_PG_EXPECTED_APPLICATION_NAME: mergepilot_isolated_live_reader
+    # 1-G stabilization sweep: the reader DSN (serve.py reads
+    # MERGEPILOT_PG_DSN) travels via this orchestrator-created secret
+    # env-file (ReaderDsnSecretFile) — never compose literals. Without
+    # it the console cannot open its read-only PostgreSQL source.
+    env_file: demo_console.env
     ports:
       - "127.0.0.1:8600:8600"       # the ONLY published port; loopback only.
 
@@ -163,6 +168,10 @@ services:
         condition: service_healthy
     networks:
       - isolated
+    # 1-G stabilization sweep: preflight's REAL DB gates connect with the
+    # reader DSN (preflight_entrypoint.py exits without MERGEPILOT_PG_DSN)
+    # — same orchestrator-created secret env-file as demo-console.
+    env_file: demo_console.env
     environment:
       # preflight reaches PostgreSQL INSIDE the internal network.
       MERGEPILOT_PG_HOST: postgres

@@ -697,7 +697,8 @@ class TestHealthchecksAndOrder(unittest.TestCase):
             plans = oc.plan_orchestrated_start(
                 demo_console_run_id="run-1",
                 demo_console_pg_server_addresses="172.18.0.2",
-                controller_env_file="/tmp/controller.env")
+                controller_env_file="/tmp/controller.env",
+                reader_dsn_env_file="/tmp/demo_console.env")
             by_name = {p[p.index("--name") + 1]: p for p in plans[1:]}
             for svc in ("mergepilot-isolated-controller-1",
                         "mergepilot-isolated-policy-gateway-1"):

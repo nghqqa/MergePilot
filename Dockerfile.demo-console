@@ -17,6 +17,11 @@ COPY tools/demo_console/serve.py /app/serve.py
 COPY tools/demo_console/preflight.py /app/preflight.py
 COPY tools/demo_console/postgres_source.py /app/postgres_source.py
 COPY tools/demo_console/live_poller.py /app/live_poller.py
+# 1-G stabilization sweep: serve.py imports live_refresh at startup (the
+# fail-closed JS contract validator). The Phase 1-E module was missing from
+# this COPY list; the real retry-5 run crashed with ModuleNotFoundError:
+# No module named 'live_refresh'.
+COPY tools/demo_console/live_refresh.py /app/live_refresh.py
 COPY tools/demo_console/integrity.py /app/integrity.py
 COPY tools/demo_console/schema.py /app/schema.py
 COPY tools/demo_console/one_click_startup.py /app/one_click_startup.py

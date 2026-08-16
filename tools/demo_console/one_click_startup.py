@@ -351,7 +351,83 @@ class ControllerSecretFile:
         return self._path.exists()
 
 
-# ── docker-compose configuration ─────────────────────────────────────────────
+class ReaderDsnSecretFile:
+    """Secret env-file carrying the reader DSN (1-G stabilization sweep).
+
+    BOTH DSN consumers — demo-console (serve.py reads
+    ``MERGEPILOT_PG_DSN`` for the read-only PostgreSQL source) and
+    preflight (preflight_entrypoint.py requires it for its real DB
+    gates) — refused to start under the shipped orchestration because
+    neither compose nor the Docker-CLI plan attached any env-file to
+    them, and the DSN may never ride ``-e`` argv. This file is the
+    established transport for it: fixed name (``demo_console.env``),
+    single ``MERGEPILOT_PG_DSN=`` line, validate-before-write with zero
+    residue, values never in argv/logs, 0600 where enforceable, refuses
+    to overwrite, idempotent delete.
+    """
+
+    _NAME = "demo_console.env"
+    _KEY = "MERGEPILOT_PG_DSN"
+
+    def __init__(self, directory: Path):
+        self._dir = Path(directory)
+        self._path = self._dir / self._NAME
+
+    @property
+    def path(self) -> Path:
+        return self._path
+
+    @staticmethod
+    def _validate_dsn(dsn) -> None:
+        """Fail-closed validation BEFORE any filesystem effect.
+
+        The DSN must be a single-line postgresql:// URL without CR/LF/NUL
+        (env-file line-injection vectors) or whitespace. The error names
+        the field only — the value never appears in exceptions or logs.
+        """
+        if not isinstance(dsn, str):
+            raise StartupGateError(
+                "CONFIG_INVALID",
+                "reader dsn must be a string (got %s)"
+                % type(dsn).__name__)
+        if not dsn.strip():
+            raise StartupGateError("CONFIG_INVALID",
+                                   "reader dsn must be non-empty")
+        if not dsn.startswith("postgresql://"):
+            raise StartupGateError("CONFIG_INVALID",
+                                   "reader dsn must use the postgresql:// "
+                                   "scheme")
+        for idx, ch in enumerate(dsn):
+            if ch in ("\r", "\n", "\0", " ", "\t"):
+                raise StartupGateError(
+                    "CONFIG_INVALID",
+                    "reader dsn contains a rejected character at offset %d "
+                    "(CR/LF/NUL/whitespace are env-file injection vectors)"
+                    % idx)
+
+    def write(self, dsn: str) -> None:
+        self._validate_dsn(dsn)
+        if self._path.exists():
+            raise StartupGateError("SECRET_FILE_EXISTS",
+                                   "refusing to overwrite an existing "
+                                   "reader-DSN secret file")
+        self._dir.mkdir(parents=True, exist_ok=True)
+        content = "%s=%s\n" % (self._KEY, dsn)
+        self._path.write_text(content, encoding="utf-8")
+        try:
+            self._path.chmod(0o600)
+        except OSError:
+            pass  # Windows: recorded honestly in capability, not enforced
+
+    def delete(self) -> None:
+        if self._path.exists():
+            self._path.unlink()
+
+    def exists(self) -> bool:
+        return self._path.exists()
+
+
+# ── Demo-console runtime input validation ────────────────────────────────────
 
 def _validate_demo_console_runtime_inputs(demo_console_run_id: str,
                                           demo_console_pg_server_addresses: str
@@ -453,10 +529,13 @@ def _gateway_environment() -> dict:
     }
 
 
+# ── docker-compose configuration ─────────────────────────────────────────────
+
 def build_compose_config(*, demo_console_port: int = DEMO_CONSOLE_PORT,
                          project_name: str = "mergepilot-isolated",
                          admin_password_secret: str = "<secret-file>",
                          controller_secret: str = "<controller-secret-file>",
+                         reader_dsn_secret: str = "<reader-dsn-secret-file>",
                          demo_console_run_id: str = "",
                          demo_console_pg_server_addresses: str = "",
                          ) -> dict:
@@ -570,6 +649,10 @@ def build_compose_config(*, demo_console_port: int = DEMO_CONSOLE_PORT,
             # REPLAY is refused (no fallback). The container listens on
             # 0.0.0.0 internally (required for Docker bridge routing); the
             # HOST-side publish stays 127.0.0.1-only (see ports below).
+            # 1-G stabilization sweep: the reader DSN (serve.py reads
+            # MERGEPILOT_PG_DSN) travels via this orchestrator-created
+            # secret env-file — never compose literals, never -e argv.
+            "env_file": reader_dsn_secret,
             "environment": demo_env,
             "ports": [
                 "%s:%d:8600" % (LOOPBACK_BIND, demo_console_port),
@@ -585,6 +668,11 @@ def build_compose_config(*, demo_console_port: int = DEMO_CONSOLE_PORT,
                 "demo-console": {"condition": "service_healthy"},
             },
             "networks": ["isolated"],
+            # 1-G stabilization sweep: preflight's REAL DB gates connect
+            # with the reader DSN (preflight_entrypoint.py reads
+            # MERGEPILOT_PG_DSN and exits without it) — same secret
+            # env-file transport as demo-console, never argv.
+            "env_file": reader_dsn_secret,
             "environment": {
                 # preflight reaches PostgreSQL INSIDE the internal network.
                 "MERGEPILOT_PG_HOST": "postgres",
@@ -683,6 +771,19 @@ def validate_compose_config(config: dict) -> None:
                 "COMPOSE_INVALID",
                 "controller secret %s must travel via env_file, never the "
                 "compose environment" % secret_key)
+    # 1-G stabilization sweep: BOTH reader-DSN consumers must carry the
+    # secret env-file (the DSN never appears in compose environment).
+    for name in ("demo-console", "preflight"):
+        svc = services[name]
+        if not svc.get("env_file"):
+            raise StartupGateError("COMPOSE_INVALID",
+                                   "%s lacks the reader-DSN secret env_file"
+                                   % name)
+        if "MERGEPILOT_PG_DSN" in (svc.get("environment") or {}):
+            raise StartupGateError(
+                "COMPOSE_INVALID",
+                "%s secret MERGEPILOT_PG_DSN must travel via env_file, "
+                "never the compose environment" % name)
     # Retry v3 Fix 3: the gateway must declare its upstream explicitly.
     gw_env = services["policy-gateway"].get("environment") or {}
     if not gw_env.get("UPSTREAM_URL"):
@@ -907,7 +1008,8 @@ def plan_service_run(service: str, *, image_ref: str,
                      declared_pg_image: str | None = None,
                      demo_console_env: dict | None = None,
                      controller_env: dict | None = None,
-                     gateway_env: dict | None = None) -> list:
+                     gateway_env: dict | None = None,
+                     reader_dsn_env_file: str | None = None) -> list:
     """argv array (docker sub-args) to run one service per the contract.
 
     ``image_ref`` is the digest/image-ID (never a floating tag). The plan
@@ -960,6 +1062,18 @@ def plan_service_run(service: str, *, image_ref: str,
             "gateway_env is required for the policy-gateway service "
             "(UPSTREAM_URL — non-secret; the gateway lifespan exits without "
             "a reachable upstream)")
+    if service in ("demo-console", "preflight"):
+        # 1-G stabilization sweep: BOTH reader-DSN consumers require the
+        # secret env-file (MERGEPILOT_PG_DSN never rides -e argv). Missing/
+        # None/blank/non-string → CONFIG_INVALID, message never echoes the
+        # path (a path leak narrows a secret's location).
+        if not isinstance(reader_dsn_env_file, str) \
+                or not reader_dsn_env_file.strip():
+            raise StartupGateError(
+                "CONFIG_INVALID",
+                "%s requires the reader-DSN secret env-file path "
+                "(a non-empty string carrying MERGEPILOT_PG_DSN via the "
+                "ReaderDsnSecretFile transport)" % service)
     for env in (demo_console_env, controller_env, gateway_env):
         if env:
             for key in env:
@@ -989,6 +1103,14 @@ def plan_service_run(service: str, *, image_ref: str,
             raise StartupGateError(
                 "CONFIG_INVALID",
                 "controller plan must carry exactly one --env-file")
+    if service in ("demo-console", "preflight"):
+        # Validated above: reader_dsn_env_file is a non-empty string here
+        # and lands in the plan exactly once.
+        argv += ["--env-file", reader_dsn_env_file]
+        if argv.count("--env-file") != 1:
+            raise StartupGateError(
+                "CONFIG_INVALID",
+                "%s plan must carry exactly one --env-file" % service)
     if healthcheck:
         argv += ["--health-cmd", " ".join(healthcheck),
                  "--health-interval", _HEALTHCHECK_INTERVAL,
@@ -1029,6 +1151,7 @@ def plan_build(service: str) -> list:
 
 def plan_orchestrated_start(env_file: str | None = None, *,
                             controller_env_file: str,
+                            reader_dsn_env_file: str,
                             demo_console_run_id: str = "",
                             demo_console_pg_server_addresses: str = ""
                             ) -> list:
@@ -1045,6 +1168,12 @@ def plan_orchestrated_start(env_file: str | None = None, *,
     BEFORE any plan (not even the network-create plan) is generated. The
     error message never echoes the path value.
 
+    ``reader_dsn_env_file`` (the reader-DSN secret env-file carrying
+    MERGEPILOT_PG_DSN via the ReaderDsnSecretFile transport, consumed by
+    BOTH demo-console and preflight) is likewise REQUIRED — the 1-G
+    stabilization sweep closed the gap where neither DSN consumer could
+    start under this orchestration.
+
     ``demo_console_run_id`` (the seeded run_id) and
     ``demo_console_pg_server_addresses`` (the postgres bridge IP MEASURED
     after the healthcheck passed) are REQUIRED — no defaults, no inference.
@@ -1059,6 +1188,17 @@ def plan_orchestrated_start(env_file: str | None = None, *,
             "controller_env_file is required (a non-empty string path to "
             "the SecretFile-transport env-file carrying the controller "
             "secrets); refusing to plan any start without it")
+    # 1-G stabilization sweep: same fail-closed rule for the reader-DSN
+    # secret env-file (demo-console + preflight both refuse to start
+    # without MERGEPILOT_PG_DSN, and it may never ride -e argv).
+    if not isinstance(reader_dsn_env_file, str) or \
+            not reader_dsn_env_file.strip():
+        raise StartupGateError(
+            "CONFIG_INVALID",
+            "reader_dsn_env_file is required (a non-empty string path to "
+            "the ReaderDsnSecretFile-transport env-file carrying "
+            "MERGEPILOT_PG_DSN for demo-console and preflight); refusing "
+            "to plan any start without it")
     demo_env = _demo_console_environment(
         demo_console_run_id, demo_console_pg_server_addresses)
     plans = [plan_network_create()]
@@ -1073,10 +1213,12 @@ def plan_orchestrated_start(env_file: str | None = None, *,
         env_file=controller_env_file))
     plans.append(plan_service_run(
         "demo-console", image_ref=get_built_image_identity("demo-console"),
-        demo_console_env=demo_env))
+        demo_console_env=demo_env,
+        reader_dsn_env_file=reader_dsn_env_file))
     plans.append(plan_service_run(
         "preflight", image_ref=get_built_image_identity("preflight"),
-        declared_pg_image=PGVECTOR_IMAGE_DIGEST))
+        declared_pg_image=PGVECTOR_IMAGE_DIGEST,
+        reader_dsn_env_file=reader_dsn_env_file))
     return plans
 
 
@@ -1111,6 +1253,7 @@ __all__ = [
     "PGVECTOR_IMAGE_DIGEST",
     "PREFLIGHT_CHECKS",
     "READER_ROLE",
+    "ReaderDsnSecretFile",
     "SERVICE_ORDER",
     "SOURCE_KIND_ISOLATED",
     "SecretFile",

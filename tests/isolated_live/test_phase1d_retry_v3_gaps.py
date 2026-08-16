@@ -15,6 +15,7 @@ No WSL/Docker/PostgreSQL started; no real connection; no subprocess.
 from __future__ import annotations
 
 import ast
+import copy
 import io
 import os
 import socket
@@ -86,7 +87,9 @@ class TestControllerEnvFileContract(unittest.TestCase):
     def test_orchestrator_rejects_missing_env_file_variants(self):
         for bad in (None, "", "   ", "\t", 42, [], object()):
             _gate(self, oc.plan_orchestrated_start,
-                  controller_env_file=bad, code="CONFIG_INVALID")
+                  controller_env_file=bad,
+                  reader_dsn_env_file="demo_console.env",
+                  code="CONFIG_INVALID")
 
     def test_failure_precedes_any_plan_generation(self):
         # plan_network_create must NEVER be reached when the env-file is
@@ -97,9 +100,13 @@ class TestControllerEnvFileContract(unittest.TestCase):
                 mock.patch.object(oc, "_demo_console_environment",
                                   _must_not_run):
             _gate(self, oc.plan_orchestrated_start,
-                  controller_env_file=None, code="CONFIG_INVALID")
+                  controller_env_file=None,
+                  reader_dsn_env_file="demo_console.env",
+                  code="CONFIG_INVALID")
             _gate(self, oc.plan_orchestrated_start,
-                  controller_env_file="  ", code="CONFIG_INVALID")
+                  controller_env_file="  ",
+                  reader_dsn_env_file="demo_console.env",
+                  code="CONFIG_INVALID")
 
     def test_service_run_rejects_controller_without_env_file(self):
         ident = oc.get_built_image_identity("controller")
@@ -126,6 +133,7 @@ class TestControllerEnvFileContract(unittest.TestCase):
     def test_orchestrated_controller_plan_env_file_once(self):
         plans = oc.plan_orchestrated_start(
             controller_env_file="controller.env",
+            reader_dsn_env_file="demo_console.env",
             demo_console_run_id="run-1",
             demo_console_pg_server_addresses="172.18.0.2")
         by_name = {p[p.index("--name") + 1]: p for p in plans[1:]}
@@ -135,6 +143,7 @@ class TestControllerEnvFileContract(unittest.TestCase):
     def test_error_messages_do_not_echo_the_path(self):
         exc = _gate(self, oc.plan_orchestrated_start,
                     controller_env_file="/very/secret/place/x.env",
+                    reader_dsn_env_file="demo_console.env",
                     code="CONFIG_INVALID")
         self.assertNotIn("/very/secret/place/x.env", str(exc))
         self.assertNotIn("x.env", str(exc))
@@ -410,6 +419,7 @@ class TestDemoReadinessThreeLayerConsistency(unittest.TestCase):
         try:
             plans = oc.plan_orchestrated_start(
                 controller_env_file="controller.env",
+                reader_dsn_env_file="demo_console.env",
                 demo_console_run_id="run-1",
                 demo_console_pg_server_addresses="172.18.0.2")
             demo = next(p for p in plans[1:]
@@ -515,7 +525,11 @@ class TestAstAndStubBoundaries(unittest.TestCase):
         self.assertIn('LISTEN_HOST = "127.0.0.1"', src)
         self.assertNotIn("sse_client", src)      # no MCP CLIENT usage
         self.assertNotIn("httpx", src)
-        self.assertNotIn("requests", src)
+        # The requests HTTP library must not be imported; match import
+        # forms precisely (starlette.requests is a framework module, not
+        # the requests library).
+        self.assertNotIn("import requests", src)
+        self.assertNotIn("from requests", src)
         self.assertNotIn("urllib.request", src)  # no outbound HTTP
         yml = yaml.safe_load(COMPOSE_PATH.read_text(encoding="utf-8"))
         self.assertEqual(set(yml["services"]),
@@ -800,11 +814,12 @@ def _load_upstream_stub(source_text=None):
             return None
 
     class _Route:
-        def __init__(self, path, endpoint, **kw):
+        def __init__(self, path, endpoint=None, **kw):
             recorded.setdefault("routes", []).append(("Route", path))
+            recorded.setdefault("route_endpoints", []).append(endpoint)
 
     class _Mount:
-        def __init__(self, path, app, **kw):
+        def __init__(self, path, app=None, **kw):
             recorded.setdefault("routes", []).append(("Mount", path))
 
     class _Starlette:
@@ -825,9 +840,22 @@ def _load_upstream_stub(source_text=None):
         starlette_mod = types.ModuleType("starlette")
         st_app_mod = types.ModuleType("starlette.applications")
         st_routing_mod = types.ModuleType("starlette.routing")
+        st_requests_mod = types.ModuleType("starlette.requests")
+
+        class _FakeRequest:
+            """Mirrors pinned Starlette Request.__init__: stores scope,
+            receive and the send callable as ``_send``."""
+
+            def __init__(self, scope, receive=None, send=None):
+                self.scope = scope
+                self.receive = receive
+                self._send = send
+
         st_app_mod.Starlette = _Starlette
         st_routing_mod.Route = _Route
         st_routing_mod.Mount = _Mount
+        st_requests_mod.Request = _FakeRequest
+        starlette_mod.requests = st_requests_mod
 
         uvicorn_mod = types.ModuleType("uvicorn")
         uvicorn_mod.run = lambda *a, **k: None
@@ -838,6 +866,7 @@ def _load_upstream_stub(source_text=None):
                 ("starlette", starlette_mod),
                 ("starlette.applications", st_app_mod),
                 ("starlette.routing", st_routing_mod),
+                ("starlette.requests", st_requests_mod),
                 ("uvicorn", uvicorn_mod)):
             sys.modules[name] = mod
             injected[name] = mod
@@ -957,6 +986,17 @@ class TestUpstreamStubSendCallable(unittest.TestCase):
             "                         sse.get_write_stream(),\n"
             "                         server.create_initialization_options())"
             "\n\n\n"
+            "class SSEEndpoint:\n"
+            "    def __init__(self, scope, receive, send):\n"
+            "        self.scope = scope\n"
+            "        self.receive = receive\n"
+            "        self.send = send\n"
+            "    def __await__(self):\n"
+            "        return self.dispatch().__await__()\n"
+            "    async def dispatch(self):\n"
+            "        await handle_sse(Request(self.scope, self.receive, "
+            "self.send))\n"
+            "\n\n\n"
         )
         mutant = source[:start] + old_body + source[end:]
         self.assertIn("get_read_stream(", mutant)
@@ -981,6 +1021,51 @@ class TestUpstreamStubSendCallable(unittest.TestCase):
             self._run(mutant_module.handle_sse(mutant_request))
         self.assertIn("get_read_stream", str(cm.exception))
 
+    def test_sse_route_endpoint_is_asgi_class(self):
+        # Pinned Starlette: a FUNCTION Route endpoint gets wrapped as
+        # func(request)->response (None return after SSE completion -> the
+        # retry-5 'NoneType not callable' traceback); a CLASS endpoint is
+        # used as the raw ASGI app.
+        import inspect
+        module, recorded = _load_upstream_stub()
+        sse_endpoints = [e for kind, e in zip(
+            (r[0] for r in recorded["routes"]),
+            recorded["route_endpoints"]) if kind == "Route"]
+        self.assertEqual(1, len(sse_endpoints))
+        endpoint = sse_endpoints[0]
+        self.assertTrue(inspect.isclass(endpoint),
+                        msg="endpoint must be a class (raw ASGI)")
+        self.assertFalse(inspect.isfunction(endpoint))
+
+    def test_asgi_app_passes_send_through_request(self):
+        # Invoke the shipped ASGI endpoint directly, following the pinned
+        # HTTPEndpoint calling convention (await Endpoint(scope, receive,
+        # send)): the Request constructed in dispatch must carry the ASGI
+        # send callable through to connect_sse (identity), with
+        # scope/receive intact.
+        module, recorded = _load_upstream_stub()
+        endpoint_cls = recorded["route_endpoints"][0]
+
+        async def send(message):
+            return None
+
+        async def receive():
+            return {"type": "http.request", "body": b"",
+                    "more_body": False}
+
+        scope = {"type": "http", "method": "GET", "path": "/sse"}
+
+        async def drive():
+            await endpoint_cls(scope, receive, send)
+
+        self._run(drive())
+
+        args = recorded["connect_sse_args"]
+        self.assertIs(scope, args[0])
+        self.assertIs(receive, args[1])
+        self.assertIs(send, args[2])   # request._send IS the ASGI send
+        self.assertTrue(recorded["connect_sse_exited"])
+
     def test_zero_tool_contract_via_loaded_module(self):
         module, recorded = _load_upstream_stub()
         self.assertEqual("mergepilot-isolated-upstream-stub",
@@ -991,6 +1076,401 @@ class TestUpstreamStubSendCallable(unittest.TestCase):
         # /sse route plus the /messages/ mount are both wired.
         self.assertEqual([("Route", "/sse"), ("Mount", "/messages/")],
                          recorded["routes"])
+
+
+# ── 1-G stabilization sweep: container delivery-closure guard ───────────────
+#
+# The retry-5 real run crashed because Dockerfile.demo-console did not COPY
+# tools/demo_console/live_refresh.py (serve.py imports it at startup, inside
+# a function). No static test compared each image's AST import closure with
+# its Dockerfile COPY list, so the gap merged. The guard below performs that
+# comparison for ALL FOUR deliverable images: it walks the repo-local import
+# closure (top-level, nested, and static importlib.import_module calls) of
+# every shipped entrypoint/main/healthcheck module and requires a matching
+# COPY line. NOT a grep. Mutations that delete any required COPY (one per
+# image) must fail the audit.
+
+# The module search space for each image: the repo directories whose
+# copied files land FLAT in /app (mirrors the container's import truth).
+# Declared explicitly — NOT derived from the COPY list — so that removing
+# a COPY line in a mutation cannot make the import unresolvable (and the
+# gap invisible).
+_DELIVERY_IMAGES = {
+    "controller": {
+        "dockerfile": "Dockerfile.controller",
+        "dirs": ["tools", "tools/workflow-controller",
+                 "tools/demo_console"],
+        "entrypoints": [
+            "tools/controller_entrypoint.py",
+            "tools/workflow-controller/controller.py",
+            "tools/workflow-controller/healthcheck.py",
+            "tools/workflow-controller/readiness.py",
+        ],
+    },
+    "policy-gateway": {
+        "dockerfile": "Dockerfile.policy-gateway",
+        "dirs": ["tools", "tools/policy-gateway",
+                 "tools/demo_console"],
+        "entrypoints": [
+            "tools/gateway_entrypoint.py",
+            "tools/policy-gateway/gateway.py",
+            "tools/policy-gateway/healthcheck.py",
+            "tools/policy-gateway/upstream_stub.py",
+        ],
+    },
+    "demo-console": {
+        "dockerfile": "Dockerfile.demo-console",
+        "dirs": ["tools", "tools/demo_console"],
+        "entrypoints": [
+            "tools/demo_console_entrypoint.py",
+            "tools/demo_console/serve.py",
+            "tools/demo_console/console_healthcheck.py",
+            "tools/demo_console/preflight.py",
+        ],
+    },
+    "preflight": {
+        "dockerfile": "Dockerfile.preflight",
+        "dirs": ["tools", "tools/demo_console"],
+        "entrypoints": [
+            "tools/preflight_entrypoint.py",
+            "tools/demo_console/preflight.py",
+        ],
+    },
+}
+
+
+def _dockerfile_copy_pairs(dockerfile_text):
+    """(src, dst) pairs from COPY instructions, continuations joined."""
+    pairs = []
+    logical = []
+    buf = None
+    for raw in dockerfile_text.splitlines():
+        line = raw.rstrip("\r")
+        stripped = line.strip()
+        if buf is None:
+            if not stripped or stripped.startswith("#"):
+                continue
+            buf = stripped
+        else:
+            buf += " " + stripped
+        if buf.endswith("\\"):
+            buf = buf[:-1]
+            continue
+        logical.append(buf.strip())
+        buf = None
+    for ins in logical:
+        if not ins.upper().startswith("COPY"):
+            continue
+        args = ins.split()[1:]
+        if len(args) < 2:
+            continue
+        srcs, dst = args[:-1], args[-1]
+        for src in srcs:
+            pairs.append((src, dst))
+    return pairs
+
+
+def _ast_local_import_names(path):
+    """Repo-local top-level module names imported anywhere in the file
+    (module level, function level, conditionals, static importlib calls)."""
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    names = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                names.add(alias.name.split(".")[0])
+        elif isinstance(node, ast.ImportFrom):
+            if node.module and node.level == 0:
+                names.add(node.module.split(".")[0])
+            elif node.level > 0:
+                for alias in node.names:
+                    names.add(alias.name.split(".")[0])
+        elif isinstance(node, ast.Call):
+            func = node.func
+            if (isinstance(func, ast.Attribute)
+                    and func.attr == "import_module"
+                    and isinstance(func.value, ast.Name)
+                    and func.value.id == "importlib"
+                    and node.args
+                    and isinstance(node.args[0], ast.Constant)):
+                names.add(str(node.args[0].value).split(".")[0])
+    return names
+
+
+def _delivery_closure_audit(dockerfile_text=None, image=None):
+    """Run the closure audit across all four images.
+
+    ``dockerfile_text``/``image`` let mutation tests substitute ONE
+    Dockerfile's content. Returns (gaps, per_image) where gaps are
+    human-readable missing-file strings and per_image maps the image name
+    to (copied_py_files, copy_pairs, required_closure_files)."""
+    image = image or "demo-console"
+    texts = {}
+    for name, spec in _DELIVERY_IMAGES.items():
+        path = ROOT / spec["dockerfile"]
+        texts[name] = (dockerfile_text
+                       if (name == image and dockerfile_text is not None)
+                       else path.read_text(encoding="utf-8"))
+
+    gaps = []
+    per_image = {}
+    for name, spec in _DELIVERY_IMAGES.items():
+        copies = _dockerfile_copy_pairs(texts[name])
+        copied = set()
+        for src, _dst in copies:
+            p = ROOT / src
+            if p.suffix == ".py":
+                copied.add(p.resolve())
+        per_image[name] = None   # filled after the walk below
+
+        required = set()
+        queue = []
+        broken_entry = False
+        for e in spec["entrypoints"]:
+            p = (ROOT / e).resolve()
+            if not p.is_file():
+                gaps.append("%s: entrypoint missing on disk: %s" % (name, e))
+                broken_entry = True
+                continue
+            queue.append(p)
+            required.add(p)
+        if broken_entry:
+            continue
+
+        # Flat /app layout: an import may resolve in ANY declared source
+        # directory of this image (tools/ root entrypoints import modules
+        # from tools/demo_console/, etc.). Declared dirs, not COPY-derived,
+        # so a mutated COPY list cannot hide a gap by breaking resolution.
+        search_dirs = {(ROOT / d).resolve() for d in spec["dirs"]}
+        for e in spec["entrypoints"]:
+            search_dirs.add((ROOT / e).parent.resolve())
+
+        while queue:
+            path = queue.pop()
+            same_dir = path.parent
+            for mod in _ast_local_import_names(path):
+                cands = [(same_dir / (mod + ".py")).resolve()]
+                cands += [d / (mod + ".py") for d in sorted(search_dirs)
+                          if d != same_dir]
+                cand = next((c for c in cands if c.is_file()), None)
+                if cand is None or cand in required:
+                    continue
+                required.add(cand)
+                queue.append(cand)
+
+        per_image[name] = (copied, copies, required)
+        missing = required - copied
+        # Host-only renderers are deliberately NOT shipped (REPLAY is
+        # refused in containers); if one ever enters a shipped closure
+        # that is a REAL finding, so no exclusion is applied here.
+        for m in sorted(missing, key=str):
+            gaps.append("%s: %s needed by import closure but NOT copied"
+                        % (name, m.relative_to(ROOT)))
+    return gaps, per_image
+
+
+class TestContainerDeliveryClosure(unittest.TestCase):
+    """AST import closure vs Dockerfile COPY list, all four images."""
+
+    def test_all_four_images_have_closed_delivery(self):
+        gaps, _per = _delivery_closure_audit()
+        self.assertEqual([], gaps, msg=gaps)
+
+    def test_copied_sources_exist_on_disk(self):
+        _gaps, per_image = _delivery_closure_audit()
+        missing = []
+        for name, (_copied, copies, _req) in per_image.items():
+            for src, _dst in copies:
+                if not (ROOT / src).exists():
+                    missing.append("%s: COPY source missing: %s"
+                                   % (name, src))
+        self.assertEqual([], missing, msg=missing)
+
+    def test_live_refresh_copy_is_present_in_demo_console(self):
+        text = (ROOT / "Dockerfile.demo-console").read_text(
+            encoding="utf-8")
+        self.assertIn(
+            "COPY tools/demo_console/live_refresh.py /app/live_refresh.py",
+            text)
+
+    def test_mutation_removing_live_refresh_copy_fails_audit(self):
+        text = (ROOT / "Dockerfile.demo-console").read_text(
+            encoding="utf-8")
+        line = ("COPY tools/demo_console/live_refresh.py"
+                " /app/live_refresh.py")
+        self.assertIn(line, text)
+        mutated = text.replace(line + "\n", "")
+        gaps, _per = _delivery_closure_audit(
+            dockerfile_text=mutated, image="demo-console")
+        self.assertTrue(any("live_refresh.py" in g for g in gaps), gaps)
+
+    def test_mutation_removing_one_copy_per_other_image_fails_audit(self):
+        _g, per_image = _delivery_closure_audit()
+        for image in ("controller", "policy-gateway", "preflight"):
+            spec = _DELIVERY_IMAGES[image]
+            text = (ROOT / spec["dockerfile"]).read_text(encoding="utf-8")
+            copied, _pairs, required = per_image[image]
+            # Remove the COPY of one non-entrypoint file that IS in the
+            # import closure (self-maintaining as the closure evolves).
+            victim = None
+            for f in sorted(required & copied, key=str):
+                rel = f.relative_to(ROOT).as_posix()
+                if rel in spec["entrypoints"]:
+                    continue
+                victim = rel
+                break
+            self.assertIsNotNone(victim, msg=image)
+            copy_line = next(
+                (ln for ln in text.splitlines()
+                 if ln.strip().startswith("COPY %s " % victim)), None)
+            self.assertIsNotNone(copy_line, msg=(image, victim))
+            mutated = text.replace(copy_line + "\n", "")
+            gaps, _per = _delivery_closure_audit(
+                dockerfile_text=mutated, image=image)
+            self.assertTrue(
+                any(victim.rsplit("/", 1)[-1] in g for g in gaps),
+                msg=(image, victim, gaps))
+
+    def test_mutation_copying_nonexistent_source_fails(self):
+        text = (ROOT / "Dockerfile.preflight").read_text(encoding="utf-8")
+        mutated = text + (
+            "\nCOPY tools/demo_console/no_such_module.py"
+            " /app/no_such_module.py\n")
+        _gaps, per_image = _delivery_closure_audit(
+            dockerfile_text=mutated, image="preflight")
+        missing = []
+        for name, (_copied, copies, _req) in per_image.items():
+            for src, _dst in copies:
+                if not (ROOT / src).exists():
+                    missing.append("%s: %s" % (name, src))
+        self.assertTrue(missing, msg="nonexistent COPY source accepted")# ── 1-G stabilization sweep: reader-DSN secret-file delivery ────────────────
+#
+# The retry-5 component smoke exposed that NEITHER compose nor the
+# Docker-CLI orchestration attached the reader-DSN secret env-file to its
+# two consumers: serve.py (demo-console) and preflight_entrypoint.py both
+# read MERGEPILOT_PG_DSN and exit without it, and the DSN may never ride
+# -e argv. The wiring now requires ReaderDsnSecretFile transport on both
+# services in every layer (compose dict, compose YAML, Docker-CLI plan).
+
+class TestReaderDsnDelivery(unittest.TestCase):
+
+    def setUp(self):
+        _record_identities()
+
+    def tearDown(self):
+        oc._builtin_registry.clear()
+
+    def test_secret_file_lifecycle_and_content(self):
+        with tempfile.TemporaryDirectory() as td:
+            sf = oc.ReaderDsnSecretFile(Path(td))
+            self.assertEqual("demo_console.env", sf.path.name)
+            dsn = ("postgresql://mergepilot_reader:pw@postgres:5432/"
+                   "mergepilot_audit?application_name=x")
+            sf.write(dsn)
+            self.assertTrue(sf.exists())
+            self.assertEqual("MERGEPILOT_PG_DSN=%s\n" % dsn,
+                             sf.path.read_text(encoding="utf-8"))
+            _gate(self, sf.write, dsn, code="SECRET_FILE_EXISTS")
+            sf.delete()
+            self.assertFalse(sf.exists())
+            sf.delete()   # idempotent
+
+    def test_secret_file_validates_before_any_residue(self):
+        bad = (None, 42, "", "   ", "mysql://x", "postgresql://a b@c/d",
+               "postgresql://u:p@h/d\nPG_PASS=leak",
+               "postgresql://u\t@h/d")
+        with tempfile.TemporaryDirectory() as td:
+            sf = oc.ReaderDsnSecretFile(Path(td) / "nested")
+            for value in bad:
+                _gate(self, sf.write, value, code="CONFIG_INVALID")
+                # zero residue: neither the file nor its (not-yet-created)
+                # parent directory
+                self.assertFalse(sf.exists(), value)
+                self.assertFalse(sf.path.parent.exists(), value)
+
+    def test_secret_file_errors_never_carry_the_value(self):
+        with tempfile.TemporaryDirectory() as td:
+            sf = oc.ReaderDsnSecretFile(Path(td))
+            exc = _gate(self, sf.write,
+                        "postgresql://u:leakme\n@h/d",
+                        code="CONFIG_INVALID")
+            self.assertNotIn("leakme", str(exc))
+
+    def test_demo_console_and_preflight_plans_carry_env_file_once(self):
+        demo = oc.plan_service_run(
+            "demo-console",
+            image_ref=oc.get_built_image_identity("demo-console"),
+            demo_console_env=oc._demo_console_environment(
+                "run-1", "172.18.0.2"),
+            reader_dsn_env_file="/secrets/demo_console.env")
+        self.assertEqual(1, demo.count("--env-file"))
+        self.assertEqual("/secrets/demo_console.env",
+                         demo[demo.index("--env-file") + 1])
+        pf = oc.plan_service_run(
+            "preflight",
+            image_ref=oc.get_built_image_identity("preflight"),
+            declared_pg_image=oc.PGVECTOR_IMAGE_DIGEST,
+            reader_dsn_env_file="/secrets/demo_console.env")
+        self.assertEqual(1, pf.count("--env-file"))
+        self.assertEqual("/secrets/demo_console.env",
+                         pf[pf.index("--env-file") + 1])
+
+    def test_service_run_rejects_missing_reader_dsn_file(self):
+        for bad in (None, "", "   ", 42):
+            for service in ("demo-console", "preflight"):
+                kwargs = {"reader_dsn_env_file": bad}
+                if service == "demo-console":
+                    kwargs["demo_console_env"] = oc._demo_console_environment(
+                        "run-1", "172.18.0.2")
+                _gate(self, oc.plan_service_run, service,
+                      image_ref=oc.get_built_image_identity(service),
+                      code="CONFIG_INVALID", **kwargs)
+
+    def test_orchestrated_start_requires_reader_dsn_file_first(self):
+        def _must_not_run():
+            raise AssertionError("plan generated before validation")
+        with mock.patch.object(oc, "plan_network_create", _must_not_run),                 mock.patch.object(oc, "_demo_console_environment",
+                                  _must_not_run):
+            for bad in (None, "", "  ", 42):
+                _gate(self, oc.plan_orchestrated_start,
+                      controller_env_file="controller.env",
+                      reader_dsn_env_file=bad, code="CONFIG_INVALID")
+        plans = oc.plan_orchestrated_start(
+            controller_env_file="controller.env",
+            reader_dsn_env_file="demo_console.env",
+            demo_console_run_id="run-1",
+            demo_console_pg_server_addresses="172.18.0.2")
+        by_name = {p[p.index("--name") + 1]: p for p in plans[1:]}
+        for svc in ("demo-console", "preflight"):
+            plan = by_name["mergepilot-isolated-%s-1" % svc]
+            self.assertEqual(1, plan.count("--env-file"), svc)
+            self.assertEqual("demo_console.env",
+                             plan[plan.index("--env-file") + 1], svc)
+
+    def test_compose_validator_requires_dsn_env_file(self):
+        cfg = oc.build_compose_config(
+            demo_console_run_id="run-1",
+            demo_console_pg_server_addresses="172.18.0.2")
+        oc.validate_compose_config(cfg)
+        for svc in ("demo-console", "preflight"):
+            self.assertTrue(cfg["services"][svc].get("env_file"), svc)
+        # negative mutation 1: strip the env_file -> COMPOSE_INVALID
+        bad1 = copy.deepcopy(cfg)
+        del bad1["services"]["demo-console"]["env_file"]
+        _gate(self, oc.validate_compose_config, bad1, code="COMPOSE_INVALID")
+        # negative mutation 2: DSN as compose literal -> COMPOSE_INVALID
+        bad2 = copy.deepcopy(cfg)
+        bad2["services"]["preflight"]["environment"][
+            "MERGEPILOT_PG_DSN"] = "postgresql://leak"
+        _gate(self, oc.validate_compose_config, bad2, code="COMPOSE_INVALID")
+
+    def test_compose_yaml_matches_env_file_wiring(self):
+        yml = yaml.safe_load(COMPOSE_PATH.read_text(encoding="utf-8"))
+        for svc in ("demo-console", "preflight"):
+            self.assertEqual("demo_console.env",
+                             yml["services"][svc].get("env_file"), svc)
+            self.assertNotIn("MERGEPILOT_PG_DSN",
+                             yml["services"][svc].get("environment") or {})
 
 
 if __name__ == "__main__":
