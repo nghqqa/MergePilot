@@ -1,0 +1,51 @@
+{
+  "schema_version": "mergepilot.verification-attestation.v1",
+  "verification_id": "phase1g-full-e2e-2026-08-16T05Z",
+  "phase": "ISOLATED_LIVE_PRODUCTIZATION_PHASE_1G_FULL_E2E",
+  "verification_kind": "local_ephemeral_full_e2e",
+
+  "verified_at": "2026-08-16T05:02:00Z",
+  "baseline_commit": "77d3d7dc71656d134c4203d07a83ae69c9f124fa",
+  "run_id": "run-1gf-1786855901-fc0a35c8",
+
+  "classifications": {
+    "built_images_verified": true,
+    "postgres_bootstrap_verified": true,
+    "gateway_mcp_initialize_verified": true,
+    "gateway_zero_tools_verified": true,
+    "gateway_startup_plumbing_verified": true,
+    "controller_readiness_verified": true,
+    "full_stack_startup_verified": true,
+    "demo_console_isolated_live_verified": true,
+    "full_stack_preflight_verified": true,
+    "eight_pages_live_render_verified": true,
+    "dynamic_pages_live_refresh_verified": true,
+    "mobile_layout_verified": true,
+    "cleanup_verified": true
+  },
+
+  "retained_artifacts": {
+    "evidence_persisted": false,
+    "screenshots_retained": false,
+    "logs_retained": false,
+    "database_snapshot_retained": false
+  },
+
+  "boundaries": {
+    "database_verified": false,
+    "application_integration_verified": false,
+    "production_verified": false,
+    "revision_producer_contract": "NOT_VERIFIED",
+    "audit_producer_contract": "NOT_VERIFIED",
+    "gateway_classification": "publication_and_startup_plumbing",
+    "dynamic_update_source": "admin_verification_seed",
+    "m8": "undefined"
+  },
+
+  "semantics": {
+    "verification_seed_note": "The dynamic-refresh data injected during this verification arrived via an admin verification seed (direct SQL INSERT), NOT a revision or audit producer integration.",
+    "scope_note": "A true classification means THIS baseline commit was observed passing in THIS ONE local ephemeral execution environment at verification time. It is not a continuous guarantee, not a production verification, and not a statement about current-environment live health.",
+    "artifacts_note": "The ephemeral environment and all original run artifacts (containers, networks, secrets, screenshots, logs, database) were fully cleaned up after verification. This record is an execution attestation derived from the verifying session, NOT a persisted evidence bundle.",
+    "upstream_note": "Runtime health/state continues to be served exclusively by /api/live/status, which deliberately does not carry these historical attestation fields."
+  }
+}
