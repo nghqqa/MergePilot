@@ -94,7 +94,10 @@ class TestComposeConfig(unittest.TestCase):
     def test_demo_console_loopback_only(self):
         cfg = build_compose_config(demo_console_run_id="test-run-1",
                                 demo_console_pg_server_addresses="172.18.0.2")
-        ports = cfg["services"]["demo-console"]["ports"]
+        # 1-G network design: demo-console is UNPUBLISHED; the loopback
+        # publish lives on the secretless console-edge.
+        self.assertIsNone(cfg["services"]["demo-console"].get("ports"))
+        ports = cfg["services"]["console-edge"]["ports"]
         self.assertEqual(len(ports), 1)
         bind = ports[0].split(":")[0]
         self.assertEqual(bind, "127.0.0.1")
@@ -154,9 +157,9 @@ class TestComposeConfig(unittest.TestCase):
         cfg = build_compose_config(demo_console_run_id="test-run-1",
                                 demo_console_pg_server_addresses="172.18.0.2")
         bindings = compose_ports_binding(cfg)
-        self.assertEqual(list(bindings.keys()), ["demo-console"])
+        self.assertEqual(list(bindings.keys()), ["console-edge"])
         self.assertTrue(all(b.startswith("127.0.0.1:")
-                            for b in bindings["demo-console"]))
+                            for b in bindings["console-edge"]))
 
     # ── negative config cases ───────────────────────────────────────────────
 

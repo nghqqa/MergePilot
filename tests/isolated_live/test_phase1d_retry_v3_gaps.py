@@ -136,7 +136,8 @@ class TestControllerEnvFileContract(unittest.TestCase):
             reader_dsn_env_file="demo_console.env",
             demo_console_run_id="run-1",
             demo_console_pg_server_addresses="172.18.0.2")
-        by_name = {p[p.index("--name") + 1]: p for p in plans[1:]}
+        by_name = {p[p.index("--name") + 1]: p for p in plans[1:]
+                   if "--name" in p}
         ctrl = by_name["mergepilot-isolated-controller-1"]
         self.assertEqual(ctrl.count("--env-file"), 1)
 
@@ -423,7 +424,8 @@ class TestDemoReadinessThreeLayerConsistency(unittest.TestCase):
                 demo_console_run_id="run-1",
                 demo_console_pg_server_addresses="172.18.0.2")
             demo = next(p for p in plans[1:]
-                        if "demo-console-1" in p[p.index("--name") + 1])
+                        if "--name" in p and
+                        "demo-console-1" in p[p.index("--name") + 1])
             self.assertIn("--health-cmd", demo)
             self.assertIn("console_healthcheck.py", " ".join(demo))
         finally:
@@ -534,7 +536,7 @@ class TestAstAndStubBoundaries(unittest.TestCase):
         yml = yaml.safe_load(COMPOSE_PATH.read_text(encoding="utf-8"))
         self.assertEqual(set(yml["services"]),
                          {"postgres", "policy-gateway", "controller",
-                          "demo-console", "preflight"})
+                          "demo-console", "console-edge", "preflight"})
         # Boundary language preserved verbatim in the truth-source module.
         ocsrc = (ROOT / "tools" / "demo_console" /
                  "one_click_startup.py").read_text(encoding="utf-8")
@@ -558,6 +560,7 @@ DELIVERABLE_DOCKERFILES = [
     ROOT / "Dockerfile.policy-gateway",
     ROOT / "Dockerfile.demo-console",
     ROOT / "Dockerfile.preflight",
+    ROOT / "Dockerfile.console-edge",
 ]
 
 
@@ -1136,6 +1139,14 @@ _DELIVERY_IMAGES = {
             "tools/demo_console/preflight.py",
         ],
     },
+    "console-edge": {
+        "dockerfile": "Dockerfile.console-edge",
+        "dirs": ["tools", "tools/demo_console"],
+        "entrypoints": [
+            "tools/demo_console/console_edge.py",
+            "tools/demo_console/console_edge_healthcheck.py",
+        ],
+    },
 }
 
 
@@ -1306,19 +1317,29 @@ class TestContainerDeliveryClosure(unittest.TestCase):
 
     def test_mutation_removing_one_copy_per_other_image_fails_audit(self):
         _g, per_image = _delivery_closure_audit()
-        for image in ("controller", "policy-gateway", "preflight"):
+        for image in ("controller", "policy-gateway", "preflight",
+                      "console-edge"):
             spec = _DELIVERY_IMAGES[image]
             text = (ROOT / spec["dockerfile"]).read_text(encoding="utf-8")
             copied, _pairs, required = per_image[image]
             # Remove the COPY of one non-entrypoint file that IS in the
             # import closure (self-maintaining as the closure evolves).
+            # Prefer a non-entrypoint closure file; fall back to an
+            # entrypoint COPY when the closure is otherwise bare (e.g.
+            # console-edge is pure stdlib — its closure IS its two
+            # entrypoint files).
             victim = None
+            fallback = None
             for f in sorted(required & copied, key=str):
                 rel = f.relative_to(ROOT).as_posix()
                 if rel in spec["entrypoints"]:
+                    if fallback is None:
+                        fallback = rel
                     continue
                 victim = rel
                 break
+            if victim is None:
+                victim = fallback
             self.assertIsNotNone(victim, msg=image)
             copy_line = next(
                 (ln for ln in text.splitlines()
@@ -1440,7 +1461,8 @@ class TestReaderDsnDelivery(unittest.TestCase):
             reader_dsn_env_file="demo_console.env",
             demo_console_run_id="run-1",
             demo_console_pg_server_addresses="172.18.0.2")
-        by_name = {p[p.index("--name") + 1]: p for p in plans[1:]}
+        by_name = {p[p.index("--name") + 1]: p for p in plans[1:]
+                   if "--name" in p}
         for svc in ("demo-console", "preflight"):
             plan = by_name["mergepilot-isolated-%s-1" % svc]
             self.assertEqual(1, plan.count("--env-file"), svc)
@@ -1471,6 +1493,400 @@ class TestReaderDsnDelivery(unittest.TestCase):
                              yml["services"][svc].get("env_file"), svc)
             self.assertNotIn("MERGEPILOT_PG_DSN",
                              yml["services"][svc].get("environment") or {})
+
+# ── 1-G console-edge: publication plumbing unit tests ───────────────────────
+#
+# The edge runs in-process against a real loopback stub upstream (pure
+# stdlib; the host needs nothing else). These tests execute the REAL
+# ConsoleEdgeHandler request path end-to-end over HTTP sockets.
+
+import http.client
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+
+class _StubUpstreamHandler(BaseHTTPRequestHandler):
+    """Answers per-path canned payloads; records received headers."""
+
+    protocol_version = "HTTP/1.1"
+    seen_headers = {}
+    seen_path = None
+
+    def do_GET(self):
+        _StubUpstreamHandler.seen_headers = dict(self.headers)
+        _StubUpstreamHandler.seen_path = self.path
+        path = self.path.split("?")[0]
+        if path == "/api/live/status":
+            body = (b'{"source_kind": "POSTGRES_ISOLATED", '
+                    b'"source_read_only": true}')
+            ctype = "application/json"
+        elif path == "/api/live/snapshot":
+            body = b'{"run_id": "edge-test", "bundle_sha256": "ab"}'
+            ctype = "application/json"
+        elif path == "/live-refresh.js":
+            body = b"// edge asset"
+            ctype = "text/javascript"
+        else:
+            body = b"<html>edge</html>"
+            ctype = "text/html"
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("X-Hop-Hop", "must-not-transit")
+        self.send_header("Set-Cookie", "session=leak")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *a):
+        pass
+
+
+class _RedirectStubHandler(_StubUpstreamHandler):
+    def do_GET(self):
+        self.send_response(302)
+        self.send_header("Location",
+                         "/safe" if "rel" in self.path
+                         else "http://evil.example/x")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+
+# ── 1-G console-edge: compose topology negative matrix ─────────────────────
+
+class TestConsoleEdgeTopology(unittest.TestCase):
+    """validate_compose_config must fail-closed on every topology drift."""
+
+    def _cfg(self):
+        cfg = oc.build_compose_config(
+            demo_console_run_id="run-1",
+            demo_console_pg_server_addresses="172.18.0.2")
+        oc.validate_compose_config(cfg)
+        return cfg
+
+    def test_rejects_demo_console_ports(self):
+        cfg = self._cfg()
+        cfg["services"]["demo-console"]["ports"] = ["127.0.0.1:8600:8600"]
+        _gate(self, oc.validate_compose_config, cfg, code="BIND_NOT_LOOPBACK")
+
+    def test_rejects_other_service_ports(self):
+        cfg = self._cfg()
+        cfg["services"]["postgres"]["ports"] = ["127.0.0.1:9999:5432"]
+        _gate(self, oc.validate_compose_config, cfg, code="BIND_NOT_LOOPBACK")
+
+    def test_rejects_edge_wildcard_lan_ipv6_wrongport(self):
+        for bad in ("0.0.0.0:8600:8600", "192.168.1.5:8600:8600",
+                    "[::1]:8600:8600", "127.0.0.1:8601:8600"):
+            cfg = self._cfg()
+            cfg["services"]["console-edge"]["ports"] = [bad]
+            _gate(self, oc.validate_compose_config, cfg,
+                  code="BIND_NOT_LOOPBACK")
+
+    def test_rejects_edge_missing_either_network(self):
+        for drop in ("isolated", "console-publish"):
+            cfg = self._cfg()
+            cfg["services"]["console-edge"]["networks"] = [
+                n for n in cfg["services"]["console-edge"]["networks"]
+                if n != drop]
+            _gate(self, oc.validate_compose_config, cfg,
+                  code="COMPOSE_INVALID")
+
+    def test_rejects_secret_service_on_publish_net(self):
+        for svc in ("postgres", "demo-console", "controller"):
+            cfg = self._cfg()
+            cfg["services"][svc]["networks"] = ["isolated",
+                                                "console-publish"]
+            _gate(self, oc.validate_compose_config, cfg,
+                  code="COMPOSE_INVALID")
+
+    def test_rejects_publish_net_internal_true(self):
+        cfg = self._cfg()
+        cfg["networks"]["console-publish"]["internal"] = True
+        _gate(self, oc.validate_compose_config, cfg, code="COMPOSE_INVALID")
+
+    def test_rejects_isolated_internal_false(self):
+        cfg = self._cfg()
+        cfg["networks"]["isolated"]["internal"] = False
+        _gate(self, oc.validate_compose_config, cfg, code="COMPOSE_INVALID")
+
+    def test_rejects_edge_env_file(self):
+        cfg = self._cfg()
+        cfg["services"]["console-edge"]["env_file"] = "demo_console.env"
+        _gate(self, oc.validate_compose_config, cfg, code="COMPOSE_INVALID")
+
+    def test_rejects_edge_environment_secrets(self):
+        cfg = self._cfg()
+        cfg["services"]["console-edge"]["environment"] = {
+            "MERGEPILOT_PG_DSN": "postgresql://leak"}
+        _gate(self, oc.validate_compose_config, cfg, code="COMPOSE_INVALID")
+
+    def test_rejects_edge_without_healthcheck(self):
+        cfg = self._cfg()
+        del cfg["services"]["console-edge"]["healthcheck"]
+        _gate(self, oc.validate_compose_config, cfg, code="COMPOSE_INVALID")
+
+    def test_rejects_preflight_without_edge_dependency(self):
+        cfg = self._cfg()
+        del cfg["services"]["preflight"]["depends_on"]["console-edge"]
+        _gate(self, oc.validate_compose_config, cfg, code="COMPOSE_INVALID")
+
+    def test_edge_docker_cli_plan_contract(self):
+        _record_identities()
+        try:
+            ident = oc.get_built_image_identity("console-edge")
+            edge = oc.plan_console_edge_run(ident)
+            self.assertEqual(edge.count("-p"), 1)
+            self.assertEqual(edge[edge.index("-p") + 1],
+                             "127.0.0.1:8600:8600")
+            # PRIMARY network is the NON-internal publication bridge.
+            self.assertIn(oc.PUBLICATION_NETWORK, edge)
+            self.assertNotIn(oc.ORCHESTRATOR_NETWORK, edge)
+            # No env-file, no -e values at all.
+            self.assertNotIn("--env-file", edge)
+            self.assertNotIn("-e", edge)
+            # Healthcheck present.
+            self.assertIn("--health-cmd", edge)
+            self.assertIn("console_edge_healthcheck.py", " ".join(edge))
+            # The backend attach is a SEPARATE later step.
+            connect = oc.plan_console_edge_connect_backend()
+            self.assertEqual(connect[0], "network")
+            self.assertEqual(connect[1], "connect")
+            self.assertEqual(connect[2], oc.ORCHESTRATOR_NETWORK)
+            self.assertEqual(connect[3],
+                             "mergepilot-isolated-console-edge-1")
+            # The GENERIC path is fail-closed for the edge (internal
+            # primary would silently drop the publish).
+            _gate(self, oc.plan_service_run, "console-edge",
+                  image_ref=ident, code="CONFIG_INVALID")
+        finally:
+            oc._builtin_registry.clear()
+
+    def test_publication_plumbing_not_application_service(self):
+        yml = yaml.safe_load(COMPOSE_PATH.read_text(encoding="utf-8"))
+        edge = yml["services"]["console-edge"]
+        self.assertIsNone(edge.get("env_file"))
+        self.assertIsNone(edge.get("environment"))
+        # Boundary language preserved: the truth-source module still says
+        # application integration is NOT verified.
+        ocsrc = (ROOT / "tools" / "demo_console" /
+                 "one_click_startup.py").read_text(encoding="utf-8")
+        self.assertIn("application_integration_verified = false", ocsrc)
+
+    def test_edge_upstream_not_configurable_anywhere(self):
+        # The EDGE's upstream is a code constant: no env knob in its
+        # Dockerfile, no environment at all on the edge service in
+        # compose (the gateway's UPSTREAM_URL is an unrelated, pinned
+        # in-container concept and stays). The edge module never reads
+        # the environment.
+        df = (ROOT / "Dockerfile.console-edge").read_text(encoding="utf-8")
+        self.assertNotIn("MERGEPILOT_UPSTREAM", df)
+        self.assertNotIn("UPSTREAM_URL", df)
+        yml = yaml.safe_load(COMPOSE_PATH.read_text(encoding="utf-8"))
+        edge_env = yml["services"]["console-edge"].get("environment")
+        self.assertIsNone(edge_env)
+        self.assertTrue(yml["services"]["console-edge"].get("env_file")
+                        in (None, False))
+        source = (ROOT / "tools" / "demo_console" /
+                  "console_edge.py").read_text(encoding="utf-8")
+        self.assertIn('UPSTREAM = "http://demo-console:8600"', source)
+        self.assertNotIn("os.environ", source)
+
+
+class TestConsoleEdgePlumbing(unittest.TestCase):
+
+    def setUp(self):
+        import console_edge
+        self.edge_mod = console_edge
+        self._orig_upstream = console_edge.UPSTREAM
+        self._orig_timeout = console_edge.UPSTREAM_TIMEOUT_SECONDS
+        self._orig_max = console_edge.MAX_BODY_BYTES
+
+        self.upstream = ThreadingHTTPServer(("127.0.0.1", 0),
+                                            _StubUpstreamHandler)
+        self.edge = ThreadingHTTPServer(
+            ("127.0.0.1", 0), console_edge.ConsoleEdgeHandler)
+        for srv in (self.upstream, self.edge):
+            srv.daemon_threads = True
+            threading.Thread(target=srv.serve_forever,
+                             daemon=True).start()
+        console_edge.UPSTREAM = "http://127.0.0.1:%d" % (
+            self.upstream.server_address[1],)
+        self.edge_port = self.edge.server_address[1]
+
+    def tearDown(self):
+        self.edge_mod.UPSTREAM = self._orig_upstream
+        self.edge_mod.UPSTREAM_TIMEOUT_SECONDS = self._orig_timeout
+        self.edge_mod.MAX_BODY_BYTES = self._orig_max
+        for srv in (self.upstream, self.edge):
+            srv.shutdown()
+            srv.server_close()
+
+    def _request(self, method, path, headers=None):
+        conn = http.client.HTTPConnection("127.0.0.1", self.edge_port,
+                                          timeout=5)
+        conn.request(method, path, headers=headers or {})
+        resp = conn.getresponse()
+        body = resp.read()
+        conn.close()
+        return resp.status, dict(resp.getheaders()), body
+
+    def test_five_whitelisted_gets_pass_through(self):
+        for path in ("/", "/index.html", "/live-refresh.js",
+                     "/api/live/status", "/api/live/snapshot"):
+            status, headers, body = self._request(
+                "GET", path, {"Host": "127.0.0.1:%d" % self.edge_port})
+            self.assertEqual(200, status, path)
+            self.assertTrue(body, path)
+            self.assertNotIn("X-Hop-Hop", headers, path)
+            self.assertNotIn("Set-Cookie", headers, path)
+
+    def test_query_rides_verbatim_and_never_changes_upstream(self):
+        status, _h, _b = self._request(
+            "GET", "/?interval_ms=7000", {"Host": "127.0.0.1"})
+        self.assertEqual(200, status)
+        self.assertEqual("/?interval_ms=7000",
+                         _StubUpstreamHandler.seen_path)
+
+    def test_method_matrix(self):
+        for method in ("POST", "PUT", "PATCH", "DELETE", "OPTIONS",
+                       "TRACE", "HEAD"):
+            status, _h, body = self._request(
+                method, "/api/live/status", {"Host": "127.0.0.1"})
+            self.assertEqual(405, status, method)
+            if method != "HEAD":   # HEAD responses carry no body by RFC
+                self.assertIn(b"method forbidden", body, method)
+
+    def test_connect_forbidden(self):
+        conn = http.client.HTTPConnection("127.0.0.1", self.edge_port,
+                                          timeout=5)
+        conn.request("CONNECT", "evil.example:443",
+                     headers={"Host": "evil.example:443"})
+        resp = conn.getresponse()
+        body = resp.read()
+        conn.close()
+        self.assertEqual(403, resp.status)
+        self.assertIn(b"CONNECT forbidden", body)
+
+    def test_absolute_uri_and_netloc_rejected(self):
+        status, _h, _b = self._request(
+            "GET", "http://evil.example/x", {"Host": "127.0.0.1"})
+        self.assertEqual(403, status)
+        # Authority-form "//host/x": http.client normalizes it to a PATH
+        # before sending ("/evil.example/x"), so the rejection arrives as
+        # 404; sent verbatim over a raw socket the edge's own urlsplit
+        # check yields 403. Either way the request is REJECTED and the
+        # authority can never become upstream routing data.
+        status, _h, _b = self._request(
+            "GET", "//evil.example/x", {"Host": "127.0.0.1"})
+        self.assertIn(status, (403, 404))
+
+    def test_host_allowlist(self):
+        for host in ("evil.example", "10.0.0.1", "[::1]:8600",
+                     "172.20.0.1"):
+            status, _h, _b = self._request("GET", "/", {"Host": host})
+            self.assertEqual(403, status, host)
+        for host in ("localhost", "localhost:8600", "127.0.0.1:8600"):
+            status, _h, _b = self._request("GET", "/", {"Host": host})
+            self.assertEqual(200, status, host)
+
+    def test_non_whitelisted_path_rejected(self):
+        for path in ("/admin", "/api/live/../status", "/index.html/x",
+                     "/api/live/status/x"):
+            status, _h, _b = self._request("GET", path,
+                                           {"Host": "127.0.0.1"})
+            self.assertIn(status, (403, 404), path)
+
+    def test_secret_client_headers_never_forwarded(self):
+        self._request("GET", "/api/live/status", {
+            "Host": "127.0.0.1",
+            "Authorization": "Bearer leak",
+            "Cookie": "session=leak",
+            "Proxy-Authorization": "Basic leak",
+            "X-Forwarded-For": "1.2.3.4"})
+        seen = _StubUpstreamHandler.seen_headers
+        for header in ("Authorization", "Cookie", "Proxy-Authorization",
+                       "X-Forwarded-For"):
+            self.assertNotIn(header, seen, header)
+        self.assertIn("mergepilot-console-edge",
+                      seen.get("User-Agent", ""))
+
+    def test_upstream_dead_fails_closed_502(self):
+        self.edge_mod.UPSTREAM = "http://127.0.0.1:1"
+        status, _h, body = self._request("GET", "/api/live/status",
+                                         {"Host": "127.0.0.1"})
+        self.assertEqual(502, status)
+        self.assertIn(b"fail-closed", body)
+
+    def test_upstream_timeout_fails_closed_502(self):
+        import time
+
+        class _SlowHandler(_StubUpstreamHandler):
+            def do_GET(self):
+                time.sleep(1.0)
+                _StubUpstreamHandler.do_GET(self)
+
+        slow = ThreadingHTTPServer(("127.0.0.1", 0), _SlowHandler)
+        slow.daemon_threads = True
+        threading.Thread(target=slow.serve_forever, daemon=True).start()
+        self.edge_mod.UPSTREAM = "http://127.0.0.1:%d" % (
+            slow.server_address[1],)
+        self.edge_mod.UPSTREAM_TIMEOUT_SECONDS = 0.2
+        try:
+            status, _h, _b = self._request("GET", "/api/live/status",
+                                           {"Host": "127.0.0.1"})
+            self.assertEqual(502, status)
+        finally:
+            slow.shutdown()
+            slow.server_close()
+
+    def test_oversized_body_fails_closed_502(self):
+        class _HugeHandler(_StubUpstreamHandler):
+            def do_GET(self):
+                body = b"x" * 4096
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+        huge = ThreadingHTTPServer(("127.0.0.1", 0), _HugeHandler)
+        huge.daemon_threads = True
+        threading.Thread(target=huge.serve_forever, daemon=True).start()
+        self.edge_mod.UPSTREAM = "http://127.0.0.1:%d" % (
+            huge.server_address[1],)
+        self.edge_mod.MAX_BODY_BYTES = 64
+        try:
+            status, _h, _b = self._request("GET", "/api/live/status",
+                                           {"Host": "127.0.0.1"})
+            self.assertEqual(502, status)
+        finally:
+            huge.shutdown()
+            huge.server_close()
+
+    def test_external_location_dropped_relative_kept(self):
+        self.upstream.RequestHandlerClass = _RedirectStubHandler
+        status, headers, _b = self._request("GET", "/?rel=1",
+                                            {"Host": "127.0.0.1"})
+        self.assertEqual(302, status)
+        self.assertEqual("/safe", headers.get("Location"))
+        status, headers, _b = self._request("GET", "/",
+                                            {"Host": "127.0.0.1"})
+        self.assertEqual(302, status)
+        self.assertIsNone(headers.get("Location"))
+
+    def test_fixed_upstream_constant_and_no_env_influence(self):
+        source = (ROOT / "tools" / "demo_console" /
+                  "console_edge.py").read_text(encoding="utf-8")
+        self.assertIn('UPSTREAM = "http://demo-console:8600"', source)
+        self.assertNotIn("os.environ", source)
+
+    def test_no_external_http_clients(self):
+        source = (ROOT / "tools" / "demo_console" /
+                  "console_edge.py").read_text(encoding="utf-8")
+        for forbidden in ("import requests", "import httpx",
+                          "import aiohttp", "socket.create_connection",
+                          "urllib3"):
+            self.assertNotIn(forbidden, source)
+
+
 
 
 if __name__ == "__main__":
