@@ -1,10 +1,10 @@
-/* ISOLATED_LIVE dynamic refresh engine (Phase 1-E; UI refresh Phase 1-F).
+/* ISOLATED_LIVE dynamic refresh engine (Phase 1-E; UI Phase 1-F; showcase PR-V1).
  *
  * Mirrors the Python contract in tools/demo_console/live_refresh.py
  * (serve.py fail-closed-verifies this file against that contract at
  * startup — see verify_js_contract).
  *
- * Hard invariants (unchanged by the Phase 1-F UI work):
+ * Hard invariants (unchanged by all UI work):
  *   - Only GET /api/live/status and GET /api/live/snapshot are requested.
  *   - Interval is configurable (URL ?interval_ms= or default) but clamped
  *     to >= 2000 ms; auto-refresh stops after 10 consecutive failures.
@@ -29,6 +29,50 @@
   var MAX_CONSECUTIVE_FAILURES = 10;
   var PAGES = ['overview', 'timeline', 'findings', 'rag',
                'trace', 'safety', 'evidence', 'benchmark'];
+
+  /* ── Per-page metadata (eyebrow, title, description) ────────────────── */
+  var PAGE_META = {
+    overview: {
+      eyebrow: 'Run Summary',
+      title: 'Overview',
+      desc: 'Current run identity, PR context, final status and agent execution summary.'
+    },
+    timeline: {
+      eyebrow: 'Workflow Progress',
+      title: 'Timeline',
+      desc: 'Ordered workflow stages with status, ownership and timing for this run.'
+    },
+    findings: {
+      eyebrow: 'Code Review',
+      title: 'Findings',
+      desc: 'Issues identified by the review pipeline, sorted by severity with affected files.'
+    },
+    rag: {
+      eyebrow: 'Retrieval Advisory',
+      title: 'RAG Advisory',
+      desc: 'Retrieval-augmented suggestions with adoption and trust boundary annotations.'
+    },
+    trace: {
+      eyebrow: 'Observability',
+      title: 'Trace Tree',
+      desc: 'Distributed trace spans for gateway calls, skill executions and controller actions.'
+    },
+    safety: {
+      eyebrow: 'Guardrails',
+      title: 'Policy & Safety',
+      desc: 'Environment residue, secret scan results and rollback event history.'
+    },
+    evidence: {
+      eyebrow: 'Provenance',
+      title: 'Evidence & Provenance',
+      desc: 'Bundle integrity, source and verification commits, and evidence file listings.'
+    },
+    benchmark: {
+      eyebrow: 'Capability Matrix',
+      title: 'Benchmark Summary',
+      desc: 'Evaluation dataset coverage, quality gate results and boundary annotations.'
+    }
+  };
 
   var state = 'INIT';
   var timer = null;               /* the ONE setInterval handle */
@@ -55,7 +99,7 @@
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
-  /* ── status semantics (shared visual language) ─────────────────────── */
+  /* ── Status semantics (shared visual language) ───────────────────────── */
 
   function statusClass(value) {
     var v = String(value === null || value === undefined ? '' : value)
@@ -79,6 +123,18 @@
         ? 'n/a' : value) + '</span>';
   }
 
+  /* ── Presentation helpers ────────────────────────────────────────────── */
+
+  function pageHeader(page) {
+    var meta = PAGE_META[page] || {};
+    return '<div class="page-head">' +
+      '<div class="page-eyebrow">' + esc(meta.eyebrow || '') + '</div>' +
+      '<h2 class="page-title" id="' + esc(page) + '-title">' +
+      esc(meta.title || page) + '</h2>' +
+      '<p class="page-desc">' + esc(meta.desc || '') + '</p>' +
+      '</div>';
+  }
+
   function kvCell(k, v, mono) {
     return '<div class="cell"><div class="k">' + esc(k) + '</div>' +
       '<div class="v' + (mono ? ' mono' : '') + '">' + v + '</div></div>';
@@ -89,7 +145,27 @@
       '<div class="m-v">' + esc(v) + '</div></div>';
   }
 
-  /* ── per-page renderers: all read the SAME `snapshot` store ─────────── */
+  function evidenceRow(label, value) {
+    return '<div class="evidence-row">' +
+      '<span class="evidence-label">' + esc(label) + '</span>' +
+      '<span class="evidence-value">' + value + '</span></div>';
+  }
+
+  function tableWrap(headers, rows) {
+    var thead = '<tr>' + headers.map(function (h) {
+      return '<th scope="col">' + esc(h) + '</th>';
+    }).join('') + '</tr>';
+    return '<div class="table-wrap"><table class="data-table">' +
+      '<thead>' + thead + '</thead><tbody>' + rows + '</tbody></table></div>';
+  }
+
+  function panel(title, body) {
+    return '<div class="panel">' +
+      (title ? '<div class="panel-title">' + esc(title) + '</div>' : '') +
+      body + '</div>';
+  }
+
+  /* ── Per-page renderers: all read the SAME `snapshot` store ─────────── */
 
   function renderOverview() {
     var run = snapshot.run || {}, pr = snapshot.pr || {};
@@ -104,24 +180,24 @@
         '<span class="skill-role">role: ' + esc(a.role) + '</span>' +
         stChip(a.status) + '</div>';
     }).join('');
-    return '<div class="panel"><h2>Overview</h2><div class="kv">' +
-      kvCell('run_id', '<code>' + esc(run.run_id) + '</code>', false) +
-      kvCell('PR', esc('#' + pr.number) + ' ' + esc(pr.title), false) +
-      kvCell('repo', esc(repo.full_name || repo.name || 'n/a'), false) +
-      kvCell('final_status', stChip(snapshot.final_status), false) +
-      kvCell('verifier', stChip(vr.status || 'n/a'), false) +
-      kvCell('trace_id', '<code>' + esc(run.trace_id) + '</code>', false) +
-      '</div></div>' +
-      '<div class="panel"><h3>Run metrics</h3><div class="metrics">' +
-      metricCell('stages', stages.length) +
-      metricCell('findings', (snapshot.findings || []).length) +
-      metricCell('fixes', fixes.length) +
-      metricCell('skills', agents.length) +
-      '</div></div>' +
-      '<div class="panel"><h3>Skill execution</h3>' +
-      (cards ? '<div class="skill-grid">' + cards + '</div>'
-             : '<p class="empty-note">no agents recorded</p>') +
-      '</div>' +
+    return pageHeader('overview') +
+      panel('Run Identity', '<div class="kv">' +
+        kvCell('run_id', '<code>' + esc(run.run_id) + '</code>', false) +
+        kvCell('PR', esc('#' + pr.number) + ' ' + esc(pr.title), false) +
+        kvCell('repo', esc(repo.full_name || repo.name || 'n/a'), false) +
+        kvCell('final_status', stChip(snapshot.final_status), false) +
+        kvCell('verifier', stChip(vr.status || 'n/a'), false) +
+        kvCell('trace_id', '<code>' + esc(run.trace_id) + '</code>', false) +
+        '</div>') +
+      panel('Run Metrics', '<div class="metrics">' +
+        metricCell('stages', stages.length) +
+        metricCell('findings', (snapshot.findings || []).length) +
+        metricCell('fixes', fixes.length) +
+        metricCell('skills', agents.length) +
+        '</div>') +
+      panel('Skill Execution',
+        (cards ? '<div class="skill-grid">' + cards + '</div>'
+               : '<p class="empty-note">no agents recorded</p>')) +
       '<div class="boundary-banner plain"><strong>Read-only viewer:</strong> ' +
       'this console performs no writes, no agent control and no GitHub ' +
       'operations. Data is the latest validated ISOLATED_LIVE snapshot.</div>';
@@ -130,8 +206,8 @@
   function renderTimeline() {
     var stages = snapshot.workflow_stages || [];
     if (!stages.length) {
-      return '<div class="panel"><h2>Timeline</h2>' +
-        '<p class="empty-note">no stages recorded</p></div>';
+      return pageHeader('timeline') +
+        panel(null, '<p class="empty-note">no stages recorded</p>');
     }
     var items = stages.map(function (s) {
       var cls = statusClass(s.status);
@@ -145,15 +221,16 @@
         '<span class="tl-meta">' + esc(s.agent_role || '') +
         (when ? ' · ' + esc(when) : '') + '</span></div></li>';
     }).join('');
-    return '<div class="panel"><h2>Timeline</h2>' +
-      '<ul class="timeline">' + items + '</ul></div>';
+    return pageHeader('timeline') +
+      panel(stages.length + ' stage' + (stages.length !== 1 ? 's' : ''),
+        '<ul class="timeline">' + items + '</ul>');
   }
 
   function renderFindings() {
     var findings = snapshot.findings || [];
     if (!findings.length) {
-      return '<div class="panel"><h2>Findings</h2>' +
-        '<p class="empty-note">no findings recorded</p></div>';
+      return pageHeader('findings') +
+        panel(null, '<p class="empty-note">no findings recorded</p>');
     }
     var rows = findings.map(function (f) {
       var sev = String(f.severity || '').toUpperCase();
@@ -165,10 +242,9 @@
         stChip(f.severity || 'n/a') + '</td><td class="code">' +
         esc(f.file) + '</td><td>' + esc(f.message) + '</td></tr>';
     }).join('');
-    return '<div class="panel"><h2>Findings</h2>' +
-      '<table class="data-table"><tr><th>ID</th><th>Category</th>' +
-      '<th>Severity</th><th>File</th><th>Message</th></tr>' + rows +
-      '</table></div>';
+    return pageHeader('findings') +
+      panel(findings.length + ' finding' + (findings.length !== 1 ? 's' : ''),
+        tableWrap(['ID', 'Category', 'Severity', 'File', 'Message'], rows));
   }
 
   function renderRag() {
@@ -180,22 +256,22 @@
         '</td><td>' + stChip(r.untrusted ? 'untrusted' : 'trusted-input') +
         '</td></tr>';
     }).join('');
-    return '<div class="panel"><h2>RAG Advisory</h2>' +
+    return pageHeader('rag') +
       '<div class="boundary-banner"><strong>Advisory only:</strong> RAG ' +
       'output is ADVISORY, untrusted context — never a deterministic ' +
       'conclusion and never auto-applied. adopted=false means the ' +
       'recommendation was NOT accepted.</div>' +
-      (rows ? '<table class="data-table"><tr><th>Role</th><th>Status</th>' +
-        '<th>hit_count</th><th>Adoption</th><th>Trust</th></tr>' + rows +
-        '</table>' : '<p class="empty-note">no rag advisories recorded</p>') +
-      '</div>';
+      (rows
+        ? panel(null, tableWrap(
+            ['Role', 'Status', 'hit_count', 'Adoption', 'Trust'], rows))
+        : panel(null, '<p class="empty-note">no rag advisories recorded</p>'));
   }
 
   function renderTrace() {
     var spans = snapshot.spans || [];
     if (!spans.length) {
-      return '<div class="panel"><h2>Trace Tree</h2>' +
-        '<p class="empty-note">no spans recorded</p></div>';
+      return pageHeader('trace') +
+        panel(null, '<p class="empty-note">no spans recorded</p>');
     }
     var items = spans.map(function (s) {
       return '<li><div class="span-line">' +
@@ -204,8 +280,9 @@
         '<span class="span-time">' + esc(s.span_id) + ' · ' +
         esc(s.start_time) + ' → ' + esc(s.end_time) + '</span></div></li>';
     }).join('');
-    return '<div class="panel"><h2>Trace Tree</h2>' +
-      '<ul class="tree">' + items + '</ul></div>';
+    return pageHeader('trace') +
+      panel(spans.length + ' span' + (spans.length !== 1 ? 's' : ''),
+        '<ul class="tree">' + items + '</ul>');
   }
 
   function renderSafety() {
@@ -213,23 +290,22 @@
     var rollbacks = snapshot.rollback_events || [];
     var leaks = snapshot.secret_leaks;
     var leakOk = leaks === 0 || leaks === '0';
-    return '<div class="panel"><h2>Policy &amp; Safety</h2>' +
-      '<div class="kv">' +
-      kvCell('residue · containers', esc(residue.containers), true) +
-      kvCell('residue · networks', esc(residue.networks), true) +
-      kvCell('residue · temp dirs', esc(residue.temp_dirs), true) +
-      kvCell('secret scan', stChip(leakOk ? 'CLEAN' : 'LEAKS'), false) +
-      kvCell('rollback events', esc(rollbacks.length), true) +
-      '</div></div>' +
-      '<div class="panel"><h3>Rollback events</h3>' +
-      (rollbacks.length
-        ? '<ul class="tree">' + rollbacks.map(function (e) {
-            return '<li><div class="span-line"><span class="span-name">' +
-              esc(e.event || e.stage || 'rollback') + '</span>' +
-              stChip(e.status || 'n/a') + '</div></li>';
-          }).join('') + '</ul>'
-        : '<p class="empty-note">0 rollback event(s)</p>') +
-      '</div>';
+    return pageHeader('safety') +
+      panel('Environment Health', '<div class="kv">' +
+        kvCell('residue · containers', esc(residue.containers), true) +
+        kvCell('residue · networks', esc(residue.networks), true) +
+        kvCell('residue · temp dirs', esc(residue.temp_dirs), true) +
+        kvCell('secret scan', stChip(leakOk ? 'CLEAN' : 'LEAKS'), false) +
+        kvCell('rollback events', esc(rollbacks.length), true) +
+        '</div>') +
+      panel('Rollback Events',
+        (rollbacks.length
+          ? '<ul class="tree">' + rollbacks.map(function (e) {
+              return '<li><div class="span-line"><span class="span-name">' +
+                esc(e.event || e.stage || 'rollback') + '</span>' +
+                stChip(e.status || 'n/a') + '</div></li>';
+            }).join('') + '</ul>'
+          : '<p class="empty-note">0 rollback event(s)</p>'));
   }
 
   function renderEvidence() {
@@ -239,21 +315,20 @@
         '<td class="code">' + esc(f.sha256) + '</td><td>' +
         esc(f.description) + '</td></tr>';
     }).join('');
-    return '<div class="panel"><h2>Evidence &amp; Provenance</h2>' +
-      '<div class="kv">' +
-      kvCell('bundle sha-256', '<code>' + esc(snapshot.bundle_sha256) +
-        '</code>', true) +
-      kvCell('source commit', '<code>' + esc(snapshot.source_commit) +
-        '</code>', true) +
-      kvCell('verification commit', '<code>' +
-        esc(snapshot.verification_commit) + '</code>', true) +
-      kvCell('generated_at', esc(snapshot.generated_at), true) +
-      '</div></div>' +
-      '<div class="panel"><h3>Evidence files</h3>' +
-      (rows ? '<table class="data-table"><tr><th>Path</th><th>SHA-256</th>' +
-        '<th>Description</th></tr>' + rows + '</table>'
-        : '<p class="empty-note">no evidence files recorded</p>') +
-      '</div>' +
+    return pageHeader('evidence') +
+      panel('Bundle Identity',
+        evidenceRow('bundle sha-256',
+          '<code>' + esc(snapshot.bundle_sha256) + '</code>') +
+        evidenceRow('source commit',
+          '<code>' + esc(snapshot.source_commit) + '</code>') +
+        evidenceRow('verification commit',
+          '<code>' + esc(snapshot.verification_commit) + '</code>') +
+        evidenceRow('generated_at',
+          '<code>' + esc(snapshot.generated_at) + '</code>')) +
+      panel('Evidence Files',
+        (rows
+          ? tableWrap(['Path', 'SHA-256', 'Description'], rows)
+          : '<p class="empty-note">no evidence files recorded</p>')) +
       '<div class="boundary-banner plain">' +
       '<strong>Provenance only:</strong> bundle integrity is recomputed ' +
       'server-side; listing evidence here does NOT imply production ' +
@@ -262,14 +337,14 @@
 
   function renderBenchmark() {
     var bs = snapshot.benchmark_summary || {};
-    return '<div class="panel"><h2>Benchmark Summary</h2>' +
-      '<div class="metrics">' +
-      metricCell('dataset', bs.dataset_version) +
-      metricCell('unique cases', bs.unique_case_count) +
-      metricCell('quality gate', bs.quality_gate_pass) +
-      metricCell('confirmatory', bs.confirmatory_all_ok) +
-      '</div></div>' +
-      '<div class="boundary-banner warning">' +
+    return pageHeader('benchmark') +
+      panel('Evaluation Results', '<div class="metrics">' +
+        metricCell('dataset', bs.dataset_version) +
+        metricCell('unique cases', bs.unique_case_count) +
+        metricCell('quality gate', bs.quality_gate_pass) +
+        metricCell('confirmatory', bs.confirmatory_all_ok) +
+        '</div>') +
+      '<div class="boundary-banner">' +
       '<strong>Benchmark boundary:</strong> offline adapter only; does NOT ' +
       'claim Reviewer/Fixer accuracy improvement. ' +
       '<code>runtime_consumes_rag_context=' +
@@ -303,7 +378,7 @@
     renderBanner();
   }
 
-  /* ── freshness banner (state chip + data time + poll health) ────────── */
+  /* ── Freshness banner (state chip + data time + poll health) ────────── */
 
   function renderBanner() {
     var el = document.getElementById('live-banner');
@@ -316,10 +391,14 @@
       ? (statusInfo.poller_state + ' · polls=' + statusInfo.poll_count)
       : 'no poll data';
     el.setAttribute('data-state', state);
-    el.innerHTML = '<span class="chip">' + esc(state) + '</span>' +
-      '<span>data_time=' + esc(freshness || 'n/a') + '</span>' +
+    el.innerHTML = '<span class="chip" aria-hidden="true"></span>' +
+      '<span>' + esc(state) + '</span>' +
+      '<span aria-hidden="true">·</span>' +
+      '<span>data: ' + esc(freshness || 'n/a') + '</span>' +
+      '<span aria-hidden="true">·</span>' +
       '<span>poll: ' + esc(poll) + '</span>' +
-      '<span>failures=' + esc(consecutiveFailures) + '</span>';
+      '<span aria-hidden="true">·</span>' +
+      '<span>failures: ' + esc(consecutiveFailures) + '</span>';
     if (btn) {
       btn.disabled = (state === 'LOADING');
       btn.textContent = (state === 'STALE')
@@ -327,7 +406,7 @@
     }
   }
 
-  /* ── fetch cycle (GET only, allowlisted URLs only) ──────────────────── */
+  /* ── Fetch cycle (GET only, allowlisted URLs only) ──────────────────── */
 
   function getJson(url) {
     return fetch(url, {method: 'GET', cache: 'no-store'})
@@ -385,7 +464,7 @@
       });
   }
 
-  /* ── timer lifecycle: created ONCE, cleaned up on stop/unload ───────── */
+  /* ── Timer lifecycle: created ONCE, cleaned up on stop/unload ───────── */
 
   function startTimer() {
     if (timer !== null) { return; }
@@ -410,7 +489,7 @@
     renderBanner();
   }
 
-  /* ── boot: REPLAY (404 on /api/live/*) never starts the engine ──────── */
+  /* ── Boot: REPLAY (404 on /api/live/*) never starts the engine ──────── */
 
   function boot() {
     var btn = document.getElementById('live-refresh-btn');
