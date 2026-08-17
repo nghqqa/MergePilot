@@ -4,11 +4,11 @@
 
 MergePilot 面向“LLM 能提出建议，但不能独自承担工程控制面”的问题。高风险操作必须经过 Policy Gateway 与人工审批；任何环节不确定时 fail-closed，失败后可以沿审计事实执行 revision-cut / rollback。
 
-> **真实性声明**：这是 Apache-2.0 开源项目原型，已完成隔离栈组件验证与 deterministic showcase。它不是生产部署、没有外部客户、不是已上线 SaaS；M8 尚未完成，`application_integration_verified=false`、`database_verified=false`、`production_verified=false`。
+> **当前范围**：Apache-2.0 开源原型，已完成隔离栈组件验证与 deterministic showcase；M8 尚未完成，应用集成与生产验证尚未进行（详见「测试与真实性边界」）。
 
 ---
 
-## 一、解决什么问题
+## 解决什么问题
 
 | 工程治理问题 | MergePilot 的确定性机制 |
 |---|---|
@@ -23,7 +23,7 @@ MergePilot 面向“LLM 能提出建议，但不能独自承担工程控制面�
 
 ---
 
-## 二、系统架构
+## 系统架构
 
 <p align="center">
   <a href="docs/showcase/architecture.svg">
@@ -42,9 +42,9 @@ MergePilot 面向“LLM 能提出建议，但不能独自承担工程控制面�
 
 ---
 
-## 三、三个确定性案例
+## 三个确定性案例
 
-三个案例均来自 `tools/demo_console/showcase_cases.py`，使用合成仓库 `mergepilot/showcase-demo`。数据是 **deterministic showcase seed，不是外部客户数据，也不是生产证据**。
+三个案例均来自 `tools/demo_console/showcase_cases.py`，基于合成仓库 `mergepilot/showcase-demo` 的确定性种子数据。
 
 | 案例 | 治理链路 | Policy / Evidence | 最终结果 |
 |---|---|---|---|
@@ -52,48 +52,26 @@ MergePilot 面向“LLM 能提出建议，但不能独自承担工程控制面�
 | **B · Fail-Closed Rejection** | review → fix DENIED，时间线立即终止 | `PROTECTED_PATH_PREFIX` + policy_deny | **FAIL** |
 | **C · Revision Drift Recovery** | merge → drift-check → rollback → re-verify | `REVISION_DRIFT` + rollback facts | **ROLLED_BACK / RECOVERED** |
 
-<details>
-<summary><strong>Case A 技术事实</strong></summary>
+**A · Protected Merge Success** — `run-showcase-a` · PR `#101` · L2 `tkt-showcase-a-l2`
 
-- `case_id=case-showcase-protected-merge-success`
-- `run_id=run-showcase-a` · PR `#101` · L2 `tkt-showcase-a-l2`
-- base `73686f77636173652d612d626173650000000000`
-- head `73686f77636173652d612d686561640000000000`
-- merge `73686f77636173652d612d6d6572676500000000`
-- Policy INTENT / RESULT 均为 `ALLOW`，最终状态 `MERGED`
+- `case_id=case-showcase-protected-merge-success`；Policy INTENT / RESULT 均为 `ALLOW`，最终状态 `MERGED`。
+- base `73686f77636173652d612d626173650000000000` · head `73686f77636173652d612d686561640000000000` · merge `73686f77636173652d612d6d6572676500000000`
 
-</details>
+**B · Fail-Closed Rejection** — `run-showcase-b` · PR `#102`
 
-<details>
-<summary><strong>Case B 技术事实</strong></summary>
+- `case_id=case-showcase-failclosed-policy-rejection`；`create_or_update_file` 命中 `samples/`，Policy 返回 `DENY / PROTECTED_PATH_PREFIX`，时间线立即终止，最终状态 `FAIL`。
+- base `73686f77636173652d622d626173650000000000` · head `73686f77636173652d622d686561640000000000`；无 merge SHA、无后续 verify / merge 阶段。
 
-- `case_id=case-showcase-failclosed-policy-rejection`
-- `run_id=run-showcase-b` · PR `#102`
-- base `73686f77636173652d622d626173650000000000`
-- head `73686f77636173652d622d686561640000000000`
-- `create_or_update_file` 命中 `samples/`，Policy 返回 `DENY / PROTECTED_PATH_PREFIX`
-- 无 merge SHA、无伪造审批、无后续 verify / merge 阶段，最终状态 `FAIL`
+**C · Revision Drift Recovery** — `run-showcase-c` · PR `#103` · L2 `tkt-showcase-c-l2`
 
-</details>
-
-<details>
-<summary><strong>Case C 技术事实</strong></summary>
-
-- `case_id=case-showcase-revision-drift-recovery`
-- `run_id=run-showcase-c` · PR `#103` · L2 `tkt-showcase-c-l2`
-- approved head `73686f77636173652d632d686561640000000000`
-- merge `73686f77636173652d632d6d6572676500000000`
-- observed drift `73686f77636173652d632d647269667400000000`
-- recovered `73686f77636173652d632d7265636f7665726564`
-- `REVISION_DRIFT` 触发 rollback，re-verify `PASS`，最终 `ROLLED_BACK / RECOVERED`
-
-</details>
+- `case_id=case-showcase-revision-drift-recovery`；`REVISION_DRIFT` 触发 rollback，re-verify `PASS`，最终 `ROLLED_BACK / RECOVERED`。
+- approved head `73686f77636173652d632d686561640000000000` · merge `73686f77636173652d632d6d6572676500000000` · observed drift `73686f77636173652d632d647269667400000000` · recovered `73686f77636173652d632d7265636f766572656400000000`
 
 ---
 
-## 四、8 页面控制台
+## 8 页面控制台
 
-以下图片来自真实隔离栈的 live snapshot：CSS viewport 为 1440×900，使用 `deviceScaleFactor=2` 捕获，PNG 像素尺寸为 2880×1800。图片均为 deterministic showcase seed，不是生产证据。
+截图来自隔离栈的 live snapshot：CSS viewport 为 1440×900、`deviceScaleFactor=2` 捕获，PNG 像素尺寸为 2880×1800。
 
 <table>
   <tr>
@@ -116,10 +94,7 @@ MergePilot 面向“LLM 能提出建议，但不能独自承担工程控制面�
 
 ### Mobile · CSS viewport 390×844
 
-移动端同样使用 DPR=2 捕获，PNG 像素尺寸为 780×1688。
-
-<details>
-<summary><strong>查看 4 张 Mobile 布局截图</strong></summary>
+移动端同样以 DPR=2 捕获，PNG 像素尺寸为 780×1688。
 
 <table>
   <tr>
@@ -132,13 +107,9 @@ MergePilot 面向“LLM 能提出建议，但不能独自承担工程控制面�
   </tr>
 </table>
 
-</details>
-
-> 不声称完整 WCAG 合规。键盘导航、reduced-motion 与 browser console 仍保留 PR‑V1 的 residual validation 披露。
-
 ---
 
-## 五、Quick Start（隔离栈）
+## Quick Start（隔离栈）
 
 ### 前置条件
 
@@ -177,13 +148,13 @@ python -m pytest -q tests/demo_console tests/isolated_live tests/verification --
 
 ---
 
-## 六、演示脚本
+## 演示脚本
 
 5 分钟演示流程见 [`docs/showcase/demo-script.md`](docs/showcase/demo-script.md)。
 
 ---
 
-## 七、测试与真实性边界
+## 测试与真实性边界
 
 | 验证项 | 已完成结果 |
 |---|---|
@@ -204,11 +175,11 @@ python -m pytest -q tests/demo_console tests/isolated_live tests/verification --
 - `audit_producer_contract=NOT_VERIFIED`
 - M8-A1 是 event ingestion machinery，不等于 revision producer integration；M8-A2 尚未实现。
 
-Showcase material 不写入 `evidence/` 或 `verification/`，也不代表实时健康、持续保证或生产验证。
+Showcase 是隔离栈上的确定性演示，不可外推为生产或真实客户验证；showcase material 不写入 `evidence/` 或 `verification/`。不声称完整 WCAG 合规，键盘导航、reduced-motion 与 browser console 保留 PR‑V1 的 residual validation 披露。
 
 ---
 
-## 八、文档、证据与贡献
+## 文档与贡献
 
 本 README 是公开项目的当前入口与真实性边界说明；[文档索引](docs/README.md) 说明各类材料的用途和时效。
 
@@ -235,4 +206,4 @@ MergePilot/
 
 ## 许可
 
-[Apache License 2.0](LICENSE)。截图与图表均为本项目自有产物，无第三方图片或字体依赖。
+[Apache License 2.0](LICENSE)。
