@@ -23,7 +23,17 @@
 
 ## 二、架构
 
-![MergePilot ISOLATED_LIVE 展示拓扑](docs/showcase/architecture.svg)
+<details>
+<summary>展开完整系统架构图（点图片打开原始 SVG）</summary>
+<p>
+<a href="docs/showcase/architecture.svg">
+<img
+  src="docs/showcase/architecture.svg"
+  alt="MergePilot isolated live showcase architecture"
+  width="960">
+</a>
+</p>
+</details>
 
 - **入口**：PR / 开发者变更请求（演示中由 deterministic seed 模拟，见下方标注）。
 - **Policy Gateway**：所有写操作经网关；角色 token 认证 + 写路径约束 + L2 审批票据 + INSERT-only 决策审计；8 类负向场景全部 fail-closed。
@@ -61,7 +71,7 @@
 | L2 / 审计证据 | ticket `tkt-showcase-a-l2`；audit_events 五步闭环（review/fix/verify/merge/close_pr） |
 | 最终状态 | **MERGED**（无 DENY、无回滚、无失败原因） |
 
-截图：[overview](docs/showcase/screenshots/desktop-01-overview.png) · [timeline](docs/showcase/screenshots/desktop-02-timeline.png) · [trace](docs/showcase/screenshots/desktop-05-trace.png) · [rag](docs/showcase/screenshots/desktop-04-rag.png)
+截图：[overview](docs/showcase/presentation/desktop-01-overview@2x.png) · [timeline](docs/showcase/presentation/desktop-02-timeline@2x.png) · [trace](docs/showcase/presentation/desktop-05-trace@2x.png) · [rag](docs/showcase/presentation/desktop-04-rag@2x.png)
 
 ### Case B · Fail-Closed Policy Rejection（`case-showcase-failclosed-policy-rejection`）
 
@@ -76,7 +86,7 @@
 | 审计证据 | audit_events 含 `policy_deny` 记录；无 merge SHA、无伪造审批（L2 状态符合真实拒绝流程） |
 | 最终状态 | **FAIL**（拒绝语义；`FAIL` 为审计库合法枚举） |
 
-截图：[findings](docs/showcase/screenshots/desktop-03-findings.png) · [mobile timeline](docs/showcase/screenshots/mobile-02-timeline.png)
+截图：[findings](docs/showcase/presentation/desktop-03-findings@2x.png) · [mobile timeline](docs/showcase/presentation/mobile-02-timeline@2x.png)
 
 ### Case C · Revision Drift Recovery（`case-showcase-revision-drift-recovery`）
 
@@ -91,7 +101,7 @@
 | L2 / 审计证据 | ticket `tkt-showcase-c-l2`；audit_events 含 `drift_detected` 与 `rollback` 记录 |
 | 最终状态 | **ROLLED_BACK**（`rollback_runs.status=RECOVERED`） |
 
-截图：[safety](docs/showcase/screenshots/desktop-06-safety.png) · [evidence](docs/showcase/screenshots/desktop-07-evidence.png) · [mobile safety](docs/showcase/screenshots/mobile-03-safety.png) · [mobile evidence](docs/showcase/screenshots/mobile-04-evidence.png)
+截图：[safety](docs/showcase/presentation/desktop-06-safety@2x.png) · [evidence](docs/showcase/presentation/desktop-07-evidence@2x.png) · [mobile safety](docs/showcase/presentation/mobile-03-safety@2x.png) · [mobile evidence](docs/showcase/presentation/mobile-04-evidence@2x.png)
 
 ---
 

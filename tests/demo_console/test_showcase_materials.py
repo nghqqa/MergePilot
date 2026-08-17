@@ -52,6 +52,10 @@ MOBILE = ("mobile-01-overview.png", "mobile-02-timeline.png",
 ALL_SHOTS = DESKTOP + MOBILE
 PRESENT = DOCS / "presentation"
 AT2X = tuple(n[:-4] + "@2x.png" for n in ALL_SHOTS)
+# Hash-of-hashes of the 12 canonical PNG blob OIDs (git blob ids equal
+# content hashes). Frozen by the polish round: media presentation work
+# must never modify the canonical validation assets.
+CANONICAL_HASH_OF_HASHES = ("702ea4f947009b26b08c093952f0fdd4106fa404")
 
 README_TEXT = README.read_text(encoding="utf-8")
 SCRIPT_TEXT = SCRIPT.read_text(encoding="utf-8")
@@ -189,14 +193,85 @@ class TestPresentationSet(unittest.TestCase):
 
     def test_readme_displays_at2x_and_links_canonical(self):
         imgs = re.findall(r"!\[[^\]]*\]\(([^)\s]+)\)", README_TEXT)
-        for n in AT2X:
-            self.assertIn("docs/showcase/presentation/%s" % n, imgs, n)
-        self.assertIn("docs/showcase/architecture.svg", imgs)
+        self.assertEqual(sorted(imgs),
+                         sorted("docs/showcase/presentation/%s" % n
+                                for n in AT2X))
         for name in ALL_SHOTS:
             self.assertIn(
                 "(docs/showcase/screenshots/%s)" % name, README_TEXT, name)
         self.assertIn("高 DPI presentation 副本", README_TEXT)
         self.assertIn("真实验证资产", README_TEXT)
+
+    def test_canonical_blob_hashes_frozen(self):
+        import hashlib
+        blob_ids = []
+        for name in ALL_SHOTS:
+            raw = (SHOTS / name).read_bytes()
+            header = b"blob " + str(len(raw)).encode("ascii") + bytes([0])
+            blob_ids.append(hashlib.sha1(header + raw).hexdigest())
+        # Deterministic order: canonical file-name order (ALL_SHOTS), the
+        # same sequence the historical git hash-object pipeline used.
+        joined = ("\n".join(blob_ids) + "\n").encode("utf-8")
+        self.assertEqual(
+            hashlib.sha1(joined).hexdigest(), CANONICAL_HASH_OF_HASHES,
+            "canonical screenshot binaries changed")
+
+
+# ── 3c: README media unification (polish round) ────────────────────────────
+
+class TestReadmeMediaUnification(unittest.TestCase):
+    """Polish contract: every DISPLAYED png is an @2x presentation copy;
+    canonical pngs appear only as click-targets of the @2x displays."""
+
+    def test_no_canonical_png_is_displayed(self):
+        for m in re.finditer(r"!\[[^\]]*\]\(([^)\s]+)\)", README_TEXT):
+            self.assertFalse(
+                m.group(1).startswith("docs/showcase/screenshots/"),
+                "canonical png displayed directly: %s" % m.group(1))
+
+    def test_all_displayed_pngs_are_at2x_presentation(self):
+        png_imgs = [t for t in re.findall(
+            r"!\[[^\]]*\]\(([^)\s]+)\)", README_TEXT)
+            if t.endswith(".png")]
+        self.assertEqual(len(png_imgs), 12)
+        for t in png_imgs:
+            self.assertIn("@2x.png", t, t)
+            self.assertTrue(t.startswith("docs/showcase/presentation/"), t)
+
+    def test_canonical_paths_only_as_click_targets(self):
+        canonical_refs = re.findall(
+            r"\]\((docs/showcase/screenshots/[^)\s]+)\)", README_TEXT)
+        self.assertEqual(sorted(canonical_refs),
+                         sorted("docs/showcase/screenshots/%s" % n
+                                for n in ALL_SHOTS))
+        # each is wrapped around an @2x display of the same stem
+        for n in ALL_SHOTS:
+            pattern = ("[![%s](docs/showcase/presentation/%s@2x.png)]"
+                       "(docs/showcase/screenshots/%s)"
+                       % (n[:-4], n[:-4], n))
+            self.assertIn(pattern, README_TEXT, n)
+
+    def test_architecture_svg_collapsed_not_expanded(self):
+        # exactly one <details> block; svg appears as link + preview img only
+        self.assertIn("<details>", README_TEXT)
+        self.assertIn("<summary>", README_TEXT)
+        self.assertIn('width="960"', README_TEXT)
+        svg_refs = re.findall(r"docs/showcase/architecture\.svg", README_TEXT)
+        self.assertEqual(len(svg_refs), 2, svg_refs)
+        self.assertIn('<a href="docs/showcase/architecture.svg">', README_TEXT)
+        self.assertIn('src="docs/showcase/architecture.svg"', README_TEXT)
+        # no other markdown-expanded svg outside the details block
+        self.assertNotIn("![MergePilot ISOLATED_LIVE 展示拓扑]", README_TEXT)
+
+    def test_architecture_boundary_notes_retained(self):
+        for note in ("不是第五个应用服务", "不是外部客户数据，不是生产证据",
+                     "M8-A1 不等于 revision producer integration"):
+            self.assertIn(note, README_TEXT, note)
+
+    def test_at2x_presentation_set_unchanged(self):
+        self.assertEqual(
+            sorted(p.name for p in PRESENT.glob("*.png")), sorted(AT2X))
+
 
     def test_presentation_not_claimed_as_new_verification(self):
         # The note must frame @2x as presentation copies of the SAME
@@ -235,12 +310,15 @@ class TestReadmeStructure(unittest.TestCase):
 
     def test_image_references_are_local(self):
         imgs = re.findall(r"!\[[^\]]*\]\(([^)\s]+)\)", README_TEXT)
-        self.assertGreaterEqual(len(imgs), 12)
+        self.assertEqual(len(imgs), 12)
         for img in imgs:
             self.assertFalse(img.startswith(("http://", "https://")),
                              "external image URL: %s" % img)
             self.assertTrue((ROOT / img).exists(), img)
-        self.assertIn("docs/showcase/architecture.svg", imgs)
+        # the architecture diagram ships as an HTML <img> inside <details>
+        html_src = re.findall(r'src="([^"]+)"', README_TEXT)
+        self.assertEqual(html_src, ["docs/showcase/architecture.svg"])
+        self.assertTrue((ROOT / html_src[0]).exists())
 
     def test_external_links_are_https(self):
         for ref in re.findall(r"\]\((https?://[^)\s]+)\)", README_TEXT):
