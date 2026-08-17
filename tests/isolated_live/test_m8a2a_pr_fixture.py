@@ -88,10 +88,23 @@ class _StubServer:
 
 
 # The stub's runtime deps (mcp / starlette / uvicorn) exist only inside the
-# gateway container image. For host-side unit tests we install minimal
-# placeholder modules so the module imports; the placeholders are inert —
-# every behavioral test exercises the decorated handlers directly.
+# gateway container image (python:3.12-slim). The host runs Python 3.9 which
+# the mcp SDK does not support, so we install minimal placeholder modules
+# for import resolution. The TextContent placeholder is a REAL Pydantic
+# model with the same field contract as mcp.types.TextContent — NOT a mock
+# — so type validation in tests exercises actual Pydantic constraints.
 import types as _types
+from typing import Literal as _Literal
+
+from pydantic import BaseModel as _BaseModel
+
+
+class _TextContentModel(_BaseModel):
+    """Faithful structural twin of mcp.types.TextContent (Pydantic v2):
+    ``type: Literal["text"] = "text"`` + ``text: str``. The real SDK type
+    (in the container) has identical field names, types, and validation."""
+    type: _Literal["text"] = "text"
+    text: str
 
 
 def _install(name):
@@ -114,6 +127,7 @@ class _FakeSSE:
 
 sys.modules["mcp.server.sse"].SseServerTransport = lambda p: _FakeSSE()
 sys.modules["mcp.types"].Tool = _Tool
+sys.modules["mcp.types"].TextContent = _TextContentModel
 sys.modules["starlette.applications"].Starlette = lambda **kw: None
 sys.modules["starlette.requests"].Request = lambda *a, **k: None
 sys.modules["starlette.routing"].Mount = lambda *a, **k: None
@@ -223,7 +237,8 @@ class TestFixtureMode(unittest.TestCase):
                          ["get", "get_diff", "get_files"])
 
     def test_get_payload_strict_contract(self):
-        d = json.loads(_call("pull_request_read", _args("get")))
+        text = _call("pull_request_read", _args("get"))
+        d = json.loads(text[0].text if isinstance(text, list) else text)
         self.assertEqual(d["number"], stub.FIXTURE_PR_NUMBER)
         self.assertEqual(d["state"], "open")
         self.assertIs(d["merged"], False)
@@ -235,14 +250,17 @@ class TestFixtureMode(unittest.TestCase):
         self.assertIsInstance(d["base"]["ref"], str)
 
     def test_get_diff_is_unified_and_consistent(self):
-        text = _call("pull_request_read", _args("get_diff"))
+        result = _call("pull_request_read", _args("get_diff"))
+        text = result[0].text if isinstance(result, list) else result
         self.assertIsInstance(text, str)
         self.assertIn("diff --git a/%s b/%s" % (stub.FIXTURE_FILE_PATH,
                                                 stub.FIXTURE_FILE_PATH), text)
         self.assertIn("@@", text)
 
     def test_get_files_shape_and_diff_consistency(self):
-        files = json.loads(_call("pull_request_read", _args("get_files")))
+        result = _call("pull_request_read", _args("get_files"))
+        files = json.loads(result[0].text if isinstance(result, list)
+                           else result)
         self.assertIsInstance(files, list)
         self.assertEqual(len(files), 1)
         item = files[0]
@@ -251,7 +269,8 @@ class TestFixtureMode(unittest.TestCase):
         self.assertIsInstance(item["additions"], int)
         self.assertIsInstance(item["deletions"], int)
         # same single change described by the diff
-        diff = _call("pull_request_read", _args("get_diff"))
+        diff_r = _call("pull_request_read", _args("get_diff"))
+        diff = diff_r[0].text if isinstance(diff_r, list) else diff_r
         self.assertIn(item["filename"], diff)
 
     def test_deterministic_byte_identical_replay(self):
@@ -291,12 +310,122 @@ class TestFixtureMode(unittest.TestCase):
             _call("pull_request_read", "get")
 
     def test_no_secrets_or_machine_paths_in_payloads(self):
-        blob = (_call("pull_request_read", _args("get"))
-                + _call("pull_request_read", _args("get_diff"))
-                + _call("pull_request_read", _args("get_files")))
+        # Extract .text from the TextContent wrappers before scanning
+        results = [_call("pull_request_read", _args(m))
+                   for m in ("get", "get_diff", "get_files")]
+        blob = "".join(
+            r[0].text if isinstance(r, list) and r
+            and hasattr(r[0], "text") else str(r)
+            for r in results)
         for banned in ("password", "token", "postgresql://", "C:\\",
                        "/mnt/", "ghp_", "AKIA"):
             self.assertNotIn(banned, blob)
+
+
+# ── 2b: MCP SDK TextContent return contract ────────────────────────────────
+
+class TestTextContentReturnContract(unittest.TestCase):
+    """The call_tool handler must return a list of exactly one TextContent
+    (Pydantic model with type='text' and text=<deterministic JSON>), never
+    a bare string — a bare str fails the SDK's Pydantic validation and the
+    gateway proxies the validation error instead of the fixture payload."""
+
+    def setUp(self):
+        self._cm = _with_env("1")
+        self._cm.__enter__()
+
+    def tearDown(self):
+        self._cm.__exit__(None, None, None)
+
+    def _call_and_check(self, method):
+        result = _call("pull_request_read", _args(method))
+        self.assertIsInstance(result, list,
+                              "%s: must return a list" % method)
+        self.assertEqual(len(result), 1,
+                         "%s: exactly one content item" % method)
+        item = result[0]
+        self.assertIsInstance(item, _TextContentModel,
+                              "%s: must be a TextContent instance" % method)
+        self.assertEqual(item.type, "text")
+        self.assertIsInstance(item.text, str)
+        return item.text
+
+    def test_get_returns_text_content_list(self):
+        text = self._call_and_check("get")
+        d = json.loads(text)
+        self.assertEqual(d["number"], stub.FIXTURE_PR_NUMBER)
+        self.assertEqual(d["state"], "open")
+
+    def test_get_diff_returns_text_content_list(self):
+        text = self._call_and_check("get_diff")
+        self.assertIn("diff --git", text)
+
+    def test_get_files_returns_text_content_list(self):
+        text = self._call_and_check("get_files")
+        files = json.loads(text)
+        self.assertEqual(len(files), 1)
+
+    def test_pydantic_validation_passes(self):
+        # The returned item passes actual Pydantic model re-validation
+        result = _call("pull_request_read", _args("get"))
+        item = result[0]
+        revalidated = _TextContentModel.model_validate(
+            {"type": item.type, "text": item.text})
+        self.assertEqual(revalidated.text, item.text)
+
+    def test_pydantic_rejects_bare_string(self):
+        # A bare string would fail TextContent validation (the original bug)
+        with self.assertRaises(Exception):
+            _TextContentModel.model_validate("not a dict")
+
+    def test_text_content_json_roundtrip(self):
+        # model_dump produces a dict that can be JSON-serialized (the
+        # serialization path the gateway uses for its own responses)
+        result = _call("pull_request_read", _args("get"))
+        item = result[0]
+        dumped = item.model_dump()
+        self.assertEqual(dumped["type"], "text")
+        json.dumps(dumped)  # must not raise
+        parsed = json.loads(dumped["text"])
+        self.assertEqual(parsed["number"], stub.FIXTURE_PR_NUMBER)
+
+    def test_all_three_methods_unpack_to_old_contract(self):
+        """Unwrapping .text yields EXACTLY the payloads the pre-fix tests
+        asserted (backward compatibility of fixture data)."""
+        get_text = self._call_and_check("get")
+        diff_text = self._call_and_check("get_diff")
+        files_text = self._call_and_check("get_files")
+
+        # get payload matches _fixture_pr_json() output
+        self.assertEqual(get_text, stub._fixture_pr_json())
+
+        # diff payload matches FIXTURE_DIFF constant
+        self.assertEqual(diff_text, stub.FIXTURE_DIFF)
+
+        # files payload matches json.dumps(FIXTURE_FILES, sort_keys=True)
+        self.assertEqual(files_text,
+                         json.dumps(stub.FIXTURE_FILES, sort_keys=True))
+
+    def test_default_closed_still_raises_original_message(self):
+        with _with_env(""):
+            with self.assertRaises(ValueError) as cm:
+                _call("pull_request_read", _args("get"))
+            self.assertIn(
+                "isolated upstream stub serves no tools", str(cm.exception))
+
+    def test_unknown_tool_in_fixture_mode_still_rejected(self):
+        with self.assertRaises(ValueError):
+            _call("unknown_tool", _args("get"))
+
+    def test_write_method_in_fixture_mode_still_rejected(self):
+        with self.assertRaises(ValueError):
+            _call("pull_request_read", _args("merge"))
+
+    def test_stub_source_uses_text_content_import(self):
+        self.assertIn("TextContent", STUB_SOURCE)
+        self.assertIn("from mcp.types import TextContent", STUB_SOURCE)
+        self.assertIn("return [TextContent(type=\"text\", text=payload)]",
+                      STUB_SOURCE)
 
 
 # ── 3: success-chain ordering (fake connection, no DB) ─────────────────────
