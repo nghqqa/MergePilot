@@ -62,12 +62,12 @@
 
 **讲**（收尾，对应 README 第八节）：
 
-- 测试：PR-V2 案例套件 60 passed；完整回归 **1195 passed / 13 skipped / 0 failed**（ResourceWarning-as-error）；
+- 测试：PR-V2 案例套件 60 passed；完整回归 **1276 passed / 13 skipped / 0 failed**（ResourceWarning-as-error）；
 - F1：audit seed 重放幂等——真实 PostgreSQL 实证 **12 → 12**；
 - F2：recovered SHA 在 API / Desktop / Mobile 三侧可见；
 - 组件级证据：5 服务 healthy + **PREFLIGHT_OK（10/10 门）**，三案例经 console-edge HTTP 200；
-- **真实性边界（逐条读出）**：`application_integration_verified=false` · `database_verified=false` · `production_verified=false` · `revision_producer_contract=NOT_VERIFIED` · `audit_producer_contract=NOT_VERIFIED` · **M8-A2 未实现** · M8-A1 不等于 revision producer integration；
-- **未完成的生产化范围**：真实 producer integration、生产部署、真实外部客户验证均未完成；本演示不包含以上内容。
+- **真实性边界（逐条读出）**：`application_integration_verified=false` · `database_verified=false` · `production_verified=false` · `revision_producer_contract=NOT_VERIFIED` · `audit_producer_contract=NOT_VERIFIED` · M8-A2-a 已通过隔离六容器 fixture 验证（非生产、非 producer contract）· M8-A1 不等于 revision producer integration；
+- **未完成的生产化范围**：完整外部 producer integration、生产部署、真实外部客户验证均未完成；本演示不包含以上内容。
 
 ---
 
