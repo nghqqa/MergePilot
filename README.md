@@ -118,6 +118,9 @@ MergePilot 面向“LLM 能提出建议，但不能独自承担工程控制面�
 
 移动端同样使用 DPR=2 捕获，PNG 像素尺寸为 780×1688。
 
+<details>
+<summary><strong>查看 4 张 Mobile 布局截图</strong></summary>
+
 <table>
   <tr>
     <td width="50%"><strong>Overview · Case A</strong><br><img src="docs/showcase/presentation/mobile-01-overview@2x.png" alt="Mobile overview" width="100%"></td>
@@ -128,6 +131,8 @@ MergePilot 面向“LLM 能提出建议，但不能独自承担工程控制面�
     <td width="50%"><strong>Evidence · Case C</strong><br><img src="docs/showcase/presentation/mobile-04-evidence@2x.png" alt="Mobile evidence" width="100%"></td>
   </tr>
 </table>
+
+</details>
 
 > 不声称完整 WCAG 合规。键盘导航、reduced-motion 与 browser console 仍保留 PR‑V1 的 residual validation 披露。
 
