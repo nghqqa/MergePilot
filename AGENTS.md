@@ -1,5 +1,7 @@
 # MergePilot Agent Instructions
 
+Human contributors should start with [CONTRIBUTING.md](CONTRIBUTING.md); this file defines repository rules for coding agents.
+
 This repository adopts the HERO Anti-OverDefense rules from
 `wanshuiyin/HERO-Anti-OverDefense`, pinned for review to upstream commit
 `536c85f480c4b3912240d58d3f207af86cc97aa5` (MIT License, checked

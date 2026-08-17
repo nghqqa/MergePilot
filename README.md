@@ -208,14 +208,14 @@ Showcase material 不写入 `evidence/` 或 `verification/`，也不代表实时
 
 ---
 
-## 八、证据与文档
+## 八、文档、证据与贡献
 
-- [`docs/初赛证据索引.md`](docs/初赛证据索引.md)
-- [`docs/初赛声明-证据矩阵.md`](docs/初赛声明-证据矩阵.md)
-- [`docs/项目状态.md`](docs/项目状态.md)
-- [`docs/复赛路线图.md`](docs/复赛路线图.md)
-- [`benchmark/formal-summary.md`](benchmark/formal-summary.md)
-- [`docs/README-历史运行记录.md`](docs/README-历史运行记录.md)
+本 README 是公开项目的当前入口与真实性边界说明；[文档索引](docs/README.md) 说明各类材料的用途和时效。
+
+- 新贡献者请先阅读 [CONTRIBUTING.md](CONTRIBUTING.md)；面向 Agent 的仓库规则见 [AGENTS.md](AGENTS.md)。
+- 当前设计与使用入口：本 README、[Showcase 演示脚本](docs/showcase/demo-script.md) 与 [Isolated-live 设计记录](docs/ISOLATED-LIVE-PG-Ephemeral-Verification-Design.md)。
+- 历史里程碑和竞赛提交快照：[项目状态记录](docs/项目状态.md)、[初赛证据索引](docs/初赛证据索引.md)、[初赛声明—证据矩阵](docs/初赛声明-证据矩阵.md)、[历史运行记录](docs/README-历史运行记录.md)。这些文档保留当时结论，不是当前能力的独立声明。
+- 可复现性与归档材料：[benchmark 摘要](benchmark/formal-summary.md)、[`evidence/`](evidence/)（历史验证资产）与 [`verification/`](verification/)（当前验证约定）。
 
 ---
 
