@@ -401,8 +401,9 @@ _RUN_PR_BINDINGS_SQL = (
 
 _MCP_CALLS_SQL = (
     "SELECT request_id, correlation_id, phase, ts, caller_agent, tool, "
-    "decision, reason_code, target_repo, target_branch, result_status, "
-    "git_sha, error FROM mcp_calls WHERE run_id = %s ORDER BY ts"
+    "decision, reason_code, ticket_id, target_repo, target_branch, "
+    "result_status, git_sha, error FROM mcp_calls WHERE run_id = %s "
+    "ORDER BY ts, request_id"
 )
 
 _ROLLBACK_RUNS_SQL = (
@@ -475,11 +476,11 @@ REQUIRED_QUERY_COLUMNS: dict[str, frozenset[str]] = {
         "recorded_at",
     }),
     # _MCP_CALLS_SQL: request_id, correlation_id, phase, ts, caller_agent,
-    #   tool, decision, reason_code, target_repo, target_branch,
+    #   tool, decision, reason_code, ticket_id, target_repo, target_branch,
     #   result_status, git_sha, error
     "mcp_calls": frozenset({
         "request_id", "correlation_id", "phase", "ts", "caller_agent", "tool",
-        "decision", "reason_code", "target_repo", "target_branch",
+        "decision", "reason_code", "ticket_id", "target_repo", "target_branch",
         "result_status", "git_sha", "error",
     }),
     # _ROLLBACK_RUNS_SQL: rollback_id, parent_run_id, revert_run_id,
@@ -1300,8 +1301,8 @@ class PostgresSnapshotSource(SnapshotSource):
         cur.execute(_MCP_CALLS_SQL, (self._run_id,))
         cols = [
             "request_id", "correlation_id", "phase", "ts", "caller_agent",
-            "tool", "decision", "reason_code", "target_repo", "target_branch",
-            "result_status", "git_sha", "error",
+            "tool", "decision", "reason_code", "ticket_id", "target_repo",
+            "target_branch", "result_status", "git_sha", "error",
         ]
         return [dict(zip(cols, row)) for row in cur.fetchall()]
 
@@ -1433,6 +1434,13 @@ class PostgresSnapshotSource(SnapshotSource):
                 "skill_name": stage_name,
                 "skill_version": "1",
                 "output_schema_validated": False,
+                # Fixed-timing provenance from the authoritative stage table
+                # (both columns are already part of _STAGE_RUNS_SQL). ISO
+                # rendering is deterministic; None when the row carries no
+                # timing. The console timeline sorts by started_at when
+                # present so the story order is the run order.
+                "started_at": self._iso(sr.get("started_at")) or None,
+                "completed_at": self._iso(sr.get("completed_at")) or None,
             }
             workflow_stages.append(stage_entry)
             agents.append({
@@ -1498,6 +1506,12 @@ class PostgresSnapshotSource(SnapshotSource):
                 "parent_run_id": rb.get("parent_run_id"),
                 "revert_run_id": rb.get("revert_run_id"),
                 "reverted_merge_sha": rb.get("reverted_merge_sha"),
+                # The revert commit's result SHA = the recovered final state
+                # after the revision-cut rollback (already selected by
+                # _ROLLBACK_RUNS_SQL; surfaced so the console can show the
+                # drift story end-to-end: approved merge -> drift -> revert
+                # -> recovered SHA).
+                "revert_result_sha": rb.get("revert_result_sha"),
                 "status": rb.get("status") or "UNKNOWN",
                 "fail_reason": rb.get("fail_reason"),
                 "reverify_verdict": rb.get("reverify_verdict"),
@@ -1518,6 +1532,31 @@ class PostgresSnapshotSource(SnapshotSource):
                 gateway_summary["deny"] += 1
             elif decision == "ERROR":
                 gateway_summary["error"] += 1
+
+        # PR-V2: per-call gateway audit rows (immutable mcp_calls columns
+        # only — request bodies are never stored in this table). The
+        # console renders the policy decision chain (trace page),
+        # rejection reasons (findings page) and the L2 ticket linkage
+        # (evidence page) from this list. Deterministic for deterministic
+        # DB rows: ts is the stored fixed timestamp rendered via _iso.
+        gateway_calls_out = [
+            {
+                "request_id": call.get("request_id"),
+                "phase": call.get("phase"),
+                "ts": self._iso(call.get("ts")) or None,
+                "caller_agent": call.get("caller_agent"),
+                "tool": call.get("tool"),
+                "decision": call.get("decision"),
+                "reason_code": call.get("reason_code"),
+                "ticket_id": call.get("ticket_id"),
+                "target_repo": call.get("target_repo"),
+                "target_branch": call.get("target_branch"),
+                "result_status": call.get("result_status"),
+                "git_sha": call.get("git_sha"),
+                "error": call.get("error"),
+            }
+            for call in gateway_calls
+        ]
 
         # ── evidence_files: the DB is the source, not files on disk ─────────
         evidence_files: list[dict] = []
@@ -1613,6 +1652,11 @@ class PostgresSnapshotSource(SnapshotSource):
             "pr": pr,
             "run": run,
             "final_status": final_status,
+            # PR-V2: fail-closed run failure reason from task_runs.last_error
+            # (already part of _TASK_RUN_SQL). None when the run records no
+            # error. The findings page surfaces it as the case's rejection
+            # / drift reason instead of fabricating finding bodies.
+            "run_failure_reason": tr.get("last_error"),
             "workflow_stages": workflow_stages,
             "agents": agents,
             "findings": findings,
@@ -1627,6 +1671,10 @@ class PostgresSnapshotSource(SnapshotSource):
             "secret_leaks": secret_leaks,
             "secret_scan_status": secret_scan_status,
             "secret_leaks_detected": secret_leaks,
+            # PR-V2: per-call gateway audit rows (see gateway_calls_out).
+            # Additive bundle field; the schema permits extra fields and
+            # bundle_sha256 covers it like every other non-volatile field.
+            "gateway_calls": gateway_calls_out,
             "residue": residue,
             "benchmark_summary": benchmark_summary,
             "topology": topology,

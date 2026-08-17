@@ -541,6 +541,43 @@ a:hover { text-decoration: underline; }
 .boundary-banner.plain { border-left-color: var(--border-strong); }
 .boundary-banner.plain strong { color: var(--text-dim); }
 
+/* ── Showcase seed badge (PR-V2) ──────────────────────────────────────── */
+.seed-badge {
+  display: flex; flex-wrap: wrap; align-items: baseline;
+  gap: var(--sp-2) var(--sp-3);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-border);
+  border-left: 3px solid var(--accent);
+  color: var(--text-dim);
+  padding: var(--sp-3) var(--sp-4);
+  border-radius: var(--radius);
+  margin: var(--sp-3) 0;
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+}
+.seed-tag {
+  color: var(--accent);
+  font-weight: 600;
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.seed-case code {
+  color: var(--text);
+  background: var(--bg-raised);
+  padding: 1px 4px;
+  border-radius: 2px;
+}
+.seed-note { color: var(--text-faint); font-size: var(--fs-xs); }
+.case-fact {
+  color: var(--text-dim);
+  font-size: var(--fs-sm);
+  line-height: 1.65;
+  padding: var(--sp-2) 0;
+  margin: 0;
+  word-break: break-word;
+}
+
 /* ── Empty & placeholder states ───────────────────────────────────────── */
 .live-placeholder {
   display: flex; flex-direction: column; align-items: center;
