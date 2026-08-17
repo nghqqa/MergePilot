@@ -39,7 +39,7 @@ import sys
 
 from mcp.server import Server
 from mcp.server.sse import SseServerTransport
-from mcp.types import Tool
+from mcp.types import TextContent, Tool
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.routing import Mount, Route
@@ -187,7 +187,14 @@ async def list_tools():
 async def call_tool(name, arguments):
     if _fixture_enabled():
         # May still raise (fail-closed) for unknown tool/method/identity.
-        return _fixture_dispatch(name, arguments)
+        # The MCP SDK 1.x call_tool contract requires a list of typed
+        # content objects — a bare str fails Pydantic validation with
+        # "Input should be a valid dictionary or instance of TextContent"
+        # and the gateway proxies that validation error instead of the
+        # fixture payload. Wrap the deterministic JSON string in exactly
+        # one TextContent; _fixture_dispatch itself is unchanged.
+        payload = _fixture_dispatch(name, arguments)
+        return [TextContent(type="text", text=payload)]
     raise ValueError(
         "isolated upstream stub serves no tools (call_tool %r refused)"
         % name)
