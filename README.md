@@ -23,8 +23,8 @@
 
 ## 二、架构
 
-<details>
-<summary>展开完整系统架构图（点图片打开原始 SVG）</summary>
+<details open>
+<summary>完整系统架构图（点击图片打开 SVG）</summary>
 <p>
 <a href="docs/showcase/architecture.svg">
 <img
@@ -107,31 +107,31 @@
 
 ## 四、8 页面控制台（Desktop 1440×900）
 
-以下画廊显示的是 **高 DPI presentation 副本**（@2x，deviceScaleFactor=2 重新真实渲染截取，仅为清晰展示；点击图片打开对应的 **canonical 验证截图**（1440×900 / 390×844，真实验证资产）。
+截图为 **@2x 高 DPI 展示资产**（deviceScaleFactor=2 真实渲染输出）：desktop CSS viewport 为 1440×900、mobile CSS viewport 为 390×844；展示 PNG 为 DPR=2 输出，像素尺寸为 **2880×1800 / 780×1688**。数据来自 deterministic showcase seed（非外部客户数据、非生产证据）。
 
 所有截图均来自**真实六容器栈**的 live 快照（banner=OK、placeholder=0、内容与 seed 精确一致），数据为 deterministic showcase 数据：
 
 | 页面 | 用途 | 截图案例 / run_id | 截图 |
 |---|---|---|---|
-| 01 overview | 运行身份：case 徽章、run_id、PR、head SHA、最终状态 | Case A · `run-showcase-a` | [![desktop-01-overview](docs/showcase/presentation/desktop-01-overview@2x.png)](docs/showcase/screenshots/desktop-01-overview.png) |
-| 02 timeline | 按 `started_at` 排序的完整阶段链与 verdict | Case A（review→fix→verify PASS→merge MERGED） | [![desktop-02-timeline](docs/showcase/presentation/desktop-02-timeline@2x.png)](docs/showcase/screenshots/desktop-02-timeline.png) |
-| 03 findings | 内联发现 + 网关拒绝事实（来自 `mcp_calls` 审计） | Case B（DENY / PROTECTED_PATH_PREFIX / fail-closed 详情） | [![desktop-03-findings](docs/showcase/presentation/desktop-03-findings@2x.png)](docs/showcase/screenshots/desktop-03-findings.png) |
-| 04 rag | RAG 咨询边界：真实 `not_measured`，不伪造结论 | Case A（advisory-only、not adopted、untrusted） | [![desktop-04-rag](docs/showcase/presentation/desktop-04-rag@2x.png)](docs/showcase/screenshots/desktop-04-rag.png) |
-| 05 trace | 决策与执行链（网关审计行） | Case A（INTENT/RESULT ALLOW + L2 ticket + merge SHA） | [![desktop-05-trace](docs/showcase/presentation/desktop-05-trace@2x.png)](docs/showcase/screenshots/desktop-05-trace.png) |
-| 06 safety | Policy Gateway 汇总 + 回滚详情（reverted/recovered SHA、re-verify） | Case C（RECOVERED、reverify PASS） | [![desktop-06-safety](docs/showcase/presentation/desktop-06-safety@2x.png)](docs/showcase/screenshots/desktop-06-safety.png) |
-| 07 evidence | bundle 完整性、audit 摘要、L2 审批记录 | Case C（drift_detected×1、tkt-showcase-c-l2） | [![desktop-07-evidence](docs/showcase/presentation/desktop-07-evidence@2x.png)](docs/showcase/screenshots/desktop-07-evidence.png) |
-| 08 benchmark | 诚实的能力边界：`NOT_MEASURABLE_WITH_CURRENT_RUNTIME` | 真实边界（不虚构性能数字） | [![desktop-08-benchmark](docs/showcase/presentation/desktop-08-benchmark@2x.png)](docs/showcase/screenshots/desktop-08-benchmark.png) |
+| 01 overview | 运行身份：case 徽章、run_id、PR、head SHA、最终状态 | Case A · `run-showcase-a` | ![desktop-01-overview](docs/showcase/presentation/desktop-01-overview@2x.png) |
+| 02 timeline | 按 `started_at` 排序的完整阶段链与 verdict | Case A（review→fix→verify PASS→merge MERGED） | ![desktop-02-timeline](docs/showcase/presentation/desktop-02-timeline@2x.png) |
+| 03 findings | 内联发现 + 网关拒绝事实（来自 `mcp_calls` 审计） | Case B（DENY / PROTECTED_PATH_PREFIX / fail-closed 详情） | ![desktop-03-findings](docs/showcase/presentation/desktop-03-findings@2x.png) |
+| 04 rag | RAG 咨询边界：真实 `not_measured`，不伪造结论 | Case A（advisory-only、not adopted、untrusted） | ![desktop-04-rag](docs/showcase/presentation/desktop-04-rag@2x.png) |
+| 05 trace | 决策与执行链（网关审计行） | Case A（INTENT/RESULT ALLOW + L2 ticket + merge SHA） | ![desktop-05-trace](docs/showcase/presentation/desktop-05-trace@2x.png) |
+| 06 safety | Policy Gateway 汇总 + 回滚详情（reverted/recovered SHA、re-verify） | Case C（RECOVERED、reverify PASS） | ![desktop-06-safety](docs/showcase/presentation/desktop-06-safety@2x.png) |
+| 07 evidence | bundle 完整性、audit 摘要、L2 审批记录 | Case C（drift_detected×1、tkt-showcase-c-l2） | ![desktop-07-evidence](docs/showcase/presentation/desktop-07-evidence@2x.png) |
+| 08 benchmark | 诚实的能力边界：`NOT_MEASURABLE_WITH_CURRENT_RUNTIME` | 真实边界（不虚构性能数字） | ![desktop-08-benchmark](docs/showcase/presentation/desktop-08-benchmark@2x.png) |
 
 ## 五、Mobile 布局（viewport 390×844）
 
-以下截图用于证明展示布局在移动视口下的适配（单列布局、长 SHA/原因文本换行不撑宽页面）：
+以下截图（CSS viewport 390×844，@2x 输出 780×1688）用于证明展示布局在移动视口下的适配（单列布局、长 SHA/原因文本换行不撑宽页面）：
 
 | 页面 | 案例 | 截图 |
 |---|---|---|
-| overview | Case A · `run-showcase-a` | [![mobile-01-overview](docs/showcase/presentation/mobile-01-overview@2x.png)](docs/showcase/screenshots/mobile-01-overview.png) |
-| timeline | Case B（时间线终止于拒绝） | [![mobile-02-timeline](docs/showcase/presentation/mobile-02-timeline@2x.png)](docs/showcase/screenshots/mobile-02-timeline.png) |
-| safety | Case C（recovered SHA 可读） | [![mobile-03-safety](docs/showcase/presentation/mobile-03-safety@2x.png)](docs/showcase/screenshots/mobile-03-safety.png) |
-| evidence | Case C（L2 记录可读） | [![mobile-04-evidence](docs/showcase/presentation/mobile-04-evidence@2x.png)](docs/showcase/screenshots/mobile-04-evidence.png) |
+| overview | Case A · `run-showcase-a` | ![mobile-01-overview](docs/showcase/presentation/mobile-01-overview@2x.png) |
+| timeline | Case B（时间线终止于拒绝） | ![mobile-02-timeline](docs/showcase/presentation/mobile-02-timeline@2x.png) |
+| safety | Case C（recovered SHA 可读） | ![mobile-03-safety](docs/showcase/presentation/mobile-03-safety@2x.png) |
+| evidence | Case C（L2 记录可读） | ![mobile-04-evidence](docs/showcase/presentation/mobile-04-evidence@2x.png) |
 
 > 不声称完整 WCAG 合规。键盘导航、reduced-motion 与浏览器控制台监控的 **residual validation 限制**按 PR-V1 披露如实保留（受演示环境浏览器自动化工具能力所限，未自动化验证），不升级为无障碍认证。
 

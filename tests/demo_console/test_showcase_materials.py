@@ -1,27 +1,31 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""PR-V3 — portfolio showcase material tests.
+"""Showcase material tests — presentation-only media contract.
 
-Covers the README / architecture.svg / demo-script / screenshot package:
+Media strategy (media-cleanup round): the twelve @2x presentation PNGs are
+the ONLY screenshot assets; the former canonical 1x PNGs under
+docs/showcase/screenshots/ were deleted. The suite pins:
 
-  - fixed deliverable set exists at the canonical paths (12 screenshots,
-    1 SVG, 1 demo script, README);
-  - SVG parses as XML and carries the required components AND the four
-    mandatory honesty annotations;
-  - screenshots are real PNGs at the exact documented viewports
-    (8 × desktop 1440×900, 4 × mobile 390×844) with stable file names;
-  - every relative link / image reference in README resolves to a repo
-    file; image references are repo-local (no external image URLs);
-  - README carries the required sections, case facts, disclosures and
-    truth boundaries; demo-script matches the same case/page names;
-  - materials contain no secrets and no internal machine paths;
-  - no screenshot or material is written into evidence/ or verification/.
+  - docs/showcase/screenshots/ contains no PNGs (and stays absent);
+  - docs/showcase/presentation/ holds exactly 12 PNGs: 8 desktop at
+    2880x1800 and 4 mobile at 780x1688 (DPR=2 renders of 1440x900 /
+    390x844 CSS viewports), frozen by hash;
+  - README displays @2x images only, never references screenshots/ or
+    "canonical" assets, and sizes them as CSS viewport + DPR=2 pixels;
+  - the architecture SVG parses, keeps its components and the four
+    honesty annotations, and its preflight-box / boundary-annotations
+    regions do not overlap (layout fix);
+  - the README embeds the diagram as a default-open <details> preview;
+  - demo-script links resolve (now under presentation/);
+  - no secrets, machine paths, evidence writes, 9th page, new API,
+    verified fields, or M8 content anywhere in the materials.
 
 Pure static checks — no Docker, no network, no browser.
 """
 
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import struct
@@ -40,6 +44,7 @@ from bundle_builder import scan_secrets  # noqa: E402
 
 DOCS = ROOT / "docs" / "showcase"
 SHOTS = DOCS / "screenshots"
+PRESENT = DOCS / "presentation"
 README = ROOT / "README.md"
 SVG = DOCS / "architecture.svg"
 SCRIPT = DOCS / "demo-script.md"
@@ -49,19 +54,29 @@ DESKTOP = tuple("desktop-%02d-%s.png" % (i, name) for i, name in enumerate((
     "evidence", "benchmark"), start=1))
 MOBILE = ("mobile-01-overview.png", "mobile-02-timeline.png",
           "mobile-03-safety.png", "mobile-04-evidence.png")
-ALL_SHOTS = DESKTOP + MOBILE
-PRESENT = DOCS / "presentation"
-AT2X = tuple(n[:-4] + "@2x.png" for n in ALL_SHOTS)
-# Hash-of-hashes of the 12 canonical PNG blob OIDs (git blob ids equal
-# content hashes). Frozen by the polish round: media presentation work
-# must never modify the canonical validation assets.
-CANONICAL_HASH_OF_HASHES = ("702ea4f947009b26b08c093952f0fdd4106fa404")
+AT2X = tuple(n[:-4] + "@2x.png" for n in DESKTOP + MOBILE)
+
+# Hash-of-hashes of the 12 presentation PNG blob ids in canonical
+# file-name order — the same sequence the git hash-object pipeline uses.
+# Frozen by the media-cleanup round: @2x assets must never be regenerated
+# or modified by documentation work.
+PRESENT_HASH_OF_HASHES = "cee16f1c544fd4fbedbb19b7090c5d6c068c41c2"
 
 README_TEXT = README.read_text(encoding="utf-8")
 SCRIPT_TEXT = SCRIPT.read_text(encoding="utf-8")
 SVG_TEXT = SVG.read_text(encoding="utf-8")
 
-# ── 1: fixed deliverable set ────────────────────────────────────────────────
+_SVG_NS = {"s": "http://www.w3.org/2000/svg"}
+
+
+def _png_size(path: Path):
+    data = path.read_bytes()
+    if data[:8] != b"\x89PNG\r\n\x1a\n":
+        raise AssertionError("not a PNG: %s" % path.name)
+    return struct.unpack(">II", data[16:24])
+
+
+# ── 1: deliverable set (presentation-only) ─────────────────────────────────
 
 class TestDeliverableSet(unittest.TestCase):
 
@@ -69,38 +84,43 @@ class TestDeliverableSet(unittest.TestCase):
         for path in (README, SVG, SCRIPT):
             self.assertTrue(path.is_file(), path)
 
-    def test_twelve_screenshots_with_stable_names(self):
-        actual = sorted(p.name for p in SHOTS.glob("*.png"))
-        self.assertEqual(actual, sorted(ALL_SHOTS))
-        self.assertEqual(len(actual), 12)
+    def test_no_png_under_screenshots_dir(self):
+        if SHOTS.exists():
+            self.assertEqual(list(SHOTS.glob("*.png")), [])
+            self.assertEqual(list(SHOTS.iterdir()), [])
+
+    def test_presentation_has_exactly_twelve_pngs(self):
+        actual = sorted(p.name for p in PRESENT.glob("*.png"))
+        self.assertEqual(actual, sorted(AT2X))
+        self.assertEqual(len(AT2X), 12)
         self.assertEqual(len(DESKTOP), 8)
-        self.assertGreaterEqual(len(MOBILE), 4)
+        self.assertEqual(len(MOBILE), 4)
 
     def test_no_stray_files_in_showcase_dir(self):
-        allowed = set(ALL_SHOTS) | set(AT2X) | {
-            "architecture.svg", "demo-script.md"}
+        allowed = set(AT2X) | {"architecture.svg", "demo-script.md"}
         extra = [p.name for p in DOCS.rglob("*")
                  if p.is_file() and p.name not in allowed]
         self.assertEqual(extra, [])
-        self.assertEqual(
-            sorted(p.name for p in PRESENT.glob("*.png")), sorted(AT2X))
 
     def test_no_materials_inside_evidence_or_verification(self):
         for forbidden in (ROOT / "evidence", ROOT / "verification"):
             if forbidden.exists():
                 leaked = [p for p in forbidden.rglob("*.png")
-                          if p.name in ALL_SHOTS]
+                          if p.name in AT2X]
                 self.assertEqual(leaked, [])
-                leaked_svg = [p for p in forbidden.rglob("architecture.svg")]
-                self.assertEqual(leaked_svg, [])
+                self.assertEqual(
+                    [p for p in forbidden.rglob("architecture.svg")], [])
 
 
 # ── 2: architecture SVG ─────────────────────────────────────────────────────
 
 class TestArchitectureSvg(unittest.TestCase):
 
+    def _root(self):
+        return ET.fromstring(SVG_TEXT)
+
     def test_parses_as_xml(self):
-        root = ET.fromstring(SVG_TEXT)
+        root = self._root()
         self.assertEqual(root.tag.split("}")[-1], "svg")
         self.assertGreater(len(list(root.iter())), 40)
 
@@ -122,164 +142,157 @@ class TestArchitectureSvg(unittest.TestCase):
             self.assertIn(note, SVG_TEXT, note)
 
     def test_component_names_match_repository(self):
-        # Real service/container names, not invented ones.
         for name in ("policy-gateway", "controller", "demo-console",
                      "console-edge", "postgres", "preflight"):
             self.assertIn(name, SVG_TEXT, name)
 
     def test_not_drawn_as_production_topology(self):
         self.assertIn("不是生产部署、云架构或多租户系统", SVG_TEXT)
+        self.assertNotRegex(SVG_TEXT, r"云服务|AWS|Azure|多租户集群|Kubernetes")
+
+    def _box(self, element_id):
+        box = self._root().find('.//s:rect[@id="%s"]' % element_id, _SVG_NS)
+        self.assertIsNotNone(box, element_id)
+        return (float(box.get("x")), float(box.get("y")),
+                float(box.get("width")), float(box.get("height")))
+
+    def test_stable_ids_present(self):
+        for element_id in ("preflight-box", "boundary-annotations"):
+            self._box(element_id)
+
+    def test_preflight_box_geometry(self):
+        x, y, w, h = self._box("preflight-box")
+        self.assertEqual((x, y, w, h), (640.0, 420.0, 270.0, 44.0))
+
+    def test_preflight_does_not_overlap_postgresql_or_console(self):
+        # PostgreSQL block: x=640 y=160 h=250 (ends y=410); Demo Console
+        # starts at y=470. Preflight must sit strictly in the gap.
+        _, py, _, ph = self._box("preflight-box")
+        self.assertGreaterEqual(py, 160 + 250)
+        self.assertLessEqual(py + ph, 470)
+
+    def test_preflight_does_not_overlap_boundary_annotations(self):
+        _, py, _, ph = self._box("preflight-box")
+        _, by, _, bh = self._box("boundary-annotations")
+        self.assertLessEqual(py + ph, by)
+        self.assertGreaterEqual(by + bh, 820)
+
+    def test_preflight_text_inside_box(self):
+        # the two preflight text lines sit inside the 420..464 band
+        ys = [int(m.group(1)) for m in re.finditer(
+            r'<text x="775" y="(\d+)"[^>]*>(?:Preflight|10 门)', SVG_TEXT)]
+        self.assertEqual(len(ys), 2, ys)
+        for y in ys:
+            self.assertGreaterEqual(y, 420)
+            self.assertLessEqual(y, 464)
 
 
-# ── 3: screenshot dimensions ────────────────────────────────────────────────
+# ── 3: presentation screenshot assets ──────────────────────────────────────
 
-def _png_size(path: Path):
-    data = path.read_bytes()
-    if data[:8] != b"\x89PNG\r\n\x1a\n":
-        raise AssertionError("not a PNG: %s" % path.name)
-    return struct.unpack(">II", data[16:24])
+class TestPresentationAssets(unittest.TestCase):
 
+    def test_desktop_at2x_are_2880x1800(self):
+        for n in (n for n in AT2X if n.startswith("desktop")):
+            self.assertEqual(_png_size(PRESENT / n), (2880, 1800), n)
 
-class TestScreenshotDimensions(unittest.TestCase):
+    def test_mobile_at2x_are_780x1688(self):
+        for n in (n for n in AT2X if n.startswith("mobile")):
+            self.assertEqual(_png_size(PRESENT / n), (780, 1688), n)
 
-    def test_desktop_shots_are_1440x900(self):
-        for name in DESKTOP:
-            w, h = _png_size(SHOTS / name)
-            self.assertEqual((w, h), (1440, 900), name)
-
-    def test_mobile_shots_are_390x844(self):
-        for name in MOBILE:
-            w, h = _png_size(SHOTS / name)
-            self.assertEqual((w, h), (390, 844), name)
-
-    def test_no_text_metadata_chunks(self):
-        # tEXt/iTXt/zTXt chunks could carry machine paths or secrets.
-        for name in ALL_SHOTS:
-            raw = (SHOTS / name).read_bytes()
+    def test_metadata_free(self):
+        for n in AT2X:
+            raw = (PRESENT / n).read_bytes()
             for marker in (b"tEXt", b"iTXt", b"zTXt"):
-                self.assertNotIn(marker, raw[:8192], (name, marker))
+                self.assertNotIn(marker, raw[:8192], (n, marker))
 
-
-# ── 3b: high-DPI presentation set ───────────────────────────────────────────
-
-class TestPresentationSet(unittest.TestCase):
-    """@2x presentation copies: real DPR=2 renders, distinct from the
-    canonical verification screenshots, same page/case mapping."""
-
-    def test_presentation_set_exact(self):
-        self.assertEqual(
-            sorted(p.name for p in PRESENT.glob("*.png")), sorted(AT2X))
-        self.assertEqual(len(AT2X), 12)
-
-    def test_presentation_dims(self):
-        for name in AT2X:
-            w, h = _png_size(PRESENT / name)
-            if name.startswith("desktop"):
-                self.assertEqual((w, h), (2880, 1800), name)
-            else:
-                self.assertEqual((w, h), (780, 1688), name)
-
-    def test_presentation_metadata_free(self):
-        for name in AT2X:
-            raw = (PRESENT / name).read_bytes()
-            for marker in (b"tEXt", b"iTXt", b"zTXt"):
-                self.assertNotIn(marker, raw[:8192], (name, marker))
-
-    def test_presentation_maps_canonical_pages(self):
-        # stripping @2x yields the canonical name for every file
-        for at2x in AT2X:
-            canonical = at2x[:-7] + ".png"
-            self.assertIn(canonical, ALL_SHOTS, at2x)
-
-    def test_readme_displays_at2x_and_links_canonical(self):
-        imgs = re.findall(r"!\[[^\]]*\]\(([^)\s]+)\)", README_TEXT)
-        self.assertEqual(sorted(imgs),
-                         sorted("docs/showcase/presentation/%s" % n
-                                for n in AT2X))
-        for name in ALL_SHOTS:
-            self.assertIn(
-                "(docs/showcase/screenshots/%s)" % name, README_TEXT, name)
-        self.assertIn("高 DPI presentation 副本", README_TEXT)
-        self.assertIn("真实验证资产", README_TEXT)
-
-    def test_canonical_blob_hashes_frozen(self):
-        import hashlib
+    def test_blobs_frozen(self):
         blob_ids = []
-        for name in ALL_SHOTS:
-            raw = (SHOTS / name).read_bytes()
+        for n in AT2X:
+            raw = (PRESENT / n).read_bytes()
             header = b"blob " + str(len(raw)).encode("ascii") + bytes([0])
             blob_ids.append(hashlib.sha1(header + raw).hexdigest())
-        # Deterministic order: canonical file-name order (ALL_SHOTS), the
-        # same sequence the historical git hash-object pipeline used.
         joined = ("\n".join(blob_ids) + "\n").encode("utf-8")
-        self.assertEqual(
-            hashlib.sha1(joined).hexdigest(), CANONICAL_HASH_OF_HASHES,
-            "canonical screenshot binaries changed")
+        self.assertEqual(hashlib.sha1(joined).hexdigest(),
+                         PRESENT_HASH_OF_HASHES,
+                         "presentation @2x assets changed")
+
+    def test_page_mapping_stable(self):
+        for n in AT2X:
+            base = n[:-7]  # strip '@2x.png'
+            self.assertTrue(base.startswith(("desktop", "mobile")), n)
+            idx = int(base.split("-")[1])
+            if base.startswith("desktop"):
+                self.assertIn((idx, base.split("-", 2)[2]), list(enumerate(
+                    ("overview", "timeline", "findings", "rag", "trace",
+                     "safety", "evidence", "benchmark"), start=1)))
+            else:
+                self.assertIn(base, {m[:-4] for m in MOBILE}, n)
 
 
-# ── 3c: README media unification (polish round) ────────────────────────────
+# ── 4: README media contract ───────────────────────────────────────────────
 
-class TestReadmeMediaUnification(unittest.TestCase):
-    """Polish contract: every DISPLAYED png is an @2x presentation copy;
-    canonical pngs appear only as click-targets of the @2x displays."""
+class TestReadmeMedia(unittest.TestCase):
 
-    def test_no_canonical_png_is_displayed(self):
-        for m in re.finditer(r"!\[[^\]]*\]\(([^)\s]+)\)", README_TEXT):
-            self.assertFalse(
-                m.group(1).startswith("docs/showcase/screenshots/"),
-                "canonical png displayed directly: %s" % m.group(1))
+    def test_all_displayed_images_are_at2x_presentation(self):
+        imgs = re.findall(r"!\[[^\]]*\]\(([^)\s]+)\)", README_TEXT)
+        self.assertEqual(len(imgs), 12)
+        for img in imgs:
+            self.assertTrue(img.startswith("docs/showcase/presentation/"), img)
+            self.assertIn("@2x.png", img)
+            self.assertTrue((ROOT / img).exists(), img)
 
-    def test_all_displayed_pngs_are_at2x_presentation(self):
-        png_imgs = [t for t in re.findall(
-            r"!\[[^\]]*\]\(([^)\s]+)\)", README_TEXT)
-            if t.endswith(".png")]
-        self.assertEqual(len(png_imgs), 12)
-        for t in png_imgs:
-            self.assertIn("@2x.png", t, t)
-            self.assertTrue(t.startswith("docs/showcase/presentation/"), t)
+    def test_no_screenshots_dir_references(self):
+        self.assertNotIn("docs/showcase/screenshots/", README_TEXT)
 
-    def test_canonical_paths_only_as_click_targets(self):
-        canonical_refs = re.findall(
-            r"\]\((docs/showcase/screenshots/[^)\s]+)\)", README_TEXT)
-        self.assertEqual(sorted(canonical_refs),
-                         sorted("docs/showcase/screenshots/%s" % n
-                                for n in ALL_SHOTS))
-        # each is wrapped around an @2x display of the same stem
-        for n in ALL_SHOTS:
-            pattern = ("[![%s](docs/showcase/presentation/%s@2x.png)]"
-                       "(docs/showcase/screenshots/%s)"
-                       % (n[:-4], n[:-4], n))
-            self.assertIn(pattern, README_TEXT, n)
+    def test_no_canonical_wording(self):
+        self.assertNotIn("canonical", README_TEXT.lower())
 
-    def test_architecture_svg_collapsed_not_expanded(self):
-        # exactly one <details> block; svg appears as link + preview img only
-        self.assertIn("<details>", README_TEXT)
+    def test_no_click_to_canonical_wording(self):
+        self.assertNotIn("点击图片打开对应的", README_TEXT)
+        self.assertNotIn("点击打开 canonical", README_TEXT)
+
+    def test_viewport_and_dpr_sizing_wording(self):
+        self.assertIn("CSS viewport 为 1440×900", README_TEXT)
+        self.assertIn("CSS viewport 为 390×844", README_TEXT)
+        self.assertIn("DPR=2", README_TEXT)
+        self.assertIn("2880×1800 / 780×1688", README_TEXT)
+
+    def test_dpr_disclosure_present(self):
+        self.assertIn("deviceScaleFactor=2", README_TEXT)
+        self.assertIn("deterministic showcase seed", README_TEXT.lower())
+        self.assertIn("非外部客户数据", README_TEXT)
+        self.assertIn("非生产证据", README_TEXT)
+
+    def test_relative_links_resolve(self):
+        refs = re.findall(r"\]\(([^)#\s]+)\)", README_TEXT)
+        self.assertGreater(len(refs), 10)
+        for ref in refs:
+            if ref.startswith(("http://", "https://", "mailto:")):
+                continue
+            self.assertTrue((ROOT / ref).exists(), ref)
+
+    def test_external_links_are_https(self):
+        for ref in re.findall(r"\]\((https?://[^)\s]+)\)", README_TEXT):
+            self.assertTrue(ref.startswith("https://"), ref)
+
+    def test_architecture_diagram_default_open(self):
+        self.assertIn("<details open>", README_TEXT)
         self.assertIn("<summary>", README_TEXT)
         self.assertIn('width="960"', README_TEXT)
+        html_src = re.findall(r'src="([^"]+)"', README_TEXT)
+        self.assertEqual(html_src, ["docs/showcase/architecture.svg"])
+        self.assertIn('<a href="docs/showcase/architecture.svg">', README_TEXT)
         svg_refs = re.findall(r"docs/showcase/architecture\.svg", README_TEXT)
         self.assertEqual(len(svg_refs), 2, svg_refs)
-        self.assertIn('<a href="docs/showcase/architecture.svg">', README_TEXT)
-        self.assertIn('src="docs/showcase/architecture.svg"', README_TEXT)
-        # no other markdown-expanded svg outside the details block
-        self.assertNotIn("![MergePilot ISOLATED_LIVE 展示拓扑]", README_TEXT)
 
     def test_architecture_boundary_notes_retained(self):
         for note in ("不是第五个应用服务", "不是外部客户数据，不是生产证据",
-                     "M8-A1 不等于 revision producer integration"):
+                     "M8-A1 不等于 revision producer integration",
+                     "production_verified=false"):
             self.assertIn(note, README_TEXT, note)
 
-    def test_at2x_presentation_set_unchanged(self):
-        self.assertEqual(
-            sorted(p.name for p in PRESENT.glob("*.png")), sorted(AT2X))
 
-
-    def test_presentation_not_claimed_as_new_verification(self):
-        # The note must frame @2x as presentation copies of the SAME
-        # verification captures, not new results.
-        self.assertIn("仅为清晰展示", README_TEXT)
-
-
-# ── 4: README structure, links, disclosures ────────────────────────────────
+# ── 5: README structure and truth boundaries ────────────────────────────────
 
 class TestReadmeStructure(unittest.TestCase):
 
@@ -292,44 +305,16 @@ class TestReadmeStructure(unittest.TestCase):
 
     def test_positioning_is_honest(self):
         self.assertIn("fail-closed", README_TEXT)
-        self.assertIn("不是", README_TEXT)
-        # Only unambiguous POSITIVE claims are banned; the README's own
-        # negations ("不是已上线的 SaaS") must stay legal.
         for banned in ("生产部署完成", "已正式上线", "已上线运营",
                        "M8 已完成", "真实客户在用", "production ready"):
             self.assertNotIn(banned, README_TEXT)
-
-    def test_all_relative_links_resolve(self):
-        refs = re.findall(r"\]\(([^)#\s]+)\)", README_TEXT)
-        self.assertGreater(len(refs), 10)
-        for ref in refs:
-            if ref.startswith(("http://", "https://", "mailto:")):
-                continue
-            target = (ROOT / ref).resolve()
-            self.assertTrue(target.exists(), ref)
-
-    def test_image_references_are_local(self):
-        imgs = re.findall(r"!\[[^\]]*\]\(([^)\s]+)\)", README_TEXT)
-        self.assertEqual(len(imgs), 12)
-        for img in imgs:
-            self.assertFalse(img.startswith(("http://", "https://")),
-                             "external image URL: %s" % img)
-            self.assertTrue((ROOT / img).exists(), img)
-        # the architecture diagram ships as an HTML <img> inside <details>
-        html_src = re.findall(r'src="([^"]+)"', README_TEXT)
-        self.assertEqual(html_src, ["docs/showcase/architecture.svg"])
-        self.assertTrue((ROOT / html_src[0]).exists())
-
-    def test_external_links_are_https(self):
-        for ref in re.findall(r"\]\((https?://[^)\s]+)\)", README_TEXT):
-            self.assertTrue(ref.startswith("https://"), ref)
 
     def test_all_eight_pages_documented_with_shots(self):
         for page in ("overview", "timeline", "findings", "rag", "trace",
                      "safety", "evidence", "benchmark"):
             self.assertIn(page, README_TEXT)
-        for name in DESKTOP:
-            self.assertIn(name, README_TEXT)
+        for n in AT2X:
+            self.assertIn(n, README_TEXT)
 
     def test_three_cases_with_stable_ids_and_shas(self):
         for run_id, case_id, pr in (
@@ -351,11 +336,6 @@ class TestReadmeStructure(unittest.TestCase):
         for outcome in ("MERGED", "FAIL", "ROLLED_BACK", "RECOVERED",
                         "PROTECTED_PATH_PREFIX", "REVISION_DRIFT"):
             self.assertIn(outcome, README_TEXT)
-
-    def test_disclosure_banner_present(self):
-        self.assertIn(
-            "Deterministic showcase seed — not external customer data — "
-            "not production evidence", README_TEXT)
 
     def test_truth_boundaries(self):
         for boundary in (
@@ -387,8 +367,13 @@ class TestReadmeStructure(unittest.TestCase):
                             "<postgres 容器桥接 IP>", "<postgres 容器>"):
             self.assertIn(placeholder, README_TEXT)
 
+    def test_no_ninth_page_or_new_api_claims(self):
+        self.assertNotIn("第 9 页", README_TEXT)
+        self.assertNotIn("第 9 页面", README_TEXT)
+        self.assertNotIn("新增 API", README_TEXT)
 
-# ── 5: demo script ─────────────────────────────────────────────────────────
+
+# ── 6: demo script ─────────────────────────────────────────────────────────
 
 class TestDemoScript(unittest.TestCase):
 
@@ -404,15 +389,16 @@ class TestDemoScript(unittest.TestCase):
             self.assertIn(token, SCRIPT_TEXT, token)
 
     def test_script_links_resolve(self):
-        # Script links are relative to the script's own directory.
         for ref in re.findall(r"\]\(([^)#\s]+)\)", SCRIPT_TEXT):
             if ref.startswith(("http://", "https://")):
                 continue
             self.assertTrue((SCRIPT.parent / ref).exists(), ref)
 
+    def test_script_references_presentation_not_screenshots(self):
+        self.assertNotIn("](screenshots/)", SCRIPT_TEXT)
+        self.assertIn("](presentation/)", SCRIPT_TEXT)
+
     def test_script_forbidden_claims_only_in_prohibition_note(self):
-        # The forbidden phrases appear ONLY inside the speaker-notes line
-        # that explicitly prohibits saying them to the audience.
         note = "不得向观众声明"
         self.assertIn(note, SCRIPT_TEXT)
         for token in ("production ready", "生产已部署", "M8 完成",
@@ -427,7 +413,7 @@ class TestDemoScript(unittest.TestCase):
         self.assertIn("非生产证据", SCRIPT_TEXT)
 
 
-# ── 6: materials hygiene ────────────────────────────────────────────────────
+# ── 7: materials hygiene ────────────────────────────────────────────────────
 
 class TestMaterialsHygiene(unittest.TestCase):
 
@@ -437,8 +423,6 @@ class TestMaterialsHygiene(unittest.TestCase):
                              0, path)
 
     def test_no_third_party_asset_claims(self):
-        # Materials must be first-party; no references to other projects'
-        # code/copy/visual assets as sources of the screenshots or SVG.
         for text in (README_TEXT, SCRIPT_TEXT):
             self.assertNotIn("SigmaMentor", text)
 
@@ -446,7 +430,15 @@ class TestMaterialsHygiene(unittest.TestCase):
         for text in (SVG_TEXT, SCRIPT_TEXT):
             self.assertNotIn("C:\\Users", text)
             self.assertNotIn("/mnt/d/", text)
-            self.assertNotIn("127.0.0.1:5432", text)  # internal DB never published
+            self.assertNotIn("127.0.0.1:5432", text)
+
+    def test_no_new_verified_fields_or_m8_content(self):
+        for text in (README_TEXT, SVG_TEXT, SCRIPT_TEXT):
+            for banned in ("application_integration_verified=true",
+                           "database_verified=true",
+                           "production_verified=true",
+                           "M8 已完成", "M8-A2 已实现"):
+                self.assertNotIn(banned, text)
 
 
 if __name__ == "__main__":
