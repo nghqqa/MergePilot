@@ -293,12 +293,22 @@ class TestReadmeStructure(unittest.TestCase):
         for value in ("application_integration_verified=false",
                       "database_verified=false", "production_verified=false",
                       "revision_producer_contract=NOT_VERIFIED",
-                      "audit_producer_contract=NOT_VERIFIED", "M8-A2 尚未实现"):
+                      "audit_producer_contract=NOT_VERIFIED"):
             self.assertIn(value, README_TEXT)
+        # M8-A2-a status: accurate current wording, not the stale "not implemented"
+        self.assertIn("M8-A2-a 已通过隔离六容器 fixture 验证", README_TEXT)
+        self.assertIn("完整外部 producer integration 尚未完成", README_TEXT)
+        self.assertNotIn("M8-A2 尚未实现", README_TEXT)
+        self.assertIn(
+            "AgentTeams 仍是多 Agent 协同与任务编排基座",
+            README_TEXT,
+        )
 
     def test_regression_numbers_are_current(self):
         for value in ("81 passed", "60 passed", "50 passed",
-                      "1245 passed / 13 skipped / 0 failed", "12 → 12",
+                      "31 passed",
+                      "1276 passed / 13 skipped / 0 failed", "12 → 12",
+                      "11 PASS / 0 FAIL",
                       "PREFLIGHT_OK"):
             self.assertIn(value, README_TEXT)
 

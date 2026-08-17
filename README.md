@@ -161,10 +161,12 @@ python -m pytest -q tests/demo_console tests/isolated_live tests/verification --
 | PR‑V1 visual system | 81 passed |
 | PR‑V2 deterministic cases | 60 passed |
 | Showcase materials | 50 passed |
-| 当前拆分回归 | **1245 passed / 13 skipped / 0 failed** |
+| M8‑A2‑a PR fixture | 31 passed |
+| 当前拆分回归 | **1276 passed / 13 skipped / 0 failed** |
 | audit seed replay | showcase audit rows **12 → 12**；task_runs 3 → 3 |
 | recovered SHA | API snapshot、Desktop、Mobile 三侧可见 |
 | component smoke | 5 services healthy + `PREFLIGHT_OK` 10/10 |
+| M8‑A2‑a 六容器 fixture E2E | **11 PASS / 0 FAIL**（bind-first 成功链 + 两个负向案例） |
 
 冻结边界：
 
@@ -173,7 +175,8 @@ python -m pytest -q tests/demo_console tests/isolated_live tests/verification --
 - `production_verified=false`
 - `revision_producer_contract=NOT_VERIFIED`
 - `audit_producer_contract=NOT_VERIFIED`
-- M8-A1 是 event ingestion machinery，不等于 revision producer integration；M8-A2 尚未实现。
+- M8-A1 是 event ingestion machinery，不等于 revision producer integration；M8-A2-a 已通过隔离六容器 fixture 验证，完整外部 producer integration 尚未完成。
+- AgentTeams 仍是多 Agent 协同与任务编排基座；本次 fixture E2E 仅验证 MergePilot 控制面，真实 AgentTeams producer integration 尚未完成。
 
 Showcase 是隔离栈上的确定性演示，不可外推为生产或真实客户验证；showcase material 不写入 `evidence/` 或 `verification/`。不声称完整 WCAG 合规，键盘导航、reduced-motion 与 browser console 保留 PR‑V1 的 residual validation 披露。
 
