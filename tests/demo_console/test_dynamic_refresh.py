@@ -552,6 +552,126 @@ class TestUiStructure(unittest.TestCase):
             self.assertIn(cls, JS_SOURCE)
 
 
+# ── Showcase PR-V1: operational design system tests ─────────────────────────
+
+class TestShowcaseDesignSystem(unittest.TestCase):
+    """Visual system invariants for the portfolio showcase round."""
+
+    def test_css_token_set_exists(self):
+        for token in ("--bg:", "--bg-panel:", "--bg-raised:", "--border:",
+                      "--text:", "--accent:", "--ok:", "--warn:", "--err:",
+                      "--mono:", "--sans:", "--radius:", "--sp-1:",
+                      "--transition:", "--shadow-1:", "--shadow-focus"):
+            self.assertIn(token, HTML_SOURCE, token)
+
+    def test_eight_page_header_structure_in_js(self):
+        # Every renderer emits the shared page-head scaffold.
+        for page in PAGES:
+            self.assertIn(
+                "pageHeader('%s')" % page, JS_SOURCE, page)
+
+    def test_page_meta_has_all_eight_pages(self):
+        import re
+        meta_keys = re.findall(
+            r"^\s{4}(\w+):\s*\{", JS_SOURCE, re.MULTILINE)
+        for page in PAGES:
+            self.assertIn(page, meta_keys, page)
+
+    def test_page_meta_fields(self):
+        for field in ("eyebrow", "title", "desc"):
+            self.assertIn(field + ":", JS_SOURCE)
+
+    def test_focus_visible_styles(self):
+        self.assertIn(":focus-visible", HTML_SOURCE)
+        self.assertIn("outline: 2px solid var(--accent)", HTML_SOURCE)
+
+    def test_skip_link_present(self):
+        self.assertIn('class="skip-link"', HTML_SOURCE)
+        self.assertIn('href="#main-content"', HTML_SOURCE)
+
+    def test_reduced_motion_media_query(self):
+        self.assertIn("@media (prefers-reduced-motion: reduce)", HTML_SOURCE)
+        self.assertIn("animation-duration: 0.01ms !important", HTML_SOURCE)
+        self.assertIn("transition-duration: 0.01ms !important", HTML_SOURCE)
+
+    def test_high_contrast_media_query(self):
+        self.assertIn("@media (prefers-contrast: high)", HTML_SOURCE)
+
+    def test_aria_landmarks_present(self):
+        self.assertIn('role="status"', HTML_SOURCE)
+        self.assertIn('aria-live="polite"', HTML_SOURCE)
+        self.assertIn('aria-label="Views"', HTML_SOURCE)
+        self.assertIn('id="main-content"', HTML_SOURCE)
+
+    def test_aria_current_page_management(self):
+        self.assertIn("aria-current", HTML_SOURCE)  # inline nav script
+
+    def test_table_wrapper_for_mobile_scroll(self):
+        self.assertIn("table-wrap", HTML_SOURCE)
+        self.assertIn("overflow-x: auto", HTML_SOURCE)
+        self.assertIn("tableWrap(", JS_SOURCE)
+
+    def test_sticky_table_headers(self):
+        self.assertIn("position: sticky; top: 0", HTML_SOURCE)
+
+    def test_status_chip_has_indicator_dot(self):
+        # Status is not conveyed by color alone — chips carry a shape.
+        self.assertIn(".st::before", HTML_SOURCE)
+
+    def test_no_extra_fetch_calls(self):
+        import re
+        fetches = re.findall(r"fetch\(", JS_SOURCE)
+        self.assertEqual(len(fetches), 1,
+                         "exactly one fetch wrapper allowed")
+        # No localStorage or sessionStorage.
+        for banned in ("localStorage", "sessionStorage",
+                       "location.reload", "window.open"):
+            self.assertNotIn(banned, JS_SOURCE, banned)
+            self.assertNotIn(banned, HTML_SOURCE, banned)
+
+    def test_single_timer_contract(self):
+        # Exactly one executable setInterval call (the comment on the
+        # variable declaration is not a second timer).
+        import re
+        code_setintervals = re.findall(
+            r"^\s*.*[^/*]\bsetInterval\(", JS_SOURCE, re.MULTILINE)
+        self.assertEqual(len(code_setintervals), 1)
+        self.assertEqual(JS_SOURCE.count("clearInterval"), 1)
+        self.assertIn("if (timer !== null) { return; }", JS_SOURCE)
+
+    def test_pages_order_unchanged(self):
+        self.assertEqual(
+            list(PAGES),
+            ['overview', 'timeline', 'findings', 'rag',
+             'trace', 'safety', 'evidence', 'benchmark'])
+
+    def test_active_nav_count_in_html(self):
+        self.assertEqual(
+            HTML_SOURCE.count('class="nav-btn active"'), 1)
+
+    def test_keyboard_arrow_navigation(self):
+        self.assertIn("ArrowDown", HTML_SOURCE)
+        self.assertIn("ArrowUp", HTML_SOURCE)
+        self.assertIn("e.preventDefault()", HTML_SOURCE)
+
+    def test_panel_title_accent_bar(self):
+        self.assertIn(".panel-title::before", HTML_SOURCE)
+
+    def test_evidence_row_component(self):
+        self.assertIn("evidence-row", HTML_SOURCE)
+        self.assertIn("evidenceRow(", JS_SOURCE)
+
+    def test_metric_card_hover(self):
+        self.assertIn(".metric:hover", HTML_SOURCE)
+
+    def test_no_ninth_page(self):
+        import re
+        sections = re.findall(
+            r'<section id="(\w+)" class="page', HTML_SOURCE)
+        self.assertEqual(len(sections), 8)
+        self.assertEqual(sorted(sections), sorted(PAGES))
+
+
 # ── serve.py fail-closed startup gate ────────────────────────────────────────
 
 class TestServeStartupGate(unittest.TestCase):
