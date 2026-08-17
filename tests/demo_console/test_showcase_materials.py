@@ -224,7 +224,8 @@ class TestArchitectureSvg(unittest.TestCase):
 class TestReadmeMedia(unittest.TestCase):
 
     def test_architecture_is_visible_by_default(self):
-        self.assertNotIn("<details open>", README_TEXT)
+        for tag in ("<details", "<summary", "</details"):
+            self.assertNotIn(tag, README_TEXT)
         self.assertIn('<img src="docs/showcase/architecture.svg"', README_TEXT)
 
     def test_architecture_is_clickable(self):
