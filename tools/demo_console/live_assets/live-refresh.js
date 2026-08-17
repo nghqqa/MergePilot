@@ -81,6 +81,41 @@
   var statusInfo = null;
   var lastDataTime = null;
 
+  /* ── Showcase case labels (PR-V2; PRESENTATION METADATA ONLY) ────────
+   * Maps a seeded showcase run_id to its display label. This registry
+   * carries NO case facts: every run_id / PR / SHA / stage / decision /
+   * status shown on the pages comes from the live snapshot API. The
+   * case_id/name here must match tools/demo_console/showcase_cases.py
+   * (enforced by the test suite) so the badge never mislabels a run. */
+  var SHOWCASE_CASES = {
+    'run-showcase-a': {
+      caseId: 'case-showcase-protected-merge-success',
+      name: 'Protected Merge Success'
+    },
+    'run-showcase-b': {
+      caseId: 'case-showcase-failclosed-policy-rejection',
+      name: 'Fail-Closed Policy Rejection'
+    },
+    'run-showcase-c': {
+      caseId: 'case-showcase-revision-drift-recovery',
+      name: 'Revision Drift Recovery'
+    }
+  };
+
+  var SEED_DISCLOSURE = 'Deterministic showcase seed — not external ' +
+    'customer data, not production evidence';
+
+  function showcaseBadge() {
+    var meta = SHOWCASE_CASES[(snapshot.run || {}).run_id];
+    if (!meta) { return ''; }
+    return '<div class="seed-badge" data-seed="deterministic-showcase">' +
+      '<span class="seed-tag">Deterministic showcase seed</span>' +
+      '<span class="seed-case"><code>' + esc(meta.caseId) + '</code> · ' +
+      esc(meta.name) + '</span>' +
+      '<span class="seed-note">not external customer data · not ' +
+      'production evidence</span></div>';
+  }
+
   function clampIntervalMs(value) {
     var v = parseInt(value, 10);
     if (!isFinite(v) || v < MIN_INTERVAL_MS) { v = MIN_INTERVAL_MS; }
@@ -165,6 +200,25 @@
       body + '</div>';
   }
 
+  /* ── Case-fact helpers (PR-V2; all data from the shared snapshot) ──── */
+
+  function gatewayCalls() {
+    return snapshot.gateway_calls || [];
+  }
+
+  function orderedStages(stages) {
+    /* Sort by started_at when EVERY stage carries one (audit-DB runs do);
+     * otherwise keep the bundle order (never a partial guess). */
+    var withTime = stages.every(function (s) {
+      return Boolean(s.started_at);
+    });
+    if (!withTime || stages.length < 2) { return stages; }
+    return stages.slice().sort(function (a, b) {
+      return String(a.started_at) < String(b.started_at) ? -1
+        : String(a.started_at) > String(b.started_at) ? 1 : 0;
+    });
+  }
+
   /* ── Per-page renderers: all read the SAME `snapshot` store ─────────── */
 
   function renderOverview() {
@@ -173,7 +227,11 @@
     var agents = snapshot.agents || [];
     var fixes = snapshot.fixes || [];
     var vr = snapshot.verifier_result || {};
-    var repo = snapshot.repo || {};
+    /* repo is a plain string in both REPLAY and ISOLATED_LIVE bundles;
+     * accept an object form defensively but never print [object Object]. */
+    var repo = snapshot.repo;
+    var repoLabel = typeof repo === 'string' ? repo
+      : ((repo && (repo.full_name || repo.name)) || 'n/a');
     var cards = agents.map(function (a) {
       return '<div class="skill-card">' +
         '<span class="skill-name">' + esc(a.skill) + '</span>' +
@@ -181,14 +239,21 @@
         stChip(a.status) + '</div>';
     }).join('');
     return pageHeader('overview') +
+      showcaseBadge() +
       panel('Run Identity', '<div class="kv">' +
         kvCell('run_id', '<code>' + esc(run.run_id) + '</code>', false) +
         kvCell('PR', esc('#' + pr.number) + ' ' + esc(pr.title), false) +
-        kvCell('repo', esc(repo.full_name || repo.name || 'n/a'), false) +
+        kvCell('repo', esc(repoLabel), false) +
         kvCell('final_status', stChip(snapshot.final_status), false) +
         kvCell('verifier', stChip(vr.status || 'n/a'), false) +
         kvCell('trace_id', '<code>' + esc(run.trace_id) + '</code>', false) +
+        kvCell('head SHA', '<code>' + esc(pr.head_sha || 'n/a') + '</code>',
+          false) +
         '</div>') +
+      (snapshot.run_failure_reason
+        ? panel('Failure Reason', '<p class="case-fact">' +
+          esc(snapshot.run_failure_reason) + '</p>')
+        : '') +
       panel('Run Metrics', '<div class="metrics">' +
         metricCell('stages', stages.length) +
         metricCell('findings', (snapshot.findings || []).length) +
@@ -204,7 +269,7 @@
   }
 
   function renderTimeline() {
-    var stages = snapshot.workflow_stages || [];
+    var stages = orderedStages(snapshot.workflow_stages || []);
     if (!stages.length) {
       return pageHeader('timeline') +
         panel(null, '<p class="empty-note">no stages recorded</p>');
@@ -214,10 +279,12 @@
       var tl = cls === 'st-ok' ? 'tl-ok'
         : cls === 'st-err' ? 'tl-err'
         : cls === 'st-warn' ? 'tl-warn' : '';
-      var when = [s.started_at, s.finished_at].filter(Boolean).join(' → ');
+      var when = [s.started_at, s.finished_at || s.completed_at]
+        .filter(Boolean).join(' → ');
       return '<li class="' + tl + '"><div class="tl-head">' +
         '<span class="tl-stage">' + esc(s.stage) + '</span>' +
         stChip(s.status) +
+        (s.verdict ? stChip(s.verdict) : '') +
         '<span class="tl-meta">' + esc(s.agent_role || '') +
         (when ? ' · ' + esc(when) : '') + '</span></div></li>';
     }).join('');
@@ -228,23 +295,66 @@
 
   function renderFindings() {
     var findings = snapshot.findings || [];
-    if (!findings.length) {
-      return pageHeader('findings') +
-        panel(null, '<p class="empty-note">no findings recorded</p>');
-    }
-    var rows = findings.map(function (f) {
-      var sev = String(f.severity || '').toUpperCase();
-      var rowCls = (sev === 'HIGH' || sev === 'CRITICAL')
-        ? ' class="sev-high"'
-        : (sev === 'MEDIUM' ? ' class="sev-medium"' : '');
-      return '<tr' + rowCls + '><td><code>' + esc(f.finding_id) +
-        '</code></td><td>' + esc(f.category) + '</td><td>' +
-        stChip(f.severity || 'n/a') + '</td><td class="code">' +
-        esc(f.file) + '</td><td>' + esc(f.message) + '</td></tr>';
-    }).join('');
-    return pageHeader('findings') +
-      panel(findings.length + ' finding' + (findings.length !== 1 ? 's' : ''),
+    var html = pageHeader('findings');
+    if (findings.length) {
+      var rows = findings.map(function (f) {
+        var sev = String(f.severity || '').toUpperCase();
+        var rowCls = (sev === 'HIGH' || sev === 'CRITICAL')
+          ? ' class="sev-high"'
+          : (sev === 'MEDIUM' ? ' class="sev-medium"' : '');
+        return '<tr' + rowCls + '><td><code>' + esc(f.finding_id) +
+          '</code></td><td>' + esc(f.category) + '</td><td>' +
+          stChip(f.severity || 'n/a') + '</td><td class="code">' +
+          esc(f.file) + '</td><td>' + esc(f.message) + '</td></tr>';
+      }).join('');
+      html += panel(findings.length + ' finding' +
+        (findings.length !== 1 ? 's' : ''),
         tableWrap(['ID', 'Category', 'Severity', 'File', 'Message'], rows));
+    } else {
+      html += panel(null,
+        '<p class="empty-note">no inline findings recorded for this run ' +
+        '(audit DB stores gateway decisions and rollback facts)</p>');
+    }
+    /* Case facts (PR-V2): policy rejections and revision-drift facts from
+     * the immutable gateway/rollback audit trail. Only real snapshot
+     * fields; empty when the run has none. */
+    var blocked = gatewayCalls().filter(function (c) {
+      return c.decision === 'DENY' || c.decision === 'ERROR';
+    });
+    if (blocked.length) {
+      var brow = blocked.map(function (c) {
+        return '<tr><td><code>' + esc(c.request_id) + '</code></td><td>' +
+          stChip(c.decision) + '</td><td class="code">' + esc(c.tool) +
+          '</td><td><code>' + esc(c.reason_code || 'n/a') + '</code>' +
+          '</td><td>' + esc(c.error || 'blocked before execution') +
+          '</td><td class="code">' + esc(c.git_sha || 'n/a') +
+          '</td></tr>';
+      }).join('');
+      html += panel('Policy Rejection Facts (gateway audit)',
+        tableWrap(['Request', 'Decision', 'Tool', 'Reason', 'Detail',
+          'Observed SHA'], brow));
+    }
+    var drift = snapshot.rollback_events || [];
+    if (drift.length) {
+      var drow = drift.map(function (e) {
+        return '<tr><td><code>' + esc(e.rollback_id) + '</code></td><td>' +
+          stChip(e.status) + '</td><td class="code">' +
+          esc(e.reverted_merge_sha || 'n/a') + '</td><td class="code">' +
+          esc(e.revert_result_sha || 'n/a') + '</td><td>' +
+          stChip(e.reverify_verdict ? 'reverify ' + e.reverify_verdict
+            : 'n/a') + '</td><td>' +
+          esc(e.fail_reason || 'n/a') + '</td></tr>';
+      }).join('');
+      html += panel('Drift & Rollback Facts (rollback_runs audit)',
+        tableWrap(['Rollback', 'Status', 'Reverted SHA', 'Recovered SHA',
+          'Re-verify', 'Reason'], drow));
+    }
+    if (snapshot.run_failure_reason) {
+      html += panel('Run Failure Reason',
+        '<p class="case-fact">' + esc(snapshot.run_failure_reason) +
+        '</p>');
+    }
+    return html;
   }
 
   function renderRag() {
@@ -269,20 +379,41 @@
 
   function renderTrace() {
     var spans = snapshot.spans || [];
-    if (!spans.length) {
+    if (spans.length) {
+      var items = spans.map(function (s) {
+        return '<li><div class="span-line">' +
+          '<span class="span-name">' + esc(s.name) + '</span>' +
+          stChip(s.status || 'n/a') +
+          '<span class="span-time">' + esc(s.span_id) + ' · ' +
+          esc(s.start_time) + ' → ' + esc(s.end_time) + '</span></div></li>';
+      }).join('');
+      return pageHeader('trace') +
+        panel(spans.length + ' span' + (spans.length !== 1 ? 's' : ''),
+          '<ul class="tree">' + items + '</ul>');
+    }
+    /* No OTel spans in the audit DB (honest empty). The decision and
+     * execution chain for this run is the immutable gateway audit trail
+     * (mcp_calls), rendered here so a case reads end-to-end. */
+    var calls = gatewayCalls();
+    if (!calls.length) {
       return pageHeader('trace') +
         panel(null, '<p class="empty-note">no spans recorded</p>');
     }
-    var items = spans.map(function (s) {
+    var chain = calls.map(function (c) {
       return '<li><div class="span-line">' +
-        '<span class="span-name">' + esc(s.name) + '</span>' +
-        stChip(s.status || 'n/a') +
-        '<span class="span-time">' + esc(s.span_id) + ' · ' +
-        esc(s.start_time) + ' → ' + esc(s.end_time) + '</span></div></li>';
+        '<span class="span-name">' + esc(c.phase || '-') + ' ' +
+        esc(c.tool) + '</span>' +
+        stChip(c.decision) +
+        '<span class="span-time">' + esc(c.request_id || '') +
+        (c.ts ? ' · ' + esc(c.ts) : '') +
+        (c.reason_code ? ' · ' + esc(c.reason_code) : '') +
+        (c.ticket_id ? ' · ticket ' + esc(c.ticket_id) : '') +
+        (c.git_sha ? ' · sha ' + esc(c.git_sha) : '') +
+        '</span></div></li>';
     }).join('');
     return pageHeader('trace') +
-      panel(spans.length + ' span' + (spans.length !== 1 ? 's' : ''),
-        '<ul class="tree">' + items + '</ul>');
+      panel('Gateway decision chain (mcp_calls audit)',
+        '<ul class="tree">' + chain + '</ul>');
   }
 
   function renderSafety() {
@@ -290,7 +421,14 @@
     var rollbacks = snapshot.rollback_events || [];
     var leaks = snapshot.secret_leaks;
     var leakOk = leaks === 0 || leaks === '0';
+    var gw = (residue.gateway_audit_summary || {});
     return pageHeader('safety') +
+      panel('Policy Gateway', '<div class="kv">' +
+        kvCell('gateway · ALLOW', esc(gw.allow), true) +
+        kvCell('gateway · DENY', esc(gw.deny), true) +
+        kvCell('gateway · ERROR', esc(gw.error), true) +
+        kvCell('gateway · total calls', esc(gw.total), true) +
+        '</div>') +
       panel('Environment Health', '<div class="kv">' +
         kvCell('residue · containers', esc(residue.containers), true) +
         kvCell('residue · networks', esc(residue.networks), true) +
@@ -302,8 +440,18 @@
         (rollbacks.length
           ? '<ul class="tree">' + rollbacks.map(function (e) {
               return '<li><div class="span-line"><span class="span-name">' +
-                esc(e.event || e.stage || 'rollback') + '</span>' +
-                stChip(e.status || 'n/a') + '</div></li>';
+                esc(e.rollback_id || e.event || e.stage || 'rollback') +
+                '</span>' +
+                stChip(e.status || 'n/a') +
+                (e.reverify_verdict
+                  ? stChip('reverify ' + e.reverify_verdict) : '') +
+                '<span class="span-time">' +
+                (e.reverted_merge_sha
+                  ? 'reverted ' + esc(e.reverted_merge_sha) : '') +
+                (e.revert_result_sha
+                  ? ' · recovered ' + esc(e.revert_result_sha) : '') +
+                (e.fail_reason ? ' · ' + esc(e.fail_reason) : '') +
+                '</span></div></li>';
             }).join('') + '</ul>'
           : '<p class="empty-note">0 rollback event(s)</p>'));
   }
@@ -329,10 +477,44 @@
         (rows
           ? tableWrap(['Path', 'SHA-256', 'Description'], rows)
           : '<p class="empty-note">no evidence files recorded</p>')) +
+      evidenceAuditPanel() +
       '<div class="boundary-banner plain">' +
       '<strong>Provenance only:</strong> bundle integrity is recomputed ' +
       'server-side; listing evidence here does NOT imply production ' +
       'verification (production_verified=false).</div>';
+  }
+
+  /* Audit-trail evidence (PR-V2): aggregate audit_events counts from the
+   * residue summary plus L2-ticket linkage from the gateway audit rows.
+   * Honest empty states when a run carries none. */
+  function evidenceAuditPanel() {
+    var audit = (snapshot.residue || {}).audit_events_summary;
+    var l2 = gatewayCalls().filter(function (c) {
+      return c.decision === 'ALLOW' && c.ticket_id;
+    });
+    if (!audit && !l2.length) { return ''; }
+    var html = panel('Audit Trail Evidence', '<div class="kv">' +
+      (audit
+        ? kvCell('audit_events · total', esc(audit.total), true) +
+          kvCell('audit_events · by action',
+            esc(Object.keys(audit.by_action || {}).sort()
+              .map(function (k) {
+                return k + '×' + audit.by_action[k];
+              }).join(', ') || 'n/a'), true)
+        : '') +
+      '</div>');
+    if (l2.length) {
+      var rows = l2.map(function (c) {
+        return '<tr><td><code>' + esc(c.ticket_id) + '</code></td>' +
+          '<td class="code">' + esc(c.tool) + '</td><td>' +
+          stChip(c.decision) + '</td><td><code>' +
+          esc(c.reason_code || 'n/a') + '</code></td><td class="code">' +
+          esc(c.git_sha || 'n/a') + '</td></tr>';
+      }).join('');
+      html += panel('L2 Approval Records (gateway audit)',
+        tableWrap(['Ticket', 'Tool', 'Decision', 'Reason', 'SHA'], rows));
+    }
+    return html;
   }
 
   function renderBenchmark() {
