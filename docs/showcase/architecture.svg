@@ -1,128 +1,146 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="860" viewBox="0 0 1200 860" font-family="'Segoe UI','Microsoft YaHei',sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" role="img" aria-labelledby="title desc">
+  <title id="title">MergePilot isolated-live showcase architecture</title>
+  <desc id="desc">Control, state, read-only console, publication, and truth-boundary layers for the deterministic MergePilot showcase.</desc>
   <defs>
-    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M0,0 L10,5 L0,10 z" fill="#8aa2c8"/>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 Z" fill="#8aa2c8"/>
     </marker>
-    <marker id="arrDim" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M0,0 L10,5 L0,10 z" fill="#5b6f8f"/>
+    <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 Z" fill="#38d9a9"/>
     </marker>
+    <style>
+      .title { fill:#eef4ff; font:700 27px 'Segoe UI','Microsoft YaHei',sans-serif; }
+      .subtitle { fill:#90a6c8; font:14px 'Segoe UI','Microsoft YaHei',sans-serif; }
+      .lane-title { fill:#66a0ff; font:600 15px 'Segoe UI','Microsoft YaHei',sans-serif; }
+      .node-title { fill:#f2f6ff; font:700 17px 'Segoe UI','Microsoft YaHei',sans-serif; }
+      .node-meta { fill:#66a0ff; font:12px 'Segoe UI','Microsoft YaHei',sans-serif; }
+      .node-body { fill:#a9bad4; font:13px 'Segoe UI','Microsoft YaHei',sans-serif; }
+      .note-title { fill:#f7c66b; font:700 15px 'Segoe UI','Microsoft YaHei',sans-serif; }
+      .note { fill:#d5deec; font:13px 'Segoe UI','Microsoft YaHei',sans-serif; }
+      .edge-label { fill:#90a6c8; font:12px 'Segoe UI','Microsoft YaHei',sans-serif; }
+      .box { fill:#16233c; stroke:#385178; stroke-width:1.5; }
+      .box-blue { fill:#16233c; stroke:#5c91f5; stroke-width:1.6; }
+      .box-green { fill:#132d2a; stroke:#38d9a9; stroke-width:1.6; }
+      .box-purple { fill:#241d3a; stroke:#a17cf7; stroke-width:1.6; stroke-dasharray:7 5; }
+      .box-orange { fill:#2c2418; stroke:#f7b84f; stroke-width:1.6; }
+      .boundary { fill:#101c31; stroke:#385178; stroke-width:1.4; stroke-dasharray:8 6; }
+      .line { stroke:#8aa2c8; stroke-width:2; fill:none; marker-end:url(#arrow); }
+      .line-green { stroke:#38d9a9; stroke-width:2; fill:none; marker-end:url(#arrow-green); }
+      .line-dashed { stroke:#a17cf7; stroke-width:2; fill:none; stroke-dasharray:7 5; marker-end:url(#arrow); }
+    </style>
   </defs>
 
-  <rect width="1200" height="860" fill="#0d1626"/>
-  <text x="600" y="40" text-anchor="middle" fill="#e8eef7" font-size="24" font-weight="600">MergePilot — ISOLATED_LIVE 展示拓扑（Deterministic Showcase）</text>
-  <text x="600" y="64" text-anchor="middle" fill="#8aa2c8" font-size="13">六容器隔离栈：内部后端网络（无外发路由） + 无密钥 loopback 发布桥</text>
+  <rect width="1440" height="900" fill="#0d1626"/>
+  <text x="720" y="45" text-anchor="middle" class="title">MergePilot · 可审计、可验证、fail-closed 的合并治理闭环</text>
+  <text x="720" y="72" text-anchor="middle" class="subtitle">ISOLATED_LIVE deterministic showcase · internal backend network · loopback-only publication</text>
 
-  <!-- Entry -->
-  <rect x="40" y="140" width="190" height="86" rx="10" fill="#16233c" stroke="#2d4160"/>
-  <text x="135" y="172" text-anchor="middle" fill="#e8eef7" font-size="15" font-weight="600">PR / 开发者入口</text>
-  <text x="135" y="194" text-anchor="middle" fill="#8aa2c8" font-size="11">受保护分支与受保护路径变更</text>
-  <text x="135" y="212" text-anchor="middle" fill="#8aa2c8" font-size="11">（showcase：deterministic seed 模拟）</text>
+  <rect id="internal-network" x="250" y="120" width="760" height="520" rx="18" class="boundary"/>
+  <text x="630" y="148" text-anchor="middle" class="lane-title">INTERNAL BACKEND NETWORK · 无 host 端口 · 无外发默认路由</text>
 
-  <!-- Internal network container -->
-  <rect x="300" y="110" width="640" height="560" rx="14" fill="#101c31" stroke="#2d4160" stroke-dasharray="7 5"/>
-  <text x="620" y="136" text-anchor="middle" fill="#4f8ff7" font-size="13" font-weight="600">internal backend network（仅内部 · 无 host 端口 · 无外发默认路由）</text>
-
-  <!-- Policy Gateway -->
-  <rect x="340" y="160" width="260" height="110" rx="10" fill="#16233c" stroke="#4f8ff7"/>
-  <text x="470" y="188" text-anchor="middle" fill="#e8eef7" font-size="15" font-weight="600">Policy Gateway</text>
-  <text x="470" y="204" text-anchor="middle" fill="#4f8ff7" font-size="10">容器: policy-gateway</text>
-  <text x="470" y="218" text-anchor="middle" fill="#8aa2c8" font-size="11">ALLOW / DENY / ERROR · fail-closed</text>
-  <text x="470" y="234" text-anchor="middle" fill="#8aa2c8" font-size="11">L2 approval 票据（高危合并强制人工审批）</text>
-  <text x="470" y="250" text-anchor="middle" fill="#8aa2c8" font-size="11">mcp_calls INSERT-only 审计</text>
-
-  <!-- Controller -->
-  <rect x="340" y="310" width="260" height="100" rx="10" fill="#16233c" stroke="#2d4160"/>
-  <text x="470" y="338" text-anchor="middle" fill="#e8eef7" font-size="15" font-weight="600">Controller</text>
-  <text x="470" y="354" text-anchor="middle" fill="#4f8ff7" font-size="10">容器: controller</text>
-  <text x="470" y="370" text-anchor="middle" fill="#8aa2c8" font-size="11">状态机 + Outbox + 事件去重 / 恢复</text>
-  <text x="470" y="386" text-anchor="middle" fill="#8aa2c8" font-size="11">MCP orchestration（最小权限调用编排）</text>
-  <text x="470" y="402" text-anchor="middle" fill="#8aa2c8" font-size="11">阶段推进 / drift 检测 / rollback 触发</text>
-
-  <!-- PostgreSQL -->
-  <rect x="640" y="160" width="270" height="250" rx="10" fill="#16233c" stroke="#38d9a9"/>
-  <text x="775" y="188" text-anchor="middle" fill="#e8eef7" font-size="15" font-weight="600">PostgreSQL（审计状态库）</text>
-  <text x="775" y="204" text-anchor="middle" fill="#38d9a9" font-size="10">容器: postgres（pgvector，digest 固定）</text>
-  <text x="775" y="222" text-anchor="middle" fill="#8aa2c8" font-size="11">task_runs / stage_runs / mcp_calls</text>
-  <text x="775" y="238" text-anchor="middle" fill="#8aa2c8" font-size="11">approvals / rollback_runs / audit_events</text>
-  <text x="775" y="254" text-anchor="middle" fill="#8aa2c8" font-size="11">revision_bindings（不可变 base/head SHA）</text>
-  <rect x="660" y="268" width="230" height="120" rx="8" fill="#0f2b22" stroke="#1a5c48"/>
-  <text x="775" y="292" text-anchor="middle" fill="#38d9a9" font-size="12" font-weight="600">只读 snapshot 通道</text>
-  <text x="775" y="314" text-anchor="middle" fill="#8aa2c8" font-size="11">mergepilot_reader 角色（SELECT-only）</text>
-  <text x="775" y="332" text-anchor="middle" fill="#8aa2c8" font-size="11">REPEATABLE READ READ ONLY 事务</text>
-  <text x="775" y="350" text-anchor="middle" fill="#8aa2c8" font-size="11">身份/环境/权限多重 fail-closed 校验</text>
-  <text x="775" y="368" text-anchor="middle" fill="#8aa2c8" font-size="11">schema 校验 + bundle 完整性摘要</text>
-
-  <!-- demo-console -->
-  <rect x="340" y="470" width="570" height="120" rx="10" fill="#16233c" stroke="#4f8ff7"/>
-  <text x="625" y="498" text-anchor="middle" fill="#e8eef7" font-size="15" font-weight="600">Demo Console（8 页面 live 只读视图）</text>
-  <text x="625" y="514" text-anchor="middle" fill="#4f8ff7" font-size="10">容器: demo-console（内部未发布 · DSN 仅经 secret 文件）</text>
-  <text x="625" y="530" text-anchor="middle" fill="#8aa2c8" font-size="11">overview · timeline · findings · rag · trace · safety · evidence · benchmark</text>
-  <text x="625" y="548" text-anchor="middle" fill="#8aa2c8" font-size="11">单一共享 snapshot · 单 GET /api/live/status + /api/live/snapshot · 单刷新定时器</text>
-  <text x="625" y="566" text-anchor="middle" fill="#8aa2c8" font-size="11">失败永不回落到静态/伪造数据（fail-closed 刷新引擎）</text>
-
-  <!-- preflight (one-shot startup gate) — inside the internal network,
-       in the gap between PostgreSQL (ends y=410) and Demo Console (y=470) -->
-  <rect id="preflight-box" x="640" y="420" width="270" height="44" rx="8" fill="#16233c" stroke="#38d9a9" stroke-dasharray="5 3"/>
-  <text x="775" y="438" text-anchor="middle" fill="#e8eef7" font-size="12" font-weight="600">Preflight 启动门禁（一次性容器: preflight）</text>
-  <text x="775" y="456" text-anchor="middle" fill="#8aa2c8" font-size="10">10 门检查 · 输出 PREFLIGHT_OK 才视为栈就绪</text>
-
-  <!-- Deterministic seed -->
-  <rect x="660" y="470" width="0" height="0" fill="none"/>
-  <g>
-    <rect x="980" y="170" width="180" height="120" rx="10" fill="#241d33" stroke="#8f6ff7" stroke-dasharray="6 4"/>
-    <text x="1070" y="198" text-anchor="middle" fill="#c9b8ff" font-size="13" font-weight="600">Deterministic</text>
-    <text x="1070" y="216" text-anchor="middle" fill="#c9b8ff" font-size="13" font-weight="600">showcase seed</text>
-    <text x="1070" y="238" text-anchor="middle" fill="#8aa2c8" font-size="10">showcase-only · 仅演示</text>
-    <text x="1070" y="254" text-anchor="middle" fill="#8aa2c8" font-size="10">非外部客户数据 · 非生产证据</text>
-    <text x="1070" y="270" text-anchor="middle" fill="#8aa2c8" font-size="10">INSERT-only · 重放幂等</text>
+  <g id="pr-entry">
+    <rect x="40" y="205" width="180" height="110" rx="12" class="box"/>
+    <text x="130" y="237" text-anchor="middle" class="node-title">PR / 开发者入口</text>
+    <text x="130" y="263" text-anchor="middle" class="node-body">受保护分支与路径变更</text>
+    <text x="130" y="286" text-anchor="middle" class="node-body">showcase seed 模拟输入</text>
   </g>
 
-  <!-- Publication bridge -->
-  <rect x="970" y="470" width="200" height="120" rx="14" fill="#101c31" stroke="#2d4160" stroke-dasharray="7 5"/>
-  <text x="1070" y="496" text-anchor="middle" fill="#4f8ff7" font-size="12" font-weight="600">publication bridge</text>
-  <rect x="990" y="510" width="160" height="62" rx="10" fill="#16233c" stroke="#f7b84f"/>
-  <text x="1070" y="530" text-anchor="middle" fill="#e8eef7" font-size="13" font-weight="600">console-edge</text>
-  <text x="1070" y="544" text-anchor="middle" fill="#f7b84f" font-size="9">容器: console-edge（唯一被发布）</text>
-  <text x="1070" y="558" text-anchor="middle" fill="#8aa2c8" font-size="10">无密钥 · 固定单一上游代理</text>
-  <text x="1070" y="570" text-anchor="middle" fill="#8aa2c8" font-size="10">GET 白名单 · 路径/Host 白名单</text>
+  <g id="policy-gateway">
+    <rect x="300" y="175" width="270" height="135" rx="12" class="box-blue"/>
+    <text x="435" y="207" text-anchor="middle" class="node-title">Policy Gateway</text>
+    <text x="435" y="230" text-anchor="middle" class="node-meta">policy-gateway</text>
+    <text x="435" y="255" text-anchor="middle" class="node-body">ALLOW / DENY / ERROR · fail-closed</text>
+    <text x="435" y="278" text-anchor="middle" class="node-body">L2 approval · INSERT-only audit</text>
+  </g>
 
-  <!-- Browser -->
-  <rect x="990" y="640" width="160" height="70" rx="10" fill="#16233c" stroke="#2d4160"/>
-  <text x="1070" y="670" text-anchor="middle" fill="#e8eef7" font-size="13" font-weight="600">浏览器（演示）</text>
-  <text x="1070" y="690" text-anchor="middle" fill="#8aa2c8" font-size="10">127.0.0.1:8600（仅 loopback）</text>
+  <g id="controller">
+    <rect x="300" y="350" width="270" height="135" rx="12" class="box"/>
+    <text x="435" y="382" text-anchor="middle" class="node-title">Controller</text>
+    <text x="435" y="405" text-anchor="middle" class="node-meta">controller</text>
+    <text x="435" y="430" text-anchor="middle" class="node-body">状态机 · Outbox · 幂等恢复</text>
+    <text x="435" y="453" text-anchor="middle" class="node-body">MCP orchestration · drift / rollback</text>
+  </g>
 
-  <!-- Edges -->
-  <line x1="230" y1="183" x2="336" y2="200" stroke="#8aa2c8" stroke-width="1.6" marker-end="url(#arr)"/>
-  <text x="283" y="172" text-anchor="middle" fill="#5b6f8f" font-size="10">变更请求</text>
-  <line x1="470" y1="270" x2="470" y2="306" stroke="#8aa2c8" stroke-width="1.6" marker-end="url(#arr)"/>
-  <text x="500" y="292" fill="#5b6f8f" font-size="10">决策 / 票据</text>
-  <line x1="600" y1="215" x2="636" y2="215" stroke="#8aa2c8" stroke-width="1.6" marker-end="url(#arr)"/>
-  <line x1="600" y1="355" x2="636" y2="330" stroke="#8aa2c8" stroke-width="1.6" marker-end="url(#arr)"/>
-  <text x="620" y="300" fill="#5b6f8f" font-size="10" transform="rotate(-20 620 300)">读写（内部）</text>
-  <line x1="775" y1="390" x2="700" y2="466" stroke="#38d9a9" stroke-width="1.6" marker-end="url(#arr)"/>
-  <text x="812" y="436" fill="#38d9a9" font-size="10">只读 snapshot</text>
-  <line x1="980" y1="300" x2="912" y2="330" stroke="#8f6ff7" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#arrDim)"/>
-  <text x="972" y="322" fill="#8f6ff7" font-size="10">seed 注入（管理连接）</text>
-  <line x1="910" y1="530" x2="986" y2="540" stroke="#8aa2c8" stroke-width="1.6" marker-end="url(#arr)"/>
-  <text x="948" y="522" text-anchor="middle" fill="#5b6f8f" font-size="10">内部上游</text>
-  <line x1="1070" y1="574" x2="1070" y2="636" stroke="#f7b84f" stroke-width="1.6" marker-end="url(#arr)"/>
-  <text x="1105" y="608" fill="#f7b84f" font-size="10">仅 loopback 发布</text>
+  <g id="postgres-state">
+    <rect x="650" y="175" width="310" height="185" rx="12" class="box-green"/>
+    <text x="805" y="207" text-anchor="middle" class="node-title">PostgreSQL · 审计状态库</text>
+    <text x="805" y="230" text-anchor="middle" class="node-meta">postgres · pgvector · digest 固定</text>
+    <text x="805" y="255" text-anchor="middle" class="node-body">task_runs · stage_runs · mcp_calls</text>
+    <text x="805" y="278" text-anchor="middle" class="node-body">approvals · rollback_runs · audit_events</text>
+    <text x="805" y="301" text-anchor="middle" class="node-body">revision_bindings · immutable SHA facts</text>
+    <rect x="680" y="318" width="250" height="28" rx="7" fill="#0e211f" stroke="#277d65"/>
+    <text x="805" y="338" text-anchor="middle" class="node-meta">mergepilot_reader · READ ONLY snapshot</text>
+  </g>
 
-  <!-- Audit boundary -->
-  <rect x="40" y="470" width="260" height="120" rx="10" fill="#101c31" stroke="#38d9a9" stroke-dasharray="5 4"/>
-  <text x="170" y="496" text-anchor="middle" fill="#38d9a9" font-size="12" font-weight="600">audit / evidence 边界</text>
-  <text x="170" y="518" text-anchor="middle" fill="#8aa2c8" font-size="10">网关/状态机写入 = INSERT-only 审计行</text>
-  <text x="170" y="534" text-anchor="middle" fill="#8aa2c8" font-size="10">console 仅 SELECT（零写路径）</text>
-  <text x="170" y="550" text-anchor="middle" fill="#8aa2c8" font-size="10">evidence/ 目录为冻结的历史产物</text>
-  <text x="170" y="566" text-anchor="middle" fill="#8aa2c8" font-size="10">展示材料不写入 evidence/verification</text>
-  <line x1="300" y1="530" x2="336" y2="530" stroke="#38d9a9" stroke-width="1.4" stroke-dasharray="4 4" marker-end="url(#arrDim)"/>
+  <g id="demo-console">
+    <rect x="650" y="405" width="310" height="135" rx="12" class="box-blue"/>
+    <text x="805" y="437" text-anchor="middle" class="node-title">Demo Console · 8 pages</text>
+    <text x="805" y="460" text-anchor="middle" class="node-meta">demo-console · internal only</text>
+    <text x="805" y="485" text-anchor="middle" class="node-body">shared snapshot · status + snapshot GET</text>
+    <text x="805" y="508" text-anchor="middle" class="node-body">live refresh · fail-closed · read-only</text>
+  </g>
 
-  <!-- Annotations -->
-  <rect id="boundary-annotations" x="40" y="640" width="880" height="180" rx="10" fill="#0f1a2e" stroke="#2d4160"/>
-  <text x="60" y="668" fill="#f7b84f" font-size="13" font-weight="600">边界与诚实标注</text>
-  <text x="60" y="694" fill="#c8d4e8" font-size="12">1. console-edge 是发布管线（publication plumbing），不是第五个应用服务，也不构成 application integration。</text>
-  <text x="60" y="718" fill="#c8d4e8" font-size="12">2. deterministic showcase seed 仅为确定性合成数据 —— 不是外部客户数据，不是生产证据；直插 seed 不验证任何 producer 合同。</text>
-  <text x="60" y="742" fill="#c8d4e8" font-size="12">3. M8-A1（事件摄取机制）不等于 revision producer integration；revision_producer_contract = NOT_VERIFIED。</text>
-  <text x="60" y="766" fill="#c8d4e8" font-size="12">4. 生产验证未完成：application_integration_verified=false · database_verified=false · production_verified=false。</text>
-  <text x="60" y="790" fill="#8aa2c8" font-size="11">本图展示的是隔离演示拓扑，不是生产部署、云架构或多租户系统。</text>
+  <g id="preflight">
+    <rect id="preflight-box" x="300" y="560" width="660" height="58" rx="11" class="box-green" stroke-dasharray="6 4"/>
+    <text x="630" y="586" text-anchor="middle" class="node-title">Preflight · one-shot startup gate</text>
+    <text x="630" y="607" text-anchor="middle" class="node-body">10 contract checks · PREFLIGHT_OK before the stack is considered ready</text>
+  </g>
+
+  <g id="showcase-seed">
+    <rect x="1060" y="165" width="225" height="130" rx="12" class="box-purple"/>
+    <text x="1172" y="198" text-anchor="middle" class="node-title">Deterministic seed</text>
+    <text x="1172" y="222" text-anchor="middle" class="node-meta">showcase-only</text>
+    <text x="1172" y="247" text-anchor="middle" class="node-body">非外部客户数据</text>
+    <text x="1172" y="270" text-anchor="middle" class="node-body">非生产证据 · 重放幂等</text>
+  </g>
+
+  <rect id="publication-boundary" x="1040" y="370" width="280" height="280" rx="18" class="boundary"/>
+  <text x="1180" y="397" text-anchor="middle" class="lane-title">LOOPBACK PUBLICATION</text>
+  <g id="console-edge">
+    <rect x="1070" y="420" width="220" height="110" rx="12" class="box-orange"/>
+    <text x="1180" y="451" text-anchor="middle" class="node-title">console-edge</text>
+    <text x="1180" y="474" text-anchor="middle" class="node-meta">publication plumbing</text>
+    <text x="1180" y="499" text-anchor="middle" class="node-body">fixed upstream · no secrets</text>
+    <text x="1180" y="520" text-anchor="middle" class="node-body">GET path + Host allowlists</text>
+  </g>
+  <g id="browser">
+    <rect x="1070" y="565" width="220" height="65" rx="12" class="box"/>
+    <text x="1180" y="593" text-anchor="middle" class="node-title">Browser · demo only</text>
+    <text x="1180" y="616" text-anchor="middle" class="node-body">127.0.0.1:8600 · loopback</text>
+  </g>
+
+  <g id="audit-boundary">
+    <rect x="40" y="405" width="180" height="145" rx="12" class="box-green" stroke-dasharray="6 4"/>
+    <text x="130" y="437" text-anchor="middle" class="node-title">Audit boundary</text>
+    <text x="130" y="462" text-anchor="middle" class="node-body">INSERT-only writes</text>
+    <text x="130" y="485" text-anchor="middle" class="node-body">console SELECT-only</text>
+    <text x="130" y="508" text-anchor="middle" class="node-body">materials ≠ evidence</text>
+    <text x="130" y="531" text-anchor="middle" class="node-body">verification frozen</text>
+  </g>
+
+  <path d="M220 260 H295" class="line"/>
+  <text x="258" y="247" text-anchor="middle" class="edge-label">change request</text>
+  <path d="M435 310 V345" class="line"/>
+  <text x="450" y="333" class="edge-label">decision</text>
+  <path d="M570 242 H645" class="line"/>
+  <text x="607" y="228" text-anchor="middle" class="edge-label">audit facts</text>
+  <path d="M570 417 C610 417 610 330 645 315" class="line"/>
+  <text x="605" y="370" text-anchor="middle" class="edge-label">state</text>
+  <path d="M805 360 V400" class="line-green"/>
+  <text x="820" y="385" class="edge-label">read-only snapshot</text>
+  <path d="M960 472 H1065" class="line"/>
+  <text x="1012" y="458" text-anchor="middle" class="edge-label">internal upstream</text>
+  <path d="M1180 530 V560" class="line"/>
+  <path d="M1060 230 H965" class="line-dashed"/>
+  <text x="1012" y="216" text-anchor="middle" class="edge-label">seed injection</text>
+  <path d="M220 475 H645" stroke="#38d9a9" stroke-width="1.7" stroke-dasharray="6 5" fill="none" marker-end="url(#arrow-green)"/>
+
+  <g id="boundary-annotations">
+    <rect x="40" y="690" width="1280" height="180" rx="14" class="box"/>
+    <text x="65" y="720" class="note-title">Truth boundaries · 不是生产部署、云架构或多租户系统</text>
+    <text x="65" y="748" class="note">1 · console-edge 是 publication plumbing，不是第五个应用服务，也不构成 application integration。</text>
+    <text x="65" y="772" class="note">2 · Deterministic showcase seed 是合成数据，不是外部客户数据，不是生产证据。</text>
+    <text x="65" y="796" class="note">3 · M8-A1 event ingestion machinery 不等于 revision producer integration。</text>
+    <text x="65" y="820" class="note">4 · revision_producer_contract=NOT_VERIFIED · audit_producer_contract=NOT_VERIFIED。</text>
+    <text x="65" y="844" class="note">5 · application_integration_verified=false · database_verified=false · production_verified=false。</text>
+  </g>
 </svg>
