@@ -1,6 +1,6 @@
 # MergePilot 演示脚本（5 分钟）
 
-> 配套材料：[README](../../README.md) · [架构图](architecture.svg) · [8 页面桌面截图](screenshots/)（desktop-01…08）· [移动截图](screenshots/)（mobile-01…04）
+> 配套材料：[README](../../README.md) · [架构图](architecture.svg) · [8 页面桌面截图](presentation/)（desktop-01…08 @2x）· [移动截图](presentation/)（mobile-01…04 @2x）
 > 演示环境：隔离六容器栈（postgres / policy-gateway / controller / demo-console / console-edge / preflight），控制台地址 `http://127.0.0.1:8600`（仅 loopback）。
 > **开场先读**：所有案例数据来自 **deterministic showcase seed —— 非外部客户数据、非生产证据**。
 
