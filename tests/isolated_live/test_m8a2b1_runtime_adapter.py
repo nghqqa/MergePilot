@@ -400,6 +400,55 @@ class TestCandidateTaskSubmittedRouting(unittest.TestCase):
         self.assertLess(sender_pos, route_pos)
 
 
+class TestTaskSubmittedBehavior(unittest.TestCase):
+    """Behavioral proof for the candidate TASK_SUBMITTED routing (M8-A2):
+    only ADMIN creates task_runs, others fall through fail-closed, and a
+    duplicate event_id is a no-op (zero growth)."""
+
+    TASK_BODY = ('TASK_SUBMITTED: {"run_id": "m5live-task-001", '
+                 '"repo": "test/repo", "pr_number": 42, '
+                 '"branch": "fix/demo"}')
+
+    def _run(self, sender_localpart, event_id="$evt-task-001", inserted=True):
+        conn, cursor = _make_mock_conn(inserted=inserted)
+        raw = "@%s:matrix-local.hiclaw.io:18080" % sender_localpart
+        with patch.object(ctrl, 'ensure_pg', return_value=conn), \
+             patch.object(ctrl, 'M4F_ONLY_MODE', True), \
+             patch.object(ctrl, 'M4F_ENABLED', True), \
+             patch.object(ctrl, 'ADMIN', 'admin'):
+            ctrl.process_event(event_id, _ROOM, raw, sender_localpart,
+                               self.TASK_BODY, 1700000000000)
+        return conn, cursor
+
+    def _task_inserts(self, cursor):
+        return [c for c in cursor.execute.call_args_list
+                if 'INSERT INTO task_runs' in str(c)]
+
+    def test_admin_creates_task_run(self):
+        _, cursor = self._run("admin")
+        inserts = self._task_inserts(cursor)
+        self.assertEqual(len(inserts), 1,
+                         "allowlisted admin must create exactly one task_run")
+        self.assertIn("m5live-task-001", str(inserts[0]))
+
+    def test_manager_cannot_create_task_run(self):
+        _, cursor = self._run("manager")
+        self.assertEqual(self._task_inserts(cursor), [],
+                         "manager must not create task_runs via TASK_SUBMITTED")
+
+    def test_wrong_sender_cannot_create_task_run(self):
+        _, cursor = self._run("reviewer")
+        self.assertEqual(self._task_inserts(cursor), [],
+                         "non-admin sender must not create task_runs")
+
+    def test_duplicate_event_id_is_zero_growth(self):
+        _, first = self._run("admin", event_id="$evt-dup-001", inserted=True)
+        self.assertEqual(len(self._task_inserts(first)), 1)
+        _, replay = self._run("admin", event_id="$evt-dup-001", inserted=False)
+        self.assertEqual(self._task_inserts(replay), [],
+                         "duplicate event_id must not insert again")
+
+
 # ── supplementary: PAT_M4F regex correctness ──────────────────────────────
 
 class TestPatM4FRegex(unittest.TestCase):
