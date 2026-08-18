@@ -13,8 +13,10 @@
   PG_DATABASE(mergepilot_audit), PG_USER(mergepilot), MATRIX_HS(hiclaw-controller:6167)
 """
 import os, sys, json, time, re, hashlib, uuid, psycopg2, urllib.request, urllib.error
+from pathlib import Path
 
 import m4f_ingress
+from task_submit import EventSource, SubmitTaskError, TaskSubmission, submit_task
 
 # ── 配置 ──
 ADMIN   = "admin"
@@ -1260,22 +1262,25 @@ def process_event(event_id, room_id, raw_sender, sender, body, ts):
             run_id = payload.get("run_id", "")
             if not run_id:
                 mark_error(cur, event_id, "no run_id"); conn.commit(); return
-            cur.execute("""INSERT INTO task_runs(run_id, room_id, repo, pr_number, branch, status, current_stage, approval_required)
-                           VALUES(%s, %s, %s, %s, %s, 'RUNNING', 'review', %s)
-                           ON CONFLICT(run_id) DO NOTHING""", (
-                run_id, room_id, payload.get("repo"), payload.get("pr_number"), payload.get("branch"), L2_MERGE_ENABLED))
-            cur.execute("""INSERT INTO stage_runs(run_id, stage, agent, attempt, status, started_at)
-                           VALUES(%s, 'review', 'reviewer', 1, 'PENDING_DISPATCH', now())
-                           ON CONFLICT(run_id, stage, attempt) DO NOTHING""", (run_id,))
-            cur.execute("""INSERT INTO dispatch_outbox(idempotency_key, run_id, room_id, target_agent, target_stage, attempt, body)
-                           VALUES(%s, %s, %s, 'reviewer', 'review', 1, %s)
-                           ON CONFLICT(idempotency_key) DO NOTHING""", (
-                f"{run_id}:review:1", run_id, room_id,
-                f"请审查 {payload.get('repo','')} PR#{payload.get('pr_number','')} (分支 {payload.get('branch','')})。用 gh-mcp-read.sh + sast-scan,findings 写 shared/tasks/{run_id}-review/findings.md。完成写 TASK_COMPLETED: {run_id}-review。"))
+            # M8-GH-1: 三表落库提取为 channel-neutral submit_task(唯一 SQL 实现)。
+            # Matrix 通道门:gh- 命名空间保留给 GitHub 派生 run_id(submit_task 内
+            # 纵深断言 RUN_ID_NAMESPACE_RESERVED → mark_error,零工作流写入)。
+            submission = TaskSubmission(
+                run_id=run_id, room_id=room_id, repo=payload.get("repo"),
+                pr_number=payload.get("pr_number"),
+                branch=payload.get("branch"),
+                approval_required=L2_MERGE_ENABLED,
+                dispatch_body=(
+                    f"请审查 {payload.get('repo','')} PR#{payload.get('pr_number','')} (分支 {payload.get('branch','')})。"
+                    f"用 gh-mcp-read.sh + sast-scan,findings 写 shared/tasks/{run_id}-review/findings.md。"
+                    f"完成写 TASK_COMPLETED: {run_id}-review。"))
+            result = submit_task(conn, submission, EventSource(
+                channel="matrix", event_id=event_id,
+                sender_identity=raw_sender))
             mark_processed(cur, event_id)
             update_event_meta(cur, event_id, run_id, "review")
             conn.commit()
-            print(f"[ctrl] TASK_SUBMITTED {run_id} → task_run + review PENDING_DISPATCH")
+            print(f"[ctrl] TASK_SUBMITTED {run_id} → task_run + review PENDING_DISPATCH ({result.outcome})")
         except Exception as e:
             conn.rollback()
             mark_error(cur, event_id, str(e)); conn.commit()
@@ -3011,6 +3016,19 @@ def process_rollback_advance(deadline=None):
 #   域 B(Matrix):login/consume/dispatch —— 独立;Matrix 不可用不阻断 L2 恢复。
 def run_forever():
     backoff = 1
+    # M8-GH-1(可选启用,默认关): GitHub delivery drain + Checks desired
+    # reconcile。room map 与 policy allowlist 1:1 失配 → 拒绝启动(fail-closed)。
+    github_ingress_cfg = None
+    if os.environ.get("GITHUB_INGRESS_ENABLED", "") == "1":
+        import github_drain
+        github_ingress_cfg = github_drain.load_github_ingress_config(
+            os.environ.get("GITHUB_ROOM_MAP",
+                           str(Path(__file__).resolve().parent.parent.parent
+                               / "config" / "gh-app" / "room-map.yaml")),
+            os.environ.get("GITHUB_POLICY_PATH",
+                           str(Path(__file__).resolve().parent.parent.parent
+                               / "tools" / "policy-gateway" / "policy.yaml")))
+        print("[ctrl][M8GH] github ingress enabled; room map aligned")
     if M4F_ONLY_MODE:
         print(f"[ctrl][M5-0] Candidate 启动;PG={PG_HOST}:{PG_PORT};Matrix={MATRIX_HS} user={MATRIX_USER};"
               f"consumer={CONTROLLER_CONSUMER_NAME};prefix={M4F_RUN_PREFIX};POLL={POLL_INTERVAL}s")
@@ -3068,6 +3086,14 @@ def run_forever():
         try:
             ensure_pg()
             drain_m4f_events(max_items=1)
+            if github_ingress_cfg is not None:
+                # M8-GH-1: GitHub delivery drain(claim CAS)→ submit_task;
+                # 随后 upsert Checks desired(不发 HTTP)。失败沿本域退避。
+                import github_drain
+                github_drain.drain_github_deliveries(
+                    ensure_pg, config=github_ingress_cfg, max_items=1,
+                    approval_required=L2_MERGE_ENABLED)
+                github_drain.reconcile_github_checks(ensure_pg)
             l2_deadline = time.monotonic() + L2_MAINTENANCE_BUDGET_SECONDS   # B4c.1 单循环工作预算(共享)
             l2_budget = [L2_MAINTENANCE_MAX_ITEMS]   # B4c.1.3:每 tick 共享 item 预算(整轮硬边界,跨阶段)
             initiate_l2_pending(l2_deadline, l2_budget)

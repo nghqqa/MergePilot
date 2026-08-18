@@ -23,6 +23,12 @@ COPY tools/workflow-controller/controller.py /app/controller.py
 COPY tools/workflow-controller/gateway_client.py /app/gateway_client.py
 COPY tools/workflow-controller/m4f_controller.py /app/m4f_controller.py
 COPY tools/workflow-controller/m4f_ingress.py /app/m4f_ingress.py
+# M8-GH-1: channel-neutral TASK_SUBMITTED three-table single implementation
+# (top-level import of controller.py).
+COPY tools/workflow-controller/task_submit.py /app/task_submit.py
+# M8-GH-1 (opt-in): GitHub delivery drain + Checks desired reconcile
+# (lazily imported by controller.py when GITHUB_INGRESS_ENABLED=1).
+COPY tools/workflow-controller/github_drain.py /app/github_drain.py
 # Retry v3 Fix 3: healthcheck probe (TCP to the configured PostgreSQL) and
 # the entrypoint validating the extracted env contract (PG_HOST/PG_PORT/
 # PG_DATABASE/PG_USER + secret PG_PASS/ADMIN_PW presence) with a stable
