@@ -78,6 +78,15 @@ class TestSoulAssetContracts(unittest.TestCase):
                           "42176c6d", "e2e/calc.py"):
             self.assertNotIn(forbidden, all_assets, forbidden)
 
+    def test_manager_contract_no_legacy_bash_entry(self):
+        """PR-192 fix: the Manager state machine must never instruct workers
+        to use the retired bash helpers; current python entries are pinned."""
+        self.assertNotIn("gh-mcp-read.sh", MGR)
+        self.assertNotIn("gh-mcp-fix.sh", MGR)
+        self.assertIn("gh_read.py", MGR)
+        self.assertIn("gh_fix_branch.py", MGR)
+        self.assertNotIn(u"新建分支/新 PR", MGR.replace(u"不新建分支/新 PR", u""))
+
     def test_manager_contract_semantics(self):
         self.assertIn("VERDICT=PASS", MGR)
         self.assertIn("M4F_RUN", MGR)

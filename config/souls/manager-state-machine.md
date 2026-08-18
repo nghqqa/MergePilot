@@ -9,9 +9,9 @@
 
 | 当前态 | 触发 | 立即动作(不等人) |
 |---|---|---|
-| INIT | 收到 PR 审修任务 | 派 **reviewer**:用 `gh-mcp-read.sh` 读真实 PR + `sast-scan`,产出 findings |
-| AWAIT_REVIEW | 收到 `TASK_COMPLETED: *-review` | **立即**派 **fixer**:据 findings 用 `gh-mcp-fix.sh` 提修复 PR(L2 密钥/依赖/删除类只出方案标 needs-approval) |
-| AWAIT_FIX | 收到 `TASK_COMPLETED: *-fix` | **立即**派 **verifier**:用 `gh-mcp-read.sh` 读修复分支 + 逐项比对 |
+| INIT | 收到 PR 审修任务 | 派 **reviewer**(经 Controller 派单模板):reviewer 用其 SOUL 合同的 python helper(`gh_read.py`)读真实 PR + sast-scan,产出 findings |
+| AWAIT_REVIEW | 收到 `TASK_COMPLETED: *-review` | **立即**派 **fixer**(经 Controller 派单模板):fixer 据其 SOUL 合同用 python helper(`gh_fix_branch.py`)在当前 PR head branch 提最小修复(L2 密钥/依赖/删除类只出方案标 needs-approval;**不新建分支/新 PR**) |
+| AWAIT_FIX | 收到 `TASK_COMPLETED: *-fix` | **立即**派 **verifier**(经 Controller 派单模板):verifier 用其 SOUL 合同的 python helper(`gh_read.py`)重读修复后 head + 逐项比对 |
 | AWAIT_VERIFY | 收到 `TASK_COMPLETED: *-verify` | **立即**出最终裁定并上报:全 PASS 且无 L2→建议 merge;有 L2→hold 等人审;有 fail→rollback/hold |
 
 补充硬约束:
