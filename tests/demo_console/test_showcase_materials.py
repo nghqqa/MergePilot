@@ -291,13 +291,20 @@ class TestReadmeStructure(unittest.TestCase):
 
     def test_truth_boundaries_are_frozen(self):
         for value in ("application_integration_verified=false",
-                      "database_verified=false", "production_verified=false",
+                      "database_verified=false",
+                      "production_verified=false",
                       "revision_producer_contract=NOT_VERIFIED",
                       "audit_producer_contract=NOT_VERIFIED"):
             self.assertIn(value, README_TEXT)
-        # M8-A2-a status: accurate current wording, not the stale "not implemented"
+        # M8-A2 status: accurate current wording, not the stale "not
+        # implemented". A2-a: isolated six-container fixture. A2-b: real
+        # Manager producer demonstrated in the isolated stack (operator-
+        # instructed byte-exact relay); remaining boundaries pinned below.
         self.assertIn("M8-A2-a 已通过隔离六容器 fixture 验证", README_TEXT)
-        self.assertIn("完整外部 producer integration 尚未完成", README_TEXT)
+        self.assertIn("M8-A2-b", README_TEXT)
+        self.assertIn("不是自主任务分解", README_TEXT)
+        self.assertIn("handoff 回路）尚未真实演示", README_TEXT)
+        self.assertIn("M8-A2-c", README_TEXT)
         self.assertNotIn("M8-A2 尚未实现", README_TEXT)
         self.assertIn(
             "AgentTeams 仍是多 Agent 协同与任务编排基座",

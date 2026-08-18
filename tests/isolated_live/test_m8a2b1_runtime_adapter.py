@@ -368,6 +368,87 @@ class TestNoDirectGovernanceWrites(unittest.TestCase):
                       CTRL_SOURCE)
 
 
+# ── M8-A2 candidate-mode TASK_SUBMITTED routing ──────────────────────────
+
+class TestCandidateTaskSubmittedRouting(unittest.TestCase):
+    """M8-A2: candidate mode has no task_runs producer of its own, so the
+    /sync filter must route TASK_SUBMITTED from allowlisted senders into
+    process_event (which still enforces sender==ADMIN and idempotent INSERT).
+    Verified live against the real Matrix homeserver during the M8-A2 E2E."""
+
+    def _candidate_branch(self):
+        """Source of the candidate /sync branch inside consume_events."""
+        sync_src = CTRL_SOURCE.split("def consume_events", 1)[1]
+        return sync_src.split("if M4F_ONLY_MODE:", 1)[1].split(
+            "# Legacy mode:", 1)[0]
+
+    def test_candidate_filter_routes_task_submitted(self):
+        # The M4F_ONLY_MODE branch routes TASK_SUBMITTED to process_event
+        # before the fall-through "skip all other event types" continue.
+        tail = self._candidate_branch()
+        self.assertIn('body.lstrip().startswith("TASK_SUBMITTED:")', tail)
+        self.assertIn(
+            "process_event(eid, room_id, raw_sender, sender, body, ts)", tail
+        )
+
+    def test_routing_still_gated_on_allowlisted_sender(self):
+        # The routing sits after verify_m5_sender, so a non-allowlisted
+        # sender never reaches process_event in candidate mode.
+        tail = self._candidate_branch()
+        sender_pos = tail.index("verify_m5_sender")
+        route_pos = tail.index('body.lstrip().startswith("TASK_SUBMITTED:")')
+        self.assertLess(sender_pos, route_pos)
+
+
+class TestTaskSubmittedBehavior(unittest.TestCase):
+    """Behavioral proof for the candidate TASK_SUBMITTED routing (M8-A2):
+    only ADMIN creates task_runs, others fall through fail-closed, and a
+    duplicate event_id is a no-op (zero growth)."""
+
+    TASK_BODY = ('TASK_SUBMITTED: {"run_id": "m5live-task-001", '
+                 '"repo": "test/repo", "pr_number": 42, '
+                 '"branch": "fix/demo"}')
+
+    def _run(self, sender_localpart, event_id="$evt-task-001", inserted=True):
+        conn, cursor = _make_mock_conn(inserted=inserted)
+        raw = "@%s:matrix-local.hiclaw.io:18080" % sender_localpart
+        with patch.object(ctrl, 'ensure_pg', return_value=conn), \
+             patch.object(ctrl, 'M4F_ONLY_MODE', True), \
+             patch.object(ctrl, 'M4F_ENABLED', True), \
+             patch.object(ctrl, 'ADMIN', 'admin'):
+            ctrl.process_event(event_id, _ROOM, raw, sender_localpart,
+                               self.TASK_BODY, 1700000000000)
+        return conn, cursor
+
+    def _task_inserts(self, cursor):
+        return [c for c in cursor.execute.call_args_list
+                if 'INSERT INTO task_runs' in str(c)]
+
+    def test_admin_creates_task_run(self):
+        _, cursor = self._run("admin")
+        inserts = self._task_inserts(cursor)
+        self.assertEqual(len(inserts), 1,
+                         "allowlisted admin must create exactly one task_run")
+        self.assertIn("m5live-task-001", str(inserts[0]))
+
+    def test_manager_cannot_create_task_run(self):
+        _, cursor = self._run("manager")
+        self.assertEqual(self._task_inserts(cursor), [],
+                         "manager must not create task_runs via TASK_SUBMITTED")
+
+    def test_wrong_sender_cannot_create_task_run(self):
+        _, cursor = self._run("reviewer")
+        self.assertEqual(self._task_inserts(cursor), [],
+                         "non-admin sender must not create task_runs")
+
+    def test_duplicate_event_id_is_zero_growth(self):
+        _, first = self._run("admin", event_id="$evt-dup-001", inserted=True)
+        self.assertEqual(len(self._task_inserts(first)), 1)
+        _, replay = self._run("admin", event_id="$evt-dup-001", inserted=False)
+        self.assertEqual(self._task_inserts(replay), [],
+                         "duplicate event_id must not insert again")
+
+
 # ── supplementary: PAT_M4F regex correctness ──────────────────────────────
 
 class TestPatM4FRegex(unittest.TestCase):

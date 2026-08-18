@@ -175,8 +175,8 @@ python -m pytest -q tests/demo_console tests/isolated_live tests/verification --
 - `production_verified=false`
 - `revision_producer_contract=NOT_VERIFIED`
 - `audit_producer_contract=NOT_VERIFIED`
-- M8-A1 是 event ingestion machinery，不等于 revision producer integration；M8-A2-a 已通过隔离六容器 fixture 验证，完整外部 producer integration 尚未完成。
-- AgentTeams 仍是多 Agent 协同与任务编排基座；本次 fixture E2E 仅验证 MergePilot 控制面，真实 AgentTeams producer integration 尚未完成。
+- M8-A1 是 event ingestion machinery，不等于 revision producer integration；M8-A2-a 已通过隔离六容器 fixture 验证（11 PASS / 0 FAIL）；M8-A2-b 于 2026-08-18 在本机隔离栈（真实 hiclab Matrix homeserver + 真实 GitHub PR + 真实 Policy Gateway 审计 + 隔离 PostgreSQL）完成收口——**这是隔离环境验证，不是生产验证**：先以 @admin producer 零种子跑通全链，再由真实 AgentTeams Manager（hiclab v1.2.2 内 DeepSeek/OpenClaw 运行时）在 operator 指令下逐字转发 M4F_RUN 契约消息（从 Manager 自身 Matrix 身份发出，真实 event，经 Candidate 严格解析器逐字校验），Gateway 产生 RESULT/ALLOW/OK provenance（run_id+git_sha），bind_revision → snapshot → 六 Skill DAG 入队；负面与幂等路径实测通过。
+- AgentTeams 仍是多 Agent 协同与任务编排基座。Manager 的 OpenClaw/LLM 运行时处理 operator 指令并从自身 Matrix 身份发送消息——本轮是 operator 指令下的精确转发，不是自主任务分解；Worker 侧（reviewer/fixer/verifier 的 TASK_COMPLETED handoff 回路）尚未真实演示。producer 停摆时 MergePilot 保持 fail-closed（无 M4F_RUN 则无任何 bind/snapshot 动作）；producer timeout/HOLD 可观测性未实现，列为后续 M8-A2-c。
 
 Showcase 是隔离栈上的确定性演示，不可外推为生产或真实客户验证；showcase material 不写入 `evidence/` 或 `verification/`。不声称完整 WCAG 合规，键盘导航、reduced-motion 与 browser console 保留 PR‑V1 的 residual validation 披露。
 
