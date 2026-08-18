@@ -175,8 +175,8 @@ python -m pytest -q tests/demo_console tests/isolated_live tests/verification --
 - `production_verified=false`
 - `revision_producer_contract=NOT_VERIFIED`
 - `audit_producer_contract=NOT_VERIFIED`
-- M8-A1 是 event ingestion machinery，不等于 revision producer integration；M8-A2-a 已通过隔离六容器 fixture 验证（11 PASS / 0 FAIL）；M8-A2-b 于 2026-08-18 在本机真实环境（真实 GitHub PR、真实 Policy Gateway 审计、真实 Matrix homeserver、隔离 PostgreSQL）零种子跑通 TASK_SUBMITTED → M4F_RUN → Gateway provenance → bind_revision → snapshot → 六 Skill DAG 入队，负面与幂等路径同日实测通过。
-- AgentTeams 仍是多 Agent 协同与任务编排基座；真实 AgentTeams Manager 运行时已在本机 hiclab 栈验证到 LLM 调用（房间加入、mention 唤醒、agent 应答管道），但 LLM API key 失效导致 Manager 产出的 M4F_RUN 尚未在真实环境演示——该 producer 路径目前由单元合同测试覆盖，不算完成。
+- M8-A1 是 event ingestion machinery，不等于 revision producer integration；M8-A2-a 已通过隔离六容器 fixture 验证（11 PASS / 0 FAIL）；M8-A2-b 于 2026-08-18 在本机真实环境完成收口：先以 @admin producer 零种子跑通全链，再由**真实 AgentTeams Manager（hiclab v1.2.2 内 DeepSeek/OpenClaw agent）**在 operator 指令下逐字产出 M4F_RUN 契约消息（真实 Matrix event，经 Candidate 严格解析器逐字校验），真实 GitHub PR、真实 Policy Gateway 审计（run_id+git_sha provenance）、隔离 PostgreSQL 上完成 bind_revision → snapshot → 六 Skill DAG 入队；负面与幂等路径实测通过。
+- AgentTeams 仍是多 Agent 协同与任务编排基座。真实 Manager producer 已在本机演示（LLM 自主决策 + 其自身 Matrix 会话发送；因果触发是 operator 的转发指令，不是自主任务分解）；Worker 侧（reviewer/fixer/verifier 的 TASK_COMPLETED handoff 回路）尚未在真实环境演示。
 
 Showcase 是隔离栈上的确定性演示，不可外推为生产或真实客户验证；showcase material 不写入 `evidence/` 或 `verification/`。不声称完整 WCAG 合规，键盘导航、reduced-motion 与 browser console 保留 PR‑V1 的 residual validation 披露。
 
