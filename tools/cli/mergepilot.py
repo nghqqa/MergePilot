@@ -1,0 +1,1704 @@
+"""MergePilot minimal local CLI — isolated-stack operator (development preview).
+
+Six commands over the ISOLATED_LIVE one-click stack contract:
+
+    mergepilot install    build the 5 local images, record real image IDs
+    mergepilot doctor     read-only environment / stack checks
+    mergepilot start      run the isolated stack end-to-end (preflight-gated)
+    mergepilot status     absent / partial / healthy classification
+    mergepilot stop       remove session containers+networks+secrets (keep images)
+    mergepilot cleanup    stop + remove verified local images + install manifest
+
+Platform boundary (v0.1, explicit): Windows 10/11 + WSL2 distro
+``MergePilot-Test`` only. No Linux/macOS/native-Windows-Docker/remote-TCP/SSH
+daemon or production support is claimed or implemented. This CLI is the local
+operator entry for the M8 isolated stack — NOT a GitHub App, NOT production
+verification, NOT a SaaS. The five repo truth boundaries stay unchanged:
+database_verified=false, application_integration_verified=false,
+production_verified=false, revision_producer_contract=NOT_VERIFIED,
+audit_producer_contract=NOT_VERIFIED.
+
+Execution contract:
+  - reuses the versioned plan generators and SecretFile transports from
+    ``tools/demo_console/one_click_startup.py`` (single source of truth);
+    NEVER imports anything from ``tests/``.
+  - every Docker command is routed through
+    ``wsl.exe -u root -d MergePilot-Test -- docker`` with argv arrays only
+    (shell execution is forbidden) and is checked by the planner's
+    ``assert_argv_safe`` before execution.
+  - the authorized distro must already be Running; a missing/Stopped distro is
+    a hard failure (it is NEVER implicitly started). The ephemeral
+    verification env gate belongs to the test harness only and is not part
+    of the CLI contract.
+  - secrets are generated per session (``secrets.token_urlsafe``), travel only
+    via the planner's 0600 env-file transports, and never appear in argv,
+    logs, manifests, or JSON output (collector-side ``redact()`` everywhere).
+  - state lives under ``<project>/.mergepilot/`` (gitignored):
+    ``install.json`` (version, project root, image tag -> real image ID) and
+    ``session.json`` (run_id, stage, real container/network IDs, secret file
+    basenames — never any secret value). Both are written atomically
+    (temp file + ``os.replace``).
+
+Journal / rollback contract:
+  - ``session.json`` IS the write journal: it is created before the first
+    Docker write and updated (atomically) after every successful creation
+    with the resource's REAL inspected ID.
+  - a failed ``start`` rolls back ONLY the resources this run created, in
+    reverse journal order, then deletes the secret files and the journal;
+    primary and rollback failures are both reported (neither swallows the
+    other). Exit 5 = failed but rollback verified; exit 9 = rollback/residue
+    verification failed.
+  - ``stop``/``cleanup`` may discover resources by their fixed names, but a
+    resource is only deleted after its name-resolved ID matches the manifest
+    ID. Name-present-but-ID-different is fail-closed (exit 4, nothing
+    deleted). Resources present without a session manifest are an ownership
+    conflict (exit 4) — ownership is never guessed.
+
+Exit codes: 0 success/explicit idempotent no-op; 2 CLI usage error;
+3 environment/config/precheck failure with zero side effects; 4 existing
+resource / state conflict; 5 execution failure with verified rollback;
+9 rollback or residue-verification failure.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import secrets
+import socket
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.request
+from pathlib import Path
+
+# ── Exit codes (stable contract) ─────────────────────────────────────────────
+
+EXIT_OK = 0
+EXIT_USAGE = 2
+EXIT_PRECHECK = 3
+EXIT_CONFLICT = 4
+EXIT_FAILED_CLEANED = 5
+EXIT_RESIDUE = 9
+
+# ── Platform constants (production-owned; mirrors of established contracts) ──
+
+AUTHORIZED_DISTRO = "MergePilot-Test"
+APPROVED_ENDPOINT = "unix:///var/run/docker.sock"
+CONSOLE_URL = "http://127.0.0.1:8600/api/live/status"
+CONSOLE_PORT = 8600
+BUILT_BASE_IMAGE = "python:3.12-slim"
+
+STATE_DIR_NAME = ".mergepilot"
+INSTALL_MANIFEST = "install.json"
+SESSION_MANIFEST = "session.json"
+SECRETS_DIR_NAME = "secrets"
+
+# A documentation-only placeholder bridge IP (RFC 5737 TEST-NET-3) used to
+# render start --dry-run / doctor plan previews. The REAL run always measures
+# the postgres bridge IP after the container is healthy.
+PLACEHOLDER_BRIDGE_IP = "203.0.113.1"
+
+_RUN_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+_WIN_PATH_RE = re.compile(r"^([A-Za-z]):[\\/](.*)$")
+_CONTAINER_ID_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+_NETWORK_ID_RE = re.compile(r"^[0-9a-f]{64}$")
+
+# Ordered audit-db migration chain (source of truth: the repository bootstrap
+# order mirrored by tests/isolated_live/ephemeral_harness.py and
+# tools/m4f1/run_schema_foundation.sh — production code must not import
+# tests/, so the order is restated here; m4f1_state and m4f1_hotfix_1 are
+# applied twice each on purpose (idempotency verification)).
+AUDIT_DB_MIGRATION_CHAIN = (
+    "init.sql",
+    "m3_state.sql",
+    "m3b_policy.sql",
+    "m3b_b4.sql",
+    "m3b_b4c.sql",
+    "m3b_b4c1.sql",
+    "m3b_b4c1_1.sql",
+    "m3b_b4d1.sql",
+    "m3c_state.sql",
+    "m4f1_state.sql",
+    "m4f1_state.sql",
+    "m4f1_hotfix_1.sql",
+    "m4f1_hotfix_1.sql",
+)
+ISOLATED_LIVE_MIGRATIONS = (
+    "001_environment_identity.sql",
+    "002_mergepilot_reader_acl.sql",
+)
+
+# Phase-0 prerequisite roles (idempotent DO block; mirrors
+# run_schema_foundation.sh:43 — the audit-db migrations reference these roles
+# in triggers/ownership, so they must exist BEFORE the chain runs).
+PREREQUISITE_ROLE_SQL = (
+    "DO $d$ BEGIN "
+    "IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='policy_gateway_l2') "
+    "THEN CREATE ROLE policy_gateway_l2 NOLOGIN; END IF; "
+    "IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname='mergepilot_approver') "
+    "THEN CREATE ROLE mergepilot_approver NOLOGIN; END IF; "
+    "END $d$;"
+)
+
+
+class Failure(Exception):
+    """Stable-code CLI failure; ``exit_code`` maps to the contract table."""
+
+    def __init__(self, code, detail="", exit_code=EXIT_PRECHECK):
+        self.code = code
+        self.detail = detail
+        self.exit_code = exit_code
+        super().__init__("%s%s" % (code, (" (%s)" % detail) if detail else ""))
+
+
+# ── Logging / output (redacted, JSON-safe) ───────────────────────────────────
+
+_JSON_MODE = False
+
+
+def _redact(text):
+    # Late-bound planner redaction (module loaded per project dir); falls back
+    # to a minimal DSN/password scrub so even pre-planner errors stay safe.
+    planner = _PLANNER
+    if planner is not None:
+        return planner.redact(text)
+    out = re.sub(r"postgresql?://[^/\s@]+:[^/\s@]+@",
+                 "postgresql://***:***@", text)
+    out = re.sub(r"(password\s*=\s*)['\"]?[^\s;&'\"]+",
+                 r"\1***REDACTED***", out, flags=re.IGNORECASE)
+    return out
+
+
+def log(text):
+    """Progress logging. stderr in --json mode so stdout stays pure JSON."""
+    if not text:
+        return
+    stream = sys.stderr if _JSON_MODE else sys.stdout
+    try:
+        stream.write(_redact(text) + "\n")
+        stream.flush()
+    except OSError:
+        pass
+
+
+# ── Project / planner resolution ─────────────────────────────────────────────
+
+_PLANNER = None          # one_click_startup module (single source of truth)
+_SHOWCASE = None         # showcase_cases module (deterministic seed SQL)
+
+
+_PLANNER_ROOT = None
+
+
+def resolve_project_dir(explicit):
+    if explicit:
+        path = Path(explicit)
+    else:
+        path = Path.cwd()
+    path = path.resolve()
+    if not path.is_dir():
+        raise Failure("PROJECT_DIR_INVALID", "not a directory: %s" % path,
+                      exit_code=EXIT_USAGE)
+    if not (path / "tools" / "demo_console" / "one_click_startup.py").is_file():
+        raise Failure(
+            "PROJECT_DIR_INVALID",
+            "%s is not a MergePilot checkout (missing "
+            "tools/demo_console/one_click_startup.py)" % path,
+            exit_code=EXIT_USAGE)
+    return path
+
+
+def _load_planner(project_dir):
+    """Import the versioned planner + showcase seed generator from the
+    checkout being operated on (never from tests/, never a second copy)."""
+    global _PLANNER, _SHOWCASE, _PLANNER_ROOT
+    project_dir = Path(project_dir).resolve()
+    if _PLANNER is not None and _PLANNER_ROOT != project_dir:
+        # Canonical module names otherwise keep the first checkout alive in a
+        # long-running process that invokes main() with another --project-dir.
+        sys.modules.pop("one_click_startup", None)
+        sys.modules.pop("showcase_cases", None)
+        _PLANNER = None
+        _SHOWCASE = None
+    if _PLANNER is not None:
+        return _PLANNER, _SHOWCASE
+    demo_console = str(project_dir / "tools" / "demo_console")
+    while demo_console in sys.path:
+        sys.path.remove(demo_console)
+    sys.path.insert(0, demo_console)
+    import one_click_startup as planner
+    import showcase_cases as showcase
+    _PLANNER = planner
+    _SHOWCASE = showcase
+    _PLANNER_ROOT = project_dir
+    return planner, showcase
+
+
+def container_name(planner, service):
+    """The planner's fixed container-name contract (see plan_service_run)."""
+    return "mergepilot-isolated-%s-1" % service
+
+
+def image_tag(planner, service):
+    """The planner's fixed local-image tag contract (see plan_build)."""
+    return "mergepilot-isolated-%s:local" % service
+
+
+def _to_wsl_path(path):
+    """Map a Windows path to its WSL drvfs form (D:\\x\\y -> /mnt/d/x/y).
+
+    Docker runs INSIDE the distro, so ``--env-file`` arguments must be
+    WSL-visible paths; the secret bytes are written by this (Windows-side)
+    process to the same file. Non-Windows-style paths pass through with
+    normalized separators (native-WSL development layout).
+    """
+    text = str(path)
+    m = _WIN_PATH_RE.match(text)
+    if not m:
+        return text.replace("\\", "/")
+    drive, rest = m.group(1).lower(), m.group(2).replace("\\", "/")
+    return "/mnt/%s/%s" % (drive, rest)
+
+
+# ── Atomic manifests (no secret fields, ever) ────────────────────────────────
+
+def _atomic_write_json(path, obj):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(
+        dir=str(path.parent), prefix=path.name + ".", suffix=".tmp")
+    tmp = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(obj, fh, indent=2, sort_keys=True)
+            fh.write("\n")
+        os.replace(str(tmp), str(path))
+    except BaseException:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        raise
+
+
+def load_manifest(path):
+    try:
+        raw = Path(path).read_text(encoding="utf-8")
+    except OSError:
+        return None
+    try:
+        obj = json.loads(raw)
+    except ValueError:
+        raise Failure("MANIFEST_INVALID", "unparseable: %s" % path.name,
+                      exit_code=EXIT_RESIDUE) from None
+    if not isinstance(obj, dict):
+        raise Failure("MANIFEST_INVALID", "not an object: %s" % path.name,
+                      exit_code=EXIT_RESIDUE)
+    return obj
+
+
+def state_paths(project_dir):
+    state = project_dir / STATE_DIR_NAME
+    return {
+        "state": state,
+        "install": state / INSTALL_MANIFEST,
+        "session": state / SESSION_MANIFEST,
+        "secrets": state / SECRETS_DIR_NAME,
+    }
+
+
+# ── WSL-routed Docker execution ──────────────────────────────────────────────
+
+class WslDocker:
+    """All Docker access: argv arrays via wsl.exe, redacted collection,
+    planner-side argv-secret guard, explicit rc handling (a failed command is
+    NEVER mistaken for an absent resource)."""
+
+    def __init__(self, planner, project_dir):
+        self._planner = planner
+        self._project_dir = project_dir
+        self._distro_states = None
+
+    # -- raw wsl.exe ---------------------------------------------------------
+
+    def _run_wsl(self, argv, *, input_bytes=None, timeout=60):
+        try:
+            cp = subprocess.run(
+                argv, input=input_bytes,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                timeout=timeout, check=False,
+                cwd=str(self._project_dir))
+        except FileNotFoundError:
+            raise Failure("WSL_MISSING",
+                          "wsl.exe not found (Windows/WSL2 required)") from None
+        except subprocess.TimeoutExpired:
+            raise Failure("COMMAND_TIMEOUT",
+                          "wsl %s timed out after %ds" % (argv[0], timeout),
+                          exit_code=EXIT_FAILED_CLEANED) from None
+        return cp
+
+    def distro_states(self):
+        """{distro: state} from read-only `wsl -l -v` (never starts one)."""
+        if self._distro_states is not None:
+            return self._distro_states
+        cp = self._run_wsl(["wsl.exe", "-l", "-v"], timeout=30)
+        states = {}
+        for line in cp.stdout.decode("utf-8", "replace").splitlines():
+            clean = line.replace("\x00", "").strip()
+            if not clean:
+                continue
+            if clean.startswith("*"):
+                clean = clean.lstrip("*").strip()
+            parts = clean.split()
+            if len(parts) < 3:
+                continue
+            state = parts[-2]
+            if state.lower() not in ("running", "stopped"):
+                continue
+            if not parts[-1].isdigit():
+                continue
+            name = " ".join(parts[:-2]).strip()
+            if name:
+                states[name] = state
+        self._distro_states = states
+        return states
+
+    def _require_distro_running(self, *, refresh=False):
+        """Fail-closed distro gate for every ``-d`` emission.
+
+        ``refresh=True`` discards the cached ``wsl -l -v`` result and
+        re-probes read-only — used by mid-execution emitters (psql_exec) so
+        a distro shut down after the command started is still caught and
+        never implicitly restarted. A missing/Stopped distro raises the
+        stable DISTRO_NOT_RUNNING failure and no ``-d`` command is issued.
+        """
+        if refresh:
+            self._distro_states = None
+        states = self.distro_states()
+        if states.get(AUTHORIZED_DISTRO) != "Running":
+            raise Failure(
+                "DISTRO_NOT_RUNNING",
+                "%s is %s; refusing to issue docker commands (never "
+                "implicitly started)" % (AUTHORIZED_DISTRO,
+                                         states.get(AUTHORIZED_DISTRO,
+                                                    "absent")),
+                exit_code=EXIT_PRECHECK)
+
+    def bash_env(self, expr):
+        """Run a fixed read-only shell expression INSIDE the distro (direct
+        wsl bash, no docker prefix). Only used for the DOCKER_HOST probe."""
+        self._require_distro_running()
+        argv = ["wsl.exe", "-u", "root", "-d", AUTHORIZED_DISTRO, "--",
+                "bash", "-c", expr]
+        self._planner.assert_argv_safe(argv)
+        cp = self._run_wsl(argv, timeout=30)
+        out = _redact(cp.stdout.decode("utf-8", "replace") if cp.stdout
+                      else "")
+        err = _redact(cp.stderr.decode("utf-8", "replace") if cp.stderr
+                      else "")
+        log("bash -c rc=%d out=%s err=%s" % (cp.returncode, out[:80],
+                                             err[:80]))
+        return cp
+
+    # -- docker --------------------------------------------------------------
+
+    def docker(self, args, *, input_bytes=None, timeout=90, check=True,
+               log_tag=None):
+        # Distro gate BEFORE any -d command: a missing/Stopped distro is
+        # never implicitly started (wsl -d on a stopped distro would start it).
+        self._require_distro_running()
+        argv = ["wsl.exe", "-u", "root", "-d", AUTHORIZED_DISTRO, "--",
+                "docker"] + list(args)
+        self._planner.assert_argv_safe(argv)
+        cp = self._run_wsl(argv, input_bytes=input_bytes, timeout=timeout)
+        out = _redact(cp.stdout.decode("utf-8", "replace") if cp.stdout else "")
+        err = _redact(cp.stderr.decode("utf-8", "replace") if cp.stderr else "")
+        tag = log_tag or args[0]
+        log("docker %s rc=%d out=%s err=%s"
+            % (tag, cp.returncode, out[:160], err[:160]))
+        if check and cp.returncode != 0:
+            raise Failure(
+                "DOCKER_FAILED",
+                "docker %s rc=%d (detail redacted)" % (tag, cp.returncode),
+                exit_code=EXIT_FAILED_CLEANED)
+        return cp
+
+    # -- read-only probes ----------------------------------------------------
+
+    def inspect_id(self, kind, name):
+        """Resolve (state, id) for a named container/network.
+
+        state: 'absent' (clean no-such), 'present', or raises on daemon error
+        — a probe failure is never conflated with absence.
+        """
+        cp = self.docker(["inspect", name, "--format", "{{.Id}}"],
+                         check=False, log_tag="inspect-%s" % kind)
+        if cp.returncode == 0:
+            cid = cp.stdout.decode("utf-8", "replace").strip()
+            if cid:
+                return "present", cid
+            raise Failure("DOCKER_INSPECT_FAILED",
+                          "empty Id for %s %s" % (kind, name),
+                          exit_code=EXIT_FAILED_CLEANED)
+        err = (cp.stderr or b"").decode("utf-8", "replace").lower()
+        if "no such" in err:
+            return "absent", None
+        raise Failure("DOCKER_INSPECT_FAILED",
+                      "inspect %s %s rc=%d (not 'no such')"
+                      % (kind, name, cp.returncode),
+                      exit_code=EXIT_FAILED_CLEANED)
+
+    def image_id(self, ref):
+        """Local image ID for ref, or None when the image is not cached."""
+        cp = self.docker(["image", "inspect", ref, "--format", "{{.Id}}"],
+                         check=False, log_tag="image-inspect")
+        if cp.returncode != 0:
+            err = (cp.stderr or b"").decode("utf-8", "replace").lower()
+            if "no such" in err or "not found" in err:
+                return None
+            raise Failure("DOCKER_IMAGE_INSPECT_FAILED",
+                          "image inspect rc=%d for %s" % (cp.returncode, ref),
+                          exit_code=EXIT_FAILED_CLEANED)
+        img = cp.stdout.decode("utf-8", "replace").strip()
+        if not img:
+            return None
+        return img
+
+    def container_state(self, name):
+        """(state, {status, health, exit_code}) in ONE inspect per container."""
+        cp = self.docker(
+            ["inspect", name, "--format",
+             "{{.Id}}|{{.State.Status}}|{{.State.Health.Status}}|"
+             "{{.State.ExitCode}}"],
+            check=False, log_tag="inspect-state")
+        if cp.returncode != 0:
+            err = (cp.stderr or b"").decode("utf-8", "replace").lower()
+            if "no such" in err:
+                return "absent", {}
+            raise Failure("DOCKER_INSPECT_FAILED",
+                          "inspect %s rc=%d (not 'no such')"
+                          % (name, cp.returncode),
+                          exit_code=EXIT_FAILED_CLEANED)
+        raw = cp.stdout.decode("utf-8", "replace").strip()
+        parts = raw.split("|")
+        if len(parts) != 4:
+            raise Failure("DOCKER_INSPECT_FAILED",
+                          "state probe unparseable for %s" % name,
+                          exit_code=EXIT_FAILED_CLEANED)
+        return "present", {
+            "id": parts[0],
+            "status": parts[1],
+            "health": "" if parts[2].startswith("<no value>") else parts[2],
+            "exit_code": parts[3],
+        }
+
+    def network_ip(self, name):
+        cp = self.docker(
+            ["inspect", name, "--format",
+             "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}"],
+            check=True, log_tag="inspect-ip")
+        return cp.stdout.decode("utf-8", "replace").strip()
+
+    # -- lifecycle waits -----------------------------------------------------
+
+    def wait_healthy(self, name, timeout):
+        deadline = time.monotonic() + timeout
+        last = ""
+        while time.monotonic() < deadline:
+            state, info = self.container_state(name)
+            last = info.get("health") or info.get("status") or state
+            if state == "present" and info.get("health") == "healthy":
+                return
+            if state == "present" and info.get("status") not in ("running",
+                                                                 "restarting"):
+                raise Failure(
+                    "CONTAINER_NOT_RUNNING",
+                    "%s status=%s before healthy" % (name, info.get("status")),
+                    exit_code=EXIT_FAILED_CLEANED)
+            time.sleep(2)
+        raise Failure("HEALTH_TIMEOUT",
+                      "%s not healthy within %ds (last=%s)"
+                      % (name, timeout, last),
+                      exit_code=EXIT_FAILED_CLEANED)
+
+    def wait_exited(self, name, timeout):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            state, info = self.container_state(name)
+            if state == "present" and info.get("status") == "exited":
+                try:
+                    return int(info.get("exit_code", "-1"))
+                except (TypeError, ValueError):
+                    return -1
+            time.sleep(2)
+        raise Failure("EXIT_TIMEOUT",
+                      "%s did not exit within %ds" % (name, timeout),
+                      exit_code=EXIT_FAILED_CLEANED)
+
+    def container_logs(self, name):
+        cp = self.docker(["logs", name], check=False, log_tag="logs")
+        out = cp.stdout.decode("utf-8", "replace") if cp.stdout else ""
+        return _redact(out)
+
+    def psql_exec(self, container, sql, *, timeout=300):
+        """Pipe SQL to psql INSIDE the postgres container (stdin, never argv).
+
+        The reader-role SQL embeds a password — the SQL bytes are therefore
+        never logged; only rc and a heavily truncated redacted stdout tail.
+        The distro gate runs FIRST, with a fresh read-only re-probe, BEFORE
+        the ``wsl ... -d ... docker exec`` argv is constructed: a
+        missing/Stopped distro would otherwise be implicitly started.
+        """
+        self._require_distro_running(refresh=True)
+        argv_args = ["exec", "-i", container, "psql", "-U", "mergepilot",
+                     "-d", "mergepilot_audit", "-v", "ON_ERROR_STOP=1",
+                     "-A", "-t", "-f", "-"]
+        self._planner.assert_argv_safe(argv_args)
+        full = ["wsl.exe", "-u", "root", "-d", AUTHORIZED_DISTRO, "--",
+                "docker"] + argv_args
+        cp = self._run_wsl(full, input_bytes=sql.encode("utf-8"),
+                           timeout=timeout)
+        out = _redact(cp.stdout.decode("utf-8", "replace")
+                      if cp.stdout else "")
+        log("psql rc=%d out=%s" % (cp.returncode, out[-160:]))
+        if cp.returncode != 0:
+            raise Failure("DB_PREPARE_FAILED",
+                          "psql rc=%d (detail redacted)" % cp.returncode,
+                          exit_code=EXIT_FAILED_CLEANED)
+        return out
+
+
+# ── Environment gate (shared by doctor / install / start) ────────────────────
+
+def probe_environment(docker):
+    """Ordered, read-only environment gates. Returns a list of check dicts;
+    probing STOPS at the first failure (a Stopped distro is never probed
+    further, never implicitly started)."""
+    checks = []
+
+    def add(name, code, ok, detail):
+        checks.append({"name": name, "code": code, "ok": ok, "detail": detail})
+        return ok
+
+    if not add("wsl_present", "DOCTOR_WSL_MISSING", True, "wsl.exe probe"):
+        return checks
+    try:
+        states = docker.distro_states()
+    except Failure as exc:
+        checks.append({"name": "wsl_present", "code": exc.code, "ok": False,
+                       "detail": exc.detail})
+        return checks
+    if AUTHORIZED_DISTRO not in states:
+        add("distro_state", "DOCTOR_DISTRO_MISSING", False,
+            "%s not in `wsl -l -v`" % AUTHORIZED_DISTRO)
+        return checks
+    if states[AUTHORIZED_DISTRO] != "Running":
+        add("distro_state", "DOCTOR_DISTRO_STOPPED", False,
+            "%s is %s (never implicitly started)" % (AUTHORIZED_DISTRO,
+                                                     states[AUTHORIZED_DISTRO]))
+        return checks
+    add("distro_state", "DOCTOR_DISTRO_RUNNING", True,
+        "%s Running" % AUTHORIZED_DISTRO)
+
+    cp = docker.docker(["context", "inspect", "--format",
+                        "{{.Endpoints.docker.Host}}"], check=False,
+                       log_tag="context")
+    if cp.returncode != 0:
+        add("daemon_endpoint", "DOCTOR_ENDPOINT_PROBE_FAILED", False,
+            "docker context inspect rc=%d" % cp.returncode)
+        return checks
+    endpoint = cp.stdout.decode("utf-8", "replace").strip()
+    if endpoint != APPROVED_ENDPOINT:
+        add("daemon_endpoint", "DOCTOR_ENDPOINT_INVALID", False,
+            "endpoint %s != %s (no TCP/SSH/remote)" % (endpoint,
+                                                       APPROVED_ENDPOINT))
+        return checks
+    add("daemon_endpoint", "DOCTOR_ENDPOINT_OK", True, endpoint)
+
+    bcp = docker.bash_env("echo \"${DOCKER_HOST:-}\"")
+    if bcp.returncode != 0:
+        add("docker_host", "DOCTOR_DOCKER_HOST_PROBE_FAILED", False,
+            "rc=%d" % bcp.returncode)
+        return checks
+    docker_host = bcp.stdout.decode("utf-8", "replace").strip()
+    if docker_host not in ("", APPROVED_ENDPOINT):
+        add("docker_host", "DOCTOR_DOCKER_HOST_INVALID", False,
+            "DOCKER_HOST=%r not empty/local-socket" % docker_host)
+        return checks
+    add("docker_host", "DOCTOR_DOCKER_HOST_OK", True,
+        docker_host or "(empty)")
+
+    icp = docker.docker(["info"], check=False, log_tag="info")
+    if icp.returncode != 0:
+        add("daemon_fingerprint", "DOCTOR_FINGERPRINT_PROBE_FAILED", False,
+            "docker info rc=%d" % icp.returncode)
+        return checks
+    info_text = icp.stdout.decode("utf-8", "replace")
+    fingerprint = {}
+    for line in info_text.splitlines():
+        s = line.strip()
+        if ":" not in s:
+            continue
+        key, _, value = s.partition(":")
+        fingerprint[key.strip().lower()] = value.strip()
+    missing = [f for f in ("server id", "docker root dir")
+               if not fingerprint.get(f)]
+    if missing:
+        add("daemon_fingerprint", "DOCTOR_FINGERPRINT_MISSING", False,
+            "fields missing: %s" % missing)
+        return checks
+    add("daemon_fingerprint", "DOCTOR_FINGERPRINT_OK", True,
+        "server_id=%s root=%s" % (fingerprint.get("server id", "")[:16],
+                                  fingerprint.get("docker root dir", "")))
+
+    base = docker.image_id(BUILT_BASE_IMAGE)
+    if base is None:
+        add("base_image", "DOCTOR_BASE_IMAGE_NOT_CACHED", False,
+            "%s not cached (no pull is performed)" % BUILT_BASE_IMAGE)
+        return checks
+    add("base_image", "DOCTOR_BASE_IMAGE_CACHED", True, base)
+
+    return checks
+
+
+def require_environment(docker):
+    """Install/start gate: probe_environment + pgvector digest cache."""
+    checks = probe_environment(docker)
+    if not all(c["ok"] for c in checks):
+        bad = next(c for c in checks if not c["ok"])
+        raise Failure(bad["code"], bad["detail"], exit_code=EXIT_PRECHECK)
+    planner = _PLANNER
+    if docker.image_id(planner.PGVECTOR_IMAGE_DIGEST) is None:
+        raise Failure(
+            "PGVECTOR_NOT_CACHED",
+            "digest-pinned pgvector image not cached (pull=never; cache it "
+            "manually): %s" % planner.PGVECTOR_IMAGE_DIGEST,
+            exit_code=EXIT_PRECHECK)
+
+
+# ── Stack discovery / classification ─────────────────────────────────────────
+
+def discover_stack(docker, planner):
+    """Read-only snapshot of the six fixed-name containers + two networks."""
+    containers = {}
+    for svc in planner.SERVICE_ORDER:
+        state, info = docker.container_state(container_name(planner, svc))
+        containers[svc] = {"state": state, **info}
+    networks = {}
+    for net in (planner.ORCHESTRATOR_NETWORK, planner.PUBLICATION_NETWORK):
+        state, nid = docker.inspect_id("network", net)
+        networks[net] = {"state": state, "id": nid}
+    return {"containers": containers, "networks": networks}
+
+
+def console_endpoint_ok():
+    """Probe the loopback publication (the ONLY published port)."""
+    try:
+        with urllib.request.urlopen(CONSOLE_URL, timeout=5) as resp:
+            body = json.loads(resp.read().decode("utf-8"))
+    except Exception:
+        return False, "endpoint unreachable"
+    if body.get("source_read_only") is not True \
+            or body.get("not_production") is not True \
+            or body.get("production_resource_accessed") is not None:
+        return False, "status contract mismatch"
+    return True, "200 + read-only contract"
+
+
+def classify_stack(docker, planner, snapshot):
+    """absent | partial | healthy (+ per-detail). Read-only."""
+    cons = snapshot["containers"]
+    nets = snapshot["networks"]
+    n_present = sum(1 for c in cons.values() if c["state"] == "present")
+    n_net = sum(1 for n in nets.values() if n["state"] == "present")
+    if n_present == 0 and n_net == 0:
+        return "absent", "no stack resources found"
+    if n_present != len(cons) or n_net != len(nets):
+        return "partial", ("%d/%d containers, %d/%d networks"
+                           % (n_present, len(cons), n_net, len(nets)))
+    preflight = cons.get("preflight", {})
+    preflight_ok = (preflight.get("status") == "exited"
+                    and preflight.get("exit_code") == "0")
+    running = all(cons[s]["status"] == "running"
+                  for s in planner.SERVICE_ORDER if s != "preflight")
+    if not (running and preflight_ok):
+        return "partial", "full resource set but not running/preflight-ok"
+    endpoint_ok, endpoint_detail = console_endpoint_ok()
+    if not endpoint_ok:
+        return "partial", "console endpoint: %s" % endpoint_detail
+    return "healthy", endpoint_detail
+
+
+def port_in_use(port):
+    s = socket.socket()
+    s.settimeout(1)
+    try:
+        s.connect(("127.0.0.1", port))
+        return True
+    except OSError:
+        return False
+    finally:
+        s.close()
+
+
+# ── Start-plan construction (planner output, byte-for-byte) ──────────────────
+
+def build_start_steps(planner, *, env_file, controller_env_file,
+                      reader_dsn_env_file, run_id, bridge_ip, m4f):
+    """The nine-step plan, composed from the planner's own public plan
+    functions in plan_orchestrated_start's exact order. Returns
+    (steps, argv_list) where each step carries its wait semantics.
+
+    The env-file arguments are WSL-visible paths (docker reads them inside
+    the distro); the controller env-file CONTRACT is validated separately by
+    the caller against the Windows-side file (same bytes).
+    """
+    demo_env = planner._demo_console_environment(run_id, bridge_ip)
+    argv_steps = [
+        ("network-create", planner.ORCHESTRATOR_NETWORK,
+         planner.plan_network_create()),
+        ("network-create", planner.PUBLICATION_NETWORK,
+         planner.plan_publication_network_create()),
+        ("container-run", "postgres",
+         planner.plan_service_run(
+             "postgres", image_ref=planner.PGVECTOR_IMAGE_DIGEST,
+             env_file=env_file)),
+        ("container-run", "policy-gateway",
+         planner.plan_service_run(
+             "policy-gateway",
+             image_ref=planner.get_built_image_identity("policy-gateway"),
+             gateway_env=planner._gateway_environment())),
+        ("container-run", "controller",
+         planner.plan_service_run(
+             "controller",
+             image_ref=planner.get_built_image_identity("controller"),
+             controller_env=planner._controller_environment(),
+             env_file=controller_env_file, m4f_enabled=m4f)),
+        ("container-run", "demo-console",
+         planner.plan_service_run(
+             "demo-console",
+             image_ref=planner.get_built_image_identity("demo-console"),
+             demo_console_env=demo_env,
+             reader_dsn_env_file=reader_dsn_env_file)),
+        ("container-run", "console-edge",
+         planner.plan_console_edge_run(
+             planner.get_built_image_identity("console-edge"))),
+        ("network-connect", planner.ORCHESTRATOR_NETWORK,
+         planner.plan_console_edge_connect_backend()),
+        ("container-run", "preflight",
+         planner.plan_service_run(
+             "preflight",
+             image_ref=planner.get_built_image_identity("preflight"),
+             declared_pg_image=planner.PGVECTOR_IMAGE_DIGEST,
+             reader_dsn_env_file=reader_dsn_env_file)),
+    ]
+    return argv_steps
+
+
+_WAIT_KIND = {
+    "network-create": None,
+    "network-connect": None,
+    "container-run": "healthy",
+}
+
+
+def record_planner_image_identities(planner, install):
+    """Feed the install manifest's real image IDs into the planner's
+    in-process identity registry (floating tags are never authoritative)."""
+    for service in planner.BUILT_SERVICES:
+        tag = image_tag(planner, service)
+        img_id = (install.get("images") or {}).get(tag)
+        if not img_id or not _CONTAINER_ID_RE.match(img_id):
+            raise Failure(
+                "INSTALL_MANIFEST_INVALID",
+                "missing/invalid image id for %s (run install)" % tag,
+                exit_code=EXIT_PRECHECK)
+        planner.record_built_image_identity(service, img_id)
+
+
+# ── Database preparation (inside the fresh postgres container) ───────────────
+
+def build_reader_role_sql(password, role):
+    escaped = password.replace("\\", "\\\\").replace("'", "''")
+    return (
+        "CREATE ROLE %s\n"
+        "    LOGIN PASSWORD '%s'\n"
+        "    NOINHERIT\n"
+        "    NOSUPERUSER\n"
+        "    NOCREATEDB\n"
+        "    NOCREATEROLE\n"
+        "    NOREPLICATION\n"
+        "    NOBYPASSRLS;\n"
+        "ALTER ROLE %s\n"
+        "    SET default_transaction_read_only = on;\n"
+        % (role, escaped, role)
+    )
+
+
+def prepare_database(docker, planner, showcase, project_dir, reader_password):
+    """Apply the canonical bootstrap to the FRESH postgres container:
+    prerequisite roles -> 13-entry audit-db chain -> reader role ->
+    ISOLATED_LIVE migrations -> environment marker -> showcase seed.
+
+    All SQL rides stdin (never argv); ON_ERROR_STOP=1 makes it transactional
+    per script; the reader password exists only inside the piped SQL bytes.
+    """
+    pg_container = container_name(planner, "postgres")
+    audit_dir = project_dir / "tools" / "audit-db"
+    iso_dir = project_dir / "tools" / "demo_console" / "migrations"
+
+    def read_sql(directory, filename):
+        path = directory / filename
+        if path.is_symlink() or not path.is_file():
+            raise Failure("MIGRATION_FILE_INVALID",
+                          "missing or non-regular: %s" % filename,
+                          exit_code=EXIT_FAILED_CLEANED)
+        return path.read_text(encoding="utf-8")
+
+    docker.psql_exec(pg_container, PREREQUISITE_ROLE_SQL)
+    for filename in AUDIT_DB_MIGRATION_CHAIN:
+        docker.psql_exec(pg_container, read_sql(audit_dir, filename))
+    docker.psql_exec(pg_container,
+                     build_reader_role_sql(reader_password,
+                                           planner.READER_ROLE))
+    for filename in ISOLATED_LIVE_MIGRATIONS:
+        docker.psql_exec(pg_container, read_sql(iso_dir, filename))
+    marker_sql = ("INSERT INTO environment_identity (environment_id) "
+                  "VALUES ('%s') ON CONFLICT DO NOTHING;"
+                  % planner.ENVIRONMENT_MARKER)
+    docker.psql_exec(pg_container, marker_sql)
+    docker.psql_exec(pg_container, showcase.build_showcase_seed_sql())
+
+
+# ── Journal helpers ──────────────────────────────────────────────────────────
+
+def write_session(paths, session):
+    _atomic_write_json(paths["session"], session)
+
+
+def new_session(run_id, m4f):
+    return {
+        "schema_version": 1,
+        "run_id": run_id,
+        "created_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ",
+                                     time.gmtime()),
+        "m4f": bool(m4f),
+        "stage": "init",
+        "containers": {},          # service -> real inspected ID (creation order)
+        "networks": {},            # network name -> real inspected ID (order)
+        "secrets": ["postgres.env", "controller.env", "demo_console.env"],
+    }
+
+
+def rollback_session(docker, planner, paths, session):
+    """Reverse-journal rollback of THIS session's created resources.
+
+    Only manifest-recorded IDs are touched; every failure is collected (never
+    swallowed, never masks the primary error); the journal and secret files
+    are removed only when everything verified clean. Each operation is
+    individually guarded so one failure cannot abort the rest.
+    """
+    codes = []
+    container_order = list(session.get("containers", {}).keys())
+    for svc in reversed(container_order):
+        target_id = session["containers"][svc]
+        try:
+            cp = docker.docker(["rm", "-fv", target_id], check=False,
+                               timeout=120, log_tag="rollback-rm")
+            if cp.returncode != 0:
+                state, _info = docker.container_state(
+                    container_name(planner, svc))
+                if state == "present":
+                    codes.append("ROLLBACK_CONTAINER_RM_FAILED:%s" % svc)
+        except Exception as exc:
+            codes.append("ROLLBACK_CONTAINER_RM_FAILED:%s(%s)"
+                         % (svc, getattr(exc, "code", type(exc).__name__)))
+    for net in reversed(list(session.get("networks", {}).keys())):
+        target_id = session["networks"][net]
+        try:
+            cp = docker.docker(["network", "rm", target_id], check=False,
+                               timeout=60, log_tag="rollback-network-rm")
+            if cp.returncode != 0:
+                state, _nid = docker.inspect_id("network", net)
+                if state == "present":
+                    codes.append("ROLLBACK_NETWORK_RM_FAILED:%s" % net)
+        except Exception as exc:
+            codes.append("ROLLBACK_NETWORK_RM_FAILED:%s(%s)"
+                         % (net, getattr(exc, "code", type(exc).__name__)))
+    for basename in session.get("secrets", []):
+        secret_path = paths["secrets"] / basename
+        try:
+            if secret_path.exists():
+                secret_path.unlink()
+            if secret_path.exists():
+                codes.append("SECRET_FILE_STILL_PRESENT:%s" % basename)
+        except OSError:
+            codes.append("SECRET_DELETE_FAILED:%s" % basename)
+    if not codes:
+        try:
+            if paths["session"].exists():
+                paths["session"].unlink()
+        except OSError:
+            codes.append("SESSION_MANIFEST_DELETE_FAILED")
+        if paths["session"].exists():
+            codes.append("SESSION_MANIFEST_STILL_PRESENT")
+    return codes
+
+
+# ── Commands ─────────────────────────────────────────────────────────────────
+
+def cmd_install(args):
+    project_dir = resolve_project_dir(args.project_dir)
+    planner, _showcase = _load_planner(project_dir)
+    paths = state_paths(project_dir)
+
+    if args.dry_run:
+        steps = [planner.plan_build(s) for s in planner.BUILT_SERVICES]
+        for s in planner.BUILT_SERVICES:
+            log("DRY-RUN build %s" % image_tag(planner, s))
+        return EXIT_OK, {
+            "command": "install", "status": "dry-run", "code": EXIT_OK,
+            "plans": steps,
+            "note": "5 local builds + image-ID recording; no Docker command "
+                    "executed, nothing written",
+        }
+
+    docker = WslDocker(planner, project_dir)
+    require_environment(docker)
+
+    images = {}
+    for service in planner.BUILT_SERVICES:
+        tag = image_tag(planner, service)
+        log("building %s ..." % tag)
+        docker.docker(planner.plan_build(service), timeout=1800,
+                      check=True, log_tag="build-%s" % service)
+        img_id = docker.image_id(tag)
+        if not img_id or not _CONTAINER_ID_RE.match(img_id):
+            raise Failure("BUILD_VERIFY_FAILED",
+                          "built image id missing/invalid for %s" % tag,
+                          exit_code=EXIT_FAILED_CLEANED)
+        images[tag] = img_id
+    manifest = {
+        "schema_version": 1,
+        "project_root": str(project_dir),
+        "images": images,
+    }
+    _atomic_write_json(paths["install"], manifest)
+    log("install manifest written: %s" % paths["install"].name)
+    return EXIT_OK, {
+        "command": "install", "status": "ok", "code": EXIT_OK,
+        "resources": {"images": images},
+    }
+
+
+def cmd_doctor(args):
+    project_dir = resolve_project_dir(args.project_dir)
+    planner, showcase = _load_planner(project_dir)
+    docker = WslDocker(planner, project_dir)
+    checks = []
+
+    def add(name, code, ok, detail):
+        checks.append({"name": name, "code": code, "ok": ok,
+                       "detail": _redact(str(detail))})
+
+    version = sys.version_info
+    add("python_version", "DOCTOR_PYTHON", True,
+        "%d.%d.%d" % (version.major, version.minor, version.micro))
+
+    required = ([("Dockerfile.%s" % s) for s in planner.BUILT_SERVICES]
+                + ["docker-compose.yml",
+                   "tools/demo_console/one_click_startup.py",
+                   "tools/demo_console/showcase_cases.py",
+                   "tools/demo_console/migrations/%s"
+                   % ISOLATED_LIVE_MIGRATIONS[0],
+                   "tools/demo_console/migrations/%s"
+                   % ISOLATED_LIVE_MIGRATIONS[1]]
+                + [("tools/audit-db/%s" % f)
+                   for f in sorted(set(AUDIT_DB_MIGRATION_CHAIN))])
+    missing = [r for r in required if not (project_dir / r).is_file()]
+    add("project_layout", "DOCTOR_LAYOUT_MISSING" if missing
+        else "DOCTOR_LAYOUT_OK", not missing,
+        "missing: %s" % missing if missing else
+        "%d contract files present" % len(required))
+
+    try:
+        with tempfile.TemporaryDirectory(prefix="mp-doctor-") as td:
+            tdp = Path(td)
+            planner.SecretFile(tdp).write("doctor-probe-admin",
+                                          "doctor-probe-reader")
+            planner.ControllerSecretFile(tdp).write(
+                "doctor-probe-pgpass", "doctor-probe-adminpw")
+            planner.ReaderDsnSecretFile(tdp).write(
+                "postgresql://mergepilot_reader:doctor-probe@postgres:5432/"
+                "mergepilot_audit")
+            for service in planner.BUILT_SERVICES:
+                planner.record_built_image_identity(
+                    service, "sha256:" + "0" * 64)
+            build_start_steps(
+                planner,
+                env_file=_to_wsl_path(tdp / "postgres.env"),
+                controller_env_file=_to_wsl_path(tdp / "controller.env"),
+                reader_dsn_env_file=_to_wsl_path(tdp / "demo_console.env"),
+                run_id="doctor-plan-probe",
+                bridge_ip=PLACEHOLDER_BRIDGE_IP, m4f=False)
+        add("planner_chain", "DOCTOR_PLAN_OK", True,
+            "9-step start plan generated (temp secrets discarded)")
+    except Failure as exc:
+        add("planner_chain", exc.code, False, exc.detail)
+    except Exception as exc:  # planner contract breach is a doctor failure
+        add("planner_chain", "DOCTOR_PLAN_INVALID", False,
+            "%s" % type(exc).__name__)
+
+    env_checks = probe_environment(docker)
+    checks.extend(env_checks)
+    env_ok = all(c["ok"] for c in env_checks)
+
+    stack = {"classification": "unknown", "detail": "environment gate failed"}
+    images = {}
+    if env_ok:
+        pg = docker.image_id(planner.PGVECTOR_IMAGE_DIGEST)
+        add("pgvector_image", "DOCTOR_PGVECTOR_CACHED" if pg
+            else "DOCTOR_PGVECTOR_NOT_CACHED", pg is not None,
+            planner.PGVECTOR_IMAGE_DIGEST if pg
+            else "digest not cached (pull=never)")
+        for service in planner.BUILT_SERVICES:
+            tag = image_tag(planner, service)
+            img = docker.image_id(tag)
+            images[tag] = img
+            add("local_images", "DOCTOR_IMAGE_NOT_BUILT:%s" % service
+                if img is None else "DOCTOR_IMAGE_OK:%s" % service,
+                img is not None, img or "tag absent (run install)")
+        snapshot = discover_stack(docker, planner)
+        classification, detail = classify_stack(docker, planner, snapshot)
+        stack = {"classification": classification, "detail": detail}
+        add("stack_state",
+            "DOCTOR_STACK_%s" % classification.upper(),
+            classification in ("absent", "healthy"), detail)
+        if classification == "absent":
+            busy = port_in_use(CONSOLE_PORT)
+            add("port_8600", "DOCTOR_PORT_BUSY" if busy
+                else "DOCTOR_PORT_FREE", not busy,
+                "127.0.0.1:%d %s" % (CONSOLE_PORT,
+                                     "in use" if busy else "free"))
+
+    ok = all(c["ok"] for c in checks)
+    result = {
+        "command": "doctor", "status": "ok" if ok else "failed",
+        "code": EXIT_OK if ok else EXIT_PRECHECK,
+        "checks": checks,
+        "resources": {"stack": stack, "local_images": images},
+    }
+    return (EXIT_OK if ok else EXIT_PRECHECK), result
+
+
+def cmd_start(args):
+    project_dir = resolve_project_dir(args.project_dir)
+    planner, showcase = _load_planner(project_dir)
+    paths = state_paths(project_dir)
+
+    run_id = args.run_id
+    if not run_id or not _RUN_ID_RE.fullmatch(run_id):
+        raise Failure("RUN_ID_INVALID",
+                      "run_id must match ^[A-Za-z0-9_-]+$",
+                      exit_code=EXIT_USAGE)
+
+    install = load_manifest(paths["install"])
+    if install is None:
+        raise Failure("NOT_INSTALLED",
+                      "%s missing (run `mergepilot install` first)"
+                      % INSTALL_MANIFEST, exit_code=EXIT_PRECHECK)
+    record_planner_image_identities(planner, install)
+
+    docker = WslDocker(planner, project_dir)
+
+    # ── conflict detection BEFORE any side effect ──
+    session = load_manifest(paths["session"])
+    snapshot = discover_stack(docker, planner)
+    classification, detail = classify_stack(docker, planner, snapshot)
+    secret_residue = [p.name for p in sorted(paths["secrets"].glob("*.env"))] \
+        if paths["secrets"].is_dir() else []
+    if session is None:
+        if classification != "absent":
+            raise Failure(
+                "ORPHAN_STACK",
+                "stack resources present without a session manifest (%s); "
+                "ownership not guessed — run `mergepilot cleanup` after "
+                "manual review" % detail, exit_code=EXIT_CONFLICT)
+        if secret_residue:
+            raise Failure("SECRET_RESIDUE",
+                          "secret files present without a session: %s"
+                          % secret_residue, exit_code=EXIT_CONFLICT)
+    else:
+        if classification == "healthy" and session.get("run_id") == run_id:
+            log("stack already healthy with run_id=%s (idempotent)" % run_id)
+            return EXIT_OK, {
+                "command": "start", "status": "ok", "code": EXIT_OK,
+                "run_id": run_id, "idempotent": True,
+                "resources": {"stack": "healthy", "detail": detail},
+            }
+        if session.get("run_id") != run_id and classification != "absent":
+            raise Failure("RUN_ID_MISMATCH",
+                         "healthy/partial stack exists for run_id=%r; stop "
+                         "or cleanup first" % session.get("run_id"),
+                         exit_code=EXIT_CONFLICT)
+        if classification != "absent":
+            raise Failure("STACK_PARTIAL",
+                          "partial stack present (%s); run `mergepilot stop` "
+                          "or `cleanup`" % detail, exit_code=EXIT_CONFLICT)
+        if session.get("stage") != "complete":
+            # complete-manifest with absent resources = already stopped;
+            # anything else is a stale journal from a failed rollback.
+            raise Failure("STALE_SESSION",
+                          "session stage=%r with absent resources"
+                          % session.get("stage"),
+                          exit_code=EXIT_CONFLICT)
+
+    # ── dry-run: zero side effects ──
+    if args.dry_run:
+        steps = build_start_steps(
+            planner,
+            env_file=_to_wsl_path(paths["secrets"] / "postgres.env"),
+            controller_env_file=_to_wsl_path(paths["secrets"]
+                                             / "controller.env"),
+            reader_dsn_env_file=_to_wsl_path(paths["secrets"]
+                                             / "demo_console.env"),
+            run_id=run_id, bridge_ip=PLACEHOLDER_BRIDGE_IP, m4f=args.m4f)
+        return EXIT_OK, {
+            "command": "start", "status": "dry-run", "code": EXIT_OK,
+            "run_id": run_id,
+            "plans": [argv for _kind, _name, argv in steps],
+            "note": "bridge IP %s is a placeholder — the real run measures "
+                    "it after postgres is healthy" % PLACEHOLDER_BRIDGE_IP,
+        }
+
+    # ── environment gate (before any Docker write) ──
+    require_environment(docker)
+    if port_in_use(CONSOLE_PORT):
+        raise Failure("PORT_BUSY",
+                      "127.0.0.1:%d already in use" % CONSOLE_PORT,
+                      exit_code=EXIT_PRECHECK)
+
+    # ── secrets + journal, then the nine-step plan ──
+    admin_pw = secrets.token_urlsafe(32)
+    controller_admin_pw = secrets.token_urlsafe(32)
+    reader_pw = secrets.token_urlsafe(32)
+    reader_dsn = ("postgresql://%s:%s@postgres:5432/%s"
+                  % (planner.READER_ROLE, reader_pw, planner.DB_NAME))
+    m4f_dsn = None
+    if args.m4f:
+        m4f_pw = secrets.token_urlsafe(32)
+        m4f_dsn = ("postgresql://snapshot_worker:%s@postgres:5432/%s"
+                   % (m4f_pw, planner.DB_NAME))
+
+    paths["secrets"].mkdir(parents=True, exist_ok=True)
+    written = []
+    try:
+        planner.SecretFile(paths["secrets"]).write(admin_pw, reader_pw)
+        written.append("postgres.env")
+        planner.ControllerSecretFile(paths["secrets"]).write(
+            admin_pw, controller_admin_pw, m4f_dsn)
+        written.append("controller.env")
+        planner.ReaderDsnSecretFile(paths["secrets"]).write(reader_dsn)
+        written.append("demo_console.env")
+        # planner-side strict contract validation of the controller env-file
+        # (same validator plan_orchestrated_start uses; Windows-side path).
+        planner._validate_controller_env_file_contract(
+            str(paths["secrets"] / "controller.env"),
+            m4f_event_machinery=bool(args.m4f))
+    except BaseException as exc:
+        for basename in written:
+            try:
+                (paths["secrets"] / basename).unlink()
+            except OSError:
+                pass
+        raise _as_failure(exc) from None
+
+    session = new_session(run_id, args.m4f)
+    write_session(paths, session)     # journal BEFORE the first Docker write
+
+    env_file_wsl = _to_wsl_path(paths["secrets"] / "postgres.env")
+    ctrl_env_wsl = _to_wsl_path(paths["secrets"] / "controller.env")
+    reader_env_wsl = _to_wsl_path(paths["secrets"] / "demo_console.env")
+
+    primary = None
+    try:
+        _execute_start(docker, planner, showcase, project_dir, paths,
+                       session, run_id, reader_pw,
+                       env_file_wsl, ctrl_env_wsl, reader_env_wsl,
+                       bool(args.m4f))
+    except Failure as exc:
+        primary = exc
+    except KeyboardInterrupt:
+        primary = Failure("INTERRUPTED", "start interrupted",
+                          exit_code=EXIT_FAILED_CLEANED)
+    except Exception as exc:
+        # planner gate errors and anything else mid-execution go through the
+        # SAME rollback path (converted, never swallowed).
+        primary = _as_failure(exc)
+
+    if primary is None:
+        result = {
+            "command": "start", "status": "ok", "code": EXIT_OK,
+            "run_id": run_id,
+            "resources": {
+                "console": CONSOLE_URL,
+                "containers": session["containers"],
+                "networks": session["networks"],
+            },
+        }
+        return EXIT_OK, result
+
+    log("start failed (%s); rolling back this session's resources ..."
+        % primary.code)
+    rb_codes = rollback_session(docker, planner, paths, session)
+    payload = {
+        "command": "start",
+        "status": "failed_rolled_back" if not rb_codes else "failed_residue",
+        "code": EXIT_FAILED_CLEANED if not rb_codes else EXIT_RESIDUE,
+        "primary_code": primary.code,
+        "primary_detail": _redact(primary.detail),
+        "rollback_codes": rb_codes,
+    }
+    if rb_codes:
+        return EXIT_RESIDUE, payload
+    return EXIT_FAILED_CLEANED, payload
+
+
+def _execute_start(docker, planner, showcase, project_dir, paths, session,
+                   run_id, reader_pw, env_file_wsl, ctrl_env_wsl,
+                   reader_env_wsl, m4f):
+    """Sequential execution of the nine-step plan with per-step journaling.
+
+    Steps 0-2 run first; the postgres bridge IP is MEASURED after postgres is
+    healthy, then the remaining steps are generated (the measured IP is a
+    REQUIRED planner input — hardcoding it is forbidden) and executed.
+    """
+
+    def journal_stage(stage):
+        session["stage"] = stage
+        write_session(paths, session)
+
+    def create_network(net_name, argv):
+        docker.docker(argv, timeout=120, check=True,
+                      log_tag="network-create")
+        state, nid = docker.inspect_id("network", net_name)
+        if state != "present" or not nid:
+            raise Failure("NETWORK_CREATE_VERIFY_FAILED", net_name,
+                          exit_code=EXIT_FAILED_CLEANED)
+        session["networks"][net_name] = nid
+        write_session(paths, session)
+
+    def create_container(svc, argv, *, healthy_timeout=240):
+        docker.docker(argv, timeout=240, check=True, log_tag="run-%s" % svc)
+        state, info = docker.container_state(container_name(planner, svc))
+        if state != "present" or not info.get("id"):
+            raise Failure("CONTAINER_CREATE_VERIFY_FAILED", svc,
+                          exit_code=EXIT_FAILED_CLEANED)
+        session["containers"][svc] = info["id"]
+        write_session(paths, session)
+        docker.wait_healthy(container_name(planner, svc), healthy_timeout)
+
+    steps = build_start_steps(
+        planner, env_file=env_file_wsl, controller_env_file=ctrl_env_wsl,
+        reader_dsn_env_file=reader_env_wsl, run_id=run_id,
+        bridge_ip=PLACEHOLDER_BRIDGE_IP, m4f=m4f)
+
+    journal_stage("networks")
+    create_network(steps[0][1], steps[0][2])
+    create_network(steps[1][1], steps[1][2])
+
+    journal_stage("postgres")
+    create_container("postgres", steps[2][2])
+
+    bridge_ip = docker.network_ip(container_name(planner, "postgres"))
+    canonical = planner.canonicalize_server_address(bridge_ip)
+    log("measured postgres bridge IP: %s" % canonical)
+
+    journal_stage("db_prepare")
+    prepare_database(docker, planner, showcase, project_dir, reader_pw)
+
+    steps = build_start_steps(
+        planner, env_file=env_file_wsl, controller_env_file=ctrl_env_wsl,
+        reader_dsn_env_file=reader_env_wsl, run_id=run_id,
+        bridge_ip=canonical, m4f=m4f)
+
+    journal_stage("services")
+    create_container("policy-gateway", steps[3][2])
+    create_container("controller", steps[4][2])
+    create_container("demo-console", steps[5][2])
+    create_container("console-edge", steps[6][2])
+    # 1-G network design: the edge is created on the publication bridge
+    # FIRST (with the loopback publish), the internal backend is attached
+    # AFTERWARDS — reversing this order silently drops the port publish.
+    docker.docker(steps[7][2], timeout=60, check=True,
+                  log_tag="network-connect")
+
+    journal_stage("preflight")
+    docker.docker(steps[8][2], timeout=240, check=True, log_tag="run-preflight")
+    state, info = docker.container_state(container_name(planner, "preflight"))
+    if state == "present" and info.get("id"):
+        session["containers"]["preflight"] = info["id"]
+        write_session(paths, session)
+    exit_code = docker.wait_exited(container_name(planner, "preflight"), 300)
+    if exit_code != 0:
+        raise Failure("PREFLIGHT_FAILED",
+                      "preflight container exit=%d" % exit_code,
+                      exit_code=EXIT_FAILED_CLEANED)
+    logs = docker.container_logs(container_name(planner, "preflight"))
+    lines = [ln for ln in logs.splitlines() if ln.strip()]
+    if not lines or lines[-1].strip() != "PREFLIGHT_OK":
+        raise Failure("PREFLIGHT_OUTPUT_INVALID",
+                      "last log line is not PREFLIGHT_OK",
+                      exit_code=EXIT_FAILED_CLEANED)
+    journal_stage("complete")
+
+
+def cmd_status(args):
+    project_dir = resolve_project_dir(args.project_dir)
+    planner, _showcase = _load_planner(project_dir)
+    docker = WslDocker(planner, project_dir)
+    paths = state_paths(project_dir)
+
+    snapshot = discover_stack(docker, planner)
+    classification, detail = classify_stack(docker, planner, snapshot)
+    session = load_manifest(paths["session"])
+    install = load_manifest(paths["install"])
+
+    resources = {
+        "containers": {svc: (info["state"] if info["state"] == "absent" else
+                             info.get("status", info["state"]))
+                       for svc, info in snapshot["containers"].items()},
+        "networks": {net: n["state"]
+                     for net, n in snapshot["networks"].items()},
+    }
+    meta = {}
+    if session is not None:
+        meta["session"] = {
+            "run_id": session.get("run_id"),
+            "stage": session.get("stage"),
+            "m4f": session.get("m4f"),
+        }
+    if install is not None:
+        meta["install_images"] = sorted((install.get("images") or {}).keys())
+    if classification != "absent" and session is None:
+        meta["ownership"] = "conflict: resources present without a session " \
+                            "manifest"
+
+    exit_code = EXIT_OK if classification in ("absent", "healthy") \
+        else EXIT_PRECHECK
+    return exit_code, {
+        "command": "status", "status": classification, "code": exit_code,
+        "detail": detail,
+        "resources": resources, **meta,
+    }
+
+
+def _as_failure(exc):
+    """Map any raised exception to a Failure (planner gate errors keep their
+    stable code; unknown errors become a fail-closed INTERNAL_ERROR)."""
+    if isinstance(exc, Failure):
+        return exc
+    planner = _PLANNER
+    if planner is not None and isinstance(exc, planner.StartupGateError):
+        return Failure(exc.code, str(exc), exit_code=EXIT_PRECHECK)
+    return Failure("INTERNAL_ERROR",
+                   "%s: %s" % (type(exc).__name__, exc),
+                   exit_code=EXIT_PRECHECK)
+
+
+def _verify_against_manifest(session, kind, key, discovered_state,
+                             discovered_id):
+    """fail-closed ownership check: present resource must match manifest ID."""
+    if discovered_state != "present":
+        return
+    recorded = (session.get(kind) or {}).get(key)
+    if not recorded:
+        raise Failure("OWNERSHIP_UNKNOWN",
+                      "%s %s present but not in session manifest" % (kind, key),
+                      exit_code=EXIT_CONFLICT)
+    if (discovered_id or "").strip() != recorded.strip():
+        raise Failure("OWNERSHIP_MISMATCH",
+                      "%s %s resolves to a different ID than the manifest "
+                      "(refusing to delete)" % (kind, key),
+                      exit_code=EXIT_CONFLICT)
+
+
+def cmd_stop(args):
+    project_dir = resolve_project_dir(args.project_dir)
+    planner, _showcase = _load_planner(project_dir)
+    docker = WslDocker(planner, project_dir)
+    paths = state_paths(project_dir)
+
+    session = load_manifest(paths["session"])
+    snapshot = discover_stack(docker, planner)
+    any_present = (any(c["state"] == "present"
+                       for c in snapshot["containers"].values())
+                   or any(n["state"] == "present"
+                          for n in snapshot["networks"].values()))
+
+    if session is None:
+        if any_present:
+            raise Failure(
+                "ORPHAN_STACK",
+                "stack resources present without a session manifest; "
+                "ownership not guessed — inspect manually before removing",
+                exit_code=EXIT_CONFLICT)
+        return EXIT_OK, {
+            "command": "stop", "status": "ok", "code": EXIT_OK,
+            "idempotent": True, "detail": "nothing to stop",
+        }
+
+    plan = planner.plan_orchestrated_cleanup()
+    if getattr(args, "dry_run", False):
+        return EXIT_OK, {
+            "command": "stop", "status": "dry-run", "code": EXIT_OK,
+            "plans": plan,
+            "note": "reverse-order removal + secret deletion; install "
+                    "manifest and images are kept",
+        }
+
+    # Ownership verification BEFORE each delete (fixed names from the
+    # planner's own cleanup plan; IDs cross-checked against the manifest).
+    for argv in plan:
+        if argv[0] == "rm":
+            name = argv[argv.index("-fv") + 1]
+            svc = name[len("mergepilot-isolated-"):-len("-1")]
+            state, info = docker.container_state(name)
+            _verify_against_manifest(session, "containers",
+                                     svc, state, info.get("id"))
+            if state == "absent":
+                log("already absent: %s" % name)
+                continue
+            docker.docker(argv, timeout=120, check=True, log_tag="rm")
+        elif argv[0] == "network" and argv[1] == "rm":
+            net = argv[2]
+            state, nid = docker.inspect_id("network", net)
+            _verify_against_manifest(session, "networks",
+                                     net, state, nid)
+            if state == "absent":
+                log("already absent: network %s" % net)
+                continue
+            docker.docker(argv, timeout=60, check=True,
+                          log_tag="network-rm")
+        else:
+            raise Failure("CLEANUP_PLAN_INVALID", "unknown plan step",
+                          exit_code=EXIT_RESIDUE)
+
+    residue = []
+    after = discover_stack(docker, planner)
+    for svc, info in after["containers"].items():
+        if info["state"] == "present":
+            residue.append("CONTAINER_STILL_PRESENT:%s" % svc)
+    for net, info in after["networks"].items():
+        if info["state"] == "present":
+            residue.append("NETWORK_STILL_PRESENT:%s" % net)
+    for basename in session.get("secrets", []):
+        secret_path = paths["secrets"] / basename
+        try:
+            if secret_path.exists():
+                secret_path.unlink()
+            if secret_path.exists():
+                residue.append("SECRET_FILE_STILL_PRESENT:%s" % basename)
+        except OSError:
+            residue.append("SECRET_DELETE_FAILED:%s" % basename)
+    if not residue:
+        try:
+            if paths["session"].exists():
+                paths["session"].unlink()
+        except OSError:
+            residue.append("SESSION_MANIFEST_DELETE_FAILED")
+        if paths["session"].exists():
+            residue.append("SESSION_MANIFEST_STILL_PRESENT")
+    if residue:
+        return EXIT_RESIDUE, {
+            "command": "stop", "status": "failed_residue",
+            "code": EXIT_RESIDUE, "residue_codes": residue,
+        }
+    return EXIT_OK, {
+        "command": "stop", "status": "ok", "code": EXIT_OK,
+        "kept": ["install manifest", "local images"],
+    }
+
+
+def cmd_cleanup(args):
+    project_dir = resolve_project_dir(args.project_dir)
+    planner, _showcase = _load_planner(project_dir)
+    docker = WslDocker(planner, project_dir)
+    paths = state_paths(project_dir)
+
+    install = load_manifest(paths["install"])
+    session = load_manifest(paths["session"])
+    snapshot = discover_stack(docker, planner)
+
+    stop_plan = planner.plan_orchestrated_cleanup() \
+        if session is not None else []
+    image_plan = []
+    if install is not None:
+        for tag, img_id in sorted((install.get("images") or {}).items()):
+            image_plan.append(["rmi", img_id])
+
+    if not args.apply:
+        return EXIT_OK, {
+            "command": "cleanup", "status": "dry-run", "code": EXIT_OK,
+            "plans": stop_plan + image_plan,
+            "deletes": [INSTALL_MANIFEST, SESSION_MANIFEST,
+                        "secret env files"],
+            "note": "dry-run (default): nothing executed; pass --apply to "
+                    "stop the stack, remove the 5 verified-ID local images "
+                    "and the install manifest",
+        }
+
+    # 1) stop (idempotent; ownership-verified)
+    stop_rc, stop_result = cmd_stop(args)
+    if stop_rc != EXIT_OK:
+        return stop_rc, {
+            "command": "cleanup", "status": "stop_failed",
+            "code": stop_rc, "stop": stop_result,
+            "residue_codes": stop_result.get("residue_codes", []),
+        }
+
+    residue = []
+    # 2) verified-ID image removal
+    if install is not None:
+        for tag, expected_id in sorted((install.get("images") or {}).items()):
+            current = docker.image_id(tag)
+            if current is None:
+                log("image already absent: %s" % tag)
+                continue
+            if current.strip() != expected_id.strip():
+                return EXIT_CONFLICT, {
+                    "command": "cleanup", "status": "failed_conflict",
+                    "code": EXIT_CONFLICT,
+                    "conflict": "image %s resolves to a different ID than "
+                                "the install manifest (refusing to delete)"
+                                % tag,
+                }
+            cp = docker.docker(["rmi", expected_id], check=False,
+                               timeout=300, log_tag="rmi")
+            if cp.returncode != 0 and docker.image_id(tag) is not None:
+                residue.append("IMAGE_STILL_PRESENT:%s" % tag)
+        try:
+            if paths["install"].exists():
+                paths["install"].unlink()
+        except OSError:
+            residue.append("INSTALL_MANIFEST_DELETE_FAILED")
+        if paths["install"].exists():
+            residue.append("INSTALL_MANIFEST_STILL_PRESENT")
+
+    # 3) residue verification (fail-closed: 9)
+    for tag in (install.get("images") or {}) if install else {}:
+        if docker.image_id(tag) is not None:
+            residue.append("IMAGE_STILL_PRESENT:%s" % tag)
+    if paths["session"].exists():
+        residue.append("SESSION_MANIFEST_STILL_PRESENT")
+    if residue:
+        return EXIT_RESIDUE, {
+            "command": "cleanup", "status": "failed_residue",
+            "code": EXIT_RESIDUE, "residue_codes": sorted(set(residue)),
+        }
+    return EXIT_OK, {
+        "command": "cleanup", "status": "ok", "code": EXIT_OK,
+        "removed": ["session containers", "networks", "secret env files",
+                    "5 local images", "install manifest"],
+    }
+
+
+# ── CLI surface ──────────────────────────────────────────────────────────────
+
+def build_parser():
+    parser = argparse.ArgumentParser(
+        prog="mergepilot",
+        description="MergePilot isolated-stack local CLI "
+                    "(development preview; Windows 10/11 + WSL2 "
+                    "MergePilot-Test only)")
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("--project-dir", default=None,
+                        help="MergePilot checkout (default: current dir)")
+    common.add_argument("--json", action="store_true",
+                        help="stable machine-readable output on stdout")
+    sub = parser.add_subparsers(dest="command", metavar="<command>")
+
+    p = sub.add_parser("install", parents=[common],
+                       help="build the 5 local images and record image IDs")
+    p.add_argument("--dry-run", action="store_true")
+
+    p = sub.add_parser("doctor", parents=[common],
+                       help="read-only environment and stack checks")
+    p = sub.add_parser("status", parents=[common],
+                       help="absent/partial/healthy classification")
+
+    p = sub.add_parser("start", parents=[common],
+                       help="run the isolated stack (preflight-gated)")
+    p.add_argument("--run-id", required=True,
+                   help="seeded run_id, e.g. run-showcase-a")
+    p.add_argument("--m4f", action="store_true",
+                   help="enable the M4F event machinery (opt-in)")
+    p.add_argument("--dry-run", action="store_true")
+
+    p = sub.add_parser("stop", parents=[common],
+                       help="remove session containers/networks/secrets")
+    p.add_argument("--dry-run", action="store_true")
+
+    p = sub.add_parser("cleanup", parents=[common],
+                       help="stop + remove local images + install manifest")
+    p.add_argument("--apply", action="store_true",
+                   help="execute (default is dry-run)")
+    return parser
+
+
+_COMMANDS = {
+    "install": cmd_install,
+    "doctor": cmd_doctor,
+    "start": cmd_start,
+    "status": cmd_status,
+    "stop": cmd_stop,
+    "cleanup": cmd_cleanup,
+}
+
+
+def main(argv=None):
+    global _JSON_MODE
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if not args.command:
+        parser.print_help(sys.stderr)
+        return EXIT_USAGE
+    _JSON_MODE = bool(getattr(args, "json", False))
+    try:
+        code, result = _COMMANDS[args.command](args)
+    except Failure as failure:
+        payload = {
+            "command": args.command,
+            "status": "failed",
+            "code": failure.exit_code,
+            "error_code": failure.code,
+            "error_detail": _redact(failure.detail),
+        }
+        if _JSON_MODE:
+            print(json.dumps(payload, indent=2))
+        else:
+            log("FAILED %s: %s" % (failure.code, failure.detail))
+        return failure.exit_code
+    except Exception as exc:  # fail-closed CLI boundary (no tracebacks)
+        failure = _as_failure(exc)
+        if _JSON_MODE:
+            print(json.dumps({"command": args.command, "status": "failed",
+                              "code": failure.exit_code,
+                              "error_code": failure.code,
+                              "error_detail": failure.detail}, indent=2))
+        else:
+            log("FAILED %s: %s" % (failure.code, failure.detail))
+        return failure.exit_code
+    if _JSON_MODE:
+        print(json.dumps(result, indent=2))
+    else:
+        status = result.get("status")
+        log("OK (%s)" % status if status else "OK")
+    return code
+
+
+if __name__ == "__main__":
+    sys.exit(main())

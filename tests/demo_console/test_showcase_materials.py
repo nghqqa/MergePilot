@@ -315,7 +315,7 @@ class TestReadmeStructure(unittest.TestCase):
     def test_regression_numbers_are_current(self):
         for value in ("81 passed", "60 passed", "50 passed",
                       "31 passed",
-                      "1276 passed / 13 skipped / 0 failed", "12 → 12",
+                      "1440 passed / 15 skipped / 0 failed", "12 → 12",
                       "11 PASS / 0 FAIL",
                       "PREFLIGHT_OK"):
             self.assertIn(value, README_TEXT)
