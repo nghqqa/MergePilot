@@ -44,6 +44,12 @@ M4F_ENABLED_INVALID = _M4F_RAW not in _L2_TRUE and _M4F_RAW not in _L2_FALSE
 M4F_SNAPSHOT_DSN = os.environ.get("M4F_SNAPSHOT_DSN", "").strip()
 M4F_EVENT_LEASE_SECONDS = int(os.environ.get("M4F_EVENT_LEASE_SECONDS", "120"))
 M4F_EVENT_MAX_ATTEMPTS = int(os.environ.get("M4F_EVENT_MAX_ATTEMPTS", "5"))
+# M8-A2-c: producer timeout reconciliation. 0 = disabled (deployment
+# behavior unchanged); candidate mode only; legal range checked at startup.
+M4F_PRODUCER_TIMEOUT_SECONDS = int(
+    os.environ.get("M4F_PRODUCER_TIMEOUT_SECONDS", "0").strip())
+_M4F_PRODUCER_TIMEOUT_STAGE = "m4f_producer_timeout"
+_M4F_PRODUCER_TIMEOUT_REASON = "PRODUCER_TIMEOUT"
 L2_MERGE_ENABLED = _L2_RAW in _L2_TRUE
 L2_MERGE_ENABLED_INVALID = _L2_RAW not in _L2_TRUE and _L2_RAW not in _L2_FALSE
 
@@ -657,6 +663,93 @@ def reconcile_m5_handoffs(run_prefix=None, limit=None):
     return processed
 
 
+# ── M8-A2-c: producer timeout reconciliation (candidate-only, no schema) ──
+
+def reconcile_m4f_producer_timeout(limit=None):
+    """M8-A2-c: HOLD candidate runs whose external AgentTeams producer never
+    sent an M4F_RUN within M4F_PRODUCER_TIMEOUT_SECONDS.
+
+    Derived purely from durable DB state (created_at + event absence), so it
+    is restart-safe and side-effect-free beyond task_runs. The HOLD is an
+    observability fact, NOT a producer contract error: a late legal M4F_RUN
+    still passes the full existing chain and is CAS-recovered in the drain
+    success path (_recover_producer_timeout_hold). The UPDATE re-checks every
+    waiting predicate so an M4F_RUN arriving between SELECT and UPDATE wins.
+    No-op unless Candidate mode with timeout > 0. Returns holds this call."""
+    if not M4F_ONLY_MODE or M4F_PRODUCER_TIMEOUT_SECONDS <= 0 or not M4F_RUN_PREFIX:
+        return 0
+    lim = limit if limit is not None else _M5_RECONCILE_LIMIT
+    conn = ensure_pg()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT run_id,room_id,repo,pr_number,
+                          EXTRACT(EPOCH FROM (now()-created_at))::int
+                   FROM public.task_runs
+                   WHERE run_id LIKE %s
+                     AND status='RUNNING' AND current_stage='review'
+                     AND skill_data_state='ACTIVE'
+                     AND NOT EXISTS (SELECT 1 FROM public.stage_events e
+                                     WHERE e.run_id=task_runs.run_id
+                                       AND e.event_type='M4F_RUN')
+                     AND NOT EXISTS (SELECT 1 FROM public.revision_bindings b
+                                     WHERE b.run_id=task_runs.run_id)
+                     AND created_at <= now() - make_interval(secs=>%s)
+                   ORDER BY created_at,run_id
+                   LIMIT %s""",
+                (M4F_RUN_PREFIX + "%", M4F_PRODUCER_TIMEOUT_SECONDS, lim))
+            waiting = cur.fetchall()
+    finally:
+        conn.rollback()
+    held = 0
+    for run_id, room_id, repo, pr_number, wait_seconds in waiting:
+        with conn.cursor() as cur:
+            cur.execute(
+                """UPDATE public.task_runs
+                   SET status='HOLD',current_stage=%s,last_error=%s,updated_at=now()
+                   WHERE run_id=%s
+                     AND status='RUNNING' AND current_stage='review'
+                     AND skill_data_state='ACTIVE'
+                     AND NOT EXISTS (SELECT 1 FROM public.stage_events e
+                                     WHERE e.run_id=task_runs.run_id
+                                       AND e.event_type='M4F_RUN')
+                     AND NOT EXISTS (SELECT 1 FROM public.revision_bindings b
+                                     WHERE b.run_id=task_runs.run_id)
+                     AND created_at <= now() - make_interval(secs=>%s)""",
+                (_M4F_PRODUCER_TIMEOUT_STAGE,
+                 "%s: no M4F_RUN after %ds" % (
+                     _M4F_PRODUCER_TIMEOUT_REASON, wait_seconds),
+                 run_id, M4F_PRODUCER_TIMEOUT_SECONDS))
+            changed = cur.rowcount
+        conn.commit()
+        if changed:
+            held += 1
+            print(json.dumps({
+                "event": "producer.timeout.held",
+                "schema": "mergepilot.observation.v1",
+                "run_id": run_id, "room_id": room_id, "repo": repo,
+                "pr_number": pr_number, "wait_seconds": wait_seconds,
+            }, ensure_ascii=False, sort_keys=True), flush=True)
+    return held
+
+
+def _recover_producer_timeout_hold(cur, run_id):
+    """M8-A2-c late-recovery CAS, executed inside the drain success
+    transaction: only an exact producer-timeout HOLD (status=HOLD +
+    current_stage=m4f_producer_timeout + last_error PRODUCER_TIMEOUT:*)
+    returns to RUNNING. HOLDs from any other cause are never touched;
+    created_at is never reset. The late M4F_RUN has already re-passed the
+    full existing chain (sender/room/prefix strict parse, Gateway read,
+    SHA/provenance). Returns True when this call performed the recovery."""
+    cur.execute(
+        """UPDATE public.task_runs
+           SET status='RUNNING',current_stage='m4f',last_error=NULL,updated_at=now()
+           WHERE run_id=%s AND status='HOLD' AND current_stage=%s
+             AND last_error LIKE 'PRODUCER_TIMEOUT:%%'""",
+        (run_id, _M4F_PRODUCER_TIMEOUT_STAGE))
+    return cur.rowcount == 1
+
+
 def _m5_handoff_one(conn, event_id, room_id, raw_sender, body):
     """Process one RECEIVED handoff (P1-1 lock order: task_runs -> stage_events;
     P1-3 room/status authoritative; P1-4 payload-reconciled advance). Every exit
@@ -865,6 +958,13 @@ def _validate_l2_config():
         raise ValueError("M4F_EVENT_MAX_ATTEMPTS 须 1..100")
     if M4F_ENABLED and not M4F_SNAPSHOT_DSN:
         raise ValueError("M4F_ENABLED=1 时必须配置 M4F_SNAPSHOT_DSN")
+    # M8-A2-c: 0 disables; enabling is candidate-only with a sane window.
+    # No silent correction/truncation — illegal values refuse startup.
+    if M4F_PRODUCER_TIMEOUT_SECONDS != 0:
+        if M4F_PRODUCER_TIMEOUT_SECONDS < 300 or M4F_PRODUCER_TIMEOUT_SECONDS > 86400:
+            raise ValueError("M4F_PRODUCER_TIMEOUT_SECONDS 须为 0 或 300..86400")
+        if not M4F_ONLY_MODE:
+            raise ValueError("M4F_PRODUCER_TIMEOUT_SECONDS 仅允许在 Candidate 模式(M4F_ONLY_MODE=1)启用")
 
 
 class GatewayOutcome:
@@ -1535,8 +1635,19 @@ def drain_m4f_events(max_items=1):
                        WHERE event_id=%s AND status='M4F_RUNNING'""",
                     (staged.run_id, event_id),
                 )
+                # M8-A2-c: a legal late M4F_RUN that passed the full chain
+                # recovers an exact producer-timeout HOLD in the same
+                # transaction; the existing M4F_RUN stage event above keeps
+                # the reconcile from ever re-holding this run.
+                recovered = _recover_producer_timeout_hold(cur, staged.run_id)
             conn.commit()
             print(f"[ctrl][M4F] {staged.run_id} staged six-Skill DAG")
+            if recovered:
+                print(json.dumps({
+                    "event": "producer.timeout.recovered",
+                    "schema": "mergepilot.observation.v1",
+                    "run_id": staged.run_id,
+                }, ensure_ascii=False, sort_keys=True), flush=True)
         except Exception as exc:
             try:
                 conn.rollback()
@@ -2912,6 +3023,9 @@ def run_forever():
                 # M5-0B §11 Domain A order: skill→review bridge, then handoff advancement.
                 reconcile_m5_skill_to_review()
                 reconcile_m5_handoffs()
+                # M8-A2-c: producer-wait reconciliation (no-op when disabled;
+                # errors flow into the existing Domain A fault handling below).
+                reconcile_m4f_producer_timeout()
             except psycopg2.OperationalError as e:
                 print(f"[ctrl][M5-0] PG degraded: {e}; reconnecting in {backoff}s")
                 reset_pg()
