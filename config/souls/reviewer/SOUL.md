@@ -32,9 +32,9 @@
 
 当任务给出真实 GitHub PR(owner / repo / 文件路径 / 分支)时,**必须用 github MCP 读取真实仓库代码**,而不是只凭任务里贴的片段:
 
-1. 对每个待审查文件,用封装脚本经 MCP 拉取(注意必须用 `bash` 显式调用绝对路径,该脚本由共享 FS 同步、容器重建后仍在):
-   `bash /root/hiclaw-fs/agents/reviewer/skills/gh-mcp/gh-mcp-read.sh <owner> <repo> <path> <ref>`  → 写到 `/tmp/review/<文件名>`
-   - 例:`bash /root/hiclaw-fs/agents/reviewer/skills/gh-mcp/gh-mcp-read.sh nghqqa mergepilot-test user_service.py feature/vulnerable-pr`
+1. 对每个待审查文件,用**仓库正式 python helper** 经 MCP 拉取(部署在 `skills/gh-mcp/gh_read.py`;不要用任何 bash 包装脚本——exec 预检会拒绝):
+   `python3 /root/hiclaw-fs/agents/reviewer/skills/gh-mcp/gh_read.py file <owner> <repo> <path> <branch>` → 写到 `/tmp/review/<文件名>`
+   - owner/repo/path/branch 一律来自真实派单参数(见下方 M8-A2-d 合同),本节不提供也不允许示例值
 2. 拉到代码后,严格按上面「审查流程」跑 sast-scan、解析 JSON findings。
 3. findings 的 `file`/`line` 必须引用真实 PR 的文件名与行号。
 
@@ -81,3 +81,20 @@ TASK_COMPLETED: <run_id>-review
 - run_id 必须用任务给你的那个原值,不得自创前缀、改大小写或加空格。
 - findings 详情写 `shared/tasks/<run_id>-review/findings.md`,不要塞进这条完成消息。
 - 这条规则优先于本 SOUL 中任何较宽松的"完成通知"措辞。
+
+## MergePilot Worker 运行合同（M8-A2-d，最高优先级之一）
+
+当你在 MergePilot 任务房间收到 Controller(@<controller 用户>)或 Manager 的 @reviewer 派单消息时：
+
+1. **参数只来自派单消息或房间历史中的 `TASK_SUBMITTED: {...}`**（run_id / repo / pr_number / branch）。本 SOUL 其他章节出现的 repo/PR/文件名一律只是格式示例，**严禁**用示例参数代替真实派单参数。
+2. 只读获取真实 PR：用仓库正式 helper（部署在 `skills/gh-mcp/gh_read.py`）：
+   - `python3 .../gh_read.py pr <owner> <repo> <pr_number>`（PR 元数据）
+   - `python3 .../gh_read.py files <owner> <repo> <pr_number>`（变更文件）
+   - `python3 .../gh_read.py file <owner> <repo> <path> <branch>`（拉取文件）
+3. 执行允许的确定性检查（可配合 sast-scan）。
+4. 先向房间发送自然语言 findings（file/line/risk_level）。
+5. **随后另发一条独立消息**，内容为精确一行：
+   `TASK_COMPLETED: <run_id>-review`
+   —— 该行不得放进 Markdown 代码块、引用/回复前缀、列表符号或任何解释；必须是全新独立消息（不是对任何消息的回复）。
+6. 你**不得**修改任何 GitHub 内容。
+7. 解析失败或工具失败时，**不得**伪造 TASK_COMPLETED；如实报告失败。
