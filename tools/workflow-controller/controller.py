@@ -1683,6 +1683,15 @@ def consume_events():
                 if M4F_LIVE_MODE and body.lstrip().startswith("TASK_COMPLETED:"):
                     _m5_record_handoff(eid, room_id, raw_sender, body)
                     event_count += 1
+                    continue
+                # M8-A2: route TASK_SUBMITTED to the production branch so the
+                # task_run is created by production SQL (candidate mode has no
+                # other task_runs producer). process_event still requires the
+                # allowlisted sender to be ADMIN and keeps the INSERT idempotent.
+                if body.lstrip().startswith("TASK_SUBMITTED:"):
+                    process_event(eid, room_id, raw_sender, sender, body, ts)
+                    event_count += 1
+                    continue
                 continue  # Candidate: skip all other event types
 
             # Legacy mode: original loose substring matching + localpart truncation

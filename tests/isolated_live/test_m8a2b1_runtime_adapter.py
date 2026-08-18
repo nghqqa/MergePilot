@@ -368,6 +368,38 @@ class TestNoDirectGovernanceWrites(unittest.TestCase):
                       CTRL_SOURCE)
 
 
+# ── M8-A2 candidate-mode TASK_SUBMITTED routing ──────────────────────────
+
+class TestCandidateTaskSubmittedRouting(unittest.TestCase):
+    """M8-A2: candidate mode has no task_runs producer of its own, so the
+    /sync filter must route TASK_SUBMITTED from allowlisted senders into
+    process_event (which still enforces sender==ADMIN and idempotent INSERT).
+    Verified live against the real Matrix homeserver during the M8-A2 E2E."""
+
+    def _candidate_branch(self):
+        """Source of the candidate /sync branch inside consume_events."""
+        sync_src = CTRL_SOURCE.split("def consume_events", 1)[1]
+        return sync_src.split("if M4F_ONLY_MODE:", 1)[1].split(
+            "# Legacy mode:", 1)[0]
+
+    def test_candidate_filter_routes_task_submitted(self):
+        # The M4F_ONLY_MODE branch routes TASK_SUBMITTED to process_event
+        # before the fall-through "skip all other event types" continue.
+        tail = self._candidate_branch()
+        self.assertIn('body.lstrip().startswith("TASK_SUBMITTED:")', tail)
+        self.assertIn(
+            "process_event(eid, room_id, raw_sender, sender, body, ts)", tail
+        )
+
+    def test_routing_still_gated_on_allowlisted_sender(self):
+        # The routing sits after verify_m5_sender, so a non-allowlisted
+        # sender never reaches process_event in candidate mode.
+        tail = self._candidate_branch()
+        sender_pos = tail.index("verify_m5_sender")
+        route_pos = tail.index('body.lstrip().startswith("TASK_SUBMITTED:")')
+        self.assertLess(sender_pos, route_pos)
+
+
 # ── supplementary: PAT_M4F regex correctness ──────────────────────────────
 
 class TestPatM4FRegex(unittest.TestCase):
