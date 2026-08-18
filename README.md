@@ -117,7 +117,25 @@ MergePilot 面向“LLM 能提出建议，但不能独自承担工程控制面�
 - 宿主 Python 3.12；镜像基于 `python:3.12-slim` 与 digest 固定的 `pgvector/pgvector`；
 - 真实 PostgreSQL 测试仅在 `EPHEMERAL_PG_VERIFY=1` 时执行，默认保持 unset。
 
-### 构建镜像
+### 最小 CLI(开发预览)
+
+六命令本地操作入口([文档](docs/mergepilot-cli.md)):`install` / `doctor` /
+`start` / `status` / `stop` / `cleanup`。它把 `one_click_startup.py` 的版本化
+计划生成器接到真实执行器,带写前 journal、逆序 rollback、manifest 原子更新与
+凭据零泄漏合同;仅支持 Windows 10/11 + WSL2 `MergePilot-Test` 隔离开发预览,
+不是 GitHub App、生产验证或 SaaS。
+
+```bash
+pip install -e .
+mergepilot doctor                 # 只读体检(发行版必须已 Running,绝不隐式启动)
+mergepilot install                # 构建 5 个本地镜像并记录真实 image ID
+mergepilot start --run-id run-showcase-a   # 全栈启动,断言 PREFLIGHT_OK
+mergepilot status                 # absent / partial / healthy
+mergepilot stop                   # 删除会话容器/网络/秘密,保留镜像
+mergepilot cleanup --apply        # stop + 删除已核验镜像与 install manifest
+```
+
+### 构建镜像(不走 CLI 时)
 
 ```bash
 docker build -f Dockerfile.policy-gateway -t mergepilot-isolated-policy-gateway:local .
@@ -162,7 +180,7 @@ python -m pytest -q tests/demo_console tests/isolated_live tests/verification --
 | PR‑V2 deterministic cases | 60 passed |
 | Showcase materials | 50 passed |
 | M8‑A2‑a PR fixture | 31 passed |
-| 当前拆分回归 | **1276 passed / 13 skipped / 0 failed** |
+| 当前拆分回归 | **1440 passed / 15 skipped / 0 failed**(含最小 CLI 53 项;ResourceWarning-as-error) |
 | audit seed replay | showcase audit rows **12 → 12**；task_runs 3 → 3 |
 | recovered SHA | API snapshot、Desktop、Mobile 三侧可见 |
 | component smoke | 5 services healthy + `PREFLIGHT_OK` 10/10 |

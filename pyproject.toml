@@ -1,0 +1,26 @@
+# Minimal packaging for the MergePilot local CLI (development preview).
+#
+# Scope contract:
+#   - stdlib-only at runtime; `pip install -e .` from a source checkout only
+#     wires the `mergepilot` console script.
+#   - Windows 10/11 + WSL2 "MergePilot-Test" isolated development preview.
+#     No Linux/macOS/native-Windows-Docker/remote-daemon/production claim.
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mergepilot-cli"
+version = "0.1.0"
+description = "MergePilot isolated-stack local CLI (development preview)"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "Apache-2.0" }
+
+[project.scripts]
+mergepilot = "tools.cli.mergepilot:main"
+
+[tool.setuptools.packages.find]
+include = ["tools.cli"]
+namespaces = true

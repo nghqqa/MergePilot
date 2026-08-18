@@ -8,6 +8,7 @@ Use this page to choose documentation by purpose and time horizon.
 | Contribute code or documentation | [CONTRIBUTING.md](../CONTRIBUTING.md) | Current contributor guidance |
 | Follow rules for coding agents | [AGENTS.md](../AGENTS.md) | Current agent guidance |
 | Understand the isolated-stack architecture | [Isolated-live design](ISOLATED-LIVE-PG-Ephemeral-Verification-Design.md) | Design record; M8 is not complete |
+| Operate the isolated stack locally | [MergePilot CLI](mergepilot-cli.md) | Minimal local operator entry (development preview; Windows 10/11 + WSL2 only) |
 | Run the showcase | [Showcase demo script](showcase/demo-script.md) | Deterministic demonstration material, not production evidence |
 | Review benchmark methodology | [Benchmark summary](../benchmark/formal-summary.md) | Engineering and research material |
 | Review milestone history | [Project status record](项目状态.md) | Historical record; read its date and scope |
