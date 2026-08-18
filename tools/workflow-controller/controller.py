@@ -821,7 +821,13 @@ def _m5_handoff_one(conn, event_id, room_id, raw_sender, body):
             # P1-3: advance requires the matching await stage; HOLD/past runs are
             # idempotent (no resume, no new dispatch) — frozen design §18.
             expected_await = _M5_AWAIT_FOR_STAGE.get(stage)
-            if t_stage != expected_await:
+            # M8-A2-d: a TASK_SUBMITTED-created candidate run sits at the
+            # legacy-shaped 'review' with its review stage_run already
+            # dispatched, so the review handoff accepts both states — the
+            # worker loop is not coupled to M4F_RUN arrival (the Manager
+            # contract emits M4F_RUN after the worker loop, A2-d §13).
+            accepted = (expected_await, "review") if stage == "review" else (expected_await,)
+            if t_stage not in accepted:
                 # already past this handoff (replay / out-of-order / finalized run)
                 _m5_mark_event(cur, event_id, "PROCESSED",
                                "run at %s/%s (no dispatch)" % (t_status, t_stage))

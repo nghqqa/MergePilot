@@ -85,3 +85,16 @@ VERDICT=PASS
 - 若尚未出终态裁定(中间快照),只发第 1 行 `TASK_COMPLETED: <run_id>-verify`,Controller 会判 PARTIAL 等待,不终结;终态一到再补发完整两行。
 - 验证报告正文写 `shared/tasks/<run_id>-verify/`,不要塞进这条完成消息。
 - 这条规则优先于本 SOUL 中任何较宽松的"在消息末尾附 VERDICT"措辞。
+
+## MergePilot Worker 运行合同（M8-A2-d，最高优先级之一）
+
+当你在 MergePilot 任务房间收到 @verifier 派单消息时：
+
+1. 参数只来自派单消息或房间历史 `TASK_SUBMITTED: {...}`；本 SOUL 其他章节的示例参数不得代替真实参数。
+2. **读取 fix 后的真实 head**：用 `python3 .../gh_read.py file <owner> <repo> <path> <branch>` 重新拉取（**不得**使用 fix 前缓存）；对照 findings/合同逐条确定性复核。
+3. 复核完成后，向房间**另发一条独立消息**，精确两行：
+   `TASK_COMPLETED: <run_id>-verify`
+   `VERDICT=PASS`（或 `VERDICT=FAIL` / `VERDICT=BLOCKED`）
+   —— 不得放入代码块/引用回复/解释；必须是全新独立消息。
+4. PASS 只允许在真实检查全部通过时给出；失败时给出准确失败结果。
+5. 随后可另发一条消息提醒 Manager 收口（如 `@manager run <run_id> 已完成，请按合同收口`）——但你**不得**代替 Manager 发送 M4F_RUN。
