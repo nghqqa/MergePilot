@@ -66,7 +66,8 @@ def _start_kwargs():
     return {"demo_console_run_id": _TEST_RUN_ID,
             "demo_console_pg_server_addresses": _TEST_BRIDGE_IP,
             "controller_env_file": _write_controller_env(),
-            "reader_dsn_env_file": "demo_console.env"}
+            "reader_dsn_env_file": "demo_console.env",
+            "gh_webhook_env_file": "gh_webhook.env"}
 
 try:
     import yaml  # type: ignore
@@ -214,13 +215,16 @@ class TestComposeYml(unittest.TestCase):
             self.assertIn("isolated", svc["networks"], name)
 
     def test_only_demo_console_publishes_loopback(self):
-        # 1-G network design: ONLY the secretless console-edge publishes,
-        # loopback-only, canonical port; demo-console is UNPUBLISHED.
+        # 1-G + M8-GH-3: exactly TWO loopback publications — the secretless
+        # console-edge (8600) and the gh-webhook receiver (8090);
+        # demo-console is UNPUBLISHED.
+        published = {"console-edge": "127.0.0.1:8600:8600",
+                     "gh-webhook": "127.0.0.1:8090:8090"}
         for name, svc in self.yml["services"].items():
             ports = svc.get("ports") or []
-            if name == "console-edge":
+            if name in published:
                 self.assertEqual(len(ports), 1, name)
-                self.assertEqual(str(ports[0]), "127.0.0.1:8600:8600")
+                self.assertEqual(str(ports[0]), published[name])
             else:
                 self.assertEqual(ports, [], name)
 
@@ -347,7 +351,8 @@ class TestImageIdentityRegistry(unittest.TestCase):
     def test_built_services_list(self):
         self.assertEqual(set(BUILT_SERVICES),
                          {"policy-gateway", "controller",
-                          "demo-console", "console-edge", "preflight"})
+                          "demo-console", "console-edge", "preflight",
+                          "gh-webhook"})
 
 
 # ── 4. Docker-CLI orchestrator ───────────────────────────────────────────────
@@ -488,8 +493,15 @@ class TestOrchestrator(unittest.TestCase):
         plans = plan_orchestrated_start(env_file="postgres.env", **_start_kwargs())
         for plan in plans:
             joined = " ".join(plan)
+            # exec-form healthcheck: the python -c body is ONE argv token
+            # (docker --health-cmd string form) — its internal ';' is not a
+            # shell metachar; strip the sanctioned body before scanning.
+            stripped = joined.replace(
+                "'import socket;s=socket.create_connection("
+                "(\"127.0.0.1\",8090),timeout=2);s.close()'",
+                "SOCKET_C_HEALTHCHECK")
             for ch in (";", "|", "&", "`", "$("):
-                self.assertNotIn(ch, joined)
+                self.assertNotIn(ch, stripped)
 
     def test_plans_no_dsn_or_password(self):
         plans = plan_orchestrated_start(env_file="postgres.env", **_start_kwargs())
@@ -498,16 +510,18 @@ class TestOrchestrator(unittest.TestCase):
 
     def test_full_start_order(self):
         plans = plan_orchestrated_start(env_file="postgres.env", **_start_kwargs())
-        # 2 network creates + 6 service runs (incl. console-edge) + 1
-        # edge network-connect = 9.
-        self.assertEqual(len(plans), 9)
+        # 2 network creates + 7 service runs (incl. console-edge and
+        # gh-webhook) + 2 network-connects = 11.
+        self.assertEqual(len(plans), 11)
         self.assertEqual(plans[0], oc.plan_network_create())
         self.assertEqual(plans[1], oc.plan_publication_network_create())
         run_plans = [p for p in plans[2:] if "--name" in p]
         connect_plans = [p for p in plans[2:] if "--name" not in p]
-        self.assertEqual(len(connect_plans), 1, connect_plans)
-        self.assertEqual(connect_plans[0],
-                         oc.plan_console_edge_connect_backend())
+        self.assertEqual(len(connect_plans), 2, connect_plans)
+        self.assertIn(oc.plan_console_edge_connect_backend(),
+                      connect_plans)
+        self.assertIn(oc.plan_gh_webhook_connect_backend(),
+                      connect_plans)
         names = [p[p.index("--name") + 1] for p in run_plans]
         expected = ["mergepilot-isolated-%s-1" % s
                     for s in oc.SERVICE_ORDER]
@@ -515,7 +529,8 @@ class TestOrchestrator(unittest.TestCase):
         edge_idx = next(i for i, p in enumerate(plans)
                         if "--name" in p and "console-edge-1" in
                         p[p.index("--name") + 1])
-        self.assertLess(edge_idx, plans.index(connect_plans[0]))
+        edge_connect_idx = plans.index(oc.plan_console_edge_connect_backend())
+        self.assertLess(edge_idx, edge_connect_idx)
 
     def test_full_start_requires_demo_console_inputs(self):
         # Fail-closed: run_id and measured bridge IP are REQUIRED — no
@@ -528,14 +543,17 @@ class TestOrchestrator(unittest.TestCase):
             _gate(self, plan_orchestrated_start, env_file="postgres.env",
                   controller_env_file="controller.env",
                   reader_dsn_env_file="demo_console.env",
+                  gh_webhook_env_file="gh_webhook.env",
                   code="CONFIG_INVALID")
             _gate(self, plan_orchestrated_start, env_file="postgres.env",
                   controller_env_file="controller.env",
                   reader_dsn_env_file="demo_console.env",
+                  gh_webhook_env_file="gh_webhook.env",
                   demo_console_run_id=_TEST_RUN_ID, code="CONFIG_INVALID")
             _gate(self, plan_orchestrated_start, env_file="postgres.env",
                   controller_env_file="controller.env",
                   reader_dsn_env_file="demo_console.env",
+                  gh_webhook_env_file="gh_webhook.env",
                   demo_console_pg_server_addresses=_TEST_BRIDGE_IP,
                   code="CONFIG_INVALID")
         finally:
@@ -546,18 +564,22 @@ class TestOrchestrator(unittest.TestCase):
         _gate(self, plan_orchestrated_start,
               controller_env_file="controller.env",
               reader_dsn_env_file="demo_console.env",
+              gh_webhook_env_file="gh_webhook.env",
               code="CONFIG_INVALID")
 
     def test_cleanup_plan_reverse_order_then_network(self):
         plans = plan_orchestrated_cleanup()
-        self.assertEqual(len(plans), 8)   # 6 services + 2 networks
-        names = [p[2] for p in plans[:6]]
+        self.assertEqual(len(plans), 9)   # 7 services + 2 networks
+        names = [p[2] for p in plans[:7]]
+        self.assertTrue(all(p[0] == 'rm' for p in plans[:7]))
+        self.assertEqual([p[0] for p in plans[7:]],
+                         ['network', 'network'])
         self.assertEqual(names, list(reversed(
             ["mergepilot-isolated-%s-1" % s for s in oc.SERVICE_ORDER])))
-        self.assertEqual(plans[6][0], "network")
-        self.assertEqual(plans[6][2], ORCHESTRATOR_NETWORK)
         self.assertEqual(plans[7][0], "network")
-        self.assertEqual(plans[7][2], oc.PUBLICATION_NETWORK)
+        self.assertEqual(plans[7][2], ORCHESTRATOR_NETWORK)
+        self.assertEqual(plans[8][0], "network")
+        self.assertEqual(plans[8][2], oc.PUBLICATION_NETWORK)
 
     def test_build_plans_reference_existing_dockerfiles(self):
         for service in ("controller", "policy-gateway",
@@ -629,6 +651,14 @@ class TestNoTwinOrHostSubstitution(unittest.TestCase):
                         get_built_image_identity(service))
                     self.assertEqual(edge[edge.index("-p") + 1],
                                      "127.0.0.1:8600:8600")
+                    continue
+                if service == "gh-webhook":
+                    # M8-GH-3: loopback publisher via its dedicated plan.
+                    hook = oc.plan_gh_webhook_run(
+                        get_built_image_identity(service),
+                        env_file="gh_webhook.env")
+                    self.assertEqual(hook[hook.index("-p") + 1],
+                                     "127.0.0.1:8090:8090")
                     continue
                 plan = plan_service_run(
                     service, image_ref=get_built_image_identity(service),
@@ -704,6 +734,7 @@ class TestM8A1ControllerEnvContract(unittest.TestCase):
         plans = self._plans_or_gate(
             controller_env_file=path,
             reader_dsn_env_file="demo_console.env",
+            gh_webhook_env_file="gh_webhook.env",
             demo_console_run_id=_TEST_RUN_ID,
             demo_console_pg_server_addresses=_TEST_BRIDGE_IP)
         self.assertIsInstance(plans, list)
@@ -714,13 +745,14 @@ class TestM8A1ControllerEnvContract(unittest.TestCase):
         kwargs = dict(
             controller_env_file=path,
             reader_dsn_env_file="demo_console.env",
+            gh_webhook_env_file="gh_webhook.env",
             demo_console_run_id=_TEST_RUN_ID,
             demo_console_pg_server_addresses=_TEST_BRIDGE_IP)
         plans_now = plan_orchestrated_start(env_file="postgres.env",
                                             **kwargs)
         # Baseline property: no M4F_ENABLED anywhere, single env-file per
-        # controller, exact step count 9 (2 nets + 6 runs + 1 connect).
-        self.assertEqual(9, len(plans_now))
+        # controller, exact step count 11 (2 nets + 7 runs + 2 connects).
+        self.assertEqual(11, len(plans_now))
         joined = " ".join(" ".join(p) for p in plans_now)
         self.assertNotIn("M4F_ENABLED", joined)
         ctrl = next(p for p in plans_now if "--name" in p and
@@ -735,6 +767,7 @@ class TestM8A1ControllerEnvContract(unittest.TestCase):
         exc = self._plans_or_gate(
             controller_env_file=path,
             reader_dsn_env_file="demo_console.env",
+            gh_webhook_env_file="gh_webhook.env",
             demo_console_run_id=_TEST_RUN_ID,
             demo_console_pg_server_addresses=_TEST_BRIDGE_IP)
         self.assertIsNotNone(exc)
@@ -753,6 +786,7 @@ class TestM8A1ControllerEnvContract(unittest.TestCase):
             exc = self._plans_or_gate(
                 controller_env_file=path,
                 reader_dsn_env_file="demo_console.env",
+                gh_webhook_env_file="gh_webhook.env",
                 demo_console_run_id=_TEST_RUN_ID,
                 demo_console_pg_server_addresses=_TEST_BRIDGE_IP)
             self.assertIsNotNone(exc, lines)
@@ -763,6 +797,7 @@ class TestM8A1ControllerEnvContract(unittest.TestCase):
         exc = self._plans_or_gate(
             controller_env_file=path,
             reader_dsn_env_file="demo_console.env",
+            gh_webhook_env_file="gh_webhook.env",
             demo_console_run_id=_TEST_RUN_ID,
             demo_console_pg_server_addresses=_TEST_BRIDGE_IP)
         self.assertIsNotNone(exc)
@@ -772,6 +807,7 @@ class TestM8A1ControllerEnvContract(unittest.TestCase):
         exc = self._plans_or_gate(
             controller_env_file="no/such/controller.env",
             reader_dsn_env_file="demo_console.env",
+            gh_webhook_env_file="gh_webhook.env",
             demo_console_run_id=_TEST_RUN_ID,
             demo_console_pg_server_addresses=_TEST_BRIDGE_IP)
         self.assertIsNotNone(exc)
@@ -790,6 +826,7 @@ class TestM8A1ControllerEnvContract(unittest.TestCase):
             env_file="postgres.env",
             controller_env_file=path,
             reader_dsn_env_file="demo_console.env",
+            gh_webhook_env_file="gh_webhook.env",
             demo_console_run_id=_TEST_RUN_ID,
             demo_console_pg_server_addresses=_TEST_BRIDGE_IP,
             m4f_event_machinery=True)
@@ -812,6 +849,7 @@ class TestM8A1ControllerEnvContract(unittest.TestCase):
         exc = self._plans_or_gate(
             controller_env_file=path,
             reader_dsn_env_file="demo_console.env",
+            gh_webhook_env_file="gh_webhook.env",
             demo_console_run_id=_TEST_RUN_ID,
             demo_console_pg_server_addresses=_TEST_BRIDGE_IP,
             m4f_event_machinery=True)
@@ -833,6 +871,7 @@ class TestM8A1ControllerEnvContract(unittest.TestCase):
             exc = self._plans_or_gate(
                 controller_env_file=path,
                 reader_dsn_env_file="demo_console.env",
+                gh_webhook_env_file="gh_webhook.env",
                 demo_console_run_id=_TEST_RUN_ID,
                 demo_console_pg_server_addresses=_TEST_BRIDGE_IP,
                 m4f_event_machinery=True)
@@ -846,6 +885,7 @@ class TestM8A1ControllerEnvContract(unittest.TestCase):
         exc = self._plans_or_gate(
             controller_env_file=path,
             reader_dsn_env_file="demo_console.env",
+            gh_webhook_env_file="gh_webhook.env",
             demo_console_run_id=_TEST_RUN_ID,
             demo_console_pg_server_addresses=_TEST_BRIDGE_IP,
             m4f_event_machinery=True)

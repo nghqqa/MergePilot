@@ -710,7 +710,8 @@ class TestHealthchecksAndOrder(unittest.TestCase):
                 demo_console_run_id="run-1",
                 demo_console_pg_server_addresses="172.18.0.2",
                 controller_env_file=_write_controller_env_file(),
-                reader_dsn_env_file="/tmp/demo_console.env")
+                reader_dsn_env_file="/tmp/demo_console.env",
+                gh_webhook_env_file="/tmp/gh_webhook.env")
             by_name = {p[p.index("--name") + 1]: p for p in plans[1:]
                        if "--name" in p}
             for svc in ("mergepilot-isolated-controller-1",
@@ -795,7 +796,8 @@ class TestCrossCutting(unittest.TestCase):
         # plumbing); the gateway stub remains in-container only.
         self.assertEqual(set(yml["services"]),
                          {"postgres", "policy-gateway", "controller",
-                          "demo-console", "console-edge", "preflight"})
+                          "demo-console", "console-edge", "preflight",
+                          "gh-webhook"})
         text = COMPOSE_PATH.read_text(encoding="utf-8")
         self.assertNotIn("host-process", text.replace(
             "no host-process substitute", "").replace(

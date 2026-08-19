@@ -165,10 +165,13 @@ class FakeWorld:
             if cont is not None:
                 if fmt == "{{.Id}}":
                     return FakeProc(0, stdout=(cont["id"] + "\n").encode())
-                if fmt.startswith("{{.Id}}|"):
-                    line = "|".join((cont["id"], cont["status"],
-                                     cont.get("health", ""),
-                                     cont.get("exit_code", "0")))
+                if fmt.startswith("{{.Id}}@@{{json .State}}"):
+                    import json as _json
+                    state = {"Status": cont["status"],
+                             "ExitCode": int(cont.get("exit_code", "0"))}
+                    if cont.get("health"):
+                        state["Health"] = {"Status": cont["health"]}
+                    line = "%s@@%s" % (cont["id"], _json.dumps(state))
                     return FakeProc(0, stdout=(line + "\n").encode())
                 if "IPAddress" in fmt:
                     return FakeProc(0, stdout=(cont.get("ip", "") + "\n")
@@ -359,15 +362,16 @@ class CliTestBase(unittest.TestCase):
         return rc, text, payload
 
     def write_install_manifest(self):
-        images = {mp.image_tag(oc, svc): IMG_BUILT[svc]
+        images = {mp.image_tag(oc, svc): IMG_BUILT.get(
+            svc, "sha256:" + "ab" * 32)
                   for svc in oc.BUILT_SERVICES}
         manifest = {"schema_version": 1, "project_root": str(_ROOT),
                     "images": images}
         path = _ROOT / ".mergepilot" / "install.json"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(manifest), encoding="utf-8")
-        for svc in oc.BUILT_SERVICES:            # keep the world consistent
-            self.world.images[mp.image_tag(oc, svc)] = IMG_BUILT[svc]
+        for tag, img_id in images.items():       # keep the world consistent
+            self.world.images[tag] = img_id
         return manifest
 
     def run_full_start(self):
@@ -600,7 +604,7 @@ class TestInstall(CliTestBase):
         rc, text, payload = self.cli("install", "--json")
         self.assertEqual(rc, mp.EXIT_OK)
         builds = [a for a in self.world.docker_args() if a[0] == "build"]
-        self.assertEqual(len(builds), 5)
+        self.assertEqual(len(builds), 6)
         expected = [oc.plan_build(s) for s in oc.BUILT_SERVICES]
         self.assertEqual(builds, expected)
         manifest = json.loads((_ROOT / ".mergepilot" / "install.json")
@@ -639,7 +643,8 @@ class TestStartDryRun(CliTestBase):
         state = _ROOT / ".mergepilot"
         self.assertFalse((state / "session.json").exists())
         self.assertFalse((state / "secrets").exists())
-        secrets = ("postgres.env", "controller.env", "demo_console.env")
+        secrets = ("postgres.env", "controller.env", "demo_console.env",
+                   "gh_webhook.env")
         wsl_base = mp._to_wsl_path(_ROOT / ".mergepilot" / "secrets")
         expected = [
             oc.plan_network_create(),
@@ -656,6 +661,10 @@ class TestStartDryRun(CliTestBase):
                 image_ref=oc.get_built_image_identity("controller"),
                 controller_env=oc._controller_environment(),
                 env_file=wsl_base + "/controller.env", m4f_enabled=False),
+            oc.plan_gh_webhook_run(
+                oc.get_built_image_identity("gh-webhook"),
+                env_file=wsl_base + "/gh_webhook.env"),
+            oc.plan_gh_webhook_connect_backend(),
             oc.plan_service_run(
                 "demo-console",
                 image_ref=oc.get_built_image_identity("demo-console"),
@@ -672,7 +681,7 @@ class TestStartDryRun(CliTestBase):
                 reader_dsn_env_file=wsl_base + "/demo_console.env"),
         ]
         self.assertEqual(payload["plans"], expected)
-        self.assertEqual(len(secrets), 3)
+        self.assertEqual(len(secrets), 4)
 
 
 class TestStartHappyPath(CliTestBase):
@@ -724,8 +733,17 @@ class TestStartHappyPath(CliTestBase):
         edge_run = next(i for i, a in enumerate(args)
                         if a[0] == "run" and EDGE_NAME in a)
         edge_connect = next(i for i, a in enumerate(args)
-                            if a[0] == "network" and a[1] == "connect")
+                            if a[0] == "network" and a[1] == "connect"
+                            and EDGE_NAME in a)
         self.assertLess(edge_run, edge_connect)
+        # gh-webhook follows the same publication-first rule
+        gh_name = "mergepilot-isolated-gh-webhook-1"
+        gh_run = next(i for i, a in enumerate(args)
+                      if a[0] == "run" and gh_name in a)
+        gh_connect = next(i for i, a in enumerate(args)
+                          if a[0] == "network" and a[1] == "connect"
+                          and gh_name in a)
+        self.assertLess(gh_run, gh_connect)
         edge_argv = args[edge_run]
         self.assertIn(oc.PUBLICATION_NETWORK, edge_argv)
         self.assertNotIn("--network=%s" % oc.ORCHESTRATOR_NETWORK,
@@ -742,15 +760,22 @@ class TestStartHappyPath(CliTestBase):
                            and "demo-console-1" in " ".join(a))
         self.assertIn(BRIDGE_IP, " ".join(console_run))
 
-        # DB prepare: prerequisite roles, reader role, migrations, seed
+        # DB prepare: prerequisite roles, reader role, migrations,
+        # gh runtime roles, marker, seed
         inputs = [b.decode("utf-8", "replace")
                   for b in world.psql_inputs]
         self.assertEqual(len(inputs), 1 + len(mp.AUDIT_DB_MIGRATION_CHAIN)
-                         + 1 + len(mp.ISOLATED_LIVE_MIGRATIONS) + 1 + 1)
+                         + 1 + len(mp.ISOLATED_LIVE_MIGRATIONS) + 1 + 1 + 1)
         self.assertIn("policy_gateway_l2", inputs[0])
         reader_sql = inputs[1 + len(mp.AUDIT_DB_MIGRATION_CHAIN)]
         self.assertIn("CREATE ROLE mergepilot_reader", reader_sql)
         self.assertIn("default_transaction_read_only", reader_sql)
+        # M8-GH-3: gh runtime role bootstrap runs AFTER prepare_database
+        gh_role_sql = inputs[-1]
+        self.assertIn("ALTER ROLE github_event_ingress PASSWORD",
+                      gh_role_sql)
+        self.assertIn("ALTER ROLE github_check_publisher PASSWORD",
+                      gh_role_sql)
         joined = "\n".join(inputs)
         self.assertIn("environment_identity", joined)
         self.assertIn("INSERT INTO task_runs", joined)
@@ -1032,7 +1057,7 @@ class TestStop(CliTestBase):
         self.assertEqual(payload["error_code"], "OWNERSHIP_MISMATCH")
         self.assertEqual([a for a in self.world.docker_args()
                           if a[0] == "rm"], [])
-        self.assertEqual(len(self.world.containers), 6)
+        self.assertEqual(len(self.world.containers), 7)
 
     def test_orphan_stack_refuses_stop(self):
         self.world.containers[PG_NAME] = {
@@ -1064,7 +1089,7 @@ class TestStop(CliTestBase):
         rc, text, payload = self.cli("stop", "--json")
         self.assertEqual(rc, mp.EXIT_RESIDUE)
         self.assertTrue(payload["residue_codes"])
-        self.assertEqual(len(self.world.containers), 6)
+        self.assertEqual(len(self.world.containers), 7)
 
 
 # ── Cleanup ──────────────────────────────────────────────────────────────────
@@ -1080,7 +1105,7 @@ class TestCleanup(CliTestBase):
         self.assertEqual(len(self.world.write_args()), writes)
         self.assertTrue(self.world.containers)
         plans = payload["plans"]
-        self.assertEqual(len([p for p in plans if p[0] == "rmi"]), 5)
+        self.assertEqual(len([p for p in plans if p[0] == "rmi"]), 6)
 
     def test_apply_removes_verified_images(self):
         self.run_full_start()
