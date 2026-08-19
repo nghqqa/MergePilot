@@ -69,8 +69,9 @@ class TestHmacAndSize(unittest.TestCase):
         self.assertEqual(len(conn.executed), 1)
         sql, params = conn.executed[0]
         self.assertIn("INSERT INTO public.github_deliveries", sql)
-        self.assertIn("ON CONFLICT (delivery_id) DO NOTHING", sql)
-        self.assertNotIn("RETURNING", sql)      # INSERT-only,无 SELECT 权限
+        # INSERT-only 合同:无 ON CONFLICT(仲裁列需 SELECT,真实 PG 拒绝)
+        self.assertNotIn("ON CONFLICT", sql)
+        self.assertNotIn("RETURNING", sql)      # 亦无表级 SELECT 依赖
         self.assertEqual(params[-1], "PENDING")
         self.assertEqual(conn.commits, 1)
 
@@ -188,11 +189,15 @@ class TestClassificationAndReplay(unittest.TestCase):
         status, outcome, _ = call(raw, conn)
         self.assertEqual((status, outcome), (200, "ignored"))
 
-    def test_guid_replay_rowcount_zero_200(self):
+    def test_guid_replay_unique_violation_200(self):
+        from fakes import FakeUniqueViolation
         conn = FakeConnection()
-        conn.enqueue("INSERT INTO public.github_deliveries", rowcount=0)
+        conn.enqueue("INSERT INTO public.github_deliveries",
+                     raise_exc=FakeUniqueViolation("duplicate key ... "
+                                                   "github_deliveries_pkey"))
         status, outcome, _ = call(pr_body(), conn)
         self.assertEqual((status, outcome), (200, "duplicate"))
+        self.assertEqual(conn.rollbacks, 1)
 
     def test_db_failure_503_and_rollback(self):
         class Boom(FakeConnection):

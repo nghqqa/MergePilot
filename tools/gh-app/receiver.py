@@ -9,9 +9,11 @@
     最小信封 + body_sha256,不保存原始 body。
   * 仅 pull_request × opened|synchronize|reopened 进入 PENDING;ping 与其余
     一切事件 → IGNORED(零工作流写入)。
-  * 重复交付判定: INSERT ... ON CONFLICT (delivery_id) DO NOTHING 的
-    rowcount(rowcount=1 新 / 0 重复)—— 不使用 RETURNING(receiver 无表
-    SELECT 权限)。
+  * 重复交付判定: 纯 INSERT + PostgreSQL 唯一违反(pgcode 23505)→
+    200 duplicate。**不使用 ON CONFLICT (delivery_id) DO NOTHING** —— 带
+    conflict_target 的 ON CONFLICT 要求仲裁列的 SELECT 权限,INSERT-only
+    角色在真实 PostgreSQL 上会被确定性拒绝(隔离 staging 实证;
+    mock 单测无法覆盖该服务器端语义)。
   * HTTP: 新 PENDING=202;重复/IGNORED=200;格式/字段违规=400;验签=401;
     超限=413;DB 故障=503(未提交即失败,GitHub 重试安全)。
   * 本模块不导入 controller/process_event/submit_task,不写任何治理表;
@@ -186,7 +188,6 @@ INSERT INTO public.github_deliveries
         observed_head_sha, observed_base_sha, body_sha256,
         canonical_payload, status)
 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-ON CONFLICT (delivery_id) DO NOTHING
 """
 
 
@@ -229,14 +230,16 @@ def handle_webhook(*, raw: bytes, event_header: Optional[str],
                 envelope.get("observed_head_sha"),
                 envelope.get("observed_base_sha"), body_sha256, canonical,
                 status_value))
-            inserted = cur.rowcount
         conn.commit()
-    except Exception:
+    except Exception as exc:
         if conn is not None:
             try:
                 conn.rollback()
             except Exception:
                 pass
+        if getattr(exc, "pgcode", None) == "23505":
+            # 主键冲突 = delivery GUID 重放(INSERT-only 判重路径)。
+            return (HTTP_OK, "duplicate", "delivery id replay")
         return (HTTP_UNAVAILABLE, "error", "database unavailable")
     finally:
         if conn is not None:
@@ -247,9 +250,7 @@ def handle_webhook(*, raw: bytes, event_header: Optional[str],
 
     if status_value == "IGNORED":
         return (HTTP_OK, "ignored", "event not mapped")
-    if inserted == 1:
-        return (HTTP_ACCEPTED, "accepted", "delivery queued")
-    return (HTTP_OK, "duplicate", "delivery id replay")
+    return (HTTP_ACCEPTED, "accepted", "delivery queued")
 
 
 def healthz(connect: Callable[[], Any]) -> bool:

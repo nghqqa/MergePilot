@@ -68,7 +68,15 @@ class WebhookHandler(BaseHTTPRequestHandler):
                                              "error": "bad content-length"})
             return
         if length > MAX_BODY_BYTES:
-            # 超限:不读 body,直接 413(零 DB 写)。
+            # 超限:排水并丢弃 body(HTTP/1.1 keep-alive 下,不排水会让
+            # 客户端阻塞在写体),然后 413 + 关连接(零业务 DB 写)。
+            remaining = length
+            while remaining > 0:
+                chunk = self.rfile.read(min(65536, remaining))
+                if not chunk:
+                    break
+                remaining -= len(chunk)
+            self.close_connection = True
             self._respond(HTTP_TOO_LARGE,
                           {"ok": False, "error": "body exceeds 2 MiB"})
             return
