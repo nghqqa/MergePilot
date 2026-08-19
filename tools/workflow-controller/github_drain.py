@@ -484,7 +484,7 @@ def reconcile_github_checks(conn_factory: Callable[[], Any], *,
                 observed = cur.fetchone()
                 cur.execute(
                     "SELECT status FROM public.rollback_runs "
-                    "WHERE parent_run_id=%s ORDER BY requested_at DESC LIMIT 1",
+                    "WHERE parent_run_id=%s ORDER BY created_at DESC LIMIT 1",
                     (run_id,))
                 rollback = cur.fetchone()
             conn.commit()

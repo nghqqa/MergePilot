@@ -5,6 +5,12 @@ from __future__ import annotations
 from collections import deque
 
 
+class FakeUniqueViolation(Exception):
+    """psycopg2.errors.UniqueViolation 的形状替身(pgcode=23505)。"""
+
+    pgcode = "23505"
+
+
 class FakeCursor:
     def __init__(self, conn):
         self._conn = conn
@@ -50,9 +56,11 @@ class FakeConnection:
 
     # -- scripting ------------------------------------------------------------
 
-    def enqueue(self, match, rowcount=1, fetchone=None, fetchall=None):
+    def enqueue(self, match, rowcount=1, fetchone=None, fetchall=None,
+                raise_exc=None):
         self.plan.append({"match": match, "rowcount": rowcount,
-                          "fetchone": fetchone, "fetchall": fetchall})
+                          "fetchone": fetchone, "fetchall": fetchall,
+                          "raise_exc": raise_exc})
         return self
 
     # -- psycopg2 surface ------------------------------------------------------
@@ -83,6 +91,8 @@ class FakeConnection:
         for entry in self.plan:
             if not entry.get("_used") and entry["match"] in normalized:
                 entry["_used"] = True
+                if entry.get("raise_exc") is not None:
+                    raise entry["raise_exc"]
                 self._staged_fetchone = entry.get("fetchone")
                 self._staged_fetchall = entry.get("fetchall")
                 return entry["rowcount"]
