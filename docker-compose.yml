@@ -99,6 +99,43 @@ services:
       timeout: 3s
       retries: 10
 
+  # gh-webhook (M8-GH-3): the GitHub webhook receiver + Checks reporter
+  # image. Publishes its receiver on the HOST loopback ONLY (8090) via the
+  # publication bridge (a non-internal network — Docker silently drops
+  # port publishing on internal networks; see the 1-G design notes above).
+  # Secrets (GITHUB_INGRESS_DSN with INSERT-only role + connect_timeout,
+  # GITHUB_WEBHOOK_SECRET) travel via the orchestrator-created secret
+  # env-file — never compose literals. Hardened runtime (M8-GH-2):
+  # non-root UID/GID 9090, digest-pinned base, read-only rootfs,
+  # no-new-privileges, all capabilities dropped, no Docker socket.
+  gh-webhook:
+    build:
+      context: .
+      dockerfile: Dockerfile.gh-webhook
+    pull_policy: never
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - isolated
+      - console-publish
+    ports:
+      - "127.0.0.1:8090:8090"        # loopback-only receiver publication.
+    env_file: gh_webhook.env         # created by the orchestrator (secrets)
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8090/healthz',timeout=2)"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: "no"
+
   demo-console:
     build:
       context: .
@@ -109,6 +146,10 @@ services:
       # controller (and transitively the policy-gateway) to pass their real
       # healthchecks before the console starts.
       controller:
+        condition: service_healthy
+      # M8-GH-3: the console also waits for the webhook receiver (transitively
+      # postgres-healthy) so a broken ingress surface blocks the stack loudly.
+      gh-webhook:
         condition: service_healthy
     networks:
       - isolated

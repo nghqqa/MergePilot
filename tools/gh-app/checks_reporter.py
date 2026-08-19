@@ -303,5 +303,32 @@ def run_loop(conn_factory: Callable[[], Any], *, api_base: str,
 
 __all__ = [
     "DEFAULT_LEASE_SECONDS", "DEFAULT_MAX_ATTEMPTS", "TransportError",
-    "default_transport", "publish_once", "run_loop",
+    "default_transport", "main", "publish_once", "run_loop",
 ]
+
+
+def main() -> int:
+    """Standalone reporter entry: poll the outbox forever from env config.
+
+    Env: GITHUB_PUBLISHER_DSN (required), GITHUB_API_BASE (default
+    http://127.0.0.1:8091), GITHUB_CHECKS_TOKEN (optional), poll 5s.
+    """
+    dsn = os.environ.get("GITHUB_PUBLISHER_DSN", "")
+    if not dsn:
+        sys.stderr.write("[gh-reporter] missing GITHUB_PUBLISHER_DSN\n")
+        return 3
+
+    def _cf():
+        import psycopg2
+        from dsn_guard import ensure_connect_timeout
+        return psycopg2.connect(ensure_connect_timeout(dsn))
+
+    run_loop(_cf,
+             api_base=os.environ.get("GITHUB_API_BASE",
+                                     "http://127.0.0.1:8091"),
+             poll_seconds=float(os.environ.get("GH_REPORTER_POLL", "5")))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

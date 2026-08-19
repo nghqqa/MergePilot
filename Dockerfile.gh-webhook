@@ -1,0 +1,29 @@
+# Root-level compose/build entry for the gh-webhook service (M8-GH-3).
+#
+# Mirrors the Dockerfile.controller pattern: this root wrapper carries the
+# full build recipe so docker-compose and the Docker-CLI orchestrator can
+# build with context "." under the uniform Dockerfile.<service> path
+# contract; the canonical thin Dockerfile in tools/gh-app stays for
+# standalone subdir builds. Keep the two in sync (digest-pinned base,
+# non-root UID/GID 9090, pinned psycopg2, no baked secrets).
+
+FROM python:3.12-slim@sha256:9e869b0816f5537709825b49e62dc86d1c2691eff19b05c1d4dc3a07992cc052
+
+RUN pip install --no-cache-dir psycopg2-binary==2.9.12 \
+ && groupadd -g 9090 mergepilot-gh \
+ && useradd -u 9090 -g 9090 -M -s /usr/sbin/nologin mergepilot-gh
+
+COPY tools/gh-app/__init__.py /app/gh_app/__init__.py
+COPY tools/gh-app/receiver.py /app/gh_app/receiver.py
+COPY tools/gh-app/http_server.py /app/gh_app/http_server.py
+COPY tools/gh-app/checks_reporter.py /app/gh_app/checks_reporter.py
+COPY tools/gh-app/dsn_guard.py /app/gh_app/dsn_guard.py
+
+WORKDIR /app/gh_app
+ENV PYTHONUNBUFFERED=1 \
+    GH_APP_BIND=0.0.0.0 \
+    GH_APP_PORT=8090
+HEALTHCHECK --interval=5s --timeout=3s --retries=10 \
+  CMD python -c "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8090/healthz',timeout=2)"
+USER mergepilot-gh
+ENTRYPOINT ["python", "-u", "http_server.py"]

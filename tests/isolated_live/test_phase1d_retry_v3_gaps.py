@@ -100,6 +100,7 @@ class TestControllerEnvFileContract(unittest.TestCase):
             _gate(self, oc.plan_orchestrated_start,
                   controller_env_file=bad,
                   reader_dsn_env_file="demo_console.env",
+                  gh_webhook_env_file="gh_webhook.env",
                   code="CONFIG_INVALID")
 
     def test_failure_precedes_any_plan_generation(self):
@@ -113,10 +114,12 @@ class TestControllerEnvFileContract(unittest.TestCase):
             _gate(self, oc.plan_orchestrated_start,
                   controller_env_file=None,
                   reader_dsn_env_file="demo_console.env",
+                  gh_webhook_env_file="gh_webhook.env",
                   code="CONFIG_INVALID")
             _gate(self, oc.plan_orchestrated_start,
                   controller_env_file="  ",
                   reader_dsn_env_file="demo_console.env",
+                  gh_webhook_env_file="gh_webhook.env",
                   code="CONFIG_INVALID")
 
     def test_service_run_rejects_controller_without_env_file(self):
@@ -145,6 +148,7 @@ class TestControllerEnvFileContract(unittest.TestCase):
         plans = oc.plan_orchestrated_start(
             controller_env_file=_write_controller_env_file(),
             reader_dsn_env_file="demo_console.env",
+            gh_webhook_env_file="gh_webhook.env",
             demo_console_run_id="run-1",
             demo_console_pg_server_addresses="172.18.0.2")
         by_name = {p[p.index("--name") + 1]: p for p in plans[1:]
@@ -156,6 +160,7 @@ class TestControllerEnvFileContract(unittest.TestCase):
         exc = _gate(self, oc.plan_orchestrated_start,
                     controller_env_file=_write_controller_env_file(),
                     reader_dsn_env_file="demo_console.env",
+                    gh_webhook_env_file="gh_webhook.env",
                     code="CONFIG_INVALID")
         self.assertNotIn("/very/secret/place/x.env", str(exc))
         self.assertNotIn("x.env", str(exc))
@@ -432,6 +437,7 @@ class TestDemoReadinessThreeLayerConsistency(unittest.TestCase):
             plans = oc.plan_orchestrated_start(
                 controller_env_file=_write_controller_env_file(),
                 reader_dsn_env_file="demo_console.env",
+                gh_webhook_env_file="gh_webhook.env",
                 demo_console_run_id="run-1",
                 demo_console_pg_server_addresses="172.18.0.2")
             demo = next(p for p in plans[1:]
@@ -547,7 +553,8 @@ class TestAstAndStubBoundaries(unittest.TestCase):
         yml = yaml.safe_load(COMPOSE_PATH.read_text(encoding="utf-8"))
         self.assertEqual(set(yml["services"]),
                          {"postgres", "policy-gateway", "controller",
-                          "demo-console", "console-edge", "preflight"})
+                          "demo-console", "console-edge", "preflight",
+                          "gh-webhook"})
         # Boundary language preserved verbatim in the truth-source module.
         ocsrc = (ROOT / "tools" / "demo_console" /
                  "one_click_startup.py").read_text(encoding="utf-8")
@@ -1470,6 +1477,7 @@ class TestReaderDsnDelivery(unittest.TestCase):
         plans = oc.plan_orchestrated_start(
             controller_env_file=_write_controller_env_file(),
             reader_dsn_env_file="demo_console.env",
+            gh_webhook_env_file="gh_webhook.env",
             demo_console_run_id="run-1",
             demo_console_pg_server_addresses="172.18.0.2")
         by_name = {p[p.index("--name") + 1]: p for p in plans[1:]

@@ -1,0 +1,25 @@
+# Example GitHub-App repo → Matrix room mapping (M8-GH-3).
+#
+# CONTRACT — read before copying this file:
+#   * This EXAMPLE contains placeholder room IDs only. Never commit real
+#     room IDs; the runtime room-map is generated at deploy time from this
+#     template and lives under the runtime secret area (gitignored,
+#     0600), never in the repository.
+#   * The repo set must map 1:1 onto tools/policy-gateway/policy.yaml
+#     repos.allowlist — a missing, extra, duplicate or ambiguous entry
+#     makes the Controller's github drain refuse to start (fail-closed).
+#   * repo keys must be canonical "owner/repo"; room_id must be a Matrix
+#     room ID ("!opaque:server"). Duplicate YAML keys are rejected by the
+#     strict parser (github_drain.parse_room_map).
+#   * MergePilot never auto-creates Matrix rooms: the room must already
+#     exist and the participants (reviewer/fixer/verifier/manager) must
+#     already be joined before enabling GITHUB_INGRESS_ENABLED=1.
+#
+# Generate a runtime map for the single-repo allowlist like:
+#   mkdir -p .mergepilot && cp config/gh-app/room-map.example.yaml \
+#       .mergepilot/room-map.yaml
+#   # then edit .mergepilot/room-map.yaml to carry your REAL room ID
+
+repos:
+  "nghqqa/MergePilot":
+    room_id: "!replace-with-your-real-matrix-room:example.org"

@@ -126,6 +126,10 @@ AUDIT_DB_MIGRATION_CHAIN = (
     "m4f1_state.sql",
     "m4f1_hotfix_1.sql",
     "m4f1_hotfix_1.sql",
+    # M8-GH-3: the GitHub ingress migration (deliveries/outbox tables +
+    # NOLOGIN capability roles + LOGIN runtime roles + minimal grants) is
+    # part of the standard chain — installs create the ingress surface.
+    "m8gh1_github_ingress.sql",
 )
 ISOLATED_LIVE_MIGRATIONS = (
     "001_environment_identity.sql",
@@ -468,11 +472,14 @@ class WslDocker:
         return img
 
     def container_state(self, name):
-        """(state, {status, health, exit_code}) in ONE inspect per container."""
+        """(state, {id, status, health, exit_code}) — ONE inspect per
+        container. Uses ``{{json .State}}`` — pipe characters in a
+        ``--format`` template are re-interpreted as shell pipes by
+        wsl.exe's argument reassembly (real-Docker E2E finding), so no
+        literal ``|`` may appear anywhere in the format string."""
         cp = self.docker(
             ["inspect", name, "--format",
-             "{{.Id}}|{{.State.Status}}|{{.State.Health.Status}}|"
-             "{{.State.ExitCode}}"],
+             "{{.Id}}@@{{json .State}}"],
             check=False, log_tag="inspect-state")
         if cp.returncode != 0:
             err = (cp.stderr or b"").decode("utf-8", "replace").lower()
@@ -483,16 +490,26 @@ class WslDocker:
                           % (name, cp.returncode),
                           exit_code=EXIT_FAILED_CLEANED)
         raw = cp.stdout.decode("utf-8", "replace").strip()
-        parts = raw.split("|")
-        if len(parts) != 4:
+        parts = raw.split("@@", 1)
+        if len(parts) != 2:
             raise Failure("DOCKER_INSPECT_FAILED",
                           "state probe unparseable for %s" % name,
                           exit_code=EXIT_FAILED_CLEANED)
+        try:
+            state = json.loads(parts[1])
+        except ValueError:
+            raise Failure("DOCKER_INSPECT_FAILED",
+                          "state JSON unparseable for %s" % name,
+                          exit_code=EXIT_FAILED_CLEANED) from None
+        health = ""
+        health_obj = state.get("Health")
+        if isinstance(health_obj, dict):
+            health = health_obj.get("Status") or ""
         return "present", {
             "id": parts[0],
-            "status": parts[1],
-            "health": "" if parts[2].startswith("<no value>") else parts[2],
-            "exit_code": parts[3],
+            "status": state.get("Status") or "",
+            "health": health,
+            "exit_code": str(state.get("ExitCode", "")),
         }
 
     def network_ip(self, name):
@@ -644,15 +661,21 @@ def probe_environment(docker):
             continue
         key, _, value = s.partition(":")
         fingerprint[key.strip().lower()] = value.strip()
-    missing = [f for f in ("server id", "docker root dir")
+    # Docker 29.x removed "Server ID" from `docker info`; the fingerprint
+    # contract now requires Docker Root Dir + Server Version (both stable
+    # across 24..29) — Server ID is recorded when present but optional.
+    missing = [f for f in ("server version", "docker root dir")
                if not fingerprint.get(f)]
     if missing:
         add("daemon_fingerprint", "DOCTOR_FINGERPRINT_MISSING", False,
             "fields missing: %s" % missing)
         return checks
     add("daemon_fingerprint", "DOCTOR_FINGERPRINT_OK", True,
-        "server_id=%s root=%s" % (fingerprint.get("server id", "")[:16],
-                                  fingerprint.get("docker root dir", "")))
+        "version=%s root=%s%s"
+        % (fingerprint.get("server version", ""),
+           fingerprint.get("docker root dir", ""),
+           (" server_id=%s" % fingerprint["server id"][:16])
+           if fingerprint.get("server id") else ""))
 
     base = docker.image_id(BUILT_BASE_IMAGE)
     if base is None:
@@ -744,11 +767,256 @@ def port_in_use(port):
         s.close()
 
 
+# ── gh-webhook secret env-file + runtime role bootstrap (M8-GH-3) ───────────
+
+class GhWebhookSecretFile:
+    """Secret env-file for the gh-webhook receiver (M8-GH-3).
+
+    Same transport guarantees as the planner SecretFile classes: fixed
+    name (``gh_webhook.env``), values never in argv/logs/manifests,
+    0600 where enforceable, refuses to overwrite, idempotent delete.
+    Carries GITHUB_INGRESS_DSN (INSERT-only role + forced
+    connect_timeout=5 via the structured builder below),
+    GITHUB_WEBHOOK_SECRET and the receiver-side repo allowlist.
+    """
+
+    _NAME = "gh_webhook.env"
+
+    def __init__(self, directory: Path):
+        self._dir = Path(directory)
+        self._path = self._dir / self._NAME
+
+    @property
+    def path(self) -> Path:
+        return self._path
+
+    @staticmethod
+    def build_ingress_dsn(password: str, *, user: str = "github_event_ingress",
+                          host: str = "postgres", port: int = 5432,
+                          database: str = "mergepilot_audit",
+                          connect_timeout: int = 5) -> str:
+        """Structured role DSN with a FORCED connect_timeout.
+
+        Built with urllib.parse (quoted password, explicit query) — never
+        bare interpolation; the receiver/reporter re-validates it via
+        dsn_guard.ensure_connect_timeout at startup and per connection.
+        """
+        import urllib.parse
+        query = urllib.parse.urlencode(
+            {"connect_timeout": str(connect_timeout)})
+        return "postgresql://%s:%s@%s:%d/%s?%s" % (
+            user, urllib.parse.quote(password, safe=""), host, port,
+            database, query)
+
+    @staticmethod
+    def _validate(password: str, webhook_secret: str, allowlist: str) -> None:
+        for name, value in (("ingress password", password),
+                            ("webhook secret", webhook_secret)):
+            if not isinstance(value, str) or not value.strip():
+                raise Failure("CONFIG_INVALID", "%s empty" % name,
+                              exit_code=EXIT_PRECHECK)
+            for ch in ("\r", "\n", "\0"):
+                if ch in value:
+                    raise Failure(
+                        "CONFIG_INVALID",
+                        "%s contains a rejected control character" % name,
+                        exit_code=EXIT_PRECHECK)
+        if not isinstance(allowlist, str) or not allowlist.strip():
+            raise Failure("CONFIG_INVALID", "allowlist empty",
+                          exit_code=EXIT_PRECHECK)
+
+    def write(self, ingress_dsn: str, webhook_secret: str,
+              allowlist: str, publisher_dsn: str = "") -> None:
+        self._validate("x" * 8, webhook_secret, allowlist)  # dsn pre-built
+        if "connect_timeout=5" not in ingress_dsn:
+            raise Failure("CONFIG_INVALID",
+                          "ingress DSN missing forced connect_timeout=5",
+                          exit_code=EXIT_PRECHECK)
+        if publisher_dsn and "connect_timeout=5" not in publisher_dsn:
+            raise Failure("CONFIG_INVALID",
+                          "publisher DSN missing forced connect_timeout=5",
+                          exit_code=EXIT_PRECHECK)
+        if self._path.exists():
+            raise Failure("SECRET_FILE_EXISTS",
+                          "refusing to overwrite an existing gh-webhook "
+                          "secret file", exit_code=EXIT_CONFLICT)
+        self._dir.mkdir(parents=True, exist_ok=True)
+        content = ("GITHUB_INGRESS_DSN=%s\n"
+                   "GITHUB_WEBHOOK_SECRET=%s\n"
+                   "GITHUB_REPO_ALLOWLIST=%s\n"
+                   % (ingress_dsn, webhook_secret, allowlist))
+        self._path.write_text(content, encoding="utf-8")
+        try:
+            self._path.chmod(0o600)
+        except OSError:
+            pass  # Windows: recorded honestly in capability, not enforced
+        if publisher_dsn:
+            reporter = self._dir / "gh_reporter.env"
+            if reporter.exists():
+                raise Failure("SECRET_FILE_EXISTS",
+                              "refusing to overwrite an existing reporter "
+                              "secret file", exit_code=EXIT_CONFLICT)
+            reporter.write_text("GITHUB_PUBLISHER_DSN=%s\n" % publisher_dsn,
+                                encoding="utf-8")
+            try:
+                reporter.chmod(0o600)
+            except OSError:
+                pass
+
+    def delete(self) -> None:
+        if self._path.exists():
+            self._path.unlink()
+        reporter = self._dir / "gh_reporter.env"
+        if reporter.exists():
+            reporter.unlink()
+
+    def exists(self) -> bool:
+        return self._path.exists()
+
+
+GH_RUNTIME_ROLE_SQL_TEMPLATE = (
+    "ALTER ROLE github_event_ingress PASSWORD '%s';\n"
+    "ALTER ROLE github_check_publisher PASSWORD '%s';\n"
+)
+
+
+def _sql_literal(value: str) -> str:
+    """PostgreSQL single-quoted literal escaping (the established repo
+    transport: the secret travels only inside SQL piped over psql stdin,
+    never argv/logs — see the ephemeral reader-role bootstrap)."""
+    return value.replace("\\", "\\\\").replace("'", "''")
+
+
+# ── Failure diagnostics (rollback 前取证;脱敏;owned 临时文件) ──────────────
+
+_DIAG_SECRET_KEY_RE = re.compile(
+    r"(password|passwd|secret|token|dsn|api_key|private_key)"
+    r"|MERGEPILOT_PG_DSN|GITHUB_WEBHOOK_SECRET|GITHUB_INGRESS_DSN"
+    r"|GITHUB_PUBLISHER_DSN|PG_PASS|ADMIN_PW|POSTGRES_PASSWORD",
+    re.IGNORECASE)
+
+
+def _redact_env_value(key: str) -> str:
+    """环境变量值脱敏:秘密类键只保留 '<redacted>'。"""
+    if _DIAG_SECRET_KEY_RE.search(key):
+        return "<redacted>"
+    return "<present>"
+
+
+def capture_failure_diagnostics(docker, planner, paths, session):
+    """Rollback 前捕获本次 owned 容器的失败取证(M8-GH-3 §1)。
+
+    精简摘要打到 stdout;完整诊断(最多 200 行日志+inspect 摘要)写入
+    .mergepilot/diagnostics.json(owned 临时文件,cleanup 删除)。
+    取证失败绝不覆盖 primary failure(每步独立 try/except)。
+    """
+    summary = {}
+    details = {}
+    for svc, cid in list((session.get("containers") or {}).items()):
+        name = container_name(planner, svc)
+        entry = {"container_id": cid}
+        detail = dict(entry)
+        try:
+            state, info = docker.container_state(name)
+            entry["state"] = state
+            entry["status"] = info.get("status", "")
+            entry["exit_code"] = info.get("exit_code", "")
+            entry["health"] = info.get("health", "")
+            detail.update({k: entry[k] for k in
+                           ("state", "status", "exit_code", "health")})
+        except Exception:
+            entry["state"] = "inspect_error"
+        try:
+            logs = docker.container_logs(name)
+            lines = [ln for ln in logs.splitlines() if ln.strip()]
+            detail["logs_tail"] = lines[-200:]
+        except Exception:
+            detail["logs_tail"] = []
+        try:
+            cp = docker.docker(
+                ["inspect", name, "--format", "{{json .Config}}"],
+                check=False, log_tag="diag-config")
+            if cp.returncode == 0:
+                config = json.loads(
+                    (cp.stdout or b"").decode("utf-8", "replace"))
+                detail["image"] = config.get("Image", "")
+                detail["entrypoint"] = config.get("Entrypoint") or []
+                detail["cmd"] = config.get("Cmd") or []
+                env_keys = sorted(
+                    (e.split("=", 1)[0] for e in (config.get("Env") or [])
+                     if "=" in e))
+                detail["env_keys"] = env_keys
+                detail["env_redacted"] = {
+                    k: _redact_env_value(k) for k in env_keys}
+        except Exception:
+            pass
+        summary[svc] = "%s exit=%s health=%s" % (
+            entry.get("status", entry.get("state", "?")),
+            entry.get("exit_code", "?"), entry.get("health", "?"))
+        details[name] = detail
+        log("diag %s: %s" % (svc, summary[svc]))
+    diag_path = paths["state"] / "diagnostics.json"
+    result = {"summary": summary}
+    try:
+        _atomic_write_json(diag_path, {"containers": details})
+        result["file"] = str(diag_path)
+    except Exception:
+        pass
+    return result
+
+
+def bootstrap_gh_roles(docker, planner, ingress_pw: str,
+                       publisher_pw: str) -> None:
+    """Inject the two gh runtime LOGIN role passwords (M8-GH-3 §4).
+
+    Runs INSIDE the start work transaction (after m8gh1 migrations, before
+    the gh-webhook container): any failure raises Failure and the normal
+    journal rollback removes the one-shot postgres container — no
+    half-configured role state can persist.
+    """
+    pg_container = container_name(planner, "postgres")
+    sql = GH_RUNTIME_ROLE_SQL_TEMPLATE % (_sql_literal(ingress_pw),
+                                          _sql_literal(publisher_pw))
+    docker.psql_exec(pg_container, sql)
+
+
+def _policy_repo_allowlist(project_dir: Path) -> str:
+    """Comma-separated repos.allowlist from policy.yaml (restricted parse,
+    same line contract as github_drain.parse_policy_repo_allowlist)."""
+    policy = project_dir / "tools" / "policy-gateway" / "policy.yaml"
+    lines = policy.read_text(encoding="utf-8").splitlines()
+    allowlist = []
+    in_repos = in_allowlist = False
+    for line in lines:
+        stripped = line.split("#", 1)[0].rstrip()
+        if not stripped.strip():
+            continue
+        if not stripped.startswith(" ") and stripped.endswith(":"):
+            in_repos = stripped == "repos:"
+            in_allowlist = False
+            continue
+        if in_repos and stripped == "  allowlist:":
+            in_allowlist = True
+            continue
+        if in_allowlist:
+            match = re.fullmatch(r'    - "([^"]+)"', stripped)
+            if match:
+                allowlist.append(match.group(1))
+                continue
+            in_allowlist = False
+    if not allowlist:
+        raise Failure("CONFIG_INVALID",
+                      "policy.yaml repos.allowlist empty/absent",
+                      exit_code=EXIT_PRECHECK)
+    return ",".join(allowlist)
+
+
 # ── Start-plan construction (planner output, byte-for-byte) ──────────────────
 
 def build_start_steps(planner, *, env_file, controller_env_file,
-                      reader_dsn_env_file, run_id, bridge_ip, m4f):
-    """The nine-step plan, composed from the planner's own public plan
+                      reader_dsn_env_file, gh_webhook_env_file,
+                      run_id, bridge_ip, m4f):
+    """The eleven-step plan, composed from the planner's own public plan
     functions in plan_orchestrated_start's exact order. Returns
     (steps, argv_list) where each step carries its wait semantics.
 
@@ -777,6 +1045,12 @@ def build_start_steps(planner, *, env_file, controller_env_file,
              image_ref=planner.get_built_image_identity("controller"),
              controller_env=planner._controller_environment(),
              env_file=controller_env_file, m4f_enabled=m4f)),
+        ("container-run", "gh-webhook",
+         planner.plan_gh_webhook_run(
+             planner.get_built_image_identity("gh-webhook"),
+             env_file=gh_webhook_env_file)),
+        ("network-connect", planner.ORCHESTRATOR_NETWORK,
+         planner.plan_gh_webhook_connect_backend()),
         ("container-run", "demo-console",
          planner.plan_service_run(
              "demo-console",
@@ -889,7 +1163,8 @@ def new_session(run_id, m4f):
         "stage": "init",
         "containers": {},          # service -> real inspected ID (creation order)
         "networks": {},            # network name -> real inspected ID (order)
-        "secrets": ["postgres.env", "controller.env", "demo_console.env"],
+        "secrets": ["postgres.env", "controller.env", "demo_console.env",
+                    "gh_webhook.env", "gh_reporter.env"],
     }
 
 
@@ -962,7 +1237,7 @@ def cmd_install(args):
         return EXIT_OK, {
             "command": "install", "status": "dry-run", "code": EXIT_OK,
             "plans": steps,
-            "note": "5 local builds + image-ID recording; no Docker command "
+            "note": "6 local builds + image-ID recording; no Docker command "
                     "executed, nothing written",
         }
 
@@ -1015,7 +1290,8 @@ def cmd_doctor(args):
                    "tools/demo_console/migrations/%s"
                    % ISOLATED_LIVE_MIGRATIONS[0],
                    "tools/demo_console/migrations/%s"
-                   % ISOLATED_LIVE_MIGRATIONS[1]]
+                   % ISOLATED_LIVE_MIGRATIONS[1],
+                   "config/gh-app/room-map.example.yaml"]
                 + [("tools/audit-db/%s" % f)
                    for f in sorted(set(AUDIT_DB_MIGRATION_CHAIN))])
     missing = [r for r in required if not (project_dir / r).is_file()]
@@ -1034,6 +1310,9 @@ def cmd_doctor(args):
             planner.ReaderDsnSecretFile(tdp).write(
                 "postgresql://mergepilot_reader:doctor-probe@postgres:5432/"
                 "mergepilot_audit")
+            GhWebhookSecretFile(tdp).write(
+                GhWebhookSecretFile.build_ingress_dsn("doctor-probe-ingress"),
+                "doctor-probe-webhook-secret", "nghqqa/MergePilot")
             for service in planner.BUILT_SERVICES:
                 planner.record_built_image_identity(
                     service, "sha256:" + "0" * 64)
@@ -1042,10 +1321,11 @@ def cmd_doctor(args):
                 env_file=_to_wsl_path(tdp / "postgres.env"),
                 controller_env_file=_to_wsl_path(tdp / "controller.env"),
                 reader_dsn_env_file=_to_wsl_path(tdp / "demo_console.env"),
+                gh_webhook_env_file=_to_wsl_path(tdp / "gh_webhook.env"),
                 run_id="doctor-plan-probe",
                 bridge_ip=PLACEHOLDER_BRIDGE_IP, m4f=False)
         add("planner_chain", "DOCTOR_PLAN_OK", True,
-            "9-step start plan generated (temp secrets discarded)")
+            "11-step start plan generated (temp secrets discarded)")
     except Failure as exc:
         add("planner_chain", exc.code, False, exc.detail)
     except Exception as exc:  # planner contract breach is a doctor failure
@@ -1165,6 +1445,8 @@ def cmd_start(args):
                                              / "controller.env"),
             reader_dsn_env_file=_to_wsl_path(paths["secrets"]
                                              / "demo_console.env"),
+            gh_webhook_env_file=_to_wsl_path(paths["secrets"]
+                                             / "gh_webhook.env"),
             run_id=run_id, bridge_ip=PLACEHOLDER_BRIDGE_IP, m4f=args.m4f)
         return EXIT_OK, {
             "command": "start", "status": "dry-run", "code": EXIT_OK,
@@ -1180,18 +1462,30 @@ def cmd_start(args):
         raise Failure("PORT_BUSY",
                       "127.0.0.1:%d already in use" % CONSOLE_PORT,
                       exit_code=EXIT_PRECHECK)
+    if port_in_use(planner.GH_WEBHOOK_PORT):
+        raise Failure("PORT_BUSY",
+                      "127.0.0.1:%d already in use (gh-webhook)"
+                      % planner.GH_WEBHOOK_PORT,
+                      exit_code=EXIT_PRECHECK)
 
-    # ── secrets + journal, then the nine-step plan ──
+    # ── secrets + journal, then the eleven-step plan ──
     admin_pw = secrets.token_urlsafe(32)
     controller_admin_pw = secrets.token_urlsafe(32)
     reader_pw = secrets.token_urlsafe(32)
     reader_dsn = ("postgresql://%s:%s@postgres:5432/%s"
-                  % (planner.READER_ROLE, reader_pw, planner.DB_NAME))
+                  "?application_name=%s"
+                  % (planner.READER_ROLE, reader_pw, planner.DB_NAME,
+                     planner.APP_NAME))
     m4f_dsn = None
     if args.m4f:
         m4f_pw = secrets.token_urlsafe(32)
         m4f_dsn = ("postgresql://snapshot_worker:%s@postgres:5432/%s"
                    % (m4f_pw, planner.DB_NAME))
+    gh_ingress_pw = secrets.token_urlsafe(24)
+    gh_publisher_pw = secrets.token_urlsafe(24)
+    gh_webhook_secret = secrets.token_urlsafe(32)
+    gh_ingress_dsn = GhWebhookSecretFile.build_ingress_dsn(gh_ingress_pw)
+    gh_allowlist = _policy_repo_allowlist(project_dir)
 
     paths["secrets"].mkdir(parents=True, exist_ok=True)
     written = []
@@ -1203,6 +1497,12 @@ def cmd_start(args):
         written.append("controller.env")
         planner.ReaderDsnSecretFile(paths["secrets"]).write(reader_dsn)
         written.append("demo_console.env")
+        GhWebhookSecretFile(paths["secrets"]).write(
+            gh_ingress_dsn, gh_webhook_secret, gh_allowlist,
+            publisher_dsn=GhWebhookSecretFile.build_ingress_dsn(
+                gh_publisher_pw, user="github_check_publisher"))
+        written.append("gh_webhook.env")
+        written.append("gh_reporter.env")
         # planner-side strict contract validation of the controller env-file
         # (same validator plan_orchestrated_start uses; Windows-side path).
         planner._validate_controller_env_file_contract(
@@ -1222,12 +1522,14 @@ def cmd_start(args):
     env_file_wsl = _to_wsl_path(paths["secrets"] / "postgres.env")
     ctrl_env_wsl = _to_wsl_path(paths["secrets"] / "controller.env")
     reader_env_wsl = _to_wsl_path(paths["secrets"] / "demo_console.env")
+    gh_env_wsl = _to_wsl_path(paths["secrets"] / "gh_webhook.env")
 
     primary = None
     try:
         _execute_start(docker, planner, showcase, project_dir, paths,
                        session, run_id, reader_pw,
                        env_file_wsl, ctrl_env_wsl, reader_env_wsl,
+                       gh_env_wsl, gh_ingress_pw, gh_publisher_pw,
                        bool(args.m4f))
     except Failure as exc:
         primary = exc
@@ -1251,8 +1553,11 @@ def cmd_start(args):
         }
         return EXIT_OK, result
 
-    log("start failed (%s); rolling back this session's resources ..."
-        % primary.code)
+    log("start failed (%s); capturing container diagnostics before "
+        "rollback ..." % primary.code)
+    diagnostics = capture_failure_diagnostics(docker, planner, paths,
+                                              session)
+    log("rolling back this session's resources ...")
     rb_codes = rollback_session(docker, planner, paths, session)
     payload = {
         "command": "start",
@@ -1261,7 +1566,10 @@ def cmd_start(args):
         "primary_code": primary.code,
         "primary_detail": _redact(primary.detail),
         "rollback_codes": rb_codes,
+        "failure_diagnostics": diagnostics.get("summary"),
     }
+    if diagnostics.get("file"):
+        payload["diagnostics_file"] = diagnostics["file"]
     if rb_codes:
         return EXIT_RESIDUE, payload
     return EXIT_FAILED_CLEANED, payload
@@ -1269,7 +1577,8 @@ def cmd_start(args):
 
 def _execute_start(docker, planner, showcase, project_dir, paths, session,
                    run_id, reader_pw, env_file_wsl, ctrl_env_wsl,
-                   reader_env_wsl, m4f):
+                   reader_env_wsl, gh_env_wsl, gh_ingress_pw,
+                   gh_publisher_pw, m4f):
     """Sequential execution of the nine-step plan with per-step journaling.
 
     Steps 0-2 run first; the postgres bridge IP is MEASURED after postgres is
@@ -1303,8 +1612,8 @@ def _execute_start(docker, planner, showcase, project_dir, paths, session,
 
     steps = build_start_steps(
         planner, env_file=env_file_wsl, controller_env_file=ctrl_env_wsl,
-        reader_dsn_env_file=reader_env_wsl, run_id=run_id,
-        bridge_ip=PLACEHOLDER_BRIDGE_IP, m4f=m4f)
+        reader_dsn_env_file=reader_env_wsl, gh_webhook_env_file=gh_env_wsl,
+        run_id=run_id, bridge_ip=PLACEHOLDER_BRIDGE_IP, m4f=m4f)
 
     journal_stage("networks")
     create_network(steps[0][1], steps[0][2])
@@ -1320,24 +1629,45 @@ def _execute_start(docker, planner, showcase, project_dir, paths, session,
     journal_stage("db_prepare")
     prepare_database(docker, planner, showcase, project_dir, reader_pw)
 
+    journal_stage("gh_bootstrap")
+    bootstrap_gh_roles(docker, planner, gh_ingress_pw, gh_publisher_pw)
+
     steps = build_start_steps(
         planner, env_file=env_file_wsl, controller_env_file=ctrl_env_wsl,
-        reader_dsn_env_file=reader_env_wsl, run_id=run_id,
-        bridge_ip=canonical, m4f=m4f)
+        reader_dsn_env_file=reader_env_wsl, gh_webhook_env_file=gh_env_wsl,
+        run_id=run_id, bridge_ip=canonical, m4f=m4f)
 
     journal_stage("services")
     create_container("policy-gateway", steps[3][2])
     create_container("controller", steps[4][2])
-    create_container("demo-console", steps[5][2])
-    create_container("console-edge", steps[6][2])
-    # 1-G network design: the edge is created on the publication bridge
-    # FIRST (with the loopback publish), the internal backend is attached
-    # AFTERWARDS — reversing this order silently drops the port publish.
-    docker.docker(steps[7][2], timeout=60, check=True,
-                  log_tag="network-connect")
+
+    def create_then_connect(svc, run_argv, connect_argv, connect_tag):
+        """Run a publication-bridge service, connect its internal backend
+        BEFORE waiting for health — the healthcheck probes cross-network
+        upstreams (demo-console) that are unreachable until the connect
+        executes. Waiting for health before the connect is a deadlock
+        (baseline orchestration-order bug, present on main too).
+        """
+        docker.docker(run_argv, timeout=240, check=True,
+                      log_tag="run-%s" % svc)
+        state, info = docker.container_state(container_name(planner, svc))
+        if state != "present" or not info.get("id"):
+            raise Failure("CONTAINER_CREATE_VERIFY_FAILED", svc,
+                          exit_code=EXIT_FAILED_CLEANED)
+        session["containers"][svc] = info["id"]
+        write_session(paths, session)
+        docker.docker(connect_argv, timeout=60, check=True,
+                      log_tag=connect_tag)
+        docker.wait_healthy(container_name(planner, svc), 240)
+
+    create_then_connect("gh-webhook", steps[5][2], steps[6][2],
+                        "network-connect-gh")
+    create_container("demo-console", steps[7][2])
+    create_then_connect("console-edge", steps[8][2], steps[9][2],
+                        "network-connect")
 
     journal_stage("preflight")
-    docker.docker(steps[8][2], timeout=240, check=True, log_tag="run-preflight")
+    docker.docker(steps[10][2], timeout=240, check=True, log_tag="run-preflight")
     state, info = docker.container_state(container_name(planner, "preflight"))
     if state == "present" and info.get("id"):
         session["containers"]["preflight"] = info["id"]
@@ -1389,6 +1719,33 @@ def cmd_status(args):
 
     exit_code = EXIT_OK if classification in ("absent", "healthy") \
         else EXIT_PRECHECK
+    # M8-GH-3: ingress queue summary when a stack is running (read-only
+    # counts only — never payload/DSN/secret values).
+    if classification == "healthy":
+        try:
+            pg = container_name(planner, "postgres")
+            deliveries = docker.docker(
+                ["exec", pg, "psql", "-U", "mergepilot",
+                 "-d", planner.DB_NAME, "-At", "-c",
+                 "SELECT count(*) FROM github_deliveries"],
+                check=False, log_tag="status-deliveries")
+            outbox = docker.docker(
+                ["exec", pg, "psql", "-U", "mergepilot",
+                 "-d", planner.DB_NAME, "-At", "-c",
+                 "SELECT count(*) FROM github_check_outbox"],
+                check=False, log_tag="status-outbox")
+            def _count(cp):
+                try:
+                    return int((cp.stdout or b"").decode(
+                        "utf-8", "replace").strip() or "-1")
+                except ValueError:
+                    return -1
+            meta["github_ingress"] = {
+                "deliveries": _count(deliveries),
+                "check_outbox": _count(outbox),
+            }
+        except Failure:
+            meta["github_ingress"] = {"deliveries": -1, "check_outbox": -1}
     return exit_code, {
         "command": "status", "status": classification, "code": exit_code,
         "detail": detail,
@@ -1512,6 +1869,15 @@ def cmd_stop(args):
             residue.append("SESSION_MANIFEST_DELETE_FAILED")
         if paths["session"].exists():
             residue.append("SESSION_MANIFEST_STILL_PRESENT")
+    # M8-GH-3 §1: owned 诊断临时文件同属清理范围(cleanup 删除)。
+    diag = paths["state"] / "diagnostics.json"
+    try:
+        if diag.exists():
+            diag.unlink()
+    except OSError:
+        residue.append("DIAGNOSTICS_DELETE_FAILED")
+    if diag.exists():
+        residue.append("DIAGNOSTICS_STILL_PRESENT")
     if residue:
         return EXIT_RESIDUE, {
             "command": "stop", "status": "failed_residue",
@@ -1594,6 +1960,16 @@ def cmd_cleanup(args):
             residue.append("IMAGE_STILL_PRESENT:%s" % tag)
     if paths["session"].exists():
         residue.append("SESSION_MANIFEST_STILL_PRESENT")
+    # M8-GH-3: sweep the CLI-owned runtime secrets area (session stop
+    # already removes the journaled files; this catches orphans).
+    if paths["secrets"].is_dir():
+        for leftover in sorted(paths["secrets"].glob("*.env")):
+            try:
+                leftover.unlink()
+            except OSError:
+                residue.append("SECRET_DELETE_FAILED:%s" % leftover.name)
+        for leftover in sorted(paths["secrets"].glob("*.env")):
+            residue.append("SECRET_FILE_STILL_PRESENT:%s" % leftover.name)
     if residue:
         return EXIT_RESIDUE, {
             "command": "cleanup", "status": "failed_residue",

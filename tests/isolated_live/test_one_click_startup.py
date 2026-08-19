@@ -157,9 +157,13 @@ class TestComposeConfig(unittest.TestCase):
         cfg = build_compose_config(demo_console_run_id="test-run-1",
                                 demo_console_pg_server_addresses="172.18.0.2")
         bindings = compose_ports_binding(cfg)
-        self.assertEqual(list(bindings.keys()), ["console-edge"])
+        # M8-GH-3: exactly two loopback publications (console-edge 8600,
+        # gh-webhook 8090).
+        self.assertEqual(sorted(bindings.keys()),
+                         ["console-edge", "gh-webhook"])
         self.assertTrue(all(b.startswith("127.0.0.1:")
                             for b in bindings["console-edge"]))
+        self.assertEqual(bindings["gh-webhook"], ["127.0.0.1:8090:8090"])
 
     # ── negative config cases ───────────────────────────────────────────────
 

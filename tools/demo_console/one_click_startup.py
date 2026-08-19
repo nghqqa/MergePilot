@@ -78,8 +78,12 @@ GATEWAY_LISTEN_PORT = 8083
 GATEWAY_ISOLATED_UPSTREAM_URL = "http://127.0.0.1:8084/sse"
 
 # Services and their dependency order (topological).
-SERVICE_ORDER = ("postgres", "policy-gateway", "controller",
+SERVICE_ORDER = ("postgres", "policy-gateway", "controller", "gh-webhook",
                  "demo-console", "console-edge", "preflight")
+
+# Host-side loopback port for the gh-webhook receiver (M8-GH-3). The ONLY
+# other published port is the console-edge on 8600.
+GH_WEBHOOK_PORT = 8090
 
 _HEALTHCHECK_INTERVAL = "5s"
 _HEALTHCHECK_TIMEOUT = "3s"
@@ -676,6 +680,7 @@ def build_compose_config(*, demo_console_port: int = DEMO_CONSOLE_PORT,
                          admin_password_secret: str = "<secret-file>",
                          controller_secret: str = "<controller-secret-file>",
                          reader_dsn_secret: str = "<reader-dsn-secret-file>",
+                         gh_webhook_secret: str = "<gh-webhook-secret-file>",
                          demo_console_run_id: str = "",
                          demo_console_pg_server_addresses: str = "",
                          m4f_event_machinery: bool = False,
@@ -805,6 +810,38 @@ def build_compose_config(*, demo_console_port: int = DEMO_CONSOLE_PORT,
             "environment": demo_env,
             # NOT published: no "ports" key on purpose.
         },
+        # M8-GH-3: gh-webhook receiver in the compose config — mirrors the
+        # versioned docker-compose.yml block (loopback publish 8090, secret
+        # env-file, hardened runtime flags; secrets NEVER in literals).
+        "gh-webhook": {
+            "build": {"context": ".",
+                      "dockerfile": "Dockerfile.gh-webhook"},
+            "pull_policy": "never",
+            "depends_on": {
+                "postgres": {"condition": "service_healthy"},
+            },
+            "networks": ["isolated", "console-publish"],
+            "ports": [
+                "%s:%d:%d" % (LOOPBACK_BIND, GH_WEBHOOK_PORT,
+                              GH_WEBHOOK_PORT),
+            ],
+            "env_file": gh_webhook_secret,
+            "read_only": True,
+            "security_opt": ["no-new-privileges:true"],
+            "cap_drop": ["ALL"],
+            "tmpfs": ["/tmp"],
+            "healthcheck": {
+                "test": ["CMD", "python", "-c",
+                         "import socket;"
+                         "s=socket.create_connection("
+                         "(\"127.0.0.1\",%d),timeout=2);s.close()"
+                         % GH_WEBHOOK_PORT],
+                "interval": _HEALTHCHECK_INTERVAL,
+                "timeout": _HEALTHCHECK_TIMEOUT,
+                "retries": _HEALTHCHECK_RETRIES,
+            },
+            "restart": "no",
+        },
         "console-edge": {
             "build": {"context": ".",
                       "dockerfile": "Dockerfile.console-edge"},
@@ -894,13 +931,16 @@ def validate_compose_config(config: dict) -> None:
         if "image" in svc and name != "postgres":
             raise StartupGateError("COMPOSE_INVALID",
                                    "service %s uses an unpinned image" % name)
-    # 1-G network design: ONLY console-edge publishes, ONLY on loopback,
-    # ONLY on the canonical port. demo-console must NOT publish (Docker
-    # drops -p on internal networks; the DSN-bearing console stays
-    # internal-only and the publish moved to the secretless edge).
+    # 1-G network design + M8-GH-3: ONLY console-edge and gh-webhook
+    # publish, ONLY on loopback, ONLY on their canonical ports.
+    # demo-console must NOT publish (Docker drops -p on internal networks;
+    # the DSN-bearing console stays internal-only and the publish moved to
+    # the secretless edge).
+    _PUBLISHED = {"console-edge": DEMO_CONSOLE_PORT,
+                  "gh-webhook": GH_WEBHOOK_PORT}
     for name, svc in services.items():
         ports = svc.get("ports") or []
-        if ports and name != "console-edge":
+        if ports and name not in _PUBLISHED:
             raise StartupGateError("BIND_NOT_LOOPBACK",
                                    "service %s publishes ports" % name)
         for p in ports:
@@ -909,10 +949,10 @@ def validate_compose_config(config: dict) -> None:
                 raise StartupGateError("BIND_NOT_LOOPBACK",
                                        "port bind %r is not %s" % (bind, LOOPBACK_BIND))
             host_port = str(p).split(":", 1)[1].split(":")[0]
-            if host_port != str(DEMO_CONSOLE_PORT):
+            if host_port != str(_PUBLISHED[name]):
                 raise StartupGateError("BIND_NOT_LOOPBACK",
-                                       "edge publish port must be %d"
-                                       % DEMO_CONSOLE_PORT)
+                                       "%s publish port must be %d"
+                                       % (name, _PUBLISHED[name]))
     if "ports" in services["postgres"]:
         raise StartupGateError("BIND_NOT_LOOPBACK", "postgres publishes ports")
     if "ports" in services["demo-console"]:
@@ -1188,7 +1228,7 @@ def compose_ports_binding(config: dict) -> dict:
 # round and checked by the orchestrator before start.
 
 BUILT_SERVICES = ("policy-gateway", "controller", "demo-console",
-                  "console-edge", "preflight")
+                  "console-edge", "preflight", "gh-webhook")
 
 _builtin_registry: dict = {}
 
@@ -1257,6 +1297,20 @@ _SERVICE_FLAGS = {
     "console-edge": (["console-edge"],
                      "%s:%d:8600" % (LOOPBACK_BIND, DEMO_CONSOLE_PORT),
                      ["python", "/app/console_edge_healthcheck.py"]),
+    # M8-GH-3: gh-webhook publishes its receiver on loopback (like the
+    # console-edge, it must be CREATED on the publication bridge or Docker
+    # silently drops the publish on the internal network). The health-cmd
+    # is shell-form (docker runs it via /bin/sh -c): the python -c body
+    # MUST be single-quoted with double-quoted URL inside — a bare
+    # `python -c import ...` fails with a sh syntax error (real-Docker
+    # E2E finding).
+    "gh-webhook": (["gh-webhook"],
+                   "%s:%d:%d" % (LOOPBACK_BIND, GH_WEBHOOK_PORT,
+                                 GH_WEBHOOK_PORT),
+                   ["python", "-c",
+                    "'import socket;s=socket.create_connection("
+                    "(\"127.0.0.1\",%d),timeout=2);s.close()'"
+                    % GH_WEBHOOK_PORT]),
     "preflight": (["preflight"], None, None),
 }
 
@@ -1310,6 +1364,13 @@ def plan_service_run(service: str, *, image_ref: str,
         raise StartupGateError(
             "CONFIG_INVALID",
             "console-edge must use plan_console_edge_run (creation on the "
+            "internal network would silently drop the loopback publish)")
+    if service == "gh-webhook":
+        # M8-GH-3: same 1-G rule — the webhook receiver publishes on
+        # loopback, so it must be created on the publication bridge.
+        raise StartupGateError(
+            "CONFIG_INVALID",
+            "gh-webhook must use plan_gh_webhook_run (creation on the "
             "internal network would silently drop the loopback publish)")
     if not image_ref or not re.fullmatch(
             r"(sha256:[0-9a-f]{64}|[a-z0-9][a-z0-9/.-]*@sha256:[0-9a-f]{64})",
@@ -1478,6 +1539,63 @@ def plan_console_edge_connect_backend() -> list:
             "mergepilot-isolated-console-edge-1"]
 
 
+def plan_gh_webhook_run(image_ref: str, *, env_file: str) -> list:
+    """argv array running gh-webhook on the PUBLICATION network (M8-GH-3).
+
+    Same 1-G ordering rule as console-edge: CREATED on the non-internal
+    publication bridge together with the loopback publish (host 8090 ->
+    container 8090), internal backend attached afterwards by
+    plan_gh_webhook_connect_backend(). Requires the secret env-file
+    (GITHUB_INGRESS_DSN + GITHUB_WEBHOOK_SECRET); no -e values."""
+    if not image_ref or not re.fullmatch(
+            r"(sha256:[0-9a-f]{64}|[a-z0-9][a-z0-9/.-]*@sha256:[0-9a-f]{64})",
+            image_ref):
+        raise StartupGateError("CONFIG_INVALID",
+                               "image_ref must be sha256:<64-hex> digest/ID "
+                               "(floating tags rejected)")
+    if not isinstance(env_file, str) or not env_file.strip():
+        raise StartupGateError(
+            "CONFIG_INVALID",
+            "gh-webhook requires the secret env-file path (GITHUB_INGRESS_DSN"
+            " + GITHUB_WEBHOOK_SECRET via the SecretFile transport)")
+    _aliases, publish, healthcheck = _SERVICE_FLAGS["gh-webhook"]
+    argv = ["run", "-d",
+            "--name", "mergepilot-isolated-gh-webhook-1",
+            "--network", PUBLICATION_NETWORK,      # PRIMARY: non-internal
+            "--network-alias", "gh-webhook",
+            "--pull", "never",
+            "--restart", "no",
+            "--env-file", env_file,
+            "-p", publish]
+    if healthcheck:
+        argv += ["--health-cmd", " ".join(healthcheck),
+                 "--health-interval", _HEALTHCHECK_INTERVAL,
+                 "--health-timeout", _HEALTHCHECK_TIMEOUT,
+                 "--health-retries", str(_HEALTHCHECK_RETRIES)]
+    argv.append(image_ref)
+    assert_argv_safe(argv)
+    if argv.count("-p") != 1:
+        raise StartupGateError("CONFIG_INVALID",
+                               "gh-webhook plan must carry exactly one "
+                               "loopback publish")
+    if argv.count("--env-file") != 1:
+        raise StartupGateError("CONFIG_INVALID",
+                               "gh-webhook plan must carry exactly one "
+                               "env-file")
+    if ORCHESTRATOR_NETWORK in argv:
+        raise StartupGateError("CONFIG_INVALID",
+                               "gh-webhook must not be created on the "
+                               "internal network (publish would be dropped)")
+    return argv
+
+
+def plan_gh_webhook_connect_backend() -> list:
+    """argv array attaching the internal backend to gh-webhook (after its
+    creation on the publication bridge)."""
+    return ["network", "connect", ORCHESTRATOR_NETWORK,
+            "mergepilot-isolated-gh-webhook-1"]
+
+
 def plan_build(service: str) -> list:
     """argv array building a service image from its root Dockerfile."""
     dockerfile = "Dockerfile.%s" % service
@@ -1492,16 +1610,18 @@ def plan_build(service: str) -> list:
 def plan_orchestrated_start(env_file: str | None = None, *,
                             controller_env_file: str,
                             reader_dsn_env_file: str,
+                            gh_webhook_env_file: str = "",
                             demo_console_run_id: str = "",
                             demo_console_pg_server_addresses: str = "",
                             m4f_event_machinery: bool = False
                             ) -> list:
     """Full start plan: [network create, run postgres, run gateway, run
-    controller, run demo-console, run preflight] as argv arrays in strict
-    dependency order. The caller executes them sequentially and waits for
-    each healthcheck before the next dependent step (mirroring depends_on:
-    postgres healthy → gateway healthy → controller healthy → demo-console
-    healthy → preflight).
+    controller, run gh-webhook, run demo-console, run preflight] as argv
+    arrays in strict dependency order. The caller executes them
+    sequentially and waits for each healthcheck before the next dependent
+    step (mirroring depends_on: postgres healthy → gateway healthy →
+    controller healthy → gh-webhook healthy → demo-console healthy →
+    preflight).
 
     ``controller_env_file`` (the controller secret env-file carrying
     PG_PASS/ADMIN_PW via the SecretFile transport) is REQUIRED. Missing,
@@ -1514,6 +1634,11 @@ def plan_orchestrated_start(env_file: str | None = None, *,
     BOTH demo-console and preflight) is likewise REQUIRED — the 1-G
     stabilization sweep closed the gap where neither DSN consumer could
     start under this orchestration.
+
+    ``gh_webhook_env_file`` (M8-GH-3, the gh-webhook secret env-file
+    carrying GITHUB_INGRESS_DSN + GITHUB_WEBHOOK_SECRET) is REQUIRED —
+    the receiver refuses to start without it and the DSN may never ride
+    -e argv.
 
     ``demo_console_run_id`` (the seeded run_id) and
     ``demo_console_pg_server_addresses`` (the postgres bridge IP MEASURED
@@ -1546,6 +1671,15 @@ def plan_orchestrated_start(env_file: str | None = None, *,
             "the ReaderDsnSecretFile-transport env-file carrying "
             "MERGEPILOT_PG_DSN for demo-console and preflight); refusing "
             "to plan any start without it")
+    # M8-GH-3: same fail-closed rule for the gh-webhook secret env-file.
+    if not isinstance(gh_webhook_env_file, str) or \
+            not gh_webhook_env_file.strip():
+        raise StartupGateError(
+            "CONFIG_INVALID",
+            "gh_webhook_env_file is required (a non-empty string path to "
+            "the secret env-file carrying GITHUB_INGRESS_DSN + "
+            "GITHUB_WEBHOOK_SECRET for the gh-webhook receiver); refusing "
+            "to plan any start without it")
     demo_env = _demo_console_environment(
         demo_console_run_id, demo_console_pg_server_addresses)
     plans = [plan_network_create(), plan_publication_network_create()]
@@ -1559,6 +1693,10 @@ def plan_orchestrated_start(env_file: str | None = None, *,
         controller_env=_controller_environment(),
         env_file=controller_env_file,
         m4f_enabled=m4f_event_machinery))
+    plans.append(plan_gh_webhook_run(
+        get_built_image_identity("gh-webhook"),
+        env_file=gh_webhook_env_file))
+    plans.append(plan_gh_webhook_connect_backend())
     plans.append(plan_service_run(
         "demo-console", image_ref=get_built_image_identity("demo-console"),
         demo_console_env=demo_env,
@@ -1600,6 +1738,7 @@ __all__ = [
     "ENVIRONMENT_MARKER",
     "GATEWAY_ISOLATED_UPSTREAM_URL",
     "GATEWAY_LISTEN_PORT",
+    "GH_WEBHOOK_PORT",
     "LOOPBACK_BIND",
     "ORCHESTRATOR_NETWORK",
     "PGVECTOR_IMAGE_DIGEST",
@@ -1622,6 +1761,8 @@ __all__ = [
     "one_click_cleanup",
     "plan_build",
     "plan_network_create",
+    "plan_gh_webhook_connect_backend",
+    "plan_gh_webhook_run",
     "plan_orchestrated_cleanup",
     "plan_orchestrated_start",
     "plan_service_run",
