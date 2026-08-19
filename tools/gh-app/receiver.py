@@ -273,9 +273,16 @@ def healthz(connect: Callable[[], Any]) -> bool:
 
 
 def connect_from_env() -> Any:
-    """INSERT-only DSN(env GITHUB_INGRESS_DSN);psycopg2 懒加载。"""
+    """INSERT-only DSN(env GITHUB_INGRESS_DSN);psycopg2 懒加载。
+
+    M8-GH-2 §4:经 dsn_guard.ensure_connect_timeout 结构化强制受控
+    connect_timeout(缺失补默认 5s,非法值 fail-closed)——隔离 staging
+    实证:无 connect_timeout 时暂停 PG 会让请求无限悬挂。
+    """
     import psycopg2
-    return psycopg2.connect(os.environ["GITHUB_INGRESS_DSN"])
+    from dsn_guard import ensure_connect_timeout
+    return psycopg2.connect(
+        ensure_connect_timeout(os.environ["GITHUB_INGRESS_DSN"]))
 
 
 __all__ = [
