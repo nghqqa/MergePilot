@@ -1476,7 +1476,7 @@ def cmd_start(args):
     if getattr(args, "github_e2e", False) and not args.dry_run:
         raise Failure(
             "GITHUB_E2E_COMPONENTS_INCOMPLETE",
-            "B1 ships planning only; pending components: %s"
+            "E2E activation incomplete; pending components: %s"
             % ", ".join(e2f.E2E_PENDING_COMPONENTS),
             exit_code=EXIT_PRECHECK)
 
