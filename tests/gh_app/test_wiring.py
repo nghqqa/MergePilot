@@ -42,7 +42,9 @@ class TestComposeWiring(unittest.TestCase):
     def setUp(self):
         self.yml = yaml.safe_load(COMPOSE_TEXT)
 
-    def test_service_count_seven(self):
+    def test_compose_service_count_still_seven(self):
+        """docker-compose stays at 7 services (E2E topology is CLI-only;
+        compose does not support --github-e2e)."""
         self.assertEqual(len(self.yml["services"]), 7)
 
     def test_gh_webhook_security_options(self):
@@ -85,9 +87,28 @@ class TestPlannerWiring(unittest.TestCase):
         self.assertLess(oc.SERVICE_ORDER.index("gh-webhook"),
                        oc.SERVICE_ORDER.index("demo-console"))
 
-    def test_built_services_six(self):
-        self.assertEqual(len(oc.BUILT_SERVICES), 6)
+    def test_e2e_service_order_eleven(self):
+        """E2E_SERVICE_ORDER has 11; SERVICE_ORDER stays at 7 (default
+        mode unchanged; compose parity)."""
+        self.assertEqual(len(oc.E2E_SERVICE_ORDER), 11)
+        self.assertEqual(len(oc.SERVICE_ORDER), 7)
+        self.assertIn("gh-proxy-r", oc.E2E_SERVICE_ORDER)
+        self.assertIn("gh-proxy-b", oc.E2E_SERVICE_ORDER)
+        self.assertIn("mcp-bridge", oc.E2E_SERVICE_ORDER)
+        self.assertIn("gh-reporter", oc.E2E_SERVICE_ORDER)
+        for earlier, later in (("gh-proxy-r", "mcp-bridge"),
+                               ("gh-proxy-b", "mcp-bridge"),
+                               ("mcp-bridge", "policy-gateway"),
+                               ("policy-gateway", "controller"),
+                               ("policy-gateway", "gh-reporter")):
+            self.assertLess(oc.E2E_SERVICE_ORDER.index(earlier),
+                           oc.E2E_SERVICE_ORDER.index(later))
+
+    def test_built_services_eight(self):
+        self.assertEqual(len(oc.BUILT_SERVICES), 8)
         self.assertIn("gh-webhook", oc.BUILT_SERVICES)
+        self.assertIn("gh-proxy", oc.BUILT_SERVICES)
+        self.assertIn("mcp-bridge", oc.BUILT_SERVICES)
 
     def test_gh_webhook_run_plan_contract(self):
         oc._builtin_registry.clear()

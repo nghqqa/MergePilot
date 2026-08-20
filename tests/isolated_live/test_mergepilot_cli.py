@@ -604,7 +604,7 @@ class TestInstall(CliTestBase):
         rc, text, payload = self.cli("install", "--json")
         self.assertEqual(rc, mp.EXIT_OK)
         builds = [a for a in self.world.docker_args() if a[0] == "build"]
-        self.assertEqual(len(builds), 6)
+        self.assertEqual(len(builds), 8)
         expected = [oc.plan_build(s) for s in oc.BUILT_SERVICES]
         self.assertEqual(builds, expected)
         manifest = json.loads((_ROOT / ".mergepilot" / "install.json")
@@ -1105,7 +1105,7 @@ class TestCleanup(CliTestBase):
         self.assertEqual(len(self.world.write_args()), writes)
         self.assertTrue(self.world.containers)
         plans = payload["plans"]
-        self.assertEqual(len([p for p in plans if p[0] == "rmi"]), 6)
+        self.assertEqual(len([p for p in plans if p[0] == "rmi"]), 8)
 
     def test_apply_removes_verified_images(self):
         self.run_full_start()

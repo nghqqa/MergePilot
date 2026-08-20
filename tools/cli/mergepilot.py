@@ -1459,6 +1459,346 @@ def cmd_doctor(args):
     return (EXIT_OK if ok else EXIT_PRECHECK), result
 
 
+# ── M8-GH-4B3-W3B-R2: E2E CLI wiring (§3/§15) ─────────────────────────────
+
+def _e2e_docker_exec(docker):
+    def docker_exec(argv, check=True, timeout=240, log_tag="e2e"):
+        return docker.docker(list(argv), timeout=timeout, check=check,
+                             log_tag=log_tag or "e2e")
+    return docker_exec
+
+
+def _e2e_host_exec(docker):
+    def host_exec(argv, check=True, timeout=60, input_bytes=None, **_):
+        # input_bytes MUST be forwarded: the firewall restore blob
+        # rides STDIN (install_firewall's atomicity contract) —
+        # dropping it makes the post-commit verify always fail.
+        return docker.wsl_exec(list(argv), check=check, timeout=timeout,
+                               input_bytes=input_bytes,
+                               log_tag="e2e-host")
+    return host_exec
+
+
+def _github_e2e_dry_run(planner, run_id):
+    """§15: PURE E2E dry-run plan — returned BEFORE any Docker/WSL
+    discovery, manifest requirement, distro start, prerequisite probe
+    or file write. Zero side effects; zero secret values."""
+    import e2e_runtime_specs as _rs
+    import e2e_probes as _ep
+    preview = e2f.build_b1_dry_run_preview(
+        run_id=run_id, tuwunel_ip=e2f.E2E_TUWUNEL_DEFAULT_IP,
+        room_map_host="<runtime-room-map-host-path>",
+        policy_host="<runtime-fixture-policy-host-path>")
+    multi_homed = {}
+    for service in _rs.SERVICE_RUNTIME_SPECS:
+        multi_homed[service] = {
+            "env_file": _rs.SERVICE_RUNTIME_SPECS[service]["env_file"],
+            "mounts": _rs.plan_runtime_mounts(service),
+            "attachments": [
+                {"network": net, "ip": ip, "gw_priority": priority}
+                for net, ip, priority in
+                _ep.E2E_CONTAINER_ATTACHMENTS.get(service, [])],
+        }
+    e2e_plans = {
+        "activation_gate": preview["activation_gate"],
+        "service_order": list(planner.E2E_SERVICE_ORDER),   # 11 services
+        "networks_create": preview["networks_create"],      # 8 networks
+        "multi_homed_containers": multi_homed,              # 6 CLI-owned
+        "default_service_containers": [
+            svc for svc in planner.E2E_SERVICE_ORDER
+            if svc not in _rs.SERVICE_RUNTIME_SPECS],
+        "firewall": preview["firewall"],
+        "route_probes": preview.get("route_gate",
+                                    preview.get("route_probe")),
+        "wiring": {
+            "gateway": preview["gateway_planning"],
+            "bridge": preview["mcp_bridge_planning"],
+            "reporter": preview["reporter_planning"],
+            "proxy": preview["proxy_planning"],
+            "hiclaw_harness": preview["hiclaw_harness_planning"],
+        },
+        "membership_preflight": preview["membership_preflight"],
+    }
+    return EXIT_OK, {
+        "command": "start", "status": "dry-run", "code": EXIT_OK,
+        "run_id": run_id,
+        "github_e2e_plans": e2e_plans,
+        "note": "pure plan — no Docker/WSL/prerequisite probe, no "
+                "files written; the activation gate marker prevents "
+                "a preview being mistaken for a mode",
+    }
+
+
+def _build_e2e_runtime_configs(config, planner, reader_dsn,
+                               audit_dsn, publisher_dsn, pat_value):
+    """§4: the six authoritative runtime configs (values assembled
+    from the validated 20-key prerequisite config and CLI-generated
+    credentials; the PAT value is read ONLY after the prerequisite
+    gate passed)."""
+    import e2e_runtime_specs as _e2rs
+    return {
+        "controller": {
+            "GITHUB_INGRESS_ENABLED": "1",
+            "GITHUB_ROOM_MAP_PATH": "/run/mergepilot/room-map.yaml",
+            "GITHUB_POLICY_PATH":
+                "/run/mergepilot/policy-fixture.yaml",
+            "GITHUB_DELIVERY_LEASE_SECONDS": "120",
+            "GITHUB_DELIVERY_MAX_ATTEMPTS": "5",
+            "MATRIX_HS": "http://matrix-hs:6167",
+            "MATRIX_SERVER_NAME": e2f.E2E_MATRIX_SERVER_NAME,
+            "MATRIX_USER": e2f.E2E_CONTROLLER_MXID.split(":")[0][1:],
+            "CONTROLLER_CONSUMER_NAME":
+                e2f.E2E_CONTROLLER_MXID.split(":")[0][1:],
+            "M4F_ALLOWED_ROOMS": config["matrix_room_id"],
+            "M4F_ALLOWED_SENDERS": "manager,reviewer,fixer,verifier",
+            "M4F_RUN_PREFIX": "gh-",
+            "RESERVED_RUN_PREFIXES": "",
+            "GATEWAY_URL": "http://policy-gateway:8083",
+            "COORDINATOR_TOKEN": "tok-" + "e" * 32,
+        },
+        "policy-gateway": {
+            "UPSTREAM_URL": _e2rs.GATEWAY_E2E_UPSTREAM,
+            "POLICY_FILE": "/run/mergepilot/policy-fixture.yaml",
+            "ROLE_TOKENS": "synthetic-role-token-value",
+            "AUDIT_DSN": audit_dsn,
+        },
+        "mcp-bridge": {
+            "MCP_GITHUB_TOKEN": pat_value,
+            "GITHUB_REPOSITORY": config["fixture_repo"],
+            "HTTPS_PROXY": _e2rs.BRIDGE_PROXY,
+            "MCP_PROXY_PORT": "8082",
+        },
+        "gh-reporter": {
+            "GITHUB_PUBLISHER_DSN": publisher_dsn,
+            "GITHUB_API_BASE": "https://api.github.com",
+            "GITHUB_APP_ID": config["app_id"],
+            "GITHUB_INSTALLATION_ID": config["installation_id"],
+            "GITHUB_REPOSITORY_ID": config["repository_id"],
+            "GITHUB_PRIVATE_KEY_PATH":
+                "/run/secrets/github-app-private-key.pem",
+            "GH_REPORTER_POLL_SECONDS": "5",
+            "GH_REPORTER_LEASE_SECONDS": "120",
+            "GH_REPORTER_MAX_ATTEMPTS": "8",
+            "HTTPS_PROXY": e2f.E2E_REPORTER_PROXY_R,
+        },
+        "gh-proxy-r": _proxy_env(config),
+        "gh-proxy-b": _proxy_env(config),
+    }
+
+
+def _proxy_env(config):
+    return {
+        "GH_PROXY_BIND": "0.0.0.0",
+        "GH_PROXY_PORT": "18090",
+        "GH_PROXY_UPSTREAM_IP": config["windows_proxy_ip"],
+        "GH_PROXY_UPSTREAM_PORT": config["windows_proxy_port"],
+    }
+
+
+def _e2e_spec_env_file(service):
+    import e2e_runtime_specs as _rs
+    spec = _rs.SERVICE_RUNTIME_SPECS.get(service)
+    return spec["env_file"] if spec else ""
+
+
+def _execute_github_e2e_start(args, project_dir, planner, paths,
+                              run_id):
+    """§3: the REAL production E2E path.
+
+    prerequisite config (20-key, real file probe — an absent config IS
+    the GITHUB_E2E_PREREQUISITES_INCOMPLETE failure, never a fake
+    unconditional raise) → install identities → session/journal →
+    run_e2e_start with injected WslDocker executors. Any failure is
+    uniformly rolled back by the lifecycle (owned resources only)."""
+    import e2e_lifecycle as el
+    import e2e_executors as ex_validate_hiclaw_receipt_mod
+
+    ex_validate_hiclaw_receipt =         ex_validate_hiclaw_receipt_mod.validate_hiclaw_receipt
+
+    try:
+        config = el.load_e2e_prerequisite_config(
+            paths["state"] / "github-e2e.json")
+    except el.E2ELifecycleError as exc:
+        # REAL prerequisite probe failure — safe detail (names +
+        # codes only), zero side effects before this point.
+        raise Failure(exc.code, exc.detail,
+                      exit_code=EXIT_PRECHECK) from None
+
+    install = load_manifest(paths["install"])
+    if install is None:
+        raise Failure("NOT_INSTALLED",
+                      "%s missing (run `mergepilot install` first)"
+                      % INSTALL_MANIFEST, exit_code=EXIT_PRECHECK)
+    record_planner_image_identities(planner, install)
+    image_refs = {}
+    for service in ("controller", "policy-gateway", "mcp-bridge",
+                    "gh-reporter", "gh-proxy-r", "gh-proxy-b"):
+        image_refs[service] = (install.get("images") or {}).get(
+            image_tag(planner,
+                      "gh-proxy" if service.startswith("gh-proxy")
+                      else service), "")
+
+    docker = WslDocker(planner, project_dir)
+    docker_exec = _e2e_docker_exec(docker)
+    host_exec = _e2e_host_exec(docker)
+
+    # ── §3 R3: the REAL read-only prerequisite gate runs BEFORE any
+    # side effect. The four probe inputs come from production
+    # adapters over REAL environment state (iptables-save text,
+    # docker network subnet inventory, --gw-priority capability,
+    # homeserver joined-members). On any failure NOTHING has been
+    # written: no session manifest, no secret file, no PAT read.
+    firewall_scan_text = el.fetch_firewall_scan_text(host_exec)
+    existing_network_cidrs = el.fetch_existing_network_cidrs(
+        docker_exec)
+    docker_gw_priority_supported =         el.fetch_docker_gw_priority_supported(docker_exec)
+    matrix_joined_mxids = el.fetch_matrix_joined_mxids(config)
+    try:
+        el.run_prerequisite_gate(
+            config,
+            docker_executor=docker_exec,
+            host_executor=host_exec,
+            matrix_joined_mxids=matrix_joined_mxids,
+            docker_gw_priority_supported=docker_gw_priority_supported,
+            existing_network_cidrs=existing_network_cidrs,
+            firewall_scan_text=firewall_scan_text)
+    except el.E2ELifecycleError as exc:
+        raise Failure(exc.code, exc.detail,
+                      exit_code=EXIT_PRECHECK) from None
+
+    # Gate passed → session/journal, then secrets, then lifecycle.
+    session = new_session(run_id, args.m4f, github_e2e=True)
+    session["hiclaw_receipt_path"] = config["hiclaw_receipt_path"]
+    write_session(paths, session)
+
+    runtime_directory = str(paths["secrets"])
+    default_secret_written = []
+
+    def persist(s):
+        write_session(paths, s)
+
+    try:
+        admin_pw = secrets.token_urlsafe(32)
+        reader_pw = secrets.token_urlsafe(32)
+        reader_dsn = ("postgresql://%s:%s@postgres:5432/%s"
+                      "?application_name=%s"
+                      % (planner.READER_ROLE, reader_pw, planner.DB_NAME,
+                         planner.APP_NAME))
+        gh_ingress_pw = secrets.token_urlsafe(24)
+        gh_publisher_pw = secrets.token_urlsafe(24)
+        publisher_dsn = GhWebhookSecretFile.build_ingress_dsn(
+            gh_publisher_pw, user="github_check_publisher")
+        audit_dsn = ("postgresql://audit:%s@postgres:5432/%s"
+                     "?connect_timeout=5"
+                     % (secrets.token_urlsafe(16), planner.DB_NAME))
+        # PAT content is read only AFTER the prerequisite gate passed.
+        pat_value = Path(config["mcp_pat_path"]).read_text(
+            encoding="utf-8").strip()
+
+        paths["secrets"].mkdir(parents=True, exist_ok=True)
+        planner.SecretFile(paths["secrets"]).write(admin_pw, reader_pw)
+        default_secret_written.append("postgres.env")
+        planner.ReaderDsnSecretFile(paths["secrets"]).write(reader_dsn)
+        default_secret_written.append("demo_console.env")
+
+        runtime_configs = _build_e2e_runtime_configs(
+            config, planner, reader_dsn, audit_dsn, publisher_dsn,
+            pat_value)
+
+        # The five non-spec DAG services reuse the default-mode plan
+        # argv (create + connect steps executed in order).
+        steps = build_start_steps(
+            planner,
+            env_file=_to_wsl_path(paths["secrets"] / "postgres.env"),
+            controller_env_file=_to_wsl_path(paths["secrets"]
+                                             / "controller.env"),
+            reader_dsn_env_file=_to_wsl_path(paths["secrets"]
+                                             / "demo_console.env"),
+            gh_webhook_env_file=_to_wsl_path(paths["secrets"]
+                                             / "gh_webhook.env"),
+            run_id=run_id, bridge_ip=PLACEHOLDER_BRIDGE_IP,
+            m4f=args.m4f)
+        by_service = {}
+        for _kind, name, argv in steps:
+            if _kind == "container-run":
+                by_service[name] = argv
+
+        def default_service_plan(service):
+            return by_service.get(service, [])
+
+        def db_bootstrap():
+            prepare_database(docker, planner, None, project_dir,
+                             reader_pw)
+
+        # §10/§11 R3: the second checks bind the REAL production
+        # implementations — homeserver joined-members (read-only) and
+        # validate_hiclaw_receipt against live docker inspect.
+        session = el.run_e2e_start(
+            config=config,
+            runtime_configs=runtime_configs,
+            runtime_directory=runtime_directory,
+            docker_executor=docker_exec,
+            host_executor=host_exec,
+            image_refs=image_refs,
+            default_service_plan=default_service_plan,
+            db_bootstrap=db_bootstrap,
+            matrix_joined_mxids=matrix_joined_mxids,
+            docker_gw_priority_supported=docker_gw_priority_supported,
+            existing_network_cidrs=existing_network_cidrs,
+            firewall_scan_text=firewall_scan_text,
+            matrix_members_provider=(
+                lambda: el.fetch_matrix_joined_mxids(config)),
+            service_health=None,
+            receipt_validator=(
+                lambda path: ex_validate_hiclaw_receipt(
+                    path, docker_executor=docker_exec,
+                    expected_old_mcp_state=config[
+                        "expected_old_mcp_state"])),
+            persist_callback=persist,
+            session=session,
+            env_file_resolver=(
+                lambda service: _to_wsl_path(
+                    paths["secrets"] /
+                    _e2e_spec_env_file(service))),
+        )
+    except el.E2ELifecycleError as exc:
+        for basename in default_secret_written:
+            try:
+                (paths["secrets"] / basename).unlink()
+            except OSError:
+                pass
+        return EXIT_FAILED_CLEANED, {
+            "command": "start", "status": "failed_rolled_back",
+            "code": EXIT_FAILED_CLEANED, "run_id": run_id,
+            "primary_code": exc.code,
+            "primary_detail": _redact(exc.detail),
+            "rollback_diagnostics": [
+                _redact(d) for d in exc.diagnostics],
+        }
+    except Exception as exc:
+        failure = _as_failure(exc)
+        for basename in default_secret_written:
+            try:
+                (paths["secrets"] / basename).unlink()
+            except OSError:
+                pass
+        try:
+            if paths["session"].exists():
+                paths["session"].unlink()
+        except OSError:
+            pass
+        raise failure from None
+
+    return EXIT_OK, {
+        "command": "start", "status": "ok", "code": EXIT_OK,
+        "run_id": run_id,
+        "resources": {
+            "containers": session.get("e2e_container_ids", {}),
+            "networks": session.get("e2e_network_ids", {}),
+        },
+    }
+
+
 def cmd_start(args):
     project_dir = resolve_project_dir(args.project_dir)
     planner, showcase = _load_planner(project_dir)
@@ -1470,15 +1810,25 @@ def cmd_start(args):
                       "run_id must match ^[A-Za-z0-9_-]+$",
                       exit_code=EXIT_USAGE)
 
-    # ── M8-GH-4B1 activation gate (before ANY side effect): a REAL
-    # `start --github-e2e` must fail closed while G3/G4 are unimplemented.
-    # Dry-run planning remains available (default-off contract §2).
-    if getattr(args, "github_e2e", False) and not args.dry_run:
-        raise Failure(
-            "GITHUB_E2E_COMPONENTS_INCOMPLETE",
-            "E2E activation incomplete; pending components: %s"
-            % ", ".join(e2f.E2E_PENDING_COMPONENTS),
-            exit_code=EXIT_PRECHECK)
+    # ── M8-GH-4B3-W3B-R2: E2E lifecycle (real production path) ──
+    # Order: pure dry-run plan (no Docker discovery, always safe) →
+    # honest component gate (development incomplete → a REAL start
+    # fails closed BEFORE any config read / manifest load / Docker /
+    # WSL / external probe) → strict 20-key prerequisite config →
+    # run_prerequisite_gate → session/journal init → run_e2e_start.
+    # The default mode below is untouched (seven-service path,
+    # byte-identical behavior).
+    if getattr(args, "github_e2e", False):
+        if args.dry_run:
+            return _github_e2e_dry_run(planner, run_id)
+        if e2f.E2E_PENDING_COMPONENTS:
+            raise Failure(
+                "GITHUB_E2E_COMPONENTS_INCOMPLETE",
+                "E2E lifecycle incomplete — pending: %s"
+                % ", ".join(e2f.E2E_PENDING_COMPONENTS),
+                exit_code=EXIT_PRECHECK)
+        return _execute_github_e2e_start(
+            args, project_dir, planner, paths, run_id)
 
     install = load_manifest(paths["install"])
     if install is None:
@@ -1816,6 +2166,15 @@ def cmd_status(args):
             "m4f": session.get("m4f"),
             "github_e2e": bool(session.get("github_e2e")),
         }
+        # M8-GH-4B3-W3B-R2 §13: a REAL E2E session gets the sanitized
+        # 11-service lifecycle status via run_e2e_status (read-only).
+        # Default-mode status keys are unchanged — this only ADDS the
+        # github_e2e_services key under the E2E-session condition.
+        if session.get("github_e2e"):
+            import e2e_lifecycle as el
+            meta["github_e2e_services"] = el.run_e2e_status(
+                docker_executor=_e2e_docker_exec(docker),
+                session=session)
     if install is not None:
         meta["install_images"] = sorted((install.get("images") or {}).keys())
     if classification != "absent" and session is None:
@@ -1920,6 +2279,49 @@ def cmd_stop(args):
             "plans": plan,
             "note": "reverse-order removal + secret deletion; install "
                     "manifest and images are kept",
+        }
+
+    # M8-GH-4B3-W3B-R2 §14: a REAL E2E session stops through
+    # run_e2e_stop (owned containers → firewall → networks → runtime
+    # files → residue verification). The E2E journal owns the
+    # resources; the default-mode manifest plan never runs here
+    # (its OWNERSHIP_UNKNOWN guard targets default-mode journals).
+    if session.get("github_e2e"):
+        import e2e_lifecycle as el
+        result = el.run_e2e_stop(
+            docker_executor=_e2e_docker_exec(docker),
+            host_executor=_e2e_host_exec(docker),
+            session=session,
+            runtime_directory=str(paths["secrets"]),
+            persist_callback=lambda s: write_session(paths, s))
+        residue = list(result["residue"])
+        for basename in session.get("secrets", []):
+            secret_path = paths["secrets"] / basename
+            try:
+                if secret_path.exists():
+                    secret_path.unlink()
+                if secret_path.exists():
+                    residue.append(
+                        "SECRET_FILE_STILL_PRESENT:%s" % basename)
+            except OSError:
+                residue.append("SECRET_DELETE_FAILED:%s" % basename)
+        if not residue:
+            try:
+                if paths["session"].exists():
+                    paths["session"].unlink()
+            except OSError:
+                residue.append("SESSION_MANIFEST_DELETE_FAILED")
+        if residue:
+            return EXIT_RESIDUE, {
+                "command": "stop", "status": "failed_residue",
+                "code": EXIT_RESIDUE,
+                "residue_codes": residue,
+                "diagnostics": result["diagnostics"],
+            }
+        return EXIT_OK, {
+            "command": "stop", "status": "ok", "code": EXIT_OK,
+            "actions": result["actions"],
+            "kept": ["install manifest", "local images"],
         }
 
     # M8-GH-4B1: session-owned firewall pins are removed AFTER the owned
@@ -2032,12 +2434,29 @@ def cmd_cleanup(args):
         for tag, img_id in sorted((install.get("images") or {}).items()):
             image_plan.append(["rmi", img_id])
 
+    # M8-GH-4B3-W3B-R2 §14: E2E session → the lifecycle residue scan
+    # is the cleanup entry (11 containers, 8 networks, firewall
+    # chains, runtime files, route-probe containers). Unowned
+    # resources are REPORTED, never guessed-deleted; a non-empty
+    # residue maps to a stable non-zero exit. Default-mode cleanup
+    # behavior is unchanged.
+    e2e_residue = []
+    if session is not None and session.get("github_e2e"):
+        import e2e_lifecycle as el
+        e2e_residue = el.run_e2e_cleanup(
+            docker_executor=_e2e_docker_exec(docker),
+            host_executor=_e2e_host_exec(docker),
+            runtime_directory=str(paths["secrets"]))["residue"]
+
     if not args.apply:
         return EXIT_OK, {
             "command": "cleanup", "status": "dry-run", "code": EXIT_OK,
             "plans": stop_plan + image_plan,
             "deletes": [INSTALL_MANIFEST, SESSION_MANIFEST,
                         "secret env files"],
+            **({"github_e2e_residue": e2e_residue}
+               if session is not None and session.get("github_e2e")
+               else {}),
             "note": "dry-run (default): nothing executed; pass --apply to "
                     "stop the stack, remove the 5 verified-ID local images "
                     "and the install manifest",
@@ -2052,7 +2471,7 @@ def cmd_cleanup(args):
             "residue_codes": stop_result.get("residue_codes", []),
         }
 
-    residue = []
+    residue = list(e2e_residue)
     # 2) verified-ID image removal
     if install is not None:
         for tag, expected_id in sorted((install.get("images") or {}).items()):
@@ -2160,8 +2579,8 @@ def build_parser():
     p.add_argument("--github-e2e", action="store_true",
                    help="plan the GitHub E2E controller/Matrix slice "
                         "(B1: dry-run planning only — a REAL start fails "
-                        "closed with GITHUB_E2E_COMPONENTS_INCOMPLETE "
-                        "until the B2/B3 components merge)")
+                        "closed with GITHUB_E2E_PREREQUISITES_INCOMPLETE "
+                        "(external readiness gate)")
     p.add_argument("--dry-run", action="store_true")
 
     p = sub.add_parser("stop", parents=[common],

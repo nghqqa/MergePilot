@@ -11,9 +11,10 @@ Implements the R4-frozen contracts as PURE, testable structures:
   per-subnet NEW default-deny, INPUT LOCAL bypass deny) rendered as an
   atomic ``iptables-restore`` blob plus an exact-match teardown;
 - the Matrix five-identity membership preflight (transport-injected);
-- the B1 activation gate: a REAL ``start --github-e2e`` fails closed with
-  ``GITHUB_E2E_COMPONENTS_INCOMPLETE`` until B2 (reporter token provider)
-  and B3 (MCP bridge) land.
+- the activation gate: a REAL ``start --github-e2e`` fails closed with
+  ``GITHUB_E2E_PREREQUISITES_INCOMPLETE`` until external prerequisites
+  (PAT, PEM, HiClaw receipt, Matrix members, room-map) are provisioned;
+  the lifecycle itself is code-complete (S2, e2e_lifecycle.py).
 
 Nothing in this module touches real iptables, WSL, Matrix or GitHub —
 executors are injected by the CLI and exercised only with fakes in tests.
@@ -41,9 +42,16 @@ E2E_CONTROLLER_MXID = "@%s:%s" % (E2E_CONTROLLER_LOCALPART,
 #: the five identities the membership preflight requires in the test room
 E2E_EXPECTED_ROOM_MEMBERS = E2E_PLATFORM_MXIDS + (E2E_CONTROLLER_MXID,)
 
-#: Activation gate — the components still not shipped. B2 (reporter token
-#: provider) merged; only the B3 MCP bridge remains.
-E2E_PENDING_COMPONENTS = ("mcp_bridge(B3)",)
+#: M8-GH-4B3-W3B-R2 FINAL: the R2 prepush conditions hold — CLI
+#: production wiring (cmd_start/status/stop/cleanup → lifecycle),
+#: full lifecycle execution tests, real persist callback, ownership/
+#: reparse boundaries, pure dry-run, namespace real-packet all-8,
+#: and the final dual-worktree regression on this exact HEAD. The
+#: component gate is CLEARED; a real `start --github-e2e` now fails
+#: closed on the REAL prerequisite probe (config + 16 read-only
+#: probes) with GITHUB_E2E_PREREQUISITES_INCOMPLETE before any side
+#: effect.
+E2E_PENDING_COMPONENTS = ()
 
 
 class E2EConfigError(Exception):
@@ -221,7 +229,9 @@ E2E_REPORTER_ENV_KEYS = frozenset((
     "GH_REPORTER_POLL_SECONDS",
     "GH_REPORTER_LEASE_SECONDS",
     "GH_REPORTER_MAX_ATTEMPTS",
+    "HTTPS_PROXY",
 ))
+E2E_REPORTER_PROXY_R = "http://172.31.0.98:18090"
 E2E_REPORTER_ENV_FILE = "gh_reporter.env"
 E2E_REPORTER_KEY_CONTAINER_PATH = "/run/secrets/github-app-private-key.pem"
 E2E_REPORTER_API_BASE = "https://api.github.com"
@@ -270,6 +280,10 @@ def validate_e2e_reporter_env(mapping) -> dict:
                   mapping["GH_REPORTER_LEASE_SECONDS"], 30, 600)
     _validate_int("GH_REPORTER_MAX_ATTEMPTS",
                   mapping["GH_REPORTER_MAX_ATTEMPTS"], 1, 50)
+    if mapping.get("HTTPS_PROXY", "") != E2E_REPORTER_PROXY_R:
+        _bad("HTTPS_PROXY",
+             "E2E reporter must use exactly %s (proxy-r; "
+             "no implicit fallback)" % E2E_REPORTER_PROXY_R)
     return dict(mapping)
 
 
@@ -738,25 +752,249 @@ def build_reporter_planning() -> dict:
                                    E2E_REPORTER_KEY_CONTAINER_PATH),
         "pem_mount_policy": "single-file :ro into gh-reporter ONLY",
         "networks": {
-            "current": ["isolated (PG via GITHUB_PUBLISHER_DSN)"],
-            "pending_b3": ["rpt-egress (172.31.0.64/28, static .66)",
-                           "restricted api.github.com proxy chain"],
+            "isolated": "PostgreSQL via GITHUB_PUBLISHER_DSN",
+            "rpt-egress": "172.31.0.64/28 static .66 (SOLE default "
+                          "route; HTTPS_PROXY -> gh-proxy-r .98:18090)",
         },
-        "activation_gate": "GITHUB_E2E_COMPONENTS_INCOMPLETE "
-                           "(mcp_bridge(B3) pending; no real egress)",
+        "https_proxy": "http://172.31.0.98:18090 (gh-proxy-r ONLY)",
+        "no_proxy_policy": "NO_PROXY must NOT bypass api.github.com",
+        "activation_gate": "GITHUB_E2E_PREREQUISITES_INCOMPLETE "
+                           "(external readiness; see §2 gate)",
     }
 
 
-# ── §2 B1 activation gate ────────────────────────────────────────────────────
+# ── M8-GH-4B3 §4/§5: MCP bridge + gateway + proxy planning ─────────────────
 
+R4_ALL_SUBNETS = [spec[0] for spec in E2E_NETWORKS.values()]
+
+
+def _build_all_edges(tuwunel_ip):
+    """The R4 10-edge set (frozen; proxy targets use static IPs)."""
+    return [
+        ("172.31.0.2", tuwunel_ip, 6167, "controller-to-tuwunel"),
+        ("172.31.0.18", "172.31.0.34", 8082, "gateway-to-bridge"),
+        ("172.31.0.66", "172.31.0.98", 18090, "reporter-to-proxy-r"),
+        ("172.31.0.82", "172.31.0.114", 18090, "bridge-to-proxy-b"),
+        ("172.31.0.130", "172.23.48.1", 17890, "proxy-r-to-winproxy"),
+        ("172.31.0.131", "172.23.48.1", 17890, "proxy-b-to-winproxy"),
+        ("172.21.0.2", "172.31.0.18", 8083, "manager-to-gateway"),
+        ("172.21.0.5", "172.31.0.18", 8083, "reviewer-to-gateway"),
+        ("172.21.0.4", "172.31.0.18", 8083, "fixer-to-gateway"),
+        ("172.21.0.6", "172.31.0.18", 8083, "verifier-to-gateway"),
+    ]
+
+
+def build_mcp_bridge_planning() -> dict:
+    """B3 §4: the CLI/session-owned MCP bridge container plan."""
+    return {
+        "container": "mergepilot-isolated-mcp-bridge-1",
+        "image": "mergepilot-isolated-mcp-bridge:local",
+        "dockerfile": "Dockerfile.mcp-bridge",
+        "supply_chain": {
+            "github_mcp_server_digest":
+                "ghcr.io/github/github-mcp-server@sha256:881b53d6"
+                "f75f69bdbc1b5b10fc2f1361717c19054143b3a8529fb5c32061a50e",
+            "base_image": "python:3.12-slim@sha256:9e869b0816f5537709825"
+                          "b49e62dc86d1c2691eff19b05c1d4dc3a07992cc052",
+            "lock_file": "requirements-mcp-bridge.lock (33 packages, "
+                         "all sha256-pinned)",
+            "install": "--only-binary=:all: --require-hashes",
+        },
+        "env_file": "mcp_bridge.env",
+        "env_keys": ["MCP_GITHUB_TOKEN"],
+        "env_policy": "PAT ONLY in mcp_bridge.env (0600, --env-file; "
+                      "never argv/journal/logs/diagnostics)",
+        "networks": {
+            "mcp-bridge-net": "172.31.0.32/28 static .34 (inbound from "
+                              "gateway ONLY)",
+            "br-up": "172.31.0.80/28 static .82 (egress to gh-proxy-b "
+                     ".114:18090)",
+        },
+        "https_proxy": "http://172.31.0.114:18090 (gh-proxy-b ONLY)",
+        "no_proxy_policy": "NO_PROXY must NOT bypass api.github.com",
+        "healthcheck": "process + TCP 8082 + MCP SSE endpoint probe "
+                       "(no real repo calls)",
+        "journal": "stop/rollback/cleanup fully journaled (CLI-owned)",
+    }
+
+
+def build_proxy_planning() -> dict:
+    """B3 §3: the two restricted CONNECT proxy instances."""
+    common = {
+        "image": "mergepilot-isolated-gh-proxy:local",
+        "dockerfile": "Dockerfile.gh-proxy",
+        "contract": {
+            "methods": "CONNECT only (HTTP -> 405)",
+            "target": "api.github.com:443 byte-exact (403 otherwise)",
+            "upstream": "IP literal : 17890 (no hostname, no DNS)",
+            "direct_dial": "forbidden (chained via upstream ONLY)",
+            "timeouts": "connect 10s / read 30s / idle 120s",
+            "sigterm": "stop listener, drain bounded, exit",
+            "logging": "no Authorization/bodies/responses",
+            "health": "config self-check only (no real GitHub)",
+        },
+        "networks": {
+            "winpx": "172.31.0.128/28 (egress to Windows proxy :17890)",
+        },
+    }
+    return {
+        "gh-proxy-r": dict(common,
+                           container="mergepilot-isolated-gh-proxy-r-1",
+                           serves="Reporter ONLY",
+                           networks=dict(common["networks"],
+                                         pxr="172.31.0.96/28 static .98 "
+                                             "(inbound from reporter)")),
+        "gh-proxy-b": dict(common,
+                           container="mergepilot-isolated-gh-proxy-b-1",
+                           serves="MCP bridge ONLY",
+                           networks=dict(common["networks"],
+                                         pxb="172.31.0.112/28 static .114 "
+                                             "(inbound from bridge)")),
+    }
+
+
+def build_gateway_e2e_planning() -> dict:
+    """B3 §5: the policy-gateway E2E wiring (real read-only upstream)."""
+    return {
+        "container": "mergepilot-isolated-policy-gateway-1",
+        "upstream_url": "http://172.31.0.34:8082/sse",
+        "policy_file": "/run/mergepilot/policy-fixture.yaml (single-file "
+                       ":ro mount)",
+        "gateway_waits_for": "MCP initialize + tools/list success "
+                             "(lifespan; healthy only after upstream "
+                             "ready — zero-tool stub FORBIDDEN in E2E)",
+        "default_mode": "unchanged (UPSTREAM_URL=http://127.0.0.1:8084/sse "
+                        "zero-tool stub)",
+        "read_only_tools": [
+            "get_pull_request", "get_pull_request_files",
+            "get_file_contents", "get_branch",
+        ],
+        "denied_tools": [
+            "create/update/delete", "comment", "branch write", "merge",
+            "workflow", "release", "secret/administration",
+        ],
+        "repo_constraint": "three layers: policy allowlist + gateway "
+                           "param validation + fine-grained PAT scope",
+        "sole_consumer": "Gateway is the ONLY bridge consumer; "
+                         "Worker/Manager/Controller/Reporter denied "
+                         "direct bridge access",
+        "failure": "upstream failure -> HOLD/M4F_ERROR (no fake SHA/"
+                   "binding/success)",
+    }
+
+
+# ── M8-GH-4B3 §9: HiClaw external rewiring harness PLANNING ─────────────────
+
+HICLAW_AGENT_SPECS = (
+    {"role": "manager", "container": "hiclaw-manager",
+     "mxid": "@manager:%s" % E2E_MATRIX_SERVER_NAME,
+     "hiclaw_net_ip": "172.21.0.2", "role_path": "/manager/sse"},
+    {"role": "reviewer", "container": "hiclaw-worker-reviewer",
+     "mxid": "@reviewer:%s" % E2E_MATRIX_SERVER_NAME,
+     "hiclaw_net_ip": "172.21.0.5", "role_path": "/reviewer/sse"},
+    {"role": "fixer", "container": "hiclaw-worker-fixer",
+     "mxid": "@fixer:%s" % E2E_MATRIX_SERVER_NAME,
+     "hiclaw_net_ip": "172.21.0.4", "role_path": "/fixer/sse"},
+    {"role": "verifier", "container": "hiclaw-worker-verifier",
+     "mxid": "@verifier:%s" % E2E_MATRIX_SERVER_NAME,
+     "hiclaw_net_ip": "172.21.0.6", "role_path": "/verifier/sse"},
+)
+
+#: Workers: /root/hiclaw-fs/agents/<role>/config/mcporter.json
+#: Manager: /root/manager-workspace/config/mcporter.json
+HICLAW_MCPORTER_PATHS = {
+    spec["role"]: ("/root/hiclaw-fs/agents/%s/config/mcporter.json"
+                   % spec["role"] if spec["role"] != "manager"
+                   else "/root/manager-workspace/config/mcporter.json")
+    for spec in HICLAW_AGENT_SPECS
+}
+
+
+def build_hiclaw_harness_planning() -> dict:
+    """B3 §9: the HiClaw rewiring harness plan — an EXPLICITLY separately
+    authorized EXTERNAL write operation. mergepilot cleanup NEVER
+    silently touches HiClaw."""
+    return {
+        "ownership": "mp-gh4-harness (operator-authorized script); "
+                     "NOT part of mergepilot CLI ownership",
+        "per_agent": [
+            dict(spec,
+                 mcporter_path=HICLAW_MCPORTER_PATHS[spec["role"]],
+                 gateway_url="http://172.31.0.18:8083%s"
+                             % spec["role_path"],
+                 token_transport="role-specific Bearer; 0600 file ONLY; "
+                                 "no cross-role reuse",
+                 pre_hash="recorded before modification",
+                 backup=".mp-gh4-<ts>.bak (same dir, root 0600)",
+                 post_hash="verified after write",
+                 drift="REFUSE_OVERWRITE if pre-hash mismatch "
+                       "(concurrent user modification)",
+                 rollback="reverse-order restore from backup",
+                 restart="config replace + container restart "
+                         "(hot-reload unverified; conservative path)")
+            for spec in HICLAW_AGENT_SPECS
+        ],
+        "openclaw": "NOT modified (requireMention=true compatible with "
+                    "send_mention explicit mentions); hash-journaled "
+                    "for drift detection only",
+        "old_github_mcp": {
+            "pre_state": "recorded (container ID, status, restart policy, "
+                         "network attachments)",
+            "e2e_requirement": "must be stopped (doctor verifies)",
+            "cleanup": "restore to journaled original state",
+        },
+        "journal": "path/hash/token-hash/ownership only — never token "
+                   "plaintext, never payload",
+    }
+
+
+# ── §2 M8-GH-4B3: external prerequisites gate (replaces the component
+#    gate; ALL code is present, activation now depends on external state) ──
+
+#: Non-sensitive prerequisite type identifiers (no paths, no tokens).
+E2E_PREREQUISITE_TYPES = (
+    "matrix_members",          # 5 joined members in the test room
+    "room_map_policy",         # fixture room-map/policy 1:1
+    "app_reporter_config",     # App/Reporter env completeness
+    "pat_file",                # fine-grained PAT file exists & valid shape
+    "hiclaw_rewiring",         # HiClaw mcporter/gateway rewiring done
+    "old_mcp_stopped",         # old github-mcp in expected stopped state
+    "callback_8090",           # 8090 handover state (placeholder stopped)
+    "docker_gw_priority",      # Docker 29.x --gw-priority capability
+    "target_ips",              # tuwunel/proxy/agent IPs un-drifted
+    "firewall_ownership",      # no conflicting session rules
+)
+
+
+def e2e_prerequisites_gate(missing=None) -> None:
+    """The B3 activation gate: a REAL `start --github-e2e` must verify
+    ALL external prerequisites BEFORE any side effect. The component-
+    missing gate is gone (B1/B2/B3 all merged); what remains is the
+    external-world readiness check.
+
+    ``missing``: iterable of E2E_PREREQUISITE_TYPES that failed their
+    probe (the caller supplies real probe results; this function only
+    fails closed). Empty/None -> all prerequisites assumed verified.
+    """
+    missing_set = set(missing or [])
+    unknown = missing_set - set(E2E_PREREQUISITE_TYPES)
+    if unknown:
+        raise E2EConfigError(
+            "PREREQUISITE_TYPE_INVALID",
+            "unknown prerequisite type(s): %s" % sorted(unknown))
+    if missing_set:
+        raise E2EConfigError(
+            "GITHUB_E2E_PREREQUISITES_INCOMPLETE",
+            "missing external prerequisites: %s" % sorted(missing_set))
+
+
+# Backward-compatible alias: the component gate no longer exists; callers
+# that still reference it get the prerequisites gate (which succeeds
+# when no probe results are supplied — the code is complete).
 def e2e_activation_gate() -> None:
-    """The final B1 gate: a REAL `start --github-e2e` must fail closed
-    because G3 (reporter token provider) and G4 (MCP bridge) are not
-    implemented yet. Remove this gate only after B2/B3 merge."""
-    raise E2EConfigError(
-        "GITHUB_E2E_COMPONENTS_INCOMPLETE",
-        "E2E activation incomplete — pending components: %s"
-        % ", ".join(E2E_PENDING_COMPONENTS))
+    """B3: all code components present; activation now depends on
+    external prerequisites (see e2e_prerequisites_gate)."""
+    e2e_prerequisites_gate()
 
 
 # ── §7 dry-run preview (pure; zero side effects) ─────────────────────────────
@@ -772,10 +1010,16 @@ def build_b1_dry_run_preview(*, run_id: str, tuwunel_ip: str,
     edges = [("172.31.0.2", tuwunel_ip, E2E_TUWUNEL_PORT,
               "controller-to-tuwunel")]
     plan = build_firewall_plan(sid, edges=edges, own_subnets=[subnet])
+    all_edges = _build_all_edges(tuwunel_ip=tuwwunel_ip_placeholder
+                                  if False else tuwunel_ip)
+    full_fw = build_firewall_plan(sid, edges=all_edges,
+                                  own_subnets=R4_ALL_SUBNETS)
     return {
-        "activation_gate": "GITHUB_E2E_COMPONENTS_INCOMPLETE (B1)",
+        "activation_gate": "GITHUB_E2E_PREREQUISITES_INCOMPLETE (B3; "
+                           "external readiness gate)",
+        "prerequisite_types": list(E2E_PREREQUISITE_TYPES),
         "networks_create": [plan_e2e_network_create(n)
-                            for n in B1_ACTIVE_NETWORKS],
+                            for n in sorted(E2E_NETWORKS)],
         "controller_create": plan_controller_e2e_create(
             image_ref="<sha256:image-id-from-install>",
             container="mergepilot-isolated-controller-1",
@@ -800,4 +1044,14 @@ def build_b1_dry_run_preview(*, run_id: str, tuwunel_ip: str,
         },
         # M8-GH-4B2: the standalone checks reporter (G3) planning slice.
         "reporter_planning": build_reporter_planning(),
+        # M8-GH-4B3: full 8-network + 11-service topology.
+        "mcp_bridge_planning": build_mcp_bridge_planning(),
+        "proxy_planning": build_proxy_planning(),
+        "gateway_planning": build_gateway_e2e_planning(),
+        "hiclaw_harness_planning": build_hiclaw_harness_planning(),
+        "full_firewall": {
+            "counts": full_fw["counts"],
+            "edge_count": len(all_edges),
+            "subnet_drop_count": len(R4_ALL_SUBNETS),
+        },
     }

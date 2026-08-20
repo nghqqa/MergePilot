@@ -154,16 +154,70 @@ class _PemSigner:
         return self._key.sign(data, padding.PKCS1v15(), hashes.SHA256())
 
 
+class _ForcedProxyHandler(urllib.request.ProxyHandler):
+    """§3 R1-T2: ProxyHandler that NEVER checks proxy_bypass.
+
+    The standard ProxyHandler calls proxy_bypass(req.host) at request
+    time, which reads NO_PROXY/no_proxy from the environment even with
+    an explicit proxy dict. This subclass overrides proxy_open() to
+    SKIP that check entirely — the proxy is always used regardless of
+    NO_PROXY, no_proxy, or any other environment state.
+
+    This is instance-level and concurrent-safe: no os.environ reads or
+    writes, no global state mutation, no locks needed."""
+
+    def proxy_open(self, req, proxy, type):
+        # Mirrors the stdlib ProxyHandler.proxy_open EXCEPT the
+        # `proxy_bypass(req.host)` early-return is DELIBERATELY
+        # SKIPPED — ambient NO_PROXY/no_proxy must never reroute
+        # api.github.com into a direct (proxy-less) connection.
+        from urllib.request import _parse_proxy, unquote
+        orig_type = req.type
+        proxy_type, user, password, hostport = _parse_proxy(proxy)
+        if proxy_type is None:
+            proxy_type = orig_type
+        hostport = unquote(hostport)
+        req.set_proxy(hostport, proxy_type)
+        if orig_type == proxy_type or orig_type == 'https':
+            # let the protocol handlers do the actual proxied dial
+            # (absolute-form for http, CONNECT for https)
+            return None
+        return self.parent.open(req, timeout=req.timeout)
+
+
+def build_proxy_opener(proxy_url: str):
+    """§3 R1-T2: Build an EXPLICIT proxy-aware opener for api.github.com.
+
+    Concurrent-safe, environment-immutable: uses _ForcedProxyHandler
+    (subclass of ProxyHandler) that skips proxy_bypass() entirely.
+    Does NOT modify os.environ, does NOT wrap open() with env clearing,
+    does NOT read HTTPS_PROXY/NO_PROXY. Routes ALL traffic through the
+    specified proxy. Returns an OpenerDirector; never logs credentials."""
+    handler = _ForcedProxyHandler({
+        "http": proxy_url,
+        "https": proxy_url,
+    })
+    return urllib.request.build_opener(handler)
+
+
 def default_transport(method: str, url: str, *, headers: dict,
                       body: Optional[dict]) -> tuple:
-    """urllib transport for the token exchange (injectable in tests).
-    Returns (status, headers, parsed_body)."""
+    """Proxy-aware urllib transport for the token exchange (injectable
+    in tests). Uses an EXPLICIT ProxyHandler when HTTPS_PROXY is set;
+    falls back to plain urlopen only when no proxy is configured (fake
+    stacks). Returns (status, headers, parsed_body)."""
     data = json.dumps(body).encode("utf-8") if body is not None else None
     request = urllib.request.Request(url, data=data, method=method)
     for key, value in headers.items():
         request.add_header(key, value)
+    proxy_url = os.environ.get("HTTPS_PROXY", "")
+    if proxy_url:
+        opener = build_proxy_opener(proxy_url)
+        open_func = opener.open
+    else:
+        open_func = urllib.request.urlopen
     try:
-        with urllib.request.urlopen(request, timeout=30) as response:
+        with open_func(request, timeout=30) as response:
             raw = response.read().decode("utf-8", "replace")
             parsed = json.loads(raw) if raw.strip() else {}
             return response.status, dict(response.headers), parsed

@@ -78,8 +78,21 @@ GATEWAY_LISTEN_PORT = 8083
 GATEWAY_ISOLATED_UPSTREAM_URL = "http://127.0.0.1:8084/sse"
 
 # Services and their dependency order (topological).
+# M8-GH-4B3 §4: the DEFAULT service order stays at 7 (docker-compose
+# parity; zero behavior change for non-E2E runs). The E2E topology adds
+# 4 CLI-managed services (gh-proxy-r/b, mcp-bridge, gh-reporter) via
+# E2E_SERVICE_ORDER — used ONLY by the --github-e2e CLI path. Compose
+# does NOT support --github-e2e (the multi-network topology is not
+# expressible there).
 SERVICE_ORDER = ("postgres", "policy-gateway", "controller", "gh-webhook",
                  "demo-console", "console-edge", "preflight")
+
+#: Full E2E topology (11 services; dependency order: proxy -> bridge ->
+#: gateway -> controller/reporter). Used by the CLI in --github-e2e mode.
+E2E_SERVICE_ORDER = ("postgres", "gh-proxy-r", "gh-proxy-b", "mcp-bridge",
+                     "policy-gateway", "controller", "gh-webhook",
+                     "demo-console", "console-edge", "gh-reporter",
+                     "preflight")
 
 # Host-side loopback port for the gh-webhook receiver (M8-GH-3). The ONLY
 # other published port is the console-edge on 8600.
@@ -1227,8 +1240,13 @@ def compose_ports_binding(config: dict) -> dict:
 # service -> recorded identity; it is populated by the (authorized) build
 # round and checked by the orchestrator before start.
 
+# M8-GH-4B3 §3: 8 built images — the original 6 plus gh-proxy
+# (stdlib-only restricted CONNECT relay) and mcp-bridge (official GitHub
+# MCP server + hash-locked mcp-proxy). ALWAYS built in install (both new
+# images have zero runtime side effects when not explicitly started).
 BUILT_SERVICES = ("policy-gateway", "controller", "demo-console",
-                  "console-edge", "preflight", "gh-webhook")
+                  "console-edge", "preflight", "gh-webhook",
+                  "gh-proxy", "mcp-bridge")
 
 _builtin_registry: dict = {}
 
@@ -1312,6 +1330,13 @@ _SERVICE_FLAGS = {
                     "(\"127.0.0.1\",%d),timeout=2);s.close()'"
                     % GH_WEBHOOK_PORT]),
     "preflight": (["preflight"], None, None),
+    # M8-GH-4B3: E2E-only services (no ports published, no healthcheck
+    # in the base flags — gh-proxy has its own in-image HEALTHCHECK;
+    # mcp-bridge likewise; gh-reporter is a polling loop).
+    "gh-proxy-r": (["gh-proxy-r"], None, None),
+    "gh-proxy-b": (["gh-proxy-b"], None, None),
+    "mcp-bridge": (["mcp-bridge"], None, None),
+    "gh-reporter": (["gh-reporter"], None, None),
 }
 
 
@@ -1745,7 +1770,7 @@ __all__ = [
     "PREFLIGHT_CHECKS",
     "READER_ROLE",
     "ReaderDsnSecretFile",
-    "SERVICE_ORDER",
+    "SERVICE_ORDER", "E2E_SERVICE_ORDER",
     "SOURCE_KIND_ISOLATED",
     "SecretFile",
     "StartupCleanupError",
