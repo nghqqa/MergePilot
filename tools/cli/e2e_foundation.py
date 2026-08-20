@@ -41,8 +41,9 @@ E2E_CONTROLLER_MXID = "@%s:%s" % (E2E_CONTROLLER_LOCALPART,
 #: the five identities the membership preflight requires in the test room
 E2E_EXPECTED_ROOM_MEMBERS = E2E_PLATFORM_MXIDS + (E2E_CONTROLLER_MXID,)
 
-#: B1 activation gate — the components this milestone does NOT ship.
-E2E_PENDING_COMPONENTS = ("reporter_token_provider(B2)", "mcp_bridge(B3)")
+#: Activation gate — the components still not shipped. B2 (reporter token
+#: provider) merged; only the B3 MCP bridge remains.
+E2E_PENDING_COMPONENTS = ("mcp_bridge(B3)",)
 
 
 class E2EConfigError(Exception):
@@ -199,6 +200,107 @@ class GithubE2eSecretFile:
             self._path.chmod(0o600)
         except OSError:
             pass  # Windows: recorded honestly in capability, not enforced
+
+    def delete(self) -> None:
+        if self._path.exists():
+            self._path.unlink()
+
+    def exists(self) -> bool:
+        return self._path.exists()
+
+
+# ── M8-GH-4B2 reporter env contract (production E2E only) ───────────────────
+
+E2E_REPORTER_ENV_KEYS = frozenset((
+    "GITHUB_PUBLISHER_DSN",
+    "GITHUB_API_BASE",
+    "GITHUB_APP_ID",
+    "GITHUB_INSTALLATION_ID",
+    "GITHUB_REPOSITORY_ID",
+    "GITHUB_PRIVATE_KEY_PATH",
+    "GH_REPORTER_POLL_SECONDS",
+    "GH_REPORTER_LEASE_SECONDS",
+    "GH_REPORTER_MAX_ATTEMPTS",
+))
+E2E_REPORTER_ENV_FILE = "gh_reporter.env"
+E2E_REPORTER_KEY_CONTAINER_PATH = "/run/secrets/github-app-private-key.pem"
+E2E_REPORTER_API_BASE = "https://api.github.com"
+
+
+def validate_e2e_reporter_env(mapping) -> dict:
+    """Strict validation of the 9-key E2E reporter env schema (§6):
+    unknown/missing/blank keys fail closed; numeric ranges enforced; the
+    API base must be exactly the production endpoint (no implicit fake
+    fallback); the PEM path must be the frozen single-file container path.
+    Errors name only keys and reasons — never the DSN value."""
+    if not isinstance(mapping, dict):
+        raise E2EConfigError("CONFIG_INVALID", "reporter env must be a mapping")
+    unknown = sorted(set(mapping) - E2E_REPORTER_ENV_KEYS)
+    if unknown:
+        raise E2EConfigError("CONFIG_INVALID",
+                             "unknown reporter env key(s): %s" % unknown)
+    missing = sorted(E2E_REPORTER_ENV_KEYS - set(mapping))
+    if missing:
+        raise E2EConfigError("CONFIG_INVALID",
+                             "missing reporter env key(s): %s" % missing)
+    for key in sorted(E2E_REPORTER_ENV_KEYS):
+        value = mapping[key]
+        if not isinstance(value, str) or not value.strip():
+            if key != "":  # (no key may be blank)
+                _bad(key, "must be a non-empty string")
+    dsn = mapping["GITHUB_PUBLISHER_DSN"]
+    if not dsn.startswith("postgresql://") or "connect_timeout=" not in dsn:
+        _bad("GITHUB_PUBLISHER_DSN",
+             "must be a postgresql:// DSN with a forced connect_timeout")
+    if mapping["GITHUB_API_BASE"] != E2E_REPORTER_API_BASE:
+        _bad("GITHUB_API_BASE",
+             "E2E reporter must use exactly %s (no implicit fake fallback)"
+             % E2E_REPORTER_API_BASE)
+    for key in ("GITHUB_APP_ID", "GITHUB_INSTALLATION_ID",
+                "GITHUB_REPOSITORY_ID"):
+        if not mapping[key].isdigit() or int(mapping[key]) <= 0:
+            _bad(key, "must be a positive numeric string")
+    if mapping["GITHUB_PRIVATE_KEY_PATH"] != E2E_REPORTER_KEY_CONTAINER_PATH:
+        _bad("GITHUB_PRIVATE_KEY_PATH",
+             "must be the frozen single-file container path %s"
+             % E2E_REPORTER_KEY_CONTAINER_PATH)
+    _validate_int("GH_REPORTER_POLL_SECONDS",
+                  mapping["GH_REPORTER_POLL_SECONDS"], 1, 3600)
+    _validate_int("GH_REPORTER_LEASE_SECONDS",
+                  mapping["GH_REPORTER_LEASE_SECONDS"], 30, 600)
+    _validate_int("GH_REPORTER_MAX_ATTEMPTS",
+                  mapping["GH_REPORTER_MAX_ATTEMPTS"], 1, 50)
+    return dict(mapping)
+
+
+class GithubReporterE2eSecretFile:
+    """E2E-mode gh_reporter.env transport (same file NAME as the fake-stack
+    one; the E2E key set is the strict 9-key schema above)."""
+
+    _NAME = E2E_REPORTER_ENV_FILE
+
+    def __init__(self, directory: Path):
+        self._dir = Path(directory)
+        self._path = self._dir / self._NAME
+
+    @property
+    def path(self) -> Path:
+        return self._path
+
+    def write(self, mapping: dict) -> None:
+        validate_e2e_reporter_env(mapping)
+        if self._path.exists():
+            raise E2EConfigError("SECRET_FILE_EXISTS",
+                                 "refusing to overwrite an existing reporter "
+                                 "E2E secret env file")
+        self._dir.mkdir(parents=True, exist_ok=True)
+        lines = ["%s=%s" % (k, mapping[k]) + chr(10)
+                 for k in sorted(E2E_REPORTER_ENV_KEYS)]
+        self._path.write_text("".join(lines), encoding="utf-8")
+        try:
+            self._path.chmod(0o600)
+        except OSError:
+            pass
 
     def delete(self) -> None:
         if self._path.exists():
@@ -620,6 +722,31 @@ def fetch_joined_members(homeserver_url: str, room_id: str,
     return set(joined.keys())
 
 
+def build_reporter_planning() -> dict:
+    """B2 reporter planning: a standalone container reusing the gh-webhook
+    image with an overridden entrypoint. The PEM rides as a SINGLE-FILE
+    read-only mount into the reporter ONLY; the future rpt-egress network
+    (and the constrained api.github.com proxy chain) is B3 scope and is
+    shown as pending — no executable public egress exists in B2."""
+    return {
+        "container": "mergepilot-isolated-gh-reporter-1",
+        "image": "mergepilot-isolated-gh-webhook:local (entrypoint override)",
+        "entrypoint": ["python", "-u", "/app/gh_app/checks_reporter.py"],
+        "env_file": E2E_REPORTER_ENV_FILE,
+        "env_keys": sorted(E2E_REPORTER_ENV_KEYS),
+        "pem_mount": "%s:%s:ro" % ("<host-pem-path>",
+                                   E2E_REPORTER_KEY_CONTAINER_PATH),
+        "pem_mount_policy": "single-file :ro into gh-reporter ONLY",
+        "networks": {
+            "current": ["isolated (PG via GITHUB_PUBLISHER_DSN)"],
+            "pending_b3": ["rpt-egress (172.31.0.64/28, static .66)",
+                           "restricted api.github.com proxy chain"],
+        },
+        "activation_gate": "GITHUB_E2E_COMPONENTS_INCOMPLETE "
+                           "(mcp_bridge(B3) pending; no real egress)",
+    }
+
+
 # ── §2 B1 activation gate ────────────────────────────────────────────────────
 
 def e2e_activation_gate() -> None:
@@ -628,7 +755,7 @@ def e2e_activation_gate() -> None:
     implemented yet. Remove this gate only after B2/B3 merge."""
     raise E2EConfigError(
         "GITHUB_E2E_COMPONENTS_INCOMPLETE",
-        "B1 ships planning only — pending components: %s"
+        "E2E activation incomplete — pending components: %s"
         % ", ".join(E2E_PENDING_COMPONENTS))
 
 
@@ -671,4 +798,6 @@ def build_b1_dry_run_preview(*, run_id: str, tuwunel_ip: str,
             "required_members": list(E2E_EXPECTED_ROOM_MEMBERS),
             "failure_code": "MATRIX_MEMBERSHIP_INCOMPLETE",
         },
+        # M8-GH-4B2: the standalone checks reporter (G3) planning slice.
+        "reporter_planning": build_reporter_planning(),
     }

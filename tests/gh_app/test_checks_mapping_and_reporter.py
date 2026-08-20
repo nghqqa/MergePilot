@@ -217,8 +217,12 @@ class ReporterTransport:
         raise cr.TransportError("unrouted url %s" % url)
 
 
-def reporter_conn(row, *, confirm_rowcount=1):
+def reporter_conn(row, *, confirm_rowcount=1, reap_rowcount=0):
     conn = FakeConnection()
+    # M8-GH-4B2: publish_once now runs the MAX_ATTEMPTS reap BEFORE the
+    # claim — script it explicitly so the generic confirm entry keeps its
+    # original meaning.
+    conn.enqueue("attempt_count >= %s", rowcount=reap_rowcount)
     conn.enqueue("UPDATE public.github_check_outbox o", rowcount=1,
                  fetchone=row)
     conn.enqueue("UPDATE public.github_check_outbox", rowcount=confirm_rowcount)
@@ -311,7 +315,7 @@ class TestReporter(unittest.TestCase):
         outcome = cr.publish_once(lambda: conn, api_base="http://stub",
                                   transport=transport)
         self.assertEqual(outcome, "terminal")
-        terminal = conn.params_of("publish_state = 'TERMINAL'")[0]
+        terminal = conn.params_of("last_error = %s, claim_id = NULL")[0]
         self.assertIn("http 403", terminal[0])
 
     def test_422_terminal(self):
@@ -375,6 +379,333 @@ class TestReporter(unittest.TestCase):
         summary = create_body["output"]["summary"]
         self.assertIn(RUN, summary)
         self.assertNotIn("secret-token-value", summary)
+
+
+
+
+# ── M8-GH-4B2: max_attempts atomic termination + provider auth ─────────────
+
+class FakeProvider:
+    """Minimal GitHubAppTokenProvider stand-in (token sequence + counters)."""
+
+    def __init__(self, tokens=("provider-tok-1", "provider-tok-2")):
+        self.tokens = list(tokens)
+        self.get_calls = 0
+        self.invalidate_calls = 0
+        self.forced = 0
+
+    def get_token(self, *, force_refresh=False):
+        self.get_calls += 1
+        if force_refresh:
+            self.forced += 1
+            return self.tokens[min(self.forced, len(self.tokens) - 1)]
+        return self.tokens[0]
+
+    def invalidate(self):
+        self.invalidate_calls += 1
+
+
+class TestMaxAttemptsTermination(unittest.TestCase):
+
+    def test_claim_sql_only_selects_below_max(self):
+        conn = reporter_conn(claimed_row(check_run_id=555, attempt=1))
+        cr.publish_once(lambda: conn, api_base="http://stub",
+                        transport=ReporterTransport(
+                            [("/check-runs/555", (500, {}, {}))]),
+                        max_attempts=5)
+        claim_sql = [sql for sql, _ in conn.executed
+                     if "SKIP LOCKED" in sql][0]
+        self.assertIn("attempt_count < %s", claim_sql)
+
+    def test_below_max_failure_returns_pending(self):
+        conn = reporter_conn(claimed_row(check_run_id=555, attempt=4))
+        outcome = cr.publish_once(
+            lambda: conn, api_base="http://stub",
+            transport=ReporterTransport([("/check-runs/555",
+                                          (500, {}, {}))]),
+            max_attempts=5)
+        self.assertEqual(outcome, "retry")
+        retry = conn.params_of("next_retry_at = now() + make_interval")[0]
+        self.assertIn("http 500", retry[1])
+
+    def test_at_max_failure_direct_terminal_with_class(self):
+        conn = reporter_conn(claimed_row(check_run_id=555, attempt=5))
+        outcome = cr.publish_once(
+            lambda: conn, api_base="http://stub",
+            transport=ReporterTransport([("/check-runs/555",
+                                          (503, {}, {}))]),
+            max_attempts=5)
+        self.assertEqual(outcome, "terminal")
+        terminal = conn.params_of("last_error = %s, claim_id = NULL")[0]
+        self.assertEqual(terminal[0], "MAX_ATTEMPTS:HTTP_5XX")
+
+    def test_at_max_transport_error_terminal_transport_class(self):
+        conn = reporter_conn(claimed_row(check_run_id=555, attempt=3))
+        outcome = cr.publish_once(
+            lambda: conn, api_base="http://stub",
+            transport=ReporterTransport([]),   # unrouted -> TransportError
+            max_attempts=3)
+        self.assertEqual(outcome, "terminal")
+        terminal = conn.params_of("last_error = %s, claim_id = NULL")[0]
+        self.assertEqual(terminal[0], "MAX_ATTEMPTS:TRANSPORT")
+
+    def test_reap_runs_before_claim_with_max_param(self):
+        conn = reporter_conn(claimed_row(check_run_id=555, attempt=1))
+        cr.publish_once(lambda: conn, api_base="http://stub",
+                        transport=ReporterTransport(
+                            [("/check-runs/555", (200, {}, {"id": 9}))]),
+                        max_attempts=7)
+        first_sql, first_params = conn.executed[0]
+        self.assertIn("attempt_count >= %s", first_sql)
+        self.assertEqual(first_params, (7,))
+
+    def test_crashed_final_attempt_reaped_without_http(self):
+        # Crash aftermath: expired-LEASED row with attempt_count == max.
+        # A publish_once round must TERMINAL-reap it with ZERO transport
+        # calls (the claim finds nothing eligible below max).
+        conn = reporter_conn(None)
+        transport = ReporterTransport([])
+        outcome = cr.publish_once(lambda: conn, api_base="http://stub",
+                                  transport=transport, max_attempts=5)
+        self.assertEqual(outcome, "idle")
+        self.assertEqual(transport.calls, [])
+        reap_sql, reap_params = conn.executed[0]
+        self.assertIn("lease_expires_at < now()", reap_sql)
+        self.assertEqual(reap_params, (5,))
+
+    def test_terminal_confirm_is_single_cas_statement(self):
+        conn = reporter_conn(claimed_row(check_run_id=555, attempt=5),
+                             confirm_rowcount=0)
+        outcome = cr.publish_once(
+            lambda: conn, api_base="http://stub",
+            transport=ReporterTransport([("/check-runs/555",
+                                          (503, {}, {}))]),
+            max_attempts=5)
+        self.assertEqual(outcome, "terminal")
+        confirms = [sql for sql, _ in conn.executed
+                    if "last_error = %s, claim_id = NULL" in sql]
+        self.assertEqual(len(confirms), 1)
+
+
+class TestProviderAuth(unittest.TestCase):
+
+    def test_shared_auth_context_and_success(self):
+        provider = FakeProvider()
+        conn = reporter_conn(claimed_row(check_run_id=555))
+        outcome = cr.publish_once(
+            lambda: conn, api_base="http://stub",
+            transport=ReporterTransport([("/check-runs/555",
+                                          (200, {}, {"id": 555}))]),
+            token_provider=provider)
+        self.assertEqual(outcome, "published")
+        self.assertEqual(provider.get_calls, 1)   # ONE fetch per attempt
+
+    def test_401_forces_one_refresh_and_retries_current_op(self):
+        provider = FakeProvider()
+        conn = reporter_conn(claimed_row(check_run_id=555))
+        transport = ReporterTransport([
+            ("/check-runs/555", (401, {}, {})),
+            ("/check-runs/555", (200, {}, {"id": 555})),
+        ])
+        outcome = cr.publish_once(lambda: conn, api_base="http://stub",
+                                  transport=transport,
+                                  token_provider=provider)
+        self.assertEqual(outcome, "published")
+        self.assertEqual(provider.invalidate_calls, 1)
+        self.assertEqual(len(transport.calls), 2)   # op retried ONCE
+        headers_after = transport.calls[1][3]
+        self.assertIn("Bearer", headers_after.get("Authorization", ""))
+
+    def test_second_401_is_terminal(self):
+        provider = FakeProvider()
+        conn = reporter_conn(claimed_row(check_run_id=555))
+        transport = ReporterTransport([
+            ("/check-runs/555", (401, {}, {})),
+            ("/check-runs/555", (401, {}, {})),
+        ])
+        outcome = cr.publish_once(lambda: conn, api_base="http://stub",
+                                  transport=transport,
+                                  token_provider=provider)
+        self.assertEqual(outcome, "terminal")
+        self.assertEqual(provider.invalidate_calls, 1)   # no infinite loop
+        self.assertEqual(len(transport.calls), 2)
+
+    def test_provider_error_confirms_retry_class(self):
+        class ExplodingProvider(FakeProvider):
+            def get_token(self, *, force_refresh=False):
+                raise RuntimeError("token exchange http 500")
+        conn = reporter_conn(claimed_row(check_run_id=555))
+        outcome = cr.publish_once(lambda: conn, api_base="http://stub",
+                                  transport=ReporterTransport([]),
+                                  token_provider=ExplodingProvider())
+        self.assertEqual(outcome, "retry")
+        retry = conn.params_of("next_retry_at = now() + make_interval")[0]
+        self.assertIn("token", retry[1])
+
+    def test_authorization_never_in_observer_events(self):
+        events = []
+        provider = FakeProvider()
+        conn = reporter_conn(claimed_row(check_run_id=555))
+        cr.publish_once(lambda: conn, api_base="http://stub",
+                        transport=ReporterTransport(
+                            [("/check-runs/555", (403, {}, {}))]),
+                        token_provider=provider, observer=events.append)
+        self.assertNotIn("provider-tok", str(events))
+
+
+
+
+class _RaisingProvider:
+    """Raises a classified token-provider error on the Nth call."""
+
+    def __init__(self, error, raise_on_call=1):
+        self.error = error
+        self.raise_on_call = raise_on_call
+        self.calls = 0
+
+    def get_token(self, *, force_refresh=False):
+        self.calls += 1
+        if self.calls >= self.raise_on_call:
+            raise self.error
+        return "tok"
+
+    def invalidate(self):
+        pass
+
+
+class TestProviderErrorClassification(unittest.TestCase):
+    """§3: terminal/retry classification at every auth point."""
+
+    def _terminal_err(self, code="TOKEN_EXCHANGE_HTTP_403"):
+        import token_provider as tp
+        return tp.TokenExchangeTerminalError(code, "classified detail")
+
+    def _retry_err(self, code="TOKEN_EXCHANGE_HTTP_5XX", retry_after=None):
+        import token_provider as tp
+        return tp.TokenExchangeRetryError(code, "classified", retry_after)
+
+    def test_exchange_403_immediate_terminal_attempt1(self):
+        conn = reporter_conn(claimed_row(check_run_id=555, attempt=1))
+        outcome = cr.publish_once(
+            lambda: conn, api_base="http://stub",
+            transport=ReporterTransport([]),
+            token_provider=_RaisingProvider(
+                self._terminal_err("TOKEN_EXCHANGE_HTTP_403")),
+            max_attempts=8)
+        self.assertEqual(outcome, "terminal")
+        terminal = conn.params_of("last_error = %s, claim_id = NULL")[0]
+        self.assertEqual(terminal[0], "TOKEN_TERMINAL:TOKEN_EXCHANGE_HTTP_403")
+
+    def test_exchange_422_immediate_terminal(self):
+        conn = reporter_conn(claimed_row(check_run_id=555, attempt=1))
+        outcome = cr.publish_once(
+            lambda: conn, api_base="http://stub",
+            transport=ReporterTransport([]),
+            token_provider=_RaisingProvider(
+                self._terminal_err("TOKEN_EXCHANGE_HTTP_422")),
+            max_attempts=8)
+        self.assertEqual(outcome, "terminal")
+        terminal = conn.params_of("last_error = %s, claim_id = NULL")[0]
+        self.assertIn("TOKEN_TERMINAL:TOKEN_EXCHANGE_HTTP_422", terminal[0])
+
+    def test_malformed_immediate_terminal(self):
+        conn = reporter_conn(claimed_row(check_run_id=555, attempt=1))
+        outcome = cr.publish_once(
+            lambda: conn, api_base="http://stub",
+            transport=ReporterTransport([]),
+            token_provider=_RaisingProvider(
+                self._terminal_err("TOKEN_EXCHANGE_MALFORMED")),
+            max_attempts=8)
+        self.assertEqual(outcome, "terminal")
+        terminal = conn.params_of("last_error = %s, claim_id = NULL")[0]
+        self.assertIn("TOKEN_EXCHANGE_MALFORMED", terminal[0])
+
+    def test_scope_mismatch_immediate_terminal(self):
+        conn = reporter_conn(claimed_row(check_run_id=555, attempt=1))
+        outcome = cr.publish_once(
+            lambda: conn, api_base="http://stub",
+            transport=ReporterTransport([]),
+            token_provider=_RaisingProvider(
+                self._terminal_err("TOKEN_SCOPE_MISMATCH")),
+            max_attempts=8)
+        self.assertEqual(outcome, "terminal")
+
+    def test_429_retry_after_used_precisely(self):
+        conn = reporter_conn(claimed_row(check_run_id=555, attempt=2))
+        outcome = cr.publish_once(
+            lambda: conn, api_base="http://stub",
+            transport=ReporterTransport([]),
+            token_provider=_RaisingProvider(
+                self._retry_err("TOKEN_EXCHANGE_RATE_LIMITED", retry_after=77)),
+            max_attempts=8)
+        self.assertEqual(outcome, "retry")
+        retry = conn.params_of("next_retry_at = now() + make_interval")[0]
+        self.assertEqual(retry[0], 77)
+
+    def test_5xx_uses_bounded_backoff(self):
+        conn = reporter_conn(claimed_row(check_run_id=555, attempt=2))
+        outcome = cr.publish_once(
+            lambda: conn, api_base="http://stub",
+            transport=ReporterTransport([]),
+            token_provider=_RaisingProvider(
+                self._retry_err("TOKEN_EXCHANGE_HTTP_5XX")),
+            max_attempts=8)
+        self.assertEqual(outcome, "retry")
+        retry = conn.params_of("next_retry_at = now() + make_interval")[0]
+        self.assertEqual(retry[0], cr._backoff_seconds(2))
+
+    def test_retry_class_at_max_terminal_token(self):
+        conn = reporter_conn(claimed_row(check_run_id=555, attempt=4))
+        outcome = cr.publish_once(
+            lambda: conn, api_base="http://stub",
+            transport=ReporterTransport([]),
+            token_provider=_RaisingProvider(self._retry_err()),
+            max_attempts=4)
+        self.assertEqual(outcome, "terminal")
+        terminal = conn.params_of("last_error = %s, claim_id = NULL")[0]
+        self.assertEqual(terminal[0], "MAX_ATTEMPTS:TOKEN")
+
+    def test_refresh_during_401_terminal_classified(self):
+        # lookup answers 401; the FORCED refresh raises a terminal error —
+        # must land TERMINAL (not the unclassified generic path)
+        conn = reporter_conn(claimed_row(check_run_id=None, attempt=1))
+        provider = _RaisingProvider(self._terminal_err(
+            "TOKEN_EXCHANGE_HTTP_403"), raise_on_call=2)
+        transport = ReporterTransport([
+            ("/commits/%s/check-runs" % SHA_A, (401, {}, {}))])
+        outcome = cr.publish_once(lambda: conn, api_base="http://stub",
+                                  transport=transport,
+                                  token_provider=provider, max_attempts=8)
+        self.assertEqual(outcome, "terminal")
+        terminal = conn.params_of("last_error = %s, claim_id = NULL")[0]
+        self.assertEqual(terminal[0],
+                         "TOKEN_TERMINAL:TOKEN_EXCHANGE_HTTP_403")
+
+    def test_unknown_provider_error_retry_class_no_body(self):
+        conn = reporter_conn(claimed_row(check_run_id=555, attempt=1))
+        outcome = cr.publish_once(
+            lambda: conn, api_base="http://stub",
+            transport=ReporterTransport([]),
+            token_provider=_RaisingProvider(
+                RuntimeError("super secret detail body")),
+            max_attempts=8)
+        self.assertEqual(outcome, "retry")
+        retry = conn.params_of("next_retry_at = now() + make_interval")[0]
+        self.assertNotIn("super secret", retry[1])
+        self.assertIn("token", retry[1])
+
+    def test_last_error_and_observer_never_leak(self):
+        events = []
+        conn = reporter_conn(claimed_row(check_run_id=555, attempt=1))
+        cr.publish_once(
+            lambda: conn, api_base="http://stub",
+            transport=ReporterTransport([]),
+            token_provider=_RaisingProvider(
+                self._terminal_err("TOKEN_SCOPE_MISMATCH")),
+            observer=events.append, max_attempts=8)
+        blob = str(events) + str(conn.executed)
+        for forbidden in ("classified detail", "Bearer ", "eyJ"):
+            self.assertNotIn(forbidden, blob)
 
 
 if __name__ == "__main__":

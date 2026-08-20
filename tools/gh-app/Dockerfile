@@ -26,7 +26,20 @@ COPY tools/gh-app/__init__.py /app/gh_app/__init__.py
 COPY tools/gh-app/receiver.py /app/gh_app/receiver.py
 COPY tools/gh-app/http_server.py /app/gh_app/http_server.py
 COPY tools/gh-app/checks_reporter.py /app/gh_app/checks_reporter.py
+COPY tools/gh-app/token_provider.py /app/gh_app/token_provider.py
 COPY tools/gh-app/dsn_guard.py /app/gh_app/dsn_guard.py
+# M8-GH-4B2: hash-locked runtime deps for the reporter's RS256 JWT signing
+# (cryptography + cffi + pycparser, linux/amd64 cp312/abi3 wheels; the
+# receiver never imports them). No floating versions, no sdist fallback.
+COPY tools/gh-app/requirements-reporter.lock /app/gh_app/requirements-reporter.lock
+
+# Normalize modes: DrvFs build contexts can present 0777 source metadata;
+# the contract (app files root-owned, runtime user non-writable) is
+# enforced IN the image, independent of the build host filesystem.
+RUN chmod 0644 /app/gh_app/*.py /app/gh_app/requirements-reporter.lock  && chmod 0755 /app /app/gh_app
+
+RUN pip install --no-cache-dir --only-binary=:all: --require-hashes \
+      -r /app/gh_app/requirements-reporter.lock
 
 WORKDIR /app/gh_app
 ENV PYTHONUNBUFFERED=1 \

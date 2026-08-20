@@ -89,8 +89,10 @@ class TestActivationGate(unittest.TestCase):
         with self.assertRaises(e2f.E2EConfigError) as ctx:
             e2f.e2e_activation_gate()
         self.assertEqual(ctx.exception.code, "GITHUB_E2E_COMPONENTS_INCOMPLETE")
-        self.assertIn("reporter_token_provider(B2)", ctx.exception.detail)
+        # M8-GH-4B2: only the B3 MCP bridge remains pending
         self.assertIn("mcp_bridge(B3)", ctx.exception.detail)
+        self.assertNotIn("reporter_token_provider", ctx.exception.detail)
+        self.assertEqual(e2f.E2E_PENDING_COMPONENTS, ("mcp_bridge(B3)",))
 
     def test_real_cli_start_fails_closed_before_any_side_effect(self):
         # the gate sits before the install-manifest load: no fixtures,
@@ -671,6 +673,203 @@ class TestFirewallNamespaceIsolated(unittest.TestCase):
              plan["restore_blob"]],
             capture_output=True, text=True, timeout=30)
         self.assertEqual(r.returncode, 0, r.stderr)
+
+
+
+
+def _valid_reporter_env():
+    return {
+        "GITHUB_PUBLISHER_DSN":
+            "postgresql://github_check_publisher:pw@postgres:5432/db"
+            "?connect_timeout=5",
+        "GITHUB_API_BASE": "https://api.github.com",
+        "GITHUB_APP_ID": "4648333",
+        "GITHUB_INSTALLATION_ID": "154914965",
+        "GITHUB_REPOSITORY_ID": "1314399289",
+        "GITHUB_PRIVATE_KEY_PATH":
+            "/run/secrets/github-app-private-key.pem",
+        "GH_REPORTER_POLL_SECONDS": "5",
+        "GH_REPORTER_LEASE_SECONDS": "120",
+        "GH_REPORTER_MAX_ATTEMPTS": "8",
+    }
+
+
+class TestReporterEnvContractB2(unittest.TestCase):
+
+    def test_valid(self):
+        env = _valid_reporter_env()
+        self.assertEqual(e2f.validate_e2e_reporter_env(env), env)
+
+    def test_unknown_missing_blank(self):
+        env = _valid_reporter_env()
+        env["EXTRA"] = "x"
+        with self.assertRaises(e2f.E2EConfigError):
+            e2f.validate_e2e_reporter_env(env)
+        env = _valid_reporter_env()
+        del env["GITHUB_APP_ID"]
+        with self.assertRaises(e2f.E2EConfigError):
+            e2f.validate_e2e_reporter_env(env)
+        env = _valid_reporter_env()
+        env["GITHUB_APP_ID"] = "   "
+        with self.assertRaises(e2f.E2EConfigError):
+            e2f.validate_e2e_reporter_env(env)
+
+    def test_api_base_must_be_production(self):
+        env = _valid_reporter_env()
+        env["GITHUB_API_BASE"] = "http://127.0.0.1:8091"
+        with self.assertRaises(e2f.E2EConfigError) as ctx:
+            e2f.validate_e2e_reporter_env(env)
+        self.assertIn("no implicit fake fallback", ctx.exception.detail)
+
+    def test_frozen_pem_path_and_numeric(self):
+        env = _valid_reporter_env()
+        env["GITHUB_PRIVATE_KEY_PATH"] = "/etc/other.pem"
+        with self.assertRaises(e2f.E2EConfigError):
+            e2f.validate_e2e_reporter_env(env)
+        env = _valid_reporter_env()
+        env["GH_REPORTER_MAX_ATTEMPTS"] = "51"
+        with self.assertRaises(e2f.E2EConfigError):
+            e2f.validate_e2e_reporter_env(env)
+        env = _valid_reporter_env()
+        env["GITHUB_REPOSITORY_ID"] = "repo-not-numeric"
+        with self.assertRaises(e2f.E2EConfigError):
+            e2f.validate_e2e_reporter_env(env)
+
+    def test_dsn_requires_connect_timeout(self):
+        env = _valid_reporter_env()
+        env["GITHUB_PUBLISHER_DSN"] = "postgresql://u:p@postgres:5432/db"
+        with self.assertRaises(e2f.E2EConfigError):
+            e2f.validate_e2e_reporter_env(env)
+
+    def test_secret_file_transport(self):
+        with tempfile.TemporaryDirectory() as td:
+            sf = e2f.GithubReporterE2eSecretFile(Path(td))
+            sf.write(_valid_reporter_env())
+            self.assertTrue(sf.exists())
+            keys = [ln.split("=", 1)[0]
+                    for ln in sf.path.read_text(encoding="utf-8").splitlines()]
+            self.assertEqual(keys, sorted(e2f.E2E_REPORTER_ENV_KEYS))
+            with self.assertRaises(e2f.E2EConfigError):
+                sf.write(_valid_reporter_env())     # refuses overwrite
+            sf.delete()
+            self.assertFalse(sf.exists())
+
+    def test_preview_contains_reporter_planning(self):
+        preview = e2f.build_b1_dry_run_preview(
+            run_id="b2probe", tuwunel_ip="172.22.0.2",
+            room_map_host="/x", policy_host="/y")
+        rp = preview["reporter_planning"]
+        self.assertEqual(rp["entrypoint"],
+                         ["python", "-u", "/app/gh_app/checks_reporter.py"])
+        self.assertTrue(rp["pem_mount"].endswith(":ro"))
+        self.assertIn("single-file :ro into gh-reporter ONLY",
+                      rp["pem_mount_policy"])
+        self.assertIn("rpt-egress", rp["networks"]["pending_b3"][0])
+        self.assertIn("GITHUB_E2E_COMPONENTS_INCOMPLETE",
+                      rp["activation_gate"])
+
+
+
+
+class TestB2DockerfileWiring(unittest.TestCase):
+
+    ROOT_DOCKERFILE = (ROOT / "Dockerfile.gh-webhook").read_text(
+        encoding="utf-8")
+    CANON_DOCKERFILE = (ROOT / "tools" / "gh-app" / "Dockerfile").read_text(
+        encoding="utf-8")
+
+    def test_token_provider_and_lock_copied_into_image(self):
+        for text in (self.ROOT_DOCKERFILE, self.CANON_DOCKERFILE):
+            self.assertIn(
+                "COPY tools/gh-app/token_provider.py "
+                "/app/gh_app/token_provider.py", text)
+            self.assertIn(
+                "COPY tools/gh-app/requirements-reporter.lock", text)
+            self.assertIn("--require-hashes", text)
+            self.assertIn("--only-binary=:all:", text)
+            # no floating additions
+            self.assertNotIn("pip install --no-cache-dir cryptography",
+                             text)
+
+    def test_receiver_still_owns_the_entrypoint(self):
+        self.assertIn('ENTRYPOINT ["python", "-u", "http_server.py"]',
+                      self.ROOT_DOCKERFILE)
+
+    def test_no_other_dockerfile_touched_by_b2(self):
+        # the reporter shares the gh-webhook image; B2 must not have
+        # modified controller/gateway/console Dockerfiles
+        for name in ("Dockerfile.controller", "Dockerfile.policy-gateway",
+                     "Dockerfile.preflight", "Dockerfile.demo-console"):
+            text = (ROOT / name).read_text(encoding="utf-8")
+            self.assertNotIn("token_provider", text)
+            self.assertNotIn("requirements-reporter.lock", text)
+
+
+
+
+def _join_instructions(text):
+    """Join Dockerfile continuation lines into full instructions
+    (CRLF-checkout tolerant: trailing CR is stripped first)."""
+    joined = []
+    buffer = ""
+    for raw in text.splitlines():
+        raw = raw.rstrip("\r")
+        if raw.endswith("\\"):
+            buffer += raw[:-1] + " "
+        else:
+            joined.append((buffer + raw).strip())
+            buffer = ""
+    if buffer:
+        joined.append(buffer.strip())
+    return joined
+
+
+class TestDockerfileInstructionLevel(unittest.TestCase):
+    """M8-GH-4B2 pre-push §2: parse the REAL instructions — no isolated
+    keyword matching, no literal backslash-n, identical contract."""
+
+    FILES = ("Dockerfile.gh-webhook", "tools/gh-app/Dockerfile")
+
+    def test_no_literal_backslash_n(self):
+        # The REAL §2 bug was a literal backslash + 'n' inside the RUN
+        # line. Line ENDINGS are checkout-dependent (autocrlf worktrees
+        # produce CRLF) and are not part of the contract.
+        for name in self.FILES:
+            raw = (ROOT / name).read_bytes()
+            self.assertNotIn(b"\\" + b"n", raw,
+                             "%s contains a literal backslash-n" % name)
+
+    def test_run_install_instruction_contract(self):
+        for name in self.FILES:
+            text = (ROOT / name).read_text(encoding="utf-8")
+            instructions = _join_instructions(text)
+            runs = [i for i in instructions
+                    if i.startswith("RUN") and "require-hashes" in i]
+            self.assertEqual(len(runs), 1,
+                             "%s must have exactly one lock install RUN"
+                             % name)
+            run = runs[0]
+            for token in ("pip install", "--no-cache-dir",
+                          "--only-binary=:all:", "--require-hashes",
+                          "-r /app/gh_app/requirements-reporter.lock"):
+                self.assertIn(token, run, "%s RUN missing %s" % (name, token))
+            self.assertIn("RUN pip install --no-cache-dir "
+                          "--only-binary=:all: --require-hashes "
+                          "-r /app/gh_app/requirements-reporter.lock",
+                          re.sub(r"  +", " ", run))
+
+    def test_copy_contract(self):
+        for name in self.FILES:
+            text = (ROOT / name).read_text(encoding="utf-8")
+            instructions = _join_instructions(text)
+            copies = " ".join(i for i in instructions
+                              if i.startswith("COPY"))
+            self.assertIn(
+                "COPY tools/gh-app/token_provider.py "
+                "/app/gh_app/token_provider.py", copies)
+            self.assertIn(
+                "COPY tools/gh-app/requirements-reporter.lock "
+                "/app/gh_app/requirements-reporter.lock", copies)
 
 
 if __name__ == "__main__":

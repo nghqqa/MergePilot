@@ -444,6 +444,11 @@ SET desired_status     = EXCLUDED.desired_status,
                               THEN 'PENDING'
                               ELSE public.github_check_outbox.publish_state END,
     desired_version    = public.github_check_outbox.desired_version + 1,
+    -- M8-GH-4B2 (R4 section-4 plan A): a REAL version increase grants a
+    -- fresh attempt budget; a same-version upsert never touches the row
+    -- (the WHERE gate below), so TERMINAL is never revived by echoes.
+    attempt_count      = 0,
+    last_error         = NULL,
     updated_at         = now()
 WHERE  (public.github_check_outbox.desired_status,
         public.github_check_outbox.desired_conclusion,

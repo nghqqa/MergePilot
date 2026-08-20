@@ -1,0 +1,19 @@
+# Reporter runtime dependency lock (M8-GH-4B2): the checks reporter's
+# GitHub App token provider needs RSA-SHA256 (RS256) JWT signing, which
+# the stdlib cannot do. Exact pinned wheels for linux/amd64 CPython 3.12
+# (the Dockerfile.gh-webhook base, Debian bookworm glibc >= 2.36).
+# Install inside the image with:
+#   pip install --only-binary=:all: --require-hashes \
+#       -r /app/gh_app/requirements-reporter.lock
+# cryptography 46.0.2 runtime deps on CPython 3.12: cffi>=2.0.0 (which
+# pulls pycparser); typing-extensions applies only to Python < 3.11 and
+# is therefore NOT in this lock. Multiple --hash entries cover the
+# manylinux variants pip may select for the target glibc.
+cryptography==46.0.2 \
+  --hash=sha256:fab8f805e9675e61ed8538f192aad70500fa6afb33a8803932999b1049363a08 \
+  --hash=sha256:be939b99d4e091eec9a2bcf41aaf8f351f312cd19ff74b5c83480f08a8a43e0b \
+  --hash=sha256:8b16c1ede6a937c291d41176934268e4ccac2c6521c69d3f5961c5a1e11e039e
+cffi==2.1.1 \
+  --hash=sha256:c1453022f490d2459a11819d83ad1d586e9ff65a12ac3e705ffebd46d3685dcf
+pycparser==3.0 \
+  --hash=sha256:b727414169a36b7d524c1c3e31839a521725078d7b2ff038656844266160a992
