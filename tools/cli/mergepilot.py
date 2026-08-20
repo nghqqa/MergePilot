@@ -75,6 +75,11 @@ import time
 import urllib.request
 from pathlib import Path
 
+# M8-GH-4B1: GitHub E2E foundation (pure planning module, sibling file —
+# the CLI script's own directory is on sys.path both as a script and under
+# the test harness's path injection).
+import e2e_foundation as e2f
+
 # ── Exit codes (stable contract) ─────────────────────────────────────────────
 
 EXIT_OK = 0
@@ -405,6 +410,31 @@ class WslDocker:
                       else "")
         log("bash -c rc=%d out=%s err=%s" % (cp.returncode, out[:80],
                                              err[:80]))
+        return cp
+
+    def wsl_exec(self, argv, *, input_bytes=None, timeout=60, check=True,
+                 log_tag=None):
+        """Run a HOST-side command inside the distro as root (iptables
+        and friends — NOT docker). Same argv-safety / redaction / rc
+        contract as docker(); a checked failure is a stable failure, never
+        a silent absence."""
+        self._require_distro_running()
+        full = (["wsl.exe", "-u", "root", "-d", AUTHORIZED_DISTRO, "--"]
+                + list(argv))
+        self._planner.assert_argv_safe(full)
+        cp = self._run_wsl(full, input_bytes=input_bytes, timeout=timeout)
+        out = _redact(cp.stdout.decode("utf-8", "replace") if cp.stdout
+                      else "")
+        err = _redact(cp.stderr.decode("utf-8", "replace") if cp.stderr
+                      else "")
+        tag = log_tag or argv[0]
+        log("wsl %s rc=%d out=%s err=%s" % (tag, cp.returncode,
+                                             out[:120], err[:120]))
+        if check and cp.returncode != 0:
+            raise Failure(
+                "WSL_EXEC_FAILED",
+                "wsl %s rc=%d (detail redacted)" % (tag, cp.returncode),
+                exit_code=EXIT_FAILED_CLEANED)
         return cp
 
     # -- docker --------------------------------------------------------------
@@ -1153,8 +1183,8 @@ def write_session(paths, session):
     _atomic_write_json(paths["session"], session)
 
 
-def new_session(run_id, m4f):
-    return {
+def new_session(run_id, m4f, github_e2e=False):
+    session = {
         "schema_version": 1,
         "run_id": run_id,
         "created_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ",
@@ -1166,6 +1196,12 @@ def new_session(run_id, m4f):
         "secrets": ["postgres.env", "controller.env", "demo_console.env",
                     "gh_webhook.env", "gh_reporter.env"],
     }
+    if github_e2e:
+        # E2E-only journal fields — the DEFAULT session manifest stays
+        # byte-identical to the pre-B1 shape (default-off contract §2).
+        session["github_e2e"] = True
+        session["firewall_teardown"] = None   # journaled pin argvs (E2E)
+    return session
 
 
 def rollback_session(docker, planner, paths, session):
@@ -1191,6 +1227,17 @@ def rollback_session(docker, planner, paths, session):
         except Exception as exc:
             codes.append("ROLLBACK_CONTAINER_RM_FAILED:%s(%s)"
                          % (svc, getattr(exc, "code", type(exc).__name__)))
+    # M8-GH-4B1: session-owned firewall pins come out BEFORE the E2E
+    # networks (R4 rollback order: containers -> pins -> networks) and ONLY
+    # the argvs this session journaled (ownership never guessed).
+    for argv in reversed(list(session.get("firewall_teardown") or [])):
+        try:
+            cp = docker.wsl_exec(list(argv), check=False, timeout=30,
+                                 log_tag="rollback-pin")
+            if cp.returncode != 0:
+                codes.append("ROLLBACK_PIN_FAILED:%s" % argv[:3])
+        except Exception as exc:
+            codes.append("ROLLBACK_PIN_FAILED:(%s)" % type(exc).__name__)
     for net in reversed(list(session.get("networks", {}).keys())):
         target_id = session["networks"][net]
         try:
@@ -1364,6 +1411,44 @@ def cmd_doctor(args):
                 "127.0.0.1:%d %s" % (CONSOLE_PORT,
                                      "in use" if busy else "free"))
 
+    # M8-GH-4B1: read-only E2E foundation checks (planning capability).
+    if getattr(args, "github_e2e", False):
+        try:
+            e2f.e2e_activation_gate()
+            add("e2e_activation_gate", "DOCTOR_E2E_GATE_BROKEN", False,
+                "gate did not fail closed")
+        except e2f.E2EConfigError as exc:
+            add("e2e_activation_gate", exc.code, True,
+                "B1 gate intact — a real start fails closed while "
+                "G3/G4 components are pending")
+        try:
+            preview = e2f.build_b1_dry_run_preview(
+                run_id="doctor-e2e-probe",
+                tuwunel_ip=e2f.E2E_TUWUNEL_DEFAULT_IP,
+                room_map_host="/mnt/d/placeholder-room-map.yaml",
+                policy_host="/mnt/d/placeholder-policy.yaml")
+            add("e2e_b1_plan", "DOCTOR_E2E_PLAN_OK", True,
+                "B1 preview generated (sid=%s, %d firewall rules, "
+                "%d required room members)"
+                % (preview["firewall"]["sid"],
+                   sum(preview["firewall"]["counts"].values()),
+                   len(preview["membership_preflight"]
+                        ["required_members"])))
+        except Exception as exc:
+            add("e2e_b1_plan", "DOCTOR_E2E_PLAN_INVALID", False,
+                type(exc).__name__)
+        if env_ok:
+            cp = docker.docker(["network", "connect", "--help"],
+                               check=False, timeout=30,
+                               log_tag="gw-priority-probe")
+            text = (cp.stdout or b"").decode("utf-8", "replace")
+            has_gwp = "--gw-priority" in text
+            add("e2e_gw_priority",
+                "DOCTOR_E2E_GW_PRIORITY_OK" if has_gwp
+                else "DOCTOR_E2E_GW_PRIORITY_MISSING", has_gwp,
+                "docker network connect supports --gw-priority"
+                if has_gwp else "daemon lacks --gw-priority")
+
     ok = all(c["ok"] for c in checks)
     result = {
         "command": "doctor", "status": "ok" if ok else "failed",
@@ -1384,6 +1469,16 @@ def cmd_start(args):
         raise Failure("RUN_ID_INVALID",
                       "run_id must match ^[A-Za-z0-9_-]+$",
                       exit_code=EXIT_USAGE)
+
+    # ── M8-GH-4B1 activation gate (before ANY side effect): a REAL
+    # `start --github-e2e` must fail closed while G3/G4 are unimplemented.
+    # Dry-run planning remains available (default-off contract §2).
+    if getattr(args, "github_e2e", False) and not args.dry_run:
+        raise Failure(
+            "GITHUB_E2E_COMPONENTS_INCOMPLETE",
+            "B1 ships planning only; pending components: %s"
+            % ", ".join(e2f.E2E_PENDING_COMPONENTS),
+            exit_code=EXIT_PRECHECK)
 
     install = load_manifest(paths["install"])
     if install is None:
@@ -1448,13 +1543,21 @@ def cmd_start(args):
             gh_webhook_env_file=_to_wsl_path(paths["secrets"]
                                              / "gh_webhook.env"),
             run_id=run_id, bridge_ip=PLACEHOLDER_BRIDGE_IP, m4f=args.m4f)
-        return EXIT_OK, {
+        payload = {
             "command": "start", "status": "dry-run", "code": EXIT_OK,
             "run_id": run_id,
             "plans": [argv for _kind, _name, argv in steps],
             "note": "bridge IP %s is a placeholder — the real run measures "
                     "it after postgres is healthy" % PLACEHOLDER_BRIDGE_IP,
         }
+        if getattr(args, "github_e2e", False):
+            # pure plan data; zero side effects; carries the activation
+            # gate marker so a preview can never be mistaken for a mode.
+            payload["github_e2e_plans"] = e2f.build_b1_dry_run_preview(
+                run_id=run_id, tuwunel_ip=e2f.E2E_TUWUNEL_DEFAULT_IP,
+                room_map_host="<runtime-room-map-host-path>",
+                policy_host="<runtime-fixture-policy-host-path>")
+        return EXIT_OK, payload
 
     # ── environment gate (before any Docker write) ──
     require_environment(docker)
@@ -1516,7 +1619,8 @@ def cmd_start(args):
                 pass
         raise _as_failure(exc) from None
 
-    session = new_session(run_id, args.m4f)
+    session = new_session(run_id, args.m4f,
+                          getattr(args, "github_e2e", False))
     write_session(paths, session)     # journal BEFORE the first Docker write
 
     env_file_wsl = _to_wsl_path(paths["secrets"] / "postgres.env")
@@ -1710,6 +1814,7 @@ def cmd_status(args):
             "run_id": session.get("run_id"),
             "stage": session.get("stage"),
             "m4f": session.get("m4f"),
+            "github_e2e": bool(session.get("github_e2e")),
         }
     if install is not None:
         meta["install_images"] = sorted((install.get("images") or {}).keys())
@@ -1817,6 +1922,23 @@ def cmd_stop(args):
                     "manifest and images are kept",
         }
 
+    # M8-GH-4B1: session-owned firewall pins are removed AFTER the owned
+    # containers are gone and BEFORE the E2E networks (R4 stop order);
+    # only journaled argvs run (ownership never guessed).
+    pins_pending = [list(a) for a in
+                    reversed(session.get("firewall_teardown") or [])]
+    pin_failures = []
+
+    def _drain_pins():
+        while pins_pending:
+            pin_argv = pins_pending.pop(0)
+            try:
+                docker.wsl_exec(pin_argv, check=False, timeout=30,
+                                log_tag="unpin")
+            except Exception as exc:
+                pin_failures.append("PIN_TEARDOWN_FAILED:(%s)"
+                                    % type(exc).__name__)
+
     # Ownership verification BEFORE each delete (fixed names from the
     # planner's own cleanup plan; IDs cross-checked against the manifest).
     for argv in plan:
@@ -1831,6 +1953,8 @@ def cmd_stop(args):
                 continue
             docker.docker(argv, timeout=120, check=True, log_tag="rm")
         elif argv[0] == "network" and argv[1] == "rm":
+            if pins_pending:
+                _drain_pins()
             net = argv[2]
             state, nid = docker.inspect_id("network", net)
             _verify_against_manifest(session, "networks",
@@ -1844,7 +1968,9 @@ def cmd_stop(args):
             raise Failure("CLEANUP_PLAN_INVALID", "unknown plan step",
                           exit_code=EXIT_RESIDUE)
 
-    residue = []
+    if pins_pending:
+        _drain_pins()
+    residue = list(pin_failures)
     after = discover_stack(docker, planner)
     for svc, info in after["containers"].items():
         if info["state"] == "present":
@@ -1954,7 +2080,23 @@ def cmd_cleanup(args):
         if paths["install"].exists():
             residue.append("INSTALL_MANIFEST_STILL_PRESENT")
 
-    # 3) residue verification (fail-closed: 9)
+    # 3) M8-GH-4B1 firewall rule residue scan — only for E2E sessions
+    # (default-mode cleanup behavior stays byte-identical).
+    if session is not None and session.get("github_e2e"):
+        try:
+            cp = docker.wsl_exec(["iptables-save"], check=False, timeout=30,
+                                 log_tag="fw-scan")
+            if cp.returncode == 0:
+                text = (cp.stdout or b"").decode("utf-8", "replace")
+                fw_residue = e2f.residue_scan(text)
+                if fw_residue:
+                    residue.extend(fw_residue)
+            else:
+                residue.append("FIREWALL_SCAN_FAILED")
+        except Failure:
+            residue.append("FIREWALL_SCAN_UNAVAILABLE")
+
+    # 4) residue verification (fail-closed: 9)
     for tag in (install.get("images") or {}) if install else {}:
         if docker.image_id(tag) is not None:
             residue.append("IMAGE_STILL_PRESENT:%s" % tag)
@@ -2003,6 +2145,9 @@ def build_parser():
 
     p = sub.add_parser("doctor", parents=[common],
                        help="read-only environment and stack checks")
+    p.add_argument("--github-e2e", action="store_true",
+                   help="add the GitHub E2E foundation checks (read-only "
+                        "planning capability; no side effects)")
     p = sub.add_parser("status", parents=[common],
                        help="absent/partial/healthy classification")
 
@@ -2012,6 +2157,11 @@ def build_parser():
                    help="seeded run_id, e.g. run-showcase-a")
     p.add_argument("--m4f", action="store_true",
                    help="enable the M4F event machinery (opt-in)")
+    p.add_argument("--github-e2e", action="store_true",
+                   help="plan the GitHub E2E controller/Matrix slice "
+                        "(B1: dry-run planning only — a REAL start fails "
+                        "closed with GITHUB_E2E_COMPONENTS_INCOMPLETE "
+                        "until the B2/B3 components merge)")
     p.add_argument("--dry-run", action="store_true")
 
     p = sub.add_parser("stop", parents=[common],
