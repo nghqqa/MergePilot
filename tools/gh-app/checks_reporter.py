@@ -144,9 +144,52 @@ def _error_class(status: Optional[int], phase: str,
     return "HTTP_%d" % status
 
 
+def build_explicit_proxy_transport(proxy_url: str):
+    """§7 R2: EXPLICIT frozen-proxy transport factory.
+
+    Returns a transport closure that routes EVERY call (exchange,
+    Checks lookup/create/update/publish) through ONE proxy-aware
+    opener built from the exact proxy_url — never the ambient
+    HTTPS_PROXY, never a global opener, never plain urlopen, and
+    immune to NO_PROXY/no_proxy bypass (the handler is a
+    _ForcedProxyHandler that skips proxy_bypass entirely). No
+    os.environ reads or writes; instance-level and concurrent-safe;
+    never echoes raw network error bodies (exception type names only).
+    """
+    from token_provider import build_proxy_opener
+    opener = build_proxy_opener(proxy_url)
+
+    def transport(method: str, url: str, *, headers: dict,
+                  body: Optional[dict]) -> tuple:
+        data = json.dumps(body).encode("utf-8") if body is not None \
+            else None
+        request = urllib.request.Request(url, data=data, method=method)
+        for key, value in headers.items():
+            request.add_header(key, value)
+        try:
+            with opener.open(request, timeout=30) as response:
+                raw = response.read().decode("utf-8", "replace")
+                parsed = json.loads(raw) if raw.strip() else {}
+                return response.status, dict(response.headers), parsed
+        except urllib.error.HTTPError as exc:
+            raw = exc.read().decode("utf-8", "replace") if exc.fp \
+                else ""
+            parsed = json.loads(raw) if raw.strip() else {}
+            return exc.code, dict(exc.headers or {}), parsed
+        except (urllib.error.URLError, OSError, ValueError) as exc:
+            # Never echo raw error bodies/URLs — type name only.
+            raise TransportError(type(exc).__name__) from exc
+
+    return transport
+
+
 def default_transport(method: str, url: str, *, headers: dict,
                       body: Optional[dict]) -> tuple:
-    """urllib 传输(隔离栈内指向 stub);返回 (status, headers, body_dict)。
+    """Proxy-aware urllib 传输(可注入 stub);返回 (status, headers, body_dict)。
+
+    §3 R1: uses an EXPLICIT ProxyHandler when HTTPS_PROXY is set,
+    ensuring Checks lookup/publish never bypass proxy-r via NO_PROXY
+    or global opener drift. Falls back to plain urlopen for fake stacks.
 
     抛 TransportError 于网络层失败(调用方归重试类)。
     """
@@ -154,8 +197,15 @@ def default_transport(method: str, url: str, *, headers: dict,
     request = urllib.request.Request(url, data=data, method=method)
     for key, value in headers.items():
         request.add_header(key, value)
+    proxy_url = os.environ.get("HTTPS_PROXY", "")
+    if proxy_url:
+        from token_provider import build_proxy_opener
+        opener = build_proxy_opener(proxy_url)
+        open_func = opener.open
+    else:
+        open_func = urllib.request.urlopen
     try:
-        with urllib.request.urlopen(request, timeout=30) as response:
+        with open_func(request, timeout=30) as response:
             raw = response.read().decode("utf-8", "replace")
             parsed = json.loads(raw) if raw.strip() else {}
             return response.status, dict(response.headers), parsed

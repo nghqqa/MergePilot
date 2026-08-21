@@ -85,14 +85,21 @@ R4_SUBNETS = [spec[0] for spec in e2f.E2E_NETWORKS.values()]
 
 class TestActivationGate(unittest.TestCase):
 
-    def test_gate_raises_with_stable_code(self):
+    def test_gate_cleared_after_r2_conditions(self):
+        # M8-GH-4B3-W3B-R2 final: all R2 prepush conditions verified
+        # (wiring/lifecycle/persist/reparse/dry-run/namespace-8);
+        # the gate is cleared and the REAL prerequisite probe is the
+        # first door for a real start.
+        self.assertEqual(e2f.E2E_PENDING_COMPONENTS, ())
+        e2f.e2e_prerequisites_gate()
+        # the prerequisites gate itself works (verified separately)
+        e2f.e2e_prerequisites_gate()
+
+    def test_prerequisites_gate_missing_raises(self):
         with self.assertRaises(e2f.E2EConfigError) as ctx:
-            e2f.e2e_activation_gate()
-        self.assertEqual(ctx.exception.code, "GITHUB_E2E_COMPONENTS_INCOMPLETE")
-        # M8-GH-4B2: only the B3 MCP bridge remains pending
-        self.assertIn("mcp_bridge(B3)", ctx.exception.detail)
-        self.assertNotIn("reporter_token_provider", ctx.exception.detail)
-        self.assertEqual(e2f.E2E_PENDING_COMPONENTS, ("mcp_bridge(B3)",))
+            e2f.e2e_prerequisites_gate(["pat_file"])
+        self.assertEqual(ctx.exception.code,
+                         "GITHUB_E2E_PREREQUISITES_INCOMPLETE")
 
     def test_real_cli_start_fails_closed_before_any_side_effect(self):
         # the gate sits before the install-manifest load: no fixtures,
@@ -107,8 +114,8 @@ class TestActivationGate(unittest.TestCase):
         # without --github-e2e the code path must not raise the B1 code
         source = (ROOT / "tools" / "cli" / "mergepilot.py").read_text(
             encoding="utf-8")
-        self.assertIn('getattr(args, "github_e2e", False) '
-                      'and not args.dry_run', source)
+        self.assertIn('if getattr(args, "github_e2e", False):',
+                      source)
         self.assertIn("GITHUB_E2E_COMPONENTS_INCOMPLETE", source)
 
     def test_parser_accepts_flag_on_start_and_doctor(self):
@@ -572,12 +579,12 @@ class TestDryRunPreview(unittest.TestCase):
             run_id="run-abc", tuwunel_ip="172.22.0.2",
             room_map_host="/mnt/d/x/room-map.yaml",
             policy_host="/mnt/d/x/policy.yaml")
-        self.assertEqual(preview["activation_gate"],
-                         "GITHUB_E2E_COMPONENTS_INCOMPLETE (B1)")
-        self.assertEqual(preview["networks_create"],
-                         [["network", "create", "--driver", "bridge",
-                           "--subnet", "172.31.0.0/28",
-                           "mp-e2e-ctrl-egress"]])
+        self.assertIn("GITHUB_E2E_PREREQUISITES_INCOMPLETE",
+                      preview["activation_gate"])
+        self.assertEqual(len(preview["networks_create"]), 8)
+        self.assertIn(["network", "create", "--driver", "bridge",
+                       "--subnet", "172.31.0.0/28",
+                       "mp-e2e-ctrl-egress"], preview["networks_create"])
         self.assertEqual(preview["route_gate"]["expected_src"],
                          "172.31.0.2")
         self.assertEqual(preview["route_gate"]["failure_code"],
@@ -691,6 +698,7 @@ def _valid_reporter_env():
         "GH_REPORTER_POLL_SECONDS": "5",
         "GH_REPORTER_LEASE_SECONDS": "120",
         "GH_REPORTER_MAX_ATTEMPTS": "8",
+        "HTTPS_PROXY": e2f.E2E_REPORTER_PROXY_R,
     }
 
 
@@ -764,8 +772,8 @@ class TestReporterEnvContractB2(unittest.TestCase):
         self.assertTrue(rp["pem_mount"].endswith(":ro"))
         self.assertIn("single-file :ro into gh-reporter ONLY",
                       rp["pem_mount_policy"])
-        self.assertIn("rpt-egress", rp["networks"]["pending_b3"][0])
-        self.assertIn("GITHUB_E2E_COMPONENTS_INCOMPLETE",
+        self.assertIn("172.31.0.64/28", rp["networks"]["rpt-egress"])
+        self.assertIn("GITHUB_E2E_PREREQUISITES_INCOMPLETE",
                       rp["activation_gate"])
 
 

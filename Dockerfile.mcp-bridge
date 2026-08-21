@@ -1,0 +1,51 @@
+# MCP bridge service image (M8-GH-4B3 §4): CLI/session-owned.
+#
+# Two stages:
+#   1. extract the official GitHub MCP server binary from the
+#      digest-pinned ghcr image (NO floating tag);
+#   2. python:3.12-slim runtime with hash-locked mcp-proxy (SSE wrapper)
+#      + the extracted binary.
+#
+# Supply chain:
+#   - ghcr.io/github/github-mcp-server@sha256:881b53d6f75f69bdbc1b5b10
+#     fc2f1361717c19054143b3a8529fb5c32061a50e  (frozen, linux/amd64)
+#   - python:3.12-slim@sha256:9e869b0816f5537709825b49e62dc86d1c2691ef
+#     f19b05c1d4dc3a07992cc052  (same digest as gh-webhook/gh-proxy)
+#   - requirements-mcp-bridge.lock: 31 packages, all SHA256-pinned
+#     linux/amd64 cp312/abi3 wheels; --only-binary=:all:
+#     --require-hashes; no sdist, no latest, no unlocked transitive deps.
+#
+# Runtime contract:
+#   - non-root UID/GID 9090; app files root-owned (in-image chmod).
+#   - PAT arrives ONLY via --env-file (MCP_GITHUB_TOKEN); never argv,
+#     never baked, never logged.
+#   - egress ONLY via HTTPS_PROXY -> gh-proxy-b (restricted CONNECT);
+#     NO_PROXY must NOT bypass api.github.com.
+
+FROM ghcr.io/github/github-mcp-server@sha256:881b53d6f75f69bdbc1b5b10fc2f1361717c19054143b3a8529fb5c32061a50e AS server
+
+FROM python:3.12-slim@sha256:9e869b0816f5537709825b49e62dc86d1c2691eff19b05c1d4dc3a07992cc052
+
+RUN groupadd -g 9090 mergepilot-gh \
+ && useradd -u 9090 -g 9090 -M -s /usr/sbin/nologin mergepilot-gh
+
+COPY --from=server /server/github-mcp-server /usr/local/bin/github-mcp-server
+COPY tools/gh-app/requirements-mcp-bridge.lock /app/requirements-mcp-bridge.lock
+
+RUN pip install --no-cache-dir --only-binary=:all: --require-hashes \
+      -r /app/requirements-mcp-bridge.lock \
+ && chmod 0755 /usr/local/bin/github-mcp-server \
+ && chmod 0644 /app/requirements-mcp-bridge.lock \
+ && chmod 0755 /app
+
+COPY tools/gh-app/mcp_bridge_health.py /app/gh_app/mcp_bridge_health.py
+RUN chmod 0644 /app/gh_app/mcp_bridge_health.py
+
+ENV PYTHONUNBUFFERED=1 \
+    MCP_PROXY_PORT=8082
+# NOTE: MCP_PROXY_* and GITHUB_PERSONAL_ACCESS_TOKEN arrive via --env-file.
+HEALTHCHECK --interval=10s --timeout=8s --start-period=15s --retries=6 \
+  CMD python /app/gh_app/mcp_bridge_health.py
+USER mergepilot-gh
+ENTRYPOINT ["mcp-proxy", "--host", "0.0.0.0", "--port", "8082", \
+            "--pass-environment", "--", "/usr/local/bin/github-mcp-server", "stdio"]

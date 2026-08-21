@@ -352,7 +352,7 @@ class TestImageIdentityRegistry(unittest.TestCase):
         self.assertEqual(set(BUILT_SERVICES),
                          {"policy-gateway", "controller",
                           "demo-console", "console-edge", "preflight",
-                          "gh-webhook"})
+                          "gh-webhook", "gh-proxy", "mcp-bridge"})
 
 
 # ── 4. Docker-CLI orchestrator ───────────────────────────────────────────────
@@ -659,6 +659,11 @@ class TestNoTwinOrHostSubstitution(unittest.TestCase):
                         env_file="gh_webhook.env")
                     self.assertEqual(hook[hook.index("-p") + 1],
                                      "127.0.0.1:8090:8090")
+                    continue
+                if service in ("gh-proxy", "mcp-bridge"):
+                    # M8-GH-4B3: E2E-only multi-network containers use
+                    # their own dedicated plan functions, not the
+                    # generic plan_service_run (which is single-network).
                     continue
                 plan = plan_service_run(
                     service, image_ref=get_built_image_identity(service),
