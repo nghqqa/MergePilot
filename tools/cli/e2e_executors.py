@@ -333,6 +333,25 @@ class ReceiptValidationError(Exception):
         super().__init__("%s: %s" % (code, detail))
 
 
+#: Docker State.Status values that satisfy a "stopped" expectation
+#: (docker never reports the literal "stopped" for State.Status).
+#: EXACTLY the legal stopped family: container exists and is not
+#: running. "dead" (removal-failure broken state) is deliberately
+#: EXCLUDED — a broken old github-mcp must MISMATCH, not pass.
+STOPPED_STATE_FAMILY = frozenset((
+    "stopped",
+    "exited",
+    "created",
+))
+
+
+def hiclaw_role_gateway_url(role: str) -> str:
+    """Single-authority E2E Gateway URL for a HiClaw role (harness
+    and receipt validator MUST both derive from this; no second
+    hardcopy of the value is allowed anywhere)."""
+    return "http://172.31.0.18:8083%s" % HICLAW_ROLE_FREEZE[role][3]
+
+
 #: Frozen role->(container_name, mxid, hiclaw_net_ip, gateway_role_path)
 HICLAW_ROLE_FREEZE = {
     "manager": ("hiclaw-manager",
@@ -405,6 +424,23 @@ def validate_hiclaw_receipt(receipt_path: str, *,
     if receipt.get("rollback_ownership") != "mp-gh4-harness":
         raise ReceiptValidationError("RECEIPT_OWNERSHIP",
                                      "rollback_ownership mismatch")
+
+    # R4: rewire_session identity — REQUIRED, strictly validated.
+    # A receipt is bound to exactly one rewiring session; the field
+    # is inside the canonical body (hash-protected) and lets crash
+    # recovery prove ownership before deleting the file. Fixed
+    # sentinel values shared across runs are rejected.
+    rewire_session = receipt.get("rewire_session")
+    if not isinstance(rewire_session, str) \
+            or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}",
+                                rewire_session):
+        raise ReceiptValidationError(
+            "RECEIPT_SESSION_INVALID",
+            "rewire_session must be a 1-128 char run-unique id")
+    if rewire_session in ("mp-gh4-harness", "session", "default"):
+        raise ReceiptValidationError(
+            "RECEIPT_SESSION_INVALID",
+            "rewire_session must be run-unique, not a fixed sentinel")
 
     # §5.1: receipt integrity hash (constant-time compare)
     stored_sha = receipt.get("receipt_sha256", "")
@@ -496,7 +532,10 @@ def validate_hiclaw_receipt(receipt_path: str, *,
         # hiclaw-net live IP
         cp = docker_executor(
             ["inspect", frozen[0], "--format",
-             "{{.NetworkSettings.Networks.hiclaw-net.IPAddress}}"],
+             # index form: Go templates cannot dot-dereference map
+             # keys containing a dash ("hiclaw-net")
+             "{{(index .NetworkSettings.Networks \"hiclaw-net\")"
+             ".IPAddress}}"],
             check=True)
         live_ip = (cp.stdout or b"").decode().strip()
         if live_ip == frozen[2] and agent.get("hiclaw_net_ip") == frozen[2]:
@@ -504,8 +543,8 @@ def validate_hiclaw_receipt(receipt_path: str, *,
         else:
             checks["ip"] = "DRIFT"
 
-        # Gateway URL
-        expected_url = "http://172.31.0.18:8083%s" % frozen[3]
+        # Gateway URL (single authority: hiclaw_role_gateway_url)
+        expected_url = hiclaw_role_gateway_url(role)
         if agent.get("gateway_url") != expected_url:
             checks["gateway_url"] = "MISMATCH"
         else:
@@ -540,8 +579,11 @@ def validate_hiclaw_receipt(receipt_path: str, *,
         ["inspect", "github-mcp", "--format",
          "{{.State.Status}}"], check=True)
     live_state = (cp.stdout or b"").decode().strip()
-    old_checks["state"] = ("OK" if live_state == expected_old_mcp_state
-                           else "MISMATCH")
+    if expected_old_mcp_state == "stopped":
+        state_ok = live_state in STOPPED_STATE_FAMILY
+    else:
+        state_ok = live_state == expected_old_mcp_state
+    old_checks["state"] = "OK" if state_ok else "MISMATCH"
 
     cp = docker_executor(
         ["inspect", "github-mcp", "--format",
@@ -571,6 +613,8 @@ def validate_hiclaw_receipt(receipt_path: str, *,
 
 __all__ = [
     "FirewallExecutorError", "install_firewall", "teardown_firewall",
+    "HICLAW_ROLE_FREEZE", "hiclaw_role_gateway_url",
+    "STOPPED_STATE_FAMILY",
     "scan_firewall_residue", "RouteProbeError", "run_route_probes",
     "ROUTE_PROBE_SPECS", "ReceiptValidationError",
     "validate_hiclaw_receipt", "HICLAW_ROLE_FREEZE",

@@ -90,7 +90,7 @@ class _FakeDocker:
             if "Networks" in fmt and "range" in fmt:
                 nets = info.get("networks", [])
                 return _CP(0, " ".join(nets).encode())
-            if "Networks.hiclaw-net" in fmt:
+            if "Networks.hiclaw-net" in fmt                     or 'Networks "hiclaw-net"' in fmt:
                 return _CP(0, info.get("ip", "").encode())
             return _CP(0, info.get("id", _hex(name)).encode())
         # exec (route probe or sha256sum)
@@ -360,6 +360,8 @@ def _hex(s):
 
 
 def _make_receipt(**overrides):
+    receipt_extra = {"rewire_session": "unit-test-session-1"}
+    receipt_extra.update(overrides.pop("extra", {}))
     agents = []
     for role, (cname, mxid, ip, path) in ex.HICLAW_ROLE_FREEZE.items():
         agents.append({
@@ -375,6 +377,7 @@ def _make_receipt(**overrides):
         })
     receipt = {
         "schema_version": 1,
+        "rewire_session": receipt_extra["rewire_session"],
         "agents": agents,
         "old_github_mcp": {
             "container_id": _hex("github-mcp"),
@@ -409,6 +412,147 @@ def _matching_docker(receipt):
         "networks": old.get("network_attachments", []),
     }
     return _FakeDocker(containers=containers)
+
+
+class TestRewireSessionContract(unittest.TestCase):
+    """R4 §9: rewire_session is REQUIRED, strictly validated, and
+    protected by the canonical receipt hash."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.receipt_path = str(Path(self.tmpdir.name) / "receipt.json")
+
+    def tearDown(self):
+        self.tmpdir.cleanup()
+
+    def _write(self, receipt):
+        Path(self.receipt_path).write_text(
+            json.dumps(receipt), encoding="utf-8")
+
+    def _rehash(self, receipt):
+        import hashlib
+        canonical = {k: v for k, v in receipt.items()
+                     if k != "receipt_sha256"}
+        receipt["receipt_sha256"] = hashlib.sha256(json.dumps(
+            canonical, sort_keys=True, separators=(",", ":"),
+            ensure_ascii=True).encode()).hexdigest()
+
+    def test_valid_session_passes(self):
+        receipt = _make_receipt()
+        self._write(receipt)
+        result = ex.validate_hiclaw_receipt(
+            self.receipt_path, docker_executor=_matching_docker(
+                receipt))
+        self.assertTrue(result["verified"])
+
+    def test_missing_session_rejected(self):
+        receipt = _make_receipt()
+        receipt.pop("rewire_session")
+        self._rehash(receipt)
+        self._write(receipt)
+        with self.assertRaises(ex.ReceiptValidationError) as ctx:
+            ex.validate_hiclaw_receipt(
+                self.receipt_path,
+                docker_executor=_matching_docker(receipt))
+        self.assertEqual(ctx.exception.code, "RECEIPT_SESSION_INVALID")
+
+    def test_blank_or_bad_format_rejected(self):
+        for bad in ("", "   ", "sp ace", "x" * 200, "-lead", "a b"):
+            with self.subTest(session=bad[:12]):
+                receipt = _make_receipt()
+                receipt["rewire_session"] = bad
+                self._rehash(receipt)
+                self._write(receipt)
+                with self.assertRaises(ex.ReceiptValidationError) as ctx:
+                    ex.validate_hiclaw_receipt(
+                        self.receipt_path,
+                        docker_executor=_matching_docker(receipt))
+                self.assertEqual(ctx.exception.code,
+                                 "RECEIPT_SESSION_INVALID")
+
+    def test_fixed_sentinels_rejected(self):
+        for sentinel in ("mp-gh4-harness", "session", "default"):
+            with self.subTest(sentinel=sentinel):
+                receipt = _make_receipt()
+                receipt["rewire_session"] = sentinel
+                self._rehash(receipt)
+                self._write(receipt)
+                with self.assertRaises(ex.ReceiptValidationError) as ctx:
+                    ex.validate_hiclaw_receipt(
+                        self.receipt_path,
+                        docker_executor=_matching_docker(receipt))
+                self.assertEqual(ctx.exception.code,
+                                 "RECEIPT_SESSION_INVALID")
+
+    def test_tampered_session_without_rehash_is_integrity_failure(self):
+        receipt = _make_receipt()
+        self._write(receipt)
+        receipt = json.loads(
+            Path(self.receipt_path).read_text(encoding="utf-8"))
+        receipt["rewire_session"] = "attacker-session"
+        self._write(receipt)     # hash NOT recomputed
+        with self.assertRaises(ex.ReceiptValidationError) as ctx:
+            ex.validate_hiclaw_receipt(
+                self.receipt_path,
+                docker_executor=_matching_docker(receipt))
+        self.assertEqual(ctx.exception.code,
+                         "RECEIPT_INTEGRITY_MISMATCH")
+
+
+class TestStoppedStatePrecision(unittest.TestCase):
+    """R2 F1: stopped normalization accepts EXACTLY the legal stopped
+    family. Every row drives the PRODUCTION validate_hiclaw_receipt()
+    with the live State.Status injected via the docker fake."""
+
+    _MATRIX = (
+        ("stopped", "stopped", "OK"),
+        ("exited", "stopped", "OK"),
+        ("created", "stopped", "OK"),
+        ("dead", "stopped", "MISMATCH"),
+        ("running", "stopped", "MISMATCH"),
+        ("restarting", "stopped", "MISMATCH"),
+        ("paused", "stopped", "MISMATCH"),
+        ("removing", "stopped", "MISMATCH"),
+    )
+
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.receipt_path = str(Path(self.tmpdir.name) / "receipt.json")
+
+    def tearDown(self):
+        self.tmpdir.cleanup()
+
+    def test_stopped_state_family(self):
+        for live_status, expected, want in self._MATRIX:
+            with self.subTest(live=live_status, expected=expected):
+                receipt = _make_receipt()
+                Path(self.receipt_path).write_text(
+                    json.dumps(receipt), encoding="utf-8")
+                fd = _matching_docker(receipt)
+                fd.containers["github-mcp"]["state"] = live_status
+                result = ex.validate_hiclaw_receipt(
+                    self.receipt_path, docker_executor=fd,
+                    expected_old_mcp_state=expected)
+                self.assertEqual(
+                    result["checks"]["old_github_mcp"]["state"], want)
+
+    def test_non_stopped_expectation_is_exact(self):
+        # expected state NOT "stopped" -> exact comparison semantics
+        receipt = _make_receipt()
+        Path(self.receipt_path).write_text(
+            json.dumps(receipt), encoding="utf-8")
+        fd = _matching_docker(receipt)
+        fd.containers["github-mcp"]["state"] = "exited"
+        result = ex.validate_hiclaw_receipt(
+            self.receipt_path, docker_executor=fd,
+            expected_old_mcp_state="running")
+        self.assertEqual(
+            result["checks"]["old_github_mcp"]["state"], "MISMATCH")
+
+    def test_family_constant_is_exact(self):
+        # auxiliary only; the production matrix above is the authority
+        self.assertEqual(ex.STOPPED_STATE_FAMILY,
+                         frozenset(("stopped", "exited", "created")))
 
 
 class TestReceiptValidator(unittest.TestCase):
