@@ -117,7 +117,7 @@ class FakeDockerSide:
         if info is None:
             self.events.append("inspect_absent:%s" % name)
             return ""
-        if "{{.NetworkSettings.Networks.hiclaw-net.IPAddress}}" in fmt:
+        if "{{(index .NetworkSettings.Networks \"hiclaw-net\").IPAddress}}" in fmt:
             return {"hiclaw-manager": "172.21.0.2",
                     "hiclaw-worker-reviewer": "172.21.0.5",
                     "hiclaw-worker-fixer": "172.21.0.4",
@@ -259,6 +259,7 @@ def _build_receipt():
         })
     receipt = {
         "schema_version": 1,
+        "rewire_session": "w3b-r3-integration-receipt",
         "agents": agents,
         "old_github_mcp": {
             "container_id": "cid-github-mcp",
