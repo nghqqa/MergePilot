@@ -60,7 +60,8 @@ class FakeDockerSide:
         self.iptables = []          # stateful rule lines
 
     # ── docker executor (container/network domain) ──
-    def docker(self, argv, timeout=240, check=True, log_tag=None):
+    def docker(self, argv, timeout=240, check=True, log_tag=None,
+               distro=None, suppress_output_log=False):
         argv = list(argv)
         a = argv
         if a[0] == "network" and a[1] == "ls":
@@ -213,6 +214,25 @@ class FakeDockerSide:
             return _cp(0)
         if a[0] == "iptables":
             return _cp(0)     # -X / -I bookkeeping: chains untracked
+        # in-distro MCP SSE health probe (python3 -c <script> <url>):
+        # answer with the probe script's stdout JSON — the full
+        # script itself is exercised against a REAL SSE server in
+        # test_e2e_mcp_health; here the executor boundary is faked
+        if a[0] == "python3" and len(a) > 3 and a[1] == "-c":
+            url = a[-1]
+            if ":8082/" in url:                  # bridge (superset)
+                self.events.append("bridge_health")
+                return _cp(0, json.dumps(
+                    {"tools": FROZEN_TOOLS
+                     + ["list_branches"]}).encode())
+            if ":8083/" in url:                  # gateway (frozen)
+                self.events.append("gateway_health")
+                # the manager bearer must ride STDIN (extracted from
+                # the canonical mcporter, never argv)
+                assert (input_bytes
+                        == b"tok-canonical-manager\n"), input_bytes
+                return _cp(0, json.dumps(
+                    {"tools": FROZEN_TOOLS}).encode())
         return _cp(0)
 
 
@@ -266,7 +286,19 @@ def make_http_router(events):
 
 
 def _canonical_body(role):
-    return ('{"r3-canon-after":"%s"}' % role).encode("utf-8")
+    """Canonical mcporter config (the rewired shape): the bearer
+    token rides mcpServers.mcp-github.headers.Authorization — the
+    single authority the gateway's ROLE_TOKENS is extracted from."""
+    return json.dumps({
+        "mcpServers": {
+            "mcp-github": {
+                "url": ex.hiclaw_role_gateway_url(role),
+                "transport": "http",
+                "headers": {"Authorization":
+                            "Bearer tok-canonical-%s" % role}},
+            "github": {
+                "url": ex.hiclaw_role_gateway_url(role),
+                "transport": "sse"}}}).encode("utf-8")
 
 
 def _build_receipt():

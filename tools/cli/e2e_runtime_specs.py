@@ -77,6 +77,25 @@ def validate_gateway_e2e_env(mapping) -> dict:
         raise RuntimeSpecError("RUNTIME_CONFIG_INVALID",
                                "POLICY_FILE must be exactly %s"
                                % GATEWAY_E2E_POLICY)
+    # ROLE_TOKENS is json.loads()ed by the gateway AT STARTUP: a
+    # non-JSON placeholder passes the non-empty-string bar and then
+    # crashes the container deterministically at gateway start.
+    # Fail closed HERE (stage 2, before anything is created).
+    try:
+        import json as _json
+        tokens = _json.loads(mapping["ROLE_TOKENS"])
+    except ValueError:
+        raise RuntimeSpecError(
+            "RUNTIME_CONFIG_INVALID",
+            "ROLE_TOKENS must be valid JSON") from None
+    if (not isinstance(tokens, dict) or not tokens
+            or not all(isinstance(k, str) and k.strip()
+                       and isinstance(v, str) and v.strip()
+                       for k, v in tokens.items())):
+        raise RuntimeSpecError(
+            "RUNTIME_CONFIG_INVALID",
+            "ROLE_TOKENS must be a non-empty JSON object of "
+            "non-empty string tokens")
     return dict(mapping)
 
 

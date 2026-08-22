@@ -62,8 +62,12 @@ AGENT_ROLES = ("manager", "reviewer", "fixer", "verifier")
 HEALTH_POLL_SECONDS = 0.5
 HEALTH_TIMEOUT_SECONDS = 120
 
-#: Frozen E2E endpoint URLs (health targets).
-GATEWAY_SSE_URL = "http://172.31.0.34:8083/sse"
+#: Frozen E2E endpoint URLs (health targets). The gateway target is
+#: the MANAGER role endpoint (Bearer-authenticated /{role}/sse per
+#: e2e_executors.hiclaw_role_gateway_url); the gateway listens on its
+#: gw-egress IP 172.31.0.18:8083 — 172.31.0.34 is the BRIDGE (8082
+#: only), so a .34:8083 target can never answer.
+GATEWAY_SSE_URL = "http://172.31.0.18:8083/manager/sse"
 BRIDGE_SSE_URL = "http://172.31.0.34:8082/sse"
 
 _PREREQ_CONFIG_NAME = "github-e2e.json"
@@ -339,7 +343,9 @@ _HEALTH_KINDS = {
 
 
 def production_service_health(docker_executor, service: str,
-                              mcp_health: Callable = None) -> None:
+                              mcp_health: Callable = None,
+                              host_executor: Callable = None,
+                              gateway_bearer: str = "") -> None:
     """§6 production readiness gate for one service (bounded poll).
 
     - postgres: docker exec pg_isready
@@ -347,6 +353,17 @@ def production_service_health(docker_executor, service: str,
     - bridge: MCP initialize + tools/list (non-zero, read-only subset)
     - gateway: MCP initialize + tools/list (frozen exact set)
     - others: docker inspect State.Running
+
+    The two MCP checks run INSIDE the WSL distro (host_executor +
+    stdlib SSE client): the Windows host cannot route to the docker
+    network IPs at all (no L3 route into the WSL bridges; a system
+    TUN proxy intercepts even no-proxy direct connects — verified by
+    RemoteDisconnected against a live listener). Every other health
+    kind already probes in-distro; the MCP checks must too.
+
+    gateway_bearer is the manager role token for the gateway probe;
+    it travels to the probe process on STDIN and is never logged,
+    journalled or persisted.
     Raises E2ELifecycleError with a stable code when unready.
     """
     name = "mergepilot-isolated-%s-1" % service
@@ -355,35 +372,232 @@ def production_service_health(docker_executor, service: str,
         _wait_probe(docker_executor, name, kind[1], what=service)
         return
     if service == "mcp-bridge":
-        check = mcp_health or _production_bridge_mcp_health
+        check = mcp_health or _bridge_mcp_check(host_executor)
         _wait_mcp(check, BRIDGE_SSE_URL, service)
         return
     if service == "policy-gateway":
-        check = mcp_health or _production_gateway_mcp_health
+        check = mcp_health or _gateway_mcp_check(host_executor,
+                                                 gateway_bearer)
         _wait_mcp(check, GATEWAY_SSE_URL, service)
         return
     _wait_running(docker_executor, name, what=service)
 
 
-def _production_bridge_mcp_health(url: str) -> dict:
-    """Bridge semantic health: initialize + tools/list must succeed
-    with a non-zero tool set containing the read-only subset (the
-    frozen four-tool filter is enforced at the GATEWAY, not here)."""
-    try:
-        result = gwh.verify_gateway_mcp_health_required(
-            upstream_url=url,
-            required=gwh.FROZEN_READ_ONLY_TOOLS,
-            exact=False)
-        return result
-    except gwh.GatewayHealthError as exc:
-        return {"healthy": False, "error": exc.code}
+# Real MCP SSE client (stdlib only), transported into the distro as a
+# `python3 -c <script> <url>` argv (the same pattern as the harness's
+# _S3_COND_SCRIPT bootstrap). Dialect: GET <url> as text/event-stream
+# → first data line carrying an absolute path is the per-session POST
+# endpoint (SDK servers send /messages/?session_id=…, mcp-proxy sends
+# /message?sessionId=…) → POST initialize → POST notifications/
+# initialized → POST tools/list; JSON-RPC responses arrive as SSE
+# `data:` events on the GET stream. The optional bearer rides STDIN
+# (never argv — it must not appear in distro ps or wsl_exe logs).
+_MCP_SSE_PROBE_SCRIPT = r'''
+import json, queue, sys, threading, time, urllib.request
+from urllib.parse import urlparse
+
+URL = sys.argv[1]
+BEARER = ""
+try:
+    BEARER = sys.stdin.readline().strip()
+except Exception:
+    pass
+DEADLINE = time.monotonic() + 15
+EVENTS = queue.Queue()
+STATE = {"error": None}
+HEADERS = {"Accept": "text/event-stream",
+           "Content-Type": "application/json"}
+if BEARER:
+    HEADERS["Authorization"] = "Bearer " + BEARER
 
 
-def _production_gateway_mcp_health(url: str) -> dict:
+def fail(code):
+    sys.stdout.write(json.dumps({"error": code}))
+    sys.exit(1)
+
+
+def reader():
     try:
-        return gwh.verify_gateway_mcp_health_safe(upstream_url=url)
+        req = urllib.request.Request(URL, headers=HEADERS, method="GET")
+        resp = urllib.request.urlopen(req, timeout=10)
+        if resp.status != 200:
+            STATE["error"] = "PROBE_HTTP_%d" % resp.status
+            return
+        buf = []
+        for raw in resp:
+            if time.monotonic() > DEADLINE:
+                STATE["error"] = "PROBE_TIMEOUT"
+                return
+            line = raw.decode("utf-8", "replace").rstrip("\r\n")
+            if line:
+                buf.append(line)
+                continue
+            if not buf:
+                continue
+            ev = {}
+            for ln in buf:
+                if ln.startswith("event:"):
+                    ev["event"] = ln[6:].strip()
+                elif ln.startswith("data:"):
+                    ev["data"] = ev.get("data", "") + ln[5:].strip()
+            EVENTS.put(ev)
+            buf = []
     except Exception:
-        return {"healthy": False, "error": "GATEWAY_UPSTREAM_UNREACHABLE"}
+        STATE["error"] = STATE["error"] or "PROBE_CONNECT_FAILED"
+
+
+def post(endpoint, payload):
+    req = urllib.request.Request(endpoint,
+                                 data=json.dumps(payload).encode(),
+                                 headers=HEADERS, method="POST")
+    urllib.request.urlopen(req, timeout=10)
+
+
+def wait_response(rid):
+    while time.monotonic() < DEADLINE:
+        try:
+            ev = EVENTS.get(timeout=1)
+        except queue.Empty:
+            if STATE["error"]:
+                fail(STATE["error"])
+            continue
+        try:
+            data = json.loads(ev.get("data", ""))
+        except ValueError:
+            continue
+        if isinstance(data, dict) and data.get("id") == rid:
+            return data
+    fail("PROBE_TIMEOUT")
+
+
+try:
+    t = threading.Thread(target=reader, daemon=True)
+    t.start()
+    endpoint_path = None
+    while time.monotonic() < DEADLINE and endpoint_path is None:
+        try:
+            ev = EVENTS.get(timeout=1)
+        except queue.Empty:
+            if STATE["error"]:
+                fail(STATE["error"])
+            continue
+        data = ev.get("data", "")
+        if data.startswith("/"):
+            endpoint_path = data
+    if endpoint_path is None:
+        fail("PROBE_NO_ENDPOINT")
+    base = "%s://%s" % (urlparse(URL).scheme, urlparse(URL).netloc)
+    endpoint = base + endpoint_path
+    post(endpoint, {"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                    "params": {"protocolVersion": "2024-11-05",
+                               "capabilities": {},
+                               "clientInfo": {"name": "mp-e2e-health",
+                                              "version": "1.0"}}})
+    init = wait_response(1)
+    if init.get("error"):
+        fail("PROBE_INIT_ERROR")
+    post(endpoint, {"jsonrpc": "2.0",
+                    "method": "notifications/initialized"})
+    post(endpoint, {"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
+    listing = wait_response(2)
+    if listing.get("error"):
+        fail("PROBE_TOOLS_ERROR")
+    tools = sorted(t.get("name", "")
+                   for t in (listing.get("result") or {}).get("tools", [])
+                   if isinstance(t, dict))
+    sys.stdout.write(json.dumps({"tools": tools}))
+    sys.exit(0)
+except SystemExit:
+    raise
+except Exception:
+    fail("PROBE_UNEXPECTED")
+'''
+
+
+def exec_mcp_sse_probe(host_exec: Callable, url: str,
+                       bearer: str = "", timeout: int = 25) -> dict:
+    """Run the real MCP SSE probe inside the distro via host_executor.
+
+    Returns the same {"healthy", "tools", "error"} shape as the
+    gateway-health module; any transport-level failure collapses to
+    GATEWAY_UPSTREAM_UNREACHABLE (the historical code for an
+    unreachable upstream, preserved for status continuity)."""
+    argv = ["python3", "-c", _MCP_SSE_PROBE_SCRIPT, url]
+    try:
+        cp = host_exec(argv, check=False, timeout=timeout,
+                       input_bytes=((bearer or "") + "\n").encode("utf-8"))
+    except Exception:
+        return {"healthy": False, "tools": [],
+                "error": "GATEWAY_UPSTREAM_UNREACHABLE"}
+    out = (cp.stdout or b"").decode("utf-8", "replace").strip()
+    # the probe script reports its precise failure code as JSON on
+    # stdout even when exiting non-zero — prefer it over the generic
+    # unreachable collapse
+    if out:
+        try:
+            data = json.loads(out)
+            if isinstance(data, dict) and data.get("error"):
+                return {"healthy": False, "tools": [],
+                        "error": data["error"]}
+        except ValueError:
+            pass
+    if getattr(cp, "returncode", 1) != 0 or not out:
+        return {"healthy": False, "tools": [],
+                "error": "GATEWAY_UPSTREAM_UNREACHABLE"}
+    try:
+        data = json.loads(out)
+    except ValueError:
+        return {"healthy": False, "tools": [],
+                "error": "GATEWAY_TOOLS_PARSE_ERROR"}
+    if data.get("error"):
+        return {"healthy": False, "tools": [], "error": data["error"]}
+    return {"healthy": True, "tools": list(data.get("tools") or []),
+            "error": None}
+
+
+def _health_with_tool_contract(result: dict, exact: bool) -> dict:
+    """Apply the frozen tool contract to a probe result (subset for
+    the bridge, exact set for the gateway) using the same stable
+    error codes as e2e_gateway_health."""
+    if not result.get("healthy"):
+        return {"healthy": False, "tools": result.get("tools") or [],
+                "error": result.get("error") or "GATEWAY_UPSTREAM_UNREACHABLE"}
+    tools = frozenset(result.get("tools") or [])
+    if not tools:
+        return {"healthy": False, "tools": [],
+                "error": "GATEWAY_ZERO_TOOLS"}
+    missing = frozenset(gwh.FROZEN_READ_ONLY_TOOLS) - tools
+    if missing:
+        return {"healthy": False, "tools": sorted(tools),
+                "error": "GATEWAY_MISSING_TOOLS"}
+    if exact:
+        extra = tools - frozenset(gwh.FROZEN_READ_ONLY_TOOLS)
+        if extra:
+            return {"healthy": False, "tools": sorted(tools),
+                    "error": "GATEWAY_EXTRA_TOOLS"}
+    return {"healthy": True, "tools": sorted(tools), "error": None}
+
+
+def _bridge_mcp_check(host_executor: Callable) -> Callable:
+    def check(url: str) -> dict:
+        if host_executor is None:
+            return {"healthy": False, "tools": [],
+                    "error": "GATEWAY_UPSTREAM_UNREACHABLE"}
+        return _health_with_tool_contract(
+            exec_mcp_sse_probe(host_executor, url), exact=False)
+    return check
+
+
+def _gateway_mcp_check(host_executor: Callable,
+                       gateway_bearer: str) -> Callable:
+    def check(url: str) -> dict:
+        if host_executor is None:
+            return {"healthy": False, "tools": [],
+                    "error": "GATEWAY_UPSTREAM_UNREACHABLE"}
+        return _health_with_tool_contract(
+            exec_mcp_sse_probe(host_executor, url,
+                               bearer=gateway_bearer), exact=True)
+    return check
 
 
 def _wait_mcp(check: Callable, url: str, service: str,
@@ -420,6 +634,8 @@ def run_e2e_start(*, config: dict,
                   docker_gw_priority_supported=None,
                   existing_network_cidrs=None,
                   firewall_scan_text: str = "",
+                  gateway_bearer: str = "",
+                  agents_docker_executor: Callable = None,
                   session: dict = None) -> dict:
     """Full E2E startup DAG. Returns the session dict (journal).
 
@@ -571,7 +787,9 @@ def run_e2e_start(*, config: dict,
     _persist()
 
     health = service_health or (
-        lambda svc: production_service_health(docker_executor, svc))
+        lambda svc: production_service_health(
+            docker_executor, svc, host_executor=host_executor,
+            gateway_bearer=gateway_bearer))
 
     # ── Stage 6: postgres start + ready (bounded pg_isready poll) ──
     session["e2e_stage"] = "postgres_ready"
@@ -653,11 +871,15 @@ def run_e2e_start(*, config: dict,
     _persist()
 
     # ── Stage 13: four agents — READ-ONLY readiness (§6; never
-    # created/modified/restarted by the CLI; HiClaw untouched). ──
+    # created/modified/restarted by the CLI; HiClaw untouched). The
+    # HiClaw stack lives in the HARNESS distro (Ubuntu-22.04 — the
+    # same authority the rewiring harness execs against), not the
+    # E2E distro; agents_docker_executor carries that binding. ──
     session["e2e_stage"] = "agents_ready"
+    agents_exec = agents_docker_executor or docker_executor
     not_ready = [role for role in AGENT_ROLES
                  if not _container_running(
-                     docker_executor,
+                     agents_exec,
                      ex.HICLAW_ROLE_FREEZE[role][0])]
     if not_ready:
         _fail("E2E_AGENTS_NOT_READY",
@@ -1028,7 +1250,9 @@ def _rollback_all(docker_executor, session,
 def run_e2e_status(*, docker_executor: Callable,
                    session: dict,
                    mcp_health: Callable = None,
-                   receipt_validator: Callable = None) -> dict:
+                   receipt_validator: Callable = None,
+                   host_executor: Callable = None,
+                   gateway_bearer: str = "") -> dict:
     """§7/§13: read-only sanitized status for 11 E2E services.
 
     Reports: expected, journal ID match, exists, running, semantic
@@ -1095,9 +1319,10 @@ def run_e2e_status(*, docker_executor: Callable,
             url = (BRIDGE_SSE_URL if service == "mcp-bridge"
                    else GATEWAY_SSE_URL)
             check = mcp_health or (
-                _production_bridge_mcp_health
+                _bridge_mcp_check(host_executor)
                 if service == "mcp-bridge"
-                else _production_gateway_mcp_health)
+                else _gateway_mcp_check(host_executor,
+                                        gateway_bearer))
             try:
                 health = check(url)
             except Exception:

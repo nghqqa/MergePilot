@@ -200,6 +200,10 @@ class TestStartWiring(unittest.TestCase):
                                    side_effect=fake_start), \
                  mock.patch.object(mp, "WslDocker") as wd, \
                  mock.patch.object(mp, "prepare_database"), \
+                 mock.patch.object(
+                     mp, "_read_hiclaw_role_tokens",
+                     return_value={"manager": "tok-m", "reviewer": "tok-r",
+                                   "fixer": "tok-f", "verifier": "tok-v"}), \
                  mock.patch.object(mp, "_to_wsl_path",
                                    side_effect=lambda p: str(p)), \
                  mock.patch.object(mp, "state_paths",

@@ -92,6 +92,15 @@ EXIT_RESIDUE = 9
 # ── Platform constants (production-owned; mirrors of established contracts) ──
 
 AUTHORIZED_DISTRO = "MergePilot-Test"
+
+#: The HiClaw stack distro: agents (hiclaw-manager/workers), the
+#: minio canonical store (mc via hiclaw-controller) and the rewired
+#: mcporter configs all live in the docker daemon the rewiring
+#: harness execs against (mp_gh4_harness: wsl -d Ubuntu-22.04).
+#: The E2E distro cannot see those containers at all — agent
+#: readiness, receipt revalidation and role-token extraction MUST
+#: bind to THIS distro.
+HICLAW_DISTRO = "Ubuntu-22.04"
 APPROVED_ENDPOINT = "unix:///var/run/docker.sock"
 CONSOLE_URL = "http://127.0.0.1:8600/api/live/status"
 CONSOLE_PORT = 8600
@@ -440,19 +449,37 @@ class WslDocker:
     # -- docker --------------------------------------------------------------
 
     def docker(self, args, *, input_bytes=None, timeout=90, check=True,
-               log_tag=None):
+               log_tag=None, distro=None, suppress_output_log=False):
         # Distro gate BEFORE any -d command: a missing/Stopped distro is
         # never implicitly started (wsl -d on a stopped distro would start it).
-        self._require_distro_running()
-        argv = ["wsl.exe", "-u", "root", "-d", AUTHORIZED_DISTRO, "--",
+        target = distro or AUTHORIZED_DISTRO
+        if target == AUTHORIZED_DISTRO:
+            self._require_distro_running()
+        else:
+            # secondary distro (HiClaw side): same fail-closed contract,
+            # read-only state probe, never implicitly started
+            states = self.distro_states()
+            if states.get(target) != "Running":
+                raise Failure(
+                    "DISTRO_NOT_RUNNING",
+                    "%s is %s; refusing to issue docker commands (never "
+                    "implicitly started)" % (target,
+                                             states.get(target, "absent")))
+        argv = ["wsl.exe", "-u", "root", "-d", target, "--",
                 "docker"] + list(args)
         self._planner.assert_argv_safe(argv)
         cp = self._run_wsl(argv, input_bytes=input_bytes, timeout=timeout)
         out = _redact(cp.stdout.decode("utf-8", "replace") if cp.stdout else "")
         err = _redact(cp.stderr.decode("utf-8", "replace") if cp.stderr else "")
         tag = log_tag or args[0]
-        log("docker %s rc=%d out=%s err=%s"
-            % (tag, cp.returncode, out[:160], err[:160]))
+        if suppress_output_log:
+            # canonical-store reads (mc cat) return SECRET bodies; the
+            # log line keeps rc visibility without the body
+            log("docker %s rc=%d out=<suppressed> err=%s"
+                % (tag, cp.returncode, err[:160]))
+        else:
+            log("docker %s rc=%d out=%s err=%s"
+                % (tag, cp.returncode, out[:160], err[:160]))
         if check and cp.returncode != 0:
             raise Failure(
                 "DOCKER_FAILED",
@@ -1479,6 +1506,60 @@ def _e2e_host_exec(docker):
     return host_exec
 
 
+def _e2e_hiclaw_docker_exec(docker):
+    """HiClaw-side docker executor (Ubuntu-22.04): agent readiness,
+    receipt live revalidation and canonical-store reads run against
+    the same docker daemon the rewiring harness targeted. `mc cat`
+    output logging is suppressed — those bodies carry agent tokens."""
+    def hiclaw_exec(argv, check=True, timeout=60, log_tag="e2e-hiclaw",
+                    **_):
+        suppress = ("mc" in argv and "cat" in argv)
+        return docker.docker(list(argv), timeout=timeout, check=check,
+                             log_tag=log_tag or "e2e-hiclaw",
+                             distro=HICLAW_DISTRO,
+                             suppress_output_log=suppress)
+    return hiclaw_exec
+
+
+def _read_hiclaw_role_tokens(hiclaw_exec):
+    """Real ROLE_TOKENS for the gateway: each agent's token is the
+    Bearer value in its REWIRED mcporter config, whose single
+    authority is the canonical MinIO store (the same objects the
+    receipt recheck hashes). Read-only mc cat via hiclaw-controller;
+    the body crosses this boundary in-process only and is never
+    logged — errors name the ROLE, never the token."""
+    import e2e_executors as _ex
+    tokens = {}
+    for role in ("manager", "reviewer", "fixer", "verifier"):
+        key = _ex.HICLAW_CANONICAL_KEYS[role]
+        cp = hiclaw_exec(["exec", "hiclaw-controller", "mc", "cat",
+                          "hiclaw/hiclaw-storage/" + key],
+                         check=False, timeout=30)
+        if getattr(cp, "returncode", 1) != 0 or not cp.stdout:
+            raise Failure(
+                "E2E_ROLE_TOKEN_EXTRACT_FAILED",
+                "canonical mcporter unreadable for role %s" % role,
+                exit_code=EXIT_PRECHECK)
+        try:
+            doc = json.loads(cp.stdout.decode("utf-8", "replace"))
+            token = ""
+            for _name, srv in (doc.get("mcpServers") or {}).items():
+                auth = ((srv or {}).get("headers") or {}).get(
+                    "Authorization", "")
+                if auth.startswith("Bearer ") and len(auth) > len("Bearer "):
+                    token = auth[len("Bearer "):].strip()
+                    break
+            if not token:
+                raise ValueError("no bearer Authorization header")
+            tokens[role] = token
+        except (ValueError, AttributeError, UnicodeDecodeError):
+            raise Failure(
+                "E2E_ROLE_TOKEN_EXTRACT_FAILED",
+                "no bearer token in canonical mcporter for role %s" % role,
+                exit_code=EXIT_PRECHECK) from None
+    return tokens
+
+
 def _github_e2e_dry_run(planner, run_id):
     """§15: PURE E2E dry-run plan — returned BEFORE any Docker/WSL
     discovery, manifest requirement, distro start, prerequisite probe
@@ -1535,12 +1616,22 @@ def _policy_repo_allowlist_from_config(config):
 
 
 def _build_e2e_runtime_configs(config, planner, reader_dsn,
-                               audit_dsn, publisher_dsn, pat_value):
+                               audit_dsn, publisher_dsn, pat_value,
+                               role_tokens=None):
     """§4: the six authoritative runtime configs (values assembled
     from the validated 20-key prerequisite config and CLI-generated
     credentials; the PAT value is read ONLY after the prerequisite
-    gate passed)."""
+    gate passed).
+
+    role_tokens: the four agents' REAL gateway tokens extracted from
+    the canonical mcporter store. ROLE_TOKENS must be valid JSON
+    (the gateway json.loads it at startup) and must equal the agents'
+    tokens or every agent SSE connect 401s — the placeholder value
+    this replaced crashed the gateway deterministically."""
     import e2e_runtime_specs as _e2rs
+    tokens = dict(role_tokens or {})
+    coordinator_token = "tok-" + "e" * 32
+    tokens.setdefault("coordinator", coordinator_token)
     return {
         "controller": {
             "GITHUB_INGRESS_ENABLED": "1",
@@ -1559,12 +1650,12 @@ def _build_e2e_runtime_configs(config, planner, reader_dsn,
             "M4F_RUN_PREFIX": "gh-",
             "RESERVED_RUN_PREFIXES": "",
             "GATEWAY_URL": "http://policy-gateway:8083",
-            "COORDINATOR_TOKEN": "tok-" + "e" * 32,
+            "COORDINATOR_TOKEN": coordinator_token,
         },
         "policy-gateway": {
             "UPSTREAM_URL": _e2rs.GATEWAY_E2E_UPSTREAM,
             "POLICY_FILE": "/run/mergepilot/policy-fixture.yaml",
-            "ROLE_TOKENS": "synthetic-role-token-value",
+            "ROLE_TOKENS": json.dumps(tokens),
             "AUDIT_DSN": audit_dsn,
         },
         "mcp-bridge": {
@@ -1650,6 +1741,10 @@ def _execute_github_e2e_start(args, project_dir, planner, paths,
     docker = WslDocker(planner, project_dir)
     docker_exec = _e2e_docker_exec(docker)
     host_exec = _e2e_host_exec(docker)
+    # HiClaw-side executor (Ubuntu-22.04): the rewiring harness's
+    # docker daemon — agents, canonical store and receipt targets
+    # are invisible to the E2E distro's daemon
+    hiclaw_exec = _e2e_hiclaw_docker_exec(docker)
 
     # ── §3 R3: the REAL read-only prerequisite gate runs BEFORE any
     # side effect. The four probe inputs come from production
@@ -1729,9 +1824,16 @@ def _execute_github_e2e_start(args, project_dir, planner, paths,
             _policy_repo_allowlist_from_config(config))
         default_secret_written.append("gh_webhook.env")
 
+        # the four agents' REAL gateway tokens (canonical store is
+        # the single authority); read AFTER the gate, bodies never
+        # logged — only the manager token value reaches the health
+        # probe (STDIN of the in-distro probe process)
+        role_tokens = _read_hiclaw_role_tokens(hiclaw_exec)
+        role_tokens_manager = role_tokens["manager"]
         runtime_configs = _build_e2e_runtime_configs(
             config, planner, reader_dsn, audit_dsn, publisher_dsn,
-            pat_value)
+            pat_value,
+            role_tokens=role_tokens)
 
         # The five non-spec DAG services reuse the default-mode plan
         # argv (create + connect steps executed in order).
@@ -1809,14 +1911,16 @@ def _execute_github_e2e_start(args, project_dir, planner, paths,
             docker_gw_priority_supported=docker_gw_priority_supported,
             existing_network_cidrs=existing_network_cidrs,
             firewall_scan_text=firewall_scan_text,
+            gateway_bearer=role_tokens_manager,
+            agents_docker_executor=hiclaw_exec,
             matrix_members_provider=(
                 lambda: el.fetch_matrix_joined_mxids(config)),
             service_health=None,
             receipt_validator=(
                 lambda path: ex_validate_hiclaw_receipt(
-                    path, docker_executor=docker_exec,
+                    path, docker_executor=hiclaw_exec,
                     minio_executor=ex_validate_hiclaw_receipt_mod
-                    .minio_readonly_via_docker(docker_exec),
+                    .minio_readonly_via_docker(hiclaw_exec),
                     expected_old_mcp_state=config[
                         "expected_old_mcp_state"])),
             persist_callback=persist,
@@ -2248,9 +2352,19 @@ def cmd_status(args):
         # github_e2e_services key under the E2E-session condition.
         if session.get("github_e2e"):
             import e2e_lifecycle as el
+            # semantic health probes run in-distro (host_exec); the
+            # gateway bearer is re-extracted read-only from the
+            # canonical store (same authority as start)
+            try:
+                status_bearer = _read_hiclaw_role_tokens(
+                    _e2e_hiclaw_docker_exec(docker))["manager"]
+            except Failure:
+                status_bearer = ""
             meta["github_e2e_services"] = el.run_e2e_status(
                 docker_executor=_e2e_docker_exec(docker),
-                session=session)
+                session=session,
+                host_executor=_e2e_host_exec(docker),
+                gateway_bearer=status_bearer)
     if install is not None:
         meta["install_images"] = sorted((install.get("images") or {}).keys())
     if classification != "absent" and session is None:

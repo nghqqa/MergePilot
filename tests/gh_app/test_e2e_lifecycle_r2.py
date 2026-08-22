@@ -518,7 +518,8 @@ def _rc():
         "policy-gateway": {
             "UPSTREAM_URL": rs.GATEWAY_E2E_UPSTREAM,
             "POLICY_FILE": rs.GATEWAY_E2E_POLICY,
-            "ROLE_TOKENS": "synthetic-role-token-value",
+            "ROLE_TOKENS": '{"manager":"tok-m","reviewer":"tok-r",'
+                              ' "fixer":"tok-f","verifier":"tok-v"}',
             "AUDIT_DSN":
                 "postgresql://u:synthetic-audit@postgres/db"
                 "?connect_timeout=5",
