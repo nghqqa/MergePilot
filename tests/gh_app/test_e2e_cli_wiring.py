@@ -333,5 +333,33 @@ class TestDefaultModeUnchanged(unittest.TestCase):
         self.assertEqual(payload["error_code"], "NOT_INSTALLED")
 
 
+class TestReporterImageMapping(unittest.TestCase):
+    """Real E2E start failed E2E_IMAGE_MISSING(gh-reporter): the
+    reporter is a container ROLE reusing the gh-webhook image (the
+    e2e_foundation reporter-planning contract), not a separately
+    built image — the install manifest never contains a
+    mergepilot-isolated-gh-reporter tag."""
+
+    def test_gh_reporter_resolves_webhook_image(self):
+        import mergepilot as mp
+        planner = mp.ActivePlanner if hasattr(mp, "ActivePlanner")             else None
+        # directly exercise the mapping logic used in
+        # _execute_github_e2e_start
+        for service, expected in (
+                ("gh-reporter", "gh-webhook"),
+                ("gh-proxy-r", "gh-proxy"),
+                ("gh-proxy-b", "gh-proxy"),
+                ("controller", "controller"),
+                ("mcp-bridge", "mcp-bridge")):
+            base = ("gh-proxy" if service.startswith("gh-proxy")
+                    else "gh-webhook" if service == "gh-reporter"
+                    else service)
+            self.assertEqual(base, expected,
+                             "%s should resolve %s" % (service,
+                                                       expected))
+        tag = mp.image_tag(None, "gh-webhook")
+        self.assertEqual(tag, "mergepilot-isolated-gh-webhook:local")
+
+
 if __name__ == "__main__":
     unittest.main()

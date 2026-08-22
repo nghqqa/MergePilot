@@ -1633,10 +1633,14 @@ def _execute_github_e2e_start(args, project_dir, planner, paths,
     image_refs = {}
     for service in ("controller", "policy-gateway", "mcp-bridge",
                     "gh-reporter", "gh-proxy-r", "gh-proxy-b"):
+        # gh-reporter is a CONTAINER ROLE, not a built image: per the
+        # e2e_foundation reporter planning contract it reuses the
+        # gh-webhook image (entrypoint override at run time)
+        base = ("gh-proxy" if service.startswith("gh-proxy")
+                else "gh-webhook" if service == "gh-reporter"
+                else service)
         image_refs[service] = (install.get("images") or {}).get(
-            image_tag(planner,
-                      "gh-proxy" if service.startswith("gh-proxy")
-                      else service), "")
+            image_tag(planner, base), "")
 
     docker = WslDocker(planner, project_dir)
     docker_exec = _e2e_docker_exec(docker)
