@@ -174,6 +174,7 @@ class FakeSyncWorld:
         self.pull_mode = {r: "converge" for r in WORKERS}
         self._push_ticks = {"manager": 0}
         self._pull_ticks = {r: 0 for r in WORKERS}
+        self._drift_countdown = {}
         self._last_push = {}
         self._last_pull = {}
         # ── failure injection (adapter boundary; tests may flip
@@ -250,6 +251,7 @@ class FakeSyncWorld:
         w.pull_mode = dict(self.pull_mode)
         w._push_ticks = dict(self._push_ticks)
         w._pull_ticks = dict(self._pull_ticks)
+        w._drift_countdown = {}
         w._last_push = {}
         w._last_pull = {}
         w.running_false = set()
@@ -311,6 +313,18 @@ class FakeSyncWorld:
             self.live[container][path] = self._legacy[role]
             return
         self.live[container][path] = self.canonical_bytes(role)
+
+    def _apply_pending_drift(self, role):
+        """Countdown post-convergence external drift (drift-once):
+        the read that consumes the last tick reverts live to the
+        pre-transaction bytes."""
+        n = self._drift_countdown.get(role, 0)
+        if n > 0:
+            self._drift_countdown[role] = n - 1
+            if n == 1:
+                cont = ex.HICLAW_ROLE_FREEZE[role][0]
+                path = ex.hiclaw_role_live_config_path(role)
+                self.live.setdefault(cont, {})[path] =                     self._legacy[role]
 
     def freeze_ticks(self):
         """Pin every sync tick far into the future: the world stays
@@ -418,20 +432,43 @@ class FakeSyncWorld:
                                      if_match)
         if op == "cat":
             if role in WORKERS:
-                self.maybe_pull(role)
+                self._apply_pending_drift(role)
             data = self.live.get(container, {}).get(args[-1], b"")
             if role in self.drift_live_read:
                 data = self.drift_live_read[role]
             return _cp(0, data)
         if op == "sha256sum":
             if role in WORKERS:
-                self.maybe_pull(role)
+                self._apply_pending_drift(role)
             data = self.live.get(container, {}).get(args[-1], b"")
             return _cp(0, (_sha(data) + "  " + args[-1]).encode())
         if op == "grep":
             return self._grep(args)
         if op == "sh":
             return self._sh(container, role, args[-1], input_bytes)
+        if op == "mc" and len(args) > 2 and args[2] == "cp"                 and role in WORKERS:
+            # the production on-demand pull primitive (B6): exact
+            # argv is [mc, cp, <bucket-key>, <live-path>] INSIDE the
+            # role's own container; wrong role/key/path -> rc=1
+            margs = args[2:]
+            src = self._strip_bucket(margs[1])
+            dst = margs[2]
+            if (src != ex.hiclaw_role_canonical_key(role)
+                    or dst != ex.hiclaw_role_live_config_path(role)):
+                return _cp(1, b"")
+            mode = self.pull_mode.get(role, "converge")
+            if mode == "never":
+                return _cp(1, b"")
+            data = self.objects.get(src)
+            if data is None:
+                return _cp(1, b"")
+            self.live.setdefault(container, {})[dst] = data
+            if mode == "drift-once":
+                # converged once; an external actor reverts live two
+                # reads later (the trigger's own read-back passes,
+                # the verification loop's stability check catches it)
+                self._drift_countdown[role] = 2
+            return _cp(0, b"")
         return _cp(0)
 
     def _inspect(self, argv, role):
@@ -998,7 +1035,7 @@ class TestApply(HarnessTestBase):
                     else:
                         world.pull_mode[fail_role] = "never"
                         expected = \
-                            "HARNESS_WORKER_PULL_CONVERGENCE_TIMEOUT"
+                            "HARNESS_WORKER_PULL_TRIGGER_FAILED"
                     with self.assertRaises(hw.HarnessError) as ctx:
                         self._apply(world, journal=j, receipt=r,
                                     session="af-%s-%s"
@@ -3139,6 +3176,220 @@ class TestMinioCpHotfix(HarnessTestBase):
         # lock cleanly tombstoned RELEASED
         self.assertTrue(self._lock_released(world),
                         self._lock_state(world))
+
+
+class TestWorkerOnDemandPull(HarnessTestBase):
+    """M8-GH-4B6: worker live converges ONLY via the explicit
+    production pull trigger; the 300s fallback tick is never a
+    transaction prerequisite."""
+
+    def test_three_workers_trigger_success_and_manager_rejected(self):
+        # manager trigger is refused at the argv-construction level
+        with self.assertRaises(hw.HarnessError) as ctx:
+            hw._worker_pull_argv("manager")
+        self.assertEqual(ctx.exception.code,
+                         "HARNESS_WORKER_PULL_TRIGGER_FAILED")
+        # each worker's argv uses the frozen authorities exactly
+        for r in ("reviewer", "fixer", "verifier"):
+            container, key, live, argv = hw._worker_pull_argv(r)
+            self.assertEqual(
+                container, ex.HICLAW_ROLE_FREEZE[r][0])
+            self.assertEqual(
+                key, ex.hiclaw_role_canonical_key(r))
+            self.assertEqual(
+                live, ex.hiclaw_role_live_config_path(r))
+            self.assertEqual(argv, [
+                "exec", container, "mc", "cp",
+                "hiclaw/hiclaw-storage/" + key, live])
+
+    def test_apply_triggers_pull_per_worker(self):
+        # full success path: each worker's live converges via the
+        # EXPLICIT trigger (no lazy convergence anywhere)
+        world = FakeSyncWorld()
+        docker, minio = self._adapters(world)
+        j = self.root / "j-trig.json"
+        r = self.root / "r-trig.json"
+        result = hw.apply(journal_path=j, receipt_path=r,
+                          docker=docker, minio=minio,
+                          session="trig")
+        self.assertEqual(result["result"], "complete")
+        for role in hw.ROLES:
+            self.assertTrue(world.role_at_target(role), role)
+        # adapter audit: exactly one worker-pull entry per worker
+        pulls = [c for c in docker.calls
+                 if len(c) > 1 and c[0] == "worker-pull"]
+        self.assertEqual(
+            sorted(c[1] for c in pulls),
+            ["fixer", "reviewer", "verifier"])
+        # the world-level audit carries the REAL argv (mc cp inside
+        # each worker container with the frozen key/path)
+        real_argv = [c for c in world.docker_calls
+                     if len(c) > 3 and c[2] == "mc"
+                     and c[3] == "cp"]
+        self.assertEqual(len(real_argv), 3)
+        for c in real_argv:
+            role = FakeSyncWorld._role_of_container(c[1])
+            self.assertIn(role, WORKERS)
+            self.assertEqual(
+                c[4], "hiclaw/hiclaw-storage/"
+                + ex.hiclaw_role_canonical_key(role))
+            self.assertEqual(
+                c[5], ex.hiclaw_role_live_config_path(role))
+        # journal carries the pull window states
+        disk = json.loads(j.read_text())
+        self.assertEqual(disk["status"], "complete")
+        for role in ("reviewer", "fixer", "verifier"):
+            self.assertEqual(
+                disk["roles"][role]["status"], "live_converged")
+
+    def test_fake_requires_exact_role_key_path_mapping(self):
+        # wrong key/path inside a worker -> rc=1 -> trigger failure
+        world = FakeSyncWorld()
+        docker, _ = self._adapters(world)
+        cp = world.docker_exec(
+            ["exec", "hiclaw-worker-fixer", "mc", "cp",
+             "hiclaw/hiclaw-storage/agents/reviewer/config/"
+             "mcporter.json",
+             "/root/hiclaw-fs/agents/fixer/config/mcporter.json"])
+        self.assertEqual(cp.returncode, 1)
+
+    def test_trigger_failure_fails_closed_before_receipt(self):
+        # pull_mode never: trigger rc=1 -> stable code, clean
+        # rollback, no receipt, lock released
+        j = self.root / "j-tf.json"
+        r = self.root / "r-tf.json"
+        world = FakeSyncWorld()
+        world.pull_mode = {"reviewer": "never"}
+        with self.assertRaises(hw.HarnessError) as ctx:
+            self._apply(world, journal=j, receipt=r, session="tf")
+        self.assertEqual(ctx.exception.code,
+                         "HARNESS_WORKER_PULL_TRIGGER_FAILED")
+        self.assertFalse(r.exists())
+        disk = json.loads(j.read_text())
+        self.assertEqual(disk["status"], "rolled-back")
+        self.assertEqual(disk["rollback_residue"], [])
+        self.assertTrue(self._lock_released(world))
+        for role in hw.ROLES:
+            self.assertTrue(world.role_at_legacy(role), role)
+
+    def test_post_trigger_drift_caught_by_stability(self):
+        # drift-once: trigger converges, external actor reverts live
+        # on the next read -> the stability re-check must fail
+        j = self.root / "j-dr.json"
+        r = self.root / "r-dr.json"
+        world = FakeSyncWorld()
+        world.pull_mode = {"reviewer": "drift-once"}
+        with self.assertRaises(hw.HarnessError) as ctx:
+            self._apply(world, journal=j, receipt=r, session="dr")
+        self.assertEqual(ctx.exception.code,
+                         "HARNESS_WORKER_PULL_CONVERGENCE_TIMEOUT")
+        self.assertFalse(r.exists())
+
+    def test_crash_matrix_pull_windows(self):
+        # crash after canonical verify, before/after trigger
+        for phase in ("worker_pull_triggering",
+                      "worker_pull_triggered"):
+            with self.subTest(window=phase):
+                world = FakeSyncWorld()
+
+                def hook(ph, rl):
+                    if ph == phase and rl == "reviewer":
+                        raise CrashSimulated(ph)
+                j = self.root / ("j-cm-%s.json" % phase)
+                r = self.root / ("r-cm-%s.json" % phase)
+                try:
+                    self._apply(world, journal=j, receipt=r,
+                                session="cm", phase_hook=hook)
+                except CrashSimulated:
+                    pass
+                disk = json.loads(j.read_text())
+                self.assertEqual(
+                    disk["roles"]["reviewer"]["status"], phase)
+                self.assertFalse(r.exists())
+                fresh = world.clone_for_recovery()
+                result = self._rollback(fresh, j, session="cm")
+                self.assertEqual(result["residue"], [])
+                for role in hw.ROLES:
+                    self.assertTrue(fresh.role_at_legacy(role), role)
+                self.assertTrue(self._lock_released(fresh))
+
+    def test_rollback_trigger_failure_then_retry(self):
+        # reviewer fully converged (live at target), then verifier
+        # fails; rollback trigger for reviewer FAILS (never) ->
+        # live:<role> residue + rollback-failed + HELD lock; retry
+        # (trigger works) converges and clears residue
+        j = self.root / "j-rbtf.json"
+        r = self.root / "r-rbtf.json"
+        world = FakeSyncWorld()
+        world.corrupt_canonical_put_once = {
+            "verifier": b'{"corrupted": true}'}
+
+        def hook(ph, rl):
+            if ph == "live_converged" and rl == "reviewer":
+                world.pull_mode = {"reviewer": "never"}
+        try:
+            self._apply(world, journal=j, receipt=r, session="rbtf",
+                        phase_hook=hook)
+        except hw.HarnessError:
+            pass
+        d1 = json.loads(j.read_text())
+        self.assertEqual(d1["status"], "rollback-failed")
+        self.assertIn("live:reviewer", d1["rollback_residue"])
+        self.assertTrue(any(
+            d.startswith("ROLLBACK_PULL_TRIGGER_FAILED")
+            for d in d1["rollback_diagnostics"]))
+        # reviewer live still at TARGET (trigger refused)
+        self.assertIn(TARGET["reviewer"],
+                      world.live_bytes("reviewer").decode())
+        # lock stays HELD (not converged)
+        self.assertEqual(self._lock_state(world).get("state"),
+                         hw.LOCK_STATE_HELD)
+        # retry with working trigger converges
+        world.pull_mode = {"reviewer": "converge"}
+        result = self._rollback(world, j, session="rbtf")
+        d2 = json.loads(j.read_text())
+        self.assertEqual(d2["status"], "rolled-back")
+        self.assertEqual(d2["rollback_residue"], [])
+        self.assertTrue(world.role_at_legacy("reviewer"))
+        self.assertTrue(self._lock_released(world))
+
+    def test_primary_error_not_overridden_by_trigger_failure(self):
+        # reviewer converged, verifier verify fails, rollback
+        # trigger also fails: primary stays the verify error
+        world = FakeSyncWorld()
+        world.corrupt_canonical_put_once = {
+            "verifier": b'{"corrupted": true}'}
+
+        def arm(ph, rl):
+            if ph == "live_converged" and rl == "reviewer":
+                world.pull_mode = {"reviewer": "never"}
+        j = self.root / "j-pe.json"
+        r = self.root / "r-pe.json"
+        with self.assertRaises(hw.HarnessError) as ctx:
+            self._apply(world, journal=j, receipt=r, session="pe",
+                        phase_hook=arm)
+        self.assertEqual(ctx.exception.code,
+                         "HARNESS_CANONICAL_VERIFY_FAILED")
+        diags = getattr(ctx.exception, "diagnostics", [])
+        self.assertTrue(any(
+            d.startswith("ROLLBACK_PULL_TRIGGER_FAILED")
+            for d in diags), diags)
+
+    def test_worker_live_never_written_by_apply(self):
+        # the ONLY writer of worker live is the production pull
+        world = FakeSyncWorld()
+        j = self.root / "j-nw.json"
+        r = self.root / "r-nw.json"
+        self._apply(world, journal=j, receipt=r, session="nw")
+        for argv in world.docker_calls:
+            if len(argv) > 4 and argv[4] == "sh" \
+                    and "cat >" in argv[-1]:
+                # find container of this write
+                idx = argv.index("sh")
+                container = argv[idx - 1] if idx > 0 else argv[2]
+                role = FakeSyncWorld._role_of_container(container)
+                self.assertEqual(role, "manager",
+                                 "worker live written: %r" % (argv,))
 
 
 if __name__ == "__main__":

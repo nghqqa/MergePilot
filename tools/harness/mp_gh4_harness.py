@@ -961,6 +961,52 @@ def _verify_acquired(minio: MinioAdapter, key: str, session: str,
             "etag": etag}
 
 
+#: Worker on-demand pull primitive (M8-GH-4B6). The deployed
+#: worker-entrypoint fallback loop (`sleep 300; mc cp
+#: <bucket>/config/mcporter.json <live>`) has NO transaction-level
+#: liveness guarantee: its 300s phase is anchored to container
+#: start, so a canonical write can fall in a dead zone where no tick
+#: fires within any bounded wait (real retry apply: zero pulls in
+#: 420s -> HARNESS_WORKER_PULL_CONVERGENCE_TIMEOUT). The harness
+#: therefore runs the EXACT same production copy explicitly after
+#: each canonical mutation; the 300s loop remains only as a
+#: long-term environmental safety net.
+_WORKER_PULL_ROLES = ("reviewer", "fixer", "verifier")
+
+
+def _worker_pull_argv(role: str) -> list:
+    """Single source of truth for the on-demand pull argv: container,
+    canonical bucket key and live path all come from the frozen
+    production authorities (no second role table)."""
+    if role not in _WORKER_PULL_ROLES:
+        raise HarnessError("HARNESS_WORKER_PULL_TRIGGER_FAILED",
+                           "role:%s" % role)
+    container = ex.HICLAW_ROLE_FREEZE[role][0]
+    key = ex.hiclaw_role_canonical_key(role)
+    live = ex.hiclaw_role_live_config_path(role)
+    return (container, key, live,
+            ["exec", container, "mc", "cp",
+             "hiclaw/hiclaw-storage/" + key, live])
+
+
+def trigger_worker_pull(docker: DockerAdapter, minio: MinioAdapter,
+                        role: str) -> None:
+    """Explicitly run the production canonical->live copy INSIDE the
+    role's container (identical argv to the entrypoint fallback
+# loop). rc!=0 or a non-converged read-back fails closed."""
+    container, key, live, argv = _worker_pull_argv(role)
+    docker.calls.append(["worker-pull", role, container, key, live])
+    cp = docker._exec(argv, check=True, timeout=60)
+    rc = getattr(cp, "returncode", -1)
+    if rc != 0:
+        raise HarnessError("HARNESS_WORKER_PULL_TRIGGER_FAILED",
+                           "%s rc=%d" % (role, rc))
+    live_hash = hashlib.sha256(
+        docker.read_config(container, live)).hexdigest()
+    if live_hash != minio.hash_of(key):
+        raise HarnessError("HARNESS_WORKER_PULL_VERIFY_FAILED", role)
+
+
 def _assert_lock_owned(minio: MinioAdapter,
                        lock_info: dict) -> None:
     """F2: live lock verification before every external mutation.
@@ -1296,20 +1342,29 @@ def apply(*, journal_path, receipt_path, docker: DockerAdapter = None,
             if minio.hash_of(key) != hashlib.sha256(new_obj).hexdigest():
                 raise HarnessError(
                     "HARNESS_CANONICAL_VERIFY_FAILED", role)
-            # bounded wait for production pull
-            conv = ex.hiclaw_role_convergence(role)
-            deadline = time.monotonic() + conv["timeout_seconds"]
+            # explicit on-demand production pull: no dependence on
+            # the 300s fallback tick's phase (B6)
+            journal["roles"][role]["status"] = "worker_pull_triggering"
+            _persist()
+            _hook("worker_pull_triggering", role)
+            _assert_lock_owned(minio, lock_info)
+            trigger_worker_pull(docker, minio, role)
+            journal["roles"][role]["status"] = "worker_pull_triggered"
+            _persist()
+            _hook("worker_pull_triggered", role)
+            # bounded verification budget only (the pull already
+            # ran; this is read-back + stability, not tick waiting)
+            deadline = time.monotonic() + 60
             converged = False
             while time.monotonic() < deadline:
-                time.sleep(conv["poll_seconds"])
                 live = docker.read_config(
                     info["container"], info["live_path"])
-                if hashlib.sha256(live).hexdigest()  \
+                if hashlib.sha256(live).hexdigest() \
                         == minio.hash_of(key):
-                    time.sleep(conv["poll_seconds"])  # stability
+                    time.sleep(1)  # stability re-check
                     live2 = docker.read_config(
                         info["container"], info["live_path"])
-                    if hashlib.sha256(live2).hexdigest()  \
+                    if hashlib.sha256(live2).hexdigest() \
                             == minio.hash_of(key):
                         converged = True
                         break
@@ -1694,14 +1749,34 @@ def _hybrid_rollback(docker, minio, writer, journal_path, root,
                     _residue_add(residue, "canonical:%s" % role)
                     continue
             else:
-                # restore canonical from tx backup, wait pull
+                # restore canonical from tx backup, then EXPLICITLY
+                # trigger the production pull (B6: never depend on
+                # the 300s fallback tick to complete a rollback)
                 minio.put_bytes(key, before_bytes)
-                conv = ex.hiclaw_role_convergence(role)
-                deadline = (time.monotonic()
-                            + conv["timeout_seconds"])
+                entry["status"] = "rollback_pull_triggering"
+                live_already = hashlib.sha256(
+                    docker.read_config(container, live_path)
+                    ).hexdigest() == entry.get("before_live")
+                try:
+                    if not live_already:
+                        # live still holds the transaction's target:
+                        # converge it back via the production pull
+                        _assert_lock_owned(minio, lock_info)
+                        trigger_worker_pull(docker, minio, role)
+                except HarnessError as exc:
+                    if exc.code in ("HARNESS_WORKER_PULL_TRIGGER_FAILED",
+                                    "HARNESS_WORKER_PULL_VERIFY_FAILED"):
+                        entry["status"] = "rollback-failed"
+                        diags.append("ROLLBACK_PULL_TRIGGER_FAILED:%s"
+                                     % role)
+                        _residue_add(residue, "live:%s" % role)
+                        continue
+                    raise
+                # bounded verification (trigger already converged
+                # live; read-back + stability only)
+                deadline = time.monotonic() + 60
                 ok = False
                 while time.monotonic() < deadline:
-                    time.sleep(conv["poll_seconds"])
                     live = docker.read_config(container,
                                               live_path)
                     if hashlib.sha256(live).hexdigest()  \

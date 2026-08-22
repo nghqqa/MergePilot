@@ -261,8 +261,9 @@ class TestApply(DirectionTestBase):
                      docker=docker, minio=minio, session="wto",
                      phase_hook=hook)
         code = ctx.exception.code
-        self.assertIn(code, ("HARNESS_WORKER_PULL_CONVERGENCE_TIMEOUT",
-                             "HARNESS_CANONICAL_VERIFY_FAILED"))
+        # B6: an unavailable production pull now fails at the
+        # explicit trigger with its own stable code
+        self.assertEqual(code, "HARNESS_WORKER_PULL_TRIGGER_FAILED")
         # canonical restored
         self.assertTrue(world.role_at_legacy("reviewer"))
 
