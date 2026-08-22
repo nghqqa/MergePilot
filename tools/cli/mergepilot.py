@@ -1752,6 +1752,8 @@ def _execute_github_e2e_start(args, project_dir, planner, paths,
             receipt_validator=(
                 lambda path: ex_validate_hiclaw_receipt(
                     path, docker_executor=docker_exec,
+                    minio_executor=ex_validate_hiclaw_receipt_mod
+                    .minio_readonly_via_docker(docker_exec),
                     expected_old_mcp_state=config[
                         "expected_old_mcp_state"])),
             persist_callback=persist,

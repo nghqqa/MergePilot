@@ -154,9 +154,32 @@ class FakeDockerSide:
                     "hiclaw-worker-reviewer": "reviewer",
                     "hiclaw-worker-fixer": "fixer",
                     "hiclaw-worker-verifier": "verifier"}[name]
-            h = ("a" * 63 + "4").encode()
+            import hashlib as _h
+            h = _h.sha256(_canonical_body(role)).hexdigest().encode()
             self.events.append("receipt_hash:%s" % role)
             return _cp(0, h + b"  " + a[2].encode())
+        if name == "hiclaw-controller" and len(a) > 2                 and a[2] == "mc":
+            import hashlib as _h2
+            mc_args = a[3:]
+            if mc_args and mc_args[0] in ("cat", "stat"):
+                target = mc_args[1]
+                key = target.replace("hiclaw/hiclaw-storage/", "")
+                role = {"manager/config/mcporter.json": "manager",
+                        "agents/reviewer/config/mcporter.json":
+                            "reviewer",
+                        "agents/fixer/config/mcporter.json": "fixer",
+                        "agents/verifier/config/mcporter.json":
+                            "verifier"}.get(key)
+                if role is None:
+                    return _cp(1, b"")
+                body = _canonical_body(role)
+                if mc_args[0] == "cat":
+                    return _cp(0, body)
+                return _cp(0, ("Name: x\nDate: now\nSize: %d B\n"
+                               "ETag: %s\n"
+                               % (len(body),
+                                  _h2.md5(body).hexdigest())).encode())
+            return _cp(0, b"")
         if "pg_isready" in a:
             self.events.append("postgres_health")
             return _cp(0)
@@ -242,7 +265,12 @@ def make_http_router(events):
     return router
 
 
+def _canonical_body(role):
+    return ('{"r3-canon-after":"%s"}' % role).encode("utf-8")
+
+
 def _build_receipt():
+    import hashlib
     agents = []
     for role, (container, mxid, ip, path) in \
             ex.HICLAW_ROLE_FREEZE.items():
@@ -252,14 +280,30 @@ def _build_receipt():
             "container_id": "cid-%s" % container,
             "mxid": mxid,
             "hiclaw_net_ip": ip,
-            "gateway_url": "http://172.31.0.18:8083%s" % path,
+            "gateway_url": ex.hiclaw_role_gateway_url(role),
+            "sync_mode": ex.hiclaw_role_sync_mode(role),
+            "canonical_key": ex.hiclaw_role_canonical_key(role),
+            "live_path": ex.hiclaw_role_live_config_path(role),
+            "live_hash_before": "b" * 64,
+            "live_hash_after": hashlib.sha256(
+                _canonical_body(role)).hexdigest(),
+            "canonical_hash_before": "b" * 64,
+            "canonical_hash_after": hashlib.sha256(
+                _canonical_body(role)).hexdigest(),
+            "canonical_etag_before": "e" * 32,
+            "canonical_etag_after": hashlib.md5(
+                _canonical_body(role)).hexdigest(),
+            "convergence_evidence": "live_converged",
             "config_hash_before": "b" * 64,
-            "config_hash_after": "a" * 63 + "4",
+            "config_hash_after": hashlib.sha256(
+                _canonical_body(role)).hexdigest(),
             "token_hash": "c" * 64,
         })
     receipt = {
-        "schema_version": 1,
+        "schema_version": 2,
         "rewire_session": "w3b-r3-integration-receipt",
+        "sync_contract_fingerprint": dict(
+            ex.HICLAW_SYNC_FINGERPRINT_EXPECTED),
         "agents": agents,
         "old_github_mcp": {
             "container_id": "cid-github-mcp",

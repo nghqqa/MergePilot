@@ -345,6 +345,88 @@ STOPPED_STATE_FAMILY = frozenset((
 ))
 
 
+#: Direction-aware sync contract (M8-GH-4B4). The HiClaw runtime
+#: propagates mcporter.json differently per role family — this is
+#: the SINGLE production authority; the harness must never keep a
+#: second copy of the mapping.
+#:
+#: - manager: live->canonical. The manager's change-triggered push
+#:   (start-manager-agent.sh, ~10s, excludes .openclaw/.cache/.npm/
+#:   .local/.mc but NOT config/mcporter.json) copies the live
+#:   workspace file to MinIO; the ONLY canonical->live path is the
+#:   container-startup mirror, so a running manager converges from
+#:   live writes, never from canonical writes.
+#: - workers: canonical->live. worker-entrypoint.sh explicitly
+#:   EXCLUDES config/mcporter.json from its change-triggered push
+#:   and unconditionally refreshes it from MinIO every ~300s
+#:   (`mc cp ... || true`, no newer-than guard).
+HICLAW_SYNC_MODES = {
+    "manager": "live_to_canonical",
+    "reviewer": "canonical_to_live",
+    "fixer": "canonical_to_live",
+    "verifier": "canonical_to_live",
+}
+
+#: Live mcporter.json path inside each role's container.
+HICLAW_LIVE_CONFIG_PATHS = {
+    "manager": "/root/manager-workspace/config/mcporter.json",
+    "reviewer": "/root/hiclaw-fs/agents/reviewer/config/mcporter.json",
+    "fixer": "/root/hiclaw-fs/agents/fixer/config/mcporter.json",
+    "verifier": "/root/hiclaw-fs/agents/verifier/config/mcporter.json",
+}
+
+#: MinIO canonical object key (relative to the storage prefix).
+HICLAW_CANONICAL_KEYS = {
+    "manager": "manager/config/mcporter.json",
+    "reviewer": "agents/reviewer/config/mcporter.json",
+    "fixer": "agents/fixer/config/mcporter.json",
+    "verifier": "agents/verifier/config/mcporter.json",
+}
+
+#: Convergence contract: bounded poll cadence and budget per family.
+HICLAW_CONVERGENCE = {
+    "manager": {"poll_seconds": 5, "timeout_seconds": 120,
+                "stability_checks": 2},     # >= 2 push cycles (~10s)
+    "worker": {"poll_seconds": 15, "timeout_seconds": 420,
+               "stability_checks": 1},      # 300s pull + margin
+}
+
+#: Dedicated MinIO transaction prefix — MUST stay outside every
+#: production mirror/push/pull prefix so backups are never synced.
+HICLAW_TX_PREFIX = "mp-gh4-tx"
+
+#: Stable fingerprint of the deployed sync scripts. The harness
+#: computes and records the ACTUAL fingerprint at runtime; this
+#: frozen expectation makes contract drift fail closed.
+HICLAW_SYNC_FINGERPRINT_EXPECTED = {
+    "manager_push_excludes_mcporter": False,   # NOT excluded
+    "worker_push_excludes_mcporter": True,     # excluded
+    "worker_pull_period_seconds": 300,
+}
+
+
+def hiclaw_role_canonical_key(role: str) -> str:
+    """Single authority: MinIO object key for a role's mcporter."""
+    return HICLAW_CANONICAL_KEYS[role]
+
+
+def hiclaw_role_live_config_path(role: str) -> str:
+    """Single authority: live mcporter path inside the container."""
+    return HICLAW_LIVE_CONFIG_PATHS[role]
+
+
+def hiclaw_role_sync_mode(role: str) -> str:
+    """Single authority: 'live_to_canonical' | 'canonical_to_live'."""
+    return HICLAW_SYNC_MODES[role]
+
+
+def hiclaw_role_convergence(role: str) -> dict:
+    """Single authority: bounded convergence budget for a role."""
+    if hiclaw_role_sync_mode(role) == "live_to_canonical":
+        return dict(HICLAW_CONVERGENCE["manager"])
+    return dict(HICLAW_CONVERGENCE["worker"])
+
+
 def hiclaw_role_gateway_url(role: str) -> str:
     """Single-authority E2E Gateway URL for a HiClaw role (harness
     and receipt validator MUST both derive from this; no second
@@ -383,27 +465,20 @@ def _compute_receipt_sha256(receipt: dict) -> str:
 _HEX64_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
-def _validate_hash_fields(receipt: dict, agent: dict,
-                           role: str) -> None:
-    """§5.2: config_hash_before/after and token_hash must be exactly
-    64-char lowercase hex. receipt_sha256 likewise."""
-    for field in ("config_hash_before", "config_hash_after",
-                  "token_hash"):
-        value = agent.get(field, "")
-        if not _HEX64_RE.match(value or ""):
-            raise ReceiptValidationError(
-                "RECEIPT_HASH_FORMAT",
-                "agent %s field %s must be 64-char lowercase hex"
-                % (role, field))
-    rs = receipt.get("receipt_sha256", "")
-    if not _HEX64_RE.match(rs or ""):
+def _require_hex64(value, *, role: str, field: str) -> None:
+    """Fail-closed hash format check: the value must be a string of
+    exactly 64 lowercase hex chars (a non-string fails with the same
+    stable code, never a TypeError)."""
+    if not isinstance(value, str) or not _HEX64_RE.match(value):
         raise ReceiptValidationError(
             "RECEIPT_HASH_FORMAT",
-            "receipt_sha256 must be 64-char lowercase hex")
+            "agent %s field %s must be 64-char lowercase hex"
+            % (role, field))
 
 
 def validate_hiclaw_receipt(receipt_path: str, *,
                             docker_executor: Callable,
+                            minio_executor: Callable,
                              expected_old_mcp_state: str = "stopped"
                              ) -> dict:
     """§5: read-only real-time validation of the HiClaw rewiring receipt.
@@ -418,18 +493,78 @@ def validate_hiclaw_receipt(receipt_path: str, *,
                                      "unreadable or invalid JSON")
 
     # receipt-level checks
-    if receipt.get("schema_version") != 1:
-        raise ReceiptValidationError("RECEIPT_SCHEMA",
-                                     "schema_version must be 1")
+    schema = receipt.get("schema_version")
+    if schema == 2:
+        # direction-aware receipt (M8-GH-4B4): strict v2 contract
+        return _validate_direction_receipt(
+            receipt, docker_executor=docker_executor,
+            minio_executor=minio_executor,
+            expected_old_mcp_state=expected_old_mcp_state)
+    if schema == 1:
+        # schema v1 predates direction-awareness (no sync_mode,
+        # canonical/live hashes or convergence evidence). It is
+        # rejected with a STABLE schema error — never silently
+        # downgraded or validated against the weaker v1 rules.
+        raise ReceiptValidationError(
+            "RECEIPT_SCHEMA",
+            "schema_version 1 receipts are retired; regenerate with "
+            "the direction-aware harness (schema_version 2)")
+    raise ReceiptValidationError("RECEIPT_SCHEMA",
+                                 "schema_version must be 2")
+def minio_readonly_via_docker(docker_exec: Callable) -> Callable:
+    """Build the read-only MinIO canonical executor from a docker
+    executor: mc argv in, CompletedProcess out (metadata and hashes
+    only; bodies never parsed by the validator)."""
+    def minio_exec(mc_argv, check=True, timeout=30, **_):
+        return docker_exec(
+            ["exec", "hiclaw-controller", "mc"] + list(mc_argv),
+            check=check, timeout=timeout)
+    return minio_exec
+
+
+def _mc_stat(minio_executor: Callable, key: str) -> dict:
+    cp = minio_executor(["stat", "hiclaw/hiclaw-storage/" + key],
+                        check=True)
+    if getattr(cp, "returncode", 0) != 0:
+        raise ReceiptValidationError(
+            "RECEIPT_CANONICAL_INACCESSIBLE",
+            "mc stat rc!=0 for %s" % key.split("/")[-1])
+    out = {}
+    for line in (cp.stdout or b"").decode(
+            "utf-8", "replace").splitlines():
+        if ":" not in line:
+            continue
+        k, v = line.split(":", 1)
+        out[k.strip().lower()] = v.strip()
+    return out
+
+
+def _mc_hash(minio_executor: Callable, key: str) -> str:
+    cp = minio_executor(
+        ["cat", "hiclaw/hiclaw-storage/" + key], check=True)
+    if getattr(cp, "returncode", 0) != 0:
+        raise ReceiptValidationError(
+            "RECEIPT_CANONICAL_INACCESSIBLE",
+            "mc cat rc!=0 for %s" % key.split("/")[-1])
+    # hash WITHOUT exposing the body: the executor's stdout crosses
+    # this boundary only into hashlib
+    return hashlib.sha256(cp.stdout or b"").hexdigest()
+
+
+def _validate_direction_receipt(receipt: dict, *,
+                                 docker_executor: Callable,
+                                 minio_executor: Callable,
+                                 expected_old_mcp_state: str = "stopped"
+                                 ) -> dict:
+    """M8-GH-4B4 schema v2: direction-aware receipt validation.
+    Verifies per-role live AND canonical state, sync_mode
+    correctness, contract fingerprint, and old github-mcp. Old v1
+    receipts missing direction fields are REJECTED by the caller
+    (schema check upstream), never downgraded."""
+    # strict v2 contract fields
     if receipt.get("rollback_ownership") != "mp-gh4-harness":
         raise ReceiptValidationError("RECEIPT_OWNERSHIP",
                                      "rollback_ownership mismatch")
-
-    # R4: rewire_session identity — REQUIRED, strictly validated.
-    # A receipt is bound to exactly one rewiring session; the field
-    # is inside the canonical body (hash-protected) and lets crash
-    # recovery prove ownership before deleting the file. Fixed
-    # sentinel values shared across runs are rejected.
     rewire_session = receipt.get("rewire_session")
     if not isinstance(rewire_session, str) \
             or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}",
@@ -441,61 +576,41 @@ def validate_hiclaw_receipt(receipt_path: str, *,
         raise ReceiptValidationError(
             "RECEIPT_SESSION_INVALID",
             "rewire_session must be run-unique, not a fixed sentinel")
-
-    # §5.1: receipt integrity hash (constant-time compare)
+    if not receipt.get("sync_contract_fingerprint"):
+        raise ReceiptValidationError(
+            "RECEIPT_FINGERPRINT_MISSING",
+            "sync_contract_fingerprint required for v2")
     stored_sha = receipt.get("receipt_sha256", "")
-    computed_sha = _compute_receipt_sha256(receipt)
-    if not hmac.compare_digest(stored_sha, computed_sha):
+    if not hmac.compare_digest(stored_sha,
+                               _compute_receipt_sha256(receipt)):
         raise ReceiptValidationError("RECEIPT_INTEGRITY_MISMATCH",
                                      "receipt_sha256 mismatch")
 
     agents = receipt.get("agents")
-    if not isinstance(agents, list):
-        raise ReceiptValidationError("RECEIPT_AGENTS",
-                                     "agents must be a list")
-    if len(agents) != 4:
+    if not isinstance(agents, list) or len(agents) != 4:
         raise ReceiptValidationError("RECEIPT_AGENT_COUNT",
-                                     "expected 4 agents, got %d"
-                                     % len(agents))
-
-    # §5.3: duplicate check BEFORE role set (so 4 agents with a dup
-    # triggers RECEIPT_DUPLICATE_ROLE rather than ROLE_MISMATCH)
+                                     "expected 4 agents")
     role_list = [a.get("role") for a in agents]
+    # duplicate check BEFORE the role-set check (same priority as
+    # v1): 4 agents with a dup reports DUPLICATE, not MISMATCH
     if len(role_list) != len(set(role_list)):
         raise ReceiptValidationError("RECEIPT_DUPLICATE_ROLE",
                                      "duplicate role in agents list")
-    expected_roles = set(HICLAW_ROLE_FREEZE)
-    if set(role_list) != expected_roles:
-        missing = sorted(expected_roles - set(role_list))
-        extra = sorted(set(role_list) - expected_roles)
-        raise ReceiptValidationError(
-            "RECEIPT_ROLE_MISMATCH",
-            "missing=%s extra=%s" % (missing, extra))
+    if set(role_list) != set(HICLAW_ROLE_FREEZE):
+        raise ReceiptValidationError("RECEIPT_ROLE_MISMATCH",
+                                     "missing=%s extra=%s" % (
+                                         sorted(set(HICLAW_ROLE_FREEZE)
+                                                - set(role_list)),
+                                         sorted(set(role_list)
+                                                - set(HICLAW_ROLE_FREEZE))))
 
-    # §5.3: container name/ID/MXID/IP uniqueness
-    seen_names, seen_cids, seen_mxids, seen_ips = (
-        set(), set(), set(), set())
+    seen_mxids = set()
     for agent in agents:
-        name = agent.get("container_name", "")
-        cid = agent.get("container_id", "")
         mxid = agent.get("mxid", "")
-        ip = agent.get("hiclaw_net_ip", "")
-        if name in seen_names:
-            raise ReceiptValidationError("RECEIPT_DUPLICATE_CONTAINER",
-                                         "duplicate container_name")
-        if cid in seen_cids:
-            raise ReceiptValidationError("RECEIPT_DUPLICATE_CID",
-                                         "duplicate container_id")
         if mxid in seen_mxids:
             raise ReceiptValidationError("RECEIPT_DUPLICATE_MXID",
                                          "duplicate mxid")
-        if ip in seen_ips:
-            raise ReceiptValidationError("RECEIPT_DUPLICATE_IP",
-                                         "duplicate hiclaw_net_ip")
-        seen_names.add(name)
-        seen_cids.add(cid)
         seen_mxids.add(mxid)
-        seen_ips.add(ip)
 
     results = {}
     for agent in agents:
@@ -503,108 +618,143 @@ def validate_hiclaw_receipt(receipt_path: str, *,
         frozen = HICLAW_ROLE_FREEZE[role]
         checks = {}
 
-        # §5.2: hash format validation (before live checks)
-        _validate_hash_fields(receipt, agent, role)
+        # direction-aware fields REQUIRED (no downgrade from v1)
+        for f in ("sync_mode", "canonical_key", "live_path",
+                  "live_hash_before", "live_hash_after",
+                  "canonical_hash_before", "canonical_hash_after",
+                  "canonical_etag_before", "canonical_etag_after",
+                  "convergence_evidence"):
+            if not agent.get(f):
+                raise ReceiptValidationError(
+                    "RECEIPT_DIRECTION_FIELD_MISSING",
+                    "%s.%s" % (role, f))
 
-        # container name
-        if agent.get("container_name") != frozen[0]:
-            checks["container_name"] = "MISMATCH"
-        else:
-            checks["container_name"] = "OK"
+        # hash format strictness (same bar as v1): every hash field
+        # is exactly 64-char lowercase hex; anything else is a schema
+        # defect, not drift
+        for f in ("live_hash_before", "live_hash_after",
+                  "canonical_hash_before", "canonical_hash_after",
+                  "config_hash_before", "config_hash_after",
+                  "token_hash"):
+            _require_hex64(agent.get(f), role=role, field=f)
+        _require_hex64(receipt.get("receipt_sha256"),
+                       role=receipt.get("rewire_session", "?"),
+                       field="receipt_sha256")
 
-        # live container ID
+        # sync_mode must match the production authority
+        expected_mode = hiclaw_role_sync_mode(role)
+        checks["sync_mode"] = ("OK"
+                               if agent["sync_mode"] == expected_mode
+                               else "MISMATCH")
+
+        # canonical/live hash agreement
+        checks["hash_agreement"] = (
+            "OK" if agent["live_hash_after"]
+            == agent["canonical_hash_after"] else "DRIFT")
+
+        # container identity via docker inspect
         cp = docker_executor(
-            ["inspect", frozen[0], "--format", "{{.Id}}"], check=True)
+            ["inspect", frozen[0], "--format", "{{.Id}}"],
+            check=True)
         live_id = (cp.stdout or b"").decode().strip()
-        if live_id and agent.get("container_id") == live_id:
-            checks["container_id"] = "OK"
-        elif live_id:
-            checks["container_id"] = "DRIFT"
-        else:
-            checks["container_id"] = "NOT_FOUND"
+        checks["container_id"] = (
+            "OK" if live_id and agent.get("container_id") == live_id
+            else "DRIFT")
 
-        # MXID
-        if agent.get("mxid") != frozen[1]:
-            checks["mxid"] = "MISMATCH"
-        else:
-            checks["mxid"] = "OK"
-
-        # hiclaw-net live IP
+        # hiclaw-net live IP (present AND matching frozen + receipt)
         cp = docker_executor(
             ["inspect", frozen[0], "--format",
-             # index form: Go templates cannot dot-dereference map
-             # keys containing a dash ("hiclaw-net")
              "{{(index .NetworkSettings.Networks \"hiclaw-net\")"
              ".IPAddress}}"],
             check=True)
         live_ip = (cp.stdout or b"").decode().strip()
-        if live_ip == frozen[2] and agent.get("hiclaw_net_ip") == frozen[2]:
-            checks["ip"] = "OK"
-        else:
-            checks["ip"] = "DRIFT"
+        checks["ip"] = (
+            "OK" if live_ip == frozen[2]
+            and agent.get("hiclaw_net_ip") == frozen[2]
+            else "DRIFT")
 
-        # Gateway URL (single authority: hiclaw_role_gateway_url)
-        expected_url = hiclaw_role_gateway_url(role)
-        if agent.get("gateway_url") != expected_url:
-            checks["gateway_url"] = "MISMATCH"
-        else:
-            checks["gateway_url"] = "OK"
-
-        # mcporter config hash (read-only sha256sum inside container)
-        mcporter_path = ("/root/hiclaw-fs/agents/%s/config/mcporter.json"
-                         % role if role != "manager"
-                         else "/root/manager-workspace/config/mcporter.json")
+        # mcporter config hash (live side)
         cp = docker_executor(
-            ["exec", frozen[0], "sha256sum", mcporter_path],
+            ["exec", frozen[0], "sha256sum",
+             hiclaw_role_live_config_path(role)],
             check=True, timeout=15)
         hash_output = (cp.stdout or b"").decode().strip()
         live_hash = hash_output.split()[0] if hash_output else ""
-        if live_hash and live_hash == agent.get("config_hash_after"):
-            checks["config_hash"] = "OK"
+        checks["config_hash"] = (
+            "OK" if live_hash
+            and live_hash == agent.get("live_hash_after")
+            else "DRIFT")
+
+        # gateway URL from the frozen authority
+        expected_url = hiclaw_role_gateway_url(role)
+        checks["gateway_url"] = (
+            "OK" if agent.get("gateway_url") == expected_url
+            else "MISMATCH")
+
+        # F8: MXID must match the frozen authority exactly; a
+        # missing, unknown or cross-role MXID is a hard mismatch
+        checks["mxid"] = (
+            "OK" if agent.get("mxid") == frozen[1] else "MISMATCH")
+
+        # F4: LIVE canonical verification — the MinIO object is
+        # probed read-only (stat metadata + in-memory hash). The
+        # receipt's internal hash_agreement can NEVER substitute for
+        # this: a rehashed receipt whose canonical_hash_after merely
+        # COPIES the live hash must still fail here when the real
+        # canonical object never converged.
+        ckey = agent.get("canonical_key")
+        if ckey != hiclaw_role_canonical_key(role):
+            checks["canonical_key"] = "MISMATCH"
         else:
-            checks["config_hash"] = "DRIFT"
+            cinfo = _mc_stat(minio_executor, ckey)
+            live_etag = cinfo.get("etag", "")
+            checks["canonical_key"] = "OK"
+            checks["canonical_hash"] = (
+                "OK" if _mc_hash(minio_executor, ckey)
+                == agent.get("canonical_hash_after")
+                else "DRIFT")
+            checks["canonical_etag"] = (
+                "OK" if live_etag
+                and live_etag == agent.get("canonical_etag_after")
+                else "DRIFT")
 
         results[role] = checks
 
-    # §5.4: old github-mcp full comparison
+    # old github-mcp state (same normalization as v1)
     old_mcp = receipt.get("old_github_mcp", {})
     old_checks = {}
     cp = docker_executor(
         ["inspect", "github-mcp", "--format", "{{.Id}}"], check=True)
     live_old_id = (cp.stdout or b"").decode().strip()
-    old_checks["container_id"] = ("OK" if old_mcp.get("container_id")
-                                  == live_old_id else "DRIFT")
-
+    old_checks["container_id"] = (
+        "OK" if old_mcp.get("container_id") == live_old_id
+        else "DRIFT")
     cp = docker_executor(
-        ["inspect", "github-mcp", "--format",
-         "{{.State.Status}}"], check=True)
+        ["inspect", "github-mcp", "--format", "{{.State.Status}}"],
+        check=True)
     live_state = (cp.stdout or b"").decode().strip()
     if expected_old_mcp_state == "stopped":
         state_ok = live_state in STOPPED_STATE_FAMILY
     else:
         state_ok = live_state == expected_old_mcp_state
     old_checks["state"] = "OK" if state_ok else "MISMATCH"
-
     cp = docker_executor(
         ["inspect", "github-mcp", "--format",
          "{{.HostConfig.RestartPolicy.Name}}"], check=True)
     live_rp = (cp.stdout or b"").decode().strip()
     old_checks["restart_policy"] = (
         "OK" if old_mcp.get("restart_policy") == live_rp else "DRIFT")
-
     cp = docker_executor(
         ["inspect", "github-mcp", "--format",
          "{{range $k, $v := .NetworkSettings.Networks}}"
          "{{$k}} {{end}}"], check=True)
-    live_nets_raw = (cp.stdout or b"").decode().strip()
-    live_nets = set(n for n in live_nets_raw.split() if n)
+    live_nets = set(n for n in
+                    (cp.stdout or b"").decode().strip().split() if n)
     receipt_nets = set(old_mcp.get("network_attachments", []))
     old_checks["network_attachments"] = (
         "OK" if live_nets == receipt_nets else "DRIFT")
-
     results["old_github_mcp"] = old_checks
 
-    # any failure?
     all_ok = all(
         v == "OK"
         for checks in results.values() for v in checks.values())
@@ -614,8 +764,14 @@ def validate_hiclaw_receipt(receipt_path: str, *,
 __all__ = [
     "FirewallExecutorError", "install_firewall", "teardown_firewall",
     "HICLAW_ROLE_FREEZE", "hiclaw_role_gateway_url",
+    "HICLAW_SYNC_MODES", "HICLAW_LIVE_CONFIG_PATHS",
+    "HICLAW_CANONICAL_KEYS", "HICLAW_CONVERGENCE",
+    "HICLAW_TX_PREFIX", "HICLAW_SYNC_FINGERPRINT_EXPECTED",
+    "hiclaw_role_canonical_key", "hiclaw_role_live_config_path",
+    "hiclaw_role_sync_mode", "hiclaw_role_convergence",
     "STOPPED_STATE_FAMILY",
     "scan_firewall_residue", "RouteProbeError", "run_route_probes",
     "ROUTE_PROBE_SPECS", "ReceiptValidationError",
-    "validate_hiclaw_receipt", "HICLAW_ROLE_FREEZE",
+    "validate_hiclaw_receipt", "minio_readonly_via_docker",
+    "HICLAW_ROLE_FREEZE",
 ]

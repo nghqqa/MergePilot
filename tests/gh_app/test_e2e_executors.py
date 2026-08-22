@@ -360,24 +360,42 @@ def _hex(s):
 
 
 def _make_receipt(**overrides):
+    """Direction-aware (schema v2) receipt fixture: direction fields
+    present, live/canonical after-hashes agree AND are derived from
+    the canonical fixture bodies the MinIO executor serves."""
     receipt_extra = {"rewire_session": "unit-test-session-1"}
     receipt_extra.update(overrides.pop("extra", {}))
     agents = []
     for role, (cname, mxid, ip, path) in ex.HICLAW_ROLE_FREEZE.items():
+        import hashlib as _h
+        after = _h.sha256(_canonical_body(role)).hexdigest()
         agents.append({
             "role": role,
             "container_name": cname,
             "container_id": _hex(cname),
             "mxid": mxid,
             "hiclaw_net_ip": ip,
-            "gateway_url": "http://172.31.0.18:8083%s" % path,
+            "gateway_url": ex.hiclaw_role_gateway_url(role),
+            "sync_mode": ex.hiclaw_role_sync_mode(role),
+            "canonical_key": ex.hiclaw_role_canonical_key(role),
+            "live_path": ex.hiclaw_role_live_config_path(role),
+            "live_hash_before": _hex("before-" + role),
+            "live_hash_after": after,
+            "canonical_hash_before": _hex("cbefore-" + role),
+            "canonical_hash_after": after,
+            "canonical_etag_before": _hex("etag-" + role)[:32],
+            "canonical_etag_after": __import__("hashlib").md5(
+                _canonical_body(role)).hexdigest(),
+            "convergence_evidence": "live_converged",
             "config_hash_before": _hex("before-" + role),
-            "config_hash_after": _hex("after-" + role),
+            "config_hash_after": after,
             "token_hash": _hex("tok-" + role),
         })
     receipt = {
-        "schema_version": 1,
+        "schema_version": 2,
         "rewire_session": receipt_extra["rewire_session"],
+        "sync_contract_fingerprint": dict(
+            ex.HICLAW_SYNC_FINGERPRINT_EXPECTED),
         "agents": agents,
         "old_github_mcp": {
             "container_id": _hex("github-mcp"),
@@ -391,6 +409,39 @@ def _make_receipt(**overrides):
     receipt["receipt_sha256"] = ex._compute_receipt_sha256(receipt)
     receipt.update(overrides)
     return receipt
+
+
+def _canonical_body(role):
+    """The canonical MinIO object content behind a healthy receipt
+    fixture; hashes/etags are DERIVED from it (never invented)."""
+    return ('{"canon-after":"%s"}' % role).encode("utf-8")
+
+
+def _mc_exec_for(receipt):
+    """Read-only MinIO canonical executor bound to the receipt's
+    canonical state (mc argv in, CompletedProcess out)."""
+    import hashlib as _h
+
+    bodies = {a["canonical_key"]: _canonical_body(a["role"])
+              for a in receipt["agents"]
+              if a.get("canonical_key")}
+
+    def mc_exec(mc_argv, check=True, timeout=30, **_):
+        sub_cmd = mc_argv[0] if mc_argv else ""
+        target = mc_argv[1] if len(mc_argv) > 1 else ""
+        key = target.replace("hiclaw/hiclaw-storage/", "")
+        body = bodies.get(key)
+        if body is None:
+            return _CP(1, b"")
+        if sub_cmd == "cat":
+            return _CP(0, body)
+        if sub_cmd == "stat":
+            etag = _h.md5(body).hexdigest()
+            return _CP(0, ("Name: x\nDate: now\nSize: %d B\n"
+                           "ETag: %s\n"
+                           % (len(body), etag)).encode())
+        return _CP(0, b"")
+    return mc_exec
 
 
 def _matching_docker(receipt):
@@ -442,7 +493,7 @@ class TestRewireSessionContract(unittest.TestCase):
         self._write(receipt)
         result = ex.validate_hiclaw_receipt(
             self.receipt_path, docker_executor=_matching_docker(
-                receipt))
+                receipt), minio_executor=_mc_exec_for(receipt))
         self.assertTrue(result["verified"])
 
     def test_missing_session_rejected(self):
@@ -453,7 +504,8 @@ class TestRewireSessionContract(unittest.TestCase):
         with self.assertRaises(ex.ReceiptValidationError) as ctx:
             ex.validate_hiclaw_receipt(
                 self.receipt_path,
-                docker_executor=_matching_docker(receipt))
+                docker_executor=_matching_docker(receipt),
+                minio_executor=_mc_exec_for(receipt))
         self.assertEqual(ctx.exception.code, "RECEIPT_SESSION_INVALID")
 
     def test_blank_or_bad_format_rejected(self):
@@ -466,7 +518,8 @@ class TestRewireSessionContract(unittest.TestCase):
                 with self.assertRaises(ex.ReceiptValidationError) as ctx:
                     ex.validate_hiclaw_receipt(
                         self.receipt_path,
-                        docker_executor=_matching_docker(receipt))
+                        docker_executor=_matching_docker(receipt),
+                minio_executor=_mc_exec_for(receipt))
                 self.assertEqual(ctx.exception.code,
                                  "RECEIPT_SESSION_INVALID")
 
@@ -480,7 +533,8 @@ class TestRewireSessionContract(unittest.TestCase):
                 with self.assertRaises(ex.ReceiptValidationError) as ctx:
                     ex.validate_hiclaw_receipt(
                         self.receipt_path,
-                        docker_executor=_matching_docker(receipt))
+                        docker_executor=_matching_docker(receipt),
+                minio_executor=_mc_exec_for(receipt))
                 self.assertEqual(ctx.exception.code,
                                  "RECEIPT_SESSION_INVALID")
 
@@ -494,9 +548,179 @@ class TestRewireSessionContract(unittest.TestCase):
         with self.assertRaises(ex.ReceiptValidationError) as ctx:
             ex.validate_hiclaw_receipt(
                 self.receipt_path,
-                docker_executor=_matching_docker(receipt))
+                docker_executor=_matching_docker(receipt),
+                minio_executor=_mc_exec_for(receipt))
         self.assertEqual(ctx.exception.code,
                          "RECEIPT_INTEGRITY_MISMATCH")
+
+
+class TestDirectionSchemaV2Migration(unittest.TestCase):
+    """M8-GH-4B4 §5: schema v2 migration completeness. v1 receipts
+    are retired with a STABLE schema error; every direction-aware
+    field is hash-protected (tamper without rehash -> integrity
+    mismatch) and live-checked (tamper with rehash -> production
+    mismatch); hash formats stay strict."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.receipt_path = str(Path(self.tmpdir.name) / "receipt.json")
+
+    def tearDown(self):
+        self.tmpdir.cleanup()
+
+    def _write(self, receipt):
+        Path(self.receipt_path).write_text(
+            json.dumps(receipt), encoding="utf-8")
+
+    def _rehash(self, receipt):
+        receipt["receipt_sha256"] = ex._compute_receipt_sha256(receipt)
+
+    def _v1_receipt(self):
+        receipt = _make_receipt()
+        receipt["schema_version"] = 1
+        for agent in receipt["agents"]:
+            for f in ("sync_mode", "canonical_key", "live_path",
+                      "live_hash_before", "live_hash_after",
+                      "canonical_hash_before",
+                      "canonical_hash_after",
+                      "canonical_etag_before",
+                      "convergence_evidence"):
+                agent.pop(f, None)
+        receipt.pop("sync_contract_fingerprint", None)
+        self._rehash(receipt)
+        return receipt
+
+    def test_v1_schema_rejected_with_stable_code(self):
+        receipt = self._v1_receipt()
+        self._write(receipt)
+        with self.assertRaises(ex.ReceiptValidationError) as ctx:
+            ex.validate_hiclaw_receipt(
+                self.receipt_path,
+                docker_executor=_matching_docker(receipt),
+                minio_executor=_mc_exec_for(receipt))
+        self.assertEqual(ctx.exception.code, "RECEIPT_SCHEMA")
+
+    def test_unknown_schema_rejected_with_stable_code(self):
+        for bad in (0, 3, "2", None):
+            with self.subTest(schema=bad):
+                receipt = _make_receipt()
+                receipt["schema_version"] = bad
+                self._rehash(receipt)
+                self._write(receipt)
+                with self.assertRaises(ex.ReceiptValidationError) \
+                        as ctx:
+                    ex.validate_hiclaw_receipt(
+                        self.receipt_path,
+                        docker_executor=_matching_docker(receipt),
+                minio_executor=_mc_exec_for(receipt))
+                self.assertEqual(ctx.exception.code, "RECEIPT_SCHEMA")
+
+    def test_direction_fields_tamper_without_rehash(self):
+        agent_tamppers = {
+            "sync_mode": lambda a: a.update(
+                {"sync_mode": "canonical_to_live"}),
+            "canonical_key": lambda a: a.update(
+                {"canonical_key": "evil/key"}),
+            "live_path": lambda a: a.update(
+                {"live_path": "/evil/path"}),
+            "live_hash_after": lambda a: a.update(
+                {"live_hash_after": _hex("evil")}),
+            "canonical_hash_after": lambda a: a.update(
+                {"canonical_hash_after": _hex("evil")}),
+            "convergence_evidence": lambda a: a.update(
+                {"convergence_evidence": "evil-evidence"}),
+        }
+        cases = [("rewire_session",
+                  lambda r: r.update(
+                      {"rewire_session": "attacker"}))]
+        cases += [("agent." + f, (lambda f: (
+            lambda r: agent_tamppers[f](r["agents"][0])))(f))
+            for f in agent_tamppers]
+        for label, tamper in cases:
+            with self.subTest(field=label):
+                receipt = _make_receipt()
+                tamper(receipt)
+                self._write(receipt)      # hash NOT recomputed
+                with self.assertRaises(ex.ReceiptValidationError) \
+                        as ctx:
+                    ex.validate_hiclaw_receipt(
+                        self.receipt_path,
+                        docker_executor=_matching_docker(receipt),
+                minio_executor=_mc_exec_for(receipt))
+                self.assertEqual(ctx.exception.code,
+                                 "RECEIPT_INTEGRITY_MISMATCH")
+
+    def test_direction_fields_tamper_with_rehash(self):
+        agent_tamppers = {
+            "sync_mode": ("sync_mode",
+                          lambda a: a.update(
+                              {"sync_mode": "canonical_to_live"})),
+            "gateway_url": ("gateway_url",
+                            lambda a: a.update(
+                                {"gateway_url": "http://evil/x"})),
+            "live_hash_after": ("config_hash",
+                                lambda a: a.update(
+                                    {"live_hash_after":
+                                     _hex("evil")})),
+            "hash_agreement": ("hash_agreement",
+                               lambda a: a.update(
+                                   {"canonical_hash_after":
+                                    _hex("evil")})),
+            "container_id": ("container_id",
+                             lambda a: a.update(
+                                 {"container_id": "cid-DRIFTED"})),
+            "hiclaw_net_ip": ("ip",
+                              lambda a: a.update(
+                                  {"hiclaw_net_ip": "10.9.9.9"})),
+        }
+        for label, (check, tamper) in agent_tamppers.items():
+            with self.subTest(field=label, check=check):
+                # the docker side reflects the UNtampered world; the
+                # tampered+rehashed receipt must mismatch it live
+                pristine = _make_receipt()
+                receipt = _make_receipt()
+                tamper(receipt["agents"][0])
+                self._rehash(receipt)
+                self._write(receipt)
+                result = ex.validate_hiclaw_receipt(
+                    self.receipt_path,
+                    docker_executor=_matching_docker(pristine),
+                minio_executor=_mc_exec_for(pristine))
+                self.assertFalse(result["verified"])
+                self.assertNotEqual(
+                    result["checks"][receipt["agents"][0]["role"]]
+                    [check], "OK")
+
+    def test_fingerprint_tamper_is_hash_protected(self):
+        receipt = _make_receipt()
+        receipt["sync_contract_fingerprint"] = {
+            "worker_pull_period_seconds": 1}
+        self._write(receipt)              # NOT rehashed
+        with self.assertRaises(ex.ReceiptValidationError) as ctx:
+            ex.validate_hiclaw_receipt(
+                self.receipt_path,
+                docker_executor=_matching_docker(receipt),
+                minio_executor=_mc_exec_for(receipt))
+        self.assertEqual(ctx.exception.code,
+                         "RECEIPT_INTEGRITY_MISMATCH")
+
+    def test_direction_hash_formats_strict(self):
+        for field in ("live_hash_after", "canonical_hash_after",
+                      "token_hash"):
+            for bad in ("XYZ", "abc", "z" * 64, 42):
+                with self.subTest(field=field, bad=bad):
+                    receipt = _make_receipt()
+                    receipt["agents"][0][field] = bad
+                    self._rehash(receipt)
+                    self._write(receipt)
+                    with self.assertRaises(ex.ReceiptValidationError) \
+                            as ctx:
+                        ex.validate_hiclaw_receipt(
+                            self.receipt_path,
+                            docker_executor=_matching_docker(receipt),
+                minio_executor=_mc_exec_for(receipt))
+                    self.assertEqual(ctx.exception.code,
+                                     "RECEIPT_HASH_FORMAT")
 
 
 class TestStoppedStatePrecision(unittest.TestCase):
@@ -532,6 +756,7 @@ class TestStoppedStatePrecision(unittest.TestCase):
                 fd.containers["github-mcp"]["state"] = live_status
                 result = ex.validate_hiclaw_receipt(
                     self.receipt_path, docker_executor=fd,
+                    minio_executor=_mc_exec_for(receipt),
                     expected_old_mcp_state=expected)
                 self.assertEqual(
                     result["checks"]["old_github_mcp"]["state"], want)
@@ -545,6 +770,7 @@ class TestStoppedStatePrecision(unittest.TestCase):
         fd.containers["github-mcp"]["state"] = "exited"
         result = ex.validate_hiclaw_receipt(
             self.receipt_path, docker_executor=fd,
+            minio_executor=_mc_exec_for(_make_receipt()),
             expected_old_mcp_state="running")
         self.assertEqual(
             result["checks"]["old_github_mcp"]["state"], "MISMATCH")
@@ -573,7 +799,8 @@ class TestReceiptValidator(unittest.TestCase):
         self._write(receipt)
         fd = _matching_docker(receipt)
         result = ex.validate_hiclaw_receipt(
-            self.receipt_path, docker_executor=fd)
+            self.receipt_path, docker_executor=fd,
+                            minio_executor=_mc_exec_for(receipt))
         self.assertTrue(result["verified"], result["checks"])
         self.assertEqual(len(result["checks"]), 5)  # 4 roles + old_mcp
 
@@ -585,7 +812,8 @@ class TestReceiptValidator(unittest.TestCase):
         fd = _matching_docker(_make_receipt())
         with self.assertRaises(ex.ReceiptValidationError) as ctx:
             ex.validate_hiclaw_receipt(
-                self.receipt_path, docker_executor=fd)
+                self.receipt_path, docker_executor=fd,
+                            minio_executor=_mc_exec_for(receipt))
         self.assertEqual(ctx.exception.code, "RECEIPT_AGENT_COUNT")
 
     def test_container_id_drift(self):
@@ -595,7 +823,8 @@ class TestReceiptValidator(unittest.TestCase):
         containers["hiclaw-manager"]["id"] = "DIFFERENT-ID"
         fd = _FakeDocker(containers=containers)
         result = ex.validate_hiclaw_receipt(
-            self.receipt_path, docker_executor=fd)
+            self.receipt_path, docker_executor=fd,
+                            minio_executor=_mc_exec_for(receipt))
         self.assertFalse(result["verified"])
         self.assertEqual(
             result["checks"]["manager"]["container_id"], "DRIFT")
@@ -607,7 +836,8 @@ class TestReceiptValidator(unittest.TestCase):
         containers["hiclaw-worker-reviewer"]["ip"] = "10.99.99.99"
         fd = _FakeDocker(containers=containers)
         result = ex.validate_hiclaw_receipt(
-            self.receipt_path, docker_executor=fd)
+            self.receipt_path, docker_executor=fd,
+                            minio_executor=_mc_exec_for(receipt))
         self.assertFalse(result["verified"])
         self.assertEqual(
             result["checks"]["reviewer"]["ip"], "DRIFT")
@@ -619,7 +849,8 @@ class TestReceiptValidator(unittest.TestCase):
         self._write(receipt)
         fd = _matching_docker(receipt)
         result = ex.validate_hiclaw_receipt(
-            self.receipt_path, docker_executor=fd)
+            self.receipt_path, docker_executor=fd,
+                            minio_executor=_mc_exec_for(receipt))
         self.assertFalse(result["verified"])
 
     def test_config_hash_drift(self):
@@ -629,7 +860,8 @@ class TestReceiptValidator(unittest.TestCase):
         containers["hiclaw-worker-fixer"]["config_hash"] = "stale-hash"
         fd = _FakeDocker(containers=containers)
         result = ex.validate_hiclaw_receipt(
-            self.receipt_path, docker_executor=fd)
+            self.receipt_path, docker_executor=fd,
+                            minio_executor=_mc_exec_for(receipt))
         self.assertFalse(result["verified"])
         self.assertEqual(
             result["checks"]["fixer"]["config_hash"], "DRIFT")
@@ -641,7 +873,8 @@ class TestReceiptValidator(unittest.TestCase):
         containers["github-mcp"]["state"] = "running"  # should be stopped
         fd = _FakeDocker(containers=containers)
         result = ex.validate_hiclaw_receipt(
-            self.receipt_path, docker_executor=fd)
+            self.receipt_path, docker_executor=fd,
+                            minio_executor=_mc_exec_for(receipt))
         self.assertFalse(result["verified"])
         self.assertEqual(
             result["checks"]["old_github_mcp"]["state"], "MISMATCH")
@@ -653,14 +886,16 @@ class TestReceiptValidator(unittest.TestCase):
         with self.assertRaises(ex.ReceiptValidationError):
             ex.validate_hiclaw_receipt(
                 self.receipt_path,
-                docker_executor=_matching_docker(_make_receipt()))
+                docker_executor=_matching_docker(_make_receipt()),
+                minio_executor=_mc_exec_for(_make_receipt()))
 
     def test_no_secret_in_output(self):
         receipt = _make_receipt()
         self._write(receipt)
         fd = _matching_docker(receipt)
         result = ex.validate_hiclaw_receipt(
-            self.receipt_path, docker_executor=fd)
+            self.receipt_path, docker_executor=fd,
+                            minio_executor=_mc_exec_for(receipt))
         blob = str(result) + str(fd.calls)
         for forbidden in ("ghp_", "ghs_", "syt_", "BEGIN PRIVATE",
                           "password=", "postgresql://"):
@@ -671,7 +906,8 @@ class TestReceiptValidator(unittest.TestCase):
         self._write(receipt)
         fd = _matching_docker(receipt)
         ex.validate_hiclaw_receipt(
-            self.receipt_path, docker_executor=fd)
+            self.receipt_path, docker_executor=fd,
+                            minio_executor=_mc_exec_for(receipt))
         for call in fd.calls:
             verb = call[0]
             self.assertIn(verb, ("inspect", "exec"),
@@ -926,7 +1162,8 @@ class TestReceiptR1Fixes(unittest.TestCase):
         self._write(receipt)
         fd = _matching_docker(receipt)
         result = ex.validate_hiclaw_receipt(
-            self.receipt_path, docker_executor=fd)
+            self.receipt_path, docker_executor=fd,
+                            minio_executor=_mc_exec_for(receipt))
         self.assertTrue(result["verified"])
 
     def test_receipt_integrity_hash_mismatch(self):
@@ -936,7 +1173,8 @@ class TestReceiptR1Fixes(unittest.TestCase):
         with self.assertRaises(ex.ReceiptValidationError) as ctx:
             ex.validate_hiclaw_receipt(
                 self.receipt_path,
-                docker_executor=_matching_docker(receipt))
+                docker_executor=_matching_docker(receipt),
+                minio_executor=_mc_exec_for(receipt))
         self.assertEqual(ctx.exception.code,
                          "RECEIPT_INTEGRITY_MISMATCH")
 
@@ -956,7 +1194,8 @@ class TestReceiptR1Fixes(unittest.TestCase):
         with self.assertRaises(ex.ReceiptValidationError) as ctx:
             ex.validate_hiclaw_receipt(
                 self.receipt_path,
-                docker_executor=_matching_docker(receipt))
+                docker_executor=_matching_docker(receipt),
+                minio_executor=_mc_exec_for(receipt))
         self.assertEqual(ctx.exception.code, "RECEIPT_HASH_FORMAT")
 
     def test_receipt_extra_role_rejected(self):
@@ -967,7 +1206,8 @@ class TestReceiptR1Fixes(unittest.TestCase):
         with self.assertRaises(ex.ReceiptValidationError) as ctx:
             ex.validate_hiclaw_receipt(
                 self.receipt_path,
-                docker_executor=_matching_docker(receipt))
+                docker_executor=_matching_docker(receipt),
+                minio_executor=_mc_exec_for(receipt))
         self.assertEqual(ctx.exception.code, "RECEIPT_ROLE_MISMATCH")
 
     def test_receipt_duplicate_role_rejected(self):
@@ -980,7 +1220,8 @@ class TestReceiptR1Fixes(unittest.TestCase):
         with self.assertRaises(ex.ReceiptValidationError) as ctx:
             ex.validate_hiclaw_receipt(
                 self.receipt_path,
-                docker_executor=_matching_docker(receipt))
+                docker_executor=_matching_docker(receipt),
+                minio_executor=_mc_exec_for(receipt))
         self.assertEqual(ctx.exception.code, "RECEIPT_DUPLICATE_ROLE")
 
     def test_old_mcp_id_drift(self):
@@ -990,7 +1231,8 @@ class TestReceiptR1Fixes(unittest.TestCase):
         containers["github-mcp"]["id"] = _hex("WRONG-ID")
         fd = _FakeDocker(containers=containers)
         result = ex.validate_hiclaw_receipt(
-            self.receipt_path, docker_executor=fd)
+            self.receipt_path, docker_executor=fd,
+                            minio_executor=_mc_exec_for(receipt))
         self.assertFalse(result["verified"])
         self.assertEqual(
             result["checks"]["old_github_mcp"]["container_id"],
@@ -1003,7 +1245,8 @@ class TestReceiptR1Fixes(unittest.TestCase):
         containers["github-mcp"]["restart_policy"] = "always"
         fd = _FakeDocker(containers=containers)
         result = ex.validate_hiclaw_receipt(
-            self.receipt_path, docker_executor=fd)
+            self.receipt_path, docker_executor=fd,
+                            minio_executor=_mc_exec_for(receipt))
         self.assertFalse(result["verified"])
         self.assertEqual(
             result["checks"]["old_github_mcp"]["restart_policy"],
@@ -1017,7 +1260,8 @@ class TestReceiptR1Fixes(unittest.TestCase):
             "mcp-backend-net", "EXTRA_NET"]
         fd = _FakeDocker(containers=containers)
         result = ex.validate_hiclaw_receipt(
-            self.receipt_path, docker_executor=fd)
+            self.receipt_path, docker_executor=fd,
+                            minio_executor=_mc_exec_for(receipt))
         self.assertFalse(result["verified"])
         self.assertEqual(
             result["checks"]["old_github_mcp"]["network_attachments"],
@@ -1030,7 +1274,8 @@ class TestReceiptR1Fixes(unittest.TestCase):
         containers["github-mcp"]["networks"] = []
         fd = _FakeDocker(containers=containers)
         result = ex.validate_hiclaw_receipt(
-            self.receipt_path, docker_executor=fd)
+            self.receipt_path, docker_executor=fd,
+                            minio_executor=_mc_exec_for(receipt))
         self.assertFalse(result["verified"])
         self.assertEqual(
             result["checks"]["old_github_mcp"]["network_attachments"],
@@ -1385,6 +1630,122 @@ class TestReceiptCanonicalizationExplicit(unittest.TestCase):
                              separators=(",", ":"),
                              ensure_ascii=True)
         self.assertIn("\\u", raw)  # verified escaped
+
+
+class TestR2ValidatorClosures(unittest.TestCase):
+    """R2 F4/F8/F9: live canonical verification, MXID checks and
+    the canonical_etag_after contract."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.receipt_path = str(Path(self.tmpdir.name) / "receipt.json")
+
+    def tearDown(self):
+        self.tmpdir.cleanup()
+
+    def _write(self, receipt):
+        Path(self.receipt_path).write_text(
+            json.dumps(receipt), encoding="utf-8")
+
+    def _rehash(self, receipt):
+        receipt["receipt_sha256"] = ex._compute_receipt_sha256(receipt)
+
+    def _validate(self, receipt, minio_exec=None):
+        return ex.validate_hiclaw_receipt(
+            self.receipt_path,
+            docker_executor=_matching_docker(receipt),
+            minio_executor=minio_exec or _mc_exec_for(receipt))
+
+    def test_f4_lying_canonical_hash_rejected(self):
+        # THE F4 repro: internal canonical_hash_after is set to the
+        # LIVE hash and the receipt is properly rehashed, but the
+        # REAL canonical object never converged (legacy content) —
+        # only a live MinIO probe can catch this
+        receipt = _make_receipt()
+        lying = dict(receipt)
+        live_hash = receipt["agents"][0]["live_hash_after"]
+        for agent in lying["agents"]:
+            agent["canonical_hash_after"] = live_hash
+            agent["canonical_etag_after"] = "0" * 32
+        self._rehash(lying)
+        self._write(lying)
+
+        def legacy_minio(mc_argv, check=True, timeout=30, **_):
+            # canonical plane serves LEGACY content, not the receipt
+            import hashlib as _h
+            body = b'{"legacy-canonical": true}'
+            if mc_argv[0] == "cat":
+                return _CP(0, body)
+            return _CP(0, ("Name: x\nDate: now\nSize: %d B\n"
+                           "ETag: %s\n"
+                           % (len(body),
+                              _h.md5(body).hexdigest())).encode())
+        result = self._validate(lying, minio_exec=legacy_minio)
+        self.assertFalse(result["verified"])
+        mgr = result["checks"][lying["agents"][0]["role"]]
+        self.assertEqual(mgr["canonical_hash"], "DRIFT")
+        self.assertEqual(mgr["canonical_etag"], "DRIFT")
+
+    def test_f4_canonical_inaccessible_fail_closed(self):
+        receipt = _make_receipt()
+        self._write(receipt)
+
+        def dead_minio(mc_argv, check=True, timeout=30, **_):
+            return _CP(1, b"")
+        with self.assertRaises(ex.ReceiptValidationError) as ctx:
+            self._validate(receipt, minio_exec=dead_minio)
+        self.assertEqual(ctx.exception.code,
+                         "RECEIPT_CANONICAL_INACCESSIBLE")
+
+    def test_f8_mxid_mismatch_and_duplicate(self):
+        receipt = _make_receipt()
+        receipt["agents"][0]["mxid"] = "@evil:"
+        receipt["agents"][0]["mxid"] += receipt["agents"][0]["mxid"].split(":", 1)[1]
+        self._rehash(receipt)
+        self._write(receipt)
+        result = self._validate(receipt)
+        self.assertFalse(result["verified"])
+        self.assertEqual(
+            result["checks"][receipt["agents"][0]["role"]]["mxid"],
+            "MISMATCH")
+        # duplicate MXID across agents is a hard schema error
+        receipt2 = _make_receipt()
+        receipt2["agents"][1]["mxid"] = receipt2["agents"][0]["mxid"]
+        self._rehash(receipt2)
+        self._write(receipt2)
+        with self.assertRaises(ex.ReceiptValidationError) as ctx:
+            self._validate(receipt2)
+        self.assertEqual(ctx.exception.code,
+                         "RECEIPT_DUPLICATE_MXID")
+
+    def test_f9_canonical_etag_after_contract(self):
+        # missing -> direction field error
+        receipt = _make_receipt()
+        receipt["agents"][0].pop("canonical_etag_after")
+        self._rehash(receipt)
+        self._write(receipt)
+        with self.assertRaises(ex.ReceiptValidationError) as ctx:
+            self._validate(receipt)
+        self.assertEqual(ctx.exception.code,
+                         "RECEIPT_DIRECTION_FIELD_MISSING")
+        # tamper WITHOUT rehash -> integrity mismatch
+        receipt2 = _make_receipt()
+        receipt2["agents"][0]["canonical_etag_after"] = "f" * 32
+        self._write(receipt2)
+        with self.assertRaises(ex.ReceiptValidationError) as ctx:
+            self._validate(receipt2)
+        self.assertEqual(ctx.exception.code,
+                         "RECEIPT_INTEGRITY_MISMATCH")
+        # rehash but live etag differs -> canonical ETag drift
+        receipt3 = _make_receipt()
+        receipt3["agents"][0]["canonical_etag_after"] = "e" * 32
+        self._rehash(receipt3)
+        self._write(receipt3)
+        result = self._validate(receipt3)
+        self.assertFalse(result["verified"])
+        self.assertEqual(
+            result["checks"][receipt3["agents"][0]["role"]]
+            ["canonical_etag"], "DRIFT")
 
 
 if __name__ == "__main__":
