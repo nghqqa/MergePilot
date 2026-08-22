@@ -3392,5 +3392,29 @@ class TestWorkerOnDemandPull(HarnessTestBase):
                                  "worker live written: %r" % (argv,))
 
 
+class TestSessionFormatContract(HarnessTestBase):
+    """Third real apply failed HARNESS_RECEIPT_VALIDATION_FAILED ->
+    RECEIPT_SESSION_INVALID: the default session id embedded the raw
+    ISO timestamp (with ':'), which the production validator's
+    session contract rejects. The default must be sanitized."""
+
+    def test_default_session_matches_validator_regex(self):
+        import re
+        sample = hw.session_sanitized("rewire-" + hw._now_iso())
+        self.assertTrue(re.fullmatch(
+            r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", sample), sample)
+        # and a full apply produces a validator-legal session id
+        world = FakeSyncWorld()
+        j = self.root / "j-sess.json"
+        r = self.root / "r-sess.json"
+        self._apply(world, journal=j, receipt=r, session=None)
+        disk = json.loads(j.read_text())
+        self.assertTrue(re.fullmatch(
+            r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}",
+            disk["session"]), disk["session"])
+        receipt = json.loads(r.read_text())
+        self.assertEqual(receipt["rewire_session"], disk["session"])
+
+
 if __name__ == "__main__":
     unittest.main()

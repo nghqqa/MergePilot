@@ -1064,7 +1064,12 @@ def apply(*, journal_path, receipt_path, docker: DockerAdapter = None,
     docker = docker or DockerAdapter(_default_docker_executor())
     minio = minio or MinioAdapter(_default_docker_executor())
     writer = writer or AtomicFileWriter()
-    session = session or ("rewire-" + _now_iso())
+    # the default session id must satisfy the production receipt
+    # validator's contract (^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$); a
+    # raw ISO timestamp contains ':' which the validator rejects —
+    # sanitize (third real apply failed on exactly this)
+    session = session or session_sanitized(
+        "rewire-" + _now_iso())
     journal_path = Path(journal_path)
     receipt_path = Path(receipt_path)
     root = journal_path.parent
