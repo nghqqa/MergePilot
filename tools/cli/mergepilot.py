@@ -1758,8 +1758,12 @@ def _execute_github_e2e_start(args, project_dir, planner, paths,
             return by_service.get(service, [])
 
         def db_bootstrap():
-            prepare_database(docker, planner, None, project_dir,
-                             reader_pw)
+            # the showcase seed generator comes from the same
+            # versioned checkout as the planner (first real run
+            # passed None -> AttributeError at the seed stage)
+            _, _showcase = _load_planner(project_dir)
+            prepare_database(docker, planner, _showcase,
+                             project_dir, reader_pw)
 
         # the five default-mode services (postgres/gh-webhook/
         # demo-console/console-edge/preflight) reference the
