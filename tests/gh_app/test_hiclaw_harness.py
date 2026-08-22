@@ -561,6 +561,10 @@ class FakeSyncWorld:
                               for k in sorted(keys))
                 return _cp(0, out.encode())
             if sub == "copy":
+                # the deployed mc does not recognize `copy` — the
+                # fake must be no more permissive than production
+                return _cp(1, b"mc: `copy` is not a recognized command")
+            if sub == "cp":
                 src = world._strip_bucket(rest[0])
                 dst = world._strip_bucket(rest[1])
                 if src not in world.objects:
@@ -3069,6 +3073,72 @@ class TestFakeProductionParity(HarnessTestBase):
             (body_a, body_b))
         self.assertIn(fake_world.objects[self.KEY],
                       (body_a, body_b))
+
+
+class TestMinioCpHotfix(HarnessTestBase):
+    """M8-GH-4B5: the production copy verb is `cp` (the deployed mc
+    RELEASE.2025-08-13 does not recognize `copy`); the fake is no
+    more permissive than the real client; a cp failure fails closed
+    before any role mutation."""
+
+    def test_minio_copy_uses_real_cp_command(self):
+        # the production audit must carry the REAL verb that the
+        # deployed mc executes
+        world = FakeSyncWorld()
+        docker, minio = self._adapters(world)
+        src = ex.hiclaw_role_canonical_key("manager")
+        dst = "%s/cp-audit/manager/mcporter.json" % (
+            ex.HICLAW_TX_PREFIX,)
+        minio.copy(src, dst, dst_prefix=ex.HICLAW_TX_PREFIX)
+        cp_cmds = [c for c in minio.calls
+                   if len(c) > 1 and c[1] in ("cp", "copy")]
+        self.assertEqual(len(cp_cmds), 1)
+        self.assertEqual(cp_cmds[0][:2], ["mc", "cp"])
+        # destination actually materialized with source bytes
+        self.assertEqual(
+            world.objects[dst], world.objects[src])
+
+    def test_fake_rejects_removed_copy_alias(self):
+        # a raw `copy` invocation must be refused by the fake exactly
+        # as the deployed mc refuses it (rc=1)
+        world = FakeSyncWorld()
+        _, minio = self._adapters(world)
+        with self.assertRaises(hw.HarnessError) as ctx:
+            minio._mc(["copy",
+                       "hiclaw/hiclaw-storage/%s" % ex
+                       .hiclaw_role_canonical_key("manager"),
+                       "hiclaw/hiclaw-storage/%s/x" % ex
+                       .HICLAW_TX_PREFIX])
+        self.assertEqual(ctx.exception.code, "HARNESS_APPLY_FAILED")
+
+    def test_cp_failure_precedes_role_mutation(self):
+        # backup cp failure: zero live/canonical mutation, clean
+        # auto-rollback, no receipt, lock released, no backup residue
+        j = self.root / "j-cpfail.json"
+        r = self.root / "r-cpfail.json"
+        world = FakeSyncWorld()
+        world.fail_tx_copy = {"manager"}
+        with self.assertRaises(hw.HarnessError) as ctx:
+            self._apply(world, journal=j, receipt=r, session="cpfail")
+        self.assertEqual(ctx.exception.code, "HARNESS_APPLY_FAILED")
+        # zero mutations anywhere
+        self.assertEqual(world.live_write_calls, 0)
+        self.assertEqual(world.canonical_put_calls, 0)
+        for role in hw.ROLES:
+            self.assertTrue(world.role_at_legacy(role), role)
+        # honest rolled-back journal, no receipt
+        disk = json.loads(j.read_text())
+        self.assertEqual(disk["status"], "rolled-back")
+        self.assertEqual(disk["rollback_diagnostics"], [])
+        self.assertEqual(disk["rollback_residue"], [])
+        self.assertFalse(r.exists())
+        # no backup object survived (cp failed -> nothing created)
+        bkey = "%s/%s/manager/mcporter.json" % (
+            ex.HICLAW_TX_PREFIX, "cpfail")
+        self.assertNotIn(bkey, world.objects)
+        # lock cleanly tombstoned RELEASED
+        self.assertTrue(self._lock_released(world),
+                        self._lock_state(world))
 
 
 if __name__ == "__main__":

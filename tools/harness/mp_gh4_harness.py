@@ -385,7 +385,10 @@ class MinioAdapter:
              dst_prefix=None) -> None:
         _validate_object_key(src_key)
         _validate_object_key(dst_key, expect_prefix=dst_prefix)
-        self._mc(["copy", _bucket(src_key), _bucket(dst_key)])
+        # the deployed mc (RELEASE.2025-08-13) only recognizes `cp`;
+        # `copy` is not a command there — the audit records the real
+        # verb that executed
+        self._mc(["cp", _bucket(src_key), _bucket(dst_key)])
 
     def remove(self, key: str, *, expect_prefix=None) -> None:
         _validate_object_key(key, expect_prefix=expect_prefix)
