@@ -485,6 +485,14 @@ def execute_e2e_container_setup(docker_executor, service: str, *,
         raise PrereqConfigError("CONTAINER_CREATE_FAILED", service)
     container_journal[service] = cid
     try:
+        # a container created with --network none cannot be joined to
+        # further networks on this docker generation ("container
+        # cannot be connected to multiple networks with one of the
+        # networks in private (none) mode"): detach the private none
+        # endpoint first — the production E2E start failed on the
+        # controller's SECOND connect before this
+        docker_executor(["network", "disconnect", "none", name],
+                        check=True)
         for connect_argv in plan_e2e_container_connects(service):
             docker_executor(connect_argv, check=True)
     except Exception:

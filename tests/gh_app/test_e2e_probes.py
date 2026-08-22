@@ -369,5 +369,65 @@ class TestProbes(unittest.TestCase):
             self.assertNotIn(forbidden, blob)
 
 
+class TestDisconnectNoneBeforeConnects(unittest.TestCase):
+    """Real E2E start failed E2E_CONTAINER_SETUP_FAILED(controller):
+    the daemon refuses a SECOND network connect while the private
+    'none' endpoint is still attached. The executor must detach
+    'none' before the connect sequence."""
+
+    def test_disconnect_none_precedes_connects(self):
+        calls = []
+
+        def docker_exec(argv, check=True, timeout=60, **_):
+            calls.append(list(argv))
+            cp = _fake_ok()
+            cp.returncode = 0
+            return cp
+
+        journal = {}
+        cid = ep.execute_e2e_container_setup(
+            docker_exec, "controller",
+            image_ref="sha256:ab", env_file="/e", mounts=[],
+            container_journal=journal)
+        self.assertTrue(cid)
+        # find the disconnect and the first connect
+        disc = next(i for i, c in enumerate(calls)
+                    if c[:3] == ["network", "disconnect", "none"])
+        conn = next(i for i, c in enumerate(calls)
+                    if c[:2] == ["network", "connect"])
+        self.assertLess(disc, conn)
+        # disconnect targets the production container name
+        self.assertEqual(calls[disc],
+                         ["network", "disconnect", "none",
+                          "mergepilot-isolated-controller-1"])
+
+    def test_disconnect_failure_removes_container(self):
+        calls = []
+
+        def docker_exec(argv, check=True, timeout=60, **_):
+            calls.append(list(argv))
+            cp = _fake_ok()
+            cp.returncode = 0
+            if argv[:3] == ["network", "disconnect", "none"]:
+                cp.returncode = 1
+                if check:
+                    raise RuntimeError("disconnect rc=1")
+            return cp
+
+        journal = {}
+        with self.assertRaises(Exception):
+            ep.execute_e2e_container_setup(
+                docker_exec, "controller", image_ref="sha256:ab",
+                env_file="/e", mounts=[], container_journal=journal)
+        self.assertEqual(journal, {})
+        self.assertIn(["rm", "-f", "id"], calls)
+
+
+def _fake_ok():
+    import subprocess
+    cp = subprocess.CompletedProcess([], 0, b"id", b"")
+    return cp
+
+
 if __name__ == "__main__":
     unittest.main()
