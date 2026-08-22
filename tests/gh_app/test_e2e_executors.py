@@ -1748,5 +1748,51 @@ class TestR2ValidatorClosures(unittest.TestCase):
             ["canonical_etag"], "DRIFT")
 
 
+class TestRuleNormalizationRealHost(unittest.TestCase):
+    """Real E2E run failed FIREWALL_VERIFY_FAILED: the committed
+    rules WERE present but normalization missed two serialization
+    differences — bare IPv4 vs /32, and '-p tcp -m tcp --dport N'
+    expansion."""
+
+    def test_bare_ipv4_normalized_to_slash32(self):
+        a = ex._normalize_rule_for_compare(
+            "-A CH -s 10.0.0.1 -j X")
+        b = ex._normalize_rule_for_compare(
+            "-A CH -s 10.0.0.1/32 -j X")
+        self.assertEqual(a, b)
+
+    def test_subnets_not_rewritten(self):
+        a = ex._normalize_rule_for_compare(
+            "-A CH -s 10.0.0.0/24 -j X")
+        self.assertIn("/24", a)
+
+    def test_m_tcp_expansion_normalized(self):
+        a = ex._normalize_rule_for_compare(
+            "-A C -p tcp --dport 6167 -j A")
+        b = ex._normalize_rule_for_compare(
+            "-A C -p tcp -m tcp --dport 6167 -j A")
+        self.assertEqual(a, b)
+
+    def test_m_udp_sport_expansion_normalized(self):
+        a = ex._normalize_rule_for_compare(
+            "-A C -p udp --sport 53 -j A")
+        b = ex._normalize_rule_for_compare(
+            "-A C -p udp -m udp --sport 53 -j A")
+        self.assertEqual(a, b)
+
+    def test_blob_rule_matches_saved_rule(self):
+        blob = ('-A MP-EG-x -s 172.31.0.2 -d 172.22.0.2 '
+                '-p tcp --dport 6167 -m conntrack '
+                '--ctstate NEW,ESTABLISHED -j ACCEPT '
+                '-m comment --comment "t"')
+        saved = ('-A MP-EG-x -s 172.31.0.2/32 -d 172.22.0.2/32 '
+                 '-p tcp -m tcp --dport 6167 -m conntrack '
+                 '--ctstate NEW,ESTABLISHED '
+                 '-m comment --comment "t" -j ACCEPT')
+        self.assertEqual(
+            ex._normalize_rule_for_compare(blob),
+            ex._normalize_rule_for_compare(saved))
+
+
 if __name__ == "__main__":
     unittest.main()

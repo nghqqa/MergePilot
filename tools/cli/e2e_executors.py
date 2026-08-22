@@ -35,13 +35,24 @@ def _normalize_rule_for_compare(rule_text: str) -> str:
     """Normalize an iptables-save rule line for comparison with a
     restore-blob rule. Handles the -I CH 1 vs -A CH serialization
     difference: '-I CH 1 ...' in the blob installs at position 1 but
-    iptables-save emits it as '-A CH ...' (no rulenum)."""
+    iptables-save emits it as '-A CH ...' (no rulumen). Also
+    normalizes bare-IPv4 vs /32 serialization (iptables-save
+    appends /32 to host addresses; the restore blob omits it)."""
     text = rule_text.strip()
     # strip ownership comment (compared separately via tag)
     text = re.sub(r'\s*-m comment --comment "[^"]*"', "", text)
     text = re.sub(r"\s+", " ", text).strip()
     # normalize '-I CH 1 ' -> '-A CH ' (rulenum is positional, not semantic)
     text = re.sub(r"^-I (\S+) \d+ ", r"-A \1 ", text)
+    # bare IPv4 host address -> explicit /32 (both sides normalized)
+    text = re.sub(
+        r"(?<![\w/.])(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(?![\w/.])",
+        r"\1/32", text)
+    # iptables-save serializes '-p tcp --dport N' as '-p tcp -m tcp
+    # --dport N' (implicit match module expansion); normalize both
+    # sides by dropping the redundant module re-declaration
+    text = re.sub(r" -m (tcp|udp|icmp)(?= --dport| --sport)",
+                  "", text)
     return text
 
 
