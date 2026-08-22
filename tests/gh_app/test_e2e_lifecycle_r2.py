@@ -776,5 +776,27 @@ class TestWslMountConversion(unittest.TestCase):
         self.assertTrue(out.startswith("/mnt/d/"))
 
 
-if __name__ == "__main__":
-    unittest.main()
+class TestStaleOwnedContainerCleanup(unittest.TestCase):
+    """A failed run leaves the never-started postgres container in
+    'created' state (the _fail fires before its cid reaches the
+    journal, so rollback misses it). The retry's docker run then
+    conflicts on the fixed name. The default-service loop must reap
+    the owned name — but ONLY a State.Status=='created' holder
+    (running/exited means foreign ownership: the run fails closed
+    on the conflict instead of killing it)."""
+
+    def test_guarded_reap_precedes_run(self):
+        import e2e_lifecycle as el
+        src = open(el.__file__, encoding="utf-8").read()
+        probe_guard = '"{{.State.Status}}"'
+        i = src.find(probe_guard)
+        self.assertGreater(i, -1, "status probe guard present")
+        window = src[i:i + 600]
+        self.assertIn('["rm", "-f", name]', window,
+                      "guarded reap must follow the status probe")
+        self.assertIn("== b\"created\"", window,
+                      "reap restricted to never-started state")
+        self.assertIn("docker_executor(list(argv), check=True)",
+                      window,
+                      "reap and planned run must be adjacent")
+

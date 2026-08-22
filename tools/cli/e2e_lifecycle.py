@@ -530,6 +530,20 @@ def run_e2e_start(*, config: dict,
                 _fail("E2E_SERVICE_PLAN_MISSING", service)
             name = "mergepilot-isolated-%s-1" % service
             try:
+                # reap a stale OWNED never-started container from
+                # an earlier failed run (_fail fired before the cid
+                # reached the journal). ONLY when not running: a
+                # running holder means foreign ownership -> leave it
+                # and let the run below fail closed on the conflict
+                try:
+                    probe = docker_executor(
+                        ["inspect", name, "--format",
+                         "{{.State.Status}}"], check=False)
+                    if getattr(probe, "returncode", 1) == 0 and                             (probe.stdout or b"").strip() == b"created":
+                        docker_executor(["rm", "-f", name],
+                                        check=False)
+                except Exception:
+                    pass
                 docker_executor(list(argv), check=True)
                 cid = _container_id(docker_executor, name)
                 if not cid:
