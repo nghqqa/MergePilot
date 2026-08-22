@@ -19,6 +19,7 @@ Sole orchestrator for E2E-mode start/stop/status/cleanup. The CLI's
 from __future__ import annotations
 
 import json
+import re
 import time
 import urllib.request
 from pathlib import Path
@@ -78,6 +79,35 @@ class E2ELifecycleError(Exception):
 
 
 # ── §3: prerequisite config loading + gate (zero side effects) ────────────
+
+_WIN_PATH_RE = re.compile(r"^([A-Za-z]):[\\/](.*)$")
+
+
+def _to_wsl_source(path: str) -> str:
+    r"""Mount sources must be WSL-visible: docker runs INSIDE the
+    distro, so a Windows drive path (D:\x\y) crosses as /mnt/d/x/y —
+    the same mapping _to_wsl_path applies to --env-file arguments in
+    the CLI. Unconverted backslash paths reach the daemon mangled
+    (D:x y) and every container create fails (the first real E2E
+    start failed on exactly this)."""
+    m = _WIN_PATH_RE.match(str(path))
+    if not m:
+        return str(path).replace("\\", "/")
+    drive, rest = m.group(1).lower(), m.group(2).replace("\\", "/")
+    return "/mnt/%s/%s" % (drive, rest)
+
+
+def _wsl_mounts(mounts: list) -> list:
+    """Convert ['-v', '<src>:<dst>:<mode>', ...] sources."""
+    out = []
+    for i, frag in enumerate(mounts):
+        if i % 2 == 0:
+            out.append(frag)
+            continue
+        src, _sep, tail = frag.rpartition(":")
+        out.append("%s:%s" % (_to_wsl_source(src), tail))
+    return out
+
 
 def load_e2e_prerequisite_config(path) -> dict:
     """Strictly load + validate the 20-key prerequisite config.
@@ -481,7 +511,8 @@ def run_e2e_start(*, config: dict,
             env_file = env_file_resolver(service)
         else:
             env_file = _absolute_env_file(runtime_directory, service)
-        mounts = rs.plan_runtime_mounts(service, config=config)
+        mounts = _wsl_mounts(
+            rs.plan_runtime_mounts(service, config=config))
         try:
             ep.execute_e2e_container_setup(
                 docker_executor, service,

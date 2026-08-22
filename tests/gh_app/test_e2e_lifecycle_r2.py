@@ -739,5 +739,42 @@ class TestStatusSanitized(unittest.TestCase):
         self.assertEqual(result["_stage"], "complete")
 
 
+class TestWslMountConversion(unittest.TestCase):
+    """First real E2E start failed E2E_CONTAINER_SETUP_FAILED because
+    Windows drive-letter mount sources reached the in-distro docker
+    daemon with backslashes eaten. The lifecycle must map them to
+    /mnt/<drive>/... exactly like --env-file handling."""
+
+    def test_windows_mount_sources_become_wsl_paths(self):
+        import e2e_lifecycle as el
+        win_a = "D:" + chr(92) + "goai" + chr(92) + "secrets" \
+            + chr(92) + "room-map.yaml"
+        win_b = "C:" + chr(92) + "a b" + chr(92) + "policy.yaml"
+        mounts = el._wsl_mounts([
+            "-v", win_a + ":/run/x:ro",
+            "-v", win_b + ":/run/y:ro",
+        ])
+        self.assertEqual(mounts[0], "-v")
+        self.assertEqual(
+            mounts[1],
+            "/mnt/d/goai/secrets/room-map.yaml:/run/x:ro")
+        self.assertEqual(
+            mounts[3], "/mnt/c/a b/policy.yaml:/run/y:ro")
+
+    def test_native_paths_pass_through(self):
+        import e2e_lifecycle as el
+        self.assertEqual(
+            el._to_wsl_source("/home/u/a.yaml"), "/home/u/a.yaml")
+        self.assertEqual(
+            el._to_wsl_source("/mnt/d/x/y"), "/mnt/d/x/y")
+
+    def test_no_mangled_backslash_survives(self):
+        import e2e_lifecycle as el
+        win = "D:" + chr(92) + "x" + chr(92) + "y"
+        out = el._to_wsl_source(win)
+        self.assertNotIn(chr(92), out)
+        self.assertTrue(out.startswith("/mnt/d/"))
+
+
 if __name__ == "__main__":
     unittest.main()
