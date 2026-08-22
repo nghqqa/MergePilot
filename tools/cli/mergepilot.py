@@ -1723,9 +1723,12 @@ def _execute_github_e2e_start(args, project_dir, planner, paths,
             run_id=run_id, bridge_ip=PLACEHOLDER_BRIDGE_IP,
             m4f=args.m4f)
         by_service = {}
+        network_create_steps = []
         for _kind, name, argv in steps:
             if _kind == "container-run":
                 by_service[name] = argv
+            if _kind == "network-create":
+                network_create_steps.append(argv)
 
         def default_service_plan(service):
             return by_service.get(service, [])
@@ -1733,6 +1736,16 @@ def _execute_github_e2e_start(args, project_dir, planner, paths,
         def db_bootstrap():
             prepare_database(docker, planner, None, project_dir,
                              reader_pw)
+
+        # the five default-mode services (postgres/gh-webhook/
+        # demo-console/console-edge/preflight) reference the
+        # default-mode networks in their planned argvs; the e2e
+        # lifecycle only creates the 8 mp-e2e networks. Create the
+        # two default-mode networks here (idempotent-safe: the
+        # lifecycle rolls back only journaled mp-e2e networks, these
+        # are managed by the default service plan's own cleanup)
+        for argv in network_create_steps:
+            docker_exec(list(argv), check=False, log_tag="e2e-net")
 
         # §10/§11 R3: the second checks bind the REAL production
         # implementations — homeserver joined-members (read-only) and

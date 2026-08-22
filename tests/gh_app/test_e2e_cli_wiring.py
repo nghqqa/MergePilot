@@ -361,5 +361,26 @@ class TestReporterImageMapping(unittest.TestCase):
         self.assertEqual(tag, "mergepilot-isolated-gh-webhook:local")
 
 
+class TestDefaultNetworkPreCreation(unittest.TestCase):
+    """Real E2E run failed E2E_CONTAINER_SETUP_FAILED(postgres):
+    "network mergepilot-isolated-isolated not found" — the five
+    default-mode services run on ORCHESTRATOR/PUBLICATION networks
+    the e2e lifecycle never creates. The CLI must create them (via
+    the planned network-create argvs, check=False) BEFORE
+    run_e2e_start."""
+
+    def test_network_create_steps_collected_and_executed(self):
+        src = open(mp.__file__, encoding="utf-8").read()
+        self.assertIn("network_create_steps", src)
+        self.assertIn('log_tag="e2e-net"', src,
+                      "network creation executed via docker_exec")
+        # creation happens before run_e2e_start
+        i = src.find('log_tag="e2e-net"')
+        j = src.find("session = el.run_e2e_start(")
+        self.assertGreater(i, -1)
+        self.assertGreater(j, -1)
+        self.assertLess(i, j)
+
+
 if __name__ == "__main__":
     unittest.main()
