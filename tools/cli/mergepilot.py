@@ -1529,6 +1529,11 @@ def _github_e2e_dry_run(planner, run_id):
     }
 
 
+def _policy_repo_allowlist_from_config(config):
+    """Single-repo allowlist string from the prerequisite config."""
+    return config.get("fixture_repo", "")
+
+
 def _build_e2e_runtime_configs(config, planner, reader_dsn,
                                audit_dsn, publisher_dsn, pat_value):
     """§4: the six authoritative runtime configs (values assembled
@@ -1677,6 +1682,7 @@ def _execute_github_e2e_start(args, project_dir, planner, paths,
 
     runtime_directory = str(paths["secrets"])
     default_secret_written = []
+    created_default_networks = {}
 
     def persist(s):
         write_session(paths, s)
@@ -1704,6 +1710,24 @@ def _execute_github_e2e_start(args, project_dir, planner, paths,
         default_secret_written.append("postgres.env")
         planner.ReaderDsnSecretFile(paths["secrets"]).write(reader_dsn)
         default_secret_written.append("demo_console.env")
+        # gh-webhook is one of the five default-mode services the
+        # github-e2e DAG reuses; its planned run argv references
+        # gh_webhook.env which only the default start path wrote
+        # (first real run failed: env file absent). Values come from
+        # the provisioned webhook secret file (body read in-process,
+        # never logged) + a fresh per-run ingress DSN.
+        _wh_secret = Path(config["webhook_secret_path"]
+                          ).read_text(encoding="utf-8").strip()
+        # no publisher_dsn here: GhWebhookSecretFile.write would also
+        # emit gh_reporter.env, which the lifecycle's own
+        # create_runtime_files owns (fresh per-run tokens) — writing
+        # both in one run collides with itself
+        GhWebhookSecretFile(paths["secrets"]).write(
+            GhWebhookSecretFile.build_ingress_dsn(
+                gh_ingress_pw, user="github_event_ingress"),
+            _wh_secret,
+            _policy_repo_allowlist_from_config(config))
+        default_secret_written.append("gh_webhook.env")
 
         runtime_configs = _build_e2e_runtime_configs(
             config, planner, reader_dsn, audit_dsn, publisher_dsn,
@@ -1745,11 +1769,29 @@ def _execute_github_e2e_start(args, project_dir, planner, paths,
         # lifecycle rolls back only journaled mp-e2e networks, these
         # are managed by the default service plan's own cleanup)
         for argv in network_create_steps:
-            docker_exec(list(argv), check=False, log_tag="e2e-net")
+            cp = docker_exec(list(argv), check=False,
+                             log_tag="e2e-net")
+            if getattr(cp, "returncode", 1) == 0 and len(argv) > 2:
+                # ownership = journaling: cleanup removes exactly what
+                # WE created (a pre-existing network is rc!=0 or
+                # already journaled)
+                net = argv[-1]
+                cid = docker_exec(
+                    ["network", "inspect", net, "--format",
+                     "{{.Id}}"], check=False, log_tag="e2e-net")
+                nid = ((cid.stdout or b"").decode().strip()
+                       if getattr(cid, "returncode", 1) == 0 else "")
+                if nid:
+                    created_default_networks[net] = nid
 
         # §10/§11 R3: the second checks bind the REAL production
         # implementations — homeserver joined-members (read-only) and
         # validate_hiclaw_receipt against live docker inspect.
+        def _register_default_networks(_session):
+            # ownership journaling for the two default-mode networks
+            # this run created (rollback/cleanup removes exactly these)
+            _session.setdefault("default_network_ids", {}).update(
+                created_default_networks)
         session = el.run_e2e_start(
             config=config,
             runtime_configs=runtime_configs,
@@ -1801,6 +1843,13 @@ def _execute_github_e2e_start(args, project_dir, planner, paths,
                 (paths["secrets"] / basename).unlink()
             except OSError:
                 pass
+        for _net in list(created_default_networks):
+            try:
+                docker_exec(["network", "rm", _net], check=False,
+                            log_tag="e2e-net")
+            except Exception:
+                pass
+            created_default_networks.pop(_net, None)
         try:
             if paths["session"].exists():
                 paths["session"].unlink()
@@ -1808,6 +1857,10 @@ def _execute_github_e2e_start(args, project_dir, planner, paths,
             pass
         raise failure from None
 
+    if created_default_networks:
+        session.setdefault("default_network_ids", {}).update(
+            created_default_networks)
+        persist(session)
     return EXIT_OK, {
         "command": "start", "status": "ok", "code": EXIT_OK,
         "run_id": run_id,

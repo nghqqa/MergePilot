@@ -165,6 +165,9 @@ class TestStartWiring(unittest.TestCase):
             state.mkdir()
             pat_file = state / "pat.txt"
             pat_file.write_text("synthetic-pat-value", encoding="utf-8")
+            wh_file = state / "w.secret"
+            wh_file.write_text("synthetic-webhook-secret",
+                               encoding="utf-8")
             (state / "github-e2e.json").write_text(json.dumps({
                 "room_map_path": "/tmp/rm.yaml",
                 "policy_path": "/tmp/p.yaml",
@@ -172,7 +175,7 @@ class TestStartWiring(unittest.TestCase):
                 "matrix_room_id": "!r:s",
                 "matrix_credentials_path": "/tmp/c.json",
                 "app_pem_path": "/tmp/a.pem",
-                "webhook_secret_path": "/tmp/w.secret",
+                "webhook_secret_path": str(wh_file),
                 "mcp_pat_path": str(pat_file),
                 "hiclaw_receipt_path": "/tmp/rec.json",
                 "callback_url_path": "/tmp/cb.txt",
@@ -380,6 +383,25 @@ class TestDefaultNetworkPreCreation(unittest.TestCase):
         self.assertGreater(i, -1)
         self.assertGreater(j, -1)
         self.assertLess(i, j)
+
+
+class TestGhWebhookEnvInE2ePath(unittest.TestCase):
+    """Real E2E run failed E2E_CONTAINER_SETUP_FAILED(gh-webhook):
+    the planned run argv references gh_webhook.env, but only the
+    default start path wrote it. The github-e2e path must write it
+    too (webhook secret body read in-process from the provisioned
+    restricted file; never logged)."""
+
+    def test_gh_webhook_env_written_in_github_e2e_path(self):
+        src = open(mp.__file__, encoding="utf-8").read()
+        fn = src.find("def _execute_github_e2e_start")
+        i = src.find('GhWebhookSecretFile(paths["secrets"]).write(', fn)
+        self.assertGreater(fn, -1)
+        self.assertGreater(i, fn)
+        window = src[fn:i]
+        self.assertIn('config["webhook_secret_path"]', window)
+        after = src[i:i + 700]
+        self.assertIn('"gh_webhook.env"', after)
 
 
 if __name__ == "__main__":

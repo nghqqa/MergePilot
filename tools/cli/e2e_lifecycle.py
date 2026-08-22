@@ -810,7 +810,16 @@ def run_e2e_stop(*, docker_executor: Callable,
         if persist_callback:
             persist_callback(session)
 
-    # 3. owned networks (journal only)
+    # 3. owned networks (journal only; includes the default-mode
+    # networks the github-e2e start path created and journaled)
+    for net, nid in list(session.get("default_network_ids",
+                                     {}).items()):
+        try:
+            docker_executor(["network", "rm", nid], check=False)
+            actions.append("network:%s" % net)
+        except Exception as exc:
+            diagnostics.append("NETWORK_RM_FAILED:%s(%s)"
+                               % (net, type(exc).__name__))
     try:
         removed = ep.remove_e2e_networks(
             docker_executor,
