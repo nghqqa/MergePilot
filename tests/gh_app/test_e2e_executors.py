@@ -68,11 +68,17 @@ class _FakeHost:
 class _FakeDocker:
     """Fake docker executor for route probes and receipt validation."""
     def __init__(self, containers=None, probe_source_ips=None,
-                 probe_exit_codes=None):
+                 probe_exit_codes=None, network_endpoints=None,
+                 running_overrides=None):
         self.calls = []
         self.containers = containers or {}
         self.probe_source_ips = probe_source_ips or {}
         self.probe_exit_codes = probe_exit_codes or {}
+        # {network: "name=ip/16 name2=ip2/16"} for holder queries
+        self.network_endpoints = network_endpoints or {}
+        self.running_overrides = running_overrides or {}
+        # networks whose connect calls fail (restore-failure path)
+        self.connect_failures = set()
 
     def __call__(self, argv, check=True, timeout=60, **kw):
         self.calls.append(list(argv))
@@ -84,6 +90,12 @@ class _FakeDocker:
             info = self.containers.get(name, {})
             if "State.Status" in fmt:
                 return _CP(0, info.get("state", "running").encode())
+            if "State.Running" in fmt:
+                if name in self.running_overrides:
+                    return _CP(0, self.running_overrides[name].encode())
+                return _CP(0, ("false" if info.get("state")
+                               in ("created", "exited") else
+                               "true").encode())
             if "RestartPolicy.Name" in fmt:
                 return _CP(0, info.get("restart_policy",
                                        "no").encode())
@@ -93,6 +105,17 @@ class _FakeDocker:
             if "Networks.hiclaw-net" in fmt                     or 'Networks "hiclaw-net"' in fmt:
                 return _CP(0, info.get("ip", "").encode())
             return _CP(0, info.get("id", _hex(name)).encode())
+        # network inspect (endpoint holders)
+        if argv[0] == "network" and argv[1] == "inspect":
+            return _CP(0, self.network_endpoints.get(
+                argv[2], "").encode())
+        # network connect/disconnect with scripted outcomes
+        if argv[0] == "network" and argv[1] in ("connect",
+                                                "disconnect"):
+            net = argv[2] if argv[1] == "disconnect" else argv[-2]
+            if argv[1] == "connect" and net in self.connect_failures:
+                return _CP(1, b"")
+            return _CP(0, b"")
         # exec (route probe or sha256sum)
         if argv[0] == "exec":
             name = argv[1]
@@ -1792,6 +1815,90 @@ class TestRuleNormalizationRealHost(unittest.TestCase):
         self.assertEqual(
             ex._normalize_rule_for_compare(blob),
             ex._normalize_rule_for_compare(saved))
+
+
+class TestRouteProbeIpYield(unittest.TestCase):
+    """A probe's static attachment IP can be held by the REAL
+    service container (Stage 4 create+connect; docker rejects a
+    second endpoint with the same IP — verified live). A STOPPED
+    holder must yield temporarily and be restored exactly."""
+
+    def _sources(self):
+        return {
+            "mp-e2e-route-probe-controller": "172.31.0.2",
+            "mp-e2e-route-probe-policy-gateway": "172.31.0.18",
+            "mp-e2e-route-probe-mcp-bridge": "172.31.0.82",
+            "mp-e2e-route-probe-gh-reporter": "172.31.0.66",
+            "mp-e2e-route-probe-gh-proxy-r": "172.31.0.130",
+            "mp-e2e-route-probe-gh-proxy-b": "172.31.0.131",
+        }
+
+    def _run(self, fd, journal):
+        return ex.run_route_probes(
+            docker_executor=fd, host_executor=None,
+            image_ref="sha256:ab", tuwunel_ip="172.22.0.2",
+            windows_proxy_ip="172.23.48.1", probe_journal=journal)
+
+    def test_stopped_holder_yields_and_is_restored(self):
+        fd = _FakeDocker(probe_source_ips=self._sources())
+        # the created-not-started gateway container holds .18 on
+        # gw-egress (exactly the Stage 4 / Stage 10 situation)
+        fd.network_endpoints["mp-e2e-gw-egress"] = (
+            "mergepilot-isolated-policy-gateway-1=172.31.0.18/28")
+        fd.containers["mergepilot-isolated-policy-gateway-1"] = {
+            "state": "created"}
+        journal = {}
+        results = self._run(fd, journal)
+        self.assertTrue(results["policy-gateway"]["verified"])
+        disconnects = [c for c in fd.calls
+                       if c[:2] == ["network", "disconnect"]]
+        self.assertEqual(
+            disconnects,
+            [["network", "disconnect", "mp-e2e-gw-egress",
+              "mergepilot-isolated-policy-gateway-1"]])
+        restores = [c for c in fd.calls
+                    if c[:2] == ["network", "connect"]
+                    and c[-1] == "mergepilot-isolated-policy-gateway-1"]
+        self.assertEqual(len(restores), 1)
+        self.assertIn("--ip", restores[0])
+        self.assertIn("172.31.0.18", restores[0])
+        self.assertIn("--gw-priority", restores[0])
+
+    def test_running_holder_is_hard_failure(self):
+        fd = _FakeDocker(probe_source_ips=self._sources())
+        fd.network_endpoints["mp-e2e-gw-egress"] = (
+            "mergepilot-isolated-policy-gateway-1=172.31.0.18/28")
+        fd.containers["mergepilot-isolated-policy-gateway-1"] = {
+            "state": "running"}
+        journal = {}
+        results = self._run(fd, journal)
+        self.assertFalse(results["policy-gateway"]["verified"])
+        self.assertEqual(results["policy-gateway"]["error"],
+                         "PROBE_IP_HELD")
+        # a running holder is never disconnected
+        disconnects = [c for c in fd.calls
+                       if c[:2] == ["network", "disconnect"]]
+        self.assertEqual(disconnects, [])
+
+    def test_restore_failure_fails_the_probe(self):
+        fd = _FakeDocker(probe_source_ips=self._sources())
+        fd.network_endpoints["mp-e2e-gw-egress"] = (
+            "mergepilot-isolated-policy-gateway-1=172.31.0.18/28")
+        fd.containers["mergepilot-isolated-policy-gateway-1"] = {
+            "state": "created"}
+        # every gw-egress connect fails (probe AND restore)
+        fd.connect_failures = {"mp-e2e-gw-egress"}
+        journal = {}
+        results = self._run(fd, journal)
+        self.assertFalse(results["policy-gateway"]["verified"])
+        # connect failure surfaced first (probe never attached);
+        # the restore path also attempted the reconnect
+        reconnects = [c for c in fd.calls
+                      if c[:2] == ["network", "connect"]
+                      and c[-1] == "mergepilot-isolated-policy-"
+                                  "gateway-1"]
+        self.assertTrue(reconnects,
+                        "restore must attempt the reconnect")
 
 
 if __name__ == "__main__":

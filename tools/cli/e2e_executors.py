@@ -237,6 +237,29 @@ def run_route_probes(*, docker_executor: Callable,
     return results
 
 
+def _network_ip_holders(docker_executor, network: str) -> dict:
+    """name-by-ip map for a network's current endpoints."""
+    cp = docker_executor(
+        ["network", "inspect", network, "--format",
+         "{{range .Containers}}{{.Name}}={{.IPv4Address}} {{end}}"],
+        check=True)
+    holders = {}
+    for token in (cp.stdout or b"").decode("utf-8", "replace").split():
+        if "=" in token:
+            name, ip = token.split("=", 1)
+            holders.setdefault(ip.split("/")[0], name)
+    return holders
+
+
+def _container_running(docker_executor, name: str) -> bool:
+    cp = docker_executor(
+        ["inspect", name, "--format", "{{.State.Running}}"],
+        check=False)
+    return (getattr(cp, "returncode", 1) == 0
+            and (cp.stdout or b"").decode("utf-8",
+                                          "replace").strip() == "true")
+
+
 def _run_single_probe(*, docker_executor, image_ref, probe_name,
                       service, dst_ip, dst_port, expected_src,
                       probe_journal) -> dict:
@@ -257,73 +280,125 @@ def _run_single_probe(*, docker_executor, image_ref, probe_name,
 
     # connect using the SAME attachments as the real service
     import e2e_probes
-    for network, ip, priority in e2e_probes.E2E_CONTAINER_ATTACHMENTS[
-            service]:
-        argv = ["network", "connect"]
-        if ip:
-            argv.extend(["--ip", ip])
-        argv.extend(["--gw-priority", str(priority), network, probe_name])
-        cp = docker_executor(argv, check=True)
+    attachments = e2e_probes.E2E_CONTAINER_ATTACHMENTS[service]
+
+    # A static attachment IP can be held by the REAL service
+    # container, which Stage 4 created+connected but has NOT yet
+    # started (docker rejects a second endpoint with the same IP —
+    # verified live). A STOPPED holder temporarily yields the
+    # endpoint (disconnect → probe → restore the exact
+    # ip/gw-priority); a RUNNING holder is a hard, honest failure.
+    yielded = []
+    restore_errors = []
+    try:
+        for network, ip, priority in attachments:
+            if not ip:
+                continue
+            holder = _network_ip_holders(
+                docker_executor, network).get(ip)
+            if holder and holder != probe_name:
+                if _container_running(docker_executor, holder):
+                    raise RouteProbeError(
+                        "PROBE_IP_HELD",
+                        "%s: %s held by running %s"
+                        % (service, ip, holder))
+                cp = docker_executor(
+                    ["network", "disconnect", network, holder],
+                    check=True)
+                if getattr(cp, "returncode", 1) != 0:
+                    raise RouteProbeError(
+                        "PROBE_YIELD_FAILED",
+                        "%s: %s did not yield %s"
+                        % (service, holder, ip))
+                yielded.append((network, ip, priority, holder))
+
+        for network, ip, priority in attachments:
+            argv = ["network", "connect"]
+            if ip:
+                argv.extend(["--ip", ip])
+            argv.extend(["--gw-priority", str(priority), network,
+                         probe_name])
+            cp = docker_executor(argv, check=True)
+            if cp.returncode != 0:
+                raise RouteProbeError("PROBE_CONNECT_FAILED",
+                                      "%s: connect %s" % (service, network))
+
+        # start
+        cp = docker_executor(["start", probe_name], check=True)
         if cp.returncode != 0:
-            raise RouteProbeError("PROBE_CONNECT_FAILED",
-                                  "%s: connect %s" % (service, network))
+            raise RouteProbeError("PROBE_START_FAILED", service)
 
-    # start
-    cp = docker_executor(["start", probe_name], check=True)
-    if cp.returncode != 0:
-        raise RouteProbeError("PROBE_START_FAILED", service)
-
-    # verify kernel source-IP via Python socket; the in-container code
-    # uses FROZEN exit codes (not stderr text) so the executor can
-    # classify without parsing OS/Python/Docker error strings.
-    code = ("import socket,sys\n"
-            "try:\n"
-            "    s=socket.create_connection(('%s',%d),timeout=10)\n"
-            "    print(s.getsockname()[0]);s.close()\n"
-            "except (ConnectionRefusedError,ConnectionResetError,"
-            "socket.timeout,OSError):\n"
-            "    sys.exit(%d)\n"
-            "except Exception:\n"
-            "    sys.exit(%d)\n"
-            % (dst_ip, dst_port,
-               PROBE_EXIT_TCP_CONNECT_FAILED,
-               PROBE_EXIT_INTERNAL_ERROR))
-    cp = docker_executor(["exec", probe_name, "python", "-c", code],
-                         check=True, timeout=30)
-    exit_code = cp.returncode
-    if exit_code == PROBE_EXIT_TCP_CONNECT_FAILED:
-        raise RouteProbeError("PROBE_TARGET_UNREACHABLE",
-                              "%s: TCP connect to %s:%d failed"
-                              % (service, dst_ip, dst_port))
-    if exit_code == PROBE_EXIT_INTERNAL_ERROR:
-        raise RouteProbeError("PROBE_INTERNAL_ERROR",
-                              "%s: probe internal error (exit %d)"
-                              % (service, exit_code))
-    if exit_code != 0:
-        raise RouteProbeError("PROBE_INTERNAL_ERROR",
-                              "%s: unexpected exit %d"
-                              % (service, exit_code))
-    output = (cp.stdout or b"").decode().strip()
-    if not output:
-        raise RouteProbeError("PROBE_OUTPUT_INVALID",
-                              "%s: empty stdout from %s:%d"
-                              % (service, dst_ip, dst_port))
-    lines = [l.strip() for l in output.split("\n") if l.strip()]
-    if len(lines) != 1:
-        raise RouteProbeError("PROBE_OUTPUT_INVALID",
-                              "%s: multi-line output (%d lines)"
-                              % (service, len(lines)))
-    source_ip = lines[0]
-    if not re.match(r"^\d{1,3}(\.\d{1,3}){3}$", source_ip) \
-            and not re.match(r"^\[?[0-9a-fA-F:]+\]?$", source_ip):
-        raise RouteProbeError("PROBE_OUTPUT_INVALID",
-                              "%s: non-IP output" % service)
-    if source_ip != expected_src:
+        # verify kernel source-IP via Python socket; the in-container code
+        # uses FROZEN exit codes (not stderr text) so the executor can
+        # classify without parsing OS/Python/Docker error strings.
+        code = ("import socket,sys\n"
+                "try:\n"
+                "    s=socket.create_connection(('%s',%d),timeout=10)\n"
+                "    print(s.getsockname()[0]);s.close()\n"
+                "except (ConnectionRefusedError,ConnectionResetError,"
+                "socket.timeout,OSError):\n"
+                "    sys.exit(%d)\n"
+                "except Exception:\n"
+                "    sys.exit(%d)\n"
+                % (dst_ip, dst_port,
+                   PROBE_EXIT_TCP_CONNECT_FAILED,
+                   PROBE_EXIT_INTERNAL_ERROR))
+        cp = docker_executor(["exec", probe_name, "python", "-c", code],
+                             check=True, timeout=30)
+        exit_code = cp.returncode
+        if exit_code == PROBE_EXIT_TCP_CONNECT_FAILED:
+            raise RouteProbeError("PROBE_TARGET_UNREACHABLE",
+                                  "%s: TCP connect to %s:%d failed"
+                                  % (service, dst_ip, dst_port))
+        if exit_code == PROBE_EXIT_INTERNAL_ERROR:
+            raise RouteProbeError("PROBE_INTERNAL_ERROR",
+                                  "%s: probe internal error (exit %d)"
+                                  % (service, exit_code))
+        if exit_code != 0:
+            raise RouteProbeError("PROBE_INTERNAL_ERROR",
+                                  "%s: unexpected exit %d"
+                                  % (service, exit_code))
+        output = (cp.stdout or b"").decode().strip()
+        if not output:
+            raise RouteProbeError("PROBE_OUTPUT_INVALID",
+                                  "%s: empty stdout from %s:%d"
+                                  % (service, dst_ip, dst_port))
+        lines = [l.strip() for l in output.split("\n") if l.strip()]
+        if len(lines) != 1:
+            raise RouteProbeError("PROBE_OUTPUT_INVALID",
+                                  "%s: multi-line output (%d lines)"
+                                  % (service, len(lines)))
+        source_ip = lines[0]
+        if not re.match(r"^\d{1,3}(\.\d{1,3}){3}$", source_ip) \
+                and not re.match(r"^\[?[0-9a-fA-F:]+\]?$", source_ip):
+            raise RouteProbeError("PROBE_OUTPUT_INVALID",
+                                  "%s: non-IP output" % service)
+        if source_ip != expected_src:
+            raise RouteProbeError(
+                "ROUTE_GATE_FAILED",
+                "%s: source %s != expected %s"
+                % (service, source_ip, expected_src))
+        result = {"source_ip": source_ip, "verified": True}
+    finally:
+        # ALWAYS restore a yielded endpoint (exact ip + priority)
+        for network, ip, priority, holder in reversed(yielded):
+            argv = ["network", "connect"]
+            if ip:
+                argv.extend(["--ip", ip])
+            argv.extend(["--gw-priority", str(priority), network,
+                         holder])
+            try:
+                cp = docker_executor(argv, check=False)
+                if getattr(cp, "returncode", 1) != 0:
+                    restore_errors.append(holder)
+            except Exception:
+                restore_errors.append(holder)
+    if restore_errors:
         raise RouteProbeError(
-            "ROUTE_GATE_FAILED",
-            "%s: source %s != expected %s"
-            % (service, source_ip, expected_src))
-    return {"source_ip": source_ip, "verified": True}
+            "PROBE_RESTORE_FAILED",
+            "%s: holder(s) not restored: %s"
+            % (service, sorted(set(restore_errors))))
+    return result
 
 
 def _cleanup_probe(docker_executor, probe_name, probe_journal):

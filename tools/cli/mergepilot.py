@@ -1489,9 +1489,13 @@ def cmd_doctor(args):
 # ── M8-GH-4B3-W3B-R2: E2E CLI wiring (§3/§15) ─────────────────────────────
 
 def _e2e_docker_exec(docker):
-    def docker_exec(argv, check=True, timeout=240, log_tag="e2e"):
+    def docker_exec(argv, check=True, timeout=240, log_tag="e2e",
+                    input_bytes=None):
+        # input_bytes forwarded: the in-container MCP health probe
+        # rides its bearer on docker-exec STDIN
         return docker.docker(list(argv), timeout=timeout, check=check,
-                             log_tag=log_tag or "e2e")
+                             log_tag=log_tag or "e2e",
+                             input_bytes=input_bytes)
     return docker_exec
 
 
@@ -2368,9 +2372,9 @@ def cmd_status(args):
         # github_e2e_services key under the E2E-session condition.
         if session.get("github_e2e"):
             import e2e_lifecycle as el
-            # semantic health probes run in-distro (host_exec); the
-            # gateway bearer is re-extracted read-only from the
-            # canonical store (same authority as start)
+            # the gateway bearer is re-extracted read-only from the
+            # HiClaw side (same authority as start); the probes exec
+            # inside the target containers via the docker executor
             try:
                 status_bearer = _read_hiclaw_role_tokens(
                     _e2e_hiclaw_docker_exec(docker))["manager"]
@@ -2379,7 +2383,6 @@ def cmd_status(args):
             meta["github_e2e_services"] = el.run_e2e_status(
                 docker_executor=_e2e_docker_exec(docker),
                 session=session,
-                host_executor=_e2e_host_exec(docker),
                 gateway_bearer=status_bearer)
     if install is not None:
         meta["install_images"] = sorted((install.get("images") or {}).keys())

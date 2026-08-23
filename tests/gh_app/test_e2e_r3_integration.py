@@ -61,7 +61,8 @@ class FakeDockerSide:
 
     # ── docker executor (container/network domain) ──
     def docker(self, argv, timeout=240, check=True, log_tag=None,
-               distro=None, suppress_output_log=False):
+               distro=None, suppress_output_log=False,
+               input_bytes=None):
         argv = list(argv)
         a = argv
         if a[0] == "network" and a[1] == "ls":
@@ -108,7 +109,7 @@ class FakeDockerSide:
         if a[0] == "inspect":
             return _cp(0, self._inspect(a).encode())
         if a[0] == "exec":
-            return self._exec(a)
+            return self._exec(a, input_bytes=input_bytes)
         return _cp(0)
 
     def _inspect(self, a):
@@ -141,7 +142,7 @@ class FakeDockerSide:
             return "true" if info["running"] else "false"
         return info["id"]
 
-    def _exec(self, a):
+    def _exec(self, a, input_bytes=None):
         name = a[1]
         if name.startswith("mp-e2e-route-probe-"):
             service = name[len("mp-e2e-route-probe-"):]
@@ -187,6 +188,27 @@ class FakeDockerSide:
         if "python3" in a and "18090" in " ".join(a):
             self.events.append("proxy_health")
             return _cp(0)
+        # in-container MCP SSE health probe (exec -i <service
+        # container> python3 -c <script> <loopback url>): answer with
+        # the probe script's stdout JSON — the script itself is
+        # exercised against a REAL SSE server in test_e2e_mcp_health
+        if a[0] == "exec" and "-i" in a[:3] and "python3" in a \
+                and "-c" in a:
+            container = a[2] if a[1] == "-i" else a[1]
+            url = a[-1]
+            if "mcp-bridge" in container:
+                self.events.append("bridge_health")
+                return _cp(0, json.dumps(
+                    {"tools": FROZEN_TOOLS
+                     + ["list_branches"]}).encode())
+            if "policy-gateway" in container:
+                self.events.append("gateway_health")
+                # the manager bearer must ride STDIN (extracted from
+                # the HiClaw side, never argv)
+                assert (input_bytes
+                        == b"tok-canonical-manager\n"), input_bytes
+                return _cp(0, json.dumps(
+                    {"tools": FROZEN_TOOLS}).encode())
         return _cp(0)
 
     # ── host executor (iptables domain; stateful) ──
@@ -214,25 +236,6 @@ class FakeDockerSide:
             return _cp(0)
         if a[0] == "iptables":
             return _cp(0)     # -X / -I bookkeeping: chains untracked
-        # in-distro MCP SSE health probe (python3 -c <script> <url>):
-        # answer with the probe script's stdout JSON — the full
-        # script itself is exercised against a REAL SSE server in
-        # test_e2e_mcp_health; here the executor boundary is faked
-        if a[0] == "python3" and len(a) > 3 and a[1] == "-c":
-            url = a[-1]
-            if ":8082/" in url:                  # bridge (superset)
-                self.events.append("bridge_health")
-                return _cp(0, json.dumps(
-                    {"tools": FROZEN_TOOLS
-                     + ["list_branches"]}).encode())
-            if ":8083/" in url:                  # gateway (frozen)
-                self.events.append("gateway_health")
-                # the manager bearer must ride STDIN (extracted from
-                # the canonical mcporter, never argv)
-                assert (input_bytes
-                        == b"tok-canonical-manager\n"), input_bytes
-                return _cp(0, json.dumps(
-                    {"tools": FROZEN_TOOLS}).encode())
         return _cp(0)
 
 

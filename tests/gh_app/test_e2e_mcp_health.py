@@ -269,32 +269,47 @@ class TestGatewayUrlAuthority(unittest.TestCase):
 
 class TestProductionServiceHealthWiring(unittest.TestCase):
 
-    def test_bridge_healthy_via_exec_probe(self):
-        def host_exec(argv, check=True, timeout=60, input_bytes=None,
-                      **_):
+    def test_bridge_healthy_via_in_container_probe(self):
+        seen = {}
+
+        def docker_exec(argv, check=True, timeout=60,
+                        input_bytes=None, **_):
+            seen["argv"] = list(argv)
             return _cp(0, json.dumps({"tools": TOOLS}).encode())
 
-        el.production_service_health(
-            lambda *a, **k: _cp(0, b""),
-            "mcp-bridge", host_executor=host_exec)
+        el.production_service_health(docker_exec, "mcp-bridge")
+        # probes exec INSIDE the service container (loopback; the
+        # distro-host position is dropped by the §8 INPUT deny)
+        self.assertEqual(seen["argv"][:3], ["exec", "-i",
+                                            "mergepilot-isolated-"
+                                            "mcp-bridge-1"])
+        self.assertEqual(seen["argv"][3], "python3")
+        self.assertIn("-c", seen["argv"])
+        self.assertEqual(seen["argv"][-1],
+                         "http://127.0.0.1:8082/sse")
 
     def test_gateway_bearer_reaches_probe_stdin(self):
         seen = {}
 
-        def host_exec(argv, check=True, timeout=60, input_bytes=None,
-                      **_):
+        def docker_exec(argv, check=True, timeout=60,
+                        input_bytes=None, **_):
+            seen["argv"] = list(argv)
             seen["input"] = input_bytes
             return _cp(0, json.dumps({"tools": TOOLS}).encode())
 
         el.production_service_health(
-            lambda *a, **k: _cp(0, b""),
-            "policy-gateway", host_executor=host_exec,
+            docker_exec, "policy-gateway",
             gateway_bearer="tok-manager-xyz")
+        self.assertEqual(seen["argv"][:3], ["exec", "-i",
+                                            "mergepilot-isolated-"
+                                            "policy-gateway-1"])
+        self.assertEqual(seen["argv"][-1],
+                         "http://127.0.0.1:8083/manager/sse")
         self.assertEqual(seen["input"], b"tok-manager-xyz\n")
 
-    def test_missing_host_executor_is_unhealthy(self):
+    def test_missing_executor_is_unhealthy(self):
         check = el._bridge_mcp_check(None)
-        self.assertEqual(check(el.BRIDGE_SSE_URL)["error"],
+        self.assertEqual(check(el._LOOPBACK_BRIDGE_SSE_URL)["error"],
                          "GATEWAY_UPSTREAM_UNREACHABLE")
 
     def test_wait_mcp_failure_code(self):
@@ -303,8 +318,8 @@ class TestProductionServiceHealthWiring(unittest.TestCase):
                     "error": "GATEWAY_MISSING_TOOLS"}
 
         with self.assertRaises(el.E2ELifecycleError) as ctx:
-            el._wait_mcp(check, el.BRIDGE_SSE_URL, "mcp-bridge",
-                         timeout=0.2)
+            el._wait_mcp(check, el._LOOPBACK_BRIDGE_SSE_URL,
+                         "mcp-bridge", timeout=0.2)
         self.assertEqual(ctx.exception.code, "E2E_MCP_BRIDGE_MCP_UNHEALTHY")
         self.assertEqual(ctx.exception.detail, "GATEWAY_MISSING_TOOLS")
 

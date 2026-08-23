@@ -344,7 +344,6 @@ _HEALTH_KINDS = {
 
 def production_service_health(docker_executor, service: str,
                               mcp_health: Callable = None,
-                              host_executor: Callable = None,
                               gateway_bearer: str = "") -> None:
     """§6 production readiness gate for one service (bounded poll).
 
@@ -354,16 +353,18 @@ def production_service_health(docker_executor, service: str,
     - gateway: MCP initialize + tools/list (frozen exact set)
     - others: docker inspect State.Running
 
-    The two MCP checks run INSIDE the WSL distro (host_executor +
-    stdlib SSE client): the Windows host cannot route to the docker
-    network IPs at all (no L3 route into the WSL bridges; a system
-    TUN proxy intercepts even no-proxy direct connects — verified by
-    RemoteDisconnected against a live listener). Every other health
-    kind already probes in-distro; the MCP checks must too.
+    The two MCP checks exec INSIDE the target service container and
+    probe its own loopback port: no Windows-host position can reach
+    the docker-network IPs at all (no L3 route into the WSL bridges;
+    a system TUN proxy intercepts even no-proxy direct connects),
+    and the distro-host position is blocked by the §8 firewall's
+    total container→LOCAL deny (which deliberately drops even
+    ESTABLISHED reply packets). In-container loopback is the same
+    position pg_isready and the proxy TCP probes already use.
 
     gateway_bearer is the manager role token for the gateway probe;
-    it travels to the probe process on STDIN and is never logged,
-    journalled or persisted.
+    it travels to the probe process on STDIN (docker exec -i) and
+    is never logged, journalled or persisted.
     Raises E2ELifecycleError with a stable code when unready.
     """
     name = "mergepilot-isolated-%s-1" % service
@@ -372,15 +373,21 @@ def production_service_health(docker_executor, service: str,
         _wait_probe(docker_executor, name, kind[1], what=service)
         return
     if service == "mcp-bridge":
-        check = mcp_health or _bridge_mcp_check(host_executor)
-        _wait_mcp(check, BRIDGE_SSE_URL, service)
+        check = mcp_health or _bridge_mcp_check(docker_executor)
+        _wait_mcp(check, _LOOPBACK_BRIDGE_SSE_URL, service)
         return
     if service == "policy-gateway":
-        check = mcp_health or _gateway_mcp_check(host_executor,
+        check = mcp_health or _gateway_mcp_check(docker_executor,
                                                  gateway_bearer)
-        _wait_mcp(check, GATEWAY_SSE_URL, service)
+        _wait_mcp(check, _LOOPBACK_GATEWAY_SSE_URL, service)
         return
     _wait_running(docker_executor, name, what=service)
+
+
+#: Loopback probe targets (in-container; the *_SSE_URL constants
+#: above stay the network-facing contract for journals/status).
+_LOOPBACK_BRIDGE_SSE_URL = "http://127.0.0.1:8082/sse"
+_LOOPBACK_GATEWAY_SSE_URL = "http://127.0.0.1:8083/manager/sse"
 
 
 # Real MCP SSE client (stdlib only), transported into the distro as a
@@ -514,9 +521,11 @@ except Exception:
 '''
 
 
-def exec_mcp_sse_probe(host_exec: Callable, url: str,
+def exec_mcp_sse_probe(runner: Callable, url: str,
                        bearer: str = "", timeout: int = 25) -> dict:
-    """Run the real MCP SSE probe inside the distro via host_executor.
+    """Run the real MCP SSE probe via an exec runner bound to the
+    target service container (`docker exec -i <container> python3
+    -c <script> <url>`, bearer on STDIN only).
 
     Returns the same {"healthy", "tools", "error"} shape as the
     gateway-health module; any transport-level failure collapses to
@@ -524,8 +533,8 @@ def exec_mcp_sse_probe(host_exec: Callable, url: str,
     unreachable upstream, preserved for status continuity)."""
     argv = ["python3", "-c", _MCP_SSE_PROBE_SCRIPT, url]
     try:
-        cp = host_exec(argv, check=False, timeout=timeout,
-                       input_bytes=((bearer or "") + "\n").encode("utf-8"))
+        cp = runner(argv, check=False, timeout=timeout,
+                    input_bytes=((bearer or "") + "\n").encode("utf-8"))
     except Exception:
         return {"healthy": False, "tools": [],
                 "error": "GATEWAY_UPSTREAM_UNREACHABLE"}
@@ -555,6 +564,17 @@ def exec_mcp_sse_probe(host_exec: Callable, url: str,
             "error": None}
 
 
+def _container_exec_runner(docker_executor: Callable,
+                            container: str) -> Callable:
+    """docker-exec runner for the MCP probe (interactive so the
+    bearer can ride STDIN; same channel the firewall blob uses)."""
+    def runner(argv, check=False, timeout=25, input_bytes=None):
+        return docker_executor(["exec", "-i", container] + list(argv),
+                               check=check, timeout=timeout,
+                               input_bytes=input_bytes)
+    return runner
+
+
 def _health_with_tool_contract(result: dict, exact: bool) -> dict:
     """Apply the frozen tool contract to a probe result (subset for
     the bridge, exact set for the gateway) using the same stable
@@ -578,25 +598,32 @@ def _health_with_tool_contract(result: dict, exact: bool) -> dict:
     return {"healthy": True, "tools": sorted(tools), "error": None}
 
 
-def _bridge_mcp_check(host_executor: Callable) -> Callable:
+def _bridge_mcp_check(docker_executor: Callable) -> Callable:
     def check(url: str) -> dict:
-        if host_executor is None:
+        if docker_executor is None:
             return {"healthy": False, "tools": [],
                     "error": "GATEWAY_UPSTREAM_UNREACHABLE"}
         return _health_with_tool_contract(
-            exec_mcp_sse_probe(host_executor, url), exact=False)
+            exec_mcp_sse_probe(
+                _container_exec_runner(
+                    docker_executor,
+                    "mergepilot-isolated-mcp-bridge-1"),
+                url), exact=False)
     return check
 
 
-def _gateway_mcp_check(host_executor: Callable,
+def _gateway_mcp_check(docker_executor: Callable,
                        gateway_bearer: str) -> Callable:
     def check(url: str) -> dict:
-        if host_executor is None:
+        if docker_executor is None:
             return {"healthy": False, "tools": [],
                     "error": "GATEWAY_UPSTREAM_UNREACHABLE"}
         return _health_with_tool_contract(
-            exec_mcp_sse_probe(host_executor, url,
-                               bearer=gateway_bearer), exact=True)
+            exec_mcp_sse_probe(
+                _container_exec_runner(
+                    docker_executor,
+                    "mergepilot-isolated-policy-gateway-1"),
+                url, bearer=gateway_bearer), exact=True)
     return check
 
 
@@ -788,8 +815,7 @@ def run_e2e_start(*, config: dict,
 
     health = service_health or (
         lambda svc: production_service_health(
-            docker_executor, svc, host_executor=host_executor,
-            gateway_bearer=gateway_bearer))
+            docker_executor, svc, gateway_bearer=gateway_bearer))
 
     # ── Stage 6: postgres start + ready (bounded pg_isready poll) ──
     session["e2e_stage"] = "postgres_ready"
@@ -1251,7 +1277,6 @@ def run_e2e_status(*, docker_executor: Callable,
                    session: dict,
                    mcp_health: Callable = None,
                    receipt_validator: Callable = None,
-                   host_executor: Callable = None,
                    gateway_bearer: str = "") -> dict:
     """§7/§13: read-only sanitized status for 11 E2E services.
 
@@ -1316,12 +1341,12 @@ def run_e2e_status(*, docker_executor: Callable,
         # gateway frozen-exact); never a container-Running shortcut.
         if service in ("mcp-bridge", "policy-gateway") \
                 and entry["running"]:
-            url = (BRIDGE_SSE_URL if service == "mcp-bridge"
-                   else GATEWAY_SSE_URL)
+            url = (_LOOPBACK_BRIDGE_SSE_URL if service == "mcp-bridge"
+                   else _LOOPBACK_GATEWAY_SSE_URL)
             check = mcp_health or (
-                _bridge_mcp_check(host_executor)
+                _bridge_mcp_check(docker_executor)
                 if service == "mcp-bridge"
-                else _gateway_mcp_check(host_executor,
+                else _gateway_mcp_check(docker_executor,
                                         gateway_bearer))
             try:
                 health = check(url)
