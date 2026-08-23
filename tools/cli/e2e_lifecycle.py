@@ -754,8 +754,38 @@ def _run_relay_probes(docker_executor, host_executor, relay_edges,
         listen_port = str(edge["listen_port"])
         checks = {}
 
+        # Create a temporary probe container on the relay's source
+        # network for two-segment verification
+        relay_ip = edge["relay_source_ip"]
+        probe_name = "mp-e2e-relay-probe-%s" % eid.replace("-to-", "-")
+        source_net = "mp-e2e-" + erly._network_short_name(
+            edge["source_network"])
+
+        # cleanup any stale probe
+        docker_executor(["rm", "-f", probe_name], check=False, timeout=15)
+        # create + connect + start
+        cp = docker_executor(
+            ["create", "--name", probe_name, "--network", "none",
+             "--entrypoint", "python3", "--pull", "never",
+             "mergepilot-isolated-gh-proxy:local",
+             "-c", "import time; time.sleep(120)"],
+            check=False, timeout=30)
+        if cp.returncode != 0:
+            results[eid] = {"verified": False,
+                            "error": "PROBE_CREATE_FAILED",
+                            "detail": "rc=%d" % cp.returncode,
+                            "vantage": "relay:%s" % kind}
+            continue
+        docker_executor(["network", "disconnect", "none", probe_name],
+                        check=False, timeout=15)
+        docker_executor(
+            ["network", "connect", source_net, probe_name],
+            check=False, timeout=15)
+        docker_executor(["start", probe_name], check=False, timeout=15)
+
+        import time as _t; _t.sleep(1)
+
         if kind == erly.PUBLISHED_EGRESS_RELAY:
-            relay_ip = edge["relay_source_ip"]
             is_winproxy = "winproxy" in eid
             crlf = chr(13) + chr(10)
             connect_payload = (
@@ -764,29 +794,34 @@ def _run_relay_probes(docker_executor, host_executor, relay_edges,
                  ).encode()
                 if is_winproxy else b"")
 
-            pos = _tcp_probe(relay_ip, int(listen_port),
-                             payload=connect_payload)
+            pos = _tcp_probe_in_docker(
+                probe_name, relay_ip, int(listen_port),
+                payload=connect_payload)
             checks["positive"] = (
                 "OK" if pos == "CONNECTED" else
                 "FAIL: got %s" % pos)
 
-            neg_port = _tcp_probe(relay_ip, 9999)
+            neg_port = _tcp_probe_in_docker(
+                probe_name, relay_ip, 9999)
             checks["wrong_port"] = (
                 "OK" if neg_port in ("REFUSED", "TIMEOUT") else
                 "FAIL: got %s" % neg_port)
 
         elif kind == erly.DUAL_HOMED_RELAY:
-            relay_ip = edge["relay_source_ip"]
-
-            pos = _tcp_probe(relay_ip, int(listen_port))
+            pos = _tcp_probe_in_docker(
+                probe_name, relay_ip, int(listen_port))
             checks["positive"] = (
                 "OK" if pos == "CONNECTED" else
                 "FAIL: got %s" % pos)
 
-            wrong = _tcp_probe(relay_ip, 9999)
+            wrong = _tcp_probe_in_docker(
+                probe_name, relay_ip, 9999)
             checks["wrong_port"] = (
                 "OK" if wrong in ("REFUSED", "TIMEOUT") else
                 "FAIL: got %s" % wrong)
+
+        # cleanup probe container
+        docker_executor(["rm", "-f", probe_name], check=False, timeout=15)
 
         verified = all(v == "OK" for v in checks.values())
         results[eid] = {
