@@ -686,41 +686,456 @@ def _wait_mcp(check: Callable, url: str, service: str,
 
 # ── §6: full startup DAG ──────────────────────────────────────────────────
 
-#: Reusable TCP probe code (stdlib only; CONNECT/REFUSED/TIMEOUT)
-_PROBE_CODE = (
-    "import socket,sys\n"
+#: TCP connect-only probe: proves handshake, never recv
+#: {TIMEOUT} is replaced with the timeout value at use time
+_PROBE_CONNECT_ONLY = (
+    "import socket,sys,time\n"
     "ip,port=sys.argv[1],int(sys.argv[2])\n"
-    "payload=sys.argv[3].encode() if len(sys.argv)>3 else b''\n"
-    "t0=__import__('time').time()\n"
+    "t0=time.time()\n"
     "try:\n"
-    "    s=socket.create_connection((ip,port),timeout=%d)\n"
-    "    if payload: s.sendall(payload)\n"
-    "    s.settimeout(8)\n"
-    "    d=s.recv(96)\n"
-    "    print('CONNECTED',d[:40])\n"
+    "    s=socket.create_connection((ip,port),timeout={TIMEOUT})\n"
+    "    local=s.getsockname(); peer=s.getpeername()\n"
     "    s.close()\n"
+    "    print('TCP_CONNECTED dt='+str(round(time.time()-t0,1))+"
+    "' local='+local[0]+':'+str(local[1])+"
+    "' peer='+peer[0]+':'+str(peer[1]))\n"
     "except ConnectionRefusedError:\n"
-    "    print('REFUSED')\n"
-    "except Exception as e:\n"
-    "    print(type(e).__name__)")
+    "    print('TCP_REFUSED')\n"
+    "except socket.timeout:\n"
+    "    print('TCP_TIMEOUT')\n"
+    "except OSError as e:\n"
+    "    print('TCP_ERROR '+type(e).__name__)\n"
+)
+
+#: TCP connect + expect frozen protocol response
+#: {TIMEOUT} is replaced with the timeout value at use time
+_PROBE_CONNECT_EXPECT = (
+    "import socket,sys,time\n"
+    "ip,port,payload=sys.argv[1],int(sys.argv[2]),sys.argv[3]\n"
+    "expect=sys.argv[4] if len(sys.argv)>4 else ''\n"
+    "t0=time.time()\n"
+    "try:\n"
+    "    s=socket.create_connection((ip,port),timeout={TIMEOUT})\n"
+    "except ConnectionRefusedError:\n"
+    "    print('TCP_CONNECT_FAILED REFUSED');sys.exit(1)\n"
+    "except socket.timeout:\n"
+    "    print('TCP_CONNECT_FAILED TIMEOUT');sys.exit(1)\n"
+    "try:\n"
+    "    s.sendall(payload.encode())\n"
+    "    s.settimeout(8)\n"
+    "    d=s.recv(256)\n"
+    "    s.close()\n"
+    "    if not d:\n"
+    "        print('APPLICATION_RESPONSE_TIMEOUT');sys.exit(2)\n"
+    "    if expect and expect not in d.decode('utf-8','replace'):\n"
+    "        print('APPLICATION_RESPONSE_MISMATCH '+repr(d[:60]));sys.exit(3)\n"
+    "    print('APPLICATION_VERIFIED '+repr(d[:60]))\n"
+    "except socket.timeout:\n"
+    "    print('APPLICATION_RESPONSE_TIMEOUT');sys.exit(2)\n"
+    "except OSError:\n"
+    "    print('APPLICATION_RESPONSE_TIMEOUT');sys.exit(2)\n"
+)
+
+#: Relay upstream connect: runs INSIDE the relay container as non-root
+_PROBE_RELAY_UPSTREAM = (
+    "import socket,sys,time\n"
+    "ip,port=sys.argv[1],int(sys.argv[2])\n"
+    "t0=time.time()\n"
+    "try:\n"
+    "    s=socket.create_connection((ip,port),timeout=6)\n"
+    "    local=s.getsockname()\n"
+    "    s.close()\n"
+    "    print('TCP_CONNECTED local='+local[0]+' peer='+ip+':'+str(port)+"
+    "' dt='+str(round(time.time()-t0,1)))\n"
+    "except ConnectionRefusedError:\n"
+    "    print('TCP_REFUSED')\n"
+    "except socket.timeout:\n"
+    "    print('TCP_TIMEOUT')\n"
+    "except OSError as e:\n"
+    "    print('TCP_ERROR '+type(e).__name__)\n"
+)
+
+
+def _verify_relay_runtime(docker_executor, edge) -> str:
+    """§1 relay runtime gate: verify running, listening, contract match.
+
+    Returns empty string on success, or a stable error code."""
+    import json as _json
+    name = edge["relay_container"]
+    relay_ip = edge["relay_source_ip"]
+    listen_port = edge["listen_port"]
+
+    # State check
+    cp = docker_executor(
+        ["inspect", name, "--format",
+         "{{.State.Running}} {{.State.ExitCode}} {{.RestartCount}}"],
+        check=False, timeout=15)
+    parts = (cp.stdout or b"").decode().strip().split()
+    if len(parts) < 3 or parts[0] != "true":
+        return "RELAY_RUNTIME_NOT_RUNNING"
+    if parts[2] != "0":
+        return "RELAY_RUNTIME_NOT_RUNNING"
+
+    # Attachment + IP check
+    cp = docker_executor(
+        ["inspect", name, "--format",
+         "{{json .NetworkSettings.Networks}}"],
+        check=False, timeout=15)
+    try:
+        nets = _json.loads((cp.stdout or b"").decode("utf-8", "replace"))
+    except (ValueError, AttributeError):
+        return "RELAY_RUNTIME_CONTRACT_MISMATCH"
+    source_net = "mp-e2e-" + erly._network_short_name(
+        edge["source_network"])
+    if not isinstance(nets, dict) or source_net not in nets:
+        return "RELAY_RUNTIME_CONTRACT_MISMATCH"
+    actual_ip = nets[source_net].get("IPAddress", "")
+    if actual_ip != relay_ip:
+        return "RELAY_RUNTIME_CONTRACT_MISMATCH"
+
+    # Listener check: /proc/net/tcp inside the relay container
+    cp = docker_executor(
+        ["exec", name, "python3", "-c",
+         "import sys\n"
+         "for line in open('/proc/net/tcp'):\n"
+         "    parts=line.split()\n"
+         "    if len(parts)>3 and parts[3]=='0A':\n"
+         "        addr=parts[1]\n"
+         "        ip,port=addr.split(':')\n"
+         "        port=int(port,16)\n"
+         "        # decode little-endian IPv4\n"
+         "        hexip=ip.zfill(8)\n"
+         "        import struct\n"
+         "        raw=struct.pack('<I',int(hexip,16))\n"
+         "        ipstr='.'.join(str(b) for b in raw)\n"
+         "        print(ipstr,port)"],
+        check=False, timeout=15)
+    listeners = (cp.stdout or b"").decode("utf-8", "replace").strip()
+    expected = "%s %d" % (relay_ip, listen_port)
+    if expected not in listeners:
+        # check for 0.0.0.0 listener (contract violation)
+        if "0.0.0.0 %d" % listen_port in listeners:
+            return "RELAY_LISTENER_ADDRESS_MISMATCH"
+        return "RELAY_LISTENER_MISSING"
+
+    return ""
 
 
 def _run_relay_probes(docker_executor, host_executor, relay_edges,
                       config) -> dict:
-    """Stage 10 under wsl-user-relay: strict two-phase execution.
+    """Stage 10 under wsl-user-relay: segmented probes with proper
+    TCP connect-only semantics.
 
-    Phase A (topology preparation): all docker create/connect/start
-    operations for all 6 edges + negative-probe containers.  No sysctl
-    dependency.  Fail-closed on any wiring error.
+    Phase A: topology prep (all Docker mutations).
+    Phase 0: relay runtime gate (inspect + listener check).
+    Phase B: sysctl barrier + segmented probes (read-only Docker).
 
-    Phase B (sysctl barrier + probes): arm bridge-nf-call-iptables=0
-    with double-read verification, then execute all positive and
-    negative TCP probes using ONLY docker exec and read-only inspect.
-    Zero topology mutations during Phase B.
-
-    Returns {edge_id: {verified, error, detail, vantage}}."""
+    Each edge produces:
+    - segment_a: source probe → relay (tcp_connect_only)
+    - segment_b: relay → destination (tcp_connect_only in relay ns)
+    - application: optional protocol-aware end-to-end
+    - negative matrix: connect-only semantics"""
     import json as _json
     import time as _t
+
+    results = {}
+    probe_names = []
+    IMAGE = "mergepilot-isolated-gh-proxy:local"
+    unauth_probe_name = "mp-e2e-relay-probe-unauth"
+
+    def _sysctl_read():
+        cp = host_executor(
+            ["sysctl", "-n", "net.bridge.bridge-nf-call-iptables"],
+            check=False, timeout=10)
+        return (cp.stdout or b"").decode().strip()
+
+    def _connect_only(container, ip, port, timeout=6):
+        """TCP connect-only probe in a Docker container."""
+        code = _PROBE_CONNECT_ONLY.replace("{TIMEOUT}", str(timeout))
+        cp = docker_executor(
+            ["exec", container, "python3", "-c", code,
+             ip, str(port)],
+            check=False, timeout=timeout + 10)
+        out = (cp.stdout or b"").decode("utf-8", "replace").strip()
+        for prefix in ("TCP_CONNECTED", "TCP_REFUSED", "TCP_TIMEOUT",
+                       "TCP_ERROR"):
+            if out.startswith(prefix):
+                return prefix
+        return "TCP_ERROR"
+
+    def _connect_expect(container, ip, port, payload, expect, timeout=6):
+        """Connect + send + expect frozen response."""
+        code = _PROBE_CONNECT_EXPECT.replace("{TIMEOUT}", str(timeout))
+        cp = docker_executor(
+            ["exec", container, "python3", "-c", code,
+             ip, str(port), payload, expect],
+            check=False, timeout=timeout + 15)
+        out = (cp.stdout or b"").decode("utf-8", "replace").strip()
+        for prefix in ("TCP_CONNECT_FAILED", "APPLICATION_RESPONSE_TIMEOUT",
+                       "APPLICATION_RESPONSE_MISMATCH", "APPLICATION_VERIFIED"):
+            if out.startswith(prefix):
+                return prefix
+        return "APPLICATION_RESPONSE_TIMEOUT"
+
+    def _relay_upstream(relay_container, dest_ip, dest_port):
+        """Connect-only probe executed INSIDE the relay container
+        to verify the relay can reach its frozen destination."""
+        cp = docker_executor(
+            ["exec", "--user", "65534:65534",
+             relay_container, "python3", "-c",
+             _PROBE_RELAY_UPSTREAM,
+             dest_ip, str(dest_port)],
+            check=False, timeout=20)
+        out = (cp.stdout or b"").decode("utf-8", "replace").strip()
+        for prefix in ("TCP_CONNECTED", "TCP_REFUSED", "TCP_TIMEOUT",
+                       "TCP_ERROR"):
+            if out.startswith(prefix):
+                return prefix, out
+        return "TCP_ERROR", out
+
+    # ══ Phase A: topology preparation ════════════════════════════
+    phase_a_ok = True
+    phase_a_error = ""
+
+    for edge in relay_edges:
+        eid = edge["edge_id"]
+        probe_name = "mp-e2e-relay-probe-%s" % eid.replace("-to-", "-")
+        probe_names.append(probe_name)
+        source_net = "mp-e2e-" + erly._network_short_name(
+            edge["source_network"])
+
+        def _fail_a(code, detail):
+            nonlocal phase_a_ok, phase_a_error
+            phase_a_ok = False
+            phase_a_error = "%s | %s (edge=%s probe=%s net=%s)" % (
+                code, detail, eid, probe_name, source_net)
+
+        docker_executor(["rm", "-f", probe_name], check=False, timeout=15)
+        cp = docker_executor(erly.plan_probe_container(edge, IMAGE),
+                             check=False, timeout=30)
+        if cp.returncode != 0:
+            _fail_a("PROBE_CREATE_FAILED", "rc=%d" % cp.returncode)
+            break
+        cp = docker_executor(["network", "disconnect", "none",
+                              probe_name], check=False, timeout=15)
+        if cp.returncode != 0:
+            docker_executor(["rm", "-f", probe_name], check=False)
+            _fail_a("PROBE_NETWORK_DISCONNECT_FAILED", "rc=%d" % cp.returncode)
+            break
+        cp = docker_executor(erly.plan_probe_connect(edge),
+                             check=False, timeout=15)
+        if cp.returncode != 0:
+            docker_executor(["rm", "-f", probe_name], check=False)
+            _fail_a("PROBE_NETWORK_CONNECT_FAILED", "rc=%d" % cp.returncode)
+            break
+        cp = docker_executor(["start", probe_name], check=False, timeout=15)
+        if cp.returncode != 0:
+            docker_executor(["rm", "-f", probe_name], check=False)
+            _fail_a("PROBE_START_FAILED", "rc=%d" % cp.returncode)
+            break
+        cp = docker_executor(
+            ["inspect", probe_name, "--format",
+             "{{json .NetworkSettings.Networks}}"],
+            check=False, timeout=15)
+        try:
+            nets = _json.loads((cp.stdout or b"").decode("utf-8", "replace"))
+            attached = source_net in nets if isinstance(nets, dict) else False
+        except (ValueError, AttributeError):
+            attached = False
+        if not attached:
+            docker_executor(["rm", "-f", probe_name], check=False)
+            _fail_a("PROBE_ATTACHMENT_MISMATCH", "expected %s" % source_net)
+            break
+
+    # unauthorized probe
+    if phase_a_ok:
+        docker_executor(["rm", "-f", unauth_probe_name], check=False, timeout=15)
+        cp = docker_executor(
+            ["create", "--name", unauth_probe_name,
+             "--network", "none", "--entrypoint", "python3",
+             "--pull", "never", IMAGE,
+             "-c", "import time; time.sleep(300)"],
+            check=False, timeout=30)
+        if cp.returncode == 0:
+            docker_executor(["network", "disconnect", "none",
+                             unauth_probe_name], check=False, timeout=15)
+            docker_executor(
+                ["network", "connect",
+                 "mergepilot-isolated-isolated", unauth_probe_name],
+                check=False, timeout=15)
+            docker_executor(["start", unauth_probe_name],
+                            check=False, timeout=15)
+            probe_names.append(unauth_probe_name)
+
+    if not phase_a_ok:
+        for pn in probe_names:
+            docker_executor(["rm", "-f", pn], check=False, timeout=15)
+        for edge in relay_edges:
+            results[edge["edge_id"]] = {
+                "verified": False, "error": "PROBE_PHASE_A_FAILED",
+                "detail": phase_a_error,
+                "vantage": "relay:%s" % edge["transport_kind"]}
+        return results
+
+    # ══ Phase 0: relay runtime gate ═════════════════════════════
+    # Verify each relay is running, listening, and matches contract.
+    for edge in relay_edges:
+        err = _verify_relay_runtime(docker_executor, edge)
+        if err:
+            for pn in probe_names:
+                docker_executor(["rm", "-f", pn], check=False, timeout=15)
+            for e2 in relay_edges:
+                results[e2["edge_id"]] = {
+                    "verified": False, "error": err,
+                    "detail": "relay=%s" % edge["relay_container"],
+                    "vantage": "relay:%s" % e2["transport_kind"]}
+            return results
+
+    # ══ Phase B: sysctl barrier + segmented probes ══════════════
+    sysctl_before = _sysctl_read()
+    host_executor(
+        ["sysctl", "-w", "net.bridge.bridge-nf-call-iptables=0"],
+        check=False, timeout=10)
+    if _sysctl_read() != "0":
+        for pn in probe_names:
+            docker_executor(["rm", "-f", pn], check=False, timeout=15)
+        for edge in relay_edges:
+            results[edge["edge_id"]] = {
+                "verified": False, "error": "RELAY_SYSCTL_ARM_FAILED",
+                "detail": "first-read not 0",
+                "vantage": "relay:%s" % edge["transport_kind"]}
+        return results
+    _t.sleep(1)
+    if _sysctl_read() != "0":
+        for pn in probe_names:
+            docker_executor(["rm", "-f", pn], check=False, timeout=15)
+        for edge in relay_edges:
+            results[edge["edge_id"]] = {
+                "verified": False, "error": "RELAY_SYSCTL_ARM_FAILED",
+                "detail": "second-read not 0",
+                "vantage": "relay:%s" % edge["transport_kind"]}
+        return results
+
+    # Identify other relay on different network for negative
+    other_relay = None
+    if relay_edges:
+        first_net = relay_edges[0]["source_network"]
+        for e in relay_edges[1:]:
+            if e["source_network"] != first_net:
+                other_relay = e
+                break
+
+    # ══ Execute segmented probes ════════════════════════════════
+    for edge in relay_edges:
+        eid = edge["edge_id"]
+        kind = edge["transport_kind"]
+        relay_ip = edge["relay_source_ip"]
+        listen_port = edge["listen_port"]
+        probe_name = "mp-e2e-relay-probe-%s" % eid.replace("-to-", "-")
+        checks = {}
+
+        # Pre-probe sysctl check
+        if _sysctl_read() != "0":
+            checks["sysctl"] = "FAIL: RELAY_SYSCTL_DRIFT"
+        else:
+            checks["sysctl"] = "OK"
+
+        # ── Segment A: source probe → relay (connect-only) ──
+        seg_a = _connect_only(probe_name, relay_ip, listen_port)
+        checks["segment_a"] = (
+            "OK" if seg_a == "TCP_CONNECTED" else
+            "FAIL: %s" % seg_a)
+
+        # ── Segment B: relay → destination (connect-only in relay ns) ──
+        if kind == erly.PUBLISHED_EGRESS_RELAY:
+            dest_ip = edge["fixed_upstream_host"]
+            dest_port = edge["fixed_upstream_port"]
+        else:
+            dest_ip = edge["destination_ip"]
+            dest_port = edge["destination_port"]
+        seg_b, seg_b_detail = _relay_upstream(
+            edge["relay_container"], dest_ip, dest_port)
+        checks["segment_b"] = (
+            "OK" if seg_b == "TCP_CONNECTED" else
+            "FAIL: %s" % seg_b)
+
+        # ── Application protocol (only if both TCP segments pass) ──
+        if (checks["segment_a"] == "OK" and checks["segment_b"] == "OK"):
+            if kind == erly.PUBLISHED_EGRESS_RELAY and "winproxy" in eid:
+                crlf = chr(13) + chr(10)
+                payload = ("CONNECT api.github.com:443 HTTP/1.1" + crlf +
+                           "Host: api.github.com:443" + crlf + crlf)
+                app = _connect_expect(
+                    probe_name, relay_ip, listen_port, payload,
+                    "200 Connection established")
+                if app == "APPLICATION_VERIFIED":
+                    checks["application"] = "OK"
+                else:
+                    checks["application"] = "FAIL: %s" % app
+            else:
+                # Route-only edges: TCP segments verified, no app protocol
+                checks["application"] = "N/A (route-only)"
+
+        # ── Negative matrix (connect-only) ──
+        wrong = _connect_only(probe_name, relay_ip, 9999)
+        checks["wrong_port"] = (
+            "OK" if wrong in ("TCP_REFUSED", "TCP_TIMEOUT", "TCP_ERROR")
+            else "FAIL: %s" % wrong)
+
+        if kind == erly.DUAL_HOMED_RELAY and dest_ip and dest_port:
+            direct = _connect_only(probe_name, dest_ip, dest_port)
+            checks["direct_blocked"] = (
+                "OK" if direct in ("TCP_REFUSED", "TCP_TIMEOUT", "TCP_ERROR")
+                else "FAIL: %s" % direct)
+
+        if unauth_probe_name in probe_names:
+            unauth = _connect_only(unauth_probe_name, relay_ip, listen_port)
+            checks["unauth_source"] = (
+                "OK" if unauth in ("TCP_REFUSED", "TCP_TIMEOUT", "TCP_ERROR")
+                else "FAIL: %s" % unauth)
+
+        if other_relay and eid != other_relay["edge_id"]:
+            other = _connect_only(
+                probe_name, other_relay["relay_source_ip"],
+                other_relay["listen_port"])
+            checks["other_relay"] = (
+                "OK" if other in ("TCP_REFUSED", "TCP_TIMEOUT", "TCP_ERROR")
+                else "FAIL: %s" % other)
+
+        verified = all(v == "OK" for k, v in checks.items()
+                       if v != "N/A (route-only)")
+        results[eid] = {
+            "verified": verified,
+            "error": "" if verified else "FAILED",
+            "detail": "; ".join(
+                "%s=%s" % (k, v) for k, v in checks.items()
+                if v.startswith("FAIL")) if not verified else "",
+            "vantage": "relay:%s" % kind,
+            "source_vantage": "temp-probe on %s (simulated, not real %s)"
+                              % (erly._network_short_name(edge["source_network"]),
+                                 edge.get("source_role", "unknown")),
+            "segments": {
+                "segment_a": checks.get("segment_a", ""),
+                "segment_b": checks.get("segment_b", ""),
+                "application": checks.get("application", ""),
+            },
+        }
+
+    # Post-probe sysctl verification
+    post_sysctl = _sysctl_read()
+    if post_sysctl != "0":
+        for eid in results:
+            if results[eid].get("verified"):
+                results[eid]["verified"] = False
+                results[eid]["error"] = "RELAY_SYSCTL_DRIFT_POST"
+                results[eid]["detail"] = (
+                    "sysctl drifted to %s after probes" % post_sysctl)
+
+    # ══ Cleanup ═════════════════════════════════════════════════
+    for pn in probe_names:
+        docker_executor(["rm", "-f", pn], check=False, timeout=15)
+
+    return results
 
     results = {}
     probe_names = []

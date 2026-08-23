@@ -467,6 +467,94 @@ class TestTwoPhaseExecution(unittest.TestCase):
         self.assertIn("direct_blocked", src)
 
 
+class TestProbeSemantics(unittest.TestCase):
+    """§2: three distinct probe types with correct semantics."""
+
+    def test_connect_only_never_recv(self):
+        import e2e_lifecycle as el
+        self.assertIn("TCP_CONNECTED", el._PROBE_CONNECT_ONLY)
+        self.assertNotIn("recv", el._PROBE_CONNECT_ONLY)
+
+    def test_connect_expect_distinct_codes(self):
+        import e2e_lifecycle as el
+        for code in ("TCP_CONNECT_FAILED", "APPLICATION_RESPONSE_TIMEOUT",
+                     "APPLICATION_RESPONSE_MISMATCH", "APPLICATION_VERIFIED"):
+            self.assertIn(code, el._PROBE_CONNECT_EXPECT)
+
+    def test_relay_upstream_connect_only(self):
+        import e2e_lifecycle as el
+        self.assertIn("TCP_CONNECTED", el._PROBE_RELAY_UPSTREAM)
+        self.assertNotIn("recv", el._PROBE_RELAY_UPSTREAM)
+
+    def test_relay_upstream_uses_nonroot(self):
+        import e2e_lifecycle as el
+        src = Path(el.__file__).read_text(encoding="utf-8")
+        # the _relay_upstream function must use --user 65534
+        self.assertIn('"--user", "65534:65534"', src)
+
+    def test_segment_a_and_b_recorded(self):
+        import e2e_lifecycle as el
+        src = Path(el.__file__).read_text(encoding="utf-8")
+        self.assertIn("segment_a", src)
+        self.assertIn("segment_b", src)
+        self.assertIn("segments", src)
+
+    def test_no_empty_payload_recv_as_positive(self):
+        """Old CONNECTED-after-recv probe must not be used for positive."""
+        import e2e_lifecycle as el
+        src = Path(el.__file__).read_text(encoding="utf-8")
+        # _PROBE_CONNECT_ONLY must not contain recv
+        self.assertNotIn("recv", el._PROBE_CONNECT_ONLY)
+        # positive segment checks use TCP_CONNECTED (connect-only)
+        self.assertIn('seg_a == "TCP_CONNECTED"', src)
+        self.assertIn('seg_b == "TCP_CONNECTED"', src)
+
+    def test_winproxy_connect_200(self):
+        import e2e_lifecycle as el
+        src = Path(el.__file__).read_text(encoding="utf-8")
+        self.assertIn("200 Connection established", src)
+        self.assertIn("CONNECT api.github.com:443", src)
+
+    def test_route_only_honest(self):
+        """Non-winproxy edges must not claim APPLICATION_VERIFIED."""
+        import e2e_lifecycle as el
+        src = Path(el.__file__).read_text(encoding="utf-8")
+        self.assertIn("N/A (route-only)", src)
+        self.assertIn("route-only", src)
+
+    def test_negative_uses_connect_only(self):
+        """Negative checks must use connect-only, not recv."""
+        import e2e_lifecycle as el
+        src = Path(el.__file__).read_text(encoding="utf-8")
+        # negative checks should use _connect_only
+        self.assertIn("_connect_only(probe_name", src)
+
+    def test_relay_runtime_gate(self):
+        """§1: relay runtime gate with stable error codes."""
+        import e2e_lifecycle as el
+        src = Path(el.__file__).read_text(encoding="utf-8")
+        for code in ("RELAY_RUNTIME_NOT_RUNNING", "RELAY_LISTENER_MISSING",
+                     "RELAY_LISTENER_ADDRESS_MISMATCH",
+                     "RELAY_RUNTIME_CONTRACT_MISMATCH"):
+            self.assertIn(code, src)
+
+    def test_relay_listener_check_reads_proc_net_tcp(self):
+        import e2e_lifecycle as el
+        src = Path(el.__file__).read_text(encoding="utf-8")
+        self.assertIn("/proc/net/tcp", src)
+
+    def test_phase_0_between_a_and_b(self):
+        """Runtime gate must run before sysctl arm."""
+        import e2e_lifecycle as el
+        src = Path(el.__file__).read_text(encoding="utf-8")
+        verify_idx = src.find("_verify_relay_runtime(docker_executor")
+        arm_idx = src.find("bridge-nf-call-iptables=0")
+        self.assertGreater(verify_idx, 0)
+        self.assertGreater(arm_idx, 0)
+        self.assertGreater(arm_idx, verify_idx,
+                           "runtime gate must run before sysctl arm")
+
+
 class TestProfileHonesty(unittest.TestCase):
 
     def test_module_declares_not_direct_routing(self):
