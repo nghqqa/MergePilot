@@ -263,13 +263,16 @@ def _container_on_network(docker_executor, container: str,
     NetworkSettings.Networks is the reliable source."""
     cp = docker_executor(
         ["inspect", container, "--format",
-         "{{range $k, $v := .NetworkSettings.Networks}}"
-         "{{$k}} {{end}}"],
+         "{{json .NetworkSettings.Networks}}"],
         check=False)
     if getattr(cp, "returncode", 1) != 0:
         return False
-    return network in (cp.stdout or b"").decode(
-        "utf-8", "replace").split()
+    try:
+        nets = json.loads((cp.stdout or b"").decode("utf-8",
+                                                    "replace"))
+    except ValueError:
+        return False
+    return isinstance(nets, dict) and network in nets
 
 
 def _container_running(docker_executor, name: str) -> bool:

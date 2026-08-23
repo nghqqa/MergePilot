@@ -99,6 +99,11 @@ class _FakeDocker:
             if "RestartPolicy.Name" in fmt:
                 return _CP(0, info.get("restart_policy",
                                        "no").encode())
+            if "Networks" in fmt and fmt.startswith("{{json"):
+                import json as _json
+                return _CP(0, _json.dumps(
+                    {n: {"IPAMConfig": {"IPv4Address": ""}}
+                     for n in info.get("networks", [])}).encode())
             if "Networks" in fmt and "range" in fmt:
                 nets = info.get("networks", [])
                 return _CP(0, " ".join(nets).encode())
