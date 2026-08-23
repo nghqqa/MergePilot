@@ -1522,41 +1522,57 @@ def _e2e_hiclaw_docker_exec(docker):
 
 
 def _read_hiclaw_role_tokens(hiclaw_exec):
-    """Real ROLE_TOKENS for the gateway: each agent's token is the
-    Bearer value in its REWIRED mcporter config, whose single
-    authority is the canonical MinIO store (the same objects the
-    receipt recheck hashes). Read-only mc cat via hiclaw-controller;
-    the body crosses this boundary in-process only and is never
-    logged — errors name the ROLE, never the token."""
+    """Real ROLE_TOKENS for the gateway: each agent's token is what
+    that agent PRESENTS to the gateway. Manager carries it inline
+    (mcporter.json mcpServers[*].headers.Authorization — the
+    canonical store is the single authority for that file); the
+    workers' rewired mcporter.json has NO header — their runtime
+    injects HICLAW_WORKER_GATEWAY_KEY as the Bearer at mcporter
+    call time (the gateway.py client contract), so the container
+    env is the authority for workers. Read-only; bodies/tokens
+    cross this boundary in-process only and are never logged —
+    errors name the ROLE, never the token."""
     import e2e_executors as _ex
+    worker_env = {"manager": "HICLAW_MANAGER_GATEWAY_KEY",
+                  "reviewer": "HICLAW_WORKER_GATEWAY_KEY",
+                  "fixer": "HICLAW_WORKER_GATEWAY_KEY",
+                  "verifier": "HICLAW_WORKER_GATEWAY_KEY"}
     tokens = {}
     for role in ("manager", "reviewer", "fixer", "verifier"):
+        token = ""
+        # 1. canonical mcporter Authorization (manager path)
         key = _ex.HICLAW_CANONICAL_KEYS[role]
         cp = hiclaw_exec(["exec", "hiclaw-controller", "mc", "cat",
                           "hiclaw/hiclaw-storage/" + key],
                          check=False, timeout=30)
-        if getattr(cp, "returncode", 1) != 0 or not cp.stdout:
+        if getattr(cp, "returncode", 1) == 0 and cp.stdout:
+            try:
+                doc = json.loads(cp.stdout.decode("utf-8", "replace"))
+                for _name, srv in (doc.get("mcpServers")
+                                   or {}).items():
+                    auth = ((srv or {}).get("headers") or {}).get(
+                        "Authorization", "")
+                    if auth.startswith("Bearer ") \
+                            and len(auth) > len("Bearer "):
+                        token = auth[len("Bearer "):].strip()
+                        break
+            except (ValueError, AttributeError, UnicodeDecodeError):
+                token = ""
+        # 2. container env (worker path: runtime-injected bearer)
+        if not token:
+            container = _ex.HICLAW_ROLE_FREEZE[role][0]
+            cp = hiclaw_exec(["exec", container, "printenv",
+                              worker_env[role]],
+                             check=False, timeout=20)
+            if getattr(cp, "returncode", 1) == 0 and cp.stdout:
+                token = cp.stdout.decode("utf-8", "replace").strip()
+        if not token:
             raise Failure(
                 "E2E_ROLE_TOKEN_EXTRACT_FAILED",
-                "canonical mcporter unreadable for role %s" % role,
+                "no gateway token for role %s (canonical mcporter "
+                "and container env both empty)" % role,
                 exit_code=EXIT_PRECHECK)
-        try:
-            doc = json.loads(cp.stdout.decode("utf-8", "replace"))
-            token = ""
-            for _name, srv in (doc.get("mcpServers") or {}).items():
-                auth = ((srv or {}).get("headers") or {}).get(
-                    "Authorization", "")
-                if auth.startswith("Bearer ") and len(auth) > len("Bearer "):
-                    token = auth[len("Bearer "):].strip()
-                    break
-            if not token:
-                raise ValueError("no bearer Authorization header")
-            tokens[role] = token
-        except (ValueError, AttributeError, UnicodeDecodeError):
-            raise Failure(
-                "E2E_ROLE_TOKEN_EXTRACT_FAILED",
-                "no bearer token in canonical mcporter for role %s" % role,
-                exit_code=EXIT_PRECHECK) from None
+        tokens[role] = token
     return tokens
 
 

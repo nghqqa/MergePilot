@@ -325,44 +325,68 @@ def _mcporter_body(token):
 
 class TestRoleTokenExtraction(unittest.TestCase):
 
-    def test_extracts_four_role_tokens(self):
+    def test_extracts_manager_from_canonical_workers_from_env(self):
         import mergepilot as mp
 
         calls = []
 
         def hiclaw_exec(argv, check=True, timeout=60, **_):
             calls.append(list(argv))
-            key = argv[-1].split("hiclaw-storage/", 1)[1]
-            parts = key.split("/")
-            role = parts[1] if parts[0] == "agents" else parts[0]
-            return _cp(0, _mcporter_body("tok-" + role))
+            if argv[1] == "hiclaw-controller":        # mc cat
+                key = argv[-1].split("hiclaw-storage/", 1)[1]
+                parts = key.split("/")
+                role = parts[1] if parts[0] == "agents" else parts[0]
+                if role == "manager":
+                    # manager carries the bearer inline
+                    return _cp(0, _mcporter_body("tok-manager"))
+                # workers' rewired mcporter has NO auth header —
+                # their runtime injects the env key at call time
+                return _cp(0, json.dumps({
+                    "mcpServers": {"github": {
+                        "url": "http://172.31.0.18:8083/%s/sse" % role,
+                        "transport": "sse"}}}).encode())
+            if argv[2] == "printenv":
+                # container env fallback (worker path)
+                return _cp(0, ("tok-" + argv[1]).encode())
+            raise AssertionError("unexpected argv %s" % argv)
 
         tokens = mp._read_hiclaw_role_tokens(hiclaw_exec)
         self.assertEqual(
             sorted(tokens), ["fixer", "manager", "reviewer", "verifier"])
         self.assertEqual(tokens["manager"], "tok-manager")
-        # every read goes through the canonical store by role key
-        for argv in calls:
-            self.assertEqual(argv[:4], ["exec", "hiclaw-controller",
-                                        "mc", "cat"])
-            self.assertTrue(argv[4].startswith("hiclaw/hiclaw-storage/"))
+        self.assertEqual(tokens["reviewer"], "tok-hiclaw-worker-reviewer")
+        self.assertEqual(tokens["fixer"], "tok-hiclaw-worker-fixer")
+        self.assertEqual(tokens["verifier"], "tok-hiclaw-worker-verifier")
+        # every canonical read goes through the store by role key
+        mc_cats = [a for a in calls if a[:4] == ["exec",
+                                                "hiclaw-controller",
+                                                "mc", "cat"]]
+        self.assertEqual(len(mc_cats), 4)
+        printenvs = [a for a in calls if len(a) > 2 and a[2] == "printenv"]
+        self.assertEqual(len(printenvs), 3)   # workers only
 
-    def test_unreadable_canonical_fails_closed(self):
+    def test_unreadable_canonical_and_env_fails_closed(self):
         import mergepilot as mp
 
         with self.assertRaises(mp.Failure) as ctx:
             mp._read_hiclaw_role_tokens(lambda *a, **k: _cp(1, b""))
         self.assertEqual(ctx.exception.code, "E2E_ROLE_TOKEN_EXTRACT_FAILED")
 
-    def test_tokenless_config_fails_closed(self):
+    def test_tokenless_config_and_env_fails_closed(self):
         import mergepilot as mp
 
         body = json.dumps({"mcpServers": {
             "github": {"url": "http://x/sse", "transport": "sse"}
         }}).encode()
+
+        def hiclaw_exec(argv, check=True, timeout=60, **_):
+            # canonical answers tokenless; printenv answers empty
+            if len(argv) > 2 and argv[2] == "printenv":
+                return _cp(0, b"")
+            return _cp(0, body)
+
         with self.assertRaises(mp.Failure) as ctx:
-            mp._read_hiclaw_role_tokens(
-                lambda *a, **k: _cp(0, body))
+            mp._read_hiclaw_role_tokens(hiclaw_exec)
         self.assertEqual(ctx.exception.code, "E2E_ROLE_TOKEN_EXTRACT_FAILED")
 
 
