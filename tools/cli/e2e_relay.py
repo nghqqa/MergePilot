@@ -676,6 +676,47 @@ class HostRelayTransaction:
 
 
 
+
+
+def derive_relay_endpoints(relay_edges: list) -> dict:
+    """Derive runtime endpoint projections from edge contracts.
+    Only called when transport_profile=wsl-user-relay."""
+    endpoints = {}
+    edge_by_id = {e["edge_id"]: e for e in relay_edges}
+
+    def _ip(eid, field="relay_source_ip"):
+        e = edge_by_id.get(eid)
+        if not e:
+            raise RelayProfileError(
+                "RELAY_EDGE_CONTRACT_INCOMPLETE",
+                "missing edge %s" % eid)
+        return e.get(field, "")
+
+    gb = _ip("gateway-to-bridge")
+    if gb:
+        endpoints["policy-gateway"] = {
+            "UPSTREAM_URL": "http://%s:8082/sse" % gb}
+    bpb = _ip("bridge-to-proxy-b")
+    if bpb:
+        endpoints["mcp-bridge"] = {
+            "HTTPS_PROXY": "http://%s:18090" % bpb}
+    rpr = _ip("reporter-to-proxy-r")
+    if rpr:
+        endpoints["gh-reporter"] = {
+            "HTTPS_PROXY": "http://%s:18090" % rpr}
+    ct = _ip("controller-to-tuwunel", "host_listener_ip")
+    if ct:
+        endpoints["controller"] = {
+            "MATRIX_HS": "http://%s:6167" % ct}
+    prw = _ip("proxy-r-to-winproxy", "host_listener_ip")
+    if prw:
+        endpoints["gh-proxy-r"] = {"GH_PROXY_UPSTREAM_IP": prw}
+    pbw = _ip("proxy-b-to-winproxy", "host_listener_ip")
+    if pbw:
+        endpoints["gh-proxy-b"] = {"GH_PROXY_UPSTREAM_IP": pbw}
+    return endpoints
+
+
 def plan_relay_connects(edge: dict) -> list:
     """Network connect argvs for container relays (dual-homed only)."""
     kind = edge["transport_kind"]
@@ -766,6 +807,7 @@ __all__ = [
     "PUBLISHED_EGRESS_RELAY",
     "build_relay_edge_contracts", "RELAY_SCRIPT",
     "HOST_RELAY_SCRIPT", "HostRelayTransaction",
+    "derive_relay_endpoints",
     "plan_host_relay_unit", "plan_host_relay_systemd_argv",
     "RELAY_SECURITY_FLAGS", "validate_relay_security",
     "SysctlTransaction", "plan_relay_run", "plan_relay_connects",

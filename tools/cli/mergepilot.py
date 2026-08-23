@@ -1637,7 +1637,7 @@ def _policy_repo_allowlist_from_config(config):
 
 def _build_e2e_runtime_configs(config, planner, reader_dsn,
                                audit_dsn, publisher_dsn, pat_value,
-                               role_tokens=None):
+                               role_tokens=None, relay_endpoints=None):
     """§4: the six authoritative runtime configs (values assembled
     from the validated 20-key prerequisite config and CLI-generated
     credentials; the PAT value is read ONLY after the prerequisite
@@ -1660,7 +1660,9 @@ def _build_e2e_runtime_configs(config, planner, reader_dsn,
                 "/run/mergepilot/policy-fixture.yaml",
             "GITHUB_DELIVERY_LEASE_SECONDS": "120",
             "GITHUB_DELIVERY_MAX_ATTEMPTS": "5",
-            "MATRIX_HS": "http://matrix-hs:6167",
+            "MATRIX_HS": (relay_endpoints or {}).get(
+                "controller", {}).get(
+                    "MATRIX_HS", "http://matrix-hs:6167"),
             "MATRIX_SERVER_NAME": e2f.E2E_MATRIX_SERVER_NAME,
             "MATRIX_USER": e2f.E2E_CONTROLLER_MXID.split(":")[0][1:],
             "CONTROLLER_CONSUMER_NAME":
@@ -1673,7 +1675,9 @@ def _build_e2e_runtime_configs(config, planner, reader_dsn,
             "COORDINATOR_TOKEN": coordinator_token,
         },
         "policy-gateway": {
-            "UPSTREAM_URL": _e2rs.GATEWAY_E2E_UPSTREAM,
+            "UPSTREAM_URL": (relay_endpoints or {}).get(
+                "policy-gateway", {}).get(
+                    "UPSTREAM_URL", _e2rs.GATEWAY_E2E_UPSTREAM),
             "POLICY_FILE": "/run/mergepilot/policy-fixture.yaml",
             "ROLE_TOKENS": json.dumps(tokens),
             "AUDIT_DSN": audit_dsn,
@@ -1681,7 +1685,9 @@ def _build_e2e_runtime_configs(config, planner, reader_dsn,
         "mcp-bridge": {
             "GITHUB_PERSONAL_ACCESS_TOKEN": pat_value,
             "GITHUB_REPOSITORY": config["fixture_repo"],
-            "HTTPS_PROXY": _e2rs.BRIDGE_PROXY,
+            "HTTPS_PROXY": (relay_endpoints or {}).get(
+                "mcp-bridge", {}).get(
+                    "HTTPS_PROXY", _e2rs.BRIDGE_PROXY),
             "MCP_PROXY_PORT": "8082",
         },
         "gh-reporter": {
@@ -1695,18 +1701,24 @@ def _build_e2e_runtime_configs(config, planner, reader_dsn,
             "GH_REPORTER_POLL_SECONDS": "5",
             "GH_REPORTER_LEASE_SECONDS": "120",
             "GH_REPORTER_MAX_ATTEMPTS": "8",
-            "HTTPS_PROXY": e2f.E2E_REPORTER_PROXY_R,
+            "HTTPS_PROXY": (relay_endpoints or {}).get(
+                "gh-reporter", {}).get(
+                    "HTTPS_PROXY", e2f.E2E_REPORTER_PROXY_R),
         },
-        "gh-proxy-r": _proxy_env(config),
-        "gh-proxy-b": _proxy_env(config),
+        "gh-proxy-r": _proxy_env(
+            config, (relay_endpoints or {}).get("gh-proxy-r")),
+        "gh-proxy-b": _proxy_env(
+            config, (relay_endpoints or {}).get("gh-proxy-b")),
     }
 
 
-def _proxy_env(config):
+def _proxy_env(config, relay_overrides=None):
+    overrides = relay_overrides or {}
     return {
         "GH_PROXY_BIND": "0.0.0.0",
         "GH_PROXY_PORT": "18090",
-        "GH_PROXY_UPSTREAM_IP": config["windows_proxy_ip"],
+        "GH_PROXY_UPSTREAM_IP": overrides.get(
+            "GH_PROXY_UPSTREAM_IP", config["windows_proxy_ip"]),
         "GH_PROXY_UPSTREAM_PORT": config["windows_proxy_port"],
     }
 
@@ -1855,10 +1867,26 @@ def _execute_github_e2e_start(args, project_dir, planner, paths,
         # the gateway health probe authenticates as REVIEWER (its
         # policy exposure is exactly the frozen read-only set)
         role_tokens_reviewer = role_tokens["reviewer"]
+        # Set the transport profile for runtime spec validation
+        _relay_endpoints_for_specs = {}
+        _relay_edges_for_derive = None
+        if getattr(args, "wsl_relay", False):
+            import e2e_relay as _relay_mod_ep
+            _relay_edges_for_derive = _relay_mod_ep.build_relay_edge_contracts(
+                config["tuwunel_ip"],
+                windows_proxy_ip=config["windows_proxy_ip"],
+                windows_proxy_port=int(config["windows_proxy_port"]))
+            _relay_endpoints_for_specs = _relay_mod_ep.derive_relay_endpoints(
+                _relay_edges_for_derive)
+        import e2e_runtime_specs as _rs_profile
+        _rs_profile.set_transport_profile(
+            "wsl-user-relay" if getattr(args, "wsl_relay", False) else "",
+            _relay_endpoints_for_specs)
         runtime_configs = _build_e2e_runtime_configs(
             config, planner, reader_dsn, audit_dsn, publisher_dsn,
             pat_value,
-            role_tokens=role_tokens)
+            role_tokens=role_tokens,
+            relay_endpoints=_relay_endpoints_for_specs)
 
         # The five non-spec DAG services reuse the default-mode plan
         # argv (create + connect steps executed in order).

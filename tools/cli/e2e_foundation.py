@@ -280,10 +280,20 @@ def validate_e2e_reporter_env(mapping) -> dict:
                   mapping["GH_REPORTER_LEASE_SECONDS"], 30, 600)
     _validate_int("GH_REPORTER_MAX_ATTEMPTS",
                   mapping["GH_REPORTER_MAX_ATTEMPTS"], 1, 50)
-    if mapping.get("HTTPS_PROXY", "") != E2E_REPORTER_PROXY_R:
+    _expected_proxy_r = E2E_REPORTER_PROXY_R
+    try:
+        import e2e_runtime_specs as _rs_prof
+        _override = _rs_prof._RELAY_ENDPOINT_OVERRIDES.get(
+            "gh-reporter", {}).get("HTTPS_PROXY")
+        if (_rs_prof._ACTIVE_TRANSPORT_PROFILE == "wsl-user-relay"
+                and _override):
+            _expected_proxy_r = _override
+    except ImportError:
+        pass
+    if mapping.get("HTTPS_PROXY", "") != _expected_proxy_r:
         _bad("HTTPS_PROXY",
              "E2E reporter must use exactly %s (proxy-r; "
-             "no implicit fallback)" % E2E_REPORTER_PROXY_R)
+             "no implicit fallback)" % _expected_proxy_r)
     return dict(mapping)
 
 

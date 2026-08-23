@@ -20,6 +20,35 @@ from typing import Optional
 
 import e2e_foundation as e2f
 
+#: Current transport profile for endpoint validation.
+#: Set by the CLI before validate_runtime_configs is called.
+#: Empty string = direct-routing (default).
+_ACTIVE_TRANSPORT_PROFILE = ""
+_RELAY_ENDPOINT_OVERRIDES = {}
+
+
+def set_transport_profile(profile, relay_endpoints=None):
+    """Set the active transport profile for endpoint validation.
+    Called by the CLI before creating runtime configs."""
+    global _ACTIVE_TRANSPORT_PROFILE, _RELAY_ENDPOINT_OVERRIDES
+    _ACTIVE_TRANSPORT_PROFILE = profile or ""
+    _RELAY_ENDPOINT_OVERRIDES = relay_endpoints or {}
+
+
+def get_transport_profile():
+    return _ACTIVE_TRANSPORT_PROFILE
+
+
+def _profile_expected(service, env_key, direct_default):
+    """Return the expected env value for the current profile.
+    Direct-routing: the original hardcoded value.
+    wsl-user-relay: the relay-projected value from edge contracts."""
+    if _ACTIVE_TRANSPORT_PROFILE == "wsl-user-relay":
+        override = _RELAY_ENDPOINT_OVERRIDES.get(service, {}).get(env_key)
+        if override is not None:
+            return override
+    return direct_default
+
 
 class RuntimeSpecError(Exception):
     def __init__(self, code: str, detail: str):
@@ -68,10 +97,12 @@ def validate_gateway_e2e_env(mapping) -> dict:
         if "\r" in v or "\n" in v or "\0" in v:
             raise RuntimeSpecError("RUNTIME_CONFIG_INVALID",
                                    "%s: CR/LF/NUL forbidden" % key)
-    if mapping["UPSTREAM_URL"] != GATEWAY_E2E_UPSTREAM:
+    expected_upstream = _profile_expected(
+        "policy-gateway", "UPSTREAM_URL", GATEWAY_E2E_UPSTREAM)
+    if mapping["UPSTREAM_URL"] != expected_upstream:
         raise RuntimeSpecError("RUNTIME_CONFIG_INVALID",
                                "UPSTREAM_URL must be exactly %s"
-                               % GATEWAY_E2E_UPSTREAM)
+                               % expected_upstream)
     if mapping["POLICY_FILE"] != GATEWAY_E2E_POLICY:
         raise RuntimeSpecError("RUNTIME_CONFIG_INVALID",
                                "POLICY_FILE must be exactly %s"
@@ -132,10 +163,12 @@ def validate_bridge_env(mapping) -> dict:
         if "\r" in v or "\n" in v or "\0" in v:
             raise RuntimeSpecError("RUNTIME_CONFIG_INVALID",
                                    "%s: CR/LF/NUL forbidden" % key)
-    if mapping["HTTPS_PROXY"] != BRIDGE_PROXY:
+    expected_proxy = _profile_expected(
+        "mcp-bridge", "HTTPS_PROXY", BRIDGE_PROXY)
+    if mapping["HTTPS_PROXY"] != expected_proxy:
         raise RuntimeSpecError("RUNTIME_CONFIG_INVALID",
                                "HTTPS_PROXY must be exactly %s"
-                               % BRIDGE_PROXY)
+                               % expected_proxy)
     if mapping["MCP_PROXY_PORT"] != "8082":
         raise RuntimeSpecError("RUNTIME_CONFIG_INVALID",
                                "MCP_PROXY_PORT must be 8082")
