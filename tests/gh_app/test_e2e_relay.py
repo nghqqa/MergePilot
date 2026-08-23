@@ -212,17 +212,21 @@ class TestTopologyPlan(unittest.TestCase):
     def test_published_egress_argv(self):
         edge = self._edges()["proxy-r-to-winproxy"]
         argv = er.plan_relay_run(edge, "test-img", "/tmp/relay.py")
-        self.assertEqual(argv[0], "run")
-        self.assertIn("-d", argv)
-        # must bind to specific gateway IP, not 0.0.0.0
+        self.assertEqual(argv[0], "create")
+        self.assertIn("--network", argv)
+        self.assertIn("none", argv)
+        # no port publishing (host IPs not bindable in this env)
         self.assertNotIn("0.0.0.0:", " ".join(argv))
+        self.assertNotIn("-p", [a for a in argv if a == "-p"])
         self.assertIn("172.23.48.1", argv)
         self.assertIn("17890", argv)
         er.validate_relay_security(argv)
 
-    def test_published_egress_no_connects(self):
+    def test_published_egress_has_source_connect(self):
         edge = self._edges()["proxy-r-to-winproxy"]
-        self.assertEqual(er.plan_relay_connects(edge), [])
+        connects = er.plan_relay_connects(edge)
+        self.assertEqual(len(connects), 1)  # source network only
+        self.assertIn("--ip", connects[0])
 
     def test_source_network_not_empty(self):
         """Dual-homed edges: source_network must be populated."""

@@ -836,12 +836,11 @@ def _start_relay_container(docker_executor, host_executor, edge,
         if cp.returncode != 0:
             _fail("E2E_RELAY_CONNECT_FAILED",
                   "%s connect rc=%d" % (edge["edge_id"], cp.returncode))
-    if connects:
-        # dual_homed: created with --network none, need start after connects
-        cp = docker_executor(
-            ["start", edge["relay_container"]], check=False)
-        if cp.returncode != 0:
-            _fail("E2E_RELAY_START_FAILED", edge["edge_id"])
+    # all relay kinds use create+connects, so always start after connects
+    cp = docker_executor(
+        ["start", edge["relay_container"]], check=False)
+    if cp.returncode != 0:
+        _fail("E2E_RELAY_START_FAILED", edge["edge_id"])
 
 
 def run_e2e_start(*, config: dict,

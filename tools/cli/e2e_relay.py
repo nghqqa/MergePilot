@@ -129,21 +129,14 @@ def build_relay_edge_contracts(tuwunel_ip: str,
         src_subnet, dst_subnet = _find_subnets(src, dst)
         edge_id = tag
 
-        if dst == windows_proxy_ip:
-            # proxies -> winproxy: published egress relay
+        if dst == windows_proxy_ip or dst == tuwunel_ip:
+            # egress to external target (winproxy/tuwunel): dual-homed
+            # relay on the source network, upstream to external target
             edges.append(_edge(
                 edge_id, _role_from_ip(src), src_subnet,
                 PUBLISHED_EGRESS_RELAY,
                 relay_container="mp-e2e-relay-%s" % tag.replace("-to-", "-"),
-                fixed_upstream_host=dst,
-                fixed_upstream_port=port,
-                listen_port=port))
-        elif dst == tuwunel_ip:
-            # controller -> tuwunel: published egress relay to matrix
-            edges.append(_edge(
-                edge_id, _role_from_ip(src), src_subnet,
-                PUBLISHED_EGRESS_RELAY,
-                relay_container="mp-e2e-relay-%s" % tag.replace("-to-", "-"),
+                relay_source_ip=_relay_ip(src_subnet),
                 fixed_upstream_host=dst,
                 fixed_upstream_port=port,
                 listen_port=port))
@@ -329,12 +322,8 @@ def plan_relay_run(edge: dict, image_ref: str,
     if kind == PUBLISHED_EGRESS_RELAY:
         upstream_host = edge["fixed_upstream_host"]
         upstream_port = str(edge["fixed_upstream_port"])
-        source_net_prefix = edge["source_network"]
-        # bind only to the gateway IP of the source network
-        gw_ip = source_net_prefix + ".1"
         argv = (
-            ["run", "-d", "--name", name,
-             "-p", "%s:%s:%s" % (gw_ip, listen, listen),
+            ["create", "--name", name, "--network", "none",
              "--entrypoint", "python3",
              "-v", "%s:/relay.py:ro" % relay_script_path]
             + list(RELAY_SECURITY_FLAGS)
@@ -362,8 +351,32 @@ def plan_relay_run(edge: dict, image_ref: str,
 
 def plan_relay_connects(edge: dict) -> list:
     """Network connect argvs for a dual-homed relay (two attaches)."""
-    if edge["transport_kind"] != DUAL_HOMED_RELAY:
-        return []
+    kind = edge["transport_kind"]
+    if kind == DUAL_HOMED_RELAY:
+        name = edge["relay_container"]
+        return [
+            ["network", "connect",
+             "--ip", edge["relay_source_ip"],
+             "--gw-priority", "100",
+             "mp-e2e-" + _network_short_name(edge["source_network"]),
+             name],
+            ["network", "connect",
+             "--ip", edge["relay_destination_ip"],
+             "--gw-priority", "0",
+             "mp-e2e-" + _network_short_name(edge["destination_network"]),
+             name],
+        ]
+    if kind == PUBLISHED_EGRESS_RELAY:
+        name = edge["relay_container"]
+        return [
+            ["network", "connect",
+             "--ip", edge.get("relay_source_ip")
+             or _relay_ip(edge["source_network"]),
+             "--gw-priority", "100",
+             "mp-e2e-" + _network_short_name(edge["source_network"]),
+             name],
+        ]
+    return []
     name = edge["relay_container"]
     return [
         ["network", "connect",
