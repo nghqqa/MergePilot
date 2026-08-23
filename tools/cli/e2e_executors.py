@@ -242,8 +242,10 @@ def _network_ip_holders(docker_executor, network: str) -> dict:
     cp = docker_executor(
         ["network", "inspect", network, "--format",
          "{{range .Containers}}{{.Name}}={{.IPv4Address}} {{end}}"],
-        check=True)
+        check=False)
     holders = {}
+    if getattr(cp, "returncode", 1) != 0:
+        return holders
     for token in (cp.stdout or b"").decode("utf-8", "replace").split():
         if "=" in token:
             name, ip = token.split("=", 1)
@@ -271,7 +273,7 @@ def _exec_probe_in_container(docker_executor, container, dst_ip,
     last_rc = None
     for py in ("python3", "python"):
         cp = docker_executor(["exec", container, py, "-c", code],
-                             check=True, timeout=30)
+                             check=False, timeout=30)
         last_rc = cp.returncode
         if cp.returncode == 0:
             output = (cp.stdout or b"").decode().strip()
@@ -323,13 +325,13 @@ def _run_single_probe(*, docker_executor, image_ref, probe_name,
     # create (network none, no env-file, no mounts)
     create_argv = ["create", "--name", probe_name,
                    "--network", "none", "--restart", "no", image_ref]
-    cp = docker_executor(create_argv, check=True)
+    cp = docker_executor(create_argv, check=False)
     if cp.returncode != 0:
         raise RouteProbeError("PROBE_CREATE_FAILED",
                               "%s: create rc=%d" % (service,
                                                     cp.returncode))
     cp = docker_executor(["inspect", probe_name, "--format",
-                          "{{.Id}}"], check=True)
+                          "{{.Id}}"], check=False)
     cid = (cp.stdout or b"").decode().strip()
     if not cid:
         raise RouteProbeError("PROBE_ID_MISSING", service)
@@ -341,12 +343,19 @@ def _run_single_probe(*, docker_executor, image_ref, probe_name,
 
     # A static attachment IP can be held by the REAL service
     # container, which Stage 4 created+connected. docker rejects a
-    # second endpoint with the same IP (verified live), so:
-    #   - RUNNING holder: the real service already occupies the
-    #     exact vantage point — execute the TCP probe INSIDE it
-    #     (its kernel source IP is inherently the edge's source).
-    #   - STOPPED holder: it temporarily yields the endpoint
-    #     (disconnect → probe → restore the exact ip/gw-priority).
+    # second endpoint with the same IP (verified live), and a
+    # STOPPED container is INVISIBLE to `network inspect` while its
+    # endpoint reservation persists — so the holder is keyed on the
+    # service container BY NAME, not discovered from the network:
+    #   - RUNNING service: it already IS the edge's vantage point —
+    #     execute the TCP probe INSIDE it.
+    #   - STOPPED service: it yields (disconnect → probe → restore
+    #     the exact ip/gw-priority).
+    # A running STRANGER on the IP remains a hard failure.
+    # NOTE: every call uses check=False — the production executor
+    # RAISES on nonzero rc when check=True, which would bypass all
+    # the rc handling below (run22: six PROBE_INTERNAL_ERRORs).
+    service_container = "mergepilot-isolated-%s-1" % service
     yielded = []
     restore_errors = []
     try:
@@ -355,20 +364,24 @@ def _run_single_probe(*, docker_executor, image_ref, probe_name,
                 continue
             holder = _network_ip_holders(
                 docker_executor, network).get(ip)
+            if holder and holder == service_container:
+                return _exec_probe_in_container(
+                    docker_executor, holder, dst_ip, dst_port,
+                    expected_src, service)
             if holder and holder != probe_name:
-                if _container_running(docker_executor, holder):
-                    return _exec_probe_in_container(
-                        docker_executor, holder, dst_ip, dst_port,
-                        expected_src, service)
-                cp = docker_executor(
-                    ["network", "disconnect", network, holder],
-                    check=True)
-                if getattr(cp, "returncode", 1) != 0:
-                    raise RouteProbeError(
-                        "PROBE_YIELD_FAILED",
-                        "%s: %s did not yield %s"
-                        % (service, holder, ip))
-                yielded.append((network, ip, priority, holder))
+                raise RouteProbeError(
+                    "PROBE_IP_HELD",
+                    "%s: %s held by running %s"
+                    % (service, ip, holder))
+            cp = docker_executor(
+                ["network", "disconnect", network, service_container],
+                check=False)
+            if getattr(cp, "returncode", 1) != 0:
+                # not attached (or already gone) — nothing to yield
+                pass
+            else:
+                yielded.append((network, ip, priority,
+                                service_container))
 
         for network, ip, priority in attachments:
             argv = ["network", "connect"]
@@ -376,13 +389,15 @@ def _run_single_probe(*, docker_executor, image_ref, probe_name,
                 argv.extend(["--ip", ip])
             argv.extend(["--gw-priority", str(priority), network,
                          probe_name])
-            cp = docker_executor(argv, check=True)
+            cp = docker_executor(argv, check=False)
             if cp.returncode != 0:
                 raise RouteProbeError("PROBE_CONNECT_FAILED",
-                                      "%s: connect %s" % (service, network))
+                                      "%s: connect %s rc=%d"
+                                      % (service, network,
+                                         cp.returncode))
 
         # start
-        cp = docker_executor(["start", probe_name], check=True)
+        cp = docker_executor(["start", probe_name], check=False)
         if cp.returncode != 0:
             raise RouteProbeError("PROBE_START_FAILED", service)
 
@@ -402,7 +417,7 @@ def _run_single_probe(*, docker_executor, image_ref, probe_name,
                    PROBE_EXIT_TCP_CONNECT_FAILED,
                    PROBE_EXIT_INTERNAL_ERROR))
         cp = docker_executor(["exec", probe_name, "python", "-c", code],
-                             check=True, timeout=30)
+                             check=False, timeout=30)
         exit_code = cp.returncode
         if exit_code == PROBE_EXIT_TCP_CONNECT_FAILED:
             raise RouteProbeError("PROBE_TARGET_UNREACHABLE",

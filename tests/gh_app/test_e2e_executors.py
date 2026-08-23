@@ -109,12 +109,18 @@ class _FakeDocker:
         if argv[0] == "network" and argv[1] == "inspect":
             return _CP(0, self.network_endpoints.get(
                 argv[2], "").encode())
-        # network connect/disconnect with scripted outcomes
+        # network connect/disconnect with scripted outcomes.
+        # disconnect semantics match docker: rc=1 when the container
+        # is unknown/not attached (the probe treats that as no-op)
         if argv[0] == "network" and argv[1] in ("connect",
                                                 "disconnect"):
             net = argv[2] if argv[1] == "disconnect" else argv[-2]
             if argv[1] == "connect" and net in self.connect_failures:
                 return _CP(1, b"")
+            if argv[1] == "disconnect":
+                if argv[-1] not in self.containers:
+                    return _CP(1, b"not connected")
+                return _CP(0, b"")
             return _CP(0, b"")
         # exec (route probe or sha256sum)
         if argv[0] == "exec":
@@ -1842,9 +1848,10 @@ class TestRouteProbeIpYield(unittest.TestCase):
     def test_stopped_holder_yields_and_is_restored(self):
         fd = _FakeDocker(probe_source_ips=self._sources())
         # the created-not-started gateway container holds .18 on
-        # gw-egress (exactly the Stage 4 / Stage 10 situation)
-        fd.network_endpoints["mp-e2e-gw-egress"] = (
-            "mergepilot-isolated-policy-gateway-1=172.31.0.18/28")
+        # gw-egress (Stage 4 / Stage 10) — INVISIBLE to the network
+        # holders query (stopped endpoints are not listed) but its
+        # reservation blocks the IP; the yield is keyed on the
+        # service container name
         fd.containers["mergepilot-isolated-policy-gateway-1"] = {
             "state": "created"}
         journal = {}
@@ -1852,10 +1859,13 @@ class TestRouteProbeIpYield(unittest.TestCase):
         self.assertTrue(results["policy-gateway"]["verified"])
         disconnects = [c for c in fd.calls
                        if c[:2] == ["network", "disconnect"]]
-        self.assertEqual(
-            disconnects,
-            [["network", "disconnect", "mp-e2e-gw-egress",
-              "mergepilot-isolated-policy-gateway-1"]])
+        # every STATIC attachment attempts to yield its service
+        # container (9 across the six probes); only the registered
+        # (attached) gateway actually yields
+        self.assertEqual(len(disconnects), 9)
+        self.assertIn(
+            ["network", "disconnect", "mp-e2e-gw-egress",
+             "mergepilot-isolated-policy-gateway-1"], disconnects)
         restores = [c for c in fd.calls
                     if c[:2] == ["network", "connect"]
                     and c[-1] == "mergepilot-isolated-policy-gateway-1"]
@@ -1881,9 +1891,10 @@ class TestRouteProbeIpYield(unittest.TestCase):
                         results["policy-gateway"])
         self.assertEqual(results["policy-gateway"]["vantage"],
                          "service-container")
-        disconnects = [c for c in fd.calls
-                       if c[:2] == ["network", "disconnect"]]
-        self.assertEqual(disconnects, [])
+        restores = [c for c in fd.calls
+                    if c[:2] == ["network", "connect"]
+                    and not c[-1].startswith("mp-e2e-route-probe-")]
+        self.assertEqual(restores, [])   # nothing yielded
 
     def test_running_holder_in_container_source_mismatch(self):
         fd = _FakeDocker(probe_source_ips={})
@@ -1901,8 +1912,6 @@ class TestRouteProbeIpYield(unittest.TestCase):
 
     def test_restore_failure_fails_the_probe(self):
         fd = _FakeDocker(probe_source_ips=self._sources())
-        fd.network_endpoints["mp-e2e-gw-egress"] = (
-            "mergepilot-isolated-policy-gateway-1=172.31.0.18/28")
         fd.containers["mergepilot-isolated-policy-gateway-1"] = {
             "state": "created"}
         # every gw-egress connect fails (probe AND restore)
