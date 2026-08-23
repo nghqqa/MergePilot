@@ -1848,21 +1848,19 @@ class TestRouteProbeIpYield(unittest.TestCase):
     def test_stopped_holder_yields_and_is_restored(self):
         fd = _FakeDocker(probe_source_ips=self._sources())
         # the created-not-started gateway container holds .18 on
-        # gw-egress (Stage 4 / Stage 10) — INVISIBLE to the network
-        # holders query (stopped endpoints are not listed) but its
-        # reservation blocks the IP; the yield is keyed on the
-        # service container name
+        # gw-egress (Stage 4 / Stage 10): invisible to network
+        # discovery on this daemon, visible container-side
         fd.containers["mergepilot-isolated-policy-gateway-1"] = {
-            "state": "created"}
+            "state": "created",
+            "networks": ["mp-e2e-gw-egress"]}
         journal = {}
         results = self._run(fd, journal)
         self.assertTrue(results["policy-gateway"]["verified"])
         disconnects = [c for c in fd.calls
                        if c[:2] == ["network", "disconnect"]]
-        # every STATIC attachment attempts to yield its service
-        # container (9 across the six probes); only the registered
-        # (attached) gateway actually yields
-        self.assertEqual(len(disconnects), 9)
+        # only the gateway's container is attached (container-side
+        # membership); the other services are absent → no attempt
+        self.assertEqual(len(disconnects), 1)
         self.assertIn(
             ["network", "disconnect", "mp-e2e-gw-egress",
              "mergepilot-isolated-policy-gateway-1"], disconnects)
@@ -1876,10 +1874,9 @@ class TestRouteProbeIpYield(unittest.TestCase):
 
     def test_running_holder_probed_in_its_container(self):
         fd = _FakeDocker(probe_source_ips=self._sources())
-        fd.network_endpoints["mp-e2e-gw-egress"] = (
-            "mergepilot-isolated-policy-gateway-1=172.31.0.18/28")
         fd.containers["mergepilot-isolated-policy-gateway-1"] = {
-            "state": "running"}
+            "state": "running",
+            "networks": ["mp-e2e-gw-egress"]}
         # the in-container probe answers under the CONTAINER name
         fd.probe_source_ips["mergepilot-isolated-policy-gateway-1"] =             "172.31.0.18"
         journal = {}
@@ -1898,10 +1895,9 @@ class TestRouteProbeIpYield(unittest.TestCase):
 
     def test_running_holder_in_container_source_mismatch(self):
         fd = _FakeDocker(probe_source_ips={})
-        fd.network_endpoints["mp-e2e-gw-egress"] = (
-            "mergepilot-isolated-policy-gateway-1=172.31.0.18/28")
         fd.containers["mergepilot-isolated-policy-gateway-1"] = {
-            "state": "running"}
+            "state": "running",
+            "networks": ["mp-e2e-gw-egress"]}
         # in-container probe prints the WRONG source
         fd.probe_source_ips["mergepilot-isolated-policy-gateway-1"] =             "172.99.99.99"
         journal = {}
@@ -1913,7 +1909,8 @@ class TestRouteProbeIpYield(unittest.TestCase):
     def test_restore_failure_fails_the_probe(self):
         fd = _FakeDocker(probe_source_ips=self._sources())
         fd.containers["mergepilot-isolated-policy-gateway-1"] = {
-            "state": "created"}
+            "state": "created",
+            "networks": ["mp-e2e-gw-egress"]}
         # every gw-egress connect fails (probe AND restore)
         fd.connect_failures = {"mp-e2e-gw-egress"}
         journal = {}
