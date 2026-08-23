@@ -525,7 +525,7 @@ def _rc():
                 "?connect_timeout=5",
         },
         "mcp-bridge": {
-            "MCP_GITHUB_TOKEN": "synthetic-pat-value",
+            "GITHUB_PERSONAL_ACCESS_TOKEN": "synthetic-pat-value",
             "GITHUB_REPOSITORY": "example/fixture",
             "HTTPS_PROXY": rs.BRIDGE_PROXY,
             "MCP_PROXY_PORT": "8082",

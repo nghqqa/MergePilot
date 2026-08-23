@@ -1679,7 +1679,7 @@ def _build_e2e_runtime_configs(config, planner, reader_dsn,
             "AUDIT_DSN": audit_dsn,
         },
         "mcp-bridge": {
-            "MCP_GITHUB_TOKEN": pat_value,
+            "GITHUB_PERSONAL_ACCESS_TOKEN": pat_value,
             "GITHUB_REPOSITORY": config["fixture_repo"],
             "HTTPS_PROXY": _e2rs.BRIDGE_PROXY,
             "MCP_PROXY_PORT": "8082",

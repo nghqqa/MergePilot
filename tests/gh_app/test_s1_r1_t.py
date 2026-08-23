@@ -61,7 +61,7 @@ def _all_configs():
 
     def bridge():
         return {
-            "MCP_GITHUB_TOKEN": "synthetic-pat-value",
+            "GITHUB_PERSONAL_ACCESS_TOKEN": "synthetic-pat-value",
             "GITHUB_REPOSITORY": "example/fixture",
             "HTTPS_PROXY": rs.BRIDGE_PROXY,
             "MCP_PROXY_PORT": "8082",
@@ -245,11 +245,11 @@ class TestSecretMatrixFailClosed(unittest.TestCase):
                 "gh-proxy-r", {"fine_grained_pat"})
 
     def test_cross_validate_sensitive_keys_bridge_pat(self):
-        env = {"MCP_GITHUB_TOKEN": "fake"}
+        env = {"GITHUB_PERSONAL_ACCESS_TOKEN": "fake"}
         rs.cross_validate_sensitive_keys("mcp-bridge", env)  # OK
 
     def test_cross_validate_wrong_consumer(self):
-        env = {"MCP_GITHUB_TOKEN": "fake"}
+        env = {"GITHUB_PERSONAL_ACCESS_TOKEN": "fake"}
         with self.assertRaises(rs.RuntimeSpecError):
             rs.cross_validate_keys = \
                 rs.cross_validate_sensitive_keys

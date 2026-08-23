@@ -387,7 +387,7 @@ class TestFullTopology(unittest.TestCase):
         bp = e2f.build_mcp_bridge_planning()
         self.assertIn("881b53d6",
                       bp["supply_chain"]["github_mcp_server_digest"])
-        self.assertEqual(bp["env_keys"], ["MCP_GITHUB_TOKEN"])
+        self.assertEqual(bp["env_keys"], ["GITHUB_PERSONAL_ACCESS_TOKEN"])
 
     def test_reporter_full_network_wiring(self):
         rp = e2f.build_reporter_planning()

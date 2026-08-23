@@ -53,7 +53,7 @@ def _gw_env():
 
 def _bridge_env():
     return {
-        "MCP_GITHUB_TOKEN": "fake-pat-for-test",
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "fake-pat-for-test",
         "GITHUB_REPOSITORY": "example/fixture",
         "HTTPS_PROXY": rs.BRIDGE_PROXY,
         "MCP_PROXY_PORT": "8082",

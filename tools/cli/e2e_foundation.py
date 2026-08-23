@@ -801,7 +801,7 @@ def build_mcp_bridge_planning() -> dict:
             "install": "--only-binary=:all: --require-hashes",
         },
         "env_file": "mcp_bridge.env",
-        "env_keys": ["MCP_GITHUB_TOKEN"],
+        "env_keys": ["GITHUB_PERSONAL_ACCESS_TOKEN"],
         "env_policy": "PAT ONLY in mcp_bridge.env (0600, --env-file; "
                       "never argv/journal/logs/diagnostics)",
         "networks": {

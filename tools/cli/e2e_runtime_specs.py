@@ -102,7 +102,9 @@ def validate_gateway_e2e_env(mapping) -> dict:
 # ── §6: MCP Bridge schema ───────────────────────────────────────────────────
 
 BRIDGE_ENV_KEYS = frozenset((
-    "MCP_GITHUB_TOKEN",     # fine-grained PAT
+    "GITHUB_PERSONAL_ACCESS_TOKEN",  # fine-grained PAT (the Go
+    #                             # github-mcp-server env contract;
+    #                             # verified against the real image)
     "GITHUB_REPOSITORY",    # fixture repo (owner/name)
     "HTTPS_PROXY",          # http://172.31.0.114:18090
     "MCP_PROXY_PORT",       # 8082
@@ -211,7 +213,7 @@ def validate_secret_consumers(service: str, secret_kinds: set) -> None:
 
 #: Maps env keys to their sensitive resource kind for cross-validation.
 SENSITIVE_ENV_KEY_MAP = {
-    "MCP_GITHUB_TOKEN": "fine_grained_pat",
+    "GITHUB_PERSONAL_ACCESS_TOKEN": "fine_grained_pat",
     "GITHUB_PUBLISHER_DSN": "reporter_dsn",
     "AUDIT_DSN": "audit_dsn",
     "ROLE_TOKENS": "role_tokens",
