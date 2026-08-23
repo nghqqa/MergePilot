@@ -913,6 +913,9 @@ def run_e2e_start(*, config: dict,
               "detail": r.get("detail", ""),
               "vantage": r.get("vantage", "probe-container")}
         for svc, r in route_result.items()}
+    # persist BEFORE the gate: a failing probe must leave its code
+    # in the journal (the rollback keeps the last persisted state)
+    _persist()
     if not all(r.get("verified") for r in route_result.values()):
         failed = [s for s, r in route_result.items()
                   if not r.get("verified")]
