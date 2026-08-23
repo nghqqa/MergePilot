@@ -104,11 +104,20 @@ def _edge(
 
 #: Relay IP pool: derived from the existing mp-e2e /28 subnets by
 #: using host .14 (unused in the frozen service assignments).
+#: Track assigned relay IPs per subnet for uniqueness
+_RELAY_IP_COUNTER = {}
+
+
 def _relay_ip(subnet_cidr: str) -> str:
-    """Derive the relay IP for a /28 subnet (network + 14)."""
+    """Derive a unique relay IP for a /28 subnet.
+
+    Uses host .14 for the first relay on a subnet, then .13, .12, etc.
+    (counting down from 14, all in the unused upper host range)."""
     import ipaddress
     net = ipaddress.ip_network(subnet_cidr, strict=False)
-    return str(net.network_address + 14)
+    offset = _RELAY_IP_COUNTER.get(subnet_cidr, 14)
+    _RELAY_IP_COUNTER[subnet_cidr] = offset - 1
+    return str(net.network_address + offset)
 
 
 import e2e_foundation as e2f
@@ -119,6 +128,11 @@ _NETS = e2f.E2E_NETWORKS
 def build_relay_edge_contracts(tuwunel_ip: str,
                                 windows_proxy_ip: str = "172.23.48.1",
                                 windows_proxy_port: int = 17890) -> list:
+    """Build the 10 frozen R4 edges as relay contracts.
+
+    Static IPs derive from the existing e2e_foundation authority.
+    Deterministic: resets the per-subnet counter each call."""
+    _RELAY_IP_COUNTER.clear()
     """Build the 10 frozen R4 edges as relay contracts.
 
     Static IPs derive from the existing e2e_foundation authority
