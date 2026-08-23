@@ -76,9 +76,9 @@ class TestEdgeContracts(unittest.TestCase):
         for e in self._edges():
             if e["transport_kind"] == er.DUAL_HOMED_RELAY:
                 src_net = ipaddress.ip_network(
-                    e["source_network"] + ".0/28", strict=False)
+                    e["source_network"], strict=False)
                 dst_net = ipaddress.ip_network(
-                    e["destination_network"] + ".0/28", strict=False)
+                    e["destination_network"], strict=False)
                 self.assertIn(
                     ipaddress.ip_address(e["relay_source_ip"]), src_net)
                 self.assertIn(

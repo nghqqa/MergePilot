@@ -104,9 +104,11 @@ def _edge(
 
 #: Relay IP pool: derived from the existing mp-e2e /28 subnets by
 #: using host .14 (unused in the frozen service assignments).
-def _relay_ip(subnet_prefix: str) -> str:
-    """Derive the relay IP for a /28 subnet (host .14)."""
-    return subnet_prefix + ".14"
+def _relay_ip(subnet_cidr: str) -> str:
+    """Derive the relay IP for a /28 subnet (network + 14)."""
+    import ipaddress
+    net = ipaddress.ip_network(subnet_cidr, strict=False)
+    return str(net.network_address + 14)
 
 
 import e2e_foundation as e2f
@@ -157,25 +159,23 @@ def build_relay_edge_contracts(tuwunel_ip: str,
 
 
 def _find_subnets(src_ip: str, dst_ip: str) -> tuple:
-    """Find the 3-octet prefix for src and dst IPs."""
+    """Find the full /28 CIDR for src and dst IPs."""
     import ipaddress
     src_net = dst_net = ""
     for name, spec in _NETS.items():
         subnet = spec[0]
         if ipaddress.ip_address(src_ip) in ipaddress.ip_network(subnet):
-            src_net = subnet.rsplit(".", 1)[0]
+            src_net = subnet
         if ipaddress.ip_address(dst_ip) in ipaddress.ip_network(subnet):
-            dst_net = subnet.rsplit(".", 1)[0]
+            dst_net = subnet
     if not src_net:
-        # outside our subnets (e.g. agent IPs on 172.21.x) — use the
-        # first octet pair as prefix for network naming
         parts = src_ip.split(".")
         if len(parts) == 4:
-            src_net = ".".join(parts[:3])
+            src_net = ".".join(parts[:3]) + ".0/28"
     if not dst_net:
         parts = dst_ip.split(".")
         if len(parts) == 4:
-            dst_net = ".".join(parts[:3])
+            dst_net = ".".join(parts[:3]) + ".0/28"
     return src_net, dst_net
 
 
@@ -392,15 +392,14 @@ def plan_relay_connects(edge: dict) -> list:
     ]
 
 
-def _network_short_name(subnet_prefix: str) -> str:
-    """Map a 3-octet prefix (e.g. '172.31.0') back to its short name."""
+def _network_short_name(subnet_cidr: str) -> str:
+    """Map a full /28 CIDR (e.g. '172.31.0.0/28') to its short name."""
     import ipaddress
+    target = ipaddress.ip_network(subnet_cidr, strict=False)
     for name, spec in _NETS.items():
-        full = spec[0]  # e.g. '172.31.0.0/28'
-        prefix = full.rsplit(".", 1)[0]  # e.g. '172.31.0'
-        if prefix == subnet_prefix:
+        if ipaddress.ip_network(spec[0]) == target:
             return name
-    return subnet_prefix.replace(".", "-")
+    return subnet_cidr.replace(".", "-").replace("/", "-")
 
 
 # ── §5 direction-aware relay probes ───────────────────────────────────────
