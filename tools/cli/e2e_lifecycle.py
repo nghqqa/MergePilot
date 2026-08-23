@@ -712,6 +712,14 @@ def _run_relay_probes(docker_executor, host_executor, relay_edges,
     Returns {edge_id: {verified, error, detail, vantage}} where
     verified=True requires ALL positive AND ALL negative probes to
     pass in the same continuous session."""
+    # Docker resets bridge-nf-call-iptables when starting containers;
+    # re-enforce before probing (verified: relay setup set it to 0,
+    # subsequent docker start calls reset it to 1)
+    cp = host_executor(["sysctl", "-n", "net.bridge.bridge-nf-call-iptables"],
+                       check=False, timeout=10)
+    if (cp.stdout or b"").decode().strip() != "0":
+        host_executor(["sysctl", "-w", "net.bridge.bridge-nf-call-iptables=0"],
+                      check=False, timeout=10)
     import socket as _sock
     import concurrent.futures
 
