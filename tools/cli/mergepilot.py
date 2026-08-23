@@ -1792,6 +1792,9 @@ def _execute_github_e2e_start(args, project_dir, planner, paths,
 
     # Gate passed → session/journal, then secrets, then lifecycle.
     session = new_session(run_id, args.m4f, github_e2e=True)
+    if getattr(args, "wsl_relay", False):
+        session["transport_profile"] = "wsl-user-relay"
+        session["direct_routing_verified"] = False
     session["hiclaw_receipt_path"] = config["hiclaw_receipt_path"]
     write_session(paths, session)
 
@@ -1920,6 +1923,19 @@ def _execute_github_e2e_start(args, project_dir, planner, paths,
             # this run created (rollback/cleanup removes exactly these)
             _session.setdefault("default_network_ids", {}).update(
                 created_default_networks)
+        # wsl-user-relay: build edge contracts + write relay script
+        relay_edges = None
+        if getattr(args, "wsl_relay", False):
+            import e2e_relay as _relay_mod
+            relay_edges = _relay_mod.build_relay_edge_contracts(
+                config["tuwunel_ip"],
+                windows_proxy_ip=config["windows_proxy_ip"],
+                windows_proxy_port=int(config["windows_proxy_port"]))
+            _relay_script = paths["secrets"] / "relay.py"
+            _relay_script.write_text(_relay_mod.RELAY_SCRIPT,
+                                     encoding="utf-8")
+            session["relay_script_path"] = str(_relay_script)
+            session["relay_edge_count"] = len(relay_edges)
         session = el.run_e2e_start(
             config=config,
             runtime_configs=runtime_configs,
@@ -1935,6 +1951,8 @@ def _execute_github_e2e_start(args, project_dir, planner, paths,
             firewall_scan_text=firewall_scan_text,
             gateway_bearer=role_tokens_reviewer,
             agents_docker_executor=hiclaw_exec,
+            transport_profile=session.get("transport_profile", ""),
+            relay_edges=relay_edges if relay_edges else None,
             matrix_members_provider=(
                 lambda: el.fetch_matrix_joined_mxids(config)),
             service_health=None,
@@ -2791,7 +2809,13 @@ def build_parser():
                    help="plan the GitHub E2E controller/Matrix slice "
                         "(B1: dry-run planning only — a REAL start fails "
                         "closed with GITHUB_E2E_PREREQUISITES_INCOMPLETE "
-                        "(external readiness gate)")
+                        "(external readiness gate))")
+    p.add_argument("--wsl-relay", action="store_true",
+                   help="use the wsl-user-relay transport profile: "
+                        "cross-bridge edges via user-space TCP relays "
+                        "(bypasses the broken WSL 6.18 IP FORWARD). "
+                        "Evidence carries transport_profile=wsl-user-relay, "
+                        "direct_routing_verified=false")
     p.add_argument("--dry-run", action="store_true")
 
     p = sub.add_parser("stop", parents=[common],

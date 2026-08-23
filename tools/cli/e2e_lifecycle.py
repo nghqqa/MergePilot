@@ -30,6 +30,7 @@ import e2e_probes as ep
 import e2e_executors as ex
 import e2e_runtime_specs as rs
 import e2e_gateway_health as gwh
+import e2e_relay as erly
 
 # Frozen 11-service startup DAG (planner.E2E_SERVICE_ORDER mirror).
 _DAG_ORDER = (
@@ -685,6 +686,163 @@ def _wait_mcp(check: Callable, url: str, service: str,
 
 # ── §6: full startup DAG ──────────────────────────────────────────────────
 
+#: Reusable TCP probe code (stdlib only; CONNECT/REFUSED/TIMEOUT)
+_PROBE_CODE = (
+    "import socket,sys\n"
+    "ip,port=sys.argv[1],int(sys.argv[2])\n"
+    "payload=sys.argv[3].encode() if len(sys.argv)>3 else b''\n"
+    "t0=__import__('time').time()\n"
+    "try:\n"
+    "    s=socket.create_connection((ip,port),timeout=%d)\n"
+    "    if payload: s.sendall(payload)\n"
+    "    s.settimeout(8)\n"
+    "    d=s.recv(96)\n"
+    "    print('CONNECTED',d[:40])\n"
+    "    s.close()\n"
+    "except ConnectionRefusedError:\n"
+    "    print('REFUSED')\n"
+    "except Exception as e:\n"
+    "    print(type(e).__name__)")
+
+
+def _run_relay_probes(docker_executor, host_executor, relay_edges,
+                      config) -> dict:
+    """Stage 10 under wsl-user-relay: two-segment + negative probes.
+
+    Returns {edge_id: {verified, error, detail, vantage}} where
+    verified=True requires ALL positive AND ALL negative probes to
+    pass in the same continuous session."""
+    import socket as _sock
+    import concurrent.futures
+
+    results = {}
+
+    def _tcp_probe(ip, port, payload=b"", timeout=6):
+        """In-distro probe via host_executor."""
+        code = _PROBE_CODE % timeout
+        argv = ["python3", "-c", code, ip, str(port)]
+        if payload:
+            argv.append(payload.decode("utf-8", "replace"))
+        cp = host_executor(argv, check=False, timeout=timeout + 10,
+                           input_bytes=b"")
+        out = (cp.stdout or b"").decode("utf-8", "replace").strip()
+        if out.startswith("CONNECTED"):
+            return "CONNECTED"
+        if out.startswith("REFUSED"):
+            return "REFUSED"
+        return "TIMEOUT"
+
+    def _tcp_probe_in_docker(container, ip, port, payload=b"",
+                             timeout=6):
+        """In-container probe via docker_executor."""
+        code = _PROBE_CODE % timeout
+        argv = ["exec", container, "python3", "-c", code,
+                ip, str(port)]
+        if payload:
+            argv.append(payload.decode("utf-8", "replace"))
+        cp = docker_executor(argv, check=False, timeout=timeout + 10)
+        out = (cp.stdout or b"").decode("utf-8", "replace").strip()
+        if out.startswith("CONNECTED"):
+            return "CONNECTED"
+        if out.startswith("REFUSED"):
+            return "REFUSED"
+        return "TIMEOUT"
+
+    for edge in relay_edges:
+        eid = edge["edge_id"]
+        kind = edge["transport_kind"]
+        listen_port = str(edge["listen_port"])
+        checks = {}
+
+        if kind == erly.PUBLISHED_EGRESS_RELAY:
+            # source container -> gateway-published port -> relay -> upstream
+            gw_ip = edge["source_network"] + ".1"
+            source_container = "mergepilot-isolated-%s-1" % (
+                edge["source_role"])
+            is_winproxy = "winproxy" in eid
+            connect_payload = (
+                b"CONNECT api.github.com:443 HTTP/1.1\n"
+                b"Host: api.github.com:443\r\n"
+                if is_winproxy else b"")
+
+            pos = _tcp_probe_in_docker(
+                source_container, gw_ip, int(listen_port),
+                payload=connect_payload)
+            checks["positive"] = (
+                "OK" if pos == "CONNECTED" else
+                "FAIL: got %s" % pos)
+
+            # wrong port
+            neg_port = _tcp_probe_in_docker(
+                source_container, gw_ip, 9999)
+            checks["wrong_port"] = (
+                "OK" if neg_port in ("REFUSED", "TIMEOUT") else
+                "FAIL: got %s" % neg_port)
+
+        elif kind == erly.DUAL_HOMED_RELAY:
+            relay_ip = edge["relay_source_ip"]
+            dest_ip = edge["destination_ip"]
+            dest_port = str(edge["destination_port"])
+            source_container = "mergepilot-isolated-%s-1" % (
+                edge["source_role"])
+
+            # positive: source -> relay -> dest
+            pos = _tcp_probe_in_docker(
+                source_container, relay_ip, int(listen_port))
+            checks["positive"] = (
+                "OK" if pos == "CONNECTED" else
+                "FAIL: got %s" % pos)
+
+            # negative: direct source -> dest (should fail)
+            direct = _tcp_probe_in_docker(
+                source_container, dest_ip, int(dest_port))
+            checks["direct_blocked"] = (
+                "OK" if direct in ("TIMEOUT", "REFUSED") else
+                "FAIL: got %s" % direct)
+
+            # negative: wrong port on relay
+            wrong = _tcp_probe_in_docker(
+                source_container, relay_ip, 9999)
+            checks["wrong_port"] = (
+                "OK" if wrong in ("REFUSED", "TIMEOUT") else
+                "FAIL: got %s" % wrong)
+
+        verified = all(v == "OK" for v in checks.values())
+        results[eid] = {
+            "verified": verified,
+            "error": "" if verified else "FAILED",
+            "detail": "; ".join(
+                "%s=%s" % (k, v) for k, v in checks.items()
+                if v != "OK") if not verified else "",
+            "vantage": "relay:%s" % kind,
+        }
+
+    return results
+
+
+def _start_relay_container(docker_executor, host_executor, edge,
+                           wsl_script_path, _fail) -> None:
+    """Create and start one relay container per the frozen edge
+    contract. Dual-homed relays get two network attaches."""
+    argv = erly.plan_relay_run(edge, "python:3.12-slim", wsl_script_path)
+    cp = docker_executor(argv, check=False)
+    if cp.returncode != 0:
+        _fail("E2E_RELAY_CONTAINER_FAILED",
+              "%s create rc=%d" % (edge["edge_id"], cp.returncode))
+    connects = erly.plan_relay_connects(edge)
+    for cargv in connects:
+        cp = docker_executor(cargv, check=False)
+        if cp.returncode != 0:
+            _fail("E2E_RELAY_CONNECT_FAILED",
+                  "%s connect rc=%d" % (edge["edge_id"], cp.returncode))
+    if connects:
+        # dual_homed: created with --network none, need start after connects
+        cp = docker_executor(
+            ["start", edge["relay_container"]], check=False)
+        if cp.returncode != 0:
+            _fail("E2E_RELAY_START_FAILED", edge["edge_id"])
+
+
 def run_e2e_start(*, config: dict,
                   runtime_configs: dict = None,
                   runtime_directory: str = "",
@@ -704,6 +862,8 @@ def run_e2e_start(*, config: dict,
                   firewall_scan_text: str = "",
                   gateway_bearer: str = "",
                   agents_docker_executor: Callable = None,
+                  transport_profile: str = "",
+                  relay_edges: list = None,
                   session: dict = None) -> dict:
     """Full E2E startup DAG. Returns the session dict (journal).
 
@@ -854,6 +1014,42 @@ def run_e2e_start(*, config: dict,
         _fail("E2E_FIREWALL_INSTALL_FAILED", type(exc).__name__)
     _persist()
 
+    # wsl-user-relay: sysctl transaction + relay container setup
+    relay_tx = None
+    _relay_names = []
+    _orig_fail = _fail
+
+    def _fail_with_relay(code, detail):
+        _teardown_relay(docker_executor, host_executor, relay_tx,
+                        _relay_names)
+        _orig_fail(code, detail)
+
+    if transport_profile == "wsl-user-relay" and relay_edges:
+        session["e2e_stage"] = "relay_setup"
+        try:
+            relay_tx = erly.SysctlTransaction(host_executor)
+            relay_tx.begin()
+            _relay_script_host = session.get("relay_script_path", "")
+            if not _relay_script_host:
+                _fail("E2E_RELAY_SCRIPT_MISSING", "no relay_script_path")
+            # write to WSL-visible path (same _to_wsl_path logic)
+            import e2e_runtime_specs as _rs_tmp
+            wsl_path = _relay_script_host.replace(
+                "D:", "/mnt/d").replace("\\", "/")
+            for edge in relay_edges:
+                _start_relay_container(
+                    docker_executor, host_executor, edge,
+                    wsl_path, _fail)
+            session["relay_containers"] = [
+                e["relay_container"] for e in relay_edges]
+            _relay_names = list(session["relay_containers"])
+            _fail = _fail_with_relay
+        except erly.RelayProfileError as exc:
+            _fail("E2E_RELAY_SETUP_FAILED", exc.detail)
+        except Exception as exc:
+            _fail("E2E_RELAY_SETUP_FAILED", type(exc).__name__)
+        _persist()
+
     health = service_health or (
         lambda svc: production_service_health(
             docker_executor, svc, gateway_bearer=gateway_bearer))
@@ -896,17 +1092,28 @@ def run_e2e_start(*, config: dict,
     # ── Stage 10: route probes (§7) ──
     session["e2e_stage"] = "route_probes"
     probe_journal = {}
-    try:
-        route_result = ex.run_route_probes(
-            docker_executor=docker_executor,
-            host_executor=host_executor,
-            image_ref=image_refs.get(
-                "gh-proxy-r", image_refs.get("mcp-bridge", "")),
-            tuwunel_ip=config["tuwunel_ip"],
-            windows_proxy_ip=config["windows_proxy_ip"],
-            probe_journal=probe_journal)
-    except Exception as exc:
-        _fail("E2E_ROUTE_PROBE_FAILED", type(exc).__name__)
+    if transport_profile == "wsl-user-relay" and relay_edges:
+        # user-relay probes: two-segment + negative per edge
+        try:
+            route_result = _run_relay_probes(
+                docker_executor, host_executor, relay_edges,
+                config)
+        except Exception as exc:
+            route_result = {}
+            _fail("E2E_ROUTE_PROBE_FAILED", type(exc).__name__)
+    else:
+        try:
+            route_result = ex.run_route_probes(
+                docker_executor=docker_executor,
+                host_executor=host_executor,
+                image_ref=image_refs.get(
+                    "gh-proxy-r", image_refs.get("mcp-bridge", "")),
+                tuwunel_ip=config["tuwunel_ip"],
+                windows_proxy_ip=config["windows_proxy_ip"],
+                probe_journal=probe_journal)
+        except Exception as exc:
+            route_result = {}
+            _fail("E2E_ROUTE_PROBE_FAILED", type(exc).__name__)
     session["route_probe_results"] = {
         svc: {"verified": r.get("verified", False),
               "error": r.get("error", ""),
@@ -1039,6 +1246,21 @@ def _default_receipt_validator(receipt_path: str) -> dict:
 
 
 # ── §14: stop (owned-only, ordered, idempotent) ───────────────────────────
+
+def _teardown_relay(docker_executor, host_executor,
+                    relay_tx, relay_containers) -> None:
+    """Cleanup: stop/remove relay containers, restore sysctl."""
+    for name in (relay_containers or ()):
+        try:
+            docker_executor(["rm", "-f", name], check=False, timeout=30)
+        except Exception:
+            pass
+    if relay_tx is not None:
+        try:
+            relay_tx.restore()
+        except erly.RelayProfileError:
+            pass
+
 
 def run_e2e_stop(*, docker_executor: Callable,
                  host_executor: Callable, session: dict,
