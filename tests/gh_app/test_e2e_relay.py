@@ -222,11 +222,10 @@ class TestTopologyPlan(unittest.TestCase):
         self.assertIn("17890", argv)
         er.validate_relay_security(argv)
 
-    def test_published_egress_has_source_connect(self):
+    def test_published_egress_no_container_connects(self):
+        """Host-side relays have zero container network connects."""
         edge = self._edges()["proxy-r-to-winproxy"]
-        connects = er.plan_relay_connects(edge)
-        self.assertEqual(len(connects), 1)  # source network only
-        self.assertIn("--ip", connects[0])
+        self.assertEqual(er.plan_relay_connects(edge), [])
 
     def test_source_network_not_empty(self):
         """Dual-homed edges: source_network must be populated."""

@@ -60,8 +60,11 @@ def _edge(
     fixed_upstream_host: str = "",
     fixed_upstream_port: int = 0,
     listen_port: int = 0,
+    **extra,
 ) -> dict:
-    """Internal constructor validating the frozen edge contract."""
+    """Internal constructor validating the frozen edge contract.
+    Extra kwargs (allowed_source_ip, host_listener_ip) are stored
+    as-is for host-side relay edges."""
     if transport_kind not in TRANSPORT_KINDS:
         raise RelayProfileError(
             "RELAY_TRANSPORT_KIND_INVALID",
@@ -83,6 +86,7 @@ def _edge(
         "fixed_upstream_port": fixed_upstream_port,
         "listen_port": listen_port,
     }
+    d.update(extra)
     if transport_kind == DUAL_HOMED_RELAY:
         for k in ("relay_container", "relay_source_ip",
                   "relay_destination_ip", "destination_network",
@@ -128,21 +132,20 @@ _NETS = e2f.E2E_NETWORKS
 def build_relay_edge_contracts(tuwunel_ip: str,
                                 windows_proxy_ip: str = "172.23.48.1",
                                 windows_proxy_port: int = 17890) -> list:
-    """Build the 10 frozen R4 edges as relay contracts.
+    """Build the 6 frozen Stage 10 probe edges as relay contracts.
+
+    DUAL_HOMED_RELAY: container relay (works, verified).
+    PUBLISHED_EGRESS_RELAY: host-side relay (container → host
+    listener → external target, bypassing broken FORWARD).
 
     Static IPs derive from the existing e2e_foundation authority.
-    Deterministic: resets the per-subnet counter each call."""
+    Deterministic: resets all per-subnet counters each call."""
     _RELAY_IP_COUNTER.clear()
-    """Build the 10 frozen R4 edges as relay contracts.
+    _HOST_LISTENER_IP_COUNTER.clear()
 
-    Static IPs derive from the existing e2e_foundation authority
-    (the /28 gateway prefix + .14 for relay hosts, a previously
-    unallocated address in each subnet)."""
     edges = []
     full = e2f._build_all_edges(tuwunel_ip)
 
-    # Only the 6 Stage 10 probe edges need relays; the 4 agent-to-
-    # gateway edges are cross-daemon and not probed in Stage 10
     import e2e_executors as _ex_probe
     probe_sources = set(
         spec[2] for spec in _ex_probe.ROUTE_PROBE_SPECS.values())
@@ -152,18 +155,21 @@ def build_relay_edge_contracts(tuwunel_ip: str,
             continue
         src_subnet, dst_subnet = _find_subnets(src, dst)
         edge_id = tag
+        allowed_source = src  # frozen source IP from R4
 
         if dst == windows_proxy_ip or dst == tuwunel_ip:
-            # egress to external target (winproxy/tuwunel): dual-homed
-            # relay on the source network, upstream to external target
+            # external target: host-side relay
+            host_ip = _host_listener_ip(src_subnet)
             edges.append(_edge(
                 edge_id, _role_from_ip(src), src_subnet,
                 PUBLISHED_EGRESS_RELAY,
-                relay_container="mp-e2e-relay-%s" % tag.replace("-to-", "-"),
-                relay_source_ip=_relay_ip(src_subnet),
+                relay_container="",  # no container for host relays
+                relay_source_ip=host_ip,
                 fixed_upstream_host=dst,
                 fixed_upstream_port=port,
-                listen_port=port))
+                listen_port=port,
+                **{"allowed_source_ip": allowed_source,
+                   "host_listener_ip": host_ip}))
         else:
             # container-to-container: dual-homed relay
             edges.append(_edge(
@@ -386,8 +392,292 @@ def plan_relay_run(edge: dict, image_ref: str,
         "RELAY_TRANSPORT_KIND_INVALID", repr(kind))
 
 
+#: Host-side relay script for PUBLISHED_EGRESS edges.
+#: Runs as a systemd transient unit on the WSL host.
+#: Binds to a specific listener IP (never 0.0.0.0), verifies
+#: the peer source IP against the frozen allowlist, then connects
+#: to the fixed upstream. No dynamic targets, no proxy protocol.
+HOST_RELAY_SCRIPT = r'''
+import socket, threading, sys, signal, os
+
+LISTEN_IP = sys.argv[1]
+LISTEN_PORT = int(sys.argv[2])
+UPSTREAM_HOST = sys.argv[3]
+UPSTREAM_PORT = int(sys.argv[4])
+ALLOWED_SOURCE = sys.argv[5]
+
+if LISTEN_IP == "0.0.0.0":
+    sys.stderr.write("refusing 0.0.0.0\n")
+    sys.exit(3)
+
+def pump(a, b):
+    a.settimeout(30); b.settimeout(30)
+    try:
+        while True:
+            d = a.recv(65536)
+            if not d: break
+            b.sendall(d)
+    except OSError: pass
+    finally:
+        for s in (a, b):
+            try: s.close()
+            except OSError: pass
+
+srv = socket.socket()
+srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+srv.bind((LISTEN_IP, LISTEN_PORT))
+srv.listen(64)
+
+def _term(s, f):
+    srv.close()
+    sys.exit(0)
+signal.signal(signal.SIGTERM, _term)
+
+pid = os.getpid()
+sys.stdout.write("host-relay[%d] %s:%d -> %s:%d allow=%s\n" % (
+    pid, LISTEN_IP, LISTEN_PORT, UPSTREAM_HOST, UPSTREAM_PORT,
+    ALLOWED_SOURCE))
+sys.stdout.flush()
+
+while True:
+    try:
+        c, addr = srv.accept()
+    except OSError:
+        break
+    peer_ip = addr[0]
+    if peer_ip != ALLOWED_SOURCE:
+        try: c.close()
+        except OSError: pass
+        continue
+    try:
+        u = socket.create_connection(
+            (UPSTREAM_HOST, UPSTREAM_PORT), timeout=8)
+    except OSError:
+        try: c.close()
+        except OSError: pass
+        continue
+    threading.Thread(target=pump, args=(c, u), daemon=True).start()
+    threading.Thread(target=pump, args=(u, c), daemon=True).start()
+'''
+
+
+#: Track assigned host listener IPs per bridge for uniqueness
+_HOST_LISTENER_IP_COUNTER = {}
+
+
+def _host_listener_ip(source_network_cidr: str) -> str:
+    """Derive a unique host listener IP on the source bridge.
+
+    Uses the upper end of the /28 host range: .12, .11, .10 etc.
+    (avoiding the container relay IPs at .14+)."""
+    import ipaddress
+    net = ipaddress.ip_network(source_network_cidr, strict=False)
+    offset = _HOST_LISTENER_IP_COUNTER.get(source_network_cidr, 12)
+    _HOST_LISTENER_IP_COUNTER[source_network_cidr] = offset - 1
+    return str(net.network_address + offset)
+
+
+def _host_bridge_name(source_network_cidr: str) -> str:
+    """Map a /28 CIDR to the Docker bridge interface name."""
+    import subprocess
+    # Docker bridge names are br-<first 12 chars of network ID>
+    # We look up via `docker network inspect` at runtime; the
+    # contract stores the network name and we derive at setup.
+    return None  # resolved at runtime
+
+
+def plan_host_relay_unit(edge: dict) -> dict:
+    """Build the systemd transient unit contract for a host relay.
+
+    Returns the unit spec dict with all frozen fields."""
+    listen_ip = edge.get("host_listener_ip", "")
+    if not listen_ip:
+        listen_ip = _host_listener_ip(edge["source_network"])
+    listen_port = edge["listen_port"]
+    upstream_host = edge["fixed_upstream_host"]
+    upstream_port = edge["fixed_upstream_port"]
+    allowed_source = edge.get("allowed_source_ip",
+                              _allowed_source_for_edge(edge))
+    unit_name = "mp-e2e-host-relay-%s.service" % (
+        edge["edge_id"].replace("-to-", "-"))
+
+    return {
+        "edge_id": edge["edge_id"],
+        "source_role": edge.get("source_role", ""),
+        "source_network": edge["source_network"],
+        "allowed_source_ip": allowed_source,
+        "host_listener_ip": listen_ip,
+        "listen_port": listen_port,
+        "fixed_upstream_host": upstream_host,
+        "fixed_upstream_port": upstream_port,
+        "transport_kind": edge["transport_kind"],
+        "systemd_unit": unit_name,
+        "session_owner": "mp-e2e-relay",
+    }
+
+
+def _allowed_source_for_edge(edge: dict) -> str:
+    """The frozen source IP for this edge from the R4 authority."""
+    for name, spec in _NETS.items():
+        for role, ip in spec[2].items():
+            if role == edge.get("source_role", ""):
+                return ip
+    return ""
+
+
+def plan_host_relay_systemd_argv(unit: dict,
+                                  script_path: str) -> list:
+    """systemd-run argv for a transient host relay unit."""
+    return [
+        "systemd-run",
+        "--unit=%s" % unit["systemd_unit"],
+        "--description=mergepilot-host-relay-%s" % unit["edge_id"],
+        "--property", "NoNewPrivileges=true",
+        "--property", "PrivateTmp=true",
+        "--property", "ProtectSystem=strict",
+        "--property", "ProtectHome=true",
+        "--property", "CapabilityBoundingSet=",
+        "--property", "Restart=no",
+        "--collect",
+        "--", "/usr/bin/python3", script_path,
+        unit["host_listener_ip"],
+        str(unit["listen_port"]),
+        unit["fixed_upstream_host"],
+        str(unit["fixed_upstream_port"]),
+        unit["allowed_source_ip"],
+    ]
+
+
+class HostRelayTransaction:
+    """§3: alias + systemd unit lifecycle for host-side relays.
+
+    Setup: alias → verify → unit → verify.
+    Cleanup: stop unit → verify listener gone → remove alias → verify.
+    Crash recovery: re-execute cleanup (idempotent)."""
+
+    def __init__(self, host_executor: Callable):
+        self._exec = host_executor
+        self._aliases = []  # (ip, bridge) tuples
+        self._units = []    # unit names
+        self._scripts = []  # script paths
+        self._iptables_rules = []  # (src, dst, port) tuples
+
+    def setup(self, unit: dict, script_path: str,
+              bridge_name: str) -> bool:
+        """Setup one host relay. Returns True on success."""
+        import time
+        listen_ip = unit["host_listener_ip"]
+
+        # 1. Add /32 alias on the bridge
+        cp = self._exec(
+            ["ip", "addr", "add", "%s/32" % listen_ip, "dev",
+             bridge_name],
+            check=False, timeout=10)
+        # rc 2 = already exists, which is fine for idempotent setup
+        if cp.returncode not in (0, 2):
+            return False
+        self._aliases.append((listen_ip, bridge_name))
+
+        # 2. Verify alias
+        cp = self._exec(
+            ["ip", "addr", "show", "dev", bridge_name],
+            check=False, timeout=10)
+        if listen_ip not in (cp.stdout or b"").decode(
+                "utf-8", "replace"):
+            self._cleanup_single(listen_ip, bridge_name, None)
+            return False
+
+        # 3. Allow the frozen source IP to reach this listener
+        # (the R4 INPUT chain drops all container→LOCAL traffic;
+        # this is a precise exception for host relay edges only)
+        # Allow the source bridge subnet to reach this listener.
+        # The relay script still enforces per-connection peer
+        # verification against the frozen allowed_source_ip.
+        source_cidr = unit["source_network"]
+        cp = self._exec(
+            ["iptables", "-I", "INPUT", "1",
+             "-s", source_cidr,
+             "-d", listen_ip,
+             "-p", "tcp", "--dport", str(unit["listen_port"]),
+             "-j", "ACCEPT"],
+            check=False, timeout=10)
+        if cp.returncode != 0:
+            self._cleanup_single(listen_ip, bridge_name, None)
+            return False
+        self._iptables_rules.append((
+            source_cidr, listen_ip,
+            unit["listen_port"]))
+
+        # 4. Start systemd unit
+        argv = plan_host_relay_systemd_argv(unit, script_path)
+        cp = self._exec(argv, check=False, timeout=30)
+        if cp.returncode != 0:
+            self._cleanup_single(listen_ip, bridge_name, None)
+            return False
+        self._units.append(unit["systemd_unit"])
+
+        # 4. Verify unit is active
+        time.sleep(1)
+        cp = self._exec(
+            ["systemctl", "is-active", unit["systemd_unit"]],
+            check=False, timeout=10)
+        if (cp.stdout or b"").decode().strip() != "active":
+            self._cleanup_single(listen_ip, bridge_name,
+                                 unit["systemd_unit"])
+            return False
+
+        self._scripts.append(script_path)
+        return True
+
+    def cleanup(self) -> None:
+        """Idempotent cleanup of all host relays."""
+        # Remove precise INPUT rules first
+        for src, dst_ip, port in self._iptables_rules:
+            self._exec(
+                ["iptables", "-D", "INPUT",
+                 "-s", src, "-d", dst_ip,
+                 "-p", "tcp", "--dport", str(port),
+                 "-j", "ACCEPT"],
+                check=False, timeout=10)
+        self._iptables_rules.clear()
+
+        for unit_name in self._units:
+            self._exec(["systemctl", "stop", unit_name],
+                       check=False, timeout=15)
+            self._exec(["systemctl", "reset-failed", unit_name],
+                       check=False, timeout=10)
+        self._units.clear()
+
+        for ip, bridge in self._aliases:
+            self._exec(
+                ["ip", "addr", "del", "%s/32" % ip, "dev", bridge],
+                check=False, timeout=10)
+        self._aliases.clear()
+
+        for path in self._scripts:
+            try:
+                import os
+                os.unlink(path)
+            except OSError:
+                pass
+        self._scripts.clear()
+
+    def _cleanup_single(self, listen_ip, bridge, unit_name):
+        if unit_name:
+            self._exec(["systemctl", "stop", unit_name],
+                       check=False, timeout=15)
+            self._exec(["systemctl", "reset-failed", unit_name],
+                       check=False, timeout=10)
+        self._exec(
+            ["ip", "addr", "del", "%s/32" % listen_ip, "dev", bridge],
+            check=False, timeout=10)
+
+
+
+
+
 def plan_relay_connects(edge: dict) -> list:
-    """Network connect argvs for each transport kind."""
+    """Network connect argvs for container relays (dual-homed only)."""
     kind = edge["transport_kind"]
     name = edge["relay_container"]
     if kind == DUAL_HOMED_RELAY:
@@ -403,14 +693,7 @@ def plan_relay_connects(edge: dict) -> list:
              "mp-e2e-" + _network_short_name(edge["destination_network"]),
              name],
         ]
-    if kind == PUBLISHED_EGRESS_RELAY:
-        return [
-            ["network", "connect",
-             "--ip", edge["relay_source_ip"],
-             "--gw-priority", "100",
-             "mp-e2e-" + _network_short_name(edge["source_network"]),
-             name],
-        ]
+    # PUBLISHED_EGRESS uses host-side relays (no container connects)
     return []
 
 
@@ -482,6 +765,8 @@ __all__ = [
     "DUAL_HOMED_RELAY", "GATEWAY_LISTENER_TO_CONTAINER",
     "PUBLISHED_EGRESS_RELAY",
     "build_relay_edge_contracts", "RELAY_SCRIPT",
+    "HOST_RELAY_SCRIPT", "HostRelayTransaction",
+    "plan_host_relay_unit", "plan_host_relay_systemd_argv",
     "RELAY_SECURITY_FLAGS", "validate_relay_security",
     "SysctlTransaction", "plan_relay_run", "plan_relay_connects",
     "plan_probe_container", "plan_probe_connect",

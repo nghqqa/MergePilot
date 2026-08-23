@@ -756,16 +756,38 @@ _PROBE_RELAY_UPSTREAM = (
 )
 
 
-def _verify_relay_runtime(docker_executor, edge) -> str:
-    """§1 relay runtime gate: verify running, listening, contract match.
-
-    Returns empty string on success, or a stable error code."""
+def _verify_relay_runtime(docker_executor, edge,
+                          host_executor=None) -> str:
+    """Relay runtime gate for both container and host relays."""
     import json as _json
-    name = edge["relay_container"]
-    relay_ip = edge["relay_source_ip"]
     listen_port = edge["listen_port"]
 
-    # State check
+    if edge["transport_kind"] == erly.PUBLISHED_EGRESS_RELAY:
+        # Host relay: systemctl + ss listener check
+        if host_executor is None:
+            return "RELAY_RUNTIME_NOT_RUNNING"
+        unit_name = erly.plan_host_relay_unit(edge)["systemd_unit"]
+        cp = host_executor(
+            ["systemctl", "is-active", unit_name],
+            check=False, timeout=10)
+        if (cp.stdout or b"").decode().strip() != "active":
+            return "RELAY_RUNTIME_NOT_RUNNING"
+        listener_ip = edge.get("host_listener_ip",
+                                edge.get("relay_source_ip", ""))
+        cp = host_executor(["ss", "-tln", "-4"], check=False, timeout=10)
+        listeners = (cp.stdout or b"").decode("utf-8", "replace")
+        expected = "%s:%d" % (listener_ip, listen_port)
+        if expected not in listeners:
+            if "0.0.0.0:%d" % listen_port in listeners:
+                return "RELAY_LISTENER_ADDRESS_MISMATCH"
+            return "RELAY_LISTENER_MISSING"
+        return ""
+
+    # Container relay
+    name = edge["relay_container"]
+    relay_ip = edge["relay_source_ip"]
+    if not name:
+        return "RELAY_RUNTIME_CONTRACT_MISMATCH"
     cp = docker_executor(
         ["inspect", name, "--format",
          "{{.State.Running}} {{.State.ExitCode}} {{.RestartCount}}"],
@@ -775,8 +797,6 @@ def _verify_relay_runtime(docker_executor, edge) -> str:
         return "RELAY_RUNTIME_NOT_RUNNING"
     if parts[2] != "0":
         return "RELAY_RUNTIME_NOT_RUNNING"
-
-    # Attachment + IP check
     cp = docker_executor(
         ["inspect", name, "--format",
          "{{json .NetworkSettings.Networks}}"],
@@ -792,8 +812,6 @@ def _verify_relay_runtime(docker_executor, edge) -> str:
     actual_ip = nets[source_net].get("IPAddress", "")
     if actual_ip != relay_ip:
         return "RELAY_RUNTIME_CONTRACT_MISMATCH"
-
-    # Listener check: /proc/net/tcp inside the relay container
     cp = docker_executor(
         ["exec", name, "python3", "-c",
          "import sys\n"
@@ -803,7 +821,6 @@ def _verify_relay_runtime(docker_executor, edge) -> str:
          "        addr=parts[1]\n"
          "        ip,port=addr.split(':')\n"
          "        port=int(port,16)\n"
-         "        # decode little-endian IPv4\n"
          "        hexip=ip.zfill(8)\n"
          "        import struct\n"
          "        raw=struct.pack('<I',int(hexip,16))\n"
@@ -813,11 +830,9 @@ def _verify_relay_runtime(docker_executor, edge) -> str:
     listeners = (cp.stdout or b"").decode("utf-8", "replace").strip()
     expected = "%s %d" % (relay_ip, listen_port)
     if expected not in listeners:
-        # check for 0.0.0.0 listener (contract violation)
         if "0.0.0.0 %d" % listen_port in listeners:
             return "RELAY_LISTENER_ADDRESS_MISMATCH"
         return "RELAY_LISTENER_MISSING"
-
     return ""
 
 
@@ -980,7 +995,8 @@ def _run_relay_probes(docker_executor, host_executor, relay_edges,
     # ══ Phase 0: relay runtime gate ═════════════════════════════
     # Verify each relay is running, listening, and matches contract.
     for edge in relay_edges:
-        err = _verify_relay_runtime(docker_executor, edge)
+        err = _verify_relay_runtime(docker_executor, edge,
+                                  host_executor=host_executor)
         if err:
             for pn in probe_names:
                 docker_executor(["rm", "-f", pn], check=False, timeout=15)
@@ -1029,10 +1045,28 @@ def _run_relay_probes(docker_executor, host_executor, relay_edges,
     for edge in relay_edges:
         eid = edge["edge_id"]
         kind = edge["transport_kind"]
-        relay_ip = edge["relay_source_ip"]
         listen_port = edge["listen_port"]
         probe_name = "mp-e2e-relay-probe-%s" % eid.replace("-to-", "-")
         checks = {}
+
+        # For host relays, use the host listener IP; for container
+        # relays, use the container relay IP
+        if kind == erly.PUBLISHED_EGRESS_RELAY:
+            relay_ip = edge.get("host_listener_ip",
+                                edge.get("relay_source_ip", ""))
+            # Winproxy edges: use the running proxy container (has
+            # the frozen IP that passes the relay's peer allowlist).
+            # Other egress edges (controller): source not running at
+            # Stage 10, use temp probe (connect-only passes via
+            # bridge INPUT; application protocol is route-only).
+            if "winproxy" in eid:
+                probe_source = "mergepilot-isolated-%s-1" % (
+                    edge.get("source_role", ""))
+            else:
+                probe_source = probe_name
+        else:
+            relay_ip = edge["relay_source_ip"]
+            probe_source = probe_name  # temp probe for dual-homed
 
         # Pre-probe sysctl check
         if _sysctl_read() != "0":
@@ -1041,20 +1075,37 @@ def _run_relay_probes(docker_executor, host_executor, relay_edges,
             checks["sysctl"] = "OK"
 
         # ── Segment A: source probe → relay (connect-only) ──
-        seg_a = _connect_only(probe_name, relay_ip, listen_port)
+        seg_a = _connect_only(probe_source, relay_ip, listen_port)
         checks["segment_a"] = (
             "OK" if seg_a == "TCP_CONNECTED" else
             "FAIL: %s" % seg_a)
 
-        # ── Segment B: relay → destination (connect-only in relay ns) ──
+        # ── Segment B: relay → destination ──
         if kind == erly.PUBLISHED_EGRESS_RELAY:
             dest_ip = edge["fixed_upstream_host"]
             dest_port = edge["fixed_upstream_port"]
+            # Host relay: segment B runs from the host namespace
+            # (already proven by the host relay's own upstream
+            # connection when it accepts). We verify via a direct
+            # host-to-upstream connect-only probe.
+            code = _PROBE_CONNECT_ONLY.replace("{TIMEOUT}", "6")
+            cp2 = host_executor(
+                ["python3", "-c", code, dest_ip, str(dest_port)],
+                check=False, timeout=20, input_bytes=b"")
+            seg_b_out = (cp2.stdout or b"").decode(
+                "utf-8", "replace").strip()
+            if seg_b_out.startswith("TCP_CONNECTED"):
+                seg_b = "TCP_CONNECTED"
+            elif seg_b_out.startswith("TCP_REFUSED"):
+                seg_b = "TCP_REFUSED"
+            else:
+                seg_b = "TCP_TIMEOUT"
         else:
             dest_ip = edge["destination_ip"]
             dest_port = edge["destination_port"]
-        seg_b, seg_b_detail = _relay_upstream(
-            edge["relay_container"], dest_ip, dest_port)
+            # Container relay: segment B from inside relay container
+            seg_b, seg_b_detail = _relay_upstream(
+                edge["relay_container"], dest_ip, dest_port)
         checks["segment_b"] = (
             "OK" if seg_b == "TCP_CONNECTED" else
             "FAIL: %s" % seg_b)
@@ -1066,7 +1117,7 @@ def _run_relay_probes(docker_executor, host_executor, relay_edges,
                 payload = ("CONNECT api.github.com:443 HTTP/1.1" + crlf +
                            "Host: api.github.com:443" + crlf + crlf)
                 app = _connect_expect(
-                    probe_name, relay_ip, listen_port, payload,
+                    probe_source, relay_ip, listen_port, payload,
                     "200 Connection established")
                 if app == "APPLICATION_VERIFIED":
                     checks["application"] = "OK"
@@ -1363,7 +1414,7 @@ def _run_relay_probes(docker_executor, host_executor, relay_edges,
                 payload=connect_payload)
             if is_winproxy and pos == "CONNECTED":
                 cp2 = docker_executor(
-                    ["exec", probe_name, "python3", "-c",
+                    ["exec", probe_source, "python3", "-c",
                      _PROBE_CODE % 8, relay_ip, str(listen_port),
                      connect_payload.decode("utf-8", "replace")],
                     check=False, timeout=20)
@@ -1653,10 +1704,13 @@ def run_e2e_start(*, config: dict,
 
     # wsl-user-relay: sysctl transaction + relay container setup
     relay_tx = None
+    host_relay_tx = None
     _relay_names = []
     _orig_fail = _fail
 
     def _fail_with_relay(code, detail):
+        if host_relay_tx is not None:
+            host_relay_tx.cleanup()
         _teardown_relay(docker_executor, host_executor, relay_tx,
                         _relay_names)
         _orig_fail(code, detail)
@@ -1669,20 +1723,69 @@ def run_e2e_start(*, config: dict,
             _relay_script_host = session.get("relay_script_path", "")
             if not _relay_script_host:
                 _fail("E2E_RELAY_SCRIPT_MISSING", "no relay_script_path")
-            # write to WSL-visible path (same _to_wsl_path logic)
-            import e2e_runtime_specs as _rs_tmp
             wsl_path = _relay_script_host.replace(
                 "D:", "/mnt/d").replace("\\", "/")
-            for edge in relay_edges:
+
+            # Write the host relay script to a WSL-visible path
+            import pathlib as _pl
+            _host_script = _pl.Path(_relay_script_host).parent / "host_relay.py"
+            _host_script.write_text(erly.HOST_RELAY_SCRIPT,
+                                     encoding="utf-8")
+            _host_script_wsl = str(_host_script).replace(
+                "D:", "/mnt/d").replace("\\", "/")
+
+            # Split edges: container (dual-homed) vs host (egress)
+            container_edges = [e for e in relay_edges
+                               if e["transport_kind"] == erly.DUAL_HOMED_RELAY]
+            host_edges = [e for e in relay_edges
+                          if e["transport_kind"] == erly.PUBLISHED_EGRESS_RELAY]
+
+            # Container relays (dual-homed only)
+            for edge in container_edges:
                 _start_relay_container(
                     docker_executor, host_executor, edge,
                     wsl_path, _fail)
             session["relay_containers"] = [
-                e["relay_container"] for e in relay_edges]
+                e["relay_container"] for e in container_edges]
             _relay_names = list(session["relay_containers"])
+
+            # Host-side relays (published egress)
+            if host_edges:
+                host_relay_tx = erly.HostRelayTransaction(host_executor)
+                for edge in host_edges:
+                    unit = erly.plan_host_relay_unit(edge)
+                    # Resolve the Docker bridge interface name via
+                    # docker_executor (proper docker CLI wrapping)
+                    net_name = "mp-e2e-" + erly._network_short_name(
+                        edge["source_network"])
+                    cp = docker_executor(
+                        ["network", "inspect", net_name, "--format",
+                         "{{.Id}}"],
+                        check=False, timeout=15)
+                    net_id = (cp.stdout or b"").decode().strip()
+                    bridge_name = ("br-%s" % net_id[:12]
+                                   if len(net_id) >= 12 else "")
+
+                    if not bridge_name:
+                        _fail("E2E_HOST_RELAY_BRIDGE_NOT_FOUND",
+                              "cannot resolve bridge for %s" % net_name)
+
+                    ok = host_relay_tx.setup(unit, _host_script_wsl,
+                                              bridge_name)
+                    if not ok:
+                        _fail("E2E_HOST_RELAY_SETUP_FAILED",
+                              "unit=%s" % unit["systemd_unit"])
+
+                session["relay_host_units"] = [
+                    erly.plan_host_relay_unit(e)["systemd_unit"]
+                    for e in host_edges]
+                session["relay_host_aliases"] = [
+                    {"ip": e["host_listener_ip"],
+                     "bridge": "mp-e2e-" + erly._network_short_name(
+                         e["source_network"])}
+                    for e in host_edges]
+
             _fail = _fail_with_relay
-        except erly.RelayProfileError as exc:
-            _fail("E2E_RELAY_SETUP_FAILED", exc.detail)
         except erly.RelayProfileError as exc:
             _fail("E2E_RELAY_SETUP_FAILED", exc.detail)
         except Exception as exc:
