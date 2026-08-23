@@ -335,9 +335,10 @@ def plan_relay_run(edge: dict, image_ref: str,
         argv = (
             ["run", "-d", "--name", name,
              "-p", "%s:%s:%s" % (gw_ip, listen, listen),
+             "--entrypoint", "python3",
              "-v", "%s:/relay.py:ro" % relay_script_path]
             + list(RELAY_SECURITY_FLAGS)
-            + [image_ref, "python3", "/relay.py", listen,
+            + [image_ref, "/relay.py", listen,
                upstream_host, upstream_port])
         validate_relay_security(argv)
         return argv
@@ -347,9 +348,10 @@ def plan_relay_run(edge: dict, image_ref: str,
         dest_port = str(edge["destination_port"])
         argv = (
             ["create", "--name", name, "--network", "none",
+             "--entrypoint", "python3",
              "-v", "%s:/relay.py:ro" % relay_script_path]
             + list(RELAY_SECURITY_FLAGS)
-            + [image_ref, "python3", "/relay.py", listen,
+            + [image_ref, "/relay.py", listen,
                dest_ip, dest_port])
         validate_relay_security(argv)
         return argv

@@ -824,7 +824,8 @@ def _start_relay_container(docker_executor, host_executor, edge,
                            wsl_script_path, _fail) -> None:
     """Create and start one relay container per the frozen edge
     contract. Dual-homed relays get two network attaches."""
-    argv = erly.plan_relay_run(edge, "python:3.12-slim", wsl_script_path)
+    relay_image = "mergepilot-isolated-gh-proxy:local"
+    argv = erly.plan_relay_run(edge, relay_image, wsl_script_path)
     cp = docker_executor(argv, check=False)
     if cp.returncode != 0:
         _fail("E2E_RELAY_CONTAINER_FAILED",
@@ -1046,8 +1047,12 @@ def run_e2e_start(*, config: dict,
             _fail = _fail_with_relay
         except erly.RelayProfileError as exc:
             _fail("E2E_RELAY_SETUP_FAILED", exc.detail)
+        except erly.RelayProfileError as exc:
+            _fail("E2E_RELAY_SETUP_FAILED", exc.detail)
         except Exception as exc:
-            _fail("E2E_RELAY_SETUP_FAILED", type(exc).__name__)
+            _fail("E2E_RELAY_SETUP_FAILED",
+                  "%s: %s" % (type(exc).__name__,
+                              getattr(exc, "detail", str(exc))[:200]))
         _persist()
 
     health = service_health or (
