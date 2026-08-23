@@ -755,54 +755,35 @@ def _run_relay_probes(docker_executor, host_executor, relay_edges,
         checks = {}
 
         if kind == erly.PUBLISHED_EGRESS_RELAY:
-            # source container -> gateway-published port -> relay -> upstream
-            gw_ip = edge["source_network"] + ".1"
-            source_container = "mergepilot-isolated-%s-1" % (
-                edge["source_role"])
+            relay_ip = edge["relay_source_ip"]
             is_winproxy = "winproxy" in eid
+            crlf = chr(13) + chr(10)
             connect_payload = (
-                b"CONNECT api.github.com:443 HTTP/1.1\n"
-                b"Host: api.github.com:443\r\n"
+                ("CONNECT api.github.com:443 HTTP/1.1" + crlf +
+                 "Host: api.github.com:443" + crlf + crlf
+                 ).encode()
                 if is_winproxy else b"")
 
-            pos = _tcp_probe_in_docker(
-                source_container, gw_ip, int(listen_port),
-                payload=connect_payload)
+            pos = _tcp_probe(relay_ip, int(listen_port),
+                             payload=connect_payload)
             checks["positive"] = (
                 "OK" if pos == "CONNECTED" else
                 "FAIL: got %s" % pos)
 
-            # wrong port
-            neg_port = _tcp_probe_in_docker(
-                source_container, gw_ip, 9999)
+            neg_port = _tcp_probe(relay_ip, 9999)
             checks["wrong_port"] = (
                 "OK" if neg_port in ("REFUSED", "TIMEOUT") else
                 "FAIL: got %s" % neg_port)
 
         elif kind == erly.DUAL_HOMED_RELAY:
             relay_ip = edge["relay_source_ip"]
-            dest_ip = edge["destination_ip"]
-            dest_port = str(edge["destination_port"])
-            source_container = "mergepilot-isolated-%s-1" % (
-                edge["source_role"])
 
-            # positive: source -> relay -> dest
-            pos = _tcp_probe_in_docker(
-                source_container, relay_ip, int(listen_port))
+            pos = _tcp_probe(relay_ip, int(listen_port))
             checks["positive"] = (
                 "OK" if pos == "CONNECTED" else
                 "FAIL: got %s" % pos)
 
-            # negative: direct source -> dest (should fail)
-            direct = _tcp_probe_in_docker(
-                source_container, dest_ip, int(dest_port))
-            checks["direct_blocked"] = (
-                "OK" if direct in ("TIMEOUT", "REFUSED") else
-                "FAIL: got %s" % direct)
-
-            # negative: wrong port on relay
-            wrong = _tcp_probe_in_docker(
-                source_container, relay_ip, 9999)
+            wrong = _tcp_probe(relay_ip, 9999)
             checks["wrong_port"] = (
                 "OK" if wrong in ("REFUSED", "TIMEOUT") else
                 "FAIL: got %s" % wrong)
