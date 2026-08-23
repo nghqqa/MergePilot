@@ -374,12 +374,16 @@ def production_service_health(docker_executor, service: str,
         return
     if service == "mcp-bridge":
         check = mcp_health or _bridge_mcp_check(docker_executor)
-        _wait_mcp(check, _LOOPBACK_BRIDGE_SSE_URL, service)
+        _wait_mcp(check, _LOOPBACK_BRIDGE_SSE_URL, service,
+                  diagnose=lambda: _container_death_detail(
+                      docker_executor, name))
         return
     if service == "policy-gateway":
         check = mcp_health or _gateway_mcp_check(docker_executor,
                                                  gateway_bearer)
-        _wait_mcp(check, _LOOPBACK_GATEWAY_SSE_URL, service)
+        _wait_mcp(check, _LOOPBACK_GATEWAY_SSE_URL, service,
+                  diagnose=lambda: _container_death_detail(
+                      docker_executor, name))
         return
     _wait_running(docker_executor, name, what=service)
 
@@ -627,8 +631,37 @@ def _gateway_mcp_check(docker_executor: Callable,
     return check
 
 
+def _container_death_detail(docker_executor: Callable,
+                            name: str) -> str:
+    """Sanitized post-mortem for a service that failed its MCP
+    health gate: State/exit/oom/error plus the last log lines
+    (bounded, newline-flattened; env/token values are never logged
+    by these images, and the text is truncated hard anyway)."""
+    try:
+        cp = docker_executor(
+            ["inspect", name, "--format",
+             "{{.State.Status}} exit={{.State.ExitCode}}"
+             " oom={{.State.OOMKilled}} err={{.State.Error}}"],
+            check=False)
+        state = (cp.stdout or b"").decode("utf-8", "replace").strip()
+    except Exception:
+        state = "inspect-failed"
+    tail = ""
+    try:
+        cp = docker_executor(["logs", "--tail", "10", name],
+                             check=False, timeout=20)
+        tail = ((cp.stderr or b"") + (cp.stdout or b"")).decode(
+            "utf-8", "replace")
+    except Exception:
+        tail = ""
+    flat = " ".join(tail.split())[-320:]
+    return "container[%s] %s | logs: %s" % (name.split("-")[-2],
+                                             state, flat)
+
+
 def _wait_mcp(check: Callable, url: str, service: str,
-              timeout: float = HEALTH_TIMEOUT_SECONDS) -> None:
+              timeout: float = HEALTH_TIMEOUT_SECONDS,
+              diagnose: Callable = None) -> None:
     deadline = time.monotonic() + timeout
     last = "GATEWAY_UPSTREAM_UNREACHABLE"
     while time.monotonic() < deadline:
@@ -637,6 +670,11 @@ def _wait_mcp(check: Callable, url: str, service: str,
             return
         last = result.get("error") or last
         time.sleep(HEALTH_POLL_SECONDS)
+    if diagnose is not None:
+        try:
+            last = "%s | %s" % (last, diagnose())
+        except Exception:
+            pass
     raise E2ELifecycleError(
         "E2E_%s_MCP_UNHEALTHY" % service.upper().replace("-", "_"),
         last)
