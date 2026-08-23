@@ -833,6 +833,9 @@ def _start_relay_container(docker_executor, host_executor, edge,
     if cp.returncode != 0:
         _fail("E2E_RELAY_CONTAINER_FAILED",
               "%s create rc=%d" % (edge["edge_id"], cp.returncode))
+    # disconnect from private none network before attaching
+    docker_executor(["network", "disconnect", "none",
+                    edge["relay_container"]], check=False, timeout=15)
     connects = erly.plan_relay_connects(edge)
     for cargv in connects:
         cp = docker_executor(cargv, check=False)
