@@ -1635,6 +1635,13 @@ def run_e2e_start(*, config: dict,
 
     # ── Stage 4: 11 containers create+connect (§6) ──
     session["e2e_stage"] = "containers"
+    # §1 policy fixture gate: wrong file = policy=unknown at runtime
+    policy_key = config.get("policy_path", "")
+    if policy_key:
+        try:
+            rs.validate_policy_fixture(policy_key)
+        except rs.RuntimeSpecError as exc:
+            _fail("E2E_POLICY_FILE_INVALID", exc.detail)
     for service in _SPEC_SERVICES:
         image = image_refs.get(service, "")
         if not image:

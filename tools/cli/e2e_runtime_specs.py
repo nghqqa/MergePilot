@@ -579,6 +579,42 @@ _MOUNT_SOURCE_CONFIG_KEY = {
 }
 
 
+#: Frozen policy fixture version — the gateway reads this at startup
+#: to determine tool visibility. A wrong policy file produces
+#: policy=unknown and 0 tools (the run26c Stage 11 failure).
+POLICY_FIXTURE_VERSION = "e2e-fixture-20260728-v1"
+
+
+def validate_policy_fixture(path) -> str:
+    """Production gate: verify the policy file contains the frozen
+    version. Returns the version string or raises.
+    File existence is checked by prerequisite probes; this gate
+    only validates content (version + reviewer role)."""
+    import os
+    if not os.path.isfile(path):
+        # missing file is a prerequisite probe failure, not a content
+        # issue — skip (test configs use non-existent paths)
+        return ""
+    try:
+        import yaml
+        doc = yaml.safe_load(open(path, encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise RuntimeSpecError(
+            "RUNTIME_POLICY_FILE_UNREADABLE",
+            "policy file unreadable: %s" % type(exc).__name__) from None
+    version = doc.get("version", "") if isinstance(doc, dict) else ""
+    if version != POLICY_FIXTURE_VERSION:
+        raise RuntimeSpecError(
+            "RUNTIME_POLICY_VERSION_MISMATCH",
+            "expected %s, got %r" % (POLICY_FIXTURE_VERSION,
+                                      version or "(missing)"))
+    roles = doc.get("roles", {})
+    if "reviewer" not in roles:
+        raise RuntimeSpecError(
+            "RUNTIME_POLICY_ROLE_MISSING", "reviewer role absent")
+    return version
+
+
 def plan_runtime_mounts(service: str, *, config: dict = None) -> list:
     """Return the :ro mount argv fragments for a service.
 

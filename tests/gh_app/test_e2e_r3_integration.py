@@ -383,9 +383,16 @@ class TestFullIntegration(unittest.TestCase):
                 '    room_id: "%s"\n' % ROOM_ID, encoding="utf-8")
             policy = root / "policy.yaml"
             policy.write_text(
+                'version: e2e-fixture-20260728-v1\n'
                 'repos:\n'
                 '  allowlist:\n'
-                '    - "example/fixture"\n', encoding="utf-8")
+                '    - "example/fixture"\n'
+                'roles:\n'
+                '  reviewer:\n'
+                '    classes: [read]\n'
+                'tool_classes:\n'
+                '  read:\n'
+                '    - get_file_contents\n', encoding="utf-8")
             creds = root / "creds.json"
             creds.write_text(json.dumps(
                 {"access_token": "syt_synthetic"}),
@@ -687,9 +694,16 @@ class TestFullIntegration(unittest.TestCase):
             '    room_id: "%s"\n' % ROOM_ID, encoding="utf-8")
         policy = root / "policy.yaml"
         policy.write_text(
+            'version: e2e-fixture-20260728-v1\n'
             'repos:\n'
             '  allowlist:\n'
-            '    - "example/fixture"\n', encoding="utf-8")
+            '    - "example/fixture"\n'
+            'roles:\n'
+            '  reviewer:\n'
+            '    classes: [read]\n'
+            'tool_classes:\n'
+            '  read:\n'
+            '    - get_file_contents\n', encoding="utf-8")
         (root / "creds.json").write_text(json.dumps(
             {"access_token": "syt_synthetic"}), encoding="utf-8")
         (root / "app.pem").write_text("synthetic pem", encoding="utf-8")
