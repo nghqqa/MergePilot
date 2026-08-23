@@ -357,9 +357,10 @@ class TestProbeWiring(unittest.TestCase):
     def test_diagnostic_fields_present(self):
         import e2e_lifecycle as el
         src = Path(el.__file__).read_text(encoding="utf-8")
+        # Phase A failure diagnostics must include these safe fields
+        self.assertIn("edge=", src)
         self.assertIn("probe=", src)
         self.assertIn("net=", src)
-        self.assertIn("relay_ip=", src)
 
     def test_connect_200_verification(self):
         """Winproxy CONNECT must verify 200 Connection established."""
@@ -374,6 +375,96 @@ class TestProbeWiring(unittest.TestCase):
         # rm -f probe_name must appear after checks
         count = src.count('["rm", "-f", probe_name]')
         self.assertGreaterEqual(count, 3)  # stale + failures + normal
+
+
+class TestTwoPhaseExecution(unittest.TestCase):
+    """§1: _run_relay_probes strict two-phase architecture."""
+
+    def test_phase_a_before_sysctl(self):
+        """All docker start/create must happen before sysctl arm."""
+        import e2e_lifecycle as el
+        src = Path(el.__file__).read_text(encoding="utf-8")
+        # Phase A marker must come before Phase B marker
+        a_idx = src.find("Phase A: topology preparation")
+        b_idx = src.find("Phase B: sysctl barrier + probes")
+        self.assertGreater(a_idx, 0)
+        self.assertGreater(b_idx, 0)
+        self.assertLess(a_idx, b_idx)
+
+    def test_sysctl_arm_double_read(self):
+        """Barrier must verify twice (immediate + 1s later)."""
+        import e2e_lifecycle as el
+        src = Path(el.__file__).read_text(encoding="utf-8")
+        self.assertIn("first-read not 0", src)
+        self.assertIn("second-read not 0", src)
+        self.assertIn("_t.sleep(1)", src)
+
+    def test_sysctl_drift_detected_not_rewritten(self):
+        """Pre-probe sysctl check must fail, not auto-rewrite."""
+        import e2e_lifecycle as el
+        src = Path(el.__file__).read_text(encoding="utf-8")
+        self.assertIn("RELAY_SYSCTL_DRIFT", src)
+        # The drift detection branch must not contain a sysctl -w
+        drift_idx = src.find('RELAY_SYSCTL_DRIFT')
+        # Look at the if-branch that handles drift
+        drift_branch = src[drift_idx:drift_idx+100]
+        self.assertNotIn("sysctl", drift_branch.lower().replace(
+            "relay_sysctl_drift", "").replace("sysctl", "", 1)
+            if "sysctl_read" not in drift_branch else "")
+
+    def test_phase_b_no_topology_mutations(self):
+        """After sysctl arm, only exec and inspect allowed."""
+        import e2e_lifecycle as el
+        src = Path(el.__file__).read_text(encoding="utf-8")
+        # Find the Phase B section
+        b_start = src.find("Phase B: sysctl barrier")
+        probe_start = src.find("Execute probes", b_start)
+        cleanup_start = src.find("Cleanup (topology mutations", b_start)
+        phase_b_section = src[probe_start:cleanup_start]
+        # No create/start/stop/rm/network in the probe section
+        for forbidden in ('["create"', '["start"', '["stop"', '["rm"',
+                          '["network"'):
+            self.assertNotIn(forbidden, phase_b_section,
+                             "Phase B must not contain %s" % forbidden)
+
+    def test_post_sysctl_verification(self):
+        """After all probes, verify sysctl is still 0."""
+        import e2e_lifecycle as el
+        src = Path(el.__file__).read_text(encoding="utf-8")
+        self.assertIn("RELAY_SYSCTL_DRIFT_POST", src)
+
+    def test_phase_a_failure_cleans_all(self):
+        """Phase A partial failure must clean all probe containers."""
+        import e2e_lifecycle as el
+        src = Path(el.__file__).read_text(encoding="utf-8")
+        self.assertIn("PROBE_PHASE_A_FAILED", src)
+
+    def test_source_vantage_honesty(self):
+        """Results must honestly label temp probes, not real services."""
+        import e2e_lifecycle as el
+        src = Path(el.__file__).read_text(encoding="utf-8")
+        self.assertIn("temp-probe", src)
+        self.assertIn("simulated attachment", src)
+        self.assertIn("not real", src)
+
+    def test_unauthorized_source_probe(self):
+        """Unauthorized source negative probe must be present."""
+        import e2e_lifecycle as el
+        src = Path(el.__file__).read_text(encoding="utf-8")
+        self.assertIn("unauth_source", src)
+        self.assertIn("unauth_probe_name", src)
+
+    def test_other_relay_negative(self):
+        """Other-relay negative probe must be present."""
+        import e2e_lifecycle as el
+        src = Path(el.__file__).read_text(encoding="utf-8")
+        self.assertIn("other_relay", src)
+
+    def test_direct_destination_negative(self):
+        """Direct-to-destination negative for dual-homed edges."""
+        import e2e_lifecycle as el
+        src = Path(el.__file__).read_text(encoding="utf-8")
+        self.assertIn("direct_blocked", src)
 
 
 class TestProfileHonesty(unittest.TestCase):
