@@ -1864,21 +1864,40 @@ class TestRouteProbeIpYield(unittest.TestCase):
         self.assertIn("172.31.0.18", restores[0])
         self.assertIn("--gw-priority", restores[0])
 
-    def test_running_holder_is_hard_failure(self):
+    def test_running_holder_probed_in_its_container(self):
         fd = _FakeDocker(probe_source_ips=self._sources())
         fd.network_endpoints["mp-e2e-gw-egress"] = (
             "mergepilot-isolated-policy-gateway-1=172.31.0.18/28")
         fd.containers["mergepilot-isolated-policy-gateway-1"] = {
             "state": "running"}
+        # the in-container probe answers under the CONTAINER name
+        fd.probe_source_ips["mergepilot-isolated-policy-gateway-1"] =             "172.31.0.18"
+        journal = {}
+        results = self._run(fd, journal)
+        # the RUNNING real service is the vantage point: the TCP
+        # probe executes inside it (source inherently correct),
+        # never a disconnect
+        self.assertTrue(results["policy-gateway"]["verified"],
+                        results["policy-gateway"])
+        self.assertEqual(results["policy-gateway"]["vantage"],
+                         "service-container")
+        disconnects = [c for c in fd.calls
+                       if c[:2] == ["network", "disconnect"]]
+        self.assertEqual(disconnects, [])
+
+    def test_running_holder_in_container_source_mismatch(self):
+        fd = _FakeDocker(probe_source_ips={})
+        fd.network_endpoints["mp-e2e-gw-egress"] = (
+            "mergepilot-isolated-policy-gateway-1=172.31.0.18/28")
+        fd.containers["mergepilot-isolated-policy-gateway-1"] = {
+            "state": "running"}
+        # in-container probe prints the WRONG source
+        fd.probe_source_ips["mergepilot-isolated-policy-gateway-1"] =             "172.99.99.99"
         journal = {}
         results = self._run(fd, journal)
         self.assertFalse(results["policy-gateway"]["verified"])
         self.assertEqual(results["policy-gateway"]["error"],
-                         "PROBE_IP_HELD")
-        # a running holder is never disconnected
-        disconnects = [c for c in fd.calls
-                       if c[:2] == ["network", "disconnect"]]
-        self.assertEqual(disconnects, [])
+                         "ROUTE_GATE_FAILED")
 
     def test_restore_failure_fails_the_probe(self):
         fd = _FakeDocker(probe_source_ips=self._sources())

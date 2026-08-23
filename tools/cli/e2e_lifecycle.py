@@ -908,7 +908,10 @@ def run_e2e_start(*, config: dict,
     except Exception as exc:
         _fail("E2E_ROUTE_PROBE_FAILED", type(exc).__name__)
     session["route_probe_results"] = {
-        svc: {"verified": r.get("verified", False)}
+        svc: {"verified": r.get("verified", False),
+              "error": r.get("error", ""),
+              "detail": r.get("detail", ""),
+              "vantage": r.get("vantage", "probe-container")}
         for svc, r in route_result.items()}
     if not all(r.get("verified") for r in route_result.values()):
         failed = [s for s, r in route_result.items()
