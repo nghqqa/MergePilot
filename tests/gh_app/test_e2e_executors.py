@@ -93,6 +93,8 @@ class _FakeDocker:
             if "State.Running" in fmt:
                 if name in self.running_overrides:
                     return _CP(0, self.running_overrides[name].encode())
+                if not info:
+                    return _CP(0, b"false")   # unknown container
                 return _CP(0, ("false" if info.get("state")
                                in ("created", "exited") else
                                "true").encode())
@@ -1863,9 +1865,10 @@ class TestRouteProbeIpYield(unittest.TestCase):
         self.assertTrue(results["policy-gateway"]["verified"])
         disconnects = [c for c in fd.calls
                        if c[:2] == ["network", "disconnect"]]
-        # only the gateway's container is attached (container-side
-        # membership); the other services are absent → no attempt
-        self.assertEqual(len(disconnects), 1)
+        # the disconnect RESULT is the membership authority: 9
+        # attempts (one per static attachment), only the registered
+        # gateway's succeeds (and is restored below)
+        self.assertEqual(len(disconnects), 9)
         self.assertIn(
             ["network", "disconnect", "mp-e2e-gw-egress",
              "mergepilot-isolated-policy-gateway-1"], disconnects)

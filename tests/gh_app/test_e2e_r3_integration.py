@@ -149,6 +149,13 @@ class FakeDockerSide:
             src = dict(ex.ROUTE_PROBE_SPECS)[service][2]
             self.events.append("route_probe:%s" % service)
             return _cp(0, src.encode())
+        if name.startswith("mergepilot-isolated-")                 and "create_connection" in " ".join(a)                 and "'127.0.0.1'" not in " ".join(a):
+            # in-container vantage (running service): same frozen
+            # source-IP answer keyed on the service container name
+            service = name[len("mergepilot-isolated-"):-2]
+            src = dict(ex.ROUTE_PROBE_SPECS)[service][2]
+            self.events.append("route_probe:%s" % service)
+            return _cp(0, src.encode())
         if a[2:4] == ["sha256sum", "/root/manager-workspace/config/"
                       "mcporter.json"] or (
                 len(a) > 2 and a[2] == "sha256sum"):

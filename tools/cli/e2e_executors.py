@@ -253,28 +253,6 @@ def _network_ip_holders(docker_executor, network: str) -> dict:
     return holders
 
 
-def _container_on_network(docker_executor, container: str,
-                          network: str) -> bool:
-    """Container-side membership check. This docker daemon does NOT
-    list `network connect`-attached endpoints in `network inspect`
-    .Containers (verified live: even RUNNING containers are absent
-    from both the --format range and the verbose JSON), so network
-    discovery is useless here — inspecting the CONTAINER's
-    NetworkSettings.Networks is the reliable source."""
-    cp = docker_executor(
-        ["inspect", container, "--format",
-         "{{json .NetworkSettings.Networks}}"],
-        check=False)
-    if getattr(cp, "returncode", 1) != 0:
-        return False
-    try:
-        nets = json.loads((cp.stdout or b"").decode("utf-8",
-                                                    "replace"))
-    except ValueError:
-        return False
-    return isinstance(nets, dict) and network in nets
-
-
 def _container_running(docker_executor, name: str) -> bool:
     cp = docker_executor(
         ["inspect", name, "--format", "{{.State.Running}}"],
@@ -381,25 +359,28 @@ def _run_single_probe(*, docker_executor, image_ref, probe_name,
     yielded = []
     restore_errors = []
     try:
+        service_running = _container_running(
+            docker_executor, service_container)
         for network, ip, priority in attachments:
             if not ip:
                 continue
-            if _container_on_network(docker_executor,
-                                     service_container, network):
-                if _container_running(docker_executor,
-                                      service_container):
-                    return _exec_probe_in_container(
-                        docker_executor, service_container, dst_ip,
-                        dst_port, expected_src, service)
-                cp = docker_executor(
-                    ["network", "disconnect", network,
-                     service_container],
-                    check=False)
-                if getattr(cp, "returncode", 1) == 0:
-                    yielded.append((network, ip, priority,
-                                    service_container))
-                # rc!=0: odd — the connect below will fail honestly
-                # if the IP is still reserved
+            if service_running:
+                return _exec_probe_in_container(
+                    docker_executor, service_container, dst_ip,
+                    dst_port, expected_src, service)
+            # NEITHER discovery source is reliable on this daemon
+            # (network inspect .Containers is always empty AND
+            # NetworkSettings.Networks only reflects the LAST
+            # attach) — the disconnect RESULT is the single
+            # authority: rc=0 means it held the endpoint (yield,
+            # restore exactly); rc=1 means it held nothing.
+            cp = docker_executor(
+                ["network", "disconnect", network,
+                 service_container],
+                check=False)
+            if getattr(cp, "returncode", 1) == 0:
+                yielded.append((network, ip, priority,
+                                service_container))
 
         for network, ip, priority in attachments:
             argv = ["network", "connect"]
