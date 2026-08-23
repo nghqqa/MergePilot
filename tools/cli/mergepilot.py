@@ -1849,7 +1849,9 @@ def _execute_github_e2e_start(args, project_dir, planner, paths,
         # logged — only the manager token value reaches the health
         # probe (STDIN of the in-distro probe process)
         role_tokens = _read_hiclaw_role_tokens(hiclaw_exec)
-        role_tokens_manager = role_tokens["manager"]
+        # the gateway health probe authenticates as REVIEWER (its
+        # policy exposure is exactly the frozen read-only set)
+        role_tokens_reviewer = role_tokens["reviewer"]
         runtime_configs = _build_e2e_runtime_configs(
             config, planner, reader_dsn, audit_dsn, publisher_dsn,
             pat_value,
@@ -1931,7 +1933,7 @@ def _execute_github_e2e_start(args, project_dir, planner, paths,
             docker_gw_priority_supported=docker_gw_priority_supported,
             existing_network_cidrs=existing_network_cidrs,
             firewall_scan_text=firewall_scan_text,
-            gateway_bearer=role_tokens_manager,
+            gateway_bearer=role_tokens_reviewer,
             agents_docker_executor=hiclaw_exec,
             matrix_members_provider=(
                 lambda: el.fetch_matrix_joined_mxids(config)),
@@ -2377,7 +2379,7 @@ def cmd_status(args):
             # inside the target containers via the docker executor
             try:
                 status_bearer = _read_hiclaw_role_tokens(
-                    _e2e_hiclaw_docker_exec(docker))["manager"]
+                    _e2e_hiclaw_docker_exec(docker))["reviewer"]
             except Failure:
                 status_bearer = ""
             meta["github_e2e_services"] = el.run_e2e_status(

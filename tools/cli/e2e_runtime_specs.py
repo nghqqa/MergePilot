@@ -40,13 +40,12 @@ GATEWAY_E2E_ENV_KEYS = frozenset((
 GATEWAY_E2E_UPSTREAM = "http://172.31.0.34:8082/sse"
 GATEWAY_E2E_POLICY = "/run/mergepilot/policy-fixture.yaml"
 
-#: Frozen read-only tool set (Gateway semantic health contract)
-GATEWAY_READ_ONLY_TOOLS = frozenset((
-    "get_pull_request",
-    "get_pull_request_files",
-    "get_file_contents",
-    "get_branch",
-))
+#: Gateway read-only tool contract — single authority is
+#: e2e_gateway_health.FROZEN_READ_ONLY_TOOLS (deployed server
+#: toolset × policy-e2e-fixture tool_classes.read); the equality
+#: is enforced by a regression test.
+import e2e_gateway_health as _gwh
+GATEWAY_READ_ONLY_TOOLS = _gwh.FROZEN_READ_ONLY_TOOLS
 
 
 def validate_gateway_e2e_env(mapping) -> dict:

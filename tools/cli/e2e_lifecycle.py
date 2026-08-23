@@ -63,11 +63,14 @@ HEALTH_POLL_SECONDS = 0.5
 HEALTH_TIMEOUT_SECONDS = 120
 
 #: Frozen E2E endpoint URLs (health targets). The gateway target is
-#: the MANAGER role endpoint (Bearer-authenticated /{role}/sse per
-#: e2e_executors.hiclaw_role_gateway_url); the gateway listens on its
+#: the REVIEWER role endpoint (Bearer-authenticated /{role}/sse per
+#: e2e_executors.hiclaw_role_gateway_url); the reviewer role's
+#: policy exposure is EXACTLY the frozen read-only set, which makes
+#: it the natural health-probe role. The gateway listens on its
 #: gw-egress IP 172.31.0.18:8083 — 172.31.0.34 is the BRIDGE (8082
-#: only), so a .34:8083 target can never answer.
-GATEWAY_SSE_URL = "http://172.31.0.18:8083/manager/sse"
+#: only), and a "manager" role does not exist in the fixture
+#: policy (roles: reviewer/verifier/fixer/coordinator).
+GATEWAY_SSE_URL = "http://172.31.0.18:8083/reviewer/sse"
 BRIDGE_SSE_URL = "http://172.31.0.34:8082/sse"
 
 _PREREQ_CONFIG_NAME = "github-e2e.json"
@@ -391,7 +394,7 @@ def production_service_health(docker_executor, service: str,
 #: Loopback probe targets (in-container; the *_SSE_URL constants
 #: above stay the network-facing contract for journals/status).
 _LOOPBACK_BRIDGE_SSE_URL = "http://127.0.0.1:8082/sse"
-_LOOPBACK_GATEWAY_SSE_URL = "http://127.0.0.1:8083/manager/sse"
+_LOOPBACK_GATEWAY_SSE_URL = "http://127.0.0.1:8083/reviewer/sse"
 
 
 # Real MCP SSE client (stdlib only), transported into the distro as a

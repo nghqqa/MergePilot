@@ -42,8 +42,8 @@ import e2e_probes as ep               # noqa: E402
 RUN_ID = "w3b-r3-integration"
 SERVER = e2f.E2E_MATRIX_SERVER_NAME
 ROOM_ID = "!r:" + SERVER
-FROZEN_TOOLS = ["get_pull_request", "get_pull_request_files",
-                "get_file_contents", "get_branch"]
+FROZEN_TOOLS = sorted(__import__("e2e_gateway_health")
+                      .FROZEN_READ_ONLY_TOOLS)
 
 
 def _cp(rc=0, stdout=b""):
@@ -206,7 +206,7 @@ class FakeDockerSide:
                 # the manager bearer must ride STDIN (extracted from
                 # the HiClaw side, never argv)
                 assert (input_bytes
-                        == b"tok-canonical-manager\n"), input_bytes
+                        == b"tok-canonical-reviewer\n"), input_bytes
                 return _cp(0, json.dumps(
                     {"tools": FROZEN_TOOLS}).encode())
         return _cp(0)

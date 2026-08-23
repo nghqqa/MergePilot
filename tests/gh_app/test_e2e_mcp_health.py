@@ -57,8 +57,8 @@ def _cp(rc=0, stdout=b""):
 # MCP SSE server (both SDK-style /messages/?session_id=… and
 # mcp-proxy-style /message?sessionId=… endpoint dialects) ──────────
 
-TOOLS = ["get_branch", "get_file_contents", "get_pull_request",
-         "get_pull_request_files"]
+# the REAL read-only contract (single authority: e2e_gateway_health)
+TOOLS = sorted(gwh.FROZEN_READ_ONLY_TOOLS)
 
 
 class _SseMcpServer(ThreadingHTTPServer):
@@ -129,7 +129,7 @@ class TestMcpSseProbeScript(unittest.TestCase):
         compile(el._MCP_SSE_PROBE_SCRIPT, "mcp-probe", "exec")
 
     def _run_probe(self, server, bearer):
-        url = "http://127.0.0.1:%d/manager/sse" % server.server_address[1]
+        url = "http://127.0.0.1:%d/reviewer/sse" % server.server_address[1]
         return subprocess.run(
             [sys.executable, "-c", el._MCP_SSE_PROBE_SCRIPT, url],
             input=(bearer + "\n").encode(), capture_output=True,
@@ -140,10 +140,10 @@ class TestMcpSseProbeScript(unittest.TestCase):
         thread = threading.Thread(target=srv.serve_forever, daemon=True)
         thread.start()
         try:
-            cp = self._run_probe(srv, "tok-manager-abc")
+            cp = self._run_probe(srv, "tok-reviewer-abc")
             self.assertEqual(cp.returncode, 0, cp.stderr[-400:])
             self.assertEqual(json.loads(cp.stdout)["tools"], TOOLS)
-            self.assertEqual(srv.auth_header, "Bearer tok-manager-abc")
+            self.assertEqual(srv.auth_header, "Bearer tok-reviewer-abc")
             methods = [r.get("method") for r in srv.requests]
             self.assertIn("initialize", methods)
             self.assertIn("notifications/initialized", methods)
@@ -250,11 +250,29 @@ class TestToolContract(unittest.TestCase):
 
 class TestGatewayUrlAuthority(unittest.TestCase):
 
-    def test_gateway_url_is_manager_role_on_gw_egress_ip(self):
+    def test_gateway_url_is_reviewer_role_on_gw_egress_ip(self):
         self.assertEqual(el.GATEWAY_SSE_URL,
-                         ex.hiclaw_role_gateway_url("manager"))
+                         ex.hiclaw_role_gateway_url("reviewer"))
         self.assertTrue(el.GATEWAY_SSE_URL.startswith(
-            "http://172.31.0.18:8083/manager/sse"))
+            "http://172.31.0.18:8083/reviewer/sse"))
+
+    def test_frozen_set_matches_fixture_policy_read_class(self):
+        """The frozen contract must equal the fixture policy's
+        tool_classes.read (drift here broke the real DAG at the
+        bridge gate: placeholder names that the deployed server
+        never exposed)."""
+        text = Path(ROOT / "tools" / "policy-gateway"
+                    / "policy-e2e-fixture.yaml").read_text(
+                        encoding="utf-8")
+        # minimal parse: read list under tool_classes
+        section = text.split("tool_classes:")[1].split("roles:")[0]
+        read_block = section.split("read:")[1].split("comment:")[0]
+        names = set()
+        for line in read_block.splitlines():
+            line = line.strip()
+            if line.startswith("- "):
+                names.add(line[2:].strip().strip('"'))
+        self.assertEqual(set(gwh.FROZEN_READ_ONLY_TOOLS), names)
 
     def test_no_host_urllib_left_in_mcp_checks(self):
         """The production health path must not fall back to host-side
@@ -299,13 +317,13 @@ class TestProductionServiceHealthWiring(unittest.TestCase):
 
         el.production_service_health(
             docker_exec, "policy-gateway",
-            gateway_bearer="tok-manager-xyz")
+            gateway_bearer="tok-reviewer-xyz")
         self.assertEqual(seen["argv"][:3], ["exec", "-i",
                                             "mergepilot-isolated-"
                                             "policy-gateway-1"])
         self.assertEqual(seen["argv"][-1],
-                         "http://127.0.0.1:8083/manager/sse")
-        self.assertEqual(seen["input"], b"tok-manager-xyz\n")
+                         "http://127.0.0.1:8083/reviewer/sse")
+        self.assertEqual(seen["input"], b"tok-reviewer-xyz\n")
 
     def test_missing_executor_is_unhealthy(self):
         check = el._bridge_mcp_check(None)
@@ -502,7 +520,7 @@ class TestHiclawExecutorFactory(unittest.TestCase):
     def test_cli_wires_hiclaw_executor_and_bearer(self):
         import mergepilot as mp
         src = Path(mp.__file__).read_text(encoding="utf-8")
-        self.assertIn("gateway_bearer=role_tokens_manager", src)
+        self.assertIn("gateway_bearer=role_tokens_reviewer", src)
         self.assertIn("agents_docker_executor=hiclaw_exec", src)
         self.assertIn("docker_executor=hiclaw_exec", src)
         self.assertIn("minio_readonly_via_docker(hiclaw_exec)", src)

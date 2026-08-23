@@ -291,9 +291,15 @@ class TestRuntimeLifecycle(unittest.TestCase):
 class TestGatewaySemanticHealth(unittest.TestCase):
 
     def test_read_only_tools_frozen(self):
-        expected = {"get_pull_request", "get_pull_request_files",
-                    "get_file_contents", "get_branch"}
-        self.assertEqual(set(rs.GATEWAY_READ_ONLY_TOOLS), expected)
+        # single authority: e2e_gateway_health (deployed server
+        # toolset x fixture policy read class)
+        import e2e_gateway_health as gwh
+        self.assertEqual(set(rs.GATEWAY_READ_ONLY_TOOLS),
+                         set(gwh.FROZEN_READ_ONLY_TOOLS))
+        # the old placeholder names must never come back
+        for ghost in ("get_pull_request", "get_pull_request_files",
+                      "get_branch"):
+            self.assertNotIn(ghost, rs.GATEWAY_READ_ONLY_TOOLS)
 
     def test_stub_upstream_not_e2e(self):
         self.assertNotEqual(rs.GATEWAY_E2E_UPSTREAM,
