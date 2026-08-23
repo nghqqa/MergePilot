@@ -215,12 +215,18 @@ def _role_from_ip(ip: str) -> str:
 #: Minimal fixed-target TCP relay (stdlib only; no CONNECT, no SOCKS,
 #: no HTTP proxy, no dynamic targets).  Runs non-root, read-only
 #: rootfs, cap_drop ALL, no-new-privileges.
+#: Argv: LISTEN_IP LISTEN_PORT TARGET_HOST TARGET_PORT
 RELAY_SCRIPT = r'''
 import socket, threading, sys, signal
 
-LISTEN_PORT = int(sys.argv[1])
-TARGET_HOST = sys.argv[2]
-TARGET_PORT = int(sys.argv[3])
+LISTEN_IP = sys.argv[1]
+LISTEN_PORT = int(sys.argv[2])
+TARGET_HOST = sys.argv[3]
+TARGET_PORT = int(sys.argv[4])
+
+if LISTEN_IP == "0.0.0.0":
+    sys.stderr.write("refusing to bind 0.0.0.0\n")
+    sys.exit(3)
 
 def pump(a, b):
     a.settimeout(30); b.settimeout(30)
@@ -237,12 +243,15 @@ def pump(a, b):
 
 srv = socket.socket()
 srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-srv.bind(("0.0.0.0", LISTEN_PORT))
+srv.bind((LISTEN_IP, LISTEN_PORT))
 srv.listen(64)
 
 def _term(s, f):
     srv.close(); sys.exit(0)
 signal.signal(signal.SIGTERM, _term)
+
+print("relay up %s:%d -> %s:%d" % (LISTEN_IP, LISTEN_PORT,
+                                   TARGET_HOST, TARGET_PORT), flush=True)
 
 while True:
     try:
@@ -331,15 +340,21 @@ class SysctlTransaction:
 
 def plan_relay_run(edge: dict, image_ref: str,
                    relay_script_path: str = "") -> list:
-    """Docker run argv for a relay container.
+    """Docker create argv for a relay container.
 
-    For DUAL_HOMED_RELAY: `docker create` argv (network none, then
-    two connects with static IPs).
-    For PUBLISHED_EGRESS_RELAY: `docker run -d` argv with -p.
-    """
+    Both kinds use create + connects + start.  The relay script
+    receives LISTEN_IP LISTEN_PORT TARGET_HOST TARGET_PORT, binding
+    only to the edge's frozen relay_source_ip (never 0.0.0.0)."""
     kind = edge["transport_kind"]
     name = edge["relay_container"]
-    listen = str(edge["listen_port"])
+    listen_ip = edge["relay_source_ip"]
+    listen_port = str(edge["listen_port"])
+
+    if not listen_ip or listen_ip == "0.0.0.0":
+        raise RelayProfileError(
+            "RELAY_LISTEN_IP_INVALID",
+            "edge %s: listen IP %r forbidden" % (edge["edge_id"],
+                                                 listen_ip))
 
     if kind == PUBLISHED_EGRESS_RELAY:
         upstream_host = edge["fixed_upstream_host"]
@@ -349,7 +364,7 @@ def plan_relay_run(edge: dict, image_ref: str,
              "--entrypoint", "python3",
              "-v", "%s:/relay.py:ro" % relay_script_path]
             + list(RELAY_SECURITY_FLAGS)
-            + [image_ref, "/relay.py", listen,
+            + [image_ref, "/relay.py", listen_ip, listen_port,
                upstream_host, upstream_port])
         validate_relay_security(argv)
         return argv
@@ -362,7 +377,7 @@ def plan_relay_run(edge: dict, image_ref: str,
              "--entrypoint", "python3",
              "-v", "%s:/relay.py:ro" % relay_script_path]
             + list(RELAY_SECURITY_FLAGS)
-            + [image_ref, "/relay.py", listen,
+            + [image_ref, "/relay.py", listen_ip, listen_port,
                dest_ip, dest_port])
         validate_relay_security(argv)
         return argv
@@ -372,10 +387,10 @@ def plan_relay_run(edge: dict, image_ref: str,
 
 
 def plan_relay_connects(edge: dict) -> list:
-    """Network connect argvs for a dual-homed relay (two attaches)."""
+    """Network connect argvs for each transport kind."""
     kind = edge["transport_kind"]
+    name = edge["relay_container"]
     if kind == DUAL_HOMED_RELAY:
-        name = edge["relay_container"]
         return [
             ["network", "connect",
              "--ip", edge["relay_source_ip"],
@@ -389,28 +404,36 @@ def plan_relay_connects(edge: dict) -> list:
              name],
         ]
     if kind == PUBLISHED_EGRESS_RELAY:
-        name = edge["relay_container"]
         return [
             ["network", "connect",
-             "--ip", edge.get("relay_source_ip")
-             or _relay_ip(edge["source_network"]),
+             "--ip", edge["relay_source_ip"],
              "--gw-priority", "100",
              "mp-e2e-" + _network_short_name(edge["source_network"]),
              name],
         ]
     return []
-    name = edge["relay_container"]
+
+
+def plan_probe_container(edge: dict, image_ref: str) -> list:
+    """Docker create argv for a temporary probe container attached
+    to the relay's source network."""
+    probe_name = "mp-e2e-relay-probe-%s" % (
+        edge["edge_id"].replace("-to-", "-"))
     return [
-        ["network", "connect",
-         "--ip", edge["relay_source_ip"],
-         "--gw-priority", "100",
-         "mp-e2e-" + _network_short_name(edge["source_network"]),
-         name],
-        ["network", "connect",
-         "--ip", edge["relay_destination_ip"],
-         "--gw-priority", "0",
-         "mp-e2e-" + _network_short_name(edge["destination_network"]),
-         name],
+        "create", "--name", probe_name, "--network", "none",
+        "--entrypoint", "python3", "--pull", "never",
+        image_ref, "-c", "import time; time.sleep(120)",
+    ]
+
+
+def plan_probe_connect(edge: dict) -> list:
+    """Connect the probe container to the relay's source network."""
+    probe_name = "mp-e2e-relay-probe-%s" % (
+        edge["edge_id"].replace("-to-", "-"))
+    return [
+        "network", "connect",
+        "mp-e2e-" + _network_short_name(edge["source_network"]),
+        probe_name,
     ]
 
 
@@ -461,5 +484,6 @@ __all__ = [
     "build_relay_edge_contracts", "RELAY_SCRIPT",
     "RELAY_SECURITY_FLAGS", "validate_relay_security",
     "SysctlTransaction", "plan_relay_run", "plan_relay_connects",
+    "plan_probe_container", "plan_probe_connect",
     "PROBE_CONNECT", "classify",
 ]

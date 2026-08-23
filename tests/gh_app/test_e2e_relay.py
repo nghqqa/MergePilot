@@ -249,6 +249,133 @@ class TestProbeClassification(unittest.TestCase):
         self.assertEqual(er.classify("OSError dt=6.0"), "TIMEOUT")
 
 
+class TestRelayListenIP(unittest.TestCase):
+    """Defect fix 1: RELAY_SCRIPT must bind to explicit LISTEN_IP."""
+
+    def test_script_rejects_0000(self):
+        self.assertIn('LISTEN_IP == "0.0.0.0"', er.RELAY_SCRIPT)
+        self.assertIn("refusing to bind 0.0.0.0", er.RELAY_SCRIPT)
+
+    def test_script_binds_listen_ip(self):
+        self.assertIn("srv.bind((LISTEN_IP, LISTEN_PORT))",
+                      er.RELAY_SCRIPT)
+        self.assertNotIn('srv.bind(("0.0.0.0"', er.RELAY_SCRIPT)
+
+    def test_argv_includes_listen_ip(self):
+        edges = er.build_relay_edge_contracts("172.22.0.2")
+        for e in edges:
+            argv = er.plan_relay_run(e, "img", "/tmp/r.py")
+            self.assertIn(e["relay_source_ip"], argv,
+                          "argv must contain relay_source_ip")
+
+    def test_0000_listen_ip_rejected(self):
+        edge = dict(self._make_edge())
+        edge["relay_source_ip"] = "0.0.0.0"
+        with self.assertRaises(er.RelayProfileError) as ctx:
+            er.plan_relay_run(edge, "img", "/tmp/r.py")
+        self.assertEqual(ctx.exception.code, "RELAY_LISTEN_IP_INVALID")
+
+    def _make_edge(self):
+        edges = er.build_relay_edge_contracts("172.22.0.2")
+        return edges[0]
+
+    def test_no_host_network(self):
+        edges = er.build_relay_edge_contracts("172.22.0.2")
+        for e in edges:
+            argv = er.plan_relay_run(e, "img", "/tmp/r.py")
+            joined = " ".join(argv)
+            self.assertNotIn("--network host", joined)
+
+
+class TestProbeWiring(unittest.TestCase):
+    """Defect fix 2: probe container wiring with error codes."""
+
+    def test_plan_probe_container_created(self):
+        edges = er.build_relay_edge_contracts("172.22.0.2")
+        for e in edges:
+            argv = er.plan_probe_container(e, "test-img")
+            self.assertEqual(argv[0], "create")
+            self.assertIn("--network", argv)
+            self.assertIn("none", argv)
+
+    def test_plan_probe_connect_targets_source_net(self):
+        edges = er.build_relay_edge_contracts("172.22.0.2")
+        for e in edges:
+            argv = er.plan_probe_connect(e)
+            self.assertEqual(argv[0], "network")
+            self.assertEqual(argv[1], "connect")
+            # target network name contains mp-e2e-
+            self.assertIn("mp-e2e-", argv[2])
+
+    def test_stable_error_codes_defined(self):
+        """The lifecycle must use these exact stable error codes."""
+        import e2e_lifecycle as el
+        src = Path(el.__file__).read_text(encoding="utf-8")
+        for code in ("PROBE_NETWORK_DISCONNECT_FAILED",
+                     "PROBE_NETWORK_CONNECT_FAILED",
+                     "PROBE_START_FAILED",
+                     "PROBE_ATTACHMENT_MISMATCH"):
+            self.assertIn(code, src,
+                          "lifecycle must use stable error %s" % code)
+
+    def test_probe_disconnect_checked(self):
+        import e2e_lifecycle as el
+        src = Path(el.__file__).read_text(encoding="utf-8")
+        # find the disconnect step and verify it has rc check
+        idx = src.find('["network", "disconnect", "none",')
+        self.assertGreater(idx, 0)
+        nearby = src[idx:idx+400]
+        self.assertIn("PROBE_NETWORK_DISCONNECT_FAILED", nearby)
+
+    def test_probe_connect_checked(self):
+        import e2e_lifecycle as el
+        src = Path(el.__file__).read_text(encoding="utf-8")
+        idx = src.find("plan_probe_connect(edge)")
+        self.assertGreater(idx, 0)
+        nearby = src[idx:idx+400]
+        self.assertIn("PROBE_NETWORK_CONNECT_FAILED", nearby)
+
+    def test_probe_start_checked(self):
+        import e2e_lifecycle as el
+        src = Path(el.__file__).read_text(encoding="utf-8")
+        # find start of probe and verify rc check nearby
+        idx = src.find('["start", probe_name]')
+        self.assertGreater(idx, 0)
+        nearby = src[idx:idx+400]
+        self.assertIn("PROBE_START_FAILED", nearby)
+
+    def test_probe_attachment_verified_before_tcp(self):
+        import e2e_lifecycle as el
+        src = Path(el.__file__).read_text(encoding="utf-8")
+        idx = src.find("PROBE_ATTACHMENT_MISMATCH")
+        self.assertGreater(idx, 0)
+        # inspect must come before tcp probe
+        inspect_idx = src.find('["inspect", probe_name, "--format",')
+        self.assertGreater(inspect_idx, 0)
+        self.assertLess(inspect_idx, idx)
+
+    def test_diagnostic_fields_present(self):
+        import e2e_lifecycle as el
+        src = Path(el.__file__).read_text(encoding="utf-8")
+        self.assertIn("probe=", src)
+        self.assertIn("net=", src)
+        self.assertIn("relay_ip=", src)
+
+    def test_connect_200_verification(self):
+        """Winproxy CONNECT must verify 200 Connection established."""
+        import e2e_lifecycle as el
+        src = Path(el.__file__).read_text(encoding="utf-8")
+        self.assertIn("200 Connection established", src)
+        self.assertIn("BAD_CONNECT_RESPONSE", src)
+
+    def test_cleanup_removes_probe(self):
+        import e2e_lifecycle as el
+        src = Path(el.__file__).read_text(encoding="utf-8")
+        # rm -f probe_name must appear after checks
+        count = src.count('["rm", "-f", probe_name]')
+        self.assertGreaterEqual(count, 3)  # stale + failures + normal
+
+
 class TestProfileHonesty(unittest.TestCase):
 
     def test_module_declares_not_direct_routing(self):

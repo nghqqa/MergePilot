@@ -761,35 +761,76 @@ def _run_relay_probes(docker_executor, host_executor, relay_edges,
         kind = edge["transport_kind"]
         listen_port = str(edge["listen_port"])
         checks = {}
-
-        # Create a temporary probe container on the relay's source
-        # network for two-segment verification
         relay_ip = edge["relay_source_ip"]
         probe_name = "mp-e2e-relay-probe-%s" % eid.replace("-to-", "-")
         source_net = "mp-e2e-" + erly._network_short_name(
             edge["source_network"])
 
+        def _diag(extra=""):
+            """Safe diagnostic fields (no env/mount/token bodies)."""
+            return ("probe=%s net=%s relay=%s relay_ip=%s%s"
+                    % (probe_name, source_net,
+                       edge["relay_container"], relay_ip,
+                       (" " + extra) if extra else ""))
+
+        def _fail_edge(code, detail):
+            results[eid] = {"verified": False, "error": code,
+                            "detail": "%s | %s" % (detail, _diag()),
+                            "vantage": "relay:%s" % kind}
+
         # cleanup any stale probe
         docker_executor(["rm", "-f", probe_name], check=False, timeout=15)
-        # create + connect + start
-        cp = docker_executor(
-            ["create", "--name", probe_name, "--network", "none",
-             "--entrypoint", "python3", "--pull", "never",
-             "mergepilot-isolated-gh-proxy:local",
-             "-c", "import time; time.sleep(120)"],
+
+        # create
+        cp = docker_executor(erly.plan_probe_container(
+            edge, "mergepilot-isolated-gh-proxy:local"),
             check=False, timeout=30)
         if cp.returncode != 0:
-            results[eid] = {"verified": False,
-                            "error": "PROBE_CREATE_FAILED",
-                            "detail": "rc=%d" % cp.returncode,
-                            "vantage": "relay:%s" % kind}
+            _fail_edge("PROBE_CREATE_FAILED", "rc=%d" % cp.returncode)
             continue
-        docker_executor(["network", "disconnect", "none", probe_name],
-                        check=False, timeout=15)
-        docker_executor(
-            ["network", "connect", source_net, probe_name],
+
+        # disconnect from private none network
+        cp = docker_executor(["network", "disconnect", "none",
+                              probe_name], check=False, timeout=15)
+        if cp.returncode != 0:
+            docker_executor(["rm", "-f", probe_name], check=False)
+            _fail_edge("PROBE_NETWORK_DISCONNECT_FAILED",
+                       "rc=%d" % cp.returncode)
+            continue
+
+        # connect to the relay's source network
+        cp = docker_executor(erly.plan_probe_connect(edge),
+                             check=False, timeout=15)
+        if cp.returncode != 0:
+            docker_executor(["rm", "-f", probe_name], check=False)
+            _fail_edge("PROBE_NETWORK_CONNECT_FAILED",
+                       "rc=%d" % cp.returncode)
+            continue
+
+        # start
+        cp = docker_executor(["start", probe_name], check=False, timeout=15)
+        if cp.returncode != 0:
+            docker_executor(["rm", "-f", probe_name], check=False)
+            _fail_edge("PROBE_START_FAILED", "rc=%d" % cp.returncode)
+            continue
+
+        # verify attachment via docker inspect before probing
+        cp = docker_executor(
+            ["inspect", probe_name, "--format",
+             "{{json .NetworkSettings.Networks}}"],
             check=False, timeout=15)
-        docker_executor(["start", probe_name], check=False, timeout=15)
+        import json as _json
+        try:
+            nets = _json.loads((cp.stdout or b"").decode(
+                "utf-8", "replace"))
+            attached = source_net in nets if isinstance(nets, dict) else False
+        except (ValueError, AttributeError):
+            attached = False
+        if not attached:
+            docker_executor(["rm", "-f", probe_name], check=False)
+            _fail_edge("PROBE_ATTACHMENT_MISMATCH",
+                       "expected %s" % source_net)
+            continue
 
         import time as _t; _t.sleep(1)
 
@@ -805,6 +846,16 @@ def _run_relay_probes(docker_executor, host_executor, relay_edges,
             pos = _tcp_probe_in_docker(
                 probe_name, relay_ip, int(listen_port),
                 payload=connect_payload)
+            if is_winproxy and pos == "CONNECTED":
+                # CONNECT success must show 200 Connection established
+                cp2 = docker_executor(
+                    ["exec", probe_name, "python3", "-c",
+                     _PROBE_CODE % 8, relay_ip, listen_port,
+                     connect_payload.decode("utf-8", "replace")],
+                    check=False, timeout=20)
+                out = (cp2.stdout or b"").decode("utf-8", "replace")
+                if "200 Connection established" not in out:
+                    pos = "BAD_CONNECT_RESPONSE"
             checks["positive"] = (
                 "OK" if pos == "CONNECTED" else
                 "FAIL: got %s" % pos)
@@ -839,6 +890,7 @@ def _run_relay_probes(docker_executor, host_executor, relay_edges,
                 "%s=%s" % (k, v) for k, v in checks.items()
                 if v != "OK") if not verified else "",
             "vantage": "relay:%s" % kind,
+            "probe_ip": _diag(),
         }
 
     return results
