@@ -141,7 +141,15 @@ def build_relay_edge_contracts(tuwunel_ip: str,
     edges = []
     full = e2f._build_all_edges(tuwunel_ip)
 
+    # Only the 6 Stage 10 probe edges need relays; the 4 agent-to-
+    # gateway edges are cross-daemon and not probed in Stage 10
+    import e2e_executors as _ex_probe
+    probe_sources = set(
+        spec[2] for spec in _ex_probe.ROUTE_PROBE_SPECS.values())
+
     for src, dst, port, tag in full:
+        if src not in probe_sources:
+            continue
         src_subnet, dst_subnet = _find_subnets(src, dst)
         edge_id = tag
 

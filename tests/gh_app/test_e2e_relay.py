@@ -34,7 +34,7 @@ class TestEdgeContracts(unittest.TestCase):
 
     def test_ten_edges_generated(self):
         edges = self._edges()
-        self.assertEqual(len(edges), 10)
+        self.assertEqual(len(edges), 6)
 
     def test_all_kinds_valid(self):
         for e in self._edges():
