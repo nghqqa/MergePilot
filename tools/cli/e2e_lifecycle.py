@@ -825,6 +825,9 @@ def _start_relay_container(docker_executor, host_executor, edge,
     """Create and start one relay container per the frozen edge
     contract. Dual-homed relays get two network attaches."""
     relay_image = "mergepilot-isolated-gh-proxy:local"
+    # remove any stale container from a prior failed run
+    docker_executor(["rm", "-f", edge["relay_container"]],
+                    check=False, timeout=15)
     argv = erly.plan_relay_run(edge, relay_image, wsl_script_path)
     cp = docker_executor(argv, check=False)
     if cp.returncode != 0:
