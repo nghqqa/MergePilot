@@ -79,6 +79,7 @@ function Assert-TarChecksum([string]$TarPath) {
     $name = Split-Path $TarPath -Leaf
     $entry = (Get-Content $csFile -Encoding ASCII) | Where-Object { $_ -match ("(?i)^\s*([0-9a-f]{64})\s+\*?" + [regex]::Escape($name) + "\s*$") }
     if (-not $entry) { throw "no checksums.sha256 entry for '$name' — refusing to install an unregistered tar" }
+    if (@($entry).Count -gt 1) { throw "duplicate checksums.sha256 entries for '$name' — refusing an ambiguous manifest" }
     # @() guards the single-match case: a bare pipeline result would
     # be a scalar STRING, and indexing it would yield one character
     $expected = ((@($entry))[0] -split '\s+')[0].ToLower()
