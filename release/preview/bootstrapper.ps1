@@ -291,24 +291,39 @@ switch ($Action) {
             if ($rc -ne 0) { throw ("docker load failed rc=" + $rc) }
             Write-Log "OK" "images imported; verifying via CLI doctor"
             Invoke-Cli @("doctor")
+            # install manifest bookkeeping: keys are the RUNNABLE
+            # tags; values are each tag's config ID resolved from the
+            # LOADED bytes (docker image inspect). The package
+            # manifest's digests are verification-grade manifest
+            # digests — NOT runnable refs after docker load.
+            $manifests = Join-Path $RepoRoot "release\preview\manifests"
+            New-Item -ItemType Directory -Force -Path $manifests | Out-Null
             $inst = Join-Path $RepoRoot ".mergepilot\install.json"
-            if ((Test-Path $mfFile) -and -not (Test-Path $inst)) {
-                New-Item -ItemType Directory -Force -Path $StateDir | Out-Null
-                $json = @{ images = $mf.images } | ConvertTo-Json -Depth 4
-                [System.IO.File]::WriteAllText($inst, $json)
-                Write-Log "OK" "install manifest materialized from package manifest (9 digests)"
+            $cur = Join-Path $manifests "install.current.json"
+            if (Test-Path $cur) {
+                Copy-Item $cur (Join-Path $manifests "install.previous.json") -Force
+                Write-Log "INFO" "previous install manifest archived"
             }
-            elseif (Test-Path $inst) {
-                $manifests = Join-Path $RepoRoot "release\preview\manifests"
-                New-Item -ItemType Directory -Force -Path $manifests | Out-Null
-                $cur = Join-Path $manifests "install.current.json"
-                $tmp = Join-Path $manifests "install.current.tmp"
-                Copy-Item $inst $tmp -Force
-                if (Test-Path $cur) { Copy-Item $cur (Join-Path $manifests "install.previous.json") -Force }
-                [System.IO.File]::Copy($tmp, $cur, $true)
-                Remove-Item $tmp -Force -ErrorAction SilentlyContinue
-                Write-Log "OK" "install manifest archived -> install.current.json"
+            $imagesJson = [ordered]@{}
+            foreach ($tag in ($required | Where-Object { $_ -like "mergepilot-isolated-*" })) {
+                $idOut = Get-WslText @("-u", "root", "-d", $Distro, "--exec",
+                    "docker", "image", "inspect", $tag, "--format", "{{.Id}}")
+                $imgId = $idOut.Trim()
+                if (-not $imgId.StartsWith("sha256:")) {
+                    throw ("loaded image " + $tag + " did not resolve to a config Id")
+                }
+                $imagesJson[$tag] = $imgId
             }
+            New-Item -ItemType Directory -Force -Path $StateDir | Out-Null
+            $json = @{ images = $imagesJson } | ConvertTo-Json -Depth 4
+            # staged write: a crash can at worst keep the previous
+            # snapshot, never a half-written manifest
+            $tmp = Join-Path $manifests "install.current.tmp"
+            [System.IO.File]::WriteAllText($tmp, $json)
+            [System.IO.File]::Copy($tmp, $inst, $true)
+            [System.IO.File]::Copy($tmp, $cur, $true)
+            Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+            Write-Log "OK" ("install manifest materialized from LOADED bytes (" + $imagesJson.Count + " config IDs)")
         }
         elseif ($BuildFromSource) {
             Write-Log "INFO" "building images from source (network required)"
