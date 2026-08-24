@@ -251,7 +251,9 @@ switch ($Action) {
 
     "Cleanup" {
         Invoke-Cli @("stop")
-        Invoke-Cli @("cleanup")
+        # the CLI's cleanup is dry-run by default; --apply executes
+        # the image/manifest removal the Cleanup contract promises
+        Invoke-Cli @("cleanup", "--apply")
         Stop-OwnedKeepalive
         Write-Log "OK" "cleaned (images and install manifest removed; evidence directories untouched)"
     }
