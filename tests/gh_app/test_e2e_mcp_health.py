@@ -440,7 +440,12 @@ class TestRoleTokensRuntimeConfig(unittest.TestCase):
         cfg = mp._build_e2e_runtime_configs(
             config, None, "postgresql://u:s@postgres/db",
             "postgresql://u:a@postgres/db", "postgresql://u:p@postgres/db",
-            "synthetic-pat-value", role_tokens=tokens)
+            "synthetic-pat-value", role_tokens=tokens,
+            controller_db_env={"PG_HOST": "postgres", "PG_PORT": "5432",
+                               "PG_DATABASE": "mergepilot_audit",
+                               "PG_USER": "mergepilot"},
+            controller_pg_pass="synthetic-pg-pass",
+            controller_admin_pw="synthetic-admin-pw")
         parsed = json.loads(cfg["policy-gateway"]["ROLE_TOKENS"])
         self.assertEqual(
             sorted(parsed),
@@ -452,6 +457,52 @@ class TestRoleTokensRuntimeConfig(unittest.TestCase):
                          cfg["controller"]["COORDINATOR_TOKEN"])
         # passes the fail-closed stage-2 schema gate
         rs.validate_gateway_e2e_env(cfg["policy-gateway"])
+
+    def test_controller_db_contract_required_and_carried(self):
+        # run27 regression: without the six database-contract keys the
+        # controller entrypoint exits CONFIG_INVALID milliseconds after
+        # docker start — the container never reaches State.Running.
+        import e2e_foundation as e2f
+        import mergepilot as mp
+
+        config = {"fixture_repo": "example/fixture",
+                  "matrix_room_id": "!r:" + e2f.E2E_MATRIX_SERVER_NAME,
+                  "windows_proxy_ip": "172.23.48.1",
+                  "windows_proxy_port": "17890",
+                  "app_id": "123456",
+                  "installation_id": "789",
+                  "repository_id": "101112"}
+        db_env = {"PG_HOST": "postgres", "PG_PORT": "5432",
+                  "PG_DATABASE": "mergepilot_audit",
+                  "PG_USER": "mergepilot"}
+        with self.assertRaises(e2f.E2EConfigError) as ctx:
+            mp._build_e2e_runtime_configs(
+                config, None, "postgresql://u:s@postgres/db",
+                "postgresql://u:a@postgres/db",
+                "postgresql://u:p@postgres/db", "synthetic-pat-value")
+        self.assertEqual(ctx.exception.code, "CONFIG_INVALID")
+        with self.assertRaises(e2f.E2EConfigError) as ctx:
+            mp._build_e2e_runtime_configs(
+                config, None, "postgresql://u:s@postgres/db",
+                "postgresql://u:a@postgres/db",
+                "postgresql://u:p@postgres/db", "synthetic-pat-value",
+                controller_db_env={"PG_HOST": "postgres"},
+                controller_pg_pass="synthetic-pg-pass",
+                controller_admin_pw="synthetic-admin-pw")
+        self.assertEqual(ctx.exception.code, "CONFIG_INVALID")
+        cfg = mp._build_e2e_runtime_configs(
+            config, None, "postgresql://u:s@postgres/db",
+            "postgresql://u:a@postgres/db", "postgresql://u:p@postgres/db",
+            "synthetic-pat-value",
+            controller_db_env=db_env,
+            controller_pg_pass="synthetic-pg-pass",
+            controller_admin_pw="synthetic-admin-pw")
+        ctrl = cfg["controller"]
+        for key, value in dict(db_env, PG_PASS="synthetic-pg-pass",
+                               ADMIN_PW="synthetic-admin-pw").items():
+            self.assertEqual(ctrl[key], value)
+        # the full mapping passes the strict 21-key schema gate
+        e2f.validate_e2e_controller_env(ctrl)
 
     def test_placeholder_role_tokens_rejected_at_schema(self):
         env = {

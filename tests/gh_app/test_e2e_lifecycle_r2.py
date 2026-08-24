@@ -514,6 +514,12 @@ def _rc():
             "RESERVED_RUN_PREFIXES": "",
             "GATEWAY_URL": "http://policy-gateway:8083",
             "COORDINATOR_TOKEN": "tok-" + "a" * 32,
+            "PG_HOST": "postgres",
+            "PG_PORT": "5432",
+            "PG_DATABASE": "mergepilot_audit",
+            "PG_USER": "mergepilot",
+            "PG_PASS": "synthetic-pg-pass",
+            "ADMIN_PW": "synthetic-admin-pw",
         },
         "policy-gateway": {
             "UPSTREAM_URL": rs.GATEWAY_E2E_UPSTREAM,

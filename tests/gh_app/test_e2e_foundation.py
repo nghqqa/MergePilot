@@ -53,6 +53,12 @@ def _valid_env():
         "RESERVED_RUN_PREFIXES": "",
         "GATEWAY_URL": "http://policy-gateway:8083",
         "COORDINATOR_TOKEN": "tok-" + "a" * 32,
+        "PG_HOST": "postgres",
+        "PG_PORT": "5432",
+        "PG_DATABASE": "mergepilot_audit",
+        "PG_USER": "mergepilot",
+        "PG_PASS": "synthetic-pg-pass",
+        "ADMIN_PW": "synthetic-admin-pw",
     }
 
 
@@ -211,6 +217,45 @@ class TestEnvSchema(unittest.TestCase):
         env["M4F_ALLOWED_ROOMS"] = "!abc:other-server.org"
         with self.assertRaises(e2f.E2EConfigError):
             e2f.validate_e2e_controller_env(env)
+
+    def test_db_contract_keys_required(self):
+        # run27 regression: the E2E controller env omitted the database
+        # contract entirely; the container exited CONFIG_INVALID before
+        # State.Running and the health gate reported E2E_CONTROLLER_UNREADY.
+        env = _valid_env()
+        for key in ("PG_HOST", "PG_PORT", "PG_DATABASE", "PG_USER",
+                    "PG_PASS", "ADMIN_PW"):
+            del env[key]
+        with self.assertRaises(e2f.E2EConfigError) as ctx:
+            e2f.validate_e2e_controller_env(env)
+        self.assertEqual(ctx.exception.code, "CONFIG_INVALID")
+        for key in sorted(("PG_HOST", "PG_PORT", "PG_DATABASE", "PG_USER",
+                           "PG_PASS", "ADMIN_PW")):
+            self.assertIn(key, ctx.exception.detail)
+
+    def test_db_contract_value_shapes(self):
+        for key, bad in (("PG_HOST", ""), ("PG_HOST", "post gres"),
+                         ("PG_PORT", "not-a-port"), ("PG_PORT", "0"),
+                         ("PG_PORT", "70000"),
+                         ("PG_DATABASE", "bad name"), ("PG_USER", "u;drop"),
+                         ("PG_PASS", ""), ("PG_PASS", "x\nADMIN_PW=evil"),
+                         ("ADMIN_PW", "")):
+            env = _valid_env()
+            env[key] = bad
+            with self.assertRaises(e2f.E2EConfigError) as ctx:
+                e2f.validate_e2e_controller_env(env)
+            self.assertEqual(ctx.exception.code, "CONFIG_INVALID")
+            self.assertIn(key, ctx.exception.detail)
+            # secrets never leak into the error detail
+            self.assertNotIn("evil", ctx.exception.detail)
+
+    def test_entrypoint_db_contract_subset_guard(self):
+        # contract-drift guard: every key controller_entrypoint.py's
+        # env gate requires must be a member of the E2E schema
+        entrypoint_required = {"PG_HOST", "PG_PORT", "PG_DATABASE",
+                               "PG_USER", "PG_PASS", "ADMIN_PW"}
+        self.assertLessEqual(entrypoint_required,
+                             e2f.E2E_CONTROLLER_ENV_KEYS)
 
     def test_token_secret_never_in_errors(self):
         env = _valid_env()

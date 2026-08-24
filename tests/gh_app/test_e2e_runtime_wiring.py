@@ -38,6 +38,12 @@ def _ctrl_env():
         "RESERVED_RUN_PREFIXES": "",
         "GATEWAY_URL": "http://policy-gateway:8083",
         "COORDINATOR_TOKEN": "tok-" + "a" * 32,
+        "PG_HOST": "postgres",
+        "PG_PORT": "5432",
+        "PG_DATABASE": "mergepilot_audit",
+        "PG_USER": "mergepilot",
+        "PG_PASS": "synthetic-pg-pass",
+        "ADMIN_PW": "synthetic-admin-pw",
     }
 
 
@@ -106,9 +112,15 @@ class TestRuntimeSpecs(unittest.TestCase):
                          {"controller", "policy-gateway", "mcp-bridge",
                           "gh-reporter", "gh-proxy-r", "gh-proxy-b"})
 
-    def test_controller_15_keys(self):
+    def test_controller_21_keys(self):
+        # 15 ingress keys + the 6-key database contract (run27 finding:
+        # without it the controller entrypoint exits CONFIG_INVALID
+        # before State.Running)
         spec = rs.SERVICE_RUNTIME_SPECS["controller"]
-        self.assertEqual(len(spec["keys"]), 15)
+        self.assertEqual(len(spec["keys"]), 21)
+        self.assertLessEqual(
+            {"PG_HOST", "PG_PORT", "PG_DATABASE", "PG_USER",
+             "PG_PASS", "ADMIN_PW"}, spec["keys"])
 
     def test_reporter_10_keys(self):
         spec = rs.SERVICE_RUNTIME_SPECS["gh-reporter"]

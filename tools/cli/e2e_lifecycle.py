@@ -332,8 +332,14 @@ def _wait_running(docker_executor, name: str, *, what: str) -> None:
         if _container_running(docker_executor, name):
             return
         time.sleep(HEALTH_POLL_SECONDS)
+    # run27 finding: a container that exits immediately (entrypoint
+    # CONFIG_INVALID) surfaced as a bare container name with no exit
+    # code or logs. Attach the same sanitized post-mortem the MCP
+    # gates use so the failure is diagnosable from the error alone.
+    detail = _container_death_detail(docker_executor, name)
     raise E2ELifecycleError(
-        "E2E_%s_UNREADY" % what.upper().replace("-", "_"), name)
+        "E2E_%s_UNREADY" % what.upper().replace("-", "_"),
+        detail or name)
 
 
 # service -> (probe kind, probe argv or url)

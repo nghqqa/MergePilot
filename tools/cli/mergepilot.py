@@ -1637,7 +1637,10 @@ def _policy_repo_allowlist_from_config(config):
 
 def _build_e2e_runtime_configs(config, planner, reader_dsn,
                                audit_dsn, publisher_dsn, pat_value,
-                               role_tokens=None, relay_endpoints=None):
+                               role_tokens=None, relay_endpoints=None,
+                               controller_db_env=None,
+                               controller_pg_pass="",
+                               controller_admin_pw=""):
     """§4: the six authoritative runtime configs (values assembled
     from the validated 20-key prerequisite config and CLI-generated
     credentials; the PAT value is read ONLY after the prerequisite
@@ -1647,11 +1650,35 @@ def _build_e2e_runtime_configs(config, planner, reader_dsn,
     the canonical mcporter store. ROLE_TOKENS must be valid JSON
     (the gateway json.loads it at startup) and must equal the agents'
     tokens or every agent SSE connect 401s — the placeholder value
-    this replaced crashed the gateway deterministically."""
+    this replaced crashed the gateway deterministically.
+
+    controller_db_env / controller_pg_pass / controller_admin_pw: the
+    database contract the controller entrypoint refuses to start
+    without (run27 finding: the container exited CONFIG_INVALID in
+    milliseconds). controller_db_env carries the four non-secret keys
+    (planner._controller_environment() — single source of truth);
+    PG_PASS is the per-run POSTGRES_PASSWORD and ADMIN_PW an
+    independent per-run secret; both ride github_ingress.env (the
+    sanctioned env-file secret transport, never argv)."""
     import e2e_runtime_specs as _e2rs
     tokens = dict(role_tokens or {})
     coordinator_token = "tok-" + "e" * 32
     tokens.setdefault("coordinator", coordinator_token)
+    if not controller_pg_pass or not controller_admin_pw:
+        raise e2f.E2EConfigError(
+            "CONFIG_INVALID",
+            "controller secrets required: PG_PASS (per-run "
+            "POSTGRES_PASSWORD) and ADMIN_PW must reach the E2E runtime "
+            "config — without them the controller entrypoint exits "
+            "CONFIG_INVALID before State.Running")
+    db_env = dict(controller_db_env or {})
+    missing_db = [k for k in ("PG_HOST", "PG_PORT", "PG_DATABASE",
+                              "PG_USER") if not db_env.get(k)]
+    if missing_db:
+        raise e2f.E2EConfigError(
+            "CONFIG_INVALID",
+            "controller database contract keys missing: %s (use "
+            "planner._controller_environment())" % sorted(missing_db))
     return {
         "controller": {
             "GITHUB_INGRESS_ENABLED": "1",
@@ -1673,6 +1700,12 @@ def _build_e2e_runtime_configs(config, planner, reader_dsn,
             "RESERVED_RUN_PREFIXES": "",
             "GATEWAY_URL": "http://policy-gateway:8083",
             "COORDINATOR_TOKEN": coordinator_token,
+            "PG_HOST": db_env["PG_HOST"],
+            "PG_PORT": db_env["PG_PORT"],
+            "PG_DATABASE": db_env["PG_DATABASE"],
+            "PG_USER": db_env["PG_USER"],
+            "PG_PASS": controller_pg_pass,
+            "ADMIN_PW": controller_admin_pw,
         },
         "policy-gateway": {
             "UPSTREAM_URL": (relay_endpoints or {}).get(
@@ -1886,7 +1919,10 @@ def _execute_github_e2e_start(args, project_dir, planner, paths,
             config, planner, reader_dsn, audit_dsn, publisher_dsn,
             pat_value,
             role_tokens=role_tokens,
-            relay_endpoints=_relay_endpoints_for_specs)
+            relay_endpoints=_relay_endpoints_for_specs,
+            controller_db_env=planner._controller_environment(),
+            controller_pg_pass=admin_pw,
+            controller_admin_pw=secrets.token_urlsafe(32))
 
         # The five non-spec DAG services reuse the default-mode plan
         # argv (create + connect steps executed in order).

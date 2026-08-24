@@ -81,6 +81,19 @@ E2E_CONTROLLER_ENV_KEYS = frozenset((
     "RESERVED_RUN_PREFIXES",
     "GATEWAY_URL",
     "COORDINATOR_TOKEN",
+    # Database contract (run27 real-DAG finding: without these six the
+    # controller entrypoint exits CONFIG_INVALID in milliseconds — the
+    # container never reaches State.Running and the health gate reports
+    # E2E_CONTROLLER_UNREADY with no further detail). PG_PASS is the
+    # per-run POSTGRES_PASSWORD; ADMIN_PW is an independent per-run
+    # secret. Both ride the env-file (the sanctioned secret transport);
+    # the four non-secret keys mirror planner._controller_environment().
+    "PG_HOST",
+    "PG_PORT",
+    "PG_DATABASE",
+    "PG_USER",
+    "PG_PASS",
+    "ADMIN_PW",
 ))
 
 E2E_INGRESS_ENV_FILE = "github_ingress.env"
@@ -114,13 +127,13 @@ def _validate_ro_path(key: str, value: str) -> None:
 
 
 def validate_e2e_controller_env(mapping) -> dict:
-    """Strict validation of the 15-key E2E controller env schema.
+    """Strict validation of the 21-key E2E controller env schema.
 
     Unknown keys, missing keys and wrong value shapes raise
     ``E2EConfigError`` naming ONLY the key and the reason — values
-    (COORDINATOR_TOKEN is a secret) never appear in errors. The sender
-    contract is LOCALPART-only: a full MXID (contains ``@`` or ``:``) is
-    rejected explicitly.
+    (COORDINATOR_TOKEN / PG_PASS / ADMIN_PW are secrets) never appear in
+    errors. The sender contract is LOCALPART-only: a full MXID (contains
+    ``@`` or ``:``) is rejected explicitly.
     """
     if not isinstance(mapping, dict):
         raise E2EConfigError("CONFIG_INVALID", "E2E env must be a mapping")
@@ -175,6 +188,21 @@ def validate_e2e_controller_env(mapping) -> dict:
     tok = mapping["COORDINATOR_TOKEN"]
     if not tok or re.search(r"[\s\"'\\\r\n\0]", tok):
         _bad("COORDINATOR_TOKEN", "non-empty, no whitespace/quote/backslash")
+
+    # Database contract — mirrors controller_entrypoint.py's own gate
+    # so the failure surfaces HERE, before any container exists, not
+    # milliseconds after docker start (run27 finding). Secrets are
+    # presence/charset-checked only; values never reach errors.
+    if not mapping["PG_HOST"] or re.search(r"[\s\"\']", mapping["PG_HOST"]):
+        _bad("PG_HOST", "non-empty host, no whitespace/quotes")
+    _validate_int("PG_PORT", mapping["PG_PORT"], 1, 65535)
+    for key in ("PG_DATABASE", "PG_USER"):
+        if not re.fullmatch(r"[A-Za-z0-9_]+", mapping[key]):
+            _bad(key, "invalid identifier charset ([A-Za-z0-9_]+)")
+    for key in ("PG_PASS", "ADMIN_PW"):
+        value = mapping[key]
+        if not value or re.search(r"[\r\n\0]", value):
+            _bad(key, "non-empty secret without CR/LF/NUL")
     return dict(mapping)
 
 
