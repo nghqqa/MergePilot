@@ -161,6 +161,22 @@ switch ($Action) {
             if ($LASTEXITCODE -ne 0) { throw "docker load failed (rc=" + $LASTEXITCODE + ")" }
             Write-Log "OK" "images imported; verifying via CLI doctor"
             Invoke-Cli @("doctor")
+            # materialize the install manifest from the package
+            # manifest beside the tar: the rollback bookkeeping below
+            # (and ROLLBACK.md §2) depends on install.json existing on
+            # the tar path too, not only on BuildFromSource
+            $pkgManifest = Join-Path (Split-Path $ImageTar -Parent) "manifest.json"
+            if (Test-Path $pkgManifest) {
+                $pm = Get-Content $pkgManifest -Raw | ConvertFrom-Json
+                $mroot = Join-Path $RepoRoot ".mergepilot"
+                New-Item -ItemType Directory -Force -Path $mroot | Out-Null
+                @{ images = $pm.images } | ConvertTo-Json -Depth 4 |
+                    Set-Content (Join-Path $mroot "install.json") -Encoding UTF8
+                Write-Log "OK" "install manifest materialized from package manifest (8 digests)"
+            }
+            else {
+                Write-Log "WARN" "package manifest not found beside tar - install.json not materialized (rollback bookkeeping degraded)"
+            }
         }
         elseif ($BuildFromSource) {
             Write-Log "INFO" "building images from source (network required)"
