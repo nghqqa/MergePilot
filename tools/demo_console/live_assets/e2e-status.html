@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MergePilot · E2E Run Status (read-only)</title>
+<style>
+/* Minimal, matching the operational design system surfaces. */
+:root {
+  --bg: #0a1020; --bg-panel: #0f1828; --border: #1e2d45;
+  --text: #d5e0ef; --text-dim: #8ba0bd; --text-faint: #5b7092;
+  --ok: #3fb68b; --bad: #e2687a; --accent: #4f8ff7;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; padding: 24px; background: var(--bg); color: var(--text);
+  font: 13px/1.5 "Segoe UI", system-ui, sans-serif;
+}
+h1 { font-size: 15px; font-weight: 600; color: var(--text-dim);
+     letter-spacing: .04em; text-transform: uppercase; margin: 0 0 16px; }
+h1 span { color: var(--text-faint); font-weight: 400; }
+.panel { background: var(--bg-panel); border: 1px solid var(--border);
+         border-radius: 6px; padding: 16px; margin-bottom: 16px;
+         max-width: 780px; }
+.row { display: flex; justify-content: space-between; gap: 16px;
+       padding: 5px 0; border-bottom: 1px solid rgba(30,45,69,.45); }
+.row:last-child { border-bottom: none; }
+.k { color: var(--text-faint); }
+.v { color: var(--text); text-align: right; word-break: break-all; }
+.ok { color: var(--ok); } .bad { color: var(--bad); }
+.muted { color: var(--text-faint); }
+table { border-collapse: collapse; width: 100%; }
+td, th { text-align: left; padding: 4px 10px 4px 0;
+         border-bottom: 1px solid rgba(30,45,69,.45); }
+th { color: var(--text-faint); font-weight: 500; }
+#note { margin-top: 8px; font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>MergePilot E2E Run Status <span>· read-only journal projection</span></h1>
+<div class="panel" id="summary"></div>
+<div class="panel" id="routes"></div>
+<div id="note" class="muted"></div>
+<script>
+"use strict";
+// Read-only view over /api/e2e/status — the server-side derived,
+// sanitized projection of the session journal. No writes, no
+// mutations, refresh every 10s.
+function el(tag, cls, text) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text !== undefined) n.textContent = text;
+  return n;
+}
+function row(parent, key, value, valueClass) {
+  const r = el("div", "row");
+  r.append(el("span", "k", key), el("span", "v " + (valueClass || ""),
+                                    String(value)));
+  parent.append(r);
+}
+function render(data) {
+  const s = document.getElementById("summary");
+  const rt = document.getElementById("routes");
+  s.textContent = ""; rt.textContent = "";
+  if (!data || data.available === false) {
+    row(s, "status", "no E2E session on record", "muted");
+    document.getElementById("note").textContent =
+      "The status projection is absent — no journal-derived data " +
+      "is shown rather than a synthesized state.";
+    return;
+  }
+  row(s, "run_id", data.run_id || "");
+  row(s, "mode", data.github_e2e ? "github-e2e" : "default");
+  row(s, "stage (journal, verbatim)", data.e2e_stage || data.stage || "");
+  row(s, "journal_complete",
+      data.journal_complete ? "true" : "false",
+      data.journal_complete ? "ok" : "bad");
+  if (data.github_e2e) {
+    row(s, "transport_profile", data.transport_profile || "");
+    row(s, "direct_routing_verified",
+        String(data.direct_routing_verified));
+    row(s, "receipt_verified", data.receipt_verified ? "true" : "false",
+        data.receipt_verified ? "ok" : "bad");
+    row(s, "matrix_verified", data.matrix_verified ? "true" : "false",
+        data.matrix_verified ? "ok" : "bad");
+    const p = data.prerequisite_summary || {};
+    row(s, "prerequisites",
+        (p.checks_passed ?? "?") + " passed · verified=" +
+        String(p.verified));
+    const rr = data.relay_resources || {};
+    row(s, "relay resources (live journal)",
+        (rr.containers ?? 0) + " containers · " +
+        (rr.host_units ?? 0) + " host units · " +
+        (rr.probe_containers ?? 0) + " probes");
+  }
+  const edges = data.route_probes || {};
+  const keys = Object.keys(edges).sort();
+  if (keys.length) {
+    const t = el("table");
+    const hr = el("tr");
+    ["route edge", "verified", "vantage"].forEach(
+      h => hr.append(el("th", "", h)));
+    t.append(hr);
+    for (const k of keys) {
+      const tr = el("tr");
+      tr.append(el("td", "", k),
+                el("td", edges[k].verified ? "ok" : "bad",
+                   edges[k].verified ? "true" : "false"),
+                el("td", "muted", edges[k].vantage || ""));
+      t.append(tr);
+    }
+    rt.append(t);
+  }
+  document.getElementById("note").textContent =
+    "Read-only projection of the session journal · updated " +
+    (data.updated_utc || "") + " · auto-refresh 10s";
+}
+async function tick() {
+  try {
+    const res = await fetch("/api/e2e/status",
+                            { cache: "no-store" });
+    render(await res.json());
+  } catch (err) {
+    document.getElementById("note").textContent =
+      "status fetch failed: " + err;
+  }
+}
+tick();
+setInterval(tick, 10000);
+</script>
+</body>
+</html>

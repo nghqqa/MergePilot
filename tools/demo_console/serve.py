@@ -52,6 +52,13 @@ from live_poller import FileSnapshotSource, LivePoller
 _MODE_REPLAY = "REPLAY"
 _MODE_LIVE = "ISOLATED_LIVE"
 
+#: Container path of the derived, sanitized E2E status projection
+#: (maintenance §7): the demo-console mounts the CLI-written
+#: ``.mergepilot/public`` directory read-only here. A DIRECTORY mount
+#: (never a single file) so the writer's atomic file replacement
+#: stays visible in-container.
+E2E_STATUS_CONTAINER_PATH = "/run/mergepilot/public/status.json"
+
 
 def _send_json(handler, status: int, payload: dict) -> None:
     """Serialize ``payload`` as JSON and send it as an HTTP response.
@@ -271,12 +278,38 @@ class LiveApiHandler(ReadOnlyHandler):
             self._handle_snapshot()
         elif path == "/api/live/status":
             self._handle_status()
+        elif path == "/api/e2e/status":
+            self._handle_e2e_status()
         elif path.startswith("/api/live/"):
             # Unknown live API endpoint.
             _send_json_error(self, 404, f"unknown live API endpoint: {path}")
         else:
             # Delegate everything else to static file serving.
             super().do_GET()
+
+    def _handle_e2e_status(self):
+        """Read-only E2E session status (maintenance §7).
+
+        Serves the DERIVED public projection mounted at
+        /run/mergepilot/public/status.json — never the journal and
+        never the secrets directory. Absent projection → an honest
+        "unavailable" payload (200), never a synthesized state. The
+        payload is produced by the journal's single writer with a
+        strict key whitelist, so it is served verbatim.
+        """
+        import json as _json
+        from pathlib import Path as _P
+        status_path = _P(getattr(self.server, "e2e_status_path",
+                                 E2E_STATUS_CONTAINER_PATH))
+        try:
+            payload = _json.loads(
+                status_path.read_text(encoding="utf-8"))
+            if not isinstance(payload, dict):
+                raise ValueError("not an object")
+        except (OSError, ValueError):
+            _send_json(self, 200, {"available": False})
+            return
+        _send_json(self, 200, payload)
 
     def _handle_snapshot(self):
         poller = getattr(self.server, "poller", None)

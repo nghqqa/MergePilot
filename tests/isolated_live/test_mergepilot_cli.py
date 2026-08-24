@@ -670,7 +670,9 @@ class TestStartDryRun(CliTestBase):
                 image_ref=oc.get_built_image_identity("demo-console"),
                 demo_console_env=oc._demo_console_environment(
                     RUN_ID, mp.PLACEHOLDER_BRIDGE_IP),
-                reader_dsn_env_file=wsl_base + "/demo_console.env"),
+                reader_dsn_env_file=wsl_base + "/demo_console.env",
+                session_public_dir=mp._to_wsl_path(
+                    _ROOT / ".mergepilot" / "public")),
             oc.plan_console_edge_run(
                 oc.get_built_image_identity("console-edge")),
             oc.plan_console_edge_connect_backend(),

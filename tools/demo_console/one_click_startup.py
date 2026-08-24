@@ -1363,6 +1363,7 @@ def plan_service_run(service: str, *, image_ref: str,
                      controller_env: dict | None = None,
                      gateway_env: dict | None = None,
                      reader_dsn_env_file: str | None = None,
+                     session_public_dir: str | None = None,
                      m4f_enabled: bool = False) -> list:
     """argv array (docker sub-args) to run one service per the contract.
 
@@ -1506,6 +1507,15 @@ def plan_service_run(service: str, *, image_ref: str,
     if demo_console_env:
         for key in sorted(demo_console_env):
             argv += ["-e", "%s=%s" % (key, demo_console_env[key])]
+    if service == "demo-console" and session_public_dir:
+        # maintenance §7: read-only mount of the DERIVED public
+        # status projection (whitelisted keys, written by the same
+        # single writer as the journal). The console serves
+        # /api/e2e/status from it — never the journal itself and
+        # never the secrets dir. A DIRECTORY mount (not a file) so
+        # atomic file replacement stays visible in-container.
+        argv += ["-v",
+                 "%s:/run/mergepilot/public:ro" % session_public_dir]
     if publish:
         argv += ["-p", publish]
     argv.append(image_ref)

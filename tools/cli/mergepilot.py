@@ -1072,7 +1072,8 @@ def _policy_repo_allowlist(project_dir: Path) -> str:
 
 def build_start_steps(planner, *, env_file, controller_env_file,
                       reader_dsn_env_file, gh_webhook_env_file,
-                      run_id, bridge_ip, m4f):
+                      run_id, bridge_ip, m4f,
+                      session_public_dir=None):
     """The eleven-step plan, composed from the planner's own public plan
     functions in plan_orchestrated_start's exact order. Returns
     (steps, argv_list) where each step carries its wait semantics.
@@ -1080,6 +1081,8 @@ def build_start_steps(planner, *, env_file, controller_env_file,
     The env-file arguments are WSL-visible paths (docker reads them inside
     the distro); the controller env-file CONTRACT is validated separately by
     the caller against the Windows-side file (same bytes).
+    session_public_dir: WSL-visible path of the derived read-only
+    status projection mounted into demo-console (maintenance §7).
     """
     demo_env = planner._demo_console_environment(run_id, bridge_ip)
     argv_steps = [
@@ -1113,7 +1116,8 @@ def build_start_steps(planner, *, env_file, controller_env_file,
              "demo-console",
              image_ref=planner.get_built_image_identity("demo-console"),
              demo_console_env=demo_env,
-             reader_dsn_env_file=reader_dsn_env_file)),
+             reader_dsn_env_file=reader_dsn_env_file,
+             session_public_dir=session_public_dir)),
         ("container-run", "console-edge",
          planner.plan_console_edge_run(
              planner.get_built_image_identity("console-edge"))),
@@ -1206,8 +1210,81 @@ def prepare_database(docker, planner, showcase, project_dir, reader_password):
 
 # ── Journal helpers ──────────────────────────────────────────────────────────
 
+#: Whitelisted keys of the derived public status projection. The
+#: projection is the ONLY thing the console may mount (maintenance
+#: §7): no paths, no argv, no secret-adjacent journal fields, ever.
+_PUBLIC_STATUS_KEYS = (
+    "schema", "run_id", "github_e2e", "stage", "updated_utc",
+    "e2e_stage", "journal_complete", "transport_profile",
+    "direct_routing_verified", "receipt_verified", "matrix_verified",
+    "prerequisite_summary", "route_probes", "services_started",
+    "relay_resources", "firewall_state",
+)
+
+
+def public_status_payload(session: dict) -> dict:
+    """Derived, sanitized projection of the session journal for the
+    read-only console API. Single writer: write_session derives it on
+    every persist, so the mounted file can never drift from the
+    journal. e2e_stage is reported VERBATIM — a stale or failed
+    session is never dressed up as complete (journal_complete is a
+    strict equality, not an inference)."""
+    payload = {
+        "schema": 1,
+        "run_id": session.get("run_id", ""),
+        "github_e2e": bool(session.get("github_e2e")),
+        "stage": session.get("stage", ""),
+        "updated_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ",
+                                     time.gmtime()),
+    }
+    if session.get("github_e2e"):
+        summary = session.get("prerequisite_summary") or {}
+        route = session.get("route_probe_results") or {}
+        payload.update({
+            "e2e_stage": session.get("e2e_stage", ""),
+            "journal_complete":
+                session.get("e2e_stage") == "complete",
+            "transport_profile": session.get("transport_profile", ""),
+            "direct_routing_verified":
+                session.get("direct_routing_verified"),
+            "receipt_verified": bool(session.get("receipt_verified")),
+            "matrix_verified": bool(session.get("matrix_verified")),
+            "prerequisite_summary": {
+                "checks_passed": summary.get("checks_passed"),
+                "verified": bool(summary.get("verified")),
+            },
+            "route_probes": {
+                edge: {"verified": bool(probe.get("verified")),
+                       "vantage": probe.get("vantage", "")}
+                for edge, probe in route.items()},
+            "services_started": list(session.get("e2e_started", [])),
+            "relay_resources": {
+                "containers": len(session.get("relay_containers", [])
+                                  or []),
+                "host_units": len(session.get("relay_host_units", [])
+                                  or []),
+                "probe_containers":
+                    len(session.get("relay_probe_containers", []) or []),
+            },
+            "firewall_state": session.get("firewall_state", ""),
+        })
+    assert set(payload) <= set(_PUBLIC_STATUS_KEYS)
+    return payload
+
+
 def write_session(paths, session):
     _atomic_write_json(paths["session"], session)
+    # derived, sanitized projection for the read-only console mount
+    # (§7): same single writer, same persist instant — the console
+    # never reads the journal or the secrets dir directly
+    public_dir = Path(paths["state"]) / "public"
+    try:
+        public_dir.mkdir(parents=True, exist_ok=True)
+        _atomic_write_json(public_dir / "status.json",
+                           public_status_payload(session))
+    except OSError:
+        pass  # projection is best-effort; the journal stays
+              # authoritative and the console reports unavailable
 
 
 def new_session(run_id, m4f, github_e2e=False):
@@ -1773,7 +1850,8 @@ E2E_DEMO_CONSOLE_RUN_ID = "run-showcase-a"
 
 def _e2e_demo_console_measured_argv(docker, planner, run_id, m4f,
                                     env_file_wsl, ctrl_env_wsl,
-                                    reader_env_wsl, gh_env_wsl):
+                                    reader_env_wsl, gh_env_wsl,
+                                    session_public_dir=""):
     """The demo-console container argv rebuilt with the MEASURED
     postgres bridge IP (run31 finding: the E2E path served the
     PLACEHOLDER_BRIDGE_IP plan, so the console's expected-server-
@@ -1789,7 +1867,8 @@ def _e2e_demo_console_measured_argv(docker, planner, run_id, m4f,
         controller_env_file=ctrl_env_wsl,
         reader_dsn_env_file=reader_env_wsl,
         gh_webhook_env_file=gh_env_wsl,
-        run_id=E2E_DEMO_CONSOLE_RUN_ID, bridge_ip=canonical, m4f=m4f)
+        run_id=E2E_DEMO_CONSOLE_RUN_ID, bridge_ip=canonical, m4f=m4f,
+        session_public_dir=session_public_dir or None)
     for _kind, name, argv in steps:
         if _kind == "container-run" and name == "demo-console":
             return argv
@@ -1971,7 +2050,8 @@ def _execute_github_e2e_start(args, project_dir, planner, paths,
             reader_dsn_env_file=reader_env_wsl,
             gh_webhook_env_file=gh_env_wsl,
             run_id=run_id, bridge_ip=PLACEHOLDER_BRIDGE_IP,
-            m4f=args.m4f)
+            m4f=args.m4f,
+            session_public_dir=_to_wsl_path(paths["state"] / "public"))
         by_service = {}
         network_create_steps = []
         for _kind, name, argv in steps:
@@ -1993,7 +2073,9 @@ def _execute_github_e2e_start(args, project_dir, planner, paths,
                 return _e2e_demo_console_measured_argv(
                     docker, planner, run_id, args.m4f,
                     env_file_wsl, ctrl_env_wsl, reader_env_wsl,
-                    gh_env_wsl)
+                    gh_env_wsl,
+                    session_public_dir=_to_wsl_path(
+                        paths["state"] / "public"))
             return by_service.get(service, [])
 
         def db_bootstrap():
@@ -2224,7 +2306,8 @@ def cmd_start(args):
                                              / "demo_console.env"),
             gh_webhook_env_file=_to_wsl_path(paths["secrets"]
                                              / "gh_webhook.env"),
-            run_id=run_id, bridge_ip=PLACEHOLDER_BRIDGE_IP, m4f=args.m4f)
+            run_id=run_id, bridge_ip=PLACEHOLDER_BRIDGE_IP, m4f=args.m4f,
+            session_public_dir=_to_wsl_path(paths["state"] / "public"))
         payload = {
             "command": "start", "status": "dry-run", "code": EXIT_OK,
             "run_id": run_id,
@@ -2399,7 +2482,8 @@ def _execute_start(docker, planner, showcase, project_dir, paths, session,
     steps = build_start_steps(
         planner, env_file=env_file_wsl, controller_env_file=ctrl_env_wsl,
         reader_dsn_env_file=reader_env_wsl, gh_webhook_env_file=gh_env_wsl,
-        run_id=run_id, bridge_ip=PLACEHOLDER_BRIDGE_IP, m4f=m4f)
+        run_id=run_id, bridge_ip=PLACEHOLDER_BRIDGE_IP, m4f=m4f,
+        session_public_dir=_to_wsl_path(paths["state"] / "public"))
 
     journal_stage("networks")
     create_network(steps[0][1], steps[0][2])
@@ -2421,7 +2505,8 @@ def _execute_start(docker, planner, showcase, project_dir, paths, session,
     steps = build_start_steps(
         planner, env_file=env_file_wsl, controller_env_file=ctrl_env_wsl,
         reader_dsn_env_file=reader_env_wsl, gh_webhook_env_file=gh_env_wsl,
-        run_id=run_id, bridge_ip=canonical, m4f=m4f)
+        run_id=run_id, bridge_ip=canonical, m4f=m4f,
+        session_public_dir=_to_wsl_path(paths["state"] / "public"))
 
     journal_stage("services")
     create_container("policy-gateway", steps[3][2])
