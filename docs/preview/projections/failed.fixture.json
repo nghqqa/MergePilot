@@ -1,0 +1,189 @@
+{
+ "schema": 1,
+ "run_id": "b8-e2e-run35",
+ "github_e2e": true,
+ "stage": "isolated_live",
+ "updated_utc": "2026-08-24T08:13:54Z",
+ "e2e_stage": "route_probes",
+ "journal_complete": false,
+ "transport_profile": "wsl-user-relay",
+ "direct_routing_verified": false,
+ "receipt_verified": false,
+ "matrix_verified": false,
+ "prerequisite_summary": {
+  "checks_passed": 16,
+  "verified": true
+ },
+ "route_probes": {
+  "bridge-to-proxy-b": {
+   "verified": true,
+   "vantage": "relay",
+   "segment_a": null,
+   "segment_b": null,
+   "application": null
+  },
+  "controller-to-tuwunel": {
+   "verified": true,
+   "vantage": "relay",
+   "segment_a": null,
+   "segment_b": null,
+   "application": null
+  },
+  "gateway-to-bridge": {
+   "verified": true,
+   "vantage": "relay",
+   "segment_a": null,
+   "segment_b": null,
+   "application": null
+  },
+  "proxy-b-to-winproxy": {
+   "verified": false,
+   "vantage": "relay",
+   "segment_a": null,
+   "segment_b": null,
+   "application": null
+  },
+  "proxy-r-to-winproxy": {
+   "verified": true,
+   "vantage": "relay",
+   "segment_a": null,
+   "segment_b": null,
+   "application": null
+  },
+  "reporter-to-proxy-r": {
+   "verified": true,
+   "vantage": "relay",
+   "segment_a": null,
+   "segment_b": null,
+   "application": null
+  }
+ },
+ "services_started": [
+  "postgres",
+  "policy-gateway",
+  "controller",
+  "gh-webhook",
+  "demo-console"
+ ],
+ "relay_resources": {
+  "containers": 3,
+  "host_units": 3,
+  "probe_containers": 0
+ },
+ "firewall_state": "installed",
+ "stages": [
+  {
+   "n": 1,
+   "key": "prerequisites",
+   "label": "前置门禁",
+   "status": "passed"
+  },
+  {
+   "n": 2,
+   "key": "runtime_files",
+   "label": "运行时文件",
+   "status": "passed"
+  },
+  {
+   "n": 3,
+   "key": "networks",
+   "label": "八网络创建",
+   "status": "passed"
+  },
+  {
+   "n": 4,
+   "key": "containers",
+   "label": "十一容器接入",
+   "status": "passed"
+  },
+  {
+   "n": 5,
+   "key": "firewall",
+   "label": "防火墙安装",
+   "status": "passed"
+  },
+  {
+   "n": 6,
+   "key": "relay",
+   "label": "中继系统",
+   "status": "passed"
+  },
+  {
+   "n": 7,
+   "key": "postgres",
+   "label": "PostgreSQL 就绪",
+   "status": "passed"
+  },
+  {
+   "n": 8,
+   "key": "db_bootstrap",
+   "label": "数据库引导",
+   "status": "passed"
+  },
+  {
+   "n": 9,
+   "key": "proxies",
+   "label": "代理就绪",
+   "status": "passed"
+  },
+  {
+   "n": 10,
+   "key": "route_probes",
+   "label": "路由探测",
+   "status": "failed"
+  },
+  {
+   "n": 11,
+   "key": "gateway",
+   "label": "策略网关",
+   "status": "pending"
+  },
+  {
+   "n": 12,
+   "key": "services",
+   "label": "业务服务",
+   "status": "pending"
+  },
+  {
+   "n": 13,
+   "key": "agents",
+   "label": "Agent 就绪",
+   "status": "pending"
+  },
+  {
+   "n": 14,
+   "key": "receipt",
+   "label": "Receipt 复核",
+   "status": "pending"
+  },
+  {
+   "n": 15,
+   "key": "matrix",
+   "label": "Matrix 复核",
+   "status": "pending"
+  },
+  {
+   "n": 16,
+   "key": "preflight",
+   "label": "语义预检",
+   "status": "pending"
+  },
+  {
+   "n": 17,
+   "key": "complete",
+   "label": "完成",
+   "status": "pending"
+  }
+ ],
+ "e2e_last_error": {
+  "code": "E2E_ROUTE_PROBE_FAILED",
+  "stage": "route_probes"
+ },
+ "truth_boundaries": {
+  "application_integration_verified": "NOT_VERIFIED",
+  "database_verified": "NOT_VERIFIED",
+  "production_verified": "NOT_VERIFIED",
+  "revision_producer_contract": "NOT_VERIFIED",
+  "audit_producer_contract": "NOT_VERIFIED"
+ }
+}
