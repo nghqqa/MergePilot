@@ -2,6 +2,11 @@
 
 版本 v0.1.0-preview.1 · 本文档是包的正式回退承诺；所有路径相对仓库根。
 
+> **硬标注**：`transport_profile=wsl-user-relay`，
+> `direct_routing_verified=false`（经中继）；五项真实性边界
+> （应用集成/数据库/生产/revision 契约/audit 契约）全部 false / NOT_VERIFIED——
+> 回退或重装不会翻转任何边界，本包不构成生产验证。
+
 ## 1. 安装失败回退（自动，无需人工）
 
 - **镜像导入失败**（`docker load` rc≠0）：bootstrapper 立即抛错终止；

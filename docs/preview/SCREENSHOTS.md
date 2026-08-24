@@ -17,7 +17,7 @@ PNG 内嵌 `Description` tEXt 出处块（视口 / 投影 / 捕获方式 / 时�
 
 ## 每张截图都应能看到的三件事
 
-1. `直连路由：false（经中继）` —— `transport_profile=wsl-user-relay` 的如实标注；
+1. `直连路由：false（经中继）` —— `transport_profile=wsl-user-relay`、`direct_routing_verified=false` 的如实标注；
 2. 五项真实性边界全部 `NOT_VERIFIED`；
 3. 页脚 `只读视图 Read-only —— 本控制台不提供任何写操作`。
 

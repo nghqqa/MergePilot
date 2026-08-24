@@ -19,7 +19,10 @@
   六边 `route_probes` 逐边 `verified=true`；
 - **硬标注**：`transport_profile=wsl-user-relay`、
   `direct_routing_verified=false`（页面显示 `false（经中继）`）；
-- `truth_boundaries` 五键全部 `NOT_VERIFIED`——成功运行不翻转边界。
+- `truth_boundaries` 五项全部 `NOT_VERIFIED`
+  （application_integration_verified / database_verified /
+  production_verified / revision_producer_contract /
+  audit_producer_contract）——成功运行不翻转任何边界。
 
 ## 2. failed.fixture.json — 生产代码派生的失败演示
 
