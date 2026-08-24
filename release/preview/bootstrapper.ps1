@@ -124,8 +124,15 @@ function Assert-Disk([string]$Path, [int]$MinGB = 8) {
 
 function Invoke-Cli([string[]]$CliArgs) {
     Write-Log "INFO" ("cli: mergepilot " + ($CliArgs -join " "))
-    & python $Cli @CliArgs 2>&1 | ForEach-Object { Write-Host $_ }
-    if ($LASTEXITCODE -ne 0) { throw ("mergepilot CLI rc=" + $LASTEXITCODE + ": " + ($CliArgs -join " ")) }
+    # the CLI resolves its .mergepilot state from the CURRENT working
+    # directory; pin it to RepoRoot so running the bootstrapper from
+    # anywhere can never target (and corrupt) another checkout's state
+    Push-Location $RepoRoot
+    try {
+        & python $Cli @CliArgs 2>&1 | ForEach-Object { Write-Host $_ }
+        if ($LASTEXITCODE -ne 0) { throw ("mergepilot CLI rc=" + $LASTEXITCODE + ": " + ($CliArgs -join " ")) }
+    }
+    finally { Pop-Location }
 }
 
 function WslPath([string]$WinPath) {
