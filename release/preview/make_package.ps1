@@ -39,14 +39,13 @@ New-Item -ItemType Directory -Force -Path $pkg | Out-Null
 Write-Host "== docker save -> images-oci.tar (this can take a few minutes)"
 $tarWin = Join-Path $OutDir "images-oci.tar"
 if (Test-Path $tarWin) { Remove-Item $tarWin -Force }
-$imgArg = ($Images -join " ")
-# docker save via distro; tar written to the repo-visible dist path.
-# Plain string translation only — PS 5.1 has no scriptblock -replace.
+# docker invoked directly via --exec (no /bin/sh -c) — the derived
+# path can never be re-interpreted by a shell.
 $distWsl = $tarWin
 if ($distWsl -match "^([A-Za-z]):\\(.*)$") {
     $distWsl = "/mnt/" + $Matches[1].ToLower() + "/" + ($Matches[2].Replace("\", "/"))
 } else { throw "cannot translate path: $tarWin" }
-& wsl.exe -u root -d $Distro --exec /bin/sh -c "docker save -o $distWsl $imgArg"
+& wsl.exe -u root -d $Distro --exec docker save -o $distWsl @Images
 if ($LASTEXITCODE -ne 0) { throw "docker save failed" }
 
 Write-Host "== copy package payload"

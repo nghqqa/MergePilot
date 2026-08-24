@@ -33,6 +33,7 @@ param(
 $ErrorActionPreference = "Stop"
 if (-not $RepoRoot) { $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path }
 $Cli = Join-Path $RepoRoot "tools\cli\mergepilot.py"
+if (-not (Test-Path $Cli)) { throw "repo layout unexpected: $Cli not found (RepoRoot=$RepoRoot)" }
 $PidFile = Join-Path $RepoRoot ".mergepilot\preview-keepalive.pid"
 $LogFile = Join-Path $RepoRoot "release\preview\logs\bootstrapper.log"
 
@@ -62,9 +63,46 @@ function Assert-Wsl2([string]$D) {
 }
 
 function Assert-Docker([string]$D) {
-    $out = & wsl.exe -u root -d $D --exec /bin/sh -c "docker info --format ok" | Out-String
-    if ($LASTEXITCODE -ne 0 -or $out -notmatch "ok") { throw "docker daemon not reachable inside '$D' (boot the distro first)" }
+    # --exec runs docker directly (no shell) — user input never
+    # reaches a command line that a shell would interpret
+    $out = & wsl.exe -u root -d $D --exec docker info --format ok | Out-String
+    if ($LASTEXITCODE -ne 0 -or ($out -replace "`0","") -notmatch "ok") { throw "docker daemon not reachable inside '$D' (boot the distro first)" }
     return "docker in '$D' OK"
+}
+
+function Assert-TarChecksum([string]$TarPath) {
+    # Install gate: the tar's SHA-256 must match its checksums.sha256
+    # entry BEFORE any image bytes are loaded. Missing manifest or
+    # missing entry -> refuse (fail closed).
+    $csFile = Join-Path (Split-Path $TarPath -Parent) "checksums.sha256"
+    if (-not (Test-Path $csFile)) { throw "checksums.sha256 not found beside $TarPath — cannot verify image tar" }
+    $name = Split-Path $TarPath -Leaf
+    $entry = (Get-Content $csFile -Encoding ASCII) | Where-Object { $_ -match ("(?i)^\s*([0-9a-f]{64})\s+\*?" + [regex]::Escape($name) + "\s*$") }
+    if (-not $entry) { throw "no checksums.sha256 entry for '$name' — refusing to install an unregistered tar" }
+    # @() guards the single-match case: a bare pipeline result would
+    # be a scalar STRING, and indexing it would yield one character
+    $expected = ((@($entry))[0] -split '\s+')[0].ToLower()
+    $actual = (Get-FileHash $TarPath -Algorithm SHA256).Hash.ToLower()
+    if ($actual -ne $expected) { throw "image tar checksum mismatch: expected $expected got $actual" }
+    return "image tar checksum verified ($($expected.Substring(0,12))…)"
+}
+
+function Stop-OwnedKeepalive {
+    # PID-ownership guard: only terminate a process we can prove is
+    # a wsl.exe keepalive. A recycled PID pointing at an unrelated
+    # process must never be killed.
+    if (-not (Test-Path $PidFile)) { return }
+    $kid = ((Get-Content $PidFile) -join "").Trim()
+    if ($kid -notmatch '^\d+$') { Remove-Item $PidFile -ErrorAction SilentlyContinue; return }
+    $p = Get-Process -Id ([int]$kid) -ErrorAction SilentlyContinue
+    if ($p -and $p.ProcessName -match "^wsl") {
+        Stop-Process -Id ([int]$kid) -Force -ErrorAction SilentlyContinue
+        Write-Log "OK" "keepalive pid=$kid terminated"
+    }
+    elseif ($p) {
+        Write-Log "WARN" "pid file $kid points at non-wsl process '$($p.ProcessName)' — NOT terminating (stale pid file removed)"
+    }
+    Remove-Item $PidFile -ErrorAction SilentlyContinue
 }
 
 function Assert-Ports {
@@ -113,9 +151,12 @@ switch ($Action) {
 
     "Install" {
         if ($ImageTar -and (Test-Path $ImageTar)) {
+            Write-Log "INFO" "verifying image tar checksum before any import"
+            $csOk = Assert-TarChecksum $ImageTar
+            Write-Log "PASS" $csOk
             Write-Log "INFO" "importing OCI images from $ImageTar"
             $tar = WslPath $ImageTar
-            & wsl.exe -u root -d $Distro --exec /bin/sh -c "docker load -i $tar"
+            & wsl.exe -u root -d $Distro --exec docker load -i $tar
             if ($LASTEXITCODE -ne 0) { throw "docker load failed (rc=" + $LASTEXITCODE + ")" }
             Write-Log "OK" "images imported; verifying via CLI doctor"
             Invoke-Cli @("doctor")
@@ -128,17 +169,24 @@ switch ($Action) {
             throw "Install requires -ImageTar <path> or -BuildFromSource"
         }
         # record the installed manifest for rollback bookkeeping,
-        # archiving the previous snapshot first (ROLLBACK.md §2/§4)
+        # archiving the previous snapshot first (ROLLBACK.md §2/§4).
+        # Update strategy: stage the new snapshot in a temp file, then
+        # overwrite the live copy in one Copy(overwrite) call — a crash
+        # can leave (at worst) the previous snapshot still current,
+        # never a half-written manifest.
         $inst = Join-Path $RepoRoot ".mergepilot\install.json"
         if (Test-Path $inst) {
             $manifests = Join-Path $RepoRoot "release\preview\manifests"
             New-Item -ItemType Directory -Force -Path $manifests | Out-Null
             $cur = Join-Path $manifests "install.current.json"
+            $tmp = Join-Path $manifests "install.current.tmp"
+            Copy-Item $inst $tmp -Force
             if (Test-Path $cur) {
                 Copy-Item $cur (Join-Path $manifests "install.previous.json") -Force
                 Write-Log "INFO" "previous install manifest archived -> install.previous.json"
             }
-            Copy-Item $inst $cur -Force
+            [System.IO.File]::Copy($tmp, $cur, $true)
+            Remove-Item $tmp -Force -ErrorAction SilentlyContinue
             Write-Log "OK" "install manifest snapshot -> release\preview\manifests\install.current.json"
         }
     }
@@ -156,7 +204,8 @@ switch ($Action) {
             Invoke-Cli @("start", "--run-id", $RunId)
         }
         catch {
-            Stop-Process -Id $k.Id -Force -ErrorAction SilentlyContinue
+            $p = Get-Process -Id $k.Id -ErrorAction SilentlyContinue
+            if ($p -and $p.ProcessName -match "^wsl") { Stop-Process -Id $k.Id -Force -ErrorAction SilentlyContinue }
             Remove-Item $PidFile -ErrorAction SilentlyContinue
             throw
         }
@@ -168,23 +217,14 @@ switch ($Action) {
 
     "Stop" {
         Invoke-Cli @("stop")
-        if (Test-Path $PidFile) {
-            $kid = (Get-Content $PidFile).Trim()
-            Stop-Process -Id $kid -Force -ErrorAction SilentlyContinue
-            Remove-Item $PidFile -ErrorAction SilentlyContinue
-            Write-Log "OK" "keepalive pid=$kid terminated"
-        }
+        Stop-OwnedKeepalive
         Write-Log "OK" "stopped (images, journals and evidence retained; residue: session containers/networks/secrets removed)"
     }
 
     "Cleanup" {
         Invoke-Cli @("stop")
         Invoke-Cli @("cleanup")
-        if (Test-Path $PidFile) {
-            $kid = (Get-Content $PidFile).Trim()
-            Stop-Process -Id $kid -Force -ErrorAction SilentlyContinue
-            Remove-Item $PidFile -ErrorAction SilentlyContinue
-        }
+        Stop-OwnedKeepalive
         Write-Log "OK" "cleaned (images and install manifest removed; evidence directories untouched)"
     }
 }
