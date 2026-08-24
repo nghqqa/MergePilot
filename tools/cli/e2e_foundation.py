@@ -67,7 +67,10 @@ class E2EConfigError(Exception):
 
 E2E_CONTROLLER_ENV_KEYS = frozenset((
     "GITHUB_INGRESS_ENABLED",
-    "GITHUB_ROOM_MAP_PATH",
+    # run29 real-DAG finding: controller.py reads GITHUB_ROOM_MAP (no
+    # _PATH suffix) — a guessed name falls through to the in-container
+    # default /config/gh-app/room-map.yaml and exits FileNotFoundError
+    "GITHUB_ROOM_MAP",
     "GITHUB_POLICY_PATH",
     "GITHUB_DELIVERY_LEASE_SECONDS",
     "GITHUB_DELIVERY_MAX_ATTEMPTS",
@@ -81,6 +84,19 @@ E2E_CONTROLLER_ENV_KEYS = frozenset((
     "RESERVED_RUN_PREFIXES",
     "GATEWAY_URL",
     "COORDINATOR_TOKEN",
+    # Database contract (run27 real-DAG finding: without these six the
+    # controller entrypoint exits CONFIG_INVALID in milliseconds — the
+    # container never reaches State.Running and the health gate reports
+    # E2E_CONTROLLER_UNREADY with no further detail). PG_PASS is the
+    # per-run POSTGRES_PASSWORD; ADMIN_PW is an independent per-run
+    # secret. Both ride the env-file (the sanctioned secret transport);
+    # the four non-secret keys mirror planner._controller_environment().
+    "PG_HOST",
+    "PG_PORT",
+    "PG_DATABASE",
+    "PG_USER",
+    "PG_PASS",
+    "ADMIN_PW",
 ))
 
 E2E_INGRESS_ENV_FILE = "github_ingress.env"
@@ -114,13 +130,13 @@ def _validate_ro_path(key: str, value: str) -> None:
 
 
 def validate_e2e_controller_env(mapping) -> dict:
-    """Strict validation of the 15-key E2E controller env schema.
+    """Strict validation of the 21-key E2E controller env schema.
 
     Unknown keys, missing keys and wrong value shapes raise
     ``E2EConfigError`` naming ONLY the key and the reason — values
-    (COORDINATOR_TOKEN is a secret) never appear in errors. The sender
-    contract is LOCALPART-only: a full MXID (contains ``@`` or ``:``) is
-    rejected explicitly.
+    (COORDINATOR_TOKEN / PG_PASS / ADMIN_PW are secrets) never appear in
+    errors. The sender contract is LOCALPART-only: a full MXID (contains
+    ``@`` or ``:``) is rejected explicitly.
     """
     if not isinstance(mapping, dict):
         raise E2EConfigError("CONFIG_INVALID", "E2E env must be a mapping")
@@ -135,7 +151,7 @@ def validate_e2e_controller_env(mapping) -> dict:
 
     if mapping["GITHUB_INGRESS_ENABLED"] != "1":
         _bad("GITHUB_INGRESS_ENABLED", "must be exactly '1' in E2E mode")
-    _validate_ro_path("GITHUB_ROOM_MAP_PATH", mapping["GITHUB_ROOM_MAP_PATH"])
+    _validate_ro_path("GITHUB_ROOM_MAP", mapping["GITHUB_ROOM_MAP"])
     _validate_ro_path("GITHUB_POLICY_PATH", mapping["GITHUB_POLICY_PATH"])
     _validate_int("GITHUB_DELIVERY_LEASE_SECONDS",
                   mapping["GITHUB_DELIVERY_LEASE_SECONDS"], 1, 600)
@@ -175,6 +191,21 @@ def validate_e2e_controller_env(mapping) -> dict:
     tok = mapping["COORDINATOR_TOKEN"]
     if not tok or re.search(r"[\s\"'\\\r\n\0]", tok):
         _bad("COORDINATOR_TOKEN", "non-empty, no whitespace/quote/backslash")
+
+    # Database contract — mirrors controller_entrypoint.py's own gate
+    # so the failure surfaces HERE, before any container exists, not
+    # milliseconds after docker start (run27 finding). Secrets are
+    # presence/charset-checked only; values never reach errors.
+    if not mapping["PG_HOST"] or re.search(r"[\s\"\']", mapping["PG_HOST"]):
+        _bad("PG_HOST", "non-empty host, no whitespace/quotes")
+    _validate_int("PG_PORT", mapping["PG_PORT"], 1, 65535)
+    for key in ("PG_DATABASE", "PG_USER"):
+        if not re.fullmatch(r"[A-Za-z0-9_]+", mapping[key]):
+            _bad(key, "invalid identifier charset ([A-Za-z0-9_]+)")
+    for key in ("PG_PASS", "ADMIN_PW"):
+        value = mapping[key]
+        if not value or re.search(r"[\r\n\0]", value):
+            _bad(key, "non-empty secret without CR/LF/NUL")
     return dict(mapping)
 
 
@@ -280,10 +311,20 @@ def validate_e2e_reporter_env(mapping) -> dict:
                   mapping["GH_REPORTER_LEASE_SECONDS"], 30, 600)
     _validate_int("GH_REPORTER_MAX_ATTEMPTS",
                   mapping["GH_REPORTER_MAX_ATTEMPTS"], 1, 50)
-    if mapping.get("HTTPS_PROXY", "") != E2E_REPORTER_PROXY_R:
+    _expected_proxy_r = E2E_REPORTER_PROXY_R
+    try:
+        import e2e_runtime_specs as _rs_prof
+        _override = _rs_prof._RELAY_ENDPOINT_OVERRIDES.get(
+            "gh-reporter", {}).get("HTTPS_PROXY")
+        if (_rs_prof._ACTIVE_TRANSPORT_PROFILE == "wsl-user-relay"
+                and _override):
+            _expected_proxy_r = _override
+    except ImportError:
+        pass
+    if mapping.get("HTTPS_PROXY", "") != _expected_proxy_r:
         _bad("HTTPS_PROXY",
              "E2E reporter must use exactly %s (proxy-r; "
-             "no implicit fallback)" % E2E_REPORTER_PROXY_R)
+             "no implicit fallback)" % _expected_proxy_r)
     return dict(mapping)
 
 
@@ -356,9 +397,19 @@ def parse_room_map_repos(text: str) -> dict:
             repos[current] = room_id
             continue
         if line.startswith("  ") and line.endswith(":"):
-            repo = line.strip().rstrip(":")
-            if len(repo) >= 2 and repo[0] == '"' and repo[-1] == '"':
-                repo = repo[1:-1]
+            # run30 finding: github_drain.parse_room_map requires
+            # MANDATORY double quotes around the repo key
+            # (r'  "([^"]+)":'). This probe previously stripped
+            # optional quotes, accepting files the in-container
+            # parser rejects at controller startup — the prerequisite
+            # gate must fail closed with the production shape.
+            m = re.fullmatch(r'  "([^"]+)":', line)
+            if not m:
+                raise E2EConfigError(
+                    "ROOM_MAP_INVALID",
+                    "line %d: repo key must be double-quoted "
+                    '(github_drain.parse_room_map contract)' % lineno)
+            repo = m.group(1)
             if not re.fullmatch(r"[A-Za-z0-9._-]+/[A-Za-z0-9._-]+", repo):
                 raise E2EConfigError(
                     "ROOM_MAP_INVALID", "line %d: invalid repo key" % lineno)
@@ -801,7 +852,7 @@ def build_mcp_bridge_planning() -> dict:
             "install": "--only-binary=:all: --require-hashes",
         },
         "env_file": "mcp_bridge.env",
-        "env_keys": ["MCP_GITHUB_TOKEN"],
+        "env_keys": ["GITHUB_PERSONAL_ACCESS_TOKEN"],
         "env_policy": "PAT ONLY in mcp_bridge.env (0600, --env-file; "
                       "never argv/journal/logs/diagnostics)",
         "networks": {

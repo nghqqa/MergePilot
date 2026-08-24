@@ -443,14 +443,24 @@ def plan_e2e_container_create(service: str, *, image_ref: str,
 
     mounts: PRE-BUILT argv fragments from the authoritative runtime
     spec (rs.plan_runtime_mounts) — e.g. ["-v", "src:dst:ro", ...].
-    Sensitive values ride the --env-file, never this argv."""
+    Sensitive values ride the --env-file, never this argv.
+
+    gh-reporter reuses the gh-webhook image whose ENTRYPOINT is the
+    webhook receiver (http_server.py, which requires the webhook env
+    contract); the reporter role is checks_reporter.py — without the
+    override the container exited 3 demanding GITHUB_WEBHOOK_SECRET
+    (run33 finding) before ever reaching State.Running."""
     argv = ["create", "--name",
             "mergepilot-isolated-%s-1" % service,
             "--network", "none"]
+    if service == "gh-reporter":
+        argv.extend(["--entrypoint", "python"])
     argv.extend(mounts or [])
     if env_file:
         argv.extend(["--env-file", env_file])
     argv.extend(["--pull", "never", "--restart", "no", image_ref])
+    if service == "gh-reporter":
+        argv.extend(["-u", "checks_reporter.py"])
     return argv
 
 
@@ -485,6 +495,14 @@ def execute_e2e_container_setup(docker_executor, service: str, *,
         raise PrereqConfigError("CONTAINER_CREATE_FAILED", service)
     container_journal[service] = cid
     try:
+        # a container created with --network none cannot be joined to
+        # further networks on this docker generation ("container
+        # cannot be connected to multiple networks with one of the
+        # networks in private (none) mode"): detach the private none
+        # endpoint first — the production E2E start failed on the
+        # controller's SECOND connect before this
+        docker_executor(["network", "disconnect", "none", name],
+                        check=True)
         for connect_argv in plan_e2e_container_connects(service):
             docker_executor(connect_argv, check=True)
     except Exception:

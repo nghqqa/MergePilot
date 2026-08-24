@@ -35,13 +35,24 @@ def _normalize_rule_for_compare(rule_text: str) -> str:
     """Normalize an iptables-save rule line for comparison with a
     restore-blob rule. Handles the -I CH 1 vs -A CH serialization
     difference: '-I CH 1 ...' in the blob installs at position 1 but
-    iptables-save emits it as '-A CH ...' (no rulenum)."""
+    iptables-save emits it as '-A CH ...' (no rulumen). Also
+    normalizes bare-IPv4 vs /32 serialization (iptables-save
+    appends /32 to host addresses; the restore blob omits it)."""
     text = rule_text.strip()
     # strip ownership comment (compared separately via tag)
     text = re.sub(r'\s*-m comment --comment "[^"]*"', "", text)
     text = re.sub(r"\s+", " ", text).strip()
     # normalize '-I CH 1 ' -> '-A CH ' (rulenum is positional, not semantic)
     text = re.sub(r"^-I (\S+) \d+ ", r"-A \1 ", text)
+    # bare IPv4 host address -> explicit /32 (both sides normalized)
+    text = re.sub(
+        r"(?<![\w/.])(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})(?![\w/.])",
+        r"\1/32", text)
+    # iptables-save serializes '-p tcp --dport N' as '-p tcp -m tcp
+    # --dport N' (implicit match module expansion); normalize both
+    # sides by dropping the redundant module re-declaration
+    text = re.sub(r" -m (tcp|udp|icmp)(?= --dport| --sport)",
+                  "", text)
     return text
 
 
@@ -226,19 +237,101 @@ def run_route_probes(*, docker_executor: Callable,
     return results
 
 
+def _network_ip_holders(docker_executor, network: str) -> dict:
+    """name-by-ip map for a network's current endpoints."""
+    cp = docker_executor(
+        ["network", "inspect", network, "--format",
+         "{{range .Containers}}{{.Name}}={{.IPv4Address}} {{end}}"],
+        check=False)
+    holders = {}
+    if getattr(cp, "returncode", 1) != 0:
+        return holders
+    for token in (cp.stdout or b"").decode("utf-8", "replace").split():
+        if "=" in token:
+            name, ip = token.split("=", 1)
+            holders.setdefault(ip.split("/")[0], name)
+    return holders
+
+
+def _container_running(docker_executor, name: str) -> bool:
+    cp = docker_executor(
+        ["inspect", name, "--format", "{{.State.Running}}"],
+        check=False)
+    return (getattr(cp, "returncode", 1) == 0
+            and (cp.stdout or b"").decode("utf-8",
+                                          "replace").strip() == "true")
+
+
+def _exec_probe_in_container(docker_executor, container, dst_ip,
+                             dst_port, expected_src, service) -> dict:
+    """TCP probe FROM inside the real (running) service container:
+    its kernel source IP is by construction the edge's source, and
+    the in-container code still verifies it via getsockname()."""
+    code = _PROBE_SOCKET_CODE % (dst_ip, dst_port,
+                                 PROBE_EXIT_TCP_CONNECT_FAILED,
+                                 PROBE_EXIT_INTERNAL_ERROR)
+    last_rc = None
+    for py in ("python3", "python"):
+        cp = docker_executor(["exec", container, py, "-c", code],
+                             check=False, timeout=30)
+        last_rc = cp.returncode
+        if cp.returncode == 0:
+            output = (cp.stdout or b"").decode().strip()
+            lines = [l.strip() for l in output.split("\n") if l.strip()]
+            if len(lines) != 1:
+                raise RouteProbeError(
+                    "PROBE_OUTPUT_INVALID",
+                    "%s: multi-line output (%d lines)"
+                    % (service, len(lines)))
+            source_ip = lines[0]
+            if not re.match(r"^\d{1,3}(\.\d{1,3}){3}$", source_ip) \
+                    and not re.match(r"^\[?[0-9a-fA-F:]+\]?$", source_ip):
+                raise RouteProbeError("PROBE_OUTPUT_INVALID",
+                                      "%s: non-IP output" % service)
+            if source_ip != expected_src:
+                raise RouteProbeError(
+                    "ROUTE_GATE_FAILED",
+                    "%s: source %s != expected %s (in-container)"
+                    % (service, source_ip, expected_src))
+            return {"source_ip": source_ip, "verified": True,
+                    "vantage": "service-container"}
+        if cp.returncode not in (126, 127):
+            break
+    if last_rc == PROBE_EXIT_TCP_CONNECT_FAILED:
+        raise RouteProbeError("PROBE_TARGET_UNREACHABLE",
+                              "%s: TCP connect to %s:%d failed "
+                              "(in-container)"
+                              % (service, dst_ip, dst_port))
+    raise RouteProbeError("PROBE_INTERNAL_ERROR",
+                          "%s: in-container probe exit %d"
+                          % (service, last_rc))
+
+
+_PROBE_SOCKET_CODE = (
+    "import socket,sys\n"
+    "try:\n"
+    "    s=socket.create_connection(('%s',%d),timeout=10)\n"
+    "    print(s.getsockname()[0]);s.close()\n"
+    "except (ConnectionRefusedError,ConnectionResetError,"
+    "socket.timeout,OSError):\n"
+    "    sys.exit(%d)\n"
+    "except Exception:\n"
+    "    sys.exit(%d)\n")
+
+
 def _run_single_probe(*, docker_executor, image_ref, probe_name,
                       service, dst_ip, dst_port, expected_src,
                       probe_journal) -> dict:
     # create (network none, no env-file, no mounts)
     create_argv = ["create", "--name", probe_name,
                    "--network", "none", "--restart", "no", image_ref]
-    cp = docker_executor(create_argv, check=True)
+    cp = docker_executor(create_argv, check=False)
     if cp.returncode != 0:
         raise RouteProbeError("PROBE_CREATE_FAILED",
                               "%s: create rc=%d" % (service,
                                                     cp.returncode))
     cp = docker_executor(["inspect", probe_name, "--format",
-                          "{{.Id}}"], check=True)
+                          "{{.Id}}"], check=False)
     cid = (cp.stdout or b"").decode().strip()
     if not cid:
         raise RouteProbeError("PROBE_ID_MISSING", service)
@@ -246,73 +339,138 @@ def _run_single_probe(*, docker_executor, image_ref, probe_name,
 
     # connect using the SAME attachments as the real service
     import e2e_probes
-    for network, ip, priority in e2e_probes.E2E_CONTAINER_ATTACHMENTS[
-            service]:
-        argv = ["network", "connect"]
-        if ip:
-            argv.extend(["--ip", ip])
-        argv.extend(["--gw-priority", str(priority), network, probe_name])
-        cp = docker_executor(argv, check=True)
+    attachments = e2e_probes.E2E_CONTAINER_ATTACHMENTS[service]
+
+    # A static attachment IP can be held by the REAL service
+    # container, which Stage 4 created+connected. docker rejects a
+    # second endpoint with the same IP (verified live), and a
+    # STOPPED container is INVISIBLE to `network inspect` while its
+    # endpoint reservation persists — so the holder is keyed on the
+    # service container BY NAME, not discovered from the network:
+    #   - RUNNING service: it already IS the edge's vantage point —
+    #     execute the TCP probe INSIDE it.
+    #   - STOPPED service: it yields (disconnect → probe → restore
+    #     the exact ip/gw-priority).
+    # A running STRANGER on the IP remains a hard failure.
+    # NOTE: every call uses check=False — the production executor
+    # RAISES on nonzero rc when check=True, which would bypass all
+    # the rc handling below (run22: six PROBE_INTERNAL_ERRORs).
+    service_container = "mergepilot-isolated-%s-1" % service
+    yielded = []
+    restore_errors = []
+    try:
+        service_running = _container_running(
+            docker_executor, service_container)
+        for network, ip, priority in attachments:
+            if not ip:
+                continue
+            if service_running:
+                return _exec_probe_in_container(
+                    docker_executor, service_container, dst_ip,
+                    dst_port, expected_src, service)
+            # NEITHER discovery source is reliable on this daemon
+            # (network inspect .Containers is always empty AND
+            # NetworkSettings.Networks only reflects the LAST
+            # attach) — the disconnect RESULT is the single
+            # authority: rc=0 means it held the endpoint (yield,
+            # restore exactly); rc=1 means it held nothing.
+            cp = docker_executor(
+                ["network", "disconnect", network,
+                 service_container],
+                check=False)
+            if getattr(cp, "returncode", 1) == 0:
+                yielded.append((network, ip, priority,
+                                service_container))
+
+        for network, ip, priority in attachments:
+            argv = ["network", "connect"]
+            if ip:
+                argv.extend(["--ip", ip])
+            argv.extend(["--gw-priority", str(priority), network,
+                         probe_name])
+            cp = docker_executor(argv, check=False)
+            if cp.returncode != 0:
+                raise RouteProbeError("PROBE_CONNECT_FAILED",
+                                      "%s: connect %s rc=%d"
+                                      % (service, network,
+                                         cp.returncode))
+
+        # start
+        cp = docker_executor(["start", probe_name], check=False)
         if cp.returncode != 0:
-            raise RouteProbeError("PROBE_CONNECT_FAILED",
-                                  "%s: connect %s" % (service, network))
+            raise RouteProbeError("PROBE_START_FAILED", service)
 
-    # start
-    cp = docker_executor(["start", probe_name], check=True)
-    if cp.returncode != 0:
-        raise RouteProbeError("PROBE_START_FAILED", service)
-
-    # verify kernel source-IP via Python socket; the in-container code
-    # uses FROZEN exit codes (not stderr text) so the executor can
-    # classify without parsing OS/Python/Docker error strings.
-    code = ("import socket,sys\n"
-            "try:\n"
-            "    s=socket.create_connection(('%s',%d),timeout=10)\n"
-            "    print(s.getsockname()[0]);s.close()\n"
-            "except (ConnectionRefusedError,ConnectionResetError,"
-            "socket.timeout,OSError):\n"
-            "    sys.exit(%d)\n"
-            "except Exception:\n"
-            "    sys.exit(%d)\n"
-            % (dst_ip, dst_port,
-               PROBE_EXIT_TCP_CONNECT_FAILED,
-               PROBE_EXIT_INTERNAL_ERROR))
-    cp = docker_executor(["exec", probe_name, "python", "-c", code],
-                         check=True, timeout=30)
-    exit_code = cp.returncode
-    if exit_code == PROBE_EXIT_TCP_CONNECT_FAILED:
-        raise RouteProbeError("PROBE_TARGET_UNREACHABLE",
-                              "%s: TCP connect to %s:%d failed"
-                              % (service, dst_ip, dst_port))
-    if exit_code == PROBE_EXIT_INTERNAL_ERROR:
-        raise RouteProbeError("PROBE_INTERNAL_ERROR",
-                              "%s: probe internal error (exit %d)"
-                              % (service, exit_code))
-    if exit_code != 0:
-        raise RouteProbeError("PROBE_INTERNAL_ERROR",
-                              "%s: unexpected exit %d"
-                              % (service, exit_code))
-    output = (cp.stdout or b"").decode().strip()
-    if not output:
-        raise RouteProbeError("PROBE_OUTPUT_INVALID",
-                              "%s: empty stdout from %s:%d"
-                              % (service, dst_ip, dst_port))
-    lines = [l.strip() for l in output.split("\n") if l.strip()]
-    if len(lines) != 1:
-        raise RouteProbeError("PROBE_OUTPUT_INVALID",
-                              "%s: multi-line output (%d lines)"
-                              % (service, len(lines)))
-    source_ip = lines[0]
-    if not re.match(r"^\d{1,3}(\.\d{1,3}){3}$", source_ip) \
-            and not re.match(r"^\[?[0-9a-fA-F:]+\]?$", source_ip):
-        raise RouteProbeError("PROBE_OUTPUT_INVALID",
-                              "%s: non-IP output" % service)
-    if source_ip != expected_src:
+        # verify kernel source-IP via Python socket; the in-container code
+        # uses FROZEN exit codes (not stderr text) so the executor can
+        # classify without parsing OS/Python/Docker error strings.
+        code = ("import socket,sys\n"
+                "try:\n"
+                "    s=socket.create_connection(('%s',%d),timeout=10)\n"
+                "    print(s.getsockname()[0]);s.close()\n"
+                "except (ConnectionRefusedError,ConnectionResetError,"
+                "socket.timeout,OSError):\n"
+                "    sys.exit(%d)\n"
+                "except Exception:\n"
+                "    sys.exit(%d)\n"
+                % (dst_ip, dst_port,
+                   PROBE_EXIT_TCP_CONNECT_FAILED,
+                   PROBE_EXIT_INTERNAL_ERROR))
+        cp = docker_executor(["exec", probe_name, "python", "-c", code],
+                             check=False, timeout=30)
+        exit_code = cp.returncode
+        if exit_code == PROBE_EXIT_TCP_CONNECT_FAILED:
+            raise RouteProbeError("PROBE_TARGET_UNREACHABLE",
+                                  "%s: TCP connect to %s:%d failed"
+                                  % (service, dst_ip, dst_port))
+        if exit_code == PROBE_EXIT_INTERNAL_ERROR:
+            raise RouteProbeError("PROBE_INTERNAL_ERROR",
+                                  "%s: probe internal error (exit %d)"
+                                  % (service, exit_code))
+        if exit_code != 0:
+            raise RouteProbeError("PROBE_INTERNAL_ERROR",
+                                  "%s: unexpected exit %d"
+                                  % (service, exit_code))
+        output = (cp.stdout or b"").decode().strip()
+        if not output:
+            raise RouteProbeError("PROBE_OUTPUT_INVALID",
+                                  "%s: empty stdout from %s:%d"
+                                  % (service, dst_ip, dst_port))
+        lines = [l.strip() for l in output.split("\n") if l.strip()]
+        if len(lines) != 1:
+            raise RouteProbeError("PROBE_OUTPUT_INVALID",
+                                  "%s: multi-line output (%d lines)"
+                                  % (service, len(lines)))
+        source_ip = lines[0]
+        if not re.match(r"^\d{1,3}(\.\d{1,3}){3}$", source_ip) \
+                and not re.match(r"^\[?[0-9a-fA-F:]+\]?$", source_ip):
+            raise RouteProbeError("PROBE_OUTPUT_INVALID",
+                                  "%s: non-IP output" % service)
+        if source_ip != expected_src:
+            raise RouteProbeError(
+                "ROUTE_GATE_FAILED",
+                "%s: source %s != expected %s"
+                % (service, source_ip, expected_src))
+        result = {"source_ip": source_ip, "verified": True}
+    finally:
+        # ALWAYS restore a yielded endpoint (exact ip + priority)
+        for network, ip, priority, holder in reversed(yielded):
+            argv = ["network", "connect"]
+            if ip:
+                argv.extend(["--ip", ip])
+            argv.extend(["--gw-priority", str(priority), network,
+                         holder])
+            try:
+                cp = docker_executor(argv, check=False)
+                if getattr(cp, "returncode", 1) != 0:
+                    restore_errors.append(holder)
+            except Exception:
+                restore_errors.append(holder)
+    if restore_errors:
         raise RouteProbeError(
-            "ROUTE_GATE_FAILED",
-            "%s: source %s != expected %s"
-            % (service, source_ip, expected_src))
-    return {"source_ip": source_ip, "verified": True}
+            "PROBE_RESTORE_FAILED",
+            "%s: holder(s) not restored: %s"
+            % (service, sorted(set(restore_errors))))
+    return result
 
 
 def _cleanup_probe(docker_executor, probe_name, probe_journal):
@@ -551,6 +709,23 @@ def _mc_hash(minio_executor: Callable, key: str) -> str:
     return hashlib.sha256(cp.stdout or b"").hexdigest()
 
 
+def _network_names_from_map_repr(repr_text: str) -> set:
+    """Network names from a docker inspect Networks map repr.
+
+    ``map[hiclaw-net:0xf6eef878d80 mcp-backend-net:0x18fda57d05a0]``
+    → ``{'hiclaw-net', 'mcp-backend-net'}``; ``map[]`` → empty set.
+    Anything else (unexpected shape) → empty set (the caller's
+    comparison then reports DRIFT, never a false OK)."""
+    text = (repr_text or "").strip()
+    if not (text.startswith("map[") and text.endswith("]")):
+        return set()
+    body = text[4:-1]
+    if not body:
+        return set()
+    return set(entry.split(":", 1)[0]
+               for entry in body.split() if ":" in entry)
+
+
 def _validate_direction_receipt(receipt: dict, *,
                                  docker_executor: Callable,
                                  minio_executor: Callable,
@@ -661,13 +836,23 @@ def _validate_direction_receipt(receipt: dict, *,
             "OK" if live_id and agent.get("container_id") == live_id
             else "DRIFT")
 
-        # hiclaw-net live IP (present AND matching frozen + receipt)
+        # hiclaw-net live IP (present AND matching frozen + receipt).
+        # The template carries NO $-variables, NO spaces and NO
+        # quotes: an unquoted argv crosses wsl.exe's `--` shell
+        # reassembly, where `$k` is expanded to empty (run34 finding:
+        # docker exited 64 'template parsing error' and the lifecycle
+        # folded the transport failure into 'receipt drift'); quoted
+        # args (spaces) leak the quotes into the template. All four
+        # receipt agents are single-homed on hiclaw-net, so the bare
+        # range emits exactly one IP — asserted, so a future
+        # dual-homed agent fails loudly instead of mismatching.
         cp = docker_executor(
             ["inspect", frozen[0], "--format",
-             "{{(index .NetworkSettings.Networks \"hiclaw-net\")"
-             ".IPAddress}}"],
+             "{{range .NetworkSettings.Networks}}{{.IPAddress}},{{end}}"],
             check=True)
-        live_ip = (cp.stdout or b"").decode().strip()
+        addresses = [a for a in (cp.stdout or b"").decode(
+            "utf-8", "replace").strip().split(",") if a]
+        live_ip = addresses[0] if len(addresses) == 1 else ""
         checks["ip"] = (
             "OK" if live_ip == frozen[2]
             and agent.get("hiclaw_net_ip") == frozen[2]
@@ -746,10 +931,14 @@ def _validate_direction_receipt(receipt: dict, *,
         "OK" if old_mcp.get("restart_policy") == live_rp else "DRIFT")
     cp = docker_executor(
         ["inspect", "github-mcp", "--format",
-         "{{range $k, $v := .NetworkSettings.Networks}}"
-         "{{$k}} {{end}}"], check=True)
-    live_nets = set(n for n in
-                    (cp.stdout or b"").decode().strip().split() if n)
+         # no $-variables / spaces / quotes: unquoted argv crosses
+         # wsl.exe's `--` shell reassembly where `$k` expands to
+         # empty and quoted argv leaks the quotes (run34 finding).
+         # The Networks map repr carries the names as keys:
+         # `map[hiclaw-net:0xf6eef878d80]`.
+         "{{.NetworkSettings.Networks}}"], check=True)
+    nets_repr = (cp.stdout or b"").decode().strip()
+    live_nets = _network_names_from_map_repr(nets_repr)
     receipt_nets = set(old_mcp.get("network_attachments", []))
     old_checks["network_attachments"] = (
         "OK" if live_nets == receipt_nets else "DRIFT")

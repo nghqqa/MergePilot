@@ -1,0 +1,78 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-24T05:35:00Z",
+  "title": "Design System: MergePilot E2E Operations Console",
+  "extensions": {
+    "colorMeta": {
+      "accent-teal": { "role": "primary", "displayName": "深青 Deep Teal", "canonical": "#0e6b62", "tonalRamp": ["#072722", "#0a524b", "#0e6b62", "#2a837a", "#5aa39b", "#8cc4bd", "#bedcd7", "#e6f1ef"] },
+      "status-green": { "role": "secondary", "displayName": "生命绿 Quiet Green", "canonical": "#17693c" },
+      "status-amber": { "role": "secondary", "displayName": "值班琥珀 Duty Amber", "canonical": "#8a5a00" },
+      "status-red": { "role": "secondary", "displayName": "故障红 Signal Red", "canonical": "#b3261e" },
+      "status-blue": { "role": "secondary", "displayName": "进行蓝 Work Blue", "canonical": "#1d5da4" },
+      "workspace-ground": { "role": "neutral", "displayName": "暖灰地 Warm Paper", "canonical": "#f4f4f1" },
+      "nav-ink": { "role": "neutral", "displayName": "墨黑导航 Nav Ink", "canonical": "#17191e" }
+    },
+    "shadows": [],
+    "motion": [
+      { "name": "state-ease", "value": "0.15s ease-out", "purpose": "Hover/focus/chip 状态过渡的唯一时长；prefers-reduced-motion 下归零。" }
+    ],
+    "breakpoints": [
+      { "name": "rail-collapse", "value": "959px" },
+      { "name": "route-cards", "value": "719px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Refresh Button",
+      "kind": "button",
+      "refersTo": "button-refresh",
+      "description": "控制台唯一的按钮：手动刷新状态。",
+      "html": "<button class=\"ds-btn-refresh\"><svg width=\"13\" height=\"13\" viewBox=\"0 0 16 16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\"><path d=\"M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 1.5v3h-3\"/></svg><span>刷新</span></button>",
+      "css": ".ds-btn-refresh { display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 12px; background: #2c2f36; color: #e9eae6; border: 1px solid #3d4149; border-radius: 5px; font: 12px system-ui, 'Microsoft YaHei', sans-serif; cursor: pointer; transition: background 0.15s ease-out; } .ds-btn-refresh:hover { background: #383c44; } .ds-btn-refresh:focus-visible { outline: none; box-shadow: 0 0 0 2px #f4f4f1, 0 0 0 4px #0e6b62; } .ds-btn-refresh[disabled] { opacity: 0.55; cursor: default; } .ds-btn-refresh svg { flex: none; }"
+    },
+    {
+      "name": "Verdict Chip (Failed)",
+      "kind": "chip",
+      "refersTo": "verdict-chip-err",
+      "description": "运行总览的失败裁决：图标 + 文字 + 红三元组。",
+      "html": "<span class=\"ds-verdict-fail\"><svg width=\"15\" height=\"15\" viewBox=\"0 0 16 16\" fill=\"currentColor\"><path d=\"M8 1.5 15 14H1L8 1.5zM8 6v4m0 2.2v.6\" stroke=\"currentColor\" stroke-width=\"1.6\" fill=\"none\"/></svg>Failed</span>",
+      "css": ".ds-verdict-fail { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 650; padding: 5px 12px; border-radius: 5px; border: 1px solid #e5bcb9; color: #b3261e; background: #f9e6e4; font-family: system-ui, 'Microsoft YaHei', sans-serif; } .ds-verdict-fail svg { color: #b3261e; flex: none; }"
+    },
+    {
+      "name": "Stage Row (failed)",
+      "kind": "custom",
+      "refersTo": "stage-status-chip",
+      "description": "17 阶段时间线中的失败行：序号列 + 名称 + 失败芯片 + 错误框。",
+      "html": "<li class=\"ds-stage-row\"><span class=\"ds-n\">10</span><span class=\"ds-name\">路由探测 <em class=\"ds-ev\">6 边</em></span><span class=\"ds-st ds-st-failed\">失败</span><span class=\"ds-err\">E2E_ROUTE_PROBE_FAILED<span class=\"ds-zh\">中继路由探测失败，六边中至少一边未验证</span></span></li>",
+      "css": ".ds-stage-row { display: grid; grid-template-columns: 34px minmax(0,1fr) auto; align-items: baseline; padding: 6px 12px 6px 0; border-bottom: 1px solid #d9dad4; font-family: system-ui, 'Microsoft YaHei', sans-serif; list-style: none; } .ds-n { font-family: ui-monospace, 'Cascadia Mono', Consolas, Menlo, monospace; font-size: 11px; color: #656c76; text-align: center; padding: 6px 0; background: #eceded; border-right: 1px solid #d9dad4; } .ds-name { font-size: 12.5px; color: #b3261e; font-weight: 600; } .ds-ev { font-style: normal; font-family: ui-monospace, 'Cascadia Mono', Consolas, Menlo, monospace; font-size: 11px; color: #656c76; margin-left: 8px; } .ds-st-failed { font-size: 11px; color: #b3261e; background: #f9e6e4; font-weight: 600; padding: 1px 8px; border-radius: 3px; justify-self: end; white-space: nowrap; } .ds-err { grid-column: 2/4; margin: 2px 0 3px; font-family: ui-monospace, 'Cascadia Mono', Consolas, Menlo, monospace; font-size: 11.5px; color: #b3261e; background: #f9e6e4; border: 1px solid #e5bcb9; border-radius: 4px; padding: 4px 9px; overflow-wrap: anywhere; } .ds-zh { font-family: system-ui, 'Microsoft YaHei', sans-serif; color: #575e68; margin-left: 8px; }"
+    },
+    {
+      "name": "Nav App Bar",
+      "kind": "nav",
+      "refersTo": "panel-card",
+      "description": "深色结构导航：品牌/面名/run 芯片/更新时间/刷新/自动状态。",
+      "html": "<header class=\"ds-appbar\"><span class=\"ds-brand\">MergePilot</span><span class=\"ds-dim\">/</span><span class=\"ds-dim\">E2E Operations</span><span class=\"ds-run\">b8-e2e-run35</span><span class=\"ds-fresh\">更新于 <time>2026-08-24T04:29:38Z</time> · 24 分前</span></header>",
+      "css": ".ds-appbar { display: flex; align-items: center; gap: 14px; height: 46px; padding: 0 20px; background: #17191e; color: #e9eae6; border-bottom: 1px solid #000; font-family: system-ui, 'Microsoft YaHei', sans-serif; } .ds-brand { font-weight: 650; font-size: 13px; white-space: nowrap; } .ds-dim { color: #9aa0a8; font-size: 12px; } .ds-run { font-family: ui-monospace, 'Cascadia Mono', Consolas, Menlo, monospace; font-size: 12px; background: #2c2f36; padding: 3px 9px; border-radius: 4px; } .ds-fresh { color: #9aa0a8; font-size: 11.5px; margin-left: auto; } .ds-fresh time { font-family: ui-monospace, 'Cascadia Mono', Consolas, Menlo, monospace; color: #e9eae6; }"
+    },
+    {
+      "name": "Boundary Panel",
+      "kind": "card",
+      "refersTo": "panel-card",
+      "description": "诊断轨面板：五项真实性边界，NOT_VERIFIED 直读。",
+      "html": "<section class=\"ds-panel\"><h3>五项真实性边界</h3><div class=\"ds-drow\"><span class=\"ds-k\">应用集成已验证</span><span class=\"ds-v ds-warn\">NOT_VERIFIED</span></div><div class=\"ds-drow\"><span class=\"ds-k\">数据库已验证</span><span class=\"ds-v ds-warn\">NOT_VERIFIED</span></div></section>",
+      "css": ".ds-panel { background: #ffffff; border: 1px solid #d9dad4; border-radius: 5px; padding: 12px 14px; font-family: system-ui, 'Microsoft YaHei', sans-serif; } .ds-panel h3 { margin: 0 0 8px; font: 650 11.5px system-ui, 'Microsoft YaHei', sans-serif; color: #575e68; padding-bottom: 5px; border-bottom: 1px solid #d9dad4; } .ds-drow { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; border-bottom: 1px dotted #d9dad4; font-size: 12px; } .ds-k { color: #575e68; } .ds-v { font-family: ui-monospace, 'Cascadia Mono', Consolas, Menlo, monospace; font-size: 11.5px; } .ds-warn { color: #8a5a00; font-weight: 600; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Shift-Handover Board（交接班看板）",
+    "overview": "这是一块挂在维护者工位上的交接班看板：数据自己说话，界面不插话。深色导航结构像车间的钢梁骨架，浅暖中性工作区像摊开的值班日志；绿、琥珀、红只用于生命状态，从不用于装饰。整个系统服务一个动作——30 秒内判断一次运行的可信度、失败阶段、网络路径与残留。诚实优先于安抚：缺失写未提供，未验证写 NOT_VERIFIED，冻结的数据把年龄如实走秒。",
+    "keyCharacteristics": ["浅暖工作区 + 深色导航双层结构", "状态三色永远是图标+文字+颜色三元组", "等宽字体只用于代码与测量值", "150–200ms 过渡且尊重 prefers-reduced-motion", "全部只读，页脚明示无写操作"],
+    "rules": [
+      { "name": "The 5% Status Rule", "body": "三个状态色合计不超过任何视口面积的 5%；出现即意味着状态判断，绝不用于分组或装饰。", "section": "colors" },
+      { "name": "The Never-Color-Only Rule", "body": "每一个状态表达都是图标+文字+颜色三元组；色盲视图下信息零损失。", "section": "colors" },
+      { "name": "The Tight-Ladder Rule", "body": "字号阶梯保持 10.5–14px 紧密跨度（1.3:1）；层级靠字重与颜色，不靠字号跳跃。", "section": "typography" }
+    ],
+    "dos": ["缺失字段如实写未提供，未验证如实写 NOT_VERIFIED", "时间 UI 用投影年龄，冻结数据必须显示为逐渐变旧", "新增视图先问投影有没有字段，客户端不合成"],
+    "donts": ["渐变、玻璃、光球、hero、营销文案", "深蓝单色主题", "任何写操作按钮", "颜色作唯一状态载体", "入场动画与滚动视差"]
+  }
+}

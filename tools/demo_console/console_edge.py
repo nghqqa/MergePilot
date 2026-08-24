@@ -69,6 +69,10 @@ ALLOWED_PATHS = frozenset({
     "/live-refresh.js",
     "/api/live/status",
     "/api/live/snapshot",
+    # maintenance §7: read-only E2E journal projection surface
+    # (same derived-status contract as the live endpoints)
+    "/e2e-status.html",
+    "/api/e2e/status",
 })
 
 ALLOWED_HOST_PREFIXES = ("127.0.0.1", "localhost")

@@ -10,12 +10,36 @@ import json
 import urllib.request
 from typing import Any, Callable, Optional
 
-#: Frozen read-only tools (must exactly match runtime specs)
+#: Frozen read-only tool contract. Authority: the deployed
+#: github-mcp-server (digest-pinned in Dockerfile.mcp-bridge) live
+#: toolset intersected with the fixture policy's tool_classes.read
+#: (tools/policy-gateway/policy-e2e-fixture.yaml) — the gateway
+#: exposes EXACTLY this set to the reviewer/verifier roles. The
+#: previous placeholder names (get_pull_request,
+#: get_pull_request_files, get_branch) never existed on the real
+#: server (verified live: 44 tools, pull_request_read etc.) and a
+#: manager role does not exist in the policy at all.
 FROZEN_READ_ONLY_TOOLS = frozenset((
-    "get_pull_request",
-    "get_pull_request_files",
+    "get_me",
+    "get_commit",
     "get_file_contents",
-    "get_branch",
+    "get_label",
+    "get_latest_release",
+    "get_release_by_tag",
+    "get_tag",
+    "list_branches",
+    "list_commits",
+    "list_issues",
+    "list_pull_requests",
+    "list_releases",
+    "list_repository_collaborators",
+    "list_tags",
+    "search_code",
+    "search_commits",
+    "search_issues",
+    "search_pull_requests",
+    "issue_read",
+    "pull_request_read",
 ))
 
 

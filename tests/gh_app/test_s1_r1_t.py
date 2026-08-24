@@ -31,7 +31,7 @@ def _all_configs():
     def ctrl():
         return {
             "GITHUB_INGRESS_ENABLED": "1",
-            "GITHUB_ROOM_MAP_PATH": "/run/mergepilot/room-map.yaml",
+            "GITHUB_ROOM_MAP": "/run/mergepilot/room-map.yaml",
             "GITHUB_POLICY_PATH":
                 "/run/mergepilot/policy-fixture.yaml",
             "GITHUB_DELIVERY_LEASE_SECONDS": "120",
@@ -47,20 +47,27 @@ def _all_configs():
             "RESERVED_RUN_PREFIXES": "",
             "GATEWAY_URL": "http://policy-gateway:8083",
             "COORDINATOR_TOKEN": "tok-" + "a" * 32,
+            "PG_HOST": "postgres",
+            "PG_PORT": "5432",
+            "PG_DATABASE": "mergepilot_audit",
+            "PG_USER": "mergepilot",
+            "PG_PASS": "synthetic-pg-pass",
+            "ADMIN_PW": "synthetic-admin-pw",
         }
 
     def gw():
         return {
             "UPSTREAM_URL": rs.GATEWAY_E2E_UPSTREAM,
             "POLICY_FILE": rs.GATEWAY_E2E_POLICY,
-            "ROLE_TOKENS": "synthetic-role-token-value",
+            "ROLE_TOKENS": '{"manager":"tok-m","reviewer":"tok-r",'
+                              ' "fixer":"tok-f","verifier":"tok-v"}',
             "AUDIT_DSN":
                 "postgresql://u:synthetic-audit@postgres/db?connect_timeout=5",
         }
 
     def bridge():
         return {
-            "MCP_GITHUB_TOKEN": "synthetic-pat-value",
+            "GITHUB_PERSONAL_ACCESS_TOKEN": "synthetic-pat-value",
             "GITHUB_REPOSITORY": "example/fixture",
             "HTTPS_PROXY": rs.BRIDGE_PROXY,
             "MCP_PROXY_PORT": "8082",
@@ -244,11 +251,11 @@ class TestSecretMatrixFailClosed(unittest.TestCase):
                 "gh-proxy-r", {"fine_grained_pat"})
 
     def test_cross_validate_sensitive_keys_bridge_pat(self):
-        env = {"MCP_GITHUB_TOKEN": "fake"}
+        env = {"GITHUB_PERSONAL_ACCESS_TOKEN": "fake"}
         rs.cross_validate_sensitive_keys("mcp-bridge", env)  # OK
 
     def test_cross_validate_wrong_consumer(self):
-        env = {"MCP_GITHUB_TOKEN": "fake"}
+        env = {"GITHUB_PERSONAL_ACCESS_TOKEN": "fake"}
         with self.assertRaises(rs.RuntimeSpecError):
             rs.cross_validate_keys = \
                 rs.cross_validate_sensitive_keys

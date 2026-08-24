@@ -331,9 +331,29 @@ class TestPrerequisitesGate(unittest.TestCase):
         self.assertEqual(e2f.E2E_PENDING_COMPONENTS, ())
 
     def test_cli_gate_fires_before_side_effects(self):
-        rc = mp.main(["start", "--run-id", "b3gate", "--github-e2e",
-                      "--project-dir", str(ROOT)])
+        # maintenance §3: this test used the REAL project dir; on a
+        # provisioned workspace the prerequisite gate PASSES (real
+        # probes against live services) and the run proceeds into
+        # REAL side effects (networks, firewall, session) until some
+        # later stage fails — the run28 iptables leftover traced to
+        # exactly this. Hermetic now: empty temp state makes the
+        # REAL loader hit genuine config absence, and the assertion
+        # pins the stable code instead of bare rc=3.
+        from unittest import mock as _mock
+        with tempfile.TemporaryDirectory() as tmp:
+            state = Path(tmp) / ".mergepilot"
+            state.mkdir()
+            with _mock.patch.object(
+                    mp, "state_paths",
+                    return_value={"state": state,
+                                  "install": state / "install.json",
+                                  "session": state / "session.json",
+                                  "secrets": state / "secrets"}):
+                rc = mp.main(["start", "--run-id", "b3gate",
+                              "--github-e2e", "--json",
+                              "--project-dir", str(ROOT)])
         self.assertEqual(rc, 3)
+        self.assertFalse((state / "session.json").exists())
 
     def test_cli_gate_honest_and_prereq_real(self):
         source = (ROOT / "tools" / "cli" / "mergepilot.py").read_text(
@@ -387,7 +407,7 @@ class TestFullTopology(unittest.TestCase):
         bp = e2f.build_mcp_bridge_planning()
         self.assertIn("881b53d6",
                       bp["supply_chain"]["github_mcp_server_digest"])
-        self.assertEqual(bp["env_keys"], ["MCP_GITHUB_TOKEN"])
+        self.assertEqual(bp["env_keys"], ["GITHUB_PERSONAL_ACCESS_TOKEN"])
 
     def test_reporter_full_network_wiring(self):
         rp = e2f.build_reporter_planning()

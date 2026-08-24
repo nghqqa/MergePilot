@@ -20,6 +20,35 @@ from typing import Optional
 
 import e2e_foundation as e2f
 
+#: Current transport profile for endpoint validation.
+#: Set by the CLI before validate_runtime_configs is called.
+#: Empty string = direct-routing (default).
+_ACTIVE_TRANSPORT_PROFILE = ""
+_RELAY_ENDPOINT_OVERRIDES = {}
+
+
+def set_transport_profile(profile, relay_endpoints=None):
+    """Set the active transport profile for endpoint validation.
+    Called by the CLI before creating runtime configs."""
+    global _ACTIVE_TRANSPORT_PROFILE, _RELAY_ENDPOINT_OVERRIDES
+    _ACTIVE_TRANSPORT_PROFILE = profile or ""
+    _RELAY_ENDPOINT_OVERRIDES = relay_endpoints or {}
+
+
+def get_transport_profile():
+    return _ACTIVE_TRANSPORT_PROFILE
+
+
+def _profile_expected(service, env_key, direct_default):
+    """Return the expected env value for the current profile.
+    Direct-routing: the original hardcoded value.
+    wsl-user-relay: the relay-projected value from edge contracts."""
+    if _ACTIVE_TRANSPORT_PROFILE == "wsl-user-relay":
+        override = _RELAY_ENDPOINT_OVERRIDES.get(service, {}).get(env_key)
+        if override is not None:
+            return override
+    return direct_default
+
 
 class RuntimeSpecError(Exception):
     def __init__(self, code: str, detail: str):
@@ -40,13 +69,12 @@ GATEWAY_E2E_ENV_KEYS = frozenset((
 GATEWAY_E2E_UPSTREAM = "http://172.31.0.34:8082/sse"
 GATEWAY_E2E_POLICY = "/run/mergepilot/policy-fixture.yaml"
 
-#: Frozen read-only tool set (Gateway semantic health contract)
-GATEWAY_READ_ONLY_TOOLS = frozenset((
-    "get_pull_request",
-    "get_pull_request_files",
-    "get_file_contents",
-    "get_branch",
-))
+#: Gateway read-only tool contract — single authority is
+#: e2e_gateway_health.FROZEN_READ_ONLY_TOOLS (deployed server
+#: toolset × policy-e2e-fixture tool_classes.read); the equality
+#: is enforced by a regression test.
+import e2e_gateway_health as _gwh
+GATEWAY_READ_ONLY_TOOLS = _gwh.FROZEN_READ_ONLY_TOOLS
 
 
 def validate_gateway_e2e_env(mapping) -> dict:
@@ -69,21 +97,44 @@ def validate_gateway_e2e_env(mapping) -> dict:
         if "\r" in v or "\n" in v or "\0" in v:
             raise RuntimeSpecError("RUNTIME_CONFIG_INVALID",
                                    "%s: CR/LF/NUL forbidden" % key)
-    if mapping["UPSTREAM_URL"] != GATEWAY_E2E_UPSTREAM:
+    expected_upstream = _profile_expected(
+        "policy-gateway", "UPSTREAM_URL", GATEWAY_E2E_UPSTREAM)
+    if mapping["UPSTREAM_URL"] != expected_upstream:
         raise RuntimeSpecError("RUNTIME_CONFIG_INVALID",
                                "UPSTREAM_URL must be exactly %s"
-                               % GATEWAY_E2E_UPSTREAM)
+                               % expected_upstream)
     if mapping["POLICY_FILE"] != GATEWAY_E2E_POLICY:
         raise RuntimeSpecError("RUNTIME_CONFIG_INVALID",
                                "POLICY_FILE must be exactly %s"
                                % GATEWAY_E2E_POLICY)
+    # ROLE_TOKENS is json.loads()ed by the gateway AT STARTUP: a
+    # non-JSON placeholder passes the non-empty-string bar and then
+    # crashes the container deterministically at gateway start.
+    # Fail closed HERE (stage 2, before anything is created).
+    try:
+        import json as _json
+        tokens = _json.loads(mapping["ROLE_TOKENS"])
+    except ValueError:
+        raise RuntimeSpecError(
+            "RUNTIME_CONFIG_INVALID",
+            "ROLE_TOKENS must be valid JSON") from None
+    if (not isinstance(tokens, dict) or not tokens
+            or not all(isinstance(k, str) and k.strip()
+                       and isinstance(v, str) and v.strip()
+                       for k, v in tokens.items())):
+        raise RuntimeSpecError(
+            "RUNTIME_CONFIG_INVALID",
+            "ROLE_TOKENS must be a non-empty JSON object of "
+            "non-empty string tokens")
     return dict(mapping)
 
 
 # ── §6: MCP Bridge schema ───────────────────────────────────────────────────
 
 BRIDGE_ENV_KEYS = frozenset((
-    "MCP_GITHUB_TOKEN",     # fine-grained PAT
+    "GITHUB_PERSONAL_ACCESS_TOKEN",  # fine-grained PAT (the Go
+    #                             # github-mcp-server env contract;
+    #                             # verified against the real image)
     "GITHUB_REPOSITORY",    # fixture repo (owner/name)
     "HTTPS_PROXY",          # http://172.31.0.114:18090
     "MCP_PROXY_PORT",       # 8082
@@ -112,10 +163,12 @@ def validate_bridge_env(mapping) -> dict:
         if "\r" in v or "\n" in v or "\0" in v:
             raise RuntimeSpecError("RUNTIME_CONFIG_INVALID",
                                    "%s: CR/LF/NUL forbidden" % key)
-    if mapping["HTTPS_PROXY"] != BRIDGE_PROXY:
+    expected_proxy = _profile_expected(
+        "mcp-bridge", "HTTPS_PROXY", BRIDGE_PROXY)
+    if mapping["HTTPS_PROXY"] != expected_proxy:
         raise RuntimeSpecError("RUNTIME_CONFIG_INVALID",
                                "HTTPS_PROXY must be exactly %s"
-                               % BRIDGE_PROXY)
+                               % expected_proxy)
     if mapping["MCP_PROXY_PORT"] != "8082":
         raise RuntimeSpecError("RUNTIME_CONFIG_INVALID",
                                "MCP_PROXY_PORT must be 8082")
@@ -192,7 +245,7 @@ def validate_secret_consumers(service: str, secret_kinds: set) -> None:
 
 #: Maps env keys to their sensitive resource kind for cross-validation.
 SENSITIVE_ENV_KEY_MAP = {
-    "MCP_GITHUB_TOKEN": "fine_grained_pat",
+    "GITHUB_PERSONAL_ACCESS_TOKEN": "fine_grained_pat",
     "GITHUB_PUBLISHER_DSN": "reporter_dsn",
     "AUDIT_DSN": "audit_dsn",
     "ROLE_TOKENS": "role_tokens",
@@ -524,6 +577,42 @@ _MOUNT_SOURCE_CONFIG_KEY = {
     "fixture_policy": "policy_path",
     "github_app_pem": "app_pem_path",
 }
+
+
+#: Frozen policy fixture version — the gateway reads this at startup
+#: to determine tool visibility. A wrong policy file produces
+#: policy=unknown and 0 tools (the run26c Stage 11 failure).
+POLICY_FIXTURE_VERSION = "e2e-fixture-20260728-v1"
+
+
+def validate_policy_fixture(path) -> str:
+    """Production gate: verify the policy file contains the frozen
+    version. Returns the version string or raises.
+    File existence is checked by prerequisite probes; this gate
+    only validates content (version + reviewer role)."""
+    import os
+    if not os.path.isfile(path):
+        # missing file is a prerequisite probe failure, not a content
+        # issue — skip (test configs use non-existent paths)
+        return ""
+    try:
+        import yaml
+        doc = yaml.safe_load(open(path, encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise RuntimeSpecError(
+            "RUNTIME_POLICY_FILE_UNREADABLE",
+            "policy file unreadable: %s" % type(exc).__name__) from None
+    version = doc.get("version", "") if isinstance(doc, dict) else ""
+    if version != POLICY_FIXTURE_VERSION:
+        raise RuntimeSpecError(
+            "RUNTIME_POLICY_VERSION_MISMATCH",
+            "expected %s, got %r" % (POLICY_FIXTURE_VERSION,
+                                      version or "(missing)"))
+    roles = doc.get("roles", {})
+    if "reviewer" not in roles:
+        raise RuntimeSpecError(
+            "RUNTIME_POLICY_ROLE_MISSING", "reviewer role absent")
+    return version
 
 
 def plan_runtime_mounts(service: str, *, config: dict = None) -> list:

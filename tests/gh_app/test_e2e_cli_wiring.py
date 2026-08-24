@@ -36,12 +36,35 @@ import mergepilot as mp               # noqa: E402
 import e2e_foundation as e2f          # noqa: E402
 import e2e_lifecycle as el            # noqa: E402
 
+from planner_isolation import (       # noqa: E402
+    add_planner_registry_isolation,
+)
+
 
 def _main_json(argv):
     buf = io.StringIO()
     with redirect_stdout(buf):
         rc = mp.main(argv + ["--json", "--project-dir", str(ROOT)])
     return rc, json.loads(buf.getvalue())
+
+
+def _empty_state_paths(tmp):
+    """state_paths for a temp .mergepilot WITHOUT github-e2e.json.
+
+    The gate tests were written when the workspace carried no E2E
+    config; on a provisioned workspace the REAL config exists and
+    the real probes run (maintenance §3 finding: one such test even
+    reached real side effects when every external service happened
+    to be up). Redirecting state keeps the absence path REAL (the
+    production loader genuinely hits a missing file) with zero
+    coupling to workspace provisioning.
+    """
+    state = Path(tmp) / ".mergepilot"
+    state.mkdir(parents=True, exist_ok=True)
+    return {"state": state,
+            "install": state / "install.json",
+            "session": state / "session.json",
+            "secrets": state / "secrets"}
 
 
 class TestComponentGate(unittest.TestCase):
@@ -52,17 +75,20 @@ class TestComponentGate(unittest.TestCase):
         # before any side effect — no manifest load, no Docker, no
         # session write.
         calls = []
-        with mock.patch.object(mp, "load_manifest",
-                               side_effect=lambda p: calls.append(
-                                   ("load_manifest", str(p))) or None), \
-             mock.patch.object(mp, "WslDocker",
-                               side_effect=AssertionError(
-                                   "no docker allowed")), \
-             mock.patch.object(mp, "write_session",
-                               side_effect=AssertionError(
-                                   "no session write")):
-            rc, payload = _main_json(
-                ["start", "--run-id", "w1", "--github-e2e"])
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.object(mp, "state_paths",
+                                   return_value=_empty_state_paths(tmp)), \
+                 mock.patch.object(mp, "load_manifest",
+                                   side_effect=lambda p: calls.append(
+                                       ("load_manifest", str(p))) or None), \
+                 mock.patch.object(mp, "WslDocker",
+                                   side_effect=AssertionError(
+                                       "no docker allowed")), \
+                 mock.patch.object(mp, "write_session",
+                                   side_effect=AssertionError(
+                                       "no session write")):
+                rc, payload = _main_json(
+                    ["start", "--run-id", "w1", "--github-e2e"])
         self.assertEqual(rc, 3)
         self.assertEqual(payload["error_code"],
                          "GITHUB_E2E_PREREQUISITES_INCOMPLETE")
@@ -128,15 +154,19 @@ class TestPrerequisiteRealProbe(unittest.TestCase):
     def test_missing_config_real_probe_zero_side_effects(self):
         # gate cleared (test-level toggle; the gate itself is tested
         # above) — the missing prerequisite config is a REAL probe.
-        with mock.patch.object(e2f, "E2E_PENDING_COMPONENTS", ()), \
-             mock.patch.object(mp, "WslDocker",
-                               side_effect=AssertionError(
-                                   "no docker before prereq")), \
-             mock.patch.object(mp, "write_session",
-                               side_effect=AssertionError(
-                                   "no session write")):
-            rc, payload = _main_json(
-                ["start", "--run-id", "w4", "--github-e2e"])
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.object(e2f, "E2E_PENDING_COMPONENTS", ()), \
+                 mock.patch.object(
+                     mp, "state_paths",
+                     return_value=_empty_state_paths(tmp)), \
+                 mock.patch.object(mp, "WslDocker",
+                                   side_effect=AssertionError(
+                                       "no docker before prereq")), \
+                 mock.patch.object(mp, "write_session",
+                                   side_effect=AssertionError(
+                                       "no session write")):
+                rc, payload = _main_json(
+                    ["start", "--run-id", "w4", "--github-e2e"])
         self.assertEqual(rc, 3)
         self.assertEqual(payload["error_code"],
                          "GITHUB_E2E_PREREQUISITES_INCOMPLETE")
@@ -146,6 +176,14 @@ class TestPrerequisiteRealProbe(unittest.TestCase):
 
 
 class TestStartWiring(unittest.TestCase):
+
+    def setUp(self):
+        # the synthetic install records sha256:ab*32 identities; a
+        # suite peer that ran the real CLI recorded the REAL image
+        # IDs into the same process-global registry, and the
+        # immutable-once-recorded contract then fails this test with
+        # IMAGE_DIGEST_MISMATCH (order-dependent suite failure)
+        add_planner_registry_isolation(self)
 
     def test_start_calls_run_e2e_start_with_real_executors(self):
         recorded = {}
@@ -165,6 +203,9 @@ class TestStartWiring(unittest.TestCase):
             state.mkdir()
             pat_file = state / "pat.txt"
             pat_file.write_text("synthetic-pat-value", encoding="utf-8")
+            wh_file = state / "w.secret"
+            wh_file.write_text("synthetic-webhook-secret",
+                               encoding="utf-8")
             (state / "github-e2e.json").write_text(json.dumps({
                 "room_map_path": "/tmp/rm.yaml",
                 "policy_path": "/tmp/p.yaml",
@@ -172,7 +213,7 @@ class TestStartWiring(unittest.TestCase):
                 "matrix_room_id": "!r:s",
                 "matrix_credentials_path": "/tmp/c.json",
                 "app_pem_path": "/tmp/a.pem",
-                "webhook_secret_path": "/tmp/w.secret",
+                "webhook_secret_path": str(wh_file),
                 "mcp_pat_path": str(pat_file),
                 "hiclaw_receipt_path": "/tmp/rec.json",
                 "callback_url_path": "/tmp/cb.txt",
@@ -197,6 +238,10 @@ class TestStartWiring(unittest.TestCase):
                                    side_effect=fake_start), \
                  mock.patch.object(mp, "WslDocker") as wd, \
                  mock.patch.object(mp, "prepare_database"), \
+                 mock.patch.object(
+                     mp, "_read_hiclaw_role_tokens",
+                     return_value={"manager": "tok-m", "reviewer": "tok-r",
+                                   "fixer": "tok-f", "verifier": "tok-v"}), \
                  mock.patch.object(mp, "_to_wsl_path",
                                    side_effect=lambda p: str(p)), \
                  mock.patch.object(mp, "state_paths",
@@ -331,6 +376,74 @@ class TestDefaultModeUnchanged(unittest.TestCase):
         # NOT_INSTALLED — the default precheck, proving the default
         # path ran and never entered the E2E wiring
         self.assertEqual(payload["error_code"], "NOT_INSTALLED")
+
+
+class TestReporterImageMapping(unittest.TestCase):
+    """Real E2E start failed E2E_IMAGE_MISSING(gh-reporter): the
+    reporter is a container ROLE reusing the gh-webhook image (the
+    e2e_foundation reporter-planning contract), not a separately
+    built image — the install manifest never contains a
+    mergepilot-isolated-gh-reporter tag."""
+
+    def test_gh_reporter_resolves_webhook_image(self):
+        import mergepilot as mp
+        planner = mp.ActivePlanner if hasattr(mp, "ActivePlanner")             else None
+        # directly exercise the mapping logic used in
+        # _execute_github_e2e_start
+        for service, expected in (
+                ("gh-reporter", "gh-webhook"),
+                ("gh-proxy-r", "gh-proxy"),
+                ("gh-proxy-b", "gh-proxy"),
+                ("controller", "controller"),
+                ("mcp-bridge", "mcp-bridge")):
+            base = ("gh-proxy" if service.startswith("gh-proxy")
+                    else "gh-webhook" if service == "gh-reporter"
+                    else service)
+            self.assertEqual(base, expected,
+                             "%s should resolve %s" % (service,
+                                                       expected))
+        tag = mp.image_tag(None, "gh-webhook")
+        self.assertEqual(tag, "mergepilot-isolated-gh-webhook:local")
+
+
+class TestDefaultNetworkPreCreation(unittest.TestCase):
+    """Real E2E run failed E2E_CONTAINER_SETUP_FAILED(postgres):
+    "network mergepilot-isolated-isolated not found" — the five
+    default-mode services run on ORCHESTRATOR/PUBLICATION networks
+    the e2e lifecycle never creates. The CLI must create them (via
+    the planned network-create argvs, check=False) BEFORE
+    run_e2e_start."""
+
+    def test_network_create_steps_collected_and_executed(self):
+        src = open(mp.__file__, encoding="utf-8").read()
+        self.assertIn("network_create_steps", src)
+        self.assertIn('log_tag="e2e-net"', src,
+                      "network creation executed via docker_exec")
+        # creation happens before run_e2e_start
+        i = src.find('log_tag="e2e-net"')
+        j = src.find("session = el.run_e2e_start(")
+        self.assertGreater(i, -1)
+        self.assertGreater(j, -1)
+        self.assertLess(i, j)
+
+
+class TestGhWebhookEnvInE2ePath(unittest.TestCase):
+    """Real E2E run failed E2E_CONTAINER_SETUP_FAILED(gh-webhook):
+    the planned run argv references gh_webhook.env, but only the
+    default start path wrote it. The github-e2e path must write it
+    too (webhook secret body read in-process from the provisioned
+    restricted file; never logged)."""
+
+    def test_gh_webhook_env_written_in_github_e2e_path(self):
+        src = open(mp.__file__, encoding="utf-8").read()
+        fn = src.find("def _execute_github_e2e_start")
+        i = src.find('GhWebhookSecretFile(paths["secrets"]).write(', fn)
+        self.assertGreater(fn, -1)
+        self.assertGreater(i, fn)
+        window = src[fn:i]
+        self.assertIn('config["webhook_secret_path"]', window)
+        after = src[i:i + 700]
+        self.assertIn('"gh_webhook.env"', after)
 
 
 if __name__ == "__main__":

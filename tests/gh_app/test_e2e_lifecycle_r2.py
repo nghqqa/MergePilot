@@ -500,7 +500,7 @@ def _rc():
     return {
         "controller": {
             "GITHUB_INGRESS_ENABLED": "1",
-            "GITHUB_ROOM_MAP_PATH": "/run/mergepilot/room-map.yaml",
+            "GITHUB_ROOM_MAP": "/run/mergepilot/room-map.yaml",
             "GITHUB_POLICY_PATH": "/run/mergepilot/policy-fixture.yaml",
             "GITHUB_DELIVERY_LEASE_SECONDS": "120",
             "GITHUB_DELIVERY_MAX_ATTEMPTS": "5",
@@ -514,17 +514,24 @@ def _rc():
             "RESERVED_RUN_PREFIXES": "",
             "GATEWAY_URL": "http://policy-gateway:8083",
             "COORDINATOR_TOKEN": "tok-" + "a" * 32,
+            "PG_HOST": "postgres",
+            "PG_PORT": "5432",
+            "PG_DATABASE": "mergepilot_audit",
+            "PG_USER": "mergepilot",
+            "PG_PASS": "synthetic-pg-pass",
+            "ADMIN_PW": "synthetic-admin-pw",
         },
         "policy-gateway": {
             "UPSTREAM_URL": rs.GATEWAY_E2E_UPSTREAM,
             "POLICY_FILE": rs.GATEWAY_E2E_POLICY,
-            "ROLE_TOKENS": "synthetic-role-token-value",
+            "ROLE_TOKENS": '{"manager":"tok-m","reviewer":"tok-r",'
+                              ' "fixer":"tok-f","verifier":"tok-v"}',
             "AUDIT_DSN":
                 "postgresql://u:synthetic-audit@postgres/db"
                 "?connect_timeout=5",
         },
         "mcp-bridge": {
-            "MCP_GITHUB_TOKEN": "synthetic-pat-value",
+            "GITHUB_PERSONAL_ACCESS_TOKEN": "synthetic-pat-value",
             "GITHUB_REPOSITORY": "example/fixture",
             "HTTPS_PROXY": rs.BRIDGE_PROXY,
             "MCP_PROXY_PORT": "8082",
@@ -739,5 +746,64 @@ class TestStatusSanitized(unittest.TestCase):
         self.assertEqual(result["_stage"], "complete")
 
 
-if __name__ == "__main__":
-    unittest.main()
+class TestWslMountConversion(unittest.TestCase):
+    """First real E2E start failed E2E_CONTAINER_SETUP_FAILED because
+    Windows drive-letter mount sources reached the in-distro docker
+    daemon with backslashes eaten. The lifecycle must map them to
+    /mnt/<drive>/... exactly like --env-file handling."""
+
+    def test_windows_mount_sources_become_wsl_paths(self):
+        import e2e_lifecycle as el
+        win_a = "D:" + chr(92) + "goai" + chr(92) + "secrets" \
+            + chr(92) + "room-map.yaml"
+        win_b = "C:" + chr(92) + "a b" + chr(92) + "policy.yaml"
+        mounts = el._wsl_mounts([
+            "-v", win_a + ":/run/x:ro",
+            "-v", win_b + ":/run/y:ro",
+        ])
+        self.assertEqual(mounts[0], "-v")
+        self.assertEqual(
+            mounts[1],
+            "/mnt/d/goai/secrets/room-map.yaml:/run/x:ro")
+        self.assertEqual(
+            mounts[3], "/mnt/c/a b/policy.yaml:/run/y:ro")
+
+    def test_native_paths_pass_through(self):
+        import e2e_lifecycle as el
+        self.assertEqual(
+            el._to_wsl_source("/home/u/a.yaml"), "/home/u/a.yaml")
+        self.assertEqual(
+            el._to_wsl_source("/mnt/d/x/y"), "/mnt/d/x/y")
+
+    def test_no_mangled_backslash_survives(self):
+        import e2e_lifecycle as el
+        win = "D:" + chr(92) + "x" + chr(92) + "y"
+        out = el._to_wsl_source(win)
+        self.assertNotIn(chr(92), out)
+        self.assertTrue(out.startswith("/mnt/d/"))
+
+
+class TestStaleOwnedContainerCleanup(unittest.TestCase):
+    """A failed run leaves the never-started postgres container in
+    'created' state (the _fail fires before its cid reaches the
+    journal, so rollback misses it). The retry's docker run then
+    conflicts on the fixed name. The default-service loop must reap
+    the owned name — but ONLY a State.Status=='created' holder
+    (running/exited means foreign ownership: the run fails closed
+    on the conflict instead of killing it)."""
+
+    def test_guarded_reap_precedes_run(self):
+        import e2e_lifecycle as el
+        src = open(el.__file__, encoding="utf-8").read()
+        probe_guard = '"{{.State.Status}}"'
+        i = src.find(probe_guard)
+        self.assertGreater(i, -1, "status probe guard present")
+        window = src[i:i + 600]
+        self.assertIn('["rm", "-f", name]', window,
+                      "guarded reap must follow the status probe")
+        self.assertIn("== b\"created\"", window,
+                      "reap restricted to never-started state")
+        self.assertIn("docker_executor(list(argv), check=True)",
+                      window,
+                      "reap and planned run must be adjacent")
+

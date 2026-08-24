@@ -38,7 +38,7 @@ import one_click_startup as oc                  # noqa: E402
 def _valid_env():
     return {
         "GITHUB_INGRESS_ENABLED": "1",
-        "GITHUB_ROOM_MAP_PATH": "/run/mergepilot/room-map.yaml",
+        "GITHUB_ROOM_MAP": "/run/mergepilot/room-map.yaml",
         "GITHUB_POLICY_PATH": "/run/mergepilot/policy-fixture.yaml",
         "GITHUB_DELIVERY_LEASE_SECONDS": "120",
         "GITHUB_DELIVERY_MAX_ATTEMPTS": "5",
@@ -53,6 +53,12 @@ def _valid_env():
         "RESERVED_RUN_PREFIXES": "",
         "GATEWAY_URL": "http://policy-gateway:8083",
         "COORDINATOR_TOKEN": "tok-" + "a" * 32,
+        "PG_HOST": "postgres",
+        "PG_PORT": "5432",
+        "PG_DATABASE": "mergepilot_audit",
+        "PG_USER": "mergepilot",
+        "PG_PASS": "synthetic-pg-pass",
+        "ADMIN_PW": "synthetic-admin-pw",
     }
 
 
@@ -104,9 +110,25 @@ class TestActivationGate(unittest.TestCase):
     def test_real_cli_start_fails_closed_before_any_side_effect(self):
         # the gate sits before the install-manifest load: no fixtures,
         # no docker, no filesystem writes are needed for it to fire.
-        with mock.patch.object(mp, "WslDocker") as wd:
-            rc = mp.main(["start", "--run-id", "gate-probe", "--github-e2e",
-                          "--project-dir", str(ROOT)])
+        # State redirects to an EMPTY temp .mergepilot (no E2E config)
+        # so the REAL loader hits genuine file absence — independent
+        # of whether the workspace is provisioned (maintenance §3:
+        # with the real config present the probes need executors and
+        # this degenerated into an order-dependent WslDocker call).
+        import tempfile as _tf
+        with _tf.TemporaryDirectory() as tmp:
+            state = Path(tmp) / ".mergepilot"
+            state.mkdir()
+            with mock.patch.object(mp, "WslDocker") as wd, \
+                 mock.patch.object(
+                     mp, "state_paths",
+                     return_value={"state": state,
+                                   "install": state / "install.json",
+                                   "session": state / "session.json",
+                                   "secrets": state / "secrets"}):
+                rc = mp.main(["start", "--run-id", "gate-probe",
+                              "--github-e2e", "--json",
+                              "--project-dir", str(ROOT)])
         self.assertEqual(rc, 3)
         self.assertFalse(wd.called)
 
@@ -202,7 +224,7 @@ class TestEnvSchema(unittest.TestCase):
         with self.assertRaises(e2f.E2EConfigError):
             e2f.validate_e2e_controller_env(env)
         env = _valid_env()
-        env["GITHUB_ROOM_MAP_PATH"] = "/etc/passwd"
+        env["GITHUB_ROOM_MAP"] = "/etc/passwd"
         with self.assertRaises(e2f.E2EConfigError):
             e2f.validate_e2e_controller_env(env)
 
@@ -211,6 +233,64 @@ class TestEnvSchema(unittest.TestCase):
         env["M4F_ALLOWED_ROOMS"] = "!abc:other-server.org"
         with self.assertRaises(e2f.E2EConfigError):
             e2f.validate_e2e_controller_env(env)
+
+    def test_db_contract_keys_required(self):
+        # run27 regression: the E2E controller env omitted the database
+        # contract entirely; the container exited CONFIG_INVALID before
+        # State.Running and the health gate reported E2E_CONTROLLER_UNREADY.
+        env = _valid_env()
+        for key in ("PG_HOST", "PG_PORT", "PG_DATABASE", "PG_USER",
+                    "PG_PASS", "ADMIN_PW"):
+            del env[key]
+        with self.assertRaises(e2f.E2EConfigError) as ctx:
+            e2f.validate_e2e_controller_env(env)
+        self.assertEqual(ctx.exception.code, "CONFIG_INVALID")
+        for key in sorted(("PG_HOST", "PG_PORT", "PG_DATABASE", "PG_USER",
+                           "PG_PASS", "ADMIN_PW")):
+            self.assertIn(key, ctx.exception.detail)
+
+    def test_db_contract_value_shapes(self):
+        for key, bad in (("PG_HOST", ""), ("PG_HOST", "post gres"),
+                         ("PG_PORT", "not-a-port"), ("PG_PORT", "0"),
+                         ("PG_PORT", "70000"),
+                         ("PG_DATABASE", "bad name"), ("PG_USER", "u;drop"),
+                         ("PG_PASS", ""), ("PG_PASS", "x\nADMIN_PW=evil"),
+                         ("ADMIN_PW", "")):
+            env = _valid_env()
+            env[key] = bad
+            with self.assertRaises(e2f.E2EConfigError) as ctx:
+                e2f.validate_e2e_controller_env(env)
+            self.assertEqual(ctx.exception.code, "CONFIG_INVALID")
+            self.assertIn(key, ctx.exception.detail)
+            # secrets never leak into the error detail
+            self.assertNotIn("evil", ctx.exception.detail)
+
+    def test_entrypoint_db_contract_subset_guard(self):
+        # contract-drift guard: every key controller_entrypoint.py's
+        # env gate requires must be a member of the E2E schema
+        entrypoint_required = {"PG_HOST", "PG_PORT", "PG_DATABASE",
+                               "PG_USER", "PG_PASS", "ADMIN_PW"}
+        self.assertLessEqual(entrypoint_required,
+                             e2f.E2E_CONTROLLER_ENV_KEYS)
+
+    def test_env_keys_match_controller_source_reads(self):
+        # run29 regression: controller.py reads GITHUB_ROOM_MAP (no
+        # _PATH suffix); a guessed key name silently falls through to
+        # the in-container default and the controller exits
+        # FileNotFoundError. Extract the ACTUAL env reads from the
+        # controller source and require the github/db contract keys
+        # the E2E schema sends to exist verbatim among them.
+        import re
+        src = (ROOT / "tools" / "workflow-controller"
+               / "controller.py").read_text(encoding="utf-8")
+        reads = set(re.findall(r'os\.environ\.get\("([A-Z0-9_]+)"', src))
+        for key in ("GITHUB_ROOM_MAP", "GITHUB_POLICY_PATH",
+                    "GITHUB_INGRESS_ENABLED", "PG_HOST", "PG_PORT",
+                    "PG_DATABASE", "PG_USER", "PG_PASS", "ADMIN_PW"):
+            self.assertIn(key, reads)
+            self.assertIn(key, e2f.E2E_CONTROLLER_ENV_KEYS)
+        self.assertNotIn("GITHUB_ROOM_MAP_PATH",
+                         e2f.E2E_CONTROLLER_ENV_KEYS)
 
     def test_token_secret_never_in_errors(self):
         env = _valid_env()
@@ -295,6 +375,21 @@ class TestRoomMapPairing(unittest.TestCase):
     def test_missing_room_id_rejected(self):
         with self.assertRaises(e2f.E2EConfigError):
             e2f.parse_room_map_repos('repos:\n  "a/b":\n')
+
+    def test_unquoted_repo_key_rejected(self):
+        # run30 regression: the probe accepted optional quotes while
+        # github_drain.parse_room_map (the in-container consumer)
+        # requires them — a plain-YAML key passed the prerequisite gate
+        # and crashed the controller at startup. The probe must fail
+        # closed with the production shape.
+        with self.assertRaises(e2f.E2EConfigError) as ctx:
+            e2f.parse_room_map_repos(
+                'repos:\n'
+                '  nghqqa/MergePilot-e2e-fixture:\n'
+                '    room_id: "!syntheticroom0000:'
+                'matrix-local.hiclaw.io:18080"\n')
+        self.assertEqual(ctx.exception.code, "ROOM_MAP_INVALID")
+        self.assertIn("double-quoted", ctx.exception.detail)
 
 
 # ── §4 network / route-gate command contract ─────────────────────────────────

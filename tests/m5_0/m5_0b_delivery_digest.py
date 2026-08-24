@@ -56,6 +56,12 @@ _M5_EXPLICIT_FILES = (
     "tests/test_env_isolation.ps1",
     "docs/M5-0-HiClaw-Live设计冻结.md",
     "tests/m5_0/m5_0b_delivery_required.txt",
+    # productization round (M8-GH-4): the E2E operations console is a
+    # delivered formal surface — CLI projection/timeline derivation,
+    # lifecycle error journaling, and its contract tests
+    "tools/cli/mergepilot.py",
+    "tools/cli/e2e_lifecycle.py",
+    "tests/gh_app/test_e2e_console_status.py",
 )
 # M5-0B extends M4-F formal suffixes with .ps1 (PowerShell wrappers).
 _M5_FORMAL_SUFFIXES = (".py", ".sh", ".sql", ".yaml", ".yml", ".ps1")

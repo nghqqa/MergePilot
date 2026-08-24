@@ -68,11 +68,17 @@ class _FakeHost:
 class _FakeDocker:
     """Fake docker executor for route probes and receipt validation."""
     def __init__(self, containers=None, probe_source_ips=None,
-                 probe_exit_codes=None):
+                 probe_exit_codes=None, network_endpoints=None,
+                 running_overrides=None):
         self.calls = []
         self.containers = containers or {}
         self.probe_source_ips = probe_source_ips or {}
         self.probe_exit_codes = probe_exit_codes or {}
+        # {network: "name=ip/16 name2=ip2/16"} for holder queries
+        self.network_endpoints = network_endpoints or {}
+        self.running_overrides = running_overrides or {}
+        # networks whose connect calls fail (restore-failure path)
+        self.connect_failures = set()
 
     def __call__(self, argv, check=True, timeout=60, **kw):
         self.calls.append(list(argv))
@@ -84,15 +90,54 @@ class _FakeDocker:
             info = self.containers.get(name, {})
             if "State.Status" in fmt:
                 return _CP(0, info.get("state", "running").encode())
+            if "State.Running" in fmt:
+                if name in self.running_overrides:
+                    return _CP(0, self.running_overrides[name].encode())
+                if not info:
+                    return _CP(0, b"false")   # unknown container
+                return _CP(0, ("false" if info.get("state")
+                               in ("created", "exited") else
+                               "true").encode())
             if "RestartPolicy.Name" in fmt:
                 return _CP(0, info.get("restart_policy",
                                        "no").encode())
+            if "Networks" in fmt and fmt.startswith("{{json"):
+                import json as _json
+                return _CP(0, _json.dumps(
+                    {n: {"IPAMConfig": {"IPv4Address": ""}}
+                     for n in info.get("networks", [])}).encode())
+            if fmt == ("{{range .NetworkSettings.Networks}}"
+                       "{{.IPAddress}},{{end}}"):
+                # wsl-safe single-home IP template (run34 fix)
+                return _CP(0, ("%s," % info.get("ip", "")).encode())
+            if fmt == "{{.NetworkSettings.Networks}}":
+                # wsl-safe Networks map repr (run34 fix)
+                return _CP(0, ("map[%s]" % " ".join(
+                    "%s:0x1" % n
+                    for n in info.get("networks", []))).encode())
             if "Networks" in fmt and "range" in fmt:
                 nets = info.get("networks", [])
                 return _CP(0, " ".join(nets).encode())
             if "Networks.hiclaw-net" in fmt                     or 'Networks "hiclaw-net"' in fmt:
                 return _CP(0, info.get("ip", "").encode())
             return _CP(0, info.get("id", _hex(name)).encode())
+        # network inspect (endpoint holders)
+        if argv[0] == "network" and argv[1] == "inspect":
+            return _CP(0, self.network_endpoints.get(
+                argv[2], "").encode())
+        # network connect/disconnect with scripted outcomes.
+        # disconnect semantics match docker: rc=1 when the container
+        # is unknown/not attached (the probe treats that as no-op)
+        if argv[0] == "network" and argv[1] in ("connect",
+                                                "disconnect"):
+            net = argv[2] if argv[1] == "disconnect" else argv[-2]
+            if argv[1] == "connect" and net in self.connect_failures:
+                return _CP(1, b"")
+            if argv[1] == "disconnect":
+                if argv[-1] not in self.containers:
+                    return _CP(1, b"not connected")
+                return _CP(0, b"")
+            return _CP(0, b"")
         # exec (route probe or sha256sum)
         if argv[0] == "exec":
             name = argv[1]
@@ -1746,6 +1791,193 @@ class TestR2ValidatorClosures(unittest.TestCase):
         self.assertEqual(
             result["checks"][receipt3["agents"][0]["role"]]
             ["canonical_etag"], "DRIFT")
+
+
+class TestRuleNormalizationRealHost(unittest.TestCase):
+    """Real E2E run failed FIREWALL_VERIFY_FAILED: the committed
+    rules WERE present but normalization missed two serialization
+    differences — bare IPv4 vs /32, and '-p tcp -m tcp --dport N'
+    expansion."""
+
+    def test_bare_ipv4_normalized_to_slash32(self):
+        a = ex._normalize_rule_for_compare(
+            "-A CH -s 10.0.0.1 -j X")
+        b = ex._normalize_rule_for_compare(
+            "-A CH -s 10.0.0.1/32 -j X")
+        self.assertEqual(a, b)
+
+    def test_subnets_not_rewritten(self):
+        a = ex._normalize_rule_for_compare(
+            "-A CH -s 10.0.0.0/24 -j X")
+        self.assertIn("/24", a)
+
+    def test_m_tcp_expansion_normalized(self):
+        a = ex._normalize_rule_for_compare(
+            "-A C -p tcp --dport 6167 -j A")
+        b = ex._normalize_rule_for_compare(
+            "-A C -p tcp -m tcp --dport 6167 -j A")
+        self.assertEqual(a, b)
+
+    def test_m_udp_sport_expansion_normalized(self):
+        a = ex._normalize_rule_for_compare(
+            "-A C -p udp --sport 53 -j A")
+        b = ex._normalize_rule_for_compare(
+            "-A C -p udp -m udp --sport 53 -j A")
+        self.assertEqual(a, b)
+
+    def test_blob_rule_matches_saved_rule(self):
+        blob = ('-A MP-EG-x -s 172.31.0.2 -d 172.22.0.2 '
+                '-p tcp --dport 6167 -m conntrack '
+                '--ctstate NEW,ESTABLISHED -j ACCEPT '
+                '-m comment --comment "t"')
+        saved = ('-A MP-EG-x -s 172.31.0.2/32 -d 172.22.0.2/32 '
+                 '-p tcp -m tcp --dport 6167 -m conntrack '
+                 '--ctstate NEW,ESTABLISHED '
+                 '-m comment --comment "t" -j ACCEPT')
+        self.assertEqual(
+            ex._normalize_rule_for_compare(blob),
+            ex._normalize_rule_for_compare(saved))
+
+
+class TestRouteProbeIpYield(unittest.TestCase):
+    """A probe's static attachment IP can be held by the REAL
+    service container (Stage 4 create+connect; docker rejects a
+    second endpoint with the same IP — verified live). A STOPPED
+    holder must yield temporarily and be restored exactly."""
+
+    def _sources(self):
+        return {
+            "mp-e2e-route-probe-controller": "172.31.0.2",
+            "mp-e2e-route-probe-policy-gateway": "172.31.0.18",
+            "mp-e2e-route-probe-mcp-bridge": "172.31.0.82",
+            "mp-e2e-route-probe-gh-reporter": "172.31.0.66",
+            "mp-e2e-route-probe-gh-proxy-r": "172.31.0.130",
+            "mp-e2e-route-probe-gh-proxy-b": "172.31.0.131",
+        }
+
+    def _run(self, fd, journal):
+        return ex.run_route_probes(
+            docker_executor=fd, host_executor=None,
+            image_ref="sha256:ab", tuwunel_ip="172.22.0.2",
+            windows_proxy_ip="172.23.48.1", probe_journal=journal)
+
+    def test_stopped_holder_yields_and_is_restored(self):
+        fd = _FakeDocker(probe_source_ips=self._sources())
+        # the created-not-started gateway container holds .18 on
+        # gw-egress (Stage 4 / Stage 10): invisible to network
+        # discovery on this daemon, visible container-side
+        fd.containers["mergepilot-isolated-policy-gateway-1"] = {
+            "state": "created",
+            "networks": ["mp-e2e-gw-egress"]}
+        journal = {}
+        results = self._run(fd, journal)
+        self.assertTrue(results["policy-gateway"]["verified"])
+        disconnects = [c for c in fd.calls
+                       if c[:2] == ["network", "disconnect"]]
+        # the disconnect RESULT is the membership authority: 9
+        # attempts (one per static attachment), only the registered
+        # gateway's succeeds (and is restored below)
+        self.assertEqual(len(disconnects), 9)
+        self.assertIn(
+            ["network", "disconnect", "mp-e2e-gw-egress",
+             "mergepilot-isolated-policy-gateway-1"], disconnects)
+        restores = [c for c in fd.calls
+                    if c[:2] == ["network", "connect"]
+                    and c[-1] == "mergepilot-isolated-policy-gateway-1"]
+        self.assertEqual(len(restores), 1)
+        self.assertIn("--ip", restores[0])
+        self.assertIn("172.31.0.18", restores[0])
+        self.assertIn("--gw-priority", restores[0])
+
+    def test_running_holder_probed_in_its_container(self):
+        fd = _FakeDocker(probe_source_ips=self._sources())
+        fd.containers["mergepilot-isolated-policy-gateway-1"] = {
+            "state": "running",
+            "networks": ["mp-e2e-gw-egress"]}
+        # the in-container probe answers under the CONTAINER name
+        fd.probe_source_ips["mergepilot-isolated-policy-gateway-1"] =             "172.31.0.18"
+        journal = {}
+        results = self._run(fd, journal)
+        # the RUNNING real service is the vantage point: the TCP
+        # probe executes inside it (source inherently correct),
+        # never a disconnect
+        self.assertTrue(results["policy-gateway"]["verified"],
+                        results["policy-gateway"])
+        self.assertEqual(results["policy-gateway"]["vantage"],
+                         "service-container")
+        restores = [c for c in fd.calls
+                    if c[:2] == ["network", "connect"]
+                    and not c[-1].startswith("mp-e2e-route-probe-")]
+        self.assertEqual(restores, [])   # nothing yielded
+
+    def test_running_holder_in_container_source_mismatch(self):
+        fd = _FakeDocker(probe_source_ips={})
+        fd.containers["mergepilot-isolated-policy-gateway-1"] = {
+            "state": "running",
+            "networks": ["mp-e2e-gw-egress"]}
+        # in-container probe prints the WRONG source
+        fd.probe_source_ips["mergepilot-isolated-policy-gateway-1"] =             "172.99.99.99"
+        journal = {}
+        results = self._run(fd, journal)
+        self.assertFalse(results["policy-gateway"]["verified"])
+        self.assertEqual(results["policy-gateway"]["error"],
+                         "ROUTE_GATE_FAILED")
+
+    def test_restore_failure_fails_the_probe(self):
+        fd = _FakeDocker(probe_source_ips=self._sources())
+        fd.containers["mergepilot-isolated-policy-gateway-1"] = {
+            "state": "created",
+            "networks": ["mp-e2e-gw-egress"]}
+        # every gw-egress connect fails (probe AND restore)
+        fd.connect_failures = {"mp-e2e-gw-egress"}
+        journal = {}
+        results = self._run(fd, journal)
+        self.assertFalse(results["policy-gateway"]["verified"])
+        # connect failure surfaced first (probe never attached);
+        # the restore path also attempted the reconnect
+        reconnects = [c for c in fd.calls
+                      if c[:2] == ["network", "connect"]
+                      and c[-1] == "mergepilot-isolated-policy-"
+                                  "gateway-1"]
+        self.assertTrue(reconnects,
+                        "restore must attempt the reconnect")
+
+
+class TestWslSafeInspectTemplates(unittest.TestCase):
+    """run34 finding: `$`-variable templates cross wsl.exe's `--`
+    shell reassembly empty-expanded (docker rc=64 'template parsing
+    error'), and the lifecycle folded the transport failure into
+    'receipt drift'. Guard every inspect --format template used by
+    the receipt validator: no $, no whitespace, no quotes."""
+
+    def test_validator_templates_are_wsl_safe(self):
+        import re
+        src = (ROOT / "tools" / "cli" / "e2e_executors.py").read_text(
+            encoding="utf-8")
+        templates = re.findall(r'"(\{\{[^"]*\}\}[^"]*)"', src)
+        self.assertGreaterEqual(len(templates), 4)
+        for tpl in templates:
+            # `$` is the proven killer: unquoted argv crosses wsl.exe's
+            # `--` shell reassembly with `$k` expanded to empty (docker
+            # rc=64 template parsing error). Quotes/spaces have working
+            # counter-examples and are not asserted here.
+            self.assertNotIn("$", tpl, tpl)
+            self.assertNotIn('"', tpl, tpl)
+
+    def test_network_names_from_map_repr(self):
+        self.assertEqual(
+            ex._network_names_from_map_repr("map[]"), set())
+        self.assertEqual(
+            ex._network_names_from_map_repr(
+                "map[hiclaw-net:0xf6eef878d80]"), {"hiclaw-net"})
+        self.assertEqual(
+            ex._network_names_from_map_repr(
+                "map[a:0x1 b:0x2]"), {"a", "b"})
+        # unexpected shapes never yield names (caller reports DRIFT)
+        self.assertEqual(
+            ex._network_names_from_map_repr(""), set())
+        self.assertEqual(
+            ex._network_names_from_map_repr("map[oops"), set())
 
 
 if __name__ == "__main__":

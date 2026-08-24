@@ -22,7 +22,7 @@ import e2e_runtime_specs as rs                  # noqa: E402
 def _ctrl_env():
     return {
         "GITHUB_INGRESS_ENABLED": "1",
-        "GITHUB_ROOM_MAP_PATH": "/run/mergepilot/room-map.yaml",
+        "GITHUB_ROOM_MAP": "/run/mergepilot/room-map.yaml",
         "GITHUB_POLICY_PATH":
             "/run/mergepilot/policy-fixture.yaml",
         "GITHUB_DELIVERY_LEASE_SECONDS": "120",
@@ -38,6 +38,12 @@ def _ctrl_env():
         "RESERVED_RUN_PREFIXES": "",
         "GATEWAY_URL": "http://policy-gateway:8083",
         "COORDINATOR_TOKEN": "tok-" + "a" * 32,
+        "PG_HOST": "postgres",
+        "PG_PORT": "5432",
+        "PG_DATABASE": "mergepilot_audit",
+        "PG_USER": "mergepilot",
+        "PG_PASS": "synthetic-pg-pass",
+        "ADMIN_PW": "synthetic-admin-pw",
     }
 
 
@@ -53,7 +59,7 @@ def _gw_env():
 
 def _bridge_env():
     return {
-        "MCP_GITHUB_TOKEN": "fake-pat-for-test",
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "fake-pat-for-test",
         "GITHUB_REPOSITORY": "example/fixture",
         "HTTPS_PROXY": rs.BRIDGE_PROXY,
         "MCP_PROXY_PORT": "8082",
@@ -106,9 +112,15 @@ class TestRuntimeSpecs(unittest.TestCase):
                          {"controller", "policy-gateway", "mcp-bridge",
                           "gh-reporter", "gh-proxy-r", "gh-proxy-b"})
 
-    def test_controller_15_keys(self):
+    def test_controller_21_keys(self):
+        # 15 ingress keys + the 6-key database contract (run27 finding:
+        # without it the controller entrypoint exits CONFIG_INVALID
+        # before State.Running)
         spec = rs.SERVICE_RUNTIME_SPECS["controller"]
-        self.assertEqual(len(spec["keys"]), 15)
+        self.assertEqual(len(spec["keys"]), 21)
+        self.assertLessEqual(
+            {"PG_HOST", "PG_PORT", "PG_DATABASE", "PG_USER",
+             "PG_PASS", "ADMIN_PW"}, spec["keys"])
 
     def test_reporter_10_keys(self):
         spec = rs.SERVICE_RUNTIME_SPECS["gh-reporter"]
@@ -291,9 +303,15 @@ class TestRuntimeLifecycle(unittest.TestCase):
 class TestGatewaySemanticHealth(unittest.TestCase):
 
     def test_read_only_tools_frozen(self):
-        expected = {"get_pull_request", "get_pull_request_files",
-                    "get_file_contents", "get_branch"}
-        self.assertEqual(set(rs.GATEWAY_READ_ONLY_TOOLS), expected)
+        # single authority: e2e_gateway_health (deployed server
+        # toolset x fixture policy read class)
+        import e2e_gateway_health as gwh
+        self.assertEqual(set(rs.GATEWAY_READ_ONLY_TOOLS),
+                         set(gwh.FROZEN_READ_ONLY_TOOLS))
+        # the old placeholder names must never come back
+        for ghost in ("get_pull_request", "get_pull_request_files",
+                      "get_branch"):
+            self.assertNotIn(ghost, rs.GATEWAY_READ_ONLY_TOOLS)
 
     def test_stub_upstream_not_e2e(self):
         self.assertNotEqual(rs.GATEWAY_E2E_UPSTREAM,

@@ -42,8 +42,8 @@ import e2e_probes as ep               # noqa: E402
 RUN_ID = "w3b-r3-integration"
 SERVER = e2f.E2E_MATRIX_SERVER_NAME
 ROOM_ID = "!r:" + SERVER
-FROZEN_TOOLS = ["get_pull_request", "get_pull_request_files",
-                "get_file_contents", "get_branch"]
+FROZEN_TOOLS = sorted(__import__("e2e_gateway_health")
+                      .FROZEN_READ_ONLY_TOOLS)
 
 
 def _cp(rc=0, stdout=b""):
@@ -60,7 +60,9 @@ class FakeDockerSide:
         self.iptables = []          # stateful rule lines
 
     # ── docker executor (container/network domain) ──
-    def docker(self, argv, timeout=240, check=True, log_tag=None):
+    def docker(self, argv, timeout=240, check=True, log_tag=None,
+               distro=None, suppress_output_log=False,
+               input_bytes=None):
         argv = list(argv)
         a = argv
         if a[0] == "network" and a[1] == "ls":
@@ -107,7 +109,7 @@ class FakeDockerSide:
         if a[0] == "inspect":
             return _cp(0, self._inspect(a).encode())
         if a[0] == "exec":
-            return self._exec(a)
+            return self._exec(a, input_bytes=input_bytes)
         return _cp(0)
 
     def _inspect(self, a):
@@ -122,6 +124,19 @@ class FakeDockerSide:
                     "hiclaw-worker-reviewer": "172.21.0.5",
                     "hiclaw-worker-fixer": "172.21.0.4",
                     "hiclaw-worker-verifier": "172.21.0.6"}.get(name, "")
+        # run34 wsl-safe templates (no $-vars/quotes; see
+        # e2e_executors._validate_direction_receipt)
+        if fmt == ("{{range .NetworkSettings.Networks}}"
+                   "{{.IPAddress}},{{end}}"):
+            return {"hiclaw-manager": "172.21.0.2,",
+                    "hiclaw-worker-reviewer": "172.21.0.5,",
+                    "hiclaw-worker-fixer": "172.21.0.4,",
+                    "hiclaw-worker-verifier": "172.21.0.6,"}.get(
+                        name, "")
+        if fmt == "{{.NetworkSettings.Networks}}":
+            # the retired github-mcp carries NO endpoint (receipt
+            # freezes network_attachments=[])
+            return {"github-mcp": "map[]"}.get(name, "map[]")
         if "{{.HostConfig.RestartPolicy.Name}}" in fmt:
             return {"github-mcp": "no"}.get(name, "no")
         if "{{range $k, $v := .NetworkSettings.Networks}}" in fmt:
@@ -140,10 +155,17 @@ class FakeDockerSide:
             return "true" if info["running"] else "false"
         return info["id"]
 
-    def _exec(self, a):
+    def _exec(self, a, input_bytes=None):
         name = a[1]
         if name.startswith("mp-e2e-route-probe-"):
             service = name[len("mp-e2e-route-probe-"):]
+            src = dict(ex.ROUTE_PROBE_SPECS)[service][2]
+            self.events.append("route_probe:%s" % service)
+            return _cp(0, src.encode())
+        if name.startswith("mergepilot-isolated-")                 and "create_connection" in " ".join(a)                 and "'127.0.0.1'" not in " ".join(a):
+            # in-container vantage (running service): same frozen
+            # source-IP answer keyed on the service container name
+            service = name[len("mergepilot-isolated-"):-2]
             src = dict(ex.ROUTE_PROBE_SPECS)[service][2]
             self.events.append("route_probe:%s" % service)
             return _cp(0, src.encode())
@@ -186,9 +208,36 @@ class FakeDockerSide:
         if "python3" in a and "18090" in " ".join(a):
             self.events.append("proxy_health")
             return _cp(0)
+        # in-container MCP SSE health probe (exec -i <service
+        # container> python3 -c <script> <loopback url>): answer with
+        # the probe script's stdout JSON — the script itself is
+        # exercised against a REAL SSE server in test_e2e_mcp_health
+        if a[0] == "exec" and "-i" in a[:3] and "python3" in a \
+                and "-c" in a:
+            container = a[2] if a[1] == "-i" else a[1]
+            url = a[-1]
+            if "mcp-bridge" in container:
+                self.events.append("bridge_health")
+                return _cp(0, json.dumps(
+                    {"tools": FROZEN_TOOLS
+                     + ["list_branches"]}).encode())
+            if "policy-gateway" in container:
+                self.events.append("gateway_health")
+                # the manager bearer must ride STDIN (extracted from
+                # the HiClaw side, never argv)
+                assert (input_bytes
+                        == b"tok-canonical-reviewer\n"), input_bytes
+                return _cp(0, json.dumps(
+                    {"tools": FROZEN_TOOLS}).encode())
         return _cp(0)
 
     # ── host executor (iptables domain; stateful) ──
+    def network_ip(self, name):
+        # WslDocker.network_ip: the measured bridge IP for the
+        # demo-console argv rebuild (run31/32 finding — the E2E must
+        # not serve the placeholder plan)
+        return "172.18.0.2"
+
     def wsl_exec(self, argv, input_bytes=None, timeout=60, check=True,
                  log_tag=None):
         a = list(argv)
@@ -266,7 +315,19 @@ def make_http_router(events):
 
 
 def _canonical_body(role):
-    return ('{"r3-canon-after":"%s"}' % role).encode("utf-8")
+    """Canonical mcporter config (the rewired shape): the bearer
+    token rides mcpServers.mcp-github.headers.Authorization — the
+    single authority the gateway's ROLE_TOKENS is extracted from."""
+    return json.dumps({
+        "mcpServers": {
+            "mcp-github": {
+                "url": ex.hiclaw_role_gateway_url(role),
+                "transport": "http",
+                "headers": {"Authorization":
+                            "Bearer tok-canonical-%s" % role}},
+            "github": {
+                "url": ex.hiclaw_role_gateway_url(role),
+                "transport": "sse"}}}).encode("utf-8")
 
 
 def _build_receipt():
@@ -309,7 +370,10 @@ def _build_receipt():
             "container_id": "cid-github-mcp",
             "state": "stopped",
             "restart_policy": "no",
-            "network_attachments": ["bridge"],
+            # run34 contract: the retired container carries NO
+            # endpoint (the production receipt freezes [] and the
+            # live container was restored to exactly that)
+            "network_attachments": [],
         },
         "rollback_ownership": "mp-gh4-harness",
     }
@@ -320,6 +384,15 @@ def _build_receipt():
 class TestFullIntegration(unittest.TestCase):
     """§3-§6: one REAL CLI start through the REAL lifecycle, then
     status/stop/cleanup consuming the ACTUAL persisted session."""
+
+    def setUp(self):
+        # synthetic installs record sha256:ab*32 identities; a suite
+        # peer that ran the real CLI recorded the REAL image IDs into
+        # the process-global registry and the immutable-once-recorded
+        # contract then fails here (order-dependent
+        # IMAGE_DIGEST_MISMATCH — maintenance §3)
+        from planner_isolation import add_planner_registry_isolation
+        add_planner_registry_isolation(self)
 
     def test_cli_entry_real_lifecycle_reaches_complete(self):
         planner, _showcase = mp._load_planner(ROOT)
@@ -341,9 +414,16 @@ class TestFullIntegration(unittest.TestCase):
                 '    room_id: "%s"\n' % ROOM_ID, encoding="utf-8")
             policy = root / "policy.yaml"
             policy.write_text(
+                'version: e2e-fixture-20260728-v1\n'
                 'repos:\n'
                 '  allowlist:\n'
-                '    - "example/fixture"\n', encoding="utf-8")
+                '    - "example/fixture"\n'
+                'roles:\n'
+                '  reviewer:\n'
+                '    classes: [read]\n'
+                'tool_classes:\n'
+                '  read:\n'
+                '    - get_file_contents\n', encoding="utf-8")
             creds = root / "creds.json"
             creds.write_text(json.dumps(
                 {"access_token": "syt_synthetic"}),
@@ -645,9 +725,16 @@ class TestFullIntegration(unittest.TestCase):
             '    room_id: "%s"\n' % ROOM_ID, encoding="utf-8")
         policy = root / "policy.yaml"
         policy.write_text(
+            'version: e2e-fixture-20260728-v1\n'
             'repos:\n'
             '  allowlist:\n'
-            '    - "example/fixture"\n', encoding="utf-8")
+            '    - "example/fixture"\n'
+            'roles:\n'
+            '  reviewer:\n'
+            '    classes: [read]\n'
+            'tool_classes:\n'
+            '  read:\n'
+            '    - get_file_contents\n', encoding="utf-8")
         (root / "creds.json").write_text(json.dumps(
             {"access_token": "syt_synthetic"}), encoding="utf-8")
         (root / "app.pem").write_text("synthetic pem", encoding="utf-8")

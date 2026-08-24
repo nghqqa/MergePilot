@@ -90,6 +90,15 @@ def _state_fixture(tmp, config, planner):
 
 class TestGateBeforeSideEffects(unittest.TestCase):
 
+    def setUp(self):
+        # the synthetic install records sha256:ab*32 identities; a
+        # suite peer that ran the real CLI recorded the REAL image
+        # IDs into the process-global registry and the immutable-
+        # once-recorded contract then fails here (order-dependent
+        # IMAGE_DIGEST_MISMATCH — maintenance §3)
+        from planner_isolation import add_planner_registry_isolation
+        add_planner_registry_isolation(self)
+
     def test_gate_failure_zero_side_effects_with_real_adapters(self):
         planner, _ = mp._load_planner(ROOT)
         with tempfile.TemporaryDirectory() as tmp:
@@ -176,6 +185,10 @@ class TestGateBeforeSideEffects(unittest.TestCase):
                                    side_effect=fake_start), \
                  mock.patch.object(mp, "WslDocker"), \
                  mock.patch.object(mp, "prepare_database"), \
+                 mock.patch.object(
+                     mp, "_read_hiclaw_role_tokens",
+                     return_value={"manager": "tok-m", "reviewer": "tok-r",
+                                   "fixer": "tok-f", "verifier": "tok-v"}), \
                  mock.patch.object(mp, "_to_wsl_path",
                                    side_effect=lambda p: str(p)), \
                  mock.patch.object(mp, "state_paths",

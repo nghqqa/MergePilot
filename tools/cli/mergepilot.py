@@ -92,6 +92,15 @@ EXIT_RESIDUE = 9
 # ── Platform constants (production-owned; mirrors of established contracts) ──
 
 AUTHORIZED_DISTRO = "MergePilot-Test"
+
+#: The HiClaw stack distro: agents (hiclaw-manager/workers), the
+#: minio canonical store (mc via hiclaw-controller) and the rewired
+#: mcporter configs all live in the docker daemon the rewiring
+#: harness execs against (mp_gh4_harness: wsl -d Ubuntu-22.04).
+#: The E2E distro cannot see those containers at all — agent
+#: readiness, receipt revalidation and role-token extraction MUST
+#: bind to THIS distro.
+HICLAW_DISTRO = "Ubuntu-22.04"
 APPROVED_ENDPOINT = "unix:///var/run/docker.sock"
 CONSOLE_URL = "http://127.0.0.1:8600/api/live/status"
 CONSOLE_PORT = 8600
@@ -440,19 +449,37 @@ class WslDocker:
     # -- docker --------------------------------------------------------------
 
     def docker(self, args, *, input_bytes=None, timeout=90, check=True,
-               log_tag=None):
+               log_tag=None, distro=None, suppress_output_log=False):
         # Distro gate BEFORE any -d command: a missing/Stopped distro is
         # never implicitly started (wsl -d on a stopped distro would start it).
-        self._require_distro_running()
-        argv = ["wsl.exe", "-u", "root", "-d", AUTHORIZED_DISTRO, "--",
+        target = distro or AUTHORIZED_DISTRO
+        if target == AUTHORIZED_DISTRO:
+            self._require_distro_running()
+        else:
+            # secondary distro (HiClaw side): same fail-closed contract,
+            # read-only state probe, never implicitly started
+            states = self.distro_states()
+            if states.get(target) != "Running":
+                raise Failure(
+                    "DISTRO_NOT_RUNNING",
+                    "%s is %s; refusing to issue docker commands (never "
+                    "implicitly started)" % (target,
+                                             states.get(target, "absent")))
+        argv = ["wsl.exe", "-u", "root", "-d", target, "--",
                 "docker"] + list(args)
         self._planner.assert_argv_safe(argv)
         cp = self._run_wsl(argv, input_bytes=input_bytes, timeout=timeout)
         out = _redact(cp.stdout.decode("utf-8", "replace") if cp.stdout else "")
         err = _redact(cp.stderr.decode("utf-8", "replace") if cp.stderr else "")
         tag = log_tag or args[0]
-        log("docker %s rc=%d out=%s err=%s"
-            % (tag, cp.returncode, out[:160], err[:160]))
+        if suppress_output_log:
+            # canonical-store reads (mc cat) return SECRET bodies; the
+            # log line keeps rc visibility without the body
+            log("docker %s rc=%d out=<suppressed> err=%s"
+                % (tag, cp.returncode, err[:160]))
+        else:
+            log("docker %s rc=%d out=%s err=%s"
+                % (tag, cp.returncode, out[:160], err[:160]))
         if check and cp.returncode != 0:
             raise Failure(
                 "DOCKER_FAILED",
@@ -1045,7 +1072,8 @@ def _policy_repo_allowlist(project_dir: Path) -> str:
 
 def build_start_steps(planner, *, env_file, controller_env_file,
                       reader_dsn_env_file, gh_webhook_env_file,
-                      run_id, bridge_ip, m4f):
+                      run_id, bridge_ip, m4f,
+                      session_public_dir=None):
     """The eleven-step plan, composed from the planner's own public plan
     functions in plan_orchestrated_start's exact order. Returns
     (steps, argv_list) where each step carries its wait semantics.
@@ -1053,6 +1081,8 @@ def build_start_steps(planner, *, env_file, controller_env_file,
     The env-file arguments are WSL-visible paths (docker reads them inside
     the distro); the controller env-file CONTRACT is validated separately by
     the caller against the Windows-side file (same bytes).
+    session_public_dir: WSL-visible path of the derived read-only
+    status projection mounted into demo-console (maintenance §7).
     """
     demo_env = planner._demo_console_environment(run_id, bridge_ip)
     argv_steps = [
@@ -1086,7 +1116,8 @@ def build_start_steps(planner, *, env_file, controller_env_file,
              "demo-console",
              image_ref=planner.get_built_image_identity("demo-console"),
              demo_console_env=demo_env,
-             reader_dsn_env_file=reader_dsn_env_file)),
+             reader_dsn_env_file=reader_dsn_env_file,
+             session_public_dir=session_public_dir)),
         ("container-run", "console-edge",
          planner.plan_console_edge_run(
              planner.get_built_image_identity("console-edge"))),
@@ -1179,8 +1210,189 @@ def prepare_database(docker, planner, showcase, project_dir, reader_password):
 
 # ── Journal helpers ──────────────────────────────────────────────────────────
 
+#: Whitelisted keys of the derived public status projection. The
+#: projection is the ONLY thing the console may mount (maintenance
+#: §7): no paths, no argv, no secret-adjacent journal fields, ever.
+_PUBLIC_STATUS_KEYS = (
+    "schema", "run_id", "github_e2e", "stage", "updated_utc",
+    "e2e_stage", "journal_complete", "transport_profile",
+    "direct_routing_verified", "receipt_verified", "matrix_verified",
+    "prerequisite_summary", "route_probes", "services_started",
+    "relay_resources", "firewall_state", "stages", "e2e_last_error",
+    "truth_boundaries",
+)
+
+#: The canonical 17-stage E2E DAG (console timeline contract). Each
+#: entry maps the lifecycle's stage markers to the frozen stage
+#: number and its zh label; ONE mapping, consumed by the projection
+#: only — the UI never re-derives stage order.
+_E2E_STAGE_TIMELINE = (
+    (1, "prerequisites", "前置门禁",
+     ("prerequisites",)),
+    (2, "runtime_files", "运行时文件",
+     ("runtime_files",)),
+    (3, "networks", "八网络创建",
+     ("networks",)),
+    (4, "containers", "十一容器接入",
+     ("containers",)),
+    (5, "firewall", "防火墙安装",
+     ("firewall",)),
+    (6, "relay", "中继系统",
+     ("relay_setup",)),
+    (7, "postgres", "PostgreSQL 就绪",
+     ("postgres_ready",)),
+    (8, "db_bootstrap", "数据库引导",
+     ("db_bootstrap",)),
+    (9, "proxies", "代理就绪",
+     ("proxies_ready",)),
+    (10, "route_probes", "路由探测",
+     ("route_probes",)),
+    (11, "gateway", "策略网关",
+     ("gateway_start", "gateway_health")),
+    (12, "services", "业务服务",
+     ("controller_start", "webhook_start", "demo_console_start",
+      "console_edge_start", "gh_reporter_start")),
+    (13, "agents", "Agent 就绪",
+     ("agents_ready",)),
+    (14, "receipt", "Receipt 复核",
+     ("receipt_recheck",)),
+    (15, "matrix", "Matrix 复核",
+     ("matrix_recheck",)),
+    (16, "preflight", "语义预检",
+     ("final_preflight",)),
+    (17, "complete", "完成",
+     ("complete",)),
+)
+
+#: The five truth boundaries (README frozen section). CLI-side
+#: constants keep the console field-driven: flipping one here (only
+#: with real production artifacts) flips every mounted projection.
+_TRUTH_BOUNDARIES = {
+    "application_integration_verified": "NOT_VERIFIED",
+    "database_verified": "NOT_VERIFIED",
+    "production_verified": "NOT_VERIFIED",
+    "revision_producer_contract": "NOT_VERIFIED",
+    "audit_producer_contract": "NOT_VERIFIED",
+}
+
+
+def _timeline_stage_index(marker: str):
+    for number, _key, _label, markers in _E2E_STAGE_TIMELINE:
+        if marker in markers:
+            return number
+    return None
+
+
+def _stage_timeline(session: dict) -> list:
+    """Per-stage status derived ONLY from the persisted journal.
+
+    complete → all passed. A journaled first stable error → the
+    stage it stopped at is failed (verbatim marker mapping, never a
+    guess), earlier passed, later pending. An in-flight journal →
+    the reached stage is running. An UNKNOWN marker maps to nothing:
+    unknown stages never masquerade as any canonical stage."""
+    marker = session.get("e2e_stage", "")
+    reached = _timeline_stage_index(marker)
+    error = session.get("e2e_last_error") or {}
+    failed = bool(error.get("code")) and not (
+        session.get("e2e_stage") == "complete")
+    stages = []
+    for number, key, label, _markers in _E2E_STAGE_TIMELINE:
+        if session.get("e2e_stage") == "complete":
+            status = "passed"
+        elif reached is None:
+            status = "unknown"
+        elif number < reached:
+            status = "passed"
+        elif number == reached:
+            status = "failed" if failed else "running"
+        else:
+            status = "pending"
+        stages.append({"n": number, "key": key, "label": label,
+                       "status": status})
+    return stages
+
+
+def public_status_payload(session: dict) -> dict:
+    """Derived, sanitized projection of the session journal for the
+    read-only console API. Single writer: write_session derives it on
+    every persist, so the mounted file can never drift from the
+    journal. e2e_stage is reported VERBATIM — a stale or failed
+    session is never dressed up as complete (journal_complete is a
+    strict equality, not an inference)."""
+    payload = {
+        "schema": 1,
+        "run_id": session.get("run_id", ""),
+        "github_e2e": bool(session.get("github_e2e")),
+        "stage": session.get("stage", ""),
+        "updated_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ",
+                                     time.gmtime()),
+    }
+    if session.get("github_e2e"):
+        summary = session.get("prerequisite_summary") or {}
+        route = session.get("route_probe_results") or {}
+        last_error = session.get("e2e_last_error") or {}
+        payload.update({
+            "e2e_stage": session.get("e2e_stage", ""),
+            "journal_complete":
+                session.get("e2e_stage") == "complete",
+            "transport_profile": session.get("transport_profile", ""),
+            "direct_routing_verified":
+                session.get("direct_routing_verified"),
+            "receipt_verified": bool(session.get("receipt_verified")),
+            "matrix_verified": bool(session.get("matrix_verified")),
+            "prerequisite_summary": {
+                "checks_passed": summary.get("checks_passed"),
+                "verified": bool(summary.get("verified")),
+            },
+            "route_probes": {
+                edge: {
+                    "verified": bool(probe.get("verified")),
+                    "vantage": probe.get("vantage", ""),
+                    # segments ride through when the journal has them
+                    # (newer probes); a legacy journal renders 未提供
+                    "segment_a":
+                        (probe.get("segments") or {}).get("segment_a"),
+                    "segment_b":
+                        (probe.get("segments") or {}).get("segment_b"),
+                    "application":
+                        (probe.get("segments") or {}).get("application"),
+                }
+                for edge, probe in route.items()},
+            "services_started": list(session.get("e2e_started", [])),
+            "relay_resources": {
+                "containers": len(session.get("relay_containers", [])
+                                  or []),
+                "host_units": len(session.get("relay_host_units", [])
+                                  or []),
+                "probe_containers":
+                    len(session.get("relay_probe_containers", []) or []),
+            },
+            "firewall_state": session.get("firewall_state", ""),
+            "stages": _stage_timeline(session),
+            "e2e_last_error": {
+                "code": last_error.get("code", ""),
+                "stage": last_error.get("stage", ""),
+            } if last_error else {"code": "", "stage": ""},
+            "truth_boundaries": dict(_TRUTH_BOUNDARIES),
+        })
+    assert set(payload) <= set(_PUBLIC_STATUS_KEYS)
+    return payload
+
+
 def write_session(paths, session):
     _atomic_write_json(paths["session"], session)
+    # derived, sanitized projection for the read-only console mount
+    # (§7): same single writer, same persist instant — the console
+    # never reads the journal or the secrets dir directly
+    public_dir = Path(paths["state"]) / "public"
+    try:
+        public_dir.mkdir(parents=True, exist_ok=True)
+        _atomic_write_json(public_dir / "status.json",
+                           public_status_payload(session))
+    except OSError:
+        pass  # projection is best-effort; the journal stays
+              # authoritative and the console reports unavailable
 
 
 def new_session(run_id, m4f, github_e2e=False):
@@ -1462,9 +1674,13 @@ def cmd_doctor(args):
 # ── M8-GH-4B3-W3B-R2: E2E CLI wiring (§3/§15) ─────────────────────────────
 
 def _e2e_docker_exec(docker):
-    def docker_exec(argv, check=True, timeout=240, log_tag="e2e"):
+    def docker_exec(argv, check=True, timeout=240, log_tag="e2e",
+                    input_bytes=None):
+        # input_bytes forwarded: the in-container MCP health probe
+        # rides its bearer on docker-exec STDIN
         return docker.docker(list(argv), timeout=timeout, check=check,
-                             log_tag=log_tag or "e2e")
+                             log_tag=log_tag or "e2e",
+                             input_bytes=input_bytes)
     return docker_exec
 
 
@@ -1477,6 +1693,76 @@ def _e2e_host_exec(docker):
                                input_bytes=input_bytes,
                                log_tag="e2e-host")
     return host_exec
+
+
+def _e2e_hiclaw_docker_exec(docker):
+    """HiClaw-side docker executor (Ubuntu-22.04): agent readiness,
+    receipt live revalidation and canonical-store reads run against
+    the same docker daemon the rewiring harness targeted. `mc cat`
+    output logging is suppressed — those bodies carry agent tokens."""
+    def hiclaw_exec(argv, check=True, timeout=60, log_tag="e2e-hiclaw",
+                    **_):
+        suppress = ("mc" in argv and "cat" in argv)
+        return docker.docker(list(argv), timeout=timeout, check=check,
+                             log_tag=log_tag or "e2e-hiclaw",
+                             distro=HICLAW_DISTRO,
+                             suppress_output_log=suppress)
+    return hiclaw_exec
+
+
+def _read_hiclaw_role_tokens(hiclaw_exec):
+    """Real ROLE_TOKENS for the gateway: each agent's token is what
+    that agent PRESENTS to the gateway. Manager carries it inline
+    (mcporter.json mcpServers[*].headers.Authorization — the
+    canonical store is the single authority for that file); the
+    workers' rewired mcporter.json has NO header — their runtime
+    injects HICLAW_WORKER_GATEWAY_KEY as the Bearer at mcporter
+    call time (the gateway.py client contract), so the container
+    env is the authority for workers. Read-only; bodies/tokens
+    cross this boundary in-process only and are never logged —
+    errors name the ROLE, never the token."""
+    import e2e_executors as _ex
+    worker_env = {"manager": "HICLAW_MANAGER_GATEWAY_KEY",
+                  "reviewer": "HICLAW_WORKER_GATEWAY_KEY",
+                  "fixer": "HICLAW_WORKER_GATEWAY_KEY",
+                  "verifier": "HICLAW_WORKER_GATEWAY_KEY"}
+    tokens = {}
+    for role in ("manager", "reviewer", "fixer", "verifier"):
+        token = ""
+        # 1. canonical mcporter Authorization (manager path)
+        key = _ex.HICLAW_CANONICAL_KEYS[role]
+        cp = hiclaw_exec(["exec", "hiclaw-controller", "mc", "cat",
+                          "hiclaw/hiclaw-storage/" + key],
+                         check=False, timeout=30)
+        if getattr(cp, "returncode", 1) == 0 and cp.stdout:
+            try:
+                doc = json.loads(cp.stdout.decode("utf-8", "replace"))
+                for _name, srv in (doc.get("mcpServers")
+                                   or {}).items():
+                    auth = ((srv or {}).get("headers") or {}).get(
+                        "Authorization", "")
+                    if auth.startswith("Bearer ") \
+                            and len(auth) > len("Bearer "):
+                        token = auth[len("Bearer "):].strip()
+                        break
+            except (ValueError, AttributeError, UnicodeDecodeError):
+                token = ""
+        # 2. container env (worker path: runtime-injected bearer)
+        if not token:
+            container = _ex.HICLAW_ROLE_FREEZE[role][0]
+            cp = hiclaw_exec(["exec", container, "printenv",
+                              worker_env[role]],
+                             check=False, timeout=20)
+            if getattr(cp, "returncode", 1) == 0 and cp.stdout:
+                token = cp.stdout.decode("utf-8", "replace").strip()
+        if not token:
+            raise Failure(
+                "E2E_ROLE_TOKEN_EXTRACT_FAILED",
+                "no gateway token for role %s (canonical mcporter "
+                "and container env both empty)" % role,
+                exit_code=EXIT_PRECHECK)
+        tokens[role] = token
+    return tokens
 
 
 def _github_e2e_dry_run(planner, run_id):
@@ -1529,22 +1815,66 @@ def _github_e2e_dry_run(planner, run_id):
     }
 
 
+def _policy_repo_allowlist_from_config(config):
+    """Single-repo allowlist string from the prerequisite config."""
+    return config.get("fixture_repo", "")
+
+
 def _build_e2e_runtime_configs(config, planner, reader_dsn,
-                               audit_dsn, publisher_dsn, pat_value):
+                               audit_dsn, publisher_dsn, pat_value,
+                               role_tokens=None, relay_endpoints=None,
+                               controller_db_env=None,
+                               controller_pg_pass="",
+                               controller_admin_pw=""):
     """§4: the six authoritative runtime configs (values assembled
     from the validated 20-key prerequisite config and CLI-generated
     credentials; the PAT value is read ONLY after the prerequisite
-    gate passed)."""
+    gate passed).
+
+    role_tokens: the four agents' REAL gateway tokens extracted from
+    the canonical mcporter store. ROLE_TOKENS must be valid JSON
+    (the gateway json.loads it at startup) and must equal the agents'
+    tokens or every agent SSE connect 401s — the placeholder value
+    this replaced crashed the gateway deterministically.
+
+    controller_db_env / controller_pg_pass / controller_admin_pw: the
+    database contract the controller entrypoint refuses to start
+    without (run27 finding: the container exited CONFIG_INVALID in
+    milliseconds). controller_db_env carries the four non-secret keys
+    (planner._controller_environment() — single source of truth);
+    PG_PASS is the per-run POSTGRES_PASSWORD and ADMIN_PW an
+    independent per-run secret; both ride github_ingress.env (the
+    sanctioned env-file secret transport, never argv)."""
     import e2e_runtime_specs as _e2rs
+    tokens = dict(role_tokens or {})
+    coordinator_token = "tok-" + "e" * 32
+    tokens.setdefault("coordinator", coordinator_token)
+    if not controller_pg_pass or not controller_admin_pw:
+        raise e2f.E2EConfigError(
+            "CONFIG_INVALID",
+            "controller secrets required: PG_PASS (per-run "
+            "POSTGRES_PASSWORD) and ADMIN_PW must reach the E2E runtime "
+            "config — without them the controller entrypoint exits "
+            "CONFIG_INVALID before State.Running")
+    db_env = dict(controller_db_env or {})
+    missing_db = [k for k in ("PG_HOST", "PG_PORT", "PG_DATABASE",
+                              "PG_USER") if not db_env.get(k)]
+    if missing_db:
+        raise e2f.E2EConfigError(
+            "CONFIG_INVALID",
+            "controller database contract keys missing: %s (use "
+            "planner._controller_environment())" % sorted(missing_db))
     return {
         "controller": {
             "GITHUB_INGRESS_ENABLED": "1",
-            "GITHUB_ROOM_MAP_PATH": "/run/mergepilot/room-map.yaml",
+            "GITHUB_ROOM_MAP": "/run/mergepilot/room-map.yaml",
             "GITHUB_POLICY_PATH":
                 "/run/mergepilot/policy-fixture.yaml",
             "GITHUB_DELIVERY_LEASE_SECONDS": "120",
             "GITHUB_DELIVERY_MAX_ATTEMPTS": "5",
-            "MATRIX_HS": "http://matrix-hs:6167",
+            "MATRIX_HS": (relay_endpoints or {}).get(
+                "controller", {}).get(
+                    "MATRIX_HS", "http://matrix-hs:6167"),
             "MATRIX_SERVER_NAME": e2f.E2E_MATRIX_SERVER_NAME,
             "MATRIX_USER": e2f.E2E_CONTROLLER_MXID.split(":")[0][1:],
             "CONTROLLER_CONSUMER_NAME":
@@ -1554,18 +1884,28 @@ def _build_e2e_runtime_configs(config, planner, reader_dsn,
             "M4F_RUN_PREFIX": "gh-",
             "RESERVED_RUN_PREFIXES": "",
             "GATEWAY_URL": "http://policy-gateway:8083",
-            "COORDINATOR_TOKEN": "tok-" + "e" * 32,
+            "COORDINATOR_TOKEN": coordinator_token,
+            "PG_HOST": db_env["PG_HOST"],
+            "PG_PORT": db_env["PG_PORT"],
+            "PG_DATABASE": db_env["PG_DATABASE"],
+            "PG_USER": db_env["PG_USER"],
+            "PG_PASS": controller_pg_pass,
+            "ADMIN_PW": controller_admin_pw,
         },
         "policy-gateway": {
-            "UPSTREAM_URL": _e2rs.GATEWAY_E2E_UPSTREAM,
+            "UPSTREAM_URL": (relay_endpoints or {}).get(
+                "policy-gateway", {}).get(
+                    "UPSTREAM_URL", _e2rs.GATEWAY_E2E_UPSTREAM),
             "POLICY_FILE": "/run/mergepilot/policy-fixture.yaml",
-            "ROLE_TOKENS": "synthetic-role-token-value",
+            "ROLE_TOKENS": json.dumps(tokens),
             "AUDIT_DSN": audit_dsn,
         },
         "mcp-bridge": {
-            "MCP_GITHUB_TOKEN": pat_value,
+            "GITHUB_PERSONAL_ACCESS_TOKEN": pat_value,
             "GITHUB_REPOSITORY": config["fixture_repo"],
-            "HTTPS_PROXY": _e2rs.BRIDGE_PROXY,
+            "HTTPS_PROXY": (relay_endpoints or {}).get(
+                "mcp-bridge", {}).get(
+                    "HTTPS_PROXY", _e2rs.BRIDGE_PROXY),
             "MCP_PROXY_PORT": "8082",
         },
         "gh-reporter": {
@@ -1579,18 +1919,24 @@ def _build_e2e_runtime_configs(config, planner, reader_dsn,
             "GH_REPORTER_POLL_SECONDS": "5",
             "GH_REPORTER_LEASE_SECONDS": "120",
             "GH_REPORTER_MAX_ATTEMPTS": "8",
-            "HTTPS_PROXY": e2f.E2E_REPORTER_PROXY_R,
+            "HTTPS_PROXY": (relay_endpoints or {}).get(
+                "gh-reporter", {}).get(
+                    "HTTPS_PROXY", e2f.E2E_REPORTER_PROXY_R),
         },
-        "gh-proxy-r": _proxy_env(config),
-        "gh-proxy-b": _proxy_env(config),
+        "gh-proxy-r": _proxy_env(
+            config, (relay_endpoints or {}).get("gh-proxy-r")),
+        "gh-proxy-b": _proxy_env(
+            config, (relay_endpoints or {}).get("gh-proxy-b")),
     }
 
 
-def _proxy_env(config):
+def _proxy_env(config, relay_overrides=None):
+    overrides = relay_overrides or {}
     return {
         "GH_PROXY_BIND": "0.0.0.0",
         "GH_PROXY_PORT": "18090",
-        "GH_PROXY_UPSTREAM_IP": config["windows_proxy_ip"],
+        "GH_PROXY_UPSTREAM_IP": overrides.get(
+            "GH_PROXY_UPSTREAM_IP", config["windows_proxy_ip"]),
         "GH_PROXY_UPSTREAM_PORT": config["windows_proxy_port"],
     }
 
@@ -1599,6 +1945,42 @@ def _e2e_spec_env_file(service):
     import e2e_runtime_specs as _rs
     spec = _rs.SERVICE_RUNTIME_SPECS.get(service)
     return spec["env_file"] if spec else ""
+
+
+#: The demo-console is a read-only VIEW over the showcase seed; its
+#: MERGEPILOT_RUN_ID is a showcase case key the seed actually contains
+#: (run32 finding: the E2E passed the session run id — e.g.
+#: b8-e2e-run32 — which no seeded row matches, so the console's
+#: startup probe exited RUN_NOT_FOUND; the default-mode contract is
+#: "seeded run_id, e.g. run-showcase-a").
+E2E_DEMO_CONSOLE_RUN_ID = "run-showcase-a"
+
+
+def _e2e_demo_console_measured_argv(docker, planner, run_id, m4f,
+                                    env_file_wsl, ctrl_env_wsl,
+                                    reader_env_wsl, gh_env_wsl,
+                                    session_public_dir=""):
+    """The demo-console container argv rebuilt with the MEASURED
+    postgres bridge IP (run31 finding: the E2E path served the
+    PLACEHOLDER_BRIDGE_IP plan, so the console's expected-server-
+    address identity check failed at startup; the default-mode start
+    in _execute_start measures the IP after postgres is healthy —
+    hardcoding it is forbidden by the planner contract). The console
+    run id is the showcase case key, NOT the E2E session run id."""
+    bridge_ip = docker.network_ip(container_name(planner, "postgres"))
+    canonical = planner.canonicalize_server_address(bridge_ip)
+    steps = build_start_steps(
+        planner,
+        env_file=env_file_wsl,
+        controller_env_file=ctrl_env_wsl,
+        reader_dsn_env_file=reader_env_wsl,
+        gh_webhook_env_file=gh_env_wsl,
+        run_id=E2E_DEMO_CONSOLE_RUN_ID, bridge_ip=canonical, m4f=m4f,
+        session_public_dir=session_public_dir or None)
+    for _kind, name, argv in steps:
+        if _kind == "container-run" and name == "demo-console":
+            return argv
+    return []
 
 
 def _execute_github_e2e_start(args, project_dir, planner, paths,
@@ -1633,14 +2015,22 @@ def _execute_github_e2e_start(args, project_dir, planner, paths,
     image_refs = {}
     for service in ("controller", "policy-gateway", "mcp-bridge",
                     "gh-reporter", "gh-proxy-r", "gh-proxy-b"):
+        # gh-reporter is a CONTAINER ROLE, not a built image: per the
+        # e2e_foundation reporter planning contract it reuses the
+        # gh-webhook image (entrypoint override at run time)
+        base = ("gh-proxy" if service.startswith("gh-proxy")
+                else "gh-webhook" if service == "gh-reporter"
+                else service)
         image_refs[service] = (install.get("images") or {}).get(
-            image_tag(planner,
-                      "gh-proxy" if service.startswith("gh-proxy")
-                      else service), "")
+            image_tag(planner, base), "")
 
     docker = WslDocker(planner, project_dir)
     docker_exec = _e2e_docker_exec(docker)
     host_exec = _e2e_host_exec(docker)
+    # HiClaw-side executor (Ubuntu-22.04): the rewiring harness's
+    # docker daemon — agents, canonical store and receipt targets
+    # are invisible to the E2E distro's daemon
+    hiclaw_exec = _e2e_hiclaw_docker_exec(docker)
 
     # ── §3 R3: the REAL read-only prerequisite gate runs BEFORE any
     # side effect. The four probe inputs come from production
@@ -1668,11 +2058,15 @@ def _execute_github_e2e_start(args, project_dir, planner, paths,
 
     # Gate passed → session/journal, then secrets, then lifecycle.
     session = new_session(run_id, args.m4f, github_e2e=True)
+    if getattr(args, "wsl_relay", False):
+        session["transport_profile"] = "wsl-user-relay"
+        session["direct_routing_verified"] = False
     session["hiclaw_receipt_path"] = config["hiclaw_receipt_path"]
     write_session(paths, session)
 
     runtime_directory = str(paths["secrets"])
     default_secret_written = []
+    created_default_networks = {}
 
     def persist(s):
         write_session(paths, s)
@@ -1700,39 +2094,150 @@ def _execute_github_e2e_start(args, project_dir, planner, paths,
         default_secret_written.append("postgres.env")
         planner.ReaderDsnSecretFile(paths["secrets"]).write(reader_dsn)
         default_secret_written.append("demo_console.env")
+        # gh-webhook is one of the five default-mode services the
+        # github-e2e DAG reuses; its planned run argv references
+        # gh_webhook.env which only the default start path wrote
+        # (first real run failed: env file absent). Values come from
+        # the provisioned webhook secret file (body read in-process,
+        # never logged) + a fresh per-run ingress DSN.
+        _wh_secret = Path(config["webhook_secret_path"]
+                          ).read_text(encoding="utf-8").strip()
+        # no publisher_dsn here: GhWebhookSecretFile.write would also
+        # emit gh_reporter.env, which the lifecycle's own
+        # create_runtime_files owns (fresh per-run tokens) — writing
+        # both in one run collides with itself
+        GhWebhookSecretFile(paths["secrets"]).write(
+            GhWebhookSecretFile.build_ingress_dsn(
+                gh_ingress_pw, user="github_event_ingress"),
+            _wh_secret,
+            _policy_repo_allowlist_from_config(config))
+        default_secret_written.append("gh_webhook.env")
 
+        # the four agents' REAL gateway tokens (canonical store is
+        # the single authority); read AFTER the gate, bodies never
+        # logged — only the manager token value reaches the health
+        # probe (STDIN of the in-distro probe process)
+        role_tokens = _read_hiclaw_role_tokens(hiclaw_exec)
+        # the gateway health probe authenticates as REVIEWER (its
+        # policy exposure is exactly the frozen read-only set)
+        role_tokens_reviewer = role_tokens["reviewer"]
+        # Set the transport profile for runtime spec validation
+        _relay_endpoints_for_specs = {}
+        _relay_edges_for_derive = None
+        if getattr(args, "wsl_relay", False):
+            import e2e_relay as _relay_mod_ep
+            _relay_edges_for_derive = _relay_mod_ep.build_relay_edge_contracts(
+                config["tuwunel_ip"],
+                windows_proxy_ip=config["windows_proxy_ip"],
+                windows_proxy_port=int(config["windows_proxy_port"]))
+            _relay_endpoints_for_specs = _relay_mod_ep.derive_relay_endpoints(
+                _relay_edges_for_derive)
+        import e2e_runtime_specs as _rs_profile
+        _rs_profile.set_transport_profile(
+            "wsl-user-relay" if getattr(args, "wsl_relay", False) else "",
+            _relay_endpoints_for_specs)
         runtime_configs = _build_e2e_runtime_configs(
             config, planner, reader_dsn, audit_dsn, publisher_dsn,
-            pat_value)
+            pat_value,
+            role_tokens=role_tokens,
+            relay_endpoints=_relay_endpoints_for_specs,
+            controller_db_env=planner._controller_environment(),
+            controller_pg_pass=admin_pw,
+            controller_admin_pw=secrets.token_urlsafe(32))
 
         # The five non-spec DAG services reuse the default-mode plan
         # argv (create + connect steps executed in order).
+        env_file_wsl = _to_wsl_path(paths["secrets"] / "postgres.env")
+        ctrl_env_wsl = _to_wsl_path(paths["secrets"] / "controller.env")
+        reader_env_wsl = _to_wsl_path(paths["secrets"] / "demo_console.env")
+        gh_env_wsl = _to_wsl_path(paths["secrets"] / "gh_webhook.env")
         steps = build_start_steps(
             planner,
-            env_file=_to_wsl_path(paths["secrets"] / "postgres.env"),
-            controller_env_file=_to_wsl_path(paths["secrets"]
-                                             / "controller.env"),
-            reader_dsn_env_file=_to_wsl_path(paths["secrets"]
-                                             / "demo_console.env"),
-            gh_webhook_env_file=_to_wsl_path(paths["secrets"]
-                                             / "gh_webhook.env"),
+            env_file=env_file_wsl,
+            controller_env_file=ctrl_env_wsl,
+            reader_dsn_env_file=reader_env_wsl,
+            gh_webhook_env_file=gh_env_wsl,
             run_id=run_id, bridge_ip=PLACEHOLDER_BRIDGE_IP,
-            m4f=args.m4f)
+            m4f=args.m4f,
+            session_public_dir=_to_wsl_path(paths["state"] / "public"))
         by_service = {}
+        network_create_steps = []
         for _kind, name, argv in steps:
             if _kind == "container-run":
                 by_service[name] = argv
+            if _kind == "network-create":
+                network_create_steps.append(argv)
 
         def default_service_plan(service):
+            # run31 finding: the default-mode start MEASURES the
+            # postgres bridge IP after postgres is healthy and
+            # regenerates the demo-console argv with it (a REQUIRED
+            # planner input; hardcoding forbidden). The E2E path used
+            # the placeholder-IP plan, so the console's expected-
+            # server-address identity check failed at startup.
+            # demo-console runs AFTER postgres in the frozen DAG
+            # order, so the measurement is safe to make lazily here.
+            if service == "demo-console":
+                return _e2e_demo_console_measured_argv(
+                    docker, planner, run_id, args.m4f,
+                    env_file_wsl, ctrl_env_wsl, reader_env_wsl,
+                    gh_env_wsl,
+                    session_public_dir=_to_wsl_path(
+                        paths["state"] / "public"))
             return by_service.get(service, [])
 
         def db_bootstrap():
-            prepare_database(docker, planner, None, project_dir,
-                             reader_pw)
+            # the showcase seed generator comes from the same
+            # versioned checkout as the planner (first real run
+            # passed None -> AttributeError at the seed stage)
+            _, _showcase = _load_planner(project_dir)
+            prepare_database(docker, planner, _showcase,
+                             project_dir, reader_pw)
+
+        # the five default-mode services (postgres/gh-webhook/
+        # demo-console/console-edge/preflight) reference the
+        # default-mode networks in their planned argvs; the e2e
+        # lifecycle only creates the 8 mp-e2e networks. Create the
+        # two default-mode networks here (idempotent-safe: the
+        # lifecycle rolls back only journaled mp-e2e networks, these
+        # are managed by the default service plan's own cleanup)
+        for argv in network_create_steps:
+            cp = docker_exec(list(argv), check=False,
+                             log_tag="e2e-net")
+            if getattr(cp, "returncode", 1) == 0 and len(argv) > 2:
+                # ownership = journaling: cleanup removes exactly what
+                # WE created (a pre-existing network is rc!=0 or
+                # already journaled)
+                net = argv[-1]
+                cid = docker_exec(
+                    ["network", "inspect", net, "--format",
+                     "{{.Id}}"], check=False, log_tag="e2e-net")
+                nid = ((cid.stdout or b"").decode().strip()
+                       if getattr(cid, "returncode", 1) == 0 else "")
+                if nid:
+                    created_default_networks[net] = nid
 
         # §10/§11 R3: the second checks bind the REAL production
         # implementations — homeserver joined-members (read-only) and
         # validate_hiclaw_receipt against live docker inspect.
+        def _register_default_networks(_session):
+            # ownership journaling for the two default-mode networks
+            # this run created (rollback/cleanup removes exactly these)
+            _session.setdefault("default_network_ids", {}).update(
+                created_default_networks)
+        # wsl-user-relay: build edge contracts + write relay script
+        relay_edges = None
+        if getattr(args, "wsl_relay", False):
+            import e2e_relay as _relay_mod
+            relay_edges = _relay_mod.build_relay_edge_contracts(
+                config["tuwunel_ip"],
+                windows_proxy_ip=config["windows_proxy_ip"],
+                windows_proxy_port=int(config["windows_proxy_port"]))
+            _relay_script = paths["secrets"] / "relay.py"
+            _relay_script.write_text(_relay_mod.RELAY_SCRIPT,
+                                     encoding="utf-8")
+            session["relay_script_path"] = str(_relay_script)
+            session["relay_edge_count"] = len(relay_edges)
         session = el.run_e2e_start(
             config=config,
             runtime_configs=runtime_configs,
@@ -1746,14 +2251,18 @@ def _execute_github_e2e_start(args, project_dir, planner, paths,
             docker_gw_priority_supported=docker_gw_priority_supported,
             existing_network_cidrs=existing_network_cidrs,
             firewall_scan_text=firewall_scan_text,
+            gateway_bearer=role_tokens_reviewer,
+            agents_docker_executor=hiclaw_exec,
+            transport_profile=session.get("transport_profile", ""),
+            relay_edges=relay_edges if relay_edges else None,
             matrix_members_provider=(
                 lambda: el.fetch_matrix_joined_mxids(config)),
             service_health=None,
             receipt_validator=(
                 lambda path: ex_validate_hiclaw_receipt(
-                    path, docker_executor=docker_exec,
+                    path, docker_executor=hiclaw_exec,
                     minio_executor=ex_validate_hiclaw_receipt_mod
-                    .minio_readonly_via_docker(docker_exec),
+                    .minio_readonly_via_docker(hiclaw_exec),
                     expected_old_mcp_state=config[
                         "expected_old_mcp_state"])),
             persist_callback=persist,
@@ -1784,6 +2293,13 @@ def _execute_github_e2e_start(args, project_dir, planner, paths,
                 (paths["secrets"] / basename).unlink()
             except OSError:
                 pass
+        for _net in list(created_default_networks):
+            try:
+                docker_exec(["network", "rm", _net], check=False,
+                            log_tag="e2e-net")
+            except Exception:
+                pass
+            created_default_networks.pop(_net, None)
         try:
             if paths["session"].exists():
                 paths["session"].unlink()
@@ -1791,6 +2307,10 @@ def _execute_github_e2e_start(args, project_dir, planner, paths,
             pass
         raise failure from None
 
+    if created_default_networks:
+        session.setdefault("default_network_ids", {}).update(
+            created_default_networks)
+        persist(session)
     return EXIT_OK, {
         "command": "start", "status": "ok", "code": EXIT_OK,
         "run_id": run_id,
@@ -1894,7 +2414,8 @@ def cmd_start(args):
                                              / "demo_console.env"),
             gh_webhook_env_file=_to_wsl_path(paths["secrets"]
                                              / "gh_webhook.env"),
-            run_id=run_id, bridge_ip=PLACEHOLDER_BRIDGE_IP, m4f=args.m4f)
+            run_id=run_id, bridge_ip=PLACEHOLDER_BRIDGE_IP, m4f=args.m4f,
+            session_public_dir=_to_wsl_path(paths["state"] / "public"))
         payload = {
             "command": "start", "status": "dry-run", "code": EXIT_OK,
             "run_id": run_id,
@@ -2069,7 +2590,8 @@ def _execute_start(docker, planner, showcase, project_dir, paths, session,
     steps = build_start_steps(
         planner, env_file=env_file_wsl, controller_env_file=ctrl_env_wsl,
         reader_dsn_env_file=reader_env_wsl, gh_webhook_env_file=gh_env_wsl,
-        run_id=run_id, bridge_ip=PLACEHOLDER_BRIDGE_IP, m4f=m4f)
+        run_id=run_id, bridge_ip=PLACEHOLDER_BRIDGE_IP, m4f=m4f,
+        session_public_dir=_to_wsl_path(paths["state"] / "public"))
 
     journal_stage("networks")
     create_network(steps[0][1], steps[0][2])
@@ -2091,7 +2613,8 @@ def _execute_start(docker, planner, showcase, project_dir, paths, session,
     steps = build_start_steps(
         planner, env_file=env_file_wsl, controller_env_file=ctrl_env_wsl,
         reader_dsn_env_file=reader_env_wsl, gh_webhook_env_file=gh_env_wsl,
-        run_id=run_id, bridge_ip=canonical, m4f=m4f)
+        run_id=run_id, bridge_ip=canonical, m4f=m4f,
+        session_public_dir=_to_wsl_path(paths["state"] / "public"))
 
     journal_stage("services")
     create_container("policy-gateway", steps[3][2])
@@ -2174,9 +2697,18 @@ def cmd_status(args):
         # github_e2e_services key under the E2E-session condition.
         if session.get("github_e2e"):
             import e2e_lifecycle as el
+            # the gateway bearer is re-extracted read-only from the
+            # HiClaw side (same authority as start); the probes exec
+            # inside the target containers via the docker executor
+            try:
+                status_bearer = _read_hiclaw_role_tokens(
+                    _e2e_hiclaw_docker_exec(docker))["reviewer"]
+            except Failure:
+                status_bearer = ""
             meta["github_e2e_services"] = el.run_e2e_status(
                 docker_executor=_e2e_docker_exec(docker),
-                session=session)
+                session=session,
+                gateway_bearer=status_bearer)
     if install is not None:
         meta["install_images"] = sorted((install.get("images") or {}).keys())
     if classification != "absent" and session is None:
@@ -2582,7 +3114,13 @@ def build_parser():
                    help="plan the GitHub E2E controller/Matrix slice "
                         "(B1: dry-run planning only — a REAL start fails "
                         "closed with GITHUB_E2E_PREREQUISITES_INCOMPLETE "
-                        "(external readiness gate)")
+                        "(external readiness gate))")
+    p.add_argument("--wsl-relay", action="store_true",
+                   help="use the wsl-user-relay transport profile: "
+                        "cross-bridge edges via user-space TCP relays "
+                        "(bypasses the broken WSL 6.18 IP FORWARD). "
+                        "Evidence carries transport_profile=wsl-user-relay, "
+                        "direct_routing_verified=false")
     p.add_argument("--dry-run", action="store_true")
 
     p = sub.add_parser("stop", parents=[common],
