@@ -36,12 +36,35 @@ import mergepilot as mp               # noqa: E402
 import e2e_foundation as e2f          # noqa: E402
 import e2e_lifecycle as el            # noqa: E402
 
+from planner_isolation import (       # noqa: E402
+    add_planner_registry_isolation,
+)
+
 
 def _main_json(argv):
     buf = io.StringIO()
     with redirect_stdout(buf):
         rc = mp.main(argv + ["--json", "--project-dir", str(ROOT)])
     return rc, json.loads(buf.getvalue())
+
+
+def _empty_state_paths(tmp):
+    """state_paths for a temp .mergepilot WITHOUT github-e2e.json.
+
+    The gate tests were written when the workspace carried no E2E
+    config; on a provisioned workspace the REAL config exists and
+    the real probes run (maintenance §3 finding: one such test even
+    reached real side effects when every external service happened
+    to be up). Redirecting state keeps the absence path REAL (the
+    production loader genuinely hits a missing file) with zero
+    coupling to workspace provisioning.
+    """
+    state = Path(tmp) / ".mergepilot"
+    state.mkdir(parents=True, exist_ok=True)
+    return {"state": state,
+            "install": state / "install.json",
+            "session": state / "session.json",
+            "secrets": state / "secrets"}
 
 
 class TestComponentGate(unittest.TestCase):
@@ -52,17 +75,20 @@ class TestComponentGate(unittest.TestCase):
         # before any side effect — no manifest load, no Docker, no
         # session write.
         calls = []
-        with mock.patch.object(mp, "load_manifest",
-                               side_effect=lambda p: calls.append(
-                                   ("load_manifest", str(p))) or None), \
-             mock.patch.object(mp, "WslDocker",
-                               side_effect=AssertionError(
-                                   "no docker allowed")), \
-             mock.patch.object(mp, "write_session",
-                               side_effect=AssertionError(
-                                   "no session write")):
-            rc, payload = _main_json(
-                ["start", "--run-id", "w1", "--github-e2e"])
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.object(mp, "state_paths",
+                                   return_value=_empty_state_paths(tmp)), \
+                 mock.patch.object(mp, "load_manifest",
+                                   side_effect=lambda p: calls.append(
+                                       ("load_manifest", str(p))) or None), \
+                 mock.patch.object(mp, "WslDocker",
+                                   side_effect=AssertionError(
+                                       "no docker allowed")), \
+                 mock.patch.object(mp, "write_session",
+                                   side_effect=AssertionError(
+                                       "no session write")):
+                rc, payload = _main_json(
+                    ["start", "--run-id", "w1", "--github-e2e"])
         self.assertEqual(rc, 3)
         self.assertEqual(payload["error_code"],
                          "GITHUB_E2E_PREREQUISITES_INCOMPLETE")
@@ -128,15 +154,19 @@ class TestPrerequisiteRealProbe(unittest.TestCase):
     def test_missing_config_real_probe_zero_side_effects(self):
         # gate cleared (test-level toggle; the gate itself is tested
         # above) — the missing prerequisite config is a REAL probe.
-        with mock.patch.object(e2f, "E2E_PENDING_COMPONENTS", ()), \
-             mock.patch.object(mp, "WslDocker",
-                               side_effect=AssertionError(
-                                   "no docker before prereq")), \
-             mock.patch.object(mp, "write_session",
-                               side_effect=AssertionError(
-                                   "no session write")):
-            rc, payload = _main_json(
-                ["start", "--run-id", "w4", "--github-e2e"])
+        with tempfile.TemporaryDirectory() as tmp:
+            with mock.patch.object(e2f, "E2E_PENDING_COMPONENTS", ()), \
+                 mock.patch.object(
+                     mp, "state_paths",
+                     return_value=_empty_state_paths(tmp)), \
+                 mock.patch.object(mp, "WslDocker",
+                                   side_effect=AssertionError(
+                                       "no docker before prereq")), \
+                 mock.patch.object(mp, "write_session",
+                                   side_effect=AssertionError(
+                                       "no session write")):
+                rc, payload = _main_json(
+                    ["start", "--run-id", "w4", "--github-e2e"])
         self.assertEqual(rc, 3)
         self.assertEqual(payload["error_code"],
                          "GITHUB_E2E_PREREQUISITES_INCOMPLETE")
@@ -146,6 +176,14 @@ class TestPrerequisiteRealProbe(unittest.TestCase):
 
 
 class TestStartWiring(unittest.TestCase):
+
+    def setUp(self):
+        # the synthetic install records sha256:ab*32 identities; a
+        # suite peer that ran the real CLI recorded the REAL image
+        # IDs into the same process-global registry, and the
+        # immutable-once-recorded contract then fails this test with
+        # IMAGE_DIGEST_MISMATCH (order-dependent suite failure)
+        add_planner_registry_isolation(self)
 
     def test_start_calls_run_e2e_start_with_real_executors(self):
         recorded = {}

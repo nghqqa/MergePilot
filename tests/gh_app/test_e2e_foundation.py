@@ -110,9 +110,25 @@ class TestActivationGate(unittest.TestCase):
     def test_real_cli_start_fails_closed_before_any_side_effect(self):
         # the gate sits before the install-manifest load: no fixtures,
         # no docker, no filesystem writes are needed for it to fire.
-        with mock.patch.object(mp, "WslDocker") as wd:
-            rc = mp.main(["start", "--run-id", "gate-probe", "--github-e2e",
-                          "--project-dir", str(ROOT)])
+        # State redirects to an EMPTY temp .mergepilot (no E2E config)
+        # so the REAL loader hits genuine file absence — independent
+        # of whether the workspace is provisioned (maintenance §3:
+        # with the real config present the probes need executors and
+        # this degenerated into an order-dependent WslDocker call).
+        import tempfile as _tf
+        with _tf.TemporaryDirectory() as tmp:
+            state = Path(tmp) / ".mergepilot"
+            state.mkdir()
+            with mock.patch.object(mp, "WslDocker") as wd, \
+                 mock.patch.object(
+                     mp, "state_paths",
+                     return_value={"state": state,
+                                   "install": state / "install.json",
+                                   "session": state / "session.json",
+                                   "secrets": state / "secrets"}):
+                rc = mp.main(["start", "--run-id", "gate-probe",
+                              "--github-e2e", "--json",
+                              "--project-dir", str(ROOT)])
         self.assertEqual(rc, 3)
         self.assertFalse(wd.called)
 

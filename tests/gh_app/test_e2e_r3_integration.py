@@ -124,6 +124,19 @@ class FakeDockerSide:
                     "hiclaw-worker-reviewer": "172.21.0.5",
                     "hiclaw-worker-fixer": "172.21.0.4",
                     "hiclaw-worker-verifier": "172.21.0.6"}.get(name, "")
+        # run34 wsl-safe templates (no $-vars/quotes; see
+        # e2e_executors._validate_direction_receipt)
+        if fmt == ("{{range .NetworkSettings.Networks}}"
+                   "{{.IPAddress}},{{end}}"):
+            return {"hiclaw-manager": "172.21.0.2,",
+                    "hiclaw-worker-reviewer": "172.21.0.5,",
+                    "hiclaw-worker-fixer": "172.21.0.4,",
+                    "hiclaw-worker-verifier": "172.21.0.6,"}.get(
+                        name, "")
+        if fmt == "{{.NetworkSettings.Networks}}":
+            # the retired github-mcp carries NO endpoint (receipt
+            # freezes network_attachments=[])
+            return {"github-mcp": "map[]"}.get(name, "map[]")
         if "{{.HostConfig.RestartPolicy.Name}}" in fmt:
             return {"github-mcp": "no"}.get(name, "no")
         if "{{range $k, $v := .NetworkSettings.Networks}}" in fmt:
@@ -219,6 +232,12 @@ class FakeDockerSide:
         return _cp(0)
 
     # ── host executor (iptables domain; stateful) ──
+    def network_ip(self, name):
+        # WslDocker.network_ip: the measured bridge IP for the
+        # demo-console argv rebuild (run31/32 finding — the E2E must
+        # not serve the placeholder plan)
+        return "172.18.0.2"
+
     def wsl_exec(self, argv, input_bytes=None, timeout=60, check=True,
                  log_tag=None):
         a = list(argv)
@@ -351,7 +370,10 @@ def _build_receipt():
             "container_id": "cid-github-mcp",
             "state": "stopped",
             "restart_policy": "no",
-            "network_attachments": ["bridge"],
+            # run34 contract: the retired container carries NO
+            # endpoint (the production receipt freezes [] and the
+            # live container was restored to exactly that)
+            "network_attachments": [],
         },
         "rollback_ownership": "mp-gh4-harness",
     }
@@ -362,6 +384,15 @@ def _build_receipt():
 class TestFullIntegration(unittest.TestCase):
     """§3-§6: one REAL CLI start through the REAL lifecycle, then
     status/stop/cleanup consuming the ACTUAL persisted session."""
+
+    def setUp(self):
+        # synthetic installs record sha256:ab*32 identities; a suite
+        # peer that ran the real CLI recorded the REAL image IDs into
+        # the process-global registry and the immutable-once-recorded
+        # contract then fails here (order-dependent
+        # IMAGE_DIGEST_MISMATCH — maintenance §3)
+        from planner_isolation import add_planner_registry_isolation
+        add_planner_registry_isolation(self)
 
     def test_cli_entry_real_lifecycle_reaches_complete(self):
         planner, _showcase = mp._load_planner(ROOT)
