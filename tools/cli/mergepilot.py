@@ -1762,6 +1762,30 @@ def _e2e_spec_env_file(service):
     return spec["env_file"] if spec else ""
 
 
+def _e2e_demo_console_measured_argv(docker, planner, run_id, m4f,
+                                    env_file_wsl, ctrl_env_wsl,
+                                    reader_env_wsl, gh_env_wsl):
+    """The demo-console container argv rebuilt with the MEASURED
+    postgres bridge IP (run31 finding: the E2E path served the
+    PLACEHOLDER_BRIDGE_IP plan, so the console's expected-server-
+    address identity check failed at startup; the default-mode start
+    in _execute_start measures the IP after postgres is healthy —
+    hardcoding it is forbidden by the planner contract)."""
+    bridge_ip = docker.network_ip(container_name(planner, "postgres"))
+    canonical = planner.canonicalize_server_address(bridge_ip)
+    steps = build_start_steps(
+        planner,
+        env_file=env_file_wsl,
+        controller_env_file=ctrl_env_wsl,
+        reader_dsn_env_file=reader_env_wsl,
+        gh_webhook_env_file=gh_env_wsl,
+        run_id=run_id, bridge_ip=canonical, m4f=m4f)
+    for _kind, name, argv in steps:
+        if _kind == "container-run" and name == "demo-console":
+            return argv
+    return []
+
+
 def _execute_github_e2e_start(args, project_dir, planner, paths,
                               run_id):
     """§3: the REAL production E2E path.
@@ -1926,15 +1950,16 @@ def _execute_github_e2e_start(args, project_dir, planner, paths,
 
         # The five non-spec DAG services reuse the default-mode plan
         # argv (create + connect steps executed in order).
+        env_file_wsl = _to_wsl_path(paths["secrets"] / "postgres.env")
+        ctrl_env_wsl = _to_wsl_path(paths["secrets"] / "controller.env")
+        reader_env_wsl = _to_wsl_path(paths["secrets"] / "demo_console.env")
+        gh_env_wsl = _to_wsl_path(paths["secrets"] / "gh_webhook.env")
         steps = build_start_steps(
             planner,
-            env_file=_to_wsl_path(paths["secrets"] / "postgres.env"),
-            controller_env_file=_to_wsl_path(paths["secrets"]
-                                             / "controller.env"),
-            reader_dsn_env_file=_to_wsl_path(paths["secrets"]
-                                             / "demo_console.env"),
-            gh_webhook_env_file=_to_wsl_path(paths["secrets"]
-                                             / "gh_webhook.env"),
+            env_file=env_file_wsl,
+            controller_env_file=ctrl_env_wsl,
+            reader_dsn_env_file=reader_env_wsl,
+            gh_webhook_env_file=gh_env_wsl,
             run_id=run_id, bridge_ip=PLACEHOLDER_BRIDGE_IP,
             m4f=args.m4f)
         by_service = {}
@@ -1946,6 +1971,19 @@ def _execute_github_e2e_start(args, project_dir, planner, paths,
                 network_create_steps.append(argv)
 
         def default_service_plan(service):
+            # run31 finding: the default-mode start MEASURES the
+            # postgres bridge IP after postgres is healthy and
+            # regenerates the demo-console argv with it (a REQUIRED
+            # planner input; hardcoding forbidden). The E2E path used
+            # the placeholder-IP plan, so the console's expected-
+            # server-address identity check failed at startup.
+            # demo-console runs AFTER postgres in the frozen DAG
+            # order, so the measurement is safe to make lazily here.
+            if service == "demo-console":
+                return _e2e_demo_console_measured_argv(
+                    docker, planner, run_id, args.m4f,
+                    env_file_wsl, ctrl_env_wsl, reader_env_wsl,
+                    gh_env_wsl)
             return by_service.get(service, [])
 
         def db_bootstrap():

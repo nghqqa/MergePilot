@@ -538,6 +538,54 @@ class TestRoleTokensRuntimeConfig(unittest.TestCase):
 
 # ── D: HiClaw distro executor wiring ───────────────────────────────────────
 
+class TestE2EDemoConsoleMeasuredArgv(unittest.TestCase):
+
+    def test_demo_console_argv_rebuilt_with_measured_ip(self):
+        # run31 regression: the E2E path served the PLACEHOLDER bridge
+        # IP (203.0.113.1) plan for demo-console, so the console's
+        # expected-server-address identity check failed at startup;
+        # the planner contract REQUIRES the measured postgres IP.
+        import mergepilot as mp
+        from unittest import mock
+
+        docker = mock.Mock()
+        docker.network_ip.return_value = "172.18.0.99"
+        planner = mock.Mock()
+        planner.canonicalize_server_address.side_effect = lambda s: s
+        canned = [("container-run", "demo-console",
+                   ["run", "--env",
+                    "MERGEPILOT_PG_EXPECTED_SERVER_ADDRESSES=172.18.0.99"])]
+        with mock.patch.object(mp, "build_start_steps",
+                               return_value=canned) as bss:
+            argv = mp._e2e_demo_console_measured_argv(
+                docker, planner, "run-x", False, "e", "c", "r", "g")
+        self.assertIn("MERGEPILOT_PG_EXPECTED_SERVER_ADDRESSES=172.18.0.99",
+                      argv)
+        self.assertEqual(bss.call_args.kwargs.get("bridge_ip"),
+                         "172.18.0.99")
+        docker.network_ip.assert_called_once()
+
+    def test_death_detail_keeps_stderr_tail_separately(self):
+        # run31 regression: concatenating stderr before stdout then
+        # truncating from the FRONT hid the actual traceback behind
+        # stdout preflight lines. The two streams now carry
+        # independent tails.
+        def fake_exec(argv, **kwargs):
+            if argv[:1] == ["inspect"]:
+                return _cp(0, b"exited exit=1")
+            return subprocess.CompletedProcess(
+                argv, 0,
+                ("Config preflight passed: mode=ISOLATED_LIVE "
+                 + "x" * 60).encode("utf-8"),
+                "Traceback ... ValueError: server address mismatch".encode(
+                    "utf-8"))
+
+        detail = el._container_death_detail(fake_exec,
+                                            "mergepilot-isolated-x-1")
+        self.assertIn("err: Traceback ... ValueError:", detail)
+        self.assertIn("out: Config preflight passed", detail)
+
+
 class TestHiclawExecutorFactory(unittest.TestCase):
 
     def _factory(self):

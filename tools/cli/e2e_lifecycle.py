@@ -656,17 +656,24 @@ def _container_death_detail(docker_executor: Callable,
         state = (cp.stdout or b"").decode("utf-8", "replace").strip()
     except Exception:
         state = "inspect-failed"
-    tail = ""
+    tail_err = ""
+    tail_out = ""
     try:
         cp = docker_executor(["logs", "--tail", "10", name],
                              check=False, timeout=20)
-        tail = ((cp.stderr or b"") + (cp.stdout or b"")).decode(
-            "utf-8", "replace")
+        # keep the two streams SEPARATE with independent tails: a
+        # single concatenated tail truncates from the FRONT, which is
+        # where stderr (tracebacks, CONFIG_INVALID) sits — run31's
+        # console failure showed only stdout preflight lines while the
+        # actual stderr error was truncated away
+        tail_err = " ".join(
+            (cp.stderr or b"").decode("utf-8", "replace").split())[-320:]
+        tail_out = " ".join(
+            (cp.stdout or b"").decode("utf-8", "replace").split())[-160:]
     except Exception:
-        tail = ""
-    flat = " ".join(tail.split())[-320:]
-    return "container[%s] %s | logs: %s" % (name.split("-")[-2],
-                                             state, flat)
+        pass
+    return "container[%s] %s | err: %s | out: %s" % (
+        name.split("-")[-2], state, tail_err, tail_out)
 
 
 def _wait_mcp(check: Callable, url: str, service: str,
