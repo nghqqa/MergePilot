@@ -67,7 +67,10 @@ class E2EConfigError(Exception):
 
 E2E_CONTROLLER_ENV_KEYS = frozenset((
     "GITHUB_INGRESS_ENABLED",
-    "GITHUB_ROOM_MAP_PATH",
+    # run29 real-DAG finding: controller.py reads GITHUB_ROOM_MAP (no
+    # _PATH suffix) — a guessed name falls through to the in-container
+    # default /config/gh-app/room-map.yaml and exits FileNotFoundError
+    "GITHUB_ROOM_MAP",
     "GITHUB_POLICY_PATH",
     "GITHUB_DELIVERY_LEASE_SECONDS",
     "GITHUB_DELIVERY_MAX_ATTEMPTS",
@@ -148,7 +151,7 @@ def validate_e2e_controller_env(mapping) -> dict:
 
     if mapping["GITHUB_INGRESS_ENABLED"] != "1":
         _bad("GITHUB_INGRESS_ENABLED", "must be exactly '1' in E2E mode")
-    _validate_ro_path("GITHUB_ROOM_MAP_PATH", mapping["GITHUB_ROOM_MAP_PATH"])
+    _validate_ro_path("GITHUB_ROOM_MAP", mapping["GITHUB_ROOM_MAP"])
     _validate_ro_path("GITHUB_POLICY_PATH", mapping["GITHUB_POLICY_PATH"])
     _validate_int("GITHUB_DELIVERY_LEASE_SECONDS",
                   mapping["GITHUB_DELIVERY_LEASE_SECONDS"], 1, 600)

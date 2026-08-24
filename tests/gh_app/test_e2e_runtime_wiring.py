@@ -22,7 +22,7 @@ import e2e_runtime_specs as rs                  # noqa: E402
 def _ctrl_env():
     return {
         "GITHUB_INGRESS_ENABLED": "1",
-        "GITHUB_ROOM_MAP_PATH": "/run/mergepilot/room-map.yaml",
+        "GITHUB_ROOM_MAP": "/run/mergepilot/room-map.yaml",
         "GITHUB_POLICY_PATH":
             "/run/mergepilot/policy-fixture.yaml",
         "GITHUB_DELIVERY_LEASE_SECONDS": "120",

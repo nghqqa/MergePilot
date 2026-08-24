@@ -1682,7 +1682,7 @@ def _build_e2e_runtime_configs(config, planner, reader_dsn,
     return {
         "controller": {
             "GITHUB_INGRESS_ENABLED": "1",
-            "GITHUB_ROOM_MAP_PATH": "/run/mergepilot/room-map.yaml",
+            "GITHUB_ROOM_MAP": "/run/mergepilot/room-map.yaml",
             "GITHUB_POLICY_PATH":
                 "/run/mergepilot/policy-fixture.yaml",
             "GITHUB_DELIVERY_LEASE_SECONDS": "120",

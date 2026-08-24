@@ -500,7 +500,7 @@ def _rc():
     return {
         "controller": {
             "GITHUB_INGRESS_ENABLED": "1",
-            "GITHUB_ROOM_MAP_PATH": "/run/mergepilot/room-map.yaml",
+            "GITHUB_ROOM_MAP": "/run/mergepilot/room-map.yaml",
             "GITHUB_POLICY_PATH": "/run/mergepilot/policy-fixture.yaml",
             "GITHUB_DELIVERY_LEASE_SECONDS": "120",
             "GITHUB_DELIVERY_MAX_ATTEMPTS": "5",

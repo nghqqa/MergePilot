@@ -38,7 +38,7 @@ import one_click_startup as oc                  # noqa: E402
 def _valid_env():
     return {
         "GITHUB_INGRESS_ENABLED": "1",
-        "GITHUB_ROOM_MAP_PATH": "/run/mergepilot/room-map.yaml",
+        "GITHUB_ROOM_MAP": "/run/mergepilot/room-map.yaml",
         "GITHUB_POLICY_PATH": "/run/mergepilot/policy-fixture.yaml",
         "GITHUB_DELIVERY_LEASE_SECONDS": "120",
         "GITHUB_DELIVERY_MAX_ATTEMPTS": "5",
@@ -208,7 +208,7 @@ class TestEnvSchema(unittest.TestCase):
         with self.assertRaises(e2f.E2EConfigError):
             e2f.validate_e2e_controller_env(env)
         env = _valid_env()
-        env["GITHUB_ROOM_MAP_PATH"] = "/etc/passwd"
+        env["GITHUB_ROOM_MAP"] = "/etc/passwd"
         with self.assertRaises(e2f.E2EConfigError):
             e2f.validate_e2e_controller_env(env)
 
@@ -256,6 +256,25 @@ class TestEnvSchema(unittest.TestCase):
                                "PG_USER", "PG_PASS", "ADMIN_PW"}
         self.assertLessEqual(entrypoint_required,
                              e2f.E2E_CONTROLLER_ENV_KEYS)
+
+    def test_env_keys_match_controller_source_reads(self):
+        # run29 regression: controller.py reads GITHUB_ROOM_MAP (no
+        # _PATH suffix); a guessed key name silently falls through to
+        # the in-container default and the controller exits
+        # FileNotFoundError. Extract the ACTUAL env reads from the
+        # controller source and require the github/db contract keys
+        # the E2E schema sends to exist verbatim among them.
+        import re
+        src = (ROOT / "tools" / "workflow-controller"
+               / "controller.py").read_text(encoding="utf-8")
+        reads = set(re.findall(r'os\.environ\.get\("([A-Z0-9_]+)"', src))
+        for key in ("GITHUB_ROOM_MAP", "GITHUB_POLICY_PATH",
+                    "GITHUB_INGRESS_ENABLED", "PG_HOST", "PG_PORT",
+                    "PG_DATABASE", "PG_USER", "PG_PASS", "ADMIN_PW"):
+            self.assertIn(key, reads)
+            self.assertIn(key, e2f.E2E_CONTROLLER_ENV_KEYS)
+        self.assertNotIn("GITHUB_ROOM_MAP_PATH",
+                         e2f.E2E_CONTROLLER_ENV_KEYS)
 
     def test_token_secret_never_in_errors(self):
         env = _valid_env()
