@@ -177,8 +177,12 @@ switch ($Action) {
                 $pm = Get-Content $pkgManifest -Raw | ConvertFrom-Json
                 $mroot = Join-Path $RepoRoot ".mergepilot"
                 New-Item -ItemType Directory -Force -Path $mroot | Out-Null
-                @{ images = $pm.images } | ConvertTo-Json -Depth 4 |
-                    Set-Content (Join-Path $mroot "install.json") -Encoding UTF8
+                # WriteAllText: UTF-8 WITHOUT BOM — Set-Content -Encoding
+                # UTF8 emits a BOM in PS 5.1 and the CLI's json.load
+                # rejects it (MANIFEST_INVALID)
+                $json = @{ images = $pm.images } | ConvertTo-Json -Depth 4
+                [System.IO.File]::WriteAllText(
+                    (Join-Path $mroot "install.json"), $json)
                 Write-Log "OK" "install manifest materialized from package manifest (8 digests)"
             }
             else {
