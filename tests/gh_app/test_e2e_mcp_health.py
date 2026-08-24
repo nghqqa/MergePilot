@@ -565,6 +565,21 @@ class TestE2EDemoConsoleMeasuredArgv(unittest.TestCase):
                          "172.18.0.99")
         docker.network_ip.assert_called_once()
 
+    def test_demo_console_run_id_is_a_seeded_showcase_case(self):
+        # run32 regression: the console run id must be a key the
+        # showcase seed actually contains (RUN_NOT_FOUND otherwise);
+        # pin the constant to the real showcase case set.
+        import importlib.util
+        import mergepilot as mp
+
+        spec = importlib.util.spec_from_file_location(
+            "showcase_cases_probe",
+            ROOT / "tools" / "demo_console" / "showcase_cases.py")
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        self.assertIn(mp.E2E_DEMO_CONSOLE_RUN_ID,
+                      mod.SHOWCASE_CASES)
+
     def test_death_detail_keeps_stderr_tail_separately(self):
         # run31 regression: concatenating stderr before stdout then
         # truncating from the FRONT hid the actual traceback behind

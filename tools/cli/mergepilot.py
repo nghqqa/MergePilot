@@ -1762,6 +1762,15 @@ def _e2e_spec_env_file(service):
     return spec["env_file"] if spec else ""
 
 
+#: The demo-console is a read-only VIEW over the showcase seed; its
+#: MERGEPILOT_RUN_ID is a showcase case key the seed actually contains
+#: (run32 finding: the E2E passed the session run id — e.g.
+#: b8-e2e-run32 — which no seeded row matches, so the console's
+#: startup probe exited RUN_NOT_FOUND; the default-mode contract is
+#: "seeded run_id, e.g. run-showcase-a").
+E2E_DEMO_CONSOLE_RUN_ID = "run-showcase-a"
+
+
 def _e2e_demo_console_measured_argv(docker, planner, run_id, m4f,
                                     env_file_wsl, ctrl_env_wsl,
                                     reader_env_wsl, gh_env_wsl):
@@ -1770,7 +1779,8 @@ def _e2e_demo_console_measured_argv(docker, planner, run_id, m4f,
     PLACEHOLDER_BRIDGE_IP plan, so the console's expected-server-
     address identity check failed at startup; the default-mode start
     in _execute_start measures the IP after postgres is healthy —
-    hardcoding it is forbidden by the planner contract)."""
+    hardcoding it is forbidden by the planner contract). The console
+    run id is the showcase case key, NOT the E2E session run id."""
     bridge_ip = docker.network_ip(container_name(planner, "postgres"))
     canonical = planner.canonicalize_server_address(bridge_ip)
     steps = build_start_steps(
@@ -1779,7 +1789,7 @@ def _e2e_demo_console_measured_argv(docker, planner, run_id, m4f,
         controller_env_file=ctrl_env_wsl,
         reader_dsn_env_file=reader_env_wsl,
         gh_webhook_env_file=gh_env_wsl,
-        run_id=run_id, bridge_ip=canonical, m4f=m4f)
+        run_id=E2E_DEMO_CONSOLE_RUN_ID, bridge_ip=canonical, m4f=m4f)
     for _kind, name, argv in steps:
         if _kind == "container-run" and name == "demo-console":
             return argv
