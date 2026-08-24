@@ -57,7 +57,8 @@ class TestComposeWiring(unittest.TestCase):
 
     def test_gh_webhook_loopback_publish_and_healthcheck(self):
         svc = self.yml["services"]["gh-webhook"]
-        self.assertEqual(svc["ports"], ["127.0.0.1:8090:8090"])
+        self.assertEqual(svc["ports"],
+                         ["%s:8090:8090" % oc.PUBLISH_BIND])
         test = svc["healthcheck"]["test"]
         self.assertIn("/healthz", " ".join(test))
 
@@ -123,7 +124,7 @@ class TestPlannerWiring(unittest.TestCase):
             joined = " ".join(plan)
             self.assertIn("--network %s" % oc.PUBLICATION_NETWORK, joined)
             self.assertIn("--env-file gh_webhook.env", joined)
-            self.assertIn("-p 127.0.0.1:8090:8090", joined)
+            self.assertIn("-p %s:8090:8090" % oc.PUBLISH_BIND, joined)
             self.assertNotIn(oc.ORCHESTRATOR_NETWORK, joined)
             oc.assert_argv_safe(plan)
             with self.assertRaises(oc.StartupGateError):

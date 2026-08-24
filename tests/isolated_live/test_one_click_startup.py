@@ -100,16 +100,21 @@ class TestComposeConfig(unittest.TestCase):
         ports = cfg["services"]["console-edge"]["ports"]
         self.assertEqual(len(ports), 1)
         bind = ports[0].split(":")[0]
-        self.assertEqual(bind, "127.0.0.1")
-        # HOST-side publish must be loopback only. 0.0.0.0 may appear in the
-        # environment as the CONTAINER-INTERNAL listen address (required for
-        # Docker bridge routing); it must NEVER appear in a ports: publish.
+        # §3: the distro-side backend bind; the Windows loopback edge
+        # (forwarder) is the enforcement point
+        self.assertEqual(bind, oc.PUBLISH_BIND)
+        # §3: the TWO publication ports bind the distro-side PUBLISH_BIND
+        # backend (inside the WSL VM, reachable from the Windows host via
+        # the WSL NAT); the Windows loopback edge is the enforcement
+        # point. LAN/IPv6 addresses still never appear anywhere.
         for bad in ("::", "192.168.1.5", "10.0.0.1"):
             self.assertNotIn(bad, json.dumps(cfg))
         for name, svc in cfg["services"].items():
             for p in (svc.get("ports") or []):
-                self.assertNotIn("0.0.0.0", str(p),
-                                 "host publish must not be 0.0.0.0: %s" % name)
+                self.assertTrue(
+                    str(p).startswith(oc.PUBLISH_BIND + ":"),
+                    "publish %r outside the PUBLISH_BIND backend "
+                    "contract: %s" % (p, name))
 
     def test_no_volumes(self):
         cfg = build_compose_config(demo_console_run_id="test-run-1",
@@ -161,9 +166,11 @@ class TestComposeConfig(unittest.TestCase):
         # gh-webhook 8090).
         self.assertEqual(sorted(bindings.keys()),
                          ["console-edge", "gh-webhook"])
-        self.assertTrue(all(b.startswith("127.0.0.1:")
+        # §3: distro-side PUBLISH_BIND backend for BOTH publications
+        self.assertTrue(all(b.startswith(oc.PUBLISH_BIND + ":")
                             for b in bindings["console-edge"]))
-        self.assertEqual(bindings["gh-webhook"], ["127.0.0.1:8090:8090"])
+        self.assertEqual(bindings["gh-webhook"],
+                         ["%s:8090:8090" % oc.PUBLISH_BIND])
 
     # ── negative config cases ───────────────────────────────────────────────
 

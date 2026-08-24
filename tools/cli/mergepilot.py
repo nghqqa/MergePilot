@@ -350,6 +350,16 @@ def state_paths(project_dir):
 
 # ── WSL-routed Docker execution ──────────────────────────────────────────────
 
+def _entry_wake(docker):
+    """Command-entry bounded wake (§2). Test doubles that substitute
+    WslDocker without the wake method simply pass through — the wake
+    is an operator affordance, never a structural dependency of the
+    command logic."""
+    wake = getattr(docker, "wake_if_dormant", None)
+    if callable(wake):
+        docker.wake_if_dormant(soft=getattr(docker, "_soft_wake", False))
+
+
 def _looks_argv_truncated(args, err) -> bool:
     """Detect the wsl.exe argv-truncation signature in a docker error:
     docker reports 'no such object: X' / 'not found: X' where X is a
@@ -434,14 +444,28 @@ class WslDocker:
         """Names from `wsl -l -v` (read-only)."""
         return set(self.distro_states().keys())
 
-    def _wake_distro(self):
-        """Bounded wake of a REGISTERED but dormant distro: boot it
-        with a trivial --exec and poll its state. Never retries past
-        the bound; failures raise the stable DISTRO_WAKE_TIMEOUT."""
+    def wake_if_dormant(self, soft=False):
+        """Bounded wake of a REGISTERED but dormant distro at operator
+        command entry: boot with a trivial --exec and poll. An
+        UNREGISTERED name fails fast with DISTRO_NOT_REGISTERED (never
+        spins the wake loop); a wake that cannot reach Running within
+        the bound (MERGEPILOT_WAKE_TIMEOUT_SECS, default 45) raises
+        the stable DISTRO_WAKE_TIMEOUT (or returns False in soft mode
+        so diagnostics continue and REPORT)."""
+        states = self.distro_states()
+        if AUTHORIZED_DISTRO not in states:
+            raise Failure(
+                "DISTRO_NOT_REGISTERED",
+                "%s is not in `wsl -l -v` (set %s to a registered "
+                "distro)" % (AUTHORIZED_DISTRO, DISTRO_ENV_VAR),
+                exit_code=EXIT_PRECHECK)
+        if states.get(AUTHORIZED_DISTRO) == "Running":
+            return True
         if self._wake_attempted:
             return False
         self._wake_attempted = True
-        deadline = time.monotonic() + 45.0
+        deadline = time.monotonic() + float(
+            os.environ.get("MERGEPILOT_WAKE_TIMEOUT_SECS", "45"))
         while time.monotonic() < deadline:
             try:
                 subprocess.run(
@@ -454,11 +478,13 @@ class WslDocker:
             if self.distro_states().get(AUTHORIZED_DISTRO) == "Running":
                 return True
             time.sleep(2.0)
+        if soft:
+            return False  # diagnostics continue and REPORT the state
         raise Failure(
             "DISTRO_WAKE_TIMEOUT",
-            "%s is registered but did not reach Running within 45s of "
-            "bounded wake" % AUTHORIZED_DISTRO,
-            exit_code=EXIT_FAILED)
+            "%s is registered but did not reach Running within the "
+            "bounded wake window" % AUTHORIZED_DISTRO,
+            exit_code=EXIT_PRECHECK)
 
     def _require_distro_running(self, *, refresh=False):
         """Fail-closed distro gate for every ``-d`` emission.
@@ -468,9 +494,10 @@ class WslDocker:
         a distro shut down after the command started is still caught and
         never implicitly restarted. An UNREGISTERED name fails with
         DISTRO_NOT_REGISTERED; a registered-but-dormant distro fails with
-        DISTRO_NOT_RUNNING — unless this instance was constructed with
-        allow_wake (operator lifecycle commands), in which case a bounded
-        wake runs first (DISTRO_WAKE_TIMEOUT on expiry).
+        DISTRO_NOT_RUNNING. Bounded waking is NOT part of this gate:
+        the six operator commands call wake_if_dormant() explicitly at
+        entry (allow_wake construction); every internal gate — psql
+        re-probes, rollback paths — keeps the never-restart contract.
         """
         if refresh:
             self._distro_states = None
@@ -482,8 +509,6 @@ class WslDocker:
                 "distro)" % (AUTHORIZED_DISTRO, DISTRO_ENV_VAR),
                 exit_code=EXIT_PRECHECK)
         if states.get(AUTHORIZED_DISTRO) != "Running":
-            if self._allow_wake and self._wake_distro():
-                return
             raise Failure(
                 "DISTRO_NOT_RUNNING",
                 "%s is %s; refusing to issue docker commands (never "
@@ -1610,6 +1635,9 @@ def cmd_install(args):
         }
 
     docker = WslDocker(planner, project_dir, allow_wake=True)
+    # §2: bounded wake of a registered-but-dormant distro at
+    # command entry (internal gates never restart mid-run)
+    _entry_wake(docker)
     require_environment(docker)
 
     images = {}
@@ -1641,6 +1669,10 @@ def cmd_doctor(args):
     project_dir = resolve_project_dir(args.project_dir)
     planner, showcase = _load_planner(project_dir)
     docker = WslDocker(planner, project_dir, allow_wake=True)
+    # §2: bounded wake of a registered-but-dormant distro at
+    # command entry (internal gates never restart mid-run)
+    docker._soft_wake = True  # doctor REPORTS, never dies on wake
+    _entry_wake(docker)
     checks = []
 
     def add(name, code, ok, detail):
@@ -2501,6 +2533,9 @@ def cmd_start(args):
     record_planner_image_identities(planner, install)
 
     docker = WslDocker(planner, project_dir, allow_wake=True)
+    # §2: bounded wake of a registered-but-dormant distro at
+    # command entry (internal gates never restart mid-run)
+    _entry_wake(docker)
 
     # ── conflict detection BEFORE any side effect ──
     session = load_manifest(paths["session"])
@@ -2812,6 +2847,9 @@ def cmd_status(args):
     project_dir = resolve_project_dir(args.project_dir)
     planner, _showcase = _load_planner(project_dir)
     docker = WslDocker(planner, project_dir, allow_wake=True)
+    # §2: bounded wake of a registered-but-dormant distro at
+    # command entry (internal gates never restart mid-run)
+    _entry_wake(docker)
     paths = state_paths(project_dir)
 
     snapshot = discover_stack(docker, planner)
@@ -2928,6 +2966,9 @@ def cmd_stop(args):
     project_dir = resolve_project_dir(args.project_dir)
     planner, _showcase = _load_planner(project_dir)
     docker = WslDocker(planner, project_dir, allow_wake=True)
+    # §2: bounded wake of a registered-but-dormant distro at
+    # command entry (internal gates never restart mid-run)
+    _entry_wake(docker)
     paths = state_paths(project_dir)
 
     session = load_manifest(paths["session"])
@@ -3098,6 +3139,9 @@ def cmd_cleanup(args):
     project_dir = resolve_project_dir(args.project_dir)
     planner, _showcase = _load_planner(project_dir)
     docker = WslDocker(planner, project_dir, allow_wake=True)
+    # §2: bounded wake of a registered-but-dormant distro at
+    # command entry (internal gates never restart mid-run)
+    _entry_wake(docker)
     paths = state_paths(project_dir)
 
     install = load_manifest(paths["install"])

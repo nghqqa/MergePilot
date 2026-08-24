@@ -258,7 +258,15 @@ class FakeWorld:
         return [a for a in self.docker_args() if _is_write_call(a)]
 
     def has_dash_d(self):
-        return any("-d" in call["argv"] for call in self.calls)
+        # usability round §2: the bounded WAKE (wsl -d <distro> --exec
+        # /bin/true — a distro BOOT, never a docker command) is
+        # allowed; every other -d emission stays forbidden.
+        return any(
+            "-d" in call["argv"] and not (
+                list(call["argv"])[1:2] == ["-d"]
+                and list(call["argv"])[3:4] == ["--exec"]
+                and list(call["argv"])[4:5] == ["/bin/true"])
+            for call in self.calls)
 
 
 class _FakeResponse:
@@ -529,7 +537,12 @@ class TestDoctor(CliTestBase):
 
     def test_stopped_distro_fails_without_issuing_dash_d(self):
         self.world.distro_state = "Stopped"
-        rc, text, payload = self.cli("doctor", "--json")
+        import os as _os
+        _os.environ["MERGEPILOT_WAKE_TIMEOUT_SECS"] = "0.2"
+        try:
+            rc, text, payload = self.cli("doctor", "--json")
+        finally:
+            _os.environ.pop("MERGEPILOT_WAKE_TIMEOUT_SECS", None)
         self.assertEqual(rc, mp.EXIT_PRECHECK)
         codes = {c["code"] for c in payload["checks"]}
         self.assertIn("DOCTOR_DISTRO_STOPPED", codes)
@@ -621,7 +634,12 @@ class TestInstall(CliTestBase):
 
     def test_env_gate_blocks_before_any_build(self):
         self.world.distro_state = "Stopped"
-        rc, text, payload = self.cli("install", "--json")
+        import os as _os
+        _os.environ["MERGEPILOT_WAKE_TIMEOUT_SECS"] = "0.2"
+        try:
+            rc, text, payload = self.cli("install", "--json")
+        finally:
+            _os.environ.pop("MERGEPILOT_WAKE_TIMEOUT_SECS", None)
         self.assertEqual(rc, mp.EXIT_PRECHECK)
         self.assertEqual([a for a in self.world.docker_args()
                           if a[0] == "build"], [])
@@ -860,11 +878,23 @@ class TestStartConflicts(CliTestBase):
         self.assertEqual(payload["error_code"], "NOT_INSTALLED")
         self.assertEqual(self.world.write_args(), [])
 
-    def test_stopped_distro_never_started_implicitly(self):
+    def test_stopped_distro_wakes_bounded_or_times_out(self):
+        # usability round §2: operator lifecycle commands BOUNDED-WAKE
+        # a registered-but-dormant distro. In this fake world the wake
+        # cannot bring it up, so the stable outcome is
+        # DISTRO_WAKE_TIMEOUT — and crucially no docker -d emission
+        # and no writes ever happen on the failed path.
         self.write_install_manifest()
         self.world.distro_state = "Stopped"
-        rc, text, payload = self.cli("start", "--run-id", RUN_ID, "--json")
+        import os
+        os.environ["MERGEPILOT_WAKE_TIMEOUT_SECS"] = "0.2"
+        try:
+            rc, text, payload = self.cli("start", "--run-id", RUN_ID,
+                                         "--json")
+        finally:
+            os.environ.pop("MERGEPILOT_WAKE_TIMEOUT_SECS", None)
         self.assertEqual(rc, mp.EXIT_PRECHECK)
+        self.assertEqual(payload.get("error_code"), "DISTRO_WAKE_TIMEOUT")
         self.assertFalse(self.world.has_dash_d())
         self.assertEqual(self.world.write_args(), [])
 

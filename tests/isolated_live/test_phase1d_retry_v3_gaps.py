@@ -1592,13 +1592,20 @@ class TestConsoleEdgeTopology(unittest.TestCase):
         cfg["services"]["postgres"]["ports"] = ["127.0.0.1:9999:5432"]
         _gate(self, oc.validate_compose_config, cfg, code="BIND_NOT_LOOPBACK")
 
-    def test_rejects_edge_wildcard_lan_ipv6_wrongport(self):
-        for bad in ("0.0.0.0:8600:8600", "192.168.1.5:8600:8600",
-                    "[::1]:8600:8600", "127.0.0.1:8601:8600"):
+    def test_rejects_edge_lan_ipv6_wrongport_wrongbind(self):
+        # §3: PUBLISH_BIND (0.0.0.0) on 8600 is the distro-side backend
+        # contract. Wrong bind/address -> BIND_NOT_PUBLISH_BIND; the
+        # correct bind with a WRONG PORT keeps the port-mismatch code.
+        for bad in ("192.168.1.5:8600:8600", "[::1]:8600:8600",
+                    "127.0.0.1:8601:8600", "127.0.0.1:8600:8600"):
             cfg = self._cfg()
             cfg["services"]["console-edge"]["ports"] = [bad]
             _gate(self, oc.validate_compose_config, cfg,
-                  code="BIND_NOT_LOOPBACK")
+                  code="BIND_NOT_PUBLISH_BIND")
+        cfg = self._cfg()
+        cfg["services"]["console-edge"]["ports"] = ["0.0.0.0:8601:8600"]
+        _gate(self, oc.validate_compose_config, cfg,
+              code="BIND_NOT_LOOPBACK")
 
     def test_rejects_edge_missing_either_network(self):
         for drop in ("isolated", "console-publish"):
@@ -1655,7 +1662,7 @@ class TestConsoleEdgeTopology(unittest.TestCase):
             edge = oc.plan_console_edge_run(ident)
             self.assertEqual(edge.count("-p"), 1)
             self.assertEqual(edge[edge.index("-p") + 1],
-                             "127.0.0.1:8600:8600")
+                             "%s:8600:8600" % oc.PUBLISH_BIND)
             # PRIMARY network is the NON-internal publication bridge.
             self.assertIn(oc.PUBLICATION_NETWORK, edge)
             self.assertNotIn(oc.ORCHESTRATOR_NETWORK, edge)
