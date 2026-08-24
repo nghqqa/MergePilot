@@ -193,6 +193,22 @@ class TestContainerArgv(unittest.TestCase):
             env_file="gh_reporter.env")
         self.assertNotIn("mcp_bridge.env", reporter)
 
+    def test_reporter_entrypoint_overridden_to_checks_reporter(self):
+        # run33 regression: the reporter reuses the gh-webhook image
+        # whose ENTRYPOINT is the webhook receiver main() — it demands
+        # GITHUB_WEBHOOK_SECRET and exits 3. The reporter role must
+        # override the entrypoint to checks_reporter.py.
+        argv = ep.plan_e2e_container_create(
+            "gh-reporter", image_ref="sha256:ab")
+        image_at = argv.index("sha256:ab")
+        self.assertEqual(argv[image_at + 1:], ["-u", "checks_reporter.py"])
+        self.assertIn("--entrypoint", argv)
+        self.assertEqual(
+            argv[argv.index("--entrypoint") + 1], "python")
+        for svc in ("gh-proxy-r", "gh-proxy-b", "mcp-bridge"):
+            other = ep.plan_e2e_container_create(svc, image_ref="sha256:ab")
+            self.assertNotIn("--entrypoint", other)
+
     def test_pem_only_in_reporter_mounts(self):
         reporter = ep.plan_e2e_container_create(
             "gh-reporter", image_ref="sha256:ab",
