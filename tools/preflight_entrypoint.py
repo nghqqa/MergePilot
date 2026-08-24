@@ -30,6 +30,7 @@ for _p in (str(_HERE),):
 from one_click_startup import (  # noqa: E402
     ENVIRONMENT_MARKER,
     PGVECTOR_IMAGE_DIGEST,
+    PGVECTOR_IMAGE_ID,
     PREFLIGHT_CHECKS,
     READER_ROLE,
     SecretFile,
@@ -59,10 +60,13 @@ def gate_docker_daemon_identity():
 
 
 def gate_image_digest_cached():
-    # The orchestrator (host side) verifies the digest before starting the
-    # stack; the container asserts it was launched with the contract value.
+    # The orchestrator (host side) verifies the pin before starting the
+    # stack; the container asserts it was launched with a RECORDED pin
+    # value. Both recorded forms are accepted: the manifest digest
+    # (registry provenance) and the byte-exact config ID (§4 offline
+    # distribution — the value a docker-load deployment declares).
     digest = os.environ.get("MERGEPILOT_DECLARED_PG_IMAGE", "")
-    if digest != PGVECTOR_IMAGE_DIGEST:
+    if digest not in (PGVECTOR_IMAGE_DIGEST, PGVECTOR_IMAGE_ID):
         raise StartupGateError("IMAGE_DIGEST_MISMATCH", "declared digest")
     return digest
 
