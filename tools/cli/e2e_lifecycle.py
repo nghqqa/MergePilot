@@ -1739,7 +1739,12 @@ def run_e2e_start(*, config: dict,
         session["e2e_stage"] = "relay_setup"
         try:
             relay_tx = erly.SysctlTransaction(host_executor)
-            relay_tx.begin()
+            # journal the sysctl BEFORE value first: a crash between
+            # begin() and any later persist must not lose the restore
+            # target (run35 finding: the success path left
+            # bridge-nf-call-iptables=0 and nothing owned the restore)
+            session["relay_sysctl_before"] = relay_tx.begin()
+            _persist()
             _relay_script_host = session.get("relay_script_path", "")
             if not _relay_script_host:
                 _fail("E2E_RELAY_SCRIPT_MISSING", "no relay_script_path")
@@ -1767,7 +1772,15 @@ def run_e2e_start(*, config: dict,
                     wsl_path, _fail)
             session["relay_containers"] = [
                 e["relay_container"] for e in container_edges]
+            # the exact networks each relay attached to (cleanup must
+            # remove relays BEFORE network rm; docker refuses to delete
+            # a network with live endpoints)
+            session["relay_networks"] = sorted({
+                argv[-2]
+                for edge in container_edges
+                for argv in erly.plan_relay_connects(edge)})
             _relay_names = list(session["relay_containers"])
+            _persist()
 
             # Host-side relays (published egress)
             if host_edges:
@@ -1804,6 +1817,16 @@ def run_e2e_start(*, config: dict,
                      "bridge": "mp-e2e-" + erly._network_short_name(
                          e["source_network"])}
                     for e in host_edges]
+                # the precise INPUT ACCEPT rules the transaction
+                # inserted (exact -D reconstruction on cleanup; never
+                # a glob/prefix guess)
+                session["relay_input_rules"] = [
+                    {"source_cidr": u["source_network"],
+                     "listen_ip": u["host_listener_ip"],
+                     "port": u["listen_port"]}
+                    for u in (erly.plan_host_relay_unit(e)
+                              for e in host_edges)]
+                _persist()
 
             _fail = _fail_with_relay
         except erly.RelayProfileError as exc:
@@ -1857,7 +1880,17 @@ def run_e2e_start(*, config: dict,
     session["e2e_stage"] = "route_probes"
     probe_journal = {}
     if transport_profile == "wsl-user-relay" and relay_edges:
-        # user-relay probes: two-segment + negative per edge
+        # user-relay probes: two-segment + negative per edge.
+        # Journal-first ownership: the probe container names are
+        # deterministic; record them BEFORE creation so a crash
+        # mid-probe still leaves stop() a precise cleanup claim
+        # (popped once the probes return — they self-clean on every
+        # path and rm -f on absent is an idempotent no-op).
+        session["relay_probe_containers"] = sorted(
+            {"mp-e2e-relay-probe-%s" % e["edge_id"].replace("-to-", "-")
+             for e in relay_edges}
+            | {"mp-e2e-relay-probe-unauth"})
+        _persist()
         try:
             route_result = _run_relay_probes(
                 docker_executor, host_executor, relay_edges,
@@ -1865,6 +1898,8 @@ def run_e2e_start(*, config: dict,
         except Exception as exc:
             route_result = {}
             _fail("E2E_ROUTE_PROBE_FAILED", type(exc).__name__)
+        session.pop("relay_probe_containers", None)
+        _persist()
     else:
         try:
             route_result = ex.run_route_probes(
@@ -2032,6 +2067,127 @@ def _teardown_relay(docker_executor, host_executor,
             pass
 
 
+def _cleanup_owned_relay(docker_executor, host_executor,
+                         session: dict) -> tuple:
+    """Reverse-order, idempotent cleanup of the journaled relay
+    system. Deletes ONLY journal-recorded resources (exact argv
+    reconstruction; never glob/prefix guessing). Returns
+    (actions, diagnostics); post-cleanup leftovers are reported as
+    E2E_RELAY_CLEANUP_INCOMPLETE / E2E_RELAY_RESOURCE_UNCERTAIN —
+    never silently ignored."""
+    actions: list = []
+    diagnostics: list = []
+    sysctl_key = "net.bridge.bridge-nf-call-iptables"
+    rules = list(session.get("relay_input_rules", []) or [])
+    units = list(session.get("relay_host_units", []) or [])
+    aliases = list(session.get("relay_host_aliases", []) or [])
+    probes = list(session.get("relay_probe_containers", []) or [])
+    relays = list(session.get("relay_containers", []) or [])
+
+    def _safe(argv, *, timeout=20):
+        try:
+            return docker_executor(list(argv), check=False,
+                                   timeout=timeout)
+        except Exception as exc:
+            diagnostics.append("RELAY_CLEANUP_STEP_FAILED:%s(%s)"
+                               % (argv[0], type(exc).__name__))
+            return None
+
+    def _host(argv, *, timeout=15):
+        try:
+            return host_executor(list(argv), check=False,
+                                 timeout=timeout)
+        except Exception as exc:
+            diagnostics.append("RELAY_CLEANUP_STEP_FAILED:%s(%s)"
+                               % (argv[0], type(exc).__name__))
+            return None
+
+    # 1. precise INPUT ACCEPT rules (exact -D of the journaled triple)
+    for rule in list(session.get("relay_input_rules", []) or []):
+        _host(["iptables", "-D", "INPUT",
+               "-s", rule["source_cidr"], "-d", rule["listen_ip"],
+               "-p", "tcp", "--dport", str(rule["port"]),
+               "-j", "ACCEPT"])
+        actions.append("relay_input_rule:%s:%s" % (
+            rule["listen_ip"], rule["port"]))
+    session.pop("relay_input_rules", None)
+
+    # 2. systemd transient units
+    for unit in list(session.get("relay_host_units", []) or []):
+        _host(["systemctl", "stop", unit])
+        _host(["systemctl", "reset-failed", unit])
+        actions.append("relay_unit:%s" % unit)
+    session.pop("relay_host_units", None)
+
+    # 3. /32 bridge aliases
+    for alias in list(session.get("relay_host_aliases", []) or []):
+        _host(["ip", "addr", "del", "%s/32" % alias["ip"],
+               "dev", alias["bridge"]])
+        actions.append("relay_alias:%s" % alias["ip"])
+    session.pop("relay_host_aliases", None)
+
+    # 4. probe containers (journaled names only; absent = no-op)
+    for name in list(session.get("relay_probe_containers", []) or []):
+        _safe(["rm", "-f", name])
+        actions.append("relay_probe:%s" % name)
+    session.pop("relay_probe_containers", None)
+
+    # 5. relay containers
+    for name in list(session.get("relay_containers", []) or []):
+        _safe(["rm", "-f", name])
+        actions.append("relay_container:%s" % name)
+    session.pop("relay_containers", None)
+    session.pop("relay_networks", None)
+
+    # 6. sysctl restore to the journaled BEFORE value
+    before = session.pop("relay_sysctl_before", None)
+    if before:
+        _host(["sysctl", "-w", "%s=%s" % (sysctl_key, before)])
+
+    # ── post-cleanup verification (owned categories must be ZERO) ──
+    for rule in rules:
+        cp = _host(["iptables", "-C", "INPUT",
+                    "-s", rule["source_cidr"], "-d", rule["listen_ip"],
+                    "-p", "tcp", "--dport", str(rule["port"]),
+                    "-j", "ACCEPT"])
+        if cp is not None and cp.returncode == 0:
+            diagnostics.append(
+                "E2E_RELAY_RESOURCE_UNCERTAIN:input_rule:%s:%s"
+                % (rule["listen_ip"], rule["port"]))
+    for unit in units:
+        cp = _host(["systemctl", "is-active", unit])
+        state = ((cp.stdout or b"").decode("utf-8", "replace").strip()
+                 if cp else "unknown")
+        if state == "active":
+            diagnostics.append(
+                "E2E_RELAY_CLEANUP_INCOMPLETE:unit:%s" % unit)
+    for alias in aliases:
+        cp = _host(["ip", "addr", "show", "dev", alias["bridge"]])
+        text = ((cp.stdout or b"").decode("utf-8", "replace")
+                if cp else alias["ip"])
+        if alias["ip"] in text:
+            diagnostics.append(
+                "E2E_RELAY_RESOURCE_UNCERTAIN:alias:%s@%s"
+                % (alias["ip"], alias["bridge"]))
+    for name in probes:
+        if _container_id(docker_executor, name):
+            diagnostics.append(
+                "E2E_RELAY_CLEANUP_INCOMPLETE:probe:%s" % name)
+    for name in relays:
+        if _container_id(docker_executor, name):
+            diagnostics.append(
+                "E2E_RELAY_CLEANUP_INCOMPLETE:container:%s" % name)
+    if before:
+        cp = _host(["sysctl", "-n", sysctl_key])
+        current = ((cp.stdout or b"").decode("utf-8", "replace").strip()
+                   if cp else "unknown")
+        if current != before:
+            diagnostics.append(
+                "E2E_RELAY_CLEANUP_INCOMPLETE:sysctl:%s!=%s"
+                % (current, before))
+    return actions, diagnostics
+
+
 def run_e2e_stop(*, docker_executor: Callable,
                  host_executor: Callable, session: dict,
                  runtime_directory: str = "",
@@ -2077,6 +2233,18 @@ def run_e2e_stop(*, docker_executor: Callable,
             diagnostics.append("CONTAINER_RM_FAILED:%s(%s)"
                                % (service, type(exc).__name__))
     session["e2e_started"] = []
+    if persist_callback:
+        persist_callback(session)
+
+    # 1b. owned relay resources (journaled only; reverse creation
+    # order: INPUT rules → units → aliases → probe containers →
+    # relay containers → sysctl restore). run35 finding: stop
+    # covered only the default DAG resources and left the relay
+    # system (units/aliases/iptables/sysctl) unowned.
+    relay_actions, relay_diagnostics = _cleanup_owned_relay(
+        docker_executor, host_executor, session)
+    actions.extend(relay_actions)
+    diagnostics.extend(relay_diagnostics)
     if persist_callback:
         persist_callback(session)
 
@@ -2136,6 +2304,14 @@ def run_e2e_stop(*, docker_executor: Callable,
     # 5. residue verification (stable report; never a guess-delete)
     residue = _scan_residue(docker_executor, host_executor,
                             runtime_directory)
+    # relay-shaped residue AFTER the owned cleanup has no journal
+    # claim: report OWNERSHIP_MISSING and KEEP the resource (never a
+    # prefix-glob delete)
+    for entry in residue:
+        if entry.startswith(("relay_container:", "relay_unit:",
+                             "relay_alias:", "relay_input_rule:")):
+            diagnostics.append(
+                "E2E_RELAY_OWNERSHIP_MISSING:%s" % entry)
     return {"actions": actions, "residue": residue,
             "diagnostics": diagnostics}
 
@@ -2204,6 +2380,50 @@ def _scan_residue(docker_executor, host_executor,
                   "probe-gateway", "probe-reporter", "probe-controller"):
         if _container_id(docker_executor, "mp-e2e-%s" % probe):
             residue.append("route_probe:%s" % probe)
+    # relay-shaped resources (scan-neutral; the caller classifies
+    # ownership against its journal — presence is REPORTED, and any
+    # deletion must come from a journal claim, never this scan)
+    try:
+        cp = docker_executor(
+            ["ps", "-a", "--format", "{{.Names}}"], check=False)
+        for name in (cp.stdout or b"").decode(
+                "utf-8", "replace").split():
+            if name.startswith("mp-e2e-relay-"):
+                residue.append("relay_container:%s" % name)
+    except Exception:
+        residue.append("relay_container:scan-failed")
+    try:
+        cp = host_executor(
+            ["systemctl", "list-units", "--all", "mp-e2e-host-relay-*",
+             "--no-legend", "--plain"], check=False)
+        for line in (cp.stdout or b"").decode(
+                "utf-8", "replace").splitlines():
+            parts = line.split()
+            if parts and parts[0].startswith("mp-e2e-host-relay-"):
+                residue.append("relay_unit:%s" % parts[0])
+    except Exception:
+        residue.append("relay_unit:scan-failed")
+    try:
+        cp = host_executor(["ip", "-4", "addr", "show"], check=False)
+        for line in (cp.stdout or b"").decode(
+                "utf-8", "replace").splitlines():
+            if "/32 scope global" in line and "br-" in line:
+                ip = line.strip().split()[1].split("/")[0]
+                residue.append("relay_alias:%s" % ip)
+    except Exception:
+        residue.append("relay_alias:scan-failed")
+    try:
+        cp = host_executor(["iptables-save"], check=False)
+        for line in (cp.stdout or b"").decode(
+                "utf-8", "replace").splitlines():
+            if (line.startswith("-A INPUT -s 172.31.")
+                    and " -d 172.31." in line
+                    and "-p tcp --dport" in line
+                    and line.rstrip().endswith("-j ACCEPT")):
+                residue.append("relay_input_rule:%s" % line.strip()
+                               [:120])
+    except Exception:
+        residue.append("relay_input_rule:scan-failed")
     return residue
 
 
