@@ -1,0 +1,195 @@
+{
+ "schema": 1,
+ "run_id": "b8-e2e-run35",
+ "github_e2e": true,
+ "stage": "init",
+ "updated_utc": "2026-08-24T04:29:38Z",
+ "e2e_stage": "complete",
+ "journal_complete": true,
+ "transport_profile": "wsl-user-relay",
+ "direct_routing_verified": false,
+ "receipt_verified": true,
+ "matrix_verified": true,
+ "prerequisite_summary": {
+  "checks_passed": 16,
+  "verified": true
+ },
+ "route_probes": {
+  "bridge-to-proxy-b": {
+   "verified": true,
+   "vantage": "relay:dual_homed_relay",
+   "segment_a": null,
+   "segment_b": null,
+   "application": null
+  },
+  "controller-to-tuwunel": {
+   "verified": true,
+   "vantage": "relay:published_egress_relay",
+   "segment_a": null,
+   "segment_b": null,
+   "application": null
+  },
+  "gateway-to-bridge": {
+   "verified": true,
+   "vantage": "relay:dual_homed_relay",
+   "segment_a": null,
+   "segment_b": null,
+   "application": null
+  },
+  "proxy-b-to-winproxy": {
+   "verified": true,
+   "vantage": "relay:published_egress_relay",
+   "segment_a": null,
+   "segment_b": null,
+   "application": null
+  },
+  "proxy-r-to-winproxy": {
+   "verified": true,
+   "vantage": "relay:published_egress_relay",
+   "segment_a": null,
+   "segment_b": null,
+   "application": null
+  },
+  "reporter-to-proxy-r": {
+   "verified": true,
+   "vantage": "relay:dual_homed_relay",
+   "segment_a": null,
+   "segment_b": null,
+   "application": null
+  }
+ },
+ "services_started": [
+  "postgres",
+  "gh-proxy-r",
+  "gh-proxy-b",
+  "mcp-bridge",
+  "policy-gateway",
+  "controller",
+  "gh-webhook",
+  "demo-console",
+  "console-edge",
+  "gh-reporter",
+  "preflight"
+ ],
+ "relay_resources": {
+  "containers": 3,
+  "host_units": 3,
+  "probe_containers": 0
+ },
+ "firewall_state": "installed",
+ "stages": [
+  {
+   "n": 1,
+   "key": "prerequisites",
+   "label": "\u524d\u7f6e\u95e8\u7981",
+   "status": "passed"
+  },
+  {
+   "n": 2,
+   "key": "runtime_files",
+   "label": "\u8fd0\u884c\u65f6\u6587\u4ef6",
+   "status": "passed"
+  },
+  {
+   "n": 3,
+   "key": "networks",
+   "label": "\u516b\u7f51\u7edc\u521b\u5efa",
+   "status": "passed"
+  },
+  {
+   "n": 4,
+   "key": "containers",
+   "label": "\u5341\u4e00\u5bb9\u5668\u63a5\u5165",
+   "status": "passed"
+  },
+  {
+   "n": 5,
+   "key": "firewall",
+   "label": "\u9632\u706b\u5899\u5b89\u88c5",
+   "status": "passed"
+  },
+  {
+   "n": 6,
+   "key": "relay",
+   "label": "\u4e2d\u7ee7\u7cfb\u7edf",
+   "status": "passed"
+  },
+  {
+   "n": 7,
+   "key": "postgres",
+   "label": "PostgreSQL \u5c31\u7eea",
+   "status": "passed"
+  },
+  {
+   "n": 8,
+   "key": "db_bootstrap",
+   "label": "\u6570\u636e\u5e93\u5f15\u5bfc",
+   "status": "passed"
+  },
+  {
+   "n": 9,
+   "key": "proxies",
+   "label": "\u4ee3\u7406\u5c31\u7eea",
+   "status": "passed"
+  },
+  {
+   "n": 10,
+   "key": "route_probes",
+   "label": "\u8def\u7531\u63a2\u6d4b",
+   "status": "passed"
+  },
+  {
+   "n": 11,
+   "key": "gateway",
+   "label": "\u7b56\u7565\u7f51\u5173",
+   "status": "passed"
+  },
+  {
+   "n": 12,
+   "key": "services",
+   "label": "\u4e1a\u52a1\u670d\u52a1",
+   "status": "passed"
+  },
+  {
+   "n": 13,
+   "key": "agents",
+   "label": "Agent \u5c31\u7eea",
+   "status": "passed"
+  },
+  {
+   "n": 14,
+   "key": "receipt",
+   "label": "Receipt \u590d\u6838",
+   "status": "passed"
+  },
+  {
+   "n": 15,
+   "key": "matrix",
+   "label": "Matrix \u590d\u6838",
+   "status": "passed"
+  },
+  {
+   "n": 16,
+   "key": "preflight",
+   "label": "\u8bed\u4e49\u9884\u68c0",
+   "status": "passed"
+  },
+  {
+   "n": 17,
+   "key": "complete",
+   "label": "\u5b8c\u6210",
+   "status": "passed"
+  }
+ ],
+ "e2e_last_error": {
+  "code": "",
+  "stage": ""
+ },
+ "truth_boundaries": {
+  "application_integration_verified": "NOT_VERIFIED",
+  "database_verified": "NOT_VERIFIED",
+  "production_verified": "NOT_VERIFIED",
+  "revision_producer_contract": "NOT_VERIFIED",
+  "audit_producer_contract": "NOT_VERIFIED"
+ }
+}

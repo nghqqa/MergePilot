@@ -7,3 +7,8 @@ __pycache__/
 *.tmp
 .tmp-*
 .mergepilot/
+
+# preview package build output (large OCI tar, rebuilt on demand)
+dist/
+release/preview/logs/
+release/preview/manifests/
