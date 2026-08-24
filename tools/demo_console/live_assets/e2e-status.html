@@ -1,132 +1,835 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>MergePilot · E2E Run Status (read-only)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>MergePilot · E2E Operations</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'">
 <style>
-/* Minimal, matching the operational design system surfaces. */
+/* ═══ MergePilot E2E Operations — design system ═══
+   Light neutral workspace, dark navigation band, restrained
+   semantic status colors. System UI faces; mono for codes and
+   measured values. Hairline borders, ≤6px radii, no gradients. */
 :root {
-  --bg: #0a1020; --bg-panel: #0f1828; --border: #1e2d45;
-  --text: #d5e0ef; --text-dim: #8ba0bd; --text-faint: #5b7092;
-  --ok: #3fb68b; --bad: #e2687a; --accent: #4f8ff7;
+  --surface-0: #f4f4f1;          /* page ground, warm neutral      */
+  --surface-1: #ffffff;          /* panels                          */
+  --surface-2: #eceded;          /* insets, table heads             */
+  --nav: #17191e;                /* dark app bar                    */
+  --nav-line: #2c2f36;
+  --nav-text: #e9eae6;
+  --nav-dim: #9aa0a8;
+  --border: #d9dad4;
+  --border-strong: #b9bab2;
+  --text-1: #1f2328;
+  --text-2: #575e68;
+  --text-3: #656c76;   /* AA ≥4.5:1 on --surface-2 (#eceded) */
+  --accent: #0e6b62;             /* teal — focus, links only        */
+  --accent-press: #0a524b;
+  --ok: #17693c;
+  --ok-bg: #e4f0e6;
+  --warn: #8a5a00;
+  --warn-bg: #f6eedb;
+  --err: #b3261e;
+  --err-bg: #f9e6e4;
+  --run: #1d5da4;
+  --run-bg: #e3ecf6;
+  --pending-c: #656c76;  /* AA 4.52:1 on --surface-2 (was #8d939b, 2.64) */
+  --focus: 0 0 0 2px #f4f4f1, 0 0 0 4px var(--accent);
+  --radius: 5px;
+  --h-control: 32px;
+  --mono: ui-monospace, "Cascadia Mono", Consolas, Menlo, monospace;
+  --sans: system-ui, "Segoe UI", "Microsoft YaHei", sans-serif;
 }
 * { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
 body {
-  margin: 0; padding: 24px; background: var(--bg); color: var(--text);
-  font: 13px/1.5 "Segoe UI", system-ui, sans-serif;
+  margin: 0; background: var(--surface-0); color: var(--text-1);
+  font: 13px/1.55 var(--sans);
+  letter-spacing: 0;
 }
-h1 { font-size: 15px; font-weight: 600; color: var(--text-dim);
-     letter-spacing: .04em; text-transform: uppercase; margin: 0 0 16px; }
-h1 span { color: var(--text-faint); font-weight: 400; }
-.panel { background: var(--bg-panel); border: 1px solid var(--border);
-         border-radius: 6px; padding: 16px; margin-bottom: 16px;
-         max-width: 780px; }
-.row { display: flex; justify-content: space-between; gap: 16px;
-       padding: 5px 0; border-bottom: 1px solid rgba(30,45,69,.45); }
-.row:last-child { border-bottom: none; }
-.k { color: var(--text-faint); }
-.v { color: var(--text); text-align: right; word-break: break-all; }
-.ok { color: var(--ok); } .bad { color: var(--bad); }
-.muted { color: var(--text-faint); }
-table { border-collapse: collapse; width: 100%; }
-td, th { text-align: left; padding: 4px 10px 4px 0;
-         border-bottom: 1px solid rgba(30,45,69,.45); }
-th { color: var(--text-faint); font-weight: 500; }
-#note { margin-top: 8px; font-size: 12px; }
+::selection { background: #cfe4e1; color: var(--text-1); }
+:focus-visible { outline: none; box-shadow: var(--focus); border-radius: 3px; }
+* { scrollbar-width: thin; scrollbar-color: #b9bcb4 transparent; }
+
+/* ═══ A. app bar ═══ */
+.appbar {
+  background: var(--nav); color: var(--nav-text);
+  border-bottom: 1px solid #000;
+  padding: 0 20px; height: 46px;
+  display: flex; align-items: center; gap: 14px;
+  position: sticky; top: 0; z-index: 10;
+}
+.appbar .brand { font-weight: 650; font-size: 13px; white-space: nowrap; }
+.appbar .sep { color: var(--nav-dim); font-size: 11px; }
+.appbar .surface-name { color: var(--nav-dim); font-size: 12px; white-space: nowrap; }
+.appbar .run {
+  font-family: var(--mono); font-size: 12px; color: var(--nav-text);
+  background: var(--nav-line); padding: 3px 9px; border-radius: 4px;
+  max-width: 34vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.appbar .spacer { flex: 1; }
+.appbar .freshness { color: var(--nav-dim); font-size: 11.5px; white-space: nowrap; }
+.appbar .freshness time { font-family: var(--mono); color: var(--nav-text); }
+.btn-refresh {
+  height: var(--h-control); min-width: var(--h-control);
+  padding: 0 12px; display: inline-flex; align-items: center; gap: 7px;
+  background: var(--nav-line); color: var(--nav-text);
+  border: 1px solid #3d4149; border-radius: var(--radius);
+  font: 12px var(--sans); cursor: pointer;
+}
+.btn-refresh:hover { background: #383c44; }
+.btn-refresh svg { width: 13px; height: 13px; flex: none; }
+.btn-refresh[disabled] { opacity: .55; cursor: default; }
+.autostate { font-size: 11.5px; color: var(--nav-dim); white-space: nowrap; }
+.autostate b { color: var(--nav-text); font-weight: 500; }
+
+/* ═══ B. status band ═══ */
+.band {
+  background: var(--surface-1); border-bottom: 1px solid var(--border);
+  padding: 12px 20px;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 26px;
+}
+.verdict {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 14px; font-weight: 650; padding: 5px 12px;
+  border-radius: var(--radius); border: 1px solid transparent;
+}
+.verdict svg { width: 15px; height: 15px; flex: none; }
+.verdict.v-ok    { color: var(--ok);   background: var(--ok-bg);   border-color: #bcd9c2; }
+.verdict.v-err   { color: var(--err);  background: var(--err-bg);  border-color: #e5bcb9; }
+.verdict.v-run   { color: var(--run);  background: var(--run-bg);  border-color: #bcd2e8; }
+.verdict.v-warn  { color: var(--warn); background: var(--warn-bg); border-color: #e3d3ad; }
+.verdict.v-none  { color: var(--text-2); background: var(--surface-2); border-color: var(--border-strong); }
+.band .kv { display: flex; align-items: baseline; gap: 7px; font-size: 12.5px; white-space: nowrap; }
+.band .kv .k { color: var(--text-3); }
+.band .kv .v { font-family: var(--mono); font-size: 12px; color: var(--text-1); }
+.band .kv .v.ok { color: var(--ok); font-weight: 600; }
+.band .kv .v.no { color: var(--err); font-weight: 600; }
+.band .kv .v.na { color: var(--text-3); }
+
+/* ═══ page frame ═══ */
+main { max-width: 1180px; margin: 0 auto; padding: 18px 20px 56px; }
+.layout { display: grid; grid-template-columns: minmax(0, 1fr) 332px; gap: 18px; }
+@media (max-width: 959px) { .layout { grid-template-columns: 1fr; } }
+section h2 {
+  font: 650 12px var(--sans); color: var(--text-2);
+  margin: 0 0 8px; padding: 0 0 6px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: baseline; gap: 10px;
+}
+section h2 .meta { margin-left: auto; font-weight: 400; color: var(--text-3); font-size: 11px; }
+
+/* ═══ C1. stage timeline ═══ */
+.timeline { list-style: none; margin: 0; padding: 0; background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.timeline li {
+  display: grid; grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: baseline; gap: 4px 10px;
+  padding: 6px 12px 6px 0; border-bottom: 1px solid var(--border);
+}
+.timeline li:last-child { border-bottom: none; }
+.timeline .n {
+  font-family: var(--mono); font-size: 11px; color: var(--text-3);
+  text-align: center; padding: 6px 0; background: var(--surface-2);
+  border-right: 1px solid var(--border); align-self: stretch;
+  display: flex; align-items: center; justify-content: center;
+}
+.timeline .name { font-size: 12.5px; color: var(--text-1); min-width: 0; }
+.timeline .ev {
+  font-family: var(--mono); font-size: 11px; color: var(--text-3);
+  margin-left: 8px; white-space: nowrap;
+}
+.timeline .st {
+  font-size: 11px; display: inline-flex; align-items: center; gap: 5px;
+  padding: 1px 8px; border-radius: 3px; justify-self: end; white-space: nowrap;
+}
+.st svg { width: 11px; height: 11px; }
+.st.passed  { color: var(--ok); background: var(--ok-bg); }
+.st.failed  { color: var(--err); background: var(--err-bg); font-weight: 600; }
+.st.running { color: var(--run); background: var(--run-bg); font-weight: 600; }
+.st.pending { color: var(--pending-c); background: var(--surface-2); }
+.st.unknown { color: var(--warn); background: var(--warn-bg); }
+.timeline li.done .name { color: var(--text-2); }
+.timeline li.fail .name { color: var(--err); font-weight: 600; }
+.stage-error {
+  grid-column: 2 / 4; margin: 2px 0 3px;
+  font-family: var(--mono); font-size: 11.5px; color: var(--err);
+  background: var(--err-bg); border: 1px solid #e5bcb9; border-radius: 4px;
+  padding: 4px 9px; overflow-wrap: anywhere;
+}
+.stage-error .zh { font-family: var(--sans); color: var(--text-2); margin-left: 8px; }
+
+/* ═══ C2. diagnostics rail ═══ */
+.rail { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+.panel { background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 14px; }
+.panel h3 {
+  margin: 0 0 8px; font: 650 11.5px var(--sans); color: var(--text-2);
+  padding-bottom: 5px; border-bottom: 1px solid var(--border);
+}
+.drow {
+  display: flex; justify-content: space-between; align-items: baseline;
+  gap: 12px; padding: 3px 0; border-bottom: 1px dotted var(--border);
+  font-size: 12px;
+}
+.drow:last-child { border-bottom: none; }
+.drow .k { color: var(--text-2); overflow-wrap: anywhere; }
+.drow .v { font-family: var(--mono); font-size: 11.5px; text-align: right; overflow-wrap: anywhere; }
+.drow .v.ok { color: var(--ok); font-weight: 600; }
+.drow .v.no { color: var(--err); font-weight: 600; }
+.drow .v.na { color: var(--text-3); font-weight: 400; }
+.drow .v.wn { color: var(--warn); font-weight: 600; }
+.source-note { font-size: 11px; color: var(--text-3); margin-top: 8px; line-height: 1.5; }
+.source-note code { font-family: var(--mono); font-size: 10.5px; background: var(--surface-2); padding: 0 4px; border-radius: 3px; }
+
+/* ═══ D. route table ═══ */
+.routes-wrap { margin-top: 18px; }
+table.routes { width: 100%; border-collapse: collapse; background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; font-size: 12px; }
+.routes th, .routes td { padding: 6px 12px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+.routes thead th {
+  background: var(--surface-2); color: var(--text-2); font-weight: 600;
+  font-size: 11px; white-space: nowrap;
+}
+.routes td.edge { font-family: var(--mono); font-size: 11.5px; white-space: nowrap; }
+.routes td.mono { font-family: var(--mono); font-size: 11.5px; }
+.routes td .na { color: var(--text-3); }
+.verdict-cell { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.verdict-cell svg { width: 12px; height: 12px; }
+.verdict-cell.pass { color: var(--ok); font-weight: 600; }
+.verdict-cell.fail { color: var(--err); font-weight: 600; }
+.routes tbody tr:last-child td { border-bottom: none; }
+.routes tbody tr:hover td { background: #fafaf7; }
+
+/* mobile: one row per edge, expandable; appbar wraps, freshness
+   drops the absolute timestamp (the rail still carries it) */
+.edge-cards { display: none; }
+@media (max-width: 719px) {
+  .appbar {
+    flex-wrap: wrap; height: auto; min-height: 46px;
+    padding: 5px 14px; gap: 8px 10px;
+  }
+  .appbar .sep, .appbar .surface-name { display: none; }
+  .appbar .run { max-width: 26vw; }
+  .appbar .freshness .f-abs { display: none; }
+  table.routes { display: none; }
+  .edge-cards { display: block; background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius); }
+  .edge-cards details { border-bottom: 1px solid var(--border); }
+  .edge-cards details:last-child { border-bottom: none; }
+  .edge-cards summary {
+    list-style: none; cursor: pointer; padding: 9px 12px;
+    display: flex; align-items: center; gap: 10px; font-size: 12.5px;
+  }
+  .edge-cards summary::-webkit-details-marker { display: none; }
+  .edge-cards summary .edge-name { font-family: var(--mono); font-size: 11.5px; flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .edge-cards summary svg.caret { width: 11px; height: 11px; color: var(--text-3); flex: none; transition: transform .15s ease-out; }
+  .edge-cards details[open] summary svg.caret { transform: rotate(90deg); }
+  .edge-cards .card-body { padding: 2px 12px 10px 33px; }
+}
+
+/* ═══ E. notices ═══ */
+.notice { border-radius: var(--radius); padding: 10px 14px; font-size: 12.5px; margin: 14px 0 0; border: 1px solid; }
+.notice.err  { color: var(--err);  background: var(--err-bg);  border-color: #e5bcb9; }
+.notice.warn { color: var(--warn); background: var(--warn-bg); border-color: #e3d3ad; }
+.notice .code { font-family: var(--mono); font-weight: 600; }
+.notice .zh { color: var(--text-2); margin-left: 6px; }
+
+/* quiet success for empty diagnostics */
+.quiet-ok {
+  display: flex; align-items: center; gap: 8px; color: var(--ok);
+  background: var(--ok-bg); border: 1px solid #bcd9c2; border-radius: var(--radius);
+  padding: 8px 14px; font-size: 12.5px; margin-top: 18px;
+}
+.quiet-ok svg { width: 13px; height: 13px; flex: none; }
+
+/* ═══ states ═══ */
+.skeleton { background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
+.sk-line { background: #e6e7e2; margin: 9px 0; height: 11px; border-radius: 3px; }
+.sk-line:nth-child(2) { width: 72%; }
+.sk-line:nth-child(3) { width: 54%; }
+.sk-line:nth-child(4) { width: 63%; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+}
+.unavailable {
+  background: var(--surface-1); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 34px 24px; text-align: center;
+  color: var(--text-2); font-size: 13px; line-height: 1.7;
+}
+.unavailable .big { font-size: 14px; font-weight: 650; color: var(--text-1); margin-bottom: 4px; }
+
+.viz-hidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+footer {
+  max-width: 1180px; margin: 26px auto 0; padding: 10px 20px 0;
+  border-top: 1px solid var(--border); color: var(--text-3); font-size: 11px;
+  display: flex; flex-wrap: wrap; gap: 6px 22px;
+}
+footer .readonly b { color: var(--ok); font-weight: 600; }
 </style>
 </head>
 <body>
-<h1>MergePilot E2E Run Status <span>· read-only journal projection</span></h1>
-<div class="panel" id="summary"></div>
-<div class="panel" id="routes"></div>
-<div id="note" class="muted"></div>
+<!--
+THESIS: 首屏即裁决——维护者一眼看到运行可信度、失败阶段与首个稳定错误码；拒绝仪表盘卡片矩阵的默认形态。
+OWN-WORLD: 浅暖灰工作区 + 墨色导航带；发丝线分隔的数据面板；系统 UI 字 + 等宽码值；克制的绿/琥珀/红语义色，蓝紫不入主调。
+STORY: 维护者在运行中/后打开，数秒内判定可信度、失败 Stage 与错误码，扫过六条路由边与五项真实性边界，据此决定是否介入。
+FIRST VIEWPORT: 深色应用栏（run ID/新鲜度/刷新）→ 全宽状态带（裁决/Stage/前置/receipt/matrix/传输）→ 左 17 段 Stage 时间线（失败段内嵌错误码）+ 右诊断栏（边界/receipt/中继资源/残留）→ 其下路由表。
+FORM: Operate 密度型单页控制台；签名交互 = Stage 时间线失败节点内嵌首个稳定错误码 + aria-live 状态播报。
+FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance
+-->
+
+<header class="appbar">
+  <span class="brand">MergePilot</span>
+  <span class="sep">/</span>
+  <span class="surface-name">E2E Operations</span>
+  <span class="run" id="run-chip" title="当前 run">—</span>
+  <span class="spacer"></span>
+  <span class="freshness" id="freshness">正在加载…</span>
+  <button class="btn-refresh" id="btn-refresh" type="button" aria-label="手动刷新状态">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9M13.5 1.8v2.7h-2.7"/></svg>
+    <span>刷新</span>
+  </button>
+  <span class="autostate">自动刷新 <b id="auto-state">开</b>·10s</span>
+</header>
+
+<div class="band" id="band" aria-label="运行总览">
+  <span class="kv"><span class="k">Stage</span> <span class="v" id="b-stage">—</span></span>
+  <span class="kv"><span class="k">前置</span> <span class="v" id="b-prereq">—</span></span>
+  <span class="kv"><span class="k">Receipt</span> <span class="v" id="b-receipt">—</span></span>
+  <span class="kv"><span class="k">Matrix</span> <span class="v" id="b-matrix">—</span></span>
+  <span class="kv"><span class="k">传输</span> <span class="v" id="b-transport">—</span></span>
+  <span class="kv"><span class="k">直连路由</span> <span class="v" id="b-direct">—</span></span>
+  <span class="kv"><span class="k">清理/残留</span> <span class="v na">未提供（由 stop / cleanup 报告）</span></span>
+</div>
+
+<p class="viz-hidden" role="status" aria-live="polite" id="live"></p>
+
+<main>
+  <div id="surface">
+    <div class="skeleton" role="status" aria-label="正在加载状态">
+      <div class="sk-line"></div><div class="sk-line"></div>
+      <div class="sk-line"></div><div class="sk-line"></div>
+    </div>
+  </div>
+
+  <div class="notice err" id="top-error" hidden>
+    <span class="code" id="top-error-code"></span><span class="zh" id="top-error-zh"></span>
+  </div>
+
+  <div class="quiet-ok" id="diag-ok" hidden>
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M2.5 8.5l3.5 3.5 7-8"/></svg>
+    无诊断告警：journal 投影未报告 diagnostics。
+  </div>
+
+  <footer>
+    <span class="readonly">只读视图 <b>Read-only</b> —— 本控制台不提供任何写操作。</span>
+    <span>数据源：session journal 派生投影 <code style="font-family:var(--mono)">GET /api/e2e/status</code>（单写者，白名单字段）。</span>
+  </footer>
+</main>
+
 <script>
 "use strict";
-// Read-only view over /api/e2e/status — the server-side derived,
-// sanitized projection of the session journal. No writes, no
-// mutations, refresh every 10s.
+/* ═══ MergePilot E2E Operations — read-only console ═══
+   Data: the derived journal projection only. No writes, no
+   mutation calls, no third-party code. Refresh keeps last good
+   data on transient failure and marks it stale. */
+
+var REFRESH_MS = 10000;
+var STALE_MS   = 30000;     // last success older than this → stale
+var TIMEOUT_MS = 5000;      // bounded fetch
+
+var ERROR_ZH = {
+  "GITHUB_E2E_PREREQUISITES_INCOMPLETE": "外部前置未就绪，门禁失败即零副作用中止",
+  "E2E_ROUTE_PROBE_FAILED": "中继路由探测失败，六边中至少一边未验证",
+  "E2E_POLICY_GATEWAY_MCP_UNHEALTHY": "策略网关 MCP 语义健康未达（策略/工具集投影错误）",
+  "E2E_CONTROLLER_UNREADY": "控制器容器未在窗口内就绪",
+  "E2E_GH_REPORTER_UNREADY": "报告器容器未在窗口内就绪",
+  "E2E_RECEIPT_RECHECK_FAILED": "receipt 复核发现漂移或校验失败",
+  "E2E_MATRIX_RECHECK_FAILED": "Matrix 成员复核失败",
+  "E2E_PREFLIGHT_FAILED": "最终语义预检未通过",
+  "E2E_RELAY_CLEANUP_INCOMPLETE": "中继资源清理后仍存在残留",
+  "E2E_DB_BOOTSTRAP_FAILED": "数据库引导失败",
+  "E2E_FIREWALL_INSTALL_FAILED": "防火墙规则安装失败"
+};
+function errorZh(code) {
+  return ERROR_ZH[code] || "见稳定错误码对照文档";
+}
+
+var lastGood = null;         // last successful payload
+var lastGoodAt = 0;
+var inflight = false;        // request dedup
+var timer = null;
+var lastRender = "";         // JSON fingerprint of last rendered data
+
+/* ── tiny DOM helpers ── */
+function $(id) { return document.getElementById(id); }
+function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
 function el(tag, cls, text) {
-  const n = document.createElement(tag);
+  var n = document.createElement(tag);
   if (cls) n.className = cls;
-  if (text !== undefined) n.textContent = text;
+  if (text !== undefined && text !== null) n.textContent = String(text);
   return n;
 }
-function row(parent, key, value, valueClass) {
-  const r = el("div", "row");
-  r.append(el("span", "k", key), el("span", "v " + (valueClass || ""),
-                                    String(value)));
-  parent.append(r);
+var ICON_OK  = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M2.5 8.5l3.5 3.5 7-8"/></svg>';
+var ICON_ERR = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M8 2v8M8 12.2v1.6"/></svg>';
+var ICON_RUN = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><path d="M8 5v3.2l2.2 1.4"/></svg>';
+var ICON_NA  = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><path d="M5.5 5.5l5 5M10.5 5.5l-5 5"/></svg>';
+var ICON_DOT = '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="8" cy="8" r="2.6"/></svg>';
+
+function fmtAge(ms) {
+  if (ms < 1500) return "刚刚";
+  var s = Math.floor(ms / 1000);
+  if (s < 60) return s + " 秒前";
+  var m = Math.floor(s / 60);
+  if (m < 60) return m + " 分前";
+  return Math.floor(m / 60) + " 时前";
 }
-function render(data) {
-  const s = document.getElementById("summary");
-  const rt = document.getElementById("routes");
-  s.textContent = ""; rt.textContent = "";
-  if (!data || data.available === false) {
-    row(s, "status", "no E2E session on record", "muted");
-    document.getElementById("note").textContent =
-      "The status projection is absent — no journal-derived data " +
-      "is shown rather than a synthesized state.";
+
+/* ── overall verdict from the payload ── */
+function verdictOf(d) {
+  if (d === null) return { cls: "v-none", icon: ICON_NA, text: "不可用" };
+  if (d.available === false) return { cls: "v-none", icon: ICON_NA, text: "无会话" };
+  if (typeof d !== "object") return { cls: "v-warn", icon: ICON_ERR, text: "数据异常" };
+  var stale = (Date.now() - lastGoodAt) > STALE_MS;
+  if (stale) return { cls: "v-warn", icon: ICON_ERR, text: "陈旧" };
+  if (d.journal_complete === true) return { cls: "v-ok", icon: ICON_OK, text: "Complete" };
+  var err = (d.e2e_last_error && d.e2e_last_error.code) || "";
+  if (err) return { cls: "v-err", icon: ICON_ERR, text: "Failed" };
+  var stages = d.stages || [];
+  for (var i = 0; i < stages.length; i++) {
+    if (stages[i].status === "running") return { cls: "v-run", icon: ICON_RUN, text: "Running" };
+  }
+  return { cls: "v-warn", icon: ICON_ERR, text: "未知态" };
+}
+
+function isPayloadUsable(d) {
+  return d !== null && typeof d === "object" && d.available !== false;
+}
+
+/* ═══ render: app bar + band ═══ */
+function renderChrome(d, verdict) {
+  $("run-chip").textContent = isPayloadUsable(d) ? (d.run_id || "（未提供 run_id）") : "—";
+  var f = $("freshness");
+  clear(f);
+  if (d === null) {
+    f.appendChild(el("span", null, "状态不可用"));
+  } else {
+    /* .f-abs collapses to relative-only on narrow viewports; the
+       age is the PROJECTION's age (updated_utc → now), not the age
+       of our fetch — a frozen journal must read as aging */
+    var fa = el("span", "f-abs");
+    fa.appendChild(el("span", null, "更新于 "));
+    var t = el("time", null, d.updated_utc || "—");
+    t.dateTime = d.updated_utc || "";
+    fa.appendChild(t);
+    fa.appendChild(el("span", null, " · "));
+    f.appendChild(fa);
+    var ts = Date.parse(d.updated_utc || "");
+    f.appendChild(el("span", "f-rel",
+      isNaN(ts) ? "—" : fmtAge(Date.now() - ts)));
+  }
+  var band = $("band");
+  var old = band.querySelector(".verdict");
+  var v = el("span", "verdict " + verdict.cls);
+  v.innerHTML = verdict.icon;
+  v.appendChild(el("span", null, verdict.text));
+  if (old) band.replaceChild(v, old); else band.insertBefore(v, band.firstChild);
+
+  function set(id, node) { var host = $(id); clear(host); host.appendChild(node); }
+  if (!isPayloadUsable(d)) {
+    ["b-stage","b-prereq","b-receipt","b-matrix","b-transport","b-direct"].forEach(function(id){
+      set(id, el("span", "na", "—"));
+    });
     return;
   }
-  row(s, "run_id", data.run_id || "");
-  row(s, "mode", data.github_e2e ? "github-e2e" : "default");
-  row(s, "stage (journal, verbatim)", data.e2e_stage || data.stage || "");
-  row(s, "journal_complete",
-      data.journal_complete ? "true" : "false",
-      data.journal_complete ? "ok" : "bad");
-  if (data.github_e2e) {
-    row(s, "transport_profile", data.transport_profile || "");
-    row(s, "direct_routing_verified",
-        String(data.direct_routing_verified));
-    row(s, "receipt_verified", data.receipt_verified ? "true" : "false",
-        data.receipt_verified ? "ok" : "bad");
-    row(s, "matrix_verified", data.matrix_verified ? "true" : "false",
-        data.matrix_verified ? "ok" : "bad");
-    const p = data.prerequisite_summary || {};
-    row(s, "prerequisites",
-        (p.checks_passed ?? "?") + " passed · verified=" +
-        String(p.verified));
-    const rr = data.relay_resources || {};
-    row(s, "relay resources (live journal)",
-        (rr.containers ?? 0) + " containers · " +
-        (rr.host_units ?? 0) + " host units · " +
-        (rr.probe_containers ?? 0) + " probes");
+  set("b-stage", el("span", null, d.e2e_stage || d.stage || "—"));
+  var pre = d.prerequisite_summary;
+  if (pre && typeof pre.checks_passed === "number") {
+    /* bare count only — the projection carries no total field, and a
+       hardcoded denominator would fabricate a number the API never
+       gave us */
+    set("b-prereq", el("span", pre.verified ? "ok" : "no",
+      pre.checks_passed + " 项" + (pre.verified ? "" : " 未过")));
+  } else {
+    set("b-prereq", el("span", "na", "未提供"));
   }
-  const edges = data.route_probes || {};
-  const keys = Object.keys(edges).sort();
-  if (keys.length) {
-    const t = el("table");
-    const hr = el("tr");
-    ["route edge", "verified", "vantage"].forEach(
-      h => hr.append(el("th", "", h)));
-    t.append(hr);
-    for (const k of keys) {
-      const tr = el("tr");
-      tr.append(el("td", "", k),
-                el("td", edges[k].verified ? "ok" : "bad",
-                   edges[k].verified ? "true" : "false"),
-                el("td", "muted", edges[k].vantage || ""));
-      t.append(tr);
+  set("b-receipt", el("span", d.receipt_verified === true ? "ok" : (d.receipt_verified === false ? "no" : "na"),
+    d.receipt_verified === true ? "verified" : (d.receipt_verified === false ? "未通过" : "未提供")));
+  set("b-matrix", el("span", d.matrix_verified === true ? "ok" : (d.matrix_verified === false ? "no" : "na"),
+    d.matrix_verified === true ? "verified" : (d.matrix_verified === false ? "未通过" : "未提供")));
+  set("b-transport", el("span", null, d.transport_profile || "未提供"));
+  if (d.direct_routing_verified === true) {
+    set("b-direct", el("span", "ok", "已验证"));
+  } else if (d.direct_routing_verified === false) {
+    set("b-direct", el("span", "no", "false（经中继）"));
+  } else {
+    set("b-direct", el("span", "na", "未提供"));
+  }
+}
+
+/* ═══ render: stage timeline ═══ */
+function stageEvidence(n, d) {
+  if (n === 1) {
+    var p = d.prerequisite_summary;
+    return p && typeof p.checks_passed === "number"
+      ? p.checks_passed + " 项" : "";
+  }
+  if (n === 10) {
+    var edges = Object.keys(d.route_probes || {}).length;
+    return edges ? edges + " 边" : "";
+  }
+  if (n === 12) return (d.services_started || []).length + " 服务";
+  return "";
+}
+var ST_ZH = { passed: "通过", failed: "失败", running: "进行中", pending: "待执行", unknown: "未知" };
+function renderTimeline(d) {
+  var ol = el("ul", "timeline");
+  ol.setAttribute("role", "list");
+  var stages = d.stages && d.stages.length ? d.stages : null;
+  if (!stages) {
+    var li = el("li");
+    li.appendChild(el("span", "n", "—"));
+    li.appendChild(el("span", "name", "时间线未提供（旧版投影字段缺失）"));
+    ol.appendChild(li);
+    return ol;
+  }
+  var errAt = null;
+  if (d.e2e_last_error && d.e2e_last_error.code) {
+    for (var i = 0; i < stages.length; i++) {
+      if (stages[i].status === "failed") { errAt = stages[i]; break; }
     }
-    rt.append(t);
   }
-  document.getElementById("note").textContent =
-    "Read-only projection of the session journal · updated " +
-    (data.updated_utc || "") + " · auto-refresh 10s";
+  stages.forEach(function(s) {
+    var li = el("li", s.status === "failed" ? "fail" : (s.status === "passed" ? "done" : ""));
+    li.appendChild(el("span", "n", s.n));
+    var name = el("span", "name");
+    name.appendChild(el("span", null, s.n + " · " + s.label));
+    var ev = stageEvidence(s.n, d);
+    if (ev) name.appendChild(el("span", "ev", ev));
+    li.appendChild(name);
+    var st = el("span", "st " + (s.status === "passed" ? "passed" : s.status));
+    st.innerHTML = s.status === "passed" ? ICON_OK :
+                   s.status === "failed" ? ICON_ERR :
+                   s.status === "running" ? ICON_RUN : ICON_DOT;
+    st.appendChild(el("span", null, ST_ZH[s.status] || s.status));
+    li.appendChild(st);
+    if (s.status === "failed" && errAt && d.e2e_last_error &&
+        d.e2e_last_error.code) {
+      var box = el("div", "stage-error");
+      box.appendChild(el("span", null, d.e2e_last_error.code));
+      box.appendChild(el("span", "zh", errorZh(d.e2e_last_error.code)));
+      li.appendChild(box);
+    }
+    ol.appendChild(li);
+  });
+  return ol;
 }
-async function tick() {
-  try {
-    const res = await fetch("/api/e2e/status",
-                            { cache: "no-store" });
-    render(await res.json());
-  } catch (err) {
-    document.getElementById("note").textContent =
-      "status fetch failed: " + err;
+
+/* ═══ render: diagnostics rail ═══ */
+function drow(key, valueNode, vcls) {
+  var r = el("div", "drow");
+  r.appendChild(el("span", "k", key));
+  var v = el("span", "v" + (vcls ? " " + vcls : ""));
+  if (typeof valueNode === "string") v.textContent = valueNode;
+  else v.appendChild(valueNode);
+  r.appendChild(v);
+  return r;
+}
+function renderRail(d) {
+  var rail = el("div", "rail");
+
+  var tb = el("section", "panel");
+  tb.appendChild(el("h3", null, "五项真实性边界"));
+  var tbs = d.truth_boundaries || {};
+  var TB_ZH = {
+    application_integration_verified: "应用集成已验证",
+    database_verified: "数据库已验证",
+    production_verified: "生产已验证",
+    revision_producer_contract: "revision producer 契约",
+    audit_producer_contract: "audit producer 契约"
+  };
+  Object.keys(TB_ZH).forEach(function(k) {
+    var val = tbs[k];
+    if (val === "NOT_VERIFIED" || val === "false" || !val) {
+      tb.appendChild(drow(TB_ZH[k], "NOT_VERIFIED", "wn"));
+    } else {
+      tb.appendChild(drow(TB_ZH[k], String(val), "ok"));
+    }
+  });
+  tb.appendChild(el("p", "source-note",
+    "仅当对应真实工件与 validator 通过后才可翻转；此处直读投影字段。"));
+  rail.appendChild(tb);
+
+  var rj = el("section", "panel");
+  rj.appendChild(el("h3", null, "Receipt / Journal / Lock"));
+  rj.appendChild(drow("receipt 复核", d.receipt_verified === true ? "verified" :
+    (d.receipt_verified === false ? "未通过" : "未提供"),
+    d.receipt_verified === true ? "ok" : (d.receipt_verified === false ? "no" : "na")));
+  rj.appendChild(drow("matrix 复核", d.matrix_verified === true ? "verified" :
+    (d.matrix_verified === false ? "未通过" : "未提供"),
+    d.matrix_verified === true ? "ok" : (d.matrix_verified === false ? "no" : "na")));
+  rj.appendChild(drow("journal stage（原文）", d.e2e_stage || "未提供"));
+  rj.appendChild(drow("journal_complete", d.journal_complete === true ? "true" :
+    (d.journal_complete === false ? "false" : "未提供"),
+    d.journal_complete === true ? "ok" : "no"));
+  rj.appendChild(drow("lock 状态", "未提供", "na"));
+  rj.appendChild(drow("firewall", d.firewall_state || "未提供",
+    d.firewall_state === "installed" ? "ok" : ""));
+  rail.appendChild(rj);
+
+  var rr = el("section", "panel");
+  rr.appendChild(el("h3", null, "中继资源（journal 归属）"));
+  var res = d.relay_resources || {};
+  function cnt(v) { return typeof v === "number" ? String(v) : "未提供"; }
+  rr.appendChild(drow("relay 容器", cnt(res.containers)));
+  rr.appendChild(drow("host systemd 单元", cnt(res.host_units)));
+  rr.appendChild(drow("探测容器", cnt(res.probe_containers)));
+  rail.appendChild(rr);
+
+  var rc = el("section", "panel");
+  rc.appendChild(el("h3", null, "清理 / 残留"));
+  rc.appendChild(drow("residue 扫描", "未提供", "na"));
+  rc.appendChild(drow("diagnostics", "未提供", "na"));
+  rc.appendChild(el("p", "source-note",
+    "残留与诊断由生产 stop / cleanup 在其自身运行中报告，" +
+    "journal 投影不携带该字段，故如实显示“未提供”。"));
+  rail.appendChild(rc);
+
+  var src = el("section", "panel");
+  src.appendChild(el("h3", null, "数据来源"));
+  src.appendChild(drow("来源", "session journal 派生投影"));
+  src.appendChild(drow("投影更新时间", d.updated_utc || "未提供"));
+  src.appendChild(drow("策略", "单写者 · 白名单字段 · no-store"));
+  rail.appendChild(src);
+
+  return rail;
+}
+
+/* ═══ render: route probes ═══ */
+var EDGE_ZH = {
+  "controller-to-tuwunel": "控制器 → Matrix",
+  "gateway-to-bridge": "网关 → MCP 网桥",
+  "reporter-to-proxy-r": "报告器 → 代理 R",
+  "bridge-to-proxy-b": "网桥 → 代理 B",
+  "proxy-r-to-winproxy": "代理 R → Windows 代理",
+  "proxy-b-to-winproxy": "代理 B → Windows 代理"
+};
+function segCell(v) {
+  if (v === true) return el("span", null, "通过");
+  if (v === false) return el("span", null, "未过");
+  if (typeof v === "string" && v) return el("span", null, v);
+  return el("span", "na", "未提供");
+}
+function kindOf(vantage) {
+  var v = String(vantage || "");
+  if (v.indexOf("dual_homed") >= 0) return "双宿主容器中继";
+  if (v.indexOf("published_egress") >= 0) return "主机出口中继";
+  return v || "未提供";
+}
+function renderRoutes(d) {
+  var wrap = el("div", "routes-wrap");
+  var edges = d.route_probes || {};
+  var names = Object.keys(edges).sort();
+  if (names.length === 0) {
+    /* zero edges is a real state (stage not reached / legacy payload):
+       an explicit 未提供 row, never an empty header-only table */
+    var emptyNote = el("div", "unavailable");
+    emptyNote.appendChild(el("div", "big", "路由探测未提供"));
+    emptyNote.appendChild(el("p", null,
+      "journal 投影未携带 route_probes（阶段未到达或旧版 payload），不合成任何边。"));
+    wrap.appendChild(emptyNote);
+    return wrap;
   }
+  var h = el("h2");
+  h.appendChild(el("span", null, "路由探测 · " + names.length + " 边矩阵"));
+  h.appendChild(el("span", "meta", "wsl-user-relay 传输"));
+  wrap.appendChild(h);
+
+  var table = el("table", "routes");
+  var thead = el("thead");
+  var hr = el("tr");
+  ["edge", "传输类型", "Segment A", "Segment B", "应用层", "判定", "vantage"].forEach(function(t) {
+    hr.appendChild(el("th", null, t));
+  });
+  thead.appendChild(hr); table.appendChild(thead);
+  var tbody = el("tbody");
+  names.forEach(function(name) {
+    var e = edges[name] || {};
+    var tr = el("tr");
+    var tdE = el("td", "edge");
+    tdE.appendChild(el("div", null, name));
+    if (EDGE_ZH[name]) tdE.appendChild(el("div", "na", EDGE_ZH[name]));
+    tr.appendChild(tdE);
+    tr.appendChild(el("td", null, kindOf(e.vantage)));
+    ["segment_a", "segment_b", "application"].forEach(function(k) {
+      var td = el("td", "mono");
+      td.appendChild(segCell(e[k]));
+      tr.appendChild(td);
+    });
+    var tdV = el("td");
+    var vc = el("span", "verdict-cell " + (e.verified ? "pass" : "fail"));
+    vc.innerHTML = e.verified ? ICON_OK : ICON_ERR;
+    vc.appendChild(el("span", null, e.verified ? "VERIFIED" : "FAIL"));
+    tdV.appendChild(vc); tr.appendChild(tdV);
+    tr.appendChild(el("td", "mono", e.vantage || "未提供"));
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  wrap.appendChild(table);
+
+  /* mobile: one expandable row per edge */
+  var cards = el("div", "edge-cards");
+  names.forEach(function(name) {
+    var e = edges[name] || {};
+    var det = el("details");
+    var sum = el("summary");
+    var vc = el("span", "verdict-cell " + (e.verified ? "pass" : "fail"));
+    vc.innerHTML = e.verified ? ICON_OK : ICON_ERR;
+    sum.appendChild(vc);
+    sum.appendChild(el("span", "edge-name", name));
+    sum.insertAdjacentHTML("beforeend",
+      '<svg class="caret" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 3.5L10.5 8 6 12.5"/></svg>');
+    det.appendChild(sum);
+    var body = el("div", "card-body");
+    [["传输类型", kindOf(e.vantage)],
+     ["Segment A", segCell(e.segment_a)],
+     ["Segment B", segCell(e.segment_b)],
+     ["应用层", segCell(e.application)],
+     ["vantage", e.vantage || "未提供"]].forEach(function(pair) {
+      body.appendChild(drow(pair[0], pair[1]));
+    });
+    det.appendChild(body);
+    cards.appendChild(det);
+  });
+  wrap.appendChild(cards);
+  return wrap;
 }
-tick();
-setInterval(tick, 10000);
+
+/* ═══ full surface render ═══ */
+function renderSurface(d) {
+  var verdict = verdictOf(d);
+  renderChrome(d, verdict);
+  var surface = $("surface");
+  clear(surface);
+
+  if (!isPayloadUsable(d)) {
+    var box = el("div", "unavailable");
+    box.setAttribute("role", "status");
+    var big = el("div", "big", "无 E2E 会话投影");
+    box.appendChild(big);
+    box.appendChild(el("div", null,
+      "挂载点内没有 status.json（或内容不可解析）。" +
+      "控制台如实显示不可用，不合成任何状态。"));
+    surface.appendChild(box);
+    return;
+  }
+
+  /* malformed / partial guards: continue with 未提供 for missing
+     fields, but a non-object core is treated as malformed */
+  if (typeof d.run_id !== "string") {
+    var warn = el("div", "notice warn");
+    warn.appendChild(el("span", null, "投影字段部分缺失（旧版 payload）：缺失字段按“未提供”显示。"));
+    surface.appendChild(warn);
+  }
+
+  var layout = el("div", "layout");
+  var left = el("div");
+  var h1 = el("h2");
+  h1.appendChild(el("span", null, "Stage 1–17 时间线"));
+  h1.appendChild(el("span", "meta", "journal 派生 · 原文 stage 值"));
+  left.appendChild(h1);
+  left.appendChild(renderTimeline(d));
+  layout.appendChild(left);
+  layout.appendChild(renderRail(d));
+  surface.appendChild(layout);
+  surface.appendChild(renderRoutes(d));
+
+  /* diagnostics quiet-success / stable error notices */
+  var errCode = (d.e2e_last_error && d.e2e_last_error.code) || "";
+  var topErr = $("top-error");
+  if (errCode && d.journal_complete !== true) {
+    $("top-error-code").textContent = errCode;
+    $("top-error-zh").textContent = "首个稳定错误 · " + errorZh(errCode);
+    topErr.hidden = false;
+  } else {
+    topErr.hidden = true;
+  }
+  var stages = d.stages || [];
+  var anyFail = stages.some(function(s) { return s.status === "failed"; });
+  $("diag-ok").hidden = !(d.journal_complete === true && !anyFail);
+}
+
+/* ═══ fetch / refresh machinery ═══ */
+function announce(d) {
+  var v = verdictOf(d);
+  $("live").textContent = "运行状态：" + v.text +
+    (isPayloadUsable(d) ? "，run " + (d.run_id || "未知") : "");
+}
+
+function applyPayload(d, ok) {
+  var now = Date.now();
+  if (ok) { lastGood = d; lastGoodAt = now; }
+  var effective = ok ? d : lastGood;
+  var fingerprint = JSON.stringify(effective && effective.available === false
+    ? { available: false } : effective);
+  if (fingerprint !== lastRender || !ok) {
+    lastRender = fingerprint;
+    renderSurface(effective);
+  } else {
+    /* identical payload: heavy sections stay untouched (no layout
+       jump), but the chrome is time-dependent — the age label must
+       advance and the stale verdict must be able to appear even
+       when the journal writer has frozen */
+    renderChrome(effective, verdictOf(effective));
+  }
+  announce(effective);
+}
+
+function tick(manual) {
+  if (inflight) return;                    /* request dedup */
+  inflight = true;
+  if (manual) { $("btn-refresh").disabled = true; }
+  var ctl = ("AbortController" in window) ? new AbortController() : null;
+  var killer = setTimeout(function() { if (ctl) ctl.abort(); }, TIMEOUT_MS);
+  var settled = false;
+  fetch("/api/e2e/status", { cache: "no-store", signal: ctl ? ctl.signal : undefined })
+    .then(function(r) {
+      if (!r.ok) throw new Error("http " + r.status);
+      return r.json();
+    })
+    .then(function(j) {
+      settled = true; clearTimeout(killer);
+      var usable = (j !== null && typeof j === "object");
+      applyPayload(usable ? j : null, usable);
+      if (!usable) { lastGood = null; lastGoodAt = 0; renderSurface(null); }
+    })
+    .catch(function() {
+      if (!settled) {
+        clearTimeout(killer);
+        /* transient failure: keep last good data, marked stale */
+        applyPayload(lastGood, false);
+      }
+    })
+    .then(function() {
+      inflight = false;
+      if (manual) { $("btn-refresh").disabled = false; }
+    });
+}
+
+function schedule() {
+  if (timer) clearInterval(timer);
+  timer = setInterval(function() {
+    if (document.visibilityState === "visible") tick(false);
+  }, REFRESH_MS);
+}
+
+document.addEventListener("visibilitychange", function() {
+  if (document.visibilityState === "visible") {
+    $("auto-state").textContent = "开";
+    tick(false);                 /* resume → immediate refresh */
+  } else {
+    $("auto-state").textContent = "暂停";
+  }
+});
+$("btn-refresh").addEventListener("click", function() { tick(true); });
+
+tick(false);
+schedule();
 </script>
 </body>
 </html>

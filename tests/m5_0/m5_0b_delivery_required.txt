@@ -3,6 +3,7 @@ config/souls/fixer/SOUL.md
 config/souls/reviewer/SOUL.md
 config/souls/verifier/SOUL.md
 docs/M5-0-HiClaw-Live设计冻结.md
+tests/gh_app/test_e2e_console_status.py
 tests/m4f1/check_hygiene.py
 tests/m4f1/compare_jcs_results.py
 tests/m4f1/delivery_digest.py
@@ -73,6 +74,8 @@ tests/test_env_isolation.ps1
 tests/test_env_isolation.sh
 tools/audit-db/m4f1_hotfix_1.sql
 tools/audit-db/m4f1_state.sql
+tools/cli/e2e_lifecycle.py
+tools/cli/mergepilot.py
 tools/handoff_watcher.py
 tools/handoff_watcher_v2.py
 tools/m4f-runtime/Dockerfile

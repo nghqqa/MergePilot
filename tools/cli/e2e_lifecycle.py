@@ -1590,6 +1590,20 @@ def run_e2e_start(*, config: dict,
             persist_callback(session)
 
     def _fail(code, detail):
+        # journal the FIRST stable error before rollback: the console
+        # projection surfaces it on the failing stage (productization
+        # round; codes are stable identifiers, detail stays local).
+        # The journal write is best-effort — a persist failure here
+        # must NEVER preempt the rollback or mask the original error.
+        if "e2e_last_error" not in session:
+            session["e2e_last_error"] = {
+                "code": code,
+                "stage": session.get("e2e_stage", ""),
+            }
+            try:
+                _persist()
+            except Exception:
+                pass
         diagnostics = _rollback_all(
             docker_executor, session, host_executor,
             runtime_directory)

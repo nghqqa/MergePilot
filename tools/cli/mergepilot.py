@@ -1218,8 +1218,99 @@ _PUBLIC_STATUS_KEYS = (
     "e2e_stage", "journal_complete", "transport_profile",
     "direct_routing_verified", "receipt_verified", "matrix_verified",
     "prerequisite_summary", "route_probes", "services_started",
-    "relay_resources", "firewall_state",
+    "relay_resources", "firewall_state", "stages", "e2e_last_error",
+    "truth_boundaries",
 )
+
+#: The canonical 17-stage E2E DAG (console timeline contract). Each
+#: entry maps the lifecycle's stage markers to the frozen stage
+#: number and its zh label; ONE mapping, consumed by the projection
+#: only — the UI never re-derives stage order.
+_E2E_STAGE_TIMELINE = (
+    (1, "prerequisites", "前置门禁",
+     ("prerequisites",)),
+    (2, "runtime_files", "运行时文件",
+     ("runtime_files",)),
+    (3, "networks", "八网络创建",
+     ("networks",)),
+    (4, "containers", "十一容器接入",
+     ("containers",)),
+    (5, "firewall", "防火墙安装",
+     ("firewall",)),
+    (6, "relay", "中继系统",
+     ("relay_setup",)),
+    (7, "postgres", "PostgreSQL 就绪",
+     ("postgres_ready",)),
+    (8, "db_bootstrap", "数据库引导",
+     ("db_bootstrap",)),
+    (9, "proxies", "代理就绪",
+     ("proxies_ready",)),
+    (10, "route_probes", "路由探测",
+     ("route_probes",)),
+    (11, "gateway", "策略网关",
+     ("gateway_start", "gateway_health")),
+    (12, "services", "业务服务",
+     ("controller_start", "webhook_start", "demo_console_start",
+      "console_edge_start", "gh_reporter_start")),
+    (13, "agents", "Agent 就绪",
+     ("agents_ready",)),
+    (14, "receipt", "Receipt 复核",
+     ("receipt_recheck",)),
+    (15, "matrix", "Matrix 复核",
+     ("matrix_recheck",)),
+    (16, "preflight", "语义预检",
+     ("final_preflight",)),
+    (17, "complete", "完成",
+     ("complete",)),
+)
+
+#: The five truth boundaries (README frozen section). CLI-side
+#: constants keep the console field-driven: flipping one here (only
+#: with real production artifacts) flips every mounted projection.
+_TRUTH_BOUNDARIES = {
+    "application_integration_verified": "NOT_VERIFIED",
+    "database_verified": "NOT_VERIFIED",
+    "production_verified": "NOT_VERIFIED",
+    "revision_producer_contract": "NOT_VERIFIED",
+    "audit_producer_contract": "NOT_VERIFIED",
+}
+
+
+def _timeline_stage_index(marker: str):
+    for number, _key, _label, markers in _E2E_STAGE_TIMELINE:
+        if marker in markers:
+            return number
+    return None
+
+
+def _stage_timeline(session: dict) -> list:
+    """Per-stage status derived ONLY from the persisted journal.
+
+    complete → all passed. A journaled first stable error → the
+    stage it stopped at is failed (verbatim marker mapping, never a
+    guess), earlier passed, later pending. An in-flight journal →
+    the reached stage is running. An UNKNOWN marker maps to nothing:
+    unknown stages never masquerade as any canonical stage."""
+    marker = session.get("e2e_stage", "")
+    reached = _timeline_stage_index(marker)
+    error = session.get("e2e_last_error") or {}
+    failed = bool(error.get("code")) and not (
+        session.get("e2e_stage") == "complete")
+    stages = []
+    for number, key, label, _markers in _E2E_STAGE_TIMELINE:
+        if session.get("e2e_stage") == "complete":
+            status = "passed"
+        elif reached is None:
+            status = "unknown"
+        elif number < reached:
+            status = "passed"
+        elif number == reached:
+            status = "failed" if failed else "running"
+        else:
+            status = "pending"
+        stages.append({"n": number, "key": key, "label": label,
+                       "status": status})
+    return stages
 
 
 def public_status_payload(session: dict) -> dict:
@@ -1240,6 +1331,7 @@ def public_status_payload(session: dict) -> dict:
     if session.get("github_e2e"):
         summary = session.get("prerequisite_summary") or {}
         route = session.get("route_probe_results") or {}
+        last_error = session.get("e2e_last_error") or {}
         payload.update({
             "e2e_stage": session.get("e2e_stage", ""),
             "journal_complete":
@@ -1254,8 +1346,18 @@ def public_status_payload(session: dict) -> dict:
                 "verified": bool(summary.get("verified")),
             },
             "route_probes": {
-                edge: {"verified": bool(probe.get("verified")),
-                       "vantage": probe.get("vantage", "")}
+                edge: {
+                    "verified": bool(probe.get("verified")),
+                    "vantage": probe.get("vantage", ""),
+                    # segments ride through when the journal has them
+                    # (newer probes); a legacy journal renders 未提供
+                    "segment_a":
+                        (probe.get("segments") or {}).get("segment_a"),
+                    "segment_b":
+                        (probe.get("segments") or {}).get("segment_b"),
+                    "application":
+                        (probe.get("segments") or {}).get("application"),
+                }
                 for edge, probe in route.items()},
             "services_started": list(session.get("e2e_started", [])),
             "relay_resources": {
@@ -1267,6 +1369,12 @@ def public_status_payload(session: dict) -> dict:
                     len(session.get("relay_probe_containers", []) or []),
             },
             "firewall_state": session.get("firewall_state", ""),
+            "stages": _stage_timeline(session),
+            "e2e_last_error": {
+                "code": last_error.get("code", ""),
+                "stage": last_error.get("stage", ""),
+            } if last_error else {"code": "", "stage": ""},
+            "truth_boundaries": dict(_TRUTH_BOUNDARIES),
         })
     assert set(payload) <= set(_PUBLIC_STATUS_KEYS)
     return payload
