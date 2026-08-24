@@ -89,17 +89,19 @@ class TestBootstrapperSourceContracts(unittest.TestCase):
     MP = (REL / "make_package.ps1").read_text(encoding="utf-8")
 
     def test_checksum_gate_precedes_docker_load(self):
-        first_cs = self.BS.index("Assert-TarChecksum")
-        called = self.BS.index("Assert-TarChecksum $ImageTar")
-        load = self.BS.index("docker load -i")
-        self.assertLess(called, load, "checksum gate must run before docker load")
-        self.assertLess(first_cs, called)
+        # v3: the gate is inline in Install (checksum verify + set
+        # completeness), the load is the Invoke-BootstrapperDocker call
+        gate = self.BS.index("image tar checksum mismatch")
+        setgate = self.BS.index("OFFLINE_IMAGE_SET_INCOMPLETE")
+        load = self.BS.index('Invoke-BootstrapperDocker @("load", "-i", $tarW)')
+        self.assertLess(gate, load, "checksum gate must run before docker load")
+        self.assertLess(setgate, load, "image-set gate must run before load")
 
     def test_refuses_unregistered_or_mismatched_tar(self):
-        self.assertIn("no checksums.sha256 entry", self.BS)
+        self.assertIn("no checksums entry", self.BS)
         self.assertIn("image tar checksum mismatch", self.BS)
         # duplicated manifest entries are ambiguous, not first-wins
-        self.assertIn("duplicate checksums.sha256 entries", self.BS)
+        self.assertIn("duplicate checksums entries", self.BS)
 
     def test_no_shell_interpolation_into_distro(self):
         """/bin/sh -c with interpolated variables is the injection class
@@ -107,17 +109,22 @@ class TestBootstrapperSourceContracts(unittest.TestCase):
         for src in (self.BS, self.MP):
             self.assertNotIn("/bin/sh -c \"docker", src)
             self.assertNotIn("sh -c \"docker", src)
-        self.assertIn("--exec docker load -i", self.BS)
+        self.assertIn('Invoke-BootstrapperDocker @("load", "-i", $tarW)', self.BS)
         self.assertIn("--exec docker save -o", self.MP)
 
     def test_keepalive_pid_ownership_guard(self):
-        self.assertIn("Stop-OwnedKeepalive", self.BS)
-        self.assertIn("ProcessName -match \"^wsl\"", self.BS)
-        # every Stop-Process site sits behind a wsl* name check
-        guard_count = self.BS.count("ProcessName -match \"^wsl\"")
-        stop_count = self.BS.count("Stop-Process")
-        self.assertGreaterEqual(guard_count, 2, "guard function + Start catch")
-        self.assertLessEqual(stop_count, guard_count + 2)
+        self.assertIn("Stop-OwnedProcess", self.BS)
+        self.assertIn('ProcessName -match ("^" + $ExpectName)', self.BS)
+        # v3: ONE identity-guarded terminator (Stop-OwnedProcess) is
+        # used for both keepalive and forwarder; every Stop-Process
+        # site must live inside it, behind the name (+token) check
+        guard_fn = self.BS[self.BS.index("function Stop-OwnedProcess"):
+                           self.BS.index("function Assert-TeardownComplete")]
+        self.assertIn("ProcessName", guard_fn)
+        self.assertIn("token", guard_fn)
+        self.assertEqual(self.BS.count("Stop-Process"),
+                         guard_fn.count("Stop-Process"),
+                         "unguarded Stop-Process outside Stop-OwnedProcess")
 
     def test_manifest_snapshot_is_staged_via_temp(self):
         self.assertIn("install.current.tmp", self.BS)

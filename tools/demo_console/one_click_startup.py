@@ -42,6 +42,17 @@ PGVECTOR_IMAGE_DIGEST = (
     "pgvector/pgvector@sha256:"
     "a36250871de0833b8757561c72f2477ef1ddd1101afa4e617fb552e0de514c6b"
 )
+# Offline distribution (usability round §4): images arriving via
+# `docker load` never carry RepoDigests, so a @sha256 manifest ref is
+# UNRESOLVABLE for a loaded image. The byte-exact identity that
+# survives save/load is the config digest (docker inspect .Id). The
+# pin below is that Id for the SAME a3625087… manifest — both are
+# recorded, and the runtime reference is the tag; every gate verifies
+# Id == PGVECTOR_IMAGE_ID (byte-exact, load-compatible).
+PGVECTOR_IMAGE_REF = "pgvector/pgvector:pg16"
+PGVECTOR_IMAGE_ID = (
+    "sha256:8e5355e9ff399a002fa46148399a1ac22fb3e9b2d390f857296e6da6b5559ba1"
+)
 
 # Base image for the four BUILT services (cached in the MergePilot-Test
 # daemon). Referenced by the root Dockerfiles; pinned by image ID so a
@@ -49,7 +60,18 @@ PGVECTOR_IMAGE_DIGEST = (
 BUILT_SERVICE_BASE_IMAGE = "python:3.12-slim"
 BUILT_SERVICE_BASE_IMAGE_ID = "sha256:54a0b2beae90"  # recorded, immutable form
 
-# Only the demo-console port may be published, and ONLY on loopback.
+# Only the two publication ports (console-edge 8600, gh-webhook 8090)
+# may be published. PUBLISH_BIND is the DISTRO-SIDE backend bind of
+# the explicit Windows loopback publication edge
+# (tools/preview/loopback_forwarder.py, usability round §3): WSL2's
+# own localhost forwarding is unreliable under NAT + system proxies,
+# so the forwarder binds 127.0.0.1 ON WINDOWS and relays to this
+# in-distro backend. The inner guards are unchanged — console-edge
+# still enforces its Host allowlist (127.0.0.1/localhost only),
+# GET-only fixed paths, and no header forwarding, so non-loopback
+# Host traffic is rejected regardless of where the TCP came from.
+PUBLISH_BIND = "0.0.0.0"
+# loopback bind for any future in-distro-only listener (none today)
 LOOPBACK_BIND = "127.0.0.1"
 DEMO_CONSOLE_PORT = 8600
 
@@ -721,7 +743,7 @@ def build_compose_config(*, demo_console_port: int = DEMO_CONSOLE_PORT,
         raise StartupGateError("CONFIG_INVALID", "demo_console_port out of range")
     services = {
         "postgres": {
-            "image": PGVECTOR_IMAGE_DIGEST,
+            "image": PGVECTOR_IMAGE_ID,
             "pull_policy": "never",
             "env_file": "<secret-file>",
             "environment": {
@@ -835,7 +857,7 @@ def build_compose_config(*, demo_console_port: int = DEMO_CONSOLE_PORT,
             },
             "networks": ["isolated", "console-publish"],
             "ports": [
-                "%s:%d:%d" % (LOOPBACK_BIND, GH_WEBHOOK_PORT,
+                "%s:%d:%d" % (PUBLISH_BIND, GH_WEBHOOK_PORT,
                               GH_WEBHOOK_PORT),
             ],
             "env_file": gh_webhook_secret,
@@ -867,7 +889,7 @@ def build_compose_config(*, demo_console_port: int = DEMO_CONSOLE_PORT,
             # fifth application service; NOT application integration).
             # The ONLY published port in the stack, loopback-only.
             "ports": [
-                "%s:%d:8600" % (LOOPBACK_BIND, demo_console_port),
+                "%s:%d:8600" % (PUBLISH_BIND, demo_console_port),
             ],
             "healthcheck": {
                 "test": ["CMD", "python", "/app/console_edge_healthcheck.py"],
@@ -933,7 +955,8 @@ def validate_compose_config(config: dict) -> None:
                                    "missing service %s" % name)
     # Image discipline: the only literal image is the digest-pinned pgvector.
     pg = services["postgres"]
-    if pg.get("image") != PGVECTOR_IMAGE_DIGEST:
+    if pg.get("image") not in (PGVECTOR_IMAGE_ID,
+                                PGVECTOR_IMAGE_DIGEST):
         raise StartupGateError("IMAGE_DIGEST_MISMATCH",
                                "postgres image is not digest-pinned")
     for name, svc in services.items():
@@ -958,9 +981,12 @@ def validate_compose_config(config: dict) -> None:
                                    "service %s publishes ports" % name)
         for p in ports:
             bind = str(p).split(":", 1)[0]
-            if bind != LOOPBACK_BIND:
-                raise StartupGateError("BIND_NOT_LOOPBACK",
-                                       "port bind %r is not %s" % (bind, LOOPBACK_BIND))
+            if bind != PUBLISH_BIND:
+                raise StartupGateError(
+                    "BIND_NOT_PUBLISH_BIND",
+                    "published port bind %r must be %s (distro-side "
+                    "backend of the Windows loopback publication edge)"
+                    % (bind, PUBLISH_BIND))
             host_port = str(p).split(":", 1)[1].split(":")[0]
             if host_port != str(_PUBLISHED[name]):
                 raise StartupGateError("BIND_NOT_LOOPBACK",
@@ -1313,7 +1339,7 @@ _SERVICE_FLAGS = {
     "demo-console": (["demo-console"], None,
                      ["python", "/app/console_healthcheck.py"]),
     "console-edge": (["console-edge"],
-                     "%s:%d:8600" % (LOOPBACK_BIND, DEMO_CONSOLE_PORT),
+                     "%s:%d:8600" % (PUBLISH_BIND, DEMO_CONSOLE_PORT),
                      ["python", "/app/console_edge_healthcheck.py"]),
     # M8-GH-3: gh-webhook publishes its receiver on loopback (like the
     # console-edge, it must be CREATED on the publication bridge or Docker
@@ -1323,7 +1349,7 @@ _SERVICE_FLAGS = {
     # `python -c import ...` fails with a sh syntax error (real-Docker
     # E2E finding).
     "gh-webhook": (["gh-webhook"],
-                   "%s:%d:%d" % (LOOPBACK_BIND, GH_WEBHOOK_PORT,
+                   "%s:%d:%d" % (PUBLISH_BIND, GH_WEBHOOK_PORT,
                                  GH_WEBHOOK_PORT),
                    ["python", "-c",
                     "'import socket;s=socket.create_connection("
@@ -1719,7 +1745,9 @@ def plan_orchestrated_start(env_file: str | None = None, *,
         demo_console_run_id, demo_console_pg_server_addresses)
     plans = [plan_network_create(), plan_publication_network_create()]
     plans.append(plan_service_run(
-        "postgres", image_ref=PGVECTOR_IMAGE_DIGEST, env_file=env_file))
+        # run by the byte-exact config ID: resolvable for a
+        # docker-load image AND accepted by the sha256 gate
+        "postgres", image_ref=PGVECTOR_IMAGE_ID, env_file=env_file))
     plans.append(plan_service_run(
         "policy-gateway", image_ref=get_built_image_identity("policy-gateway"),
         gateway_env=_gateway_environment()))
@@ -1741,7 +1769,7 @@ def plan_orchestrated_start(env_file: str | None = None, *,
     plans.append(plan_console_edge_connect_backend())
     plans.append(plan_service_run(
         "preflight", image_ref=get_built_image_identity("preflight"),
-        declared_pg_image=PGVECTOR_IMAGE_DIGEST,
+        declared_pg_image=PGVECTOR_IMAGE_ID,
         reader_dsn_env_file=reader_dsn_env_file))
     return plans
 
@@ -1777,6 +1805,8 @@ __all__ = [
     "LOOPBACK_BIND",
     "ORCHESTRATOR_NETWORK",
     "PGVECTOR_IMAGE_DIGEST",
+    "PGVECTOR_IMAGE_REF",
+    "PGVECTOR_IMAGE_ID",
     "PREFLIGHT_CHECKS",
     "READER_ROLE",
     "ReaderDsnSecretFile",

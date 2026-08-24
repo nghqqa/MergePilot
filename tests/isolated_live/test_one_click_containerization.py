@@ -218,8 +218,8 @@ class TestComposeYml(unittest.TestCase):
         # 1-G + M8-GH-3: exactly TWO loopback publications — the secretless
         # console-edge (8600) and the gh-webhook receiver (8090);
         # demo-console is UNPUBLISHED.
-        published = {"console-edge": "127.0.0.1:8600:8600",
-                     "gh-webhook": "127.0.0.1:8090:8090"}
+        published = {"console-edge": "%s:8600:8600" % oc.PUBLISH_BIND,
+                     "gh-webhook": "%s:8090:8090" % oc.PUBLISH_BIND}
         for name, svc in self.yml["services"].items():
             ports = svc.get("ports") or []
             if name in published:
@@ -281,17 +281,28 @@ class TestComposeYml(unittest.TestCase):
         text = COMPOSE_PATH.read_text(encoding="utf-8")
         for bad in ("::", "192.168.", "10.0."):
             self.assertNotIn(bad, text)
-        # Check that 0.0.0.0 appears ONLY in the env block, never in ports.
-        in_ports = False
+        # Usability round §3: the TWO publication ports bind the
+        # distro-side backend (PUBLISH_BIND=0.0.0.0 inside the WSL VM,
+        # reachable from the Windows host through the WSL NAT); the
+        # Windows loopback edge (forwarder) is the enforcement point.
+        # Any OTHER service publishing any port — including a wildcard
+        # bind — remains forbidden.
+        published_ok = {"0.0.0.0:8600:8600", "0.0.0.0:8090:8090"}
+        current_service = None
         for line in text.splitlines():
             stripped = line.strip()
-            if stripped.startswith("ports:"):
-                in_ports = True
-                continue
-            if in_ports and stripped.startswith("-") and "0.0.0.0" in stripped:
-                self.fail("0.0.0.0 found in a ports: publish line: %r" % stripped)
-            if in_ports and stripped and not stripped.startswith(("-", "#")) and not line.startswith(" "):
-                in_ports = False
+            if stripped and not line.startswith(" ") and                     stripped.endswith(":"):
+                current_service = stripped[:-1]
+            if stripped.startswith("- ") and ":" in stripped and \
+                    stripped.count(":") >= 2:
+                bind = stripped.lstrip("- ").strip("\"' ").split(":")[0]
+                if bind == "0.0.0.0":
+                    self.assertIn(
+                        stripped.lstrip("- ").strip("\"' ").split()[0]
+                        .strip("\"' ,"),
+                        published_ok,
+                        "wildcard publish outside the two publication "
+                        "ports: %r (service %s)" % (stripped, current_service))
 
     def test_no_twin_or_host_process_path(self):
         # The yml comments say "no twin container, no host-process substitute"
@@ -411,7 +422,8 @@ class TestOrchestrator(unittest.TestCase):
         edge = oc.plan_console_edge_run(
             get_built_image_identity("console-edge"))
         self.assertEqual(edge.count("-p"), 1)
-        self.assertEqual(edge[edge.index("-p") + 1], "127.0.0.1:8600:8600")
+        self.assertEqual(edge[edge.index("-p") + 1],
+                         "%s:8600:8600" % oc.PUBLISH_BIND)
         for service, env_kwargs in (
                 ("policy-gateway", {"gateway_env": oc._gateway_environment()}),
                 ("controller",
@@ -650,7 +662,7 @@ class TestNoTwinOrHostSubstitution(unittest.TestCase):
                     edge = oc.plan_console_edge_run(
                         get_built_image_identity(service))
                     self.assertEqual(edge[edge.index("-p") + 1],
-                                     "127.0.0.1:8600:8600")
+                                     "%s:8600:8600" % oc.PUBLISH_BIND)
                     continue
                 if service == "gh-webhook":
                     # M8-GH-3: loopback publisher via its dedicated plan.
@@ -658,7 +670,7 @@ class TestNoTwinOrHostSubstitution(unittest.TestCase):
                         get_built_image_identity(service),
                         env_file="gh_webhook.env")
                     self.assertEqual(hook[hook.index("-p") + 1],
-                                     "127.0.0.1:8090:8090")
+                                     "%s:8090:8090" % oc.PUBLISH_BIND)
                     continue
                 if service in ("gh-proxy", "mcp-bridge"):
                     # M8-GH-4B3: E2E-only multi-network containers use

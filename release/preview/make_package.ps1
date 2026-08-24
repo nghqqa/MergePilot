@@ -19,7 +19,11 @@ $ErrorActionPreference = "Stop"
 if (-not $RepoRoot) { $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path }
 if (-not $OutDir) { $OutDir = Join-Path $RepoRoot "dist\preview-v0.1.0" }
 
-$Version = "v0.1.0-preview.2"
+$Version = "v0.1.0-preview.3"
+# REQUIRED_IMAGE_SET: everything `doctor`/`start` needs to run with a
+# BLANK image cache and NO network pull — the 8 built images plus the
+# digest-locked pgvector base. The bootstrapper's Install gate checks
+# the manifest against exactly this set before docker load.
 $Images = @(
     "mergepilot-isolated-console-edge:local",
     "mergepilot-isolated-demo-console:local",
@@ -28,7 +32,8 @@ $Images = @(
     "mergepilot-isolated-gh-webhook:local",
     "mergepilot-isolated-gh-proxy:local",
     "mergepilot-isolated-mcp-bridge:local",
-    "mergepilot-isolated-preflight:local"
+    "mergepilot-isolated-preflight:local",
+    "pgvector/pgvector:pg16"
 )
 
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
@@ -70,14 +75,17 @@ $git = (& git -C $RepoRoot rev-parse HEAD | Out-String).Trim()
 # a user cannot verify manifest.json against images-oci.tar. We read the
 # OCI layout's index.json from the tar and map each image name to its
 # manifest digest (the digest a verifier can recompute from the tar).
-$indexJson = (& tar.exe -xOf $tarWin "index.json" | Out-String)
+# System32 tar explicitly: an MSYS/Git tar earlier on PATH
+# misparses the drive-letter path as a remote host
+$winTar = Join-Path $env:SystemRoot "System32\tar.exe"
+$indexJson = (& $winTar -xOf $tarWin "index.json" | Out-String)
 if ($LASTEXITCODE -ne 0 -or -not $indexJson) { throw "cannot read index.json from images-oci.tar - digest verification impossible" }
 $ociIndex = $indexJson | ConvertFrom-Json
 $digests = [ordered]@{}
 foreach ($m in $ociIndex.manifests) {
     $name = $m.annotations.'io.containerd.image.name'
     if (-not $name) { throw "OCI manifest entry without io.containerd.image.name annotation" }
-    $name = $name -replace '^docker\.io/library/', ''
+    $name = $name -replace '^docker\.io/(library/)?', ''
     $digests[$name] = $m.digest
 }
 if ($digests.Count -ne $Images.Count) { throw "expected $($Images.Count) image digests from tar index, got $($digests.Count)" }
@@ -100,6 +108,7 @@ $manifest = [ordered]@{
         audit_producer_contract          = "NOT_VERIFIED"
     }
     commands          = @("install", "doctor", "start --run-id RUN-ID", "status", "stop", "cleanup")
+    required_image_set = @($Images)
     seeded_run_ids    = @("run-showcase-a", "run-showcase-b", "run-showcase-c")
     images_oci_tar    = "images-oci.tar"
     images            = $digests

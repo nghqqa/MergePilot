@@ -17,11 +17,28 @@
 
 ## 安装（管理员 PowerShell 不需要；普通用户即可）
 
+### 解压布局与同目录要求（checksum/manifest 摆放合同）
+
+解压后 `images-oci.tar`、`checksums.sha256`、`manifest.json` 三者必须位于
+**同一目录**——Install 的 checksum 前置门只在 tar 旁寻找 `checksums.sha256`
+与 `manifest.json`（缺一、缺条目、重复条目、哈希不匹配、镜像集合不完整都会
+在导入任何镜像字节之前拒绝）。实际布局：
+
+```
+<解压目录>/
+  images-oci.tar            # 9 个镜像：8 个构建镜像 + 锁定 pgvector 基础镜像
+  checksums.sha256          # 全部载荷的 SHA-256（正斜杠路径，sha256sum -c 可用）
+  manifest.json             # 版本清单（含 required_image_set，Install 逐项核对）
+  package/                  # bootstrapper.ps1 + README + docs/preview/
+```
+
 ```powershell
 .\bootstrapper.ps1 -Action Check
 .\bootstrapper.ps1 -Action Install -ImageTar images-oci.tar
 .\bootstrapper.ps1 -Action Start            # 默认 run-showcase-a
 # 控制台: http://127.0.0.1:8600/e2e-status.html
+# Start 会启动 Windows loopback 发布边（转发器）：仅监听 127.0.0.1:8600/8090，
+# 转发到 WSL 发行版内的后端；发布验证失败自动回滚整个栈。
 ```
 
 校验完整性：

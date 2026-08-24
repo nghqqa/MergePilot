@@ -63,10 +63,12 @@ class TestComposeConfig(unittest.TestCase):
     def test_postgres_image_digest_pinned(self):
         cfg = build_compose_config(demo_console_run_id="test-run-1",
                                 demo_console_pg_server_addresses="172.18.0.2")
+        # §4 offline pin: compose declares the byte-exact config ID
+        # (survives docker save/load); the manifest digest stays
+        # recorded as PGVECTOR_IMAGE_DIGEST for provenance
         self.assertEqual(cfg["services"]["postgres"]["image"],
-                         oc.PGVECTOR_IMAGE_DIGEST)
+                         oc.PGVECTOR_IMAGE_ID)
         self.assertIn("sha256:", cfg["services"]["postgres"]["image"])
-        # 64-hex digest
         digest = cfg["services"]["postgres"]["image"].split("sha256:")[1]
         self.assertRegex(digest, r"^[0-9a-f]{64}$")
 
@@ -100,16 +102,21 @@ class TestComposeConfig(unittest.TestCase):
         ports = cfg["services"]["console-edge"]["ports"]
         self.assertEqual(len(ports), 1)
         bind = ports[0].split(":")[0]
-        self.assertEqual(bind, "127.0.0.1")
-        # HOST-side publish must be loopback only. 0.0.0.0 may appear in the
-        # environment as the CONTAINER-INTERNAL listen address (required for
-        # Docker bridge routing); it must NEVER appear in a ports: publish.
+        # §3: the distro-side backend bind; the Windows loopback edge
+        # (forwarder) is the enforcement point
+        self.assertEqual(bind, oc.PUBLISH_BIND)
+        # §3: the TWO publication ports bind the distro-side PUBLISH_BIND
+        # backend (inside the WSL VM, reachable from the Windows host via
+        # the WSL NAT); the Windows loopback edge is the enforcement
+        # point. LAN/IPv6 addresses still never appear anywhere.
         for bad in ("::", "192.168.1.5", "10.0.0.1"):
             self.assertNotIn(bad, json.dumps(cfg))
         for name, svc in cfg["services"].items():
             for p in (svc.get("ports") or []):
-                self.assertNotIn("0.0.0.0", str(p),
-                                 "host publish must not be 0.0.0.0: %s" % name)
+                self.assertTrue(
+                    str(p).startswith(oc.PUBLISH_BIND + ":"),
+                    "publish %r outside the PUBLISH_BIND backend "
+                    "contract: %s" % (p, name))
 
     def test_no_volumes(self):
         cfg = build_compose_config(demo_console_run_id="test-run-1",
@@ -161,9 +168,11 @@ class TestComposeConfig(unittest.TestCase):
         # gh-webhook 8090).
         self.assertEqual(sorted(bindings.keys()),
                          ["console-edge", "gh-webhook"])
-        self.assertTrue(all(b.startswith("127.0.0.1:")
+        # §3: distro-side PUBLISH_BIND backend for BOTH publications
+        self.assertTrue(all(b.startswith(oc.PUBLISH_BIND + ":")
                             for b in bindings["console-edge"]))
-        self.assertEqual(bindings["gh-webhook"], ["127.0.0.1:8090:8090"])
+        self.assertEqual(bindings["gh-webhook"],
+                         ["%s:8090:8090" % oc.PUBLISH_BIND])
 
     # ── negative config cases ───────────────────────────────────────────────
 
@@ -185,8 +194,13 @@ class TestComposeConfig(unittest.TestCase):
         _gate(self, validate_compose_config, cfg, code="COMPOSE_INVALID")
 
     def test_wrong_digest_rejected(self):
+        # §4: the floating TAG is rejected — only the byte-exact
+        # config ID (or the recorded manifest digest) may be declared
         cfg = self._mutated(**{"services.postgres.image":
                                "pgvector/pgvector:pg16"})
+        _gate(self, validate_compose_config, cfg, code="IMAGE_DIGEST_MISMATCH")
+        cfg = self._mutated(**{"services.postgres.image":
+                               "sha256:" + "ab" * 32})
         _gate(self, validate_compose_config, cfg, code="IMAGE_DIGEST_MISMATCH")
 
     def test_pull_policy_not_never_rejected(self):
