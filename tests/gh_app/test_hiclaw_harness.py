@@ -480,6 +480,18 @@ class FakeSyncWorld:
             running = "false" if (role in self.running_false
                                   or name == "github-mcp") else "true"
             return _cp(0, running.encode())
+        # run34 wsl-safe validator templates (no $-vars/quotes — the
+        # production receipt validator stopped using the quoted and
+        # $k forms after the wsl.exe argv-reassembly findings)
+        if fmt == ("{{range .NetworkSettings.Networks}}"
+                   "{{.IPAddress}},{{end}}"):
+            if role and role == self.ip_drift_role:
+                return _cp(0, b"172.21.0.99,")
+            ip = ex.HICLAW_ROLE_FREEZE[role][2] if role else ""
+            return _cp(0, ("%s," % ip).encode())
+        if fmt == "{{.NetworkSettings.Networks}}":
+            # retired github-mcp: no endpoint (the frozen contract)
+            return _cp(0, b"map[]")
         if "hiclaw-net" in fmt:
             if role and role == self.ip_drift_role:
                 return _cp(0, b"172.21.0.99")
@@ -490,7 +502,11 @@ class FakeSyncWorld:
         if "{{.State.Status}}" in fmt:
             return _cp(0, b"exited")
         if "NetworkSettings.Networks" in fmt:
-            return _cp(0, b"mcp-backend-net ")
+            # run34 restored contract: the retired github-mcp carries
+            # NO endpoint (the production receipt freezes [] and the
+            # live container was disconnected) — generation and the
+            # production validator must agree on empty
+            return _cp(0, b"")
         return _cp(0, ("cid-%s" % name).encode())
 
     def _grep(self, args):
