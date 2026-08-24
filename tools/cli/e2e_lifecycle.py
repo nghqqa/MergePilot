@@ -1937,8 +1937,14 @@ def run_e2e_start(*, config: dict,
     if receipt_path:
         try:
             receipt_result = validate_receipt(receipt_path)
-        except Exception:
-            _fail("E2E_RECEIPT_RECHECK_FAILED", "receipt drift detected")
+        except Exception as exc:
+            # run34 finding: a transport-layer failure inside the
+            # validator folded indistinguishably into 'receipt drift';
+            # carry the validator's stable code (or exception type)
+            # so transport defects and real drift are diagnosable
+            reason = getattr(exc, "code", "") or type(exc).__name__
+            _fail("E2E_RECEIPT_RECHECK_FAILED",
+                  "receipt drift detected (%s)" % reason)
         if not receipt_result.get("verified", False):
             _fail("E2E_RECEIPT_RECHECK_FAILED", "receipt drift detected")
         session["receipt_verified"] = True

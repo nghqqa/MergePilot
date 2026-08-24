@@ -709,6 +709,23 @@ def _mc_hash(minio_executor: Callable, key: str) -> str:
     return hashlib.sha256(cp.stdout or b"").hexdigest()
 
 
+def _network_names_from_map_repr(repr_text: str) -> set:
+    """Network names from a docker inspect Networks map repr.
+
+    ``map[hiclaw-net:0xf6eef878d80 mcp-backend-net:0x18fda57d05a0]``
+    → ``{'hiclaw-net', 'mcp-backend-net'}``; ``map[]`` → empty set.
+    Anything else (unexpected shape) → empty set (the caller's
+    comparison then reports DRIFT, never a false OK)."""
+    text = (repr_text or "").strip()
+    if not (text.startswith("map[") and text.endswith("]")):
+        return set()
+    body = text[4:-1]
+    if not body:
+        return set()
+    return set(entry.split(":", 1)[0]
+               for entry in body.split() if ":" in entry)
+
+
 def _validate_direction_receipt(receipt: dict, *,
                                  docker_executor: Callable,
                                  minio_executor: Callable,
@@ -819,13 +836,23 @@ def _validate_direction_receipt(receipt: dict, *,
             "OK" if live_id and agent.get("container_id") == live_id
             else "DRIFT")
 
-        # hiclaw-net live IP (present AND matching frozen + receipt)
+        # hiclaw-net live IP (present AND matching frozen + receipt).
+        # The template carries NO $-variables, NO spaces and NO
+        # quotes: an unquoted argv crosses wsl.exe's `--` shell
+        # reassembly, where `$k` is expanded to empty (run34 finding:
+        # docker exited 64 'template parsing error' and the lifecycle
+        # folded the transport failure into 'receipt drift'); quoted
+        # args (spaces) leak the quotes into the template. All four
+        # receipt agents are single-homed on hiclaw-net, so the bare
+        # range emits exactly one IP — asserted, so a future
+        # dual-homed agent fails loudly instead of mismatching.
         cp = docker_executor(
             ["inspect", frozen[0], "--format",
-             "{{(index .NetworkSettings.Networks \"hiclaw-net\")"
-             ".IPAddress}}"],
+             "{{range .NetworkSettings.Networks}}{{.IPAddress}},{{end}}"],
             check=True)
-        live_ip = (cp.stdout or b"").decode().strip()
+        addresses = [a for a in (cp.stdout or b"").decode(
+            "utf-8", "replace").strip().split(",") if a]
+        live_ip = addresses[0] if len(addresses) == 1 else ""
         checks["ip"] = (
             "OK" if live_ip == frozen[2]
             and agent.get("hiclaw_net_ip") == frozen[2]
@@ -904,10 +931,14 @@ def _validate_direction_receipt(receipt: dict, *,
         "OK" if old_mcp.get("restart_policy") == live_rp else "DRIFT")
     cp = docker_executor(
         ["inspect", "github-mcp", "--format",
-         "{{range $k, $v := .NetworkSettings.Networks}}"
-         "{{$k}} {{end}}"], check=True)
-    live_nets = set(n for n in
-                    (cp.stdout or b"").decode().strip().split() if n)
+         # no $-variables / spaces / quotes: unquoted argv crosses
+         # wsl.exe's `--` shell reassembly where `$k` expands to
+         # empty and quoted argv leaks the quotes (run34 finding).
+         # The Networks map repr carries the names as keys:
+         # `map[hiclaw-net:0xf6eef878d80]`.
+         "{{.NetworkSettings.Networks}}"], check=True)
+    nets_repr = (cp.stdout or b"").decode().strip()
+    live_nets = _network_names_from_map_repr(nets_repr)
     receipt_nets = set(old_mcp.get("network_attachments", []))
     old_checks["network_attachments"] = (
         "OK" if live_nets == receipt_nets else "DRIFT")

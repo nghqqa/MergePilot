@@ -106,6 +106,15 @@ class _FakeDocker:
                 return _CP(0, _json.dumps(
                     {n: {"IPAMConfig": {"IPv4Address": ""}}
                      for n in info.get("networks", [])}).encode())
+            if fmt == ("{{range .NetworkSettings.Networks}}"
+                       "{{.IPAddress}},{{end}}"):
+                # wsl-safe single-home IP template (run34 fix)
+                return _CP(0, ("%s," % info.get("ip", "")).encode())
+            if fmt == "{{.NetworkSettings.Networks}}":
+                # wsl-safe Networks map repr (run34 fix)
+                return _CP(0, ("map[%s]" % " ".join(
+                    "%s:0x1" % n
+                    for n in info.get("networks", []))).encode())
             if "Networks" in fmt and "range" in fmt:
                 nets = info.get("networks", [])
                 return _CP(0, " ".join(nets).encode())
@@ -1932,6 +1941,43 @@ class TestRouteProbeIpYield(unittest.TestCase):
                                   "gateway-1"]
         self.assertTrue(reconnects,
                         "restore must attempt the reconnect")
+
+
+class TestWslSafeInspectTemplates(unittest.TestCase):
+    """run34 finding: `$`-variable templates cross wsl.exe's `--`
+    shell reassembly empty-expanded (docker rc=64 'template parsing
+    error'), and the lifecycle folded the transport failure into
+    'receipt drift'. Guard every inspect --format template used by
+    the receipt validator: no $, no whitespace, no quotes."""
+
+    def test_validator_templates_are_wsl_safe(self):
+        import re
+        src = (ROOT / "tools" / "cli" / "e2e_executors.py").read_text(
+            encoding="utf-8")
+        templates = re.findall(r'"(\{\{[^"]*\}\}[^"]*)"', src)
+        self.assertGreaterEqual(len(templates), 4)
+        for tpl in templates:
+            # `$` is the proven killer: unquoted argv crosses wsl.exe's
+            # `--` shell reassembly with `$k` expanded to empty (docker
+            # rc=64 template parsing error). Quotes/spaces have working
+            # counter-examples and are not asserted here.
+            self.assertNotIn("$", tpl, tpl)
+            self.assertNotIn('"', tpl, tpl)
+
+    def test_network_names_from_map_repr(self):
+        self.assertEqual(
+            ex._network_names_from_map_repr("map[]"), set())
+        self.assertEqual(
+            ex._network_names_from_map_repr(
+                "map[hiclaw-net:0xf6eef878d80]"), {"hiclaw-net"})
+        self.assertEqual(
+            ex._network_names_from_map_repr(
+                "map[a:0x1 b:0x2]"), {"a", "b"})
+        # unexpected shapes never yield names (caller reports DRIFT)
+        self.assertEqual(
+            ex._network_names_from_map_repr(""), set())
+        self.assertEqual(
+            ex._network_names_from_map_repr("map[oops"), set())
 
 
 if __name__ == "__main__":
