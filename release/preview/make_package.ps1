@@ -75,14 +75,17 @@ $git = (& git -C $RepoRoot rev-parse HEAD | Out-String).Trim()
 # a user cannot verify manifest.json against images-oci.tar. We read the
 # OCI layout's index.json from the tar and map each image name to its
 # manifest digest (the digest a verifier can recompute from the tar).
-$indexJson = (& tar.exe -xOf $tarWin "index.json" | Out-String)
+# System32 tar explicitly: an MSYS/Git tar earlier on PATH
+# misparses the drive-letter path as a remote host
+$winTar = Join-Path $env:SystemRoot "System32\tar.exe"
+$indexJson = (& $winTar -xOf $tarWin "index.json" | Out-String)
 if ($LASTEXITCODE -ne 0 -or -not $indexJson) { throw "cannot read index.json from images-oci.tar - digest verification impossible" }
 $ociIndex = $indexJson | ConvertFrom-Json
 $digests = [ordered]@{}
 foreach ($m in $ociIndex.manifests) {
     $name = $m.annotations.'io.containerd.image.name'
     if (-not $name) { throw "OCI manifest entry without io.containerd.image.name annotation" }
-    $name = $name -replace '^docker\.io/library/', ''
+    $name = $name -replace '^docker\.io/(library/)?', ''
     $digests[$name] = $m.digest
 }
 if ($digests.Count -ne $Images.Count) { throw "expected $($Images.Count) image digests from tar index, got $($digests.Count)" }
