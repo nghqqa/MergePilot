@@ -68,8 +68,10 @@ function Assert-DistroRegistered([string]$D) {
 
 function Invoke-BootstrapperDocker([string[]]$DockerArgs) {
     # docker invoked directly via --exec (no shell) — user input never
-    # reaches a command line a shell would re-interpret
-    & wsl.exe -u root -d $Distro --exec docker @DockerArgs
+    # reaches a command line a shell would re-interpret. Command output
+    # goes to the SUCCESS stream and would pollute the return value, so
+    # it is discarded here; only the exit code travels.
+    $null = & wsl.exe -u root -d $Distro --exec docker @DockerArgs
     return $LASTEXITCODE
 }
 
@@ -104,6 +106,17 @@ function Wake-Distro([string]$D) {
     throw "DISTRO_WAKE_TIMEOUT: $D dormant and would not wake"
 }
 
+function Wait-DockerReady([string]$D) {
+    # a freshly-woken distro needs a few seconds before dockerd
+    # answers; bounded poll, then a stable failure
+    for ($i = 0; $i -lt 20; $i++) {
+        $rc = Invoke-BootstrapperDocker @("info", "--format", "ok")
+        if ($rc -eq 0) { return $true }
+        Start-Sleep -Seconds 1
+    }
+    Write-Log "FAIL" "docker not reachable inside '$D' within 20s of wake"
+    throw "docker not reachable inside '$D'"
+}
 function New-Token { return [System.IO.Path]::GetRandomFileName() -replace "\.", "" }
 
 function Start-Keepalive([string]$D) {
@@ -223,14 +236,11 @@ switch ($Action) {
     "Check" {
         $v = [System.Environment]::OSVersion.Version
         Write-Log "PASS" ("Windows build " + $v.Build)
-        $lv = Get-WslText @("-l", "-v")
-        if ($lv -notmatch "Running") { throw "no running distro found in wsl -l -v" }
         $k = Get-WslText @("-d", $Distro, "--exec", "/bin/uname", "-r")
         if ($k -notmatch "microsoft|WSL") { throw "distro is not WSL2" }
         Write-Log "PASS" ("WSL2 distro '$Distro' kernel " + $k.Trim())
         $null = Wake-Distro $Distro
-        $rc = Invoke-BootstrapperDocker @("info", "--format", "ok")
-        if ($rc -ne 0) { throw "docker not reachable inside '$Distro'" }
+        Wait-DockerReady $Distro | Out-Null
         Write-Log "PASS" "docker in distro OK"
         Write-Log "PASS" (Assert-Ports)
         $free = [math]::Round((Get-PSDrive -Name ($RepoRoot.Substring(0, 1))).Free / 1GB, 1)
@@ -272,6 +282,7 @@ switch ($Action) {
             }
             Write-Log "PASS" ("offline image set exact: " + $required.Count + " images incl. pgvector")
             $null = Wake-Distro $Distro
+            Wait-DockerReady $Distro | Out-Null
             $tarW = $ImageTar
             if ($tarW -match "^([A-Za-z]):\\(.*)$") {
                 $tarW = "/mnt/" + $Matches[1].ToLower() + "/" + ($Matches[2].Replace("\", "/"))
@@ -314,6 +325,7 @@ switch ($Action) {
         }
         Assert-Ports | Out-Null
         $null = Wake-Distro $Distro
+        Wait-DockerReady $Distro | Out-Null
         $kaPid = Start-Keepalive $Distro
         try {
             Invoke-Cli @("start", "--run-id", $RunId)

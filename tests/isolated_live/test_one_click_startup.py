@@ -63,10 +63,12 @@ class TestComposeConfig(unittest.TestCase):
     def test_postgres_image_digest_pinned(self):
         cfg = build_compose_config(demo_console_run_id="test-run-1",
                                 demo_console_pg_server_addresses="172.18.0.2")
+        # §4 offline pin: compose declares the byte-exact config ID
+        # (survives docker save/load); the manifest digest stays
+        # recorded as PGVECTOR_IMAGE_DIGEST for provenance
         self.assertEqual(cfg["services"]["postgres"]["image"],
-                         oc.PGVECTOR_IMAGE_DIGEST)
+                         oc.PGVECTOR_IMAGE_ID)
         self.assertIn("sha256:", cfg["services"]["postgres"]["image"])
-        # 64-hex digest
         digest = cfg["services"]["postgres"]["image"].split("sha256:")[1]
         self.assertRegex(digest, r"^[0-9a-f]{64}$")
 
@@ -192,8 +194,13 @@ class TestComposeConfig(unittest.TestCase):
         _gate(self, validate_compose_config, cfg, code="COMPOSE_INVALID")
 
     def test_wrong_digest_rejected(self):
+        # §4: the floating TAG is rejected — only the byte-exact
+        # config ID (or the recorded manifest digest) may be declared
         cfg = self._mutated(**{"services.postgres.image":
                                "pgvector/pgvector:pg16"})
+        _gate(self, validate_compose_config, cfg, code="IMAGE_DIGEST_MISMATCH")
+        cfg = self._mutated(**{"services.postgres.image":
+                               "sha256:" + "ab" * 32})
         _gate(self, validate_compose_config, cfg, code="IMAGE_DIGEST_MISMATCH")
 
     def test_pull_policy_not_never_rejected(self):

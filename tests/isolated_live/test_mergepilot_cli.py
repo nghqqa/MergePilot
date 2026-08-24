@@ -40,7 +40,7 @@ from tools.cli import mergepilot as mp  # noqa: E402
 RUN_ID = "run-showcase-a"
 BRIDGE_IP = "172.18.0.2"
 IMG_BASE = "sha256:" + "bb" * 32
-IMG_PG = "sha256:" + "cc" * 32
+IMG_PG = oc.PGVECTOR_IMAGE_ID  # byte-exact offline pin (§4)
 IMG_BUILT = {svc: "sha256:" + ("%02x" % i) * 32
              for i, svc in enumerate(oc.BUILT_SERVICES)}
 PG_NAME = "mergepilot-isolated-postgres-1"
@@ -101,7 +101,7 @@ class FakeWorld:
             " Docker Root Dir: /var/lib/docker\n"
             " Server ID: 9f8c7b6a5e4d3210\n")
         self.images = {mp.BUILT_BASE_IMAGE: IMG_BASE,
-                       oc.PGVECTOR_IMAGE_DIGEST: IMG_PG}
+                       oc.PGVECTOR_IMAGE_ID: IMG_PG}
         self.networks = {}
         self.containers = {}
         self.logs_text = {PREFLIGHT_NAME: PREFLIGHT_LOGS}
@@ -557,7 +557,7 @@ class TestDoctor(CliTestBase):
         self.assertIn("DOCTOR_IMAGE_NOT_BUILT:policy-gateway", codes)
 
     def test_pgvector_not_cached_fails(self):
-        del self.world.images[oc.PGVECTOR_IMAGE_DIGEST]
+        del self.world.images[oc.PGVECTOR_IMAGE_ID]
         rc, text, payload = self.cli("doctor", "--json")
         self.assertEqual(rc, mp.EXIT_PRECHECK)
         codes = {c["code"] for c in payload["checks"]}
@@ -668,7 +668,7 @@ class TestStartDryRun(CliTestBase):
             oc.plan_network_create(),
             oc.plan_publication_network_create(),
             oc.plan_service_run(
-                "postgres", image_ref=oc.PGVECTOR_IMAGE_DIGEST,
+                "postgres", image_ref=oc.PGVECTOR_IMAGE_ID,
                 env_file=wsl_base + "/postgres.env"),
             oc.plan_service_run(
                 "policy-gateway",
@@ -697,7 +697,7 @@ class TestStartDryRun(CliTestBase):
             oc.plan_service_run(
                 "preflight",
                 image_ref=oc.get_built_image_identity("preflight"),
-                declared_pg_image=oc.PGVECTOR_IMAGE_DIGEST,
+                declared_pg_image=oc.PGVECTOR_IMAGE_ID,
                 reader_dsn_env_file=wsl_base + "/demo_console.env"),
         ]
         self.assertEqual(payload["plans"], expected)

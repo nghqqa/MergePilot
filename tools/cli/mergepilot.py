@@ -885,11 +885,16 @@ def require_environment(docker):
         bad = next(c for c in checks if not c["ok"])
         raise Failure(bad["code"], bad["detail"], exit_code=EXIT_PRECHECK)
     planner = _PLANNER
-    if docker.image_id(planner.PGVECTOR_IMAGE_DIGEST) is None:
+    # byte-exact offline pin: the loaded tag must resolve to the
+    # recorded config digest (a @sha256 manifest ref is unresolvable
+    # for docker-load images — usability round §4)
+    _pg_id = docker.image_id(planner.PGVECTOR_IMAGE_ID)
+    if _pg_id is None or _pg_id.strip() != planner.PGVECTOR_IMAGE_ID:
         raise Failure(
             "PGVECTOR_NOT_CACHED",
-            "digest-pinned pgvector image not cached (pull=never; cache it "
-            "manually): %s" % planner.PGVECTOR_IMAGE_DIGEST,
+            "pgvector image not cached at the pinned bytes (pull=never): "
+            "%s must resolve to %s" % (planner.PGVECTOR_IMAGE_REF,
+                                     planner.PGVECTOR_IMAGE_ID),
             exit_code=EXIT_PRECHECK)
 
 
@@ -1226,7 +1231,7 @@ def build_start_steps(planner, *, env_file, controller_env_file,
          planner.plan_publication_network_create()),
         ("container-run", "postgres",
          planner.plan_service_run(
-             "postgres", image_ref=planner.PGVECTOR_IMAGE_DIGEST,
+             "postgres", image_ref=planner.PGVECTOR_IMAGE_ID,
              env_file=env_file)),
         ("container-run", "policy-gateway",
          planner.plan_service_run(
@@ -1261,7 +1266,7 @@ def build_start_steps(planner, *, env_file, controller_env_file,
          planner.plan_service_run(
              "preflight",
              image_ref=planner.get_built_image_identity("preflight"),
-             declared_pg_image=planner.PGVECTOR_IMAGE_DIGEST,
+             declared_pg_image=planner.PGVECTOR_IMAGE_ID,
              reader_dsn_env_file=reader_dsn_env_file)),
     ]
     return argv_steps
@@ -1739,11 +1744,11 @@ def cmd_doctor(args):
     stack = {"classification": "unknown", "detail": "environment gate failed"}
     images = {}
     if env_ok:
-        pg = docker.image_id(planner.PGVECTOR_IMAGE_DIGEST)
+        pg = docker.image_id(planner.PGVECTOR_IMAGE_ID)
         add("pgvector_image", "DOCTOR_PGVECTOR_CACHED" if pg
             else "DOCTOR_PGVECTOR_NOT_CACHED", pg is not None,
-            planner.PGVECTOR_IMAGE_DIGEST if pg
-            else "digest not cached (pull=never)")
+            planner.PGVECTOR_IMAGE_ID if pg
+            else "pinned bytes not cached (pull=never)")
         for service in planner.BUILT_SERVICES:
             tag = image_tag(planner, service)
             img = docker.image_id(tag)
