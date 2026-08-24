@@ -1,7 +1,7 @@
 # MergePilot v0.1 Preview bootstrapper (Windows + WSL2)
 # -----------------------------------------------------
-# Version : v0.1.0-preview.1
-# Git     : 5e10cca
+# Version : v0.1.0-preview.2
+# Git     : see manifest.json git_commit (never hardcoded)
 # Scope   : environment check, image install (OCI tar or source build),
 #           start/stop/status/doctor/cleanup for the read-only console
 #           staging stack. Loopback-only publishing is enforced by the

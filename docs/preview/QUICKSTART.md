@@ -1,6 +1,6 @@
 # MergePilot v0.1 Preview — 快速开始（Windows + WSL2）
 
-> 版本：v0.1.0-preview.1 · git `5e10cca` · 只读运维控制台 + 真实 GitHub E2E 证据
+> 版本：v0.1.0-preview.2 · git SHA 以 manifest.json 的 git_commit 为准 · 只读运维控制台 + 真实 GitHub E2E 证据
 >
 > **真实性声明**：本 Preview 的传输档案为 `transport_profile=wsl-user-relay`，
 > `direct_routing_verified=false`（跨桥边经由用户态 TCP 中继，非直连路由）；

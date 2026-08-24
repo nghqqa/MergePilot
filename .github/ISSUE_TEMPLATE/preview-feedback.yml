@@ -1,0 +1,46 @@
+name: Preview 试用反馈
+about: MergePilot v0.1 Preview（v0.1.0-preview.x）安装/运行/文档问题反馈
+labels: ["preview", "triage"]
+body:
+  - type: dropdown
+    id: category
+    attributes:
+      label: 问题分类
+      options:
+        - installation（安装：Check/Install/镜像导入失败）
+        - environment（环境：WSL/Docker/端口/磁盘）
+        - runtime（运行：Start/Stop/Status/Doctor、容器或控制台行为）
+        - UI（控制台页面：展示、刷新、投影）
+        - documentation（文档：README/QUICKSTART 歧义或缺失）
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 版本（manifest.json 的 version 与 git_commit）
+      placeholder: "v0.1.0-preview.2 · <git_commit>"
+    validations:
+      required: true
+  - type: textarea
+    id: env
+    attributes:
+      label: 环境信息（脱敏）
+      description: Windows build、WSL 版本与内核、Docker 版本。请勿粘贴任何 secret/token 正文。
+      placeholder: "Win11 22631 / WSL 2.x kernel 5.15.x / Docker 24.x"
+  - type: textarea
+    id: logs
+    attributes:
+      label: 自动收集的脱敏输出
+      description: 请附上 `bootstrapper.ps1 -Action Doctor`、`-Action Status` 与 `python tools/cli/mergepilot.py version` 的输出；只读命令，不含秘密。粘贴前自行确认无内网地址或令牌。
+      render: text
+  - type: textarea
+    id: repro
+    attributes:
+      label: 复现步骤与期望/实际结果
+    validations:
+      required: true
+  - type: textarea
+    id: timeline
+    attributes:
+      label: 耗时记录（可选）
+      description: 安装总耗时 / 镜像导入耗时 / 首次启动耗时

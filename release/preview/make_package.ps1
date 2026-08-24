@@ -19,7 +19,7 @@ $ErrorActionPreference = "Stop"
 if (-not $RepoRoot) { $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path }
 if (-not $OutDir) { $OutDir = Join-Path $RepoRoot "dist\preview-v0.1.0" }
 
-$Version = "v0.1.0-preview.1"
+$Version = "v0.1.0-preview.2"
 $Images = @(
     "mergepilot-isolated-console-edge:local",
     "mergepilot-isolated-demo-console:local",
@@ -66,9 +66,22 @@ foreach ($f in $files) {
 
 Write-Host "== manifest"
 $git = (& git -C $RepoRoot rev-parse HEAD | Out-String).Trim()
-$installJson = Get-Content (Join-Path $RepoRoot ".mergepilot\install.json") -Raw | ConvertFrom-Json
+# Image digests MUST be derivable from the shipped tar itself, otherwise
+# a user cannot verify manifest.json against images-oci.tar. We read the
+# OCI layout's index.json from the tar and map each image name to its
+# manifest digest (the digest a verifier can recompute from the tar).
+$indexJson = (& tar.exe -xOf $tarWin "index.json" | Out-String)
+if ($LASTEXITCODE -ne 0 -or -not $indexJson) { throw "cannot read index.json from images-oci.tar - digest verification impossible" }
+$ociIndex = $indexJson | ConvertFrom-Json
 $digests = [ordered]@{}
-foreach ($prop in $installJson.images.PSObject.Properties) { $digests[$prop.Name] = $prop.Value }
+foreach ($m in $ociIndex.manifests) {
+    $name = $m.annotations.'io.containerd.image.name'
+    if (-not $name) { throw "OCI manifest entry without io.containerd.image.name annotation" }
+    $name = $name -replace '^docker\.io/library/', ''
+    $digests[$name] = $m.digest
+}
+if ($digests.Count -ne $Images.Count) { throw "expected $($Images.Count) image digests from tar index, got $($digests.Count)" }
+foreach ($expected in $Images) { if (-not $digests[$expected]) { throw "image '$expected' missing from tar index.json" } }
 $manifest = [ordered]@{
     schema            = 1
     version           = $Version

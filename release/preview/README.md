@@ -1,6 +1,6 @@
 # MergePilot v0.1 Preview 包说明
 
-版本 `v0.1.0-preview.1` · git `5e10cca` · 平台 Windows + WSL2 · **loopback-only**
+版本 `v0.1.0-preview.2` · git SHA 以 manifest.json 的 git_commit 为准 · 平台 Windows + WSL2 · **loopback-only**
 
 ## 包内物
 
@@ -46,3 +46,28 @@ certutil -hashfile images-oci.tar SHA256     # 与 manifest.json 对照
 
 见 `docs/ROLLBACK.md`（安装失败自动回退；版本升级保留旧 digest 与 manifest；
 stop/cleanup 后会话资源零残留）。
+
+## 支持范围（Preview）
+
+- 支持：Windows 10 2004+ / Windows 11 + WSL2 + 发行版内 Docker；本包 6 个
+  bootstrapper 动作（Check/Install/Doctor/Start/Status/Stop/Cleanup）；
+  播种用例 run-showcase-a/b/c 的只读控制台。
+- 不支持：生产部署、真实应用集成、数据库连通、直连路由
+  （`direct_routing_verified=false`，经 wsl-user-relay）。
+
+## 已知限制
+
+- 传输档案为用户态 TCP 中继（非直连），页面状态标注 `false（经中继）`。
+- WSL 发行版休眠时容器暂停；恢复见 QUICKSTART「WSL 休眠说明」。
+- 五项真实性边界全部未验证（见上「三句硬标注」）。
+
+## 卸载
+
+`.\bootstrapper.ps1 -Action Cleanup`（stop + 删除本地镜像 + 删除安装清单），
+随后删除包目录即可；秘密与会话资源由 Stop 先行清除，证据目录不删除。
+
+## 反馈
+
+- 问题/建议：GitHub Issues，使用「Preview 试用反馈」模板（自动附脱敏
+  Doctor/Status/version 输出，请勿粘贴秘密正文）。
+- 反馈不改变真实性边界；仅用于 preview.2 及后续修复轮。

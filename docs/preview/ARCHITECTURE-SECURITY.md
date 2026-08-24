@@ -1,6 +1,6 @@
 # MergePilot v0.1 Preview — 架构与安全边界
 
-版本 v0.1.0-preview.1 · git `5e10cca`
+版本 v0.1.0-preview.2 · git SHA 以 manifest.json 的 git_commit 为准
 
 ## 1. 组件拓扑
 
