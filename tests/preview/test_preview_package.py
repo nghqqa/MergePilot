@@ -98,6 +98,8 @@ class TestBootstrapperSourceContracts(unittest.TestCase):
     def test_refuses_unregistered_or_mismatched_tar(self):
         self.assertIn("no checksums.sha256 entry", self.BS)
         self.assertIn("image tar checksum mismatch", self.BS)
+        # duplicated manifest entries are ambiguous, not first-wins
+        self.assertIn("duplicate checksums.sha256 entries", self.BS)
 
     def test_no_shell_interpolation_into_distro(self):
         """/bin/sh -c with interpolated variables is the injection class
