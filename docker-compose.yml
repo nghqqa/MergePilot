@@ -120,7 +120,7 @@ services:
       - isolated
       - console-publish
     ports:
-      - "127.0.0.1:8090:8090"        # loopback-only receiver publication.
+      - "0.0.0.0:8090:8090"        # distro-side backend of the Windows loopback publication edge (forwarder binds 127.0.0.1 on Windows).
     env_file: gh_webhook.env         # created by the orchestrator (secrets)
     read_only: true
     security_opt:
@@ -222,7 +222,7 @@ services:
       - isolated
       - console-publish
     ports:
-      - "127.0.0.1:8600:8600"       # the ONLY published port; loopback only.
+      - "0.0.0.0:8600:8600"       # distro-side backend of the Windows loopback publication edge (forwarder binds 127.0.0.1 on Windows).
     healthcheck:
       test: ["CMD", "python", "/app/console_edge_healthcheck.py"]
       interval: 5s

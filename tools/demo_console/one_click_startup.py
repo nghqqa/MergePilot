@@ -49,7 +49,18 @@ PGVECTOR_IMAGE_DIGEST = (
 BUILT_SERVICE_BASE_IMAGE = "python:3.12-slim"
 BUILT_SERVICE_BASE_IMAGE_ID = "sha256:54a0b2beae90"  # recorded, immutable form
 
-# Only the demo-console port may be published, and ONLY on loopback.
+# Only the two publication ports (console-edge 8600, gh-webhook 8090)
+# may be published. PUBLISH_BIND is the DISTRO-SIDE backend bind of
+# the explicit Windows loopback publication edge
+# (tools/preview/loopback_forwarder.py, usability round §3): WSL2's
+# own localhost forwarding is unreliable under NAT + system proxies,
+# so the forwarder binds 127.0.0.1 ON WINDOWS and relays to this
+# in-distro backend. The inner guards are unchanged — console-edge
+# still enforces its Host allowlist (127.0.0.1/localhost only),
+# GET-only fixed paths, and no header forwarding, so non-loopback
+# Host traffic is rejected regardless of where the TCP came from.
+PUBLISH_BIND = "0.0.0.0"
+# loopback bind for any future in-distro-only listener (none today)
 LOOPBACK_BIND = "127.0.0.1"
 DEMO_CONSOLE_PORT = 8600
 
@@ -835,7 +846,7 @@ def build_compose_config(*, demo_console_port: int = DEMO_CONSOLE_PORT,
             },
             "networks": ["isolated", "console-publish"],
             "ports": [
-                "%s:%d:%d" % (LOOPBACK_BIND, GH_WEBHOOK_PORT,
+                "%s:%d:%d" % (PUBLISH_BIND, GH_WEBHOOK_PORT,
                               GH_WEBHOOK_PORT),
             ],
             "env_file": gh_webhook_secret,
@@ -867,7 +878,7 @@ def build_compose_config(*, demo_console_port: int = DEMO_CONSOLE_PORT,
             # fifth application service; NOT application integration).
             # The ONLY published port in the stack, loopback-only.
             "ports": [
-                "%s:%d:8600" % (LOOPBACK_BIND, demo_console_port),
+                "%s:%d:8600" % (PUBLISH_BIND, demo_console_port),
             ],
             "healthcheck": {
                 "test": ["CMD", "python", "/app/console_edge_healthcheck.py"],
@@ -958,9 +969,12 @@ def validate_compose_config(config: dict) -> None:
                                    "service %s publishes ports" % name)
         for p in ports:
             bind = str(p).split(":", 1)[0]
-            if bind != LOOPBACK_BIND:
-                raise StartupGateError("BIND_NOT_LOOPBACK",
-                                       "port bind %r is not %s" % (bind, LOOPBACK_BIND))
+            if bind != PUBLISH_BIND:
+                raise StartupGateError(
+                    "BIND_NOT_PUBLISH_BIND",
+                    "published port bind %r must be %s (distro-side "
+                    "backend of the Windows loopback publication edge)"
+                    % (bind, PUBLISH_BIND))
             host_port = str(p).split(":", 1)[1].split(":")[0]
             if host_port != str(_PUBLISHED[name]):
                 raise StartupGateError("BIND_NOT_LOOPBACK",
@@ -1313,7 +1327,7 @@ _SERVICE_FLAGS = {
     "demo-console": (["demo-console"], None,
                      ["python", "/app/console_healthcheck.py"]),
     "console-edge": (["console-edge"],
-                     "%s:%d:8600" % (LOOPBACK_BIND, DEMO_CONSOLE_PORT),
+                     "%s:%d:8600" % (PUBLISH_BIND, DEMO_CONSOLE_PORT),
                      ["python", "/app/console_edge_healthcheck.py"]),
     # M8-GH-3: gh-webhook publishes its receiver on loopback (like the
     # console-edge, it must be CREATED on the publication bridge or Docker
@@ -1323,7 +1337,7 @@ _SERVICE_FLAGS = {
     # `python -c import ...` fails with a sh syntax error (real-Docker
     # E2E finding).
     "gh-webhook": (["gh-webhook"],
-                   "%s:%d:%d" % (LOOPBACK_BIND, GH_WEBHOOK_PORT,
+                   "%s:%d:%d" % (PUBLISH_BIND, GH_WEBHOOK_PORT,
                                  GH_WEBHOOK_PORT),
                    ["python", "-c",
                     "'import socket;s=socket.create_connection("

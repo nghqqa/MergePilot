@@ -397,11 +397,14 @@ class TestComposeContract(unittest.TestCase):
 
     def test_compose_demo_console_loopback_publish(self):
         # 1-G network design: the console is UNPUBLISHED (internal-only);
-        # the loopback publish lives on the secretless console-edge.
+        # the distro-side PUBLISH_BIND backend lives on the secretless
+        # console-edge; the WINDOWS loopback edge (forwarder) is the
+        # enforcement point (usability round §3).
         self.assertIsNone(self.yml["services"]["demo-console"].get("ports"))
         ports = self.yml["services"]["console-edge"]["ports"]
         self.assertEqual(len(ports), 1)
-        self.assertEqual(str(ports[0]), "127.0.0.1:8600:8600")
+        self.assertEqual(str(ports[0]),
+                         "%s:8600:8600" % oc.PUBLISH_BIND)
 
     def test_compose_demo_console_container_listen_0000(self):
         self.assertEqual(self._compose_env()["MERGEPILOT_HOST"], "0.0.0.0")

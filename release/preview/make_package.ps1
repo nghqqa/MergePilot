@@ -19,7 +19,11 @@ $ErrorActionPreference = "Stop"
 if (-not $RepoRoot) { $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path }
 if (-not $OutDir) { $OutDir = Join-Path $RepoRoot "dist\preview-v0.1.0" }
 
-$Version = "v0.1.0-preview.2"
+$Version = "v0.1.0-preview.3"
+# REQUIRED_IMAGE_SET: everything `doctor`/`start` needs to run with a
+# BLANK image cache and NO network pull — the 8 built images plus the
+# digest-locked pgvector base. The bootstrapper's Install gate checks
+# the manifest against exactly this set before docker load.
 $Images = @(
     "mergepilot-isolated-console-edge:local",
     "mergepilot-isolated-demo-console:local",
@@ -28,7 +32,8 @@ $Images = @(
     "mergepilot-isolated-gh-webhook:local",
     "mergepilot-isolated-gh-proxy:local",
     "mergepilot-isolated-mcp-bridge:local",
-    "mergepilot-isolated-preflight:local"
+    "mergepilot-isolated-preflight:local",
+    "pgvector/pgvector:pg16"
 )
 
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
@@ -100,6 +105,7 @@ $manifest = [ordered]@{
         audit_producer_contract          = "NOT_VERIFIED"
     }
     commands          = @("install", "doctor", "start --run-id RUN-ID", "status", "stop", "cleanup")
+    required_image_set = @($Images)
     seeded_run_ids    = @("run-showcase-a", "run-showcase-b", "run-showcase-c")
     images_oci_tar    = "images-oci.tar"
     images            = $digests

@@ -91,7 +91,14 @@ EXIT_RESIDUE = 9
 
 # ── Platform constants (production-owned; mirrors of established contracts) ──
 
-AUTHORIZED_DISTRO = "MergePilot-Test"
+#: Single authoritative distro source (usability round §2): the
+#: default stays MergePilot-Test; operators may override through the
+#: MERGEPILOT_WSL_DISTRO environment variable (validated against the
+#: registered distro set — a name that is not registered fails with
+#: DISTRO_NOT_REGISTERED before any docker emission). The bootstrapper
+#: passes its -Distro through this variable and nowhere else.
+DISTRO_ENV_VAR = "MERGEPILOT_WSL_DISTRO"
+AUTHORIZED_DISTRO = os.environ.get(DISTRO_ENV_VAR, "MergePilot-Test")
 
 #: The HiClaw stack distro: agents (hiclaw-manager/workers), the
 #: minio canonical store (mc via hiclaw-controller) and the rewired
@@ -201,6 +208,19 @@ def log(text):
         stream.flush()
     except OSError:
         pass
+
+
+def _status_line(result):
+    """Human status line for a command result. A status that starts
+    with 'failed' is a FAILURE and must never render as OK — the
+    preview.2 blocker printed 'OK (failed_rolled_back)' (usability
+    round §6)."""
+    status = result.get("status") or "ok"
+    if str(status).startswith("failed"):
+        primary = result.get("primary_code") or result.get("error_code")
+        hint = (" (%s)" % primary) if primary else ""
+        return "FAILED (%s%s)" % (status, hint)
+    return "OK (%s)" % status
 
 
 # ── Project / planner resolution ─────────────────────────────────────────────
@@ -330,15 +350,30 @@ def state_paths(project_dir):
 
 # ── WSL-routed Docker execution ──────────────────────────────────────────────
 
+def _looks_argv_truncated(args, err) -> bool:
+    """Detect the wsl.exe argv-truncation signature in a docker error:
+    docker reports 'no such object: X' / 'not found: X' where X is a
+    proper prefix of one of OUR arguments (and shorter than it) —
+    i.e. docker never received the full resource name."""
+    for marker in ("no such object: ", "No such object: ",
+                   "not found: ", "No such image: "):
+        idx = err.find(marker)
+        while idx != -1:
+            tail = err[idx + len(marker):]
+            reported = tail.split()[0] if tail.split() else ""
+            for arg in args:
+                if (reported and len(reported) >= 3
+                        and arg.startswith(reported)
+                        and len(reported) < len(arg)):
+                    return True
+            idx = err.find(marker, idx + 1)
+    return False
+
+
 class WslDocker:
     """All Docker access: argv arrays via wsl.exe, redacted collection,
     planner-side argv-secret guard, explicit rc handling (a failed command is
     NEVER mistaken for an absent resource)."""
-
-    def __init__(self, planner, project_dir):
-        self._planner = planner
-        self._project_dir = project_dir
-        self._distro_states = None
 
     # -- raw wsl.exe ---------------------------------------------------------
 
@@ -384,19 +419,71 @@ class WslDocker:
         self._distro_states = states
         return states
 
+    #: operator lifecycle commands (install/doctor/status/start/stop/
+    #: cleanup) may BOUNDED-WAKE a registered-but-dormant distro;
+    #: every other construction (E2E executor path) keeps the
+    #: never-implicitly-started contract
+    def __init__(self, planner, project_dir, allow_wake=False):
+        self._planner = planner
+        self._project_dir = Path(project_dir)
+        self._distro_states = None
+        self._allow_wake = bool(allow_wake)
+        self._wake_attempted = False
+
+    def registered_distros(self):
+        """Names from `wsl -l -v` (read-only)."""
+        return set(self.distro_states().keys())
+
+    def _wake_distro(self):
+        """Bounded wake of a REGISTERED but dormant distro: boot it
+        with a trivial --exec and poll its state. Never retries past
+        the bound; failures raise the stable DISTRO_WAKE_TIMEOUT."""
+        if self._wake_attempted:
+            return False
+        self._wake_attempted = True
+        deadline = time.monotonic() + 45.0
+        while time.monotonic() < deadline:
+            try:
+                subprocess.run(
+                    ["wsl.exe", "-d", AUTHORIZED_DISTRO, "--exec",
+                     "/bin/true"],
+                    capture_output=True, timeout=20)
+            except (OSError, subprocess.TimeoutExpired):
+                pass
+            self._distro_states = None
+            if self.distro_states().get(AUTHORIZED_DISTRO) == "Running":
+                return True
+            time.sleep(2.0)
+        raise Failure(
+            "DISTRO_WAKE_TIMEOUT",
+            "%s is registered but did not reach Running within 45s of "
+            "bounded wake" % AUTHORIZED_DISTRO,
+            exit_code=EXIT_FAILED)
+
     def _require_distro_running(self, *, refresh=False):
         """Fail-closed distro gate for every ``-d`` emission.
 
         ``refresh=True`` discards the cached ``wsl -l -v`` result and
         re-probes read-only — used by mid-execution emitters (psql_exec) so
         a distro shut down after the command started is still caught and
-        never implicitly restarted. A missing/Stopped distro raises the
-        stable DISTRO_NOT_RUNNING failure and no ``-d`` command is issued.
+        never implicitly restarted. An UNREGISTERED name fails with
+        DISTRO_NOT_REGISTERED; a registered-but-dormant distro fails with
+        DISTRO_NOT_RUNNING — unless this instance was constructed with
+        allow_wake (operator lifecycle commands), in which case a bounded
+        wake runs first (DISTRO_WAKE_TIMEOUT on expiry).
         """
         if refresh:
             self._distro_states = None
         states = self.distro_states()
+        if AUTHORIZED_DISTRO not in states:
+            raise Failure(
+                "DISTRO_NOT_REGISTERED",
+                "%s is not in `wsl -l -v` (set %s to a registered "
+                "distro)" % (AUTHORIZED_DISTRO, DISTRO_ENV_VAR),
+                exit_code=EXIT_PRECHECK)
         if states.get(AUTHORIZED_DISTRO) != "Running":
+            if self._allow_wake and self._wake_distro():
+                return
             raise Failure(
                 "DISTRO_NOT_RUNNING",
                 "%s is %s; refusing to issue docker commands (never "
@@ -480,6 +567,28 @@ class WslDocker:
         else:
             log("docker %s rc=%d out=%s err=%s"
                 % (tag, cp.returncode, out[:160], err[:160]))
+        if cp.returncode != 0 and _looks_argv_truncated(args, err):
+            # §1.11: wsl.exe NON-DETERMINISTICALLY truncates an argv
+            # token on reassembly (observed: 'mergepilot-isolated-
+            # console-edge-1' reaching docker as 'mergepi'); a
+            # truncated name must never be classified as absence.
+            # Bounded retry, then the stable WSL_ARGV_TRUNCATION code.
+            for _attempt in range(2):
+                log("docker %s: argv truncation signature detected; "
+                    "bounded retry" % tag)
+                cp = self._run_wsl(argv, input_bytes=input_bytes,
+                                   timeout=timeout)
+                err = _redact(cp.stderr.decode("utf-8", "replace")
+                              if cp.stderr else "")
+                if cp.returncode == 0 or \
+                        not _looks_argv_truncated(args, err):
+                    break
+            else:
+                raise Failure(
+                    "WSL_ARGV_TRUNCATION",
+                    "docker %s: wsl.exe delivered a truncated argument "
+                    "twice (err tail: %s)" % (tag, err[-80:]),
+                    exit_code=EXIT_FAILED_CLEANED)
         if check and cp.returncode != 0:
             raise Failure(
                 "DOCKER_FAILED",
@@ -1500,7 +1609,7 @@ def cmd_install(args):
                     "executed, nothing written",
         }
 
-    docker = WslDocker(planner, project_dir)
+    docker = WslDocker(planner, project_dir, allow_wake=True)
     require_environment(docker)
 
     images = {}
@@ -1531,7 +1640,7 @@ def cmd_install(args):
 def cmd_doctor(args):
     project_dir = resolve_project_dir(args.project_dir)
     planner, showcase = _load_planner(project_dir)
-    docker = WslDocker(planner, project_dir)
+    docker = WslDocker(planner, project_dir, allow_wake=True)
     checks = []
 
     def add(name, code, ok, detail):
@@ -1662,9 +1771,20 @@ def cmd_doctor(args):
                 if has_gwp else "daemon lacks --gw-priority")
 
     ok = all(c["ok"] for c in checks)
+    if not ok:
+        # §6 diagnostics: the first failing check and its stable code
+        # are the headline, never a bare OK-on-failure
+        first = next(c for c in checks if not c["ok"])
+        if not _JSON_MODE:
+            log("DOCTOR_FIRST_FAILURE %s (%s): %s"
+                % (first["name"], first["code"], first["detail"]))
+        result_first = {"name": first["name"], "code": first["code"]}
+    else:
+        result_first = None
     result = {
         "command": "doctor", "status": "ok" if ok else "failed",
         "code": EXIT_OK if ok else EXIT_PRECHECK,
+        "first_failure": result_first,
         "checks": checks,
         "resources": {"stack": stack, "local_images": images},
     }
@@ -2194,6 +2314,20 @@ def _execute_github_e2e_start(args, project_dir, planner, paths,
             prepare_database(docker, planner, _showcase,
                              project_dir, reader_pw)
 
+        # §5 ownership-precedes-creation: journal the DETERMINISTIC
+        # resource names (every planned container/network) BEFORE the
+        # first docker command runs, so a crash between "docker run"
+        # and the id-journaling below still leaves stop/rollback with
+        # an exact ownership list — a Created-state orphan is then
+        # removed by name, never guessed by glob.
+        _session = load_manifest(paths["session"]) or {}
+        _session["stack_owned_containers"] = sorted(
+            ["mergepilot-isolated-%s-1" % s for s in by_service])
+        _session["stack_owned_networks"] = sorted(
+            [argv[-1] for argv in network_create_steps if len(argv) > 2])
+        _session["stage"] = "start_pending"
+        write_session(paths, _session)
+
         # the five default-mode services (postgres/gh-webhook/
         # demo-console/console-edge/preflight) reference the
         # default-mode networks in their planned argvs; the e2e
@@ -2300,10 +2434,17 @@ def _execute_github_e2e_start(args, project_dir, planner, paths,
             except Exception:
                 pass
             created_default_networks.pop(_net, None)
+        # §5: NEVER unlink the session on failure — the ownership
+        # journal (stack_owned_*) is exactly what lets `stop` /
+        # `cleanup --apply` remove a Created-state orphan later. Keep
+        # the journal, marked failed, with ownership intact.
         try:
-            if paths["session"].exists():
-                paths["session"].unlink()
-        except OSError:
+            _fail_session = load_manifest(paths["session"]) or {}
+            _fail_session["stage"] = "start_failed"
+            _fail_session["start_failure_code"] = getattr(
+                failure, "code", "UNKNOWN")
+            write_session(paths, _fail_session)
+        except Exception:
             pass
         raise failure from None
 
@@ -2359,7 +2500,7 @@ def cmd_start(args):
                       % INSTALL_MANIFEST, exit_code=EXIT_PRECHECK)
     record_planner_image_identities(planner, install)
 
-    docker = WslDocker(planner, project_dir)
+    docker = WslDocker(planner, project_dir, allow_wake=True)
 
     # ── conflict detection BEFORE any side effect ──
     session = load_manifest(paths["session"])
@@ -2393,8 +2534,10 @@ def cmd_start(args):
                          exit_code=EXIT_CONFLICT)
         if classification != "absent":
             raise Failure("STACK_PARTIAL",
-                          "partial stack present (%s); run `mergepilot stop` "
-                          "or `cleanup`" % detail, exit_code=EXIT_CONFLICT)
+                          "partial stack present (%s); recover with "
+                          "`mergepilot stop` or `mergepilot cleanup "
+                          "--apply` (cleanup is dry-run unless --apply)"
+                          % detail, exit_code=EXIT_CONFLICT)
         if session.get("stage") != "complete":
             # complete-manifest with absent resources = already stopped;
             # anything else is a stale journal from a failed rollback.
@@ -2668,7 +2811,7 @@ def _execute_start(docker, planner, showcase, project_dir, paths, session,
 def cmd_status(args):
     project_dir = resolve_project_dir(args.project_dir)
     planner, _showcase = _load_planner(project_dir)
-    docker = WslDocker(planner, project_dir)
+    docker = WslDocker(planner, project_dir, allow_wake=True)
     paths = state_paths(project_dir)
 
     snapshot = discover_stack(docker, planner)
@@ -2784,7 +2927,7 @@ def _verify_against_manifest(session, kind, key, discovered_state,
 def cmd_stop(args):
     project_dir = resolve_project_dir(args.project_dir)
     planner, _showcase = _load_planner(project_dir)
-    docker = WslDocker(planner, project_dir)
+    docker = WslDocker(planner, project_dir, allow_wake=True)
     paths = state_paths(project_dir)
 
     session = load_manifest(paths["session"])
@@ -2954,7 +3097,7 @@ def cmd_stop(args):
 def cmd_cleanup(args):
     project_dir = resolve_project_dir(args.project_dir)
     planner, _showcase = _load_planner(project_dir)
-    docker = WslDocker(planner, project_dir)
+    docker = WslDocker(planner, project_dir, allow_wake=True)
     paths = state_paths(project_dir)
 
     install = load_manifest(paths["install"])
@@ -3180,8 +3323,7 @@ def main(argv=None):
     if _JSON_MODE:
         print(json.dumps(result, indent=2))
     else:
-        status = result.get("status")
-        log("OK (%s)" % status if status else "OK")
+        log(_status_line(result))
     return code
 
 
