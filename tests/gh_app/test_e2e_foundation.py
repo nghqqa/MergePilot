@@ -360,6 +360,21 @@ class TestRoomMapPairing(unittest.TestCase):
         with self.assertRaises(e2f.E2EConfigError):
             e2f.parse_room_map_repos('repos:\n  "a/b":\n')
 
+    def test_unquoted_repo_key_rejected(self):
+        # run30 regression: the probe accepted optional quotes while
+        # github_drain.parse_room_map (the in-container consumer)
+        # requires them — a plain-YAML key passed the prerequisite gate
+        # and crashed the controller at startup. The probe must fail
+        # closed with the production shape.
+        with self.assertRaises(e2f.E2EConfigError) as ctx:
+            e2f.parse_room_map_repos(
+                'repos:\n'
+                '  nghqqa/MergePilot-e2e-fixture:\n'
+                '    room_id: "!syntheticroom0000:'
+                'matrix-local.hiclaw.io:18080"\n')
+        self.assertEqual(ctx.exception.code, "ROOM_MAP_INVALID")
+        self.assertIn("double-quoted", ctx.exception.detail)
+
 
 # ── §4 network / route-gate command contract ─────────────────────────────────
 

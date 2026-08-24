@@ -397,9 +397,19 @@ def parse_room_map_repos(text: str) -> dict:
             repos[current] = room_id
             continue
         if line.startswith("  ") and line.endswith(":"):
-            repo = line.strip().rstrip(":")
-            if len(repo) >= 2 and repo[0] == '"' and repo[-1] == '"':
-                repo = repo[1:-1]
+            # run30 finding: github_drain.parse_room_map requires
+            # MANDATORY double quotes around the repo key
+            # (r'  "([^"]+)":'). This probe previously stripped
+            # optional quotes, accepting files the in-container
+            # parser rejects at controller startup — the prerequisite
+            # gate must fail closed with the production shape.
+            m = re.fullmatch(r'  "([^"]+)":', line)
+            if not m:
+                raise E2EConfigError(
+                    "ROOM_MAP_INVALID",
+                    "line %d: repo key must be double-quoted "
+                    '(github_drain.parse_room_map contract)' % lineno)
+            repo = m.group(1)
             if not re.fullmatch(r"[A-Za-z0-9._-]+/[A-Za-z0-9._-]+", repo):
                 raise E2EConfigError(
                     "ROOM_MAP_INVALID", "line %d: invalid repo key" % lineno)
