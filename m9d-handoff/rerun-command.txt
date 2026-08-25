@@ -1,0 +1,14 @@
+# M9-D External Test Machine — Run These Commands
+# (in the directory containing all 7 downloaded assets)
+
+sha256sum -c checksums.sha256
+Expand-Archive mergepilot-v0.1.0-preview.4-rc.3-package.zip -DestinationPath .
+.\bootstrapper.ps1 -Action Check
+.\bootstrapper.ps1 -Action Install -ImageTar images-oci.tar
+.\bootstrapper.ps1 -Action Doctor
+.\bootstrapper.ps1 -Action Start
+# Browser: http://127.0.0.1:8600/e2e-status.html
+.\bootstrapper.ps1 -Action Status
+.\bootstrapper.ps1 -Action Stop
+.\bootstrapper.ps1 -Action Start
+.\bootstrapper.ps1 -Action Cleanup
