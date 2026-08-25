@@ -52,8 +52,8 @@ class CleanupInstallJsonTiming(unittest.TestCase):
     """§3: manifest state recorded BEFORE cleanup, three-way report."""
 
     def test_manifest_state_recorded_before(self):
-        self.assertIn("$manifestExisted", BS)
-        self.assertIn("BEFORE cleanup", BS)
+        self.assertIn("$manifestInitialState", BS)
+        self.assertIn("BEFORE any cleanup call", BS)
 
     def test_present_and_consumed_message(self):
         cleanup_blk = BS[BS.index('"Cleanup" {'):]
@@ -68,13 +68,13 @@ class CleanupInstallJsonTiming(unittest.TestCase):
 
     def test_unparseable_manifest_message(self):
         cleanup_blk = BS[BS.index('"Cleanup" {'):]
-        self.assertIn("present but unparseable", cleanup_blk)
-        self.assertIn("ownership not assumed", cleanup_blk)
+        self.assertIn("present but unreadable", cleanup_blk)
+        self.assertIn("fail-closed", cleanup_blk)
 
     def test_parse_check_exists(self):
         cleanup_blk = BS[BS.index('"Cleanup" {'):]
         self.assertIn("ConvertFrom-Json", cleanup_blk)
-        self.assertIn("$manifestParsed", cleanup_blk)
+        self.assertIn("$manifestInitialState", cleanup_blk)
 
     def test_no_ambiguous_no_json_found(self):
         cleanup_blk = BS[BS.index('"Cleanup" {'):]
