@@ -53,6 +53,17 @@ PGVECTOR_IMAGE_REF = "pgvector/pgvector:pg16"
 PGVECTOR_IMAGE_ID = (
     "sha256:8e5355e9ff399a002fa46148399a1ac22fb3e9b2d390f857296e6da6b5559ba1"
 )
+# m9 defect B: `docker inspect .Id` is NOT stable across storage
+# backends — the classic graph2 store reports the config digest
+# (8e5355e9…), while the containerd image store reports the MANIFEST
+# digest. The manifest digest of the preview.3 shipped tar bytes is
+# recorded here so every gate accepts all three RECORDED forms
+# (registry manifest, classic-docker config Id, shipped-tar manifest)
+# and still fails closed on anything else. Packaging saves pgvector
+# BY DIGEST so future tars carry the pinned bytes.
+PGVECTOR_IMAGE_TAR_DIGEST = (
+    "sha256:7f58c9936b2ef7f3e1fa20ac7d13cc1d7337ebf2380eec75677efe0204daadf0"
+)
 
 # Base image for the four BUILT services (cached in the MergePilot-Test
 # daemon). Referenced by the root Dockerfiles; pinned by image ID so a
@@ -1807,6 +1818,7 @@ __all__ = [
     "PGVECTOR_IMAGE_DIGEST",
     "PGVECTOR_IMAGE_REF",
     "PGVECTOR_IMAGE_ID",
+    "PGVECTOR_IMAGE_TAR_DIGEST",
     "PREFLIGHT_CHECKS",
     "READER_ROLE",
     "ReaderDsnSecretFile",

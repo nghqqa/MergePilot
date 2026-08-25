@@ -33,7 +33,7 @@ $Images = @(
     "mergepilot-isolated-gh-proxy:local",
     "mergepilot-isolated-mcp-bridge:local",
     "mergepilot-isolated-preflight:local",
-    "pgvector/pgvector:pg16"
+    "pgvector/pgvector@sha256:a36250871de0833b8757561c72f2477ef1ddd1101afa4e617fb552e0de514c6b"
 )
 
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
@@ -63,10 +63,16 @@ Write-Host "== checksums"
 $cs = Join-Path $OutDir "checksums.sha256"
 Remove-Item $cs -ErrorAction SilentlyContinue
 $files = Get-ChildItem $OutDir -Recurse -File | Where-Object { $_.Name -ne "checksums.sha256" -and $_.Name -ne "manifest.json" }
-foreach ($f in $files) {
+# m9 defect A: `Add-Content` writes CRLF and $rel carries backslashes,
+# which breaks `sha256sum -c` on every non-Windows toolchain. Build the
+# file with LF newlines and forward-slash paths instead.
+$lines = foreach ($f in $files) {
     $h = (Get-FileHash $f.FullName -Algorithm SHA256).Hash.ToLower()
-    $rel = $f.FullName.Substring($OutDir.Length + 1)
-    Add-Content $cs ("$h  $rel") -Encoding ASCII
+    $rel = $f.FullName.Substring($OutDir.Length + 1).Replace("\", "/")
+    "$h  $rel"
+}
+[System.IO.File]::WriteAllText($cs, ($lines -join "`n") + "`n",
+                                [System.Text.UTF8Encoding]::new($false))
 }
 
 Write-Host "== manifest"

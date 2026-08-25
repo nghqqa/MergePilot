@@ -878,6 +878,32 @@ def probe_environment(docker):
     return checks
 
 
+def pgvector_recorded_pins(planner) -> frozenset:
+    """Every RECORDED pgvector identity, across storage backends.
+
+    `docker inspect .Id` differs by backend (graph2: config digest;
+    containerd image store: manifest digest), so the pin set carries
+    the registry manifest digest, the classic-docker config Id, and
+    the shipped-tar manifest digest. Anything outside the set still
+    fails closed.
+    """
+    return frozenset((
+        planner.PGVECTOR_IMAGE_DIGEST,
+        planner.PGVECTOR_IMAGE_ID,
+        planner.PGVECTOR_IMAGE_TAR_DIGEST,
+    ))
+
+
+def pgvector_cached_at_recorded_pin(docker, planner) -> bool:
+    """True when any recorded ref resolves to a recorded identity."""
+    pins = pgvector_recorded_pins(planner)
+    for ref in (planner.PGVECTOR_IMAGE_REF,) + tuple(pins):
+        img = docker.image_id(ref)
+        if img is not None and img.strip() in pins:
+            return True
+    return False
+
+
 def require_environment(docker):
     """Install/start gate: probe_environment + pgvector digest cache."""
     checks = probe_environment(docker)
@@ -885,16 +911,16 @@ def require_environment(docker):
         bad = next(c for c in checks if not c["ok"])
         raise Failure(bad["code"], bad["detail"], exit_code=EXIT_PRECHECK)
     planner = _PLANNER
-    # byte-exact offline pin: the loaded tag must resolve to the
-    # recorded config digest (a @sha256 manifest ref is unresolvable
-    # for docker-load images — usability round §4)
-    _pg_id = docker.image_id(planner.PGVECTOR_IMAGE_ID)
-    if _pg_id is None or _pg_id.strip() != planner.PGVECTOR_IMAGE_ID:
+    # byte-exact offline pin, backend-stable: any RECORDED ref must
+    # resolve to a RECORDED identity (registry manifest digest,
+    # classic-docker config Id, or shipped-tar manifest digest).
+    if not pgvector_cached_at_recorded_pin(docker, planner):
         raise Failure(
             "PGVECTOR_NOT_CACHED",
-            "pgvector image not cached at the pinned bytes (pull=never): "
-            "%s must resolve to %s" % (planner.PGVECTOR_IMAGE_REF,
-                                     planner.PGVECTOR_IMAGE_ID),
+            "pgvector image not cached at any recorded pin (pull=never): "
+            "%s must resolve to one of %s" % (
+                planner.PGVECTOR_IMAGE_REF,
+                ", ".join(sorted(pgvector_recorded_pins(planner)))),
             exit_code=EXIT_PRECHECK)
 
 
@@ -1744,11 +1770,11 @@ def cmd_doctor(args):
     stack = {"classification": "unknown", "detail": "environment gate failed"}
     images = {}
     if env_ok:
-        pg = docker.image_id(planner.PGVECTOR_IMAGE_ID)
-        add("pgvector_image", "DOCTOR_PGVECTOR_CACHED" if pg
-            else "DOCTOR_PGVECTOR_NOT_CACHED", pg is not None,
-            planner.PGVECTOR_IMAGE_ID if pg
-            else "pinned bytes not cached (pull=never)")
+        pg_ok = pgvector_cached_at_recorded_pin(docker, planner)
+        add("pgvector_image", "DOCTOR_PGVECTOR_CACHED" if pg_ok
+            else "DOCTOR_PGVECTOR_NOT_CACHED", pg_ok,
+            planner.PGVECTOR_IMAGE_REF if pg_ok
+            else "no recorded pin cached (pull=never)")
         for service in planner.BUILT_SERVICES:
             tag = image_tag(planner, service)
             img = docker.image_id(tag)

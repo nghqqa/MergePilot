@@ -563,6 +563,37 @@ class TestDoctor(CliTestBase):
         codes = {c["code"] for c in payload["checks"]}
         self.assertIn("DOCTOR_PGVECTOR_NOT_CACHED", codes)
 
+    def test_pgvector_tar_recorded_digest_accepted(self):
+        # m9 defect B repro: a docker/containerd image store reports the
+        # MANIFEST digest as .Id; an offline docker-load of the shipped
+        # tar resolves the tag to the tar-recorded digest (7f58c993…),
+        # not the classic-docker config-ID pin (8e5355e9…). The gate
+        # must accept every RECORDED identity and still fail closed on
+        # anything else.
+        del self.world.images[oc.PGVECTOR_IMAGE_ID]
+        self.world.images[oc.PGVECTOR_IMAGE_REF] = oc.PGVECTOR_IMAGE_TAR_DIGEST
+        rc, text, payload = self.cli("doctor", "--json")
+        codes = {c["code"] for c in payload["checks"]}
+        self.assertNotIn("DOCTOR_PGVECTOR_NOT_CACHED", codes)
+
+    def test_pgvector_registry_digest_accepted(self):
+        # A deployment that pulled the pinned registry digest also
+        # passes the gate (manifest-digest form).
+        del self.world.images[oc.PGVECTOR_IMAGE_ID]
+        self.world.images[oc.PGVECTOR_IMAGE_REF] = oc.PGVECTOR_IMAGE_DIGEST
+        rc, text, payload = self.cli("doctor", "--json")
+        codes = {c["code"] for c in payload["checks"]}
+        self.assertNotIn("DOCTOR_PGVECTOR_NOT_CACHED", codes)
+
+    def test_pgvector_unknown_bytes_still_rejected(self):
+        # Fail-closed: bytes matching NO recorded identity still fail.
+        del self.world.images[oc.PGVECTOR_IMAGE_ID]
+        self.world.images[oc.PGVECTOR_IMAGE_REF] = "sha256:" + "ab" * 32
+        rc, text, payload = self.cli("doctor", "--json")
+        self.assertEqual(rc, mp.EXIT_PRECHECK)
+        codes = {c["code"] for c in payload["checks"]}
+        self.assertIn("DOCTOR_PGVECTOR_NOT_CACHED", codes)
+
     def test_partial_stack_reported(self):
         self.world.containers[PG_NAME] = {
             "id": "sha256:" + "11" * 32, "status": "running",
