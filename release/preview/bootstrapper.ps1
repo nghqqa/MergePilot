@@ -366,6 +366,20 @@ switch ($Action) {
     }
 
     "Cleanup" {
+        # M9G-1 fix: snapshot the manifest state BEFORE any cleanup call
+        # runs — the CLI cleanup --apply DELETES install.json, so checking
+        # after the call always sees "absent" and the report lies.
+        $inst = Join-Path $StateDir "install.json"
+        $manifestInitialState = "absent"
+        $manifestExisted = Test-Path $inst
+        if ($manifestExisted) {
+            try {
+                $null = Get-Content $inst -Raw | ConvertFrom-Json
+                $manifestInitialState = "present_valid"
+            } catch {
+                $manifestInitialState = "present_invalid"
+            }
+        }
         $null = Wake-Distro $Distro
         Invoke-Cli @("stop")
         Invoke-Cli @("cleanup", "--apply")
@@ -373,21 +387,11 @@ switch ($Action) {
         Stop-OwnedProcess $KeepaliveFile "wsl"
         Assert-TeardownComplete $KeepaliveFile
         Assert-TeardownComplete $ForwarderIdentity
-        # §3: record manifest state BEFORE cleanup runs so the report
-        # reflects the pre-cleanup reality, not the post-cleanup absence
-        $inst = Join-Path $StateDir "install.json"
-        $manifestExisted = Test-Path $inst
-        $manifestParsed = $false
-        if ($manifestExisted) {
-            try {
-                $null = Get-Content $inst -Raw | ConvertFrom-Json
-                $manifestParsed = $true
-            } catch { $manifestParsed = $false }
-        }
-        if ($manifestExisted -and $manifestParsed) {
+        # Report based on the PRE-cleanup snapshot, not post-cleanup state
+        if ($manifestInitialState -eq "present_valid") {
             Write-Log "OK" "install manifest removed (was present and consumed by cleanup --apply)"
-        } elseif ($manifestExisted -and -not $manifestParsed) {
-            Write-Log "WARN" "install manifest was present but unparseable; CLI cleanup may have removed or retained it (fail-closed: ownership not assumed)"
+        } elseif ($manifestInitialState -eq "present_invalid") {
+            Write-Log "WARN" "install manifest present but unreadable; ownership-sensitive image cleanup skipped (fail-closed)"
         } else {
             Write-Log "INFO" "no install manifest found from the start; ownership-sensitive image cleanup skipped (fail-closed: no owner record, no deletion)"
         }
