@@ -92,13 +92,13 @@ class CleanupMessaging(unittest.TestCase):
 
     def test_no_owner_record_explains_retention(self):
         cleanup_blk = BS[BS.index('"Cleanup" {'):]
-        self.assertIn("no install.json found", cleanup_blk)
+        self.assertIn("no install manifest found from the start", cleanup_blk)
         self.assertIn("fail-closed", cleanup_blk)
-        self.assertIn("images retained", cleanup_blk)
+        self.assertIn("image cleanup skipped", cleanup_blk)
 
     def test_owned_manifest_removal_reported(self):
         cleanup_blk = BS[BS.index('"Cleanup" {'):]
-        self.assertIn("install.json removed", cleanup_blk)
+        self.assertIn("install manifest removed", cleanup_blk)
 
     def test_cleanup_complete_summary_line(self):
         cleanup_blk = BS[BS.index('"Cleanup" {'):]

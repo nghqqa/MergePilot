@@ -373,12 +373,23 @@ switch ($Action) {
         Stop-OwnedProcess $KeepaliveFile "wsl"
         Assert-TeardownComplete $KeepaliveFile
         Assert-TeardownComplete $ForwarderIdentity
-        # §4: explicit per-resource cleanup report (never a bare "cleaned")
+        # §3: record manifest state BEFORE cleanup runs so the report
+        # reflects the pre-cleanup reality, not the post-cleanup absence
         $inst = Join-Path $StateDir "install.json"
-        if (Test-Path $inst) {
-            Write-Log "OK" "install.json removed (owned manifest found)"
+        $manifestExisted = Test-Path $inst
+        $manifestParsed = $false
+        if ($manifestExisted) {
+            try {
+                $null = Get-Content $inst -Raw | ConvertFrom-Json
+                $manifestParsed = $true
+            } catch { $manifestParsed = $false }
+        }
+        if ($manifestExisted -and $manifestParsed) {
+            Write-Log "OK" "install manifest removed (was present and consumed by cleanup --apply)"
+        } elseif ($manifestExisted -and -not $manifestParsed) {
+            Write-Log "WARN" "install manifest was present but unparseable; CLI cleanup may have removed or retained it (fail-closed: ownership not assumed)"
         } else {
-            Write-Log "INFO" "no install.json found - no owned image manifest; images retained (fail-closed: no owner record, no deletion)"
+            Write-Log "INFO" "no install manifest found from the start; ownership-sensitive image cleanup skipped (fail-closed: no owner record, no deletion)"
         }
         Write-Log "OK" "session containers/networks: removed by stop"
         Write-Log "OK" "keepalive: terminated"
