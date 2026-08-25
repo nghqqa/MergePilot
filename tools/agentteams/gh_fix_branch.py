@@ -119,10 +119,10 @@ def main(argv: list) -> int:
     if not content or len(content.encode("utf-8")) > 512_000:
         _die("content empty or exceeds limit")
 
-    id_args = ("owner=%s" % owner, "repo=%s" % repo, "pull_number=%d" % pr)
+    id_args = ("owner=%s" % owner, "repo=%s" % repo, "pullNumber=%d" % pr)
 
     # 1) confirm target branch == PR current head branch (fail-closed)
-    pr_raw = _mc("github.get_pull_request", *id_args)
+    pr_raw = _mc("github.pull_request_read", "method=get", *id_args)
     m = re.search(r'"ref"\s*:\s*"%s"' % re.escape(branch), pr_raw)
     head_ref = re.search(r'"head"\s*:\s*\{[^}]*?"ref"\s*:\s*"([^"]+)"', pr_raw)
     if not m or not head_ref or head_ref.group(1) != branch:

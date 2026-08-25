@@ -140,7 +140,7 @@ def main(argv: list) -> int:
         owner, repo, pr_number = argv[2], argv[3], argv[4]
         id_args = _owner_repo(owner, repo)
         pr = _validate_pr(pr_number)
-        raw = _mc("github.get_pull_request", *id_args, "pull_number=%d" % pr)
+        raw = _mc("github.pull_request_read", "method=get", *id_args, "pullNumber=%d" % pr)
         # minimal, stable, secret-free projection
         try:
             doc = json.loads(raw[raw.index("{"):])
@@ -159,7 +159,8 @@ def main(argv: list) -> int:
         owner, repo, pr_number = argv[2], argv[3], argv[4]
         id_args = _owner_repo(owner, repo)
         pr = _validate_pr(pr_number)
-        raw = _mc("github.get_pull_request_files", *id_args, "pull_number=%d" % pr)
+        raw = _mc("github.pull_request_read", "method=get_files", *id_args,
+            "pullNumber=%d" % pr)
         names = re.findall(r'"(?:filename|path)"\s*:\s*"([^"]+)"', raw)
         print(json.dumps({"files": names[:100]}, ensure_ascii=False))
         return 0
