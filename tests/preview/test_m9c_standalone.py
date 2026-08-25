@@ -56,8 +56,8 @@ class StandaloneInstall(unittest.TestCase):
         self.assertIn("PackageRoot", BS)
 
     def test_make_package_bundles_cli(self):
-        self.assertIn(r'tools\cli', PKG)
-        self.assertIn(r'tools\preview', PKG)
+        self.assertIn('tools', PKG)
+        self.assertIn('config', PKG)
 
     def test_state_dir_in_package_root(self):
         self.assertIn('Join-Path $RepoRoot ".mergepilot"', BS)

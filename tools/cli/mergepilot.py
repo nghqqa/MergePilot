@@ -1789,22 +1789,40 @@ def cmd_doctor(args):
     add("python_version", "DOCTOR_PYTHON", True,
         "%d.%d.%d" % (version.major, version.minor, version.micro))
 
-    required = ([("Dockerfile.%s" % s) for s in planner.BUILT_SERVICES]
-                + ["docker-compose.yml",
-                   "tools/demo_console/one_click_startup.py",
-                   "tools/demo_console/showcase_cases.py",
-                   "tools/demo_console/migrations/%s"
-                   % ISOLATED_LIVE_MIGRATIONS[0],
-                   "tools/demo_console/migrations/%s"
-                   % ISOLATED_LIVE_MIGRATIONS[1],
-                   "config/gh-app/room-map.example.yaml"]
-                + [("tools/audit-db/%s" % f)
-                   for f in sorted(set(AUDIT_DB_MIGRATION_CHAIN))])
+    # m9-d standalone Doctor contract: source-build files are only
+    # required when the caller explicitly asks to BUILD from source.
+    # In offline-install/runtime mode (the standalone package), the
+    # runtime state is what matters — install.json, images, containers.
+    source_build = getattr(args, "build_from_source", False)
+    _runtime_files = [
+        "tools/demo_console/one_click_startup.py",
+        "tools/demo_console/showcase_cases.py",
+    ]
+    _source_build_files = ([("Dockerfile.%s" % s) for s in planner.BUILT_SERVICES]
+                           + ["docker-compose.yml",
+                              "tools/demo_console/migrations/%s"
+                              % ISOLATED_LIVE_MIGRATIONS[0],
+                              "tools/demo_console/migrations/%s"
+                              % ISOLATED_LIVE_MIGRATIONS[1],
+                              "config/gh-app/room-map.example.yaml"]
+                           + [("tools/audit-db/%s" % f)
+                              for f in sorted(set(AUDIT_DB_MIGRATION_CHAIN))])
+    required = _runtime_files + (_source_build_files if source_build else [])
     missing = [r for r in required if not (project_dir / r).is_file()]
-    add("project_layout", "DOCTOR_LAYOUT_MISSING" if missing
-        else "DOCTOR_LAYOUT_OK", not missing,
-        "missing: %s" % missing if missing else
-        "%d contract files present" % len(required))
+    if source_build:
+        add("project_layout", "DOCTOR_LAYOUT_MISSING" if missing
+            else "DOCTOR_LAYOUT_OK", not missing,
+            "SOURCE-BUILD mode, missing: %s" % missing if missing else
+            "%d contract files present" % len(required))
+    else:
+        add("runtime_layout", "DOCTOR_RUNTIME_MISSING" if missing
+            else "DOCTOR_RUNTIME_OK", not missing,
+            "missing: %s" % missing if missing else
+            "%d runtime files present (standalone OK)" % len(required))
+        add("project_layout", "DOCTOR_LAYOUT_SOURCE_ONLY", True,
+            "offline-install mode: %d source-build files not required "
+            "(use --build-from-source to check them)"
+            % len(_source_build_files))
 
     try:
         with tempfile.TemporaryDirectory(prefix="mp-doctor-") as td:
@@ -1841,6 +1859,16 @@ def cmd_doctor(args):
     env_checks = probe_environment(docker)
     checks.extend(env_checks)
     env_ok = all(c["ok"] for c in env_checks)
+
+    # standalone install status: the offline package's install.json
+    _paths = state_paths(project_dir)
+    install_manifest = load_manifest(_paths["install"])
+    add("install_status", "DOCTOR_INSTALLED" if install_manifest
+        else "DOCTOR_NOT_INSTALLED", install_manifest is not None,
+        "%d images recorded" % len((install_manifest or {}).get("images", {}))
+        if install_manifest else
+        "no install.json — run bootstrapper Install (offline) or "
+        "mergepilot install (source)")
 
     stack = {"classification": "unknown", "detail": "environment gate failed"}
     images = {}
@@ -3391,6 +3419,9 @@ def build_parser():
 
     p = sub.add_parser("doctor", parents=[common],
                        help="read-only environment and stack checks")
+    p.add_argument("--build-from-source", action="store_true",
+                   help="check source-build files (Dockerfiles, compose, "
+                        "migrations) — not needed for offline installs")
     p.add_argument("--github-e2e", action="store_true",
                    help="add the GitHub E2E foundation checks (read-only "
                         "planning capability; no side effects)")

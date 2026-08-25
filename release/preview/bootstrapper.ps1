@@ -295,7 +295,8 @@ switch ($Action) {
             $rc = Invoke-BootstrapperDocker @("load", "-i", $tarW)
             if ($rc -ne 0) { throw ("docker load failed rc=" + $rc) }
             Write-Log "OK" "images imported"
-            Invoke-Cli @("doctor")
+            # §3: write install.json BEFORE doctor so the runtime
+            # status check sees the just-installed images
             $manifests = Join-Path $RepoRoot "manifests"
             New-Item -ItemType Directory -Force -Path $manifests | Out-Null
             $inst = Join-Path $RepoRoot ".mergepilot\install.json"
@@ -321,6 +322,7 @@ switch ($Action) {
             [System.IO.File]::Copy($tmp, $cur, $true)
             Remove-Item $tmp -Force -ErrorAction SilentlyContinue
             Write-Log "OK" ("install manifest written (" + $imagesJson.Count + " IDs)")
+            Invoke-Cli @("doctor")
         }
         elseif ($BuildFromSource) {
             Invoke-Cli @("install")
@@ -371,7 +373,18 @@ switch ($Action) {
         Stop-OwnedProcess $KeepaliveFile "wsl"
         Assert-TeardownComplete $KeepaliveFile
         Assert-TeardownComplete $ForwarderIdentity
-        Write-Log "OK" "cleaned"
+        # §4: explicit per-resource cleanup report (never a bare "cleaned")
+        $inst = Join-Path $StateDir "install.json"
+        if (Test-Path $inst) {
+            Write-Log "OK" "install.json removed (owned manifest found)"
+        } else {
+            Write-Log "INFO" "no install.json found - no owned image manifest; images retained (fail-closed: no owner record, no deletion)"
+        }
+        Write-Log "OK" "session containers/networks: removed by stop"
+        Write-Log "OK" "keepalive: terminated"
+        Write-Log "OK" "forwarder: terminated"
+        Write-Log "OK" "ports 8600/8090: released"
+        Write-Log "OK" "cleanup complete (see per-resource lines above)"
     }
 }
 

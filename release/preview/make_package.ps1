@@ -58,15 +58,12 @@ Copy-Item (Join-Path $RepoRoot "release\preview\bootstrapper.ps1") $pkg
 Copy-Item (Join-Path $RepoRoot "release\preview\README.md") $pkg
 New-Item -ItemType Directory -Force -Path (Join-Path $pkg "docs") | Out-Null
 Copy-Item (Join-Path $RepoRoot "docs\preview") (Join-Path $pkg "docs") -Recurse
-# Standalone CLI payload: mirrors the repo tools/ layout so the CLI's
-# own path resolution works unchanged (tools/cli/, tools/demo_console/,
-# tools/preview/ are siblings inside the extracted ZIP)
-New-Item -ItemType Directory -Force -Path (Join-Path $pkg "tools\cli") | Out-Null
-Copy-Item (Join-Path $RepoRoot "tools\cli\*.py") (Join-Path $pkg "tools\cli")
-New-Item -ItemType Directory -Force -Path (Join-Path $pkg "tools\demo_console") | Out-Null
-Copy-Item (Join-Path $RepoRoot "tools\demo_console\*.py") (Join-Path $pkg "tools\demo_console") -Exclude "__pycache__"
-New-Item -ItemType Directory -Force -Path (Join-Path $pkg "tools\preview") | Out-Null
-Copy-Item (Join-Path $RepoRoot "tools\preview\*.py") (Join-Path $pkg "tools\preview")
+# Standalone CLI payload: mirror the FULL tools/ + config/ trees so the
+# CLI's path resolution AND runtime file reads (policy.yaml, migrations,
+# audit-db SQL, room-map) work unchanged from the extracted ZIP
+Copy-Item (Join-Path $RepoRoot "tools") (Join-Path $pkg "tools") -Recurse -Exclude "__pycache__","*.pyc"
+New-Item -ItemType Directory -Force -Path (Join-Path $pkg "config") | Out-Null
+Copy-Item (Join-Path $RepoRoot "config\gh-app") (Join-Path $pkg "config\gh-app") -Recurse
 
 Write-Host "== checksums"
 $cs = Join-Path $OutDir "checksums.sha256"
