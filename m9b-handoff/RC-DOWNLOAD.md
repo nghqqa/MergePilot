@@ -19,11 +19,11 @@ sha256sum -c checksums.sha256
 ```powershell
 # Extract the ZIP to a subfolder 'package/'
 Expand-Archive mergepilot-v0.1.0-preview.4-rc.1-package.zip -DestinationPath package
-.\packageootstrapper.ps1 -Action Check
-.\packageootstrapper.ps1 -Action Install -ImageTar images-oci.tar
-.\packageootstrapper.ps1 -Action Start
+.\package/bootstrapper.ps1 -Action Check
+.\package/bootstrapper.ps1 -Action Install -ImageTar images-oci.tar
+.\package/bootstrapper.ps1 -Action Start
 # Browser: http://127.0.0.1:8600/e2e-status.html
-.\packageootstrapper.ps1 -Action Cleanup
+.\package/bootstrapper.ps1 -Action Cleanup
 ```
 
 ## Expected environment-specific behavior

@@ -19,7 +19,7 @@ $ErrorActionPreference = "Stop"
 if (-not $RepoRoot) { $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path }
 if (-not $OutDir) { $OutDir = Join-Path $RepoRoot "dist\preview-v0.1.0" }
 
-$Version = "v0.1.0-preview.3"
+$Version = "v0.1.0-preview.4-rc.2"
 # REQUIRED_IMAGE_SET: everything `doctor`/`start` needs to run with a
 # BLANK image cache and NO network pull — the 8 built images plus the
 # digest-locked pgvector base. The bootstrapper's Install gate checks
@@ -53,11 +53,24 @@ if ($distWsl -match "^([A-Za-z]):\\(.*)$") {
 & wsl.exe -u root -d $Distro --exec docker save -o $distWsl @Images
 if ($LASTEXITCODE -ne 0) { throw "docker save failed" }
 
-Write-Host "== copy package payload"
+Write-Host "== copy package payload (standalone: bundled CLI + forwarder)"
 Copy-Item (Join-Path $RepoRoot "release\preview\bootstrapper.ps1") $pkg
 Copy-Item (Join-Path $RepoRoot "release\preview\README.md") $pkg
 New-Item -ItemType Directory -Force -Path (Join-Path $pkg "docs") | Out-Null
 Copy-Item (Join-Path $RepoRoot "docs\preview") (Join-Path $pkg "docs") -Recurse
+# Standalone CLI payload: the Python tools the bootstrapper invokes,
+# laid out so cli/mergepilot.py and preview/loopback_forwarder.py are
+# siblings of bootstrapper.ps1 inside the extracted ZIP
+New-Item -ItemType Directory -Force -Path (Join-Path $pkg "cli") | Out-Null
+Copy-Item (Join-Path $RepoRoot "tools\cli\*.py") (Join-Path $pkg "cli")
+New-Item -ItemType Directory -Force -Path (Join-Path $pkg "preview") | Out-Null
+Copy-Item (Join-Path $RepoRoot "tools\preview\*.py") (Join-Path $pkg "preview")
+New-Item -ItemType Directory -Force -Path (Join-Path $pkg "demo_console") | Out-Null
+Copy-Item (Join-Path $RepoRoot "tools\demo_console\*.py") (Join-Path $pkg "demo_console") -Exclude "__pycache__"
+# mergepilot.py imports from the demo_console package
+New-Item -ItemType Directory -Force -Path (Join-Path $pkg "cli\tools\demo_console") | Out-Null
+Copy-Item (Join-Path $RepoRoot "tools\demo_console\*.py") (Join-Path $pkg "cli\tools\demo_console") -Exclude "__pycache__"
+Copy-Item (Join-Path $RepoRoot "tools\demo_console\showcase_cases.py") (Join-Path $pkg "cli\tools\demo_console") -ErrorAction SilentlyContinue
 
 Write-Host "== checksums"
 $cs = Join-Path $OutDir "checksums.sha256"

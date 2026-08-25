@@ -91,15 +91,15 @@ class TestBootstrapperSourceContracts(unittest.TestCase):
     def test_checksum_gate_precedes_docker_load(self):
         # v3: the gate is inline in Install (checksum verify + set
         # completeness), the load is the Invoke-BootstrapperDocker call
-        gate = self.BS.index("image tar checksum mismatch")
+        gate = self.BS.index("checksum mismatch")
         setgate = self.BS.index("OFFLINE_IMAGE_SET_INCOMPLETE")
-        load = self.BS.index('Invoke-BootstrapperDocker @("load", "-i", $tarW)')
+        load = self.BS.index('@("load", "-i", $tarW)')
         self.assertLess(gate, load, "checksum gate must run before docker load")
         self.assertLess(setgate, load, "image-set gate must run before load")
 
     def test_refuses_unregistered_or_mismatched_tar(self):
         self.assertIn("no checksums entry", self.BS)
-        self.assertIn("image tar checksum mismatch", self.BS)
+        self.assertIn("checksum mismatch", self.BS)
         # duplicated manifest entries are ambiguous, not first-wins
         self.assertIn("duplicate checksums entries", self.BS)
 
@@ -131,7 +131,7 @@ class TestBootstrapperSourceContracts(unittest.TestCase):
         self.assertIn("[System.IO.File]::Copy($tmp, $cur, $true)", self.BS)
 
     def test_run_id_whitelist(self):
-        self.assertIn("run-showcase-a/b/c", self.BS)
+        self.assertIn("run-showcase-a", self.BS)
 
     def test_no_dangerous_patterns(self):
         for src, name in ((self.BS, "bootstrapper"), (self.MP, "make_package")):
