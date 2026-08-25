@@ -64,3 +64,16 @@ class PinnedToolNames(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class IdempotencyGuard(unittest.TestCase):
+    """m9 finding G: a retry with identical content must be a no-op,
+    never a duplicate commit."""
+
+    def test_fixer_has_idempotency_precheck(self):
+        self.assertIn("idempotent no-op", FIX)
+        self.assertIn("content.strip() in cur", FIX)
+        # the no-op returns BEFORE any create_or_update_file call
+        guard = FIX.index("idempotent no-op")
+        write = FIX.index('"github.create_or_update_file"')
+        self.assertLess(guard, write)

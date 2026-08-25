@@ -136,13 +136,19 @@ def main(argv: list) -> int:
         _die("PR #%d head repo %r != requested %r (fork PRs are denied)" % (
             pr, (full.group(1) if full else "?"), want_repo))
 
-    # 2) current blob SHA for CAS
+    # 2) current blob SHA for CAS + idempotency pre-check (m9 G):
+    # a retry with IDENTICAL content must be a no-op, not a duplicate
+    # commit — GitHub's create_or_update_file always commits.
     cur = _mc("github.get_file_contents", "owner=%s" % owner, "repo=%s" % repo,
               "path=%s" % path, "ref=%s" % branch)
     sha_m = _SHA_RE.search(cur)
     if not sha_m:
         _die("no blob SHA found for %s @ %s" % (path[:60], branch[:40]))
     sha = sha_m.group(1)
+    if content.strip() in cur:
+        print("[%s] already at target content on %s (idempotent no-op, "
+              "base sha %s)" % (TOOL, branch[:40], sha[:10]))
+        return 0
 
     # 3) single-file CAS update
     _mc("github.create_or_update_file", "owner=%s" % owner, "repo=%s" % repo,
