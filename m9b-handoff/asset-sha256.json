@@ -1,0 +1,73 @@
+{
+ "git_commit": "3a6e5313a495adcd8d1d610484f533da2ba94097",
+ "assets": {
+  "checksums.sha256": {
+   "sha256": "b8a781b478455d7b60ee5d8179c85f8db3b6f31e3cedd61c44d87349fe9aa2fa",
+   "bytes": 1525
+  },
+  "EXTERNAL-ACCEPTANCE.md": {
+   "sha256": "085ef414893f10e526e8af1aa5b30d4e4f4af4206bb6c8f6559629c8d889dd8a",
+   "bytes": 1796
+  },
+  "images-oci.tar": {
+   "sha256": "37cb0cd15c5ae7ddffa371fdfa5a3c27538d52848f7ed930dda06dc3e8bc3b2a",
+   "bytes": 847388160
+  },
+  "manifest.json": {
+   "sha256": "0e9d896b5ba607034a118b3f799d6c29b45b1f4904ecacf1dd78b13a64ccd5dd",
+   "bytes": 4297
+  },
+  "mergepilot-v0.1.0-preview.4-rc.1-package.zip": {
+   "sha256": "939977ac8a2a8ee8282005bf6b742962650d7f91e7d31469d77cef65c93957af",
+   "bytes": 24906
+  },
+  "package/bootstrapper.ps1": {
+   "sha256": "77921a358266b93f734f36219227db88e9d0ee7bf82b726492c326d648333b65",
+   "bytes": 20210
+  },
+  "package/docs/preview/ARCHITECTURE-SECURITY.md": {
+   "sha256": "7a7763b54ba2b53f594d435a2d21bef059fd32707ed8668b6f362f4dff363f78",
+   "bytes": 3931
+  },
+  "package/docs/preview/DEMO-SCRIPT.md": {
+   "sha256": "96d3d264ac4a92836c1091c29925a4f0e386a187e4f0d874cc9fc22478ca2805",
+   "bytes": 4214
+  },
+  "package/docs/preview/projections/complete.run35.json": {
+   "sha256": "5d762023216a2dd5a59b8a5e6fd62d94e3e4503050057704fa06313892edc9de",
+   "bytes": 4013
+  },
+  "package/docs/preview/projections/failed.fixture.json": {
+   "sha256": "447a1e08e423e283ee9a072a2bd3822b57114ecf9ac0fd9ca5b6ebb4d1371b14",
+   "bytes": 3655
+  },
+  "package/docs/preview/projections/live.showcase.json": {
+   "sha256": "fdcab376946417d598535287651e95d8448e2cbe950127dda5a5cc4a74382a2e",
+   "bytes": 135
+  },
+  "package/docs/preview/PROJECTIONS.md": {
+   "sha256": "1c55098baba9481f0d4760a2484e29356fc289241ab8e9e9955d10f35ed8dcfd",
+   "bytes": 3189
+  },
+  "package/docs/preview/QUICKSTART.md": {
+   "sha256": "b6ab3e1f8e2bcdc8211f66c36f61bd341c00f82c05bb28fb1143e76d371b18e4",
+   "bytes": 3419
+  },
+  "package/docs/preview/ROLLBACK.md": {
+   "sha256": "b92f5e1849b475616c7149212526bce8ac5736d7441da1102a26a221c1249e1b",
+   "bytes": 4211
+  },
+  "package/docs/preview/SCREENSHOTS.md": {
+   "sha256": "009276a857dd122fe8fc3fa58c49901213cd2327a8e20974a5c6b9f65fde21bc",
+   "bytes": 1700
+  },
+  "package/README.md": {
+   "sha256": "e5220619af8d7aa528d4b0ed4cd5b89ec25776f45b25299cf7e245b15ffdcfd5",
+   "bytes": 4180
+  },
+  "SHA256SUMS": {
+   "sha256": "2c2d385a16fbead089cc03eb7bab12c9ee2716fe9ee52a425f7cec9f70173fce",
+   "bytes": 1609
+  }
+ }
+}

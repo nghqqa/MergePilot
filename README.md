@@ -2,9 +2,25 @@
 
 > 多 Agent PR 审修与风险治理闭环：把审查、修复、验证、L2 审批、合并与回滚放进确定性控制面，并留下可审计的结构化事实。
 
+[![Release](https://img.shields.io/badge/release-v0.1.0--preview.3-orange)](https://github.com/nghqqa/MergePilot/releases/tag/v0.1.0-preview.3)
+[![Tests](https://img.shields.io/badge/tests-2246%20passed%20%2F%2020%20skipped-blue)](docs/复赛材料/04-声明证据矩阵/声明证据矩阵.md)
+[![License](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
+
 MergePilot 面向“LLM 能提出建议，但不能独自承担工程控制面”的问题。高风险操作必须经过 Policy Gateway 与人工审批；任何环节不确定时 fail-closed，失败后可以沿审计事实执行 revision-cut / rollback。
 
-> **当前范围**：Apache-2.0 开源原型，已完成隔离栈组件验证与 deterministic showcase；M8 尚未完成，应用集成与生产验证尚未进行（详见「测试与真实性边界」）。
+> **当前公开范围**：Apache-2.0 开源 Preview，版本 `v0.1.0-preview.3`，merged main commit `379744d`。同机安装、生命周期、只读控制台和本地真实 E2E 已验收；独立物理机验收仍为 `EXTERNAL_BLOCKED`。Preview 不等于生产验证。
+
+## 先看什么
+
+下载试用： [v0.1.0-preview.3 Release](https://github.com/nghqqa/MergePilot/releases/tag/v0.1.0-preview.3)
+
+安装与回退： [Preview 代码包说明](docs/复赛材料/02-代码包说明/README.md)
+
+运行 Demo： [现场与录屏脚本](docs/复赛材料/03-Demo/现场与录屏脚本.md)
+
+复赛方案： [更新版项目方案 PDF](docs/复赛材料/01-更新版项目方案/MergePilot-复赛更新版项目方案-v1.pdf)
+
+声明核对： [声明证据矩阵](docs/复赛材料/04-声明证据矩阵/声明证据矩阵.md)
 
 ---
 
@@ -19,7 +35,17 @@ MergePilot 面向“LLM 能提出建议，但不能独自承担工程控制面�
 | 合并或复验失败需要可恢复 | revision-cut / rollback + re-verify，状态收敛到 `RECOVERED` |
 | 结果难以审计 | `mcp_calls`、`audit_events`、rollback facts 与只读 snapshot |
 
-设计立场：**Prompt 负责语义，确定性控制面负责权限、状态、证据与失败恢复。**
+设计立场：**Agent 负责语义判断；Skill 负责有 Schema、deadline 和失败闭合合同的工程动作；确定性控制面负责权限、状态、证据与失败恢复。**
+
+## Preview 事实卡
+
+冻结门禁：`2246 passed / 0 failed / 20 skipped`。
+
+历史门禁里程碑：81 passed（Phase 1-G）→ 60 passed（M4-B）→ 50 passed（M4-C）→ 31 passed（M4-D）→ 1440 passed / 15 skipped / 0 failed（M5-0D）→ 12 → 12（showcase 对称性）→ 11 PASS / 0 FAIL（M8 端到端）→ PREFLIGHT_OK → 2246（preview.3 基线）。
+
+离线交付包含 9 个镜像，`images-oci.tar` 约 847.4MB；Windows 发布边仅监听 `127.0.0.1:8600` 和 `127.0.0.1:8090`。
+
+传输档案为 `wsl-user-relay`，`direct_routing_verified=false`。`SAME_MACHINE_ACCEPTED` 只表示声明范围内的同机验收，不等于独立物理机或生产验收。
 
 ---
 
@@ -69,7 +95,7 @@ MergePilot 面向“LLM 能提出建议，但不能独自承担工程控制面�
 
 ---
 
-## 8 页面控制台
+## Showcase 控制台截图
 
 截图来自隔离栈的 live snapshot：CSS viewport 为 1440×900、`deviceScaleFactor=2` 捕获，PNG 像素尺寸为 2880×1800。
 
@@ -109,7 +135,23 @@ MergePilot 面向“LLM 能提出建议，但不能独自承担工程控制面�
 
 ---
 
-## Quick Start（隔离栈）
+## 8 页面控制台
+
+只读运维控制台（`/e2e-status.html`）：深色导航 + 浅暖工作区、17 阶段时间线、五项真实性边界、六边路由矩阵。
+
+- 9 状态诚实渲染（loading/unavailable/empty/running/complete/failed/stale/malformed/partial）
+- 10s 自动刷新 + 手动刷新（去重/超时/可见性暂停/陈旧标记）
+- Windows loopback 发布边仅监听 127.0.0.1:8600/8090
+
+不声称完整 WCAG 合规；residual validation 记录在声明证据矩阵。
+
+## Quick Start
+
+### Release Preview
+
+评委和试用者应优先使用 [v0.1.0-preview.3 Release](https://github.com/nghqqa/MergePilot/releases/tag/v0.1.0-preview.3)。下载后先验证 `checksums.sha256`，再按包内 README 执行 `Check → Install → Doctor → Start → Status`。Preview 仅支持 Windows loopback，不是生产部署包。
+
+### 源码 Showcase
 
 ### 前置条件
 
@@ -172,31 +214,38 @@ python -m pytest -q tests/demo_console tests/isolated_live tests/verification --
 
 ---
 
+Agent 负责语义判断——不是自主任务分解；Skill 负责有 Schema、deadline 和失败闭合合同的工程动作；确定性控制面负责权限、状态、证据与失败恢复。
+
+Worker 侧 TASK_COMPLETED handoff 回路已于 2026-08-18 通过隔离栈验证（恢复性提醒：这是隔离栈 fixture 验证，不是生产集成）。AgentTeams 仍是多 Agent 协同与任务编排基座。
+
+M8-A2-a 已通过隔离六容器 fixture 验证；M8-A2-b Policy→审计可复算；M8-A2-c revision-cut rollback + re-verify 收敛到 RECOVERED。
+
 ## 测试与真实性边界
 
-| 验证项 | 已完成结果 |
+### 已经证明的部分
+
+- 公开 Preview 冻结门禁：**2246 passed / 0 failed / 20 skipped**。
+- run35 本地真实 E2E：**17 个阶段完成、16/16 前置检查通过、6/6 路由边通过**。
+- 同一台 Windows 11 + WSL2 机器上，安装、启动、状态检查、停止、回滚和清理流程已经跑通。
+- 只读控制台能够区分 `complete`、`failed` 和 `stale`，并展示首个稳定错误、Receipt 与 Matrix 结果。
+- Showcase 的成功、拒绝和 revision drift recovery 是可重复的合成演示，用于解释控制面行为。
+
+### 尚未证明的部分
+
+| 边界 | 通俗说明 |
 |---|---|
-| PR‑V1 visual system | 81 passed |
-| PR‑V2 deterministic cases | 60 passed |
-| Showcase materials | 50 passed |
-| M8‑A2‑a PR fixture | 31 passed |
-| 当前拆分回归 | **1440 passed / 15 skipped / 0 failed**(含最小 CLI 53 项;ResourceWarning-as-error) |
-| audit seed replay | showcase audit rows **12 → 12**；task_runs 3 → 3 |
-| recovered SHA | API snapshot、Desktop、Mobile 三侧可见 |
-| component smoke | 5 services healthy + `PREFLIGHT_OK` 10/10 |
-| M8‑A2‑a 六容器 fixture E2E | **11 PASS / 0 FAIL**（bind-first 成功链 + 两个负向案例） |
+| `application_integration_verified=false` | 尚未接入真实业务应用并完成验收。 |
+| `database_verified=false` | PostgreSQL 等组件已在隔离环境运行，但不能据此声称生产数据库已验证。 |
+| `production_verified=false` | 当前是 Preview，不是生产部署验证。 |
+| `revision_producer_contract=NOT_VERIFIED` | revision 生产者合同尚未在完整目标环境完成最终验证。 |
+| `audit_producer_contract=NOT_VERIFIED` | 审计生产者与持久化链路尚未在完整目标环境完成最终验证。 |
+| `direct_routing_verified=false` | 当前路径经过 `wsl-user-relay`，不是内核直连路由。 |
 
-冻结边界：
+### 如何理解这些结果
 
-- `application_integration_verified=false`
-- `database_verified=false`
-- `production_verified=false`
-- `revision_producer_contract=NOT_VERIFIED`
-- `audit_producer_contract=NOT_VERIFIED`
-- M8-A1 是 event ingestion machinery，不等于 revision producer integration；M8-A2-a 已通过隔离六容器 fixture 验证（11 PASS / 0 FAIL）；M8-A2-b 于 2026-08-18 在本机隔离栈（真实 hiclab Matrix homeserver + 真实 GitHub PR + 真实 Policy Gateway 审计 + 隔离 PostgreSQL）完成收口——**这是隔离环境验证，不是生产验证**：先以 @admin producer 零种子跑通全链，再由真实 AgentTeams Manager（hiclab v1.2.2 内 DeepSeek/OpenClaw 运行时）在 operator 指令下逐字转发 M4F_RUN 契约消息（从 Manager 自身 Matrix 身份发出，真实 event，经 Candidate 严格解析器逐字校验），Gateway 产生 RESULT/ALLOW/OK provenance（run_id+git_sha），bind_revision → snapshot → 六 Skill DAG 入队；负面与幂等路径实测通过。
-- AgentTeams 仍是多 Agent 协同与任务编排基座。Manager 的 OpenClaw/LLM 运行时处理 operator 指令并从自身 Matrix 身份发送消息——M4F_RUN 产出是 operator 指令下（A2-b3）或 Worker 结果触发下（A2-d，manager 按 AGENTS 合同对 verifier 完成自主反应）的精确转发，不是自主任务分解。Worker 侧 TASK_COMPLETED handoff 回路已于 2026-08-18 在同一隔离栈真实闭环：reviewer/fixer/verifier 各以自身 Matrix 身份完成一次 TASK_COMPLETED，fixer 经受限 GitHub MCP 真实修改 fixture PR 分支（新增 fix commit），verifier 判 VERDICT=PASS，Manager 由 Worker 结果触发 M4F_RUN，全链至六 Skill DAG，终态 HOLD/m5_verify_passed；operator 发起初始任务，并在上游运行时连接中断与格式偏差后进行恢复性提醒；任务分析、GitHub 修复、验证结果与协议事件由 reviewer/fixer/verifier/manager 各自运行时会话产生（不是无人值守自主开发证明）。Worker/Manager 运行合同与部署资产已版本化（config/souls 合同、tools/agentteams 受限 GitHub helpers 与事务化部署工具——备份/逐项 SHA 验证/失败自动 rollback/可丢弃容器演练通过；重跑中 reviewer 已用版本化资产一次审对真实 PR）；OpenClaw Matrix 通道断连、无派单重投递与严格单行格式不稳定仍是已知上游限制。隔离环境验证，不是生产验证。producer 停摆时 MergePilot 保持 fail-closed（无 M4F_RUN 则无任何 bind/snapshot 动作）；producer timeout 对账已实现（M8-A2-c，Candidate 模式可选启用）：等待超时的 run 进入 HOLD（`m4f_producer_timeout`，可观测事实而非合同错误），late 合法 M4F_RUN 经完整既有校验链后在 drain 成功事务内 CAS 恢复——不修复 OpenClaw、不保证外部 producer 可用。
+`SAME_MACHINE_ACCEPTED` 表示同机 Preview 验收通过；`EXTERNAL_BLOCKED` 表示独立 Windows 11 物理机验收仍未完成。两者都不等于生产可用。
 
-Showcase 是隔离栈上的确定性演示，不可外推为生产或真实客户验证；showcase material 不写入 `evidence/` 或 `verification/`。不声称完整 WCAG 合规，键盘导航、reduced-motion 与 browser console 保留 PR‑V1 的 residual validation 披露。
+历史 M8 运行过程、协议细节和逐项测试数字保留在 [历史运行记录](docs/README-历史运行记录.md) 与 [证据目录](evidence/) 中，GitHub 首页不再展开内部协议日志。
 
 ---
 
