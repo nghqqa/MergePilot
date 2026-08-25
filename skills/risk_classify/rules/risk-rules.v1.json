@@ -5,97 +5,159 @@
       "rule_id": "DEP_MANIFEST",
       "level": "L2",
       "summary": "dependency manifest or lockfile changed (may alter resolved dependencies)",
-      "match": { "category": "dependency" }
+      "match": {
+        "category": "dependency"
+      }
     },
     {
       "rule_id": "WORKFLOW_CI",
       "level": "L2",
       "summary": "CI/deploy workflow changed (may change build, test or deployment gates)",
-      "match": { "category": "workflow" }
+      "match": {
+        "category": "workflow"
+      }
     },
     {
       "rule_id": "MIGRATION_SCHEMA",
       "level": "L2",
       "summary": "database migration or schema changed",
-      "match": { "category": "migration" }
+      "match": {
+        "category": "migration"
+      }
     },
     {
       "rule_id": "SECURITY_SENSITIVE_PATH",
       "level": "L2",
       "summary": "security/auth/credential-sensitive path changed",
-      "match": { "category": "security_sensitive" }
+      "match": {
+        "category": "security_sensitive"
+      }
     },
     {
       "rule_id": "BINARY_FILE",
       "level": "L2",
       "summary": "binary file changed (not reviewable as text)",
-      "match": { "binary": true }
+      "match": {
+        "binary": true
+      }
     },
     {
       "rule_id": "SOURCE_DELETION",
       "level": "L2",
       "summary": "non-doc/test source or infra file deleted",
-      "match": { "change_type": "D", "category": ["source", "config", "dependency", "workflow", "migration", "security_sensitive", "binary"] }
+      "match": {
+        "change_type": "D",
+        "category": [
+          "source",
+          "config",
+          "dependency",
+          "workflow",
+          "migration",
+          "security_sensitive",
+          "binary"
+        ]
+      }
     },
     {
       "rule_id": "LARGE_CHANGE",
       "level": "L2",
       "summary": "very large change (>=1000 added+deleted lines)",
-      "match": { "min_total_changes": 1000 }
+      "match": {
+        "min_total_changes": 1000
+      }
     },
     {
       "rule_id": "PARTIAL_CONTEXT",
       "level": "L1",
       "summary": "diff-parse returned incomplete/partial context; classify conservatively",
-      "match": { "complete_false": true }
+      "match": {
+        "complete_false": true
+      }
     },
     {
       "rule_id": "RENAME_OR_COPY",
       "level": "L1",
       "summary": "rename or copy detected",
-      "match": { "change_type": ["R", "C"] }
+      "match": {
+        "change_type": [
+          "R",
+          "C"
+        ]
+      }
     },
     {
       "rule_id": "MEDIUM_CHANGE",
       "level": "L1",
       "summary": "medium-sized change (>=201 added+deleted lines)",
-      "match": { "min_total_changes": 201 }
+      "match": {
+        "min_total_changes": 201
+      }
     },
     {
       "rule_id": "SOURCE_CONFIG_CHANGE",
       "level": "L1",
       "summary": "source or config logic changed",
-      "match": { "category": ["source", "config"] }
+      "match": {
+        "category": [
+          "source",
+          "config"
+        ]
+      }
     },
     {
       "rule_id": "DELETION",
       "level": "L1",
       "summary": "a file was deleted",
-      "match": { "category": "deletion" }
+      "match": {
+        "category": "deletion"
+      }
     },
     {
       "rule_id": "MULTI_FILE_CHANGE",
       "level": "L1",
       "summary": "many files changed (>=20)",
-      "match": { "min_files": 20 }
+      "match": {
+        "min_files": 20
+      }
     },
     {
       "rule_id": "UNCATEGORIZED_CHANGE",
       "level": "L1",
       "summary": "a changed file has no recognized category (e.g. CODEOWNERS); classify conservatively",
-      "match": { "has_uncategorized": true }
+      "match": {
+        "has_uncategorized": true
+      }
     },
     {
       "rule_id": "DOCS_ONLY_SMALL",
       "level": "L0",
       "summary": "small documentation-only change (<=200 lines)",
-      "match": { "only_categories": ["documentation"], "max_total_changes": 200 }
+      "match": {
+        "only_categories": [
+          "documentation"
+        ],
+        "max_total_changes": 200
+      }
     },
     {
       "rule_id": "TEST_ONLY_SMALL",
       "level": "L0",
       "summary": "small test-only change (<=300 lines)",
-      "match": { "only_categories": ["test"], "max_total_changes": 300 }
+      "match": {
+        "only_categories": [
+          "test"
+        ],
+        "max_total_changes": 300
+      }
+    },
+    {
+      "rule_id": "FILE_CONTENT_SURFACE",
+      "level": "L2",
+      "summary": "new file-content read/download surface (open/read of file contents added in the patch) — expands the readable data surface and needs path-confinement review",
+      "match": {
+        "category": "source",
+        "patch_pattern": "(?m)\\b(open\\s*\\(|read_bytes\\s*\\(|read_text\\s*\\(|send_file\\s*\\(|FileResponse\\s*\\()"
+      }
     }
   ]
 }

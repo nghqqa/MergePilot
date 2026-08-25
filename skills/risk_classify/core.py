@@ -54,7 +54,8 @@ class RiskClassifyError(Exception):
 
 
 # predicate classification
-_FILE_PREDICATES = ("category", "change_type", "binary", "path_pattern")
+_FILE_PREDICATES = ("category", "change_type", "binary", "path_pattern",
+                    "patch_pattern")
 _CTX_PREDICATES = (
     "complete_false", "empty", "min_total_changes", "max_total_changes",
     "min_additions", "min_deletions", "min_files", "only_categories",
@@ -244,7 +245,7 @@ def _ctx_pred_ok(key, value, s):
     return False
 
 
-def _file_preds_ok(preds, f):
+def _file_preds_ok(preds, f, patch_by_file=None):
     cats = set(f.get("categories") or [])
     for key, value in preds.items():
         if key == "category":
@@ -263,10 +264,24 @@ def _file_preds_ok(preds, f):
             except re.error:
                 # a bad pattern never matches (does not crash the classifier)
                 return False
+        elif key == "patch_pattern":
+            # m9 E: match ADDED-LINE content in this file's patch
+            # (patch_by_file is optional; absent patch never matches)
+            patch = ""
+            if isinstance(patch_by_file, dict):
+                patch = patch_by_file.get(f.get("path", "")) or ""
+            try:
+                added = chr(10).join(ln[1:] for ln in patch.splitlines()
+                                  if ln.startswith("+") and not
+                                  ln.startswith("+++"))
+                if not re.search(value, added):
+                    return False
+            except re.error:
+                return False
     return True
 
 
-def _evaluate_rule(rule, summary, files):
+def _evaluate_rule(rule, summary, files, patch_by_file=None):
     """Return (matched: bool, contributing_paths: list[str])."""
     match = rule.get("match") or {}
     # context-wise predicates must ALL hold
@@ -275,7 +290,8 @@ def _evaluate_rule(rule, summary, files):
             return False, []
     file_preds = {k: v for k, v in match.items() if k in _FILE_PREDICATES}
     if file_preds:
-        contributing = [f.get("path", "") for f in files if _file_preds_ok(file_preds, f)]
+        contributing = [f.get("path", "") for f in files
+                        if _file_preds_ok(file_preds, f, patch_by_file)]
         if not contributing:
             return False, []
         return True, contributing
@@ -316,7 +332,9 @@ def classify(change_context, risk_floor="L0", ruleset=None,
 
     matched = []  # list of (rule_id, level, summary, contributing_paths)
     for rule in ruleset["rules"]:
-        ok, contributing = _evaluate_rule(rule, summary, files)
+        ok, contributing = _evaluate_rule(
+            rule, summary, files,
+            change_context.get("patch_by_file"))
         if ok:
             matched.append((
                 rule["rule_id"],

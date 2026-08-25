@@ -54,7 +54,9 @@
     {
       "rule_id": "AST_DANGEROUS_EVAL",
       "kind": "dangerous_call",
-      "targets": ["eval"],
+      "targets": [
+        "eval"
+      ],
       "severity": "high",
       "risk_level": "L2",
       "remediation": "Avoid eval(); parse or use a safe literal evaluator."
@@ -62,7 +64,9 @@
     {
       "rule_id": "AST_DANGEROUS_EXEC",
       "kind": "dangerous_call",
-      "targets": ["exec"],
+      "targets": [
+        "exec"
+      ],
       "severity": "high",
       "risk_level": "L2",
       "remediation": "Avoid exec(); refactor to explicit calls."
@@ -70,7 +74,11 @@
     {
       "rule_id": "AST_DANGEROUS_PICKLE_LOAD",
       "kind": "dangerous_call",
-      "targets": ["pickle.load", "pickle.loads", "yaml.load"],
+      "targets": [
+        "pickle.load",
+        "pickle.loads",
+        "yaml.load"
+      ],
       "severity": "high",
       "risk_level": "L2",
       "remediation": "Use a safe deserializer; pickle/yaml.load can execute arbitrary code."
@@ -78,7 +86,12 @@
     {
       "rule_id": "AST_DANGEROUS_SUBPROCESS_SHELL",
       "kind": "dangerous_call",
-      "targets": ["subprocess.Popen", "subprocess.run", "subprocess.call", "subprocess.check_output"],
+      "targets": [
+        "subprocess.Popen",
+        "subprocess.run",
+        "subprocess.call",
+        "subprocess.check_output"
+      ],
       "severity": "high",
       "risk_level": "L2",
       "remediation": "Pass shell=False and an argv list; never interpolate untrusted input into a command string."
@@ -86,16 +99,32 @@
     {
       "rule_id": "AST_SQLI_EXECUTE",
       "kind": "sqli_execute",
-      "targets": ["execute", "executemany"],
+      "targets": [
+        "execute",
+        "executemany"
+      ],
       "severity": "critical",
       "risk_level": "L2",
       "remediation": "Use parameterized queries; never f-string/concatenate untrusted input into SQL."
+    },
+    {
+      "rule_id": "AST_PATH_TRAVERSAL",
+      "kind": "taint_path_join",
+      "targets": [
+        "open",
+        "io.open"
+      ],
+      "severity": "high",
+      "risk_level": "L2",
+      "remediation": "Constrain untrusted paths: resolve with realpath and require the result to stay under the base directory (prefix check after resolution), or confine to basename(); reject absolute inputs and traversal sequences BEFORE opening."
     }
   ],
   "dep_vuln": {
     "db_version": "2026-07-advisory-snapshot",
     "source": "MergePilot offline local advisory set (curated; not a complete or real-time DB)",
-    "covered_ecosystems": ["pypi"],
+    "covered_ecosystems": [
+      "pypi"
+    ],
     "valid_until": "2027-01-30",
     "advisories": [
       {

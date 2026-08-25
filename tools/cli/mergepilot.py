@@ -722,9 +722,23 @@ class WslDocker:
                 return
             if state == "present" and info.get("status") not in ("running",
                                                                  "restarting"):
+                # m9 finding D: an early exit must carry the REAL
+                # error — full logs are fetched and the first stable
+                # error + stderr tail ride in the failure detail, not
+                # just the preflight banner.
+                tail = ""
+                try:
+                    tail = self.container_logs(name)
+                except Exception:
+                    pass
                 raise Failure(
                     "CONTAINER_NOT_RUNNING",
-                    "%s status=%s before healthy" % (name, info.get("status")),
+                    "%s status=%s exit=%s before healthy; first_error=%s; "
+                    "logs_tail=%s" % (
+                        name, info.get("status"),
+                        info.get("exit_code", "?"),
+                        _first_stable_error(tail) or "(none in logs)",
+                        _tail_lines(tail, 12)),
                     exit_code=EXIT_FAILED_CLEANED)
             time.sleep(2)
         raise Failure("HEALTH_TIMEOUT",
@@ -1152,6 +1166,38 @@ def _redact_env_value(key: str) -> str:
         return "<redacted>"
     return "<present>"
 
+
+def _first_stable_error(logs: str) -> str:
+    """First STABLE error line in container logs (m9 D): startup-probe
+    failures, exception types, or FAILED <CODE> markers — never the
+    preflight banner."""
+    import re as _re
+    if not logs:
+        return ""
+    banner_marks = ('preflight passed', 'Config preflight')
+    probe = _re.compile(r'STARTUP PROBE FAILED[^\n]*')
+    code = _re.compile(r'\b([A-Z][A-Z0-9]+_[A-Z0-9_]{3,})\b')
+    exc = _re.compile(r'^(\w*(?:Error|Exception)\w*):[^\n]*', _re.M)
+    failed = _re.compile(r'FAILED [A-Z0-9_]+[^\n]*')
+    for line in logs.splitlines():
+        stripped = line.strip()
+        if any(m in stripped for m in banner_marks):
+            continue
+        m = probe.search(stripped) or failed.search(stripped)
+        if m:
+            return m.group(0)
+        m = code.search(stripped)
+        if m:
+            return stripped[:120]
+        m = exc.search(stripped)
+        if m:
+            return stripped[:120]
+    return ""
+
+
+def _tail_lines(text: str, n: int) -> str:
+    lines = [ln for ln in (text or "").splitlines() if ln.strip()]
+    return " | ".join(lines[-n:])[-400:]
 
 def capture_failure_diagnostics(docker, planner, paths, session):
     """Rollback 前捕获本次 owned 容器的失败取证(M8-GH-3 §1)。
