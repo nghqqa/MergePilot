@@ -1287,6 +1287,23 @@ BUILT_SERVICES = ("policy-gateway", "controller", "demo-console",
 
 _builtin_registry: dict = {}
 
+# m9 defect B (run leg): the pgvector run ref is backend-dependent
+# (classic store runs the config-Id ref; the containerd image store
+# runs manifest-digest refs). require_environment resolves which
+# recorded ref THIS daemon can run and records it here; the start
+# plans read it through get_pgvector_run_ref(). Default keeps the
+# classic behavior for plan-only callers.
+_pgvector_run_ref: dict = {"ref": None}
+
+
+def record_pgvector_run_ref(ref: str) -> None:
+    """Record the pgvector ref this daemon can actually run."""
+    _pgvector_run_ref["ref"] = ref
+
+
+def get_pgvector_run_ref() -> str:
+    return _pgvector_run_ref["ref"] or PGVECTOR_IMAGE_ID
+
 
 def record_built_image_identity(service: str, image_id: str) -> None:
     """Record the immutable identity of a built service image.
@@ -1819,6 +1836,8 @@ __all__ = [
     "PGVECTOR_IMAGE_REF",
     "PGVECTOR_IMAGE_ID",
     "PGVECTOR_IMAGE_TAR_DIGEST",
+    "record_pgvector_run_ref",
+    "get_pgvector_run_ref",
     "PREFLIGHT_CHECKS",
     "READER_ROLE",
     "ReaderDsnSecretFile",

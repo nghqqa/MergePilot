@@ -946,6 +946,10 @@ def require_environment(docker):
                 planner.PGVECTOR_IMAGE_REF,
                 ", ".join(sorted(pgvector_recorded_pins(planner)))),
             exit_code=EXIT_PRECHECK)
+    # Every start path passes through this gate before planning —
+    # record once which recorded ref THIS daemon can actually run so
+    # all build_start_steps callers share the resolution (m9 B).
+    planner.record_pgvector_run_ref(pgvector_runnable_ref(docker, planner))
 
 
 # ── Stack discovery / classification ─────────────────────────────────────────
@@ -1282,7 +1286,7 @@ def build_start_steps(planner, *, env_file, controller_env_file,
         ("container-run", "postgres",
          planner.plan_service_run(
              "postgres",
-             image_ref=pg_image_ref or planner.PGVECTOR_IMAGE_ID,
+             image_ref=pg_image_ref or planner.get_pgvector_run_ref(),
              env_file=env_file)),
         ("container-run", "policy-gateway",
          planner.plan_service_run(
@@ -2184,8 +2188,7 @@ def _e2e_demo_console_measured_argv(docker, planner, run_id, m4f,
         reader_dsn_env_file=reader_env_wsl,
         gh_webhook_env_file=gh_env_wsl,
         run_id=E2E_DEMO_CONSOLE_RUN_ID, bridge_ip=canonical, m4f=m4f,
-        session_public_dir=session_public_dir or None,
-        pg_image_ref=pgvector_runnable_ref(docker, planner))
+        session_public_dir=session_public_dir or None)
     for _kind, name, argv in steps:
         if _kind == "container-run" and name == "demo-console":
             return argv
@@ -2368,8 +2371,7 @@ def _execute_github_e2e_start(args, project_dir, planner, paths,
             gh_webhook_env_file=gh_env_wsl,
             run_id=run_id, bridge_ip=PLACEHOLDER_BRIDGE_IP,
             m4f=args.m4f,
-            session_public_dir=_to_wsl_path(paths["state"] / "public"),
-            pg_image_ref=pgvector_runnable_ref(docker, planner))
+            session_public_dir=_to_wsl_path(paths["state"] / "public"))
         by_service = {}
         network_create_steps = []
         for _kind, name, argv in steps:

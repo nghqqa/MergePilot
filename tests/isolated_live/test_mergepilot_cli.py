@@ -615,6 +615,27 @@ class TestDoctor(CliTestBase):
         with self.assertRaises(mp.Failure):
             mp.pgvector_runnable_ref(_Stub({}), oc)
 
+    def test_postgres_plan_uses_recorded_run_ref(self):
+        # The registry recorded by require_environment must drive the
+        # postgres container-run argv in EVERY start plan (m9 B).
+        try:
+            oc.record_pgvector_run_ref(oc.PGVECTOR_IMAGE_TAR_DIGEST)
+            for _svc in oc.BUILT_SERVICES:
+                oc.record_built_image_identity(_svc, "sha256:" + "0" * 64)
+            steps = mp.build_start_steps(
+                oc,
+                env_file="/tmp/pg.env",
+                controller_env_file="/tmp/ctrl.env",
+                reader_dsn_env_file="/tmp/demo.env",
+                gh_webhook_env_file="/tmp/hook.env",
+                run_id="ref-contract", bridge_ip=mp.PLACEHOLDER_BRIDGE_IP,
+                m4f=False)
+            pg_argv = next(argv for kind, name, argv in steps
+                           if kind == "container-run" and name == "postgres")
+            self.assertIn(oc.PGVECTOR_IMAGE_TAR_DIGEST, pg_argv)
+        finally:
+            oc.record_pgvector_run_ref(oc.PGVECTOR_IMAGE_ID)
+
     def test_partial_stack_reported(self):
         self.world.containers[PG_NAME] = {
             "id": "sha256:" + "11" * 32, "status": "running",
