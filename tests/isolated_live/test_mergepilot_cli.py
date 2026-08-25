@@ -594,6 +594,27 @@ class TestDoctor(CliTestBase):
         codes = {c["code"] for c in payload["checks"]}
         self.assertIn("DOCTOR_PGVECTOR_NOT_CACHED", codes)
 
+    def test_pgvector_runnable_ref_follows_backend(self):
+        # m9 defect B (run leg): the postgres container-run ref must be
+        # one THIS daemon can resolve — the containerd image store
+        # cannot run the classic config-Id ref, so resolution must
+        # fall through to a recorded digest that exists locally.
+        class _Stub:
+            def __init__(self, images):
+                self.images = images
+
+            def image_id(self, ref):
+                return self.images.get(ref)
+
+        stub = _Stub({oc.PGVECTOR_IMAGE_REF: oc.PGVECTOR_IMAGE_TAR_DIGEST})
+        self.assertEqual(mp.pgvector_runnable_ref(stub, oc),
+                         oc.PGVECTOR_IMAGE_TAR_DIGEST)
+        stub2 = _Stub({oc.PGVECTOR_IMAGE_ID: oc.PGVECTOR_IMAGE_ID})
+        self.assertEqual(mp.pgvector_runnable_ref(stub2, oc),
+                         oc.PGVECTOR_IMAGE_ID)
+        with self.assertRaises(mp.Failure):
+            mp.pgvector_runnable_ref(_Stub({}), oc)
+
     def test_partial_stack_reported(self):
         self.world.containers[PG_NAME] = {
             "id": "sha256:" + "11" * 32, "status": "running",

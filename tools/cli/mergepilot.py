@@ -904,6 +904,30 @@ def pgvector_cached_at_recorded_pin(docker, planner) -> bool:
     return False
 
 
+def pgvector_runnable_ref(docker, planner) -> str:
+    """A pgvector ref THIS daemon can actually `docker run`.
+
+    The classic store runs the config-Id ref; the containerd image
+    store runs manifest-digest refs (the config-Id ref does not
+    resolve). Preference order is deterministic; byte-exactness is
+    guaranteed by require_environment, which runs before any plan.
+    """
+    for ref in (planner.PGVECTOR_IMAGE_ID,
+                planner.PGVECTOR_IMAGE_TAR_DIGEST,
+                planner.PGVECTOR_IMAGE_DIGEST):
+        if docker.image_id(ref) is not None:
+            return ref
+    img = docker.image_id(planner.PGVECTOR_IMAGE_REF)
+    if img is not None and img.strip() in pgvector_recorded_pins(planner):
+        # byte-exact identity of the tag-pinned image — never the
+        # mutable tag itself
+        return img.strip()
+    raise Failure(
+        "PGVECTOR_NOT_CACHED",
+        "pgvector image not cached at any recorded pin (pull=never)",
+        exit_code=EXIT_PRECHECK)
+
+
 def require_environment(docker):
     """Install/start gate: probe_environment + pgvector digest cache."""
     checks = probe_environment(docker)
@@ -1238,7 +1262,7 @@ def _policy_repo_allowlist(project_dir: Path) -> str:
 def build_start_steps(planner, *, env_file, controller_env_file,
                       reader_dsn_env_file, gh_webhook_env_file,
                       run_id, bridge_ip, m4f,
-                      session_public_dir=None):
+                      session_public_dir=None, pg_image_ref=None):
     """The eleven-step plan, composed from the planner's own public plan
     functions in plan_orchestrated_start's exact order. Returns
     (steps, argv_list) where each step carries its wait semantics.
@@ -1257,7 +1281,8 @@ def build_start_steps(planner, *, env_file, controller_env_file,
          planner.plan_publication_network_create()),
         ("container-run", "postgres",
          planner.plan_service_run(
-             "postgres", image_ref=planner.PGVECTOR_IMAGE_ID,
+             "postgres",
+             image_ref=pg_image_ref or planner.PGVECTOR_IMAGE_ID,
              env_file=env_file)),
         ("container-run", "policy-gateway",
          planner.plan_service_run(
@@ -2159,7 +2184,8 @@ def _e2e_demo_console_measured_argv(docker, planner, run_id, m4f,
         reader_dsn_env_file=reader_env_wsl,
         gh_webhook_env_file=gh_env_wsl,
         run_id=E2E_DEMO_CONSOLE_RUN_ID, bridge_ip=canonical, m4f=m4f,
-        session_public_dir=session_public_dir or None)
+        session_public_dir=session_public_dir or None,
+        pg_image_ref=pgvector_runnable_ref(docker, planner))
     for _kind, name, argv in steps:
         if _kind == "container-run" and name == "demo-console":
             return argv
@@ -2342,7 +2368,8 @@ def _execute_github_e2e_start(args, project_dir, planner, paths,
             gh_webhook_env_file=gh_env_wsl,
             run_id=run_id, bridge_ip=PLACEHOLDER_BRIDGE_IP,
             m4f=args.m4f,
-            session_public_dir=_to_wsl_path(paths["state"] / "public"))
+            session_public_dir=_to_wsl_path(paths["state"] / "public"),
+            pg_image_ref=pgvector_runnable_ref(docker, planner))
         by_service = {}
         network_create_steps = []
         for _kind, name, argv in steps:
