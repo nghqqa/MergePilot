@@ -70,7 +70,6 @@ $lines = foreach ($f in $files) {
     $h = (Get-FileHash $f.FullName -Algorithm SHA256).Hash.ToLower()
     $rel = $f.FullName.Substring($OutDir.Length + 1).Replace("\", "/")
     "$h  $rel"
-}
 [System.IO.File]::WriteAllText($cs, ($lines -join "`n") + "`n",
                                 [System.Text.UTF8Encoding]::new($false))
 }
