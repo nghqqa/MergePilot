@@ -1,0 +1,23 @@
+{
+  "round": "m9",
+  "bootstrapper_cleanup_on_pure_preview3": {
+    "result": "OK (ok)",
+    "output": "images and install manifest removed; evidence untouched"
+  },
+  "final_state": {
+    "mergepilot_images": 0,
+    "pgvector_images": 0,
+    "containers": 0,
+    "mergepilot_networks": 0,
+    "install_json": "removed",
+    "leftover": "diagnostics.json kept (product-owned, secrets redacted)"
+  },
+  "environment_disclosures": {
+    "temporary_docker_trace_wrapper": "installed for diagnosis, REMOVED (docker back to /usr/bin/docker, non-root calls verified working)",
+    "diagnostic_registry_pulls": "pgvector tag+digest probes REMOVED",
+    "forwarder_probe_files": "REMOVED",
+    "system_proxy": "restored to original in prior round; untouched this round",
+    "wslconfig": "absent (NAT default)"
+  },
+  "local_working_dirs": "trial dirs remain on a local drive only; contain no secrets"
+}
