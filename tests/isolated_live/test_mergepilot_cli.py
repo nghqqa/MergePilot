@@ -594,6 +594,28 @@ class TestDoctor(CliTestBase):
         codes = {c["code"] for c in payload["checks"]}
         self.assertIn("DOCTOR_PGVECTOR_NOT_CACHED", codes)
 
+    def test_pgvector_classic_config_id_accepted_uncached_all_rejected(self):
+        # m9 B matrix completion: (a) classic backend caching keyed by
+        # the config Id passes; (b) with NO recorded ref cached at all
+        # (tag present but resolving to unrecorded bytes AND no digest
+        # refs), require_environment fails closed.
+        # (a) classic
+        self.write_install_manifest()
+        rc, text, payload = self.cli("doctor", "--json")
+        self.assertEqual(rc, 0, payload.get("first_failure"))
+        # (b) nothing recorded anywhere: no digest ref cached, and the
+        # mutable tag resolving to UNRECORDED bytes must not pass the
+        # gate (doctor reports the failing check; start gate would
+        # raise the same PGVECTOR_NOT_CACHED before any plan)
+        for ref in (oc.PGVECTOR_IMAGE_ID, oc.PGVECTOR_IMAGE_TAR_DIGEST,
+                    oc.PGVECTOR_IMAGE_DIGEST):
+            self.world.images.pop(ref, None)
+        self.world.images[oc.PGVECTOR_IMAGE_REF] = "sha256:" + "cd" * 32
+        rc, text, payload = self.cli("doctor", "--json")
+        self.assertEqual(rc, mp.EXIT_PRECHECK)
+        codes = {c["code"] for c in payload["checks"]}
+        self.assertIn("DOCTOR_PGVECTOR_NOT_CACHED", codes)
+
     def test_pgvector_runnable_ref_follows_backend(self):
         # m9 defect B (run leg): the postgres container-run ref must be
         # one THIS daemon can resolve — the containerd image store

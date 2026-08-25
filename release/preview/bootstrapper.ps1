@@ -172,6 +172,26 @@ function Assert-TeardownComplete([string]$IdentityFile) {
     throw "KEEPALIVE_SURVIVED"
 }
 
+function Test-PortBind([int]$Port) {
+    # finding C: a listener check cannot see WinNAT/Hyper-V dynamic
+    # exclusion ranges — the kernel refuses the bind (10013). PROBE
+    # the bind itself on the loopback address the edge will use.
+    $l = $null
+    try {
+        $l = [System.Net.Sockets.TcpListener]::new(
+            [System.Net.IPAddress]::Parse("127.0.0.1"), $Port)
+        $l.Start()
+    } catch {
+        $msg = $_.Exception.Message
+        $code = $_.Exception.InnerException.ErrorCode
+        Write-Log "FAIL" ("WINDOWS_PORT_BIND_UNAVAILABLE: cannot bind 127.0.0.1:$Port ($msg)")
+        Write-Log "HINT" ("the port is inside a Windows excluded port range (WinNAT/Hyper-V dynamic reservation). Inspect: netsh interface ipv4 show excludedportrange protocol=tcp. Fix (admin, reboot-persistent): netsh int ipv4 add excludedportrange protocol=tcp startport=$Port numberofports=1, or free the range by stopping the service that reserved it. This tool never rewrites system reservations and never silently changes ports.")
+        throw "WINDOWS_PORT_BIND_UNAVAILABLE (127.0.0.1:$Port)"
+    } finally {
+        if ($l) { $l.Stop() }
+    }
+    return $true
+}
 function Assert-Ports {
     foreach ($p in 8600, 8090) {
         $c = Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue
@@ -243,6 +263,9 @@ switch ($Action) {
         Wait-DockerReady $Distro | Out-Null
         Write-Log "PASS" "docker in distro OK"
         Write-Log "PASS" (Assert-Ports)
+        Test-PortBind 8600 | Out-Null
+        Test-PortBind 8090 | Out-Null
+        Write-Log "PASS" "bind probe 127.0.0.1:8600/8090 OK (no WinNAT exclusion)"
         $free = [math]::Round((Get-PSDrive -Name ($RepoRoot.Substring(0, 1))).Free / 1GB, 1)
         if ($free -lt 8) { throw ("disk free " + $free + " GB < 8 GB") }
         Write-Log "PASS" ("disk free " + $free + " GB >= 8 GB")
