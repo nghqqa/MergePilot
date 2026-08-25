@@ -169,7 +169,7 @@ class TestHelperValidation(unittest.TestCase):
 
         def fake_mc(*tool_args):
             joined = " ".join(tool_args)
-            if "get_pull_request" in joined and "pull_number" in joined:
+            if "pull_request_read" in joined and "pullNumber" in joined:
                 return '{"head": {"ref": "br-fix", "repo": {"full_name": "owner/repo"}}}'
             if "get_file_contents" in joined:
                 if not state["sha_seen"]:
@@ -194,7 +194,7 @@ class TestHelperValidation(unittest.TestCase):
 
         def fake_mc(*tool_args):
             joined = " ".join(tool_args)
-            if "get_pull_request" in joined and "pull_number" in joined:
+            if "pull_request_read" in joined and "pullNumber" in joined:
                 return '{"head": {"ref": "br-fix", "repo": {"full_name": "owner/repo"}}}'
             if "get_file_contents" in joined:
                 state["reads"] += 1

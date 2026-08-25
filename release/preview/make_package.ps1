@@ -33,7 +33,7 @@ $Images = @(
     "mergepilot-isolated-gh-proxy:local",
     "mergepilot-isolated-mcp-bridge:local",
     "mergepilot-isolated-preflight:local",
-    "pgvector/pgvector@sha256:a36250871de0833b8757561c72f2477ef1ddd1101afa4e617fb552e0de514c6b"
+    "pgvector/pgvector:pg16"
 )
 
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
@@ -70,9 +70,9 @@ $lines = foreach ($f in $files) {
     $h = (Get-FileHash $f.FullName -Algorithm SHA256).Hash.ToLower()
     $rel = $f.FullName.Substring($OutDir.Length + 1).Replace("\", "/")
     "$h  $rel"
+}
 [System.IO.File]::WriteAllText($cs, ($lines -join "`n") + "`n",
                                 [System.Text.UTF8Encoding]::new($false))
-}
 
 Write-Host "== manifest"
 $git = (& git -C $RepoRoot rev-parse HEAD | Out-String).Trim()
