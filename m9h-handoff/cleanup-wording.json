@@ -1,0 +1,4 @@
+{"defect":"M9G-1",
+ "root_cause":"bootstrapper checked manifest state AFTER Invoke-Cli cleanup --apply (which deletes install.json), so always saw 'absent'",
+ "fix":"snapshot $manifestInitialState (present_valid/present_invalid/absent) BEFORE any Invoke-Cli call; report uses pre-cleanup snapshot",
+ "verified":"Cleanup#1: 'install manifest removed (was present and consumed)' / Cleanup#2: 'no install manifest found from the start'"}
