@@ -42,9 +42,9 @@ if ($RepoRoot) {
         throw "DEV MODE: -RepoRoot '$RepoRoot' does not contain tools\cli\mergepilot.py"
     }
 } else {
-    $PackageRoot = Split-Path $PSScriptRoot -Parent
-    $Cli = Join-Path $PackageRoot "cli\mergepilot.py"
-    $ForwarderScript = Join-Path $PackageRoot "preview\loopback_forwarder.py"
+    $PackageRoot = $PSScriptRoot
+    $Cli = Join-Path $PackageRoot "tools\cli\mergepilot.py"
+    $ForwarderScript = Join-Path $PackageRoot "tools\preview\loopback_forwarder.py"
     $RepoRoot = $PackageRoot
 }
 

@@ -58,19 +58,15 @@ Copy-Item (Join-Path $RepoRoot "release\preview\bootstrapper.ps1") $pkg
 Copy-Item (Join-Path $RepoRoot "release\preview\README.md") $pkg
 New-Item -ItemType Directory -Force -Path (Join-Path $pkg "docs") | Out-Null
 Copy-Item (Join-Path $RepoRoot "docs\preview") (Join-Path $pkg "docs") -Recurse
-# Standalone CLI payload: the Python tools the bootstrapper invokes,
-# laid out so cli/mergepilot.py and preview/loopback_forwarder.py are
-# siblings of bootstrapper.ps1 inside the extracted ZIP
-New-Item -ItemType Directory -Force -Path (Join-Path $pkg "cli") | Out-Null
-Copy-Item (Join-Path $RepoRoot "tools\cli\*.py") (Join-Path $pkg "cli")
-New-Item -ItemType Directory -Force -Path (Join-Path $pkg "preview") | Out-Null
-Copy-Item (Join-Path $RepoRoot "tools\preview\*.py") (Join-Path $pkg "preview")
-New-Item -ItemType Directory -Force -Path (Join-Path $pkg "demo_console") | Out-Null
-Copy-Item (Join-Path $RepoRoot "tools\demo_console\*.py") (Join-Path $pkg "demo_console") -Exclude "__pycache__"
-# mergepilot.py imports from the demo_console package
-New-Item -ItemType Directory -Force -Path (Join-Path $pkg "cli\tools\demo_console") | Out-Null
-Copy-Item (Join-Path $RepoRoot "tools\demo_console\*.py") (Join-Path $pkg "cli\tools\demo_console") -Exclude "__pycache__"
-Copy-Item (Join-Path $RepoRoot "tools\demo_console\showcase_cases.py") (Join-Path $pkg "cli\tools\demo_console") -ErrorAction SilentlyContinue
+# Standalone CLI payload: mirrors the repo tools/ layout so the CLI's
+# own path resolution works unchanged (tools/cli/, tools/demo_console/,
+# tools/preview/ are siblings inside the extracted ZIP)
+New-Item -ItemType Directory -Force -Path (Join-Path $pkg "tools\cli") | Out-Null
+Copy-Item (Join-Path $RepoRoot "tools\cli\*.py") (Join-Path $pkg "tools\cli")
+New-Item -ItemType Directory -Force -Path (Join-Path $pkg "tools\demo_console") | Out-Null
+Copy-Item (Join-Path $RepoRoot "tools\demo_console\*.py") (Join-Path $pkg "tools\demo_console") -Exclude "__pycache__"
+New-Item -ItemType Directory -Force -Path (Join-Path $pkg "tools\preview") | Out-Null
+Copy-Item (Join-Path $RepoRoot "tools\preview\*.py") (Join-Path $pkg "tools\preview")
 
 Write-Host "== checksums"
 $cs = Join-Path $OutDir "checksums.sha256"
