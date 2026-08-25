@@ -1,0 +1,98 @@
+From 0fee123e542fa0e4734a91184217bada285e0420 Mon Sep 17 00:00:00 2001
+From: nghqqa <nghqqa@users.noreply.github.com>
+Date: Tue, 25 Aug 2026 12:03:06 +0800
+Subject: [PATCH] feat(download): add download() endpoint (REV1,
+ path-validation missing)
+
+Controlled competition fixture: this revision deliberately joins the
+request name without realpath confinement, so a traversal sequence
+reads bytes outside BASE_DIR (SEC-001). test_download_traversal_rejected
+exposes it and stays red until REV2 fixes the endpoint.
+---
+ .gitignore          |  2 ++
+ data/d.bin          |  1 +
+ data/hello.txt      |  1 +
+ fileservice.py      | 13 +++++++++++++
+ test_fileservice.py | 17 ++++++++++++++++-
+ 5 files changed, 33 insertions(+), 1 deletion(-)
+ create mode 100644 .gitignore
+ create mode 100644 data/d.bin
+ create mode 100644 data/hello.txt
+
+diff --git a/.gitignore b/.gitignore
+new file mode 100644
+index 0000000..7a60b85
+--- /dev/null
++++ b/.gitignore
+@@ -0,0 +1,2 @@
++__pycache__/
++*.pyc
+diff --git a/data/d.bin b/data/d.bin
+new file mode 100644
+index 0000000..b5754e2
+--- /dev/null
++++ b/data/d.bin
+@@ -0,0 +1 @@
++ok
+\ No newline at end of file
+diff --git a/data/hello.txt b/data/hello.txt
+new file mode 100644
+index 0000000..b6fc4c6
+--- /dev/null
++++ b/data/hello.txt
+@@ -0,0 +1 @@
++hello
+\ No newline at end of file
+diff --git a/fileservice.py b/fileservice.py
+index 355da24..91cb606 100644
+--- a/fileservice.py
++++ b/fileservice.py
+@@ -19,3 +19,16 @@ def read_file(name: str) -> str:
+         raise ValueError("path escapes the data directory")
+     with open(candidate, encoding="utf-8") as fh:
+         return fh.read()
++
++
++def download(name: str) -> bytes:
++    """Return raw file bytes for download (NEW in this PR).
++
++    REV1 (defective): joins the request name directly and returns the
++    bytes -- a traversal sequence escapes BASE_DIR (SEC-001-path-escape
++    violation; the endpoint also ships without the documented
++    authorization decision required by SEC-002).
++    """
++    path = os.path.join(BASE_DIR, name)
++    with open(path, "rb") as fh:
++        return fh.read()
+diff --git a/test_fileservice.py b/test_fileservice.py
+index 2e51899..11ca487 100644
+--- a/test_fileservice.py
++++ b/test_fileservice.py
+@@ -1,7 +1,7 @@
+ import os
+ import unittest
+ 
+-from fileservice import BASE_DIR, read_file
++from fileservice import BASE_DIR, download, read_file
+ 
+ 
+ class ReadFileTest(unittest.TestCase):
+@@ -21,3 +21,18 @@ def test_rejects_traversal(self):
+ 
+ if __name__ == "__main__":
+     unittest.main()
++
++
++class DownloadSecTest(unittest.TestCase):
++    """SEC-001 regression: the download() endpoint must not allow a
++    traversal sequence to read bytes outside BASE_DIR."""
++
++    def test_download_traversal_rejected(self):
++        with self.assertRaises(ValueError):
++            download("../fileservice.py")
++
++    def test_download_allowed_file(self):
++        os.makedirs(BASE_DIR, exist_ok=True)
++        with open(os.path.join(BASE_DIR, "d.bin"), "wb") as fh:
++            fh.write(b"ok")
++        self.assertEqual(download("d.bin"), b"ok")

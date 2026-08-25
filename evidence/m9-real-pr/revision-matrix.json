@@ -1,0 +1,79 @@
+{
+ "controlled_fixture": true,
+ "matrix": [
+  {
+   "id": "P1",
+   "case": "correct repo/PR/branch/path, fresh content",
+   "tool": "gh_fix_branch",
+   "expected": "write+read-back confirm",
+   "actual": "confirmed update (base sha 91cb6061)",
+   "result": "PASS"
+  },
+  {
+   "id": "N1",
+   "case": "protected branch (main)",
+   "tool": "gh_fix_branch",
+   "expected": "deny before MCP",
+   "actual": "protected branch denied: main",
+   "result": "PASS"
+  },
+  {
+   "id": "N2",
+   "case": "wrong repo (MergePilot, not Demo)",
+   "tool": "gh_fix_branch",
+   "expected": "PR head mismatch deny",
+   "actual": "branch is not the current head of PR #2 in that repo",
+   "result": "PASS"
+  },
+  {
+   "id": "N3",
+   "case": "stale branch name",
+   "tool": "gh_fix_branch",
+   "expected": "PR head mismatch deny",
+   "actual": "branch 'old-branch-name' is not the current head",
+   "result": "PASS"
+  },
+  {
+   "id": "N4",
+   "case": "path traversal in target path (../../etc/passwd)",
+   "tool": "gh_fix_branch",
+   "expected": "deny before MCP",
+   "actual": "invalid path",
+   "result": "PASS"
+  },
+  {
+   "id": "N5-pre",
+   "case": "retry identical content (pre-guard)",
+   "tool": "gh_fix_branch",
+   "expected": "no duplicate commit",
+   "actual": "DUPLICATE commit created (finding G, defect evidence)",
+   "result": "FAIL→G"
+  },
+  {
+   "id": "N5-post",
+   "case": "retry identical content (post-guard)",
+   "tool": "gh_fix_branch",
+   "expected": "idempotent no-op",
+   "actual": "already at target content (idempotent no-op); commit count unchanged",
+   "result": "PASS"
+  },
+  {
+   "id": "N6",
+   "case": "reader on protected branch",
+   "tool": "gh_read",
+   "expected": "deny",
+   "actual": "protected branch denied: main",
+   "result": "PASS"
+  },
+  {
+   "id": "N7",
+   "case": "PAT isolation",
+   "tool": "architecture",
+   "expected": "PAT only in MCP server env",
+   "actual": "PAT in stdio github-mcp-server env only; gh_fix_branch/gh_read never read it; no PAT in any worker env/log",
+   "result": "PASS"
+  }
+ ],
+ "stale_revision_semantics": "CAS blob-SHA + PR-head-ref binding: a concurrent update changes the blob SHA, and the next CAS fails on mismatch; the PR head check refuses any branch that is not the PR's CURRENT head.",
+ "recorded_utc": "2026-08-25T07:07:52Z"
+}

@@ -1,0 +1,12 @@
+{
+ "machine_role": "development",
+ "os": "Windows 11 + WSL2 (NAT mode)",
+ "python": "3.9/3.12 (host+distro)",
+ "node_for_mcporter": "v20.18.1 (static binary)",
+ "github_mcp_server": "v1.9.0 (extracted from pinned mcp-bridge image)",
+ "github_cli": "authenticated (account redacted)",
+ "wsl_distro": "MergePilot-Test (test-labeled daemon)",
+ "hiclab_distro": "Ubuntu-22.04 (mcporter source, not used in replay)",
+ "no_secrets_in_this_file": true,
+ "recorded_utc": "2026-08-25T07:08:23Z"
+}

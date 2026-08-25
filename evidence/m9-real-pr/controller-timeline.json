@@ -1,0 +1,24 @@
+{
+ "note": "dev-machine replay: the in-stack Workflow Controller is not running; the timeline records the same state transitions enforced by the tool orchestration (analysis→fix→verify). In-stack controller execution requires the complete stack.",
+ "states": [
+  {
+   "state": "ANALYZING",
+   "entered_utc": "2026-08-25T07:08:23Z",
+   "exit": "FINDINGS_READY"
+  },
+  {
+   "state": "FIX_PENDING",
+   "entered_utc": "2026-08-25T07:08:23Z",
+   "exit": "FIX_CONFIRMED"
+  },
+  {
+   "state": "VERIFY_PENDING",
+   "entered_utc": "2026-08-25T07:08:23Z",
+   "exit": "VERIFY_PASSED"
+  },
+  {
+   "state": "COMPLETE",
+   "entered_utc": "2026-08-25T07:08:23Z"
+  }
+ ]
+}

@@ -1,0 +1,48 @@
+{
+ "producer": "gh_fix_branch / gh_read (agent-team tools, dev-machine replay)",
+ "chain": [
+  {
+   "seq": 1,
+   "timestamp_utc": "2026-08-25T07:07:52Z",
+   "agent": "Reviewer(diff-parse+risk+sast)",
+   "action": "analyze PR#2 REV1",
+   "result": "L2 risk + 1 high path-traversal finding",
+   "run_id": "m9a-dev",
+   "repo": "nghqqa/MergePilot-Demo",
+   "pr": 2,
+   "base_revision": "1fb8b68",
+   "head_revision": "0fee123"
+  },
+  {
+   "seq": 2,
+   "timestamp_utc": "2026-08-25T07:07:52Z",
+   "agent": "Fixer",
+   "action": "write REV2 via isolated github-mcp-server",
+   "result": "confirmed (CAS base sha 91cb6061, read-back verified)",
+   "head_revision_after": "55e55f6"
+  },
+  {
+   "seq": 3,
+   "timestamp_utc": "2026-08-25T07:07:52Z",
+   "agent": "Verifier",
+   "action": "run test_fileservice on PR head branch",
+   "result": "4/4 passed (REV1's failing test now green)"
+  },
+  {
+   "seq": 4,
+   "timestamp_utc": "2026-08-25T07:07:52Z",
+   "agent": "Fixer(retry)",
+   "action": "identical-content retry (pre-guard)",
+   "result": "duplicate commit a0e4e87b — FINDING G recorded"
+  },
+  {
+   "seq": 5,
+   "timestamp_utc": "2026-08-25T07:07:52Z",
+   "agent": "Fixer(retry-guarded)",
+   "action": "identical-content retry (post-guard)",
+   "result": "idempotent no-op, commit count unchanged"
+  }
+ ],
+ "first_stable_error_on_rev1": "test_download_traversal_rejected: ValueError not raised (SEC-001 path traversal)",
+ "sensitive_values_redacted": true
+}

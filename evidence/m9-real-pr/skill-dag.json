@@ -1,0 +1,50 @@
+{
+ "trace_id": "m9a-trace-002",
+ "stages": [
+  {
+   "skill": "diff-parse",
+   "status": "OK",
+   "output_summary": {
+    "files": 5,
+    "paths": [
+     ".gitignore",
+     "data/d.bin",
+     "data/hello.txt",
+     "fileservice.py",
+     "test_fileservice.py"
+    ]
+   }
+  },
+  {
+   "skill": "risk-classify",
+   "status": "OK",
+   "output_summary": {
+    "risk_level": "L2",
+    "matched_rules": [
+     "FILE_CONTENT_SURFACE",
+     "SOURCE_CONFIG_CHANGE"
+    ]
+   }
+  },
+  {
+   "skill": "sast-scan",
+   "status": "OK",
+   "output_summary": {
+    "findings": 1,
+    "rule_ids": [
+     "AST_PATH_TRAVERSAL"
+    ]
+   }
+  },
+  {
+   "skill": "test-runner",
+   "status": "REV1-red REV2-green",
+   "output_summary": {
+    "rev1": "1 failed (test_download_traversal_rejected)",
+    "rev2": "4 passed"
+   }
+  }
+ ],
+ "pipeline_driven": true,
+ "fixer_tool": "gh_fix_branch.py via isolated github-mcp-server stdio"
+}

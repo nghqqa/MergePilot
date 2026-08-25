@@ -1,0 +1,35 @@
+{
+ "controlled_fixture": true,
+ "handoffs": [
+  {
+   "from": "Coordinator",
+   "to": "Reviewer",
+   "payload": "PR#2 REV1 diff + context"
+  },
+  {
+   "from": "Reviewer",
+   "to": "Coordinator",
+   "payload": "risk=L2, sast=AST_PATH_TRAVERSAL(high), verdict=BLOCK"
+  },
+  {
+   "from": "Coordinator",
+   "to": "Fixer",
+   "payload": "SEC-001 violation, target fileservice.py, REV2 content"
+  },
+  {
+   "from": "Fixer",
+   "to": "Coordinator",
+   "payload": "write confirmed, head=55e55f6"
+  },
+  {
+   "from": "Coordinator",
+   "to": "Verifier",
+   "payload": "PR head 55e55f6, run tests"
+  },
+  {
+   "from": "Verifier",
+   "to": "Coordinator",
+   "payload": "4/4 passed"
+  }
+ ]
+}
