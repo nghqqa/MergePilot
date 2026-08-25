@@ -563,6 +563,79 @@ class TestDoctor(CliTestBase):
         codes = {c["code"] for c in payload["checks"]}
         self.assertIn("DOCTOR_PGVECTOR_NOT_CACHED", codes)
 
+    def test_pgvector_tar_recorded_digest_accepted(self):
+        # m9 defect B repro: a docker/containerd image store reports the
+        # MANIFEST digest as .Id; an offline docker-load of the shipped
+        # tar resolves the tag to the tar-recorded digest (7f58c993…),
+        # not the classic-docker config-ID pin (8e5355e9…). The gate
+        # must accept every RECORDED identity and still fail closed on
+        # anything else.
+        del self.world.images[oc.PGVECTOR_IMAGE_ID]
+        self.world.images[oc.PGVECTOR_IMAGE_REF] = oc.PGVECTOR_IMAGE_TAR_DIGEST
+        rc, text, payload = self.cli("doctor", "--json")
+        codes = {c["code"] for c in payload["checks"]}
+        self.assertNotIn("DOCTOR_PGVECTOR_NOT_CACHED", codes)
+
+    def test_pgvector_registry_digest_accepted(self):
+        # A deployment that pulled the pinned registry digest also
+        # passes the gate (manifest-digest form).
+        del self.world.images[oc.PGVECTOR_IMAGE_ID]
+        self.world.images[oc.PGVECTOR_IMAGE_REF] = oc.PGVECTOR_IMAGE_DIGEST
+        rc, text, payload = self.cli("doctor", "--json")
+        codes = {c["code"] for c in payload["checks"]}
+        self.assertNotIn("DOCTOR_PGVECTOR_NOT_CACHED", codes)
+
+    def test_pgvector_unknown_bytes_still_rejected(self):
+        # Fail-closed: bytes matching NO recorded identity still fail.
+        del self.world.images[oc.PGVECTOR_IMAGE_ID]
+        self.world.images[oc.PGVECTOR_IMAGE_REF] = "sha256:" + "ab" * 32
+        rc, text, payload = self.cli("doctor", "--json")
+        self.assertEqual(rc, mp.EXIT_PRECHECK)
+        codes = {c["code"] for c in payload["checks"]}
+        self.assertIn("DOCTOR_PGVECTOR_NOT_CACHED", codes)
+
+    def test_pgvector_runnable_ref_follows_backend(self):
+        # m9 defect B (run leg): the postgres container-run ref must be
+        # one THIS daemon can resolve — the containerd image store
+        # cannot run the classic config-Id ref, so resolution must
+        # fall through to a recorded digest that exists locally.
+        class _Stub:
+            def __init__(self, images):
+                self.images = images
+
+            def image_id(self, ref):
+                return self.images.get(ref)
+
+        stub = _Stub({oc.PGVECTOR_IMAGE_REF: oc.PGVECTOR_IMAGE_TAR_DIGEST})
+        self.assertEqual(mp.pgvector_runnable_ref(stub, oc),
+                         oc.PGVECTOR_IMAGE_TAR_DIGEST)
+        stub2 = _Stub({oc.PGVECTOR_IMAGE_ID: oc.PGVECTOR_IMAGE_ID})
+        self.assertEqual(mp.pgvector_runnable_ref(stub2, oc),
+                         oc.PGVECTOR_IMAGE_ID)
+        with self.assertRaises(mp.Failure):
+            mp.pgvector_runnable_ref(_Stub({}), oc)
+
+    def test_postgres_plan_uses_recorded_run_ref(self):
+        # The registry recorded by require_environment must drive the
+        # postgres container-run argv in EVERY start plan (m9 B).
+        try:
+            oc.record_pgvector_run_ref(oc.PGVECTOR_IMAGE_TAR_DIGEST)
+            for _svc in oc.BUILT_SERVICES:
+                oc.record_built_image_identity(_svc, "sha256:" + "0" * 64)
+            steps = mp.build_start_steps(
+                oc,
+                env_file="/tmp/pg.env",
+                controller_env_file="/tmp/ctrl.env",
+                reader_dsn_env_file="/tmp/demo.env",
+                gh_webhook_env_file="/tmp/hook.env",
+                run_id="ref-contract", bridge_ip=mp.PLACEHOLDER_BRIDGE_IP,
+                m4f=False)
+            pg_argv = next(argv for kind, name, argv in steps
+                           if kind == "container-run" and name == "postgres")
+            self.assertIn(oc.PGVECTOR_IMAGE_TAR_DIGEST, pg_argv)
+        finally:
+            oc.record_pgvector_run_ref(oc.PGVECTOR_IMAGE_ID)
+
     def test_partial_stack_reported(self):
         self.world.containers[PG_NAME] = {
             "id": "sha256:" + "11" * 32, "status": "running",

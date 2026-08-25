@@ -878,6 +878,56 @@ def probe_environment(docker):
     return checks
 
 
+def pgvector_recorded_pins(planner) -> frozenset:
+    """Every RECORDED pgvector identity, across storage backends.
+
+    `docker inspect .Id` differs by backend (graph2: config digest;
+    containerd image store: manifest digest), so the pin set carries
+    the registry manifest digest, the classic-docker config Id, and
+    the shipped-tar manifest digest. Anything outside the set still
+    fails closed.
+    """
+    return frozenset((
+        planner.PGVECTOR_IMAGE_DIGEST,
+        planner.PGVECTOR_IMAGE_ID,
+        planner.PGVECTOR_IMAGE_TAR_DIGEST,
+    ))
+
+
+def pgvector_cached_at_recorded_pin(docker, planner) -> bool:
+    """True when any recorded ref resolves to a recorded identity."""
+    pins = pgvector_recorded_pins(planner)
+    for ref in (planner.PGVECTOR_IMAGE_REF,) + tuple(pins):
+        img = docker.image_id(ref)
+        if img is not None and img.strip() in pins:
+            return True
+    return False
+
+
+def pgvector_runnable_ref(docker, planner) -> str:
+    """A pgvector ref THIS daemon can actually `docker run`.
+
+    The classic store runs the config-Id ref; the containerd image
+    store runs manifest-digest refs (the config-Id ref does not
+    resolve). Preference order is deterministic; byte-exactness is
+    guaranteed by require_environment, which runs before any plan.
+    """
+    for ref in (planner.PGVECTOR_IMAGE_ID,
+                planner.PGVECTOR_IMAGE_TAR_DIGEST,
+                planner.PGVECTOR_IMAGE_DIGEST):
+        if docker.image_id(ref) is not None:
+            return ref
+    img = docker.image_id(planner.PGVECTOR_IMAGE_REF)
+    if img is not None and img.strip() in pgvector_recorded_pins(planner):
+        # byte-exact identity of the tag-pinned image — never the
+        # mutable tag itself
+        return img.strip()
+    raise Failure(
+        "PGVECTOR_NOT_CACHED",
+        "pgvector image not cached at any recorded pin (pull=never)",
+        exit_code=EXIT_PRECHECK)
+
+
 def require_environment(docker):
     """Install/start gate: probe_environment + pgvector digest cache."""
     checks = probe_environment(docker)
@@ -885,17 +935,21 @@ def require_environment(docker):
         bad = next(c for c in checks if not c["ok"])
         raise Failure(bad["code"], bad["detail"], exit_code=EXIT_PRECHECK)
     planner = _PLANNER
-    # byte-exact offline pin: the loaded tag must resolve to the
-    # recorded config digest (a @sha256 manifest ref is unresolvable
-    # for docker-load images — usability round §4)
-    _pg_id = docker.image_id(planner.PGVECTOR_IMAGE_ID)
-    if _pg_id is None or _pg_id.strip() != planner.PGVECTOR_IMAGE_ID:
+    # byte-exact offline pin, backend-stable: any RECORDED ref must
+    # resolve to a RECORDED identity (registry manifest digest,
+    # classic-docker config Id, or shipped-tar manifest digest).
+    if not pgvector_cached_at_recorded_pin(docker, planner):
         raise Failure(
             "PGVECTOR_NOT_CACHED",
-            "pgvector image not cached at the pinned bytes (pull=never): "
-            "%s must resolve to %s" % (planner.PGVECTOR_IMAGE_REF,
-                                     planner.PGVECTOR_IMAGE_ID),
+            "pgvector image not cached at any recorded pin (pull=never): "
+            "%s must resolve to one of %s" % (
+                planner.PGVECTOR_IMAGE_REF,
+                ", ".join(sorted(pgvector_recorded_pins(planner)))),
             exit_code=EXIT_PRECHECK)
+    # Every start path passes through this gate before planning —
+    # record once which recorded ref THIS daemon can actually run so
+    # all build_start_steps callers share the resolution (m9 B).
+    planner.record_pgvector_run_ref(pgvector_runnable_ref(docker, planner))
 
 
 # ── Stack discovery / classification ─────────────────────────────────────────
@@ -1212,7 +1266,7 @@ def _policy_repo_allowlist(project_dir: Path) -> str:
 def build_start_steps(planner, *, env_file, controller_env_file,
                       reader_dsn_env_file, gh_webhook_env_file,
                       run_id, bridge_ip, m4f,
-                      session_public_dir=None):
+                      session_public_dir=None, pg_image_ref=None):
     """The eleven-step plan, composed from the planner's own public plan
     functions in plan_orchestrated_start's exact order. Returns
     (steps, argv_list) where each step carries its wait semantics.
@@ -1231,7 +1285,8 @@ def build_start_steps(planner, *, env_file, controller_env_file,
          planner.plan_publication_network_create()),
         ("container-run", "postgres",
          planner.plan_service_run(
-             "postgres", image_ref=planner.PGVECTOR_IMAGE_ID,
+             "postgres",
+             image_ref=pg_image_ref or planner.get_pgvector_run_ref(),
              env_file=env_file)),
         ("container-run", "policy-gateway",
          planner.plan_service_run(
@@ -1744,11 +1799,11 @@ def cmd_doctor(args):
     stack = {"classification": "unknown", "detail": "environment gate failed"}
     images = {}
     if env_ok:
-        pg = docker.image_id(planner.PGVECTOR_IMAGE_ID)
-        add("pgvector_image", "DOCTOR_PGVECTOR_CACHED" if pg
-            else "DOCTOR_PGVECTOR_NOT_CACHED", pg is not None,
-            planner.PGVECTOR_IMAGE_ID if pg
-            else "pinned bytes not cached (pull=never)")
+        pg_ok = pgvector_cached_at_recorded_pin(docker, planner)
+        add("pgvector_image", "DOCTOR_PGVECTOR_CACHED" if pg_ok
+            else "DOCTOR_PGVECTOR_NOT_CACHED", pg_ok,
+            planner.PGVECTOR_IMAGE_REF if pg_ok
+            else "no recorded pin cached (pull=never)")
         for service in planner.BUILT_SERVICES:
             tag = image_tag(planner, service)
             img = docker.image_id(tag)
