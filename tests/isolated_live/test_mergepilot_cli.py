@@ -689,11 +689,20 @@ class TestDoctor(CliTestBase):
                 continue  # one Dockerfile deliberately missing
             (skeleton / ("Dockerfile.%s" % svc)).write_text("FROM x\n",
                                                             encoding="utf-8")
+        # m9-d: source-build files only checked with --build-from-source;
+        # in offline mode the skeleton's missing Dockerfile is advisory
         rc, text, payload = self.cli("doctor", "--json", "--project-dir",
-                                     str(skeleton))
+                                     str(skeleton), "--build-from-source")
         self.assertEqual(rc, mp.EXIT_PRECHECK)
         codes = {c["code"] for c in payload["checks"]}
         self.assertIn("DOCTOR_LAYOUT_MISSING", codes)
+        # offline mode on the same skeleton: runtime files present,
+        # source-build gap is advisory, NOT a failure
+        rc2, text2, payload2 = self.cli("doctor", "--json",
+                                         "--project-dir", str(skeleton))
+        codes2 = {c["code"] for c in payload2["checks"]}
+        self.assertIn("DOCTOR_LAYOUT_SOURCE_ONLY", codes2)
+        self.assertIn("DOCTOR_RUNTIME_OK", codes2)
 
 
 # ── Install ──────────────────────────────────────────────────────────────────
