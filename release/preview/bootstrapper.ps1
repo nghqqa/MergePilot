@@ -1,16 +1,17 @@
 # MergePilot v0.1 Preview bootstrapper (Windows + WSL2)
 # -----------------------------------------------------
-# Version : v0.1.0-preview.3
-# Scope   : environment check, offline image install (checksum-gated),
-#           start (with the explicit Windows loopback publication
-#           edge), stop/cleanup with verified keepalive teardown.
+# Version : v0.1.0-preview.4-rc.2
+# Mode    : STANDALONE (default) — the package carries the CLI code;
+#           no source checkout, no git clone, no .mergepilot from any
+#           other checkout. -RepoRoot is an EXPLICIT development-mode
+#           override.
 #
 # Truth boundaries carried by this preview (NEVER flipped by deploying):
 #   application_integration_verified = false
 #   database_verified                 = false
 #   production_verified               = false
-#   revision_producer_contract        = NOT_VERIFIED
-#   audit_producer_contract           = NOT_VERIFIED
+#   revision_producer_contract        = PARTIALLY_VERIFIED
+#   audit_producer_contract           = PARTIALLY_VERIFIED
 #   transport_profile = wsl-user-relay, direct_routing_verified = false
 #
 # No secrets are read, printed, or shipped by this script.
@@ -29,14 +30,35 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-if (-not $RepoRoot) { $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path }
-$Cli = Join-Path $RepoRoot "tools\cli\mergepilot.py"
-if (-not (Test-Path $Cli)) { throw "repo layout unexpected: $Cli not found (RepoRoot=$RepoRoot)" }
+
+# Standalone path resolution: the package root is the parent of this
+# script. Layout: <root>/bootstrapper.ps1, <root>/cli/, <root>/preview/
+# -RepoRoot is an EXPLICIT dev-mode override (must contain tools/cli/).
+if ($RepoRoot) {
+    $RepoRoot = [System.IO.Path]::GetFullPath($RepoRoot)
+    $Cli = Join-Path $RepoRoot "tools\cli\mergepilot.py"
+    $ForwarderScript = Join-Path $RepoRoot "tools\preview\loopback_forwarder.py"
+    if (-not (Test-Path $Cli)) {
+        throw "DEV MODE: -RepoRoot '$RepoRoot' does not contain tools\cli\mergepilot.py"
+    }
+} else {
+    $PackageRoot = $PSScriptRoot
+    $Cli = Join-Path $PackageRoot "tools\cli\mergepilot.py"
+    $ForwarderScript = Join-Path $PackageRoot "tools\preview\loopback_forwarder.py"
+    $RepoRoot = $PackageRoot
+}
+
+if (-not (Test-Path $Cli)) {
+    throw "STANDALONE_PACKAGE_INCOMPLETE: CLI payload not found at '$Cli'. Extract the package ZIP so cli/, preview/, and bootstrapper.ps1 are siblings."
+}
+if (-not (Test-Path $ForwarderScript)) {
+    throw "STANDALONE_PACKAGE_INCOMPLETE: forwarder not found at '$ForwarderScript'"
+}
+
 $StateDir = Join-Path $RepoRoot ".mergepilot"
 $KeepaliveFile = Join-Path $StateDir "preview-keepalive.identity.json"
 $ForwarderIdentity = Join-Path $StateDir "preview-forwarder.identity.json"
-$ForwarderScript = Join-Path $RepoRoot "tools\preview\loopback_forwarder.py"
-$LogFile = Join-Path $RepoRoot "release\preview\logs\bootstrapper.log"
+$LogFile = Join-Path $RepoRoot "logs\bootstrapper.log"
 $script:LastCliExitCode = 0
 
 function Write-Log([string]$Level, [string]$Msg) {
@@ -47,17 +69,11 @@ function Write-Log([string]$Level, [string]$Msg) {
 }
 
 function Get-WslText([string[]]$WslArgs) {
-    # wsl.exe emits UTF-16LE; strip NULs. NO stderr redirect (the
-    # UTF-16 warning deadlocks PS 5.1 native stderr readers).
     $out = (& wsl.exe @WslArgs | Out-String) -replace "`0", ""
     return $out
 }
 
 function Assert-DistroRegistered([string]$D) {
-    # distro authority (§2): validate -Distro against the registered
-    # set up front (DISTRO_MISMATCH), then pass it to the CLI ONLY
-    # through the MERGEPILOT_WSL_DISTRO environment variable — one
-    # authority, no parallel arguments, no shell injection surface.
     $list = Get-WslText @("-l", "-v")
     if ($list -notmatch [regex]::Escape($D)) {
         Write-Log "FAIL" "DISTRO_MISMATCH: '$D' is not in wsl -l -v"
@@ -67,10 +83,6 @@ function Assert-DistroRegistered([string]$D) {
 }
 
 function Invoke-BootstrapperDocker([string[]]$DockerArgs) {
-    # docker invoked directly via --exec (no shell) — user input never
-    # reaches a command line a shell would re-interpret. Command output
-    # goes to the SUCCESS stream and would pollute the return value, so
-    # it is discarded here; only the exit code travels.
     $null = & wsl.exe -u root -d $Distro --exec docker @DockerArgs
     return $LASTEXITCODE
 }
@@ -79,6 +91,7 @@ function Invoke-Cli([string[]]$CliArgs) {
     Write-Log "INFO" ("cli: mergepilot " + ($CliArgs -join " "))
     Push-Location $RepoRoot
     $env:MERGEPILOT_WSL_DISTRO = $Distro
+    $env:PYTHONPATH = $RepoRoot
     try {
         & python $Cli @CliArgs 2>&1 | ForEach-Object { Write-Host $_ }
         $script:LastCliExitCode = $LASTEXITCODE
@@ -88,14 +101,12 @@ function Invoke-Cli([string[]]$CliArgs) {
     }
     finally {
         Remove-Item Env:\MERGEPILOT_WSL_DISTRO -ErrorAction SilentlyContinue
+        Remove-Item Env:\PYTHONPATH -ErrorAction SilentlyContinue
         Pop-Location
     }
 }
 
 function Wake-Distro([string]$D) {
-    # bounded wake for lifecycle commands: boot a REGISTERED but
-    # dormant distro with a trivial --exec, poll its state, give up
-    # loudly (the CLI independently wakes with the same bound).
     for ($i = 0; $i -lt 12; $i++) {
         $null = Get-WslText @("-d", $D, "--exec", "/bin/true")
         $lv = Get-WslText @("-l", "-v")
@@ -107,8 +118,6 @@ function Wake-Distro([string]$D) {
 }
 
 function Wait-DockerReady([string]$D) {
-    # a freshly-woken distro needs a few seconds before dockerd
-    # answers; bounded poll, then a stable failure
     for ($i = 0; $i -lt 20; $i++) {
         $rc = Invoke-BootstrapperDocker @("info", "--format", "ok")
         if ($rc -eq 0) { return $true }
@@ -117,10 +126,10 @@ function Wait-DockerReady([string]$D) {
     Write-Log "FAIL" "docker not reachable inside '$D' within 20s of wake"
     throw "docker not reachable inside '$D'"
 }
+
 function New-Token { return [System.IO.Path]::GetRandomFileName() -replace "\.", "" }
 
 function Start-Keepalive([string]$D) {
-    # single persistent foreground wsl.exe sleep, identity-filed
     $tok = New-Token
     $k = Start-Process -FilePath "wsl.exe" -ArgumentList @("-d", $D, "--exec", "/bin/sleep", "14400") -PassThru -WindowStyle Hidden
     New-Item -ItemType Directory -Force -Path $StateDir | Out-Null
@@ -133,10 +142,6 @@ function Start-Keepalive([string]$D) {
 }
 
 function Stop-OwnedProcess([string]$IdentityFile, [string]$ExpectName) {
-    # verified teardown: only terminate a process whose id, process
-    # NAME, and (for the forwarder) the launch TOKEN on its command
-    # line all match our identity file. A recycled PID pointing at an
-    # unrelated process is reported and left alone.
     if (-not (Test-Path $IdentityFile)) { return }
     $id = $null
     try { $id = Get-Content $IdentityFile -Raw | ConvertFrom-Json } catch { }
@@ -146,7 +151,7 @@ function Stop-OwnedProcess([string]$IdentityFile, [string]$ExpectName) {
             if ($IdentityFile -eq $ForwarderIdentity) {
                 $cl = (Get-CimInstance Win32_Process -Filter ("ProcessId=" + $id.pid) -ErrorAction SilentlyContinue).CommandLine
                 if ($cl -and $id.token -and ($cl -notmatch [regex]::Escape($id.token))) {
-                    Write-Log "WARN" ("forwarder pid " + $id.pid + " command line lacks our token — NOT terminating")
+                    Write-Log "WARN" ("forwarder pid " + $id.pid + " command line lacks our token - NOT terminating")
                     Remove-Item $IdentityFile -ErrorAction SilentlyContinue
                     return
                 }
@@ -155,20 +160,18 @@ function Stop-OwnedProcess([string]$IdentityFile, [string]$ExpectName) {
             Write-Log "OK" ($ExpectName + " pid=" + $id.pid + " terminated (token verified)")
         }
         elseif ($p) {
-            Write-Log "WARN" ("pid " + $id.pid + " is '" + $p.ProcessName + "', not " + $ExpectName + " — NOT terminating (stale identity removed)")
+            Write-Log "WARN" ("pid " + $id.pid + " is '" + $p.ProcessName + "', not " + $ExpectName + " - NOT terminating")
         }
     }
     Remove-Item $IdentityFile -ErrorAction SilentlyContinue
 }
 
 function Assert-TeardownComplete([string]$IdentityFile) {
-    # bounded wait for the identity to be gone; a survivor is the
-    # stable KEEPALIVE_SURVIVED blocker, never a silent leftover
     for ($i = 0; $i -lt 10; $i++) {
         if (-not (Test-Path $IdentityFile)) { return }
         Start-Sleep -Milliseconds 500
     }
-    Write-Log "FAIL" ("KEEPALIVE_SURVIVED: " + (Split-Path $IdentityFile -Leaf) + " still present after bounded teardown")
+    Write-Log "FAIL" ("KEEPALIVE_SURVIVED: " + (Split-Path $IdentityFile -Leaf))
     throw "KEEPALIVE_SURVIVED"
 }
 
@@ -177,25 +180,31 @@ function Assert-Ports {
         $c = Get-NetTCPConnection -LocalPort $p -State Listen -ErrorAction SilentlyContinue
         if ($c) { throw "port $p already listening (stack running? run -Action Stop first)" }
     }
-    return "loopback ports 8600/8090 free (Windows edge binds 127.0.0.1 only)"
+    return "loopback ports 8600/8090 not listening"
+}
+
+function Test-PortBind([int]$Port) {
+    $l = $null
+    try {
+        $l = [System.Net.Sockets.TcpListener]::new(
+            [System.Net.IPAddress]::Parse("127.0.0.1"), $Port)
+        $l.Start()
+    } catch {
+        $msg = $_.Exception.Message
+        Write-Log "FAIL" ("WINDOWS_PORT_BIND_UNAVAILABLE: cannot bind 127.0.0.1:$Port ($msg)")
+        Write-Log "HINT" ("WinNAT/Hyper-V port exclusion. Inspect: netsh interface ipv4 show excludedportrange protocol=tcp. Fix (admin): netsh int ipv4 add excludedportrange protocol=tcp startport=$Port numberofports=1. This tool never rewrites system reservations.")
+        throw "WINDOWS_PORT_BIND_UNAVAILABLE (127.0.0.1:$Port)"
+    } finally {
+        if ($l) { $l.Stop() }
+    }
+    return $true
 }
 
 function Test-LoopbackHttp([int]$Port, [string]$Path) {
-    # real verification with the user's system proxy settings intact:
-    # --noproxy '*' bypasses proxies for LOOPBACK only — we never
-    # touch the user's proxy configuration
     & curl.exe -s --noproxy "*" -o NUL -w "%{http_code}" --max-time 8 ("http://127.0.0.1:" + $Port + $Path)
 }
 
 function Start-PublicationEdge {
-    # explicit Windows-side loopback publication (§3): launch the
-    # forwarder (127.0.0.1-only, fixed ports, token-identified), then
-    # REALLY verify page + API from the Windows side. Any failure is
-    # fail-closed: forwarder down + CLI stop (full rollback).
-    if (-not (Test-Path $ForwarderScript)) {
-        Write-Log "FAIL" "WINDOWS_LOOPBACK_PUBLICATION_UNAVAILABLE: forwarder script missing"
-        throw "WINDOWS_LOOPBACK_PUBLICATION_UNAVAILABLE"
-    }
     $tok = New-Token
     $f = Start-Process -FilePath "python" -ArgumentList @(
         "-u", $ForwarderScript, "--distro", $Distro,
@@ -210,12 +219,12 @@ function Start-PublicationEdge {
     }
     $api = Test-LoopbackHttp 8600 "/api/e2e/status"
     if (($code -ne "200") -or ($api -ne "200") -or $f.HasExited) {
-        Write-Log "FAIL" ("WINDOWS_LOOPBACK_PUBLICATION_FAILED: page=" + $code + " api=" + $api + " exited=" + $f.HasExited)
+        Write-Log "FAIL" ("WINDOWS_LOOPBACK_PUBLICATION_FAILED: page=$code api=$api exited=$($f.HasExited)")
         Stop-OwnedProcess $ForwarderIdentity "python"
         try { Invoke-Cli @("stop") } catch { Write-Log "WARN" "rollback stop also failed" }
         throw "WINDOWS_LOOPBACK_PUBLICATION_FAILED (rolled back)"
     }
-    Write-Log "PASS" ("Windows-side loopback publication verified: page 200, api 200 (forwarder token " + $tok + ")")
+    Write-Log "PASS" ("Windows-side loopback publication verified (token $tok)")
 }
 
 function Stop-PublicationEdge {
@@ -225,7 +234,6 @@ function Stop-PublicationEdge {
         if ($busy -eq 0) { return }
         Start-Sleep -Milliseconds 500
     }
-    Write-Log "FAIL" "KEEPALIVE_SURVIVED: loopback ports still listening after forwarder teardown"
     throw "KEEPALIVE_SURVIVED (ports)"
 }
 
@@ -242,15 +250,15 @@ switch ($Action) {
         $null = Wake-Distro $Distro
         Wait-DockerReady $Distro | Out-Null
         Write-Log "PASS" "docker in distro OK"
-        Write-Log "PASS" (Assert-Ports)
+        # bind probe FIRST; "ports free" only after both binds pass
+        Assert-Ports | Out-Null
+        Test-PortBind 8600 | Out-Null
+        Test-PortBind 8090 | Out-Null
+        Write-Log "PASS" "ports 8600/8090 free AND bindable (no WinNAT exclusion)"
         $free = [math]::Round((Get-PSDrive -Name ($RepoRoot.Substring(0, 1))).Free / 1GB, 1)
         if ($free -lt 8) { throw ("disk free " + $free + " GB < 8 GB") }
         Write-Log "PASS" ("disk free " + $free + " GB >= 8 GB")
-        if (-not (Test-Path $ForwarderScript)) {
-            Write-Log "FAIL" "WINDOWS_LOOPBACK_PUBLICATION_UNAVAILABLE: forwarder script missing from repo"
-            throw "WINDOWS_LOOPBACK_PUBLICATION_UNAVAILABLE"
-        }
-        Write-Log "OK" "Check: all environment gates green"
+        Write-Log "OK" "Check: all gates green (standalone mode)"
     }
 
     "Install" {
@@ -259,28 +267,25 @@ switch ($Action) {
             $csFile = Join-Path (Split-Path $ImageTar -Parent) "checksums.sha256"
             $mfFile = Join-Path (Split-Path $ImageTar -Parent) "manifest.json"
             if (-not (Test-Path $csFile)) { throw "checksums.sha256 not found beside tar" }
-            if (-not (Test-Path $mfFile)) { throw "manifest.json not found beside tar (placement contract)" }
+            if (-not (Test-Path $mfFile)) { throw "manifest.json not found beside tar" }
             $name = Split-Path $ImageTar -Leaf
             $entry = @((Get-Content $csFile -Encoding ASCII) | Where-Object {
                 $_ -match ("(?i)^\s*([0-9a-f]{64})\s+\*?" + [regex]::Escape($name) + "\s*$") })
-            if ($entry.Count -eq 0) { throw "no checksums entry for '$name' — refusing an unregistered tar" }
-            if ($entry.Count -gt 1) { throw "duplicate checksums entries for '$name' — refusing an ambiguous manifest" }
+            if ($entry.Count -eq 0) { throw "no checksums entry for '$name'" }
+            if ($entry.Count -gt 1) { throw "duplicate checksums entries for '$name'" }
             $expected = ((@($entry))[0] -split '\s+')[0].ToLower()
             $actual = (Get-FileHash $ImageTar -Algorithm SHA256).Hash.ToLower()
-            if ($actual -ne $expected) { throw ("image tar checksum mismatch: expected " + $expected + " got " + $actual) }
+            if ($actual -ne $expected) { throw ("checksum mismatch: expected $expected got $actual") }
             Write-Log "PASS" ("checksum verified (" + $expected.Substring(0, 12) + ")")
-            # offline completeness (§4): the manifest's image set must
-            # be EXACTLY the required set (9 images incl. pgvector)
             $mf = Get-Content $mfFile -Raw | ConvertFrom-Json
             $required = @($mf.required_image_set)
             $shipped = @($mf.images.PSObject.Properties.Name)
             $missing = @($required | Where-Object { $shipped -notcontains $_ })
             $extra = @($shipped | Where-Object { $required -notcontains $_ })
             if (($missing.Count -gt 0) -or ($extra.Count -gt 0) -or ($required.Count -ne 9)) {
-                Write-Log "FAIL" ("OFFLINE_IMAGE_SET_INCOMPLETE: missing=[" + ($missing -join ",") + "] extra=[" + ($extra -join ",") + "]")
-                throw "OFFLINE_IMAGE_SET_INCOMPLETE — the tar cannot install offline"
+                throw "OFFLINE_IMAGE_SET_INCOMPLETE"
             }
-            Write-Log "PASS" ("offline image set exact: " + $required.Count + " images incl. pgvector")
+            Write-Log "PASS" ("offline image set exact: " + $required.Count + " images")
             $null = Wake-Distro $Distro
             Wait-DockerReady $Distro | Out-Null
             $tarW = $ImageTar
@@ -289,20 +294,15 @@ switch ($Action) {
             } else { throw "cannot translate path: $ImageTar" }
             $rc = Invoke-BootstrapperDocker @("load", "-i", $tarW)
             if ($rc -ne 0) { throw ("docker load failed rc=" + $rc) }
-            Write-Log "OK" "images imported; verifying via CLI doctor"
-            Invoke-Cli @("doctor")
-            # install manifest bookkeeping: keys are the RUNNABLE
-            # tags; values are each tag's config ID resolved from the
-            # LOADED bytes (docker image inspect). The package
-            # manifest's digests are verification-grade manifest
-            # digests — NOT runnable refs after docker load.
-            $manifests = Join-Path $RepoRoot "release\preview\manifests"
+            Write-Log "OK" "images imported"
+            # §3: write install.json BEFORE doctor so the runtime
+            # status check sees the just-installed images
+            $manifests = Join-Path $RepoRoot "manifests"
             New-Item -ItemType Directory -Force -Path $manifests | Out-Null
             $inst = Join-Path $RepoRoot ".mergepilot\install.json"
             $cur = Join-Path $manifests "install.current.json"
             if (Test-Path $cur) {
                 Copy-Item $cur (Join-Path $manifests "install.previous.json") -Force
-                Write-Log "INFO" "previous install manifest archived"
             }
             $imagesJson = [ordered]@{}
             foreach ($tag in ($required | Where-Object { $_ -like "mergepilot-isolated-*" })) {
@@ -310,33 +310,31 @@ switch ($Action) {
                     "docker", "image", "inspect", $tag, "--format", "{{.Id}}")
                 $imgId = $idOut.Trim()
                 if (-not $imgId.StartsWith("sha256:")) {
-                    throw ("loaded image " + $tag + " did not resolve to a config Id")
+                    throw ("loaded image " + $tag + " did not resolve")
                 }
                 $imagesJson[$tag] = $imgId
             }
             New-Item -ItemType Directory -Force -Path $StateDir | Out-Null
             $json = @{ images = $imagesJson } | ConvertTo-Json -Depth 4
-            # staged write: a crash can at worst keep the previous
-            # snapshot, never a half-written manifest
             $tmp = Join-Path $manifests "install.current.tmp"
             [System.IO.File]::WriteAllText($tmp, $json)
             [System.IO.File]::Copy($tmp, $inst, $true)
             [System.IO.File]::Copy($tmp, $cur, $true)
             Remove-Item $tmp -Force -ErrorAction SilentlyContinue
-            Write-Log "OK" ("install manifest materialized from LOADED bytes (" + $imagesJson.Count + " config IDs)")
+            Write-Log "OK" ("install manifest written (" + $imagesJson.Count + " IDs)")
+            Invoke-Cli @("doctor")
         }
         elseif ($BuildFromSource) {
-            Write-Log "INFO" "building images from source (network required)"
             Invoke-Cli @("install")
         }
         else {
-            throw "Install requires -ImageTar <path> or -BuildFromSource"
+            throw "Install requires -ImageTar or -BuildFromSource"
         }
     }
 
     "Start" {
         if ($RunId -notin @("run-showcase-a", "run-showcase-b", "run-showcase-c")) {
-            throw "RunId must be a seeded showcase case: run-showcase-a/b/c"
+            throw "RunId must be a seeded showcase case"
         }
         Assert-Ports | Out-Null
         $null = Wake-Distro $Distro
@@ -351,7 +349,7 @@ switch ($Action) {
             Stop-OwnedProcess $KeepaliveFile "wsl"
             throw
         }
-        Write-Log "OK" ("stack started; console at http://127.0.0.1:8600/e2e-status.html (keepalive pid " + $kaPid + ")")
+        Write-Log "OK" ("stack started; console at http://127.0.0.1:8600 (pid $kaPid)")
     }
 
     "Status" { Invoke-Cli @("status") }
@@ -364,23 +362,45 @@ switch ($Action) {
         Stop-OwnedProcess $KeepaliveFile "wsl"
         Assert-TeardownComplete $KeepaliveFile
         Assert-TeardownComplete $ForwarderIdentity
-        Write-Log "OK" "stopped (images, journals and evidence retained)"
+        Write-Log "OK" "stopped"
     }
 
     "Cleanup" {
+        # M9G-1 fix: snapshot the manifest state BEFORE any cleanup call
+        # runs — the CLI cleanup --apply DELETES install.json, so checking
+        # after the call always sees "absent" and the report lies.
+        $inst = Join-Path $StateDir "install.json"
+        $manifestInitialState = "absent"
+        $manifestExisted = Test-Path $inst
+        if ($manifestExisted) {
+            try {
+                $null = Get-Content $inst -Raw | ConvertFrom-Json
+                $manifestInitialState = "present_valid"
+            } catch {
+                $manifestInitialState = "present_invalid"
+            }
+        }
         $null = Wake-Distro $Distro
         Invoke-Cli @("stop")
-        # the CLI's cleanup is dry-run by default; --apply executes
         Invoke-Cli @("cleanup", "--apply")
         Stop-PublicationEdge
         Stop-OwnedProcess $KeepaliveFile "wsl"
         Assert-TeardownComplete $KeepaliveFile
         Assert-TeardownComplete $ForwarderIdentity
-        Write-Log "OK" "cleaned (images and install manifest removed; evidence untouched)"
+        # Report based on the PRE-cleanup snapshot, not post-cleanup state
+        if ($manifestInitialState -eq "present_valid") {
+            Write-Log "OK" "install manifest removed (was present and consumed by cleanup --apply)"
+        } elseif ($manifestInitialState -eq "present_invalid") {
+            Write-Log "WARN" "install manifest present but unreadable; ownership-sensitive image cleanup skipped (fail-closed)"
+        } else {
+            Write-Log "INFO" "no install manifest found from the start; ownership-sensitive image cleanup skipped (fail-closed: no owner record, no deletion)"
+        }
+        Write-Log "OK" "session containers/networks: removed by stop"
+        Write-Log "OK" "keepalive: terminated"
+        Write-Log "OK" "forwarder: terminated"
+        Write-Log "OK" "ports 8600/8090: released"
+        Write-Log "OK" "cleanup complete (see per-resource lines above)"
     }
 }
 
-# diagnostics (§6): the bootstrapper's exit code IS the last CLI exit
-# code (0 when everything succeeded); the log never contains OK on a
-# failed path.
 exit $script:LastCliExitCode

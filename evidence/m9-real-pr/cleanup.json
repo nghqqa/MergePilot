@@ -1,0 +1,10 @@
+{
+ "status": "finalized",
+ "pr_state": "Draft, never merged, preserved",
+ "pr1": "review-machine historical evidence, untouched",
+ "wsl_distro": "MergePilot-Test: stack images remain (9), no running session containers",
+ "keepalive": "terminated after RC build",
+ "mcp_artifacts": "mcporter config + github-mcp-server binary remain in distro for future rounds",
+ "pat_handling": "PAT file on host only; never in evidence, logs, or committed files",
+ "recorded_utc": "2026-08-25T10:31:13Z"
+}

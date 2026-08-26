@@ -1,0 +1,25 @@
+{
+ "note": "dev-machine replay: the in-stack Policy Gateway container is not running; the policy decisions below are enforced by the agent-team tools' own guard contracts (same rules the gateway delegates to). Full in-stack gateway execution requires the complete stack (external acceptance round).",
+ "decisions": [
+  {
+   "action": "fixer write to PR head branch",
+   "decision": "ALLOW",
+   "basis": "seeded-case PR, correct repo, non-protected branch, path allowlist"
+  },
+  {
+   "action": "fixer write to main",
+   "decision": "DENY",
+   "basis": "protected branch"
+  },
+  {
+   "action": "fixer write to wrong repo",
+   "decision": "DENY",
+   "basis": "PR head binding failed"
+  },
+  {
+   "action": "reader access to main",
+   "decision": "DENY",
+   "basis": "protected branch"
+  }
+ ]
+}

@@ -19,7 +19,7 @@ $ErrorActionPreference = "Stop"
 if (-not $RepoRoot) { $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path }
 if (-not $OutDir) { $OutDir = Join-Path $RepoRoot "dist\preview-v0.1.0" }
 
-$Version = "v0.1.0-preview.3"
+$Version = "v0.1.0-preview.4-rc.2"
 # REQUIRED_IMAGE_SET: everything `doctor`/`start` needs to run with a
 # BLANK image cache and NO network pull — the 8 built images plus the
 # digest-locked pgvector base. The bootstrapper's Install gate checks
@@ -53,21 +53,60 @@ if ($distWsl -match "^([A-Za-z]):\\(.*)$") {
 & wsl.exe -u root -d $Distro --exec docker save -o $distWsl @Images
 if ($LASTEXITCODE -ne 0) { throw "docker save failed" }
 
-Write-Host "== copy package payload"
+Write-Host "== copy package payload (standalone: bundled CLI + forwarder)"
 Copy-Item (Join-Path $RepoRoot "release\preview\bootstrapper.ps1") $pkg
 Copy-Item (Join-Path $RepoRoot "release\preview\README.md") $pkg
 New-Item -ItemType Directory -Force -Path (Join-Path $pkg "docs") | Out-Null
 Copy-Item (Join-Path $RepoRoot "docs\preview") (Join-Path $pkg "docs") -Recurse
+# Standalone CLI payload: mirror the FULL tools/ + config/ trees so the
+# CLI's path resolution AND runtime file reads (policy.yaml, migrations,
+# audit-db SQL, room-map) work unchanged from the extracted ZIP.
+# m9-f §2 hygiene: Copy-Item -Exclude only filters the TOP level; we
+# copy first, then recursively STRIP all cache artifacts and verify.
+Copy-Item (Join-Path $RepoRoot "tools") (Join-Path $pkg "tools") -Recurse
+New-Item -ItemType Directory -Force -Path (Join-Path $pkg "config") | Out-Null
+Copy-Item (Join-Path $RepoRoot "config\gh-app") (Join-Path $pkg "config\gh-app") -Recurse
+
+# ── m9-f §2: package hygiene — recursive cache strip + fail-closed verify ──
+$CacheDirs = @("__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache")
+$CacheFiles = @("*.pyc", "*.pyo", "*.coverage", ".coverage")
+foreach ($cd in $CacheDirs) {
+    Get-ChildItem $pkg -Recurse -Directory -Filter $cd -ErrorAction SilentlyContinue |
+        Remove-Item -Recurse -Force
+}
+foreach ($cf in $CacheFiles) {
+    Get-ChildItem $pkg -Recurse -File -Filter $cf -ErrorAction SilentlyContinue |
+        Remove-Item -Force
+}
+# fail-closed: if any cache still exists after the strip, abort the build
+$leftover = @(Get-ChildItem $pkg -Recurse -Force | Where-Object {
+    $_.Name -in $CacheDirs -or $_.Name -match '\.py[co]$' -or
+    $_.Name -eq '.coverage' -or $_.Name -eq '*.coverage'
+})
+if ($leftover.Count -gt 0) {
+    throw "PACKAGE_HYGIENE_FAILED: $($leftover.Count) cache artifacts remain: $($leftover | Select-Object -First 3 | ForEach-Object { $_.FullName })"
+}
+# also verify no EMPTY directories remain from the strip
+$emptyDirs = @(Get-ChildItem $pkg -Recurse -Directory | Where-Object {
+    @(Get-ChildItem $_.FullName -Recurse -Force -ErrorAction SilentlyContinue).Count -eq 0
+})
+foreach ($ed in $emptyDirs) { Remove-Item $ed.FullName -Force -ErrorAction SilentlyContinue }
+Write-Host "== package hygiene: 0 cache artifacts, 0 empty dirs"
 
 Write-Host "== checksums"
 $cs = Join-Path $OutDir "checksums.sha256"
 Remove-Item $cs -ErrorAction SilentlyContinue
 $files = Get-ChildItem $OutDir -Recurse -File | Where-Object { $_.Name -ne "checksums.sha256" -and $_.Name -ne "manifest.json" }
-foreach ($f in $files) {
+# m9 defect A: `Add-Content` writes CRLF and $rel carries backslashes,
+# which breaks `sha256sum -c` on every non-Windows toolchain. Build the
+# file with LF newlines and forward-slash paths instead.
+$lines = foreach ($f in $files) {
     $h = (Get-FileHash $f.FullName -Algorithm SHA256).Hash.ToLower()
-    $rel = $f.FullName.Substring($OutDir.Length + 1)
-    Add-Content $cs ("$h  $rel") -Encoding ASCII
+    $rel = $f.FullName.Substring($OutDir.Length + 1).Replace("\", "/")
+    "$h  $rel"
 }
+[System.IO.File]::WriteAllText($cs, ($lines -join "`n") + "`n",
+                                [System.Text.UTF8Encoding]::new($false))
 
 Write-Host "== manifest"
 $git = (& git -C $RepoRoot rev-parse HEAD | Out-String).Trim()

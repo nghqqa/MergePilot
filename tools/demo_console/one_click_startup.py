@@ -53,6 +53,17 @@ PGVECTOR_IMAGE_REF = "pgvector/pgvector:pg16"
 PGVECTOR_IMAGE_ID = (
     "sha256:8e5355e9ff399a002fa46148399a1ac22fb3e9b2d390f857296e6da6b5559ba1"
 )
+# m9 defect B: `docker inspect .Id` is NOT stable across storage
+# backends — the classic graph2 store reports the config digest
+# (8e5355e9…), while the containerd image store reports the MANIFEST
+# digest. The manifest digest of the preview.3 shipped tar bytes is
+# recorded here so every gate accepts all three RECORDED forms
+# (registry manifest, classic-docker config Id, shipped-tar manifest)
+# and still fails closed on anything else. Packaging saves pgvector
+# BY DIGEST so future tars carry the pinned bytes.
+PGVECTOR_IMAGE_TAR_DIGEST = (
+    "sha256:7f58c9936b2ef7f3e1fa20ac7d13cc1d7337ebf2380eec75677efe0204daadf0"
+)
 
 # Base image for the four BUILT services (cached in the MergePilot-Test
 # daemon). Referenced by the root Dockerfiles; pinned by image ID so a
@@ -1276,6 +1287,23 @@ BUILT_SERVICES = ("policy-gateway", "controller", "demo-console",
 
 _builtin_registry: dict = {}
 
+# m9 defect B (run leg): the pgvector run ref is backend-dependent
+# (classic store runs the config-Id ref; the containerd image store
+# runs manifest-digest refs). require_environment resolves which
+# recorded ref THIS daemon can run and records it here; the start
+# plans read it through get_pgvector_run_ref(). Default keeps the
+# classic behavior for plan-only callers.
+_pgvector_run_ref: dict = {"ref": None}
+
+
+def record_pgvector_run_ref(ref: str) -> None:
+    """Record the pgvector ref this daemon can actually run."""
+    _pgvector_run_ref["ref"] = ref
+
+
+def get_pgvector_run_ref() -> str:
+    return _pgvector_run_ref["ref"] or PGVECTOR_IMAGE_ID
+
 
 def record_built_image_identity(service: str, image_id: str) -> None:
     """Record the immutable identity of a built service image.
@@ -1807,6 +1835,9 @@ __all__ = [
     "PGVECTOR_IMAGE_DIGEST",
     "PGVECTOR_IMAGE_REF",
     "PGVECTOR_IMAGE_ID",
+    "PGVECTOR_IMAGE_TAR_DIGEST",
+    "record_pgvector_run_ref",
+    "get_pgvector_run_ref",
     "PREFLIGHT_CHECKS",
     "READER_ROLE",
     "ReaderDsnSecretFile",

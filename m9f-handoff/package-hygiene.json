@@ -1,0 +1,10 @@
+{
+  "round": "m9-f",
+  "fix": "recursive cache strip in make_package.ps1",
+  "rc3_cache_entries": 19,
+  "rc4_cache_entries": 0,
+  "excluded": ["__pycache__/", "*.pyc", "*.pyo", ".pytest_cache/", ".mypy_cache/", ".ruff_cache/", ".coverage"],
+  "fail_closed": "PACKAGE_HYGIENE_FAILED if any cache remains after strip",
+  "empty_dirs_removed": true,
+  "required_files_verified": ["tools/cli/mergepilot.py", "tools/policy-gateway/policy.yaml", "tools/audit-db/init.sql", "config/gh-app/room-map.example.yaml", "bootstrapper.ps1", "tools/preview/loopback_forwarder.py"]
+}

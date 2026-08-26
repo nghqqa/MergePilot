@@ -1,0 +1,28 @@
+# M9-B External Acceptance — Run These Commands
+# (in the directory containing all 5 downloaded assets)
+
+# 1. Verify checksums
+sha256sum -c checksums.sha256
+
+# 2. Extract the package
+Expand-Archive mergepilot-v0.1.0-preview.4-rc.1-package.zip -DestinationPath package
+
+# 3. Environment check (expect PASS or WINDOWS_PORT_BIND_UNAVAILABLE)
+.\package/bootstrapper.ps1 -Action Check
+
+# 4. Install (offline, 9 images)
+.\package/bootstrapper.ps1 -Action Install -ImageTar images-oci.tar
+
+# 5. Start (if Check passed)
+.\package/bootstrapper.ps1 -Action Start
+
+# 6. Verify in browser
+# http://127.0.0.1:8600/e2e-status.html should show the console
+
+# 7. Negative smoke
+curl -X POST http://127.0.0.1:8600/api/e2e/status   # expect 405
+curl http://127.0.0.1:8600/no-such-path              # expect 404
+curl -H "Host: evil.com" http://127.0.0.1:8600/e2e-status.html  # expect 403
+
+# 8. Cleanup
+.\package/bootstrapper.ps1 -Action Cleanup

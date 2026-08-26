@@ -1,0 +1,10 @@
+{
+  "version": "v0.1.0-preview.4-rc.3",
+  "git_commit": "58cfd475",
+  "image_count": 9,
+  "tar_bytes": 847388160,
+  "delivery": "m9b-rc3-delivery",
+  "assets": ["images-oci.tar", "manifest.json", "checksums.sha256",
+              "mergepilot-v0.1.0-preview.4-rc.3-package.zip",
+              "EXTERNAL-ACCEPTANCE.md", "SHA256SUMS", "asset-sha256.json"]
+}

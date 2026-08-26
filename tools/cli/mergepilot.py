@@ -722,9 +722,23 @@ class WslDocker:
                 return
             if state == "present" and info.get("status") not in ("running",
                                                                  "restarting"):
+                # m9 finding D: an early exit must carry the REAL
+                # error — full logs are fetched and the first stable
+                # error + stderr tail ride in the failure detail, not
+                # just the preflight banner.
+                tail = ""
+                try:
+                    tail = self.container_logs(name)
+                except Exception:
+                    pass
                 raise Failure(
                     "CONTAINER_NOT_RUNNING",
-                    "%s status=%s before healthy" % (name, info.get("status")),
+                    "%s status=%s exit=%s before healthy; first_error=%s; "
+                    "logs_tail=%s" % (
+                        name, info.get("status"),
+                        info.get("exit_code", "?"),
+                        _first_stable_error(tail) or "(none in logs)",
+                        _tail_lines(tail, 12)),
                     exit_code=EXIT_FAILED_CLEANED)
             time.sleep(2)
         raise Failure("HEALTH_TIMEOUT",
@@ -878,6 +892,56 @@ def probe_environment(docker):
     return checks
 
 
+def pgvector_recorded_pins(planner) -> frozenset:
+    """Every RECORDED pgvector identity, across storage backends.
+
+    `docker inspect .Id` differs by backend (graph2: config digest;
+    containerd image store: manifest digest), so the pin set carries
+    the registry manifest digest, the classic-docker config Id, and
+    the shipped-tar manifest digest. Anything outside the set still
+    fails closed.
+    """
+    return frozenset((
+        planner.PGVECTOR_IMAGE_DIGEST,
+        planner.PGVECTOR_IMAGE_ID,
+        planner.PGVECTOR_IMAGE_TAR_DIGEST,
+    ))
+
+
+def pgvector_cached_at_recorded_pin(docker, planner) -> bool:
+    """True when any recorded ref resolves to a recorded identity."""
+    pins = pgvector_recorded_pins(planner)
+    for ref in (planner.PGVECTOR_IMAGE_REF,) + tuple(pins):
+        img = docker.image_id(ref)
+        if img is not None and img.strip() in pins:
+            return True
+    return False
+
+
+def pgvector_runnable_ref(docker, planner) -> str:
+    """A pgvector ref THIS daemon can actually `docker run`.
+
+    The classic store runs the config-Id ref; the containerd image
+    store runs manifest-digest refs (the config-Id ref does not
+    resolve). Preference order is deterministic; byte-exactness is
+    guaranteed by require_environment, which runs before any plan.
+    """
+    for ref in (planner.PGVECTOR_IMAGE_ID,
+                planner.PGVECTOR_IMAGE_TAR_DIGEST,
+                planner.PGVECTOR_IMAGE_DIGEST):
+        if docker.image_id(ref) is not None:
+            return ref
+    img = docker.image_id(planner.PGVECTOR_IMAGE_REF)
+    if img is not None and img.strip() in pgvector_recorded_pins(planner):
+        # byte-exact identity of the tag-pinned image — never the
+        # mutable tag itself
+        return img.strip()
+    raise Failure(
+        "PGVECTOR_NOT_CACHED",
+        "pgvector image not cached at any recorded pin (pull=never)",
+        exit_code=EXIT_PRECHECK)
+
+
 def require_environment(docker):
     """Install/start gate: probe_environment + pgvector digest cache."""
     checks = probe_environment(docker)
@@ -885,17 +949,21 @@ def require_environment(docker):
         bad = next(c for c in checks if not c["ok"])
         raise Failure(bad["code"], bad["detail"], exit_code=EXIT_PRECHECK)
     planner = _PLANNER
-    # byte-exact offline pin: the loaded tag must resolve to the
-    # recorded config digest (a @sha256 manifest ref is unresolvable
-    # for docker-load images — usability round §4)
-    _pg_id = docker.image_id(planner.PGVECTOR_IMAGE_ID)
-    if _pg_id is None or _pg_id.strip() != planner.PGVECTOR_IMAGE_ID:
+    # byte-exact offline pin, backend-stable: any RECORDED ref must
+    # resolve to a RECORDED identity (registry manifest digest,
+    # classic-docker config Id, or shipped-tar manifest digest).
+    if not pgvector_cached_at_recorded_pin(docker, planner):
         raise Failure(
             "PGVECTOR_NOT_CACHED",
-            "pgvector image not cached at the pinned bytes (pull=never): "
-            "%s must resolve to %s" % (planner.PGVECTOR_IMAGE_REF,
-                                     planner.PGVECTOR_IMAGE_ID),
+            "pgvector image not cached at any recorded pin (pull=never): "
+            "%s must resolve to one of %s" % (
+                planner.PGVECTOR_IMAGE_REF,
+                ", ".join(sorted(pgvector_recorded_pins(planner)))),
             exit_code=EXIT_PRECHECK)
+    # Every start path passes through this gate before planning —
+    # record once which recorded ref THIS daemon can actually run so
+    # all build_start_steps callers share the resolution (m9 B).
+    planner.record_pgvector_run_ref(pgvector_runnable_ref(docker, planner))
 
 
 # ── Stack discovery / classification ─────────────────────────────────────────
@@ -1099,6 +1167,38 @@ def _redact_env_value(key: str) -> str:
     return "<present>"
 
 
+def _first_stable_error(logs: str) -> str:
+    """First STABLE error line in container logs (m9 D): startup-probe
+    failures, exception types, or FAILED <CODE> markers — never the
+    preflight banner."""
+    import re as _re
+    if not logs:
+        return ""
+    banner_marks = ('preflight passed', 'Config preflight')
+    probe = _re.compile(r'STARTUP PROBE FAILED[^\n]*')
+    code = _re.compile(r'\b([A-Z][A-Z0-9]+_[A-Z0-9_]{3,})\b')
+    exc = _re.compile(r'^(\w*(?:Error|Exception)\w*):[^\n]*', _re.M)
+    failed = _re.compile(r'FAILED [A-Z0-9_]+[^\n]*')
+    for line in logs.splitlines():
+        stripped = line.strip()
+        if any(m in stripped for m in banner_marks):
+            continue
+        m = probe.search(stripped) or failed.search(stripped)
+        if m:
+            return m.group(0)
+        m = code.search(stripped)
+        if m:
+            return stripped[:120]
+        m = exc.search(stripped)
+        if m:
+            return stripped[:120]
+    return ""
+
+
+def _tail_lines(text: str, n: int) -> str:
+    lines = [ln for ln in (text or "").splitlines() if ln.strip()]
+    return " | ".join(lines[-n:])[-400:]
+
 def capture_failure_diagnostics(docker, planner, paths, session):
     """Rollback 前捕获本次 owned 容器的失败取证(M8-GH-3 §1)。
 
@@ -1212,7 +1312,7 @@ def _policy_repo_allowlist(project_dir: Path) -> str:
 def build_start_steps(planner, *, env_file, controller_env_file,
                       reader_dsn_env_file, gh_webhook_env_file,
                       run_id, bridge_ip, m4f,
-                      session_public_dir=None):
+                      session_public_dir=None, pg_image_ref=None):
     """The eleven-step plan, composed from the planner's own public plan
     functions in plan_orchestrated_start's exact order. Returns
     (steps, argv_list) where each step carries its wait semantics.
@@ -1231,7 +1331,8 @@ def build_start_steps(planner, *, env_file, controller_env_file,
          planner.plan_publication_network_create()),
         ("container-run", "postgres",
          planner.plan_service_run(
-             "postgres", image_ref=planner.PGVECTOR_IMAGE_ID,
+             "postgres",
+             image_ref=pg_image_ref or planner.get_pgvector_run_ref(),
              env_file=env_file)),
         ("container-run", "policy-gateway",
          planner.plan_service_run(
@@ -1688,22 +1789,40 @@ def cmd_doctor(args):
     add("python_version", "DOCTOR_PYTHON", True,
         "%d.%d.%d" % (version.major, version.minor, version.micro))
 
-    required = ([("Dockerfile.%s" % s) for s in planner.BUILT_SERVICES]
-                + ["docker-compose.yml",
-                   "tools/demo_console/one_click_startup.py",
-                   "tools/demo_console/showcase_cases.py",
-                   "tools/demo_console/migrations/%s"
-                   % ISOLATED_LIVE_MIGRATIONS[0],
-                   "tools/demo_console/migrations/%s"
-                   % ISOLATED_LIVE_MIGRATIONS[1],
-                   "config/gh-app/room-map.example.yaml"]
-                + [("tools/audit-db/%s" % f)
-                   for f in sorted(set(AUDIT_DB_MIGRATION_CHAIN))])
+    # m9-d standalone Doctor contract: source-build files are only
+    # required when the caller explicitly asks to BUILD from source.
+    # In offline-install/runtime mode (the standalone package), the
+    # runtime state is what matters — install.json, images, containers.
+    source_build = getattr(args, "build_from_source", False)
+    _runtime_files = [
+        "tools/demo_console/one_click_startup.py",
+        "tools/demo_console/showcase_cases.py",
+    ]
+    _source_build_files = ([("Dockerfile.%s" % s) for s in planner.BUILT_SERVICES]
+                           + ["docker-compose.yml",
+                              "tools/demo_console/migrations/%s"
+                              % ISOLATED_LIVE_MIGRATIONS[0],
+                              "tools/demo_console/migrations/%s"
+                              % ISOLATED_LIVE_MIGRATIONS[1],
+                              "config/gh-app/room-map.example.yaml"]
+                           + [("tools/audit-db/%s" % f)
+                              for f in sorted(set(AUDIT_DB_MIGRATION_CHAIN))])
+    required = _runtime_files + (_source_build_files if source_build else [])
     missing = [r for r in required if not (project_dir / r).is_file()]
-    add("project_layout", "DOCTOR_LAYOUT_MISSING" if missing
-        else "DOCTOR_LAYOUT_OK", not missing,
-        "missing: %s" % missing if missing else
-        "%d contract files present" % len(required))
+    if source_build:
+        add("project_layout", "DOCTOR_LAYOUT_MISSING" if missing
+            else "DOCTOR_LAYOUT_OK", not missing,
+            "SOURCE-BUILD mode, missing: %s" % missing if missing else
+            "%d contract files present" % len(required))
+    else:
+        add("runtime_layout", "DOCTOR_RUNTIME_MISSING" if missing
+            else "DOCTOR_RUNTIME_OK", not missing,
+            "missing: %s" % missing if missing else
+            "%d runtime files present (standalone OK)" % len(required))
+        add("project_layout", "DOCTOR_LAYOUT_SOURCE_ONLY", True,
+            "offline-install mode: %d source-build files not required "
+            "(use --build-from-source to check them)"
+            % len(_source_build_files))
 
     try:
         with tempfile.TemporaryDirectory(prefix="mp-doctor-") as td:
@@ -1741,14 +1860,24 @@ def cmd_doctor(args):
     checks.extend(env_checks)
     env_ok = all(c["ok"] for c in env_checks)
 
+    # standalone install status: the offline package's install.json
+    _paths = state_paths(project_dir)
+    install_manifest = load_manifest(_paths["install"])
+    add("install_status", "DOCTOR_INSTALLED" if install_manifest
+        else "DOCTOR_NOT_INSTALLED", install_manifest is not None,
+        "%d images recorded" % len((install_manifest or {}).get("images", {}))
+        if install_manifest else
+        "no install.json — run bootstrapper Install (offline) or "
+        "mergepilot install (source)")
+
     stack = {"classification": "unknown", "detail": "environment gate failed"}
     images = {}
     if env_ok:
-        pg = docker.image_id(planner.PGVECTOR_IMAGE_ID)
-        add("pgvector_image", "DOCTOR_PGVECTOR_CACHED" if pg
-            else "DOCTOR_PGVECTOR_NOT_CACHED", pg is not None,
-            planner.PGVECTOR_IMAGE_ID if pg
-            else "pinned bytes not cached (pull=never)")
+        pg_ok = pgvector_cached_at_recorded_pin(docker, planner)
+        add("pgvector_image", "DOCTOR_PGVECTOR_CACHED" if pg_ok
+            else "DOCTOR_PGVECTOR_NOT_CACHED", pg_ok,
+            planner.PGVECTOR_IMAGE_REF if pg_ok
+            else "no recorded pin cached (pull=never)")
         for service in planner.BUILT_SERVICES:
             tag = image_tag(planner, service)
             img = docker.image_id(tag)
@@ -3290,6 +3419,9 @@ def build_parser():
 
     p = sub.add_parser("doctor", parents=[common],
                        help="read-only environment and stack checks")
+    p.add_argument("--build-from-source", action="store_true",
+                   help="check source-build files (Dockerfiles, compose, "
+                        "migrations) — not needed for offline installs")
     p.add_argument("--github-e2e", action="store_true",
                    help="add the GitHub E2E foundation checks (read-only "
                         "planning capability; no side effects)")

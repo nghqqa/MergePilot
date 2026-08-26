@@ -1,0 +1,14 @@
+{
+ "receipt_id": "m9a-dev-pr2-rev2",
+ "repo": "nghqqa/MergePilot-Demo",
+ "pr": 2,
+ "base_revision": "1fb8b680c9f0ef6513ccd0f9d58e444b0ac28e2a",
+ "head_revision_before": "0fee123e542fa0e4734a91184217bada285e0420",
+ "head_revision_after": "55e55f6fd1a9fbc5b9b9ee4df8fa58ae0fdd1a9f",
+ "pipeline_driven": true,
+ "fix_commit_message": "fix(download): realpath confinement (SEC-001, pipeline fixer REV2)",
+ "verifier_result": "4/4 tests passed",
+ "sast_before": "AST_PATH_TRAVERSAL high",
+ "sast_after": "guarded realpath+prefix (clean)",
+ "recorded_utc": "2026-08-25T07:07:52Z"
+}

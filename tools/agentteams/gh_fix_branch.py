@@ -119,10 +119,10 @@ def main(argv: list) -> int:
     if not content or len(content.encode("utf-8")) > 512_000:
         _die("content empty or exceeds limit")
 
-    id_args = ("owner=%s" % owner, "repo=%s" % repo, "pull_number=%d" % pr)
+    id_args = ("owner=%s" % owner, "repo=%s" % repo, "pullNumber=%d" % pr)
 
     # 1) confirm target branch == PR current head branch (fail-closed)
-    pr_raw = _mc("github.get_pull_request", *id_args)
+    pr_raw = _mc("github.pull_request_read", "method=get", *id_args)
     m = re.search(r'"ref"\s*:\s*"%s"' % re.escape(branch), pr_raw)
     head_ref = re.search(r'"head"\s*:\s*\{[^}]*?"ref"\s*:\s*"([^"]+)"', pr_raw)
     if not m or not head_ref or head_ref.group(1) != branch:
@@ -136,13 +136,19 @@ def main(argv: list) -> int:
         _die("PR #%d head repo %r != requested %r (fork PRs are denied)" % (
             pr, (full.group(1) if full else "?"), want_repo))
 
-    # 2) current blob SHA for CAS
+    # 2) current blob SHA for CAS + idempotency pre-check (m9 G):
+    # a retry with IDENTICAL content must be a no-op, not a duplicate
+    # commit — GitHub's create_or_update_file always commits.
     cur = _mc("github.get_file_contents", "owner=%s" % owner, "repo=%s" % repo,
               "path=%s" % path, "ref=%s" % branch)
     sha_m = _SHA_RE.search(cur)
     if not sha_m:
         _die("no blob SHA found for %s @ %s" % (path[:60], branch[:40]))
     sha = sha_m.group(1)
+    if content.strip() in cur:
+        print("[%s] already at target content on %s (idempotent no-op, "
+              "base sha %s)" % (TOOL, branch[:40], sha[:10]))
+        return 0
 
     # 3) single-file CAS update
     _mc("github.create_or_update_file", "owner=%s" % owner, "repo=%s" % repo,

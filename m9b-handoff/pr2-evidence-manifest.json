@@ -1,0 +1,56 @@
+{
+ "description": "PR#2 evidence files (all committed at 3a6e531)",
+ "branch": "feature/m9-real-pr-contracts",
+ "files": {
+  "github-pr.json": {
+   "path": "evidence/m9-real-pr/github-pr.json",
+   "sha256": "3cfd47ce32da7e54595bfb70fb47deaa3294d1002d84062ddfb18f3460482d5c",
+   "bytes": 696
+  },
+  "revision-matrix.json": {
+   "path": "evidence/m9-real-pr/revision-matrix.json",
+   "sha256": "6136eda539bea397b06f8f0eae6cb5d98de002307ab7d2a84aaac48ec3dd91ab",
+   "bytes": 2365
+  },
+  "audit-chain.json": {
+   "path": "evidence/m9-real-pr/audit-chain.json",
+   "sha256": "1d2bfd3b523a6f658adf0f1a5dab5b77c6fd05c3c9969f0a630b8446f668ba40",
+   "bytes": 1507
+  },
+  "receipt.json": {
+   "path": "evidence/m9-real-pr/receipt.json",
+   "sha256": "77c905cfd5ee22b0e6a653468c06ea62f3525edbbbe116b1940614dff032f270",
+   "bytes": 589
+  },
+  "skill-dag.json": {
+   "path": "evidence/m9-real-pr/skill-dag.json",
+   "sha256": "cdf22eff7283e1a41c1fa694792df0e35b9be3ebd41d28645b3041854d9df2c3",
+   "bytes": 954
+  },
+  "test-results.json": {
+   "path": "evidence/m9-real-pr/test-results.json",
+   "sha256": "5aedf555cc5544f4f7c7652bab7b5528164268046d0868c96e968cac67f44841",
+   "bytes": 410
+  },
+  "controller-timeline.json": {
+   "path": "evidence/m9-real-pr/controller-timeline.json",
+   "sha256": "ca8ac3aa518738764560312a4e7f35b79a2ffedce9393bdd5b4acb5829558184",
+   "bytes": 684
+  },
+  "gateway-decisions.json": {
+   "path": "evidence/m9-real-pr/gateway-decisions.json",
+   "sha256": "5e2a914d92763262f73bb9fafc054af1359ff8a6a48318e710c0623f5991b457",
+   "bytes": 817
+  },
+  "agent-handoffs.json": {
+   "path": "evidence/m9-real-pr/agent-handoffs.json",
+   "sha256": "0d35f94cfec1fda001842a9502cc6c4ee2fff36afd668f1b3df2d73210c469ea",
+   "bytes": 713
+  },
+  "cleanup.json": {
+   "path": "evidence/m9-real-pr/cleanup.json",
+   "sha256": "947ce4e491333999be86c76368fdbbaeabd1081c59c46e3ba37a04348601d9d3",
+   "bytes": 501
+  }
+ }
+}

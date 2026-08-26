@@ -1,0 +1,10 @@
+{
+  "round": "m9-f",
+  "fix": "install.json state recorded BEFORE cleanup runs",
+  "three_way_report": {
+    "present_and_consumed": "install manifest removed (was present and consumed by cleanup --apply)",
+    "present_but_unparseable": "install manifest was present but unparseable; CLI cleanup may have removed or retained it (fail-closed: ownership not assumed)",
+    "absent_from_start": "no install manifest found from the start; ownership-sensitive image cleanup skipped (fail-closed: no owner record, no deletion)"
+  },
+  "per_resource_lines": ["session containers/networks", "keepalive", "forwarder", "ports 8600/8090", "install manifest"]
+}

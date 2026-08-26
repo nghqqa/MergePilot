@@ -1,0 +1,8 @@
+{
+  "version": "v0.1.0-preview.4-rc.4",
+  "git_commit": "d43c090e",
+  "image_count": 9,
+  "tar_bytes": 847388160,
+  "delivery": "m9b-rc4-delivery",
+  "branch": "fix/m9f-preview4-rc4-hygiene"
+}

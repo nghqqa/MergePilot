@@ -1,0 +1,20 @@
+{
+ "dev_machine_full_suite": {
+  "passed": 2411,
+  "failed": 0,
+  "skipped": 20,
+  "scope": "gh_app+demo_console+isolated_live+preview+m4b+m4c/sast"
+ },
+ "pr_fixture_tests": {
+  "rev1_defective": {
+   "passed": 3,
+   "failed": 1,
+   "failing": "test_download_traversal_rejected"
+  },
+  "rev2_pipeline_fix": {
+   "passed": 4,
+   "failed": 0
+  }
+ },
+ "recorded_utc": "2026-08-25T10:31:13Z"
+}

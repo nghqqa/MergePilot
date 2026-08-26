@@ -1,0 +1,18 @@
+{
+ "controlled_fixture": true,
+ "repo": "nghqqa/MergePilot-Demo",
+ "repo_visibility": "private",
+ "pr_number": 2,
+ "pr_state": "OPEN",
+ "pr_draft": true,
+ "base_branch": "main",
+ "base_sha": "1fb8b680c9f0ef6513ccd0f9d58e444b0ac28e2a",
+ "head_branch": "feat/download-endpoint",
+ "head_sha_rev1_defective": "0fee123e542fa0e4734a91184217bada285e0420",
+ "head_sha_rev2_pipeline_fix": "55e55f6fd1a9fbc5b9b9ee4df8fa58ae0fdd1a9f",
+ "duplicate_commit_defect_evidence": "a0e4e87b (pre-guard retry, finding G)",
+ "commits_on_pr": 3,
+ "never_merged": true,
+ "pr1_preserved_as": "review-machine historical evidence (head a569f0d, never modified)",
+ "recorded_utc": "2026-08-25T07:07:17Z"
+}

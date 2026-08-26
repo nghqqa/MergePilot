@@ -1,0 +1,6 @@
+{"round":"m9h",
+ "repro":{"install_json_before":"present","images_after":"8 deleted (owned)","non_owned":"retained",
+   "report_output":"WRONG: 'no install manifest found from the start'"},
+ "fix":{"install_json_before":"present","images_after":"8 deleted (owned)","non_owned":"retained",
+   "report_output":"CORRECT: 'install manifest removed (was present and consumed by cleanup --apply)'"},
+ "second_cleanup":{"install_json_before":"absent","report_output":"CORRECT: 'no install manifest found from the start'"}}

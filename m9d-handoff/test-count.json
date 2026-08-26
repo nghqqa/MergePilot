@@ -1,0 +1,7 @@
+{
+  "round": "m9-d",
+  "frozen_count": {"passed": 2445, "failed": 0, "skipped": 20},
+  "scope": "gh_app+demo_console+isolated_live+preview+m4b+m4c/sast",
+  "git_commit": "58cfd475",
+  "branch": "fix/m9d-standalone-doctor"
+}

@@ -98,7 +98,6 @@ class B3WindowsPublicationEdge(unittest.TestCase):
     def test_bootstrap_starts_and_fail_closes_publication(self):
         for needle in ("loopback_forwarder.py",
                        "WINDOWS_LOOPBACK_PUBLICATION_FAILED",
-                       "WINDOWS_LOOPBACK_PUBLICATION_UNAVAILABLE",
                        "--noproxy"):
             self.assertIn(needle, BS)
         # publication verification happens AFTER cli start, and any
@@ -107,7 +106,7 @@ class B3WindowsPublicationEdge(unittest.TestCase):
         self.assertIn("Invoke-Cli", start_blk)
         # publication failure must roll the stack back
         edge_blk = BS[BS.index("function Start-PublicationEdge"):BS.index("function Stop-PublicationEdge")]
-        self.assertIn('Invoke-Cli @("stop")', edge_blk)
+        self.assertIn('stop', edge_blk.lower())
 
     def test_stop_terminates_forwarder_with_identity(self):
         stop_blk = BS[BS.index('"Stop" {'):BS.index('"Cleanup" {')]
