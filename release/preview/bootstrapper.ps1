@@ -1,6 +1,6 @@
 # MergePilot v0.1 Preview bootstrapper (Windows + WSL2)
 # -----------------------------------------------------
-# Version : v0.1.0-preview.4-rc.2
+# Version : v0.1.0-preview.4
 # Mode    : STANDALONE (default) — the package carries the CLI code;
 #           no source checkout, no git clone, no .mergepilot from any
 #           other checkout. -RepoRoot is an EXPLICIT development-mode

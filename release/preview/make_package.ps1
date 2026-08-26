@@ -19,7 +19,7 @@ $ErrorActionPreference = "Stop"
 if (-not $RepoRoot) { $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path }
 if (-not $OutDir) { $OutDir = Join-Path $RepoRoot "dist\preview-v0.1.0" }
 
-$Version = "v0.1.0-preview.4-rc.2"
+$Version = "v0.1.0-preview.4"
 # REQUIRED_IMAGE_SET: everything `doctor`/`start` needs to run with a
 # BLANK image cache and NO network pull — the 8 built images plus the
 # digest-locked pgvector base. The bootstrapper's Install gate checks

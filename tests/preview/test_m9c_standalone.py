@@ -13,7 +13,7 @@ BS = (ROOT / "release" / "preview" / "bootstrapper.ps1").read_text(
 PKG = (ROOT / "release" / "preview" / "make_package.ps1").read_text(
     encoding="utf-8-sig")
 
-RC_VERSION = "v0.1.0-preview.4-rc.2"
+RC_VERSION = "v0.1.0-preview.4"
 
 
 class VersionConsistency(unittest.TestCase):
