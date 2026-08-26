@@ -1,22 +1,18 @@
 # MergePilot 复赛材料
 
-本目录是复赛提交物的单一材料入口。当前已基于 `v0.1.0-preview.3` / `379744d` 形成材料 v1；视频文件仍需按冻结脚本录制，现场展示必须保留 Preview 与真实性边界说明。
+当前正式材料基于 `v0.1.0-preview.4` / `5bb2635` 整理。同机黑盒验收为 `SAME_MACHINE_ACCEPTED`，独立物理机验收仍为 `EXTERNAL_BLOCKED`；不代表 production ready。
 
-## 使用顺序
+## 目录
 
-1. 先读 [00-材料约束.md](00-材料约束.md)。
-2. 所有页面、口播、视频字幕和提交说明必须遵守其中的真实性与术语约束。
-3. 最终材料只能引用已冻结的提交、Release、测试结果和 evidence，不从开发中状态推断能力。
+- [材料约束](00-材料约束.md)
+- [正式整理版 finals-v1](finals-v1/)
+- [历史项目方案](01-更新版项目方案/)
+- [历史代码包说明](02-代码包说明/)
+- [历史 Demo](03-Demo/)
+- [历史声明矩阵](04-声明证据矩阵/)
 
-## 计划交付物
+正式 Release：[v0.1.0-preview.4](https://github.com/nghqqa/MergePilot/releases/tag/v0.1.0-preview.4)。
 
-| 目录或文件 | 用途 | 当前状态 |
-|---|---|---|
-| `00-材料约束.md` | 官方要求、统一口径、真实性边界 | 已建立 |
-| `01-更新版项目方案/` | PPT、PDF及逐页证据指针 | v1 已完成并渲染复核 |
-| `02-代码包说明/` | 运行入口、依赖、配置、样例和验证证据 | v1 已完成 |
-| `03-Demo/` | 现场演示脚本、录屏脚本和故障预案 | v1 脚本已完成，视频待录制 |
-| `04-声明证据矩阵/` | 每项声明对应 commit、测试和 evidence | v1 已完成并统一复核 |
-| `05-评委问答/` | 架构演进、边界、风险和开放计划 | 待材料成稿后整理 |
+## 冻结口径
 
-历史初赛材料不迁入本目录覆盖修改；需要对照时只引用其历史快照。
+9 个离线镜像，OCI tar 约 847MB；门禁 `2471 passed / 0 failed / 20 skipped`。传输为 `wsl-user-relay`，`direct_routing_verified=false`。所有材料必须保留以下真实性边界：`application_integration_verified=false`、`database_verified=false`、`production_verified=false`、`revision_producer_contract=NOT_VERIFIED`、`audit_producer_contract=NOT_VERIFIED`。
