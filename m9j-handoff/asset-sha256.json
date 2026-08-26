@@ -1,0 +1,875 @@
+{
+ "version": "v0.1.0-preview.4",
+ "git_commit": "5bb2635624585318aa005a0fc1d8c2b302c8a183",
+ "hash_algorithm": "sha256",
+ "assets": {
+  "checksums.sha256": {
+   "sha256": "1e5a02c319be5110fa0fc0fbbff77b04911a6656db91919cad66e37371840bed",
+   "bytes": 267
+  },
+  "images-oci.tar": {
+   "sha256": "74869211270c01d97ba9633738e2bb60ecbb1e1aa696fe9f0e4631ad0772ed27",
+   "bytes": 847388160
+  },
+  "manifest.json": {
+   "sha256": "90f499f206693a26ad1d10c5744224c34f800c5238573b0744e44521acfa2ef4",
+   "bytes": 18687
+  },
+  "mergepilot-v0.1.0-preview.4-package.zip": {
+   "sha256": "a59699fbfbf7471544f47e5a3851322452e90637bb15ab7997009a22766b3e07",
+   "bytes": 868978
+  },
+  "package/bootstrapper.ps1": {
+   "sha256": "3ce8c594d9e977360b2e934c4953b54511be343ce23e92af3fef46be7e79ca3c",
+   "bytes": 17865
+  },
+  "package/README.md": {
+   "sha256": "e5220619af8d7aa528d4b0ed4cd5b89ec25776f45b25299cf7e245b15ffdcfd5",
+   "bytes": 4180
+  },
+  "package/config/gh-app/room-map.example.yaml": {
+   "sha256": "f64017b47e5e6722d22313c59b3305acecb6181418046fe437c9b8163330304e",
+   "bytes": 1316
+  },
+  "package/docs/preview/ARCHITECTURE-SECURITY.md": {
+   "sha256": "7a7763b54ba2b53f594d435a2d21bef059fd32707ed8668b6f362f4dff363f78",
+   "bytes": 3931
+  },
+  "package/docs/preview/DEMO-SCRIPT.md": {
+   "sha256": "96d3d264ac4a92836c1091c29925a4f0e386a187e4f0d874cc9fc22478ca2805",
+   "bytes": 4214
+  },
+  "package/docs/preview/PROJECTIONS.md": {
+   "sha256": "1c55098baba9481f0d4760a2484e29356fc289241ab8e9e9955d10f35ed8dcfd",
+   "bytes": 3189
+  },
+  "package/docs/preview/QUICKSTART.md": {
+   "sha256": "b6ab3e1f8e2bcdc8211f66c36f61bd341c00f82c05bb28fb1143e76d371b18e4",
+   "bytes": 3419
+  },
+  "package/docs/preview/ROLLBACK.md": {
+   "sha256": "b92f5e1849b475616c7149212526bce8ac5736d7441da1102a26a221c1249e1b",
+   "bytes": 4211
+  },
+  "package/docs/preview/SCREENSHOTS.md": {
+   "sha256": "009276a857dd122fe8fc3fa58c49901213cd2327a8e20974a5c6b9f65fde21bc",
+   "bytes": 1700
+  },
+  "package/docs/preview/projections/complete.run35.json": {
+   "sha256": "5d762023216a2dd5a59b8a5e6fd62d94e3e4503050057704fa06313892edc9de",
+   "bytes": 4013
+  },
+  "package/docs/preview/projections/failed.fixture.json": {
+   "sha256": "447a1e08e423e283ee9a072a2bd3822b57114ecf9ac0fd9ca5b6ebb4d1371b14",
+   "bytes": 3655
+  },
+  "package/docs/preview/projections/live.showcase.json": {
+   "sha256": "fdcab376946417d598535287651e95d8448e2cbe950127dda5a5cc4a74382a2e",
+   "bytes": 135
+  },
+  "package/tools/apply-bad-fix.sh": {
+   "sha256": "10757d043918a5ade8cb0f88d9787995f6e66e0f3e424b1b370e16c0cae72a40",
+   "bytes": 1275
+  },
+  "package/tools/approve.sh": {
+   "sha256": "642ba92c5dab9814e875871af880e808e29d6238a2bde4414ba905b65c7fdaa2",
+   "bytes": 5630
+  },
+  "package/tools/audit_trail.py": {
+   "sha256": "e9d884878bfa23709b2ff94557ac92545a16666001ee2f5251dd3dd8b7b79255",
+   "bytes": 3890
+  },
+  "package/tools/clean-reset-workers.sh": {
+   "sha256": "f30bc4e6464cd731b9625e1c0789496d602d67539dc84fe2f26b9b3b9912c590",
+   "bytes": 790
+  },
+  "package/tools/collect_e2e_evidence.py": {
+   "sha256": "d9df6a7bf4c0be066473b988b0860762013a4e83493083533a5ee9a9de459dab",
+   "bytes": 2057
+  },
+  "package/tools/controller_entrypoint.py": {
+   "sha256": "5a49c0fa6022a2939e087ddc9d0966d695fad2979754fc9bc2138e2f34958896",
+   "bytes": 3287
+  },
+  "package/tools/crash-recovery-test.sh": {
+   "sha256": "835d6416944f7dc6c443202b54f1353b40f39b21eec75c7b8becb81a65f526fc",
+   "bytes": 5567
+  },
+  "package/tools/create_task_room.py": {
+   "sha256": "51c52b2e3c68d7dacd0303db73e80c4b6e82be34e90e29331a479cbdd126c2d2",
+   "bytes": 1975
+  },
+  "package/tools/delete_rooms.sh": {
+   "sha256": "7a80b433cec361b8e01aa21a74c13bb316898aebecd88f61c282ecc17afec4a5",
+   "bytes": 923
+  },
+  "package/tools/demo.sh": {
+   "sha256": "8288ead37fa9b8c874da4c6b43db15c4b025e0263fe3b17280299877a2228e0f",
+   "bytes": 2537
+  },
+  "package/tools/demo_console_entrypoint.py": {
+   "sha256": "f9cc4979a83b40b6752fbc262d5549622d0ec7cfa3f2869044bccd9ceb8f0fc7",
+   "bytes": 12805
+  },
+  "package/tools/demo_prepare.sh": {
+   "sha256": "0d892136292795b9c4c01cdfde802fa0d8103fd06e088ea21498ea4257a0cf89",
+   "bytes": 520
+  },
+  "package/tools/deploy-github-mcp-direct.sh": {
+   "sha256": "1f981b541996e77441453720d9292f50e6d1db4c39b7c7488e41a5d2deee9f77",
+   "bytes": 795
+  },
+  "package/tools/deploy-souls-and-helpers.sh": {
+   "sha256": "5c697e87a8ab4feb95e8671da50ff33c4d16bbf3737eb38bd0c79ec4c68bb6d9",
+   "bytes": 705
+  },
+  "package/tools/e2e-lib.sh": {
+   "sha256": "1036cf963a6627e83f470864e1e21670fcf10e78ce724baa037c0f26c520aa73",
+   "bytes": 2584
+  },
+  "package/tools/gateway_entrypoint.py": {
+   "sha256": "c3c70d38aa1d719049cc4bef11b4020d255a8549d126dd0aa85bfed0ff0928b4",
+   "bytes": 5189
+  },
+  "package/tools/handoff_watcher.py": {
+   "sha256": "d2af74f88e27a7ff7effedc4ec5c247fac9bbf5995474cb58a0ec54800eb6b7c",
+   "bytes": 6401
+  },
+  "package/tools/handoff_watcher_v2.py": {
+   "sha256": "f0903dceea67887d0be30cf905df893cceb524b6331b2c1d80472479a15e997c",
+   "bytes": 6527
+  },
+  "package/tools/light-reset-sessions.sh": {
+   "sha256": "0e0cb01c91daf770ba6d25aa38170e3fea76e15aa3d394583628fe0d047c95f6",
+   "bytes": 997
+  },
+  "package/tools/list_rooms.sh": {
+   "sha256": "dfed1cf4a87a21cf17624d8a23af30b0b9ed603850bb0bf589d1b22bd9e8865e",
+   "bytes": 1165
+  },
+  "package/tools/m3a-verify.sh": {
+   "sha256": "5d593ccc453096ac8215c1158e86ee5d8e924eefab6523d5e9dedbc93bb6de07",
+   "bytes": 6486
+  },
+  "package/tools/m3b-b1-test.sh": {
+   "sha256": "72988f3d33982ab1887df3caf495da5dd99085c705d71710e5bc3c146b09605d",
+   "bytes": 6807
+  },
+  "package/tools/m3b-b2-test.sh": {
+   "sha256": "7348f873d9463055c7c725fa3c72b03b246791bc13f1aed74820c302b2caaf81",
+   "bytes": 11455
+  },
+  "package/tools/m3b-b3-test.sh": {
+   "sha256": "0926cfdae820051e04d9002a51f26d777b09e13d002d35838116c447dd13a6bc",
+   "bytes": 13729
+  },
+  "package/tools/m3b-b4-create-roles.sh": {
+   "sha256": "ca1ac70f4f85401b65379fe4a9af7c0d8194efca9b4660c2a7c0425590d88aa7",
+   "bytes": 6889
+  },
+  "package/tools/m3b-b4a-test.sh": {
+   "sha256": "c86ae3084560e9e2895b2264809c4350a54ca6de47c5b5156c1a4531692397e0",
+   "bytes": 20740
+  },
+  "package/tools/m3b-b4b-fault.sh": {
+   "sha256": "a2ed94479f0f99f79f1c8fd055ec054d9fb6a450b8b0c96ffe0500120a256c2d",
+   "bytes": 13361
+  },
+  "package/tools/m3b-b4b-test.sh": {
+   "sha256": "50795caf08c11ce8dc5df3e055218473b6c9455f75035bfd8de40463f7ad801e",
+   "bytes": 15245
+  },
+  "package/tools/m3b-b4c0-controller.sh": {
+   "sha256": "4069dc26deaa12fa2ada539039cadcf5ca4c0fc8e6fff0ea63918686c3a39ad1",
+   "bytes": 11008
+  },
+  "package/tools/m3b-b4c0-migration.sh": {
+   "sha256": "6c9acc9bfbfbd566e76c9e77fb1dfa0072fb72ebe22c13c0aebf75be76c2037e",
+   "bytes": 18891
+  },
+  "package/tools/m3b-b4c1-discover.sh": {
+   "sha256": "ca7c0ef7da005bc72b98445b0b1c7db09c36ddf8daa8ae8b0826736ede224876",
+   "bytes": 17387
+  },
+  "package/tools/m3b-b4c1-hardening.sh": {
+   "sha256": "6f4c8a43f1c604360e46fbe57531561595804687bd4c04c912579fe78f971c5e",
+   "bytes": 17014
+  },
+  "package/tools/m3b-b4c1_1-hardening.sh": {
+   "sha256": "3f786d47754b581107fcc53c881822237636080bf51589eede44e308d75e4803",
+   "bytes": 16250
+  },
+  "package/tools/m3b-b4c1_2-hardening.sh": {
+   "sha256": "98a5b06803405c10cc5feda44365083f7666efa705d3ecbc1c774fcdc140f6b7",
+   "bytes": 14385
+  },
+  "package/tools/m3b-b4c1_3-hardening.sh": {
+   "sha256": "7b1788ec4ccacb91fac36e671280488443027603aa5d8c19b65038532bb74150",
+   "bytes": 8906
+  },
+  "package/tools/m3b-b4c1_4-hardening.sh": {
+   "sha256": "d0ccb4e74958524aa6df7b9e4389aaaf23bd108fe2b3c43c7b8b18ee0b986ea2",
+   "bytes": 8927
+  },
+  "package/tools/m3b-b4c1_5-hardening.sh": {
+   "sha256": "dc50a542872cea766c709874c543afeadd3349abb6edf14d7a5957d5de115ee3",
+   "bytes": 5880
+  },
+  "package/tools/m3b-b4c1_6-hardening.sh": {
+   "sha256": "908e42abe4951876377bda3411a7acc47f1d5d9fe9cdb7e86d2415a7c1709671",
+   "bytes": 5769
+  },
+  "package/tools/m3b-b4c2-ticket.sh": {
+   "sha256": "94f77af1c85742422a8bf265ab4bdf8e128174a4b36d2d3391d40713aa965e26",
+   "bytes": 14695
+  },
+  "package/tools/m3b-b4c3-drain.sh": {
+   "sha256": "a2400cc0fad3498de9e0db7d2018dda4ab273b1748a6ee753f1e93d4ca004529",
+   "bytes": 18866
+  },
+  "package/tools/m3b-b4c4-reconcile.sh": {
+   "sha256": "46b5f152d8c9231e2099eb36d3a5aaf94a4d551c6744bec76bb3ade4d0daf9ae",
+   "bytes": 15918
+  },
+  "package/tools/m3b-b4c5-e2e.sh": {
+   "sha256": "61fd58bf04107c58a504bd49913d7a4966f46b6e3e725c78529c6b2ae016cfa4",
+   "bytes": 27103
+  },
+  "package/tools/m3b-b4d-approve.sh": {
+   "sha256": "cd4149d69052f29d66497ca14ec6a2a6d1dba6e0aedf7c9370f581368da77379",
+   "bytes": 13837
+  },
+  "package/tools/m3b-b4e-e2e.sh": {
+   "sha256": "6e91ff8f76c98a8f89974961c91dadd4c64a7c620682e3ef9d3387b9368dcc08",
+   "bytes": 32370
+  },
+  "package/tools/m3b-b5-negative.sh": {
+   "sha256": "41d180fa956593faef4593cc5d8b4dc1b91b70c5bddf68a97c5e8aa624203c4e",
+   "bytes": 32024
+  },
+  "package/tools/m3b-create-audit-role.sh": {
+   "sha256": "1a96c412e93ea011ea12c6c16f9004a80dc610c0f75a3bd19f74e1193cb4e7d1",
+   "bytes": 5098
+  },
+  "package/tools/m3b-cutover-isolation.sh": {
+   "sha256": "7a8e9128376f18fee488360bb711d66f91c531f45f15c29d774a215a2ce4e679",
+   "bytes": 5407
+  },
+  "package/tools/m3b-cutover-rollback.sh": {
+   "sha256": "ed03a8cc2ad680a0b3c3eff0d8b1b468608a5601021535dc94d7e93a1bc876d0",
+   "bytes": 1266
+  },
+  "package/tools/m3b-generate-tokens.sh": {
+   "sha256": "267098139ba1033236fe98e1ddb25d6d077ef76ea5f04e4b638dc308ded7623a",
+   "bytes": 1207
+  },
+  "package/tools/m3b-probe.sh": {
+   "sha256": "316686491bb57b87e7827467bc3cb4554dc4f6f5431b28ef4be0e79ca2bb8592",
+   "bytes": 2357
+  },
+  "package/tools/m3b-step2-fixture-isolation.sh": {
+   "sha256": "850a1f305af1426b8d1ed500f222277b186fd5409c469bb7024fca1315623156",
+   "bytes": 10244
+  },
+  "package/tools/m3c-e2e.sh": {
+   "sha256": "9ce5f08e149a5027cff245a1d100a95a3e9d3959d0ae88864142072fc67a0933",
+   "bytes": 30218
+  },
+  "package/tools/m4f_demo.py": {
+   "sha256": "d8213f8da6ddef84f42b57fc3a9c1ebdc22e9db96feb95a1b811ef7305b22ad8",
+   "bytes": 17537
+  },
+  "package/tools/m4f_skill_worker.py": {
+   "sha256": "1760459518f2125bb84af5c538f3919823a8252b685b71f001034bf84fed62d7",
+   "bytes": 20393
+  },
+  "package/tools/make_dashboard.py": {
+   "sha256": "e4e2f7d62c3e416520194cf6b3bfc02f1b201e6ff7d774f25320bc2458ae9beb",
+   "bytes": 7033
+  },
+  "package/tools/make_demo_dashboard.py": {
+   "sha256": "d774571523e25e6b32cf222e01e4caa6c8623df0d7bfed2dd4c1c96f8d9d589c",
+   "bytes": 10313
+  },
+  "package/tools/mcp-sdk-probe.sh": {
+   "sha256": "a1a4a7dd514cc223a51695137f5cb43aced8bc5054151481bfa615ffde467832",
+   "bytes": 2688
+  },
+  "package/tools/nudge.sh": {
+   "sha256": "9c91e8fe7701c648076eb78f35e4b2c05a35fb264f8aeff5f102b062392651ad",
+   "bytes": 381
+  },
+  "package/tools/observe-demo-host.sh": {
+   "sha256": "f4c9c299d5810d7cd71e5d297ab5c333a590e266340a00e47a1e0a4abd032e5d",
+   "bytes": 345
+  },
+  "package/tools/observe-demo.py": {
+   "sha256": "d2ca182e650d291f263a40528393513b8f89b0c68ec7a5c8669721d222c1c51a",
+   "bytes": 2217
+  },
+  "package/tools/post_mention.py": {
+   "sha256": "3ab8f93f0cdc03dcb8b34c054fddd22e600feae36dfb984110358fb533633422",
+   "bytes": 1534
+  },
+  "package/tools/preflight_entrypoint.py": {
+   "sha256": "c1a69e10b968bf94758a11d16423e0d916ae5ada797552b1ff48214a8b83313f",
+   "bytes": 6874
+  },
+  "package/tools/register-github-mcp.sh": {
+   "sha256": "2a338a0c250faf0b6929f8dcc71498d5bc8f11cdc0b40deeafe124c1654bddf5",
+   "bytes": 616
+  },
+  "package/tools/rewire-github-mcp-pat.sh": {
+   "sha256": "87abd45a2324572863e8659c67fc0646c5d4ef95dbda09cb004d65e5822174c8",
+   "bytes": 539
+  },
+  "package/tools/rollback-release-candidate.sh": {
+   "sha256": "f00c7d8925088cf6772f5d218e08a0764edde26b3d8eb7fee458b6b5bcd7e76b",
+   "bytes": 1228
+  },
+  "package/tools/room-recent.py": {
+   "sha256": "10364280aa3c294f425473673921bf28d9c13a783ad0a3d6182c4201f9f73d34",
+   "bytes": 1808
+  },
+  "package/tools/run-github-mcp-bridge.sh": {
+   "sha256": "1b6d69b7531454f2848fdd89ce9591ba04dd954b40fc9422bb62e0305d45d91c",
+   "bytes": 739
+  },
+  "package/tools/run-in-mgr.sh": {
+   "sha256": "9b8ad18a6567409d17d5f7b33fbeffbea1873367cd5176998472753ff2489dbf",
+   "bytes": 442
+  },
+  "package/tools/run-policy-gateway-e2e.sh": {
+   "sha256": "35362c05d53686ac50adef756c4723d17b53da4699fa997557bc9cc55875b744",
+   "bytes": 3120
+  },
+  "package/tools/run-policy-gateway.sh": {
+   "sha256": "24887ba07e9f7acf1847d9959f5d0838dc0c952b79d4b6557c20446b4537c041",
+   "bytes": 4704
+  },
+  "package/tools/run-room-recent.sh": {
+   "sha256": "75401046d9671ab75dcdf54c8a354da1da55fc1e3291df95fefe741e5b9d1b87",
+   "bytes": 402
+  },
+  "package/tools/send-agent-host.sh": {
+   "sha256": "b084aeda7a6b117c14436aaa81a54fea68b2dda12fe043d0fa26cdbf76a67b77",
+   "bytes": 411
+  },
+  "package/tools/send-to-agent.py": {
+   "sha256": "c3f2a6f2ba4f8634ec38b282eb072fc6bd80d6813b1e2508b942135c7a426442",
+   "bytes": 1768
+  },
+  "package/tools/send-to-manager.py": {
+   "sha256": "464bd4b8baed24f75643528fe7bd5fe8ac465b47753ef38e3752d47a3db6db0f",
+   "bytes": 1731
+  },
+  "package/tools/start-controller-container.sh": {
+   "sha256": "9d678d95902e125724775fd68568a8bf48222bdde4d84fb4be1e3566bbbbc8fc",
+   "bytes": 8672
+  },
+  "package/tools/start-handoff-watcher.sh": {
+   "sha256": "69d59e356cc05012796d7cdd23d4fb52a4931cc3a2ffc675f6e740cb3b094820",
+   "bytes": 816
+  },
+  "package/tools/start-m5-0-candidate.sh": {
+   "sha256": "b74cbbde2ff69d9c03323b39d66c95fbf6141cb0f5b2772b647136af615cd403",
+   "bytes": 7382
+  },
+  "package/tools/start-watcher-v2.sh": {
+   "sha256": "3dd4c123b52fbc04956dbf0483653eda67a6b8325ea07c2dbb354ed7fda50d60",
+   "bytes": 606
+  },
+  "package/tools/submit-demo-host.sh": {
+   "sha256": "5e0adaeb0ed3b784d70c11797d3ae7c75b67a5bb542f88790e49b0526d9eab83",
+   "bytes": 450
+  },
+  "package/tools/submit_demo_pr1.py": {
+   "sha256": "04b669de4b58e039f8aaab43ace09b6bdac298eb166bb6dd6d89e3e85074bf92",
+   "bytes": 3842
+  },
+  "package/tools/submit_manager_orchestrate.py": {
+   "sha256": "85cb1d13a358bd890a6977a19544f2e7377370490509e4a8d8c08ccf3d6586fc",
+   "bytes": 2975
+  },
+  "package/tools/submit_pr_manager.py": {
+   "sha256": "dd51d5829e846d3f185db2b9047a41a4b27b2ec06dc3340859f24151abfcaca7",
+   "bytes": 2819
+  },
+  "package/tools/submit_pr_taskroom.py": {
+   "sha256": "987336dde5e72cadf565238a3a6a1f3fcb9c8abecbfabef025828bfdb84a0d35",
+   "bytes": 3475
+  },
+  "package/tools/trace_aggregator.py": {
+   "sha256": "b409c3b464c490731308c0a146fcb623adf9eda1e556f7bf3c8d4a1c9a804874",
+   "bytes": 4795
+  },
+  "package/tools/verify-github-write-chain.sh": {
+   "sha256": "14ddf0c44113aea5133c9afe087a224e3612be41e79e537105aa7b297d90db74",
+   "bytes": 1727
+  },
+  "package/tools/workflow_controller.py": {
+   "sha256": "d3474495f13c309db55092b02810c5b22ff2b6bb10dff4e461dc162f888cb0f2",
+   "bytes": 19968
+  },
+  "package/tools/agentteams/deploy_worker_contracts.py": {
+   "sha256": "f1e1e377701793632a329a7cee81dd79ba0ef2033b1c1d5d22d6d04086cab4fa",
+   "bytes": 19343
+  },
+  "package/tools/agentteams/gh_fix_branch.py": {
+   "sha256": "f3c7784251c29514abde7ed142767ad6f157e15caeae53b71a7210bea3e461f0",
+   "bytes": 6848
+  },
+  "package/tools/agentteams/gh_read.py": {
+   "sha256": "431795d284e2f0e70071269957f8b91a78ddf0140a7596907d72cb10037735ea",
+   "bytes": 6803
+  },
+  "package/tools/audit-db/ingest_demo.py": {
+   "sha256": "d9ac81ccdb017871be7b1fb1065bf8b5a8940f060b1bf94db5a0445f3bf71358",
+   "bytes": 6505
+  },
+  "package/tools/audit-db/init.sql": {
+   "sha256": "8a97fd18a84c7b327ff27a38d55fbf1643860be6cd8962544b1577ff28f60674",
+   "bytes": 3633
+  },
+  "package/tools/audit-db/m3b_b4.sql": {
+   "sha256": "9466de724994e5fcf65b8c438194055355a0403114a584175c6c6fd142ac2cd0",
+   "bytes": 19954
+  },
+  "package/tools/audit-db/m3b_b4c.sql": {
+   "sha256": "37baed744388fdf4c4279f3ad32234378e25e7919fd94f38e12f3402b1fc49ac",
+   "bytes": 7280
+  },
+  "package/tools/audit-db/m3b_b4c1.sql": {
+   "sha256": "fd510c4da64fe1a86b812d17c27a7f746ead718ef4db83ad3f94a5d21cdf5f2f",
+   "bytes": 4073
+  },
+  "package/tools/audit-db/m3b_b4c1_1.sql": {
+   "sha256": "d4739abc4e681179209e415cf0c6ae515bdc5958aeb30dbef21fc51134d48967",
+   "bytes": 1538
+  },
+  "package/tools/audit-db/m3b_b4d1.sql": {
+   "sha256": "95c0b70d30c7b275b5f12a3b2a15e0420c9361040a544ea9a2a3333542046bf1",
+   "bytes": 2210
+  },
+  "package/tools/audit-db/m3b_policy.sql": {
+   "sha256": "f0217193c358fc879f18012949f58c08f56cb25a783f063cb46279fb289b6a0b",
+   "bytes": 6238
+  },
+  "package/tools/audit-db/m3c_state.sql": {
+   "sha256": "3f71ec60548e38afa1fef552a97074f631f5f2b0cd118e30c6a6b7b501e929bf",
+   "bytes": 10880
+  },
+  "package/tools/audit-db/m3_state.sql": {
+   "sha256": "0c7f60a0d8f3a85306136ed195faf9f3d37ec7b40853d6aa44cb78af9d2a0b70",
+   "bytes": 3728
+  },
+  "package/tools/audit-db/m4f1_hotfix_1.sql": {
+   "sha256": "20b23d4c704625a236c2172f59d43c1620eb5749c848ac63bcd3afb246ca69f3",
+   "bytes": 13137
+  },
+  "package/tools/audit-db/m4f1_state.sql": {
+   "sha256": "56b1f2b24efa073e067a533bee6a1ba8349f95886676c32e99237162f83c380f",
+   "bytes": 104215
+  },
+  "package/tools/audit-db/m8gh1_github_ingress.sql": {
+   "sha256": "e3e4002e49ddd8dc15a247511210680c06bfe52bd27557853ce746fa40959ea2",
+   "bytes": 7211
+  },
+  "package/tools/audit-db/query_audit.sql": {
+   "sha256": "90375a28c27ca309e864fe99bb5222a3bcccd180b7ce6d70d17225a2bcd4eb1c",
+   "bytes": 735
+  },
+  "package/tools/audit-db/run_audit_pg.sh": {
+   "sha256": "47d10679c814331a89e8743d1b29b771fc307ec15a7c8effa0326a5cb3c4451c",
+   "bytes": 1766
+  },
+  "package/tools/cli/e2e_executors.py": {
+   "sha256": "d9c712cbaf89644c0fa34c939c894fc40c1139c5430a682340a15c715864fe81",
+   "bytes": 42544
+  },
+  "package/tools/cli/e2e_foundation.py": {
+   "sha256": "d053a5ba17d24992463d0470e80bf7a4b9e579fcc46189b87bd0bec6204f96be",
+   "bytes": 49822
+  },
+  "package/tools/cli/e2e_gateway_health.py": {
+   "sha256": "c688f445e4c258908d44eef69ba54431ecc336afba4692cff48116788f656360",
+   "bytes": 7912
+  },
+  "package/tools/cli/e2e_lifecycle.py": {
+   "sha256": "d114dea3f14696e636e97b251b32f5f0fe7eae8f1b2bab30b2d60048b1f9fe94",
+   "bytes": 111340
+  },
+  "package/tools/cli/e2e_probes.py": {
+   "sha256": "132b3d951f84a7aff6487490e17905f52ef7fa739f07ab6328e961cb9b5c85b6",
+   "bytes": 22609
+  },
+  "package/tools/cli/e2e_relay.py": {
+   "sha256": "8dc2f55aaba07cd1dc656d40a695c96806856f4f822f4b3aed10d345c5ac34dd",
+   "bytes": 29414
+  },
+  "package/tools/cli/e2e_runtime_specs.py": {
+   "sha256": "5cd14169c88a17cef8459d1290e3891a8145c5491c3c4b6ea9898fec7e8e50c9",
+   "bytes": 26932
+  },
+  "package/tools/cli/mergepilot.py": {
+   "sha256": "6d76e292f6b456c849ae1e3db22525fe67b0621e816e2a9248facd2cd6af8402",
+   "bytes": 156770
+  },
+  "package/tools/cli/__init__.py": {
+   "sha256": "8f31696358d82cdf5b3f12ea1c15a35b523e41c22c1844bdff71b0e2aafd582c",
+   "bytes": 265
+  },
+  "package/tools/demo_console/bundle_builder.py": {
+   "sha256": "b7a34c785daeddd0bb9ec416fa4356f737f0e5ca85b1bdcc9f3f891c96e86fd7",
+   "bytes": 15890
+  },
+  "package/tools/demo_console/console_edge.py": {
+   "sha256": "5c9b815fe23857371dba968c2f47ffd8f42b3d3d6ec824ba78596eaaab7c81ac",
+   "bytes": 9940
+  },
+  "package/tools/demo_console/console_edge_healthcheck.py": {
+   "sha256": "2c4f1172bd45a5519dd0991b83ec5ea7852f60a6b54750db228d711067d84e86",
+   "bytes": 1556
+  },
+  "package/tools/demo_console/console_healthcheck.py": {
+   "sha256": "2616e1839a9c1a4e081f67d6de3929f005c152b4584c6a1b55108def16c3f724",
+   "bytes": 3332
+  },
+  "package/tools/demo_console/evidence_manifest.py": {
+   "sha256": "f6b9df3d7f7dfbc7a2235d6823cb418dc2a7927159cc97fd16f208f4c3b275fd",
+   "bytes": 61752
+  },
+  "package/tools/demo_console/integrity.py": {
+   "sha256": "604bdd99fee582e9b03fe7aff5d1d109bcb30209e9d38457f3f075eaf208fd0a",
+   "bytes": 1917
+  },
+  "package/tools/demo_console/live_poller.py": {
+   "sha256": "b0adfcb4e2a4dd7b8472bdff715a9803a8dd9b731c4bb9ac885de2bd9b2a4c7f",
+   "bytes": 9997
+  },
+  "package/tools/demo_console/live_refresh.py": {
+   "sha256": "a9e649e974e4619d6e9fb35e0d254a0937090e6ff0e48e41dfce5c365f56e997",
+   "bytes": 15395
+  },
+  "package/tools/demo_console/mergepilot_integration.py": {
+   "sha256": "1b03d57f1b2f53d52b2c13743a5ed53234cc1131db3c8ab0637fdb36619778c9",
+   "bytes": 26247
+  },
+  "package/tools/demo_console/one_click_startup.py": {
+   "sha256": "559513adf718f3f2e681feee60d5fc7e91fae71e5bd96eef9b46bfda2c14d367",
+   "bytes": 86784
+  },
+  "package/tools/demo_console/postgres_source.py": {
+   "sha256": "14c4e27f8b82b5a69d812af7ed9b40b899cb04beedd9d99ad0f252dd0228db49",
+   "bytes": 91981
+  },
+  "package/tools/demo_console/preflight.py": {
+   "sha256": "256143906d3ff855137d1c20de8e5936992442c2f3864fb921d5a3ccb5078ef1",
+   "bytes": 28784
+  },
+  "package/tools/demo_console/render.py": {
+   "sha256": "e1ab8fb7d1fb06d3fb8e21b3b9da57168437b2a9e536fbfebd9fbce3eb9fb5cf",
+   "bytes": 18599
+  },
+  "package/tools/demo_console/schema.py": {
+   "sha256": "10d2369397c06253e495099d53273fc1780b9aed4b788d68ca44a90c881fe15e",
+   "bytes": 9363
+  },
+  "package/tools/demo_console/serve.py": {
+   "sha256": "67b4307deeb55245a54d7ece422d82e58ba137b85d1934f70faf796a0fdddfe3",
+   "bytes": 35147
+  },
+  "package/tools/demo_console/showcase_cases.py": {
+   "sha256": "72be522ac7d05027689ce37e5473ca967a79d79e5832a57630b25c730ae8f9d0",
+   "bytes": 36002
+  },
+  "package/tools/demo_console/live_assets/e2e-status.html": {
+   "sha256": "3c3fe85cbe94a2a6ed6b0a051ec56f4fff0c6a6afc3c0b2635c8bbaad269ef14",
+   "bytes": 38500
+  },
+  "package/tools/demo_console/live_assets/index.html": {
+   "sha256": "f649e0d3aa9ffa8172fa5e37ae14b56796b8fd8e77aa64adefee6707a3194553",
+   "bytes": 29000
+  },
+  "package/tools/demo_console/live_assets/live-refresh.js": {
+   "sha256": "23d4081ce03090715caa9d2ccb828b97b9b0ea07a3d32041da687c27871ca4e7",
+   "bytes": 28897
+  },
+  "package/tools/demo_console/migrations/001_environment_identity.sql": {
+   "sha256": "32eae2cf995bde32413a72d258d5225935e46d65a3361be8fdcd26c693ce99ca",
+   "bytes": 542
+  },
+  "package/tools/demo_console/migrations/002_mergepilot_reader_acl.sql": {
+   "sha256": "ff34efbd1b276a8f1a3a2edb0fcb08233e64828cb8147f10004baa7723b94f70",
+   "bytes": 2135
+  },
+  "package/tools/gh-app/checks_reporter.py": {
+   "sha256": "bc92042d92a039ea39b82259a0f596d757ad47075bc1e5d10e8b1bfdd900ebdd",
+   "bytes": 26566
+  },
+  "package/tools/gh-app/Dockerfile": {
+   "sha256": "f3593ce9d8e93e21a2a94606d7053eddcf82d93d848d69e10bdddf3b4807e803",
+   "bytes": 2784
+  },
+  "package/tools/gh-app/dsn_guard.py": {
+   "sha256": "a4b996f0c6b4b4b2d373fdff85c848c7fa8a462a025b4885d3751ef555ae230f",
+   "bytes": 3419
+  },
+  "package/tools/gh-app/http_server.py": {
+   "sha256": "6b1c1059fe427fa0d32a9688bd1198cf065712be443794c34ee6e6a93a643ba1",
+   "bytes": 8853
+  },
+  "package/tools/gh-app/mcp_bridge_health.py": {
+   "sha256": "bff3e352623bb6b1c19ea449b4aeae0a8ae49e6559ed8805b9f74d4fbf631ed1",
+   "bytes": 1617
+  },
+  "package/tools/gh-app/receiver.py": {
+   "sha256": "1d04e415119fb99c6c0396fab3fb9df31eab8b0f65e3d71c16cf866061e38449",
+   "bytes": 11963
+  },
+  "package/tools/gh-app/reporter_health.py": {
+   "sha256": "43de6a8ec9314323ad45fc155832388f73fa84412cbf2f3fdf0815a1b5adc038",
+   "bytes": 4336
+  },
+  "package/tools/gh-app/requirements-mcp-bridge.lock": {
+   "sha256": "41579a15507deedbcb240473cca29219f36692dd4d9d7bb231d5aab3930bde48",
+   "bytes": 5095
+  },
+  "package/tools/gh-app/requirements-reporter.lock": {
+   "sha256": "f0fe0a9ab87ef8d7c0386ae7ca58c706c3757c9ada7b4e351aaa1f4db96ee8d1",
+   "bytes": 1170
+  },
+  "package/tools/gh-app/requirements.txt": {
+   "sha256": "aecc15b6f87e790c6896d31bfa618d8e2de7ef00d76a73b703dd6d837a14662e",
+   "bytes": 25
+  },
+  "package/tools/gh-app/restricted_connect_proxy.py": {
+   "sha256": "c3d15fac18ee4bc42344aa8b70c2e106f07ba32f40c414eaea8cb4509a6bf9fa",
+   "bytes": 10242
+  },
+  "package/tools/gh-app/token_provider.py": {
+   "sha256": "79bd0190871718d3fbe2420a7926f670c85b345da1aaf2ce5c4d952f2ddc1986",
+   "bytes": 18278
+  },
+  "package/tools/gh-app/__init__.py": {
+   "sha256": "0760bd087451ffa63bf131c6efe71d3b7bbcf9b5e6f0192dd54f57c3ca28edd5",
+   "bytes": 319
+  },
+  "package/tools/github-mcp-bridge/Dockerfile": {
+   "sha256": "52434ef6a3a526d69b5e4d8c57c0c3bebdbd4b70bcefa23cba7d96388c968de6",
+   "bytes": 723
+  },
+  "package/tools/harness/mp_gh4_harness.py": {
+   "sha256": "dbe59a15478c1a59dd3072c8b0d458d9f2233224d8463282ef1b7a19a370df2c",
+   "bytes": 87852
+  },
+  "package/tools/hiclab/cleanup_run.py": {
+   "sha256": "b41a146da1e991cf471f8fe0705d5c5c8c9b845025b6186843735333e7bb21c5",
+   "bytes": 7937
+  },
+  "package/tools/hiclab/create_hardened_worker.sh": {
+   "sha256": "bf595e6b340e40b31e79daa42c872fcd23403939bcc2d20fef6c6142ecdccbe6",
+   "bytes": 4981
+  },
+  "package/tools/hiclab/disk_guard.py": {
+   "sha256": "13b0988c0ceb0f1d6961db071d16af553249c05d9b0ef89a10596a63781b4661",
+   "bytes": 6171
+  },
+  "package/tools/hiclab/disk_guard.sh": {
+   "sha256": "e5d6db827d9d853a3139c2aac8dfddaab42bfd4bf29a18ad8e54e4c51e2eaf74",
+   "bytes": 1122
+  },
+  "package/tools/hiclab/docker_socket_proxy.py": {
+   "sha256": "49909811326d5b2b20dc6eb0592c127fcc33fc84aaecf02aa9d30aebc7f3cbf1",
+   "bytes": 34502
+  },
+  "package/tools/hiclab/guarded_start.py": {
+   "sha256": "b28fb94d8c018ef7cca00957732eb10d06b45dc1e532859f432dc5432b0f9213",
+   "bytes": 21192
+  },
+  "package/tools/hiclab/harden_orchestrate.py": {
+   "sha256": "e3b85f9ac0f8394fd5e2597885c7b83c03a0cee043b62f33e5826b9fb2c5c22f",
+   "bytes": 4480
+  },
+  "package/tools/hiclab/harden_policy.py": {
+   "sha256": "4b8811e80f04220cc0ca3b65dd1abb25e93758bb46a9b83b0772f05de2eb1561",
+   "bytes": 21561
+  },
+  "package/tools/hiclab/hiclab_supervisor.sh": {
+   "sha256": "73bde2704245ea33228d3f0348714beffe908f2315e8ab0d83660399af3167db",
+   "bytes": 984
+  },
+  "package/tools/hiclab/install_guarded.py": {
+   "sha256": "ffb9edcd556dcd5607f05d5ab07a8e483166ccc60ffcbd98f08b8a40f7264312",
+   "bytes": 18961
+  },
+  "package/tools/hiclab/install_guarded_startup.sh": {
+   "sha256": "138deb4fbfe69a82e00c9ecee9ef94e61f34f8dd8392d4824e36e413324bd301",
+   "bytes": 602
+  },
+  "package/tools/hiclab/managed_containers.py": {
+   "sha256": "f93c7bf851c3a2f4b98ac220794ba46aa42fdb1d1075b483729d15d9b712ae77",
+   "bytes": 4155
+  },
+  "package/tools/hiclab/minio_cleanup.py": {
+   "sha256": "e3772f4f9620fdff2a9b572a65ec856f949e3cc44dfec56b79d5d9b0ca4c693a",
+   "bytes": 11097
+  },
+  "package/tools/hiclab/proxy_transport.py": {
+   "sha256": "ed405f352e7a66940b9849b52d147ebd141fad27a54da5d1b40867d9c47d9236",
+   "bytes": 34409
+  },
+  "package/tools/hiclab/rollback_worker.py": {
+   "sha256": "0ed2237e0fcb7fd5859516ed5cc4b471a83bc69101170203991bd6843e2482b1",
+   "bytes": 2341
+  },
+  "package/tools/hiclab/storage_opt_probe.py": {
+   "sha256": "8881158e1c11abfde140eb35aa5fe40a5450d75def8723e72aed9b44948a35c0",
+   "bytes": 4839
+  },
+  "package/tools/hiclab/storage_opt_probe.sh": {
+   "sha256": "dd66950dcf7a1602c1581fe81f1e27cccc5b6e232246f2ede51af60f51f01945",
+   "bytes": 1126
+  },
+  "package/tools/hiclab/UPSTREAM_BLOCKED.md": {
+   "sha256": "89433f2d5026fb58cae3199707d7376dd13bf8fdeabd0f6bd505d49365edece3",
+   "bytes": 3513
+  },
+  "package/tools/hiclab/worker_argv.py": {
+   "sha256": "a3330264f4f67e66f575218e6f78527784852b2696d6575ec6fc903e41378845",
+   "bytes": 13956
+  },
+  "package/tools/m4f-runtime/Dockerfile": {
+   "sha256": "f73846e70f1bc9d15cbbc3659b7b029d9aafdd6550a2d11ec7565b96badefcb1",
+   "bytes": 335
+  },
+  "package/tools/otel/fake_sls_receiver.py": {
+   "sha256": "7f6f812da93c61e514d240cf4ab63e96a42f37b11cb24df59c2cea6ba66d7a63",
+   "bytes": 3065
+  },
+  "package/tools/otel/local_otlp_receiver.py": {
+   "sha256": "d3eb197aa6b9c17c17556e38429cd4866bf422473e57ac4307cbd082358836f2",
+   "bytes": 7030
+  },
+  "package/tools/otel/otel_spans.py": {
+   "sha256": "9e1a21b4866ea2949e5bdba053c229daaf608c98219553fa6fbf13b8271736ae",
+   "bytes": 19570
+  },
+  "package/tools/otel/sls_exporter.py": {
+   "sha256": "b3f79e833881a137334b62e9e92b1fb11a79688fae6d06ccb6afce02a75b64b3",
+   "bytes": 10405
+  },
+  "package/tools/policy-gateway/Dockerfile": {
+   "sha256": "b8f598187fb2cb72c891025bb6aac16df451cd6257ada52eaa4117d700d6feba",
+   "bytes": 855
+  },
+  "package/tools/policy-gateway/gateway.py": {
+   "sha256": "a3cbb5a3de9807b2ebedaa46e8ca4083494f336238f3788e06fbff5c3b1aaf0b",
+   "bytes": 34993
+  },
+  "package/tools/policy-gateway/healthcheck.py": {
+   "sha256": "d4823b339b796c97556300904801afbc3b2099aa526aeff4362a52895d3330e5",
+   "bytes": 933
+  },
+  "package/tools/policy-gateway/policy-e2e-fixture.yaml": {
+   "sha256": "8a1f5f0cb829ff3ee51bfe9a633bc6fa4b001e1776e8b34d94b5525efa130621",
+   "bytes": 2282
+  },
+  "package/tools/policy-gateway/policy.yaml": {
+   "sha256": "d9ec07a7d9b4767fdb8ef641f92ac461f96d578647a95f78df930ba8d865ee5c",
+   "bytes": 3395
+  },
+  "package/tools/policy-gateway/probe-tools.py": {
+   "sha256": "4d5f0b7a037458ed817ddd2a8116209b07a75fa751fa8691b697fde3224195c7",
+   "bytes": 3334
+  },
+  "package/tools/policy-gateway/requirements.txt": {
+   "sha256": "c2fe4e352f2a2bc80e2f9a0aead0c2dd002266a4def1e844b19cc02fa315a43e",
+   "bytes": 103
+  },
+  "package/tools/policy-gateway/upstream_stub.py": {
+   "sha256": "fe8c826d64efd419c630495eb7559de781a10cbe801a89d22f862de2bceb3383",
+   "bytes": 10836
+  },
+  "package/tools/preview/loopback_forwarder.py": {
+   "sha256": "31ae3c72ced2637d1328520b908cfc24ad5ed85eb0fb58a0984c196fc42c72b2",
+   "bytes": 7687
+  },
+  "package/tools/rag/rag.py": {
+   "sha256": "08057f731d4c610e2fb317e74057d5f3ab8b1c2199e807bee1f646cb103ad33a",
+   "bytes": 4796
+  },
+  "package/tools/rag/rag_retrieval_service.py": {
+   "sha256": "45065057e57a29fdd4be3733261b6da81ba831974db472309feecc67ec848757",
+   "bytes": 24115
+  },
+  "package/tools/rag/requirements.txt": {
+   "sha256": "053df7e5bdc56b07694aa7b873f4b316c2526d183b3557c24d61807d7ea10fd1",
+   "bytes": 42
+  },
+  "package/tools/test-env/mp_guard.sh": {
+   "sha256": "f9d02fb760f783e9becde2a78abe79e19b2b9fd0b37e716997d6f23717153896",
+   "bytes": 4364
+  },
+  "package/tools/test-env/mp_launch.sh": {
+   "sha256": "7f5e4aa80298a64f3e600aa623d38b6971db93448ede9e6e5620390bc9e7d578",
+   "bytes": 1063
+  },
+  "package/tools/test-env/wsl_test.ps1": {
+   "sha256": "7c5fac566fd3868e976b90907a8299231862400ec93eff61c08b89b09e67e7ca",
+   "bytes": 2844
+  },
+  "package/tools/test-env/wsl_test.sh": {
+   "sha256": "66c7e96a627786af7d19937a935290abc8ba867c9d8711eafb3f1d338895a3f2",
+   "bytes": 2679
+  },
+  "package/tools/verification/phase1g_attestation.py": {
+   "sha256": "fd8d51680bcfe74e483afac84d7b0fe70d35125e3cf44eb22e30a8115d2f40db",
+   "bytes": 9778
+  },
+  "package/tools/workflow-controller/controller.py": {
+   "sha256": "fb43f46a3fe348cb707ab6a1484d81ca6f10d23e6f7c5d2738503e64fb825283",
+   "bytes": 181534
+  },
+  "package/tools/workflow-controller/Dockerfile": {
+   "sha256": "8f82b7d1800ca506f92d3c25e489b288db37db3fe9fc534b5b739a72ed066b2b",
+   "bytes": 1004
+  },
+  "package/tools/workflow-controller/gateway_client.py": {
+   "sha256": "2cbe02a85b3a95cc8fd3cd36f103998a42d154879866dec8ad4d815cd3a1a761",
+   "bytes": 23495
+  },
+  "package/tools/workflow-controller/github_drain.py": {
+   "sha256": "7e3bf9a63f97eca4cd8752ad97db313ede885b8dc7c797d092a1afdb13bc3db7",
+   "bytes": 23363
+  },
+  "package/tools/workflow-controller/healthcheck.py": {
+   "sha256": "e5575cff3a09850dbcc65ddeee4b099107f2352aa55e12098238b1a7c6bf41c6",
+   "bytes": 2114
+  },
+  "package/tools/workflow-controller/m4f_controller.py": {
+   "sha256": "c0a276ceab5ed5ed45ff8b90002ddba4b498525230cfbef4528763a382ac7a43",
+   "bytes": 15969
+  },
+  "package/tools/workflow-controller/m4f_ingress.py": {
+   "sha256": "1fb99772bb190ef71218781d7ad5eab84490b658de49d236625429bc33079432",
+   "bytes": 22718
+  },
+  "package/tools/workflow-controller/readiness.py": {
+   "sha256": "b27ea29b9d9505f737cfcb1d1e9db3e2541b79db6813056dcf2364290bd3c513",
+   "bytes": 4972
+  },
+  "package/tools/workflow-controller/task_submit.py": {
+   "sha256": "ce2b7650c20f7d6d6ec2c63be5021aa3abad8a2a1f8dfc8999cbc89b7bbc8fde",
+   "bytes": 8619
+  },
+  "package/tools/workflow-controller/test_gateway_schema.py": {
+   "sha256": "d0dd266aebb8dec415162c4c929656224284bbe0e6a31ce91bd0aa2b566dbb5c",
+   "bytes": 6895
+  },
+  "package/tools/workflow-controller/test_startup_pgwait.py": {
+   "sha256": "f3f59c008ab590c94c20ecf91ba7f77678afde1fdb652fe3aca3d4909b83183d",
+   "bytes": 3448
+  }
+ }
+}

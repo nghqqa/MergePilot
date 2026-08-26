@@ -1,0 +1,39 @@
+{
+  "round": "m9j",
+  "fix": "M9G-1 (snapshot manifest state BEFORE any Invoke-Cli call)",
+  "dev_machine_evidence": [
+    {
+      "step": "Install (offline tar)",
+      "lines": [
+        "[PASS] checksum verified (74869211270c)",
+        "[PASS] offline image set exact: 9 images",
+        "[OK] images imported",
+        "[OK] install manifest written (8 IDs)"
+      ],
+      "note": "journal records ONLY the 8 mergepilot-isolated-* images; pgvector is deliberately excluded from ownership (shared upstream base — never claimed, never deleted)"
+    },
+    {
+      "step": "Cleanup #1 (after Install; stack stopped)",
+      "required_line": "[OK] install manifest removed (was present and consumed by cleanup --apply)",
+      "forbidden_line": "no install manifest found from the start",
+      "observed": true
+    },
+    {
+      "step": "Cleanup #2",
+      "required_line": "no install manifest found from the start; ownership-sensitive image cleanup skipped (fail-closed: no owner record, no deletion)",
+      "observed": true
+    }
+  ],
+  "ownership_boundary_result": {
+    "owner_images_deleted": 8,
+    "pgvector_retained": "by design (not journaled as owned)",
+    "non_owner_images_retained": ["mergepilot-m5-0-candidate:current", "mergepilot-m4f-runtime:demo", "policy-gateway:m4f", "policy-gateway:m5-0c"]
+  },
+  "residue_after_double_cleanup": {
+    "mergepilot_containers": 0,
+    "mergepilot_networks": 0,
+    "listeners_8600_8090": 0,
+    "wsl_keepalive_processes": 0,
+    "forwarder_identity_files": 0
+  }
+}

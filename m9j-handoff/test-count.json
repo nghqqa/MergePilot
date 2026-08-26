@@ -1,0 +1,20 @@
+{
+  "round": "m9j",
+  "scope": "gh_app+demo_console+isolated_live+preview+m4b+m4c/sast",
+  "runs": [
+    {
+      "when": "pre-merge, branch head 9cf32dc (live re-run, not inherited)",
+      "passed": 2471, "failed": 0, "skipped": 20
+    },
+    {
+      "when": "post-merge, bumped main 1d6f7f5 (live re-run)",
+      "passed": 2471, "failed": 0, "skipped": 20
+    },
+    {
+      "when": "final candidate main 5bb2635 (preview subset)",
+      "note": "tests/preview 103 passed / 0 failed (full-scope count identical to 1d6f7f5 by scope equality: 5bb2635 changes only a comment line in release/preview/bootstrapper.ps1)"
+    }
+  ],
+  "frozen_count": {"passed": 2471, "failed": 0, "skipped": 20},
+  "final_candidate_commit": "5bb2635624585318aa005a0fc1d8c2b302c8a183"
+}

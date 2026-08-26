@@ -1,0 +1,51 @@
+# M9-J final-candidate regression (original test machine)
+# Download all 7 assets from:
+#   https://github.com/nghqqa/MergePilot/releases/tag/m9j-preview4-final-candidate
+# Extract the ZIP into a FRESH directory (no source checkout, no git),
+# keep images-oci.tar / manifest.json / checksums.sha256 beside the
+# extracted bootstrapper.ps1, then run from ANY working directory
+# (adjust $V to your extraction path; paths must be Windows backslash form).
+
+$V = "C:\mp9\m9j-final"   # example — adjust to the actual extraction path
+
+# 0. checksum gate (fail-closed before any import)
+cd $V; sha256sum -c checksums.sha256          # expect: 3/3 OK
+
+# 1. Check
+powershell -NoProfile -ExecutionPolicy Bypass -File "$V\bootstrapper.ps1" -Action Check
+
+# 2. Install (note: -ImageTar MUST use backslashes)
+powershell -NoProfile -ExecutionPolicy Bypass -File "$V\bootstrapper.ps1" -Action Install -ImageTar "$V\images-oci.tar"
+
+# 3. Doctor — must print: OK (ok)
+powershell -NoProfile -ExecutionPolicy Bypass -File "$V\bootstrapper.ps1" -Action Doctor
+
+# 4. Status
+powershell -NoProfile -ExecutionPolicy Bypass -File "$V\bootstrapper.ps1" -Action Status
+
+# 5. Start — expect healthy + "Windows-side loopback publication verified"
+powershell -NoProfile -ExecutionPolicy Bypass -File "$V\bootstrapper.ps1" -Action Start
+
+# 6. smoke (page/api 200; method/path/host violations 405/404/403)
+curl -s -o NUL -w "page=%{http_code}`n"  http://127.0.0.1:8600/
+curl -s -o NUL -w "api=%{http_code}`n"   http://127.0.0.1:8600/api/live/status
+curl -s -o NUL -w "post=%{http_code}`n"  -X POST http://127.0.0.1:8600/
+curl -s -o NUL -w "404=%{http_code}`n"   http://127.0.0.1:8600/nonexistent
+curl -s -o NUL -w "host=%{http_code}`n"  -H "Host: evil.com" http://127.0.0.1:8600/
+
+# 7. Stop, then Start again (restart path)
+powershell -NoProfile -ExecutionPolicy Bypass -File "$V\bootstrapper.ps1" -Action Stop
+powershell -NoProfile -ExecutionPolicy Bypass -File "$V\bootstrapper.ps1" -Action Start
+
+# 8. Cleanup #1 — MUST contain:
+#    [OK] install manifest removed (was present and consumed by cleanup --apply)
+#    and MUST NOT contain "no install manifest found from the start"
+powershell -NoProfile -ExecutionPolicy Bypass -File "$V\bootstrapper.ps1" -Action Cleanup
+
+# 9. Cleanup #2 — MUST contain:
+#    no install manifest found from the start; ownership-sensitive image
+#    cleanup skipped (fail-closed: no owner record, no deletion)
+powershell -NoProfile -ExecutionPolicy Bypass -File "$V\bootstrapper.ps1" -Action Cleanup
+
+# 10. residue: no mergepilot containers/networks, no 8600/8090 listeners,
+#     no forwarder/keepalive processes, no PID/identity files in $V\.mergepilot\

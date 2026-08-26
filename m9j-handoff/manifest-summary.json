@@ -1,0 +1,36 @@
+{
+  "round": "m9j",
+  "version": "v0.1.0-preview.4",
+  "git_commit": "5bb2635624585318aa005a0fc1d8c2b302c8a183",
+  "created_utc": "2026-08-26T02:44:00Z",
+  "platform": "windows-wsl2",
+  "loopback_only": true,
+  "publish_ports": ["127.0.0.1:8600", "127.0.0.1:8090"],
+  "transport_profile": "wsl-user-relay",
+  "direct_routing_verified": false,
+  "truth_boundaries": {
+    "application_integration_verified": "NOT_VERIFIED",
+    "database_verified": "NOT_VERIFIED",
+    "production_verified": "NOT_VERIFIED",
+    "revision_producer_contract": "NOT_VERIFIED",
+    "audit_producer_contract": "NOT_VERIFIED"
+  },
+  "required_image_set": 9,
+  "images_in_manifest": 9,
+  "identity_vs_rc5": "9/9 identical (recomputed from shipped tar)",
+  "oci_verification": {
+    "blobs_digest_ok": "182/182",
+    "config_digest_ok": "9/9",
+    "redownloaded_tar_recheck": "images=9 blobs=182 config-digest=9/9"
+  },
+  "package": {
+    "zip_entries": 213,
+    "cache_entries": 0,
+    "byte_identity_package_dir_vs_zip": "213/213"
+  },
+  "checksums": {
+    "checksums_sha256": "3 entries, LF, forward-slash",
+    "SHA256SUMS": "217 entries, 217/217 verified",
+    "asset_sha256_json": "217/217 verified on re-download"
+  }
+}

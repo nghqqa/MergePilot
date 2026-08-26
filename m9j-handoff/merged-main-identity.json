@@ -1,0 +1,33 @@
+{
+  "round": "m9j",
+  "merged_main": {
+    "merge_commit": "dac9fca288c163069455ca164ec1adf314d87567",
+    "merge_parents": [
+      "379744d0f6755bf04ed4d5eab2fc00bd504849be",
+      "9cf32dc960fda6734b3861de98c49ac86b179f79"
+    ],
+    "pr": 209,
+    "pr_state": "MERGED",
+    "merge_tree": "5925808add2ba620c9d60cfb0d4e670fd1b0c31d",
+    "merge_tree_matches_dry_run": true,
+    "branch_commits": 23,
+    "branch_files": 75,
+    "branch_additions": 6286,
+    "branch_deletions": 296
+  },
+  "final_candidate_commit": "5bb2635624585318aa005a0fc1d8c2b302c8a183",
+  "lineage": [
+    {"commit": "dac9fca", "what": "PR #209 merge (RC.5 fix branch into main)"},
+    {"commit": "1d6f7f5", "what": "release-prep: version bump v0.1.0-preview.4 (3 anchors)"},
+    {"commit": "5bb2635", "what": "bootstrapper header truth boundary PARTIALLY_VERIFIED -> NOT_VERIFIED (comment-only)"}
+  ],
+  "retained": {
+    "fix_branch_local": "9cf32dc",
+    "fix_branch_remote": "9cf32dc",
+    "formal_preview4_tag_created": false
+  },
+  "gates": {
+    "pre_merge_branch_head": "2471 passed / 0 failed / 20 skipped",
+    "post_bump_merged_main": "2471 passed / 0 failed / 20 skipped"
+  }
+}
