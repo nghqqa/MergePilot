@@ -70,14 +70,22 @@ def contract_sha256() -> str:
 
 
 def _git_commit() -> str:
-    try:
-        out = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=10,
-        )
-        return out.stdout.strip()
-    except Exception:
-        return "unavailable"
+    """Product-tree identity: the peeled commit of the frozen product tag.
+
+    The benchmark worktree HEAD moves with harness commits; the product
+    files (skills/, config/) are pinned by the tag, so provenance reports
+    the tag's peeled commit, not HEAD."""
+    for args in (["git", "rev-parse", "v0.1.0-preview.4^{}"],
+                 ["git", "rev-parse", "HEAD"]):
+        try:
+            out = subprocess.run(args, cwd=str(REPO_ROOT),
+                                 capture_output=True, text=True, timeout=10)
+            v = out.stdout.strip()
+            if v:
+                return v
+        except Exception:
+            continue
+    return "unavailable"
 
 
 def _file_sha256(path: Path) -> str:

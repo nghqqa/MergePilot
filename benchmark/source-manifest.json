@@ -4,26 +4,26 @@
     "benchmark/adapters/base.py": "fe2483eaa1ff67576a76bd9ab71e99bfd5a294bba87a84c41edec3f26ee59545",
     "benchmark/adapters/mergepilot.py": "8c802ace8ebc9d0c47df1bba61d0135adde2042a42e1e9cbae511c5518bb2e94",
     "benchmark/adapters/single_agent.py": "fd01160420999d6cdda761e0ea505a40057488fd05d1916f70e52b57bd488c7d",
-    "benchmark/dataset/cases.jsonl": "3f5187d50e05cc292afbcaccdb14764a157294dbf9804377df0f0be5194dc6d6",
+    "benchmark/dataset/cases.jsonl": "c2f86c864ed76df6106f9928b8798f9ad97a38c24f6f81d810ad3db0fbbcdd25",
     "benchmark/dataset/dataset-design.json": "456a06d0b52ffbc31394b0a69981f7e9dc5f3f1add4469a6ad80e6d68fff7a9d",
     "benchmark/evaluator.py": "61dcaec44fc2d2038a66f26e1bafdeb4f4acd063157d0afd4b0199563e23929b",
     "benchmark/gen_smoke_summary.py": "c1874bc184f346d3e3db3123e4796c36d871b02fdf8b8fc63f8ea7482687264f",
     "benchmark/gen_source_manifest.py": "366062cf155d5a4fec8cdf5ecc036e28c16beafc2ead1325268b8faf0df56eac",
-    "benchmark/preview4_refresh/coupling-audit.json": "24e61edee377b8f5014eaf8bbc1972adf99d553d3ff36c3fe676068b45203c2f",
+    "benchmark/preview4_refresh/coupling-audit.json": "538abf3433d319c7b183d54d049959d7c3833d1bb9d73add3d958d242240152e",
     "benchmark/preview4_refresh/design.json": "33561b0c53a0be9126d3f2b0a0b327d6d01db9d1962772fb1a4aea7591dd3e28",
-    "benchmark/preview4_refresh/product_evidence.py": "735b0a7bcd22740f85fe35c2a01307c8ee2a6a7caec6cb74eac349d2506e0e78",
-    "benchmark/preview4_refresh/run_formal.py": "63cc65a20a055acec0d6d8a9cf0adb21959f14eb24405f870d3310c300135795",
-    "benchmark/preview4_refresh/run_smoke.py": "9bdd713a7a5ae5c0b54e907c6bc3428fa595c3248ae99019053e14c30c84b809",
-    "benchmark/preview4_refresh/test_offline_refresh.py": "7ba2b2a67f1750169d2f13d0a25a626dcfe0f3e008a65caa36110959849c1348",
-    "benchmark/preview4_refresh/update_manifest.py": "96cab3361dbfee06be2cd824942d46072d5c7fa09694df999ab4e4dee7069533",
+    "benchmark/preview4_refresh/product_evidence.py": "757f8fbb0513e19f13b2cb7da5ea92420e27b7d493ae7594aae6cff06366acf0",
+    "benchmark/preview4_refresh/run_formal.py": "10964474609d7737518fb63c9e227e8f86b4c9fa00d3a6ff2295d74088ede2fe",
+    "benchmark/preview4_refresh/run_smoke.py": "a5fe0aeb931a4ea15a18d4cdc1ac9b22c00adf43418918081cdec97700fdb58c",
+    "benchmark/preview4_refresh/test_offline_refresh.py": "f407026e2cbdc30272c2ceeff231ec1b5884d89cc6952b758093923506667db1",
+    "benchmark/preview4_refresh/update_manifest.py": "61ef294a3f24e3086a173ce3bb27d4abffc2b53a219a89279a7ac21af73a95bb",
     "benchmark/run_benchmark.py": "c7999ddd44f115b77ef3177be801a171315e03f2f45f015a225da1ec448c0059",
     "benchmark/schemas/case.schema.json": "c3a49bc99356d21c7e201d870ba72a13ed6bd076ab841d0fa5d0cc0eddd26901",
     "benchmark/schemas/run-result.schema.json": "98cc1955427897b5e86fe4aae3406577f2a3ae99fcda41558245c0dcb35e4ba2",
     "benchmark/summarize_results.py": "e113d8e127a3de0495885b1ad114e3331223b7602cded0ef23dc45ea5111d1a4",
     "benchmark/test_offline.py": "c4fe7feccac859b92d7cdbf9bd178986189272184e5cf0d96d44e60ec5ddd658",
     "benchmark/validate_dataset.py": "a18b6867c16bb9352d076bc633d7efa364c0274bbd003cc97f44e2dfc4040df7",
-    "config/souls/fixer/SOUL.md": "3ea56f8ed875fc461543bd4fc9fee1f1681e0cf033f8b6d2210afc62ec25ce88",
-    "config/souls/reviewer/SOUL.md": "08d4d92fbb96550a5cc14bf8becd0e9ba49cbcdad0851d232014e117535b3eaf"
+    "config/souls/fixer/SOUL.md": "2e6ec8cf79e7c6f907d9803161c0861b2a675e4ca873c81e383b4fa068aa83c5",
+    "config/souls/reviewer/SOUL.md": "eee76eaaadb2a1bfbff79904cb0156ce5a7f55cd1c77ddbc536712a93c0b16bb"
   },
   "fixtures": {
     "bm-01_clean_pr.py": "f42c2bbb21a71d38af5e64c1f7c54760a52e7797497aba50ed22a08b4c763e88",
@@ -45,20 +45,20 @@
       {
         "path": "skills/sast_scan",
         "role": "skill_sast_scan",
-        "sha256": "42cf9e6869ecc36398866338c1f844e6f629feb5e6bec60f2b24e3d09e2277f4",
-        "source_commit": "5bb2635624585318aa005a0fc1d8c2b302c8a183"
+        "sha256": "ecf965b491a37b8634cbf35301dc6c1c14115281e20b843f6e503af21ea08410",
+        "source_commit": "09d0b1cc890de1ac251e3fe97a2968b67af3dc6c"
       },
       {
         "path": "skills/risk_classify",
         "role": "skill_risk_classify",
-        "sha256": "56b9d14aa424c535c79b4568f17a1cbafceb8d0dfa76c9569596f6ed074a593e",
-        "source_commit": "5bb2635624585318aa005a0fc1d8c2b302c8a183"
+        "sha256": "fcb797f87c5a267e7e6fea1b011c0ede1539ffb749400694ef4fd580146a348c",
+        "source_commit": "09d0b1cc890de1ac251e3fe97a2968b67af3dc6c"
       },
       {
         "path": "benchmark/dataset/fixtures",
         "role": "dataset_fixtures",
-        "sha256": "168eba1444e2b64e986b4dacf6dcade11909c8caeb67e382720284fb1d7c14ca",
-        "source_commit": "5bb2635624585318aa005a0fc1d8c2b302c8a183"
+        "sha256": "7fe526eb57cbdae191ec7a7d9416ba42b7aad85fcb358b798901f44b82a8a51e",
+        "source_commit": "09d0b1cc890de1ac251e3fe97a2968b67af3dc6c"
       }
     ],
     "files": [
@@ -66,84 +66,84 @@
         "path": "benchmark/adapters/single_agent.py",
         "role": "adapter_group_A",
         "sha256": "fd01160420999d6cdda761e0ea505a40057488fd05d1916f70e52b57bd488c7d",
-        "source_commit": "5bb2635624585318aa005a0fc1d8c2b302c8a183"
+        "source_commit": "09d0b1cc890de1ac251e3fe97a2968b67af3dc6c"
       },
       {
         "path": "benchmark/adapters/mergepilot.py",
         "role": "adapter_group_B",
         "sha256": "8c802ace8ebc9d0c47df1bba61d0135adde2042a42e1e9cbae511c5518bb2e94",
-        "source_commit": "5bb2635624585318aa005a0fc1d8c2b302c8a183"
+        "source_commit": "09d0b1cc890de1ac251e3fe97a2968b67af3dc6c"
       },
       {
         "path": "benchmark/preview4_refresh/product_evidence.py",
         "role": "coupling_bridge",
-        "sha256": "735b0a7bcd22740f85fe35c2a01307c8ee2a6a7caec6cb74eac349d2506e0e78",
-        "source_commit": "5bb2635624585318aa005a0fc1d8c2b302c8a183"
+        "sha256": "757f8fbb0513e19f13b2cb7da5ea92420e27b7d493ae7594aae6cff06366acf0",
+        "source_commit": "09d0b1cc890de1ac251e3fe97a2968b67af3dc6c"
       },
       {
         "path": "benchmark/preview4_refresh/design.json",
         "role": "frozen_design",
         "sha256": "33561b0c53a0be9126d3f2b0a0b327d6d01db9d1962772fb1a4aea7591dd3e28",
-        "source_commit": "5bb2635624585318aa005a0fc1d8c2b302c8a183"
+        "source_commit": "09d0b1cc890de1ac251e3fe97a2968b67af3dc6c"
       },
       {
         "path": "benchmark/preview4_refresh/update_manifest.py",
         "role": "manifest_tool",
-        "sha256": "96cab3361dbfee06be2cd824942d46072d5c7fa09694df999ab4e4dee7069533",
-        "source_commit": "5bb2635624585318aa005a0fc1d8c2b302c8a183"
+        "sha256": "61ef294a3f24e3086a173ce3bb27d4abffc2b53a219a89279a7ac21af73a95bb",
+        "source_commit": "09d0b1cc890de1ac251e3fe97a2968b67af3dc6c"
       },
       {
         "path": "benchmark/preview4_refresh/test_offline_refresh.py",
         "role": "offline_test",
-        "sha256": "7ba2b2a67f1750169d2f13d0a25a626dcfe0f3e008a65caa36110959849c1348",
-        "source_commit": "5bb2635624585318aa005a0fc1d8c2b302c8a183"
+        "sha256": "f407026e2cbdc30272c2ceeff231ec1b5884d89cc6952b758093923506667db1",
+        "source_commit": "09d0b1cc890de1ac251e3fe97a2968b67af3dc6c"
       },
       {
         "path": "benchmark/preview4_refresh/run_smoke.py",
         "role": "smoke_runner",
-        "sha256": "9bdd713a7a5ae5c0b54e907c6bc3428fa595c3248ae99019053e14c30c84b809",
-        "source_commit": "5bb2635624585318aa005a0fc1d8c2b302c8a183"
+        "sha256": "a5fe0aeb931a4ea15a18d4cdc1ac9b22c00adf43418918081cdec97700fdb58c",
+        "source_commit": "09d0b1cc890de1ac251e3fe97a2968b67af3dc6c"
       },
       {
         "path": "benchmark/preview4_refresh/run_formal.py",
         "role": "formal_runner",
-        "sha256": "63cc65a20a055acec0d6d8a9cf0adb21959f14eb24405f870d3310c300135795",
-        "source_commit": "5bb2635624585318aa005a0fc1d8c2b302c8a183"
+        "sha256": "10964474609d7737518fb63c9e227e8f86b4c9fa00d3a6ff2295d74088ede2fe",
+        "source_commit": "09d0b1cc890de1ac251e3fe97a2968b67af3dc6c"
       },
       {
         "path": "benchmark/dataset/cases.jsonl",
         "role": "dataset_cases",
-        "sha256": "3f5187d50e05cc292afbcaccdb14764a157294dbf9804377df0f0be5194dc6d6",
-        "source_commit": "5bb2635624585318aa005a0fc1d8c2b302c8a183"
+        "sha256": "c2f86c864ed76df6106f9928b8798f9ad97a38c24f6f81d810ad3db0fbbcdd25",
+        "source_commit": "09d0b1cc890de1ac251e3fe97a2968b67af3dc6c"
       },
       {
         "path": "benchmark/dataset/dataset-design.json",
         "role": "dataset_design",
         "sha256": "456a06d0b52ffbc31394b0a69981f7e9dc5f3f1add4469a6ad80e6d68fff7a9d",
-        "source_commit": "5bb2635624585318aa005a0fc1d8c2b302c8a183"
+        "source_commit": "09d0b1cc890de1ac251e3fe97a2968b67af3dc6c"
       },
       {
         "path": "benchmark/preview4_refresh/coupling-audit.json",
         "role": "audit_report",
-        "sha256": "24e61edee377b8f5014eaf8bbc1972adf99d553d3ff36c3fe676068b45203c2f",
-        "source_commit": "5bb2635624585318aa005a0fc1d8c2b302c8a183"
+        "sha256": "538abf3433d319c7b183d54d049959d7c3833d1bb9d73add3d958d242240152e",
+        "source_commit": "09d0b1cc890de1ac251e3fe97a2968b67af3dc6c"
       },
       {
         "path": "config/souls/reviewer/SOUL.md",
         "role": "soul_prompt_reviewer",
-        "sha256": "08d4d92fbb96550a5cc14bf8becd0e9ba49cbcdad0851d232014e117535b3eaf",
-        "source_commit": "5bb2635624585318aa005a0fc1d8c2b302c8a183"
+        "sha256": "eee76eaaadb2a1bfbff79904cb0156ce5a7f55cd1c77ddbc536712a93c0b16bb",
+        "source_commit": "09d0b1cc890de1ac251e3fe97a2968b67af3dc6c"
       },
       {
         "path": "config/souls/fixer/SOUL.md",
         "role": "soul_prompt_fixer",
-        "sha256": "3ea56f8ed875fc461543bd4fc9fee1f1681e0cf033f8b6d2210afc62ec25ce88",
-        "source_commit": "5bb2635624585318aa005a0fc1d8c2b302c8a183"
+        "sha256": "2e6ec8cf79e7c6f907d9803161c0861b2a675e4ca873c81e383b4fa068aa83c5",
+        "source_commit": "09d0b1cc890de1ac251e3fe97a2968b67af3dc6c"
       }
     ],
     "generated_by": "benchmark/preview4_refresh/update_manifest.py",
     "note": "additive refresh over the 2026-08-11 baseline manifest; historical freeze provenance stays recorded in benchmark/formal-run-manifest.json",
-    "source_commit": "5bb2635624585318aa005a0fc1d8c2b302c8a183"
+    "source_commit": "09d0b1cc890de1ac251e3fe97a2968b67af3dc6c"
   },
   "temperature": 0.1,
   "timeout_seconds": 120,

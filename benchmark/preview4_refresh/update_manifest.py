@@ -14,12 +14,15 @@ Rules:
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import subprocess
 import sys
 from pathlib import Path
+
+REPO_ROOT_ = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT_) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT_))
 
 HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parents[1]
@@ -29,17 +32,8 @@ SOURCE_COMMIT = subprocess.run(
     capture_output=True, text=True).stdout.strip()
 
 
-def _sha(p: Path) -> str:
-    return hashlib.sha256(p.read_bytes()).hexdigest()
-
-
-def _dir_digest(p: Path) -> str:
-    h = hashlib.sha256()
-    for f in sorted(p.rglob("*")):
-        if f.is_file():
-            h.update(f.relative_to(p).as_posix().encode())
-            h.update(bytes.fromhex(_sha(f)))
-    return h.hexdigest()
+from benchmark.preview4_refresh.canonical_hash import canonical_digest as _sha
+from benchmark.preview4_refresh.canonical_hash import canonical_dir_digest as _dir_digest
 
 
 FILE_ROLES = [

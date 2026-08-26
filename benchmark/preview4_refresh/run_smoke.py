@@ -75,8 +75,7 @@ def _git_commit() -> str:
                           capture_output=True, text=True).stdout.strip()
 
 
-def _sha_file(p: Path) -> str:
-    return hashlib.sha256(p.read_bytes()).hexdigest()
+from benchmark.preview4_refresh.canonical_hash import canonical_digest as _sha_file  # noqa: E402
 
 
 def load_case(case_id: str) -> dict:

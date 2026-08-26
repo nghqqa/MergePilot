@@ -2,13 +2,15 @@
   "kind": "preview4-refresh-formal-20x2x3",
   "generated_at_utc": "2026-08-26T14:13:43Z",
   "identity": {
+    "hash_scheme": "canonical-lf-v2",
     "product_source_commit": "5bb2635624585318aa005a0fc1d8c2b302c8a183",
-    "benchmark_harness_digest": "d64cbfe5096ec19f02ca4dcd8e06e1edc050b149b055e4526033228bd45e9f61",
+    "benchmark_harness_digest": "f01e8490762a5cdff96e5ec47363ddc1e998bafa2a302f1e23da37868cbd14e9",
     "design_json_sha256": "33561b0c53a0be9126d3f2b0a0b327d6d01db9d1962772fb1a4aea7591dd3e28",
-    "source_manifest_sha256": "a4623a56e51a6f3b47dbb889fce56d8a1b237ed88660956878c2785890eb7598",
+    "source_manifest_sha256": "3f99d0ad632e98e9986d9b42172125b4a34b43eaa470f80a6b30cb0640e35a88",
+    "dataset_manifest_sha256": "d6d054e77c27b3f68f355d85fede334c5f80dcc7df8f7614fa17a88baa55e6a5",
     "untrusted_contract_sha256": "b29a5ed6df841ace889b742bcb845c9de9f0cc3e02b731bea8a28bb56f78d833",
-    "dataset_manifest_sha256": "c55a334a6437aea771d7c79dc19fc48b250fa2c997c774cbae0fe6dcf69b7e22",
-    "schedule_sha256": "2ba0a0efdae58783603044254a4ef9437d7d271039fb256737e0c7eca6a3d0a9"
+    "schedule_sha256": "2ba0a0efdae58783603044254a4ef9437d7d271039fb256737e0c7eca6a3d0a9",
+    "run_time_identity_note": "run-time digests (pre-normalization) preserved verbatim inside each raw run and in identity.json; canonical digests reproduce on any checkout platform"
   },
   "n_cases": 20,
   "groups": 2,

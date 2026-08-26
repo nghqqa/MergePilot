@@ -63,8 +63,7 @@ def _utc():
     return dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _sha_file(p):
-    return hashlib.sha256(Path(p).read_bytes()).hexdigest()
+from benchmark.preview4_refresh.canonical_hash import canonical_digest as _sha_file
 
 
 def load_cases():

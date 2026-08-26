@@ -1,14 +1,18 @@
 {
-  "benchmark_harness_digest": "d64cbfe5096ec19f02ca4dcd8e06e1edc050b149b055e4526033228bd45e9f61",
-  "dataset_manifest_sha256": "c55a334a6437aea771d7c79dc19fc48b250fa2c997c774cbae0fe6dcf69b7e22",
+  "archive_head_at_generation": "09d0b1cc890de1ac251e3fe97a2968b67af3dc6c",
+  "benchmark_harness_digest": "f01e8490762a5cdff96e5ec47363ddc1e998bafa2a302f1e23da37868cbd14e9",
+  "dataset_manifest_sha256": "d6d054e77c27b3f68f355d85fede334c5f80dcc7df8f7614fa17a88baa55e6a5",
   "design_json_sha256": "33561b0c53a0be9126d3f2b0a0b327d6d01db9d1962772fb1a4aea7591dd3e28",
   "harness_files": [
     "benchmark/adapters/single_agent.py",
     "benchmark/adapters/mergepilot.py",
+    "benchmark/adapters/base.py",
     "benchmark/preview4_refresh/product_evidence.py",
+    "benchmark/preview4_refresh/canonical_hash.py",
     "benchmark/preview4_refresh/design.json",
     "benchmark/preview4_refresh/test_offline_refresh.py",
     "benchmark/preview4_refresh/update_manifest.py",
+    "benchmark/preview4_refresh/gen_identity.py",
     "benchmark/preview4_refresh/run_smoke.py",
     "benchmark/preview4_refresh/run_candidate.py",
     "benchmark/preview4_refresh/run_formal.py",
@@ -16,8 +20,18 @@
     "benchmark/preview4_refresh/__init__.py",
     "benchmark/source-manifest.json"
   ],
-  "note": "formal-round identity v3 + 20-case dataset; product commit alone does NOT represent the benchmark implementation",
+  "hash_scheme": "canonical-lf-v2",
+  "note": "canonical digests are LF-normalized for UTF-8 text and raw for binaries, so they reproduce on any platform's checkout; run_time_identity preserves the digests recorded inside the 120 formal raw runs at execution time (pre-normalization scheme); product commit alone does NOT represent the benchmark implementation",
   "product_source_commit": "5bb2635624585318aa005a0fc1d8c2b302c8a183",
-  "source_manifest_sha256": "a4623a56e51a6f3b47dbb889fce56d8a1b237ed88660956878c2785890eb7598",
+  "run_time_identity": {
+    "benchmark_harness_digest": "d64cbfe5096ec19f02ca4dcd8e06e1edc050b149b055e4526033228bd45e9f61",
+    "dataset_manifest_sha256": "c55a334a6437aea771d7c79dc19fc48b250fa2c997c774cbae0fe6dcf69b7e22",
+    "design_json_sha256": "33561b0c53a0be9126d3f2b0a0b327d6d01db9d1962772fb1a4aea7591dd3e28",
+    "product_source_commit": "5bb2635624585318aa005a0fc1d8c2b302c8a183",
+    "schedule_sha256": "2ba0a0efdae58783603044254a4ef9437d7d271039fb256737e0c7eca6a3d0a9",
+    "source_manifest_sha256": "a4623a56e51a6f3b47dbb889fce56d8a1b237ed88660956878c2785890eb7598",
+    "untrusted_contract_sha256": "b29a5ed6df841ace889b742bcb845c9de9f0cc3e02b731bea8a28bb56f78d833"
+  },
+  "source_manifest_sha256": "3f99d0ad632e98e9986d9b42172125b4a34b43eaa470f80a6b30cb0640e35a88",
   "untrusted_contract_sha256": "b29a5ed6df841ace889b742bcb845c9de9f0cc3e02b731bea8a28bb56f78d833"
 }

@@ -65,8 +65,8 @@ class BaseAdapter(abc.ABC):
     def verify_fixture(self, inp: AdapterInput) -> bool:
         if not os.path.exists(inp.fixture_path):
             return False
-        with open(inp.fixture_path, "rb") as f:
-            return hashlib.sha256(f.read()).hexdigest() == inp.fixture_sha256
+        from benchmark.preview4_refresh.canonical_hash import canonical_digest
+        return canonical_digest(inp.fixture_path) == inp.fixture_sha256
 
     def check_credentials(self) -> tuple[bool, str]:
         return True, ""
