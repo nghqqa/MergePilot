@@ -10,8 +10,8 @@
 #   application_integration_verified = false
 #   database_verified                 = false
 #   production_verified               = false
-#   revision_producer_contract        = PARTIALLY_VERIFIED
-#   audit_producer_contract           = PARTIALLY_VERIFIED
+#   revision_producer_contract        = NOT_VERIFIED
+#   audit_producer_contract           = NOT_VERIFIED
 #   transport_profile = wsl-user-relay, direct_routing_verified = false
 #
 # No secrets are read, printed, or shipped by this script.
