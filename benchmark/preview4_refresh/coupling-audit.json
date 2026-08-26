@@ -1,0 +1,73 @@
+{
+  "ab_parameters": {
+    "model": "same (inp.model)",
+    "retry": "none; first stable error kept",
+    "schema": "identical findings/decision JSON",
+    "temperature": "0.1 both",
+    "timeout": "shared pool",
+    "token_budget": "equal total; B splits 45/55"
+  },
+  "ab_static_evidence": {
+    "producer": "skills/sast_scan@1.0.0 + skills/risk_classify (same call for both groups)",
+    "sample_digest_sha256_prefix": "b1d37334b31f088f",
+    "shared": true
+  },
+  "api_key_read": false,
+  "chains": {
+    "A": "run_benchmark -> SingleAgentAdapter._run -> benchmark.preview4_refresh.product_evidence.build_static_evidence -> skills/sast_scan/core.scan + skills/risk_classify/core.classify (in-process, offline) -> _call_llm (single request, evidence-injected user message)",
+    "B": "run_benchmark -> MergePilotAdapter._run -> product_evidence.build_static_evidence (same as A) + load_soul(reviewer/fixer) -> reviewer LLM call with SOUL system prompt + evidence -> fixer LLM call with SOUL system prompt"
+  },
+  "controller_called": false,
+  "coupling_flags": {
+    "controller_coupled": false,
+    "gateway_coupled": false,
+    "github_mcp_coupled": false,
+    "rag_coupled": false,
+    "real_e2e_coupled": false,
+    "skills_coupled": true,
+    "souls_coupled": true
+  },
+  "dataset_integrity_fixes": {
+    "applied_pre_run": true,
+    "files": [
+      "benchmark/dataset/fixtures/bm-10_l2_rollback.py",
+      "benchmark/dataset/fixtures/bm-06_test_failure.py",
+      "benchmark/dataset/fixtures/bm-08_allowlist_fp.py",
+      "benchmark/dataset/cases.jsonl"
+    ],
+    "note": "oracle-hint comments removed from bm-10/bm-06/bm-08 fixtures; cases.jsonl fixture_sha256 re-pinned; bm-09 prompt-injection payload intentionally retained"
+  },
+  "fail_closed_checks": {
+    "no_inline_prompt_fallback": "PASS (adapter returns error run)",
+    "skill_error": "PASS (sast_scan_failed carries first error)",
+    "skill_missing": "PASS (ProductCouplingError sast_scan_missing)",
+    "soul_missing_empty_unreadable": "PASS"
+  },
+  "gateway_called": false,
+  "generated_at_utc": "2026-08-26T10:25:31+08:00",
+  "github_mcp_called": false,
+  "historical_benchmark_untouched": true,
+  "model_requests": 0,
+  "network_access": "none (socket-blocked test passed)",
+  "offline_tests": {
+    "failed": 0,
+    "historical_regression": "12/12",
+    "passed": 13
+  },
+  "product_coupling_status": "PARTIAL_VERIFIED",
+  "rag_called": false,
+  "skill_paths": {
+    "risk_classify": "D:\\goai\\mp-benchmark-preview4\\skills\\risk_classify",
+    "sast_scan": "D:\\goai\\mp-benchmark-preview4\\skills\\sast_scan"
+  },
+  "soul_paths": {
+    "fixer": "D:\\goai\\mp-benchmark-preview4\\config\\souls\\fixer\\SOUL.md",
+    "reviewer": "D:\\goai\\mp-benchmark-preview4\\config\\souls\\reviewer\\SOUL.md"
+  },
+  "soul_sha256": {
+    "fixer": "3ea56f8ed875fc461543bd4fc9fee1f1681e0cf033f8b6d2210afc62ec25ce88",
+    "reviewer": "08d4d92fbb96550a5cc14bf8becd0e9ba49cbcdad0851d232014e117535b3eaf"
+  },
+  "source_commit": "5bb2635624585318aa005a0fc1d8c2b302c8a183",
+  "tag": "v0.1.0-preview.4"
+}

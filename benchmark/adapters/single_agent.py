@@ -23,7 +23,10 @@ def _call_llm(api_key, api_base, model, messages, timeout, max_tokens):
     import requests
     url = f"{api_base}/chat/completions"
     headers = {"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"}
-    payload = {"model": model, "messages": messages, "max_tokens": max_tokens, "temperature": 0.1}
+    # Generic protocol enforcement at the API layer: constrain generation to
+    # a single JSON object (applies identically to Group A and Group B).
+    payload = {"model": model, "messages": messages, "max_tokens": max_tokens,
+               "temperature": 0.1, "response_format": {"type": "json_object"}}
     try:
         resp = requests.post(url, headers=headers, json=payload, timeout=timeout)
     except Exception:
@@ -50,6 +53,22 @@ def _safe_parse(content: str) -> tuple[list, str, str | None]:
     if decision not in ("APPROVE", "HOLD", "REJECT"):
         decision = "HOLD"
     return findings, decision, None
+
+
+def build_system_prompt() -> str:
+    """Group A system prompt: reviewer contract + schema + untrusted-input
+    output protocol (byte-identical protocol block shared with Group B)."""
+    from benchmark.preview4_refresh.product_evidence import UNTRUSTED_INPUT_CONTRACT
+    return (
+        "You are a code reviewer. Review for security issues, bugs, "
+        "and best practice violations.\n\n"
+        "Respond ONLY in JSON:\n"
+        '{"findings":[{"description":"...","category":"secret|injection|command-injection|'
+        'dependency|logic-bug|prompt-injection|data-loss|other","severity":'
+        '"info|low|medium|high|critical"}],'
+        '"decision":"APPROVE|HOLD|REJECT"}\n\n'
+        + UNTRUSTED_INPUT_CONTRACT
+    )
 
 
 class SingleAgentAdapter(BaseAdapter):
@@ -95,21 +114,31 @@ class SingleAgentAdapter(BaseAdapter):
         with open(inp.fixture_path, "r", encoding="utf-8") as f:
             code = f.read()
 
-        system_prompt = (
-            "You are a code reviewer. Review for security issues, bugs, "
-            "and best practice violations.\n\n"
-            "Respond ONLY in JSON:\n"
-            '{"findings":[{"description":"...","category":"secret|injection|command-injection|'
-            'dependency|logic-bug|prompt-injection|data-loss|other","severity":'
-            '"info|low|medium|high|critical"}],'
-            '"decision":"APPROVE|HOLD|REJECT"}'
-        )
-
         t0 = time.time()
+
+        # Preview 4 coupling (fail-closed): identical static evidence as Group B.
+        try:
+            from benchmark.preview4_refresh.product_evidence import (
+                build_static_evidence, render_evidence_text, evidence_digest)
+            evidence = build_static_evidence(inp.fixture_path)
+            evidence_text = render_evidence_text(evidence)
+            evidence_audit = {
+                "phase": "static_evidence",
+                "digest": evidence_digest(evidence)[:16],
+                "provenance": evidence.get("provenance", {}),
+            }
+        except Exception as e:
+            code_ = getattr(e, "code", "coupling_failed")
+            return AdapterOutput(status="error", error_detail=code_,
+                                 duration_seconds=round(time.time() - t0, 2))
+
+        system_prompt = build_system_prompt()
+
         content, usage, err, api_count = _call_llm(
             api_key, _get_api_base(inp.model), inp.model,
             [{"role": "system", "content": system_prompt},
-             {"role": "user", "content": f"```python\n{code}\n```"}],
+             {"role": "user", "content": f"```python\n{code}\n```\n\n"
+              "Deterministic static evidence from offline scanners:\n" + evidence_text}],
             inp.timeout_seconds, inp.token_budget)
         elapsed = round(time.time() - t0, 2)
 
@@ -126,7 +155,8 @@ class SingleAgentAdapter(BaseAdapter):
                                  duration_seconds=elapsed,
                                  token_usage=_u(usage), api_request_count=api_count)
 
-        audit_events = [{"phase": "review", "findings_count": len(findings)}]
+        audit_events = [{"phase": "review", "findings_count": len(findings)},
+                        evidence_audit]
 
         return AdapterOutput(
             status="completed", findings=findings, decision=decision,

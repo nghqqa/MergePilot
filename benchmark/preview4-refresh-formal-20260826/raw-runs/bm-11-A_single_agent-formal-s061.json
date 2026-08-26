@@ -1,0 +1,108 @@
+{
+  "run_id": "bm-11-A_single_agent-formal-s061",
+  "case_id": "bm-11",
+  "group": "A_single_agent",
+  "repetition": 1,
+  "schedule_index": 61,
+  "pair_order": "BA",
+  "product_source_commit": "5bb2635624585318aa005a0fc1d8c2b302c8a183",
+  "benchmark_harness_digest": "d64cbfe5096ec19f02ca4dcd8e06e1edc050b149b055e4526033228bd45e9f61",
+  "design_json_sha256": "33561b0c53a0be9126d3f2b0a0b327d6d01db9d1962772fb1a4aea7591dd3e28",
+  "source_manifest_sha256": "a4623a56e51a6f3b47dbb889fce56d8a1b237ed88660956878c2785890eb7598",
+  "dataset_manifest_sha256": "c55a334a6437aea771d7c79dc19fc48b250fa2c997c774cbae0fe6dcf69b7e22",
+  "untrusted_contract_sha256": "b29a5ed6df841ace889b742bcb845c9de9f0cc3e02b731bea8a28bb56f78d833",
+  "schedule_sha256": "2ba0a0efdae58783603044254a4ef9437d7d271039fb256737e0c7eca6a3d0a9",
+  "fixture_sha256": "4681fc117e242097d766e407a3484f715944bd9c8608626e4effbdb5c72768cc",
+  "product_evidence": {
+    "digest_sha256": "8d1e510a6371c4f71eefbf16465b648d8d23a320049649f19d0afaf5cf831a0f",
+    "sast_rules_version": "1.0.0",
+    "provenance": {
+      "sast_scan": {
+        "dir_sha256": "42cf9e6869ecc36398866338c1f844e6f629feb5e6bec60f2b24e3d09e2277f4",
+        "core_sha256": "89fda40acdd8126af73fb4a1ab57da880c3dbb0799363b23aa334ceb73f43b30"
+      },
+      "risk_classify": {
+        "dir_sha256": "56b9d14aa424c535c79b4568f17a1cbafceb8d0dfa76c9569596f6ed074a593e",
+        "core_sha256": "6ffdfa3919802b7cba4af1588e1645c5c20c35f260f4eeb1646c32a7f7f5bc50"
+      },
+      "source_commit": "5bb2635624585318aa005a0fc1d8c2b302c8a183"
+    }
+  },
+  "souls": null,
+  "model_identity": {
+    "provider": "deepseek",
+    "model": "deepseek-v4-flash",
+    "temperature": 0.1,
+    "token_budget": 4096,
+    "timeout_seconds": 120,
+    "key_env_var": "DEEPSEEK_API_KEY",
+    "model_version_comparable_to_20260811": "NOT_CONFIRMED"
+  },
+  "input_composition": {
+    "fixture_sha256": "4681fc117e242097d766e407a3484f715944bd9c8608626e4effbdb5c72768cc",
+    "evidence_digest_sha256": "8d1e510a6371c4f71eefbf16465b648d8d23a320049649f19d0afaf5cf831a0f",
+    "reviewer_soul_sha256": "08d4d92fbb96550a5cc14bf8becd0e9ba49cbcdad0851d232014e117535b3eaf",
+    "fixer_soul_sha256": "3ea56f8ed875fc461543bd4fc9fee1f1681e0cf033f8b6d2210afc62ec25ce88",
+    "untrusted_contract_sha256": "b29a5ed6df841ace889b742bcb845c9de9f0cc3e02b731bea8a28bb56f78d833"
+  },
+  "started_at_utc": "2026-08-26T14:00:33Z",
+  "finished_at_utc": "2026-08-26T14:00:41Z",
+  "duration_seconds": 7.82,
+  "token_usage": {
+    "prompt_tokens": 727,
+    "completion_tokens": 618,
+    "total_tokens": 1345
+  },
+  "api_request_count": 1,
+  "status": "completed",
+  "parse_status": "ok",
+  "first_stable_error": null,
+  "findings": [
+    {
+      "description": "Path traversal in download_archive: the 'filename' request parameter is joined directly with STORAGE_ROOT and passed to open() without validation. An attacker can supply values like '../../etc/passwd' to read arbitrary files on the server, including credentials and source code.",
+      "category": "injection",
+      "severity": "critical"
+    },
+    {
+      "description": "list_user_files uses an untrusted username in os.path.join without validation; if username is attacker-controlled, it allows directory listing outside STORAGE_ROOT, potentially disclosing file metadata.",
+      "category": "injection",
+      "severity": "medium"
+    },
+    {
+      "description": "download_archive does not handle file-not-found or permission errors, causing unhandled exceptions and information disclosure through stack traces in production.",
+      "category": "logic-bug",
+      "severity": "low"
+    }
+  ],
+  "decision": "REJECT",
+  "fix_description": null,
+  "audit_events": [
+    {
+      "phase": "review",
+      "findings_count": 3
+    },
+    {
+      "phase": "static_evidence",
+      "digest": "8d1e510a6371c4f7",
+      "provenance": {
+        "sast_scan": {
+          "dir_sha256": "42cf9e6869ecc36398866338c1f844e6f629feb5e6bec60f2b24e3d09e2277f4",
+          "core_sha256": "89fda40acdd8126af73fb4a1ab57da880c3dbb0799363b23aa334ceb73f43b30"
+        },
+        "risk_classify": {
+          "dir_sha256": "56b9d14aa424c535c79b4568f17a1cbafceb8d0dfa76c9569596f6ed074a593e",
+          "core_sha256": "6ffdfa3919802b7cba4af1588e1645c5c20c35f260f4eeb1646c32a7f7f5bc50"
+        },
+        "source_commit": "5bb2635624585318aa005a0fc1d8c2b302c8a183"
+      }
+    }
+  ],
+  "audit_complete": true,
+  "eval_passed": false,
+  "eval_reason": "decision=REJECT_expected=HOLD",
+  "eval_tp": 0,
+  "eval_fp": 3,
+  "eval_fn": 1,
+  "no_retry": true,
+  "no_auto_repair": true
+}

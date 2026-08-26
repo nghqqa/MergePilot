@@ -1,0 +1,117 @@
+{
+  "dataset_version": "preview4-formal-20260826",
+  "extends": "bm-01..bm-10 (unchanged, pins preserved)",
+  "design_rule": "ground truth derived from code facts only; no oracle hints in fixtures",
+  "cases": [
+    {
+      "case_id": "bm-11",
+      "title": "Path traversal in archive download",
+      "risk_level": "L2",
+      "clean": false,
+      "categories": [
+        "security_sensitive"
+      ],
+      "design_purpose": "lines 6-9: download_archive joins raw filename; handle_download passes query param"
+    },
+    {
+      "case_id": "bm-12",
+      "title": "Unsafe deserialization of session cookie",
+      "risk_level": "L2",
+      "clean": false,
+      "categories": [
+        "security_sensitive"
+      ],
+      "design_purpose": "lines 7-9: pickle.loads on base64-decoded cookie"
+    },
+    {
+      "case_id": "bm-13",
+      "title": "SSRF in webhook relay and URL preview",
+      "risk_level": "L2",
+      "clean": false,
+      "categories": [
+        "security_sensitive"
+      ],
+      "design_purpose": "lines 10-16: deliver_event and preview_url fetch arbitrary urls"
+    },
+    {
+      "case_id": "bm-14",
+      "title": "Weak password hashing",
+      "risk_level": "L1",
+      "clean": false,
+      "categories": [
+        "security_sensitive"
+      ],
+      "design_purpose": "lines 5-6: hash_password uses hashlib.md5 without salt"
+    },
+    {
+      "case_id": "bm-15",
+      "title": "Missing authorization on invoice lookup",
+      "risk_level": "L1",
+      "clean": false,
+      "categories": [
+        "source"
+      ],
+      "design_purpose": "lines 3-10: get_invoice/show_invoice never compare owner"
+    },
+    {
+      "case_id": "bm-16",
+      "title": "JWT algorithm confusion",
+      "risk_level": "L2",
+      "clean": false,
+      "categories": [
+        "security_sensitive"
+      ],
+      "design_purpose": "lines 8-9: algorithms list includes none"
+    },
+    {
+      "case_id": "bm-17",
+      "title": "XXE in shipping feed parser",
+      "risk_level": "L2",
+      "clean": false,
+      "categories": [
+        "security_sensitive"
+      ],
+      "design_purpose": "lines 4-12: minidom.parseString on raw request body"
+    },
+    {
+      "case_id": "bm-18",
+      "title": "Clean parameterized product search",
+      "risk_level": "L0",
+      "clean": true,
+      "categories": [
+        "source"
+      ],
+      "design_purpose": "both queries use placeholders; no dynamic SQL"
+    },
+    {
+      "case_id": "bm-19",
+      "title": "Clean safe subprocess helpers",
+      "risk_level": "L0",
+      "clean": true,
+      "categories": [
+        "source"
+      ],
+      "design_purpose": "list argv, shell=False, timeouts, secret popped from env"
+    },
+    {
+      "case_id": "bm-20",
+      "title": "Non-atomic wallet transfer",
+      "risk_level": "L1",
+      "clean": false,
+      "categories": [
+        "source"
+      ],
+      "design_purpose": "lines 3-11: check-then-update sequence with no lock"
+    }
+  ],
+  "distribution": {
+    "total": 20,
+    "clean": 4,
+    "non_clean": 16,
+    "by_risk": {
+      "L0": 5,
+      "L1": 8,
+      "L2": 7
+    }
+  }
+}

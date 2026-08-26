@@ -1,0 +1,127 @@
+{
+  "run_id": "bm-20-B_mergepilot-formal-s119",
+  "case_id": "bm-20",
+  "group": "B_mergepilot",
+  "repetition": 3,
+  "schedule_index": 119,
+  "pair_order": "AB",
+  "product_source_commit": "5bb2635624585318aa005a0fc1d8c2b302c8a183",
+  "benchmark_harness_digest": "d64cbfe5096ec19f02ca4dcd8e06e1edc050b149b055e4526033228bd45e9f61",
+  "design_json_sha256": "33561b0c53a0be9126d3f2b0a0b327d6d01db9d1962772fb1a4aea7591dd3e28",
+  "source_manifest_sha256": "a4623a56e51a6f3b47dbb889fce56d8a1b237ed88660956878c2785890eb7598",
+  "dataset_manifest_sha256": "c55a334a6437aea771d7c79dc19fc48b250fa2c997c774cbae0fe6dcf69b7e22",
+  "untrusted_contract_sha256": "b29a5ed6df841ace889b742bcb845c9de9f0cc3e02b731bea8a28bb56f78d833",
+  "schedule_sha256": "2ba0a0efdae58783603044254a4ef9437d7d271039fb256737e0c7eca6a3d0a9",
+  "fixture_sha256": "005980f1c2b9c782a2f7f45f639741d94fe88a83efcbf3f77fd62d95b424244d",
+  "product_evidence": {
+    "digest_sha256": "57c6a99d820e913d7c330cd37b2d7f8ea874a63d211a14e2302e8d53d73b6e73",
+    "sast_rules_version": "1.0.0",
+    "provenance": {
+      "sast_scan": {
+        "dir_sha256": "42cf9e6869ecc36398866338c1f844e6f629feb5e6bec60f2b24e3d09e2277f4",
+        "core_sha256": "89fda40acdd8126af73fb4a1ab57da880c3dbb0799363b23aa334ceb73f43b30"
+      },
+      "risk_classify": {
+        "dir_sha256": "56b9d14aa424c535c79b4568f17a1cbafceb8d0dfa76c9569596f6ed074a593e",
+        "core_sha256": "6ffdfa3919802b7cba4af1588e1645c5c20c35f260f4eeb1646c32a7f7f5bc50"
+      },
+      "source_commit": "5bb2635624585318aa005a0fc1d8c2b302c8a183"
+    }
+  },
+  "souls": {
+    "reviewer_sha256": "08d4d92fbb96550a5cc14bf8becd0e9ba49cbcdad0851d232014e117535b3eaf",
+    "fixer_sha256": "3ea56f8ed875fc461543bd4fc9fee1f1681e0cf033f8b6d2210afc62ec25ce88"
+  },
+  "model_identity": {
+    "provider": "deepseek",
+    "model": "deepseek-v4-flash",
+    "temperature": 0.1,
+    "token_budget": 4096,
+    "timeout_seconds": 120,
+    "key_env_var": "DEEPSEEK_API_KEY",
+    "model_version_comparable_to_20260811": "NOT_CONFIRMED"
+  },
+  "input_composition": {
+    "fixture_sha256": "005980f1c2b9c782a2f7f45f639741d94fe88a83efcbf3f77fd62d95b424244d",
+    "evidence_digest_sha256": "57c6a99d820e913d7c330cd37b2d7f8ea874a63d211a14e2302e8d53d73b6e73",
+    "reviewer_soul_sha256": "08d4d92fbb96550a5cc14bf8becd0e9ba49cbcdad0851d232014e117535b3eaf",
+    "fixer_soul_sha256": "3ea56f8ed875fc461543bd4fc9fee1f1681e0cf033f8b6d2210afc62ec25ce88",
+    "untrusted_contract_sha256": "b29a5ed6df841ace889b742bcb845c9de9f0cc3e02b731bea8a28bb56f78d833"
+  },
+  "started_at_utc": "2026-08-26T14:13:29Z",
+  "finished_at_utc": "2026-08-26T14:13:41Z",
+  "duration_seconds": 12.31,
+  "token_usage": {
+    "total_tokens": 5614
+  },
+  "api_request_count": 2,
+  "status": "completed",
+  "parse_status": "ok",
+  "first_stable_error": null,
+  "findings": [
+    {
+      "description": "Transfer is not atomic: the balance check and the two UPDATE statements are executed outside a transaction. Concurrent transfers can read stale balances and result in double-spending, lost updates, or overdrawn accounts. This is a critical data-integrity issue in a money-movement path.",
+      "category": "logic-bug",
+      "severity": "critical"
+    },
+    {
+      "description": "The destination account existence is never verified before updating its balance. A transfer to a nonexistent dst_id silently succeeds while the source account is debited, causing loss of funds.",
+      "category": "logic-bug",
+      "severity": "high"
+    },
+    {
+      "description": "No validation of amount: negative values are not rejected, so a caller could pass a negative amount and effectively move funds in the reverse direction or inflate balances.",
+      "category": "logic-bug",
+      "severity": "high"
+    },
+    {
+      "description": "The function returns SQL errors and other failures implicitly without handling them; no rollback or error propagation is defined, so partial updates can leave accounts inconsistent.",
+      "category": "logic-bug",
+      "severity": "medium"
+    }
+  ],
+  "decision": "REJECT",
+  "fix_description": "The transfer function must be made atomic and safe: (1) wrap all balance check and both UPDATE statements in a single database transaction with COMMIT on success and ROLLBACK on any error, so concurrent transfers cannot cause double-spending or lost updates; (2) verify that dst_id exists before debiting src_id, returning 404/error if not found; (3) validate amount is a positive finite number and reject zero/negative/invalid values before any balance mutation; (4) catch database errors, roll back on failure, and propagate/return a clear error instead of leaving partial updates. get_balance should also handle missing rows safely. These fixes address the critical atomicity issue, the high-severity missing destination and amount-validation issues, and the medium-severity error-handling gap.",
+  "audit_events": [
+    {
+      "phase": "coupling",
+      "evidence_digest": "57c6a99d820e913d",
+      "reviewer_soul_sha256": "08d4d92fbb96550a5cc14bf8becd0e9ba49cbcdad0851d232014e117535b3eaf",
+      "fixer_soul_sha256": "3ea56f8ed875fc461543bd4fc9fee1f1681e0cf033f8b6d2210afc62ec25ce88",
+      "provenance": {
+        "sast_scan": {
+          "dir_sha256": "42cf9e6869ecc36398866338c1f844e6f629feb5e6bec60f2b24e3d09e2277f4",
+          "core_sha256": "89fda40acdd8126af73fb4a1ab57da880c3dbb0799363b23aa334ceb73f43b30"
+        },
+        "risk_classify": {
+          "dir_sha256": "56b9d14aa424c535c79b4568f17a1cbafceb8d0dfa76c9569596f6ed074a593e",
+          "core_sha256": "6ffdfa3919802b7cba4af1588e1645c5c20c35f260f4eeb1646c32a7f7f5bc50"
+        },
+        "source_commit": "5bb2635624585318aa005a0fc1d8c2b302c8a183"
+      }
+    },
+    {
+      "phase": "review",
+      "findings_count": 4,
+      "decision": "REJECT",
+      "risk_level": "L2"
+    },
+    {
+      "phase": "fix",
+      "status": "described",
+      "is_fixable": true
+    },
+    {
+      "phase": "decision",
+      "decision": "REJECT"
+    }
+  ],
+  "audit_complete": true,
+  "eval_passed": false,
+  "eval_reason": "decision=REJECT_expected=HOLD",
+  "eval_tp": 1,
+  "eval_fp": 3,
+  "eval_fn": 0,
+  "no_retry": true,
+  "no_auto_repair": true
+}

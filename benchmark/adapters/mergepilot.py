@@ -23,6 +23,42 @@ def _validate_decision_protocol(findings, decision):
     return None
 
 
+def build_reviewer_prompt(reviewer_soul: str) -> str:
+    """Group B reviewer prompt: product SOUL + schema contract + the same
+    untrusted-input output protocol block Group A uses."""
+    from benchmark.preview4_refresh.product_evidence import UNTRUSTED_INPUT_CONTRACT
+    return reviewer_soul + (
+        "\n\n--- OUTPUT CONTRACT (must follow) ---\n"
+        "Respond ONLY in JSON:\n"
+        '{"findings":[{"description":"...","category":"secret|injection|command-injection|'
+        'dependency|logic-bug|prompt-injection|data-loss|other","severity":'
+        '"info|low|medium|high|critical"}],'
+        '"decision":"APPROVE|HOLD|REJECT","risk_level":"L0|L1|L2"}\n\n'
+        "Rules:\n- NO issues => decision=APPROVE\n"
+        "- Issues => decision=HOLD or REJECT\n"
+        "- NEVER APPROVE when issues exist\n\n"
+        + UNTRUSTED_INPUT_CONTRACT
+    )
+
+
+def build_fixer_prompt(fixer_soul: str) -> str:
+    from benchmark.preview4_refresh.product_evidence import UNTRUSTED_INPUT_CONTRACT
+    return fixer_soul + (
+        "\n\n--- OUTPUT CONTRACT (must follow) ---\n"
+        "You are describing fixes. Respond ONLY in JSON:\n"
+        '{"fix_description":"...","is_fixable":true|false}\n\n'
+        + UNTRUSTED_INPUT_CONTRACT
+    )
+
+
+def build_fixer_user_message(code: str, findings: list) -> str:
+    """Fixer receives ONLY structured results: the code plus the reviewer's
+    findings as JSON — no free-text reviewer chatter is forwarded."""
+    return ("Code:\n```python\n" + code + "\n```\n"
+            "Findings (structured review results):\n"
+            + json.dumps(findings, ensure_ascii=False))
+
+
 class MergePilotAdapter(BaseAdapter):
     @property
     def group_name(self): return "B_mergepilot"
@@ -64,24 +100,36 @@ class MergePilotAdapter(BaseAdapter):
         total_api = 0
         t0 = time.time()
         audit = []
-        rv_budget = int(inp.token_budget * 0.45)
+        rv_budget = int(inp.token_budget * 0.60)   # v3: reviewer-truncation guard
         fx_budget = inp.token_budget - rv_budget
 
-        rv_prompt = (
-            "You are a security-focused code reviewer.\n"
-            "Respond ONLY in JSON:\n"
-            '{"findings":[{"description":"...","category":"secret|injection|command-injection|'
-            'dependency|logic-bug|prompt-injection|data-loss|other","severity":'
-            '"info|low|medium|high|critical"}],'
-            '"decision":"APPROVE|HOLD|REJECT","risk_level":"L0|L1|L2"}\n\n'
-            "Rules:\n- NO issues => decision=APPROVE\n"
-            "- Issues => decision=HOLD or REJECT\n"
-            "- NEVER APPROVE when issues exist"
-        )
+        # Preview 4 coupling (fail-closed): real SOUL prompts + the SAME
+        # static evidence block Group A receives. No inline-prompt fallback.
+        try:
+            from benchmark.preview4_refresh.product_evidence import (
+                build_static_evidence, render_evidence_text, evidence_digest,
+                load_soul)
+            evidence = build_static_evidence(inp.fixture_path)
+            evidence_text = render_evidence_text(evidence)
+            reviewer_soul, reviewer_soul_sha = load_soul("reviewer")
+            fixer_soul, fixer_soul_sha = load_soul("fixer")
+            audit.append({"phase": "coupling",
+                          "evidence_digest": evidence_digest(evidence)[:16],
+                          "reviewer_soul_sha256": reviewer_soul_sha,
+                          "fixer_soul_sha256": fixer_soul_sha,
+                          "provenance": evidence.get("provenance", {})})
+        except Exception as e:
+            code_ = getattr(e, "code", "coupling_failed")
+            return AdapterOutput(status="error", error_detail=code_,
+                duration_seconds=round(time.time() - t0, 2),
+                audit_events=audit, audit_complete=False, api_request_count=0)
+
+        rv_prompt = build_reviewer_prompt(reviewer_soul)
         rv_content, rv_usage, rv_err, rv_api = _call_llm(
             api_key, base, inp.model,
             [{"role": "system", "content": rv_prompt},
-             {"role": "user", "content": f"```python\n{code}\n```"}],
+             {"role": "user", "content": f"```python\n{code}\n```\n\n"
+              "Deterministic static evidence from offline scanners:\n" + evidence_text}],
             inp.timeout_seconds, rv_budget)
         total_api += rv_api
         elapsed = round(time.time() - t0, 2)
@@ -129,16 +177,14 @@ class MergePilotAdapter(BaseAdapter):
                 duration_seconds=elapsed, token_usage={"total_tokens": total_tokens},
                 audit_events=audit, audit_complete=True, api_request_count=total_api)
 
-        # Phase 2: FIXER
-        findings_desc = json.dumps(findings, ensure_ascii=False)
-        fx_prompt = ("You are a code fixer. Describe fixes.\n"
-                      "Respond ONLY in JSON:\n"
-                      '{"fix_description":"...","is_fixable":true|false}')
+        # Phase 2: FIXER (structured-only input)
+        fx_prompt = build_fixer_prompt(fixer_soul)
+        fx_user = build_fixer_user_message(code, findings)
         remaining = max(10, inp.timeout_seconds - int(elapsed))
         fx_content, fx_usage, fx_err, fx_api = _call_llm(
             api_key, base, inp.model,
             [{"role": "system", "content": fx_prompt},
-             {"role": "user", "content": f"Code:\n```python\n{code}\n```\nFindings:\n{findings_desc}"}],
+             {"role": "user", "content": fx_user}],
             remaining, fx_budget)
         total_api += fx_api
         elapsed = round(time.time() - t0, 2)

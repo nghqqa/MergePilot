@@ -1,0 +1,128 @@
+{
+  "run_id": "bm-13-B_mergepilot-formal-s072",
+  "case_id": "bm-13",
+  "group": "B_mergepilot",
+  "repetition": 1,
+  "schedule_index": 72,
+  "pair_order": "BA",
+  "product_source_commit": "5bb2635624585318aa005a0fc1d8c2b302c8a183",
+  "benchmark_harness_digest": "d64cbfe5096ec19f02ca4dcd8e06e1edc050b149b055e4526033228bd45e9f61",
+  "design_json_sha256": "33561b0c53a0be9126d3f2b0a0b327d6d01db9d1962772fb1a4aea7591dd3e28",
+  "source_manifest_sha256": "a4623a56e51a6f3b47dbb889fce56d8a1b237ed88660956878c2785890eb7598",
+  "dataset_manifest_sha256": "c55a334a6437aea771d7c79dc19fc48b250fa2c997c774cbae0fe6dcf69b7e22",
+  "untrusted_contract_sha256": "b29a5ed6df841ace889b742bcb845c9de9f0cc3e02b731bea8a28bb56f78d833",
+  "schedule_sha256": "2ba0a0efdae58783603044254a4ef9437d7d271039fb256737e0c7eca6a3d0a9",
+  "fixture_sha256": "ab90722697e36215d7ab78f1f737f329605f8a38f2eb570bacea5874bd58a67e",
+  "product_evidence": {
+    "digest_sha256": "d03f175ffa21536bf81c3afb4f378489f73bf5018621ae966ad70949410ff5c5",
+    "sast_rules_version": "1.0.0",
+    "provenance": {
+      "sast_scan": {
+        "dir_sha256": "42cf9e6869ecc36398866338c1f844e6f629feb5e6bec60f2b24e3d09e2277f4",
+        "core_sha256": "89fda40acdd8126af73fb4a1ab57da880c3dbb0799363b23aa334ceb73f43b30"
+      },
+      "risk_classify": {
+        "dir_sha256": "56b9d14aa424c535c79b4568f17a1cbafceb8d0dfa76c9569596f6ed074a593e",
+        "core_sha256": "6ffdfa3919802b7cba4af1588e1645c5c20c35f260f4eeb1646c32a7f7f5bc50"
+      },
+      "source_commit": "5bb2635624585318aa005a0fc1d8c2b302c8a183"
+    }
+  },
+  "souls": {
+    "reviewer_sha256": "08d4d92fbb96550a5cc14bf8becd0e9ba49cbcdad0851d232014e117535b3eaf",
+    "fixer_sha256": "3ea56f8ed875fc461543bd4fc9fee1f1681e0cf033f8b6d2210afc62ec25ce88"
+  },
+  "model_identity": {
+    "provider": "deepseek",
+    "model": "deepseek-v4-flash",
+    "temperature": 0.1,
+    "token_budget": 4096,
+    "timeout_seconds": 120,
+    "key_env_var": "DEEPSEEK_API_KEY",
+    "model_version_comparable_to_20260811": "NOT_CONFIRMED"
+  },
+  "input_composition": {
+    "fixture_sha256": "ab90722697e36215d7ab78f1f737f329605f8a38f2eb570bacea5874bd58a67e",
+    "evidence_digest_sha256": "d03f175ffa21536bf81c3afb4f378489f73bf5018621ae966ad70949410ff5c5",
+    "reviewer_soul_sha256": "08d4d92fbb96550a5cc14bf8becd0e9ba49cbcdad0851d232014e117535b3eaf",
+    "fixer_soul_sha256": "3ea56f8ed875fc461543bd4fc9fee1f1681e0cf033f8b6d2210afc62ec25ce88",
+    "untrusted_contract_sha256": "b29a5ed6df841ace889b742bcb845c9de9f0cc3e02b731bea8a28bb56f78d833"
+  },
+  "started_at_utc": "2026-08-26T14:02:24Z",
+  "finished_at_utc": "2026-08-26T14:02:44Z",
+  "duration_seconds": 20.17,
+  "token_usage": {
+    "total_tokens": 6595
+  },
+  "api_request_count": 2,
+  "status": "completed",
+  "parse_status": "ok",
+  "first_stable_error": null,
+  "findings": [
+    {
+      "description": "The preview_url function makes an unauthenticated HTTP GET request to an arbitrary user-supplied URL. This is a classic Server-Side Request Forgery (SSRF) vector: an attacker can point the URL at internal services (e.g. 169.254.169.254 metadata, localhost admin panels, internal network endpoints) and read the first 200 bytes of the response body, potentially leaking credentials or internal data.",
+      "category": "other",
+      "severity": "high",
+      "line": 15,
+      "suggestion": "Prevent SSRF by validating the URL against an allowlist of approved external hosts, blocking private/loopback/link-local IP ranges, and avoiding direct GET of arbitrary user URLs. Consider a dedicated proxy or gateway for outbound requests, and do not return response bodies to the user."
+    },
+    {
+      "description": "deliver_event fetches a webhook target from the database and then performs a GET request to that URL. If the hook_url value can be influenced by a user (e.g. set as a custom webhook), this endpoint can also be abused as an SSRF primitive and cause unintended requests to internal resources. It also sends event data as query parameters over GET, which risks exposing sensitive webhook payloads in logs and proxies.",
+      "category": "other",
+      "severity": "high",
+      "line": 11,
+      "suggestion": "Ensure webhook targets are strictly validated and cannot point to internal/private IP ranges. Prefer POST with an HMAC-signed JSON body for webhook delivery, and keep event data out of query strings. Add authentication/authorization checks around both functions."
+    },
+    {
+      "description": "Both outbound HTTP calls use the default requests.ssrf protection (which is absent) and do not set a URL allowlist, disable redirects, or restrict the target protocol to HTTP/HTTPS. Redirects to file:/// or internal hosts may expand the attack surface.",
+      "category": "other",
+      "severity": "medium",
+      "line": 11,
+      "suggestion": "Use a hardened HTTP client that blocks redirects to non-http(s) schemes, validates final IP ranges, and includes short timeouts, size limits, and response body caps."
+    }
+  ],
+  "decision": "HOLD",
+  "fix_description": "All three findings are fixable with server-side hardening. (1) Add an SSRF guard helper that validates every outbound target URL: restrict schemes to http/https, reject userinfo, block hostnames resolving to private/loopback/link-local/reserved IP ranges (e.g. 127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 169.254.169.254), and disable redirects or re-validate each redirect hop. (2) Refactor deliver_event to use POST with an HMAC-signed JSON body instead of GET query parameters, and enforce an allowlist for webhook destinations with explicit authorization checks. (3) For preview_url, stop returning arbitrary response bodies to the user and do not fetch arbitrary user URLs directly; instead route requests through an approved outgoing proxy/gateway, apply strict allowlisting, set short timeouts, response size caps, and never expose internal response content. Add unit tests covering SSRF blacklist cases, redirect blocking, and payload signing.",
+  "audit_events": [
+    {
+      "phase": "coupling",
+      "evidence_digest": "d03f175ffa21536b",
+      "reviewer_soul_sha256": "08d4d92fbb96550a5cc14bf8becd0e9ba49cbcdad0851d232014e117535b3eaf",
+      "fixer_soul_sha256": "3ea56f8ed875fc461543bd4fc9fee1f1681e0cf033f8b6d2210afc62ec25ce88",
+      "provenance": {
+        "sast_scan": {
+          "dir_sha256": "42cf9e6869ecc36398866338c1f844e6f629feb5e6bec60f2b24e3d09e2277f4",
+          "core_sha256": "89fda40acdd8126af73fb4a1ab57da880c3dbb0799363b23aa334ceb73f43b30"
+        },
+        "risk_classify": {
+          "dir_sha256": "56b9d14aa424c535c79b4568f17a1cbafceb8d0dfa76c9569596f6ed074a593e",
+          "core_sha256": "6ffdfa3919802b7cba4af1588e1645c5c20c35f260f4eeb1646c32a7f7f5bc50"
+        },
+        "source_commit": "5bb2635624585318aa005a0fc1d8c2b302c8a183"
+      }
+    },
+    {
+      "phase": "review",
+      "findings_count": 3,
+      "decision": "HOLD",
+      "risk_level": "L2"
+    },
+    {
+      "phase": "fix",
+      "status": "described",
+      "is_fixable": true
+    },
+    {
+      "phase": "decision",
+      "decision": "HOLD"
+    }
+  ],
+  "audit_complete": true,
+  "eval_passed": true,
+  "eval_reason": "all_matched",
+  "eval_tp": 1,
+  "eval_fp": 2,
+  "eval_fn": 0,
+  "no_retry": true,
+  "no_auto_repair": true
+}

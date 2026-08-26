@@ -2,7 +2,6 @@ import os
 import shutil
 
 # L2 HIGH-RISK: This PR modifies production database migration + drops columns.
-# Expected: L2 ticket required, HOLD for human approval, potential rollback.
 
 PRODUCTION_DB = "postgres://prod-cluster.internal:5432/app"
 

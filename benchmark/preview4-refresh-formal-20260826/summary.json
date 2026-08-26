@@ -1,0 +1,648 @@
+{
+  "kind": "preview4-refresh-formal-20x2x3",
+  "generated_at_utc": "2026-08-26T14:13:43Z",
+  "identity": {
+    "product_source_commit": "5bb2635624585318aa005a0fc1d8c2b302c8a183",
+    "benchmark_harness_digest": "d64cbfe5096ec19f02ca4dcd8e06e1edc050b149b055e4526033228bd45e9f61",
+    "design_json_sha256": "33561b0c53a0be9126d3f2b0a0b327d6d01db9d1962772fb1a4aea7591dd3e28",
+    "source_manifest_sha256": "a4623a56e51a6f3b47dbb889fce56d8a1b237ed88660956878c2785890eb7598",
+    "untrusted_contract_sha256": "b29a5ed6df841ace889b742bcb845c9de9f0cc3e02b731bea8a28bb56f78d833",
+    "dataset_manifest_sha256": "c55a334a6437aea771d7c79dc19fc48b250fa2c997c774cbae0fe6dcf69b7e22",
+    "schedule_sha256": "2ba0a0efdae58783603044254a4ef9437d7d271039fb256737e0c7eca6a3d0a9"
+  },
+  "n_cases": 20,
+  "groups": 2,
+  "repetitions": 3,
+  "total_runs": 120,
+  "total_api_requests": 174,
+  "key_env_var": "DEEPSEEK_API_KEY",
+  "model": "deepseek-v4-flash",
+  "model_version_comparable_to_20260811": "NOT_CONFIRMED",
+  "historical_absolute_comparison": "NOT_COMPARABLE",
+  "bootstrap": {
+    "seed": 20260826,
+    "n": 10000,
+    "unit": "case-cluster (resample 20 cases, keep 3 reps and A/B pairing)"
+  },
+  "by_group": {
+    "A_single_agent": {
+      "runs": 60,
+      "tp": 50,
+      "fp": 93,
+      "fn": 25,
+      "precision": 0.3497,
+      "recall": 0.6667,
+      "f1": 0.4587,
+      "decision_accuracy": 0.3333,
+      "clean_case_runs": 12,
+      "clean_case_fp": 18,
+      "tokens_total": 96746,
+      "api_requests": 60,
+      "fixer_triggered": 0,
+      "duration_mean": 9.87,
+      "duration_p50": 8.47,
+      "duration_p95": 25.45
+    },
+    "B_mergepilot": {
+      "runs": 60,
+      "tp": 51,
+      "fp": 62,
+      "fn": 24,
+      "precision": 0.4513,
+      "recall": 0.68,
+      "f1": 0.5426,
+      "decision_accuracy": 0.6333,
+      "clean_case_runs": 12,
+      "clean_case_fp": 14,
+      "tokens_total": 333837,
+      "api_requests": 114,
+      "fixer_triggered": 54,
+      "duration_mean": 14.17,
+      "duration_p50": 12.52,
+      "duration_p95": 24.35
+    }
+  },
+  "by_repetition": {
+    "1": {
+      "A_single_agent": {
+        "runs": 20,
+        "tp": 15,
+        "fp": 35,
+        "fn": 10,
+        "precision": 0.3,
+        "recall": 0.6,
+        "f1": 0.4,
+        "decision_accuracy": 0.35,
+        "clean_case_runs": 4,
+        "clean_case_fp": 8,
+        "tokens_total": 32476,
+        "api_requests": 20,
+        "fixer_triggered": 0,
+        "duration_mean": 9.98,
+        "duration_p50": 8.61,
+        "duration_p95": 32.86
+      },
+      "B_mergepilot": {
+        "runs": 20,
+        "tp": 17,
+        "fp": 20,
+        "fn": 8,
+        "precision": 0.4595,
+        "recall": 0.68,
+        "f1": 0.5484,
+        "decision_accuracy": 0.65,
+        "clean_case_runs": 4,
+        "clean_case_fp": 5,
+        "tokens_total": 113132,
+        "api_requests": 38,
+        "fixer_triggered": 18,
+        "duration_mean": 14.92,
+        "duration_p50": 12.72,
+        "duration_p95": 21.77
+      }
+    },
+    "2": {
+      "A_single_agent": {
+        "runs": 20,
+        "tp": 18,
+        "fp": 28,
+        "fn": 7,
+        "precision": 0.3913,
+        "recall": 0.72,
+        "f1": 0.507,
+        "decision_accuracy": 0.3,
+        "clean_case_runs": 4,
+        "clean_case_fp": 7,
+        "tokens_total": 32207,
+        "api_requests": 20,
+        "fixer_triggered": 0,
+        "duration_mean": 9.98,
+        "duration_p50": 8.01,
+        "duration_p95": 25.45
+      },
+      "B_mergepilot": {
+        "runs": 20,
+        "tp": 17,
+        "fp": 20,
+        "fn": 8,
+        "precision": 0.4595,
+        "recall": 0.68,
+        "f1": 0.5484,
+        "decision_accuracy": 0.65,
+        "clean_case_runs": 4,
+        "clean_case_fp": 4,
+        "tokens_total": 111375,
+        "api_requests": 38,
+        "fixer_triggered": 18,
+        "duration_mean": 14.28,
+        "duration_p50": 13.26,
+        "duration_p95": 30.77
+      }
+    },
+    "3": {
+      "A_single_agent": {
+        "runs": 20,
+        "tp": 17,
+        "fp": 30,
+        "fn": 8,
+        "precision": 0.3617,
+        "recall": 0.68,
+        "f1": 0.4722,
+        "decision_accuracy": 0.35,
+        "clean_case_runs": 4,
+        "clean_case_fp": 3,
+        "tokens_total": 32063,
+        "api_requests": 20,
+        "fixer_triggered": 0,
+        "duration_mean": 9.67,
+        "duration_p50": 8.6,
+        "duration_p95": 27.31
+      },
+      "B_mergepilot": {
+        "runs": 20,
+        "tp": 17,
+        "fp": 22,
+        "fn": 8,
+        "precision": 0.4359,
+        "recall": 0.68,
+        "f1": 0.5312,
+        "decision_accuracy": 0.6,
+        "clean_case_runs": 4,
+        "clean_case_fp": 5,
+        "tokens_total": 109330,
+        "api_requests": 38,
+        "fixer_triggered": 18,
+        "duration_mean": 13.3,
+        "duration_p50": 12.31,
+        "duration_p95": 30.64
+      }
+    }
+  },
+  "mean_sd": {
+    "A_single_agent": {
+      "precision": {
+        "mean": 0.351,
+        "sd": 0.0466
+      },
+      "recall": {
+        "mean": 0.6667,
+        "sd": 0.0611
+      },
+      "f1": {
+        "mean": 0.4597,
+        "sd": 0.0546
+      },
+      "decision_accuracy": {
+        "mean": 0.3333,
+        "sd": 0.0289
+      }
+    },
+    "B_mergepilot": {
+      "precision": {
+        "mean": 0.4516,
+        "sd": 0.0136
+      },
+      "recall": {
+        "mean": 0.68,
+        "sd": 0.0
+      },
+      "f1": {
+        "mean": 0.5427,
+        "sd": 0.0099
+      },
+      "decision_accuracy": {
+        "mean": 0.6333,
+        "sd": 0.0289
+      }
+    }
+  },
+  "per_case_pairing": {
+    "bm-01": {
+      "expected": "APPROVE",
+      "A_decisions": [
+        "APPROVE",
+        "APPROVE",
+        "APPROVE"
+      ],
+      "B_decisions": [
+        "APPROVE",
+        "APPROVE",
+        "APPROVE"
+      ],
+      "A_fp_mean": 3.0,
+      "B_fp_mean": 0.0
+    },
+    "bm-02": {
+      "expected": "HOLD",
+      "A_decisions": [
+        "REJECT",
+        "REJECT",
+        "REJECT"
+      ],
+      "B_decisions": [
+        "REJECT",
+        "REJECT",
+        "REJECT"
+      ],
+      "A_fp_mean": 1.67,
+      "B_fp_mean": 0.33
+    },
+    "bm-03": {
+      "expected": "HOLD",
+      "A_decisions": [
+        "REJECT",
+        "REJECT",
+        "REJECT"
+      ],
+      "B_decisions": [
+        "REJECT",
+        "HOLD",
+        "HOLD"
+      ],
+      "A_fp_mean": 1.0,
+      "B_fp_mean": 0.67
+    },
+    "bm-04": {
+      "expected": "HOLD",
+      "A_decisions": [
+        "REJECT",
+        "REJECT",
+        "REJECT"
+      ],
+      "B_decisions": [
+        "REJECT",
+        "HOLD",
+        "REJECT"
+      ],
+      "A_fp_mean": 1.0,
+      "B_fp_mean": 0.0
+    },
+    "bm-05": {
+      "expected": "HOLD",
+      "A_decisions": [
+        "REJECT",
+        "REJECT",
+        "REJECT"
+      ],
+      "B_decisions": [
+        "REJECT",
+        "HOLD",
+        "REJECT"
+      ],
+      "A_fp_mean": 2.0,
+      "B_fp_mean": 2.0
+    },
+    "bm-06": {
+      "expected": "HOLD",
+      "A_decisions": [
+        "HOLD",
+        "REJECT",
+        "HOLD"
+      ],
+      "B_decisions": [
+        "HOLD",
+        "HOLD",
+        "HOLD"
+      ],
+      "A_fp_mean": 0.0,
+      "B_fp_mean": 0.0
+    },
+    "bm-07": {
+      "expected": "REJECT",
+      "A_decisions": [
+        "REJECT",
+        "REJECT",
+        "REJECT"
+      ],
+      "B_decisions": [
+        "REJECT",
+        "REJECT",
+        "REJECT"
+      ],
+      "A_fp_mean": 1.67,
+      "B_fp_mean": 1.0
+    },
+    "bm-08": {
+      "expected": "APPROVE",
+      "A_decisions": [
+        "APPROVE",
+        "APPROVE",
+        "APPROVE"
+      ],
+      "B_decisions": [
+        "HOLD",
+        "REJECT",
+        "HOLD"
+      ],
+      "A_fp_mean": 1.0,
+      "B_fp_mean": 2.67
+    },
+    "bm-09": {
+      "expected": "HOLD",
+      "A_decisions": [
+        "REJECT",
+        "REJECT",
+        "REJECT"
+      ],
+      "B_decisions": [
+        "HOLD",
+        "REJECT",
+        "HOLD"
+      ],
+      "A_fp_mean": 2.0,
+      "B_fp_mean": 1.33
+    },
+    "bm-10": {
+      "expected": "REJECT",
+      "A_decisions": [
+        "REJECT",
+        "REJECT",
+        "REJECT"
+      ],
+      "B_decisions": [
+        "REJECT",
+        "HOLD",
+        "REJECT"
+      ],
+      "A_fp_mean": 1.0,
+      "B_fp_mean": 1.0
+    },
+    "bm-11": {
+      "expected": "HOLD",
+      "A_decisions": [
+        "REJECT",
+        "REJECT",
+        "REJECT"
+      ],
+      "B_decisions": [
+        "HOLD",
+        "REJECT",
+        "HOLD"
+      ],
+      "A_fp_mean": 2.67,
+      "B_fp_mean": 1.33
+    },
+    "bm-12": {
+      "expected": "HOLD",
+      "A_decisions": [
+        "REJECT",
+        "REJECT",
+        "REJECT"
+      ],
+      "B_decisions": [
+        "HOLD",
+        "REJECT",
+        "REJECT"
+      ],
+      "A_fp_mean": 1.0,
+      "B_fp_mean": 0.67
+    },
+    "bm-13": {
+      "expected": "HOLD",
+      "A_decisions": [
+        "REJECT",
+        "REJECT",
+        "REJECT"
+      ],
+      "B_decisions": [
+        "HOLD",
+        "HOLD",
+        "HOLD"
+      ],
+      "A_fp_mean": 3.33,
+      "B_fp_mean": 2.33
+    },
+    "bm-14": {
+      "expected": "HOLD",
+      "A_decisions": [
+        "REJECT",
+        "HOLD",
+        "REJECT"
+      ],
+      "B_decisions": [
+        "HOLD",
+        "HOLD",
+        "HOLD"
+      ],
+      "A_fp_mean": 1.0,
+      "B_fp_mean": 0.67
+    },
+    "bm-15": {
+      "expected": "HOLD",
+      "A_decisions": [
+        "REJECT",
+        "REJECT",
+        "REJECT"
+      ],
+      "B_decisions": [
+        "HOLD",
+        "HOLD",
+        "HOLD"
+      ],
+      "A_fp_mean": 0.0,
+      "B_fp_mean": 0.0
+    },
+    "bm-16": {
+      "expected": "HOLD",
+      "A_decisions": [
+        "REJECT",
+        "REJECT",
+        "REJECT"
+      ],
+      "B_decisions": [
+        "REJECT",
+        "HOLD",
+        "REJECT"
+      ],
+      "A_fp_mean": 2.33,
+      "B_fp_mean": 1.67
+    },
+    "bm-17": {
+      "expected": "HOLD",
+      "A_decisions": [
+        "HOLD",
+        "REJECT",
+        "HOLD"
+      ],
+      "B_decisions": [
+        "HOLD",
+        "HOLD",
+        "HOLD"
+      ],
+      "A_fp_mean": 1.0,
+      "B_fp_mean": 0.33
+    },
+    "bm-18": {
+      "expected": "APPROVE",
+      "A_decisions": [
+        "APPROVE",
+        "APPROVE",
+        "APPROVE"
+      ],
+      "B_decisions": [
+        "APPROVE",
+        "APPROVE",
+        "APPROVE"
+      ],
+      "A_fp_mean": 1.33,
+      "B_fp_mean": 0.0
+    },
+    "bm-19": {
+      "expected": "APPROVE",
+      "A_decisions": [
+        "HOLD",
+        "REJECT",
+        "REJECT"
+      ],
+      "B_decisions": [
+        "HOLD",
+        "HOLD",
+        "HOLD"
+      ],
+      "A_fp_mean": 0.67,
+      "B_fp_mean": 2.0
+    },
+    "bm-20": {
+      "expected": "HOLD",
+      "A_decisions": [
+        "REJECT",
+        "REJECT",
+        "REJECT"
+      ],
+      "B_decisions": [
+        "HOLD",
+        "HOLD",
+        "REJECT"
+      ],
+      "A_fp_mean": 3.33,
+      "B_fp_mean": 2.67
+    }
+  },
+  "per_case_stability": {
+    "bm-01": {
+      "A_stable": true,
+      "B_stable": true
+    },
+    "bm-02": {
+      "A_stable": true,
+      "B_stable": true
+    },
+    "bm-03": {
+      "A_stable": true,
+      "B_stable": false
+    },
+    "bm-04": {
+      "A_stable": true,
+      "B_stable": false
+    },
+    "bm-05": {
+      "A_stable": true,
+      "B_stable": false
+    },
+    "bm-06": {
+      "A_stable": false,
+      "B_stable": true
+    },
+    "bm-07": {
+      "A_stable": true,
+      "B_stable": true
+    },
+    "bm-08": {
+      "A_stable": true,
+      "B_stable": false
+    },
+    "bm-09": {
+      "A_stable": true,
+      "B_stable": false
+    },
+    "bm-10": {
+      "A_stable": true,
+      "B_stable": false
+    },
+    "bm-11": {
+      "A_stable": true,
+      "B_stable": false
+    },
+    "bm-12": {
+      "A_stable": true,
+      "B_stable": false
+    },
+    "bm-13": {
+      "A_stable": true,
+      "B_stable": true
+    },
+    "bm-14": {
+      "A_stable": false,
+      "B_stable": true
+    },
+    "bm-15": {
+      "A_stable": true,
+      "B_stable": true
+    },
+    "bm-16": {
+      "A_stable": true,
+      "B_stable": false
+    },
+    "bm-17": {
+      "A_stable": false,
+      "B_stable": true
+    },
+    "bm-18": {
+      "A_stable": true,
+      "B_stable": true
+    },
+    "bm-19": {
+      "A_stable": false,
+      "B_stable": true
+    },
+    "bm-20": {
+      "A_stable": true,
+      "B_stable": false
+    }
+  },
+  "bootstrap_B_minus_A": {
+    "precision": {
+      "B_minus_A_mean": 0.1023,
+      "ci95": [
+        0.019,
+        0.1986
+      ]
+    },
+    "recall": {
+      "B_minus_A_mean": 0.0152,
+      "ci95": [
+        -0.0417,
+        0.0833
+      ]
+    },
+    "f1": {
+      "B_minus_A_mean": 0.0845,
+      "ci95": [
+        0.0142,
+        0.1668
+      ]
+    },
+    "decision_accuracy": {
+      "B_minus_A_mean": 0.273,
+      "ci95": [
+        -0.45,
+        0.5667
+      ]
+    },
+    "clean_case_fp_delta": {
+      "B_minus_A_mean": -3.8,
+      "ci95": [
+        -28,
+        18
+      ]
+    },
+    "token_delta_pct": {
+      "mean": 246.9,
+      "ci95": [
+        198.3429,
+        295.0529
+      ]
+    }
+  },
+  "limits": "20 synthetic fixtures x3 reps controlled evaluation; directional evidence; NOT comparable by attribution to 2026-08-11; Controller/Gateway/GitHub MCP/real E2E NOT_VERIFIED; not production ready; do not enter competition materials before user review"
+}

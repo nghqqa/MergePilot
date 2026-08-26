@@ -1,0 +1,116 @@
+{
+  "run_id": "bm-02-B_mergepilot-formal-s007",
+  "case_id": "bm-02",
+  "group": "B_mergepilot",
+  "repetition": 1,
+  "schedule_index": 7,
+  "pair_order": "AB",
+  "product_source_commit": "5bb2635624585318aa005a0fc1d8c2b302c8a183",
+  "benchmark_harness_digest": "d64cbfe5096ec19f02ca4dcd8e06e1edc050b149b055e4526033228bd45e9f61",
+  "design_json_sha256": "33561b0c53a0be9126d3f2b0a0b327d6d01db9d1962772fb1a4aea7591dd3e28",
+  "source_manifest_sha256": "a4623a56e51a6f3b47dbb889fce56d8a1b237ed88660956878c2785890eb7598",
+  "dataset_manifest_sha256": "c55a334a6437aea771d7c79dc19fc48b250fa2c997c774cbae0fe6dcf69b7e22",
+  "untrusted_contract_sha256": "b29a5ed6df841ace889b742bcb845c9de9f0cc3e02b731bea8a28bb56f78d833",
+  "schedule_sha256": "2ba0a0efdae58783603044254a4ef9437d7d271039fb256737e0c7eca6a3d0a9",
+  "fixture_sha256": "c9280a9b39696f78c70fe56b731121009e1d637d18586584595a912fd7e412f2",
+  "product_evidence": {
+    "digest_sha256": "b1d37334b31f088f7abaf9751b62961f866e426e3e148526a5a0b3940be75841",
+    "sast_rules_version": "1.0.0",
+    "provenance": {
+      "sast_scan": {
+        "dir_sha256": "42cf9e6869ecc36398866338c1f844e6f629feb5e6bec60f2b24e3d09e2277f4",
+        "core_sha256": "89fda40acdd8126af73fb4a1ab57da880c3dbb0799363b23aa334ceb73f43b30"
+      },
+      "risk_classify": {
+        "dir_sha256": "56b9d14aa424c535c79b4568f17a1cbafceb8d0dfa76c9569596f6ed074a593e",
+        "core_sha256": "6ffdfa3919802b7cba4af1588e1645c5c20c35f260f4eeb1646c32a7f7f5bc50"
+      },
+      "source_commit": "5bb2635624585318aa005a0fc1d8c2b302c8a183"
+    }
+  },
+  "souls": {
+    "reviewer_sha256": "08d4d92fbb96550a5cc14bf8becd0e9ba49cbcdad0851d232014e117535b3eaf",
+    "fixer_sha256": "3ea56f8ed875fc461543bd4fc9fee1f1681e0cf033f8b6d2210afc62ec25ce88"
+  },
+  "model_identity": {
+    "provider": "deepseek",
+    "model": "deepseek-v4-flash",
+    "temperature": 0.1,
+    "token_budget": 4096,
+    "timeout_seconds": 120,
+    "key_env_var": "DEEPSEEK_API_KEY",
+    "model_version_comparable_to_20260811": "NOT_CONFIRMED"
+  },
+  "input_composition": {
+    "fixture_sha256": "c9280a9b39696f78c70fe56b731121009e1d637d18586584595a912fd7e412f2",
+    "evidence_digest_sha256": "b1d37334b31f088f7abaf9751b62961f866e426e3e148526a5a0b3940be75841",
+    "reviewer_soul_sha256": "08d4d92fbb96550a5cc14bf8becd0e9ba49cbcdad0851d232014e117535b3eaf",
+    "fixer_soul_sha256": "3ea56f8ed875fc461543bd4fc9fee1f1681e0cf033f8b6d2210afc62ec25ce88",
+    "untrusted_contract_sha256": "b29a5ed6df841ace889b742bcb845c9de9f0cc3e02b731bea8a28bb56f78d833"
+  },
+  "started_at_utc": "2026-08-26T13:50:35Z",
+  "finished_at_utc": "2026-08-26T13:50:43Z",
+  "duration_seconds": 8.42,
+  "token_usage": {
+    "total_tokens": 5208
+  },
+  "api_request_count": 2,
+  "status": "completed",
+  "parse_status": "ok",
+  "first_stable_error": null,
+  "findings": [
+    {
+      "description": "Hardcoded OpenAI-style API key detected in source code at line 3 (sk-7928...1c591c). This is a critical secret leak verified by sast-scan (SECRET_HARDCODED_ASSIGN, SECRET_OPENAI_SK). The credential is active in code and would be exposed in version control, logs, and any artifact sharing.",
+      "category": "secret",
+      "severity": "critical",
+      "file": "bm-02_hardcoded_secret.py",
+      "line": 3,
+      "risk_level": "L2",
+      "suggestion": "Remove the hardcoded key immediately, revoke/rotate the exposed credential, and load secrets from an environment variable or secret manager. Redact the full key in all outputs and history."
+    }
+  ],
+  "decision": "REJECT",
+  "fix_description": "Critical secret leak (L2) at line 3: hardcoded API key, now redacted as sk-7928...1c591c. This requires human approval; do NOT auto-apply. Recommended plan: (1) revoke/rotate the exposed credential immediately; (2) remove the hardcoded value from source; (3) load the secret at runtime from an environment variable or secret manager, e.g. os.environ['API_KEY']; (4) scrub the key from version history, logs, and artifacts; (5) avoid printing full key in any output. Until approved, do not execute or merge any secret-handling change. Patch would redefine API_KEY = os.environ.get('API_KEY') and add a startup guard if the environment variable is missing; actual code change requires approval and safe propagation via the controlled branch helper.",
+  "audit_events": [
+    {
+      "phase": "coupling",
+      "evidence_digest": "b1d37334b31f088f",
+      "reviewer_soul_sha256": "08d4d92fbb96550a5cc14bf8becd0e9ba49cbcdad0851d232014e117535b3eaf",
+      "fixer_soul_sha256": "3ea56f8ed875fc461543bd4fc9fee1f1681e0cf033f8b6d2210afc62ec25ce88",
+      "provenance": {
+        "sast_scan": {
+          "dir_sha256": "42cf9e6869ecc36398866338c1f844e6f629feb5e6bec60f2b24e3d09e2277f4",
+          "core_sha256": "89fda40acdd8126af73fb4a1ab57da880c3dbb0799363b23aa334ceb73f43b30"
+        },
+        "risk_classify": {
+          "dir_sha256": "56b9d14aa424c535c79b4568f17a1cbafceb8d0dfa76c9569596f6ed074a593e",
+          "core_sha256": "6ffdfa3919802b7cba4af1588e1645c5c20c35f260f4eeb1646c32a7f7f5bc50"
+        },
+        "source_commit": "5bb2635624585318aa005a0fc1d8c2b302c8a183"
+      }
+    },
+    {
+      "phase": "review",
+      "findings_count": 1,
+      "decision": "REJECT",
+      "risk_level": "L2"
+    },
+    {
+      "phase": "fix",
+      "status": "described",
+      "is_fixable": true
+    },
+    {
+      "phase": "decision",
+      "decision": "REJECT"
+    }
+  ],
+  "audit_complete": true,
+  "eval_passed": false,
+  "eval_reason": "decision=REJECT_expected=HOLD",
+  "eval_tp": 1,
+  "eval_fp": 0,
+  "eval_fn": 0,
+  "no_retry": true,
+  "no_auto_repair": true
+}

@@ -1,0 +1,122 @@
+{
+  "run_id": "bm-05-B_mergepilot-formal-s028",
+  "case_id": "bm-05",
+  "group": "B_mergepilot",
+  "repetition": 3,
+  "schedule_index": 28,
+  "pair_order": "BA",
+  "product_source_commit": "5bb2635624585318aa005a0fc1d8c2b302c8a183",
+  "benchmark_harness_digest": "d64cbfe5096ec19f02ca4dcd8e06e1edc050b149b055e4526033228bd45e9f61",
+  "design_json_sha256": "33561b0c53a0be9126d3f2b0a0b327d6d01db9d1962772fb1a4aea7591dd3e28",
+  "source_manifest_sha256": "a4623a56e51a6f3b47dbb889fce56d8a1b237ed88660956878c2785890eb7598",
+  "dataset_manifest_sha256": "c55a334a6437aea771d7c79dc19fc48b250fa2c997c774cbae0fe6dcf69b7e22",
+  "untrusted_contract_sha256": "b29a5ed6df841ace889b742bcb845c9de9f0cc3e02b731bea8a28bb56f78d833",
+  "schedule_sha256": "2ba0a0efdae58783603044254a4ef9437d7d271039fb256737e0c7eca6a3d0a9",
+  "fixture_sha256": "6e4a585b9eba90b7de5c7d088db58d875c9d5d2d3647ab57b327fd1490d37596",
+  "product_evidence": {
+    "digest_sha256": "ee2abbd86095cafefcce46fa6be13480ca45fbee8aa110416398d96d99b502e7",
+    "sast_rules_version": "1.0.0",
+    "provenance": {
+      "sast_scan": {
+        "dir_sha256": "42cf9e6869ecc36398866338c1f844e6f629feb5e6bec60f2b24e3d09e2277f4",
+        "core_sha256": "89fda40acdd8126af73fb4a1ab57da880c3dbb0799363b23aa334ceb73f43b30"
+      },
+      "risk_classify": {
+        "dir_sha256": "56b9d14aa424c535c79b4568f17a1cbafceb8d0dfa76c9569596f6ed074a593e",
+        "core_sha256": "6ffdfa3919802b7cba4af1588e1645c5c20c35f260f4eeb1646c32a7f7f5bc50"
+      },
+      "source_commit": "5bb2635624585318aa005a0fc1d8c2b302c8a183"
+    }
+  },
+  "souls": {
+    "reviewer_sha256": "08d4d92fbb96550a5cc14bf8becd0e9ba49cbcdad0851d232014e117535b3eaf",
+    "fixer_sha256": "3ea56f8ed875fc461543bd4fc9fee1f1681e0cf033f8b6d2210afc62ec25ce88"
+  },
+  "model_identity": {
+    "provider": "deepseek",
+    "model": "deepseek-v4-flash",
+    "temperature": 0.1,
+    "token_budget": 4096,
+    "timeout_seconds": 120,
+    "key_env_var": "DEEPSEEK_API_KEY",
+    "model_version_comparable_to_20260811": "NOT_CONFIRMED"
+  },
+  "input_composition": {
+    "fixture_sha256": "6e4a585b9eba90b7de5c7d088db58d875c9d5d2d3647ab57b327fd1490d37596",
+    "evidence_digest_sha256": "ee2abbd86095cafefcce46fa6be13480ca45fbee8aa110416398d96d99b502e7",
+    "reviewer_soul_sha256": "08d4d92fbb96550a5cc14bf8becd0e9ba49cbcdad0851d232014e117535b3eaf",
+    "fixer_soul_sha256": "3ea56f8ed875fc461543bd4fc9fee1f1681e0cf033f8b6d2210afc62ec25ce88",
+    "untrusted_contract_sha256": "b29a5ed6df841ace889b742bcb845c9de9f0cc3e02b731bea8a28bb56f78d833"
+  },
+  "started_at_utc": "2026-08-26T13:54:02Z",
+  "finished_at_utc": "2026-08-26T13:54:15Z",
+  "duration_seconds": 13.59,
+  "token_usage": {
+    "total_tokens": 5967
+  },
+  "api_request_count": 2,
+  "status": "completed",
+  "parse_status": "ok",
+  "first_stable_error": null,
+  "findings": [
+    {
+      "description": "Unsafe use of yaml.load on attacker-controlled request body (line 20) allows arbitrary code execution via crafted YAML (e.g., Python object deserialization). This is a critical security vulnerability.",
+      "category": "injection",
+      "severity": "critical"
+    },
+    {
+      "description": "Proxy endpoint (line 25) passes unvalidated 'url' query parameter directly to requests.get(), enabling SSRF (Server-Side Request Forgery) to internal services or metadata endpoints.",
+      "category": "other",
+      "severity": "high"
+    },
+    {
+      "description": "Dependency versions are outdated and have known vulnerabilities: Flask 0.12.2 (CVE-2019-1010083 DoS), requests 2.19.0 (CVE-2018-18074 credential leak on redirect), PyYAML 3.13 (CVE-2017-18342 RCE via yaml.load), Jinja2 2.10 (CVE-2019-10906 sandbox escape). These should be upgraded.",
+      "category": "dependency",
+      "severity": "high"
+    }
+  ],
+  "decision": "REJECT",
+  "fix_description": "Replace unsafe yaml.load with yaml.safe_load to prevent arbitrary code execution; validate the proxy URL by enforcing an allowlist and rejecting private/internal IP ranges to mitigate SSRF; upgrade vulnerable dependencies (Flask, requests, PyYAML, Jinja2) to patched versions with regression testing, marking the dependency upgrade for approval where required.",
+  "audit_events": [
+    {
+      "phase": "coupling",
+      "evidence_digest": "ee2abbd86095cafe",
+      "reviewer_soul_sha256": "08d4d92fbb96550a5cc14bf8becd0e9ba49cbcdad0851d232014e117535b3eaf",
+      "fixer_soul_sha256": "3ea56f8ed875fc461543bd4fc9fee1f1681e0cf033f8b6d2210afc62ec25ce88",
+      "provenance": {
+        "sast_scan": {
+          "dir_sha256": "42cf9e6869ecc36398866338c1f844e6f629feb5e6bec60f2b24e3d09e2277f4",
+          "core_sha256": "89fda40acdd8126af73fb4a1ab57da880c3dbb0799363b23aa334ceb73f43b30"
+        },
+        "risk_classify": {
+          "dir_sha256": "56b9d14aa424c535c79b4568f17a1cbafceb8d0dfa76c9569596f6ed074a593e",
+          "core_sha256": "6ffdfa3919802b7cba4af1588e1645c5c20c35f260f4eeb1646c32a7f7f5bc50"
+        },
+        "source_commit": "5bb2635624585318aa005a0fc1d8c2b302c8a183"
+      }
+    },
+    {
+      "phase": "review",
+      "findings_count": 3,
+      "decision": "REJECT",
+      "risk_level": "L2"
+    },
+    {
+      "phase": "fix",
+      "status": "described",
+      "is_fixable": true
+    },
+    {
+      "phase": "decision",
+      "decision": "REJECT"
+    }
+  ],
+  "audit_complete": true,
+  "eval_passed": false,
+  "eval_reason": "decision=REJECT_expected=HOLD",
+  "eval_tp": 1,
+  "eval_fp": 2,
+  "eval_fn": 3,
+  "no_retry": true,
+  "no_auto_repair": true
+}

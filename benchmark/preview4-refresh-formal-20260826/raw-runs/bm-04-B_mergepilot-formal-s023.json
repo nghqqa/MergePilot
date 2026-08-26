@@ -1,0 +1,122 @@
+{
+  "run_id": "bm-04-B_mergepilot-formal-s023",
+  "case_id": "bm-04",
+  "group": "B_mergepilot",
+  "repetition": 3,
+  "schedule_index": 23,
+  "pair_order": "AB",
+  "product_source_commit": "5bb2635624585318aa005a0fc1d8c2b302c8a183",
+  "benchmark_harness_digest": "d64cbfe5096ec19f02ca4dcd8e06e1edc050b149b055e4526033228bd45e9f61",
+  "design_json_sha256": "33561b0c53a0be9126d3f2b0a0b327d6d01db9d1962772fb1a4aea7591dd3e28",
+  "source_manifest_sha256": "a4623a56e51a6f3b47dbb889fce56d8a1b237ed88660956878c2785890eb7598",
+  "dataset_manifest_sha256": "c55a334a6437aea771d7c79dc19fc48b250fa2c997c774cbae0fe6dcf69b7e22",
+  "untrusted_contract_sha256": "b29a5ed6df841ace889b742bcb845c9de9f0cc3e02b731bea8a28bb56f78d833",
+  "schedule_sha256": "2ba0a0efdae58783603044254a4ef9437d7d271039fb256737e0c7eca6a3d0a9",
+  "fixture_sha256": "724e9c0ccab03efaec3e230dc3d6a6412a92141cc8a134719649b3f1e67673b1",
+  "product_evidence": {
+    "digest_sha256": "b9f983b0b67a5adea42eaa5efd55f644d9dde4bfefc93d12bfd63a86f9f2a895",
+    "sast_rules_version": "1.0.0",
+    "provenance": {
+      "sast_scan": {
+        "dir_sha256": "42cf9e6869ecc36398866338c1f844e6f629feb5e6bec60f2b24e3d09e2277f4",
+        "core_sha256": "89fda40acdd8126af73fb4a1ab57da880c3dbb0799363b23aa334ceb73f43b30"
+      },
+      "risk_classify": {
+        "dir_sha256": "56b9d14aa424c535c79b4568f17a1cbafceb8d0dfa76c9569596f6ed074a593e",
+        "core_sha256": "6ffdfa3919802b7cba4af1588e1645c5c20c35f260f4eeb1646c32a7f7f5bc50"
+      },
+      "source_commit": "5bb2635624585318aa005a0fc1d8c2b302c8a183"
+    }
+  },
+  "souls": {
+    "reviewer_sha256": "08d4d92fbb96550a5cc14bf8becd0e9ba49cbcdad0851d232014e117535b3eaf",
+    "fixer_sha256": "3ea56f8ed875fc461543bd4fc9fee1f1681e0cf033f8b6d2210afc62ec25ce88"
+  },
+  "model_identity": {
+    "provider": "deepseek",
+    "model": "deepseek-v4-flash",
+    "temperature": 0.1,
+    "token_budget": 4096,
+    "timeout_seconds": 120,
+    "key_env_var": "DEEPSEEK_API_KEY",
+    "model_version_comparable_to_20260811": "NOT_CONFIRMED"
+  },
+  "input_composition": {
+    "fixture_sha256": "724e9c0ccab03efaec3e230dc3d6a6412a92141cc8a134719649b3f1e67673b1",
+    "evidence_digest_sha256": "b9f983b0b67a5adea42eaa5efd55f644d9dde4bfefc93d12bfd63a86f9f2a895",
+    "reviewer_soul_sha256": "08d4d92fbb96550a5cc14bf8becd0e9ba49cbcdad0851d232014e117535b3eaf",
+    "fixer_soul_sha256": "3ea56f8ed875fc461543bd4fc9fee1f1681e0cf033f8b6d2210afc62ec25ce88",
+    "untrusted_contract_sha256": "b29a5ed6df841ace889b742bcb845c9de9f0cc3e02b731bea8a28bb56f78d833"
+  },
+  "started_at_utc": "2026-08-26T13:52:52Z",
+  "finished_at_utc": "2026-08-26T13:53:05Z",
+  "duration_seconds": 12.07,
+  "token_usage": {
+    "total_tokens": 5560
+  },
+  "api_request_count": 2,
+  "status": "completed",
+  "parse_status": "ok",
+  "first_stable_error": null,
+  "findings": [
+    {
+      "description": "os.system uses an f-string to build a shell command from the `directory` parameter; if an attacker can control this value, it enables arbitrary command injection and dangerous recursive deletion. The immutable `rm -rf` compound command further increases data-loss risk.",
+      "category": "command-injection",
+      "severity": "critical"
+    },
+    {
+      "description": "subprocess.call is invoked with shell=True and an f-string containing `path` and `host`; this is a direct command-injection path that can execute arbitrary shell commands. Static evidence marks this as AST_DANGEROUS_SUBPROCESS_SHELL high at line 8.",
+      "category": "command-injection",
+      "severity": "critical"
+    },
+    {
+      "description": "os.popen directly executes arbitrary user input as a shell command; this is arbitrary command execution and should never be used with untrusted input.",
+      "category": "command-injection",
+      "severity": "critical"
+    }
+  ],
+  "decision": "REJECT",
+  "fix_description": "Replace all three dangerous shell-execution paths with safe, non-shell APIs and input validation. (1) cleanup_old_files: do not use os.system with an f-string; instead build an absolute path with pathlib and delete only the intended directory contents using e.g. Path(directory).glob('*') with unlink/unlink_dir, or use shutil.rmtree only after validating that directory is an expected absolute/relative path and rejecting empty or root values. (2) run_backup: replace subprocess.call(..., shell=True) with subprocess.run([...], shell=False) using a fixed argument list, e.g. ['scp', '-r', path_arg, f'user@{host}:/backup'], and validate/escape host/path as parameters rather than interpolating into a shell string. (3) execute_command: replace os.popen(user_input) with a whitelist/allowlist of permitted commands and parse input as structured arguments; if arbitrary shell execution is truly required, reject untrusted input and execute via subprocess.run(list_args, shell=False) with no_such_shell. All changes preserve intended functionality while eliminating command injection and recursive-deletion risk. These are auto-fixable for a review patch, but deployment to critical environments should still be human-reviewed due to the invasive behavior change.",
+  "audit_events": [
+    {
+      "phase": "coupling",
+      "evidence_digest": "b9f983b0b67a5ade",
+      "reviewer_soul_sha256": "08d4d92fbb96550a5cc14bf8becd0e9ba49cbcdad0851d232014e117535b3eaf",
+      "fixer_soul_sha256": "3ea56f8ed875fc461543bd4fc9fee1f1681e0cf033f8b6d2210afc62ec25ce88",
+      "provenance": {
+        "sast_scan": {
+          "dir_sha256": "42cf9e6869ecc36398866338c1f844e6f629feb5e6bec60f2b24e3d09e2277f4",
+          "core_sha256": "89fda40acdd8126af73fb4a1ab57da880c3dbb0799363b23aa334ceb73f43b30"
+        },
+        "risk_classify": {
+          "dir_sha256": "56b9d14aa424c535c79b4568f17a1cbafceb8d0dfa76c9569596f6ed074a593e",
+          "core_sha256": "6ffdfa3919802b7cba4af1588e1645c5c20c35f260f4eeb1646c32a7f7f5bc50"
+        },
+        "source_commit": "5bb2635624585318aa005a0fc1d8c2b302c8a183"
+      }
+    },
+    {
+      "phase": "review",
+      "findings_count": 3,
+      "decision": "REJECT",
+      "risk_level": "L2"
+    },
+    {
+      "phase": "fix",
+      "status": "described",
+      "is_fixable": true
+    },
+    {
+      "phase": "decision",
+      "decision": "REJECT"
+    }
+  ],
+  "audit_complete": true,
+  "eval_passed": false,
+  "eval_reason": "decision=REJECT_expected=HOLD",
+  "eval_tp": 3,
+  "eval_fp": 0,
+  "eval_fn": 0,
+  "no_retry": true,
+  "no_auto_repair": true
+}

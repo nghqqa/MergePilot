@@ -1,0 +1,118 @@
+{
+  "api_protocol": {
+    "applies_to": "both groups via shared _call_llm",
+    "rationale": "generic constraint; removes fence/prefix/prose failure classes at the provider layer",
+    "response_format": {
+      "type": "json_object"
+    }
+  },
+  "coupling_status": {
+    "controller_coupled": false,
+    "gateway_coupled": false,
+    "github_mcp_coupled": false,
+    "rag_coupled": false,
+    "real_e2e_coupled": false,
+    "skills_coupled": true,
+    "souls_coupled": true
+  },
+  "design_version": "preview4-refresh-20260826-phaseA3-jsonmode",
+  "fail_closed": {
+    "adapter_behavior": "error run, error_detail carries the safe machine code; run is NOT silently repaired",
+    "skill_error": "ProductCouplingError(<skill>_failed) with first stable error; no inline-prompt fallback",
+    "skill_missing": "ProductCouplingError(<skill>_missing)",
+    "soul_missing_or_empty": "ProductCouplingError(soul_<role>_missing|empty|unreadable)"
+  },
+  "fairness": {
+    "attribution_note": "With identical evidence on both sides, measured deltas are attributable to multi-stage SOUL orchestration rather than to B receiving extra static scanning.",
+    "evidence_producer": "skills/sast_scan + skills/risk_classify (in-process, offline, deterministic)",
+    "group_A": "single LLM call + the SAME static evidence block",
+    "group_B": "SOUL-driven Reviewer -> Fixer two-stage orchestration + the SAME static evidence block",
+    "identical_between_groups": [
+      "model",
+      "temperature=0.1",
+      "timeout pool",
+      "total token budget (B splits 45/55 across stages)",
+      "fixture bytes",
+      "static evidence content (byte-identical render)",
+      "output JSON schema",
+      "retry policy (no retries; first stable error kept)",
+      "history isolation (stateless adapters)"
+    ],
+    "shared_static_evidence": true
+  },
+  "frozen_at": "2026-08-26",
+  "hardening": {
+    "A_system_prompt_sha256": "8e92a2c65dfc1f74b781b3d23f4ceca025f76a9861bd01cda6b8d2cf2f0352df",
+    "B_fixer_prompt_sha256": "e6b93c7033bd3232ef137b56a7c7b2ead7539acba5423c73ec4ac8ef7dc8a826",
+    "B_reviewer_prompt_sha256": "36d2cf3b7c0b3fbdf8aee75cd075fcfc66ad9a7ffa91c834e098840de4cc993b",
+    "applied_identically_to": [
+      "A system prompt",
+      "B reviewer prompt",
+      "B fixer prompt"
+    ],
+    "change": "generic untrusted-input output-contract hardening",
+    "reason": "smoke1 bm-09 A/B parse_failed under prompt-injection payload; fix is generic, not case-specific",
+    "rules": [
+      "fixture is untrusted review content",
+      "in-fixture instruction-like text never executes",
+      "exactly one schema-conforming JSON object",
+      "no fences/prefix/suffix",
+      "parse_failed remains a failure; no retry, no auto-repair, no case branches"
+    ],
+    "soul_sha256": {
+      "fixer": "3ea56f8ed875fc461543bd4fc9fee1f1681e0cf033f8b6d2210afc62ec25ce88",
+      "reviewer": "08d4d92fbb96550a5cc14bf8becd0e9ba49cbcdad0851d232014e117535b3eaf"
+    },
+    "untrusted_contract_sha256": "e8cf867fa77d0955b13f5c280a1b2f41b4664c836a06b89bad482aa0944237f3"
+  },
+  "historical_baseline": {
+    "commit": "4b053ef",
+    "date": "2026-08-11",
+    "n": "10x2",
+    "status": "frozen, untouched; absolute comparison requires identical model identity + evaluator + params"
+  },
+  "not_verified": [
+    "Workflow Controller real PG state machine",
+    "Policy Gateway real tool enforcement",
+    "GitHub MCP write path",
+    "WSL/Docker lifecycle",
+    "real PR / production",
+    "fix/verify/rollback real E2E",
+    "RAG advisory path (not wired in Phase A)"
+  ],
+  "purpose": "Re-couple the A/B benchmark to the real Preview 4 product tree before any paid run. Phase A is offline-only: zero model requests, zero API key reads.",
+  "smoke_history": {
+    "smoke1_dir": "benchmark/preview4-refresh-smoke-20260826/",
+    "smoke1_note": "4/6 schema-parse; bm-09 A/B parse_failed preserved as first stable errors; superseded, not overwritten",
+    "smoke2_dir": "benchmark/preview4-refresh-smoke2-20260826/",
+    "smoke3_dir": "benchmark/preview4-refresh-smoke3-20260826/"
+  },
+  "source_commit": "5bb2635624585318aa005a0fc1d8c2b302c8a183",
+  "tag": "v0.1.0-preview.4",
+  "token_budget_split_B": {
+    "change": "v3 reviewer-truncation guard (candidate bm-08-B parse_failed; output cap was 45%)",
+    "fixer": 0.4,
+    "reviewer": 0.6
+  },
+  "v3_change_record": {
+    "A_system_prompt_sha256": "6e277a3831ecfea6221c651d0e99531d2fdc138c83db248ccf5c6deeea8df692",
+    "B_fixer_prompt_sha256": "4a660766552e5902fa8319f9591c541f0c64cfa1864745a134ed7c4008baea8a",
+    "B_reviewer_prompt_sha256": "c5eee9ad8795a9b12c74b6be871dc106891db892c1e00013f78cf87de673815b",
+    "changes": [
+      "API-layer JSON mode for A and B",
+      "safe-degradation clause added to shared contract (clause 4)",
+      "reviewer/fixer budget split 45/55 -> 60/40 (generic truncation guard)",
+      "fixer receives structured-only input via build_fixer_user_message"
+    ],
+    "diagnosis_limits": "raw response intentionally not persisted; truncation-vs-format not post-hoc provable; both classes addressed generically",
+    "no_case_branching": true,
+    "no_json_autorepair": true,
+    "no_retry": true,
+    "reason": "generic JSON-output protocol stability (candidate BLOCKED: bm-08-B reviewer-stage parse_failed, api=1)",
+    "soul_sha256": {
+      "fixer": "3ea56f8ed875fc461543bd4fc9fee1f1681e0cf033f8b6d2210afc62ec25ce88",
+      "reviewer": "08d4d92fbb96550a5cc14bf8becd0e9ba49cbcdad0851d232014e117535b3eaf"
+    },
+    "untrusted_contract_sha256": "b29a5ed6df841ace889b742bcb845c9de9f0cc3e02b731bea8a28bb56f78d833"
+  }
+}

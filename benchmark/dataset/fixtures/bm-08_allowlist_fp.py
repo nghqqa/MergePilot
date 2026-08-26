@@ -14,5 +14,4 @@ def get_version_string():
     # The line below is a display format, not a real token:
     return f"Version: commit-hash (format: ghp_XXXXXXXXXXXX)"
 
-# Note: sast-scan allowlist should match these and NOT report them as findings.
 # If the scanner reports these, it's a false positive that hurts precision.
