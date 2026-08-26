@@ -58,6 +58,7 @@ SENSITIVE_KEY_PATTERNS = (
 
 SENSITIVE_VALUE_PATTERNS = (
     "ghp_", "ghs_", "gho_", "sk-", "AKIA", "xox",
+    "LTAI", "AKID", "sk-ant", "Bearer ",
     "BEGIN RSA PRIVATE", "BEGIN OPENSSH PRIVATE",
 )
 
@@ -70,7 +71,13 @@ def _is_sensitive_key(key: str) -> bool:
 def _is_sensitive_value(value: Any) -> bool:
     if not isinstance(value, str):
         return False
-    return any(p in value for p in SENSITIVE_VALUE_PATTERNS)
+    v = value.lower()
+    if any((p.lower() in v) or (p in value) for p in SENSITIVE_VALUE_PATTERNS):
+        return True
+    # Database DSN shape: scheme://user:password@host/... (any driver)
+    if re.search(r"[a-z][a-z0-9+.\-]*://[^\s/:@]+:[^\s/@]+@", v):
+        return True
+    return False
 
 
 def redact_attributes(attrs: dict) -> dict:
@@ -93,12 +100,13 @@ def redact_attributes(attrs: dict) -> dict:
 
 class SpanRecord:
     """A single recorded span (OTel-compatible shape)."""
+
     __slots__ = ("trace_id", "span_id", "parent_span_id", "name",
                  "status", "start_time", "end_time", "attributes",
-                 "events", "run_id")
+                 "events", "run_id", "links", "drop_reason")
 
     def __init__(self, trace_id, span_id, parent_span_id, name,
-                 run_id, attributes=None):
+                 run_id, attributes=None, links=None):
         self.trace_id = trace_id
         self.span_id = span_id
         self.parent_span_id = parent_span_id
@@ -106,21 +114,40 @@ class SpanRecord:
         self.status = "OK"
         self.start_time = time.time()
         self.end_time = None
-        self.attributes = redact_attributes(attributes or {})
-        self.events = []
         self.run_id = run_id
+        # PoC: async handoff links [{trace_id, span_id}]; drop_reason marks
+        # spans whose redaction itself failed (never exported anywhere).
+        self.links = list(links or [])
+        self.drop_reason = None
+        self.events = []
+        try:
+            self.attributes = redact_attributes(attributes or {})
+        except Exception:
+            self.attributes = {}
+            self.drop_reason = "redaction_failed"
 
     def set_attribute(self, key, value):
-        if _is_sensitive_key(key) or _is_sensitive_value(value):
-            self.attributes[key] = "<redacted>"
-        else:
-            self.attributes[key] = value
+        if self.drop_reason:
+            return
+        try:
+            sensitive = _is_sensitive_key(key) or _is_sensitive_value(value)
+        except Exception:
+            self.drop_reason = "redaction_failed"
+            return
+        self.attributes[key] = "<redacted>" if sensitive else value
 
     def add_event(self, name, attributes=None):
+        if self.drop_reason:
+            return
+        try:
+            safe = redact_attributes(attributes or {})
+        except Exception:
+            self.drop_reason = "redaction_failed"
+            return
         self.events.append({
             "name": name,
             "timestamp": time.time(),
-            "attributes": redact_attributes(attributes or {}),
+            "attributes": safe,
         })
 
     def set_status(self, status):
@@ -138,7 +165,7 @@ class SpanRecord:
         return None
 
     def to_dict(self):
-        return {
+        d = {
             "trace_id": self.trace_id,
             "span_id": self.span_id,
             "parent_span_id": self.parent_span_id,
@@ -151,6 +178,34 @@ class SpanRecord:
             "attributes": dict(self.attributes),
             "events": list(self.events),
         }
+        if self.links:
+            d["links"] = [dict(l) for l in self.links]
+        if self.drop_reason:
+            d["drop_reason"] = self.drop_reason
+        return d
+
+
+# ---------------------------------------------------------------------------
+# Export statistics (PoC): local telemetry export failure accounting.
+# Telemetry is fail-open w.r.t. business but never silent about failure.
+# ---------------------------------------------------------------------------
+
+_EXPORT_STATS = {
+    "sent": 0,
+    "failed_export": 0,
+    "dropped_export": 0,       # collector-level export errors
+    "dropped_redaction": 0,    # spans discarded because redaction itself failed
+}
+
+
+def bump_export_stat(key: str, n: int = 1):
+    if key in _EXPORT_STATS:
+        _EXPORT_STATS[key] += n
+
+
+def get_export_stats() -> dict:
+    """Snapshot of local telemetry counters. Governance-safe: read-only."""
+    return dict(_EXPORT_STATS)
 
 
 class DualSLSCollector:
@@ -240,6 +295,7 @@ def get_collector() -> Optional[InMemoryCollector]:
 
 import hashlib
 import random
+import re
 
 
 def _gen_span_id() -> str:
@@ -282,19 +338,20 @@ def _set_current_context(ctx: Optional[SpanContext]):
 
 @contextlib.contextmanager
 def start_span(name: str, run_id: str = "", trace_id: str = "",
-               agent_role: str = "", **attributes):
+               agent_role: str = "", parent_span_id: str = None,
+               links=None, **attributes):
     """Start a new span as a child of the current context (or root).
 
-    Usage:
-        with start_span("controller.process_event",
-                        run_id="run-1", trace_id="trace-1",
-                        agent_role="coordinator") as span:
-            span.set_attribute("mp.stage", "review")
-            ...
+    PoC additions:
+      - ``parent_span_id``: reattach a hop-root span to a producer span id
+        carried over an async/HTTP boundary when no thread-local parent
+        exists (cross-process rejoin on the same trace).
+      - ``links``: list of {"trace_id","span_id"} dicts expressing async
+        handoff (Span Link semantics); never fakes parenting.
 
-    The span is automatically ended on context exit. If an exception
-    occurs, the span status is set to ERROR and the exception is recorded
-    as an event (then re-raised).
+    The span is automatically ended on context exit. If redaction itself
+    fails, the span is marked ``drop_reason`` and is NOT exported anywhere,
+    but the failure is counted locally.
     """
     parent = get_current_context()
 
@@ -310,12 +367,14 @@ def start_span(name: str, run_id: str = "", trace_id: str = "",
         # No parent, no trace_id — generate both
         ctx = SpanContext(_gen_trace_id(), _gen_span_id(), run_id)
 
+    effective_parent = parent.span_id if parent is not None else parent_span_id
     span = SpanRecord(
         trace_id=ctx.trace_id,
         span_id=ctx.span_id,
-        parent_span_id=parent.span_id if parent else None,
+        parent_span_id=effective_parent,
         name=name,
         run_id=ctx.run_id,
+        links=links,
     )
 
     # Set required attributes
@@ -345,7 +404,9 @@ def start_span(name: str, run_id: str = "", trace_id: str = "",
         raise
     finally:
         span.end()
-        if _global_collector is not None:
+        if getattr(span, "drop_reason", None) == "redaction_failed":
+            bump_export_stat("dropped_redaction")
+        elif _global_collector is not None:
             try:
                 _global_collector.add_span(span)
             except Exception:
@@ -500,8 +561,163 @@ def extract_context(headers: dict, run_id: str = "") -> Optional[SpanContext]:
 
 
 # ---------------------------------------------------------------------------
-# OTLP HTTP exporter (sends spans to a local otelcol / compatible receiver)
+# Matrix / task-text trace carrier (PoC)
 # ---------------------------------------------------------------------------
+#
+# Async handoff across Matrix rooms cannot use HTTP headers, so the W3C
+# traceparent rides inside the task message body as a single trailing line.
+# Strictly validated on parse; anything malformed yields None (fail-closed):
+# we never resume a broken context. The trailer contains only hex IDs and a
+# run_id — no prompt/code/credential content ever travels in it.
+
+_CARRIER_LINE = re.compile(
+    r"\[MPTRACE\] v=1 tp=([0-9a-f]{2})-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-f]{2})"
+    r" run=([A-Za-z0-9._\-]+)")
+
+
+def append_task_carrier(task_text: str, ctx: SpanContext = None) -> str:
+    """Append (or refresh) the trailing MPTRACE line for outgoing dispatches.
+
+    Idempotent: any existing trailer line is stripped first. With no current
+    context the text is returned unchanged.
+    """
+    ctx = ctx or get_current_context()
+    if ctx is None:
+        return task_text
+    base = task_text.rstrip()
+    base = base.split("\n[MPTRACE] ")[0].rstrip()
+    flags = "01"
+    return (base + "\n[MPTRACE] v=1 tp=00-%s-%s-%s run=%s\n"
+            % (ctx.trace_id, ctx.span_id, flags, ctx.run_id))
+
+
+def parse_task_carrier(task_text: str) -> Optional[SpanContext]:
+    """Extract SpanContext from the last valid MPTRACE line, else None."""
+    if not task_text or not isinstance(task_text, str):
+        return None
+    match = None
+    for line in task_text.splitlines():
+        m = _CARRIER_LINE.search(line.strip())
+        if m:
+            match = m
+    if match is None:
+        return None
+    trace_id, span_id = match.group(2), match.group(3)
+    return SpanContext(trace_id=trace_id, span_id=span_id,
+                       run_id=match.group(5))
+
+
+def make_link(ctx: SpanContext) -> dict:
+    """Build one link record referencing a producer's SpanContext."""
+    return {"trace_id": ctx.trace_id, "span_id": ctx.span_id}
+
+
+# ---------------------------------------------------------------------------
+# GenAI semantic builders (PoC, frozen attribute allowlist)
+# ---------------------------------------------------------------------------
+
+GENAI_ATTR_ALLOWLIST = {
+    # input key -> exported span attribute key
+    "run_id": "mp.run_id",
+    "task_id": "mp.task_id",
+    "agent_role": "mp.agent_role",
+    "stage": "mp.stage",
+    "attempt": "mp.attempt",
+    "tool_name": "mp.tool_name",
+    "tool_status": "mp.tool_status",
+    "policy_decision": "mp.policy_decision",
+    "finding_count": "mp.finding_count",
+    "final_decision": "mp.final_decision",
+    "verification_status": "mp.verification_status",
+    "human_intervention": "mp.human_intervention",
+    "model_provider": "gen_ai.system",
+    "model_name": "gen_ai.request.model",
+    "token_usage": "gen_ai.usage",
+    "duration_ms": "mp.duration_ms",
+}
+
+GENAI_PROMPT_CAPTURE_DEFAULT_OFF = True  # content capture forbidden this round
+
+
+def build_genai_attrs(**kw) -> dict:
+    """Filter+map caller attributes down to the frozen allowlist."""
+    out = {}
+    for k, v in kw.items():
+        mapped = GENAI_ATTR_ALLOWLIST.get(k)
+        if mapped is not None and v is not None:
+            out[mapped] = v
+    return out
+
+
+@contextlib.contextmanager
+def entry_span(name: str, run_id: str, attrs: dict = None):
+    """Root 'Entry' span for one MergePilot business run (e.g. pr_review)."""
+    clean = build_genai_attrs(**(attrs or {}))
+    with start_span(name, run_id=run_id, agent_role="manager", **clean) as sp:
+        yield sp
+
+
+class AgentWindowSpan:
+    """Manually-opened Agent/Stage window span (dispatch → completion).
+
+    Spans a controller observation window across events, so it cannot use a
+    with-block. Holds the thread-local context while open so same-process
+    children still attach correctly; restores the previous context on close.
+    """
+
+    def __init__(self, name: str, run_id: str, trace_id: str,
+                 agent_role: str = "", stage: str = "", attempt: int = 0,
+                 attrs: dict = None):
+        self._prev = get_current_context()
+        clean_attrs = build_genai_attrs(**(attrs or {}))
+        self.span = SpanRecord(
+            trace_id=trace_id or (self._prev.trace_id if self._prev else _gen_trace_id()),
+            span_id=_gen_span_id(),
+            parent_span_id=self._prev.span_id if self._prev else None,
+            name=name,
+            run_id=run_id,
+        )
+        if run_id:
+            self.span.set_attribute("mp.run_id", run_id)
+        if agent_role:
+            self.span.set_attribute("mp.agent_role", agent_role)
+        if stage:
+            self.span.set_attribute("mp.stage", stage)
+        self.span.set_attribute("mp.attempt", attempt)
+        for k, v in clean_attrs.items():
+            self.span.set_attribute(k, v)
+        self.ctx = SpanContext(self.span.trace_id, self.span.span_id, run_id)
+        _set_current_context(self.ctx)
+
+    def finish(self, final_decision: str = "", verification_status: str = "",
+               human_intervention: bool = False) -> None:
+        for k, v in (("final_decision", final_decision),
+                     ("verification_status", verification_status),
+                     ("human_intervention", human_intervention)):
+            mapped = GENAI_ATTR_ALLOWLIST.get(k)
+            if mapped is not None:
+                self.span.set_attribute(mapped, v)
+        self._close("OK")
+
+    def fail(self) -> None:
+        self._close("ERROR")
+
+    def _close(self, status: str) -> None:
+        try:
+            self.span.set_status(status)
+        finally:
+            self.span.end()
+            if getattr(self.span, "drop_reason", None) == "redaction_failed":
+                bump_export_stat("dropped_redaction")
+            elif _global_collector is not None:
+                try:
+                    _global_collector.add_span(self.span)
+                except Exception:
+                    pass
+            _set_current_context(self._prev)
+
+
+
 
 
 class OTLPExporter:
@@ -518,16 +734,20 @@ class OTLPExporter:
         self.timeout = timeout
         self._failed = 0
         self._sent = 0
+        # Telemetry must never be hijacked by ambient system proxies and must
+        # not pay opener-construction cost per span.
+        import urllib.request as _rq
+        self._opener = _rq.build_opener(_rq.ProxyHandler({}))
 
     def export(self, span: SpanRecord):
         """Export a single span. Non-blocking on failure."""
-        import urllib.request
         import urllib.error
+        service_name = os.environ.get("MP_SERVICE_NAME", "mergepilot")
         payload = json.dumps({
             "resourceSpans": [{
                 "resource": {"attributes": [{
                     "key": "service.name",
-                    "value": {"stringValue": "mergepilot"}
+                    "value": {"stringValue": service_name}
                 }]},
                 "scopeSpans": [{
                     "spans": [self._span_to_otlp(span)]
@@ -535,18 +755,20 @@ class OTLPExporter:
             }]
         }).encode("utf-8")
         try:
-            req = urllib.request.Request(
-                self.endpoint, data=payload,
-                headers={"Content-Type": "application/json"},
-                method="POST")
-            urllib.request.urlopen(req, timeout=self.timeout)
+            from urllib.request import Request
+            req = Request(self.endpoint, data=payload,
+                          headers={"Content-Type": "application/json"},
+                          method="POST")
+            self._opener.open(req, timeout=self.timeout)
             self._sent += 1
+            bump_export_stat("sent")
         except Exception:
             self._failed += 1
+            bump_export_stat("failed_export")
 
     def _span_to_otlp(self, span: SpanRecord):
         """Convert SpanRecord to OTLP JSON span format."""
-        return {
+        otlp = {
             "traceId": span.trace_id,
             "spanId": span.span_id,
             "parentSpanId": span.parent_span_id or "",
@@ -562,6 +784,12 @@ class OTLPExporter:
                 for k, v in span.attributes.items()
             ],
         }
+        if getattr(span, "links", None):
+            otlp["links"] = [
+                {"traceId": l.get("trace_id", ""), "spanId": l.get("span_id", "")}
+                for l in span.links
+            ]
+        return otlp
 
 
 class DualCollector:
@@ -575,8 +803,14 @@ class DualCollector:
 
     def add_span(self, span: SpanRecord):
         self.memory.add_span(span)
-        if self.exporter is not None:
-            try:
-                self.exporter.export(span)
-            except Exception:
-                pass  # fail-closed
+        drop = getattr(span, "drop_reason", None)
+        if drop == "redaction_failed":
+            # Redaction itself failed → span must not reach any external sink.
+            bump_export_stat("dropped_redaction")
+            return
+        if self.exporter is None:
+            return
+        try:
+            self.exporter.export(span)
+        except Exception:
+            bump_export_stat("dropped_export")  # fail-closed; counted locally

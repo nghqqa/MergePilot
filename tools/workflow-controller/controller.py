@@ -18,6 +18,15 @@ from pathlib import Path
 import m4f_ingress
 from task_submit import EventSource, SubmitTaskError, TaskSubmission, submit_task
 
+# PoC(agentloop): optional OTel instrumentation. Fail-closed on BOTH layers:
+# missing module → controller runs exactly as before; present module can still
+# never alter PG state machine logic (spans/stats are side-effect free here).
+try:
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "otel"))
+    import otel_spans as _otel
+except Exception:
+    _otel = None
+
 # ── 配置 ──
 ADMIN   = "admin"
 SERVER  = os.environ.get("MATRIX_SERVER_NAME", "matrix-local.hiclaw.io:18080")
@@ -1103,6 +1112,11 @@ def matrix_sync(since=None, timeout=30000):
 
 def send_mention(room_id, user, text):
     """发真 @mention 消息,返回 event_id。"""
+    if _otel is not None:
+        try:
+            text = _otel.append_task_carrier(text)
+        except Exception:
+            pass  # 载体注入永不影响派单主路径
     uid = f"@{user}:{SERVER}"
     txn = "c_" + hashlib.sha256(f"{room_id}:{user}:{text}".encode()).hexdigest()[:16]
     resp = matrix_request("PUT", f"/_matrix/client/v3/rooms/{room_id}/send/m.room.message/{txn}", {
@@ -1358,6 +1372,12 @@ def process_event(event_id, room_id, raw_sender, sender, body, ts):
         if not mt or sender not in ("reviewer", "fixer"):
             continue
         run_id = mt.group(1)
+        producer_ctx = None
+        if _otel is not None:
+            try:
+                producer_ctx = _otel.parse_task_carrier(body)
+            except Exception:
+                producer_ctx = None  # 非法载体 fail-closed：忽略但绝不阻塞状态机
         try:
             # 锁住 task
             cur.execute("SELECT status, current_stage FROM task_runs WHERE run_id=%s FOR UPDATE", (run_id,))
@@ -1393,6 +1413,17 @@ def process_event(event_id, room_id, raw_sender, sender, body, ts):
             mark_processed(cur, event_id)
             update_event_meta(cur, event_id, run_id, stage)
             conn.commit()
+            if _otel is not None and producer_ctx is not None:
+                try:
+                    with _otel.start_span(
+                            "agent.handoff_complete", run_id=run_id,
+                            trace_id=producer_ctx.trace_id, agent_role=sender,
+                            stage=stage, parent_span_id=producer_ctx.span_id,
+                            links=[_otel.make_link(producer_ctx)]) as _hop_span:
+                        _hop_span.add_event("mp.stage_transition", {
+                            "stage": stage, "decision": ns or "done"})
+                except Exception:
+                    pass  # 可观测出口永不影响状态机提交
             print(f"[ctrl] {sender} TASK_COMPLETED {run_id}-{stage} → {ns or 'done'} PENDING_DISPATCH | PG committed")
         except Exception as e:
             conn.rollback()

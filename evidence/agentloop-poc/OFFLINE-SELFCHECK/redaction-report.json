@@ -1,0 +1,15 @@
+{
+  "spans_scanned": 2,
+  "sensitive_hits": [],
+  "patterns_checked": [
+    "ghp_",
+    "LTAI",
+    "AKID",
+    "Bearer ",
+    "sk-ant",
+    "PRIVATE KEY",
+    "password",
+    "postgres://"
+  ],
+  "content_capture_disabled_by_default": true
+}

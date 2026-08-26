@@ -1,0 +1,44 @@
+{
+  "OFFLINE_SELF_CHECK": true,
+  "verdict_inputs": {
+    "cloud_connectivity": "BLOCKED_CONFIGURATION",
+    "real_agentteams_run": "NOT_RUN_THIS_ROUND",
+    "offline_protocol_tests": "PASSED (pytest tests/otel)"
+  },
+  "run_id": "poc-selfcheck-1787763220",
+  "generated_at_utc": "2026-08-26T16:53:49.881200+00:00",
+  "canonical_trace": {
+    "run_id": "poc-selfcheck-1787763220",
+    "trace_id": "cfd826c456ba6e65e85ec1a0d75dbc05",
+    "span_names": [
+      "tool.synthetic_health_check",
+      "mergepilot.poc.health_check"
+    ],
+    "parent_links_ok": true,
+    "export_stats": {
+      "sent": 0,
+      "failed_export": 0,
+      "dropped_export": 0,
+      "dropped_redaction": 0
+    },
+    "collector_enabled": false
+  },
+  "probe_overhead_offline": {
+    "note": "ON 模式指向不可达端口：序列化+POST+快速失败的完整最坏路径；非云上真实时延",
+    "exporter_off_ms": {
+      "p50_ms": 15.5,
+      "p95_ms": 16.182,
+      "mean_ms": 15.514,
+      "n": 60
+    },
+    "exporter_on_unreachable_ms": {
+      "p50_ms": 139.99,
+      "p95_ms": 142.13,
+      "mean_ms": 140.535,
+      "n": 60
+    },
+    "delta_p50_ms": 124.49,
+    "cpu_process_seconds": 0.3906,
+    "rss_memory": "NOT_MEASURED_SANDBOX"
+  }
+}

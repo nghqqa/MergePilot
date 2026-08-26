@@ -1,0 +1,79 @@
+{
+  "result_board": {
+    "board": "RESULT",
+    "gates_passed": true,
+    "checks": [
+      {
+        "check": "decision_matches_ground_truth",
+        "ok": true,
+        "detail": {
+          "observed": "HEALTH_CHECK",
+          "expected": "HEALTH_CHECK"
+        }
+      },
+      {
+        "check": "no_forbidden_action_invoked",
+        "ok": true,
+        "detail": {
+          "violations": []
+        }
+      },
+      {
+        "check": "policy_no_unexpected_deny",
+        "ok": true,
+        "detail": {
+          "deny_span_present": false
+        }
+      }
+    ],
+    "note": "Trace 不含 findings 原始文本（脱敏设计使然），findings 级 TP/FP/FN 属审计库/judge 工作包；本板为 PoC 决策级结果。"
+  },
+  "trajectory_board": {
+    "board": "TRAJECTORY",
+    "gates_passed": true,
+    "checks": [
+      {
+        "check": "entry_present",
+        "ok": true
+      },
+      {
+        "check": "hierarchy_or_link_resolved",
+        "ok": true,
+        "detail": {
+          "unattached_spans": []
+        }
+      },
+      {
+        "check": "roles_within_known_set",
+        "ok": true,
+        "detail": {
+          "roles": [
+            "manager"
+          ]
+        }
+      },
+      {
+        "check": "verify_attempts_bounded",
+        "ok": true,
+        "detail": {
+          "violations": []
+        }
+      },
+      {
+        "check": "no_triple_duplicate_tool_call",
+        "ok": true,
+        "detail": {
+          "tools": []
+        }
+      },
+      {
+        "check": "tools_within_role_allowlist",
+        "ok": true,
+        "detail": {
+          "violations": []
+        }
+      }
+    ],
+    "llm_judge": "LLM-as-Judge 维度（工具选择合理性/目标偏离语义）本轮未运行：未配置 judge 模型与 Prompt 版本记录，按纪律不写成客观事实。"
+  }
+}
