@@ -320,3 +320,50 @@ def test_health_check_emitter_offline():
     assert set(out["span_names"]) == {"mergepilot.poc.health_check",
                                       "tool.synthetic_health_check"}
     assert len(out["trace_id"]) == 32 and out["parent_links_ok"] is True
+
+
+# ---- 续篇：官方标准 OTLP 认证头通道（不臆造变量名，值不入日志） --------------
+def test_standard_otlp_headers_parse(monkeypatch):
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_HEADERS",
+                       "Authorization=Bearer%20abc123,api-key=k%3Dv,,")
+    out = ot.OTLPExporter.headers_from_standard_env()
+    assert out == {"Authorization": "Bearer abc123", "api-key": "k=v"}
+    monkeypatch.delenv("OTEL_EXPORTER_OTLP_HEADERS")
+    assert ot.OTLPExporter.headers_from_standard_env() == {}
+
+
+def test_headers_reach_export_request_but_not_logs(mem, monkeypatch):
+    class CaptureOpener:
+        def __init__(self):
+            self.captured = None
+        def open(self, req, timeout=None):
+            self.captured = req
+
+    cap = CaptureOpener()
+    exp = ot.OTLPExporter(endpoint="http://127.0.0.1:9/v1/traces",
+                          timeout=0.2,
+                          headers={"x-license": "SECRET-VALUE"})
+    exp._opener = cap
+    dual = ot.DualCollector(memory=mem, exporter=exp)
+    ot.set_collector(dual)
+    try:
+        with ot.start_span("controller.process_event", run_id="r-hdr"):
+            pass
+    finally:
+        ot.set_collector(None)
+    assert cap.captured is not None
+    sent = {k.lower(): v for k, v in cap.captured.header_items()}
+    assert sent.get("x-license") == "SECRET-VALUE"
+    assert sent.get("content-type") == "application/json"
+    # 值不得出现在任何统计/序列化旁路里
+    blob = json.dumps(ot.get_export_stats())
+    assert "SECRET-VALUE" not in blob
+
+
+def test_init_wires_standard_headers(monkeypatch):
+    monkeypatch.setenv("MP_OTEL_EXPORT_ENABLED", "1")
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_HEADERS", "x-auth=token9")
+    ei.reset_for_tests()
+    col = ei.init_from_env()
+    ei.reset_for_tests()
+    assert col is not None and col.exporter._headers == {"x-auth": "token9"}

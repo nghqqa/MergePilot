@@ -729,15 +729,43 @@ class OTLPExporter:
     """
 
     def __init__(self, endpoint: str = "http://localhost:4318/v1/traces",
-                 timeout: float = 2.0):
+                 timeout: float = 2.0, headers: dict = None):
         self.endpoint = endpoint
         self.timeout = timeout
+        # Auth/license headers ride on every export POST; their VALUES are
+        # never logged, counted into stats, or exposed via repr/str paths.
+        self._headers = dict(headers or {})
         self._failed = 0
         self._sent = 0
         # Telemetry must never be hijacked by ambient system proxies and must
         # not pay opener-construction cost per span.
         import urllib.request as _rq
         self._opener = _rq.build_opener(_rq.ProxyHandler({}))
+
+    @staticmethod
+    def headers_from_standard_env(environ=None) -> dict:
+        """Parse OTEL_EXPORTER_OTLP_HEADERS (official OTel spec name).
+
+        Format: ``key1=value1,key2=value2`` (URL-decoded per spec). Returns {}
+        when unset/malformed-pair-wise — malformed pairs are skipped, keys are
+        not invented by this codebase.
+        """
+        from urllib.parse import unquote
+        raw = (environ if environ is not None else os.environ) \
+            .get("OTEL_EXPORTER_OTLP_HEADERS", "")
+        out = {}
+        for pair in raw.split(","):
+            pair = pair.strip()
+            if not pair or "=" not in pair:
+                continue
+            k, _, v = pair.partition("=")
+            k, v = k.strip(), v.strip()
+            if k:
+                try:
+                    out[k] = unquote(v)
+                except Exception:
+                    out[k] = v
+        return out
 
     def export(self, span: SpanRecord):
         """Export a single span. Non-blocking on failure."""
@@ -756,9 +784,10 @@ class OTLPExporter:
         }).encode("utf-8")
         try:
             from urllib.request import Request
+            req_headers = dict(self._headers)
+            req_headers["Content-Type"] = "application/json"
             req = Request(self.endpoint, data=payload,
-                          headers={"Content-Type": "application/json"},
-                          method="POST")
+                          headers=req_headers, method="POST")
             self._opener.open(req, timeout=self.timeout)
             self._sent += 1
             bump_export_stat("sent")

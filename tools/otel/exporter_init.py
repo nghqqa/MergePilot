@@ -33,10 +33,14 @@ def init_from_env(memory=None):
         endpoint = os.environ.get("MP_OTLP_ENDPOINT",
                                   "http://127.0.0.1:4318/v1/traces")
         timeout = float(os.environ.get("MP_OTEL_EXPORT_TIMEOUT_S", "2"))
+        # Official-spec auth channel: OTEL_EXPORTER_OTLP_HEADERS (k=v,k=v,
+        # URL-decoded). Values flow straight into export headers, never logs.
+        auth_headers = _otel.OTLPExporter.headers_from_standard_env()
         memory_collector = memory or _otel.InMemoryCollector()
         _collector = _otel.DualCollector(
             memory=memory_collector,
-            exporter=_otel.OTLPExporter(endpoint=endpoint, timeout=timeout),
+            exporter=_otel.OTLPExporter(endpoint=endpoint, timeout=timeout,
+                                        headers=auth_headers),
         )
         _otel.set_collector(_collector)
         return _collector
