@@ -34,19 +34,19 @@ Agent 只承担语义判断，六类 Skill 以 Schema、deadline、错误码和 
 
 ### 总览
 
-![Console overview](docs/assets/readme/preview4/console-overview-preview4.png)
+![控制台总览：b8-e2e-run35 的 17 阶段时间线全绿收敛，右侧五项真实性边界保持 NOT_VERIFIED](docs/assets/readme/preview4/console-overview-preview4.png)
 
 展示 17 阶段时间线、只读证据链和真实性边界。不代表生产系统或独立物理机验收。
 
 ### 完整证据
 
-![Console complete](docs/assets/readme/preview4/console-complete-preview4.png)
+![完整证据：16/16 前置检查、6/6 路由边逐边 VERIFIED、Receipt 与 Matrix verified](docs/assets/readme/preview4/console-complete-preview4.png)
 
 展示 16/16 前置检查、6/6 路由边和 Receipt/Matrix 状态。数据来自同机 Preview 投影。
 
 ### 失败定位
 
-![Console failed](docs/assets/readme/preview4/console-failed-preview4.png)
+![失败定位：第 10 阶段失败，首个稳定错误 E2E_ROUTE_PROBE_FAILED 与失败路由边置顶](docs/assets/readme/preview4/console-failed-preview4.png)
 
 展示失败阶段、首个稳定错误 `E2E_ROUTE_PROBE_FAILED` 和后续阶段停止。它用于说明 fail-closed 行为，不是客户生产事故。
 

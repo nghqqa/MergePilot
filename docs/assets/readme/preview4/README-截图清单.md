@@ -14,7 +14,7 @@
 | 文件 | 尺寸 | 页面状态 | 数据源 | 用途 | 证明的事实 | 不证明的事实 | 允许放入 README |
 |---|---|---|---|---|---|---|---|
 | `console-overview-preview4.png` | 1600×1000 | complete（首屏） | `complete.run35.json` | 首屏控制台总览 | 17 阶段时间线全绿收敛、五项真实性边界常驻、`direct_routing_verified=false` 可见 | 生产验证、独立物理机验收 | 是（已放入） |
-| `console-complete-preview4.png` | 1600×2400 | complete（全页证据） | `complete.run35.json` | 完整证据区 | 16/16 前置、6/6 路由边逐边 VERIFIED、Receipt/Matrix verified、wsl-user-relay 如实标注 | 内核直连路由已验证 | 是（已放入） |
+| `console-complete-preview4.png` | 1600×800（2026-08-26 由 1600×2400 裁剪为证据区） | complete（证据区条带） | `complete.run35.json` | 完整证据区 | 16/16 前置、6/6 路由边逐边 VERIFIED、Receipt/Matrix verified、中继资源归属 | 内核直连路由已验证 | 是（已放入） |
 | `console-failed-preview4.png` | 1600×1000 | failed | `failed.fixture.json`（演示夹具） | 失败定位能力 | 第 10 阶段红、首个稳定错误 `E2E_ROUTE_PROBE_FAILED` 置顶、失败路由边、后续阶段灰显 | 真实客户事故或生产故障 | 是（已放入，说明中已标注为演示夹具） |
 | `console-mobile-preview4.png` | — | — | — | 移动端展示 | 390px 视口实测布局横向溢出、时间线截断 | — | **否**（已删除；记录为待验证：控制台未适配窄屏） |
 
@@ -22,7 +22,13 @@
 
 - 根 README 本轮之前**没有任何截图引用**（仅 badge），无旧图替换。
 - `.impeccable/review/` 旧截图（desktop.png 等）保留不动，属历史评审资产；历史材料目录已由 `HISTORICAL-SNAPSHOT.md` 标注。
-- 已知残留：`docs/复赛材料/finals-v1/` PPT P12 页 Sources 仍引用 `.impeccable/review/desktop.png`（旧图）。修改需重渲染 PPT/PDF，超出本轮"只改 README 与图片资产"范围，**列为后续待办**。
+- 已知残留（2026-08-26 已清零）：PPT P01/P12 页 Sources 原引用 `.impeccable/review/` 旧截图，本轮已改为 `docs/assets/readme/preview4/` 当前截图；PDF 经文本抽取确认不含备注路径，无需重导。
+
+## 2026-08-26 优化轮记录
+
+- `console-complete-preview4.png` 由 1600×2400 全页裁剪为 1600×800 证据区条带（保留 16/16 前置、6/6 路由边、Receipt/Matrix、中继资源；裁剪前后均经视觉复核无截断）。
+- README 三张截图 alt 文本由泛化描述改为含事实描述。
+- finals-v1 PPT P01/P12 备注 Sources 改指当前截图路径，全 PPT `.impeccable` 引用清零；幻灯片正文与 PDF 未受影响。
 
 ## 验证记录（2026-08-26）
 
