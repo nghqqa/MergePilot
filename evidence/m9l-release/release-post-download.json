@@ -1,0 +1,37 @@
+{
+  "round": "m9l",
+  "release_tag": "v0.1.0-preview.4",
+  "api_readback": {
+    "tag_name": "v0.1.0-preview.4",
+    "name": "MergePilot v0.1.0 Preview 4",
+    "prerelease": true,
+    "draft": false,
+    "latest": "not marked (GET /releases/latest -> 404; all releases are prereleases)",
+    "asset_count": 7,
+    "api_tag_object": {"sha": "083b4cb04276a741cb4d4ebe2349c08b19767509", "type": "tag"}
+  },
+  "post_download_byte_compare": {
+    "method": "cmp (raw bytes) formal-release re-download vs pre-publication snapshot",
+    "EXTERNAL-ACCEPTANCE.md": "byte-identical",
+    "SHA256SUMS": "byte-identical",
+    "asset-sha256.json": "byte-identical",
+    "checksums.sha256": "byte-identical",
+    "images-oci.tar": "byte-identical",
+    "manifest.json": "byte-identical",
+    "mergepilot-v0.1.0-preview.4-package.zip": "byte-identical",
+    "result": "7/7 byte-identical"
+  },
+  "manifest_tag_agreement": {
+    "manifest.git_commit": "5bb2635624585318aa005a0fc1d8c2b302c8a183",
+    "tag_peeled_commit": "5bb2635624585318aa005a0fc1d8c2b302c8a183",
+    "match": true
+  },
+  "historical_releases_unchanged": {
+    "v0.1.0-preview.1": {"assets": 4, "tar": "dd7138b2a496aadee8f9c9b62c4a5dba1b5408647efaff9077097b763bd0086c", "zip": "44843a60b452ee38499a151682ed59942bb7e5292551db77700e6e41ab4ccc24"},
+    "v0.1.0-preview.2": {"assets": 4, "tar": "dd7138b2a496aadee8f9c9b62c4a5dba1b5408647efaff9077097b763bd0086c", "zip": "6d6c0877cf9dd619678a0323d996ae8475da2a7c4e62cf009080edba7ca19b34"},
+    "v0.1.0-preview.3": {"assets": 4, "tar": "5ab66446a3ba237e13b5a7ff1eb31c2714909b5ee185ff31bdac8a6560783369", "zip": "991ba7da46b5ab7878f8d4d4debc2c8056f2bf408b03704dff917c58251e254f"},
+    "m9b-rc5-delivery": {"assets": 7, "tar": "176025bcc3d3a371752c68389984c0a77a72ed3b04656426b38679286997749f", "zip": "c39116c090d71b4dcbc049caa95687be8f1e538cc53629201ea120ef66424b4c"},
+    "m9j-preview4-final-candidate": {"assets": 7, "tar": "74869211270c01d97ba9633738e2bb60ecbb1e1aa696fe9f0e4631ad0772ed27", "zip": "a59699fbfbf7471544f47e5a3851322452e90637bb15ab7997009a22766b3e07"},
+    "unchanged": true
+  }
+}

@@ -1,0 +1,56 @@
+{
+  "round": "m9l",
+  "release": {
+    "tag_name": "v0.1.0-preview.4",
+    "title": "MergePilot v0.1.0 Preview 4",
+    "url": "https://github.com/nghqqa/MergePilot/releases/tag/v0.1.0-preview.4",
+    "prerelease": true,
+    "draft": false,
+    "latest": false,
+    "asset_count": 7,
+    "tag_object": "083b4cb04276a741cb4d4ebe2349c08b19767509",
+    "tag_object_type": "tag (annotated)",
+    "tag_peeled_commit": "5bb2635624585318aa005a0fc1d8c2b302c8a183",
+    "push_mode": "normal push (new tag, no force)"
+  },
+  "source_candidate": {
+    "release": "m9j-preview4-final-candidate",
+    "verdict": "MERGEPILOT_M9K_FINAL_CANDIDATE_SAME_MACHINE_ACCEPTED",
+    "test_machine_evidence": "E:\\mp9\\m9k-final-candidate-evidence\\",
+    "acceptance_class": "SAME_MACHINE_ACCEPTED (not EXTERNAL_ACCEPTED)"
+  },
+  "prepublication_verification": {
+    "digests_vs_candidate_record": "7/7",
+    "digests_vs_live_api": "7/7",
+    "checksums_sha256": "3/3 OK",
+    "asset_sha256_json": "217/217 OK",
+    "zip": "213 entries, 0 cache artifacts, testzip OK",
+    "manifest": "version=v0.1.0-preview.4 git_commit=5bb2635 images 9/9",
+    "oci": "images=9 blobs=182/182 config-digest=9/9 manifest-vs-tar match"
+  },
+  "notes_compliance": {
+    "includes_required": [
+      "Windows 11 + WSL2 scope", "loopback-only", "wsl-user-relay",
+      "direct_routing_verified=false", "9 offline images", "tar ~847MB",
+      "standalone Check/Install/Doctor/Start/Status/Stop/Cleanup",
+      "first-Start preflight exit=0 run-to-completion (not abnormal exit)",
+      "same-machine lifecycle acceptance passed", "EXTERNAL_BLOCKED",
+      "docker transient probe noise", "non-owner images fail-closed retained",
+      "uninstall/cleanup instructions", "feedback entry", "no secrets"
+    ],
+    "forbidden_absent": [
+      "EXTERNAL_ACCEPTED", "production ready", "application_integration_verified=true",
+      "database_verified=true", "revision_producer_contract=VERIFIED",
+      "audit_producer_contract=VERIFIED"
+    ]
+  },
+  "truth_boundaries_frozen": {
+    "application_integration_verified": false,
+    "database_verified": false,
+    "production_verified": false,
+    "revision_producer_contract": "NOT_VERIFIED",
+    "audit_producer_contract": "NOT_VERIFIED",
+    "direct_routing_verified": false,
+    "transport_profile": "wsl-user-relay"
+  }
+}

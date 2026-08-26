@@ -1,0 +1,16 @@
+{
+  "round": "m9l",
+  "release_tag": "v0.1.0-preview.4",
+  "source": "re-downloaded from m9j-preview4-final-candidate before publication (pre-publication snapshot)",
+  "hash_algorithm": "sha256",
+  "assets": {
+    "EXTERNAL-ACCEPTANCE.md": {"sha256": "7822c3e056de451c5826c0a4d910886ae90fe34303527bfa13d702c1d6359fc3", "bytes": 1366},
+    "SHA256SUMS": {"sha256": "60168f17341019ad9b036308fe3e907004336ca500ad98f4518e7883385a6bfa", "bytes": 22636},
+    "asset-sha256.json": {"sha256": "75344d659ce267c6b316ab67130060e5b0349f34fcc95943daa9479f275a5cb3", "bytes": 32374},
+    "checksums.sha256": {"sha256": "1e5a02c319be5110fa0fc0fbbff77b04911a6656db91919cad66e37371840bed", "bytes": 267},
+    "images-oci.tar": {"sha256": "74869211270c01d97ba9633738e2bb60ecbb1e1aa696fe9f0e4631ad0772ed27", "bytes": 847388160},
+    "manifest.json": {"sha256": "90f499f206693a26ad1d10c5744224c34f800c5238573b0744e44521acfa2ef4", "bytes": 18687},
+    "mergepilot-v0.1.0-preview.4-package.zip": {"sha256": "a59699fbfbf7471544f47e5a3851322452e90637bb15ab7997009a22766b3e07", "bytes": 868978}
+  },
+  "identical_to_candidate_release": "7/7 byte-identical (cmp on raw bytes after formal-release re-download)"
+}

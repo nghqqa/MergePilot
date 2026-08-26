@@ -1,0 +1,29 @@
+{
+  "round": "m9l",
+  "tag": "v0.1.0-preview.4",
+  "pre_existing": {"local": false, "remote": false},
+  "creation": {
+    "command": "git tag -a v0.1.0-preview.4 5bb2635624585318aa005a0fc1d8c2b302c8a183 -m <message>",
+    "annotated": true,
+    "tag_object": "083b4cb04276a741cb4d4ebe2349c08b19767509",
+    "tag_object_type": "tag",
+    "peeled_commit": "5bb2635624585318aa005a0fc1d8c2b302c8a183",
+    "peeled_commit_subject": "fix(preview): bootstrapper header truth boundary — PARTIALLY_VERIFIED -> NOT_VERIFIED",
+    "matches_manifest_git_commit": true,
+    "not_stale_branch_sha": true,
+    "ancestor_of_origin_main": true,
+    "origin_main_at_publication": "46d167702c0468e39c419e282913ddf038c27aee"
+  },
+  "message": [
+    "MergePilot v0.1.0 Preview 4",
+    "",
+    "Final candidate accepted by same-machine black-box validation.",
+    "External physical-machine acceptance remains blocked.",
+    "This release is Preview and is not production-ready."
+  ],
+  "push": {
+    "mode": "git push origin v0.1.0-preview.4 (normal, new tag, no force)",
+    "remote_ref": "083b4cb04276a741cb4d4ebe2349c08b19767509 refs/tags/v0.1.0-preview.4",
+    "remote_peeled": "5bb2635624585318aa005a0fc1d8c2b302c8a183 refs/tags/v0.1.0-preview.4^{}"
+  }
+}
