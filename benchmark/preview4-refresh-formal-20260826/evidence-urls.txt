@@ -1,0 +1,5 @@
+# push-pending evidence URLs (NOT reachable until branch is pushed)
+https://github.com/nghqqa/MergePilot/tree/benchmark/preview4-formal-20260826
+https://github.com/nghqqa/MergePilot/blob/benchmark/preview4-formal-20260826/benchmark/preview4-refresh-formal-20260826/summary.json
+https://github.com/nghqqa/MergePilot/blob/benchmark/preview4-formal-20260826/benchmark/preview4-refresh-formal-20260826/material-claims.json
+https://github.com/nghqqa/MergePilot/blob/benchmark/preview4-formal-20260826/benchmark/preview4-refresh-formal-20260826/SHA256SUMS.txt

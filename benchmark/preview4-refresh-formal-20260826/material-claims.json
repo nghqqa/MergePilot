@@ -1,0 +1,92 @@
+{
+  "generated_from": {
+    "summary": "summary.json",
+    "raw_runs": 120
+  },
+  "identity": {
+    "product_version": "v0.1.0-preview.4",
+    "product_commit": "5bb2635624585318aa005a0fc1d8c2b302c8a183",
+    "benchmark_branch": "benchmark/preview4-formal-20260826",
+    "benchmark_commit": "7831fbfd0152415cea113aa5368c82974290eb57",
+    "model": "deepseek-v4-flash",
+    "model_version_comparable_to_20260811": "NOT_CONFIRMED",
+    "scale": "20 synthetic fixtures x 2 groups x 3 repetitions",
+    "gates": "120/120 completed, Schema 120/120"
+  },
+  "A_single_agent": {
+    "runs": 60,
+    "tp": 50,
+    "fp": 93,
+    "fn": 25,
+    "precision_pct": 34.97,
+    "recall_pct": 66.67,
+    "f1_pct": 45.87,
+    "decision_accuracy_pct": 33.33,
+    "clean_fp_findings": 18,
+    "clean_runs_with_fp": 8,
+    "clean_runs_total": 12,
+    "tokens": 96746,
+    "api_requests": 60,
+    "fixer_triggered": 0
+  },
+  "B_mergepilot": {
+    "runs": 60,
+    "tp": 51,
+    "fp": 62,
+    "fn": 24,
+    "precision_pct": 45.13,
+    "recall_pct": 68.0,
+    "f1_pct": 54.26,
+    "decision_accuracy_pct": 63.33,
+    "clean_fp_findings": 14,
+    "clean_runs_with_fp": 6,
+    "clean_runs_total": 12,
+    "tokens": 333837,
+    "api_requests": 114,
+    "fixer_triggered": 54
+  },
+  "B_minus_A": {
+    "precision_pp": 10.16,
+    "recall_pp": 1.33,
+    "f1_pp": 8.39,
+    "decision_accuracy_pp": 30.0,
+    "clean_fp_findings": -4,
+    "clean_runs_with_fp": -2,
+    "token_increase_pct": 245.1,
+    "api_request_increase_pct": 90.0
+  },
+  "formulas": {
+    "precision": "TP/(TP+FP)",
+    "recall": "TP/(TP+FN)",
+    "f1": "2PR/(P+R)",
+    "decision_accuracy": "correct decisions / 60",
+    "clean_fp_findings": "sum(eval_fp) over clean-case runs only",
+    "clean_runs_with_fp": "count(clean runs with eval_fp>0) — distinct from findings count",
+    "token_increase_pct": "100*(B-A)/A on raw totals"
+  },
+  "bootstrap_ci_from_summary": {
+    "precision_delta_ci95": [
+      0.019,
+      0.1986
+    ],
+    "recall_delta_ci95": [
+      -0.0417,
+      0.0833
+    ],
+    "f1_delta_ci95": [
+      0.0142,
+      0.1668
+    ],
+    "decision_accuracy_ci95": [
+      -0.45,
+      0.5667
+    ],
+    "note": "case-cluster bootstrap, 10000 resamples, seed 20260826; CI shown verbatim from summary.json, not recomputed"
+  },
+  "wording_rules": [
+    "no statistical-significance or causal claims",
+    "no production ready",
+    "historical 2026-08-11 baseline not comparable by attribution",
+    "Controller/Gateway/GitHub MCP/real E2E NOT_VERIFIED"
+  ]
+}
