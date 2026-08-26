@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1800" height="900" viewBox="0 0 1800 900" role="img" aria-labelledby="title desc">
   <title id="title">MergePilot 多 Agent PR 审修与风险治理架构</title>
-  <desc id="desc">GitHub PR 经确定性 Workflow Controller 编排 Reviewer、Fixer 和 Verifier，调用六个 Skill。Policy Gateway 阻止未授权写入或授权 GitHub MCP 执行合并与回滚。PostgreSQL 保存状态与 Outbox，pgvector 提供案例检索，审计平面记录完整 Trace。</desc>
+  <desc id="desc">GitHub PR 经确定性 Workflow Controller 编排四个运行时 Agent：Manager、Reviewer、Fixer 和 Verifier，并调用六个 Skill。Policy Gateway 阻止未授权写入或授权 GitHub MCP 隔离服务执行治理操作。PostgreSQL 保存状态与 Outbox，pgvector 提供案例检索，MinIO 保存对象与配置证据，审计平面记录关联 Trace。</desc>
 
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
@@ -106,18 +106,21 @@
     <text x="785" y="305" text-anchor="middle" class="tiny" fill="#6d28d9" font-weight="700">可适配 runtime · 非状态权威</text>
 
     <g>
-      <rect x="650" y="326" width="86" height="78" rx="15" fill="#f5f3ff" stroke="#a78bfa" stroke-width="2"/>
-      <circle cx="693" cy="349" r="12" fill="#7c3aed"/>
-      <text x="693" y="382" text-anchor="middle" class="small ink" font-weight="700">Reviewer</text>
-      <rect x="742" y="326" width="86" height="78" rx="15" fill="#f5f3ff" stroke="#a78bfa" stroke-width="2"/>
-      <circle cx="785" cy="349" r="12" fill="#7c3aed"/>
-      <text x="785" y="382" text-anchor="middle" class="small ink" font-weight="700">Fixer</text>
-      <rect x="834" y="326" width="86" height="78" rx="15" fill="#f5f3ff" stroke="#a78bfa" stroke-width="2"/>
-      <circle cx="877" cy="349" r="12" fill="#7c3aed"/>
-      <text x="877" y="382" text-anchor="middle" class="small ink" font-weight="700">Verifier</text>
+      <rect x="632" y="326" width="72" height="78" rx="15" fill="#f5f3ff" stroke="#a78bfa" stroke-width="2"/>
+      <circle cx="668" cy="349" r="12" fill="#7c3aed"/>
+      <text x="668" y="382" text-anchor="middle" class="tiny ink" font-weight="700">Manager</text>
+      <rect x="712" y="326" width="72" height="78" rx="15" fill="#f5f3ff" stroke="#a78bfa" stroke-width="2"/>
+      <circle cx="748" cy="349" r="12" fill="#7c3aed"/>
+      <text x="748" y="382" text-anchor="middle" class="tiny ink" font-weight="700">Reviewer</text>
+      <rect x="792" y="326" width="72" height="78" rx="15" fill="#f5f3ff" stroke="#a78bfa" stroke-width="2"/>
+      <circle cx="828" cy="349" r="12" fill="#7c3aed"/>
+      <text x="828" y="382" text-anchor="middle" class="tiny ink" font-weight="700">Fixer</text>
+      <rect x="872" y="326" width="60" height="78" rx="15" fill="#f5f3ff" stroke="#a78bfa" stroke-width="2"/>
+      <circle cx="902" cy="349" r="12" fill="#7c3aed"/>
+      <text x="902" y="382" text-anchor="middle" class="tiny ink" font-weight="700">Verifier</text>
     </g>
     <rect x="671" y="424" width="228" height="30" rx="15" fill="#fef3c7"/>
-    <text x="785" y="445" text-anchor="middle" class="tiny" fill="#92400e" font-weight="700">当前：隔离 / 候选栈 · hiclaw_live=false</text>
+<text x="785" y="445" text-anchor="middle" class="tiny" fill="#92400e" font-weight="700">四个运行时 Agent · 非状态权威</text>
 
     <!-- Skills -->
     <g filter="url(#shadow)">
@@ -152,7 +155,7 @@
       <rect x="1580" y="275" width="170" height="150" rx="22" fill="#ffffff" stroke="#fb923c" stroke-width="2.5"/>
     </g>
     <text x="1665" y="326" text-anchor="middle" class="card-title ink">GitHub MCP</text>
-    <text x="1665" y="358" text-anchor="middle" class="small muted">凭证隔离 sidecar</text>
+<text x="1665" y="358" text-anchor="middle" class="small muted">隔离服务 · 凭证边界</text>
     <rect x="1605" y="378" width="120" height="27" rx="13" fill="#dcfce7"/>
     <text x="1665" y="397" text-anchor="middle" class="tiny" fill="#166534" font-weight="750">Worker 零 PAT</text>
 
@@ -189,24 +192,30 @@
     </g>
 
     <g>
-      <rect x="600" y="700" width="620" height="92" rx="18" fill="#ecfeff" stroke="#22d3ee" stroke-width="2"/>
+      <rect x="600" y="700" width="450" height="92" rx="18" fill="#ecfeff" stroke="#22d3ee" stroke-width="2"/>
       <circle cx="652" cy="746" r="25" fill="#0891b2"/>
       <path d="M641 751 c10-24 24-24 28-7 c-10 1-18 7-25 15" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
-      <text x="700" y="735" class="card-title ink">pgvector · Case Retrieval</text>
+      <text x="700" y="735" class="card-title ink">pgvector · Retrieval</text>
       <text x="700" y="765" class="small muted">历史案例仅作参考；不替代当次验证</text>
     </g>
 
     <g>
-      <rect x="1250" y="700" width="470" height="92" rx="18" fill="#f5f3ff" stroke="#a78bfa" stroke-width="2"/>
-      <circle cx="1302" cy="746" r="25" fill="#7c3aed"/>
-      <path d="M1290 746 h24 M1302 734 v24" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
-      <text x="1350" y="735" class="card-title ink">审计证据与 Trace</text>
-      <text x="1350" y="765" class="small muted">Finding · Decision · Run · source_commit</text>
+      <rect x="1080" y="700" width="250" height="92" rx="18" fill="#f0fdf4" stroke="#4ade80" stroke-width="2"/>
+      <circle cx="1125" cy="746" r="25" fill="#16a34a"/>
+      <path d="M1112 746 h26 M1125 733 v26" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
+      <text x="1160" y="735" class="card-title ink">MinIO</text>
+      <text x="1160" y="765" class="small muted">对象与配置证据</text>
+    </g> <g>
+      <rect x="1360" y="700" width="360" height="92" rx="18" fill="#f5f3ff" stroke="#a78bfa" stroke-width="2"/>
+      <circle cx="1412" cy="746" r="25" fill="#7c3aed"/>
+      <path d="M1400 746 h24 M1412 734 v24" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
+      <text x="1460" y="735" class="card-title ink">审计证据与 Trace</text>
+      <text x="1460" y="765" class="small muted">Finding · Decision · Run · source_commit</text>
     </g>
 
     <!-- State links -->
     <path d="M425 450 V610 Q425 625 410 625 V690" class="state-link"/>
     <path d="M1127 450 V690" class="state-link"/>
-    <path d="M1535 420 H1555 V610 Q1555 625 1500 625 V690" class="state-link"/>
+<path d="M1535 420 H1555 V610 Q1555 625 1500 625 V690" class="state-link"/>
   </g>
 </svg>
