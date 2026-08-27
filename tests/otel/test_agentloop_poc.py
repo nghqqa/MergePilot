@@ -416,9 +416,11 @@ def test_proto_encoder_structural_roundtrip():
     res_kv = _pb_parse(res[1][0])
     assert res_kv[1][0].decode() == "service.name"             # key
     assert _pb_parse(res_kv[2][0])[1][0].decode() == "mergepilot"
-    kv2 = _pb_parse(res[1][1])                                  # resource attr
-    assert kv2[1][0].decode() == "env"
-    assert _pb_parse(kv2[2][0])[1][0].decode() == "poc"
+    found = {}
+    for raw in res[1]:
+        kv = _pb_parse(raw)
+        found[kv[1][0].decode()] = _pb_parse(kv[2][0])[1][0].decode()
+    assert found.get("env") == "poc"                            # resource attr
     ss = _pb_parse(rs[2][0])
     assert _pb_parse(ss[1][0])[1][0].decode() == "mergepilot-otel"
     sp = _pb_parse(ss[2][0])
@@ -492,3 +494,19 @@ def test_official_env_precedence_and_resource_attrs(mem, monkeypatch):
     svc_kv = _pb_parse(res[1][0])
     assert svc_kv[1][0].decode() == "service.name"
     assert _pb_parse(svc_kv[2][0])[1][0].decode() == "mergepilot-poc"
+
+
+def test_proto_resource_carries_sdk_identity_and_overrides():
+    rec = ot.SpanRecord("1" * 32, "2" * 16, None, "skill.x", run_id="r")
+    blob = ot.span_to_otlp_proto(rec, "mergepilot",
+                                 resource_attrs={"telemetry.sdk.language":
+                                                 "python"})
+    req = _pb_parse(blob)
+    res = _pb_parse(_pb_parse(req[1][0])[1][0])
+    kvs = {}
+    for raw in res[1]:
+        kv = _pb_parse(raw)
+        kvs[kv[1][0].decode()] = _pb_parse(kv[2][0])[1][0].decode()
+    assert kvs["service.name"] == "mergepilot"
+    assert kvs["telemetry.sdk.name"] == "mergepilot-otel"
+    assert kvs["telemetry.sdk.language"] == "python"

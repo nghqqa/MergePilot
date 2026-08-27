@@ -762,8 +762,16 @@ _SPAN_KIND_INTERNAL = 1                        # enum SpanKind
 def span_to_otlp_proto(span: SpanRecord, service_name: str,
                        resource_attrs: dict = None) -> bytes:
     """Encode one SpanRecord as ExportTraceServiceRequest bytes."""
+    # SDK identity defaults (honest: our own emitter, not LoongSuite probe);
+    # OTEL_RESOURCE_ATTRIBUTES values take precedence over defaults.
+    merged = {
+        "telemetry.sdk.name": "mergepilot-otel",
+        "telemetry.sdk.language": "python",
+        "telemetry.sdk.version": "1",
+    }
+    merged.update(resource_attrs or {})
     kvs = [_pb_kv("service.name", service_name)]
-    for k, v in (resource_attrs or {}).items():
+    for k, v in merged.items():
         kvs.append(_pb_kv(k, v))
     resource = b"".join(_pb_len(1, x) for x in kvs)
 
