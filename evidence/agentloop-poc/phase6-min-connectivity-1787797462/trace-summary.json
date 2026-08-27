@@ -1,0 +1,21 @@
+{
+  "phase": "6-minimal-connectivity",
+  "verdict_wire_level": "ACCEPTED_BY_SERVER",
+  "console_visibility": "NEEDS_USER_CONFIRM",
+  "run_id": "phase6-min-connectivity-1787797462",
+  "trace_id": "3829f47673783253f0c60c40c36f6140",
+  "span_tree": [
+    {"name": "mergepilot.poc.health_check", "role": "Entry", "parent": null},
+    {"name": "tool.synthetic_health_check", "role": "Tool", "parent": "Entry"}
+  ],
+  "export": {
+    "format": "OTLP/HTTP protobuf (application/x-protobuf)",
+    "spans_sent": 2,
+    "export_failures": 0,
+    "endpoint_class": "aliyun-public (derived from intranet URL by removing '-intranet'; console 连接方式=公网方式 to confirm)",
+    "auth": "x-arms-license-key / x-arms-project / x-cms-workspace (values only in process env, never committed)"
+  },
+  "resource_attrs_reported": ["service.name=mergepilot", "acs.cms.workspace=<workspace-id>", "acs.arms.service.feature=genai_app", "deployment.environment=poc", "service.version=v0.1.0"],
+  "redaction": {"sensitive_hits": 0, "content_capture": "disabled"},
+  "generated_at_utc": "2026-08-27"
+}

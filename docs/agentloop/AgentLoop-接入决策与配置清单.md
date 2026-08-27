@@ -45,16 +45,17 @@
 - 认证头通道（`OTEL_EXPORTER_OTLP_HEADERS`，官方标准名）+ `OTEL_SERVICE_NAME` 官方优先级 + `OTEL_RESOURCE_ATTRIBUTES` 解析；
 - 顺带修复：json 分支缺 `content_type` 赋值导致导出静默失败的实现 bug（此前被 fail-open 吞掉，测试已补锁定）。
 
-## 五、配置状态总表（v0.3）
+## 五、配置状态总表（v0.4 · Phase 6 已打通后更新）
 
 | 项 | 状态 | 依据 |
 |---|---|---|
-| AgentLoop 开通 | READY | 控制台已可见（接入中心/费用入口） |
-| region | READY | 华东1（杭州）· 控制台 |
-| workspace/AgentSpace | READY | `goai` · 控制台 |
-| 认证头格式 | READY | 官方文档三头 + ARMS_* 降级名 |
-| service.name 规则 | READY | `OTEL_SERVICE_NAME` 官方环境变量 |
-| OTLP endpoint 具体值 | **NEEDS_USER_ACTION** | 需从自定义接入卡片复制 |
-| LicenseKey/Project/WorkspaceID 具体值 | **NEEDS_USER_ACTION** | 同上 |
-| 本机 env 接线 | MISSING | 待第 3 步 |
-| 云侧连通性 | BLOCKED_CONFIGURATION | 待上行两项完成后重判 |
+| AgentLoop 开通 | READY | 控制台已可见 |
+| region / workspace | READY | 华东1（杭州）/ `goai`（workspace id 形如 `agentloop-b466f…`，即 `x-cms-workspace` 值） |
+| 认证头格式与值 | READY | 官方手册三头；值仅存于进程环境变量 |
+| service.name | READY | 控制台应用名 `mergepilot` = `OTEL_SERVICE_NAME` |
+| OTLP endpoint | READY（公网） | 内网地址去 `-intranet` 的公网变体实测可达；控制台「连接方式→公网方式」可交叉核对 |
+| 本机 env 接线 | READY | 五变量（enable/format/endpoint/service/headers）+ OTEL_RESOURCE_ATTRIBUTES 带 `acs.cms.workspace` 等 |
+| **云侧连通性** | **READY（wire 级 VERIFIED）** | `sent=2, failed=0`，trace_id `3829f476…6140` 已被服务端接受 |
+| 控制台可见性 | NEEDS_USER_CONFIRM | 待人工在 AI Agent 可观测中核对后闭环 |
+
+手册要求的 Resource 属性已随 Resource 上报；`gen_ai.instrumentation.sdk.name=loongsuite-genai-utils` 未上报——我们未使用该 handler，标记自己为该 SDK 不符实。后续若接入 util-genai handler 产生 Agent/LLM/Tool 语义 span（Phase 7+ 的 HiClaw worker 内路径），再补该标记。
