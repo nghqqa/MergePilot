@@ -56,6 +56,6 @@
 | OTLP endpoint | READY（公网） | 内网地址去 `-intranet` 的公网变体实测可达；控制台「连接方式→公网方式」可交叉核对 |
 | 本机 env 接线 | READY | 五变量（enable/format/endpoint/service/headers）+ OTEL_RESOURCE_ATTRIBUTES 带 `acs.cms.workspace` 等 |
 | **云侧连通性** | **READY（wire 级 VERIFIED）** | `sent=2, failed=0`，trace_id `3829f476…6140` 已被服务端接受 |
-| 控制台可见性 | NEEDS_USER_CONFIRM | 待人工在 AI Agent 可观测中核对后闭环 |
+| 控制台可见性 | READY（2026-08-27 用户控制台截图证实：logstore-tracing 4 条 span，mp.trace_id/run_id/agent_role/policy_decision 全部对上，无重复） | **Phase 6 已闭环** |
 
 手册要求的 Resource 属性已随 Resource 上报；`gen_ai.instrumentation.sdk.name=loongsuite-genai-utils` 未上报——我们未使用该 handler，标记自己为该 SDK 不符实。后续若接入 util-genai handler 产生 Agent/LLM/Tool 语义 span（Phase 7+ 的 HiClaw worker 内路径），再补该标记。

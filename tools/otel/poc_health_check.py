@@ -44,7 +44,7 @@ def emit(run_id: str) -> dict:
                               tool_name="synthetic_health_check") as tool:
             time.sleep(0.01)
             tool.set_attribute("tool_status", "OK")
-        entry.set_attribute("policy_decision", "ALLOW")
+        entry.set_attribute("mp.policy_decision", "ALLOW")
 
     spans = []
     if local_owned:
