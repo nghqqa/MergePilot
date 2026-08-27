@@ -214,15 +214,24 @@ def fetch_existing_network_cidrs(docker_executor: Callable) -> list:
 def fetch_docker_gw_priority_supported(docker_executor) -> bool:
     """Read-only capability probe: docker network connect --gw-priority
     (same check cmd_doctor performs)."""
-    try:
-        cp = docker_executor(
-            ["network", "connect", "--help"], check=False, timeout=30)
-    except Exception:
-        return False
-    if cp.returncode != 0:
-        return False
-    return "--gw-priority" in (cp.stdout or b"").decode(
-        "utf-8", "replace")
+    import time as _time
+    for attempt in (1, 2):
+        try:
+            cp = docker_executor(
+                ["network", "connect", "--help"], check=False, timeout=30)
+        except Exception:
+            return False
+        if cp.returncode == 0:
+            return "--gw-priority" in (cp.stdout or b"").decode(
+                "utf-8", "replace")
+        if attempt == 1:
+            # 7.3I2-D fix: a cold WSL distro/daemon yields rc!=0
+            # (DISTRO_NOT_RUNNING was being swallowed as capability-False).
+            # One bounded warm-up retry keeps the gate fail-closed while
+            # never masking a real capability gap (second failure stays
+            # False).
+            _time.sleep(4)
+    return False
 
 
 def fetch_matrix_joined_mxids(config: dict,

@@ -1448,6 +1448,27 @@ def prepare_database(docker, planner, showcase, project_dir, reader_password):
     docker.psql_exec(pg_container, showcase.build_showcase_seed_sql())
 
 
+def snapshot_worker_password_sql(password: str) -> str:
+    """Render the per-session ALTER for the m4f snapshot login.
+
+    The audit migration chain creates ``snapshot_worker`` as a passwordless
+    LOGIN (m4f1_state.sql), while the controller.env DSN contract requires a
+    password. The password never enters argv/logs: it rides the same stdin
+    psql transport as the migration chain. Charset is restricted to the
+    token_urlsafe alphabet so the SQL literal needs no escaping.
+    """
+    import re as _re
+    if not _re.fullmatch(r"[A-Za-z0-9_-]{16,128}", password):
+        raise Failure("CONFIG_INVALID",
+                      "snapshot_worker password charset/length invalid")
+    return "ALTER ROLE snapshot_worker PASSWORD '%s';" % password
+
+
+def apply_snapshot_worker_password(docker, planner, password: str) -> None:
+    docker.psql_exec(container_name(planner, "postgres"),
+                     snapshot_worker_password_sql(password))
+
+
 # ── Journal helpers ──────────────────────────────────────────────────────────
 
 #: Whitelisted keys of the derived public status projection. The
@@ -2328,7 +2349,27 @@ def _execute_github_e2e_start(args, project_dir, planner, paths,
     existing_network_cidrs = el.fetch_existing_network_cidrs(
         docker_exec)
     docker_gw_priority_supported =         el.fetch_docker_gw_priority_supported(docker_exec)
-    matrix_joined_mxids = el.fetch_matrix_joined_mxids(config)
+    import matrix_wsl_transport as _mx_transport  # PoC 7.3I2-C (stdlib-only)
+    _mx_t = None
+    try:
+        _mx_t = _mx_transport.ensure_matrix_transport(config)
+    except _mx_transport.MatrixTransportUnavailable as _e:
+        raise Failure("MATRIX_TRANSPORT_UNAVAILABLE", type(_e).__name__,
+                      exit_code=EXIT_PRECHECK) from None
+    matrix_joined_mxids = el.fetch_matrix_joined_mxids(config, transport=_mx_t)
+    if matrix_joined_mxids is None and _mx_t is not None:
+        import urllib.parse as _up2
+        _sec = json.load(open(config["matrix_credentials_path"], encoding="utf-8"))
+        _st, _body = _mx_transport.wsl_matrix_request(
+            "GET", config["matrix_homeserver"].rstrip("/") +
+            "/_matrix/client/v3/rooms/" + _up2.quote(config["matrix_room_id"], safe="") +
+            "/joined_members",
+            headers={"Authorization": "Bearer " + _sec["access_token"]},
+            allow_netloc=_mx_transport.homeserver_netloc(config))
+        try:
+            matrix_joined_mxids = sorted(json.loads(_body).get("joined", {}).keys())
+        except Exception:
+            matrix_joined_mxids = None
     try:
         el.run_prerequisite_gate(
             config,
@@ -2556,7 +2597,8 @@ def _execute_github_e2e_start(args, project_dir, planner, paths,
             transport_profile=session.get("transport_profile", ""),
             relay_edges=relay_edges if relay_edges else None,
             matrix_members_provider=(
-                lambda: el.fetch_matrix_joined_mxids(config)),
+                lambda: el.fetch_matrix_joined_mxids(
+                    config, transport=(sys.modules["matrix_wsl_transport"].current_transport() if "matrix_wsl_transport" in sys.modules else None))),
             service_health=None,
             receipt_validator=(
                 lambda path: ex_validate_hiclaw_receipt(
@@ -2819,7 +2861,8 @@ def cmd_start(args):
                        session, run_id, reader_pw,
                        env_file_wsl, ctrl_env_wsl, reader_env_wsl,
                        gh_env_wsl, gh_ingress_pw, gh_publisher_pw,
-                       bool(args.m4f))
+                       bool(args.m4f),
+                       m4f_snapshot_password=(m4f_pw if args.m4f else None))
     except Failure as exc:
         primary = exc
     except KeyboardInterrupt:
@@ -2829,6 +2872,17 @@ def cmd_start(args):
         # planner gate errors and anything else mid-execution go through the
         # SAME rollback path (converted, never swallowed).
         primary = _as_failure(exc)
+        if primary.code == "INTERNAL_ERROR":
+            # 7.3D.6 safe local diagnosis: unknown exceptions get their
+            # traceback redacted and written to an owned state file (never
+            # user output); cleanup removes it with the session.
+            import traceback as _tb
+            try:
+                _diag = paths["state"] / "diagnostics-traceback.txt"
+                _diag.write_text(_redact(_tb.format_exc()), encoding="utf-8")
+                log("diagnostics: redacted traceback -> %s" % _diag.name)
+            except Exception:
+                pass
 
     if primary is None:
         result = {
@@ -2867,7 +2921,7 @@ def cmd_start(args):
 def _execute_start(docker, planner, showcase, project_dir, paths, session,
                    run_id, reader_pw, env_file_wsl, ctrl_env_wsl,
                    reader_env_wsl, gh_env_wsl, gh_ingress_pw,
-                   gh_publisher_pw, m4f):
+                   gh_publisher_pw, m4f, m4f_snapshot_password=None):
     """Sequential execution of the nine-step plan with per-step journaling.
 
     Steps 0-2 run first; the postgres bridge IP is MEASURED after postgres is
@@ -2918,6 +2972,13 @@ def _execute_start(docker, planner, showcase, project_dir, paths, session,
 
     journal_stage("db_prepare")
     prepare_database(docker, planner, showcase, project_dir, reader_pw)
+    if m4f:
+        # Phase7 fix: chain creates snapshot_worker LOGIN without a password;
+        # provision the per-session password matching the generated DSN.
+        if not m4f_snapshot_password:
+            raise Failure("CONFIG_INVALID",
+                          "m4f start requires the snapshot_worker password")
+        apply_snapshot_worker_password(docker, planner, m4f_snapshot_password)
 
     journal_stage("gh_bootstrap")
     bootstrap_gh_roles(docker, planner, gh_ingress_pw, gh_publisher_pw)
