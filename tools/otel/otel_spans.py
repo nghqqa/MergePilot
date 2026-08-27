@@ -720,6 +720,100 @@ class AgentWindowSpan:
 
 
 
+# ---------------------------------------------------------------------------
+# OTLP/HTTP protobuf encoding (AgentLoop ingestion is http/protobuf ONLY;
+# official docs: "仅支持 HTTP/Protobuf，暂不支持 HTTP/JSON 和 gRPC").
+# Hand-rolled minimal writer for the subset this codebase emits — no external
+# dependency. Wire format reference: opentelemetry/proto/trace/v1.
+# ---------------------------------------------------------------------------
+
+def _pb_varint(n: int) -> bytes:
+    out = bytearray()
+    while True:
+        b = n & 0x7F
+        n >>= 7
+        out.append(b | (0x80 if n else 0))
+        if not n:
+            return bytes(out)
+
+
+def _pb_tag(field: int, wire: int) -> bytes:
+    return _pb_varint((field << 3) | wire)
+
+
+def _pb_len(field: int, payload: bytes) -> bytes:
+    return _pb_tag(field, 2) + _pb_varint(len(payload)) + payload
+
+
+def _pb_uint64_fixed(field: int, n: int) -> bytes:
+    import struct
+    return _pb_tag(field, 1) + struct.pack("<Q", n)
+
+
+def _pb_kv(k: str, v: Any) -> bytes:
+    # KeyValue{1: key, 2: AnyValue{1: string_value}}
+    return _pb_len(1, k.encode()) + _pb_len(2, _pb_len(1, str(v).encode()))
+
+
+_STATUS_CODE = {"OK": 1, "ERROR": 2}          # else UNSET=0
+_SPAN_KIND_INTERNAL = 1                        # enum SpanKind
+
+
+def span_to_otlp_proto(span: SpanRecord, service_name: str,
+                       resource_attrs: dict = None) -> bytes:
+    """Encode one SpanRecord as ExportTraceServiceRequest bytes."""
+    kvs = [_pb_kv("service.name", service_name)]
+    for k, v in (resource_attrs or {}).items():
+        kvs.append(_pb_kv(k, v))
+    resource = b"".join(_pb_len(1, x) for x in kvs)
+
+    scope = _pb_len(1, b"mergepilot-otel") + _pb_len(2, b"1")
+    t0 = int(span.start_time * 1e9)
+    t1 = int((span.end_time or time.time()) * 1e9)
+    parts = [
+        _pb_len(1, bytes.fromhex(span.trace_id)),
+        _pb_len(2, bytes.fromhex(span.span_id)),
+    ]
+    if span.parent_span_id:
+        parts.append(_pb_len(4, bytes.fromhex(span.parent_span_id)))
+    parts.append(_pb_len(5, span.name.encode()))
+    parts.append(_pb_tag(6, 0) + _pb_varint(_SPAN_KIND_INTERNAL))
+    parts.append(_pb_uint64_fixed(7, t0))
+    parts.append(_pb_uint64_fixed(8, t1))
+    for k, v in span.attributes.items():
+        parts.append(_pb_len(9, _pb_kv(k, v)))
+    for link in getattr(span, "links", []) or []:
+        lm = _pb_len(1, bytes.fromhex(link["trace_id"])) + \
+            _pb_len(2, bytes.fromhex(link["span_id"]))
+        parts.append(_pb_len(11, lm))
+    code = _STATUS_CODE.get(span.status, 0)
+    parts.append(_pb_len(15, _pb_tag(3, 0) + _pb_varint(code)))
+    span_msg = b"".join(parts)
+
+    scope_spans = _pb_len(1, scope) + _pb_len(2, span_msg)
+    resource_spans = _pb_len(1, resource) + _pb_len(2, scope_spans)
+    return _pb_len(1, resource_spans)
+
+
+def parse_resource_attributes(environ=None) -> dict:
+    """Official OTEL_RESOURCE_ATTRIBUTES (k1=v1,k2=v2, URL-decoded)."""
+    from urllib.parse import unquote
+    raw = (environ if environ is not None else os.environ) \
+        .get("OTEL_RESOURCE_ATTRIBUTES", "")
+    out = {}
+    for pair in raw.split(","):
+        pair = pair.strip()
+        if not pair or "=" not in pair:
+            continue
+        k, _, v = pair.partition("=")
+        if k.strip():
+            try:
+                out[k.strip()] = unquote(v.strip())
+            except Exception:
+                out[k.strip()] = v.strip()
+    return out
+
+
 class OTLPExporter:
     """Sends completed spans to an OTLP/HTTP receiver.
 
@@ -729,9 +823,13 @@ class OTLPExporter:
     """
 
     def __init__(self, endpoint: str = "http://localhost:4318/v1/traces",
-                 timeout: float = 2.0, headers: dict = None):
+                 timeout: float = 2.0, headers: dict = None,
+                 fmt: str = "json"):
         self.endpoint = endpoint
         self.timeout = timeout
+        # AgentLoop ingestion is http/protobuf only; json kept for local
+        # otelcol receivers and backward compatibility.
+        self._format = fmt if fmt in ("json", "proto") else "json"
         # Auth/license headers ride on every export POST; their VALUES are
         # never logged, counted into stats, or exposed via repr/str paths.
         self._headers = dict(headers or {})
@@ -770,8 +868,17 @@ class OTLPExporter:
     def export(self, span: SpanRecord):
         """Export a single span. Non-blocking on failure."""
         import urllib.error
-        service_name = os.environ.get("MP_SERVICE_NAME", "mergepilot")
-        payload = json.dumps({
+        # Official env (OTEL_SERVICE_NAME) wins over legacy MP_SERVICE_NAME.
+        service_name = os.environ.get("OTEL_SERVICE_NAME") or \
+            os.environ.get("MP_SERVICE_NAME", "mergepilot")
+        if self._format == "proto":
+            payload = span_to_otlp_proto(
+                span, service_name,
+                resource_attrs=parse_resource_attributes())
+            content_type = "application/x-protobuf"
+        else:
+            content_type = "application/json"
+            payload = json.dumps({
             "resourceSpans": [{
                 "resource": {"attributes": [{
                     "key": "service.name",
@@ -785,7 +892,7 @@ class OTLPExporter:
         try:
             from urllib.request import Request
             req_headers = dict(self._headers)
-            req_headers["Content-Type"] = "application/json"
+            req_headers["Content-Type"] = content_type
             req = Request(self.endpoint, data=payload,
                           headers=req_headers, method="POST")
             self._opener.open(req, timeout=self.timeout)

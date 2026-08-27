@@ -367,3 +367,128 @@ def test_init_wires_standard_headers(monkeypatch):
     col = ei.init_from_env()
     ei.reset_for_tests()
     assert col is not None and col.exporter._headers == {"x-auth": "token9"}
+
+
+# ---- 续篇：OTLP http/protobuf 编码（AgentLoop 官方唯一支持的格式） ----------
+def _pb_read_varint(buf, i):
+    shift, val = 0, 0
+    while True:
+        b = buf[i]; i += 1
+        val |= (b & 0x7F) << shift
+        if not (b & 0x80):
+            return val, i
+        shift += 7
+
+
+def _pb_parse(buf):
+    """Generic decode: {field: [(wire, value)]}, wire2 values kept raw."""
+    out, i = {}, 0
+    while i < len(buf):
+        key, i = _pb_read_varint(buf, i)
+        field, wire = key >> 3, key & 7
+        if wire == 0:
+            val, i = _pb_read_varint(buf, i)
+        elif wire == 1:
+            val = int.from_bytes(buf[i:i + 8], "little"); i += 8
+        elif wire == 2:
+            ln, i = _pb_read_varint(buf, i)
+            val = buf[i:i + ln]; i += ln
+        else:
+            raise AssertionError(f"wire {wire}")
+        out.setdefault(field, []).append(val)
+    return out
+
+
+def test_proto_encoder_structural_roundtrip():
+    import time as _t
+    t0, t1 = _t.time(), _t.time() + 1.5
+    rec = ot.SpanRecord("a" * 32, "b" * 16, "c" * 16, "gateway.call_tool",
+                        run_id="r-proto",
+                        attributes={"mp.policy_decision": "ALLOW"})
+    rec.links = [{"trace_id": "d" * 32, "span_id": "e" * 16}]
+    rec.set_status("ERROR")
+    rec.end_time = t1
+    blob = ot.span_to_otlp_proto(rec, "mergepilot",
+                                 resource_attrs={"env": "poc"})
+    req = _pb_parse(blob)
+    rs = _pb_parse(req[1][0])
+    res = _pb_parse(rs[1][0])
+    res_kv = _pb_parse(res[1][0])
+    assert res_kv[1][0].decode() == "service.name"             # key
+    assert _pb_parse(res_kv[2][0])[1][0].decode() == "mergepilot"
+    kv2 = _pb_parse(res[1][1])                                  # resource attr
+    assert kv2[1][0].decode() == "env"
+    assert _pb_parse(kv2[2][0])[1][0].decode() == "poc"
+    ss = _pb_parse(rs[2][0])
+    assert _pb_parse(ss[1][0])[1][0].decode() == "mergepilot-otel"
+    sp = _pb_parse(ss[2][0])
+    assert sp[1][0].hex() == "a" * 32 and sp[2][0].hex() == "b" * 16
+    assert sp[4][0].hex() == "c" * 16                          # parent
+    assert sp[5][0].decode() == "gateway.call_tool"
+    assert sp[6][0] == 1                                       # INTERNAL kind
+    assert sp[7][0] == int(t0 * 1e9) and sp[8][0] == int(t1 * 1e9)
+    kv = _pb_parse(sp[9][0])
+    assert kv[1][0].decode() == "mp.policy_decision"
+    assert _pb_parse(kv[2][0])[1][0].decode() == "ALLOW"
+    link = _pb_parse(sp[11][0])
+    assert link[1][0].hex() == "d" * 32 and link[2][0].hex() == "e" * 16
+    assert _pb_parse(sp[15][0])[3][0] == 2                     # STATUS_ERROR
+
+
+def test_proto_encoder_omits_absent_parent():
+    rec = ot.SpanRecord("1" * 32, "2" * 16, None, "skill.x", run_id="r")
+    sp = _pb_parse(_pb_parse(_pb_parse(
+        ot.span_to_otlp_proto(rec, "m"))[1][0])[2][0])[2][0]
+    assert 4 not in _pb_parse(sp)
+
+
+def test_proto_format_switch_content_type(mem, monkeypatch):
+    class Cap:
+        def __init__(self): self.captured = None
+        def open(self, req, timeout=None): self.captured = req
+
+    cap = Cap()
+    exp = ot.OTLPExporter(endpoint="http://127.0.0.1:9/v1/traces",
+                          timeout=0.2, fmt="proto")
+    exp._opener = cap
+    dual = ot.DualCollector(memory=mem, exporter=exp)
+    ot.set_collector(dual)
+    try:
+        with ot.start_span("controller.process_event", run_id="r-fmt"):
+            pass
+    finally:
+        ot.set_collector(None)
+    ct = {k.lower(): v for k, v in cap.captured.header_items()}
+    assert ct.get("content-type") == "application/x-protobuf"
+    assert cap.captured.data[:1] == b"\x0a"                    # field1, wire2
+    # json 缺省路径不受影响
+    exp2 = ot.OTLPExporter(endpoint="http://127.0.0.1:9/v1/traces")
+    assert exp2._format == "json"
+
+
+def test_official_env_precedence_and_resource_attrs(mem, monkeypatch):
+    class Cap:
+        def __init__(self): self.captured = None
+        def open(self, req, timeout=None): self.captured = req
+
+    monkeypatch.setenv("OTEL_SERVICE_NAME", "mergepilot-poc")
+    monkeypatch.setenv("MP_SERVICE_NAME", "legacy-name")
+    monkeypatch.setenv("OTEL_RESOURCE_ATTRIBUTES",
+                       "deployment.env=poc%2F1,team=infra")
+    assert ot.parse_resource_attributes() ==         {"deployment.env": "poc/1", "team": "infra"}
+    cap = Cap()
+    exp = ot.OTLPExporter(endpoint="http://127.0.0.1:9/v1/traces",
+                          timeout=0.2, fmt="proto")
+    exp._opener = cap
+    dual = ot.DualCollector(memory=mem, exporter=exp)
+    ot.set_collector(dual)
+    try:
+        with ot.start_span("controller.process_event", run_id="r-env"):
+            pass
+    finally:
+        ot.set_collector(None)
+    req_msg = _pb_parse(cap.captured.data)
+    res = _pb_parse(_pb_parse(req_msg[1][0])[1][0])
+    svc_kv = _pb_parse(res[1][0])
+    assert svc_kv[1][0].decode() == "service.name"
+    assert _pb_parse(svc_kv[2][0])[1][0].decode() == "mergepilot-poc"

@@ -1,17 +1,17 @@
 [
   {
-    "trace_id": "4e1355f34190d1a98e0268567c3bbb4d",
-    "span_id": "945ad6b4147defa2",
-    "parent_span_id": "3ae747aad269573c",
+    "trace_id": "7e11357e78e15fd5a1bde9a7319f4064",
+    "span_id": "d0a70f9966e3bd20",
+    "parent_span_id": "fe111abb0baa1a77",
     "name": "tool.synthetic_health_check",
     "status": "OK",
-    "start_time": 1787763220.5179303,
-    "end_time": 1787763220.5179303,
+    "start_time": 1787796858.28913,
+    "end_time": 1787796858.28913,
     "duration_ms": 0.0,
-    "run_id": "poc-selfcheck-1787763220",
+    "run_id": "poc-selfcheck-1787796858",
     "attributes": {
-      "mp.run_id": "poc-selfcheck-1787763220",
-      "mp.trace_id": "4e1355f34190d1a98e0268567c3bbb4d",
+      "mp.run_id": "poc-selfcheck-1787796858",
+      "mp.trace_id": "7e11357e78e15fd5a1bde9a7319f4064",
       "mp.agent_role": "manager",
       "tool_name": "synthetic_health_check",
       "policy_decision": "ALLOW"
@@ -19,18 +19,18 @@
     "events": []
   },
   {
-    "trace_id": "4e1355f34190d1a98e0268567c3bbb4d",
-    "span_id": "3ae747aad269573c",
+    "trace_id": "7e11357e78e15fd5a1bde9a7319f4064",
+    "span_id": "fe111abb0baa1a77",
     "parent_span_id": null,
     "name": "mergepilot.poc.health_check",
     "status": "OK",
-    "start_time": 1787763220.5179303,
-    "end_time": 1787763220.5179303,
+    "start_time": 1787796858.28913,
+    "end_time": 1787796858.28913,
     "duration_ms": 0.0,
-    "run_id": "poc-selfcheck-1787763220",
+    "run_id": "poc-selfcheck-1787796858",
     "attributes": {
-      "mp.run_id": "poc-selfcheck-1787763220",
-      "mp.trace_id": "4e1355f34190d1a98e0268567c3bbb4d",
+      "mp.run_id": "poc-selfcheck-1787796858",
+      "mp.trace_id": "7e11357e78e15fd5a1bde9a7319f4064",
       "mp.agent_role": "manager",
       "mp.final_decision": "HEALTH_CHECK"
     },

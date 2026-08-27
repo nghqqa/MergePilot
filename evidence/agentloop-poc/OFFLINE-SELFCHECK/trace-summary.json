@@ -5,11 +5,11 @@
     "real_agentteams_run": "NOT_RUN_THIS_ROUND",
     "offline_protocol_tests": "PASSED (pytest tests/otel)"
   },
-  "run_id": "poc-selfcheck-1787763220",
-  "generated_at_utc": "2026-08-26T16:53:49.881200+00:00",
+  "run_id": "poc-selfcheck-1787796858",
+  "generated_at_utc": "2026-08-27T02:14:27.653018+00:00",
   "canonical_trace": {
-    "run_id": "poc-selfcheck-1787763220",
-    "trace_id": "cfd826c456ba6e65e85ec1a0d75dbc05",
+    "run_id": "poc-selfcheck-1787796858",
+    "trace_id": "f56804502950a00191bd05320a5a86b6",
     "span_names": [
       "tool.synthetic_health_check",
       "mergepilot.poc.health_check"
@@ -26,19 +26,19 @@
   "probe_overhead_offline": {
     "note": "ON 模式指向不可达端口：序列化+POST+快速失败的完整最坏路径；非云上真实时延",
     "exporter_off_ms": {
-      "p50_ms": 15.5,
-      "p95_ms": 16.182,
-      "mean_ms": 15.514,
+      "p50_ms": 15.545,
+      "p95_ms": 16.138,
+      "mean_ms": 15.545,
       "n": 60
     },
     "exporter_on_unreachable_ms": {
-      "p50_ms": 139.99,
-      "p95_ms": 142.13,
-      "mean_ms": 140.535,
+      "p50_ms": 140.012,
+      "p95_ms": 141.799,
+      "mean_ms": 140.509,
       "n": 60
     },
-    "delta_p50_ms": 124.49,
-    "cpu_process_seconds": 0.3906,
+    "delta_p50_ms": 124.467,
+    "cpu_process_seconds": 0.2344,
     "rss_memory": "NOT_MEASURED_SANDBOX"
   }
 }
