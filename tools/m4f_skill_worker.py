@@ -317,6 +317,17 @@ class SkillWorker:
             _otel_ctx.__enter__()
         except Exception:
             pass  # fail-closed
+        child_env = self._child_env(job.skill_name)
+        # PoC(Phase7.1): propagate the worker span context into the Skill
+        # subprocess via env (side-channel; envelope schema untouched).
+        try:
+            if _otel_ctx is not None:
+                _wctx = _otel.get_current_context()
+                if _wctx is not None:
+                    child_env["MP_TRACEPARENT"] = _otel.to_traceparent(_wctx)
+                    child_env["MP_RUN_ID"] = job.run_id
+        except Exception:
+            pass  # fail-closed: propagation never breaks execution
         try:
             proc = subprocess.run(
                 [self.python_executable, "-m", module],
@@ -324,7 +335,7 @@ class SkillWorker:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 cwd=str(self.repo_root),
-                env=self._child_env(job.skill_name),
+                env=child_env,
                 timeout=timeout_seconds,
                 check=False,
             )

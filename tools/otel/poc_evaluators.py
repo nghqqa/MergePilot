@@ -26,6 +26,14 @@ ROLE_TOOL_ALLOWLIST = {
 MAX_VERIFY_ATTEMPTS = 3
 
 
+def load_manifest(path) -> List[Dict[str, Any]]:
+    """Load a span-manifest.json (Phase 7.5) into evaluator-ready dicts."""
+    import json
+    with open(path, "r", encoding="utf-8") as fh:
+        data = json.load(fh)
+    return data["spans"] if isinstance(data, dict) else data
+
+
 def _attrs(span: Dict[str, Any]) -> Dict[str, Any]:
     return span.get("attributes", {})
 

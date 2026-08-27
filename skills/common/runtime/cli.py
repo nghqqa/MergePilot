@@ -407,10 +407,19 @@ def run_request(req, skill_fn, *, name=SKILL_NAME, version=SKILL_VERSION, timeou
         if _otel_dir not in _otel_sys.path:
             _otel_sys.path.insert(0, _otel_dir)
         import otel_spans as _otel_mod
+        # PoC(Phase7.1): optional worker-provided parent context via env
+        # (fail-closed; malformed value -> None, span stays hop-root).
+        _mp_parent_span_id = None
+        _tp = os.environ.get("MP_TRACEPARENT", "")
+        if _tp:
+            _pc = _otel_mod.from_traceparent(_tp)
+            if _pc is not None:
+                _mp_parent_span_id = _pc.span_id
         _otel_ctx = _otel_mod.skill_span(
             run_id="", trace_id=trace_id,
             skill_name=name, skill_version=version,
-            request_id=request_id, agent_role="skill")
+            request_id=request_id, agent_role="skill",
+            parent_span_id=_mp_parent_span_id)
         _otel_span_obj = _otel_ctx.__enter__()
     except Exception:
         _otel_ctx = None  # ensure no double-enter
