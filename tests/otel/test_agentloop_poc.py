@@ -27,6 +27,7 @@ Coverage map (task mandate §5, items 1-20):
 import contextlib
 import inspect
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -510,3 +511,88 @@ def test_proto_resource_carries_sdk_identity_and_overrides():
     assert kvs["service.name"] == "mergepilot"
     assert kvs["telemetry.sdk.name"] == "mergepilot-otel"
     assert kvs["telemetry.sdk.language"] == "python"
+
+
+# ---- Phase 7 离线门禁：worker↔skill 上下文透传协议 + GenAI 防伪造挂载点 ----
+def test_phase7_worker_to_skill_context_protocol(mem, monkeypatch):
+    # 生产者侧（worker 进程角色）：开 span → 序列化进 env
+    monkeypatch.delenv("MP_TRACEPARENT", raising=False)
+    with ot.start_span("skill.sast_scan", run_id="r-p7",
+                       trace_id=ot._gen_trace_id(), agent_role="skill-worker"):
+        wctx = ot.get_current_context()
+        monkeypatch.setenv("MP_TRACEPARENT", ot.to_traceparent(wctx))
+        # 消费者侧（skill 子进程角色）：解析 env → 回挂父 span
+        pc = ot.from_traceparent(os.environ["MP_TRACEPARENT"])
+        assert pc is not None
+        with ot.start_span("skill.inner", run_id="r-p7", trace_id=pc.trace_id,
+                           parent_span_id=pc.span_id):
+            pass
+    child = _by_name(mem, "skill.inner")
+    assert child.trace_id == wctx.trace_id
+    assert child.parent_span_id == wctx.span_id      # 同 run 内同步父子
+    # 非法 env fail-closed：子 span 保持 hop 根且不带伪造父
+    monkeypatch.setenv("MP_TRACEPARENT", "00-zz-yy-01")
+    pc2 = ot.from_traceparent(os.environ["MP_TRACEPARENT"])
+    assert pc2 is None
+
+
+def test_phase7_cli_source_has_env_fallback():
+    src = open("skills/common/runtime/cli.py", encoding="utf-8").read()
+    assert "MP_TRACEPARENT" in src and "parent_span_id=_mp_parent_span_id" in src
+
+
+def test_phase7_genai_hooks_refuse_fake_invocations(mem):
+    import genai_hooks as gh
+    ot.set_collector(mem)
+    try:
+        fake = gh.RealInvocation(provider="", model="", input_digest="",
+                                 output_digest="", input_tokens=0,
+                                 output_tokens=0)
+        for emit in (gh.emit_invoke_agent, gh.emit_llm, gh.emit_execute_tool):
+            span, reason = emit(ot, "r-g", "t" * 32, fake)
+            assert span is None and reason
+        # 文本直传（非摘要）一律拒绝
+        bad = gh.RealInvocation(provider="dashscope", model="qwen-plus",
+                                input_digest=" PROMPT TEXT ", output_digest="x" * 64,
+                                input_tokens=1, output_tokens=1)
+        span, reason = gh.emit_llm(ot, "r-g", "t" * 32, bad)
+        assert span is None and "sha256" in reason
+        assert mem.count == 0, "未发生真实调用时不得产生任何 GenAI span"
+        # 真实载荷 → 允许，且只带 gen_ai/mp 白名单属性
+        real = gh.RealInvocation(provider="dashscope", model="qwen-plus",
+                                 input_digest="a" * 64, output_digest="b" * 64,
+                                 input_tokens=12, output_tokens=8,
+                                 latency_ms=250)
+        span, reason = gh.emit_llm(ot, "r-g", "t" * 32, real)
+        assert span is not None and reason is None
+        assert span.attributes["gen_ai.usage"] == 20
+        assert span.name == "genai.llm"
+    finally:
+        ot.set_collector(None)
+
+
+def test_phase7_evaluator_manifest_loader(tmp_path):
+    import json as _json
+    from poc_evaluators import load_manifest
+    f = tmp_path / "span-manifest.json"
+    f.write_text(_json.dumps({"spans": [{"span_id": "s", "name": "n"}]}),
+                 encoding="utf-8")
+    assert load_manifest(f)[0]["span_id"] == "s"
+    f.write_text(_json.dumps([{"span_id": "s2"}]), encoding="utf-8")
+    assert load_manifest(f)[0]["span_id"] == "s2"
+
+
+# ---- Phase 7.3B：snapshot_worker 密码供给（通用机制，无 run 特判） ----------
+def test_snapshot_worker_password_sql_contract():
+    import importlib.util as _iu
+    sys.path.insert(0, os.path.abspath("tools/cli"))
+    spec = _iu.spec_from_file_location(
+        "mp_cli", "tools/cli/mergepilot.py")
+    mp = _iu.module_from_spec(spec)
+    spec.loader.exec_module(mp)
+    sql = mp.snapshot_worker_password_sql("Ab3_-xyz" * 4)
+    assert sql == "ALTER ROLE snapshot_worker PASSWORD 'Ab3_-xyzAb3_-xyzAb3_-xyzAb3_-xyz';"
+    for bad in ("short", "with space" + "a" * 20, "quote'" + "a" * 20,
+                "a" * 200):
+        with pytest.raises(mp.Failure):
+            mp.snapshot_worker_password_sql(bad)
