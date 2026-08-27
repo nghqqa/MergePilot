@@ -1,0 +1,34 @@
+{
+  "verdict": "BLOCKED_RUNTIME_MATRIX_TRANSPORT",
+  "reason": "WSL/daemon restart lifecycle: rooms-family routes missing after restarts on both instances",
+  "attempts_7_3I": [
+    "p7i fresh volume + 0.0.0.0:6167 + homeserver=wsl-eth0-ip -> windows-side unreachable (sandbox NAT)",
+    "pristine restore + tuwunel_ip=172.25.0.2 + 127.0.0.1:18080:6167 -> typed matrix_membership fail CORRECT (pristine room/creds point at dead server)"
+  ],
+  "recovery": "read cmd_start membership transport injection (10 lines) -> set matrix_homeserver to transport vantage (likely in-distro 172.25.0.2:6167) + point room_id/creds to p7i files -> rerun start gh-p7i2",
+  "verdict_final": "BLOCKED_CONFIGURATION",
+  "state_7_3I2": {
+    "p7i_matrix": "healthy (fresh volume, 9 identities, contract room 5/5 reconciled earlier)",
+    "two_probes_open": [
+      "matrix_membership (config currently points at dead historical room/creds: my final config write hit RemoteDisconnected before persisting; staged script ready)",
+      "docker_gw_priority (CLI fetch=False vs doctor True intermittently; suspected exec-layer transient, gate kept, not bypassed)"
+    ],
+    "transport_fix": "shipped: tools/cli/matrix_wsl_transport.py (WSL-side runner, SSRF allowlist, stdin-only auth, fail-closed) wired into cmd_start initial probe + lifecycle members_provider, same vantage"
+  },
+  "report": "Phase7 ends BLOCKED_CONFIGURATION; READY reachable via: rerun staged config-write in a stable window, then start gh-p7i3 --m4f --github-e2e",
+  "evidence_7_3I3": {
+    "routable_room": "!wUhWu… GET state/members=200/200 on p7i",
+    "verb_asymmetry": "same room seconds apart: GET 200 -> POST invite 404 M_UNRECOGNIZED -> GET members 404 EMPTY chunk",
+    "recovery": "tcpdump/conntrack inside distro to find second responder on 172.25.0.2:6167, or run CLI probe by mounting it inside p7i-matrix network"
+  },
+  "ladder_7_3I3": [
+    "matrix_membership PASS (WSL transport + p7i room fix)",
+    "docker_gw_priority PASS (warm-retry fix; cold-VM transient eliminated)",
+    "DISTRO_NOT_RUNNING Ubuntu-22.04 -> started docker -> PASSED",
+    "E2E_ROLE_TOKEN_EXTRACT_FAILED: no gateway token for role reviewer (mcporter+container env empty) -> BLOCKED_CONFIGURATION"
+  ],
+  "remaining": "provision hiclaw four-agent gateway tokens/containers (mp-gh4 milestone assets), then rerun start gh-p7i3"
+}{"ladder_7_3K":"role tokens PASS (workers env verified, started); NEW typed first-failure: E2E_POLICY_FILE_INVALID (policy_path historical target) -> verdict stays BLOCKED_CONFIGURATION; next: point policy_path at a valid policy fixture and continue ladder"}
+
+
+> **SUPERSEDED（2026-08-27 终版）**：本目录中的路由/配置层结论已被 PHASE7-FINAL-BLOCKED-UPSTREAM-20260827-1600 的决定性复现取代——根因=内嵌 tuwunel 容器重建后新房间路由失效（上游缺陷）。原文件保留作为证据链。

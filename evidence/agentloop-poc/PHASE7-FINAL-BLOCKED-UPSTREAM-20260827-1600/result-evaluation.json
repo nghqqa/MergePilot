@@ -1,0 +1,4 @@
+{
+  "result_board": "not computable: no real run (upstream blocked)",
+  "offline_gates": "transport 52 + one_click 46 + otel 122 + security 2/2 all green"
+}

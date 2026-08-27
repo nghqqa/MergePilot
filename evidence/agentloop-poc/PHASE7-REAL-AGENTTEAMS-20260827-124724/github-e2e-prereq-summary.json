@@ -1,0 +1,7 @@
+{
+  "gate": "run_prerequisite_gate / load_e2e_prerequisite_config",
+  "stable_code": "GITHUB_E2E_PREREQUISITES_INCOMPLETE",
+  "exit_class": "EXIT_PRECHECK (fail-closed, zero side effects)",
+  "config_file": "state/github-e2e.json PRESENT (20/20 keys, copied from historical provision)",
+  "probe_blockers": ["matrix homeserver unreachable: container + image + data all absent on host distro"]
+}

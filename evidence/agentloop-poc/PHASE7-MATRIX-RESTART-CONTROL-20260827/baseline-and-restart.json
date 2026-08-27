@@ -1,0 +1,85 @@
+{
+  "experiment": "AB",
+  "network": "p7h-net-a",
+  "volume": "p7h-data-a",
+  "container": "p7h-tuwunel-a",
+  "flip_delete_rooms_false": false,
+  "started_utc": "2026-08-27T05:42:41.021656+00:00",
+  "events": [
+    {
+      "step": "create",
+      "container_cid": "7707d8f39952"
+    },
+    {
+      "step": "readiness",
+      "http": "200",
+      "wait_s": 3
+    },
+    {
+      "step": "whoami",
+      "http": 200,
+      "server_name": "18080"
+    },
+    {
+      "step": "createRoom",
+      "http": 200,
+      "room_id": "!n9PmpgbI82zqo8W8aQ:matrix-local.hiclaw.io:18080",
+      "cid": "7707d8f39952"
+    },
+    {
+      "step": "joined_contains_new",
+      "http": 200,
+      "contains": true
+    },
+    {
+      "step": "state",
+      "http": 200
+    },
+    {
+      "step": "log_scan_count_delete_forget_unknown",
+      "count": "0"
+    },
+    {
+      "step": "invite_join",
+      "who": "manager",
+      "invite": 200,
+      "join": 200
+    },
+    {
+      "step": "RESTART",
+      "action": "docker restart"
+    },
+    {
+      "step": "readiness-after-restart",
+      "wait_s": 5
+    },
+    {
+      "step": "whoami-after-restart",
+      "http": 200
+    },
+    {
+      "step": "old_room_in_joined",
+      "http": 200,
+      "contains": true
+    },
+    {
+      "step": "old_room_state",
+      "http": 200
+    },
+    {
+      "step": "new_room_after_restart",
+      "http": 200,
+      "room_id": "!oWEZSgu6boDyqf0pqc:matrix-local.hiclaw.io:18080"
+    },
+    {
+      "step": "new_room_state",
+      "http": 200
+    }
+  ],
+  "probe_summary": {
+    "state_200": 16,
+    "members_200": 16,
+    "total": 32
+  },
+  "cid_final": "7707d8f39952"
+}

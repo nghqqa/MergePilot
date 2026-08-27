@@ -1,0 +1,84 @@
+{
+  "route_rounds": [
+    {
+      "seq": 1,
+      "cid": "a7f75549647b",
+      "wsl": true,
+      "joined_rooms": 200,
+      "state": 400,
+      "members": 400
+    },
+    {
+      "seq": 2,
+      "cid": "a7f75549647b",
+      "wsl": true,
+      "joined_rooms": 200,
+      "state": 400,
+      "members": 400
+    },
+    {
+      "seq": 3,
+      "cid": "a7f75549647b",
+      "wsl": true,
+      "joined_rooms": 200,
+      "state": 400,
+      "members": 400
+    },
+    {
+      "seq": 4,
+      "cid": "a7f75549647b",
+      "wsl": true,
+      "joined_rooms": 200,
+      "state": 400,
+      "members": 400
+    },
+    {
+      "seq": 5,
+      "cid": "a7f75549647b",
+      "wsl": true,
+      "joined_rooms": 200,
+      "state": 400,
+      "members": 400
+    },
+    {
+      "seq": 6,
+      "cid": "a7f75549647b",
+      "wsl": true,
+      "joined_rooms": 200,
+      "state": 400,
+      "members": 400
+    },
+    {
+      "seq": 7,
+      "cid": "a7f75549647b",
+      "wsl": true,
+      "joined_rooms": 200,
+      "state": 400,
+      "members": 400
+    },
+    {
+      "seq": 8,
+      "cid": "a7f75549647b",
+      "wsl": true,
+      "joined_rooms": 200,
+      "state": 400,
+      "members": 400
+    },
+    {
+      "seq": 9,
+      "cid": "a7f75549647b",
+      "wsl": true,
+      "joined_rooms": 200,
+      "state": 400,
+      "members": 400
+    },
+    {
+      "seq": 10,
+      "cid": "a7f75549647b",
+      "wsl": true,
+      "joined_rooms": 200,
+      "state": 400,
+      "members": 400
+    }
+  ]
+}

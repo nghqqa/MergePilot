@@ -1,0 +1,30 @@
+{
+  "search_scopes": {
+    "docker_images_full": "20 tagged + 5 dangling inspected; name-grep negative; imagedb CONTENT-blob string-search positive",
+    "var_lib_docker_imagedb": "hit: sha256/44a29e0d1f8d6522e69f4837729eb297911a7cc6b46c4e1203424e289979ced2 contains 'tuwunel /usr/local/bin/tuwunel' (buildkit history)",
+    "git_all_refs_S_search": "tuwunel/matrix-homeserver/docker-load -> docs+console commits only, no image source",
+    "filename_search": "no tuwunel/conduwuit tars in D:/goai or Downloads",
+    "shell_history": "no surviving launch command (sanitized check)"
+  },
+  "verifiable_source_found": {
+    "registry": "higress-registry.cn-hangzhou.cr.aliyuncs.com",
+    "image": "higress/hiclaw-embedded:v1.1.2",
+    "digest": "sha256:5f8b42fd6c4160b40eb7c3b26c5617edc78fe24d2fcb00f918ff6d742aaa2d2c",
+    "present_locally": true,
+    "embedded_artifacts": ["/usr/local/bin/tuwunel", "/opt/hiclaw/scripts/init/start-tuwunel.sh"],
+    "launch_recipe_recovered": {
+      "binary": "tuwunel (conduwuit fork, CONDUWUIT_* env)",
+      "server_name_env": "HICLAW_MATRIX_DOMAIN (historical value matrix-local.hiclaw.io:18080 per matrix-users.json)",
+      "database_path": "/data/tuwunel",
+      "listen": "0.0.0.0:6167",
+      "allow_registration": true,
+      "frozen_network_target": "172.22.0.2:6167 (R4)"
+    }
+  },
+  "classification": "CONFIGURATION_READY_FOR_RESTORE",
+  "restore_pending_user_inputs": [
+    "确认 hiclaw-embedded:v1.1.2 作为 Matrix 载体（本地已有，无需拉取）",
+    "授权重建 m8gh4-* 五用户/房间/访问令牌（镜像内置 ALLOW_REGISTRATION=true，属受支持流程）",
+    "目标网络网段确认（R4 冻结 172.22.0.2 或新的 pinned IP，需同步刷新 github-e2e.json 与 room-map）"
+  ]
+}

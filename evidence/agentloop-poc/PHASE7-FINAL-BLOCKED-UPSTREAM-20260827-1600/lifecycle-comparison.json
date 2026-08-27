@@ -1,0 +1,25 @@
+{
+  "fresh_volume_first_session": {
+    "create": 200,
+    "room_routes": 200,
+    "probes": "16/16, 24/24",
+    "members": "5/5 exact"
+  },
+  "docker_restart_same_volume": {
+    "old_room": 200,
+    "new_room": 200,
+    "token_survives": true
+  },
+  "daemon_restart_same_volume": {
+    "old_room": 200,
+    "new_room": 200
+  },
+  "container_rm_run_same_volume": {
+    "create": 200,
+    "room_scoped_routes": "404 M_UNRECOGNIZED (deterministic)",
+    "volumes": [
+      "p7g-tuwunel-data",
+      "p7i-tuwunel-data"
+    ]
+  }
+}

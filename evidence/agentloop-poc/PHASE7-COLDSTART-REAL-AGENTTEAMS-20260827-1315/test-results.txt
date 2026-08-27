@@ -1,0 +1,5 @@
+final verdict: BLOCKED_UPSTREAM_TUWUNEL_ROUTE
+discriminator: new-room create=200 state/invite=404 M_UNRECOGNIZED (deterministic, single boot, single container)
+removed variable set: WSL lifecycle / DELETE-FORGET flags / instance switch / generic corruption
+remaining variable: multi-era RocksDB volume x embedded tuwunel 1.5.0-48 router
+model_calls: 0; agents: not triggered; fabricated: 0

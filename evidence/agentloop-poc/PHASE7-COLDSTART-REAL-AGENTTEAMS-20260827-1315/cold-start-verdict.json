@@ -1,0 +1,36 @@
+{
+  "verdict": "BLOCKED_UPSTREAM_TUWUNEL_ROUTE",
+  "cold_boot": "clean (RocksDB v17 seq3068 loaded, listening, greeting ok)",
+  "discriminator": "joined_rooms 200x10; state/members 400x10 (deterministic, with Authorization)",
+  "formal_room_created": true,
+  "frozen_members_joined": false,
+  "model_calls": 0,
+  "agents_triggered": 0,
+  "fabricated_events": 0,
+  "unresolved": "400 response body not yet captured (auth-enabled probe script staged at .mergepilot/p7h3-probe400.py)",
+  "final_discriminator": {
+    "boot": "14:19 (single stable session)",
+    "new_room_create": 200,
+    "new_room_state": 404,
+    "new_room_invite": 404,
+    "errcode": "M_UNRECOGNIZED",
+    "deterministic": "6/6 + this-run repeats",
+    "container_cid": "a7f75549647b"
+  },
+  "eliminated": {
+    "wsl_lifecycle": "kept-alive session, uptime stable during tests",
+    "delete_forget_flags": "experiment D passed with flags=false; p7g broken WITH flags=false too",
+    "instance_switch": "single container/IP",
+    "rocksdb_corruption_generic": "users/tokens/joined_rooms survive; only room-scoped routes dead"
+  },
+  "remaining_variable": "multi-era p7g-tuwunel-data RocksDB volume interacting with embedded tuwunel 1.5.0-48 router (room-scoped client routes unregistered/hidden)",
+  "practical_recovery_for_stack": "discard p7g-tuwunel-data volume; fresh volume + scripted registration (p7g-provision-matrix.py + p7g-final-provision.py, all idempotent) rebuilds users/rooms/tokens in minutes",
+  "decisive_repro": {
+    "fresh_volume_session1": "createRoom 200 + state/invite 200 + 5/5 reconcile (p7i-exp 16/16, 24/24 probes)",
+    "after_container_rm_and_run_same_volume": "createRoom 200 BUT state/invite = 404 M_UNRECOGNIZED (deterministic 6/6 + final probe)",
+    "cross_volume": "p7g volume identical signature",
+    "conclusion": "upstream tuwunel 1.5.0-48: rooms created after container recreation are not registered in the router; first-session rooms remain routable"
+  }
+}
+
+> **SUPERSEDED（2026-08-27 终版）**：本目录中的路由/配置层结论已被 PHASE7-FINAL-BLOCKED-UPSTREAM-20260827-1600 的决定性复现取代——根因=内嵌 tuwunel 容器重建后新房间路由失效（上游缺陷）。原文件保留作为证据链。

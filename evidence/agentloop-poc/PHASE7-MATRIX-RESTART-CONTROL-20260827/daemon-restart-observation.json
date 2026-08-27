@@ -1,0 +1,42 @@
+{
+  "experiment": "CPOST",
+  "network": "p7h-net-a",
+  "volume": "p7h-data-a",
+  "container": "p7h-tuwunel-a",
+  "flip_delete_rooms_false": false,
+  "started_utc": "2026-08-27T05:45:59.200183+00:00",
+  "events": [
+    {
+      "step": "readiness",
+      "http": "200",
+      "wait_s": 3
+    },
+    {
+      "step": "readiness-after-daemon-restart",
+      "wait_s": 30
+    },
+    {
+      "step": "whoami",
+      "http": 200
+    },
+    {
+      "step": "old_room_in_joined",
+      "http": 200,
+      "contains": true
+    },
+    {
+      "step": "old_room_state",
+      "http": 200
+    },
+    {
+      "step": "new_room",
+      "http": 200,
+      "room_id": "!3j6PDKmWl2I7xquWX8:matrix-local.hiclaw.io:18080"
+    },
+    {
+      "step": "new_room_state",
+      "http": 200
+    }
+  ],
+  "cid_final": "7707d8f39952"
+}

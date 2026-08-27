@@ -1,0 +1,520 @@
+{
+  "started_utc": "2026-08-27T05:20:09.338159+00:00",
+  "probes": [
+    {
+      "seq": 1,
+      "ts": "05:20:11.271",
+      "cid_prefix": "457ed5c6c9e7",
+      "joined_rooms": [
+        200,
+        ""
+      ],
+      "state": [
+        200,
+        ""
+      ],
+      "members": [
+        200,
+        ""
+      ]
+    },
+    {
+      "seq": 2,
+      "ts": "05:20:13.522",
+      "cid_prefix": "457ed5c6c9e7",
+      "joined_rooms": [
+        200,
+        ""
+      ],
+      "state": [
+        200,
+        ""
+      ],
+      "members": [
+        200,
+        ""
+      ]
+    },
+    {
+      "seq": 3,
+      "ts": "05:20:15.731",
+      "cid_prefix": "457ed5c6c9e7",
+      "joined_rooms": [
+        200,
+        ""
+      ],
+      "state": [
+        200,
+        ""
+      ],
+      "members": [
+        200,
+        ""
+      ],
+      "invite_mgr": [
+        200,
+        ""
+      ],
+      "join_mgr": [
+        200,
+        ""
+      ]
+    },
+    {
+      "seq": 4,
+      "ts": "05:20:18.013",
+      "cid_prefix": "457ed5c6c9e7",
+      "joined_rooms": [
+        200,
+        ""
+      ],
+      "state": [
+        200,
+        ""
+      ],
+      "members": [
+        200,
+        ""
+      ]
+    },
+    {
+      "seq": 5,
+      "ts": "05:20:20.361",
+      "cid_prefix": "457ed5c6c9e7",
+      "joined_rooms": [
+        200,
+        ""
+      ],
+      "state": [
+        200,
+        ""
+      ],
+      "members": [
+        200,
+        ""
+      ]
+    },
+    {
+      "seq": 6,
+      "ts": "05:20:22.598",
+      "cid_prefix": "457ed5c6c9e7",
+      "joined_rooms": [
+        200,
+        ""
+      ],
+      "state": [
+        200,
+        ""
+      ],
+      "members": [
+        200,
+        ""
+      ]
+    },
+    {
+      "seq": 7,
+      "ts": "05:20:24.904",
+      "cid_prefix": "457ed5c6c9e7",
+      "joined_rooms": [
+        200,
+        ""
+      ],
+      "state": [
+        200,
+        ""
+      ],
+      "members": [
+        200,
+        ""
+      ]
+    },
+    {
+      "seq": 8,
+      "ts": "05:20:27.127",
+      "cid_prefix": "457ed5c6c9e7",
+      "joined_rooms": [
+        200,
+        ""
+      ],
+      "state": [
+        200,
+        ""
+      ],
+      "members": [
+        200,
+        ""
+      ]
+    },
+    {
+      "seq": 9,
+      "ts": "05:20:29.392",
+      "cid_prefix": "457ed5c6c9e7",
+      "joined_rooms": [
+        200,
+        ""
+      ],
+      "state": [
+        200,
+        ""
+      ],
+      "members": [
+        200,
+        ""
+      ]
+    },
+    {
+      "seq": 10,
+      "ts": "05:20:31.586",
+      "cid_prefix": "457ed5c6c9e7",
+      "joined_rooms": [
+        200,
+        ""
+      ],
+      "state": [
+        200,
+        ""
+      ],
+      "members": [
+        200,
+        ""
+      ]
+    },
+    {
+      "seq": 11,
+      "ts": "05:20:33.838",
+      "cid_prefix": "457ed5c6c9e7",
+      "joined_rooms": [
+        200,
+        ""
+      ],
+      "state": [
+        200,
+        ""
+      ],
+      "members": [
+        200,
+        ""
+      ]
+    },
+    {
+      "seq": 12,
+      "ts": "05:20:36.069",
+      "cid_prefix": "457ed5c6c9e7",
+      "joined_rooms": [
+        200,
+        ""
+      ],
+      "state": [
+        200,
+        ""
+      ],
+      "members": [
+        200,
+        ""
+      ]
+    },
+    {
+      "seq": 13,
+      "ts": "05:20:38.399",
+      "cid_prefix": "457ed5c6c9e7",
+      "joined_rooms": [
+        200,
+        ""
+      ],
+      "state": [
+        200,
+        ""
+      ],
+      "members": [
+        200,
+        ""
+      ]
+    },
+    {
+      "seq": 14,
+      "ts": "05:20:40.606",
+      "cid_prefix": "457ed5c6c9e7",
+      "joined_rooms": [
+        200,
+        ""
+      ],
+      "state": [
+        200,
+        ""
+      ],
+      "members": [
+        200,
+        ""
+      ]
+    },
+    {
+      "seq": 15,
+      "ts": "05:20:42.881",
+      "cid_prefix": "457ed5c6c9e7",
+      "joined_rooms": [
+        200,
+        ""
+      ],
+      "state": [
+        200,
+        ""
+      ],
+      "members": [
+        200,
+        ""
+      ],
+      "invite_mgr": [
+        403,
+        "M_FORBIDDEN"
+      ],
+      "join_mgr": [
+        200,
+        ""
+      ]
+    },
+    {
+      "seq": 16,
+      "ts": "05:20:45.152",
+      "cid_prefix": "457ed5c6c9e7",
+      "joined_rooms": [
+        200,
+        ""
+      ],
+      "state": [
+        200,
+        ""
+      ],
+      "members": [
+        200,
+        ""
+      ]
+    },
+    {
+      "seq": 17,
+      "ts": "05:20:47.350",
+      "cid_prefix": "457ed5c6c9e7",
+      "joined_rooms": [
+        200,
+        ""
+      ],
+      "state": [
+        200,
+        ""
+      ],
+      "members": [
+        200,
+        ""
+      ]
+    },
+    {
+      "seq": 18,
+      "ts": "05:20:49.592",
+      "cid_prefix": "457ed5c6c9e7",
+      "joined_rooms": [
+        200,
+        ""
+      ],
+      "state": [
+        200,
+        ""
+      ],
+      "members": [
+        200,
+        ""
+      ]
+    },
+    {
+      "seq": 19,
+      "ts": "05:20:51.840",
+      "cid_prefix": "457ed5c6c9e7",
+      "joined_rooms": [
+        200,
+        ""
+      ],
+      "state": [
+        200,
+        ""
+      ],
+      "members": [
+        200,
+        ""
+      ]
+    },
+    {
+      "seq": 20,
+      "ts": "05:20:54.039",
+      "cid_prefix": "457ed5c6c9e7",
+      "joined_rooms": [
+        200,
+        ""
+      ],
+      "state": [
+        200,
+        ""
+      ],
+      "members": [
+        200,
+        ""
+      ]
+    },
+    {
+      "seq": 21,
+      "ts": "05:20:56.339",
+      "cid_prefix": "457ed5c6c9e7",
+      "joined_rooms": [
+        200,
+        ""
+      ],
+      "state": [
+        200,
+        ""
+      ],
+      "members": [
+        200,
+        ""
+      ]
+    },
+    {
+      "seq": 22,
+      "ts": "05:20:58.572",
+      "cid_prefix": "457ed5c6c9e7",
+      "joined_rooms": [
+        200,
+        ""
+      ],
+      "state": [
+        200,
+        ""
+      ],
+      "members": [
+        200,
+        ""
+      ]
+    },
+    {
+      "seq": 23,
+      "ts": "05:21:00.849",
+      "cid_prefix": "457ed5c6c9e7",
+      "joined_rooms": [
+        200,
+        ""
+      ],
+      "state": [
+        200,
+        ""
+      ],
+      "members": [
+        200,
+        ""
+      ]
+    },
+    {
+      "seq": 24,
+      "ts": "05:21:03.149",
+      "cid_prefix": "457ed5c6c9e7",
+      "joined_rooms": [
+        200,
+        ""
+      ],
+      "state": [
+        200,
+        ""
+      ],
+      "members": [
+        200,
+        ""
+      ]
+    },
+    {
+      "seq": 25,
+      "ts": "05:21:05.407",
+      "cid_prefix": "457ed5c6c9e7",
+      "joined_rooms": [
+        200,
+        ""
+      ],
+      "state": [
+        200,
+        ""
+      ],
+      "members": [
+        200,
+        ""
+      ]
+    },
+    {
+      "seq": 26,
+      "ts": "05:21:07.565",
+      "cid_prefix": "457ed5c6c9e7",
+      "joined_rooms": [
+        200,
+        ""
+      ],
+      "state": [
+        200,
+        ""
+      ],
+      "members": [
+        200,
+        ""
+      ]
+    },
+    {
+      "seq": 27,
+      "ts": "05:21:09.717",
+      "cid_prefix": "457ed5c6c9e7",
+      "joined_rooms": [
+        200,
+        ""
+      ],
+      "state": [
+        200,
+        ""
+      ],
+      "members": [
+        200,
+        ""
+      ],
+      "invite_mgr": [
+        403,
+        "M_FORBIDDEN"
+      ],
+      "join_mgr": [
+        200,
+        ""
+      ]
+    },
+    {
+      "seq": 28,
+      "ts": "05:21:11.900",
+      "cid_prefix": "457ed5c6c9e7",
+      "joined_rooms": [
+        200,
+        ""
+      ],
+      "state": [
+        200,
+        ""
+      ],
+      "members": [
+        200,
+        ""
+      ]
+    }
+  ],
+  "wsl_uptime": "2026-08-27 12:58:21",
+  "docker_version": "29.1.3",
+  "container_id": "457ed5c6c9e707cf8cb79258b2b20ce38eba34900bf6e07508943f8661163875",
+  "container_started_at": "2026-08-27T05:12:57.995017511Z",
+  "restart_count": "0",
+  "image_id": "sha256:44a29e0d1f8d6522e69f4837729eb297911a7cc6b46c4e1203424e289979ced2",
+  "network_id": "p7g-matrix:5aec357cfbad4efaaf69db6605480a82dff25713a5924d769cc2db1b0a0d007f:172.22.0.2",
+  "volume": "p7g-tuwunel-data",
+  "server_name_env": "",
+  "footer": {
+    "ended_utc": "2026-08-27T05:21:14.176507+00:00",
+    "container_id_after": "457ed5c6c9e707cf8cb79258b2b20ce38eba34900bf6e07508943f8661163875",
+    "wsl_uptime_after": "2026-08-27 12:58:21",
+    "probes_total": 28
+  }
+}

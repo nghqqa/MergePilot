@@ -1,0 +1,138 @@
+{
+  "frozen_old": {
+    "cid": "a7f75549647b",
+    "volume": "p7g-tuwunel-data (untouched, evidence)",
+    "image_digest": "sha256:5f8b42fd6c4160b40eb7c3b26c5617edc78fe24d2fcb00f918ff6d742aaa2d2c"
+  },
+  "started_utc": "2026-08-27T06:33:19.655374+00:00",
+  "events": [
+    {
+      "step": "create-new-volume-container",
+      "cid": "0dfc3b0b6959",
+      "mounts_old_volume": false
+    },
+    {
+      "step": "readiness",
+      "wait_s": 5
+    },
+    {
+      "step": "readiness-plus-30s",
+      "ok": true
+    },
+    {
+      "step": "register",
+      "who": "m8gh4-controller",
+      "ok": true
+    },
+    {
+      "step": "register",
+      "who": "m8gh4-manager",
+      "ok": true
+    },
+    {
+      "step": "register",
+      "who": "m8gh4-reviewer",
+      "ok": true
+    },
+    {
+      "step": "register",
+      "who": "m8gh4-fixer",
+      "ok": true
+    },
+    {
+      "step": "register",
+      "who": "m8gh4-verifier",
+      "ok": true
+    },
+    {
+      "step": "register",
+      "who": "manager",
+      "ok": true
+    },
+    {
+      "step": "register",
+      "who": "reviewer",
+      "ok": true
+    },
+    {
+      "step": "register",
+      "who": "fixer",
+      "ok": true
+    },
+    {
+      "step": "register",
+      "who": "verifier",
+      "ok": true
+    },
+    {
+      "step": "post-create-accounting",
+      "http_create": 200,
+      "in_joined": true,
+      "state_http": 200,
+      "cid": "0dfc3b0b6959"
+    },
+    {
+      "step": "invite_join",
+      "who": "manager",
+      "invite": 200,
+      "join": 200
+    },
+    {
+      "step": "invite_join",
+      "who": "reviewer",
+      "invite": 200,
+      "join": 200
+    },
+    {
+      "step": "invite_join",
+      "who": "fixer",
+      "invite": 200,
+      "join": 200
+    },
+    {
+      "step": "invite_join",
+      "who": "verifier",
+      "invite": 200,
+      "join": 200
+    },
+    {
+      "step": "members-reconcile",
+      "joined_n": 5,
+      "exact": true,
+      "missing": []
+    },
+    {
+      "step": "route-probe-10rounds",
+      "total": 24,
+      "all_200": true
+    },
+    {
+      "step": "RESTART",
+      "action": "docker restart"
+    },
+    {
+      "step": "readiness-after-restart",
+      "wait_s": 5
+    },
+    {
+      "step": "old-token-whoami",
+      "http": 200
+    },
+    {
+      "step": "old-room-in-joined",
+      "contains": true
+    },
+    {
+      "step": "old-room-state",
+      "http": 200
+    },
+    {
+      "step": "new-room-after-restart",
+      "state": 200,
+      "invite": 200,
+      "join": 200
+    }
+  ],
+  "verdict": "CONFIGURATION_READY_FOR_RESTORE",
+  "cid_final": "0dfc3b0b6959"
+}

@@ -1,0 +1,11 @@
+{
+  "agentloop_verified": {
+    "phase": 6,
+    "evidence": "server-accepted OTLP/protobuf trace 3829f476\u20266140 + console logstore spans",
+    "status": "VERIFIED"
+  },
+  "phase7_real_run": {
+    "traces": 0,
+    "reason": "blocked before Controller start by upstream room-route defect"
+  }
+}

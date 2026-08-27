@@ -1,0 +1,15 @@
+{
+  "verdict": "BLOCKED_UPSTREAM_TUWUNEL_ROUTE",
+  "attempts_total": 22,
+  "model_calls": 0,
+  "four_agents_executed": false,
+  "fixed_in_phase7": [
+    "snapshot_worker password provisioning",
+    "CLI INTERNAL_ERROR typed diagnosis hook",
+    "gw probe cold-VM warm retry",
+    "matrix_wsl_transport module (WSL vantage)",
+    "OTLP protobuf encoder",
+    "MPTRACE carrier + Span Link"
+  ],
+  "root_cause": "embedded tuwunel 1.5.0-48: rooms created after container recreation are not registered in the router"
+}

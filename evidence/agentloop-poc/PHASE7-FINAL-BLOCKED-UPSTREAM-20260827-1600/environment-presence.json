@@ -1,0 +1,16 @@
+{
+  "MergePilot-Test": {
+    "docker": "29.1.3 UP",
+    "p7i-tuwunel-b1": "UP (frozen evidence)",
+    "p7g-tuwunel-a1": "UP (frozen evidence)"
+  },
+  "Ubuntu-22.04": {
+    "docker": "UP",
+    "hiclaw-controller": "UP (restored, owns 18080)",
+    "hiclaw-manager": "UP",
+    "hiclaw-workers": "UP (revived)"
+  },
+  "p7g_tuwunel_data_volume": "PRESERVED (fault evidence, unmounted)",
+  "p7i_tuwunel_data_volume": "PRESERVED (validation evidence)",
+  "api_keys": "PRESERVED"
+}

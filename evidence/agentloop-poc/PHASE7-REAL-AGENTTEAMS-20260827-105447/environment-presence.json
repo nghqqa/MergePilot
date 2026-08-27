@@ -1,0 +1,1 @@
+{"MP_OTEL_EXPORT_ENABLED":"ABSENT(本进程默认关,导出经init显式)","MP_OTLP_ENDPOINT":"ABSENT","OTEL_SERVICE_NAME":"ABSENT","OTEL_EXPORTER_OTLP_HEADERS":"ABSENT","host_docker":"ABSENT","wsl_MergePilotTest":"PRESENT(stopped)","wsl_docker_version":"29.1.3","one_click_startup_tests":46}

@@ -1,0 +1,55 @@
+{
+  "verdict_class": "BLOCKED_CONFIGURATION",
+  "external_target_contract": {
+    "host": "172.22.0.2 (frozen R4)",
+    "port": 6167,
+    "server_name": "matrix-local.hiclaw.io:18080",
+    "lifecycle_role": "MEASURED-ONLY, never created by e2e code"
+  },
+  "present_assets": {
+    "provisioned_config_20key": "state/github-e2e.json (copied from mp-gh4-direction-apply/rewire-real-9b295ccc37)",
+    "secrets_dir_named_assets": [
+      "app-id",
+      "installation-id",
+      "app-private-key.pem",
+      "matrix-controller-token.json",
+      "matrix-users.json",
+      "matrix-room-id",
+      "room-map.yaml",
+      "mcp-bridge-fgpat.txt",
+      "fixture-repo",
+      "e2e-env.template"
+    ],
+    "users_manifest": {
+      "mxids": [
+        "m8gh4-controller",
+        "m8gh4-manager",
+        "m8gh4-reviewer",
+        "m8gh4-fixer",
+        "m8gh4-verifier"
+      ],
+      "room_keys": [
+        "room_id",
+        "room_name",
+        "probe_event_id",
+        "encryption",
+        "guest_access",
+        "directory_visibility"
+      ]
+    }
+  },
+  "missing_assets": {
+    "tuwunel_container": "RESTORABLE: run embedded start-tuwunel.sh (recipe recovered from image)",
+    "matrix_server_image": "RESOLVED: embedded in higress/hiclaw-embedded:v1.1.2 (present locally, digest 5f8b42fd…)",
+    "homeserver_binary_datadir": "ABSENT (WSL /root, /opt, /srv swept)",
+    "user_passwords_access_tokens": "unrecoverable for a fresh server DB; five access tokens in mp-gh4-secrets were issued by the deleted instance",
+    "in_repo_provisioner": "ABSENT (tuwunel referenced only as measured external target)"
+  },
+  "rebuild_workload_estimate": "M8-GH-4 milestone-scale: obtain tuwunel image -> register 5 users -> recreate room -> reissue tokens -> rewrite 4x mcporter + controller token + room-map -> refresh github-e2e.json tuwunel_ip",
+  "typed_failures_on_record": [
+    "GITHUB_E2E_PREREQUISITES_INCOMPLETE (prerequisite config absent -> then external resource absence)"
+  ],
+  "classification": "CONFIGURATION_READY_FOR_RESTORE"
+}
+
+> **SUPERSEDED（2026-08-27 终版）**：本目录中的路由/配置层结论已被 PHASE7-FINAL-BLOCKED-UPSTREAM-20260827-1600 的决定性复现取代——根因=内嵌 tuwunel 容器重建后新房间路由失效（上游缺陷）。原文件保留作为证据链。

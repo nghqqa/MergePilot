@@ -1,0 +1,55 @@
+{
+  "experiment": "D",
+  "network": "p7h-net-d",
+  "volume": "p7h-data-d",
+  "container": "p7h-tuwunel-d",
+  "flip_delete_rooms_false": true,
+  "started_utc": "2026-08-27T05:40:25.539644+00:00",
+  "events": [
+    {
+      "step": "create",
+      "container_cid": "19da594360ed"
+    },
+    {
+      "step": "readiness",
+      "http": "200",
+      "wait_s": 3
+    },
+    {
+      "step": "whoami",
+      "http": 200,
+      "server_name": "18080"
+    },
+    {
+      "step": "createRoom",
+      "http": 200,
+      "room_id": "!SaE8TiEgpuKWtyhmZ5:matrix-local.hiclaw.io:18080",
+      "cid": "19da594360ed"
+    },
+    {
+      "step": "joined_contains_new",
+      "http": 200,
+      "contains": true
+    },
+    {
+      "step": "state",
+      "http": 200
+    },
+    {
+      "step": "log_scan_count_delete_forget_unknown",
+      "count": "0"
+    },
+    {
+      "step": "invite_join",
+      "who": "manager",
+      "invite": 200,
+      "join": 200
+    }
+  ],
+  "probe_summary": {
+    "state_200": 16,
+    "members_200": 16,
+    "total": 32
+  },
+  "cid_final": "19da594360ed"
+}

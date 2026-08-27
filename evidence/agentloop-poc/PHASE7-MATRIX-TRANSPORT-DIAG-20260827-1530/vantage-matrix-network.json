@@ -1,0 +1,78 @@
+{
+  "vantage": "matrix-network",
+  "target": "http://172.25.0.2:6167",
+  "room_prefix": "!wUhWuAtsIQjvFjp8hv:",
+  "room_q": "%21wUhWuAtsIQjvFjp8hv%3A...",
+  "container_id": "?",
+  "wsl_uptime": null,
+  "daemon": null,
+  "ts": "2026-08-27T08:05:45.755157+00:00",
+  "requests": [
+    {
+      "method": "GET",
+      "kind": "versions",
+      "status": 200,
+      "errcode": "",
+      "error": "",
+      "resp_headers": {
+        "Content-Type": "application/json"
+      },
+      "resp_snip": "{\"versions\":[\"r0.0.1\",\"r0.1.0\",\"r0.2.0\",\"r0.3.0\",\"r0.4.0\",\"r"
+    },
+    {
+      "method": "GET",
+      "kind": "joined_rooms",
+      "status": 200,
+      "errcode": "",
+      "error": "",
+      "resp_headers": {
+        "Content-Type": "application/json"
+      },
+      "resp_snip": "{\"joined_rooms\":[\"!MD4mMkUGpvN9nSOjjg:matrix-local.hiclaw.io"
+    },
+    {
+      "method": "GET",
+      "kind": "state",
+      "status": 200,
+      "errcode": "",
+      "error": "",
+      "resp_headers": {
+        "Content-Type": "application/json"
+      },
+      "resp_snip": "[{\"content\":{\"room_version\":\"11\"},\"event_id\":\"$PeTKLpafn7LNQ"
+    },
+    {
+      "method": "GET",
+      "kind": "members",
+      "status": 200,
+      "errcode": "",
+      "error": "",
+      "resp_headers": {
+        "Content-Type": "application/json"
+      },
+      "resp_snip": "{\"chunk\":[{\"content\":{\"displayname\":\"m8gh4-controller\",\"is_d"
+    },
+    {
+      "method": "POST",
+      "kind": "invite",
+      "status": 403,
+      "errcode": "M_FORBIDDEN",
+      "error": "M_FORBIDDEN: Auth check failed: cannot invite user that is joined or banned",
+      "resp_headers": {
+        "Content-Type": "application/json"
+      },
+      "resp_snip": "{\"errcode\":\"M_FORBIDDEN\",\"error\":\"M_FORBIDDEN: Auth check fa"
+    },
+    {
+      "method": "POST",
+      "kind": "join",
+      "status": 200,
+      "errcode": "",
+      "error": "",
+      "resp_headers": {
+        "Content-Type": "application/json"
+      },
+      "resp_snip": "{\"room_id\":\"!wUhWuAtsIQjvFjp8hv:matrix-local.hiclaw.io:18080"
+    }
+  ]
+}

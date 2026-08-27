@@ -1,0 +1,1 @@
+{"real_run":false,"note":"真实链路未执行,本文件为占位声明;Phase6 连通性 trace 3829f476...6140 / fa27e570...4c54 已服务端接受并控制台可见(前序证据)","handoff_continuity_protocol":"MPTRACE carrier(task text) -> worker env -> skill child env parent reattach; async agent-room hops via Span Link (controller agent.handoff_complete)"}

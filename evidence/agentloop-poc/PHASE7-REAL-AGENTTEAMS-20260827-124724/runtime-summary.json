@@ -1,0 +1,40 @@
+{
+  "phase": "7.3E external resource recovery",
+  "outcome": "BLOCKED_CONFIGURATION",
+  "chain": "github-e2e selected as the only four-agent vehicle -> typed GITHUB_E2E_PREREQUISITES_INCOMPLETE -> config restored from historical provision -> external Matrix measured-absent (container/image/data all gone, no in-repo provisioner)",
+  "controller_started_this_round": false,
+  "model_calls": 0,
+  "fabricated_events": 0,
+  "attempts_7_3G": [
+    {
+      "cmd": "7.3G matrix restore (atomic scripts + WSL keep-alive 7200s)",
+      "result": "tuwunel RUNNING: digest-verified local image, restart=unless-stopped, pinned 172.22.0.2:6167, volume p7g-tuwunel-data",
+      "evidence": ".mergepilot/p7g-gen-token.sh + p7g-provision-matrix.py"
+    },
+    {
+      "cmd": "idempotent provisioning xN",
+      "result": "5x m8gh4-* users registered, tokens whoami-valid; rooms creatable+listable (joined_rooms 200); invites/joins BLOCKED"
+    },
+    {
+      "cmd": "room route probe",
+      "result": "/rooms/{id}/* flaps 200 <-> 404 M_UNRECOGNIZED across calls; createRoom always 200; server greeting stable"
+    }
+  ],
+  "root_cause_l4": "room-route flapping (M_UNRECOGNIZED) on embedded tuwunel 1.5.0-48; suspects: DELETE_ROOMS_AFTER_LEAVE room-collapse, server_name routing, unstable room version flag. Maintainer knowledge required.",
+  "recovery_l4": "resolve flapping (maintainer answer or env off switch), then invites -> github-e2e.json refresh -> start gh-* --m4f --github-e2e",
+  "attempts_7_3H": [
+    {
+      "probe": "62s observation (28 seq, same container 457ed5c6, same WSL uptime)",
+      "result": "joined_rooms 28/28=200, state 28/28=200, invite@seq3=200 join=200, later invites=403 M_FORBIDDEN (already-member semantics) -> WITH keep-alive routes are 100 percent stable"
+    },
+    {
+      "probe": "post-VM-bounce era (VM restarts every few min, uptime-verified)",
+      "result": "createRoom=200 + membership 200, but rooms/{id}/state+invite+join = 404 M_UNRECOGNIZED (bodies captured) even seconds after create; joined_rooms lists all rooms incl the 404-ing ones; correct-localpart users registered 200"
+    },
+    {
+      "verdict_rule": "7.3H same-instance persistent route anomaly -> BLOCKED_UPSTREAM; single-variable DELETE_ROOMS experiment queued as first recovery step"
+    }
+  ],
+  "root_cause_l5": "embedded tuwunel room-route anomaly: rooms/{id}/* M_UNRECOGNIZED while joined_rooms lists the rooms; flapping correlates with WSL VM lifecycle (graceful daemon shutdowns); frozen-contract discovery: four agent mxids must be BARE localparts (at manager/reviewer/fixer/verifier :18080), controller = m8gh4-controller (registered, 200)",
+  "recovery_l5": "(1) single-variable experiment: fresh network/volume/container with DELETE_ROOMS_AFTER_LEAVE=false and FORGET_FORCED_UPON_LEAVE=false, createRoom->invite->join->state; (2) still flapping -> maintainer/upstream consult; (3) stable -> membership probe passes (five frozen mxids exist), start gh-* --m4f --github-e2e"
+}

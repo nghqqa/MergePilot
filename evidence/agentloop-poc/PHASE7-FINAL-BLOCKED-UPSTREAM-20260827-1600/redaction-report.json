@@ -1,0 +1,9 @@
+{
+  "evidence_secret_scan_hits": 0,
+  "patterns": [
+    "access_token assignment",
+    "bearer + 20 chars",
+    "postgres dsn"
+  ],
+  "tokens_in_argv_or_logs": "never (stdin-only transport contract)"
+}

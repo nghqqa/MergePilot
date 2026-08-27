@@ -1,0 +1,52 @@
+{
+  "phase": "7.3 stack bring-up",
+  "attempts": [
+    {
+      "cmd": "start --run-id poc7-real1 --m4f",
+      "result": "controller exit=1 at startup_assert_l2 (image line 2017), rolled back",
+      "log": "D:/goai/temp/phase7-start-log.txt (repo-external)"
+    },
+    {
+      "cmd": "start --run-id run-showcase-a --m4f",
+      "result": "same CONTAINER_NOT_RUNNING; postgres+gateway healthy, controller crash",
+      "log": "D:/goai/temp/phase7-start2-log.txt"
+    },
+    {
+      "cmd": "start --run-id run-showcase-a --m4f --json",
+      "result": "same; CLI truncates docker-logs, full stderr unrecoverable via CLI",
+      "log": "D:/goai/temp/phase7-start3.json"
+    },
+    {
+      "cmd": "start --run-id run-showcase-a --m4f (after snapshot_worker password fix)",
+      "result": "ORIGINAL BLOCKER FIXED AND VERIFIED: chain replayed fully green, 'psql rc=0 CREATE ROLE / ALTER ROLE' proves the new provisioning landed; showcase seed INSERTs completed",
+      "new_first_blocker": "IMMEDIATELY post-seed: untyped INTERNAL_ERROR at gh_bootstrap stage (CLI prints no traceback); not yet diagnosed",
+      "log": "D:/goai/temp/phase7-start5.txt"
+    },
+    {
+      "cmd": "start --run-id run-showcase-a --m4f (after scope fix)",
+      "result": "snapshot-worker PG connected (password fix LIVE); new typed FATAL: missing COORDINATOR_TOKEN -> default m4f mode lacks orchestration token by design",
+      "log": "D:/goai/temp/phase7-start7.txt"
+    },
+    {
+      "cmd": "start --run-id gh-poc7a --m4f --github-e2e",
+      "result": "typed EXIT_PRECHECK GITHUB_E2E_PREREQUISITES_INCOMPLETE: github-e2e.json absent -> provisioned 20-key config copied from mp-gh4-direction-apply/rewire-real-9b295ccc37; external Matrix (tuwunel) container no longer exists in MergePilot-Test -> prerequisite probes will fail-closed",
+      "log": "D:/goai/temp/phase7-start8.txt"
+    }
+  ],
+  "diagnosis": {
+    "healthy": [
+      "postgres",
+      "policy-gateway(+upstream-stub loopback)"
+    ],
+    "crashing": "controller",
+    "root_cause": "(3-layer final) L1 fixed+verified: snapshot_worker password. L2 fixed+verified in-code path: scope bug NameError (own patch) - fixed via explicit passthrough + fail-closed CONFIG_INVALID. L3 OPEN: real four-agent vehicle is --github-e2e mode; requires provisioned external Matrix homeserver (tuwunel) + 20-key github-e2e.json; provisioning from prior milestone exists (mp-gh4-direction-apply/rewire-real-9b295ccc37) but the tuwunel container is gone -> BLOCKED_CONFIGURATION pending re-provisioning",
+    "migrations_present_but_unwired": [
+      "tools/audit-db/m4f1_state.sql",
+      "tools/audit-db/m4f1_hotfix_1.sql"
+    ],
+    "disproof_of_alternatives": "controller against fresh schema+full env contract runs >4min without crash (L2/M4F checks skipped without M4F_ENABLED) => not a code/secret issue"
+  },
+  "recovery": "re-provision external resources per mp-gh4-direction-apply/rewire-real runbook (tuwunel container + room + credentials), refresh tuwunel_ip/windows_proxy_ip in state github-e2e.json, then start --run-id gh-<new> --m4f --github-e2e",
+  "model_calls_made": false,
+  "fabricated_spans": 0
+}

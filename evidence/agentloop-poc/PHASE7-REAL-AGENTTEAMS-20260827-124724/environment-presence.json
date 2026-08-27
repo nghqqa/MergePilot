@@ -1,0 +1,1 @@
+{"docker_daemon_wsl":"UP (29.1.3)","docker_images_inventoried":20,"matrix_server_image":"ABSENT","tuwunel_container":"ABSENT","homeserver_data_dir":"ABSENT","state_github_e2e_json":"PRESENT(20 keys)","mp_gh4_secrets_dir":"PRESENT","MP_OTEL_EXPORT_ENABLED":"ABSENT(this process)","repository_head":"a15d22c + uncommitted phase7 wiring"}

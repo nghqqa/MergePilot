@@ -1,0 +1,66 @@
+{
+  "vantage": "windows",
+  "target": "http://172.25.0.2:6167",
+  "room_prefix": "!wUhWuAtsIQjvFjp8hv:",
+  "room_q": "%21wUhWuAtsIQjvFjp8hv%3A...",
+  "container_id": "(host vantage)",
+  "wsl_uptime": null,
+  "daemon": null,
+  "ts": "2026-08-27T08:05:11.339864+00:00",
+  "requests": [
+    {
+      "method": "GET",
+      "kind": "versions",
+      "status": 0,
+      "errcode": "",
+      "error": "",
+      "resp_headers": {},
+      "resp_snip": "RemoteDisconnected"
+    },
+    {
+      "method": "GET",
+      "kind": "joined_rooms",
+      "status": 0,
+      "errcode": "",
+      "error": "",
+      "resp_headers": {},
+      "resp_snip": "RemoteDisconnected"
+    },
+    {
+      "method": "GET",
+      "kind": "state",
+      "status": 0,
+      "errcode": "",
+      "error": "",
+      "resp_headers": {},
+      "resp_snip": "RemoteDisconnected"
+    },
+    {
+      "method": "GET",
+      "kind": "members",
+      "status": 0,
+      "errcode": "",
+      "error": "",
+      "resp_headers": {},
+      "resp_snip": "RemoteDisconnected"
+    },
+    {
+      "method": "POST",
+      "kind": "invite",
+      "status": 0,
+      "errcode": "",
+      "error": "",
+      "resp_headers": {},
+      "resp_snip": "RemoteDisconnected"
+    },
+    {
+      "method": "POST",
+      "kind": "join",
+      "status": 0,
+      "errcode": "",
+      "error": "",
+      "resp_headers": {},
+      "resp_snip": "RemoteDisconnected"
+    }
+  ]
+}

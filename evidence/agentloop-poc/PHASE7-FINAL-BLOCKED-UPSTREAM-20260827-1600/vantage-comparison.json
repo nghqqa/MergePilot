@@ -1,0 +1,29 @@
+{
+  "windows": {
+    "versions": 0,
+    "joined_rooms": 0,
+    "state": 0,
+    "members": 0,
+    "invite": 0,
+    "join": 0,
+    "note": "connection refused: Windows cannot reach WSL-published loopback / pinned bridge IP in this sandbox"
+  },
+  "wsl_host": {
+    "versions": 200,
+    "joined_rooms": 200,
+    "state": 200,
+    "members": 200,
+    "invite": 200,
+    "join": 200,
+    "note": "host python3 urllib direct to pinned IP; POST invite 200 real"
+  },
+  "matrix_network": {
+    "versions": 200,
+    "joined_rooms": 200,
+    "state": 200,
+    "members": 200,
+    "invite": 403,
+    "join": 200,
+    "note": "403 M_FORBIDDEN = already-invited semantics (correct); second responder theory REFUTED"
+  }
+}
