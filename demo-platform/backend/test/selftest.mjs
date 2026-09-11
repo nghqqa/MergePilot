@@ -7,10 +7,22 @@
 
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { redact, scanForSecrets, redactionMeta } from '../../evidence-adapter/redact.mjs';
 import { EVIDENCE_ROOT, resolveSourceRef } from '../../evidence-adapter/evidence.mjs';
 import { getReplayData, replayAudit } from '../../evidence-adapter/replay-provider.mjs';
 import { handle } from '../lib/api.mjs';
+
+// The RAG tool-span audit log is append-only by design and is tracked in git;
+// the retrievals exercised below would otherwise leave the working tree dirty.
+// Snapshot it now and put it back exactly as found when the process exits.
+const TOOL_SPAN_LOG = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'rag-data', 'tool-spans.jsonl');
+const toolSpanSnapshot = fs.existsSync(TOOL_SPAN_LOG) ? fs.readFileSync(TOOL_SPAN_LOG) : null;
+process.on('exit', () => {
+  if (toolSpanSnapshot !== null) fs.writeFileSync(TOOL_SPAN_LOG, toolSpanSnapshot);
+  else if (fs.existsSync(TOOL_SPAN_LOG)) fs.unlinkSync(TOOL_SPAN_LOG);
+});
 
 let passed = 0;
 let failed = 0;
