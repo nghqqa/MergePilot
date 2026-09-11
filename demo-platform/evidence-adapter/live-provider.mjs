@@ -101,9 +101,9 @@ export async function liveStatus({ refresh = false } = {}) {
         status: 'SMOKE_VERIFIED_LIVE_CLOUD_CONFIRMED_BY_OPERATOR',
         smoke: 'VERIFIED (Aliyun AgentLoop OTLP smoke)',
         live_copaw_run: 'VERIFIED (LIVE CLOUD, operator-confirmed: fbf4a3cec0493990d76e10a102418be1)',
-        note: '真实 CoPaw run 合并 Trace（Agent+LLM+Tool）已由操作员在阿里云控制台确认；verdict=AGENTLOOP_ALIYUN_TRACE_VISIBILITY_CONFIRMED_BY_OPERATOR，不声称 6/6 稳定覆盖',
+        note: '真实 CoPaw run 合并 Trace（Agent+LLM+Tool）已由操作员在阿里云控制台确认（历史权威 Trace · 已确认样本 n=1）；verdict=AGENTLOOP_ALIYUN_TRACE_VISIBILITY_CONFIRMED_BY_OPERATOR，不声称多轮稳定覆盖',
       },
-      rag: { status: 'NOT_IMPLEMENTED', detail: 'PolarDB RAG 未接入' },
+      rag: { status: 'NOT_IMPLEMENTED', detail: 'PolarDB RAG 未接入；当前 RAG 为本地 SYNTHETIC 合成演示数据集（见 /api/rag/status）' },
     };
     lastSnapshot = snapshot;
     inflight = null;

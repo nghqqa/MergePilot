@@ -3,7 +3,7 @@
 // Read-only. Every event carries source_ref provenance; provider startup validates
 // that all referenced evidence files exist (replay integrity gate).
 //
-// Evidence anchors (all under D:\goai\p14-demo\evidence\):
+// Evidence anchors (all under EVIDENCE_ROOT = ../evidence/, sibling of MergePilot-demo/):
 //   replayMaterials PHASE14-WINDOWS-REPLAY-MATERIALS-20260829-195223  (primary replay pack)
 //   fixAudit       PHASE14-WINDOWS-COPAW-HIGH-RISK-FIX-AUDIT-20260829-165813
 //   fixVerify      PHASE14-WINDOWS-COPAW-HIGH-RISK-FIX-VERIFY-20260829-180548
@@ -188,7 +188,7 @@ function buildPR1() {
         result_summary: 'STATUS: SUCCESS — Reviewed the copaw-sandbox project scope (bootstrap review-fix-verify DAG). Task identity, assignment, and DAG plumbing are consistent; no blocking issues found.',
         result_status: 'SUCCESS', effective: true,
         artifacts: [{ name: 'review-findings.md', source: 'finalLock/task-results.json (deliverables)' }],
-        trace_id: null, trace_note: 'AgentLoop/OTel 未接入 — trace_id 不存在（如实显示"待接入"）',
+        trace_id: null, trace_note: 'per-task Trace 未接入（仍为 evidence-replay，trace_id 不存在，如实显示"待接入"）；平台级历史权威 Trace 见总览页',
         status_history_source: 'replayMaterials/01-case-pr1-normal.md + 05-timeline.md',
       },
       {
@@ -199,7 +199,7 @@ function buildPR1() {
         result_summary: 'STATUS: SUCCESS — Completed the sandbox fix step... no remediation was required; ready for downstream verify-1.',
         result_status: 'SUCCESS', effective: true,
         artifacts: [{ name: 'fix-findings.md', source: 'finalLock/task-results.json (deliverables)' }],
-        trace_id: null, trace_note: 'AgentLoop/OTel 未接入',
+        trace_id: null, trace_note: 'per-task Trace 未接入（仍为 evidence-replay）；平台级历史权威 Trace 见总览页',
         status_history_source: 'finalLock/task-results.json',
       },
       {
@@ -210,7 +210,7 @@ function buildPR1() {
         result_summary: 'STATUS: SUCCESS — Verified the completed copaw-sandbox chain (review-1 -> fix-1 -> verify-1)... verification passes.',
         result_status: 'SUCCESS', effective: true,
         artifacts: [{ name: 'verify-findings.md', source: 'finalLock/task-results.json (deliverables)' }],
-        trace_id: null, trace_note: 'AgentLoop/OTel 未接入',
+        trace_id: null, trace_note: 'per-task Trace 未接入（仍为 evidence-replay）；平台级历史权威 Trace 见总览页',
         status_history_source: 'replayMaterials/05-timeline.md 阶段A',
       },
     ],
@@ -483,7 +483,7 @@ function buildPR2(probe) {
         result_summary: 'STATUS: SUCCESS\nSUMMARY: Confirmed HIGH path traversal / arbitrary file read (CWE-22) ...\n         STATUS: FINDING_CONFIRMED, SEVERITY: HIGH, HUMAN_VERIFICATION_REQUIRED: YES',
         result_status: 'SUCCESS', effective: true,
         artifacts: [{ name: 'review-report.md', source: 'replayMaterials/02-case-pr2-high-risk.md §1（workspace/review-report.md 引用）' }],
-        trace_id: null, trace_note: 'AgentLoop/OTel 未接入 — trace_id 不存在（如实显示"待接入"）',
+        trace_id: null, trace_note: 'per-task Trace 未接入（仍为 evidence-replay，trace_id 不存在，如实显示"待接入"）；平台级历史权威 Trace 见总览页',
         status_history_source: 'fixAudit/AUDIT.md + replayMaterials/02-case-pr2-high-risk.md',
       },
       {
@@ -498,7 +498,7 @@ function buildPR2(probe) {
           { name: 'demo_high_risk.fixed.py', source: 'fix-1.result.md DELIVERABLES' },
           { name: 'test-evidence.md', source: 'fixVerify/artifacts/fix-1.test-evidence.md' },
         ],
-        trace_id: null, trace_note: 'AgentLoop/OTel 未接入',
+        trace_id: null, trace_note: 'per-task Trace 未接入（仍为 evidence-replay）；平台级历史权威 Trace 见总览页',
         status_history_source: 'fixVerify/AUDIT.md 执行时间线',
       },
       {
@@ -514,7 +514,7 @@ function buildPR2(probe) {
           { name: 'after_probe_raw.txt', source: 'fixVerify/artifacts/verify-1.after_probe_raw.txt' },
           { name: 'probe.py', source: 'verify-1.result.md DELIVERABLES' },
         ],
-        trace_id: null, trace_note: 'AgentLoop/OTel 未接入',
+        trace_id: null, trace_note: 'per-task Trace 未接入（仍为 evidence-replay）；平台级历史权威 Trace 见总览页',
         status_history_source: 'fixVerify/AUDIT.md 执行时间线',
       },
     ],
@@ -761,7 +761,7 @@ function buildPR3() {
         result_summary: 'STATUS: SUCCESS\nSUMMARY: STATUS: HIGH_RISK_FOUND | SEVERITY: critical | HUMAN_VERIFICATION_REQUIRED: true | Confirmed critical OS command injection (CWE-78) / RCE in demo_ping ...',
         result_status: 'SUCCESS', effective: true,
         artifacts: [{ name: 'findings.md', source: 'rejectDemo/reviewer-findings.md' }],
-        trace_id: null, trace_note: 'AgentLoop/OTel 未接入 — trace_id 不存在（如实显示"待接入"）',
+        trace_id: null, trace_note: 'per-task Trace 未接入（仍为 evidence-replay，trace_id 不存在，如实显示"待接入"）；平台级历史权威 Trace 见总览页',
         status_history_source: 'rejectDemo/reviewer-high-risk-result.md + agent-message-timeline-raw.json',
       },
       {
@@ -905,17 +905,17 @@ export function replayAudit() {
       { component: 'Credential Rotation', status: 'VERIFIED', source: 'CREDENTIAL_ROTATION_VERIFIED — 5/5 consumer 轮换、旧值吊销、deepseek 旧 key 已失效(401)', evidence: `${D.credRotation}/verdict.json` },
       { component: 'PR Auto Merge', status: 'DISABLED', source: '人工门禁令（merge/push/close/reopen 全禁）；本 runtime 无任何 PR 写操作', evidence: `${D.finalLock}/pr-state-final.json` },
       { component: 'Event Integrity', status: 'VERIFIED', source: `SHA256SUMS 重算 ${integrity.ok_files}/${integrity.total_files} 文件一致`, evidence: '启动时实时重算（见 /api/health）' },
-      { component: 'PolarDB RAG', status: 'NOT_IMPLEMENTED', source: '未接入 — 无检索增强链路在运行', evidence: `${D.replayMaterials}/08-scope-boundary.md` },
-      { component: 'Agentic Database Branch', status: 'NOT_IMPLEMENTED', source: '未实现；隔离为文件/容器层', evidence: `${D.replayMaterials}/08-scope-boundary.md` },
-      { component: 'AgentLoop/OTel', status: 'PARTIAL_SCHEMA_ONLY', source: '未接入 live capture；仅定义 evidence-replay trace schema', evidence: `${D.agentloopOtel}/trace-schema.json` },
+      { component: 'PolarDB RAG', status: 'NOT_IMPLEMENTED', source: '真实 PolarDB 向量检索后端未接入；当前 RAG 为本地 SYNTHETIC 合成演示数据集（data_mode=SYNTHETIC，见 RAG 页）', evidence: `${D.replayMaterials}/08-scope-boundary.md` },
+      { component: 'Agentic Database Branch', status: 'NOT_IMPLEMENTED', source: '真实 PolarDB Branch 未实现（NOT CONNECTED）；PR #4 候选验证运行在 SIMULATED 内存 fixture，运行时隔离为文件/容器层', evidence: `${D.replayMaterials}/08-scope-boundary.md` },
+      { component: 'AgentLoop/OTel', status: 'PARTIAL', source: '平台级：真实 CoPaw run 的 Agent+LLM+Tool 合并 Trace 已在阿里云 AgentLoop 控制台确认（LIVE CLOUD · 历史权威 Trace · 已确认样本 n=1）；per-task 维度仍为 evidence-replay trace schema，无 per-task live capture', evidence: `${D.agentloopOtel}/trace-schema.json` },
     ],
     residual_risks: [
       { item: 'MinIO shared tree 曾发生异常清空，已恢复，根因待查', detail: '2026-08-29 11:26–11:41 UTC shared/projects/.../tasks/ 整树变空；worker 本地副本从未丢失；以各 worker 提交原件回推恢复；疑似 controller 侧 fs-view reconcile 或 MinIO 生命周期策略，待查。', source: `${D.replayMaterials}/07-disclosures.md 事件1` },
       { item: 'tool_guard 曾导致会话超时，当前策略已调整', detail: '受保护工具调用需人工批准，无人值守下超时→拒绝→清空会话记忆（fixer 10:40:08 / verifier 11:15:08）；处置：仅对这两个 worker 关闭 guard 并重启（按人工门授权）；有人值守模式应重新开启。', source: `${D.replayMaterials}/07-disclosures.md 事件2` },
       { item: 'VERIFICATION_PASSED 状态枚举兼容问题', detail: 'store 白名单（RESULT_STATUSES）不含 VERIFICATION_PASSED，check_task 报 invalid result status；验证证据本身完整可信；待办：纳入白名单或统一映射。', source: `${D.replayMaterials}/07-disclosures.md 事件3` },
-      { item: 'PolarDB RAG：未接入', detail: '未接通 PolarDB 作为向量/知识检索后端；Agent 知识来源仅为任务 spec、GitHub 公开内容与仓库文档。', source: `${D.replayMaterials}/08-scope-boundary.md` },
-      { item: 'Agentic Database Branch：未实现', detail: '无数据库写时分支隔离；演示隔离为任务目录 + 独立 venv/clone 的文件/容器层。', source: `${D.replayMaterials}/08-scope-boundary.md` },
-      { item: 'AgentLoop/OTel：未接入（部分：schema 已定义）', detail: '无 OpenTelemetry traces/metrics 导出；现有可观测为框架日志 + Matrix 事件历史；已定义 evidence-replay 模式 trace schema（PHASE14-WINDOWS-AGENTLOOP-OTEL-20260829-200307/trace-schema.json），spans 永不以 live capture 呈现。', source: `${D.agentloopOtel}/trace-schema.json` },
+      { item: 'PolarDB RAG：未接入', detail: '未接通 PolarDB 作为向量/知识检索后端；当前 RAG 为本地 SYNTHETIC 合成演示数据集（8 篇演示文档，非企业数据）；历史运行中 Agent 知识来源仅为任务 spec、GitHub 公开内容与仓库文档。', source: `${D.replayMaterials}/08-scope-boundary.md` },
+      { item: 'Agentic Database Branch：未实现', detail: '无真实数据库写时分支隔离（PolarDB NOT CONNECTED）；PR #4 候选验证运行在 SIMULATED 内存 fixture；运行时隔离为任务目录 + 独立 venv/clone 的文件/容器层。', source: `${D.replayMaterials}/08-scope-boundary.md` },
+      { item: 'AgentLoop/OTel：平台级 LIVE CLOUD Trace 已确认（已确认样本 n=1）；per-task 维度未接入', detail: '2026-08-30 真实 Matrix 触发 run 的合并 Trace（trace fbf4a3cec0493990d76e10a102418be1，Agent 1 / LLM 24 / Tool 8）由操作员在阿里云 AgentLoop 控制台确认，本地 relay/span 记录旁证；历史权威 Trace，不声称多轮稳定覆盖。per-task 维度仍为 evidence-replay 模式 trace schema（PHASE14-WINDOWS-AGENTLOOP-OTEL-20260829-200307/trace-schema.json），spans 不以 live capture 呈现。', source: `${D.agentloopOtel}/trace-schema.json` },
     ],
     stability_events: [
       { item: '首次高危委派静默丢失（已根因修复）', detail: '平铺命名空间冲突 + since-token 高水位/DM 误判双根因；只读审计定位 → 12 项单元测试（基线全失败→修复后全通过、零回归）→ build2 重放闭环。', source: `${D.replayMaterials}/07-disclosures.md 事件4 + ${D.fixAudit}/AUDIT.md` },
