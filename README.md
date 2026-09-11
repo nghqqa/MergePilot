@@ -1,4 +1,4 @@
-# MergePilot
+# MergePilot：多 Agent PR 审修闭环
 
 **多 Agent 代码与数据库变更安全闭环系统**
 
@@ -15,9 +15,9 @@
 
 ## 演示
 
-**Demo 视频（75 秒 · 1080p · 中文旁白）**：[Watch Demo](https://github.com/nghqqa/MergePilot/releases/download/fudai-semifinal-demo-20260831/mergepilot-final-demo-fullscreen-20260831-v11.mp4)
+**Demo 视频（75 秒 · 1080p · 中文旁白）**：[Watch Demo](https://github.com/nghqqa/MergePilot/releases/download/v0.2.0/MergePilot-demo.mp4)
 
-**在线体验**：`git clone` 后执行 `cd demo-platform && node backend/server.mjs`，访问 `http://127.0.0.1:4173`。零第三方依赖，无需 `npm install`。也可下载离线包 [MergePilot-demo.zip](https://github.com/nghqqa/MergePilot/releases/download/fudai-semifinal-demo-20260831/MergePilot-demo.zip)（约 1 MB）。
+**在线体验**：`git clone` 后执行 `cd demo-platform && node backend/server.mjs`，访问 `http://127.0.0.1:4173`。零第三方依赖，无需 `npm install`。也可下载离线包 [MergePilot-demo.zip](https://github.com/nghqqa/MergePilot/releases/download/v0.2.0/MergePilot-demo.zip)（约 1 MB）。
 
 ## 要解决的问题
 
@@ -97,7 +97,7 @@ Node.js ≥ 18 即可，无需 `npm install`：前端已预构建（`frontend/di
 
 自测：`node backend/test/selftest.mjs`（54 项：脱敏、回放完整性、API 契约、无泄密扫描；[CI 在 Node 18/20/22 上自动运行](https://github.com/nghqqa/MergePilot/actions/workflows/selftest.yml)）。
 
-不想 clone？下载 [MergePilot-demo.zip](https://github.com/nghqqa/MergePilot/releases/download/fudai-semifinal-demo-20260831/MergePilot-demo.zip)（约 1 MB，已含证据），解压后在 `MergePilot-demo` 目录执行同样的命令。
+不想 clone？下载 [MergePilot-demo.zip](https://github.com/nghqqa/MergePilot/releases/download/v0.2.0/MergePilot-demo.zip)（约 1 MB，已含证据、预检脚本与现场演示手册），解压后进入 `MergePilot-demo-现场版` 目录，双击 `start-demo.bat` 或执行 `node MergePilot-demo/backend/server.mjs`。PPT、视频与完整提交包见 [Release v0.2.0](https://github.com/nghqqa/MergePilot/releases/tag/v0.2.0)。
 
 ### 主项目（Python 控制面）
 
