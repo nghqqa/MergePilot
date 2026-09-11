@@ -10,14 +10,14 @@
 [![Database Branch](https://img.shields.io/badge/Database_Branch-SIMULATED-yellow)](#polardb-与-branch-边界)
 [![PolarDB](https://img.shields.io/badge/PolarDB-NOT_CONNECTED-red)](#polardb-与-branch-边界)
 [![PR Auto Merge](https://img.shields.io/badge/PR_Auto_Merge-DISABLED-red)]
-[![Tests](https://img.shields.io/badge/selftest-54%2F54-brightgreen)](demo-platform/backend/test/selftest.mjs)
+[![selftest](https://github.com/nghqqa/MergePilot/actions/workflows/selftest.yml/badge.svg)](https://github.com/nghqqa/MergePilot/actions/workflows/selftest.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
 
 ## 演示
 
 **Demo 视频（75 秒 · 1080p · 中文旁白）**：[Watch Demo](https://github.com/nghqqa/MergePilot/releases/download/fudai-semifinal-demo-20260831/mergepilot-final-demo-fullscreen-20260831-v11.mp4)
 
-**在线体验**：解压 [MergePilot-demo.zip](MergePilot-demo.zip) 后执行 `node backend/server.mjs`，访问 `http://127.0.0.1:4173`
+**在线体验**：`git clone` 后执行 `cd demo-platform && node backend/server.mjs`，访问 `http://127.0.0.1:4173`。零第三方依赖，无需 `npm install`。也可下载离线包 [MergePilot-demo.zip](https://github.com/nghqqa/MergePilot/releases/download/fudai-semifinal-demo-20260831/MergePilot-demo.zip)（约 1 MB）。
 
 ## 要解决的问题
 
@@ -42,6 +42,10 @@ Reviewer、Fixer、Verifier 三个 Agent 职责分离、互相制衡：
 - **DAG 依赖**：review-1 → fix-1 → verify-1，逐级锁定防止越权
 
 Agent 只承担语义判断，六类 Skill 以 Schema、deadline、错误码和 fail-closed 合同执行。Workflow Controller 负责状态机、确定性交接、CAS、超时 HOLD 和回滚；Policy Gateway 负责 ALLOW/DENY/HOLD；GitHub MCP 是隔离服务，PAT 不进入 Worker。
+
+![MergePilot 架构：Agent 只做语义判断，Workflow Controller、Policy Gateway 与审计事实构成确定性控制面](docs/assets/readme/preview4/architecture-preview4.png)
+
+源图（可编辑 SVG）：[`docs/assets/mergepilot-architecture.svg`](docs/assets/mergepilot-architecture.svg)
 
 ## AgentLoop 云端 Trace
 
@@ -81,19 +85,25 @@ span 父子关系：`agent_step → invoke_agent → { chat deepseek-chat（原�
 
 ## 快速开始
 
-### 演示平台（推荐）
+### 演示平台（推荐，零依赖）
 
 ```bash
-# 解压 MergePilot-demo.zip 后，在 MergePilot-demo 目录执行：
-node backend/server.mjs
-# 访问 http://127.0.0.1:4173
+git clone https://github.com/nghqqa/MergePilot.git
+cd MergePilot/demo-platform
+node backend/server.mjs        # 打开 http://127.0.0.1:4173
 ```
 
-前端已预构建，Node.js ≥ 18 即可，零第三方依赖。自测：`node backend/test/selftest.mjs`（54/54）。
+Node.js ≥ 18 即可，无需 `npm install`：前端已预构建（`frontend/dist/`），三个案例的回放证据随仓库分发（`evidence/PHASE14-*`，SHA256 锁定）。Windows 也可直接双击 `demo-platform/start-demo.bat`。
+
+自测：`node backend/test/selftest.mjs`（54 项：脱敏、回放完整性、API 契约、无泄密扫描；[CI 在 Node 18/20/22 上自动运行](https://github.com/nghqqa/MergePilot/actions/workflows/selftest.yml)）。
+
+不想 clone？下载 [MergePilot-demo.zip](https://github.com/nghqqa/MergePilot/releases/download/fudai-semifinal-demo-20260831/MergePilot-demo.zip)（约 1 MB，已含证据），解压后在 `MergePilot-demo` 目录执行同样的命令。
 
 ### 主项目（Python 控制面）
 
-从 [v0.1.0-preview.4 Release](https://github.com/nghqqa/MergePilot/releases/tag/v0.1.0-preview.4) 下载资产，按 `bootstrapper.ps1` 引导执行。
+完整隔离栈（Controller、Policy Gateway、GitHub MCP、PostgreSQL/pgvector、MinIO）以离线镜像包发布：从 [v0.1.0-preview.4 Release](https://github.com/nghqqa/MergePilot/releases/tag/v0.1.0-preview.4) 下载资产，校验 checksums 后按 `bootstrapper.ps1` 引导执行（当前正式支持 Windows 11 + WSL2）。
+
+仓库内的 `docker-compose.yml` 与 `Dockerfile.*` 是该镜像包的构建配方，由 `tools/demo_console/one_click_startup.py` 编排调用，不支持直接 `docker compose up`。源码开发与本地测试命令见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## 仓库结构
 
