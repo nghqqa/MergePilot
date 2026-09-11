@@ -38,10 +38,12 @@ export default function OperationsView({ caseData, openDrawer }) {
         <div className="panel ops-cell">
           <h3 className="ops-h">Risk / Gate</h3>
           <dl className="kv small">
-            <dt>risk</dt><dd>{caseData.risk.level === 'high'
+            <dt>risk</dt><dd>{caseData.risk.level === 'critical'
+              ? <span className="chip bad">CRITICAL · {caseData.risk.category}</span>
+              : caseData.risk.level === 'high'
               ? <span className="chip bad">HIGH · {caseData.risk.category}</span>
               : <span className="chip ok">NORMAL — 非高危</span>}</dd>
-            <dt>human gate</dt><dd><StatusPill status={caseData.gate.state === 'approved' ? 'completed' : caseData.gate.state === 'required' ? 'waiting_human' : 'pending'} label={`GATE: ${caseData.gate.state.toUpperCase()}`} /></dd>
+            <dt>human gate</dt><dd><StatusPill status={caseData.gate.state === 'approved' ? 'completed' : caseData.gate.state === 'rejected' ? 'blocked' : caseData.gate.state === 'required' ? 'waiting_human' : 'pending'} label={`GATE: ${caseData.gate.state.toUpperCase()}`} /></dd>
             <dt>residual</dt><dd className="muted small">{caseData.risk.residual_after_fix ?? '—'}</dd>
             {isPR2 && <dt>finding</dt>}
             {isPR2 && <dd><button className="linklike" onClick={() => openDrawer({ kind: 'finding' })}>打开 Finding 证据 →</button></dd>}

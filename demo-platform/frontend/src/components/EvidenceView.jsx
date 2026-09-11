@@ -25,10 +25,10 @@ export default function EvidenceView({ caseData, openDrawer }) {
 
   return (
     <div>
-      {caseData.risk.level === 'high' && (
-        <div className="panel" style={{ borderColor: 'rgba(251,191,36,0.4)' }}>
+      {(caseData.risk.level === 'high' || caseData.risk.level === 'critical') && (
+        <div className="panel" style={{ borderColor: caseData.risk.level === 'critical' ? 'rgba(248,113,113,0.45)' : 'rgba(251,191,36,0.4)' }}>
           <div className="sec-head" style={{ marginBottom: 8 }}>
-            <h2 style={{ color: 'var(--amber)' }}><IconAlert size={15} /> Finding — HIGH RISK FOUND · {caseData.risk.category}</h2>
+            <h2 style={{ color: caseData.risk.level === 'critical' ? 'var(--red)' : 'var(--amber)' }}><IconAlert size={15} /> Finding — {caseData.risk.level === 'critical' ? 'CRITICAL' : 'HIGH'} RISK FOUND · {caseData.risk.category}</h2>
           </div>
           <dl className="kv small">
             <dt>结论</dt><dd className="mono small">{caseData.risk.reviewer_conclusion}</dd>
@@ -55,10 +55,15 @@ export default function EvidenceView({ caseData, openDrawer }) {
             </>
           )}
           {g.state !== 'none' && (
-            <ClaimRow label="human approval" value={`${g.state.toUpperCase()} by ${g.approver}`} s={{ source: 'Evidence Replay', source_ref: g.record_path, precision: 'approx' }} onOpen={() => openDrawer({ kind: 'approval' })} openLabel="审批记录证据 →" />
+            <ClaimRow label={g.state === 'rejected' ? 'human rejection' : 'human approval'} value={`${g.state.toUpperCase()} by ${g.approver ?? g.rejected_by ?? '—'}`} s={{ source: 'Evidence Replay', source_ref: g.record_path ?? g.rejection_text_source ?? null, precision: g.state === 'rejected' ? 'exact' : 'approx' }} onOpen={() => openDrawer({ kind: 'approval' })} openLabel={g.state === 'rejected' ? '拒绝记录证据 →' : '审批记录证据 →'} />
           )}
           <ClaimRow label="trace" value={`Trace Mode: ${caseData.trace_status.trace_mode.toUpperCase()} · Cloud Trace: Smoke ${caseData.trace_status.smoke?.status} / Live CoPaw Run ${caseData.trace_status.live_copaw_run?.status}`} s={{ source: 'AgentLoop Cloud', source_ref: caseData.trace_status.schema_only.path, precision: null }} onOpen={() => openDrawer({ kind: 'trace' })} openLabel="trace 证据 →" />
-          <ClaimRow label="evidence integrity" value={`SHA256 ${health?.integrity?.ok_files}/${health?.integrity?.total_files} VERIFIED（启动时重算）`} s={{ source: 'Evidence Replay', source_ref: 'SHA256SUMS per evidence dir', precision: null }} onOpen={() => openDrawer({ kind: 'trace' })} openLabel="校验说明 →" />
+          <ClaimRow label="evidence integrity" value={(() => {
+            const fin = health?.integrity?.final_submission_integrity;
+            const hist = health?.integrity?.historical_source_integrity;
+            if (!fin) return 'SHA256 校验结果加载中…';
+            return `SHA256 最终提交包 ${fin.ok_files}/${fin.files} ${fin.status}${hist ? ` · 历史材料 ${hist.ok_files}/${hist.files} ${hist.status}` : ''}（启动时逐文件重算）`;
+          })()} s={{ source: 'Evidence Replay', source_ref: 'SHA256SUMS per evidence dir', precision: null }} onOpen={() => openDrawer({ kind: 'trace' })} openLabel="校验说明 →" />
         </div>
       </section>
 

@@ -120,7 +120,7 @@ function DrawerBody({ d }) {
           <span className="mono small">{d.timestamp}</span> <PrecisionBadge precision={d.timestamp_precision} note={d.timestamp_note} />
         </KVRow>
         {d.matrix_event_id && <KVRow k="matrix event"><span className="mono small break">{d.matrix_event_id}</span></KVRow>}
-        <KVRow k="trace_id"><span className="mono small">{d.trace_id ?? 'null'}</span> <span className="faint small">{d.trace_note || 'AgentLoop 未接入 — 待接入'}</span></KVRow>
+        <KVRow k="trace_id"><span className="mono small">{d.trace_id ?? 'null'}</span> <span className="faint small">{d.trace_note || 'per-task Trace 未接入 — 待接入；平台级历史权威 Trace 见总览页'}</span></KVRow>
         {d.event_id && <KVRow k="event_id"><span className="mono small">{d.event_id}</span></KVRow>}
         {d.project_id && <KVRow k="project_id"><span className="mono small">{d.project_id}</span></KVRow>}
         {d.task_id !== undefined && d.task_id !== null && <KVRow k="task_id"><span className="mono small">{d.task_id}</span></KVRow>}

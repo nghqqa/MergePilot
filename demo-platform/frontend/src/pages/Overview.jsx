@@ -1,7 +1,7 @@
 // frontend/src/pages/Overview.jsx — masthead + case billboards + mandated status bar.
 // 10-second thesis; per-case facts; no status shown without real evidence support.
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { api } from '../api.js';
 import { useDemo } from '../store.jsx';
 import { LoadingBox, SourceRef } from '../components/ui.jsx';
@@ -114,11 +114,11 @@ export default function Overview() {
       {liveTrace && al?.live_copaw_run?.status === 'VERIFIED' && (
         <section className="sec" aria-label="AgentLoop LIVE CLOUD Trace">
           <div className="sec-head">
-            <h2>AgentLoop Cloud Trace — LIVE CLOUD（真实运行合并 Trace）</h2>
-            <span className="sub"><span className="chip ok">Trace Mode: LIVE CLOUD</span></span>
+            <h2>AgentLoop Cloud Trace — LIVE CLOUD（历史权威 Trace · 已确认样本 n=1）</h2>
+            <span className="sub"><span className="chip ok">Trace Mode: LIVE CLOUD</span> <span className="faint small">2026-08-30 真实运行确认样本，非当前实时数据</span></span>
           </div>
           <div className="resrisk">
-            <div className="item"><IconShieldCheck size={13} />真实 CoPaw run 已在阿里云 AgentLoop 控制台确认：Agent + LLM + Tool 三类 span 合并于同一 Trace，会话与模型分析数据可用</div>
+            <div className="item"><IconShieldCheck size={13} />历史权威 Trace：该次真实 CoPaw run 已在阿里云 AgentLoop 控制台确认（已确认样本），Agent + LLM + Tool 三类 span 合并于同一 Trace；以下为该次确认样本的数字，非当前实时数据</div>
             <dl className="kv small detail">
               <dt>trace id</dt><dd className="mono">{liveTrace.trace_id}</dd>
               <dt>session id</dt><dd className="mono">{liveTrace.session_id}</dd>
@@ -135,9 +135,9 @@ export default function Overview() {
               <dt>合并说明</dt>
               <dd className="small">原生 agentscope span 与 loongsuite wrapper span 同 Trace：zz 埋点在解释器启动时设置全局 TracerProvider（service.name=mergepilot-copaw），agentscope_runtime 复用同一 Provider，所有 span 同批导出、同 Trace 收敛</dd>
               <dt>证据来源</dt>
-              <dd className="small mono">{al.live_copaw_run.evidence_dir}（{al.live_copaw_run.verdict}）</dd>
+              <dd className="small mono">{al.live_copaw_run.evidence_dir}（{al.live_copaw_run.verdict}）{al.live_copaw_run.evidence_dir_in_package === false && <><br /><span className="faint">{al.live_copaw_run.evidence_dir_note}</span></>}</dd>
               <dt>SHA256 状态</dt>
-              <dd><span className="chip ok">证据目录内含 SHA256SUMS 清单</span> <span className="faint small">verdict 为操作员控制台确认（非 API 级查询记录）；不声称 6/6 稳定覆盖</span></dd>
+              <dd><span className="chip ok">证据目录内含 SHA256SUMS 清单</span> <span className="faint small">历史权威 Trace · 已确认样本 n=1（操作员控制台确认，非 API 级查询记录）；不声称多轮稳定覆盖</span></dd>
             </dl>
           </div>
         </section>
@@ -146,7 +146,7 @@ export default function Overview() {
       <section className="sec" aria-label="诚实披露">
         <div className="sec-head">
           <h2>Disclosures — 诚实披露</h2>
-          <span className="sub"><a href="#/audit">完整审计页 →</a></span>
+          <span className="sub"><Link to="/audit">完整审计页 →</Link></span>
         </div>
         <div className="resrisk">
           <div className="item"><IconLock size={13} />残余风险与未接入项（如实显示，无证据不标 READY）</div>
@@ -157,7 +157,7 @@ export default function Overview() {
             per-task live trace 仍为 evidence-replay ·
             RAG 已接入合成数据集（SYNTHETIC DEMO，非企业数据）· PolarDB Branch NOT CONNECTED（演示使用 SIMULATED fixture）·
           </div>
-          <SourceRef>D:\goai\p14-demo\evidence\PHASE14-WINDOWS-REPLAY-MATERIALS-20260829-195223\07-disclosures.md · 08-scope-boundary.md{al?.source_ref ? '' : ''}</SourceRef>
+          <SourceRef>evidence/PHASE14-WINDOWS-REPLAY-MATERIALS-20260829-195223/07-disclosures.md · 08-scope-boundary.md（只读证据目录，实际根路径见 /api/health）</SourceRef>
         </div>
       </section>
     </main>

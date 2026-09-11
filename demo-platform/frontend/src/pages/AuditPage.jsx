@@ -1,11 +1,12 @@
 // frontend/src/pages/AuditPage.jsx — audit as full-width evidence rows (no card grid)
 import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../api.js';
 import { LoadingBox, ErrorBox, SourceRef } from '../components/ui.jsx';
 import { IconShieldCheck, IconAlert, IconHash } from '../icons.jsx';
 
 const STATUS_CLS = {
-  VERIFIED: 'ok', DISABLED: 'warn', NOT_IMPLEMENTED: 'bad', PARTIAL_SCHEMA_ONLY: 'warn',
+  VERIFIED: 'ok', DISABLED: 'warn', NOT_IMPLEMENTED: 'bad', PARTIAL_SCHEMA_ONLY: 'warn', PARTIAL: 'warn',
 };
 
 export default function AuditPage() {
@@ -114,13 +115,13 @@ export default function AuditPage() {
             </tbody>
           </table>
         </div>
-        <SourceRef>D:\goai\p14-demo\evidence\（只读）— 各目录 SHA256SUMS 由 Demo Backend 启动时逐文件重算</SourceRef>
+        <SourceRef>evidence/（只读，与 MergePilot-demo/ 并列）— 各目录 SHA256SUMS 由 Demo Backend 启动时逐文件重算，实际根路径见 /api/health 的 evidence_root</SourceRef>
       </section>
 
       <section className="sec">
         <div className="sec-head">
           <h2>RAG 数据完整性（SYNTHETIC DEMO）</h2>
-          <span className="sub"><a href="#/rag">RAG 页面 →</a> <a href="#/ops">Operations →</a></span>
+          <span className="sub"><Link to="/rag">RAG 页面 →</Link> <Link to="/ops">Operations →</Link></span>
         </div>
         <RagEvidence />
       </section>

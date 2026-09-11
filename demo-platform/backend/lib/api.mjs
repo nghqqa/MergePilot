@@ -44,7 +44,7 @@ function taskSourceMap(t) {
 //   Aliyun AgentLoop console (trace fbf4a3cec0493990d76e10a102418be1), operator-
 //   confirmed screenshot + local relay/span corroboration. Verdict word:
 //   AGENTLOOP_ALIYUN_TRACE_VISIBILITY_CONFIRMED_BY_OPERATOR (no programmatic
-//   cloud-query record yet — do NOT claim 6/6 stable coverage).
+//   cloud-query record yet — do NOT claim multi-run stable coverage; n=1 confirmed sample).
 let agentloopCache = null;
 export function agentloopStatus() {
   if (agentloopCache) return agentloopCache;
@@ -61,6 +61,9 @@ export function agentloopStatus() {
       source: 'Aliyun AgentLoop console trace detail — operator-confirmed screenshot (Phase 14.2H, 2026-08-30)',
       verdict: 'AGENTLOOP_ALIYUN_TRACE_VISIBILITY_CONFIRMED_BY_OPERATOR',
       evidence_dir: 'evidence/PHASE14-WINDOWS-AGENTLOOP-MERGED-TRACE-FINALIZE-20260830-181813',
+      evidence_dir_in_package: false,
+      evidence_dir_note: '该目录属于项目完整证据库，本演示包随附的 11 个证据目录未包含它；包内 AgentLoop 相关证据为 PHASE14-WINDOWS-AGENTLOOP-OTEL-20260829-200307（OTLP smoke + trace schema）',
+      sample_note: '历史权威 Trace · 已确认样本 n=1（2026-08-30），非当前实时数据',
       refs: ['cloud-trace-confirmation.json', 'span-tree.json', 'coverage-matrix.json', 'relay-stability.json', 'SHA256SUMS'],
       refs_note: '真实 Matrix 触发 run（observability-validation-run-4 / project agentloop-innerhook-4），非 synthetic smoke、非 evidence replay；云端可见性由操作员控制台确认，本地 relay(75/75 HTTP 200) 与四 worker 埋点(span 名录+LLM 审计)构成旁证',
       trace: {
@@ -88,7 +91,7 @@ export function agentloopStatus() {
     },
     coverage: {
       status: 'VERIFIED',
-      scope: 'Agent / LLM / Tool span 同一 Trace 覆盖（n=1 完整真实运行；不声称 6/6 稳定覆盖）',
+      scope: 'Agent / LLM / Tool span 同一 Trace 覆盖（历史权威 Trace · 已确认样本 n=1 完整真实运行；不声称多轮稳定覆盖）',
       refs: ['coverage-matrix.json'],
     },
     historical_replay: {
@@ -188,7 +191,7 @@ function eventEvidence(caseObj, seq) {
     seq: ev.seq,
     matrix_event_id: ev.matrix_event_id ?? null,
     trace_id: null,
-    trace_note: 'AgentLoop 未接入 — 无 trace（待接入）',
+    trace_note: 'per-event 无独立 trace（per-task/事件维度仍为 evidence-replay）；平台级历史权威 Trace 见总览页 AgentLoop Cloud Trace 区块',
     project_id: caseObj.project.id,
     task_id: null,
     agent_role: ev.agent_role,
@@ -222,7 +225,7 @@ function taskEvidence(caseObj, taskId) {
     ...drawerEnvelope(resolvedStatus),
     event_id: null,
     trace_id: t.trace_id ?? null,
-    trace_note: t.trace_note ?? 'AgentLoop 未接入 — 待接入',
+    trace_note: t.trace_note ?? 'per-task Trace 仍为 evidence-replay；平台级历史权威 Trace 见总览页',
     project_id: t.project_id,
     task_id: t.id,
     agent_role: t.assignee.includes('reviewer') ? 'reviewer' : t.assignee.includes('fixer') ? 'fixer' : t.assignee.includes('verifier') ? 'verifier' : 'leader',
@@ -538,7 +541,7 @@ export const routes = {
         source_ref: e.source_ref,
         matrix_event_id: e.matrix_event_id ?? null,
         trace_id: e.trace_id ?? null,
-        trace_note: 'AgentLoop/OTel 未接入 — 无 trace（如实显示待接入）',
+        trace_note: 'per-task Trace 未接入 — 无 per-task trace（如实显示待接入）；平台级历史权威 Trace 见总览页',
         summary: e.summary,
         detail: e.detail ?? null,
         state_after: e.state_after,
@@ -703,11 +706,19 @@ export const routes = {
 
   'GET /api/cases/:id/trace': async (q, p) => {
     const { c } = requireCase(p.id);
+    const al = agentloopStatus();
     return {
       case_id: c.case_id,
       status: 'NOT_AVAILABLE',
       display: '待接入',
-      reason: 'AgentLoop/OTel 未实现 — 本阶段无 live capture；不得声称已有 trace',
+      scope: 'per-task',
+      reason: 'per-task 维度 Trace 仍为 evidence-replay（历史证据回放），本阶段无 per-task live capture；平台级历史权威 Trace（已确认样本 n=1）见 platform_trace 字段与总览页',
+      platform_trace: {
+        trace_mode: al.live_copaw_run.trace_mode,
+        status: al.live_copaw_run.status,
+        trace_id: al.live_copaw_run.trace?.trace_id ?? null,
+        note: '历史权威 Trace · 已确认样本 n=1（2026-08-30 操作员控制台确认），非当前实时数据',
+      },
       schema_only: {
         exists: true,
         path: `${EVIDENCE_DIRS.agentloopOtel}/trace-schema.json`,
