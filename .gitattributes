@@ -9,3 +9,6 @@
 # 证据目录按原始字节 SHA256 锁定，禁止 git 做任何行尾/编码转换，
 # 否则 checkout 后哈希漂移，selftest 的完整性断言会失败。
 evidence/** -text
+# .bat must keep CRLF bytes verbatim: cmd.exe mis-parses LF-only files, and
+# GitHub ZIP downloads serve stored bytes as-is.
+*.bat -text
