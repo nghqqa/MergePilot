@@ -1,0 +1,12 @@
+PHASE14.2H-WD-REPLAY-MATERIALS-UPDATE
+VERDICT=REPLAY_MATERIALS_READY_FOR_DEMO_PLATFORM
+CASE_PR1=normal collaboration (autonomous DAG review->fix->verify, all SUCCESS)
+CASE_PR2=high-risk human gate (CWE-22 -> HIGH_RISK_FOUND -> HUMAN_SECURITY_APPROVED_FIX -> fix -> VERIFICATION_PASSED)
+PR2_STATE=OPEN (no merge/push/close/reopen performed)
+ROLE_MATRIX_DAG_TIMELINE_GATE=updated (03/04/05/06)
+DISCLOSURES=minio shared tree emptied+restored; tool_guard approval-timeout session wipe; status enum gap (07)
+NOT_IMPLEMENTED_DECLARED=polardb-rag / agentic-db-branch / agentloop-otel (08)
+DEMO_SCRIPTS=3min / 8min / 15min (09/demo-scripts.md)
+DEMO_PLATFORM=page structure + status field JSON schema + state machines (10)
+SECRET_SCAN=CLEAN (patterns: 0 hits; reverse-match with real secret values: 0 hits; FS_ACCESS_KEY hits = public worker-name identifiers, cleared)
+HISTORY_PRESERVED=all prior evidence dirs untouched

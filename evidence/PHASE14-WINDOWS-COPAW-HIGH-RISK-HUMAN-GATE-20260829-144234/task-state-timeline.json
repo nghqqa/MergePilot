@@ -1,0 +1,27 @@
+{
+  "phase": "Phase 14.2H-WD-COPAW-HIGH-RISK-PR-DEMO",
+  "recorded_at": "2026-08-29T14:46:00+08:00",
+  "check_type": "runtime state + task-state-timeline + kickoff/retry ledger",
+  "result": "PASS",
+  "runtime": {
+    "context": "desktop-linux (Docker Desktop engine 29.7.2)",
+    "containers": "10/10 running (ctrl, manager, 4 openclaw workers, 4 copaw workers)",
+    "restart_counts": "all 0 since their last intentional starts",
+    "isolation": "copaw workers only on p14h2-copaw-net; openclaw workers only on p14h2-wd-net; no WSL"
+  },
+  "projects": {
+    "copaw-high-risk-human-gate": "active/dag/p14h2-copaw (THIS phase's project)",
+    "copaw-sandbox": "completed (retained, untouched)",
+    "wd1-pr1-bootstrap": "active (retained, untouched)"
+  },
+  "ledger": {
+    "kickoffs_sent_copaw_runtime": 2 (copaw-sandbox E2E: 1; copaw-high-risk-human-gate: 1 - each project exactly one),
+    "retries_sent_copaw_runtime": 0 (no retry messages sent for the high-risk project)
+  },
+  "task_state_timeline": [
+    {"t": "project create + replan", "review-1": "pending (ready)", "fix-1": "pending", "verify-1": "pending"},
+    {"t": "kickoff sent 06:02:43Z", "review-1": "pending", "fix-1": "pending", "verify-1": "pending"},
+    {"t": "audit close", "review-1": "pending (reviewer consumption stalled - see verdict)", "fix-1": "pending", "verify-1": "pending"}
+  ],
+  "manual_state_changes": "none"
+}

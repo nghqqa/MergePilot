@@ -1,0 +1,13 @@
+PHASE14.2H-WD-COPAW-HIGH-RISK-FIX-VERIFY
+VERDICT=COPAW_HIGH_RISK_FIXVERIFY_PASSED
+HUMAN_GATE=APPROVED (record: artifacts/human-gate-approval.md)
+FIX1_EVENT=$JU09kIgwjvVJmEUSVSlNR8Va2-zhxsvtmFaZ3RIHuTM (fixer consumed 10:06:24Z, submitted)
+FIX1_RESULT=STATUS: SUCCESS / FIX_APPLIED / TESTS_PASSED (before: traversal 200 leak; after: 404)
+VERIFY1_EVENT=$t0dXkuWwmjdkA-Ao6H0Z3KhuYJLJ0nQPCq7w0Jr1aU8 (verifier consumed 11:06:25Z, submitted)
+VERIFY1_RESULT=STATUS: VERIFICATION_PASSED / SEVERITY: NONE / HUMAN_VERIFICATION_REQUIRED: NO / FIX_INDEPENDENTLY_VERIFIED REGRESSION_CHECK_PASSED
+PATCH_SCOPE=minimal, single file demo_high_risk.py (12+/4-), Path.resolve + is_relative_to containment
+PR2_STATE=OPEN (no merge/push/close/reopen performed; local work only)
+CONSTRAINTS=all honored (OpenClaw mainline untouched; copaw-sandbox untouched; no secrets; old evidence read-only)
+SLOWNESS_ROOT_CAUSE=copaw tool_guard interactive approval timeout -> session wipe (mitigated: guard disabled for fixer/verifier per gate authorization)
+OPEN_FINDINGS=remote shared/ tasks tree emptied by unknown actor (restored from worker locals); RESULT_STATUSES whitelist lacks VERIFICATION_PASSED; plan.md duplicate sections
+NEXT=operator review of verification report; dispatch decisions complete for this phase

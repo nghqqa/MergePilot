@@ -1,0 +1,8 @@
+{
+  "phase": "Phase 14.2H-WD-COPAW-HIGH-RISK-PR-DEMO",
+  "recorded_at": "2026-08-29T14:47:00+08:00",
+  "check_type": "human-security-approval",
+  "result": "NOT_GRANTED_YET",
+  "state": "this phase ends BEFORE the human security approval (the reviewer execution is stalled - see verdict.json)",
+  "next_phase": "after the reviewer delivery fix (container restart authorization), re-run the review; the human security approval is then requested per the phase design"
+}

@@ -1,0 +1,7 @@
+PHASE14.2H-WD-COPAW-MATRIX-SYNC-AUDIT
+VERDICT=COPAW_MATRIX_SYNC_ROOT_CAUSE_IDENTIFIED
+CODE_FIX_REQUIRED=YES
+ROOT_CAUSE_A=taskflow.py delegate_task flat task-id namespace reuse branch returns stale event_id without sending (shared/tasks/review-1 collision sandbox vs high-risk)
+ROOT_CAUSE_B=matrix_channel.py _sync_loop persists since-token high-water independently of consumption; restart restores token past the event; no backfill, limited-flag ignored -> historical events structurally unreplayable
+IMAGE_REBUILD_REQUIRED=YES (Fix-2 taskflow.py in image venv; Fix-1 hot-patchable via MinIO custom_channels)
+UNBLOCK_WITHOUT_CODE=send a NEW delegation @mention containing reviewer MXID / m.mentions

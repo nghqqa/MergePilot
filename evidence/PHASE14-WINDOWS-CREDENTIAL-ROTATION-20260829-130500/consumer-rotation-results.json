@@ -1,0 +1,20 @@
+{
+  "phase": "Phase 14.2H-WD-CREDENTIAL-ROTATION",
+  "recorded_at": "2026-08-29T13:12:00+08:00",
+  "check_type": "consumer-rotation-results + digest-change-audit",
+  "result": "PASS - 5/5 ROTATED AND VERIFIED",
+  "method": "two-phase per consumer: console values=[old,new] (both valid) -> worker config updated atomically (stdin key transfer, tmp+mv) -> worker container restart (flush in-memory old key) -> real completion verification with the NEW key -> console values=[new] (old revoked)",
+  "rotations": [
+    {"consumer": "worker-p14h2-wd-worker-manager", "old_revoked": true, "new_key_gateway_completion": "200 / 0.47s / completion_len=2", "worker_restart": "yes"},
+    {"consumer": "worker-p14h2-wd-worker-reviewer", "old_revoked": true, "new_key_gateway_completion": "200 / 1.00s / completion_len=2", "worker_restart": "yes"},
+    {"consumer": "worker-p14h2-wd-worker-fixer", "old_revoked": true, "new_key_gateway_completion": "200 / 0.36s / completion_len=2", "worker_restart": "yes"},
+    {"consumer": "worker-p14h2-wd-worker-verifier", "old_revoked": true, "new_key_gateway_completion": "200 / 0.59s / completion_len=2", "worker_restart": "yes"},
+    {"consumer": "manager", "old_revoked": true, "new_key_gateway_completion": "200 / 0.53s / completion_len=2", "worker_restart": "manager container restarted"}
+  ],
+  "digest_change_audit": {
+    "per_consumer": "old value -> new value: CHANGED (all 5)",
+    "worker_openclaw_json_apiKey": "updated to match the new consumer value (atomic tmp+mv)",
+    "console_values_after": "1 per consumer (new only)",
+    "no_digest_or_prefix_values_recorded": "per phase constraint 10 - only change facts"
+  }
+}

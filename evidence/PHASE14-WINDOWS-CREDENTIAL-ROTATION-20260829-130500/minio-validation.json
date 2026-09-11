@@ -1,0 +1,10 @@
+{
+  "phase": "Phase 14.2H-WD-CREDENTIAL-ROTATION",
+  "recorded_at": "2026-08-29T13:22:00+08:00",
+  "check_type": "minio-validation",
+  "result": "PASS",
+  "checks": {
+    "minio_health_live": 200,
+    "storage_objects_reconciled": "agents/<consumer>/openclaw.json objects re-synced to the rotated values (4 workers) - manager's object intentionally not synced to MinIO (its store is local-only)"
+  }
+}

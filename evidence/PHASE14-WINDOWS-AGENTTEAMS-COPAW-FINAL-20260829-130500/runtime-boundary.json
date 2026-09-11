@@ -1,0 +1,20 @@
+{
+  "phase": "Phase 14.2H-WD-FINAL-SUBMISSION-LOCK",
+  "recorded_at": "2026-08-29T13:07:00+08:00",
+  "check_type": "runtime-boundary",
+  "result": "PASS",
+  "boundaries": {
+    "AgentTeams": "协作框架（Controller / Team / Worker / Project / DAG 语义）",
+    "CoPaw": "Agent runtime（python，内含委派工具 + credential_guard）",
+    "p14h2-copaw": "本机隔离演示 runtime",
+    "p14h2-wd": "OpenClaw 主线（保持不变）"
+  },
+  "isolation_map": {
+    "copaw_workers_network": "p14h2-copaw-net only",
+    "openclaw_workers_network": "p14h2-wd-net only",
+    "matrix_identities": "distinct prefixes (p14h2-copaw-worker-* vs p14h2-wd-worker-* + @manager)",
+    "minio_prefixes": "agents/p14h2-copaw-worker-* vs agents/p14h2-wd-worker-* + shared/, manager/",
+    "projects": "copaw-sandbox (completed) vs wd1-pr1-bootstrap (active)"
+  },
+  "no_cross_runtime_dependencies": true
+}

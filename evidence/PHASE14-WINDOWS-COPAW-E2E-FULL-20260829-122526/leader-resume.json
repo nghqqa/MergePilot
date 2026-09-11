@@ -1,0 +1,18 @@
+{
+  "phase": "Phase 14.2H-WD-COPAW-E2E-FULL",
+  "recorded_at": "2026-08-29T12:25:26+08:00",
+  "check_type": "leader-resume",
+  "result": "PASS",
+  "trigger": {"event_id": "$jXLm54cP-l-wVuhHTqc1qI_w4fcQIpMmFLjceUyFvdY", "ts_utc": "2026-08-29T04:15:49Z", "type": "e2e-continuation (authorized trigger via existing DM; not a kickoff)"},
+  "leader_resume": {
+    "consumed_utc": "2026-08-29T04:15:49Z (runner Handle agent query)",
+    "autonomous_actions_in_this_e2e": [
+      "read review-1 result via taskflow check_task -> STATUS SUCCESS, no blocking issues",
+      "dispatched fix-1 to the fixer via taskflow(delegate_task)",
+      "REPAIRED plan.md autonomously: deduplicated the double plan section that was blocking ready_nodes/plan_dag and reset prematurely-delegated fix-1/verify-1 markers to pending (MEMORY_COPAW_PROJECT_STORE_RECONCILED_BY_AGENT)",
+      "progressed the DAG after fix-1 completion and dispatched verify-1",
+      "collected verify-1 pass result and produced the final project report",
+      "entered wait-for-human-approval state per instructions"
+    ]
+  }
+}

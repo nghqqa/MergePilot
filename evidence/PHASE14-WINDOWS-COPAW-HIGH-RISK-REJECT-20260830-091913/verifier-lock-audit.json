@@ -1,0 +1,19 @@
+{
+  "phase": "Phase 14.2H-WD-COPAW-HIGH-RISK-REJECT-DEMO",
+  "recorded_at": "2026-08-30T09:34:00+08:00",
+  "mode": "live-demo",
+  "source_commit": "PR#3 head ad267a6e51209551a0733657321bb364d04befd0",
+  "evidence_refs": [
+    "pre-rejection-fixer-verifier-activity.txt",
+    "post-rejection-fixer-verifier-activity.txt",
+    "docker logs agentteams-worker-p14h2-copaw-worker-verifier (consume 事件全量时间戳)"
+  ],
+  "status": "PASS",
+  "worker": "p14h2-copaw-worker-verifier",
+  "verifier_runs_before_rejection": 0,
+  "verifier_runs_after_rejection": 0,
+  "method": "docker logs _consume_with_tracker 事件全量审计：verifier 容器全部 5 条 consume 事件时间戳均为 2026-08-29（昨日已批准并归档的 verify-1 流程 04:20/11:06/11:15/11:23/11:39 UTC）；2026-08-30（本阶段全程）consume 事件为 0",
+  "delegation_messages_to_verifier_today": 0,
+  "task_state": "verify-1 从未被派发；plan.md 标记 [!] locked, never dispatch (fix-1 rejected)",
+  "conclusion": "无 Verifier run（本阶段全程）— 锁定成立"
+}

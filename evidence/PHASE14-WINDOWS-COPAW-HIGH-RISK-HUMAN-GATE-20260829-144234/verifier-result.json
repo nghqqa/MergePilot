@@ -1,0 +1,7 @@
+{
+  "phase": "Phase 14.2H-WD-COPAW-HIGH-RISK-PR-DEMO",
+  "recorded_at": "2026-08-29T14:47:00+08:00",
+  "check_type": "verifier-result",
+  "result": "NOT_RUN",
+  "reason": "the Verifier must only run after the Fixer (post human approval); the chain has not reached this stage"
+}

@@ -1,0 +1,75 @@
+{
+ "observation": "180s stability probe for the evidence-replay trace pipeline",
+ "method": "collector re-executed 3 times, 90s apart, against immutable evidence sources; canonical JSON (sorted keys, no wall-clock fields) hashed each run",
+ "runs": [
+  {
+   "run": 1,
+   "at_utc": "2026-08-29T12:11:43Z",
+   "pr1_sha256": "7c10b5daabcdda826b69453d5452f0c1dbe364f018e04321ffc998551d669458",
+   "pr2_sha256": "8dd2d3ccb51119962c8ea4d4e756f7c67b556652a1e42641a4b7e628be6e7f8e"
+  },
+  {
+   "run": 2,
+   "at_utc": "2026-08-29T12:13:14Z",
+   "pr1_sha256": "7c10b5daabcdda826b69453d5452f0c1dbe364f018e04321ffc998551d669458",
+   "pr2_sha256": "8dd2d3ccb51119962c8ea4d4e756f7c67b556652a1e42641a4b7e628be6e7f8e"
+  },
+  {
+   "run": 3,
+   "at_utc": "2026-08-29T12:14:44Z",
+   "pr1_sha256": "7c10b5daabcdda826b69453d5452f0c1dbe364f018e04321ffc998551d669458",
+   "pr2_sha256": "8dd2d3ccb51119962c8ea4d4e756f7c67b556652a1e42641a4b7e628be6e7f8e"
+  }
+ ],
+ "full_sha256": {
+  "pr1": "7c10b5daabcdda826b69453d5452f0c1dbe364f018e04321ffc998551d669458",
+  "pr2": "8dd2d3ccb51119962c8ea4d4e756f7c67b556652a1e42641a4b7e628be6e7f8e"
+ },
+ "result": "STABLE — identical canonical hashes across 180s window; repeated queries by project/task/agent/run return byte-identical traces",
+ "note": "Determinism is by design: replay derives from immutable evidence, so hash equality also proves no live traffic polluted the trace window.",
+ "queries_exercised": {
+  "project=copaw-high-risk-human-gate": {
+   "count": 18,
+   "spans": [
+    "agentloop.project",
+    "task.review-1",
+    "taskflow.delegate_task",
+    "matrix.message.receive",
+    "agent.session.run",
+    "task.submit",
+    "human_gate.request",
+    "human_gate.blocking_window",
+    "human_gate.approval",
+    "task.state_transition",
+    "task.fix-1",
+    "taskflow.delegate_task",
+    "incident.tool_guard_session_wipe",
+    "incident.tool_guard_session_wipe",
+    "incident.minio_shared_tree_empty",
+    "task.verify-1",
+    "taskflow.delegate_task",
+    "project.completed"
+   ]
+  },
+  "task=review-1@pr2": {
+   "count": 2,
+   "spans": [
+    "task.review-1",
+    "task.submit"
+   ]
+  },
+  "agent=verifier@pr2": {
+   "count": 2,
+   "spans": [
+    "incident.tool_guard_session_wipe",
+    "task.verify-1"
+   ]
+  },
+  "run=GENAI_LLM_SESSION@pr2": {
+   "count": 1,
+   "spans": [
+    "agent.session.run"
+   ]
+  }
+ }
+}

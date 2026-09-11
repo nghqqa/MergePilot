@@ -1,0 +1,9 @@
+{
+  "phase": "Phase 14.2H-WD-COPAW-HIGH-RISK-PR-DEMO",
+  "recorded_at": "2026-08-29T14:46:00+08:00",
+  "check_type": "pre-approval-task-state",
+  "result": "PASS",
+  "controller_tasks": [["review-1", "pending", "p14h2-copaw-worker-reviewer"], ["fix-1", "pending", "p14h2-copaw-worker-fixer"], ["verify-1", "pending", "p14h2-copaw-worker-verifier"]],
+  "ready_nodes": ["review-1"],
+  "no_manual_state_changes": true
+}

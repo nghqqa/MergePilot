@@ -1,0 +1,8 @@
+{
+  "project_id": "copaw-high-risk-human-reject",
+  "title": "High-risk human-reject workflow: PR #3 review-fix-verify with human approval gate",
+  "status": "paused",
+  "source": "admin",
+  "requester": "@admin:p14h2-wd-matrix:6167",
+  "created_at": "2026-08-30T01:25:53Z"
+}
