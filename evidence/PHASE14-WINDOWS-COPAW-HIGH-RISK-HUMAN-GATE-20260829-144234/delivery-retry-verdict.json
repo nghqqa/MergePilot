@@ -1,0 +1,26 @@
+{
+  "phase": "Phase 14.2H-WD-COPAW-HIGH-RISK-PR-DEMO (DELIVERY-RETRY)",
+  "recorded_at": "2026-08-29T14:20:00+08:00",
+  "verdict": "BLOCKED_REVIEWER_CONSUMPTION_AFTER_DELIVERY",
+  "delivery_retry": {
+    "sent": true,
+    "event_id": "$_xibtD1CnD5HHzPekXs05X6_TNdXw7ny1L61P_E5o3I",
+    "room": "!fai6WChnDcFHxNnuK2:p14h2-wd-matrix:6167 (the reviewer's DM)",
+    "ts_utc": "2026-08-29T08:09:06Z",
+    "sender": "@admin",
+    "content": "delegation-redelivery: task review-1 of project copaw-high-risk-human-gate (PR#2 security review request with the required markers)"
+  },
+  "observation": {
+    "reviewer_consumption": "NONE after 8+ minutes (0 agent runs, 0 log activity)",
+    "diagnosis": "the reviewer's copaw app matrix channel sync loop is stalled (the same pattern as the pre-restart consumer idle-stop); the container restart reloaded the app but the matrix channel's sync loop has not delivered the message"
+  },
+  "constraints_respected": {
+    "single_delivery_retry_only": true,
+    "no_second_kickoff": true,
+    "no_manual_delegate": true,
+    "no_container_restarts": true,
+    "no_pr_write_operations": true,
+    "secrets_in_evidence": false
+  },
+  "fix_path": "the reviewer container restart (re-initializes the matrix channel's sync loop) - requires separate authorization; then the re-delivered @mention will be consumed and the review proceeds"
+}

@@ -10,5 +10,7 @@ __pycache__/
 
 # preview package build output (large OCI tar, rebuilt on demand)
 dist/
+# demo-platform 前端预构建产物例外：零依赖 clone-and-run 需要它随仓库分发
+!demo-platform/frontend/dist/
 release/preview/logs/
 release/preview/manifests/

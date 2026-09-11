@@ -1,0 +1,36 @@
+{
+  "phase": "Phase 14.2H-WD-COPAW-HIGH-RISK-PR-DEMO (DELIVERY-AUDIT)",
+  "recorded_at": "2026-08-29T14:55:00+08:00",
+  "check_type": "delivery-audit",
+  "result": "BLOCKED_REVIEWER_ROOM_ROUTING",
+  "audit": {
+    "leader_delegate_dispatch": "confirmed dispatched (leader session: taskflow(delegate_task) with the notification)",
+    "delegation_event_in_reviewer_readable_rooms": {
+      "team_room_!8JQYuign7W0GMBDBDU": "last 20 events contain NO m.room.message events (membership/state only); the delegation @mention is ABSENT",
+      "reviewer_dm_!fai6WChnDcFHxNnuK2": "0 recent messages; the delegation @mention is ABSENT"
+    },
+    "reviewer_membership": "join in both rooms (verified)",
+    "reviewer_power_levels": "None (default level 0 - no admin action needed)",
+    "reviewer_sync_since_token": "no sync-token file found in /root/.copaw-worker or the agentteams-fs view (the copaw app's sync state is in-memory only - NOT persisted across container restarts)"
+  },
+  "root_cause_analysis": {
+    "delegation_notification_target": "the leader's taskflow(delegate_task) notification targets the assignee's room, but the @mention never materialized in either the Team Room or the reviewer's DM",
+    "team_room_state": "membership/state events only (the room.meta @admin polling events are the ADMIN's session-login receipts, not task messages)",
+    "sync_cursor": "the copaw app's matrix sync state is IN-MEMORY ONLY (no persisted sync-token file); after the reviewer container restart, the sync starts from the CURRENT position - the historical @mention (12:26 local) is SKIPPED by design"
+  },
+  "failure_code": "BLOCKED_REVIEWER_ROOM_ROUTING",
+  "fix_path_for_next_phase": [
+    "1. deliver the delegation @mention as a NEW message into the reviewer's WORKER_ROOM_ID room (!fai6WChnDcFHxNnuK2) - the reviewer's matrix channel will then consume it on its next sync",
+    "2. or restart the reviewer container (re-initializes the matrix channel; the room sync then re-processes the team room history including the delegation @mention)",
+    "both require explicit operator authorization (the current phase forbids Matrix messages and container restarts)"
+  ],
+  "constraints_respected": {
+    "no_new_kickoff": true,
+    "no_new_messages_sent": true,
+    "no_task_state_changes": true,
+    "no_manual_delegate": true,
+    "no_container_restarts": true,
+    "no_pr_write_operations": true,
+    "secrets_in_evidence": false
+  }
+}

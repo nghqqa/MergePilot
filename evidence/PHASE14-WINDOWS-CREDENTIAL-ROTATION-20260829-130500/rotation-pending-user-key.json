@@ -1,0 +1,20 @@
+{
+  "phase": "Phase 14.2H-WD-CREDENTIAL-ROTATION",
+  "recorded_at": "2026-08-29T13:35:00+08:00",
+  "check_type": "rotation-pending-user-key",
+  "result": "AWAITING_NEW_KEY_FROM_OPERATOR",
+  "finding": "the operator-provided key file (D:\\goai\\secrets\\deepseek_api_key.txt, 35 bytes, mtime Aug 28 23:25) contains the SAME key currently configured in the higress deepseek provider (digest 6c53f4db... identical) - i.e. the ACTIVE, transcript-exposed key, not a replacement",
+  "key_validity_check": {"direct DeepSeek API call with the file key": "200 / 0.38s / completion OK - the exposed key is still ACTIVE on the platform"},
+  "rotation_definition": "complete only when a NEWLY-CREATED key (different digest) is in the provider and verified, and the old key is revoked on the platform",
+  "operator_steps_required": [
+    "1. platform.deepseek.com -> API Keys -> create a NEW key (web UI only; no key-management API exists)",
+    "2. overwrite the contents of D:\\goai\\secrets\\deepseek_api_key.txt with the new key",
+    "3. notify this session"
+  ],
+  "then_automation_completes": [
+    "provider token refreshed from the file via stdin (console API PUT, no display)",
+    "real completion verification 200 with the new key",
+    "operator revokes the old key on the platform",
+    "verdict upgrades to CREDENTIAL_ROTATION_VERIFIED (full)"
+  ]
+}

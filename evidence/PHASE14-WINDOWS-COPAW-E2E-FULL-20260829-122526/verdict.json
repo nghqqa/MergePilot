@@ -1,0 +1,42 @@
+{
+  "phase": "Phase 14.2H-WD-COPAW-E2E-FULL",
+  "recorded_at": "2026-08-29T12:30:00+08:00",
+  "verdict": "COPAW_AGENT_AUTONOMOUS_PROJECT_CLOSED_PENDING_HUMAN_GATE",
+  "achieved": true,
+  "e2e_chain": {
+    "trigger": "e2e-continuation message via existing leader DM (event $jXLm54cP-l-wVuhHTqc1qI_w4fcQIpMmFLjceUyFvdY)",
+    "leader_consumed": "04:15:49Z",
+    "review_1": {"dispatched_by_leader": true, "executed_by": "p14h2-copaw-worker-reviewer", "result": "SUCCESS, no blocking issues", "ack": "taskflow ack_task -> in_progress", "result_md": "shared/tasks/review-1/result.md"},
+    "fix_1": {"dispatched_by_leader": "yes (autonomous, after reading review-1 result)", "executed_by": "p14h2-copaw-worker-fixer", "result": "SUCCESS, no remediation required", "result_md": "shared/tasks/fix-1/result.md", "deliverable": "fix-findings.md"},
+    "verify_1": {"dispatched_by_leader": "yes (autonomous, after fix-1)", "executed_by": "p14h2-copaw-worker-verifier", "result": "SUCCESS - 'full sandbox chain provisioned and executed cleanly end-to-end; verification passes'", "result_md": "shared/tasks/verify-1/result.md", "deliverable": "verify-findings.md"},
+    "final_report": "leader delivered the final project report and is WAITING FOR HUMAN APPROVAL",
+    "human_gate": "HUMAN_APPROVAL_REQUIRED (no auto merge/close/PR actions)"
+  },
+  "completion_conditions_met": {
+    "reviewer_executed_and_reported": true,
+    "fixer_completed_or_not_required": "completed (SUCCESS, no remediation needed)",
+    "verifier_executed_and_passed": true,
+    "dag_nodes_terminal": "all three [x] in the copaw plan.md (review-1/fix-1/verify-1)",
+    "stores_explainable": "controller store (created via MANUAL_PROJECT_CREATION) remains 'pending' as a dual-store artifact; operative state is the CoPaw file store - recorded in task-state-timeline.json",
+    "results_persisted": true,
+    "matrix_message_chain_complete": true,
+    "no_duplicate_kickoff_retry": true,
+    "no_manual_delegate": true,
+    "six_containers_stable": true,
+    "stability_window": "180s-class verification at E2E end: all running, RestartCount=0, StartedAt constant",
+    "no_reconcile_loops": true,
+    "secret_scan_clean": true
+  },
+  "autonomy_evidence": {
+    "leader_tool_activity": "40+ exec / 12+ read tool calls in the earlier dispatch run; continued autonomous DAG progression in this run (check_task, plan repair, delegate x2, verify collection, final report)",
+    "leader_autonomous_repair": "plan.md deduplication + marker reset (recorded in repair-attempts: 1 autonomous repair, within limits)"
+  },
+  "constraints_respected": {
+    "openclaw_runtime_modified": false,
+    "second_kickoff_or_retry_of_old_thread": false,
+    "manual_delegate_or_task_state_change": false,
+    "pr_touched_or_auto_merged": false,
+    "wsl_or_foreign_runtimes_touched": false,
+    "secrets_in_evidence": false
+  }
+}

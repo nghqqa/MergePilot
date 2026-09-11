@@ -1,0 +1,13 @@
+{
+  "phase": "Phase 14.2H-WD-COPAW-HIGH-RISK-PR-DEMO",
+  "recorded_at": "2026-08-29T14:44:00+08:00",
+  "check_type": "project-dag",
+  "result": "PASS",
+  "project": {"id": "copaw-high-risk-human-gate", "status": "active", "plan": "dag", "team": "p14h2-copaw", "title": "HIGH-RISK security demo: human security gate (nghqqa/fastapi-boilerplate-demo PR#2)"},
+  "dag": [
+    {"id": "review-1", "assignee": "p14h2-copaw-worker-reviewer", "dependsOn": [], "status": "pending (dispatched by the leader; reviewer consumption pending - see verdict)"},
+    {"id": "fix-1", "assignee": "p14h2-copaw-worker-fixer", "dependsOn": ["review-1"], "status": "pending"},
+    {"id": "verify-1", "assignee": "p14h2-copaw-worker-verifier", "dependsOn": ["fix-1"], "status": "pending"}
+  ],
+  "not_reusing": ["wd1-pr1-bootstrap", "copaw-sandbox"]
+}

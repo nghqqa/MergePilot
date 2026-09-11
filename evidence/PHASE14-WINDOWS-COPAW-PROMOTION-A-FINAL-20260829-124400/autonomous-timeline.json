@@ -1,0 +1,17 @@
+{
+  "phase": "Phase 14.2H-WD-COPAW-PROMOTION-A-FINAL",
+  "recorded_at": "2026-08-29T12:45:00+08:00",
+  "check_type": "autonomous-timeline",
+  "result": "PASS",
+  "timeline_utc": [
+    {"t": "2026-08-28T15:09:55Z", "event": "p14h2-wd runtime kickoff sent+consumed; LLM 401 (provider gap) — 后续修复"},
+    {"t": "2026-08-29T01:18:03Z", "event": "copaw runtime retry consumed; leader run 24c0c67a (63.8s, isError=false, 52 tool calls); delegation refused (missing plan.md store seed)"},
+    {"t": "2026-08-29T03:47:25Z", "event": "copaw-sandbox kickoff consumed by copaw leader (run started)"},
+    {"t": "2026-08-29T03:48:09Z", "event": "leader session saved; ready_nodes blocked by missing plan.md -> 正确上报（未越权）"},
+    {"t": "2026-08-29T04:01:04Z", "event": "SEED-RETRY: operator seeded the file store (official projectflow path); retry_attempt=2 sent"},
+    {"t": "2026-08-29T04:01:04-04:01:24", "event": "leader consumed retry -> projectflow(ready_nodes) -> [review-1] -> taskflow(delegate_task) -> reviewer @mention"},
+    {"t": "2026-08-29T04:01:24-04:02:17", "event": "reviewer acked + executed + reported completion (SUCCESS)"},
+    {"t": "2026-08-29T04:15:49Z", "event": "E2E continuation sent -> leader read review-1 result -> dispatched fix-1 -> fixer executed (SUCCESS) -> dispatched verify-1 -> verifier executed (SUCCESS, full chain passes)"},
+    {"t": "2026-08-29T04:21:14Z", "event": "leader final report delivered; project completed; HUMAN_APPROVAL_REQUIRED"}
+  ]
+}

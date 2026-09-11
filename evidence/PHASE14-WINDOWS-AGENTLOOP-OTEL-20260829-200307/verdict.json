@@ -1,0 +1,46 @@
+{
+  "phase": "Phase 14.2H-WD-AGENTLOOP-OTEL",
+  "verdict": "AGENTLOOP_OTEL_TRACE_READY_FOR_DEMO",
+  "blocked_alternatives_not_triggered": [
+    "BLOCKED_AGENTLOOP_OTEL_UNAVAILABLE",
+    "BLOCKED_AGENTLOOP_TRACE_REDACTION",
+    "BLOCKED_AGENTLOOP_EVENT_CORRELATION"
+  ],
+  "mode": "evidence-replay (not live capture; constraint 8 honored)",
+  "constraints_compliance": {
+    "no_business_logic_changes": true,
+    "openclaw_mainline_untouched": true,
+    "pr1_pr2_untouched": true,
+    "no_kickoff_retry_new_task_messages": true,
+    "no_delegate_task_calls": true,
+    "project_dag_task_state_unchanged": true,
+    "no_secrets_output_or_persisted": true,
+    "no_live_disguise": "mode=evidence-replay badge on traces + console contract",
+    "existing_materials_and_evidence_preserved": true
+  },
+  "trace_coverage": [
+    "project/session/run", "agent identity+role", "LLM calls (session spans)",
+    "tool calls", "projectflow(ready_nodes) via plan/ready evidence", "taskflow(delegate_task)",
+    "reviewer/fixer/verifier state transitions", "human gate request",
+    "human approval", "retries+incidents (tool_guard x2, minio tree, recovered)", "final task results", "project completed"
+  ],
+  "redaction": {"rules": 4, "real_secret_hits": 0, "token_in_output": false},
+  "dual_evaluation": {
+    "result": {"pr1": "PASS", "pr2": "PASS"},
+    "trajectory": {"pr1": "PASS (7 checks)", "pr2": "PASS (8 checks)"},
+    "separation": "result_evaluation embedded per result-trace; trajectory in dedicated files"
+  },
+  "two_cases_separate_traces": {"pr1": "trace-pr1-normal-collab", "pr2": "trace-pr2-high-risk-human-gate (gate = actual state transitions: request -> blocking_window -> approval -> dispatch resumed)"},
+  "verification_conditions": {
+    "query_by_project_task_agent_run": true,
+    "parent_child_spans": true,
+    "llm_tool_matrix_human_event_types_distinguished": true,
+    "timeline_consistent_with_matrix_session_task_evidence": true,
+    "result_vs_trajectory_separated": true,
+    "anomaly_trace_example": "incident spans (tool_guard x2 recovered; minio tree empty recovered)",
+    "human_gate_before_after_comparison": "human-gate-trace.json before_after_comparison",
+    "stability_180s": "3 runs identical canonical hashes",
+    "final_secret_scan_real_hits": 0
+  },
+  "generated_at_utc": "2026-08-29T12:20:00Z"
+}

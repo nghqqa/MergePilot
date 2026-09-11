@@ -1,0 +1,14 @@
+{
+  "phase": "Phase 14.2H-WD-CREDENTIAL-ROTATION",
+  "recorded_at": "2026-08-29T13:21:00+08:00",
+  "check_type": "llm-completion-validation",
+  "result": "PASS",
+  "semantic_validation": "every completion probe returned HTTP 200 with a NON-EMPTY choice content ('OK' - 2 chars, matching the requested literal reply) and model deepseek-v4-flash - not merely a network 200",
+  "post_rotation_completions": {
+    "worker-p14h2-wd-worker-manager": "200/0.48s",
+    "worker-p14h2-wd-worker-reviewer": "200/0.38s",
+    "worker-p14h2-wd-worker-fixer": "200/0.54s",
+    "worker-p14h2-wd-worker-verifier": "200/0.59s"
+  },
+  "no_real_project_task_executed": true
+}

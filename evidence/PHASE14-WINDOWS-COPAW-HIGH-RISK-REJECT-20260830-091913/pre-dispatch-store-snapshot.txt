@@ -1,0 +1,38 @@
+--tasks--
+/root/.copaw-worker/p14h2-copaw-worker-manager/.copaw/workspaces/default/shared/tasks/fix-1/
+{
+  "task_id": "fix-1",
+  "project_id": "copaw-sandbox",
+  "task_title": "Sandbox fix task",
+  "assigned_to": "p14h2-copaw-worker-fixer",
+  "room_id": "!8JQYuign7W0GMBDBDU:p14h2-wd-matrix:6167",
+  "status": "submitted",
+  "depends_on": [
+    "review-1"
+  ],
+  "assigned_at": "2026-08-29T04:17:35Z",
+ 
+/root/.copaw-worker/p14h2-copaw-worker-manager/.copaw/workspaces/default/shared/tasks/review-1/
+{
+  "task_id": "review-1",
+  "project_id": "copaw-high-risk-human-gate",
+  "task_title": "Security review of PR#2 high-risk demo diff",
+  "assigned_to": "p14h2-copaw-worker-reviewer",
+  "room_id": "room:!8JQYuign7W0GMBDBDU:p14h2-wd-matrix:6167",
+  "status": "assigned",
+  "depends_on": [],
+  "assigne
+/root/.copaw-worker/p14h2-copaw-worker-manager/.copaw/workspaces/default/shared/tasks/verify-1/
+{
+  "task_id": "verify-1",
+  "project_id": "copaw-sandbox",
+  "task_title": "Sandbox verify task",
+  "assigned_to": "p14h2-copaw-worker-verifier",
+  "room_id": "!8JQYuign7W0GMBDBDU:p14h2-wd-matrix:6167",
+  "status": "submitted",
+  "depends_on": [
+    "fix-1"
+  ],
+  "assigned_at": "2026-08-29T04:20:4
+--project copaw-high-risk-human-reject exists?--
+0

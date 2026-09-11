@@ -1,0 +1,336 @@
+{
+ "trace_id": "trace-pr1-normal-collab",
+ "mode": "evidence-replay",
+ "case": "pr1-normal-collab",
+ "resource": {
+  "service.name": "agentteams-agentloop",
+  "service.namespace": "p14h2-wd",
+  "agentteams.runtime": "223ddc2 / copaw-worker:223ddc2-build2",
+  "gen_ai.system": "higress->deepseek-chat"
+ },
+ "root_span": {
+  "span_id": "sp-pr1-10a2aab788",
+  "parent_span_id": null,
+  "name": "agentloop.project",
+  "span_kind": "AGENTLOOP_PROJECT",
+  "status": "ok",
+  "start_utc": "2026-08-29T03:42:00Z",
+  "end_utc": "2026-08-29T06:21:30Z",
+  "time_certainty": "inferred",
+  "attributes": {
+   "project_id": "copaw-sandbox",
+   "pr": "PR #1 (wd1-pr1-bootstrap)",
+   "human_gate": "not_required"
+  },
+  "provenance_refs": [
+   "task-meta flat/*; room history"
+  ],
+  "agentteams": {
+   "project_id": "copaw-sandbox",
+   "agent_role": "leader"
+  }
+ },
+ "spans": [
+  {
+   "span_id": "sp-pr1-10a2aab788",
+   "parent_span_id": null,
+   "name": "agentloop.project",
+   "span_kind": "AGENTLOOP_PROJECT",
+   "status": "ok",
+   "start_utc": "2026-08-29T03:42:00Z",
+   "end_utc": "2026-08-29T06:21:30Z",
+   "time_certainty": "inferred",
+   "attributes": {
+    "project_id": "copaw-sandbox",
+    "pr": "PR #1 (wd1-pr1-bootstrap)",
+    "human_gate": "not_required"
+   },
+   "provenance_refs": [
+    "task-meta flat/*; room history"
+   ],
+   "agentteams": {
+    "project_id": "copaw-sandbox",
+    "agent_role": "leader"
+   }
+  },
+  {
+   "span_id": "sp-pr1-6fc85ee1ca",
+   "parent_span_id": "sp-pr1-10a2aab788",
+   "name": "task.review-1",
+   "span_kind": "AGENTLOOP_TASK",
+   "status": "ok",
+   "start_utc": "2026-08-29T04:01:24.756Z",
+   "end_utc": "2026-08-29T04:02:17.000Z",
+   "time_certainty": "exact",
+   "attributes": {
+    "task_id": "review-1",
+    "assignee": "@p14h2-copaw-worker-reviewer:p14h2-wd-matrix:6167"
+   },
+   "provenance_refs": [
+    "matrix-event:$nadwji6tQQkl4vSWDktWAFt",
+    "copaw.log 04:01-04:02"
+   ],
+   "agentteams": {
+    "task_id": "review-1",
+    "agent": "@p14h2-copaw-worker-reviewer:p14h2-wd-matrix:6167"
+   }
+  },
+  {
+   "span_id": "sp-pr1-1753434f1d",
+   "parent_span_id": "sp-pr1-6fc85ee1ca",
+   "name": "matrix.delegate",
+   "span_kind": "MATRIX_MESSAGE",
+   "status": "ok",
+   "start_utc": "2026-08-29T04:01:24.756Z",
+   "end_utc": "2026-08-29T04:01:24.756Z",
+   "time_certainty": "exact",
+   "attributes": {},
+   "provenance_refs": [
+    "matrix-event:$nadwji6tQQkl4vSWDktWAFtWs_enjxAcg23927OKmrU"
+   ],
+   "agentteams": {
+    "matrix_event_id": "$nadwji6tQQkl4vSWDktWAFtWs_enjxAcg23927OKmrU",
+    "mentions_target": "@p14h2-copaw-worker-reviewer:p14h2-wd-matrix:6167",
+    "agent_role": "leader"
+   }
+  },
+  {
+   "span_id": "sp-pr1-f107bb6737",
+   "parent_span_id": "sp-pr1-6fc85ee1ca",
+   "name": "agent.session.run",
+   "span_kind": "GENAI_LLM_SESSION",
+   "status": "ok",
+   "start_utc": "2026-08-29T04:01:24.000Z",
+   "end_utc": "2026-08-29T04:02:17.000Z",
+   "time_certainty": "exact",
+   "attributes": {
+    "gen_ai": {
+     "operation.name": "agent_session",
+     "request.model": "global-fallback(RetryChatModel)"
+    }
+   },
+   "provenance_refs": [
+    "copaw.log 04:01:24/04:02:17"
+   ],
+   "agentteams": {
+    "agent": "@p14h2-copaw-worker-reviewer:p14h2-wd-matrix:6167",
+    "agent_role": "reviewer",
+    "run_id": "sandbox-review-1-run1"
+   }
+  },
+  {
+   "span_id": "sp-pr1-11666bc2fa",
+   "parent_span_id": "sp-pr1-10a2aab788",
+   "name": "task.fix-1",
+   "span_kind": "AGENTLOOP_TASK",
+   "status": "ok",
+   "start_utc": "2026-08-29T04:17:35.660Z",
+   "end_utc": "2026-08-29T04:18:05.828Z",
+   "time_certainty": "exact",
+   "attributes": {
+    "task_id": "fix-1",
+    "assignee": "@p14h2-copaw-worker-fixer:p14h2-wd-matrix:6167"
+   },
+   "provenance_refs": [
+    "matrix-event:$6vRswN2kR4a6HaSuueSTm8v2vgbWMmMrFOxZmhk14ho"
+   ],
+   "agentteams": {
+    "task_id": "fix-1",
+    "agent": "@p14h2-copaw-worker-fixer:p14h2-wd-matrix:6167"
+   }
+  },
+  {
+   "span_id": "sp-pr1-a81824d166",
+   "parent_span_id": "sp-pr1-11666bc2fa",
+   "name": "matrix.delegate",
+   "span_kind": "MATRIX_MESSAGE",
+   "status": "ok",
+   "start_utc": "2026-08-29T04:17:35.660Z",
+   "end_utc": "2026-08-29T04:17:35.660Z",
+   "time_certainty": "exact",
+   "attributes": {},
+   "provenance_refs": [
+    "matrix-event:$6vRswN2kR4a6HaSuueSTm8v2vgbWMmMrFOxZmhk14ho"
+   ],
+   "agentteams": {
+    "matrix_event_id": "$6vRswN2kR4a6HaSuueSTm8v2vgbWMmMrFOxZmhk14ho",
+    "mentions_target": "@p14h2-copaw-worker-fixer:p14h2-wd-matrix:6167",
+    "agent_role": "leader"
+   }
+  },
+  {
+   "span_id": "sp-pr1-490d63cf76",
+   "parent_span_id": "sp-pr1-10a2aab788",
+   "name": "task.verify-1",
+   "span_kind": "AGENTLOOP_TASK",
+   "status": "ok",
+   "start_utc": "2026-08-29T04:20:42.204Z",
+   "end_utc": "2026-08-29T04:21:17.119Z",
+   "time_certainty": "exact",
+   "attributes": {
+    "task_id": "verify-1",
+    "assignee": "@p14h2-copaw-worker-verifier:p14h2-wd-matrix:6167"
+   },
+   "provenance_refs": [
+    "matrix-event:$1aBwYYvMBKSByNCSRb779RCSI0-u3oQKKKSoeQztdMs"
+   ],
+   "agentteams": {
+    "task_id": "verify-1",
+    "agent": "@p14h2-copaw-worker-verifier:p14h2-wd-matrix:6167"
+   }
+  },
+  {
+   "span_id": "sp-pr1-cef6178ec9",
+   "parent_span_id": "sp-pr1-490d63cf76",
+   "name": "matrix.delegate",
+   "span_kind": "MATRIX_MESSAGE",
+   "status": "ok",
+   "start_utc": "2026-08-29T04:20:42.204Z",
+   "end_utc": "2026-08-29T04:20:42.204Z",
+   "time_certainty": "exact",
+   "attributes": {},
+   "provenance_refs": [
+    "matrix-event:$1aBwYYvMBKSByNCSRb779RCSI0-u3oQKKKSoeQztdMs"
+   ],
+   "agentteams": {
+    "matrix_event_id": "$1aBwYYvMBKSByNCSRb779RCSI0-u3oQKKKSoeQztdMs",
+    "mentions_target": "@p14h2-copaw-worker-verifier:p14h2-wd-matrix:6167",
+    "agent_role": "leader"
+   }
+  },
+  {
+   "span_id": "sp-pr1-53518c2b59",
+   "parent_span_id": "sp-pr1-10a2aab788",
+   "name": "project.completed",
+   "span_kind": "EVALUATION_ANCHOR",
+   "status": "ok",
+   "start_utc": "2026-08-29T04:02:17.413Z",
+   "end_utc": "2026-08-29T04:02:17.413Z",
+   "time_certainty": "exact",
+   "attributes": {
+    "project_id": "copaw-sandbox",
+    "note": "verify-1 TASK_COMPLETED; all three submitted"
+   },
+   "provenance_refs": [
+    "matrix-event:$mbcGpxJH1j7gcKyZ2Ki9W6-K8xncmG-3cFSO6qi22M8"
+   ],
+   "agentteams": {
+    "project_id": "copaw-sandbox"
+   }
+  }
+ ],
+ "provenance": {
+  "mode": "evidence-replay",
+  "note": "spans reconstructed from immutable evidence; timestamps are ORIGINAL event times; no live traffic generated",
+  "sources": [
+   {
+    "kind": "matrix-event",
+    "ref": "$nadwji6tQQkl4vSWDktWAFtWs_enjxAcg23927OKmrU",
+    "sha256_12": "52b07ace70bc"
+   },
+   {
+    "kind": "matrix-event",
+    "ref": "$VQmYLk0xG-6-k4w0xkgquoG9LrYgqZlDzwjxAQ7scNI",
+    "sha256_12": "58eb9c1f204c"
+   },
+   {
+    "kind": "matrix-event",
+    "ref": "$mbcGpxJH1j7gcKyZ2Ki9W6-K8xncmG-3cFSO6qi22M8",
+    "sha256_12": "9554e46bbcd9"
+   },
+   {
+    "kind": "matrix-event",
+    "ref": "$6vRswN2kR4a6HaSuueSTm8v2vgbWMmMrFOxZmhk14ho",
+    "sha256_12": "02ba2eaf1ec0"
+   },
+   {
+    "kind": "matrix-event",
+    "ref": "$ZiCxbofS1ih9P5I0IMXrbBjTdONQwOuywXI7Gry_Mzs",
+    "sha256_12": "40ec3f3cce7e"
+   },
+   {
+    "kind": "matrix-event",
+    "ref": "$1aBwYYvMBKSByNCSRb779RCSI0-u3oQKKKSoeQztdMs",
+    "sha256_12": "a6e7538a2e09"
+   },
+   {
+    "kind": "matrix-event",
+    "ref": "$THz2n5bxUC76-Bd9zwuttFbNEuewIOa7aj-sclP6a18",
+    "sha256_12": "ebbf56b88260"
+   },
+   {
+    "kind": "matrix-event",
+    "ref": "$9IXIEhoUbNm1_41d0zzxo-yjtlv2oGvhRDyvkclRm0I",
+    "sha256_12": "337357b69cfa"
+   },
+   {
+    "kind": "matrix-event",
+    "ref": "$IDofCrGE0os3RryOyFkF6R9qdX4cvU7bXL9nj1aiJac",
+    "sha256_12": "6bee16b8993a"
+   },
+   {
+    "kind": "matrix-event",
+    "ref": "$wAW493TfzEIxqT-i29smmyfBCd13b-__9L97LXXjliA",
+    "sha256_12": "4f07e57be649"
+   },
+   {
+    "kind": "matrix-event",
+    "ref": "$0CmSNq-d6aml4NyRa-8Y8ppz-M9r-Gaeh80WyiA_j4I",
+    "sha256_12": "7fbdebf43965"
+   },
+   {
+    "kind": "matrix-event",
+    "ref": "$JU09kIgwjvVJmEUSVSlNR8Va2-zhxsvtmFaZ3RIHuTM",
+    "sha256_12": "3cd5db17ad09"
+   },
+   {
+    "kind": "matrix-event",
+    "ref": "$t0dXkuWwmjdkA-Ao6H0Z3KhuYJLJ0nQPCq7w0Jr1aU8",
+    "sha256_12": "61a0fa2619e0"
+   }
+  ],
+  "redaction": {
+   "verified_clean": true
+  }
+ },
+ "result_evaluation": {
+  "evaluation_type": "result",
+  "criteria": [
+   {
+    "criterion": "reviewer_identified_issue_and_completed_protocol",
+    "verdict": "pass",
+    "evidence": {
+     "span": "sp-pr1-6fc85ee1ca",
+     "submitted": true,
+     "protocol": "STATUS/SUMMARY/DELIVERABLES present"
+    }
+   },
+   {
+    "criterion": "fixer_fixed",
+    "verdict": "pass",
+    "evidence": {
+     "span": "sp-pr1-11666bc2fa",
+     "submitted": true
+    }
+   },
+   {
+    "criterion": "verifier_passed",
+    "verdict": "pass",
+    "evidence": {
+     "span": "sp-pr1-490d63cf76",
+     "completion_event": "TASK_COMPLETED verify-1 @manager (06:21:17Z)"
+    }
+   },
+   {
+    "criterion": "project_state_correctly_completed",
+    "verdict": "pass",
+    "evidence": {
+     "span": "sp-pr1-53518c2b59",
+     "note": "all three tasks submitted and accepted; no high-risk gate required by design"
+    }
+   }
+  ],
+  "result_verdict": "PASS"
+ },
+ "trajectory_evaluation_ref": "pr1-trajectory-evaluation.json"
+}

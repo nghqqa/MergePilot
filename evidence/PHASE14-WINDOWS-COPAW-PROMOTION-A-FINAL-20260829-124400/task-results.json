@@ -1,0 +1,12 @@
+{
+  "phase": "Phase 14.2H-WD-COPAW-PROMOTION-A-FINAL",
+  "recorded_at": "2026-08-29T12:45:00+08:00",
+  "check_type": "task-results",
+  "result": "PASS - ALL SUCCESS",
+  "tasks": [
+    {"task_id": "review-1", "assignee": "p14h2-copaw-worker-reviewer", "status": "completed (SUCCESS)", "result_head": "Reviewed the copaw-sandbox project scope (bootstrap review-fix-verify DAG). Task identity, assignment, and DAG plumbing are consistent; no blocking issues found...", "deliverables": ["review-findings.md"]},
+    {"task_id": "fix-1", "assignee": "p14h2-copaw-worker-fixer", "status": "completed (SUCCESS)", "result_head": "Completed the sandbox fix step... upstream review-1 passed with SUCCESS and no blocking issues; no remediation was required...", "deliverables": ["fix-findings.md"]},
+    {"task_id": "verify-1", "assignee": "p14h2-copaw-worker-verifier", "status": "completed (SUCCESS)", "result_head": "Verified the completed copaw-sandbox chain (review-1 -> fix-1 -> verify-1)... The full sandbox chain provisioned and executed cleanly end-to-end; verification passes", "deliverables": ["verify-findings.md"]}
+  ],
+  "result_files_location": "leader copaw store: shared/tasks/<task_id>/result.md (MinIO-backed via FS sync)"
+}

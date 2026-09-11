@@ -1,0 +1,215 @@
+{
+ "trace_id": "trace-human-gate-pr2",
+ "mode": "evidence-replay",
+ "gate_id": "copaw-high-risk-human-gate:post-review",
+ "state_machine": [
+  "requested",
+  "blocking",
+  "approved"
+ ],
+ "spans": [
+  {
+   "span_id": "sp-pr2-1d5492d5e9",
+   "parent_span_id": "sp-pr2-6fc85ee1ca",
+   "name": "taskflow.delegate_task",
+   "span_kind": "GENAI_TOOL_CALL",
+   "status": "ok",
+   "start_utc": "2026-08-29T04:01:24.756Z",
+   "end_utc": "2026-08-29T04:01:24.756Z",
+   "time_certainty": "exact",
+   "attributes": {},
+   "provenance_refs": [
+    "matrix-event:$nadwji6tQQkl4vSWDktWAFtWs_enjxAcg23927OKmrU"
+   ],
+   "gen_ai": {
+    "tool.name": "taskflow.delegate_task",
+    "tool.call.arguments_hash": "9287792db58d"
+   },
+   "agentteams": {
+    "matrix_event_id": "$nadwji6tQQkl4vSWDktWAFtWs_enjxAcg23927OKmrU",
+    "mentions_target": "@p14h2-copaw-worker-reviewer:p14h2-wd-matrix:6167",
+    "agent_role": "leader"
+   }
+  },
+  {
+   "span_id": "sp-pr2-319c48af8a",
+   "parent_span_id": "sp-pr2-10a2aab788",
+   "name": "human_gate.request",
+   "span_kind": "HUMAN_GATE",
+   "status": "blocked",
+   "start_utc": "2026-08-29T09:59:18.000Z",
+   "end_utc": "2026-08-29T09:59:18.000Z",
+   "time_certainty": "exact",
+   "attributes": {
+    "agentteams": {
+     "human_gate_state": "requested"
+    },
+    "name": "HUMAN_SECURITY_REVIEW_REQUIRED"
+   },
+   "provenance_refs": [
+    "review-1/result.md markers"
+   ],
+   "agentteams": {
+    "agent_role": "human"
+   }
+  },
+  {
+   "span_id": "sp-pr2-d72d29471e",
+   "parent_span_id": "sp-pr2-10a2aab788",
+   "name": "human_gate.blocking_window",
+   "span_kind": "HUMAN_GATE",
+   "status": "blocked",
+   "start_utc": "2026-08-29T09:59:18.000Z",
+   "end_utc": "2026-08-29T10:06:24.000Z",
+   "time_certainty": "exact",
+   "attributes": {
+    "agentteams": {
+     "human_gate_state": "blocking"
+    },
+    "invariant": "no fix-1/verify-1 delegation inside window (absence proof: room history + meta timeline)"
+   },
+   "provenance_refs": [
+    "absence proof: room history; meta timeline"
+   ],
+   "agentteams": {
+    "agent_role": "human"
+   }
+  },
+  {
+   "span_id": "sp-pr2-93cc3c156d",
+   "parent_span_id": "sp-pr2-10a2aab788",
+   "name": "human_gate.approval",
+   "span_kind": "HUMAN_GATE",
+   "status": "ok",
+   "start_utc": "2026-08-29T10:06:23.000Z",
+   "end_utc": "2026-08-29T10:06:23.000Z",
+   "time_certainty": "exact",
+   "attributes": {
+    "agentteams": {
+     "human_gate_state": "approved",
+     "agent_role": "human"
+    },
+    "name": "HUMAN_SECURITY_APPROVED_FIX",
+    "record_sha12": "514515fe09bb"
+   },
+   "provenance_refs": [
+    "human-gate-approval.md"
+   ],
+   "agentteams": {
+    "agent_role": "human"
+   }
+  },
+  {
+   "span_id": "sp-pr2-90435ed35d",
+   "parent_span_id": "sp-pr2-10a2aab788",
+   "name": "task.state_transition",
+   "span_kind": "AGENTLOOP_TASK",
+   "status": "ok",
+   "start_utc": "2026-08-29T10:06:24.000Z",
+   "end_utc": "2026-08-29T10:06:24.000Z",
+   "time_certainty": "exact",
+   "attributes": {
+    "task_state_from": "gate-blocking",
+    "task_state_to": "fix-1 dispatched"
+   },
+   "provenance_refs": [
+    "meta:fix-1 assigned_at"
+   ],
+   "agentteams": {
+    "task_id": "fix-1"
+   }
+  },
+  {
+   "span_id": "sp-pr2-2827450272",
+   "parent_span_id": "sp-pr2-8d9071d49d",
+   "name": "taskflow.delegate_task",
+   "span_kind": "GENAI_TOOL_CALL",
+   "status": "ok",
+   "start_utc": "2026-08-29T10:06:24.000Z",
+   "end_utc": "2026-08-29T10:06:24.000Z",
+   "time_certainty": "exact",
+   "attributes": {},
+   "provenance_refs": [
+    "matrix-event:$JU09kIgwjvVJmEUSVSlNR8Va2-zhxsvtmFaZ3RIHuTM"
+   ],
+   "gen_ai": {
+    "tool.name": "taskflow.delegate_task",
+    "tool.call.arguments_hash": "4aaecfbf9b96"
+   },
+   "agentteams": {
+    "matrix_event_id": "$JU09kIgwjvVJmEUSVSlNR8Va2-zhxsvtmFaZ3RIHuTM",
+    "mentions_target": "@p14h2-copaw-worker-fixer:p14h2-wd-matrix:6167",
+    "agent_role": "leader"
+   }
+  },
+  {
+   "span_id": "sp-pr2-36cff63b80",
+   "parent_span_id": "sp-pr2-d62d07420a",
+   "name": "taskflow.delegate_task",
+   "span_kind": "GENAI_TOOL_CALL",
+   "status": "ok",
+   "start_utc": "2026-08-29T04:20:42.204Z",
+   "end_utc": "2026-08-29T04:20:42.204Z",
+   "time_certainty": "exact",
+   "attributes": {},
+   "provenance_refs": [
+    "matrix-event:$1aBwYYvMBKSByNCSRb779RCSI0-u3oQKKKSoeQztdMs"
+   ],
+   "gen_ai": {
+    "tool.name": "taskflow.delegate_task",
+    "tool.call.arguments_hash": "a001e251f4ff"
+   },
+   "agentteams": {
+    "matrix_event_id": "$1aBwYYvMBKSByNCSRb779RCSI0-u3oQKKKSoeQztdMs",
+    "mentions_target": "@p14h2-copaw-worker-verifier:p14h2-wd-matrix:6167",
+    "agent_role": "leader"
+   }
+  }
+ ],
+ "blocking_invariant": {
+  "claim": "HUMAN_SECURITY_REVIEW_REQUIRED caused an actual execution stop: no fix-1/verify-1 delegation exists inside the blocking window",
+  "window": {
+   "from": "2026-08-29T09:59:18.000Z",
+   "to": "2026-08-29T09:59:18.000Z"
+  },
+  "proof": "Matrix room history (281 events scanned) contains no delegation to fixer/verifier inside the window; fix-1 event_id $JU09kIgw assigned_at 10:05:5x is the FIRST post-approval dispatch",
+  "actual_state_transition": {
+   "before": {
+    "leader": "blocked",
+    "fix_1": "not dispatched",
+    "verify_1": "not dispatched"
+   },
+   "trigger": "human_gate.approval (HUMAN_SECURITY_APPROVED_FIX, record_sha12 in gate span)",
+   "after": {
+    "leader": "autonomous dispatch resumed",
+    "fix_1": "assigned -> submitted (SUCCESS/TESTS_PASSED)",
+    "verify_1": "assigned -> submitted (VERIFICATION_PASSED)"
+   }
+  }
+ },
+ "before_after_comparison": {
+  "before_gate": {
+   "spans": [
+    "$nadwji6tQQkl4vSWDktWAFtWs_enjxAcg23927OKmrU",
+    "$VQmYLk0xG-6-k4w0xkgquoG9LrYgqZlDzwjxAQ7scNI",
+    "$mbcGpxJH1j7gcKyZ2Ki9W6-K8xncmG-3cFSO6qi22M8",
+    "$6vRswN2kR4a6HaSuueSTm8v2vgbWMmMrFOxZmhk14ho",
+    "$ZiCxbofS1ih9P5I0IMXrbBjTdONQwOuywXI7Gry_Mzs",
+    "$1aBwYYvMBKSByNCSRb779RCSI0-u3oQKKKSoeQztdMs",
+    "$THz2n5bxUC76-Bd9zwuttFbNEuewIOa7aj-sclP6a18",
+    "$9IXIEhoUbNm1_41d0zzxo-yjtlv2oGvhRDyvkclRm0I",
+    "$IDofCrGE0os3RryOyFkF6R9qdX4cvU7bXL9nj1aiJac",
+    "$wAW493TfzEIxqT-i29smmyfBCd13b-__9L97LXXjliA"
+   ],
+   "note": "review-1 delegation/consumption/submit only"
+  },
+  "after_gate": {
+   "spans": [
+    "$0CmSNq-d6aml4NyRa-8Y8ppz-M9r-Gaeh80WyiA_j4I",
+    "$JU09kIgwjvVJmEUSVSlNR8Va2-zhxsvtmFaZ3RIHuTM",
+    "$t0dXkuWwmjdkA-Ao6H0Z3KhuYJLJ0nQPCq7w0Jr1aU8"
+   ],
+   "note": "fix-1 then verify-1 dispatch/submit"
+  }
+ }
+}

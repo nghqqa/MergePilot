@@ -1,0 +1,25 @@
+{
+  "phase": "Phase 14.2H-WD-COPAW-HIGH-RISK-PR-DEMO",
+  "recorded_at": "2026-08-29T14:44:00+08:00",
+  "check_type": "pr-created + pr-diff-summary",
+  "result": "PASS",
+  "pr": {
+    "repository": "nghqqa/fastapi-boilerplate-demo",
+    "number": 2,
+    "url": "https://github.com/nghqqa/fastapi-boilerplate-demo/pull/2",
+    "title": "High-risk security demo: require human verification before remediation",
+    "state": "OPEN",
+    "base": "mergepilot-demo/schema-migration-risk",
+    "head": "demo/high-risk-human-gate",
+    "commit_sha": "1dedf5e1992c950557064d8f4fb9039d1523deb3",
+    "changed_files": 2,
+    "additions": 122,
+    "deletions": 0,
+    "files": [
+      "backend/src/interfaces/api/v1/demo_high_risk.py (intentionally vulnerable router + demo notice)",
+      "backend/tests/unit/test_demo_high_risk_path_traversal.py (minimal reproduction tests, temp files only)"
+    ],
+    "description_declares": "competition security demo; intentionally introduced high-risk flaw; no real secrets; must not auto-merge; reviewer must identify and trigger the human security gate; fix awaits human approval"
+  },
+  "diff_summary": "2 files, 122 lines added, 0 removed: a standalone demo router with an unsanitized file-download path parameter, plus unit tests proving '../' escapes the demo base directory via throwaway temp files"
+}

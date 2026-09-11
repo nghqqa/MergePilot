@@ -1,0 +1,12 @@
+### PROBING UNFIXED (vulnerable) demonstration_high_risk ###
+
+========== [probe] ==========
+1) traversal ../outside/outside-secret.txt
+   status: 404
+   body:   '{"detail":"Not found"}'
+   LEAKED_OUTSIDE_SECRET: False
+   TRAVERSAL_REJECTED (4xx, no leak): True
+2) legit welcome.txt
+   status: 200
+   body:   'WELCOME-LEGIT-DEMO'
+   LEGIT_SERVED (200): True

@@ -1,0 +1,25 @@
+{
+  "phase": "Phase 14.2H-WD-FINAL-SUBMISSION-LOCK",
+  "recorded_at": "2026-08-29T13:11:00+08:00",
+  "verdict": "PHASE14_2H_WINDOWS_AGENTTEAMS_COPAW_SUBMISSION_READY",
+  "achieved": true,
+  "gates": {
+    "COPAW_AGENT_AUTONOMOUS_PROJECT_CLOSED_PENDING_HUMAN_GATE": true,
+    "CREDENTIAL_ROTATION_VERIFIED": true,
+    "HUMAN_APPROVAL_GRANTED": true,
+    "OPENCLAW_MAINLINE_PRESERVED": true,
+    "PR_WRITE_ACTIONS": "NOT_AUTHORIZED_AND_NOT_EXECUTED"
+  },
+  "evidence_sources_verified": [
+    {"dir": "PHASE14-WINDOWS-COPAW-E2E-FULL-20260829-122526", "sha256sums": "20/20 OK"},
+    {"dir": "PHASE14-WINDOWS-COPAW-PROMOTION-A-FINAL-20260829-124400", "sha256sums": "17/17 OK"},
+    {"dir": "PHASE14-WINDOWS-CREDENTIAL-ROTATION-20260829-130500", "sha256sums": "20/20 OK"}
+  ],
+  "integrity": {
+    "hash_inconsistencies": "none",
+    "duplicate_kickoff_retry": "none",
+    "manual_delegate": "none",
+    "reconcile_loops": "none",
+    "pr_write_operations": "none"
+  }
+}

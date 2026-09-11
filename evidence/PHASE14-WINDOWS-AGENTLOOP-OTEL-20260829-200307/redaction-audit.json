@@ -1,0 +1,10 @@
+{
+ "rules": [
+  "bodies->sha12+len+head40",
+  "no tokens/passwords/cookies serialized",
+  "model identity from framework logs only"
+ ],
+ "matrix_access_token_present_in_output": false,
+ "generic_secret_pattern_hits": 0,
+ "placeholder_note": "TOP-SECRET-OUTSIDE-BASE = PR#2 repo demo placeholder (in probe outputs), not a credential"
+}

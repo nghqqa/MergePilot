@@ -1,0 +1,29 @@
+{
+  "phase": "Phase 14.2H-WD-COPAW-HIGH-RISK-REJECT-DEMO",
+  "recorded_at": "2026-08-30T09:29:00+08:00",
+  "mode": "live-demo",
+  "source_commit": "PR#3 head ad267a6e51209551a0733657321bb364d04befd0",
+  "evidence_refs": [
+    "pre-rejection-plan.md (Leader store plan.md 快照)",
+    "pre-rejection-project-meta.json",
+    "pre-rejection-fixer-verifier-activity.txt",
+    "pre-dispatch-store-snapshot.txt"
+  ],
+  "status": "PASS",
+  "captured_at_utc": "2026-08-30T01:29:00Z (人工拒绝发出之前)",
+  "project": "copaw-high-risk-human-reject",
+  "plan_markers": [
+    "[x] review-1 — completed (HIGH_RISK_FOUND, critical)",
+    "[!] fix-1 — gated on human decision, NOT dispatched",
+    "[!] verify-1 — gated on human decision, NOT dispatched"
+  ],
+  "project_status": "active (meta.json; 尚未 pause — 拒绝决定尚未下达)",
+  "fixer_runs_before_rejection": 0,
+  "verifier_runs_before_rejection": 0,
+  "delegations_sent_before_rejection": {
+    "review-1_to_reviewer": 1,
+    "fix-1_to_fixer": 0,
+    "verify-1_to_verifier": 0
+  },
+  "task_store_note": "flat shared/tasks/{review-1,fix-1,verify-1} 中存在此前已完结项目（copaw-sandbox / copaw-high-risk-human-gate）的旧 meta；本项目任务写入 project-scoped 路径 shared/projects/copaw-high-risk-human-reject/tasks/，Leader 在 check_task 时以 projectId 消歧（DM 01:27:13-01:27:14），历史项目数据未被本项目触碰"
+}

@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentteams.demo/schemas/agentloop-otel-trace-1.0.json",
+  "title": "AgentLoop OTel GenAI Trace (evidence-replay) Schema",
+  "description": "Unified AgentLoop/OTel GenAI trace model for AgentTeams cases. Spans are reconstructed from immutable evidence (Matrix events, task-store metas, phase log excerpts). Mode is ALWAYS evidence-replay; spans are never presented as live captures.",
+  "type": "object",
+  "required": ["trace_id", "mode", "case", "resource", "root_span", "spans", "provenance"],
+  "properties": {
+    "trace_id": {"type": "string", "pattern": "^trace-[a-z0-9-]+$"},
+    "mode": {"const": "evidence-replay", "description": "Immutable: replay from evidence, not live capture (constraint 8)"},
+    "case": {"enum": ["pr1-normal-collab", "pr2-high-risk-human-gate"]},
+    "generated_at": {"type": "string", "format": "date-time"},
+    "resource": {
+      "type": "object",
+      "required": ["service.name", "service.namespace", "agentteams.runtime"],
+      "properties": {
+        "service.name": {"const": "agentteams-agentloop"},
+        "service.namespace": {"const": "p14h2-wd"},
+        "agentteams.runtime": {"type": "string"},
+        "gen_ai.system": {"type": "string", "description": "LLM provider family served via Higress"}
+      }
+    },
+    "root_span": {"$ref": "#/$defs/span"},
+    "spans": {"type": "array", "items": {"$ref": "#/$defs/span"}},
+    "provenance": {
+      "type": "object",
+      "required": ["sources", "redaction"],
+      "properties": {
+        "sources": {"type": "array", "items": {
+          "type": "object",
+          "required": ["kind", "ref"],
+          "properties": {
+            "kind": {"enum": ["matrix-event", "task-meta", "phase-log", "approval-record", "workspace-artifact"]},
+            "ref": {"type": "string", "description": "event_id | file path | log line id"},
+            "sha256_12": {"type": "string", "description": "content hash prefix; bodies never inlined"}
+          }
+        }},
+        "redaction": {"$ref": "#/$defs/redaction"}
+      }
+    }
+  },
+  "$defs": {
+    "span": {
+      "type": "object",
+      "required": ["span_id", "parent_span_id", "name", "span_kind", "start_utc", "end_utc", "attributes", "provenance_refs"],
+      "properties": {
+        "span_id": {"type": "string"},
+        "parent_span_id": {"type": ["string", "null"]},
+        "name": {"type": "string"},
+        "span_kind": {
+          "enum": ["AGENTLOOP_PROJECT", "AGENTLOOP_TASK", "AGENTLOOP_AGENT_SESSION", "GENAI_LLM_SESSION", "GENAI_TOOL_CALL", "MATRIX_MESSAGE", "HUMAN_GATE", "INCIDENT", "EVALUATION_ANCHOR"]
+        },
+        "status": {"enum": ["ok", "error", "blocked", "recovered"]},
+        "start_utc": {"type": "string", "format": "date-time"},
+        "end_utc": {"type": "string", "format": "date-time"},
+        "time_certainty": {"enum": ["exact", "inferred"], "description": "inferred = derived from bounded log/meta evidence"},
+        "attributes": {"type": "object"},
+        "gen_ai": {
+          "type": "object",
+          "properties": {
+            "operation.name": {"type": "string"},
+            "request.model": {"type": "string"},
+            "prompt.length": {"type": "integer", "description": "chars; content never inlined"},
+            "completion.length": {"type": "integer"},
+            "tool.name": {"type": "string"},
+            "tool.call.arguments_hash": {"type": "string"}
+          }
+        },
+        "agentteams": {
+          "type": "object",
+          "properties": {
+            "project_id": {"type": "string"},
+            "task_id": {"type": "string"},
+            "agent": {"type": "string"},
+            "agent_role": {"enum": ["leader", "reviewer", "fixer", "verifier", "human"]},
+            "run_id": {"type": "string"},
+            "task_state_from": {"type": "string"},
+            "task_state_to": {"type": "string"},
+            "matrix_event_id": {"type": "string"},
+            "mentions_target": {"type": "string"},
+            "human_gate_state": {"enum": ["requested", "blocking", "approved", "rejected", "not_required"]},
+            "incident_type": {"type": "string"},
+            "recovered": {"type": "boolean"}
+          }
+        },
+        "provenance_refs": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "redaction": {
+      "type": "object",
+      "required": ["rules", "verified_clean"],
+      "properties": {
+        "rules": {"type": "array", "items": {"type": "string"}},
+        "verified_clean": {"type": "boolean"}
+      }
+    }
+  }
+}
