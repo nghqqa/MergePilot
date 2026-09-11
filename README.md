@@ -139,6 +139,11 @@ MergePilot/
 - **演示平台**：Node.js 零依赖后端 + React 前端（Vite 预构建）
 - **可观测**：OpenTelemetry GenAI 语义约定 · loongsuite 探针 · 阿里云 AgentLoop
 
+## 提交材料
+
+- [`submission/`](submission/) — 决赛提交文档：SKILLS.md（分级如实口径）、跨仓 Schema 审查 Skill、演示平台 DEPLOY 说明与 `.env.example`、路演备用网页版（含同版 PDF）
+- `demo-platform/` 已同步决赛现场版修复：PR#3 风险等级在 Operations 视图的错误显示、Evidence 视图字段错配、站内路由链接、Audit 组件表与 SKILLS.md 口径统一为「已云端确认样本 / 本地契约审计」分级表述
+
 ## 许可
 
 [Apache License 2.0](LICENSE)
