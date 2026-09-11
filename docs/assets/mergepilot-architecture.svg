@@ -33,14 +33,14 @@
       <path d="M0,0 L10,5 L0,10 Z" fill="#2563eb"/>
     </marker>
     <style>
-      .font { font-family: Inter, "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", Arial, sans-serif; }
-      .title { font-size: 40px; font-weight: 750; fill: #0f172a; }
+      .font { font-family: "Noto Sans SC", "Microsoft YaHei", "Segoe UI", "PingFang SC", Arial, sans-serif; font-kerning: normal; }
+      .title { font-size: 40px; font-weight: 700; fill: #0f172a; }
       .subtitle { font-size: 19px; fill: #475569; }
-      .lane { font-size: 15px; font-weight: 750; letter-spacing: 1.6px; fill: #64748b; }
-      .card-title { font-size: 23px; font-weight: 750; }
+      .lane { font-size: 15px; font-weight: 700; letter-spacing: 1.2px; fill: #64748b; }
+      .card-title { font-size: 23px; font-weight: 700; }
       .card-body { font-size: 17px; }
       .small { font-size: 15px; }
-      .tiny { font-size: 13px; }
+      .tiny { font-size: 14px; }
       .white { fill: #ffffff; }
       .ink { fill: #0f172a; }
       .muted { fill: #475569; }
@@ -127,7 +127,7 @@
       <rect x="1005" y="250" width="245" height="200" rx="24" fill="url(#skills)"/>
     </g>
     <text x="1127" y="292" text-anchor="middle" class="card-title white">6 Skill DAG</text>
-    <g class="tiny" fill="#ecfeff" font-weight="650">
+    <g fill="#ecfeff" font-weight="650" font-size="12px">
       <text x="1035" y="330">01  diff-parse</text>
       <text x="1035" y="360">02  risk-classify</text>
       <text x="1035" y="390">03  sast-scan</text>
@@ -210,11 +210,11 @@
       <circle cx="1412" cy="746" r="25" fill="#7c3aed"/>
       <path d="M1400 746 h24 M1412 734 v24" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
       <text x="1460" y="735" class="card-title ink">审计证据与 Trace</text>
-      <text x="1460" y="765" class="small muted">Finding · Decision · Run · source_commit</text>
+      <text x="1460" y="765" class="tiny muted">Finding · Decision · Run · commit</text>
     </g>
 
     <!-- State links -->
-    <path d="M425 450 V610 Q425 625 410 625 V690" class="state-link"/>
+    <path d="M425 450 V610 Q425 625 500 625 V690" class="state-link"/>
     <path d="M1127 450 V690" class="state-link"/>
 <path d="M1535 420 H1555 V610 Q1555 625 1500 625 V690" class="state-link"/>
   </g>
