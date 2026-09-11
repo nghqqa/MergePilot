@@ -1,0 +1,48 @@
+name: selftest
+
+# demo-platform 零依赖自检：脱敏引擎、回放完整性（SHA256）、API 契约、无泄密扫描，
+# 再以真实进程启动 server 探测首页与预构建资产，保证 clone 即可运行。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  selftest:
+    name: demo-platform selftest (node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [18, 20, 22]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Run selftest (54 checks)
+        working-directory: demo-platform
+        run: node backend/test/selftest.mjs
+
+      - name: Boot server and probe frontend + API
+        working-directory: demo-platform
+        run: |
+          node backend/server.mjs &
+          SERVER_PID=$!
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:4173/api/health > /dev/null && break
+            sleep 0.5
+          done
+          curl -sf -o /dev/null http://127.0.0.1:4173/api/health
+          curl -sf -o /dev/null http://127.0.0.1:4173/api/cases
+          curl -sf -o /dev/null http://127.0.0.1:4173/
+          JS=$(ls frontend/dist/assets | grep -E '^index-.*\.js$' | head -1)
+          curl -sf -o /dev/null "http://127.0.0.1:4173/assets/${JS}"
+          kill "$SERVER_PID"
