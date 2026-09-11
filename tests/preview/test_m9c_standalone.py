@@ -91,7 +91,7 @@ class DocEscaping(unittest.TestCase):
     """§8: no backspace bytes from \b in JSON/docs."""
 
     def test_no_backspace_in_handoff(self):
-        handoff = ROOT / "m9b-handoff"
+        handoff = ROOT / "docs" / "archive" / "handoff" / "m9b-handoff"
         for f in handoff.iterdir():
             if f.suffix in (".json", ".md", ".txt"):
                 content = f.read_bytes()
@@ -100,7 +100,7 @@ class DocEscaping(unittest.TestCase):
 
     def test_forward_slash_in_examples(self):
         # commands use forward slashes or properly escaped backslashes
-        for f in (ROOT / "m9b-handoff").glob("*.md"):
+        for f in (ROOT / "docs" / "archive" / "handoff" / "m9b-handoff").glob("*.md"):
             text = f.read_text(encoding="utf-8")
             # no literal package\bootstrapper that would become package\x08ootstrapper
             self.assertNotIn("packageootstrapper", text)

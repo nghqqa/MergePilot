@@ -14,7 +14,7 @@
    ZIP carries the complete `tools/` tree (required for standalone CLI
    operation). Some legacy dev scripts and one doc contain
    machine-path references in usage comments/defaults
-   (`wsl -- bash /mnt/d/goai/tools/...` examples,
+   (`wsl -- bash /mnt/<drive>/<repo>/tools/...` examples,
    `audit_trail.py` dev default, ROLLBACK.md historical example).
    These bytes are identical to RC.1–RC.5 (externally accepted), are
    not secrets, and are not runtime state — but they ARE machine-path
