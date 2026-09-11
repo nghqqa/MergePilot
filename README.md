@@ -35,7 +35,7 @@ AI 改代码很快，但企业不敢让它碰生产环境：出了高危漏洞�
 
 Reviewer、Fixer、Verifier 三个 Agent 职责分离、互相制衡：
 
-- **Reviewer** 只做语义判断与风险分级（NORMAL / HIGH / CRITICAL），不修改代码
+- **Reviewer** 只做语义判断与风险分级（NORMAL / HIGH / CRITICAL 三级；`benchmark/` 数据集对同一维度标注为 L0 / L1 / L2），不修改代码
 - **Fixer** 在被派发前保持 LOCKED，高危时必须等人工门放行
 - **Verifier** 用独立探针复核修复效果（不信任 Fixer 的自述），结果写入 MinIO 证据
 - **人工安全门**：高危时系统自动暂停（Fixer/Verifier LOCKED），批准或拒绝均为真实人工记录，拒绝后 409 终态不可翻转
