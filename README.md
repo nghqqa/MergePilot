@@ -87,6 +87,11 @@ span 父子关系：`agent_step → invoke_agent → { chat deepseek-chat（原�
 
 ## 快速开始
 
+**推荐顺序**：① 先运行演示平台（下方「演示平台」，或直接下载
+[MergePilot-demo.zip](https://github.com/nghqqa/MergePilot/releases/download/v0.2.0/MergePilot-demo.zip)——无需 Docker）；
+② 需要完整隔离栈时，下载[离线镜像包](https://github.com/nghqqa/MergePilot/releases/tag/runtime-images-20260912)
+并加载（见 [DEPLOY.md](DEPLOY.md) B）；③ 有网络时可选用 GHCR 镜像（预留，见 DEPLOY.md C）。
+
 ### 演示平台（推荐，零依赖）
 
 ```bash
@@ -104,6 +109,8 @@ Node.js ≥ 18 即可，无需 `npm install`：前端已预构建（`frontend/di
 ### 主项目（Python 控制面）
 
 完整隔离栈（Controller、Policy Gateway、GitHub MCP、PostgreSQL/pgvector、MinIO）以离线镜像包发布：从 [v0.1.0-preview.4 Release](https://github.com/nghqqa/MergePilot/releases/tag/v0.1.0-preview.4) 下载资产，校验 checksums 后按 `bootstrapper.ps1` 引导执行——该引导器在发布时点受支持的环境为 **Windows 11 + WSL2**（栈内服务运行于 WSL2 发行版中的 Docker）。
+
+当前版本的镜像交付（9 镜像 · zstd · 逐镜像 digest 清单）：[runtime-images-20260912 Release](https://github.com/nghqqa/MergePilot/releases/tag/runtime-images-20260912)，加载与校验见 [DEPLOY.md](DEPLOY.md) B。
 
 项目最初即运行在 WSL2 上；后续因 WSL2 环境兼容性问题，将整套执行环境迁移至 **Docker Desktop for Windows** 并跑通全流程：AgentTeams（HiClaw）运行时（嵌入式 Manager + CoPaw worker：Reviewer / Fixer / Verifier）、Controller、MinIO、LLM Gateway 均以容器形式在该引擎内运行（由 Controller 统一 reconcile）——三条案例的回放数据即产自该环境（演示平台 Audit 页可见对应组件与证据）。
 
@@ -139,7 +146,7 @@ MergePilot/
 
 ## 技术栈
 
-- **主项目**：Python（pyproject.toml）· 1461 tests（可复现命令见 CONTRIBUTING）· 6 类 Skill · 4 Agent 承载 6 类职责
+- **主项目**：Python（pyproject.toml）· 1490 tests（可复现命令见 CONTRIBUTING）· 6 类 Skill · 4 Agent 承载 6 类职责
 - **演示平台**：Node.js 零依赖后端 + React 前端（Vite 预构建）
 - **可观测**：OpenTelemetry GenAI 语义约定 · loongsuite 探针 · 阿里云 AgentLoop
 

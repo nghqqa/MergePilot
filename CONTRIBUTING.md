@@ -21,7 +21,7 @@ Thanks for helping improve MergePilot. This repository is an Apache-2.0 prototyp
 Install the test dependencies once: `python -m pip install -e ".[dev]"`. Then keep `EPHEMERAL_PG_VERIFY` unset and run:
 
 ```bash
-python -m pytest -q tests/demo_console tests/isolated_live tests/verification --import-mode=importlib
+python -m pytest -q tests/demo_console tests/isolated_live tests/verification tests/release_delivery --import-mode=importlib
 ```
 
 Use the isolated-stack instructions in the [README](README.md) only when the task explicitly requires Docker/WSL validation. Never place passwords, tokens, or DSNs in command arguments, committed files, screenshots, or logs.
