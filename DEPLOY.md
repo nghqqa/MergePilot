@@ -28,10 +28,10 @@ node backend/server.mjs        # 打开 http://127.0.0.1:4173
 ## B · 离线镜像加载（完整隔离栈）
 
 适用于需要运行**完整隔离栈**（Controller / Policy Gateway / PostgreSQL/pgvector /
-gh-webhook / demo-console / console-edge / preflight，以及可选的 gh-proxy / mcp-bridge
+gh-webhook / demo-console / console-edge / preflight，以及可选 gh-proxy / mcp-bridge
 真实 GitHub 链路服务）的环境。离线、无需构建、无需外部镜像仓库。
 
-### 1. 下载（Release 资产）
+### 下载
 
 从 [runtime-images-20260912 Release](https://github.com/nghqqa/MergePilot/releases/tag/runtime-images-20260912) 下载：
 
@@ -41,31 +41,30 @@ gh-webhook / demo-console / console-edge / preflight，以及可选的 gh-proxy 
 | `MergePilot-images-manifest.json` | 镜像 / tag / digest / 架构 / source_commit 清单 |
 | `SHA256SUMS` | 资产校验和 |
 
-先核对：`sha256sum -c SHA256SUMS`（在下载目录执行）。
+先核对：`sha256sum -c SHA256SUMS`。
 
-### 2. 加载
+### 加载
 
 WSL2 / Linux：
 
 ```bash
 ./release/images/load-images.sh <下载目录>
-# 或: zstd -dc MergePilot-images-linux-amd64.tar.zst | docker load
 ```
 
 Windows PowerShell（Docker Desktop）：
 
 ```powershell
-.\release\images\load-images.ps1
+.elease\images\load-images.ps1
 ```
 
 脚本会：解包 → `docker load` → 逐镜像校验**数量 / tag / digest / 架构**，
 全部一致输出 `VERIFY_OK: 9/9`。
 
-### 3. 启动隔离栈
+### 启动隔离栈
 
 ```bash
 mergepilot doctor                 # 环境体检
-mergepilot install                # 记录镜像 ID、生成 secret env 文件（postgres.env 等）
+mergepilot install                # 记录镜像 ID、生成 secret env 文件
 mergepilot start                  # 按契约启动隔离栈（preflight 门禁全绿后对外）
 ```
 
@@ -88,7 +87,7 @@ mergepilot start                  # 按契约启动隔离栈（preflight 门禁�
 
 ## D · GitHub App / GitHub MCP 真实接入（指向你自己的仓库）
 
-让 MergePilot 对**你自己的 GitHub 仓库**的真实 PR 执行 审查 →（人工门）→ 修复 → 验证。
+让 MergePilot 对**你自己的 GitHub 仓库**的真实 PR 执行 审查 →（高危人工门）→ 修复 → 验证。
 
 前提：完成 B（隔离栈）+ CoPaw worker 运行时镜像（同 Release 或自建 AgentTeams 环境，
 runtime 任选 CoPaw / QwenPaw / openclaw）。逐步操作见
