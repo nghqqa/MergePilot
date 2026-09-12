@@ -101,9 +101,11 @@ Node.js ≥ 18 即可，无需 `npm install`：前端已预构建（`frontend/di
 
 ### 主项目（Python 控制面）
 
-完整隔离栈（Controller、Policy Gateway、GitHub MCP、PostgreSQL/pgvector、MinIO）以离线镜像包发布：从 [v0.1.0-preview.4 Release](https://github.com/nghqqa/MergePilot/releases/tag/v0.1.0-preview.4) 下载资产，校验 checksums 后按 `bootstrapper.ps1` 引导执行（当前正式支持 Windows 11 + WSL2）。
+完整隔离栈（Controller、Policy Gateway、GitHub MCP、PostgreSQL/pgvector、MinIO）以离线镜像包发布：从 [v0.1.0-preview.4 Release](https://github.com/nghqqa/MergePilot/releases/tag/v0.1.0-preview.4) 下载资产，校验 checksums 后按 `bootstrapper.ps1` 引导执行——该引导器在发布时点受支持的环境为 **Windows 11 + WSL2**（栈内服务运行于 WSL2 发行版中的 Docker）。
 
-仓库内的 `docker-compose.yml` 与 `Dockerfile.*` 是该镜像包的构建配方，由 `tools/demo_console/one_click_startup.py` 编排调用，不支持直接 `docker compose up`。源码开发与本地测试命令见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+多 Agent 执行运行时（Reviewer / Fixer / Verifier 的 Copaw worker）则跑在 **Docker Desktop for Windows** 上，由 Controller 统一 reconcile——三条案例的回放数据即产自该环境（演示平台 Audit 页可见对应组件与证据）。
+
+仓库内的 `docker-compose.yml` 与 `Dockerfile.*` 是隔离栈镜像的构建配方，由 `tools/demo_console/one_click_startup.py` 编排调用，不支持直接 `docker compose up`。源码开发与本地测试命令见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## 仓库结构
 
