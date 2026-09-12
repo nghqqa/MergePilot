@@ -100,10 +100,7 @@ Controller（Python，状态机 / DAG 派发 / CAS / 超时 HOLD / 回滚）+ Po
 Matrix 账号。六类 Skill 以 Schema、deadline、错误码与 fail-closed 合同执行；
 合同总览见 [SKILLS.md](../SKILLS.md)（提交材料目录亦有副本）。
 
-**注意**：我们对 CoPaw 运行时的本地修改（taskflow / matrix_channel 等 5 个文件，
-HIGH-RISK-FIX 阶段成果）目前**未随 Release 公开分发**——单镜像体积超过 GitHub 单资产 2GiB 上限，且 preview.4 的
-`images-oci.tar` 只含隔离栈。验证这些运行时的审计记录（manager 拓扑、镜像 digest、容器连接性）
-见演示平台 Audit 页；如需运行时镜像或源码级复用，请提 issue 说明用途。
+**运行时镜像的分发状态**：三条案例所用的 Manager（`agentteams/manager:223ddc2`）与最终加固版 CoPaw worker（`agentteams/copaw-worker:223ddc2-build2`，内含我们对 taskflow / matrix_channel 等 5 个文件的修复）已随 [runtime-images-20260912 Release](https://github.com/nghqqa/MergePilot/releases/tag/runtime-images-20260912) 分发——分卷 tar，加载方法见该 Release 说明。**未分发**：`copaw-worker:223ddc2-build1`（case 1/3 的历史构建）、`agentteams-embedded` 与 `worker-agent` 运行时变体——需要请提 issue 说明用途。验证这些运行时的审计记录（manager 拓扑、镜像 digest、容器连接性）见演示平台 Audit 页。
 
 ### 完成标志
 
