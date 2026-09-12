@@ -112,6 +112,32 @@ Matrix 触发一条任务 → Controller 按 DAG 供给 worker → Reviewer 分�
 
 ---
 
+## 不使用我们的镜像：按设计自建（Design-only adoption）
+
+我们的设计分布在**四个公开层**，全部不依赖未分发的运行时镜像：
+
+| 层 | 你拿到什么 | 仓库位置 |
+| --- | --- | --- |
+| 调度与门控 | Workflow Controller（状态机 / DAG 派发 / CAS / 超时 HOLD / 回滚）、Policy Gateway（ALLOW/DENY/HOLD）、GitHub MCP 隔离服务——完整 Python 源码（stdlib-only） | `tools/`、`config/`、`Dockerfile.*` |
+| Skill 合同 | 六类 Skill 的 Schema / deadline / 错误码 / fail-closed 合同 + M4-A 公共运行时信封 | [SKILLS.md](../SKILLS.md)、`skills/common/schema/`、`skills/*/schema/` |
+| Skill 实现 | 两个可独立运行的完整实现：sast-scan（纯标准库）、case-retrieval（pgvector） | `skills/sast_scan/`、`skills/case_retrieval/` |
+| 设计文档 | 三条安全路径 / 角色制衡 / 人工门 / 数据边界的架构文档与反过度防御规则 | 本 README、[DESIGN.md](../DESIGN.md)、[AGENTS.md](../AGENTS.md) |
+
+**自建路径**：
+
+1. 自行安装 AgentTeams（HiClaw）开源环境——runtime 任选 CoPaw / QwenPaw / openclaw
+   **原版即可**，无需我们的修改；qwenpaw 为官方默认 runtime
+2. 部署 `tools/` 的 Controller 与 Policy Gateway，按 `config/` 与 `Dockerfile.*` 适配你的
+   网络与存储
+3. 运行 `skills/` 的两个 Skill（或按 [SKILLS.md](../SKILLS.md) 合同实现你自己的同类 Skill）
+   并挂到你的 Worker
+4. 按主 README「Agent 协同设计」与「三条安全决策路径」配置 DAG 依赖、锁定状态与人工门
+5. 验证：L1 / L2 的命令照常可用
+
+**如实说明**：我们对 CoPaw 运行时的生产加固修改（taskflow / matrix_channel 等 5 文件）
+不在公开源码内；它们体现加固思路，但**复刻它们不是使用本设计的前提**——标准上游 runtime
+即可承载本设计的调度、门控与 Skill 合同。若需等价加固的运行时镜像，请提 issue 说明用途。
+
 ## 义务
 
 Apache-2.0。复用时请保持 fail-closed 行为、最小权限边界与"未验证之事不得声称"的
