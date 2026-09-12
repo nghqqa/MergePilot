@@ -79,9 +79,12 @@ Skill 的调用方（我们的场景是 CoPaw worker 的工具调用，见 L3）
 
 ### 两条入口
 
-1. **离线镜像包（最快）**：[v0.1.0-preview.4 Release](https://github.com/nghqqa/MergePilot/releases/tag/v0.1.0-preview.4)
+1. **隔离栈离线镜像包**：[v0.1.0-preview.4 Release](https://github.com/nghqqa/MergePilot/releases/tag/v0.1.0-preview.4)
    下载 `images-oci.tar` + `manifest.json`，校验 checksums 后 `docker load`，按
-   `bootstrapper.ps1` 引导（该引导器受支持环境为 Windows 11 + WSL2）
+   `bootstrapper.ps1` 引导（受支持环境为 Windows 11 + WSL2）。
+   ⚠️ 该包只含**隔离栈 9 个服务镜像**（controller / policy-gateway / pgvector / gh-proxy /
+   gh-webhook / mcp-bridge / preflight / demo-console / console-edge），**不含 Agent 执行运行时镜像**
+   （CoPaw worker / 嵌入式 Manager——见下方“运行时镜像的分发状态”）
 2. **从源码搭建（早期文档）**：[docs/环境搭建-HiClaw-WSL.md](环境搭建-HiClaw-WSL.md)
    记录了 AgentTeams + Element Web + Worker 的完整搭建过程。⏳ 该文写于 WSL2 时点，
    命令与模型配置已过时，概念与拓扑仍适用
@@ -98,7 +101,9 @@ Matrix 账号。六类 Skill 以 Schema、deadline、错误码与 fail-closed �
 合同总览见 [SKILLS.md](../SKILLS.md)（提交材料目录亦有副本）。
 
 **注意**：我们对 CoPaw 运行时的本地修改（taskflow / matrix_channel 等 5 个文件，
-HIGH-RISK-FIX 阶段成果）目前**随离线镜像分发、未随仓库分发源码**；如需源码级复用请提 issue。
+HIGH-RISK-FIX 阶段成果）目前**未随 Release 公开分发**——单镜像体积超过 GitHub 单资产 2GiB 上限，且 preview.4 的
+`images-oci.tar` 只含隔离栈。验证这些运行时的审计记录（manager 拓扑、镜像 digest、容器连接性）
+见演示平台 Audit 页；如需运行时镜像或源码级复用，请提 issue 说明用途。
 
 ### 完成标志
 
