@@ -107,6 +107,9 @@ Matrix 账号。六类 Skill 以 Schema、deadline、错误码与 fail-closed �
 Matrix 触发一条任务 → Controller 按 DAG 供给 worker → Reviewer 分级 →
 （高危）人工门 → Fixer → Verifier 探针 → 证据写 MinIO + AgentLoop 云端 Trace。
 
+已有环境、想把闭环指向**你自己的 GitHub 仓库**？进入下一级：
+[L4 · 真实闭环：指向你自己的仓库](real-loop-your-repo.md)。
+
 ---
 
 ## 不使用我们的镜像：按设计自建（Design-only adoption）
