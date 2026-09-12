@@ -103,7 +103,7 @@ Node.js ≥ 18 即可，无需 `npm install`：前端已预构建（`frontend/di
 
 完整隔离栈（Controller、Policy Gateway、GitHub MCP、PostgreSQL/pgvector、MinIO）以离线镜像包发布：从 [v0.1.0-preview.4 Release](https://github.com/nghqqa/MergePilot/releases/tag/v0.1.0-preview.4) 下载资产，校验 checksums 后按 `bootstrapper.ps1` 引导执行——该引导器在发布时点受支持的环境为 **Windows 11 + WSL2**（栈内服务运行于 WSL2 发行版中的 Docker）。
 
-项目最初即运行在 WSL2 上；后续因 WSL2 环境兼容性问题，将整套执行环境迁移至 **Docker Desktop for Windows** 并跑通全流程：Controller、MinIO、LLM Gateway 与多 Agent 运行时（Reviewer / Fixer / Verifier 的 Copaw worker，由 Controller 统一 reconcile）均在该引擎内运行——三条案例的回放数据即产自该环境（演示平台 Audit 页可见对应组件与证据）。
+项目最初即运行在 WSL2 上；后续因 WSL2 环境兼容性问题，将整套执行环境迁移至 **Docker Desktop for Windows** 并跑通全流程：AgentTeams（HiClaw）运行时（嵌入式 Manager + CoPaw worker：Reviewer / Fixer / Verifier）、Controller、MinIO、LLM Gateway 均以容器形式在该引擎内运行（由 Controller 统一 reconcile）——三条案例的回放数据即产自该环境（演示平台 Audit 页可见对应组件与证据）。
 
 仓库内的 `docker-compose.yml` 与 `Dockerfile.*` 是隔离栈镜像的构建配方，由 `tools/demo_console/one_click_startup.py` 编排调用，不支持直接 `docker compose up`。源码开发与本地测试命令见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
@@ -137,7 +137,7 @@ MergePilot/
 
 ## 技术栈
 
-- **主项目**：Python（pyproject.toml）· 2471 tests · 6 类 Skill · 4 Agent 承载 6 类职责
+- **主项目**：Python（pyproject.toml）· 1461 tests（可复现命令见 CONTRIBUTING）· 6 类 Skill · 4 Agent 承载 6 类职责
 - **演示平台**：Node.js 零依赖后端 + React 前端（Vite 预构建）
 - **可观测**：OpenTelemetry GenAI 语义约定 · loongsuite 探针 · 阿里云 AgentLoop
 

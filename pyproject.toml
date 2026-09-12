@@ -21,6 +21,9 @@ license = { text = "Apache-2.0" }
 [project.scripts]
 mergepilot = "tools.cli.mergepilot:main"
 
+[project.optional-dependencies]
+dev = ["pytest>=8", "pydantic>=2", "PyYAML>=6", "psycopg2-binary>=2.9"]
+
 [tool.setuptools.packages.find]
 include = ["tools.cli"]
 namespaces = true

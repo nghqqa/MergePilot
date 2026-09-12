@@ -18,7 +18,7 @@ Thanks for helping improve MergePilot. This repository is an Apache-2.0 prototyp
 
 ## Local checks
 
-For the ordinary Python suites, keep `EPHEMERAL_PG_VERIFY` unset and run:
+Install the test dependencies once: `python -m pip install -e ".[dev]"`. Then keep `EPHEMERAL_PG_VERIFY` unset and run:
 
 ```bash
 python -m pytest -q tests/demo_console tests/isolated_live tests/verification --import-mode=importlib

@@ -1,4 +1,4 @@
-"""Contracts for the public Showcase README, architecture, and media assets."""
+"""Contracts for the public README (finals edition), architecture, and media assets."""
 
 from __future__ import annotations
 
@@ -223,29 +223,22 @@ class TestArchitectureSvg(unittest.TestCase):
 
 class TestReadmeMedia(unittest.TestCase):
 
-    def test_architecture_is_visible_by_default(self):
+    def test_architecture_image_is_referenced_and_exists(self):
+        match = re.search(r"!\[[^\]]*\]\((docs/assets/[^)]+)\)", README_TEXT)
+        self.assertIsNotNone(match, "architecture image not referenced from README")
+        self.assertTrue((ROOT / match.group(1)).exists(), match.group(1))
+
+    def test_architecture_image_is_visible_by_default(self):
         for tag in ("<details", "<summary", "</details"):
             self.assertNotIn(tag, README_TEXT)
-        self.assertIn('<img src="docs/showcase/architecture.svg"', README_TEXT)
+        self.assertIn("architecture-preview4.png", README_TEXT)
 
-    def test_architecture_is_clickable(self):
-        self.assertIn('<a href="docs/showcase/architecture.svg">', README_TEXT)
+    def test_download_links_point_to_the_current_release(self):
+        for asset in ("MergePilot-demo.zip", "MergePilot-demo.mp4"):
+            self.assertIn("releases/download/v0.2.0/%s" % asset, README_TEXT)
 
-    def test_all_twelve_showcase_images_are_present(self):
-        refs = re.findall(r'src="(docs/showcase/presentation/[^\"]+@2x\.png)"',
-                          README_TEXT)
-        self.assertEqual(sorted(refs), sorted("docs/showcase/presentation/" + x for x in AT2X))
-
-    def test_gallery_uses_two_columns(self):
-        self.assertGreaterEqual(README_TEXT.count('width="50%"'), 12)
-
-    def test_images_are_full_width_in_cells(self):
-        self.assertGreaterEqual(README_TEXT.count('width="100%"'), 13)
-
-    def test_dpr_disclosure_is_precise(self):
-        for text in ("CSS viewport 为 1440×900", "CSS viewport 390×844",
-                     "deviceScaleFactor=2", "2880×1800", "780×1688"):
-            self.assertIn(text, README_TEXT)
+    def test_no_stale_semifinal_release_links(self):
+        self.assertNotIn("fudai-semifinal-demo-20260831", README_TEXT)
 
     def test_all_local_links_resolve(self):
         for ref in _refs(README_TEXT):
@@ -257,13 +250,29 @@ class TestReadmeMedia(unittest.TestCase):
         self.assertNotIn("docs/showcase/screenshots/", README_TEXT)
         self.assertNotIn("canonical", README_TEXT.lower())
 
+    def test_truth_boundary_badges_are_present(self):
+        for badge in ("badge/Database_Branch-SIMULATED-yellow",
+                      "badge/PolarDB-NOT_CONNECTED-red",
+                      "badge/PR_Auto_Merge-DISABLED-red",
+                      "badge/RAG-SYNTHETIC_DEMO-blue"):
+            self.assertIn(badge, README_TEXT)
+
+    def test_selftest_claim_is_stated(self):
+        self.assertIn("54 项", README_TEXT)
+        self.assertIn("actions/workflows/selftest.yml", README_TEXT)
+
+
 
 class TestReadmeStructure(unittest.TestCase):
 
     def test_required_sections(self):
-        for section in ("解决什么问题", "系统架构", "三个确定性案例",
-                        "8 页面控制台", "Quick Start", "测试与真实性边界"):
+        for section in ("演示", "要解决的问题", "三条安全决策路径", "Agent 协同设计",
+                        "AgentLoop 云端 Trace", "RAG 检索能力", "PolarDB 与 Branch 边界",
+                        "快速开始", "仓库结构", "评估方法", "技术栈", "提交材料", "许可"):
             self.assertIn(section, README_TEXT)
+
+    def test_title_uses_the_registered_project_name(self):
+        self.assertTrue(README_TEXT.startswith("# MergePilot：多 Agent PR 审修闭环"))
 
     def test_positioning_is_honest(self):
         self.assertIn("fail-closed", README_TEXT)
@@ -271,58 +280,27 @@ class TestReadmeStructure(unittest.TestCase):
                        "production ready", "M8 已完成"):
             self.assertNotIn(banned, README_TEXT)
 
-    def test_all_cases_and_ids_are_documented(self):
-        for value in ("run-showcase-a", "run-showcase-b", "run-showcase-c",
-                      "case-showcase-protected-merge-success",
-                      "case-showcase-failclosed-policy-rejection",
-                      "case-showcase-revision-drift-recovery", "#101", "#102", "#103"):
+    def test_three_safety_paths_are_documented(self):
+        for value in ("自主完成", "批准后完成", "拒绝后停止", "PR #1", "PR #2",
+                      "PR #3", "CWE-22", "CWE-78", "409 终态", "LOCKED"):
             self.assertIn(value, README_TEXT)
 
-    def test_case_shas_are_documented(self):
-        for sha in ("73686f77636173652d612d686561640000000000",
-                    "73686f77636173652d632d647269667400000000",
-                    "73686f77636173652d632d7265636f7665726564"):
-            self.assertIn(sha, README_TEXT)
-
-    def test_case_outcomes_are_documented(self):
-        for value in ("MERGED", "FAIL", "ROLLED_BACK", "RECOVERED",
-                      "PROTECTED_PATH_PREFIX", "REVISION_DRIFT"):
+    def test_authoritative_trace_is_documented(self):
+        for value in ("fbf4a3cec0493990d76e10a102418be1", "17.6", "51,890"):
             self.assertIn(value, README_TEXT)
 
     def test_truth_boundaries_are_frozen(self):
-        for value in ("application_integration_verified=false",
-                      "database_verified=false",
-                      "production_verified=false",
-                      "revision_producer_contract=NOT_VERIFIED",
-                      "audit_producer_contract=NOT_VERIFIED"):
-            self.assertIn(value, README_TEXT)
-        # M8-A2 status: accurate current wording, not the stale "not
-        # implemented". A2-a: isolated six-container fixture. A2-b: real
-        # Manager producer demonstrated in the isolated stack (operator-
-        # instructed byte-exact relay); remaining boundaries pinned below.
-        self.assertIn("M8-A2-a 已通过隔离六容器 fixture 验证", README_TEXT)
-        self.assertIn("M8-A2-b", README_TEXT)
-        self.assertIn("不是自主任务分解", README_TEXT)
-        self.assertIn("Worker 侧 TASK_COMPLETED handoff 回路已于 2026-08-18", README_TEXT)
-        self.assertIn("恢复性提醒", README_TEXT)
-        self.assertIn("M8-A2-c", README_TEXT)
-        self.assertNotIn("M8-A2 尚未实现", README_TEXT)
-        self.assertIn(
-            "AgentTeams 仍是多 Agent 协同与任务编排基座",
-            README_TEXT,
-        )
-
-    def test_regression_numbers_are_current(self):
-        for value in ("81 passed", "60 passed", "50 passed",
-                      "31 passed",
-                      "1440 passed / 15 skipped / 0 failed", "12 → 12",
-                      "11 PASS / 0 FAIL",
-                      "PREFLIGHT_OK"):
+        for value in ("SYNTHETIC/REDACTED", "SIMULATED", "NOT CONNECTED", "DISABLED"):
             self.assertIn(value, README_TEXT)
 
-    def test_accessibility_residual_is_disclosed(self):
-        self.assertIn("不声称完整 WCAG 合规", README_TEXT)
-        self.assertIn("residual validation", README_TEXT)
+    def test_agentteams_baseline_is_disclosed(self):
+        self.assertIn("AgentTeams", README_TEXT)
+        self.assertIn("CoPaw", README_TEXT)
+        self.assertIn("HiClaw", README_TEXT)
+
+    def test_test_count_matches_the_documented_command(self):
+        self.assertIn("1461 tests", README_TEXT)
+
 
 
 class TestDemoScript(unittest.TestCase):
