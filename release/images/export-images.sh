@@ -42,7 +42,7 @@ IMAGE_SET="$SCRIPT_DIR/image-set.json"
 missing=()
 command -v docker    >/dev/null 2>&1 || missing+=("docker")
 command -v zstd      >/dev/null 2>&1 || missing+=("zstd (Ubuntu/WSL: apt-get install zstd)")
-command -v python3   >/dev/null 2>&1 || missing+=("python3")
+command -v python3   >/dev/null 2>&1 || command -v python >/dev/null 2>&1 || missing+=("python3 (or python)")
 command -v sha256sum >/dev/null 2>&1 || missing+=("sha256sum")
 command -v git       >/dev/null 2>&1 || missing+=("git")
 if (( ${#missing[@]} )); then
@@ -62,12 +62,13 @@ SERVER_PLATFORM="$(docker version --format '{{.Server.Os}}/{{.Server.Arch}}')"
 }
 
 # ---- canonical image set ----------------------------------------------------------
-REFS_COUNT="$(python3 -c 'import json,sys;d=json.load(open(sys.argv[1],encoding="utf-8"));print(len(d["images"]["built"])+len(d["images"]["pinned_remote"]))' "$IMAGE_SET")"
-PLATFORM="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1],encoding="utf-8"))["platform"])' "$IMAGE_SET")"
+PYBIN="$(command -v python3 || command -v python)"
+REFS_COUNT="$("${PYBIN}" -c 'import json,sys;d=json.load(open(sys.argv[1],encoding="utf-8"));print(len(d["images"]["built"])+len(d["images"]["pinned_remote"]))' "$IMAGE_SET")"
+PLATFORM="$("${PYBIN}" -c 'import json,sys;print(json.load(open(sys.argv[1],encoding="utf-8"))["platform"])' "$IMAGE_SET")"
 
 REFS=()
 while IFS= read -r ref; do REFS+=("$ref"); done < <(
-  python3 -c '
+  "${PYBIN}" -c '
 import json, sys
 d = json.load(open(sys.argv[1], encoding="utf-8"))
 for i in d["images"]["built"]:
@@ -101,7 +102,7 @@ echo ">> archive sha256: $(sha256sum "$ARCHIVE" | cut -c1-16)... ($(stat -c %s "
 
 # ---- manifest (docker metadata + git only; secrets cannot enter) ------------------
 MANIFEST="$OUT_DIR/MergePilot-images-manifest.json"
-python3 - "$IMAGE_SET" "$MANIFEST" "$PLATFORM" "$SOURCE_COMMIT" "$RELEASE_VERSION" "$CREATED_AT" <<'PYEOF'
+"${PYBIN}" - "$IMAGE_SET" "$MANIFEST" "$PLATFORM" "$SOURCE_COMMIT" "$RELEASE_VERSION" "$CREATED_AT" <<'PYEOF'
 import datetime, json, subprocess, sys
 
 image_set, out, platform, commit, version, created = sys.argv[1:7]
