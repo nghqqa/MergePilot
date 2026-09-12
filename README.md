@@ -43,6 +43,8 @@ Reviewer、Fixer、Verifier 三个 Agent 职责分离、互相制衡：
 
 Agent 只承担语义判断，六类 Skill 以 Schema、deadline、错误码和 fail-closed 合同执行。Workflow Controller 负责状态机、确定性交接、CAS、超时 HOLD 和回滚；Policy Gateway 负责 ALLOW/DENY/HOLD；GitHub MCP 是隔离服务，PAT 不进入 Worker。
 
+想在自己的环境复用这套 Agent 设计与 Skill？按投入分三级（验证 / 单独跑 Skill / 完整闭环）：见 [docs/agent-runtime-adoption.md](docs/agent-runtime-adoption.md)。
+
 ![MergePilot 架构：Agent 只做语义判断，Workflow Controller、Policy Gateway 与审计事实构成确定性控制面](docs/assets/readme/preview4/architecture-preview4.png)
 
 源图（可编辑 SVG）：[`docs/assets/mergepilot-architecture.svg`](docs/assets/mergepilot-architecture.svg)
