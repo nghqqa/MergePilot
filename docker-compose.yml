@@ -22,7 +22,7 @@ name: mergepilot-isolated
 
 services:
   postgres:
-    image: pgvector/pgvector@sha256:a36250871de0833b8757561c72f2477ef1ddd1101afa4e617fb552e0de514c6b
+    image: pgvector/pgvector:pg16  # digest pin: sha256:a3625… (see release/images/image-set.json)
     pull_policy: never
     env_file: postgres.env          # created by the orchestrator (SecretFile)
     environment:
@@ -37,6 +37,7 @@ services:
     # ports: deliberately ABSENT — postgres is never published.
 
   policy-gateway:
+    image: mergepilot-isolated-policy-gateway:local
     build:
       # Retry v3: build context unified with the builder/orchestrator
       # contract (root wrapper Dockerfile) — five-layer consistency; the
@@ -66,6 +67,7 @@ services:
       retries: 10
 
   controller:
+    image: mergepilot-isolated-controller:local
     build:
       # Retry v3: build context unified with the builder/orchestrator
       # contract (root wrapper Dockerfile) — five-layer consistency.
@@ -109,6 +111,7 @@ services:
   # non-root UID/GID 9090, digest-pinned base, read-only rootfs,
   # no-new-privileges, all capabilities dropped, no Docker socket.
   gh-webhook:
+    image: mergepilot-isolated-gh-webhook:local
     build:
       context: .
       dockerfile: Dockerfile.gh-webhook
@@ -137,6 +140,7 @@ services:
     restart: "no"
 
   demo-console:
+    image: mergepilot-isolated-demo-console:local
     build:
       context: .
       dockerfile: Dockerfile.demo-console
@@ -211,6 +215,7 @@ services:
   # open proxy. It holds no DSN/password/token/database coordinates
   # (no env_file, no environment secrets) by design.
   console-edge:
+    image: mergepilot-isolated-console-edge:local
     build:
       context: .
       dockerfile: Dockerfile.console-edge
@@ -231,6 +236,7 @@ services:
     restart: "no"
 
   preflight:
+    image: mergepilot-isolated-preflight:local
     build:
       context: .
       dockerfile: Dockerfile.preflight
