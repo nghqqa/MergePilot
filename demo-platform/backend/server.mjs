@@ -101,8 +101,48 @@ if (!data.replay_integrity.ok) {
 console.log(`[boot] replay integrity OK — pr1 ${data.replay_integrity.events_pr1} events, pr2 ${data.replay_integrity.events_pr2} events, ${data.replay_integrity.source_refs_checked} source refs verified`);
 console.log(`[boot] evidence integrity: ${data.integrity.ok_files}/${data.integrity.total_files} files match SHA256SUMS`);
 
-server.listen(PORT, HOST, () => {
-  console.log(`MergePilot demo platform → http://${HOST}:${PORT}`);
+// Windows（Hyper-V/WSL NAT）常保留大段端口，4173 落在保留段时报 EACCES。
+// 策略：从 DEMO_PORT 起连续顺延最多 DEMO_PORT_TRIES-1 个端口；仍失败则交给
+// 系统分配（port 0），控制台大声打印实际访问地址。
+// 注意：listen(port, cb) 每次调用都会累积一个 once('listening') 监听，重试
+// 链最终成功时会全部触发——成功回调必须只注册一次，错误按 bind 去重。
+const PORT_TRIES = Number(process.env.DEMO_PORT_TRIES || 6);
+let portOffset = 0;   // -1 表示已改用系统分配端口
+let pendingBind = false;
+server.once('listening', () => {
+  pendingBind = false;
+  const actual = server.address().port;
+  const suffix = actual === PORT ? '' : `（默认端口 ${PORT} 被系统保留或占用，已自动改用 ${actual}）`;
+  console.log(`MergePilot demo platform → http://${HOST}:${actual}${suffix}`);
   console.log(`  mode default: REPLAY — HISTORICAL VERIFIED RUN`);
   console.log(`  live probe: GET /api/modes?mode=live (unavailable sources reported honestly)`);
 });
+server.on('error', (err) => {
+  if (!pendingBind) return; // 同一次 bind 的重复错误 / 迟到事件：忽略
+  pendingBind = false;
+  const manual = err.code === 'EACCES' || err.code === 'EADDRINUSE';
+  if (manual && portOffset !== -1 && portOffset + 1 < PORT_TRIES) {
+    portOffset += 1;
+    console.warn(`[boot] ${err.code} on port ${PORT + portOffset - 1} - retrying on ${PORT + portOffset} ...`);
+    bindServer();
+    return;
+  }
+  if (manual && portOffset !== -1) {
+    portOffset = -1;
+    console.warn(`[boot] 连续 ${PORT_TRIES} 个端口均被系统保留或占用 - 交由系统分配可用端口`);
+    bindServer();
+    return;
+  }
+  if (err.code === 'EACCES') {
+    console.error('[boot] 端口被系统拒绝：Windows 保留端口段常见于 Hyper-V/WSL（查看：netsh interface ipv4 show excludedportrange protocol=tcp）');
+    console.error('[boot] 也可指定起始端口后重试：set DEMO_PORT=5050 && start-demo.bat');
+  }
+  console.error('[boot] listen failed:', err.message);
+  process.exit(1);
+});
+function bindServer() {
+  pendingBind = true;
+  const port = portOffset === -1 ? 0 : PORT + portOffset;
+  server.listen(port, HOST);
+}
+bindServer();
