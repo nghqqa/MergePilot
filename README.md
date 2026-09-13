@@ -19,9 +19,9 @@
 
 **Demo 视频（75 秒 · 1080p · 中文旁白）**：[Watch Demo](https://github.com/nghqqa/MergePilot/releases/download/v0.2.0/MergePilot-demo.mp4)
 
-![MergePilot 演示平台：三条安全路径总览（PR#1 自主完成 · PR#2 人审门 · PR#3 终态拒绝）](docs/assets/readme/preview4/console-overview-preview4.png)
+![MergePilot 演示平台总览：普通变更 Agent 自主完成，高风险系统停下等人工（PR#1 自主 / PR#2 人审门 / REPLAY 回放模式）](docs/assets/readme/console-overview-current.png)
 
-**在线体验**：`git clone` 后执行 `cd demo-platform && node backend/server.mjs`，访问 `http://127.0.0.1:4173`。零第三方依赖，无需 `npm install`。也可下载离线包 [MergePilot-demo.zip](https://github.com/nghqqa/MergePilot/releases/download/v0.2.0/MergePilot-demo.zip)（约 1 MB）。
+**在线体验**：`git clone` 后执行 `cd demo-platform && node backend/server.mjs`，访问 `http://127.0.0.1:4173`（若该端口落在 Windows 保留段被拒，服务会自动顺延并在控制台打印实际地址）。零第三方依赖，无需 `npm install`。也可下载离线包 [MergePilot-demo.zip](https://github.com/nghqqa/MergePilot/releases/download/v0.2.0/MergePilot-demo.zip)（约 1 MB）。
 
 ## 要解决的问题
 
