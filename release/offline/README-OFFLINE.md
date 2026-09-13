@@ -40,3 +40,9 @@ demo run row before the controller starts.
   stack; the controller logs `Matrix degraded ... (L2 域继续运行)` and the
   L2 audit domain keeps running - expected in offline mode.
 - Passwords are fixed smoke values; do not expose ports beyond loopback.
+
+## Revision
+- **rev2 (20260913)**: seed run_id in `db-init/005-seed.sql` aligned with the
+  launcher's `MERGEPILOT_RUN_ID=offline-demo` (rev1 shipped `schema-test`,
+  which tripped the console's fail-closed RUN_NOT_FOUND gate). Both files now
+  carry the same literal; verify you have rev2 via SHA256SUMS in this folder.
