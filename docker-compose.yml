@@ -27,6 +27,8 @@ services:
     env_file: postgres.env          # created by the orchestrator (SecretFile)
     environment:
       PGDATA: /tmp/pgdata
+    volumes:
+      - ./release/offline/db-init:/docker-entrypoint-initdb.d:ro
     networks:
       - isolated
     healthcheck:
@@ -263,6 +265,9 @@ services:
       MERGEPILOT_PG_HOST: postgres
       MERGEPILOT_PG_PORT: "5432"
       MERGEPILOT_DEMO_CONSOLE_URL: http://demo-console:8600
+      # §4 offline distribution: compose references the TAG (docker-load cannot resolve @sha256 refs); the recorded pin travels to the
+      # preflight digest gate via this env instead.
+      MERGEPILOT_DECLARED_PG_IMAGE: pgvector/pgvector@sha256:a36250871de0833b8757561c72f2477ef1ddd1101afa4e617fb552e0de514c6b
     restart: "no"
     # ports: deliberately ABSENT.
 
