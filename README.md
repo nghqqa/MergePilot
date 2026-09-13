@@ -13,15 +13,54 @@
 [![selftest](https://github.com/nghqqa/MergePilot/actions/workflows/selftest.yml/badge.svg)](https://github.com/nghqqa/MergePilot/actions/workflows/selftest.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-green)](LICENSE)
 
+> 上排红黄徽章不是缺陷，是**如实声明的当前边界**——本项目把"还没做到的"钉在第一屏。
+
 ## 演示
 
 **Demo 视频（75 秒 · 1080p · 中文旁白）**：[Watch Demo](https://github.com/nghqqa/MergePilot/releases/download/v0.2.0/MergePilot-demo.mp4)
+
+![MergePilot 演示平台：三条安全路径总览（PR#1 自主完成 · PR#2 人审门 · PR#3 终态拒绝）](docs/assets/readme/preview4/console-overview-preview4.png)
 
 **在线体验**：`git clone` 后执行 `cd demo-platform && node backend/server.mjs`，访问 `http://127.0.0.1:4173`。零第三方依赖，无需 `npm install`。也可下载离线包 [MergePilot-demo.zip](https://github.com/nghqqa/MergePilot/releases/download/v0.2.0/MergePilot-demo.zip)（约 1 MB）。
 
 ## 要解决的问题
 
 AI 改代码很快，但企业不敢让它碰生产环境：出了高危漏洞谁负责？改坏了怎么追溯？MergePilot 解决的是"敢让 AI 改"这件事——每一步有审计，高危必须人工点头，拒绝就真的停下。
+
+## 快速开始
+
+**推荐顺序**：① 先跑演示平台（零依赖，无需 Docker）；② 需要完整隔离栈时，用离线镜像包 + 一键启动器（外部 Windows 机器已两轮实测 10/10）；③ 有网络时可选用 GHCR 镜像（预留，见 DEPLOY.md C）。
+
+### 演示平台（推荐，零依赖）
+
+```bash
+git clone https://github.com/nghqqa/MergePilot.git
+cd MergePilot/demo-platform
+node backend/server.mjs        # 打开 http://127.0.0.1:4173
+```
+
+Node.js ≥ 18 即可，无需 `npm install`：前端已预构建（`frontend/dist/`），三个案例的回放证据随仓库分发（`evidence/PHASE14-*`，SHA256 锁定）。Windows 也可直接双击 `demo-platform/start-demo.bat`。
+
+自测：`node backend/test/selftest.mjs`（54 项：脱敏、回放完整性、API 契约、无泄密扫描；[CI 在 Node 18/20/22 上自动运行](https://github.com/nghqqa/MergePilot/actions/workflows/selftest.yml)）。
+
+不想 clone？下载 [MergePilot-demo.zip](https://github.com/nghqqa/MergePilot/releases/download/v0.2.0/MergePilot-demo.zip)（约 1 MB，已含证据、预检脚本与现场演示手册），解压后进入 `MergePilot-demo-现场版` 目录，双击 `start-demo.bat` 或执行 `node MergePilot-demo/backend/server.mjs`。PPT、视频与完整提交包见 [Release v0.2.0](https://github.com/nghqqa/MergePilot/releases/tag/v0.2.0)。
+
+### 完整隔离栈（离线镜像 + 一键启动）
+
+当前交付：**[Release v0.2.1](https://github.com/nghqqa/MergePilot/releases/tag/v0.2.1)**——9 镜像 · zstd 单包（265MB · 逐镜像 digest 清单）+ **offline-config 配置包**（数据库 schema/角色初始化五件套 + `start-stack.bat|.sh` 两阶段启动器 + env 模板）。
+
+```text
+1. 下载 v0.2.1 的镜像包与配置包，解压到同一目录
+2. load-images（Windows PowerShell / Linux 脚本均随包提供）
+3. 双击 start-stack.bat —— 自动测量容器网络、写 .env、启动 7 服务
+4. 验证：6 服务 healthy + PREFLIGHT_OK + http://127.0.0.1:8600 返回 200
+```
+
+**可复现性证据**：在一台独立外部 Windows 机器上完成两轮验证与一次复验——第一轮暴露交付缺口，十个启动门禁逐个拦下 8 类真实故障；修复后 rev2 版本 **10/10 通过标准全 PASS、零干预一键启动**。完整加载、校验与故障对照见 [DEPLOY.md](DEPLOY.md)。
+
+AgentTeams 运行时镜像（嵌入式 Manager + CoPaw worker：Reviewer / Fixer / Verifier）单独提供：[runtime-images-20260912](https://github.com/nghqqa/MergePilot/releases/tag/runtime-images-20260912)。项目最初运行在 WSL2，后整体迁移至 **Docker Desktop for Windows** 并跑通全流程（由 Controller 统一 reconcile），三条案例的回放数据即产自该环境。
+
+仓库内的 `docker-compose.yml` 与 `Dockerfile.*` 是隔离栈镜像的构建配方：开发态由 `tools/demo_console/one_click_startup.py` 编排调用；离线交付态由配置包内的 `start-stack` 脚本驱动 `docker compose`（含数据库 schema 初始化挂载）。源码开发与本地测试命令见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## 三条安全决策路径
 
@@ -85,37 +124,6 @@ span 父子关系：`agent_step → invoke_agent → { chat deepseek-chat（原�
 
 支持 create_branch → validate_migration → assert_data → rollback_check 全链路（当前在模拟 fixture 上运行）。真实 PolarDB 接入需满足 8 项门槛后由环境变量切换。
 
-## 快速开始
-
-**推荐顺序**：① 先运行演示平台（下方「演示平台」，或直接下载
-[MergePilot-demo.zip](https://github.com/nghqqa/MergePilot/releases/download/v0.2.0/MergePilot-demo.zip)——无需 Docker）；
-② 需要完整隔离栈时，下载[离线镜像包](https://github.com/nghqqa/MergePilot/releases/tag/runtime-images-20260912)
-并加载（见 [DEPLOY.md](DEPLOY.md) B）；③ 有网络时可选用 GHCR 镜像（预留，见 DEPLOY.md C）。
-
-### 演示平台（推荐，零依赖）
-
-```bash
-git clone https://github.com/nghqqa/MergePilot.git
-cd MergePilot/demo-platform
-node backend/server.mjs        # 打开 http://127.0.0.1:4173
-```
-
-Node.js ≥ 18 即可，无需 `npm install`：前端已预构建（`frontend/dist/`），三个案例的回放证据随仓库分发（`evidence/PHASE14-*`，SHA256 锁定）。Windows 也可直接双击 `demo-platform/start-demo.bat`。
-
-自测：`node backend/test/selftest.mjs`（54 项：脱敏、回放完整性、API 契约、无泄密扫描；[CI 在 Node 18/20/22 上自动运行](https://github.com/nghqqa/MergePilot/actions/workflows/selftest.yml)）。
-
-不想 clone？下载 [MergePilot-demo.zip](https://github.com/nghqqa/MergePilot/releases/download/v0.2.0/MergePilot-demo.zip)（约 1 MB，已含证据、预检脚本与现场演示手册），解压后进入 `MergePilot-demo-现场版` 目录，双击 `start-demo.bat` 或执行 `node MergePilot-demo/backend/server.mjs`。PPT、视频与完整提交包见 [Release v0.2.0](https://github.com/nghqqa/MergePilot/releases/tag/v0.2.0)。
-
-### 主项目（Python 控制面）
-
-完整隔离栈（Controller、Policy Gateway、GitHub MCP、PostgreSQL/pgvector、MinIO）以离线镜像包发布：从 [v0.1.0-preview.4 Release](https://github.com/nghqqa/MergePilot/releases/tag/v0.1.0-preview.4) 下载资产，校验 checksums 后按 `bootstrapper.ps1` 引导执行——该引导器在发布时点受支持的环境为 **Windows 11 + WSL2**（栈内服务运行于 WSL2 发行版中的 Docker）。
-
-当前版本的镜像交付（9 镜像 · zstd · 逐镜像 digest 清单）：[runtime-images-20260912 Release](https://github.com/nghqqa/MergePilot/releases/tag/runtime-images-20260912)，加载与校验见 [DEPLOY.md](DEPLOY.md) B。
-
-项目最初即运行在 WSL2 上；后续因 WSL2 环境兼容性问题，将整套执行环境迁移至 **Docker Desktop for Windows** 并跑通全流程：AgentTeams（HiClaw）运行时（嵌入式 Manager + CoPaw worker：Reviewer / Fixer / Verifier）、Controller、MinIO、LLM Gateway 均以容器形式在该引擎内运行（由 Controller 统一 reconcile）——三条案例的回放数据即产自该环境（演示平台 Audit 页可见对应组件与证据）。
-
-仓库内的 `docker-compose.yml` 与 `Dockerfile.*` 是隔离栈镜像的构建配方，由 `tools/demo_console/one_click_startup.py` 编排调用，不支持直接 `docker compose up`。源码开发与本地测试命令见 [CONTRIBUTING.md](CONTRIBUTING.md)。
-
 ## 仓库结构
 
 ```
@@ -153,7 +161,7 @@ MergePilot/
 ## 提交材料
 
 - [`submission/`](submission/) — 决赛提交文档：SKILLS.md（分级如实口径）、跨仓 Schema 审查 Skill、演示平台 DEPLOY 说明与 `.env.example`、路演备用网页版（含同版 PDF）
-- `demo-platform/` 已同步决赛现场版修复：PR#3 风险等级在 Operations 视图的错误显示、Evidence 视图字段错配、站内路由链接、Audit 组件表与 SKILLS.md 口径统一为「已云端确认样本 / 本地契约审计」分级表述
+- 离线交付方案与外部机器验证记录：见 [Release v0.2.1](https://github.com/nghqqa/MergePilot/releases/tag/v0.2.1) 与 [DEPLOY.md](DEPLOY.md)
 
 ## 许可
 
