@@ -1,0 +1,10 @@
+test_different_orders_are_independent (test_payments.TestPaymentLedger) ... ok
+test_non_positive_amount_rejected (test_payments.TestPaymentLedger) ... ok
+test_replay_same_payment_is_idempotent (test_payments.TestPaymentLedger) ... ok
+test_second_payment_request_for_same_order_is_idempotent (test_payments.TestPaymentLedger) ... ok
+test_single_charge_recorded (test_payments.TestPaymentLedger) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 0.000s
+
+OK
