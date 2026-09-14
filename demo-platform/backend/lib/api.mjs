@@ -9,6 +9,9 @@ import { EVIDENCE_ROOT, readText, resolveSourceRef, redactionStatusOf, integrity
 import { datasetInventory, retrieve, answer, toolSpanTail, lastQueryMeta, RAG_DATA_MODE, EMBEDDING_BACKEND, RETRIEVAL_MODE, ingestExternalToolSpan } from './rag.mjs';
 import { polardbAudit, fixtureQuery, fixtureInventory } from './polardb.mjs';
 import { connectionState, evaluateLiveGates, SCHEMA_BASELINE, CANDIDATES, createBranch, validateMigration, assertData, rollbackCheck, branchState } from './polardb_adapter.mjs';
+import { dbLoopSummary, pr4GateState, pr4Decide, pr4ApplyFollowup, pr4Reset, reworkLoopSummary, ragLoopSummary, finalsIntegrity } from './finals_evidence.mjs';
+
+const STARTED_AT = Date.now();
 
 // Canonical source labels (CREDIBILITY-PASS data-source taxonomy)
 export const SRC = {
@@ -251,7 +254,56 @@ function taskEvidence(caseObj, taskId) {
   };
 }
 
-export const routes = {
+export // ---------------------------------------------- Phase 16 / Finals: PR #4 helpers
+// The SIMULATED three-candidate comparison is computed ONCE per process and
+// cached: reading the page no longer creates new branch ids or appends tool
+// spans on every GET (the audit log grows only when a tool is really run).
+let pr4SimulatedCache = null;
+function pr4Simulated() {
+  if (pr4SimulatedCache) return pr4SimulatedCache;
+  const ragHit = retrieve('跨仓 schema 变更 orders payments 关联仓库 历史风险', { topK: 3 });
+  const validations = CANDIDATES.map((c) => {
+    const b = createBranch(c.candidate_id);
+    return {
+      candidate_id: c.candidate_id,
+      title: c.title,
+      strategy: c.strategy,
+      repos_touched: c.repos_touched,
+      expected: c.expected,
+      failure_reasons: c.failure_reasons,
+      branch: b,
+      validation: validateMigration(b.branch_id, c.candidate_id),
+      assert_data: assertData(b.branch_id, c.candidate_id),
+      rollback_check: rollbackCheck(b.branch_id, c.candidate_id),
+    };
+  });
+  pr4SimulatedCache = { ragHit, validations, computed_at: new Date().toISOString() };
+  return pr4SimulatedCache;
+}
+
+function runtimeMetadata() {
+  const rework = reworkLoopSummary();
+  const db = dbLoopSummary();
+  const rag = ragLoopSummary();
+  return {
+    demo_platform: { version: '1.2.0-truthfulness', node: process.version, uptime_s: Math.round((Date.now() - STARTED_AT) / 1000), mode: 'replay' },
+    rag: { strategy: datasetInventory().retrieval_strategy, previous: 'v1-unigram-hash256', evidence: rag.available ? rag.tier : 'EVIDENCE_NOT_AVAILABLE',
+      heldout_hit_at_1: rag.available ? `${rag.baseline_heldout.hit_at_1} → ${rag.backtest_heldout.hit_at_1}` : null },
+    db_verification: { schema: 'tools/audit-db/m9_migration_verification.sql', gate: 'db_release_gate(ticket, target_data_digest)',
+      tier: db.available ? db.tier : 'EVIDENCE_NOT_AVAILABLE', pg_version: db.available ? db.environment?.pg_version : null,
+      trial_instance: db.available ? db.environment?.trial_instance : null },
+    controller: { file: 'tools/workflow-controller/controller.py', mode: rework.available ? rework.controller?.mode : null,
+      max_verify_attempts: rework.available ? rework.controller?.max_verify_attempts : null,
+      tier: rework.available ? rework.tier : 'EVIDENCE_NOT_AVAILABLE' },
+    agent_runtime: { framework: 'AgentTeams (HiClaw) v1.2.3 / CoPaw worker', model_gateway: 'deepseek-chat via LLM gateway (historical PR#1-3 runs)',
+      finals_evidence_uses_llm: false, note: 'finals loops are mechanism/real-SQL/offline tiers; real agent + Element handoff is a separate tier, NOT_EXECUTED in this package' },
+    boundaries: { polardb: 'NOT CONNECTED', database_branch: 'SIMULATED (three-candidate comparison) · ISOLATED_POSTGRES clone (candidate-a real SQL loop)', pr_auto_merge: 'DISABLED', github_writes: 'NONE', matrix_messages_sent: 0 },
+    evidence_integrity: finalsIntegrity(),
+  };
+}
+
+
+const routes = {
   'GET /api/audit': async (q) => {
     const audit = replayAudit();
     const live = q.get('mode') === 'live' ? await liveStatus() : null;
@@ -321,11 +373,22 @@ export const routes = {
         document_count: datasetInventory().document_count,
         chunk_count: datasetInventory().chunk_count,
         embedding_backend: EMBEDDING_BACKEND,
+        retrieval_strategy: datasetInventory().retrieval_strategy,
         agent_correlation: 'VERIFIED（execute_tool rag_retrieve 已随真实 agent run 入云，trace f5bb3e1f55bc53412f0fac5e6b400eb5）',
       },
       polardb: {
         connection: polardbAudit().connection,
         fixture_data_mode: 'SIMULATED',
+      },
+      // Finals 2026-09-14: three evidence directories with explicit tiers.
+      finals: {
+        evidence_integrity: finalsIntegrity(),
+        tiers: {
+          db_migration_loop: 'REAL_SQL_VERIFICATION_ISOLATED_POSTGRES — not an Agentic Database branch; PolarDB NOT CONNECTED',
+          rework_loop: 'MECHANISM_VERIFICATION — real controller + real PG + real tests; agent output is controlled input; no Matrix/Element, no LLM',
+          rag_loop: 'REAL_OFFLINE_EXPERIMENT — SYNTHETIC corpus, family-split held-out backtest',
+          real_agent_element_handoff: 'NOT_EXECUTED (separate tier; requires the AgentTeams stack and authorization)',
+        },
       },
       redaction: redactionMeta,
       constraints: {
@@ -826,6 +889,13 @@ export const routes = {
       chunk_count: inv.chunk_count,
       embedding_backend: EMBEDDING_BACKEND,
       retrieval_mode: RETRIEVAL_MODE,
+      retrieval_strategy: {
+        id: inv.retrieval_strategy,
+        previous: 'v1-unigram-hash256',
+        promoted_by: 'offline loop experiments/rag-loop (tuning families → single held-out backtest)',
+        evidence: 'evidence/FINALS-RAG-LOOP-20260914/report.json',
+        reproduce: 'node demo-platform/backend/experiments/rag-loop/rag_eval_loop.mjs',
+      },
       tool_span_contract: { logical: 'rag.retrieve', runtime: 'rag_retrieve', database: 'database.query', note: '运行时工具名需匹配 ^[a-zA-Z0-9_-]+$，故 logical rag.retrieve 以 rag_retrieve 注册；tool span 名为 execute_tool rag_retrieve' },
       agent_correlation: {
         status: 'VERIFIED',
@@ -906,22 +976,8 @@ export const routes = {
 
   'GET /api/pr4': async () => {
     const conn = connectionState();
-    const ragHit = retrieve('跨仓 schema 变更 orders payments 关联仓库 历史风险', { topK: 3 });
-    const validations = CANDIDATES.map((c) => {
-      const b = createBranch(c.candidate_id);
-      return {
-        candidate_id: c.candidate_id,
-        title: c.title,
-        strategy: c.strategy,
-        repos_touched: c.repos_touched,
-        expected: c.expected,
-        failure_reasons: c.failure_reasons,
-        branch: b,
-        validation: validateMigration(b.branch_id, c.candidate_id),
-        assert_data: assertData(b.branch_id, c.candidate_id),
-        rollback_check: rollbackCheck(b.branch_id, c.candidate_id),
-      };
-    });
+    const sim = pr4Simulated();
+    const validations = sim.validations;
     const promoted = validations.find((v) => v.validation.verdict === 'VERIFIED');
     return {
       pr: 4,
@@ -929,16 +985,24 @@ export const routes = {
       title: 'CROSS-REPO ORDER SCHEMA MIGRATION',
       repos: ['fastapi-demo-api', 'fastapi-demo-worker', 'fastapi-demo-schema'],
       schema_baseline: SCHEMA_BASELINE,
-      rag_impact: { query_hash: ragHit.query_hash, results: ragHit.results, data_mode: ragHit.data_mode },
+      rag_impact: { query_hash: sim.ragHit.query_hash, results: sim.ragHit.results, data_mode: sim.ragHit.data_mode },
       candidates: validations,
       promoted: promoted ? { candidate_id: promoted.candidate_id, verdict: promoted.validation.verdict } : null,
       rejected: validations.filter((v) => v.validation.verdict !== 'VERIFIED').map((v) => v.candidate_id),
+      simulated_comparison: { computed_once_at: sim.computed_at, side_effect_free_reads: true, data_mode: 'SIMULATED' },
       human_gate: {
         required: true,
         state: 'AWAITING_OPERATOR_APPROVAL（策略回放 — 无运行时写入）',
         note: 'candidate-c 部署前需人工批准；失败候选禁止 promote',
       },
-      data_modes: { rag: 'SYNTHETIC', schema_baseline: 'SYNTHETIC', branch: 'SIMULATED', polardb_connection: conn.connection },
+      // Finals D2: the same candidate story executed for real on an isolated
+      // PostgreSQL clone (candidate-a rev1 FAIL on historical data → context
+      // fetch → rev2 PASS → version-bound approval → stale after follow-up).
+      real_sql_loop: dbLoopSummary(),
+      gate: pr4GateState(),
+      runtime_metadata: runtimeMetadata(),
+      data_modes: { rag: 'SYNTHETIC', schema_baseline: 'SYNTHETIC', branch: 'SIMULATED', polardb_connection: conn.connection,
+        real_sql_loop: 'ISOLATED_POSTGRES (real SQL, not Agentic Database branch)' },
       agentloop: {
         authoritative_trace_id: 'fbf4a3cec0493990d76e10a102418be1',
         rag_correlation_trace_id: 'f5bb3e1f55bc53412f0fac5e6b400eb5',
@@ -948,6 +1012,35 @@ export const routes = {
       disclosure: conn.disclosure,
     };
   },
+
+  'GET /api/pr4/gate': async () => pr4GateState(),
+
+  'POST /api/pr4/approval': async (q, p, body) => {
+    const r = pr4Decide({ decision: body && body.decision, verification_id: body && body.verification_id, head_sha: body && body.head_sha, actor: body && body.actor });
+    if (r.error) throw new ApiError(r.status || 400, r.error, r.detail || 'PR #4 gate decision rejected');
+    return r;
+  },
+
+  // Replays the recorded follow-up commit (evidence step S9): the bound head is
+  // no longer current, so the approval becomes STALE — exactly the gate result
+  // recorded by db_release_gate() in the audit DB.
+  'POST /api/pr4/followup': async () => {
+    const r = pr4ApplyFollowup();
+    if (r.error) throw new ApiError(r.status || 400, r.error, 'PR #4 evidence not available');
+    return r;
+  },
+
+  'POST /api/pr4/reset': async () => pr4Reset(),
+
+  'GET /api/rework-loop': async () => reworkLoopSummary(),
+
+  'GET /api/finals/evidence': async () => ({
+    integrity: finalsIntegrity(),
+    db_loop: dbLoopSummary(),
+    rework_loop: (() => { const r = reworkLoopSummary(); if (!r.available) return r; const { patches, ...rest } = r; return rest; })(),
+    rag_loop: ragLoopSummary(),
+    runtime_metadata: runtimeMetadata(),
+  }),
 
   'POST /api/db/branch/create': async (q, p, body) => {
     const r = createBranch(body && body.candidate_id);

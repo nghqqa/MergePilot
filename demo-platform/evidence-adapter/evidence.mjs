@@ -24,6 +24,13 @@ export const EVIDENCE_DIRS = {
   matrixSyncAudit: 'PHASE14-WINDOWS-COPAW-MATRIX-SYNC-AUDIT-20260829-164840',
   highRiskGateBlocked: 'PHASE14-WINDOWS-COPAW-HIGH-RISK-HUMAN-GATE-20260829-144234',
   rejectDemo: 'PHASE14-WINDOWS-COPAW-HIGH-RISK-REJECT-20260830-091913',
+  // Finals (2026-09-14) evidence. Deliberately NOT part of INTEGRITY_KEYS: the
+  // historical "final package VERIFIED" split stays exactly what it was; these
+  // dirs are verified separately by lib/finals_evidence.mjs and carry their own
+  // evidence tier (real SQL loop / controller mechanism / offline RAG loop).
+  finalsDbLoop: 'FINALS-DB-MIGRATION-LOOP-20260914',
+  finalsReworkLoop: 'FINALS-REWORK-LOOP-20260914',
+  finalsRagLoop: 'FINALS-RAG-LOOP-20260914',
 };
 
 export function dirPath(key) {

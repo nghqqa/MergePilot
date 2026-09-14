@@ -521,3 +521,23 @@ details > summary:hover { color: var(--ink); }
   .claim-row { grid-template-columns: 1fr; gap: 4px; }
   .ops-grid { grid-template-columns: 1fr; }
 }
+
+/* Finals: verification chain + unified diff (PR #4 real SQL loop, rework page) */
+.dag-col li.failed .dag-node-dot { border-color: var(--red); color: var(--red); }
+.verchain .kv { margin-top: 2px; }
+.diff { font-family: var(--mono); font-size: 12px; line-height: 1.5; background: var(--bg2); border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; margin: 0; overflow: auto; max-height: 380px; white-space: pre; font-variant-numeric: tabular-nums; }
+.diff .add { color: var(--green); }
+.diff .del { color: var(--red); }
+.diff .hunk { color: var(--cyan); }
+.diff:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+.takeover-actions .btn { white-space: normal; }
+@media (max-width: 720px) { .diff { max-height: 260px; font-size: 11.5px; } }
+
+/* Finals pages: long status tokens may wrap on narrow screens; rows wrap instead of overflowing */
+.page.finals .pill, .page.finals .chip { white-space: normal; overflow-wrap: anywhere; }
+.page.finals .gate-row { flex-wrap: wrap; }
+.page.finals table { display: block; overflow-x: auto; max-width: 100%; }
+@media (max-width: 720px) {
+  .topnav { flex-wrap: wrap; row-gap: 2px; }
+  .page.finals .grid2 { grid-template-columns: 1fr; }
+}

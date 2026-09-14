@@ -8,6 +8,7 @@ import AuditPage from './pages/AuditPage.jsx';
 import RagPage from './pages/RagPage.jsx';
 import OpsPage from './pages/OpsPage.jsx';
 import Pr4Page from './pages/Pr4Page.jsx';
+import ReworkPage from './pages/ReworkPage.jsx';
 import { ModeBanner, DemoBar, ErrorBox, LoadingBox } from './components/ui.jsx';
 
 class ErrorBoundary extends React.Component {
@@ -59,6 +60,7 @@ export default function App() {
             <NavLink to="/cases/pr2-high-risk-human-gate">PR#2</NavLink>
             <NavLink to="/cases/pr3-high-risk-human-reject">PR#3</NavLink>
             <NavLink to="/pr4">PR#4</NavLink>
+            <NavLink to="/rework">返工闭环</NavLink>
             <NavLink to="/rag">RAG</NavLink>
             <NavLink to="/ops">Operations</NavLink>
             <NavLink to="/audit">审计</NavLink>
@@ -77,6 +79,7 @@ export default function App() {
             <Route path="/cases/:caseId" element={<CasePage />} />
             <Route path="/audit" element={<AuditPage />} />
             <Route path="/pr4" element={<Pr4Page />} />
+            <Route path="/rework" element={<ReworkPage />} />
             <Route path="/rag" element={<RagPage />} />
             <Route path="/ops" element={<OpsPage />} />
             <Route path="*" element={<main className="page"><LoadingBox text="加载中…" /></main>} />
