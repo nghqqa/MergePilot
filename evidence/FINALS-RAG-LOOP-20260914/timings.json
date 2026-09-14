@@ -1,0 +1,133 @@
+{
+  "note": "wall-clock, non-deterministic, excluded from SHA256SUMS",
+  "runs": [
+    {
+      "label": "baseline/tuning",
+      "strategy_id": "v1-unigram-hash256",
+      "n_queries": 30,
+      "index_build_ms": 0.25,
+      "eval_ms_total": 0.86,
+      "eval_ms_per_query": 0.029
+    },
+    {
+      "label": "baseline/heldout",
+      "strategy_id": "v1-unigram-hash256",
+      "n_queries": 24,
+      "index_build_ms": 0.35,
+      "eval_ms_total": 0.15,
+      "eval_ms_per_query": 0.006
+    },
+    {
+      "label": "grid/tuning",
+      "strategy_id": "cand-unigram-tf-hash256",
+      "n_queries": 30,
+      "index_build_ms": 0.49,
+      "eval_ms_total": 0.69,
+      "eval_ms_per_query": 0.023
+    },
+    {
+      "label": "grid/tuning",
+      "strategy_id": "cand-unigram-tf-hash1024",
+      "n_queries": 30,
+      "index_build_ms": 0.23,
+      "eval_ms_total": 0.42,
+      "eval_ms_per_query": 0.014
+    },
+    {
+      "label": "grid/tuning",
+      "strategy_id": "cand-unigram-tf-hash4096",
+      "n_queries": 30,
+      "index_build_ms": 0.3,
+      "eval_ms_total": 1.57,
+      "eval_ms_per_query": 0.052
+    },
+    {
+      "label": "grid/tuning",
+      "strategy_id": "cand-unigram-idf-hash256",
+      "n_queries": 30,
+      "index_build_ms": 0.48,
+      "eval_ms_total": 0.81,
+      "eval_ms_per_query": 0.027
+    },
+    {
+      "label": "grid/tuning",
+      "strategy_id": "cand-unigram-idf-hash1024",
+      "n_queries": 30,
+      "index_build_ms": 1.19,
+      "eval_ms_total": 0.58,
+      "eval_ms_per_query": 0.019
+    },
+    {
+      "label": "grid/tuning",
+      "strategy_id": "cand-unigram-idf-hash4096",
+      "n_queries": 30,
+      "index_build_ms": 0.44,
+      "eval_ms_total": 1.55,
+      "eval_ms_per_query": 0.052
+    },
+    {
+      "label": "grid/tuning",
+      "strategy_id": "cand-bigram-tf-hash256",
+      "n_queries": 30,
+      "index_build_ms": 0.2,
+      "eval_ms_total": 0.19,
+      "eval_ms_per_query": 0.006
+    },
+    {
+      "label": "grid/tuning",
+      "strategy_id": "cand-bigram-tf-hash1024",
+      "n_queries": 30,
+      "index_build_ms": 0.19,
+      "eval_ms_total": 0.42,
+      "eval_ms_per_query": 0.014
+    },
+    {
+      "label": "grid/tuning",
+      "strategy_id": "cand-bigram-tf-hash4096",
+      "n_queries": 30,
+      "index_build_ms": 0.63,
+      "eval_ms_total": 1.73,
+      "eval_ms_per_query": 0.058
+    },
+    {
+      "label": "grid/tuning",
+      "strategy_id": "cand-bigram-idf-hash256",
+      "n_queries": 30,
+      "index_build_ms": 0.67,
+      "eval_ms_total": 0.75,
+      "eval_ms_per_query": 0.025
+    },
+    {
+      "label": "grid/tuning",
+      "strategy_id": "cand-bigram-idf-hash1024",
+      "n_queries": 30,
+      "index_build_ms": 0.63,
+      "eval_ms_total": 0.46,
+      "eval_ms_per_query": 0.015
+    },
+    {
+      "label": "grid/tuning",
+      "strategy_id": "cand-bigram-idf-hash4096",
+      "n_queries": 30,
+      "index_build_ms": 0.69,
+      "eval_ms_total": 1.7,
+      "eval_ms_per_query": 0.057
+    },
+    {
+      "label": "selected/tuning",
+      "strategy_id": "cand-bigram-idf-hash4096",
+      "n_queries": 30,
+      "index_build_ms": 0.69,
+      "eval_ms_total": 1.7,
+      "eval_ms_per_query": 0.057
+    },
+    {
+      "label": "selected/heldout",
+      "strategy_id": "cand-bigram-idf-hash4096",
+      "n_queries": 24,
+      "index_build_ms": 0.57,
+      "eval_ms_total": 1.24,
+      "eval_ms_per_query": 0.052
+    }
+  ]
+}
