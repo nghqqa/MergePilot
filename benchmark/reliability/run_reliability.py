@@ -268,8 +268,14 @@ def main():
     }
     report["evidence_tier"]["model_layer"] = report["model_layer"]["status"]
     out = Path(args.out); out.mkdir(parents=True, exist_ok=True)
+
+    def write_lf(name, content):
+        # explicit LF: SHA256SUMS below must stay valid on every checkout
+        with open(out / name, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(content)
+
     text = json.dumps(report, indent=2, ensure_ascii=False) + "\n"
-    (out / "report.json").write_text(text, encoding="utf-8")
+    write_lf("report.json", text)
     md = ["# 可靠性对照报告（决赛 D1）", "",
           "确定性层（真实执行）：%d 个样本 · 决策准确率 %.0f%% · 风险级别准确率 %.0f%% · 误报规则 %d · 漏报规则 %d · 人工介入率 %.0f%% · 禁止决策命中 %d · 保护检查 %s" % (
               summary["cases"], summary["decision_accuracy"] * 100, summary["risk_level_accuracy"] * 100, summary["false_positive_rules_total"],
@@ -284,11 +290,11 @@ def main():
             "; ".join("%s=%s" % (k, v) for k, v in s["protections"].items()) or "-"))
     ml = report["model_layer"]
     md += ["", "模型层：**%s** — %s" % (ml["status"], ml.get("reason", "")), "复现：`%s`" % ml.get("reproduce", ""), ""]
-    (out / "report.md").write_text("\n".join(md) + "\n", encoding="utf-8")
-    (out / "run-meta.json").write_text(json.dumps({"generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "python": sys.version.split()[0],
-                                                   "command": "python benchmark/reliability/run_reliability.py --out %s" % args.out}, indent=2) + "\n", encoding="utf-8")
+    write_lf("report.md", "\n".join(md) + "\n")
+    write_lf("run-meta.json", json.dumps({"generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "python": sys.version.split()[0],
+                                          "command": "python benchmark/reliability/run_reliability.py --out %s" % args.out}, indent=2) + "\n")
     sums = "".join("%s *%s\n" % (hashlib.sha256((out / n).read_bytes()).hexdigest(), n) for n in ("report.json", "report.md"))
-    (out / "SHA256SUMS").write_text(sums, encoding="utf-8")
+    write_lf("SHA256SUMS", sums)
     print(json.dumps(summary, ensure_ascii=False))
     print("[model layer]", ml["status"])
     print("[evidence]", out)

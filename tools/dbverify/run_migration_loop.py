@@ -530,7 +530,7 @@ class Loop:
         return self.report
 
     def write_plan_package(self, run, candidate_id, script_digest, v):
-        out = REPO_ROOT / "release" / "migration-plans" / "orders-schema-change" / "candidate-a.rev2"
+        out = Path(self.args.plan_out) if getattr(self.args, "plan_out", None) else (REPO_ROOT / "release" / "migration-plans" / "orders-schema-change" / "candidate-a.rev2")
         out.mkdir(parents=True, exist_ok=True)
         script = read_norm(CASE_DIR / "migrations" / "candidate-a.rev2.sql").decode()
         preflight = """-- 01-preflight.sql — compatibility checks BEFORE running the migration (read-only).
@@ -612,7 +612,8 @@ COMMIT;
         write_lf(out / "manifest.json", json.dumps(manifest, indent=2, ensure_ascii=False) + "\n")
         sums = "".join("%s *%s\n" % (sha256_bytes((out / n).read_bytes()), n) for n in sorted(list(files) + ["manifest.json"]))
         write_lf(out / "SHA256SUMS", sums)
-        return {"path": str(out.relative_to(REPO_ROOT)).replace("\\", "/"), "files": sorted(list(files) + ["manifest.json", "SHA256SUMS"])}
+        rel = str(out.relative_to(REPO_ROOT)) if str(out).startswith(str(REPO_ROOT)) else str(out)
+        return {"path": rel.replace("\\", "/"), "files": sorted(list(files) + ["manifest.json", "SHA256SUMS"])}
 
     def write_evidence(self):
         out = Path(self.args.out)
@@ -655,6 +656,7 @@ def main():
     ap.add_argument("--image", default="pgvector/pgvector:pg16")
     ap.add_argument("--out", default=str(REPO_ROOT / "evidence" / "FINALS-DB-MIGRATION-LOOP-20260914"))
     ap.add_argument("--keep-baseline", action="store_true")
+    ap.add_argument("--plan-out", default=None, help="where to write the migration plan package (default: release/migration-plans/...)")
     ap.add_argument("--run-suffix", default=time.strftime("%H%M%S", time.gmtime()), help="unique token so audit rows (immutable) never collide across runs")
     args = ap.parse_args()
     report = Loop(args).run()

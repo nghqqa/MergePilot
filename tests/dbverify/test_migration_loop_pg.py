@@ -30,7 +30,7 @@ class TestMigrationLoopAgainstPostgres(unittest.TestCase):
             pg_host=os.environ.get("DBVERIFY_PG_HOST", "127.0.0.1"), pg_port=int(PORT), pg_user="mergepilot",
             pg_password_file=PWFILE, audit_db="mergepilot_audit",
             trial_instance=os.environ.get("DBVERIFY_TRIAL_INSTANCE", "test:isolated-postgres"),
-            image="pgvector/pgvector:pg16", out=str(out), keep_baseline=False,
+            image="pgvector/pgvector:pg16", out=str(out), keep_baseline=False, plan_out=str(out / "migration-plan"),
             run_suffix="t" + time.strftime("%H%M%S", time.gmtime()))
         report = loop.Loop(args).run()
         failed = [n["name"] for n in report["negative_tests"] if not n["ok"]]
