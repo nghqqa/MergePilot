@@ -1,0 +1,859 @@
+{
+  "report_version": "db-migration-loop-report.v1",
+  "evidence_tier": "REAL_SQL_VERIFICATION_ISOLATED_POSTGRES",
+  "not_agentic_database_branch": true,
+  "polardb": "NOT CONNECTED",
+  "data_mode": "SYNTHETIC",
+  "case": {
+    "case_id": "orders-schema-change",
+    "repo": "mergepilot/orders-demo",
+    "pr_number": 4,
+    "sha_kind": "git tree object id of the candidate content (git mktree); NOT a commit on a remote",
+    "base_sha": "3ce26f656aa6dfdd8e30548537363bff3941132e",
+    "head_rev1": "b22fc0622b497de2fca0c1ccf3853618939400b2",
+    "head_rev2": "a7db33c36313f5f4c963bd6000b108ca8279d96a",
+    "head_rev3_followup": "a0b4633592c13ea66aca46c14c0c73bbe7a5b814",
+    "files": {
+      "baseline/schema.sql": "594cb9c48d2db429165fb9a6c1832d8b0bbde42740b67c2d47978fa437ca0c4f",
+      "baseline/seed.sql": "3a333900d372decb66d27b47f19d4a035f22d001468481e58c0ff4c856009e5c",
+      "app/orders_service.py": "1189a29411333bf5fdee34542a9d988555b4f6e946802fbc9d228f050e637c28",
+      "app/test_orders_service.py": "2c3201cf729d1a297b0c9578341a2bc2ddc2f69ca2dcdce0bd8adb0372355552",
+      "assertions.json": "5fa5f6a4f488ef044cdd42bb81ab6830ef766cc720d113d2fa5f32daed530bc6",
+      "migrations/candidate-a.sql": "5c3d64e04bad548136b63b50e87d26b83af5ada425c7aee052bcb9958623069e"
+    },
+    "followup_change": "app/orders_service.py gains cancel_order(); migration unchanged"
+  },
+  "run_suffix": "r8",
+  "environment": {
+    "pg_version": "16.14 (Debian 16.14-1.pgdg12+1)",
+    "trial_kind": "ISOLATED_POSTGRES",
+    "trial_instance": "docker:5d63fdf9c387@sha256:7f58c9936b2ef7f3e1fa20ac7d13cc1d7337ebf2380eec75677efe0204daadf0",
+    "clone_method": "CREATE DATABASE ... TEMPLATE dbv_baseline"
+  },
+  "steps": [
+    {
+      "step": "S1_baseline",
+      "outcome": "REGISTERED",
+      "baseline_id": "bl-e3e3c59da7deaa85",
+      "schema_digest": "594cb9c48d2db429165fb9a6c1832d8b0bbde42740b67c2d47978fa437ca0c4f",
+      "data_digest": "e3e3c59da7deaa85b1c8dc8b9dd1371bd931fc81b0aa8e2ccf2aeb1ca3135bf9",
+      "row_counts": {
+        "customers": 500,
+        "orders": 10000,
+        "payments": 10002,
+        "legacy_order_owner": 120
+      },
+      "historical_null_customer_id": 137,
+      "historical_duplicate_payment_rows": 2,
+      "pg_version": "16.14 (Debian 16.14-1.pgdg12+1)"
+    },
+    {
+      "step": "S2_run1_registered",
+      "outcome": "BOUND",
+      "run_id": "run-dbv-r8-rev1",
+      "head_sha": "b22fc0622b497de2fca0c1ccf3853618939400b2",
+      "base_sha": "3ce26f656aa6dfdd8e30548537363bff3941132e",
+      "pr_binding_id": "prb-run-dbv-r8-rev1",
+      "revision_binding_id": "rev-50aaa0885c9f5b00f3e3c61027689ec2",
+      "source_call_id": "mcp-run-dbv-r8-rev1-read",
+      "source_evidence_digest": "794ae2ae5cd0cfffbbf5d3f29215017f2230fb52e1d48d748079b603c9c2dddb"
+    },
+    {
+      "step": "S3_code_tests_rev1",
+      "outcome": "PASS",
+      "command": "python -m unittest discover -s tools/dbverify/case/orders-schema-change/app -p 'test_*.py'",
+      "tests_run": 7,
+      "failures": 0,
+      "errors": 0,
+      "verdict": "PASS",
+      "output_tail": [
+        "Ran 7 tests in 0.000s",
+        "",
+        "OK"
+      ]
+    },
+    {
+      "step": "S2_candidate_rev1",
+      "outcome": "REGISTERED",
+      "candidate_id": "mc-f28f610ca3be5a3e1effc211",
+      "script_digest": "223e27fcecbf63e4824ab9650349630ed8903acebea4dffb0858df05e18ad5bc"
+    },
+    {
+      "step": "verify_rev1_attempt1",
+      "outcome": "FAIL/HISTORICAL_DATA_INCOMPATIBLE",
+      "verification_id": "mv-3b7e83b18b16507ac07fcfa7",
+      "report_digest": "5d9bd5d692425972445be1e4982a8d44c28b275d5de14f9f3ad1d4f44a94d92b",
+      "migration_error": {
+        "sqlstate": "23502",
+        "message": "ERROR:  column \"customer_id\" of relation \"orders\" contains null values",
+        "detail": ""
+      },
+      "assertions_passed": 3,
+      "assertions_total": 11,
+      "failed_assertions": [
+        "no_null_customer_id",
+        "payments_order_id_unique",
+        "not_null_constraint_present",
+        "unique_constraint_present",
+        "payments_preserved_incl_archive",
+        "backfill_fully_audited",
+        "sentinel_rows_flagged_for_follow_up",
+        "duplicate_payment_now_rejected"
+      ],
+      "clone_ms": 34,
+      "migration_duration_ms": 1,
+      "detail": {
+        "run_id": "run-dbv-r8-rev1",
+        "candidate_id": "mc-f28f610ca3be5a3e1effc211",
+        "head_sha": "b22fc0622b497de2fca0c1ccf3853618939400b2",
+        "migration_rev": 1,
+        "attempt": 1,
+        "trial_db": "dbv_trial_run_dbv_r8_rev1_a1",
+        "clone_ms": 34,
+        "migration": {
+          "applied": false,
+          "error": {
+            "sqlstate": "23502",
+            "message": "ERROR:  column \"customer_id\" of relation \"orders\" contains null values",
+            "detail": ""
+          },
+          "duration_ms": 1
+        },
+        "assertions": [
+          {
+            "name": "no_null_customer_id",
+            "kind": "scalar",
+            "expect": 0,
+            "actual": 137,
+            "passed": false
+          },
+          {
+            "name": "payments_order_id_unique",
+            "kind": "scalar",
+            "expect": 0,
+            "actual": 2,
+            "passed": false
+          },
+          {
+            "name": "not_null_constraint_present",
+            "kind": "scalar",
+            "expect": "NO",
+            "actual": "YES",
+            "passed": false
+          },
+          {
+            "name": "unique_constraint_present",
+            "kind": "scalar",
+            "expect": 1,
+            "actual": 0,
+            "passed": false
+          },
+          {
+            "name": "orders_row_count_preserved",
+            "kind": "scalar",
+            "expect": 10000,
+            "actual": 10000,
+            "passed": true
+          },
+          {
+            "name": "payments_preserved_incl_archive",
+            "kind": "scalar",
+            "expect": 10002,
+            "actual": "ERROR",
+            "error": {
+              "sqlstate": "42P01",
+              "message": "ERROR:  relation \"payments_dedup_archive\" does not exist"
+            },
+            "passed": false
+          },
+          {
+            "name": "backfill_fully_audited",
+            "kind": "scalar",
+            "expect": 137,
+            "actual": "ERROR",
+            "error": {
+              "sqlstate": "42P01",
+              "message": "ERROR:  relation \"orders_backfill_audit\" does not exist"
+            },
+            "passed": false
+          },
+          {
+            "name": "sentinel_rows_flagged_for_follow_up",
+            "kind": "scalar",
+            "expect": 17,
+            "actual": "ERROR",
+            "error": {
+              "sqlstate": "42P01",
+              "message": "ERROR:  relation \"orders_backfill_audit\" does not exist"
+            },
+            "passed": false
+          },
+          {
+            "name": "old_worker_compat_insert",
+            "kind": "probe",
+            "expect": "OK",
+            "actual": "OK",
+            "passed": true
+          },
+          {
+            "name": "new_code_insert",
+            "kind": "probe",
+            "expect": "OK",
+            "actual": "OK",
+            "passed": true
+          },
+          {
+            "name": "duplicate_payment_now_rejected",
+            "kind": "probe",
+            "expect": "ERROR",
+            "actual": "OK",
+            "passed": false
+          }
+        ],
+        "assertions_passed": 3,
+        "assertions_total": 11,
+        "verdict": "FAIL",
+        "failure_class": "HISTORICAL_DATA_INCOMPATIBLE",
+        "verification_id": "mv-3b7e83b18b16507ac07fcfa7",
+        "report_digest": "5d9bd5d692425972445be1e4982a8d44c28b275d5de14f9f3ad1d4f44a94d92b"
+      }
+    },
+    {
+      "step": "S5b_context_fetch",
+      "outcome": "REVISE_CANDIDATE",
+      "missing_context": "owner (customer_id) for 137 historical orders; SQLSTATE 23502 says nothing about whether it can be recovered",
+      "fetched": {
+        "legacy_order_owner_coverage": 120,
+        "unresolvable_orders": 17,
+        "duplicate_payment_rows": 2,
+        "query": "SELECT count(*) FROM legacy_order_owner l JOIN orders o USING (order_id) WHERE o.customer_id IS NULL"
+      },
+      "rule": "unresolvable share <= 20% -> revise the same candidate (backfill + sentinel flagged for follow-up); otherwise escalate to a human before touching data",
+      "unresolvable_share": 0.1241,
+      "decision": "REVISE_CANDIDATE",
+      "next_action": "candidate-a rev2: backfill 120 from legacy_order_owner, sentinel 17 (audited), archive 2 duplicate payments, add DEFAULT for old workers, then constraints",
+      "human_gate_still_required": true
+    },
+    {
+      "step": "S6_run2_registered",
+      "outcome": "BOUND",
+      "run_id": "run-dbv-r8-rev2",
+      "head_sha": "a7db33c36313f5f4c963bd6000b108ca8279d96a",
+      "base_sha": "3ce26f656aa6dfdd8e30548537363bff3941132e",
+      "pr_binding_id": "prb-run-dbv-r8-rev2",
+      "revision_binding_id": "rev-70036255796409b61c6a95c915c3e170",
+      "source_call_id": "mcp-run-dbv-r8-rev2-read",
+      "source_evidence_digest": "daceafdc462ce8371dc01ce05e8f9b5a06987c586a3909c7689e64240c7fa8bc"
+    },
+    {
+      "step": "S3_code_tests_rev2",
+      "outcome": "PASS",
+      "command": "python -m unittest discover -s tools/dbverify/case/orders-schema-change/app -p 'test_*.py'",
+      "tests_run": 7,
+      "failures": 0,
+      "errors": 0,
+      "verdict": "PASS",
+      "output_tail": [
+        "Ran 7 tests in 0.001s",
+        "",
+        "OK"
+      ]
+    },
+    {
+      "step": "S6_candidate_rev2",
+      "outcome": "REGISTERED",
+      "candidate_id": "mc-fd43768b29f9c16fc69caeb3",
+      "parent_candidate_id": "mc-f28f610ca3be5a3e1effc211",
+      "script_digest": "5c3d64e04bad548136b63b50e87d26b83af5ada425c7aee052bcb9958623069e"
+    },
+    {
+      "step": "verify_rev2_attempt1",
+      "outcome": "PASS/-",
+      "verification_id": "mv-729e460dd8b4517be0293aba",
+      "report_digest": "e8de1b754b544d3b4d6d7400f87bc58c0da06a767988e444e26951965ae24ab6",
+      "migration_error": null,
+      "assertions_passed": 11,
+      "assertions_total": 11,
+      "failed_assertions": [],
+      "clone_ms": 33,
+      "migration_duration_ms": 32,
+      "detail": {
+        "run_id": "run-dbv-r8-rev2",
+        "candidate_id": "mc-fd43768b29f9c16fc69caeb3",
+        "head_sha": "a7db33c36313f5f4c963bd6000b108ca8279d96a",
+        "migration_rev": 2,
+        "attempt": 1,
+        "trial_db": "dbv_trial_run_dbv_r8_rev2_a1",
+        "clone_ms": 33,
+        "migration": {
+          "applied": true,
+          "error": null,
+          "duration_ms": 32
+        },
+        "assertions": [
+          {
+            "name": "no_null_customer_id",
+            "kind": "scalar",
+            "expect": 0,
+            "actual": 0,
+            "passed": true
+          },
+          {
+            "name": "payments_order_id_unique",
+            "kind": "scalar",
+            "expect": 0,
+            "actual": 0,
+            "passed": true
+          },
+          {
+            "name": "not_null_constraint_present",
+            "kind": "scalar",
+            "expect": "NO",
+            "actual": "NO",
+            "passed": true
+          },
+          {
+            "name": "unique_constraint_present",
+            "kind": "scalar",
+            "expect": 1,
+            "actual": 1,
+            "passed": true
+          },
+          {
+            "name": "orders_row_count_preserved",
+            "kind": "scalar",
+            "expect": 10000,
+            "actual": 10000,
+            "passed": true
+          },
+          {
+            "name": "payments_preserved_incl_archive",
+            "kind": "scalar",
+            "expect": 10002,
+            "actual": 10002,
+            "passed": true
+          },
+          {
+            "name": "backfill_fully_audited",
+            "kind": "scalar",
+            "expect": 137,
+            "actual": 137,
+            "passed": true
+          },
+          {
+            "name": "sentinel_rows_flagged_for_follow_up",
+            "kind": "scalar",
+            "expect": 17,
+            "actual": 17,
+            "passed": true
+          },
+          {
+            "name": "old_worker_compat_insert",
+            "kind": "probe",
+            "expect": "OK",
+            "actual": "OK",
+            "passed": true
+          },
+          {
+            "name": "new_code_insert",
+            "kind": "probe",
+            "expect": "OK",
+            "actual": "OK",
+            "passed": true
+          },
+          {
+            "name": "duplicate_payment_now_rejected",
+            "kind": "probe",
+            "expect": "ERROR",
+            "actual": "ERROR",
+            "error": {
+              "sqlstate": "23505",
+              "message": "ERROR:  duplicate key value violates unique constraint \"uq_payments_order_id\""
+            },
+            "passed": true
+          }
+        ],
+        "assertions_passed": 11,
+        "assertions_total": 11,
+        "verdict": "PASS",
+        "failure_class": null,
+        "verification_id": "mv-729e460dd8b4517be0293aba",
+        "report_digest": "e8de1b754b544d3b4d6d7400f87bc58c0da06a767988e444e26951965ae24ab6"
+      }
+    },
+    {
+      "step": "verify_rev2_attempt2_for_race_test",
+      "outcome": "PASS/-",
+      "verification_id": "mv-f4678d129fefef626f5d916f",
+      "report_digest": "cadbfc978d183a1335759e6e6c70d988aaea0cd0e72bf2c975570247b2b21d1a",
+      "migration_error": null,
+      "assertions_passed": 11,
+      "assertions_total": 11,
+      "failed_assertions": [],
+      "clone_ms": 33,
+      "migration_duration_ms": 34,
+      "detail": {
+        "run_id": "run-dbv-r8-rev2",
+        "candidate_id": "mc-fd43768b29f9c16fc69caeb3",
+        "head_sha": "a7db33c36313f5f4c963bd6000b108ca8279d96a",
+        "migration_rev": 2,
+        "attempt": 2,
+        "trial_db": "dbv_trial_run_dbv_r8_rev2_a2",
+        "clone_ms": 33,
+        "migration": {
+          "applied": true,
+          "error": null,
+          "duration_ms": 34
+        },
+        "assertions": [
+          {
+            "name": "no_null_customer_id",
+            "kind": "scalar",
+            "expect": 0,
+            "actual": 0,
+            "passed": true
+          },
+          {
+            "name": "payments_order_id_unique",
+            "kind": "scalar",
+            "expect": 0,
+            "actual": 0,
+            "passed": true
+          },
+          {
+            "name": "not_null_constraint_present",
+            "kind": "scalar",
+            "expect": "NO",
+            "actual": "NO",
+            "passed": true
+          },
+          {
+            "name": "unique_constraint_present",
+            "kind": "scalar",
+            "expect": 1,
+            "actual": 1,
+            "passed": true
+          },
+          {
+            "name": "orders_row_count_preserved",
+            "kind": "scalar",
+            "expect": 10000,
+            "actual": 10000,
+            "passed": true
+          },
+          {
+            "name": "payments_preserved_incl_archive",
+            "kind": "scalar",
+            "expect": 10002,
+            "actual": 10002,
+            "passed": true
+          },
+          {
+            "name": "backfill_fully_audited",
+            "kind": "scalar",
+            "expect": 137,
+            "actual": 137,
+            "passed": true
+          },
+          {
+            "name": "sentinel_rows_flagged_for_follow_up",
+            "kind": "scalar",
+            "expect": 17,
+            "actual": 17,
+            "passed": true
+          },
+          {
+            "name": "old_worker_compat_insert",
+            "kind": "probe",
+            "expect": "OK",
+            "actual": "OK",
+            "passed": true
+          },
+          {
+            "name": "new_code_insert",
+            "kind": "probe",
+            "expect": "OK",
+            "actual": "OK",
+            "passed": true
+          },
+          {
+            "name": "duplicate_payment_now_rejected",
+            "kind": "probe",
+            "expect": "ERROR",
+            "actual": "ERROR",
+            "error": {
+              "sqlstate": "23505",
+              "message": "ERROR:  duplicate key value violates unique constraint \"uq_payments_order_id\""
+            },
+            "passed": true
+          }
+        ],
+        "assertions_passed": 11,
+        "assertions_total": 11,
+        "verdict": "PASS",
+        "failure_class": null,
+        "verification_id": "mv-f4678d129fefef626f5d916f",
+        "report_digest": "cadbfc978d183a1335759e6e6c70d988aaea0cd0e72bf2c975570247b2b21d1a"
+      }
+    },
+    {
+      "step": "S7_ticket_created",
+      "outcome": "PENDING",
+      "ticket_id": "tkt-f65631ac-bc19-482b-8270-b937d63266f6"
+    },
+    {
+      "step": "S7_bind_verification",
+      "outcome": "BOUND",
+      "ticket_id": "tkt-f65631ac-bc19-482b-8270-b937d63266f6",
+      "verification_id": "mv-f4678d129fefef626f5d916f",
+      "race_winner": "B"
+    },
+    {
+      "step": "S7_l2_approve",
+      "outcome": "APPROVED",
+      "approved": true,
+      "approved_by": "mergepilot",
+      "ticket_id": "tkt-f65631ac-bc19-482b-8270-b937d63266f6"
+    },
+    {
+      "step": "S9_run3_followup_commit_registered",
+      "outcome": "BOUND",
+      "run_id": "run-dbv-r8-rev3-followup",
+      "head_sha": "a0b4633592c13ea66aca46c14c0c73bbe7a5b814",
+      "base_sha": "3ce26f656aa6dfdd8e30548537363bff3941132e",
+      "pr_binding_id": "prb-run-dbv-r8-rev3-followup",
+      "revision_binding_id": "rev-61891bf4939d6596e1341f095812be4b",
+      "source_call_id": "mcp-run-dbv-r8-rev3-followup-read",
+      "source_evidence_digest": "6381cd62e66d2ff7dfdc5363f12e4f00e6ac2e7f630f2a16eda937251e2e5d96"
+    },
+    {
+      "step": "verify_rev2_late_callback_attempt3",
+      "outcome": "PASS/-",
+      "verification_id": "mv-6e1a81d033b44e0c2c0e9aee",
+      "report_digest": "2af59521b3a5d97f64894fc51b795b078e5412846ac9d5db4adb9a056cdae682",
+      "migration_error": null,
+      "assertions_passed": 11,
+      "assertions_total": 11,
+      "failed_assertions": [],
+      "clone_ms": 36,
+      "migration_duration_ms": 34,
+      "detail": {
+        "run_id": "run-dbv-r8-rev2",
+        "candidate_id": "mc-fd43768b29f9c16fc69caeb3",
+        "head_sha": "a7db33c36313f5f4c963bd6000b108ca8279d96a",
+        "migration_rev": 2,
+        "attempt": 3,
+        "trial_db": "dbv_trial_run_dbv_r8_rev2_a3",
+        "clone_ms": 36,
+        "migration": {
+          "applied": true,
+          "error": null,
+          "duration_ms": 34
+        },
+        "assertions": [
+          {
+            "name": "no_null_customer_id",
+            "kind": "scalar",
+            "expect": 0,
+            "actual": 0,
+            "passed": true
+          },
+          {
+            "name": "payments_order_id_unique",
+            "kind": "scalar",
+            "expect": 0,
+            "actual": 0,
+            "passed": true
+          },
+          {
+            "name": "not_null_constraint_present",
+            "kind": "scalar",
+            "expect": "NO",
+            "actual": "NO",
+            "passed": true
+          },
+          {
+            "name": "unique_constraint_present",
+            "kind": "scalar",
+            "expect": 1,
+            "actual": 1,
+            "passed": true
+          },
+          {
+            "name": "orders_row_count_preserved",
+            "kind": "scalar",
+            "expect": 10000,
+            "actual": 10000,
+            "passed": true
+          },
+          {
+            "name": "payments_preserved_incl_archive",
+            "kind": "scalar",
+            "expect": 10002,
+            "actual": 10002,
+            "passed": true
+          },
+          {
+            "name": "backfill_fully_audited",
+            "kind": "scalar",
+            "expect": 137,
+            "actual": 137,
+            "passed": true
+          },
+          {
+            "name": "sentinel_rows_flagged_for_follow_up",
+            "kind": "scalar",
+            "expect": 17,
+            "actual": 17,
+            "passed": true
+          },
+          {
+            "name": "old_worker_compat_insert",
+            "kind": "probe",
+            "expect": "OK",
+            "actual": "OK",
+            "passed": true
+          },
+          {
+            "name": "new_code_insert",
+            "kind": "probe",
+            "expect": "OK",
+            "actual": "OK",
+            "passed": true
+          },
+          {
+            "name": "duplicate_payment_now_rejected",
+            "kind": "probe",
+            "expect": "ERROR",
+            "actual": "ERROR",
+            "error": {
+              "sqlstate": "23505",
+              "message": "ERROR:  duplicate key value violates unique constraint \"uq_payments_order_id\""
+            },
+            "passed": true
+          }
+        ],
+        "assertions_passed": 11,
+        "assertions_total": 11,
+        "verdict": "PASS",
+        "failure_class": null,
+        "verification_id": "mv-6e1a81d033b44e0c2c0e9aee",
+        "report_digest": "2af59521b3a5d97f64894fc51b795b078e5412846ac9d5db4adb9a056cdae682"
+      }
+    },
+    {
+      "step": "S11_migration_plan_package",
+      "outcome": "WRITTEN",
+      "path": "release/migration-plans/orders-schema-change/candidate-a.rev2",
+      "files": [
+        "01-preflight.sql",
+        "02-migrate.sql",
+        "03-postcheck.sql",
+        "04-rollback.sql",
+        "README.md",
+        "SHA256SUMS",
+        "manifest.json"
+      ]
+    }
+  ],
+  "negative_tests": [
+    {
+      "name": "baseline_register_idempotent",
+      "expected": "bl-e3e3c59da7deaa85",
+      "observed": "bl-e3e3c59da7deaa85",
+      "ok": true
+    },
+    {
+      "name": "duplicate_callback_same_digest_is_noop",
+      "expected": "same id, 1 row",
+      "observed": "True, 1 row(s)",
+      "ok": true
+    },
+    {
+      "name": "conflicting_callback_different_digest_rejected",
+      "expected": "SQLSTATE 23505",
+      "observed": "23505 ERROR:  mv_record_verification: attempt 1 of mc-f28f610ca3be5a3e1effc211 already recorded with a different report; use a new attempt",
+      "ok": true
+    },
+    {
+      "name": "verification_row_immutable",
+      "expected": "UPDATE rejected",
+      "observed": "P0001 ERROR:  migration_verifications immutable: UPDATE not allowed",
+      "ok": true
+    },
+    {
+      "name": "candidate_revision_script_immutable",
+      "expected": "SQLSTATE 23505",
+      "observed": "23505 ERROR:  mv_register_candidate: candidate-a rev 1 already registered with a different script digest",
+      "ok": true
+    },
+    {
+      "name": "existing_model_one_active_ticket_per_binding_action",
+      "expected": "SQLSTATE 23505 uq_active_ticket_per_binding_action",
+      "observed": "23505 ERROR:  duplicate key value violates unique constraint \"uq_active_ticket_per_binding_action\"",
+      "ok": true
+    },
+    {
+      "name": "concurrent_bind_exactly_one_wins",
+      "expected": "1 winner, 1 binding row",
+      "observed": "winners=['B'] rows=1 losers={'A': '23505'}",
+      "ok": true
+    },
+    {
+      "name": "approval_invalid_when_target_data_differs",
+      "expected": "TARGET_DATA_DIGEST_MISMATCH",
+      "observed": "TARGET_DATA_DIGEST_MISMATCH",
+      "ok": true
+    },
+    {
+      "name": "rebind_same_ticket_rejected",
+      "expected": "already bound (23505)",
+      "observed": "23505 ERROR:  l2_bind_verification: ticket tkt-f65631ac-bc19-482b-8270-b937d63266f6 already bound",
+      "ok": true
+    },
+    {
+      "name": "fail_verification_cannot_be_bound",
+      "expected": "rejected (not PASS/PASS)",
+      "observed": "P0001 ERROR:  l2_bind_verification: verification mv-3b7e83b18b16507ac07fcfa7 is not PASS/PASS (migration=FAIL, code_tests=PASS)",
+      "ok": true
+    },
+    {
+      "name": "cross_run_verification_cannot_be_bound",
+      "expected": "rejected (run mismatch)",
+      "observed": "P0001 ERROR:  l2_bind_verification: verification belongs to run run-dbv-r8-rev2, ticket to run run-dbv-r8-rev1",
+      "ok": true
+    },
+    {
+      "name": "old_approval_invalid_after_new_revision",
+      "expected": "STALE_SUPERSEDED_BY_NEW_REVISION",
+      "observed": "STALE_SUPERSEDED_BY_NEW_REVISION",
+      "ok": true
+    },
+    {
+      "name": "late_callback_does_not_revive_stale_approval",
+      "expected": "still invalid",
+      "observed": "STALE_SUPERSEDED_BY_NEW_REVISION",
+      "ok": true
+    },
+    {
+      "name": "binding_row_immutable",
+      "expected": "UPDATE rejected",
+      "observed": "P0001 ERROR:  approval_verification_bindings immutable: UPDATE not allowed",
+      "ok": true
+    },
+    {
+      "name": "revision_bindings_immutable_unchanged",
+      "expected": "UPDATE rejected",
+      "observed": "P0001 ERROR:  revision_bindings immutable: UPDATE not allowed",
+      "ok": true
+    }
+  ],
+  "gate_timeline": [
+    {
+      "label": "before_bind",
+      "ticket_id": "tkt-f65631ac-bc19-482b-8270-b937d63266f6",
+      "valid": false,
+      "reason": "NOT_BOUND_TO_VERIFICATION",
+      "ticket_status": "PENDING",
+      "bound_head_sha": null,
+      "current_head_sha": null,
+      "verification_id": null
+    },
+    {
+      "label": "bound_not_yet_approved",
+      "ticket_id": "tkt-f65631ac-bc19-482b-8270-b937d63266f6",
+      "valid": false,
+      "reason": "TICKET_NOT_APPROVED",
+      "ticket_status": "PENDING",
+      "bound_head_sha": "a7db33c36313f5f4c963bd6000b108ca8279d96a",
+      "current_head_sha": "a7db33c36313f5f4c963bd6000b108ca8279d96a",
+      "verification_id": "mv-f4678d129fefef626f5d916f"
+    },
+    {
+      "label": "approved_current_version",
+      "ticket_id": "tkt-f65631ac-bc19-482b-8270-b937d63266f6",
+      "valid": true,
+      "reason": "OK",
+      "ticket_status": "APPROVED",
+      "bound_head_sha": "a7db33c36313f5f4c963bd6000b108ca8279d96a",
+      "current_head_sha": "a7db33c36313f5f4c963bd6000b108ca8279d96a",
+      "verification_id": "mv-f4678d129fefef626f5d916f"
+    },
+    {
+      "label": "approved_same_data_digest",
+      "ticket_id": "tkt-f65631ac-bc19-482b-8270-b937d63266f6",
+      "valid": true,
+      "reason": "OK",
+      "ticket_status": "APPROVED",
+      "bound_head_sha": "a7db33c36313f5f4c963bd6000b108ca8279d96a",
+      "current_head_sha": "a7db33c36313f5f4c963bd6000b108ca8279d96a",
+      "verification_id": "mv-f4678d129fefef626f5d916f"
+    },
+    {
+      "label": "target_data_changed",
+      "ticket_id": "tkt-f65631ac-bc19-482b-8270-b937d63266f6",
+      "valid": false,
+      "reason": "TARGET_DATA_DIGEST_MISMATCH",
+      "ticket_status": "APPROVED",
+      "bound_head_sha": "a7db33c36313f5f4c963bd6000b108ca8279d96a",
+      "current_head_sha": "a7db33c36313f5f4c963bd6000b108ca8279d96a",
+      "verification_id": "mv-f4678d129fefef626f5d916f"
+    },
+    {
+      "label": "after_followup_commit",
+      "ticket_id": "tkt-f65631ac-bc19-482b-8270-b937d63266f6",
+      "valid": false,
+      "reason": "STALE_SUPERSEDED_BY_NEW_REVISION",
+      "ticket_status": "APPROVED",
+      "bound_head_sha": "a7db33c36313f5f4c963bd6000b108ca8279d96a",
+      "current_head_sha": "a0b4633592c13ea66aca46c14c0c73bbe7a5b814",
+      "verification_id": "mv-f4678d129fefef626f5d916f"
+    },
+    {
+      "label": "after_late_pass_callback",
+      "ticket_id": "tkt-f65631ac-bc19-482b-8270-b937d63266f6",
+      "valid": false,
+      "reason": "STALE_SUPERSEDED_BY_NEW_REVISION",
+      "ticket_status": "APPROVED",
+      "bound_head_sha": "a7db33c36313f5f4c963bd6000b108ca8279d96a",
+      "current_head_sha": "a0b4633592c13ea66aca46c14c0c73bbe7a5b814",
+      "verification_id": "mv-f4678d129fefef626f5d916f"
+    }
+  ],
+  "outcome_signature": "b8a380ed8e8a037b8b057e84356c40cc743cef9d220851ccc3604e26aa9b02f2",
+  "run2_status_view": [
+    {
+      "candidate_key": "candidate-a",
+      "revision_no": 2,
+      "attempt": 1,
+      "migration_verdict": "PASS",
+      "code_tests_verdict": "PASS",
+      "failure_class": null,
+      "trial_kind": "ISOLATED_POSTGRES"
+    },
+    {
+      "candidate_key": "candidate-a",
+      "revision_no": 2,
+      "attempt": 2,
+      "migration_verdict": "PASS",
+      "code_tests_verdict": "PASS",
+      "failure_class": null,
+      "trial_kind": "ISOLATED_POSTGRES"
+    },
+    {
+      "candidate_key": "candidate-a",
+      "revision_no": 2,
+      "attempt": 3,
+      "migration_verdict": "PASS",
+      "code_tests_verdict": "PASS",
+      "failure_class": null,
+      "trial_kind": "ISOLATED_POSTGRES"
+    }
+  ],
+  "final_disposition": {
+    "candidate_a_rev1": "FAIL on historical data (SQLSTATE 23502) — code tests PASS",
+    "candidate_a_rev2": "PASS (11/11 assertions) — approved on head a7db33c36313, ticket tkt-f65631ac-bc19-482b-8270-b937d63266f6",
+    "after_followup_commit": "approval tkt-f65631ac-bc19-482b-8270-b937d63266f6 → STALE_SUPERSEDED_BY_NEW_REVISION; release blocked until re-verification on head a0b4633592c1",
+    "production_release": "NOT PERFORMED — trial database clone is not a production release; execution requires a controlled rollout using the plan package"
+  }
+}

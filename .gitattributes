@@ -12,3 +12,9 @@ evidence/** -text
 # .bat must keep CRLF bytes verbatim: cmd.exe mis-parses LF-only files, and
 # GitHub ZIP downloads serve stored bytes as-is.
 *.bat -text
+
+# Finals (2026-09-14): hash-locked deliverables and datasets keep their original bytes
+# (their SHA256SUMS / recorded digests would drift under autocrlf checkout).
+release/migration-plans/** -text
+demo-platform/backend/experiments/** -text
+benchmark/reliability/** -text
