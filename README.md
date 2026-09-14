@@ -41,7 +41,7 @@ node backend/server.mjs        # 打开 http://127.0.0.1:4173
 
 Node.js ≥ 18 即可，无需 `npm install`：前端已预构建（`frontend/dist/`），三个案例的回放证据随仓库分发（`evidence/PHASE14-*`，SHA256 锁定）。Windows 也可直接双击 `demo-platform/start-demo.bat`。
 
-自测：`node backend/test/selftest.mjs`（54 项：脱敏、回放完整性、API 契约、无泄密扫描；[CI 在 Node 18/20/22 上自动运行](https://github.com/nghqqa/MergePilot/actions/workflows/selftest.yml)）。
+自测：`node backend/test/selftest.mjs`（61 项：脱敏、回放完整性、API 契约、无泄密扫描、决赛证据等级与版本绑定闸门；2026-09-13 前为 54 项；[CI 在 Node 18/20/22 上自动运行](https://github.com/nghqqa/MergePilot/actions/workflows/selftest.yml)）。
 
 不想 clone？下载 [MergePilot-demo.zip](https://github.com/nghqqa/MergePilot/releases/download/v0.2.0/MergePilot-demo.zip)（约 1 MB，已含证据、预检脚本与现场演示手册），解压后进入 `MergePilot-demo-现场版` 目录，双击 `start-demo.bat` 或执行 `node MergePilot-demo/backend/server.mjs`。PPT、视频与完整提交包见 [Release v0.2.0](https://github.com/nghqqa/MergePilot/releases/tag/v0.2.0)。
 
@@ -58,7 +58,7 @@ Node.js ≥ 18 即可，无需 `npm install`：前端已预构建（`frontend/di
 
 **可复现性证据**：在一台独立外部 Windows 机器上完成两轮验证与一次复验——第一轮暴露交付缺口，十个启动门禁逐个拦下 8 类真实故障；修复后 rev2 版本 **10/10 通过标准全 PASS、零干预一键启动**。完整加载、校验与故障对照见 [DEPLOY.md](DEPLOY.md)。
 
-AgentTeams 运行时镜像（嵌入式 Manager + CoPaw worker：Reviewer / Fixer / Verifier）单独提供：[runtime-images-20260912](https://github.com/nghqqa/MergePilot/releases/tag/runtime-images-20260912)。项目最初运行在 WSL2，后整体迁移至 **Docker Desktop for Windows** 并跑通全流程（由 Controller 统一 reconcile），三条案例的回放数据即产自该环境。
+AgentTeams（HiClaw）运行时镜像（嵌入式 Manager + CoPaw worker：Reviewer / Fixer / Verifier）单独提供：[runtime-images-20260912](https://github.com/nghqqa/MergePilot/releases/tag/runtime-images-20260912)。项目最初运行在 WSL2，后整体迁移至 **Docker Desktop for Windows** 并跑通全流程（由 Controller 统一 reconcile），三条案例的回放数据即产自该环境。
 
 仓库内的 `docker-compose.yml` 与 `Dockerfile.*` 是隔离栈镜像的构建配方：开发态由 `tools/demo_console/one_click_startup.py` 编排调用；离线交付态由配置包内的 `start-stack` 脚本驱动 `docker compose`（含数据库 schema 初始化挂载）。源码开发与本地测试命令见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
@@ -112,7 +112,7 @@ span 父子关系：`agent_step → invoke_agent → { chat deepseek-chat（原�
 - 每次检索返回 `query_hash`（不保存原文）、`top_k`、逐条 `{document_id, chunk_id, score, source_ref}`
 - **无引用来源的答案不会被标记为已验证**
 - 数据模式为 SYNTHETIC/REDACTED（合成演示集，非企业语料）
-- 嵌入：本地确定性 hash-bow-256（无外部服务依赖）
+- 嵌入：本地确定性哈希词袋（无外部服务依赖）；检索策略 `v2-bigram-idf-hash4096`，由离线闭环从 `v1-unigram-hash256` 晋级（按语义族切分调优/held-out，held-out hit@1 75.0% → 91.7%，证据 `evidence/FINALS-RAG-LOOP-20260914`）
 
 ## PolarDB 与 Branch 边界
 
@@ -121,8 +121,9 @@ span 父子关系：`agent_step → invoke_agent → { chat deepseek-chat（原�
 | PolarDB | **NOT CONNECTED**（8 项接入门槛已在代码中预留） |
 | Database Branch | **SIMULATED**（隔离模拟环境上的验证状态机） |
 | PR Auto Merge | **DISABLED** |
+| 候选 A 迁移验证（决赛新增） | **ISOLATED_POSTGRES** —— 在独立 PostgreSQL 克隆库上**真实执行** SQL 迁移与断言；**不是** Agentic Database 分支验证 |
 
-支持 create_branch → validate_migration → assert_data → rollback_check 全链路（当前在模拟 fixture 上运行）。真实 PolarDB 接入需满足 8 项门槛后由环境变量切换。
+支持 create_branch → validate_migration → assert_data → rollback_check 全链路（三候选对照仍在模拟 fixture 上运行）。真实 PolarDB 接入需满足 8 项门槛后由环境变量切换。
 
 ## 仓库结构
 
@@ -134,7 +135,7 @@ MergePilot/
 │   ├── evidence-adapter/# 只读数据适配层 + 内置演示数据集
 │   ├── rag-data/        # RAG 合成数据集
 │   ├── SKILLS.md        # 核心 Skill 清单
-│   └── test/            # 自测脚本（54 项）
+│   └── test/            # 自测脚本（61 项）
 ├── evidence/            # 回放证据子集（SHA256 锁定）
 ├── shared/              # 数据契约
 ├── docs/                # 文档与架构图
@@ -151,6 +152,17 @@ MergePilot/
 - **轨迹评估**（过程顺序）：先检索 RAG、正确选择工具、创建隔离 Branch、拒绝后锁定、source_refs 保留、Agent→LLM→Tool Trace 形成
 
 即使最终状态正确，若过程顺序违规（如未检索先动手、跳过人工门），轨迹评估仍判不通过。
+
+## 决赛新增（2026-09-14）：三个可复现闭环，各带证据等级
+
+| 闭环 | 做了什么 | 证据等级（如实） | 证据 / 复现 |
+| --- | --- | --- | --- |
+| 数据库迁移验证纳入 PR 验收 | `tools/audit-db/m9_migration_verification.sql` 在不可变 `revision_bindings` 与 `approvals` 之上挂 4 张不可变子表 + `db_release_gate()`；`tools/dbverify` 在克隆库上真实跑：代码测试 PASS → 迁移因历史数据 **FAIL(23502)** → 补取信息 → 修订同一候选 → **PASS 11/11** → 审批绑定版本 → 追加提交后旧批准 **STALE**；交付迁移方案包 `release/migration-plans/` | **真实 SQL 验证（ISOLATED_POSTGRES）**，非 Agentic Database 分支；PolarDB 仍 NOT CONNECTED | `evidence/FINALS-DB-MIGRATION-LOOP-20260914` · `python tools/dbverify/run_migration_loop.py` |
+| 多 Agent 返工闭环 | 真实 `controller.py::process_event` + 真实 PostgreSQL + 真实验收测试驱动 VERDICT：review → fix#1 → **verify FAIL → 退回 Fixer** → fix#2 → verify PASS；重试上限 HOLD、BLOCKED 升级、非法输入 | **机制验证**：Agent 语义输出为受控输入；无 LLM、无 Matrix/Element 真实交接（另一等级，未执行） | `evidence/FINALS-REWORK-LOOP-20260914` · `python tools/agentteams/rework_loop_harness.py` · 演示页 `/rework` |
+| RAG 观测→评估→数据集→优化→回测 | 观测（tool-span 审计：127 行 retrieve 仅 12 个不同查询）→ 18 语义族 54 条标注查询按族切分 → 调优集选策略 → held-out 单次回测 → 晋级 v2 | **真实离线实验**，语料 SYNTHETIC/REDACTED，小样本 | `evidence/FINALS-RAG-LOOP-20260914` · `node demo-platform/backend/experiments/rag-loop/rag_eval_loop.mjs` |
+| 可靠性对照 | 长/跨文件 PR、小上下文、诱导性注释、干净对照、伪造批准 × 确定性层（diff_parse / risk_classify / sast_scan） | 确定性层**真实执行**（5/5 决策正确、0 误报 0 漏报）；模型轴 **NOT_EXECUTED**（付费调用需授权） | `evidence/FINALS-RELIABILITY-20260914` · `python benchmark/reliability/run_reliability.py` |
+
+演示平台 PR#4 页现在回放上述真实 SQL 证据并提供**版本绑定的人工门**（REPLAY overlay，NO RUNTIME WRITE；旧版本批准返回 409）。
 
 ## 技术栈
 
