@@ -1,0 +1,208 @@
+{
+  "dataset_version": "rag-loop-queries.v1",
+  "data_mode": "SYNTHETIC",
+  "corpus": "demo-platform/backend/rag-data/dataset.json (8 documents, 9 chunks, SYNTHETIC/REDACTED demo docs)",
+  "labeling": "Authored 2026-09-14 by the MergePilot team against the synthetic corpus BEFORE any baseline was measured. One family = one user intent; all paraphrases of an intent stay inside the same family. Labels are the document (and, where the document has more than one chunk, the chunk) a correct retrieval must rank first.",
+  "split_rule": "Split is by family, never by query: every family listed in heldout_families is held-out in full, every other family is tuning. Held-out results may be computed exactly once per promoted strategy; strategy selection uses tuning families only.",
+  "heldout_families": ["F03", "F05", "F07", "F09", "F11", "F14", "F16", "F17"],
+  "families": [
+    {
+      "family_id": "F01",
+      "intent": "三级审查中三个 Agent 角色的职责分工",
+      "expected_document_id": "doc-mergepilot-review-policy",
+      "expected_chunk_id": null,
+      "queries": [
+        "Reviewer、Fixer、Verifier 三个角色分别负责什么",
+        "审查流程里每个 Agent 的职责怎么划分",
+        "谁负责发现问题、谁负责修复、谁负责复核修复效果"
+      ]
+    },
+    {
+      "family_id": "F02",
+      "intent": "平台是否执行 push / merge / 改变 PR 状态",
+      "expected_document_id": "doc-mergepilot-review-policy",
+      "expected_chunk_id": null,
+      "queries": [
+        "平台会不会执行 push 或 merge",
+        "任务过程中 PR 的状态会被系统改变吗",
+        "Agent 会推送代码或者合并 PR 吗"
+      ]
+    },
+    {
+      "family_id": "F03",
+      "intent": "任务结果的权威来源（MinIO result.md / meta.json，leader 终检）",
+      "expected_document_id": "doc-mergepilot-review-policy",
+      "expected_chunk_id": null,
+      "queries": [
+        "任务结果以什么文件为准",
+        "leader 做终检时 check_task 看的是什么",
+        "result.md 和 meta.json 存放在哪里"
+      ]
+    },
+    {
+      "family_id": "F04",
+      "intent": "人工闸门的触发条件与 Fixer 是否启动",
+      "expected_document_id": "doc-human-gate-policy",
+      "expected_chunk_id": null,
+      "queries": [
+        "什么风险级别会触发人工闸门",
+        "finding 是 critical 的时候 Fixer 会启动吗",
+        "什么情况下 projectflow 进入 copaw-high-risk-human-gate 状态"
+      ]
+    },
+    {
+      "family_id": "F05",
+      "intent": "人工闸门的 SLA 与自动催办",
+      "expected_document_id": "doc-human-gate-policy",
+      "expected_chunk_id": null,
+      "queries": [
+        "人工闸门有没有自动催办",
+        "human gate 的 SLA 是怎么规定的",
+        "审批一直没人处理会自动超时放行吗"
+      ]
+    },
+    {
+      "family_id": "F06",
+      "intent": "PR #1 的仓库与自主闭环结果",
+      "expected_document_id": "doc-case-pr1-summary",
+      "expected_chunk_id": null,
+      "queries": [
+        "PR #1 用的是哪个仓库",
+        "普通风险案例的最终任务状态是什么",
+        "fastapi-boilerplate-demo 这个案例的结果如何"
+      ]
+    },
+    {
+      "family_id": "F07",
+      "intent": "PR #2 CWE-22 探针修复前后的返回码",
+      "expected_document_id": "doc-case-pr2-summary",
+      "expected_chunk_id": null,
+      "queries": [
+        "路径穿越漏洞修复前后探针分别返回什么",
+        "CWE-22 案例的验证结果是什么",
+        "before 返回 200、after 返回 404 是哪个案例"
+      ]
+    },
+    {
+      "family_id": "F08",
+      "intent": "PR #3 拒绝之后链路的行为",
+      "expected_document_id": "doc-case-pr3-summary",
+      "expected_chunk_id": null,
+      "queries": [
+        "operator 回复 reject 之后会发生什么",
+        "被拒绝的案例修复还会执行吗",
+        "拒绝原因归档到哪里"
+      ]
+    },
+    {
+      "family_id": "F09",
+      "intent": "闸门是双向控制的证明",
+      "expected_document_id": "doc-case-pr3-summary",
+      "expected_chunk_id": null,
+      "queries": [
+        "哪两个案例证明闸门是真实的双向控制",
+        "闸门既能在批准后继续也能在拒绝后停下是怎么证明的",
+        "为什么说人工闸门不是单向的"
+      ]
+    },
+    {
+      "family_id": "F10",
+      "intent": "权威 Trace 的规模（LLM/工具调用次数、Token、模型、会话）",
+      "expected_document_id": "doc-agentloop-observability",
+      "expected_chunk_id": "doc-agentloop-observability#c0",
+      "queries": [
+        "权威 Trace 包含多少次 LLM 调用和多少次工具调用",
+        "fbf4a3cec0493990d76e10a102418be1 这条 Trace 的总 Token 和模型是什么",
+        "会话 N2KQqHVSBsSZc9utWsEeZ5f 对应的是哪条 Trace"
+      ]
+    },
+    {
+      "family_id": "F11",
+      "intent": "span 树结构与原生/包装 span 为何合并在同一 Trace",
+      "expected_document_id": "doc-agentloop-observability",
+      "expected_chunk_id": "doc-agentloop-observability#c0",
+      "queries": [
+        "span 树的根节点是什么，下面挂了哪些 span",
+        "agentscope 原生 span 和 loongsuite wrapper span 为什么落在同一条 Trace",
+        "共用全局 TracerProvider 带来了什么效果"
+      ]
+    },
+    {
+      "family_id": "F12",
+      "intent": "AgentLoop 可见性的裁决词",
+      "expected_document_id": "doc-agentloop-observability",
+      "expected_chunk_id": "doc-agentloop-observability#c1",
+      "queries": [
+        "AgentLoop 可见性确认的裁决词是什么",
+        "操作员确认 Trace 可见的判定词叫什么",
+        "AGENTLOOP_ALIYUN_TRACE_VISIBILITY 后面的裁决词全称"
+      ]
+    },
+    {
+      "family_id": "F13",
+      "intent": "检索是否保存 query 原文",
+      "expected_document_id": "doc-rag-usage-policy",
+      "expected_chunk_id": null,
+      "queries": [
+        "检索会保存查询原文吗",
+        "query_hash 是用来做什么的",
+        "RAG 会记录用户问了什么问题吗"
+      ]
+    },
+    {
+      "family_id": "F14",
+      "intent": "无引用不得标记 verified 与切换 LIVE 的前提",
+      "expected_document_id": "doc-rag-usage-policy",
+      "expected_chunk_id": null,
+      "queries": [
+        "没有 source_ref 引用的答案能标记为 verified 吗",
+        "接入真实企业数据源之前必须做什么",
+        "data_mode 什么时候才能切换成 LIVE"
+      ]
+    },
+    {
+      "family_id": "F15",
+      "intent": "PolarDB 当前连接状态及原因",
+      "expected_document_id": "doc-polardb-branch-plan",
+      "expected_chunk_id": null,
+      "queries": [
+        "PolarDB 现在连接了吗",
+        "为什么 PolarDB 的状态是 NOT CONNECTED",
+        "环境里有没有配置好的 PolarDB endpoint"
+      ]
+    },
+    {
+      "family_id": "F16",
+      "intent": "接入真实 PolarDB 实例需要的前提条件",
+      "expected_document_id": "doc-polardb-branch-plan",
+      "expected_chunk_id": null,
+      "queries": [
+        "接入真实 PolarDB 实例需要哪些条件",
+        "Branch API 的凭据应该从哪里读取",
+        "PolarDB 接入是否需要白名单和只读账号"
+      ]
+    },
+    {
+      "family_id": "F17",
+      "intent": "人工闸门未触发的案例",
+      "expected_document_id": "doc-case-pr1-summary",
+      "expected_chunk_id": null,
+      "queries": [
+        "哪个案例的人工闸门没有触发",
+        "人工闸门未被触发的是哪个 PR",
+        "没有经过人工审批就自主完成的案例是哪一个"
+      ]
+    },
+    {
+      "family_id": "F18",
+      "intent": "PR #2 的修复内容（补齐路径校验）",
+      "expected_document_id": "doc-case-pr2-summary",
+      "expected_chunk_id": null,
+      "queries": [
+        "PR #2 的修复具体做了什么",
+        "Fixer 是怎么修复路径穿越问题的",
+        "补齐路径校验是哪个案例的修复动作"
+      ]
+    }
+  ]
+}

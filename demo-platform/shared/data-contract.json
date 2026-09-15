@@ -1,24 +1,32 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "MergePilot Demo Platform Data Contract v1",
-  "description": "Unified data model served by the Demo Backend. Every field carries a provenance source. All responses pass through the redaction layer (see redaction.rules). Two providers implement this contract: replay (read-only over locked evidence dirs) and live (read-only real APIs; returns LIVE_DATA_UNAVAILABLE per-source when down).",
+  "title": "MergePilot Demo Platform Data Contract v1.1",
+  "description": "Unified data model served by the Demo Backend. Every field carries a provenance source. All responses pass through the redaction layer (see redaction.rules). Two providers implement this contract: replay (read-only over locked evidence dirs) and live (read-only real APIs; returns LIVE_DATA_UNAVAILABLE per-source when down). Consumers: this file is documentation for judges/integrators (no runtime code imports it); backend/test/selftest.mjs checks its case_id enum, risk levels and finals endpoints against the live API so it cannot drift silently.",
   "modes": {
     "replay": {
       "banner": "REPLAY — HISTORICAL VERIFIED RUN",
       "provider": "evidence-adapter/replay-provider.mjs",
-      "reads": ["evidence dirs (read-only)"],
+      "reads": [
+        "evidence dirs (read-only)"
+      ],
       "writes": "NONE — runtime write forbidden, evidence dirs never modified; approval POST only mutates an in-memory demo overlay marked 'REPLAY ACTION — NO RUNTIME WRITE'"
     },
     "live": {
       "banner": "LIVE — CONNECTED TO AGENTTEAMS",
       "provider": "evidence-adapter/live-provider.mjs",
-      "reads": ["Controller API", "Matrix (Tuwunel)", "MinIO", "GitHub PR metadata (unauthenticated, read-only)", "AgentLoop/OTel (not implemented — always reported as such)"],
+      "reads": [
+        "Controller API",
+        "Matrix (Tuwunel)",
+        "MinIO",
+        "GitHub PR metadata (unauthenticated, read-only)",
+        "AgentLoop/OTel (not implemented — always reported as such)"
+      ],
       "writes": "approval POST only against protected Demo Backend approval endpoint; credentials stay server-side (env), never returned",
       "unavailable_banner": "LIVE DATA UNAVAILABLE"
     }
   },
   "case": {
-    "case_id": "enum: pr1-normal-review | pr2-high-risk-human-gate",
+    "case_id": "enum: pr1-normal-review | pr2-high-risk-human-gate | pr3-high-risk-human-reject",
     "title": "string",
     "positioning": "string — 10-second product read",
     "repository": "string (owner/repo)",
@@ -35,37 +43,56 @@
       "source": "task store + evidence"
     },
     "risk": {
-      "level": "none|low|medium|high",
-      "category": "null | CWE-22",
+      "level": "none|low|medium|high|critical",
+      "category": "null | CWE-22 | CWE-78",
       "human_gate": "none|required|approved|rejected",
       "source": "review-1 result protocol markers"
     },
-    "agents": [{
-      "role": "leader|reviewer|fixer|verifier|human",
-      "agent_id": "string",
-      "matrix_id": "string (homeserver part as recorded; partially elided in evidence)",
-      "runtime": "string image tag",
-      "console": "string informational endpoint from evidence (127.0.0.1)"
-    }],
-    "tasks": [{
-      "id": "review-1|fix-1|verify-1",
-      "project_id": "string",
-      "assignee": "string",
-      "status": "pending|running|waiting_human|blocked|completed|failed",
-      "status_label": "string — text+color, never color-only",
-      "locked_reason": "string|null — why fixer/verifier is locked",
-      "result_status": "SUCCESS|VERIFICATION_PASSED|null",
-      "effective": "bool|null — leader acceptance",
-      "evidence": ["artifact relative paths"]
-    }],
+    "agents": [
+      {
+        "role": "leader|reviewer|fixer|verifier|human",
+        "agent_id": "string",
+        "matrix_id": "string (homeserver part as recorded; partially elided in evidence)",
+        "runtime": "string image tag",
+        "console": "string informational endpoint from evidence (127.0.0.1)"
+      }
+    ],
+    "tasks": [
+      {
+        "id": "review-1|fix-1|verify-1",
+        "project_id": "string",
+        "assignee": "string",
+        "status": "pending|running|waiting_human|blocked|completed|failed",
+        "status_label": "string — text+color, never color-only",
+        "locked_reason": "string|null — why fixer/verifier is locked",
+        "result_status": "SUCCESS|VERIFICATION_PASSED|null",
+        "effective": "bool|null — leader acceptance",
+        "evidence": [
+          "artifact relative paths"
+        ]
+      }
+    ],
     "gate": {
       "gate_id": "string|null",
       "state": "none|required|approved|rejected",
-      "trigger_signals": ["FINDING_CONFIRMED", "SEVERITY: HIGH", "HUMAN_VERIFICATION_REQUIRED: YES"],
+      "trigger_signals": [
+        "FINDING_CONFIRMED",
+        "SEVERITY: HIGH",
+        "HUMAN_VERIFICATION_REQUIRED: YES"
+      ],
       "approved_at": "ISO UTC|null",
       "record_path": "string|null",
-      "scope": ["dispatch fix-1", "minimal fix + local tests", "dispatch verify-1"],
-      "prohibitions": ["merge", "push", "close", "reopen"]
+      "scope": [
+        "dispatch fix-1",
+        "minimal fix + local tests",
+        "dispatch verify-1"
+      ],
+      "prohibitions": [
+        "merge",
+        "push",
+        "close",
+        "reopen"
+      ]
     },
     "evidence_integrity": {
       "sha256_verified": "bool",
@@ -96,14 +123,20 @@
   "approval_api": {
     "GET /api/cases/:id/approval": "returns historical record (from evidence) + current demo overlay (replay-only)",
     "POST /api/cases/:id/approval": {
-      "body": {"decision": "approve|reject|hold", "actor": "string"},
+      "body": {
+        "decision": "approve|reject|hold",
+        "actor": "string"
+      },
       "replay_response": {
         "accepted": true,
         "mode": "replay",
         "runtime_write": false,
         "evidence_write": false,
         "marker": "REPLAY ACTION — NO RUNTIME WRITE",
-        "overlay": {"decision": "...", "recorded_at": "ISO UTC"}
+        "overlay": {
+          "decision": "...",
+          "recorded_at": "ISO UTC"
+        }
       },
       "live_response_when_unavailable": {
         "accepted": false,
@@ -118,14 +151,46 @@
     "display": "待接入"
   },
   "audit_items": [
-    {"component": "AgentTeams Controller", "status": "VERIFIED", "source": "agentteams-embedded:223ddc2, Docker reconcile mode"},
-    {"component": "CoPaw Runtime", "status": "VERIFIED", "source": "copaw-worker:223ddc2-build2"},
-    {"component": "Matrix (Tuwunel)", "status": "VERIFIED", "source": "p14h2-wd-ctrl:6167"},
-    {"component": "MinIO", "status": "VERIFIED", "source": "p14h2-wd-ctrl:9000"},
-    {"component": "LLM Gateway (Higress)", "status": "VERIFIED", "source": "p14h2-wd-ctrl:8080, key-auth"},
-    {"component": "Docker Desktop", "status": "VERIFIED", "source": "Windows host runtime"},
-    {"component": "Credential Rotation", "status": "VERIFIED", "source": "PHASE14-WINDOWS-CREDENTIAL-ROTATION-20260829-130500 (verdict CREDENTIAL_ROTATION_VERIFIED)"},
-    {"component": "PR Auto Merge", "status": "DISABLED", "source": "gate prohibitions + pr-state-final.json (operations: none)"}
+    {
+      "component": "AgentTeams Controller",
+      "status": "VERIFIED",
+      "source": "agentteams-embedded:223ddc2, Docker reconcile mode"
+    },
+    {
+      "component": "CoPaw Runtime",
+      "status": "VERIFIED",
+      "source": "copaw-worker:223ddc2-build2"
+    },
+    {
+      "component": "Matrix (Tuwunel)",
+      "status": "VERIFIED",
+      "source": "p14h2-wd-ctrl:6167"
+    },
+    {
+      "component": "MinIO",
+      "status": "VERIFIED",
+      "source": "p14h2-wd-ctrl:9000"
+    },
+    {
+      "component": "LLM Gateway (Higress)",
+      "status": "VERIFIED",
+      "source": "p14h2-wd-ctrl:8080, key-auth"
+    },
+    {
+      "component": "Docker Desktop",
+      "status": "VERIFIED",
+      "source": "Windows host runtime"
+    },
+    {
+      "component": "Credential Rotation",
+      "status": "VERIFIED",
+      "source": "PHASE14-WINDOWS-CREDENTIAL-ROTATION-20260829-130500 (verdict CREDENTIAL_ROTATION_VERIFIED)"
+    },
+    {
+      "component": "PR Auto Merge",
+      "status": "DISABLED",
+      "source": "gate prohibitions + pr-state-final.json (operations: none)"
+    }
   ],
   "residual_risks": [
     "MinIO shared tree 曾发生异常清空，已恢复，根因待查",
@@ -144,5 +209,22 @@
     ],
     "self_test": "backend/test/selftest.mjs asserts masking on crafted samples and no-leak on all API responses"
   },
-  "field_provenance": "Every API payload embeds a `sources` map (field → evidence dir/file or live endpoint). The frontend renders source refs as evidence links; SHA256SUMS of each evidence dir are recomputed at backend start and exposed via /api/health and /api/cases/:id/audit."
+  "field_provenance": "Every API payload embeds a `sources` map (field → evidence dir/file or live endpoint). The frontend renders source refs as evidence links; SHA256SUMS of each evidence dir are recomputed at backend start and exposed via /api/health and /api/cases/:id/audit.",
+  "finals_2026_09_14": {
+    "evidence_tiers": {
+      "FINALS-DB-MIGRATION-LOOP-20260914": "REAL_SQL_VERIFICATION_ISOLATED_POSTGRES — migration executed on an isolated PostgreSQL clone; NOT an Agentic Database branch; PolarDB NOT CONNECTED",
+      "FINALS-REWORK-LOOP-20260914": "MECHANISM_VERIFICATION — real controller.process_event + real PostgreSQL + real acceptance tests; Reviewer findings and Fixer patches are controlled input; no LLM, no Matrix/Element handoff",
+      "FINALS-RAG-LOOP-20260914": "REAL_OFFLINE_EXPERIMENT — SYNTHETIC corpus, family-split tuning/held-out, strategy v1→v2 promotion",
+      "real_agent_element_handoff": "NOT_EXECUTED — separate tier requiring the AgentTeams stack and authorization"
+    },
+    "GET /api/pr4": "adds real_sql_loop (evidence replay), gate (version-bound REPLAY overlay), runtime_metadata, simulated_comparison.side_effect_free_reads=true",
+    "GET /api/pr4/gate": "{ reason: AWAITING_OPERATOR_DECISION|OK|STALE_SUPERSEDED_BY_NEW_REVISION|REJECTED_TERMINAL|HELD_BY_OPERATOR, verified_version:{verification_id,head_sha,script_digest,report_digest}, current_head_sha, marker:\"REPLAY ACTION — NO RUNTIME WRITE\" }",
+    "POST /api/pr4/approval": "body {decision: approve|reject|hold, verification_id, head_sha, actor}; 400 INVALID_DECISION; 409 VERIFICATION_MISMATCH | HEAD_MISMATCH | STALE_VERSION | REJECTED_TERMINAL; success carries runtime_write=false, evidence_write=false, matrix_message_sent=false",
+    "POST /api/pr4/followup": "replays recorded step S9 (follow-up commit) → gate STALE_SUPERSEDED_BY_NEW_REVISION; in-memory only",
+    "POST /api/pr4/reset": "clears the in-memory overlay",
+    "GET /api/rework-loop": "mechanism-verification evidence: scenarios A/B/C/D, stage_runs, dispatch_outbox, stage_events, patches (unified diff), risk_basis",
+    "GET /api/finals/evidence": "integrity per finals dir + db_loop + rework_loop (without patches) + rag_loop + runtime_metadata",
+    "GET /api/health.finals": "evidence_integrity + tiers",
+    "GET /api/rag/status.retrieval_strategy": "{ id: v2-bigram-idf-hash4096, previous: v1-unigram-hash256, evidence, reproduce }"
+  }
 }

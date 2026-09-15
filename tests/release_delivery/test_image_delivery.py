@@ -102,9 +102,15 @@ class TestManifestTemplate:
             assert not name.endswith(":latest")
 
     def test_digest_pinning_matches_compose(self):
-        compose_ref = _compose_services()["postgres"]["image"]
-        assert compose_ref == PINNED["ref"], "compose and image-set must pin the same pgvector digest"
-        assert PINNED["manifest_digest"] in compose_ref
+        # f167762: compose runs the offline-loadable TAG; the registry digest is declared
+        # to preflight (MERGEPILOT_DECLARED_PG_IMAGE) and gate-checked at start-up. The
+        # image-set must agree with BOTH halves, so a re-pin never drifts silently.
+        services = _compose_services()
+        assert services["postgres"]["image"] == "%s:%s" % (PINNED["image"], PINNED["tag"]), \
+            "compose tag and image-set tag must be the same pgvector image"
+        declared = services["preflight"]["environment"]["MERGEPILOT_DECLARED_PG_IMAGE"]
+        assert declared == PINNED["ref"], "declared digest and image-set must pin the same pgvector digest"
+        assert PINNED["manifest_digest"] in declared
 
     def test_image_set_matches_manifest_template(self):
         built = {i["image"] for i in TEMPLATE_DATA["images"] if i["source"].startswith("built")}

@@ -14,3 +14,6 @@ dist/
 !demo-platform/frontend/dist/
 release/preview/logs/
 release/preview/manifests/
+
+# frontend build dependencies (installed locally to rebuild demo-platform/frontend/dist; never committed)
+demo-platform/frontend/node_modules/

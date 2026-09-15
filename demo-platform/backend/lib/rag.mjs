@@ -21,11 +21,35 @@ const DATASET_FILE = path.join(DATA_DIR, 'dataset.json');
 const TOOL_SPAN_LOG = path.join(DATA_DIR, 'tool-spans.jsonl');
 
 export const RAG_DATA_MODE = 'SYNTHETIC';
-export const EMBEDDING_BACKEND = 'local-hash-bow-256 (deterministic, SYNTHETIC)';
 export const RETRIEVAL_MODE = 'local-hash-vector-cosine';
-const DIM = 256;
 const CHUNK_MAX = 420;
 const CHUNK_OVERLAP = 60;
+
+// ------------------------------------------------------------ strategies
+// A retrieval strategy is a small frozen record of the tokenizer/weighting
+// knobs. Every knob is deterministic and offline. `v1` is the historical
+// Phase 15 behaviour (kept byte-identical so recorded spans stay
+// reproducible); later versions come from the RAG optimisation loop
+// (experiments/rag-loop) and must only be promoted after a held-out
+// backtest is recorded in evidence.
+export const STRATEGIES = Object.freeze({
+  'v1-unigram-hash256': Object.freeze({
+    id: 'v1-unigram-hash256', dim: 256, cjk_bigram: false, idf: false,
+  }),
+  // Promoted 2026-09-14 by the offline loop in experiments/rag-loop: picked on
+  // the tuning families, then backtested once on the held-out families
+  // (evidence/FINALS-RAG-LOOP-20260914/report.json — held-out hit@1 75.0% →
+  // 91.7%, MRR 0.861 → 0.958, 1 regression). Set RAG_STRATEGY=v1-unigram-hash256
+  // to reproduce the historical behaviour.
+  'v2-bigram-idf-hash4096': Object.freeze({
+    id: 'v2-bigram-idf-hash4096', dim: 4096, cjk_bigram: true, idf: true,
+  }),
+});
+export const DEFAULT_STRATEGY_ID = 'v2-bigram-idf-hash4096';
+export const ACTIVE_STRATEGY = STRATEGIES[process.env.RAG_STRATEGY || DEFAULT_STRATEGY_ID]
+  || STRATEGIES[DEFAULT_STRATEGY_ID];
+export const EMBEDDING_BACKEND =
+  `local-hash-bow-${ACTIVE_STRATEGY.dim} (deterministic, SYNTHETIC, strategy=${ACTIVE_STRATEGY.id})`;
 
 // ---------------------------------------------------------------- ingestion
 
@@ -33,11 +57,11 @@ function sha256(s) {
   return createHash('sha256').update(s, 'utf8').digest('hex');
 }
 
-function splitSentences(text) {
+export function splitSentences(text) {
   return text.split(/(?<=[。．.!?！？\n])/).map((s) => s.trim()).filter(Boolean);
 }
 
-function chunkText(text) {
+export function chunkText(text) {
   const sentences = splitSentences(text);
   const chunks = [];
   let cur = '';
@@ -54,34 +78,61 @@ function chunkText(text) {
 }
 
 // Hashed bag-of-words vector: deterministic, offline, audit-friendly.
-function hashToken(t) {
+function hashToken(t, dim) {
   let h = 2166136261;
   for (let i = 0; i < t.length; i++) {
     h ^= t.charCodeAt(i);
     h = Math.imul(h, 16777619);
   }
-  return Math.abs(h) % DIM;
+  return Math.abs(h) % dim;
 }
 
-function tokenize(text) {
+export function tokenize(text, strategy = ACTIVE_STRATEGY) {
   const lower = text.toLowerCase();
   const words = lower.match(/[a-z0-9_]+/g) || [];
   const cjk = lower.match(/[\u4e00-\u9fff]/g) || [];
-  return [...words, ...cjk];
+  if (!strategy.cjk_bigram) return [...words, ...cjk];
+  // Character bigrams over each contiguous CJK run (never across latin
+  // words or punctuation), in addition to the unigrams.
+  const bigrams = [];
+  for (const run of lower.match(/[\u4e00-\u9fff]+/g) || []) {
+    for (let i = 0; i + 1 < run.length; i++) bigrams.push(run.slice(i, i + 2));
+  }
+  return [...words, ...cjk, ...bigrams];
 }
 
-function embed(text) {
-  const vec = new Float64Array(DIM);
-  for (const tok of tokenize(text)) vec[hashToken(tok)] += 1;
+// Inverse document frequency over the chunk corpus (unsupervised corpus
+// statistic; it never sees query labels). Smoothed so unseen query tokens
+// still get a finite weight.
+function buildIdf(chunkTexts, strategy) {
+  const df = new Map();
+  for (const text of chunkTexts) {
+    for (const tok of new Set(tokenize(text, strategy))) df.set(tok, (df.get(tok) || 0) + 1);
+  }
+  const n = chunkTexts.length;
+  return (tok) => Math.log((n + 1) / ((df.get(tok) || 0) + 1)) + 1;
+}
+
+export function embed(text, strategy = ACTIVE_STRATEGY, idf = null) {
+  const vec = new Float64Array(strategy.dim);
+  for (const tok of tokenize(text, strategy)) {
+    vec[hashToken(tok, strategy.dim)] += strategy.idf && idf ? idf(tok) : 1;
+  }
   let norm = 0;
-  for (let i = 0; i < DIM; i++) norm += vec[i] * vec[i];
+  for (let i = 0; i < strategy.dim; i++) norm += vec[i] * vec[i];
   norm = Math.sqrt(norm) || 1;
-  for (let i = 0; i < DIM; i++) vec[i] /= norm;
+  for (let i = 0; i < strategy.dim; i++) vec[i] /= norm;
   return vec;
 }
 
-function ingest() {
-  const raw = JSON.parse(fs.readFileSync(DATASET_FILE, 'utf8'));
+export function loadDataset() {
+  return JSON.parse(fs.readFileSync(DATASET_FILE, 'utf8'));
+}
+
+// Build a complete, self-contained index for one strategy. Pure: no I/O
+// besides reading the dataset, no span writes — the optimisation loop calls
+// this for every candidate strategy without touching the audit log.
+export function buildIndex(strategy = ACTIVE_STRATEGY, raw = loadDataset()) {
   const chunks = [];
   const docs = raw.documents.map((d) => {
     const content_sha256 = sha256(d.text);
@@ -94,7 +145,6 @@ function ingest() {
         text,
         content_sha256: sha256(text),
         source_ref: `rag://synthetic-docs/${d.document_id}#${d.document_id}#c${i}`,
-        vector: embed(text),
       });
     });
     return {
@@ -109,10 +159,12 @@ function ingest() {
       chunk_count: parts.length,
     };
   });
-  return { data_mode: raw.data_mode, docs, chunks };
+  const idf = strategy.idf ? buildIdf(chunks.map((c) => c.text), strategy) : null;
+  for (const c of chunks) c.vector = embed(c.text, strategy, idf);
+  return { strategy, data_mode: raw.data_mode, docs, chunks, idf };
 }
 
-const INDEX = ingest();
+const INDEX = buildIndex(ACTIVE_STRATEGY);
 
 // ---------------------------------------------------------------- retrieval
 
@@ -120,24 +172,27 @@ export function datasetInventory() {
   return {
     data_mode: INDEX.data_mode,
     embedding_backend: EMBEDDING_BACKEND,
+    retrieval_strategy: INDEX.strategy.id,
     document_count: INDEX.docs.length,
     chunk_count: INDEX.chunks.length,
     documents: INDEX.docs.map(({ vector, ...rest }) => rest),
   };
 }
 
-function queryVector(q) {
-  return embed(q);
+// Score every chunk of `index` against `query`; pure and span-free. This is
+// the single scoring path shared by production retrieval and the
+// optimisation loop, so an offline backtest measures exactly what runs.
+export function scoreChunks(index, query) {
+  const qv = embed(query, index.strategy, index.idf);
+  return index.chunks
+    .map((c) => ({ chunk: c, score: dotOf(qv, c.vector, index.strategy.dim) }))
+    .sort((a, b) => b.score - a.score);
 }
 
 export function retrieve(query, { topK = 4 } = {}) {
   const t0 = Date.now();
   const query_hash = sha256(query).slice(0, 16);
-  const qv = queryVector(query);
-  const scored = INDEX.chunks
-    .map((c) => ({ chunk: c, score: dotOf(qv, c.vector) }))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, Math.max(1, Math.min(topK, 10)));
+  const scored = scoreChunks(INDEX, query).slice(0, Math.max(1, Math.min(topK, 10)));
   const results = scored.map(({ chunk, score }) => ({
     document_id: chunk.document_id,
     chunk_id: chunk.chunk_id,
@@ -156,12 +211,15 @@ export function retrieve(query, { topK = 4 } = {}) {
     data_mode: INDEX.data_mode,
     source_refs: results.map((r) => r.source_ref),
   });
-  return { query_hash, top_k: results.length, retrieval_mode: RETRIEVAL_MODE, data_mode: INDEX.data_mode, results, latency_ms };
+  return {
+    query_hash, top_k: results.length, retrieval_mode: RETRIEVAL_MODE,
+    retrieval_strategy: INDEX.strategy.id, data_mode: INDEX.data_mode, results, latency_ms,
+  };
 }
 
-function dotOf(a, b) {
+function dotOf(a, b, dim) {
   let d = 0;
-  for (let i = 0; i < DIM; i++) d += a[i] * b[i];
+  for (let i = 0; i < dim; i++) d += a[i] * b[i];
   return d;
 }
 
@@ -175,7 +233,7 @@ export function answer(question) {
     return { status: 'UNVERIFIED', answer_text: '', citations: [], data_mode: INDEX.data_mode, source_refs: [] };
   }
   const chunk = INDEX.chunks.find((c) => c.chunk_id === best.chunk_id);
-  const qTokens = new Set(tokenize(question));
+  const qTokens = new Set(tokenize(question, INDEX.strategy));
   const sentence = splitSentences(chunk.text)
     .map((s) => {
       const toks = tokenize(s);

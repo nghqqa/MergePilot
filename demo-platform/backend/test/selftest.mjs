@@ -381,6 +381,11 @@ await test('no secrets in any API payload', async () => {
     ['/api/cases/pr3-high-risk-human-reject/artifacts', q()],
     ['/api/cases/pr3-high-risk-human-reject/audit', q()],
     ['/api/cases/pr3-high-risk-human-reject/approval', q()],
+    ['/api/pr4', q()],
+    ['/api/pr4/gate', q()],
+    ['/api/rework-loop', q()],
+    ['/api/finals/evidence', q()],
+    ['/api/rag/status', q()],
   ];
   for (const [p, query] of paths) {
     const r = await handle('GET', p, query, null);
@@ -603,6 +608,127 @@ await test('polardb adapter: env-gated live gates default to closed', async () =
   assert.equal(g.allLive, false);
   assert.equal(g.gates.length, 8);
 });
+
+// ── 7) Finals 2026-09-14: evidence tiers, version-bound PR #4 gate, rework loop, RAG v2 ──
+console.log('== 7) finals: evidence tiers / PR#4 version-bound gate / rework loop / RAG v2 ==');
+const post = (p, body) => handle('POST', p, q(), body);
+const expectStatus = async (promise, status, code) => {
+  try { await promise; } catch (e) { assert.equal(e.status, status, `expected HTTP ${status}, got ${e.status}`); assert.equal((e.body && e.body.error) || e.message, code); return; }
+  throw new Error(`expected HTTP ${status} ${code}, got success`);
+};
+await test('finals: three evidence dirs verify against their SHA256SUMS and carry explicit tiers', async () => {
+  const h = await handle('GET', '/api/health', q(), null);
+  const f = h.finals.evidence_integrity;
+  for (const k of ['finalsDbLoop', 'finalsReworkLoop', 'finalsRagLoop']) assert.equal(f[k].verified, true, `${k} not verified`);
+  assert.match(h.finals.tiers.db_migration_loop, /not an Agentic Database branch/);
+  assert.match(h.finals.tiers.rework_loop, /controlled input/);
+  assert.match(h.finals.tiers.real_agent_element_handoff, /NOT_EXECUTED/);
+});
+await test('pr4: real SQL loop replays FAIL(23502) -> context fetch -> PASS and never claims Agentic DB', async () => {
+  const r = await handle('GET', '/api/pr4', q(), null);
+  const L = r.real_sql_loop;
+  assert.equal(L.available, true);
+  assert.equal(L.tier, 'REAL_SQL_VERIFICATION_ISOLATED_POSTGRES');
+  assert.equal(L.not_agentic_database_branch, true);
+  assert.equal(L.polardb, 'NOT CONNECTED');
+  const rev1 = L.attempts.find((a) => a.revision === 1);
+  const rev2 = L.attempts.find((a) => a.revision === 2 && !a.late_callback);
+  assert.equal(rev1.code_tests.verdict, 'PASS');
+  assert.equal(rev1.migration.verdict, 'FAIL');
+  assert.equal(rev1.migration.error.sqlstate, '23502');
+  assert.equal(L.context_fetch.outcome, 'REVISE_CANDIDATE');
+  assert.equal(L.context_fetch.human_gate_still_required, true);
+  assert.equal(rev2.migration.verdict, 'PASS');
+  assert.equal(rev2.assertions.passed, rev2.assertions.total);
+  assert.notEqual(rev1.head_sha, rev2.head_sha);
+  assert.equal(L.followup.gate_after, 'STALE_SUPERSEDED_BY_NEW_REVISION');
+  assert.equal(L.negative_tests.ok, L.negative_tests.total);
+  assert.equal(r.data_modes.branch, 'SIMULATED');
+  assert.match(r.data_modes.real_sql_loop, /not Agentic Database branch/);
+});
+await test('pr4: reading the page has no side effects (same branch ids, no new tool spans)', async () => {
+  const a = await handle('GET', '/api/pr4', q(), null);
+  const before = fs.readFileSync(TOOL_SPAN_LOG, 'utf8').split('\n').filter(Boolean).length;
+  const b = await handle('GET', '/api/pr4', q(), null);
+  const after = fs.readFileSync(TOOL_SPAN_LOG, 'utf8').split('\n').filter(Boolean).length;
+  assert.deepEqual(a.candidates.map((c) => c.branch.branch_id), b.candidates.map((c) => c.branch.branch_id));
+  assert.equal(after, before, 'GET /api/pr4 must not append tool spans');
+  assert.equal(b.simulated_comparison.side_effect_free_reads, true);
+});
+await test('pr4 gate: approval is bound to (verification_id, head_sha); stale/rejected versions return 409', async () => {
+  await post('/api/pr4/reset', {});
+  const g0 = await handle('GET', '/api/pr4/gate', q(), null);
+  assert.equal(g0.reason, 'AWAITING_OPERATOR_DECISION');
+  assert.equal(g0.marker, 'REPLAY ACTION — NO RUNTIME WRITE');
+  const v = g0.verified_version;
+  await expectStatus(post('/api/pr4/approval', { decision: 'approve', verification_id: 'mv-nope', head_sha: v.head_sha }), 409, 'VERIFICATION_MISMATCH');
+  await expectStatus(post('/api/pr4/approval', { decision: 'approve', verification_id: v.verification_id, head_sha: 'f'.repeat(40) }), 409, 'HEAD_MISMATCH');
+  await expectStatus(post('/api/pr4/approval', { decision: 'yolo', verification_id: v.verification_id, head_sha: v.head_sha }), 400, 'INVALID_DECISION');
+  const ok = await post('/api/pr4/approval', { decision: 'approve', verification_id: v.verification_id, head_sha: v.head_sha });
+  assert.equal(ok.gate.reason, 'OK');
+  assert.equal(ok.runtime_write, false);
+  assert.equal(ok.evidence_write, false);
+  assert.equal(ok.matrix_message_sent, false);
+  const fu = await post('/api/pr4/followup', {});
+  assert.equal(fu.gate.reason, 'STALE_SUPERSEDED_BY_NEW_REVISION');
+  assert.equal(fu.recorded_gate_result, 'STALE_SUPERSEDED_BY_NEW_REVISION');
+  assert.notEqual(fu.gate.current_head_sha, v.head_sha);
+  await expectStatus(post('/api/pr4/approval', { decision: 'approve', verification_id: v.verification_id, head_sha: v.head_sha }), 409, 'STALE_VERSION');
+  await post('/api/pr4/reset', {});
+  const rj = await post('/api/pr4/approval', { decision: 'reject', verification_id: v.verification_id, head_sha: v.head_sha });
+  assert.equal(rj.gate.reason, 'REJECTED_TERMINAL');
+  await expectStatus(post('/api/pr4/approval', { decision: 'approve', verification_id: v.verification_id, head_sha: v.head_sha }), 409, 'REJECTED_TERMINAL');
+  const rs = await post('/api/pr4/reset', {});
+  assert.equal(rs.gate.reason, 'AWAITING_OPERATOR_DECISION');
+});
+await test('rework loop: mechanism-verification evidence exposes the real send-back sequence', async () => {
+  const r = await handle('GET', '/api/rework-loop', q(), null);
+  assert.equal(r.available, true);
+  assert.equal(r.tier, 'MECHANISM_VERIFICATION');
+  assert.ok(r.not_executed.some((x) => /Matrix\/Element/.test(x)));
+  assert.ok(r.controlled_input.includes('fixer patches'));
+  const A = r.scenarios.A_rework_then_pass;
+  assert.deepEqual(A.stage_runs.map((s) => [s.stage, s.attempt, s.verdict]),
+    [['review', 1, null], ['fix', 1, null], ['verify', 1, 'FAIL'], ['fix', 2, null], ['verify', 2, 'PASS']]);
+  assert.equal(A.final_task.status, 'PASS');
+  assert.ok(A.dispatch_outbox.some((o) => o.target_stage === 'fix' && o.attempt === 2 && /回退修复/.test(o.body)));
+  assert.equal(r.scenarios.B_retry_cap_hold.final_task.current_stage, 'verify_max_hold');
+  assert.equal(r.scenarios.C_missing_context_blocked_escalation.final_task.status, 'HOLD');
+  assert.ok(r.patches.attempt1.includes('--- a/payments.py'));
+  assert.ok(r.patches.attempt2.includes('+++ b/payments.py'));
+  for (const [, v] of Object.entries(r.scenarios)) for (const [k, ok] of Object.entries(v.checks)) assert.equal(ok, true, `check ${k} failed`);
+});
+await test('rag: promoted strategy v2 is the active default and points at its held-out evidence', async () => {
+  const s = await handle('GET', '/api/rag/status', q(), null);
+  assert.equal(s.retrieval_strategy.id, 'v2-bigram-idf-hash4096');
+  assert.equal(s.retrieval_strategy.previous, 'v1-unigram-hash256');
+  assert.match(s.retrieval_strategy.evidence, /FINALS-RAG-LOOP-20260914/);
+  const e = await handle('GET', '/api/finals/evidence', q(), null);
+  // the loop names candidates by their knobs; the promoted production strategy must carry the same knobs
+  const { STRATEGIES } = await import('../lib/rag.mjs');
+  const v2 = STRATEGIES['v2-bigram-idf-hash4096'];
+  assert.deepEqual(e.rag_loop.selected_knobs, { dim: v2.dim, cjk_bigram: v2.cjk_bigram, idf: v2.idf });
+  assert.equal(e.rag_loop.promotion, 'PROMOTE');
+  assert.ok(e.rag_loop.backtest_heldout.hit_at_1 > e.rag_loop.baseline_heldout.hit_at_1);
+  assert.equal(e.rag_loop.data_mode, 'SYNTHETIC');
+});
+
+
+await test('data-contract: case ids / risk levels / finals endpoints match the live API (no silent drift)', async () => {
+  const contract = JSON.parse(fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'shared', 'data-contract.json'), 'utf8'));
+  const cases = await handle('GET', '/api/cases', q(), null);
+  const ids = (cases.cases || cases).map((c) => c.case_id).sort();
+  const enumIds = contract.case.case_id.replace(/^enum:\s*/, '').split('|').map((x) => x.trim()).sort();
+  assert.deepEqual(ids, enumIds, 'contract case_id enum must equal /api/cases');
+  const levels = contract.case.risk.level.split('|');
+  for (const c of (cases.cases || cases)) assert.ok(levels.includes(c.risk.level), `risk level ${c.risk.level} missing from contract`);
+  for (const ep of ['GET /api/pr4/gate', 'GET /api/rework-loop', 'GET /api/finals/evidence']) {
+    assert.ok(contract.finals_2026_09_14[ep], `contract missing ${ep}`);
+    const r = await handle('GET', ep.replace('GET ', ''), q(), null);
+    assert.ok(r && typeof r === 'object');
+  }
+});
+
 console.log(`\nselftest: ${passed} passed, ${failed} failed`);
 if (failed > 0) {
   console.error(JSON.stringify(failures, null, 2));

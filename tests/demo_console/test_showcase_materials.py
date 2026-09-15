@@ -299,7 +299,7 @@ class TestReadmeStructure(unittest.TestCase):
         self.assertIn("HiClaw", README_TEXT)
 
     def test_test_count_matches_the_documented_command(self):
-        self.assertIn("1461 tests", README_TEXT)
+        self.assertIn("1490 tests", README_TEXT)  # documented command collects 1490 (verified 2026-09-14 on main and finals branch)
 
 
 

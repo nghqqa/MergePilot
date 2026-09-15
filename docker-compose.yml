@@ -2,8 +2,12 @@
 #
 # Contract (enforced by tools/demo_console/one_click_startup.py and
 # tests/isolated_live/test_one_click_containerization.py):
-#   - postgres uses the digest-pinned pgvector image; every other service
-#     is BUILT locally (pull_policy: never) — no unpinned remote tags.
+#   - postgres is the only registry image: compose runs the offline-loadable
+#     TAG (pgvector/pgvector:pg16 — a docker-load'ed tar has no RepoDigest) and
+#     the registry digest is DECLARED to preflight (MERGEPILOT_DECLARED_PG_IMAGE),
+#     which fail-closes on mismatch; release/images/image-set.json is the source
+#     of truth for both. Every other service is BUILT locally under its
+#     mergepilot-isolated-*:local name (pull_policy: never) — no unpinned remote tags.
 #   - all services share the internal-only bridge network "isolated".
 #   - ONLY demo-console publishes a port, bound to 127.0.0.1.
 #     postgres / controller / policy-gateway / preflight publish NOTHING.

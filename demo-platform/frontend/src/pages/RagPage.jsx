@@ -41,7 +41,7 @@ export default function RagPage() {
   if (!dataset) return <main className="page" style={{ paddingTop: 40 }}><LoadingBox text="加载 RAG 数据集…" /></main>;
 
   return (
-    <main className="page" style={{ paddingTop: 0 }}>
+    <main className="page ragpage" style={{ paddingTop: 0 }}>
       <div className="case-rail">
         <span className="seg">RAG · 合成数据集 · 检索 · 引用</span>
         <span className="spacer" />

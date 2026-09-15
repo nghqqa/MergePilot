@@ -396,7 +396,7 @@ class TestReadFailureFailClosed:
         d2, c2 = m5dd.compute_digest(ROOT)
         assert d1 == d2
         assert c1 == c2
-        assert c1 == 95  # 92 + 3 console productization files
+        assert c1 == 133  # 92 + 3 console productization files + 38 finals files (dbverify incl. data_digest / rework harness / reliability / m9 / gateway claim test / m9 fresh-vs-upgrade parity)
 
 
 # ── CLI ──

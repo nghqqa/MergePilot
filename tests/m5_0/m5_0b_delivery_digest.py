@@ -42,6 +42,14 @@ _SCOPE = (
 _M5_TREE_ROOTS = (
     "tools/test-env",
     "tests/m5_0",
+    # Finals round (2026-09-14): the migration-verification loop, the rework
+    # mechanism harness and the reliability comparison are delivered formal
+    # surfaces (same rule as the M8-GH-4 productization block below).
+    "tools/dbverify",
+    "tests/dbverify",
+    "tests/agentteams",
+    "tests/reliability",
+    "benchmark/reliability",
 )
 # ── M5-0B additional explicit files (not inside the M4-F walk or M5 trees) ──
 _M5_EXPLICIT_FILES = (
@@ -62,6 +70,11 @@ _M5_EXPLICIT_FILES = (
     "tools/cli/mergepilot.py",
     "tools/cli/e2e_lifecycle.py",
     "tests/gh_app/test_e2e_console_status.py",
+    # Finals round (2026-09-14): audit-db migration-verification schema, the
+    # offline db-init carrier for it, and the rework mechanism harness.
+    "tools/audit-db/m9_migration_verification.sql",
+    "release/offline/db-init/001-init.sql",
+    "tools/agentteams/rework_loop_harness.py",
 )
 # M5-0B extends M4-F formal suffixes with .ps1 (PowerShell wrappers).
 _M5_FORMAL_SUFFIXES = (".py", ".sh", ".sql", ".yaml", ".yml", ".ps1")

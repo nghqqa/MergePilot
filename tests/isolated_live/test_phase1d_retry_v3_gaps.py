@@ -858,6 +858,31 @@ def _load_upstream_stub(source_text=None):
         mcp_mod.server = mcp_server_mod
         mcp_server_mod.sse = mcp_sse_mod
 
+        # Self-contained mcp.types stand-in: upstream_stub.py does
+        # ``from mcp.types import TextContent, Tool`` and this loader replaces
+        # sys.modules["mcp"] wholesale, so a leaked module from another test
+        # file must never be what satisfies that import. Plain twins keep the
+        # same attribute contract as the real SDK types.
+        mcp_types_mod = types.ModuleType("mcp.types")
+
+        class _ToolT:
+            def __init__(self, name="", description="", inputSchema=None, **kw):
+                self.name = name
+                self.description = description
+                self.inputSchema = inputSchema
+                for k, v in kw.items():
+                    setattr(self, k, v)
+
+        class _TextContentT:
+            def __init__(self, type="text", text="", **kw):
+                self.type = type
+                self.text = text
+                for k, v in kw.items():
+                    setattr(self, k, v)
+
+        mcp_types_mod.Tool = _ToolT
+        mcp_types_mod.TextContent = _TextContentT
+
         starlette_mod = types.ModuleType("starlette")
         st_app_mod = types.ModuleType("starlette.applications")
         st_routing_mod = types.ModuleType("starlette.routing")
@@ -883,7 +908,7 @@ def _load_upstream_stub(source_text=None):
 
         for name, mod in (
                 ("mcp", mcp_mod), ("mcp.server", mcp_server_mod),
-                ("mcp.server.sse", mcp_sse_mod),
+                ("mcp.server.sse", mcp_sse_mod), ("mcp.types", mcp_types_mod),
                 ("starlette", starlette_mod),
                 ("starlette.applications", st_app_mod),
                 ("starlette.routing", st_routing_mod),

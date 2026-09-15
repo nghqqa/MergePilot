@@ -303,6 +303,7 @@ class TestStatusStopCleanupWiring(unittest.TestCase):
                                   "install": state / "install.json",
                                   "session": state / "session.json",
                                   "secrets": state / "secrets"}), \
+                 mock.patch.object(mp, "WslDocker"), \
                  mock.patch.object(mp, "discover_stack",
                                    return_value=self._absent_snapshot()), \
                  mock.patch.object(mp, "classify_stack",
@@ -327,7 +328,7 @@ class TestStatusStopCleanupWiring(unittest.TestCase):
                                   "session": state / "session.json",
                                   "secrets": state / "secrets"}), \
                  mock.patch.object(mp, "discover_stack",
-                                   return_value=self._absent_snapshot()),                  mock.patch.object(el, "run_e2e_stop",
+                                   return_value=self._absent_snapshot()), mock.patch.object(mp, "WslDocker"), mock.patch.object(el, "run_e2e_stop",
                                    return_value={"actions": [],
                                                  "residue": [],
                                                  "diagnostics": []}) as sp:
@@ -347,7 +348,7 @@ class TestStatusStopCleanupWiring(unittest.TestCase):
                                   "session": state / "session.json",
                                   "secrets": state / "secrets"}), \
                  mock.patch.object(mp, "discover_stack",
-                                   return_value=self._absent_snapshot()),                  mock.patch.object(el, "run_e2e_cleanup",
+                                   return_value=self._absent_snapshot()), mock.patch.object(mp, "WslDocker"), mock.patch.object(el, "run_e2e_cleanup",
                                    return_value={
                                        "residue": ["container:postgres"],
                                        "report": {}}) as cp:

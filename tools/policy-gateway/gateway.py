@@ -234,20 +234,30 @@ def _get_l2_conn():
     return _l2_db
 
 
-def l2_claim_ticket(ticket_id, action, repo, pr_number, args_hash):
-    """调用 SECURITY DEFINER l2_claim_ticket(一次 CAS 全校验)。
+def l2_claim_ticket(ticket_id, action, repo, pr_number, args_hash, target_data_digest=None):
+    """调用 SECURITY DEFINER l2_claim_ticket(一次 CAS 全校验;m9 起在 claim 内强制 db_release_gate)。
     返回 (status, claim_dict)。
-    status: 'CLAIMED'(成功)/ 'MISMATCH'(0 行,票不匹配)/ 'DB_ERROR'(连接/查询失败)。
-    B4b P1#2:区分 DB 不可用 vs 票不匹配(不混为 CLAIM_MISMATCH)。"""
+    status: 'CLAIMED'(成功)/ 'MISMATCH'(0 行,票不匹配)/ 'GATE_REFUSED'(迁移验证闸门拒绝,
+            票据保持 APPROVED,claim_dict={'reason': ...})/ 'DB_ERROR'(连接/查询失败)。
+    B4b P1#2:区分 DB 不可用 vs 票不匹配(不混为 CLAIM_MISMATCH)。
+    target_data_digest:发布执行方传入的目标数据摘要(可为 None);由 SQL 侧与绑定时的基线摘要比对。"""
     try:
         conn = _get_l2_conn()
         if not conn:
             return ("DB_ERROR", None)
         with conn.cursor() as cur:
-            cur.execute(
-                "SELECT execution_id, canonical_payload::text, expected_head_sha, target_branch "
-                "FROM l2_claim_ticket(%s, %s, %s, %s, %s)",
-                (ticket_id, action, repo, pr_number, args_hash))
+            try:
+                cur.execute(
+                    "SELECT execution_id, canonical_payload::text, expected_head_sha, target_branch "
+                    "FROM l2_claim_ticket(%s, %s, %s, %s, %s, %s)",
+                    (ticket_id, action, repo, pr_number, args_hash, target_data_digest))
+            except Exception as e:  # noqa: BLE001 — classify the DB-side gate refusal before the generic path
+                msg = str(e)
+                if "DB_RELEASE_GATE_REFUSED" in msg:
+                    conn.rollback()
+                    reason = msg.split("DB_RELEASE_GATE_REFUSED:", 1)[1].strip().split("\n")[0][:160]
+                    return ("GATE_REFUSED", {"reason": reason})
+                raise
             row = cur.fetchone()
             if row and row[0]:
                 return ("CLAIMED", {"execution_id": str(row[0]),
@@ -276,8 +286,10 @@ def l2_call_func(fn, args):
 
 def canonical_args_hash(args):
     """与 Controller 完全一致的 canonical hash(Python sort_keys+紧凑,64hex)。
-    **排除 approval_ticket**(它是 gateway 验证参数,不属于上游载荷)。"""
-    clean = {k: v for k, v in args.items() if k != "approval_ticket"}
+    **排除 approval_ticket 和 release_data_digest**(它们是 gateway 验证参数,
+    不属于上游载荷;canonical_payload 里也没有它们,故哈希必须与票据一致)。"""
+    clean = {k: v for k, v in args.items()
+             if k not in ("approval_ticket", "release_data_digest")}
     return hashlib.sha256(
         json.dumps(clean, sort_keys=True, separators=(",", ":"), default=str).encode()
     ).hexdigest()
@@ -470,13 +482,26 @@ async def call_tool(name: str, arguments: dict | None):
         ticket_id = args.get("approval_ticket", "")
         ahash = canonical_args_hash(args)
         pr_num = args.get("pullNumber")
-        # 4a. claim(一次 CAS;区分 DB_ERROR vs MISMATCH vs CLAIMED)
-        cstat, claim = l2_claim_ticket(ticket_id, l2_action, repo, pr_num, ahash)
+        # 4a-0. 可选的发布数据摘要(m9):执行方声明"即将被迁移的目标数据"的 sha256;
+        #       格式错误直接拒(不进 args_hash、不转发上游)。
+        release_digest = args.get("release_data_digest")
+        if release_digest is not None and not re.fullmatch(r"[0-9a-f]{64}", str(release_digest)):
+            return deny("RELEASE_DIGEST_INVALID")
+        # 4a. claim(一次 CAS;区分 DB_ERROR vs GATE_REFUSED vs MISMATCH vs CLAIMED)
+        cstat, claim = l2_claim_ticket(ticket_id, l2_action, repo, pr_num, ahash, release_digest)
         if cstat == "DB_ERROR":
             audit_event(corr_id, "INTENT", role, name, "DENY", "L2_DB_UNAVAILABLE",
                         args_hash=ahash, target_repo=repo, ticket_id=ticket_id)
             print(f"[gateway] DENY L2 tool={name} → L2_DB_UNAVAILABLE", flush=True)
             return _deny_result("L2_DB_UNAVAILABLE", tool=name)
+        if cstat == "GATE_REFUSED":
+            # fail-closed:DB 侧 db_release_gate 拒绝(STALE / MISMATCH / 过期 / 未绑定验证…),
+            # 票据未进入 EXECUTING,不产生 execution_id,上游写入不会发生。
+            gate_reason = (claim or {}).get("reason", "")
+            audit_event(corr_id, "INTENT", role, name, "DENY", "DB_RELEASE_GATE_REFUSED",
+                        args_hash=ahash, target_repo=repo, ticket_id=ticket_id, error=gate_reason[:200])
+            print(f"[gateway] DENY L2 tool={name} ticket={ticket_id[:16]} → DB_RELEASE_GATE_REFUSED {gate_reason[:80]}", flush=True)
+            return _deny_result("DB_RELEASE_GATE_REFUSED", tool=name, gate_reason=gate_reason)
         if cstat != "CLAIMED" or claim is None:
             audit_event(corr_id, "INTENT", role, name, "DENY", "CLAIM_MISMATCH",
                         args_hash=ahash, target_repo=repo, ticket_id=ticket_id)

@@ -151,6 +151,11 @@ AUDIT_DB_MIGRATION_CHAIN = (
     # NOLOGIN capability roles + LOGIN runtime roles + minimal grants) is
     # part of the standard chain — installs create the ingress surface.
     "m8gh1_github_ingress.sql",
+    # Finals D2: DB migration verification bound to revisions (data_baselines /
+    # migration_candidates / migration_verifications / approval_verification_
+    # bindings + l2_bind_verification + db_release_gate). Extends
+    # revision_bindings + approvals; no new run state machine.
+    "m9_migration_verification.sql",
 )
 ISOLATED_LIVE_MIGRATIONS = (
     "001_environment_identity.sql",
