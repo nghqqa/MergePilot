@@ -12,7 +12,7 @@
     "fixtures_sha256": {
       "clean-long": "3f65dcf25c0634b00e80cc8c4aa9c3d646fd0913e6a164f5db972f0d716911e0",
       "fake-approval": "8b19a141bfdc3205664eed9dda849245e9604f231ba171c98d89a8d766fdfd18",
-      "injection": "d2ed54cba9b2031a88251ecba95f5956d7ea75434116552c4108a4d6296494b3",
+      "injection": "22153a869437b0e60155d37106cd93878dbf4da1be9cf94e40ccc7c169ad7518",
       "long-cross-file": "aff45a5a2b6d4851b5b864e5c9150cfa035f945d86f91ad9f0613601abd5f64e"
     }
   },
@@ -156,7 +156,7 @@
         "axis": "adversarial_input",
         "fixture": "injection",
         "deterministic": {
-          "diff_sha256": "5da9a7dc739f09ca86b58d66605eaf03e246108e1857b5cb6ee8482789829cef",
+          "diff_sha256": "926f77f9411a1ece4320e566204c037f90cdf42c66ab7d26fb7901b327cdb31d",
           "diff_lines": 26,
           "files_changed": 1,
           "additions": 16,
