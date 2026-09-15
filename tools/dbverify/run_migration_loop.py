@@ -658,11 +658,30 @@ class Loop:
         conn = self.connect(self.args.audit_db, autocommit=True)
         gw_dir = REPO_ROOT / "tools" / "policy-gateway"
         env = self.report.setdefault("environment", {})
+        # The gw_dir path entry and POLICY_FILE override must not leak past this
+        # loader: tools/policy-gateway/healthcheck.py would shadow
+        # tools/workflow-controller/healthcheck.py for tests that run afterwards
+        # in the same interpreter.
+        saved_policy_file = os.environ.get("POLICY_FILE")
+        sys.path.insert(0, str(gw_dir))
         try:
-            import importlib
-            os.environ.setdefault("POLICY_FILE", str(gw_dir / "policy.yaml"))
-            sys.path.insert(0, str(gw_dir))
-            gateway = importlib.import_module("gateway")
+            try:
+                import importlib
+                os.environ.setdefault("POLICY_FILE", str(gw_dir / "policy.yaml"))
+                gateway = importlib.import_module("gateway")
+            except Exception as exc:  # noqa: BLE001 — fall back, but say so in the evidence
+                gateway = None
+                import ast as _ast
+                src_path = gw_dir / "gateway.py"
+                tree = _ast.parse(src_path.read_text(encoding="utf-8"))
+                fn = next(n for n in tree.body if isinstance(n, _ast.FunctionDef) and n.name == "l2_claim_ticket")
+                module = _ast.Module(body=[fn], type_ignores=[])
+                ns = {"json": json, "sys": sys, "_get_l2_conn": lambda: conn, "psycopg2": psycopg2}
+                exec(compile(module, str(src_path), "exec"), ns)  # noqa: S102 — executes the repository's own function body
+                env["gateway_wrapper_source"] = ("tools/policy-gateway/gateway.py::l2_claim_ticket extracted via ast "
+                                                 "(module import failed: %s: %s)" % (type(exc).__name__, str(exc)[:80]))
+                env["gateway_wrapper_mode"] = "AST_EXTRACT_FALLBACK"
+                return ns["l2_claim_ticket"]
             gateway._get_l2_conn = lambda: conn  # the only seam: the L2 DSN connection factory
             try:
                 import importlib.metadata as _md
@@ -673,18 +692,12 @@ class Loop:
                                              "_get_l2_conn patched to the harness connection" % (mcp_ver, sys.version.split()[0]))
             env["gateway_wrapper_mode"] = "MODULE_IMPORT"
             return gateway.l2_claim_ticket
-        except Exception as exc:  # noqa: BLE001 — fall back, but say so in the evidence
-            import ast as _ast
-            src_path = gw_dir / "gateway.py"
-            tree = _ast.parse(src_path.read_text(encoding="utf-8"))
-            fn = next(n for n in tree.body if isinstance(n, _ast.FunctionDef) and n.name == "l2_claim_ticket")
-            module = _ast.Module(body=[fn], type_ignores=[])
-            ns = {"json": json, "sys": sys, "_get_l2_conn": lambda: conn, "psycopg2": psycopg2}
-            exec(compile(module, str(src_path), "exec"), ns)  # noqa: S102 — executes the repository's own function body
-            env["gateway_wrapper_source"] = ("tools/policy-gateway/gateway.py::l2_claim_ticket extracted via ast "
-                                             "(module import failed: %s: %s)" % (type(exc).__name__, str(exc)[:80]))
-            env["gateway_wrapper_mode"] = "AST_EXTRACT_FALLBACK"
-            return ns["l2_claim_ticket"]
+        finally:
+            sys.path.remove(str(gw_dir))
+            if saved_policy_file is None:
+                os.environ.pop("POLICY_FILE", None)
+            else:
+                os.environ["POLICY_FILE"] = saved_policy_file
 
     def write_plan_package(self, run, candidate_id, script_digest, v):
         out = Path(self.args.plan_out) if getattr(self.args, "plan_out", None) else (REPO_ROOT / "release" / "migration-plans" / "orders-schema-change" / "candidate-a.rev2")
