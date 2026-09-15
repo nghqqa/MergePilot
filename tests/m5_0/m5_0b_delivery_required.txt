@@ -26,6 +26,7 @@ release/offline/db-init/001-init.sql
 tests/agentteams/test_rework_loop.py
 tests/dbverify/test_gateway_claim_wrapper.py
 tests/dbverify/test_m9_contract.py
+tests/dbverify/test_m9_upgrade_parity_pg.py
 tests/dbverify/test_migration_loop_pg.py
 tests/dbverify/test_runner_helpers.py
 tests/gh_app/test_e2e_console_status.py
