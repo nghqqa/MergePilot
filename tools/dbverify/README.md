@@ -29,7 +29,10 @@
 |---|---|---|
 | 迁移票据是否必须绑定验证 | 必须。run 一旦登记过 `migration_candidates`，其票据在 claim 时若无 `approval_verification_bindings` → `MIGRATION_VERIFICATION_REQUIRED` 拒绝；从未登记候选的普通 PR 行为不变（残余边界：登记候选是流水线责任，未登记的 DB 变更只受 `risk_classify` MIGRATION_SCHEMA=L2 人工门约束） | m9 §5.7 + S12 负向 `claim_refused_when_migration_run_unbound` |
 | 目标数据摘要的可信来源与缺省 | 来源 = 执行方在**目标库**上用 `tools/dbverify/data_digest.py`（与基线登记同一算法：sorted 表、`COPY … ORDER BY 1`）现算；缺省 NULL **不再**跳过数据比对，绑定票据不带摘要即拒绝 `TARGET_DATA_DIGEST_REQUIRED`（`db_release_gate` 供只读展示时仍可传 NULL） | m9 §5.7 + S12 负向 `claim_refused_without_target_digest_for_bound_ticket` |
-| claim → 执行的版本一致性 | 代码侧：网关已有 TOCTOU 读（PR 头 == expected_head_sha）。数据侧：claim 时比对摘要后仍有窗口，方案包要求在 `02-migrate.sql` 前**再算一次**并与 claim 值一致，否则 `l2_fail_ticket` 停止 | S12 `recompute_before_migrate_matches_bound_digest` / `data_drift_after_claim_detected` + 方案包 README 步骤 2 |
+| claim → 执行的版本一致性 | **数据侧**：claim 后、`02-migrate.sql` 前再算一次摘要，与 claim 值不一致 → `l2_fail_ticket` 停止。**版本侧（第四轮新增）**：`db_release_gate` 接受 EXECUTING 状态，执行方在迁移前再跑一次闸门——claim 后又推新提交 → `STALE_SUPERSEDED_BY_NEW_REVISION`、票据过期 → `TICKET_EXPIRED`，均停止。保护范围：迁移脚本由 `script_digest` 绑定、不受 claim 后新提交影响；摘要测量真实性属执行方信任边界（下下行） | S12 `recompute_before_migrate_matches_bound_digest` / `data_drift_after_claim_detected` / **`post_claim_gate_recheck_detects_new_revision`** + 方案包 README 步骤 2 |
+| 摘要的可信测量与目标绑定（数据库不能验证的部分） | 摘要值由可信执行方（网关/发布器）测量并传入；数据库只能把它与验证基线比对，无法证明该值确实测自目标库。内容级佐证：`01-preflight.sql` 基线画像（137 NULL / 2 重复 / 120 可回填）必须与目标库一致。不为此在 DB 侧引入目标身份参数（不可验证的声明不新增机制） | 方案包 README 步骤 1–2 |
+| 函数签名替换、旧重载与权限升级 | m9 `DROP FUNCTION l2_claim_ticket(TEXT,TEXT,TEXT,INTEGER,TEXT)` 后建 6 参签名（第 6 参 DEFAULT NULL，旧 5 参调用方无需改动），自检断言同名函数恰好一个。**第四轮修复**：`tools/m3b-b4-create-roles.sh` 仍按旧签名 REVOKE/GRANT，升级后运行必报 `function does not exist` → 改为 5/6 参双签名 allowlist + `to_regprocedure` 存在性判断，升级前后都可重复运行 | m9 §5.7/§7 + `tests/dbverify/test_m9_upgrade_parity_pg.py`（用旧脚本该测试失败） |
+| 新装与升级同一套合同 | 离线 `001-init.sql`（逐字节内含全部 14 个迁移文件）vs「12 个 m9 前文件 + 旧式授权 + 独立 m9」升级路径：m9 面（8 个函数定义/owner/ACL、4 张表结构/约束/触发器）完全一致；`policy_gateway_l2` 在 CLI 路径由 `PREREQUISITE_ROLE_SQL` 预先创建、m9 条件 GRANT 生效，纯 docker-entrypoint 离线 init 不建该角色（与 m9 之前行为一致，由角色脚本事后授权）。行为等价：网关角色可 claim（5/6 参均可解析）、approver 被拒 | `tests/dbverify/test_m9_upgrade_parity_pg.py`（PG-gated 目录快照对等 + SET ROLE 行为断言） |
 
 ## 授权执行路径（m9 §5.7）
 
@@ -37,7 +40,7 @@ Policy Gateway 的最终授权执行点是 `l2_claim_ticket()`（APPROVED → EX
 票据若绑定了迁移验证，`db_release_gate(ticket, target_data_digest)` 不 valid → `P0001 DB_RELEASE_GATE_REFUSED`，
 **不推进状态、不产生 execution_id、不发生上游写入**；未绑定验证的票据行为不变。网关（`gateway.py`）把
 `release_data_digest` 作为验证参数透传（不进 args_hash、不转发上游），把 DB 侧拒绝映射为 DENY `DB_RELEASE_GATE_REFUSED`。
-运行器 S12 在真实 PG 上覆盖：stale / 摘要变化 / 未批准 / 过期 / 并发 claim / 重复 claim / 未绑定 / 网关包装映射。
+运行器 S12 在真实 PG 上覆盖：stale / 摘要变化 / 未批准 / 过期 / 并发 claim / 重复 claim / 未绑定 / 网关包装映射 / **claim 后新提交（EXECUTING 票据重跑闸门 → STALE）**，共 28 项负向、闸门时间线 10 步。
 网关模块的真实导入需要 `mcp==1.28.1`（Python ≥3.10）：`conda run -n goai python tools/dbverify/run_migration_loop.py …`；
 3.9 下运行器退回 ast 提取并在证据 `environment.gateway_wrapper_mode` 标注。
 
