@@ -541,3 +541,10 @@ details > summary:hover { color: var(--ink); }
   .topnav { flex-wrap: wrap; row-gap: 2px; }
   .page.finals .grid2 { grid-template-columns: 1fr; }
 }
+
+/* RAG page at narrow widths: long status chips wrap, data tables scroll inside their panel
+   (the only two element classes that exceeded 390px; copy and data untouched) */
+@media (max-width: 720px) {
+  .page.ragpage .chip { white-space: normal; overflow-wrap: anywhere; }
+  .page.ragpage table { display: block; overflow-x: auto; max-width: 100%; }
+}
