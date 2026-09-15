@@ -111,6 +111,7 @@ tools/dbverify/case/orders-schema-change/baseline/seed.sql
 tools/dbverify/case/orders-schema-change/followup/orders_service.py
 tools/dbverify/case/orders-schema-change/migrations/candidate-a.rev1.sql
 tools/dbverify/case/orders-schema-change/migrations/candidate-a.rev2.sql
+tools/dbverify/data_digest.py
 tools/dbverify/run_migration_loop.py
 tools/handoff_watcher.py
 tools/handoff_watcher_v2.py

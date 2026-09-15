@@ -19,8 +19,9 @@
       目标数据摘要变化 → TARGET_DATA_DIGEST_MISMATCH
   S10 迟到回调:失效后再为 run-2 候选回写 PASS → 闸门仍失效(旧回调不能使失效结果重新有效)
   S11 交付迁移方案包(绑定到真实验证摘要)
-  S12 授权执行路径:l2_claim_ticket 内强制 db_release_gate(stale / 摘要变化 / 未批准 / 过期 → 拒绝,不进 EXECUTING);
-      并发 claim 只有一个成功;未绑定验证的票据行为不变;网关包装函数把拒绝映射为 GATE_REFUSED
+  S12 授权执行路径:l2_claim_ticket 内强制 db_release_gate(stale / 摘要变化 / 未批准 / 过期 / 缺目标摘要 → 拒绝,不进 EXECUTING);
+      登记过迁移候选却未绑定验证的票据 → MIGRATION_VERIFICATION_REQUIRED;无候选的普通 PR 行为不变;
+      并发 claim 只有一个成功;claim 后目标数据漂移可由执行前重算摘要检出;网关包装函数把拒绝映射为 GATE_REFUSED
   S13 证据目录 + SHA256SUMS,清理试验库
 
 用法:
@@ -43,6 +44,9 @@ from pathlib import Path
 
 import psycopg2
 import psycopg2.extras
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from data_digest import DEFAULT_TABLES, compute_data_digest, row_counts  # noqa: E402  (shared canonical digest)
 
 HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parents[1]
@@ -213,17 +217,11 @@ class Loop:
             cur.execute(read_norm(CASE_DIR / "baseline" / "schema.sql").decode())
             cur.execute(read_norm(CASE_DIR / "baseline" / "seed.sql").decode())
         conn.commit()
-        tables = ["customers", "orders", "payments", "legacy_order_owner"]
-        h = hashlib.sha256()
-        counts = {}
+        tables = DEFAULT_TABLES
+        # the same algorithm the release executor must run on the TARGET database (data_digest.py)
+        data_digest = compute_data_digest(conn, tables)
+        counts = row_counts(conn, tables)
         with conn.cursor() as cur:
-            for t in tables:
-                buf = io.StringIO()
-                cur.copy_expert("COPY (SELECT * FROM %s ORDER BY 1) TO STDOUT" % t, buf)
-                data = buf.getvalue().encode("utf-8")
-                h.update(("table:%s\n" % t).encode()); h.update(data)
-                cur.execute("SELECT count(*) FROM %s" % t)
-                counts[t] = cur.fetchone()[0]
             cur.execute("SELECT count(*) FROM orders WHERE customer_id IS NULL")
             null_rows = cur.fetchone()[0]
             cur.execute("SELECT count(*) - count(DISTINCT order_id) FROM payments")
@@ -232,7 +230,6 @@ class Loop:
             pg_version = cur.fetchone()[0]
         conn.close()
         schema_digest = sha256_bytes(read_norm(CASE_DIR / "baseline" / "schema.sql"))
-        data_digest = h.hexdigest()
         baseline_id = self.q(self.audit, "SELECT mv_register_baseline(%s,%s,%s,%s,%s::jsonb,%s)",
                              ("orders-demo historical baseline (synthetic)", "SYNTHETIC", schema_digest, data_digest,
                               json.dumps(counts), pg_version), one=True)[0]
@@ -547,6 +544,11 @@ class Loop:
         ok, code, msg = claim_direct(t3, self.baseline["data_digest"])
         self.negative("claim_refused_before_approval", "P0001 TICKET_NOT_APPROVED", "%s %s" % (code, (msg or "")[:90]), (not ok) and "TICKET_NOT_APPROVED" in (msg or ""))
         self.q(a, "SELECT l2_approve(%s)", (t3,))
+        # bound ticket without a target data digest → refused (the default is fail-closed, not "skip the data check")
+        ok, code, msg = claim_direct(t3, None)
+        st = self.q(a, "SELECT status FROM approvals WHERE ticket_id=%s", (t3,), one=True)[0]
+        self.negative("claim_refused_without_target_digest_for_bound_ticket", "P0001 TARGET_DATA_DIGEST_REQUIRED; ticket APPROVED",
+                      "%s %s | %s" % (code, (msg or "")[:90], st), (not ok) and "TARGET_DATA_DIGEST_REQUIRED" in (msg or "") and st == "APPROVED")
         # wrong target data digest → refused, ticket still APPROVED
         ok, code, msg = claim_direct(t3, "e" * 64)
         st = self.q(a, "SELECT status FROM approvals WHERE ticket_id=%s", (t3,), one=True)[0]
@@ -589,12 +591,37 @@ class Loop:
         ok, code, msg = claim_direct(t4, self.baseline["data_digest"])
         self.negative("claim_refused_on_expired_ticket", "gate TICKET_EXPIRED; claim P0001", "gate=%s claim=%s %s" % (g_exp["reason"], code, (msg or "")[:60]),
                       g_exp["reason"] == "TICKET_EXPIRED" and (not ok) and "TICKET_EXPIRED" in (msg or ""))
-        # 12d. unbound ticket (ordinary code PR, no migration verification): behaviour unchanged → CLAIMED
-        self.q(a, "SELECT l2_approve(%s)", (ticket_fail,))
-        gwstat_plain, gwclaim_plain = gw_claim(ticket_fail, "merge", REPO_NAME, PR_NUMBER, args_hash_of(ticket_fail), None)
-        self.negative("unbound_ticket_claim_unchanged", "CLAIMED (no verification binding → gate not consulted)", gwstat_plain, gwstat_plain == "CLAIMED")
+        # 12d. a run that REGISTERED migration candidates but never bound its ticket to a PASS verification
+        #      must not execute: migration tickets require a verification binding.
+        self.q(a, "SELECT l2_approve(%s)", (ticket_fail,))          # run-1 ticket: candidates exist, no binding
+        ok, code, msg = claim_direct(ticket_fail, self.baseline["data_digest"])
+        st = self.q(a, "SELECT status FROM approvals WHERE ticket_id=%s", (ticket_fail,), one=True)[0]
+        self.negative("claim_refused_when_migration_run_unbound", "P0001 MIGRATION_VERIFICATION_REQUIRED; ticket APPROVED",
+                      "%s %s | %s" % (code, (msg or "")[:90], st), (not ok) and "MIGRATION_VERIFICATION_REQUIRED" in (msg or "") and st == "APPROVED")
+        # 12e. an ordinary code PR (no migration candidates at all): behaviour unchanged → CLAIMED via the gateway wrapper
+        head_plain = git_tree_sha({"README.md": b"plain code PR without any migration\n"})
+        run_plain = self.register_run("run-dbv-%s-plain" % self.args.run_suffix, head_plain, base_sha)
+        t_plain = self.create_ticket(run_plain)
+        self.q(a, "SELECT l2_approve(%s)", (t_plain,))
+        gwstat_plain, gwclaim_plain = gw_claim(t_plain, "merge", REPO_NAME, PR_NUMBER, args_hash_of(t_plain), None)
+        self.negative("plain_ticket_claim_unchanged", "CLAIMED (no candidates, no binding → gate not consulted)", gwstat_plain, gwstat_plain == "CLAIMED")
         if gwstat_plain == "CLAIMED":
-            self.q(a, "SELECT l2_fail_ticket(%s,%s::uuid,%s)", (ticket_fail, gwclaim_plain["execution_id"], "harness: unbound ticket closed, no upstream"))
+            self.q(a, "SELECT l2_fail_ticket(%s,%s::uuid,%s)", (t_plain, gwclaim_plain["execution_id"], "harness: plain ticket closed, no upstream"))
+        # 12f. claim → execute window: the executor recomputes the target digest right before 02-migrate.sql.
+        #      Fresh clone of the baseline → equals the bound digest; one mutated row → differs → the release must stop.
+        adm = self.connect("postgres", autocommit=True)
+        drift_db = "dbv_trial_drift_%s" % self.args.run_suffix
+        self.q(adm, "DROP DATABASE IF EXISTS %s" % drift_db)
+        self.q(adm, "CREATE DATABASE %s TEMPLATE %s" % (drift_db, BASELINE_DB))
+        adm.close()
+        dconn = self.connect(drift_db, autocommit=True)
+        before = compute_data_digest(dconn)
+        with dconn.cursor() as cur:
+            cur.execute("UPDATE orders SET amount_cents = amount_cents + 1 WHERE order_id = 1")
+        after = compute_data_digest(dconn)
+        dconn.close()
+        self.negative("recompute_before_migrate_matches_bound_digest", "fresh clone digest == baseline digest", before[:16], before == self.baseline["data_digest"])
+        self.negative("data_drift_after_claim_detected", "one changed row → digest differs → stop", "%s != %s" % (before[:12], after[:12]), before != after)
         self.step("S12_claim_path_summary", outcome="GATE_ENFORCED_AT_CLAIM",
                   enforced_in="public.l2_claim_ticket (m9 §5.7) → db_release_gate(ticket, target_data_digest)",
                   gateway_mapping="gateway.py l2_claim_ticket wrapper: DB_RELEASE_GATE_REFUSED → status GATE_REFUSED → DENY (no execution_id, no upstream call)",
@@ -713,7 +740,8 @@ COMMIT;
 ## 执行顺序
 
 1. `01-preflight.sql`（只读）：目标库的历史数据画像必须与验证基线一致（137 NULL / 2 重复 / 120 可回填）。任一不符 → **停止**，回到验证环节。
-2. 执行前调用 `db_release_gate(<ticket>, <目标数据摘要>)`，必须返回 `valid=true`；否则 **停止**（旧批准已失效）。
+2. 目标数据摘要 **只能**由执行方在目标库上用规范算法现算：`python tools/dbverify/data_digest.py --dsn <目标库> --tables customers,orders,payments,legacy_order_owner --expect <上表 data 摘要>`（不符则 exit 3 → **停止**）。随后携带该摘要领取票据：`l2_claim_ticket(<ticket>, 'merge', <repo>, <pr>, <args_hash>, <摘要>)`——绑定了验证的票据**不带摘要即拒绝**（TARGET_DATA_DIGEST_REQUIRED），STALE / MISMATCH / 未批准 / 过期同样拒绝且票据不进入 EXECUTING。
+   claim 到执行之间仍有时间窗：在 `02-migrate.sql` 之前**再算一次**摘要，与 claim 时的值不一致 → **停止**（`l2_fail_ticket`），不得继续。
 3. `02-migrate.sql`：单事务；失败即自动回滚，目标库无残留（回填审计表与去重归档表在同一事务内创建）。
 4. `03-postcheck.sql`：与试验验证相同的断言；任一不符 → 执行 `04-rollback.sql` 并停止后续发布步骤。
 5. 应用发布：先发布新代码（总是携带 customer_id），旧 worker 依赖 `DEFAULT 0` 在窗口期内继续可写；窗口期结束后处理 `orders_backfill_audit.source='sentinel'` 的 17 条记录，再评估移除 DEFAULT。

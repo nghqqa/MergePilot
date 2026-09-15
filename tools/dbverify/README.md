@@ -23,6 +23,14 @@
 
 函数：`mv_register_baseline` / `mv_register_candidate` / `mv_record_verification`（幂等重复回调，异摘要拒绝）/ `l2_bind_verification`（审批人绑定，事务内校验，PK 保证并发只有一个成功）/ `db_release_gate(ticket, target_data_digest)`（**每次调用重算** 11 项匹配，结果不落库，旧回调无法使失效结果复活）/ `mv_run_status`。
 
+## 合并前审查结论（2026-09-15）
+
+| 问题 | 结论 | 落地 |
+|---|---|---|
+| 迁移票据是否必须绑定验证 | 必须。run 一旦登记过 `migration_candidates`，其票据在 claim 时若无 `approval_verification_bindings` → `MIGRATION_VERIFICATION_REQUIRED` 拒绝；从未登记候选的普通 PR 行为不变（残余边界：登记候选是流水线责任，未登记的 DB 变更只受 `risk_classify` MIGRATION_SCHEMA=L2 人工门约束） | m9 §5.7 + S12 负向 `claim_refused_when_migration_run_unbound` |
+| 目标数据摘要的可信来源与缺省 | 来源 = 执行方在**目标库**上用 `tools/dbverify/data_digest.py`（与基线登记同一算法：sorted 表、`COPY … ORDER BY 1`）现算；缺省 NULL **不再**跳过数据比对，绑定票据不带摘要即拒绝 `TARGET_DATA_DIGEST_REQUIRED`（`db_release_gate` 供只读展示时仍可传 NULL） | m9 §5.7 + S12 负向 `claim_refused_without_target_digest_for_bound_ticket` |
+| claim → 执行的版本一致性 | 代码侧：网关已有 TOCTOU 读（PR 头 == expected_head_sha）。数据侧：claim 时比对摘要后仍有窗口，方案包要求在 `02-migrate.sql` 前**再算一次**并与 claim 值一致，否则 `l2_fail_ticket` 停止 | S12 `recompute_before_migrate_matches_bound_digest` / `data_drift_after_claim_detected` + 方案包 README 步骤 2 |
+
 ## 授权执行路径（m9 §5.7）
 
 Policy Gateway 的最终授权执行点是 `l2_claim_ticket()`（APPROVED → EXECUTING 的 CAS）。m9 把闸门接进 claim 本身：

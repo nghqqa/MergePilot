@@ -312,6 +312,13 @@ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public AS $$
 DECLARE v_gate record;
 BEGIN
   IF EXISTS (SELECT 1 FROM public.approval_verification_bindings b WHERE b.ticket_id = p_ticket_id) THEN
+    -- 绑定了迁移验证的票据:目标数据摘要是必需输入(fail-closed)。它由发布执行方用与基线登记
+    -- 相同的规范算法(tools/dbverify/data_digest.py)在目标库上计算;缺省 NULL 会跳过数据比对,
+    -- 等于把"验证绑定到数据版本"变成可选 —— 因此拒绝。
+    IF p_target_data_digest IS NULL THEN
+      RAISE EXCEPTION 'DB_RELEASE_GATE_REFUSED: TARGET_DATA_DIGEST_REQUIRED (bound ticket % must present the target data digest at claim)', p_ticket_id
+        USING ERRCODE = 'P0001';
+    END IF;
     SELECT g.valid, g.reason, g.bound_head_sha, g.current_head_sha
       INTO v_gate FROM public.db_release_gate(p_ticket_id, p_target_data_digest) g;
     IF v_gate.valid IS DISTINCT FROM TRUE THEN
@@ -320,6 +327,11 @@ BEGIN
         COALESCE(v_gate.reason, 'GATE_ERROR'), v_gate.bound_head_sha, v_gate.current_head_sha
         USING ERRCODE = 'P0001';
     END IF;
+  ELSIF EXISTS (SELECT 1 FROM public.migration_candidates c JOIN public.approvals a ON a.run_id = c.run_id
+                 WHERE a.ticket_id = p_ticket_id) THEN
+    -- run 登记过迁移候选却没有把票据绑定到一次 PASS 验证:迁移票据必须绑定验证,否则不得执行。
+    RAISE EXCEPTION 'DB_RELEASE_GATE_REFUSED: MIGRATION_VERIFICATION_REQUIRED (run of ticket % registered migration candidates but the ticket is not bound to a verification)', p_ticket_id
+      USING ERRCODE = 'P0001';
   END IF;
   UPDATE public.approvals SET
     status='EXECUTING', execution_id=gen_random_uuid(), executing_at=now()
@@ -362,8 +374,8 @@ GRANT EXECUTE ON FUNCTION public.db_release_gate(TEXT,TEXT) TO gate_owner, merge
 GRANT EXECUTE ON FUNCTION public.mv_run_status(TEXT) TO mergepilot_reader, runtime_owner;
 -- claim-path enforcement runs inside l2_claim_ticket, whose SECURITY DEFINER owner is the
 -- least-privilege role mergepilot_l2_owner: it needs exactly (a) SELECT on the binding table
--- for the EXISTS check and (b) EXECUTE on db_release_gate. Nothing else.
-GRANT SELECT ON public.approval_verification_bindings TO mergepilot_l2_owner;
+-- and on migration_candidates for the two EXISTS checks, and (b) EXECUTE on db_release_gate.
+GRANT SELECT ON public.approval_verification_bindings, public.migration_candidates TO mergepilot_l2_owner;
 GRANT EXECUTE ON FUNCTION public.db_release_gate(TEXT,TEXT) TO mergepilot_l2_owner;
 
 -- ═══ 7. 自检(fail-closed)═══

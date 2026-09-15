@@ -42,8 +42,10 @@ class TestMigrationLoopAgainstPostgres(unittest.TestCase):
         for required in ("duplicate_callback_same_digest_is_noop", "claim_refused_on_stale_head",
                          "claim_refused_on_target_data_digest_change", "concurrent_claim_exactly_one_executes",
                          "claim_refused_on_expired_ticket", "claim_refused_before_approval",
-                         "gateway_wrapper_maps_gate_refusal", "unbound_ticket_claim_unchanged",
-                         "reclaim_on_executing_returns_no_row"):
+                         "gateway_wrapper_maps_gate_refusal", "plain_ticket_claim_unchanged",
+                         "reclaim_on_executing_returns_no_row", "claim_refused_without_target_digest_for_bound_ticket",
+                         "claim_refused_when_migration_run_unbound", "recompute_before_migrate_matches_bound_digest",
+                         "data_drift_after_claim_detected"):
             self.assertIn(required, names)
         self.assertIn(report["environment"]["gateway_wrapper_mode"], ("MODULE_IMPORT", "AST_EXTRACT_FALLBACK"))
         try:

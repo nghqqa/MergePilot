@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import sys
+import json
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -184,8 +185,18 @@ class TestComposeYml(unittest.TestCase):
         self.assertNotIn("172.18.", text)
 
     def test_postgres_digest_pinned(self):
-        self.assertEqual(self.yml["services"]["postgres"]["image"],
-                         oc.PGVECTOR_IMAGE_DIGEST)
+        # Policy since f167762 (offline docker-load delivery): the compose `image:` is the
+        # TAG (a loaded tar carries no RepoDigest, so a digest reference cannot start
+        # offline); the registry digest is DECLARED to the preflight container, which
+        # fail-closes at start-up (tools/preflight_entrypoint.py gate_image_digest_cached).
+        # Both halves must agree with the shipped image-set entry.
+        image_set = json.loads((ROOT / "release" / "images" / "image-set.json").read_text(encoding="utf-8"))
+        pinned = image_set["images"]["pinned_remote"][0]
+        self.assertEqual(self.yml["services"]["postgres"]["image"], "%s:%s" % (pinned["image"], pinned["tag"]))
+        declared = self.yml["services"]["preflight"]["environment"]["MERGEPILOT_DECLARED_PG_IMAGE"]
+        self.assertEqual(declared, oc.PGVECTOR_IMAGE_DIGEST)
+        self.assertEqual(declared, pinned["ref"])
+        self.assertIn(pinned["manifest_digest"], declared)
 
     def test_all_pull_never(self):
         for name, svc in self.yml["services"].items():
@@ -267,11 +278,22 @@ class TestComposeYml(unittest.TestCase):
         self.assertEqual(self.yml["services"]["preflight"]["restart"], "no")
 
     def test_no_unpinned_remote_tags(self):
-        # The ONLY literal remote image anywhere is the digest-pinned pgvector.
+        # The ONLY remote image is pgvector (tag for offline load, digest declared to
+        # preflight — see test_postgres_digest_pinned). Every other `image:` is the local
+        # name of a service BUILT here (build: + pull_policy: never), never a remote tag,
+        # and nothing floats on :latest.
         for name, svc in self.yml["services"].items():
-            if "image" in svc:
-                self.assertEqual(name, "postgres")
-                self.assertIn("@sha256:", svc["image"])
+            if "image" not in svc:
+                continue
+            self.assertFalse(svc["image"].endswith(":latest"), name)
+            if "build" in svc:
+                self.assertTrue(svc["image"].startswith("mergepilot-isolated-") and svc["image"].endswith(":local"),
+                                "%s: built service must carry its local image name" % name)
+                self.assertEqual(svc.get("pull_policy"), "never", name)
+            else:
+                self.assertEqual(name, "postgres", "only pgvector may come from a registry")
+                self.assertEqual(svc["image"], "pgvector/pgvector:pg16")
+                self.assertIn("MERGEPILOT_DECLARED_PG_IMAGE", self.yml["services"]["preflight"]["environment"])
 
     def test_yaml_contains_no_lan_or_wildcard_binds(self):
         # HOST-side port publishes must never use LAN/wildcard/IPv6. The

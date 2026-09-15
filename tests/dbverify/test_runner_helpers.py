@@ -55,6 +55,23 @@ class TestCandidateIdentity(unittest.TestCase):
         self.assertIn("SET DEFAULT 0", r2)   # old-worker compatibility
 
 
+class TestDataDigestHelper(unittest.TestCase):
+
+    def test_unsafe_table_name_rejected_before_any_sql(self):
+        import data_digest
+
+        class _Conn:
+            def cursor(self):
+                raise AssertionError("cursor must not be opened for an unsafe table name")
+
+        with self.assertRaises(ValueError):
+            data_digest.compute_data_digest(_Conn(), ("orders; drop table x",))
+
+    def test_default_tables_are_the_case_tables(self):
+        import data_digest
+        self.assertEqual(set(data_digest.DEFAULT_TABLES), {"customers", "orders", "payments", "legacy_order_owner"})
+
+
 class TestCaseFixtures(unittest.TestCase):
 
     def test_assertions_json_well_formed(self):

@@ -81,7 +81,12 @@ class TestM9Shape(unittest.TestCase):
         # the refusal happens BEFORE the UPDATE that moves the ticket to EXECUTING
         self.assertLess(SQL.index("RAISE EXCEPTION 'DB_RELEASE_GATE_REFUSED:"), SQL.index("status='EXECUTING', execution_id=gen_random_uuid()"))
         # least privilege for the SECURITY DEFINER owner of l2_*: exactly the two grants the guard needs
-        self.assertIn("GRANT SELECT ON public.approval_verification_bindings TO mergepilot_l2_owner;", SQL)
+        self.assertIn("GRANT SELECT ON public.approval_verification_bindings, public.migration_candidates TO mergepilot_l2_owner;", SQL)
+        # fail-closed defaults reviewed 2026-09-15: a bound ticket must present the target digest; a run that
+        # registered migration candidates cannot execute through an unbound ticket
+        self.assertIn("TARGET_DATA_DIGEST_REQUIRED", SQL)
+        self.assertIn("MIGRATION_VERIFICATION_REQUIRED", SQL)
+        self.assertLess(SQL.index("TARGET_DATA_DIGEST_REQUIRED"), SQL.index("FROM public.db_release_gate(p_ticket_id, p_target_data_digest) g"))
         self.assertIn("GRANT EXECUTE ON FUNCTION public.db_release_gate(TEXT,TEXT) TO mergepilot_l2_owner;", SQL)
         self.assertIn("OWNER TO mergepilot_l2_owner", SQL)
         self.assertIn("p_target_data_digest text%'", SQL)   # self-check pins the single 6-parameter signature
