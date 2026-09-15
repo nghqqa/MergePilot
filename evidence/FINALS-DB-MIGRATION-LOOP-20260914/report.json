@@ -23,11 +23,11 @@
     },
     "followup_change": "app/orders_service.py gains cancel_order(); migration unchanged"
   },
-  "run_suffix": "h8",
+  "run_suffix": "084723",
   "environment": {
     "pg_version": "16.14 (Debian 16.14-1.pgdg12+1)",
     "trial_kind": "ISOLATED_POSTGRES",
-    "trial_instance": "docker:6311167625f9@sha256:7f58c9936b2ef7f3e1fa20ac7d13cc1d7337ebf2380eec75677efe0204daadf0",
+    "trial_instance": "docker:fb2a17be83b4@sha256:7f58c9936b2ef7f3e1fa20ac7d13cc1d7337ebf2380eec75677efe0204daadf0",
     "clone_method": "CREATE DATABASE ... TEMPLATE dbv_baseline",
     "gateway_wrapper_source": "tools/policy-gateway/gateway.py imported as a module (mcp 1.28.1, Python 3.10.21); _get_l2_conn patched to the harness connection",
     "gateway_wrapper_mode": "MODULE_IMPORT"
@@ -52,13 +52,13 @@
     {
       "step": "S2_run1_registered",
       "outcome": "BOUND",
-      "run_id": "run-dbv-h8-rev1",
+      "run_id": "run-dbv-084723-rev1",
       "head_sha": "b22fc0622b497de2fca0c1ccf3853618939400b2",
       "base_sha": "3ce26f656aa6dfdd8e30548537363bff3941132e",
-      "pr_binding_id": "prb-run-dbv-h8-rev1",
-      "revision_binding_id": "rev-32089fbe68f4e51a1395accdc301b27e",
-      "source_call_id": "mcp-run-dbv-h8-rev1-read",
-      "source_evidence_digest": "0badee0eed90223e5b50af89ed9130e23cd8e99e0aee993933723e9104eb711d"
+      "pr_binding_id": "prb-run-dbv-084723-rev1",
+      "revision_binding_id": "rev-6ff191cd7eaf5456c05ffd5606a8c015",
+      "source_call_id": "mcp-run-dbv-084723-rev1-read",
+      "source_evidence_digest": "6dcf15fa24c7fddea0cc1f7f5c90979d6eeb33803eb823568457a275830ef125"
     },
     {
       "step": "S3_code_tests_rev1",
@@ -77,14 +77,14 @@
     {
       "step": "S2_candidate_rev1",
       "outcome": "REGISTERED",
-      "candidate_id": "mc-13d5bd541af3f4f832c42286",
+      "candidate_id": "mc-31b545c0e9f6c391a44e19f5",
       "script_digest": "223e27fcecbf63e4824ab9650349630ed8903acebea4dffb0858df05e18ad5bc"
     },
     {
       "step": "verify_rev1_attempt1",
       "outcome": "FAIL/HISTORICAL_DATA_INCOMPATIBLE",
-      "verification_id": "mv-a915ef6c1efd21210322cc7c",
-      "report_digest": "2633b5669ed61ab8c44c1e4f7f7dd25e77461604cd0ee02dca266cdf77d63c10",
+      "verification_id": "mv-d83d4d53b1c4854bff7d680f",
+      "report_digest": "a14691564894c1d9d5505341c822bd685e98767d1e05943e6aba5a79d6975d95",
       "migration_error": {
         "sqlstate": "23502",
         "message": "ERROR:  column \"customer_id\" of relation \"orders\" contains null values",
@@ -102,16 +102,16 @@
         "sentinel_rows_flagged_for_follow_up",
         "duplicate_payment_now_rejected"
       ],
-      "clone_ms": 33,
-      "migration_duration_ms": 0,
+      "clone_ms": 31,
+      "migration_duration_ms": 1,
       "detail": {
-        "run_id": "run-dbv-h8-rev1",
-        "candidate_id": "mc-13d5bd541af3f4f832c42286",
+        "run_id": "run-dbv-084723-rev1",
+        "candidate_id": "mc-31b545c0e9f6c391a44e19f5",
         "head_sha": "b22fc0622b497de2fca0c1ccf3853618939400b2",
         "migration_rev": 1,
         "attempt": 1,
-        "trial_db": "dbv_trial_run_dbv_h8_rev1_a1",
-        "clone_ms": 33,
+        "trial_db": "dbv_trial_run_dbv_084723_rev1_a1",
+        "clone_ms": 31,
         "migration": {
           "applied": false,
           "error": {
@@ -119,7 +119,7 @@
             "message": "ERROR:  column \"customer_id\" of relation \"orders\" contains null values",
             "detail": ""
           },
-          "duration_ms": 0
+          "duration_ms": 1
         },
         "assertions": [
           {
@@ -216,8 +216,8 @@
         "assertions_total": 11,
         "verdict": "FAIL",
         "failure_class": "HISTORICAL_DATA_INCOMPATIBLE",
-        "verification_id": "mv-a915ef6c1efd21210322cc7c",
-        "report_digest": "2633b5669ed61ab8c44c1e4f7f7dd25e77461604cd0ee02dca266cdf77d63c10"
+        "verification_id": "mv-d83d4d53b1c4854bff7d680f",
+        "report_digest": "a14691564894c1d9d5505341c822bd685e98767d1e05943e6aba5a79d6975d95"
       }
     },
     {
@@ -239,13 +239,13 @@
     {
       "step": "S6_run2_registered",
       "outcome": "BOUND",
-      "run_id": "run-dbv-h8-rev2",
+      "run_id": "run-dbv-084723-rev2",
       "head_sha": "a7db33c36313f5f4c963bd6000b108ca8279d96a",
       "base_sha": "3ce26f656aa6dfdd8e30548537363bff3941132e",
-      "pr_binding_id": "prb-run-dbv-h8-rev2",
-      "revision_binding_id": "rev-c504422a67a21b837999d563e5e07197",
-      "source_call_id": "mcp-run-dbv-h8-rev2-read",
-      "source_evidence_digest": "1a4ea693fde265bb8401e4e6a2909a1d6ec5f6720586b45b0d24bf68721755d0"
+      "pr_binding_id": "prb-run-dbv-084723-rev2",
+      "revision_binding_id": "rev-7b5698664f84731991366d4e14c9a94e",
+      "source_call_id": "mcp-run-dbv-084723-rev2-read",
+      "source_evidence_digest": "cfd782753c14f3283148f3bf87a5aba408cfa8b1d535f03a9dc301fb2403f105"
     },
     {
       "step": "S3_code_tests_rev2",
@@ -264,144 +264,29 @@
     {
       "step": "S6_candidate_rev2",
       "outcome": "REGISTERED",
-      "candidate_id": "mc-5c46cf2e5b7c97dabdcf462e",
-      "parent_candidate_id": "mc-13d5bd541af3f4f832c42286",
+      "candidate_id": "mc-109d93c429f38e6f5139654e",
+      "parent_candidate_id": "mc-31b545c0e9f6c391a44e19f5",
       "script_digest": "5c3d64e04bad548136b63b50e87d26b83af5ada425c7aee052bcb9958623069e"
     },
     {
       "step": "verify_rev2_attempt1",
       "outcome": "PASS/-",
-      "verification_id": "mv-417d2e88841a9ade1b8fdc2b",
-      "report_digest": "0548bee51d1ffbc17ee0fbca8561ed1fffec52e28eb1d9504571ccc6f041c3d0",
+      "verification_id": "mv-04f9e460e5b26e9f2af6e745",
+      "report_digest": "3d0a03fa1311673254843a20b0860247d2fb0659840054dc4ebd7369859f128e",
       "migration_error": null,
       "assertions_passed": 11,
       "assertions_total": 11,
       "failed_assertions": [],
-      "clone_ms": 31,
-      "migration_duration_ms": 29,
+      "clone_ms": 33,
+      "migration_duration_ms": 31,
       "detail": {
-        "run_id": "run-dbv-h8-rev2",
-        "candidate_id": "mc-5c46cf2e5b7c97dabdcf462e",
+        "run_id": "run-dbv-084723-rev2",
+        "candidate_id": "mc-109d93c429f38e6f5139654e",
         "head_sha": "a7db33c36313f5f4c963bd6000b108ca8279d96a",
         "migration_rev": 2,
         "attempt": 1,
-        "trial_db": "dbv_trial_run_dbv_h8_rev2_a1",
-        "clone_ms": 31,
-        "migration": {
-          "applied": true,
-          "error": null,
-          "duration_ms": 29
-        },
-        "assertions": [
-          {
-            "name": "no_null_customer_id",
-            "kind": "scalar",
-            "expect": 0,
-            "actual": 0,
-            "passed": true
-          },
-          {
-            "name": "payments_order_id_unique",
-            "kind": "scalar",
-            "expect": 0,
-            "actual": 0,
-            "passed": true
-          },
-          {
-            "name": "not_null_constraint_present",
-            "kind": "scalar",
-            "expect": "NO",
-            "actual": "NO",
-            "passed": true
-          },
-          {
-            "name": "unique_constraint_present",
-            "kind": "scalar",
-            "expect": 1,
-            "actual": 1,
-            "passed": true
-          },
-          {
-            "name": "orders_row_count_preserved",
-            "kind": "scalar",
-            "expect": 10000,
-            "actual": 10000,
-            "passed": true
-          },
-          {
-            "name": "payments_preserved_incl_archive",
-            "kind": "scalar",
-            "expect": 10002,
-            "actual": 10002,
-            "passed": true
-          },
-          {
-            "name": "backfill_fully_audited",
-            "kind": "scalar",
-            "expect": 137,
-            "actual": 137,
-            "passed": true
-          },
-          {
-            "name": "sentinel_rows_flagged_for_follow_up",
-            "kind": "scalar",
-            "expect": 17,
-            "actual": 17,
-            "passed": true
-          },
-          {
-            "name": "old_worker_compat_insert",
-            "kind": "probe",
-            "expect": "OK",
-            "actual": "OK",
-            "passed": true
-          },
-          {
-            "name": "new_code_insert",
-            "kind": "probe",
-            "expect": "OK",
-            "actual": "OK",
-            "passed": true
-          },
-          {
-            "name": "duplicate_payment_now_rejected",
-            "kind": "probe",
-            "expect": "ERROR",
-            "actual": "ERROR",
-            "error": {
-              "sqlstate": "23505",
-              "message": "ERROR:  duplicate key value violates unique constraint \"uq_payments_order_id\""
-            },
-            "passed": true
-          }
-        ],
-        "assertions_passed": 11,
-        "assertions_total": 11,
-        "verdict": "PASS",
-        "failure_class": null,
-        "verification_id": "mv-417d2e88841a9ade1b8fdc2b",
-        "report_digest": "0548bee51d1ffbc17ee0fbca8561ed1fffec52e28eb1d9504571ccc6f041c3d0"
-      }
-    },
-    {
-      "step": "verify_rev2_attempt2_for_race_test",
-      "outcome": "PASS/-",
-      "verification_id": "mv-b08f38c2ce80c80a9dd4cb8b",
-      "report_digest": "d521008df92c734ffada63b94e326c26b4216f6da5c639adeea74c6e7300ef76",
-      "migration_error": null,
-      "assertions_passed": 11,
-      "assertions_total": 11,
-      "failed_assertions": [],
-      "clone_ms": 29,
-      "migration_duration_ms": 31,
-      "detail": {
-        "run_id": "run-dbv-h8-rev2",
-        "candidate_id": "mc-5c46cf2e5b7c97dabdcf462e",
-        "head_sha": "a7db33c36313f5f4c963bd6000b108ca8279d96a",
-        "migration_rev": 2,
-        "attempt": 2,
-        "trial_db": "dbv_trial_run_dbv_h8_rev2_a2",
-        "clone_ms": 29,
+        "trial_db": "dbv_trial_run_dbv_084723_rev2_a1",
+        "clone_ms": 33,
         "migration": {
           "applied": true,
           "error": null,
@@ -494,63 +379,178 @@
         "assertions_total": 11,
         "verdict": "PASS",
         "failure_class": null,
-        "verification_id": "mv-b08f38c2ce80c80a9dd4cb8b",
-        "report_digest": "d521008df92c734ffada63b94e326c26b4216f6da5c639adeea74c6e7300ef76"
+        "verification_id": "mv-04f9e460e5b26e9f2af6e745",
+        "report_digest": "3d0a03fa1311673254843a20b0860247d2fb0659840054dc4ebd7369859f128e"
+      }
+    },
+    {
+      "step": "verify_rev2_attempt2_for_race_test",
+      "outcome": "PASS/-",
+      "verification_id": "mv-f159237b287a70b2fecd839c",
+      "report_digest": "eee2a9ee0b6e09835563fd67480b2c23e7d79a2f030e6aa391da7a57bf5e9a02",
+      "migration_error": null,
+      "assertions_passed": 11,
+      "assertions_total": 11,
+      "failed_assertions": [],
+      "clone_ms": 31,
+      "migration_duration_ms": 30,
+      "detail": {
+        "run_id": "run-dbv-084723-rev2",
+        "candidate_id": "mc-109d93c429f38e6f5139654e",
+        "head_sha": "a7db33c36313f5f4c963bd6000b108ca8279d96a",
+        "migration_rev": 2,
+        "attempt": 2,
+        "trial_db": "dbv_trial_run_dbv_084723_rev2_a2",
+        "clone_ms": 31,
+        "migration": {
+          "applied": true,
+          "error": null,
+          "duration_ms": 30
+        },
+        "assertions": [
+          {
+            "name": "no_null_customer_id",
+            "kind": "scalar",
+            "expect": 0,
+            "actual": 0,
+            "passed": true
+          },
+          {
+            "name": "payments_order_id_unique",
+            "kind": "scalar",
+            "expect": 0,
+            "actual": 0,
+            "passed": true
+          },
+          {
+            "name": "not_null_constraint_present",
+            "kind": "scalar",
+            "expect": "NO",
+            "actual": "NO",
+            "passed": true
+          },
+          {
+            "name": "unique_constraint_present",
+            "kind": "scalar",
+            "expect": 1,
+            "actual": 1,
+            "passed": true
+          },
+          {
+            "name": "orders_row_count_preserved",
+            "kind": "scalar",
+            "expect": 10000,
+            "actual": 10000,
+            "passed": true
+          },
+          {
+            "name": "payments_preserved_incl_archive",
+            "kind": "scalar",
+            "expect": 10002,
+            "actual": 10002,
+            "passed": true
+          },
+          {
+            "name": "backfill_fully_audited",
+            "kind": "scalar",
+            "expect": 137,
+            "actual": 137,
+            "passed": true
+          },
+          {
+            "name": "sentinel_rows_flagged_for_follow_up",
+            "kind": "scalar",
+            "expect": 17,
+            "actual": 17,
+            "passed": true
+          },
+          {
+            "name": "old_worker_compat_insert",
+            "kind": "probe",
+            "expect": "OK",
+            "actual": "OK",
+            "passed": true
+          },
+          {
+            "name": "new_code_insert",
+            "kind": "probe",
+            "expect": "OK",
+            "actual": "OK",
+            "passed": true
+          },
+          {
+            "name": "duplicate_payment_now_rejected",
+            "kind": "probe",
+            "expect": "ERROR",
+            "actual": "ERROR",
+            "error": {
+              "sqlstate": "23505",
+              "message": "ERROR:  duplicate key value violates unique constraint \"uq_payments_order_id\""
+            },
+            "passed": true
+          }
+        ],
+        "assertions_passed": 11,
+        "assertions_total": 11,
+        "verdict": "PASS",
+        "failure_class": null,
+        "verification_id": "mv-f159237b287a70b2fecd839c",
+        "report_digest": "eee2a9ee0b6e09835563fd67480b2c23e7d79a2f030e6aa391da7a57bf5e9a02"
       }
     },
     {
       "step": "S7_ticket_created",
       "outcome": "PENDING",
-      "ticket_id": "tkt-05615bd7-7e34-4df4-9049-5b98d725b7f3"
+      "ticket_id": "tkt-523e97c2-19ae-49dc-bfb5-356cddf6dbda"
     },
     {
       "step": "S7_bind_verification",
       "outcome": "BOUND",
-      "ticket_id": "tkt-05615bd7-7e34-4df4-9049-5b98d725b7f3",
-      "verification_id": "mv-b08f38c2ce80c80a9dd4cb8b",
-      "race_winner": "B"
+      "ticket_id": "tkt-523e97c2-19ae-49dc-bfb5-356cddf6dbda",
+      "verification_id": "mv-04f9e460e5b26e9f2af6e745",
+      "race_winner": "A"
     },
     {
       "step": "S7_l2_approve",
       "outcome": "APPROVED",
       "approved": true,
       "approved_by": "mergepilot",
-      "ticket_id": "tkt-05615bd7-7e34-4df4-9049-5b98d725b7f3"
+      "ticket_id": "tkt-523e97c2-19ae-49dc-bfb5-356cddf6dbda"
     },
     {
       "step": "S9_run3_followup_commit_registered",
       "outcome": "BOUND",
-      "run_id": "run-dbv-h8-rev3-followup",
+      "run_id": "run-dbv-084723-rev3-followup",
       "head_sha": "a0b4633592c13ea66aca46c14c0c73bbe7a5b814",
       "base_sha": "3ce26f656aa6dfdd8e30548537363bff3941132e",
-      "pr_binding_id": "prb-run-dbv-h8-rev3-followup",
-      "revision_binding_id": "rev-1ae44ad81af78bb41526d52622d35b23",
-      "source_call_id": "mcp-run-dbv-h8-rev3-followup-read",
-      "source_evidence_digest": "d207eb45250c3dc2cc0bd224f1c3a038b12c7091e5e0fd8eefe3231c34a64896"
+      "pr_binding_id": "prb-run-dbv-084723-rev3-followup",
+      "revision_binding_id": "rev-6fa0a85a5edfb809b632f2f5e18f232b",
+      "source_call_id": "mcp-run-dbv-084723-rev3-followup-read",
+      "source_evidence_digest": "43f36445e10eaa3b38995704c0baf9ac4f75b4b8a602beb2b8f88452e6d6c2e3"
     },
     {
       "step": "verify_rev2_late_callback_attempt3",
       "outcome": "PASS/-",
-      "verification_id": "mv-cb88de3fb86205e62112e5b1",
-      "report_digest": "babe9bf9c741fc667856a2e97cdb8a19b5857e27972f2bb8876e881e6f870399",
+      "verification_id": "mv-b445b408bfd8d5d1a669ee4d",
+      "report_digest": "225e4d1acf0c55e692b87245f0c2f7efd88176292a5be5e87935bbec942d1474",
       "migration_error": null,
       "assertions_passed": 11,
       "assertions_total": 11,
       "failed_assertions": [],
-      "clone_ms": 31,
-      "migration_duration_ms": 31,
+      "clone_ms": 30,
+      "migration_duration_ms": 34,
       "detail": {
-        "run_id": "run-dbv-h8-rev2",
-        "candidate_id": "mc-5c46cf2e5b7c97dabdcf462e",
+        "run_id": "run-dbv-084723-rev2",
+        "candidate_id": "mc-109d93c429f38e6f5139654e",
         "head_sha": "a7db33c36313f5f4c963bd6000b108ca8279d96a",
         "migration_rev": 2,
         "attempt": 3,
-        "trial_db": "dbv_trial_run_dbv_h8_rev2_a3",
-        "clone_ms": 31,
+        "trial_db": "dbv_trial_run_dbv_084723_rev2_a3",
+        "clone_ms": 30,
         "migration": {
           "applied": true,
           "error": null,
-          "duration_ms": 31
+          "duration_ms": 34
         },
         "assertions": [
           {
@@ -639,33 +639,33 @@
         "assertions_total": 11,
         "verdict": "PASS",
         "failure_class": null,
-        "verification_id": "mv-cb88de3fb86205e62112e5b1",
-        "report_digest": "babe9bf9c741fc667856a2e97cdb8a19b5857e27972f2bb8876e881e6f870399"
+        "verification_id": "mv-b445b408bfd8d5d1a669ee4d",
+        "report_digest": "225e4d1acf0c55e692b87245f0c2f7efd88176292a5be5e87935bbec942d1474"
       }
     },
     {
       "step": "verify_rev3_latest_attempt1",
       "outcome": "PASS/-",
-      "verification_id": "mv-c79f56f3021dda21e5f763af",
-      "report_digest": "377de3182bdb0303efaea1a8808bffa0f93541fcbc6f61f9e4a89f73524a37d9",
+      "verification_id": "mv-0d53c464254bf3e76a504d87",
+      "report_digest": "582cf745a010ad7c8631d669d884eeb5748cf86d21e85e2ddf9b5179b3eac255",
       "migration_error": null,
       "assertions_passed": 11,
       "assertions_total": 11,
       "failed_assertions": [],
-      "clone_ms": 28,
-      "migration_duration_ms": 31,
+      "clone_ms": 32,
+      "migration_duration_ms": 32,
       "detail": {
-        "run_id": "run-dbv-h8-rev3-followup",
-        "candidate_id": "mc-d9ab02d86d3993aa4ec43cdd",
+        "run_id": "run-dbv-084723-rev3-followup",
+        "candidate_id": "mc-03a457340d6b7f3392444d8e",
         "head_sha": "a0b4633592c13ea66aca46c14c0c73bbe7a5b814",
         "migration_rev": 2,
         "attempt": 1,
-        "trial_db": "dbv_trial_run_dbv_h8_rev3_followup_a1",
-        "clone_ms": 28,
+        "trial_db": "dbv_trial_run_dbv_084723_rev3_followup_a1",
+        "clone_ms": 32,
         "migration": {
           "applied": true,
           "error": null,
-          "duration_ms": 31
+          "duration_ms": 32
         },
         "assertions": [
           {
@@ -754,15 +754,15 @@
         "assertions_total": 11,
         "verdict": "PASS",
         "failure_class": null,
-        "verification_id": "mv-c79f56f3021dda21e5f763af",
-        "report_digest": "377de3182bdb0303efaea1a8808bffa0f93541fcbc6f61f9e4a89f73524a37d9"
+        "verification_id": "mv-0d53c464254bf3e76a504d87",
+        "report_digest": "582cf745a010ad7c8631d669d884eeb5748cf86d21e85e2ddf9b5179b3eac255"
       }
     },
     {
       "step": "S12_claim_executed_then_closed",
       "outcome": "EXECUTING->FAILED(no upstream in this tier)",
-      "ticket_id": "tkt-31ed46c8-e9f5-4924-84bb-cabe1eaed7e4",
-      "execution_id": "80bb8cac-f2db-4e2f-9413-e9caca1e4bdb",
+      "ticket_id": "tkt-d4270026-e0f5-4dc6-acdc-311fb2a535ac",
+      "execution_id": "036b58d2-4e2b-40fc-9286-2707c21fa30c",
       "closed": true,
       "note": "claim = the point where the Policy Gateway would perform the upstream write; nothing is written in this tier"
     },
@@ -804,7 +804,7 @@
     {
       "name": "conflicting_callback_different_digest_rejected",
       "expected": "SQLSTATE 23505",
-      "observed": "23505 ERROR:  mv_record_verification: attempt 1 of mc-13d5bd541af3f4f832c42286 already recorded with a different report; use a new attempt",
+      "observed": "23505 ERROR:  mv_record_verification: attempt 1 of mc-31b545c0e9f6c391a44e19f5 already recorded with a different report; use a new attempt",
       "ok": true
     },
     {
@@ -828,7 +828,7 @@
     {
       "name": "concurrent_bind_exactly_one_wins",
       "expected": "1 winner, 1 binding row",
-      "observed": "winners=['B'] rows=1 losers={'A': '23505'}",
+      "observed": "winners=['A'] rows=1 losers={'B': '23505'}",
       "ok": true
     },
     {
@@ -840,19 +840,19 @@
     {
       "name": "rebind_same_ticket_rejected",
       "expected": "already bound (23505)",
-      "observed": "23505 ERROR:  l2_bind_verification: ticket tkt-05615bd7-7e34-4df4-9049-5b98d725b7f3 already bound",
+      "observed": "23505 ERROR:  l2_bind_verification: ticket tkt-523e97c2-19ae-49dc-bfb5-356cddf6dbda already bound",
       "ok": true
     },
     {
       "name": "fail_verification_cannot_be_bound",
       "expected": "rejected (not PASS/PASS)",
-      "observed": "P0001 ERROR:  l2_bind_verification: verification mv-a915ef6c1efd21210322cc7c is not PASS/PASS (migration=FAIL, code_tests=PASS)",
+      "observed": "P0001 ERROR:  l2_bind_verification: verification mv-d83d4d53b1c4854bff7d680f is not PASS/PASS (migration=FAIL, code_tests=PASS)",
       "ok": true
     },
     {
       "name": "cross_run_verification_cannot_be_bound",
       "expected": "rejected (run mismatch)",
-      "observed": "P0001 ERROR:  l2_bind_verification: verification belongs to run run-dbv-h8-rev2, ticket to run run-dbv-h8-rev1",
+      "observed": "P0001 ERROR:  l2_bind_verification: verification belongs to run run-dbv-084723-rev2, ticket to run run-dbv-084723-rev1",
       "ok": true
     },
     {
@@ -900,7 +900,7 @@
     {
       "name": "claim_refused_without_target_digest_for_bound_ticket",
       "expected": "P0001 TARGET_DATA_DIGEST_REQUIRED; ticket APPROVED",
-      "observed": "P0001 ERROR:  DB_RELEASE_GATE_REFUSED: TARGET_DATA_DIGEST_REQUIRED (bound ticket tkt-31ed46c8-e9 | APPROVED",
+      "observed": "P0001 ERROR:  DB_RELEASE_GATE_REFUSED: TARGET_DATA_DIGEST_REQUIRED (bound ticket tkt-d4270026-e0 | APPROVED",
       "ok": true
     },
     {
@@ -912,13 +912,19 @@
     {
       "name": "concurrent_claim_exactly_one_executes",
       "expected": "1 CLAIMED, ticket EXECUTING with one execution_id",
-      "observed": "results={'A': ('CLAIMED', '80bb8cac-f2db-4e2f-9413-e9caca1e4bdb'), 'B': ('NO_ROW', None)} status=EXECUTING",
+      "observed": "results={'B': ('CLAIMED', '036b58d2-4e2b-40fc-9286-2707c21fa30c'), 'A': ('NO_ROW', None)} status=EXECUTING",
       "ok": true
     },
     {
       "name": "reclaim_on_executing_returns_no_row",
       "expected": "0 rows",
       "observed": "0",
+      "ok": true
+    },
+    {
+      "name": "post_claim_gate_recheck_detects_new_revision",
+      "expected": "gate(EXECUTING ticket): OK before, STALE_SUPERSEDED_BY_NEW_REVISION after a new revision",
+      "observed": "OK -> STALE_SUPERSEDED_BY_NEW_REVISION (status=EXECUTING)",
       "ok": true
     },
     {
@@ -930,7 +936,7 @@
     {
       "name": "claim_refused_when_migration_run_unbound",
       "expected": "P0001 MIGRATION_VERIFICATION_REQUIRED; ticket APPROVED",
-      "observed": "P0001 ERROR:  DB_RELEASE_GATE_REFUSED: MIGRATION_VERIFICATION_REQUIRED (run of ticket tkt-fbaece | APPROVED",
+      "observed": "P0001 ERROR:  DB_RELEASE_GATE_REFUSED: MIGRATION_VERIFICATION_REQUIRED (run of ticket tkt-c28e99 | APPROVED",
       "ok": true
     },
     {
@@ -955,7 +961,7 @@
   "gate_timeline": [
     {
       "label": "before_bind",
-      "ticket_id": "tkt-05615bd7-7e34-4df4-9049-5b98d725b7f3",
+      "ticket_id": "tkt-523e97c2-19ae-49dc-bfb5-356cddf6dbda",
       "valid": false,
       "reason": "NOT_BOUND_TO_VERIFICATION",
       "ticket_status": "PENDING",
@@ -965,76 +971,96 @@
     },
     {
       "label": "bound_not_yet_approved",
-      "ticket_id": "tkt-05615bd7-7e34-4df4-9049-5b98d725b7f3",
+      "ticket_id": "tkt-523e97c2-19ae-49dc-bfb5-356cddf6dbda",
       "valid": false,
       "reason": "TICKET_NOT_APPROVED",
       "ticket_status": "PENDING",
       "bound_head_sha": "a7db33c36313f5f4c963bd6000b108ca8279d96a",
       "current_head_sha": "a7db33c36313f5f4c963bd6000b108ca8279d96a",
-      "verification_id": "mv-b08f38c2ce80c80a9dd4cb8b"
+      "verification_id": "mv-04f9e460e5b26e9f2af6e745"
     },
     {
       "label": "approved_current_version",
-      "ticket_id": "tkt-05615bd7-7e34-4df4-9049-5b98d725b7f3",
+      "ticket_id": "tkt-523e97c2-19ae-49dc-bfb5-356cddf6dbda",
       "valid": true,
       "reason": "OK",
       "ticket_status": "APPROVED",
       "bound_head_sha": "a7db33c36313f5f4c963bd6000b108ca8279d96a",
       "current_head_sha": "a7db33c36313f5f4c963bd6000b108ca8279d96a",
-      "verification_id": "mv-b08f38c2ce80c80a9dd4cb8b"
+      "verification_id": "mv-04f9e460e5b26e9f2af6e745"
     },
     {
       "label": "approved_same_data_digest",
-      "ticket_id": "tkt-05615bd7-7e34-4df4-9049-5b98d725b7f3",
+      "ticket_id": "tkt-523e97c2-19ae-49dc-bfb5-356cddf6dbda",
       "valid": true,
       "reason": "OK",
       "ticket_status": "APPROVED",
       "bound_head_sha": "a7db33c36313f5f4c963bd6000b108ca8279d96a",
       "current_head_sha": "a7db33c36313f5f4c963bd6000b108ca8279d96a",
-      "verification_id": "mv-b08f38c2ce80c80a9dd4cb8b"
+      "verification_id": "mv-04f9e460e5b26e9f2af6e745"
     },
     {
       "label": "target_data_changed",
-      "ticket_id": "tkt-05615bd7-7e34-4df4-9049-5b98d725b7f3",
+      "ticket_id": "tkt-523e97c2-19ae-49dc-bfb5-356cddf6dbda",
       "valid": false,
       "reason": "TARGET_DATA_DIGEST_MISMATCH",
       "ticket_status": "APPROVED",
       "bound_head_sha": "a7db33c36313f5f4c963bd6000b108ca8279d96a",
       "current_head_sha": "a7db33c36313f5f4c963bd6000b108ca8279d96a",
-      "verification_id": "mv-b08f38c2ce80c80a9dd4cb8b"
+      "verification_id": "mv-04f9e460e5b26e9f2af6e745"
     },
     {
       "label": "after_followup_commit",
-      "ticket_id": "tkt-05615bd7-7e34-4df4-9049-5b98d725b7f3",
+      "ticket_id": "tkt-523e97c2-19ae-49dc-bfb5-356cddf6dbda",
       "valid": false,
       "reason": "STALE_SUPERSEDED_BY_NEW_REVISION",
       "ticket_status": "APPROVED",
       "bound_head_sha": "a7db33c36313f5f4c963bd6000b108ca8279d96a",
       "current_head_sha": "a0b4633592c13ea66aca46c14c0c73bbe7a5b814",
-      "verification_id": "mv-b08f38c2ce80c80a9dd4cb8b"
+      "verification_id": "mv-04f9e460e5b26e9f2af6e745"
     },
     {
       "label": "after_late_pass_callback",
-      "ticket_id": "tkt-05615bd7-7e34-4df4-9049-5b98d725b7f3",
+      "ticket_id": "tkt-523e97c2-19ae-49dc-bfb5-356cddf6dbda",
       "valid": false,
       "reason": "STALE_SUPERSEDED_BY_NEW_REVISION",
       "ticket_status": "APPROVED",
       "bound_head_sha": "a7db33c36313f5f4c963bd6000b108ca8279d96a",
       "current_head_sha": "a0b4633592c13ea66aca46c14c0c73bbe7a5b814",
-      "verification_id": "mv-b08f38c2ce80c80a9dd4cb8b"
+      "verification_id": "mv-04f9e460e5b26e9f2af6e745"
+    },
+    {
+      "label": "post_claim_recheck_same_head",
+      "ticket_id": "tkt-d4270026-e0f5-4dc6-acdc-311fb2a535ac",
+      "valid": true,
+      "reason": "OK",
+      "ticket_status": "EXECUTING",
+      "bound_head_sha": "a0b4633592c13ea66aca46c14c0c73bbe7a5b814",
+      "current_head_sha": "a0b4633592c13ea66aca46c14c0c73bbe7a5b814",
+      "verification_id": "mv-0d53c464254bf3e76a504d87"
+    },
+    {
+      "label": "post_claim_recheck_after_new_revision",
+      "ticket_id": "tkt-d4270026-e0f5-4dc6-acdc-311fb2a535ac",
+      "valid": false,
+      "reason": "STALE_SUPERSEDED_BY_NEW_REVISION",
+      "ticket_status": "EXECUTING",
+      "bound_head_sha": "a0b4633592c13ea66aca46c14c0c73bbe7a5b814",
+      "current_head_sha": "7cd779ad3daa11ca9f930c7e36432e72b42b9bd2",
+      "verification_id": "mv-0d53c464254bf3e76a504d87"
     },
     {
       "label": "expired_ticket",
-      "ticket_id": "tkt-3a66528e-6ecd-49d9-9c19-bc936a99c997",
+      "ticket_id": "tkt-6647b5e2-5d38-4fbb-94da-d07de0356879",
       "valid": false,
       "reason": "TICKET_EXPIRED",
       "ticket_status": "APPROVED",
       "bound_head_sha": "a0b4633592c13ea66aca46c14c0c73bbe7a5b814",
-      "current_head_sha": "a0b4633592c13ea66aca46c14c0c73bbe7a5b814",
-      "verification_id": "mv-c79f56f3021dda21e5f763af"
+      "current_head_sha": "7cd779ad3daa11ca9f930c7e36432e72b42b9bd2",
+      "verification_id": "mv-0d53c464254bf3e76a504d87"
     }
   ],
-  "outcome_signature": "0689f544abf613ebea5338ea6b5b0357c2c3256bf082c9e0d019886c1e066c93",
+  "outcome_signature": "b60b328cc33cd8ab7a9f976338947d8a12af44ced1c2ef161c9b40598eaacf0e",
   "run2_status_view": [
     {
       "candidate_key": "candidate-a",
@@ -1066,8 +1092,8 @@
   ],
   "final_disposition": {
     "candidate_a_rev1": "FAIL on historical data (SQLSTATE 23502) — code tests PASS",
-    "candidate_a_rev2": "PASS (11/11 assertions) — approved on head a7db33c36313, ticket tkt-05615bd7-7e34-4df4-9049-5b98d725b7f3",
-    "after_followup_commit": "approval tkt-05615bd7-7e34-4df4-9049-5b98d725b7f3 → STALE_SUPERSEDED_BY_NEW_REVISION; release blocked until re-verification on head a0b4633592c1",
+    "candidate_a_rev2": "PASS (11/11 assertions) — approved on head a7db33c36313, ticket tkt-523e97c2-19ae-49dc-bfb5-356cddf6dbda",
+    "after_followup_commit": "approval tkt-523e97c2-19ae-49dc-bfb5-356cddf6dbda → STALE_SUPERSEDED_BY_NEW_REVISION; release blocked until re-verification on head a0b4633592c1",
     "production_release": "NOT PERFORMED — trial database clone is not a production release; execution requires a controlled rollout using the plan package"
   }
 }

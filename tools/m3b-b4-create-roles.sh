@@ -51,11 +51,15 @@ REVOKE ALL ON approvals, policy_action_outbox, run_pr_bindings, mcp_calls, task_
 REVOKE ALL ON ALL TABLES IN SCHEMA public FROM policy_gateway_l2, mergepilot_approver;
 REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM policy_gateway_l2, mergepilot_approver;
 -- B4a.3 P1#A:撤业务函数 EXECUTE(完整 regprocedure 签名 allowlist,不再 LIKE,避免误伤同名 overload)
+-- l2_claim_ticket 的签名随迁移变化:m9 之前是 5 参,m9 起被替换为 6 参(p_target_data_digest DEFAULT NULL)。
+-- 两个签名都列入 allowlist,只对当前存在的那个执行(to_regprocedure 不存在返回 NULL),
+-- 使脚本在升级前后都可重复运行。
 DO \$rv\$ DECLARE f text;
 BEGIN
   FOREACH f IN ARRAY ARRAY[
     'l2_create_ticket(text,text,jsonb,text,integer,integer)',
     'l2_claim_ticket(text,text,text,integer,text)',
+    'l2_claim_ticket(text,text,text,integer,text,text)',
     'l2_complete_ticket(text,uuid,text)',
     'l2_fail_ticket(text,uuid,text)',
     'l2_mark_unknown(text,uuid,text)',
@@ -65,11 +69,25 @@ BEGIN
     'l2_reconcile_executing(text,boolean,text)',
     'l2_expire_pending(text)'
   ] LOOP
-    EXECUTE format('REVOKE ALL ON FUNCTION %s FROM policy_gateway_l2, mergepilot_approver', f::regprocedure::text);
+    IF to_regprocedure(f) IS NOT NULL THEN
+      EXECUTE format('REVOKE ALL ON FUNCTION %s FROM policy_gateway_l2, mergepilot_approver', to_regprocedure(f)::text);
+    END IF;
   END LOOP;
 END \$rv\$;
--- Gateway L2:仅 4 个函数
-GRANT EXECUTE ON FUNCTION l2_claim_ticket(TEXT,TEXT,TEXT,INTEGER,TEXT)        TO policy_gateway_l2;
+-- Gateway L2:仅 4 个函数(claim 按当前存在的签名授权;m9 自检保证同名函数恰好一个)
+DO \$gc\$ DECLARE f text; v_n int := 0;
+BEGIN
+  FOREACH f IN ARRAY ARRAY['l2_claim_ticket(text,text,text,integer,text)',
+                           'l2_claim_ticket(text,text,text,integer,text,text)'] LOOP
+    IF to_regprocedure(f) IS NOT NULL THEN
+      EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO policy_gateway_l2', to_regprocedure(f)::text);
+      v_n := v_n + 1;
+    END IF;
+  END LOOP;
+  IF v_n <> 1 THEN
+    RAISE EXCEPTION 'expected exactly one l2_claim_ticket signature, found %', v_n;
+  END IF;
+END \$gc\$;
 GRANT EXECUTE ON FUNCTION l2_complete_ticket(TEXT,UUID,TEXT)                  TO policy_gateway_l2;
 GRANT EXECUTE ON FUNCTION l2_fail_ticket(TEXT,UUID,TEXT)                      TO policy_gateway_l2;
 GRANT EXECUTE ON FUNCTION l2_mark_unknown(TEXT,UUID,TEXT)                     TO policy_gateway_l2;

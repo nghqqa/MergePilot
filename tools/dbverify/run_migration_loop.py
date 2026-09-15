@@ -578,6 +578,16 @@ class Loop:
         # double execution prevented: a second claim on an EXECUTING ticket returns no row (gate valid, CAS fails)
         rows = self.q(a, "SELECT count(*) FROM l2_claim_ticket(%s,'merge',%s,%s,%s,%s)", (t3, REPO_NAME, PR_NUMBER, args_hash_of(t3), self.baseline["data_digest"]), one=True)[0]
         self.negative("reclaim_on_executing_returns_no_row", "0 rows", "%d" % rows, rows == 0)
+        # 12b'. claim → execute window, version side: db_release_gate accepts EXECUTING, so the executor re-runs it
+        #       right before 02-migrate.sql (the data side is the digest recompute in 12f). Same head → OK; a revision
+        #       pushed AFTER the claim → STALE_SUPERSEDED_BY_NEW_REVISION → the executor must stop and fail the ticket.
+        g_exec_ok = self.gate("post_claim_recheck_same_head", t3, self.baseline["data_digest"])
+        head4 = git_tree_sha({"app/orders.py": b"print('follow-up commit pushed after the claim')\n", "migrations/candidate-a.rev2.sql": read_norm(CASE_DIR / "migrations" / "candidate-a.rev2.sql")})
+        self.register_run("run-dbv-%s-rev4-post-claim" % self.args.run_suffix, head4, base_sha)
+        g_exec_stale = self.gate("post_claim_recheck_after_new_revision", t3, self.baseline["data_digest"])
+        self.negative("post_claim_gate_recheck_detects_new_revision", "gate(EXECUTING ticket): OK before, STALE_SUPERSEDED_BY_NEW_REVISION after a new revision",
+                      "%s -> %s (status=%s)" % (g_exec_ok["reason"], g_exec_stale["reason"], g_exec_stale["ticket_status"]),
+                      g_exec_ok["reason"] == "OK" and g_exec_stale["reason"] == "STALE_SUPERSEDED_BY_NEW_REVISION" and g_exec_stale["ticket_status"] == "EXECUTING")
         # no upstream write exists in this tier: close the execution honestly as FAILED with the reason
         failed = self.q(a, "SELECT l2_fail_ticket(%s,%s::uuid,%s)", (t3, exec_id, "harness: upstream write not performed (ISOLATED_POSTGRES tier, no GitHub)"), one=True)[0]
         self.step("S12_claim_executed_then_closed", outcome="EXECUTING->FAILED(no upstream in this tier)", ticket_id=t3, execution_id=exec_id, closed=failed,
@@ -754,7 +764,8 @@ COMMIT;
 
 1. `01-preflight.sql`（只读）：目标库的历史数据画像必须与验证基线一致（137 NULL / 2 重复 / 120 可回填）。任一不符 → **停止**，回到验证环节。
 2. 目标数据摘要 **只能**由执行方在目标库上用规范算法现算：`python tools/dbverify/data_digest.py --dsn <目标库> --tables customers,orders,payments,legacy_order_owner --expect <上表 data 摘要>`（不符则 exit 3 → **停止**）。随后携带该摘要领取票据：`l2_claim_ticket(<ticket>, 'merge', <repo>, <pr>, <args_hash>, <摘要>)`——绑定了验证的票据**不带摘要即拒绝**（TARGET_DATA_DIGEST_REQUIRED），STALE / MISMATCH / 未批准 / 过期同样拒绝且票据不进入 EXECUTING。
-   claim 到执行之间仍有时间窗：在 `02-migrate.sql` 之前**再算一次**摘要，与 claim 时的值不一致 → **停止**（`l2_fail_ticket`），不得继续。
+   claim 到执行之间仍有时间窗，两侧都要再查一次：数据侧在 `02-migrate.sql` 之前**再算一次**摘要，与 claim 时的值不一致 → **停止**（`l2_fail_ticket`）；版本侧再跑一次 `SELECT * FROM db_release_gate(<ticket>, <摘要>)`（票据处于 EXECUTING 时闸门同样可查），`valid=false`（如 claim 后又有新提交 → STALE_SUPERSEDED_BY_NEW_REVISION，或票据过期）→ **停止**（`l2_fail_ticket`），不得继续。
+   闸门不能覆盖的部分要写清楚：摘要值本身由执行方测量并传入，数据库只能把它与验证基线比对，无法证明它确实来自目标库——执行方（网关/发布器）是可信边界；`01-preflight.sql` 的基线画像对照是目标库身份的内容级佐证。
 3. `02-migrate.sql`：单事务；失败即自动回滚，目标库无残留（回填审计表与去重归档表在同一事务内创建）。
 4. `03-postcheck.sql`：与试验验证相同的断言；任一不符 → 执行 `04-rollback.sql` 并停止后续发布步骤。
 5. 应用发布：先发布新代码（总是携带 customer_id），旧 worker 依赖 `DEFAULT 0` 在窗口期内继续可写；窗口期结束后处理 `orders_backfill_audit.source='sentinel'` 的 17 条记录，再评估移除 DEFAULT。

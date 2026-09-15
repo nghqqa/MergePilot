@@ -37,7 +37,10 @@ class TestMigrationLoopAgainstPostgres(unittest.TestCase):
         self.assertEqual(failed, [], failed)
         self.assertEqual([g["reason"] for g in report["gate_timeline"]], [
             "NOT_BOUND_TO_VERIFICATION", "TICKET_NOT_APPROVED", "OK", "OK", "TARGET_DATA_DIGEST_MISMATCH",
-            "STALE_SUPERSEDED_BY_NEW_REVISION", "STALE_SUPERSEDED_BY_NEW_REVISION", "TICKET_EXPIRED"])
+            "STALE_SUPERSEDED_BY_NEW_REVISION", "STALE_SUPERSEDED_BY_NEW_REVISION",
+            # post-claim re-check on the EXECUTING ticket: same head OK, revision pushed after the claim → STALE
+            "OK", "STALE_SUPERSEDED_BY_NEW_REVISION",
+            "TICKET_EXPIRED"])
         names = {n["name"] for n in report["negative_tests"]}
         for required in ("duplicate_callback_same_digest_is_noop", "claim_refused_on_stale_head",
                          "claim_refused_on_target_data_digest_change", "concurrent_claim_exactly_one_executes",
@@ -45,7 +48,7 @@ class TestMigrationLoopAgainstPostgres(unittest.TestCase):
                          "gateway_wrapper_maps_gate_refusal", "plain_ticket_claim_unchanged",
                          "reclaim_on_executing_returns_no_row", "claim_refused_without_target_digest_for_bound_ticket",
                          "claim_refused_when_migration_run_unbound", "recompute_before_migrate_matches_bound_digest",
-                         "data_drift_after_claim_detected"):
+                         "data_drift_after_claim_detected", "post_claim_gate_recheck_detects_new_revision"):
             self.assertIn(required, names)
         self.assertIn(report["environment"]["gateway_wrapper_mode"], ("MODULE_IMPORT", "AST_EXTRACT_FALLBACK"))
         try:
