@@ -19,7 +19,9 @@
       目标数据摘要变化 → TARGET_DATA_DIGEST_MISMATCH
   S10 迟到回调:失效后再为 run-2 候选回写 PASS → 闸门仍失效(旧回调不能使失效结果重新有效)
   S11 交付迁移方案包(绑定到真实验证摘要)
-  S12 证据目录 + SHA256SUMS,清理试验库
+  S12 授权执行路径:l2_claim_ticket 内强制 db_release_gate(stale / 摘要变化 / 未批准 / 过期 → 拒绝,不进 EXECUTING);
+      并发 claim 只有一个成功;未绑定验证的票据行为不变;网关包装函数把拒绝映射为 GATE_REFUSED
+  S13 证据目录 + SHA256SUMS,清理试验库
 
 用法:
   python tools/dbverify/run_migration_loop.py --pg-port 55432 --pg-password-file <file> \
@@ -58,6 +60,14 @@ def sha256_bytes(b: bytes) -> str:
 
 def sha256_text(s: str) -> str:
     return sha256_bytes(s.encode("utf-8"))
+
+
+def _repo_rel(p) -> str:
+    """Repo-relative, forward-slash form of an output path (no machine-specific prefixes in evidence)."""
+    try:
+        return Path(p).resolve().relative_to(REPO_ROOT).as_posix()
+    except ValueError:
+        return Path(p).name
 
 
 def write_lf(path: Path, text: str) -> None:
@@ -510,6 +520,86 @@ class Loop:
         ok, code, msg = self.try_sql(a, "UPDATE revision_bindings SET head_sha=%s WHERE run_id=%s", (head2, run3["run_id"]))
         self.negative("revision_bindings_immutable_unchanged", "UPDATE rejected", "%s %s" % (code, msg), not ok)
 
+        # ── S12 claim-path enforcement: the Gateway's final authorized execution ──
+        # From m9 on, l2_claim_ticket() (APPROVED → EXECUTING CAS) refuses any ticket bound to a
+        # migration verification unless db_release_gate() is valid AT CLAIM TIME. We drive it two
+        # ways: (a) the SQL function directly, (b) the real gateway.py wrapper body extracted from
+        # source (the module itself needs `mcp`, Python>=3.10, so it cannot be imported here).
+        gw_claim = self.load_gateway_claim_wrapper()
+        args_hash_of = lambda t: self.q(a, "SELECT args_hash FROM approvals WHERE ticket_id=%s", (t,), one=True)[0]
+        def claim_direct(t, digest):
+            return self.try_sql(a, "SELECT * FROM l2_claim_ticket(%s,'merge',%s,%s,%s,%s)", (t, REPO_NAME, PR_NUMBER, args_hash_of(t), digest))
+        # 12a. stale ticket (run-2, superseded by run-3) → gate refuses, ticket stays APPROVED, no execution_id
+        ok, code, msg = claim_direct(ticket, self.baseline["data_digest"])
+        st = self.q(a, "SELECT status, execution_id FROM approvals WHERE ticket_id=%s", (ticket,), one=True)
+        self.negative("claim_refused_on_stale_head", "P0001 DB_RELEASE_GATE_REFUSED STALE; ticket APPROVED, no execution_id",
+                      "%s %s | status=%s exec=%s" % (code, (msg or "")[:90], st[0], st[1]),
+                      (not ok) and code == "P0001" and "STALE_SUPERSEDED_BY_NEW_REVISION" in (msg or "") and st[0] == "APPROVED" and st[1] is None)
+        gwstat, gwclaim = gw_claim(ticket, "merge", REPO_NAME, PR_NUMBER, args_hash_of(ticket), self.baseline["data_digest"])
+        self.negative("gateway_wrapper_maps_gate_refusal", "GATE_REFUSED (not DB_ERROR, not CLAIMED)", "%s %s" % (gwstat, (gwclaim or {}).get("reason", "")[:80]), gwstat == "GATE_REFUSED")
+        # 12b. fresh chain on the LATEST revision (run-3): candidate rev3 (same script as rev2) → verify PASS → ticket
+        cand3 = self.q(a, "SELECT mv_register_candidate(%s,'candidate-a',3,%s,%s,%s)",
+                       (run3["run_id"], cand2, "migrations/candidate-a.rev2.sql", dig2), one=True)[0]
+        v3 = self.verify("rev3_latest_attempt1", run3, cand3, 2, 1)
+        t3 = self.create_ticket(run3)
+        # gate refusal before approval (bound but PENDING)
+        bound3 = self.q(a, "SELECT l2_bind_verification(%s,%s)", (t3, v3["verification_id"]), one=True)[0]
+        ok, code, msg = claim_direct(t3, self.baseline["data_digest"])
+        self.negative("claim_refused_before_approval", "P0001 TICKET_NOT_APPROVED", "%s %s" % (code, (msg or "")[:90]), (not ok) and "TICKET_NOT_APPROVED" in (msg or ""))
+        self.q(a, "SELECT l2_approve(%s)", (t3,))
+        # wrong target data digest → refused, ticket still APPROVED
+        ok, code, msg = claim_direct(t3, "e" * 64)
+        st = self.q(a, "SELECT status FROM approvals WHERE ticket_id=%s", (t3,), one=True)[0]
+        self.negative("claim_refused_on_target_data_digest_change", "P0001 TARGET_DATA_DIGEST_MISMATCH; ticket APPROVED",
+                      "%s %s | %s" % (code, (msg or "")[:90], st), (not ok) and "TARGET_DATA_DIGEST_MISMATCH" in (msg or "") and st == "APPROVED")
+        # concurrent claims with the correct digest → exactly one EXECUTING (CAS), the other 0 rows
+        results = {}
+        barrier = threading.Barrier(2)
+        def claim_thread(name):
+            c = self.connect(self.args.audit_db, autocommit=True)
+            barrier.wait()
+            try:
+                with c.cursor() as cur:
+                    cur.execute("SELECT execution_id FROM l2_claim_ticket(%s,'merge',%s,%s,%s,%s)", (t3, REPO_NAME, PR_NUMBER, args_hash_of(t3), self.baseline["data_digest"]))
+                    row = cur.fetchone()
+                results[name] = ("CLAIMED", str(row[0])) if row and row[0] else ("NO_ROW", None)
+            except psycopg2.Error as e:
+                results[name] = ("ERROR", (e.pgerror or str(e)).splitlines()[0][:100])
+            c.close()
+        th = [threading.Thread(target=claim_thread, args=(n,)) for n in ("A", "B")]
+        [t.start() for t in th]; [t.join() for t in th]
+        claimed = [k for k, r in results.items() if r[0] == "CLAIMED"]
+        st = self.q(a, "SELECT status, execution_id FROM approvals WHERE ticket_id=%s", (t3,), one=True)
+        self.negative("concurrent_claim_exactly_one_executes", "1 CLAIMED, ticket EXECUTING with one execution_id",
+                      "results=%s status=%s" % (results, st[0]), len(claimed) == 1 and st[0] == "EXECUTING" and st[1] is not None)
+        exec_id = str(st[1])
+        # double execution prevented: a second claim on an EXECUTING ticket returns no row (gate valid, CAS fails)
+        rows = self.q(a, "SELECT count(*) FROM l2_claim_ticket(%s,'merge',%s,%s,%s,%s)", (t3, REPO_NAME, PR_NUMBER, args_hash_of(t3), self.baseline["data_digest"]), one=True)[0]
+        self.negative("reclaim_on_executing_returns_no_row", "0 rows", "%d" % rows, rows == 0)
+        # no upstream write exists in this tier: close the execution honestly as FAILED with the reason
+        failed = self.q(a, "SELECT l2_fail_ticket(%s,%s::uuid,%s)", (t3, exec_id, "harness: upstream write not performed (ISOLATED_POSTGRES tier, no GitHub)"), one=True)[0]
+        self.step("S12_claim_executed_then_closed", outcome="EXECUTING->FAILED(no upstream in this tier)", ticket_id=t3, execution_id=exec_id, closed=failed,
+                  note="claim = the point where the Policy Gateway would perform the upstream write; nothing is written in this tier")
+        # 12c. expired ticket: new ticket on the same binding (previous one is FAILED, so the active-ticket index allows it)
+        t4 = self.create_ticket(run3)
+        self.q(a, "SELECT l2_bind_verification(%s,%s)", (t4, v3["verification_id"]))
+        self.q(a, "SELECT l2_approve(%s)", (t4,))
+        self.q(a, "UPDATE approvals SET expires_at = now() - interval '1 hour' WHERE ticket_id=%s", (t4,))   # test-only clock manipulation on the mutable ticket row
+        g_exp = self.gate("expired_ticket", t4)
+        ok, code, msg = claim_direct(t4, self.baseline["data_digest"])
+        self.negative("claim_refused_on_expired_ticket", "gate TICKET_EXPIRED; claim P0001", "gate=%s claim=%s %s" % (g_exp["reason"], code, (msg or "")[:60]),
+                      g_exp["reason"] == "TICKET_EXPIRED" and (not ok) and "TICKET_EXPIRED" in (msg or ""))
+        # 12d. unbound ticket (ordinary code PR, no migration verification): behaviour unchanged → CLAIMED
+        self.q(a, "SELECT l2_approve(%s)", (ticket_fail,))
+        gwstat_plain, gwclaim_plain = gw_claim(ticket_fail, "merge", REPO_NAME, PR_NUMBER, args_hash_of(ticket_fail), None)
+        self.negative("unbound_ticket_claim_unchanged", "CLAIMED (no verification binding → gate not consulted)", gwstat_plain, gwstat_plain == "CLAIMED")
+        if gwstat_plain == "CLAIMED":
+            self.q(a, "SELECT l2_fail_ticket(%s,%s::uuid,%s)", (ticket_fail, gwclaim_plain["execution_id"], "harness: unbound ticket closed, no upstream"))
+        self.step("S12_claim_path_summary", outcome="GATE_ENFORCED_AT_CLAIM",
+                  enforced_in="public.l2_claim_ticket (m9 §5.7) → db_release_gate(ticket, target_data_digest)",
+                  gateway_mapping="gateway.py l2_claim_ticket wrapper: DB_RELEASE_GATE_REFUSED → status GATE_REFUSED → DENY (no execution_id, no upstream call)",
+                  tier="LOCAL_REAL_SQL (ISOLATED_POSTGRES); not Agentic Database; no GitHub write")
+
         # run status view for the demo/console
         status = self.q(a, "SELECT candidate_key, revision_no, attempt, migration_verdict, code_tests_verdict, failure_class, trial_kind FROM mv_run_status(%s)", (run2["run_id"],))
         self.report["run2_status_view"] = [dict(zip(["candidate_key", "revision_no", "attempt", "migration_verdict", "code_tests_verdict", "failure_class", "trial_kind"], r)) for r in status]
@@ -528,6 +618,46 @@ class Loop:
         self.write_evidence()
         self.cleanup()
         return self.report
+
+    def load_gateway_claim_wrapper(self):
+        """Return the REAL gateway.py::l2_claim_ticket wrapper bound to this harness's audit connection.
+
+        Preferred path: import tools/policy-gateway/gateway.py as a module (needs the `mcp` package,
+        i.e. Python>=3.10 — the conda env `goai` provides mcp==1.28.1, the version pinned by the
+        gateway image) and point its _get_l2_conn() at our real psycopg2 connection. Fallback when the
+        module cannot be imported (e.g. Python 3.9 without mcp): extract the function definition from
+        the source with `ast` and execute it in an isolated namespace. Either way the classification
+        logic under test is the repository's own code; the evidence records which path ran."""
+        conn = self.connect(self.args.audit_db, autocommit=True)
+        gw_dir = REPO_ROOT / "tools" / "policy-gateway"
+        env = self.report.setdefault("environment", {})
+        try:
+            import importlib
+            os.environ.setdefault("POLICY_FILE", str(gw_dir / "policy.yaml"))
+            sys.path.insert(0, str(gw_dir))
+            gateway = importlib.import_module("gateway")
+            gateway._get_l2_conn = lambda: conn  # the only seam: the L2 DSN connection factory
+            try:
+                import importlib.metadata as _md
+                mcp_ver = _md.version("mcp")
+            except Exception:  # pragma: no cover
+                mcp_ver = "unknown"
+            env["gateway_wrapper_source"] = ("tools/policy-gateway/gateway.py imported as a module (mcp %s, Python %s); "
+                                             "_get_l2_conn patched to the harness connection" % (mcp_ver, sys.version.split()[0]))
+            env["gateway_wrapper_mode"] = "MODULE_IMPORT"
+            return gateway.l2_claim_ticket
+        except Exception as exc:  # noqa: BLE001 — fall back, but say so in the evidence
+            import ast as _ast
+            src_path = gw_dir / "gateway.py"
+            tree = _ast.parse(src_path.read_text(encoding="utf-8"))
+            fn = next(n for n in tree.body if isinstance(n, _ast.FunctionDef) and n.name == "l2_claim_ticket")
+            module = _ast.Module(body=[fn], type_ignores=[])
+            ns = {"json": json, "sys": sys, "_get_l2_conn": lambda: conn, "psycopg2": psycopg2}
+            exec(compile(module, str(src_path), "exec"), ns)  # noqa: S102 — executes the repository's own function body
+            env["gateway_wrapper_source"] = ("tools/policy-gateway/gateway.py::l2_claim_ticket extracted via ast "
+                                             "(module import failed: %s: %s)" % (type(exc).__name__, str(exc)[:80]))
+            env["gateway_wrapper_mode"] = "AST_EXTRACT_FALLBACK"
+            return ns["l2_claim_ticket"]
 
     def write_plan_package(self, run, candidate_id, script_digest, v):
         out = Path(self.args.plan_out) if getattr(self.args, "plan_out", None) else (REPO_ROOT / "release" / "migration-plans" / "orders-schema-change" / "candidate-a.rev2")
@@ -626,7 +756,7 @@ COMMIT;
             dst.write_bytes(read_norm(CASE_DIR / rel))
         meta = {"generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "python": sys.version.split()[0],
                 "git_head": git(["rev-parse", "HEAD"]).decode().strip(), "trial_instance": self.args.trial_instance,
-                "image": self.args.image, "command": "python tools/dbverify/run_migration_loop.py --pg-port %d --trial-instance ... --out %s" % (self.args.pg_port, self.args.out),
+                "image": self.args.image, "command": "python tools/dbverify/run_migration_loop.py --pg-port %d --trial-instance ... --out %s" % (self.args.pg_port, _repo_rel(self.args.out)),
                 "evidence_tier": "REAL_SQL_VERIFICATION_ISOLATED_POSTGRES (not Agentic Database branch)"}
         write_lf(out / "run-meta.json", json.dumps(meta, indent=2) + "\n")
         names = ["report.json", "run.log", "run-meta.json"] + ["case/" + r for r in ["baseline/schema.sql", "baseline/seed.sql", "migrations/candidate-a.rev1.sql", "migrations/candidate-a.rev2.sql", "assertions.json"]]

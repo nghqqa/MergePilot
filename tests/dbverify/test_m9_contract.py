@@ -70,6 +70,22 @@ class TestM9Shape(unittest.TestCase):
         self.assertIn("DROP FUNCTION IF EXISTS public.db_release_gate(TEXT);", SQL)  # signature change stays idempotent
         self.assertIn("p_target_data_digest TEXT DEFAULT NULL", SQL)
 
+    def test_claim_path_enforces_gate_fail_closed(self):
+        # m9 5.7: the Gateway's final authorized execution (APPROVED -> EXECUTING CAS) must consult the
+        # gate for tickets bound to a migration verification, and refuse without touching state.
+        self.assertIn("DROP FUNCTION IF EXISTS public.l2_claim_ticket(TEXT,TEXT,TEXT,INTEGER,TEXT);", SQL)
+        self.assertRegex(SQL, r"CREATE OR REPLACE FUNCTION public\.l2_claim_ticket\([^)]*p_target_data_digest TEXT DEFAULT NULL\)")
+        self.assertIn("FROM public.approval_verification_bindings b WHERE b.ticket_id = p_ticket_id", SQL)
+        self.assertIn("FROM public.db_release_gate(p_ticket_id, p_target_data_digest) g", SQL)
+        self.assertIn("RAISE EXCEPTION 'DB_RELEASE_GATE_REFUSED:", SQL)
+        # the refusal happens BEFORE the UPDATE that moves the ticket to EXECUTING
+        self.assertLess(SQL.index("RAISE EXCEPTION 'DB_RELEASE_GATE_REFUSED:"), SQL.index("status='EXECUTING', execution_id=gen_random_uuid()"))
+        # least privilege for the SECURITY DEFINER owner of l2_*: exactly the two grants the guard needs
+        self.assertIn("GRANT SELECT ON public.approval_verification_bindings TO mergepilot_l2_owner;", SQL)
+        self.assertIn("GRANT EXECUTE ON FUNCTION public.db_release_gate(TEXT,TEXT) TO mergepilot_l2_owner;", SQL)
+        self.assertIn("OWNER TO mergepilot_l2_owner", SQL)
+        self.assertIn("p_target_data_digest text%'", SQL)   # self-check pins the single 6-parameter signature
+
     def test_grants_follow_deny_by_not_granted(self):
         self.assertIn("REVOKE ALL ON public.data_baselines", SQL)
         self.assertIn("TO mergepilot_reader;", SQL)

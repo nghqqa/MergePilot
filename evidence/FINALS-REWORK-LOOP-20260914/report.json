@@ -23,7 +23,7 @@
   },
   "scenarios": {
     "A_rework_then_pass": {
-      "run_id": "run-rework-h3-a",
+      "run_id": "run-rework-f1-a",
       "checks": {
         "submit_creates_review_stage": true,
         "attempt1_tests_fail": true,
@@ -59,7 +59,7 @@
         {
           "attempt": 1,
           "tree_sha": "760c20801d733acaf0c8f1b6beb209eeda77cab0",
-          "diff_file": "patches/run-rework-h3-a-attempt1.diff",
+          "diff_file": "patches/run-rework-f1-a-attempt1.diff",
           "tests": {
             "verdict": "FAIL",
             "command": "python -m unittest discover -s <revision> -p 'test_*.py'",
@@ -77,12 +77,12 @@
             "verdict": "FAIL",
             "last_error": "verify FAIL; retry fix attempt=2 (1/3)"
           },
-          "rework_reason": "verify FAIL(第 1/3 次),回退修复。完成写 TASK_COMPLETED: run-rework-h3-a-fix。"
+          "rework_reason": "verify FAIL(第 1/3 次),回退修复。完成写 TASK_COMPLETED: run-rework-f1-a-fix。"
         },
         {
           "attempt": 2,
           "tree_sha": "255490e3831dab05a39421e0867eeb1bd5d69e2a",
-          "diff_file": "patches/run-rework-h3-a-attempt2.diff",
+          "diff_file": "patches/run-rework-f1-a-attempt2.diff",
           "tests": {
             "verdict": "PASS",
             "command": "python -m unittest discover -s <revision> -p 'test_*.py'",
@@ -151,40 +151,40 @@
             "target_stage": "review",
             "attempt": 1,
             "status": "PENDING",
-            "body": "请审查 mergepilot/payments-demo PR#7 (分支 fix/payment-idempotency)。用 gh-mcp-read.sh + sast-scan,findings 写 shared/tasks/run-rework-h3-a-review/findings.md。完成写 TASK_COMPLETED: run-rework-h3-a-review。"
+            "body": "请审查 mergepilot/payments-demo PR#7 (分支 fix/payment-idempotency)。用 gh-mcp-read.sh + sast-scan,findings 写 shared/tasks/run-rework-f1-a-review/findings.md。完成写 TASK_COMPLETED: run-rework-f1-a-review。"
           },
           {
             "target_agent": "fixer",
             "target_stage": "fix",
             "attempt": 1,
             "status": "PENDING",
-            "body": "run-rework-h3-a-review 完成,findings 见 shared/tasks/run-rework-h3-a-review/findings.md。请用 gh-mcp-fix.sh 提修复 PR(L2 密钥/依赖/删除类只出方案)。完成写 TASK_COMPLETED: run-rework-h3-a-fix。"
+            "body": "run-rework-f1-a-review 完成,findings 见 shared/tasks/run-rework-f1-a-review/findings.md。请用 gh-mcp-fix.sh 提修复 PR(L2 密钥/依赖/删除类只出方案)。完成写 TASK_COMPLETED: run-rework-f1-a-fix。"
           },
           {
             "target_agent": "verifier",
             "target_stage": "verify",
             "attempt": 1,
             "status": "PENDING",
-            "body": "run-rework-h3-a-fix 完成,修复 PR 见 shared/tasks/run-rework-h3-a-fix/。请用 gh-mcp-read.sh 读修复分支逐项复核。完成写 TASK_COMPLETED: run-rework-h3-a-verify。"
+            "body": "run-rework-f1-a-fix 完成,修复 PR 见 shared/tasks/run-rework-f1-a-fix/。请用 gh-mcp-read.sh 读修复分支逐项复核。完成写 TASK_COMPLETED: run-rework-f1-a-verify。"
           },
           {
             "target_agent": "fixer",
             "target_stage": "fix",
             "attempt": 2,
             "status": "PENDING",
-            "body": "verify FAIL(第 1/3 次),回退修复。完成写 TASK_COMPLETED: run-rework-h3-a-fix。"
+            "body": "verify FAIL(第 1/3 次),回退修复。完成写 TASK_COMPLETED: run-rework-f1-a-fix。"
           },
           {
             "target_agent": "verifier",
             "target_stage": "verify",
             "attempt": 2,
             "status": "PENDING",
-            "body": "run-rework-h3-a-fix 完成,修复 PR 见 shared/tasks/run-rework-h3-a-fix/。请用 gh-mcp-read.sh 读修复分支逐项复核。完成写 TASK_COMPLETED: run-rework-h3-a-verify。"
+            "body": "run-rework-f1-a-fix 完成,修复 PR 见 shared/tasks/run-rework-f1-a-fix/。请用 gh-mcp-read.sh 读修复分支逐项复核。完成写 TASK_COMPLETED: run-rework-f1-a-verify。"
           }
         ],
         "stage_events": [
           {
-            "event_id": "$e0b5223786104c4b8af8e7",
+            "event_id": "$8ed35485fc3c44af98b5e5",
             "sender": "@admin:matrix-local.hiclaw.io:18080",
             "event_type": "TASK_SUBMITTED",
             "stage": "review",
@@ -192,7 +192,7 @@
             "error": null
           },
           {
-            "event_id": "$ad208e1249414162b490f6",
+            "event_id": "$dc25a959d52949888f28a9",
             "sender": "@reviewer:matrix-local.hiclaw.io:18080",
             "event_type": "TASK_COMPLETED",
             "stage": "review",
@@ -200,7 +200,7 @@
             "error": null
           },
           {
-            "event_id": "$5b470ace1cdf4b3cbe2ce8",
+            "event_id": "$63d5eb4d85ed427e91cf42",
             "sender": "@fixer:matrix-local.hiclaw.io:18080",
             "event_type": "TASK_COMPLETED",
             "stage": "fix",
@@ -208,7 +208,7 @@
             "error": null
           },
           {
-            "event_id": "$2797c5441353432eafe8d7",
+            "event_id": "$a18aec01140f47b485c15a",
             "sender": "@verifier:matrix-local.hiclaw.io:18080",
             "event_type": "TASK_COMPLETED",
             "stage": "verify",
@@ -216,7 +216,7 @@
             "error": null
           },
           {
-            "event_id": "$aaaf8e1fa54745398ab8a9",
+            "event_id": "$804bf3a4763d4eeeb65f68",
             "sender": "@fixer:matrix-local.hiclaw.io:18080",
             "event_type": "TASK_COMPLETED",
             "stage": "fix",
@@ -224,7 +224,7 @@
             "error": null
           },
           {
-            "event_id": "$499305f1c1c94bf2a54be0",
+            "event_id": "$fb370c9f948e43999c8dbe",
             "sender": "@verifier:matrix-local.hiclaw.io:18080",
             "event_type": "TASK_COMPLETED",
             "stage": "verify",
@@ -235,7 +235,7 @@
       }
     },
     "B_retry_cap_hold": {
-      "run_id": "run-rework-h3-b",
+      "run_id": "run-rework-f1-b",
       "checks": {
         "all_verdicts_fail": true,
         "rework_dispatched_before_cap": true,
@@ -328,54 +328,54 @@
             "target_stage": "review",
             "attempt": 1,
             "status": "PENDING",
-            "body": "请审查 mergepilot/payments-demo PR#7 (分支 fix/payment-idempotency)。用 gh-mcp-read.sh + sast-scan,findings 写 shared/tasks/run-rework-h3-b-review/findings.md。完成写 TASK_COMPLETED: run-rework-h3-b-review。"
+            "body": "请审查 mergepilot/payments-demo PR#7 (分支 fix/payment-idempotency)。用 gh-mcp-read.sh + sast-scan,findings 写 shared/tasks/run-rework-f1-b-review/findings.md。完成写 TASK_COMPLETED: run-rework-f1-b-review。"
           },
           {
             "target_agent": "fixer",
             "target_stage": "fix",
             "attempt": 1,
             "status": "PENDING",
-            "body": "run-rework-h3-b-review 完成,findings 见 shared/tasks/run-rework-h3-b-review/findings.md。请用 gh-mcp-fix.sh 提修复 PR(L2 密钥/依赖/删除类只出方案)。完成写 TASK_COMPLETED: run-rework-h3-b-fix。"
+            "body": "run-rework-f1-b-review 完成,findings 见 shared/tasks/run-rework-f1-b-review/findings.md。请用 gh-mcp-fix.sh 提修复 PR(L2 密钥/依赖/删除类只出方案)。完成写 TASK_COMPLETED: run-rework-f1-b-fix。"
           },
           {
             "target_agent": "verifier",
             "target_stage": "verify",
             "attempt": 1,
             "status": "PENDING",
-            "body": "run-rework-h3-b-fix 完成,修复 PR 见 shared/tasks/run-rework-h3-b-fix/。请用 gh-mcp-read.sh 读修复分支逐项复核。完成写 TASK_COMPLETED: run-rework-h3-b-verify。"
+            "body": "run-rework-f1-b-fix 完成,修复 PR 见 shared/tasks/run-rework-f1-b-fix/。请用 gh-mcp-read.sh 读修复分支逐项复核。完成写 TASK_COMPLETED: run-rework-f1-b-verify。"
           },
           {
             "target_agent": "fixer",
             "target_stage": "fix",
             "attempt": 2,
             "status": "PENDING",
-            "body": "verify FAIL(第 1/3 次),回退修复。完成写 TASK_COMPLETED: run-rework-h3-b-fix。"
+            "body": "verify FAIL(第 1/3 次),回退修复。完成写 TASK_COMPLETED: run-rework-f1-b-fix。"
           },
           {
             "target_agent": "verifier",
             "target_stage": "verify",
             "attempt": 2,
             "status": "PENDING",
-            "body": "run-rework-h3-b-fix 完成,修复 PR 见 shared/tasks/run-rework-h3-b-fix/。请用 gh-mcp-read.sh 读修复分支逐项复核。完成写 TASK_COMPLETED: run-rework-h3-b-verify。"
+            "body": "run-rework-f1-b-fix 完成,修复 PR 见 shared/tasks/run-rework-f1-b-fix/。请用 gh-mcp-read.sh 读修复分支逐项复核。完成写 TASK_COMPLETED: run-rework-f1-b-verify。"
           },
           {
             "target_agent": "fixer",
             "target_stage": "fix",
             "attempt": 3,
             "status": "PENDING",
-            "body": "verify FAIL(第 2/3 次),回退修复。完成写 TASK_COMPLETED: run-rework-h3-b-fix。"
+            "body": "verify FAIL(第 2/3 次),回退修复。完成写 TASK_COMPLETED: run-rework-f1-b-fix。"
           },
           {
             "target_agent": "verifier",
             "target_stage": "verify",
             "attempt": 3,
             "status": "PENDING",
-            "body": "run-rework-h3-b-fix 完成,修复 PR 见 shared/tasks/run-rework-h3-b-fix/。请用 gh-mcp-read.sh 读修复分支逐项复核。完成写 TASK_COMPLETED: run-rework-h3-b-verify。"
+            "body": "run-rework-f1-b-fix 完成,修复 PR 见 shared/tasks/run-rework-f1-b-fix/。请用 gh-mcp-read.sh 读修复分支逐项复核。完成写 TASK_COMPLETED: run-rework-f1-b-verify。"
           }
         ],
         "stage_events": [
           {
-            "event_id": "$e0b5223786104c4b8af8e7",
+            "event_id": "$8ed35485fc3c44af98b5e5",
             "sender": "@admin:matrix-local.hiclaw.io:18080",
             "event_type": "TASK_SUBMITTED",
             "stage": "review",
@@ -383,7 +383,7 @@
             "error": null
           },
           {
-            "event_id": "$ad208e1249414162b490f6",
+            "event_id": "$dc25a959d52949888f28a9",
             "sender": "@reviewer:matrix-local.hiclaw.io:18080",
             "event_type": "TASK_COMPLETED",
             "stage": "review",
@@ -391,7 +391,7 @@
             "error": null
           },
           {
-            "event_id": "$5b470ace1cdf4b3cbe2ce8",
+            "event_id": "$63d5eb4d85ed427e91cf42",
             "sender": "@fixer:matrix-local.hiclaw.io:18080",
             "event_type": "TASK_COMPLETED",
             "stage": "fix",
@@ -399,7 +399,7 @@
             "error": null
           },
           {
-            "event_id": "$2797c5441353432eafe8d7",
+            "event_id": "$a18aec01140f47b485c15a",
             "sender": "@verifier:matrix-local.hiclaw.io:18080",
             "event_type": "TASK_COMPLETED",
             "stage": "verify",
@@ -407,7 +407,7 @@
             "error": null
           },
           {
-            "event_id": "$aaaf8e1fa54745398ab8a9",
+            "event_id": "$804bf3a4763d4eeeb65f68",
             "sender": "@fixer:matrix-local.hiclaw.io:18080",
             "event_type": "TASK_COMPLETED",
             "stage": "fix",
@@ -415,7 +415,7 @@
             "error": null
           },
           {
-            "event_id": "$499305f1c1c94bf2a54be0",
+            "event_id": "$fb370c9f948e43999c8dbe",
             "sender": "@verifier:matrix-local.hiclaw.io:18080",
             "event_type": "TASK_COMPLETED",
             "stage": "verify",
@@ -423,7 +423,7 @@
             "error": null
           },
           {
-            "event_id": "$50e11a9cca6e4c2383dbd6",
+            "event_id": "$a6fe802e610b4d4a874fd5",
             "sender": "@admin:matrix-local.hiclaw.io:18080",
             "event_type": "TASK_SUBMITTED",
             "stage": "review",
@@ -431,7 +431,7 @@
             "error": null
           },
           {
-            "event_id": "$80666c7509774902a1fc08",
+            "event_id": "$32c64c6295334bc3b56a12",
             "sender": "@reviewer:matrix-local.hiclaw.io:18080",
             "event_type": "TASK_COMPLETED",
             "stage": "review",
@@ -439,7 +439,7 @@
             "error": null
           },
           {
-            "event_id": "$8438af485a6942319295fe",
+            "event_id": "$d6024ad49f3848d2ad4992",
             "sender": "@fixer:matrix-local.hiclaw.io:18080",
             "event_type": "TASK_COMPLETED",
             "stage": "fix",
@@ -447,7 +447,7 @@
             "error": null
           },
           {
-            "event_id": "$346625cb2f9d422aaf73a1",
+            "event_id": "$8b07b3e6c1734e4f81f676",
             "sender": "@verifier:matrix-local.hiclaw.io:18080",
             "event_type": "TASK_COMPLETED",
             "stage": "verify",
@@ -455,7 +455,7 @@
             "error": null
           },
           {
-            "event_id": "$fc6c89a9e4f844aeb69a5a",
+            "event_id": "$4b17fa6528a34cbca92ffc",
             "sender": "@fixer:matrix-local.hiclaw.io:18080",
             "event_type": "TASK_COMPLETED",
             "stage": "fix",
@@ -463,7 +463,7 @@
             "error": null
           },
           {
-            "event_id": "$7b906aee025f42dc9ddca0",
+            "event_id": "$4438642f13e94e43b28c62",
             "sender": "@verifier:matrix-local.hiclaw.io:18080",
             "event_type": "TASK_COMPLETED",
             "stage": "verify",
@@ -471,7 +471,7 @@
             "error": null
           },
           {
-            "event_id": "$a4108b6d412248beb2e1d4",
+            "event_id": "$d61f2ee9e79b401c9d3837",
             "sender": "@fixer:matrix-local.hiclaw.io:18080",
             "event_type": "TASK_COMPLETED",
             "stage": "fix",
@@ -479,7 +479,7 @@
             "error": null
           },
           {
-            "event_id": "$76499d9a1aaa4d9faaa9cd",
+            "event_id": "$6c53183c95b749419db70f",
             "sender": "@verifier:matrix-local.hiclaw.io:18080",
             "event_type": "TASK_COMPLETED",
             "stage": "verify",
@@ -490,7 +490,7 @@
       }
     },
     "C_missing_context_blocked_escalation": {
-      "run_id": "run-rework-h3-c",
+      "run_id": "run-rework-f1-c",
       "checks": {
         "verifier_blocked_on_missing_context": true,
         "blocked_recorded_as_needs_approval": true,
@@ -597,54 +597,54 @@
             "target_stage": "review",
             "attempt": 1,
             "status": "PENDING",
-            "body": "请审查 mergepilot/payments-demo PR#7 (分支 fix/payment-idempotency)。用 gh-mcp-read.sh + sast-scan,findings 写 shared/tasks/run-rework-h3-c-review/findings.md。完成写 TASK_COMPLETED: run-rework-h3-c-review。"
+            "body": "请审查 mergepilot/payments-demo PR#7 (分支 fix/payment-idempotency)。用 gh-mcp-read.sh + sast-scan,findings 写 shared/tasks/run-rework-f1-c-review/findings.md。完成写 TASK_COMPLETED: run-rework-f1-c-review。"
           },
           {
             "target_agent": "fixer",
             "target_stage": "fix",
             "attempt": 1,
             "status": "PENDING",
-            "body": "run-rework-h3-c-review 完成,findings 见 shared/tasks/run-rework-h3-c-review/findings.md。请用 gh-mcp-fix.sh 提修复 PR(L2 密钥/依赖/删除类只出方案)。完成写 TASK_COMPLETED: run-rework-h3-c-fix。"
+            "body": "run-rework-f1-c-review 完成,findings 见 shared/tasks/run-rework-f1-c-review/findings.md。请用 gh-mcp-fix.sh 提修复 PR(L2 密钥/依赖/删除类只出方案)。完成写 TASK_COMPLETED: run-rework-f1-c-fix。"
           },
           {
             "target_agent": "verifier",
             "target_stage": "verify",
             "attempt": 1,
             "status": "PENDING",
-            "body": "run-rework-h3-c-fix 完成,修复 PR 见 shared/tasks/run-rework-h3-c-fix/。请用 gh-mcp-read.sh 读修复分支逐项复核。完成写 TASK_COMPLETED: run-rework-h3-c-verify。"
+            "body": "run-rework-f1-c-fix 完成,修复 PR 见 shared/tasks/run-rework-f1-c-fix/。请用 gh-mcp-read.sh 读修复分支逐项复核。完成写 TASK_COMPLETED: run-rework-f1-c-verify。"
           },
           {
             "target_agent": "fixer",
             "target_stage": "fix",
             "attempt": 2,
             "status": "PENDING",
-            "body": "verify FAIL(第 1/3 次),回退修复。完成写 TASK_COMPLETED: run-rework-h3-c-fix。"
+            "body": "verify FAIL(第 1/3 次),回退修复。完成写 TASK_COMPLETED: run-rework-f1-c-fix。"
           },
           {
             "target_agent": "verifier",
             "target_stage": "verify",
             "attempt": 2,
             "status": "PENDING",
-            "body": "run-rework-h3-c-fix 完成,修复 PR 见 shared/tasks/run-rework-h3-c-fix/。请用 gh-mcp-read.sh 读修复分支逐项复核。完成写 TASK_COMPLETED: run-rework-h3-c-verify。"
+            "body": "run-rework-f1-c-fix 完成,修复 PR 见 shared/tasks/run-rework-f1-c-fix/。请用 gh-mcp-read.sh 读修复分支逐项复核。完成写 TASK_COMPLETED: run-rework-f1-c-verify。"
           },
           {
             "target_agent": "fixer",
             "target_stage": "fix",
             "attempt": 3,
             "status": "PENDING",
-            "body": "verify FAIL(第 2/3 次),回退修复。完成写 TASK_COMPLETED: run-rework-h3-c-fix。"
+            "body": "verify FAIL(第 2/3 次),回退修复。完成写 TASK_COMPLETED: run-rework-f1-c-fix。"
           },
           {
             "target_agent": "verifier",
             "target_stage": "verify",
             "attempt": 3,
             "status": "PENDING",
-            "body": "run-rework-h3-c-fix 完成,修复 PR 见 shared/tasks/run-rework-h3-c-fix/。请用 gh-mcp-read.sh 读修复分支逐项复核。完成写 TASK_COMPLETED: run-rework-h3-c-verify。"
+            "body": "run-rework-f1-c-fix 完成,修复 PR 见 shared/tasks/run-rework-f1-c-fix/。请用 gh-mcp-read.sh 读修复分支逐项复核。完成写 TASK_COMPLETED: run-rework-f1-c-verify。"
           }
         ],
         "stage_events": [
           {
-            "event_id": "$e0b5223786104c4b8af8e7",
+            "event_id": "$8ed35485fc3c44af98b5e5",
             "sender": "@admin:matrix-local.hiclaw.io:18080",
             "event_type": "TASK_SUBMITTED",
             "stage": "review",
@@ -652,7 +652,7 @@
             "error": null
           },
           {
-            "event_id": "$ad208e1249414162b490f6",
+            "event_id": "$dc25a959d52949888f28a9",
             "sender": "@reviewer:matrix-local.hiclaw.io:18080",
             "event_type": "TASK_COMPLETED",
             "stage": "review",
@@ -660,7 +660,7 @@
             "error": null
           },
           {
-            "event_id": "$5b470ace1cdf4b3cbe2ce8",
+            "event_id": "$63d5eb4d85ed427e91cf42",
             "sender": "@fixer:matrix-local.hiclaw.io:18080",
             "event_type": "TASK_COMPLETED",
             "stage": "fix",
@@ -668,7 +668,7 @@
             "error": null
           },
           {
-            "event_id": "$2797c5441353432eafe8d7",
+            "event_id": "$a18aec01140f47b485c15a",
             "sender": "@verifier:matrix-local.hiclaw.io:18080",
             "event_type": "TASK_COMPLETED",
             "stage": "verify",
@@ -676,7 +676,7 @@
             "error": null
           },
           {
-            "event_id": "$aaaf8e1fa54745398ab8a9",
+            "event_id": "$804bf3a4763d4eeeb65f68",
             "sender": "@fixer:matrix-local.hiclaw.io:18080",
             "event_type": "TASK_COMPLETED",
             "stage": "fix",
@@ -684,7 +684,7 @@
             "error": null
           },
           {
-            "event_id": "$499305f1c1c94bf2a54be0",
+            "event_id": "$fb370c9f948e43999c8dbe",
             "sender": "@verifier:matrix-local.hiclaw.io:18080",
             "event_type": "TASK_COMPLETED",
             "stage": "verify",
@@ -692,7 +692,7 @@
             "error": null
           },
           {
-            "event_id": "$50e11a9cca6e4c2383dbd6",
+            "event_id": "$a6fe802e610b4d4a874fd5",
             "sender": "@admin:matrix-local.hiclaw.io:18080",
             "event_type": "TASK_SUBMITTED",
             "stage": "review",
@@ -700,7 +700,7 @@
             "error": null
           },
           {
-            "event_id": "$80666c7509774902a1fc08",
+            "event_id": "$32c64c6295334bc3b56a12",
             "sender": "@reviewer:matrix-local.hiclaw.io:18080",
             "event_type": "TASK_COMPLETED",
             "stage": "review",
@@ -708,7 +708,7 @@
             "error": null
           },
           {
-            "event_id": "$8438af485a6942319295fe",
+            "event_id": "$d6024ad49f3848d2ad4992",
             "sender": "@fixer:matrix-local.hiclaw.io:18080",
             "event_type": "TASK_COMPLETED",
             "stage": "fix",
@@ -716,7 +716,7 @@
             "error": null
           },
           {
-            "event_id": "$346625cb2f9d422aaf73a1",
+            "event_id": "$8b07b3e6c1734e4f81f676",
             "sender": "@verifier:matrix-local.hiclaw.io:18080",
             "event_type": "TASK_COMPLETED",
             "stage": "verify",
@@ -724,7 +724,7 @@
             "error": null
           },
           {
-            "event_id": "$fc6c89a9e4f844aeb69a5a",
+            "event_id": "$4b17fa6528a34cbca92ffc",
             "sender": "@fixer:matrix-local.hiclaw.io:18080",
             "event_type": "TASK_COMPLETED",
             "stage": "fix",
@@ -732,7 +732,7 @@
             "error": null
           },
           {
-            "event_id": "$7b906aee025f42dc9ddca0",
+            "event_id": "$4438642f13e94e43b28c62",
             "sender": "@verifier:matrix-local.hiclaw.io:18080",
             "event_type": "TASK_COMPLETED",
             "stage": "verify",
@@ -740,7 +740,7 @@
             "error": null
           },
           {
-            "event_id": "$a4108b6d412248beb2e1d4",
+            "event_id": "$d61f2ee9e79b401c9d3837",
             "sender": "@fixer:matrix-local.hiclaw.io:18080",
             "event_type": "TASK_COMPLETED",
             "stage": "fix",
@@ -748,7 +748,7 @@
             "error": null
           },
           {
-            "event_id": "$76499d9a1aaa4d9faaa9cd",
+            "event_id": "$6c53183c95b749419db70f",
             "sender": "@verifier:matrix-local.hiclaw.io:18080",
             "event_type": "TASK_COMPLETED",
             "stage": "verify",
@@ -756,7 +756,7 @@
             "error": null
           },
           {
-            "event_id": "$dc3106813574401eb10ec2",
+            "event_id": "$391cf4912d844e44948b2d",
             "sender": "@admin:matrix-local.hiclaw.io:18080",
             "event_type": "TASK_SUBMITTED",
             "stage": "review",
@@ -764,7 +764,7 @@
             "error": null
           },
           {
-            "event_id": "$9f368b185d7e4fd487aa42",
+            "event_id": "$cc150fa2139845238f1444",
             "sender": "@reviewer:matrix-local.hiclaw.io:18080",
             "event_type": "TASK_COMPLETED",
             "stage": "review",
@@ -772,7 +772,7 @@
             "error": null
           },
           {
-            "event_id": "$f1e6dc58bf11496eb35f0c",
+            "event_id": "$26acca4b5ef74f3db17b80",
             "sender": "@fixer:matrix-local.hiclaw.io:18080",
             "event_type": "TASK_COMPLETED",
             "stage": "fix",
@@ -780,7 +780,7 @@
             "error": null
           },
           {
-            "event_id": "$ad911cdf3f9844fc8b6da4",
+            "event_id": "$2ae13174eb5e42f9b0912e",
             "sender": "@verifier:matrix-local.hiclaw.io:18080",
             "event_type": "TASK_COMPLETED",
             "stage": "verify",
@@ -788,7 +788,7 @@
             "error": null
           },
           {
-            "event_id": "$93271dc4b3904b769fb1be",
+            "event_id": "$4b251f96063f42dfb44910",
             "sender": "@fixer:matrix-local.hiclaw.io:18080",
             "event_type": "TASK_COMPLETED",
             "stage": "fix",
@@ -796,7 +796,7 @@
             "error": null
           },
           {
-            "event_id": "$f75bb19179c04a97917a4d",
+            "event_id": "$4a306f52e819430ea1f086",
             "sender": "@verifier:matrix-local.hiclaw.io:18080",
             "event_type": "TASK_COMPLETED",
             "stage": "verify",
@@ -804,7 +804,7 @@
             "error": null
           },
           {
-            "event_id": "$ec8b9d12ab07431795a29e",
+            "event_id": "$52c51e23468e4009846d39",
             "sender": "@fixer:matrix-local.hiclaw.io:18080",
             "event_type": "TASK_COMPLETED",
             "stage": "fix",
@@ -812,7 +812,7 @@
             "error": null
           },
           {
-            "event_id": "$c76c9eb1cd474b4e8d1455",
+            "event_id": "$7993a3bc75e447edb458a2",
             "sender": "@verifier:matrix-local.hiclaw.io:18080",
             "event_type": "TASK_COMPLETED",
             "stage": "verify",
@@ -824,7 +824,7 @@
       "observation": "Legacy path treats BLOCKED like FAIL (consumes a verify attempt, sends back to Fixer); the Verifier's reason lives in stage_events.raw_body, the outbox body is the generic rework text. Human escalation = HOLD at the cap."
     },
     "D_conflicts_and_invalid_inputs": {
-      "run_id": "run-rework-h3-d",
+      "run_id": "run-rework-f1-d",
       "checks": {
         "verify_from_non_verifier": true,
         "duplicate_event_id_ignored": true,

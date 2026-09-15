@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-14T16:07:43Z",
+  "generated_at": "2026-09-15T02:14:34Z",
   "python": "3.9.25",
-  "command": "python benchmark/reliability/run_reliability.py --out D:\\goai\\mp-worktrees\\finals-opt-20260914\\evidence\\FINALS-RELIABILITY-20260914"
+  "command": "python benchmark/reliability/run_reliability.py --out evidence/FINALS-RELIABILITY-20260914"
 }

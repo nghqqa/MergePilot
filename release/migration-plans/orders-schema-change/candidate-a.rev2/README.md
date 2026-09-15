@@ -15,9 +15,9 @@
 | 数据基线 schema 摘要 | `594cb9c48d2db429165fb9a6c1832d8b0bbde42740b67c2d47978fa437ca0c4f` |
 | 数据基线 data 摘要 | `e3e3c59da7deaa85b1c8dc8b9dd1371bd931fc81b0aa8e2ccf2aeb1ca3135bf9` |
 | 基线行数 | {"customers": 500, "orders": 10000, "payments": 10002, "legacy_order_owner": 120} |
-| 验证实例 | test:isolated-postgres |
+| 验证实例 | docker:452423c43d8d@sha256:7f58c9936b2ef7f3e1fa20ac7d13cc1d7337ebf2380eec75677efe0204daadf0 |
 | PostgreSQL | 16.14 (Debian 16.14-1.pgdg12+1) |
-| 验证记录 | `mv-9dc16f1fb9ef07f31aa6808e`（report_digest `38137b62f591a38456a1e314afb205bb84712dd0f658d461659b43e7e84b0d7e`） |
+| 验证记录 | `mv-d1b4a14bb0a2a0114405881f`（report_digest `e537f4373611a3f233530c3a9ec3b023edc55149143852081ed3fa389d90b12a`） |
 | 断言 | 11/11 通过 |
 
 ## 执行顺序

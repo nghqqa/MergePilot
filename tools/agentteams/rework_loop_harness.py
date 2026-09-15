@@ -50,6 +50,14 @@ ROOM = "!rework-mechanism:matrix-local"
 SERVER = "matrix-local.hiclaw.io:18080"
 
 
+def _repo_rel(p) -> str:
+    """Repo-relative, forward-slash form of an output path (no machine-specific prefixes in evidence)."""
+    try:
+        return Path(p).resolve().relative_to(REPO_ROOT).as_posix()
+    except ValueError:
+        return Path(p).name
+
+
 def sha256_text(s: str) -> str:
     return hashlib.sha256(s.encode("utf-8")).hexdigest()
 
@@ -326,7 +334,7 @@ class Harness:
         files["report.json"] = json.dumps(self.report, indent=2, ensure_ascii=False, default=str) + "\n"
         files["run-meta.json"] = json.dumps({"generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "python": sys.version.split()[0],
                                              "git_head": git(["rev-parse", "HEAD"]).decode().strip(),
-                                             "command": "python tools/agentteams/rework_loop_harness.py --pg-port %d --out %s" % (self.args.pg_port, self.args.out),
+                                             "command": "python tools/agentteams/rework_loop_harness.py --pg-port %d --out %s" % (self.args.pg_port, _repo_rel(self.args.out)),
                                              "evidence_tier": "MECHANISM_VERIFICATION"}, indent=2) + "\n"
         for name, content in files.items():
             with open(out / name, "w", encoding="utf-8", newline="\n") as f:

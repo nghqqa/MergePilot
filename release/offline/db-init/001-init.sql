@@ -3524,6 +3524,53 @@ SECURITY DEFINER SET search_path = pg_catalog, public LANGUAGE sql STABLE AS $$
    ORDER BY c.candidate_key, c.revision_no, v.attempt;
 $$;
 
+-- ═══ 5.7 授权执行路径强制过闸(claim-path enforcement)═══
+-- Policy Gateway 的最终授权执行 = l2_claim_ticket()(APPROVED → EXECUTING 的 CAS)。
+-- 这里把 db_release_gate 接进 claim 本身:凡绑定了迁移验证的票据,闸门不 valid 就**不能**进入
+-- EXECUTING —— 不写入、不推进状态;抛异常(P0001)让网关按 DB 侧拒绝处理。未绑定迁移验证的票据
+-- (普通代码 PR)行为与 m3b_b4 原函数逐字节一致。第 6 个参数 p_target_data_digest 可选:
+-- 发布执行方传入"即将被迁移的目标数据"摘要;网关透传 args.release_data_digest(不进 args_hash)。
+-- 旧的 5 参签名被替换为带默认值的 6 参签名(既有 5 参调用方无需改动)。
+DROP FUNCTION IF EXISTS public.l2_claim_ticket(TEXT,TEXT,TEXT,INTEGER,TEXT);
+CREATE OR REPLACE FUNCTION public.l2_claim_ticket(
+    p_ticket_id TEXT, p_action TEXT, p_repo TEXT, p_pr_number INTEGER, p_args_hash TEXT,
+    p_target_data_digest TEXT DEFAULT NULL)
+RETURNS TABLE(execution_id UUID, canonical_payload JSONB, expected_head_sha TEXT, target_branch TEXT)
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public AS $$
+DECLARE v_gate record;
+BEGIN
+  IF EXISTS (SELECT 1 FROM public.approval_verification_bindings b WHERE b.ticket_id = p_ticket_id) THEN
+    SELECT g.valid, g.reason, g.bound_head_sha, g.current_head_sha
+      INTO v_gate FROM public.db_release_gate(p_ticket_id, p_target_data_digest) g;
+    IF v_gate.valid IS DISTINCT FROM TRUE THEN
+      -- fail-closed:票据保持 APPROVED(不推进),不产生 execution_id,不写入
+      RAISE EXCEPTION 'DB_RELEASE_GATE_REFUSED: % (bound_head=%, current_head=%)',
+        COALESCE(v_gate.reason, 'GATE_ERROR'), v_gate.bound_head_sha, v_gate.current_head_sha
+        USING ERRCODE = 'P0001';
+    END IF;
+  END IF;
+  UPDATE public.approvals SET
+    status='EXECUTING', execution_id=gen_random_uuid(), executing_at=now()
+  WHERE ticket_id=p_ticket_id AND status='APPROVED'
+    AND action=p_action AND repo=p_repo AND pr_number=p_pr_number AND args_hash=p_args_hash
+    AND expires_at IS NOT NULL AND expires_at > now()
+  RETURNING approvals.execution_id, approvals.canonical_payload, approvals.expected_head_sha, approvals.target_branch
+  INTO execution_id, canonical_payload, expected_head_sha, target_branch;
+  IF NOT FOUND THEN RETURN; END IF;
+  RETURN NEXT;
+END $$;
+-- owner / 权限与 m3b_b4 的 l2_* 约定一致:owner mergepilot_l2_owner,REVOKE PUBLIC,
+-- 网关登录角色 policy_gateway_l2 若存在则 GRANT(该角色由部署脚本 m3b-b4-create-roles.sh 创建)。
+DO $$ BEGIN
+  ALTER FUNCTION public.l2_claim_ticket(TEXT,TEXT,TEXT,INTEGER,TEXT,TEXT) OWNER TO mergepilot_l2_owner;
+END $$;
+REVOKE ALL ON FUNCTION public.l2_claim_ticket(TEXT,TEXT,TEXT,INTEGER,TEXT,TEXT) FROM PUBLIC;
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'policy_gateway_l2') THEN
+    GRANT EXECUTE ON FUNCTION public.l2_claim_ticket(TEXT,TEXT,TEXT,INTEGER,TEXT,TEXT) TO policy_gateway_l2;
+  END IF;
+END $$;
+
 -- ═══ 6. 权限(deny-by-not-granted;与 002-console / m4f1 角色矩阵一致)═══
 REVOKE ALL ON public.data_baselines, public.migration_candidates, public.migration_verifications,
               public.approval_verification_bindings FROM PUBLIC;
@@ -3541,17 +3588,27 @@ GRANT EXECUTE ON FUNCTION public.mv_record_verification(TEXT,TEXT,INTEGER,TEXT,T
 GRANT EXECUTE ON FUNCTION public.l2_bind_verification(TEXT,TEXT) TO mergepilot_approver;
 GRANT EXECUTE ON FUNCTION public.db_release_gate(TEXT,TEXT) TO gate_owner, mergepilot_approver, mergepilot_reader, runtime_owner;
 GRANT EXECUTE ON FUNCTION public.mv_run_status(TEXT) TO mergepilot_reader, runtime_owner;
+-- claim-path enforcement runs inside l2_claim_ticket, whose SECURITY DEFINER owner is the
+-- least-privilege role mergepilot_l2_owner: it needs exactly (a) SELECT on the binding table
+-- for the EXISTS check and (b) EXECUTE on db_release_gate. Nothing else.
+GRANT SELECT ON public.approval_verification_bindings TO mergepilot_l2_owner;
+GRANT EXECUTE ON FUNCTION public.db_release_gate(TEXT,TEXT) TO mergepilot_l2_owner;
 
 -- ═══ 7. 自检(fail-closed)═══
 DO $$
-DECLARE v_tables INT; v_funcs INT;
+DECLARE v_tables INT; v_funcs INT; v_claim INT;
 BEGIN
   SELECT count(*) INTO v_tables FROM pg_tables WHERE schemaname='public'
    AND tablename IN ('data_baselines','migration_candidates','migration_verifications','approval_verification_bindings');
   SELECT count(*) INTO v_funcs FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public'
    AND p.proname IN ('mv_register_baseline','mv_register_candidate','mv_record_verification','l2_bind_verification','db_release_gate','mv_run_status');
-  IF v_tables <> 4 OR v_funcs <> 6 THEN
-    RAISE EXCEPTION 'm9 self-check failed: tables=% funcs=%', v_tables, v_funcs;
+  -- exactly one l2_claim_ticket, the gate-enforcing 6-parameter signature
+  SELECT count(*) INTO v_claim FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+   WHERE n.nspname='public' AND p.proname='l2_claim_ticket'
+     AND pg_get_function_identity_arguments(p.oid) LIKE '%p_target_data_digest text%';
+  IF v_tables <> 4 OR v_funcs <> 6 OR v_claim <> 1
+     OR (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proname='l2_claim_ticket') <> 1 THEN
+    RAISE EXCEPTION 'm9 self-check failed: tables=% funcs=% claim_overloads_ok=%', v_tables, v_funcs, v_claim;
   END IF;
 END $$;
 

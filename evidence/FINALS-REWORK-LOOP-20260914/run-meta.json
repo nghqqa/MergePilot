@@ -1,7 +1,7 @@
 {
-  "generated_at": "2026-09-14T14:23:03Z",
+  "generated_at": "2026-09-15T02:14:34Z",
   "python": "3.9.25",
-  "git_head": "db5944a4d4555f4cf90cf0099c90f9a833584460",
-  "command": "python tools/agentteams/rework_loop_harness.py --pg-port 55432 --out D:\\goai\\mp-worktrees\\finals-opt-20260914\\evidence\\FINALS-REWORK-LOOP-20260914",
+  "git_head": "0fba982196340b4ecb3913e83bc3eb673bee817a",
+  "command": "python tools/agentteams/rework_loop_harness.py --pg-port 55432 --out evidence/FINALS-REWORK-LOOP-20260914",
   "evidence_tier": "MECHANISM_VERIFICATION"
 }

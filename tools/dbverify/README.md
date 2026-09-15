@@ -23,6 +23,16 @@
 
 函数：`mv_register_baseline` / `mv_register_candidate` / `mv_record_verification`（幂等重复回调，异摘要拒绝）/ `l2_bind_verification`（审批人绑定，事务内校验，PK 保证并发只有一个成功）/ `db_release_gate(ticket, target_data_digest)`（**每次调用重算** 11 项匹配，结果不落库，旧回调无法使失效结果复活）/ `mv_run_status`。
 
+## 授权执行路径（m9 §5.7）
+
+Policy Gateway 的最终授权执行点是 `l2_claim_ticket()`（APPROVED → EXECUTING 的 CAS）。m9 把闸门接进 claim 本身：
+票据若绑定了迁移验证，`db_release_gate(ticket, target_data_digest)` 不 valid → `P0001 DB_RELEASE_GATE_REFUSED`，
+**不推进状态、不产生 execution_id、不发生上游写入**；未绑定验证的票据行为不变。网关（`gateway.py`）把
+`release_data_digest` 作为验证参数透传（不进 args_hash、不转发上游），把 DB 侧拒绝映射为 DENY `DB_RELEASE_GATE_REFUSED`。
+运行器 S12 在真实 PG 上覆盖：stale / 摘要变化 / 未批准 / 过期 / 并发 claim / 重复 claim / 未绑定 / 网关包装映射。
+网关模块的真实导入需要 `mcp==1.28.1`（Python ≥3.10）：`conda run -n goai python tools/dbverify/run_migration_loop.py …`；
+3.9 下运行器退回 ast 提取并在证据 `environment.gateway_wrapper_mode` 标注。
+
 ## 运行
 
 ```bash

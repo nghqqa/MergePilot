@@ -8,11 +8,11 @@ test_single_charge_recorded (test_payments.TestPaymentLedger) ... ok
 FAIL: test_second_payment_request_for_same_order_is_idempotent (test_payments.TestPaymentLedger)
 ----------------------------------------------------------------------
 Traceback (most recent call last):
-  File "C:\Users\ngh\AppData\Local\Temp\rework-verify-yhosfh6p\test_payments.py", line 34, in test_second_payment_request_for_same_order_is_idempotent
+  File "C:\Users\ngh\AppData\Local\Temp\rework-verify-it9mw_05\test_payments.py", line 34, in test_second_payment_request_for_same_order_is_idempotent
     self.assertEqual(ledger.total_for_order(1), 500, "an order must never be charged twice")
 AssertionError: 1000 != 500 : an order must never be charged twice
 
 ----------------------------------------------------------------------
-Ran 5 tests in 0.001s
+Ran 5 tests in 0.000s
 
 FAILED (failures=1)

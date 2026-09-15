@@ -37,7 +37,20 @@ class TestMigrationLoopAgainstPostgres(unittest.TestCase):
         self.assertEqual(failed, [], failed)
         self.assertEqual([g["reason"] for g in report["gate_timeline"]], [
             "NOT_BOUND_TO_VERIFICATION", "TICKET_NOT_APPROVED", "OK", "OK", "TARGET_DATA_DIGEST_MISMATCH",
-            "STALE_SUPERSEDED_BY_NEW_REVISION", "STALE_SUPERSEDED_BY_NEW_REVISION"])
+            "STALE_SUPERSEDED_BY_NEW_REVISION", "STALE_SUPERSEDED_BY_NEW_REVISION", "TICKET_EXPIRED"])
+        names = {n["name"] for n in report["negative_tests"]}
+        for required in ("duplicate_callback_same_digest_is_noop", "claim_refused_on_stale_head",
+                         "claim_refused_on_target_data_digest_change", "concurrent_claim_exactly_one_executes",
+                         "claim_refused_on_expired_ticket", "claim_refused_before_approval",
+                         "gateway_wrapper_maps_gate_refusal", "unbound_ticket_claim_unchanged",
+                         "reclaim_on_executing_returns_no_row"):
+            self.assertIn(required, names)
+        self.assertIn(report["environment"]["gateway_wrapper_mode"], ("MODULE_IMPORT", "AST_EXTRACT_FALLBACK"))
+        try:
+            import mcp  # noqa: F401
+            self.assertEqual(report["environment"]["gateway_wrapper_mode"], "MODULE_IMPORT")
+        except ImportError:
+            pass
         steps = {s["step"]: s for s in report["steps"]}
         self.assertEqual(steps["verify_rev1_attempt1"]["outcome"], "FAIL/HISTORICAL_DATA_INCOMPATIBLE")
         self.assertEqual(steps["verify_rev1_attempt1"]["migration_error"]["sqlstate"], "23502")

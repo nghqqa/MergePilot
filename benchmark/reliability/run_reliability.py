@@ -49,6 +49,14 @@ CASES = HERE / "cases.jsonl"
 REJECT_RULE_PREFIXES = ("SECRET_", "AST_DANGEROUS_", "AST_SQLI_")
 
 
+def _repo_rel(p) -> str:
+    """Repo-relative, forward-slash form of an output path (no machine-specific prefixes in evidence)."""
+    try:
+        return Path(p).resolve().relative_to(REPO_ROOT).as_posix()
+    except ValueError:
+        return Path(p).name
+
+
 def sha256_text(s: str) -> str:
     return hashlib.sha256(s.encode("utf-8")).hexdigest()
 
@@ -292,7 +300,7 @@ def main():
     md += ["", "模型层：**%s** — %s" % (ml["status"], ml.get("reason", "")), "复现：`%s`" % ml.get("reproduce", ""), ""]
     write_lf("report.md", "\n".join(md) + "\n")
     write_lf("run-meta.json", json.dumps({"generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "python": sys.version.split()[0],
-                                          "command": "python benchmark/reliability/run_reliability.py --out %s" % args.out}, indent=2) + "\n")
+                                          "command": "python benchmark/reliability/run_reliability.py --out %s" % _repo_rel(args.out)}, indent=2) + "\n")
     sums = "".join("%s *%s\n" % (hashlib.sha256((out / n).read_bytes()).hexdigest(), n) for n in ("report.json", "report.md"))
     write_lf("SHA256SUMS", sums)
     print(json.dumps(summary, ensure_ascii=False))
