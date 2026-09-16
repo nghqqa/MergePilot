@@ -65,6 +65,7 @@ export default function GuidedDemoPage({ caseId: propCaseId }) {
 
   return (
     <main className="dwrap" key={resetKey}>
+      {c.banner && <div className="notice amber" role="note" style={{ marginBottom: 12 }}>{c.banner}</div>}
       {/* case header */}
       <div className="dhead-row" style={{ alignItems: 'center' }}>
         <Link to="/cases" className="evlink" style={{ paddingLeft: 0 }}><ArrowLeft size={14} /> 返回案例选择</Link>

@@ -398,7 +398,7 @@ function caseAFastAPI() {
       real_agentteams_run: { value: '真实 AgentTeams 运行（2026-08-29 历史证据）', ok: true, note: '真实 Matrix 派单 / LLM / 容器执行' },
       github_write: { value: '未写入 —— PR 保持 OPEN', ok: false, note: 'merge/push/close/reopen 全程禁止' },
     },
-    banner: null,
+    banner: '历史回放 —— 本案例是 2026-08-29 的历史真实运行对照；最新证据见主案例「本次真实运行（2026-09-16）」',
     stage_timeline: null,
     relation_note: '与主案例 fastapi-pr2-live-20260916 为同一 PR：本卡是 2026-08-29 历史运行对照（当时亦为真实运行，今日已复跑）。',
     portfolio_role: '案例 A 对照 · 历史回放',

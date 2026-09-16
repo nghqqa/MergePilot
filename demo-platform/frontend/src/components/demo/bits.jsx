@@ -5,7 +5,7 @@ import { ChevronDown, ChevronRight, Copy, Check, ArrowRight } from 'lucide-react
 
 export const LEVEL_ZH = {
   REAL_EXECUTED_AGENTTEAMS_LIVE: '本次真实运行',
-  REAL_EXECUTED_AGENTTEAMS: '真实执行 · AgentTeams',
+  REAL_EXECUTED_AGENTTEAMS: '真实执行 · AgentTeams（历史 2026-08-29）',
   REAL_OFFLINE_EXPERIMENT: '真实离线实验 · 合成语料',
   REAL_EXECUTED: '真实执行',
   LOCAL_REAL_SQL: '本地真实 SQL',
