@@ -651,23 +651,115 @@ function caseDPr2Live() {
   };
 }
 
-// --------------------------------------------------- case E: PR #3 human rejection (historical)
+// --------------------------------------------------- case E: PR #3 human rejection (live 2026-09-16 + historical)
 
 function caseEPr3Reject() {
   if (!exists('rejectDemo', 'README.md')) return null;
+  const liveAvailable = exists('finalsPr3Live', 'README.md');
   const rejection = exists('rejectDemo', 'human-rejection-record.json') ? readJson('rejectDemo', 'human-rejection-record.json') : null;
   const reviewResult = exists('rejectDemo', 'reviewer-high-risk-result.md') ? readText('rejectDemo', 'reviewer-high-risk-result.md') : null;
   const taskState = exists('rejectDemo', 'post-rejection-task-state.json') ? readJson('rejectDemo', 'post-rejection-task-state.json') : null;
   const planAfter = exists('rejectDemo', 'post-rejection-plan.md') ? readText('rejectDemo', 'post-rejection-plan.md') : null;
   const gateRequest = exists('rejectDemo', 'human-gate-request.json') ? readJson('rejectDemo', 'human-gate-request.json') : null;
 
+  // live run (2026-09-16) artifacts
+  const liveReview = liveAvailable && exists('finalsPr3Live', 'reviewer-result.md') ? readText('finalsPr3Live', 'reviewer-result.md') : null;
+  const liveRejection = liveAvailable && exists('finalsPr3Live', 'human-gate-rejection.md') ? readText('finalsPr3Live', 'human-gate-rejection.md') : null;
+  const livePlan = liveAvailable && exists('finalsPr3Live', 'leader-plan-and-meta.txt') ? readText('finalsPr3Live', 'leader-plan-and-meta.txt') : null;
+  const liveReadme = liveAvailable && exists('finalsPr3Live', 'README.md') ? readText('finalsPr3Live', 'README.md') : null;
+
   const HONESTY = {
-    honesty_real: '历史真实运行（2026-08-30）：真实 Reviewer 审查、真实操作员拒绝、真实 Leader 停等；fix-1/verify-1 从未派发',
-    honesty_limits: '本页面为只读回放；拒绝为终态，演示层不可翻转（approve → 409 REJECTED_CASE_TERMINAL）',
-    honesty_exclude: '未执行：Fixer/Verifier 从未运行（0 次消费留痕）',
+    honesty_real: liveAvailable
+      ? '本次真实执行（2026-09-16，FINALS-ELEM-PR3-LIVE）：真实 Reviewer 审查、真实操作员拒绝、真实 Leader 停等；fix/verify 从未派发。2026-08-30 的历史运行保留为对照'
+      : '历史真实运行（2026-08-30）：真实 Reviewer 审查、真实操作员拒绝、真实 Leader 停等；fix-1/verify-1 从未派发',
+    honesty_limits: '本页面为只读回放；拒绝为终态，演示层不可翻转',
+    honesty_exclude: '未执行：Fixer/Verifier 从未运行（两轮均为 0 消费留痕）',
   };
 
-  const items = [
+  const items = liveAvailable ? [
+    {
+      id: 'ev-rej-live-review', title: '【本次真实执行】Reviewer 结论 pr3-review-1', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE',
+      fields: [
+        ['结论', 'FINDING_CONFIRMED · SEVERITY: HIGH（Reviewer 自主定级）· HUMAN_VERIFICATION_REQUIRED: YES'],
+        ['定性', 'CWE-78 未认证 RCE：demo_ping L41 f-string 拼接 host → L42-44 subprocess.run(shell=True) → L45-49 回显输出；路由无鉴权'],
+        ['真实复现', 'Reviewer 容器内 ?host=127.0.0.1; id → uid=0(root)；; cat /etc/hostname 返回宿主文件内容'],
+        ['事件', '委派 $iC99q_-LvYBeHcm74OuA7hwgeKacWv5-WuNL_gqKSyA · head ad267a6e（git ls-remote 核验与 P14 一致）'],
+      ],
+      blocks: [{ title: 'FINALS-ELEM-PR3-LIVE-20260916/reviewer-result.md', lang: 'text', text: liveReview ?? '未提供' }],
+      source_ref: 'finalsPr3Live/reviewer-result.md',
+      hash: refHash('finalsPr3Live', 'reviewer-result.md'),
+      ...HONESTY,
+    },
+    {
+      id: 'ev-rej-live-gate', title: '【本次真实执行】人工安全门 → 操作员真实拒绝', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE',
+      fields: [
+        ['Leader 行为', '审查验收后主动停门：「尚未委派 pr3-fix-1，等待门禁决策」（与 PR #2 运行时的跳门违规形成同日对照）'],
+        ['操作员决策', 'HUMAN_SECURITY_REJECTED —— 不授权修复（查看真实 findings 后作出）'],
+        ['绑定效应', 'pr3-fix-1 标记 [-] REJECTED（never delegated）· pr3-verify-1 标记 [!] LOCKED · 项目 status=blocked'],
+        ['事件', '拒绝指令 DM $PKSeWIago1vw… · 团队房 $aLygMjw6nG8X… · 最终报告 $N6Y3EYlOfxJb…（PROJECT_BLOCKED_HUMAN_REJECTED）'],
+      ],
+      blocks: [
+        { title: 'FINALS-ELEM-PR3-LIVE-20260916/human-gate-rejection.md', lang: 'text', text: liveRejection ?? '未提供' },
+        { title: 'FINALS-ELEM-PR3-LIVE-20260916/leader-plan-and-meta.txt（拒绝后的 plan/meta 快照）', lang: 'text', text: livePlan ?? '未提供' },
+      ],
+      source_ref: 'finalsPr3Live/human-gate-rejection.md',
+      hash: refHash('finalsPr3Live', 'human-gate-rejection.md'),
+      ...HONESTY,
+    },
+    {
+      id: 'ev-rej-live-run', title: '【本次真实执行】运行档案 README（含门纪律对照与用量）', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE',
+      fields: [
+        ['用量', '52 次调用 · 输入 1.82M（98.7% 缓存命中）· 估算 ≈¥0.4'],
+        ['合规', 'PR #3 全程 OPEN · head ad267a6e 运行中 ls-remote 核验 · 零 GitHub 写入'],
+      ],
+      blocks: [{ title: 'FINALS-ELEM-PR3-LIVE-20260916/README.md', lang: 'markdown', text: liveReadme ?? '未提供' }],
+      source_ref: 'finalsPr3Live/README.md',
+      hash: refHash('finalsPr3Live', 'README.md'),
+      ...HONESTY,
+    },
+    {
+      id: 'ev-rej-review', title: '【历史对照 2026-08-30】Reviewer 结论（critical）', level: 'HISTORICAL_REPLAY',
+      fields: [
+        ['结论', 'HIGH_RISK_FOUND · SEVERITY: critical · HUMAN_VERIFICATION_REQUIRED: true'],
+        ['定性', 'OS command injection / RCE：host 参数 shell 注入（与本次独立审查同一缺陷）'],
+        ['PR', '#3 · head ad267a6e51209551a0733657321bb364d04befd0（全程 OPEN 未合并）'],
+      ],
+      blocks: [{ title: 'rejectDemo/reviewer-high-risk-result.md', lang: 'text', text: reviewResult ?? '未提供' }],
+      source_ref: 'rejectDemo/reviewer-high-risk-result.md',
+      hash: refHash('rejectDemo', 'reviewer-high-risk-result.md'),
+      ...HONESTY,
+    },
+    {
+      id: 'ev-rej-rejection', title: '【历史对照】人工拒绝记录（终态）', level: 'REAL_EXECUTED_AGENTTEAMS',
+      fields: [
+        ['决策', rejection?.decision ?? 'HUMAN_SECURITY_REJECTED'],
+        ['决策人 / 时间', `${rejection?.decided_by ?? 'operator'} · ${rejection?.decided_at_utc ?? '未提供'}`],
+        ['效果', 'fix-1 = rejected · verify-1 = locked · project = blocked(paused)；Fixer/Verifier 从未启动（0 消费留痕）'],
+      ],
+      blocks: [
+        { title: 'rejectDemo/human-rejection-record.json', lang: 'json', text: rejection ? JSON.stringify(rejection, null, 2) : '未提供' },
+        { title: 'rejectDemo/human-gate-request.json', lang: 'json', text: gateRequest ? JSON.stringify(gateRequest, null, 2) : '未提供' },
+      ],
+      source_ref: 'rejectDemo/human-rejection-record.json',
+      hash: refHash('rejectDemo', 'human-rejection-record.json'),
+      ...HONESTY,
+    },
+    {
+      id: 'ev-rej-state', title: '【历史对照】拒绝后的系统状态（不再派发）', level: 'REAL_EXECUTED_AGENTTEAMS',
+      fields: [
+        ['plan', 'fix-1 标记 rejected · verify-1 保持 locked（见 post-rejection-plan.md）'],
+        ['项目状态', 'blocked(paused) —— 系统没有继续执行'],
+        ['审计', 'pre/post rejection 的 fixer/verifier activity 对照：零消费'],
+      ],
+      blocks: [
+        { title: 'rejectDemo/post-rejection-plan.md', lang: 'text', text: planAfter ?? '未提供' },
+        { title: 'rejectDemo/post-rejection-task-state.json', lang: 'json', text: taskState ? JSON.stringify(taskState, null, 2) : '未提供' },
+      ],
+      source_ref: 'rejectDemo/post-rejection-task-state.json',
+      hash: refHash('rejectDemo', 'post-rejection-task-state.json'),
+      ...HONESTY,
+    },
+  ] : [
     {
       id: 'ev-rej-review', title: 'Reviewer 结论（critical · CWE-78）', level: 'REAL_EXECUTED_AGENTTEAMS',
       fields: [
@@ -686,8 +778,8 @@ function caseEPr3Reject() {
       fields: [
         ['决策', rejection?.decision ?? 'HUMAN_SECURITY_REJECTED'],
         ['决策人 / 时间', `${rejection?.decided_by ?? 'operator'} · ${rejection?.decided_at_utc ?? '未提供'}`],
-        ['送达', 'Leader DM event $jEuOZNsiqMkzt27uFd0bNG8UD07SnFssLXOQtL05g9k + store 落盘 + read-back 确认'],
-        ['效果', 'fix-1 = rejected · verify-1 = locked · project = blocked(paused)；Fixer/Verifier 从未启动（0 消费留痕）'],
+        ['送达', 'Leader DM event + store 落盘 + read-back 确认'],
+        ['效果', 'fix-1 = rejected · verify-1 = locked · project = blocked(paused)；Fixer/Verifier 从未启动'],
       ],
       blocks: [
         { title: 'rejectDemo/human-rejection-record.json', lang: 'json', text: rejection ? JSON.stringify(rejection, null, 2) : '未提供' },
@@ -714,7 +806,39 @@ function caseEPr3Reject() {
     },
   ];
 
-  const steps = [
+  const steps = liveAvailable ? [
+    {
+      id: 'review', title: '① 风险审查（本次真实执行）',
+      points: [
+        { k: 'Reviewer 结论', v: 'FINDING_CONFIRMED · SEVERITY: HIGH · HUMAN_VERIFICATION_REQUIRED: YES' },
+        { k: '风险定性', v: 'CWE-78 未认证 RCE —— f-string 拼接 + shell=True + 输出回显（独立自主定级）' },
+        { k: '真实复现', v: '容器内 ; id → uid=0(root)；; cat /etc/hostname 泄露主机名' },
+      ],
+      evidence: ['ev-rej-live-review'],
+      probe: null,
+      detail: { title: '执行细节（默认折叠）', quote: 'Reviewer 在自己容器 clone+checkout head ad267a6e 后独立审查；历史轮（2026-08-30）同缺陷被定级 critical——两轮独立定级如实分列。', outbox: [], events: [] },
+    },
+    {
+      id: 'gate', title: '② 人工门 · 操作员真实拒绝（终态）',
+      points: [
+        { k: 'Leader 行为', v: '审查验收后停门等决策（同日 PR #2 运行时曾跳门被作废——对照留痕）' },
+        { k: '操作员决策', v: 'HUMAN_SECURITY_REJECTED —— 查看真实 findings 后拒绝修复授权' },
+        { k: '绑定效应', v: 'fix [-] rejected（never delegated）· verify [!] locked · 项目 blocked', mono: true },
+        { k: '终态不可翻转', v: '拒绝即终态：系统停等，全部审查证据保留，零 GitHub 写入' },
+      ],
+      evidence: ['ev-rej-live-gate', 'ev-rej-live-run'],
+      probe: null,
+      decision: {
+        verified: { verdict: 'NOT_EXECUTED', text: '验证未执行 —— 人工拒绝后 Fixer/Verifier 从未派发（两轮一致）' },
+        human_approval: { needed: true, text: '已执行且结果为拒绝 —— 本次真实操作员决策（2026-09-16），历史轮（2026-08-30）同样拒绝', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE' },
+        merge_allowed: { allowed: false, text: 'PR #3 保持 OPEN —— 未合并；拒绝即停止' },
+        github_write: { done: false, text: '未写入 GitHub', level: 'NOT_EXECUTED' },
+        execution_nature: { text: 'REAL_EXECUTED-AgentTeams（本次运行 2026-09-16）+ HISTORICAL_REPLAY（2026-08-30 对照）：两轮真实拒绝', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE' },
+        pr_open: true,
+      },
+      detail: { title: '终态（默认折叠）', quote: '失败安全设计：拒绝 → 保留全部审查证据 → 不产生任何修复或推送。', outbox: [], events: [] },
+    },
+  ] : [
     {
       id: 'review', title: '风险审查（critical）',
       points: [
@@ -751,30 +875,36 @@ function caseEPr3Reject() {
   return {
     case_id: 'fastapi-pr3-reject',
     shape: 'guided',
-    name: 'FastAPI PR #3 · 人工拒绝（短案例）',
-    short_name: '第二案例 · PR #3 人工拒绝',
-    one_liner: '历史真实运行：Reviewer 确认 critical（CWE-78/RCE）→ 人工门拒绝 → 系统停等，Fixer/Verifier 从未派发，PR 保持 OPEN。',
+    name: liveAvailable ? 'FastAPI PR #3 · 人工拒绝（本次真实执行 + 历史对照）' : 'FastAPI PR #3 · 人工拒绝（短案例）',
+    short_name: liveAvailable ? '第二案例 · PR #3 真实拒绝' : '第二案例 · PR #3 人工拒绝',
+    one_liner: liveAvailable
+      ? '本次真实执行：Reviewer 独立确认 HIGH（CWE-78 未认证 RCE，实证 root 执行）→ 人工门操作员真实拒绝 → 项目 blocked，Fixer/Verifier 从未派发；附 2026-08-30 历史轮对照。'
+      : '历史真实运行：Reviewer 确认 critical（CWE-78/RCE）→ 人工门拒绝 → 系统停等，Fixer/Verifier 从未派发，PR 保持 OPEN。',
     repo: 'nghqqa/fastapi-boilerplate-demo',
     pr: 'PR #3 · demo/high-risk-human-reject',
     pr_url: 'https://github.com/nghqqa/fastapi-boilerplate-demo/pull/3',
-    run_id: 'copaw-high-risk-reject-demo（AgentTeams project）',
-    sha: rejection?.source_commit?.replace('PR#3 head ', '') ?? null,
-    sha_kind: 'PR #3 head commit',
-    evidence_level: ['HISTORICAL_REPLAY', 'REAL_EXECUTED_AGENTTEAMS'],
-    replay_note: 'HISTORICAL_REPLAY —— 回放 2026-08-30 历史运行证据；拒绝语义为终态，不可在演示层翻转',
+    run_id: liveAvailable ? 'run-elem-fastapi-pr3-20260916-01' : 'copaw-high-risk-reject-demo（AgentTeams project）',
+    sha: liveAvailable ? 'ad267a6e51209551a0733657321bb364d04befd0' : (rejection?.source_commit?.replace('PR#3 head ', '') ?? null),
+    sha_kind: 'PR #3 head commit（运行中 ls-remote 核验与历史一致）',
+    evidence_level: liveAvailable ? ['REAL_EXECUTED_AGENTTEAMS_LIVE', 'HISTORICAL_REPLAY'] : ['HISTORICAL_REPLAY', 'REAL_EXECUTED_AGENTTEAMS'],
+    replay_note: liveAvailable
+      ? 'REAL_EXECUTED（本次运行 2026-09-16）+ 历史对照 —— 拒绝语义为终态，不可在演示层翻转'
+      : 'HISTORICAL_REPLAY —— 回放 2026-08-30 历史运行证据；拒绝语义为终态，不可在演示层翻转',
     purpose: '展示人工门的拒绝分支：失败安全（fail-safe）——不批准即停止，证据保留',
-    risk_tags: ['CWE-78 命令注入', 'RCE', 'CRITICAL'],
-    status: { verdict: 'REJECTED', label: '人工拒绝 · 系统停等 · Fixer/Verifier 未派发' },
+    risk_tags: ['CWE-78 命令注入', 'RCE', 'HIGH（历史轮 critical）'],
+    status: { verdict: 'REJECTED', label: liveAvailable ? '本次真实拒绝 · 项目 blocked · Fixer/Verifier 未派发' : '人工拒绝 · 系统停等 · Fixer/Verifier 未派发' },
     facts: {
-      real_github_pr: { value: '真实 GitHub PR（历史状态：OPEN）', ok: true, note: 'https://github.com/nghqqa/fastapi-boilerplate-demo/pull/3' },
-      real_agentteams_run: { value: '真实 AgentTeams 运行（2026-08-30 历史证据）', ok: true, note: '真实审查、真实拒绝、真实停等' },
+      real_github_pr: { value: '真实 GitHub PR（运行后核验：仍 OPEN）', ok: true, note: 'https://github.com/nghqqa/fastapi-boilerplate-demo/pull/3' },
+      real_agentteams_run: { value: liveAvailable ? '真实 AgentTeams 运行（2026-09-16 本次）' : '真实 AgentTeams 运行（2026-08-30 历史证据）', ok: true, note: '真实审查、真实拒绝、真实停等' },
       github_write: { value: '未写入 —— PR 保持 OPEN', ok: false, note: '全程禁止 merge/push/close' },
     },
     banner: 'REJECTED —— 人工安全门拒绝为终态；系统没有继续执行（fail-safe 分支演示）',
     stage_timeline: null,
-    chain: ['案例 fastapi-pr3-reject', 'PR #3', 'demo_cmd_exec.py', 'HUMAN_SECURITY_REJECTED', 'fix-1 rejected / verify-1 locked', 'project blocked'],
-    generated_at: '运行 2026-08-30 · 状态锁定（post-rejection-* 快照）',
-    source_dir: 'evidence/PHASE14-WINDOWS-COPAW-HIGH-RISK-REJECT-20260830-091913（rejectDemo）',
+    chain: liveAvailable
+      ? ['案例 run-elem-fastapi-pr3-20260916-01', 'PR #3', 'demo_cmd_exec.py', 'HUMAN_SECURITY_REJECTED（操作员真实决策）', 'fix rejected / verify locked', 'project blocked']
+      : ['案例 fastapi-pr3-reject', 'PR #3', 'demo_cmd_exec.py', 'HUMAN_SECURITY_REJECTED', 'fix-1 rejected / verify-1 locked', 'project blocked'],
+    generated_at: liveAvailable ? '运行 2026-09-16（本轮）· 历史对照 2026-08-30' : '运行 2026-08-30 · 状态锁定（post-rejection-* 快照）',
+    source_dir: liveAvailable ? 'evidence/FINALS-ELEM-PR3-LIVE-20260916（本次新证据）+ PHASE14-WINDOWS-COPAW-HIGH-RISK-REJECT-20260830-091913（历史对照）' : 'evidence/PHASE14-WINDOWS-COPAW-HIGH-RISK-REJECT-20260830-091913（rejectDemo）',
     honesty: HONESTY,
     steps,
     evidence_index: items.map(({ id, title, level }) => ({ id, title, level })),

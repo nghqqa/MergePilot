@@ -35,6 +35,9 @@ export const EVIDENCE_DIRS = {
   // elemiso isolated stack with CoPaw Leader orchestration. Has its own
   // SHA256SUMS; verified separately like the other FINALS dirs.
   finalsPr2Live: 'FINALS-ELEM-PR2-LIVE-20260916',
+  // Finals live AgentTeams run (2026-09-16): real PR #3 human-REJECT case on
+  // the same stack/team; second run of the day.
+  finalsPr3Live: 'FINALS-ELEM-PR3-LIVE-20260916',
 };
 
 export function dirPath(key) {
