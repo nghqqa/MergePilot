@@ -73,13 +73,10 @@ await test('scanForSecrets flags crafted leaks', () => {
 
 console.log('== 2) replay integrity ==');
 const data = getReplayData();
-await test('both cases present', () => {
-  assert.ok(data.cases['pr1-normal-review']);
+await test('both cases present (two-case RAG-traced lineup)', () => {
   assert.ok(data.cases['pr2-high-risk-human-gate']);
-});
-await test('three cases present incl. PR#3 reject case', () => {
   assert.ok(data.cases['pr3-high-risk-human-reject']);
-  assert.equal(Object.keys(data.cases).length, 3);
+  assert.equal(Object.keys(data.cases).length, 2);
 });
 await test('all source refs resolve to real evidence files', () => {
   assert.deepEqual(data.replay_integrity.missing_source_refs, []);
@@ -116,7 +113,7 @@ await test('PR2 replay ordering matches mandated script', () => {
   const review = idx('HIGH_RISK_FOUND');
   const gate = idx('HUMAN_SECURITY_REVIEW_REQUIRED');
   const approve = idx('HUMAN_SECURITY_APPROVED_FIX');
-  const fixDispatch = idx('fix-1 委派');
+  const fixDispatch = idx('全新 fix 委派');
   const verifyDispatch = idx('verify-1 委派');
   const done = idx('PROJECT COMPLETED');
   assert.ok(review >= 0 && gate > review && approve > gate && fixDispatch > approve && verifyDispatch > fixDispatch && done > verifyDispatch, JSON.stringify({ review, gate, approve, fixDispatch, verifyDispatch, done }));
@@ -132,7 +129,7 @@ await test('fixer locked before approval; verifier locked before fix completes',
   const afterApprove = tl.find((e) => e.summary.includes('HUMAN_SECURITY_APPROVED_FIX')).state_after;
   assert.notEqual(afterApprove.tasks['fix-1'].status, 'waiting_human'); // unlocked
   assert.equal(afterApprove.tasks['verify-1'].status, 'blocked'); // still locked on fix-1
-  const afterFix = tl.find((e) => e.summary.includes('fix-1 正式提交')).state_after;
+  const afterFix = tl.find((e) => e.summary.includes('fix-1 提交')).state_after;
   assert.equal(afterFix.tasks['verify-1'].status, 'pending'); // unlocked
 });
 await test('PR3 replay ordering: review → gate → REJECTED → blocked → PR OPEN; no dispatch after rejection', () => {
@@ -142,9 +139,8 @@ await test('PR3 replay ordering: review → gate → REJECTED → blocked → PR
   const review = idx('HIGH_RISK_FOUND');
   const gate = idx('HUMAN_SECURITY_REVIEW_REQUIRED');
   const reject = idx('HUMAN_SECURITY_REJECTED');
-  const blocked = idx('pause_project');
-  const final = idx('最终锁定状态回报');
-  assert.ok(review >= 0 && gate > review && reject > gate && blocked > reject && final > blocked, JSON.stringify({ review, gate, reject, blocked, final }));
+  const blocked = idx('PROJECT_BLOCKED_HUMAN_REJECTED');
+  assert.ok(review >= 0 && gate > review && reject > gate && blocked > reject, JSON.stringify({ review, gate, reject, blocked }));
   // rejection event: human decision, approval type
   const rejEv = tl[reject];
   assert.equal(rejEv.agent_role, 'human');
@@ -163,17 +159,9 @@ await test('PR3 replay ordering: review → gate → REJECTED → blocked → PR
   assert.equal(st.phase, 'blocked');
   assert.equal(c.gate.state, 'rejected');
   assert.equal(c.pull_request.state, 'open');
-  assert.equal(c.risk.level, 'critical');
+  assert.equal(c.risk.level, 'high');
   assert.equal(c.risk.category, 'CWE-78');
   assert.equal(c.risk.human_gate, 'rejected');
-  // state machine: no event ever transitions rejected → fixing/verifying/completed
-  for (const ev of tl) {
-    for (const t of Object.values(ev.state_after.tasks)) {
-      if (t.status === 'rejected' || t.status === 'locked') {
-        // once rejected/locked appears it must hold to the end (checked above); nothing else to allow
-      }
-    }
-  }
   const seq = tl.map((e) => e.state_after.tasks['fix-1'].status);
   const rejIdx = seq.lastIndexOf('rejected');
   for (const s of seq.slice(rejIdx)) assert.equal(s, 'rejected', 'fix-1 must stay rejected once rejected');
@@ -186,25 +174,20 @@ await test('PR3 lock audits assert zero fixer/verifier runs', () => {
   const fixerTask = c.tasks.find((t) => t.id === 'fix-1');
   const verifierTask = c.tasks.find((t) => t.id === 'verify-1');
   assert.equal(fixerTask.effective, false);
-  assert.ok(fixerTask.effective_note.includes('0 次 consume'));
+  assert.ok(fixerTask.effective_note.includes('永不派发'));
   assert.equal(verifierTask.effective, false);
-  assert.ok(verifierTask.effective_note.includes('永久锁定'));
+  assert.ok(verifierTask.effective_note.includes('无修复可验证'));
 });
-await test('PR1 fully autonomous, no gate', () => {
-  const c = data.cases['pr1-normal-review'];
-  assert.equal(c.gate.state, 'none');
-  const finalState = c.timeline[c.timeline.length - 1].state_after;
-  assert.equal(finalState.phase, 'completed');
-  for (const t of Object.values(finalState.tasks)) assert.equal(t.status, 'completed');
+await test('RAG events present in both cases with rag source role', () => {
+  for (const id of ['pr2-high-risk-human-gate', 'pr3-high-risk-human-reject']) {
+    const ragEv = data.cases[id].timeline.find((e) => e.source === 'rag');
+    assert.ok(ragEv, `${id} missing a rag-source event`);
+    assert.ok(ragEv.summary.includes('rag_retrieve'), `${id} rag event must mention rag_retrieve`);
+  }
 });
-await test('PR1 stage words: RUN → FIXING → VERIFYING → COMPLETE', () => {
-  const tl = data.cases['pr1-normal-review'].timeline;
-  const seq = [...new Set(tl.map((e) => e.state_after.phase))];
-  assert.deepEqual(seq, ['running', 'fixing', 'verifying', 'completed'], JSON.stringify(seq));
-});
-await test('three-case data contract fields on case detail', async () => {
+await test('two-case data contract fields on case detail', async () => {
   const q0 = new Map();
-  for (const id of ['pr1-normal-review', 'pr2-high-risk-human-gate', 'pr3-high-risk-human-reject']) {
+  for (const id of ['pr2-high-risk-human-gate', 'pr3-high-risk-human-reject']) {
     const c = await handle('GET', `/api/cases/${id}`, q0, null);
     for (const k of ['case_id', 'repository', 'pull_request', 'project', 'team', 'runtime', 'risk', 'agents', 'tasks', 'timeline', 'data_mode', 'trace_mode', 'source_refs', 'integrity_status']) {
       assert.ok(c[k] !== undefined, `case ${id} missing contract field: ${k}`);
@@ -218,22 +201,26 @@ await test('three-case data contract fields on case detail', async () => {
     assert.equal(c.integrity_status.final_package, 'VERIFIED');
   }
 });
-await test('probe comparison parsed from real raw evidence (200→404, legit 200→200)', () => {
+await test('probe comparison parsed from real verification.md evidence (200→400, legit 200→200, missing 500→404)', () => {
   const p = data.cases['pr2-high-risk-human-gate'].fix_comparison.probe;
   assert.equal(p.before.traversal_status, 200);
-  assert.equal(p.after.traversal_status, 404);
+  assert.equal(p.after.traversal_status, 400);
   assert.equal(p.before.leaked_outside_secret, true);
   assert.equal(p.after.leaked_outside_secret, false);
   assert.equal(p.before.legit_status, 200);
   assert.equal(p.after.legit_status, 200);
+  assert.equal(p.before.abs_status, 200);
+  assert.equal(p.after.abs_status, 400);
 });
 await test('audit carries mandated residual risks verbatim', () => {
   const audit = replayAudit();
   const items = audit.residual_risks.map((r) => r.item).join('|');
-  for (const must of ['MinIO shared tree', 'tool_guard', 'VERIFICATION_PASSED', 'PolarDB RAG', 'AgentLoop/OTel']) {
+  for (const must of ['Reviewer 跨轮记忆', 'RAG 为 citation-only', '缓存命中率', 'controller Stopped', 'PolarDB RAG']) {
     assert.ok(items.includes(must), `missing residual risk: ${must}`);
   }
   assert.ok(audit.components.find((x) => x.component === 'PR Auto Merge' && x.status === 'DISABLED'));
+  assert.ok(audit.components.find((x) => x.component === 'AgentLoop/OTel' && x.status === 'VERIFIED'));
+  assert.ok(audit.components.find((x) => x.component === 'RAG MCP（组织知识库）' && x.status === 'VERIFIED'));
 });
 
 console.log('== 3) API smoke (in-process) ==');
@@ -251,21 +238,21 @@ await test('GET /api/modes (live honest)', async () => {
   assert.equal(typeof r.live.available, 'boolean');
   if (!r.live.available) assert.ok(r.live.sources);
 });
-await test('GET /api/cases lists three cases', async () => {
+await test('GET /api/cases lists two cases', async () => {
   const r = await handle('GET', '/api/cases', q(), null);
-  assert.equal(r.cases.length, 3);
+  assert.equal(r.cases.length, 2);
   const pr2 = r.cases.find((c) => c.case_id === 'pr2-high-risk-human-gate');
   assert.equal(pr2.risk.level, 'high');
   assert.equal(pr2.pull_request.state, 'open');
   assert.equal(pr2.human_gate_passed, true);
   const pr3 = r.cases.find((c) => c.case_id === 'pr3-high-risk-human-reject');
-  assert.equal(pr3.risk.level, 'critical');
+  assert.equal(pr3.risk.level, 'high');
   assert.equal(pr3.risk.human_gate, 'rejected');
   assert.equal(pr3.pull_request.state, 'open');
   assert.equal(pr3.human_gate_passed, false);
   assert.equal(pr3.phase, 'blocked');
 });
-for (const id of ['pr1-normal-review', 'pr2-high-risk-human-gate', 'pr3-high-risk-human-reject']) {
+for (const id of ['pr2-high-risk-human-gate', 'pr3-high-risk-human-reject']) {
   await test(`GET /api/cases/${id} + subresources`, async () => {
     const c = await handle('GET', `/api/cases/${id}`, q(), null);
     assert.ok(c.breadcrumb.repository.includes('nghqqa/'));
@@ -331,11 +318,11 @@ await test('PR3 evidence drawer: rejection record with real source + mandated fi
     assert.ok(k in r, `rejection drawer missing field: ${k}`);
   }
 });
-await test('PR3 finding drawer: CWE-78 critical from real reviewer evidence', async () => {
+await test('PR3 finding drawer: CWE-78 from real reviewer evidence (this run rated HIGH)', async () => {
   const r = await handle('GET', '/api/cases/pr3-high-risk-human-reject/evidence', q({ kind: 'finding' }), null);
   assert.equal(r.finding.category, 'CWE-78');
-  assert.equal(r.finding.level, 'critical');
-  assert.ok(r.source_ref.includes('reviewer-high-risk-result.md'));
+  assert.equal(r.finding.level, 'high');
+  assert.ok(r.source_ref.includes('findings.md') || r.source_ref.includes('result.md'));
 });
 await test('PR3 task drawer: fix-1 never ran', async () => {
   const r = await handle('GET', '/api/cases/pr3-high-risk-human-reject/evidence', q({ kind: 'task', task: 'fix-1' }), null);
@@ -350,13 +337,8 @@ await test('POST approval on gated case in live mode refuses honestly', async ()
     return ['LIVE_DATA_UNAVAILABLE', 'LIVE_APPROVAL_NOT_IMPLEMENTED'].includes(e.body?.error);
   });
 });
-await test('PR#1 case has no gate — POST approval rejected', async () => {
-  await assert.rejects(() => handle('POST', '/api/cases/pr1-normal-review/approval', q(), { decision: 'approve' }), /NO_HUMAN_GATE/);
-});
-await test('artifact content fetch (fix.patch) is real evidence', async () => {
-  const r = await handle('GET', '/api/cases/pr2-high-risk-human-gate/artifacts', q({ file: 'fix.patch' }), null);
-  assert.ok(r.content.includes('is_relative_to'));
-  assert.ok(r.content.includes('demo_high_risk.py'));
+await test('POST approval invalid decision rejected', async () => {
+  await assert.rejects(() => handle('POST', '/api/cases/pr2-high-risk-human-gate/approval', q(), { decision: 'merge-pr' }), /INVALID_DECISION/);
 });
 
 console.log('== 4) no-secret scan across all API responses ==');
@@ -373,7 +355,6 @@ await test('no secrets in any API payload', async () => {
     ['/api/cases/pr2-high-risk-human-gate/audit', q()],
     ['/api/cases/pr2-high-risk-human-gate/trace', q()],
     ['/api/cases/pr2-high-risk-human-gate/approval', q()],
-    ['/api/cases/pr1-normal-review/timeline', q()],
     ['/api/cases/pr3-high-risk-human-reject', q()],
     ['/api/cases/pr3-high-risk-human-reject/dag', q()],
     ['/api/cases/pr3-high-risk-human-reject/timeline', q()],
@@ -413,7 +394,7 @@ await test('evidence drawer (event): mandated fields + hash verification', async
     assert.ok(k in r, `event drawer missing field: ${k}`);
   }
   assert.equal(r.source_label, 'Matrix event');
-  assert.equal(r.matrix_event_id, '$JU09kIgwjvVJmEUSVSlNR8Va2-zhxsvtmFaZ3RIHuTM');
+  assert.ok(r.matrix_event_id.startsWith('$MA75PoE6NxVwx'), `unexpected kickoff-adjacent event id: ${r.matrix_event_id}`);
   assert.ok(r.source_hash && r.source_hash.exists, 'source_ref should resolve to a real evidence file');
 });
 await test('evidence drawer (task fix-1): result + artifacts with hashes', async () => {
@@ -446,7 +427,7 @@ await test('evidence drawer (finding): risk with probe + reviewer conclusion', a
   const r = await handle('GET', '/api/cases/pr2-high-risk-human-gate/evidence', q({ kind: 'finding' }), null);
   assert.equal(r.task_id, 'review-1');
   assert.ok(r.finding.category === 'CWE-22');
-  assert.ok(r.probe.before.traversal_status === 200 && r.probe.after.traversal_status === 404);
+  assert.ok(r.probe.before.traversal_status === 200 && r.probe.after.traversal_status === 400);
 });
 await test('case carries trace_status + data_sources (new semantics)', async () => {
   const r = await handle('GET', '/api/cases/pr2-high-risk-human-gate', q(), null);

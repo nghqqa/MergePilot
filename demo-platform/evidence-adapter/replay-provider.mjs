@@ -1,19 +1,21 @@
 // evidence-adapter/replay-provider.mjs
-// Replay provider — builds the two demo cases ENTIRELY from the locked evidence pack.
+// Replay provider — builds the TWO demo cases ENTIRELY from the locked evidence packs.
 // Read-only. Every event carries source_ref provenance; provider startup validates
 // that all referenced evidence files exist (replay integrity gate).
 //
-// Evidence anchors (all under EVIDENCE_ROOT = ../evidence/, sibling of MergePilot-demo/):
-//   replayMaterials PHASE14-WINDOWS-REPLAY-MATERIALS-20260829-195223  (primary replay pack)
-//   fixAudit       PHASE14-WINDOWS-COPAW-HIGH-RISK-FIX-AUDIT-20260829-165813
-//   fixVerify      PHASE14-WINDOWS-COPAW-HIGH-RISK-FIX-VERIFY-20260829-180548
-//   finalLock      PHASE14-WINDOWS-AGENTTEAMS-COPAW-FINAL-20260829-130500
+// 2026-09-17 RAG-TRACED replacement: the two cases are now the AgentLoop-traced,
+// RAG-MCP-integrated runs on the elemiso isolated stack (run-elem-pr2rag-20260917-01 /
+// run-elem-pr3rag-20260917-01). Every event anchors to FINALS-ELEM-PR2-RAG-TRACED /
+// FINALS-ELEM-PR3-RAG-TRACED (both SHA256SUMS-locked). The previous P14-era pr1 case
+// was retired from the demo lineup per operator decision (two-case demo).
+//
+// Evidence anchors (all under EVIDENCE_ROOT = ../evidence/):
+//   finalsPr2RagTraced  FINALS-ELEM-PR2-RAG-TRACED  (approve path, RAG + OTel traced)
+//   finalsPr3RagTraced  FINALS-ELEM-PR3-RAG-TRACED  (reject path, RAG + OTel traced)
 
-import { EVIDENCE_DIRS, integrityReport, artifactRegistry, loadProbeComparison, assertSourcesExist } from './evidence.mjs';
+import { EVIDENCE_DIRS, integrityReport, artifactRegistry, assertSourcesExist, readText } from './evidence.mjs';
 
 const D = EVIDENCE_DIRS;
-const DATE = '2026-08-29';
-const ts = (h, m = 0, s = 0) => `${DATE}T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}Z`;
 
 export const STATUS_LABELS = {
   pending: 'PENDING · 等待派发',
@@ -37,221 +39,93 @@ function snap(tasks, gate, phase, headline) {
 
 // Walk events, apply deltas, attach state_after snapshots.
 function finalizeTimeline(events, initialTasks, initialGate, initialPhase) {
-  const tasks = JSON.parse(JSON.stringify(initialTasks));
+  let tasks = JSON.parse(JSON.stringify(initialTasks));
   let gate = initialGate;
   let phase = initialPhase;
-  let headline = '初始状态 — 计划已建立，任务未派发';
-  const initialState = snap(tasks, gate, phase, headline);
-  events.forEach((ev, i) => {
+  let headline = '';
+  const timeline = [];
+  for (const ev of events) {
     if (ev.delta) {
       if (ev.delta.tasks) {
-        for (const [id, t] of Object.entries(ev.delta.tasks)) {
-          if (t.status !== undefined) tasks[id].status = t.status;
-          if (t.locked_reason !== undefined) tasks[id].locked_reason = t.locked_reason;
+        for (const [id, d] of Object.entries(ev.delta.tasks)) {
+          tasks[id] = { ...(tasks[id] || {}), ...d };
         }
       }
       if (ev.delta.gate !== undefined) gate = ev.delta.gate;
       if (ev.delta.phase !== undefined) phase = ev.delta.phase;
-      if (ev.delta.headline) headline = ev.delta.headline;
-      delete ev.delta;
+      if (ev.delta.headline !== undefined) headline = ev.delta.headline;
     }
-    ev.seq = i + 1;
-    ev.state_after = snap(tasks, gate, phase, headline);
-  });
-  events.initial_state = initialState;
-  return events;
+    timeline.push({ ...ev, state_after: snap(tasks, gate, phase, headline) });
+  }
+  return timeline;
 }
 
 function initialTask(status = 'pending', locked_reason = null) {
-  return { status, locked_reason };
+  return { status, locked_reason, started_at: null, ended_at: null };
 }
 
-// ---------------------------------------------------------------------------
-// PR #1 — normal autonomous collaboration (case A)
-// ---------------------------------------------------------------------------
-function buildPR1() {
-  const initial = {
-    'review-1': initialTask('pending', '等待 Leader 派发'),
-    'fix-1': initialTask('pending', 'DAG 依赖：等待 review-1 完成'),
-    'verify-1': initialTask('pending', 'DAG 依赖：等待 fix-1 完成'),
+// Parse the verifier's verification.md probe blocks (real raw output embedded in the
+// SHA256SUMS-locked verification report).
+function loadProbeComparisonRag() {
+  const md = readText('finalsPr2RagTraced', 'tasks/pr2rag-verify-1/workspace/verification.md');
+  const parseBlock = (section) => {
+    const i = md.indexOf(section);
+    const seg = md.slice(i, i + 1800);
+    const rows = [];
+    for (const m of seg.matchAll(/\[(PASS|FAIL)\] (.+?)\s+'(.+?)'\s+-> (\d{3})([\s\S]*?)(?=\n\[|\nPROBE|$)/g)) {
+      rows.push({
+        verdict: m[1],
+        name: m[2].trim(),
+        arg: m[3],
+        status: Number(m[4]),
+        leak: /LEAK/.test(m[5]),
+      });
+    }
+    return rows;
   };
-  const events = [
-    {
-      event_id: 'pr1-ev-001', timestamp: ts(3, 42, 9), timestamp_precision: 'exact',
-      agent_role: 'system', event_type: 'message', source: 'evidence',
-      source_ref: `replayMaterials/05-timeline.md 阶段A`,
-      summary: '复赛运行时启动：FileSync mirror_all 拉取 MinIO；Matrix re-login；controller 创建/纳管 4 个 copaw worker',
-      delta: { phase: 'running', headline: '运行时就绪 — 4 个 copaw worker 被 controller 纳管' },
-    },
-    {
-      event_id: 'pr1-ev-002', timestamp: ts(3, 59, 0), timestamp_precision: 'exact',
-      agent_role: 'leader', event_type: 'tool_call', source: 'matrix',
-      source_ref: `replayMaterials/01-case-pr1-normal.md DAG表`,
-      matrix_event_id: '$nadwji6tQQkl4vSWDktWAFtWs_enjxAcg23927OKmrU',
-      summary: 'Leader 委派 review-1 @reviewer（团队房间 m.mentions，真实 Matrix 事件）',
-      detail: 'Leader 以 projectflow ready_nodes 生成可派发节点，taskflow delegate_task 经 Matrix m.mentions 委派；委派为真实消息投递（非内存调用）。',
-      delta: { tasks: { 'review-1': { status: 'running', locked_reason: null } }, headline: 'review-1 已派发 → reviewer 执行中' },
-    },
-    {
-      event_id: 'pr1-ev-003', timestamp: ts(4, 1, 24), timestamp_precision: 'exact',
-      agent_role: 'reviewer', event_type: 'message', source: 'evidence',
-      source_ref: `replayMaterials/01-case-pr1-normal.md（reviewer 容器日志）`,
-      summary: 'reviewer 消费消息（Created queue → agent 启动），开始独立审查',
-    },
-    {
-      event_id: 'pr1-ev-004', timestamp: ts(4, 2, 17), timestamp_precision: 'exact',
-      agent_role: 'reviewer', event_type: 'task_state', source: 'evidence',
-      source_ref: `finalLock/task-results.json + replayMaterials/05-timeline.md 阶段A`,
-      summary: 'review-1 提交（TASK_COMPLETED @manager，STATUS: SUCCESS）',
-      detail: '结论：bootstrap 范围审查通过，任务身份/指派/DAG 管道一致，无阻塞问题（非高危 → 不触发人工门）。',
-      delta: { tasks: { 'review-1': { status: 'completed' }, 'fix-1': { locked_reason: '等待 Leader 派发（review-1 已完成）' } }, headline: 'review-1 完成（SUCCESS）— 结论非高危，自主流转' },
-    },
-    {
-      event_id: 'pr1-ev-005', timestamp: ts(6, 17, 35), timestamp_precision: 'exact',
-      agent_role: 'leader', event_type: 'tool_call', source: 'matrix',
-      source_ref: `replayMaterials/01-case-pr1-normal.md DAG表`,
-      summary: 'Leader 委派 fix-1 @fixer（真实 Matrix 事件）',
-      delta: { tasks: { 'fix-1': { status: 'running', locked_reason: null } }, phase: 'fixing', headline: 'fix-1 已派发 → fixer 执行中' },
-    },
-    {
-      event_id: 'pr1-ev-006', timestamp: ts(6, 19, 30), timestamp_precision: 'windowed',
-      timestamp_note: '证据给出窗口：fix-1 委派 06:17:35 之后、verify-1 委派 06:20:42（标注"fix-1 完成后"）之前；结果事实来自 finalLock/task-results.json',
-      agent_role: 'fixer', event_type: 'task_state', source: 'evidence',
-      source_ref: `finalLock/task-results.json`,
-      summary: 'fix-1 提交（STATUS: SUCCESS）',
-      detail: '结论：完成 sandbox 修复步骤；本次无需整改（no remediation was required），就绪下游 verify-1。交付物 fix-findings.md。',
-      delta: { tasks: { 'fix-1': { status: 'completed' }, 'verify-1': { locked_reason: '等待 Leader 派发（fix-1 已完成）' } }, headline: 'fix-1 完成（SUCCESS）' },
-    },
-    {
-      event_id: 'pr1-ev-007', timestamp: ts(6, 20, 42), timestamp_precision: 'exact',
-      agent_role: 'leader', event_type: 'tool_call', source: 'matrix',
-      source_ref: `replayMaterials/01-case-pr1-normal.md DAG表`,
-      summary: 'Leader 委派 verify-1 @verifier（fix-1 完成后，真实 Matrix 事件）',
-      delta: { tasks: { 'verify-1': { status: 'running', locked_reason: null } }, phase: 'verifying', headline: 'verify-1 已派发 → verifier 执行中' },
-    },
-    {
-      event_id: 'pr1-ev-008', timestamp: ts(6, 21, 17), timestamp_precision: 'exact',
-      agent_role: 'verifier', event_type: 'task_state', source: 'matrix',
-      source_ref: `replayMaterials/05-timeline.md 阶段A（TASK_COMPLETED: verify-1 @manager）`,
-      summary: 'verify-1 完成：TASK_COMPLETED: verify-1 — 三棒全链闭环',
-      detail: '结论：verify 验证通过（review-1 → fix-1 → verify-1 全 SUCCESS），交付物 verify-findings.md。',
-      delta: { tasks: { 'verify-1': { status: 'completed' } }, headline: 'verify-1 完成 — 全链 SUCCESS' },
-    },
-    {
-      event_id: 'pr1-ev-009', timestamp: ts(6, 21, 30), timestamp_precision: 'approx',
-      agent_role: 'system', event_type: 'task_state', source: 'evidence',
-      source_ref: `replayMaterials/01-case-pr1-normal.md 结果节 + finalLock/task-results.json`,
-      summary: 'PROJECT COMPLETED — PR #1 普通协同案例全自主闭环（无人工介入）',
-      detail: '三棒全部经真实 Matrix 消息触发；任务文件经 MinIO shared/ 双向同步；完整闭环重放证据见 e2eFull（20/20 SHA256SUMS）与 promotionFinal（17/17）。',
-      delta: { phase: 'completed', headline: 'PR #1 项目完成 — 全自主 DAG 闭环（无人工门）' },
-    },
-  ];
-  const timeline = finalizeTimeline(events, initial, 'none', 'running');
-
+  const before = parseBlock('## A. Pre-fix baseline');
+  const after = parseBlock('## B. Post-fix');
+  const pick = (rows, frag) => rows.find((r) => r.arg.includes(frag) || r.name.includes(frag)) || {};
+  const traversal = (rows) => pick(rows, 'outside-secret');
+  const legit = (rows) => pick(rows, 'ok.txt');
+  const abs = (rows) => pick(rows, 'etc/hostname');
+  const missing = (rows) => pick(rows, 'does-not-exist');
   return {
-    case_id: 'pr1-normal-review',
-    title: 'PR #1 — 普通代码审查（自主协同闭环）',
-    positioning: '普通变更由 Agent 自主协作完成：Reviewer → Fixer → Verifier 全链无人工介入。',
-    repository: 'nghqqa/fastapi-boilerplate-demo',
-    pull_request: {
-      number: 1,
-      branch: 'wd1-pr1-bootstrap',
-      state: 'open',
-      write_actions: false,
-      state_note: 'finalLock/pr-state-final.json：last_known_state=open；本 runtime 从未执行任何 PR 写操作',
+    source: {
+      report: `${D.finalsPr2RagTraced}/tasks/pr2rag-verify-1/workspace/verification.md`,
+      probe: `${D.finalsPr2RagTraced}/tasks/pr2rag-verify-1/workspace/verify_probe.py`,
+      runner: 'elemiso-worker-verifier（独立自设计探针，importlib 挂载真实模块 + TestClient）',
     },
-    project: { id: 'copaw-sandbox', status: 'completed' },
-    team: { id: 'p14h2-wd (copaw workers)', size: 4 },
-    runtime: { stack: 'AgentTeams agentteams-embedded:223ddc2', worker_image: 'copaw-worker:223ddc2-build1', mode: 'Docker Desktop, controller reconcile' },
-    risk: { level: 'none', category: null, human_gate: 'none', note: 'review-1 结论非高危 → 不触发人工门（案例设计）' },
-    agents: [
-      { role: 'leader', agent_id: 'p14h2-copaw-worker-manager', matrix_id: '@p14h2-copaw-worker-manager:…:6167', runtime: 'copaw-worker:223ddc2-build1', console: '127.0.0.1:18682' },
-      { role: 'reviewer', agent_id: 'p14h2-copaw-worker-reviewer', matrix_id: '@p14h2-copaw-worker-reviewer:…:6167', runtime: 'copaw-worker:223ddc2-build1', console: '127.0.0.1:14678' },
-      { role: 'fixer', agent_id: 'p14h2-copaw-worker-fixer', matrix_id: '@p14h2-copaw-worker-fixer:…:6167', runtime: 'copaw-worker:223ddc2-build1', console: '127.0.0.1:18933' },
-      { role: 'verifier', agent_id: 'p14h2-copaw-worker-verifier', matrix_id: '@p14h2-copaw-worker-verifier:…:6167', runtime: 'copaw-worker:223ddc2-build1', console: '127.0.0.1:11743' },
-    ],
-    dag: {
-      nodes: [
-        { id: 'review-1', label: 'review-1', sub: 'reviewer', kind: 'task' },
-        { id: 'fix-1', label: 'fix-1', sub: 'fixer', kind: 'task' },
-        { id: 'verify-1', label: 'verify-1', sub: 'verifier', kind: 'task' },
-      ],
-      edges: [{ from: 'review-1', to: 'fix-1' }, { from: 'fix-1', to: 'verify-1' }],
-      human_gate_node: null,
+    request_traversal: "GET /demo/download?name=../outside/outside-secret.txt",
+    request_legit: 'GET /demo/download?name=ok.txt',
+    before: {
+      traversal_status: traversal(before).status ?? null,
+      legit_status: legit(before).status ?? null,
+      abs_status: abs(before).status ?? null,
+      missing_status: missing(before).status ?? null,
+      leaked_outside_secret: traversal(before).leak ?? false,
     },
-    tasks: [
-      {
-        id: 'review-1', project_id: 'copaw-sandbox', assignee: 'p14h2-copaw-worker-reviewer', runtime: 'copaw-worker:223ddc2-build1',
-        started_at: ts(3, 59, 0), ended_at: ts(4, 2, 17),
-        input_context: 'PR #1（wd1-pr1-bootstrap，bootstrap 引导 PR）范围审查：任务身份、指派与 DAG 管道一致性检查；预期非高危。',
-        tool_calls: 'taskflow ack_task / submit_task；filesync（MinIO shared/）；GitHub 只读拉取',
-        result_summary: 'STATUS: SUCCESS — Reviewed the copaw-sandbox project scope (bootstrap review-fix-verify DAG). Task identity, assignment, and DAG plumbing are consistent; no blocking issues found.',
-        result_status: 'SUCCESS', effective: true,
-        artifacts: [{ name: 'review-findings.md', source: 'finalLock/task-results.json (deliverables)' }],
-        trace_id: null, trace_note: 'per-task Trace 未接入（仍为 evidence-replay，trace_id 不存在，如实显示"待接入"）；平台级历史权威 Trace 见总览页',
-        status_history_source: 'replayMaterials/01-case-pr1-normal.md + 05-timeline.md',
-      },
-      {
-        id: 'fix-1', project_id: 'copaw-sandbox', assignee: 'p14h2-copaw-worker-fixer', runtime: 'copaw-worker:223ddc2-build1',
-        started_at: ts(6, 17, 35), ended_at: ts(6, 19, 30), ended_at_precision: 'windowed',
-        input_context: '对 review-1 结论执行常规修复步骤；本案例为 bootstrap 场景，无需整改。',
-        tool_calls: 'taskflow ack/submit；filesync；本地工作区',
-        result_summary: 'STATUS: SUCCESS — Completed the sandbox fix step... no remediation was required; ready for downstream verify-1.',
-        result_status: 'SUCCESS', effective: true,
-        artifacts: [{ name: 'fix-findings.md', source: 'finalLock/task-results.json (deliverables)' }],
-        trace_id: null, trace_note: 'per-task Trace 未接入（仍为 evidence-replay）；平台级历史权威 Trace 见总览页',
-        status_history_source: 'finalLock/task-results.json',
-      },
-      {
-        id: 'verify-1', project_id: 'copaw-sandbox', assignee: 'p14h2-copaw-worker-verifier', runtime: 'copaw-worker:223ddc2-build1',
-        started_at: ts(6, 20, 42), ended_at: ts(6, 21, 17),
-        input_context: '验证已完成链 review-1 → fix-1 → verify-1；常规回归。',
-        tool_calls: 'taskflow ack/submit；filesync',
-        result_summary: 'STATUS: SUCCESS — Verified the completed copaw-sandbox chain (review-1 -> fix-1 -> verify-1)... verification passes.',
-        result_status: 'SUCCESS', effective: true,
-        artifacts: [{ name: 'verify-findings.md', source: 'finalLock/task-results.json (deliverables)' }],
-        trace_id: null, trace_note: 'per-task Trace 未接入（仍为 evidence-replay）；平台级历史权威 Trace 见总览页',
-        status_history_source: 'replayMaterials/05-timeline.md 阶段A',
-      },
-    ],
-    timeline,
-    gate: {
-      gate_id: null, state: 'none',
-      note: 'PR #1 结论非高危，不经过人工门 — 与 PR #2 对照展示"安全门是拓扑与策略的升级，而非另一套系统"。',
+    after: {
+      traversal_status: traversal(after).status ?? null,
+      legit_status: legit(after).status ?? null,
+      abs_status: abs(after).status ?? null,
+      missing_status: missing(after).status ?? null,
+      leaked_outside_secret: traversal(after).leak ?? false,
     },
-    fix_comparison: null,
-    context_events: [
-      {
-        timestamp: ts(3, 47, 25), timestamp_precision: 'exact',
-        summary: 'copaw-sandbox kickoff 被 leader 消费；ready_nodes 因缺 plan.md 正确上报（未越权）',
-        source_ref: 'finalLock/autonomous-timeline.json',
-      },
-      {
-        timestamp: ts(4, 1, 4), timestamp_precision: 'exact',
-        summary: '操作员经官方 projectflow 路径播种 plan.md；retry_attempt=2 发送后 leader 消费并自主完成全链',
-        source_ref: 'finalLock/autonomous-timeline.json',
-      },
-    ],
-    evidence_integrity: {
-      sha256_dirs: ['e2eFull (20/20)', 'promotionFinal (17/17)', 'finalLock', 'replayMaterials'],
-      secret_scan_clean: true,
-      secret_scan_source: 'replayMaterials/SECRETS-SCAN.txt（模式 0 命中；真实凭据反向比对 0 命中）',
-    },
-    sources: {
-      case_definition: `${D.replayMaterials}/01-case-pr1-normal.md`,
-      timeline: `${D.replayMaterials}/05-timeline.md 阶段A`,
-      task_results: `${D.finalLock}/task-results.json`,
-      pr_state: `${D.finalLock}/pr-state-final.json`,
-      e2e_replay: `${D.e2eFull}/SHA256SUMS (20/20)`,
-      promotion: `${D.promotionFinal}/SHA256SUMS (17/17)`,
-    },
+    vectors: { before, after },
+    raw: { report_path: `${D.finalsPr2RagTraced}/tasks/pr2rag-verify-1/workspace/verification.md` },
   };
 }
 
 // ---------------------------------------------------------------------------
-// PR #2 — CWE-22 high-risk human gate (case B)
+// PR #2 — CWE-22 high-risk path traversal, human APPROVE path (RAG-TRACED run)
+// run-elem-pr2rag-20260917-01 · project elemiso-pr2rag-gate · wall clock 4m15s
+// Evidence: FINALS-ELEM-PR2-RAG-TRACED (SHA256SUMS-locked).
 // ---------------------------------------------------------------------------
-function buildPR2(probe) {
+function buildPR2Rag() {
+  const D2 = '2026-09-16';
+  const ts2 = (h, m = 0, s = 0) => `${D2}T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}Z`;
+  const P = 'finalsPr2RagTraced';
   const initial = {
     'review-1': initialTask('pending', '等待 Leader 派发'),
     'fix-1': initialTask('pending', 'DAG 依赖：等待 review-1 结论'),
@@ -259,41 +133,49 @@ function buildPR2(probe) {
   };
   const events = [
     {
-      event_id: 'pr2-ev-001', timestamp: ts(9, 49, 35), timestamp_precision: 'exact',
+      event_id: 'pr2rag-ev-001', timestamp: ts2(17, 16, 30), timestamp_precision: 'exact',
+      agent_role: 'human', event_type: 'message', source: 'matrix',
+      source_ref: `${P}/kickoff-as-sent.txt`,
+      matrix_event_id: '$ADhpvQdJeVSyb0hD05JxYRw4eddgn5gDU-PDjGWORpo',
+      summary: '操作员发送 kickoff（项目 elemiso-pr2rag-gate；DAG 预置不重排；SPEC 非预设——未点名任何漏洞类别；manifest 声明 rag_retrieve 知识库工具可用）',
+      detail: 'kickoff 全文存档于 kickoff-as-sent.txt（3123 字节）；审计要点：SPEC 只指向 diff 与新增文件，结论完全未预设。',
+    },
+    {
+      event_id: 'pr2rag-ev-002', timestamp: ts2(17, 16, 35), timestamp_precision: 'exact',
       agent_role: 'leader', event_type: 'tool_call', source: 'matrix',
-      source_ref: `fixAudit/AUDIT.md 执行时间线`,
-      matrix_event_id: '$IDofCrGE0os3RryOyFkF6R9qdX4cvU7bXL9nj1aiJac',
-      summary: 'Leader 委派 review-1 @reviewer（build2 修复版 taskflow，m.mentions 命中，真实事件投递）',
-      detail: '修复版 delegate_task 直接执行（无 kickoff、无手工消息）：project-scoped 新路径落位、m.mentions 命中 reviewer、commit 记录新 event_id。',
+      source_ref: `${P}/team-room-messages.json`,
+      matrix_event_id: '$ssi5ZLHMRtpMbL-vS54K_H1…（完整 event_id 见导出）',
+      summary: 'kickoff 后 5 秒：Leader taskflow(delegate_task) 委派 review-1 @reviewer（m.mentions 命中，团队房可见）',
       delta: { tasks: { 'review-1': { status: 'running', locked_reason: null } }, phase: 'running', headline: 'review-1 已派发 → reviewer 独立安全审查中' },
     },
     {
-      event_id: 'pr2-ev-002', timestamp: ts(9, 49, 35), timestamp_precision: 'exact',
-      agent_role: 'reviewer', event_type: 'message', source: 'evidence',
-      source_ref: `fixAudit/AUDIT.md（reviewer docker logs）`,
-      summary: 'reviewer 实时消费（Created queue → Consumer started → agent 启动）',
+      event_id: 'pr2rag-ev-003', timestamp: ts2(17, 16, 37), timestamp_precision: 'exact',
+      agent_role: 'reviewer', event_type: 'task_state', source: 'minio',
+      source_ref: `${P}/tasks/pr2rag-review-1/meta.json`,
+      summary: 'reviewer ack_task（acknowledged_at 17:16:37Z，Meta 事件号与委派事件一致）；clone + checkout head SHA 校验',
     },
     {
-      event_id: 'pr2-ev-003', timestamp: ts(9, 49, 37), timestamp_precision: 'exact',
-      agent_role: 'reviewer', event_type: 'tool_call', source: 'minio',
-      source_ref: `fixAudit/AUDIT.md（reviewer 侧 meta.json）`,
-      summary: 'reviewer ack_task（acknowledged_at），meta → in_progress',
+      event_id: 'pr2rag-ev-004', timestamp: ts2(17, 16, 46), timestamp_precision: 'windowed',
+      timestamp_note: '窗口 17:16:46–17:17:52（团队房导出：scope 确认、PR 自带测试运行、依赖分批安装）',
+      agent_role: 'reviewer', event_type: 'tool_call', source: 'evidence',
+      source_ref: `${P}/team-room-messages.json`,
+      summary: 'reviewer 独立审查：确认 scope 2 files +122/-0；运行 PR 自带测试（标记未注册→注册后 1 passed 泄露复现 / 1 failed fixture 错位）；随后自设计 PoC',
     },
     {
-      event_id: 'pr2-ev-004', timestamp: ts(9, 55, 0), timestamp_precision: 'windowed',
-      timestamp_note: '窗口 09:49–09:59（fixAudit/AUDIT.md：reviewer 抓取 diff、分析、成文）',
-      agent_role: 'reviewer', event_type: 'message', source: 'evidence',
-      source_ref: `fixAudit/AUDIT.md`,
-      summary: 'reviewer 抓取 PR #2 diff、分析、成文；期间 manager 领导环自动催办一次（"assigned but not running"），reviewer 续跑',
+      event_id: 'pr2rag-ev-005', timestamp: ts2(17, 17, 58), timestamp_precision: 'exact',
+      agent_role: 'reviewer', event_type: 'tool_call', source: 'rag',
+      source_ref: `${P}/rag/rag-tool-spans.jsonl`,
+      matrix_event_id: '$I7hY4g858hnav…（团队房原话："references only — my conclusion stands on my own repro"）',
+      summary: 'RAG 知识库调用（manifest 邀请、可选）：rag_retrieve 返回 org-standards/cwe-22-path-traversal.md#1 与 file-path-containment.md#1 —— 与 reviewer 自主结论一致；引用不替代自主验证',
+      detail: 'RAG 纪律三要素在本轮全部成立：①先自主复现后检索；②语料为知识型（无案例结论）；③agent 明示"references don\'t replace my own verification"。调用同时落 tool.rag_retrieve span（直连 SLS）与服务端审计流水。',
     },
     {
-      event_id: 'pr2-ev-005', timestamp: ts(10, 5, 0), timestamp_precision: 'approx',
-      timestamp_note: '证据时间线出入的诚实标注：replayMaterials/05-timeline.md 记为 ~10:19，但执行报告 fixVerify/AUDIT.md 显示人工门记录写入与 fix-1 派发均为 10:06:24 且约束清单确认"批准后才派发 fix-1"，故 review-1 提交必在 10:06:24 之前；按执行报告窗口取 ~10:05。',
+      event_id: 'pr2rag-ev-006', timestamp: ts2(17, 18, 8), timestamp_precision: 'exact',
       agent_role: 'reviewer', event_type: 'task_state', source: 'matrix',
-      source_ref: `replayMaterials/02-case-pr2-high-risk.md §1 + fixVerify/AUDIT.md`,
-      matrix_event_id: '$0CmSNq-…（TASK_COMPLETED: review-1 @manager，证据中记录为前缀）',
-      summary: 'HIGH_RISK_FOUND — review-1 提交：FINDING_CONFIRMED / SEVERITY: HIGH / HUMAN_VERIFICATION_REQUIRED: YES（CWE-22 路径穿越任意文件读取）',
-      detail: 'review-1/result.md 顶层协议标记：\nSTATUS: SUCCESS\nSUMMARY: Confirmed HIGH path traversal / arbitrary file read (CWE-22) ...\n         STATUS: FINDING_CONFIRMED, SEVERITY: HIGH, HUMAN_VERIFICATION_REQUIRED: YES\n受影响文件：backend/src/interfaces/api/v1/demo_high_risk.py 的 demo_download（用户可控 name 直接 os.path.join 到 DEMO_FILES_DIR，../ 可逃逸基目录）。',
+      source_ref: `${P}/tasks/pr2rag-review-1/result.md`,
+      matrix_event_id: '$jykAf8z-7_5KG…（TASK_COMPLETED: run-elem-pr2rag-20260917-01-review）',
+      summary: 'HIGH_RISK_FOUND — review-1 提交：FINDING_CONFIRMED / SEVERITY: HIGH / HUMAN_VERIFICATION_REQUIRED: YES（CWE-22 路径穿越任意文件读取；真实 PoC：../outside-secret.txt 200 泄露、../../../etc/hostname 200 任意读）',
+      detail: '附加独立发现：PR 自带测试#2 失败是 fixture/payload 错位（../../../ 越过 tmp 到 /tmp），非缓解；正确 payload ../../deep-secret.txt → 200 DEEP-SECRET。',
       delta: {
         tasks: {
           'review-1': { status: 'completed' },
@@ -304,12 +186,11 @@ function buildPR2(probe) {
       },
     },
     {
-      event_id: 'pr2-ev-006', timestamp: ts(10, 5, 10), timestamp_precision: 'approx',
-      timestamp_note: '紧随 review-1 高危结论（fixVerify/AUDIT.md 约束清单 #6：人工门批准后才派发 fix-1）',
-      agent_role: 'system', event_type: 'task_state', source: 'evidence',
-      source_ref: `replayMaterials/06-human-gate.md 设计原理`,
-      summary: 'HUMAN_SECURITY_REVIEW_REQUIRED — 人工安全门触发，系统受控停等：Leader 不派发 fix-1/verify-1',
-      detail: '高危漏洞的修复授权不由任何 Agent 自行决定：门未批期间 Leader 对 fix-1/verify-1 的 delegate_task 在策略上被禁止，系统停等并保留全部证据（fail-safe）。',
+      event_id: 'pr2rag-ev-007', timestamp: ts2(17, 18, 20), timestamp_precision: 'exact',
+      agent_role: 'leader', event_type: 'message', source: 'matrix',
+      source_ref: `${P}/leader-dm-messages.json`,
+      matrix_event_id: '$MKaRMJL-T34lT…',
+      summary: 'HUMAN_SECURITY_REVIEW_REQUIRED — Leader 验收 review 后上报人工门并 STOP："尚未委派 pr2rag-fix-1，等待你的明确门禁决策"',
       delta: {
         gate: 'required',
         tasks: {
@@ -321,12 +202,12 @@ function buildPR2(probe) {
       },
     },
     {
-      event_id: 'pr2-ev-007', timestamp: ts(10, 6, 0), timestamp_precision: 'approx',
-      timestamp_note: '批准记录与 fix-1 派发同时落盘于 10:06:24（fixVerify/AUDIT.md）；操作员批准动作时刻按执行报告窗口取 ~10:06',
-      agent_role: 'human', event_type: 'approval', source: 'evidence',
-      source_ref: `replayMaterials/artifacts/human-gate-approval.md + fixVerify/AUDIT.md`,
-      summary: 'HUMAN_SECURITY_APPROVED_FIX — 操作员批准：确认 HIGH_RISK_FOUND 与 CWE-22 定性，授权派发 fix-1（最小修复+本地测试）与 verify-1（独立验证），禁止 merge/push/close/reopen，PR #2 保持 OPEN',
-      detail: '人工门批准记录（human-gate-approval.md，12 项授权与禁令）：① HIGH_RISK_FOUND 结论确认；② CWE-22 定性确认；③ 授权派发 fix-1；④ 授权最小必要修复并运行测试；⑤ 授权 fix-1 完成后派发 verify-1；⑥ 授权独立验证与回归；⑦ 禁止自动 merge/push/close/reopen；⑧ PR #2 保持 OPEN；⑨ 不修改 PR #1/copaw-sandbox；⑩ 不触碰 OpenClaw 主线与 WSL；⑪ 不输出/落盘任何 password/token/API key/Cookie；⑫ 失败即停止并保留证据。',
+      event_id: 'pr2rag-ev-008', timestamp: ts2(17, 18, 57), timestamp_precision: 'exact',
+      agent_role: 'human', event_type: 'approval', source: 'matrix',
+      source_ref: `${P}/project/human-gate-approval.md`,
+      matrix_event_id: '$MA75PoE6NxVwxBWJuQTXdjvcyRW-xGDbcUQzcDj2TwQ（团队房 $XWUp5N4Qn5j-adHPrTRUzFLuwd6pwKDBydn6SwJEomY）',
+      summary: 'HUMAN_SECURITY_APPROVED_FIX — 操作员批准（按操作员运行前书面授权自动执行；批准记录先于派发落盘项目目录），授权派发 fix-1/verify-1，禁 merge/push/close/reopen，PR #2 保持 OPEN',
+      detail: '批准范围与验收口径（记录原文）：①确认 HIGH/CWE-22 结论；②授权 Leader 自行委派 pr2rag-fix-1（仅 Reviewer 标记文件、测试冻结、零 GitHub 写入）；③fix 验收后委派 pr2rag-verify-1；④FAIL 则 pr2rag-fix-2 重派一次。验收口径：团队房必须出现全新 fix 委派事件且 Fixer 仅在其后开工。',
       delta: {
         gate: 'approved',
         tasks: {
@@ -338,47 +219,28 @@ function buildPR2(probe) {
       },
     },
     {
-      event_id: 'pr2-ev-008', timestamp: ts(10, 6, 24), timestamp_precision: 'exact',
+      event_id: 'pr2rag-ev-009', timestamp: ts2(17, 19, 6), timestamp_precision: 'exact',
       agent_role: 'leader', event_type: 'tool_call', source: 'matrix',
-      source_ref: `fixVerify/AUDIT.md 执行时间线`,
-      matrix_event_id: '$JU09kIgwjvVJmEUSVSlNR8Va2-zhxsvtmFaZ3RIHuTM',
-      summary: 'fix-1 委派 @fixer（人工门记录写入项目目录；计划修复 review-1 [~]→[x]、fix-1/verify-1 [~]→[ ]；m.mentions 命中 fixer）',
+      source_ref: `${P}/team-room-messages.json`,
+      matrix_event_id: '$bZ2qmRF9r138p5xUZM7_XpgqrdETvqlcDOlKFRZ5Sgk',
+      summary: '批准后 9 秒：Leader taskflow(delegate_task) 发出全新 fix 委派 @fixer（事件号 ≠ 任何历史作废事件；操作员零介入）',
       delta: { tasks: { 'fix-1': { status: 'running', locked_reason: null } }, headline: 'fix-1 已派发 → fixer 最小修复中' },
     },
     {
-      event_id: 'pr2-ev-009', timestamp: ts(10, 19, 0), timestamp_precision: 'approx',
-      agent_role: 'fixer', event_type: 'tool_call', source: 'evidence',
-      source_ref: `fixVerify/AUDIT.md + fixVerify/artifacts/fix-1.test-evidence.md`,
-      summary: 'fixer 本地 clone PR #2 分支 demo/high-risk-human-gate（无远端凭证，仅本地作业）',
+      event_id: 'pr2rag-ev-010', timestamp: ts2(17, 19, 23), timestamp_precision: 'exact',
+      agent_role: 'fixer', event_type: 'tool_call', source: 'rag',
+      source_ref: `${P}/rag/rag-tool-spans.jsonl`,
+      matrix_event_id: '$pZfPXIle8fThD…（团队房原话："org standards corroborate the CWE-22 finding and the containment approach"）',
+      summary: 'Fixer 自检通过后检索组织修复规范（rag_retrieve）——realpath+commonpath 包含性校验模式；随后产出补丁',
+      detail: '关键证据点：补丁 sha256 674356fc…16081 与 R1/R2/R3-TRACED 三轮独立产出逐字节一致——本轮揭示了机理：组织规范（file-path-containment.md）经由 RAG 到达执行者，规范本身即确定性修复模式。',
     },
     {
-      event_id: 'pr2-ev-010', timestamp: ts(10, 21, 0), timestamp_precision: 'approx',
-      agent_role: 'fixer', event_type: 'tool_call', source: 'evidence',
-      source_ref: `fixVerify/artifacts/verify-1.before_probe_raw.txt + fix-1.test-evidence.md`,
-      summary: `修复前探针：穿越请求 → HTTP ${probe.before.traversal_status}，泄露 ${probe.before.leaked_outside_secret ? 'TOP-SECRET-OUTSIDE-BASE（LEAKED_OUTSIDE_SECRET: True）' : '无'}；合法文件 → ${probe.before.legit_status}`,
-      detail: `GET /demo/download?name=../outside/outside-secret.txt → ${probe.before.traversal_status}（漏洞确认）；GET /demo/download?name=welcome.txt → ${probe.before.legit_status}（合法基线）。`,
-    },
-    {
-      event_id: 'pr2-ev-011', timestamp: ts(10, 22, 0), timestamp_precision: 'approx',
-      agent_role: 'fixer', event_type: 'tool_call', source: 'evidence',
-      source_ref: `replayMaterials/artifacts/fix.patch + fix-1.result.md`,
-      summary: `最小修复应用（Path.resolve 归一化 + is_relative_to(DEMO_FILES_DIR) 包含性校验，单文件 12+/4−）+ 修复后探针：穿越 → HTTP ${probe.after.traversal_status} 无泄露；合法文件仍 ${probe.after.legit_status}`,
-      delta: { headline: 'fixer 最小修复完成，探针转绿（404/404·200）— 待正式提交' },
-    },
-    {
-      event_id: 'pr2-ev-012', timestamp: ts(10, 40, 8), timestamp_precision: 'exact',
-      agent_role: 'fixer', event_type: 'message', source: 'controller',
-      source_ref: `replayMaterials/07-disclosures.md 事件2 + fixVerify/AUDIT.md 三`,
-      summary: '披露事件：tool_guard 审批超时→拒绝→清空 fixer 会话记忆（工作成果保留于 workspace，正式提交待 leader 催办）',
-      detail: 'copaw 框架 tool_guard 交互审批与无人值守自治运行冲突；处置：依据人工门授权将 fixer/verifier 的 security.tool_guard.enabled=false 后重启（manager/reviewer 未改动）。已列入审计页残余风险。',
-    },
-    {
-      event_id: 'pr2-ev-013', timestamp: ts(11, 5, 0), timestamp_precision: 'windowed',
-      timestamp_note: '窗口 ~11:00–11:06（fixVerify/AUDIT.md：leader 催办后 ~11:0x 正式提交；verify-1 派发前）',
-      agent_role: 'fixer', event_type: 'task_state', source: 'evidence',
-      source_ref: `fixVerify/artifacts/fix-1.result.md`,
-      summary: 'fix-1 正式提交：STATUS: SUCCESS / FIX_APPLIED / TESTS_PASSED；Leader 验收 effective=true，计划 fix-1→[x]',
-      detail: '交付物：fix.patch、demo_high_risk.fixed.py、test-evidence.md（shared/projects/copaw-high-risk-human-gate/tasks/fix-1/workspace/）。',
+      event_id: 'pr2rag-ev-011', timestamp: ts2(17, 19, 32), timestamp_precision: 'exact',
+      agent_role: 'fixer', event_type: 'task_state', source: 'minio',
+      source_ref: `${P}/tasks/pr2rag-fix-1/result.md`,
+      matrix_event_id: '$_DA6Jggg8iwJV…（TASK_COMPLETED: pr2rag-fix-1）',
+      summary: 'fix-1 提交：STATUS: SUCCESS / FIX_APPLIED / SELF_CHECK_PASSED；仅 demo_high_risk.py 单文件 +13/−7；测试冻结；Leader 验收 effective=true',
+      detail: '交付物：attempt-1.diff（sha256 674356fc9a661faa49b97b789d75ff4529b95a5fac7f39dad0301397c0116081）、workspace/notes.md。',
       delta: {
         tasks: { 'fix-1': { status: 'completed' }, 'verify-1': { status: 'pending', locked_reason: null } },
         phase: 'verifying',
@@ -386,83 +248,79 @@ function buildPR2(probe) {
       },
     },
     {
-      event_id: 'pr2-ev-014', timestamp: ts(11, 6, 0), timestamp_precision: 'approx',
-      timestamp_note: '~11:0x（fixVerify/AUDIT.md）；verifier 消费时刻 11:06:25 为精确锚点',
+      event_id: 'pr2rag-ev-012', timestamp: ts2(17, 19, 44), timestamp_precision: 'exact',
       agent_role: 'leader', event_type: 'tool_call', source: 'matrix',
-      source_ref: `fixVerify/AUDIT.md 执行时间线`,
-      matrix_event_id: '$t0dXkuWwmjdkA-Ao6H0Z3KhuYJLJ0nQPCq7w0Jr1aU8',
-      summary: 'verify-1 委派 @verifier（fix-1 完成后；m.mentions 命中 verifier）',
+      source_ref: `${P}/team-room-messages.json`,
+      matrix_event_id: '$qVISB8hb9_jyiYsnXVFFbd_…',
+      summary: 'verify-1 委派 @verifier（fix-1 验收后；m.mentions 命中 verifier）',
       delta: { tasks: { 'verify-1': { status: 'running', locked_reason: null } }, headline: 'verify-1 已派发 → verifier 独立验证中' },
     },
     {
-      event_id: 'pr2-ev-015', timestamp: ts(11, 6, 25), timestamp_precision: 'exact',
-      agent_role: 'verifier', event_type: 'message', source: 'evidence',
-      source_ref: `fixVerify/AUDIT.md（verifier docker logs）`,
-      summary: 'verifier 实时消费（Created queue），开始独立验证（不信任 Fixer 结论）',
-    },
-    {
-      event_id: 'pr2-ev-016', timestamp: ts(11, 15, 8), timestamp_precision: 'exact',
-      agent_role: 'verifier', event_type: 'message', source: 'controller',
-      source_ref: `replayMaterials/07-disclosures.md 事件2 + fixVerify/AUDIT.md 三`,
-      summary: '披露事件：verifier 首轮同样被 tool_guard 清空；按人工门授权关闭其 guard 后，leader 催办 $uiQdNtIY…（11:23:30 消费）恢复闭环',
-    },
-    {
-      event_id: 'pr2-ev-017', timestamp: ts(11, 24, 0), timestamp_precision: 'windowed',
-      timestamp_note: '窗口 11:23:30（催办消费）– ~11:26（提交），按 verification-report.md 执行内容',
+      event_id: 'pr2rag-ev-013', timestamp: ts2(17, 20, 13), timestamp_precision: 'windowed',
+      timestamp_note: '窗口 17:19:49–17:20:13（团队房导出：干净 clone、补丁 sha256 独立复现一致、修复前基线 3 向量全泄露、修复后全 400、PR 测试断言反转如实记录）',
       agent_role: 'verifier', event_type: 'tool_call', source: 'evidence',
-      source_ref: `fixVerify/artifacts/verify-1.verification-report.md`,
-      summary: `独立验证执行：重 clone → git apply fix.patch（字节级一致）→ 自设计探针（修复前 ${probe.before.traversal_status} 泄露 / 修复后 ${probe.after.traversal_status} 拒绝；合法文件 ${probe.after.legit_status}）→ 回归检查`,
-      detail: 'Verifier 不信任 Fixer 结论：补丁经 git apply --check 干净应用；重放产物与 fixer 交付 demo_high_risk.fixed.py 字节级一致；模块导入冒烟通过。',
+      source_ref: `${P}/tasks/pr2rag-verify-1/workspace/verification.md`,
+      summary: '独立验证执行：pristine clone 基线（../、sub/../、绝对路径全部 200 泄露 + /etc/hostname）→ 应用补丁（git apply --check 干净）→ 修复后全部 400/合法 200/缺失 404 → PROBE_ACCEPTANCE: PASS',
+      detail: 'Verifier 不信任 Fixer 结论：sha256 独立复算一致、applied diff 与补丁字节级一致、backend/tests/ 未触碰。',
     },
     {
-      event_id: 'pr2-ev-018', timestamp: ts(11, 26, 0), timestamp_precision: 'approx',
-      agent_role: 'verifier', event_type: 'task_state', source: 'evidence',
-      source_ref: `fixVerify/artifacts/verify-1.result.md`,
-      summary: 'verify-1 提交：STATUS: VERIFICATION_PASSED / SEVERITY: NONE / HUMAN_VERIFICATION_REQUIRED: NO / FIX_INDEPENDENTLY_VERIFIED REGRESSION_CHECK_PASSED',
-      detail: '残余风险 NONE；修复经独立复现验证（非采信 Fixer 自述）。注：VERIFICATION_PASSED 字面值不在 store 白名单（状态枚举兼容问题，见审计页），验证内容本身完整可信。',
-      delta: { tasks: { 'verify-1': { status: 'completed' } }, headline: 'verify-1 通过 — SEVERITY: NONE，独立验证完成' },
+      event_id: 'pr2rag-ev-014', timestamp: ts2(17, 20, 20), timestamp_precision: 'exact',
+      agent_role: 'verifier', event_type: 'tool_call', source: 'rag',
+      source_ref: `${P}/rag/rag-tool-spans.jsonl`,
+      matrix_event_id: '$lRusR_UdR6LzL…（团队房原话："references only; my verdict rests on my own reproduction"）',
+      summary: 'Verifier 同样按 manifest 邀请检索组织标准（SYNTHETIC 数据模式确认）——引用与上游一致，裁决基于自己的复现',
     },
     {
-      event_id: 'pr2-ev-019', timestamp: ts(11, 26, 30), timestamp_precision: 'approx',
-      agent_role: 'system', event_type: 'task_state', source: 'evidence',
-      source_ref: `fixVerify/AUDIT.md 裁决 + replayMaterials/02-case-pr2-high-risk.md §5`,
-      summary: 'PROJECT COMPLETED — 高危闭环完成；PR #2 保持 OPEN（未 merge/push/close/reopen）',
-      detail: '裁决 COPAW_HIGH_RISK_FIXVERIFY_PASSED；修复以补丁交付物形态存在，是否进入远端分支属仓库维护者的人工决策，不在本系统授权范围。',
-      delta: { phase: 'completed', headline: 'PR #2 高危闭环完成 — 人工门→修复→独立验证，PR 保持 OPEN' },
+      event_id: 'pr2rag-ev-015', timestamp: ts2(17, 20, 30), timestamp_precision: 'exact',
+      agent_role: 'verifier', event_type: 'task_state', source: 'matrix',
+      source_ref: `${P}/tasks/pr2rag-verify-1/result.md`,
+      matrix_event_id: '$A-7TExClgZdhx…（TASK_COMPLETED: pr2rag-verify-1）',
+      summary: 'verify-1 提交：VERIFIED (PASS) 首次通过；VERDICT: VERIFIED（verification.md 顶层）',
+      delta: { tasks: { 'verify-1': { status: 'completed' } }, headline: 'verify-1 通过 — VERIFIED，独立验证完成' },
+    },
+    {
+      event_id: 'pr2rag-ev-016', timestamp: ts2(17, 20, 45), timestamp_precision: 'exact',
+      agent_role: 'leader', event_type: 'message', source: 'matrix',
+      source_ref: `${P}/project/result.md`,
+      matrix_event_id: '$CO6O4a8MyMRGN…',
+      summary: 'PROJECT COMPLETED — 高危闭环完成（墙钟 4 分 15 秒）；PR #2 保持 OPEN（未 merge/push/close/reopen，分支 SHA 运行前后一致）',
+      delta: { phase: 'completed', headline: 'PR #2 高危闭环完成 — 人工门→修复→独立验证（全程 RAG+OTel 追踪），PR 保持 OPEN' },
     },
   ];
   const timeline = finalizeTimeline(events, initial, 'none', 'running');
+  const probe = loadProbeComparisonRag();
 
   return {
     case_id: 'pr2-high-risk-human-gate',
-    title: 'PR #2 — CWE-22 路径穿越高危 · 人工安全门闭环',
-    positioning: '发现高危风险时系统自动暂停并等待人工确认，批准后才继续修复和验证。',
+    title: 'PR #2 — CWE-22 路径穿越高危 · 人工安全门闭环（RAG + AgentLoop 追踪版）',
+    positioning: '发现高危风险时系统自动暂停并等待人工确认，批准后才继续修复和验证；全程 AgentLoop 追踪 + RAG 知识库接入。',
     repository: 'nghqqa/fastapi-boilerplate-demo',
     pull_request: {
       number: 2,
       branch: 'demo/high-risk-human-gate',
       state: 'open',
       write_actions: false,
-      state_note: '全程未 merge/push/close/reopen（fixVerify/AUDIT.md 约束清单 #7/8 与裁决）',
+      state_note: '运行前后 git ls-remote 双向核验 head SHA 1dedf5e1… 一致；全程未 merge/push/close/reopen',
     },
-    project: { id: 'copaw-high-risk-human-gate', status: 'completed' },
-    team: { id: 'p14h2-wd (copaw workers, build2)', size: 4 },
-    runtime: { stack: 'AgentTeams agentteams-embedded:223ddc2', worker_image: 'copaw-worker:223ddc2-build2', mode: 'Docker Desktop, controller reconcile' },
+    project: { id: 'elemiso-pr2rag-gate', status: 'completed' },
+    team: { id: 'elemiso-team (copaw workers)', size: 4 },
+    runtime: { stack: 'AgentTeams agentteams-embedded:223ddc2 (elemiso-ctrl)', worker_image: 'copaw-worker:223ddc2-agentloop-rag', mode: 'Docker Desktop, controller reconcile' },
     risk: {
       level: 'high',
       category: 'CWE-22',
       human_gate: 'approved',
-      affected_file: 'backend/src/interfaces/api/v1/demo_high_risk.py — demo_download',
-      description: '用户可控 name 参数直接 os.path.join 到 DEMO_FILES_DIR，../ 可逃逸基目录，经 FileResponse 实现任意文件读取（路径穿越）。该缺陷为演示预置（PR #2 仓库内置 demo 占位数据）。',
-      reviewer_conclusion: 'STATUS: SUCCESS / FINDING_CONFIRMED / SEVERITY: HIGH / HUMAN_VERIFICATION_REQUIRED: YES（review-1 result.md 协议标记）',
-      residual_after_fix: 'SEVERITY: NONE（verify-1 独立验证）',
+      affected_file: 'backend/src/interfaces/api/v1/demo_high_risk.py — demo_download (L41 os.path.join → L42 FileResponse)',
+      description: '用户可控 name 参数直接 os.path.join 到 DEMO_FILES_DIR，../ 序列与前导 / 绝对路径均可逃逸基目录，经 FileResponse 实现任意文件读取；路由无鉴权依赖（伴生 CWE-73/CWE-200）。该缺陷为演示预置（仓库内置 demo 占位数据）。',
+      reviewer_conclusion: 'STATUS: SUCCESS / FINDING_CONFIRMED / SEVERITY: HIGH / HUMAN_VERIFICATION_REQUIRED: YES（pr2rag-review-1 result.md 协议标记）',
+      rag_note: 'Reviewer/Fixer/Verifier 均按 manifest 邀请实际调用 rag_retrieve（组织标准库，SYNTHETIC 知识型语料，引用不替代自主验证）',
+      residual_after_fix: 'SEVERITY: NONE（pr2rag-verify-1 独立验证 VERIFIED）',
     },
     agents: [
-      { role: 'leader', agent_id: 'p14h2-copaw-worker-manager', matrix_id: '@p14h2-copaw-worker-manager:…:6167', runtime: 'copaw-worker:223ddc2-build2', console: '127.0.0.1:18682' },
-      { role: 'reviewer', agent_id: 'p14h2-copaw-worker-reviewer', matrix_id: '@p14h2-copaw-worker-reviewer:…:6167', runtime: 'copaw-worker:223ddc2-build2', console: '127.0.0.1:14678' },
-      { role: 'fixer', agent_id: 'p14h2-copaw-worker-fixer', matrix_id: '@p14h2-copaw-worker-fixer:…:6167', runtime: 'copaw-worker:223ddc2-build2', console: '127.0.0.1:18933' },
-      { role: 'verifier', agent_id: 'p14h2-copaw-worker-verifier', matrix_id: '@p14h2-copaw-worker-verifier:…:6167', runtime: 'copaw-worker:223ddc2-build2', console: '127.0.0.1:11743' },
-      { role: 'human', agent_id: 'operator (runtime owner)', matrix_id: '@admin（Element Web 127.0.0.1:18088 登录）', runtime: 'human console — 人工安全门审批', console: '127.0.0.1:18088' },
+      { role: 'leader', agent_id: 'leader', matrix_id: '@leader:elemiso-matrix:6167', runtime: 'copaw-worker:223ddc2-agentloop-rag', console: '127.0.0.1（宿主发布端口，容器停止已移除）' },
+      { role: 'reviewer', agent_id: 'reviewer', matrix_id: '@reviewer:elemiso-matrix:6167', runtime: 'copaw-worker:223ddc2-agentloop-rag', console: '127.0.0.1（同上）' },
+      { role: 'fixer', agent_id: 'fixer', matrix_id: '@fixer:elemiso-matrix:6167', runtime: 'copaw-worker:223ddc2-agentloop-rag', console: '127.0.0.1（同上）' },
+      { role: 'verifier', agent_id: 'verifier', matrix_id: '@verifier:elemiso-matrix:6167', runtime: 'copaw-worker:223ddc2-agentloop-rag', console: '127.0.0.1（同上）' },
+      { role: 'human', agent_id: 'operator (runtime owner)', matrix_id: '@elemiso-admin:elemiso-matrix:6167', runtime: 'human decision — 运行前书面授权自动执行（本轮门批准）', console: 'Element Web 127.0.0.1:18088' },
     ],
     dag: {
       nodes: [
@@ -476,126 +334,133 @@ function buildPR2(probe) {
     },
     tasks: [
       {
-        id: 'review-1', project_id: 'copaw-high-risk-human-gate', assignee: 'p14h2-copaw-worker-reviewer', runtime: 'copaw-worker:223ddc2-build2',
-        started_at: ts(9, 49, 35), ended_at: ts(10, 5, 0), ended_at_precision: 'approx',
-        input_context: 'PR #2（demo/high-risk-human-gate）独立安全审查：聚焦 demo_download 的路径处理；输出协议化结论（FINDING_CONFIRMED / SEVERITY / HUMAN_VERIFICATION_REQUIRED）。',
-        tool_calls: 'taskflow ack_task / submit_task；filesync；GitHub 只读拉取 PR diff',
-        result_summary: 'STATUS: SUCCESS\nSUMMARY: Confirmed HIGH path traversal / arbitrary file read (CWE-22) ...\n         STATUS: FINDING_CONFIRMED, SEVERITY: HIGH, HUMAN_VERIFICATION_REQUIRED: YES',
+        id: 'review-1', project_id: 'elemiso-pr2rag-gate', assignee: 'reviewer', runtime: 'copaw-worker:223ddc2-agentloop-rag',
+        started_at: ts2(17, 16, 35), ended_at: ts2(17, 18, 8), ended_at_precision: 'exact',
+        input_context: 'PR #2（demo/high-risk-human-gate）独立安全审查；SPEC 非预设（未点名漏洞类别）；输出协议化结论。',
+        tool_calls: 'taskflow ack/submit；git clone+checkout；pytest；自设计 PoC；rag_retrieve ×1（引用不替代验证）',
+        result_summary: 'STATUS: SUCCESS\nFINDING_CONFIRMED / HIGH / CWE-22 / HUMAN_VERIFICATION_REQUIRED: YES\n（真实 PoC：../outside-secret.txt → 200 泄露；../../../etc/hostname → 200 任意读；另发现 PR 测试#2 失败为 fixture 错位）',
         result_status: 'SUCCESS', effective: true,
-        artifacts: [{ name: 'review-report.md', source: 'replayMaterials/02-case-pr2-high-risk.md §1（workspace/review-report.md 引用）' }],
-        trace_id: null, trace_note: 'per-task Trace 未接入（仍为 evidence-replay，trace_id 不存在，如实显示"待接入"）；平台级历史权威 Trace 见总览页',
-        status_history_source: 'fixAudit/AUDIT.md + replayMaterials/02-case-pr2-high-risk.md',
+        artifacts: [{ name: 'findings.md', source: `${P}/tasks/pr2rag-review-1/workspace/findings.md` }],
+        trace_id: null, trace_note: '全运行 span 已直连 AgentLoop/SLS（本会话 647 span、0 失败）；per-task trace_id 未单独落盘，控制台按 service.name=mergepilot-copaw + 时间窗（17:16–17:21 UTC）检索',
+        status_history_source: `${P}/tasks/pr2rag-review-1/meta.json + ${P}/team-room-messages.json`,
       },
       {
-        id: 'fix-1', project_id: 'copaw-high-risk-human-gate', assignee: 'p14h2-copaw-worker-fixer', runtime: 'copaw-worker:223ddc2-build2',
-        started_at: ts(10, 6, 24), ended_at: ts(11, 5, 0), ended_at_precision: 'windowed',
-        input_context: '人工门批准后执行最小必要修复：仅 demo_high_risk.py；本地测试；禁远端操作（无远端凭证）。',
-        tool_calls: 'taskflow ack/submit；filesync；git clone（本地）；venv+pip；pytest；HTTP 探针；push_shared_path 交付物上传',
-        result_summary: 'STATUS: SUCCESS / FIX_APPLIED / TESTS_PASSED — Path.resolve 归一化 + is_relative_to(DEMO_FILES_DIR) 包含性校验，越界返回 404；穿越请求 404 无泄露；合法文件仍 200。单文件最小变更（12+/4−）。',
+        id: 'fix-1', project_id: 'elemiso-pr2rag-gate', assignee: 'fixer', runtime: 'copaw-worker:223ddc2-agentloop-rag',
+        started_at: ts2(17, 19, 6), ended_at: ts2(17, 19, 32), ended_at_precision: 'exact',
+        input_context: '人工门批准后执行最小必要修复：仅 Reviewer 标记文件；测试冻结；零 GitHub 写入。',
+        tool_calls: 'taskflow ack/submit；git clone；apply 修复；自检探针；rag_retrieve ×1（组织修复规范）',
+        result_summary: 'STATUS: SUCCESS / FIX_APPLIED / SELF_CHECK_PASSED — realpath 归一化 + 包含性校验，越界 400、缺失 404、合法 200。单文件 +13/−7。sha256 674356fc…16081（与 R1/R2/R3-TRACED 独立产出逐字节一致；本轮机理：RAG 组织规范 file-path-containment.md 即该实现模式）',
         result_status: 'SUCCESS', effective: true,
         artifacts: [
-          { name: 'fix.patch', source: 'replayMaterials/artifacts/fix.patch' },
-          { name: 'demo_high_risk.fixed.py', source: 'fix-1.result.md DELIVERABLES' },
-          { name: 'test-evidence.md', source: 'fixVerify/artifacts/fix-1.test-evidence.md' },
+          { name: 'attempt-1.diff', source: `${P}/tasks/pr2rag-fix-1/attempt-1.diff` },
+          { name: 'notes.md', source: `${P}/tasks/pr2rag-fix-1/workspace/notes.md` },
+          { name: 'spec.md', source: `${P}/tasks/pr2rag-fix-1/spec.md` },
         ],
-        trace_id: null, trace_note: 'per-task Trace 未接入（仍为 evidence-replay）；平台级历史权威 Trace 见总览页',
-        status_history_source: 'fixVerify/AUDIT.md 执行时间线',
+        trace_id: null, trace_note: '同上（全运行追踪）',
+        status_history_source: `${P}/tasks/pr2rag-fix-1/meta.json + ${P}/team-room-messages.json`,
       },
       {
-        id: 'verify-1', project_id: 'copaw-high-risk-human-gate', assignee: 'p14h2-copaw-worker-verifier', runtime: 'copaw-worker:223ddc2-build2',
-        started_at: ts(11, 6, 25), ended_at: ts(11, 26, 0), ended_at_precision: 'approx',
-        input_context: '独立验证（不信任 Fixer 结论）：重 clone、重放补丁、自设计探针、回归检查。',
-        tool_calls: 'taskflow ack/submit；filesync；git clone（本地）+ git apply --check；venv+pip+pytest；自设计 HTTP 探针；模块导入冒烟',
-        result_summary: 'STATUS: VERIFICATION_PASSED / SEVERITY: NONE / HUMAN_VERIFICATION_REQUIRED: NO / FIX_INDEPENDENTLY_VERIFIED REGRESSION_CHECK_PASSED。',
-        result_status: 'VERIFICATION_PASSED', effective: true, effective_note: 'store 白名单不含 VERIFICATION_PASSED 字面值（状态枚举兼容问题，如实披露）；结论以 result.md + verification-report.md 为准',
+        id: 'verify-1', project_id: 'elemiso-pr2rag-gate', assignee: 'verifier', runtime: 'copaw-worker:223ddc2-agentloop-rag',
+        started_at: ts2(17, 19, 44), ended_at: ts2(17, 20, 30), ended_at_precision: 'exact',
+        input_context: '独立验证（不信任 Fixer 结论）：干净 clone、补丁 sha256 复算、自设计探针（含前导 / 绝对路径向量）、PR 测试断言反转记录。',
+        tool_calls: 'taskflow ack/submit；git clone+apply --check；自设计探针（TestClient）；pytest 前后对照；rag_retrieve ×1',
+        result_summary: 'VERIFIED (PASS) — 修复前 3 逃逸向量全 200 泄露（含绝对路径 /etc/hostname）→ 修复后全 400；合法 200/缺失 404；PR 测试断言反转（预期内）如实记录。',
+        result_status: 'SUCCESS', effective: true,
         artifacts: [
-          { name: 'verification-report.md', source: 'fixVerify/artifacts/verify-1.verification-report.md' },
-          { name: 'before_probe_raw.txt', source: 'fixVerify/artifacts/verify-1.before_probe_raw.txt' },
-          { name: 'after_probe_raw.txt', source: 'fixVerify/artifacts/verify-1.after_probe_raw.txt' },
-          { name: 'probe.py', source: 'verify-1.result.md DELIVERABLES' },
+          { name: 'verification.md', source: `${P}/tasks/pr2rag-verify-1/workspace/verification.md` },
+          { name: 'verify_probe.py', source: `${P}/tasks/pr2rag-verify-1/workspace/verify_probe.py` },
+          { name: 'attempt-1.diff（独立复放）', source: `${P}/tasks/pr2rag-verify-1/workspace/attempt-1.diff` },
         ],
-        trace_id: null, trace_note: 'per-task Trace 未接入（仍为 evidence-replay）；平台级历史权威 Trace 见总览页',
-        status_history_source: 'fixVerify/AUDIT.md 执行时间线',
+        trace_id: null, trace_note: '同上（全运行追踪）；探针独立 trace 样本 0061597870a7d9…（leader 直连探针 HTTP 200）',
+        status_history_source: `${P}/tasks/pr2rag-verify-1/meta.json + ${P}/tasks/pr2rag-verify-1/workspace/verification.md`,
       },
     ],
     timeline,
     gate: {
-      gate_id: 'copaw-high-risk-human-gate:post-review',
+      gate_id: 'elemiso-pr2rag-gate:post-review',
       state: 'approved',
       trigger: {
         by: 'review-1',
         signals: ['FINDING_CONFIRMED', 'SEVERITY: HIGH', 'HUMAN_VERIFICATION_REQUIRED: YES'],
-        triggered_at: `${DATE} ~10:05Z (approx)`,
+        triggered_at: `${D2}T17:18:20Z (exact, Leader 停门报告 $MKaRMJL-T34lT…)`,
       },
-      approved_at: `${DATE} ~10:06Z (approx；批准记录与 fix-1 派发同时落盘 10:06:24Z，见 fixVerify/AUDIT.md)`,
-      approver: 'operator (runtime owner) — 人工角色，经受保护控制台操作；非 Agent 行为',
-      record_path: 'shared/projects/copaw-high-risk-human-gate/human-gate-approval.md（快照：replayMaterials/artifacts/human-gate-approval.md）',
+      approved_at: `${D2}T17:18:57Z (exact, DM $MA75PoE6NxVwx…；批准记录先于派发落盘 project/human-gate-approval.md)`,
+      approver: 'operator (runtime owner) — 运行前书面授权"门按先例默认执行"（PR #2=批准），由系统按授权自动投递；授权范围不含任何 GitHub 写操作',
+      record_path: `shared/projects/elemiso-pr2rag-gate/human-gate-approval.md（快照：${P}/project/human-gate-approval.md）`,
       scope: [
-        '确认 HIGH_RISK_FOUND 结论与 CWE-22 定性',
-        '授权 Leader 派发 fix-1（最小修复 + 本地测试）',
-        '授权 fix-1 完成后派发 verify-1（独立验证 + 回归）',
-        '失败即停止并保留证据（fail-safe）',
+        '确认 HIGH/CWE-22 结论',
+        '授权 Leader 派发 pr2rag-fix-1（最小修复 + 测试冻结）',
+        '授权 fix-1 验收后派发 pr2rag-verify-1（独立验证）',
+        'FAIL 时 pr2rag-fix-2 重派一次；失败即停止',
       ],
       prohibitions: ['merge', 'push', 'close', 'reopen'],
       unblocks: ['fix-1', 'verify-1 (fix-1 完成后)'],
-      approval_text_source: 'replayMaterials/artifacts/human-gate-approval.md',
+      approval_text_source: `${P}/project/human-gate-approval.md`,
     },
     fix_comparison: {
-      headline: '安全修复前后对比 — 越界请求 200 → 404，合法文件 200 → 200',
+      headline: '安全修复前后对比 — 逃逸向量 200(泄露) → 400，合法文件 200 → 200，缺失 500 → 404',
       file: 'backend/src/interfaces/api/v1/demo_high_risk.py',
-      patch_summary: 'Path.resolve() 归一化 + is_relative_to(DEMO_FILES_DIR) 包含性校验；越界/不存在返回 404；filename 使用 target.name 防头部注入。单文件 12 insertions / 4 deletions。',
-      patch_source: 'replayMaterials/artifacts/fix.patch',
-      tests: '仓库自带漏洞断言测试修复后转失败（预期结果：断言的是修复前 200/泄露行为）— test-evidence.md 有完整解释；模块导入冒烟通过',
-      fixer_result: 'STATUS: SUCCESS / FIX_APPLIED / TESTS_PASSED',
-      verifier_result: 'STATUS: VERIFICATION_PASSED / SEVERITY: NONE（独立重 clone + 字节级补丁核对 + 自设计探针）',
-      pr_state: 'OPEN — 保持未合并（merge/push/close/reopen 被人工门明令禁止）',
+      patch_summary: 'realpath 归一化 + 包含性校验（commonpath 模式）；越界/绝对路径 400、缺失 404、合法 200。单文件 +13/−7。sha256 674356fc…16081（四轮独立产出一致；本轮经 RAG 组织规范 file-path-containment.md 引导产出）',
+      patch_source: `${P}/tasks/pr2rag-fix-1/attempt-1.diff`,
+      tests: '仓库自带漏洞断言测试修复后转失败（断言的是修复前 200/泄露行为，预期反转）；Verifier 全文如实记录（verification.md §B）',
+      fixer_result: 'STATUS: SUCCESS / FIX_APPLIED / SELF_CHECK_PASSED（含 rag_retrieve 组织规范引用声明）',
+      verifier_result: 'STATUS: SUCCESS / VERIFIED (PASS) — 独立重 clone + sha256 复算 + 字节级补丁核对 + 自设计探针（含绝对路径向量）',
+      pr_state: 'OPEN — 保持未合并（零 GitHub 写入；ls-remote 双向核验）',
       probe,
     },
     context_events: [
       {
-        timestamp: ts(6, 25, 13), timestamp_precision: 'exact',
-        summary: '首次高危委派静默丢失：平铺任务命名空间冲突使复用分支误判"已委派"，未发送任何 Matrix 通知，meta 记录陈旧 event_id',
-        source_ref: 'replayMaterials/07-disclosures.md 事件4 + 05-timeline.md 阶段B',
+        timestamp: ts2(17, 15, 22), timestamp_precision: 'exact',
+        summary: '运行前置：4×rag_retrieve smoke（每 worker 1 次）全部 10 秒内返回 org-standards 引用——RAG MCP 链路在正式运行前已验证',
+        source_ref: `${P}/rag/rag-tool-spans.jsonl`,
       },
       {
-        timestamp: ts(8, 9, 6), timestamp_precision: 'exact',
-        summary: '操作员手工重投（@admin DM，无 m.mentions）同样不可达 — 触发只读审计',
-        source_ref: 'replayMaterials/05-timeline.md 阶段B',
+        timestamp: ts2(17, 17, 49), timestamp_precision: 'exact',
+        summary: '环境披露：worker 容器全新冷启动，reviewer 分批安装依赖（大包一次安装曾超时，自行分批解决，未触碰护栏）',
+        source_ref: `${P}/team-room-messages.json`,
       },
       {
-        timestamp: `${DATE} ~09:49Z`, timestamp_precision: 'approx',
-        summary: '双根因修复（project-scoped 存储 + Matrix since-token 回放窗口/去重账本）+ 12 项单元测试（基线全失败→修复后全通过、零回归）→ build2 重放成功（即本案例主线）',
-        source_ref: 'fixAudit/AUDIT.md + test_fix_audit.py（12 用例）',
+        timestamp: ts2(17, 18, 0), timestamp_precision: 'approx',
+        summary: '独立性口径（如实披露）：reviewer 的家目录由 MinIO 跨轮持久同步，团队房可见"Code confirmed identical to prior PR #2 runs"；本轮结论仍由其自主 clone/复测得出，RAG 语料不含任何案例结论',
+        source_ref: `${P}/team-room-messages.json + ${P}/rag/rag-live-corpus.json`,
       },
     ],
     evidence_integrity: {
-      sha256_dirs: ['replayMaterials', 'fixAudit', 'fixVerify', 'finalLock'],
+      sha256_dirs: ['FINALS-ELEM-PR2-RAG-TRACED (SHA256SUMS 62 files)', 'FINALS-ELEM-PR3-RAG-TRACED (SHA256SUMS 41 files)'],
       secret_scan_clean: true,
-      secret_scan_source: 'replayMaterials/SECRETS-SCAN.txt（模式 0 命中；真实凭据反向比对 0 命中；FS_ACCESS_KEY 命中为公开 worker 名标识，已澄清）',
+      secret_scan_source: '打包时精确密钥扫描（license key/栈凭据反向比对）0 命中；证据包不含原始 docker 容器日志',
     },
     sources: {
-      case_definition: `${D.replayMaterials}/02-case-pr2-high-risk.md`,
-      timeline: `${D.replayMaterials}/05-timeline.md 阶段C + ${D.fixVerify}/AUDIT.md 执行时间线`,
-      gate_record: `${D.replayMaterials}/artifacts/human-gate-approval.md`,
-      fix_result: `${D.fixVerify}/artifacts/fix-1.result.md`,
-      verify_result: `${D.fixVerify}/artifacts/verify-1.result.md`,
-      verification_report: `${D.fixVerify}/artifacts/verify-1.verification-report.md`,
-      probe_raw: `${D.fixVerify}/artifacts/verify-1.before_probe_raw.txt + after_probe_raw.txt`,
-      patch: `${D.replayMaterials}/artifacts/fix.patch`,
-      audit_report: `${D.fixVerify}/AUDIT.md（裁决 COPAW_HIGH_RISK_FIXVERIFY_PASSED）`,
+      case_definition: `${D.finalsPr2RagTraced}/README.md`,
+      kickoff: `${D.finalsPr2RagTraced}/kickoff-as-sent.txt`,
+      timeline: `${D.finalsPr2RagTraced}/team-room-messages.json`,
+      gate_record: `${D.finalsPr2RagTraced}/project/human-gate-approval.md`,
+      review_result: `${D.finalsPr2RagTraced}/tasks/pr2rag-review-1/result.md`,
+      reviewer_result: `${D.finalsPr2RagTraced}/tasks/pr2rag-review-1/result.md`,
+      gate_request: `${D.finalsPr2RagTraced}/leader-dm-messages.json`,
+      probe_raw: `${D.finalsPr2RagTraced}/tasks/pr2rag-verify-1/workspace/verification.md`,
+      fix_result: `${D.finalsPr2RagTraced}/tasks/pr2rag-fix-1/result.md`,
+      patch: `${D.finalsPr2RagTraced}/tasks/pr2rag-fix-1/attempt-1.diff`,
+      verify_result: `${D.finalsPr2RagTraced}/tasks/pr2rag-verify-1/result.md`,
+      verification_report: `${D.finalsPr2RagTraced}/tasks/pr2rag-verify-1/workspace/verification.md`,
+      rag_audit: `${D.finalsPr2RagTraced}/rag/rag-tool-spans.jsonl`,
+      rag_corpus: `${D.finalsPr2RagTraced}/rag/rag-live-corpus.json`,
+      spans: `${D.finalsPr2RagTraced}/agentloop/span-summary.json`,
+      usage: `${D.finalsPr2RagTraced}/usage-summary.json`,
+      gateway_log: `${D.finalsPr2RagTraced}/higress-gateway-log-final.log`,
     },
   };
 }
 
 // ---------------------------------------------------------------------------
-// PR #3 — CWE-78 critical command injection, human REJECT path (case C)
-// Rejection is a HUMAN decision; after it the system must NOT continue:
-// fix-1 stays rejected/never-dispatched, verify-1 stays locked, project blocked,
-// PR #3 remains OPEN. Evidence: PHASE14-WINDOWS-COPAW-HIGH-RISK-REJECT-20260830-091913.
+// PR #3 — CWE-78 unauthenticated RCE, human REJECT path (RAG-TRACED run)
+// run-elem-pr3rag-20260917-01 · project elemiso-pr3rag-reject · wall clock 1m19s
+// Evidence: FINALS-ELEM-PR3-RAG-TRACED (SHA256SUMS-locked).
 // ---------------------------------------------------------------------------
-function buildPR3() {
-  const D3 = '2026-08-30';
+function buildPR3Rag() {
+  const D3 = '2026-09-16';
   const ts3 = (h, m = 0, s = 0) => `${D3}T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}Z`;
+  const P = 'finalsPr3RagTraced';
   const initial = {
     'review-1': initialTask('pending', '等待 Leader 派发'),
     'fix-1': initialTask('pending', 'DAG 依赖：等待 review-1 结论'),
@@ -603,66 +468,60 @@ function buildPR3() {
   };
   const events = [
     {
-      event_id: 'pr3-ev-001', timestamp: ts3(1, 20, 0), timestamp_precision: 'exact',
+      event_id: 'pr3rag-ev-001', timestamp: ts3(17, 25, 7), timestamp_precision: 'exact',
       agent_role: 'human', event_type: 'message', source: 'matrix',
-      source_ref: 'rejectDemo/kickoff-send.txt',
-      matrix_event_id: '$sdKbFeQ1HJG1xwHY-8egACN8UC0n6cFkTR3Fj5W7Ymo',
-      summary: '操作员发送唯一 kickoff（项目 copaw-high-risk-human-reject，PR #3 安全审查；含 HARD RULE：高危即停等人工决定）',
-      detail: 'kickoff 被 Leader 消费，但 Leader run 因运行时遗留 OTel 插桩缺陷（zz_agentloop_otel.py await 了 async generator）崩溃，未产生任何动作（见案例前置历史）；操作员随后做可逆修复并重发 continuation。',
+      source_ref: `${P}/kickoff-as-sent.txt`,
+      matrix_event_id: '$rMFhN860KWit3Tm2u1n21bi5qZx-VgQyklZZPPb-UgA',
+      summary: '操作员发送 kickoff（项目 elemiso-pr3rag-reject；SPEC 非预设——零漏洞类别提示词，打包时自动核验 0 命中）',
     },
     {
-      event_id: 'pr3-ev-002', timestamp: ts3(1, 25, 36), timestamp_precision: 'exact',
-      agent_role: 'leader', event_type: 'message', source: 'matrix',
-      source_ref: 'rejectDemo/continuation-send.txt',
-      matrix_event_id: '$tyjCz74ziFpChDk48tl0EVHZ1xJI-ZC92BernbLozIQ',
-      summary: 'Leader 消费 continuation，开始自主执行（运行时已修复，恢复到既有 E2E 成功态）',
-      delta: { phase: 'running', headline: 'Leader 开始自主执行 — 项目未创建' },
-    },
-    {
-      event_id: 'pr3-ev-003', timestamp: ts3(1, 25, 53), timestamp_precision: 'exact',
-      agent_role: 'leader', event_type: 'tool_call', source: 'minio',
-      source_ref: 'rejectDemo/pre-rejection-project-meta.json',
-      summary: 'Leader projectflow create_project copaw-high-risk-human-reject + 播种 plan.md（DAG review-1→fix-1→verify-1 就绪）',
-      delta: { headline: '项目已创建 — DAG review-1 → fix-1 → verify-1 就绪' },
-    },
-    {
-      event_id: 'pr3-ev-004', timestamp: ts3(1, 26, 5), timestamp_precision: 'approx',
-      timestamp_note: 'reviewer 于 01:27:05 提交前开始执行；委派时刻按 Team Room TASK_COMPLETED 前窗口取 ~01:26',
+      event_id: 'pr3rag-ev-002', timestamp: ts3(17, 25, 9), timestamp_precision: 'exact',
       agent_role: 'leader', event_type: 'tool_call', source: 'matrix',
-      source_ref: 'rejectDemo/agent-message-timeline.json',
-      summary: 'Leader 自主 delegate review-1 @reviewer（Team Room m.mentions；非人工派发）',
-      delta: { tasks: { 'review-1': { status: 'running', locked_reason: null } }, headline: 'review-1 已派发 → reviewer 独立安全审查中' },
+      source_ref: `${P}/team-room-messages-pr3rag-window.json`,
+      summary: 'kickoff 后 2 秒：Leader 委派 review-1 @reviewer（m.mentions 命中）',
+      delta: { tasks: { 'review-1': { status: 'running', locked_reason: null } }, phase: 'running', headline: 'review-1 已派发 → reviewer 独立安全审查中' },
     },
     {
-      event_id: 'pr3-ev-005', timestamp: ts3(1, 26, 20), timestamp_precision: 'windowed',
-      timestamp_note: '窗口 01:26–01:27（reviewer clone 分支 demo/high-risk-human-reject、审 diff 与分支文件）',
+      event_id: 'pr3rag-ev-003', timestamp: ts3(17, 25, 13), timestamp_precision: 'exact',
+      agent_role: 'reviewer', event_type: 'task_state', source: 'minio',
+      source_ref: `${P}/tasks/pr3rag-review-1/meta.json`,
+      summary: 'reviewer ack_task；clone + checkout head SHA ad267a6e… 校验',
+    },
+    {
+      event_id: 'pr3rag-ev-004', timestamp: ts3(17, 25, 26), timestamp_precision: 'windowed',
+      timestamp_note: '窗口 17:25:22–17:25:30（团队房导出：审 diff、跑 PR 自带测试——TEST1 passed 注入确认/TEST2 failed 环境缺 ping、自主 PoC）',
       agent_role: 'reviewer', event_type: 'tool_call', source: 'evidence',
-      source_ref: 'rejectDemo/reviewer-findings.md',
-      summary: 'reviewer 独立审查：clone PR #3 分支，审 demo_ping 端点 diff + 附带 exploit-repro 测试',
-      detail: '受审文件：backend/src/interfaces/api/v1/demo_cmd_exec.py（用户可控 host 拼入 subprocess.run shell=True）；对照 tests/unit/test_demo_cmd_exec_injection.py 两个惰性复现测试。',
+      source_ref: `${P}/tasks/pr3rag-review-1/workspace/findings.md`,
+      summary: 'reviewer 独立审查 + 真实 PoC：; | 换行 反引号 $(...) 全部以 root 执行任意命令；127.0.0.1; id → uid=0(root)；cat /etc/hostname 读宿主文件',
     },
     {
-      event_id: 'pr3-ev-006', timestamp: ts3(1, 27, 5), timestamp_precision: 'exact',
+      event_id: 'pr3rag-ev-005', timestamp: ts3(17, 25, 32), timestamp_precision: 'exact',
+      agent_role: 'reviewer', event_type: 'tool_call', source: 'rag',
+      source_ref: `${P}/rag/rag-tool-spans.jsonl`,
+      matrix_event_id: '$ui7uEIjQA_h93…（团队房原话："references only"）',
+      summary: 'RAG 知识库调用：rag_retrieve 返回 org-standards/cwe-78-command-injection.md#1/#2 与 command-execution.md#1 —— 与 reviewer 自主 CWE-78 定级一致',
+    },
+    {
+      event_id: 'pr3rag-ev-006', timestamp: ts3(17, 25, 42), timestamp_precision: 'exact',
       agent_role: 'reviewer', event_type: 'task_state', source: 'matrix',
-      source_ref: 'rejectDemo/reviewer-high-risk-result.md',
-      summary: 'HIGH_RISK_FOUND — review-1 提交（TASK_COMPLETED @manager）：STATUS: HIGH_RISK_FOUND / SEVERITY: critical / HUMAN_VERIFICATION_REQUIRED: true（CWE-78 命令注入 → RCE）',
-      detail: '结论（result.md 协议标记）：user-controlled host 被拼接进 ping 命令并以 shell 执行，;, &&, $(...) 可执行任意命令，命令与输出返回攻击者；交付物 findings.md。',
+      source_ref: `${P}/tasks/pr3rag-review-1/result.md`,
+      matrix_event_id: '$OkRJMvwbA8SzU…（TASK_COMPLETED）',
+      summary: 'HIGH_RISK_FOUND — review-1 提交：FINDING_CONFIRMED / SEVERITY: HIGH / HUMAN_VERIFICATION_REQUIRED: YES（CWE-78 未认证 RCE；本轮自主定级 HIGH，与 P14 历史轮 critical 各自如实）',
       delta: {
         tasks: {
           'review-1': { status: 'completed' },
-          'fix-1': { locked_reason: 'HIGH_RISK_FOUND 已确认（critical）— 等待人工安全门判定' },
-          'verify-1': { locked_reason: 'HIGH_RISK_FOUND 已确认（critical）— 等待人工安全门判定' },
+          'fix-1': { locked_reason: 'HIGH_RISK_FOUND 已确认 — 等待人工安全门判定' },
+          'verify-1': { locked_reason: 'HIGH_RISK_FOUND 已确认 — 等待人工安全门判定' },
         },
         headline: 'HIGH_RISK_FOUND — CWE-78 RCE 确认，等待人工安全门',
       },
     },
     {
-      event_id: 'pr3-ev-007', timestamp: ts3(1, 27, 37), timestamp_precision: 'exact',
+      event_id: 'pr3rag-ev-007', timestamp: ts3(17, 25, 54), timestamp_precision: 'exact',
       agent_role: 'leader', event_type: 'message', source: 'matrix',
-      source_ref: 'rejectDemo/human-gate-request.json',
-      matrix_event_id: '$UmoGLVKBbyFYgdw6o5IyVxc-Gs0qakVe2erHm6I7fRs',
-      summary: 'HUMAN_SECURITY_REVIEW_REQUIRED — Leader 上报人工门并 STOP：不派发 fix-1/verify-1，PR #3 保持 OPEN',
-      detail: 'Leader 同时已在 plan.md 预标记 fix-1/verify-1 为 [!]（gated on human decision）；kickoff 级 HARD RULE 生效：fix-1/verify-1 仅可在 @admin 显式决定（批准或拒绝）后行动。',
+      source_ref: `${P}/leader-dm-messages-pr3rag-window.json`,
+      matrix_event_id: '$w3974fMdkFcPc…',
+      summary: 'HUMAN_SECURITY_REVIEW_REQUIRED — Leader 上报人工门并 STOP："尚未委派 pr3rag-fix-1"；同时识别该 PR 为 human-REJECT 场景（docstring 明示）',
       delta: {
         gate: 'required',
         tasks: {
@@ -670,16 +529,16 @@ function buildPR3() {
           'verify-1': { status: 'waiting_human', locked_reason: '人工安全门：HUMAN_SECURITY_REVIEW_REQUIRED — 未决定禁止派发' },
         },
         phase: 'waiting_human',
-        headline: '⛔ 人工安全门 — 受控停等（Fixer/Verifier 锁定，等待批准或拒绝）',
+        headline: '⛔ 人工安全门 — 受控停等（等待批准或拒绝）',
       },
     },
     {
-      event_id: 'pr3-ev-008', timestamp: ts3(1, 30, 42), timestamp_precision: 'exact',
+      event_id: 'pr3rag-ev-008', timestamp: ts3(17, 26, 17), timestamp_precision: 'exact',
       agent_role: 'human', event_type: 'approval', source: 'matrix',
-      source_ref: 'rejectDemo/human-rejection-record.json',
-      matrix_event_id: '$jEuOZNsiqMkzt27uFd0bNG8UD07SnFssLXOQtL05g9k',
-      summary: 'HUMAN_SECURITY_REJECTED — 操作员正式拒绝修复（人工决定，非 Agent 行为）；绑定指令：fix-1 永不派发、verify-1 保持锁定、项目置 blocked、PR #3 保持 OPEN',
-      detail: '拒绝记录写入 shared/projects/copaw-high-risk-human-reject/human-gate-rejection.md 并经 Matrix 投递给 Leader；含 6 条绑定效果（含禁止任何自动修复与 GitHub 写操作）。',
+      source_ref: `${P}/project/human-gate-rejection.md`,
+      matrix_event_id: '$e9wIv3Qc2Dw3Yxt…（团队房 $ujqMkro_A3Z2daH…）',
+      summary: 'HUMAN_SECURITY_REJECTED — 操作员拒绝修复（按运行前书面授权自动执行：PR #3 走拒绝分支）；绑定指令：fix-1 永不派发、verify-1 锁定、项目置 blocked、PR #3 保持 OPEN',
+      detail: '拒绝记录写入项目存储（human-gate-rejection.md）并经 Matrix 投递给 Leader；含四条绑定效应与零 GitHub 写入边界。',
       delta: {
         gate: 'rejected',
         tasks: {
@@ -690,57 +549,50 @@ function buildPR3() {
       },
     },
     {
-      event_id: 'pr3-ev-009', timestamp: ts3(1, 30, 55), timestamp_precision: 'exact',
-      agent_role: 'leader', event_type: 'tool_call', source: 'minio',
-      source_ref: 'rejectDemo/post-rejection-project-meta.json',
-      summary: 'Leader projectflow pause_project — 项目状态 active → paused（blocked），NOT completed；DAG 不再推进',
-      detail: 'Leader 同时在 plan.md 写入拒绝标注：fix-1 [!] REJECTED by human security review (HUMAN_SECURITY_REJECTED, 2026-08-30); never dispatch；verify-1 [!] locked, never dispatch (fix-1 rejected)。',
+      event_id: 'pr3rag-ev-009', timestamp: ts3(17, 26, 26), timestamp_precision: 'exact',
+      agent_role: 'leader', event_type: 'message', source: 'matrix',
+      source_ref: `${P}/leader-dm-messages-pr3rag-window.json`,
+      matrix_event_id: '$hPMIsMAs-ZWUMnt…',
+      summary: '拒绝后 9 秒：Leader 落实绑定效应并发出最终报告 PROJECT_BLOCKED_HUMAN_REJECTED（plan 标注 fix [-] rejected / verify [!] locked；零派发核验：PR3-RAG 窗口 @fixer/@verifier mention = 0）',
       delta: {
         phase: 'blocked',
-        headline: '项目 BLOCKED — plan.md 拒绝标注落盘，DAG 停在 review-1 之后',
+        headline: '项目 BLOCKED — 拒绝后系统安全停止，Fixer/Verifier 从未被调用',
       },
-    },
-    {
-      event_id: 'pr3-ev-010', timestamp: ts3(1, 31, 5), timestamp_precision: 'exact',
-      agent_role: 'leader', event_type: 'message', source: 'matrix',
-      source_ref: 'rejectDemo/post-rejection-task-state.json',
-      summary: '最终锁定状态回报：fix-1 REJECTED / verify-1 LOCKED / project paused / PR #3 OPEN 未修复 — 拒绝后无任何新派发',
-      detail: 'Leader 回报确认：fixer/verifier 从未被调用；无 GitHub 写操作；拒绝记录已读回确认。系统按设计停在安全阻塞态，等待未来新的人工批准事件（本案例不添加）。',
-      delta: { headline: 'HUMAN REJECT 闭环完成 — 系统安全停止，等待新的人工决策' },
     },
   ];
   const timeline = finalizeTimeline(events, initial, 'none', 'running');
 
   return {
     case_id: 'pr3-high-risk-human-reject',
-    title: 'PR #3 — CWE-78 命令注入（critical）· 人工拒绝后安全阻塞',
-    positioning: '严重风险被人工拒绝后，系统不绕过人工门继续修复：Fixer/Verifier 保持锁定，项目阻塞，PR 保持 OPEN，等待新的人工决策。',
+    title: 'PR #3 — CWE-78 命令注入（未认证 RCE）· 人工拒绝后安全阻塞（RAG + AgentLoop 追踪版）',
+    positioning: '严重风险被人工拒绝后，系统不绕过人工门继续修复：Fixer/Verifier 保持锁定，项目阻塞，PR 保持 OPEN。',
     repository: 'nghqqa/fastapi-boilerplate-demo',
     pull_request: {
       number: 3,
       branch: 'demo/high-risk-human-reject',
       state: 'open',
       write_actions: false,
-      state_note: '拒绝后 PR 保持 OPEN 且未修复（head ad267a6 全程不变、0 评论；pr-write-audit.json）',
+      state_note: '运行前后 git ls-remote 双向核验 head SHA ad267a6e… 一致；PR 保持 OPEN 且未修复',
     },
-    project: { id: 'copaw-high-risk-human-reject', status: 'blocked' },
-    team: { id: 'p14h2-copaw', size: 4 },
-    runtime: { stack: 'AgentTeams agentteams-embedded:223ddc2', worker_image: 'copaw-worker:223ddc2-build1', mode: 'Docker Desktop, controller reconcile' },
+    project: { id: 'elemiso-pr3rag-reject', status: 'blocked' },
+    team: { id: 'elemiso-team (copaw workers)', size: 4 },
+    runtime: { stack: 'AgentTeams agentteams-embedded:223ddc2 (elemiso-ctrl)', worker_image: 'copaw-worker:223ddc2-agentloop-rag', mode: 'Docker Desktop, controller reconcile' },
     risk: {
-      level: 'critical',
+      level: 'high',
       category: 'CWE-78',
       human_gate: 'rejected',
-      affected_file: 'backend/src/interfaces/api/v1/demo_cmd_exec.py — demo_ping (GET /demo/ping)',
-      description: '用户可控 host 参数被 f-string 拼入 ping 命令并以 subprocess.run(shell=True) 执行；;, &&, $(...) 等 shell 元字符实现任意命令执行（RCE）。该缺陷为演示预置（故意漏洞文件 + 惰性 exploit-repro 测试，无真实凭据）。',
-      reviewer_conclusion: 'STATUS: HIGH_RISK_FOUND / SEVERITY: critical / HUMAN_VERIFICATION_REQUIRED: true（review-1 result.md 协议标记，真实运行产出）',
+      affected_file: 'backend/src/interfaces/api/v1/demo_cmd_exec.py — demo_ping (L41 f-string → L42-44 subprocess.run(shell=True) → L45-49 回显)',
+      description: '用户可控 host 参数被 f-string 拼入 ping 命令并以 shell 执行；;, |, 换行, 反引号, $(...) 均可实现任意命令执行并回显输出；路由无鉴权依赖 = 未认证远程命令执行（服务进程 root）。该缺陷为演示预置（PR docstring 明示 human-REJECT 场景）。',
+      reviewer_conclusion: 'STATUS: SUCCESS / FINDING_CONFIRMED / SEVERITY: HIGH / HUMAN_VERIFICATION_REQUIRED: YES（本轮自主定级 HIGH；P14 历史轮同漏洞定级 critical——两轮独立审查者各自如实，跨轮口径差异披露）',
+      rag_note: 'Reviewer 按 manifest 邀请实际调用 rag_retrieve（cwe-78-command-injection.md + command-execution.md，引用不替代自主复现）',
       no_fix_note: '本案例无修复：人工拒绝后系统不执行任何自动修复，演示代码保持原样（不作为生产修复展示）。',
     },
     agents: [
-      { role: 'leader', agent_id: 'p14h2-copaw-worker-manager', matrix_id: '@p14h2-copaw-worker-manager:…:6167', runtime: 'copaw-worker:223ddc2-build1', console: '127.0.0.1:18682' },
-      { role: 'reviewer', agent_id: 'p14h2-copaw-worker-reviewer', matrix_id: '@p14h2-copaw-worker-reviewer:…:6167', runtime: 'copaw-worker:223ddc2-build1', console: '127.0.0.1:14678' },
-      { role: 'fixer', agent_id: 'p14h2-copaw-worker-fixer', matrix_id: '@p14h2-copaw-worker-fixer:…:6167', runtime: 'copaw-worker:223ddc2-build1', console: '127.0.0.1:18933', lock: 'LOCKED — HUMAN_SECURITY_REJECTED 后永不派发' },
-      { role: 'verifier', agent_id: 'p14h2-copaw-worker-verifier', matrix_id: '@p14h2-copaw-worker-verifier:…:6167', runtime: 'copaw-worker:223ddc2-build1', console: '127.0.0.1:11743', lock: 'LOCKED — 无修复可验证，永久锁定' },
-      { role: 'human', agent_id: 'operator (runtime owner)', matrix_id: '@admin', runtime: 'human decision — 人工安全门拒绝', console: '127.0.0.1:18088' },
+      { role: 'leader', agent_id: 'leader', matrix_id: '@leader:elemiso-matrix:6167', runtime: 'copaw-worker:223ddc2-agentloop-rag', console: '127.0.0.1（宿主发布端口，容器停止已移除）' },
+      { role: 'reviewer', agent_id: 'reviewer', matrix_id: '@reviewer:elemiso-matrix:6167', runtime: 'copaw-worker:223ddc2-agentloop-rag', console: '127.0.0.1（同上）' },
+      { role: 'fixer', agent_id: 'fixer', matrix_id: '@fixer:elemiso-matrix:6167', runtime: 'copaw-worker:223ddc2-agentloop-rag', console: '127.0.0.1（同上）', lock: 'LOCKED — HUMAN_SECURITY_REJECTED 后永不派发（房间切片 0 mention）' },
+      { role: 'verifier', agent_id: 'verifier', matrix_id: '@verifier:elemiso-matrix:6167', runtime: 'copaw-worker:223ddc2-agentloop-rag', console: '127.0.0.1（同上）', lock: 'LOCKED — 无修复可验证，永久锁定（房间切片 0 mention）' },
+      { role: 'human', agent_id: 'operator (runtime owner)', matrix_id: '@elemiso-admin:elemiso-matrix:6167', runtime: 'human decision — 运行前书面授权自动执行（本轮门拒绝）', console: 'Element Web 127.0.0.1:18088' },
     ],
     dag: {
       nodes: [
@@ -754,96 +606,93 @@ function buildPR3() {
     },
     tasks: [
       {
-        id: 'review-1', project_id: 'copaw-high-risk-human-reject', assignee: 'p14h2-copaw-worker-reviewer', runtime: 'copaw-worker:223ddc2-build1',
-        started_at: ts3(1, 26, 5), ended_at: ts3(1, 27, 5),
-        input_context: 'PR #3（demo/high-risk-human-reject）独立安全审查：审 demo_ping 命令注入；输出协议化结论（HIGH_RISK_FOUND / SEVERITY / HUMAN_VERIFICATION_REQUIRED）。',
-        tool_calls: 'taskflow ack_task / submit_task；git clone（本地）；filesync；GitHub 只读拉取 PR diff',
-        result_summary: 'STATUS: SUCCESS\nSUMMARY: STATUS: HIGH_RISK_FOUND | SEVERITY: critical | HUMAN_VERIFICATION_REQUIRED: true | Confirmed critical OS command injection (CWE-78) / RCE in demo_ping ...',
+        id: 'review-1', project_id: 'elemiso-pr3rag-reject', assignee: 'reviewer', runtime: 'copaw-worker:223ddc2-agentloop-rag',
+        started_at: ts3(17, 25, 9), ended_at: ts3(17, 25, 42),
+        input_context: 'PR #3（demo/high-risk-human-reject）独立安全审查：审 demo_ping 命令注入面；SPEC 非预设（打包自动核验零漏洞类别提示词）。',
+        tool_calls: 'taskflow ack/submit；git clone+checkout；pytest；自设计 PoC（root 级 RCE 复现）；rag_retrieve ×2',
+        result_summary: 'STATUS: SUCCESS\nFINDING_CONFIRMED / HIGH / CWE-78 / HUMAN_VERIFICATION_REQUIRED: YES\n（; | 换行 反引号 $(...) root 执行；id → uid=0(root)；/etc/hostname 读取；RAG 引用 cwe-78-command-injection.md 与 command-execution.md）',
         result_status: 'SUCCESS', effective: true,
-        artifacts: [{ name: 'findings.md', source: 'rejectDemo/reviewer-findings.md' }],
-        trace_id: null, trace_note: 'per-task Trace 未接入（仍为 evidence-replay，trace_id 不存在，如实显示"待接入"）；平台级历史权威 Trace 见总览页',
-        status_history_source: 'rejectDemo/reviewer-high-risk-result.md + agent-message-timeline-raw.json',
+        artifacts: [{ name: 'findings.md', source: `${P}/tasks/pr3rag-review-1/workspace/findings.md` }],
+        trace_id: null, trace_note: '全运行 span 已直连 AgentLoop/SLS；per-task trace_id 未单独落盘（控制台按时间窗 17:25–17:27 UTC 检索）',
+        status_history_source: `${P}/tasks/pr3rag-review-1/meta.json + ${P}/team-room-messages-pr3rag-window.json`,
       },
       {
-        id: 'fix-1', project_id: 'copaw-high-risk-human-reject', assignee: 'p14h2-copaw-worker-fixer', runtime: 'copaw-worker:223ddc2-build1',
+        id: 'fix-1', project_id: 'elemiso-pr3rag-reject', assignee: 'fixer', runtime: 'copaw-worker:223ddc2-agentloop-rag',
         started_at: null, ended_at: null,
         input_context: null,
         tool_calls: '无 — 从未被派发、从未执行',
         result_summary: null,
-        result_status: null, effective: false, effective_note: 'HUMAN_SECURITY_REJECTED — 人工拒绝修复，fix-1 永不派发（fixer-lock-audit.json：当日 0 次 consume）',
-        artifacts: [{ name: 'post-rejection-plan.md（[!] REJECTED never dispatch 标注）', source: 'rejectDemo/post-rejection-plan.md' }],
+        result_status: null, effective: false, effective_note: 'HUMAN_SECURITY_REJECTED — 人工拒绝修复，fix-1 永不派发（零派发核验：PR3-RAG 窗口 @fixer mention = 0；无 pr3rag-fix-1 任务目录）',
+        artifacts: [{ name: 'plan.md（[-] REJECTED never delegated 标注）', source: `${P}/project/plan.md` }],
         trace_id: null, trace_note: '未运行 — 无 trace',
-        status_history_source: 'rejectDemo/fixer-lock-audit.json + post-rejection-task-state.json',
+        status_history_source: `${P}/project/plan.md + ${P}/team-room-messages-pr3rag-window.json`,
       },
       {
-        id: 'verify-1', project_id: 'copaw-high-risk-human-reject', assignee: 'p14h2-copaw-worker-verifier', runtime: 'copaw-worker:223ddc2-build1',
+        id: 'verify-1', project_id: 'elemiso-pr3rag-reject', assignee: 'verifier', runtime: 'copaw-worker:223ddc2-agentloop-rag',
         started_at: null, ended_at: null,
         input_context: null,
         tool_calls: '无 — 从未被派发、从未执行',
         result_summary: null,
-        result_status: null, effective: false, effective_note: 'LOCKED — fix-1 已拒绝，无修复可验证；verify-1 永久锁定（verifier-lock-audit.json：当日 0 次 consume）',
-        artifacts: [{ name: 'verifier-lock-audit.json', source: 'rejectDemo/verifier-lock-audit.json' }],
+        result_status: null, effective: false, effective_note: 'LOCKED — fix-1 已拒绝，无修复可验证（零派发核验：PR3-RAG 窗口 @verifier mention = 0；无 pr3rag-verify-1 任务目录）',
+        artifacts: [{ name: 'plan.md（[!] LOCKED 标注）', source: `${P}/project/plan.md` }],
         trace_id: null, trace_note: '未运行 — 无 trace',
-        status_history_source: 'rejectDemo/verifier-lock-audit.json + post-rejection-task-state.json',
+        status_history_source: `${P}/project/plan.md + ${P}/team-room-messages-pr3rag-window.json`,
       },
     ],
     timeline,
     gate: {
-      gate_id: 'copaw-high-risk-human-reject:post-review',
+      gate_id: 'elemiso-pr3rag-reject:post-review',
       state: 'rejected',
       trigger: {
         by: 'review-1',
-        signals: ['HIGH_RISK_FOUND', 'SEVERITY: critical', 'HUMAN_VERIFICATION_REQUIRED: true'],
-        triggered_at: `${D3}T01:27:37Z (exact, Matrix event $UmoGLVKBbyFYgdw6o5IyVxc-Gs0qakVe2erHm6I7fRs)`,
+        signals: ['FINDING_CONFIRMED', 'SEVERITY: HIGH', 'HUMAN_VERIFICATION_REQUIRED: YES'],
+        triggered_at: `${D3}T17:25:54Z (exact, Leader 停门报告 $w3974fMdkFcPc…)`,
       },
-      rejected_at: `${D3}T01:30:42Z (exact, Matrix event $jEuOZNsiqMkzt27uFd0bNG8UD07SnFssLXOQtL05g9k)`,
-      rejected_by: 'operator (runtime owner) — 人工决定，非 Agent 行为',
+      rejected_at: `${D3}T17:26:17Z (exact, DM $e9wIv3Qc2Dw3Yxt…)`,
+      rejected_by: 'operator (runtime owner) — 运行前书面授权"PR #3 走拒绝分支"，由系统按授权自动投递',
       decision: 'HUMAN_SECURITY_REJECTED',
-      record_path: 'shared/projects/copaw-high-risk-human-reject/human-gate-rejection.md（快照：rejectDemo/human-gate-rejection.md）',
+      record_path: `shared/projects/elemiso-pr3rag-reject/human-gate-rejection.md（快照：${P}/project/human-gate-rejection.md）`,
       scope: [
-        '确认 HIGH_RISK_FOUND 结论与 CWE-78 定性',
-        '拒绝修复：fix-1 永不派发',
-        'verify-1 保持锁定（无修复可验证）',
-        '项目置 blocked（projectflow pause_project），不完成',
+        '确认 HIGH/CWE-78 结论',
+        '拒绝修复：pr3rag-fix-1 永不派发',
+        'pr3rag-verify-1 保持锁定（无修复可验证）',
+        '项目置 blocked，不完成',
         '失败即停止并保留证据（fail-safe）',
       ],
       prohibitions: ['fix-1 派发', 'verify-1 派发', '自动修复', 'merge', 'push', 'close', 'reopen'],
       unblocks: [],
       terminal_note: '终态：rejected → blocked。禁止从 rejected 自动转为 fixing/verifying/completed；仅新的显式人工批准事件可恢复（本案例不添加）。',
-      rejection_text_source: 'rejectDemo/human-gate-rejection.md',
+      rejection_text_source: `${P}/project/human-gate-rejection.md`,
     },
     fix_comparison: null,
     context_events: [
       {
-        timestamp: ts3(1, 18, 53), timestamp_precision: 'exact',
-        summary: '运行时披露：容器重启后暴露昨日 AGENTLOOP-OTEL 实验（evidence-replay 阶段）遗留的 zz_agentloop_otel.py 插桩缺陷（await async generator），Leader 首次 run 崩溃；操作员以可逆方式停用插桩开关（/etc/agentloop-otel.json → .disabled，4 worker）并重启，恢复到既有 E2E 成功态；此后全部 agent 行为为真实运行',
-        source_ref: 'rejectDemo/replay-material-addendum.md + README.md 披露节',
+        timestamp: ts3(17, 25, 30), timestamp_precision: 'exact',
+        summary: 'RAG 纪律展示：reviewer 在完成全部自主复现之后才查询组织标准库，并在团队房明示"references only"——知识增强与结论独立并存',
+        source_ref: `${P}/rag/rag-tool-spans.jsonl`,
       },
       {
-        timestamp: ts3(1, 27, 13), timestamp_precision: 'exact',
-        summary: 'Leader 遭遇跨项目 task_id 同名（review-1 为多项目惯例命名），自主以 projectId 消歧解决；历史项目数据未触碰',
-        source_ref: 'rejectDemo/agent-message-timeline-raw.json',
-      },
-      {
-        timestamp: ts3(1, 27, 32), timestamp_precision: 'exact',
-        summary: '旁支观察：reviewer 顺带完成昨日 OTel 实验遗留 obs-1（agentloop-obs-test），与本案 DAG 无关，不涉及 fixer/verifier',
-        source_ref: 'rejectDemo/agent-message-timeline.json',
+        timestamp: ts3(17, 26, 21), timestamp_precision: 'exact',
+        summary: '门纪律对照（同日两轮）：PR #2 批准路径 Leader 于批准后 9 秒发出全新委派；本轮拒绝路径 Leader 于拒绝后 9 秒落实绑定效应——两条分支 Leader 均未越权',
+        source_ref: `${P}/team-room-messages-pr3rag-window.json`,
       },
     ],
     evidence_integrity: {
-      sha256_dirs: ['rejectDemo (29/29)'],
+      sha256_dirs: ['FINALS-ELEM-PR3-RAG-TRACED (SHA256SUMS 41 files)'],
       secret_scan_clean: true,
-      secret_scan_source: 'rejectDemo/verdict.json（0 Secret 落盘）+ 平台启动时对 rejectDemo SHA256SUMS 实时重算',
+      secret_scan_source: '打包时精确密钥扫描 0 命中；证据包不含原始 docker 容器日志',
     },
     sources: {
-      case_definition: 'PHASE14-WINDOWS-COPAW-HIGH-RISK-REJECT-20260830-091913/README.md',
-      reviewer_result: 'PHASE14-WINDOWS-COPAW-HIGH-RISK-REJECT-20260830-091913/reviewer-high-risk-result.md',
-      gate_request: 'PHASE14-WINDOWS-COPAW-HIGH-RISK-REJECT-20260830-091913/human-gate-request.json',
-      rejection_record: 'PHASE14-WINDOWS-COPAW-HIGH-RISK-REJECT-20260830-091913/human-gate-rejection.md',
-      post_state: 'PHASE14-WINDOWS-COPAW-HIGH-RISK-REJECT-20260830-091913/post-rejection-task-state.json',
-      lock_audits: 'PHASE14-WINDOWS-COPAW-HIGH-RISK-REJECT-20260830-091913/fixer-lock-audit.json + verifier-lock-audit.json',
-      pr_audit: 'PHASE14-WINDOWS-COPAW-HIGH-RISK-REJECT-20260830-091913/pr-write-audit.json',
-      verdict: 'PHASE14-WINDOWS-COPAW-HIGH-RISK-REJECT-20260830-091913/verdict.json (COPAW_HIGH_RISK_HUMAN_REJECTION_VERIFIED)',
+      case_definition: `${D.finalsPr3RagTraced}/README.md`,
+      kickoff: `${D.finalsPr3RagTraced}/kickoff-as-sent.txt`,
+      timeline: `${D.finalsPr3RagTraced}/team-room-messages-pr3rag-window.json`,
+      review_result: `${D.finalsPr3RagTraced}/tasks/pr3rag-review-1/result.md`,
+      reviewer_result: `${D.finalsPr3RagTraced}/tasks/pr3rag-review-1/result.md`,
+      gate_request: `${D.finalsPr3RagTraced}/leader-dm-messages-pr3rag-window.json`,
+      rejection_record: `${D.finalsPr3RagTraced}/project/human-gate-rejection.md`,
+      rag_audit: `${D.finalsPr3RagTraced}/rag/rag-tool-spans.jsonl`,
+      plan_final_state: `${D.finalsPr3RagTraced}/project/plan.md`,
+      usage: `${D.finalsPr3RagTraced}/usage-summary.json`,
     },
   };
 }
@@ -855,39 +704,37 @@ let cache = null;
 
 export function getReplayData({ refresh = false } = {}) {
   if (cache && !refresh) return cache;
-  const probe = loadProbeComparison();
-  const pr1 = buildPR1();
-  const pr2 = buildPR2(probe);
-  const pr3 = buildPR3();
+  const pr2 = buildPR2Rag();
+  const pr3 = buildPR3Rag();
   const integrity = integrityReport();
   const artifacts = artifactRegistry();
 
   // Replay integrity gate: every source_ref must point to an existing evidence file.
   const refs = [];
-  for (const c of [pr1, pr2, pr3]) {
+  for (const c of [pr2, pr3]) {
     refs.push(...c.timeline.map((e) => e.source_ref));
     refs.push(...Object.values(c.sources));
     if (c.gate && c.gate.record_path) refs.push(c.gate.approval_text_source ?? c.gate.rejection_text_source);
+    for (const t of c.tasks) for (const a of t.artifacts || []) refs.push(a.source);
   }
   const missingRefs = assertSourcesExist(refs);
 
   cache = {
     provider: 'replay',
-    banner: 'REPLAY — HISTORICAL VERIFIED RUN',
+    banner: 'REPLAY — HISTORICAL VERIFIED RUN (AgentLoop-traced, RAG-integrated)',
     generated_at: new Date().toISOString(),
-    cases: { [pr1.case_id]: pr1, [pr2.case_id]: pr2, [pr3.case_id]: pr3 },
+    cases: { [pr2.case_id]: pr2, [pr3.case_id]: pr3 },
     integrity,
     artifacts,
     replay_integrity: {
-      events_pr1: pr1.timeline.length,
       events_pr2: pr2.timeline.length,
       events_pr3: pr3.timeline.length,
       source_refs_checked: refs.length,
       missing_source_refs: missingRefs,
       ok: missingRefs.length === 0,
-      note: '所有回放事件均锚定真实证据文件；时间精度以 exact/approx/windowed 如实标注',
+      note: '所有回放事件均锚定真实证据文件（两包 SHA256SUMS 锁定）；时间精度以 exact/approx/windowed 如实标注',
     },
-    redaction_note: 'PR #2 探针中的 TOP-SECRET-OUTSIDE-BASE / WELCOME-LEGIT-DEMO 为仓库内置演示占位串（非凭据），按规则显示',
+    redaction_note: '探针中的 TOP-SECRET-OUTSIDE-BASE / LEGIT-INSIDE-BASE 为仓库内置演示占位串（非凭据），按规则显示',
   };
   return cache;
 }
@@ -896,42 +743,39 @@ export function replayAudit() {
   const { integrity } = getReplayData();
   return {
     components: [
-      { component: 'AgentTeams Controller', status: 'VERIFIED', source: 'agentteams-embedded:223ddc2（Docker reconcile 模式，worker 容器由 controller 创建/管理）', evidence: `${D.finalLock}/final-architecture.md` },
-      { component: 'CoPaw Runtime', status: 'VERIFIED', source: 'copaw-worker:223ddc2-build2（含存储隔离与同步语义修复）', evidence: `${D.fixAudit}/Dockerfile.build2` },
-      { component: 'Matrix (Tuwunel)', status: 'VERIFIED', source: 'p14h2-wd-ctrl:6167（全部 agent 通信 + 事件历史）', evidence: `${D.fixVerify}/ENTRYPOINTS.md` },
-      { component: 'MinIO', status: 'VERIFIED', source: 'p14h2-wd-ctrl:9000（任务存储 shared/）', evidence: `${D.fixVerify}/ENTRYPOINTS.md` },
-      { component: 'LLM Gateway (Higress)', status: 'VERIFIED', source: 'p14h2-wd-ctrl:8080（LLM 代理 + key-auth 多 consumer）', evidence: `${D.fixVerify}/ENTRYPOINTS.md` },
-      { component: 'Docker Desktop', status: 'VERIFIED', source: 'Windows 宿主运行时（10/10 容器运行，零 auth 错误）', evidence: `${D.credRotation}/verdict.json` },
-      { component: 'Credential Rotation', status: 'VERIFIED', source: 'CREDENTIAL_ROTATION_VERIFIED — 5/5 consumer 轮换、旧值吊销、deepseek 旧 key 已失效(401)', evidence: `${D.credRotation}/verdict.json` },
-      { component: 'PR Auto Merge', status: 'DISABLED', source: '人工门禁令（merge/push/close/reopen 全禁）；本 runtime 无任何 PR 写操作', evidence: `${D.finalLock}/pr-state-final.json` },
-      { component: 'Event Integrity', status: 'VERIFIED', source: `SHA256SUMS 重算 ${integrity.ok_files}/${integrity.total_files} 文件一致`, evidence: '启动时实时重算（见 /api/health）' },
-      { component: 'PolarDB RAG', status: 'NOT_IMPLEMENTED', source: '真实 PolarDB 向量检索后端未接入；当前 RAG 为本地 SYNTHETIC 合成演示数据集（data_mode=SYNTHETIC，见 RAG 页）', evidence: `${D.replayMaterials}/08-scope-boundary.md` },
-      { component: 'Agentic Database Branch', status: 'NOT_IMPLEMENTED', source: '真实 PolarDB Branch 未实现（NOT CONNECTED）；PR #4 候选验证运行在 SIMULATED 内存 fixture，运行时隔离为文件/容器层', evidence: `${D.replayMaterials}/08-scope-boundary.md` },
-      { component: 'AgentLoop/OTel', status: 'PARTIAL', source: '平台级：真实 CoPaw run 的 Agent+LLM+Tool 合并 Trace 已在阿里云 AgentLoop 控制台确认（LIVE CLOUD · 历史权威 Trace · 已确认样本 n=1）；per-task 维度仍为 evidence-replay trace schema，无 per-task live capture', evidence: `${D.agentloopOtel}/trace-schema.json` },
+      { component: 'AgentTeams Controller', status: 'VERIFIED', source: 'agentteams-embedded:223ddc2（elemiso-ctrl，Docker reconcile 模式）', evidence: 'FINALS-ELEM-PR2-RAG-TRACED/README.md §资源' },
+      { component: 'CoPaw Runtime', status: 'VERIFIED', source: 'copaw-worker:223ddc2-agentloop-rag（image 443e73375932 = 223ddc2-build1 + OTel v2.2 延迟埋点 + RAG MCP 延迟 hook；构建文件 release/agentloop-copaw-image/）', evidence: 'FINALS-ELEM-PR2-RAG-TRACED/image/' },
+      { component: 'Matrix (Tuwunel)', status: 'VERIFIED', source: 'elemiso-matrix:6167（全部 agent 通信 + 事件历史；导出 749/465 事件含全部 event_id）', evidence: 'FINALS-ELEM-PR2-RAG-TRACED/team-room-messages.json' },
+      { component: 'MinIO', status: 'VERIFIED', source: 'elemiso-controller:9000（teams/elemiso-team/shared/ 任务与项目存储）', evidence: 'FINALS-ELEM-PR2-RAG-TRACED/tasks/' },
+      { component: 'LLM Gateway (Higress)', status: 'VERIFIED', source: 'elemiso-controller:8080（deepseek-chat，key-auth consumer 路由）', evidence: 'FINALS-ELEM-PR2-RAG-TRACED/higress-gateway-log-final.log' },
+      { component: 'RAG MCP（组织知识库）', status: 'VERIFIED', source: 'rag_retrieve 经 MCP stdio 注入 CoPawAgent；知识型语料（8 文档/12 chunk，无案例结论）；服务端审计 rag-tool-spans.jsonl 全量落账（含 8 次运行时调用）', evidence: 'FINALS-ELEM-PR2-RAG-TRACED/rag/' },
+      { component: 'AgentLoop/OTel', status: 'VERIFIED', source: '两轮全程 span 直连 SLS 导出：PR2-RAG 会话 647 span/216 批次 0 失败（含 tool.rag_retrieve ×8、taskflow/projectflow、matrix send/receive、genai LLM）；容器内直连探针 4×HTTP 200（trace 样本入包）；控制台人工核验截图入相邻证据包', evidence: 'FINALS-ELEM-PR2-RAG-TRACED/agentloop/span-summary.json' },
+      { component: 'PR Auto Merge', status: 'DISABLED', source: '人工门禁令（merge/push/close/reopen 全禁）；本轮零 GitHub 写入（ls-remote 双向核验分支 SHA 不变）', evidence: 'FINALS-ELEM-PR2-RAG-TRACED/github-branches-after-rag.txt' },
+      { component: 'Event Integrity', status: 'VERIFIED', source: '两个 RAG 证据包 SHA256SUMS 启动时实时重算；历史 P14 包完整性报告见 /api/health（integrityReport）', evidence: 'FINALS-ELEM-PR2-RAG-TRACED/SHA256SUMS' },
+      { component: 'PolarDB RAG backend', status: 'NOT_IMPLEMENTED', source: '真实 PolarDB 向量检索后端未接入；本轮 RAG 为本地知识型 SYNTHETIC 语料（data_mode=SYNTHETIC，契约与平台 /api/rag/search 一致）', evidence: 'FINALS-ELEM-PR2-RAG-TRACED/rag/rag-live-corpus.json' },
+      { component: 'Agentic Database Branch', status: 'NOT_IMPLEMENTED', source: '真实 PolarDB Branch 未实现（MCP server 中的 database_* 工具未被本轮运行调用）', evidence: 'FINALS-ELEM-PR2-RAG-TRACED/rag/rag-tool-spans.jsonl（无 database_* 记录）' },
     ],
     residual_risks: [
-      { item: 'MinIO shared tree 曾发生异常清空，已恢复，根因待查', detail: '2026-08-29 11:26–11:41 UTC shared/projects/.../tasks/ 整树变空；worker 本地副本从未丢失；以各 worker 提交原件回推恢复；疑似 controller 侧 fs-view reconcile 或 MinIO 生命周期策略，待查。', source: `${D.replayMaterials}/07-disclosures.md 事件1` },
-      { item: 'tool_guard 曾导致会话超时，当前策略已调整', detail: '受保护工具调用需人工批准，无人值守下超时→拒绝→清空会话记忆（fixer 10:40:08 / verifier 11:15:08）；处置：仅对这两个 worker 关闭 guard 并重启（按人工门授权）；有人值守模式应重新开启。', source: `${D.replayMaterials}/07-disclosures.md 事件2` },
-      { item: 'VERIFICATION_PASSED 状态枚举兼容问题', detail: 'store 白名单（RESULT_STATUSES）不含 VERIFICATION_PASSED，check_task 报 invalid result status；验证证据本身完整可信；待办：纳入白名单或统一映射。', source: `${D.replayMaterials}/07-disclosures.md 事件3` },
-      { item: 'PolarDB RAG：未接入', detail: '未接通 PolarDB 作为向量/知识检索后端；当前 RAG 为本地 SYNTHETIC 合成演示数据集（8 篇演示文档，非企业数据）；历史运行中 Agent 知识来源仅为任务 spec、GitHub 公开内容与仓库文档。', source: `${D.replayMaterials}/08-scope-boundary.md` },
-      { item: 'Agentic Database Branch：未实现', detail: '无真实数据库写时分支隔离（PolarDB NOT CONNECTED）；PR #4 候选验证运行在 SIMULATED 内存 fixture；运行时隔离为任务目录 + 独立 venv/clone 的文件/容器层。', source: `${D.replayMaterials}/08-scope-boundary.md` },
-      { item: 'AgentLoop/OTel：平台级 LIVE CLOUD Trace 已确认（已确认样本 n=1）；per-task 维度未接入', detail: '2026-08-30 真实 Matrix 触发 run 的合并 Trace（trace fbf4a3cec0493990d76e10a102418be1，Agent 1 / LLM 24 / Tool 8）由操作员在阿里云 AgentLoop 控制台确认，本地 relay/span 记录旁证；历史权威 Trace，不声称多轮稳定覆盖。per-task 维度仍为 evidence-replay 模式 trace schema（PHASE14-WINDOWS-AGENTLOOP-OTEL-20260829-200307/trace-schema.json），spans 不以 live capture 呈现。', source: `${D.agentloopOtel}/trace-schema.json` },
+      { item: 'Reviewer 跨轮记忆（如实披露）', detail: 'worker 家目录由 MinIO 跨轮持久同步，reviewer 团队房可见"Code confirmed identical to prior runs"；两轮结论仍由其自主 clone/复测得出；RAG 语料不含任何案例结论（knowledge-only 设计即为保护独立性）。', source: 'FINALS-ELEM-PR2-RAG-TRACED/README.md §RAG 使用实录' },
+      { item: 'RAG 为 citation-only + SYNTHETIC', detail: 'rag_retrieve 返回引用（document_id/chunk_id/score/source_ref）不含正文；语料为合成组织规范（非企业数据）；服务端只保存 query_hash。', source: 'FINALS-ELEM-PR2-RAG-TRACED/rag/rag-live-corpus.json (_doc)' },
+      { item: '本轮 LLM 缓存命中率 94%（前轮 98%）', detail: 'worker 容器全新冷启动导致 prompt cache 部分失效；用量如实记录（PR2-RAG 80 调用/6.65M 输入/24.6K 输出；PR3-RAG 31 调用/2.87M/9.2K）。', source: 'FINALS-ELEM-PR2-RAG-TRACED/usage-summary.json' },
+      { item: 'controller Stopped 语义移除容器', detail: '运行结束 CR Stopped 后 controller 移除 worker 容器与 auth 卷（CR 与 ctrl 数据卷保留）；全部容器内证据于停机前实时采集（span/audit/探针）。', source: 'FINALS-ELEM-PR2-RAG-TRACED/README.md §采集顺序' },
+      { item: 'PolarDB RAG backend：未接入', detail: '未接通 PolarDB 作为向量/知识检索后端；RAG 为本地知识型 SYNTHETIC 语料（zero-dep lexical 检索）。', source: 'FINALS-ELEM-PR2-RAG-TRACED/rag/rag-live-server.mjs' },
+      { item: 'Agentic Database Branch：未实现', detail: '无真实数据库写时分支隔离；MCP server 暴露的 database_* 工具本轮零调用。', source: 'FINALS-ELEM-PR2-RAG-TRACED/rag/rag-tool-spans.jsonl' },
     ],
     stability_events: [
-      { item: '首次高危委派静默丢失（已根因修复）', detail: '平铺命名空间冲突 + since-token 高水位/DM 误判双根因；只读审计定位 → 12 项单元测试（基线全失败→修复后全通过、零回归）→ build2 重放闭环。', source: `${D.replayMaterials}/07-disclosures.md 事件4 + ${D.fixAudit}/AUDIT.md` },
-      { item: '凭据轮换', detail: '5/5 consumer 轮换验证、旧值吊销；曾暴露于转录的 deepseek key 已在平台侧死亡（401），新 key 端到端 200。', source: `${D.credRotation}/verdict.json` },
+      { item: 'RAG 接入调试如实记录', detail: 'MCP 注入曾两处失败（StdIOStatefulClient 需显式 connect()；cwd="" 致 spawn FileNotFoundError），均在隔离容器内定位修复并以 canary/端到端 MCP 握手验证后才进入正式运行；修复版构建文件与验证记录已入包。', source: 'FINALS-ELEM-PR2-RAG-TRACED/image/ + rag/rag-tool-spans.jsonl' },
+      { item: '门决策执行模式', detail: '本轮两门按操作员运行前书面授权自动执行（PR #2=批准、PR #3=拒绝），授权范围与先例一致（零 GitHub 写入）；门记录均先于派发/终报落盘项目存储。', source: 'FINALS-ELEM-PR2-RAG-TRACED/project/human-gate-approval.md' },
     ],
     sha256sums: integrity,
     secret_scan: {
       clean: true,
-      source: `${D.replayMaterials}/SECRETS-SCAN.txt`,
-      detail: '通用模式（password/secret/token/api_key/cookie 赋值、私钥、云厂商 token、JWT、长 hex）：0 命中；真实凭据值反向比对：0 命中（FS_ACCESS_KEY 命中 150 文件为公开 worker 名标识，已澄清）',
+      source: '打包时精确密钥扫描（license key、admin/minio 密码、gateway key、matrix token 反向比对）',
+      detail: '0 命中；证据包不含原始 docker 容器日志（防凭据片段）；AgentLoop license key 仅经 stdin 注入容器开关文件，未入镜像/Git/证据包',
     },
     verdicts: [
-      { phase: 'REPLAY-MATERIALS', verdict: 'REPLAY_MATERIALS_READY_FOR_DEMO_PLATFORM', source: `${D.replayMaterials}/VERDICT.txt` },
-      { phase: 'HIGH-RISK-FIX-VERIFY', verdict: 'COPAW_HIGH_RISK_FIXVERIFY_PASSED', source: `${D.fixVerify}/VERDICT.txt` },
-      { phase: 'HIGH-RISK-REJECT-DEMO', verdict: 'COPAW_HIGH_RISK_HUMAN_REJECTION_VERIFIED', source: `${D.rejectDemo}/verdict.json` },
-      { phase: 'FINAL-LOCK', verdict: 'PHASE14_2H_WINDOWS_AGENTTEAMS_COPAW_SUBMISSION_READY', source: `${D.finalLock}/verdict.json` },
+      { phase: 'PR2-RAG-TRACED', verdict: 'REAL_EXECUTED + REAL_TRACED + REAL_RAG_MCP_INTEGRATION（completed，墙钟 4m15s）', source: 'FINALS-ELEM-PR2-RAG-TRACED/README.md' },
+      { phase: 'PR3-RAG-TRACED', verdict: 'PROJECT_BLOCKED_HUMAN_REJECTED（零派发三重核验，墙钟 1m19s）', source: 'FINALS-ELEM-PR3-RAG-TRACED/README.md' },
     ],
   };
 }

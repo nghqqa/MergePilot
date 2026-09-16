@@ -1,0 +1,6 @@
+pr2rag-review-1 / run-elem-pr2rag-20260917-01 - Reviewer independent security review.
+1) taskflow(ack_task) taskId "pr2rag-review-1".
+2) Follow your role contract at ~/task/ROLE-CONTRACT.md and the parameters in ~/task/PR-METADATA.md: clone in your own workspace, checkout head SHA 1dedf5e1992c950557064d8f4fb9039d1523deb3 (verify with git rev-parse HEAD), review ALL files added by this PR (confirm scope with git diff 4cd5bf0..HEAD --stat), run the tests the PR adds, and produce your own independent findings per the contract (impact, affected file/function/lines, your own severity and CWE rating, one reproducible command, real output summary). Use /opt/venv/standard/bin/python.
+3) taskflow(submit_task) taskId "pr2rag-review-1" with result per contract (status SUCCESS/BLOCKED; summary containing STATUS: FINDING_CONFIRMED or NOT_CONFIRMED; SEVERITY: <your rating>; HUMAN_VERIFICATION_REQUIRED: YES or NO).
+4) Reply in THIS team room mentioning @leader: run_id, role=Reviewer, head SHA first 8 chars, findings; last line exactly: TASK_COMPLETED: run-elem-pr2rag-20260917-01-review
+Constraints per contract: do NOT modify repository files; do NOT include fix/patch code; zero GitHub writes; own workspace only.

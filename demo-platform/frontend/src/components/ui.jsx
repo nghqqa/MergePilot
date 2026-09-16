@@ -80,8 +80,7 @@ export function DemoBar() {
         </div>
         <span className="ctl-label" style={{ marginLeft: 6 }}>Case</span>
         <select value={activeCase} onChange={(e) => selectCase(e.target.value)} aria-label="选择案例">
-          <option value="pr1-normal-review">PR #1 普通协同</option>
-          <option value="pr2-high-risk-human-gate">PR #2 高危人工门（批准）</option>
+          <option value="pr2-high-risk-human-gate">PR #2 高危人工门（批准）· RAG+追踪版</option>
           <option value="pr3-high-risk-human-reject">PR #3 高危人工门（拒绝）</option>
         </select>
         <button className="dbtn" onClick={reset} title="重置回放 (R)"><IconReset />重置</button>

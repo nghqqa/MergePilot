@@ -1,0 +1,13 @@
+{
+  "task_id": "pr2rag-review-1",
+  "project_id": "elemiso-pr2rag-gate",
+  "task_title": "Independent security review of PR #2",
+  "assigned_to": "reviewer",
+  "room_id": "room:!RErK7WVs9iUeaszwho:elemiso-matrix:6167",
+  "status": "submitted",
+  "depends_on": [],
+  "assigned_at": "2026-09-16T17:16:35Z",
+  "acknowledged_at": "2026-09-16T17:16:37Z",
+  "submitted_at": "2026-09-16T17:18:08Z",
+  "event_id": "$ssi5ZLHMRtpMbL-vS54K_H1YfkJ_iwdjFgEiLv2dfqM"
+}

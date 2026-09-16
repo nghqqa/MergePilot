@@ -40,6 +40,10 @@ export const EVIDENCE_DIRS = {
   finalsPr3Live: 'FINALS-ELEM-PR3-LIVE-20260916',
   // R2 clean re-run of the PR #2 case (same day, post-audit corrections).
   finalsPr2R2Live: 'FINALS-ELEM-PR2-LIVE-20260916-R2',
+  // 2026-09-17 RAG-TRACED replacement cases: AgentLoop-traced + RAG-MCP-integrated
+  // runs on the elemiso stack. These are the two demo cases (pr1 retired).
+  finalsPr2RagTraced: 'FINALS-ELEM-PR2-RAG-TRACED',
+  finalsPr3RagTraced: 'FINALS-ELEM-PR3-RAG-TRACED',
 };
 
 export function dirPath(key) {

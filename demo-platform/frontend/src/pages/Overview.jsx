@@ -20,8 +20,7 @@ export default function Overview() {
 
   const live = modes?.live;
   const CASE_META = {
-    'pr1-normal-review': { label: 'AUTONOMOUS REVIEW', word: 'AUTONOMOUS', cls: 'green' },
-    'pr2-high-risk-human-gate': { label: 'HUMAN-GATED SECURITY REVIEW', word: 'HUMAN GATE', cls: 'amber' },
+    'pr2-high-risk-human-gate': { label: 'HUMAN-GATED SECURITY REVIEW (RAG+TRACED)', word: 'HUMAN GATE', cls: 'amber' },
     'pr3-high-risk-human-reject': { label: 'HUMAN-REJECTED SECURITY REVIEW', word: 'REJECTED', cls: 'red' },
   };
 

@@ -114,7 +114,6 @@ export default function App() {
             </div>
           </a>
           <nav className="topnav">
-            <a href="/cases/pr1-normal-review">PR#1</a>
             <a href="/cases/pr2-high-risk-human-gate">PR#2</a>
             <a href="/cases/pr3-high-risk-human-reject">PR#3</a>
             <a href="/pr4">PR#4</a>
