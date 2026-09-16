@@ -39,7 +39,7 @@ cd MergePilot/demo-platform
 node backend/server.mjs        # 打开 http://127.0.0.1:4173
 ```
 
-Node.js ≥ 18 即可，无需 `npm install`：前端已预构建（`frontend/dist/`），三个案例的回放证据随仓库分发（`evidence/PHASE14-*`，SHA256 锁定）。Windows 也可直接双击 `demo-platform/start-demo.bat`。
+Node.js ≥ 18 即可，无需 `npm install`：前端已预构建（`frontend/dist/`），六个案例的回放证据随仓库分发（`evidence/PHASE14-*` + `evidence/FINALS-*`，SHA256 锁定）。Windows 也可直接双击 `demo-platform/start-demo.bat`。
 
 自测：`node backend/test/selftest.mjs`（61 项：脱敏、回放完整性、API 契约、无泄密扫描、决赛证据等级与版本绑定闸门；2026-09-13 前为 54 项；[CI 在 Node 18/20/22 上自动运行](https://github.com/nghqqa/MergePilot/actions/workflows/selftest.yml)）。
 
@@ -70,6 +70,20 @@ AgentTeams（HiClaw）运行时镜像（嵌入式 Manager + CoPaw worker：Revie
 | **批准后完成** | PR #2（高危 · CWE-22） | 人工安全门 → 批准 → 修复 → 探针验证（200→404） | 修复有效 · PR 保持 OPEN |
 | **拒绝后停止** | PR #3（严重 · CWE-78） | 人工拒绝 → 永久 BLOCKED → 409 终态 | 拒绝不可翻转 · 审计归档 |
 
+> 2026-09-16：三条路径已在隔离栈上以**真实 AgentTeams 多 Agent 运行**复核——批准路径干净复跑（R2，见下节）、拒绝路径真实执行（零派发，三层证据）、自主路径沿用既有证据。
+
+## 决赛真实运行（2026-09-16）：独立审计 → 修正 → 干净复跑
+
+三条真实 AgentTeams 运行（非回放：真实派单、真实 deepseek-chat 调用、真实容器内执行、事件级留痕），并经**独立第三方审计**：
+
+| 运行 | 结果 | 关键验收 | 证据 |
+| --- | --- | --- | --- |
+| **R2 主案例**（PR #2，CWE-22） | 非预设 SPEC 下 Reviewer 独立确认 HIGH → 现场人工门批准 → Leader 发出全新委派事件 → Verifier 独立验证 **VERIFIED PASS** | 门后**新委派事件** $uZ4Rj1SI…（≠任何被作废 ID），Fixer 零操作员介入 | [FINALS-ELEM-PR2-LIVE-20260916-R2](evidence/FINALS-ELEM-PR2-LIVE-20260916-R2) |
+| **真实拒绝**（PR #3，CWE-78 RCE） | 操作员拒绝修复授权 → fix/verify **从未派发**，项目 blocked（消息/网关/状态存储三层印证） | 拒绝为终态，不可翻转 | [FINALS-ELEM-PR3-LIVE-20260916](evidence/FINALS-ELEM-PR3-LIVE-20260916) |
+| **R1 首跑**（PR #2，同日早前） | 技术结论成立；门后派发链瑕疵被独立审计指出 → **如实修正**（AUDIT 修正版 v2），并以 R2 复跑闭环 | 审计发现→修正→复跑的完整记录 | [FINALS-ELEM-PR2-LIVE-20260916](evidence/FINALS-ELEM-PR2-LIVE-20260916) + AUDIT.md |
+
+配套：**角色契约 v1.0**（Leader/Reviewer/Fixer/Verifier 跨案例冻结，新案例只填 [CASE-MANIFEST](tools/agentteams/roles/CASE-MANIFEST.template.md)）见 [tools/agentteams/roles/](tools/agentteams/roles/)；R2 用量 88 次调用 / 输入 4.65M token（98.9% 缓存命中）/ ≈¥1.1–2.5，全程网关日志逐条可查。
+
 ## Agent 协同设计
 
 Reviewer、Fixer、Verifier 三个 Agent 职责分离、互相制衡：
@@ -81,6 +95,8 @@ Reviewer、Fixer、Verifier 三个 Agent 职责分离、互相制衡：
 - **DAG 依赖**：review-1 → fix-1 → verify-1，逐级锁定防止越权
 
 Agent 只承担语义判断，六类 Skill 以 Schema、deadline、错误码和 fail-closed 合同执行。Workflow Controller 负责状态机、确定性交接、CAS、超时 HOLD 和回滚；Policy Gateway 负责 ALLOW/DENY/HOLD；GitHub MCP 是隔离服务，PAT 不进入 Worker。
+
+角色行为契约 v1.0（Leader/Reviewer/Fixer/Verifier 跨案例冻结，新案例只填 [CASE-MANIFEST](tools/agentteams/roles/CASE-MANIFEST.template.md)）见 [tools/agentteams/roles/](tools/agentteams/roles/)。
 
 想在自己的环境复用这套 Agent 设计与 Skill？按投入分四级（验证 / 单独跑 Skill / 完整闭环 / 指向你自己的仓库的真实闭环）：见 [docs/agent-runtime-adoption.md](docs/agent-runtime-adoption.md) 与 [docs/real-loop-your-repo.md](docs/real-loop-your-repo.md)。
 
