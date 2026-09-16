@@ -53,7 +53,9 @@ export default function GuidedDemoPage({ caseId: propCaseId }) {
   const step = c.steps[stepIdx];
   const Icon = ICONS[stepIdx] || Eye;
   const reset = () => { setResetKey((k) => k + 1); setDrawer(null); setSp({ step: '1' }); };
-  const chain = ['案例 ' + c.case_id, c.pr.split(' · ')[0], `tree ${short(c.sha, 10)}`, 'payments.py 补丁', 'unittest 报告', `任务 ${c.status.verdict}`];
+  const chain = Array.isArray(c.chain) && c.chain.length > 0
+    ? c.chain
+    : ['案例 ' + c.case_id, c.pr.split(' · ')[0], `tree ${short(c.sha, 10)}`, `任务 ${c.status.verdict}`];
   const previewItems = step.evidence.map((id) => itemsById[id]).filter(Boolean);
   const previewBlock = previewItems.map((it) => it.blocks?.[0]).find((b) => b && b.text && b.text !== '未提供');
 

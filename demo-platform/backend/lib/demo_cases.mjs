@@ -29,6 +29,7 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..
 export const EVIDENCE_LEVELS = {
   REAL_EXECUTED_AGENTTEAMS_LIVE: '真实执行 · AgentTeams（本次运行 2026-09-16）',
   REAL_EXECUTED_AGENTTEAMS: '真实执行 · AgentTeams（历史运行）',
+  REAL_OFFLINE_EXPERIMENT: '真实离线实验 · 合成语料',
   LOCAL_REAL_SQL: '本地真实 SQL（隔离 PostgreSQL）',
   CONTROL_PLANE_MECHANISM: '控制面机制验证',
   SYNTHETIC: '合成数据',
@@ -781,6 +782,205 @@ function caseEPr3Reject() {
   };
 }
 
+// --------------------------------------------------- case F: RAG eval→optimize→backtest loop
+
+function caseFRagLoop() {
+  if (!exists('finalsRagLoop', 'report.md')) return null;
+  const r = readJson('finalsRagLoop', 'report.json');
+  const reportMd = readText('finalsRagLoop', 'report.md');
+  const runMeta = readJson('finalsRagLoop', 'run-meta.json');
+  const timings = readJson('finalsRagLoop', 'timings.json');
+  const queriesFile = readText('finalsRagLoop', 'queries.v1.json');
+  const pct = (x) => (typeof x === 'number' ? `${(x * 100).toFixed(1)}%` : '—');
+  const s = r.observation, d = r.dataset, b = r.baseline, t = r.tuning, bt = r.backtest, cmp = bt.comparison;
+  const gridRows = t.grid.map((c) => `${c.strategy.id}  hit@1=${pct(c.hit_at_1)}  hit@3=${pct(c.hit_at_3)}  MRR=${c.mrr.toFixed(4)}  chunk-hit@1=${pct(c.chunk_hit_at_1)}${c.strategy.id === t.selected.strategy.id ? '   ← 选中' : ''}`).join('\n');
+  const badRows = r.badcases.map((c) => `${c.query_id}  期望 ${c.expected_document_id} → 实际 top1 ${c.retrieved_top1_chunk_id}（名次 ${c.expected_doc_rank}）`).join('\n');
+
+  const HONESTY = {
+    honesty_real: '真实离线实验（2026-09-14）：真实 span 审计、真实检索器执行、真实指标计算；查询集在任何测量前固定，held-out 只评估一次',
+    honesty_limits: '合成语料（8 文档/9 chunk，SYNTHETIC/REDACTED）+ 小样本（held-out 24 条，单条名次变化即影响 4.2% hit@1）——结论不外推到企业语料',
+    honesty_exclude: 'span 日志行数是重复演示的审计记录，不是独立样本；日志只存 query_hash，评估样本单独标注',
+  };
+
+  const items = [
+    {
+      id: 'ev-rag-observation', title: '① 观测核验 tool-spans.jsonl（真实审计记录）', level: 'REAL_OFFLINE_EXPERIMENT',
+      fields: [
+        ['span 总行数', `${s.total_span_rows} 行（rag.retrieve ${s.rag_retrieve_rows} / rag.answer ${s.rag_answer_rows}）`],
+        ['关键结论', `retrieve 127 行只对应 ${s.rag_retrieve_distinct_query_hashes} 个不同 query_hash —— 行数是重复演示的审计记录，不是独立样本`],
+        ['隐私边界', '日志只存 query_hash，无法反推查询文本'],
+        ['延迟', 'retrieve p50=0ms · p95=1ms'],
+      ],
+      blocks: [{ title: 'FINALS-RAG-LOOP-20260914/report.md（§1 观测核验）', lang: 'markdown', text: reportMd }],
+      source_ref: 'finalsRagLoop/report.md',
+      hash: refHash('finalsRagLoop', 'report.md'),
+      ...HONESTY,
+    },
+    {
+      id: 'ev-rag-dataset', title: '② 标注数据集与按族切分（防泄漏）', level: 'REAL_OFFLINE_EXPERIMENT',
+      fields: [
+        ['查询集', `queries.v1 · ${d.n_families} 个语义族 / ${d.n_queries} 条查询（版本 ${d.version}）`],
+        ['切分', `按族切分（从不按条）：调优 ${d.n_tuning_families} 族/${d.n_tuning_queries} 条 · held-out ${d.n_heldout_families} 族/${d.n_heldout_queries} 条`],
+        ['泄漏检查', `held-out 与调优查询的最大词元 Jaccard max=${d.leakage.max}（阈值 0.5），近似改写对 ${d.leakage.flagged_pairs.length} 对`],
+        ['指标', '文档级 hit@1 / hit@3 / MRR；多 chunk 文档另计 chunk-hit@1'],
+      ],
+      blocks: [{ title: 'FINALS-RAG-LOOP-20260914/queries.v1.json（前 2000 字）', lang: 'json', text: queriesFile.slice(0, 2000) + '\n…' }],
+      source_ref: 'finalsRagLoop/queries.v1.json',
+      hash: refHash('finalsRagLoop', 'queries.v1.json'),
+      ...HONESTY,
+    },
+    {
+      id: 'ev-rag-baseline', title: '③ 基线 v1-unigram-hash256 + badcase 归因', level: 'REAL_OFFLINE_EXPERIMENT',
+      fields: [
+        ['调优集 (n=30)', `hit@1=${pct(b.tuning.hit_at_1)} · hit@3=${pct(b.tuning.hit_at_3)} · MRR=${b.tuning.mrr.toFixed(4)} · chunk-hit@1=${pct(b.tuning.chunk_hit_at_1)}`],
+        ['held-out (n=24)', `hit@1=${pct(b.heldout.hit_at_1)} · hit@3=${pct(b.heldout.hit_at_3)} · MRR=${b.heldout.mrr.toFixed(4)}`],
+        ['badcase', `基线未命中 top-1 的 ${r.badcases.length} 条全部逐条归因（期望文档名次/分差/词元重叠）`],
+      ],
+      blocks: [{ title: '调优集 9 条 badcase（逐条）', lang: 'text', text: badRows || '未提供' }],
+      source_ref: 'finalsRagLoop/report.json#badcases',
+      hash: refHash('finalsRagLoop', 'report.json'),
+      ...HONESTY,
+    },
+    {
+      id: 'ev-rag-tuning', title: '④ 策略优化（12 候选网格，只用调优集）', level: 'REAL_OFFLINE_EXPERIMENT',
+      fields: [
+        ['网格', 'CJK 二元组 × IDF × 哈希维度，共 12 个候选策略'],
+        ['选择规则（回测前声明）', t.selection_rule ?? 'MRR → hit@1 → hit@3 → 更小维度'],
+        ['选中', `${t.selected.strategy.id}（dim=${t.selected.strategy.dim} · cjk_bigram=${t.selected.strategy.cjk_bigram} · idf=${t.selected.strategy.idf}）调优集 MRR ${b.tuning.mrr.toFixed(4)} → ${t.selected.mrr.toFixed(4)}`],
+      ],
+      blocks: [
+        { title: '12 候选 · 调优集指标全表', lang: 'text', text: gridRows },
+        { title: 'FINALS-RAG-LOOP-20260914/timings.json', lang: 'json', text: JSON.stringify(timings, null, 2) },
+      ],
+      source_ref: 'finalsRagLoop/report.json#tuning',
+      hash: refHash('finalsRagLoop', 'report.json'),
+      ...HONESTY,
+    },
+    {
+      id: 'ev-rag-backtest', title: '⑤ held-out 回测（只评估一次）+ 晋级判定', level: 'REAL_OFFLINE_EXPERIMENT',
+      fields: [
+        ['基线 held-out', `hit@1=${pct(b.heldout.hit_at_1)} · hit@3=${pct(b.heldout.hit_at_3)} · MRR=${b.heldout.mrr.toFixed(4)}`],
+        ['选中策略 held-out', `hit@1=${pct(bt.heldout.hit_at_1)} · hit@3=${pct(bt.heldout.hit_at_3)} · MRR=${bt.heldout.mrr.toFixed(4)}`],
+        ['逐条变化', `改善 ${cmp.improved.length} 条 · 退化 ${cmp.regressed.length} 条（${cmp.regressed.map((x) => x.query_id).join('、')}）· 不变 ${cmp.unchanged_count} 条`],
+        ['晋级判定', `${bt.promotion.decision} —— 规则：heldout.mrr > baseline && heldout.hit@1 >= baseline（回测前声明）`],
+        ['诚实边界', '语料为 SYNTHETIC/REDACTED 演示文档；结论=该策略在此合成语料上更优，不外推企业语料'],
+      ],
+      blocks: [{ title: 'FINALS-RAG-LOOP-20260914/run-meta.json', lang: 'json', text: JSON.stringify(runMeta, null, 2) }],
+      source_ref: 'finalsRagLoop/report.json#backtest',
+      hash: refHash('finalsRagLoop', 'report.json'),
+      ...HONESTY,
+    },
+  ];
+
+  const steps = [
+    {
+      id: 'observe', title: '① 观测：span 审计定界样本',
+      points: [
+        { k: '审计记录', v: `604 行 span（rag.retrieve 127 / rag.answer 26 / database.* 451）` },
+        { k: '关键发现', v: '127 行 retrieve 只对应 12 个不同 query_hash —— 演示流量≠独立样本', },
+        { k: '结论', v: '评估样本必须单独标注；日志只存 query_hash（隐私边界）' },
+      ],
+      evidence: ['ev-rag-observation'],
+      probe: null,
+      detail: { title: '观测来源（默认折叠）', quote: 'span 日志=生产检索器的真实审计记录；本步骤避免"拿演示日志当评测集"的常见错误。', outbox: [], events: [] },
+    },
+    {
+      id: 'dataset', title: '② 数据集：18 语义族 · 54 查询 · 按族切分',
+      points: [
+        { k: '版本化查询集', v: 'rag-loop-queries.v1（任何基线测量之前固定）' },
+        { k: '切分', v: '调优 10 族/30 条 · held-out 8 族/24 条 —— 按族切分，从不按条', mono: true },
+        { k: '泄漏检查', v: '最大词元 Jaccard 0.2581（阈值 0.5）· 近似改写对 0', mono: true },
+      ],
+      evidence: ['ev-rag-dataset'],
+      probe: null,
+      detail: { title: '切分规则原文（默认折叠）', quote: d.split_rule, outbox: [], events: [] },
+    },
+    {
+      id: 'baseline', title: '③ 基线评估 + badcase 归因',
+      points: [
+        { k: '基线策略', v: 'v1-unigram-hash256（生产策略）' },
+        { k: '调优集', v: `hit@1 ${pct(b.tuning.hit_at_1)} · MRR ${b.tuning.mrr.toFixed(4)}` },
+        { k: 'held-out', v: `hit@1 ${pct(b.heldout.hit_at_1)} · MRR ${b.heldout.mrr.toFixed(4)}` },
+        { k: 'badcase', v: `9 条未命中逐条归因（期望名次/分差/与命中块词元重叠）` },
+      ],
+      evidence: ['ev-rag-baseline'],
+      probe: null,
+      detail: { title: '方法说明（默认折叠）', quote: '只看指标会掩盖语义错误；badcase 逐条归因才能把"未命中原因"变成优化方向。', outbox: [], events: [] },
+    },
+    {
+      id: 'tuning', title: '④ 优化：12 候选网格（仅调优集）',
+      points: [
+        { k: '网格维度', v: 'CJK 二元组 × IDF × 哈希维度（256/1024/4096）' },
+        { k: '选择规则', v: 'MRR → hit@1 → hit@3 → 更小维度（回测前声明）', mono: true },
+        { k: '选中', v: 'cand-bigram-idf-hash4096 —— 调优集 MRR 0.7928 → 0.8594，chunk-hit@1 50% → 83.3%' },
+      ],
+      evidence: ['ev-rag-tuning'],
+      probe: null,
+      detail: { title: '防过拟合纪律（默认折叠）', quote: '策略选择只允许看调优集；held-out 在晋级判定前从未参与任何选择。', outbox: [], events: [] },
+    },
+    {
+      id: 'backtest', title: '⑤ held-out 回测 + 晋级判定',
+      points: [
+        { k: '回测结果', v: `MRR ${b.heldout.mrr.toFixed(4)} → ${bt.heldout.mrr.toFixed(4)} · hit@1 ${pct(b.heldout.hit_at_1)} → ${pct(bt.heldout.hit_at_1)}`, mono: true },
+        { k: '逐条变化', v: `改善 ${cmp.improved.length} · 退化 ${cmp.regressed.length}（F17-q1 名次 1→2）· 不变 ${cmp.unchanged_count}` },
+        { k: '晋级', v: `${bt.promotion.decision}（规则回测前声明，held-out 只评估一次）` },
+        { k: '诚实边界', v: '合成语料小样本：单条查询名次变化即影响 4.2% hit@1；结论不外推企业语料' },
+      ],
+      evidence: ['ev-rag-backtest'],
+      probe: {
+        headline: 'held-out 回测对照（只评估一次）',
+        rows: [
+          { label: 'hit@1', request: 'held-out 24 条', before: pct(b.heldout.hit_at_1), after: pct(bt.heldout.hit_at_1), kind: 'fixed' },
+          { label: 'hit@3', request: 'held-out 24 条', before: pct(b.heldout.hit_at_3), after: pct(bt.heldout.hit_at_3), kind: 'stable' },
+          { label: 'MRR', request: 'held-out 24 条', before: b.heldout.mrr.toFixed(4), after: bt.heldout.mrr.toFixed(4), kind: 'fixed' },
+        ],
+      },
+      decision: {
+        verified: { verdict: 'PROMOTE', text: 'held-out MRR 0.8611→0.9583 且 hit@1 0.75→0.9167 —— 满足回测前声明的晋级规则' },
+        human_approval: { needed: false, text: '无需人工门 —— 离线检索策略实验；数据模式（SYNTHETIC/REDACTED）声明不变', level: 'REAL_OFFLINE_EXPERIMENT' },
+        merge_allowed: { allowed: true, text: '策略已晋级为新的生产检索配置（rag.mjs 可按选中参数加载）' },
+        github_write: { done: false, text: '未写入 GitHub —— 纯本地实验', level: 'NOT_EXECUTED' },
+        execution_nature: { text: '真实离线实验（合成语料）：真实 span 审计 + 真实检索器 + 真实指标；非 AgentTeams 运行', level: 'REAL_OFFLINE_EXPERIMENT' },
+        pr_open: false,
+      },
+      detail: { title: '复现（默认折叠）', quote: 'node demo-platform/backend/experiments/rag-loop/rag_eval_loop.mjs --out <dir>（报告 JSON sha256 见目录 SHA256SUMS；timings 非确定性故排除在 SUMS 外）', outbox: [], events: [] },
+    },
+  ];
+
+  return {
+    case_id: 'rag-retrieval-loop',
+    shape: 'guided',
+    name: 'RAG 检索闭环 · 观测→评估→数据集→优化→回测',
+    short_name: '闭环能力 · RAG 检索优化',
+    one_liner: '真实离线实验：span 审计定界样本 → 18 族 54 查询按族切分 → 基线+9 条 badcase 归因 → 12 候选网格调优 → held-out 只评一次，MRR 0.861→0.958 判定 PROMOTE。',
+    repo: 'mergepilot/demo-platform（rag-data 合成语料）',
+    pr: '本地离线实验 · 无外部 PR（合成语料）',
+    pr_url: null,
+    run_id: 'rag-loop-20260914',
+    sha: d.corpus_sha256 ?? null,
+    sha_kind: '语料 corpus sha256',
+    evidence_level: ['REAL_OFFLINE_EXPERIMENT', 'SYNTHETIC'],
+    replay_note: 'REAL_OFFLINE_EXPERIMENT —— 本页面回放 2026-09-14 离线实验证据；语料为 SYNTHETIC/REDACTED 演示文档',
+    purpose: '闭环能力证明（评委要点⑤）：观测→评估→数据集→优化→留出回测的完整方法链与防过拟合纪律',
+    risk_tags: ['检索质量', '防泄漏切分', 'held-out 回测', 'PROMOTE'],
+    status: { verdict: 'PROMOTE', label: 'held-out MRR 0.861→0.958 · 晋级规则满足' },
+    facts: {
+      real_github_pr: { value: '否 —— 本地离线实验', ok: false, note: '' },
+      real_agentteams_run: { value: '否 —— 真实检索器实验，但非 AgentTeams 运行', ok: false, note: '' },
+      github_write: { value: '未写入 —— NOT_EXECUTED', ok: false, note: '' },
+    },
+    banner: null,
+    stage_timeline: null,
+    chain: ['观测 604 span→12 独立查询', '54 查询按族切分 30/24', '基线 MRR 0.793', '12 网格选中 bigram-idf-4096', 'held-out MRR 0.958 · PROMOTE'],
+    generated_at: runMeta?.generated_at ?? '2026-09-14',
+    source_dir: 'evidence/FINALS-RAG-LOOP-20260914（SHA256SUMS 锁定；timings 因非确定性排除）',
+    honesty: HONESTY,
+    steps,
+    evidence_index: items.map(({ id, title, level }) => ({ id, title, level })),
+    items,
+  };
+}
+
 // --------------------------------------------------- case B: rework mechanism
 
 function caseBRework() {
@@ -1224,7 +1424,7 @@ function caseCDbLoop() {
 
 // ------------------------------------------------------------------ public API
 
-const CASE_BUILDERS = { 'fastapi-pr2-cwe22': caseAFastAPI, 'fastapi-pr2-live-20260916': caseDPr2Live, 'fastapi-pr3-reject': caseEPr3Reject, 'rework-payments': caseBRework, 'db-migration-orders': caseCDbLoop };
+const CASE_BUILDERS = { 'fastapi-pr2-cwe22': caseAFastAPI, 'fastapi-pr2-live-20260916': caseDPr2Live, 'fastapi-pr3-reject': caseEPr3Reject, 'rag-retrieval-loop': caseFRagLoop, 'rework-payments': caseBRework, 'db-migration-orders': caseCDbLoop };
 
 function summarize(x) {
   if (!x) return null;
@@ -1242,6 +1442,7 @@ export function demoOverview() {
   const a = caseAFastAPI();
   const live = caseDPr2Live();
   const r3 = caseEPr3Reject();
+  const rag = caseFRagLoop();
   const c = caseBRework();
   const d = caseCDbLoop();
   return {
@@ -1254,7 +1455,7 @@ export function demoOverview() {
     },
     levels: EVIDENCE_LEVELS,
     current_case_id: live ? live.case_id : (a ? a.case_id : null),
-    cases: [live, a, r3, c, d].filter(Boolean).map(summarize).filter((x) => !x.extra),
+    cases: [live, a, r3, rag, c, d].filter(Boolean).map(summarize).filter((x) => !x.extra),
     additional: [d].filter(Boolean).map(summarize),
   };
 }
