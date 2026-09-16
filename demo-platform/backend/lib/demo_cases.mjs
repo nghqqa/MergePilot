@@ -415,9 +415,9 @@ function caseAFastAPI() {
 // --------------------------------------------------- case D: PR #2 live run (2026-09-16)
 
 const PR2_LIVE_HONESTY = {
-  honesty_real: '本次真实执行（2026-09-16）：真实 Matrix 派单、真实 deepseek-chat 调用、真实容器内 clone/测试，全部 event_id 可审计',
-  honesty_limits: 'Element 截图与房间导出为同一证据源；平台页面只读回放，不连接实时系统',
-  honesty_exclude: '门前 Leader 违规委派与 Fixer 自启均已被操作员作废并留痕（AUDIT.md §3），不计入案例结果',
+  real: ['本次真实执行（2026-09-16）：真实 Matrix 派单、真实 deepseek-chat 调用、真实容器内 clone/测试，全部 event_id 可审计', '人工门为操作员真实批准（human-gate-approval.md，位置在修复前）', 'Verifier 在独立干净工作区验证，patch sha256 独立复现一致'],
+  controlled: ['本页面为证据的只读回放与讲解文案'],
+  not_executed: ['本次演示不连接实时 GitHub / Matrix / LLM', 'merge / push / close / reopen 全程禁止，PR #2 保持 OPEN', 'GitHub 写入未执行（NOT_EXECUTED）'],
 };
 
 function caseDPr2Live() {
@@ -696,11 +696,11 @@ function caseEPr3Reject() {
   const roleContracts = ['ROLE-LEADER.md','ROLE-REVIEWER.md','ROLE-FIXER.md','ROLE-VERIFIER.md'].map((rf) => ({ name: rf, text: readRepoFile('tools/agentteams/roles/' + rf) }));
 
   const HONESTY = {
-    honesty_real: liveAvailable
-      ? '本次真实执行（2026-09-16，FINALS-ELEM-PR3-LIVE）：真实 Reviewer 审查、真实操作员拒绝、真实 Leader 停等；fix/verify 从未派发。2026-08-30 的历史运行保留为对照'
-      : '历史真实运行（2026-08-30）：真实 Reviewer 审查、真实操作员拒绝、真实 Leader 停等；fix-1/verify-1 从未派发',
-    honesty_limits: '本页面为只读回放；拒绝为终态，演示层不可翻转',
-    honesty_exclude: '未执行：Fixer/Verifier 从未运行（两轮均为 0 消费留痕）',
+    real: liveAvailable
+      ? ['本次真实执行（2026-09-16）：真实 Reviewer 审查、真实操作员拒绝、真实 Leader 停等；全部 event_id 留痕；fix/verify 从未派发']
+      : ['历史真实运行（2026-08-30）：真实 Reviewer 审查、真实操作员拒绝、真实 Leader 停等；fix-1/verify-1 从未派发'],
+    controlled: ['本页面为证据的只读回放与讲解文案；拒绝为终态，演示层不可翻转'],
+    not_executed: ['Fixer / Verifier 从未派发（两轮均 0 消费留痕）', '零 GitHub 写入；PR #3 保持 OPEN'],
   };
 
   const items = liveAvailable ? [
@@ -965,9 +965,9 @@ function caseFRagLoop() {
   const badRows = r.badcases.map((c) => `${c.query_id}  期望 ${c.expected_document_id} → 实际 top1 ${c.retrieved_top1_chunk_id}（名次 ${c.expected_doc_rank}）`).join('\n');
 
   const HONESTY = {
-    honesty_real: '真实离线实验（2026-09-14）：真实 span 审计、真实检索器执行、真实指标计算；查询集在任何测量前固定，held-out 只评估一次',
-    honesty_limits: '合成语料（8 文档/9 chunk，SYNTHETIC/REDACTED）+ 小样本（held-out 24 条，单条名次变化即影响 4.2% hit@1）——结论不外推到企业语料',
-    honesty_exclude: 'span 日志行数是重复演示的审计记录，不是独立样本；日志只存 query_hash，评估样本单独标注',
+    real: ['真实离线实验（2026-09-14）：真实 span 审计、真实检索器执行、真实指标计算；查询集在任何测量前固定，held-out 只评估一次'],
+    controlled: ['语料为 SYNTHETIC/REDACTED 演示文档（8 文档/9 chunk）；标注由团队编写'],
+    not_executed: ['不外推企业语料；本实验优化检索策略，不改变数据模式声明'],
   };
 
   const items = [

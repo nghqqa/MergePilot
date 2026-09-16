@@ -8,8 +8,6 @@ import { X, Copy, Check, ShieldCheck } from 'lucide-react';
 import { api } from '../../api.js';
 import { LevelChip, CodeBlock, KV, HonestTriple, useScrollLock, useEsc } from './bits.jsx';
 
-const INTEG_KEY = { 'evidence/FINALS-REWORK-LOOP-20260914': 'finalsReworkLoop', 'evidence/FINALS-DB-MIGRATION-LOOP-20260914': 'finalsDbLoop' };
-
 export default function EvidenceDrawer({ caseId, evidenceId, onClose }) {
   const open = !!(caseId && evidenceId);
   const [d, setD] = useState(null);
@@ -30,12 +28,26 @@ export default function EvidenceDrawer({ caseId, evidenceId, onClose }) {
 
   if (!open) return null;
 
-  const integ = d && d.integrity ? d.integrity[INTEG_KEY[d.source_dir]] : null;
+  // Case-level meta lives under `case` in the evidence payload (demoEvidence).
+  const meta = d && d.case ? d.case : {};
+  // SHA256 row: item-level hash (per-file vs the evidence dir's SHA256SUMS) first;
+  // repo read-only references are honestly "不适用" instead of "未提供".
+  const hashInfo = d && d.hash;
+  let integText;
+  if (hashInfo && hashInfo.exists) {
+    integText = hashInfo.hash_verified === true ? `通过 · ${(hashInfo.sha256 || '').slice(0, 16)}…`
+      : hashInfo.hash_verified === false ? '未通过（与 SUMS 不一致）'
+      : '未命中 SUMS 条目';
+  } else if (hashInfo && hashInfo.dir) {
+    integText = '不适用 —— 仓库只读引用（不在证据目录内）';
+  } else {
+    integText = meta.source_dir ? '按证据目录整体校验（见全部证据页）' : '未提供';
+  }
   const copyAll = async () => {
     if (!d) return;
     const text = [
-      `${d.title}`, `case: ${d.case_id} · run_id: ${d.run_id} · ${d.pr}`, `sha: ${d.sha} (${d.sha_kind})`,
-      `level: ${d.level}`, `source: ${d.source_ref}`, `generated_at: ${d.generated_at ?? '未提供'}`, '',
+      `${d.title}`, `case: ${d.case_id} · run_id: ${meta.run_id ?? '未提供'} · ${meta.pr ?? ''}`, `sha: ${meta.sha ?? '未提供'} (${meta.sha_kind ?? ''})`,
+      `level: ${d.level}`, `source: ${d.source_ref}`, `generated_at: ${meta.generated_at ?? '未提供'}`, '',
       ...(d.fields || []).map(([k, v]) => `${k}: ${v}`), '',
       ...(d.blocks || []).flatMap((b) => [`--- ${b.title} ---`, b.text, '']),
     ].join('\n');
@@ -66,13 +78,13 @@ export default function EvidenceDrawer({ caseId, evidenceId, onClose }) {
               <section className="drawer-sec">
                 <div className="st">追溯标识</div>
                 <KV rows={[
-                  ['run_id', d.run_id, true],
-                  ['PR', d.pr],
-                  [`SHA · ${d.sha_kind || 'sha'}`, d.sha ?? '未提供', true],
-                  ['证据目录', d.source_dir, true],
+                  ['run_id', meta.run_id, true],
+                  ['PR', meta.pr],
+                  [`SHA · ${meta.sha_kind || 'sha'}`, meta.sha ?? '未提供', true],
+                  ['证据目录', meta.source_dir, true],
                   ['来源', d.source_ref, true],
-                  ['生成时间', d.generated_at ?? '未提供', true],
-                  ['SHA256 校验', integ ? (integ.verified ? `通过 · ${integ.files} 个文件` : '未通过') : '未提供'],
+                  ['生成时间', meta.generated_at ?? '未提供', true],
+                  ['SHA256 校验', integText],
                 ]} />
               </section>
 
