@@ -39,11 +39,17 @@
 | 门决策 | 批准修复+验证 | **拒绝修复** |
 | 系统终态 | 项目 completed(修复验证通过) | 项目 **blocked**,fix/verify 从未派发 |
 
-同一 Leader、同一套协议:门强化指令后纪律生效——这本身是「人工门=权限拓扑+操作员强制执行」的完整证据。
+同一 Leader:PR#2 轮跳门违规、本轮在强化指令+结果预告下正确停等——两轮对照如实呈现(含混杂因素,见 §四.5),不宜简化为"纪律自发生效"。
+
+## 四.5 口径与限定(审计修正)
+
+- **混杂因素如实声明**:本轮 Leader 的"正确停门"并非干净 A/B——kickoff 含强化条款(点名 PR2 违规、门条款升级为 ABSOLUTE),且操作员播种的项目标题含"human reject path"预告。准确口径是:**指令强化+结果预告下的正确停等**,而非无提示下的自发纪律。
+- **任务文件时滞**:Reviewer 开工时 `~/task/` 内仍是 PR #2 旧文件(运行前 MinIO 播种晚于容器同步周期),Reviewer 自行发现并经 filesync 取得新文件后继续——Reviewer 结果基于正确的 head SHA 与新指令,过程留痕于房间导出。
+- **模型口径**:请求模型 deepseek-chat;网关 ai_log 的 `model=deepseek-flash` 来自供应商响应,请求侧模型无法由日志直接证实。
 
 ## 五、用量与终态
 
-- 本轮窗口(01:55Z 起):52 次调用 · 输入 1,824,197(98.7% 缓存命中)· 输出 13,865 → 估算 **≈¥0.4**
+- 本轮窗口(01:55Z 起):网关日志 52 条请求,其中 **49 条含 usage 计费记录** · 输入 1,824,197(98.7% 缓存命中)· 输出 13,865 → 估算 **≈¥0.4**
 - 运行结束:4 个计费调用者 CR state=Stopped(容器移除,可恢复);房间历史/卷/CR 保留
 - 文件:team-room-messages.json / leader-dm-messages.json(全量事件)、reviewer-result.md、
-  human-gate-rejection.md、leader-plan-and-meta.txt、PR-METADATA.md、网关日志;SHA256SUMS 见同目录
+  human-gate-rejection.md、leader-plan-and-meta.txt(补采说明见文件头)、PR-METADATA.md、网关日志;SHA256SUMS 见同目录

@@ -30,6 +30,7 @@ export const EVIDENCE_LEVELS = {
   REAL_EXECUTED_AGENTTEAMS_LIVE: '真实执行 · AgentTeams（本次运行 2026-09-16）',
   REAL_EXECUTED_AGENTTEAMS: '真实执行 · AgentTeams（历史运行）',
   REAL_OFFLINE_EXPERIMENT: '真实离线实验 · 合成语料',
+  POST_RUN_DESIGN: '运行后固化设计 · 非运行时证据',
   LOCAL_REAL_SQL: '本地真实 SQL（隔离 PostgreSQL）',
   CONTROL_PLANE_MECHANISM: '控制面机制验证',
   SYNTHETIC: '合成数据',
@@ -415,7 +416,7 @@ function caseAFastAPI() {
 // --------------------------------------------------- case D: PR #2 live run (2026-09-16)
 
 const PR2_LIVE_HONESTY = {
-  real: ['本次真实执行（2026-09-16）：真实 Matrix 派单、真实 deepseek-chat 调用、真实容器内 clone/测试，全部 event_id 可审计', '人工门为操作员真实批准（human-gate-approval.md，位置在修复前）', 'Verifier 在独立干净工作区验证，patch sha256 独立复现一致'],
+  real: ['本次真实执行（2026-09-16）：真实 Matrix 派单、真实容器内 clone/测试，全部 event_id 可审计；Reviewer 复现与定级独立', '漏洞类别与目标文件由 kickoff 指令点名（非盲测）；人工门为操作员真实批准（修复前）', 'Verifier 在独立干净工作区验证，patch sha256 独立复现一致；请求模型 deepseek-chat（网关记录响应 model=deepseek-flash）'],
   controlled: ['本页面为证据的只读回放与讲解文案'],
   not_executed: ['本次演示不连接实时 GitHub / Matrix / LLM', 'merge / push / close / reopen 全程禁止，PR #2 保持 OPEN', 'GitHub 写入未执行（NOT_EXECUTED）'],
 };
@@ -454,7 +455,7 @@ function caseDPr2Live() {
       ...PR2_LIVE_HONESTY,
     },
     {
-      id: "ev-live-roles", title: "角色契约（v1.0 冻结，跨案例零改动）", level: 'REAL_EXECUTED_AGENTTEAMS_LIVE',
+      id: "ev-live-roles", title: "角色契约（v1.0 冻结，跨案例零改动）", level: 'POST_RUN_DESIGN',
       fields: [
         ['契约版本', 'v1.0（冻结，跨案例零改动；回溯固化自 P14 角色矩阵与两轮真实运行的公共协议）'],
         ['要点', '角色行为与案例参数分离：Reviewer/Fixer/Verifier/Leader 契约在两个 PR 的运行中逐字相同，案例差异只在 CASE-MANIFEST（SHA/目标文件/task id/验收行为）'],
@@ -497,7 +498,7 @@ function caseDPr2Live() {
         ['交付', 'attempt-1.diff 单文件 +13/−7（仅 demo_high_risk.py，测试零改动）'],
         ['策略', 'os.path.realpath 归一化 + os.path.commonpath 包含性校验；越界 400、缺失 404、合法 200'],
         ['patch sha256', '674356fc9a661faa49b97b789d75ff4529b95a5fac7f39dad0301397c0116081', 'mono'],
-        ['事件', '过门后正式委派 $uyClhW_xZMMmxZx49V_e5buvoI3dHYTPcve-RnWIoV0'],
+        ['派发链(审计修正)', '门后无新委派事件(Matrix 事务号幂等复用被作废事件);Fixer 由操作员按 SPEC B 直接指令开工,如实披露'],
       ],
       blocks: [
         { title: 'finalsPr2Live/fixer-attempt-1.diff', lang: 'diff', text: fixerDiff ?? '未提供' },
@@ -594,7 +595,7 @@ function caseDPr2Live() {
         { k: '交付物', v: 'attempt-1.diff —— 单文件 +13/−7，测试零改动，零 GitHub 写入' },
         { k: '修复策略', v: 'realpath 归一化 + commonpath 包含性校验；越界 400 / 缺失 404 / 合法 200' },
         { k: 'patch sha256', v: '674356fc9a661faa49b97b789d75ff4529b95a5fac7f39dad0301397c0116081', mono: true },
-        { k: '正式委派', v: '过门后 Leader 重派 $uyClhW_xZMMmxZx49V_e5buvoI3dHYTPcve-RnWIoV0（门前的违规委派已作废）' },
+        { k: '门后派发链(审计修正)', v: 'Leader 重派因 Matrix 事务号幂等未产生新委派事件;Fixer 由操作员按 SPEC B 直接指令开工(偏离协议,如实披露)' },
       ],
       evidence: ['ev-live-fix'],
       probe: null,
@@ -615,7 +616,7 @@ function caseDPr2Live() {
         rows: [
           { label: '越权读取（../outside/outside-secret.txt）', request: attack, before: 'HTTP 200 · 泄露 TOP-SECRET-OUTSIDE-BASE', after: 'HTTP 400 · Invalid file path', kind: 'fixed' },
           { label: '越权读取（多级 ../ 至 /etc/hostname）', request: 'name=../../../../../../etc/hostname', before: 'HTTP 200 · 泄露主机名', after: 'HTTP 400 · Invalid file path', kind: 'fixed' },
-          { label: '合法基内文件', request: 'GET /demo/download?name=welcome.txt', before: 'HTTP 200 · LEGIT-INSIDE-BASE', after: 'HTTP 200 · 仍可用', kind: 'stable' },
+          { label: '合法基内文件(ok.txt,Verifier 实测)', request: 'GET /demo/download?name=ok.txt', before: 'HTTP 200 · LEGIT-INSIDE-BASE', after: 'HTTP 200 · 仍可用', kind: 'stable' },
         ],
       },
       detail: { title: '验证事件链（默认折叠）', quote: 'Verifier 不信任 Fixer 自述：只采信自己的 clone、自己的 apply、自己的探针退出码与 HTTP 状态码。', outbox: [], events: [] },
@@ -668,7 +669,7 @@ function caseDPr2Live() {
     banner: null,
     stage_timeline: null,
     chain: [`案例 ${RUN}`, 'PR #2', `commit ${short(SHA, 10)}`, 'demo_high_risk.py', 'attempt-1.diff', 'probe 200→400', 'VERDICT: VERIFIED'],
-    generated_at: '运行 2026-09-15T17:19Z–2026-09-16T00:5xZ（容器钟，宿主钟换算见 AUDIT §2）',
+    generated_at: '运行 2026-09-15T17:19Z–2026-09-16T00:5xZ（UTC；墙钟 ≈7.6h，含操作员离席等待，见 AUDIT §2）',
     source_dir: 'evidence/FINALS-ELEM-PR2-LIVE-20260916（本次新证据，SHA256SUMS 锁定）',
     honesty: PR2_LIVE_HONESTY,
     steps,
@@ -736,7 +737,7 @@ function caseEPr3Reject() {
     {
       id: 'ev-rej-live-run', title: '【本次真实执行】运行档案 README（含门纪律对照与用量）', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE',
       fields: [
-        ['用量', '52 次调用 · 输入 1.82M（98.7% 缓存命中）· 估算 ≈¥0.4'],
+        ['用量', '52 条请求（49 条含 usage）· 输入 1.82M（98.7% 缓存命中）· 估算 ≈¥0.4'],
         ['合规', 'PR #3 全程 OPEN · head ad267a6e 运行中 ls-remote 核验 · 零 GitHub 写入'],
       ],
       blocks: [{ title: 'FINALS-ELEM-PR3-LIVE-20260916/README.md', lang: 'markdown', text: liveReadme ?? '未提供' }],
@@ -745,7 +746,7 @@ function caseEPr3Reject() {
       ...HONESTY,
     },
     {
-      id: "ev-rej-live-roles", title: "【本次真实执行】角色契约（v1.0 冻结，跨案例零改动）", level: 'REAL_EXECUTED_AGENTTEAMS_LIVE',
+      id: "ev-rej-live-roles", title: "【本次真实执行】角色契约（v1.0 冻结，跨案例零改动）", level: 'POST_RUN_DESIGN',
       fields: [
         ['契约版本', 'v1.0（冻结，跨案例零改动；回溯固化自 P14 角色矩阵与两轮真实运行的公共协议）'],
         ['要点', '角色行为与案例参数分离：Reviewer/Fixer/Verifier/Leader 契约在两个 PR 的运行中逐字相同，案例差异只在 CASE-MANIFEST（SHA/目标文件/task id/验收行为）'],
@@ -858,7 +859,7 @@ function caseEPr3Reject() {
     {
       id: 'gate', title: '② 人工门 · 操作员真实拒绝（终态）',
       points: [
-        { k: 'Leader 行为', v: '审查验收后停门等决策（同日 PR #2 运行时曾跳门被作废——对照留痕）' },
+        { k: 'Leader 行为', v: '审查验收后停门等决策（混杂因素：kickoff 含强化条款、项目标题预告 reject——见 README §四.5）' },
         { k: '操作员决策', v: 'HUMAN_SECURITY_REJECTED —— 查看真实 findings 后拒绝修复授权' },
         { k: '绑定效应', v: 'fix [-] rejected（never delegated）· verify [!] locked · 项目 blocked', mono: true },
         { k: '终态不可翻转', v: '拒绝即终态：系统停等，全部审查证据保留，零 GitHub 写入' },

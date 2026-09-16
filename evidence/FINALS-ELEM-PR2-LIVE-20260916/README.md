@@ -35,9 +35,9 @@
 | kickoff(修正版,已消费) | `$LzIUwjIZSEFeD9ZKxVZSdcgWiSHAT1KvbGii96KiHrs` | 含 SPEC A/B/C 全文 |
 | 委派 pr2-review-1 | `$lK5NAkgCQwxnNIoTahtvwFSQW4J_WrNqx5RyM24wNBI` | Leader taskflow(delegate_task),meta event_id 一致 |
 | Reviewer 提交 | team room(TASK_COMPLETED 行) | FINDING_CONFIRMED / HIGH / CWE-22 / HUMAN_VERIFICATION_REQUIRED:YES |
-| Leader 违规委派 fix-1(未过门) | 见 AUDIT §3.2 | 已由操作员作废并回滚 |
+| Leader 违规委派 fix-1(未过门,00:03:13Z) | `$uyClhW_xZMMmxZx49V_e5buvoI3dHYTPcve-RnWIoV0` | **即后来被引用的那条委派事件**;00:07Z 被操作员宣布作废,plan 回滚、任务文件清除 |
 | 人工门批准(操作员真实决策) | DM `$5Bj24K0DHVkjc2BD2_8A9OR7Mh-U4d-PS_fw4WJ9sOM` / team `$jMI5NE6QkHHZNgqYuo6L5M_948ETdFgGjkxbq4s2b90` | 批准记录 `human-gate-approval.md` 落盘项目存储 |
-| 重新委派 pr2-fix-1(过门后) | `$uyClhW_xZMMmxZx49V_e5buvoI3dHYTPcve-RnWIoV0` | FIX_APPLIED + SELF_CHECK_PASSED,patch sha256 `674356fc…16081` |
+| 门后 Leader 重派 **未产生新委派事件**(审计修正) | — | Leader 的 taskflow 重派因 Matrix 事务号幂等复用了被作废事件 ID,团队房无新消息;Fixer 实际由操作员 00:22:04Z 按 SPEC B 内容直接指令开工(偏离 P14 操作员边界,如实披露;fixer meta 的 assigned_at/event_id 矛盾原样保留) |
 | Verifier 独立验证 | team room | **VERDICT=VERIFIED(PASS)**,sha256 独立复现一致,修复前 3 组越权 200→修复后全 400,合法访问 200,缺失 404,冻结测试预期反转(2 failed)如实记录 |
 | Leader 最终报告 | DM `$91jWHmFauP7vmlr8lYKG78wh2K2KC92eRDRr-CQwmYo` | 项目 completed,三任务全验收 |
 
@@ -51,6 +51,13 @@
 
 - 返工:未发生(自然首次 PASS,如实记录;不存在人为制造返工)。
 - GitHub 合规:PR #2 open/未合并/head 不变;无新分支、无评论、无 push。
+
+## 三.5 口径与限定(审计修正)
+
+- **Reviewer 独立性范围**:复现与定级(HIGH、CWE-22 定性、PoC)为 Reviewer 独立得出;**漏洞类别与目标文件由指令(SPEC A)点名**(kickoff SPEC A 写明"../ sequences / arbitrary file read"方向)。两轮运行的 as-run 指令存在实质差异,角色契约 v1.0 为运行后回溯固化(见 CASE-MANIFEST 模板声明)。
+- **门后派发链**:见上表"审计修正"行与 AUDIT §3.2——门后无新委派事件,Fixer 由操作员直接指令驱动。
+- **模型口径**:worker 请求模型为 deepseek-chat;网关 ai_log 记录的 `model=deepseek-flash` 来自供应商响应,请求侧模型无法由日志直接证实。
+- **墙钟**:preflight→停止调用者 ≈7.6 小时(含操作员离席等待约 6.3 小时,期间 Leader heartbeat 空转 ~70 次/3.97M 输入),超出 ≤120 分钟口径,如实披露;详见 AUDIT §1/§2。
 
 ## 五、文件清单
 
