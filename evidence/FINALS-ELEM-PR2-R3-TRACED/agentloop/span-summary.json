@@ -1,0 +1,75 @@
+{
+ "leader": {
+  "spans_created_through_1557Z": 187,
+  "by_name": {
+   "genai.llm.call": 39,
+   "genai.llm.request": 39,
+   "matrix.receive": 35,
+   "matrix.send": 24,
+   "agent.session.run": 8,
+   "tool.projectflow": 8,
+   "tool.filesync": 7,
+   "tool.taskflow": 7,
+   "tool.execute_shell_command": 6,
+   "tool.edit_file": 4,
+   "taskflow.notify_assignment": 3,
+   "tool.read_file": 3,
+   "tool.message": 3,
+   "tool.write_file": 1
+  },
+  "export_batches_ok": 46,
+  "spans_exported": 195,
+  "export_failures": 0
+ },
+ "reviewer": {
+  "spans_created_through_1557Z": 143,
+  "by_name": {
+   "matrix.receive": 33,
+   "genai.llm.call": 30,
+   "genai.llm.request": 30,
+   "tool.execute_shell_command": 20,
+   "matrix.send": 19,
+   "tool.write_file": 5,
+   "agent.session.run": 2,
+   "tool.taskflow": 2,
+   "tool.read_file": 2
+  },
+  "export_batches_ok": 50,
+  "spans_exported": 145,
+  "export_failures": 0
+ },
+ "fixer": {
+  "spans_created_through_1557Z": 94,
+  "by_name": {
+   "matrix.receive": 43,
+   "genai.llm.call": 14,
+   "genai.llm.request": 14,
+   "matrix.send": 9,
+   "tool.execute_shell_command": 6,
+   "agent.session.run": 2,
+   "tool.taskflow": 2,
+   "tool.edit_file": 2,
+   "tool.write_file": 2
+  },
+  "export_batches_ok": 39,
+  "spans_exported": 96,
+  "export_failures": 0
+ },
+ "verifier": {
+  "spans_created_through_1557Z": 100,
+  "by_name": {
+   "matrix.receive": 43,
+   "genai.llm.call": 15,
+   "genai.llm.request": 15,
+   "tool.execute_shell_command": 9,
+   "matrix.send": 9,
+   "tool.write_file": 3,
+   "agent.session.run": 2,
+   "tool.taskflow": 2,
+   "tool.filesync": 2
+  },
+  "export_batches_ok": 47,
+  "spans_exported": 102,
+  "export_failures": 0
+ }
+}

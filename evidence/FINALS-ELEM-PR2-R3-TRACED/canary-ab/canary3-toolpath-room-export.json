@@ -1,0 +1,290 @@
+[
+ {
+  "content": {
+   "room_version": "11"
+  },
+  "event_id": "$xyw3iDrjoiJI64NuuKUtmmplLBoMQZI4InU_ZfT-wqM",
+  "origin_server_ts": 1789572256096,
+  "room_id": "!vf8ToP5CyPknkHDK8V:elemiso-matrix:6167",
+  "sender": "@elemiso-admin:elemiso-matrix:6167",
+  "state_key": "",
+  "type": "m.room.create",
+  "unsigned": {
+   "age": 182853
+  }
+ },
+ {
+  "content": {
+   "displayname": "elemiso-admin",
+   "is_direct": false,
+   "membership": "join"
+  },
+  "event_id": "$ff0bzX6tyS_vbBuh7tp2QW250NMajrlGqPGTOJrPzi4",
+  "origin_server_ts": 1789572256097,
+  "room_id": "!vf8ToP5CyPknkHDK8V:elemiso-matrix:6167",
+  "sender": "@elemiso-admin:elemiso-matrix:6167",
+  "state_key": "@elemiso-admin:elemiso-matrix:6167",
+  "type": "m.room.member",
+  "unsigned": {
+   "age": 182852
+  }
+ },
+ {
+  "content": {
+   "alias": "#agentteams-worker-canary:elemiso-matrix:6167"
+  },
+  "event_id": "$3QT82FHT5wUHKsC2_4SePkLnvW83RwmFMP-KPp28rlQ",
+  "origin_server_ts": 1789572256098,
+  "room_id": "!vf8ToP5CyPknkHDK8V:elemiso-matrix:6167",
+  "sender": "@elemiso-admin:elemiso-matrix:6167",
+  "state_key": "",
+  "type": "m.room.canonical_alias",
+  "unsigned": {
+   "age": 182851
+  }
+ },
+ {
+  "content": {
+   "ban": 50,
+   "events": {
+    "m.poll.response": 0,
+    "m.room.encryption": 100,
+    "m.room.history_visibility": 100,
+    "m.room.power_levels": 100,
+    "m.room.server_acl": 100,
+    "m.room.tombstone": 100,
+    "org.matrix.msc3381.poll.response": 0
+   },
+   "events_default": 0,
+   "invite": 0,
+   "kick": 50,
+   "notifications": {
+    "room": 50
+   },
+   "redact": 50,
+   "state_default": 50,
+   "users": {
+    "@canary:elemiso-matrix:6167": 0,
+    "@elemiso-admin:elemiso-matrix:6167": 100,
+    "@manager:elemiso-matrix:6167": 100
+   },
+   "users_default": 0
+  },
+  "event_id": "$4fyr06mYVdDgDP1SfSndDptOGK2IHgukIo7XCGUs9ok",
+  "origin_server_ts": 1789572256098,
+  "room_id": "!vf8ToP5CyPknkHDK8V:elemiso-matrix:6167",
+  "sender": "@elemiso-admin:elemiso-matrix:6167",
+  "state_key": "",
+  "type": "m.room.power_levels",
+  "unsigned": {
+   "age": 182851
+  }
+ },
+ {
+  "content": {
+   "createdBy": "agentteams",
+   "lifecycle": "persistent",
+   "roomKind": "worker_room",
+   "schemaVersion": 1,
+   "workerName": "canary"
+  },
+  "event_id": "$ygPSWyV8gjFqjWcwYoS9oZy1lmTzeSfpTcz2_tGizfc",
+  "origin_server_ts": 1789572256099,
+  "room_id": "!vf8ToP5CyPknkHDK8V:elemiso-matrix:6167",
+  "sender": "@elemiso-admin:elemiso-matrix:6167",
+  "state_key": "",
+  "type": "room.meta",
+  "unsigned": {
+   "age": 182850
+  }
+ },
+ {
+  "content": {
+   "guest_access": "can_join"
+  },
+  "event_id": "$XEwkLRF-3AXcoha95doqJl1u6o1Mmt-nhUMvovzw7os",
+  "origin_server_ts": 1789572256099,
+  "room_id": "!vf8ToP5CyPknkHDK8V:elemiso-matrix:6167",
+  "sender": "@elemiso-admin:elemiso-matrix:6167",
+  "state_key": "",
+  "type": "m.room.guest_access",
+  "unsigned": {
+   "age": 182850
+  }
+ },
+ {
+  "content": {
+   "history_visibility": "shared"
+  },
+  "event_id": "$6Gtdlm3RNGylCrAFWQ4t7nhhNJydunFKAW57vdmYnas",
+  "origin_server_ts": 1789572256099,
+  "room_id": "!vf8ToP5CyPknkHDK8V:elemiso-matrix:6167",
+  "sender": "@elemiso-admin:elemiso-matrix:6167",
+  "state_key": "",
+  "type": "m.room.history_visibility",
+  "unsigned": {
+   "age": 182850
+  }
+ },
+ {
+  "content": {
+   "join_rule": "invite"
+  },
+  "event_id": "$SKtDLcMLJVU2hmMIdeUVX83CXF_bgBbxSEVCd1ZIwy0",
+  "origin_server_ts": 1789572256099,
+  "room_id": "!vf8ToP5CyPknkHDK8V:elemiso-matrix:6167",
+  "sender": "@elemiso-admin:elemiso-matrix:6167",
+  "state_key": "",
+  "type": "m.room.join_rules",
+  "unsigned": {
+   "age": 182850
+  }
+ },
+ {
+  "content": {
+   "topic": "Communication channel for canary"
+  },
+  "event_id": "$WUDjSnxGdrVeJU50jWqLhjqzgkZbF7K8sVbYdFe8gLw",
+  "origin_server_ts": 1789572256100,
+  "room_id": "!vf8ToP5CyPknkHDK8V:elemiso-matrix:6167",
+  "sender": "@elemiso-admin:elemiso-matrix:6167",
+  "state_key": "",
+  "type": "m.room.topic",
+  "unsigned": {
+   "age": 182849
+  }
+ },
+ {
+  "content": {
+   "name": "Worker: canary"
+  },
+  "event_id": "$zwnH3hPrYLEn5sfTRhBaJg-xo_G_98ijVz0dN5dqwJo",
+  "origin_server_ts": 1789572256100,
+  "room_id": "!vf8ToP5CyPknkHDK8V:elemiso-matrix:6167",
+  "sender": "@elemiso-admin:elemiso-matrix:6167",
+  "state_key": "",
+  "type": "m.room.name",
+  "unsigned": {
+   "age": 182849
+  }
+ },
+ {
+  "content": {
+   "displayname": "manager",
+   "is_direct": false,
+   "membership": "invite"
+  },
+  "event_id": "$OrsOHJJzs067TDUJGf4Jizd8Ll9ASj9nhFuEmD4SbgE",
+  "origin_server_ts": 1789572256101,
+  "room_id": "!vf8ToP5CyPknkHDK8V:elemiso-matrix:6167",
+  "sender": "@elemiso-admin:elemiso-matrix:6167",
+  "state_key": "@manager:elemiso-matrix:6167",
+  "type": "m.room.member",
+  "unsigned": {
+   "age": 182848
+  }
+ },
+ {
+  "content": {
+   "displayname": "canary",
+   "is_direct": false,
+   "membership": "invite"
+  },
+  "event_id": "$Jxccm4TVWACGLWzp_LLRFBr9z_8YhMpGVXcvfRSrfUA",
+  "origin_server_ts": 1789572256103,
+  "room_id": "!vf8ToP5CyPknkHDK8V:elemiso-matrix:6167",
+  "sender": "@elemiso-admin:elemiso-matrix:6167",
+  "state_key": "@canary:elemiso-matrix:6167",
+  "type": "m.room.member",
+  "unsigned": {
+   "age": 182846
+  }
+ },
+ {
+  "content": {
+   "createdBy": "agentteams",
+   "lifecycle": "persistent",
+   "roomKind": "worker_room",
+   "schemaVersion": 1,
+   "workerName": "canary"
+  },
+  "event_id": "$TqoCxW2Jh0lFBYpgzHHIo6vAFRsq3kpnkjKa5GYHfTA",
+  "origin_server_ts": 1789572256105,
+  "room_id": "!vf8ToP5CyPknkHDK8V:elemiso-matrix:6167",
+  "sender": "@elemiso-admin:elemiso-matrix:6167",
+  "state_key": "",
+  "type": "room.meta",
+  "unsigned": {
+   "age": 182844,
+   "prev_content": {
+    "createdBy": "agentteams",
+    "lifecycle": "persistent",
+    "roomKind": "worker_room",
+    "schemaVersion": 1,
+    "workerName": "canary"
+   },
+   "prev_sender": "@elemiso-admin:elemiso-matrix:6167",
+   "replaces_state": "$ygPSWyV8gjFqjWcwYoS9oZy1lmTzeSfpTcz2_tGizfc"
+  }
+ },
+ {
+  "content": {
+   "displayname": "canary",
+   "membership": "join"
+  },
+  "event_id": "$HWL89ZW2Sd1-nr9zjDAQGtY_phFuKVOppLvhW4pM-aI",
+  "origin_server_ts": 1789572256107,
+  "room_id": "!vf8ToP5CyPknkHDK8V:elemiso-matrix:6167",
+  "sender": "@canary:elemiso-matrix:6167",
+  "state_key": "@canary:elemiso-matrix:6167",
+  "type": "m.room.member",
+  "unsigned": {
+   "age": 182842,
+   "prev_content": {
+    "displayname": "canary",
+    "is_direct": false,
+    "membership": "invite"
+   },
+   "prev_sender": "@elemiso-admin:elemiso-matrix:6167",
+   "replaces_state": "$Jxccm4TVWACGLWzp_LLRFBr9z_8YhMpGVXcvfRSrfUA"
+  }
+ },
+ {
+  "content": {
+   "body": "canary: tool-path check: use your shell command tool to run exactly this command: echo CANARY-TOOL-OK-$((6*7)) . Then reply with only the single output line of that command, nothing else.",
+   "format": "org.matrix.custom.html",
+   "formatted_body": "<a href=\"https://matrix.to/#/@canary:elemiso-matrix:6167\">canary</a> tool-path check: use your shell command tool to run exactly this command: echo CANARY-TOOL-OK-$((6*7)) . Then reply with only the single output line of that command, nothing else.",
+   "m.mentions": {
+    "user_ids": [
+     "@canary:elemiso-matrix:6167"
+    ]
+   },
+   "msgtype": "m.text"
+  },
+  "event_id": "$_SBPKkJoz3bagoHjOlkCzMuTJqVk2Ea2B_FFuOJogEY",
+  "origin_server_ts": 1789572384216,
+  "room_id": "!vf8ToP5CyPknkHDK8V:elemiso-matrix:6167",
+  "sender": "@elemiso-admin:elemiso-matrix:6167",
+  "type": "m.room.message",
+  "unsigned": {
+   "age": 54733,
+   "transaction_id": "canary-tool1-1789572384213"
+  }
+ },
+ {
+  "content": {
+   "body": "CANARY-TOOL-OK-42",
+   "format": "org.matrix.custom.html",
+   "formatted_body": "<p>CANARY-TOOL-OK-42</p>",
+   "msgtype": "m.text"
+  },
+  "event_id": "$e7x1BHx_IvR03O-FGTXciqHa19tNsgoLenFK2rz8N-M",
+  "origin_server_ts": 1789572385996,
+  "room_id": "!vf8ToP5CyPknkHDK8V:elemiso-matrix:6167",
+  "sender": "@canary:elemiso-matrix:6167",
+  "type": "m.room.message",
+  "unsigned": {
+   "age": 52953
+  }
+ }
+]

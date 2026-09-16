@@ -1,0 +1,13 @@
+{
+  "task_id": "pr3r2t-review-1",
+  "project_id": "elemiso-pr3r2t-reject",
+  "task_title": "Independent security review of PR #3",
+  "assigned_to": "reviewer",
+  "room_id": "room:!RErK7WVs9iUeaszwho:elemiso-matrix:6167",
+  "status": "submitted",
+  "depends_on": [],
+  "assigned_at": "2026-09-16T16:06:45Z",
+  "acknowledged_at": "2026-09-16T16:06:46Z",
+  "submitted_at": "2026-09-16T16:07:28Z",
+  "event_id": "$-qLw1eXJwgk7IEH7IPR1lUch0062jQXvqwNAsb7wo4g"
+}

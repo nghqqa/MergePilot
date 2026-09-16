@@ -1,0 +1,8 @@
+matrix.receive
+agent.session.run
+genai.llm.call
+genai.llm.request
+tool.execute_shell_command
+genai.llm.call
+genai.llm.request
+matrix.send

@@ -1,0 +1,61 @@
+{
+ "window_start": "2026-09-16T16:06:00Z",
+ "team_room_events": 15,
+ "dm_events": 4,
+ "leader": {
+  "spans_delta_after_pr2_snapshot": 92,
+  "by_name": {
+   "genai.llm.call": 22,
+   "genai.llm.request": 22,
+   "matrix.send": 10,
+   "matrix.receive": 10,
+   "agent.session.run": 6,
+   "tool.projectflow": 4,
+   "tool.filesync": 4,
+   "tool.read_file": 4,
+   "tool.execute_shell_command": 3,
+   "tool.edit_file": 3,
+   "tool.taskflow": 2,
+   "taskflow.notify_assignment": 1,
+   "tool.message": 1
+  },
+  "export_batches_ok_pr3_window": 18,
+  "spans_exported_pr3_window": 85,
+  "export_failures_pr3_window": 0
+ },
+ "reviewer": {
+  "spans_delta_after_pr2_snapshot": 55,
+  "by_name": {
+   "genai.llm.call": 13,
+   "genai.llm.request": 13,
+   "matrix.send": 9,
+   "matrix.receive": 6,
+   "tool.execute_shell_command": 6,
+   "tool.write_file": 3,
+   "tool.taskflow": 2,
+   "tool.read_file": 2,
+   "agent.session.run": 1
+  },
+  "export_batches_ok_pr3_window": 15,
+  "spans_exported_pr3_window": 56,
+  "export_failures_pr3_window": 0
+ },
+ "fixer": {
+  "spans_delta_after_pr2_snapshot": 15,
+  "by_name": {
+   "matrix.receive": 15
+  },
+  "export_batches_ok_pr3_window": 11,
+  "spans_exported_pr3_window": 15,
+  "export_failures_pr3_window": 0
+ },
+ "verifier": {
+  "spans_delta_after_pr2_snapshot": 15,
+  "by_name": {
+   "matrix.receive": 15
+  },
+  "export_batches_ok_pr3_window": 10,
+  "spans_exported_pr3_window": 15,
+  "export_failures_pr3_window": 0
+ }
+}
