@@ -17,11 +17,11 @@
 
 ## 演示
 
-**Demo 视频（75 秒 · 1080p · 中文旁白）**：[Watch Demo](https://github.com/nghqqa/MergePilot/releases/download/v0.2.0/MergePilot-demo.mp4)
+**Demo 视频（75 秒 · 1080p · 中文旁白，早期版本界面）**：[Watch Demo](https://github.com/nghqqa/MergePilot/releases/download/v0.2.0/MergePilot-demo.mp4)
 
-![MergePilot 演示平台总览：普通变更 Agent 自主完成，高风险系统停下等人工（PR#1 自主 / PR#2 人审门 / REPLAY 回放模式）](docs/assets/readme/console-overview-current.png)
+![MergePilot 决赛演示：6 案例组合（R2 干净复跑主案例 / R1 审计修正对照 / 历史回放 / PR#3 真实拒绝 / RAG 闭环 / 返工机制），每张卡标注执行性质与证据等级](docs/assets/readme/portfolio-overview-r2.png)
 
-**在线体验**：`git clone` 后执行 `cd demo-platform && node backend/server.mjs`，访问 `http://127.0.0.1:4173`（若该端口落在 Windows 保留段被拒，服务会自动顺延并在控制台打印实际地址）。零第三方依赖，无需 `npm install`。也可下载离线包 [MergePilot-demo.zip](https://github.com/nghqqa/MergePilot/releases/download/v0.2.0/MergePilot-demo.zip)（约 1 MB）。
+**在线体验**：`git clone` 后执行 `cd demo-platform && node backend/server.mjs`，访问 `http://127.0.0.1:4173`（若该端口落在 Windows 保留段被拒，服务会自动顺延并在控制台打印实际地址）。零第三方依赖，无需 `npm install`。也可下载离线包 [MergePilot-demo-v0.3.0.zip](https://github.com/nghqqa/MergePilot/releases/download/v0.3.0/MergePilot-demo-v0.3.0.zip)（约 1.5 MB，含 6 案例）。
 
 ## 要解决的问题
 
@@ -43,7 +43,7 @@ Node.js ≥ 18 即可，无需 `npm install`：前端已预构建（`frontend/di
 
 自测：`node backend/test/selftest.mjs`（61 项：脱敏、回放完整性、API 契约、无泄密扫描、决赛证据等级与版本绑定闸门；2026-09-13 前为 54 项；[CI 在 Node 18/20/22 上自动运行](https://github.com/nghqqa/MergePilot/actions/workflows/selftest.yml)）。
 
-不想 clone？下载 [MergePilot-demo.zip](https://github.com/nghqqa/MergePilot/releases/download/v0.2.0/MergePilot-demo.zip)（约 1 MB，已含证据、预检脚本与现场演示手册），解压后进入 `MergePilot-demo-现场版` 目录，双击 `start-demo.bat` 或执行 `node MergePilot-demo/backend/server.mjs`。PPT、视频与完整提交包见 [Release v0.2.0](https://github.com/nghqqa/MergePilot/releases/tag/v0.2.0)。
+不想 clone？下载 [MergePilot-demo-v0.3.0.zip](https://github.com/nghqqa/MergePilot/releases/download/v0.3.0/MergePilot-demo-v0.3.0.zip)（约 1.5 MB，含 6 案例证据与一键启动），解压后进入 `MergePilot-demo-v0.3.0` 目录，双击 `start-demo.bat` 或执行 `node MergePilot-demo/backend/server.mjs`。视频与历史版本见 [Releases](https://github.com/nghqqa/MergePilot/releases)。
 
 ### 完整隔离栈（离线镜像 + 一键启动）
 
