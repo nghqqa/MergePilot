@@ -4,6 +4,9 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, Copy, Check, ArrowRight } from 'lucide-react';
 
 export const LEVEL_ZH = {
+  REAL_EXECUTED_AGENTTEAMS_LIVE: '本次真实运行',
+  REAL_EXECUTED_AGENTTEAMS: '真实执行 · AgentTeams',
+  REAL_OFFLINE_EXPERIMENT: '真实离线实验 · 合成语料',
   REAL_EXECUTED: '真实执行',
   LOCAL_REAL_SQL: '本地真实 SQL',
   CONTROL_PLANE_MECHANISM: '控制面机制验证',
@@ -12,13 +15,19 @@ export const LEVEL_ZH = {
   NOT_EXECUTED: '未执行',
 };
 
+// Accepts a string OR an array of levels (cases carry both, e.g. live + replay).
 export function LevelChip({ level, zh = true }) {
-  if (!level) return <span className="chip gray">未标注</span>;
+  const levels = Array.isArray(level) ? level.filter(Boolean) : (level ? [level] : []);
+  if (levels.length === 0) return <span className="chip gray">未标注</span>;
   return (
-    <span className={`chip lv-${level}`}>
-      <span className="cdot" aria-hidden="true" />
-      <span className="mono">{level}</span>
-      {zh && <span style={{ fontWeight: 500 }}>{LEVEL_ZH[level] || ''}</span>}
+    <span style={{ display: 'inline-flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+      {levels.map((lv) => (
+        <span key={lv} className={`chip lv-${lv}`}>
+          <span className="cdot" aria-hidden="true" />
+          <span className="mono">{lv}</span>
+          {zh && LEVEL_ZH[lv] ? <span style={{ fontWeight: 500 }}>{LEVEL_ZH[lv]}</span> : null}
+        </span>
+      ))}
     </span>
   );
 }

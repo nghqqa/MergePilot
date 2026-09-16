@@ -19,6 +19,10 @@ const TIERS = {
   finalsDbLoop: 'REAL_SQL_VERIFICATION_ISOLATED_POSTGRES',
   finalsReworkLoop: 'MECHANISM_VERIFICATION',
   finalsRagLoop: 'REAL_OFFLINE_EXPERIMENT_SYNTHETIC_CORPUS',
+  // Live AgentTeams runs (2026-09-16) — integrity-only summaries here; the
+  // case payloads are built in demo_cases.mjs from the same dirs.
+  finalsPr2Live: 'REAL_EXECUTED_AGENTTEAMS_LIVE_20260916',
+  finalsPr3Live: 'REAL_EXECUTED_AGENTTEAMS_LIVE_20260916',
 };
 
 const cache = new Map();
@@ -26,13 +30,15 @@ const cache = new Map();
 function load(key) {
   if (cache.has(key)) return cache.get(key);
   let out;
-  if (!exists(key, 'report.json')) {
+  // The live-run dirs carry README.md rather than report.json.
+  const marker = exists(key, 'report.json') ? 'report.json' : (exists(key, 'README.md') ? 'README.md' : null);
+  if (!marker) {
     out = { available: false, key, dir: EVIDENCE_DIRS[key], tier: TIERS[key], reason: 'EVIDENCE_NOT_AVAILABLE' };
   } else {
     const integrity = verifyDirIntegrity(key);
     out = {
       available: true, key, dir: EVIDENCE_DIRS[key], tier: TIERS[key], integrity,
-      report: readJson(key, 'report.json'),
+      report: marker === 'report.json' ? readJson(key, 'report.json') : null,
       run_meta: exists(key, 'run-meta.json') ? readJson(key, 'run-meta.json') : null,
     };
   }

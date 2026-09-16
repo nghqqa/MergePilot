@@ -400,6 +400,8 @@ function caseAFastAPI() {
     },
     banner: null,
     stage_timeline: null,
+    relation_note: '与主案例 fastapi-pr2-live-20260916 为同一 PR：本卡是 2026-08-29 历史运行对照（当时亦为真实运行，今日已复跑）。',
+    portfolio_role: '案例 A 对照 · 历史回放',
     chain: ['案例 fastapi-pr2-cwe22', 'PR #2', `commit ${short(commitSha, 10)}`, 'demo_high_risk.py', 'fix.patch', 'probe 200→404', 'VERIFICATION_PASSED'],
     generated_at: '运行 2026-08-29 · 状态锁定 2026-08-29T13:09+08:00（pr-state-final.json）',
     source_dir: 'evidence/PHASE14-WINDOWS-*（replayMaterials · fixVerify · fixAudit · finalLock · highRiskGateBlocked）',
@@ -575,16 +577,28 @@ function caseDPr2Live() {
       detail: { title: '执行细节（默认折叠）', quote: 'Reviewer 在自己容器内 clone+checkout head SHA（git rev-parse 校验）后独立审查并运行真实复现测试。', outbox: [], events: [] },
     },
     {
-      id: 'fix-diff', title: '人工安全门 → 修复 diff',
+      id: 'gate', title: '人工安全门（真实批准）',
       points: [
-        { k: '人工门', v: '操作员查看具体 findings 后批准修复+验证（本次真实批准，修复前位置，不复用历史批准）' },
-        { k: '交付物', v: 'attempt-1.diff —— 单文件 +13/−7，测试零改动，零 GitHub 写入', },
-        { k: '修复策略', v: 'realpath 归一化 + commonpath 包含性校验；越界 400 / 缺失 404 / 合法 200' },
-        { k: 'patch sha256', v: '674356fc9a661faa49b97b789d75ff4529b95a5fac7f39dad0301397c0116081', mono: true },
+        { k: '门触发', v: 'Reviewer 结论 HIGH + HUMAN_VERIFICATION_REQUIRED: YES —— 系统停等，禁止派发修复' },
+        { k: '本案例的真实经过', v: 'Leader 曾违规委派 fix（被操作员作废回滚）→ 操作员向用户展示真实 findings → 用户批准（批准指令 DM $5Bj24K0DHVkjc2BD2_8A9OR7Mh-U4d-PS_fw4WJ9sOM）' },
+        { k: '操作员决策', v: '查看具体 findings 后批准修复+验证 —— 本次真实批准，位置在修复前，不复用历史批准' },
+        { k: '门记录', v: 'human-gate-approval.md 落盘项目存储（范围+禁令+门前提 anomalies）' },
       ],
-      evidence: ['ev-live-gate', 'ev-live-fix'],
+      evidence: ['ev-live-gate'],
       probe: null,
       detail: { title: '门与边界（默认折叠）', quote: '门未批期间 Leader 曾违规委派（已作废回滚）、Fixer 曾自启（已叫停）——均留痕于 AUDIT §3，体现"门=权限拓扑"需操作员强制执行。', outbox: [], events: [] },
+    },
+    {
+      id: 'fix-diff', title: '修复 diff（Fixer 最小修复）',
+      points: [
+        { k: '交付物', v: 'attempt-1.diff —— 单文件 +13/−7，测试零改动，零 GitHub 写入' },
+        { k: '修复策略', v: 'realpath 归一化 + commonpath 包含性校验；越界 400 / 缺失 404 / 合法 200' },
+        { k: 'patch sha256', v: '674356fc9a661faa49b97b789d75ff4529b95a5fac7f39dad0301397c0116081', mono: true },
+        { k: '正式委派', v: '过门后 Leader 重派 $uyClhW_xZMMmxZx49V_e5buvoI3dHYTPcve-RnWIoV0（门前的违规委派已作废）' },
+      ],
+      evidence: ['ev-live-fix'],
+      probe: null,
+      detail: { title: 'fixer 执行细节（默认折叠）', quote: 'fixer 在自己容器的新目录 clone+checkout 同一 head SHA，修改单文件后 py_compile 自检、生成 diff 并提交 TaskResult。', outbox: [], events: [] },
     },
     {
       id: 'verify', title: '独立验证（VERIFIED PASS）',
@@ -630,6 +644,7 @@ function caseDPr2Live() {
 
   return {
     case_id: 'fastapi-pr2-live-20260916',
+    portfolio_role: '案例 A · 主案例（本次真实执行）',
     shape: 'guided',
     name: 'FastAPI PR #2 · 本次真实运行（2026-09-16）',
     short_name: '主案例 · PR #2 真实运行',
@@ -896,6 +911,7 @@ function caseEPr3Reject() {
 
   return {
     case_id: 'fastapi-pr3-reject',
+    portfolio_role: '案例 B · 人工拒绝分支',
     shape: 'guided',
     name: liveAvailable ? 'FastAPI PR #3 · 人工拒绝（本次真实执行 + 历史对照）' : 'FastAPI PR #3 · 人工拒绝（短案例）',
     short_name: liveAvailable ? '第二案例 · PR #3 真实拒绝' : '第二案例 · PR #3 人工拒绝',
@@ -1101,6 +1117,7 @@ function caseFRagLoop() {
 
   return {
     case_id: 'rag-retrieval-loop',
+    portfolio_role: '附录 · 观测→评估→优化→回测闭环',
     shape: 'guided',
     name: 'RAG 检索闭环 · 观测→评估→数据集→优化→回测',
     short_name: '闭环能力 · RAG 检索优化',
@@ -1338,6 +1355,7 @@ function caseBRework() {
 
   return {
     case_id: 'rework-payments',
+    portfolio_role: '案例 C · 返工机制（控制面）',
     shape: 'guided',
     name: '支付幂等 · 返工机制案例',
     short_name: '机制案例 · 支付幂等',
@@ -1497,6 +1515,7 @@ function caseCDbLoop() {
 
   return {
     case_id: 'db-migration-orders',
+    portfolio_role: '附录 · 数据库迁移与版本绑定',
     shape: 'brief',
     extra: true,
     name: '订单库迁移 · 历史数据兼容',
@@ -1583,6 +1602,7 @@ function summarize(x) {
   return {
     case_id: x.case_id, shape: x.shape, extra: !!x.extra, name: x.name, short_name: x.short_name,
     one_liner: x.one_liner, repo: x.repo, pr: x.pr, pr_url: x.pr_url ?? null, run_id: x.run_id,
+    portfolio_role: x.portfolio_role ?? null, relation_note: x.relation_note ?? null,
     sha: x.sha, sha_kind: x.sha_kind, evidence_level: x.evidence_level, replay_note: x.replay_note ?? null,
     purpose: x.purpose, risk_tags: x.risk_tags, status: x.status, facts: x.facts,
     generated_at: x.generated_at, source_dir: x.source_dir, steps: x.steps?.length ?? null,

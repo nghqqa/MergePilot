@@ -29,6 +29,10 @@ export default function GuidedDemoPage({ caseId: propCaseId }) {
 
   useEffect(() => { let alive = true; api(`/api/demo/cases/${caseId}`).then((r) => alive && setC(r)).catch((e) => alive && setErr(e)); return () => { alive = false; }; }, [caseId]);
 
+  // ?ev=<evidence id> deep link: open the evidence drawer once the case is loaded.
+  const evParam = sp.get('ev');
+  useEffect(() => { if (evParam && c && (c.items || []).some((x) => x.id === evParam)) setDrawer(evParam); }, [evParam, c]); // eslint-disable-line
+
   const total = c?.steps?.length ?? 5;
   const stepIdx = Math.min(Math.max((Number(sp.get('step')) || 1) - 1, 0), total - 1);
   const go = (i) => { const n = Math.min(Math.max(i, 0), total - 1); setSp({ step: String(n + 1) }, { replace: false }); };
@@ -63,14 +67,14 @@ export default function GuidedDemoPage({ caseId: propCaseId }) {
     <main className="dwrap" key={resetKey}>
       {/* case header */}
       <div className="dhead-row" style={{ alignItems: 'center' }}>
-        <Link to="/cases" className="evlink" style={{ paddingLeft: 0 }}><ArrowLeft size={14} /> 返回案例总览</Link>
+        <Link to="/cases" className="evlink" style={{ paddingLeft: 0 }}><ArrowLeft size={14} /> 返回案例选择</Link>
         <span className="faint">/</span>
         <div className="grow" style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', minWidth: 0 }}>
           <h1 className="dh1" style={{ fontSize: 18, margin: 0 }}>{c.name}</h1>
           <span className="chip slate mono">{c.pr.split(' · ')[0]}</span>
           <span className="chip slate mono">{c.run_id}</span>
           <LevelChip level={c.evidence_level} />
-          <Verdict v={c.status.verdict}>{c.status.verdict} 5/5</Verdict>
+          <Verdict v={c.status.verdict}>{c.status.verdict} {stepIdx + 1}/{total}</Verdict>
         </div>
         <button className="btn ghost small" onClick={reset} data-tip="回到第 1 步并清除演示审批" aria-label="重置演示"><RotateCcw size={14} /> 重置演示</button>
       </div>
@@ -159,7 +163,7 @@ export default function GuidedDemoPage({ caseId: propCaseId }) {
         <span className="pos"><b className="tnum">步骤 {stepIdx + 1} / {total}</b><span>{step.title}</span></span>
         <span className="right">
           <span className="kbd"><kbd>←</kbd> <kbd>→</kbd> 切换步骤 · <kbd>Esc</kbd> 关闭证据</span>
-          <Link className="evlink" to="/cases">案例总览</Link>
+          <Link className="evlink" to="/cases">返回案例选择</Link>
         </span>
       </div>
 

@@ -93,6 +93,33 @@ export default function EvidenceLibraryPage() {
         </section>
       ))}
 
+      {/* dynamic evidence index for every portfolio case (drawer-backed) */}
+      <section className="panel" style={{ marginTop: 16 }}>
+        <div className="panel-head"><ShieldCheck size={15} className="faint" /><h2 className="dh2">全部案例 · 证据索引</h2><span className="spacer" /><span className="small faint">点击「打开」查看证据原文</span></div>
+        <div className="panel-body" style={{ paddingTop: 6 }}>
+          {o.cases.map((c) => (
+            <div key={c.case_id} style={{ marginBottom: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <Link className="evlink" style={{ paddingLeft: 0, fontWeight: 600 }} to={c.shape === 'guided' ? `/demo/${c.case_id}?step=1` : `/demo/${c.case_id}`}>{c.name}</Link>
+                <LevelChip level={c.evidence_level} />
+                <span className="small faint">{c.portfolio_role || ''}</span>
+              </div>
+              <div style={{ marginTop: 4 }}>
+                {(c.evidence_index || []).map((it) => (
+                  <div className="evrow" key={c.case_id + '/' + it.id}>
+                    <div className="t">
+                      {it.title}
+                      <div className="small faint mono" style={{ marginTop: 2 }}>{it.level}</div>
+                    </div>
+                    <button className="evlink" onClick={() => setDrawer([c.case_id, it.id])}>打开 <ChevronRight size={13} /></button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
       <section className="panel" style={{ marginTop: 16 }}>
         <div className="panel-head"><Ban size={15} className="faint" /><h2 className="dh2">明确边界 · NOT_EXECUTED</h2></div>
         <div className="panel-body">
