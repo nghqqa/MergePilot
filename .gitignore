@@ -17,3 +17,7 @@ release/preview/manifests/
 
 # frontend build dependencies (installed locally to rebuild demo-platform/frontend/dist; never committed)
 demo-platform/frontend/node_modules/
+
+# Local model/API credentials used only for authorized offline/isolated runs.
+key.key
+run-secrets/

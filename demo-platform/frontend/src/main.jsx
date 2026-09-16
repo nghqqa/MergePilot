@@ -8,6 +8,7 @@ import '@fontsource-variable/archivo/wdth.css';
 import '@fontsource/jetbrains-mono/400.css';
 import '@fontsource/jetbrains-mono/700.css';
 import './theme.css';
+import './demo.css';
 
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>

@@ -1,15 +1,57 @@
-// frontend/src/App.jsx — layout shell: topbar + routed pages + demo control bar.
+// frontend/src/App.jsx — dual-chrome shell.
+//   Demo world (light, finals guided replay): / , /cases , /demo/:caseId , /evidence
+//     → DemoChrome (new header/footer, no autoplay controls).
+//   Legacy replay world (dark, Phase 14): /cases/pr* , /pr4 , /rework , /rag ,
+//   /audit , /ops → original topbar + DemoBar, untouched.
 import React from 'react';
-import { Routes, Route, Link, NavLink } from 'react-router-dom';
+import { Routes, Route, useLocation } from 'react-router-dom';
 import { useDemo } from './store.jsx';
-import Overview from './pages/Overview.jsx';
+import DemoChrome from './DemoChrome.jsx';
+import OverviewPage from './pages/demo/OverviewPage.jsx';
+import CaseSelectorPage from './pages/demo/CaseSelectorPage.jsx';
+import GuidedDemoPage from './pages/demo/GuidedDemoPage.jsx';
+import CaseBriefPage from './pages/demo/CaseBriefPage.jsx';
+import EvidenceLibraryPage from './pages/demo/EvidenceLibraryPage.jsx';
 import CasePage from './pages/CasePage.jsx';
 import AuditPage from './pages/AuditPage.jsx';
 import RagPage from './pages/RagPage.jsx';
 import OpsPage from './pages/OpsPage.jsx';
 import Pr4Page from './pages/Pr4Page.jsx';
 import ReworkPage from './pages/ReworkPage.jsx';
-import { ModeBanner, DemoBar, ErrorBox, LoadingBox } from './components/ui.jsx';
+import Overview from './pages/Overview.jsx';
+import { DemoBar, ErrorBox, LoadingBox } from './components/ui.jsx';
+
+function DemoRoutes() {
+  return (
+    <Routes>
+      <Route path="/" element={<OverviewPage />} />
+      <Route path="/cases" element={<CaseSelectorPage />} />
+      {/* shape-specific demo pages; unknown ids fall through to the selector */}
+      <Route path="/demo/rework-payments" element={<GuidedDemoPage caseId="rework-payments" />} />
+      <Route path="/demo/db-migration-orders" element={<CaseBriefPage caseId="db-migration-orders" />} />
+      <Route path="/demo/:caseId" element={<CaseSelectorPage />} />
+      <Route path="/evidence" element={<EvidenceLibraryPage />} />
+      <Route path="*" element={<CaseSelectorPage />} />
+    </Routes>
+  );
+}
+
+function LegacyRoutes() {
+  return (
+    <Routes>
+      <Route path="/" element={<Overview />} />
+      <Route path="/cases/:caseId" element={<CasePage />} />
+      <Route path="/audit" element={<AuditPage />} />
+      <Route path="/pr4" element={<Pr4Page />} />
+      <Route path="/rework" element={<ReworkPage />} />
+      <Route path="/rag" element={<RagPage />} />
+      <Route path="/ops" element={<OpsPage />} />
+      <Route path="*" element={<main className="page"><LoadingBox text="加载中…" /></main>} />
+    </Routes>
+  );
+}
+
+const isDemoPath = (p) => p === '/' || p === '/cases' || p.startsWith('/demo/') || p === '/evidence';
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -34,7 +76,6 @@ class ErrorBoundary extends React.Component {
               <button className="btn ghost" onClick={() => window.location.reload()}>重载</button>
             </div>
           </div>
-          <DemoBar />
         </main>
       );
     }
@@ -43,53 +84,54 @@ class ErrorBoundary extends React.Component {
 }
 
 export default function App() {
-  const { error, modes, mode } = useDemo();
+  const { error } = useDemo();
+  const { pathname } = useLocation();
+  const demo = isDemoPath(pathname);
+
+  if (demo) {
+    return (
+      <DemoChrome>
+        {error
+          ? <main className="dwrap"><div className="dstate error"><ErrorBox e={error} /></div></main>
+          : <ErrorBoundary><DemoRoutes /></ErrorBoundary>}
+      </DemoChrome>
+    );
+  }
+
   return (
     <>
       <header className="topbar">
         <div className="topbar-inner">
-          <Link to="/" style={{ textDecoration: 'none', color: 'inherit' }}>
+          <a href="/" style={{ textDecoration: 'none', color: 'inherit' }}>
             <div className="brand">
               <span className="brand-name">Merge<span className="mp">Pilot</span></span>
-              <span className="brand-sub">多 Agent 审查 · 受控修复 · 人工安全门</span>
+              <span className="brand-sub">历史回放包（Phase 14）· 旧版视图</span>
             </div>
-          </Link>
+          </a>
           <nav className="topnav">
-            <NavLink to="/" end>总览</NavLink>
-            <NavLink to="/cases/pr1-normal-review">PR#1</NavLink>
-            <NavLink to="/cases/pr2-high-risk-human-gate">PR#2</NavLink>
-            <NavLink to="/cases/pr3-high-risk-human-reject">PR#3</NavLink>
-            <NavLink to="/pr4">PR#4</NavLink>
-            <NavLink to="/rework">返工闭环</NavLink>
-            <NavLink to="/rag">RAG</NavLink>
-            <NavLink to="/ops">Operations</NavLink>
-            <NavLink to="/audit">审计</NavLink>
+            <a href="/cases/pr1-normal-review">PR#1</a>
+            <a href="/cases/pr2-high-risk-human-gate">PR#2</a>
+            <a href="/cases/pr3-high-risk-human-reject">PR#3</a>
+            <a href="/pr4">PR#4</a>
+            <a href="/rework">返工闭环</a>
+            <a href="/rag">RAG</a>
+            <a href="/ops">Operations</a>
+            <a href="/audit">审计</a>
+            <a href="/">← 决赛演示</a>
           </nav>
-          <div className="topbar-right">
-            <ModeBanner modes={modes} mode={mode} />
-          </div>
         </div>
       </header>
 
       {error && <main className="page" style={{ paddingTop: 30 }}><ErrorBox e={error} /></main>}
       {!error && (
         <ErrorBoundary>
-          <Routes>
-            <Route path="/" element={<Overview />} />
-            <Route path="/cases/:caseId" element={<CasePage />} />
-            <Route path="/audit" element={<AuditPage />} />
-            <Route path="/pr4" element={<Pr4Page />} />
-            <Route path="/rework" element={<ReworkPage />} />
-            <Route path="/rag" element={<RagPage />} />
-            <Route path="/ops" element={<OpsPage />} />
-            <Route path="*" element={<main className="page"><LoadingBox text="加载中…" /></main>} />
-          </Routes>
+          <LegacyRoutes />
         </ErrorBoundary>
       )}
 
       <DemoBar />
       <footer className="pagefoot">
-        MergePilot Demo Platform · Phase 14.2H-WD · 人工门/任务状态/审计均来自真实 AgentTeams/CoPaw 证据，前端不伪造
+        MergePilot Demo Platform · 历史回放视图 — 人工门/任务状态/审计均来自真实证据，前端不伪造
       </footer>
     </>
   );

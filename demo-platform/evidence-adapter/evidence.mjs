@@ -31,6 +31,10 @@ export const EVIDENCE_DIRS = {
   finalsDbLoop: 'FINALS-DB-MIGRATION-LOOP-20260914',
   finalsReworkLoop: 'FINALS-REWORK-LOOP-20260914',
   finalsRagLoop: 'FINALS-RAG-LOOP-20260914',
+  // Finals live AgentTeams run (2026-09-16): real PR #2 case executed on the
+  // elemiso isolated stack with CoPaw Leader orchestration. Has its own
+  // SHA256SUMS; verified separately like the other FINALS dirs.
+  finalsPr2Live: 'FINALS-ELEM-PR2-LIVE-20260916',
 };
 
 export function dirPath(key) {

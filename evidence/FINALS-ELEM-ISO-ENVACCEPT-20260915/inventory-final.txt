@@ -1,0 +1,36 @@
+# docker inventory at phase-1 end (2026-09-15T14:08:56Z)
+## containers (all)
+elemiso-worker-verifier	agentteams/copaw-worker:223ddc2-build1	Exited (0) 8 minutes ago	
+elemiso-worker-fixer	agentteams/copaw-worker:223ddc2-build1	Exited (0) 8 minutes ago	
+elemiso-worker-reviewer	agentteams/copaw-worker:223ddc2-build1	Exited (0) 8 minutes ago	
+elemiso-manager	agentteams/manager:223ddc2	Exited (0) 8 minutes ago	
+elemiso-ctrl	agentteams/agentteams-embedded:223ddc2	Exited (0) 8 minutes ago	elem-iso-20260915
+p14h2-wd-element-web	vectorim/element-web:latest	Exited (0) 21 hours ago	
+agentteams-worker-p14h2-copaw-worker-verifier	agentteams/copaw-worker:223ddc2-build1	Exited (0) 2 days ago	
+agentteams-worker-p14h2-copaw-worker-fixer	agentteams/copaw-worker:223ddc2-build1	Exited (0) 2 days ago	
+agentteams-worker-p14h2-copaw-worker-reviewer	agentteams/copaw-worker:223ddc2-build1	Exited (0) 2 days ago	
+agentteams-worker-p14h2-copaw-worker-manager	agentteams/copaw-worker:223ddc2-build1	Exited (0) 2 days ago	
+agentteams-worker-p14h2-wd-worker-verifier	agentteams/worker-agent:223ddc2	Exited (0) 2 days ago	
+agentteams-worker-p14h2-wd-worker-fixer	agentteams/worker-agent:223ddc2	Exited (0) 2 days ago	
+agentteams-worker-p14h2-wd-worker-reviewer	agentteams/worker-agent:223ddc2	Exited (0) 2 days ago	
+agentteams-worker-p14h2-wd-worker-manager	agentteams/worker-agent:223ddc2	Exited (0) 2 days ago	
+agentteams-manager	agentteams/manager:223ddc2	Exited (0) 2 days ago	
+p14h2-wd-ctrl	agentteams/agentteams-embedded:223ddc2	Exited (137) 2 days ago	
+## volumes (elemiso) with CreatedAt
+elemiso-ctrl-data 2026-09-15T13:04:06Z label.mp.task=elem-iso-20260915
+elemiso-worker-fixer-auth 2026-09-15T13:25:24Z label.mp.task=
+elemiso-worker-reviewer-auth 2026-09-15T13:25:21Z label.mp.task=
+elemiso-worker-verifier-auth 2026-09-15T13:25:27Z label.mp.task=
+## networks
+bridge	bridge	
+elemiso-net	bridge	elem-iso-20260915
+host	host	
+none	null	
+p14h2-copaw-net	bridge	
+p14h2-wd-net	bridge	
+## totals: containers=16 volumes=28 networks=6 running=0
+## volumes created during session window (>= 2026-09-15T13:04:00Z)
+elemiso-ctrl-data 2026-09-15T13:04:06Z
+elemiso-worker-fixer-auth 2026-09-15T13:25:24Z
+elemiso-worker-reviewer-auth 2026-09-15T13:25:21Z
+elemiso-worker-verifier-auth 2026-09-15T13:25:27Z

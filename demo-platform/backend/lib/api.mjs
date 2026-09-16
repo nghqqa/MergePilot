@@ -10,6 +10,7 @@ import { datasetInventory, retrieve, answer, toolSpanTail, lastQueryMeta, RAG_DA
 import { polardbAudit, fixtureQuery, fixtureInventory } from './polardb.mjs';
 import { connectionState, evaluateLiveGates, SCHEMA_BASELINE, CANDIDATES, createBranch, validateMigration, assertData, rollbackCheck, branchState } from './polardb_adapter.mjs';
 import { dbLoopSummary, pr4GateState, pr4Decide, pr4ApplyFollowup, pr4Reset, reworkLoopSummary, ragLoopSummary, finalsIntegrity } from './finals_evidence.mjs';
+import { demoOverview, demoCases, demoCase, demoEvidence, EVIDENCE_LEVELS } from './demo_cases.mjs';
 
 const STARTED_AT = Date.now();
 
@@ -1034,6 +1035,11 @@ const routes = {
 
   'GET /api/rework-loop': async () => reworkLoopSummary(),
 
+  // -------------------------------------- Finals guided-demo case adapter (2 cases)
+  'GET /api/demo/overview': async () => demoOverview(),
+  'GET /api/demo/cases': async () => demoCases(),
+  'GET /api/demo/levels': async () => ({ levels: EVIDENCE_LEVELS }),
+
   'GET /api/finals/evidence': async () => ({
     integrity: finalsIntegrity(),
     db_loop: dbLoopSummary(),
@@ -1083,6 +1089,20 @@ export async function handle(method, pathname, query, body) {
   if (m) {
     const routeKey = `${method} /api/cases/:id${m[2] || ''}`;
     if (routes[routeKey]) return routes[routeKey](query, { id: decodeURIComponent(m[1]) }, body);
+  }
+  const dm = pathname.match(/^\/api\/demo\/cases\/([^/]+)(\/evidence)?$/);
+  if (dm) {
+    const id = decodeURIComponent(dm[1]);
+    if (dm[2]) {
+      const evId = query.get('id');
+      if (!evId) throw new ApiError(400, 'MISSING_EVIDENCE_ID', 'query ?id=<evidence id> is required');
+      const payload = demoEvidence(id, evId);
+      if (!payload) throw new ApiError(404, 'EVIDENCE_NOT_FOUND', `no evidence item ${evId} in case ${id}`);
+      return payload;
+    }
+    const c = demoCase(id);
+    if (!c) throw new ApiError(404, 'CASE_NOT_FOUND', `unknown demo case: ${id} (available: rework-payments, db-migration-orders)`);
+    return c;
   }
   throw new ApiError(404, 'NOT_FOUND', `no route: ${key}`);
 }

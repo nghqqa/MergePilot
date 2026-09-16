@@ -1,0 +1,113 @@
+# Independent Security Review — PR #2 (run-elem-fastapi-pr2-20260916-01)
+
+- **Role**: Reviewer (independent)
+- **Run ID**: run-elem-fastapi-pr2-20260916-01
+- **Repo**: https://github.com/nghqqa/fastapi-boilerplate-demo
+- **PR**: #2 — "High-risk security demo: require human verification before remediation"
+- **Head SHA verified**: `1dedf5e1992c950557064d8f4fb9039d1523deb3` (`git rev-parse HEAD` = same)
+- **Base SHA**: `4cd5bf099f88c3f3f85ee4c06b7adfe9925a6e5c`
+- **Diff scope confirmed** (`git diff 4cd5bf0..HEAD --stat`): **2 files, +122 / -0**
+  - A `backend/src/interfaces/api/v1/demo_high_risk.py` (+42)
+  - A `backend/tests/unit/test_demo_high_risk_path_traversal.py` (+80)
+- **Constraints honored**: no repository file modified; no patch/fix code included; zero GitHub writes.
+
+## Verdict
+
+- **STATUS: FINDING_CONFIRMED**
+- **SEVERITY: HIGH**
+- **CWE: CWE-22** — Improper Limitation of a Pathname to a Restricted Directory (Path Traversal)
+  (enables arbitrary file read → also CWE-73 / CWE-200 exposure)
+- **HUMAN_VERIFICATION_REQUIRED: YES** (competition human-gate: fix only after explicit human security approval)
+
+## 1. User-controlled parameter escapes the base directory
+
+- File: `backend/src/interfaces/api/v1/demo_high_risk.py`
+- Function: `demo_download` (`async def demo_download(name: str) -> FileResponse`)
+- Key lines:
+  - **L28** `DEMO_FILES_DIR = os.path.join(os.path.dirname(__file__), "demo_files_base")` — base dir.
+  - **L41** `file_path = os.path.join(DEMO_FILES_DIR, name)` — **vulnerable**: raw, user-controlled `name` is joined with **no normalization and no containment check**.
+  - **L42** `return FileResponse(file_path, filename=name)` — serves the resolved (escaped) path.
+- `name` is an unsanitized `str` query parameter bound directly to the filesystem path. `os.path.join` does not neutralize `../`; a `../`-prefixed value re-parents the resolved path outside `DEMO_FILES_DIR`.
+
+## 2. Arbitrary file read outside the base directory
+
+- Any file readable by the process (relative traversal, or absolute path via enough `../`) is returned with HTTP 200 and its raw contents. No allow-list, no `realpath`+`commonpath` containment, no null-byte / separator filtering.
+
+## 3. Reproduction (one command)
+
+```
+cd ~/pr2-work && /opt/venv/standard/bin/python -m pytest backend/tests/unit/test_demo_high_risk_path_traversal.py -q -p no:cacheprovider --noconftest -o markers=security_demo
+```
+
+Independent reviewer PoC (not the PR's own test), `~/pr2-review-repro.py`:
+
+```
+cd /root/.copaw-worker/reviewer && /opt/venv/standard/bin/python pr2-review-repro.py
+```
+
+### Real output — PR test file
+
+Repo-level `backend/tests/conftest.py` fails to import under the standard venv
+(`ModuleNotFoundError: No module named 'crudauth'`), and `security_demo` is not a registered
+pytest marker. Running the reproduction test with the module-level conftest disabled and the
+marker registered yields the real pre-fix behavior:
+
+```
+backend/tests/unit/test_demo_high_risk_path_traversal.py::test_high_risk_path_traversal_reproduces PASSED
+backend/tests/unit/test_demo_high_risk_path_traversal.py::test_high_risk_path_traversal_depth FAILED
+E   RuntimeError: File at path /tmp/pytest-of-root/.../demo-files/sub/../../../deep-secret.txt does not exist.
+========================= 1 failed, 1 passed, 1 warning in 0.42s ==========================
+```
+
+- Test 1 (`../outside/outside-secret.txt`) **PASSED** → the endpoint returned the file from
+  OUTSIDE the base dir (leak reproduced; assertion is on the *vulnerable* behavior).
+- Test 2 (deeper `../../../deep-secret.txt`) **FAILED** — a test-fixture/content mismatch
+  (the traversal resolved to a non-existent path, so `FileResponse` raised RuntimeError).
+  This is a **reproduction-test quality issue**, not a mitigation: the underlying
+  vulnerability is unmitigated in both cases.
+
+### Real output — independent reviewer PoC
+
+```
+[i] base dir (allowed)      : /tmp/reviewer-repro-8voi8f9i/demo_files_base
+[i] outside secret file     : /tmp/reviewer-repro-8voi8f9i/outside-secret.txt
+[i] base realpath           : /tmp/reviewer-repro-8voi8f9i/demo_files_base
+[+] request name            : ../outside-secret.txt
+[+] HTTP status             : 200
+[+] response body           : 'TOP-SECRET-OUTSIDE-BASE'
+[+] resolved path on server : /tmp/reviewer-repro-8voi8f9i/outside-secret.txt
+[+] escaped base dir?       : True
+[+] LEAK CONFIRMED          : True
+[*] arbitrary read attempt  : name=../../../etc/hostname -> status=200, bytes=13, content='35d73f559779'
+```
+
+Confirms both required conditions: (a) `../` escapes the base dir, (b) **arbitrary file read**
+outside the base dir, including absolute targets (`/etc/hostname`) via traversal.
+
+## 4. Impact & severity rationale
+
+- Unauthenticated-capable endpoint (router mounted without auth in the demo); HTTP 200 leak of
+  arbitrary process-readable files (secrets, config, keys, `/etc/passwd`, SSH material, etc.).
+- Internet-exposed FastAPI service → data exfiltration / credential disclosure. **HIGH**.
+- Human security approval required before remediation (PR's stated human-gate scenario); this
+  review intentionally contains **no fix code**.
+
+## 5. Notes / secondary observations
+
+- The PR's own test suite does not run cleanly in the available environment (missing `crudauth`,
+  unregistered `security_demo` marker) — a test-harness gap worth flagging separately.
+- No comparison/containment hardening present anywhere in the new file.
+===META===
+{
+  "task_id": "pr2-review-1",
+  "project_id": "elemiso-pr2-gate",
+  "task_title": "Independent security review of PR #2",
+  "assigned_to": "reviewer",
+  "room_id": "room:!RErK7WVs9iUeaszwho:elemiso-matrix:6167",
+  "status": "submitted",
+  "depends_on": [],
+  "assigned_at": "2026-09-15T17:24:11Z",
+  "acknowledged_at": "2026-09-15T17:24:14Z",
+  "submitted_at": "2026-09-16T00:02:47Z",
+  "event_id": "$lK5NAkgCQwxnNIoTahtvwFSQW4J_WrNqx5RyM24wNBI"
+}

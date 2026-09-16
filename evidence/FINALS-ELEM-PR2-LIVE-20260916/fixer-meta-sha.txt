@@ -1,0 +1,16 @@
+674356fc9a661faa49b97b789d75ff4529b95a5fac7f39dad0301397c0116081  /root/.copaw-worker/fixer/.copaw/workspaces/default/shared/tasks/pr2-fix-1/attempt-1.diff
+{
+  "task_id": "pr2-fix-1",
+  "project_id": "elemiso-pr2-gate",
+  "task_title": "Minimal fix for confirmed finding, local patch delivery",
+  "assigned_to": "fixer",
+  "room_id": "room:!RErK7WVs9iUeaszwho:elemiso-matrix:6167",
+  "status": "submitted",
+  "depends_on": [
+    "pr2-review-1"
+  ],
+  "assigned_at": "2026-09-16T00:09:35Z",
+  "acknowledged_at": "2026-09-16T00:22:05Z",
+  "submitted_at": "2026-09-16T00:22:40Z",
+  "event_id": "$uyClhW_xZMMmxZx49V_e5buvoI3dHYTPcve-RnWIoV0"
+}
