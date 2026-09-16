@@ -44,6 +44,9 @@
 - **导出**：直连 `…cn-hangzhou.log.aliyuncs.com/apm/trace/opentelemetry/v1/traces`（公网 endpoint，无中继），各容器 `OTEL_EXPORT SUCCESS` 批次合计 239、失败 0（`agentloop/audit-*-snapshot-1557Z.log`）。
 - **显式 HTTP 200 探针**（`agentloop/direct-probe-*.json`，各容器内独立 POST）：leader trace_id `2d4105035d1ce8cf…`、reviewer `1fddd4846732d9b6…`、fixer `51ec9810c992dc7a…`、verifier `2c14de8b8ea76604…`（AgentLoop 控制台可检索）。
 - 埋点实现：`image/zz_agentloop_otel.py`（v2.2 延迟 patching：.pth 导入零副作用、watcher 轮询开关、90s 宽限、仅 patch 已加载模块、稠点均为运行时按名查找——与注册时捕获引用的 taskflow/message 工具函数及 nio 回调 `_on_room_event` 解耦）。
+- **控制台证据**：`agentloop-console-screenshot-shared.png`（操作员现场截图，PR3 窗口 6 条 Trace，逐秒交叉验证见
+  `FINALS-ELEM-PR3-R2-TRACED/README.md` 第四节；PR2 窗口 trace 可按 direct-probe trace_id 检索：
+  leader `2d4105035d1ce8cf…`、reviewer `1fddd4846732d9b6…`、fixer `51ec9810c992dc7a…`、verifier `2c14de8b8ea76604…`）。
 
 ## 五、用量与口径
 

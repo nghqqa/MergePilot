@@ -37,6 +37,21 @@
 - span 增量（`agentloop/span-summary.json`，final − PR2 快照）：leader 92 / reviewer 55 / fixer 15 / verifier 15（fixer/verifier 的增量全部来自共享房间事件的 `matrix.receive` 观察与 0 次工具调用——旁证其未被派发）。
 - 导出：PR3 窗口内 `OTEL_EXPORT SUCCESS` 批次全部成功、0 失败（`agentloop/audit-*-pr3-window.log`）。
 - 显式 HTTP 200 探针与本包共用栈级证据（`agentloop/direct-probe-*.json`，15:34Z 采自同 4 容器）。
+- **控制台交叉验证（`agentloop-console-screenshot-pr3-window.png`，操作员 2026-09-17 00:36+08 现场截图）**：
+  AgentLoop 控制台 `serviceName:"mergepilot-copaw"` 检索到 **6 条 Trace**，开始时间与本地事件链逐秒吻合
+  （控制台为 UTC+8，括号内为 UTC）：
+
+  | 控制台开始时间 | UTC | 对应本地事件（房间导出 event_id） | Total tokens |
+  |---|---|---|---|
+  | 00:06:40 | 16:06:40Z | PR #3 kickoff（`$ks17JyF9pF…`）当轮 agent 会话 | 509,060 |
+  | 00:06:45 | 16:06:45Z | Leader 委派 pr3r2t-review-1（`$-qLw1eXJ…`）轮次 | 2,083,788 |
+  | 00:07:31 | 16:07:31Z | Reviewer 提交（`$eriQk6qza0…`，TASK_COMPLETED）轮次 | 1,157,376 |
+  | 00:08:04 | 16:08:04Z | Leader 停门检查轮次 | 560,808 |
+  | 00:09:07 | 16:09:07Z | **门拒绝**（`$4d9oQ6slJA…`）当轮 + Leader 绑定效应（8.33s） | 643,666 |
+  | 00:18:04 | 16:18:04Z | 停机前 Leader 最后一次心跳（AUDIT I10，16:21:02Z 停机） | 567,052 |
+
+  Token 曲线峰值 ≈3.1M、平均耗时曲线、Trace/Token 面板与本包 `usage-summary.json`（PR3 窗口 2.39M 输入）
+  同量级互证。**SLS 侧接收时间与本地 Matrix/网关记录零漂移**。
 
 ## 五、用量与口径
 

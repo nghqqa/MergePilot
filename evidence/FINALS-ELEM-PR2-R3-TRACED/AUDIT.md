@@ -49,5 +49,6 @@
 ## 4. 密钥与凭据边界
 
 - AgentLoop license key 仅经 stdin 写入容器开关文件（`enable_otel.py` env 注入），存于工作树外 `D:/mp-finals-tmp/agentloop.key`；未入镜像（镜像内开关文件 `enabled:false` 且无 headers）、未入 Git、未入证据包（证据包经密钥扫描，见各 SHA256SUMS 同目录扫描记录）。
+- key 后续处置：操作员 2026-09-17 决定**暂不轮换**（后续运行复用）；注意该 key 曾出现在本会话聊天一次，复用前请自行评估。
 - 证据包不含原始 docker 容器日志（可能含凭据片段），仅含 span/audit、房间导出、MinIO 工件、网关访问日志（无 auth 头）。
 - 容器内 `/etc/agentloop-otel.json` 含 key（运行时必要）；容器已由 controller 移除，无残留。
