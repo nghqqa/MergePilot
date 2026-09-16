@@ -645,7 +645,8 @@ function caseDPr2Live() {
 
   return {
     case_id: 'fastapi-pr2-live-20260916',
-    portfolio_role: '案例 A · 主案例（本次真实执行）',
+    portfolio_role: '案例 A · R1 首跑（审计修正对照）',
+    relation_note: '与主案例 fastapi-pr2-r2-live-20260916 为同一 PR 同日两次运行：本卡是 R1 首跑（其流程偏差经第三方审计并修正，修正版见 R2）。',
     shape: 'guided',
     name: 'FastAPI PR #2 · 本次真实运行（2026-09-16）',
     short_name: '主案例 · PR #2 真实运行',
@@ -1151,6 +1152,230 @@ function caseFRagLoop() {
   };
 }
 
+// --------------------------------------------------- case G: PR #2 R2 clean re-run (2026-09-16, post-audit)
+
+function caseGPr2R2Live() {
+  if (!exists('finalsPr2R2Live', 'README.md')) return null;
+  const reviewerResult = exists('finalsPr2R2Live', 'reviewer-result.md') ? readText('finalsPr2R2Live', 'reviewer-result.md') : null;
+  const fixerResult = exists('finalsPr2R2Live', 'fixer-result.md') ? readText('finalsPr2R2Live', 'fixer-result.md') : null;
+  const fixerDiff = exists('finalsPr2R2Live', 'fixer-attempt-1.diff') ? readText('finalsPr2R2Live', 'fixer-attempt-1.diff') : null;
+  const verifierResult = exists('finalsPr2R2Live', 'verifier-result.md') ? readText('finalsPr2R2Live', 'verifier-result.md') : null;
+  const verification = exists('finalsPr2R2Live', 'verifier-workspace/verification.md') ? readText('finalsPr2R2Live', 'verifier-workspace/verification.md') : null;
+  const gateApproval = exists('finalsPr2R2Live', 'human-gate-approval.md') ? readText('finalsPr2R2Live', 'human-gate-approval.md') : null;
+  const runReadme = exists('finalsPr2R2Live', 'README.md') ? readText('finalsPr2R2Live', 'README.md') : null;
+  const meta = exists('finalsPr2R2Live', 'PR-METADATA.md') ? readText('finalsPr2R2Live', 'PR-METADATA.md') : null;
+  const teamRoom = exists('finalsPr2R2Live', 'team-room-messages.json') ? readJson('finalsPr2R2Live', 'team-room-messages.json') : null;
+
+  const RUN = 'run-elem-pr2r2-20260916-01';
+  const SHA = '1dedf5e1992c950557064d8f4fb9039d1523deb3';
+  const attack = 'GET /demo/download?name=../outside/outside-secret.txt';
+
+  const H = {
+    honesty_real: 'R2 本次真实执行（2026-09-16，审计修正后复跑）：非预设 SPEC、真实人工门、Leader 全新委派事件、真实 deepseek-chat 请求、全事件 id 可审计',
+    honesty_limits: '页面为只读回放；工件在容器移除后自 MinIO 持久层恢复（README §四已披露）；本轮 leader 状态报告较多，用量略超点估计',
+    honesty_exclude: '操作员对 Fixer 零执行指令介入；merge/push/close/reopen 未执行',
+  };
+
+  const items = [
+    {
+      id: 'ev-r2-meta', title: 'CASE-MANIFEST（R2 仅参数，零结论预设）', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE',
+      fields: [
+        ['run_id / project', RUN + ' · elemiso-pr2r2-gate'],
+        ['head SHA', SHA],
+        ['与 R1 的差异', '全新 task id（事务号无碰撞）；SPEC 未点名漏洞类别；全程守候 16 分钟'],
+      ],
+      blocks: [{ title: 'finalsPr2R2Live/PR-METADATA.md', lang: 'text', text: meta ?? '未提供' }],
+      source_ref: 'finalsPr2R2Live/PR-METADATA.md',
+      hash: refHash('finalsPr2R2Live', 'PR-METADATA.md'),
+      ...H,
+    },
+    {
+      id: 'ev-r2-review', title: 'Reviewer 结论 pr2r2-review-1（非预设 SPEC 下独立得出）', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE',
+      fields: [
+        ['结论', 'FINDING_CONFIRMED · SEVERITY: HIGH · CWE-22 · HUMAN_VERIFICATION_REQUIRED: YES'],
+        ['独立性', 'SPEC 未点名漏洞类别——Reviewer 自行定位 L41 os.path.join → L42 FileResponse 并自写 PoC（含 /etc/hostname 读取）'],
+        ['事件', '委派 $sWmvb_KJEsISTzysSG8j9rwg1sudypwTGV0vTRKsXJ4'],
+      ],
+      blocks: [{ title: 'finalsPr2R2Live/reviewer-result.md', lang: 'text', text: reviewerResult ?? '未提供' }],
+      source_ref: 'finalsPr2R2Live/reviewer-result.md',
+      hash: refHash('finalsPr2R2Live', 'reviewer-result.md'),
+      ...H,
+    },
+    {
+      id: 'ev-r2-gate', title: '人工安全门（操作员现场批准）', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE',
+      fields: [
+        ['Leader 行为', '审查验收后主动停门（DM $nSCtrMg5TAHz…：「尚未委派 pr2r2-fix-1」）'],
+        ['操作员决策', '批准修复+验证（现场交互，批准后零介入）'],
+        ['批准记录', 'human-gate-approval.md（含 R2 验收口径：必须出现新委派事件）'],
+      ],
+      blocks: [{ title: 'finalsPr2R2Live/human-gate-approval.md', lang: 'text', text: gateApproval ?? '未提供' }],
+      source_ref: 'finalsPr2R2Live/human-gate-approval.md',
+      hash: refHash('finalsPr2R2Live', 'human-gate-approval.md'),
+      ...H,
+    },
+    {
+      id: 'ev-r2-fix', title: 'Fixer 补丁 pr2r2-fix-1（R2 关键验收点达成）', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE',
+      fields: [
+        ['关键验收', '门批准后 Leader 发出全新委派事件 $uZ4Rj1SIJO82URs8w4K6boIr0H9eovivkv3oWYIaF9g（R1 缺陷：重派被事务号幂等吞掉）'],
+        ['交付', 'attempt-1.diff 单文件 +13/−7；patch sha256 674356fc9a661faa49b97b789d75ff4529b95a5fac7f39dad0301397c0116081'],
+        ['跨轮一致', '与 R1 独立产出的补丁逐字节一致（同一漏洞的确定性修复，互为印证）'],
+      ],
+      blocks: [
+        { title: 'finalsPr2R2Live/fixer-attempt-1.diff', lang: 'diff', text: fixerDiff ?? '未提供' },
+        { title: 'finalsPr2R2Live/fixer-result.md', lang: 'text', text: fixerResult ?? '未提供' },
+      ],
+      source_ref: 'finalsPr2R2Live/fixer-attempt-1.diff',
+      hash: refHash('finalsPr2R2Live', 'fixer-attempt-1.diff'),
+      ...H,
+    },
+    {
+      id: 'ev-r2-verify', title: 'Verifier 独立验证（VERIFIED PASS，首次通过）', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE',
+      fields: [
+        ['独立工作区', '全新 clone ~/pr2r2-verify-work @ head SHA；git apply 干净通过；sha256 独立复现一致'],
+        ['修复前', '3 组越权 200 并泄露基外内容（含 /etc/hostname）；缺失 500'],
+        ['修复后', '越权全 400 Invalid file path · 合法 ok.txt 200 · 缺失 404'],
+        ['回归', '冻结测试断言反转如实记录；未修改任何测试'],
+      ],
+      blocks: [
+        { title: 'finalsPr2R2Live/verifier-result.md', lang: 'text', text: verifierResult ?? '未提供' },
+        { title: 'finalsPr2R2Live/verifier-workspace/verification.md', lang: 'markdown', text: verification ?? '未提供' },
+      ],
+      source_ref: 'finalsPr2R2Live/verifier-result.md',
+      hash: refHash('finalsPr2R2Live', 'verifier-result.md'),
+      ...H,
+    },
+    {
+      id: 'ev-r2-run', title: 'R2 运行档案（事件链/用量/采集披露）', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE',
+      fields: [
+        ['墙钟', 'kickoff 04:49:48Z → 终报 05:06:28Z ≈ 16 分钟（全程守候，无离席项）'],
+        ['用量', '88 次调用 · 输入 4.65M（98.9% 缓存命中）· 估算 ≈¥1.1–2.5'],
+        ['采集披露', '工件在容器移除后自 MinIO 持久层恢复（README §四）'],
+      ],
+      blocks: [{ title: 'finalsPr2R2Live/README.md', lang: 'markdown', text: runReadme ?? '未提供' }],
+      source_ref: 'finalsPr2R2Live/README.md',
+      hash: refHash('finalsPr2R2Live', 'README.md'),
+      ...H,
+    },
+    {
+      id: 'ev-r2-rooms', title: 'Matrix 房间导出（R2 窗口事件）', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE',
+      fields: [
+        ['团队房', '!RErK7WVs9iUeaszwho:elemiso-matrix:6167'],
+        ['Leader DM', '!VocOLrDhUMBcBjzIuY:elemiso-matrix:6167'],
+      ],
+      blocks: [{ title: 'finalsPr2R2Live/team-room-messages.json（事件数）', lang: 'json', text: JSON.stringify({ room: teamRoom?.room, events: teamRoom?.count }) }],
+      source_ref: 'finalsPr2R2Live/team-room-messages.json',
+      hash: refHash('finalsPr2R2Live', 'team-room-messages.json'),
+      ...H,
+    },
+  ];
+
+  const steps = [
+    {
+      id: 'pr-init', title: '① PR 发起', points: [
+        { k: 'run_id', v: RUN, mono: true },
+        { k: '与 R1 差异', v: '全新 task id（无事务号碰撞）；SPEC 未预设结论；全程守候' },
+        { k: 'head SHA', v: SHA, mono: true },
+      ],
+      evidence: ['ev-r2-meta'], probe: null,
+      detail: { title: '运行环境（默认折叠）', quote: '与 R1 同栈同团队；镜像一致（223ddc2 系）。', outbox: [], events: [] },
+    },
+    {
+      id: 'review', title: '② 风险审查（非预设 SPEC）', points: [
+        { k: 'Reviewer 结论', v: 'FINDING_CONFIRMED · SEVERITY: HIGH · CWE-22' },
+        { k: '独立性', v: 'SPEC 未点名漏洞类别；Reviewer 自行定位并自写 PoC（/etc/hostname 读取）' },
+        { k: '真实执行', v: 'pytest 实跑（含 marker 收集期问题的诚实备注）' },
+      ],
+      evidence: ['ev-r2-review'], probe: null, attack: { request: attack, legit: 'GET /demo/download?name=ok.txt' },
+      detail: { title: '执行细节（默认折叠）', quote: 'clone+checkout 校验后独立审查；这轮的 HIGH 定级完全来自 Reviewer 自己。', outbox: [], events: [] },
+    },
+    {
+      id: 'gate', title: '③ 人工安全门（现场批准）', points: [
+        { k: 'Leader 行为', v: '审查验收后主动停门（「尚未委派 pr2r2-fix-1」）' },
+        { k: '操作员决策', v: '现场批准修复+验证（批准后零介入）' },
+      ],
+      evidence: ['ev-r2-gate'], probe: null,
+      detail: { title: '与 R1 对照（默认折叠）', quote: 'R1 同一 Leader 跳门被作废；R2 契约强化后正确停门——门纪律的完整对照。', outbox: [], events: [] },
+    },
+    {
+      id: 'fix-diff', title: '④ 修复 diff（Leader 委派）', points: [
+        { k: '关键验收', v: '门后全新委派事件 $uZ4Rj1SI…（R1 缺陷闭环）', mono: true },
+        { k: '交付物', v: 'attempt-1.diff 单文件 +13/−7；sha256 674356fc…16081', mono: true },
+        { k: '跨轮一致', v: '与 R1 补丁逐字节一致——确定性修复的互证' },
+      ],
+      evidence: ['ev-r2-fix'], probe: null,
+      detail: { title: 'fixer 执行（默认折叠）', quote: 'Fixer 按契约在新目录 clone/修改/diff/sha256/提交；无操作员执行指令。', outbox: [], events: [] },
+    },
+    {
+      id: 'verify', title: '⑤ 独立验证（VERIFIED PASS）', points: [
+        { k: '独立工作区', v: '全新 clone + apply + sha256 独立复现一致' },
+        { k: '修复前', v: '越权 200+泄露 / 合法 200 / 缺失 500' },
+        { k: '修复后', v: '越权全 400 / 合法 200 / 缺失 404' },
+        { k: '返工', v: '未发生——首次 PASS，如实记录' },
+      ],
+      evidence: ['ev-r2-verify'],
+      probe: {
+        headline: '探针对照（Verifier 独立实测）',
+        rows: [
+          { label: '越权读取（../outside/outside-secret.txt）', request: attack, before: 'HTTP 200 · 泄露 TOP-SECRET-OUTSIDE-BASE', after: 'HTTP 400 · Invalid file path', kind: 'fixed' },
+          { label: '越权读取（多级 ../ 至 /etc/hostname）', request: 'name=../../../../../../etc/hostname', before: 'HTTP 200 · 泄露主机名', after: 'HTTP 400 · Invalid file path', kind: 'fixed' },
+          { label: '合法基内文件（ok.txt）', request: 'GET /demo/download?name=ok.txt', before: 'HTTP 200 · LEGIT-INSIDE-BASE', after: 'HTTP 200 · 仍可用', kind: 'stable' },
+        ],
+      },
+      detail: { title: '验证事件链（默认折叠）', quote: '只采信自己的 clone、apply、探针状态码。', outbox: [], events: [] },
+    },
+    {
+      id: 'approval', title: '⑥ Leader 验收 · 最终处置', points: [
+        { k: 'Leader 验收', v: '三任务全验收，plan 全 [x]，项目 completed' },
+        { k: '终报', v: 'DM $f-0vondMoFHh…（05:06:28Z）' },
+        { k: 'PR 状态', v: 'PR #2 保持 OPEN · 零 GitHub 写入' },
+      ],
+      evidence: ['ev-r2-run', 'ev-r2-rooms'], probe: null,
+      decision: {
+        verified: { verdict: 'PASS', text: 'VERDICT: VERIFIED —— R2 干净链路：门后新委派事件 + 独立验证通过' },
+        human_approval: { needed: true, text: '需要且已执行 —— 操作员现场批准（修复前）', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE' },
+        merge_allowed: { allowed: false, text: 'PR #2 保持 OPEN —— 合并未执行' },
+        github_write: { done: false, text: '未写入 GitHub', level: 'NOT_EXECUTED' },
+        execution_nature: { text: 'REAL_EXECUTED-AgentTeams（R2 复跑，审计修正后）：非预设 SPEC + 干净派发链', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE' },
+        pr_open: true,
+      },
+      detail: { title: '终态（默认折叠）', quote: '运行结束计费调用者全部停止；R1 保留为审计修正对照。', outbox: [], events: [] },
+    },
+  ];
+
+  return {
+    case_id: 'fastapi-pr2-r2-live-20260916',
+    shape: 'guided',
+    name: 'FastAPI PR #2 · R2 干净复跑（2026-09-16）',
+    short_name: '主案例 · PR #2 R2 复跑',
+    one_liner: '审计修正后的干净复跑：非预设 SPEC 下 Reviewer 独立确认 HIGH（CWE-22）→ 现场人工门批准 → Leader 全新委派事件 → Verifier 独立验证 VERIFIED PASS，16 分钟全程守候。',
+    repo: 'nghqqa/fastapi-boilerplate-demo',
+    pr: 'PR #2 · demo/high-risk-human-gate',
+    pr_url: 'https://github.com/nghqqa/fastapi-boilerplate-demo/pull/2',
+    run_id: RUN,
+    sha: SHA,
+    sha_kind: 'PR #2 head commit（运行中 ls-remote 核验一致）',
+    evidence_level: ['REAL_EXECUTED_AGENTTEAMS_LIVE'],
+    replay_note: 'REAL_EXECUTED（R2 复跑 2026-09-16）—— 本页面回放该次运行的证据；不连接实时系统',
+    purpose: '审计修正后的主案例证据：流程与宣称完全一致的干净闭环',
+    risk_tags: ['CWE-22 路径穿越', '任意文件读取', 'HIGH'],
+    status: { verdict: 'PASS', label: 'R2 干净复跑 · VERIFIED PASS · PR 保持 OPEN' },
+    facts: {
+      real_github_pr: { value: '真实 GitHub PR（OPEN）', ok: true, note: 'https://github.com/nghqqa/fastapi-boilerplate-demo/pull/2' },
+      real_agentteams_run: { value: '真实 AgentTeams 运行（R2）', ok: true, note: '门后全新委派事件；无操作员执行指令介入' },
+      github_write: { value: '未写入 —— PR 保持 OPEN', ok: false, note: 'merge/push/close/reopen 全程禁止' },
+    },
+    banner: null,
+    stage_timeline: null,
+    chain: ['案例 ' + RUN, 'PR #2', 'commit ' + short(SHA, 10), 'demo_high_risk.py', 'attempt-1.diff', 'probe 200→400', 'VERIFIED PASS'],
+    generated_at: '运行 2026-09-16T04:49Z–05:06Z（全程守候 ≈16 分钟）',
+    source_dir: 'evidence/FINALS-ELEM-PR2-LIVE-20260916-R2（SHA256SUMS 锁定）',
+    honesty: H,
+    steps,
+    evidence_index: items.map(({ id, title, level }) => ({ id, title, level })),
+    items,
+  };
+}
+
 // --------------------------------------------------- case B: rework mechanism
 
 function caseBRework() {
@@ -1596,7 +1821,7 @@ function caseCDbLoop() {
 
 // ------------------------------------------------------------------ public API
 
-const CASE_BUILDERS = { 'fastapi-pr2-cwe22': caseAFastAPI, 'fastapi-pr2-live-20260916': caseDPr2Live, 'fastapi-pr3-reject': caseEPr3Reject, 'rag-retrieval-loop': caseFRagLoop, 'rework-payments': caseBRework, 'db-migration-orders': caseCDbLoop };
+const CASE_BUILDERS = { 'fastapi-pr2-r2-live-20260916': caseGPr2R2Live, 'fastapi-pr2-cwe22': caseAFastAPI, 'fastapi-pr2-live-20260916': caseDPr2Live, 'fastapi-pr3-reject': caseEPr3Reject, 'rag-retrieval-loop': caseFRagLoop, 'rework-payments': caseBRework, 'db-migration-orders': caseCDbLoop };
 
 function summarize(x) {
   if (!x) return null;
@@ -1613,7 +1838,8 @@ function summarize(x) {
 export function demoOverview() {
   const b = build();
   const a = caseAFastAPI();
-  const live = caseDPr2Live();
+  const live = caseGPr2R2Live() || caseDPr2Live();
+  const r1live = caseDPr2Live();
   const r3 = caseEPr3Reject();
   const rag = caseFRagLoop();
   const c = caseBRework();
@@ -1628,7 +1854,7 @@ export function demoOverview() {
     },
     levels: EVIDENCE_LEVELS,
     current_case_id: live ? live.case_id : (a ? a.case_id : null),
-    cases: [live, a, r3, rag, c, d].filter(Boolean).map(summarize).filter((x) => !x.extra),
+    cases: [live, r1live, a, r3, rag, c, d].filter(Boolean).map(summarize).filter((x) => !x.extra),
     additional: [d].filter(Boolean).map(summarize),
   };
 }

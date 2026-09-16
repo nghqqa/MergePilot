@@ -27,6 +27,7 @@ function DemoRoutes() {
       <Route path="/" element={<OverviewPage />} />
       <Route path="/cases" element={<CaseSelectorPage />} />
       {/* shape-specific demo pages; unknown ids fall through to the selector */}
+      <Route path="/demo/fastapi-pr2-r2-live-20260916" element={<GuidedDemoPage caseId="fastapi-pr2-r2-live-20260916" />} />
       <Route path="/demo/fastapi-pr2-live-20260916" element={<GuidedDemoPage caseId="fastapi-pr2-live-20260916" />} />
       <Route path="/demo/fastapi-pr2-cwe22" element={<GuidedDemoPage caseId="fastapi-pr2-cwe22" />} />
       <Route path="/demo/fastapi-pr3-reject" element={<GuidedDemoPage caseId="fastapi-pr3-reject" />} />

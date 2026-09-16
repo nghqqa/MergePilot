@@ -38,6 +38,8 @@ export const EVIDENCE_DIRS = {
   // Finals live AgentTeams run (2026-09-16): real PR #3 human-REJECT case on
   // the same stack/team; second run of the day.
   finalsPr3Live: 'FINALS-ELEM-PR3-LIVE-20260916',
+  // R2 clean re-run of the PR #2 case (same day, post-audit corrections).
+  finalsPr2R2Live: 'FINALS-ELEM-PR2-LIVE-20260916-R2',
 };
 
 export function dirPath(key) {
