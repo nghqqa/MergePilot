@@ -431,6 +431,7 @@ function caseDPr2Live() {
   const teamRoom = exists('finalsPr2Live', 'team-room-messages.json') ? readJson('finalsPr2Live', 'team-room-messages.json') : null;
   const leaderDm = exists('finalsPr2Live', 'leader-dm-messages.json') ? readJson('finalsPr2Live', 'leader-dm-messages.json') : null;
   const meta = exists('finalsPr2Live', 'PR-METADATA.md') ? readText('finalsPr2Live', 'PR-METADATA.md') : null;
+  const roleContractsD = ['ROLE-LEADER.md','ROLE-REVIEWER.md','ROLE-FIXER.md','ROLE-VERIFIER.md'].map((rf) => ({ name: rf, text: readRepoFile('tools/agentteams/roles/' + rf) }));
 
   const RUN = 'run-elem-fastapi-pr2-20260916-01';
   const SHA = '1dedf5e1992c950557064d8f4fb9039d1523deb3';
@@ -448,6 +449,16 @@ function caseDPr2Live() {
       blocks: [{ title: 'finalsPr2Live/PR-METADATA.md', lang: 'text', text: meta ?? '未提供' }],
       source_ref: 'finalsPr2Live/PR-METADATA.md',
       hash: refHash('finalsPr2Live', 'PR-METADATA.md'),
+      ...PR2_LIVE_HONESTY,
+    },
+    {
+      id: "ev-live-roles", title: "角色契约（v1.0 冻结，跨案例零改动）", level: 'REAL_EXECUTED_AGENTTEAMS_LIVE',
+      fields: [
+        ['契约版本', 'v1.0（冻结，跨案例零改动；回溯固化自 P14 角色矩阵与两轮真实运行的公共协议）'],
+        ['要点', '角色行为与案例参数分离：Reviewer/Fixer/Verifier/Leader 契约在两个 PR 的运行中逐字相同，案例差异只在 CASE-MANIFEST（SHA/目标文件/task id/验收行为）'],
+      ],
+      blocks: roleContractsD.map((rc) => ({ title: 'tools/agentteams/roles/' + rc.name, lang: 'markdown', text: rc.text ?? '未提供' })),
+      source_ref: 'tools/agentteams/roles/（仓库文件，非案例工件）',
       ...PR2_LIVE_HONESTY,
     },
     {
@@ -667,6 +678,7 @@ function caseEPr3Reject() {
   const liveRejection = liveAvailable && exists('finalsPr3Live', 'human-gate-rejection.md') ? readText('finalsPr3Live', 'human-gate-rejection.md') : null;
   const livePlan = liveAvailable && exists('finalsPr3Live', 'leader-plan-and-meta.txt') ? readText('finalsPr3Live', 'leader-plan-and-meta.txt') : null;
   const liveReadme = liveAvailable && exists('finalsPr3Live', 'README.md') ? readText('finalsPr3Live', 'README.md') : null;
+  const roleContracts = ['ROLE-LEADER.md','ROLE-REVIEWER.md','ROLE-FIXER.md','ROLE-VERIFIER.md'].map((rf) => ({ name: rf, text: readRepoFile('tools/agentteams/roles/' + rf) }));
 
   const HONESTY = {
     honesty_real: liveAvailable
@@ -715,6 +727,16 @@ function caseEPr3Reject() {
       blocks: [{ title: 'FINALS-ELEM-PR3-LIVE-20260916/README.md', lang: 'markdown', text: liveReadme ?? '未提供' }],
       source_ref: 'finalsPr3Live/README.md',
       hash: refHash('finalsPr3Live', 'README.md'),
+      ...HONESTY,
+    },
+    {
+      id: "ev-rej-live-roles", title: "【本次真实执行】角色契约（v1.0 冻结，跨案例零改动）", level: 'REAL_EXECUTED_AGENTTEAMS_LIVE',
+      fields: [
+        ['契约版本', 'v1.0（冻结，跨案例零改动；回溯固化自 P14 角色矩阵与两轮真实运行的公共协议）'],
+        ['要点', '角色行为与案例参数分离：Reviewer/Fixer/Verifier/Leader 契约在两个 PR 的运行中逐字相同，案例差异只在 CASE-MANIFEST（SHA/目标文件/task id/验收行为）'],
+      ],
+      blocks: roleContracts.map((rc) => ({ title: 'tools/agentteams/roles/' + rc.name, lang: 'markdown', text: rc.text ?? '未提供' })),
+      source_ref: 'tools/agentteams/roles/（仓库文件，非案例工件）',
       ...HONESTY,
     },
     {
