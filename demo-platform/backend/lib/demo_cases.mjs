@@ -683,7 +683,7 @@ function caseDPr2Live() {
 
 function caseEPr3Reject() {
   if (!exists('rejectDemo', 'README.md')) return null;
-  const liveAvailable = exists('finalsPr3Live', 'README.md');
+  const liveAvailable = exists('finalsPr3RagTraced', 'README.md');
   const rejection = exists('rejectDemo', 'human-rejection-record.json') ? readJson('rejectDemo', 'human-rejection-record.json') : null;
   const reviewResult = exists('rejectDemo', 'reviewer-high-risk-result.md') ? readText('rejectDemo', 'reviewer-high-risk-result.md') : null;
   const taskState = exists('rejectDemo', 'post-rejection-task-state.json') ? readJson('rejectDemo', 'post-rejection-task-state.json') : null;
@@ -691,15 +691,15 @@ function caseEPr3Reject() {
   const gateRequest = exists('rejectDemo', 'human-gate-request.json') ? readJson('rejectDemo', 'human-gate-request.json') : null;
 
   // live run (2026-09-16) artifacts
-  const liveReview = liveAvailable && exists('finalsPr3Live', 'reviewer-result.md') ? readText('finalsPr3Live', 'reviewer-result.md') : null;
-  const liveRejection = liveAvailable && exists('finalsPr3Live', 'human-gate-rejection.md') ? readText('finalsPr3Live', 'human-gate-rejection.md') : null;
-  const livePlan = liveAvailable && exists('finalsPr3Live', 'leader-plan-and-meta.txt') ? readText('finalsPr3Live', 'leader-plan-and-meta.txt') : null;
-  const liveReadme = liveAvailable && exists('finalsPr3Live', 'README.md') ? readText('finalsPr3Live', 'README.md') : null;
+  const liveReview = liveAvailable && exists('finalsPr3RagTraced', 'tasks/pr3rag-review-1/result.md') ? readText('finalsPr3RagTraced', 'tasks/pr3rag-review-1/result.md') : null;
+  const liveRejection = liveAvailable && exists('finalsPr3RagTraced', 'project/human-gate-rejection.md') ? readText('finalsPr3RagTraced', 'project/human-gate-rejection.md') : null;
+  const livePlan = liveAvailable && exists('finalsPr3RagTraced', 'project/plan.md') ? readText('finalsPr3RagTraced', 'project/plan.md') : null;
+  const liveReadme = liveAvailable && exists('finalsPr3RagTraced', 'README.md') ? readText('finalsPr3RagTraced', 'README.md') : null;
   const roleContracts = ['ROLE-LEADER.md','ROLE-REVIEWER.md','ROLE-FIXER.md','ROLE-VERIFIER.md'].map((rf) => ({ name: rf, text: readRepoFile('tools/agentteams/roles/' + rf) }));
 
   const HONESTY = {
     real: liveAvailable
-      ? ['本次真实执行（2026-09-16）：真实 Reviewer 审查、真实操作员拒绝、真实 Leader 停等；全部 event_id 留痕；fix/verify 从未派发']
+      ? ['本次真实执行（2026-09-17 RAG-TRACED）：真实 Reviewer 审查（含 rag_retrieve 组织标准引用）、真实操作员拒绝、真实 Leader 停等；全部 event_id 留痕；fix/verify 从未派发']
       : ['历史真实运行（2026-08-30）：真实 Reviewer 审查、真实操作员拒绝、真实 Leader 停等；fix-1/verify-1 从未派发'],
     controlled: ['本页面为证据的只读回放与讲解文案；拒绝为终态，演示层不可翻转'],
     not_executed: ['Fixer / Verifier 从未派发（两轮均 0 消费留痕）', '零 GitHub 写入；PR #3 保持 OPEN'],
@@ -712,38 +712,40 @@ function caseEPr3Reject() {
         ['结论', 'FINDING_CONFIRMED · SEVERITY: HIGH（Reviewer 自主定级）· HUMAN_VERIFICATION_REQUIRED: YES'],
         ['定性', 'CWE-78 未认证 RCE：demo_ping L41 f-string 拼接 host → L42-44 subprocess.run(shell=True) → L45-49 回显输出；路由无鉴权'],
         ['真实复现', 'Reviewer 容器内 ?host=127.0.0.1; id → uid=0(root)；; cat /etc/hostname 返回宿主文件内容'],
-        ['事件', '委派 $iC99q_-LvYBeHcm74OuA7hwgeKacWv5-WuNL_gqKSyA · head ad267a6e（git ls-remote 核验与 P14 一致）'],
+        ['事件', '委派 17:25:09Z（团队房切片含完整 event_id）· ack $QtuISYLcxdz6QlOmtgmvqLr… · head ad267a6e（git ls-remote 核验与历史一致）'],
+        ['RAG 引用', '自主复现完成后检索组织标准（cwe-78-command-injection.md + command-execution.md，references only）'],
       ],
-      blocks: [{ title: 'FINALS-ELEM-PR3-LIVE-20260916/reviewer-result.md', lang: 'text', text: liveReview ?? '未提供' }],
-      source_ref: 'finalsPr3Live/reviewer-result.md',
-      hash: refHash('finalsPr3Live', 'reviewer-result.md'),
+      blocks: [{ title: 'FINALS-ELEM-PR3-RAG-TRACED/tasks/pr3rag-review-1/result.md', lang: 'text', text: liveReview ?? '未提供' }],
+      source_ref: 'finalsPr3RagTraced/tasks/pr3rag-review-1/result.md',
+      hash: refHash('finalsPr3RagTraced', 'tasks/pr3rag-review-1/result.md'),
       ...HONESTY,
     },
     {
       id: 'ev-rej-live-gate', title: '【本次真实执行】人工安全门 → 操作员真实拒绝', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE',
       fields: [
-        ['Leader 行为', '审查验收后主动停门：「尚未委派 pr3-fix-1，等待门禁决策」（与 PR #2 运行时的跳门违规形成同日对照）'],
+        ['Leader 行为', '审查验收后主动停门（17:25:54Z：「尚未委派 pr3rag-fix-1」；与 PR #2 批准路径形成同日两分支对照）'],
         ['操作员决策', 'HUMAN_SECURITY_REJECTED —— 不授权修复（查看真实 findings 后作出）'],
         ['绑定效应', 'pr3-fix-1 标记 [-] REJECTED（never delegated）· pr3-verify-1 标记 [!] LOCKED · 项目 status=blocked'],
-        ['事件', '拒绝指令 DM $PKSeWIago1vw… · 团队房 $aLygMjw6nG8X… · 最终报告 $N6Y3EYlOfxJb…（PROJECT_BLOCKED_HUMAN_REJECTED）'],
+        ['事件', '拒绝指令 DM $e9wIv3Qc2Dw3Yxt… · 团队房 $ujqMkro_A3Z2daH… · 最终报告 $hPMIsMAs-ZWUMnt…（拒绝后 9 秒）'],
+        ['RAG 引用', 'Reviewer 自主复现后检索 cwe-78-command-injection.md 与 command-execution.md（references only）'],
       ],
       blocks: [
-        { title: 'FINALS-ELEM-PR3-LIVE-20260916/human-gate-rejection.md', lang: 'text', text: liveRejection ?? '未提供' },
-        { title: 'FINALS-ELEM-PR3-LIVE-20260916/leader-plan-and-meta.txt（拒绝后的 plan/meta 快照）', lang: 'text', text: livePlan ?? '未提供' },
+        { title: 'FINALS-ELEM-PR3-RAG-TRACED/project/human-gate-rejection.md', lang: 'text', text: liveRejection ?? '未提供' },
+        { title: 'FINALS-ELEM-PR3-RAG-TRACED/project/plan.md（拒绝后的 plan 快照）', lang: 'text', text: livePlan ?? '未提供' },
       ],
-      source_ref: 'finalsPr3Live/human-gate-rejection.md',
-      hash: refHash('finalsPr3Live', 'human-gate-rejection.md'),
+      source_ref: 'finalsPr3RagTraced/project/human-gate-rejection.md',
+      hash: refHash('finalsPr3RagTraced', 'project/human-gate-rejection.md'),
       ...HONESTY,
     },
     {
       id: 'ev-rej-live-run', title: '【本次真实执行】运行档案 README（含门纪律对照与用量）', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE',
       fields: [
-        ['用量', '52 条请求（49 条含 usage）· 输入 1.82M（98.7% 缓存命中）· 估算 ≈¥0.4'],
+        ['墙钟/用量', 'kickoff 17:25:07Z → 终报 17:26:26Z ≈ 1 分 19 秒 · 31 次调用 · 输入 2.87M（99% 缓存）· 输出 9,248'],
         ['合规', 'PR #3 全程 OPEN · head ad267a6e 运行中 ls-remote 核验 · 零 GitHub 写入'],
       ],
-      blocks: [{ title: 'FINALS-ELEM-PR3-LIVE-20260916/README.md', lang: 'markdown', text: liveReadme ?? '未提供' }],
-      source_ref: 'finalsPr3Live/README.md',
-      hash: refHash('finalsPr3Live', 'README.md'),
+      blocks: [{ title: 'FINALS-ELEM-PR3-RAG-TRACED/README.md', lang: 'markdown', text: liveReadme ?? '未提供' }],
+      source_ref: 'finalsPr3RagTraced/README.md',
+      hash: refHash('finalsPr3RagTraced', 'README.md'),
       ...HONESTY,
     },
     {
@@ -851,7 +853,7 @@ function caseEPr3Reject() {
       points: [
         { k: 'Reviewer 结论', v: 'FINDING_CONFIRMED · SEVERITY: HIGH · HUMAN_VERIFICATION_REQUIRED: YES' },
         { k: '风险定性', v: 'CWE-78 未认证 RCE —— f-string 拼接 + shell=True + 输出回显（独立自主定级）' },
-        { k: '真实复现', v: '容器内 ; id → uid=0(root)；; cat /etc/hostname 泄露主机名' },
+        { k: '真实复现', v: '容器内 ; id → uid=0(root)；; cat /etc/hostname 泄露主机名；RAG 引用组织规范（references only）' },
       ],
       evidence: ['ev-rej-live-review'],
       probe: null,
@@ -860,7 +862,7 @@ function caseEPr3Reject() {
     {
       id: 'gate', title: '② 人工门 · 操作员真实拒绝（终态）',
       points: [
-        { k: 'Leader 行为', v: '审查验收后停门等决策（混杂因素：kickoff 含强化条款、项目标题预告 reject——见 README §四.5）' },
+        { k: 'Leader 行为', v: '审查验收后停门等决策（17:25:54Z；与 PR #2 批准分支同日对照）' },
         { k: '操作员决策', v: 'HUMAN_SECURITY_REJECTED —— 查看真实 findings 后拒绝修复授权' },
         { k: '绑定效应', v: 'fix [-] rejected（never delegated）· verify [!] locked · 项目 blocked', mono: true },
         { k: '终态不可翻转', v: '拒绝即终态：系统停等，全部审查证据保留，零 GitHub 写入' },
@@ -872,7 +874,7 @@ function caseEPr3Reject() {
         human_approval: { needed: true, text: '已执行且结果为拒绝 —— 本次真实操作员决策（2026-09-16），历史轮（2026-08-30）同样拒绝', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE' },
         merge_allowed: { allowed: false, text: 'PR #3 保持 OPEN —— 未合并；拒绝即停止' },
         github_write: { done: false, text: '未写入 GitHub', level: 'NOT_EXECUTED' },
-        execution_nature: { text: 'REAL_EXECUTED-AgentTeams（本次运行 2026-09-16）+ HISTORICAL_REPLAY（2026-08-30 对照）：两轮真实拒绝', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE' },
+        execution_nature: { text: 'REAL_EXECUTED-AgentTeams（RAG-TRACED 2026-09-17）+ HISTORICAL_REPLAY（2026-08-30 对照）：两轮真实拒绝', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE' },
         pr_open: true,
       },
       detail: { title: '终态（默认折叠）', quote: '失败安全设计：拒绝 → 保留全部审查证据 → 不产生任何修复或推送。', outbox: [], events: [] },
@@ -915,36 +917,36 @@ function caseEPr3Reject() {
     case_id: 'fastapi-pr3-reject',
     portfolio_role: '案例 B · 人工拒绝分支',
     shape: 'guided',
-    name: liveAvailable ? 'FastAPI PR #3 · 人工拒绝（本次真实执行 + 历史对照）' : 'FastAPI PR #3 · 人工拒绝（短案例）',
-    short_name: liveAvailable ? '第二案例 · PR #3 真实拒绝' : '第二案例 · PR #3 人工拒绝',
+    name: liveAvailable ? 'FastAPI PR #3 · 人工拒绝（RAG+追踪版，本次真实执行 + 历史对照）' : 'FastAPI PR #3 · 人工拒绝（短案例）',
+    short_name: liveAvailable ? '第二案例 · PR #3 真实拒绝（RAG+追踪）' : '第二案例 · PR #3 人工拒绝',
     one_liner: liveAvailable
-      ? '本次真实执行：Reviewer 独立确认 HIGH（CWE-78 未认证 RCE，实证 root 执行）→ 人工门操作员真实拒绝 → 项目 blocked，Fixer/Verifier 从未派发；附 2026-08-30 历史轮对照。'
+      ? 'RAG 接入轮真实执行：Reviewer 38 秒独立确认 HIGH（CWE-78 未认证 RCE，实证 root 执行 + rag_retrieve 组织标准引用）→ 人工门拒绝 → 9 秒后项目 blocked，Fixer/Verifier 从未派发；附 2026-08-30 历史轮对照。'
       : '历史真实运行：Reviewer 确认 critical（CWE-78/RCE）→ 人工门拒绝 → 系统停等，Fixer/Verifier 从未派发，PR 保持 OPEN。',
     repo: 'nghqqa/fastapi-boilerplate-demo',
     pr: 'PR #3 · demo/high-risk-human-reject',
     pr_url: 'https://github.com/nghqqa/fastapi-boilerplate-demo/pull/3',
-    run_id: liveAvailable ? 'run-elem-fastapi-pr3-20260916-01' : 'copaw-high-risk-reject-demo（AgentTeams project）',
+    run_id: liveAvailable ? 'run-elem-pr3rag-20260917-01' : 'copaw-high-risk-reject-demo（AgentTeams project）',
     sha: liveAvailable ? 'ad267a6e51209551a0733657321bb364d04befd0' : (rejection?.source_commit?.replace('PR#3 head ', '') ?? null),
-    sha_kind: 'PR #3 head commit（运行中 ls-remote 核验与历史一致）',
+    sha_kind: 'PR #3 head commit · ls-remote 已核验',
     evidence_level: liveAvailable ? ['REAL_EXECUTED_AGENTTEAMS_LIVE', 'HISTORICAL_REPLAY'] : ['HISTORICAL_REPLAY', 'REAL_EXECUTED_AGENTTEAMS'],
     replay_note: liveAvailable
-      ? 'REAL_EXECUTED（本次运行 2026-09-16）+ 历史对照 —— 拒绝语义为终态，不可在演示层翻转'
+      ? 'REAL_EXECUTED（RAG-TRACED 2026-09-17）+ 历史对照 —— 拒绝语义为终态，不可在演示层翻转'
       : 'HISTORICAL_REPLAY —— 回放 2026-08-30 历史运行证据；拒绝语义为终态，不可在演示层翻转',
     purpose: '展示人工门的拒绝分支：失败安全（fail-safe）——不批准即停止，证据保留',
     risk_tags: ['CWE-78 命令注入', 'RCE', 'HIGH（历史轮 critical）'],
     status: { verdict: 'REJECTED', label: liveAvailable ? '本次真实拒绝 · 项目 blocked · Fixer/Verifier 未派发' : '人工拒绝 · 系统停等 · Fixer/Verifier 未派发' },
     facts: {
       real_github_pr: { value: '真实 GitHub PR（运行后核验：仍 OPEN）', ok: true, note: 'https://github.com/nghqqa/fastapi-boilerplate-demo/pull/3' },
-      real_agentteams_run: { value: liveAvailable ? '真实 AgentTeams 运行（2026-09-16 本次）' : '真实 AgentTeams 运行（2026-08-30 历史证据）', ok: true, note: '真实审查、真实拒绝、真实停等' },
+      real_agentteams_run: { value: liveAvailable ? '真实 AgentTeams 运行（RAG-TRACED 2026-09-17 本次）' : '真实 AgentTeams 运行（2026-08-30 历史证据）', ok: true, note: '真实审查（含 rag_retrieve 引用）、真实拒绝、真实停等' },
       github_write: { value: '未写入 —— PR 保持 OPEN', ok: false, note: '全程禁止 merge/push/close' },
     },
     banner: 'REJECTED —— 人工安全门拒绝为终态；系统没有继续执行（fail-safe 分支演示）',
     stage_timeline: null,
     chain: liveAvailable
-      ? ['案例 run-elem-fastapi-pr3-20260916-01', 'PR #3', 'demo_cmd_exec.py', 'HUMAN_SECURITY_REJECTED（操作员真实决策）', 'fix rejected / verify locked', 'project blocked']
+      ? ['案例 run-elem-pr3rag-20260917-01', 'PR #3', 'demo_cmd_exec.py', 'HUMAN_SECURITY_REJECTED（操作员真实决策）', 'fix rejected / verify locked', 'project blocked']
       : ['案例 fastapi-pr3-reject', 'PR #3', 'demo_cmd_exec.py', 'HUMAN_SECURITY_REJECTED', 'fix-1 rejected / verify-1 locked', 'project blocked'],
-    generated_at: liveAvailable ? '运行 2026-09-16（本轮）· 历史对照 2026-08-30' : '运行 2026-08-30 · 状态锁定（post-rejection-* 快照）',
-    source_dir: liveAvailable ? 'evidence/FINALS-ELEM-PR3-LIVE-20260916（本次新证据）+ PHASE14-WINDOWS-COPAW-HIGH-RISK-REJECT-20260830-091913（历史对照）' : 'evidence/PHASE14-WINDOWS-COPAW-HIGH-RISK-REJECT-20260830-091913（rejectDemo）',
+    generated_at: liveAvailable ? '运行 2026-09-16T17:25Z–17:27Z（RAG-TRACED 本轮）· 历史对照 2026-08-30' : '运行 2026-08-30 · 状态锁定（post-rejection-* 快照）',
+    source_dir: liveAvailable ? 'evidence/FINALS-ELEM-PR3-RAG-TRACED（本次新证据，SHA256SUMS 锁定）+ PHASE14-WINDOWS-COPAW-HIGH-RISK-REJECT-20260830-091913（历史对照）' : 'evidence/PHASE14-WINDOWS-COPAW-HIGH-RISK-REJECT-20260830-091913（rejectDemo）',
     honesty: HONESTY,
     steps,
     evidence_index: items.map(({ id, title, level }) => ({ id, title, level })),
@@ -1154,117 +1156,142 @@ function caseFRagLoop() {
 
 // --------------------------------------------------- case G: PR #2 R2 clean re-run (2026-09-16, post-audit)
 
-function caseGPr2R2Live() {
-  if (!exists('finalsPr2R2Live', 'README.md')) return null;
-  const reviewerResult = exists('finalsPr2R2Live', 'reviewer-result.md') ? readText('finalsPr2R2Live', 'reviewer-result.md') : null;
-  const fixerResult = exists('finalsPr2R2Live', 'fixer-result.md') ? readText('finalsPr2R2Live', 'fixer-result.md') : null;
-  const fixerDiff = exists('finalsPr2R2Live', 'fixer-attempt-1.diff') ? readText('finalsPr2R2Live', 'fixer-attempt-1.diff') : null;
-  const verifierResult = exists('finalsPr2R2Live', 'verifier-result.md') ? readText('finalsPr2R2Live', 'verifier-result.md') : null;
-  const verification = exists('finalsPr2R2Live', 'verifier-workspace/verification.md') ? readText('finalsPr2R2Live', 'verifier-workspace/verification.md') : null;
-  const gateApproval = exists('finalsPr2R2Live', 'human-gate-approval.md') ? readText('finalsPr2R2Live', 'human-gate-approval.md') : null;
-  const runReadme = exists('finalsPr2R2Live', 'README.md') ? readText('finalsPr2R2Live', 'README.md') : null;
-  const meta = exists('finalsPr2R2Live', 'PR-METADATA.md') ? readText('finalsPr2R2Live', 'PR-METADATA.md') : null;
-  const teamRoom = exists('finalsPr2R2Live', 'team-room-messages.json') ? readJson('finalsPr2R2Live', 'team-room-messages.json') : null;
+function caseGPr2RagTraced() {
+  if (!exists('finalsPr2RagTraced', 'README.md')) return null;
+  const reviewerResult = exists('finalsPr2RagTraced', 'tasks/pr2rag-review-1/result.md') ? readText('finalsPr2RagTraced', 'tasks/pr2rag-review-1/result.md') : null;
+  const reviewerFindings = exists('finalsPr2RagTraced', 'tasks/pr2rag-review-1/workspace/findings.md') ? readText('finalsPr2RagTraced', 'tasks/pr2rag-review-1/workspace/findings.md') : null;
+  const fixerResult = exists('finalsPr2RagTraced', 'tasks/pr2rag-fix-1/result.md') ? readText('finalsPr2RagTraced', 'tasks/pr2rag-fix-1/result.md') : null;
+  const fixerDiff = exists('finalsPr2RagTraced', 'tasks/pr2rag-fix-1/attempt-1.diff') ? readText('finalsPr2RagTraced', 'tasks/pr2rag-fix-1/attempt-1.diff') : null;
+  const fixerNotes = exists('finalsPr2RagTraced', 'tasks/pr2rag-fix-1/workspace/notes.md') ? readText('finalsPr2RagTraced', 'tasks/pr2rag-fix-1/workspace/notes.md') : null;
+  const verifierResult = exists('finalsPr2RagTraced', 'tasks/pr2rag-verify-1/result.md') ? readText('finalsPr2RagTraced', 'tasks/pr2rag-verify-1/result.md') : null;
+  const verification = exists('finalsPr2RagTraced', 'tasks/pr2rag-verify-1/workspace/verification.md') ? readText('finalsPr2RagTraced', 'tasks/pr2rag-verify-1/workspace/verification.md') : null;
+  const gateApproval = exists('finalsPr2RagTraced', 'project/human-gate-approval.md') ? readText('finalsPr2RagTraced', 'project/human-gate-approval.md') : null;
+  const runReadme = exists('finalsPr2RagTraced', 'README.md') ? readText('finalsPr2RagTraced', 'README.md') : null;
+  const kickoff = exists('finalsPr2RagTraced', 'kickoff-as-sent.txt') ? readText('finalsPr2RagTraced', 'kickoff-as-sent.txt') : null;
+  const ragAudit = exists('finalsPr2RagTraced', 'rag/rag-tool-spans.jsonl') ? readText('finalsPr2RagTraced', 'rag/rag-tool-spans.jsonl') : null;
+  const ragCorpus = exists('finalsPr2RagTraced', 'rag/rag-live-corpus.json') ? readText('finalsPr2RagTraced', 'rag/rag-live-corpus.json') : null;
+  const teamRoom = exists('finalsPr2RagTraced', 'team-room-messages.json') ? readJson('finalsPr2RagTraced', 'team-room-messages.json') : null;
 
-  const RUN = 'run-elem-pr2r2-20260916-01';
+  const RUN = 'run-elem-pr2rag-20260917-01';
   const SHA = '1dedf5e1992c950557064d8f4fb9039d1523deb3';
   const attack = 'GET /demo/download?name=../outside/outside-secret.txt';
 
   const H = {
-    honesty_real: 'R2 本次真实执行（2026-09-16，审计修正后复跑）：非预设 SPEC、真实人工门、Leader 全新委派事件、真实 deepseek-chat 请求、全事件 id 可审计',
-    honesty_limits: '页面为只读回放；工件在容器移除后自 MinIO 持久层恢复（README §四已披露）；本轮 leader 状态报告较多，用量略超点估计',
+    honesty_real: 'RAG-TRACED 本次真实执行（2026-09-17）：非预设 SPEC、真实人工门（按操作员运行前授权自动投递）、批准后 9 秒 Leader 全新委派、三角色实际调用 rag_retrieve（审计流水全量）、647 span 直连 SLS 导出 0 失败',
+    honesty_limits: '页面为只读回放；RAG 语料为知识型 SYNTHETIC（无案例结论，citation-only）；reviewer 家目录跨轮持久同步（团队房可见 prior-runs 字样，结论仍由其自主复测得出）',
     honesty_exclude: '操作员对 Fixer 零执行指令介入；merge/push/close/reopen 未执行',
   };
 
   const items = [
     {
-      id: 'ev-r2-meta', title: 'CASE-MANIFEST（R2 仅参数，零结论预设）', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE',
+      id: 'ev-rag-meta', title: 'CASE-MANIFEST（RAG 轮仅参数 + 知识库能力声明，零结论预设）', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE',
       fields: [
-        ['run_id / project', RUN + ' · elemiso-pr2r2-gate'],
+        ['run_id / project', RUN + ' · elemiso-pr2rag-gate'],
         ['head SHA', SHA],
-        ['与 R1 的差异', '全新 task id（事务号无碰撞）；SPEC 未点名漏洞类别；全程守候 16 分钟'],
+        ['知识库', 'MCP 工具 rag_retrieve 可用（组织规范库，SYNTHETIC 知识型语料；工具仅返回引用，结论须出自自主复现）'],
       ],
-      blocks: [{ title: 'finalsPr2R2Live/PR-METADATA.md', lang: 'text', text: meta ?? '未提供' }],
-      source_ref: 'finalsPr2R2Live/PR-METADATA.md',
-      hash: refHash('finalsPr2R2Live', 'PR-METADATA.md'),
+      blocks: [{ title: 'finalsPr2RagTraced/kickoff-as-sent.txt', lang: 'text', text: kickoff ?? '未提供' }],
+      source_ref: 'finalsPr2RagTraced/kickoff-as-sent.txt',
+      hash: refHash('finalsPr2RagTraced', 'kickoff-as-sent.txt'),
       ...H,
     },
     {
-      id: 'ev-r2-review', title: 'Reviewer 结论 pr2r2-review-1（非预设 SPEC 下独立得出）', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE',
+      id: 'ev-rag-review', title: 'Reviewer 结论 pr2rag-review-1（先自主复现，后引用规范）', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE',
       fields: [
         ['结论', 'FINDING_CONFIRMED · SEVERITY: HIGH · CWE-22 · HUMAN_VERIFICATION_REQUIRED: YES'],
-        ['独立性', 'SPEC 未点名漏洞类别——Reviewer 自行定位 L41 os.path.join → L42 FileResponse 并自写 PoC（含 /etc/hostname 读取）'],
-        ['事件', '委派 $sWmvb_KJEsISTzysSG8j9rwg1sudypwTGV0vTRKsXJ4'],
-      ],
-      blocks: [{ title: 'finalsPr2R2Live/reviewer-result.md', lang: 'text', text: reviewerResult ?? '未提供' }],
-      source_ref: 'finalsPr2R2Live/reviewer-result.md',
-      hash: refHash('finalsPr2R2Live', 'reviewer-result.md'),
-      ...H,
-    },
-    {
-      id: 'ev-r2-gate', title: '人工安全门（操作员现场批准）', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE',
-      fields: [
-        ['Leader 行为', '审查验收后主动停门（DM $nSCtrMg5TAHz…：「尚未委派 pr2r2-fix-1」）'],
-        ['操作员决策', '批准修复+验证（现场交互，批准后零介入）'],
-        ['批准记录', 'human-gate-approval.md（含 R2 验收口径：必须出现新委派事件）'],
-      ],
-      blocks: [{ title: 'finalsPr2R2Live/human-gate-approval.md', lang: 'text', text: gateApproval ?? '未提供' }],
-      source_ref: 'finalsPr2R2Live/human-gate-approval.md',
-      hash: refHash('finalsPr2R2Live', 'human-gate-approval.md'),
-      ...H,
-    },
-    {
-      id: 'ev-r2-fix', title: 'Fixer 补丁 pr2r2-fix-1（R2 关键验收点达成）', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE',
-      fields: [
-        ['关键验收', '门批准后 Leader 发出全新委派事件 $uZ4Rj1SIJO82URs8w4K6boIr0H9eovivkv3oWYIaF9g（R1 缺陷：重派被事务号幂等吞掉）'],
-        ['交付', 'attempt-1.diff 单文件 +13/−7；patch sha256 674356fc9a661faa49b97b789d75ff4529b95a5fac7f39dad0301397c0116081'],
-        ['跨轮一致', '与 R1 独立产出的补丁逐字节一致（同一漏洞的确定性修复，互为印证）'],
+        ['独立复现', '自写 PoC：../outside-secret.txt → 200 泄露；../../../etc/hostname → 200 任意读；另发现 PR 自带测试#2 失败为 fixture 错位而非缓解'],
+        ['RAG 引用', 'rag_retrieve 返回 org-standards/cwe-22-path-traversal.md#1 + file-path-containment.md#1（"references only — my conclusion stands on my own repro"）'],
+        ['事件', '委派 $ssi5ZLHMRtpMbL-vS54K_H1…（团队房导出含完整 event_id）'],
       ],
       blocks: [
-        { title: 'finalsPr2R2Live/fixer-attempt-1.diff', lang: 'diff', text: fixerDiff ?? '未提供' },
-        { title: 'finalsPr2R2Live/fixer-result.md', lang: 'text', text: fixerResult ?? '未提供' },
+        { title: 'finalsPr2RagTraced/tasks/pr2rag-review-1/result.md', lang: 'text', text: reviewerResult ?? '未提供' },
+        { title: 'finalsPr2RagTraced/tasks/pr2rag-review-1/workspace/findings.md', lang: 'text', text: reviewerFindings ?? '未提供' },
       ],
-      source_ref: 'finalsPr2R2Live/fixer-attempt-1.diff',
-      hash: refHash('finalsPr2R2Live', 'fixer-attempt-1.diff'),
+      source_ref: 'finalsPr2RagTraced/tasks/pr2rag-review-1/result.md',
+      hash: refHash('finalsPr2RagTraced', 'tasks/pr2rag-review-1/result.md'),
       ...H,
     },
     {
-      id: 'ev-r2-verify', title: 'Verifier 独立验证（VERIFIED PASS，首次通过）', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE',
+      id: 'ev-rag-gate', title: '人工安全门（按操作员运行前授权自动投递：批准）', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE',
       fields: [
-        ['独立工作区', '全新 clone ~/pr2r2-verify-work @ head SHA；git apply 干净通过；sha256 独立复现一致'],
-        ['修复前', '3 组越权 200 并泄露基外内容（含 /etc/hostname）；缺失 500'],
-        ['修复后', '越权全 400 Invalid file path · 合法 ok.txt 200 · 缺失 404'],
-        ['回归', '冻结测试断言反转如实记录；未修改任何测试'],
+        ['Leader 行为', '审查验收后主动停门（DM $MKaRMJL-T34lT…：「尚未委派 pr2rag-fix-1」）'],
+        ['操作员决策', 'APPROVED（17:18:57Z，按运行前书面授权"门按先例默认执行"投递；授权范围不含任何 GitHub 写操作）'],
+        ['批准记录', '先于派发落盘 project/human-gate-approval.md'],
+      ],
+      blocks: [{ title: 'finalsPr2RagTraced/project/human-gate-approval.md', lang: 'text', text: gateApproval ?? '未提供' }],
+      source_ref: 'finalsPr2RagTraced/project/human-gate-approval.md',
+      hash: refHash('finalsPr2RagTraced', 'project/human-gate-approval.md'),
+      ...H,
+    },
+    {
+      id: 'ev-rag-fix', title: 'Fixer 补丁 pr2rag-fix-1（RAG 组织规范 → 确定性修复）', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE',
+      fields: [
+        ['关键验收', '门批准后 9 秒 Leader 发出全新委派事件 $bZ2qmRF9r138p5xUZM7_XpgqrdETvqlcDOlKFRZ5Sgk'],
+        ['RAG 引用', '自检通过后检索组织规范："org standards corroborate the CWE-22 finding and the containment approach"（file-path-containment.md：realpath+commonpath+400/404）'],
+        ['交付', 'attempt-1.diff 单文件 +13/−7；sha256 674356fc…16081 —— 与 R1/R2/R3-TRACED 独立产出逐字节一致；本轮揭示机理：组织规范即该实现模式'],
       ],
       blocks: [
-        { title: 'finalsPr2R2Live/verifier-result.md', lang: 'text', text: verifierResult ?? '未提供' },
-        { title: 'finalsPr2R2Live/verifier-workspace/verification.md', lang: 'markdown', text: verification ?? '未提供' },
+        { title: 'finalsPr2RagTraced/tasks/pr2rag-fix-1/attempt-1.diff', lang: 'diff', text: fixerDiff ?? '未提供' },
+        { title: 'finalsPr2RagTraced/tasks/pr2rag-fix-1/result.md', lang: 'text', text: fixerResult ?? '未提供' },
+        { title: 'finalsPr2RagTraced/tasks/pr2rag-fix-1/workspace/notes.md', lang: 'text', text: fixerNotes ?? '未提供' },
       ],
-      source_ref: 'finalsPr2R2Live/verifier-result.md',
-      hash: refHash('finalsPr2R2Live', 'verifier-result.md'),
+      source_ref: 'finalsPr2RagTraced/tasks/pr2rag-fix-1/attempt-1.diff',
+      hash: refHash('finalsPr2RagTraced', 'tasks/pr2rag-fix-1/attempt-1.diff'),
       ...H,
     },
     {
-      id: 'ev-r2-run', title: 'R2 运行档案（事件链/用量/采集披露）', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE',
+      id: 'ev-rag-verify', title: 'Verifier 独立验证（VERIFIED PASS，首次通过）', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE',
       fields: [
-        ['墙钟', 'kickoff 04:49:48Z → 终报 05:06:28Z ≈ 16 分钟（全程守候，无离席项）'],
-        ['用量', '88 次调用 · 输入 4.65M（98.9% 缓存命中）· 估算 ≈¥1.1–2.5'],
-        ['采集披露', '工件在容器移除后自 MinIO 持久层恢复（README §四）'],
+        ['独立工作区', '干净 clone ~/pr2rag-verify-work @ head SHA；git apply 干净通过；sha256 独立复现一致；backend/tests/ 未触碰'],
+        ['修复前', '3 逃逸向量全 200 泄露（含前导 / 绝对路径 /etc/hostname）；缺失 500'],
+        ['修复后', '越权全 400 Invalid file path · 合法 ok.txt 200 · 缺失 404；PR 测试断言反转如实记录'],
+        ['RAG 引用', '验证通过后检索组织标准（SYNTHETIC 确认）——"my verdict rests on my own reproduction"'],
       ],
-      blocks: [{ title: 'finalsPr2R2Live/README.md', lang: 'markdown', text: runReadme ?? '未提供' }],
-      source_ref: 'finalsPr2R2Live/README.md',
-      hash: refHash('finalsPr2R2Live', 'README.md'),
+      blocks: [
+        { title: 'finalsPr2RagTraced/tasks/pr2rag-verify-1/result.md', lang: 'text', text: verifierResult ?? '未提供' },
+        { title: 'finalsPr2RagTraced/tasks/pr2rag-verify-1/workspace/verification.md', lang: 'markdown', text: verification ?? '未提供' },
+      ],
+      source_ref: 'finalsPr2RagTraced/tasks/pr2rag-verify-1/result.md',
+      hash: refHash('finalsPr2RagTraced', 'tasks/pr2rag-verify-1/result.md'),
       ...H,
     },
     {
-      id: 'ev-r2-rooms', title: 'Matrix 房间导出（R2 窗口事件）', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE',
+      id: 'ev-rag-run', title: 'RAG-TRACED 运行档案（RAG 审计/span/用量/采集披露）', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE',
       fields: [
-        ['团队房', '!RErK7WVs9iUeaszwho:elemiso-matrix:6167'],
-        ['Leader DM', '!VocOLrDhUMBcBjzIuY:elemiso-matrix:6167'],
+        ['墙钟', 'kickoff 17:16:30Z → 终报 17:20:45Z ≈ 4 分 15 秒（全程守候）'],
+        ['用量', '80 次调用 · 输入 6.65M（94% 缓存，容器冷启动所致）· 输出 24,569'],
+        ['追踪', '647 span（tool.rag_retrieve ×8）直连 SLS、216 批次 0 失败；直连探针 4×HTTP 200'],
+        ['采集披露', '工件于停机（17:28:12Z）前实时采集；停机后网关零新增'],
       ],
-      blocks: [{ title: 'finalsPr2R2Live/team-room-messages.json（事件数）', lang: 'json', text: JSON.stringify({ room: teamRoom?.room, events: teamRoom?.count }) }],
-      source_ref: 'finalsPr2R2Live/team-room-messages.json',
-      hash: refHash('finalsPr2R2Live', 'team-room-messages.json'),
+      blocks: [
+        { title: 'finalsPr2RagTraced/README.md', lang: 'markdown', text: runReadme ?? '未提供' },
+        { title: 'finalsPr2RagTraced/rag/rag-tool-spans.jsonl（服务端审计流水）', lang: 'json', text: ragAudit ?? '未提供' },
+      ],
+      source_ref: 'finalsPr2RagTraced/README.md',
+      hash: refHash('finalsPr2RagTraced', 'README.md'),
+      ...H,
+    },
+    {
+      id: 'ev-rag-corpus', title: 'RAG 语料与服务（知识型设计：零案例结论）', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE',
+      fields: [
+        ['语料', '8 文档 / 12 chunk：CWE-22/CWE-78 定义、路径包含性与命令执行组织规范、FastAPI 安全清单、审查输出规范'],
+        ['泄露防护', '语料不含任何案例结论/仓库事实——Reviewer 独立性不受污染（平台 :4174 语料含案例摘要，本轮刻意分离）'],
+        ['契约', '与平台 /api/rag/search 同形；citation-only；服务端只存 query_hash'],
+      ],
+      blocks: [{ title: 'finalsPr2RagTraced/rag/rag-live-corpus.json', lang: 'json', text: ragCorpus ?? '未提供' }],
+      source_ref: 'finalsPr2RagTraced/rag/rag-live-corpus.json',
+      hash: refHash('finalsPr2RagTraced', 'rag/rag-live-corpus.json'),
+      ...H,
+    },
+    {
+      id: 'ev-rag-rooms', title: 'Matrix 房间导出（全量事件）', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE',
+      fields: [
+        ['团队房', '!RErK7WVs9iUeaszwho:elemiso-matrix:6167（749 事件）'],
+        ['Leader DM', '!VocOLrDhUMBcBjzIuY:elemiso-matrix:6167（465 事件）'],
+      ],
+      blocks: [{ title: 'finalsPr2RagTraced/team-room-messages.json（事件数）', lang: 'json', text: JSON.stringify({ room: teamRoom?.room, events: teamRoom?.count }) }],
+      source_ref: 'finalsPr2RagTraced/team-room-messages.json',
+      hash: refHash('finalsPr2RagTraced', 'team-room-messages.json'),
       ...H,
     },
   ];
@@ -1273,51 +1300,51 @@ function caseGPr2R2Live() {
     {
       id: 'pr-init', title: '① PR 发起', points: [
         { k: 'run_id', v: RUN, mono: true },
-        { k: '与 R1 差异', v: '全新 task id（无事务号碰撞）；SPEC 未预设结论；全程守候' },
+        { k: '知识库', v: 'rag_retrieve 可用（知识型语料；引用不替代验证）' },
         { k: 'head SHA', v: SHA, mono: true },
       ],
-      evidence: ['ev-r2-meta'], probe: null,
-      detail: { title: '运行环境（默认折叠）', quote: '与 R1 同栈同团队；镜像一致（223ddc2 系）。', outbox: [], events: [] },
+      evidence: ['ev-rag-meta'], probe: null,
+      detail: { title: '运行环境（默认折叠）', quote: 'elemiso 隔离栈；镜像 copaw-worker:223ddc2-agentloop-rag（OTel v2.2 + RAG MCP 延迟 hook）。', outbox: [], events: [] },
     },
     {
       id: 'review', title: '② 风险审查（非预设 SPEC）', points: [
         { k: 'Reviewer 结论', v: 'FINDING_CONFIRMED · SEVERITY: HIGH · CWE-22' },
-        { k: '独立性', v: 'SPEC 未点名漏洞类别；Reviewer 自行定位并自写 PoC（/etc/hostname 读取）' },
-        { k: '真实执行', v: 'pytest 实跑（含 marker 收集期问题的诚实备注）' },
+        { k: '独立复现', v: '自写 PoC（/etc/hostname 任意读）；PR 测试#2 失败 = fixture 错位（独立发现）' },
+        { k: 'RAG 引用', v: '复现完成后检索组织标准——与自主结论一致（references only）' },
       ],
-      evidence: ['ev-r2-review'], probe: null, attack: { request: attack, legit: 'GET /demo/download?name=ok.txt' },
-      detail: { title: '执行细节（默认折叠）', quote: 'clone+checkout 校验后独立审查；这轮的 HIGH 定级完全来自 Reviewer 自己。', outbox: [], events: [] },
+      evidence: ['ev-rag-review'], probe: null, attack: { request: attack, legit: 'GET /demo/download?name=ok.txt' },
+      detail: { title: '执行细节（默认折叠）', quote: 'RAG 纪律：先复现、后引用、结论自带验证——知识增强不替代独立判断。', outbox: [], events: [] },
     },
     {
-      id: 'gate', title: '③ 人工安全门（现场批准）', points: [
-        { k: 'Leader 行为', v: '审查验收后主动停门（「尚未委派 pr2r2-fix-1」）' },
-        { k: '操作员决策', v: '现场批准修复+验证（批准后零介入）' },
+      id: 'gate', title: '③ 人工安全门（批准）', points: [
+        { k: 'Leader 行为', v: '审查验收后主动停门（「尚未委派 pr2rag-fix-1」）' },
+        { k: '操作员决策', v: 'APPROVED（按运行前书面授权自动投递；记录先于派发落盘）' },
       ],
-      evidence: ['ev-r2-gate'], probe: null,
-      detail: { title: '与 R1 对照（默认折叠）', quote: 'R1 同一 Leader 跳门被作废；R2 契约强化后正确停门——门纪律的完整对照。', outbox: [], events: [] },
+      evidence: ['ev-rag-gate'], probe: null,
+      detail: { title: '授权口径（默认折叠）', quote: '授权范围与先例一致：最小修复+测试冻结+零 GitHub 写入；FAIL 一次重派。', outbox: [], events: [] },
     },
     {
-      id: 'fix-diff', title: '④ 修复 diff（Leader 委派）', points: [
-        { k: '关键验收', v: '门后全新委派事件 $uZ4Rj1SI…（R1 缺陷闭环）', mono: true },
+      id: 'fix-diff', title: '④ 修复 diff（Leader 委派后 9 秒开工）', points: [
+        { k: '关键验收', v: '门后全新委派事件 $bZ2qmRF9r138p…', mono: true },
         { k: '交付物', v: 'attempt-1.diff 单文件 +13/−7；sha256 674356fc…16081', mono: true },
-        { k: '跨轮一致', v: '与 R1 补丁逐字节一致——确定性修复的互证' },
+        { k: 'RAG 机理', v: 'Fixer 检索的组织规范 = 该实现模式——解释四轮独立产出逐字节一致' },
       ],
-      evidence: ['ev-r2-fix'], probe: null,
+      evidence: ['ev-rag-fix'], probe: null,
       detail: { title: 'fixer 执行（默认折叠）', quote: 'Fixer 按契约在新目录 clone/修改/diff/sha256/提交；无操作员执行指令。', outbox: [], events: [] },
     },
     {
       id: 'verify', title: '⑤ 独立验证（VERIFIED PASS）', points: [
-        { k: '独立工作区', v: '全新 clone + apply + sha256 独立复现一致' },
-        { k: '修复前', v: '越权 200+泄露 / 合法 200 / 缺失 500' },
+        { k: '独立工作区', v: '干净 clone + apply + sha256 独立复现一致' },
+        { k: '修复前', v: '3 逃逸向量 200+泄露（含前导 / 绝对路径）/ 缺失 500' },
         { k: '修复后', v: '越权全 400 / 合法 200 / 缺失 404' },
         { k: '返工', v: '未发生——首次 PASS，如实记录' },
       ],
-      evidence: ['ev-r2-verify'],
+      evidence: ['ev-rag-verify'],
       probe: {
         headline: '探针对照（Verifier 独立实测）',
         rows: [
           { label: '越权读取（../outside/outside-secret.txt）', request: attack, before: 'HTTP 200 · 泄露 TOP-SECRET-OUTSIDE-BASE', after: 'HTTP 400 · Invalid file path', kind: 'fixed' },
-          { label: '越权读取（多级 ../ 至 /etc/hostname）', request: 'name=../../../../../../etc/hostname', before: 'HTTP 200 · 泄露主机名', after: 'HTTP 400 · Invalid file path', kind: 'fixed' },
+          { label: '绝对路径（/etc/hostname）', request: 'name=/etc/hostname', before: 'HTTP 200 · 泄露主机名', after: 'HTTP 400 · Invalid file path', kind: 'fixed' },
           { label: '合法基内文件（ok.txt）', request: 'GET /demo/download?name=ok.txt', before: 'HTTP 200 · LEGIT-INSIDE-BASE', after: 'HTTP 200 · 仍可用', kind: 'stable' },
         ],
       },
@@ -1326,49 +1353,50 @@ function caseGPr2R2Live() {
     {
       id: 'approval', title: '⑥ Leader 验收 · 最终处置', points: [
         { k: 'Leader 验收', v: '三任务全验收，plan 全 [x]，项目 completed' },
-        { k: '终报', v: 'DM $f-0vondMoFHh…（05:06:28Z）' },
+        { k: '终报', v: 'DM $CO6O4a8MyMRGN…（17:20:45Z，墙钟 4 分 15 秒）' },
         { k: 'PR 状态', v: 'PR #2 保持 OPEN · 零 GitHub 写入' },
       ],
-      evidence: ['ev-r2-run', 'ev-r2-rooms'], probe: null,
+      evidence: ['ev-rag-run', 'ev-rag-corpus', 'ev-rag-rooms'], probe: null,
       decision: {
-        verified: { verdict: 'PASS', text: 'VERDICT: VERIFIED —— R2 干净链路：门后新委派事件 + 独立验证通过' },
-        human_approval: { needed: true, text: '需要且已执行 —— 操作员现场批准（修复前）', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE' },
+        verified: { verdict: 'PASS', text: 'VERDICT: VERIFIED —— 门后新委派事件 + 独立验证通过 + 全程 RAG/OTel 追踪' },
+        human_approval: { needed: true, text: '需要且已执行 —— 按操作员运行前授权自动投递（批准）', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE' },
         merge_allowed: { allowed: false, text: 'PR #2 保持 OPEN —— 合并未执行' },
         github_write: { done: false, text: '未写入 GitHub', level: 'NOT_EXECUTED' },
-        execution_nature: { text: 'REAL_EXECUTED-AgentTeams（R2 复跑，审计修正后）：非预设 SPEC + 干净派发链', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE' },
+        execution_nature: { text: 'REAL_EXECUTED-AgentTeams + RAG-MCP-INTEGRATED：非预设 SPEC + 干净派发链 + 全程追踪', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE' },
         pr_open: true,
       },
-      detail: { title: '终态（默认折叠）', quote: '运行结束计费调用者全部停止；R1 保留为审计修正对照。', outbox: [], events: [] },
+      detail: { title: '终态（默认折叠）', quote: '运行结束计费调用者全部停止；非 RAG 轮证据（R3-TRACED）保留为对照。', outbox: [], events: [] },
     },
   ];
 
   return {
-    case_id: 'fastapi-pr2-r2-live-20260916',
+    case_id: 'fastapi-pr2-rag-traced-20260917',
     shape: 'guided',
-    name: 'FastAPI PR #2 · R2 干净复跑（2026-09-16）',
-    short_name: '主案例 · PR #2 R2 复跑',
-    one_liner: '审计修正后的干净复跑：非预设 SPEC 下 Reviewer 独立确认 HIGH（CWE-22）→ 现场人工门批准 → Leader 全新委派事件 → Verifier 独立验证 VERIFIED PASS，16 分钟全程守候。',
+    name: 'FastAPI PR #2 · RAG 接入 + AgentLoop 追踪（2026-09-17）',
+    short_name: '主案例 · PR #2 RAG+追踪',
+    one_liner: 'RAG MCP 挂进 worker 的全链闭环：非预设 SPEC 下 Reviewer 独立确认 HIGH（CWE-22）→ 人工门批准（授权自动投递）→ Leader 9 秒全新委派 → Fixer 依组织规范产出确定性修复 → Verifier VERIFIED，4 分 15 秒，647 span 直连 SLS。',
     repo: 'nghqqa/fastapi-boilerplate-demo',
     pr: 'PR #2 · demo/high-risk-human-gate',
     pr_url: 'https://github.com/nghqqa/fastapi-boilerplate-demo/pull/2',
     run_id: RUN,
     sha: SHA,
-    sha_kind: 'PR #2 head commit（运行中 ls-remote 核验一致）',
+    sha_kind: 'PR #2 head commit · ls-remote 已核验',
     evidence_level: ['REAL_EXECUTED_AGENTTEAMS_LIVE'],
-    replay_note: 'REAL_EXECUTED（R2 复跑 2026-09-16）—— 本页面回放该次运行的证据；不连接实时系统',
-    purpose: '审计修正后的主案例证据：流程与宣称完全一致的干净闭环',
-    risk_tags: ['CWE-22 路径穿越', '任意文件读取', 'HIGH'],
-    status: { verdict: 'PASS', label: 'R2 干净复跑 · VERIFIED PASS · PR 保持 OPEN' },
+    replay_note: 'REAL_EXECUTED（RAG-TRACED 2026-09-17）—— 本页面回放该次运行的证据；不连接实时系统',
+    purpose: 'RAG 接入后的主案例证据：知识增强不破坏独立性，全程 AgentLoop 追踪',
+    risk_tags: ['CWE-22 路径穿越', '任意文件读取', 'HIGH', 'RAG 知识库', 'AgentLoop 追踪'],
+    status: { verdict: 'PASS', label: 'RAG-TRACED · VERIFIED PASS · PR 保持 OPEN' },
     facts: {
       real_github_pr: { value: '真实 GitHub PR（OPEN）', ok: true, note: 'https://github.com/nghqqa/fastapi-boilerplate-demo/pull/2' },
-      real_agentteams_run: { value: '真实 AgentTeams 运行（R2）', ok: true, note: '门后全新委派事件；无操作员执行指令介入' },
+      real_agentteams_run: { value: '真实 AgentTeams 运行（RAG-TRACED）', ok: true, note: '门后全新委派事件；三角色实际调用 rag_retrieve' },
+      rag_mcp: { value: 'rag_retrieve ×8（三角色）', ok: true, note: '审计流水全量；引用不替代自主验证' },
       github_write: { value: '未写入 —— PR 保持 OPEN', ok: false, note: 'merge/push/close/reopen 全程禁止' },
     },
     banner: null,
     stage_timeline: null,
     chain: ['案例 ' + RUN, 'PR #2', 'commit ' + short(SHA, 10), 'demo_high_risk.py', 'attempt-1.diff', 'probe 200→400', 'VERIFIED PASS'],
-    generated_at: '运行 2026-09-16T04:49Z–05:06Z（全程守候 ≈16 分钟）',
-    source_dir: 'evidence/FINALS-ELEM-PR2-LIVE-20260916-R2（SHA256SUMS 锁定）',
+    generated_at: '运行 2026-09-16T17:16Z–17:21Z（全程守候 ≈4 分 15 秒）',
+    source_dir: 'evidence/FINALS-ELEM-PR2-RAG-TRACED（SHA256SUMS 锁定）',
     honesty: H,
     steps,
     evidence_index: items.map(({ id, title, level }) => ({ id, title, level })),
@@ -1821,7 +1849,7 @@ function caseCDbLoop() {
 
 // ------------------------------------------------------------------ public API
 
-const CASE_BUILDERS = { 'fastapi-pr2-r2-live-20260916': caseGPr2R2Live, 'fastapi-pr2-cwe22': caseAFastAPI, 'fastapi-pr2-live-20260916': caseDPr2Live, 'fastapi-pr3-reject': caseEPr3Reject, 'rag-retrieval-loop': caseFRagLoop, 'rework-payments': caseBRework, 'db-migration-orders': caseCDbLoop };
+const CASE_BUILDERS = { 'fastapi-pr2-rag-traced-20260917': caseGPr2RagTraced, 'fastapi-pr2-cwe22': caseAFastAPI, 'fastapi-pr2-live-20260916': caseDPr2Live, 'fastapi-pr3-reject': caseEPr3Reject, 'rag-retrieval-loop': caseFRagLoop, 'rework-payments': caseBRework, 'db-migration-orders': caseCDbLoop };
 
 function summarize(x) {
   if (!x) return null;
@@ -1838,7 +1866,7 @@ function summarize(x) {
 export function demoOverview() {
   const b = build();
   const a = caseAFastAPI();
-  const live = caseGPr2R2Live() || caseDPr2Live();
+  const live = caseGPr2RagTraced() || caseDPr2Live();
   const r1live = caseDPr2Live();
   const r3 = caseEPr3Reject();
   const rag = caseFRagLoop();
