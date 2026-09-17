@@ -1296,7 +1296,7 @@ function caseGPr2RagTraced() {
     },
   ];
 
-  const steps = [
+    const steps = [
     {
       id: 'pr-init', title: '① PR 发起', points: [
         { k: 'run_id', v: RUN, mono: true },
@@ -1316,7 +1316,27 @@ function caseGPr2RagTraced() {
       detail: { title: '执行细节（默认折叠）', quote: 'RAG 纪律：先复现、后引用、结论自带验证——知识增强不替代独立判断。', outbox: [], events: [] },
     },
     {
-      id: 'gate', title: '③ 人工安全门（批准）', points: [
+      id: 'rag', title: '③ 知识库检索（RAG MCP · 全程审计）', points: [
+        { k: '谁在查', v: 'Reviewer（复现后）/ Fixer（修复前）/ Verifier（裁决前）——三个角色各自独立发起' },
+        { k: '命中什么', v: 'cwe-22-path-traversal / file-path-containment / fastapi-endpoint-checklist（组织规范）' },
+        { k: '防泄露设计', v: '语料零案例结论；服务端只存 query_hash；工具 citation-only——知识增强不替代独立判断' },
+      ],
+      evidence: ['ev-rag-run', 'ev-rag-corpus'], probe: null,
+      rag: {
+        headline: 'rag_retrieve 调用审计（PR2-RAG 运行窗口，服务端流水原文）',
+        source: 'rag/rag-tool-spans.jsonl（只记录 query_hash/命中引用/耗时——设计上不保存查询原文）',
+        records: [
+          { role: 'reviewer', at: '17:17:56Z', stage: '自主 PoC 复现完成后，检索组织定性/修复规范', query_hash: '见审计流水', refs: ['org-standards/cwe-22-path-traversal.md#1', 'org-standards/file-path-containment.md#1'] },
+          { role: 'fixer', at: '17:19:22Z', stage: '自检通过后，确认修复模式与组织规范一致', query_hash: '见审计流水', refs: ['org-standards/cwe-22-path-traversal.md#1', 'org-standards/file-path-containment.md#2'] },
+          { role: 'verifier', at: '17:20:19Z', stage: '独立裁决通过后，核对组织口径（SYNTHETIC 确认）', query_hash: '见审计流水', refs: ['org-standards/fastapi-endpoint-checklist.md#1', 'org-standards/cwe-22-path-traversal.md#1'] },
+        ],
+        note: '同一调用在流水中出现两条（MCP 客户端侧 + 服务侧各一条），为对账设计；另有 4 条 17:15:23Z 的运行前 smoke 预检记录。',
+      },
+      evidence: ['ev-rag-run', 'ev-rag-corpus'], probe: null,
+      detail: { title: 'RAG 纪律（默认折叠）', quote: '三个角色都在完成自己的独立工作之后才查询知识库，且都在团队房明示"references only"——这是本次接入最重要的演示点。', outbox: [], events: [] },
+    },
+    {
+      id: 'gate', title: '④ 人工安全门（批准）', points: [
         { k: 'Leader 行为', v: '审查验收后主动停门（「尚未委派 pr2rag-fix-1」）' },
         { k: '操作员决策', v: 'APPROVED（按运行前书面授权自动投递；记录先于派发落盘）' },
       ],
@@ -1324,7 +1344,7 @@ function caseGPr2RagTraced() {
       detail: { title: '授权口径（默认折叠）', quote: '授权范围与先例一致：最小修复+测试冻结+零 GitHub 写入；FAIL 一次重派。', outbox: [], events: [] },
     },
     {
-      id: 'fix-diff', title: '④ 修复 diff（Leader 委派后 9 秒开工）', points: [
+      id: 'fix-diff', title: '⑤ 修复 diff（RAG 组织规范引导）', points: [
         { k: '关键验收', v: '门后全新委派事件 $bZ2qmRF9r138p…', mono: true },
         { k: '交付物', v: 'attempt-1.diff 单文件 +13/−7；sha256 674356fc…16081', mono: true },
         { k: 'RAG 机理', v: 'Fixer 检索的组织规范 = 该实现模式——解释四轮独立产出逐字节一致' },
@@ -1333,7 +1353,7 @@ function caseGPr2RagTraced() {
       detail: { title: 'fixer 执行（默认折叠）', quote: 'Fixer 按契约在新目录 clone/修改/diff/sha256/提交；无操作员执行指令。', outbox: [], events: [] },
     },
     {
-      id: 'verify', title: '⑤ 独立验证（VERIFIED PASS）', points: [
+      id: 'verify', title: '⑥ 独立验证（VERIFIED PASS）', points: [
         { k: '独立工作区', v: '干净 clone + apply + sha256 独立复现一致' },
         { k: '修复前', v: '3 逃逸向量 200+泄露（含前导 / 绝对路径）/ 缺失 500' },
         { k: '修复后', v: '越权全 400 / 合法 200 / 缺失 404' },
@@ -1351,7 +1371,7 @@ function caseGPr2RagTraced() {
       detail: { title: '验证事件链（默认折叠）', quote: '只采信自己的 clone、apply、探针状态码。', outbox: [], events: [] },
     },
     {
-      id: 'approval', title: '⑥ Leader 验收 · 最终处置', points: [
+      id: 'approval', title: '⑦ Leader 验收 · 最终处置', points: [
         { k: 'Leader 验收', v: '三任务全验收，plan 全 [x]，项目 completed' },
         { k: '终报', v: 'DM $CO6O4a8MyMRGN…（17:20:45Z，墙钟 4 分 15 秒）' },
         { k: 'PR 状态', v: 'PR #2 保持 OPEN · 零 GitHub 写入' },
@@ -1867,13 +1887,14 @@ export function demoOverview() {
   const b = build();
   const a = caseAFastAPI();
   const live = caseGPr2RagTraced() || caseDPr2Live();
-  const r1live = caseDPr2Live();
   const r3 = caseEPr3Reject();
-  const rag = caseFRagLoop();
   const c = caseBRework();
   const d = caseCDbLoop();
+  // 2026-09-17 lineup: ONLY the two RAG-TRACED core cases are demoed.
+  // The other builders remain reachable by direct id (deep links / API) but are
+  // intentionally not part of the roadshow lineup.
   return {
-    available: !!(a && c),
+    available: !!(live && r3),
     platform: {
       name: 'MergePilot',
       tagline: '证据驱动的 PR 审修流程回放器 · 离线优先',
@@ -1881,8 +1902,8 @@ export function demoOverview() {
       integrity: Object.entries(b.integrity).map(([k, v]) => ({ key: k, dir: v.dir, tier: v.tier, verified: !!v.verified, files: v.files ?? 0 })),
     },
     levels: EVIDENCE_LEVELS,
-    current_case_id: live ? live.case_id : (a ? a.case_id : null),
-    cases: [live, r1live, a, r3, rag, c, d].filter(Boolean).map(summarize).filter((x) => !x.extra),
+    current_case_id: live ? live.case_id : (r3 ? r3.case_id : null),
+    cases: [live, r3].filter(Boolean).map(summarize).filter((x) => !x.extra),
     additional: [d].filter(Boolean).map(summarize),
   };
 }

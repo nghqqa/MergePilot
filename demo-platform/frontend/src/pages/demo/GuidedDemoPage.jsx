@@ -7,14 +7,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearchParams, Link } from 'react-router-dom';
 import {
-  ChevronLeft, ChevronRight, RotateCcw, ArrowLeft, Eye, GitPullRequest, ScanSearch, FileDiff, FlaskConical, UserCheck,
+  ChevronLeft, ChevronRight, RotateCcw, ArrowLeft, Eye, GitPullRequest, ScanSearch, FileDiff, FlaskConical, UserCheck, BookOpen, Flag,
 } from 'lucide-react';
 import { api } from '../../api.js';
 import { LevelChip, Verdict, Points, Collapsed, StepBar, CodeBlock } from '../../components/demo/bits.jsx';
 import EvidenceDrawer from '../../components/demo/EvidenceDrawer.jsx';
 import DecisionPanel, { NotExecutedNote } from './DecisionPanel.jsx';
 
-const ICONS = [GitPullRequest, ScanSearch, FileDiff, FlaskConical, UserCheck];
+const ICONS = [GitPullRequest, ScanSearch, BookOpen, UserCheck, FileDiff, FlaskConical, UserCheck, Flag];
 const short = (s, n = 12) => (s ? `${String(s).slice(0, n)}…` : '未提供');
 
 export default function GuidedDemoPage({ caseId: propCaseId }) {
@@ -93,6 +93,26 @@ export default function GuidedDemoPage({ caseId: propCaseId }) {
           </div>
           <div className="panel-body">
             <Points rows={step.points} />
+            {step.rag && (
+              <div className="table-scroll" style={{ marginTop: 10 }}>
+                <table className="dtable">
+                  <thead><tr><th>调用方</th><th>时刻 (UTC)</th><th>阶段</th><th>命中引用（source_refs）</th></tr></thead>
+                  <tbody>
+                    {step.rag.records.map((r, i) => (
+                      <tr key={i}>
+                        <td className="mono">{r.role}</td>
+                        <td className="mono tnum">{r.at}</td>
+                        <td className="wrap small">{r.stage}</td>
+                        <td className="wrap small mono">{r.refs.join(' · ')}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div className="small faint" style={{ marginTop: 6 }}>
+                  {step.rag.headline} · {step.rag.source} · {step.rag.note}
+                </div>
+              </div>
+            )}
             {step.detail && (
               <Collapsed title={step.detail.title}>
                 {step.detail.quote && <div className="notice gray" style={{ marginBottom: 10 }}>{step.detail.quote}</div>}
