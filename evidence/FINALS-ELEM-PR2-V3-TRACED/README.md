@@ -33,7 +33,10 @@
 - span 会话累计 **530**（leader 203/reviewer 136/fixer 92/verifier 99），其中 `tool.rag_retrieve` ×4、
   **`agentteams.delegation.link` ×12**（接收侧每个委派通知 1 条——跨 Agent 关联首次在真实运行生效）；
   导出 234 批次全部 SUCCESS、0 失败（`agentloop/span-summary.json`）。
-- 直连探针 4×HTTP 200（`agentloop/direct-probe-*.json`）。
+- 直连探针：**本轮未采集成功**（采集命令静默失败，`agentloop/direct-probe-*.json` 为
+  0 字节空文件、已被 SHA256SUMS 如实锁定——空文件哈希 e3b0c442… 即"此轮无探针"的诚实留痕）。
+  容器内导出成功的证据以进程内 `OTEL_EXPORT SUCCESS` 批次（234 批、0 失败）为准；
+  直接导出连通性在此前轮次（RAG-TRACED 包 4×HTTP 200）与本轮 Agent 真实 span 的持续云端落盘中间接成立。
 - 用量：**88 次调用 · 输入 9,186,373（92% 缓存）· 输出 27,791**（`usage-summary.json`）。
 
 ## 文件清单
