@@ -63,9 +63,9 @@ export default function CaseSelectorPage() {
                 <LevelChip level={c.evidence_level} />
               </div>
               <div className="small muted" style={{ textAlign: 'right' }}>{c.status.label}</div>
-              <button className="btn primary small" onClick={(e) => { e.stopPropagation(); openCase(c); }}>
+              <a className="btn primary small" href={c.shape === 'guided' ? `/demo/${c.case_id}?step=1` : `/demo/${c.case_id}`} onClick={(e) => e.stopPropagation()}>
                 {c.shape === 'guided' ? '开始引导演示' : '查看案例简报'} <ArrowRight size={13} />
-              </button>
+              </a>
             </div>
           </div>
         ))}

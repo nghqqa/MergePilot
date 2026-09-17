@@ -4,7 +4,7 @@
 //   Legacy replay world (dark, Phase 14): /cases/pr* , /pr4 , /rework , /rag ,
 //   /audit , /ops → original topbar + DemoBar, untouched.
 import React from 'react';
-import { Routes, Route, useLocation } from 'react-router-dom';
+import { Routes, Route, useLocation, useParams } from 'react-router-dom';
 import { useDemo } from './store.jsx';
 import DemoChrome from './DemoChrome.jsx';
 import OverviewPage from './pages/demo/OverviewPage.jsx';
@@ -21,12 +21,18 @@ import ReworkPage from './pages/ReworkPage.jsx';
 import Overview from './pages/Overview.jsx';
 import { DemoBar, ErrorBox, LoadingBox } from './components/ui.jsx';
 
+function GuidedDemoPageRoute() {
+  const { caseId } = useParams();
+  return <GuidedDemoPage caseId={caseId} />;
+}
+
 function DemoRoutes() {
   return (
     <Routes>
       <Route path="/" element={<OverviewPage />} />
       <Route path="/cases" element={<CaseSelectorPage />} />
-      {/* shape-specific demo pages; unknown ids fall through to the selector */}
+      {/* shape-specific demo pages; unknown ids fall through to a dynamic guided
+          page (the backend 404s honestly for ids without evidence) */}
       <Route path="/demo/fastapi-pr2-rag-traced-20260917" element={<GuidedDemoPage caseId="fastapi-pr2-rag-traced-20260917" />} />
       <Route path="/demo/fastapi-pr2-live-20260916" element={<GuidedDemoPage caseId="fastapi-pr2-live-20260916" />} />
       <Route path="/demo/fastapi-pr2-cwe22" element={<GuidedDemoPage caseId="fastapi-pr2-cwe22" />} />
@@ -34,7 +40,7 @@ function DemoRoutes() {
       <Route path="/demo/rag-retrieval-loop" element={<GuidedDemoPage caseId="rag-retrieval-loop" />} />
       <Route path="/demo/rework-payments" element={<GuidedDemoPage caseId="rework-payments" />} />
       <Route path="/demo/db-migration-orders" element={<CaseBriefPage caseId="db-migration-orders" />} />
-      <Route path="/demo/:caseId" element={<CaseSelectorPage />} />
+      <Route path="/demo/:caseId" element={<GuidedDemoPageRoute />} />
       <Route path="/evidence" element={<EvidenceLibraryPage />} />
       <Route path="*" element={<CaseSelectorPage />} />
     </Routes>
