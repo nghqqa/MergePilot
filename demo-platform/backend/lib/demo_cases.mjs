@@ -976,7 +976,7 @@ function caseEPr3Reject() {
       ? ['案例 run-elem-pr3v3-20260917-01', 'PR #3', 'demo_cmd_exec.py', 'HUMAN_SECURITY_REJECTED（操作员真实决策）', 'fix rejected / verify locked', 'project blocked']
       : ['案例 fastapi-pr3-reject', 'PR #3', 'demo_cmd_exec.py', 'HUMAN_SECURITY_REJECTED', 'fix-1 rejected / verify-1 locked', 'project blocked'],
     generated_at: liveAvailable ? '运行 2026-09-17T03:19Z–03:21Z（V3-TRACED 本轮，墙钟 2 分 11 秒）· 历史对照 2026-08-30' : '运行 2026-08-30 · 状态锁定（post-rejection-* 快照）',
-    source_dir: liveAvailable ? 'evidence/FINALS-ELEM-PR3-V3-TRACED（SHA256SUMS 锁定，50 文件）+ PHASE14-WINDOWS-COPAW-HIGH-RISK-REJECT-20260830-091913（历史对照）' : 'evidence/PHASE14-WINDOWS-COPAW-HIGH-RISK-REJECT-20260830-091913（rejectDemo）',
+    source_dir: liveAvailable ? 'evidence/FINALS-ELEM-PR3-V3-TRACED（SHA256SUMS 锁定，53 文件）+ PHASE14-WINDOWS-COPAW-HIGH-RISK-REJECT-20260830-091913（历史对照）' : 'evidence/PHASE14-WINDOWS-COPAW-HIGH-RISK-REJECT-20260830-091913（rejectDemo）',
     honesty: HONESTY,
     steps,
     evidence_index: items.map(({ id, title, level }) => ({ id, title, level })),
@@ -1518,7 +1518,7 @@ function caseGPr2V3Traced() {
     stage_timeline: null,
     chain: ['案例 ' + RUN, 'PR #2', 'commit ' + short(SHA, 10), 'demo_high_risk.py', 'attempt-1.diff', 'probe 200→400', 'VERIFIED PASS'],
     generated_at: '运行 2026-09-17T03:02Z–03:15Z（墙钟 12 分 32 秒，含 reviewer 依赖安装等待 ≈9 分钟与一次 nudge）',
-    source_dir: 'evidence/FINALS-ELEM-PR2-V3-TRACED（SHA256SUMS 锁定，59 文件）',
+    source_dir: 'evidence/FINALS-ELEM-PR2-V3-TRACED（SHA256SUMS 锁定，62 文件）',
     honesty: H,
     steps,
     evidence_index: items.map(({ id, title, level }) => ({ id, title, level })),

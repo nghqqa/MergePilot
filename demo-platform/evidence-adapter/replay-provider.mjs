@@ -10,7 +10,7 @@
 // genai.llm.call, loongsuite ExecuteTool semantics, gen_ai.conversation.id on all
 // spans, and agentteams.delegation.link cross-agent linking (receiver side).
 // Every event anchors to FINALS-ELEM-PR2-V3-TRACED / FINALS-ELEM-PR3-V3-TRACED
-// (both SHA256SUMS-locked, 59/50 files). The prior RAG-TRACED round (v2.2) and the
+// (both SHA256SUMS-locked, 62/53 entries incl. README/kickoff). The prior RAG-TRACED round (v2.2) and the
 // P14-era pr1 case stay out of the demo lineup per operator decision (two-case demo).
 //
 // Faithful-record notes (all anchored to room exports + task meta.json, which take
@@ -143,7 +143,7 @@ function loadProbeComparisonV3() {
 // ---------------------------------------------------------------------------
 // PR #2 — CWE-22 high-risk path traversal, human APPROVE path (V3-TRACED run)
 // run-elem-pr2v3-20260917-01 · project elemiso-pr2v3-gate · wall clock 12m32s
-// Evidence: FINALS-ELEM-PR2-V3-TRACED (SHA256SUMS-locked, 59 files).
+// Evidence: FINALS-ELEM-PR2-V3-TRACED (SHA256SUMS-locked, 62 entries).
 // ---------------------------------------------------------------------------
 function buildPR2V3() {
   const D2 = '2026-09-17';
@@ -457,7 +457,7 @@ function buildPR2V3() {
       },
     ],
     evidence_integrity: {
-      sha256_dirs: ['FINALS-ELEM-PR2-V3-TRACED (SHA256SUMS 59 files)', 'FINALS-ELEM-PR3-V3-TRACED (SHA256SUMS 50 files)'],
+      sha256_dirs: ['FINALS-ELEM-PR2-V3-TRACED (SHA256SUMS 62 files)', 'FINALS-ELEM-PR3-V3-TRACED (SHA256SUMS 53 files)'],
       secret_scan_clean: true,
       secret_scan_source: '打包时精确密钥扫描（license key/栈凭据反向比对）0 命中；证据包不含原始 docker 容器日志',
       disclosed_gaps: [
@@ -503,7 +503,7 @@ function buildPR2V3() {
 // ---------------------------------------------------------------------------
 // PR #3 — CWE-78 unauthenticated RCE, human REJECT path (V3-TRACED run)
 // run-elem-pr3v3-20260917-01 · project elemiso-pr3v3-reject · wall clock 2m11s
-// Evidence: FINALS-ELEM-PR3-V3-TRACED (SHA256SUMS-locked, 50 files).
+// Evidence: FINALS-ELEM-PR3-V3-TRACED (SHA256SUMS-locked, 53 entries).
 // ---------------------------------------------------------------------------
 function buildPR3V3() {
   const D3 = '2026-09-17';
@@ -729,7 +729,7 @@ function buildPR3V3() {
       },
     ],
     evidence_integrity: {
-      sha256_dirs: ['FINALS-ELEM-PR3-V3-TRACED (SHA256SUMS 50 files)'],
+      sha256_dirs: ['FINALS-ELEM-PR3-V3-TRACED (SHA256SUMS 53 files)'],
       secret_scan_clean: true,
       secret_scan_source: '打包时精确密钥扫描 0 命中；证据包不含原始 docker 容器日志',
       disclosed_gaps: [
@@ -817,7 +817,7 @@ export function replayAudit() {
       { component: 'RAG MCP（组织知识库）', status: 'VERIFIED', source: 'rag_retrieve 经 MCP stdio 注入 CoPawAgent；知识型语料（8 文档/12 chunk，无案例结论）；V3 窗口运行时调用 4 次（PR2 reviewer/fixer/verifier 各 1 + PR3 reviewer 1），审计流水每次 2 条（客户端+服务端对账）', evidence: 'FINALS-ELEM-PR2-V3-TRACED/rag/' },
       { component: 'AgentLoop/OTel', status: 'VERIFIED', source: 'v3 埋点：会话累计 530 span（leader 203/reviewer 136/fixer 92/verifier 99），tool.rag_retrieve ×4、agentteams.delegation.link ×12（接收侧跨 Agent 关联首轮实战——属性级关联：携带 Leader trace_id 可检索，但因实现缺陷未作为 parent 嵌入 Leader 瀑布，已修复于后续镜像）、单层 genai.llm.call、全 span 携带 gen_ai.conversation.id；234 导出批次全部 SUCCESS 0 失败。披露：直连探针本轮未采集成功（采集命令静默失败，direct-probe-*.json 0 字节，SHA256SUMS 如实锁定，README 已披露）', evidence: 'FINALS-ELEM-PR2-V3-TRACED/agentloop/span-summary.json' },
       { component: 'PR Auto Merge', status: 'DISABLED', source: '人工门禁令（merge/push/close/reopen 全禁）；本轮零 GitHub 写入（ls-remote 双向核验分支 SHA 不变）', evidence: 'FINALS-ELEM-PR2-V3-TRACED/github-branches-after-v3.txt' },
-      { component: 'Event Integrity', status: 'VERIFIED', source: '两个 V3 证据包 SHA256SUMS（59/50 文件）启动时实时重算；历史 P14 包完整性报告见 /api/health（integrityReport）', evidence: 'FINALS-ELEM-PR2-V3-TRACED/SHA256SUMS' },
+      { component: 'Event Integrity', status: 'VERIFIED', source: '两个 V3 证据包 SHA256SUMS（62/53 文件，含 README/kickoff）启动时实时重算；历史 P14 包完整性报告见 /api/health（integrityReport）', evidence: 'FINALS-ELEM-PR2-V3-TRACED/SHA256SUMS' },
       { component: 'PolarDB RAG backend', status: 'NOT_IMPLEMENTED', source: '真实 PolarDB 向量检索后端未接入；本轮 RAG 为本地知识型 SYNTHETIC 语料（data_mode=SYNTHETIC，契约与平台 /api/rag/search 一致）', evidence: 'FINALS-ELEM-PR2-V3-TRACED/rag/rag-live-corpus.json' },
       { component: 'Agentic Database Branch', status: 'NOT_IMPLEMENTED', source: '真实 PolarDB Branch 未实现（MCP server 中的 database_* 工具未被本轮运行调用）', evidence: 'FINALS-ELEM-PR2-V3-TRACED/rag/rag-tool-spans.jsonl（无 database_* 记录）' },
     ],
