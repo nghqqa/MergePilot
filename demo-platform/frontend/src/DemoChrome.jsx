@@ -60,7 +60,7 @@ export default function DemoChrome({ children }) {
       <footer className="dfoot">
         <div className="dfoot-inner">
           <span>MergePilot 决赛演示 · 证据驱动的 PR 审修流程回放器</span>
-          <span>数据来源标注：本次真实运行 · 历史回放 · 控制面机制 · 本地真实 SQL · 合成语料 · 未执行</span>
+          <span>数据来源标注：真实运行 · 历史回放 · 控制面机制 · 本地真实 SQL · 合成语料 · 未执行</span>
           <span>不依赖实时模型 / GitHub / Matrix / PolarDB；审批与合并均不写入运行系统</span>
         </div>
       </footer>

@@ -27,7 +27,7 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..
 
 // Fixed evidence-level vocabulary (UI must never invent other levels).
 export const EVIDENCE_LEVELS = {
-  REAL_EXECUTED_AGENTTEAMS_LIVE: '真实执行 · AgentTeams（本次运行 2026-09-16）',
+  REAL_EXECUTED_AGENTTEAMS_LIVE: '真实运行 · AgentTeams',
   REAL_EXECUTED_AGENTTEAMS: '真实执行 · AgentTeams（历史运行）',
   REAL_OFFLINE_EXPERIMENT: '真实离线实验 · 合成语料',
   POST_RUN_DESIGN: '运行后固化设计 · 非运行时证据',
@@ -699,7 +699,7 @@ function caseEPr3Reject() {
 
   const HONESTY = {
     real: liveAvailable
-      ? ['本次真实执行（2026-09-17 RAG-TRACED）：真实 Reviewer 审查（含 rag_retrieve 组织标准引用）、真实操作员拒绝、真实 Leader 停等；全部 event_id 留痕；fix/verify 从未派发']
+      ? ['真实执行（RAG-TRACED 2026-09-17）：Reviewer 独立审查（含 rag_retrieve 组织标准引用）、操作员拒绝、Leader 停等；全部 event_id 留痕；fix/verify 从未派发']
       : ['历史真实运行（2026-08-30）：真实 Reviewer 审查、真实操作员拒绝、真实 Leader 停等；fix-1/verify-1 从未派发'],
     controlled: ['本页面为证据的只读回放与讲解文案；拒绝为终态，演示层不可翻转'],
     not_executed: ['Fixer / Verifier 从未派发（两轮均 0 消费留痕）', '零 GitHub 写入；PR #3 保持 OPEN'],
@@ -707,7 +707,7 @@ function caseEPr3Reject() {
 
   const items = liveAvailable ? [
     {
-      id: 'ev-rej-live-review', title: '【本次真实执行】Reviewer 结论 pr3-review-1', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE',
+      id: 'ev-rej-live-review', title: 'Reviewer 结论 pr3rag-review-1', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE',
       fields: [
         ['结论', 'FINDING_CONFIRMED · SEVERITY: HIGH（Reviewer 自主定级）· HUMAN_VERIFICATION_REQUIRED: YES'],
         ['定性', 'CWE-78 未认证 RCE：demo_ping L41 f-string 拼接 host → L42-44 subprocess.run(shell=True) → L45-49 回显输出；路由无鉴权'],
@@ -721,7 +721,7 @@ function caseEPr3Reject() {
       ...HONESTY,
     },
     {
-      id: 'ev-rej-live-gate', title: '【本次真实执行】人工安全门 → 操作员真实拒绝', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE',
+      id: 'ev-rej-live-gate', title: '人工安全门 → 操作员拒绝', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE',
       fields: [
         ['Leader 行为', '审查验收后主动停门（17:25:54Z：「尚未委派 pr3rag-fix-1」；与 PR #2 批准路径形成同日两分支对照）'],
         ['操作员决策', 'HUMAN_SECURITY_REJECTED —— 不授权修复（查看真实 findings 后作出）'],
@@ -738,7 +738,7 @@ function caseEPr3Reject() {
       ...HONESTY,
     },
     {
-      id: 'ev-rej-live-run', title: '【本次真实执行】运行档案 README（含门纪律对照与用量）', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE',
+      id: 'ev-rej-live-run', title: '运行档案（用量与合规）', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE',
       fields: [
         ['墙钟/用量', 'kickoff 17:25:07Z → 终报 17:26:26Z ≈ 1 分 19 秒 · 31 次调用 · 输入 2.87M（99% 缓存）· 输出 9,248'],
         ['合规', 'PR #3 全程 OPEN · head ad267a6e 运行中 ls-remote 核验 · 零 GitHub 写入'],
@@ -749,7 +749,7 @@ function caseEPr3Reject() {
       ...HONESTY,
     },
     {
-      id: "ev-rej-live-roles", title: "【本次真实执行】角色契约（v1.0 冻结，跨案例零改动）", level: 'POST_RUN_DESIGN',
+      id: "ev-rej-live-roles", title: "角色契约（v1.0 冻结，跨案例零改动）", level: 'POST_RUN_DESIGN',
       fields: [
         ['契约版本', 'v1.0（冻结，跨案例零改动；回溯固化自 P14 角色矩阵与两轮真实运行的公共协议）'],
         ['要点', '角色行为与案例参数分离：Reviewer/Fixer/Verifier/Leader 契约在两个 PR 的运行中逐字相同，案例差异只在 CASE-MANIFEST（SHA/目标文件/task id/验收行为）'],
@@ -849,7 +849,7 @@ function caseEPr3Reject() {
 
   const steps = liveAvailable ? [
     {
-      id: 'review', title: '① 风险审查（本次真实执行）',
+      id: 'review', title: '① 风险审查',
       points: [
         { k: 'Reviewer 结论', v: 'FINDING_CONFIRMED · SEVERITY: HIGH · HUMAN_VERIFICATION_REQUIRED: YES' },
         { k: '风险定性', v: 'CWE-78 未认证 RCE —— f-string 拼接 + shell=True + 输出回显（独立自主定级）' },
@@ -871,7 +871,7 @@ function caseEPr3Reject() {
       probe: null,
       decision: {
         verified: { verdict: 'NOT_EXECUTED', text: '验证未执行 —— 人工拒绝后 Fixer/Verifier 从未派发（两轮一致）' },
-        human_approval: { needed: true, text: '已执行且结果为拒绝 —— 本次真实操作员决策（2026-09-16），历史轮（2026-08-30）同样拒绝', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE' },
+        human_approval: { needed: true, text: '已执行，结果为拒绝（2026-09-17，操作员运行前授权的拒绝分支）', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE' },
         merge_allowed: { allowed: false, text: 'PR #3 保持 OPEN —— 未合并；拒绝即停止' },
         github_write: { done: false, text: '未写入 GitHub', level: 'NOT_EXECUTED' },
         execution_nature: { text: 'REAL_EXECUTED-AgentTeams（RAG-TRACED 2026-09-17）+ HISTORICAL_REPLAY（2026-08-30 对照）：两轮真实拒绝', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE' },
@@ -917,10 +917,10 @@ function caseEPr3Reject() {
     case_id: 'fastapi-pr3-reject',
     portfolio_role: '案例 B · 人工拒绝分支',
     shape: 'guided',
-    name: liveAvailable ? 'FastAPI PR #3 · 人工拒绝（RAG+追踪版，本次真实执行 + 历史对照）' : 'FastAPI PR #3 · 人工拒绝（短案例）',
+    name: liveAvailable ? 'FastAPI PR #3 · 人工拒绝（RAG + AgentLoop 追踪 · 2026-09-17）' : 'FastAPI PR #3 · 人工拒绝（短案例）',
     short_name: liveAvailable ? '第二案例 · PR #3 真实拒绝（RAG+追踪）' : '第二案例 · PR #3 人工拒绝',
     one_liner: liveAvailable
-      ? 'RAG 接入轮真实执行：Reviewer 38 秒独立确认 HIGH（CWE-78 未认证 RCE，实证 root 执行 + rag_retrieve 组织标准引用）→ 人工门拒绝 → 9 秒后项目 blocked，Fixer/Verifier 从未派发；附 2026-08-30 历史轮对照。'
+      ? 'RAG 接入轮真实执行：Reviewer 38 秒独立确认 HIGH（CWE-78 未认证 RCE，实证 root 执行 + rag_retrieve 组织标准引用）→ 人工门拒绝 → 9 秒后项目 blocked，Fixer/Verifier 从未派发。'
       : '历史真实运行：Reviewer 确认 critical（CWE-78/RCE）→ 人工门拒绝 → 系统停等，Fixer/Verifier 从未派发，PR 保持 OPEN。',
     repo: 'nghqqa/fastapi-boilerplate-demo',
     pr: 'PR #3 · demo/high-risk-human-reject',
@@ -928,13 +928,13 @@ function caseEPr3Reject() {
     run_id: liveAvailable ? 'run-elem-pr3rag-20260917-01' : 'copaw-high-risk-reject-demo（AgentTeams project）',
     sha: liveAvailable ? 'ad267a6e51209551a0733657321bb364d04befd0' : (rejection?.source_commit?.replace('PR#3 head ', '') ?? null),
     sha_kind: 'PR #3 head commit · ls-remote 已核验',
-    evidence_level: liveAvailable ? ['REAL_EXECUTED_AGENTTEAMS_LIVE', 'HISTORICAL_REPLAY'] : ['HISTORICAL_REPLAY', 'REAL_EXECUTED_AGENTTEAMS'],
+    evidence_level: ['REAL_EXECUTED_AGENTTEAMS_LIVE'],
     replay_note: liveAvailable
       ? 'REAL_EXECUTED（RAG-TRACED 2026-09-17）+ 历史对照 —— 拒绝语义为终态，不可在演示层翻转'
       : 'HISTORICAL_REPLAY —— 回放 2026-08-30 历史运行证据；拒绝语义为终态，不可在演示层翻转',
     purpose: '展示人工门的拒绝分支：失败安全（fail-safe）——不批准即停止，证据保留',
-    risk_tags: ['CWE-78 命令注入', 'RCE', 'HIGH（历史轮 critical）'],
-    status: { verdict: 'REJECTED', label: liveAvailable ? '本次真实拒绝 · 项目 blocked · Fixer/Verifier 未派发' : '人工拒绝 · 系统停等 · Fixer/Verifier 未派发' },
+    risk_tags: ['CWE-78 命令注入', 'RCE', 'HIGH'],
+    status: { verdict: 'REJECTED', label: '真实拒绝 · 项目 blocked · Fixer/Verifier 未派发' },
     facts: {
       real_github_pr: { value: '真实 GitHub PR（运行后核验：仍 OPEN）', ok: true, note: 'https://github.com/nghqqa/fastapi-boilerplate-demo/pull/3' },
       real_agentteams_run: { value: liveAvailable ? '真实 AgentTeams 运行（RAG-TRACED 2026-09-17 本次）' : '真实 AgentTeams 运行（2026-08-30 历史证据）', ok: true, note: '真实审查（含 rag_retrieve 引用）、真实拒绝、真实停等' },
@@ -1177,7 +1177,7 @@ function caseGPr2RagTraced() {
   const attack = 'GET /demo/download?name=../outside/outside-secret.txt';
 
   const H = {
-    honesty_real: 'RAG-TRACED 本次真实执行（2026-09-17）：非预设 SPEC、真实人工门（按操作员运行前授权自动投递）、批准后 9 秒 Leader 全新委派、三角色实际调用 rag_retrieve（审计流水全量）、647 span 直连 SLS 导出 0 失败',
+    honesty_real: '真实执行（RAG-TRACED，2026-09-17）：非预设 SPEC、真实人工门（按操作员运行前授权自动投递）、批准后 9 秒 Leader 全新委派、三角色实际调用 rag_retrieve（审计流水全量）、647 span 直连 SLS 导出 0 失败',
     honesty_limits: '页面为只读回放；RAG 语料为知识型 SYNTHETIC（无案例结论，citation-only）；reviewer 家目录跨轮持久同步（团队房可见 prior-runs 字样，结论仍由其自主复测得出）',
     honesty_exclude: '操作员对 Fixer 零执行指令介入；merge/push/close/reopen 未执行',
   };
