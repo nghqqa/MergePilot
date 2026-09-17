@@ -1,0 +1,26 @@
+{
+  "edges": [],
+  "interrupts": [],
+  "mode": "dag",
+  "next": [],
+  "nodes": [],
+  "plan_type": "dag",
+  "project_id": "elemiso-pr3v3-reject",
+  "requester": "admin",
+  "source": "matrix",
+  "source_room_id": "!VocOLrDhUMBcBjzIuY:elemiso-matrix:6167",
+  "status": "blocked",
+  "team_id": "elemiso-team",
+  "title": "PR #3 review + human gate V3 (run-elem-pr3v3-20260917-01)",
+  "updated_at": "2026-09-17T03:18:59Z",
+  "updated_by": "admin",
+  "values": {
+    "mode": "dag",
+    "plan_type": "dag",
+    "project_id": "elemiso-pr3v3-reject",
+    "status": "blocked",
+    "task_count": {},
+    "team_id": "elemiso-team",
+    "title": "PR #3 review + human gate V3 (run-elem-pr3v3-20260917-01)"
+  }
+}

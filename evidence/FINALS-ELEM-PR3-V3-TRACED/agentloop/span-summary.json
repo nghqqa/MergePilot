@@ -1,0 +1,6 @@
+{
+ "window_start": "2026-09-17T03:19:00Z",
+ "team_room_events": 16,
+ "dm_events": 5,
+ "note": "span logs session-cumulative; PR3 window export batches see audit-*-pr3v3-window.log"
+}
