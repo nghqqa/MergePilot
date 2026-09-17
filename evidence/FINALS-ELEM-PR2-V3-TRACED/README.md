@@ -31,7 +31,7 @@
 ## 追踪与用量
 
 - span 会话累计 **530**（leader 203/reviewer 136/fixer 92/verifier 99），其中 `tool.rag_retrieve` ×4、
-  **`agentteams.delegation.link` ×12**（接收侧每个委派通知 1 条——跨 Agent 关联首次在真实运行生效）；
+  **`agentteams.delegation.link` ×12**（跨 Agent 关联首次在真实运行生效；如实说明：本轮该 span 为**属性级关联**——携带 Leader trace_id 可检索，但因实现缺陷未作为 parent 嵌入 Leader 瀑布；已修复于后续镜像，修复后委派将以子节点形态出现在 Leader trace 内）；
   导出 234 批次全部 SUCCESS、0 失败（`agentloop/span-summary.json`）。
 - 直连探针：**本轮未采集成功**（采集命令静默失败，`agentloop/direct-probe-*.json` 为
   0 字节空文件、已被 SHA256SUMS 如实锁定——空文件哈希 e3b0c442… 即"此轮无探针"的诚实留痕）。

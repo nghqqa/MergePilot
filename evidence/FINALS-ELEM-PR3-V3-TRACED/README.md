@@ -19,7 +19,7 @@
 
 ## 追踪与用量
 
-- RAG 窗口 span：reviewer rag_retrieve ×2（审计只存 query_hash）；delegation.link ×4/worker（跨 Agent 关联）。
+- RAG 窗口 span：reviewer rag_retrieve ×2（审计只存 query_hash）；delegation.link ×4/worker（属性级关联，同 PR2 包披露——瀑布嵌套形态由修复后镜像在后续运行产出）。
 - 导出：PR3 窗口批次全 SUCCESS、0 失败（`agentloop/audit-*-pr3v3-window.log`）。
 - 用量：**30 次调用 · 输入 3,272,385（99% 缓存）· 输出 9,361**（`usage-summary.json`）。
 - 采集顺序：工件于停机（03:22:34Z）前实时采集；停机后网关 delta=0。
