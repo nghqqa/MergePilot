@@ -684,13 +684,15 @@ def _emit_delegation_link(event):
                          is_remote=True, trace_flags=TraceFlags(int(parts[3], 16)))
         if not sc.is_valid:
             return
+        # parent = the sender's span: the link span lands inside the LEADER's trace
+        parent_ctx = set_span_in_context(NonRecordingSpan(sc))
         span = _start_span("agentteams.delegation.link", _base_attrs({
             "agentteams.event_type": "delegation_link",
             "agentteams.link.trace_id": parts[1],
             "agentteams.link.parent_span_id": parts[2],
             "matrix.event_id": str(getattr(event, "event_id", "") or ""),
             "matrix.sender": str(getattr(event, "sender", "") or ""),
-        }))
+        }, context=parent_ctx))
         _end_span_ok(span)
         if not _state.get("conversation_id"):
             _state["conversation_id"] = "trace:" + parts[1][:16]
