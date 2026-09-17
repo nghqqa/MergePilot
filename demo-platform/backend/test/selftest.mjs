@@ -73,7 +73,7 @@ await test('scanForSecrets flags crafted leaks', () => {
 
 console.log('== 2) replay integrity ==');
 const data = getReplayData();
-await test('both cases present (two-case RAG-traced lineup)', () => {
+await test('both cases present (two-case V3-traced lineup)', () => {
   assert.ok(data.cases['pr2-high-risk-human-gate']);
   assert.ok(data.cases['pr3-high-risk-human-reject']);
   assert.equal(Object.keys(data.cases).length, 2);
@@ -389,12 +389,15 @@ await test('task source_map: every field has source+source_ref', async () => {
   }
 });
 await test('evidence drawer (event): mandated fields + hash verification', async () => {
-  const r = await handle('GET', '/api/cases/pr2-high-risk-human-gate/evidence', q({ kind: 'event', seq: '8' }), null);
+  // V3 timeline: seq 9 is the human gate approval (seq 5 is the faithfully recorded
+  // 03:09:34Z operator nudge, which shifted the approval from seq 8 in the RAG round).
+  const r = await handle('GET', '/api/cases/pr2-high-risk-human-gate/evidence', q({ kind: 'event', seq: '9' }), null);
   for (const k of ['event_id', 'trace_id', 'project_id', 'task_id', 'agent_role', 'runtime', 'event_type', 'source', 'source_ref', 'timestamp', 'timestamp_precision', 'hash_verified', 'redaction_status']) {
     assert.ok(k in r, `event drawer missing field: ${k}`);
   }
   assert.equal(r.source_label, 'Matrix event');
-  assert.ok(r.matrix_event_id.startsWith('$MA75PoE6NxVwx'), `unexpected kickoff-adjacent event id: ${r.matrix_event_id}`);
+  assert.equal(r.event_type, 'approval');
+  assert.ok(r.matrix_event_id.startsWith('$qnZ1ipJJKMiHFyo'), `unexpected gate-approval event id: ${r.matrix_event_id}`);
   assert.ok(r.source_hash && r.source_hash.exists, 'source_ref should resolve to a real evidence file');
 });
 await test('evidence drawer (task fix-1): result + artifacts with hashes', async () => {
@@ -403,10 +406,14 @@ await test('evidence drawer (task fix-1): result + artifacts with hashes', async
   assert.ok(r.artifacts.length >= 3);
   assert.ok(r.artifacts.some((a) => a.resolved && a.resolved.exists && a.resolved.hash_verified === true), 'fix.patch artifact should hash-verify');
 });
-await test('evidence drawer (approval): human record, read-only', async () => {
+await test('evidence drawer (approval): human record, read-only, body = the cited V3 record', async () => {
   const r = await handle('GET', '/api/cases/pr2-high-risk-human-gate/evidence', q({ kind: 'approval' }), null);
   assert.equal(r.agent_role, 'human');
-  assert.ok(r.approval_text.includes('PROHIBITED'));
+  // body must be the same SHA256SUMS-locked record the drawer cites (not the P14 fallback)
+  assert.ok(r.approval_text.includes('run-elem-pr2v3-20260917-01'), 'approval body must be the V3 record');
+  assert.ok(r.approval_text.includes('remediation authorized'));
+  assert.ok(r.approval_text.includes('zero GitHub writes'));
+  assert.ok(r.source_ref.includes('human-gate-approval.md'));
   assert.ok(r.source_hash.exists);
 });
 await test('evidence drawer (trace): EVIDENCE REPLAY ONLY, smoke/live split honest', async () => {

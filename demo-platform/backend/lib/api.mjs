@@ -183,6 +183,25 @@ function drawerEnvelope(sourceHash, { data_mode = 'historical replay', trace_mod
   return { data_mode, trace_mode, integrity_status };
 }
 
+// Human-gate record text for a case. The body must come from the SAME record the
+// drawer cites (gate.approval_text_source / rejection_text_source, i.e. the current
+// round's SHA256SUMS-locked file); the P14 historical record is only a fallback for
+// cases that carry no record of their own.
+function gateRecordText(c, isRejection) {
+  const ref = isRejection ? c.gate?.rejection_text_source : c.gate?.approval_text_source;
+  const resolved = ref ? resolveSourceRef(ref) : null;
+  if (resolved?.exists) {
+    try { return { text: readText(resolved.dir, resolved.file), source: ref, resolved }; } catch { /* fall through */ }
+  }
+  try {
+    return isRejection
+      ? { text: readText('rejectDemo', 'human-gate-rejection.md'), source: `${EVIDENCE_DIRS.rejectDemo}/human-gate-rejection.md`, resolved }
+      : { text: readText('replayMaterials', 'artifacts/human-gate-approval.md'), source: `${EVIDENCE_DIRS.replayMaterials}/artifacts/human-gate-approval.md`, resolved };
+  } catch {
+    return { text: null, source: ref ?? null, resolved };
+  }
+}
+
 // Evidence drawer payload for a timeline event (by 1-based seq)
 function eventEvidence(caseObj, seq) {
   const ev = caseObj.timeline[seq - 1];
@@ -663,17 +682,14 @@ const routes = {
     if (kind === 'approval') {
       const isRejection = c.gate.state === 'rejected';
       const recordRef = isRejection ? c.gate.rejection_text_source : c.gate.approval_text_source;
-      const resolved = resolveSourceRef(recordRef);
-      let recordText = null;
-      if (isRejection) {
-        try { recordText = readText('rejectDemo', 'human-gate-rejection.md'); } catch { /* absent */ }
-      } else {
-        try { recordText = readText('replayMaterials', 'artifacts/human-gate-approval.md'); } catch { /* absent */ }
-      }
+      const record = gateRecordText(c, isRejection);
+      const resolved = record.resolved ?? resolveSourceRef(recordRef);
+      const recordText = record.text;
+      const gateEvent = c.timeline.find((e) => e.event_type === 'approval');
       return {
         drawer: isRejection ? 'rejection' : 'approval',
         ...drawerEnvelope(resolved),
-        event_id: isRejection ? 'pr3-ev-008' : 'pr2-ev-007',
+        event_id: gateEvent?.event_id ?? null,
         trace_id: null,
         project_id: c.project.id,
         task_id: null,
@@ -796,30 +812,16 @@ const routes = {
     const { c } = requireCase(p.id);
     const overlay = demoOverlay.get(p.id) ?? null;
     const isRejection = c.gate && c.gate.state === 'rejected';
-    let recordText = null;
-    let recordSource;
-    if (isRejection) {
-      recordSource = c.gate.rejection_text_source;
-      try {
-        recordText = readText('rejectDemo', 'human-gate-rejection.md');
-      } catch {
-        recordText = null;
-      }
-    } else {
-      recordSource = `${EVIDENCE_DIRS.replayMaterials}/artifacts/human-gate-approval.md`;
-      try {
-        recordText = readText('replayMaterials', 'artifacts/human-gate-approval.md');
-      } catch {
-        recordText = null;
-      }
-    }
+    const record = gateRecordText(c, !!isRejection);
+    const recordText = record.text;
+    const recordSource = record.source;
     return {
       case_id: c.case_id,
       decision_type: isRejection ? 'rejected' : 'approved_or_pending',
       historical_record: c.gate,
       approval_text: isRejection ? null : recordText,
       rejection_text: isRejection ? recordText : null,
-      approval_text_source: isRejection ? null : `${EVIDENCE_DIRS.replayMaterials}/artifacts/human-gate-approval.md`,
+      approval_text_source: isRejection ? null : recordSource,
       rejection_text_source: isRejection ? recordSource : null,
       rejected_case_note: isRejection
         ? '本案例历史裁决为 HUMAN_SECURITY_REJECTED — 禁止显示"批准成功"；此处展示真实拒绝记录'
