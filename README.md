@@ -21,7 +21,7 @@
 
 ![MergePilot 决赛演示：两个 V3 核心案例（FastAPI PR #2 · RAG 接入 + AgentLoop v3 追踪，批准路径 VERIFIED / FastAPI PR #3 · 人工拒绝，blocked 零派发），另附机制验证与数据库迁移附录案例，每张卡标注执行性质与证据等级](docs/assets/readme/portfolio-overview-v3.png)
 
-**在线体验**：`git clone` 后执行 `cd demo-platform && node backend/server.mjs`，访问 `http://127.0.0.1:4173`（若该端口落在 Windows 保留段被拒，服务会自动顺延并在控制台打印实际地址）。零第三方依赖，无需 `npm install`。也可下载离线包 [MergePilot-demo-v0.3.0.zip](https://github.com/nghqqa/MergePilot/releases/download/v0.3.0/MergePilot-demo-v0.3.0.zip)（约 1.5 MB，含 6 案例）。
+**在线体验**：`git clone` 后执行 `cd demo-platform && node backend/server.mjs`，访问 `http://127.0.0.1:4173`（若该端口落在 Windows 保留段被拒，服务会自动顺延并在控制台打印实际地址）。零第三方依赖，无需 `npm install`。也可下载离线演示包（两案例最新版，含 25 个 SHA256SUMS 锁定证据目录与一键启动脚本，见 Releases）。
 
 ## 要解决的问题
 
@@ -39,11 +39,11 @@ cd MergePilot/demo-platform
 node backend/server.mjs        # 打开 http://127.0.0.1:4173
 ```
 
-Node.js ≥ 18 即可，无需 `npm install`：前端已预构建（`frontend/dist/`），六个案例的回放证据随仓库分发（`evidence/PHASE14-*` + `evidence/FINALS-*`，SHA256 锁定）。Windows 也可直接双击 `demo-platform/start-demo.bat`。
+Node.js ≥ 18 即可，无需 `npm install`：前端已预构建（`frontend/dist/`），两个核心案例（确定性 Skill + RAG + AgentLoop 追踪）的回放证据随仓库分发（`evidence/FINALS-ELEM-*` 等 25 个 SHA256SUMS 锁定目录）。Windows 也可直接双击 `demo-platform/start-demo.bat`。
 
 自测：`node backend/test/selftest.mjs`（61 项：脱敏、回放完整性、API 契约、无泄密扫描、决赛证据等级与版本绑定闸门；2026-09-13 前为 54 项；[CI 在 Node 18/20/22 上自动运行](https://github.com/nghqqa/MergePilot/actions/workflows/selftest.yml)）。
 
-不想 clone？下载 [MergePilot-demo-v0.3.0.zip](https://github.com/nghqqa/MergePilot/releases/download/v0.3.0/MergePilot-demo-v0.3.0.zip)（约 1.5 MB，含 6 案例证据与一键启动），解压后进入 `MergePilot-demo-v0.3.0` 目录，双击 `start-demo.bat` 或执行 `node MergePilot-demo/backend/server.mjs`。视频与历史版本见 [Releases](https://github.com/nghqqa/MergePilot/releases)。
+不想 clone？下载离线演示包（含两案例证据与一键启动，见 [Releases](https://github.com/nghqqa/MergePilot/releases)），解压后双击 `start-demo.bat` 或执行 `node */backend/server.mjs`。视频与历史版本见 [Releases](https://github.com/nghqqa/MergePilot/releases)。
 
 ### 完整隔离栈（离线镜像 + 一键启动）
 
@@ -72,15 +72,24 @@ AgentTeams（HiClaw）运行时镜像（嵌入式 Manager + CoPaw worker：Revie
 
 > 2026-09-16：三条路径已在隔离栈上以**真实 AgentTeams 多 Agent 运行**复核——批准路径干净复跑（R2，见下节）、拒绝路径真实执行（零派发，三层证据）、自主路径沿用既有证据。
 
-## 决赛真实运行（2026-09-16）：独立审计 → 修正 → 干净复跑
+## 决赛真实运行（2026-09-16 → 09-18 共七轮）：独立审计 → 修正 → 多轮复现 → Skill 集成
 
-三条真实 AgentTeams 运行（非回放：真实派单、真实 deepseek-chat 调用、真实容器内执行、事件级留痕），并经**独立第三方审计**：
+七轮真实 AgentTeams 运行（非回放：真实派单、真实 deepseek-chat 调用、真实容器内执行、事件级留痕），并经**独立第三方审计**。最新两轮为确定性 Skill 集成轮：
 
 | 运行 | 结果 | 关键验收 | 证据 |
 | --- | --- | --- | --- |
 | **R2 主案例**（PR #2，CWE-22） | 非预设 SPEC 下 Reviewer 独立确认 HIGH → 现场人工门批准 → Leader 发出全新委派事件 → Verifier 独立验证 **VERIFIED PASS** | 门后**新委派事件** $uZ4Rj1SI…（≠任何被作废 ID），Fixer 零操作员介入 | [FINALS-ELEM-PR2-LIVE-20260916-R2](evidence/FINALS-ELEM-PR2-LIVE-20260916-R2) |
 | **真实拒绝**（PR #3，CWE-78 RCE） | 操作员拒绝修复授权 → fix/verify **从未派发**，项目 blocked（消息/网关/状态存储三层印证） | 拒绝为终态，不可翻转 | [FINALS-ELEM-PR3-LIVE-20260916](evidence/FINALS-ELEM-PR3-LIVE-20260916) |
 | **R1 首跑**（PR #2，同日早前） | 技术结论成立；门后派发链瑕疵被独立审计指出 → **如实修正**（AUDIT 修正版 v2），并以 R2 复跑闭环 | 审计发现→修正→复跑的完整记录 | [FINALS-ELEM-PR2-LIVE-20260916](evidence/FINALS-ELEM-PR2-LIVE-20260916) + AUDIT.md |
+
+最新两轮（2026-09-17 → 09-18）为**确定性 Skill 集成**与**可观测性增强**版本：
+
+| 运行 | 结果 | 关键增量 | 证据 |
+| --- | --- | --- | --- |
+| **SK2**（PR #2 / PR #3） | PR #2 VERIFIED / PR #3 blocked 零派发 | RAG MCP 接入：三角色真实调用 rag_retrieve（组织规范引用） | [FINALS-ELEM-PR2-RAG-TRACED](evidence/FINALS-ELEM-PR2-RAG-TRACED) · [PR3-RAG-TRACED](evidence/FINALS-ELEM-PR3-RAG-TRACED) |
+| **SK3**（PR #2 / PR #3） | PR #2 VERIFIED completed / PR #3 blocked 零派发 | 确定性 Skill 经 MCP 被 Agent 真实调用 ×10（span 实测）；skill_risk_classify 建议分级 L1 vs Agent 自主 HIGH 的分歧如实入档——建议不覆盖自主判断 | [FINALS-ELEM-PR2-SK3-TRACED](evidence/FINALS-ELEM-PR2-SK3-TRACED) · [FINALS-ELEM-PR3-SK3-TRACED](evidence/FINALS-ELEM-PR3-SK3-TRACED) |
+
+补丁确定性：PR #2 的修复补丁在六轮独立运行中 sha256 逐字节一致（`674356fc…16081`）——同一漏洞的确定性修复，多轮互证。
 
 配套：**角色契约 v1.0**（Leader/Reviewer/Fixer/Verifier 跨案例冻结，新案例只填 [CASE-MANIFEST](tools/agentteams/roles/CASE-MANIFEST.template.md)）见 [tools/agentteams/roles/](tools/agentteams/roles/)；R2 用量 88 次调用 / 输入 4.65M token（98.9% 缓存命中）/ ≈¥1.1–2.5，全程网关日志逐条可查。
 
@@ -104,19 +113,20 @@ Agent 只承担语义判断，六类 Skill 以 Schema、deadline、错误码和 
 
 架构总览图（可编辑 SVG）：[`docs/assets/mergepilot-architecture.svg`](docs/assets/mergepilot-architecture.svg) —— 含两套控制面职责区分、四个运行时 Agent、六个确定性 Skill（接入状态分组）、AgentLoop 观测层与凭据边界
 
-## AgentLoop 云端 Trace
+## AgentLoop 云端 Trace（七轮真实运行全程接入）
 
-全流程已接入阿里云 AgentLoop，Agent + LLM + Tool 三类 span 合并在同一条链路。
+全部运行的标准 span 直连上报阿里云 AgentLoop / SLS：Agent 会话（AGENT_STEP）、LLM 调用（单层 genai.llm.call）、工具调用（genai 语义）三类齐全，**累计 450-530 span/轮 · 导出批次零失败**。
 
-**权威 Trace**：`fbf4a3cec0493990d76e10a102418be1`（真实 CoPaw 运行，17.6s）
+**最新轮（确定性 Skill 集成）实测**：PR #2 SK3 轮 97 次模型调用 / 458 span；PR #3 SK3 轮 35 次 / 5.75M token。跨 Agent 关联：委派通知携带 W3C traceparent，接手 Agent 上报同 trace 关联 span（delegation.link，属性级）——**一条追踪 ID 串联两个容器的证据**。
 
-| 指标 | 值 |
-| --- | --- |
-| Agent 调用 | 1 |
-| LLM 调用 | 24 |
-| 工具调用 | 8 |
-| 总 Token | 51,890（入 49,867 / 出 2,023） |
-| 模型 | deepseek-chat |
+| 指标 | SK3 轮（PR #2） | SK3 轮（PR #3） |
+| --- | --- | --- |
+| 调用次数 | 97 | 35 |
+| 输入 token | 13,877,345（98% 缓存） | 5,748,692（99% 缓存） |
+| 输出 token | 34,944 | 11,507 |
+| skill 调用 span | ×10（diff_parse / risk_classify / case_retrieval） | reviewer 侧含 skill_risk_classify |
+
+检索方式：AgentLoop 控制台按 service.name=`mergepilot-copaw` + 运行时间窗筛选，或按 run 对应的 trace id 直查（trace id 与 run 的映射见各证据包 README）。
 | 会话 ID | N2KQqHVSBsSZc9utWsEeZ5f |
 
 span 父子关系：`agent_step → invoke_agent → { chat deepseek-chat（原生）+ genai.llm.call（loongsuite 包装）+ tool.projectflow + tool.taskflow + matrix.send }`。原生 agentscope span 与 loongsuite 包装 span 共享全局 TracerProvider，天然合并。
