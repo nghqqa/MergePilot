@@ -1,0 +1,23 @@
+{
+  "edges": [],
+  "interrupts": [],
+  "mode": "",
+  "next": [],
+  "nodes": [],
+  "plan_type": "",
+  "project_id": "elemiso-pr1sk5-auto",
+  "requester": "admin",
+  "source": "matrix",
+  "status": "completed",
+  "team_id": "elemiso-team",
+  "title": "PR #1 low-risk auto (run-elem-pr1sk5-20260919-01)",
+  "values": {
+    "mode": "",
+    "plan_type": "",
+    "project_id": "elemiso-pr1sk5-auto",
+    "status": "completed",
+    "task_count": {},
+    "team_id": "elemiso-team",
+    "title": "PR #1 low-risk auto (run-elem-pr1sk5-20260919-01)"
+  }
+}
