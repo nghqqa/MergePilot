@@ -1,0 +1,35 @@
+2026-09-18T17:12:40Z ACTIVATED worker=reviewer-b role=b otlp=https://proj-xtrace-98a0a58e103d37e424adc3fdffb5f51-cn-hangzhou.cn-hangzhou.log. grace=90.0s v3
+2026-09-18T17:14:10Z PATCH agentscope.tool._toolkit applied
+2026-09-18T17:14:10Z PATCH matrix_channel applied
+2026-09-18T17:14:10Z PATCH copaw_worker.hooks.tools.message applied
+2026-09-18T17:14:10Z PATCH copaw_worker.hooks.tools.taskflow applied
+2026-09-18T17:14:10Z PATCH copaw.providers.retry_chat_model applied
+2026-09-18T17:14:10Z PATCH agentscope.model target-missing (will retry)
+2026-09-18T17:14:10Z PATCH copaw.agents.react_agent applied
+2026-09-18T17:33:40Z OTEL_EXPORT SUCCESS n=6
+2026-09-18T17:36:25Z OTEL_EXPORT SUCCESS n=3
+2026-09-18T17:38:22Z GENAI_HANDLER loongsuite extended handler active
+2026-09-18T17:38:22Z OTEL_EXPORT SUCCESS n=2
+2026-09-18T17:38:25Z OTEL_EXPORT SUCCESS n=6
+2026-09-18T17:38:28Z OTEL_EXPORT SUCCESS n=11
+2026-09-18T17:38:30Z ACTIVATED worker=reviewer-b role=b otlp=https://proj-xtrace-98a0a58e103d37e424adc3fdffb5f51-cn-hangzhou.cn-hangzhou.log. grace=90.0s v3
+2026-09-18T17:38:31Z ACTIVATED worker=reviewer-b role=b otlp=https://proj-xtrace-98a0a58e103d37e424adc3fdffb5f51-cn-hangzhou.cn-hangzhou.log. grace=90.0s v3
+2026-09-18T17:38:31Z OTEL_EXPORT SUCCESS n=7
+2026-09-18T17:38:37Z ACTIVATED worker=reviewer-b role=b otlp=https://proj-xtrace-98a0a58e103d37e424adc3fdffb5f51-cn-hangzhou.cn-hangzhou.log. grace=90.0s v3
+2026-09-18T17:38:38Z OTEL_EXPORT SUCCESS n=2
+2026-09-18T17:38:38Z ACTIVATED worker=reviewer-b role=b otlp=https://proj-xtrace-98a0a58e103d37e424adc3fdffb5f51-cn-hangzhou.cn-hangzhou.log. grace=90.0s v3
+2026-09-18T17:38:41Z OTEL_EXPORT SUCCESS n=1
+2026-09-18T17:38:41Z ACTIVATED worker=reviewer-b role=b otlp=https://proj-xtrace-98a0a58e103d37e424adc3fdffb5f51-cn-hangzhou.cn-hangzhou.log. grace=90.0s v3
+2026-09-18T17:38:43Z ACTIVATED worker=reviewer-b role=b otlp=https://proj-xtrace-98a0a58e103d37e424adc3fdffb5f51-cn-hangzhou.cn-hangzhou.log. grace=90.0s v3
+2026-09-18T17:38:44Z OTEL_EXPORT SUCCESS n=7
+2026-09-18T17:38:45Z ACTIVATED worker=reviewer-b role=b otlp=https://proj-xtrace-98a0a58e103d37e424adc3fdffb5f51-cn-hangzhou.cn-hangzhou.log. grace=90.0s v3
+2026-09-18T17:38:47Z OTEL_EXPORT SUCCESS n=7
+2026-09-18T17:38:47Z ACTIVATED worker=reviewer-b role=b otlp=https://proj-xtrace-98a0a58e103d37e424adc3fdffb5f51-cn-hangzhou.cn-hangzhou.log. grace=90.0s v3
+2026-09-18T17:38:49Z ACTIVATED worker=reviewer-b role=b otlp=https://proj-xtrace-98a0a58e103d37e424adc3fdffb5f51-cn-hangzhou.cn-hangzhou.log. grace=90.0s v3
+2026-09-18T17:38:50Z OTEL_EXPORT SUCCESS n=6
+2026-09-18T17:38:51Z ACTIVATED worker=reviewer-b role=b otlp=https://proj-xtrace-98a0a58e103d37e424adc3fdffb5f51-cn-hangzhou.cn-hangzhou.log. grace=90.0s v3
+2026-09-18T17:38:53Z OTEL_EXPORT SUCCESS n=5
+2026-09-18T17:38:53Z ACTIVATED worker=reviewer-b role=b otlp=https://proj-xtrace-98a0a58e103d37e424adc3fdffb5f51-cn-hangzhou.cn-hangzhou.log. grace=90.0s v3
+2026-09-18T17:38:56Z OTEL_EXPORT SUCCESS n=7
+2026-09-18T17:38:59Z OTEL_EXPORT SUCCESS n=4
+2026-09-18T17:51:44Z OTEL_EXPORT SUCCESS n=5
