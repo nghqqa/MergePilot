@@ -1,0 +1,7 @@
+{
+  "enabled": false,
+  "otlp": "",
+  "headers": {},
+  "workspace": "",
+  "_doc": "AgentLoop OTel switch. Image default = disabled, no secrets. Enable at runtime by rewriting this file (enabled=true, otlp=<endpoint>, headers={x-arms-license-key,x-arms-project,x-cms-workspace}, workspace=<id>); the watcher in zz_agentloop_otel picks it up within ~2s, patches after a 90s grace. No container restart needed."
+}

@@ -1,0 +1,23 @@
+{
+  "edges": [],
+  "interrupts": [],
+  "mode": "",
+  "next": [],
+  "nodes": [],
+  "plan_type": "",
+  "project_id": "elemiso-pr2r3t-gate",
+  "requester": "admin",
+  "source": "matrix",
+  "status": "completed",
+  "team_id": "elemiso-team",
+  "title": "PR #2 review-remediation R3 traced (run-elem-pr2r3t-20260916-01)",
+  "values": {
+    "mode": "",
+    "plan_type": "",
+    "project_id": "elemiso-pr2r3t-gate",
+    "status": "completed",
+    "task_count": {},
+    "team_id": "elemiso-team",
+    "title": "PR #2 review-remediation R3 traced (run-elem-pr2r3t-20260916-01)"
+  }
+}

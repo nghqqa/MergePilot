@@ -98,7 +98,7 @@ if (!data.replay_integrity.ok) {
   console.error('[boot] FATAL: replay source refs missing:', data.replay_integrity.missing_source_refs);
   process.exit(1);
 }
-console.log(`[boot] replay integrity OK — pr1 ${data.replay_integrity.events_pr1} events, pr2 ${data.replay_integrity.events_pr2} events, ${data.replay_integrity.source_refs_checked} source refs verified`);
+console.log(`[boot] replay integrity OK — pr2 ${data.replay_integrity.events_pr2} events, pr3 ${data.replay_integrity.events_pr3} events, ${data.replay_integrity.source_refs_checked} source refs verified`);
 console.log(`[boot] evidence integrity: ${data.integrity.ok_files}/${data.integrity.total_files} files match SHA256SUMS`);
 
 // Windows（Hyper-V/WSL NAT）常保留大段端口，4173 落在保留段时报 EACCES。

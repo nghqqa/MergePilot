@@ -50,7 +50,7 @@ export default function OverviewPage() {
         <div className="cc-side">
           <div className="cc-tags"><Verdict v={main.status.verdict}>{main.status.verdict}</Verdict></div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'stretch' }}>
-            <button className="btn primary" onClick={() => nav(`/demo/${main.case_id}?step=1`)}><Play size={15} /> 开始主案例</button>
+            <a className="btn primary" href={`/demo/${main.case_id}?step=1`}><Play size={15} /> 开始主案例</a>
             <Link className="btn ghost" to="/evidence"><FolderSearch size={15} /> 查看证据链</Link>
             <Link className="btn ghost" to="/cases"><Repeat size={15} /> 切换案例</Link>
           </div>
@@ -96,9 +96,9 @@ export default function OverviewPage() {
               </div>
               <div className="cc-side">
                 <div className="cc-tags"><Verdict v={c.status.verdict}>{c.status.verdict}</Verdict></div>
-                <button className="btn ghost small" onClick={(e) => { e.stopPropagation(); openCase(c); }}>
+                <a className="btn ghost small" href={c.shape === 'guided' ? `/demo/${c.case_id}?step=1` : `/demo/${c.case_id}`} onClick={(e) => e.stopPropagation()}>
                   {c.shape === 'guided' ? '引导演示' : '案例简报'} <ArrowRight size={13} />
-                </button>
+                </a>
               </div>
             </div>
           ))}

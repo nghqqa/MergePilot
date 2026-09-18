@@ -1,0 +1,9 @@
+FROM agentteams/copaw-worker:223ddc2-agentloop
+# v3: single-layer LLM spans + genai tool semantics + cross-agent traceparent.
+# Replaces the module loaded by the existing zzz_agentloop.pth.
+COPY zz_agentloop_otel_v3.py /opt/venv/standard/lib/python3.11/site-packages/zz_agentloop_otel.py
+# loongsuite genai handler (ExecuteTool/InvokeAgent semantics for the console)
+RUN /opt/venv/standard/bin/pip install --no-cache-dir "loongsuite-otel-util-genai>=0.6.1"
+
+LABEL agentloop.instrumentation="v3-single-layer+genai+cross-agent" \
+      mp.task="v3-observability-fixes-20260917"

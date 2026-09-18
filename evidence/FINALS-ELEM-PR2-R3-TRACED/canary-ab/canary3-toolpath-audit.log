@@ -1,0 +1,10 @@
+2026-09-16T15:24:25Z ACTIVATED worker=canary role=canary otlp=https://proj-xtrace-98a0a58e103d37e424adc3fdffb5f51-cn-hangzhou.cn-hangzhou.log. grace=90.0s
+2026-09-16T15:25:55Z PATCH agentscope.tool._toolkit applied
+2026-09-16T15:25:55Z PATCH matrix_channel applied
+2026-09-16T15:25:55Z PATCH copaw_worker.hooks.tools.message applied
+2026-09-16T15:25:55Z PATCH copaw_worker.hooks.tools.taskflow applied
+2026-09-16T15:25:55Z PATCH copaw.providers.retry_chat_model applied
+2026-09-16T15:25:55Z PATCH agentscope.model applied
+2026-09-16T15:25:55Z PATCH copaw.agents.react_agent applied
+2026-09-16T15:26:25Z OTEL_EXPORT SUCCESS n=1
+2026-09-16T15:26:28Z OTEL_EXPORT SUCCESS n=8

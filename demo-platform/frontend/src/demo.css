@@ -171,7 +171,7 @@
 .kv { margin: 0; display: grid; grid-template-columns: minmax(96px, 150px) minmax(0, 1fr); gap: 0; }
 .kv > .k {
   font-size: 12px; color: var(--p-ink-3); font-weight: 600; padding: 7px 12px 7px 0; border-top: 1px solid var(--p-sunken);
-  display: flex; align-items: baseline; gap: 6px;
+  overflow-wrap: anywhere; word-break: break-word; min-width: 0;
 }
 .kv > .v { font-size: 13.5px; padding: 7px 0; border-top: 1px solid var(--p-sunken); min-width: 0; overflow-wrap: anywhere; }
 .kv > .v.mono { font-size: 12.5px; }

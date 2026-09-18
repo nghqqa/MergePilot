@@ -1,0 +1,20 @@
+{
+ "pr2rag": {
+  "calls": 80,
+  "inp": 6645498,
+  "cached": 6304256,
+  "outp": 24569
+ },
+ "pr3rag": {
+  "calls": 31,
+  "inp": 2872271,
+  "cached": 2852352,
+  "outp": 9248
+ },
+ "rag_session": {
+  "calls": 134,
+  "inp": 10566867,
+  "cached": 9970432,
+  "outp": 35206
+ }
+}

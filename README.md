@@ -19,7 +19,7 @@
 
 **Demo 视频（75 秒 · 1080p · 中文旁白，早期版本界面）**：[Watch Demo](https://github.com/nghqqa/MergePilot/releases/download/v0.2.0/MergePilot-demo.mp4)
 
-![MergePilot 决赛演示：6 案例组合（R2 干净复跑主案例 / R1 审计修正对照 / 历史回放 / PR#3 真实拒绝 / RAG 闭环 / 返工机制），每张卡标注执行性质与证据等级](docs/assets/readme/portfolio-overview-r2.png)
+![MergePilot 决赛演示：两个 V3 核心案例（FastAPI PR #2 · RAG 接入 + AgentLoop v3 追踪，批准路径 VERIFIED / FastAPI PR #3 · 人工拒绝，blocked 零派发），另附机制验证与数据库迁移附录案例，每张卡标注执行性质与证据等级](docs/assets/readme/portfolio-overview-v3.png)
 
 **在线体验**：`git clone` 后执行 `cd demo-platform && node backend/server.mjs`，访问 `http://127.0.0.1:4173`（若该端口落在 Windows 保留段被拒，服务会自动顺延并在控制台打印实际地址）。零第三方依赖，无需 `npm install`。也可下载离线包 [MergePilot-demo-v0.3.0.zip](https://github.com/nghqqa/MergePilot/releases/download/v0.3.0/MergePilot-demo-v0.3.0.zip)（约 1.5 MB，含 6 案例）。
 

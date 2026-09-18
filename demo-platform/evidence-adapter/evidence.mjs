@@ -40,6 +40,17 @@ export const EVIDENCE_DIRS = {
   finalsPr3Live: 'FINALS-ELEM-PR3-LIVE-20260916',
   // R2 clean re-run of the PR #2 case (same day, post-audit corrections).
   finalsPr2R2Live: 'FINALS-ELEM-PR2-LIVE-20260916-R2',
+  // 2026-09-17 RAG-TRACED round (v2.2 instrumentation). Retired from the demo
+  // lineup by the V3 round below; kept resolvable as prior-round evidence.
+  finalsPr2RagTraced: 'FINALS-ELEM-PR2-RAG-TRACED',
+  finalsPr3RagTraced: 'FINALS-ELEM-PR3-RAG-TRACED',
+  // 2026-09-17 V3-TRACED round: AgentLoop instrumentation v3 (single-layer
+  // genai.llm.call, loongsuite ExecuteTool semantics, gen_ai.conversation.id,
+  // agentteams.delegation.link cross-agent linking) + RAG MCP hook, image
+  // copaw-worker:223ddc2-agentloop-v3rag (8e17c3667c3c). These are the two demo
+  // cases (pr1 retired); both dirs are SHA256SUMS-locked.
+  finalsPr2V3Traced: 'FINALS-ELEM-PR2-V3-TRACED',
+  finalsPr3V3Traced: 'FINALS-ELEM-PR3-V3-TRACED',
 };
 
 export function dirPath(key) {

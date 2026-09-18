@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "MergePilot Demo Platform Data Contract v1.1",
-  "description": "Unified data model served by the Demo Backend. Every field carries a provenance source. All responses pass through the redaction layer (see redaction.rules). Two providers implement this contract: replay (read-only over locked evidence dirs) and live (read-only real APIs; returns LIVE_DATA_UNAVAILABLE per-source when down). Consumers: this file is documentation for judges/integrators (no runtime code imports it); backend/test/selftest.mjs checks its case_id enum, risk levels and finals endpoints against the live API so it cannot drift silently.",
+  "description": "Unified data model served by the Demo Backend. Every field carries a provenance source. All responses pass through the redaction layer (see redaction.rules). 2026-09-17: two-case lineup (AgentLoop-traced + RAG-integrated elemiso runs; pr1 retired). Two providers implement this contract: replay (read-only over locked evidence dirs) and live (read-only real APIs; returns LIVE_DATA_UNAVAILABLE per-source when down). Consumers: this file is documentation for judges/integrators (no runtime code imports it); backend/test/selftest.mjs checks its case_id enum, risk levels and finals endpoints against the live API so it cannot drift silently.",
   "modes": {
     "replay": {
       "banner": "REPLAY — HISTORICAL VERIFIED RUN",
@@ -26,7 +26,7 @@
     }
   },
   "case": {
-    "case_id": "enum: pr1-normal-review | pr2-high-risk-human-gate | pr3-high-risk-human-reject",
+    "case_id": "enum: pr2-high-risk-human-gate | pr3-high-risk-human-reject",
     "title": "string",
     "positioning": "string — 10-second product read",
     "repository": "string (owner/repo)",

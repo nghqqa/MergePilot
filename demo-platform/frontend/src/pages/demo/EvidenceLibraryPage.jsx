@@ -10,9 +10,8 @@ import { LevelChip } from '../../components/demo/bits.jsx';
 import EvidenceDrawer from '../../components/demo/EvidenceDrawer.jsx';
 
 const LEGACY = [
-  ['/cases/pr1-normal-review', 'PR #1 普通协同（自动闭环）'],
-  ['/cases/pr2-high-risk-human-gate', 'PR #2 高危人工门（批准）'],
-  ['/cases/pr3-high-risk-human-reject', 'PR #3 高危人工门（拒绝）'],
+  ['/cases/pr2-high-risk-human-gate', 'PR #2 高危人工门（批准）· RAG+追踪版'],
+  ['/cases/pr3-high-risk-human-reject', 'PR #3 高危人工门（拒绝）· RAG+追踪版'],
   ['/pr4', 'PR #4 跨仓 Schema（模拟对比 + 真实 SQL 循环）'],
   ['/rework', '返工闭环全量证据页'],
   ['/rag', 'RAG 检索（SYNTHETIC 语料）'],
