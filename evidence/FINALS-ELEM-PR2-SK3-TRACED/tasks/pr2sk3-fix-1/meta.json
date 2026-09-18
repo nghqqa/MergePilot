@@ -1,0 +1,15 @@
+{
+  "task_id": "pr2sk3-fix-1",
+  "project_id": "elemiso-pr2sk3-gate",
+  "task_title": "Minimal fix only if human gate approves",
+  "assigned_to": "fixer",
+  "room_id": "room:!RErK7WVs9iUeaszwho:elemiso-matrix:6167",
+  "status": "submitted",
+  "depends_on": [
+    "pr2sk3-review-1"
+  ],
+  "assigned_at": "2026-09-18T11:34:10Z",
+  "acknowledged_at": "2026-09-18T11:34:13Z",
+  "submitted_at": "2026-09-18T11:34:54Z",
+  "event_id": "$gHxzj2mILVW_CXtXPJXmgr55IgcnZDvlMyIZBzf9lHA"
+}

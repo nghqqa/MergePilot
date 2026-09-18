@@ -1,0 +1,8 @@
+{
+ "window_start": "2026-09-18T11:40:00Z",
+ "team_room_events": 19,
+ "dm_events": 7,
+ "skill_limitation": "skill_risk_classify returned advisory L1 (metadata-level); reviewer's independent review established HIGH \u2014 advisory skill output did not override agent judgment",
+ "skill_case_retrieval": "returned CASE_RETR_DB_UNAVAILABLE (DB-dependent, unavailable in container) \u2014 agents degraded gracefully",
+ "probe_note": "direct-probe collection failed this round (MSYS path issue, 3rd occurrence); span direct-upload evidence is complete via audit logs"
+}
