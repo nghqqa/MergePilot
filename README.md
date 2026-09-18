@@ -102,7 +102,7 @@ Agent 只承担语义判断，六类 Skill 以 Schema、deadline、错误码和 
 
 ![MergePilot 架构：Agent 只做语义判断，Workflow Controller、Policy Gateway 与审计事实构成确定性控制面](docs/assets/readme/preview4/architecture-preview4.png)
 
-源图（可编辑 SVG）：[`docs/assets/mergepilot-architecture.svg`](docs/assets/mergepilot-architecture.svg)
+架构总览图（可编辑 SVG）：[`docs/assets/mergepilot-architecture.svg`](docs/assets/mergepilot-architecture.svg) —— 含两套控制面职责区分、四个运行时 Agent、六个确定性 Skill（接入状态分组）、AgentLoop 观测层与凭据边界
 
 ## AgentLoop 云端 Trace
 
