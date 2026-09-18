@@ -1,0 +1,24 @@
+2026-09-18T15:53:16Z config enabled; grace 90.0s before patching
+2026-09-18T15:54:46Z CoPawAgent.register_mcp_clients patched (live-run SYNTHETIC RAG, endpoint=http://host.docker.internal:4184/api/rag/search)
+2026-09-18T15:55:32Z register_mcp_clients ENTRY pre_clients=0
+2026-09-18T15:55:32Z rag_mcp connected and injected (endpoint=http://host.docker.internal:4184/api/rag/search)
+2026-09-18T15:55:36Z register_mcp_clients ENTRY pre_clients=0
+2026-09-18T15:55:36Z rag_mcp connected and injected (endpoint=http://host.docker.internal:4184/api/rag/search)
+2026-09-18T15:57:56Z register_mcp_clients ENTRY pre_clients=0
+2026-09-18T15:57:56Z rag_mcp connected and injected (endpoint=http://host.docker.internal:4184/api/rag/search)
+2026-09-18T15:59:35Z register_mcp_clients ENTRY pre_clients=0
+2026-09-18T15:59:35Z rag_mcp connected and injected (endpoint=http://host.docker.internal:4184/api/rag/search)
+2026-09-18T16:00:23Z register_mcp_clients ENTRY pre_clients=0
+2026-09-18T16:00:23Z rag_mcp connected and injected (endpoint=http://host.docker.internal:4184/api/rag/search)
+2026-09-18T16:01:47Z register_mcp_clients ENTRY pre_clients=0
+2026-09-18T16:01:47Z rag_mcp connected and injected (endpoint=http://host.docker.internal:4184/api/rag/search)
+2026-09-18T16:01:48Z register_mcp_clients ENTRY pre_clients=0
+2026-09-18T16:01:48Z rag_mcp connected and injected (endpoint=http://host.docker.internal:4184/api/rag/search)
+2026-09-18T16:05:14Z register_mcp_clients ENTRY pre_clients=0
+2026-09-18T16:05:14Z rag_mcp connected and injected (endpoint=http://host.docker.internal:4184/api/rag/search)
+2026-09-18T16:05:18Z register_mcp_clients ENTRY pre_clients=0
+2026-09-18T16:05:18Z rag_mcp connected and injected (endpoint=http://host.docker.internal:4184/api/rag/search)
+2026-09-18T16:06:12Z register_mcp_clients ENTRY pre_clients=0
+2026-09-18T16:06:12Z rag_mcp connected and injected (endpoint=http://host.docker.internal:4184/api/rag/search)
+2026-09-18T16:07:06Z register_mcp_clients ENTRY pre_clients=0
+2026-09-18T16:07:06Z rag_mcp connected and injected (endpoint=http://host.docker.internal:4184/api/rag/search)

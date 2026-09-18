@@ -1,0 +1,15 @@
+{
+  "task_id": "pr2sk4-verify-1",
+  "project_id": "elemiso-pr2sk4-gate",
+  "task_title": "Independent verification only if fix authorized and accepted",
+  "assigned_to": "verifier",
+  "room_id": "room:!RErK7WVs9iUeaszwho:elemiso-matrix:6167",
+  "status": "submitted",
+  "depends_on": [
+    "pr2sk4-fix-1"
+  ],
+  "assigned_at": "2026-09-18T16:00:32Z",
+  "acknowledged_at": "2026-09-18T16:00:36Z",
+  "submitted_at": "2026-09-18T16:01:45Z",
+  "event_id": "$7XvTjFinfvq46nz9OSKhGvRrV9Lawn6W4tbtrtUFPiw"
+}
