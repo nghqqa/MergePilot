@@ -410,7 +410,7 @@ await test('evidence drawer (approval): human record, read-only, body = the cite
   const r = await handle('GET', '/api/cases/pr2-high-risk-human-gate/evidence', q({ kind: 'approval' }), null);
   assert.equal(r.agent_role, 'human');
   // body must be the same SHA256SUMS-locked record the drawer cites (not the P14 fallback)
-  assert.ok(r.approval_text.includes('run-elem-pr2v3-20260917-01'), 'approval body must be the V3 record');
+  assert.ok(r.approval_text.includes('run-elem-pr2sk3-20260918-01'), 'approval body must be the SK3 record');
   assert.ok(r.approval_text.includes('remediation authorized'));
   assert.ok(r.approval_text.includes('zero GitHub writes'));
   assert.ok(r.source_ref.includes('human-gate-approval.md'));

@@ -49,8 +49,8 @@ export const EVIDENCE_DIRS = {
   // agentteams.delegation.link cross-agent linking) + RAG MCP hook, image
   // copaw-worker:223ddc2-agentloop-v3rag (8e17c3667c3c). These are the two demo
   // cases (pr1 retired); both dirs are SHA256SUMS-locked.
-  finalsPr2V3Traced: 'FINALS-ELEM-PR2-V3-TRACED',
-  finalsPr3V3Traced: 'FINALS-ELEM-PR3-V3-TRACED',
+  finalsPr2Sk3Traced: 'FINALS-ELEM-PR2-SK3-TRACED',
+  finalsPr3Sk3Traced: 'FINALS-ELEM-PR3-SK3-TRACED',
 };
 
 export function dirPath(key) {

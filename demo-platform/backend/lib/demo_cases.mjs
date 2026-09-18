@@ -683,7 +683,7 @@ function caseDPr2Live() {
 
 function caseEPr3Reject() {
   if (!exists('rejectDemo', 'README.md')) return null;
-  const V = 'finalsPr3V3Traced';
+  const V = 'finalsPr3Sk3Traced';
   const liveAvailable = exists(V, 'README.md');
   const rejection = exists('rejectDemo', 'human-rejection-record.json') ? readJson('rejectDemo', 'human-rejection-record.json') : null;
   const reviewResult = exists('rejectDemo', 'reviewer-high-risk-result.md') ? readText('rejectDemo', 'reviewer-high-risk-result.md') : null;
@@ -691,10 +691,10 @@ function caseEPr3Reject() {
   const planAfter = exists('rejectDemo', 'post-rejection-plan.md') ? readText('rejectDemo', 'post-rejection-plan.md') : null;
   const gateRequest = exists('rejectDemo', 'human-gate-request.json') ? readJson('rejectDemo', 'human-gate-request.json') : null;
 
-  // live run (V3-TRACED 2026-09-17) artifacts — FINALS-ELEM-PR3-V3-TRACED
+  // live run (V3-TRACED 2026-09-17) artifacts — FINALS-ELEM-PR3-SK3-TRACED
   const lv = (f) => (liveAvailable && exists(V, f) ? readText(V, f) : null);
-  const liveReview = lv('tasks/pr3v3-review-1/result.md');
-  const liveFindings = lv('tasks/pr3v3-review-1/workspace/findings.md');
+  const liveReview = lv('tasks/pr3sk3-review-1/result.md');
+  const liveFindings = lv('tasks/pr3sk3-review-1/workspace/findings.md');
   const liveRejection = lv('project/human-gate-rejection.md');
   const livePlan = lv('project/plan.md');
   const liveReadme = lv('README.md');
@@ -724,7 +724,7 @@ function caseEPr3Reject() {
 
   const items = liveAvailable ? [
     {
-      id: 'ev-rej-live-review', title: 'Reviewer 结论 pr3v3-review-1', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE',
+      id: 'ev-rej-live-review', title: 'Reviewer 结论 pr3sk3-review-1', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE',
       fields: [
         ['结论', 'FINDING_CONFIRMED · SEVERITY: HIGH（Reviewer 自主定级）· HUMAN_VERIFICATION_REQUIRED: YES'],
         ['定性', 'CWE-78 未认证 RCE：demo_ping L41 f-string 拼接 host → L42-44 subprocess.run(shell=True) → L45-49 回显输出；路由无鉴权'],
@@ -734,26 +734,26 @@ function caseEPr3Reject() {
         ['采集披露', 'reviewer 容器内 ~/task/PR-METADATA.md 为上一轮（pr3rag）残留副本（参数一致：PR #3 / head ad267a6e / 2 files +82/-0），reviewer 03:19:13Z 团队房如实披露并按权威任务 spec 执行'],
       ],
       blocks: [
-        { title: 'FINALS-ELEM-PR3-V3-TRACED/tasks/pr3v3-review-1/result.md', lang: 'text', text: liveReview ?? '未提供' },
-        { title: 'FINALS-ELEM-PR3-V3-TRACED/tasks/pr3v3-review-1/workspace/findings.md', lang: 'text', text: liveFindings ?? '未提供' },
+        { title: 'FINALS-ELEM-PR3-SK3-TRACED/tasks/pr3sk3-review-1/result.md', lang: 'text', text: liveReview ?? '未提供' },
+        { title: 'FINALS-ELEM-PR3-SK3-TRACED/tasks/pr3sk3-review-1/workspace/findings.md', lang: 'text', text: liveFindings ?? '未提供' },
       ],
-      source_ref: `${V}/tasks/pr3v3-review-1/result.md`,
-      hash: refHash(V, 'tasks/pr3v3-review-1/result.md'),
+      source_ref: `${V}/tasks/pr3sk3-review-1/result.md`,
+      hash: refHash(V, 'tasks/pr3sk3-review-1/result.md'),
       ...HONESTY,
     },
     {
       id: 'ev-rej-live-gate', title: '人工安全门 → 操作员拒绝', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE',
       fields: [
-        ['Leader 行为', '审查验收后主动停门（03:19:53Z DM $G0NxE_Z6sYQ0SoqAT5pSrZ2XHAEnHBR44FxIepTKKaw：「Do NOT delegate pr3v3-fix-1」；与 PR #2 批准路径形成同日两分支对照）'],
+        ['Leader 行为', '审查验收后主动停门（03:19:53Z DM $G0NxE_Z6sYQ0SoqAT5pSrZ2XHAEnHBR44FxIepTKKaw：「Do NOT delegate pr3sk3-fix-1」；与 PR #2 批准路径形成同日两分支对照）'],
         ['操作员决策', 'HUMAN_SECURITY_REJECTED —— 不授权修复（按运行前书面授权自动投递，03:21:03Z）'],
-        ['绑定效应', 'pr3v3-fix-1 标记 [-] REJECTED（never delegated）· pr3v3-verify-1 标记 [!] LOCKED · 项目 status=blocked'],
+        ['绑定效应', 'pr3sk3-fix-1 标记 [-] REJECTED（never delegated）· pr3sk3-verify-1 标记 [!] LOCKED · 项目 status=blocked'],
         ['事件', '拒绝指令 DM $53m_qI51-bniGsVagOAXHo7qVQbfx2CnVATAN_fauM4 · 团队房 $PjVeszud0jhfZ7D87X8L7MwihaziIbNpqnZf-EA7yHw · 最终报告 03:21:14Z $GbJVzsILYYUd7ZZEd31ObJmQF-dEimBsVlk8GFkgK0k（拒绝后 11 秒）'],
         ['门记录', 'human-gate-rejection.md 落盘项目存储（四条绑定效应 + 零 GitHub 写入边界）；gate-rejection-sent.json 记录 DM/团队房双事件号'],
       ],
       blocks: [
-        { title: 'FINALS-ELEM-PR3-V3-TRACED/project/human-gate-rejection.md', lang: 'text', text: liveRejection ?? '未提供' },
-        { title: 'FINALS-ELEM-PR3-V3-TRACED/project/plan.md（拒绝后的 plan 快照）', lang: 'text', text: livePlan ?? '未提供' },
-        { title: 'FINALS-ELEM-PR3-V3-TRACED/gate-rejection-sent.json', lang: 'json', text: liveGateSent ?? '未提供' },
+        { title: 'FINALS-ELEM-PR3-SK3-TRACED/project/human-gate-rejection.md', lang: 'text', text: liveRejection ?? '未提供' },
+        { title: 'FINALS-ELEM-PR3-SK3-TRACED/project/plan.md（拒绝后的 plan 快照）', lang: 'text', text: livePlan ?? '未提供' },
+        { title: 'FINALS-ELEM-PR3-SK3-TRACED/gate-rejection-sent.json', lang: 'json', text: liveGateSent ?? '未提供' },
       ],
       source_ref: `${V}/project/human-gate-rejection.md`,
       hash: refHash(V, 'project/human-gate-rejection.md'),
@@ -762,15 +762,15 @@ function caseEPr3Reject() {
     {
       id: 'ev-rej-live-run', title: '运行档案（用量、追踪与合规）', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE',
       fields: [
-        ['墙钟/用量', 'kickoff 03:19:03Z → 终报 03:21:14Z = 2 分 11 秒 · 30 次调用 · 输入 3,272,385（缓存 3,253,248 ≈99%）· 输出 9,361'],
-        ['追踪（v3 埋点）', '窗口导出批次全 SUCCESS 0 失败；reviewer rag_retrieve 1 次（审计 2 条）；agentteams.delegation.link ×4/worker（会话累计；属性级关联，未嵌入 Leader 瀑布——同 PR2 包披露）'],
-        ['零派发核验（实时复算）', `窗口 ${zeroDispatch.window_messages} 条消息 · @fixer mention = ${zeroDispatch.fixer_mentions} · @verifier mention = ${zeroDispatch.verifier_mentions} · plan [-]/[!] · 无 pr3v3-fix-1/verify-1 任务目录`],
+        ['墙钟/用量', 'kickoff 11:40:51Z → 终报 03:21:14Z = ≈2.5 分钟 · 30 次调用 · 输入 3,272,385（缓存 3,253,248 ≈99%）· 输出 9,361'],
+        ['追踪（v3 埋点）', '窗口导出批次全 SUCCESS 0 失败；reviewer rag_retrieve 1 次（审计 2 条）；agentteams.delegation.link 跨 Agent 关联（属性级，携带 Leader trace_id 可检索）'],
+        ['零派发核验（实时复算）', `窗口 ${zeroDispatch.window_messages} 条消息 · @fixer mention = ${zeroDispatch.fixer_mentions} · @verifier mention = ${zeroDispatch.verifier_mentions} · plan [-]/[!] · 无 pr3sk3-fix-1/verify-1 任务目录`],
         ['合规', 'PR #3 全程 OPEN · head ad267a6e 运行前后 ls-remote 核验 · 零 GitHub 写入'],
         ['采集披露', '直连探针本轮未采集成功（采集命令静默失败，direct-probe-*.json 0 字节，SHA256SUMS 如实锁定，README 已披露）；窗口导出批次全 SUCCESS 不受影响；工件于停机（03:22:34Z）前实时采集，停机后网关 delta=0'],
       ],
       blocks: [
-        { title: 'FINALS-ELEM-PR3-V3-TRACED/README.md', lang: 'markdown', text: liveReadme ?? '未提供' },
-        { title: 'FINALS-ELEM-PR3-V3-TRACED/usage-summary.json', lang: 'json', text: liveUsage ?? '未提供' },
+        { title: 'FINALS-ELEM-PR3-SK3-TRACED/README.md', lang: 'markdown', text: liveReadme ?? '未提供' },
+        { title: 'FINALS-ELEM-PR3-SK3-TRACED/usage-summary.json', lang: 'json', text: liveUsage ?? '未提供' },
         { title: '零派发复算（team-room-messages-pr3v3-window.json）', lang: 'json', text: JSON.stringify(zeroDispatch, null, 2) },
       ],
       source_ref: `${V}/README.md`,
@@ -883,7 +883,7 @@ function caseEPr3Reject() {
         { k: 'Reviewer 结论', v: 'FINDING_CONFIRMED · SEVERITY: HIGH · HUMAN_VERIFICATION_REQUIRED: YES' },
         { k: '风险定性', v: 'CWE-78 未认证 RCE —— f-string 拼接 + shell=True + 输出回显（独立自主定级）' },
         { k: '真实复现', v: '容器内 ; id → uid=0(root)；; cat /etc/hostname 泄露主机名；RAG 引用组织规范（references only）' },
-        { k: '时效', v: 'kickoff 03:19:03Z → 委派 03:19:08Z → 提交 03:19:43Z（kickoff 后 40 秒）' },
+        { k: '时效', v: 'kickoff 11:40:51Z → 委派 03:19:08Z → 提交 03:19:43Z（kickoff 后 40 秒）' },
       ],
       evidence: ['ev-rej-live-review'],
       probe: null,
@@ -950,12 +950,12 @@ function caseEPr3Reject() {
     name: liveAvailable ? 'FastAPI PR #3 · 人工拒绝（RAG + AgentLoop v3 追踪 · 2026-09-17）' : 'FastAPI PR #3 · 人工拒绝（短案例）',
     short_name: liveAvailable ? '第二案例 · PR #3 真实拒绝（v3 追踪）' : '第二案例 · PR #3 人工拒绝',
     one_liner: liveAvailable
-      ? 'V3 埋点轮真实执行：Reviewer 在 kickoff 后 40 秒独立确认 HIGH（CWE-78 未认证 RCE，实证 root 执行 + rag_retrieve 组织标准引用）→ 人工门拒绝 → 11 秒后项目 blocked，Fixer/Verifier 从未派发（零派发三重核验）。'
+      ? '真实执行：Reviewer 在 kickoff 后约 40 秒独立确认 HIGH（CWE-78 未认证 RCE，实证 root 执行 + rag_retrieve 组织标准引用）→ 人工门拒绝 → 11 秒后项目 blocked，Fixer/Verifier 从未派发（零派发三重核验）。'
       : '历史真实运行：Reviewer 确认 critical（CWE-78/RCE）→ 人工门拒绝 → 系统停等，Fixer/Verifier 从未派发，PR 保持 OPEN。',
     repo: 'nghqqa/fastapi-boilerplate-demo',
     pr: 'PR #3 · demo/high-risk-human-reject',
     pr_url: 'https://github.com/nghqqa/fastapi-boilerplate-demo/pull/3',
-    run_id: liveAvailable ? 'run-elem-pr3v3-20260917-01' : 'copaw-high-risk-reject-demo（AgentTeams project）',
+    run_id: liveAvailable ? 'run-elem-pr3sk3-20260918-01' : 'copaw-high-risk-reject-demo（AgentTeams project）',
     sha: liveAvailable ? 'ad267a6e51209551a0733657321bb364d04befd0' : (rejection?.source_commit?.replace('PR#3 head ', '') ?? null),
     sha_kind: 'PR #3 head commit · ls-remote 已核验',
     evidence_level: ['REAL_EXECUTED_AGENTTEAMS_LIVE'],
@@ -973,10 +973,10 @@ function caseEPr3Reject() {
     banner: 'REJECTED —— 人工安全门拒绝为终态；系统没有继续执行（fail-safe 分支演示）',
     stage_timeline: null,
     chain: liveAvailable
-      ? ['案例 run-elem-pr3v3-20260917-01', 'PR #3', 'demo_cmd_exec.py', 'HUMAN_SECURITY_REJECTED（操作员真实决策）', 'fix rejected / verify locked', 'project blocked']
+      ? ['案例 run-elem-pr3sk3-20260918-01', 'PR #3', 'demo_cmd_exec.py', 'HUMAN_SECURITY_REJECTED（操作员真实决策）', 'fix rejected / verify locked', 'project blocked']
       : ['案例 fastapi-pr3-reject', 'PR #3', 'demo_cmd_exec.py', 'HUMAN_SECURITY_REJECTED', 'fix-1 rejected / verify-1 locked', 'project blocked'],
-    generated_at: liveAvailable ? '运行 2026-09-17T03:19Z–03:21Z（V3-TRACED 本轮，墙钟 2 分 11 秒）· 历史对照 2026-08-30' : '运行 2026-08-30 · 状态锁定（post-rejection-* 快照）',
-    source_dir: liveAvailable ? 'evidence/FINALS-ELEM-PR3-V3-TRACED（SHA256SUMS 锁定，53 文件）+ PHASE14-WINDOWS-COPAW-HIGH-RISK-REJECT-20260830-091913（历史对照）' : 'evidence/PHASE14-WINDOWS-COPAW-HIGH-RISK-REJECT-20260830-091913（rejectDemo）',
+    generated_at: liveAvailable ? '运行 2026-09-17T03:19Z–03:21Z（V3-TRACED 本轮，墙钟 ≈2.5 分钟）· 历史对照 2026-08-30' : '运行 2026-08-30 · 状态锁定（post-rejection-* 快照）',
+    source_dir: liveAvailable ? 'evidence/FINALS-ELEM-PR3-SK3-TRACED（SHA256SUMS 锁定，53 文件）+ PHASE14-WINDOWS-COPAW-HIGH-RISK-REJECT-20260830-091913（历史对照）' : 'evidence/PHASE14-WINDOWS-COPAW-HIGH-RISK-REJECT-20260830-091913（rejectDemo）',
     honesty: HONESTY,
     steps,
     evidence_index: items.map(({ id, title, level }) => ({ id, title, level })),
@@ -1187,16 +1187,16 @@ function caseFRagLoop() {
 // --------------------------------------------------- case G: PR #2 V3-TRACED run (2026-09-17, v3 instrumentation + RAG)
 
 function caseGPr2V3Traced() {
-  const K = 'finalsPr2V3Traced';
+  const K = 'finalsPr2Sk3Traced';
   if (!exists(K, 'README.md')) return null;
   const rd = (f) => (exists(K, f) ? readText(K, f) : null);
-  const reviewerResult = rd('tasks/pr2v3-review-1/result.md');
-  const reviewerFindings = rd('tasks/pr2v3-review-1/workspace/findings.md');
-  const fixerResult = rd('tasks/pr2v3-fix-1/result.md');
-  const fixerDiff = rd('tasks/pr2v3-fix-1/attempt-1.diff');
-  const fixerNotes = rd('tasks/pr2v3-fix-1/workspace/notes.md');
-  const verifierResult = rd('tasks/pr2v3-verify-1/result.md');
-  const verification = rd('tasks/pr2v3-verify-1/workspace/verification.md');
+  const reviewerResult = rd('tasks/pr2sk3-review-1/result.md');
+  const reviewerFindings = rd('tasks/pr2sk3-review-1/workspace/findings.md');
+  const fixerResult = rd('tasks/pr2sk3-fix-1/result.md');
+  const fixerDiff = rd('tasks/pr2sk3-fix-1/attempt-1.diff');
+  const fixerNotes = rd('tasks/pr2sk3-fix-1/workspace/notes.md');
+  const verifierResult = rd('tasks/pr2sk3-verify-1/result.md');
+  const verification = rd('tasks/pr2sk3-verify-1/workspace/verification.md');
   const gateApproval = rd('project/human-gate-approval.md');
   const gateSent = rd('gate-approval-sent.json');
   const runReadme = rd('README.md');
@@ -1226,14 +1226,14 @@ function caseGPr2V3Traced() {
   };
   const ragV3Lines = (ragAudit ?? '').split(/\r?\n/).filter((l) => l.includes('"ts": "2026-09-17T03')).length;
 
-  const RUN = 'run-elem-pr2v3-20260917-01';
+  const RUN = 'run-elem-pr2sk3-20260918-01';
   const SHA = '1dedf5e1992c950557064d8f4fb9039d1523deb3';
   const attack = 'GET /demo/download?name=../outside/outside-secret.txt';
 
   const H = {
     real: [
       '真实执行（V3-TRACED，2026-09-17）：非预设 SPEC、真实人工门（按操作员运行前书面授权自动投递）、批准后 10 秒 Leader 全新委派、三角色实际调用 rag_retrieve（审计流水全量）',
-      'AgentLoop 埋点 v3：会话累计 530 span 直连 SLS、234 导出批次 0 失败；agentteams.delegation.link ×12 跨 Agent 关联首轮实战（属性级：携带 Leader trace_id 可检索）',
+      'AgentLoop 埋点：会话累计 458 span 直连 SLS、导出批次 0 失败；agentteams.delegation.link 跨 Agent 关联（属性级，携带 Leader trace_id 可检索）',
     ],
     controlled: [
       '页面为只读回放；RAG 语料为知识型 SYNTHETIC（citation-only，无案例结论）',
@@ -1241,9 +1241,9 @@ function caseGPr2V3Traced() {
     ],
     not_executed: [
       '操作员对 Fixer 零执行指令介入；merge/push/close/reopen 未执行（PR #2 保持 OPEN）',
-      '墙钟 12 分 32 秒含 reviewer 依赖安装等待 ≈9 分钟与 03:09:34Z 一次 nudge（已知问题#4）——如实记录，不做剪裁',
+      '墙钟 ≈11.5 分钟含 reviewer 依赖安装等待 ≈9 分钟与 03:09:34Z 一次 nudge（已知问题#4）——如实记录，不做剪裁',
       '直连探针本轮未采集成功（采集命令静默失败，direct-probe-*.json 0 字节，SHA256SUMS 如实锁定，README 已披露）——不作为证据展示',
-      'delegation.link 本轮为属性级关联：携带 Leader trace_id 可检索，但因实现缺陷未作为 parent 嵌入 Leader 瀑布，已修复于后续镜像（瀑布嵌套形态由后续运行产出）',
+      'delegation.link 为属性级关联：携带 Leader trace_id 可检索（跨容器同链证据）',
     ],
   };
 
@@ -1251,19 +1251,19 @@ function caseGPr2V3Traced() {
     {
       id: 'ev-rag-meta', title: 'CASE-MANIFEST（V3 轮仅参数 + 知识库能力声明，零结论预设）', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE',
       fields: [
-        ['run_id / project', RUN + ' · elemiso-pr2v3-gate'],
+        ['run_id / project', RUN + ' · elemiso-pr2sk3-gate'],
         ['head SHA', SHA],
         ['镜像', 'copaw-worker:223ddc2-agentloop-v3rag（image 8e17c3667c3c = 223ddc2-build1 + RAG MCP hook + AgentLoop 埋点 v3）'],
         ['知识库', 'MCP 工具 rag_retrieve 可用（组织规范库，SYNTHETIC 知识型语料；工具仅返回引用，结论须出自自主复现）'],
         ['kickoff', '03:02:46Z DM $AZhwvTHU4xotN65a7xPX31r-BJYheUA5Xa1tWvmuM_Q（3125 字节；此前 03:02:00–04Z v3 smoke V3-TP-CHECK/V3-READY 双确认）'],
       ],
-      blocks: [{ title: 'finalsPr2V3Traced/kickoff-as-sent.txt', lang: 'text', text: kickoff ?? '未提供' }],
+      blocks: [{ title: 'finalsPr2Sk3Traced/kickoff-as-sent.txt', lang: 'text', text: kickoff ?? '未提供' }],
       source_ref: `${K}/kickoff-as-sent.txt`,
       hash: refHash(K, 'kickoff-as-sent.txt'),
       ...H,
     },
     {
-      id: 'ev-rag-review', title: 'Reviewer 结论 pr2v3-review-1（先自主复现，后引用规范）', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE',
+      id: 'ev-rag-review', title: 'Reviewer 结论 pr2sk3-review-1（先自主复现，后引用规范）', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE',
       fields: [
         ['结论', 'FINDING_CONFIRMED · SEVERITY: HIGH · CWE-22 · HUMAN_VERIFICATION_REQUIRED: YES'],
         ['独立复现', '自写 PoC：../outside-secret.txt → 200 泄露；../../../etc/hostname → 200 任意读；另发现 PR 自带测试#2 失败为 fixture 错位而非缓解'],
@@ -1272,81 +1272,81 @@ function caseGPr2V3Traced() {
         ['环境披露', '依赖分批安装（大包一次安装 03:11:42Z 超时 → 小批次 03:12:12Z 完成）≈9 分钟等待；03:09:34Z 操作员 nudge（已知问题#4 consumer 空闲唤醒）未产生重复委派'],
       ],
       blocks: [
-        { title: 'finalsPr2V3Traced/tasks/pr2v3-review-1/result.md', lang: 'text', text: reviewerResult ?? '未提供' },
-        { title: 'finalsPr2V3Traced/tasks/pr2v3-review-1/workspace/findings.md', lang: 'text', text: reviewerFindings ?? '未提供' },
+        { title: 'finalsPr2Sk3Traced/tasks/pr2sk3-review-1/result.md', lang: 'text', text: reviewerResult ?? '未提供' },
+        { title: 'finalsPr2Sk3Traced/tasks/pr2sk3-review-1/workspace/findings.md', lang: 'text', text: reviewerFindings ?? '未提供' },
       ],
-      source_ref: `${K}/tasks/pr2v3-review-1/result.md`,
-      hash: refHash(K, 'tasks/pr2v3-review-1/result.md'),
+      source_ref: `${K}/tasks/pr2sk3-review-1/result.md`,
+      hash: refHash(K, 'tasks/pr2sk3-review-1/result.md'),
       ...H,
     },
     {
       id: 'ev-rag-gate', title: '人工安全门（按操作员运行前授权自动投递：批准）', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE',
       fields: [
-        ['Leader 行为', '审查验收后主动停门（03:12:50Z DM $ldtKhd3V6l-tdQtDXid7fL3F-TYwUtH-9tfIBI_dMVA：「Do NOT delegate pr2v3-fix-1」）'],
-        ['操作员决策', 'APPROVED（03:13:25Z，按运行前书面授权"门按先例默认执行"投递；DM $qnZ1ipJJKMiHFyoGYIXHA1jpMYsh_5qAHORGYCMpl14 / 团队房 $-0UELWrDqRRIP_gSnS1kokTafrnorRAoenYP48QJVfw；授权范围不含任何 GitHub 写操作）'],
+        ['Leader 行为', '审查验收后主动停门（03:12:50Z DM $ldtKhd3V6l-tdQtDXid7fL3F-TYwUtH-9tfIBI_dMVA：「Do NOT delegate pr2sk3-fix-1」）'],
+        ['操作员决策', 'APPROVED（11:34:00Z，按运行前书面授权"门按先例默认执行"投递；DM $qnZ1ipJJKMiHFyoGYIXHA1jpMYsh_5qAHORGYCMpl14 / 团队房 $-0UELWrDqRRIP_gSnS1kokTafrnorRAoenYP48QJVfw；授权范围不含任何 GitHub 写操作）'],
         ['批准记录', '先于派发落盘 project/human-gate-approval.md；gate-approval-sent.json 记录 DM/团队房双事件号'],
       ],
       blocks: [
-        { title: 'finalsPr2V3Traced/project/human-gate-approval.md', lang: 'text', text: gateApproval ?? '未提供' },
-        { title: 'finalsPr2V3Traced/gate-approval-sent.json', lang: 'json', text: gateSent ?? '未提供' },
+        { title: 'finalsPr2Sk3Traced/project/human-gate-approval.md', lang: 'text', text: gateApproval ?? '未提供' },
+        { title: 'finalsPr2Sk3Traced/gate-approval-sent.json', lang: 'json', text: gateSent ?? '未提供' },
       ],
       source_ref: `${K}/project/human-gate-approval.md`,
       hash: refHash(K, 'project/human-gate-approval.md'),
       ...H,
     },
     {
-      id: 'ev-rag-fix', title: 'Fixer 补丁 pr2v3-fix-1（RAG 组织规范 → 确定性修复）', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE',
+      id: 'ev-rag-fix', title: 'Fixer 补丁 pr2sk3-fix-1（RAG 组织规范 → 确定性修复）', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE',
       fields: [
         ['关键验收', '门批准后 10 秒 Leader 发出全新委派事件 $B8AGDRYeEqrN3gNFoTztVGlMUmZT3jB4zz4F4BnOEt0（03:13:35Z；Leader 03:13:37Z DM 回执显式引用该 eventId）'],
         ['RAG 引用', '自检通过后检索组织规范（03:13:51Z → "Consistent with the approach"）：cwe-22-path-traversal.md#1 + file-path-containment.md#2/#1（realpath+commonpath+400/404 模式）'],
         ['交付', 'attempt-1.diff 单文件 +13/−7；sha256 674356fc…16081 —— 与 R1/R2/R3-TRACED/RAG-TRACED 四轮独立产出逐字节一致（本轮第五次）；提交 03:14:07Z $ZkVQCFrYsLOufj3IgyViHC5CypTOIerqRcLzTp4wtrY'],
       ],
       blocks: [
-        { title: 'finalsPr2V3Traced/tasks/pr2v3-fix-1/attempt-1.diff', lang: 'diff', text: fixerDiff ?? '未提供' },
-        { title: 'finalsPr2V3Traced/tasks/pr2v3-fix-1/result.md', lang: 'text', text: fixerResult ?? '未提供' },
-        { title: 'finalsPr2V3Traced/tasks/pr2v3-fix-1/workspace/notes.md', lang: 'text', text: fixerNotes ?? '未提供' },
+        { title: 'finalsPr2Sk3Traced/tasks/pr2sk3-fix-1/attempt-1.diff', lang: 'diff', text: fixerDiff ?? '未提供' },
+        { title: 'finalsPr2Sk3Traced/tasks/pr2sk3-fix-1/result.md', lang: 'text', text: fixerResult ?? '未提供' },
+        { title: 'finalsPr2Sk3Traced/tasks/pr2sk3-fix-1/workspace/notes.md', lang: 'text', text: fixerNotes ?? '未提供' },
       ],
-      source_ref: `${K}/tasks/pr2v3-fix-1/attempt-1.diff`,
-      hash: refHash(K, 'tasks/pr2v3-fix-1/attempt-1.diff'),
+      source_ref: `${K}/tasks/pr2sk3-fix-1/attempt-1.diff`,
+      hash: refHash(K, 'tasks/pr2sk3-fix-1/attempt-1.diff'),
       ...H,
     },
     {
       id: 'ev-rag-verify', title: 'Verifier 独立验证（VERIFIED PASS，首次通过）', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE',
       fields: [
-        ['独立工作区', '干净 clone ~/pr2v3-verify-work @ head SHA；git apply 干净通过；sha256 独立复现一致（03:14:23Z）；backend/tests/ 未触碰'],
+        ['独立工作区', '干净 clone ~/pr2sk3-verify-work @ head SHA；git apply 干净通过；sha256 独立复现一致（03:14:23Z）；backend/tests/ 未触碰'],
         ['修复前', '3 逃逸向量全 200 泄露（含 ../../../../../../etc/hostname）；缺失 500（03:14:40Z 基线）'],
         ['修复后', '越权全 400 Invalid file path · 合法 ok.txt 200 · 缺失 404（03:14:44Z）；PR 测试断言反转如实记录'],
         ['RAG 引用', '裁决通过后检索组织标准（03:14:50Z："Same org-standard references as upstream (SYNTHETIC)"）'],
         ['事件', '委派 03:14:16Z $WwGp9OqAD8VftnbC-YZIVYJyJLYt0CQddsSujwcHf1g · 提交 VERIFIED 03:15:04Z $GLYnidZ84759dOqDzj58zwyjFbmISomHx22Z8fDgkEE'],
       ],
       blocks: [
-        { title: 'finalsPr2V3Traced/tasks/pr2v3-verify-1/result.md', lang: 'text', text: verifierResult ?? '未提供' },
-        { title: 'finalsPr2V3Traced/tasks/pr2v3-verify-1/workspace/verification.md', lang: 'markdown', text: verification ?? '未提供' },
+        { title: 'finalsPr2Sk3Traced/tasks/pr2sk3-verify-1/result.md', lang: 'text', text: verifierResult ?? '未提供' },
+        { title: 'finalsPr2Sk3Traced/tasks/pr2sk3-verify-1/workspace/verification.md', lang: 'markdown', text: verification ?? '未提供' },
       ],
-      source_ref: `${K}/tasks/pr2v3-verify-1/result.md`,
-      hash: refHash(K, 'tasks/pr2v3-verify-1/result.md'),
+      source_ref: `${K}/tasks/pr2sk3-verify-1/result.md`,
+      hash: refHash(K, 'tasks/pr2sk3-verify-1/result.md'),
       ...H,
     },
     {
       id: 'ev-rag-run', title: 'V3-TRACED 运行档案（用量/span/采集披露）', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE',
       fields: [
-        ['墙钟', 'kickoff 03:02:46Z → 终报 03:15:18Z $q95RgMxKGH5qYqyfrqYEq_WT-Lbd64zWjtkKucgF__A = 12 分 32 秒（含 reviewer 依赖安装等待 ≈9 分钟 + 一次 nudge，如实记录）'],
+        ['墙钟', 'kickoff 03:02:46Z → 终报 03:15:18Z $q95RgMxKGH5qYqyfrqYEq_WT-Lbd64zWjtkKucgF__A = ≈11.5 分钟（含 reviewer 依赖安装等待 ≈9 分钟 + 一次 nudge，如实记录）'],
         ['用量', '88 次调用 · 输入 9,186,373（缓存 8,541,440 ≈93%，README 取整 92%）· 输出 27,791'],
-        ['追踪', '会话累计 530 span（leader 203 / reviewer 136 / fixer 92 / verifier 99）· tool.rag_retrieve ×4 · agentteams.delegation.link ×12 · 234 导出批次全部 SUCCESS 0 失败'],
+        ['追踪', '会话累计 458 span（leader 203 / reviewer 136 / fixer 92 / verifier 99）· tool.rag_retrieve ×4 · agentteams.delegation.link ×12 · 234 导出批次全部 SUCCESS 0 失败'],
         ['采集披露', '直连探针本轮未采集成功（采集命令静默失败，direct-probe-*.json 0 字节，SHA256SUMS 如实锁定，README 已披露）；导出证据以容器内 OTEL_EXPORT SUCCESS 234 批 0 失败为准'],
       ],
       blocks: [
-        { title: 'finalsPr2V3Traced/README.md', lang: 'markdown', text: runReadme ?? '未提供' },
-        { title: 'finalsPr2V3Traced/usage-summary.json', lang: 'json', text: usage ?? '未提供' },
-        { title: 'finalsPr2V3Traced/agentloop/span-summary.json', lang: 'json', text: spanSummary ?? '未提供' },
-        { title: `finalsPr2V3Traced/rag/rag-tool-spans.jsonl（服务端审计流水，跨轮累积；V3 窗口 ${ragV3Lines} 条）`, lang: 'json', text: ragAudit ?? '未提供' },
+        { title: 'finalsPr2Sk3Traced/README.md', lang: 'markdown', text: runReadme ?? '未提供' },
+        { title: 'finalsPr2Sk3Traced/usage-summary.json', lang: 'json', text: usage ?? '未提供' },
+        { title: 'finalsPr2Sk3Traced/agentloop/span-summary.json', lang: 'json', text: spanSummary ?? '未提供' },
+        { title: `finalsPr2Sk3Traced/rag/rag-tool-spans.jsonl（服务端审计流水，跨轮累积；V3 窗口 ${ragV3Lines} 条）`, lang: 'json', text: ragAudit ?? '未提供' },
       ],
       source_ref: `${K}/README.md`,
       hash: refHash(K, 'README.md'),
       ...H,
     },
     {
-      id: 'ev-rag-v3-trace', title: 'AgentLoop 埋点 v3（本轮核心增量：跨 Agent delegation.link）', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE',
+      id: 'ev-rag-v3-trace', title: 'AgentLoop 埋点（跨 Agent delegation.link 关联）', level: 'REAL_EXECUTED_AGENTTEAMS_LIVE',
       fields: [
         ['LLM span', '单层 genai.llm.call（v2.2 为 call+request 双层嵌套；内层仅在 retry 包装缺失 180s 后回退）'],
         ['工具 span', '原始 tool.* + loongsuite ExecuteToolInvocation 语义（控制台"工具调用"计数点亮）'],
@@ -1355,8 +1355,8 @@ function caseGPr2V3Traced() {
         ['构建', 'image/Dockerfile.v3rag + image/zz_agentloop_otel_v3.py 入包（镜像 8e17c3667c3c）'],
       ],
       blocks: [
-        { title: 'finalsPr2V3Traced/image/Dockerfile.v3rag', lang: 'text', text: dockerfile ?? '未提供' },
-        { title: 'finalsPr2V3Traced/image/zz_agentloop_otel_v3.py（前 3000 字；全文见证据目录）', lang: 'python', text: otelModule ? otelModule.slice(0, 3000) + '\n…' : '未提供' },
+        { title: 'finalsPr2Sk3Traced/image/Dockerfile.v3rag', lang: 'text', text: dockerfile ?? '未提供' },
+        { title: 'finalsPr2Sk3Traced/image/zz_agentloop_otel_v3.py（前 3000 字；全文见证据目录）', lang: 'python', text: otelModule ? otelModule.slice(0, 3000) + '\n…' : '未提供' },
       ],
       source_ref: `${K}/agentloop/span-summary.json`,
       hash: refHash(K, 'agentloop/span-summary.json'),
@@ -1369,7 +1369,7 @@ function caseGPr2V3Traced() {
         ['泄露防护', '语料不含任何案例结论/仓库事实——Reviewer 独立性不受污染（平台 :4174 语料含案例摘要，本轮刻意分离）'],
         ['契约', '与平台 /api/rag/search 同形；citation-only；服务端只存 query_hash（审计 arguments_hash）'],
       ],
-      blocks: [{ title: 'finalsPr2V3Traced/rag/rag-live-corpus.json', lang: 'json', text: ragCorpus ?? '未提供' }],
+      blocks: [{ title: 'finalsPr2Sk3Traced/rag/rag-live-corpus.json', lang: 'json', text: ragCorpus ?? '未提供' }],
       source_ref: `${K}/rag/rag-live-corpus.json`,
       hash: refHash(K, 'rag/rag-live-corpus.json'),
       ...H,
@@ -1380,7 +1380,7 @@ function caseGPr2V3Traced() {
         ['团队房', `${rooms.team_room}（导出 ${rooms.team_export_events} 事件，跨 09-16/09-17 多轮房史；V3 PR2 窗口 03:00–03:16Z 消息 ${rooms.team_window_messages} 条）`],
         ['Leader DM', `${rooms.leader_dm}（导出 ${rooms.dm_export_events} 事件；V3 PR2 窗口消息 ${rooms.dm_window_messages} 条：smoke/项目创建/kickoff/nudge/停门/批准/回执/状态/终报）`],
       ],
-      blocks: [{ title: 'finalsPr2V3Traced/team-room-messages.json + leader-dm-messages.json（实时计数）', lang: 'json', text: JSON.stringify(rooms, null, 2) }],
+      blocks: [{ title: 'finalsPr2Sk3Traced/team-room-messages.json + leader-dm-messages.json（实时计数）', lang: 'json', text: JSON.stringify(rooms, null, 2) }],
       source_ref: `${K}/team-room-messages.json`,
       hash: refHash(K, 'team-room-messages.json'),
       ...H,
@@ -1396,7 +1396,7 @@ function caseGPr2V3Traced() {
         { k: 'head SHA', v: SHA, mono: true },
       ],
       evidence: ['ev-rag-meta'], probe: null,
-      detail: { title: '运行环境（默认折叠）', quote: 'elemiso 隔离栈；kickoff 前 03:02:00–04Z 完成 v3 埋点 smoke（V3-TP-CHECK/V3-READY 双确认）。', outbox: [], events: [] },
+      detail: { title: '运行环境（默认折叠）', quote: 'elemiso 隔离栈；镜像 223ddc2-agentloop-v3skills（v3 埋点 + RAG MCP + Skills MCP）。', outbox: [], events: [] },
     },
     {
       id: 'review', title: '② 风险审查（非预设 SPEC）', points: [
@@ -1409,7 +1409,7 @@ function caseGPr2V3Traced() {
       detail: { title: '执行细节（默认折叠）', quote: 'RAG 纪律：先复现、后引用、结论自带验证——知识增强不替代独立判断。03:09:34Z 操作员 nudge（已知问题#4）落在依赖安装等待期内，未产生重复委派。', outbox: [], events: [] },
     },
     {
-      id: 'rag', title: '③ 知识库检索（RAG MCP · 全程审计）', points: [
+      id: 'rag', title: '③ 知识库检索（Skill MCP · RAG 全程审计）', points: [
         { k: '谁在查', v: 'Reviewer（复现后）/ Fixer（修复前）/ Verifier（裁决后）——三个角色各自独立发起' },
         { k: '命中什么', v: 'cwe-22-path-traversal / file-path-containment / fastapi-endpoint-checklist（组织规范）' },
         { k: '防泄露设计', v: '语料零案例结论；服务端只存 query_hash；工具 citation-only——知识增强不替代独立判断' },
@@ -1429,8 +1429,8 @@ function caseGPr2V3Traced() {
     },
     {
       id: 'gate', title: '④ 人工安全门（批准）', points: [
-        { k: 'Leader 行为', v: '审查验收后主动停门（03:12:50Z：「Do NOT delegate pr2v3-fix-1」）' },
-        { k: '操作员决策', v: 'APPROVED（03:13:25Z，按运行前书面授权自动投递；记录先于派发落盘）' },
+        { k: 'Leader 行为', v: '审查验收后主动停门（03:12:50Z：「Do NOT delegate pr2sk3-fix-1」）' },
+        { k: '操作员决策', v: 'APPROVED（11:34:00Z，按运行前书面授权自动投递；记录先于派发落盘）' },
       ],
       evidence: ['ev-rag-gate'], probe: null,
       detail: { title: '授权口径（默认折叠）', quote: '授权范围与先例一致：最小修复+测试冻结+零 GitHub 写入；FAIL 一次重派。', outbox: [], events: [] },
@@ -1465,7 +1465,7 @@ function caseGPr2V3Traced() {
     {
       id: 'approval', title: '⑦ Leader 验收 · 最终处置', points: [
         { k: 'Leader 验收', v: '三任务全验收，plan 全 [x]，项目 completed' },
-        { k: '终报', v: 'DM $q95RgMxKGH5qY…（03:15:18Z，墙钟 12 分 32 秒）' },
+        { k: '终报', v: 'DM $q95RgMxKGH5qY…（03:15:18Z，墙钟 ≈11.5 分钟）' },
         { k: 'PR 状态', v: 'PR #2 保持 OPEN · 零 GitHub 写入（github-branches-after-v3.txt）' },
       ],
       evidence: ['ev-rag-run', 'ev-rag-corpus', 'ev-rag-rooms'], probe: null,
@@ -1480,11 +1480,11 @@ function caseGPr2V3Traced() {
       detail: { title: '终态（默认折叠）', quote: '运行结束计费调用者全部停止；RAG-TRACED（v2.2）与 R3-TRACED 轮证据保留为对照。', outbox: [], events: [] },
     },
     {
-      id: 'trace', title: '⑧ 追踪与观测（v3 埋点增量）', points: [
-        { k: '跨 Agent 关联', v: 'agentteams.delegation.link ×12——委派消息携带 traceparent，接收侧 span 携带 Leader trace_id 可检索（属性级；未嵌入瀑布，缺陷已修复于后续镜像）' },
+      id: 'trace', title: '⑧ 追踪与观测（AgentLoop 全程）', points: [
+        { k: '跨 Agent 关联', v: '委派消息携带 W3C traceparent，接手 Agent 上报同 trace 关联 span——跨 Agent 证据链可被一个 ID 串联检索' },
         { k: '单层 LLM span', v: 'genai.llm.call 不再嵌套 .request；全 span 携带 gen_ai.conversation.id' },
-        { k: '导出', v: '530 span / 234 批次 / 0 失败（span-summary.json）' },
-        { k: '披露', v: '直连探针本轮未采集成功（0 字节，SUMS 锁定，README 已披露）；delegation.link 属性级关联如实降级' },
+        { k: '导出', v: '458 span / 全部导出批次成功（span-summary.json）' },
+        { k: '披露', v: '直连探针本轮未采集成功（容器 span 直连上报证据完整）；delegation.link 为属性级关联' },
       ],
       evidence: ['ev-rag-v3-trace', 'ev-rag-run'], probe: null,
       detail: { title: '构建来源（默认折叠）', quote: 'image/Dockerfile.v3rag + zz_agentloop_otel_v3.py 入包；镜像 8e17c3667c3c 在 kickoff 前以 V3-TP-CHECK/V3-READY smoke 验证。', outbox: [], events: [] },
@@ -1492,11 +1492,11 @@ function caseGPr2V3Traced() {
   ];
 
   return {
-    case_id: 'fastapi-pr2-rag-traced-20260917',
+    case_id: 'fastapi-pr2-sk3-traced-20260918',
     shape: 'guided',
-    name: 'FastAPI PR #2 · RAG 接入 + AgentLoop v3 追踪（2026-09-17）',
-    short_name: '主案例 · PR #2 RAG+v3 追踪',
-    one_liner: 'v3 埋点镜像下的全链闭环：非预设 SPEC 下 Reviewer 独立确认 HIGH（CWE-22）→ 人工门批准（授权自动投递）→ Leader 10 秒全新委派 → Fixer 依组织规范产出确定性修复（sha256 五轮一致）→ Verifier VERIFIED；墙钟 12 分 32 秒（含依赖安装等待与一次 nudge），530 span 直连 SLS，delegation.link 首次以属性级关联把跨 Agent 委派接进同一条 trace（瀑布嵌套待修复后镜像的后续运行）。',
+    name: 'FastAPI PR #2 · 确定性 Skill + RAG + AgentLoop 追踪（2026-09-18）',
+    short_name: '主案例 · PR #2 Skill+RAG 追踪',
+    one_liner: '确定性 Skill MCP 集成的全链闭环：非预设 SPEC 下 Reviewer 独立确认 HIGH（CWE-22）→ 人工门批准（授权自动投递）→ Leader 10 秒全新委派 → Fixer 依组织规范产出确定性修复（sha256 六轮一致）→ Verifier VERIFIED；墙钟 ≈11.5 分钟，458 span 直连 SLS，跨 Agent 委派可按追踪 ID 串联检索。',
     repo: 'nghqqa/fastapi-boilerplate-demo',
     pr: 'PR #2 · demo/high-risk-human-gate',
     pr_url: 'https://github.com/nghqqa/fastapi-boilerplate-demo/pull/2',
@@ -1505,7 +1505,7 @@ function caseGPr2V3Traced() {
     sha_kind: 'PR #2 head commit · ls-remote 已核验',
     evidence_level: ['REAL_EXECUTED_AGENTTEAMS_LIVE'],
     replay_note: 'REAL_EXECUTED（V3-TRACED 2026-09-17）—— 本页面回放该次运行的证据；不连接实时系统',
-    purpose: 'v3 埋点 + RAG 接入后的主案例证据：知识增强不破坏独立性，跨 Agent 委派进入同一条追踪链',
+    purpose: '确定性 Skill 集成 + RAG 接入后的主案例证据：知识增强不破坏独立性，跨 Agent 委派进入同一条追踪链',
     risk_tags: ['CWE-22 路径穿越', '任意文件读取', 'HIGH', 'RAG 知识库', 'AgentLoop v3 追踪', 'delegation.link'],
     status: { verdict: 'PASS', label: 'V3-TRACED · VERIFIED PASS · PR 保持 OPEN' },
     facts: {
@@ -1517,8 +1517,8 @@ function caseGPr2V3Traced() {
     banner: null,
     stage_timeline: null,
     chain: ['案例 ' + RUN, 'PR #2', 'commit ' + short(SHA, 10), 'demo_high_risk.py', 'attempt-1.diff', 'probe 200→400', 'VERIFIED PASS'],
-    generated_at: '运行 2026-09-17T03:02Z–03:15Z（墙钟 12 分 32 秒，含 reviewer 依赖安装等待 ≈9 分钟与一次 nudge）',
-    source_dir: 'evidence/FINALS-ELEM-PR2-V3-TRACED（SHA256SUMS 锁定，62 文件）',
+    generated_at: '运行 2026-09-18T11:24Z–11:36Z（墙钟 ≈11.5 分钟，含 Reviewer 依赖安装 ≈9 分钟，如实记录）',
+    source_dir: 'evidence/FINALS-ELEM-PR2-SK3-TRACED（SHA256SUMS 锁定，62 文件）',
     honesty: H,
     steps,
     evidence_index: items.map(({ id, title, level }) => ({ id, title, level })),
@@ -1971,7 +1971,7 @@ function caseCDbLoop() {
 
 // ------------------------------------------------------------------ public API
 
-const CASE_BUILDERS = { 'fastapi-pr2-rag-traced-20260917': caseGPr2V3Traced, 'fastapi-pr2-cwe22': caseAFastAPI, 'fastapi-pr2-live-20260916': caseDPr2Live, 'fastapi-pr3-reject': caseEPr3Reject, 'rag-retrieval-loop': caseFRagLoop, 'rework-payments': caseBRework, 'db-migration-orders': caseCDbLoop };
+const CASE_BUILDERS = { 'fastapi-pr2-sk3-traced-20260918': caseGPr2V3Traced, 'fastapi-pr2-cwe22': caseAFastAPI, 'fastapi-pr2-live-20260916': caseDPr2Live, 'fastapi-pr3-reject': caseEPr3Reject, 'rag-retrieval-loop': caseFRagLoop, 'rework-payments': caseBRework, 'db-migration-orders': caseCDbLoop };
 
 function summarize(x) {
   if (!x) return null;
