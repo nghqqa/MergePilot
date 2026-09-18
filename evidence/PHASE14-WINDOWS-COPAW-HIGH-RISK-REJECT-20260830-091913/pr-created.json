@@ -1,0 +1,37 @@
+{
+  "phase": "Phase 14.2H-WD-COPAW-HIGH-RISK-REJECT-DEMO",
+  "recorded_at": "2026-08-30T09:20:00+08:00",
+  "mode": "live-demo (GitHub PR creation authorized by phase scope)",
+  "source_commit": "base mergepilot-demo/schema-migration-risk@4cd5bf0; PR head ad267a6e51209551a0733657321bb364d04befd0",
+  "evidence_refs": [
+    "gh pr create output",
+    "raw gh pr view snapshot (this file .pr)",
+    "/d/goai/temp/p14h3-reject-demo (scratch clone)"
+  ],
+  "status": "PASS",
+  "pr": {
+    "repository": "nghqqa/fastapi-boilerplate-demo",
+    "number": 3,
+    "url": "https://github.com/nghqqa/fastapi-boilerplate-demo/pull/3",
+    "title": "High-risk security demo: human REJECT path (no remediation authorized)",
+    "state": "OPEN",
+    "base": "mergepilot-demo/schema-migration-risk",
+    "head": "demo/high-risk-human-reject",
+    "commit_sha": "ad267a6e51209551a0733657321bb364d04befd0",
+    "changed_files": 2,
+    "additions": 82,
+    "deletions": 0,
+    "description_declares_demo_and_no_auto_merge": true
+  },
+  "defect_design": {
+    "type": "OS command injection (CWE-78) -> RCE",
+    "file": "backend/src/interfaces/api/v1/demo_cmd_exec.py (GET /demo/ping, subprocess.run shell=True)",
+    "tests": "backend/tests/unit/test_demo_cmd_exec_injection.py (2 inert exploit-repro tests, echo marker)",
+    "distinct_from_pr2": "PR #2 was CWE-22 path traversal in demo_high_risk.py; PR #3 is a new file, new defect class, no overlap",
+    "no_real_credentials": true
+  },
+  "pr1_pr2_untouched_baseline": {
+    "pr1": {"state": "OPEN", "headRefOid": "4cd5bf099f88c3f3f85ee4c06b7adfe9925a6e5c"},
+    "pr2": {"state": "OPEN", "headRefOid": "1dedf5e1992c950557064d8f4fb9039d1523deb3"}
+  }
+}

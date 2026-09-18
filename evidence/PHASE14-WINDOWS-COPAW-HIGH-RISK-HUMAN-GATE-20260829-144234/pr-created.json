@@ -1,0 +1,7 @@
+{
+  "phase": "Phase 14.2H-WD-COPAW-HIGH-RISK-PR-DEMO",
+  "recorded_at": "2026-08-29T14:46:00+08:00",
+  "check_type": "pr-created",
+  "result": "PASS",
+  "pr": {"repository": "nghqqa/fastapi-boilerplate-demo", "number": 2, "url": "https://github.com/nghqqa/fastapi-boilerplate-demo/pull/2", "title": "High-risk security demo: require human verification before remediation", "state": "OPEN", "base": "mergepilot-demo/schema-migration-risk", "head": "demo/high-risk-human-gate", "commit_sha": "1dedf5e1992c950557064d8f4fb9039d1523deb3", "changed_files": 2, "additions": 122, "deletions": 0, "description_declares_demo_and_no_auto_merge": true}
+}

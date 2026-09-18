@@ -1,0 +1,7 @@
+{
+  "phase": "Phase 14.2H-WD-COPAW-E2E-FULL",
+  "check_type": "controller-dag-before",
+  "result": "PASS",
+  "tasks": [["review-1", "pending", "p14h2-copaw-worker-reviewer"], ["fix-1", "pending", "p14h2-copaw-worker-fixer"], ["verify-1", "pending", "p14h2-copaw-worker-verifier"]],
+  "ready_nodes": ["review-1"]
+}

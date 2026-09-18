@@ -1,3 +1,5 @@
+> ⏳ **历史文档（2026-08 上旬 · WSL2 时点）**：当前运行环境已迁移至 **Docker Desktop for Windows**，Worker 运行时为 CoPaw（见主 README「主项目」一节与 [agent-runtime-adoption.md](agent-runtime-adoption.md)）。本文的 Matrix / Worker / 网关概念仍适用，具体命令与模型配置已过时。
+
 # HiClaw 环境搭建(WSL2 + DeepSeek)
 
 > 目标:把 AgentTeams/HiClaw 在本地 WSL 跑起来,登录 Element Web,创建第一个测试 Worker,验证 Manager-Worker 通信。这是前置原型的第一步。

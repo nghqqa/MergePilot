@@ -1,0 +1,13 @@
+{
+  "phase": "Phase 14.2H-WD-CREDENTIAL-ROTATION",
+  "recorded_at": "2026-08-29T13:31:00+08:00",
+  "verdict": "CREDENTIAL_ROTATION_VERIFIED",
+  "achieved_full": true,
+  "consumer_rotation": "5/5 rotated, verified, old values revoked",
+  "deepseek_provider_rotation": "COMPLETE - new operator-provided key active in the higress deepseek provider; the previously transcript-exposed key is DEAD on the platform (HTTP 401); real completions 200 end-to-end",
+  "runtime_health": "10/10 containers running, zero auth errors, projects unchanged",
+  "operator_rotation_of_deepseek_key": {
+    "status": "DONE (operator created a new key on platform.deepseek.com and provided it via the protected secrets file)",
+    "old_key_state": "revoked/invalid on the platform (401)"
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "project": "mergepilot-isolated",
+  "platform": "linux/amd64",
+  "tag": "local",
+  "comment": "Canonical offline-delivery image set. built = docker compose build services (project mergepilot-isolated); pinned_remote = the ONLY literal remote image (digest-pinned). Export/load scripts and tests MUST consume this file instead of hardcoding names.",
+  "images": {
+    "built": [
+      { "service": "controller",      "image": "mergepilot-isolated-controller:local",      "dockerfile": "Dockerfile.controller" },
+      { "service": "policy-gateway",  "image": "mergepilot-isolated-policy-gateway:local",  "dockerfile": "Dockerfile.policy-gateway" },
+      { "service": "demo-console",    "image": "mergepilot-isolated-demo-console:local",    "dockerfile": "Dockerfile.demo-console" },
+      { "service": "preflight",       "image": "mergepilot-isolated-preflight:local",       "dockerfile": "Dockerfile.preflight" },
+      { "service": "gh-webhook",      "image": "mergepilot-isolated-gh-webhook:local",      "dockerfile": "Dockerfile.gh-webhook" },
+      { "service": "console-edge",    "image": "mergepilot-isolated-console-edge:local",    "dockerfile": "Dockerfile.console-edge" },
+      { "service": "gh-proxy",        "image": "mergepilot-isolated-gh-proxy:local",        "dockerfile": "Dockerfile.gh-proxy",      "role": "real-github-chain (optional)" },
+      { "service": "mcp-bridge",      "image": "mergepilot-isolated-mcp-bridge:local",      "dockerfile": "Dockerfile.mcp-bridge",    "role": "real-github-chain (optional)" }
+    ],
+    "pinned_remote": [
+      {
+        "image": "pgvector/pgvector",
+        "tag": "pg16",
+        "ref": "pgvector/pgvector@sha256:a36250871de0833b8757561c72f2477ef1ddd1101afa4e617fb552e0de514c6b",
+        "manifest_digest": "sha256:a36250871de0833b8757561c72f2477ef1ddd1101afa4e617fb552e0de514c6b",
+        "repo_digest": "sha256:8e5355e9ff399a002fa46148399a1ac22fb3e9b2d390f857296e6da6b5559ba1",
+        "config_digest": "sha256:7f58c9936b2ef7f3e1fa20ac7d13cc1d7337ebf2380eec75677efe0204daadf0",
+        "comment": "compose pins the manifest digest; config_digest is the identity that survives docker save/load (see tools/demo_console/one_click_startup.py m9 defect B)"
+      }
+    ],
+    "build_base_images": [
+      "python:3.12-slim",
+      "python:3.12-slim@sha256:9e869b0816f5537709825b49e62dc86d1c2691eff19b05c1d4dc3a07992cc052",
+      "ghcr.io/github/github-mcp-server@sha256:881b53d6f75f69bdbc1b5b10fc2f1361717c19054143b3a8529fb5c32061a50e"
+    ],
+    "build_base_note": "Base images are BUILD-time dependencies only; they are contained inside the built images and are NOT part of the runtime bundle."
+  }
+}

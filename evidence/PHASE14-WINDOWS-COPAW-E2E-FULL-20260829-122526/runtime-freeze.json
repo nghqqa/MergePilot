@@ -1,0 +1,16 @@
+{
+  "phase": "Phase 14.2H-WD-COPAW-E2E-FULL",
+  "recorded_at": "2026-08-29T12:25:26+08:00",
+  "check_type": "runtime-freeze + project-before + controller-dag-before + copaw-store-before",
+  "result": "PASS",
+  "runtime": {"context": "desktop-linux", "engine": "29.7.2", "containers": "6/6 running (ctrl dual-homed on p14h2-copaw-net + p14h2-wd-net)", "image": "agentteams/copaw-worker:223ddc2-build1 sha256:cdc8f8a4..."},
+  "project_before": {"id": "copaw-sandbox", "status": "active", "team": "p14h2-copaw", "unique": true},
+  "dag_before": [["review-1", "pending", "p14h2-copaw-worker-reviewer"], ["fix-1", "pending", "p14h2-copaw-worker-fixer"], ["verify-1", "pending", "p14h2-copaw-worker-verifier"]],
+  "copaw_store_before": {
+    "review-1": "dispatched [~] (result.md STATUS SUCCESS in reviewer store)",
+    "fix-1": "[~] premature marker + pending in controller store",
+    "verify-1": "[~] premature marker + pending in controller store",
+    "known_defect": "plan.md contained a duplicated double task-plan section (residue from seed + runtime rewrite) which had been blocking ready_nodes/plan_dag"
+  },
+  "kickoff_retry_ledger_before": {"kickoffs": 1, "retries": 1, "e2e_continuations": 1, "all_consumed": true}
+}

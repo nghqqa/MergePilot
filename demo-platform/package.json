@@ -1,0 +1,20 @@
+{
+  "name": "mergepilot-demo-platform",
+  "version": "1.0.0",
+  "private": true,
+  "description": "MergePilot judge demo platform — standalone UI over real AgentTeams/CoPaw evidence (Phase 14.2H-WD-DEMO-PLATFORM-BUILD)",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "npm run build:frontend",
+    "build:frontend": "npm --prefix frontend install --no-audit --no-fund && npm --prefix frontend run build",
+    "start": "node backend/server.mjs",
+    "selftest": "node backend/test/selftest.mjs",
+    "test": "node backend/test/selftest.mjs",
+    "evidence": "node scripts/build-evidence.mjs",
+    "credibility-evidence": "node scripts/build-credibility-evidence.mjs",
+    "demo": "npm run build:frontend && node backend/server.mjs"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "phase": "Phase 14.2H-WD-COPAW-HIGH-RISK-PR-DEMO (DELIVERY-AUDIT)",
+  "recorded_at": "2026-08-29T14:56:00+08:00",
+  "verdict": "BLOCKED_REVIEWER_ROOM_ROUTING",
+  "audit_conclusion": "the leader's delegate_task dispatched review-1, but the delegation @mention never materialized in any room the reviewer can read (the Team Room contains only membership/state events; the reviewer's DM has no messages). The reviewer's matrix consumer is idle-stopped, so the @mention is un-consumed and undeliverable without a new trigger.",
+  "positive_finding": "the reviewer's matrix identity is valid (whoami 200 via its own token), its membership is join in both rooms, and its local task store has the review-1 spec synced - the only missing piece is the room-level trigger",
+  "constraints_respected": {
+    "no_new_kickoff": true,
+    "no_new_messages_sent": true,
+    "no_task_state_changes": true,
+    "no_manual_delegate": true,
+    "no_container_restarts": true,
+    "no_pr_write_operations": true,
+    "secrets_in_evidence": false
+  },
+  "next_phase_decision": "awaiting operator authorization for ONE of: (a) deliver the delegation @mention as a new message into the reviewer's room (fixes the routing gap), or (b) restart the reviewer container (re-initializes the matrix channel; the room sync then picks up the delegation @mention from history)"
+}

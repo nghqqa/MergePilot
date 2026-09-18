@@ -1,0 +1,18 @@
+{
+  "phase": "Phase 14.2H-WD-CREDENTIAL-ROTATION",
+  "recorded_at": "2026-08-29T13:30:00+08:00",
+  "check_type": "four-way-consistency-snapshot (definitive)",
+  "result": "PASS - ALL CONSISTENT",
+  "workers": [
+    {"worker": "p14h2-wd-worker-manager", "local_file_sha16": "fbb3846be5cf4aff", "minio_object_sha16": "fbb3846be5cf4aff", "console_consumer_sha16": "fbb3846be5cf4aff", "gateway_completion": "200 (completion_len=2)", "note": "manager consumer (agentteams-manager container) also consistent: fbb3846be5cf4aff"},
+    {"worker": "p14h2-wd-worker-reviewer", "local_file_sha16": "d2570cb5bfe99594", "minio_object_sha16": "d2570cb5bfe99594", "console_consumer_sha16": "d2570cb5bfe99594", "gateway_completion": "200"},
+    {"worker": "p14h2-wd-worker-fixer", "local_file_sha16": "bbec394272d3fc4e", "minio_object_sha16": "bbec394272d3fc4e", "console_consumer_sha16": "bbec394272d3fc4e", "gateway_completion": "200"},
+    {"worker": "p14h2-wd-worker-verifier", "local_file_sha16": "19c9f707449af968", "minio_object_sha16": "19c9f707449af968", "gateway_completion": "200"}
+  ],
+  "finding": "the openclaw/copaw runtime MANAGES its gateway consumer keys dynamically: after the operator rotation, each worker app persisted its own credential and the file-sync propagated it to MinIO and the console consumer records. All layers converged. The transcript-exposed values are no longer present in any layer.",
+  "deepseek_provider": {
+    "provider_token": "rotated to the operator-provided new key (from D:\\goai\\secrets\\deepseek_api_key.txt via stdin, never displayed)",
+    "old_exposed_key": "DEAD on the platform (HTTP 401)",
+    "new_key_completion": "200 via direct API and via the gateway path"
+  }
+}

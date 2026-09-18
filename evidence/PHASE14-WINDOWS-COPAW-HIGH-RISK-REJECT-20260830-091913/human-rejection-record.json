@@ -1,0 +1,26 @@
+{
+  "phase": "Phase 14.2H-WD-COPAW-HIGH-RISK-REJECT-DEMO",
+  "recorded_at": "2026-08-30T09:31:00+08:00",
+  "mode": "live-demo",
+  "source_commit": "PR#3 head ad267a6e51209551a0733657321bb364d04befd0",
+  "evidence_refs": [
+    "human-gate-rejection.md (写入 Leader store 项目目录的原件)",
+    "Leader DM event $jEuOZNsiqMkzt27uFd0bNG8UD07SnFssLXOQtL05g9k @ 2026-08-30T01:30:42Z",
+    "Leader read-back confirmation 2026-08-30T01:31:02Z"
+  ],
+  "status": "PASS",
+  "decision": "HUMAN_SECURITY_REJECTED",
+  "decided_by": "operator (@admin)",
+  "decided_at_utc": "2026-08-30T01:30:42Z (record written to store; DM delivered)",
+  "record_path_in_store": "shared/projects/copaw-high-risk-human-reject/human-gate-rejection.md",
+  "leader_read_back": true,
+  "binding_effects_ordered": [
+    "fix-1 must NOT be dispatched or executed — marked rejected/blocked",
+    "verify-1 must NOT be dispatched or executed — kept locked",
+    "project set to blocked/paused via projectflow pause_project — NOT completed",
+    "PR #3 remains OPEN and unfixed",
+    "no GitHub write actions",
+    "no automatic remediation of the CWE-78 finding"
+  ],
+  "delivery": "single DM message from @admin with html mention pill (m.mentions user_ids); one message only, no retries"
+}

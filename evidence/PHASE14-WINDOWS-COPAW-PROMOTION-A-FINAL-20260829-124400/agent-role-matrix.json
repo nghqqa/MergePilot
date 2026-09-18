@@ -1,0 +1,15 @@
+{
+  "phase": "Phase 14.2H-WD-COPAW-PROMOTION-A-FINAL",
+  "recorded_at": "2026-08-29T12:44:30+08:00",
+  "check_type": "agent-role-matrix",
+  "roles": [
+    {"agent": "p14h2-copaw-worker-manager", "role": "Team Leader / 编排者", "runtime": "copaw", "tools": "projectflow(ready_nodes/create_project/plan_dag/complete_project), taskflow(delegate_task/ack_task), message, filesync, exec, read", "e2e_actions": ["消费 kickoff/retry/continuation", "ready_nodes -> review-1", "delegate review-1/fix-1/verify-1", "自主修复 plan.md", "最终报告"]},
+    {"agent": "p14h2-copaw-worker-reviewer", "role": "Reviewer", "runtime": "copaw", "e2e_actions": ["ack_task -> in_progress", "gather review subject", "execute review (LLM)", "result.md SUCCESS", "回报 manager 房间"]},
+    {"agent": "p14h2-copaw-worker-fixer", "role": "Fixer", "runtime": "copaw", "e2e_actions": ["执行 fix 步骤（确认无需修复）", "result.md SUCCESS", "TASK_COMPLETED 回报"]},
+    {"agent": "p14h2-copaw-worker-verifier", "role": "Verifier", "runtime": "copaw", "e2e_actions": ["验证全链", "result.md SUCCESS（verification passes）"]}
+  ],
+  "supporting_components": [
+    {"name": "p14h2-wd-ctrl", "role": "Controller + Matrix + MinIO + AI gateway (embedded)"},
+    {"name": "agentteams-manager", "role": "p14h2-wd 主线 Manager（OpenClaw 基线，保留）"}
+  ]
+}

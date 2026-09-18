@@ -28,7 +28,7 @@
 2. 旧版本镜像 digest 已保留在：
    - `release\preview\manifests\install.current.json`（每次成功 Install 后快照）
    - `dist\preview-v0.1.0\manifest.json`（打包时的完整 digest 清单）
-   - 历史 digest 记录：`D:\goai\temp\m8gh4-run27\staging_pre_images.txt`
+   - 历史 digest 记录：`<操作机工作目录>\temp\m8gh4-run27\staging_pre_images.txt`
      （v0.1 升级前的 8 镜像旧 digest）
 3. 回退方式（二选一）：
    - **源码回退**（推荐，始终可用）：`git checkout <旧版本提交>` →
@@ -59,7 +59,7 @@
 | 对象 | 保留策略 |
 |---|---|
 | `.mergepilot/github-e2e.json`（run35 journal） | 永久，stop/cleanup 不触碰 |
-| `D:\goai\temp\m8gh4-run27\evidence\`（run27–35 输出） | 永久（操作机路径） |
+| `<操作机工作目录>\temp\m8gh4-run27\evidence\`（run27–35 输出） | 永久（操作机路径） |
 | `.mergepilot/public/status.json`（live 投影） | 随下一次 start 由单写者重建 |
 | `release\preview\manifests\install.current.json` | 每次成功 Install 覆盖前**先归档**为 `install.previous.json` |
 | 镜像 digest 清单 | 见第 2 节三处 |

@@ -1,0 +1,2 @@
+fixer consume-events-since-boot: 5
+verifier consume-events-since-boot: 5

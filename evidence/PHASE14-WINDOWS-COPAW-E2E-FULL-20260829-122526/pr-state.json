@@ -1,0 +1,9 @@
+{
+  "phase": "Phase 14.2H-WD-COPAW-E2E-FULL",
+  "recorded_at": "2026-08-29T12:28:00+08:00",
+  "check_type": "pr-state",
+  "pr": "https://github.com/nghqqa/fastapi-boilerplate-demo/pull/1",
+  "state": "open (untouched)",
+  "actions_by_this_runtime": "none - no merge, no close, no reopen, no comments, no commits",
+  "reference_only": true
+}

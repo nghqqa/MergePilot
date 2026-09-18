@@ -107,38 +107,53 @@ class _TextContentModel(_BaseModel):
     text: str
 
 
-def _install(name):
-    if name in sys.modules:
-        return
-    sys.modules[name] = _types.ModuleType(name)
-
-
-_install("mcp")
-_install("mcp.server")
-_install("mcp.server.sse")
-_install("mcp.types")
-_install("starlette")
-_install("starlette.applications")
-_install("starlette.requests")
-_install("starlette.routing")
-sys.modules["mcp.server"].Server = lambda name: _StubServer()
 class _FakeSSE:
     handle_post_message = staticmethod(lambda *a, **k: None)
 
-sys.modules["mcp.server.sse"].SseServerTransport = lambda p: _FakeSSE()
-sys.modules["mcp.types"].Tool = _Tool
-sys.modules["mcp.types"].TextContent = _TextContentModel
-sys.modules["starlette.applications"].Starlette = lambda **kw: None
-sys.modules["starlette.requests"].Request = lambda *a, **k: None
-sys.modules["starlette.routing"].Mount = lambda *a, **k: None
-sys.modules["starlette.routing"].Route = lambda *a, **k: None
-sys.modules["uvicorn"] = _types.ModuleType("uvicorn")
-sys.modules["uvicorn"].run = lambda *a, **k: None
+
+_STUB_NAMES = (
+    "mcp", "mcp.server", "mcp.server.sse", "mcp.types",
+    "starlette", "starlette.applications", "starlette.requests",
+    "starlette.routing", "uvicorn",
+)
 
 
+def setUpModule():
+    """Install the placeholder modules only for the duration of THIS module.
 
-stub = _load("upstream_stub",
-            "tools/policy-gateway/upstream_stub.py")
+    Installed in setUpModule (not at import time) so that other test modules
+    collected in the same interpreter — e.g. tests/dbverify probing whether the
+    real ``mcp`` package is importable — never see these stand-ins, and removed
+    again in tearDownModule. Any name that already exists (the real package
+    already imported) is left untouched.
+    """
+    global stub, _INJECTED
+    _INJECTED = []
+    for name in _STUB_NAMES:
+        if name in sys.modules:
+            continue
+        sys.modules[name] = _types.ModuleType(name)
+        _INJECTED.append(name)
+    sys.modules["mcp.server"].Server = lambda name: _StubServer()
+    sys.modules["mcp.server.sse"].SseServerTransport = lambda p: _FakeSSE()
+    sys.modules["mcp.types"].Tool = _Tool
+    sys.modules["mcp.types"].TextContent = _TextContentModel
+    sys.modules["starlette.applications"].Starlette = lambda **kw: None
+    sys.modules["starlette.requests"].Request = lambda *a, **k: None
+    sys.modules["starlette.routing"].Mount = lambda *a, **k: None
+    sys.modules["starlette.routing"].Route = lambda *a, **k: None
+    sys.modules["uvicorn"].run = lambda *a, **k: None
+    stub = _load("upstream_stub",
+                 "tools/policy-gateway/upstream_stub.py")
+
+
+def tearDownModule():
+    # upstream_stub keeps its own references; the placeholders were only
+    # needed to resolve its imports.
+    global _INJECTED
+    for name in _INJECTED:
+        sys.modules.pop(name, None)
+    _INJECTED = []
 
 STUB_SOURCE = (ROOT / "tools" / "policy-gateway" / "upstream_stub.py")\
     .read_text(encoding="utf-8")

@@ -1,0 +1,5 @@
+{
+  "generated_at": "2026-09-15T07:32:58Z",
+  "python": "3.9.25",
+  "command": "python benchmark/reliability/run_reliability.py --out evidence/FINALS-RELIABILITY-20260914"
+}

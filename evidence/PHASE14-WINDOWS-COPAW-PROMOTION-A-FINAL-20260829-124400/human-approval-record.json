@@ -1,0 +1,23 @@
+{
+  "phase": "Phase 14.2H-WD-COPAW-PROMOTION-A-FINAL",
+  "recorded_at": "2026-08-29T13:25:00+08:00",
+  "check_type": "human-approval-record",
+  "marker": "HUMAN_APPROVAL_GRANTED",
+  "state": "APPROVED",
+  "previous_state": "OPEN (HUMAN_APPROVAL_REQUIRED)",
+  "approved_by": "operator (p14h2 runtime owner, via session instruction)",
+  "approved_at": "2026-08-29T13:25:00+08:00",
+  "approved_items": [
+    "p14h2-copaw sandbox 的 CoPaw AgentTeams E2E 结果有效",
+    "review-1、fix-1、verify-1 均由 Agent 自主完成",
+    "选择方案 A",
+    "保留 p14h2-wd OpenClaw 主线，不执行 runtime 迁移",
+    "不自动执行 PR comment、push、merge、close",
+    "允许将最终提交包作为复赛技术证据"
+  ],
+  "deferred_items": [
+    "凭据轮换（DeepSeek key + consumer keys）另行授权"
+  ],
+  "pr_operations_still_require_separate_authorization": true,
+  "see_also": "human-approval-granted.json"
+}

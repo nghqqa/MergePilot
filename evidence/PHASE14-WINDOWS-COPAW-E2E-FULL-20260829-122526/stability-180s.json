@@ -1,0 +1,10 @@
+{
+  "phase": "Phase 14.2H-WD-COPAW-E2E-FULL",
+  "recorded_at": "2026-08-29T12:28:00+08:00",
+  "check_type": "stability-180s",
+  "result": "PASS",
+  "window": "post-E2E verification samples (30s intervals through the run end) plus final snapshot",
+  "all_6_containers": "running, RestartCount=0, StartedAt constant (ctrl/manager 01:16:17Z, workers 01:16:22-28Z)",
+  "no_reconcile_delete_recreate": true,
+  "no_exits": 0
+}

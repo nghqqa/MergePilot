@@ -2,8 +2,12 @@
 #
 # Contract (enforced by tools/demo_console/one_click_startup.py and
 # tests/isolated_live/test_one_click_containerization.py):
-#   - postgres uses the digest-pinned pgvector image; every other service
-#     is BUILT locally (pull_policy: never) — no unpinned remote tags.
+#   - postgres is the only registry image: compose runs the offline-loadable
+#     TAG (pgvector/pgvector:pg16 — a docker-load'ed tar has no RepoDigest) and
+#     the registry digest is DECLARED to preflight (MERGEPILOT_DECLARED_PG_IMAGE),
+#     which fail-closes on mismatch; release/images/image-set.json is the source
+#     of truth for both. Every other service is BUILT locally under its
+#     mergepilot-isolated-*:local name (pull_policy: never) — no unpinned remote tags.
 #   - all services share the internal-only bridge network "isolated".
 #   - ONLY demo-console publishes a port, bound to 127.0.0.1.
 #     postgres / controller / policy-gateway / preflight publish NOTHING.
@@ -22,11 +26,13 @@ name: mergepilot-isolated
 
 services:
   postgres:
-    image: pgvector/pgvector@sha256:a36250871de0833b8757561c72f2477ef1ddd1101afa4e617fb552e0de514c6b
+    image: pgvector/pgvector:pg16  # digest pin: sha256:a3625… (see release/images/image-set.json)
     pull_policy: never
     env_file: postgres.env          # created by the orchestrator (SecretFile)
     environment:
       PGDATA: /tmp/pgdata
+    volumes:
+      - ./release/offline/db-init:/docker-entrypoint-initdb.d:ro
     networks:
       - isolated
     healthcheck:
@@ -37,6 +43,7 @@ services:
     # ports: deliberately ABSENT — postgres is never published.
 
   policy-gateway:
+    image: mergepilot-isolated-policy-gateway:local
     build:
       # Retry v3: build context unified with the builder/orchestrator
       # contract (root wrapper Dockerfile) — five-layer consistency; the
@@ -66,6 +73,7 @@ services:
       retries: 10
 
   controller:
+    image: mergepilot-isolated-controller:local
     build:
       # Retry v3: build context unified with the builder/orchestrator
       # contract (root wrapper Dockerfile) — five-layer consistency.
@@ -109,6 +117,7 @@ services:
   # non-root UID/GID 9090, digest-pinned base, read-only rootfs,
   # no-new-privileges, all capabilities dropped, no Docker socket.
   gh-webhook:
+    image: mergepilot-isolated-gh-webhook:local
     build:
       context: .
       dockerfile: Dockerfile.gh-webhook
@@ -137,6 +146,7 @@ services:
     restart: "no"
 
   demo-console:
+    image: mergepilot-isolated-demo-console:local
     build:
       context: .
       dockerfile: Dockerfile.demo-console
@@ -211,6 +221,7 @@ services:
   # open proxy. It holds no DSN/password/token/database coordinates
   # (no env_file, no environment secrets) by design.
   console-edge:
+    image: mergepilot-isolated-console-edge:local
     build:
       context: .
       dockerfile: Dockerfile.console-edge
@@ -231,6 +242,7 @@ services:
     restart: "no"
 
   preflight:
+    image: mergepilot-isolated-preflight:local
     build:
       context: .
       dockerfile: Dockerfile.preflight
@@ -257,6 +269,9 @@ services:
       MERGEPILOT_PG_HOST: postgres
       MERGEPILOT_PG_PORT: "5432"
       MERGEPILOT_DEMO_CONSOLE_URL: http://demo-console:8600
+      # §4 offline distribution: compose references the TAG (docker-load cannot resolve @sha256 refs); the recorded pin travels to the
+      # preflight digest gate via this env instead.
+      MERGEPILOT_DECLARED_PG_IMAGE: pgvector/pgvector@sha256:a36250871de0833b8757561c72f2477ef1ddd1101afa4e617fb552e0de514c6b
     restart: "no"
     # ports: deliberately ABSENT.
 

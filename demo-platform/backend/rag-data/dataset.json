@@ -1,0 +1,71 @@
+{
+  "data_mode": "SYNTHETIC",
+  "description": "Phase 15 合成脱敏数据集：平台自有演示文档，非企业生产数据，非客户内容",
+  "documents": [
+    {
+      "document_id": "doc-mergepilot-review-policy",
+      "title": "MergePilot 审查流程政策（演示文档）",
+      "source_type": "policy-doc",
+      "classification": "public-demo",
+      "created_at": "2026-08-30T00:00:00Z",
+      "text": "MergePilot 平台对代码变更执行三级审查：Reviewer 发现问题并出具 finding，Fixer 在受控范围内修复，Verifier 独立复核修复效果。普通风险变更由 Agent 自主完成闭环；高危变更触发 human gate，系统暂停并等待人工批准。人工批准记录写入审批日志，拒绝记录同样留痕。任何阶段都不执行 push、merge 或 PR 状态变更，PR 状态保持平台外真实 GitHub 状态。三案例 PR #1、PR #2、PR #3 分别覆盖自主审查、人工批准、人工拒绝三种路径。所有任务结果以 MinIO 上的 result.md 与 meta.json 为准，leader 会做 check_task effective=true 终检。"
+    },
+    {
+      "document_id": "doc-human-gate-policy",
+      "title": "高危人工闸门政策（演示文档）",
+      "source_type": "policy-doc",
+      "classification": "public-demo",
+      "created_at": "2026-08-30T00:00:00Z",
+      "text": "当 Reviewer finding 的风险级别为 high 或 critical 时，projectflow 自动进入 copaw-high-risk-human-gate 状态：Fixer 不启动，系统在房间内发出批准请求。只有 demo operator 明确回复 approve 后，链路才继续；回复 reject 则链路终止并归档拒绝原因。批准与拒绝均为真实人工操作记录，不含任何自动化伪造。Human gate 的 SLA 不做自动催办，演示中以操作员在场为前提。该策略与 PR #2（approved）与 PR #3（rejected）两个案例一一对应。"
+    },
+    {
+      "document_id": "doc-case-pr1-summary",
+      "title": "PR #1 案例摘要（演示回放事实的合成转述）",
+      "source_type": "case-summary",
+      "classification": "public-demo",
+      "created_at": "2026-08-30T00:00:00Z",
+      "text": "PR #1 是普通风险案例：repository 为 fastapi-boilerplate-demo，变更内容为常规功能补丁。Reviewer 审查后确认无高危 finding，链路自主完成 review、fix、verify 三节点。任务状态在 taskflow 中流转，最终状态为 SUCCESS，人工闸门未触发。该案例用于演示 Agent 自主闭环能力，回放数据来自历史已验证运行，本转述为合成文档。"
+    },
+    {
+      "document_id": "doc-case-pr2-summary",
+      "title": "PR #2 案例摘要（演示回放事实的合成转述）",
+      "source_type": "case-summary",
+      "classification": "public-demo",
+      "created_at": "2026-08-30T00:00:00Z",
+      "text": "PR #2 是高危案例：Reviewer 发现 CWE-22 路径穿越类 finding，风险级别 high，链路进入 copaw-high-risk-human-gate。demo operator 回复 approve 后 Fixer 修复并补齐路径校验，Verifier 用探针验证 before 遍历返回 200、after 返回 404，确认修复有效。审批记录为真实人工操作。该案例演示高危变更的人工批准路径。"
+    },
+    {
+      "document_id": "doc-case-pr3-summary",
+      "title": "PR #3 案例摘要（演示回放事实的合成转述）",
+      "source_type": "case-summary",
+      "classification": "public-demo",
+      "created_at": "2026-08-30T00:00:00Z",
+      "text": "PR #3 是高危拒绝案例：Reviewer 出具 high 级别 finding 后链路进入人工闸门，demo operator 主动回复 reject，链路终止，修复不执行，拒绝原因归档进审计页。该案例与 PR #2 共同证明闸门是真实的双向控制：既能在批准后继续，也能在拒绝后停下。"
+    },
+    {
+      "document_id": "doc-agentloop-observability",
+      "title": "AgentLoop 可观测性事实（演示文档）",
+      "source_type": "runbook",
+      "classification": "public-demo",
+      "created_at": "2026-08-30T00:00:00Z",
+      "text": "阿里云 AgentLoop 已接入真实 CoPaw 运行的合并 Trace：权威 Trace ID 为 fbf4a3cec0493990d76e10a102418be1，包含 24 次 LLM 调用与 8 次工具调用，会话 ID 为 N2KQqHVSBsSZc9utWsEeZ5f，总 Token 51890，模型 deepseek-chat。span 树为 agent_step 根节点，下挂 invoke_agent 与原生 chat deepseek-chat、wrapper genai.llm.call、tool.projectflow、tool.taskflow、matrix.send。原生 agentscope span 与 loongsuite wrapper span 共用同一全局 TracerProvider，因此收敛于同一 Trace。裁决词为 AGENTLOOP_ALIYUN_TRACE_VISIBILITY_CONFIRMED_BY_OPERATOR。"
+    },
+    {
+      "document_id": "doc-rag-usage-policy",
+      "title": "本 RAG 数据使用政策（演示文档）",
+      "source_type": "policy-doc",
+      "classification": "public-demo",
+      "data_mode_override": "SYNTHETIC",
+      "created_at": "2026-08-30T00:00:00Z",
+      "text": "演示平台 RAG 使用明确的合成数据集：全部文档为平台自有演示文档，不含企业生产数据、客户内容或真实凭据。检索结果必须携带 source_ref 引用与 data_mode 标识；无引用的答案不得标记为 verified。检索不保存 query 原文，只保存 query_hash。嵌入与检索采用本地确定性算法，不依赖外部服务。若未来接入真实企业数据源，必须另行评审并把 data_mode 切换为 LIVE。"
+    },
+    {
+      "document_id": "doc-polardb-branch-plan",
+      "title": "PolarDB Branch 接入计划（演示文档）",
+      "source_type": "plan-doc",
+      "classification": "public-demo",
+      "created_at": "2026-08-30T00:00:00Z",
+      "text": "PolarDB Agentic Database Branch 计划用于给每个高风险修复分支提供隔离的数据快照，使 Fixer 与 Verifier 能在分支上做只读验证。当前状态为 NOT CONNECTED：环境内无已配置的 PolarDB endpoint、无只读账号、未做网络连通性验证。演示中使用 SIMULATED 只读 fixture 提供同等形状的数据视图，UI 与 Trace 中均标注 SIMULATED，不伪造真实连接。接入真实实例需要：endpoint 与白名单、只读账号、Branch API 凭据（从受保护存储读取）以及 Phase 15 后续评审。"
+    }
+  ]
+}

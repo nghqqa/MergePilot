@@ -1,0 +1,16 @@
+{
+  "phase": "Phase 14.2H-WD-CREDENTIAL-ROTATION",
+  "recorded_at": "2026-08-29T13:20:00+08:00",
+  "check_type": "digest-change-audit",
+  "result": "PASS",
+  "note": "per constraint 10: no secret length/prefix/value/digest values recorded - only CHANGE facts",
+  "changes": [
+    {"consumer": "manager", "old_value_revoked": true, "new_value_active": true, "worker_file_updated": "/root/agentteams-fs/agents/manager/openclaw.json", "gateway_completion_with_new": 200},
+    {"consumer": "worker-p14h2-wd-worker-manager", "old_value_revoked": true, "new_value_active": true, "worker_file_updated": true, "gateway_completion_with_new": 200},
+    {"consumer": "worker-p14h2-wd-worker-reviewer", "old_value_revoked": true, "new_value_active": true, "worker_file_updated": true, "gateway_completion_with_new": 200},
+    {"consumer": "worker-p14h2-wd-worker-fixer", "old_value_revoked": true, "new_value_active": true, "worker_file_updated": true, "gateway_completion_with_new": 200},
+    {"consumer": "worker-p14h2-wd-worker-verifier", "old_value_revoked": true, "new_value_active": true, "worker_file_updated": true, "gateway_completion_with_new": 200}
+  ],
+  "provider_deepseek": "token NOT changed this phase (BLOCKED_CREDENTIAL_ROTATION_GENERATION - requires operator platform action); old token still active and still functional",
+  "digest_values": "intentionally omitted per constraint 10"
+}

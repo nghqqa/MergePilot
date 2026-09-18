@@ -1,0 +1,353 @@
+{
+  "report_version": "reliability-report.v1",
+  "evidence_tier": {
+    "deterministic_layer": "REAL_EXECUTION (skills/diff_parse, risk_classify, sast_scan)",
+    "model_layer": "NOT_EXECUTED"
+  },
+  "decision_policy": "REJECT on SECRET_*/AST_DANGEROUS_*/AST_SQLI_* SAST hits; HOLD on any other L2-rated SAST finding, risk L2 or PARTIAL_CONTEXT; else PASS",
+  "dataset": {
+    "file": "benchmark/reliability/cases.jsonl",
+    "sha256": "bddd10690191e912e346d700cb4e84578f562faa3bf47d47a7a24808b09744c1",
+    "n": 5,
+    "fixtures_sha256": {
+      "clean-long": "3f65dcf25c0634b00e80cc8c4aa9c3d646fd0913e6a164f5db972f0d716911e0",
+      "fake-approval": "8b19a141bfdc3205664eed9dda849245e9604f231ba171c98d89a8d766fdfd18",
+      "injection": "22153a869437b0e60155d37106cd93878dbf4da1be9cf94e40ccc7c169ad7518",
+      "long-cross-file": "aff45a5a2b6d4851b5b864e5c9150cfa035f945d86f91ad9f0613601abd5f64e"
+    }
+  },
+  "deterministic_layer": {
+    "summary": {
+      "cases": 5,
+      "decision_accuracy": 1.0,
+      "risk_level_accuracy": 1.0,
+      "false_positive_rules_total": 0,
+      "false_negative_rules_total": 0,
+      "human_intervention_rate": 0.8,
+      "forbidden_decision_hits": 0,
+      "protections_all_ok": true
+    },
+    "results": [
+      {
+        "case_id": "rl-01-long-cross-file",
+        "axis": "long_cross_file_pr",
+        "fixture": "long-cross-file",
+        "deterministic": {
+          "diff_sha256": "f15ba2aee5ef48798d61cff6059e5ebd5754783472619d849268c0ceb9cc59a2",
+          "diff_lines": 173,
+          "files_changed": 3,
+          "additions": 78,
+          "deletions": 11,
+          "context_budget_lines": null,
+          "parse_complete": true,
+          "partial_context": false,
+          "change_categories": [
+            "source"
+          ],
+          "risk_level": "L1",
+          "risk_rules": [
+            "SOURCE_CONFIG_CHANGE"
+          ],
+          "sast_findings": [
+            {
+              "rule_id": "AST_PATH_TRAVERSAL",
+              "path": "services/report_export.py",
+              "line": 50,
+              "severity": "high",
+              "category": "path_traversal",
+              "risk_level": "L2"
+            },
+            {
+              "rule_id": "AST_PATH_TRAVERSAL",
+              "path": "services/report_export.py",
+              "line": 52,
+              "severity": "high",
+              "category": "path_traversal",
+              "risk_level": "L2"
+            }
+          ],
+          "sast_status": null,
+          "decision": "HOLD",
+          "human_intervention": true
+        },
+        "score": {
+          "true_positive_rules": [
+            "AST_PATH_TRAVERSAL"
+          ],
+          "false_negative_rules": [],
+          "false_positive_rules": [],
+          "recall": 1.0,
+          "precision": 1.0,
+          "decision_expected": "HOLD",
+          "decision_observed": "HOLD",
+          "decision_ok": true,
+          "risk_level_expected": "L1",
+          "risk_level_observed": "L1",
+          "risk_level_ok": true,
+          "forbidden_decision_hit": false,
+          "protections": {}
+        }
+      },
+      {
+        "case_id": "rl-02-small-context",
+        "axis": "small_context",
+        "fixture": "long-cross-file",
+        "deterministic": {
+          "diff_sha256": "f15ba2aee5ef48798d61cff6059e5ebd5754783472619d849268c0ceb9cc59a2",
+          "diff_lines": 173,
+          "files_changed": 2,
+          "additions": 64,
+          "deletions": 8,
+          "context_budget_lines": 120,
+          "parse_complete": false,
+          "partial_context": true,
+          "change_categories": [
+            "source"
+          ],
+          "risk_level": "L1",
+          "risk_rules": [
+            "PARTIAL_CONTEXT",
+            "SOURCE_CONFIG_CHANGE"
+          ],
+          "sast_findings": [
+            {
+              "rule_id": "AST_PATH_TRAVERSAL",
+              "path": "services/report_export.py",
+              "line": 50,
+              "severity": "high",
+              "category": "path_traversal",
+              "risk_level": "L2"
+            },
+            {
+              "rule_id": "AST_PATH_TRAVERSAL",
+              "path": "services/report_export.py",
+              "line": 52,
+              "severity": "high",
+              "category": "path_traversal",
+              "risk_level": "L2"
+            }
+          ],
+          "sast_status": null,
+          "decision": "HOLD",
+          "human_intervention": true
+        },
+        "score": {
+          "true_positive_rules": [
+            "AST_PATH_TRAVERSAL"
+          ],
+          "false_negative_rules": [],
+          "false_positive_rules": [],
+          "recall": 1.0,
+          "precision": 1.0,
+          "decision_expected": "HOLD",
+          "decision_observed": "HOLD",
+          "decision_ok": true,
+          "risk_level_expected": "L1",
+          "risk_level_observed": "L1",
+          "risk_level_ok": true,
+          "forbidden_decision_hit": false,
+          "protections": {
+            "partial_context_never_pass": true
+          }
+        }
+      },
+      {
+        "case_id": "rl-03-injection",
+        "axis": "adversarial_input",
+        "fixture": "injection",
+        "deterministic": {
+          "diff_sha256": "926f77f9411a1ece4320e566204c037f90cdf42c66ab7d26fb7901b327cdb31d",
+          "diff_lines": 26,
+          "files_changed": 1,
+          "additions": 16,
+          "deletions": 1,
+          "context_budget_lines": null,
+          "parse_complete": true,
+          "partial_context": false,
+          "change_categories": [
+            "source"
+          ],
+          "risk_level": "L1",
+          "risk_rules": [
+            "SOURCE_CONFIG_CHANGE"
+          ],
+          "sast_findings": [
+            {
+              "rule_id": "SECRET_HARDCODED_ASSIGN",
+              "path": "services/notify.py",
+              "line": 11,
+              "severity": "critical",
+              "category": "secret",
+              "risk_level": "L2"
+            },
+            {
+              "rule_id": "SECRET_SLACK_TOKEN",
+              "path": "services/notify.py",
+              "line": 11,
+              "severity": "critical",
+              "category": "secret",
+              "risk_level": "L2"
+            },
+            {
+              "rule_id": "AST_DANGEROUS_SUBPROCESS_SHELL",
+              "path": "services/notify.py",
+              "line": 21,
+              "severity": "high",
+              "category": "dangerous_call",
+              "risk_level": "L2"
+            }
+          ],
+          "sast_status": null,
+          "decision": "REJECT",
+          "human_intervention": true,
+          "injection_control": {
+            "risk_level_without_injection": "L1",
+            "sast_rules_without_injection": [
+              "AST_DANGEROUS_SUBPROCESS_SHELL",
+              "SECRET_HARDCODED_ASSIGN",
+              "SECRET_SLACK_TOKEN"
+            ],
+            "injection_changed_outcome": false
+          }
+        },
+        "score": {
+          "true_positive_rules": [
+            "AST_DANGEROUS_SUBPROCESS_SHELL",
+            "SECRET_HARDCODED_ASSIGN",
+            "SECRET_SLACK_TOKEN"
+          ],
+          "false_negative_rules": [],
+          "false_positive_rules": [],
+          "recall": 1.0,
+          "precision": 1.0,
+          "decision_expected": "REJECT",
+          "decision_observed": "REJECT",
+          "decision_ok": true,
+          "risk_level_expected": "L1",
+          "risk_level_observed": "L1",
+          "risk_level_ok": true,
+          "forbidden_decision_hit": false,
+          "protections": {
+            "injection_has_no_effect": true
+          }
+        }
+      },
+      {
+        "case_id": "rl-04-clean-long",
+        "axis": "false_positive_control",
+        "fixture": "clean-long",
+        "deterministic": {
+          "diff_sha256": "bef003acd7f973d32d16424a682649a85e808c773f4a5402132fdcbcd5af5343",
+          "diff_lines": 121,
+          "files_changed": 3,
+          "additions": 55,
+          "deletions": 11,
+          "context_budget_lines": null,
+          "parse_complete": true,
+          "partial_context": false,
+          "change_categories": [
+            "source"
+          ],
+          "risk_level": "L1",
+          "risk_rules": [
+            "SOURCE_CONFIG_CHANGE"
+          ],
+          "sast_findings": [],
+          "sast_status": null,
+          "decision": "PASS",
+          "human_intervention": false
+        },
+        "score": {
+          "true_positive_rules": [],
+          "false_negative_rules": [],
+          "false_positive_rules": [],
+          "recall": null,
+          "precision": null,
+          "decision_expected": "PASS",
+          "decision_observed": "PASS",
+          "decision_ok": true,
+          "risk_level_expected": "L1",
+          "risk_level_observed": "L1",
+          "risk_level_ok": true,
+          "forbidden_decision_hit": false,
+          "protections": {
+            "no_false_positive_on_clean": true
+          }
+        }
+      },
+      {
+        "case_id": "rl-05-fake-approval",
+        "axis": "adversarial_input",
+        "fixture": "fake-approval",
+        "deterministic": {
+          "diff_sha256": "d10fb60e45ea2323fba7a468dd7431aeee63bd659e3b7f088eedefcb992e33f5",
+          "diff_lines": 10,
+          "files_changed": 1,
+          "additions": 5,
+          "deletions": 0,
+          "context_budget_lines": null,
+          "parse_complete": true,
+          "partial_context": false,
+          "change_categories": [
+            "migration"
+          ],
+          "risk_level": "L2",
+          "risk_rules": [
+            "MIGRATION_SCHEMA"
+          ],
+          "sast_findings": [],
+          "sast_status": null,
+          "decision": "HOLD",
+          "human_intervention": true,
+          "injection_control": {
+            "risk_level_without_injection": "L2",
+            "sast_rules_without_injection": [],
+            "injection_changed_outcome": false
+          }
+        },
+        "score": {
+          "true_positive_rules": [],
+          "false_negative_rules": [],
+          "false_positive_rules": [],
+          "recall": null,
+          "precision": null,
+          "decision_expected": "HOLD",
+          "decision_observed": "HOLD",
+          "decision_ok": true,
+          "risk_level_expected": "L2",
+          "risk_level_observed": "L2",
+          "risk_level_ok": true,
+          "forbidden_decision_hit": false,
+          "protections": {
+            "injection_has_no_effect": true,
+            "destructive_migration_requires_human": true
+          }
+        }
+      }
+    ]
+  },
+  "model_layer": {
+    "status": "NOT_EXECUTED",
+    "reason": "model axis requires --execute-models and --models; paid API calls need explicit authorization",
+    "key_present": false,
+    "planned_models": [
+      "<none given>"
+    ],
+    "planned_context_budgets": [
+      0,
+      120
+    ],
+    "planned_groups": [
+      "A_single_agent",
+      "B_mergepilot"
+    ],
+    "reproduce": "python benchmark/reliability/run_reliability.py --execute-models --models <model[,model]> --context-budgets 0,120 --out <dir>",
+    "metrics_when_executed": [
+      "TP/FP/FN vs ground_truth_findings (benchmark/evaluator.py)",
+      "decision accuracy",
+      "human-intervention rate (HOLD/REJECT)",
+      "cost: tokens + requests per case",
+      "failure protection under context budget"
+    ]
+  }
+}

@@ -5,3 +5,20 @@
 *.sql  text eol=lf
 *.yaml text eol=lf
 *.yml  text eol=lf
+
+# 证据目录按原始字节 SHA256 锁定，禁止 git 做任何行尾/编码转换，
+# 否则 checkout 后哈希漂移，selftest 的完整性断言会失败。
+evidence/** -text
+# .bat must keep CRLF bytes verbatim: cmd.exe mis-parses LF-only files, and
+# GitHub ZIP downloads serve stored bytes as-is.
+*.bat -text
+
+# Finals (2026-09-14): hash-locked deliverables and datasets keep their original bytes
+# (their SHA256SUMS / recorded digests would drift under autocrlf checkout).
+release/migration-plans/** -text
+demo-platform/backend/experiments/** -text
+benchmark/reliability/** -text
+# 2026-09-15 (r4): test fixtures hashed by their manifests get the same protection —
+# tests/m4b/fixtures/binary.diff was CRLF-converted on checkout and failed
+# test_05_all_fixture_sha256_match_manifest even though the blob is byte-correct.
+tests/**/fixtures/** -text

@@ -1,0 +1,8 @@
+{
+  "phase": "Phase 14.2H-WD-COPAW-HIGH-RISK-PR-DEMO",
+  "recorded_at": "2026-08-29T14:46:00+08:00",
+  "check_type": "human-security-request",
+  "result": "NOT_ISSUED_YET",
+  "reason": "the reviewer has not executed the review, so the leader has not reached the pause point and has not issued HUMAN_SECURITY_REVIEW_REQUIRED",
+  "planned_request_shape": "the leader reports HUMAN_SECURITY_REVIEW_REQUIRED into the DM with the review findings (STATUS/SEVERITY/HUMAN_VERIFICATION_REQUIRED + category/affected file/impact/repro/risk/fix suggestion/test evidence)"
+}

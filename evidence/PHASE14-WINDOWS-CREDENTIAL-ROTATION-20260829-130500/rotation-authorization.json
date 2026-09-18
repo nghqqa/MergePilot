@@ -1,0 +1,14 @@
+{
+  "phase": "Phase 14.2H-WD-CREDENTIAL-ROTATION",
+  "recorded_at": "2026-08-29T13:05:00+08:00",
+  "check_type": "rotation-authorization",
+  "result": "AUTHORIZED",
+  "authorization": {
+    "deepseek_provider_key_rotation": "APPROVED (new key must be created by the operator on platform.deepseek.com - platform has no key-management API; runtime refresh performed by this phase once the new key is provided via the protected env)",
+    "five_gateway_consumer_keys_rotation": "APPROVED (manager + worker-p14h2-wd-worker-{manager,reviewer,fixer,verifier})",
+    "console_api_config_updates": "APPROVED (official higress console API, container-local)",
+    "pr_operations": "NOT authorized",
+    "kickoff_retry_delegate_project_changes": "NOT authorized"
+  },
+  "scope_exclusions": ["4 copaw consumers (worker-p14h2-copaw-worker-*) were created AFTER the transcript echo and were never exposed - out of scope", "WSL/foreign runtime credentials - out of scope"]
+}
