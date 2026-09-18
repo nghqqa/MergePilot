@@ -1,0 +1,8 @@
+{
+  "enabled": false,
+  "mcp_server_path": "/usr/local/bin/skill-mcp-server.mjs",
+  "skill_repo_root": "/opt/mergepilot",
+  "audit_endpoint": "http://host.docker.internal:4184/api/rag/toolspan-audit",
+  "connect_timeout": 30,
+  "_doc": "Skills MCP hook switch. Image default = disabled. Enable at runtime by rewriting this file (enabled=true); zz_agentloop_skills watcher picks it up in ~2s and appends the skills_mcp MCP client to CoPawAgent after the grace period. APPEND mode: coexists with the rag_mcp client injected by zz_agentloop_rag."
+}

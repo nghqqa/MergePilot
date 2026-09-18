@@ -1,0 +1,14 @@
+{
+ "mode": "approve",
+ "run": "run-elem-pr2sk3-20260918-01",
+ "project": "elemiso-pr2sk3-gate",
+ "ts": "2026-09-18T11:34:00Z",
+ "record_written": true,
+ "dm_event": "$_F7HaaALImdgf-s\u2026 (full id in server-side room export)",
+ "reconstructed": "regenerated from session audit after pipeline consumed stdout; all decision facts verbatim",
+ "finding_summary_lines": [
+  "- STATUS: FINDING_CONFIRMED; SEVERITY: HIGH; HUMAN_VERIFICATION_REQUIRED: YES",
+  "- CWE-22 path traversal in demo_download; real PoC: ../outside-secret.txt -> 200 leak; ../../../etc/hostname -> 200",
+  "- Deterministic skills used: skill_diff_parse + skill_risk_classify (advisory L1, HUMAN_REVIEW control recommended); rag_retrieve reachable: cwe-22-path-traversal.md#1 + file-path-containment.md#1"
+ ]
+}

@@ -1,0 +1,18 @@
+FROM agentteams/copaw-worker:223ddc2-agentloop-v3rag
+# v3+RAG+Skills: adds the M4-F deterministic Skills (skills/ + common runtime)
+# and the Skill MCP server, so AgentTeam members can call skill_* tools the same
+# way they call rag_retrieve.
+
+ENV SKILL_REPO_ROOT=/opt/mergepilot \
+    PYTHONPATH=/opt/mergepilot
+COPY skills /opt/mergepilot/skills
+COPY skill-mcp-server.mjs /usr/local/bin/skill-mcp-server.mjs
+# skills.common may import tools.otel for skill spans - provide the module dir too
+COPY tools/otel /opt/mergepilot/tools/otel
+
+COPY zz_agentloop_skills.py /opt/venv/standard/lib/python3.11/site-packages/zz_agentloop_skills.py
+COPY zzz_skills_hook.pth  /opt/venv/standard/lib/python3.11/site-packages/zzz_skills_hook.pth
+COPY agentloop-skills.json /etc/agentloop-skills.json
+
+LABEL agentloop.instrumentation="v3+rag+skills" \
+      mp.task="skill-integration-run-20260917"

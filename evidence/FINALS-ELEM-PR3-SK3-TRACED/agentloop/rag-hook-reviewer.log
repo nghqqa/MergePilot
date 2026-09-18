@@ -1,0 +1,29 @@
+2026-09-18T11:20:25Z config enabled; grace 90.0s before patching
+2026-09-18T11:21:55Z CoPawAgent.register_mcp_clients patched (live-run SYNTHETIC RAG, endpoint=http://host.docker.internal:4184/api/rag/search)
+2026-09-18T11:24:59Z register_mcp_clients ENTRY pre_clients=0
+2026-09-18T11:24:59Z rag_mcp connected and injected (endpoint=http://host.docker.internal:4184/api/rag/search)
+2026-09-18T11:25:15Z config enabled; grace 90.0s before patching
+2026-09-18T11:25:18Z config enabled; grace 90.0s before patching
+2026-09-18T11:25:20Z config enabled; grace 90.0s before patching
+2026-09-18T11:25:20Z config enabled; grace 90.0s before patching
+2026-09-18T11:25:21Z config enabled; grace 90.0s before patching
+2026-09-18T11:25:27Z config enabled; grace 90.0s before patching
+2026-09-18T11:25:30Z config enabled; grace 90.0s before patching
+2026-09-18T11:25:35Z config enabled; grace 90.0s before patching
+2026-09-18T11:25:39Z config enabled; grace 90.0s before patching
+2026-09-18T11:25:41Z config enabled; grace 90.0s before patching
+2026-09-18T11:25:51Z config enabled; grace 90.0s before patching
+2026-09-18T11:25:53Z config enabled; grace 90.0s before patching
+2026-09-18T11:25:55Z config enabled; grace 90.0s before patching
+2026-09-18T11:26:01Z config enabled; grace 90.0s before patching
+2026-09-18T11:26:04Z config enabled; grace 90.0s before patching
+2026-09-18T11:26:05Z config enabled; grace 90.0s before patching
+2026-09-18T11:26:07Z config enabled; grace 90.0s before patching
+2026-09-18T11:40:57Z register_mcp_clients ENTRY pre_clients=0
+2026-09-18T11:40:57Z rag_mcp connected and injected (endpoint=http://host.docker.internal:4184/api/rag/search)
+2026-09-18T11:41:12Z config enabled; grace 90.0s before patching
+2026-09-18T11:41:15Z config enabled; grace 90.0s before patching
+2026-09-18T11:41:17Z config enabled; grace 90.0s before patching
+2026-09-18T11:41:17Z config enabled; grace 90.0s before patching
+2026-09-18T11:41:21Z config enabled; grace 90.0s before patching
+2026-09-18T11:41:28Z config enabled; grace 90.0s before patching
