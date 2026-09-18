@@ -1,0 +1,11 @@
+{
+ "window_start": "2026-09-18T16:05:00Z",
+ "team_room_events": 17,
+ "dm_events": 6,
+ "key_facts": {
+  "review_time": "57s (kickoff 16:05:18 \u2192 submit 16:06:12)",
+  "reject_to_blocked": "12s (16:07:06 reject \u2192 16:07:18 final report)",
+  "skill_case_retrieval": "verifier-side OK result with verifiable PR citations (real DB)",
+  "skill_risk_classify": "advisory L1 vs reviewer-verified HIGH \u2014 advisory does not override"
+ }
+}
