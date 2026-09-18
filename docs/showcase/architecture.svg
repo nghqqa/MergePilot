@@ -1,146 +1,240 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" role="img" aria-labelledby="title desc">
-  <title id="title">MergePilot isolated-live showcase architecture</title>
-  <desc id="desc">Control, state, read-only console, publication, and truth-boundary layers for the deterministic MergePilot showcase.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="900" viewBox="0 0 1800 900" role="img" aria-labelledby="title desc">
+  <title id="title">MergePilot 多 Agent PR 审修与风险治理架构</title>
+  <desc id="desc">Workflow Controller 是待赛后集成的 PR 状态机与事件桥，与 AgentTeams 控制面 elemiso-ctrl 为两套组件。AgentTeams 控制面负责 Worker CR 调解、动态容器和审计汇聚，内嵌 Matrix (Tuwunel)、MinIO 与 Higress 网关，管理 Leader、Reviewer、Fixer、Verifier。六个 Skill 已经 MCP 接入 Agent 实测调用，与 LLM 决策分层，采用 advisory-only。AgentLoop / SLS 上报 OTel span，以委派 W3C traceparent 跨 Agent 关联，每轮 450-530 span 零失败，并保留网关用量计量。Agent 无任何 GitHub 凭据，零写入实证。pgvector 为设计资产，运行时未接入。PostgreSQL、MinIO 与审计 Trace 保存状态和证据。</desc>
+
   <defs>
-    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M0 0 L10 5 L0 10 Z" fill="#8aa2c8"/>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f8fbff"/>
+      <stop offset="1" stop-color="#f5f3ff"/>
+    </linearGradient>
+    <linearGradient id="controller" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2563eb"/>
+      <stop offset="1" stop-color="#1d4ed8"/>
+    </linearGradient>
+    <linearGradient id="runtime" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7c3aed"/>
+      <stop offset="1" stop-color="#6d28d9"/>
+    </linearGradient>
+    <linearGradient id="skills" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0891b2"/>
+      <stop offset="1" stop-color="#0e7490"/>
+    </linearGradient>
+    <linearGradient id="governance" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ea580c"/>
+      <stop offset="1" stop-color="#c2410c"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#0f172a" flood-opacity="0.12"/>
+    </filter>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#64748b"/>
     </marker>
-    <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M0 0 L10 5 L0 10 Z" fill="#38d9a9"/>
+    <marker id="arrowBlue" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#2563eb"/>
     </marker>
     <style>
-      .title { fill:#eef4ff; font:700 27px 'Segoe UI','Microsoft YaHei',sans-serif; }
-      .subtitle { fill:#90a6c8; font:14px 'Segoe UI','Microsoft YaHei',sans-serif; }
-      .lane-title { fill:#66a0ff; font:600 15px 'Segoe UI','Microsoft YaHei',sans-serif; }
-      .node-title { fill:#f2f6ff; font:700 17px 'Segoe UI','Microsoft YaHei',sans-serif; }
-      .node-meta { fill:#66a0ff; font:12px 'Segoe UI','Microsoft YaHei',sans-serif; }
-      .node-body { fill:#a9bad4; font:13px 'Segoe UI','Microsoft YaHei',sans-serif; }
-      .note-title { fill:#f7c66b; font:700 15px 'Segoe UI','Microsoft YaHei',sans-serif; }
-      .note { fill:#d5deec; font:13px 'Segoe UI','Microsoft YaHei',sans-serif; }
-      .edge-label { fill:#90a6c8; font:12px 'Segoe UI','Microsoft YaHei',sans-serif; }
-      .box { fill:#16233c; stroke:#385178; stroke-width:1.5; }
-      .box-blue { fill:#16233c; stroke:#5c91f5; stroke-width:1.6; }
-      .box-green { fill:#132d2a; stroke:#38d9a9; stroke-width:1.6; }
-      .box-purple { fill:#241d3a; stroke:#a17cf7; stroke-width:1.6; stroke-dasharray:7 5; }
-      .box-orange { fill:#2c2418; stroke:#f7b84f; stroke-width:1.6; }
-      .boundary { fill:#101c31; stroke:#385178; stroke-width:1.4; stroke-dasharray:8 6; }
-      .line { stroke:#8aa2c8; stroke-width:2; fill:none; marker-end:url(#arrow); }
-      .line-green { stroke:#38d9a9; stroke-width:2; fill:none; marker-end:url(#arrow-green); }
-      .line-dashed { stroke:#a17cf7; stroke-width:2; fill:none; stroke-dasharray:7 5; marker-end:url(#arrow); }
+      .font { font-family: "Noto Sans SC", "Microsoft YaHei", "Segoe UI", "PingFang SC", Arial, sans-serif; font-kerning: normal; }
+      .title { font-size: 40px; font-weight: 700; fill: #0f172a; }
+      .subtitle { font-size: 19px; fill: #475569; }
+      .lane { font-size: 15px; font-weight: 700; letter-spacing: 1.2px; fill: #64748b; }
+      .card-title { font-size: 23px; font-weight: 700; }
+      .card-body { font-size: 17px; }
+      .small { font-size: 15px; }
+      .tiny { font-size: 14px; }
+      .white { fill: #ffffff; }
+      .ink { fill: #0f172a; }
+      .muted { fill: #475569; }
+      .connector { fill: none; stroke: #64748b; stroke-width: 3; marker-end: url(#arrow); }
+      .state-link { fill: none; stroke: #2563eb; stroke-width: 2.5; stroke-dasharray: 8 7; marker-end: url(#arrowBlue); }
     </style>
   </defs>
 
-  <rect width="1440" height="900" fill="#0d1626"/>
-  <text x="720" y="45" text-anchor="middle" class="title">MergePilot · 可审计、可验证、fail-closed 的合并治理闭环</text>
-  <text x="720" y="72" text-anchor="middle" class="subtitle">ISOLATED_LIVE deterministic showcase · internal backend network · loopback-only publication</text>
+  <rect width="1800" height="900" rx="30" fill="url(#bg)"/>
+  <path d="M0 170 H1800" stroke="#dbe5f1" stroke-width="2"/>
 
-  <rect id="internal-network" x="250" y="120" width="760" height="520" rx="18" class="boundary"/>
-  <text x="630" y="148" text-anchor="middle" class="lane-title">INTERNAL BACKEND NETWORK · 无 host 端口 · 无外发默认路由</text>
+  <g class="font">
+    <text x="70" y="70" class="title">MergePilot · 多 Agent PR 审修与风险治理闭环</text>
+    <text x="70" y="110" class="subtitle">确定性控制面掌握状态，Agent 负责语义决策，工具层执行最小权限操作，失败进入审批或回滚。</text>
 
-  <g id="pr-entry">
-    <rect x="40" y="205" width="180" height="110" rx="12" class="box"/>
-    <text x="130" y="237" text-anchor="middle" class="node-title">PR / 开发者入口</text>
-    <text x="130" y="263" text-anchor="middle" class="node-body">受保护分支与路径变更</text>
-    <text x="130" y="286" text-anchor="middle" class="node-body">showcase seed 模拟输入</text>
-  </g>
+    <g transform="translate(70 132)">
+      <rect width="164" height="28" rx="14" fill="#dbeafe"/>
+      <circle cx="17" cy="14" r="5" fill="#2563eb"/>
+      <text x="30" y="20" class="tiny" fill="#1e40af" font-weight="700">CONTROL PLANE</text>
+      <rect x="176" width="160" height="28" rx="14" fill="#ede9fe"/>
+      <circle cx="193" cy="14" r="5" fill="#7c3aed"/>
+      <text x="206" y="20" class="tiny" fill="#5b21b6" font-weight="700">AGENT RUNTIME</text>
+      <rect x="348" width="154" height="28" rx="14" fill="#cffafe"/>
+      <circle cx="365" cy="14" r="5" fill="#0891b2"/>
+      <text x="378" y="20" class="tiny" fill="#155e75" font-weight="700">SKILL / TOOLS</text>
+      <rect x="514" width="154" height="28" rx="14" fill="#ffedd5"/>
+      <circle cx="531" cy="14" r="5" fill="#ea580c"/>
+      <text x="544" y="20" class="tiny" fill="#9a3412" font-weight="700">GOVERNANCE</text>
+    </g>
 
-  <g id="policy-gateway">
-    <rect x="300" y="175" width="270" height="135" rx="12" class="box-blue"/>
-    <text x="435" y="207" text-anchor="middle" class="node-title">Policy Gateway</text>
-    <text x="435" y="230" text-anchor="middle" class="node-meta">policy-gateway</text>
-    <text x="435" y="255" text-anchor="middle" class="node-body">ALLOW / DENY / ERROR · fail-closed</text>
-    <text x="435" y="278" text-anchor="middle" class="node-body">L2 approval · INSERT-only audit</text>
-  </g>
+    <text x="70" y="215" class="lane">PR 输入</text>
+    <text x="292" y="215" class="lane">确定性控制面</text>
+    <text x="625" y="215" class="lane">语义协作</text>
+    <text x="1005" y="215" class="lane">确定性工具执行</text>
+    <text x="1335" y="215" class="lane">受治理写入</text>
 
-  <g id="controller">
-    <rect x="300" y="350" width="270" height="135" rx="12" class="box"/>
-    <text x="435" y="382" text-anchor="middle" class="node-title">Controller</text>
-    <text x="435" y="405" text-anchor="middle" class="node-meta">controller</text>
-    <text x="435" y="430" text-anchor="middle" class="node-body">状态机 · Outbox · 幂等恢复</text>
-    <text x="435" y="453" text-anchor="middle" class="node-body">MCP orchestration · drift / rollback</text>
-  </g>
+    <!-- GitHub PR -->
+    <g filter="url(#shadow)">
+      <rect x="60" y="275" width="170" height="150" rx="22" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+    </g>
+    <circle cx="145" cy="315" r="22" fill="#111827"/>
+    <path d="M136 307 v18 M136 307 a7 7 0 1 0 0-14 M136 325 a7 7 0 1 0 0 14 M136 316 h18 a7 7 0 1 0 0-14" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
+    <text x="145" y="366" text-anchor="middle" class="card-title ink">GitHub PR</text>
+    <text x="145" y="396" text-anchor="middle" class="small muted">代码 · Diff · 元数据</text>
 
-  <g id="postgres-state">
-    <rect x="650" y="175" width="310" height="185" rx="12" class="box-green"/>
-    <text x="805" y="207" text-anchor="middle" class="node-title">PostgreSQL · 审计状态库</text>
-    <text x="805" y="230" text-anchor="middle" class="node-meta">postgres · pgvector · digest 固定</text>
-    <text x="805" y="255" text-anchor="middle" class="node-body">task_runs · stage_runs · mcp_calls</text>
-    <text x="805" y="278" text-anchor="middle" class="node-body">approvals · rollback_runs · audit_events</text>
-    <text x="805" y="301" text-anchor="middle" class="node-body">revision_bindings · immutable SHA facts</text>
-    <rect x="680" y="318" width="250" height="28" rx="7" fill="#0e211f" stroke="#277d65"/>
-    <text x="805" y="338" text-anchor="middle" class="node-meta">mergepilot_reader · READ ONLY snapshot</text>
-  </g>
+    <!-- Controller -->
+    <g filter="url(#shadow)">
+      <rect x="285" y="250" width="280" height="200" rx="24" fill="url(#controller)"/>
+    </g>
+    <text x="425" y="294" text-anchor="middle" class="card-title white">Workflow Controller</text>
+    <text x="425" y="327" text-anchor="middle" class="small" fill="#dbeafe">PR 状态机 · 事件桥（赛后集成）</text>
+    <rect x="317" y="350" width="216" height="68" rx="14" fill="#ffffff" fill-opacity="0.13" stroke="#ffffff" stroke-opacity="0.28"/>
+    <text x="425" y="376" text-anchor="middle" class="small white">状态机 · Outbox · 幂等</text>
+    <text x="425" y="402" text-anchor="middle" class="small white">重试 · 超时 · 崩溃恢复</text>
+    <text x="425" y="439" text-anchor="middle" font-size="12" fill="#dbeafe">与 AgentTeams 控制面为两套组件，衔接待集成</text>
 
-  <g id="demo-console">
-    <rect x="650" y="405" width="310" height="135" rx="12" class="box-blue"/>
-    <text x="805" y="437" text-anchor="middle" class="node-title">Demo Console · 8 pages</text>
-    <text x="805" y="460" text-anchor="middle" class="node-meta">demo-console · internal only</text>
-    <text x="805" y="485" text-anchor="middle" class="node-body">shared snapshot · status + snapshot GET</text>
-    <text x="805" y="508" text-anchor="middle" class="node-body">live refresh · fail-closed · read-only</text>
-  </g>
+    <!-- Separate, live AgentTeams control plane; workflow integration remains pending. -->
+    <g filter="url(#shadow)">
+      <rect x="285" y="495" width="665" height="90" rx="22" fill="url(#controller)"/>
+    </g>
+    <text x="310" y="524" font-size="21" font-weight="700" class="white">AgentTeams 控制面（elemiso-ctrl）</text>
+    <text x="310" y="549" class="small" fill="#dbeafe">Worker CR 调解 · 动态容器 · 审计汇聚</text>
+    <text x="310" y="572" class="tiny white">Matrix (Tuwunel) · MinIO · Higress 网关</text>
 
-  <g id="preflight">
-    <rect id="preflight-box" x="300" y="560" width="660" height="58" rx="11" class="box-green" stroke-dasharray="6 4"/>
-    <text x="630" y="586" text-anchor="middle" class="node-title">Preflight · one-shot startup gate</text>
-    <text x="630" y="607" text-anchor="middle" class="node-body">10 contract checks · PREFLIGHT_OK before the stack is considered ready</text>
-  </g>
+    <!-- Agent runtime -->
+    <g filter="url(#shadow)">
+      <rect x="620" y="225" width="330" height="250" rx="26" fill="#ffffff" stroke="#c4b5fd" stroke-width="3"/>
+    </g>
+    <rect x="620" y="225" width="330" height="58" rx="24" fill="url(#runtime)"/>
+    <path d="M620 260 H950 V283 H620 Z" fill="url(#runtime)"/>
+    <text x="785" y="261" text-anchor="middle" class="card-title white">AgentTeams / HiClaw</text>
+    <text x="785" y="305" text-anchor="middle" class="tiny" fill="#6d28d9" font-weight="700">可适配 runtime · 非状态权威</text>
 
-  <g id="showcase-seed">
-    <rect x="1060" y="165" width="225" height="130" rx="12" class="box-purple"/>
-    <text x="1172" y="198" text-anchor="middle" class="node-title">Deterministic seed</text>
-    <text x="1172" y="222" text-anchor="middle" class="node-meta">showcase-only</text>
-    <text x="1172" y="247" text-anchor="middle" class="node-body">非外部客户数据</text>
-    <text x="1172" y="270" text-anchor="middle" class="node-body">非生产证据 · 重放幂等</text>
-  </g>
+    <g>
+      <rect x="632" y="326" width="72" height="78" rx="15" fill="#f5f3ff" stroke="#a78bfa" stroke-width="2"/>
+      <circle cx="668" cy="349" r="12" fill="#7c3aed"/>
+      <text x="668" y="382" text-anchor="middle" class="tiny ink" font-weight="700">Leader</text>
+      <rect x="712" y="326" width="72" height="78" rx="15" fill="#f5f3ff" stroke="#a78bfa" stroke-width="2"/>
+      <circle cx="748" cy="349" r="12" fill="#7c3aed"/>
+      <text x="748" y="382" text-anchor="middle" class="tiny ink" font-weight="700">Reviewer</text>
+      <rect x="792" y="326" width="72" height="78" rx="15" fill="#f5f3ff" stroke="#a78bfa" stroke-width="2"/>
+      <circle cx="828" cy="349" r="12" fill="#7c3aed"/>
+      <text x="828" y="382" text-anchor="middle" class="tiny ink" font-weight="700">Fixer</text>
+      <rect x="872" y="326" width="60" height="78" rx="15" fill="#f5f3ff" stroke="#a78bfa" stroke-width="2"/>
+      <circle cx="902" cy="349" r="12" fill="#7c3aed"/>
+      <text x="902" y="382" text-anchor="middle" class="tiny ink" font-weight="700">Verifier</text>
+    </g>
+    <rect x="671" y="424" width="228" height="30" rx="15" fill="#fef3c7"/>
+<text x="785" y="445" text-anchor="middle" class="tiny" fill="#92400e" font-weight="700">四个运行时 Agent · 非状态权威</text>
 
-  <rect id="publication-boundary" x="1040" y="370" width="280" height="280" rx="18" class="boundary"/>
-  <text x="1180" y="397" text-anchor="middle" class="lane-title">LOOPBACK PUBLICATION</text>
-  <g id="console-edge">
-    <rect x="1070" y="420" width="220" height="110" rx="12" class="box-orange"/>
-    <text x="1180" y="451" text-anchor="middle" class="node-title">console-edge</text>
-    <text x="1180" y="474" text-anchor="middle" class="node-meta">publication plumbing</text>
-    <text x="1180" y="499" text-anchor="middle" class="node-body">fixed upstream · no secrets</text>
-    <text x="1180" y="520" text-anchor="middle" class="node-body">GET path + Host allowlists</text>
-  </g>
-  <g id="browser">
-    <rect x="1070" y="565" width="220" height="65" rx="12" class="box"/>
-    <text x="1180" y="593" text-anchor="middle" class="node-title">Browser · demo only</text>
-    <text x="1180" y="616" text-anchor="middle" class="node-body">127.0.0.1:8600 · loopback</text>
-  </g>
+    <!-- Skills -->
+    <g filter="url(#shadow)">
+      <rect x="1005" y="250" width="245" height="200" rx="24" fill="url(#skills)"/>
+    </g>
+    <text x="1127" y="292" text-anchor="middle" class="card-title white">6 Skill DAG</text>
+    <g fill="#ecfeff" font-weight="650" font-size="12px">
+      <text x="1035" y="330" textLength="95" lengthAdjust="spacingAndGlyphs">01  diff-parse ✓已调用</text>
+      <text x="1035" y="360" textLength="95" lengthAdjust="spacingAndGlyphs">02  risk-classify ✓已调用</text>
+      <text x="1035" y="390" textLength="95" lengthAdjust="spacingAndGlyphs">03  sast-scan 待接入</text>
+      <text x="1137" y="330" textLength="103" lengthAdjust="spacingAndGlyphs">04  test-runner 已接入</text>
+      <text x="1137" y="360" textLength="103" lengthAdjust="spacingAndGlyphs">05  pr-lifecycle 待接入</text>
+      <text x="1137" y="390" textLength="103" lengthAdjust="spacingAndGlyphs">06  case-retrieval ✓已调用(降级)</text>
+    </g>
+    <rect x="1035" y="410" width="185" height="24" rx="12" fill="#ffffff" fill-opacity="0.16"/>
+    <text x="1127" y="427" text-anchor="middle" class="tiny white">Schema · Fail-closed</text>
+    <text x="1127" y="464" text-anchor="middle" class="tiny" fill="#0e7490" textLength="340" lengthAdjust="spacingAndGlyphs">SK3 轮实测：tool.skill_* span ×10（含降级 1 例）· advisory-only</text>
+    <text x="1127" y="477" text-anchor="middle" class="tiny" fill="#0e7490">已实现 · 经 MCP 接入 Agent 实测调用</text>
+    <text x="1127" y="500" text-anchor="middle" class="tiny" fill="#0e7490">与 LLM 决策分层（advisory-only）</text>
 
-  <g id="audit-boundary">
-    <rect x="40" y="405" width="180" height="145" rx="12" class="box-green" stroke-dasharray="6 4"/>
-    <text x="130" y="437" text-anchor="middle" class="node-title">Audit boundary</text>
-    <text x="130" y="462" text-anchor="middle" class="node-body">INSERT-only writes</text>
-    <text x="130" y="485" text-anchor="middle" class="node-body">console SELECT-only</text>
-    <text x="130" y="508" text-anchor="middle" class="node-body">materials ≠ evidence</text>
-    <text x="130" y="531" text-anchor="middle" class="node-body">verification frozen</text>
-  </g>
+    <!-- Policy Gateway -->
+    <g filter="url(#shadow)">
+      <rect x="1310" y="250" width="225" height="200" rx="24" fill="url(#governance)"/>
+    </g>
+    <text x="1422" y="292" text-anchor="middle" class="card-title white">Policy Gateway</text>
+    <text x="1422" y="326" text-anchor="middle" class="small" fill="#ffedd5">所有写操作的权限门</text>
+    <g class="small white">
+      <text x="1342" y="365">✓ 角色 token</text>
+      <text x="1342" y="393">✓ 最小权限写约束</text>
+      <text x="1342" y="421">✓ L2 人工审批</text>
+    </g>
 
-  <path d="M220 260 H295" class="line"/>
-  <text x="258" y="247" text-anchor="middle" class="edge-label">change request</text>
-  <path d="M435 310 V345" class="line"/>
-  <text x="450" y="333" class="edge-label">decision</text>
-  <path d="M570 242 H645" class="line"/>
-  <text x="607" y="228" text-anchor="middle" class="edge-label">audit facts</text>
-  <path d="M570 417 C610 417 610 330 645 315" class="line"/>
-  <text x="605" y="370" text-anchor="middle" class="edge-label">state</text>
-  <path d="M805 360 V400" class="line-green"/>
-  <text x="820" y="385" class="edge-label">read-only snapshot</text>
-  <path d="M960 472 H1065" class="line"/>
-  <text x="1012" y="458" text-anchor="middle" class="edge-label">internal upstream</text>
-  <path d="M1180 530 V560" class="line"/>
-  <path d="M1060 230 H965" class="line-dashed"/>
-  <text x="1012" y="216" text-anchor="middle" class="edge-label">seed injection</text>
-  <path d="M220 475 H645" stroke="#38d9a9" stroke-width="1.7" stroke-dasharray="6 5" fill="none" marker-end="url(#arrow-green)"/>
+    <!-- GitHub MCP -->
+    <g filter="url(#shadow)">
+      <rect x="1580" y="275" width="170" height="150" rx="22" fill="#ffffff" stroke="#fb923c" stroke-width="2.5"/>
+    </g>
+    <text x="1665" y="326" text-anchor="middle" class="card-title ink">GitHub MCP</text>
+<text x="1665" y="358" text-anchor="middle" class="small muted">隔离服务 · 凭证边界</text>
+    <rect x="1605" y="378" width="120" height="27" rx="13" fill="#dcfce7"/>
+    <text x="1665" y="397" text-anchor="middle" class="tiny" fill="#166534" font-weight="750">Worker 零 PAT</text>
+    <text x="1665" y="454" text-anchor="middle" class="tiny" fill="#166534">Agent 无任何 GitHub 凭据</text>
+    <text x="1665" y="476" text-anchor="middle" class="tiny" fill="#166534">（零写入实证）</text>
 
-  <g id="boundary-annotations">
-    <rect x="40" y="690" width="1280" height="180" rx="14" class="box"/>
-    <text x="65" y="720" class="note-title">Truth boundaries · 不是生产部署、云架构或多租户系统</text>
-    <text x="65" y="748" class="note">1 · console-edge 是 publication plumbing，不是第五个应用服务，也不构成 application integration。</text>
-    <text x="65" y="772" class="note">2 · Deterministic showcase seed 是合成数据，不是外部客户数据，不是生产证据。</text>
-    <text x="65" y="796" class="note">3 · M8-A1 event ingestion machinery 不等于 revision producer integration。</text>
-    <text x="65" y="820" class="note">4 · revision_producer_contract=NOT_VERIFIED · audit_producer_contract=NOT_VERIFIED。</text>
-    <text x="65" y="844" class="note">5 · application_integration_verified=false · database_verified=false · production_verified=false。</text>
+    <!-- Main connectors -->
+    <path d="M230 350 H275" class="connector"/>
+    <path d="M425 450 V485" class="state-link"/>
+    <path d="M785 495 V478" class="connector"/>
+    <path d="M950 350 H995" class="connector"/>
+    <path d="M1250 350 H1300" class="connector"/>
+    <path d="M1535 350 H1570" class="connector"/>
+
+    <!-- Governance outcomes: Gateway decides; MCP only executes authorized writes -->
+    <path d="M1422 450 V495" fill="none" stroke="#f97316" stroke-width="2.5" marker-end="url(#arrow)"/>
+    <path d="M1750 400 H1760 V488 H1740 V495" fill="none" stroke="#22c55e" stroke-width="2.5" marker-end="url(#arrow)"/>
+    <g filter="url(#shadow)">
+      <rect x="1310" y="505" width="225" height="78" rx="18" fill="#fff7ed" stroke="#f97316" stroke-width="2"/>
+      <rect x="1580" y="505" width="170" height="78" rx="18" fill="#ecfdf5" stroke="#22c55e" stroke-width="2"/>
+    </g>
+    <text x="1422" y="538" text-anchor="middle" class="small" fill="#9a3412" font-weight="750">HOLD / 待审批</text>
+    <text x="1422" y="561" text-anchor="middle" class="tiny" fill="#c2410c">拒绝或等待 L2 授权</text>
+    <text x="1665" y="538" text-anchor="middle" class="small" fill="#166534" font-weight="750">MERGE / REVERT</text>
+    <text x="1665" y="561" text-anchor="middle" class="tiny" fill="#15803d">仅执行已授权写入</text>
+
+    <!-- Observability plane -->
+    <rect x="60" y="600" width="1710" height="72" rx="22" fill="#eff6ff" stroke="#60a5fa" stroke-width="2"/>
+    <text x="90" y="629" font-size="21" font-weight="700" fill="#1d4ed8">OBSERVABILITY — AgentLoop / SLS（阿里云）</text>
+    <text x="90" y="654" class="card-body muted">OTel span 直连上报 · 委派 W3C traceparent 跨 Agent 关联 · 每轮 450-530 span 零失败 · 网关用量计量</text>
+
+    <!-- State and evidence plane -->
+    <g transform="translate(0 55)">
+    <rect x="60" y="635" width="1710" height="190" rx="28" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
+    <text x="90" y="676" class="lane">STATE · EVIDENCE · KNOWLEDGE PLANE</text>
+
+    <g>
+      <rect x="90" y="700" width="480" height="92" rx="18" fill="#eff6ff" stroke="#60a5fa" stroke-width="2"/>
+      <ellipse cx="142" cy="735" rx="24" ry="10" fill="#2563eb"/>
+      <path d="M118 735 V762 C118 776 166 776 166 762 V735" fill="#2563eb"/>
+      <ellipse cx="142" cy="762" rx="24" ry="10" fill="#1d4ed8"/>
+      <text x="190" y="735" class="card-title ink">PostgreSQL 16</text>
+      <text x="190" y="765" class="small muted">任务状态 · 阶段转换 · Outbox · 审批票据</text>
+    </g>
+
+    <g>
+      <rect x="600" y="700" width="450" height="92" rx="18" fill="#ecfeff" stroke="#22d3ee" stroke-width="2"/>
+      <circle cx="652" cy="746" r="25" fill="#0891b2"/>
+      <path d="M641 751 c10-24 24-24 28-7 c-10 1-18 7-25 15" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
+      <text x="700" y="735" class="card-title ink">pgvector · Retrieval</text>
+      <text x="700" y="759" class="tiny" fill="#0e7490" font-weight="700">设计资产 · 运行时未接入</text>
+      <text x="700" y="782" class="tiny muted">历史案例仅作参考；不替代当次验证</text>
+    </g>
+
+    <g>
+      <rect x="1080" y="700" width="250" height="92" rx="18" fill="#f0fdf4" stroke="#4ade80" stroke-width="2"/>
+      <circle cx="1125" cy="746" r="25" fill="#16a34a"/>
+      <path d="M1112 746 h26 M1125 733 v26" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
+      <text x="1160" y="735" class="card-title ink">MinIO</text>
+      <text x="1160" y="765" class="small muted">对象与配置证据</text>
+    </g> <g>
+      <rect x="1360" y="700" width="360" height="92" rx="18" fill="#f5f3ff" stroke="#a78bfa" stroke-width="2"/>
+      <circle cx="1412" cy="746" r="25" fill="#7c3aed"/>
+      <path d="M1400 746 h24 M1412 734 v24" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
+      <text x="1460" y="735" class="card-title ink">审计证据与 Trace</text>
+      <text x="1460" y="765" class="tiny muted">Finding · Decision · Run · commit</text>
+    </g>
+
+    </g>
   </g>
 </svg>
