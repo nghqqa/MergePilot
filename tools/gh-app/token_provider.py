@@ -318,7 +318,9 @@ class GitHubAppTokenProvider:
         except _NetworkFailure as exc:
             raise TokenExchangeRetryError(
                 "TOKEN_EXCHANGE_NETWORK", "network %s" % exc) from None
-        if status == 200:
+        # GitHub POST /app/installations/{id}/access_tokens 的成功码是
+        # 201 Created(真实 api.github.com 实测;仅认 200 会把成功当终局失败)。
+        if status in (200, 201):
             self._parse_and_store(parsed)
             return
         if status == 401:

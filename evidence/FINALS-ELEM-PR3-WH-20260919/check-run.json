@@ -1,0 +1,17 @@
+{
+ "id": 105848011867,
+ "name": "mergepilot/review",
+ "conclusion": "failure",
+ "html_url": "https://github.com/nghqqa/fastapi-boilerplate-demo/runs/105848011867",
+ "app": "mergepilot-reporter",
+ "output": {
+  "title": "MergePilot review: HIGH finding — human gate REJECTED (blocked, zero fix/verify dispatch)",
+  "summary": "run_id: run-gh-pr3-9fd86556-053436\nverdict: rejected\ntriggered by: pull_request synchronize #3 @ 9fd8655633ba\n\nleader report (excerpt):\n## gate record | # Human Security Gate REJECTION — run-gh-pr3-9fd86556-053436 | - Project: elemiso-gh-pr3-9fd86556 (team elemiso-team) | - Task reviewed: gh-pr3-review-1 (Reviewer, copaw runtime, AgentLoop-traced) | - Head SHA under review: 9fd8655633ba788eee17871c73c43e0bb7ea6b11 (PR #3) | - Gate decision time: 2026-09-19T05:37:57Z (host clock; operator present, decision made via interactive gate prompt) | - Approver: repository/workspace owner (human operator) | - Decision: **HUMAN_SECURITY_REJECTED — no remediation authorized** | ## Confirmed findings (Reviewer result, real execution) | SUM",
+  "text": null,
+  "annotations_count": 0,
+  "annotations_url": "https://api.github.com/repos/nghqqa/fastapi-boilerplate-demo/check-runs/105848011867/annotations"
+ },
+ "started_at": "2026-09-19T05:38:44Z",
+ "completed_at": "2026-09-19T05:38:44Z",
+ "check_suite_url": null
+}

@@ -3114,7 +3114,7 @@ COMMIT;
 CREATE TABLE IF NOT EXISTS public.github_deliveries (
   delivery_id       TEXT PRIMARY KEY
                     CHECK (delivery_id ~ '^[A-Za-z0-9][A-Za-z0-9-]{7,63}$'),
-  event_name        TEXT NOT NULL CHECK (event_name IN ('ping','pull_request','other')),
+  event_name        TEXT NOT NULL CHECK (event_name ~ '^[a-z_]{1,64}$'),  -- 对齐 receiver._EVENT_NAME_RE:交付台账记录一切事件名(push 等记 IGNORED),原 IN('ping','pull_request','other') 与接收端写原始事件名的实现冲突,真实 webhook 流量实证 push 触发 check violation→503
   action            TEXT NOT NULL CHECK (action ~ '^[a-z_]{1,64}$'),
   installation_id   BIGINT CHECK (installation_id IS NULL OR installation_id > 0),
   repo              TEXT CHECK (repo IS NULL OR repo ~ '^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$'),
@@ -3137,12 +3137,13 @@ CREATE TABLE IF NOT EXISTS public.github_deliveries (
   received_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
   processed_at      TIMESTAMPTZ,
   -- 映射事件必须携带完整最小 envelope(ping/other 允许缺省):
+  -- installation_id 仅 GitHub App webhook 载荷携带(Phase 2);repo webhook(Phase 1)
+  -- 无 installation 对象,实测强约束会把真实 pull_request 交付挡成 503,故不作为必需字段。
   CONSTRAINT gh_deliveries_pull_request_envelope CHECK (
     event_name <> 'pull_request' OR (
-      installation_id IS NOT NULL AND repo IS NOT NULL
+      repo IS NOT NULL
       AND pr_number IS NOT NULL AND observed_head_sha IS NOT NULL
-      AND observed_base_sha IS NOT NULL AND action IN
-        ('opened','synchronize','reopened'))
+      AND observed_base_sha IS NOT NULL)  -- 动作白名单由 receiver.classify 裁决;DB 约束不重复 enforce(closed/assigned 等非映射动作按 IGNORED 记账)
   )
 );
 

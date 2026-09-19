@@ -1,0 +1,17 @@
+{
+ "id": 105847205375,
+ "name": "mergepilot/review",
+ "conclusion": "success",
+ "html_url": "https://github.com/nghqqa/fastapi-boilerplate-demo/runs/105847205375",
+ "app": "mergepilot-reporter",
+ "output": {
+  "title": "MergePilot review: HIGH → human gate APPROVED → fix → VERIFIED",
+  "summary": "run_id: run-gh-pr2-1414edbe-052650\nverdict: pass_verified\ntriggered by: pull_request synchronize #2 @ 1414edbe5136\n\nleader report (excerpt):\n# Project Result: PR #2 webhook review | - **Project ID**: elemiso-gh-pr2-1414edbe | - **Run ID**: run-gh-pr2-1414edbe-052650 | - **Requester**: admin (Team Admin, via Leader DM) | - **Repo**: https://github.com/nghqqa/fastapi-boilerplate-demo | - **PR**: #2 (head SHA '1414edbe513620262b31372ed1af4027be5888d1', merge-base base '4cd5bf099f88c3f3f85ee4c06b7adfe9925a6e5c') | - **Status**: COMPLETE — all DAG nodes accepted | - **Human security gate**: APPROVED (2026-09-19T05:29:44Z; remediation authorized) | ## Outcome | A HIGH-severity CWE-22 path traversal was independently confirmed, a minimal ",
+  "text": null,
+  "annotations_count": 0,
+  "annotations_url": "https://api.github.com/repos/nghqqa/fastapi-boilerplate-demo/check-runs/105847205375/annotations"
+ },
+ "started_at": "2026-09-19T05:31:54Z",
+ "completed_at": "2026-09-19T05:31:54Z",
+ "check_suite_url": null
+}
