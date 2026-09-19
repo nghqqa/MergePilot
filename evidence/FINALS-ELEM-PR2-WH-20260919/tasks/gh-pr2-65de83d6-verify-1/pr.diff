@@ -1,0 +1,152 @@
+diff --git a/README.md b/README.md
+index ccfaca5..cf69e33 100644
+--- a/README.md
++++ b/README.md
+@@ -226,3 +226,13 @@ Benav Labs – [benav.io](https://benav.io), [discord server](https://discord.co
+     <img src="docs/assets/benav-labs-banner-light.png" alt="Benav Labs - benav.io" width="100%"/>
+   </picture>
+ </a>
++
++<!-- webhook pipeline re-run trigger (no content change) 2026-09-19T05:26:30Z -->
++
++<!-- full-toolchain re-run trigger 06:44:05Z -->
++
++<!-- final evidence round trigger 07:45:03Z -->
++
++<!-- final rag evidence round 08:33:32Z -->
++
++<!-- complete-toolchain final 08:50:49Z -->
+diff --git a/backend/src/interfaces/api/v1/demo_high_risk.py b/backend/src/interfaces/api/v1/demo_high_risk.py
+new file mode 100644
+index 0000000..59cd8d1
+--- /dev/null
++++ b/backend/src/interfaces/api/v1/demo_high_risk.py
+@@ -0,0 +1,42 @@
++"""SECURITY DEMO — DO NOT USE IN PRODUCTION.
++
++Competition demonstration file (high-risk human-gate scenario).
++
++This module intentionally contains a HIGH-RISK path-traversal vulnerability in
++``demo_download``: user-controlled ``name`` is joined to the base directory
++without normalization or containment checks, so ``../`` sequences escape the
++demo base directory and read arbitrary files readable by the process.
++
++Rules for this demo:
++- No real credentials exist in or around this file.
++- The accompanying test (tests/unit/test_demo_high_risk_path_traversal.py)
++  reproduces the leak with throwaway temp files only.
++- The flaw must be identified by the Reviewer agent and only fixed after an
++  explicit human security approval (competition human-gate scenario).
++"""
++
++from __future__ import annotations
++
++import os
++
++from fastapi import APIRouter
++from fastapi.responses import FileResponse
++
++router = APIRouter(tags=["SecurityDemo"])
++
++# Base directory served by the demo download endpoint.
++DEMO_FILES_DIR = os.path.join(os.path.dirname(__file__), "demo_files_base")
++
++
++@router.get(
++    "/demo/download",
++    summary="SECURITY DEMO: file download (intentionally vulnerable)",
++    description=(
++        "Competition demo endpoint. ``name`` is unsanitized: '../' sequences "
++        "escape DEMO_FILES_DIR (path traversal / arbitrary file read)."
++    ),
++)
++async def demo_download(name: str) -> FileResponse:
++    # VULNERABLE (intentional): no containment check on the resolved path.
++    file_path = os.path.join(DEMO_FILES_DIR, name)
++    return FileResponse(file_path, filename=name)
+diff --git a/backend/tests/unit/test_demo_high_risk_path_traversal.py b/backend/tests/unit/test_demo_high_risk_path_traversal.py
+new file mode 100644
+index 0000000..a1db63a
+--- /dev/null
++++ b/backend/tests/unit/test_demo_high_risk_path_traversal.py
+@@ -0,0 +1,80 @@
++"""SECURITY DEMO — minimal reproduction of the high-risk path traversal.
++
++Competition demonstration test: proves that ``demo_download`` leaks files
++OUTSIDE the demo base directory via ``../`` traversal. Throwaway temp files
++only; no real credentials. The Fixer must later invert the assertions after
++adding containment (the current vulnerable behavior returns the file).
++"""
++
++from __future__ import annotations
++
++import importlib.util
++from pathlib import Path
++
++import pytest
++
++_MODULE_PATH = (
++    Path(__file__).resolve().parents[2]
++    / "src"
++    / "interfaces"
++    / "api"
++    / "v1"
++    / "demo_high_risk.py"
++)
++
++
++def _load_demo_module():
++    spec = importlib.util.spec_from_file_location("demo_high_risk", _MODULE_PATH)
++    module = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(module)  # type: ignore[union-attr]
++    return module
++
++
++def _client():
++    from fastapi import FastAPI
++    from fastapi.testclient import TestClient
++
++    demo = _load_demo_module()
++    app = FastAPI()
++    app.include_router(demo.router, prefix="/demo-security")
++    return TestClient(app), demo
++
++
++@pytest.mark.security_demo
++def test_high_risk_path_traversal_reproduces(tmp_path, monkeypatch):
++    """Reproduces the flaw: '../' escapes the base dir and returns the file."""
++    client, demo = _client()
++    base = tmp_path / "demo-files"
++    base.mkdir(parents=True)
++    outside = tmp_path / "outside"
++    outside.mkdir()
++    secret = outside / "outside-secret.txt"
++    secret.write_text("TOP-SECRET-OUTSIDE-BASE", encoding="utf-8")
++    monkeypatch.setattr(demo, "DEMO_FILES_DIR", str(base))
++
++    r = client.get(
++        "/demo-security/demo/download",
++        params={"name": "../outside/outside-secret.txt"},
++    )
++
++    assert r.status_code == 200, r.text
++    assert "TOP-SECRET-OUTSIDE-BASE" in r.text
++
++
++@pytest.mark.security_demo
++def test_high_risk_path_traversal_depth(tmp_path, monkeypatch):
++    """Deeper nesting still escapes (reproduces the missing containment)."""
++    client, demo = _client()
++    base = tmp_path / "demo-files"
++    (base / "sub").mkdir(parents=True)
++    outside = tmp_path
++    (outside / "deep-secret.txt").write_text("DEEP-SECRET", encoding="utf-8")
++    monkeypatch.setattr(demo, "DEMO_FILES_DIR", str(base / "sub"))
++
++    r = client.get(
++        "/demo-security/demo/download",
++        params={"name": "../../../deep-secret.txt"},
++    )
++
++    assert r.status_code == 200, r.text
++    assert "DEEP-SECRET" in r.text

@@ -1,81 +1,133 @@
 {
- "run": "run-gh-pr2-e9731abd-064416",
+ "run": "run-gh-pr2-65de83d6-085056",
  "window": [
-  "2026-09-19T06:44",
-  "2026-09-19T06:56"
+  "2026-09-19T08:50:56Z",
+  "2026-09-19T09:20:00Z"
  ],
  "invocations": [
   {
    "tool": "skill_diff_parse",
-   "arguments_hash": "req-25ea1623b0",
+   "arguments_hash": "req-5c4ec815e1",
    "result_status": "ERROR",
    "document_count": 0,
-   "latency_ms": 92,
+   "latency_ms": 171,
    "data_mode": "DETERMINISTIC_SKILL",
    "source_refs": [
     "skills/diff_parse"
    ],
-   "ts": "2026-09-19T06:44:35.714Z"
+   "ts": "2026-09-19T08:51:25.140Z"
+  },
+  {
+   "tool": "skill_diff_parse",
+   "arguments_hash": "req-1a3e61e3cd",
+   "result_status": "OK",
+   "document_count": 0,
+   "latency_ms": 212,
+   "data_mode": "DETERMINISTIC_SKILL",
+   "source_refs": [
+    "skills/diff_parse"
+   ],
+   "ts": "2026-09-19T08:51:30.095Z"
   },
   {
    "tool": "skill_sast_scan",
-   "arguments_hash": "req-afd6afabb7",
+   "arguments_hash": "req-ca1b4b83a7",
    "result_status": "OK",
    "document_count": 0,
-   "latency_ms": 80,
+   "latency_ms": 159,
    "data_mode": "DETERMINISTIC_SKILL",
    "source_refs": [
     "skills/sast_scan"
    ],
-   "ts": "2026-09-19T06:44:38.294Z"
+   "ts": "2026-09-19T08:51:31.614Z"
+  },
+  {
+   "tool": "skill_sast_scan",
+   "arguments_hash": "req-343f24f275",
+   "result_status": "OK",
+   "document_count": 0,
+   "latency_ms": 153,
+   "data_mode": "DETERMINISTIC_SKILL",
+   "source_refs": [
+    "skills/sast_scan"
+   ],
+   "ts": "2026-09-19T09:13:09.800Z"
   },
   {
    "tool": "skill_diff_parse",
-   "arguments_hash": "req-e65912f949",
+   "arguments_hash": "req-c9d18421d0",
    "result_status": "OK",
    "document_count": 0,
-   "latency_ms": 82,
+   "latency_ms": 137,
    "data_mode": "DETERMINISTIC_SKILL",
    "source_refs": [
     "skills/diff_parse"
    ],
-   "ts": "2026-09-19T06:44:53.889Z"
+   "ts": "2026-09-19T09:13:09.943Z"
   },
   {
    "tool": "skill_risk_classify",
-   "arguments_hash": "req-85aed2c389",
+   "arguments_hash": "req-fecf3e0db2",
    "result_status": "OK",
    "document_count": 0,
-   "latency_ms": 71,
+   "latency_ms": 137,
    "data_mode": "DETERMINISTIC_SKILL",
    "source_refs": [
     "skills/risk_classify"
    ],
-   "ts": "2026-09-19T06:44:56.349Z"
+   "ts": "2026-09-19T09:13:12.268Z"
   },
   {
    "tool": "skill_diff_parse",
-   "arguments_hash": "req-6762e74107",
+   "arguments_hash": "req-f1443596df",
    "result_status": "OK",
    "document_count": 0,
-   "latency_ms": 92,
+   "latency_ms": 151,
    "data_mode": "DETERMINISTIC_SKILL",
    "source_refs": [
     "skills/diff_parse"
    ],
-   "ts": "2026-09-19T06:53:24.065Z"
+   "ts": "2026-09-19T09:18:35.249Z"
   },
   {
-   "tool": "skill_risk_classify",
-   "arguments_hash": "req-ff789618c6",
+   "tool": "skill_sast_scan",
+   "arguments_hash": "req-0f14e5d39a",
    "result_status": "OK",
    "document_count": 0,
-   "latency_ms": 84,
+   "latency_ms": 166,
    "data_mode": "DETERMINISTIC_SKILL",
    "source_refs": [
-    "skills/risk_classify"
+    "skills/sast_scan"
    ],
-   "ts": "2026-09-19T06:53:27.141Z"
+   "ts": "2026-09-19T09:18:36.788Z"
+  },
+  {
+   "tool": "rag.retrieve",
+   "arguments_hash": "132afabf0719ce86",
+   "result_status": "OK",
+   "document_count": 3,
+   "latency_ms": 1,
+   "data_mode": "SYNTHETIC",
+   "source_refs": [
+    "org-standards/cwe-78-command-injection.md#1",
+    "org-standards/command-execution.md#1",
+    "org-standards/cwe-78-command-injection.md#2"
+   ],
+   "ts": "2026-09-19T09:18:44.081Z"
+  },
+  {
+   "tool": "rag.retrieve",
+   "arguments_hash": "132afabf0719ce86",
+   "result_status": "OK",
+   "document_count": 3,
+   "latency_ms": 12,
+   "data_mode": "SYNTHETIC",
+   "source_refs": [
+    "org-standards/cwe-78-command-injection.md#1",
+    "org-standards/command-execution.md#1",
+    "org-standards/cwe-78-command-injection.md#2"
+   ],
+   "ts": "2026-09-19T09:18:44.085Z"
   }
  ]
 }

@@ -1,0 +1,15 @@
+{
+  "task_id": "gh-pr2-65de83d6-verify-1",
+  "project_id": "elemiso-gh-pr2-65de83d6",
+  "task_title": "Independent verification only if fix authorized and accepted",
+  "assigned_to": "verifier",
+  "room_id": "room:!RErK7WVs9iUeaszwho:elemiso-matrix:6167",
+  "status": "submitted",
+  "depends_on": [
+    "gh-pr2-65de83d6-fix-1"
+  ],
+  "assigned_at": "2026-09-19T09:12:38Z",
+  "acknowledged_at": "2026-09-19T09:12:39Z",
+  "submitted_at": "2026-09-19T09:13:24Z",
+  "event_id": "$2-L7cxS_o1dsmLPceYBK85_jcqEi2-qeBqO-nXhdbpw"
+}

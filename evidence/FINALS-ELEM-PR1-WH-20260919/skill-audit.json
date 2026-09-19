@@ -1,21 +1,33 @@
 {
- "run": "run-gh-pr1-0fae3afd-070752",
+ "run": "run-gh-pr1-575aa8e1-093022",
  "window": [
-  "2026-09-19T07:07",
-  "2026-09-19T07:20"
+  "2026-09-19T09:30:22Z",
+  "2026-09-19T09:32:00Z"
  ],
  "invocations": [
   {
-   "tool": "skill_sast_scan",
-   "arguments_hash": "req-6f38bb2a60",
+   "tool": "skill_diff_parse",
+   "arguments_hash": "req-097b52d7c6",
    "result_status": "OK",
    "document_count": 0,
-   "latency_ms": 78,
+   "latency_ms": 181,
+   "data_mode": "DETERMINISTIC_SKILL",
+   "source_refs": [
+    "skills/diff_parse"
+   ],
+   "ts": "2026-09-19T09:30:51.476Z"
+  },
+  {
+   "tool": "skill_sast_scan",
+   "arguments_hash": "req-7d94dfd74c",
+   "result_status": "OK",
+   "document_count": 0,
+   "latency_ms": 155,
    "data_mode": "DETERMINISTIC_SKILL",
    "source_refs": [
     "skills/sast_scan"
    ],
-   "ts": "2026-09-19T07:08:12.528Z"
+   "ts": "2026-09-19T09:30:53.402Z"
   }
  ]
 }
