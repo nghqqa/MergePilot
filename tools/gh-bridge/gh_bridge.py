@@ -115,7 +115,7 @@ def seed_project(proj, task, d, run):
             and minio_put(f"{base}/plan.md", plan))
 
 
-def wake_workers(names=("leader", "reviewer")):
+def wake_workers(names=("leader", "reviewer", "fixer", "verifier")):
     for n in names:
         # agt worker wake 只认 --name(status 才认 --team,CLI 不一致)
         subprocess.run(["docker", "exec", "elemiso-ctrl", "agt", "worker", "wake",
@@ -173,12 +173,46 @@ def build_kickoff(d):
     return run, proj, task, kickoff
 
 
+def project_status(proj):
+    """轮询项目 meta.json 的权威生命周期状态(completed/blocked/...)."""
+    p = subprocess.run(["docker", "exec", "elemiso-ctrl", "mc", "cat",
+                        f"{BUCKET}/teams/elemiso-team/shared/projects/{proj}/meta.json"],
+                       capture_output=True, text=True, timeout=30)
+    if p.returncode != 0 or not p.stdout.strip():
+        return None
+    try:
+        return json.loads(p.stdout).get("status")
+    except Exception:
+        return None
+
+
+def project_result(proj):
+    p = subprocess.run(["docker", "exec", "elemiso-ctrl", "mc", "cat",
+                        f"{BUCKET}/teams/elemiso-team/shared/projects/{proj}/result.md"],
+                       capture_output=True, text=True, timeout=30)
+    return (p.stdout or "").strip() if p.returncode == 0 else ""
+
+
+def gate_record(proj, kind):
+    p = subprocess.run(["docker", "exec", "elemiso-ctrl", "mc", "cat",
+                        f"{BUCKET}/teams/elemiso-team/shared/projects/{proj}/human-gate-{kind}.md"],
+                       capture_output=True, text=True, timeout=30)
+    return (p.stdout or "").strip() if p.returncode == 0 else ""
+
+
 def watch_run(run, proj, deadline_ts):
-    """轮询团队房+Leader DM,返回 (verdict, evidence_body)."""
+    """终态以项目 meta.json 权威状态为准(completed/blocked);房间消息仅作进度线索."""
     t0_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 5))
-    seen = set()
-    review_done, report = False, None
+    seen, report = set(), None
     while time.time() < deadline_ts:
+        st = project_status(proj)
+        if st in ("completed", "blocked", "cancelled"):
+            # 终态后再宽限数秒,让 result.md/gate 记录发布完整
+            for _ in range(6):
+                if project_result(proj):
+                    break
+                time.sleep(5)
+            return st, report or ""
         for rid in (TEAM_ROOM, DM_ROOM):
             try:
                 evs = mx.since(rid, t0_iso)
@@ -189,40 +223,12 @@ def watch_run(run, proj, deadline_ts):
                     continue
                 seen.add(ev["event_id"])
                 body = ev["body"]
-                if f"TASK_COMPLETED: {run}-review" in body:
-                    review_done = True
-                # Leader 终报:强标记(状态报告/最终报告/已完成)且篇幅足够长——
-                # 裸 completed/blocked 会让中间进度消息("not blocked")被误判为终报
                 if ((run in body or proj in body) and ev["sender"].startswith("@leader")
                         and len(body) > 300
                         and any(k in body for k in ("已完成", "状态报告", "最终报告"))):
                     report = body
-        if report:
-            break
         time.sleep(WATCH_POLL_S)
-    if not report:
-        return "timeout", review_done and "review completed, no leader report" or ""
-    # 判读以权威产物 result.md 为准(Leader 报告可能含 "not blocked" 之类子串陷阱)
-    rm = ""
-    for _ in range(6):  # result.md 可能在报告后数秒才发布
-        p = subprocess.run(["docker", "exec", "elemiso-ctrl", "mc", "cat",
-                            f"{BUCKET}/teams/elemiso-team/shared/projects/{proj}/result.md"],
-                           capture_output=True, text=True, timeout=30)
-        rm = p.stdout or ""
-        if "Outcome" in rm or "STATUS" in rm or "review" in rm.lower():
-            break
-        time.sleep(5)
-    src = rm if rm.strip() else report
-    m_s = re.search(r"(FINDING_CONFIRMED|NOT_CONFIRMED)", src)
-    m_v = re.search(r"SEVERITY[:\s]*\**\s*(HIGH|MEDIUM|LOW)", src) or \
-        re.search(r"\b(HIGH|MEDIUM|LOW)\b\s*/\s*HUMAN", src)
-    m_h = re.search(r"HUMAN_VERIFICATION_REQUIRED[:\s]*\**\s*(YES|NO)", src)
-    if m_h and m_h.group(1) == "YES":
-        return "high", src
-    if m_s and m_s.group(1) == "FINDING_CONFIRMED" and m_v and m_v.group(1) == "HIGH":
-        return "high", src
-    # 检测层已要求强终报标记;到达即视为项目闭环
-    return "pass", src
+    return "timeout", report or ""
 
 
 # ── 回写:经服务器 reporter 容器以 App 身份 POST check-run ───────────────────
@@ -245,7 +251,11 @@ print(json.dumps({'http': r.status, 'check_run_id': d['id'], 'url': d['html_url'
 def post_check(d, verdict, report, run):
     concl, title = {
         "pass": ("success", "MergePilot review: passed (auto-completed)"),
+        "pass_verified": ("success",
+                          "MergePilot review: HIGH → human gate APPROVED → fix → VERIFIED"),
         "high": ("action_required", "MergePilot review: HIGH finding — human gate required"),
+        "rejected": ("failure",
+                     "MergePilot review: HIGH finding — human gate REJECTED (blocked, zero fix/verify dispatch)"),
         "gate": ("action_required", "MergePilot review: stopped at human gate"),
         "timeout": ("neutral", "MergePilot review: bridge timeout (manual check needed)"),
     }[verdict]
@@ -299,11 +309,23 @@ def process(d, timeout_min, dry):
         finish(d, False, "kickoff send failed: " + str(r.get("error"))[:120])
         return
     log("kickoff sent:", r["event_id"])
-    verdict, report = watch_run(run, proj, time.time() + timeout_min * 60)
-    log("verdict:", verdict)
-    cr = post_check(d, verdict, report, run)
+    st, report = watch_run(run, proj, time.time() + timeout_min * 60)
+    # 终态→结论,以权威产物(meta.json 状态 + result.md + gate 记录)裁决
+    if st == "completed":
+        verdict = "pass_verified" if gate_record(proj, "approval") else "pass"
+    elif st == "blocked":
+        verdict = "rejected"
+    else:
+        verdict = "timeout"
+    evidence = "\n\n".join(x for x in [
+        project_result(proj),
+        "## gate record\n" + (gate_record(proj, "approval") or gate_record(proj, "rejection")),
+        "## leader report\n" + (report or ""),
+    ] if x.strip())
+    log("terminal:", st, "-> verdict:", verdict)
+    cr = post_check(d, verdict, evidence, run)
     log("check-run:", cr)
-    finish(d, verdict in ("pass", "high", "gate"), f"{verdict}; {cr[:150]}")
+    finish(d, st in ("completed", "blocked"), f"{st}/{verdict}; {cr[:150]}")
 
 
 def main():
