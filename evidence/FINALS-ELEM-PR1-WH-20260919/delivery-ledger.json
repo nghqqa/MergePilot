@@ -1,1 +1,16 @@
-[]
+[
+ {
+  "delivery_id": "b450d6c0-b40c-11f1-9dfd-8130a8dfad4c",
+  "event_name": "pull_request",
+  "action": "synchronize",
+  "repo": "nghqqa/fastapi-boilerplate-demo",
+  "pr_number": 1,
+  "observed_head_sha": "575aa8e13146998da65a8f62816740dbb5e539ca",
+  "observed_base_sha": "fdde4f4142606336c7b7b25f176949dc5882d89a",
+  "status": "PROCESSED",
+  "error": "completed/pass; Connection closed by 159.75.42.106 port 22",
+  "received_at": "2026-09-19T09:30:18.187502+00:00",
+  "claimed_at": "2026-09-19T09:30:22.467332+00:00",
+  "processed_at": "2026-09-19T09:31:26.814+00:00"
+ }
+]

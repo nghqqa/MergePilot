@@ -1,8 +1,8 @@
 {
  "run": "run-gh-pr2-65de83d6-085056",
  "window": [
-  "2026-09-19T08:50:56Z",
-  "2026-09-19T09:20:00Z"
+  "2026-09-19T08:50:55Z",
+  "2026-09-19T09:17:50Z"
  ],
  "invocations": [
   {
@@ -76,58 +76,7 @@
     "skills/risk_classify"
    ],
    "ts": "2026-09-19T09:13:12.268Z"
-  },
-  {
-   "tool": "skill_diff_parse",
-   "arguments_hash": "req-f1443596df",
-   "result_status": "OK",
-   "document_count": 0,
-   "latency_ms": 151,
-   "data_mode": "DETERMINISTIC_SKILL",
-   "source_refs": [
-    "skills/diff_parse"
-   ],
-   "ts": "2026-09-19T09:18:35.249Z"
-  },
-  {
-   "tool": "skill_sast_scan",
-   "arguments_hash": "req-0f14e5d39a",
-   "result_status": "OK",
-   "document_count": 0,
-   "latency_ms": 166,
-   "data_mode": "DETERMINISTIC_SKILL",
-   "source_refs": [
-    "skills/sast_scan"
-   ],
-   "ts": "2026-09-19T09:18:36.788Z"
-  },
-  {
-   "tool": "rag.retrieve",
-   "arguments_hash": "132afabf0719ce86",
-   "result_status": "OK",
-   "document_count": 3,
-   "latency_ms": 1,
-   "data_mode": "SYNTHETIC",
-   "source_refs": [
-    "org-standards/cwe-78-command-injection.md#1",
-    "org-standards/command-execution.md#1",
-    "org-standards/cwe-78-command-injection.md#2"
-   ],
-   "ts": "2026-09-19T09:18:44.081Z"
-  },
-  {
-   "tool": "rag.retrieve",
-   "arguments_hash": "132afabf0719ce86",
-   "result_status": "OK",
-   "document_count": 3,
-   "latency_ms": 12,
-   "data_mode": "SYNTHETIC",
-   "source_refs": [
-    "org-standards/cwe-78-command-injection.md#1",
-    "org-standards/command-execution.md#1",
-    "org-standards/cwe-78-command-injection.md#2"
-   ],
-   "ts": "2026-09-19T09:18:44.085Z"
   }
- ]
+ ],
+ "_note": "窗口严格按本案 run(kickoff→check run);源为本包原锁定导出(会话累计口径),重切于 2026-09-19 勘误(见 CORRECTIONS.md)"
 }
