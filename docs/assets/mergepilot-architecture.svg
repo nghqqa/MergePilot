@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1800" height="900" viewBox="0 0 1800 900" role="img" aria-labelledby="title desc">
   <title id="title">MergePilot 多 Agent PR 审修与风险治理系统架构</title>
-  <desc id="desc">MergePilot 当前运行架构，依据提供的架构说明更新。GitHub PR 通过匿名 HTTPS 只读获取，Agent 不持有 GitHub 凭据。AgentTeams 控制面管理 Worker CR、动态容器与审计汇聚，包含 Matrix、MinIO、Higress。Leader 编排，Reviewer 独立审查，Fixer 授权后修复，Verifier 独立验证；Reviewer-b 用于双审查实验。每个 Agent 通过独立 MCP 客户端按需调用工具，diff-parse、risk-classify、sast-scan、test-runner、case-retrieval 已接入，test-runner 尚未正式调用，pr-lifecycle 待受控写入通道集成。case-retrieval 已连接 PostgreSQL 与 pgvector 历史案例库，只读查询；独立 RAG 通道提供组织规范引用。人工门批准后开放修复派发，拒绝则锁定后续任务。交付补丁与独立验证报告，不自动合并。AgentLoop 与阿里云 SLS 提供模型与工具追踪、跨 Agent 属性级关联和用量计量。Workflow Controller 与任务状态数据库属于赛后集成范围，独立于当前 AgentTeams 控制面。</desc>
+  <desc id="desc">MergePilot 当前运行架构，依据提供的架构说明更新。GitHub PR 事件经公网 webhook 入口（HMAC 验签、交付台账）自动触发；gh-bridge 完成播种、唤醒与 kickoff，并按权威产物判读终态。Agent 不持有 GitHub 凭据；结论由 GitHub App（仅 Checks 读写）以 check run 回写 PR，与 CI 并排，无 merge 权限。AgentTeams 控制面管理 Worker CR、动态容器与审计汇聚，包含 Matrix、MinIO、Higress。Leader 编排，Reviewer 独立审查，Fixer 授权后修复，Verifier 独立验证；Reviewer-b 用于双审查实验。每个 Agent 通过独立 MCP 客户端按需调用工具，diff-parse、risk-classify、sast-scan、test-runner、case-retrieval 已接入，test-runner 尚未正式调用，pr-lifecycle 待受控写入通道集成。case-retrieval 已连接 PostgreSQL 与 pgvector 历史案例库，只读查询；独立 RAG 通道提供组织规范引用。人工门批准后开放修复派发，拒绝则锁定后续任务。交付补丁与独立验证报告，不自动合并。AgentLoop 与阿里云 SLS 提供模型与工具追踪、跨 Agent 属性级关联和用量计量。Workflow Controller 与任务状态数据库属于赛后集成范围，独立于当前 AgentTeams 控制面。</desc>
 
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
@@ -32,6 +32,9 @@
     <marker id="arrowBlue" markerWidth="10" markerHeight="10" refX="10" refY="5" orient="auto" markerUnits="userSpaceOnUse">
       <path d="M0,0 L10,5 L0,10 Z" fill="#2563eb"/>
     </marker>
+    <marker id="arrowGreen" markerWidth="10" markerHeight="10" refX="10" refY="5" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#16a34a"/>
+    </marker>
     <style>
       .font { font-family: "Noto Sans SC", "Microsoft YaHei", "Segoe UI", "PingFang SC", Arial, sans-serif; font-kerning: normal; }
       .title { font-size: 40px; font-weight: 700; fill: #0f172a; }
@@ -54,7 +57,7 @@
 
   <g class="font">
     <text x="70" y="70" class="title">MergePilot · 多 Agent PR 审修与风险治理闭环</text>
-    <text x="70" y="110" class="subtitle">控制面管理运行，Agent 分工审查与修复，人工门约束派发，独立验证后交付补丁与报告。</text>
+    <text x="70" y="110" class="subtitle">webhook 自动触发，Agent 分工审查与修复，人工门约束派发，独立验证后结论回写 PR —— 不自动合并。</text>
 
     <g transform="translate(70 132)">
       <rect width="164" height="28" rx="14" fill="#dbeafe"/>
@@ -83,8 +86,9 @@
     </g>
     <circle cx="145" cy="315" r="22" fill="#111827"/>
     <path d="M136 307 v18 M136 307 a7 7 0 1 0 0-14 M136 325 a7 7 0 1 0 0 14 M136 316 h18 a7 7 0 1 0 0-14" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
-    <text x="145" y="366" text-anchor="middle" class="card-title ink">GitHub PR</text>
-    <text x="145" y="396" text-anchor="middle" class="small muted">匿名 HTTPS · 只读获取</text>
+    <text x="145" y="360" text-anchor="middle" class="card-title ink">GitHub PR</text>
+    <text x="145" y="388" text-anchor="middle" class="small muted">webhook 事件 · HMAC 验签</text>
+    <text x="145" y="412" text-anchor="middle" class="tiny" fill="#166534" font-weight="700">check run 回写 ✅ / ❌</text>
 
     <!-- Controller -->
     <g filter="url(#shadow)">
@@ -101,9 +105,13 @@
     <g filter="url(#shadow)">
       <rect x="285" y="495" width="665" height="90" rx="22" fill="url(#controller)"/>
     </g>
-    <text x="310" y="524" font-size="21" font-weight="700" class="white">Workflow Controller · 赛后集成</text>
-    <text x="310" y="549" class="small" fill="#dbeafe">PR 状态机 · 事件桥 · 生命周期管理</text>
-    <text x="310" y="572" class="tiny white">与 AgentTeams 控制面独立 · GitHub 受控写入通道待集成</text>
+    <line x1="938" y1="507" x2="938" y2="573" stroke="#ffffff" stroke-opacity="0.25" stroke-width="2"/>
+    <text x="310" y="522" font-size="21" font-weight="700" class="white">Webhook 入口 + gh-bridge · 已接入</text>
+    <text x="310" y="546" class="small" fill="#dbeafe">HMAC 验签 · 交付台账 · 播种 / 唤醒 / kickoff · 终态判读（公网自托管）</text>
+    <text x="310" y="570" class="tiny white">受控写入已接入：GitHub App 仅 Checks 读写 · check run 回写 PR · 无 merge 权限</text>
+    <text x="962" y="522" font-size="17" font-weight="700" class="white">Workflow Controller</text>
+    <text x="962" y="546" class="tiny" fill="#dbeafe">完整 PR 状态机 · 事件桥 · 生命周期</text>
+    <text x="962" y="570" class="tiny" fill="#bfdbfe">赛后集成（当前由 gh-bridge 轻量承担）</text>
 
     <!-- Agent runtime -->
     <g filter="url(#shadow)">
@@ -169,17 +177,22 @@
     <g filter="url(#shadow)">
       <rect x="1580" y="275" width="170" height="150" rx="22" fill="#ffffff" stroke="#fb923c" stroke-width="2.5"/>
     </g>
-    <text x="1665" y="326" text-anchor="middle" class="card-title ink">补丁与验证报告</text>
-<text x="1665" y="358" text-anchor="middle" class="small muted">最小修复 · 独立验收</text>
-    <rect x="1605" y="378" width="120" height="27" rx="13" fill="#dcfce7"/>
-    <text x="1665" y="397" text-anchor="middle" class="tiny" fill="#166534" font-weight="750">不自动合并</text>
+    <text x="1665" y="320" text-anchor="middle" class="card-title ink">补丁与验证报告</text>
+<text x="1665" y="348" text-anchor="middle" class="small muted">最小修复 · 独立验收</text>
+    <text x="1665" y="372" text-anchor="middle" class="tiny" fill="#166534" font-weight="700">check run 回写 PR · 与 CI 并排</text>
+    <rect x="1605" y="386" width="120" height="27" rx="13" fill="#dcfce7"/>
+    <text x="1665" y="405" text-anchor="middle" class="tiny" fill="#166534" font-weight="750">不自动合并</text>
     <text x="1665" y="264" text-anchor="middle" class="tiny" fill="#166534">Agent 不持有 GitHub 凭据</text>
 
+
+    <!-- check run write-back loop (GitHub App, Checks RW only) -->
+    <path d="M1665 275 V240 H145 V271" fill="none" stroke="#16a34a" stroke-width="2.5" stroke-dasharray="7 6" marker-end="url(#arrowGreen)"/>
+    <text x="905" y="232" text-anchor="middle" class="tiny" fill="#166534" font-weight="700">check run 回写（GitHub App · 仅 Checks 读写 · 结论与 CI 并排）</text>
 
     <!-- Main connectors -->
     <path d="M236 350 H279" class="connector"/>
     <path d="M425 456 V489" class="state-link"/>
-    <text x="444" y="477" class="tiny" fill="#2563eb">规划集成</text>
+    <text x="444" y="477" class="tiny" fill="#2563eb">桥接已接入</text>
     <path d="M571 350 H614" class="connector"/>
     <path d="M956 350 H999" class="connector"/>
     <path d="M1256 350 H1304" class="connector"/>
