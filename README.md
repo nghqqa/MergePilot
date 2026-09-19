@@ -2,7 +2,9 @@
 
 **多 Agent 代码与数据库变更安全闭环系统**
 
-普通变更，AI 自主完成。高危变更，系统停下等人工。
+PR 一提交，webhook 自动触发审查：AI 独立复现、确定性 Skill 算事实、RAG 查组织规范、
+结论以 check run 回写 PR（与 CI 并排）。普通变更自动完成；高危变更停下等人工；
+系统无 merge 权限——合并永远归维护者。
 
 [![AgentLoop Cloud Trace](https://img.shields.io/badge/AgentLoop_Cloud_Trace-VERIFIED_LIVE_CLOUD-brightgreen)](#agentloop-云端-trace)
 [![Three Safety Paths](https://img.shields.io/badge/Three_Safety_Paths-VERIFIED-brightgreen)](#三条安全决策路径)
@@ -19,7 +21,7 @@
 
 **Demo 视频（75 秒 · 1080p · 中文旁白，早期版本界面）**：[Watch Demo](https://github.com/nghqqa/MergePilot/releases/download/v0.2.0/MergePilot-demo.mp4)
 
-![MergePilot 决赛演示：两个 V3 核心案例（FastAPI PR #2 · RAG 接入 + AgentLoop v3 追踪，批准路径 VERIFIED / FastAPI PR #3 · 人工拒绝，blocked 零派发），另附机制验证与数据库迁移附录案例，每张卡标注执行性质与证据等级](docs/assets/readme/portfolio-overview-v3.png)
+![MergePilot 决赛演示：三案例主线（PR #1 低风险自动 / PR #2 高危批准 VERIFIED / PR #3 高危拒绝 blocked），webhook 自动触发 + Skill/RAG/AgentLoop 全链，结论回写 PR check run；另附机制验证与数据库迁移附录，每张卡标注执行性质与证据等级](docs/assets/readme/portfolio-overview-v3.png)
 
 **在线体验**：`git clone` 后执行 `cd demo-platform && node backend/server.mjs`，访问 `http://127.0.0.1:4173`（若该端口落在 Windows 保留段被拒，服务会自动顺延并在控制台打印实际地址）。零第三方依赖，无需 `npm install`。也可下载离线演示包（两案例最新版，含 25 个 SHA256SUMS 锁定证据目录与一键启动脚本，见 Releases）。
 
@@ -39,7 +41,7 @@ cd MergePilot/demo-platform
 node backend/server.mjs        # 打开 http://127.0.0.1:4173
 ```
 
-Node.js ≥ 18 即可，无需 `npm install`：前端已预构建（`frontend/dist/`），两个核心案例（确定性 Skill + RAG + AgentLoop 追踪）的回放证据随仓库分发（`evidence/FINALS-ELEM-*` 等 29 个 SHA256SUMS 锁定目录，含九轮真实运行）。Windows 也可直接双击 `demo-platform/start-demo.bat`。
+Node.js ≥ 18 即可，无需 `npm install`：前端已预构建（`frontend/dist/`），两个核心案例（确定性 Skill + RAG + AgentLoop 追踪）的回放证据随仓库分发（`evidence/FINALS-ELEM-*` 等 36 个 SHA256SUMS 锁定目录，含十二轮真实运行）。Windows 也可直接双击 `demo-platform/start-demo.bat`。
 
 自测：`node backend/test/selftest.mjs`（57 项：脱敏、回放完整性、API 契约、无泄密扫描、证据等级与版本绑定闸门；[CI 在 Node 18/20/22 上自动运行](https://github.com/nghqqa/MergePilot/actions/workflows/selftest.yml)）。
 
@@ -51,14 +53,17 @@ Node.js ≥ 18 即可，无需 `npm install`：前端已预构建（`frontend/di
 
 | 组件 | 说明 | 状态 |
 |---|---|---|
-| AgentTeams 控制面 | Worker CR 调解 + Matrix 消息 + MinIO 存储 + Higress 网关 | 九轮验证 |
-| 4 个 CoPaw Worker | Leader / Reviewer / Fixer / Verifier（动态容器） | 九轮验证 |
-| AgentLoop 埋点 | v3 OTel span 直连 SLS + 跨 Agent traceparent 关联 | 九轮验证 |
+| AgentTeams 控制面 | Worker CR 调解 + Matrix 消息 + MinIO 存储 + Higress 网关 | 十二轮验证 |
+| 4 个 CoPaw Worker | Leader / Reviewer / Fixer / Verifier（动态容器，自举激活） | 十二轮验证 |
+| AgentLoop 埋点 | OTel span 直连 SLS + 跨 Agent traceparent 关联 | 十二轮验证 |
 | RAG MCP | 组织规范知识库（citation-only） | SK2 验证 |
 | Skills MCP | 5 个确定性 Skill（diff_parse / risk_classify / sast_scan / test_runner / case_retrieval） | SK3–SK5 验证 |
 | 案例知识库 | PostgreSQL 16 + pgvector，7 条真实历史案例 | SK4 接通 |
+| **Webhook 入口** | GitHub webhook → HMAC 验签 → 交付台账（公网 HTTPS，2C2G 自托管） | WH 轮验证 |
+| **gh-bridge** | 台账消费 → 项目播种 → 唤醒 → kickoff → 终态判读（`tools/gh-bridge/`） | WH 轮验证 |
+| **结论回写** | GitHub App（仅 Checks 读写）check run 回写 PR，与 CI 并排 | WH 轮验证 |
 
-历史离线交付（v0.2.1 镜像包）保留在 [Releases](https://github.com/nghqqa/MergePilot/releases)——含 9 镜像 zstd 单包、配置包与一键启动器，外部 Windows 机器 10/10 验收通过。**当前 Agent 运行镜像 `copaw-worker:223ddc2-agentloop-v3skills` 为最新版**（含全部埋点与 Skill MCP），构建配方见 `Dockerfile.v3skills`。
+历史离线交付（v0.2.1 镜像包）保留在 [Releases](https://github.com/nghqqa/MergePilot/releases)——含 9 镜像 zstd 单包、配置包与一键启动器，外部 Windows 机器 10/10 验收通过。**当前 Agent 运行镜像 `copaw-worker:223ddc2-agentloop-v4boot` 为最新版**——OTel/Skill/RAG 激活自举（配置从 worker 自有 MinIO 前缀拉取，密钥不进镜像），冷容器出生即全链；构建配方见 `Dockerfile.v4boot`（前一版 `v3skills` 保留于 `Dockerfile.v3skills`）。
 
 仓库内的 `docker-compose.yml` 与 `Dockerfile.*` 是隔离栈的构建配方。源码开发与本地测试命令见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
@@ -70,11 +75,12 @@ Node.js ≥ 18 即可，无需 `npm install`：前端已预构建（`frontend/di
 | **批准后完成** | PR #2（高危 · CWE-22） | 人工安全门 → 批准 → 修复 → 探针验证（200→404） | 修复有效 · PR 保持 OPEN |
 | **拒绝后停止** | PR #3（严重 · CWE-78） | 人工拒绝 → 永久 BLOCKED → 409 终态 | 拒绝不可翻转 · 审计归档 |
 
+> 2026-09-19（收官轮）：三条路径全部由**真实 GitHub webhook 自动触发**复核——结论以 check run 回写 PR（PR #2 ✅ success / PR #3 ❌ failure / PR #1 ✅ success），证据见 [FINALS-ELEM-WH-MASTER-README](evidence/FINALS-ELEM-WH-MASTER-README.md)。
 > 2026-09-16：三条路径已在隔离栈上以**真实 AgentTeams 多 Agent 运行**复核——批准路径干净复跑（R2，见下节）、拒绝路径真实执行（零派发，三层证据）、自主路径沿用既有证据。
 
-## 决赛真实运行（2026-09-16 → 09-19 共九轮）：独立审计 → 修正 → 多轮复现 → Skill 全链 → 三路径覆盖
+## 决赛真实运行（2026-09-16 → 09-19 共十二轮）：独立审计 → 修正 → 多轮复现 → Skill 全链 → 三路径 → webhook 自动闭环
 
-九轮真实 AgentTeams 运行（非回放：真实派单、真实 deepseek-chat 调用、真实容器内执行、事件级留痕），并经**独立第三方审计**。最新三轮为确定性 Skill 全链集成与三路径覆盖：
+十二轮真实 AgentTeams 运行（非回放：真实派单、真实 deepseek-chat 调用、真实容器内执行、事件级留痕），并经**独立第三方审计**。演进主线（每轮证据锁定在 `evidence/`）：R1 审计修正 → R2 干净复跑 → R3t/V3 追踪接入 → RAG 接入 → Skill 集成 → 案例库接通 → 三路径覆盖 → **收官轮 webhook 全自动闭环**。
 
 | 运行 | 结果 | 关键验收 | 证据 |
 | --- | --- | --- | --- |
@@ -82,16 +88,19 @@ Node.js ≥ 18 即可，无需 `npm install`：前端已预构建（`frontend/di
 | **真实拒绝**（PR #3，CWE-78 RCE） | 操作员拒绝修复授权 → fix/verify **从未派发**，项目 blocked（消息/网关/状态存储三层印证） | 拒绝为终态，不可翻转 | [FINALS-ELEM-PR3-LIVE-20260916](evidence/FINALS-ELEM-PR3-LIVE-20260916) |
 | **R1 首跑**（PR #2，同日早前） | 技术结论成立；门后派发链瑕疵被独立审计指出 → **如实修正**（AUDIT 修正版 v2），并以 R2 复跑闭环 | 审计发现→修正→复跑的完整记录 | [FINALS-ELEM-PR2-LIVE-20260916](evidence/FINALS-ELEM-PR2-LIVE-20260916) + AUDIT.md |
 
-最新两轮（2026-09-17 → 09-18）为**确定性 Skill 集成**与**可观测性增强**版本：
+中期四轮（RAG/SK3/SK4/SK5，2026-09-17 → 09-18）完成能力接入，要点：RAG MCP 三角色真实调用（组织规范 citation-only）；确定性 Skill 经 MCP 真实调用（span 实测 ×10→15，`skill_risk_classify` 建议 L1 vs Agent 自主 HIGH 的分歧如实入档）；**skill_case_retrieval 返回真实历史案例**（pgvector 接通）；**skill_sast_scan 首次正式调用**；**PR #1 低风险自动路径首通**（62 秒）；**dual-reviewer 评审间信度**（两独立 Reviewer 同 PR 结论完全一致）。证据：[RAG](evidence/FINALS-ELEM-PR2-RAG-TRACED) · [SK3](evidence/FINALS-ELEM-PR2-SK3-TRACED) · [SK4](evidence/FINALS-ELEM-PR2-SK4-TRACED) · [SK5×3](evidence/FINALS-ELEM-PR2-SK5-TRACED) · [DUAL-REVIEWER](evidence/DUAL-REVIEWER-EXP-20260919)。
 
-| 运行 | 结果 | 关键增量 | 证据 |
-| --- | --- | --- | --- |
-| **SK2**（PR #2 / PR #3） | PR #2 VERIFIED / PR #3 blocked 零派发 | RAG MCP 接入：三角色真实调用 rag_retrieve（组织规范引用） | [FINALS-ELEM-PR2-RAG-TRACED](evidence/FINALS-ELEM-PR2-RAG-TRACED) · [PR3-RAG-TRACED](evidence/FINALS-ELEM-PR3-RAG-TRACED) |
-| **SK3**（PR #2 / PR #3） | PR #2 VERIFIED completed / PR #3 blocked 零派发 | 确定性 Skill 经 MCP 被 Agent 真实调用 ×10（span 实测）；skill_risk_classify 建议分级 L1 vs Agent 自主 HIGH 的分歧如实入档——建议不覆盖自主判断 | [FINALS-ELEM-PR2-SK3-TRACED](evidence/FINALS-ELEM-PR2-SK3-TRACED) · [FINALS-ELEM-PR3-SK3-TRACED](evidence/FINALS-ELEM-PR3-SK3-TRACED) |
-| **SK4**（PR #2 / PR #3） | PR #2 VERIFIED / PR #3 blocked 零派发 | **skill_case_retrieval 首次返回真实历史案例**（pgvector 知识库接通，3 条相似案例带可验证 PR 引用） | [FINALS-ELEM-PR2-SK4-TRACED](evidence/FINALS-ELEM-PR2-SK4-TRACED) · [FINALS-ELEM-PR3-SK4-TRACED](evidence/FINALS-ELEM-PR3-SK4-TRACED) |
-| **SK5**（PR #2 / PR #3 / **PR #1**） | PR #2 VERIFIED / PR #3 blocked / **PR #1 auto completed（62 秒）** | **skill_sast_scan 首次正式调用**（AST 规则命中）；**PR #1 低风险自动路径首通**（NOT_CONFIRMED/LOW→无门→auto completed）；**dual-reviewer 评审间信度**：两个独立 Reviewer 对同一 PR 结论完全一致 | [PR2-SK5](evidence/FINALS-ELEM-PR2-SK5-TRACED) · [PR3-SK5](evidence/FINALS-ELEM-PR3-SK5-TRACED) · [PR1-SK5-AUTO](evidence/FINALS-ELEM-PR1-SK5-AUTO) · [DUAL-REVIEWER-EXP](evidence/DUAL-REVIEWER-EXP-20260919) |
+**收官轮（WH，2026-09-19）——webhook 自动闭环，四链齐备**：
 
-补丁确定性：PR #2 的修复补丁在八轮独立运行中 sha256 逐字节一致（`674356fc…16081`）——同一漏洞的确定性修复，多轮互证。
+| 案例 | 触发 | 结论（check run 回写 PR） | 关键验收 | 证据 |
+| --- | --- | --- | --- | --- |
+| PR #2 批准 | synchronize webhook | ✅ success：HIGH → 门批准 → 修复 → **VERIFIED** | 补丁 sha256 第 11 次一致（Verifier 独立复现）；窗口 skill ×8 | [PR2-WH](evidence/FINALS-ELEM-PR2-WH-20260919) |
+| PR #3 拒绝 | synchronize webhook | ❌ failure：门拒绝 → blocked 零派发 | **rag ×2 命中 org-standards/cwe-78-command-injection.md**（确认发现后查规范，references only） | [PR3-WH](evidence/FINALS-ELEM-PR3-WH-20260919) |
+| PR #1 自动 | synchronize webhook | ✅ success：NOT_CONFIRMED/LOW → 自动完成 | 63 秒；skill ×2 | [PR1-WH](evidence/FINALS-ELEM-PR1-WH-20260919) |
+
+链路：`GitHub webhook → HMAC 验签(mergepilot.nghqqa.cn) → 交付台账 → gh-bridge(播种/唤醒/kickoff) → AgentTeams 真实执行(Skill+RAG+案例库) → result.md 权威判读 → GitHub App(仅 Checks 读写) check-run 回写 PR`。门决策为操作员投递（MinIO 记录+Matrix 指令），修复与验证全 Agent 执行；App 无 Contents Write / merge 权限。
+
+补丁确定性：PR #2 的修复补丁在十一轮独立运行中 sha256 逐字节一致（`674356fc…16081`），收官轮 Verifier 全新 clone 独立复现同哈希——同一漏洞的确定性修复，多轮互证。
 
 **三路径完整覆盖**（SK5 达成）：批准（PR #2 → VERIFIED completed）· 拒绝（PR #3 → blocked 零派发）· **自动**（PR #1 → NOT_CONFIRMED/LOW → 无人工门 → auto completed）。
 
@@ -123,7 +132,7 @@ Agent 只承担语义判断，六类 Skill 以 Schema、deadline、错误码和 
 
 全部运行的标准 span 直连上报阿里云 AgentLoop / SLS：Agent 会话（AGENT_STEP）、LLM 调用（单层 genai.llm.call）、工具调用（genai 语义）三类齐全，**累计 450-530 span/轮 · 导出批次零失败**。
 
-**最新轮（SK5 三路径 + dual-reviewer）实测**：824 span / 197 个 LLM 调用 span / 15 次 skill 调用（含 sast_scan 首次）；PR #1 自动路径 45 次 / 5.08M token / 62 秒完成。跨 Agent 关联：委派通知携带 W3C traceparent，接手 Agent 上报同 trace 关联 span（delegation.link，属性级）——**一条追踪 ID 串联两个容器的证据**。
+**收官轮（WH）实测**：会话累计 **1528 span**（四 worker），OTEL_EXPORT 全部 SUCCESS；上一轮（SK5）824 span / 197 个 LLM 调用 span / 15 次 skill 调用，两轮数据均锁定在包。跨 Agent 关联：委派通知携带 W3C traceparent，接手 Agent 上报同 trace 关联 span（delegation.link，属性级）——**一条追踪 ID 串联两个容器的证据**。
 
 | 指标 | SK5 轮（PR #2） | SK5 轮（PR #3） | SK5 轮（PR #1 自动） | Dual-Reviewer |
 | --- | --- | --- | --- | --- |
@@ -167,13 +176,14 @@ MergePilot/
 │   ├── evidence-adapter/# 只读数据适配层 + 内置演示数据集
 │   ├── rag-data/        # RAG 合成数据集
 │   ├── SKILLS.md        # 核心 Skill 清单
-│   └── test/            # 自测脚本（61 项）
-├── evidence/            # 回放证据子集（SHA256 锁定）
-├── shared/              # 数据契约
-├── docs/                # 文档与架构图
-├── skills/              # Agent Skill 定义
-├── config/              # 配置
-└── LICENSE              # Apache 2.0
+│   └── test/            # 自测脚本
+├── tools/gh-bridge/     # ★ webhook 台账→AgentTeams→check-run 回写的桥（Phase 3）
+├── tools/gh-app/        # webhook 接收端（HMAC 验签/交付台账）+ check run 发布器 + App 令牌
+├── evidence/            # 36 个锁定证据包（十二轮真实运行，SHA256SUMS）
+├── skills/              # 确定性 Skill（纯计算、schema 校验、fail-closed）
+├── skill-mcp-server.mjs # Skill MCP 服务器（Agent 按需调用）
+├── Dockerfile.v4boot    # ★ 最新 worker 镜像：OTel/Skill/RAG 激活自举（配置从 MinIO 拉取）
+├── shared/ docs/ config/ LICENSE（Apache 2.0）
 ```
 
 ## 评估方法
