@@ -225,6 +225,28 @@ PENDING 入库 → HTTP **202**；ping 按合同 IGNORED。测试 PR 验证后�
 
 结论：入口实现此前从未被真实 GitHub 事件验证过，本日链路为首个真实流量验证。
 
+## 实测记录 · Phase 2（出口链路 · 2026-09-19）
+
+组件：`mp-checks-reporter` 容器（复用 gh-webhook 镜像，入口换成 `checks_reporter.py`），
+轮询 `github_check_outbox` → GitHub Checks API 发布 check run。
+
+- GitHub App：`MergePilot-Reporter`（App ID 4997459 · Installation 162911455 ·
+  repo 1348534810=nghqqa/fastapi-boilerplate-demo）；权限仅 Checks RW，
+  App webhook 关闭（入口由 repo webhook 承担，避免双投递）。
+- 网络：发布器是栈内唯一需要出网的容器——挂 `mp-reporter-egress`（普通桥接，
+  出网）+ `isolated`（连 postgres）；其余服务维持 `internal: true` 全隔离。
+- 私钥：宿主 `secrets/github-app-private-key.pem`，属主 9090:9090（容器运行用户）、
+  600，容器内只读挂载到冻结路径 `/run/secrets/github-app-private-key.pem`。
+- 认证链实测：PEM→RS256 JWT→installation token（scoped checks:write）→
+  API 200 ✓；Checks API 写路径 POST check-run 201 ✓。
+
+Phase 2 修复（真实 api.github.com 首跑暴露，已提交）：
+`token_provider` 换取 installation token 只认 200，而 GitHub 该端点成功码为
+**201 Created**——成功被当终局失败。修为接受 200/201（tests 816 passed）。
+
+今日累计：P14 的 GitHub 出入口组件共修复 4 处"从未被真实流量验证"的缺陷
+（event_name 约束 / classify 必填 installation_id / 信封约束 / 201 成功码）。
+
 ## Phase 2 预告 · GitHub App + 结果回写
 
 复用已实现的 `tools/gh-app/token_provider.py`（App JWT/installation token）与
