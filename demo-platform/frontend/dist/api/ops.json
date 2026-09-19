@@ -1,0 +1,31 @@
+{
+  "rag": {
+    "status": "SYNTHETIC DEMO",
+    "data_mode": "SYNTHETIC",
+    "embedding_backend": "local-hash-bow-4096 (deterministic, SYNTHETIC, strategy=v2-bigram-idf-hash4096)",
+    "last_query": {
+      "ts": "2026-09-19T00:45:11.020Z",
+      "tool": "database.query",
+      "arguments_hash": "226de8409145345b",
+      "data_mode": "SIMULATED"
+    }
+  },
+  "polardb": {
+    "connection": "NOT CONNECTED",
+    "verdict": "PREREQUISITES_MISSING",
+    "data_mode": "SIMULATED (fixture)"
+  },
+  "agentloop": {
+    "authoritative_trace_id": "fbf4a3cec0493990d76e10a102418be1",
+    "correlation_trace_id": "f5bb3e1f55bc53412f0fac5e6b400eb5",
+    "status": "VERIFIED",
+    "trace_mode": "LIVE CLOUD",
+    "tool_span_correlation": "VERIFIED — rag_retrieve（逻辑名 rag.retrieve）已在真实 agent run 中执行并入云同 Trace（2026-08-30 11:53:53Z）"
+  },
+  "data_modes": {
+    "agentteams_cases": "REPLAY (verified historical run)",
+    "agentloop_trace": "LIVE CLOUD",
+    "rag": "SYNTHETIC",
+    "polardb": "SIMULATED fixture / NOT CONNECTED"
+  }
+}

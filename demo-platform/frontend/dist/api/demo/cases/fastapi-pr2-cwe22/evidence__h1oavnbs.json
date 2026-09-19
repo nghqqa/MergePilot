@@ -1,0 +1,108 @@
+{
+  "id": "ev-verify-result",
+  "title": "Verifier 结果 verify-1.result.md",
+  "level": "REAL_EXECUTED_AGENTTEAMS",
+  "fields": [
+    [
+      "STATUS",
+      "VERIFICATION_PASSED / SEVERITY: NONE / HUMAN_VERIFICATION_REQUIRED: NO"
+    ],
+    [
+      "标记",
+      "FIX_INDEPENDENTLY_VERIFIED · REGRESSION_CHECK_PASSED"
+    ],
+    [
+      "披露",
+      "VERIFICATION_PASSED 字面值不在 store 白名单（枚举兼容问题，如实披露）"
+    ]
+  ],
+  "blocks": [
+    {
+      "title": "fixVerify/artifacts/verify-1.result.md",
+      "lang": "text",
+      "text": "STATUS: VERIFICATION_PASSED\nSEVERITY: NONE\nHUMAN_VERIFICATION_REQUIRED: NO\nSUMMARY: FIX_INDEPENDENTLY_VERIFIED REGRESSION_CHECK_PASSED - Independently re-cloned PR#2 branch (nghqqa/fastapi-boilerplate-demo, demo/high-risk-human-gate), re-applied fix.patch to a fresh clone (applies cleanly; re-applied file is byte-identical to the fixer's demo_high_risk.fixed.py) and re-tested end-to-end from scratch. BEFORE fix: the repo's own test test_high_risk_path_traversal_reproduces PASSED and an independent probe GET /demo/download?name=../outside/outside-secret.txt returned HTTP 200 disclosing TOP-SECRET-OUTSIDE-BASE, confirming the CWE-22 arbitrary-file-read leak. AFTER fix: the same traversal returned HTTP 404 {\"detail\":\"Not found\"} with no leak, while the legitimate demo file (welcome.txt) is still served HTTP 200 (WELCOME-LEGIT-DEMO) - no regression. The patch is MINIMAL (only backend/src/interfaces/api/v1/demo_high_risk.py, 12 insertions/4 deletions) and correctly enforces Path.resolve() normalization plus is_relative_to(DEMO_FILES_DIR) containment, returning 404 on any traversal/missing file and using target.name for the response filename. The patched module imports cleanly; no unrelated files changed; PR#2 stays open (local work only). Residual severity after fix: NONE. No human re-verification is required. See workspace/verification-report.md for full commands and real outputs.\nDELIVERABLES:\n- shared/projects/copaw-high-risk-human-gate/tasks/verify-1/workspace/verification-report.md\n- shared/projects/copaw-high-risk-human-gate/tasks/verify-1/workspace/before_probe_raw.txt\n- shared/projects/copaw-high-risk-human-gate/tasks/verify-1/workspace/after_probe_raw.txt\n- shared/projects/copaw-high-risk-human-gate/tasks/verify-1/workspace/before_pytest_raw.txt\n- shared/projects/copaw-high-risk-human-gate/tasks/verify-1/workspace/after_pytest_raw.txt\n- shared/projects/copaw-high-risk-human-gate/tasks/verify-1/workspace/probe.py\n"
+    }
+  ],
+  "source_ref": "fixVerify/artifacts/verify-1.result.md",
+  "hash": {
+    "file": "artifacts/verify-1.result.md",
+    "dir": "PHASE14-WINDOWS-COPAW-HIGH-RISK-FIX-VERIFY-20260829-180548",
+    "exists": true,
+    "hash_verified": true,
+    "sha256": "8d16ae009100a5074d6b81dd475823c64e81ff382e43b5930736f4196fa80d47"
+  },
+  "real": [
+    "AgentTeams/CoPaw 多 Agent 历史真实运行（2026-08-29：真实 Matrix 派单、真实 LLM、真实容器执行）",
+    "Reviewer / Fixer / Verifier 产物来自锁定证据目录（SHA256 校验）",
+    "人工审批为真实操作员记录（human-gate-approval.md）"
+  ],
+  "controlled": [
+    "本页面对证据的时间线投影与讲解文案"
+  ],
+  "not_executed": [
+    "本次演示不连接实时 GitHub / Matrix / LLM",
+    "merge / push / close / reopen 全程禁止，PR #2 保持 OPEN",
+    "per-task 云端 Trace（evidence-replay，trace_id 不存在）"
+  ],
+  "case": {
+    "case_id": "fastapi-pr2-cwe22",
+    "case_name": "FastAPI PR #2 · 路径穿越风险修复",
+    "repo": "nghqqa/fastapi-boilerplate-demo",
+    "pr": "PR #2 · demo/high-risk-human-gate",
+    "pr_url": "https://github.com/nghqqa/fastapi-boilerplate-demo/pull/2",
+    "run_id": "copaw-high-risk-human-gate（AgentTeams project）",
+    "sha": "1dedf5e1992c950557064d8f4fb9039d1523deb3",
+    "sha_kind": "PR #2 head commit",
+    "evidence_level": [
+      "HISTORICAL_REPLAY",
+      "REAL_EXECUTED_AGENTTEAMS"
+    ],
+    "source_dir": "evidence/PHASE14-WINDOWS-*（replayMaterials · fixVerify · fixAudit · finalLock · highRiskGateBlocked）",
+    "generated_at": "运行 2026-08-29 · 状态锁定 2026-08-29T13:09+08:00（pr-state-final.json）",
+    "pending_redactions": null
+  },
+  "integrity": {
+    "finals": {
+      "finalsDbLoop": {
+        "dir": "FINALS-DB-MIGRATION-LOOP-20260914",
+        "tier": "REAL_SQL_VERIFICATION_ISOLATED_POSTGRES",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsReworkLoop": {
+        "dir": "FINALS-REWORK-LOOP-20260914",
+        "tier": "MECHANISM_VERIFICATION",
+        "verified": true,
+        "files": 7,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsRagLoop": {
+        "dir": "FINALS-RAG-LOOP-20260914",
+        "tier": "REAL_OFFLINE_EXPERIMENT_SYNTHETIC_CORPUS",
+        "verified": true,
+        "files": 4,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr2Live": {
+        "dir": "FINALS-ELEM-PR2-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 19,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr3Live": {
+        "dir": "FINALS-ELEM-PR3-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      }
+    }
+  }
+}

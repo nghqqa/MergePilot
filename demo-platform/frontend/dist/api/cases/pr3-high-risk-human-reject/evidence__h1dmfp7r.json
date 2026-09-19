@@ -1,0 +1,59 @@
+{
+  "drawer": "finding",
+  "data_mode": "historical replay",
+  "trace_mode": "evidence-replay",
+  "integrity_status": "verified",
+  "event_id": "pr3v3-ev-006",
+  "trace_id": null,
+  "project_id": "elemiso-pr3v3-reject",
+  "task_id": "review-1",
+  "agent_role": "reviewer",
+  "runtime": "copaw-worker:223ddc2-agentloop-v3rag（image 8e17c3667c3c）",
+  "event_type": "task_state",
+  "source": "evidence",
+  "source_label": "Evidence Replay",
+  "source_ref": "FINALS-ELEM-PR3-V3-TRACED/tasks/pr3v3-review-1/result.md + FINALS-ELEM-PR3-V3-TRACED/leader-dm-messages-pr3v3-window.json",
+  "source_hash": {
+    "ref": "FINALS-ELEM-PR3-V3-TRACED/README.md",
+    "dir": "FINALS-ELEM-PR3-V3-TRACED",
+    "dir_key": null,
+    "file": "README.md",
+    "abs_path": "D:\\goai\\mergepilot-demo\\evidence\\FINALS-ELEM-PR3-V3-TRACED\\README.md",
+    "exists": true,
+    "evidence_root_readonly": true,
+    "sha256_actual": "b1e269fa6de4410be1fe95e23278195210e9d2a611c5f17f62be9041878a3983",
+    "sha256_expected": "b1e269fa6de4410be1fe95e23278195210e9d2a611c5f17f62be9041878a3983",
+    "hash_verified": true,
+    "sums_source": "FINALS-ELEM-PR3-V3-TRACED/SHA256SUMS"
+  },
+  "timestamp": "2026-09-17T03:19:27Z",
+  "timestamp_precision": "approx",
+  "finding": {
+    "level": "high",
+    "category": "CWE-78",
+    "human_gate": "rejected",
+    "affected_file": "backend/src/interfaces/api/v1/demo_cmd_exec.py — demo_ping (L41 f-string → L42-44 subprocess.run(shell=True) → L45-49 回显)",
+    "description": "用户可控 host 参数被 f-string 拼入 ping 命令并以 shell 执行；;, |, 换行, 反引号, $(...) 均可实现任意命令执行并回显输出；路由无鉴权依赖 = 未认证远程命令执行（服务进程 root）。该缺陷为演示预置（PR docstring 明示 human-REJECT 场景）。",
+    "reviewer_conclusion": "STATUS: SUCCESS / FINDING_CONFIRMED / SEVERITY: HIGH / HUMAN_VERIFICATION_REQUIRED: YES（本轮自主定级 HIGH；P14 历史轮同漏洞定级 critical——两轮独立审查者各自如实，跨轮口径差异披露）",
+    "rag_note": "Reviewer 按 manifest 邀请实际调用 rag_retrieve（cwe-78-command-injection.md#1/#2 + command-execution.md#1，引用不替代自主复现）",
+    "no_fix_note": "本案例无修复：人工拒绝后系统不执行任何自动修复，演示代码保持原样（不作为生产修复展示）。"
+  },
+  "reviewer_conclusion": "STATUS: SUCCESS / FINDING_CONFIRMED / SEVERITY: HIGH / HUMAN_VERIFICATION_REQUIRED: YES（本轮自主定级 HIGH；P14 历史轮同漏洞定级 critical——两轮独立审查者各自如实，跨轮口径差异披露）",
+  "probe": null,
+  "probe_hash": null,
+  "hash_verified": true,
+  "redaction_status": {
+    "redaction_layer": "applied (evidence-adapter/redact.mjs)",
+    "scan_hits": [],
+    "status": "CLEAN — redaction applied; PR#2 demo placeholders allow-listed",
+    "forbidden_fields_excluded": [
+      "Authorization",
+      "Cookie",
+      "API key",
+      "Matrix token",
+      "password",
+      "完整工具参数",
+      "完整 prompt/completion"
+    ]
+  }
+}

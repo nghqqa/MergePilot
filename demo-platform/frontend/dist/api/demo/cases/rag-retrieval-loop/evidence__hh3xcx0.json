@@ -1,0 +1,108 @@
+{
+  "id": "ev-rag-dataset",
+  "title": "② 标注数据集与按族切分（防泄漏）",
+  "level": "REAL_OFFLINE_EXPERIMENT",
+  "fields": [
+    [
+      "查询集",
+      "queries.v1 · 18 个语义族 / 54 条查询（版本 rag-loop-queries.v1）"
+    ],
+    [
+      "切分",
+      "按族切分（从不按条）：调优 10 族/30 条 · held-out 8 族/24 条"
+    ],
+    [
+      "泄漏检查",
+      "held-out 与调优查询的最大词元 Jaccard max=0.2581（阈值 0.5），近似改写对 0 对"
+    ],
+    [
+      "指标",
+      "文档级 hit@1 / hit@3 / MRR；多 chunk 文档另计 chunk-hit@1"
+    ]
+  ],
+  "blocks": [
+    {
+      "title": "FINALS-RAG-LOOP-20260914/queries.v1.json（前 2000 字）",
+      "lang": "json",
+      "text": "{\n  \"dataset_version\": \"rag-loop-queries.v1\",\n  \"data_mode\": \"SYNTHETIC\",\n  \"corpus\": \"demo-platform/backend/rag-data/dataset.json (8 documents, 9 chunks, SYNTHETIC/REDACTED demo docs)\",\n  \"labeling\": \"Authored 2026-09-14 by the MergePilot team against the synthetic corpus BEFORE any baseline was measured. One family = one user intent; all paraphrases of an intent stay inside the same family. Labels are the document (and, where the document has more than one chunk, the chunk) a correct retrieval must rank first.\",\n  \"split_rule\": \"Split is by family, never by query: every family listed in heldout_families is held-out in full, every other family is tuning. Held-out results may be computed exactly once per promoted strategy; strategy selection uses tuning families only.\",\n  \"heldout_families\": [\"F03\", \"F05\", \"F07\", \"F09\", \"F11\", \"F14\", \"F16\", \"F17\"],\n  \"families\": [\n    {\n      \"family_id\": \"F01\",\n      \"intent\": \"三级审查中三个 Agent 角色的职责分工\",\n      \"expected_document_id\": \"doc-mergepilot-review-policy\",\n      \"expected_chunk_id\": null,\n      \"queries\": [\n        \"Reviewer、Fixer、Verifier 三个角色分别负责什么\",\n        \"审查流程里每个 Agent 的职责怎么划分\",\n        \"谁负责发现问题、谁负责修复、谁负责复核修复效果\"\n      ]\n    },\n    {\n      \"family_id\": \"F02\",\n      \"intent\": \"平台是否执行 push / merge / 改变 PR 状态\",\n      \"expected_document_id\": \"doc-mergepilot-review-policy\",\n      \"expected_chunk_id\": null,\n      \"queries\": [\n        \"平台会不会执行 push 或 merge\",\n        \"任务过程中 PR 的状态会被系统改变吗\",\n        \"Agent 会推送代码或者合并 PR 吗\"\n      ]\n    },\n    {\n      \"family_id\": \"F03\",\n      \"intent\": \"任务结果的权威来源（MinIO result.md / meta.json，leader 终检）\",\n      \"expected_document_id\": \"doc-mergepilot-review-policy\",\n      \"expected_chunk_id\": null,\n      \"queries\": [\n        \"任务结果以什么文件为准\",\n        \"leader 做终检时 check_task 看的是什么\",\n        \"result.md 和 meta.json 存放在哪里\"\n      ]\n    },\n    {\n      \"family_id\": \"F04\",\n      \"intent\": \"人工闸门的触发条件与 Fixer 是否启动\",\n      \"expected_document_id\": \"doc-human-gate-policy\",\n      \"expected_chunk_id\": null,\n      \"queri\n…"
+    }
+  ],
+  "source_ref": "finalsRagLoop/queries.v1.json",
+  "hash": {
+    "file": "queries.v1.json",
+    "dir": "FINALS-RAG-LOOP-20260914",
+    "exists": true,
+    "hash_verified": true,
+    "sha256": "1122fa11239b2836c76352b0dfe2aa191c82c025201331906b5c40b977a5adfc"
+  },
+  "real": [
+    "真实离线实验（2026-09-14）：真实 span 审计、真实检索器执行、真实指标计算；查询集在任何测量前固定，held-out 只评估一次"
+  ],
+  "controlled": [
+    "语料为 SYNTHETIC/REDACTED 演示文档（8 文档/9 chunk）；标注由团队编写"
+  ],
+  "not_executed": [
+    "不外推企业语料；本实验优化检索策略，不改变数据模式声明"
+  ],
+  "case": {
+    "case_id": "rag-retrieval-loop",
+    "case_name": "RAG 检索闭环 · 观测→评估→数据集→优化→回测",
+    "repo": "mergepilot/demo-platform（rag-data 合成语料）",
+    "pr": "本地离线实验 · 无外部 PR（合成语料）",
+    "pr_url": null,
+    "run_id": "rag-loop-20260914",
+    "sha": "aa05c3d894e6485727d2bda1de3025e6b7be0b2c9e627ef48c95186ea27adb01",
+    "sha_kind": "语料 corpus sha256",
+    "evidence_level": [
+      "REAL_OFFLINE_EXPERIMENT",
+      "SYNTHETIC"
+    ],
+    "source_dir": "evidence/FINALS-RAG-LOOP-20260914（SHA256SUMS 锁定；timings 因非确定性排除）",
+    "generated_at": "2026-09-14T13:39:41.983Z",
+    "pending_redactions": null
+  },
+  "integrity": {
+    "finals": {
+      "finalsDbLoop": {
+        "dir": "FINALS-DB-MIGRATION-LOOP-20260914",
+        "tier": "REAL_SQL_VERIFICATION_ISOLATED_POSTGRES",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsReworkLoop": {
+        "dir": "FINALS-REWORK-LOOP-20260914",
+        "tier": "MECHANISM_VERIFICATION",
+        "verified": true,
+        "files": 7,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsRagLoop": {
+        "dir": "FINALS-RAG-LOOP-20260914",
+        "tier": "REAL_OFFLINE_EXPERIMENT_SYNTHETIC_CORPUS",
+        "verified": true,
+        "files": 4,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr2Live": {
+        "dir": "FINALS-ELEM-PR2-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 19,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr3Live": {
+        "dir": "FINALS-ELEM-PR3-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      }
+    }
+  }
+}

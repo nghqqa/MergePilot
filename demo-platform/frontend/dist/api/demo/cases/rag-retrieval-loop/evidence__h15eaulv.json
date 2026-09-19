@@ -1,0 +1,109 @@
+{
+  "id": "ev-rag-tuning",
+  "title": "④ 策略优化（12 候选网格，只用调优集）",
+  "level": "REAL_OFFLINE_EXPERIMENT",
+  "fields": [
+    [
+      "网格",
+      "CJK 二元组 × IDF × 哈希维度，共 12 个候选策略"
+    ],
+    [
+      "选择规则（回测前声明）",
+      "MRR desc, hit@1 desc, hit@3 desc, smaller dim, fewer features"
+    ],
+    [
+      "选中",
+      "cand-bigram-idf-hash4096（dim=4096 · cjk_bigram=true · idf=true）调优集 MRR 0.7928 → 0.8594"
+    ]
+  ],
+  "blocks": [
+    {
+      "title": "12 候选 · 调优集指标全表",
+      "lang": "text",
+      "text": "cand-unigram-tf-hash256  hit@1=70.0%  hit@3=90.0%  MRR=0.7928  chunk-hit@1=50.0%\ncand-unigram-tf-hash1024  hit@1=76.7%  hit@3=90.0%  MRR=0.8383  chunk-hit@1=83.3%\ncand-unigram-tf-hash4096  hit@1=73.3%  hit@3=93.3%  MRR=0.8344  chunk-hit@1=83.3%\ncand-unigram-idf-hash256  hit@1=70.0%  hit@3=90.0%  MRR=0.8048  chunk-hit@1=50.0%\ncand-unigram-idf-hash1024  hit@1=76.7%  hit@3=90.0%  MRR=0.8456  chunk-hit@1=83.3%\ncand-unigram-idf-hash4096  hit@1=76.7%  hit@3=93.3%  MRR=0.8539  chunk-hit@1=83.3%\ncand-bigram-tf-hash256  hit@1=56.7%  hit@3=76.7%  MRR=0.7086  chunk-hit@1=66.7%\ncand-bigram-tf-hash1024  hit@1=80.0%  hit@3=80.0%  MRR=0.8428  chunk-hit@1=83.3%\ncand-bigram-tf-hash4096  hit@1=73.3%  hit@3=90.0%  MRR=0.8400  chunk-hit@1=83.3%\ncand-bigram-idf-hash256  hit@1=50.0%  hit@3=70.0%  MRR=0.6550  chunk-hit@1=50.0%\ncand-bigram-idf-hash1024  hit@1=66.7%  hit@3=83.3%  MRR=0.7714  chunk-hit@1=83.3%\ncand-bigram-idf-hash4096  hit@1=76.7%  hit@3=93.3%  MRR=0.8594  chunk-hit@1=83.3%   ← 选中"
+    },
+    {
+      "title": "FINALS-RAG-LOOP-20260914/timings.json",
+      "lang": "json",
+      "text": "{\n  \"note\": \"wall-clock, non-deterministic, excluded from SHA256SUMS\",\n  \"runs\": [\n    {\n      \"label\": \"baseline/tuning\",\n      \"strategy_id\": \"v1-unigram-hash256\",\n      \"n_queries\": 30,\n      \"index_build_ms\": 0.25,\n      \"eval_ms_total\": 0.86,\n      \"eval_ms_per_query\": 0.029\n    },\n    {\n      \"label\": \"baseline/heldout\",\n      \"strategy_id\": \"v1-unigram-hash256\",\n      \"n_queries\": 24,\n      \"index_build_ms\": 0.35,\n      \"eval_ms_total\": 0.15,\n      \"eval_ms_per_query\": 0.006\n    },\n    {\n      \"label\": \"grid/tuning\",\n      \"strategy_id\": \"cand-unigram-tf-hash256\",\n      \"n_queries\": 30,\n      \"index_build_ms\": 0.49,\n      \"eval_ms_total\": 0.69,\n      \"eval_ms_per_query\": 0.023\n    },\n    {\n      \"label\": \"grid/tuning\",\n      \"strategy_id\": \"cand-unigram-tf-hash1024\",\n      \"n_queries\": 30,\n      \"index_build_ms\": 0.23,\n      \"eval_ms_total\": 0.42,\n      \"eval_ms_per_query\": 0.014\n    },\n    {\n      \"label\": \"grid/tuning\",\n      \"strategy_id\": \"cand-unigram-tf-hash4096\",\n      \"n_queries\": 30,\n      \"index_build_ms\": 0.3,\n      \"eval_ms_total\": 1.57,\n      \"eval_ms_per_query\": 0.052\n    },\n    {\n      \"label\": \"grid/tuning\",\n      \"strategy_id\": \"cand-unigram-idf-hash256\",\n      \"n_queries\": 30,\n      \"index_build_ms\": 0.48,\n      \"eval_ms_total\": 0.81,\n      \"eval_ms_per_query\": 0.027\n    },\n    {\n      \"label\": \"grid/tuning\",\n      \"strategy_id\": \"cand-unigram-idf-hash1024\",\n      \"n_queries\": 30,\n      \"index_build_ms\": 1.19,\n      \"eval_ms_total\": 0.58,\n      \"eval_ms_per_query\": 0.019\n    },\n    {\n      \"label\": \"grid/tuning\",\n      \"strategy_id\": \"cand-unigram-idf-hash4096\",\n      \"n_queries\": 30,\n      \"index_build_ms\": 0.44,\n      \"eval_ms_total\": 1.55,\n      \"eval_ms_per_query\": 0.052\n    },\n    {\n      \"label\": \"grid/tuning\",\n      \"strategy_id\": \"cand-bigram-tf-hash256\",\n      \"n_queries\": 30,\n      \"index_build_ms\": 0.2,\n      \"eval_ms_total\": 0.19,\n      \"eval_ms_per_query\": 0.006\n    },\n    {\n      \"label\": \"grid/tuning\",\n      \"strategy_id\": \"cand-bigram-tf-hash1024\",\n      \"n_queries\": 30,\n      \"index_build_ms\": 0.19,\n      \"eval_ms_total\": 0.42,\n      \"eval_ms_per_query\": 0.014\n    },\n    {\n      \"label\": \"grid/tuning\",\n      \"strategy_id\": \"cand-bigram-tf-hash4096\",\n      \"n_queries\": 30,\n      \"index_build_ms\": 0.63,\n      \"eval_ms_total\": 1.73,\n      \"eval_ms_per_query\": 0.058\n    },\n    {\n      \"label\": \"grid/tuning\",\n      \"strategy_id\": \"cand-bigram-idf-hash256\",\n      \"n_queries\": 30,\n      \"index_build_ms\": 0.67,\n      \"eval_ms_total\": 0.75,\n      \"eval_ms_per_query\": 0.025\n    },\n    {\n      \"label\": \"grid/tuning\",\n      \"strategy_id\": \"cand-bigram-idf-hash1024\",\n      \"n_queries\": 30,\n      \"index_build_ms\": 0.63,\n      \"eval_ms_total\": 0.46,\n      \"eval_ms_per_query\": 0.015\n    },\n    {\n      \"label\": \"grid/tuning\",\n      \"strategy_id\": \"cand-bigram-idf-hash4096\",\n      \"n_queries\": 30,\n      \"index_build_ms\": 0.69,\n      \"eval_ms_total\": 1.7,\n      \"eval_ms_per_query\": 0.057\n    },\n    {\n      \"label\": \"selected/tuning\",\n      \"strategy_id\": \"cand-bigram-idf-hash4096\",\n      \"n_queries\": 30,\n      \"index_build_ms\": 0.69,\n      \"eval_ms_total\": 1.7,\n      \"eval_ms_per_query\": 0.057\n    },\n    {\n      \"label\": \"selected/heldout\",\n      \"strategy_id\": \"cand-bigram-idf-hash4096\",\n      \"n_queries\": 24,\n      \"index_build_ms\": 0.57,\n      \"eval_ms_total\": 1.24,\n      \"eval_ms_per_query\": 0.052\n    }\n  ]\n}"
+    }
+  ],
+  "source_ref": "finalsRagLoop/report.json#tuning",
+  "hash": {
+    "file": "report.json",
+    "dir": "FINALS-RAG-LOOP-20260914",
+    "exists": true,
+    "hash_verified": true,
+    "sha256": "7f84fad68eb7b56bd31ea8d3d0309075e5729d3d38e49dbd241042b2e6b1f666"
+  },
+  "real": [
+    "真实离线实验（2026-09-14）：真实 span 审计、真实检索器执行、真实指标计算；查询集在任何测量前固定，held-out 只评估一次"
+  ],
+  "controlled": [
+    "语料为 SYNTHETIC/REDACTED 演示文档（8 文档/9 chunk）；标注由团队编写"
+  ],
+  "not_executed": [
+    "不外推企业语料；本实验优化检索策略，不改变数据模式声明"
+  ],
+  "case": {
+    "case_id": "rag-retrieval-loop",
+    "case_name": "RAG 检索闭环 · 观测→评估→数据集→优化→回测",
+    "repo": "mergepilot/demo-platform（rag-data 合成语料）",
+    "pr": "本地离线实验 · 无外部 PR（合成语料）",
+    "pr_url": null,
+    "run_id": "rag-loop-20260914",
+    "sha": "aa05c3d894e6485727d2bda1de3025e6b7be0b2c9e627ef48c95186ea27adb01",
+    "sha_kind": "语料 corpus sha256",
+    "evidence_level": [
+      "REAL_OFFLINE_EXPERIMENT",
+      "SYNTHETIC"
+    ],
+    "source_dir": "evidence/FINALS-RAG-LOOP-20260914（SHA256SUMS 锁定；timings 因非确定性排除）",
+    "generated_at": "2026-09-14T13:39:41.983Z",
+    "pending_redactions": null
+  },
+  "integrity": {
+    "finals": {
+      "finalsDbLoop": {
+        "dir": "FINALS-DB-MIGRATION-LOOP-20260914",
+        "tier": "REAL_SQL_VERIFICATION_ISOLATED_POSTGRES",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsReworkLoop": {
+        "dir": "FINALS-REWORK-LOOP-20260914",
+        "tier": "MECHANISM_VERIFICATION",
+        "verified": true,
+        "files": 7,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsRagLoop": {
+        "dir": "FINALS-RAG-LOOP-20260914",
+        "tier": "REAL_OFFLINE_EXPERIMENT_SYNTHETIC_CORPUS",
+        "verified": true,
+        "files": 4,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr2Live": {
+        "dir": "FINALS-ELEM-PR2-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 19,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr3Live": {
+        "dir": "FINALS-ELEM-PR3-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      }
+    }
+  }
+}

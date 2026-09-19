@@ -1,0 +1,51 @@
+{
+  "drawer": "event",
+  "data_mode": "historical replay",
+  "trace_mode": "evidence-replay",
+  "integrity_status": "verified",
+  "event_id": "pr2v3-ev-006",
+  "matrix_event_id": "$oq726ECe3rG9QdICFD-uv3i1g_Pv50A2tw1rMVN67F4（团队房原话：\"references only\"，前一条 03:12:23Z $xDfH8HIM9GrC… 明示\"my conclusion stands on my own repro\"）",
+  "trace_id": null,
+  "trace_note": "per-event 无独立 trace（per-task/事件维度仍为 evidence-replay）；平台级历史权威 Trace 见总览页 AgentLoop Cloud Trace 区块",
+  "project_id": "elemiso-pr2v3-gate",
+  "task_id": null,
+  "agent_role": "reviewer",
+  "runtime": "copaw-worker:223ddc2-agentloop-v3rag（image 8e17c3667c3c）",
+  "event_type": "tool_call",
+  "source": "rag",
+  "source_label": "rag",
+  "source_ref": "finalsPr2V3Traced/rag/rag-tool-spans.jsonl",
+  "source_hash": {
+    "ref": "finalsPr2V3Traced/rag/rag-tool-spans.jsonl",
+    "dir": "FINALS-ELEM-PR2-V3-TRACED",
+    "dir_key": "finalsPr2V3Traced",
+    "file": "rag/rag-tool-spans.jsonl",
+    "abs_path": "D:\\goai\\mergepilot-demo\\evidence\\FINALS-ELEM-PR2-V3-TRACED\\rag\\rag-tool-spans.jsonl",
+    "exists": true,
+    "evidence_root_readonly": true,
+    "sha256_actual": "ea62e37a8e9ef4f32e51b82563d3033b7dcd242f3b1fc11e815af502c7058552",
+    "sha256_expected": "ea62e37a8e9ef4f32e51b82563d3033b7dcd242f3b1fc11e815af502c7058552",
+    "hash_verified": true,
+    "sums_source": "FINALS-ELEM-PR2-V3-TRACED/SHA256SUMS"
+  },
+  "timestamp": "2026-09-17T03:12:23Z",
+  "timestamp_precision": "exact",
+  "timestamp_note": null,
+  "summary": "RAG 知识库调用（manifest 邀请、可选）：rag_retrieve 返回 org-standards/cwe-22-path-traversal.md#1 与 file-path-containment.md#1 —— 与 reviewer 自主结论一致；引用不替代自主验证",
+  "detail": "审计流水 03:12:23.941Z/.946Z 两条（MCP 客户端侧+服务侧对账，arguments_hash 22072a7c42c0897e，data_mode=SYNTHETIC）。v3 下同一调用落三类 span：原始 tool.rag_retrieve + loongsuite ExecuteTool 语义 span（控制台\"工具调用\"计数点亮）+ genai.llm.call 单层调用链。",
+  "hash_verified": true,
+  "redaction_status": {
+    "redaction_layer": "applied (evidence-adapter/redact.mjs)",
+    "scan_hits": [],
+    "status": "CLEAN — redaction applied; PR#2 demo placeholders allow-listed",
+    "forbidden_fields_excluded": [
+      "Authorization",
+      "Cookie",
+      "API key",
+      "Matrix token",
+      "password",
+      "完整工具参数",
+      "完整 prompt/completion"
+    ]
+  }
+}

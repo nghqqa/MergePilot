@@ -1,0 +1,51 @@
+{
+  "drawer": "event",
+  "data_mode": "historical replay",
+  "trace_mode": "evidence-replay",
+  "integrity_status": "verified",
+  "event_id": "pr2v3-ev-017",
+  "matrix_event_id": "$q95RgMxKGH5qYqyfrqYEq_WT-Lbd64zWjtkKucgF__A",
+  "trace_id": null,
+  "trace_note": "per-event 无独立 trace（per-task/事件维度仍为 evidence-replay）；平台级历史权威 Trace 见总览页 AgentLoop Cloud Trace 区块",
+  "project_id": "elemiso-pr2v3-gate",
+  "task_id": null,
+  "agent_role": "leader",
+  "runtime": "copaw-worker:223ddc2-agentloop-v3rag（image 8e17c3667c3c）",
+  "event_type": "message",
+  "source": "matrix",
+  "source_label": "Matrix event",
+  "source_ref": "finalsPr2V3Traced/project/result.md",
+  "source_hash": {
+    "ref": "finalsPr2V3Traced/project/result.md",
+    "dir": "FINALS-ELEM-PR2-V3-TRACED",
+    "dir_key": "finalsPr2V3Traced",
+    "file": "project/result.md",
+    "abs_path": "D:\\goai\\mergepilot-demo\\evidence\\FINALS-ELEM-PR2-V3-TRACED\\project\\result.md",
+    "exists": true,
+    "evidence_root_readonly": true,
+    "sha256_actual": "aacdd23badc6d4650bbd21da622e754be301fc1fa40d6f6de99a0605f27731fd",
+    "sha256_expected": "aacdd23badc6d4650bbd21da622e754be301fc1fa40d6f6de99a0605f27731fd",
+    "hash_verified": true,
+    "sums_source": "FINALS-ELEM-PR2-V3-TRACED/SHA256SUMS"
+  },
+  "timestamp": "2026-09-17T03:15:18Z",
+  "timestamp_precision": "exact",
+  "timestamp_note": null,
+  "summary": "PROJECT COMPLETED — 高危闭环完成（墙钟 12 分 32 秒，含 reviewer 依赖安装等待 ≈9 分钟与一次 nudge，如实记录）；PR #2 保持 OPEN（未 merge/push/close/reopen，分支 SHA 运行前后一致）",
+  "detail": null,
+  "hash_verified": true,
+  "redaction_status": {
+    "redaction_layer": "applied (evidence-adapter/redact.mjs)",
+    "scan_hits": [],
+    "status": "CLEAN — redaction applied; PR#2 demo placeholders allow-listed",
+    "forbidden_fields_excluded": [
+      "Authorization",
+      "Cookie",
+      "API key",
+      "Matrix token",
+      "password",
+      "完整工具参数",
+      "完整 prompt/completion"
+    ]
+  }
+}

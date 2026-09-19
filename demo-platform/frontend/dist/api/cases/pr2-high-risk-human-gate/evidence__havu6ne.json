@@ -1,0 +1,51 @@
+{
+  "drawer": "event",
+  "data_mode": "historical replay",
+  "trace_mode": "evidence-replay",
+  "integrity_status": "verified",
+  "event_id": "pr2v3-ev-004",
+  "matrix_event_id": null,
+  "trace_id": null,
+  "trace_note": "per-event 无独立 trace（per-task/事件维度仍为 evidence-replay）；平台级历史权威 Trace 见总览页 AgentLoop Cloud Trace 区块",
+  "project_id": "elemiso-pr2v3-gate",
+  "task_id": null,
+  "agent_role": "reviewer",
+  "runtime": "copaw-worker:223ddc2-agentloop-v3rag（image 8e17c3667c3c）",
+  "event_type": "tool_call",
+  "source": "evidence",
+  "source_label": "Evidence Replay",
+  "source_ref": "finalsPr2V3Traced/team-room-messages.json",
+  "source_hash": {
+    "ref": "finalsPr2V3Traced/team-room-messages.json",
+    "dir": "FINALS-ELEM-PR2-V3-TRACED",
+    "dir_key": "finalsPr2V3Traced",
+    "file": "team-room-messages.json",
+    "abs_path": "D:\\goai\\mergepilot-demo\\evidence\\FINALS-ELEM-PR2-V3-TRACED\\team-room-messages.json",
+    "exists": true,
+    "evidence_root_readonly": true,
+    "sha256_actual": "83b9047189557306098f4ca2b50346597d62863b4e1e56d9f504f83478fbceb2",
+    "sha256_expected": "83b9047189557306098f4ca2b50346597d62863b4e1e56d9f504f83478fbceb2",
+    "hash_verified": true,
+    "sums_source": "FINALS-ELEM-PR2-V3-TRACED/SHA256SUMS"
+  },
+  "timestamp": "2026-09-17T03:03:00Z",
+  "timestamp_precision": "windowed",
+  "timestamp_note": "窗口 03:03:00–03:12:19（团队房导出：scope 确认 2 files +122/-0、PR 自带测试运行、依赖分批安装——大包一次安装 03:11:42Z 超时后改小批次 03:12:12Z 完成、测试 1 passed 泄露复现 / 1 failed fixture 错位、自设计 PoC）",
+  "summary": "reviewer 独立审查：确认 scope 2 files +122/-0；运行 PR 自带测试（1 passed 泄露复现 / 1 failed fixture 错位）；随后自设计 PoC。依赖安装等待 ≈9 分钟构成本轮墙钟主体",
+  "detail": null,
+  "hash_verified": true,
+  "redaction_status": {
+    "redaction_layer": "applied (evidence-adapter/redact.mjs)",
+    "scan_hits": [],
+    "status": "CLEAN — redaction applied; PR#2 demo placeholders allow-listed",
+    "forbidden_fields_excluded": [
+      "Authorization",
+      "Cookie",
+      "API key",
+      "Matrix token",
+      "password",
+      "完整工具参数",
+      "完整 prompt/completion"
+    ]
+  }
+}

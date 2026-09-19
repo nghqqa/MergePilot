@@ -1,0 +1,283 @@
+{
+  "case_id": "pr2-high-risk-human-gate",
+  "pr_compliance": {
+    "pr_number": 2,
+    "state": "open",
+    "write_operations": "NONE — 未 merge/push/close/reopen",
+    "auto_merge": "DISABLED"
+  },
+  "components": [
+    {
+      "component": "AgentTeams Controller",
+      "status": "VERIFIED",
+      "source": "agentteams-embedded:223ddc2（elemiso-ctrl，Docker reconcile 模式）",
+      "evidence": "FINALS-ELEM-PR2-V3-TRACED/README.md §资源"
+    },
+    {
+      "component": "CoPaw Runtime",
+      "status": "VERIFIED",
+      "source": "copaw-worker:223ddc2-agentloop-v3rag（image 8e17c3667c3c = 223ddc2-build1 + RAG MCP hook + AgentLoop 埋点 v3；构建文件 image/Dockerfile.v3rag + image/zz_agentloop_otel_v3.py 入包）",
+      "evidence": "FINALS-ELEM-PR2-V3-TRACED/image/"
+    },
+    {
+      "component": "Matrix (Tuwunel)",
+      "status": "VERIFIED",
+      "source": "elemiso-matrix:6167（全部 agent 通信 + 事件历史；导出 942/612 事件含全部 event_id）",
+      "evidence": "FINALS-ELEM-PR2-V3-TRACED/team-room-messages.json"
+    },
+    {
+      "component": "MinIO",
+      "status": "VERIFIED",
+      "source": "elemiso-controller:9000（teams/elemiso-team/shared/ 任务与项目存储）",
+      "evidence": "FINALS-ELEM-PR2-V3-TRACED/tasks/"
+    },
+    {
+      "component": "LLM Gateway (Higress)",
+      "status": "VERIFIED",
+      "source": "elemiso-controller:8080（deepseek-chat，key-auth consumer 路由）",
+      "evidence": "FINALS-ELEM-PR2-V3-TRACED/higress-gateway-log-final.log"
+    },
+    {
+      "component": "RAG MCP（组织知识库）",
+      "status": "VERIFIED",
+      "source": "rag_retrieve 经 MCP stdio 注入 CoPawAgent；知识型语料（8 文档/12 chunk，无案例结论）；V3 窗口运行时调用 4 次（PR2 reviewer/fixer/verifier 各 1 + PR3 reviewer 1），审计流水每次 2 条（客户端+服务端对账）",
+      "evidence": "FINALS-ELEM-PR2-V3-TRACED/rag/"
+    },
+    {
+      "component": "AgentLoop/OTel",
+      "status": "VERIFIED",
+      "source": "v3 埋点：会话累计 530 span（leader 203/reviewer 136/fixer 92/verifier 99），tool.rag_retrieve ×4、agentteams.delegation.link ×12（接收侧跨 Agent 关联首轮实战——属性级关联：携带 Leader trace_id 可检索，但因实现缺陷未作为 parent 嵌入 Leader 瀑布，已修复于后续镜像）、单层 genai.llm.call、全 span 携带 gen_ai.conversation.id；234 导出批次全部 SUCCESS 0 失败。披露：直连探针本轮未采集成功（采集命令静默失败，direct-probe-*.json 0 字节，SHA256SUMS 如实锁定，README 已披露）",
+      "evidence": "FINALS-ELEM-PR2-V3-TRACED/agentloop/span-summary.json"
+    },
+    {
+      "component": "PR Auto Merge",
+      "status": "DISABLED",
+      "source": "人工门禁令（merge/push/close/reopen 全禁）；本轮零 GitHub 写入（ls-remote 双向核验分支 SHA 不变）",
+      "evidence": "FINALS-ELEM-PR2-V3-TRACED/github-branches-after-v3.txt"
+    },
+    {
+      "component": "Event Integrity",
+      "status": "VERIFIED",
+      "source": "两个 V3 证据包 SHA256SUMS（62/53 文件，含 README/kickoff）启动时实时重算；历史 P14 包完整性报告见 /api/health（integrityReport）",
+      "evidence": "FINALS-ELEM-PR2-V3-TRACED/SHA256SUMS"
+    },
+    {
+      "component": "PolarDB RAG backend",
+      "status": "NOT_IMPLEMENTED",
+      "source": "真实 PolarDB 向量检索后端未接入；本轮 RAG 为本地知识型 SYNTHETIC 语料（data_mode=SYNTHETIC，契约与平台 /api/rag/search 一致）",
+      "evidence": "FINALS-ELEM-PR2-V3-TRACED/rag/rag-live-corpus.json"
+    },
+    {
+      "component": "Agentic Database Branch",
+      "status": "NOT_IMPLEMENTED",
+      "source": "真实 PolarDB Branch 未实现（MCP server 中的 database_* 工具未被本轮运行调用）",
+      "evidence": "FINALS-ELEM-PR2-V3-TRACED/rag/rag-tool-spans.jsonl（无 database_* 记录）"
+    }
+  ],
+  "residual_risks": [
+    {
+      "item": "Reviewer 跨轮记忆（如实披露）",
+      "detail": "worker 家目录由 MinIO 跨轮持久同步，reviewer 团队房可见 prior-runs 字样；本轮结论仍由其自主 clone/复测得出；RAG 语料不含任何案例结论（knowledge-only 设计即为保护独立性）。",
+      "source": "FINALS-ELEM-PR2-V3-TRACED/README.md + team-room-messages.json"
+    },
+    {
+      "item": "RAG 为 citation-only + SYNTHETIC",
+      "detail": "rag_retrieve 返回引用（document_id/chunk_id/score/source_ref）不含正文；语料为合成组织规范（非企业数据）；服务端只保存 query_hash（审计流水 arguments_hash）。",
+      "source": "FINALS-ELEM-PR2-V3-TRACED/rag/rag-live-corpus.json (_doc)"
+    },
+    {
+      "item": "本轮 LLM 缓存命中率 93%（PR2）/99%（PR3）",
+      "detail": "用量如实记录：PR2-V3 88 调用/输入 9,186,373（缓存 8,541,440 ≈93%，README 取整 92%）/输出 27,791；PR3-V3 30 调用/输入 3,272,385（缓存 3,253,248 ≈99%）/输出 9,361。",
+      "source": "FINALS-ELEM-PR2-V3-TRACED/usage-summary.json"
+    },
+    {
+      "item": "controller Stopped 语义移除容器",
+      "detail": "运行结束 CR Stopped 后 controller 移除 worker 容器与 auth 卷（CR 与 ctrl 数据卷保留）；全部容器内证据于停机前实时采集（span/audit/探针文件）。",
+      "source": "FINALS-ELEM-PR2-V3-TRACED/README.md §采集顺序"
+    },
+    {
+      "item": "PolarDB RAG backend：未接入",
+      "detail": "未接通 PolarDB 作为向量/知识检索后端；RAG 为本地知识型 SYNTHETIC 语料（zero-dep lexical 检索）。",
+      "source": "FINALS-ELEM-PR2-V3-TRACED/rag/rag-live-server.mjs"
+    },
+    {
+      "item": "Agentic Database Branch：未实现",
+      "detail": "无真实数据库写时分支隔离；MCP server 暴露的 database_* 工具本轮零调用。",
+      "source": "FINALS-ELEM-PR2-V3-TRACED/rag/rag-tool-spans.jsonl"
+    },
+    {
+      "item": "直连探针文件为 0 字节（如实披露）",
+      "detail": "两 V3 包内 agentloop/direct-probe-*.json 共 8 个文件均为 0 字节——采集命令本轮静默失败，SHA256SUMS 以空文件哈希 e3b0c442… 如实锁定，README 已披露\"本轮未采集成功\"；导出证据以容器内 OTEL_EXPORT SUCCESS 批次（234 / 0 失败）为准，直接导出连通性由前序轮次 4×HTTP 200 与本轮 span 持续云端落盘间接成立。",
+      "source": "FINALS-ELEM-PR2-V3-TRACED/SHA256SUMS + agentloop/"
+    },
+    {
+      "item": "delegation.link 属性级关联（如实降级）",
+      "detail": "本轮 agentteams.delegation.link ×12 携带 Leader trace_id 可检索，但因实现缺陷未作为 parent 嵌入 Leader 瀑布；修复（v3.1.1 补挂远端 parent context）已进入后续镜像，嵌套形态由后续运行产出——平台不以\"委派出现在 Leader 瀑布\"作为本轮证据。",
+      "source": "FINALS-ELEM-PR2-V3-TRACED/README.md §追踪与用量"
+    },
+    {
+      "item": "kickoff nudge（已知问题#4，如实记录）",
+      "detail": "PR2 kickoff 后监控判定\"未消费\"并于 03:09:34Z 发出 nudge（consumer 空闲唤醒）；房间导出+任务 meta 显示委派 03:02:53Z/ack 03:02:56Z 早已发生，nudge 未产生重复委派；另 reviewer 依赖安装等待 ≈9 分钟构成本轮墙钟主体。",
+      "source": "FINALS-ELEM-PR2-V3-TRACED/leader-dm-messages.json + team-room-messages.json + tasks/pr2v3-review-1/meta.json"
+    },
+    {
+      "item": "PR-METADATA.md 残留副本（PR3 如实披露）",
+      "detail": "PR3-V3 reviewer 容器内 ~/task/PR-METADATA.md 为上一轮（pr3rag）残留（参数一致），reviewer 03:19:13Z 团队房披露并按权威任务 spec 执行。",
+      "source": "FINALS-ELEM-PR3-V3-TRACED/tasks/pr3v3-review-1/ + team-room-messages-pr3v3-window.json"
+    }
+  ],
+  "stability_events": [
+    {
+      "item": "RAG 接入与 v3 埋点构建如实记录",
+      "detail": "v3rag 镜像（8e17c3667c3c）= 223ddc2-build1 + RAG MCP hook + AgentLoop 埋点 v3；RAG 注入的两处历史失败（StdIOStatefulClient 需显式 connect()、cwd=\"\" 致 spawn FileNotFoundError）在隔离容器内定位修复并以 canary/端到端 MCP 握手验证后才进入正式运行；构建文件与验证记录入包。",
+      "source": "FINALS-ELEM-PR2-V3-TRACED/image/ + rag/rag-tool-spans.jsonl"
+    },
+    {
+      "item": "门决策执行模式",
+      "detail": "本轮两门按操作员运行前书面授权自动执行（PR #2=批准、PR #3=拒绝），授权范围与先例一致（零 GitHub 写入）；门记录均先于派发/终报落盘项目存储（gate-approval-sent.json / gate-rejection-sent.json 记录 DM+团队房双事件号）。",
+      "source": "FINALS-ELEM-PR2-V3-TRACED/project/human-gate-approval.md + gate-approval-sent.json"
+    },
+    {
+      "item": "PR2 墙钟构成如实拆解",
+      "detail": "kickoff 03:02:46Z → 终报 03:15:18Z = 12m32s；其中 reviewer 依赖分批安装等待 ≈9 分钟（大包一次安装 03:11:42Z 超时后自行改小批次）为墙钟主体；03:09:34Z nudge（已知问题#4）未产生额外委派。",
+      "source": "FINALS-ELEM-PR2-V3-TRACED/team-room-messages.json"
+    }
+  ],
+  "secret_scan": {
+    "clean": true,
+    "source": "打包时精确密钥扫描（license key、admin/minio 密码、gateway key、matrix token 反向比对）",
+    "detail": "0 命中；证据包不含原始 docker 容器日志（防凭据片段）；AgentLoop license key 仅经 stdin 注入容器开关文件，未入镜像/Git/证据包"
+  },
+  "verdicts": [
+    {
+      "phase": "PR2-V3-TRACED",
+      "verdict": "REAL_EXECUTED + V3_INSTRUMENTATION + REAL_RAG_MCP_INTEGRATION（completed，墙钟 12m32s 含依赖安装等待与一次 nudge，如实记录）",
+      "source": "FINALS-ELEM-PR2-V3-TRACED/README.md"
+    },
+    {
+      "phase": "PR3-V3-TRACED",
+      "verdict": "PROJECT_BLOCKED_HUMAN_REJECTED（零派发三重核验，墙钟 2m11s）",
+      "source": "FINALS-ELEM-PR3-V3-TRACED/README.md"
+    }
+  ],
+  "sha256sums": {
+    "checked_at": "2026-09-19T00:53:17.605Z",
+    "dirs": {
+      "replayMaterials": {
+        "dir": "PHASE14-WINDOWS-REPLAY-MATERIALS-20260829-195223",
+        "sha256sums": true,
+        "files": 21,
+        "ok": 21,
+        "mismatched": [],
+        "missing": [],
+        "verified": true
+      },
+      "fixAudit": {
+        "dir": "PHASE14-WINDOWS-COPAW-HIGH-RISK-FIX-AUDIT-20260829-165813",
+        "sha256sums": true,
+        "files": 12,
+        "ok": 12,
+        "mismatched": [],
+        "missing": [],
+        "verified": true
+      },
+      "fixVerify": {
+        "dir": "PHASE14-WINDOWS-COPAW-HIGH-RISK-FIX-VERIFY-20260829-180548",
+        "sha256sums": true,
+        "files": 11,
+        "ok": 11,
+        "mismatched": [],
+        "missing": [],
+        "verified": true
+      },
+      "finalLock": {
+        "dir": "PHASE14-WINDOWS-AGENTTEAMS-COPAW-FINAL-20260829-130500",
+        "sha256sums": true,
+        "files": 16,
+        "ok": 16,
+        "mismatched": [],
+        "missing": [],
+        "verified": true
+      },
+      "agentloopOtel": {
+        "dir": "PHASE14-WINDOWS-AGENTLOOP-OTEL-20260829-200307",
+        "sha256sums": true,
+        "files": 14,
+        "ok": 14,
+        "mismatched": [],
+        "missing": [],
+        "verified": true
+      },
+      "credRotation": {
+        "dir": "PHASE14-WINDOWS-CREDENTIAL-ROTATION-20260829-130500",
+        "sha256sums": true,
+        "files": 20,
+        "ok": 20,
+        "mismatched": [],
+        "missing": [],
+        "verified": true
+      },
+      "e2eFull": {
+        "dir": "PHASE14-WINDOWS-COPAW-E2E-FULL-20260829-122526",
+        "sha256sums": true,
+        "files": 20,
+        "ok": 20,
+        "mismatched": [],
+        "missing": [],
+        "verified": true
+      },
+      "promotionFinal": {
+        "dir": "PHASE14-WINDOWS-COPAW-PROMOTION-A-FINAL-20260829-124400",
+        "sha256sums": true,
+        "files": 17,
+        "ok": 17,
+        "mismatched": [],
+        "missing": [],
+        "verified": true
+      },
+      "rejectDemo": {
+        "dir": "PHASE14-WINDOWS-COPAW-HIGH-RISK-REJECT-20260830-091913",
+        "sha256sums": true,
+        "files": 29,
+        "ok": 29,
+        "mismatched": [],
+        "missing": [],
+        "verified": true
+      }
+    },
+    "total_files": 160,
+    "ok_files": 160,
+    "all_ok": true
+  },
+  "case_sources": {
+    "case_definition": "FINALS-ELEM-PR2-V3-TRACED/README.md",
+    "kickoff": "FINALS-ELEM-PR2-V3-TRACED/kickoff-as-sent.txt",
+    "kickoff_json": "FINALS-ELEM-PR2-V3-TRACED/kickoff.json",
+    "timeline": "FINALS-ELEM-PR2-V3-TRACED/team-room-messages.json",
+    "leader_dm": "FINALS-ELEM-PR2-V3-TRACED/leader-dm-messages.json",
+    "gate_record": "FINALS-ELEM-PR2-V3-TRACED/project/human-gate-approval.md",
+    "gate_sent": "FINALS-ELEM-PR2-V3-TRACED/gate-approval-sent.json",
+    "review_result": "FINALS-ELEM-PR2-V3-TRACED/tasks/pr2v3-review-1/result.md",
+    "reviewer_result": "FINALS-ELEM-PR2-V3-TRACED/tasks/pr2v3-review-1/result.md",
+    "reviewer_findings": "FINALS-ELEM-PR2-V3-TRACED/tasks/pr2v3-review-1/workspace/findings.md",
+    "gate_request": "FINALS-ELEM-PR2-V3-TRACED/leader-dm-messages.json",
+    "probe_raw": "FINALS-ELEM-PR2-V3-TRACED/tasks/pr2v3-verify-1/workspace/verification.md",
+    "fix_result": "FINALS-ELEM-PR2-V3-TRACED/tasks/pr2v3-fix-1/result.md",
+    "patch": "FINALS-ELEM-PR2-V3-TRACED/tasks/pr2v3-fix-1/attempt-1.diff",
+    "verify_result": "FINALS-ELEM-PR2-V3-TRACED/tasks/pr2v3-verify-1/result.md",
+    "verification_report": "FINALS-ELEM-PR2-V3-TRACED/tasks/pr2v3-verify-1/workspace/verification.md",
+    "rag_audit": "FINALS-ELEM-PR2-V3-TRACED/rag/rag-tool-spans.jsonl",
+    "rag_corpus": "FINALS-ELEM-PR2-V3-TRACED/rag/rag-live-corpus.json",
+    "spans": "FINALS-ELEM-PR2-V3-TRACED/agentloop/span-summary.json",
+    "spans_leader": "FINALS-ELEM-PR2-V3-TRACED/agentloop/spans-leader-final.log",
+    "audit_leader": "FINALS-ELEM-PR2-V3-TRACED/agentloop/audit-leader-final.log",
+    "usage": "FINALS-ELEM-PR2-V3-TRACED/usage-summary.json",
+    "gateway_log": "FINALS-ELEM-PR2-V3-TRACED/higress-gateway-log-final.log",
+    "controller": "FINALS-ELEM-PR2-V3-TRACED/controller-project.json",
+    "project_result": "FINALS-ELEM-PR2-V3-TRACED/project/result.md",
+    "project_plan": "FINALS-ELEM-PR2-V3-TRACED/project/plan.md",
+    "github_branches": "FINALS-ELEM-PR2-V3-TRACED/github-branches-after-v3.txt",
+    "image_dockerfile": "FINALS-ELEM-PR2-V3-TRACED/image/Dockerfile.v3rag",
+    "image_otel_module": "FINALS-ELEM-PR2-V3-TRACED/image/zz_agentloop_otel_v3.py"
+  }
+}

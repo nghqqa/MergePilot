@@ -1,0 +1,51 @@
+{
+  "drawer": "event",
+  "data_mode": "historical replay",
+  "trace_mode": "evidence-replay",
+  "integrity_status": "verified",
+  "event_id": "pr2v3-ev-001",
+  "matrix_event_id": "$AZhwvTHU4xotN65a7xPX31r-BJYheUA5Xa1tWvmuM_Q",
+  "trace_id": null,
+  "trace_note": "per-event 无独立 trace（per-task/事件维度仍为 evidence-replay）；平台级历史权威 Trace 见总览页 AgentLoop Cloud Trace 区块",
+  "project_id": "elemiso-pr2v3-gate",
+  "task_id": null,
+  "agent_role": "human",
+  "runtime": "copaw-worker:223ddc2-agentloop-v3rag（image 8e17c3667c3c）",
+  "event_type": "message",
+  "source": "matrix",
+  "source_label": "Matrix event",
+  "source_ref": "finalsPr2V3Traced/kickoff-as-sent.txt",
+  "source_hash": {
+    "ref": "finalsPr2V3Traced/kickoff-as-sent.txt",
+    "dir": "FINALS-ELEM-PR2-V3-TRACED",
+    "dir_key": "finalsPr2V3Traced",
+    "file": "kickoff-as-sent.txt",
+    "abs_path": "D:\\goai\\mergepilot-demo\\evidence\\FINALS-ELEM-PR2-V3-TRACED\\kickoff-as-sent.txt",
+    "exists": true,
+    "evidence_root_readonly": true,
+    "sha256_actual": "238c6cd0647a97cefdbf8d2744229b39284ae7b9c0fab7f0da08e6191d0452d0",
+    "sha256_expected": "238c6cd0647a97cefdbf8d2744229b39284ae7b9c0fab7f0da08e6191d0452d0",
+    "hash_verified": true,
+    "sums_source": "FINALS-ELEM-PR2-V3-TRACED/SHA256SUMS"
+  },
+  "timestamp": "2026-09-17T03:02:46Z",
+  "timestamp_precision": "exact",
+  "timestamp_note": null,
+  "summary": "操作员发送 kickoff（项目 elemiso-pr2v3-gate；DAG 预置不重排；SPEC 非预设——未点名任何漏洞类别；manifest 声明 rag_retrieve 知识库工具可用）",
+  "detail": "kickoff 全文存档于 kickoff-as-sent.txt（3125 字节）；此前 03:02:00–03:02:04Z 完成 v3 埋点 smoke（DM V3-TP-CHECK/V3-READY，Leader 双确认）。审计要点：SPEC 只指向 diff 与新增文件，结论完全未预设。",
+  "hash_verified": true,
+  "redaction_status": {
+    "redaction_layer": "applied (evidence-adapter/redact.mjs)",
+    "scan_hits": [],
+    "status": "CLEAN — redaction applied; PR#2 demo placeholders allow-listed",
+    "forbidden_fields_excluded": [
+      "Authorization",
+      "Cookie",
+      "API key",
+      "Matrix token",
+      "password",
+      "完整工具参数",
+      "完整 prompt/completion"
+    ]
+  }
+}

@@ -1,0 +1,100 @@
+{
+  "id": "ev-approval-bind",
+  "title": "真实审批记录（绑定 verification + head）",
+  "level": "LOCAL_REAL_SQL",
+  "fields": [
+    [
+      "ticket_id",
+      "tkt-523e97c2-19ae-49dc-bfb5-356cddf6dbda"
+    ],
+    [
+      "bound_verification",
+      "mv-04f9e460e5b26e9f2af6e745"
+    ],
+    [
+      "bound_head",
+      "未提供"
+    ],
+    [
+      "approved",
+      "APPROVED · by mergepilot"
+    ]
+  ],
+  "blocks": [],
+  "note": "审批在真实审计库中绑定（verification_id, head_sha）；本演示界面不重复该操作，只展示记录。",
+  "source_ref": "evidence/FINALS-DB-MIGRATION-LOOP-20260914/report.json → S7_*",
+  "real": [
+    "隔离 PostgreSQL 16.14 clone 上真实执行迁移与断言 SQL",
+    "审批/绑定/gate 记录真实写入审计库",
+    "政策网关 wrapper 以模块导入方式真实执行"
+  ],
+  "controlled": [
+    "案例数据（orders-demo 基线与种子为 SYNTHETIC 合成数据）"
+  ],
+  "not_executed": [
+    "PolarDB 连接（NOT CONNECTED）",
+    "Agentic Database Branch",
+    "GitHub 写入",
+    "生产发布（NOT PERFORMED）"
+  ],
+  "case": {
+    "case_id": "db-migration-orders",
+    "case_name": "订单库迁移 · 历史数据兼容",
+    "repo": "mergepilot/orders-demo",
+    "pr": "PR #4 · orders-schema-change",
+    "pr_url": null,
+    "run_id": "run-dbv-084723-rev2",
+    "sha": "a7db33c36313f5f4c963bd6000b108ca8279d96a",
+    "sha_kind": "rev2 head（git tree object id）",
+    "evidence_level": [
+      "LOCAL_REAL_SQL"
+    ],
+    "source_dir": "evidence/FINALS-DB-MIGRATION-LOOP-20260914",
+    "generated_at": "2026-09-15T08:47:27Z",
+    "pending_redactions": null
+  },
+  "integrity": {
+    "finals": {
+      "finalsDbLoop": {
+        "dir": "FINALS-DB-MIGRATION-LOOP-20260914",
+        "tier": "REAL_SQL_VERIFICATION_ISOLATED_POSTGRES",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsReworkLoop": {
+        "dir": "FINALS-REWORK-LOOP-20260914",
+        "tier": "MECHANISM_VERIFICATION",
+        "verified": true,
+        "files": 7,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsRagLoop": {
+        "dir": "FINALS-RAG-LOOP-20260914",
+        "tier": "REAL_OFFLINE_EXPERIMENT_SYNTHETIC_CORPUS",
+        "verified": true,
+        "files": 4,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr2Live": {
+        "dir": "FINALS-ELEM-PR2-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 19,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr3Live": {
+        "dir": "FINALS-ELEM-PR3-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      }
+    }
+  }
+}

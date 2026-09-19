@@ -1,0 +1,105 @@
+{
+  "id": "ev-mig-rev2",
+  "title": "迁移候选 rev2（回填+归档+兼容）",
+  "level": "LOCAL_REAL_SQL",
+  "fields": [
+    [
+      "candidate_id",
+      "mc-109d93c429f38e6f5139654e"
+    ],
+    [
+      "parent_candidate",
+      "mc-31b545c0e9f6c391a44e19f5"
+    ],
+    [
+      "head_sha",
+      "a7db33c36313f5f4c963bd6000b108ca8279d96a"
+    ],
+    [
+      "script_digest",
+      "5c3d64e04bad548136b63b50e87d26b83af5ada425c7aee052bcb9958623069e"
+    ]
+  ],
+  "blocks": [
+    {
+      "title": "candidate-a.rev2.sql",
+      "lang": "sql",
+      "text": "-- candidate-a · revision 2 — \"先回填、归档重复、再加约束，并保留旧程序兼容\"\n-- Same candidate, revised after revision 1 failed on historical data.\n--   1. recover owners from legacy_order_owner; unresolvable rows get the\n--      sentinel customer 0 (UNKNOWN_LEGACY) and are written to an audit table\n--      so the business can follow up — no silent data invention.\n--   2. duplicate payments are archived (not deleted) before UNIQUE is added.\n--   3. NOT NULL is added together with DEFAULT 0 so workers still running the\n--      old code (which omits customer_id) keep working during the rollout\n--      window; the new code always supplies a real customer_id.\nBEGIN;\n\nINSERT INTO customers(customer_id, name) VALUES (0, 'UNKNOWN_LEGACY')\nON CONFLICT (customer_id) DO NOTHING;\n\nCREATE TABLE IF NOT EXISTS orders_backfill_audit (\n  order_id        BIGINT PRIMARY KEY,\n  old_customer_id BIGINT,\n  new_customer_id BIGINT NOT NULL,\n  source          TEXT NOT NULL CHECK (source IN ('legacy_order_owner','sentinel')),\n  applied_at      TIMESTAMPTZ NOT NULL DEFAULT now()\n);\n\nINSERT INTO orders_backfill_audit(order_id, old_customer_id, new_customer_id, source)\nSELECT o.order_id, o.customer_id, COALESCE(l.customer_id, 0),\n       CASE WHEN l.customer_id IS NULL THEN 'sentinel' ELSE 'legacy_order_owner' END\nFROM orders o\nLEFT JOIN legacy_order_owner l ON l.order_id = o.order_id\nWHERE o.customer_id IS NULL\nON CONFLICT (order_id) DO NOTHING;\n\nUPDATE orders o\n   SET customer_id = a.new_customer_id\n  FROM orders_backfill_audit a\n WHERE a.order_id = o.order_id AND o.customer_id IS NULL;\n\nCREATE TABLE IF NOT EXISTS payments_dedup_archive (LIKE payments INCLUDING ALL);\n\nINSERT INTO payments_dedup_archive\nSELECT p.* FROM payments p\nWHERE p.payment_id IN (\n  SELECT payment_id FROM (\n    SELECT payment_id, row_number() OVER (PARTITION BY order_id ORDER BY payment_id) AS rn\n    FROM payments) t\n  WHERE t.rn > 1)\nON CONFLICT (payment_id) DO NOTHING;\n\nDELETE FROM payments WHERE payment_id IN (SELECT payment_id FROM payments_dedup_archive);\n\nALTER TABLE orders ALTER COLUMN customer_id SET DEFAULT 0;\nALTER TABLE orders ALTER COLUMN customer_id SET NOT NULL;\nALTER TABLE payments ADD CONSTRAINT uq_payments_order_id UNIQUE (order_id);\n\nCOMMIT;\n"
+    }
+  ],
+  "source_ref": "evidence/FINALS-DB-MIGRATION-LOOP-20260914/case/migrations/candidate-a.rev2.sql",
+  "real": [
+    "隔离 PostgreSQL 16.14 clone 上真实执行迁移与断言 SQL",
+    "审批/绑定/gate 记录真实写入审计库",
+    "政策网关 wrapper 以模块导入方式真实执行"
+  ],
+  "controlled": [
+    "案例数据（orders-demo 基线与种子为 SYNTHETIC 合成数据）"
+  ],
+  "not_executed": [
+    "PolarDB 连接（NOT CONNECTED）",
+    "Agentic Database Branch",
+    "GitHub 写入",
+    "生产发布（NOT PERFORMED）"
+  ],
+  "case": {
+    "case_id": "db-migration-orders",
+    "case_name": "订单库迁移 · 历史数据兼容",
+    "repo": "mergepilot/orders-demo",
+    "pr": "PR #4 · orders-schema-change",
+    "pr_url": null,
+    "run_id": "run-dbv-084723-rev2",
+    "sha": "a7db33c36313f5f4c963bd6000b108ca8279d96a",
+    "sha_kind": "rev2 head（git tree object id）",
+    "evidence_level": [
+      "LOCAL_REAL_SQL"
+    ],
+    "source_dir": "evidence/FINALS-DB-MIGRATION-LOOP-20260914",
+    "generated_at": "2026-09-15T08:47:27Z",
+    "pending_redactions": null
+  },
+  "integrity": {
+    "finals": {
+      "finalsDbLoop": {
+        "dir": "FINALS-DB-MIGRATION-LOOP-20260914",
+        "tier": "REAL_SQL_VERIFICATION_ISOLATED_POSTGRES",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsReworkLoop": {
+        "dir": "FINALS-REWORK-LOOP-20260914",
+        "tier": "MECHANISM_VERIFICATION",
+        "verified": true,
+        "files": 7,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsRagLoop": {
+        "dir": "FINALS-RAG-LOOP-20260914",
+        "tier": "REAL_OFFLINE_EXPERIMENT_SYNTHETIC_CORPUS",
+        "verified": true,
+        "files": 4,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr2Live": {
+        "dir": "FINALS-ELEM-PR2-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 19,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr3Live": {
+        "dir": "FINALS-ELEM-PR3-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      }
+    }
+  }
+}

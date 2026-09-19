@@ -1,0 +1,250 @@
+{
+  "status": "ok",
+  "service": "mergepilot-demo-backend",
+  "version": "1.2.0-truthfulness",
+  "time": "2026-09-19T00:53:18.508Z",
+  "evidence_root": "D:\\goai\\mergepilot-demo\\evidence",
+  "modes": {
+    "replay": {
+      "available": true,
+      "provider": "evidence-adapter/replay-provider.mjs",
+      "read_only": true
+    },
+    "live": {
+      "available": false,
+      "fully_connected": false,
+      "sources": {
+        "matrix": {
+          "label": "Matrix (Tuwunel homeserver)",
+          "configured": true,
+          "status": "UNAVAILABLE",
+          "http_status": null,
+          "detail": "fetch failed"
+        },
+        "element": {
+          "label": "Element Web",
+          "configured": true,
+          "status": "OK",
+          "http_status": 200,
+          "detail": "read-only probe succeeded"
+        },
+        "minio": {
+          "label": "MinIO",
+          "configured": true,
+          "status": "UNAVAILABLE",
+          "http_status": null,
+          "detail": "fetch failed"
+        },
+        "controller": {
+          "label": "AgentTeams Controller API",
+          "configured": false,
+          "status": "NOT_CONFIGURED",
+          "detail": "设置 DEMO_LIVE_CONTROLLER_URL（及可选 DEMO_LIVE_CONTROLLER_TOKEN）后启用；凭据仅保存在服务端环境变量"
+        },
+        "github": {
+          "label": "GitHub PR metadata (unauthenticated, read-only)",
+          "configured": true,
+          "status": "UNAVAILABLE",
+          "http_status": 403,
+          "detail": "HTTP 403"
+        }
+      }
+    }
+  },
+  "integrity": {
+    "historical_source_integrity": {
+      "status": "VERIFIED",
+      "files": 21,
+      "ok_files": 21,
+      "drift_files": [],
+      "missing_files": []
+    },
+    "final_submission_integrity": {
+      "status": "VERIFIED",
+      "files": 139,
+      "ok_files": 139,
+      "drift_files": [],
+      "missing_files": [],
+      "dirs": [
+        "PHASE14-WINDOWS-AGENTTEAMS-COPAW-FINAL-20260829-130500",
+        "PHASE14-WINDOWS-COPAW-HIGH-RISK-FIX-AUDIT-20260829-165813",
+        "PHASE14-WINDOWS-COPAW-HIGH-RISK-FIX-VERIFY-20260829-180548",
+        "PHASE14-WINDOWS-AGENTLOOP-OTEL-20260829-200307",
+        "PHASE14-WINDOWS-CREDENTIAL-ROTATION-20260829-130500",
+        "PHASE14-WINDOWS-COPAW-E2E-FULL-20260829-122526",
+        "PHASE14-WINDOWS-COPAW-PROMOTION-A-FINAL-20260829-124400",
+        "PHASE14-WINDOWS-COPAW-HIGH-RISK-REJECT-20260830-091913"
+      ]
+    },
+    "all_ok": true,
+    "drift_files": [],
+    "checked_at": "2026-09-19T00:53:17.605Z"
+  },
+  "replay_integrity": {
+    "events_pr2": 17,
+    "events_pr3": 9,
+    "source_refs_checked": 87,
+    "missing_source_refs": [],
+    "ok": true,
+    "note": "所有回放事件均锚定真实证据文件（两包 SHA256SUMS 锁定）；时间精度以 exact/approx/windowed 如实标注"
+  },
+  "credibility": {
+    "final_package_sha256": "VERIFIED",
+    "historical_source_sha256": "VERIFIED",
+    "secret_scan": "CLEAN",
+    "pr_auto_merge": "DISABLED",
+    "runtime_write": "NONE",
+    "matrix_messages": "NONE"
+  },
+  "agentloop": {
+    "smoke": {
+      "status": "VERIFIED",
+      "source": "Aliyun AgentLoop OTLP smoke evidence",
+      "refs": [
+        "PHASE14-WINDOWS-AGENTLOOP-OTEL-20260829-200307/trace-schema.json",
+        "PHASE14-WINDOWS-REPLAY-MATERIALS-20260829-195223/08-scope-boundary.md"
+      ],
+      "refs_note": "smoke 判定依据阶段指令；相关文档存在 1 个已记录 SHA256 drift（08-scope-boundary.md），故该文件中的 LIVE 断言不作为 VERIFIED 依据"
+    },
+    "live_copaw_run": {
+      "status": "VERIFIED",
+      "trace_mode": "LIVE CLOUD",
+      "source": "Aliyun AgentLoop console trace detail — operator-confirmed screenshot (Phase 14.2H, 2026-08-30)",
+      "verdict": "AGENTLOOP_ALIYUN_TRACE_VISIBILITY_CONFIRMED_BY_OPERATOR",
+      "evidence_dir": "evidence/PHASE14-WINDOWS-AGENTLOOP-MERGED-TRACE-FINALIZE-20260830-181813",
+      "evidence_dir_in_package": false,
+      "evidence_dir_note": "该目录属于项目完整证据库，本演示包随附的 11 个证据目录未包含它；包内 AgentLoop 相关证据为 PHASE14-WINDOWS-AGENTLOOP-OTEL-20260829-200307（OTLP smoke + trace schema）",
+      "sample_note": "历史权威 Trace · 已确认样本 n=1（2026-08-30），非当前实时数据",
+      "refs": [
+        "cloud-trace-confirmation.json",
+        "span-tree.json",
+        "coverage-matrix.json",
+        "relay-stability.json",
+        "SHA256SUMS"
+      ],
+      "refs_note": "真实 Matrix 触发 run（observability-validation-run-4 / project agentloop-innerhook-4），非 synthetic smoke、非 evidence replay；云端可见性由操作员控制台确认，本地 relay(75/75 HTTP 200) 与四 worker 埋点(span 名录+LLM 审计)构成旁证",
+      "trace": {
+        "trace_id": "fbf4a3cec0493990d76e10a102418be1",
+        "session_id": "N2KQqHVSBsSZc9utWsEeZ5f",
+        "started_at_utc": "2026-08-30T10:07:26Z",
+        "duration": "17.6s",
+        "agent_calls": 1,
+        "llm_calls": 24,
+        "tool_calls": 8,
+        "tokens_total": 51890,
+        "tokens_input": 49867,
+        "tokens_output": 2023,
+        "model": "deepseek-chat",
+        "service": "mergepilot-copaw"
+      },
+      "span_tree": "agent_step → invoke_agent Friday → {chat deepseek-chat (native) + genai.llm.call (loongsuite wrapper) + tool.projectflow + tool.taskflow + matrix.send}",
+      "merged_span_note": "原生 agentscope span 与 loongsuite wrapper span 同 Trace：zz 埋点在解释器启动时抢占全局 TracerProvider（service.name=mergepilot-copaw），runtime 复用同一 Provider，同批导出",
+      "drifted_claim_file": "PHASE14-WINDOWS-REPLAY-MATERIALS-20260829-195223/08-scope-boundary.md"
+    },
+    "tool_span": {
+      "status": "VERIFIED",
+      "source": "console 工具调用=8（trace fbf4a3cec0493990d76e10a102418be1）+ worker span 日志 tool.projectflow/tool.taskflow 同 run 产出",
+      "refs": [
+        "span-tree.json",
+        "relay-stability.json"
+      ]
+    },
+    "coverage": {
+      "status": "VERIFIED",
+      "scope": "Agent / LLM / Tool span 同一 Trace 覆盖（历史权威 Trace · 已确认样本 n=1 完整真实运行；不声称多轮稳定覆盖）",
+      "refs": [
+        "coverage-matrix.json"
+      ]
+    },
+    "historical_replay": {
+      "status": "VERIFIED",
+      "mode": "evidence-replay"
+    }
+  },
+  "rag": {
+    "status": "SYNTHETIC DEMO",
+    "data_mode": "SYNTHETIC",
+    "document_count": 8,
+    "chunk_count": 9,
+    "embedding_backend": "local-hash-bow-4096 (deterministic, SYNTHETIC, strategy=v2-bigram-idf-hash4096)",
+    "retrieval_strategy": "v2-bigram-idf-hash4096",
+    "agent_correlation": "VERIFIED（execute_tool rag_retrieve 已随真实 agent run 入云，trace f5bb3e1f55bc53412f0fac5e6b400eb5）"
+  },
+  "polardb": {
+    "connection": "NOT CONNECTED",
+    "fixture_data_mode": "SIMULATED"
+  },
+  "finals": {
+    "evidence_integrity": {
+      "finalsDbLoop": {
+        "dir": "FINALS-DB-MIGRATION-LOOP-20260914",
+        "tier": "REAL_SQL_VERIFICATION_ISOLATED_POSTGRES",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsReworkLoop": {
+        "dir": "FINALS-REWORK-LOOP-20260914",
+        "tier": "MECHANISM_VERIFICATION",
+        "verified": true,
+        "files": 7,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsRagLoop": {
+        "dir": "FINALS-RAG-LOOP-20260914",
+        "tier": "REAL_OFFLINE_EXPERIMENT_SYNTHETIC_CORPUS",
+        "verified": true,
+        "files": 4,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr2Live": {
+        "dir": "FINALS-ELEM-PR2-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 19,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr3Live": {
+        "dir": "FINALS-ELEM-PR3-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      }
+    },
+    "tiers": {
+      "db_migration_loop": "REAL_SQL_VERIFICATION_ISOLATED_POSTGRES — not an Agentic Database branch; PolarDB NOT CONNECTED",
+      "rework_loop": "MECHANISM_VERIFICATION — real controller + real PG + real tests; agent output is controlled input; no Matrix/Element, no LLM",
+      "rag_loop": "REAL_OFFLINE_EXPERIMENT — SYNTHETIC corpus, family-split held-out backtest",
+      "real_agent_element_handoff": "NOT_EXECUTED (separate tier; requires the AgentTeams stack and authorization)"
+    }
+  },
+  "redaction": {
+    "applied": "every API response body",
+    "key_rules": "secret-like keys -> [REDACTED] (sha/digest/event_id/id/path exempt)",
+    "string_rules": "bearer / gh* / sk-* / AKIA* / JWT / key=value secret assignments masked",
+    "allow_list": [
+      "TOP-SECRET-OUTSIDE-BASE",
+      "WELCOME-LEGIT-DEMO",
+      "outside-secret.txt",
+      "deep-secret.txt",
+      "welcome.txt",
+      "LEAKED_OUTSIDE_SECRET",
+      "TOP-SECRET"
+    ],
+    "note": "PR #2 demo placeholders are repo fixtures, not credentials (permitted by build spec)"
+  },
+  "constraints": {
+    "controller_modified": false,
+    "copaw_runtime_modified": false,
+    "openclaw_mainline_modified": false,
+    "pr_write_operations": "NONE (PR Auto Merge: DISABLED)",
+    "matrix_messages_sent": 0,
+    "evidence_dirs": "READ-ONLY (never written by this platform)"
+  }
+}

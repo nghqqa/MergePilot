@@ -1,0 +1,126 @@
+{
+  "id": "ev-auto-run",
+  "title": "运行档案（自动闭环与会话口径）",
+  "level": "REAL_EXECUTED_AGENTTEAMS_LIVE",
+  "fields": [
+    [
+      "自动闭环",
+      "审查提交 → 单节点 DAG 即结 → 项目 completed（17:06:38Z 团队房留痕「low-risk auto path」）→ 17:06:44Z 综合终报"
+    ],
+    [
+      "用量（两口径并列）",
+      "锁定工件未单列 pr1 窗口；SK5 会话合计 133 次调用 / 输入 8,960,469 / 输出 40,623；轮次说明估计 pr1 ≈45 次 / 5.08M（≈99% 缓存）"
+    ],
+    [
+      "追踪（会话累计）",
+      "SK5 四包同会话：span-summary 824 span（本案例为其中 reviewer 段）· skill_sast_scan ×2 独立 span"
+    ],
+    [
+      "合规",
+      "PR #1 全程 OPEN · github-branches-after-sk5.txt：两分支 head 运行后与记录一致 · 零 GitHub 写入"
+    ]
+  ],
+  "blocks": [
+    {
+      "title": "finalsPr1Sk5Auto/project/result.md（项目终报）",
+      "lang": "markdown",
+      "text": "# Project Result: PR #1 low-risk auto path\n\n- **Project ID**: elemiso-pr1sk5-auto\n- **Run ID**: run-elem-pr1sk5-20260919-01\n- **Requester**: admin (Team Admin, via Leader DM)\n- **Repo**: https://github.com/nghqqa/fastapi-boilerplate-demo\n- **PR**: #1 (head SHA `4cd5bf099f88c3f3f85ee4c06b7adfe9925a6e5c`, base `fdde4f4142606336c7b7b25f176949dc5882d89a`)\n- **Status**: COMPLETE — review node accepted; low-risk auto path (no human gate)\n\n## Outcome\n\nAn independent routine security review of the PR #1 bootstrap change found **no\nnew security vulnerability**. The low-risk auto path applies: no remediation is\nrequired, no human security gate is triggered, and no fix/verify nodes are\nneeded. PR #1 stays OPEN; **zero GitHub writes** were performed.\n\n## DAG Execution\n\n- [x] `pr1sk5-review-1` — Routine security review of PR #1 bootstrap (reviewer) — **NOT_CONFIRMED / LOW / HUMAN_VERIFICATION_REQUIRED: NO**\n\n## Key Findings\n\n- Diff scope: 6 files, +168/-1 (`PR_DESCRIPTION.md`, migration\n  `0001_uq_api_keys_user_name.py`, `models.py`, migration test `__init__.py`,\n  `base_schema_helper.py`, `test_uq_user_key_name.py`).\n- No new security vulnerability: the model change is purely additive\n  (`UniqueConstraint(\"user_id\", \"name\")`); the migration is static DDL\n  (`create_unique_constraint` / `drop_constraint`) — no user input, no\n  raw/dynamic SQL, no secrets, no auth/route change, no new dependency, no\n  deserialization/path handling.\n- Tools: `skill_sast_scan` (inline) reported one `subprocess.run` finding at\n  `test_uq_user_key_name.py:9` — adjudicated **false positive** (argv list,\n  `shell=False`, constant args). `skill_risk_classify` → advisory L1\n  (`SOURCE_CONFIG_CHANGE`), consistent.\n- PR's own tests as written: 2 **SKIPPED** (`@needs_baseline` guard;\n  `P14_BASELINE_TREE` unset and no Docker socket) — environment limitation,\n  not a defect.\n- Non-security note (does not change the verdict): the migration adds\n  `UNIQUE(user_id, name)` without deduplicating historical rows, so upgrade\n  can fail with `IntegrityError`/SQLSTATE 23505 where a user already has\n  same-named keys. This is a reliability/data-migration-safety issue and is\n  explicitly disclosed/seeded in the diff (`PR_DESCRIPTION.md` names the\n  by-design failing test). No fix proposed (contract forbids patch code).\n\n## Deliverables\n\n- `shared/tasks/pr1sk5-review-1/workspace/findings.md` — independent review findings\n\n## Notes\n\n- Low-risk auto path: review verdict LOW / NOT_CONFIRMED → project completes\n  without a human security gate, fix, or verification node.\n- Advisory tools (`rag_retrieve`, `skill_case_retrieval`) returned no relevant\n  match for a bootstrap migration PR; references only.\n- PR #1 stays OPEN. Any GitHub-side action requires explicit authorization.\n"
+    },
+    {
+      "title": "finalsPr1Sk5Auto/usage-summary.json（分窗口用量）",
+      "lang": "json",
+      "text": "{\r\n \"windows\": {\r\n  \"pr2\": {\r\n   \"calls\": 90,\r\n   \"inp\": 6218954,\r\n   \"cached\": 6154368,\r\n   \"outp\": 30647\r\n  },\r\n  \"pr3\": {\r\n   \"calls\": 32,\r\n   \"inp\": 2392229,\r\n   \"cached\": 2376704,\r\n   \"outp\": 9552\r\n  },\r\n  \"session\": {\r\n   \"calls\": 133,\r\n   \"inp\": 8960469,\r\n   \"cached\": 8878336,\r\n   \"outp\": 40623\r\n  }\r\n },\r\n \"models\": [\r\n  \"\",\r\n  \"deepseek-flash\"\r\n ],\r\n \"note\": \"deepseek-flash is the vendor-reported model name per request; requested model is deepseek-chat (see R1 audit)\"\r\n}"
+    },
+    {
+      "title": "finalsPr1Sk5Auto/span-summary.json（SK5 会话累计）",
+      "lang": "json",
+      "text": "{\r\n \"leader\": {\r\n  \"spans\": 280,\r\n  \"skill\": {},\r\n  \"skill_total\": 0,\r\n  \"rag\": 0,\r\n  \"link\": 0\r\n },\r\n \"reviewer\": {\r\n  \"spans\": 240,\r\n  \"skill\": {\r\n   \"tool.skill_diff_parse\": 3,\r\n   \"tool.skill_risk_classify\": 6,\r\n   \"tool.skill_sast_scan\": 2,\r\n   \"tool.skill_case_retrieval\": 2\r\n  },\r\n  \"skill_total\": 13,\r\n  \"rag\": 5,\r\n  \"link\": 5\r\n },\r\n \"fixer\": {\r\n  \"spans\": 118,\r\n  \"skill\": {},\r\n  \"skill_total\": 0,\r\n  \"rag\": 1,\r\n  \"link\": 5\r\n },\r\n \"verifier\": {\r\n  \"spans\": 129,\r\n  \"skill\": {\r\n   \"tool.skill_diff_parse\": 1,\r\n   \"tool.skill_risk_classify\": 1\r\n  },\r\n  \"skill_total\": 2,\r\n  \"rag\": 1,\r\n  \"link\": 5\r\n },\r\n \"reviewer-b\": {\r\n  \"spans\": 57,\r\n  \"skill\": {},\r\n  \"skill_total\": 0,\r\n  \"rag\": 0,\r\n  \"link\": 0\r\n }\r\n}"
+    },
+    {
+      "title": "finalsPr1Sk5Auto/github-branches-after-sk5.txt",
+      "lang": "text",
+      "text": "1dedf5e1992c950557064d8f4fb9039d1523deb3\trefs/heads/demo/high-risk-human-gate\nad267a6e51209551a0733657321bb364d04befd0\trefs/heads/demo/high-risk-human-reject\n"
+    }
+  ],
+  "source_ref": "finalsPr1Sk5Auto/project/result.md",
+  "hash": {
+    "file": "project/result.md",
+    "dir": "FINALS-ELEM-PR1-SK5-AUTO",
+    "exists": true,
+    "hash_verified": true,
+    "sha256": "f3dd59d6f4ced1c23f8898b6a2a15bf1f7bfa57ab8aa727424086336136a3eb7"
+  },
+  "real": [
+    "真实执行（低风险自动路径）：NOT_CONFIRMED / LOW → 单节点 DAG 审查即结、项目自动 completed，无人工门——按风险分级设计，非跳过",
+    "skill_sast_scan 首次被 Agent 调用：唯一命中为测试文件 subprocess.run（argv 列表、非 shell=True），Agent 诚实裁决 false positive 并留痕"
+  ],
+  "controlled": [
+    "页面为只读回放；确定性 Skill 输出为 advisory（其 SKILL.md 自述 never an authorization decision）",
+    "case_retrieval 检索使用离线确定性 hash embedding（非语义模型）——本轮如实返回空匹配（无相关历史案例）"
+  ],
+  "not_executed": [
+    "无人工门——NOT_CONFIRMED/LOW 未触发停等条件（设计行为）；无修复/验证对象，Fixer/Verifier 未派发",
+    "零 GitHub 写入；PR #1 保持 OPEN",
+    "锁定 usage 工件未单列 pr1 窗口——用量以会话合计与轮次说明估计值两口径并列披露"
+  ],
+  "case": {
+    "case_id": "fastapi-pr1-auto",
+    "case_name": "FastAPI PR #1 · 低风险自动闭环",
+    "repo": "nghqqa/fastapi-boilerplate-demo",
+    "pr": "PR #1 · bootstrap 基线",
+    "pr_url": "https://github.com/nghqqa/fastapi-boilerplate-demo/pull/1",
+    "run_id": "run-elem-pr1sk5-20260919-01",
+    "sha": "4cd5bf099f88c3f3f85ee4c06b7adfe9925a6e5c",
+    "sha_kind": "PR #1 head commit · ls-remote 已核验",
+    "evidence_level": [
+      "REAL_EXECUTED_AGENTTEAMS_LIVE"
+    ],
+    "source_dir": "evidence/FINALS-ELEM-PR1-SK5-AUTO（SHA256SUMS 锁定，39 清单项）",
+    "generated_at": "运行窗口 17:04Z–17:06Z（建项 → 自动完成；与 PR #3 同会话接力）",
+    "pending_redactions": null
+  },
+  "integrity": {
+    "finals": {
+      "finalsDbLoop": {
+        "dir": "FINALS-DB-MIGRATION-LOOP-20260914",
+        "tier": "REAL_SQL_VERIFICATION_ISOLATED_POSTGRES",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsReworkLoop": {
+        "dir": "FINALS-REWORK-LOOP-20260914",
+        "tier": "MECHANISM_VERIFICATION",
+        "verified": true,
+        "files": 7,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsRagLoop": {
+        "dir": "FINALS-RAG-LOOP-20260914",
+        "tier": "REAL_OFFLINE_EXPERIMENT_SYNTHETIC_CORPUS",
+        "verified": true,
+        "files": 4,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr2Live": {
+        "dir": "FINALS-ELEM-PR2-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 19,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr3Live": {
+        "dir": "FINALS-ELEM-PR3-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      }
+    }
+  }
+}

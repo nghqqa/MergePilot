@@ -1,0 +1,51 @@
+{
+  "drawer": "event",
+  "data_mode": "historical replay",
+  "trace_mode": "evidence-replay",
+  "integrity_status": "verified",
+  "event_id": "pr3v3-ev-001",
+  "matrix_event_id": "$p8R3xy8yeQlFaQEqH4IGAXVF-UlCLxC64RWCg2lmC6Y",
+  "trace_id": null,
+  "trace_note": "per-event 无独立 trace（per-task/事件维度仍为 evidence-replay）；平台级历史权威 Trace 见总览页 AgentLoop Cloud Trace 区块",
+  "project_id": "elemiso-pr3v3-reject",
+  "task_id": null,
+  "agent_role": "human",
+  "runtime": "copaw-worker:223ddc2-agentloop-v3rag（image 8e17c3667c3c）",
+  "event_type": "message",
+  "source": "matrix",
+  "source_label": "Matrix event",
+  "source_ref": "finalsPr3V3Traced/kickoff-as-sent.txt",
+  "source_hash": {
+    "ref": "finalsPr3V3Traced/kickoff-as-sent.txt",
+    "dir": "FINALS-ELEM-PR3-V3-TRACED",
+    "dir_key": "finalsPr3V3Traced",
+    "file": "kickoff-as-sent.txt",
+    "abs_path": "D:\\goai\\mergepilot-demo\\evidence\\FINALS-ELEM-PR3-V3-TRACED\\kickoff-as-sent.txt",
+    "exists": true,
+    "evidence_root_readonly": true,
+    "sha256_actual": "f7473d52df55ffd075650061832b3220bbb1817002777700495846a6944275c3",
+    "sha256_expected": "f7473d52df55ffd075650061832b3220bbb1817002777700495846a6944275c3",
+    "hash_verified": true,
+    "sums_source": "FINALS-ELEM-PR3-V3-TRACED/SHA256SUMS"
+  },
+  "timestamp": "2026-09-17T03:19:03Z",
+  "timestamp_precision": "exact",
+  "timestamp_note": null,
+  "summary": "操作员发送 kickoff（项目 elemiso-pr3v3-reject；SPEC 非预设——零漏洞类别提示词，打包时自动核验 0 命中）",
+  "detail": null,
+  "hash_verified": true,
+  "redaction_status": {
+    "redaction_layer": "applied (evidence-adapter/redact.mjs)",
+    "scan_hits": [],
+    "status": "CLEAN — redaction applied; PR#2 demo placeholders allow-listed",
+    "forbidden_fields_excluded": [
+      "Authorization",
+      "Cookie",
+      "API key",
+      "Matrix token",
+      "password",
+      "完整工具参数",
+      "完整 prompt/completion"
+    ]
+  }
+}

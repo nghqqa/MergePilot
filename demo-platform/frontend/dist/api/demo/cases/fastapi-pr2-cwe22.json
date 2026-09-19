@@ -1,0 +1,1164 @@
+{
+  "case_id": "fastapi-pr2-cwe22",
+  "shape": "guided",
+  "name": "FastAPI PR #2 · 路径穿越风险修复",
+  "short_name": "主案例 · FastAPI PR #2",
+  "one_liner": "真实历史 PR：Reviewer 确认 CWE-22 任意文件读取 → 人工门批准 → Fixer 最小修复 → Verifier 独立复测 200→404，PR 保持 OPEN。",
+  "repo": "nghqqa/fastapi-boilerplate-demo",
+  "pr": "PR #2 · demo/high-risk-human-gate",
+  "pr_url": "https://github.com/nghqqa/fastapi-boilerplate-demo/pull/2",
+  "run_id": "copaw-high-risk-human-gate（AgentTeams project）",
+  "sha": "1dedf5e1992c950557064d8f4fb9039d1523deb3",
+  "sha_kind": "PR #2 head commit",
+  "evidence_level": [
+    "HISTORICAL_REPLAY",
+    "REAL_EXECUTED_AGENTTEAMS"
+  ],
+  "replay_note": "HISTORICAL_REPLAY —— 本页面回放 2026-08-29 的历史运行证据；不连接实时 GitHub / Matrix / 模型",
+  "purpose": "展示真实 PR 上的完整审修闭环：高危发现 → 人工门 → 最小修复 → 独立验证",
+  "risk_tags": [
+    "CWE-22 路径穿越",
+    "任意文件读取",
+    "HIGH"
+  ],
+  "status": {
+    "verdict": "PASS",
+    "label": "修复已独立验证 · PR 保持 OPEN"
+  },
+  "facts": {
+    "real_github_pr": {
+      "value": "真实 GitHub PR（历史状态：OPEN）",
+      "ok": true,
+      "note": "https://github.com/nghqqa/fastapi-boilerplate-demo/pull/2"
+    },
+    "real_agentteams_run": {
+      "value": "真实 AgentTeams 运行（2026-08-29 历史证据）",
+      "ok": true,
+      "note": "真实 Matrix 派单 / LLM / 容器执行"
+    },
+    "github_write": {
+      "value": "未写入 —— PR 保持 OPEN",
+      "ok": false,
+      "note": "merge/push/close/reopen 全程禁止"
+    }
+  },
+  "banner": "历史回放 —— 本案例是 2026-08-29 的历史真实运行对照；最新证据见主案例「本次真实运行（2026-09-16）」",
+  "stage_timeline": null,
+  "relation_note": "与主案例 fastapi-pr2-live-20260916 为同一 PR：本卡是 2026-08-29 历史运行对照（当时亦为真实运行，今日已复跑）。",
+  "portfolio_role": "案例 A 对照 · 历史回放",
+  "chain": [
+    "案例 fastapi-pr2-cwe22",
+    "PR #2",
+    "commit 1dedf5e199…",
+    "demo_high_risk.py",
+    "fix.patch",
+    "probe 200→404",
+    "VERIFICATION_PASSED"
+  ],
+  "generated_at": "运行 2026-08-29 · 状态锁定 2026-08-29T13:09+08:00（pr-state-final.json）",
+  "source_dir": "evidence/PHASE14-WINDOWS-*（replayMaterials · fixVerify · fixAudit · finalLock · highRiskGateBlocked）",
+  "honesty": {
+    "real": [
+      "AgentTeams/CoPaw 多 Agent 历史真实运行（2026-08-29：真实 Matrix 派单、真实 LLM、真实容器执行）",
+      "Reviewer / Fixer / Verifier 产物来自锁定证据目录（SHA256 校验）",
+      "人工审批为真实操作员记录（human-gate-approval.md）"
+    ],
+    "controlled": [
+      "本页面对证据的时间线投影与讲解文案"
+    ],
+    "not_executed": [
+      "本次演示不连接实时 GitHub / Matrix / LLM",
+      "merge / push / close / reopen 全程禁止，PR #2 保持 OPEN",
+      "per-task 云端 Trace（evidence-replay，trace_id 不存在）"
+    ]
+  },
+  "steps": [
+    {
+      "id": "pr-init",
+      "title": "PR 发起",
+      "points": [
+        {
+          "k": "仓库 / PR",
+          "v": "nghqqa/fastapi-boilerplate-demo · PR #2 · High-risk security demo: require human verification before remediation"
+        },
+        {
+          "k": "分支",
+          "v": "base mergepilot-demo/schema-migration-risk ← head demo/high-risk-human-gate",
+          "mono": true
+        },
+        {
+          "k": "commit SHA",
+          "v": "1dedf5e1992c950557064d8f4fb9039d1523deb3",
+          "mono": true
+        },
+        {
+          "k": "变更目标",
+          "v": "新增演示路由 demo_high_risk.py（预置漏洞）+ 路径穿越复现单测，2 files · +122"
+        },
+        {
+          "k": "风险预期",
+          "v": "PR 描述声明“高危安全演示：修复前必须人工确认”——预期触发人工安全门"
+        }
+      ],
+      "evidence": [
+        "ev-pr-created",
+        "ev-case-definition"
+      ],
+      "probe": null,
+      "detail": {
+        "title": "运行环境",
+        "quote": "project copaw-high-risk-human-gate · runtime copaw-worker:223ddc2-agentloop-v3rag（image 8e17c3667c3c） · 团队 elemiso-team (copaw workers)",
+        "outbox": [],
+        "events": [
+          {
+            "event_id": "pr2v3-ev-017",
+            "timestamp": "2026-09-17T03:15:18Z",
+            "timestamp_precision": "exact",
+            "agent_role": "leader",
+            "event_type": "message",
+            "source": "matrix",
+            "source_ref": "finalsPr2V3Traced/project/result.md",
+            "matrix_event_id": "$q95RgMxKGH5qYqyfrqYEq_WT-Lbd64zWjtkKucgF__A",
+            "summary": "PROJECT COMPLETED — 高危闭环完成（墙钟 12 分 32 秒，含 reviewer 依赖安装等待 ≈9 分钟与一次 nudge，如实记录）；PR #2 保持 OPEN（未 merge/push/close/reopen，分支 SHA 运行前后一致）",
+            "delta": {
+              "phase": "completed",
+              "headline": "PR #2 高危闭环完成 — 人工门→修复→独立验证（全程 v3+RAG 追踪），PR 保持 OPEN"
+            },
+            "state_after": {
+              "tasks": {
+                "review-1": {
+                  "status": "completed",
+                  "status_label": "COMPLETED · 完成",
+                  "locked_reason": null
+                },
+                "fix-1": {
+                  "status": "completed",
+                  "status_label": "COMPLETED · 完成",
+                  "locked_reason": null
+                },
+                "verify-1": {
+                  "status": "completed",
+                  "status_label": "COMPLETED · 完成",
+                  "locked_reason": null
+                }
+              },
+              "gate": "approved",
+              "phase": "completed",
+              "headline": "PR #2 高危闭环完成 — 人工门→修复→独立验证（全程 v3+RAG 追踪），PR 保持 OPEN"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "review",
+      "title": "风险审查",
+      "points": [
+        {
+          "k": "Reviewer 结论",
+          "v": "STATUS: SUCCESS / FINDING_CONFIRMED / SEVERITY: HIGH / HUMAN_VERIFICATION_REQUIRED: YES（pr2v3-review-1 result.md 协议标记）"
+        },
+        {
+          "k": "风险定性",
+          "v": "CWE-22 路径穿越 / 任意文件读取 —— name 参数直接 os.path.join 到 DEMO_FILES_DIR，../ 可逃逸基目录"
+        },
+        {
+          "k": "受影响位置",
+          "v": "backend/src/interfaces/api/v1/demo_high_risk.py — demo_download (L41 os.path.join → L42 FileResponse)",
+          "mono": true
+        },
+        {
+          "k": "攻击请求",
+          "v": "GET /demo/download?name=../outside/outside-secret.txt → HTTP 200 · 泄露 TOP-SECRET-OUTSIDE-BASE",
+          "mono": true
+        },
+        {
+          "k": "严重级别 / 人工门",
+          "v": "SEVERITY: HIGH · HUMAN_VERIFICATION_REQUIRED: YES → 全系统暂停等人工"
+        }
+      ],
+      "evidence": [
+        "ev-review-conclusion",
+        "ev-probe-before"
+      ],
+      "probe": null,
+      "attack": {
+        "request": "GET /demo/download?name=../outside/outside-secret.txt",
+        "legit": "GET /demo/download?name=welcome.txt"
+      },
+      "detail": {
+        "title": "派单与执行细节",
+        "quote": "review-1 由真实 Matrix 消息派发（event_id 记录于审计），聚焦 demo_download 路径处理，输出协议化结论。",
+        "outbox": [],
+        "events": [
+          {
+            "event_id": "pr2v3-ev-007",
+            "timestamp": "2026-09-17T03:12:39Z",
+            "timestamp_precision": "exact",
+            "agent_role": "reviewer",
+            "event_type": "task_state",
+            "source": "matrix",
+            "source_ref": "finalsPr2V3Traced/tasks/pr2v3-review-1/result.md",
+            "matrix_event_id": "$Pbdr68h1bKJJ8q2fvcMFNKkeEavJwtBU0-vpS2vacDM（TASK_COMPLETED: run-elem-pr2v3-20260917-01-review；meta submitted_at 03:12:36Z）",
+            "summary": "HIGH_RISK_FOUND — review-1 提交：FINDING_CONFIRMED / SEVERITY: HIGH / HUMAN_VERIFICATION_REQUIRED: YES（CWE-22 路径穿越任意文件读取；真实 PoC：../outside-secret.txt 200 泄露、../../../etc/hostname 200 任意读）",
+            "detail": "附加独立发现：PR 自带测试#2 失败是 fixture/payload 错位（../../../ 越过 tmp 到 /tmp），非缓解。",
+            "delta": {
+              "tasks": {
+                "review-1": {
+                  "status": "completed"
+                },
+                "fix-1": {
+                  "locked_reason": "HIGH_RISK_FOUND 已确认 — 等待人工安全门判定"
+                },
+                "verify-1": {
+                  "locked_reason": "HIGH_RISK_FOUND 已确认 — 等待人工安全门判定"
+                }
+              },
+              "headline": "HIGH_RISK_FOUND — CWE-22 确认，等待人工安全门"
+            },
+            "state_after": {
+              "tasks": {
+                "review-1": {
+                  "status": "completed",
+                  "status_label": "COMPLETED · 完成",
+                  "locked_reason": null
+                },
+                "fix-1": {
+                  "status": "pending",
+                  "status_label": "PENDING · 等待派发",
+                  "locked_reason": "HIGH_RISK_FOUND 已确认 — 等待人工安全门判定"
+                },
+                "verify-1": {
+                  "status": "pending",
+                  "status_label": "PENDING · 等待派发",
+                  "locked_reason": "HIGH_RISK_FOUND 已确认 — 等待人工安全门判定"
+                }
+              },
+              "gate": "none",
+              "phase": "running",
+              "headline": "HIGH_RISK_FOUND — CWE-22 确认，等待人工安全门"
+            }
+          },
+          {
+            "event_id": "pr2v3-ev-008",
+            "timestamp": "2026-09-17T03:12:50Z",
+            "timestamp_precision": "exact",
+            "agent_role": "leader",
+            "event_type": "message",
+            "source": "matrix",
+            "source_ref": "finalsPr2V3Traced/leader-dm-messages.json",
+            "matrix_event_id": "$ldtKhd3V6l-tdQtDXid7fL3F-TYwUtH-9tfIBI_dMVA",
+            "summary": "HUMAN_SECURITY_REVIEW_REQUIRED — Leader 验收 review 后上报人工门并 STOP（\"Do NOT delegate pr2v3-fix-1\"）：尚未委派 fix，等待人工门禁决策",
+            "delta": {
+              "gate": "required",
+              "tasks": {
+                "fix-1": {
+                  "status": "waiting_human",
+                  "locked_reason": "人工安全门：HUMAN_SECURITY_REVIEW_REQUIRED — 未批准禁止派发"
+                },
+                "verify-1": {
+                  "status": "waiting_human",
+                  "locked_reason": "人工安全门：HUMAN_SECURITY_REVIEW_REQUIRED — 未批准禁止派发"
+                }
+              },
+              "phase": "waiting_human",
+              "headline": "⛔ 人工安全门 — 受控停等（Fixer/Verifier 锁定）"
+            },
+            "state_after": {
+              "tasks": {
+                "review-1": {
+                  "status": "completed",
+                  "status_label": "COMPLETED · 完成",
+                  "locked_reason": null
+                },
+                "fix-1": {
+                  "status": "waiting_human",
+                  "status_label": "WAITING_HUMAN · 人工门停等",
+                  "locked_reason": "人工安全门：HUMAN_SECURITY_REVIEW_REQUIRED — 未批准禁止派发"
+                },
+                "verify-1": {
+                  "status": "waiting_human",
+                  "status_label": "WAITING_HUMAN · 人工门停等",
+                  "locked_reason": "人工安全门：HUMAN_SECURITY_REVIEW_REQUIRED — 未批准禁止派发"
+                }
+              },
+              "gate": "required",
+              "phase": "waiting_human",
+              "headline": "⛔ 人工安全门 — 受控停等（Fixer/Verifier 锁定）"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "fix-diff",
+      "title": "修复 diff",
+      "points": [
+        {
+          "k": "交付物",
+          "v": "fix.patch — 单文件最小修复（12+/4−），未写入 GitHub"
+        },
+        {
+          "k": "文件路径",
+          "v": "backend/src/interfaces/api/v1/demo_high_risk.py",
+          "mono": true
+        },
+        {
+          "k": "修复策略",
+          "v": "Path.resolve() 归一化 + is_relative_to(DEMO_FILES_DIR) 包含性校验；越界/不存在 → 404；filename 用 target.name 防头部注入"
+        },
+        {
+          "k": "patch 校验",
+          "v": "git index 59cd8d1..b3d3b46 · 文件在锁定证据包内 SHA256 校验通过",
+          "mono": true
+        },
+        {
+          "k": "边界",
+          "v": "补丁以交付物形态存在 —— 是否进入远端分支属仓库维护者的人工决策"
+        }
+      ],
+      "evidence": [
+        "ev-fix-patch",
+        "ev-fix-result",
+        "ev-fix-test-evidence"
+      ],
+      "probe": null,
+      "detail": {
+        "title": "fixer 执行细节",
+        "quote": "fixer 本地 clone 分支 demo/high-risk-human-gate（无远端凭证，仅本地作业）→ 修复前探针 → 最小修复 → 修复后探针 404/200。",
+        "outbox": [],
+        "events": []
+      }
+    },
+    {
+      "id": "verify",
+      "title": "独立验证",
+      "points": [
+        {
+          "k": "独立工作区",
+          "v": "Verifier 重 clone → git apply fix.patch（字节级一致）→ 自设计探针 → 回归检查"
+        },
+        {
+          "k": "测试命令",
+          "v": "自设计 HTTP 探针 probe.py（穿越 + 合法双请求）+ pytest 回归 + 模块导入冒烟",
+          "mono": true
+        },
+        {
+          "k": "修复前后",
+          "v": "穿越请求 200（泄露）→ 404（拒绝）；合法文件 200 → 200 仍可用",
+          "mono": false
+        },
+        {
+          "k": "结论",
+          "v": "STATUS: VERIFICATION_PASSED · SEVERITY: NONE · FIX_INDEPENDENTLY_VERIFIED · REGRESSION_CHECK_PASSED"
+        },
+        {
+          "k": "角色区分",
+          "v": "Reviewer 发现风险；Verifier 独立复测且不信任 Fixer 自述 —— 两个角色、两份独立证据"
+        }
+      ],
+      "evidence": [
+        "ev-verify-report",
+        "ev-probe-after",
+        "ev-verify-result"
+      ],
+      "probe": {
+        "headline": "探针对照 · 越权读取关闭，合法访问保留",
+        "rows": [
+          {
+            "label": "越权读取（路径穿越）",
+            "request": "GET /demo/download?name=../outside/outside-secret.txt",
+            "before": "HTTP 200 · 泄露 TOP-SECRET",
+            "after": "HTTP 404 · 拒绝",
+            "kind": "fixed"
+          },
+          {
+            "label": "合法文件 welcome.txt",
+            "request": "GET /demo/download?name=welcome.txt",
+            "before": "HTTP 200",
+            "after": "HTTP 200 · 仍可用",
+            "kind": "stable"
+          }
+        ]
+      },
+      "detail": {
+        "title": "验证事件链",
+        "quote": "verify-1 于 11:06:25Z 实时消费派单（精确锚点），11:26Z 提交 VERIFICATION_PASSED。",
+        "outbox": [],
+        "events": [
+          {
+            "event_id": "pr2v3-ev-016",
+            "timestamp": "2026-09-17T03:15:04Z",
+            "timestamp_precision": "exact",
+            "agent_role": "verifier",
+            "event_type": "task_state",
+            "source": "matrix",
+            "source_ref": "finalsPr2V3Traced/tasks/pr2v3-verify-1/result.md",
+            "matrix_event_id": "$GLYnidZ84759dOqDzj58zwyjFbmISomHx22Z8fDgkEE（TASK_COMPLETED: pr2v3-verify-1；meta submitted_at 03:15:01Z）",
+            "summary": "verify-1 提交：VERIFIED (PASS) 首次通过；VERDICT: VERIFIED（verification.md 顶层）",
+            "delta": {
+              "tasks": {
+                "verify-1": {
+                  "status": "completed"
+                }
+              },
+              "headline": "verify-1 通过 — VERIFIED，独立验证完成"
+            },
+            "state_after": {
+              "tasks": {
+                "review-1": {
+                  "status": "completed",
+                  "status_label": "COMPLETED · 完成",
+                  "locked_reason": null
+                },
+                "fix-1": {
+                  "status": "completed",
+                  "status_label": "COMPLETED · 完成",
+                  "locked_reason": null
+                },
+                "verify-1": {
+                  "status": "completed",
+                  "status_label": "COMPLETED · 完成",
+                  "locked_reason": null
+                }
+              },
+              "gate": "approved",
+              "phase": "verifying",
+              "headline": "verify-1 通过 — VERIFIED，独立验证完成"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "approval",
+      "title": "人工审批 · 最终处置",
+      "points": [
+        {
+          "k": "人工审批",
+          "v": "已执行 —— 2026-08-29 操作员经受保护控制台批准（批准记录 human-gate-approval.md，SHA256 校验）"
+        },
+        {
+          "k": "验证结论",
+          "v": "VERIFICATION_PASSED · SEVERITY: NONE（独立验证）"
+        },
+        {
+          "k": "PR 状态",
+          "v": "PR #2 保持 OPEN —— merge/push/close/reopen 全程禁止且未发生"
+        },
+        {
+          "k": "写入 GitHub",
+          "v": "未执行 —— 本次演示不写入 GitHub（NOT_EXECUTED）"
+        }
+      ],
+      "evidence": [
+        "ev-gate-approval",
+        "ev-pr-write-audit"
+      ],
+      "probe": null,
+      "decision": {
+        "verified": {
+          "verdict": "PASS",
+          "text": "VERIFICATION_PASSED —— 越权 200→404，合法 200→200（Verifier 独立复测）"
+        },
+        "human_approval": {
+          "needed": true,
+          "text": "需要且已执行 —— 真实操作员审批记录在案（human-gate-approval.md）",
+          "level": "REAL_EXECUTED_AGENTTEAMS"
+        },
+        "merge_allowed": {
+          "allowed": false,
+          "text": "PR #2 保持 OPEN —— 合并权限未在本演示中执行（merge/push/close/reopen 被审批记录明令禁止）"
+        },
+        "github_write": {
+          "done": false,
+          "text": "未写入 —— 本次演示不写入 GitHub",
+          "level": "NOT_EXECUTED"
+        },
+        "execution_nature": {
+          "text": "HISTORICAL_REPLAY · REAL_EXECUTED-AgentTeams：回放 2026-08-29 的真实历史运行证据；本次演示本身不执行任何 Agent",
+          "level": "HISTORICAL_REPLAY"
+        },
+        "pr_open": true
+      },
+      "detail": {
+        "title": "终态事件",
+        "outbox": [],
+        "events": [
+          {
+            "event_id": "pr2v3-ev-017",
+            "timestamp": "2026-09-17T03:15:18Z",
+            "timestamp_precision": "exact",
+            "agent_role": "leader",
+            "event_type": "message",
+            "source": "matrix",
+            "source_ref": "finalsPr2V3Traced/project/result.md",
+            "matrix_event_id": "$q95RgMxKGH5qYqyfrqYEq_WT-Lbd64zWjtkKucgF__A",
+            "summary": "PROJECT COMPLETED — 高危闭环完成（墙钟 12 分 32 秒，含 reviewer 依赖安装等待 ≈9 分钟与一次 nudge，如实记录）；PR #2 保持 OPEN（未 merge/push/close/reopen，分支 SHA 运行前后一致）",
+            "delta": {
+              "phase": "completed",
+              "headline": "PR #2 高危闭环完成 — 人工门→修复→独立验证（全程 v3+RAG 追踪），PR 保持 OPEN"
+            },
+            "state_after": {
+              "tasks": {
+                "review-1": {
+                  "status": "completed",
+                  "status_label": "COMPLETED · 完成",
+                  "locked_reason": null
+                },
+                "fix-1": {
+                  "status": "completed",
+                  "status_label": "COMPLETED · 完成",
+                  "locked_reason": null
+                },
+                "verify-1": {
+                  "status": "completed",
+                  "status_label": "COMPLETED · 完成",
+                  "locked_reason": null
+                }
+              },
+              "gate": "approved",
+              "phase": "completed",
+              "headline": "PR #2 高危闭环完成 — 人工门→修复→独立验证（全程 v3+RAG 追踪），PR 保持 OPEN"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "evidence_index": [
+    {
+      "id": "ev-pr-created",
+      "title": "PR 创建记录 pr-created.json",
+      "level": "REAL_EXECUTED_AGENTTEAMS"
+    },
+    {
+      "id": "ev-case-definition",
+      "title": "案例定义 02-case-pr2-high-risk.md",
+      "level": "HISTORICAL_REPLAY"
+    },
+    {
+      "id": "ev-review-conclusion",
+      "title": "Reviewer 结论（review-1）",
+      "level": "REAL_EXECUTED_AGENTTEAMS"
+    },
+    {
+      "id": "ev-probe-before",
+      "title": "修复前探针原始输出（漏洞确认）",
+      "level": "REAL_EXECUTED_AGENTTEAMS"
+    },
+    {
+      "id": "ev-fix-patch",
+      "title": "Fixer 最小修复 fix.patch",
+      "level": "REAL_EXECUTED_AGENTTEAMS"
+    },
+    {
+      "id": "ev-fix-result",
+      "title": "Fixer 交付 fix-1.result.md",
+      "level": "REAL_EXECUTED_AGENTTEAMS"
+    },
+    {
+      "id": "ev-fix-test-evidence",
+      "title": "Fixer 本地测试说明 fix-1.test-evidence.md",
+      "level": "REAL_EXECUTED_AGENTTEAMS"
+    },
+    {
+      "id": "ev-probe-after",
+      "title": "修复后探针原始输出（Verifier 独立复测）",
+      "level": "REAL_EXECUTED_AGENTTEAMS"
+    },
+    {
+      "id": "ev-verify-report",
+      "title": "Verifier 独立验证报告 verification-report.md",
+      "level": "REAL_EXECUTED_AGENTTEAMS"
+    },
+    {
+      "id": "ev-verify-result",
+      "title": "Verifier 结果 verify-1.result.md",
+      "level": "REAL_EXECUTED_AGENTTEAMS"
+    },
+    {
+      "id": "ev-gate-approval",
+      "title": "人工安全门审批记录 human-gate-approval.md",
+      "level": "REAL_EXECUTED_AGENTTEAMS"
+    },
+    {
+      "id": "ev-pr-write-audit",
+      "title": "PR 写操作审计（零写入证明）",
+      "level": "HISTORICAL_REPLAY"
+    }
+  ],
+  "items": [
+    {
+      "id": "ev-pr-created",
+      "title": "PR 创建记录 pr-created.json",
+      "level": "REAL_EXECUTED_AGENTTEAMS",
+      "fields": [
+        [
+          "仓库",
+          "nghqqa/fastapi-boilerplate-demo"
+        ],
+        [
+          "PR",
+          "#2 · High-risk security demo: require human verification before remediation"
+        ],
+        [
+          "URL",
+          "https://github.com/nghqqa/fastapi-boilerplate-demo/pull/2"
+        ],
+        [
+          "base / head",
+          "mergepilot-demo/schema-migration-risk ← demo/high-risk-human-gate"
+        ],
+        [
+          "commit_sha",
+          "1dedf5e1992c950557064d8f4fb9039d1523deb3"
+        ],
+        [
+          "变更规模",
+          "2 files · +122 / -0"
+        ]
+      ],
+      "blocks": [
+        {
+          "title": "highRiskGateBlocked/pr-created.json",
+          "lang": "json",
+          "text": "{\n  \"phase\": \"Phase 14.2H-WD-COPAW-HIGH-RISK-PR-DEMO\",\n  \"recorded_at\": \"2026-08-29T14:46:00+08:00\",\n  \"check_type\": \"pr-created\",\n  \"result\": \"PASS\",\n  \"pr\": {\n    \"repository\": \"nghqqa/fastapi-boilerplate-demo\",\n    \"number\": 2,\n    \"url\": \"https://github.com/nghqqa/fastapi-boilerplate-demo/pull/2\",\n    \"title\": \"High-risk security demo: require human verification before remediation\",\n    \"state\": \"OPEN\",\n    \"base\": \"mergepilot-demo/schema-migration-risk\",\n    \"head\": \"demo/high-risk-human-gate\",\n    \"commit_sha\": \"1dedf5e1992c950557064d8f4fb9039d1523deb3\",\n    \"changed_files\": 2,\n    \"additions\": 122,\n    \"deletions\": 0,\n    \"description_declares_demo_and_no_auto_merge\": true\n  }\n}"
+        }
+      ],
+      "source_ref": "highRiskGateBlocked/pr-created.json",
+      "hash": {
+        "file": "pr-created.json",
+        "dir": "PHASE14-WINDOWS-COPAW-HIGH-RISK-HUMAN-GATE-20260829-144234",
+        "exists": true,
+        "hash_verified": true,
+        "sha256": "65884a690a991f6f8fb70ffe091d1d5f1dc8cd26ba8f026cdc007578fa1ca08c"
+      },
+      "real": [
+        "AgentTeams/CoPaw 多 Agent 历史真实运行（2026-08-29：真实 Matrix 派单、真实 LLM、真实容器执行）",
+        "Reviewer / Fixer / Verifier 产物来自锁定证据目录（SHA256 校验）",
+        "人工审批为真实操作员记录（human-gate-approval.md）"
+      ],
+      "controlled": [
+        "本页面对证据的时间线投影与讲解文案"
+      ],
+      "not_executed": [
+        "本次演示不连接实时 GitHub / Matrix / LLM",
+        "merge / push / close / reopen 全程禁止，PR #2 保持 OPEN",
+        "per-task 云端 Trace（evidence-replay，trace_id 不存在）"
+      ]
+    },
+    {
+      "id": "ev-case-definition",
+      "title": "案例定义 02-case-pr2-high-risk.md",
+      "level": "HISTORICAL_REPLAY",
+      "fields": [
+        [
+          "PR 状态",
+          "全程 OPEN — 未 merge/push/close/reopen"
+        ],
+        [
+          "风险",
+          "CWE-22 路径穿越 / 任意文件读取（演示预置缺陷）"
+        ],
+        [
+          "受影响文件",
+          "backend/src/interfaces/api/v1/demo_high_risk.py — demo_download (L41 os.path.join → L42 FileResponse)"
+        ]
+      ],
+      "blocks": [
+        {
+          "title": "replayMaterials/02-case-pr2-high-risk.md",
+          "lang": "text",
+          "text": "# 案例二：PR #2（demo/high-risk-human-gate）— 高危安全门案例\n\n> 定位：在 PR #1 的协同管道上叠加**高危人工安全门**：Reviewer 确认高危后，\n> 系统强制停下等人工批准；批准后 Fixer 最小修复、Verifier 独立验证；\n> **PR #2 全程保持 OPEN，未 merge/push/close/reopen**。\n\n## 案例设定\n\n- 仓库：`nghqqa/fastapi-boilerplate-demo`，**PR #2**，分支 `demo/high-risk-human-gate`\n- 预置缺陷（演示用）：`backend/src/interfaces/api/v1/demo_high_risk.py` 的 `demo_download`\n  将用户可控 `name` 直接 `os.path.join` 到 `DEMO_FILES_DIR`，`../` 可逃逸基目录，\n  经 `FileResponse` 任意文件读取（**CWE-22**）\n- DAG：`review-1 → ⛔人工安全门 → fix-1 → verify-1`\n\n## 完整闭环（UTC，全部真实事件）\n\n### 1) 独立审查 → HIGH_RISK_FOUND\n\n| 时刻 | 事件 | 证据 |\n|---|---|---|\n| 09:49:35 | Leader（修复版 taskflow）委派 review-1：event `$IDofCrGE0os3RryOyFkF6R9qdX4cvU7bXL9nj1aiJac`，`m.mentions` 命中 reviewer | 房间事件 + manager meta.json |\n| 09:49:35 | reviewer 消费（`Created queue`） | verifier/fixer 同款日志链 |\n| 09:49:37 | reviewer `ack_task`（acknowledged_at） | 任务 meta |\n| ~10:19 | reviewer 提交：review-report 结论 | `TASK_COMPLETED: review-1` @manager（event `$0CmSNq-…`） |\n\n**Review 结论（review-1/result.md + workspace/review-report.md）**：\n\n```text\nSTATUS: SUCCESS\nSUMMARY: Confirmed HIGH path traversal / arbitrary file read (CWE-22) ...\n         STATUS: FINDING_CONFIRMED, SEVERITY: HIGH, HUMAN_VERIFICATION_REQUIRED: YES\n```\n\n### 2) ⛔ 人工安全门（系统强制暂停点）\n\nReview 结论为 `FINDING_CONFIRMED + SEVERITY: HIGH` ⇒ 计划图进入人工门：\nFixer/Verifier **不派发**，直至操作员批准。\n\n**人工门记录**（`shared/projects/copaw-high-risk-human-gate/human-gate-approval.md`，\n快照 artifacts/human-gate-approval.md）：操作员确认 HIGH_RISK_FOUND 与 CWE-22 定性，\n授权 Leader 派发 fix-1/verify-1、授权最小修复+本地测试与独立验证；\n**明确禁止 merge/push/close/reopen，PR #2 保持 OPEN**。\n\n### 3) 人工批准后：Fixer 修复\n\n| 时刻 | 事件 | 证据 |\n|---|---|---|\n| 10:06:24 | fix-1 委派：event `$JU09kIgwjvVJmEUSVSlNR8Va2-zhxsvtmFaZ3RIHuTM` | 房间事件 |\n| 10:06→10:22 | fixer：clone 分支 → 修复前探针（**traversal 200 泄露**）→ 最小修复 → 修复后探针（**404 拒绝**） | workspace/test-evidence.md |\n| ~11:0x | fix-1 提交：`STATUS: SUCCESS`、`FIX_APPLIED`、`TESTS_PASSED` | fix-1/result.md |\n\n补丁（artifacts/fix.patch，12+/4-，单文件）：\n`Path.resolve()` 归一化 + `is_relative_to(DEMO_FILES_DIR)` 包含性校验，越界返回 404。\n\n### 4) Verifier 独立验证\n\n| 时刻 | 事件 | 证据 |\n|---|---|---|\n| 11:06:25 | verify-1 委派：event `$t0dXkuWwmjdkA-Ao6H0Z3KhuYJLJ0nQPCq7w0Jr1aU8` | 房间事件 |\n| 11:06→11:26 | verifier **独立重 clone**、应用 fix.patch（字节级一致）、自设计探针复测、仓库测试回归 | workspace/verification-report.md |\n| ~11:26 | verify-1 提交 | verify-1/result.md |\n\n**验证结论（verify-1/result.md）**：\n\n```text\nSTATUS: VERIFICATION_PASSED\nSEVERITY: NONE\nHUMAN_VERIFICATION_REQUIRED: NO\nSUMMARY: FIX_INDEPENDENTLY_VERIFIED REGRESSION_CHECK_PASSED - ...\n```\n\n探针对照（原始输出 artifacts/verify-1.before/after_probe_raw.txt）：\n\n| 请求 `name=../outside/outside-secret.txt` | 修复前 | 修复后 |\n|---|---|---|\n| HTTP | 200 | **404** |\n| 泄露外部内容 | TOP-SECRET-OUTSIDE-BASE | 无 |\n\n### 5) PR #2 状态（合规声明）\n\n- **PR #2 保持 OPEN**；未执行 merge / push / close / reopen\n- Fixer/Verifier 无远端凭证，spec 明令\"仅本地作业\"；修复以补丁交付物形态存在\n- 修复是否进入远端分支，属仓库维护者的后续人工决策，不在本系统授权范围内\n\n## 与 PR #1 案例的对照总结\n\n| | PR #1 | PR #2 |\n|---|---|---|\n| 触发人工门 | 否（结论非高危） | 是（SEVERITY: HIGH） |\n| 派发时机 | Leader 自主 | 人工批准后 Leader 自主 |\n| Fixer 边界 | 常规修复 | 最小修复 + 本地测试，禁远端操作 |\n| 验证强度 | 常规回归 | 独立重 clone + 自设计探针 + 字节级补丁核对 |\n"
+        }
+      ],
+      "source_ref": "replayMaterials/02-case-pr2-high-risk.md",
+      "hash": {
+        "file": "02-case-pr2-high-risk.md",
+        "dir": "PHASE14-WINDOWS-REPLAY-MATERIALS-20260829-195223",
+        "exists": true,
+        "hash_verified": true,
+        "sha256": "de287164b630ea6780991219ed87ee948fead612ba0cb08e3a54f37f78ba520d"
+      },
+      "real": [
+        "AgentTeams/CoPaw 多 Agent 历史真实运行（2026-08-29：真实 Matrix 派单、真实 LLM、真实容器执行）",
+        "Reviewer / Fixer / Verifier 产物来自锁定证据目录（SHA256 校验）",
+        "人工审批为真实操作员记录（human-gate-approval.md）"
+      ],
+      "controlled": [
+        "本页面对证据的时间线投影与讲解文案"
+      ],
+      "not_executed": [
+        "本次演示不连接实时 GitHub / Matrix / LLM",
+        "merge / push / close / reopen 全程禁止，PR #2 保持 OPEN",
+        "per-task 云端 Trace（evidence-replay，trace_id 不存在）"
+      ]
+    },
+    {
+      "id": "ev-review-conclusion",
+      "title": "Reviewer 结论（review-1）",
+      "level": "REAL_EXECUTED_AGENTTEAMS",
+      "fields": [
+        [
+          "协议标记",
+          "STATUS: SUCCESS / FINDING_CONFIRMED / SEVERITY: HIGH / HUMAN_VERIFICATION_REQUIRED: YES（pr2v3-review-1 result.md 协议标记）"
+        ],
+        [
+          "风险",
+          "CWE-22 · severity=HIGH · 任意文件读取"
+        ],
+        [
+          "位置",
+          "backend/src/interfaces/api/v1/demo_high_risk.py — demo_download (L41 os.path.join → L42 FileResponse)"
+        ],
+        [
+          "是否需要人工门",
+          "HUMAN_VERIFICATION_REQUIRED: YES → 触发人工安全门"
+        ],
+        [
+          "执行者",
+          "p14h2-copaw-worker-reviewer（真实历史运行）"
+        ]
+      ],
+      "blocks": [],
+      "source_ref": "replayMaterials/02-case-pr2-high-risk.md §1 + fixAudit/AUDIT.md",
+      "real": [
+        "AgentTeams/CoPaw 多 Agent 历史真实运行（2026-08-29：真实 Matrix 派单、真实 LLM、真实容器执行）",
+        "Reviewer / Fixer / Verifier 产物来自锁定证据目录（SHA256 校验）",
+        "人工审批为真实操作员记录（human-gate-approval.md）"
+      ],
+      "controlled": [
+        "本页面对证据的时间线投影与讲解文案"
+      ],
+      "not_executed": [
+        "本次演示不连接实时 GitHub / Matrix / LLM",
+        "merge / push / close / reopen 全程禁止，PR #2 保持 OPEN",
+        "per-task 云端 Trace（evidence-replay，trace_id 不存在）"
+      ]
+    },
+    {
+      "id": "ev-probe-before",
+      "title": "修复前探针原始输出（漏洞确认）",
+      "level": "REAL_EXECUTED_AGENTTEAMS",
+      "fields": [
+        [
+          "穿越请求",
+          "GET /demo/download?name=../outside/outside-secret.txt → HTTP 200"
+        ],
+        [
+          "泄露",
+          "TOP-SECRET-OUTSIDE-BASE · LEAKED_OUTSIDE_SECRET: True"
+        ],
+        [
+          "合法请求",
+          "GET /demo/download?name=welcome.txt → HTTP 200"
+        ]
+      ],
+      "blocks": [
+        {
+          "title": "fixVerify/artifacts/verify-1.before_probe_raw.txt",
+          "lang": "log",
+          "text": "### PROBING UNFIXED (vulnerable) demonstration_high_risk ###\n\n========== [probe] ==========\n1) traversal ../outside/outside-secret.txt\n   status: 200\n   body:   'TOP-SECRET-OUTSIDE-BASE'\n   LEAKED_OUTSIDE_SECRET: True\n   TRAVERSAL_REJECTED (4xx, no leak): False\n2) legit welcome.txt\n   status: 200\n   body:   'WELCOME-LEGIT-DEMO'\n   LEGIT_SERVED (200): True\n"
+        }
+      ],
+      "source_ref": "fixVerify/artifacts/verify-1.before_probe_raw.txt",
+      "hash": {
+        "file": "artifacts/verify-1.before_probe_raw.txt",
+        "dir": "PHASE14-WINDOWS-COPAW-HIGH-RISK-FIX-VERIFY-20260829-180548",
+        "exists": true,
+        "hash_verified": true,
+        "sha256": "762006a7a72ed51e8de41c6d534303f7671b7ff648816d2544fd731085f09909"
+      },
+      "real": [
+        "AgentTeams/CoPaw 多 Agent 历史真实运行（2026-08-29：真实 Matrix 派单、真实 LLM、真实容器执行）",
+        "Reviewer / Fixer / Verifier 产物来自锁定证据目录（SHA256 校验）",
+        "人工审批为真实操作员记录（human-gate-approval.md）"
+      ],
+      "controlled": [
+        "本页面对证据的时间线投影与讲解文案"
+      ],
+      "not_executed": [
+        "本次演示不连接实时 GitHub / Matrix / LLM",
+        "merge / push / close / reopen 全程禁止，PR #2 保持 OPEN",
+        "per-task 云端 Trace（evidence-replay，trace_id 不存在）"
+      ]
+    },
+    {
+      "id": "ev-fix-patch",
+      "title": "Fixer 最小修复 fix.patch",
+      "level": "REAL_EXECUTED_AGENTTEAMS",
+      "fields": [
+        [
+          "文件",
+          "backend/src/interfaces/api/v1/demo_high_risk.py"
+        ],
+        [
+          "规模",
+          "单文件 · 12 insertions / 4 deletions"
+        ],
+        [
+          "策略",
+          "Path.resolve() 归一化 + is_relative_to(DEMO_FILES_DIR) 包含性校验；越界/不存在 → 404"
+        ],
+        [
+          "blob 锚点",
+          "index 59cd8d1..b3d3b46（fix.patch git index 行）"
+        ],
+        [
+          "写入 GitHub",
+          "否 — 补丁仅以交付物形态存在（NOT_EXECUTED）"
+        ]
+      ],
+      "blocks": [
+        {
+          "title": "replayMaterials/artifacts/fix.patch",
+          "lang": "diff",
+          "text": "diff --git a/backend/src/interfaces/api/v1/demo_high_risk.py b/backend/src/interfaces/api/v1/demo_high_risk.py\nindex 59cd8d1..b3d3b46 100644\n--- a/backend/src/interfaces/api/v1/demo_high_risk.py\n+++ b/backend/src/interfaces/api/v1/demo_high_risk.py\n@@ -18,8 +18,9 @@ Rules for this demo:\n from __future__ import annotations\n \n import os\n+from pathlib import Path\n \n-from fastapi import APIRouter\n+from fastapi import APIRouter, HTTPException\n from fastapi.responses import FileResponse\n \n router = APIRouter(tags=[\"SecurityDemo\"])\n@@ -37,6 +38,13 @@ DEMO_FILES_DIR = os.path.join(os.path.dirname(__file__), \"demo_files_base\")\n     ),\n )\n async def demo_download(name: str) -> FileResponse:\n-    # VULNERABLE (intentional): no containment check on the resolved path.\n-    file_path = os.path.join(DEMO_FILES_DIR, name)\n-    return FileResponse(file_path, filename=name)\n+    # FIX (CWE-22 path traversal): normalize the resolved path and enforce\n+    # containment within DEMO_FILES_DIR. Reject any traversal that escapes\n+    # the base directory (and any name that does not resolve to a real file).\n+    base = Path(DEMO_FILES_DIR).resolve()\n+    target = (base / name).resolve()\n+    if not target.is_relative_to(base):\n+        raise HTTPException(status_code=404, detail=\"Not found\")\n+    if not target.is_file():\n+        raise HTTPException(status_code=404, detail=\"Not found\")\n+    return FileResponse(target, filename=target.name)\n"
+        }
+      ],
+      "source_ref": "replayMaterials/artifacts/fix.patch",
+      "hash": {
+        "file": "artifacts/fix.patch",
+        "dir": "PHASE14-WINDOWS-REPLAY-MATERIALS-20260829-195223",
+        "exists": true,
+        "hash_verified": true,
+        "sha256": "d92707c06ab834a0aa633f985c3f03fc59c2ed9d0fada0db2773933eb53dcabf"
+      },
+      "real": [
+        "AgentTeams/CoPaw 多 Agent 历史真实运行（2026-08-29：真实 Matrix 派单、真实 LLM、真实容器执行）",
+        "Reviewer / Fixer / Verifier 产物来自锁定证据目录（SHA256 校验）",
+        "人工审批为真实操作员记录（human-gate-approval.md）"
+      ],
+      "controlled": [
+        "本页面对证据的时间线投影与讲解文案"
+      ],
+      "not_executed": [
+        "本次演示不连接实时 GitHub / Matrix / LLM",
+        "merge / push / close / reopen 全程禁止，PR #2 保持 OPEN",
+        "per-task 云端 Trace（evidence-replay，trace_id 不存在）"
+      ]
+    },
+    {
+      "id": "ev-fix-result",
+      "title": "Fixer 交付 fix-1.result.md",
+      "level": "REAL_EXECUTED_AGENTTEAMS",
+      "fields": [
+        [
+          "STATUS",
+          "SUCCESS / FIX_APPLIED / TESTS_PASSED"
+        ],
+        [
+          "交付物",
+          "fix.patch · demo_high_risk.fixed.py · test-evidence.md"
+        ],
+        [
+          "Leader 验收",
+          "effective=true（fixVerify/AUDIT.md）"
+        ]
+      ],
+      "blocks": [
+        {
+          "title": "fixVerify/artifacts/fix-1.result.md",
+          "lang": "text",
+          "text": "STATUS: SUCCESS\nSUMMARY: FIX_APPLIED TESTS_PASSED - Remediated CWE-22 path traversal (arbitrary file read) in PR#2 demo_download by normalizing the resolved path (Path.resolve) and enforcing containment within DEMO_FILES_DIR via is_relative_to, returning 404 on violation. Fix verified locally: traversal request (name=../outside/outside-secret.txt) now returns 404 and no longer leaks the external secret; the legitimate demo file inside the base is still served (HTTP 200, WELCOME-LEGIT-DEMO). Minimal single-file change to demo_high_risk.py only. Local work only; PR#2 stays open. (Note: the repo's own unmodified tests assert the pre-fix 200/disclosure behavior and now fail with 404, which is the expected confirmation the flaw is closed; see test-evidence.md.)\nDELIVERABLES:\n- shared/projects/copaw-high-risk-human-gate/tasks/fix-1/workspace/fix.patch\n- shared/projects/copaw-high-risk-human-gate/tasks/fix-1/workspace/demo_high_risk.fixed.py\n- shared/projects/copaw-high-risk-human-gate/tasks/fix-1/workspace/test-evidence.md\n"
+        }
+      ],
+      "source_ref": "fixVerify/artifacts/fix-1.result.md",
+      "hash": {
+        "file": "artifacts/fix-1.result.md",
+        "dir": "PHASE14-WINDOWS-COPAW-HIGH-RISK-FIX-VERIFY-20260829-180548",
+        "exists": true,
+        "hash_verified": true,
+        "sha256": "30a758cd30922eab2678270a2ddeada875fc069e9156f4764b301868e4ea31c2"
+      },
+      "real": [
+        "AgentTeams/CoPaw 多 Agent 历史真实运行（2026-08-29：真实 Matrix 派单、真实 LLM、真实容器执行）",
+        "Reviewer / Fixer / Verifier 产物来自锁定证据目录（SHA256 校验）",
+        "人工审批为真实操作员记录（human-gate-approval.md）"
+      ],
+      "controlled": [
+        "本页面对证据的时间线投影与讲解文案"
+      ],
+      "not_executed": [
+        "本次演示不连接实时 GitHub / Matrix / LLM",
+        "merge / push / close / reopen 全程禁止，PR #2 保持 OPEN",
+        "per-task 云端 Trace（evidence-replay，trace_id 不存在）"
+      ]
+    },
+    {
+      "id": "ev-fix-test-evidence",
+      "title": "Fixer 本地测试说明 fix-1.test-evidence.md",
+      "level": "REAL_EXECUTED_AGENTTEAMS",
+      "fields": [
+        [
+          "说明",
+          "仓库自带漏洞断言测试在修复后转失败 — 断言的是修复前 200/泄露行为（预期翻转，非回归）"
+        ],
+        [
+          "模块导入冒烟",
+          "通过"
+        ]
+      ],
+      "blocks": [
+        {
+          "title": "fixVerify/artifacts/fix-1.test-evidence.md",
+          "lang": "text",
+          "text": "# Test Evidence — fix-1 (copaw-high-risk-human-gate)\n\n**Fixer**: p14h2-copaw-worker-fixer\n**Date**: 2026-08-29\n**Repository**: nghqqa/fastapi-boilerplate-demo (PR #2, branch `demo/high-risk-human-gate`)\n**File fixed**: `backend/src/interfaces/api/v1/demo_high_risk.py` — `demo_download`\n**Vulnerability**: CWE-22 path traversal / arbitrary file read (HIGH)\n\nLocal Python env (isolated venv): Python 3.11.15, fastapi 0.141.1, pytest 9.1.1,\nhttpx 0.28.1. No changes were pushed; PR #2 stays open. Local work only.\n\n---\n\n## 1) BEFORE the fix — vulnerability present\n\n### 1a) Repository's own unit test (`pytest -k high_risk`)\n\nThe repo test `tests/unit/test_demo_high_risk_path_traversal.py` asserts the\n*vulnerable* behavior (HTTP 200 + disclosure of a file outside `DEMO_FILES_DIR`).\n\n```\ncollected 2 items\n\ntests/unit/test_demo_high_risk_path_traversal.py .F                      [100%]\n...\ntests/unit/test_demo_high_risk_path_traversal.py::test_high_risk_path_traversal_reproduces  PASSED\n```\n(`.` = `test_high_risk_path_traversal_reproduces` PASSED — the primary\nreproduction confirms `../outside/outside-secret.txt` returns the outside file\nwith HTTP 200.)\n(`F` = `test_high_risk_path_traversal_depth` failed with a starlette\n`RuntimeError: File at path .../sub/../../../deep-secret.txt does not exist.`\n— an OS path-depth quirk on this filesystem for the deeper-nesting case. It\ndoes not negate the confirmed vulnerability.)\n\n### 1b) Direct reproduction probe (raw output)\n\n```\nGET /demo/download?name=../outside/outside-secret.txt\n  status: 200\n  body: 'TOP-SECRET-OUTSIDE-BASE'\nRESULT: path traversal succeeded -> arbitrary external file read (VULNERABLE)\n```\n\nThe request `name=../outside/outside-secret.txt` returned HTTP **200** with\n`TOP-SECRET-OUTSIDE-BASE`, a file that lives OUTSIDE `DEMO_FILES_DIR`.\n**Vulnerability confirmed:** arbitrary file read (CWE-22).\n\n---\n\n## 2) The fix (minimal, single file)\n\n`demo_download` now normalizes the resolved path and enforces containment:\n\n```python\nasync def demo_download(name: str) -> FileResponse:\n    base = Path(DEMO_FILES_DIR).resolve()\n    target = (base / name).resolve()\n    if not target.is_relative_to(base):\n        raise HTTPException(status_code=404, detail=\"Not found\")\n    if not target.is_file():\n        raise HTTPException(status_code=404, detail=\"Not found\")\n    return FileResponse(target, filename=target.name)\n```\n\n- `Path.resolve()` normalizes `..` sequences.\n- `is_relative_to(base)` guarantees the resolved path stays inside `DEMO_FILES_DIR`;\n  any traversal escaping the base is rejected with 404.\n- Missing files are also rejected with 404.\n- Response filename uses `target.name` (basename only), not the raw `name`.\n\nFull diff: `fix.patch`. Fixed file: `demo_high_risk.fixed.py`.\n\n---\n\n## 3) AFTER the fix — vulnerability closed\n\n### 3a) Fix verification probe (raw output)\n\n```\n=== CASE 1: traversal must be REJECTED (4xx) ===\nGET /demo/download?name=../outside/outside-secret.txt\n  status: 404\n  body: '{\"detail\":\"Not found\"}'\n  -> traversal REJECTED, outside secret NOT leaked (fix works)\n\n=== CASE 2: legitimate file inside base must still be served (200) ===\nGET /demo/download?name=welcome.txt\n  status: 200\n  body: 'WELCOME-LEGIT-DEMO'\n  -> legitimate demo file still served (no regression)\n\nRESULT: FIX VERIFIED - traversal blocked, legitimate download works\n```\n\n- Traversal `../outside/outside-secret.txt` → **404 Not found** (external file\n  no longer leaked).\n- Legitimate `welcome.txt` inside the base → **200** with correct content\n  (no regression).\n\n### 3b) Repository's own unit test after the fix (`pytest -k high_risk`)\n\nThe repo's two path-traversal tests now FAIL — expected — because they assert\nthe *pre-fix* vulnerable behavior (HTTP 200 + disclosure). They were left\nunchanged per the task's \"minimal change / only touch `demo_download`\"\nconstraint. Their failure confirms the traversal is now rejected:\n\n```\ntests/unit/test_demo_high_risk_path_traversal.py FF                      [100%]\n\n_____________ test_high_risk_path_traversal_reproduces _____________\n    r = client.get(\n        \"/demo-security/demo/download\",\n        params={\"name\": \"../outside/outside-secret.txt\"},\n    )\n>   assert r.status_code == 200, r.text\nE   AssertionError: {\"detail\":\"Not found\"}\nE   assert 404 == 200\nE    +  where 404 = <Response [404 Not Found]>.status_code\n\ntests/unit/test_demo_high_risk_path_traversal.py:60: AssertionError\n\n_____________ test_high_risk_path_traversal_depth _____________\n>   assert r.status_code == 200, r.text\nE   AssertionError: {\"detail\":\"Not found\"}\nE   assert 404 == 200\n\n======================== 2 failed, 2 warnings in 0.22s =========================\n```\n\nBoth assertions now observe **404** instead of the previous leak, i.e. exactly\nthe remediation required. (If the repo tests were inverted to assert 404 —\nas the reviewer's fix note suggests — they would pass. Inverting tests is out of\nscope for this task per the \"only `demo_download`\" constraint, so the test file\nis intentionally left unchanged.)\n\n---\n\n## 4) Summary\n\n- `FIX_APPLIED`: YES — single-file minimal fix to `demo_download`\n  (containment enforcement) applied.\n- Fix verification (`TESTS_PASSED`): the AFTER probe confirms traversal is\n  rejected (**404**) and the legitimate demo file is still served (**200**).\n- Repo's unmodified vulnerability-assertion tests now report failures because\n  they expect the pre-fix 200/disclosure behavior — this is the expected,\n  correct outcome of closing the CWE-22 flaw and is fully explained above.\n\nLocal work only. Nothing pushed, merged, or otherwise modified in the remote PR.\n"
+        }
+      ],
+      "source_ref": "fixVerify/artifacts/fix-1.test-evidence.md",
+      "hash": {
+        "file": "artifacts/fix-1.test-evidence.md",
+        "dir": "PHASE14-WINDOWS-COPAW-HIGH-RISK-FIX-VERIFY-20260829-180548",
+        "exists": true,
+        "hash_verified": true,
+        "sha256": "731f1969726f53dfb526f389118c37a773d7fda517e8026b9cf8614ea402315f"
+      },
+      "real": [
+        "AgentTeams/CoPaw 多 Agent 历史真实运行（2026-08-29：真实 Matrix 派单、真实 LLM、真实容器执行）",
+        "Reviewer / Fixer / Verifier 产物来自锁定证据目录（SHA256 校验）",
+        "人工审批为真实操作员记录（human-gate-approval.md）"
+      ],
+      "controlled": [
+        "本页面对证据的时间线投影与讲解文案"
+      ],
+      "not_executed": [
+        "本次演示不连接实时 GitHub / Matrix / LLM",
+        "merge / push / close / reopen 全程禁止，PR #2 保持 OPEN",
+        "per-task 云端 Trace（evidence-replay，trace_id 不存在）"
+      ]
+    },
+    {
+      "id": "ev-probe-after",
+      "title": "修复后探针原始输出（Verifier 独立复测）",
+      "level": "REAL_EXECUTED_AGENTTEAMS",
+      "fields": [
+        [
+          "穿越请求",
+          "GET /demo/download?name=../outside/outside-secret.txt → HTTP 404 · 无泄露"
+        ],
+        [
+          "合法请求",
+          "GET /demo/download?name=welcome.txt → HTTP 200 仍可用"
+        ],
+        [
+          "TRAVERSAL_REJECTED",
+          "True"
+        ]
+      ],
+      "blocks": [
+        {
+          "title": "fixVerify/artifacts/verify-1.after_probe_raw.txt",
+          "lang": "log",
+          "text": "### PROBING UNFIXED (vulnerable) demonstration_high_risk ###\n\n========== [probe] ==========\n1) traversal ../outside/outside-secret.txt\n   status: 404\n   body:   '{\"detail\":\"Not found\"}'\n   LEAKED_OUTSIDE_SECRET: False\n   TRAVERSAL_REJECTED (4xx, no leak): True\n2) legit welcome.txt\n   status: 200\n   body:   'WELCOME-LEGIT-DEMO'\n   LEGIT_SERVED (200): True\n"
+        }
+      ],
+      "source_ref": "fixVerify/artifacts/verify-1.after_probe_raw.txt",
+      "hash": {
+        "file": "artifacts/verify-1.after_probe_raw.txt",
+        "dir": "PHASE14-WINDOWS-COPAW-HIGH-RISK-FIX-VERIFY-20260829-180548",
+        "exists": true,
+        "hash_verified": true,
+        "sha256": "2594515866bc2851d4af1260ebe56ea6021cce0a190500e221988082fff4689a"
+      },
+      "real": [
+        "AgentTeams/CoPaw 多 Agent 历史真实运行（2026-08-29：真实 Matrix 派单、真实 LLM、真实容器执行）",
+        "Reviewer / Fixer / Verifier 产物来自锁定证据目录（SHA256 校验）",
+        "人工审批为真实操作员记录（human-gate-approval.md）"
+      ],
+      "controlled": [
+        "本页面对证据的时间线投影与讲解文案"
+      ],
+      "not_executed": [
+        "本次演示不连接实时 GitHub / Matrix / LLM",
+        "merge / push / close / reopen 全程禁止，PR #2 保持 OPEN",
+        "per-task 云端 Trace（evidence-replay，trace_id 不存在）"
+      ]
+    },
+    {
+      "id": "ev-verify-report",
+      "title": "Verifier 独立验证报告 verification-report.md",
+      "level": "REAL_EXECUTED_AGENTTEAMS",
+      "fields": [
+        [
+          "独立工作区",
+          "重 clone → git apply fix.patch（字节级一致）→ 自设计探针 → 回归检查"
+        ],
+        [
+          "角色区分",
+          "Verifier 不信任 Fixer 结论，独立复现验证"
+        ]
+      ],
+      "blocks": [
+        {
+          "title": "fixVerify/artifacts/verify-1.verification-report.md",
+          "lang": "text",
+          "text": "# Verification Report — verify-1 (copaw-high-risk-human-gate)\n\n**Verifier**: p14h2-copaw-worker-verifier\n**Date**: 2026-08-29\n**Repository**: nghqqa/fastapi-boilerplate-demo, PR #2, branch `demo/high-risk-human-gate`\n**File**: `backend/src/interfaces/api/v1/demo_high_risk.py` — `demo_download`\n**Vulnerability**: CWE-22 path traversal / arbitrary file read (HIGH)\n\nThis report is an **independent** verification of the fix-1 CWE-22 remediation.\nThe fixer's conclusions were NOT trusted; the fix was re-derived, re-applied to a\nfresh clone, and re-tested end-to-end from scratch.\n\nEnvironment: Python 3.11.15, fastapi 0.141.1, starlette, httpx 0.28.1, pytest 9.1.1.\nLocal work only. PR #2 stays OPEN. Nothing pushed or merged.\n\n---\n\n## 1. Independent reproduction of the vulnerability (BEFORE the fix)\n\nCloned the PR branch fresh and ran the repo's own unit test on the **unfixed**\ncode:\n\n```\n$ pytest backend/tests/unit/test_demo_high_risk_path_traversal.py -v\ntest_high_risk_path_traversal_reproduces PASSED\ntest_high_risk_path_traversal_depth FAILED  (starlette RuntimeError:\n    File .../demo-files/sub/../../../deep-secret.txt does not exist — OS\n    depth quirk, unrelated to the confirmed primary reproduction)\n```\n\n`test_high_risk_path_traversal_reproduces` **PASSED**, i.e. the repo-test itself\nconfirms `../outside/outside-secret.txt` returns the outside file.\n\n**Independent traversal probe (unfixed code):**\n```\n1) GET /demo/download?name=../outside/outside-secret.txt\n   status: 200\n   body:   'TOP-SECRET-OUTSIDE-BASE'\n   LEAKED_OUTSIDE_SECRET: True      <- CONFIRMED VULNERABLE\n2) GET /demo/download?name=welcome.txt\n   status: 200 / body: 'WELCOME-LEGIT-DEMO'\n```\n\n**Verdict (before fix):** arbitrary file read outside `DEMO_FILES_DIR` confirmed\nvia `../outside/outside-secret.txt` (HTTP 200, content disclosed).\n\n---\n\n## 2. Patch review (independent)\n\n`fix.patch` (fixer deliverable) was re-applied to a fresh clone via\n`git apply --check` (applies cleanly with no fuzz/conflicts) then applied.\n\n**Minimality** — the working tree diff after applying the patch is EXACTLY one\nfile:\n\n```\n$ git diff --stat\n backend/src/interfaces/api/v1/demo_high_risk.py | 16 ++++++++++++----\n 1 file changed, 12 insertions(+), 4 deletions(-)\n\n$ git status --porcelain\n M backend/src/interfaces/api/v1/demo_high_risk.py\n```\n\nOnly `demo_high_risk.py` is touched: it adds `Path` and `HTTPException` imports\nand rewrites the `demo_download` body. No unrelated files, no other modules.\n\n**Containment logic** (the essence of the fix, confirmed correct):\n```python\nbase   = Path(DEMO_FILES_DIR).resolve()\ntarget = (base / name).resolve()\nif not target.is_relative_to(base):\n    raise HTTPException(status_code=404, detail=\"Not found\")\nif not target.is_file():\n    raise HTTPException(status_code=404, detail=\"Not found\")\nreturn FileResponse(target, filename=target.name)\n```\n- `Path.resolve()` normalizes `..` and symlinks before the containment check.\n- `is_relative_to(base)` rejects any path escaping `DEMO_FILES_DIR` (404).\n- `is_file()` rejects missing/non-file targets (404).\n- `filename=target.name` uses only the basename of the resolved target, preventing\n  filename-header injection / further traversal via the `filename` parameter.\n\nThe re-applied patch produced a file **byte-identical** to the fixer's\n`demo_high_risk.fixed.py` deliverable (`diff` clean), confirming the fixer's\nartifact is genuine and matches the patch.\n\n---\n\n## 3. Independent functional verification (AFTER the fix)\n\n### 3a. Independent traversal probe (patched code)\n```\n1) GET /demo/download?name=../outside/outside-secret.txt\n   status: 404\n   body:   '{\"detail\":\"Not found\"}'\n   LEAKED_OUTSIDE_SECRET: False\n   TRAVERSAL_REJECTED (4xx, no leak): True    <- FIX WORKS\n2) GET /demo/download?name=welcome.txt\n   status: 200 / body: 'WELCOME-LEGIT-DEMO'   <- NO REGRESSION\n```\n\n### 3b. Repo's own unit tests after the fix\n```\ntest_high_risk_path_traversal_reproduces FAILED (404 != 200)\ntest_high_risk_path_traversal_depth       FAILED (404 != 200)\n```\nThese fail **only because** they assert the *pre-fix* vulnerable behavior\n(`assert status == 200` on a traversal/disclosure). Under the fix the endpoint\nnow returns **404** instead of leaking the file — i.e. exactly the remediation\nrequired. The test file is intentionally left unchanged per the \"minimal change,\nonly `demo_download`\" constraint. Their failure is the correct confirmation that\nthe traversal is closed.\n\n### 3c. Import / regression smoke test\n```\nIMPORT_OK: router=<fastapi.routing.APIRouter>, tags=['SecurityDemo']\n```\nThe patched module imports cleanly; the app routers load without error.\n\n---\n\n## 4. Regression / scope check\n\n- Working-tree diff after fix = **exactly one file** (`demo_high_risk.py`).\n- The PR branch `demo/high-risk-human-gate` in the remote is **untouched** (local\n  clone only; no push, no merge, no close/reopen).\n- The patched module imports cleanly and the legitimate download still returns 200.\n- No passwords, tokens, keys or cookies were read, stored, or emitted.\n\n---\n\n## 5. Conclusion\n\nThe fix-1 remediation for the CWE-22 path traversal is **independently verified**:\n\n- `FIX_INDEPENDENTLY_VERIFIED`: the traversal `../outside/outside-secret.txt` is\n  rejected with **404** and no longer leaks the external secret; the fix is minimal\n  and correctly enforces path normalization (`Path.resolve`) + containment\n  (`is_relative_to(DEMO_FILES_DIR)`).\n- `REGRESSION_CHECK_PASSED`: legitimate demo file still served (200), module\n  imports cleanly, and no unrelated files changed.\n- Residual severity after fix: **NONE**.\n\n**Verify result**: VERIFICATION_PASSED\n"
+        }
+      ],
+      "source_ref": "fixVerify/artifacts/verify-1.verification-report.md",
+      "hash": {
+        "file": "artifacts/verify-1.verification-report.md",
+        "dir": "PHASE14-WINDOWS-COPAW-HIGH-RISK-FIX-VERIFY-20260829-180548",
+        "exists": true,
+        "hash_verified": true,
+        "sha256": "b7b1cfae757eeb685973abedce07c06ec57d38a1be564cd16e16dc8d904c8a9c"
+      },
+      "real": [
+        "AgentTeams/CoPaw 多 Agent 历史真实运行（2026-08-29：真实 Matrix 派单、真实 LLM、真实容器执行）",
+        "Reviewer / Fixer / Verifier 产物来自锁定证据目录（SHA256 校验）",
+        "人工审批为真实操作员记录（human-gate-approval.md）"
+      ],
+      "controlled": [
+        "本页面对证据的时间线投影与讲解文案"
+      ],
+      "not_executed": [
+        "本次演示不连接实时 GitHub / Matrix / LLM",
+        "merge / push / close / reopen 全程禁止，PR #2 保持 OPEN",
+        "per-task 云端 Trace（evidence-replay，trace_id 不存在）"
+      ]
+    },
+    {
+      "id": "ev-verify-result",
+      "title": "Verifier 结果 verify-1.result.md",
+      "level": "REAL_EXECUTED_AGENTTEAMS",
+      "fields": [
+        [
+          "STATUS",
+          "VERIFICATION_PASSED / SEVERITY: NONE / HUMAN_VERIFICATION_REQUIRED: NO"
+        ],
+        [
+          "标记",
+          "FIX_INDEPENDENTLY_VERIFIED · REGRESSION_CHECK_PASSED"
+        ],
+        [
+          "披露",
+          "VERIFICATION_PASSED 字面值不在 store 白名单（枚举兼容问题，如实披露）"
+        ]
+      ],
+      "blocks": [
+        {
+          "title": "fixVerify/artifacts/verify-1.result.md",
+          "lang": "text",
+          "text": "STATUS: VERIFICATION_PASSED\nSEVERITY: NONE\nHUMAN_VERIFICATION_REQUIRED: NO\nSUMMARY: FIX_INDEPENDENTLY_VERIFIED REGRESSION_CHECK_PASSED - Independently re-cloned PR#2 branch (nghqqa/fastapi-boilerplate-demo, demo/high-risk-human-gate), re-applied fix.patch to a fresh clone (applies cleanly; re-applied file is byte-identical to the fixer's demo_high_risk.fixed.py) and re-tested end-to-end from scratch. BEFORE fix: the repo's own test test_high_risk_path_traversal_reproduces PASSED and an independent probe GET /demo/download?name=../outside/outside-secret.txt returned HTTP 200 disclosing TOP-SECRET-OUTSIDE-BASE, confirming the CWE-22 arbitrary-file-read leak. AFTER fix: the same traversal returned HTTP 404 {\"detail\":\"Not found\"} with no leak, while the legitimate demo file (welcome.txt) is still served HTTP 200 (WELCOME-LEGIT-DEMO) - no regression. The patch is MINIMAL (only backend/src/interfaces/api/v1/demo_high_risk.py, 12 insertions/4 deletions) and correctly enforces Path.resolve() normalization plus is_relative_to(DEMO_FILES_DIR) containment, returning 404 on any traversal/missing file and using target.name for the response filename. The patched module imports cleanly; no unrelated files changed; PR#2 stays open (local work only). Residual severity after fix: NONE. No human re-verification is required. See workspace/verification-report.md for full commands and real outputs.\nDELIVERABLES:\n- shared/projects/copaw-high-risk-human-gate/tasks/verify-1/workspace/verification-report.md\n- shared/projects/copaw-high-risk-human-gate/tasks/verify-1/workspace/before_probe_raw.txt\n- shared/projects/copaw-high-risk-human-gate/tasks/verify-1/workspace/after_probe_raw.txt\n- shared/projects/copaw-high-risk-human-gate/tasks/verify-1/workspace/before_pytest_raw.txt\n- shared/projects/copaw-high-risk-human-gate/tasks/verify-1/workspace/after_pytest_raw.txt\n- shared/projects/copaw-high-risk-human-gate/tasks/verify-1/workspace/probe.py\n"
+        }
+      ],
+      "source_ref": "fixVerify/artifacts/verify-1.result.md",
+      "hash": {
+        "file": "artifacts/verify-1.result.md",
+        "dir": "PHASE14-WINDOWS-COPAW-HIGH-RISK-FIX-VERIFY-20260829-180548",
+        "exists": true,
+        "hash_verified": true,
+        "sha256": "8d16ae009100a5074d6b81dd475823c64e81ff382e43b5930736f4196fa80d47"
+      },
+      "real": [
+        "AgentTeams/CoPaw 多 Agent 历史真实运行（2026-08-29：真实 Matrix 派单、真实 LLM、真实容器执行）",
+        "Reviewer / Fixer / Verifier 产物来自锁定证据目录（SHA256 校验）",
+        "人工审批为真实操作员记录（human-gate-approval.md）"
+      ],
+      "controlled": [
+        "本页面对证据的时间线投影与讲解文案"
+      ],
+      "not_executed": [
+        "本次演示不连接实时 GitHub / Matrix / LLM",
+        "merge / push / close / reopen 全程禁止，PR #2 保持 OPEN",
+        "per-task 云端 Trace（evidence-replay，trace_id 不存在）"
+      ]
+    },
+    {
+      "id": "ev-gate-approval",
+      "title": "人工安全门审批记录 human-gate-approval.md",
+      "level": "REAL_EXECUTED_AGENTTEAMS",
+      "fields": [
+        [
+          "决定",
+          "APPROVED（2026-08-29，操作员经受保护控制台）"
+        ],
+        [
+          "范围",
+          "确认 HIGH_RISK_FOUND → 授权 fix-1 → 完成后授权 verify-1"
+        ],
+        [
+          "禁止",
+          "merge / push / close / reopen"
+        ]
+      ],
+      "blocks": [
+        {
+          "title": "replayMaterials/artifacts/human-gate-approval.md",
+          "lang": "text",
+          "text": "# Human Security Gate — APPROVED (2026-08-29)\n\nPhase 14.2H-WD-COPAW-HIGH-RISK-FIX-VERIFY, authorized by operator.\n\n1. Reviewer HIGH_RISK_FOUND conclusion: CONFIRMED by operator.\n2. Vulnerability: CWE-22 path traversal / arbitrary file read in\n   backend/src/interfaces/api/v1/demo_high_risk.py (PR #2,\n   branch demo/high-risk-human-gate): CONFIRMED by operator.\n3. Leader authorized to dispatch fix-1 (minimal fix + local tests).\n4. Leader authorized to dispatch verify-1 after fix-1 completes\n   (independent verification + regression).\n5. PROHIBITED: merge / push / close / reopen of any PR. PR #2 stays OPEN.\n6. Scope: only PR #2 demo branch artifacts. PR #1 / wd1-pr1-bootstrap /\n   copaw-sandbox must not be modified.\n7. On any failure: stop and preserve evidence.\n"
+        }
+      ],
+      "source_ref": "replayMaterials/artifacts/human-gate-approval.md",
+      "hash": {
+        "file": "artifacts/human-gate-approval.md",
+        "dir": "PHASE14-WINDOWS-REPLAY-MATERIALS-20260829-195223",
+        "exists": true,
+        "hash_verified": true,
+        "sha256": "514515fe09bbb6a4583096f2b6b3c0db39a4ce8ad1da1c443a58b269876dd2d1"
+      },
+      "real": [
+        "AgentTeams/CoPaw 多 Agent 历史真实运行（2026-08-29：真实 Matrix 派单、真实 LLM、真实容器执行）",
+        "Reviewer / Fixer / Verifier 产物来自锁定证据目录（SHA256 校验）",
+        "人工审批为真实操作员记录（human-gate-approval.md）"
+      ],
+      "controlled": [
+        "本页面对证据的时间线投影与讲解文案"
+      ],
+      "not_executed": [
+        "本次演示不连接实时 GitHub / Matrix / LLM",
+        "merge / push / close / reopen 全程禁止，PR #2 保持 OPEN",
+        "per-task 云端 Trace（evidence-replay，trace_id 不存在）"
+      ]
+    },
+    {
+      "id": "ev-pr-write-audit",
+      "title": "PR 写操作审计（零写入证明）",
+      "level": "HISTORICAL_REPLAY",
+      "fields": [
+        [
+          "本 runtime 的 PR 操作",
+          "none (no merge/close/reopen/comment/push)"
+        ],
+        [
+          "PR #2 状态",
+          "OPEN（保持未合并）"
+        ],
+        [
+          "live 检查",
+          "rate-limited (unauthenticated) at audit time; no PR operations have ever been performed by this runtime, so the state is unchanged by us"
+        ]
+      ],
+      "blocks": [
+        {
+          "title": "finalLock/pr-state-final.json",
+          "lang": "json",
+          "text": "{\n  \"phase\": \"Phase 14.2H-WD-FINAL-SUBMISSION-LOCK\",\n  \"recorded_at\": \"2026-08-29T13:09:00+08:00\",\n  \"check_type\": \"pr-state-final\",\n  \"result\": \"RECORDED\",\n  \"pr\": \"https://github.com/nghqqa/fastapi-boilerplate-demo/pull/1\",\n  \"last_known_state\": \"open\",\n  \"live_api_check\": \"rate-limited (unauthenticated) at audit time; no PR operations have ever been performed by this runtime, so the state is unchanged by us\",\n  \"operations_by_this_runtime\": \"none (no merge/close/reopen/comment/push)\"\n}"
+        }
+      ],
+      "source_ref": "finalLock/pr-state-final.json + highRiskGateBlocked/pr-write-audit.json",
+      "hash": {
+        "file": "pr-state-final.json",
+        "dir": "PHASE14-WINDOWS-AGENTTEAMS-COPAW-FINAL-20260829-130500",
+        "exists": true,
+        "hash_verified": true,
+        "sha256": "181998d2020359d7f9cd9a4c0620cb7094c6a865efa260946bdf9ee51588de64"
+      },
+      "real": [
+        "AgentTeams/CoPaw 多 Agent 历史真实运行（2026-08-29：真实 Matrix 派单、真实 LLM、真实容器执行）",
+        "Reviewer / Fixer / Verifier 产物来自锁定证据目录（SHA256 校验）",
+        "人工审批为真实操作员记录（human-gate-approval.md）"
+      ],
+      "controlled": [
+        "本页面对证据的时间线投影与讲解文案"
+      ],
+      "not_executed": [
+        "本次演示不连接实时 GitHub / Matrix / LLM",
+        "merge / push / close / reopen 全程禁止，PR #2 保持 OPEN",
+        "per-task 云端 Trace（evidence-replay，trace_id 不存在）"
+      ]
+    }
+  ]
+}

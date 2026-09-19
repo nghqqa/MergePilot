@@ -1,0 +1,121 @@
+{
+  "data_mode": "SYNTHETIC",
+  "embedding_backend": "local-hash-bow-4096 (deterministic, SYNTHETIC, strategy=v2-bigram-idf-hash4096)",
+  "document_count": 8,
+  "chunk_count": 9,
+  "documents": [
+    {
+      "document_id": "doc-mergepilot-review-policy",
+      "title": "MergePilot 审查流程政策（演示文档）",
+      "source_type": "policy-doc",
+      "classification": "public-demo",
+      "created_at": "2026-08-30T00:00:00Z",
+      "content_sha256": "1774ee85cfe8412e9e22c8ba877e5942c6debcc7c2dcef0d6a6c9637f1ba88f8",
+      "data_mode": "SYNTHETIC",
+      "char_length": 335,
+      "chunk_count": 1
+    },
+    {
+      "document_id": "doc-human-gate-policy",
+      "title": "高危人工闸门政策（演示文档）",
+      "source_type": "policy-doc",
+      "classification": "public-demo",
+      "created_at": "2026-08-30T00:00:00Z",
+      "content_sha256": "e324712c4c60cdcc159a6be55ce3f228c6c9bd4e417da0dbc0188eb57af5c4ce",
+      "data_mode": "SYNTHETIC",
+      "char_length": 284,
+      "chunk_count": 1
+    },
+    {
+      "document_id": "doc-case-pr1-summary",
+      "title": "PR #1 案例摘要（演示回放事实的合成转述）",
+      "source_type": "case-summary",
+      "classification": "public-demo",
+      "created_at": "2026-08-30T00:00:00Z",
+      "content_sha256": "03e230ee60c1a59606d11aa19bbb6537fb415dfa084cd038815cc999107598a0",
+      "data_mode": "SYNTHETIC",
+      "char_length": 204,
+      "chunk_count": 1
+    },
+    {
+      "document_id": "doc-case-pr2-summary",
+      "title": "PR #2 案例摘要（演示回放事实的合成转述）",
+      "source_type": "case-summary",
+      "classification": "public-demo",
+      "created_at": "2026-08-30T00:00:00Z",
+      "content_sha256": "b979930ccdd58379635bce959314d9c82751b3a5e3838d3f0cafdd1615f1f5d5",
+      "data_mode": "SYNTHETIC",
+      "char_length": 210,
+      "chunk_count": 1
+    },
+    {
+      "document_id": "doc-case-pr3-summary",
+      "title": "PR #3 案例摘要（演示回放事实的合成转述）",
+      "source_type": "case-summary",
+      "classification": "public-demo",
+      "created_at": "2026-08-30T00:00:00Z",
+      "content_sha256": "2b3b95bfac21f3191efb34fc89a28651b23e6a15b8e149b366662d109821182d",
+      "data_mode": "SYNTHETIC",
+      "char_length": 144,
+      "chunk_count": 1
+    },
+    {
+      "document_id": "doc-agentloop-observability",
+      "title": "AgentLoop 可观测性事实（演示文档）",
+      "source_type": "runbook",
+      "classification": "public-demo",
+      "created_at": "2026-08-30T00:00:00Z",
+      "content_sha256": "7b45029b0f4030edcdbecffc977c6b1ca3479be83b2b1d7f427d31edb1689840",
+      "data_mode": "SYNTHETIC",
+      "char_length": 442,
+      "chunk_count": 2
+    },
+    {
+      "document_id": "doc-rag-usage-policy",
+      "title": "本 RAG 数据使用政策（演示文档）",
+      "source_type": "policy-doc",
+      "classification": "public-demo",
+      "created_at": "2026-08-30T00:00:00Z",
+      "content_sha256": "f329890a15615a4e25b54b20ce33340216a67b1c19b1676ebdde504cb0085460",
+      "data_mode": "SYNTHETIC",
+      "char_length": 205,
+      "chunk_count": 1
+    },
+    {
+      "document_id": "doc-polardb-branch-plan",
+      "title": "PolarDB Branch 接入计划（演示文档）",
+      "source_type": "plan-doc",
+      "classification": "public-demo",
+      "created_at": "2026-08-30T00:00:00Z",
+      "content_sha256": "f4c5ea7bd57b1d40d9d66917eae17a9e9d119d04bedbbe87170c24e25c389281",
+      "data_mode": "SYNTHETIC",
+      "char_length": 289,
+      "chunk_count": 1
+    }
+  ],
+  "polardb_fixture": {
+    "data_mode": "SIMULATED",
+    "polardb_connection": "NOT CONNECTED",
+    "tables": {
+      "pr_cases": {
+        "row_count": 3,
+        "columns": [
+          "pr",
+          "case_id",
+          "risk_level",
+          "gate",
+          "final_status"
+        ]
+      },
+      "review_findings": {
+        "row_count": 3,
+        "columns": [
+          "pr",
+          "finding",
+          "category",
+          "risk_level"
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,104 @@
+{
+  "id": "ev-verify-report",
+  "title": "Verifier 独立验证报告 verification-report.md",
+  "level": "REAL_EXECUTED_AGENTTEAMS",
+  "fields": [
+    [
+      "独立工作区",
+      "重 clone → git apply fix.patch（字节级一致）→ 自设计探针 → 回归检查"
+    ],
+    [
+      "角色区分",
+      "Verifier 不信任 Fixer 结论，独立复现验证"
+    ]
+  ],
+  "blocks": [
+    {
+      "title": "fixVerify/artifacts/verify-1.verification-report.md",
+      "lang": "text",
+      "text": "# Verification Report — verify-1 (copaw-high-risk-human-gate)\n\n**Verifier**: p14h2-copaw-worker-verifier\n**Date**: 2026-08-29\n**Repository**: nghqqa/fastapi-boilerplate-demo, PR #2, branch `demo/high-risk-human-gate`\n**File**: `backend/src/interfaces/api/v1/demo_high_risk.py` — `demo_download`\n**Vulnerability**: CWE-22 path traversal / arbitrary file read (HIGH)\n\nThis report is an **independent** verification of the fix-1 CWE-22 remediation.\nThe fixer's conclusions were NOT trusted; the fix was re-derived, re-applied to a\nfresh clone, and re-tested end-to-end from scratch.\n\nEnvironment: Python 3.11.15, fastapi 0.141.1, starlette, httpx 0.28.1, pytest 9.1.1.\nLocal work only. PR #2 stays OPEN. Nothing pushed or merged.\n\n---\n\n## 1. Independent reproduction of the vulnerability (BEFORE the fix)\n\nCloned the PR branch fresh and ran the repo's own unit test on the **unfixed**\ncode:\n\n```\n$ pytest backend/tests/unit/test_demo_high_risk_path_traversal.py -v\ntest_high_risk_path_traversal_reproduces PASSED\ntest_high_risk_path_traversal_depth FAILED  (starlette RuntimeError:\n    File .../demo-files/sub/../../../deep-secret.txt does not exist — OS\n    depth quirk, unrelated to the confirmed primary reproduction)\n```\n\n`test_high_risk_path_traversal_reproduces` **PASSED**, i.e. the repo-test itself\nconfirms `../outside/outside-secret.txt` returns the outside file.\n\n**Independent traversal probe (unfixed code):**\n```\n1) GET /demo/download?name=../outside/outside-secret.txt\n   status: 200\n   body:   'TOP-SECRET-OUTSIDE-BASE'\n   LEAKED_OUTSIDE_SECRET: True      <- CONFIRMED VULNERABLE\n2) GET /demo/download?name=welcome.txt\n   status: 200 / body: 'WELCOME-LEGIT-DEMO'\n```\n\n**Verdict (before fix):** arbitrary file read outside `DEMO_FILES_DIR` confirmed\nvia `../outside/outside-secret.txt` (HTTP 200, content disclosed).\n\n---\n\n## 2. Patch review (independent)\n\n`fix.patch` (fixer deliverable) was re-applied to a fresh clone via\n`git apply --check` (applies cleanly with no fuzz/conflicts) then applied.\n\n**Minimality** — the working tree diff after applying the patch is EXACTLY one\nfile:\n\n```\n$ git diff --stat\n backend/src/interfaces/api/v1/demo_high_risk.py | 16 ++++++++++++----\n 1 file changed, 12 insertions(+), 4 deletions(-)\n\n$ git status --porcelain\n M backend/src/interfaces/api/v1/demo_high_risk.py\n```\n\nOnly `demo_high_risk.py` is touched: it adds `Path` and `HTTPException` imports\nand rewrites the `demo_download` body. No unrelated files, no other modules.\n\n**Containment logic** (the essence of the fix, confirmed correct):\n```python\nbase   = Path(DEMO_FILES_DIR).resolve()\ntarget = (base / name).resolve()\nif not target.is_relative_to(base):\n    raise HTTPException(status_code=404, detail=\"Not found\")\nif not target.is_file():\n    raise HTTPException(status_code=404, detail=\"Not found\")\nreturn FileResponse(target, filename=target.name)\n```\n- `Path.resolve()` normalizes `..` and symlinks before the containment check.\n- `is_relative_to(base)` rejects any path escaping `DEMO_FILES_DIR` (404).\n- `is_file()` rejects missing/non-file targets (404).\n- `filename=target.name` uses only the basename of the resolved target, preventing\n  filename-header injection / further traversal via the `filename` parameter.\n\nThe re-applied patch produced a file **byte-identical** to the fixer's\n`demo_high_risk.fixed.py` deliverable (`diff` clean), confirming the fixer's\nartifact is genuine and matches the patch.\n\n---\n\n## 3. Independent functional verification (AFTER the fix)\n\n### 3a. Independent traversal probe (patched code)\n```\n1) GET /demo/download?name=../outside/outside-secret.txt\n   status: 404\n   body:   '{\"detail\":\"Not found\"}'\n   LEAKED_OUTSIDE_SECRET: False\n   TRAVERSAL_REJECTED (4xx, no leak): True    <- FIX WORKS\n2) GET /demo/download?name=welcome.txt\n   status: 200 / body: 'WELCOME-LEGIT-DEMO'   <- NO REGRESSION\n```\n\n### 3b. Repo's own unit tests after the fix\n```\ntest_high_risk_path_traversal_reproduces FAILED (404 != 200)\ntest_high_risk_path_traversal_depth       FAILED (404 != 200)\n```\nThese fail **only because** they assert the *pre-fix* vulnerable behavior\n(`assert status == 200` on a traversal/disclosure). Under the fix the endpoint\nnow returns **404** instead of leaking the file — i.e. exactly the remediation\nrequired. The test file is intentionally left unchanged per the \"minimal change,\nonly `demo_download`\" constraint. Their failure is the correct confirmation that\nthe traversal is closed.\n\n### 3c. Import / regression smoke test\n```\nIMPORT_OK: router=<fastapi.routing.APIRouter>, tags=['SecurityDemo']\n```\nThe patched module imports cleanly; the app routers load without error.\n\n---\n\n## 4. Regression / scope check\n\n- Working-tree diff after fix = **exactly one file** (`demo_high_risk.py`).\n- The PR branch `demo/high-risk-human-gate` in the remote is **untouched** (local\n  clone only; no push, no merge, no close/reopen).\n- The patched module imports cleanly and the legitimate download still returns 200.\n- No passwords, tokens, keys or cookies were read, stored, or emitted.\n\n---\n\n## 5. Conclusion\n\nThe fix-1 remediation for the CWE-22 path traversal is **independently verified**:\n\n- `FIX_INDEPENDENTLY_VERIFIED`: the traversal `../outside/outside-secret.txt` is\n  rejected with **404** and no longer leaks the external secret; the fix is minimal\n  and correctly enforces path normalization (`Path.resolve`) + containment\n  (`is_relative_to(DEMO_FILES_DIR)`).\n- `REGRESSION_CHECK_PASSED`: legitimate demo file still served (200), module\n  imports cleanly, and no unrelated files changed.\n- Residual severity after fix: **NONE**.\n\n**Verify result**: VERIFICATION_PASSED\n"
+    }
+  ],
+  "source_ref": "fixVerify/artifacts/verify-1.verification-report.md",
+  "hash": {
+    "file": "artifacts/verify-1.verification-report.md",
+    "dir": "PHASE14-WINDOWS-COPAW-HIGH-RISK-FIX-VERIFY-20260829-180548",
+    "exists": true,
+    "hash_verified": true,
+    "sha256": "b7b1cfae757eeb685973abedce07c06ec57d38a1be564cd16e16dc8d904c8a9c"
+  },
+  "real": [
+    "AgentTeams/CoPaw 多 Agent 历史真实运行（2026-08-29：真实 Matrix 派单、真实 LLM、真实容器执行）",
+    "Reviewer / Fixer / Verifier 产物来自锁定证据目录（SHA256 校验）",
+    "人工审批为真实操作员记录（human-gate-approval.md）"
+  ],
+  "controlled": [
+    "本页面对证据的时间线投影与讲解文案"
+  ],
+  "not_executed": [
+    "本次演示不连接实时 GitHub / Matrix / LLM",
+    "merge / push / close / reopen 全程禁止，PR #2 保持 OPEN",
+    "per-task 云端 Trace（evidence-replay，trace_id 不存在）"
+  ],
+  "case": {
+    "case_id": "fastapi-pr2-cwe22",
+    "case_name": "FastAPI PR #2 · 路径穿越风险修复",
+    "repo": "nghqqa/fastapi-boilerplate-demo",
+    "pr": "PR #2 · demo/high-risk-human-gate",
+    "pr_url": "https://github.com/nghqqa/fastapi-boilerplate-demo/pull/2",
+    "run_id": "copaw-high-risk-human-gate（AgentTeams project）",
+    "sha": "1dedf5e1992c950557064d8f4fb9039d1523deb3",
+    "sha_kind": "PR #2 head commit",
+    "evidence_level": [
+      "HISTORICAL_REPLAY",
+      "REAL_EXECUTED_AGENTTEAMS"
+    ],
+    "source_dir": "evidence/PHASE14-WINDOWS-*（replayMaterials · fixVerify · fixAudit · finalLock · highRiskGateBlocked）",
+    "generated_at": "运行 2026-08-29 · 状态锁定 2026-08-29T13:09+08:00（pr-state-final.json）",
+    "pending_redactions": null
+  },
+  "integrity": {
+    "finals": {
+      "finalsDbLoop": {
+        "dir": "FINALS-DB-MIGRATION-LOOP-20260914",
+        "tier": "REAL_SQL_VERIFICATION_ISOLATED_POSTGRES",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsReworkLoop": {
+        "dir": "FINALS-REWORK-LOOP-20260914",
+        "tier": "MECHANISM_VERIFICATION",
+        "verified": true,
+        "files": 7,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsRagLoop": {
+        "dir": "FINALS-RAG-LOOP-20260914",
+        "tier": "REAL_OFFLINE_EXPERIMENT_SYNTHETIC_CORPUS",
+        "verified": true,
+        "files": 4,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr2Live": {
+        "dir": "FINALS-ELEM-PR2-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 19,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr3Live": {
+        "dir": "FINALS-ELEM-PR3-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      }
+    }
+  }
+}

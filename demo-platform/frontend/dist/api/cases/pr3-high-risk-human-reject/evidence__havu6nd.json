@@ -1,0 +1,51 @@
+{
+  "drawer": "event",
+  "data_mode": "historical replay",
+  "trace_mode": "evidence-replay",
+  "integrity_status": "verified",
+  "event_id": "pr3v3-ev-003",
+  "matrix_event_id": null,
+  "trace_id": null,
+  "trace_note": "per-event 无独立 trace（per-task/事件维度仍为 evidence-replay）；平台级历史权威 Trace 见总览页 AgentLoop Cloud Trace 区块",
+  "project_id": "elemiso-pr3v3-reject",
+  "task_id": null,
+  "agent_role": "reviewer",
+  "runtime": "copaw-worker:223ddc2-agentloop-v3rag（image 8e17c3667c3c）",
+  "event_type": "task_state",
+  "source": "minio",
+  "source_label": "MinIO task result",
+  "source_ref": "finalsPr3V3Traced/tasks/pr3v3-review-1/meta.json",
+  "source_hash": {
+    "ref": "finalsPr3V3Traced/tasks/pr3v3-review-1/meta.json",
+    "dir": "FINALS-ELEM-PR3-V3-TRACED",
+    "dir_key": "finalsPr3V3Traced",
+    "file": "tasks/pr3v3-review-1/meta.json",
+    "abs_path": "D:\\goai\\mergepilot-demo\\evidence\\FINALS-ELEM-PR3-V3-TRACED\\tasks\\pr3v3-review-1\\meta.json",
+    "exists": true,
+    "evidence_root_readonly": true,
+    "sha256_actual": "d98cca335b0c6112655dc3a7314f13fe5af414a3d2f68c89ae946661bdfdc29d",
+    "sha256_expected": "d98cca335b0c6112655dc3a7314f13fe5af414a3d2f68c89ae946661bdfdc29d",
+    "hash_verified": true,
+    "sums_source": "FINALS-ELEM-PR3-V3-TRACED/SHA256SUMS"
+  },
+  "timestamp": "2026-09-17T03:19:10Z",
+  "timestamp_precision": "exact",
+  "timestamp_note": null,
+  "summary": "reviewer ack_task（acknowledged_at 03:19:10Z）；clone + checkout head SHA ad267a6e… 校验",
+  "detail": "reviewer 03:19:13Z 团队房如实披露：~/task/PR-METADATA.md 为上一轮（pr3rag）残留副本（参数一致：PR #3、head ad267a6e、2 files +82/-0），以权威任务 spec 为准——已知采集残留，平台如实记录。",
+  "hash_verified": true,
+  "redaction_status": {
+    "redaction_layer": "applied (evidence-adapter/redact.mjs)",
+    "scan_hits": [],
+    "status": "CLEAN — redaction applied; PR#2 demo placeholders allow-listed",
+    "forbidden_fields_excluded": [
+      "Authorization",
+      "Cookie",
+      "API key",
+      "Matrix token",
+      "password",
+      "完整工具参数",
+      "完整 prompt/completion"
+    ]
+  }
+}

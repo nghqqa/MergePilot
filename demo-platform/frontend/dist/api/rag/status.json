@@ -1,0 +1,64 @@
+{
+  "status": "SYNTHETIC DEMO",
+  "data_mode": "SYNTHETIC",
+  "document_count": 8,
+  "chunk_count": 9,
+  "embedding_backend": "local-hash-bow-4096 (deterministic, SYNTHETIC, strategy=v2-bigram-idf-hash4096)",
+  "retrieval_mode": "local-hash-vector-cosine",
+  "retrieval_strategy": {
+    "id": "v2-bigram-idf-hash4096",
+    "previous": "v1-unigram-hash256",
+    "promoted_by": "offline loop experiments/rag-loop (tuning families → single held-out backtest)",
+    "evidence": "evidence/FINALS-RAG-LOOP-20260914/report.json",
+    "reproduce": "node demo-platform/backend/experiments/rag-loop/rag_eval_loop.mjs"
+  },
+  "tool_span_contract": {
+    "logical": "rag.retrieve",
+    "runtime": "rag_retrieve",
+    "database": "database.query",
+    "note": "运行时工具名需匹配 ^[a-zA-Z0-9_-]+$，故 logical rag.retrieve 以 rag_retrieve 注册；tool span 名为 execute_tool rag_retrieve"
+  },
+  "agent_correlation": {
+    "status": "VERIFIED",
+    "executed_in_agent_run": true,
+    "last_agent_execution_utc": "2026-08-30T11:53:53Z",
+    "cloud_trace_id": "f5bb3e1f55bc53412f0fac5e6b400eb5",
+    "cloud_session_id": "HTuUgFTncUNhFGrCgtBgFP",
+    "evidence": "操作员控制台确认：execute_tool rag_retrieve（6ms，成功）与 agent_step/invoke_agent/genai.llm.call/chat deepseek-chat 同 Trace；本地 tool-spans.jsonl 11:53:53.731Z 审计与云端 span 时序/计数吻合",
+    "cloud_span_confirmation": "VERIFIED — 2026-08-30 19:53:52 local trace, LLM 6 / Tool 1, Token 11059"
+  },
+  "polardb": {
+    "connection": "NOT CONNECTED",
+    "probe_mode": "read-only audit, connection never attempted",
+    "audited_at": "2026-09-19T00:53:18.430Z",
+    "conditions": {
+      "endpoint_configured": {
+        "value": false,
+        "evidence": "POLARDB_ENDPOINT / POLARDB_DB_ENDPOINT / DATABASE_URL / DB_HOST 均未设置；agentloop-secure.env 与 p14h2 ctrl 容器 env 扫描无 PolarDB/RDS 线索（2026-08-30 只读扫描）"
+      },
+      "readonly_account": {
+        "value": false,
+        "evidence": "未配置任何 PolarDB 账号；凭据规范要求只读账号从受保护存储读取，当前受保护存储中无此类条目"
+      },
+      "network_reachability": {
+        "value": "NOT_ATTEMPTED",
+        "evidence": "无 endpoint 可达性目标，未发起任何网络连接（避免伪造探测结果）"
+      },
+      "whitelist": {
+        "value": "NOT_ASSESSABLE",
+        "evidence": "白名单是 endpoint 侧属性，需真实 endpoint 与账号后才能验证"
+      },
+      "schema_table_access": {
+        "value": "NOT_ASSESSABLE",
+        "evidence": "需只读连接后执行 information_schema 只读查询，当前不可达"
+      },
+      "agentic_branch_api": {
+        "value": "NOT_ASSESSABLE",
+        "evidence": "Agentic Database Branch 接入接口需云端凭据（受保护存储），当前未配置"
+      }
+    },
+    "verdict": "PREREQUISITES_MISSING",
+    "disclosure": "缺少任一前置条件即保持 NOT CONNECTED；不搭建“看起来像真实 PolarDB”的假连接。演示使用 SIMULATED 只读 fixture。"
+  },
+  "disclosure": "全部文档为平台自有合成演示文档（SYNTHETIC），不含企业生产数据；检索只保存 query_hash，不保存 query 原文"
+}

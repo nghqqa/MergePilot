@@ -1,0 +1,96 @@
+{
+  "id": "ev-testlog-a2",
+  "title": "第二次验证日志 attempt-2（PASS）",
+  "level": "REAL_EXECUTED",
+  "fields": [
+    [
+      "命令",
+      "python -m unittest discover -s <revision> -p 'test_*.py'"
+    ],
+    [
+      "结果",
+      "PASS · 5 tests · 0 failure"
+    ],
+    [
+      "任务终态",
+      "PASS · verdict=PASS"
+    ]
+  ],
+  "blocks": [
+    {
+      "title": "run-rework-f1-a-attempt2.log",
+      "lang": "log",
+      "text": "test_different_orders_are_independent (test_payments.TestPaymentLedger) ... ok\ntest_non_positive_amount_rejected (test_payments.TestPaymentLedger) ... ok\ntest_replay_same_payment_is_idempotent (test_payments.TestPaymentLedger) ... ok\ntest_second_payment_request_for_same_order_is_idempotent (test_payments.TestPaymentLedger) ... ok\ntest_single_charge_recorded (test_payments.TestPaymentLedger) ... ok\n\n----------------------------------------------------------------------\nRan 5 tests in 0.000s\n\nOK\n"
+    }
+  ],
+  "source_ref": "evidence/FINALS-REWORK-LOOP-20260914/tests/run-rework-f1-a-attempt2.log",
+  "real": [
+    "unittest 真实执行，VERDICT=PASS 由断言结果决定"
+  ],
+  "controlled": [],
+  "not_executed": [
+    "LLM 调用",
+    "Matrix/Element 真实交接",
+    "GitHub 写入"
+  ],
+  "case": {
+    "case_id": "rework-payments",
+    "case_name": "支付幂等 · 返工机制案例",
+    "repo": "mergepilot/payments-demo（本地案例仓库）",
+    "pr": "PR #7（本地编号，非可核验外部 PR）",
+    "pr_url": null,
+    "run_id": "run-rework-f1-a",
+    "sha": "255490e3831dab05a39421e0867eeb1bd5d69e2a",
+    "sha_kind": "attempt-2 tree_sha",
+    "evidence_level": [
+      "CONTROL_PLANE_MECHANISM"
+    ],
+    "source_dir": "evidence/FINALS-REWORK-LOOP-20260914 · tools/agentteams/rework_case/base",
+    "generated_at": "2026-09-15T02:14:34Z",
+    "pending_redactions": null
+  },
+  "integrity": {
+    "finals": {
+      "finalsDbLoop": {
+        "dir": "FINALS-DB-MIGRATION-LOOP-20260914",
+        "tier": "REAL_SQL_VERIFICATION_ISOLATED_POSTGRES",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsReworkLoop": {
+        "dir": "FINALS-REWORK-LOOP-20260914",
+        "tier": "MECHANISM_VERIFICATION",
+        "verified": true,
+        "files": 7,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsRagLoop": {
+        "dir": "FINALS-RAG-LOOP-20260914",
+        "tier": "REAL_OFFLINE_EXPERIMENT_SYNTHETIC_CORPUS",
+        "verified": true,
+        "files": 4,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr2Live": {
+        "dir": "FINALS-ELEM-PR2-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 19,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr3Live": {
+        "dir": "FINALS-ELEM-PR3-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      }
+    }
+  }
+}

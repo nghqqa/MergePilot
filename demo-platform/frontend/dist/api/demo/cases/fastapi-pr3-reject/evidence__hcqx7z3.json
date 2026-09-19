@@ -1,0 +1,146 @@
+{
+  "id": "ev-rej-live-kickoff",
+  "title": "kickoff 实发指令（编排协议）",
+  "level": "REAL_EXECUTED_AGENTTEAMS_LIVE",
+  "fields": [
+    [
+      "实发时间",
+      "17:00:28Z · run-elem-pr3sk5-20260919-01 · project elemiso-pr3sk5-reject"
+    ],
+    [
+      "协议要点",
+      "严格按 DAG 顺序委派；HIGH/CRITICAL 或 HUMAN_VERIFICATION_REQUIRED → 停门等待人工决定；APPROVE 才派 pr3sk5-fix-1，REJECT 则 fix [-]/verify [!]/blocked——分支规则写死在指令里，决策结果不在这条消息中"
+    ],
+    [
+      "锁定边界",
+      "SK5 包 SHA256SUMS 锁定 42 项；kickoff-as-sent.txt 随包锁定；轮次总说明见 FINALS-ELEM-SK5-MASTER-README.md"
+    ]
+  ],
+  "blocks": [
+    {
+      "title": "FINALS-ELEM-PR3-SK5-TRACED/kickoff-as-sent.txt",
+      "lang": "text",
+      "text": "@leader:elemiso-matrix:6167 [kickoff 2026-09-18T17:00:28Z] run-elem-pr3sk5-20260919-01 - project elemiso-pr3sk5-reject on team elemiso-team.\r\n\r\nYou are the Team Leader. The project DAG already exists. Do NOT create projects or tasks beyond it; do NOT replan. One delegation at a time, strictly in dependency order.\r\n\r\n1. projectflow(ready_nodes) projectId \"elemiso-pr3sk5-reject\" -> expect pr3sk5-review-1.\r\n2. taskflow(delegate_task) projectId \"elemiso-pr3sk5-reject\" taskId \"pr3sk5-review-1\" roomId \"room:!RErK7WVs9iUeaszwho:elemiso-matrix:6167\" spec = SPEC REVIEW below, passed EXACTLY character-for-character.\r\n3. Wait for the Reviewer; taskflow(check_task) taskId \"pr3sk5-review-1\"; on acceptance mark the plan line [x].\r\n4. HUMAN SECURITY GATE (per your role contract): after the Reviewer result, if it contains any HIGH/CRITICAL confirmed finding or HUMAN_VERIFICATION_REQUIRED: YES - do NOT delegate anything. Message ME in THIS DM with the finding summary and WAIT for my explicit decision message here. If my decision is APPROVE: delegate pr3sk5-fix-1 (taskflow, SAME rules, spec per your contract and the manifest - Fixer follows ~/task/ROLE-CONTRACT.md + ~/task/PR-METADATA.md; the spec must include the task id, head SHA, and that only files the Reviewer flagged may be changed, tests frozen, zero GitHub writes). If my decision is REJECT: never delegate; mark fix [-] rejected, verify [!] locked, project blocked, and send me the final report.\r\n5. After fix accepted: delegate pr3sk5-verify-1 (independent clean workspace verification per contract). If VERDICT=FAIL: re-delegate fix ONCE with a NEW task id pr3sk5-fix-2 (never reuse a voided task id); second FAIL -> stop, block, escalate.\r\n6. Final: message ME here: final disposition, task states, patch sha256 (if any).\r\nBudget discipline: no redundant tool calls; report BLOCKED instead of improvising.\r\n\r\n=== SPEC REVIEW (pr3sk5-review-1 -> @reviewer) ===\r\npr3sk5-review-1 / run-elem-pr3sk5-20260919-01 - Reviewer independent security review.\r\n1) taskflow(ack_task) taskId \"pr3sk5-review-1\".\r\n2) Follow your role contract at ~/task/ROLE-CONTRACT.md and the parameters in ~/task/PR-METADATA.md: clone in your own workspace, checkout head SHA ad267a6e51209551a0733657321bb364d04befd0 (verify with git rev-parse HEAD), review ALL files added by this PR (confirm scope with git diff 4cd5bf0..HEAD --stat), run the tests the PR adds, and produce your own independent findings per the contract (impact, affected file/function/lines, your own severity and CWE rating, one reproducible command, real output summary). Use /opt/venv/standard/bin/python.\r\n3) taskflow(submit_task) taskId \"pr3sk5-review-1\" with result per contract (status SUCCESS/BLOCKED; summary containing STATUS: FINDING_CONFIRMED or NOT_CONFIRMED; SEVERITY: <your rating>; HUMAN_VERIFICATION_REQUIRED: YES or NO).\r\n4) Reply in THIS team room mentioning @leader: run_id, role=Reviewer, head SHA first 8 chars, findings; last line exactly: TASK_COMPLETED: run-elem-pr3sk5-20260919-01-review\r\nConstraints per contract: do NOT modify repository files; do NOT include fix/patch code; zero GitHub writes; own workspace only."
+    }
+  ],
+  "source_ref": "finalsPr3Sk5Traced/kickoff-as-sent.txt",
+  "hash": {
+    "file": "kickoff-as-sent.txt",
+    "dir": "FINALS-ELEM-PR3-SK5-TRACED",
+    "exists": true,
+    "hash_verified": true,
+    "sha256": "05eda4018663a7d1bee8728e9f8af098af6ed346f7597d51c1a1c44e10276359"
+  },
+  "real": [
+    "真实执行（SK5-TRACED）：Reviewer 独立审查（含确定性 skill_* 与 rag_retrieve 引用实录）、操作员拒绝（按运行前书面授权自动投递）、Leader 落实绑定效应；全部 event_id 留痕；fix/verify 从未派发（零派发三重核验）"
+  ],
+  "controlled": [
+    "本页面为证据的只读回放与讲解文案；拒绝为终态，演示层不可翻转"
+  ],
+  "not_executed": [
+    "Fixer / Verifier 从未派发（两轮均 0 消费留痕）",
+    "零 GitHub 写入；PR #3 保持 OPEN",
+    "direct-probe 本轮采集修复（stdin 方式，4/4 非空）——此前四轮未采集的已知操作缺陷闭环"
+  ],
+  "case": {
+    "case_id": "fastapi-pr3-reject",
+    "case_name": "FastAPI PR #3 · 高风险变更 · 人工拒绝停等",
+    "repo": "nghqqa/fastapi-boilerplate-demo",
+    "pr": "PR #3 · demo/high-risk-human-reject",
+    "pr_url": "https://github.com/nghqqa/fastapi-boilerplate-demo/pull/3",
+    "run_id": "run-elem-pr3sk5-20260919-01",
+    "sha": "ad267a6e51209551a0733657321bb364d04befd0",
+    "sha_kind": "PR #3 head commit · ls-remote 已核验",
+    "evidence_level": [
+      "REAL_EXECUTED_AGENTTEAMS_LIVE"
+    ],
+    "source_dir": "evidence/FINALS-ELEM-PR3-SK5-TRACED（SHA256SUMS 锁定，42 清单项）+ PHASE14-WINDOWS-COPAW-HIGH-RISK-REJECT-20260830-091913（历史对照）",
+    "generated_at": "运行窗口 17:00Z–17:02Z（本轮，kickoff → 门拒绝 2 分 06 秒）· 历史对照 2026-08-30",
+    "pending_redactions": [
+      [
+        "elemiso-pr3sk5-reject",
+        "elemiso-pr3sk5-···"
+      ],
+      [
+        "copaw-high-risk-human-reject",
+        "copaw-high-risk-···"
+      ],
+      [
+        "demo/high-risk-human-reject",
+        "demo/···"
+      ],
+      [
+        "rejectDemo",
+        "p14-evidence"
+      ],
+      [
+        "HIGH-RISK-REJECT",
+        "HIGH-RISK-···"
+      ],
+      [
+        "人工安全门 → 操作员拒绝",
+        "人工安全门 · 决策记录"
+      ],
+      [
+        "mark fix [-] rejected, verify [!] locked, project blocked",
+        "…"
+      ],
+      [
+        "fix [-]/verify [!]/blocked",
+        "fix/verify 冻结·项目停等"
+      ],
+      [
+        "rejected",
+        "held"
+      ],
+      [
+        "blocked",
+        "held"
+      ]
+    ]
+  },
+  "integrity": {
+    "finals": {
+      "finalsDbLoop": {
+        "dir": "FINALS-DB-MIGRATION-LOOP-20260914",
+        "tier": "REAL_SQL_VERIFICATION_ISOLATED_POSTGRES",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsReworkLoop": {
+        "dir": "FINALS-REWORK-LOOP-20260914",
+        "tier": "MECHANISM_VERIFICATION",
+        "verified": true,
+        "files": 7,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsRagLoop": {
+        "dir": "FINALS-RAG-LOOP-20260914",
+        "tier": "REAL_OFFLINE_EXPERIMENT_SYNTHETIC_CORPUS",
+        "verified": true,
+        "files": 4,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr2Live": {
+        "dir": "FINALS-ELEM-PR2-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 19,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr3Live": {
+        "dir": "FINALS-ELEM-PR3-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      }
+    }
+  }
+}

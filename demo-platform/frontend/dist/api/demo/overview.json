@@ -1,0 +1,472 @@
+{
+  "available": true,
+  "platform": {
+    "name": "MergePilot",
+    "tagline": "证据驱动的 PR 审修流程回放器 · 离线优先",
+    "data_note": "本平台回放锁定证据目录中的运行证据；演示页面不连接实时模型 / GitHub / Matrix / PolarDB",
+    "integrity": [
+      {
+        "key": "finalsDbLoop",
+        "dir": "FINALS-DB-MIGRATION-LOOP-20260914",
+        "tier": "REAL_SQL_VERIFICATION_ISOLATED_POSTGRES",
+        "verified": true,
+        "files": 8
+      },
+      {
+        "key": "finalsReworkLoop",
+        "dir": "FINALS-REWORK-LOOP-20260914",
+        "tier": "MECHANISM_VERIFICATION",
+        "verified": true,
+        "files": 7
+      },
+      {
+        "key": "finalsRagLoop",
+        "dir": "FINALS-RAG-LOOP-20260914",
+        "tier": "REAL_OFFLINE_EXPERIMENT_SYNTHETIC_CORPUS",
+        "verified": true,
+        "files": 4
+      },
+      {
+        "key": "finalsPr2Live",
+        "dir": "FINALS-ELEM-PR2-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 19
+      },
+      {
+        "key": "finalsPr3Live",
+        "dir": "FINALS-ELEM-PR3-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 8
+      }
+    ]
+  },
+  "levels": {
+    "REAL_EXECUTED_AGENTTEAMS_LIVE": "真实运行 · AgentTeams",
+    "REAL_EXECUTED_AGENTTEAMS": "真实执行 · AgentTeams（历史运行）",
+    "REAL_OFFLINE_EXPERIMENT": "真实离线实验 · 合成语料",
+    "POST_RUN_DESIGN": "运行后固化设计 · 非运行时证据",
+    "LOCAL_REAL_SQL": "本地真实 SQL（隔离 PostgreSQL）",
+    "CONTROL_PLANE_MECHANISM": "控制面机制验证",
+    "SYNTHETIC": "合成数据",
+    "HISTORICAL_REPLAY": "历史回放",
+    "NOT_EXECUTED": "未执行"
+  },
+  "current_case_id": "fastapi-pr2-rag-traced-20260917",
+  "cases": [
+    {
+      "case_id": "fastapi-pr1-auto",
+      "shape": "guided",
+      "extra": false,
+      "name": "FastAPI PR #1 · 低风险自动闭环",
+      "short_name": "PR #1 · 低风险自动路径",
+      "has_gate": false,
+      "name_pending": null,
+      "pr_pending": null,
+      "one_liner": "低风险自动路径首次打通：bootstrap PR（6 files +168/−1）经 67 秒独立审查——NOT_CONFIRMED/LOW、SAST 唯一命中诚实裁决为 false positive——单节点 DAG 即审即结，无人工门自动完成；与门控案例共同构成风险分级处置的完整光谱。",
+      "repo": "nghqqa/fastapi-boilerplate-demo",
+      "pr": "PR #1 · bootstrap 基线",
+      "pr_url": "https://github.com/nghqqa/fastapi-boilerplate-demo/pull/1",
+      "run_id": "run-elem-pr1sk5-20260919-01",
+      "portfolio_role": "低风险自动分支",
+      "relation_note": null,
+      "sha": "4cd5bf099f88c3f3f85ee4c06b7adfe9925a6e5c",
+      "sha_kind": "PR #1 head commit · ls-remote 已核验",
+      "evidence_level": [
+        "REAL_EXECUTED_AGENTTEAMS_LIVE"
+      ],
+      "replay_note": "REAL_EXECUTED —— 本页面回放该次运行的证据；不连接实时系统",
+      "purpose": "补全风险分级处置光谱：低风险自动通过——审查即结论，无需人工门",
+      "risk_tags": [
+        "bootstrap 基线",
+        "LOW",
+        "自动完成",
+        "确定性 Skill MCP",
+        "sast_scan"
+      ],
+      "status": {
+        "verdict": "PASS",
+        "label": "低风险自动完成 · 无人工门 · PR 保持 OPEN"
+      },
+      "facts": {
+        "real_github_pr": {
+          "value": "真实 GitHub PR（OPEN）",
+          "ok": true,
+          "note": "https://github.com/nghqqa/fastapi-boilerplate-demo/pull/1"
+        },
+        "real_agentteams_run": {
+          "value": "真实 AgentTeams 运行（SK5 同会话）",
+          "ok": true,
+          "note": "NOT_CONFIRMED/LOW → 无人工门自动完成；SAST 首战如实裁决"
+        },
+        "skills_mcp": {
+          "value": "确定性 Skill + SAST（advisory-only）",
+          "ok": true,
+          "note": "sast_scan 唯一命中裁决 false positive；case_retrieval 如实空匹配"
+        },
+        "github_write": {
+          "value": "未写入 —— PR 保持 OPEN",
+          "ok": false,
+          "note": "merge/push/close/reopen 全程禁止"
+        }
+      },
+      "stats": [
+        {
+          "k": "端到端墙钟",
+          "v": "≈2 分 32 秒",
+          "hint": "建项 → 综合终报（17:04:12Z → 17:06:44Z）"
+        },
+        {
+          "k": "审查时效",
+          "v": "67 秒",
+          "hint": "委派 → Reviewer 提交"
+        },
+        {
+          "k": "SAST",
+          "v": "×2 · 首次实战",
+          "hint": "唯一命中诚实裁决 false positive"
+        },
+        {
+          "k": "LLM 调用",
+          "v": "≈45 次（估计）",
+          "hint": "锁定工件未单列 pr1 窗口；会话合计 133 次"
+        }
+      ],
+      "generated_at": "运行窗口 17:04Z–17:06Z（建项 → 自动完成；与 PR #3 同会话接力）",
+      "source_dir": "evidence/FINALS-ELEM-PR1-SK5-AUTO（SHA256SUMS 锁定，39 清单项）",
+      "steps": 4
+    },
+    {
+      "case_id": "fastapi-pr2-rag-traced-20260917",
+      "shape": "guided",
+      "extra": false,
+      "name": "FastAPI PR #2 · 高风险变更 · 人工批准闭环",
+      "short_name": "PR #2 · 批准路径",
+      "has_gate": true,
+      "name_pending": "FastAPI PR #2 · 高风险变更审修",
+      "pr_pending": "PR #2",
+      "one_liner": "非预设 SPEC 下 Reviewer 自主确认 HIGH（CWE-22，skill_risk_classify 建议性 L1 未覆盖自主定级）→ 人工门批准（授权自动投递）→ Leader 12 秒全新委派 → Fixer 确定性修复（sha256 八轮一致）→ Verifier VERIFIED；墙钟 5 分 31 秒，direct-probe 4/4 采集成功。",
+      "repo": "nghqqa/fastapi-boilerplate-demo",
+      "pr": "PR #2 · demo/high-risk-human-gate",
+      "pr_url": "https://github.com/nghqqa/fastapi-boilerplate-demo/pull/2",
+      "run_id": "run-elem-pr2sk5-20260919-01",
+      "portfolio_role": null,
+      "relation_note": null,
+      "sha": "1dedf5e1992c950557064d8f4fb9039d1523deb3",
+      "sha_kind": "PR #2 head commit · ls-remote 已核验",
+      "evidence_level": [
+        "REAL_EXECUTED_AGENTTEAMS_LIVE"
+      ],
+      "replay_note": "REAL_EXECUTED —— 本页面回放该次运行的证据；不连接实时系统",
+      "purpose": "主案例：高风险变更的独立审查、人工授权修复与独立验证——advisory 工具与历史案例引用不覆盖自主判断，自主判断不越过人工门",
+      "risk_tags": [
+        "CWE-22 路径穿越",
+        "任意文件读取",
+        "HIGH",
+        "确定性 Skill MCP",
+        "sast_scan",
+        "案例知识库",
+        "AgentLoop v3 追踪"
+      ],
+      "status": {
+        "verdict": "PASS",
+        "label": "VERIFIED PASS · PR 保持 OPEN"
+      },
+      "facts": {
+        "real_github_pr": {
+          "value": "真实 GitHub PR（OPEN）",
+          "ok": true,
+          "note": "https://github.com/nghqqa/fastapi-boilerplate-demo/pull/2"
+        },
+        "real_agentteams_run": {
+          "value": "真实 AgentTeams 运行（SK5-TRACED）",
+          "ok": true,
+          "note": "门后全新委派事件；三角色真实调用 skill_* 工具；delegation.link ×15（会话）"
+        },
+        "skills_mcp": {
+          "value": "确定性 Skill + sast_scan 首战（advisory-only）",
+          "ok": true,
+          "note": "SAST 命中诚实识别 false positive；建议性 L1 未覆盖自主 HIGH"
+        },
+        "github_write": {
+          "value": "未写入 —— PR 保持 OPEN",
+          "ok": false,
+          "note": "merge/push/close/reopen 全程禁止"
+        }
+      },
+      "stats": [
+        {
+          "k": "端到端墙钟",
+          "v": "5 分 31 秒",
+          "hint": "含 Reviewer 依赖安装与门决策等待 1 分 00 秒（操作员时间），如实分列"
+        },
+        {
+          "k": "LLM 调用",
+          "v": "90 次",
+          "hint": "pr2 窗口 · 输入 6.22M · ≈99% 命中缓存"
+        },
+        {
+          "k": "追踪 span",
+          "v": "824 · 会话累计",
+          "hint": "SK5 四包同会话（含 PR1/PR3/双评审）"
+        },
+        {
+          "k": "确定性 Skill",
+          "v": "×15 · 会话累计",
+          "hint": "diff_parse/risk_classify/sast_scan/case_retrieval · advisory-only"
+        },
+        {
+          "k": "补丁一致性",
+          "v": "sha256 八轮一致",
+          "hint": "674356fc…16081"
+        }
+      ],
+      "generated_at": "运行窗口 16:51Z–16:57Z（墙钟 5 分 31 秒，含人工门决策等待 1 分 00 秒）",
+      "source_dir": "evidence/FINALS-ELEM-PR2-SK5-TRACED（SHA256SUMS 锁定，54 清单项）",
+      "steps": 8
+    },
+    {
+      "case_id": "fastapi-pr3-reject",
+      "shape": "guided",
+      "extra": false,
+      "name": "FastAPI PR #3 · 高风险变更 · 人工拒绝停等",
+      "short_name": "PR #3 · 拒绝路径",
+      "has_gate": true,
+      "name_pending": "FastAPI PR #3 · 高风险变更审修",
+      "pr_pending": "PR #3",
+      "one_liner": "真实执行：Reviewer 在 kickoff 后 44 秒独立确认 HIGH（CWE-78 未认证 RCE，; id → uid=0(root) 实证）→ 人工门拒绝 → 修复与验证从未派发（零派发三重核验）；skill_risk_classify 建议性 L1 与自主 HIGH 的分歧被 Leader 在门报告原话引用。",
+      "repo": "nghqqa/fastapi-boilerplate-demo",
+      "pr": "PR #3 · demo/high-risk-human-reject",
+      "pr_url": "https://github.com/nghqqa/fastapi-boilerplate-demo/pull/3",
+      "run_id": "run-elem-pr3sk5-20260919-01",
+      "portfolio_role": "人工拒绝分支",
+      "relation_note": null,
+      "sha": "ad267a6e51209551a0733657321bb364d04befd0",
+      "sha_kind": "PR #3 head commit · ls-remote 已核验",
+      "evidence_level": [
+        "REAL_EXECUTED_AGENTTEAMS_LIVE"
+      ],
+      "replay_note": "REAL_EXECUTED + 历史对照 —— 拒绝语义为终态，不可在演示层翻转",
+      "purpose": "展示人工门的拒绝分支：失败安全（fail-safe）——不批准即停止，证据保留",
+      "risk_tags": [
+        "CWE-78 命令注入",
+        "RCE",
+        "HIGH",
+        "确定性 Skill MCP"
+      ],
+      "status": {
+        "verdict": "REJECTED",
+        "label": "真实拒绝 · 项目 blocked · Fixer/Verifier 未派发"
+      },
+      "facts": {
+        "real_github_pr": {
+          "value": "真实 GitHub PR（运行后核验：仍 OPEN）",
+          "ok": true,
+          "note": "https://github.com/nghqqa/fastapi-boilerplate-demo/pull/3"
+        },
+        "real_agentteams_run": {
+          "value": "真实 AgentTeams 运行（本次最新一轮）",
+          "ok": true,
+          "note": "真实审查（含 skill_* 与 rag_retrieve 引用）、真实拒绝、真实停等"
+        },
+        "github_write": {
+          "value": "未写入 —— PR 保持 OPEN",
+          "ok": false,
+          "note": "全程禁止 merge/push/close"
+        }
+      },
+      "stats": [
+        {
+          "k": "端到端墙钟",
+          "v": "2 分 06 秒",
+          "hint": "kickoff → 门拒绝（拒绝即终态）"
+        },
+        {
+          "k": "LLM 调用",
+          "v": "32 次",
+          "hint": "pr3 窗口 · 输入 2.39M · ≈99% 命中缓存"
+        },
+        {
+          "k": "审查时效",
+          "v": "44 秒",
+          "hint": "kickoff → Reviewer 提交"
+        },
+        {
+          "k": "Fixer / Verifier",
+          "v": "零派发",
+          "hint": "房间/plan/任务目录三重核验"
+        }
+      ],
+      "generated_at": "运行窗口 17:00Z–17:02Z（本轮，kickoff → 门拒绝 2 分 06 秒）· 历史对照 2026-08-30",
+      "source_dir": "evidence/FINALS-ELEM-PR3-SK5-TRACED（SHA256SUMS 锁定，42 清单项）+ PHASE14-WINDOWS-COPAW-HIGH-RISK-REJECT-20260830-091913（历史对照）",
+      "steps": 5
+    }
+  ],
+  "additional": [
+    {
+      "case_id": "rework-payments",
+      "shape": "guided",
+      "extra": false,
+      "name": "支付幂等 · 返工机制案例",
+      "short_name": "机制案例 · 支付幂等",
+      "has_gate": false,
+      "name_pending": null,
+      "pr_pending": null,
+      "one_liner": "Verifier 只认冻结的验收测试：首次修复测试失败，Manager 判定 revision 重派 Fixer，第二次修复通过。",
+      "repo": "mergepilot/payments-demo（本地案例仓库）",
+      "pr": "PR #7（本地编号，非可核验外部 PR）",
+      "pr_url": null,
+      "run_id": "run-rework-f1-a",
+      "portfolio_role": "案例 C · 返工机制（控制面）",
+      "relation_note": null,
+      "sha": "255490e3831dab05a39421e0867eeb1bd5d69e2a",
+      "sha_kind": "attempt-2 tree_sha",
+      "evidence_level": [
+        "CONTROL_PLANE_MECHANISM"
+      ],
+      "replay_note": null,
+      "purpose": "展示 verify-FAIL → revision → 重派 → 复验的返工语义（控制面机制）",
+      "risk_tags": [
+        "业务逻辑幂等",
+        "correctness",
+        "L1"
+      ],
+      "status": {
+        "verdict": "PASS",
+        "label": "attempt-2 验证通过 5/5 · 机制闭环"
+      },
+      "facts": {
+        "real_github_pr": {
+          "value": "否 —— 控制面机制案例，不作为外部 PR 证据",
+          "ok": false,
+          "note": "mergepilot/payments-demo PR#7 无可核验外部链接"
+        },
+        "real_agentteams_run": {
+          "value": "否 —— 无 LLM、无 Matrix/Element 交接",
+          "ok": false,
+          "note": "Reviewer/Fixer 语义为受控输入"
+        },
+        "github_write": {
+          "value": "未写入 —— NOT_EXECUTED",
+          "ok": false,
+          "note": ""
+        }
+      },
+      "stats": null,
+      "generated_at": "2026-09-15T02:14:34Z",
+      "source_dir": "evidence/FINALS-REWORK-LOOP-20260914 · tools/agentteams/rework_case/base",
+      "steps": 5
+    },
+    {
+      "case_id": "db-migration-orders",
+      "shape": "brief",
+      "extra": true,
+      "name": "订单库迁移 · 历史数据兼容",
+      "short_name": "附加证据 · 数据库迁移",
+      "has_gate": false,
+      "name_pending": null,
+      "pr_pending": null,
+      "one_liner": "迁移在隔离 PostgreSQL 真实执行：rev1 被历史数据挡下（23502），上下文补取后 rev2 11/11 断言通过。",
+      "repo": "mergepilot/orders-demo",
+      "pr": "PR #4 · orders-schema-change",
+      "pr_url": null,
+      "run_id": "run-dbv-084723-rev2",
+      "portfolio_role": "附录 · 数据库迁移与版本绑定",
+      "relation_note": null,
+      "sha": "a7db33c36313f5f4c963bd6000b108ca8279d96a",
+      "sha_kind": "rev2 head（git tree object id）",
+      "evidence_level": [
+        "LOCAL_REAL_SQL"
+      ],
+      "replay_note": null,
+      "purpose": "附加证据：数据库迁移与历史数据兼容风险的本地真实 SQL 验证",
+      "risk_tags": [
+        "数据库迁移",
+        "历史数据兼容",
+        "SQLSTATE 23502"
+      ],
+      "status": {
+        "verdict": "PASS",
+        "label": "验证通过 11/11 · 审批后被 follow-up 取代（STALE）"
+      },
+      "facts": {
+        "real_github_pr": {
+          "value": "否 —— 本地案例（SYNTHETIC 数据）",
+          "ok": false,
+          "note": ""
+        },
+        "real_agentteams_run": {
+          "value": "否 —— 真实 SQL 执行，但非 AgentTeams 运行",
+          "ok": false,
+          "note": ""
+        },
+        "github_write": {
+          "value": "未写入 —— NOT_EXECUTED",
+          "ok": false,
+          "note": ""
+        }
+      },
+      "stats": null,
+      "generated_at": "2026-09-15T08:47:27Z",
+      "source_dir": "evidence/FINALS-DB-MIGRATION-LOOP-20260914",
+      "steps": null
+    },
+    {
+      "case_id": "rag-retrieval-loop",
+      "shape": "guided",
+      "extra": false,
+      "name": "RAG 检索闭环 · 观测→评估→数据集→优化→回测",
+      "short_name": "闭环能力 · RAG 检索优化",
+      "has_gate": false,
+      "name_pending": null,
+      "pr_pending": null,
+      "one_liner": "真实离线实验：span 审计定界样本 → 18 族 54 查询按族切分 → 基线+9 条 badcase 归因 → 12 候选网格调优 → held-out 只评一次，MRR 0.861→0.958 判定 PROMOTE。",
+      "repo": "mergepilot/demo-platform（rag-data 合成语料）",
+      "pr": "本地离线实验 · 无外部 PR（合成语料）",
+      "pr_url": null,
+      "run_id": "rag-loop-20260914",
+      "portfolio_role": "附录 · 观测→评估→优化→回测闭环",
+      "relation_note": null,
+      "sha": "aa05c3d894e6485727d2bda1de3025e6b7be0b2c9e627ef48c95186ea27adb01",
+      "sha_kind": "语料 corpus sha256",
+      "evidence_level": [
+        "REAL_OFFLINE_EXPERIMENT",
+        "SYNTHETIC"
+      ],
+      "replay_note": "REAL_OFFLINE_EXPERIMENT —— 本页面回放 2026-09-14 离线实验证据；语料为 SYNTHETIC/REDACTED 演示文档",
+      "purpose": "闭环能力证明：观测→评估→数据集→优化→留出回测的完整方法链与防过拟合纪律",
+      "risk_tags": [
+        "检索质量",
+        "防泄漏切分",
+        "held-out 回测",
+        "PROMOTE"
+      ],
+      "status": {
+        "verdict": "PROMOTE",
+        "label": "held-out MRR 0.861→0.958 · 晋级规则满足"
+      },
+      "facts": {
+        "real_github_pr": {
+          "value": "否 —— 本地离线实验",
+          "ok": false,
+          "note": ""
+        },
+        "real_agentteams_run": {
+          "value": "否 —— 真实检索器实验，但非 AgentTeams 运行",
+          "ok": false,
+          "note": ""
+        },
+        "github_write": {
+          "value": "未写入 —— NOT_EXECUTED",
+          "ok": false,
+          "note": ""
+        }
+      },
+      "stats": null,
+      "generated_at": "2026-09-14T13:39:41.983Z",
+      "source_dir": "evidence/FINALS-RAG-LOOP-20260914（SHA256SUMS 锁定；timings 因非确定性排除）",
+      "steps": 5
+    }
+  ]
+}

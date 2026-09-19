@@ -1,0 +1,91 @@
+{
+  "case_id": "pr3-high-risk-human-reject",
+  "at_event_seq": 4,
+  "timestamp": "2026-09-17T03:19:13Z",
+  "nodes": [
+    {
+      "id": "review-1",
+      "label": "review-1",
+      "sub": "reviewer",
+      "kind": "task",
+      "status": "running",
+      "status_label": "RUNNING · 执行中",
+      "locked_reason": null
+    },
+    {
+      "id": "human-gate",
+      "label": "HUMAN GATE",
+      "sub": "人工安全门（拒绝路径）",
+      "kind": "gate",
+      "status": "pending",
+      "status_label": "GATE: NONE",
+      "state": "none"
+    },
+    {
+      "id": "fix-1",
+      "label": "fix-1",
+      "sub": "fixer",
+      "kind": "task",
+      "status": "pending",
+      "status_label": "PENDING · 等待派发",
+      "locked_reason": "DAG 依赖：等待 review-1 结论"
+    },
+    {
+      "id": "verify-1",
+      "label": "verify-1",
+      "sub": "verifier",
+      "kind": "task",
+      "status": "pending",
+      "status_label": "PENDING · 等待派发",
+      "locked_reason": "DAG 依赖：等待 fix-1 完成"
+    }
+  ],
+  "edges": [
+    {
+      "from": "review-1",
+      "to": "human-gate"
+    },
+    {
+      "from": "human-gate",
+      "to": "fix-1"
+    },
+    {
+      "from": "fix-1",
+      "to": "verify-1"
+    }
+  ],
+  "phase": "running",
+  "headline": "review-1 已派发 → reviewer 独立安全审查中",
+  "legend": [
+    {
+      "status": "pending",
+      "color": "gray",
+      "meaning": "未派发/等待依赖"
+    },
+    {
+      "status": "running",
+      "color": "blue",
+      "meaning": "已派发执行中"
+    },
+    {
+      "status": "waiting_human",
+      "color": "orange",
+      "meaning": "人工门停等（锁定）"
+    },
+    {
+      "status": "blocked",
+      "color": "red",
+      "meaning": "依赖锁定（前置任务未完成）"
+    },
+    {
+      "status": "completed",
+      "color": "green",
+      "meaning": "完成并经 Leader 验收"
+    },
+    {
+      "status": "failed",
+      "color": "darkred",
+      "meaning": "失败（保留证据）"
+    }
+  ]
+}

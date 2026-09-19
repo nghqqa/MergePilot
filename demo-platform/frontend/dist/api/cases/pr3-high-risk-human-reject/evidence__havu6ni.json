@@ -1,0 +1,51 @@
+{
+  "drawer": "event",
+  "data_mode": "historical replay",
+  "trace_mode": "evidence-replay",
+  "integrity_status": "verified",
+  "event_id": "pr3v3-ev-008",
+  "matrix_event_id": "$53m_qI51-bniGsVagOAXHo7qVQbfx2CnVATAN_fauM4（团队房 $PjVeszud0jhfZ7D87X8L7MwihaziIbNpqnZf-EA7yHw）",
+  "trace_id": null,
+  "trace_note": "per-event 无独立 trace（per-task/事件维度仍为 evidence-replay）；平台级历史权威 Trace 见总览页 AgentLoop Cloud Trace 区块",
+  "project_id": "elemiso-pr3v3-reject",
+  "task_id": null,
+  "agent_role": "human",
+  "runtime": "copaw-worker:223ddc2-agentloop-v3rag（image 8e17c3667c3c）",
+  "event_type": "approval",
+  "source": "matrix",
+  "source_label": "Matrix event",
+  "source_ref": "finalsPr3V3Traced/project/human-gate-rejection.md",
+  "source_hash": {
+    "ref": "finalsPr3V3Traced/project/human-gate-rejection.md",
+    "dir": "FINALS-ELEM-PR3-V3-TRACED",
+    "dir_key": "finalsPr3V3Traced",
+    "file": "project/human-gate-rejection.md",
+    "abs_path": "D:\\goai\\mergepilot-demo\\evidence\\FINALS-ELEM-PR3-V3-TRACED\\project\\human-gate-rejection.md",
+    "exists": true,
+    "evidence_root_readonly": true,
+    "sha256_actual": "82e9a77cb77fddd39e5af4ab3b9dae2af775299954337185e6b51b260e8d5776",
+    "sha256_expected": "82e9a77cb77fddd39e5af4ab3b9dae2af775299954337185e6b51b260e8d5776",
+    "hash_verified": true,
+    "sums_source": "FINALS-ELEM-PR3-V3-TRACED/SHA256SUMS"
+  },
+  "timestamp": "2026-09-17T03:21:03Z",
+  "timestamp_precision": "exact",
+  "timestamp_note": null,
+  "summary": "HUMAN_SECURITY_REJECTED — 操作员拒绝修复（按运行前书面授权自动投递：PR #3 走拒绝分支）；绑定指令：fix-1 永不派发、verify-1 锁定、项目置 blocked、PR #3 保持 OPEN",
+  "detail": "拒绝记录写入项目存储（human-gate-rejection.md）并经 Matrix 投递给 Leader（gate-rejection-sent.json 记录 DM/团队房双事件号）；含四条绑定效应与零 GitHub 写入边界。",
+  "hash_verified": true,
+  "redaction_status": {
+    "redaction_layer": "applied (evidence-adapter/redact.mjs)",
+    "scan_hits": [],
+    "status": "CLEAN — redaction applied; PR#2 demo placeholders allow-listed",
+    "forbidden_fields_excluded": [
+      "Authorization",
+      "Cookie",
+      "API key",
+      "Matrix token",
+      "password",
+      "完整工具参数",
+      "完整 prompt/completion"
+    ]
+  }
+}

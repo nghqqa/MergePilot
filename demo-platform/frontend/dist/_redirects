@@ -1,0 +1,4 @@
+# Cloudflare Pages — SPA fallback. Static assets (including baked /api/*.json)
+# are served first; everything else falls back to the React app.
+/favicon.ico /favicon.svg 200
+/* /index.html 200

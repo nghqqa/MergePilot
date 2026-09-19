@@ -1,0 +1,51 @@
+{
+  "drawer": "event",
+  "data_mode": "historical replay",
+  "trace_mode": "evidence-replay",
+  "integrity_status": "verified",
+  "event_id": "pr2v3-ev-015",
+  "matrix_event_id": "$g8zjUSURcwlsQH93T5d9dC47xBIruwOi3PpRgVrwMEY（团队房原话：\"Same org-standard references as upstream (SYNTHETIC)\"）",
+  "trace_id": null,
+  "trace_note": "per-event 无独立 trace（per-task/事件维度仍为 evidence-replay）；平台级历史权威 Trace 见总览页 AgentLoop Cloud Trace 区块",
+  "project_id": "elemiso-pr2v3-gate",
+  "task_id": null,
+  "agent_role": "verifier",
+  "runtime": "copaw-worker:223ddc2-agentloop-v3rag（image 8e17c3667c3c）",
+  "event_type": "tool_call",
+  "source": "rag",
+  "source_label": "rag",
+  "source_ref": "finalsPr2V3Traced/rag/rag-tool-spans.jsonl",
+  "source_hash": {
+    "ref": "finalsPr2V3Traced/rag/rag-tool-spans.jsonl",
+    "dir": "FINALS-ELEM-PR2-V3-TRACED",
+    "dir_key": "finalsPr2V3Traced",
+    "file": "rag/rag-tool-spans.jsonl",
+    "abs_path": "D:\\goai\\mergepilot-demo\\evidence\\FINALS-ELEM-PR2-V3-TRACED\\rag\\rag-tool-spans.jsonl",
+    "exists": true,
+    "evidence_root_readonly": true,
+    "sha256_actual": "ea62e37a8e9ef4f32e51b82563d3033b7dcd242f3b1fc11e815af502c7058552",
+    "sha256_expected": "ea62e37a8e9ef4f32e51b82563d3033b7dcd242f3b1fc11e815af502c7058552",
+    "hash_verified": true,
+    "sums_source": "FINALS-ELEM-PR2-V3-TRACED/SHA256SUMS"
+  },
+  "timestamp": "2026-09-17T03:14:50Z",
+  "timestamp_precision": "exact",
+  "timestamp_note": null,
+  "summary": "Verifier 裁决通过后按 manifest 邀请检索组织标准（rag_retrieve → fastapi-endpoint-checklist.md#1、cwe-22-path-traversal.md#1、file-path-containment.md#1，SYNTHETIC 确认）——引用与上游一致，裁决基于自己的复现",
+  "detail": null,
+  "hash_verified": true,
+  "redaction_status": {
+    "redaction_layer": "applied (evidence-adapter/redact.mjs)",
+    "scan_hits": [],
+    "status": "CLEAN — redaction applied; PR#2 demo placeholders allow-listed",
+    "forbidden_fields_excluded": [
+      "Authorization",
+      "Cookie",
+      "API key",
+      "Matrix token",
+      "password",
+      "完整工具参数",
+      "完整 prompt/completion"
+    ]
+  }
+}

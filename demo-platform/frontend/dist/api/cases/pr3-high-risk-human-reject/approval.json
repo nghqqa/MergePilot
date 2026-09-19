@@ -1,0 +1,47 @@
+{
+  "case_id": "pr3-high-risk-human-reject",
+  "decision_type": "rejected",
+  "historical_record": {
+    "gate_id": "elemiso-pr3v3-reject:post-review",
+    "state": "rejected",
+    "trigger": {
+      "by": "review-1",
+      "signals": [
+        "FINDING_CONFIRMED",
+        "SEVERITY: HIGH",
+        "HUMAN_VERIFICATION_REQUIRED: YES"
+      ],
+      "triggered_at": "2026-09-17T03:19:53Z (exact, Leader 停门报告 $G0NxE_Z6sYQ0S…)"
+    },
+    "rejected_at": "2026-09-17T03:21:03Z (exact, DM $53m_qI51-bniG…；gate-rejection-sent.json 记录 DM/团队房双事件号)",
+    "rejected_by": "operator (runtime owner) — 运行前书面授权\"PR #3 走拒绝分支\"，由系统按授权自动投递",
+    "decision": "HUMAN_SECURITY_REJECTED",
+    "record_path": "shared/projects/elemiso-pr3v3-reject/human-gate-rejection.md（快照：finalsPr3V3Traced/project/human-gate-rejection.md）",
+    "scope": [
+      "确认 HIGH/CWE-78 结论",
+      "拒绝修复：pr3v3-fix-1 永不派发",
+      "pr3v3-verify-1 保持锁定（无修复可验证）",
+      "项目置 blocked，不完成",
+      "失败即停止并保留证据（fail-safe）"
+    ],
+    "prohibitions": [
+      "fix-1 派发",
+      "verify-1 派发",
+      "自动修复",
+      "merge",
+      "push",
+      "close",
+      "reopen"
+    ],
+    "unblocks": [],
+    "terminal_note": "终态：rejected → blocked。禁止从 rejected 自动转为 fixing/verifying/completed；仅新的显式人工批准事件可恢复（本案例不添加）。",
+    "rejection_text_source": "finalsPr3V3Traced/project/human-gate-rejection.md"
+  },
+  "approval_text": null,
+  "rejection_text": "# Human Security Gate REJECTION — run-elem-pr3v3-20260917-01\n\n- Project: elemiso-pr3v3-reject (team elemiso-team)\n- Task reviewed: pr3v3-review-1 (Reviewer, copaw runtime, AgentLoop-traced)\n- Head SHA under review: ad267a6e51209551a0733657321bb364d04befd0 (PR #3 nghqqa/fastapi-boilerplate-demo, branch demo/high-risk-human-reject)\n- Gate decision time: 2026-09-17T03:21:03Z (host clock; operator present, decision made via interactive gate prompt)\n- Approver: repository/workspace owner (human operator)\n- Decision: **HUMAN_SECURITY_REJECTED — no remediation authorized**\n\n## Confirmed findings (Reviewer result, real execution)\n\n- STATUS: FINDING_CONFIRMED; SEVERITY: HIGH; HUMAN_VERIFICATION_REQUIRED: YES\n- CWE-78 OS command injection / unauthenticated RCE in demo_ping: L41 f-string -> L42-44 subprocess.run(shell=True) -> L45-49 echo; no auth\n- Real PoC: ; | newline backtick $() all root; ; id -> uid=0(root); cat /etc/hostname read\n- RAG usage (references only): cwe-78-command-injection.md#1/#2 + command-execution.md#1, consistent with own rating\n\n## Binding effects ordered by the operator\n\n1. pr3v3-fix-1: **rejected — MUST NOT be delegated**; plan line marked `[-] rejected`.\n2. pr3v3-verify-1: **locked — MUST NOT be delegated** (depends on an unauthorized fix); plan line marked `[!] locked`.\n3. Project status: **blocked** — the system stops; no further dispatch of any task in this project.\n4. All review evidence is retained; nothing is pushed/merged/closed on GitHub; the PR stays OPEN.\n",
+  "approval_text_source": null,
+  "rejection_text_source": "finalsPr3V3Traced/project/human-gate-rejection.md",
+  "rejected_case_note": "本案例历史裁决为 HUMAN_SECURITY_REJECTED — 禁止显示\"批准成功\"；此处展示真实拒绝记录",
+  "demo_overlay": null,
+  "demo_overlay_note": "Replay 模式下按钮操作仅用于演示状态切换（见 POST 响应标记）"
+}

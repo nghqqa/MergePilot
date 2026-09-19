@@ -1,0 +1,91 @@
+{
+  "case_id": "pr3-high-risk-human-reject",
+  "at_event_seq": 8,
+  "timestamp": "2026-09-17T03:21:03Z",
+  "nodes": [
+    {
+      "id": "review-1",
+      "label": "review-1",
+      "sub": "reviewer",
+      "kind": "task",
+      "status": "completed",
+      "status_label": "COMPLETED · 完成",
+      "locked_reason": null
+    },
+    {
+      "id": "human-gate",
+      "label": "HUMAN GATE",
+      "sub": "人工安全门（拒绝路径）",
+      "kind": "gate",
+      "status": "rejected",
+      "status_label": "GATE: REJECTED",
+      "state": "rejected"
+    },
+    {
+      "id": "fix-1",
+      "label": "fix-1",
+      "sub": "fixer",
+      "kind": "task",
+      "status": "rejected",
+      "status_label": "REJECTED · 人工拒绝后锁定",
+      "locked_reason": "HUMAN_SECURITY_REJECTED — 人工拒绝修复，永不派发"
+    },
+    {
+      "id": "verify-1",
+      "label": "verify-1",
+      "sub": "verifier",
+      "kind": "task",
+      "status": "locked",
+      "status_label": "LOCKED · 永久锁定（不可派发）",
+      "locked_reason": "fix-1 已拒绝 — Verifier 永久锁定（无修复可验证）"
+    }
+  ],
+  "edges": [
+    {
+      "from": "review-1",
+      "to": "human-gate"
+    },
+    {
+      "from": "human-gate",
+      "to": "fix-1"
+    },
+    {
+      "from": "fix-1",
+      "to": "verify-1"
+    }
+  ],
+  "phase": "waiting_human",
+  "headline": "🛑 人工拒绝 — 系统不绕过人工门：Fixer/Verifier 锁定，项目转 blocked",
+  "legend": [
+    {
+      "status": "pending",
+      "color": "gray",
+      "meaning": "未派发/等待依赖"
+    },
+    {
+      "status": "running",
+      "color": "blue",
+      "meaning": "已派发执行中"
+    },
+    {
+      "status": "waiting_human",
+      "color": "orange",
+      "meaning": "人工门停等（锁定）"
+    },
+    {
+      "status": "blocked",
+      "color": "red",
+      "meaning": "依赖锁定（前置任务未完成）"
+    },
+    {
+      "status": "completed",
+      "color": "green",
+      "meaning": "完成并经 Leader 验收"
+    },
+    {
+      "status": "failed",
+      "color": "darkred",
+      "meaning": "失败（保留证据）"
+    }
+  ]
+}

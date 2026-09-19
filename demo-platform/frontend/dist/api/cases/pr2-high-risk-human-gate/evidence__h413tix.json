@@ -1,0 +1,51 @@
+{
+  "drawer": "event",
+  "data_mode": "historical replay",
+  "trace_mode": "evidence-replay",
+  "integrity_status": "verified",
+  "event_id": "pr2v3-ev-012",
+  "matrix_event_id": "$ZkVQCFrYsLOufj3IgyViHC5CypTOIerqRcLzTp4wtrY（TASK_COMPLETED: pr2v3-fix-1；meta submitted_at 03:14:02Z）",
+  "trace_id": null,
+  "trace_note": "per-event 无独立 trace（per-task/事件维度仍为 evidence-replay）；平台级历史权威 Trace 见总览页 AgentLoop Cloud Trace 区块",
+  "project_id": "elemiso-pr2v3-gate",
+  "task_id": null,
+  "agent_role": "fixer",
+  "runtime": "copaw-worker:223ddc2-agentloop-v3rag（image 8e17c3667c3c）",
+  "event_type": "task_state",
+  "source": "minio",
+  "source_label": "MinIO task result",
+  "source_ref": "finalsPr2V3Traced/tasks/pr2v3-fix-1/result.md",
+  "source_hash": {
+    "ref": "finalsPr2V3Traced/tasks/pr2v3-fix-1/result.md",
+    "dir": "FINALS-ELEM-PR2-V3-TRACED",
+    "dir_key": "finalsPr2V3Traced",
+    "file": "tasks/pr2v3-fix-1/result.md",
+    "abs_path": "D:\\goai\\mergepilot-demo\\evidence\\FINALS-ELEM-PR2-V3-TRACED\\tasks\\pr2v3-fix-1\\result.md",
+    "exists": true,
+    "evidence_root_readonly": true,
+    "sha256_actual": "5279141552f2a173b95076acdbf4c5897d251578feb6a4c17558ed425a5f84da",
+    "sha256_expected": "5279141552f2a173b95076acdbf4c5897d251578feb6a4c17558ed425a5f84da",
+    "hash_verified": true,
+    "sums_source": "FINALS-ELEM-PR2-V3-TRACED/SHA256SUMS"
+  },
+  "timestamp": "2026-09-17T03:14:07Z",
+  "timestamp_precision": "exact",
+  "timestamp_note": null,
+  "summary": "fix-1 提交：STATUS: SUCCESS / FIX_APPLIED / SELF_CHECK_PASSED；仅 demo_high_risk.py 单文件 +13/−7；测试冻结；Leader 验收 effective=true（03:14:10Z）",
+  "detail": "交付物：attempt-1.diff（sha256 674356fc9a661faa49b97b789d75ff4529b95a5fac7f39dad0301397c0116081）、workspace/notes.md。",
+  "hash_verified": true,
+  "redaction_status": {
+    "redaction_layer": "applied (evidence-adapter/redact.mjs)",
+    "scan_hits": [],
+    "status": "CLEAN — redaction applied; PR#2 demo placeholders allow-listed",
+    "forbidden_fields_excluded": [
+      "Authorization",
+      "Cookie",
+      "API key",
+      "Matrix token",
+      "password",
+      "完整工具参数",
+      "完整 prompt/completion"
+    ]
+  }
+}

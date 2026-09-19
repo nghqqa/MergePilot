@@ -1,0 +1,104 @@
+{
+  "id": "ev-rag-baseline",
+  "title": "③ 基线 v1-unigram-hash256 + badcase 归因",
+  "level": "REAL_OFFLINE_EXPERIMENT",
+  "fields": [
+    [
+      "调优集 (n=30)",
+      "hit@1=70.0% · hit@3=90.0% · MRR=0.7928 · chunk-hit@1=50.0%"
+    ],
+    [
+      "held-out (n=24)",
+      "hit@1=75.0% · hit@3=100.0% · MRR=0.8611"
+    ],
+    [
+      "badcase",
+      "基线未命中 top-1 的 9 条全部逐条归因（期望文档名次/分差/词元重叠）"
+    ]
+  ],
+  "blocks": [
+    {
+      "title": "调优集 9 条 badcase（逐条）",
+      "lang": "text",
+      "text": "F01-q2  期望 doc-mergepilot-review-policy → 实际 top1 doc-case-pr3-summary#c0（名次 3）\nF04-q1  期望 doc-human-gate-policy → 实际 top1 doc-mergepilot-review-policy#c0（名次 6）\nF06-q1  期望 doc-case-pr1-summary → 实际 top1 doc-polardb-branch-plan#c0（名次 3）\nF06-q3  期望 doc-case-pr1-summary → 实际 top1 doc-case-pr2-summary#c0（名次 3）\nF10-q3  期望 doc-agentloop-observability → 实际 top1 doc-polardb-branch-plan#c0（名次 3）\nF12-q1  期望 doc-agentloop-observability → 实际 top1 doc-case-pr2-summary#c0（名次 5）\nF12-q2  期望 doc-agentloop-observability → 实际 top1 doc-case-pr2-summary#c0（名次 4）\nF13-q3  期望 doc-rag-usage-policy → 实际 top1 doc-mergepilot-review-policy#c0（名次 3）\nF15-q2  期望 doc-polardb-branch-plan → 实际 top1 doc-case-pr1-summary#c0（名次 2）"
+    }
+  ],
+  "source_ref": "finalsRagLoop/report.json#badcases",
+  "hash": {
+    "file": "report.json",
+    "dir": "FINALS-RAG-LOOP-20260914",
+    "exists": true,
+    "hash_verified": true,
+    "sha256": "7f84fad68eb7b56bd31ea8d3d0309075e5729d3d38e49dbd241042b2e6b1f666"
+  },
+  "real": [
+    "真实离线实验（2026-09-14）：真实 span 审计、真实检索器执行、真实指标计算；查询集在任何测量前固定，held-out 只评估一次"
+  ],
+  "controlled": [
+    "语料为 SYNTHETIC/REDACTED 演示文档（8 文档/9 chunk）；标注由团队编写"
+  ],
+  "not_executed": [
+    "不外推企业语料；本实验优化检索策略，不改变数据模式声明"
+  ],
+  "case": {
+    "case_id": "rag-retrieval-loop",
+    "case_name": "RAG 检索闭环 · 观测→评估→数据集→优化→回测",
+    "repo": "mergepilot/demo-platform（rag-data 合成语料）",
+    "pr": "本地离线实验 · 无外部 PR（合成语料）",
+    "pr_url": null,
+    "run_id": "rag-loop-20260914",
+    "sha": "aa05c3d894e6485727d2bda1de3025e6b7be0b2c9e627ef48c95186ea27adb01",
+    "sha_kind": "语料 corpus sha256",
+    "evidence_level": [
+      "REAL_OFFLINE_EXPERIMENT",
+      "SYNTHETIC"
+    ],
+    "source_dir": "evidence/FINALS-RAG-LOOP-20260914（SHA256SUMS 锁定；timings 因非确定性排除）",
+    "generated_at": "2026-09-14T13:39:41.983Z",
+    "pending_redactions": null
+  },
+  "integrity": {
+    "finals": {
+      "finalsDbLoop": {
+        "dir": "FINALS-DB-MIGRATION-LOOP-20260914",
+        "tier": "REAL_SQL_VERIFICATION_ISOLATED_POSTGRES",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsReworkLoop": {
+        "dir": "FINALS-REWORK-LOOP-20260914",
+        "tier": "MECHANISM_VERIFICATION",
+        "verified": true,
+        "files": 7,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsRagLoop": {
+        "dir": "FINALS-RAG-LOOP-20260914",
+        "tier": "REAL_OFFLINE_EXPERIMENT_SYNTHETIC_CORPUS",
+        "verified": true,
+        "files": 4,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr2Live": {
+        "dir": "FINALS-ELEM-PR2-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 19,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr3Live": {
+        "dir": "FINALS-ELEM-PR3-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      }
+    }
+  }
+}

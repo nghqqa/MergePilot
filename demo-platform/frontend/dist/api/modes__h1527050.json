@@ -1,0 +1,65 @@
+{
+  "current": "replay",
+  "available": [
+    "replay",
+    "live"
+  ],
+  "replay": {
+    "available": true,
+    "banner": "REPLAY — HISTORICAL VERIFIED RUN",
+    "description": "从锁定证据目录读取真实历史结果，按真实时间顺序回放；不写入 runtime"
+  },
+  "live": {
+    "available": false,
+    "fully_connected": false,
+    "banner": "LIVE DATA UNAVAILABLE",
+    "description": "从 Demo Backend 读取实时状态（Controller/MinIO/Matrix/GitHub/OTel）；数据源不可用时明确显示 LIVE DATA UNAVAILABLE",
+    "sources": {
+      "matrix": {
+        "label": "Matrix (Tuwunel homeserver)",
+        "configured": true,
+        "status": "UNAVAILABLE",
+        "http_status": null,
+        "detail": "fetch failed"
+      },
+      "element": {
+        "label": "Element Web",
+        "configured": true,
+        "status": "OK",
+        "http_status": 200,
+        "detail": "read-only probe succeeded"
+      },
+      "minio": {
+        "label": "MinIO",
+        "configured": true,
+        "status": "UNAVAILABLE",
+        "http_status": null,
+        "detail": "fetch failed"
+      },
+      "controller": {
+        "label": "AgentTeams Controller API",
+        "configured": false,
+        "status": "NOT_CONFIGURED",
+        "detail": "设置 DEMO_LIVE_CONTROLLER_URL（及可选 DEMO_LIVE_CONTROLLER_TOKEN）后启用；凭据仅保存在服务端环境变量"
+      },
+      "github": {
+        "label": "GitHub PR metadata (unauthenticated, read-only)",
+        "configured": true,
+        "status": "UNAVAILABLE",
+        "http_status": 403,
+        "detail": "HTTP 403"
+      }
+    },
+    "trace": {
+      "status": "SMOKE_VERIFIED_LIVE_CLOUD_CONFIRMED_BY_OPERATOR",
+      "smoke": "VERIFIED (Aliyun AgentLoop OTLP smoke)",
+      "live_copaw_run": "VERIFIED (LIVE CLOUD, operator-confirmed: fbf4a3cec0493990d76e10a102418be1)",
+      "note": "真实 CoPaw run 合并 Trace（Agent+LLM+Tool）已由操作员在阿里云控制台确认（历史权威 Trace · 已确认样本 n=1）；verdict=AGENTLOOP_ALIYUN_TRACE_VISIBILITY_CONFIRMED_BY_OPERATOR，不声称多轮稳定覆盖"
+    },
+    "rag": {
+      "status": "NOT_IMPLEMENTED",
+      "detail": "PolarDB RAG 未接入；当前 RAG 为本地 SYNTHETIC 合成演示数据集（见 /api/rag/status）"
+    },
+    "checked_at": "2026-09-19T00:53:18.430Z"
+  }
+}

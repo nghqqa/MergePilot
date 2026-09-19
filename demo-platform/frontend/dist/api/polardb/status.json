@@ -1,0 +1,131 @@
+{
+  "connection": "NOT CONNECTED",
+  "branch_mode": "SIMULATED",
+  "adapter": {
+    "gates": [
+      {
+        "key": "endpoint_exists",
+        "ok": false,
+        "note": "POLARDB_ENDPOINT 未设置"
+      },
+      {
+        "key": "readonly_account",
+        "ok": false,
+        "note": "POLARDB_READONLY_USER 未设置"
+      },
+      {
+        "key": "secret_resolvable",
+        "ok": false,
+        "note": "POLARDB_SECRET_REF 未设置"
+      },
+      {
+        "key": "network_connectivity",
+        "ok": false,
+        "note": "NOT_ATTEMPTED — 无 endpoint，不发起连接"
+      },
+      {
+        "key": "allowlist_confirmed",
+        "ok": false,
+        "note": "POLARDB_ALLOWLIST_CONFIRMED 未确认"
+      },
+      {
+        "key": "schema_query_ok",
+        "ok": false,
+        "note": "NOT_ATTEMPTED — 需真实连接"
+      },
+      {
+        "key": "branch_api_reachable",
+        "ok": false,
+        "note": "POLARDB_BRANCH_API 未设置"
+      },
+      {
+        "key": "readonly_privilege_check",
+        "ok": false,
+        "note": "NOT_ATTEMPTED — 需真实连接"
+      }
+    ],
+    "missing": [
+      "endpoint_exists",
+      "readonly_account",
+      "secret_resolvable",
+      "network_connectivity",
+      "allowlist_confirmed",
+      "schema_query_ok",
+      "branch_api_reachable",
+      "readonly_privilege_check"
+    ],
+    "disclosure": "NOT CONNECTED — 前置条件缺失，使用 SIMULATED fixture；不创建假连接"
+  },
+  "fixture": {
+    "data_mode": "SIMULATED",
+    "polardb_connection": "NOT CONNECTED",
+    "tables": {
+      "pr_cases": {
+        "row_count": 3,
+        "columns": [
+          "pr",
+          "case_id",
+          "risk_level",
+          "gate",
+          "final_status"
+        ]
+      },
+      "review_findings": {
+        "row_count": 3,
+        "columns": [
+          "pr",
+          "finding",
+          "category",
+          "risk_level"
+        ]
+      }
+    }
+  },
+  "legacy_audit": {
+    "connection": "NOT CONNECTED",
+    "probe_mode": "read-only audit, connection never attempted",
+    "audited_at": "2026-09-19T00:53:18.430Z",
+    "conditions": {
+      "endpoint_configured": {
+        "value": false,
+        "evidence": "POLARDB_ENDPOINT / POLARDB_DB_ENDPOINT / DATABASE_URL / DB_HOST 均未设置；agentloop-secure.env 与 p14h2 ctrl 容器 env 扫描无 PolarDB/RDS 线索（2026-08-30 只读扫描）"
+      },
+      "readonly_account": {
+        "value": false,
+        "evidence": "未配置任何 PolarDB 账号；凭据规范要求只读账号从受保护存储读取，当前受保护存储中无此类条目"
+      },
+      "network_reachability": {
+        "value": "NOT_ATTEMPTED",
+        "evidence": "无 endpoint 可达性目标，未发起任何网络连接（避免伪造探测结果）"
+      },
+      "whitelist": {
+        "value": "NOT_ASSESSABLE",
+        "evidence": "白名单是 endpoint 侧属性，需真实 endpoint 与账号后才能验证"
+      },
+      "schema_table_access": {
+        "value": "NOT_ASSESSABLE",
+        "evidence": "需只读连接后执行 information_schema 只读查询，当前不可达"
+      },
+      "agentic_branch_api": {
+        "value": "NOT_ASSESSABLE",
+        "evidence": "Agentic Database Branch 接入接口需云端凭据（受保护存储），当前未配置"
+      }
+    },
+    "verdict": "PREREQUISITES_MISSING",
+    "disclosure": "缺少任一前置条件即保持 NOT CONNECTED；不搭建“看起来像真实 PolarDB”的假连接。演示使用 SIMULATED 只读 fixture。"
+  },
+  "pr4_candidates": [
+    {
+      "candidate_id": "candidate-a",
+      "expected": "REJECTED"
+    },
+    {
+      "candidate_id": "candidate-b",
+      "expected": "REJECTED 或 DEGRADED"
+    },
+    {
+      "candidate_id": "candidate-c",
+      "expected": "VERIFIED"
+    }
+  ]
+}

@@ -1,0 +1,541 @@
+{
+  "case_id": "fastapi-pr1-auto",
+  "portfolio_role": "低风险自动分支",
+  "shape": "guided",
+  "name": "FastAPI PR #1 · 低风险自动闭环",
+  "short_name": "PR #1 · 低风险自动路径",
+  "one_liner": "低风险自动路径首次打通：bootstrap PR（6 files +168/−1）经 67 秒独立审查——NOT_CONFIRMED/LOW、SAST 唯一命中诚实裁决为 false positive——单节点 DAG 即审即结，无人工门自动完成；与门控案例共同构成风险分级处置的完整光谱。",
+  "repo": "nghqqa/fastapi-boilerplate-demo",
+  "pr": "PR #1 · bootstrap 基线",
+  "pr_url": "https://github.com/nghqqa/fastapi-boilerplate-demo/pull/1",
+  "run_id": "run-elem-pr1sk5-20260919-01",
+  "sha": "4cd5bf099f88c3f3f85ee4c06b7adfe9925a6e5c",
+  "sha_kind": "PR #1 head commit · ls-remote 已核验",
+  "evidence_level": [
+    "REAL_EXECUTED_AGENTTEAMS_LIVE"
+  ],
+  "replay_note": "REAL_EXECUTED —— 本页面回放该次运行的证据；不连接实时系统",
+  "purpose": "补全风险分级处置光谱：低风险自动通过——审查即结论，无需人工门",
+  "risk_tags": [
+    "bootstrap 基线",
+    "LOW",
+    "自动完成",
+    "确定性 Skill MCP",
+    "sast_scan"
+  ],
+  "status": {
+    "verdict": "PASS",
+    "label": "低风险自动完成 · 无人工门 · PR 保持 OPEN"
+  },
+  "pitch_next": {
+    "to": "/evidence",
+    "kicker": "收尾",
+    "label": "原文证据索引 —— 逐字可查"
+  },
+  "gate_alt": {
+    "label": "PR #2 · 高风险门的批准路径",
+    "path": "/demo/fastapi-pr2-rag-traced-20260917"
+  },
+  "stats": [
+    {
+      "k": "端到端墙钟",
+      "v": "≈2 分 32 秒",
+      "hint": "建项 → 综合终报（17:04:12Z → 17:06:44Z）"
+    },
+    {
+      "k": "审查时效",
+      "v": "67 秒",
+      "hint": "委派 → Reviewer 提交"
+    },
+    {
+      "k": "SAST",
+      "v": "×2 · 首次实战",
+      "hint": "唯一命中诚实裁决 false positive"
+    },
+    {
+      "k": "LLM 调用",
+      "v": "≈45 次（估计）",
+      "hint": "锁定工件未单列 pr1 窗口；会话合计 133 次"
+    }
+  ],
+  "facts": {
+    "real_github_pr": {
+      "value": "真实 GitHub PR（OPEN）",
+      "ok": true,
+      "note": "https://github.com/nghqqa/fastapi-boilerplate-demo/pull/1"
+    },
+    "real_agentteams_run": {
+      "value": "真实 AgentTeams 运行（SK5 同会话）",
+      "ok": true,
+      "note": "NOT_CONFIRMED/LOW → 无人工门自动完成；SAST 首战如实裁决"
+    },
+    "skills_mcp": {
+      "value": "确定性 Skill + SAST（advisory-only）",
+      "ok": true,
+      "note": "sast_scan 唯一命中裁决 false positive；case_retrieval 如实空匹配"
+    },
+    "github_write": {
+      "value": "未写入 —— PR 保持 OPEN",
+      "ok": false,
+      "note": "merge/push/close/reopen 全程禁止"
+    }
+  },
+  "banner": null,
+  "stage_timeline": null,
+  "chain": [
+    "案例 run-elem-pr1sk5-20260919-01",
+    "PR #1",
+    "bootstrap 基线",
+    "NOT_CONFIRMED / LOW",
+    "单节点 DAG 完成",
+    "project completed"
+  ],
+  "generated_at": "运行窗口 17:04Z–17:06Z（建项 → 自动完成；与 PR #3 同会话接力）",
+  "source_dir": "evidence/FINALS-ELEM-PR1-SK5-AUTO（SHA256SUMS 锁定，39 清单项）",
+  "honesty": {
+    "real": [
+      "真实执行（低风险自动路径）：NOT_CONFIRMED / LOW → 单节点 DAG 审查即结、项目自动 completed，无人工门——按风险分级设计，非跳过",
+      "skill_sast_scan 首次被 Agent 调用：唯一命中为测试文件 subprocess.run（argv 列表、非 shell=True），Agent 诚实裁决 false positive 并留痕"
+    ],
+    "controlled": [
+      "页面为只读回放；确定性 Skill 输出为 advisory（其 SKILL.md 自述 never an authorization decision）",
+      "case_retrieval 检索使用离线确定性 hash embedding（非语义模型）——本轮如实返回空匹配（无相关历史案例）"
+    ],
+    "not_executed": [
+      "无人工门——NOT_CONFIRMED/LOW 未触发停等条件（设计行为）；无修复/验证对象，Fixer/Verifier 未派发",
+      "零 GitHub 写入；PR #1 保持 OPEN",
+      "锁定 usage 工件未单列 pr1 窗口——用量以会话合计与轮次说明估计值两口径并列披露"
+    ]
+  },
+  "steps": [
+    {
+      "id": "pr-init",
+      "title": "① PR 发起（低风险基线）",
+      "role": "Leader 编排",
+      "time": "17:04:12Z 建项",
+      "headline": "bootstrap 基线 PR 走低风险路径——DAG 只有审查节点，无人工门",
+      "points": [
+        {
+          "k": "PR 内容",
+          "v": "PR #1 bootstrap：文档与迁移基线（6 files · +168/−1）· head 4cd5bf0"
+        },
+        {
+          "k": "run_id",
+          "v": "run-elem-pr1sk5-20260919-01",
+          "mono": true
+        },
+        {
+          "k": "DAG",
+          "v": "单节点 pr1sk5-review-1——审查即结论，无修复/验证/人工门"
+        },
+        {
+          "k": "head SHA",
+          "v": "4cd5bf099f88c3f3f85ee4c06b7adfe9925a6e5c",
+          "mono": true
+        }
+      ],
+      "evidence": [
+        "ev-auto-meta"
+      ],
+      "probe": null,
+      "detail": {
+        "title": "分级依据",
+        "quote": "低风险路径不是降低标准：Reviewer 仍独立审查、仍调用 SAST 与知识库——只是结论不触发停等。",
+        "outbox": [],
+        "events": []
+      }
+    },
+    {
+      "id": "review",
+      "title": "② 风险审查（NOT_CONFIRMED · LOW）",
+      "role": "Reviewer",
+      "time": "17:05:18Z → 17:06:25Z · 67 秒",
+      "headline": "SAST 首次实战诚实裁决 false positive——无发现即无门，审查即结论",
+      "stat": "NOT_CONFIRMED · LOW",
+      "points": [
+        {
+          "k": "Reviewer 结论",
+          "v": "NOT_CONFIRMED · SEVERITY: LOW · HUMAN_VERIFICATION_REQUIRED: NO"
+        },
+        {
+          "k": "SAST 实录",
+          "v": "skill_sast_scan（inline 模式）：唯一命中 = 测试文件 subprocess.run（argv 列表、非 shell=True）——裁决 false positive；paths 模式缺部署根配置如实降级"
+        },
+        {
+          "k": "案例检索",
+          "v": "skill_case_retrieval：无相关历史案例——如实空匹配，不以近似案例凑数"
+        },
+        {
+          "k": "时效",
+          "v": "委派 → 提交 67 秒"
+        }
+      ],
+      "evidence": [
+        "ev-auto-review"
+      ],
+      "probe": null,
+      "exhibit": {
+        "type": "terminal",
+        "title": "SAST 与检索实录 · 团队房/Findings 原话",
+        "lines": [
+          {
+            "text": "Now run SAST scan on the changed files.",
+            "tone": "cmd"
+          },
+          {
+            "text": "The strict parser rejects blank context lines … use the exact file contents",
+            "tone": "dim"
+          },
+          {
+            "text": "Only finding is the test's `subprocess.run` (not shell=True; argv list, constant args)",
+            "tone": "ok"
+          },
+          {
+            "text": "  → 裁决：false positive（非命令注入向量）",
+            "tone": "ok"
+          },
+          {
+            "text": "No relevant historical match for the bootstrap PR (only PR #2/#3 cases).",
+            "tone": "dim"
+          }
+        ]
+      },
+      "detail": {
+        "title": "裁决纪律",
+        "quote": "SAST 命中不等于漏洞：argv 列表 + 常量参数 ≠ 注入向量——工具命中与安全结论分层，裁决权在 Reviewer。",
+        "outbox": [],
+        "events": []
+      }
+    },
+    {
+      "id": "approval",
+      "title": "③ Leader 验收 · 自动闭环",
+      "role": "Leader",
+      "time": "17:06:38Z 自动完成",
+      "headline": "单节点 DAG 即审即结——低风险路径无需人工门，全程无人工介入",
+      "points": [
+        {
+          "k": "DAG 验收",
+          "v": "单节点 pr1sk5-review-1 完成 [x] · 无 ready nodes → 项目 completed"
+        },
+        {
+          "k": "终报",
+          "v": "与 PR #3 合并发送综合终报（17:06:44Z，Leader DM）"
+        },
+        {
+          "k": "PR 状态",
+          "v": "PR #1 保持 OPEN · 零 GitHub 写入（github-branches-after-sk5.txt 核验）"
+        }
+      ],
+      "evidence": [
+        "ev-auto-run"
+      ],
+      "probe": null,
+      "exhibit": {
+        "type": "checklist",
+        "title": "Leader 验收清单 · TaskResult ×1",
+        "items": [
+          {
+            "label": "pr1sk5-review-1",
+            "sub": "NOT_CONFIRMED · LOW · false positive 如实裁决 —— 验收"
+          }
+        ],
+        "foot": "综合终报 17:06:44Z · PR #1 保持 OPEN · 零 GitHub 写入"
+      },
+      "decision": {
+        "verified": {
+          "verdict": "NOT_EXECUTED",
+          "text": "验证未执行——审查未确认风险，无修复对象"
+        },
+        "human_approval": {
+          "needed": false,
+          "text": "无需人工门——NOT_CONFIRMED/LOW 未触发停等条件（按分级设计自动完成）",
+          "level": "REAL_EXECUTED_AGENTTEAMS_LIVE"
+        },
+        "merge_allowed": {
+          "allowed": false,
+          "text": "PR #1 保持 OPEN —— 合并未执行"
+        },
+        "github_write": {
+          "done": false,
+          "text": "未写入 GitHub",
+          "level": "NOT_EXECUTED"
+        },
+        "execution_nature": {
+          "text": "REAL_EXECUTED-AgentTeams（低风险自动路径）：审查即结论，DAG 单节点即结",
+          "level": "REAL_EXECUTED_AGENTTEAMS_LIVE"
+        },
+        "pr_open": true
+      },
+      "detail": {
+        "title": "终态",
+        "quote": "低风险路径与门控路径共用同一套审查纪律——差别只在结论是否触发人工门。",
+        "outbox": [],
+        "events": []
+      }
+    },
+    {
+      "id": "trace",
+      "title": "④ 追踪与观测",
+      "role": "AgentLoop",
+      "time": "会话累计 · 824 span",
+      "stat": "会话口径",
+      "headline": "SK5 会话级追踪——低风险路径同样全程留痕",
+      "points": [
+        {
+          "k": "轨迹分解",
+          "v": "span 按角色（会话累计）：leader 280 · reviewer 240 · fixer 118 · verifier 129 · reviewer-b 57——本案例为其中 reviewer 段"
+        },
+        {
+          "k": "skill 留痕",
+          "v": "tool.skill_sast_scan ×2 独立 span + 宿主审计流水（首战实录）"
+        },
+        {
+          "k": "用量口径",
+          "v": "锁定工件未单列 pr1 窗口——会话合计 133 次/输入 8.96M 与轮次说明估计值（≈45 次/5.08M）两口径并列披露"
+        },
+        {
+          "k": "披露",
+          "v": "direct-probe 本轮修复采集（stdin 方式，4/4 非空）——此前四轮未采集的已知操作缺陷闭环"
+        }
+      ],
+      "evidence": [
+        "ev-auto-run"
+      ],
+      "probe": null,
+      "exhibit": {
+        "type": "bars",
+        "title": "824 span · 按角色分解（span-summary.json · 会话累计）",
+        "rows": [
+          {
+            "label": "leader",
+            "value": 280
+          },
+          {
+            "label": "reviewer",
+            "value": 240
+          },
+          {
+            "label": "verifier",
+            "value": 129
+          },
+          {
+            "label": "fixer",
+            "value": 118
+          },
+          {
+            "label": "reviewer-b",
+            "value": 57
+          }
+        ],
+        "foot": "skill_* ×15 · rag ×7 · delegation.link ×15 · 四包同会话"
+      },
+      "detail": {
+        "title": "构建来源",
+        "quote": "image/skill-mcp-server.mjs + zz_agentloop_skills.py 入包；delegation.link 数据层验证：LINK_SPAN_TRACE trace_id 与 parent_trace 一致。",
+        "outbox": [],
+        "events": []
+      }
+    }
+  ],
+  "evidence_index": [
+    {
+      "id": "ev-auto-meta",
+      "title": "CASE-MANIFEST（低风险自动路径：单节点 DAG + 技能能力声明）",
+      "level": "REAL_EXECUTED_AGENTTEAMS_LIVE"
+    },
+    {
+      "id": "ev-auto-review",
+      "title": "Reviewer 结论 pr1sk5-review-1（NOT_CONFIRMED · LOW）",
+      "level": "REAL_EXECUTED_AGENTTEAMS_LIVE"
+    },
+    {
+      "id": "ev-auto-run",
+      "title": "运行档案（自动闭环与会话口径）",
+      "level": "REAL_EXECUTED_AGENTTEAMS_LIVE"
+    }
+  ],
+  "items": [
+    {
+      "id": "ev-auto-meta",
+      "title": "CASE-MANIFEST（低风险自动路径：单节点 DAG + 技能能力声明）",
+      "level": "REAL_EXECUTED_AGENTTEAMS_LIVE",
+      "fields": [
+        [
+          "run_id / project",
+          "run-elem-pr1sk5-20260919-01 · elemiso-pr1sk5-auto"
+        ],
+        [
+          "head SHA",
+          "4cd5bf099f88c3f3f85ee4c06b7adfe9925a6e5c（PR #1 bootstrap head · base fdde4f41…）"
+        ],
+        [
+          "DAG",
+          "单节点 pr1sk5-review-1——无 fix/verify/人工门（低风险按分级设计）"
+        ],
+        [
+          "知识库与技能",
+          "manifest 明示确定性 Skill 可用（advisory-only）：diff_parse / risk_classify / sast_scan / case_retrieval；rag_retrieve（citation-only）"
+        ],
+        [
+          "锁定边界",
+          "SK5 包 SHA256SUMS 锁定 39 项；kickoff 快照未随包，建项（17:04:12Z）与房间导出留痕"
+        ]
+      ],
+      "blocks": [
+        {
+          "title": "finalsPr1Sk5Auto/project/plan.md（单节点 DAG 计划）",
+          "lang": "markdown",
+          "text": "# Team Project: PR #1 low-risk auto path (run-elem-pr1sk5-20260919-01)\n\n**ID**: elemiso-pr1sk5-auto\n**Created**: 2026-09-18T17:04:12Z\n\n## DAG Task Plan\n\n**Plan Type**: dag\n\n- [x] pr1sk5-review-1 — Routine security review of PR #1 bootstrap (assigned: @reviewer:elemiso-matrix:6167)\n"
+        }
+      ],
+      "source_ref": "finalsPr1Sk5Auto/project/plan.md",
+      "hash": {
+        "file": "project/plan.md",
+        "dir": "FINALS-ELEM-PR1-SK5-AUTO",
+        "exists": true,
+        "hash_verified": true,
+        "sha256": "903c3e4c83651c8a21c7f428e7cad62f9f7c4af0fd787c68e1a33261e7701a0e"
+      },
+      "real": [
+        "真实执行（低风险自动路径）：NOT_CONFIRMED / LOW → 单节点 DAG 审查即结、项目自动 completed，无人工门——按风险分级设计，非跳过",
+        "skill_sast_scan 首次被 Agent 调用：唯一命中为测试文件 subprocess.run（argv 列表、非 shell=True），Agent 诚实裁决 false positive 并留痕"
+      ],
+      "controlled": [
+        "页面为只读回放；确定性 Skill 输出为 advisory（其 SKILL.md 自述 never an authorization decision）",
+        "case_retrieval 检索使用离线确定性 hash embedding（非语义模型）——本轮如实返回空匹配（无相关历史案例）"
+      ],
+      "not_executed": [
+        "无人工门——NOT_CONFIRMED/LOW 未触发停等条件（设计行为）；无修复/验证对象，Fixer/Verifier 未派发",
+        "零 GitHub 写入；PR #1 保持 OPEN",
+        "锁定 usage 工件未单列 pr1 窗口——用量以会话合计与轮次说明估计值两口径并列披露"
+      ]
+    },
+    {
+      "id": "ev-auto-review",
+      "title": "Reviewer 结论 pr1sk5-review-1（NOT_CONFIRMED · LOW）",
+      "level": "REAL_EXECUTED_AGENTTEAMS_LIVE",
+      "fields": [
+        [
+          "结论",
+          "STATUS: NOT_CONFIRMED · SEVERITY: LOW · HUMAN_VERIFICATION_REQUIRED: NO——未引入新的安全漏洞"
+        ],
+        [
+          "范围",
+          "git diff --stat = 6 files +168/−1（PR_DESCRIPTION.md 等）· head 4cd5bf0 git rev-parse 核验"
+        ],
+        [
+          "skill_sast_scan",
+          "req-c2c37caad4（inline 模式）：唯一命中 = 测试文件 subprocess.run（argv 列表、常量参数、非 shell=True）→ 裁决 false positive；paths 模式返回 SAST_SCAN_TRUSTED_CONFIG_MISSING（需部署根配置）→ 如实降级 inline"
+        ],
+        [
+          "skill_case_retrieval",
+          "无相关历史案例（知识库仅 PR #2/#3 案例）——如实返回空匹配，不以近似案例凑数"
+        ],
+        [
+          "事件",
+          "委派 17:05:18Z $BD0lIZpUswA11CBPc9OUdVMaK6hK-GWyKRNnLN2f8SA · 提交 17:06:25Z（67 秒）"
+        ]
+      ],
+      "blocks": [
+        {
+          "title": "finalsPr1Sk5Auto/tasks/pr1sk5-review-1/result.md",
+          "lang": "text",
+          "text": "STATUS: SUCCESS\nSUMMARY: STATUS: NOT_CONFIRMED; SEVERITY: LOW; HUMAN_VERIFICATION_REQUIRED: NO. PR #1 bootstrap head 4cd5bf099f88c3f3f85ee4c06b7adfe9925a6e5c (verified git rev-parse HEAD); base fdde4f4142606336c7b7b25f176949dc5882d89a; scope confirmed via git diff --stat = 6 files/+168/-1: PR_DESCRIPTION.md (+33), backend/migrations/versions/0001_uq_api_keys_user_name.py (+28), backend/src/modules/api_keys/models.py (+2/-1), backend/tests/integration/migrations/__init__.py (0), base_schema_helper.py (+20), test_uq_user_key_name.py (+85). Independent security review found NO new security vulnerability: the model change is purely additive (UniqueConstraint user_id+name), the migration is static DDL (op.create_unique_constraint / drop_constraint) with no user input, no raw/dynamic SQL, no secrets, no auth/authz/route change, no new dependency, no deserialization/path handling. Checks: skill_sast_scan inline (req-c2c37caad4) returned a single finding AST_DANGEROUS_SUBPROCESS_SHELL at test_uq_user_key_name.py:9 (subprocess.run) which I adjudicated as a FALSE POSITIVE - it passes an argv list with shell=False and constant arguments, no untrusted interpolation (paths mode failed with SAST_SCAN_TRUSTED_CONFIG_MISSING, so I used inline with real file contents). skill_risk_classify (req-b654cd1fda) = advisory L1 SOURCE_CONFIG_CHANGE, consistent. PR's own tests run as written: test_empty_db_upgrade_succeeds SKIPPED and test_historical_duplicates_upgrade_fails SKIPPED (2 skipped) because P14_BASELINE_TREE is unset and /var/run/docker.sock is absent - a container environment limitation, not a code defect; the tests are correctly guarded by @needs_baseline. Material non-security risk noted but NOT changing the security verdict: the migration adds UNIQUE(user_id,name) WITHOUT deduplicating historical rows, so upgrade fails with IntegrityError/SQLSTATE 23505 on databases where a user already has same-named keys - this is a reliability/data-migration-safety issue, and it is explicitly declared/seeded in the diff (migration docstring + PR_DESCRIPTION.md naming the by-design failing test), so it is disclosed rather than a covert vulnerability; no fix proposed (contract forbids patch code). Optional tools: rag_retrieve returned 0 results for migration/schema-rollout queries; skill_case_retrieval matched only unrelated PR #2/#3 cases (untrusted references); neither changed my verdict. Repro command: cd /root/.copaw-worker/reviewer/pr1sk5-work && git diff --stat fdde4f4142606336c7b7b25f176949dc5882d89a..HEAD && cat -n backend/migrations/versions/0001_uq_api_keys_user_name.py && cat -n backend/src/modules/api_keys/models.py | sed -n '36,42p'. No repository file modified; zero GitHub writes.\n\nDELIVERABLES:\n- shared/tasks/pr1sk5-review-1/workspace/findings.md\n"
+        },
+        {
+          "title": "finalsPr1Sk5Auto/tasks/pr1sk5-review-1/workspace/findings.md",
+          "lang": "text",
+          "text": "# Independent Security Review — PR #1 bootstrap (run-elem-pr1sk5-20260919-01)\n\n- **Role**: Reviewer (independent)\n- **Run ID**: run-elem-pr1sk5-20260919-01\n- **Project**: elemiso-pr1sk5-auto\n- **Repo**: https://github.com/nghqqa/fastapi-boilerplate-demo\n- **PR**: #1 — \"demo: enforce unique API-key names per user\" (OPEN)\n- **Head SHA verified**: `4cd5bf099f88c3f3f85ee4c06b7adfe9925a6e5c` (`git rev-parse HEAD` = same)\n- **Base SHA**: `fdde4f4142606336c7b7b25f176949dc5882d89a` (main)\n- **Diff scope confirmed** (`git diff fdde4f4..HEAD --stat`): **6 files, +168 / -1**\n  - A `PR_DESCRIPTION.md` (+33)\n  - A `backend/migrations/versions/0001_uq_api_keys_user_name.py` (+28)\n  - M `backend/src/modules/api_keys/models.py` (+2/-1)\n  - A `backend/tests/integration/migrations/__init__.py` (0)\n  - A `backend/tests/integration/migrations/base_schema_helper.py` (+20)\n  - A `backend/tests/integration/migrations/test_uq_user_key_name.py` (+85)\n- **Constraints honored**: no repository file modified; no fix/patch code; zero GitHub writes; own workspace only.\n\n## Verdict\n\n- **STATUS: NOT_CONFIRMED** (no *new* security vulnerability introduced by this PR)\n- **SEVERITY: LOW**\n- **CWE**: none newly introduced for the security classes in scope. The PR contains an explicitly\n  labeled **seeded reliability/data-integrity risk** (see §3) that is *declared in the diff itself*\n  and is not a security vulnerability under the org CWE classes I reviewed.\n- **HUMAN_VERIFICATION_REQUIRED: NO**\n\n## 1. Scope review — what the PR actually changes\n\n1. **Model (+1 line)**: adds `UniqueConstraint(\"user_id\", \"name\", name=\"uq_api_keys_user_name\")` to\n   `APIKey.__table_args__` in `backend/src/modules/api_keys/models.py` (additive; no column, no\n   type, no default change). Existing API response schemas unaffected.\n2. **Migration (`demo0001`)**: `op.create_unique_constraint(\"uq_api_keys_user_name\", \"api_keys\",\n   [\"user_id\", \"name\"])`; `downgrade()` drops it. Static SQL DDL; no dynamic/`op.execute` raw\n   string, no user input, no secret material.\n3. **Tests + helper**: integration tests against a Postgres URL supplied by the harness; the helper\n   emits fixed DDL for a throwaway baseline schema.\n4. **`PR_DESCRIPTION.md`**: documentation only.\n\nNo executable request path, no authentication/authorization change, no new attack surface.\n\n## 2. Security checks performed (my own analysis)\n\n- **No injection vector**: the migration and helper use constant identifiers/table names; no string\n  concatenation of external input into SQL/DDL.\n- **No secrets**: no credential, token, or key material added (secret-scanner engine found none).\n- **No authn/authz change**: no route, dependency, or permission logic touched.\n- **No new dependency**: no manifest/lockfile change.\n- **No deserialization / eval / path handling**: none present.\n- **`subprocess` in tests**: the only SAST hit is `subprocess.run` in the test file (see §4). It is\n  called with an **argv list**, `shell=False` (default), constant arguments, and no untrusted\n  interpolation — **not** a command-injection vector. Adjudicated as a false positive.\n\n## 3. Seeded risk that is NOT a security finding (noted for completeness, no fix code)\n\nBoth the migration docstring and `PR_DESCRIPTION.md` state the defect verbatim: adding\n`UNIQUE(user_id, name)` **without de-duplicating historical rows** causes `upgrade` to fail with\n`IntegrityError` (SQLSTATE 23505) on any database where a user already has same-named keys (which\nwas legal before this change).\n\n- This is a **reliability / data-migration-safety** issue, not a security vulnerability (no\n  confidentiality/integrity/availability of *other* parties' data is compromised by an attacker).\n- It is **intentionally seeded and disclosed** in the PR: `PR_DESCRIPTION.md` names the reproducer\n  `test_historical_duplicates_upgrade_fails` \"(this test FAILS by design until the fix lands)\".\n- Because it is explicitly declared and out of the security classes in scope, it does **not**\n  change my security verdict. I record it only because it is the material non-security risk in the\n  diff. No fix is proposed (contract forbids patch code).\n\n## 4. Tools run (real output)\n\n### `skill_sast_scan` (inline mode; `request_id` `req-c2c37caad4`)\n```\nfiles_scanned: 4\nfindings_total: 1\n- AST_DANGEROUS_SUBPROCESS_SHELL, severity high, L2, file\n  backend/tests/integration/migrations/test_uq_user_key_name.py:9\n  \"dangerous call: subprocess.run\"\nengines_used: [\"ast_python\", \"dep_vuln\", \"secret\"]\n```\nAdjudication: **false positive** — the call passes an argv list (`[sys.executable, \"-m\", \"alembic\",\n...]`) with `shell=False` and constant arguments; no interpolation of untrusted input.\n(`paths` mode returned `SAST_SCAN_TRUSTED_CONFIG_MISSING` — deploy-provided root required, so I used\n`inline` with the real file contents.)\n\n### `skill_risk_classify` (advisory; `request_id` `req-b654cd1fda`)\n```\nrisk_level: L1, rule SOURCE_CONFIG_CHANGE, controls [AUTO_REVIEW_ELIGIBLE, HUMAN_REVIEW]\n```\nConsistent with my LOW / NOT_CONFIRMED security assessment (advisory only; my judgment governs).\n\n### PR's own tests (real output)\n```\ncd /root/.copaw-worker/reviewer/pr1sk5-work\nOAUTH_GOOGLE_CLIENT_ID=dummy-id OAUTH_GOOGLE_CLIENT_SECRET=dummy-secret \\\n  /opt/venv/standard/bin/python -m pytest \\\n  backend/tests/integration/migrations/test_uq_user_key_name.py -v\n---\ntest_empty_db_upgrade_succeeds SKIPPED\ntest_historical_duplicates_upgrade_fails SKIPPED\n======================== 2 skipped, 3 warnings in 0.01s ========================\n```\nBoth tests skip because `P14_BASELINE_TREE` is unset and `/var/run/docker.sock` is absent — no\nPostgres/harness in this container. Environment limitation, not a code defect; the tests are\ncorrectly guarded by `@needs_baseline`.\n\n### `rag_retrieve` / `skill_case_retrieval` (optional, references only)\n- `rag_retrieve` returned **0 results** for migration/schema-rollout queries (SYNTHETIC corpus,\n  lexical; no matching org standard).\n- `skill_case_retrieval` matched only the unrelated PR #2/#3 path-traversal & command-injection\n  cases (untrusted references); **no** relevant historical bootstrap/migration case. Neither tool\n  changed my verdict.\n\n## 5. Reproduction\n\n```\ncd /root/.copaw-worker/reviewer/pr1sk5-work && \\\n  git diff --stat fdde4f4142606336c7b7b25f176949dc5882d89a..HEAD && \\\n  cat -n backend/migrations/versions/0001_uq_api_keys_user_name.py && \\\n  cat -n backend/src/modules/api_keys/models.py | sed -n '36,42p'\n```\n\n## 6. Conclusion\n\nNo new security vulnerability is introduced by this bootstrap PR; the materials are additive\n(documentation, a static DDL migration, a model constraint, and guarded integration tests). The\nonly substantive non-security risk is the explicitly seeded\n\"upgrade fails on pre-existing duplicate rows\" behavior, which the PR itself discloses and labels\nas failing-by-design pending a fix. Security verdict: **NOT_CONFIRMED / LOW**.\n"
+        }
+      ],
+      "source_ref": "finalsPr1Sk5Auto/tasks/pr1sk5-review-1/result.md",
+      "hash": {
+        "file": "tasks/pr1sk5-review-1/result.md",
+        "dir": "FINALS-ELEM-PR1-SK5-AUTO",
+        "exists": true,
+        "hash_verified": true,
+        "sha256": "ffae9a2db54a7d6bad1dd00b5a28df7c3c37840236ddd409e38776595f97eb25"
+      },
+      "real": [
+        "真实执行（低风险自动路径）：NOT_CONFIRMED / LOW → 单节点 DAG 审查即结、项目自动 completed，无人工门——按风险分级设计，非跳过",
+        "skill_sast_scan 首次被 Agent 调用：唯一命中为测试文件 subprocess.run（argv 列表、非 shell=True），Agent 诚实裁决 false positive 并留痕"
+      ],
+      "controlled": [
+        "页面为只读回放；确定性 Skill 输出为 advisory（其 SKILL.md 自述 never an authorization decision）",
+        "case_retrieval 检索使用离线确定性 hash embedding（非语义模型）——本轮如实返回空匹配（无相关历史案例）"
+      ],
+      "not_executed": [
+        "无人工门——NOT_CONFIRMED/LOW 未触发停等条件（设计行为）；无修复/验证对象，Fixer/Verifier 未派发",
+        "零 GitHub 写入；PR #1 保持 OPEN",
+        "锁定 usage 工件未单列 pr1 窗口——用量以会话合计与轮次说明估计值两口径并列披露"
+      ]
+    },
+    {
+      "id": "ev-auto-run",
+      "title": "运行档案（自动闭环与会话口径）",
+      "level": "REAL_EXECUTED_AGENTTEAMS_LIVE",
+      "fields": [
+        [
+          "自动闭环",
+          "审查提交 → 单节点 DAG 即结 → 项目 completed（17:06:38Z 团队房留痕「low-risk auto path」）→ 17:06:44Z 综合终报"
+        ],
+        [
+          "用量（两口径并列）",
+          "锁定工件未单列 pr1 窗口；SK5 会话合计 133 次调用 / 输入 8,960,469 / 输出 40,623；轮次说明估计 pr1 ≈45 次 / 5.08M（≈99% 缓存）"
+        ],
+        [
+          "追踪（会话累计）",
+          "SK5 四包同会话：span-summary 824 span（本案例为其中 reviewer 段）· skill_sast_scan ×2 独立 span"
+        ],
+        [
+          "合规",
+          "PR #1 全程 OPEN · github-branches-after-sk5.txt：两分支 head 运行后与记录一致 · 零 GitHub 写入"
+        ]
+      ],
+      "blocks": [
+        {
+          "title": "finalsPr1Sk5Auto/project/result.md（项目终报）",
+          "lang": "markdown",
+          "text": "# Project Result: PR #1 low-risk auto path\n\n- **Project ID**: elemiso-pr1sk5-auto\n- **Run ID**: run-elem-pr1sk5-20260919-01\n- **Requester**: admin (Team Admin, via Leader DM)\n- **Repo**: https://github.com/nghqqa/fastapi-boilerplate-demo\n- **PR**: #1 (head SHA `4cd5bf099f88c3f3f85ee4c06b7adfe9925a6e5c`, base `fdde4f4142606336c7b7b25f176949dc5882d89a`)\n- **Status**: COMPLETE — review node accepted; low-risk auto path (no human gate)\n\n## Outcome\n\nAn independent routine security review of the PR #1 bootstrap change found **no\nnew security vulnerability**. The low-risk auto path applies: no remediation is\nrequired, no human security gate is triggered, and no fix/verify nodes are\nneeded. PR #1 stays OPEN; **zero GitHub writes** were performed.\n\n## DAG Execution\n\n- [x] `pr1sk5-review-1` — Routine security review of PR #1 bootstrap (reviewer) — **NOT_CONFIRMED / LOW / HUMAN_VERIFICATION_REQUIRED: NO**\n\n## Key Findings\n\n- Diff scope: 6 files, +168/-1 (`PR_DESCRIPTION.md`, migration\n  `0001_uq_api_keys_user_name.py`, `models.py`, migration test `__init__.py`,\n  `base_schema_helper.py`, `test_uq_user_key_name.py`).\n- No new security vulnerability: the model change is purely additive\n  (`UniqueConstraint(\"user_id\", \"name\")`); the migration is static DDL\n  (`create_unique_constraint` / `drop_constraint`) — no user input, no\n  raw/dynamic SQL, no secrets, no auth/route change, no new dependency, no\n  deserialization/path handling.\n- Tools: `skill_sast_scan` (inline) reported one `subprocess.run` finding at\n  `test_uq_user_key_name.py:9` — adjudicated **false positive** (argv list,\n  `shell=False`, constant args). `skill_risk_classify` → advisory L1\n  (`SOURCE_CONFIG_CHANGE`), consistent.\n- PR's own tests as written: 2 **SKIPPED** (`@needs_baseline` guard;\n  `P14_BASELINE_TREE` unset and no Docker socket) — environment limitation,\n  not a defect.\n- Non-security note (does not change the verdict): the migration adds\n  `UNIQUE(user_id, name)` without deduplicating historical rows, so upgrade\n  can fail with `IntegrityError`/SQLSTATE 23505 where a user already has\n  same-named keys. This is a reliability/data-migration-safety issue and is\n  explicitly disclosed/seeded in the diff (`PR_DESCRIPTION.md` names the\n  by-design failing test). No fix proposed (contract forbids patch code).\n\n## Deliverables\n\n- `shared/tasks/pr1sk5-review-1/workspace/findings.md` — independent review findings\n\n## Notes\n\n- Low-risk auto path: review verdict LOW / NOT_CONFIRMED → project completes\n  without a human security gate, fix, or verification node.\n- Advisory tools (`rag_retrieve`, `skill_case_retrieval`) returned no relevant\n  match for a bootstrap migration PR; references only.\n- PR #1 stays OPEN. Any GitHub-side action requires explicit authorization.\n"
+        },
+        {
+          "title": "finalsPr1Sk5Auto/usage-summary.json（分窗口用量）",
+          "lang": "json",
+          "text": "{\r\n \"windows\": {\r\n  \"pr2\": {\r\n   \"calls\": 90,\r\n   \"inp\": 6218954,\r\n   \"cached\": 6154368,\r\n   \"outp\": 30647\r\n  },\r\n  \"pr3\": {\r\n   \"calls\": 32,\r\n   \"inp\": 2392229,\r\n   \"cached\": 2376704,\r\n   \"outp\": 9552\r\n  },\r\n  \"session\": {\r\n   \"calls\": 133,\r\n   \"inp\": 8960469,\r\n   \"cached\": 8878336,\r\n   \"outp\": 40623\r\n  }\r\n },\r\n \"models\": [\r\n  \"\",\r\n  \"deepseek-flash\"\r\n ],\r\n \"note\": \"deepseek-flash is the vendor-reported model name per request; requested model is deepseek-chat (see R1 audit)\"\r\n}"
+        },
+        {
+          "title": "finalsPr1Sk5Auto/span-summary.json（SK5 会话累计）",
+          "lang": "json",
+          "text": "{\r\n \"leader\": {\r\n  \"spans\": 280,\r\n  \"skill\": {},\r\n  \"skill_total\": 0,\r\n  \"rag\": 0,\r\n  \"link\": 0\r\n },\r\n \"reviewer\": {\r\n  \"spans\": 240,\r\n  \"skill\": {\r\n   \"tool.skill_diff_parse\": 3,\r\n   \"tool.skill_risk_classify\": 6,\r\n   \"tool.skill_sast_scan\": 2,\r\n   \"tool.skill_case_retrieval\": 2\r\n  },\r\n  \"skill_total\": 13,\r\n  \"rag\": 5,\r\n  \"link\": 5\r\n },\r\n \"fixer\": {\r\n  \"spans\": 118,\r\n  \"skill\": {},\r\n  \"skill_total\": 0,\r\n  \"rag\": 1,\r\n  \"link\": 5\r\n },\r\n \"verifier\": {\r\n  \"spans\": 129,\r\n  \"skill\": {\r\n   \"tool.skill_diff_parse\": 1,\r\n   \"tool.skill_risk_classify\": 1\r\n  },\r\n  \"skill_total\": 2,\r\n  \"rag\": 1,\r\n  \"link\": 5\r\n },\r\n \"reviewer-b\": {\r\n  \"spans\": 57,\r\n  \"skill\": {},\r\n  \"skill_total\": 0,\r\n  \"rag\": 0,\r\n  \"link\": 0\r\n }\r\n}"
+        },
+        {
+          "title": "finalsPr1Sk5Auto/github-branches-after-sk5.txt",
+          "lang": "text",
+          "text": "1dedf5e1992c950557064d8f4fb9039d1523deb3\trefs/heads/demo/high-risk-human-gate\nad267a6e51209551a0733657321bb364d04befd0\trefs/heads/demo/high-risk-human-reject\n"
+        }
+      ],
+      "source_ref": "finalsPr1Sk5Auto/project/result.md",
+      "hash": {
+        "file": "project/result.md",
+        "dir": "FINALS-ELEM-PR1-SK5-AUTO",
+        "exists": true,
+        "hash_verified": true,
+        "sha256": "f3dd59d6f4ced1c23f8898b6a2a15bf1f7bfa57ab8aa727424086336136a3eb7"
+      },
+      "real": [
+        "真实执行（低风险自动路径）：NOT_CONFIRMED / LOW → 单节点 DAG 审查即结、项目自动 completed，无人工门——按风险分级设计，非跳过",
+        "skill_sast_scan 首次被 Agent 调用：唯一命中为测试文件 subprocess.run（argv 列表、非 shell=True），Agent 诚实裁决 false positive 并留痕"
+      ],
+      "controlled": [
+        "页面为只读回放；确定性 Skill 输出为 advisory（其 SKILL.md 自述 never an authorization decision）",
+        "case_retrieval 检索使用离线确定性 hash embedding（非语义模型）——本轮如实返回空匹配（无相关历史案例）"
+      ],
+      "not_executed": [
+        "无人工门——NOT_CONFIRMED/LOW 未触发停等条件（设计行为）；无修复/验证对象，Fixer/Verifier 未派发",
+        "零 GitHub 写入；PR #1 保持 OPEN",
+        "锁定 usage 工件未单列 pr1 窗口——用量以会话合计与轮次说明估计值两口径并列披露"
+      ]
+    }
+  ]
+}

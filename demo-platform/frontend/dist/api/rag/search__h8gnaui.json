@@ -1,0 +1,43 @@
+{
+  "query_hash": "82d137242603673f",
+  "top_k": 4,
+  "retrieval_mode": "local-hash-vector-cosine",
+  "retrieval_strategy": "v2-bigram-idf-hash4096",
+  "data_mode": "SYNTHETIC",
+  "results": [
+    {
+      "document_id": "doc-case-pr2-summary",
+      "chunk_id": "doc-case-pr2-summary#c0",
+      "score": 0.2001,
+      "source_ref": "rag://synthetic-docs/doc-case-pr2-summary#doc-case-pr2-summary#c0",
+      "retrieval_mode": "local-hash-vector-cosine",
+      "data_mode": "SYNTHETIC"
+    },
+    {
+      "document_id": "doc-mergepilot-review-policy",
+      "chunk_id": "doc-mergepilot-review-policy#c0",
+      "score": 0.1907,
+      "source_ref": "rag://synthetic-docs/doc-mergepilot-review-policy#doc-mergepilot-review-policy#c0",
+      "retrieval_mode": "local-hash-vector-cosine",
+      "data_mode": "SYNTHETIC"
+    },
+    {
+      "document_id": "doc-case-pr1-summary",
+      "chunk_id": "doc-case-pr1-summary#c0",
+      "score": 0.0948,
+      "source_ref": "rag://synthetic-docs/doc-case-pr1-summary#doc-case-pr1-summary#c0",
+      "retrieval_mode": "local-hash-vector-cosine",
+      "data_mode": "SYNTHETIC"
+    },
+    {
+      "document_id": "doc-case-pr3-summary",
+      "chunk_id": "doc-case-pr3-summary#c0",
+      "score": 0.0819,
+      "source_ref": "rag://synthetic-docs/doc-case-pr3-summary#doc-case-pr3-summary#c0",
+      "retrieval_mode": "local-hash-vector-cosine",
+      "data_mode": "SYNTHETIC"
+    }
+  ],
+  "latency_ms": 0,
+  "disclosure": "SYNTHETIC demo retrieval — 只保存 query_hash"
+}

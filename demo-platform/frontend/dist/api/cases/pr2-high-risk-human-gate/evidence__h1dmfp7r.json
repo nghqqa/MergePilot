@@ -1,0 +1,90 @@
+{
+  "drawer": "finding",
+  "data_mode": "historical replay",
+  "trace_mode": "evidence-replay",
+  "integrity_status": "verified",
+  "event_id": "pr2v3-ev-007",
+  "trace_id": null,
+  "project_id": "elemiso-pr2v3-gate",
+  "task_id": "review-1",
+  "agent_role": "reviewer",
+  "runtime": "copaw-worker:223ddc2-agentloop-v3rag（image 8e17c3667c3c）",
+  "event_type": "task_state",
+  "source": "minio",
+  "source_label": "MinIO task result",
+  "source_ref": "FINALS-ELEM-PR2-V3-TRACED/README.md + FINALS-ELEM-PR2-V3-TRACED/tasks/pr2v3-verify-1/workspace/verification.md",
+  "source_hash": {
+    "ref": "FINALS-ELEM-PR2-V3-TRACED/README.md",
+    "dir": "FINALS-ELEM-PR2-V3-TRACED",
+    "dir_key": null,
+    "file": "README.md",
+    "abs_path": "D:\\goai\\mergepilot-demo\\evidence\\FINALS-ELEM-PR2-V3-TRACED\\README.md",
+    "exists": true,
+    "evidence_root_readonly": true,
+    "sha256_actual": "8fe8f1c6ce5a7e0fd2faa6e64817fbd3077401e3cccdac0287fdb0f3f770f19b",
+    "sha256_expected": "8fe8f1c6ce5a7e0fd2faa6e64817fbd3077401e3cccdac0287fdb0f3f770f19b",
+    "hash_verified": true,
+    "sums_source": "FINALS-ELEM-PR2-V3-TRACED/SHA256SUMS"
+  },
+  "timestamp": "2026-09-17T03:09:34Z",
+  "timestamp_precision": "approx",
+  "finding": {
+    "level": "high",
+    "category": "CWE-22",
+    "human_gate": "approved",
+    "affected_file": "backend/src/interfaces/api/v1/demo_high_risk.py — demo_download (L41 os.path.join → L42 FileResponse)",
+    "description": "用户可控 name 参数直接 os.path.join 到 DEMO_FILES_DIR，../ 序列与前导 / 绝对路径均可逃逸基目录，经 FileResponse 实现任意文件读取；路由无鉴权依赖（伴生 CWE-73/CWE-200）。该缺陷为演示预置（仓库内置 demo 占位数据）。",
+    "reviewer_conclusion": "STATUS: SUCCESS / FINDING_CONFIRMED / SEVERITY: HIGH / HUMAN_VERIFICATION_REQUIRED: YES（pr2v3-review-1 result.md 协议标记）",
+    "rag_note": "Reviewer/Fixer/Verifier 均按 manifest 邀请实际调用 rag_retrieve（组织标准库，SYNTHETIC 知识型语料，引用不替代自主验证）",
+    "residual_after_fix": "SEVERITY: NONE（pr2v3-verify-1 独立验证 VERIFIED）"
+  },
+  "reviewer_conclusion": "STATUS: SUCCESS / FINDING_CONFIRMED / SEVERITY: HIGH / HUMAN_VERIFICATION_REQUIRED: YES（pr2v3-review-1 result.md 协议标记）",
+  "probe": {
+    "before": {
+      "traversal_status": 200,
+      "legit_status": 200,
+      "abs_status": 200,
+      "missing_status": 500,
+      "leaked_outside_secret": true
+    },
+    "after": {
+      "traversal_status": 400,
+      "legit_status": 200,
+      "abs_status": 400,
+      "missing_status": 404,
+      "leaked_outside_secret": false
+    },
+    "requests": {
+      "traversal": "GET /demo/download?name=../outside/outside-secret.txt",
+      "legit": "GET /demo/download?name=ok.txt"
+    }
+  },
+  "probe_hash": {
+    "ref": "FINALS-ELEM-PR2-V3-TRACED/tasks/pr2v3-verify-1/workspace/verification.md",
+    "dir": "FINALS-ELEM-PR2-V3-TRACED",
+    "dir_key": null,
+    "file": "tasks/pr2v3-verify-1/workspace/verification.md",
+    "abs_path": "D:\\goai\\mergepilot-demo\\evidence\\FINALS-ELEM-PR2-V3-TRACED\\tasks\\pr2v3-verify-1\\workspace\\verification.md",
+    "exists": true,
+    "evidence_root_readonly": true,
+    "sha256_actual": "893b75dc5d86a84ac237a0f41c0bb60616fc91ed166e739cfb9174e6cabb2d94",
+    "sha256_expected": "893b75dc5d86a84ac237a0f41c0bb60616fc91ed166e739cfb9174e6cabb2d94",
+    "hash_verified": true,
+    "sums_source": "FINALS-ELEM-PR2-V3-TRACED/SHA256SUMS"
+  },
+  "hash_verified": true,
+  "redaction_status": {
+    "redaction_layer": "applied (evidence-adapter/redact.mjs)",
+    "scan_hits": [],
+    "status": "CLEAN — redaction applied; PR#2 demo placeholders allow-listed",
+    "forbidden_fields_excluded": [
+      "Authorization",
+      "Cookie",
+      "API key",
+      "Matrix token",
+      "password",
+      "完整工具参数",
+      "完整 prompt/completion"
+    ]
+  }
+}

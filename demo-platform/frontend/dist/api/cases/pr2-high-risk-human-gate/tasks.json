@@ -1,0 +1,373 @@
+{
+  "case_id": "pr2-high-risk-human-gate",
+  "tasks": [
+    {
+      "id": "review-1",
+      "project_id": "elemiso-pr2v3-gate",
+      "assignee": "reviewer",
+      "runtime": "copaw-worker:223ddc2-agentloop-v3rag",
+      "started_at": "2026-09-17T03:02:53Z",
+      "ended_at": "2026-09-17T03:12:39Z",
+      "ended_at_precision": "exact",
+      "input_context": "PR #2（demo/high-risk-human-gate）独立安全审查；SPEC 非预设（未点名漏洞类别）；输出协议化结论。",
+      "tool_calls": "taskflow ack/submit；git clone+checkout；pytest；自设计 PoC；rag_retrieve ×1（引用不替代验证）",
+      "result_summary": "STATUS: SUCCESS\nFINDING_CONFIRMED / HIGH / CWE-22 / HUMAN_VERIFICATION_REQUIRED: YES\n（真实 PoC：../outside-secret.txt → 200 泄露；../../../etc/hostname → 200 任意读；另发现 PR 测试#2 失败为 fixture 错位）",
+      "result_status": "SUCCESS",
+      "effective": true,
+      "effective_note": null,
+      "artifacts": [
+        {
+          "name": "findings.md",
+          "source": "finalsPr2V3Traced/tasks/pr2v3-review-1/workspace/findings.md"
+        }
+      ],
+      "trace_id": null,
+      "trace_note": "v3 全运行 span 直连 AgentLoop/SLS（会话累计 530 span、234 导出批次 0 失败）；委派消息注入 traceparent，接收侧 agentteams.delegation.link ×4（属性级关联：携带 Leader trace_id 可检索，但因实现缺陷未作为 parent 嵌入 Leader 瀑布，已修复于后续镜像）；per-task trace_id 未单独落盘，控制台按 service.name=mergepilot-copaw + 时间窗（03:02–03:16 UTC）检索",
+      "final_status": {
+        "status": "completed",
+        "status_label": "COMPLETED · 完成",
+        "locked_reason": null
+      },
+      "locked": false,
+      "upstream": [],
+      "last_status_change": {
+        "at": "2026-09-17T03:12:39Z",
+        "event_id": "pr2v3-ev-007",
+        "status": "completed",
+        "status_label": "COMPLETED · 完成",
+        "locked_reason": null
+      },
+      "source_map": {
+        "status": {
+          "value": null,
+          "source": "Evidence Replay",
+          "source_ref": "finalsPr2V3Traced/tasks/pr2v3-review-1/meta.json + finalsPr2V3Traced/team-room-messages.json",
+          "timestamp_precision": null
+        },
+        "assignee": {
+          "value": "reviewer",
+          "source": "MinIO task result",
+          "source_ref": "elemiso-pr2v3-gate/tasks/review-1/meta.json (recorded in evidence; project-scoped store)",
+          "timestamp_precision": null
+        },
+        "runtime": {
+          "value": "copaw-worker:223ddc2-agentloop-v3rag",
+          "source": "Controller API",
+          "source_ref": "PHASE14-WINDOWS-COPAW-HIGH-RISK-FIX-VERIFY-20260829-180548/ENTRYPOINTS.md",
+          "timestamp_precision": null
+        },
+        "started_at": {
+          "value": "2026-09-17T03:02:53Z",
+          "source": "Evidence Replay",
+          "source_ref": "finalsPr2V3Traced/tasks/pr2v3-review-1/meta.json + finalsPr2V3Traced/team-room-messages.json",
+          "timestamp_precision": "exact"
+        },
+        "ended_at": {
+          "value": "2026-09-17T03:12:39Z",
+          "source": "Evidence Replay",
+          "source_ref": "finalsPr2V3Traced/tasks/pr2v3-review-1/meta.json + finalsPr2V3Traced/team-room-messages.json",
+          "timestamp_precision": "exact"
+        },
+        "result": {
+          "value": "SUCCESS",
+          "source": "MinIO task result",
+          "source_ref": "finalsPr2V3Traced/tasks/pr2v3-review-1/workspace/findings.md",
+          "timestamp_precision": null
+        },
+        "effective": {
+          "value": true,
+          "source": "Controller API",
+          "source_ref": "PHASE14-WINDOWS-COPAW-HIGH-RISK-FIX-VERIFY-20260829-180548/AUDIT.md（leader check_task effective=true 终检）",
+          "timestamp_precision": null
+        }
+      },
+      "status_history": [
+        {
+          "at": "2026-09-17T03:02:46Z",
+          "event_id": "pr2v3-ev-001",
+          "status": "pending",
+          "status_label": "PENDING · 等待派发",
+          "locked_reason": "等待 Leader 派发"
+        },
+        {
+          "at": "2026-09-17T03:02:53Z",
+          "event_id": "pr2v3-ev-002",
+          "status": "running",
+          "status_label": "RUNNING · 执行中",
+          "locked_reason": null
+        },
+        {
+          "at": "2026-09-17T03:12:39Z",
+          "event_id": "pr2v3-ev-007",
+          "status": "completed",
+          "status_label": "COMPLETED · 完成",
+          "locked_reason": null
+        }
+      ]
+    },
+    {
+      "id": "fix-1",
+      "project_id": "elemiso-pr2v3-gate",
+      "assignee": "fixer",
+      "runtime": "copaw-worker:223ddc2-agentloop-v3rag",
+      "started_at": "2026-09-17T03:13:35Z",
+      "ended_at": "2026-09-17T03:14:07Z",
+      "ended_at_precision": "exact",
+      "input_context": "人工门批准后执行最小必要修复：仅 Reviewer 标记文件；测试冻结；零 GitHub 写入。",
+      "tool_calls": "taskflow ack/submit；git clone；apply 修复；自检探针；rag_retrieve ×1（组织修复规范）",
+      "result_summary": "STATUS: SUCCESS / FIX_APPLIED / SELF_CHECK_PASSED — realpath 归一化 + 包含性校验，越界 400、缺失 404、合法 200。单文件 +13/−7。sha256 674356fc…16081（与 R1/R2/R3-TRACED/RAG-TRACED 独立产出逐字节一致，第五次；机理：RAG 组织规范 file-path-containment.md 即该实现模式）",
+      "result_status": "SUCCESS",
+      "effective": true,
+      "effective_note": null,
+      "artifacts": [
+        {
+          "name": "attempt-1.diff",
+          "source": "finalsPr2V3Traced/tasks/pr2v3-fix-1/attempt-1.diff"
+        },
+        {
+          "name": "notes.md",
+          "source": "finalsPr2V3Traced/tasks/pr2v3-fix-1/workspace/notes.md"
+        },
+        {
+          "name": "spec.md",
+          "source": "finalsPr2V3Traced/tasks/pr2v3-fix-1/spec.md"
+        }
+      ],
+      "trace_id": null,
+      "trace_note": "同上（全运行追踪 + delegation.link 关联）",
+      "final_status": {
+        "status": "completed",
+        "status_label": "COMPLETED · 完成",
+        "locked_reason": null
+      },
+      "locked": false,
+      "upstream": [
+        "review-1",
+        "human-gate (PR#2)"
+      ],
+      "last_status_change": {
+        "at": "2026-09-17T03:14:07Z",
+        "event_id": "pr2v3-ev-012",
+        "status": "completed",
+        "status_label": "COMPLETED · 完成",
+        "locked_reason": null
+      },
+      "source_map": {
+        "status": {
+          "value": null,
+          "source": "Evidence Replay",
+          "source_ref": "finalsPr2V3Traced/tasks/pr2v3-fix-1/meta.json + finalsPr2V3Traced/team-room-messages.json",
+          "timestamp_precision": null
+        },
+        "assignee": {
+          "value": "fixer",
+          "source": "MinIO task result",
+          "source_ref": "elemiso-pr2v3-gate/tasks/fix-1/meta.json (recorded in evidence; project-scoped store)",
+          "timestamp_precision": null
+        },
+        "runtime": {
+          "value": "copaw-worker:223ddc2-agentloop-v3rag",
+          "source": "Controller API",
+          "source_ref": "PHASE14-WINDOWS-COPAW-HIGH-RISK-FIX-VERIFY-20260829-180548/ENTRYPOINTS.md",
+          "timestamp_precision": null
+        },
+        "started_at": {
+          "value": "2026-09-17T03:13:35Z",
+          "source": "Evidence Replay",
+          "source_ref": "finalsPr2V3Traced/tasks/pr2v3-fix-1/meta.json + finalsPr2V3Traced/team-room-messages.json",
+          "timestamp_precision": "exact"
+        },
+        "ended_at": {
+          "value": "2026-09-17T03:14:07Z",
+          "source": "Evidence Replay",
+          "source_ref": "finalsPr2V3Traced/tasks/pr2v3-fix-1/meta.json + finalsPr2V3Traced/team-room-messages.json",
+          "timestamp_precision": "exact"
+        },
+        "result": {
+          "value": "SUCCESS",
+          "source": "MinIO task result",
+          "source_ref": "finalsPr2V3Traced/tasks/pr2v3-fix-1/attempt-1.diff",
+          "timestamp_precision": null
+        },
+        "effective": {
+          "value": true,
+          "source": "Controller API",
+          "source_ref": "PHASE14-WINDOWS-COPAW-HIGH-RISK-FIX-VERIFY-20260829-180548/AUDIT.md（leader check_task effective=true 终检）",
+          "timestamp_precision": null
+        }
+      },
+      "status_history": [
+        {
+          "at": "2026-09-17T03:02:46Z",
+          "event_id": "pr2v3-ev-001",
+          "status": "pending",
+          "status_label": "PENDING · 等待派发",
+          "locked_reason": "DAG 依赖：等待 review-1 结论"
+        },
+        {
+          "at": "2026-09-17T03:12:50Z",
+          "event_id": "pr2v3-ev-008",
+          "status": "waiting_human",
+          "status_label": "WAITING_HUMAN · 人工门停等",
+          "locked_reason": "人工安全门：HUMAN_SECURITY_REVIEW_REQUIRED — 未批准禁止派发"
+        },
+        {
+          "at": "2026-09-17T03:13:25Z",
+          "event_id": "pr2v3-ev-009",
+          "status": "pending",
+          "status_label": "PENDING · 等待派发",
+          "locked_reason": null
+        },
+        {
+          "at": "2026-09-17T03:13:35Z",
+          "event_id": "pr2v3-ev-010",
+          "status": "running",
+          "status_label": "RUNNING · 执行中",
+          "locked_reason": null
+        },
+        {
+          "at": "2026-09-17T03:14:07Z",
+          "event_id": "pr2v3-ev-012",
+          "status": "completed",
+          "status_label": "COMPLETED · 完成",
+          "locked_reason": null
+        }
+      ]
+    },
+    {
+      "id": "verify-1",
+      "project_id": "elemiso-pr2v3-gate",
+      "assignee": "verifier",
+      "runtime": "copaw-worker:223ddc2-agentloop-v3rag",
+      "started_at": "2026-09-17T03:14:16Z",
+      "ended_at": "2026-09-17T03:15:04Z",
+      "ended_at_precision": "exact",
+      "input_context": "独立验证（不信任 Fixer 结论）：干净 clone、补丁 sha256 复算、自设计探针（含绝对路径向量）、PR 测试断言反转记录。",
+      "tool_calls": "taskflow ack/submit；git clone+apply --check；自设计探针（TestClient）；pytest 前后对照；rag_retrieve ×1",
+      "result_summary": "VERIFIED (PASS) — 修复前 3 逃逸向量全 200 泄露（含绝对路径 /etc/hostname）→ 修复后全 400；合法 200/缺失 404；PR 测试断言反转（预期内）如实记录。",
+      "result_status": "SUCCESS",
+      "effective": true,
+      "effective_note": null,
+      "artifacts": [
+        {
+          "name": "verification.md",
+          "source": "finalsPr2V3Traced/tasks/pr2v3-verify-1/workspace/verification.md"
+        },
+        {
+          "name": "verify_probe.py",
+          "source": "finalsPr2V3Traced/tasks/pr2v3-verify-1/workspace/verify_probe.py"
+        },
+        {
+          "name": "attempt-1.diff（独立复放）",
+          "source": "finalsPr2V3Traced/tasks/pr2v3-verify-1/workspace/attempt-1.diff"
+        }
+      ],
+      "trace_id": null,
+      "trace_note": "同上（全运行追踪 + delegation.link 关联）。披露：直连探针本轮未采集成功（采集命令静默失败，direct-probe-*.json 0 字节，SHA256SUMS 如实锁定，README 已披露）；导出证据以容器内 OTEL_EXPORT SUCCESS 234 批 0 失败为准",
+      "final_status": {
+        "status": "completed",
+        "status_label": "COMPLETED · 完成",
+        "locked_reason": null
+      },
+      "locked": false,
+      "upstream": [
+        "fix-1"
+      ],
+      "last_status_change": {
+        "at": "2026-09-17T03:15:04Z",
+        "event_id": "pr2v3-ev-016",
+        "status": "completed",
+        "status_label": "COMPLETED · 完成",
+        "locked_reason": null
+      },
+      "source_map": {
+        "status": {
+          "value": null,
+          "source": "Evidence Replay",
+          "source_ref": "finalsPr2V3Traced/tasks/pr2v3-verify-1/meta.json + finalsPr2V3Traced/tasks/pr2v3-verify-1/workspace/verification.md",
+          "timestamp_precision": null
+        },
+        "assignee": {
+          "value": "verifier",
+          "source": "MinIO task result",
+          "source_ref": "elemiso-pr2v3-gate/tasks/verify-1/meta.json (recorded in evidence; project-scoped store)",
+          "timestamp_precision": null
+        },
+        "runtime": {
+          "value": "copaw-worker:223ddc2-agentloop-v3rag",
+          "source": "Controller API",
+          "source_ref": "PHASE14-WINDOWS-COPAW-HIGH-RISK-FIX-VERIFY-20260829-180548/ENTRYPOINTS.md",
+          "timestamp_precision": null
+        },
+        "started_at": {
+          "value": "2026-09-17T03:14:16Z",
+          "source": "Evidence Replay",
+          "source_ref": "finalsPr2V3Traced/tasks/pr2v3-verify-1/meta.json + finalsPr2V3Traced/tasks/pr2v3-verify-1/workspace/verification.md",
+          "timestamp_precision": "exact"
+        },
+        "ended_at": {
+          "value": "2026-09-17T03:15:04Z",
+          "source": "Evidence Replay",
+          "source_ref": "finalsPr2V3Traced/tasks/pr2v3-verify-1/meta.json + finalsPr2V3Traced/tasks/pr2v3-verify-1/workspace/verification.md",
+          "timestamp_precision": "exact"
+        },
+        "result": {
+          "value": "SUCCESS",
+          "source": "MinIO task result",
+          "source_ref": "finalsPr2V3Traced/tasks/pr2v3-verify-1/workspace/verification.md",
+          "timestamp_precision": null
+        },
+        "effective": {
+          "value": true,
+          "source": "Controller API",
+          "source_ref": "PHASE14-WINDOWS-COPAW-HIGH-RISK-FIX-VERIFY-20260829-180548/AUDIT.md（leader check_task effective=true 终检）",
+          "timestamp_precision": null
+        }
+      },
+      "status_history": [
+        {
+          "at": "2026-09-17T03:02:46Z",
+          "event_id": "pr2v3-ev-001",
+          "status": "pending",
+          "status_label": "PENDING · 等待派发",
+          "locked_reason": "DAG 依赖：等待 fix-1 完成"
+        },
+        {
+          "at": "2026-09-17T03:12:50Z",
+          "event_id": "pr2v3-ev-008",
+          "status": "waiting_human",
+          "status_label": "WAITING_HUMAN · 人工门停等",
+          "locked_reason": "人工安全门：HUMAN_SECURITY_REVIEW_REQUIRED — 未批准禁止派发"
+        },
+        {
+          "at": "2026-09-17T03:13:25Z",
+          "event_id": "pr2v3-ev-009",
+          "status": "blocked",
+          "status_label": "BLOCKED · 锁定",
+          "locked_reason": "依赖锁定：fix-1 未完成前 Verifier 禁止启动"
+        },
+        {
+          "at": "2026-09-17T03:14:07Z",
+          "event_id": "pr2v3-ev-012",
+          "status": "pending",
+          "status_label": "PENDING · 等待派发",
+          "locked_reason": null
+        },
+        {
+          "at": "2026-09-17T03:14:16Z",
+          "event_id": "pr2v3-ev-013",
+          "status": "running",
+          "status_label": "RUNNING · 执行中",
+          "locked_reason": null
+        },
+        {
+          "at": "2026-09-17T03:15:04Z",
+          "event_id": "pr2v3-ev-016",
+          "status": "completed",
+          "status_label": "COMPLETED · 完成",
+          "locked_reason": null
+        }
+      ]
+    }
+  ]
+}
