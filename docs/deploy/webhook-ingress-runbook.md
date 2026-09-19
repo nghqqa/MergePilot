@@ -90,10 +90,15 @@ EOF
 
 cat > .env <<EOF
 MERGEPILOT_RUN_ID=webhook-ingress-phase1
+MERGEPILOT_PG_EXPECTED_SERVER_ADDRESSES=unused-phase1
 EOF
 
 chmod 600 postgres.env gh_webhook.env .env
 ```
+
+> 说明：`MERGEPILOT_PG_EXPECTED_SERVER_ADDRESSES` 属于 demo-console 服务（Phase 1 不启动），
+> 但 compose 的 `${VAR:?}` 插值是**整文件生效**的——缺了它，哪怕只起 postgres/gh-webhook
+> 也会在解析阶段报错，所以必须占位。
 
 修改 `docker-compose.yml` 的 `gh-webhook.ports`：`"0.0.0.0:8090:8090"` → `"127.0.0.1:8090:8090"`（只允许 NGINX 反代访问）。
 
