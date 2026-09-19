@@ -91,7 +91,7 @@ Node.js ≥ 18 即可，无需 `npm install`：前端已预构建（`frontend/di
 | **SK4**（PR #2 / PR #3） | PR #2 VERIFIED / PR #3 blocked 零派发 | **skill_case_retrieval 首次返回真实历史案例**（pgvector 知识库接通，3 条相似案例带可验证 PR 引用） | [FINALS-ELEM-PR2-SK4-TRACED](evidence/FINALS-ELEM-PR2-SK4-TRACED) · [FINALS-ELEM-PR3-SK4-TRACED](evidence/FINALS-ELEM-PR3-SK4-TRACED) |
 | **SK5**（PR #2 / PR #3 / **PR #1**） | PR #2 VERIFIED / PR #3 blocked / **PR #1 auto completed（62 秒）** | **skill_sast_scan 首次正式调用**（AST 规则命中）；**PR #1 低风险自动路径首通**（NOT_CONFIRMED/LOW→无门→auto completed）；**dual-reviewer 评审间信度**：两个独立 Reviewer 对同一 PR 结论完全一致 | [PR2-SK5](evidence/FINALS-ELEM-PR2-SK5-TRACED) · [PR3-SK5](evidence/FINALS-ELEM-PR3-SK5-TRACED) · [PR1-SK5-AUTO](evidence/FINALS-ELEM-PR1-SK5-AUTO) · [DUAL-REVIEWER-EXP](evidence/DUAL-REVIEWER-EXP-20260919) |
 
-补丁确定性：PR #2 的修复补丁在七轮独立运行中 sha256 逐字节一致（`674356fc…16081`）——同一漏洞的确定性修复，多轮互证。
+补丁确定性：PR #2 的修复补丁在八轮独立运行中 sha256 逐字节一致（`674356fc…16081`）——同一漏洞的确定性修复，多轮互证。
 
 **三路径完整覆盖**（SK5 达成）：批准（PR #2 → VERIFIED completed）· 拒绝（PR #3 → blocked 零派发）· **自动**（PR #1 → NOT_CONFIRMED/LOW → 无人工门 → auto completed）。
 
