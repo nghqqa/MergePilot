@@ -18,3 +18,9 @@ RUN chmod 0644 /opt/venv/standard/lib/python3.11/site-packages/zz_agentloop_skil
 
 LABEL agentloop.instrumentation="v4boot(self-activating)" \
       agentloop.activation="minio-secrets-bootstrap"
+
+# 2.1 冷启动卡死修复:entrypoint 在一切 import 之前 export COPAW_WORKING_DIR
+#     (copaw.constant 在 import 时锁定 WORKING_DIR;竞态时锁到 HOME 默认树,
+#      custom_channels 缺失 → matrix 通道不装配 → Agent 零消费,restart 即愈)
+COPY entrypoint-fix.sh /tmp/entrypoint-fix.sh
+RUN chmod +x /tmp/entrypoint-fix.sh && /tmp/entrypoint-fix.sh && rm /tmp/entrypoint-fix.sh
