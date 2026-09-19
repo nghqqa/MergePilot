@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1800" height="900" viewBox="0 0 1800 900" role="img" aria-labelledby="title desc">
   <title id="title">MergePilot 多 Agent PR 审修与风险治理架构</title>
-  <desc id="desc">Workflow Controller 是待赛后集成的 PR 状态机与事件桥，与 AgentTeams 控制面 elemiso-ctrl 为两套组件。AgentTeams 控制面负责 Worker CR 调解、动态容器和审计汇聚，内嵌 Matrix (Tuwunel)、MinIO 与 Higress 网关，管理 Leader、Reviewer、Fixer、Verifier。六个 Skill 已经 MCP 接入 Agent 实测调用，与 LLM 决策分层，采用 advisory-only。AgentLoop / SLS 上报 OTel span，以委派 W3C traceparent 跨 Agent 关联，每轮 450-530 span 零失败，并保留网关用量计量。Agent 无任何 GitHub 凭据，零写入实证。pgvector 为设计资产，运行时未接入。PostgreSQL、MinIO 与审计 Trace 保存状态和证据。</desc>
+  <desc id="desc">Workflow Controller 是待赛后集成的 PR 状态机与事件桥，与 AgentTeams 控制面 elemiso-ctrl 为两套组件。AgentTeams 控制面负责 Worker CR 调解、动态容器和审计汇聚，内嵌 Matrix (Tuwunel)、MinIO 与 Higress 网关，管理 Leader、Reviewer、Fixer、Verifier。六个 Skill 已经 MCP 接入 Agent 实测调用，与 LLM 决策分层，采用 advisory-only。AgentLoop / SLS 上报 OTel span，以委派 W3C traceparent 跨 Agent 关联，每轮 458-824 span 零失败，并保留网关用量计量。Agent 无任何 GitHub 凭据，零写入实证。pgvector 为设计资产，运行时未接入。PostgreSQL、MinIO 与审计 Trace 保存状态和证据。</desc>
 
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
@@ -139,14 +139,14 @@
     <g fill="#ecfeff" font-weight="650" font-size="12px">
       <text x="1035" y="330" textLength="95" lengthAdjust="spacingAndGlyphs">01  diff-parse ✓已调用</text>
       <text x="1035" y="360" textLength="95" lengthAdjust="spacingAndGlyphs">02  risk-classify ✓已调用</text>
-      <text x="1035" y="390" textLength="95" lengthAdjust="spacingAndGlyphs">03  sast-scan 待接入</text>
-      <text x="1137" y="330" textLength="103" lengthAdjust="spacingAndGlyphs">04  test-runner 已接入</text>
+      <text x="1035" y="390" textLength="95" lengthAdjust="spacingAndGlyphs">03  sast-scan ✓已调用</text>
+      <text x="1137" y="330" textLength="103" lengthAdjust="spacingAndGlyphs">04  test-runner 已接入(未正式调用)</text>
       <text x="1137" y="360" textLength="103" lengthAdjust="spacingAndGlyphs">05  pr-lifecycle 待接入</text>
-      <text x="1137" y="390" textLength="103" lengthAdjust="spacingAndGlyphs">06  case-retrieval ✓已调用(降级)</text>
+      <text x="1137" y="390" textLength="103" lengthAdjust="spacingAndGlyphs">06  case-retrieval ✓已调用(真实结果)</text>
     </g>
     <rect x="1035" y="410" width="185" height="24" rx="12" fill="#ffffff" fill-opacity="0.16"/>
     <text x="1127" y="427" text-anchor="middle" class="tiny white">Schema · Fail-closed</text>
-    <text x="1127" y="464" text-anchor="middle" class="tiny" fill="#0e7490" textLength="340" lengthAdjust="spacingAndGlyphs">SK3 轮实测：tool.skill_* span ×10（含降级 1 例）· advisory-only</text>
+    <text x="1127" y="464" text-anchor="middle" class="tiny" fill="#0e7490" textLength="340" lengthAdjust="spacingAndGlyphs">SK5 轮实测：skill ×15（4种工具真实调用）· 824 span · 9轮零失败</text>
     <text x="1127" y="477" text-anchor="middle" class="tiny" fill="#0e7490">已实现 · 经 MCP 接入 Agent 实测调用</text>
     <text x="1127" y="500" text-anchor="middle" class="tiny" fill="#0e7490">与 LLM 决策分层（advisory-only）</text>
 
@@ -196,7 +196,7 @@
     <!-- Observability plane -->
     <rect x="60" y="600" width="1710" height="72" rx="22" fill="#eff6ff" stroke="#60a5fa" stroke-width="2"/>
     <text x="90" y="629" font-size="21" font-weight="700" fill="#1d4ed8">OBSERVABILITY — AgentLoop / SLS（阿里云）</text>
-    <text x="90" y="654" class="card-body muted">OTel span 直连上报 · 委派 W3C traceparent 跨 Agent 关联 · 每轮 450-530 span 零失败 · 网关用量计量</text>
+    <text x="90" y="654" class="card-body muted">OTel span 直连上报 · 委派 W3C traceparent 跨 Agent 关联 · 每轮 458-824 span 零失败 · 网关用量计量</text>
 
     <!-- State and evidence plane -->
     <g transform="translate(0 55)">
@@ -217,8 +217,8 @@
       <circle cx="652" cy="746" r="25" fill="#0891b2"/>
       <path d="M641 751 c10-24 24-24 28-7 c-10 1-18 7-25 15" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round"/>
       <text x="700" y="735" class="card-title ink">pgvector · Retrieval</text>
-      <text x="700" y="759" class="tiny" fill="#0e7490" font-weight="700">设计资产 · 运行时未接入</text>
-      <text x="700" y="782" class="tiny muted">历史案例仅作参考；不替代当次验证</text>
+      <text x="700" y="759" class="tiny" fill="#0e7490" font-weight="700">SK4 已接通 · 7条真实案例</text>
+      <text x="700" y="782" class="tiny muted">pgvector · knowledge 表 · 只读角色<br/>检索返回可验证 PR 引用</text>
     </g>
 
     <g>
