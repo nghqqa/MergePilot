@@ -1,0 +1,61 @@
+{
+  "mode": "replay",
+  "mode_banner": "REPLAY — HISTORICAL VERIFIED RUN",
+  "live_available": null,
+  "cases": [
+    {
+      "case_id": "pr2-high-risk-human-gate",
+      "title": "PR #2 — CWE-22 路径穿越高危 · 人工安全门闭环（v3 埋点 + RAG 追踪版）",
+      "positioning": "发现高危风险时系统自动暂停并等待人工确认，批准后才继续修复和验证；AgentLoop v3 埋点（含跨 Agent delegation.link 关联）+ RAG 知识库接入。",
+      "repository": "nghqqa/fastapi-boilerplate-demo",
+      "pull_request": {
+        "number": 2,
+        "state": "open",
+        "write_actions": false
+      },
+      "project": {
+        "id": "elemiso-pr2v3-gate",
+        "status": "completed"
+      },
+      "risk": {
+        "level": "high",
+        "category": "CWE-22",
+        "human_gate": "approved"
+      },
+      "agents_count": 5,
+      "tasks_completed": "3/3",
+      "human_gate_passed": true,
+      "phase": "completed",
+      "mode": "replay",
+      "events": 17,
+      "updated_at": "2026-09-19T00:53:17.621Z"
+    },
+    {
+      "case_id": "pr3-high-risk-human-reject",
+      "title": "PR #3 — CWE-78 命令注入（未认证 RCE）· 人工拒绝后安全阻塞（v3 埋点 + RAG 追踪版）",
+      "positioning": "严重风险被人工拒绝后，系统不绕过人工门继续修复：Fixer/Verifier 保持锁定，项目阻塞，PR 保持 OPEN。",
+      "repository": "nghqqa/fastapi-boilerplate-demo",
+      "pull_request": {
+        "number": 3,
+        "state": "open",
+        "write_actions": false
+      },
+      "project": {
+        "id": "elemiso-pr3v3-reject",
+        "status": "blocked"
+      },
+      "risk": {
+        "level": "high",
+        "category": "CWE-78",
+        "human_gate": "rejected"
+      },
+      "agents_count": 5,
+      "tasks_completed": "1/3",
+      "human_gate_passed": false,
+      "phase": "blocked",
+      "mode": "replay",
+      "events": 9,
+      "updated_at": "2026-09-19T00:53:17.621Z"
+    }
+  ]
+}

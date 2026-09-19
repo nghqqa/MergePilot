@@ -1,0 +1,550 @@
+{
+  "case_id": "rag-retrieval-loop",
+  "portfolio_role": "附录 · 观测→评估→优化→回测闭环",
+  "shape": "guided",
+  "name": "RAG 检索闭环 · 观测→评估→数据集→优化→回测",
+  "short_name": "闭环能力 · RAG 检索优化",
+  "one_liner": "真实离线实验：span 审计定界样本 → 18 族 54 查询按族切分 → 基线+9 条 badcase 归因 → 12 候选网格调优 → held-out 只评一次，MRR 0.861→0.958 判定 PROMOTE。",
+  "repo": "mergepilot/demo-platform（rag-data 合成语料）",
+  "pr": "本地离线实验 · 无外部 PR（合成语料）",
+  "pr_url": null,
+  "run_id": "rag-loop-20260914",
+  "sha": "aa05c3d894e6485727d2bda1de3025e6b7be0b2c9e627ef48c95186ea27adb01",
+  "sha_kind": "语料 corpus sha256",
+  "evidence_level": [
+    "REAL_OFFLINE_EXPERIMENT",
+    "SYNTHETIC"
+  ],
+  "replay_note": "REAL_OFFLINE_EXPERIMENT —— 本页面回放 2026-09-14 离线实验证据；语料为 SYNTHETIC/REDACTED 演示文档",
+  "purpose": "闭环能力证明：观测→评估→数据集→优化→留出回测的完整方法链与防过拟合纪律",
+  "risk_tags": [
+    "检索质量",
+    "防泄漏切分",
+    "held-out 回测",
+    "PROMOTE"
+  ],
+  "status": {
+    "verdict": "PROMOTE",
+    "label": "held-out MRR 0.861→0.958 · 晋级规则满足"
+  },
+  "facts": {
+    "real_github_pr": {
+      "value": "否 —— 本地离线实验",
+      "ok": false,
+      "note": ""
+    },
+    "real_agentteams_run": {
+      "value": "否 —— 真实检索器实验，但非 AgentTeams 运行",
+      "ok": false,
+      "note": ""
+    },
+    "github_write": {
+      "value": "未写入 —— NOT_EXECUTED",
+      "ok": false,
+      "note": ""
+    }
+  },
+  "banner": null,
+  "stage_timeline": null,
+  "chain": [
+    "观测 604 span→12 独立查询",
+    "54 查询按族切分 30/24",
+    "基线 MRR 0.793",
+    "12 网格选中 bigram-idf-4096",
+    "held-out MRR 0.958 · PROMOTE"
+  ],
+  "generated_at": "2026-09-14T13:39:41.983Z",
+  "source_dir": "evidence/FINALS-RAG-LOOP-20260914（SHA256SUMS 锁定；timings 因非确定性排除）",
+  "honesty": {
+    "real": [
+      "真实离线实验（2026-09-14）：真实 span 审计、真实检索器执行、真实指标计算；查询集在任何测量前固定，held-out 只评估一次"
+    ],
+    "controlled": [
+      "语料为 SYNTHETIC/REDACTED 演示文档（8 文档/9 chunk）；标注由团队编写"
+    ],
+    "not_executed": [
+      "不外推企业语料；本实验优化检索策略，不改变数据模式声明"
+    ]
+  },
+  "steps": [
+    {
+      "id": "observe",
+      "title": "① 观测：span 审计定界样本",
+      "role": "AgentLoop 追踪",
+      "time": "604 行 span",
+      "headline": "先定界再评估——127 行 retrieve 只对应 12 个 query_hash，演示流量≠独立样本",
+      "points": [
+        {
+          "k": "审计记录",
+          "v": "604 行 span（rag.retrieve 127 / rag.answer 26 / database.* 451）"
+        },
+        {
+          "k": "关键发现",
+          "v": "127 行 retrieve 只对应 12 个不同 query_hash —— 演示流量≠独立样本"
+        },
+        {
+          "k": "结论",
+          "v": "评估样本必须单独标注；日志只存 query_hash（隐私边界）"
+        }
+      ],
+      "evidence": [
+        "ev-rag-observation"
+      ],
+      "probe": null,
+      "detail": {
+        "title": "观测来源",
+        "quote": "span 日志=生产检索器的真实审计记录；本步骤避免\"拿演示日志当评测集\"的常见错误。",
+        "outbox": [],
+        "events": []
+      }
+    },
+    {
+      "id": "dataset",
+      "title": "② 数据集：18 语义族 · 54 查询 · 按族切分",
+      "role": "数据集构建",
+      "time": "v1 版本化",
+      "headline": "查询集在任何基线测量前固定——按族切分防泄漏，Jaccard 0.2581 < 阈值 0.5",
+      "points": [
+        {
+          "k": "版本化查询集",
+          "v": "rag-loop-queries.v1（任何基线测量之前固定）"
+        },
+        {
+          "k": "切分",
+          "v": "调优 10 族/30 条 · held-out 8 族/24 条 —— 按族切分，从不按条",
+          "mono": true
+        },
+        {
+          "k": "泄漏检查",
+          "v": "最大词元 Jaccard 0.2581（阈值 0.5）· 近似改写对 0",
+          "mono": true
+        }
+      ],
+      "evidence": [
+        "ev-rag-dataset"
+      ],
+      "probe": null,
+      "detail": {
+        "title": "切分规则原文",
+        "quote": "Split is by family, never by query: every family listed in heldout_families is held-out in full, every other family is tuning. Held-out results may be computed exactly once per promoted strategy; strategy selection uses tuning families only.",
+        "outbox": [],
+        "events": []
+      }
+    },
+    {
+      "id": "baseline",
+      "title": "③ 基线评估 + badcase 归因",
+      "role": "基线评估",
+      "time": "v1-unigram-hash256",
+      "headline": "不只看指标——9 条未命中逐条归因，把「没命中」变成可优化的方向",
+      "points": [
+        {
+          "k": "基线策略",
+          "v": "v1-unigram-hash256（生产策略）"
+        },
+        {
+          "k": "调优集",
+          "v": "hit@1 70.0% · MRR 0.7928"
+        },
+        {
+          "k": "held-out",
+          "v": "hit@1 75.0% · MRR 0.8611"
+        },
+        {
+          "k": "badcase",
+          "v": "9 条未命中逐条归因（期望名次/分差/与命中块词元重叠）"
+        }
+      ],
+      "evidence": [
+        "ev-rag-baseline"
+      ],
+      "probe": null,
+      "detail": {
+        "title": "方法说明",
+        "quote": "只看指标会掩盖语义错误；badcase 逐条归因才能把\"未命中原因\"变成优化方向。",
+        "outbox": [],
+        "events": []
+      }
+    },
+    {
+      "id": "tuning",
+      "title": "④ 优化：12 候选网格（仅调优集）",
+      "role": "策略优化",
+      "time": "12 候选",
+      "headline": "网格搜索只许看调优集——选择规则（MRR→hit@1→hit@3→小维度）回测前声明",
+      "points": [
+        {
+          "k": "网格维度",
+          "v": "CJK 二元组 × IDF × 哈希维度（256/1024/4096）"
+        },
+        {
+          "k": "选择规则",
+          "v": "MRR → hit@1 → hit@3 → 更小维度（回测前声明）",
+          "mono": true
+        },
+        {
+          "k": "选中",
+          "v": "cand-bigram-idf-hash4096 —— 调优集 MRR 0.7928 → 0.8594，chunk-hit@1 50% → 83.3%"
+        }
+      ],
+      "evidence": [
+        "ev-rag-tuning"
+      ],
+      "probe": null,
+      "detail": {
+        "title": "防过拟合纪律",
+        "quote": "策略选择只允许看调优集；held-out 在晋级判定前从未参与任何选择。",
+        "outbox": [],
+        "events": []
+      }
+    },
+    {
+      "id": "backtest",
+      "title": "⑤ held-out 回测 + 晋级判定",
+      "role": "回测判定",
+      "time": "只评一次",
+      "headline": "held-out 全程未参与选择——MRR 0.861→0.958 满足回测前声明的晋级规则",
+      "points": [
+        {
+          "k": "回测结果",
+          "v": "MRR 0.8611 → 0.9583 · hit@1 75.0% → 91.7%",
+          "mono": true
+        },
+        {
+          "k": "逐条变化",
+          "v": "改善 5 · 退化 1（F17-q1 名次 1→2）· 不变 18"
+        },
+        {
+          "k": "晋级",
+          "v": "PROMOTE（规则回测前声明，held-out 只评估一次）"
+        },
+        {
+          "k": "诚实边界",
+          "v": "合成语料小样本：单条查询名次变化即影响 4.2% hit@1；结论不外推企业语料"
+        }
+      ],
+      "evidence": [
+        "ev-rag-backtest"
+      ],
+      "exhibit": {
+        "type": "delta",
+        "label": "held-out 黄金集（n=24 · 全程未参与选择 · 只评估一次）",
+        "metrics": [
+          {
+            "name": "MRR",
+            "from": "0.8611",
+            "to": "0.9583"
+          },
+          {
+            "name": "hit@1",
+            "from": "75.0%",
+            "to": "91.7%"
+          },
+          {
+            "name": "hit@3",
+            "from": "100.0%",
+            "to": "100.0%"
+          }
+        ],
+        "verdict": "PROMOTE",
+        "sub": "满足回测前声明的晋级规则（MRR → hit@1 → hit@3 → 更小维度）"
+      },
+      "decision": {
+        "verified": {
+          "verdict": "PROMOTE",
+          "text": "held-out MRR 0.8611→0.9583 且 hit@1 0.75→0.9167 —— 满足回测前声明的晋级规则"
+        },
+        "human_approval": {
+          "needed": false,
+          "text": "无需人工门 —— 离线检索策略实验；数据模式（SYNTHETIC/REDACTED）声明不变",
+          "level": "REAL_OFFLINE_EXPERIMENT"
+        },
+        "merge_allowed": {
+          "allowed": true,
+          "text": "策略已晋级为新的生产检索配置（rag.mjs 可按选中参数加载）"
+        },
+        "github_write": {
+          "done": false,
+          "text": "未写入 GitHub —— 纯本地实验",
+          "level": "NOT_EXECUTED"
+        },
+        "execution_nature": {
+          "text": "真实离线实验（合成语料）：真实 span 审计 + 真实检索器 + 真实指标；非 AgentTeams 运行",
+          "level": "REAL_OFFLINE_EXPERIMENT"
+        },
+        "pr_open": false
+      },
+      "detail": {
+        "title": "复现",
+        "quote": "node demo-platform/backend/experiments/rag-loop/rag_eval_loop.mjs --out <dir>（报告 JSON sha256 见目录 SHA256SUMS；timings 非确定性故排除在 SUMS 外）",
+        "outbox": [],
+        "events": []
+      }
+    }
+  ],
+  "evidence_index": [
+    {
+      "id": "ev-rag-observation",
+      "title": "① 观测核验 tool-spans.jsonl（真实审计记录）",
+      "level": "REAL_OFFLINE_EXPERIMENT"
+    },
+    {
+      "id": "ev-rag-dataset",
+      "title": "② 标注数据集与按族切分（防泄漏）",
+      "level": "REAL_OFFLINE_EXPERIMENT"
+    },
+    {
+      "id": "ev-rag-baseline",
+      "title": "③ 基线 v1-unigram-hash256 + badcase 归因",
+      "level": "REAL_OFFLINE_EXPERIMENT"
+    },
+    {
+      "id": "ev-rag-tuning",
+      "title": "④ 策略优化（12 候选网格，只用调优集）",
+      "level": "REAL_OFFLINE_EXPERIMENT"
+    },
+    {
+      "id": "ev-rag-backtest",
+      "title": "⑤ held-out 回测（只评估一次）+ 晋级判定",
+      "level": "REAL_OFFLINE_EXPERIMENT"
+    }
+  ],
+  "items": [
+    {
+      "id": "ev-rag-observation",
+      "title": "① 观测核验 tool-spans.jsonl（真实审计记录）",
+      "level": "REAL_OFFLINE_EXPERIMENT",
+      "fields": [
+        [
+          "span 总行数",
+          "604 行（rag.retrieve 127 / rag.answer 26）"
+        ],
+        [
+          "关键结论",
+          "retrieve 127 行只对应 12 个不同 query_hash —— 行数是重复演示的审计记录，不是独立样本"
+        ],
+        [
+          "隐私边界",
+          "日志只存 query_hash，无法反推查询文本"
+        ],
+        [
+          "延迟",
+          "retrieve p50=0ms · p95=1ms"
+        ]
+      ],
+      "blocks": [
+        {
+          "title": "FINALS-RAG-LOOP-20260914/report.md（§1 观测核验）",
+          "lang": "markdown",
+          "text": "# RAG 观测→评估→数据集→优化→回测 闭环报告\n\n语料：demo-platform/backend/rag-data/dataset.json (8 documents, 9 chunks, SYNTHETIC/REDACTED demo docs)（**SYNTHETIC/REDACTED**，合成演示文档，非企业语料）。策略版本基线 `v1-unigram-hash256`。\n\n## 1. 观测核验（真实审计记录）\n\n- 审计日志 `demo-platform/backend/rag-data/tool-spans.jsonl`：共 604 行 span，其中 rag.retrieve **127 行**，但只对应 **12 个不同 query_hash**；rag.answer 26 行 / 3 个不同 hash。\n- retrieve 结果状态：{\"OK\":127}；延迟 p50=0ms p95=1ms。\n- 结论：span 行数是重复演示的审计记录，**不是独立样本**；日志只存 query_hash，无法反推查询文本，因此评估样本必须单独标注（见 §2）。\n\n## 2. 标注数据集与切分\n\n- 查询集 `demo-platform/backend/experiments/rag-loop/queries.v1.json`（版本 rag-loop-queries.v1）：18 个语义族（意图），54 条查询；**按族切分**：调优 10 族 / 30 条，held-out 8 族 / 24 条。\n- 泄漏检查（held-out 每条查询与全部调优查询的最大词元 Jaccard）：max=0.2581，mean=0.1571，超过 0.5 的近似改写对：0 对。\n- 指标：文档级 hit@1 / hit@3 / MRR；多 chunk 文档另计 chunk-hit@1（仅 9 条带 chunk 标签）。\n\n## 3. 基线（生产策略 v1）\n\n| 集合 | n | hit@1 | hit@3 | MRR | chunk-hit@1 |\n|---|---|---|---|---|---|\n| 调优集 | 30 | 70.0% | 90.0% | 0.7928 | 50.0% (n=6) |\n| held-out | 24 | 75.0% | 100.0% | 0.8611 | 66.7% (n=3) |\n\n### 3.1 调优集 badcase（基线未命中 top-1 的 9 条）\n\n| query | 期望文档 | 实际 top-1 chunk | 期望文档名次 | 分差 | 与命中块重叠词元 | 与期望块重叠词元 |\n|---|---|---|---|---|---|---|\n| F01-q2 审查流程里每个 Agent 的职责怎么划分 | doc-mergepilot-review-policy | doc-case-pr3-summary#c0 | 3 | 0.036 | 2 | 8 |\n| F04-q1 什么风险级别会触发人工闸门 | doc-human-gate-policy | doc-mergepilot-review-policy#c0 | 6 | 0.056 | 16 | 7 |\n| F06-q1 PR #1 用的是哪个仓库 | doc-case-pr1-summary | doc-polardb-branch-plan#c0 | 3 | 0.0019 | 6 | 4 |\n| F06-q3 fastapi-boilerplate-demo 这个案例的结果如何 | doc-case-pr1-summary | doc-case-pr2-summary#c0 | 3 | 0.0397 | 6 | 7 |\n| F10-q3 会话 N2KQqHVSBsSZc9utWsEeZ5f 对应的是哪条 Trace | doc-agentloop-observability | doc-polardb-branch-plan#c0 | 3 | 0.0017 | 4 | 7 |\n| F12-q1 AgentLoop 可见性确认的裁决词是什么 | doc-agentloop-observability | doc-case-pr2-summary#c0 | 5 | 0.1383 | 4 | 3 |\n| F12-q2 操作员确认 Trace 可见的判定词叫什么 | doc-agentloop-observability | doc-case-pr2-summary#c0 | 4 | 0.1051 | 5 | 2 |\n| F13-q3 RAG 会记录用户问了什么问题吗 | doc-rag-usage-policy | doc-mergepilot-review-policy#c0 | 3 | 0.0119 | 7 | 7 |\n| F15-q2 为什么 PolarDB 的状态是 NOT CONNECTED | doc-polardb-branch-plan | doc-case-pr1-summary#c0 | 2 | 0.0133 | 9 | 11 |\n\n## 4. 策略优化（只看调优集）\n\n候选网格 12 个（CJK 二元组 × IDF × 哈希维度），选择规则：MRR → hit@1 → hit@3 → 更小维度。\n\n| 策略 | hit@1 | hit@3 | MRR | chunk-hit@1 |\n|---|---|---|---|---|\n| cand-unigram-tf-hash256 | 70.0% | 90.0% | 0.7928 | 50.0% |\n| cand-unigram-tf-hash1024 | 76.7% | 90.0% | 0.8383 | 83.3% |\n| cand-unigram-tf-hash4096 | 73.3% | 93.3% | 0.8344 | 83.3% |\n| cand-unigram-idf-hash256 | 70.0% | 90.0% | 0.8048 | 50.0% |\n| cand-unigram-idf-hash1024 | 76.7% | 90.0% | 0.8456 | 83.3% |\n| cand-unigram-idf-hash4096 | 76.7% | 93.3% | 0.8539 | 83.3% |\n| cand-bigram-tf-hash256 | 56.7% | 76.7% | 0.7086 | 66.7% |\n| cand-bigram-tf-hash1024 | 80.0% | 80.0% | 0.8428 | 83.3% |\n| cand-bigram-tf-hash4096 | 73.3% | 90.0% | 0.84 | 83.3% |\n| cand-bigram-idf-hash256 | 50.0% | 70.0% | 0.655 | 50.0% |\n| cand-bigram-idf-hash1024 | 66.7% | 83.3% | 0.7714 | 83.3% |\n| cand-bigram-idf-hash4096 **←选中** | 76.7% | 93.3% | 0.8594 | 83.3% |\n\n耗时（非确定性，见 timings.json）：基线 held-out 每查询 0.006ms / 建索引 0.35ms；选中策略 held-out 每查询 0.052ms / 建索引 0.57ms（本次运行，2026-09-14）\n\n## 5. held-out 回测（选中策略只评估一次）\n\n| 集合 | 策略 | hit@1 | hit@3 | MRR | chunk-hit@1 |\n|---|---|---|---|---|---|\n| held-out | 基线 v1-unigram-hash256 | 75.0% | 100.0% | 0.8611 | 66.7% |\n| held-out | 选中 cand-bigram-idf-hash4096 | 91.7% | 100.0% | 0.9583 | 66.7% |\n\n- 逐条变化：改善 5 条，**退化 1 条**，不变 18 条。\n- 退化案例：\n  - F17-q1（F17）文档名次 1 → 2\n- 晋级规则（回测前声明）：`heldout.mrr > baseline.heldout.mrr && heldout.hit_at_1 >= baseline.heldout.hit_at_1` → **PROMOTE**。held-out MRR 0.8611 → 0.9583，hit@1 0.75 → 0.9167；满足规则。\n\n## 6. 限制与诚实声明\n\n- 样本规模小：语料 8 篇 / 9 chunk，held-out 24 条查询；单条查询名次变化即影响 4.2% 的 hit@1。结论是“该策略在此合成语料上更优”，不外推到企业语料。\n- 标注由团队编写，存在标注者偏差；查询集在测量任何基线前固定，held-out 只评估一次，未针对 held-out 调参。\n- 语料 SYNTHETIC/REDACTED 边界不变；本实验优化的是检索策略，不改变数据模式声明。\n\n## 7. 复现\n\n```bash\nnode demo-platform/backend/experiments/rag-loop/rag_eval_loop.mjs --out <dir>\n```\n报告 JSON 的 sha256 见同目录 SHA256SUMS；运行环境见 run-meta.json。\n"
+        }
+      ],
+      "source_ref": "finalsRagLoop/report.md",
+      "hash": {
+        "file": "report.md",
+        "dir": "FINALS-RAG-LOOP-20260914",
+        "exists": true,
+        "hash_verified": true,
+        "sha256": "e9b6a35c7cb9852aa1e7d3748e179ec57a39e573535284a31c6ae6bb26433d88"
+      },
+      "real": [
+        "真实离线实验（2026-09-14）：真实 span 审计、真实检索器执行、真实指标计算；查询集在任何测量前固定，held-out 只评估一次"
+      ],
+      "controlled": [
+        "语料为 SYNTHETIC/REDACTED 演示文档（8 文档/9 chunk）；标注由团队编写"
+      ],
+      "not_executed": [
+        "不外推企业语料；本实验优化检索策略，不改变数据模式声明"
+      ]
+    },
+    {
+      "id": "ev-rag-dataset",
+      "title": "② 标注数据集与按族切分（防泄漏）",
+      "level": "REAL_OFFLINE_EXPERIMENT",
+      "fields": [
+        [
+          "查询集",
+          "queries.v1 · 18 个语义族 / 54 条查询（版本 rag-loop-queries.v1）"
+        ],
+        [
+          "切分",
+          "按族切分（从不按条）：调优 10 族/30 条 · held-out 8 族/24 条"
+        ],
+        [
+          "泄漏检查",
+          "held-out 与调优查询的最大词元 Jaccard max=0.2581（阈值 0.5），近似改写对 0 对"
+        ],
+        [
+          "指标",
+          "文档级 hit@1 / hit@3 / MRR；多 chunk 文档另计 chunk-hit@1"
+        ]
+      ],
+      "blocks": [
+        {
+          "title": "FINALS-RAG-LOOP-20260914/queries.v1.json（前 2000 字）",
+          "lang": "json",
+          "text": "{\n  \"dataset_version\": \"rag-loop-queries.v1\",\n  \"data_mode\": \"SYNTHETIC\",\n  \"corpus\": \"demo-platform/backend/rag-data/dataset.json (8 documents, 9 chunks, SYNTHETIC/REDACTED demo docs)\",\n  \"labeling\": \"Authored 2026-09-14 by the MergePilot team against the synthetic corpus BEFORE any baseline was measured. One family = one user intent; all paraphrases of an intent stay inside the same family. Labels are the document (and, where the document has more than one chunk, the chunk) a correct retrieval must rank first.\",\n  \"split_rule\": \"Split is by family, never by query: every family listed in heldout_families is held-out in full, every other family is tuning. Held-out results may be computed exactly once per promoted strategy; strategy selection uses tuning families only.\",\n  \"heldout_families\": [\"F03\", \"F05\", \"F07\", \"F09\", \"F11\", \"F14\", \"F16\", \"F17\"],\n  \"families\": [\n    {\n      \"family_id\": \"F01\",\n      \"intent\": \"三级审查中三个 Agent 角色的职责分工\",\n      \"expected_document_id\": \"doc-mergepilot-review-policy\",\n      \"expected_chunk_id\": null,\n      \"queries\": [\n        \"Reviewer、Fixer、Verifier 三个角色分别负责什么\",\n        \"审查流程里每个 Agent 的职责怎么划分\",\n        \"谁负责发现问题、谁负责修复、谁负责复核修复效果\"\n      ]\n    },\n    {\n      \"family_id\": \"F02\",\n      \"intent\": \"平台是否执行 push / merge / 改变 PR 状态\",\n      \"expected_document_id\": \"doc-mergepilot-review-policy\",\n      \"expected_chunk_id\": null,\n      \"queries\": [\n        \"平台会不会执行 push 或 merge\",\n        \"任务过程中 PR 的状态会被系统改变吗\",\n        \"Agent 会推送代码或者合并 PR 吗\"\n      ]\n    },\n    {\n      \"family_id\": \"F03\",\n      \"intent\": \"任务结果的权威来源（MinIO result.md / meta.json，leader 终检）\",\n      \"expected_document_id\": \"doc-mergepilot-review-policy\",\n      \"expected_chunk_id\": null,\n      \"queries\": [\n        \"任务结果以什么文件为准\",\n        \"leader 做终检时 check_task 看的是什么\",\n        \"result.md 和 meta.json 存放在哪里\"\n      ]\n    },\n    {\n      \"family_id\": \"F04\",\n      \"intent\": \"人工闸门的触发条件与 Fixer 是否启动\",\n      \"expected_document_id\": \"doc-human-gate-policy\",\n      \"expected_chunk_id\": null,\n      \"queri\n…"
+        }
+      ],
+      "source_ref": "finalsRagLoop/queries.v1.json",
+      "hash": {
+        "file": "queries.v1.json",
+        "dir": "FINALS-RAG-LOOP-20260914",
+        "exists": true,
+        "hash_verified": true,
+        "sha256": "1122fa11239b2836c76352b0dfe2aa191c82c025201331906b5c40b977a5adfc"
+      },
+      "real": [
+        "真实离线实验（2026-09-14）：真实 span 审计、真实检索器执行、真实指标计算；查询集在任何测量前固定，held-out 只评估一次"
+      ],
+      "controlled": [
+        "语料为 SYNTHETIC/REDACTED 演示文档（8 文档/9 chunk）；标注由团队编写"
+      ],
+      "not_executed": [
+        "不外推企业语料；本实验优化检索策略，不改变数据模式声明"
+      ]
+    },
+    {
+      "id": "ev-rag-baseline",
+      "title": "③ 基线 v1-unigram-hash256 + badcase 归因",
+      "level": "REAL_OFFLINE_EXPERIMENT",
+      "fields": [
+        [
+          "调优集 (n=30)",
+          "hit@1=70.0% · hit@3=90.0% · MRR=0.7928 · chunk-hit@1=50.0%"
+        ],
+        [
+          "held-out (n=24)",
+          "hit@1=75.0% · hit@3=100.0% · MRR=0.8611"
+        ],
+        [
+          "badcase",
+          "基线未命中 top-1 的 9 条全部逐条归因（期望文档名次/分差/词元重叠）"
+        ]
+      ],
+      "blocks": [
+        {
+          "title": "调优集 9 条 badcase（逐条）",
+          "lang": "text",
+          "text": "F01-q2  期望 doc-mergepilot-review-policy → 实际 top1 doc-case-pr3-summary#c0（名次 3）\nF04-q1  期望 doc-human-gate-policy → 实际 top1 doc-mergepilot-review-policy#c0（名次 6）\nF06-q1  期望 doc-case-pr1-summary → 实际 top1 doc-polardb-branch-plan#c0（名次 3）\nF06-q3  期望 doc-case-pr1-summary → 实际 top1 doc-case-pr2-summary#c0（名次 3）\nF10-q3  期望 doc-agentloop-observability → 实际 top1 doc-polardb-branch-plan#c0（名次 3）\nF12-q1  期望 doc-agentloop-observability → 实际 top1 doc-case-pr2-summary#c0（名次 5）\nF12-q2  期望 doc-agentloop-observability → 实际 top1 doc-case-pr2-summary#c0（名次 4）\nF13-q3  期望 doc-rag-usage-policy → 实际 top1 doc-mergepilot-review-policy#c0（名次 3）\nF15-q2  期望 doc-polardb-branch-plan → 实际 top1 doc-case-pr1-summary#c0（名次 2）"
+        }
+      ],
+      "source_ref": "finalsRagLoop/report.json#badcases",
+      "hash": {
+        "file": "report.json",
+        "dir": "FINALS-RAG-LOOP-20260914",
+        "exists": true,
+        "hash_verified": true,
+        "sha256": "7f84fad68eb7b56bd31ea8d3d0309075e5729d3d38e49dbd241042b2e6b1f666"
+      },
+      "real": [
+        "真实离线实验（2026-09-14）：真实 span 审计、真实检索器执行、真实指标计算；查询集在任何测量前固定，held-out 只评估一次"
+      ],
+      "controlled": [
+        "语料为 SYNTHETIC/REDACTED 演示文档（8 文档/9 chunk）；标注由团队编写"
+      ],
+      "not_executed": [
+        "不外推企业语料；本实验优化检索策略，不改变数据模式声明"
+      ]
+    },
+    {
+      "id": "ev-rag-tuning",
+      "title": "④ 策略优化（12 候选网格，只用调优集）",
+      "level": "REAL_OFFLINE_EXPERIMENT",
+      "fields": [
+        [
+          "网格",
+          "CJK 二元组 × IDF × 哈希维度，共 12 个候选策略"
+        ],
+        [
+          "选择规则（回测前声明）",
+          "MRR desc, hit@1 desc, hit@3 desc, smaller dim, fewer features"
+        ],
+        [
+          "选中",
+          "cand-bigram-idf-hash4096（dim=4096 · cjk_bigram=true · idf=true）调优集 MRR 0.7928 → 0.8594"
+        ]
+      ],
+      "blocks": [
+        {
+          "title": "12 候选 · 调优集指标全表",
+          "lang": "text",
+          "text": "cand-unigram-tf-hash256  hit@1=70.0%  hit@3=90.0%  MRR=0.7928  chunk-hit@1=50.0%\ncand-unigram-tf-hash1024  hit@1=76.7%  hit@3=90.0%  MRR=0.8383  chunk-hit@1=83.3%\ncand-unigram-tf-hash4096  hit@1=73.3%  hit@3=93.3%  MRR=0.8344  chunk-hit@1=83.3%\ncand-unigram-idf-hash256  hit@1=70.0%  hit@3=90.0%  MRR=0.8048  chunk-hit@1=50.0%\ncand-unigram-idf-hash1024  hit@1=76.7%  hit@3=90.0%  MRR=0.8456  chunk-hit@1=83.3%\ncand-unigram-idf-hash4096  hit@1=76.7%  hit@3=93.3%  MRR=0.8539  chunk-hit@1=83.3%\ncand-bigram-tf-hash256  hit@1=56.7%  hit@3=76.7%  MRR=0.7086  chunk-hit@1=66.7%\ncand-bigram-tf-hash1024  hit@1=80.0%  hit@3=80.0%  MRR=0.8428  chunk-hit@1=83.3%\ncand-bigram-tf-hash4096  hit@1=73.3%  hit@3=90.0%  MRR=0.8400  chunk-hit@1=83.3%\ncand-bigram-idf-hash256  hit@1=50.0%  hit@3=70.0%  MRR=0.6550  chunk-hit@1=50.0%\ncand-bigram-idf-hash1024  hit@1=66.7%  hit@3=83.3%  MRR=0.7714  chunk-hit@1=83.3%\ncand-bigram-idf-hash4096  hit@1=76.7%  hit@3=93.3%  MRR=0.8594  chunk-hit@1=83.3%   ← 选中"
+        },
+        {
+          "title": "FINALS-RAG-LOOP-20260914/timings.json",
+          "lang": "json",
+          "text": "{\n  \"note\": \"wall-clock, non-deterministic, excluded from SHA256SUMS\",\n  \"runs\": [\n    {\n      \"label\": \"baseline/tuning\",\n      \"strategy_id\": \"v1-unigram-hash256\",\n      \"n_queries\": 30,\n      \"index_build_ms\": 0.25,\n      \"eval_ms_total\": 0.86,\n      \"eval_ms_per_query\": 0.029\n    },\n    {\n      \"label\": \"baseline/heldout\",\n      \"strategy_id\": \"v1-unigram-hash256\",\n      \"n_queries\": 24,\n      \"index_build_ms\": 0.35,\n      \"eval_ms_total\": 0.15,\n      \"eval_ms_per_query\": 0.006\n    },\n    {\n      \"label\": \"grid/tuning\",\n      \"strategy_id\": \"cand-unigram-tf-hash256\",\n      \"n_queries\": 30,\n      \"index_build_ms\": 0.49,\n      \"eval_ms_total\": 0.69,\n      \"eval_ms_per_query\": 0.023\n    },\n    {\n      \"label\": \"grid/tuning\",\n      \"strategy_id\": \"cand-unigram-tf-hash1024\",\n      \"n_queries\": 30,\n      \"index_build_ms\": 0.23,\n      \"eval_ms_total\": 0.42,\n      \"eval_ms_per_query\": 0.014\n    },\n    {\n      \"label\": \"grid/tuning\",\n      \"strategy_id\": \"cand-unigram-tf-hash4096\",\n      \"n_queries\": 30,\n      \"index_build_ms\": 0.3,\n      \"eval_ms_total\": 1.57,\n      \"eval_ms_per_query\": 0.052\n    },\n    {\n      \"label\": \"grid/tuning\",\n      \"strategy_id\": \"cand-unigram-idf-hash256\",\n      \"n_queries\": 30,\n      \"index_build_ms\": 0.48,\n      \"eval_ms_total\": 0.81,\n      \"eval_ms_per_query\": 0.027\n    },\n    {\n      \"label\": \"grid/tuning\",\n      \"strategy_id\": \"cand-unigram-idf-hash1024\",\n      \"n_queries\": 30,\n      \"index_build_ms\": 1.19,\n      \"eval_ms_total\": 0.58,\n      \"eval_ms_per_query\": 0.019\n    },\n    {\n      \"label\": \"grid/tuning\",\n      \"strategy_id\": \"cand-unigram-idf-hash4096\",\n      \"n_queries\": 30,\n      \"index_build_ms\": 0.44,\n      \"eval_ms_total\": 1.55,\n      \"eval_ms_per_query\": 0.052\n    },\n    {\n      \"label\": \"grid/tuning\",\n      \"strategy_id\": \"cand-bigram-tf-hash256\",\n      \"n_queries\": 30,\n      \"index_build_ms\": 0.2,\n      \"eval_ms_total\": 0.19,\n      \"eval_ms_per_query\": 0.006\n    },\n    {\n      \"label\": \"grid/tuning\",\n      \"strategy_id\": \"cand-bigram-tf-hash1024\",\n      \"n_queries\": 30,\n      \"index_build_ms\": 0.19,\n      \"eval_ms_total\": 0.42,\n      \"eval_ms_per_query\": 0.014\n    },\n    {\n      \"label\": \"grid/tuning\",\n      \"strategy_id\": \"cand-bigram-tf-hash4096\",\n      \"n_queries\": 30,\n      \"index_build_ms\": 0.63,\n      \"eval_ms_total\": 1.73,\n      \"eval_ms_per_query\": 0.058\n    },\n    {\n      \"label\": \"grid/tuning\",\n      \"strategy_id\": \"cand-bigram-idf-hash256\",\n      \"n_queries\": 30,\n      \"index_build_ms\": 0.67,\n      \"eval_ms_total\": 0.75,\n      \"eval_ms_per_query\": 0.025\n    },\n    {\n      \"label\": \"grid/tuning\",\n      \"strategy_id\": \"cand-bigram-idf-hash1024\",\n      \"n_queries\": 30,\n      \"index_build_ms\": 0.63,\n      \"eval_ms_total\": 0.46,\n      \"eval_ms_per_query\": 0.015\n    },\n    {\n      \"label\": \"grid/tuning\",\n      \"strategy_id\": \"cand-bigram-idf-hash4096\",\n      \"n_queries\": 30,\n      \"index_build_ms\": 0.69,\n      \"eval_ms_total\": 1.7,\n      \"eval_ms_per_query\": 0.057\n    },\n    {\n      \"label\": \"selected/tuning\",\n      \"strategy_id\": \"cand-bigram-idf-hash4096\",\n      \"n_queries\": 30,\n      \"index_build_ms\": 0.69,\n      \"eval_ms_total\": 1.7,\n      \"eval_ms_per_query\": 0.057\n    },\n    {\n      \"label\": \"selected/heldout\",\n      \"strategy_id\": \"cand-bigram-idf-hash4096\",\n      \"n_queries\": 24,\n      \"index_build_ms\": 0.57,\n      \"eval_ms_total\": 1.24,\n      \"eval_ms_per_query\": 0.052\n    }\n  ]\n}"
+        }
+      ],
+      "source_ref": "finalsRagLoop/report.json#tuning",
+      "hash": {
+        "file": "report.json",
+        "dir": "FINALS-RAG-LOOP-20260914",
+        "exists": true,
+        "hash_verified": true,
+        "sha256": "7f84fad68eb7b56bd31ea8d3d0309075e5729d3d38e49dbd241042b2e6b1f666"
+      },
+      "real": [
+        "真实离线实验（2026-09-14）：真实 span 审计、真实检索器执行、真实指标计算；查询集在任何测量前固定，held-out 只评估一次"
+      ],
+      "controlled": [
+        "语料为 SYNTHETIC/REDACTED 演示文档（8 文档/9 chunk）；标注由团队编写"
+      ],
+      "not_executed": [
+        "不外推企业语料；本实验优化检索策略，不改变数据模式声明"
+      ]
+    },
+    {
+      "id": "ev-rag-backtest",
+      "title": "⑤ held-out 回测（只评估一次）+ 晋级判定",
+      "level": "REAL_OFFLINE_EXPERIMENT",
+      "fields": [
+        [
+          "基线 held-out",
+          "hit@1=75.0% · hit@3=100.0% · MRR=0.8611"
+        ],
+        [
+          "选中策略 held-out",
+          "hit@1=91.7% · hit@3=100.0% · MRR=0.9583"
+        ],
+        [
+          "逐条变化",
+          "改善 5 条 · 退化 1 条（F17-q1）· 不变 18 条"
+        ],
+        [
+          "晋级判定",
+          "PROMOTE —— 规则：heldout.mrr > baseline && heldout.hit@1 >= baseline（回测前声明）"
+        ],
+        [
+          "诚实边界",
+          "语料为 SYNTHETIC/REDACTED 演示文档；结论=该策略在此合成语料上更优，不外推企业语料"
+        ]
+      ],
+      "blocks": [
+        {
+          "title": "FINALS-RAG-LOOP-20260914/run-meta.json",
+          "lang": "json",
+          "text": "{\n  \"generated_at\": \"2026-09-14T13:39:41.983Z\",\n  \"node\": \"v24.11.0\",\n  \"platform\": \"win32-x64\",\n  \"git_head\": \"db5944a4d4555f4cf90cf0099c90f9a833584460\",\n  \"command\": \"node demo-platform/backend/experiments/rag-loop/rag_eval_loop.mjs\",\n  \"evidence_tier\": \"REAL_OFFLINE_EXPERIMENT on SYNTHETIC corpus\"\n}"
+        }
+      ],
+      "source_ref": "finalsRagLoop/report.json#backtest",
+      "hash": {
+        "file": "report.json",
+        "dir": "FINALS-RAG-LOOP-20260914",
+        "exists": true,
+        "hash_verified": true,
+        "sha256": "7f84fad68eb7b56bd31ea8d3d0309075e5729d3d38e49dbd241042b2e6b1f666"
+      },
+      "real": [
+        "真实离线实验（2026-09-14）：真实 span 审计、真实检索器执行、真实指标计算；查询集在任何测量前固定，held-out 只评估一次"
+      ],
+      "controlled": [
+        "语料为 SYNTHETIC/REDACTED 演示文档（8 文档/9 chunk）；标注由团队编写"
+      ],
+      "not_executed": [
+        "不外推企业语料；本实验优化检索策略，不改变数据模式声明"
+      ]
+    }
+  ]
+}

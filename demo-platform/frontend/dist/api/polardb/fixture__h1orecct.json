@@ -1,0 +1,24 @@
+{
+  "data_mode": "SIMULATED",
+  "polardb_connection": "NOT CONNECTED",
+  "fixture_table": "pr_cases",
+  "row_count": 2,
+  "rows": [
+    {
+      "pr": 2,
+      "case_id": "pr2-high-risk-human-gate",
+      "risk_level": "high",
+      "gate": "approved",
+      "final_status": "SUCCESS"
+    },
+    {
+      "pr": 3,
+      "case_id": "pr3-high-risk-human-reject",
+      "risk_level": "high",
+      "gate": "rejected",
+      "final_status": "REJECTED"
+    }
+  ],
+  "latency_ms": 0,
+  "disclosure": "PolarDB-compatible read-only fixture — DATA MODE: SIMULATED, POLARDB CONNECTION: NOT CONNECTED"
+}

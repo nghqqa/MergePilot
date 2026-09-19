@@ -1,0 +1,82 @@
+{
+  "drawer": "approval",
+  "data_mode": "historical replay",
+  "trace_mode": "evidence-replay",
+  "integrity_status": "verified",
+  "event_id": "pr2v3-ev-009",
+  "trace_id": null,
+  "project_id": "elemiso-pr2v3-gate",
+  "task_id": null,
+  "agent_role": "human",
+  "runtime": "human decision — 人工安全门（人工角色，非 Agent 行为）",
+  "event_type": "approval",
+  "source": "evidence",
+  "source_label": "Evidence Replay",
+  "source_ref": "finalsPr2V3Traced/project/human-gate-approval.md",
+  "source_hash": {
+    "ref": "finalsPr2V3Traced/project/human-gate-approval.md",
+    "dir": "FINALS-ELEM-PR2-V3-TRACED",
+    "dir_key": "finalsPr2V3Traced",
+    "file": "project/human-gate-approval.md",
+    "abs_path": "D:\\goai\\mergepilot-demo\\evidence\\FINALS-ELEM-PR2-V3-TRACED\\project\\human-gate-approval.md",
+    "exists": true,
+    "evidence_root_readonly": true,
+    "sha256_actual": "45c79517b6c0052b2300a3a41abd4b3aae0e7aecbd52c386572a41156934a652",
+    "sha256_expected": "45c79517b6c0052b2300a3a41abd4b3aae0e7aecbd52c386572a41156934a652",
+    "hash_verified": true,
+    "sums_source": "FINALS-ELEM-PR2-V3-TRACED/SHA256SUMS"
+  },
+  "timestamp": "2026-09-17T03:13:25Z (exact, DM $qnZ1ipJJKMiHF…；批准记录先于派发落盘 project/human-gate-approval.md，gate-approval-sent.json 记录 DM/团队房双事件号)",
+  "timestamp_precision": "approx",
+  "gate": {
+    "gate_id": "elemiso-pr2v3-gate:post-review",
+    "state": "approved",
+    "trigger": {
+      "by": "review-1",
+      "signals": [
+        "FINDING_CONFIRMED",
+        "SEVERITY: HIGH",
+        "HUMAN_VERIFICATION_REQUIRED: YES"
+      ],
+      "triggered_at": "2026-09-17T03:12:50Z (exact, Leader 停门报告 $ldtKhd3V6l-td…)"
+    },
+    "approved_at": "2026-09-17T03:13:25Z (exact, DM $qnZ1ipJJKMiHF…；批准记录先于派发落盘 project/human-gate-approval.md，gate-approval-sent.json 记录 DM/团队房双事件号)",
+    "approver": "operator (runtime owner) — 运行前书面授权\"门按先例默认执行\"（PR #2=批准），由系统按授权自动投递；授权范围不含任何 GitHub 写操作",
+    "record_path": "shared/projects/elemiso-pr2v3-gate/human-gate-approval.md（快照：finalsPr2V3Traced/project/human-gate-approval.md）",
+    "scope": [
+      "确认 HIGH/CWE-22 结论",
+      "授权 Leader 派发 pr2v3-fix-1（最小修复 + 测试冻结）",
+      "授权 fix-1 验收后派发 pr2v3-verify-1（独立验证）",
+      "FAIL 时 pr2v3-fix-2 重派一次；失败即停止"
+    ],
+    "prohibitions": [
+      "merge",
+      "push",
+      "close",
+      "reopen"
+    ],
+    "unblocks": [
+      "fix-1",
+      "verify-1 (fix-1 完成后)"
+    ],
+    "approval_text_source": "finalsPr2V3Traced/project/human-gate-approval.md"
+  },
+  "approval_text": "# Human Security Gate APPROVAL — run-elem-pr2v3-20260917-01\n\n- Project: elemiso-pr2v3-gate (team elemiso-team)\n- Task reviewed: pr2v3-review-1 (Reviewer, copaw runtime, AgentLoop-traced)\n- Head SHA under review: 1dedf5e1992c950557064d8f4fb9039d1523deb3 (PR #2 nghqqa/fastapi-boilerplate-demo, branch demo/high-risk-human-gate)\n- Gate decision: **APPROVED — remediation authorized**\n- Decision time: 2026-09-17T03:13:25Z (host clock; operator present and responsive, decision made via interactive gate prompt)\n- Approver: repository/workspace owner (human operator)\n\n## Confirmed findings (Reviewer result, real execution — SPEC was non-prescriptive)\n\n- STATUS: FINDING_CONFIRMED; SEVERITY: HIGH; HUMAN_VERIFICATION_REQUIRED: YES\n- CWE-22 path traversal in demo_download (L41 os.path.join -> L42 FileResponse, no auth); real PoC: ../outside-secret.txt -> 200 leak; ../../../etc/hostname -> 200\n- RAG usage (manifest-invited, references only): cwe-22-path-traversal.md#1 + file-path-containment.md#1, consistent with the reviewer's own finding\n\n## Approval scope\n\n1. Leader delegates pr2v3-fix-1 (minimal fix; only Reviewer-flagged files; tests frozen; zero GitHub writes).\n2. After fix acceptance: Leader delegates pr2v3-verify-1 (independent clean-workspace verification).\n3. On verify VERDICT=FAIL: one re-delegation as pr2v3-fix-2; second FAIL -> stop, block, escalate.\n\n## Acceptance criterion (recorded before dispatch)\n\nAfter this approval, the team room MUST contain a NEW fix delegation event issued by the Leader (taskflow),\ndistinct from any earlier/voided event id. The Fixer must start work only after that event, with no operator\nexecution instructions in between. Every step is exported as OpenTelemetry spans to AgentLoop (SLS, direct).\n",
+  "rejection_text": null,
+  "decision_marker": "HUMAN_SECURITY_APPROVED_FIX",
+  "hash_verified": true,
+  "redaction_status": {
+    "redaction_layer": "applied (evidence-adapter/redact.mjs)",
+    "scan_hits": [],
+    "status": "CLEAN — redaction applied; PR#2 demo placeholders allow-listed",
+    "forbidden_fields_excluded": [
+      "Authorization",
+      "Cookie",
+      "API key",
+      "Matrix token",
+      "password",
+      "完整工具参数",
+      "完整 prompt/completion"
+    ]
+  }
+}

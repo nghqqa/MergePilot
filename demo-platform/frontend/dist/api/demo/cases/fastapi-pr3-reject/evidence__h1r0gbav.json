@@ -1,0 +1,165 @@
+{
+  "id": "ev-rej-live-run",
+  "title": "运行档案（用量、追踪与合规）",
+  "level": "REAL_EXECUTED_AGENTTEAMS_LIVE",
+  "postgate": true,
+  "fields": [
+    [
+      "墙钟/用量",
+      "kickoff 17:00:28Z → 门拒绝 17:02:34Z = 2 分 06 秒 · pr3 窗口 32 次调用 · 输入 2,392,229（缓存 2,376,704 ≈99%）· 输出 9,552"
+    ],
+    [
+      "追踪（会话累计）",
+      "SK5 四包同会话：span-summary 824 span（leader 280 / reviewer 240 / fixer 118 / verifier 129 / reviewer-b 57）；本窗口团队房 17 事件 · Leader DM 6 事件"
+    ],
+    [
+      "零派发核验（实时复算）",
+      "窗口 16 条消息 · @fixer mention = 0 · @verifier mention = 0 · plan [-]/[!] · 无 pr3sk5-fix-1/verify-1 任务目录"
+    ],
+    [
+      "合规",
+      "PR #3 全程 OPEN · github-branches-after-sk5.txt：两分支 head 运行后与记录一致 · 零 GitHub 写入"
+    ],
+    [
+      "采集披露",
+      "direct-probe 本轮采集修复（stdin 方式，4/4 非空 375–377 字节）——此前四轮未采集的已知操作缺陷闭环"
+    ]
+  ],
+  "blocks": [
+    {
+      "title": "FINALS-ELEM-PR3-SK5-TRACED/usage-summary.json（分窗口用量）",
+      "lang": "json",
+      "text": "{\r\n \"windows\": {\r\n  \"pr2\": {\r\n   \"calls\": 90,\r\n   \"inp\": 6218954,\r\n   \"cached\": 6154368,\r\n   \"outp\": 30647\r\n  },\r\n  \"pr3\": {\r\n   \"calls\": 32,\r\n   \"inp\": 2392229,\r\n   \"cached\": 2376704,\r\n   \"outp\": 9552\r\n  },\r\n  \"session\": {\r\n   \"calls\": 133,\r\n   \"inp\": 8960469,\r\n   \"cached\": 8878336,\r\n   \"outp\": 40623\r\n  }\r\n },\r\n \"models\": [\r\n  \"\",\r\n  \"deepseek-flash\"\r\n ],\r\n \"note\": \"deepseek-flash is the vendor-reported model name per request; requested model is deepseek-chat (see R1 audit)\"\r\n}"
+    },
+    {
+      "title": "FINALS-ELEM-PR3-SK5-TRACED/span-summary.json（SK5 会话累计）",
+      "lang": "json",
+      "text": "{\r\n \"leader\": {\r\n  \"spans\": 280,\r\n  \"skill\": {},\r\n  \"skill_total\": 0,\r\n  \"rag\": 0,\r\n  \"link\": 0\r\n },\r\n \"reviewer\": {\r\n  \"spans\": 240,\r\n  \"skill\": {\r\n   \"tool.skill_diff_parse\": 3,\r\n   \"tool.skill_risk_classify\": 6,\r\n   \"tool.skill_sast_scan\": 2,\r\n   \"tool.skill_case_retrieval\": 2\r\n  },\r\n  \"skill_total\": 13,\r\n  \"rag\": 5,\r\n  \"link\": 5\r\n },\r\n \"fixer\": {\r\n  \"spans\": 118,\r\n  \"skill\": {},\r\n  \"skill_total\": 0,\r\n  \"rag\": 1,\r\n  \"link\": 5\r\n },\r\n \"verifier\": {\r\n  \"spans\": 129,\r\n  \"skill\": {\r\n   \"tool.skill_diff_parse\": 1,\r\n   \"tool.skill_risk_classify\": 1\r\n  },\r\n  \"skill_total\": 2,\r\n  \"rag\": 1,\r\n  \"link\": 5\r\n },\r\n \"reviewer-b\": {\r\n  \"spans\": 57,\r\n  \"skill\": {},\r\n  \"skill_total\": 0,\r\n  \"rag\": 0,\r\n  \"link\": 0\r\n }\r\n}"
+    },
+    {
+      "title": "零派发复算（team-room-messages.json 按 17:00–17:03Z 窗口）",
+      "lang": "json",
+      "text": "{\n  \"window_events\": 17,\n  \"window_messages\": 16,\n  \"fixer_mentions\": 0,\n  \"verifier_mentions\": 0\n}"
+    }
+  ],
+  "source_ref": "finalsPr3Sk5Traced/gate-rejection-sent.json",
+  "hash": {
+    "file": "gate-rejection-sent.json",
+    "dir": "FINALS-ELEM-PR3-SK5-TRACED",
+    "exists": true,
+    "hash_verified": true,
+    "sha256": "40e698ae57fbf4803cb6e9454fe8e31327b452143d4d000a7e63107c80adf532"
+  },
+  "real": [
+    "真实执行（SK5-TRACED）：Reviewer 独立审查（含确定性 skill_* 与 rag_retrieve 引用实录）、操作员拒绝（按运行前书面授权自动投递）、Leader 落实绑定效应；全部 event_id 留痕；fix/verify 从未派发（零派发三重核验）"
+  ],
+  "controlled": [
+    "本页面为证据的只读回放与讲解文案；拒绝为终态，演示层不可翻转"
+  ],
+  "not_executed": [
+    "Fixer / Verifier 从未派发（两轮均 0 消费留痕）",
+    "零 GitHub 写入；PR #3 保持 OPEN",
+    "direct-probe 本轮采集修复（stdin 方式，4/4 非空）——此前四轮未采集的已知操作缺陷闭环"
+  ],
+  "case": {
+    "case_id": "fastapi-pr3-reject",
+    "case_name": "FastAPI PR #3 · 高风险变更 · 人工拒绝停等",
+    "repo": "nghqqa/fastapi-boilerplate-demo",
+    "pr": "PR #3 · demo/high-risk-human-reject",
+    "pr_url": "https://github.com/nghqqa/fastapi-boilerplate-demo/pull/3",
+    "run_id": "run-elem-pr3sk5-20260919-01",
+    "sha": "ad267a6e51209551a0733657321bb364d04befd0",
+    "sha_kind": "PR #3 head commit · ls-remote 已核验",
+    "evidence_level": [
+      "REAL_EXECUTED_AGENTTEAMS_LIVE"
+    ],
+    "source_dir": "evidence/FINALS-ELEM-PR3-SK5-TRACED（SHA256SUMS 锁定，42 清单项）+ PHASE14-WINDOWS-COPAW-HIGH-RISK-REJECT-20260830-091913（历史对照）",
+    "generated_at": "运行窗口 17:00Z–17:02Z（本轮，kickoff → 门拒绝 2 分 06 秒）· 历史对照 2026-08-30",
+    "pending_redactions": [
+      [
+        "elemiso-pr3sk5-reject",
+        "elemiso-pr3sk5-···"
+      ],
+      [
+        "copaw-high-risk-human-reject",
+        "copaw-high-risk-···"
+      ],
+      [
+        "demo/high-risk-human-reject",
+        "demo/···"
+      ],
+      [
+        "rejectDemo",
+        "p14-evidence"
+      ],
+      [
+        "HIGH-RISK-REJECT",
+        "HIGH-RISK-···"
+      ],
+      [
+        "人工安全门 → 操作员拒绝",
+        "人工安全门 · 决策记录"
+      ],
+      [
+        "mark fix [-] rejected, verify [!] locked, project blocked",
+        "…"
+      ],
+      [
+        "fix [-]/verify [!]/blocked",
+        "fix/verify 冻结·项目停等"
+      ],
+      [
+        "rejected",
+        "held"
+      ],
+      [
+        "blocked",
+        "held"
+      ]
+    ]
+  },
+  "integrity": {
+    "finals": {
+      "finalsDbLoop": {
+        "dir": "FINALS-DB-MIGRATION-LOOP-20260914",
+        "tier": "REAL_SQL_VERIFICATION_ISOLATED_POSTGRES",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsReworkLoop": {
+        "dir": "FINALS-REWORK-LOOP-20260914",
+        "tier": "MECHANISM_VERIFICATION",
+        "verified": true,
+        "files": 7,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsRagLoop": {
+        "dir": "FINALS-RAG-LOOP-20260914",
+        "tier": "REAL_OFFLINE_EXPERIMENT_SYNTHETIC_CORPUS",
+        "verified": true,
+        "files": 4,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr2Live": {
+        "dir": "FINALS-ELEM-PR2-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 19,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr3Live": {
+        "dir": "FINALS-ELEM-PR3-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      }
+    }
+  }
+}

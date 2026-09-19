@@ -1,0 +1,51 @@
+{
+  "drawer": "event",
+  "data_mode": "historical replay",
+  "trace_mode": "evidence-replay",
+  "integrity_status": "verified",
+  "event_id": "pr3v3-ev-004",
+  "matrix_event_id": null,
+  "trace_id": null,
+  "trace_note": "per-event 无独立 trace（per-task/事件维度仍为 evidence-replay）；平台级历史权威 Trace 见总览页 AgentLoop Cloud Trace 区块",
+  "project_id": "elemiso-pr3v3-reject",
+  "task_id": null,
+  "agent_role": "reviewer",
+  "runtime": "copaw-worker:223ddc2-agentloop-v3rag（image 8e17c3667c3c）",
+  "event_type": "tool_call",
+  "source": "evidence",
+  "source_label": "Evidence Replay",
+  "source_ref": "finalsPr3V3Traced/tasks/pr3v3-review-1/workspace/findings.md",
+  "source_hash": {
+    "ref": "finalsPr3V3Traced/tasks/pr3v3-review-1/workspace/findings.md",
+    "dir": "FINALS-ELEM-PR3-V3-TRACED",
+    "dir_key": "finalsPr3V3Traced",
+    "file": "tasks/pr3v3-review-1/workspace/findings.md",
+    "abs_path": "D:\\goai\\mergepilot-demo\\evidence\\FINALS-ELEM-PR3-V3-TRACED\\tasks\\pr3v3-review-1\\workspace\\findings.md",
+    "exists": true,
+    "evidence_root_readonly": true,
+    "sha256_actual": "e5b134acda01716d8299a2269cae49a89c151cbb7f945ac9454f97a40b386ab0",
+    "sha256_expected": "e5b134acda01716d8299a2269cae49a89c151cbb7f945ac9454f97a40b386ab0",
+    "hash_verified": true,
+    "sums_source": "FINALS-ELEM-PR3-V3-TRACED/SHA256SUMS"
+  },
+  "timestamp": "2026-09-17T03:19:13Z",
+  "timestamp_precision": "windowed",
+  "timestamp_note": "窗口 03:19:13–03:19:27（团队房导出：审 diff、跑 PR 自带测试——TEST1 passed 注入确认/TEST2 failed 环境缺 ping、自主 PoC）",
+  "summary": "reviewer 独立审查 + 真实 PoC：; | 换行 反引号 $(...) 全部以 root 执行任意命令；127.0.0.1; id → uid=0(root)；cat /etc/hostname 读宿主文件",
+  "detail": null,
+  "hash_verified": true,
+  "redaction_status": {
+    "redaction_layer": "applied (evidence-adapter/redact.mjs)",
+    "scan_hits": [],
+    "status": "CLEAN — redaction applied; PR#2 demo placeholders allow-listed",
+    "forbidden_fields_excluded": [
+      "Authorization",
+      "Cookie",
+      "API key",
+      "Matrix token",
+      "password",
+      "完整工具参数",
+      "完整 prompt/completion"
+    ]
+  }
+}

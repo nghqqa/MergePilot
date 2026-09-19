@@ -1,0 +1,897 @@
+{
+  "case_id": "rework-payments",
+  "portfolio_role": "案例 C · 返工机制（控制面）",
+  "shape": "guided",
+  "name": "支付幂等 · 返工机制案例",
+  "short_name": "机制案例 · 支付幂等",
+  "one_liner": "Verifier 只认冻结的验收测试：首次修复测试失败，Manager 判定 revision 重派 Fixer，第二次修复通过。",
+  "repo": "mergepilot/payments-demo（本地案例仓库）",
+  "pr": "PR #7（本地编号，非可核验外部 PR）",
+  "pr_url": null,
+  "run_id": "run-rework-f1-a",
+  "sha": "255490e3831dab05a39421e0867eeb1bd5d69e2a",
+  "sha_kind": "attempt-2 tree_sha",
+  "evidence_level": [
+    "CONTROL_PLANE_MECHANISM"
+  ],
+  "replay_note": null,
+  "purpose": "展示 verify-FAIL → revision → 重派 → 复验的返工语义（控制面机制）",
+  "risk_tags": [
+    "业务逻辑幂等",
+    "correctness",
+    "L1"
+  ],
+  "status": {
+    "verdict": "PASS",
+    "label": "attempt-2 验证通过 5/5 · 机制闭环"
+  },
+  "facts": {
+    "real_github_pr": {
+      "value": "否 —— 控制面机制案例，不作为外部 PR 证据",
+      "ok": false,
+      "note": "mergepilot/payments-demo PR#7 无可核验外部链接"
+    },
+    "real_agentteams_run": {
+      "value": "否 —— 无 LLM、无 Matrix/Element 交接",
+      "ok": false,
+      "note": "Reviewer/Fixer 语义为受控输入"
+    },
+    "github_write": {
+      "value": "未写入 —— NOT_EXECUTED",
+      "ok": false,
+      "note": ""
+    }
+  },
+  "banner": "这是控制面机制案例，不是外部 GitHub PR；测试和状态链路用于展示返工语义。",
+  "stage_timeline": [
+    {
+      "label": "Review #1",
+      "verdict": null
+    },
+    {
+      "label": "Fix #1",
+      "verdict": null
+    },
+    {
+      "label": "Verify #1",
+      "verdict": "FAIL"
+    },
+    {
+      "label": "Fix #2",
+      "verdict": null
+    },
+    {
+      "label": "Verify #2",
+      "verdict": "PASS"
+    }
+  ],
+  "chain": [
+    "案例 rework-payments",
+    "PR #7（本地）",
+    "tree 255490e383…",
+    "payments.py 补丁",
+    "unittest 报告",
+    "任务 PASS"
+  ],
+  "generated_at": "2026-09-15T02:14:34Z",
+  "source_dir": "evidence/FINALS-REWORK-LOOP-20260914 · tools/agentteams/rework_case/base",
+  "honesty": {
+    "real": [
+      "workflow-controller 控制器代码真实执行",
+      "PostgreSQL 审计链真实写入",
+      "验收测试真实执行并决定 VERDICT"
+    ],
+    "controlled": [
+      "Reviewer 结论（reviewer_findings.json）",
+      "Fixer 两个补丁（patches/*.diff）"
+    ],
+    "not_executed": [
+      "LLM 调用",
+      "Matrix/Element 真实交接",
+      "GitHub 写入",
+      "CoPaw 容器运行"
+    ]
+  },
+  "steps": [
+    {
+      "id": "defect",
+      "title": "缺陷与验收条件",
+      "role": "Reviewer（受控输入）",
+      "time": "基线固化",
+      "headline": "冻结的验收测试先行——缺陷、预期行为、风险分级全部前置声明",
+      "points": [
+        {
+          "k": "缺陷",
+          "v": "payments.py:29 charge() 无条件 append —— 网关重试携带新 payment_id → 同一订单被重复扣款"
+        },
+        {
+          "k": "冻结验收测试",
+          "v": "test_payments.py::TestPaymentLedger::test_second_payment_request_for_same_order_is_idempotent",
+          "mono": true
+        },
+        {
+          "k": "预期行为",
+          "v": "total_for_order(1) stays 500 after a second charge request for order 1 with a different payment_id"
+        },
+        {
+          "k": "风险分级",
+          "v": "L1 · correctness · 无密钥/依赖/破坏性操作，允许自动修复"
+        },
+        {
+          "k": "语义来源",
+          "v": "受控输入（CONTROLLED_INPUT）—— 本证据等级无 LLM、无真实 AgentTeams"
+        }
+      ],
+      "evidence": [
+        "ev-defect-code",
+        "ev-finding"
+      ],
+      "detail": {
+        "title": "派单记录",
+        "outbox": [
+          {
+            "target_agent": "reviewer",
+            "target_stage": "review",
+            "attempt": 1,
+            "body": "请审查 mergepilot/payments-demo PR#7 (分支 fix/payment-idempotency)。用 gh-mcp-read.sh + sast-scan,findings 写 shared/tasks/run-rework-f1-a-review/findings.md。完成写 TASK_COMPLETED: run-rework-f1-a-review。"
+          },
+          {
+            "target_agent": "fixer",
+            "target_stage": "fix",
+            "attempt": 1,
+            "body": "run-rework-f1-a-review 完成,findings 见 shared/tasks/run-rework-f1-a-review/findings.md。请用 gh-mcp-fix.sh 提修复 PR(L2 密钥/依赖/删除类只出方案)。完成写 TASK_COMPLETED: run-rework-f1-a-fix。"
+          }
+        ],
+        "events": [
+          {
+            "event_id": "$8ed35485fc3c44af98b5e5",
+            "sender": "@admin:matrix-local.hiclaw.io:18080",
+            "event_type": "TASK_SUBMITTED",
+            "stage": "review",
+            "status": "PROCESSED"
+          },
+          {
+            "event_id": "$dc25a959d52949888f28a9",
+            "sender": "@reviewer:matrix-local.hiclaw.io:18080",
+            "event_type": "TASK_COMPLETED",
+            "stage": "review",
+            "status": "PROCESSED"
+          }
+        ]
+      }
+    },
+    {
+      "id": "attempt1",
+      "title": "首次修复结果",
+      "role": "Fixer",
+      "time": "attempt=1",
+      "headline": "Fixer 第一次修复：按 payment_id 去重——看似合理，未覆盖同订单新 id 场景",
+      "points": [
+        {
+          "k": "补丁 attempt-1",
+          "v": "按 payment_id 去重 —— 看似合理，未覆盖同订单新 payment_id 场景"
+        },
+        {
+          "k": "tree_sha",
+          "v": "760c20801d733acaf0c8f1b6beb209eeda77cab0",
+          "mono": true
+        },
+        {
+          "k": "交付",
+          "v": "fixer attempt=1 COMPLETED（控制器 stage_runs 记录）"
+        }
+      ],
+      "evidence": [
+        "ev-diff-a1"
+      ],
+      "detail": {
+        "title": "执行记录",
+        "outbox": [
+          {
+            "target_agent": "verifier",
+            "target_stage": "verify",
+            "attempt": 1,
+            "body": "run-rework-f1-a-fix 完成,修复 PR 见 shared/tasks/run-rework-f1-a-fix/。请用 gh-mcp-read.sh 读修复分支逐项复核。完成写 TASK_COMPLETED: run-rework-f1-a-verify。"
+          }
+        ],
+        "events": [
+          {
+            "event_id": "$63d5eb4d85ed427e91cf42",
+            "sender": "@fixer:matrix-local.hiclaw.io:18080",
+            "event_type": "TASK_COMPLETED",
+            "stage": "fix",
+            "status": "PROCESSED"
+          }
+        ]
+      }
+    },
+    {
+      "id": "verify-fail",
+      "title": "Verifier 失败",
+      "role": "Verifier",
+      "time": "verify_attempt=1/3",
+      "tone": "reject",
+      "headline": "独立复测不采信 Fixer 自述——冻结验收测试真实执行，FAIL 1/5 触发返工",
+      "points": [
+        {
+          "k": "验证命令",
+          "v": "python -m unittest discover -s <revision> -p 'test_*.py'",
+          "mono": true
+        },
+        {
+          "k": "结果",
+          "v": "FAIL · 5 tests · 1 failure —— total_for_order(1)=1000 ≠ 500（AssertionError）"
+        },
+        {
+          "k": "失败用例",
+          "v": "test_second_payment_request_for_same_order_is_idempotent",
+          "mono": true
+        },
+        {
+          "k": "控制器状态",
+          "v": "RUNNING / fix · verify_attempt=1/3"
+        },
+        {
+          "k": "判定来源",
+          "v": "冻结验收测试真实执行结果（REAL_EXECUTED）—— 由测试决定，非预置"
+        }
+      ],
+      "evidence": [
+        "ev-testlog-a1"
+      ],
+      "exhibit": {
+        "type": "terminal",
+        "title": "Verifier 失败日志 · run-rework-f1-a-attempt1.log（摘要）",
+        "lines": [
+          {
+            "text": "$ python -m unittest discover -s <revision> -p 'test_*.py'",
+            "tone": "cmd"
+          },
+          {
+            "text": "FAIL: test_second_payment_request_for_same_order_is_idempotent",
+            "tone": "bad"
+          },
+          {
+            "text": "AssertionError: total_for_order(1) → got 1000, want 500",
+            "tone": "bad"
+          },
+          {
+            "text": "VERDICT: FAIL · 5 tests · 1 failure → verify_attempt=1/3 触发返工",
+            "tone": "amber"
+          }
+        ]
+      },
+      "detail": {
+        "title": "失败事件",
+        "outbox": [],
+        "events": [
+          {
+            "event_id": "$a18aec01140f47b485c15a",
+            "sender": "@verifier:matrix-local.hiclaw.io:18080",
+            "event_type": "TASK_COMPLETED",
+            "stage": "verify",
+            "status": "PROCESSED"
+          }
+        ]
+      }
+    },
+    {
+      "id": "revision",
+      "title": "Manager revision → Fixer 重派",
+      "role": "Workflow Controller",
+      "time": "attempt=2 重派",
+      "headline": "判定 revision 并回退修复——失败原因随重派一并下发，attempt 计数受控上限 3",
+      "points": [
+        {
+          "k": "revision 判定",
+          "v": "verify FAIL(第 1/3 次),回退修复。完成写 TASK_COMPLETED: run-rework-f1-a-fix。",
+          "mono": false
+        },
+        {
+          "k": "重派",
+          "v": "dispatch outbox → fixer · stage=fix · attempt=2"
+        },
+        {
+          "k": "二次补丁",
+          "v": "attempt-2 改为按 order_id 幂等（重复请求返回既有扣款）"
+        },
+        {
+          "k": "tree_sha",
+          "v": "255490e3831dab05a39421e0867eeb1bd5d69e2a",
+          "mono": true
+        }
+      ],
+      "evidence": [
+        "ev-rework-dispatch",
+        "ev-diff-a2"
+      ],
+      "detail": {
+        "title": "重派与重修记录",
+        "outbox": [
+          {
+            "target_agent": "fixer",
+            "target_stage": "fix",
+            "attempt": 2,
+            "body": "verify FAIL(第 1/3 次),回退修复。完成写 TASK_COMPLETED: run-rework-f1-a-fix。"
+          }
+        ],
+        "events": [
+          {
+            "event_id": "$804bf3a4763d4eeeb65f68",
+            "sender": "@fixer:matrix-local.hiclaw.io:18080",
+            "event_type": "TASK_COMPLETED",
+            "stage": "fix",
+            "status": "PROCESSED"
+          }
+        ]
+      }
+    },
+    {
+      "id": "verify-pass",
+      "title": "第二次验证通过",
+      "role": "Verifier",
+      "time": "verify_attempt=2/3",
+      "headline": "同一套冻结验收测试第二次执行——5/5 全部通过，返工闭环完成",
+      "points": [
+        {
+          "k": "结果",
+          "v": "PASS · 5/5 全部通过（同一套冻结验收测试）"
+        },
+        {
+          "k": "任务终态",
+          "v": "PASS · verifier TASK_COMPLETED $fb370c9f948e43999c8dbe（PostgreSQL 审计链）",
+          "mono": false
+        },
+        {
+          "k": "外部 PR",
+          "v": "不适用 —— 控制面机制案例，不作为外部 PR 证据"
+        },
+        {
+          "k": "GitHub 写入",
+          "v": "未执行 —— NOT_EXECUTED"
+        }
+      ],
+      "evidence": [
+        "ev-testlog-a2",
+        "ev-final-event",
+        "ev-stage-runs"
+      ],
+      "detail": {
+        "title": "终态事件链",
+        "outbox": [],
+        "events": [
+          {
+            "event_id": "$fb370c9f948e43999c8dbe",
+            "sender": "@verifier:matrix-local.hiclaw.io:18080",
+            "event_type": "TASK_COMPLETED",
+            "stage": "verify",
+            "status": "PROCESSED"
+          }
+        ]
+      }
+    }
+  ],
+  "evidence_index": [
+    {
+      "id": "ev-defect-code",
+      "title": "缺陷基线代码 rework_case/base/payments.py",
+      "level": "CONTROL_PLANE_MECHANISM"
+    },
+    {
+      "id": "ev-run-meta",
+      "title": "运行元数据 run-meta.json",
+      "level": "CONTROL_PLANE_MECHANISM"
+    },
+    {
+      "id": "ev-finding",
+      "title": "Reviewer 发现 reviewer_findings.json（受控输入）",
+      "level": "CONTROL_PLANE_MECHANISM"
+    },
+    {
+      "id": "ev-diff-a1",
+      "title": "首次修复补丁 attempt-1（受控输入）",
+      "level": "CONTROL_PLANE_MECHANISM"
+    },
+    {
+      "id": "ev-testlog-a1",
+      "title": "Verifier 失败日志 attempt-1（FAIL）",
+      "level": "REAL_EXECUTED"
+    },
+    {
+      "id": "ev-rework-dispatch",
+      "title": "Manager revision → Fixer 重派（dispatch outbox #4）",
+      "level": "CONTROL_PLANE_MECHANISM"
+    },
+    {
+      "id": "ev-diff-a2",
+      "title": "二次修复补丁 attempt-2（受控输入）",
+      "level": "CONTROL_PLANE_MECHANISM"
+    },
+    {
+      "id": "ev-testlog-a2",
+      "title": "第二次验证日志 attempt-2（PASS）",
+      "level": "REAL_EXECUTED"
+    },
+    {
+      "id": "ev-stage-runs",
+      "title": "阶段序列与事件链（stage_runs · stage_events）",
+      "level": "CONTROL_PLANE_MECHANISM"
+    },
+    {
+      "id": "ev-final-event",
+      "title": "验证通过终态事件（verifier TASK_COMPLETED #2）",
+      "level": "CONTROL_PLANE_MECHANISM"
+    },
+    {
+      "id": "ev-controller-final",
+      "title": "控制器配置与结局签名",
+      "level": "CONTROL_PLANE_MECHANISM"
+    }
+  ],
+  "items": [
+    {
+      "id": "ev-defect-code",
+      "title": "缺陷基线代码 rework_case/base/payments.py",
+      "level": "CONTROL_PLANE_MECHANISM",
+      "fields": [
+        [
+          "来源",
+          "tools/agentteams/rework_case/base（本地案例基线，非外部 PR）"
+        ],
+        [
+          "缺陷",
+          "charge() 无条件 append —— 同订单重试重复扣款"
+        ],
+        [
+          "冻结验收测试",
+          "test_payments.py::TestPaymentLedger::test_second_payment_request_for_same_order_is_idempotent"
+        ]
+      ],
+      "blocks": [
+        {
+          "title": "tools/agentteams/rework_case/base/payments.py",
+          "lang": "text",
+          "text": "未提供"
+        },
+        {
+          "title": "tools/agentteams/rework_case/base/test_payments.py（冻结，未修改）",
+          "lang": "text",
+          "text": "未提供"
+        }
+      ],
+      "source_ref": "tools/agentteams/rework_case/base/（只读引用）",
+      "real": [
+        "workflow-controller 控制器代码真实执行",
+        "PostgreSQL 审计链真实写入",
+        "验收测试真实执行并决定 VERDICT"
+      ],
+      "controlled": [
+        "Reviewer 结论（reviewer_findings.json）",
+        "Fixer 两个补丁（patches/*.diff）"
+      ],
+      "not_executed": [
+        "LLM 调用",
+        "Matrix/Element 真实交接",
+        "GitHub 写入",
+        "CoPaw 容器运行"
+      ]
+    },
+    {
+      "id": "ev-run-meta",
+      "title": "运行元数据 run-meta.json",
+      "level": "CONTROL_PLANE_MECHANISM",
+      "fields": [
+        [
+          "run_id",
+          "run-rework-f1-a"
+        ],
+        [
+          "generated_at",
+          "2026-09-15T02:14:34Z"
+        ],
+        [
+          "git_head",
+          "0fba982196340b4ecb3913e83bc3eb673bee817a"
+        ],
+        [
+          "command",
+          "python tools/agentteams/rework_loop_harness.py --pg-port 55432 --out evidence/FINALS-REWORK-LOOP-20260914"
+        ],
+        [
+          "evidence_tier",
+          "MECHANISM_VERIFICATION"
+        ]
+      ],
+      "blocks": [
+        {
+          "title": "run-meta.json",
+          "lang": "json",
+          "text": "{\n  \"generated_at\": \"2026-09-15T02:14:34Z\",\n  \"python\": \"3.9.25\",\n  \"git_head\": \"0fba982196340b4ecb3913e83bc3eb673bee817a\",\n  \"command\": \"python tools/agentteams/rework_loop_harness.py --pg-port 55432 --out evidence/FINALS-REWORK-LOOP-20260914\",\n  \"evidence_tier\": \"MECHANISM_VERIFICATION\"\n}"
+        }
+      ],
+      "source_ref": "evidence/FINALS-REWORK-LOOP-20260914/run-meta.json",
+      "real": [
+        "workflow-controller 控制器代码真实执行",
+        "PostgreSQL 审计链真实写入",
+        "验收测试真实执行并决定 VERDICT"
+      ],
+      "controlled": [
+        "Reviewer 结论（reviewer_findings.json）",
+        "Fixer 两个补丁（patches/*.diff）"
+      ],
+      "not_executed": [
+        "LLM 调用",
+        "Matrix/Element 真实交接",
+        "GitHub 写入",
+        "CoPaw 容器运行"
+      ]
+    },
+    {
+      "id": "ev-finding",
+      "title": "Reviewer 发现 reviewer_findings.json（受控输入）",
+      "level": "CONTROL_PLANE_MECHANISM",
+      "fields": [
+        [
+          "发现",
+          "F1 · correctness · severity=high · L1"
+        ],
+        [
+          "位置",
+          "payments.py:29"
+        ],
+        [
+          "验收测试",
+          "test_payments.py::TestPaymentLedger::test_second_payment_request_for_same_order_is_idempotent"
+        ],
+        [
+          "语义来源",
+          "CONTROLLED_INPUT —— 本证据等级无 LLM 调用"
+        ]
+      ],
+      "blocks": [
+        {
+          "title": "reviewer_findings.json",
+          "lang": "json",
+          "text": "{\n  \"role\": \"reviewer\",\n  \"input_kind\": \"CONTROLLED_INPUT\",\n  \"note\": \"Reviewer semantic output supplied by the harness (no LLM in this evidence tier). The finding schema mirrors config/souls/reviewer/SOUL.md; the acceptance test it references is what the Verifier actually executes.\",\n  \"findings\": [\n    {\n      \"id\": \"F1\",\n      \"category\": \"correctness\",\n      \"severity\": \"high\",\n      \"risk_level\": \"L1\",\n      \"file\": \"payments.py\",\n      \"line\": 29,\n      \"description\": \"PaymentLedger.charge() appends unconditionally; a retried payment request for the same order (gateway retries carry a NEW payment_id) charges the customer twice.\",\n      \"suggestion\": \"Make charging idempotent per order_id (one charge per order); a repeated request must return the existing charge unchanged.\",\n      \"acceptance_test\": \"test_payments.py::TestPaymentLedger::test_second_payment_request_for_same_order_is_idempotent\",\n      \"expected_behavior\": \"total_for_order(1) stays 500 after a second charge request for order 1 with a different payment_id\"\n    }\n  ],\n  \"risk_summary\": \"L1 — no secrets, dependencies or destructive operations; auto-fix allowed, Verifier must confirm with the acceptance test.\"\n}"
+        }
+      ],
+      "source_ref": "evidence/FINALS-REWORK-LOOP-20260914/reviewer_findings.json",
+      "real": [
+        "workflow-controller 控制器代码真实执行",
+        "PostgreSQL 审计链真实写入",
+        "验收测试真实执行并决定 VERDICT"
+      ],
+      "controlled": [
+        "Reviewer 结论（reviewer_findings.json）",
+        "Fixer 两个补丁（patches/*.diff）"
+      ],
+      "not_executed": [
+        "LLM 调用",
+        "Matrix/Element 真实交接",
+        "GitHub 写入",
+        "CoPaw 容器运行"
+      ]
+    },
+    {
+      "id": "ev-diff-a1",
+      "title": "首次修复补丁 attempt-1（受控输入）",
+      "level": "CONTROL_PLANE_MECHANISM",
+      "fields": [
+        [
+          "文件",
+          "payments.py"
+        ],
+        [
+          "tree_sha",
+          "760c20801d733acaf0c8f1b6beb209eeda77cab0"
+        ],
+        [
+          "策略",
+          "按 payment_id 去重 —— 未覆盖“同订单新 payment_id”场景"
+        ]
+      ],
+      "blocks": [
+        {
+          "title": "run-rework-f1-a-attempt1.diff",
+          "lang": "diff",
+          "text": "--- a/payments.py\n+++ b/payments.py\n@@ -1,7 +1,10 @@\n-\"\"\"Payment ledger — BASE revision (the code the PR starts from).\n+\"\"\"Payment ledger — FIX ATTEMPT 1 (plausible but wrong).\n \n-Known defect the Reviewer will flag: charge() appends unconditionally, so a\n-retried payment request for the same order charges the customer twice.\n+The Fixer de-duplicates by payment_id. That closes the \"same payment id\n+retried\" hole but not the one the Reviewer actually flagged: a gateway retry\n+arrives with a NEW payment id for the same order and is still charged again.\n+The acceptance test test_second_payment_request_for_same_order_is_idempotent\n+keeps failing, so the Verifier must send the task back.\n \"\"\"\n from __future__ import annotations\n \n@@ -23,12 +26,16 @@\n @dataclass\n class PaymentLedger:\n     charges: List[Charge] = field(default_factory=list)\n+    _seen_payment_ids: Dict[int, Charge] = field(default_factory=dict)\n \n     def charge(self, order_id: int, payment_id: int, amount_cents: int) -> Charge:\n         if amount_cents <= 0:\n             raise LedgerError(\"amount_cents must be positive\")\n+        if payment_id in self._seen_payment_ids:\n+            return self._seen_payment_ids[payment_id]\n         c = Charge(order_id=order_id, payment_id=payment_id, amount_cents=amount_cents)\n         self.charges.append(c)\n+        self._seen_payment_ids[payment_id] = c\n         return c\n \n     def total_for_order(self, order_id: int) -> int:\n"
+        }
+      ],
+      "source_ref": "evidence/FINALS-REWORK-LOOP-20260914/patches/run-rework-f1-a-attempt1.diff",
+      "real": [
+        "workflow-controller 控制器代码真实执行",
+        "PostgreSQL 审计链真实写入",
+        "验收测试真实执行并决定 VERDICT"
+      ],
+      "controlled": [
+        "Reviewer 结论（reviewer_findings.json）",
+        "Fixer 两个补丁（patches/*.diff）"
+      ],
+      "not_executed": [
+        "LLM 调用",
+        "Matrix/Element 真实交接",
+        "GitHub 写入",
+        "CoPaw 容器运行"
+      ]
+    },
+    {
+      "id": "ev-testlog-a1",
+      "title": "Verifier 失败日志 attempt-1（FAIL）",
+      "level": "REAL_EXECUTED",
+      "fields": [
+        [
+          "命令",
+          "python -m unittest discover -s <revision> -p 'test_*.py'"
+        ],
+        [
+          "结果",
+          "FAIL · 5 tests · 1 failure"
+        ],
+        [
+          "失败用例",
+          "test_second_payment_request_for_same_order_is_idempotent"
+        ],
+        [
+          "控制器状态",
+          "RUNNING / fix · verify_attempt=1"
+        ]
+      ],
+      "blocks": [
+        {
+          "title": "run-rework-f1-a-attempt1.log",
+          "lang": "log",
+          "text": "test_different_orders_are_independent (test_payments.TestPaymentLedger) ... ok\ntest_non_positive_amount_rejected (test_payments.TestPaymentLedger) ... ok\ntest_replay_same_payment_is_idempotent (test_payments.TestPaymentLedger) ... ok\ntest_second_payment_request_for_same_order_is_idempotent (test_payments.TestPaymentLedger) ... FAIL\ntest_single_charge_recorded (test_payments.TestPaymentLedger) ... ok\n\n======================================================================\nFAIL: test_second_payment_request_for_same_order_is_idempotent (test_payments.TestPaymentLedger)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"C:\\Users\\ngh\\AppData\\Local\\Temp\\rework-verify-it9mw_05\\test_payments.py\", line 34, in test_second_payment_request_for_same_order_is_idempotent\n    self.assertEqual(ledger.total_for_order(1), 500, \"an order must never be charged twice\")\nAssertionError: 1000 != 500 : an order must never be charged twice\n\n----------------------------------------------------------------------\nRan 5 tests in 0.000s\n\nFAILED (failures=1)\n"
+        }
+      ],
+      "source_ref": "evidence/FINALS-REWORK-LOOP-20260914/tests/run-rework-f1-a-attempt1.log",
+      "real": [
+        "unittest 真实执行，VERDICT=FAIL 由断言结果决定",
+        "审计链记录 verify_attempt=1/3"
+      ],
+      "controlled": [],
+      "not_executed": [
+        "LLM 调用",
+        "Matrix/Element 真实交接",
+        "GitHub 写入"
+      ]
+    },
+    {
+      "id": "ev-rework-dispatch",
+      "title": "Manager revision → Fixer 重派（dispatch outbox #4）",
+      "level": "CONTROL_PLANE_MECHANISM",
+      "fields": [
+        [
+          "target",
+          "fixer · stage=fix · attempt=2"
+        ],
+        [
+          "触发",
+          "verify FAIL; retry fix attempt=2 (1/3)"
+        ],
+        [
+          "rework_reason",
+          "verify FAIL(第 1/3 次),回退修复。完成写 TASK_COMPLETED: run-rework-f1-a-fix。"
+        ]
+      ],
+      "blocks": [
+        {
+          "title": "outbox body",
+          "lang": "text",
+          "text": "verify FAIL(第 1/3 次),回退修复。完成写 TASK_COMPLETED: run-rework-f1-a-fix。"
+        }
+      ],
+      "source_ref": "evidence/FINALS-REWORK-LOOP-20260914/report.json → scenarios.A.final.dispatch_outbox[3]",
+      "real": [
+        "workflow-controller 控制器代码真实执行",
+        "PostgreSQL 审计链真实写入",
+        "验收测试真实执行并决定 VERDICT"
+      ],
+      "controlled": [
+        "Reviewer 结论（reviewer_findings.json）",
+        "Fixer 两个补丁（patches/*.diff）"
+      ],
+      "not_executed": [
+        "LLM 调用",
+        "Matrix/Element 真实交接",
+        "GitHub 写入",
+        "CoPaw 容器运行"
+      ]
+    },
+    {
+      "id": "ev-diff-a2",
+      "title": "二次修复补丁 attempt-2（受控输入）",
+      "level": "CONTROL_PLANE_MECHANISM",
+      "fields": [
+        [
+          "文件",
+          "payments.py"
+        ],
+        [
+          "tree_sha",
+          "255490e3831dab05a39421e0867eeb1bd5d69e2a"
+        ],
+        [
+          "策略",
+          "按 order_id 幂等 —— 重复请求返回既有扣款，不新增记录"
+        ]
+      ],
+      "blocks": [
+        {
+          "title": "run-rework-f1-a-attempt2.diff",
+          "lang": "diff",
+          "text": "--- a/payments.py\n+++ b/payments.py\n@@ -1,10 +1,9 @@\n-\"\"\"Payment ledger — FIX ATTEMPT 1 (plausible but wrong).\n+\"\"\"Payment ledger — FIX ATTEMPT 2 (after rework).\n \n-The Fixer de-duplicates by payment_id. That closes the \"same payment id\n-retried\" hole but not the one the Reviewer actually flagged: a gateway retry\n-arrives with a NEW payment id for the same order and is still charged again.\n-The acceptance test test_second_payment_request_for_same_order_is_idempotent\n-keeps failing, so the Verifier must send the task back.\n+Idempotency is keyed by order_id: an order is charged at most once; any later\n+charge request for that order (same or new payment id) returns the existing\n+charge unchanged. This is the invariant the Reviewer's finding asked for and\n+the acceptance test enforces.\n \"\"\"\n from __future__ import annotations\n \n@@ -26,16 +25,17 @@\n @dataclass\n class PaymentLedger:\n     charges: List[Charge] = field(default_factory=list)\n-    _seen_payment_ids: Dict[int, Charge] = field(default_factory=dict)\n+    _charge_by_order: Dict[int, Charge] = field(default_factory=dict)\n \n     def charge(self, order_id: int, payment_id: int, amount_cents: int) -> Charge:\n         if amount_cents <= 0:\n             raise LedgerError(\"amount_cents must be positive\")\n-        if payment_id in self._seen_payment_ids:\n-            return self._seen_payment_ids[payment_id]\n+        existing = self._charge_by_order.get(order_id)\n+        if existing is not None:\n+            return existing\n         c = Charge(order_id=order_id, payment_id=payment_id, amount_cents=amount_cents)\n         self.charges.append(c)\n-        self._seen_payment_ids[payment_id] = c\n+        self._charge_by_order[order_id] = c\n         return c\n \n     def total_for_order(self, order_id: int) -> int:\n"
+        }
+      ],
+      "source_ref": "evidence/FINALS-REWORK-LOOP-20260914/patches/run-rework-f1-a-attempt2.diff",
+      "real": [
+        "workflow-controller 控制器代码真实执行",
+        "PostgreSQL 审计链真实写入",
+        "验收测试真实执行并决定 VERDICT"
+      ],
+      "controlled": [
+        "Reviewer 结论（reviewer_findings.json）",
+        "Fixer 两个补丁（patches/*.diff）"
+      ],
+      "not_executed": [
+        "LLM 调用",
+        "Matrix/Element 真实交接",
+        "GitHub 写入",
+        "CoPaw 容器运行"
+      ]
+    },
+    {
+      "id": "ev-testlog-a2",
+      "title": "第二次验证日志 attempt-2（PASS）",
+      "level": "REAL_EXECUTED",
+      "fields": [
+        [
+          "命令",
+          "python -m unittest discover -s <revision> -p 'test_*.py'"
+        ],
+        [
+          "结果",
+          "PASS · 5 tests · 0 failure"
+        ],
+        [
+          "任务终态",
+          "PASS · verdict=PASS"
+        ]
+      ],
+      "blocks": [
+        {
+          "title": "run-rework-f1-a-attempt2.log",
+          "lang": "log",
+          "text": "test_different_orders_are_independent (test_payments.TestPaymentLedger) ... ok\ntest_non_positive_amount_rejected (test_payments.TestPaymentLedger) ... ok\ntest_replay_same_payment_is_idempotent (test_payments.TestPaymentLedger) ... ok\ntest_second_payment_request_for_same_order_is_idempotent (test_payments.TestPaymentLedger) ... ok\ntest_single_charge_recorded (test_payments.TestPaymentLedger) ... ok\n\n----------------------------------------------------------------------\nRan 5 tests in 0.000s\n\nOK\n"
+        }
+      ],
+      "source_ref": "evidence/FINALS-REWORK-LOOP-20260914/tests/run-rework-f1-a-attempt2.log",
+      "real": [
+        "unittest 真实执行，VERDICT=PASS 由断言结果决定"
+      ],
+      "controlled": [],
+      "not_executed": [
+        "LLM 调用",
+        "Matrix/Element 真实交接",
+        "GitHub 写入"
+      ]
+    },
+    {
+      "id": "ev-stage-runs",
+      "title": "阶段序列与事件链（stage_runs · stage_events）",
+      "level": "CONTROL_PLANE_MECHANISM",
+      "fields": [
+        [
+          "stage_runs",
+          "review#1 → fix#1 → verify#1=FAIL → fix#2 → verify#2=PASS"
+        ],
+        [
+          "events_injected",
+          "34"
+        ],
+        [
+          "checks",
+          "9/9 通过"
+        ]
+      ],
+      "blocks": [
+        {
+          "title": "stage_events（event_id ↔ stage）",
+          "lang": "json",
+          "text": "[\n  {\n    \"event_id\": \"$8ed35485fc3c44af98b5e5\",\n    \"sender\": \"@admin:matrix-local.hiclaw.io:18080\",\n    \"event_type\": \"TASK_SUBMITTED\",\n    \"stage\": \"review\",\n    \"status\": \"PROCESSED\"\n  },\n  {\n    \"event_id\": \"$dc25a959d52949888f28a9\",\n    \"sender\": \"@reviewer:matrix-local.hiclaw.io:18080\",\n    \"event_type\": \"TASK_COMPLETED\",\n    \"stage\": \"review\",\n    \"status\": \"PROCESSED\"\n  },\n  {\n    \"event_id\": \"$63d5eb4d85ed427e91cf42\",\n    \"sender\": \"@fixer:matrix-local.hiclaw.io:18080\",\n    \"event_type\": \"TASK_COMPLETED\",\n    \"stage\": \"fix\",\n    \"status\": \"PROCESSED\"\n  },\n  {\n    \"event_id\": \"$a18aec01140f47b485c15a\",\n    \"sender\": \"@verifier:matrix-local.hiclaw.io:18080\",\n    \"event_type\": \"TASK_COMPLETED\",\n    \"stage\": \"verify\",\n    \"status\": \"PROCESSED\"\n  },\n  {\n    \"event_id\": \"$804bf3a4763d4eeeb65f68\",\n    \"sender\": \"@fixer:matrix-local.hiclaw.io:18080\",\n    \"event_type\": \"TASK_COMPLETED\",\n    \"stage\": \"fix\",\n    \"status\": \"PROCESSED\"\n  },\n  {\n    \"event_id\": \"$fb370c9f948e43999c8dbe\",\n    \"sender\": \"@verifier:matrix-local.hiclaw.io:18080\",\n    \"event_type\": \"TASK_COMPLETED\",\n    \"stage\": \"verify\",\n    \"status\": \"PROCESSED\"\n  }\n]"
+        }
+      ],
+      "source_ref": "evidence/FINALS-REWORK-LOOP-20260914/report.json → scenarios.A.final",
+      "real": [
+        "workflow-controller 控制器代码真实执行",
+        "PostgreSQL 审计链真实写入",
+        "验收测试真实执行并决定 VERDICT"
+      ],
+      "controlled": [
+        "Reviewer 结论（reviewer_findings.json）",
+        "Fixer 两个补丁（patches/*.diff）"
+      ],
+      "not_executed": [
+        "LLM 调用",
+        "Matrix/Element 真实交接",
+        "GitHub 写入",
+        "CoPaw 容器运行"
+      ]
+    },
+    {
+      "id": "ev-final-event",
+      "title": "验证通过终态事件（verifier TASK_COMPLETED #2）",
+      "level": "CONTROL_PLANE_MECHANISM",
+      "fields": [
+        [
+          "event_id",
+          "$fb370c9f948e43999c8dbe"
+        ],
+        [
+          "sender",
+          "@verifier:matrix-local.hiclaw.io:18080"
+        ],
+        [
+          "含义",
+          "verify attempt=2 完成 → 控制器判定任务 PASS（终态，无后续派单）"
+        ]
+      ],
+      "blocks": [],
+      "source_ref": "evidence/FINALS-REWORK-LOOP-20260914/report.json → scenarios.A.final.stage_events[5]",
+      "real": [
+        "workflow-controller 控制器代码真实执行",
+        "PostgreSQL 审计链真实写入",
+        "验收测试真实执行并决定 VERDICT"
+      ],
+      "controlled": [
+        "Reviewer 结论（reviewer_findings.json）",
+        "Fixer 两个补丁（patches/*.diff）"
+      ],
+      "not_executed": [
+        "LLM 调用",
+        "Matrix/Element 真实交接",
+        "GitHub 写入",
+        "CoPaw 容器运行"
+      ]
+    },
+    {
+      "id": "ev-controller-final",
+      "title": "控制器配置与结局签名",
+      "level": "CONTROL_PLANE_MECHANISM",
+      "fields": [
+        [
+          "controller",
+          "tools/workflow-controller/controller.py"
+        ],
+        [
+          "mode",
+          "legacy (M4F_ONLY_MODE=0) — the path that implements the verify-FAIL rework loop"
+        ],
+        [
+          "MAX_VERIFY_ATTEMPTS",
+          "3"
+        ],
+        [
+          "outcome_signature",
+          "bff63ce55abc2cc70c3783ddbf90ebb6003be0da2d39261e2f266d03454070b6"
+        ]
+      ],
+      "blocks": [],
+      "source_ref": "evidence/FINALS-REWORK-LOOP-20260914/report.json",
+      "real": [
+        "workflow-controller 控制器代码真实执行",
+        "PostgreSQL 审计链真实写入",
+        "验收测试真实执行并决定 VERDICT"
+      ],
+      "controlled": [
+        "Reviewer 结论（reviewer_findings.json）",
+        "Fixer 两个补丁（patches/*.diff）"
+      ],
+      "not_executed": [
+        "LLM 调用",
+        "Matrix/Element 真实交接",
+        "GitHub 写入",
+        "CoPaw 容器运行"
+      ]
+    }
+  ]
+}

@@ -91,7 +91,7 @@ Node.js ≥ 18 即可，无需 `npm install`：前端已预构建（`frontend/di
 | **SK4**（PR #2 / PR #3） | PR #2 VERIFIED / PR #3 blocked 零派发 | **skill_case_retrieval 首次返回真实历史案例**（pgvector 知识库接通，3 条相似案例带可验证 PR 引用） | [FINALS-ELEM-PR2-SK4-TRACED](evidence/FINALS-ELEM-PR2-SK4-TRACED) · [FINALS-ELEM-PR3-SK4-TRACED](evidence/FINALS-ELEM-PR3-SK4-TRACED) |
 | **SK5**（PR #2 / PR #3 / **PR #1**） | PR #2 VERIFIED / PR #3 blocked / **PR #1 auto completed（62 秒）** | **skill_sast_scan 首次正式调用**（AST 规则命中）；**PR #1 低风险自动路径首通**（NOT_CONFIRMED/LOW→无门→auto completed）；**dual-reviewer 评审间信度**：两个独立 Reviewer 对同一 PR 结论完全一致 | [PR2-SK5](evidence/FINALS-ELEM-PR2-SK5-TRACED) · [PR3-SK5](evidence/FINALS-ELEM-PR3-SK5-TRACED) · [PR1-SK5-AUTO](evidence/FINALS-ELEM-PR1-SK5-AUTO) · [DUAL-REVIEWER-EXP](evidence/DUAL-REVIEWER-EXP-20260919) |
 
-补丁确定性：PR #2 的修复补丁在七轮独立运行中 sha256 逐字节一致（`674356fc…16081`）——同一漏洞的确定性修复，多轮互证。
+补丁确定性：PR #2 的修复补丁在八轮独立运行中 sha256 逐字节一致（`674356fc…16081`）——同一漏洞的确定性修复，多轮互证。
 
 **三路径完整覆盖**（SK5 达成）：批准（PR #2 → VERIFIED completed）· 拒绝（PR #3 → blocked 零派发）· **自动**（PR #1 → NOT_CONFIRMED/LOW → 无人工门 → auto completed）。
 
@@ -123,14 +123,14 @@ Agent 只承担语义判断，六类 Skill 以 Schema、deadline、错误码和 
 
 全部运行的标准 span 直连上报阿里云 AgentLoop / SLS：Agent 会话（AGENT_STEP）、LLM 调用（单层 genai.llm.call）、工具调用（genai 语义）三类齐全，**累计 450-530 span/轮 · 导出批次零失败**。
 
-**最新轮（SK5 三路径 + dual-reviewer）实测**：824 span / 141 LLM 调用 / 15 次 skill 调用（含 sast_scan 首次）；PR #1 自动路径 45 次 / 5.08M token / 62 秒完成。跨 Agent 关联：委派通知携带 W3C traceparent，接手 Agent 上报同 trace 关联 span（delegation.link，属性级）——**一条追踪 ID 串联两个容器的证据**。
+**最新轮（SK5 三路径 + dual-reviewer）实测**：824 span / 197 个 LLM 调用 span / 15 次 skill 调用（含 sast_scan 首次）；PR #1 自动路径 45 次 / 5.08M token / 62 秒完成。跨 Agent 关联：委派通知携带 W3C traceparent，接手 Agent 上报同 trace 关联 span（delegation.link，属性级）——**一条追踪 ID 串联两个容器的证据**。
 
 | 指标 | SK5 轮（PR #2） | SK5 轮（PR #3） | SK5 轮（PR #1 自动） | Dual-Reviewer |
 | --- | --- | --- | --- | --- |
 | 调用次数 | 86 | 33 | 45 | 31 |
 | 输入 token | 15,643,868（93%） | 3,882,302（99%） | 5,084,301（99%） | 2,177,070（98%） |
 | 输出 token | 36,522 | 9,022 | 14,661 | 4,827 |
-| skill 调用 | diff_parse + risk_classify | risk_classify | **sast_scan ×2（首次）** + risk_classify | — |
+| skill 调用 | diff_parse + risk_classify + case_retrieval | diff_parse + risk_classify | **sast_scan ×2（首次）** + risk_classify | — |
 
 检索方式：AgentLoop 控制台按 service.name=`mergepilot-copaw` + 运行时间窗筛选，或按 run 对应的 trace id 直查（trace id 与 run 的映射见各证据包 README）。
 | 会话 ID | N2KQqHVSBsSZc9utWsEeZ5f |

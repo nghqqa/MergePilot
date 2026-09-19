@@ -1,0 +1,22 @@
+{
+  "data_mode": "SIMULATED",
+  "polardb_connection": "NOT CONNECTED",
+  "fixture_table": "review_findings",
+  "row_count": 2,
+  "rows": [
+    {
+      "pr": 2,
+      "finding": "path-traversal",
+      "category": "CWE-22",
+      "risk_level": "high"
+    },
+    {
+      "pr": 3,
+      "finding": "high-risk-pattern",
+      "category": "CWE-22",
+      "risk_level": "high"
+    }
+  ],
+  "latency_ms": 0,
+  "disclosure": "PolarDB-compatible read-only fixture — DATA MODE: SIMULATED, POLARDB CONNECTION: NOT CONNECTED"
+}

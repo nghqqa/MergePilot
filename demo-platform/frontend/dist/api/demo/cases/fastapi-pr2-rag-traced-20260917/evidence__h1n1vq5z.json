@@ -1,0 +1,146 @@
+{
+  "id": "ev-sk-verify",
+  "title": "Verifier 独立验证（VERIFIED PASS，首次通过）",
+  "level": "REAL_EXECUTED_AGENTTEAMS_LIVE",
+  "postgate": true,
+  "fields": [
+    [
+      "独立工作区",
+      "干净 clone @ head SHA；git apply 干净通过；sha256 独立复算一致；backend/tests/ 未触碰"
+    ],
+    [
+      "修复前",
+      "pristine checkout 上 3 逃逸向量全 200 泄露（含 ../../../../../../etc/hostname = 158f57ca9296）；缺失 500"
+    ],
+    [
+      "修复后",
+      "越权全 400 Invalid file path · 合法 ok.txt 200 · 缺失 404 · py_compile PASS；PR 测试断言反转如实记录"
+    ],
+    [
+      "skill 交叉核对",
+      "skill_diff_parse ×1 + skill_risk_classify ×1（建议性 L1，低估 vs 自主 HIGH）——advisory 输出不替代自主复现"
+    ],
+    [
+      "事件",
+      "委派 16:55:44Z $0PQZDxKql3Aj4Q1JrD2OQnM6ZxgUORqvmF4IZPqjGI0 · 提交 VERIFIED 16:56:46Z（房间 16:56:50 报告）"
+    ]
+  ],
+  "blocks": [
+    {
+      "title": "finalsPr2Sk5Traced/tasks/pr2sk5-verify-1/result.md",
+      "lang": "text",
+      "text": "STATUS: SUCCESS\nSUMMARY: INDEPENDENT VERIFICATION of pr2sk5-fix-1 (run-elem-pr2sk5-20260919-01): VERIFIED. In my OWN fresh clone (~/pr2sk5-verify-work) at head SHA 1dedf5e1992c950557064d8f4fb9039d1523deb3 (git rev-parse HEAD verified; scope 2 files +122/-0), patch shared/tasks/pr2sk5-fix-1/attempt-1.diff applied cleanly (git apply --check and git apply exit 0; applied diff byte-identical to patch) and its sha256 was independently reproduced as 674356fc9a661faa49b97b789d75ff4529b95a5fac7f39dad0301397c0116081 (matches Fixer). Only backend/src/interfaces/api/v1/demo_high_risk.py changed; backend/tests untouched. (4a) On a PRISTINE checkout the vulnerability reproduces: my independent probe returned HTTP 200 + out-of-base content for ../outside/outside-secret.txt (TOP-SECRET-OUTSIDE-BASE), nested sub/../../outside/outside-secret.txt (TOP-SECRET-OUTSIDE-BASE) and ../../../../../../etc/hostname (158f57ca9296); missing -> 500; PR test = 1 passed/1 failed (matches Reviewer). (4b) With the patch applied all cases PASS: legit in-base file -> 200 'LEGIT-INSIDE-BASE'; ../outside/outside-secret.txt -> 400 {\"detail\":\"Invalid file path\"}; sub/../../outside/outside-secret.txt -> 400; ../../../../../../etc/hostname -> 400; missing in-base -> 404 {\"detail\":\"File not found\"} — no out-of-base content ever returned. (4c) python -m py_compile PASS both pre and post. Post-fix PR test = 2 failed, which is the EXPECTED assertion inversion (the PR test asserts the pre-fix 200/leak behavior, now 400) per spec step 5, i.e. the flaw is CLOSED, not a regression. Deterministic skills (advisory only, per manifest): skill_diff_parse req-c95384c75f confirmed scope (2 files +122/-0, source+test); skill_risk_classify req-83ea050b22 returned advisory L1 SOURCE_CONFIG_CHANGE (metadata-only, understated; actual severity HIGH CWE-22 per my code review + reproduction); rag_retrieve returned CWE-22 org standards (SYNTHETIC). None replaced my own reproduction. Zero GitHub writes; no repo test or other file modified. VERDICT: VERIFIED (PASS). Evidence: shared/tasks/pr2sk5-verify-1/workspace/verification.md\n\nDELIVERABLES:\n- shared/tasks/pr2sk5-verify-1/workspace/verification.md\n- shared/tasks/pr2sk5-verify-1/workspace/verify_probe.py\n- shared/tasks/pr2sk5-verify-1/workspace/attempt-1.diff\n"
+    },
+    {
+      "title": "finalsPr2Sk5Traced/tasks/pr2sk5-verify-1/workspace/verification.md",
+      "lang": "markdown",
+      "text": "# pr2sk5-verify-1 — Independent clean-workspace verification of the authorized fix patch (attempt 1)\n\n- **run_id**: run-elem-pr2sk5-20260919-01\n- **Role**: Verifier (independent)\n- **Repo**: https://github.com/nghqqa/fastapi-boilerplate-demo\n- **PR**: #2 (OPEN) — zero GitHub writes performed\n- **Human security gate**: APPROVED (remediation authorized)\n- **head SHA**: `1dedf5e1992c950557064d8f4fb9039d1523deb3` (verified `git rev-parse HEAD` = same) on my OWN fresh clone `~/pr2sk5-verify-work`; pristine comparison clone `~/pr2sk5-verify-prefix` at same SHA\n- **Diff scope (base..head)**: 2 files, +122/-0 (confirmed `git diff 4cd5bf0..HEAD --stat`)\n- **Patch verified**: `shared/tasks/pr2sk5-fix-1/attempt-1.diff`\n  - **sha256** = `674356fc9a661faa49b97b789d75ff4529b95a5fac7f39dad0301397c0116081` — **matches the fixer's claim** (independent `sha256sum`)\n  - `git apply --check` exit 0; `git apply` exit 0; applied `git diff` is **byte-identical** to the patch (`diff` exit 0)\n  - only `backend/src/interfaces/api/v1/demo_high_risk.py` modified; **`backend/tests/` untouched** (`git status --short -- backend/tests/` empty)\n- **Python**: `/opt/venv/standard/bin/python` (3.11.15); deps: fastapi 0.141.1, httpx 0.28.1, pytest 9.1.1\n\n## VERDICT: VERIFIED (PASS)\n\n---\n\n## A. Pre-fix baseline (PRISTINE clone, no patch) — vulnerability present\n\nIndependent probe `workspace/verify_probe.py` (loads the real module via importlib, mounts a fresh\nFastAPI app + `TestClient`, monkeypatches `DEMO_FILES_DIR` at runtime; lives OUTSIDE the repo;\nmodifies NO repo test; direct import also bypasses the repo conftest):\n\n```\n[i] /etc/hostname       : '158f57ca9296'\n[PASS] legit in-base file         'ok.txt'                              -> 200  body='LEGIT-INSIDE-BASE'\n[FAIL] traversal ../              '../outside/outside-secret.txt'       -> 200  body='TOP-SECRET-OUTSIDE-BASE'  !! LEAK\n[FAIL] nested ../ via sub dir     'sub/../../outside/outside-secret.txt'-> 200  body='TOP-SECRET-OUTSIDE-BASE'  !! LEAK\n[FAIL] absolute-target traversal  '../../../../../../etc/hostname'      -> 200  body='158f57ca9296\\n'           !! LEAK\n[FAIL] missing in-base file       'does-not-exist.txt'                  -> 500  'Internal Server Error'\nPROBE_ACCEPTANCE: FAIL   (exit=1)\n```\n\nPre-fix PR test (pristine clone, `--noconftest -o markers=security_demo`):\n\n```\n1 failed, 1 passed, 2 warnings in 0.47s\n- test_high_risk_path_traversal_reproduces  PASSED   (leak from OUTSIDE base returned; 200)\n- test_high_risk_path_traversal_depth       FAILED   RuntimeError: File at path\n    /tmp/pytest-of-root/.../demo-files/sub/../../../deep-secret.txt does not exist.\n```\n\n**The harness genuinely detects the flaw.**\n\n## B. Post-fix behavior (patch applied to `~/pr2sk5-verify-work`)\n\n```\n[PASS] legit in-base file         'ok.txt'                              -> 200  body='LEGIT-INSIDE-BASE'\n[PASS] traversal ../              '../outside/outside-secret.txt'       -> 400  body='{\"detail\":\"Invalid file path\"}'\n[PASS] nested ../ via sub dir     'sub/../../outside/outside-secret.txt'-> 400  body='{\"detail\":\"Invalid file path\"}'\n[PASS] absolute-target traversal  '../../../../../../etc/hostname'      -> 400  body='{\"detail\":\"Invalid file path\"}'\n[PASS] missing in-base file       'does-not-exist.txt'                  -> 404  body='{\"detail\":\"File not found\"}'\nPROBE_ACCEPTANCE: PASS   (exit=0)\n```\n\nPost-fix PR test (same invocation):\n\n```\n2 failed, 2 warnings in 0.22s\n- test_high_risk_path_traversal_reproduces  FAILED  AssertionError: {\"detail\":\"Invalid file path\"} / assert 400 == 200\n- test_high_risk_path_traversal_depth       FAILED  AssertionError: {\"detail\":\"Invalid file path\"} / assert 400 == 200\n```\n\n**Expected assertion inversion** (the PR test asserts the PRE-FIX vulnerable 200 behavior; after the\npatch it is 400) — the flaw is CLOSED, not a regression (per spec step 5).\n\n## C. py_compile\n\n```\nPRE-FIX  : PASS\nPOST-FIX : PASS\n```\n\n## Requirement coverage\n\n| # | Requirement | Result |\n|---|-------------|--------|\n| 4a | PRISTINE leaks (harness detects vuln) | `../` relative, nested `sub/../../`, and absolute-target traversal ALL → 200 with outside content — PASS |\n| 4b | post-fix `../` relative rejected | **400** `Invalid file path` — PASS |\n| 4b | post-fix nested `../` rejected | **400** `Invalid file path` — PASS |\n| 4b | post-fix absolute-target traversal rejected | **400** `Invalid file path` — PASS |\n| 4b | post-fix missing in-base file | **404** `File not found` — PASS |\n| 4b | post-fix legit in-base file | **200** `LEGIT-INSIDE-BASE` — PASS |\n| 4c | py_compile pre & post | PASS |\n| 3 | patch applies cleanly; sha256 matches | PASS |\n| 6 | tests untouched; no extra repo files; zero GitHub writes | PASS |\n\n## Deterministic skill tools & RAG (advisory only, per manifest)\n\n- **`skill_diff_parse`** (`req-c95384c75f`): matched scope exactly — 2 files, +122/-0, categories\n  `source`+`test`.\n- **`skill_risk_classify`** (`req-83ea050b22`): **advisory L1** (`SOURCE_CONFIG_CHANGE`,\n  recommends `HUMAN_REVIEW`) — **metadata-only and understated**; it does not read code. My\n  independent code inspection + reproduction establish the actual **HIGH CWE-22** severity. The\n  tool marks itself `advisory_only: true` (\"never replaces human approval\").\n- **`rag_retrieve`**: OK — `org-standards/fastapi-endpoint-checklist.md#1`,\n  `org-standards/cwe-22-path-traversal.md#1`, `org-standards/file-path-containment.md#1`\n  (`data_mode=SYNTHETIC`).\n\nAll advisory; **none replaced my own reproduction**.\n\n## Notes\n\n- **Environment:** the repo-level `backend/tests/conftest.py` requires non-empty Google OAuth env\n  values to import. I ran the PR test with `--noconftest` + registered `security_demo` marker; my\n  decisive evidence is the independent behavior probe, which loads `demo_high_risk.py` directly via\n  importlib and bypasses the conftest entirely. No repo file was modified.\n- Containment logic inspected: `realpath` + `commonpath([base_real, file_real]) != base_real`\n  with an `isfile` 404 path — correct; no `startswith` `/base` vs `/base-evil` prefix pitfall.\n- The patch (byte-identical, same sha256) replicates the earlier accepted fix; this independent\n  re-run reconfirms it on a fresh clone.\n"
+    }
+  ],
+  "source_ref": "finalsPr2Sk5Traced/tasks/pr2sk5-verify-1/result.md",
+  "hash": {
+    "file": "tasks/pr2sk5-verify-1/result.md",
+    "dir": "FINALS-ELEM-PR2-SK5-TRACED",
+    "exists": true,
+    "hash_verified": true,
+    "sha256": "83a1ed88c5994f986bc9e9d5cc7bc413d4ed6127bd2b6aa02fc0f5430369402b"
+  },
+  "real": [
+    "真实执行（SK5-TRACED）：非预设 SPEC、真实人工门（按操作员运行前书面授权自动投递）、批准后 12 秒 Leader 全新委派、Reviewer/Fixer/Verifier 真实调用确定性 skill_* 工具（tool.skill_* 独立 span + 宿主审计流水）",
+    "SK5 会话四线并行：PR #2 批准路径 + PR #3 拒绝路径 + PR #1 低风险自动路径（NOT_CONFIRMED/LOW，无人工门，skill_sast_scan 首次被 Agent 调用并诚实识别 false positive）+ 双 Reviewer 信度实验（两独立容器同一 head 结论完全一致）；direct-probe 以 stdin 方式修复采集，4/4 非空"
+  ],
+  "controlled": [
+    "页面为只读回放；RAG 语料为知识型 SYNTHETIC（citation-only，无案例结论）；确定性 Skill 输出为 advisory（其 SKILL.md 自述 never an authorization decision）",
+    "case_retrieval 的向量检索使用仓库自带的离线确定性 hash embedding（非语义模型）——排序为确定性向量相似度，升级语义检索属赛后项"
+  ],
+  "not_executed": [
+    "操作员对 Fixer 零执行指令介入；merge/push/close/reopen 未执行（PR #2 保持 OPEN，github-branches-after-sk5.txt 双分支 head 核验不变）",
+    "SK5-MASTER-README 的用量表为估计口径，与本包锁定 usage-summary.json 的实测窗口不一致——本页以锁定工件为准",
+    "直连探针本轮已修复采集（stdin 方式，4/4 非空）——此前四轮\"未采集\"的已知操作缺陷闭环"
+  ],
+  "case": {
+    "case_id": "fastapi-pr2-rag-traced-20260917",
+    "case_name": "FastAPI PR #2 · 高风险变更 · 人工批准闭环",
+    "repo": "nghqqa/fastapi-boilerplate-demo",
+    "pr": "PR #2 · demo/high-risk-human-gate",
+    "pr_url": "https://github.com/nghqqa/fastapi-boilerplate-demo/pull/2",
+    "run_id": "run-elem-pr2sk5-20260919-01",
+    "sha": "1dedf5e1992c950557064d8f4fb9039d1523deb3",
+    "sha_kind": "PR #2 head commit · ls-remote 已核验",
+    "evidence_level": [
+      "REAL_EXECUTED_AGENTTEAMS_LIVE"
+    ],
+    "source_dir": "evidence/FINALS-ELEM-PR2-SK5-TRACED（SHA256SUMS 锁定，54 清单项）",
+    "generated_at": "运行窗口 16:51Z–16:57Z（墙钟 5 分 31 秒，含人工门决策等待 1 分 00 秒）",
+    "pending_redactions": [
+      [
+        "demo/high-risk-human-gate",
+        "demo/···"
+      ],
+      [
+        "copaw-high-risk-human-gate",
+        "copaw-high-risk-···"
+      ],
+      [
+        "sast_scan 首战 + case_retrieval 持续产出",
+        "核心增量：确定性 Skill 全家桶接入"
+      ],
+      [
+        "Fixer 补丁 pr2sk5-fix-1（skill 辅助下的确定性修复）",
+        "门后任务产物（决策后可见）"
+      ],
+      [
+        "Verifier 独立验证（VERIFIED PASS，首次通过）",
+        "门后任务产物（决策后可见）"
+      ],
+      [
+        "人工安全门（按操作员运行前授权自动投递：批准）",
+        "人工安全门 · 决策记录"
+      ]
+    ]
+  },
+  "integrity": {
+    "finals": {
+      "finalsDbLoop": {
+        "dir": "FINALS-DB-MIGRATION-LOOP-20260914",
+        "tier": "REAL_SQL_VERIFICATION_ISOLATED_POSTGRES",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsReworkLoop": {
+        "dir": "FINALS-REWORK-LOOP-20260914",
+        "tier": "MECHANISM_VERIFICATION",
+        "verified": true,
+        "files": 7,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsRagLoop": {
+        "dir": "FINALS-RAG-LOOP-20260914",
+        "tier": "REAL_OFFLINE_EXPERIMENT_SYNTHETIC_CORPUS",
+        "verified": true,
+        "files": 4,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr2Live": {
+        "dir": "FINALS-ELEM-PR2-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 19,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr3Live": {
+        "dir": "FINALS-ELEM-PR3-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      }
+    }
+  }
+}

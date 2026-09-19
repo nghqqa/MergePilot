@@ -1,0 +1,667 @@
+{
+  "mode": "replay",
+  "case_id": "pr3-high-risk-human-reject",
+  "title": "PR #3 — CWE-78 命令注入（未认证 RCE）· 人工拒绝后安全阻塞（v3 埋点 + RAG 追踪版）",
+  "positioning": "严重风险被人工拒绝后，系统不绕过人工门继续修复：Fixer/Verifier 保持锁定，项目阻塞，PR 保持 OPEN。",
+  "repository": "nghqqa/fastapi-boilerplate-demo",
+  "data_mode": "historical replay",
+  "trace_mode": "evidence-replay",
+  "integrity_status": {
+    "final_package": "VERIFIED",
+    "historical_materials": "VERIFIED",
+    "case_dirs": [
+      "FINALS-ELEM-PR3-V3-TRACED (SHA256SUMS 53 files)"
+    ]
+  },
+  "source_refs": [
+    "FINALS-ELEM-PR3-V3-TRACED/README.md",
+    "FINALS-ELEM-PR3-V3-TRACED/kickoff-as-sent.txt",
+    "FINALS-ELEM-PR3-V3-TRACED/kickoff.json",
+    "FINALS-ELEM-PR3-V3-TRACED/team-room-messages-pr3v3-window.json",
+    "FINALS-ELEM-PR3-V3-TRACED/tasks/pr3v3-review-1/result.md",
+    "FINALS-ELEM-PR3-V3-TRACED/tasks/pr3v3-review-1/result.md",
+    "FINALS-ELEM-PR3-V3-TRACED/tasks/pr3v3-review-1/workspace/findings.md",
+    "FINALS-ELEM-PR3-V3-TRACED/leader-dm-messages-pr3v3-window.json",
+    "FINALS-ELEM-PR3-V3-TRACED/project/human-gate-rejection.md",
+    "FINALS-ELEM-PR3-V3-TRACED/gate-rejection-sent.json",
+    "FINALS-ELEM-PR3-V3-TRACED/rag/rag-tool-spans.jsonl",
+    "FINALS-ELEM-PR3-V3-TRACED/project/plan.md",
+    "FINALS-ELEM-PR3-V3-TRACED/project/meta.json",
+    "FINALS-ELEM-PR3-V3-TRACED/controller-project.json",
+    "FINALS-ELEM-PR3-V3-TRACED/usage-summary.json",
+    "FINALS-ELEM-PR3-V3-TRACED/agentloop/audit-leader-pr3v3-window.log",
+    "FINALS-ELEM-PR3-V3-TRACED/agentloop/audit-reviewer-pr3v3-window.log",
+    "FINALS-ELEM-PR3-V3-TRACED/agentloop/audit-verifier-pr3v3-window.log",
+    "FINALS-ELEM-PR3-V3-TRACED/agentloop/span-summary.json",
+    "FINALS-ELEM-PR3-V3-TRACED/github-branches-after-v3.txt"
+  ],
+  "breadcrumb": {
+    "repository": "nghqqa/fastapi-boilerplate-demo",
+    "pull_request": "PR #3 (demo/high-risk-human-reject)",
+    "project": "elemiso-pr3v3-reject",
+    "team": "elemiso-team (copaw workers)",
+    "runtime": "copaw-worker:223ddc2-agentloop-v3rag（image 8e17c3667c3c）"
+  },
+  "pull_request": {
+    "number": 3,
+    "branch": "demo/high-risk-human-reject",
+    "state": "open",
+    "write_actions": false,
+    "state_note": "运行前后 ls-remote 双向核验 head SHA ad267a6e… 一致（github-branches-after-v3.txt）；PR 保持 OPEN 且未修复"
+  },
+  "project": {
+    "id": "elemiso-pr3v3-reject",
+    "status": "blocked"
+  },
+  "team": {
+    "id": "elemiso-team (copaw workers)",
+    "size": 4
+  },
+  "runtime": {
+    "stack": "AgentTeams agentteams-embedded:223ddc2 (elemiso-ctrl)",
+    "worker_image": "copaw-worker:223ddc2-agentloop-v3rag（image 8e17c3667c3c）",
+    "mode": "Docker Desktop, controller reconcile"
+  },
+  "risk": {
+    "level": "high",
+    "category": "CWE-78",
+    "human_gate": "rejected",
+    "affected_file": "backend/src/interfaces/api/v1/demo_cmd_exec.py — demo_ping (L41 f-string → L42-44 subprocess.run(shell=True) → L45-49 回显)",
+    "description": "用户可控 host 参数被 f-string 拼入 ping 命令并以 shell 执行；;, |, 换行, 反引号, $(...) 均可实现任意命令执行并回显输出；路由无鉴权依赖 = 未认证远程命令执行（服务进程 root）。该缺陷为演示预置（PR docstring 明示 human-REJECT 场景）。",
+    "reviewer_conclusion": "STATUS: SUCCESS / FINDING_CONFIRMED / SEVERITY: HIGH / HUMAN_VERIFICATION_REQUIRED: YES（本轮自主定级 HIGH；P14 历史轮同漏洞定级 critical——两轮独立审查者各自如实，跨轮口径差异披露）",
+    "rag_note": "Reviewer 按 manifest 邀请实际调用 rag_retrieve（cwe-78-command-injection.md#1/#2 + command-execution.md#1，引用不替代自主复现）",
+    "no_fix_note": "本案例无修复：人工拒绝后系统不执行任何自动修复，演示代码保持原样（不作为生产修复展示）。"
+  },
+  "agents": [
+    {
+      "role": "leader",
+      "agent_id": "leader",
+      "matrix_id": "@leader:elemiso-matrix:6167",
+      "runtime": "copaw-worker:223ddc2-agentloop-v3rag",
+      "console": "127.0.0.1（宿主发布端口，容器停止已移除）"
+    },
+    {
+      "role": "reviewer",
+      "agent_id": "reviewer",
+      "matrix_id": "@reviewer:elemiso-matrix:6167",
+      "runtime": "copaw-worker:223ddc2-agentloop-v3rag",
+      "console": "127.0.0.1（同上）"
+    },
+    {
+      "role": "fixer",
+      "agent_id": "fixer",
+      "matrix_id": "@fixer:elemiso-matrix:6167",
+      "runtime": "copaw-worker:223ddc2-agentloop-v3rag",
+      "console": "127.0.0.1（同上）",
+      "lock": "LOCKED — HUMAN_SECURITY_REJECTED 后永不派发（窗口切片 0 mention）"
+    },
+    {
+      "role": "verifier",
+      "agent_id": "verifier",
+      "matrix_id": "@verifier:elemiso-matrix:6167",
+      "runtime": "copaw-worker:223ddc2-agentloop-v3rag",
+      "console": "127.0.0.1（同上）",
+      "lock": "LOCKED — 无修复可验证，永久锁定（窗口切片 0 mention）"
+    },
+    {
+      "role": "human",
+      "agent_id": "operator (runtime owner)",
+      "matrix_id": "@elemiso-admin:elemiso-matrix:6167",
+      "runtime": "human decision — 运行前书面授权自动执行（本轮门拒绝）",
+      "console": "Element Web 127.0.0.1:18088"
+    }
+  ],
+  "dag": {
+    "nodes": [
+      {
+        "id": "review-1",
+        "label": "review-1",
+        "sub": "reviewer",
+        "kind": "task"
+      },
+      {
+        "id": "human-gate",
+        "label": "HUMAN GATE",
+        "sub": "人工安全门（拒绝路径）",
+        "kind": "gate"
+      },
+      {
+        "id": "fix-1",
+        "label": "fix-1",
+        "sub": "fixer",
+        "kind": "task"
+      },
+      {
+        "id": "verify-1",
+        "label": "verify-1",
+        "sub": "verifier",
+        "kind": "task"
+      }
+    ],
+    "edges": [
+      {
+        "from": "review-1",
+        "to": "human-gate"
+      },
+      {
+        "from": "human-gate",
+        "to": "fix-1"
+      },
+      {
+        "from": "fix-1",
+        "to": "verify-1"
+      }
+    ],
+    "human_gate_node": "human-gate"
+  },
+  "tasks": [
+    {
+      "id": "review-1",
+      "project_id": "elemiso-pr3v3-reject",
+      "assignee": "reviewer",
+      "runtime": "copaw-worker:223ddc2-agentloop-v3rag",
+      "status": "completed",
+      "status_label": "COMPLETED · 完成",
+      "locked": false,
+      "locked_reason": null,
+      "upstream": [],
+      "last_status_change": {
+        "at": "2026-09-17T03:19:43Z",
+        "event_id": "pr3v3-ev-006",
+        "status": "completed",
+        "status_label": "COMPLETED · 完成",
+        "locked_reason": null
+      },
+      "source_map": {
+        "status": {
+          "value": null,
+          "source": "Evidence Replay",
+          "source_ref": "finalsPr3V3Traced/tasks/pr3v3-review-1/meta.json + finalsPr3V3Traced/team-room-messages-pr3v3-window.json",
+          "timestamp_precision": null
+        },
+        "assignee": {
+          "value": "reviewer",
+          "source": "MinIO task result",
+          "source_ref": "elemiso-pr3v3-reject/tasks/review-1/meta.json (recorded in evidence; project-scoped store)",
+          "timestamp_precision": null
+        },
+        "runtime": {
+          "value": "copaw-worker:223ddc2-agentloop-v3rag",
+          "source": "Controller API",
+          "source_ref": "PHASE14-WINDOWS-COPAW-HIGH-RISK-FIX-VERIFY-20260829-180548/ENTRYPOINTS.md",
+          "timestamp_precision": null
+        },
+        "started_at": {
+          "value": "2026-09-17T03:19:08Z",
+          "source": "Evidence Replay",
+          "source_ref": "finalsPr3V3Traced/tasks/pr3v3-review-1/meta.json + finalsPr3V3Traced/team-room-messages-pr3v3-window.json",
+          "timestamp_precision": "exact"
+        },
+        "ended_at": {
+          "value": "2026-09-17T03:19:43Z",
+          "source": "Evidence Replay",
+          "source_ref": "finalsPr3V3Traced/tasks/pr3v3-review-1/meta.json + finalsPr3V3Traced/team-room-messages-pr3v3-window.json",
+          "timestamp_precision": "exact"
+        },
+        "result": {
+          "value": "SUCCESS",
+          "source": "MinIO task result",
+          "source_ref": "finalsPr3V3Traced/tasks/pr3v3-review-1/workspace/findings.md",
+          "timestamp_precision": null
+        },
+        "effective": {
+          "value": true,
+          "source": "Controller API",
+          "source_ref": "PHASE14-WINDOWS-COPAW-HIGH-RISK-FIX-VERIFY-20260829-180548/AUDIT.md（leader check_task effective=true 终检）",
+          "timestamp_precision": null
+        }
+      },
+      "result_status": "SUCCESS",
+      "effective": true,
+      "evidence": [
+        {
+          "name": "findings.md",
+          "source": "finalsPr3V3Traced/tasks/pr3v3-review-1/workspace/findings.md"
+        }
+      ]
+    },
+    {
+      "id": "fix-1",
+      "project_id": "elemiso-pr3v3-reject",
+      "assignee": "fixer",
+      "runtime": "copaw-worker:223ddc2-agentloop-v3rag",
+      "status": "rejected",
+      "status_label": "REJECTED · 人工拒绝后锁定",
+      "locked": true,
+      "locked_reason": "HUMAN_SECURITY_REJECTED — 人工拒绝修复，永不派发",
+      "upstream": [
+        "review-1",
+        "human-gate (PR#2)"
+      ],
+      "last_status_change": {
+        "at": "2026-09-17T03:21:03Z",
+        "event_id": "pr3v3-ev-008",
+        "status": "rejected",
+        "status_label": "REJECTED · 人工拒绝后锁定",
+        "locked_reason": "HUMAN_SECURITY_REJECTED — 人工拒绝修复，永不派发"
+      },
+      "source_map": {
+        "status": {
+          "value": null,
+          "source": "Evidence Replay",
+          "source_ref": "finalsPr3V3Traced/project/plan.md + finalsPr3V3Traced/team-room-messages-pr3v3-window.json",
+          "timestamp_precision": null
+        },
+        "assignee": {
+          "value": "fixer",
+          "source": "MinIO task result",
+          "source_ref": "elemiso-pr3v3-reject/tasks/fix-1/meta.json (recorded in evidence; project-scoped store)",
+          "timestamp_precision": null
+        },
+        "runtime": {
+          "value": "copaw-worker:223ddc2-agentloop-v3rag",
+          "source": "Controller API",
+          "source_ref": "PHASE14-WINDOWS-COPAW-HIGH-RISK-FIX-VERIFY-20260829-180548/ENTRYPOINTS.md",
+          "timestamp_precision": null
+        },
+        "started_at": {
+          "value": null,
+          "source": "Evidence Replay",
+          "source_ref": "finalsPr3V3Traced/project/plan.md + finalsPr3V3Traced/team-room-messages-pr3v3-window.json",
+          "timestamp_precision": "exact"
+        },
+        "ended_at": {
+          "value": null,
+          "source": "Evidence Replay",
+          "source_ref": "finalsPr3V3Traced/project/plan.md + finalsPr3V3Traced/team-room-messages-pr3v3-window.json",
+          "timestamp_precision": "exact"
+        },
+        "result": {
+          "value": null,
+          "source": "MinIO task result",
+          "source_ref": "finalsPr3V3Traced/project/plan.md",
+          "timestamp_precision": null
+        },
+        "effective": {
+          "value": false,
+          "source": "Controller API",
+          "source_ref": "PHASE14-WINDOWS-COPAW-HIGH-RISK-FIX-VERIFY-20260829-180548/AUDIT.md（leader check_task effective=true 终检）",
+          "timestamp_precision": null
+        }
+      },
+      "result_status": null,
+      "effective": false,
+      "evidence": [
+        {
+          "name": "plan.md（[-] REJECTED never delegated 标注）",
+          "source": "finalsPr3V3Traced/project/plan.md"
+        }
+      ]
+    },
+    {
+      "id": "verify-1",
+      "project_id": "elemiso-pr3v3-reject",
+      "assignee": "verifier",
+      "runtime": "copaw-worker:223ddc2-agentloop-v3rag",
+      "status": "locked",
+      "status_label": "LOCKED · 永久锁定（不可派发）",
+      "locked": true,
+      "locked_reason": "fix-1 已拒绝 — Verifier 永久锁定（无修复可验证）",
+      "upstream": [
+        "fix-1"
+      ],
+      "last_status_change": {
+        "at": "2026-09-17T03:21:03Z",
+        "event_id": "pr3v3-ev-008",
+        "status": "locked",
+        "status_label": "LOCKED · 永久锁定（不可派发）",
+        "locked_reason": "fix-1 已拒绝 — Verifier 永久锁定（无修复可验证）"
+      },
+      "source_map": {
+        "status": {
+          "value": null,
+          "source": "Evidence Replay",
+          "source_ref": "finalsPr3V3Traced/project/plan.md + finalsPr3V3Traced/team-room-messages-pr3v3-window.json",
+          "timestamp_precision": null
+        },
+        "assignee": {
+          "value": "verifier",
+          "source": "MinIO task result",
+          "source_ref": "elemiso-pr3v3-reject/tasks/verify-1/meta.json (recorded in evidence; project-scoped store)",
+          "timestamp_precision": null
+        },
+        "runtime": {
+          "value": "copaw-worker:223ddc2-agentloop-v3rag",
+          "source": "Controller API",
+          "source_ref": "PHASE14-WINDOWS-COPAW-HIGH-RISK-FIX-VERIFY-20260829-180548/ENTRYPOINTS.md",
+          "timestamp_precision": null
+        },
+        "started_at": {
+          "value": null,
+          "source": "Evidence Replay",
+          "source_ref": "finalsPr3V3Traced/project/plan.md + finalsPr3V3Traced/team-room-messages-pr3v3-window.json",
+          "timestamp_precision": "exact"
+        },
+        "ended_at": {
+          "value": null,
+          "source": "Evidence Replay",
+          "source_ref": "finalsPr3V3Traced/project/plan.md + finalsPr3V3Traced/team-room-messages-pr3v3-window.json",
+          "timestamp_precision": "exact"
+        },
+        "result": {
+          "value": null,
+          "source": "MinIO task result",
+          "source_ref": "finalsPr3V3Traced/project/plan.md",
+          "timestamp_precision": null
+        },
+        "effective": {
+          "value": false,
+          "source": "Controller API",
+          "source_ref": "PHASE14-WINDOWS-COPAW-HIGH-RISK-FIX-VERIFY-20260829-180548/AUDIT.md（leader check_task effective=true 终检）",
+          "timestamp_precision": null
+        }
+      },
+      "result_status": null,
+      "effective": false,
+      "evidence": [
+        {
+          "name": "plan.md（[!] LOCKED 标注）",
+          "source": "finalsPr3V3Traced/project/plan.md"
+        }
+      ]
+    }
+  ],
+  "timeline": [
+    {
+      "event_id": "pr3v3-ev-001",
+      "timestamp": "2026-09-17T03:19:03Z",
+      "timestamp_precision": "exact",
+      "agent_role": "human",
+      "event_type": "message",
+      "source": "matrix",
+      "source_ref": "finalsPr3V3Traced/kickoff-as-sent.txt",
+      "summary": "操作员发送 kickoff（项目 elemiso-pr3v3-reject；SPEC 非预设——零漏洞类别提示词，打包时自动核验 0 命中）"
+    },
+    {
+      "event_id": "pr3v3-ev-002",
+      "timestamp": "2026-09-17T03:19:08Z",
+      "timestamp_precision": "exact",
+      "agent_role": "leader",
+      "event_type": "tool_call",
+      "source": "matrix",
+      "source_ref": "finalsPr3V3Traced/team-room-messages-pr3v3-window.json",
+      "summary": "kickoff 后 5 秒：Leader 委派 review-1 @reviewer（m.mentions 命中；traceparent 注入 → 接收侧 agentteams.delegation.link 属性级关联）"
+    },
+    {
+      "event_id": "pr3v3-ev-003",
+      "timestamp": "2026-09-17T03:19:10Z",
+      "timestamp_precision": "exact",
+      "agent_role": "reviewer",
+      "event_type": "task_state",
+      "source": "minio",
+      "source_ref": "finalsPr3V3Traced/tasks/pr3v3-review-1/meta.json",
+      "summary": "reviewer ack_task（acknowledged_at 03:19:10Z）；clone + checkout head SHA ad267a6e… 校验"
+    },
+    {
+      "event_id": "pr3v3-ev-004",
+      "timestamp": "2026-09-17T03:19:13Z",
+      "timestamp_precision": "windowed",
+      "agent_role": "reviewer",
+      "event_type": "tool_call",
+      "source": "evidence",
+      "source_ref": "finalsPr3V3Traced/tasks/pr3v3-review-1/workspace/findings.md",
+      "summary": "reviewer 独立审查 + 真实 PoC：; | 换行 反引号 $(...) 全部以 root 执行任意命令；127.0.0.1; id → uid=0(root)；cat /etc/hostname 读宿主文件"
+    },
+    {
+      "event_id": "pr3v3-ev-005",
+      "timestamp": "2026-09-17T03:19:27Z",
+      "timestamp_precision": "exact",
+      "agent_role": "reviewer",
+      "event_type": "tool_call",
+      "source": "rag",
+      "source_ref": "finalsPr3V3Traced/rag/rag-tool-spans.jsonl",
+      "summary": "RAG 知识库调用：rag_retrieve 返回 org-standards/cwe-78-command-injection.md#1/#2 与 command-execution.md#1 —— 与 reviewer 自主 CWE-78 定级一致"
+    },
+    {
+      "event_id": "pr3v3-ev-006",
+      "timestamp": "2026-09-17T03:19:43Z",
+      "timestamp_precision": "exact",
+      "agent_role": "reviewer",
+      "event_type": "task_state",
+      "source": "matrix",
+      "source_ref": "finalsPr3V3Traced/tasks/pr3v3-review-1/result.md",
+      "summary": "HIGH_RISK_FOUND — review-1 提交：FINDING_CONFIRMED / SEVERITY: HIGH / HUMAN_VERIFICATION_REQUIRED: YES（CWE-78 未认证 RCE；kickoff 后 40 秒；本轮自主定级 HIGH，与 P14 历史轮 critical 各自如实）"
+    },
+    {
+      "event_id": "pr3v3-ev-007",
+      "timestamp": "2026-09-17T03:19:53Z",
+      "timestamp_precision": "exact",
+      "agent_role": "leader",
+      "event_type": "message",
+      "source": "matrix",
+      "source_ref": "finalsPr3V3Traced/leader-dm-messages-pr3v3-window.json",
+      "summary": "HUMAN_SECURITY_REVIEW_REQUIRED — Leader 上报人工门并 STOP（\"Do NOT delegate pr3v3-fix-1\"）；同时识别该 PR 为 human-REJECT 场景（docstring 明示）"
+    },
+    {
+      "event_id": "pr3v3-ev-008",
+      "timestamp": "2026-09-17T03:21:03Z",
+      "timestamp_precision": "exact",
+      "agent_role": "human",
+      "event_type": "approval",
+      "source": "matrix",
+      "source_ref": "finalsPr3V3Traced/project/human-gate-rejection.md",
+      "summary": "HUMAN_SECURITY_REJECTED — 操作员拒绝修复（按运行前书面授权自动投递：PR #3 走拒绝分支）；绑定指令：fix-1 永不派发、verify-1 锁定、项目置 blocked、PR #3 保持 OPEN"
+    },
+    {
+      "event_id": "pr3v3-ev-009",
+      "timestamp": "2026-09-17T03:21:14Z",
+      "timestamp_precision": "exact",
+      "agent_role": "leader",
+      "event_type": "message",
+      "source": "matrix",
+      "source_ref": "finalsPr3V3Traced/leader-dm-messages-pr3v3-window.json",
+      "summary": "拒绝后 11 秒：Leader 落实绑定效应并发出最终报告 PROJECT_BLOCKED_HUMAN_REJECTED（plan 标注 fix [-] rejected / verify [!] locked；零派发三重核验：窗口 15 条消息 @fixer/@verifier=0 · plan [-]/[!] · 无 pr3v3-fix-1/verify-1 任务目录）"
+    }
+  ],
+  "gate": {
+    "gate_id": "elemiso-pr3v3-reject:post-review",
+    "state": "rejected",
+    "trigger": {
+      "by": "review-1",
+      "signals": [
+        "FINDING_CONFIRMED",
+        "SEVERITY: HIGH",
+        "HUMAN_VERIFICATION_REQUIRED: YES"
+      ],
+      "triggered_at": "2026-09-17T03:19:53Z (exact, Leader 停门报告 $G0NxE_Z6sYQ0S…)"
+    },
+    "rejected_at": "2026-09-17T03:21:03Z (exact, DM $53m_qI51-bniG…；gate-rejection-sent.json 记录 DM/团队房双事件号)",
+    "rejected_by": "operator (runtime owner) — 运行前书面授权\"PR #3 走拒绝分支\"，由系统按授权自动投递",
+    "decision": "HUMAN_SECURITY_REJECTED",
+    "record_path": "shared/projects/elemiso-pr3v3-reject/human-gate-rejection.md（快照：finalsPr3V3Traced/project/human-gate-rejection.md）",
+    "scope": [
+      "确认 HIGH/CWE-78 结论",
+      "拒绝修复：pr3v3-fix-1 永不派发",
+      "pr3v3-verify-1 保持锁定（无修复可验证）",
+      "项目置 blocked，不完成",
+      "失败即停止并保留证据（fail-safe）"
+    ],
+    "prohibitions": [
+      "fix-1 派发",
+      "verify-1 派发",
+      "自动修复",
+      "merge",
+      "push",
+      "close",
+      "reopen"
+    ],
+    "unblocks": [],
+    "terminal_note": "终态：rejected → blocked。禁止从 rejected 自动转为 fixing/verifying/completed；仅新的显式人工批准事件可恢复（本案例不添加）。",
+    "rejection_text_source": "finalsPr3V3Traced/project/human-gate-rejection.md"
+  },
+  "fix_comparison": null,
+  "trace_status": {
+    "status": "EVIDENCE REPLAY ONLY",
+    "display": "待接入",
+    "trace_mode": "evidence-replay",
+    "data_mode": "historical replay",
+    "cloud_trace": "VERIFIED / VERIFIED",
+    "smoke": {
+      "status": "VERIFIED",
+      "source": "Aliyun AgentLoop OTLP smoke evidence",
+      "refs": [
+        "PHASE14-WINDOWS-AGENTLOOP-OTEL-20260829-200307/trace-schema.json",
+        "PHASE14-WINDOWS-REPLAY-MATERIALS-20260829-195223/08-scope-boundary.md"
+      ],
+      "refs_note": "smoke 判定依据阶段指令；相关文档存在 1 个已记录 SHA256 drift（08-scope-boundary.md），故该文件中的 LIVE 断言不作为 VERIFIED 依据"
+    },
+    "live_copaw_run": {
+      "status": "VERIFIED",
+      "trace_mode": "LIVE CLOUD",
+      "source": "Aliyun AgentLoop console trace detail — operator-confirmed screenshot (Phase 14.2H, 2026-08-30)",
+      "verdict": "AGENTLOOP_ALIYUN_TRACE_VISIBILITY_CONFIRMED_BY_OPERATOR",
+      "evidence_dir": "evidence/PHASE14-WINDOWS-AGENTLOOP-MERGED-TRACE-FINALIZE-20260830-181813",
+      "evidence_dir_in_package": false,
+      "evidence_dir_note": "该目录属于项目完整证据库，本演示包随附的 11 个证据目录未包含它；包内 AgentLoop 相关证据为 PHASE14-WINDOWS-AGENTLOOP-OTEL-20260829-200307（OTLP smoke + trace schema）",
+      "sample_note": "历史权威 Trace · 已确认样本 n=1（2026-08-30），非当前实时数据",
+      "refs": [
+        "cloud-trace-confirmation.json",
+        "span-tree.json",
+        "coverage-matrix.json",
+        "relay-stability.json",
+        "SHA256SUMS"
+      ],
+      "refs_note": "真实 Matrix 触发 run（observability-validation-run-4 / project agentloop-innerhook-4），非 synthetic smoke、非 evidence replay；云端可见性由操作员控制台确认，本地 relay(75/75 HTTP 200) 与四 worker 埋点(span 名录+LLM 审计)构成旁证",
+      "trace": {
+        "trace_id": "fbf4a3cec0493990d76e10a102418be1",
+        "session_id": "N2KQqHVSBsSZc9utWsEeZ5f",
+        "started_at_utc": "2026-08-30T10:07:26Z",
+        "duration": "17.6s",
+        "agent_calls": 1,
+        "llm_calls": 24,
+        "tool_calls": 8,
+        "tokens_total": 51890,
+        "tokens_input": 49867,
+        "tokens_output": 2023,
+        "model": "deepseek-chat",
+        "service": "mergepilot-copaw"
+      },
+      "span_tree": "agent_step → invoke_agent Friday → {chat deepseek-chat (native) + genai.llm.call (loongsuite wrapper) + tool.projectflow + tool.taskflow + matrix.send}",
+      "merged_span_note": "原生 agentscope span 与 loongsuite wrapper span 同 Trace：zz 埋点在解释器启动时抢占全局 TracerProvider（service.name=mergepilot-copaw），runtime 复用同一 Provider，同批导出",
+      "drifted_claim_file": "PHASE14-WINDOWS-REPLAY-MATERIALS-20260829-195223/08-scope-boundary.md"
+    },
+    "tool_span": {
+      "status": "VERIFIED",
+      "source": "console 工具调用=8（trace fbf4a3cec0493990d76e10a102418be1）+ worker span 日志 tool.projectflow/tool.taskflow 同 run 产出",
+      "refs": [
+        "span-tree.json",
+        "relay-stability.json"
+      ]
+    },
+    "coverage": {
+      "status": "VERIFIED",
+      "scope": "Agent / LLM / Tool span 同一 Trace 覆盖（历史权威 Trace · 已确认样本 n=1 完整真实运行；不声称多轮稳定覆盖）",
+      "refs": [
+        "coverage-matrix.json"
+      ]
+    },
+    "historical_replay": {
+      "status": "VERIFIED",
+      "mode": "evidence-replay"
+    },
+    "trace_id": "fbf4a3cec0493990d76e10a102418be1",
+    "span_count": 32,
+    "trace_source": "agentloop-plane live cloud trace",
+    "cloud_visibility": true,
+    "trajectory_evaluation": null,
+    "result_evaluation": null,
+    "reason": "平台内 per-task Trace 仍为 evidence-replay（历史证据回放）；AgentLoop 平面已切换 LIVE CLOUD：真实 CoPaw run 的合并 Trace（Agent+LLM+Tool）已在阿里云控制台由操作员确认（verdict: AGENTLOOP_ALIYUN_TRACE_VISIBILITY_CONFIRMED_BY_OPERATOR）。per-task 维度接入为下一阶段（Phase 15）工作",
+    "schema_only": {
+      "exists": true,
+      "path": "PHASE14-WINDOWS-AGENTLOOP-OTEL-20260829-200307/trace-schema.json",
+      "note": "evidence-replay 模式 schema（mode 恒为 evidence-replay，spans 永不以 live capture 呈现）"
+    }
+  },
+  "data_sources": [
+    {
+      "label": "Matrix event",
+      "status": "VERIFIED (replay)",
+      "ref": "PHASE14-WINDOWS-COPAW-HIGH-RISK-FIX-VERIFY-20260829-180548/ENTRYPOINTS.md"
+    },
+    {
+      "label": "MinIO task result",
+      "status": "VERIFIED (replay)",
+      "ref": "PHASE14-WINDOWS-AGENTTEAMS-COPAW-FINAL-20260829-130500/task-results.json"
+    },
+    {
+      "label": "Controller API",
+      "status": "VERIFIED (replay)",
+      "ref": "PHASE14-WINDOWS-AGENTTEAMS-COPAW-FINAL-20260829-130500/final-architecture.md"
+    },
+    {
+      "label": "GitHub PR",
+      "status": "运行前后 ls-remote 双向核验 head SHA ad267a6e… 一致（github-branches-after-v3.txt）；PR 保持 OPEN 且未修复",
+      "ref": "PHASE14-WINDOWS-AGENTTEAMS-COPAW-FINAL-20260829-130500/pr-state-final.json"
+    },
+    {
+      "label": "Evidence Replay",
+      "status": "FINAL PACKAGE: VERIFIED · 历史材料: VERIFIED",
+      "ref": "SHA256SUMS per evidence dir（漂移明细见 /api/health）"
+    },
+    {
+      "label": "AgentLoop Cloud",
+      "status": "VERIFIED / VERIFIED（平台集成 PENDING）",
+      "ref": "PHASE14-WINDOWS-AGENTLOOP-OTEL-20260829-200307/trace-schema.json"
+    }
+  ],
+  "phase": "blocked",
+  "evidence_integrity": {
+    "sha256_dirs": [
+      "FINALS-ELEM-PR3-V3-TRACED (SHA256SUMS 53 files)"
+    ],
+    "secret_scan_clean": true,
+    "secret_scan_source": "打包时精确密钥扫描 0 命中；证据包不含原始 docker 容器日志",
+    "disclosed_gaps": [
+      "直连探针本轮未采集成功（采集命令静默失败，direct-probe-*.json 0 字节，SHA256SUMS 如实锁定，README 已披露）；窗口导出批次全 SUCCESS 不受影响",
+      "delegation.link ×4/worker 本轮为属性级关联（同 PR2 包披露）——瀑布嵌套形态由修复后镜像在后续运行产出",
+      "reviewer 容器内 ~/task/PR-METADATA.md 为上一轮残留副本（参数一致），reviewer 团队房 03:19:13Z 如实披露并按权威任务 spec 执行"
+    ]
+  },
+  "context_events": [
+    {
+      "timestamp": "2026-09-17T03:19:29Z",
+      "timestamp_precision": "exact",
+      "summary": "RAG 纪律展示：reviewer 在完成全部自主复现之后才查询组织标准库，并在团队房明示\"references only\"——知识增强与结论独立并存",
+      "source_ref": "finalsPr3V3Traced/rag/rag-tool-spans.jsonl"
+    },
+    {
+      "timestamp": "2026-09-17T03:21:14Z",
+      "timestamp_precision": "exact",
+      "summary": "门纪律对照（同日两轮）：PR #2 批准路径 Leader 于批准后 10 秒发出全新委派；本轮拒绝路径 Leader 于拒绝后 11 秒落实绑定效应——两条分支 Leader 均未越权",
+      "source_ref": "finalsPr3V3Traced/team-room-messages-pr3v3-window.json"
+    }
+  ],
+  "sources": {
+    "case_definition": "FINALS-ELEM-PR3-V3-TRACED/README.md",
+    "kickoff": "FINALS-ELEM-PR3-V3-TRACED/kickoff-as-sent.txt",
+    "kickoff_json": "FINALS-ELEM-PR3-V3-TRACED/kickoff.json",
+    "timeline": "FINALS-ELEM-PR3-V3-TRACED/team-room-messages-pr3v3-window.json",
+    "review_result": "FINALS-ELEM-PR3-V3-TRACED/tasks/pr3v3-review-1/result.md",
+    "reviewer_result": "FINALS-ELEM-PR3-V3-TRACED/tasks/pr3v3-review-1/result.md",
+    "reviewer_findings": "FINALS-ELEM-PR3-V3-TRACED/tasks/pr3v3-review-1/workspace/findings.md",
+    "gate_request": "FINALS-ELEM-PR3-V3-TRACED/leader-dm-messages-pr3v3-window.json",
+    "rejection_record": "FINALS-ELEM-PR3-V3-TRACED/project/human-gate-rejection.md",
+    "gate_sent": "FINALS-ELEM-PR3-V3-TRACED/gate-rejection-sent.json",
+    "rag_audit": "FINALS-ELEM-PR3-V3-TRACED/rag/rag-tool-spans.jsonl",
+    "plan_final_state": "FINALS-ELEM-PR3-V3-TRACED/project/plan.md",
+    "project_meta": "FINALS-ELEM-PR3-V3-TRACED/project/meta.json",
+    "controller": "FINALS-ELEM-PR3-V3-TRACED/controller-project.json",
+    "usage": "FINALS-ELEM-PR3-V3-TRACED/usage-summary.json",
+    "audit_window_leader": "FINALS-ELEM-PR3-V3-TRACED/agentloop/audit-leader-pr3v3-window.log",
+    "audit_window_reviewer": "FINALS-ELEM-PR3-V3-TRACED/agentloop/audit-reviewer-pr3v3-window.log",
+    "audit_window_verifier": "FINALS-ELEM-PR3-V3-TRACED/agentloop/audit-verifier-pr3v3-window.log",
+    "spans": "FINALS-ELEM-PR3-V3-TRACED/agentloop/span-summary.json",
+    "github_branches": "FINALS-ELEM-PR3-V3-TRACED/github-branches-after-v3.txt"
+  },
+  "live": null
+}

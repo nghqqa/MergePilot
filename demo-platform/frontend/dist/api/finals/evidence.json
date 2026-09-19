@@ -1,0 +1,1334 @@
+{
+  "integrity": {
+    "finalsDbLoop": {
+      "dir": "FINALS-DB-MIGRATION-LOOP-20260914",
+      "tier": "REAL_SQL_VERIFICATION_ISOLATED_POSTGRES",
+      "verified": true,
+      "files": 8,
+      "mismatched": [],
+      "missing": []
+    },
+    "finalsReworkLoop": {
+      "dir": "FINALS-REWORK-LOOP-20260914",
+      "tier": "MECHANISM_VERIFICATION",
+      "verified": true,
+      "files": 7,
+      "mismatched": [],
+      "missing": []
+    },
+    "finalsRagLoop": {
+      "dir": "FINALS-RAG-LOOP-20260914",
+      "tier": "REAL_OFFLINE_EXPERIMENT_SYNTHETIC_CORPUS",
+      "verified": true,
+      "files": 4,
+      "mismatched": [],
+      "missing": []
+    },
+    "finalsPr2Live": {
+      "dir": "FINALS-ELEM-PR2-LIVE-20260916",
+      "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+      "verified": true,
+      "files": 19,
+      "mismatched": [],
+      "missing": []
+    },
+    "finalsPr3Live": {
+      "dir": "FINALS-ELEM-PR3-LIVE-20260916",
+      "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+      "verified": true,
+      "files": 8,
+      "mismatched": [],
+      "missing": []
+    }
+  },
+  "db_loop": {
+    "available": true,
+    "tier": "REAL_SQL_VERIFICATION_ISOLATED_POSTGRES",
+    "not_agentic_database_branch": true,
+    "polardb": "NOT CONNECTED",
+    "data_mode": "SYNTHETIC",
+    "integrity": {
+      "verified": true,
+      "files": 8
+    },
+    "environment": {
+      "pg_version": "16.14 (Debian 16.14-1.pgdg12+1)",
+      "trial_kind": "ISOLATED_POSTGRES",
+      "trial_instance": "docker:fb2a17be83b4@sha256:7f58c9936b2ef7f3e1fa20ac7d13cc1d7337ebf2380eec75677efe0204daadf0",
+      "clone_method": "CREATE DATABASE ... TEMPLATE dbv_baseline",
+      "gateway_wrapper_source": "tools/policy-gateway/gateway.py imported as a module (mcp 1.28.1, Python 3.10.21); _get_l2_conn patched to the harness connection",
+      "gateway_wrapper_mode": "MODULE_IMPORT"
+    },
+    "case": {
+      "case_id": "orders-schema-change",
+      "repo": "mergepilot/orders-demo",
+      "pr_number": 4,
+      "sha_kind": "git tree object id of the candidate content (git mktree); NOT a commit on a remote",
+      "base_sha": "3ce26f656aa6dfdd8e30548537363bff3941132e",
+      "head_rev1": "b22fc0622b497de2fca0c1ccf3853618939400b2",
+      "head_rev2": "a7db33c36313f5f4c963bd6000b108ca8279d96a",
+      "head_rev3_followup": "a0b4633592c13ea66aca46c14c0c73bbe7a5b814",
+      "files": {
+        "baseline/schema.sql": "594cb9c48d2db429165fb9a6c1832d8b0bbde42740b67c2d47978fa437ca0c4f",
+        "baseline/seed.sql": "3a333900d372decb66d27b47f19d4a035f22d001468481e58c0ff4c856009e5c",
+        "app/orders_service.py": "1189a29411333bf5fdee34542a9d988555b4f6e946802fbc9d228f050e637c28",
+        "app/test_orders_service.py": "2c3201cf729d1a297b0c9578341a2bc2ddc2f69ca2dcdce0bd8adb0372355552",
+        "assertions.json": "5fa5f6a4f488ef044cdd42bb81ab6830ef766cc720d113d2fa5f32daed530bc6",
+        "migrations/candidate-a.sql": "5c3d64e04bad548136b63b50e87d26b83af5ada425c7aee052bcb9958623069e"
+      },
+      "followup_change": "app/orders_service.py gains cancel_order(); migration unchanged"
+    },
+    "baseline": {
+      "step": "S1_baseline",
+      "outcome": "REGISTERED",
+      "baseline_id": "bl-64c381926f051578",
+      "schema_digest": "594cb9c48d2db429165fb9a6c1832d8b0bbde42740b67c2d47978fa437ca0c4f",
+      "data_digest": "64c381926f0515787d75160c276b4aad8f0cdf12eac3889f7f660ca993589795",
+      "row_counts": {
+        "customers": 500,
+        "legacy_order_owner": 120,
+        "orders": 10000,
+        "payments": 10002
+      },
+      "historical_null_customer_id": 137,
+      "historical_duplicate_payment_rows": 2,
+      "pg_version": "16.14 (Debian 16.14-1.pgdg12+1)"
+    },
+    "context_fetch": {
+      "step": "S5b_context_fetch",
+      "outcome": "REVISE_CANDIDATE",
+      "missing_context": "owner (customer_id) for 137 historical orders; SQLSTATE 23502 says nothing about whether it can be recovered",
+      "fetched": {
+        "legacy_order_owner_coverage": 120,
+        "unresolvable_orders": 17,
+        "duplicate_payment_rows": 2,
+        "query": "SELECT count(*) FROM legacy_order_owner l JOIN orders o USING (order_id) WHERE o.customer_id IS NULL"
+      },
+      "rule": "unresolvable share <= 20% -> revise the same candidate (backfill + sentinel flagged for follow-up); otherwise escalate to a human before touching data",
+      "unresolvable_share": 0.1241,
+      "decision": "REVISE_CANDIDATE",
+      "next_action": "candidate-a rev2: backfill 120 from legacy_order_owner, sentinel 17 (audited), archive 2 duplicate payments, add DEFAULT for old workers, then constraints",
+      "human_gate_still_required": true
+    },
+    "attempts": [
+      {
+        "revision": 1,
+        "head_sha": "b22fc0622b497de2fca0c1ccf3853618939400b2",
+        "script_digest": "223e27fcecbf63e4824ab9650349630ed8903acebea4dffb0858df05e18ad5bc",
+        "code_tests": {
+          "verdict": "PASS",
+          "tests_run": 7,
+          "failures": 0,
+          "command": "python -m unittest discover -s tools/dbverify/case/orders-schema-change/app -p 'test_*.py'"
+        },
+        "migration": {
+          "verdict": "FAIL",
+          "failure_class": "HISTORICAL_DATA_INCOMPATIBLE",
+          "error": {
+            "sqlstate": "23502",
+            "message": "ERROR:  column \"customer_id\" of relation \"orders\" contains null values",
+            "detail": ""
+          }
+        },
+        "assertions": {
+          "passed": 3,
+          "total": 11,
+          "failed": [
+            "no_null_customer_id",
+            "payments_order_id_unique",
+            "not_null_constraint_present",
+            "unique_constraint_present",
+            "payments_preserved_incl_archive",
+            "backfill_fully_audited",
+            "sentinel_rows_flagged_for_follow_up",
+            "duplicate_payment_now_rejected"
+          ]
+        },
+        "verification_id": "mv-d83d4d53b1c4854bff7d680f",
+        "report_digest": "a14691564894c1d9d5505341c822bd685e98767d1e05943e6aba5a79d6975d95",
+        "attempt": 1
+      },
+      {
+        "revision": 2,
+        "head_sha": "a7db33c36313f5f4c963bd6000b108ca8279d96a",
+        "script_digest": "5c3d64e04bad548136b63b50e87d26b83af5ada425c7aee052bcb9958623069e",
+        "parent_candidate_id": "mc-31b545c0e9f6c391a44e19f5",
+        "code_tests": {
+          "verdict": "PASS",
+          "tests_run": 7,
+          "failures": 0,
+          "command": "python -m unittest discover -s tools/dbverify/case/orders-schema-change/app -p 'test_*.py'"
+        },
+        "migration": {
+          "verdict": "PASS",
+          "failure_class": null,
+          "error": null
+        },
+        "assertions": {
+          "passed": 11,
+          "total": 11,
+          "failed": []
+        },
+        "verification_id": "mv-04f9e460e5b26e9f2af6e745",
+        "report_digest": "3d0a03fa1311673254843a20b0860247d2fb0659840054dc4ebd7369859f128e",
+        "attempt": 1
+      },
+      {
+        "revision": 2,
+        "attempt": 3,
+        "late_callback": true,
+        "migration": {
+          "verdict": "PASS"
+        },
+        "verification_id": "mv-b445b408bfd8d5d1a669ee4d",
+        "note": "recorded AFTER the follow-up commit; the gate stayed STALE"
+      }
+    ],
+    "approval": {
+      "ticket_id": "tkt-523e97c2-19ae-49dc-bfb5-356cddf6dbda",
+      "bound_verification_id": "mv-04f9e460e5b26e9f2af6e745",
+      "race_winner": "A",
+      "approved": true,
+      "approved_by": "mergepilot",
+      "status": "APPROVED"
+    },
+    "gate_timeline": [
+      {
+        "label": "before_bind",
+        "valid": false,
+        "reason": "NOT_BOUND_TO_VERIFICATION",
+        "bound_head_sha": null,
+        "current_head_sha": null
+      },
+      {
+        "label": "bound_not_yet_approved",
+        "valid": false,
+        "reason": "TICKET_NOT_APPROVED",
+        "bound_head_sha": "a7db33c36313f5f4c963bd6000b108ca8279d96a",
+        "current_head_sha": "a7db33c36313f5f4c963bd6000b108ca8279d96a"
+      },
+      {
+        "label": "approved_current_version",
+        "valid": true,
+        "reason": "OK",
+        "bound_head_sha": "a7db33c36313f5f4c963bd6000b108ca8279d96a",
+        "current_head_sha": "a7db33c36313f5f4c963bd6000b108ca8279d96a"
+      },
+      {
+        "label": "approved_same_data_digest",
+        "valid": true,
+        "reason": "OK",
+        "bound_head_sha": "a7db33c36313f5f4c963bd6000b108ca8279d96a",
+        "current_head_sha": "a7db33c36313f5f4c963bd6000b108ca8279d96a"
+      },
+      {
+        "label": "target_data_changed",
+        "valid": false,
+        "reason": "TARGET_DATA_DIGEST_MISMATCH",
+        "bound_head_sha": "a7db33c36313f5f4c963bd6000b108ca8279d96a",
+        "current_head_sha": "a7db33c36313f5f4c963bd6000b108ca8279d96a"
+      },
+      {
+        "label": "after_followup_commit",
+        "valid": false,
+        "reason": "STALE_SUPERSEDED_BY_NEW_REVISION",
+        "bound_head_sha": "a7db33c36313f5f4c963bd6000b108ca8279d96a",
+        "current_head_sha": "a0b4633592c13ea66aca46c14c0c73bbe7a5b814"
+      },
+      {
+        "label": "after_late_pass_callback",
+        "valid": false,
+        "reason": "STALE_SUPERSEDED_BY_NEW_REVISION",
+        "bound_head_sha": "a7db33c36313f5f4c963bd6000b108ca8279d96a",
+        "current_head_sha": "a0b4633592c13ea66aca46c14c0c73bbe7a5b814"
+      },
+      {
+        "label": "post_claim_recheck_same_head",
+        "valid": true,
+        "reason": "OK",
+        "bound_head_sha": "a0b4633592c13ea66aca46c14c0c73bbe7a5b814",
+        "current_head_sha": "a0b4633592c13ea66aca46c14c0c73bbe7a5b814"
+      },
+      {
+        "label": "post_claim_recheck_after_new_revision",
+        "valid": false,
+        "reason": "STALE_SUPERSEDED_BY_NEW_REVISION",
+        "bound_head_sha": "a0b4633592c13ea66aca46c14c0c73bbe7a5b814",
+        "current_head_sha": "7cd779ad3daa11ca9f930c7e36432e72b42b9bd2"
+      },
+      {
+        "label": "expired_ticket",
+        "valid": false,
+        "reason": "TICKET_EXPIRED",
+        "bound_head_sha": "a0b4633592c13ea66aca46c14c0c73bbe7a5b814",
+        "current_head_sha": "7cd779ad3daa11ca9f930c7e36432e72b42b9bd2"
+      }
+    ],
+    "followup": {
+      "head_sha": "a0b4633592c13ea66aca46c14c0c73bbe7a5b814",
+      "change": "app/orders_service.py gains cancel_order(); migration unchanged",
+      "gate_after": "STALE_SUPERSEDED_BY_NEW_REVISION"
+    },
+    "negative_tests": {
+      "total": 28,
+      "ok": 28,
+      "names": [
+        "baseline_register_idempotent",
+        "duplicate_callback_same_digest_is_noop",
+        "conflicting_callback_different_digest_rejected",
+        "verification_row_immutable",
+        "candidate_revision_script_immutable",
+        "existing_model_one_active_ticket_per_binding_action",
+        "concurrent_bind_exactly_one_wins",
+        "approval_invalid_when_target_data_differs",
+        "rebind_same_ticket_rejected",
+        "fail_verification_cannot_be_bound",
+        "cross_run_verification_cannot_be_bound",
+        "old_approval_invalid_after_new_revision",
+        "late_callback_does_not_revive_stale_approval",
+        "binding_row_immutable",
+        "revision_bindings_immutable_unchanged",
+        "claim_refused_on_stale_head",
+        "gateway_wrapper_maps_gate_refusal",
+        "claim_refused_before_approval",
+        "claim_refused_without_target_digest_for_bound_ticket",
+        "claim_refused_on_target_data_digest_change",
+        "concurrent_claim_exactly_one_executes",
+        "reclaim_on_executing_returns_no_row",
+        "post_claim_gate_recheck_detects_new_revision",
+        "claim_refused_on_expired_ticket",
+        "claim_refused_when_migration_run_unbound",
+        "plain_ticket_claim_unchanged",
+        "recompute_before_migrate_matches_bound_digest",
+        "data_drift_after_claim_detected"
+      ]
+    },
+    "plan_package": {
+      "path": "release/migration-plans/orders-schema-change/candidate-a.rev2",
+      "files": [
+        "01-preflight.sql",
+        "02-migrate.sql",
+        "03-postcheck.sql",
+        "04-rollback.sql",
+        "README.md",
+        "SHA256SUMS",
+        "manifest.json"
+      ]
+    },
+    "final_disposition": {
+      "candidate_a_rev1": "FAIL on historical data (SQLSTATE 23502) — code tests PASS",
+      "candidate_a_rev2": "PASS (11/11 assertions) — approved on head a7db33c36313, ticket tkt-523e97c2-19ae-49dc-bfb5-356cddf6dbda",
+      "after_followup_commit": "approval tkt-523e97c2-19ae-49dc-bfb5-356cddf6dbda → STALE_SUPERSEDED_BY_NEW_REVISION; release blocked until re-verification on head a0b4633592c1",
+      "production_release": "NOT PERFORMED — trial database clone is not a production release; execution requires a controlled rollout using the plan package"
+    },
+    "outcome_signature": "b60b328cc33cd8ab7a9f976338947d8a12af44ced1c2ef161c9b40598eaacf0e",
+    "run_meta": {
+      "generated_at": "2026-09-15T08:47:27Z",
+      "python": "3.10.21",
+      "git_head": "2c579fcf60698469eda9ce061f9451514c6b3062",
+      "trial_instance": "docker:fb2a17be83b4@sha256:7f58c9936b2ef7f3e1fa20ac7d13cc1d7337ebf2380eec75677efe0204daadf0",
+      "image": "pgvector/pgvector:pg16",
+      "command": "python tools/dbverify/run_migration_loop.py --pg-port 55433 --trial-instance ... --out evidence/FINALS-DB-MIGRATION-LOOP-20260914",
+      "evidence_tier": "REAL_SQL_VERIFICATION_ISOLATED_POSTGRES (not Agentic Database branch)"
+    }
+  },
+  "rework_loop": {
+    "available": true,
+    "tier": "MECHANISM_VERIFICATION",
+    "integrity": {
+      "verified": true,
+      "files": 7
+    },
+    "real": [
+      "controller.process_event",
+      "postgresql audit chain",
+      "acceptance test execution"
+    ],
+    "controlled_input": [
+      "reviewer findings",
+      "fixer patches"
+    ],
+    "not_executed": [
+      "Matrix/Element handoff",
+      "CoPaw agent runtime",
+      "LLM calls",
+      "GitHub writes"
+    ],
+    "controller": {
+      "file": "tools/workflow-controller/controller.py",
+      "max_verify_attempts": 3,
+      "mode": "legacy (M4F_ONLY_MODE=0) — the path that implements the verify-FAIL rework loop"
+    },
+    "scenarios": {
+      "A_rework_then_pass": {
+        "run_id": "run-rework-f1-a",
+        "checks": {
+          "submit_creates_review_stage": true,
+          "attempt1_tests_fail": true,
+          "controller_sends_back_to_fixer": true,
+          "rework_dispatch_row_created": true,
+          "fix_attempt2_stage_row": true,
+          "attempt2_tests_pass": true,
+          "verify_attempt2_recorded_pass": true,
+          "task_final_pass": true,
+          "every_event_processed": true
+        },
+        "final_task": {
+          "status": "PASS",
+          "current_stage": "verify",
+          "verify_attempt": 1,
+          "verdict": "PASS",
+          "last_error": "verify FAIL; retry fix attempt=2 (1/3)"
+        },
+        "stage_runs": [
+          {
+            "stage": "review",
+            "agent": "reviewer",
+            "attempt": 1,
+            "status": "COMPLETED",
+            "verdict": null
+          },
+          {
+            "stage": "fix",
+            "agent": "fixer",
+            "attempt": 1,
+            "status": "COMPLETED",
+            "verdict": null
+          },
+          {
+            "stage": "verify",
+            "agent": "verifier",
+            "attempt": 1,
+            "status": "COMPLETED",
+            "verdict": "FAIL"
+          },
+          {
+            "stage": "fix",
+            "agent": "fixer",
+            "attempt": 2,
+            "status": "COMPLETED",
+            "verdict": null
+          },
+          {
+            "stage": "verify",
+            "agent": "verifier",
+            "attempt": 2,
+            "status": "COMPLETED",
+            "verdict": "PASS"
+          }
+        ],
+        "dispatch_outbox": [
+          {
+            "target_agent": "reviewer",
+            "target_stage": "review",
+            "attempt": 1,
+            "body": "请审查 mergepilot/payments-demo PR#7 (分支 fix/payment-idempotency)。用 gh-mcp-read.sh + sast-scan,findings 写 shared/tasks/run-rework-f1-a-review/findings.md。完成写 TASK_COMPLETED: run-rework-f1-a-review。"
+          },
+          {
+            "target_agent": "fixer",
+            "target_stage": "fix",
+            "attempt": 1,
+            "body": "run-rework-f1-a-review 完成,findings 见 shared/tasks/run-rework-f1-a-review/findings.md。请用 gh-mcp-fix.sh 提修复 PR(L2 密钥/依赖/删除类只出方案)。完成写 TASK_COMPLETED: run-rework-f1-a-fix。"
+          },
+          {
+            "target_agent": "verifier",
+            "target_stage": "verify",
+            "attempt": 1,
+            "body": "run-rework-f1-a-fix 完成,修复 PR 见 shared/tasks/run-rework-f1-a-fix/。请用 gh-mcp-read.sh 读修复分支逐项复核。完成写 TASK_COMPLETED: run-rework-f1-a-verify。"
+          },
+          {
+            "target_agent": "fixer",
+            "target_stage": "fix",
+            "attempt": 2,
+            "body": "verify FAIL(第 1/3 次),回退修复。完成写 TASK_COMPLETED: run-rework-f1-a-fix。"
+          },
+          {
+            "target_agent": "verifier",
+            "target_stage": "verify",
+            "attempt": 2,
+            "body": "run-rework-f1-a-fix 完成,修复 PR 见 shared/tasks/run-rework-f1-a-fix/。请用 gh-mcp-read.sh 读修复分支逐项复核。完成写 TASK_COMPLETED: run-rework-f1-a-verify。"
+          }
+        ],
+        "stage_events": [
+          {
+            "event_id": "$8ed35485fc3c44af98b5e5",
+            "sender": "@admin:matrix-local.hiclaw.io:18080",
+            "event_type": "TASK_SUBMITTED",
+            "stage": "review",
+            "status": "PROCESSED"
+          },
+          {
+            "event_id": "$dc25a959d52949888f28a9",
+            "sender": "@reviewer:matrix-local.hiclaw.io:18080",
+            "event_type": "TASK_COMPLETED",
+            "stage": "review",
+            "status": "PROCESSED"
+          },
+          {
+            "event_id": "$63d5eb4d85ed427e91cf42",
+            "sender": "@fixer:matrix-local.hiclaw.io:18080",
+            "event_type": "TASK_COMPLETED",
+            "stage": "fix",
+            "status": "PROCESSED"
+          },
+          {
+            "event_id": "$a18aec01140f47b485c15a",
+            "sender": "@verifier:matrix-local.hiclaw.io:18080",
+            "event_type": "TASK_COMPLETED",
+            "stage": "verify",
+            "status": "PROCESSED"
+          },
+          {
+            "event_id": "$804bf3a4763d4eeeb65f68",
+            "sender": "@fixer:matrix-local.hiclaw.io:18080",
+            "event_type": "TASK_COMPLETED",
+            "stage": "fix",
+            "status": "PROCESSED"
+          },
+          {
+            "event_id": "$fb370c9f948e43999c8dbe",
+            "sender": "@verifier:matrix-local.hiclaw.io:18080",
+            "event_type": "TASK_COMPLETED",
+            "stage": "verify",
+            "status": "PROCESSED"
+          }
+        ],
+        "attempts": [
+          {
+            "attempt": 1,
+            "tree_sha": "760c20801d733acaf0c8f1b6beb209eeda77cab0",
+            "diff_file": "patches/run-rework-f1-a-attempt1.diff",
+            "tests": {
+              "verdict": "FAIL",
+              "command": "python -m unittest discover -s <revision> -p 'test_*.py'",
+              "tests_run": 5,
+              "failures": 1,
+              "errors": 0,
+              "failed_tests": [
+                "test_second_payment_request_for_same_order_is_idempotent"
+              ]
+            },
+            "controller_state_after_verify": {
+              "status": "RUNNING",
+              "current_stage": "fix",
+              "verify_attempt": 1,
+              "verdict": "FAIL",
+              "last_error": "verify FAIL; retry fix attempt=2 (1/3)"
+            },
+            "rework_reason": "verify FAIL(第 1/3 次),回退修复。完成写 TASK_COMPLETED: run-rework-f1-a-fix。"
+          },
+          {
+            "attempt": 2,
+            "tree_sha": "255490e3831dab05a39421e0867eeb1bd5d69e2a",
+            "diff_file": "patches/run-rework-f1-a-attempt2.diff",
+            "tests": {
+              "verdict": "PASS",
+              "command": "python -m unittest discover -s <revision> -p 'test_*.py'",
+              "tests_run": 5,
+              "failures": 0,
+              "errors": 0,
+              "failed_tests": []
+            },
+            "controller_state_after_verify": {
+              "status": "PASS",
+              "current_stage": "verify",
+              "verify_attempt": 1,
+              "verdict": "PASS",
+              "last_error": "verify FAIL; retry fix attempt=2 (1/3)"
+            }
+          }
+        ],
+        "verdict_sequence": null,
+        "sequence": null,
+        "observation": null,
+        "observations": null
+      },
+      "B_retry_cap_hold": {
+        "run_id": "run-rework-f1-b",
+        "checks": {
+          "all_verdicts_fail": true,
+          "rework_dispatched_before_cap": true,
+          "hold_at_cap": true,
+          "no_fix_dispatch_beyond_cap": true,
+          "last_error_names_cap": true
+        },
+        "final_task": {
+          "status": "HOLD",
+          "current_stage": "verify_max_hold",
+          "verify_attempt": 3,
+          "verdict": "FAIL",
+          "last_error": "verify FAIL reached MAX_VERIFY_ATTEMPTS=3"
+        },
+        "stage_runs": [
+          {
+            "stage": "review",
+            "agent": "reviewer",
+            "attempt": 1,
+            "status": "COMPLETED",
+            "verdict": null
+          },
+          {
+            "stage": "fix",
+            "agent": "fixer",
+            "attempt": 1,
+            "status": "COMPLETED",
+            "verdict": null
+          },
+          {
+            "stage": "verify",
+            "agent": "verifier",
+            "attempt": 1,
+            "status": "COMPLETED",
+            "verdict": "FAIL"
+          },
+          {
+            "stage": "fix",
+            "agent": "fixer",
+            "attempt": 2,
+            "status": "COMPLETED",
+            "verdict": null
+          },
+          {
+            "stage": "verify",
+            "agent": "verifier",
+            "attempt": 2,
+            "status": "COMPLETED",
+            "verdict": "FAIL"
+          },
+          {
+            "stage": "fix",
+            "agent": "fixer",
+            "attempt": 3,
+            "status": "COMPLETED",
+            "verdict": null
+          },
+          {
+            "stage": "verify",
+            "agent": "verifier",
+            "attempt": 3,
+            "status": "COMPLETED",
+            "verdict": "FAIL"
+          }
+        ],
+        "dispatch_outbox": [
+          {
+            "target_agent": "reviewer",
+            "target_stage": "review",
+            "attempt": 1,
+            "body": "请审查 mergepilot/payments-demo PR#7 (分支 fix/payment-idempotency)。用 gh-mcp-read.sh + sast-scan,findings 写 shared/tasks/run-rework-f1-b-review/findings.md。完成写 TASK_COMPLETED: run-rework-f1-b-review。"
+          },
+          {
+            "target_agent": "fixer",
+            "target_stage": "fix",
+            "attempt": 1,
+            "body": "run-rework-f1-b-review 完成,findings 见 shared/tasks/run-rework-f1-b-review/findings.md。请用 gh-mcp-fix.sh 提修复 PR(L2 密钥/依赖/删除类只出方案)。完成写 TASK_COMPLETED: run-rework-f1-b-fix。"
+          },
+          {
+            "target_agent": "verifier",
+            "target_stage": "verify",
+            "attempt": 1,
+            "body": "run-rework-f1-b-fix 完成,修复 PR 见 shared/tasks/run-rework-f1-b-fix/。请用 gh-mcp-read.sh 读修复分支逐项复核。完成写 TASK_COMPLETED: run-rework-f1-b-verify。"
+          },
+          {
+            "target_agent": "fixer",
+            "target_stage": "fix",
+            "attempt": 2,
+            "body": "verify FAIL(第 1/3 次),回退修复。完成写 TASK_COMPLETED: run-rework-f1-b-fix。"
+          },
+          {
+            "target_agent": "verifier",
+            "target_stage": "verify",
+            "attempt": 2,
+            "body": "run-rework-f1-b-fix 完成,修复 PR 见 shared/tasks/run-rework-f1-b-fix/。请用 gh-mcp-read.sh 读修复分支逐项复核。完成写 TASK_COMPLETED: run-rework-f1-b-verify。"
+          },
+          {
+            "target_agent": "fixer",
+            "target_stage": "fix",
+            "attempt": 3,
+            "body": "verify FAIL(第 2/3 次),回退修复。完成写 TASK_COMPLETED: run-rework-f1-b-fix。"
+          },
+          {
+            "target_agent": "verifier",
+            "target_stage": "verify",
+            "attempt": 3,
+            "body": "run-rework-f1-b-fix 完成,修复 PR 见 shared/tasks/run-rework-f1-b-fix/。请用 gh-mcp-read.sh 读修复分支逐项复核。完成写 TASK_COMPLETED: run-rework-f1-b-verify。"
+          }
+        ],
+        "stage_events": [
+          {
+            "event_id": "$8ed35485fc3c44af98b5e5",
+            "sender": "@admin:matrix-local.hiclaw.io:18080",
+            "event_type": "TASK_SUBMITTED",
+            "stage": "review",
+            "status": "PROCESSED"
+          },
+          {
+            "event_id": "$dc25a959d52949888f28a9",
+            "sender": "@reviewer:matrix-local.hiclaw.io:18080",
+            "event_type": "TASK_COMPLETED",
+            "stage": "review",
+            "status": "PROCESSED"
+          },
+          {
+            "event_id": "$63d5eb4d85ed427e91cf42",
+            "sender": "@fixer:matrix-local.hiclaw.io:18080",
+            "event_type": "TASK_COMPLETED",
+            "stage": "fix",
+            "status": "PROCESSED"
+          },
+          {
+            "event_id": "$a18aec01140f47b485c15a",
+            "sender": "@verifier:matrix-local.hiclaw.io:18080",
+            "event_type": "TASK_COMPLETED",
+            "stage": "verify",
+            "status": "PROCESSED"
+          },
+          {
+            "event_id": "$804bf3a4763d4eeeb65f68",
+            "sender": "@fixer:matrix-local.hiclaw.io:18080",
+            "event_type": "TASK_COMPLETED",
+            "stage": "fix",
+            "status": "PROCESSED"
+          },
+          {
+            "event_id": "$fb370c9f948e43999c8dbe",
+            "sender": "@verifier:matrix-local.hiclaw.io:18080",
+            "event_type": "TASK_COMPLETED",
+            "stage": "verify",
+            "status": "PROCESSED"
+          },
+          {
+            "event_id": "$a6fe802e610b4d4a874fd5",
+            "sender": "@admin:matrix-local.hiclaw.io:18080",
+            "event_type": "TASK_SUBMITTED",
+            "stage": "review",
+            "status": "PROCESSED"
+          },
+          {
+            "event_id": "$32c64c6295334bc3b56a12",
+            "sender": "@reviewer:matrix-local.hiclaw.io:18080",
+            "event_type": "TASK_COMPLETED",
+            "stage": "review",
+            "status": "PROCESSED"
+          },
+          {
+            "event_id": "$d6024ad49f3848d2ad4992",
+            "sender": "@fixer:matrix-local.hiclaw.io:18080",
+            "event_type": "TASK_COMPLETED",
+            "stage": "fix",
+            "status": "PROCESSED"
+          },
+          {
+            "event_id": "$8b07b3e6c1734e4f81f676",
+            "sender": "@verifier:matrix-local.hiclaw.io:18080",
+            "event_type": "TASK_COMPLETED",
+            "stage": "verify",
+            "status": "PROCESSED"
+          },
+          {
+            "event_id": "$4b17fa6528a34cbca92ffc",
+            "sender": "@fixer:matrix-local.hiclaw.io:18080",
+            "event_type": "TASK_COMPLETED",
+            "stage": "fix",
+            "status": "PROCESSED"
+          },
+          {
+            "event_id": "$4438642f13e94e43b28c62",
+            "sender": "@verifier:matrix-local.hiclaw.io:18080",
+            "event_type": "TASK_COMPLETED",
+            "stage": "verify",
+            "status": "PROCESSED"
+          },
+          {
+            "event_id": "$d61f2ee9e79b401c9d3837",
+            "sender": "@fixer:matrix-local.hiclaw.io:18080",
+            "event_type": "TASK_COMPLETED",
+            "stage": "fix",
+            "status": "PROCESSED"
+          },
+          {
+            "event_id": "$6c53183c95b749419db70f",
+            "sender": "@verifier:matrix-local.hiclaw.io:18080",
+            "event_type": "TASK_COMPLETED",
+            "stage": "verify",
+            "status": "PROCESSED"
+          }
+        ],
+        "attempts": null,
+        "verdict_sequence": [
+          [
+            "FAIL",
+            "RUNNING",
+            "fix",
+            1
+          ],
+          [
+            "FAIL",
+            "RUNNING",
+            "fix",
+            2
+          ],
+          [
+            "FAIL",
+            "HOLD",
+            "verify_max_hold",
+            3
+          ]
+        ],
+        "sequence": null,
+        "observation": null,
+        "observations": null
+      },
+      "C_missing_context_blocked_escalation": {
+        "run_id": "run-rework-f1-c",
+        "checks": {
+          "verifier_blocked_on_missing_context": true,
+          "blocked_recorded_as_needs_approval": true,
+          "blocked_consumes_attempt_and_sends_back": true,
+          "escalates_to_hold_at_cap": true
+        },
+        "final_task": {
+          "status": "HOLD",
+          "current_stage": "verify_max_hold",
+          "verify_attempt": 3,
+          "verdict": "blocked-needs-approval",
+          "last_error": "verify FAIL reached MAX_VERIFY_ATTEMPTS=3"
+        },
+        "stage_runs": [
+          {
+            "stage": "review",
+            "agent": "reviewer",
+            "attempt": 1,
+            "status": "COMPLETED",
+            "verdict": null
+          },
+          {
+            "stage": "fix",
+            "agent": "fixer",
+            "attempt": 1,
+            "status": "COMPLETED",
+            "verdict": null
+          },
+          {
+            "stage": "verify",
+            "agent": "verifier",
+            "attempt": 1,
+            "status": "COMPLETED",
+            "verdict": "blocked-needs-approval"
+          },
+          {
+            "stage": "fix",
+            "agent": "fixer",
+            "attempt": 2,
+            "status": "COMPLETED",
+            "verdict": null
+          },
+          {
+            "stage": "verify",
+            "agent": "verifier",
+            "attempt": 2,
+            "status": "COMPLETED",
+            "verdict": "blocked-needs-approval"
+          },
+          {
+            "stage": "fix",
+            "agent": "fixer",
+            "attempt": 3,
+            "status": "COMPLETED",
+            "verdict": null
+          },
+          {
+            "stage": "verify",
+            "agent": "verifier",
+            "attempt": 3,
+            "status": "COMPLETED",
+            "verdict": "blocked-needs-approval"
+          }
+        ],
+        "dispatch_outbox": [
+          {
+            "target_agent": "reviewer",
+            "target_stage": "review",
+            "attempt": 1,
+            "body": "请审查 mergepilot/payments-demo PR#7 (分支 fix/payment-idempotency)。用 gh-mcp-read.sh + sast-scan,findings 写 shared/tasks/run-rework-f1-c-review/findings.md。完成写 TASK_COMPLETED: run-rework-f1-c-review。"
+          },
+          {
+            "target_agent": "fixer",
+            "target_stage": "fix",
+            "attempt": 1,
+            "body": "run-rework-f1-c-review 完成,findings 见 shared/tasks/run-rework-f1-c-review/findings.md。请用 gh-mcp-fix.sh 提修复 PR(L2 密钥/依赖/删除类只出方案)。完成写 TASK_COMPLETED: run-rework-f1-c-fix。"
+          },
+          {
+            "target_agent": "verifier",
+            "target_stage": "verify",
+            "attempt": 1,
+            "body": "run-rework-f1-c-fix 完成,修复 PR 见 shared/tasks/run-rework-f1-c-fix/。请用 gh-mcp-read.sh 读修复分支逐项复核。完成写 TASK_COMPLETED: run-rework-f1-c-verify。"
+          },
+          {
+            "target_agent": "fixer",
+            "target_stage": "fix",
+            "attempt": 2,
+            "body": "verify FAIL(第 1/3 次),回退修复。完成写 TASK_COMPLETED: run-rework-f1-c-fix。"
+          },
+          {
+            "target_agent": "verifier",
+            "target_stage": "verify",
+            "attempt": 2,
+            "body": "run-rework-f1-c-fix 完成,修复 PR 见 shared/tasks/run-rework-f1-c-fix/。请用 gh-mcp-read.sh 读修复分支逐项复核。完成写 TASK_COMPLETED: run-rework-f1-c-verify。"
+          },
+          {
+            "target_agent": "fixer",
+            "target_stage": "fix",
+            "attempt": 3,
+            "body": "verify FAIL(第 2/3 次),回退修复。完成写 TASK_COMPLETED: run-rework-f1-c-fix。"
+          },
+          {
+            "target_agent": "verifier",
+            "target_stage": "verify",
+            "attempt": 3,
+            "body": "run-rework-f1-c-fix 完成,修复 PR 见 shared/tasks/run-rework-f1-c-fix/。请用 gh-mcp-read.sh 读修复分支逐项复核。完成写 TASK_COMPLETED: run-rework-f1-c-verify。"
+          }
+        ],
+        "stage_events": [
+          {
+            "event_id": "$8ed35485fc3c44af98b5e5",
+            "sender": "@admin:matrix-local.hiclaw.io:18080",
+            "event_type": "TASK_SUBMITTED",
+            "stage": "review",
+            "status": "PROCESSED"
+          },
+          {
+            "event_id": "$dc25a959d52949888f28a9",
+            "sender": "@reviewer:matrix-local.hiclaw.io:18080",
+            "event_type": "TASK_COMPLETED",
+            "stage": "review",
+            "status": "PROCESSED"
+          },
+          {
+            "event_id": "$63d5eb4d85ed427e91cf42",
+            "sender": "@fixer:matrix-local.hiclaw.io:18080",
+            "event_type": "TASK_COMPLETED",
+            "stage": "fix",
+            "status": "PROCESSED"
+          },
+          {
+            "event_id": "$a18aec01140f47b485c15a",
+            "sender": "@verifier:matrix-local.hiclaw.io:18080",
+            "event_type": "TASK_COMPLETED",
+            "stage": "verify",
+            "status": "PROCESSED"
+          },
+          {
+            "event_id": "$804bf3a4763d4eeeb65f68",
+            "sender": "@fixer:matrix-local.hiclaw.io:18080",
+            "event_type": "TASK_COMPLETED",
+            "stage": "fix",
+            "status": "PROCESSED"
+          },
+          {
+            "event_id": "$fb370c9f948e43999c8dbe",
+            "sender": "@verifier:matrix-local.hiclaw.io:18080",
+            "event_type": "TASK_COMPLETED",
+            "stage": "verify",
+            "status": "PROCESSED"
+          },
+          {
+            "event_id": "$a6fe802e610b4d4a874fd5",
+            "sender": "@admin:matrix-local.hiclaw.io:18080",
+            "event_type": "TASK_SUBMITTED",
+            "stage": "review",
+            "status": "PROCESSED"
+          },
+          {
+            "event_id": "$32c64c6295334bc3b56a12",
+            "sender": "@reviewer:matrix-local.hiclaw.io:18080",
+            "event_type": "TASK_COMPLETED",
+            "stage": "review",
+            "status": "PROCESSED"
+          },
+          {
+            "event_id": "$d6024ad49f3848d2ad4992",
+            "sender": "@fixer:matrix-local.hiclaw.io:18080",
+            "event_type": "TASK_COMPLETED",
+            "stage": "fix",
+            "status": "PROCESSED"
+          },
+          {
+            "event_id": "$8b07b3e6c1734e4f81f676",
+            "sender": "@verifier:matrix-local.hiclaw.io:18080",
+            "event_type": "TASK_COMPLETED",
+            "stage": "verify",
+            "status": "PROCESSED"
+          },
+          {
+            "event_id": "$4b17fa6528a34cbca92ffc",
+            "sender": "@fixer:matrix-local.hiclaw.io:18080",
+            "event_type": "TASK_COMPLETED",
+            "stage": "fix",
+            "status": "PROCESSED"
+          },
+          {
+            "event_id": "$4438642f13e94e43b28c62",
+            "sender": "@verifier:matrix-local.hiclaw.io:18080",
+            "event_type": "TASK_COMPLETED",
+            "stage": "verify",
+            "status": "PROCESSED"
+          },
+          {
+            "event_id": "$d61f2ee9e79b401c9d3837",
+            "sender": "@fixer:matrix-local.hiclaw.io:18080",
+            "event_type": "TASK_COMPLETED",
+            "stage": "fix",
+            "status": "PROCESSED"
+          },
+          {
+            "event_id": "$6c53183c95b749419db70f",
+            "sender": "@verifier:matrix-local.hiclaw.io:18080",
+            "event_type": "TASK_COMPLETED",
+            "stage": "verify",
+            "status": "PROCESSED"
+          },
+          {
+            "event_id": "$391cf4912d844e44948b2d",
+            "sender": "@admin:matrix-local.hiclaw.io:18080",
+            "event_type": "TASK_SUBMITTED",
+            "stage": "review",
+            "status": "PROCESSED"
+          },
+          {
+            "event_id": "$cc150fa2139845238f1444",
+            "sender": "@reviewer:matrix-local.hiclaw.io:18080",
+            "event_type": "TASK_COMPLETED",
+            "stage": "review",
+            "status": "PROCESSED"
+          },
+          {
+            "event_id": "$26acca4b5ef74f3db17b80",
+            "sender": "@fixer:matrix-local.hiclaw.io:18080",
+            "event_type": "TASK_COMPLETED",
+            "stage": "fix",
+            "status": "PROCESSED"
+          },
+          {
+            "event_id": "$2ae13174eb5e42f9b0912e",
+            "sender": "@verifier:matrix-local.hiclaw.io:18080",
+            "event_type": "TASK_COMPLETED",
+            "stage": "verify",
+            "status": "PROCESSED"
+          },
+          {
+            "event_id": "$4b251f96063f42dfb44910",
+            "sender": "@fixer:matrix-local.hiclaw.io:18080",
+            "event_type": "TASK_COMPLETED",
+            "stage": "fix",
+            "status": "PROCESSED"
+          },
+          {
+            "event_id": "$4a306f52e819430ea1f086",
+            "sender": "@verifier:matrix-local.hiclaw.io:18080",
+            "event_type": "TASK_COMPLETED",
+            "stage": "verify",
+            "status": "PROCESSED"
+          },
+          {
+            "event_id": "$52c51e23468e4009846d39",
+            "sender": "@fixer:matrix-local.hiclaw.io:18080",
+            "event_type": "TASK_COMPLETED",
+            "stage": "fix",
+            "status": "PROCESSED"
+          },
+          {
+            "event_id": "$7993a3bc75e447edb458a2",
+            "sender": "@verifier:matrix-local.hiclaw.io:18080",
+            "event_type": "TASK_COMPLETED",
+            "stage": "verify",
+            "status": "PROCESSED"
+          }
+        ],
+        "attempts": null,
+        "verdict_sequence": null,
+        "sequence": [
+          {
+            "verdict": "BLOCKED",
+            "reason": "acceptance test file test_payments.py not present in the revision; cannot verify",
+            "task": {
+              "status": "RUNNING",
+              "current_stage": "fix",
+              "verify_attempt": 1,
+              "verdict": "blocked-needs-approval",
+              "last_error": "verify FAIL; retry fix attempt=2 (1/3)"
+            }
+          },
+          {
+            "verdict": "BLOCKED",
+            "reason": "acceptance test file test_payments.py not present in the revision; cannot verify",
+            "task": {
+              "status": "RUNNING",
+              "current_stage": "fix",
+              "verify_attempt": 2,
+              "verdict": "blocked-needs-approval",
+              "last_error": "verify FAIL; retry fix attempt=3 (2/3)"
+            }
+          },
+          {
+            "verdict": "BLOCKED",
+            "reason": "acceptance test file test_payments.py not present in the revision; cannot verify",
+            "task": {
+              "status": "HOLD",
+              "current_stage": "verify_max_hold",
+              "verify_attempt": 3,
+              "verdict": "blocked-needs-approval",
+              "last_error": "verify FAIL reached MAX_VERIFY_ATTEMPTS=3"
+            }
+          }
+        ],
+        "observation": "Legacy path treats BLOCKED like FAIL (consumes a verify attempt, sends back to Fixer); the Verifier's reason lives in stage_events.raw_body, the outbox body is the generic rework text. Human escalation = HOLD at the cap.",
+        "observations": null
+      },
+      "D_conflicts_and_invalid_inputs": {
+        "run_id": "run-rework-f1-d",
+        "checks": {
+          "verify_from_non_verifier": true,
+          "duplicate_event_id_ignored": true,
+          "late_verify_after_completion": true,
+          "partial_without_verdict": true,
+          "submit_from_non_admin": true
+        },
+        "final_task": null,
+        "stage_runs": [],
+        "dispatch_outbox": [],
+        "stage_events": [],
+        "attempts": null,
+        "verdict_sequence": null,
+        "sequence": null,
+        "observation": null,
+        "observations": {
+          "verify_from_non_verifier": {
+            "event_status": "PROCESSED",
+            "error": null,
+            "task_after": [
+              "RUNNING",
+              "verify"
+            ],
+            "ok": true
+          },
+          "duplicate_event_id_ignored": {
+            "rows_added": 1,
+            "task_after": [
+              "PASS",
+              0
+            ],
+            "ok": true
+          },
+          "late_verify_after_completion": {
+            "event_status": "DUPLICATE",
+            "task_after": [
+              "PASS"
+            ],
+            "ok": true
+          },
+          "partial_without_verdict": {
+            "event_status": "PARTIAL",
+            "error": "waiting for explicit VERDICT",
+            "task_after": [
+              "RUNNING",
+              "verify"
+            ],
+            "ok": true
+          },
+          "submit_from_non_admin": {
+            "event_status": "PROCESSED",
+            "task_runs_created": 0,
+            "ok": true
+          }
+        }
+      }
+    },
+    "risk_basis": {
+      "role": "reviewer",
+      "input_kind": "CONTROLLED_INPUT",
+      "note": "Reviewer semantic output supplied by the harness (no LLM in this evidence tier). The finding schema mirrors config/souls/reviewer/SOUL.md; the acceptance test it references is what the Verifier actually executes.",
+      "findings": [
+        {
+          "id": "F1",
+          "category": "correctness",
+          "severity": "high",
+          "risk_level": "L1",
+          "file": "payments.py",
+          "line": 29,
+          "description": "PaymentLedger.charge() appends unconditionally; a retried payment request for the same order (gateway retries carry a NEW payment_id) charges the customer twice.",
+          "suggestion": "Make charging idempotent per order_id (one charge per order); a repeated request must return the existing charge unchanged.",
+          "acceptance_test": "test_payments.py::TestPaymentLedger::test_second_payment_request_for_same_order_is_idempotent",
+          "expected_behavior": "total_for_order(1) stays 500 after a second charge request for order 1 with a different payment_id"
+        }
+      ],
+      "risk_summary": "L1 — no secrets, dependencies or destructive operations; auto-fix allowed, Verifier must confirm with the acceptance test."
+    },
+    "summary": {
+      "checks_total": 23,
+      "checks_failed": [],
+      "events_injected": 34
+    },
+    "outcome_signature": "bff63ce55abc2cc70c3783ddbf90ebb6003be0da2d39261e2f266d03454070b6",
+    "run_meta": {
+      "generated_at": "2026-09-15T02:14:34Z",
+      "python": "3.9.25",
+      "git_head": "0fba982196340b4ecb3913e83bc3eb673bee817a",
+      "command": "python tools/agentteams/rework_loop_harness.py --pg-port 55432 --out evidence/FINALS-REWORK-LOOP-20260914",
+      "evidence_tier": "MECHANISM_VERIFICATION"
+    }
+  },
+  "rag_loop": {
+    "available": true,
+    "tier": "REAL_OFFLINE_EXPERIMENT_SYNTHETIC_CORPUS",
+    "integrity": {
+      "verified": true,
+      "files": 4
+    },
+    "data_mode": "SYNTHETIC",
+    "observation": {
+      "span_log": "demo-platform/backend/rag-data/tool-spans.jsonl",
+      "total_span_rows": 604,
+      "rows_by_tool": {
+        "rag.retrieve": 127,
+        "rag.answer": 26,
+        "database.query": 26,
+        "database.create_branch": 107,
+        "database.validate_migration": 106,
+        "database.assert_data": 106,
+        "database.rollback_check": 106
+      },
+      "rag_retrieve_rows": 127,
+      "rag_retrieve_distinct_query_hashes": 12,
+      "rag_answer_rows": 26,
+      "rag_answer_distinct_query_hashes": 3,
+      "rag_retrieve_result_status": {
+        "OK": 127
+      },
+      "rag_retrieve_latency_ms": {
+        "p50": 0,
+        "p95": 1,
+        "max": 18
+      },
+      "note": "Span rows are audit records of repeated demo runs, NOT independent evaluation samples. The log stores query_hash only, so query text cannot be recovered from it; the labelled query set below was authored separately and is the evaluation sample."
+    },
+    "dataset": {
+      "families": 18,
+      "queries": 54,
+      "tuning_queries": 30,
+      "heldout_queries": 24,
+      "leakage_max": 0.2581
+    },
+    "baseline_heldout": {
+      "hit_at_1": 0.75,
+      "hit_at_3": 1,
+      "mrr": 0.8611
+    },
+    "selected": "cand-bigram-idf-hash4096",
+    "selected_knobs": {
+      "dim": 4096,
+      "cjk_bigram": true,
+      "idf": true
+    },
+    "backtest_heldout": {
+      "hit_at_1": 0.9167,
+      "hit_at_3": 1,
+      "mrr": 0.9583
+    },
+    "regressions": [
+      "F17-q1"
+    ],
+    "promotion": "PROMOTE",
+    "badcases": 9,
+    "run_meta": {
+      "generated_at": "2026-09-14T13:39:41.983Z",
+      "node": "v24.11.0",
+      "platform": "win32-x64",
+      "git_head": "db5944a4d4555f4cf90cf0099c90f9a833584460",
+      "command": "node demo-platform/backend/experiments/rag-loop/rag_eval_loop.mjs",
+      "evidence_tier": "REAL_OFFLINE_EXPERIMENT on SYNTHETIC corpus"
+    }
+  },
+  "runtime_metadata": {
+    "demo_platform": {
+      "version": "1.2.0-truthfulness",
+      "node": "v24.11.0",
+      "uptime_s": 1,
+      "mode": "replay"
+    },
+    "rag": {
+      "strategy": "v2-bigram-idf-hash4096",
+      "previous": "v1-unigram-hash256",
+      "evidence": "REAL_OFFLINE_EXPERIMENT_SYNTHETIC_CORPUS",
+      "heldout_hit_at_1": "0.75 → 0.9167"
+    },
+    "db_verification": {
+      "schema": "tools/audit-db/m9_migration_verification.sql",
+      "gate": "db_release_gate(ticket, target_data_digest)",
+      "tier": "REAL_SQL_VERIFICATION_ISOLATED_POSTGRES",
+      "pg_version": "16.14 (Debian 16.14-1.pgdg12+1)",
+      "trial_instance": "docker:fb2a17be83b4@sha256:7f58c9936b2ef7f3e1fa20ac7d13cc1d7337ebf2380eec75677efe0204daadf0"
+    },
+    "controller": {
+      "file": "tools/workflow-controller/controller.py",
+      "mode": "legacy (M4F_ONLY_MODE=0) — the path that implements the verify-FAIL rework loop",
+      "max_verify_attempts": 3,
+      "tier": "MECHANISM_VERIFICATION"
+    },
+    "agent_runtime": {
+      "framework": "AgentTeams (HiClaw) v1.2.3 / CoPaw worker",
+      "model_gateway": "deepseek-chat via LLM gateway (historical PR#1-3 runs)",
+      "finals_evidence_uses_llm": false,
+      "note": "finals loops are mechanism/real-SQL/offline tiers; real agent + Element handoff is a separate tier, NOT_EXECUTED in this package"
+    },
+    "boundaries": {
+      "polardb": "NOT CONNECTED",
+      "database_branch": "SIMULATED (three-candidate comparison) · ISOLATED_POSTGRES clone (candidate-a real SQL loop)",
+      "pr_auto_merge": "DISABLED",
+      "github_writes": "NONE",
+      "matrix_messages_sent": 0
+    },
+    "evidence_integrity": {
+      "finalsDbLoop": {
+        "dir": "FINALS-DB-MIGRATION-LOOP-20260914",
+        "tier": "REAL_SQL_VERIFICATION_ISOLATED_POSTGRES",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsReworkLoop": {
+        "dir": "FINALS-REWORK-LOOP-20260914",
+        "tier": "MECHANISM_VERIFICATION",
+        "verified": true,
+        "files": 7,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsRagLoop": {
+        "dir": "FINALS-RAG-LOOP-20260914",
+        "tier": "REAL_OFFLINE_EXPERIMENT_SYNTHETIC_CORPUS",
+        "verified": true,
+        "files": 4,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr2Live": {
+        "dir": "FINALS-ELEM-PR2-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 19,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr3Live": {
+        "dir": "FINALS-ELEM-PR3-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      }
+    }
+  }
+}

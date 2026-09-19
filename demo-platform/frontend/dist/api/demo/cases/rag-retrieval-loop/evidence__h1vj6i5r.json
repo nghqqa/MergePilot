@@ -1,0 +1,112 @@
+{
+  "id": "ev-rag-backtest",
+  "title": "⑤ held-out 回测（只评估一次）+ 晋级判定",
+  "level": "REAL_OFFLINE_EXPERIMENT",
+  "fields": [
+    [
+      "基线 held-out",
+      "hit@1=75.0% · hit@3=100.0% · MRR=0.8611"
+    ],
+    [
+      "选中策略 held-out",
+      "hit@1=91.7% · hit@3=100.0% · MRR=0.9583"
+    ],
+    [
+      "逐条变化",
+      "改善 5 条 · 退化 1 条（F17-q1）· 不变 18 条"
+    ],
+    [
+      "晋级判定",
+      "PROMOTE —— 规则：heldout.mrr > baseline && heldout.hit@1 >= baseline（回测前声明）"
+    ],
+    [
+      "诚实边界",
+      "语料为 SYNTHETIC/REDACTED 演示文档；结论=该策略在此合成语料上更优，不外推企业语料"
+    ]
+  ],
+  "blocks": [
+    {
+      "title": "FINALS-RAG-LOOP-20260914/run-meta.json",
+      "lang": "json",
+      "text": "{\n  \"generated_at\": \"2026-09-14T13:39:41.983Z\",\n  \"node\": \"v24.11.0\",\n  \"platform\": \"win32-x64\",\n  \"git_head\": \"db5944a4d4555f4cf90cf0099c90f9a833584460\",\n  \"command\": \"node demo-platform/backend/experiments/rag-loop/rag_eval_loop.mjs\",\n  \"evidence_tier\": \"REAL_OFFLINE_EXPERIMENT on SYNTHETIC corpus\"\n}"
+    }
+  ],
+  "source_ref": "finalsRagLoop/report.json#backtest",
+  "hash": {
+    "file": "report.json",
+    "dir": "FINALS-RAG-LOOP-20260914",
+    "exists": true,
+    "hash_verified": true,
+    "sha256": "7f84fad68eb7b56bd31ea8d3d0309075e5729d3d38e49dbd241042b2e6b1f666"
+  },
+  "real": [
+    "真实离线实验（2026-09-14）：真实 span 审计、真实检索器执行、真实指标计算；查询集在任何测量前固定，held-out 只评估一次"
+  ],
+  "controlled": [
+    "语料为 SYNTHETIC/REDACTED 演示文档（8 文档/9 chunk）；标注由团队编写"
+  ],
+  "not_executed": [
+    "不外推企业语料；本实验优化检索策略，不改变数据模式声明"
+  ],
+  "case": {
+    "case_id": "rag-retrieval-loop",
+    "case_name": "RAG 检索闭环 · 观测→评估→数据集→优化→回测",
+    "repo": "mergepilot/demo-platform（rag-data 合成语料）",
+    "pr": "本地离线实验 · 无外部 PR（合成语料）",
+    "pr_url": null,
+    "run_id": "rag-loop-20260914",
+    "sha": "aa05c3d894e6485727d2bda1de3025e6b7be0b2c9e627ef48c95186ea27adb01",
+    "sha_kind": "语料 corpus sha256",
+    "evidence_level": [
+      "REAL_OFFLINE_EXPERIMENT",
+      "SYNTHETIC"
+    ],
+    "source_dir": "evidence/FINALS-RAG-LOOP-20260914（SHA256SUMS 锁定；timings 因非确定性排除）",
+    "generated_at": "2026-09-14T13:39:41.983Z",
+    "pending_redactions": null
+  },
+  "integrity": {
+    "finals": {
+      "finalsDbLoop": {
+        "dir": "FINALS-DB-MIGRATION-LOOP-20260914",
+        "tier": "REAL_SQL_VERIFICATION_ISOLATED_POSTGRES",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsReworkLoop": {
+        "dir": "FINALS-REWORK-LOOP-20260914",
+        "tier": "MECHANISM_VERIFICATION",
+        "verified": true,
+        "files": 7,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsRagLoop": {
+        "dir": "FINALS-RAG-LOOP-20260914",
+        "tier": "REAL_OFFLINE_EXPERIMENT_SYNTHETIC_CORPUS",
+        "verified": true,
+        "files": 4,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr2Live": {
+        "dir": "FINALS-ELEM-PR2-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 19,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr3Live": {
+        "dir": "FINALS-ELEM-PR3-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      }
+    }
+  }
+}

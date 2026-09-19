@@ -1,0 +1,90 @@
+{
+  "drawer": "task",
+  "data_mode": "historical replay",
+  "trace_mode": "evidence-replay",
+  "integrity_status": "verified",
+  "event_id": null,
+  "trace_id": null,
+  "trace_note": "v3 全运行 span 直连 AgentLoop/SLS（会话累计 530 span、234 导出批次 0 失败）；委派消息注入 traceparent，接收侧 agentteams.delegation.link ×4（属性级关联：携带 Leader trace_id 可检索，但因实现缺陷未作为 parent 嵌入 Leader 瀑布，已修复于后续镜像）；per-task trace_id 未单独落盘，控制台按 service.name=mergepilot-copaw + 时间窗（03:02–03:16 UTC）检索",
+  "project_id": "elemiso-pr2v3-gate",
+  "task_id": "review-1",
+  "agent_role": "reviewer",
+  "runtime": "copaw-worker:223ddc2-agentloop-v3rag",
+  "event_type": "task_state",
+  "source": "minio",
+  "source_label": "MinIO task result",
+  "source_ref": "finalsPr2V3Traced/tasks/pr2v3-review-1/meta.json + finalsPr2V3Traced/team-room-messages.json",
+  "source_hash": {
+    "ref": "finalsPr2V3Traced/tasks/pr2v3-review-1/meta.json + finalsPr2V3Traced/team-room-messages.json",
+    "dir": "FINALS-ELEM-PR2-V3-TRACED",
+    "dir_key": "finalsPr2V3Traced",
+    "file": "tasks/pr2v3-review-1/meta.json",
+    "abs_path": "D:\\goai\\mergepilot-demo\\evidence\\FINALS-ELEM-PR2-V3-TRACED\\tasks\\pr2v3-review-1\\meta.json",
+    "exists": true,
+    "evidence_root_readonly": true,
+    "sha256_actual": "d48228ba1afdf5db95f52c9fe12448af576031b13794b355de98b228c79b96f9",
+    "sha256_expected": "d48228ba1afdf5db95f52c9fe12448af576031b13794b355de98b228c79b96f9",
+    "hash_verified": true,
+    "sums_source": "FINALS-ELEM-PR2-V3-TRACED/SHA256SUMS"
+  },
+  "timestamp": "2026-09-17T03:02:53Z → 2026-09-17T03:12:39Z",
+  "timestamp_precision": "exact",
+  "assignee": "reviewer",
+  "result_summary": "STATUS: SUCCESS\nFINDING_CONFIRMED / HIGH / CWE-22 / HUMAN_VERIFICATION_REQUIRED: YES\n（真实 PoC：../outside-secret.txt → 200 泄露；../../../etc/hostname → 200 任意读；另发现 PR 测试#2 失败为 fixture 错位）",
+  "result_status": "SUCCESS",
+  "effective": true,
+  "effective_note": null,
+  "input_context": "PR #2（demo/high-risk-human-gate）独立安全审查；SPEC 非预设（未点名漏洞类别）；输出协议化结论。",
+  "tool_calls_summary": "taskflow ack/submit；git clone+checkout；pytest；自设计 PoC；rag_retrieve ×1（引用不替代验证）",
+  "artifacts": [
+    {
+      "name": "findings.md",
+      "source": "finalsPr2V3Traced/tasks/pr2v3-review-1/workspace/findings.md",
+      "resolved": {
+        "dir": "FINALS-ELEM-PR2-V3-TRACED",
+        "file": "tasks/pr2v3-review-1/workspace/findings.md",
+        "exists": true,
+        "hash_verified": true,
+        "sha256_actual": "1f32d58d883f1f3544ec31213ca6f18cf5314b820f2a20480f884caa1fb8aa27"
+      }
+    }
+  ],
+  "status_history": [
+    {
+      "at": "2026-09-17T03:02:46Z",
+      "event_id": "pr2v3-ev-001",
+      "status": "pending",
+      "status_label": "PENDING · 等待派发",
+      "locked_reason": "等待 Leader 派发"
+    },
+    {
+      "at": "2026-09-17T03:02:53Z",
+      "event_id": "pr2v3-ev-002",
+      "status": "running",
+      "status_label": "RUNNING · 执行中",
+      "locked_reason": null
+    },
+    {
+      "at": "2026-09-17T03:12:39Z",
+      "event_id": "pr2v3-ev-007",
+      "status": "completed",
+      "status_label": "COMPLETED · 完成",
+      "locked_reason": null
+    }
+  ],
+  "hash_verified": true,
+  "redaction_status": {
+    "redaction_layer": "applied (evidence-adapter/redact.mjs)",
+    "scan_hits": [],
+    "status": "CLEAN — redaction applied; PR#2 demo placeholders allow-listed",
+    "forbidden_fields_excluded": [
+      "Authorization",
+      "Cookie",
+      "API key",
+      "Matrix token",
+      "password",
+      "完整工具参数",
+      "完整 prompt/completion"
+    ]
+  }
+}

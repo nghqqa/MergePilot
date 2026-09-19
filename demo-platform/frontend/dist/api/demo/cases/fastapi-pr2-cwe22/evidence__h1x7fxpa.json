@@ -1,0 +1,120 @@
+{
+  "id": "ev-pr-created",
+  "title": "PR 创建记录 pr-created.json",
+  "level": "REAL_EXECUTED_AGENTTEAMS",
+  "fields": [
+    [
+      "仓库",
+      "nghqqa/fastapi-boilerplate-demo"
+    ],
+    [
+      "PR",
+      "#2 · High-risk security demo: require human verification before remediation"
+    ],
+    [
+      "URL",
+      "https://github.com/nghqqa/fastapi-boilerplate-demo/pull/2"
+    ],
+    [
+      "base / head",
+      "mergepilot-demo/schema-migration-risk ← demo/high-risk-human-gate"
+    ],
+    [
+      "commit_sha",
+      "1dedf5e1992c950557064d8f4fb9039d1523deb3"
+    ],
+    [
+      "变更规模",
+      "2 files · +122 / -0"
+    ]
+  ],
+  "blocks": [
+    {
+      "title": "highRiskGateBlocked/pr-created.json",
+      "lang": "json",
+      "text": "{\n  \"phase\": \"Phase 14.2H-WD-COPAW-HIGH-RISK-PR-DEMO\",\n  \"recorded_at\": \"2026-08-29T14:46:00+08:00\",\n  \"check_type\": \"pr-created\",\n  \"result\": \"PASS\",\n  \"pr\": {\n    \"repository\": \"nghqqa/fastapi-boilerplate-demo\",\n    \"number\": 2,\n    \"url\": \"https://github.com/nghqqa/fastapi-boilerplate-demo/pull/2\",\n    \"title\": \"High-risk security demo: require human verification before remediation\",\n    \"state\": \"OPEN\",\n    \"base\": \"mergepilot-demo/schema-migration-risk\",\n    \"head\": \"demo/high-risk-human-gate\",\n    \"commit_sha\": \"1dedf5e1992c950557064d8f4fb9039d1523deb3\",\n    \"changed_files\": 2,\n    \"additions\": 122,\n    \"deletions\": 0,\n    \"description_declares_demo_and_no_auto_merge\": true\n  }\n}"
+    }
+  ],
+  "source_ref": "highRiskGateBlocked/pr-created.json",
+  "hash": {
+    "file": "pr-created.json",
+    "dir": "PHASE14-WINDOWS-COPAW-HIGH-RISK-HUMAN-GATE-20260829-144234",
+    "exists": true,
+    "hash_verified": true,
+    "sha256": "65884a690a991f6f8fb70ffe091d1d5f1dc8cd26ba8f026cdc007578fa1ca08c"
+  },
+  "real": [
+    "AgentTeams/CoPaw 多 Agent 历史真实运行（2026-08-29：真实 Matrix 派单、真实 LLM、真实容器执行）",
+    "Reviewer / Fixer / Verifier 产物来自锁定证据目录（SHA256 校验）",
+    "人工审批为真实操作员记录（human-gate-approval.md）"
+  ],
+  "controlled": [
+    "本页面对证据的时间线投影与讲解文案"
+  ],
+  "not_executed": [
+    "本次演示不连接实时 GitHub / Matrix / LLM",
+    "merge / push / close / reopen 全程禁止，PR #2 保持 OPEN",
+    "per-task 云端 Trace（evidence-replay，trace_id 不存在）"
+  ],
+  "case": {
+    "case_id": "fastapi-pr2-cwe22",
+    "case_name": "FastAPI PR #2 · 路径穿越风险修复",
+    "repo": "nghqqa/fastapi-boilerplate-demo",
+    "pr": "PR #2 · demo/high-risk-human-gate",
+    "pr_url": "https://github.com/nghqqa/fastapi-boilerplate-demo/pull/2",
+    "run_id": "copaw-high-risk-human-gate（AgentTeams project）",
+    "sha": "1dedf5e1992c950557064d8f4fb9039d1523deb3",
+    "sha_kind": "PR #2 head commit",
+    "evidence_level": [
+      "HISTORICAL_REPLAY",
+      "REAL_EXECUTED_AGENTTEAMS"
+    ],
+    "source_dir": "evidence/PHASE14-WINDOWS-*（replayMaterials · fixVerify · fixAudit · finalLock · highRiskGateBlocked）",
+    "generated_at": "运行 2026-08-29 · 状态锁定 2026-08-29T13:09+08:00（pr-state-final.json）",
+    "pending_redactions": null
+  },
+  "integrity": {
+    "finals": {
+      "finalsDbLoop": {
+        "dir": "FINALS-DB-MIGRATION-LOOP-20260914",
+        "tier": "REAL_SQL_VERIFICATION_ISOLATED_POSTGRES",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsReworkLoop": {
+        "dir": "FINALS-REWORK-LOOP-20260914",
+        "tier": "MECHANISM_VERIFICATION",
+        "verified": true,
+        "files": 7,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsRagLoop": {
+        "dir": "FINALS-RAG-LOOP-20260914",
+        "tier": "REAL_OFFLINE_EXPERIMENT_SYNTHETIC_CORPUS",
+        "verified": true,
+        "files": 4,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr2Live": {
+        "dir": "FINALS-ELEM-PR2-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 19,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr3Live": {
+        "dir": "FINALS-ELEM-PR3-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      }
+    }
+  }
+}

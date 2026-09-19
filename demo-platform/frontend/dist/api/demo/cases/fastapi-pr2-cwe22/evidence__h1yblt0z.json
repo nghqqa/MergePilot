@@ -1,0 +1,103 @@
+{
+  "id": "ev-review-conclusion",
+  "title": "Reviewer 结论（review-1）",
+  "level": "REAL_EXECUTED_AGENTTEAMS",
+  "fields": [
+    [
+      "协议标记",
+      "STATUS: SUCCESS / FINDING_CONFIRMED / SEVERITY: HIGH / HUMAN_VERIFICATION_REQUIRED: YES（pr2v3-review-1 result.md 协议标记）"
+    ],
+    [
+      "风险",
+      "CWE-22 · severity=HIGH · 任意文件读取"
+    ],
+    [
+      "位置",
+      "backend/src/interfaces/api/v1/demo_high_risk.py — demo_download (L41 os.path.join → L42 FileResponse)"
+    ],
+    [
+      "是否需要人工门",
+      "HUMAN_VERIFICATION_REQUIRED: YES → 触发人工安全门"
+    ],
+    [
+      "执行者",
+      "p14h2-copaw-worker-reviewer（真实历史运行）"
+    ]
+  ],
+  "blocks": [],
+  "source_ref": "replayMaterials/02-case-pr2-high-risk.md §1 + fixAudit/AUDIT.md",
+  "real": [
+    "AgentTeams/CoPaw 多 Agent 历史真实运行（2026-08-29：真实 Matrix 派单、真实 LLM、真实容器执行）",
+    "Reviewer / Fixer / Verifier 产物来自锁定证据目录（SHA256 校验）",
+    "人工审批为真实操作员记录（human-gate-approval.md）"
+  ],
+  "controlled": [
+    "本页面对证据的时间线投影与讲解文案"
+  ],
+  "not_executed": [
+    "本次演示不连接实时 GitHub / Matrix / LLM",
+    "merge / push / close / reopen 全程禁止，PR #2 保持 OPEN",
+    "per-task 云端 Trace（evidence-replay，trace_id 不存在）"
+  ],
+  "case": {
+    "case_id": "fastapi-pr2-cwe22",
+    "case_name": "FastAPI PR #2 · 路径穿越风险修复",
+    "repo": "nghqqa/fastapi-boilerplate-demo",
+    "pr": "PR #2 · demo/high-risk-human-gate",
+    "pr_url": "https://github.com/nghqqa/fastapi-boilerplate-demo/pull/2",
+    "run_id": "copaw-high-risk-human-gate（AgentTeams project）",
+    "sha": "1dedf5e1992c950557064d8f4fb9039d1523deb3",
+    "sha_kind": "PR #2 head commit",
+    "evidence_level": [
+      "HISTORICAL_REPLAY",
+      "REAL_EXECUTED_AGENTTEAMS"
+    ],
+    "source_dir": "evidence/PHASE14-WINDOWS-*（replayMaterials · fixVerify · fixAudit · finalLock · highRiskGateBlocked）",
+    "generated_at": "运行 2026-08-29 · 状态锁定 2026-08-29T13:09+08:00（pr-state-final.json）",
+    "pending_redactions": null
+  },
+  "integrity": {
+    "finals": {
+      "finalsDbLoop": {
+        "dir": "FINALS-DB-MIGRATION-LOOP-20260914",
+        "tier": "REAL_SQL_VERIFICATION_ISOLATED_POSTGRES",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsReworkLoop": {
+        "dir": "FINALS-REWORK-LOOP-20260914",
+        "tier": "MECHANISM_VERIFICATION",
+        "verified": true,
+        "files": 7,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsRagLoop": {
+        "dir": "FINALS-RAG-LOOP-20260914",
+        "tier": "REAL_OFFLINE_EXPERIMENT_SYNTHETIC_CORPUS",
+        "verified": true,
+        "files": 4,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr2Live": {
+        "dir": "FINALS-ELEM-PR2-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 19,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr3Live": {
+        "dir": "FINALS-ELEM-PR3-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      }
+    }
+  }
+}

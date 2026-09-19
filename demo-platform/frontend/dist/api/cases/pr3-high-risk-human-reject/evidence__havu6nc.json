@@ -1,0 +1,51 @@
+{
+  "drawer": "event",
+  "data_mode": "historical replay",
+  "trace_mode": "evidence-replay",
+  "integrity_status": "verified",
+  "event_id": "pr3v3-ev-002",
+  "matrix_event_id": "$vR1jiZuuN87yJEIxVOXN5OgulX2KTl6BMLjiZHn40fM",
+  "trace_id": null,
+  "trace_note": "per-event 无独立 trace（per-task/事件维度仍为 evidence-replay）；平台级历史权威 Trace 见总览页 AgentLoop Cloud Trace 区块",
+  "project_id": "elemiso-pr3v3-reject",
+  "task_id": null,
+  "agent_role": "leader",
+  "runtime": "copaw-worker:223ddc2-agentloop-v3rag（image 8e17c3667c3c）",
+  "event_type": "tool_call",
+  "source": "matrix",
+  "source_label": "Matrix event",
+  "source_ref": "finalsPr3V3Traced/team-room-messages-pr3v3-window.json",
+  "source_hash": {
+    "ref": "finalsPr3V3Traced/team-room-messages-pr3v3-window.json",
+    "dir": "FINALS-ELEM-PR3-V3-TRACED",
+    "dir_key": "finalsPr3V3Traced",
+    "file": "team-room-messages-pr3v3-window.json",
+    "abs_path": "D:\\goai\\mergepilot-demo\\evidence\\FINALS-ELEM-PR3-V3-TRACED\\team-room-messages-pr3v3-window.json",
+    "exists": true,
+    "evidence_root_readonly": true,
+    "sha256_actual": "dc3acd0acc46f88a86f7c8f01fefa51a55ac7349d260ec12e5a3f93904dcb726",
+    "sha256_expected": "dc3acd0acc46f88a86f7c8f01fefa51a55ac7349d260ec12e5a3f93904dcb726",
+    "hash_verified": true,
+    "sums_source": "FINALS-ELEM-PR3-V3-TRACED/SHA256SUMS"
+  },
+  "timestamp": "2026-09-17T03:19:08Z",
+  "timestamp_precision": "exact",
+  "timestamp_note": null,
+  "summary": "kickoff 后 5 秒：Leader 委派 review-1 @reviewer（m.mentions 命中；traceparent 注入 → 接收侧 agentteams.delegation.link 属性级关联）",
+  "detail": null,
+  "hash_verified": true,
+  "redaction_status": {
+    "redaction_layer": "applied (evidence-adapter/redact.mjs)",
+    "scan_hits": [],
+    "status": "CLEAN — redaction applied; PR#2 demo placeholders allow-listed",
+    "forbidden_fields_excluded": [
+      "Authorization",
+      "Cookie",
+      "API key",
+      "Matrix token",
+      "password",
+      "完整工具参数",
+      "完整 prompt/completion"
+    ]
+  }
+}

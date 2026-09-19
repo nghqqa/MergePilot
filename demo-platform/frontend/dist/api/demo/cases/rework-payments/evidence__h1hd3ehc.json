@@ -1,0 +1,102 @@
+{
+  "id": "ev-diff-a2",
+  "title": "二次修复补丁 attempt-2（受控输入）",
+  "level": "CONTROL_PLANE_MECHANISM",
+  "fields": [
+    [
+      "文件",
+      "payments.py"
+    ],
+    [
+      "tree_sha",
+      "255490e3831dab05a39421e0867eeb1bd5d69e2a"
+    ],
+    [
+      "策略",
+      "按 order_id 幂等 —— 重复请求返回既有扣款，不新增记录"
+    ]
+  ],
+  "blocks": [
+    {
+      "title": "run-rework-f1-a-attempt2.diff",
+      "lang": "diff",
+      "text": "--- a/payments.py\n+++ b/payments.py\n@@ -1,10 +1,9 @@\n-\"\"\"Payment ledger — FIX ATTEMPT 1 (plausible but wrong).\n+\"\"\"Payment ledger — FIX ATTEMPT 2 (after rework).\n \n-The Fixer de-duplicates by payment_id. That closes the \"same payment id\n-retried\" hole but not the one the Reviewer actually flagged: a gateway retry\n-arrives with a NEW payment id for the same order and is still charged again.\n-The acceptance test test_second_payment_request_for_same_order_is_idempotent\n-keeps failing, so the Verifier must send the task back.\n+Idempotency is keyed by order_id: an order is charged at most once; any later\n+charge request for that order (same or new payment id) returns the existing\n+charge unchanged. This is the invariant the Reviewer's finding asked for and\n+the acceptance test enforces.\n \"\"\"\n from __future__ import annotations\n \n@@ -26,16 +25,17 @@\n @dataclass\n class PaymentLedger:\n     charges: List[Charge] = field(default_factory=list)\n-    _seen_payment_ids: Dict[int, Charge] = field(default_factory=dict)\n+    _charge_by_order: Dict[int, Charge] = field(default_factory=dict)\n \n     def charge(self, order_id: int, payment_id: int, amount_cents: int) -> Charge:\n         if amount_cents <= 0:\n             raise LedgerError(\"amount_cents must be positive\")\n-        if payment_id in self._seen_payment_ids:\n-            return self._seen_payment_ids[payment_id]\n+        existing = self._charge_by_order.get(order_id)\n+        if existing is not None:\n+            return existing\n         c = Charge(order_id=order_id, payment_id=payment_id, amount_cents=amount_cents)\n         self.charges.append(c)\n-        self._seen_payment_ids[payment_id] = c\n+        self._charge_by_order[order_id] = c\n         return c\n \n     def total_for_order(self, order_id: int) -> int:\n"
+    }
+  ],
+  "source_ref": "evidence/FINALS-REWORK-LOOP-20260914/patches/run-rework-f1-a-attempt2.diff",
+  "real": [
+    "workflow-controller 控制器代码真实执行",
+    "PostgreSQL 审计链真实写入",
+    "验收测试真实执行并决定 VERDICT"
+  ],
+  "controlled": [
+    "Reviewer 结论（reviewer_findings.json）",
+    "Fixer 两个补丁（patches/*.diff）"
+  ],
+  "not_executed": [
+    "LLM 调用",
+    "Matrix/Element 真实交接",
+    "GitHub 写入",
+    "CoPaw 容器运行"
+  ],
+  "case": {
+    "case_id": "rework-payments",
+    "case_name": "支付幂等 · 返工机制案例",
+    "repo": "mergepilot/payments-demo（本地案例仓库）",
+    "pr": "PR #7（本地编号，非可核验外部 PR）",
+    "pr_url": null,
+    "run_id": "run-rework-f1-a",
+    "sha": "255490e3831dab05a39421e0867eeb1bd5d69e2a",
+    "sha_kind": "attempt-2 tree_sha",
+    "evidence_level": [
+      "CONTROL_PLANE_MECHANISM"
+    ],
+    "source_dir": "evidence/FINALS-REWORK-LOOP-20260914 · tools/agentteams/rework_case/base",
+    "generated_at": "2026-09-15T02:14:34Z",
+    "pending_redactions": null
+  },
+  "integrity": {
+    "finals": {
+      "finalsDbLoop": {
+        "dir": "FINALS-DB-MIGRATION-LOOP-20260914",
+        "tier": "REAL_SQL_VERIFICATION_ISOLATED_POSTGRES",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsReworkLoop": {
+        "dir": "FINALS-REWORK-LOOP-20260914",
+        "tier": "MECHANISM_VERIFICATION",
+        "verified": true,
+        "files": 7,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsRagLoop": {
+        "dir": "FINALS-RAG-LOOP-20260914",
+        "tier": "REAL_OFFLINE_EXPERIMENT_SYNTHETIC_CORPUS",
+        "verified": true,
+        "files": 4,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr2Live": {
+        "dir": "FINALS-ELEM-PR2-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 19,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr3Live": {
+        "dir": "FINALS-ELEM-PR3-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      }
+    }
+  }
+}

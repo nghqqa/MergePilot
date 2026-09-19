@@ -1,0 +1,91 @@
+{
+  "case_id": "pr2-high-risk-human-gate",
+  "at_event_seq": 12,
+  "timestamp": "2026-09-17T03:14:07Z",
+  "nodes": [
+    {
+      "id": "review-1",
+      "label": "review-1",
+      "sub": "reviewer",
+      "kind": "task",
+      "status": "completed",
+      "status_label": "COMPLETED · 完成",
+      "locked_reason": null
+    },
+    {
+      "id": "human-gate",
+      "label": "HUMAN GATE",
+      "sub": "人工安全门",
+      "kind": "gate",
+      "status": "completed",
+      "status_label": "GATE: APPROVED",
+      "state": "approved"
+    },
+    {
+      "id": "fix-1",
+      "label": "fix-1",
+      "sub": "fixer",
+      "kind": "task",
+      "status": "completed",
+      "status_label": "COMPLETED · 完成",
+      "locked_reason": null
+    },
+    {
+      "id": "verify-1",
+      "label": "verify-1",
+      "sub": "verifier",
+      "kind": "task",
+      "status": "pending",
+      "status_label": "PENDING · 等待派发",
+      "locked_reason": null
+    }
+  ],
+  "edges": [
+    {
+      "from": "review-1",
+      "to": "human-gate"
+    },
+    {
+      "from": "human-gate",
+      "to": "fix-1"
+    },
+    {
+      "from": "fix-1",
+      "to": "verify-1"
+    }
+  ],
+  "phase": "verifying",
+  "headline": "fix-1 完成并验收 — Verifier 解锁，可派发",
+  "legend": [
+    {
+      "status": "pending",
+      "color": "gray",
+      "meaning": "未派发/等待依赖"
+    },
+    {
+      "status": "running",
+      "color": "blue",
+      "meaning": "已派发执行中"
+    },
+    {
+      "status": "waiting_human",
+      "color": "orange",
+      "meaning": "人工门停等（锁定）"
+    },
+    {
+      "status": "blocked",
+      "color": "red",
+      "meaning": "依赖锁定（前置任务未完成）"
+    },
+    {
+      "status": "completed",
+      "color": "green",
+      "meaning": "完成并经 Leader 验收"
+    },
+    {
+      "status": "failed",
+      "color": "darkred",
+      "meaning": "失败（保留证据）"
+    }
+  ]
+}

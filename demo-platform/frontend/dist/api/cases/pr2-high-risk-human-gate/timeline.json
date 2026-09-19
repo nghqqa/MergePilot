@@ -1,0 +1,636 @@
+{
+  "case_id": "pr2-high-risk-human-gate",
+  "mode_banner": "REPLAY — HISTORICAL VERIFIED RUN",
+  "total_events": 17,
+  "events": [
+    {
+      "event_id": "pr2v3-ev-001",
+      "timestamp": "2026-09-17T03:02:46Z",
+      "timestamp_precision": "exact",
+      "timestamp_note": null,
+      "agent_role": "human",
+      "event_type": "message",
+      "source": "matrix",
+      "source_ref": "finalsPr2V3Traced/kickoff-as-sent.txt",
+      "matrix_event_id": "$AZhwvTHU4xotN65a7xPX31r-BJYheUA5Xa1tWvmuM_Q",
+      "trace_id": null,
+      "trace_note": "per-task Trace 未接入 — 无 per-task trace（如实显示待接入）；平台级历史权威 Trace 见总览页",
+      "summary": "操作员发送 kickoff（项目 elemiso-pr2v3-gate；DAG 预置不重排；SPEC 非预设——未点名任何漏洞类别；manifest 声明 rag_retrieve 知识库工具可用）",
+      "detail": "kickoff 全文存档于 kickoff-as-sent.txt（3125 字节）；此前 03:02:00–03:02:04Z 完成 v3 埋点 smoke（DM V3-TP-CHECK/V3-READY，Leader 双确认）。审计要点：SPEC 只指向 diff 与新增文件，结论完全未预设。",
+      "state_after": {
+        "tasks": {
+          "review-1": {
+            "status": "pending",
+            "status_label": "PENDING · 等待派发",
+            "locked_reason": "等待 Leader 派发"
+          },
+          "fix-1": {
+            "status": "pending",
+            "status_label": "PENDING · 等待派发",
+            "locked_reason": "DAG 依赖：等待 review-1 结论"
+          },
+          "verify-1": {
+            "status": "pending",
+            "status_label": "PENDING · 等待派发",
+            "locked_reason": "DAG 依赖：等待 fix-1 完成"
+          }
+        },
+        "gate": "none",
+        "phase": "running",
+        "headline": ""
+      }
+    },
+    {
+      "event_id": "pr2v3-ev-002",
+      "timestamp": "2026-09-17T03:02:53Z",
+      "timestamp_precision": "exact",
+      "timestamp_note": null,
+      "agent_role": "leader",
+      "event_type": "tool_call",
+      "source": "matrix",
+      "source_ref": "finalsPr2V3Traced/team-room-messages.json",
+      "matrix_event_id": "$jtMx6XatnDws6qpEcI1QIgtN52BcIkSXB6e1Hq2j9vE",
+      "trace_id": null,
+      "trace_note": "per-task Trace 未接入 — 无 per-task trace（如实显示待接入）；平台级历史权威 Trace 见总览页",
+      "summary": "kickoff 后 7 秒：Leader taskflow(delegate_task) 委派 review-1 @reviewer（m.mentions 命中；v3 首轮：委派消息注入 m.agentloop.traceparent，接收侧生成 agentteams.delegation.link span——跨 Agent 关联首次在真实运行生效；本轮为属性级关联：携带 Leader trace_id 可检索，但因实现缺陷未作为 parent 嵌入 Leader 瀑布，已修复于后续镜像）",
+      "detail": null,
+      "state_after": {
+        "tasks": {
+          "review-1": {
+            "status": "running",
+            "status_label": "RUNNING · 执行中",
+            "locked_reason": null
+          },
+          "fix-1": {
+            "status": "pending",
+            "status_label": "PENDING · 等待派发",
+            "locked_reason": "DAG 依赖：等待 review-1 结论"
+          },
+          "verify-1": {
+            "status": "pending",
+            "status_label": "PENDING · 等待派发",
+            "locked_reason": "DAG 依赖：等待 fix-1 完成"
+          }
+        },
+        "gate": "none",
+        "phase": "running",
+        "headline": "review-1 已派发 → reviewer 独立安全审查中"
+      }
+    },
+    {
+      "event_id": "pr2v3-ev-003",
+      "timestamp": "2026-09-17T03:02:56Z",
+      "timestamp_precision": "exact",
+      "timestamp_note": null,
+      "agent_role": "reviewer",
+      "event_type": "task_state",
+      "source": "minio",
+      "source_ref": "finalsPr2V3Traced/tasks/pr2v3-review-1/meta.json",
+      "matrix_event_id": null,
+      "trace_id": null,
+      "trace_note": "per-task Trace 未接入 — 无 per-task trace（如实显示待接入）；平台级历史权威 Trace 见总览页",
+      "summary": "reviewer ack_task（acknowledged_at 03:02:56Z，meta event_id 与委派事件一致）；clone + checkout head SHA 校验",
+      "detail": null,
+      "state_after": {
+        "tasks": {
+          "review-1": {
+            "status": "running",
+            "status_label": "RUNNING · 执行中",
+            "locked_reason": null
+          },
+          "fix-1": {
+            "status": "pending",
+            "status_label": "PENDING · 等待派发",
+            "locked_reason": "DAG 依赖：等待 review-1 结论"
+          },
+          "verify-1": {
+            "status": "pending",
+            "status_label": "PENDING · 等待派发",
+            "locked_reason": "DAG 依赖：等待 fix-1 完成"
+          }
+        },
+        "gate": "none",
+        "phase": "running",
+        "headline": "review-1 已派发 → reviewer 独立安全审查中"
+      }
+    },
+    {
+      "event_id": "pr2v3-ev-004",
+      "timestamp": "2026-09-17T03:03:00Z",
+      "timestamp_precision": "windowed",
+      "timestamp_note": "窗口 03:03:00–03:12:19（团队房导出：scope 确认 2 files +122/-0、PR 自带测试运行、依赖分批安装——大包一次安装 03:11:42Z 超时后改小批次 03:12:12Z 完成、测试 1 passed 泄露复现 / 1 failed fixture 错位、自设计 PoC）",
+      "agent_role": "reviewer",
+      "event_type": "tool_call",
+      "source": "evidence",
+      "source_ref": "finalsPr2V3Traced/team-room-messages.json",
+      "matrix_event_id": null,
+      "trace_id": null,
+      "trace_note": "per-task Trace 未接入 — 无 per-task trace（如实显示待接入）；平台级历史权威 Trace 见总览页",
+      "summary": "reviewer 独立审查：确认 scope 2 files +122/-0；运行 PR 自带测试（1 passed 泄露复现 / 1 failed fixture 错位）；随后自设计 PoC。依赖安装等待 ≈9 分钟构成本轮墙钟主体",
+      "detail": null,
+      "state_after": {
+        "tasks": {
+          "review-1": {
+            "status": "running",
+            "status_label": "RUNNING · 执行中",
+            "locked_reason": null
+          },
+          "fix-1": {
+            "status": "pending",
+            "status_label": "PENDING · 等待派发",
+            "locked_reason": "DAG 依赖：等待 review-1 结论"
+          },
+          "verify-1": {
+            "status": "pending",
+            "status_label": "PENDING · 等待派发",
+            "locked_reason": "DAG 依赖：等待 fix-1 完成"
+          }
+        },
+        "gate": "none",
+        "phase": "running",
+        "headline": "review-1 已派发 → reviewer 独立安全审查中"
+      }
+    },
+    {
+      "event_id": "pr2v3-ev-005",
+      "timestamp": "2026-09-17T03:09:34Z",
+      "timestamp_precision": "exact",
+      "timestamp_note": null,
+      "agent_role": "human",
+      "event_type": "message",
+      "source": "matrix",
+      "source_ref": "finalsPr2V3Traced/leader-dm-messages.json",
+      "matrix_event_id": "$ypHIHjs3r-_i1faiNyJxmu-WtFLUlnu4upBShe6A578",
+      "trace_id": null,
+      "trace_note": "per-task Trace 未接入 — 无 per-task trace（如实显示待接入）；平台级历史权威 Trace 见总览页",
+      "summary": "操作员 nudge（如实记录）：监控判定 kickoff 尚未被 Leader 消费并发出唤醒——已知问题#4（consumer 空闲唤醒）",
+      "detail": "房间导出与任务 meta 显示：委派 03:02:53Z、ack 03:02:56Z 均早已发生；nudge 期间 reviewer 正处于依赖安装等待（03:03:07Z 大包安装 → 03:11:42Z 超时 → 03:12:12Z 小批次完成）。Leader 在 DM 的首次回帖为 03:12:50Z 停门报告；nudge 未产生任何重复委派。pack README 事件表\"委派 review 03:09:5x\"为汇总表述，平台以原始房间导出+meta.json 为准。",
+      "state_after": {
+        "tasks": {
+          "review-1": {
+            "status": "running",
+            "status_label": "RUNNING · 执行中",
+            "locked_reason": null
+          },
+          "fix-1": {
+            "status": "pending",
+            "status_label": "PENDING · 等待派发",
+            "locked_reason": "DAG 依赖：等待 review-1 结论"
+          },
+          "verify-1": {
+            "status": "pending",
+            "status_label": "PENDING · 等待派发",
+            "locked_reason": "DAG 依赖：等待 fix-1 完成"
+          }
+        },
+        "gate": "none",
+        "phase": "running",
+        "headline": "review-1 已派发 → reviewer 独立安全审查中"
+      }
+    },
+    {
+      "event_id": "pr2v3-ev-006",
+      "timestamp": "2026-09-17T03:12:23Z",
+      "timestamp_precision": "exact",
+      "timestamp_note": null,
+      "agent_role": "reviewer",
+      "event_type": "tool_call",
+      "source": "rag",
+      "source_ref": "finalsPr2V3Traced/rag/rag-tool-spans.jsonl",
+      "matrix_event_id": "$oq726ECe3rG9QdICFD-uv3i1g_Pv50A2tw1rMVN67F4（团队房原话：\"references only\"，前一条 03:12:23Z $xDfH8HIM9GrC… 明示\"my conclusion stands on my own repro\"）",
+      "trace_id": null,
+      "trace_note": "per-task Trace 未接入 — 无 per-task trace（如实显示待接入）；平台级历史权威 Trace 见总览页",
+      "summary": "RAG 知识库调用（manifest 邀请、可选）：rag_retrieve 返回 org-standards/cwe-22-path-traversal.md#1 与 file-path-containment.md#1 —— 与 reviewer 自主结论一致；引用不替代自主验证",
+      "detail": "审计流水 03:12:23.941Z/.946Z 两条（MCP 客户端侧+服务侧对账，arguments_hash 22072a7c42c0897e，data_mode=SYNTHETIC）。v3 下同一调用落三类 span：原始 tool.rag_retrieve + loongsuite ExecuteTool 语义 span（控制台\"工具调用\"计数点亮）+ genai.llm.call 单层调用链。",
+      "state_after": {
+        "tasks": {
+          "review-1": {
+            "status": "running",
+            "status_label": "RUNNING · 执行中",
+            "locked_reason": null
+          },
+          "fix-1": {
+            "status": "pending",
+            "status_label": "PENDING · 等待派发",
+            "locked_reason": "DAG 依赖：等待 review-1 结论"
+          },
+          "verify-1": {
+            "status": "pending",
+            "status_label": "PENDING · 等待派发",
+            "locked_reason": "DAG 依赖：等待 fix-1 完成"
+          }
+        },
+        "gate": "none",
+        "phase": "running",
+        "headline": "review-1 已派发 → reviewer 独立安全审查中"
+      }
+    },
+    {
+      "event_id": "pr2v3-ev-007",
+      "timestamp": "2026-09-17T03:12:39Z",
+      "timestamp_precision": "exact",
+      "timestamp_note": null,
+      "agent_role": "reviewer",
+      "event_type": "task_state",
+      "source": "matrix",
+      "source_ref": "finalsPr2V3Traced/tasks/pr2v3-review-1/result.md",
+      "matrix_event_id": "$Pbdr68h1bKJJ8q2fvcMFNKkeEavJwtBU0-vpS2vacDM（TASK_COMPLETED: run-elem-pr2v3-20260917-01-review；meta submitted_at 03:12:36Z）",
+      "trace_id": null,
+      "trace_note": "per-task Trace 未接入 — 无 per-task trace（如实显示待接入）；平台级历史权威 Trace 见总览页",
+      "summary": "HIGH_RISK_FOUND — review-1 提交：FINDING_CONFIRMED / SEVERITY: HIGH / HUMAN_VERIFICATION_REQUIRED: YES（CWE-22 路径穿越任意文件读取；真实 PoC：../outside-secret.txt 200 泄露、../../../etc/hostname 200 任意读）",
+      "detail": "附加独立发现：PR 自带测试#2 失败是 fixture/payload 错位（../../../ 越过 tmp 到 /tmp），非缓解。",
+      "state_after": {
+        "tasks": {
+          "review-1": {
+            "status": "completed",
+            "status_label": "COMPLETED · 完成",
+            "locked_reason": null
+          },
+          "fix-1": {
+            "status": "pending",
+            "status_label": "PENDING · 等待派发",
+            "locked_reason": "HIGH_RISK_FOUND 已确认 — 等待人工安全门判定"
+          },
+          "verify-1": {
+            "status": "pending",
+            "status_label": "PENDING · 等待派发",
+            "locked_reason": "HIGH_RISK_FOUND 已确认 — 等待人工安全门判定"
+          }
+        },
+        "gate": "none",
+        "phase": "running",
+        "headline": "HIGH_RISK_FOUND — CWE-22 确认，等待人工安全门"
+      }
+    },
+    {
+      "event_id": "pr2v3-ev-008",
+      "timestamp": "2026-09-17T03:12:50Z",
+      "timestamp_precision": "exact",
+      "timestamp_note": null,
+      "agent_role": "leader",
+      "event_type": "message",
+      "source": "matrix",
+      "source_ref": "finalsPr2V3Traced/leader-dm-messages.json",
+      "matrix_event_id": "$ldtKhd3V6l-tdQtDXid7fL3F-TYwUtH-9tfIBI_dMVA",
+      "trace_id": null,
+      "trace_note": "per-task Trace 未接入 — 无 per-task trace（如实显示待接入）；平台级历史权威 Trace 见总览页",
+      "summary": "HUMAN_SECURITY_REVIEW_REQUIRED — Leader 验收 review 后上报人工门并 STOP（\"Do NOT delegate pr2v3-fix-1\"）：尚未委派 fix，等待人工门禁决策",
+      "detail": null,
+      "state_after": {
+        "tasks": {
+          "review-1": {
+            "status": "completed",
+            "status_label": "COMPLETED · 完成",
+            "locked_reason": null
+          },
+          "fix-1": {
+            "status": "waiting_human",
+            "status_label": "WAITING_HUMAN · 人工门停等",
+            "locked_reason": "人工安全门：HUMAN_SECURITY_REVIEW_REQUIRED — 未批准禁止派发"
+          },
+          "verify-1": {
+            "status": "waiting_human",
+            "status_label": "WAITING_HUMAN · 人工门停等",
+            "locked_reason": "人工安全门：HUMAN_SECURITY_REVIEW_REQUIRED — 未批准禁止派发"
+          }
+        },
+        "gate": "required",
+        "phase": "waiting_human",
+        "headline": "⛔ 人工安全门 — 受控停等（Fixer/Verifier 锁定）"
+      }
+    },
+    {
+      "event_id": "pr2v3-ev-009",
+      "timestamp": "2026-09-17T03:13:25Z",
+      "timestamp_precision": "exact",
+      "timestamp_note": null,
+      "agent_role": "human",
+      "event_type": "approval",
+      "source": "matrix",
+      "source_ref": "finalsPr2V3Traced/project/human-gate-approval.md",
+      "matrix_event_id": "$qnZ1ipJJKMiHFyoGYIXHA1jpMYsh_5qAHORGYCMpl14（团队房 $-0UELWrDqRRIP_gSnS1kokTafrnorRAoenYP48QJVfw）",
+      "trace_id": null,
+      "trace_note": "per-task Trace 未接入 — 无 per-task trace（如实显示待接入）；平台级历史权威 Trace 见总览页",
+      "summary": "HUMAN_SECURITY_APPROVED_FIX — 操作员批准（按操作员运行前书面授权自动投递；批准记录先于派发落盘项目目录），授权派发 fix-1/verify-1，禁 merge/push/close/reopen，PR #2 保持 OPEN",
+      "detail": "批准范围与验收口径（记录原文）：①确认 HIGH/CWE-22 结论；②授权 Leader 自行委派 pr2v3-fix-1（仅 Reviewer 标记文件、测试冻结、零 GitHub 写入）；③fix 验收后委派 pr2v3-verify-1；④FAIL 则 pr2v3-fix-2 重派一次。验收口径：团队房必须出现全新 fix 委派事件且 Fixer 仅在其后开工。",
+      "state_after": {
+        "tasks": {
+          "review-1": {
+            "status": "completed",
+            "status_label": "COMPLETED · 完成",
+            "locked_reason": null
+          },
+          "fix-1": {
+            "status": "pending",
+            "status_label": "PENDING · 等待派发",
+            "locked_reason": null
+          },
+          "verify-1": {
+            "status": "blocked",
+            "status_label": "BLOCKED · 锁定",
+            "locked_reason": "依赖锁定：fix-1 未完成前 Verifier 禁止启动"
+          }
+        },
+        "gate": "approved",
+        "phase": "fixing",
+        "headline": "人工门已批准 → Fixer 解锁；Verifier 仍锁定（等 fix-1）"
+      }
+    },
+    {
+      "event_id": "pr2v3-ev-010",
+      "timestamp": "2026-09-17T03:13:35Z",
+      "timestamp_precision": "exact",
+      "timestamp_note": null,
+      "agent_role": "leader",
+      "event_type": "tool_call",
+      "source": "matrix",
+      "source_ref": "finalsPr2V3Traced/team-room-messages.json",
+      "matrix_event_id": "$B8AGDRYeEqrN3gNFoTztVGlMUmZT3jB4zz4F4BnOEt0",
+      "trace_id": null,
+      "trace_note": "per-task Trace 未接入 — 无 per-task trace（如实显示待接入）；平台级历史权威 Trace 见总览页",
+      "summary": "批准后 10 秒：Leader taskflow(delegate_task) 发出全新 fix 委派 @fixer（事件号 ≠ 任何历史事件；操作员零介入；03:13:37Z Leader DM 回执显式引用该 eventId）",
+      "detail": null,
+      "state_after": {
+        "tasks": {
+          "review-1": {
+            "status": "completed",
+            "status_label": "COMPLETED · 完成",
+            "locked_reason": null
+          },
+          "fix-1": {
+            "status": "running",
+            "status_label": "RUNNING · 执行中",
+            "locked_reason": null
+          },
+          "verify-1": {
+            "status": "blocked",
+            "status_label": "BLOCKED · 锁定",
+            "locked_reason": "依赖锁定：fix-1 未完成前 Verifier 禁止启动"
+          }
+        },
+        "gate": "approved",
+        "phase": "fixing",
+        "headline": "fix-1 已派发 → fixer 最小修复中"
+      }
+    },
+    {
+      "event_id": "pr2v3-ev-011",
+      "timestamp": "2026-09-17T03:13:51Z",
+      "timestamp_precision": "exact",
+      "timestamp_note": null,
+      "agent_role": "fixer",
+      "event_type": "tool_call",
+      "source": "rag",
+      "source_ref": "finalsPr2V3Traced/rag/rag-tool-spans.jsonl",
+      "matrix_event_id": "$gfHktkD-uuENo2I_xr9Hjk_FI1XUzdoENMb9I5tIzbA（03:13:52Z $LAvNTs1ff6yF…：\"Consistent with the approach\"）",
+      "trace_id": null,
+      "trace_note": "per-task Trace 未接入 — 无 per-task trace（如实显示待接入）；平台级历史权威 Trace 见总览页",
+      "summary": "Fixer 自检通过后检索组织修复规范（rag_retrieve → cwe-22-path-traversal.md#1、file-path-containment.md#2/#1：realpath+commonpath 包含性校验模式）；随后产出补丁",
+      "detail": "关键证据点：补丁 sha256 674356fc…16081 与 R1/R2/R3-TRACED/RAG-TRACED 四轮独立产出逐字节一致（本轮第五次）；机理：组织规范（file-path-containment.md）经 RAG 到达执行者，规范本身即确定性修复模式。",
+      "state_after": {
+        "tasks": {
+          "review-1": {
+            "status": "completed",
+            "status_label": "COMPLETED · 完成",
+            "locked_reason": null
+          },
+          "fix-1": {
+            "status": "running",
+            "status_label": "RUNNING · 执行中",
+            "locked_reason": null
+          },
+          "verify-1": {
+            "status": "blocked",
+            "status_label": "BLOCKED · 锁定",
+            "locked_reason": "依赖锁定：fix-1 未完成前 Verifier 禁止启动"
+          }
+        },
+        "gate": "approved",
+        "phase": "fixing",
+        "headline": "fix-1 已派发 → fixer 最小修复中"
+      }
+    },
+    {
+      "event_id": "pr2v3-ev-012",
+      "timestamp": "2026-09-17T03:14:07Z",
+      "timestamp_precision": "exact",
+      "timestamp_note": null,
+      "agent_role": "fixer",
+      "event_type": "task_state",
+      "source": "minio",
+      "source_ref": "finalsPr2V3Traced/tasks/pr2v3-fix-1/result.md",
+      "matrix_event_id": "$ZkVQCFrYsLOufj3IgyViHC5CypTOIerqRcLzTp4wtrY（TASK_COMPLETED: pr2v3-fix-1；meta submitted_at 03:14:02Z）",
+      "trace_id": null,
+      "trace_note": "per-task Trace 未接入 — 无 per-task trace（如实显示待接入）；平台级历史权威 Trace 见总览页",
+      "summary": "fix-1 提交：STATUS: SUCCESS / FIX_APPLIED / SELF_CHECK_PASSED；仅 demo_high_risk.py 单文件 +13/−7；测试冻结；Leader 验收 effective=true（03:14:10Z）",
+      "detail": "交付物：attempt-1.diff（sha256 674356fc9a661faa49b97b789d75ff4529b95a5fac7f39dad0301397c0116081）、workspace/notes.md。",
+      "state_after": {
+        "tasks": {
+          "review-1": {
+            "status": "completed",
+            "status_label": "COMPLETED · 完成",
+            "locked_reason": null
+          },
+          "fix-1": {
+            "status": "completed",
+            "status_label": "COMPLETED · 完成",
+            "locked_reason": null
+          },
+          "verify-1": {
+            "status": "pending",
+            "status_label": "PENDING · 等待派发",
+            "locked_reason": null
+          }
+        },
+        "gate": "approved",
+        "phase": "verifying",
+        "headline": "fix-1 完成并验收 — Verifier 解锁，可派发"
+      }
+    },
+    {
+      "event_id": "pr2v3-ev-013",
+      "timestamp": "2026-09-17T03:14:16Z",
+      "timestamp_precision": "exact",
+      "timestamp_note": null,
+      "agent_role": "leader",
+      "event_type": "tool_call",
+      "source": "matrix",
+      "source_ref": "finalsPr2V3Traced/team-room-messages.json",
+      "matrix_event_id": "$WwGp9OqAD8VftnbC-YZIVYJyJLYt0CQddsSujwcHf1g",
+      "trace_id": null,
+      "trace_note": "per-task Trace 未接入 — 无 per-task trace（如实显示待接入）；平台级历史权威 Trace 见总览页",
+      "summary": "verify-1 委派 @verifier（fix-1 验收后 6 秒；m.mentions 命中 verifier；接收侧 delegation.link 关联）",
+      "detail": null,
+      "state_after": {
+        "tasks": {
+          "review-1": {
+            "status": "completed",
+            "status_label": "COMPLETED · 完成",
+            "locked_reason": null
+          },
+          "fix-1": {
+            "status": "completed",
+            "status_label": "COMPLETED · 完成",
+            "locked_reason": null
+          },
+          "verify-1": {
+            "status": "running",
+            "status_label": "RUNNING · 执行中",
+            "locked_reason": null
+          }
+        },
+        "gate": "approved",
+        "phase": "verifying",
+        "headline": "verify-1 已派发 → verifier 独立验证中"
+      }
+    },
+    {
+      "event_id": "pr2v3-ev-014",
+      "timestamp": "2026-09-17T03:14:19Z",
+      "timestamp_precision": "windowed",
+      "timestamp_note": "窗口 03:14:19–03:14:49（团队房导出：干净 clone、补丁 sha256 独立复现一致 03:14:23Z、修复前基线 3 向量全 200 泄露 + /etc/hostname 03:14:40Z、修复后全 400 + 合法 200 + 缺失 404 03:14:44Z、PR 测试断言反转如实记录）",
+      "agent_role": "verifier",
+      "event_type": "tool_call",
+      "source": "evidence",
+      "source_ref": "finalsPr2V3Traced/tasks/pr2v3-verify-1/workspace/verification.md",
+      "matrix_event_id": null,
+      "trace_id": null,
+      "trace_note": "per-task Trace 未接入 — 无 per-task trace（如实显示待接入）；平台级历史权威 Trace 见总览页",
+      "summary": "独立验证执行：pristine clone 基线（../、sub/../、绝对路径全部 200 泄露 + /etc/hostname）→ 应用补丁（git apply --check 干净）→ 修复后全部 400/合法 200/缺失 404 → PROBE_ACCEPTANCE: PASS",
+      "detail": "Verifier 不信任 Fixer 结论：sha256 独立复算一致、applied diff 与补丁字节级一致、backend/tests/ 未触碰。",
+      "state_after": {
+        "tasks": {
+          "review-1": {
+            "status": "completed",
+            "status_label": "COMPLETED · 完成",
+            "locked_reason": null
+          },
+          "fix-1": {
+            "status": "completed",
+            "status_label": "COMPLETED · 完成",
+            "locked_reason": null
+          },
+          "verify-1": {
+            "status": "running",
+            "status_label": "RUNNING · 执行中",
+            "locked_reason": null
+          }
+        },
+        "gate": "approved",
+        "phase": "verifying",
+        "headline": "verify-1 已派发 → verifier 独立验证中"
+      }
+    },
+    {
+      "event_id": "pr2v3-ev-015",
+      "timestamp": "2026-09-17T03:14:50Z",
+      "timestamp_precision": "exact",
+      "timestamp_note": null,
+      "agent_role": "verifier",
+      "event_type": "tool_call",
+      "source": "rag",
+      "source_ref": "finalsPr2V3Traced/rag/rag-tool-spans.jsonl",
+      "matrix_event_id": "$g8zjUSURcwlsQH93T5d9dC47xBIruwOi3PpRgVrwMEY（团队房原话：\"Same org-standard references as upstream (SYNTHETIC)\"）",
+      "trace_id": null,
+      "trace_note": "per-task Trace 未接入 — 无 per-task trace（如实显示待接入）；平台级历史权威 Trace 见总览页",
+      "summary": "Verifier 裁决通过后按 manifest 邀请检索组织标准（rag_retrieve → fastapi-endpoint-checklist.md#1、cwe-22-path-traversal.md#1、file-path-containment.md#1，SYNTHETIC 确认）——引用与上游一致，裁决基于自己的复现",
+      "detail": null,
+      "state_after": {
+        "tasks": {
+          "review-1": {
+            "status": "completed",
+            "status_label": "COMPLETED · 完成",
+            "locked_reason": null
+          },
+          "fix-1": {
+            "status": "completed",
+            "status_label": "COMPLETED · 完成",
+            "locked_reason": null
+          },
+          "verify-1": {
+            "status": "running",
+            "status_label": "RUNNING · 执行中",
+            "locked_reason": null
+          }
+        },
+        "gate": "approved",
+        "phase": "verifying",
+        "headline": "verify-1 已派发 → verifier 独立验证中"
+      }
+    },
+    {
+      "event_id": "pr2v3-ev-016",
+      "timestamp": "2026-09-17T03:15:04Z",
+      "timestamp_precision": "exact",
+      "timestamp_note": null,
+      "agent_role": "verifier",
+      "event_type": "task_state",
+      "source": "matrix",
+      "source_ref": "finalsPr2V3Traced/tasks/pr2v3-verify-1/result.md",
+      "matrix_event_id": "$GLYnidZ84759dOqDzj58zwyjFbmISomHx22Z8fDgkEE（TASK_COMPLETED: pr2v3-verify-1；meta submitted_at 03:15:01Z）",
+      "trace_id": null,
+      "trace_note": "per-task Trace 未接入 — 无 per-task trace（如实显示待接入）；平台级历史权威 Trace 见总览页",
+      "summary": "verify-1 提交：VERIFIED (PASS) 首次通过；VERDICT: VERIFIED（verification.md 顶层）",
+      "detail": null,
+      "state_after": {
+        "tasks": {
+          "review-1": {
+            "status": "completed",
+            "status_label": "COMPLETED · 完成",
+            "locked_reason": null
+          },
+          "fix-1": {
+            "status": "completed",
+            "status_label": "COMPLETED · 完成",
+            "locked_reason": null
+          },
+          "verify-1": {
+            "status": "completed",
+            "status_label": "COMPLETED · 完成",
+            "locked_reason": null
+          }
+        },
+        "gate": "approved",
+        "phase": "verifying",
+        "headline": "verify-1 通过 — VERIFIED，独立验证完成"
+      }
+    },
+    {
+      "event_id": "pr2v3-ev-017",
+      "timestamp": "2026-09-17T03:15:18Z",
+      "timestamp_precision": "exact",
+      "timestamp_note": null,
+      "agent_role": "leader",
+      "event_type": "message",
+      "source": "matrix",
+      "source_ref": "finalsPr2V3Traced/project/result.md",
+      "matrix_event_id": "$q95RgMxKGH5qYqyfrqYEq_WT-Lbd64zWjtkKucgF__A",
+      "trace_id": null,
+      "trace_note": "per-task Trace 未接入 — 无 per-task trace（如实显示待接入）；平台级历史权威 Trace 见总览页",
+      "summary": "PROJECT COMPLETED — 高危闭环完成（墙钟 12 分 32 秒，含 reviewer 依赖安装等待 ≈9 分钟与一次 nudge，如实记录）；PR #2 保持 OPEN（未 merge/push/close/reopen，分支 SHA 运行前后一致）",
+      "detail": null,
+      "state_after": {
+        "tasks": {
+          "review-1": {
+            "status": "completed",
+            "status_label": "COMPLETED · 完成",
+            "locked_reason": null
+          },
+          "fix-1": {
+            "status": "completed",
+            "status_label": "COMPLETED · 完成",
+            "locked_reason": null
+          },
+          "verify-1": {
+            "status": "completed",
+            "status_label": "COMPLETED · 完成",
+            "locked_reason": null
+          }
+        },
+        "gate": "approved",
+        "phase": "completed",
+        "headline": "PR #2 高危闭环完成 — 人工门→修复→独立验证（全程 v3+RAG 追踪），PR 保持 OPEN"
+      }
+    }
+  ]
+}

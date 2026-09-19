@@ -1,0 +1,146 @@
+{
+  "id": "ev-rej-review",
+  "title": "【历史对照 2026-08-30】Reviewer 结论（critical）",
+  "level": "HISTORICAL_REPLAY",
+  "fields": [
+    [
+      "结论",
+      "HIGH_RISK_FOUND · SEVERITY: critical · HUMAN_VERIFICATION_REQUIRED: true"
+    ],
+    [
+      "定性",
+      "OS command injection / RCE：host 参数 shell 注入（与本次独立审查同一缺陷）"
+    ],
+    [
+      "PR",
+      "#3 · head ad267a6e51209551a0733657321bb364d04befd0（全程 OPEN 未合并）"
+    ]
+  ],
+  "blocks": [
+    {
+      "title": "rejectDemo/reviewer-high-risk-result.md",
+      "lang": "text",
+      "text": "STATUS: SUCCESS\nSUMMARY: STATUS: HIGH_RISK_FOUND | SEVERITY: critical | HUMAN_VERIFICATION_REQUIRED: true | Confirmed critical OS command injection (CWE-78) / RCE in backend/src/interfaces/api/v1/demo_cmd_exec.py demo_ping: user-controlled 'host' is f-string interpolated into 'ping -c 1 {host}' and executed via subprocess.run(shell=True), so ';', '&&', '$(...)' shell metacharacters execute arbitrary commands on the server; the command string and output are returned to the attacker. Reproduced by the bundled tests (shell chaining and command-substitution marker assertions). Per demo rules the human reviewer must REJECT remediation: PR #3 stays OPEN, fix-1/verify-1 stay locked, and the project remains blocked/rejected. Full marker-bearing report in deliverable findings.md.\n\nDELIVERABLES:\n- shared/projects/copaw-high-risk-human-reject/tasks/review-1/workspace/findings.md\n"
+    }
+  ],
+  "source_ref": "rejectDemo/reviewer-high-risk-result.md",
+  "hash": {
+    "file": "reviewer-high-risk-result.md",
+    "dir": "PHASE14-WINDOWS-COPAW-HIGH-RISK-REJECT-20260830-091913",
+    "exists": true,
+    "hash_verified": true,
+    "sha256": "eef2c5fd4be2b9b22ff5a0ea38508ff805123ca75fd11d9b548f891e439ead67"
+  },
+  "real": [
+    "真实执行（SK5-TRACED）：Reviewer 独立审查（含确定性 skill_* 与 rag_retrieve 引用实录）、操作员拒绝（按运行前书面授权自动投递）、Leader 落实绑定效应；全部 event_id 留痕；fix/verify 从未派发（零派发三重核验）"
+  ],
+  "controlled": [
+    "本页面为证据的只读回放与讲解文案；拒绝为终态，演示层不可翻转"
+  ],
+  "not_executed": [
+    "Fixer / Verifier 从未派发（两轮均 0 消费留痕）",
+    "零 GitHub 写入；PR #3 保持 OPEN",
+    "direct-probe 本轮采集修复（stdin 方式，4/4 非空）——此前四轮未采集的已知操作缺陷闭环"
+  ],
+  "case": {
+    "case_id": "fastapi-pr3-reject",
+    "case_name": "FastAPI PR #3 · 高风险变更 · 人工拒绝停等",
+    "repo": "nghqqa/fastapi-boilerplate-demo",
+    "pr": "PR #3 · demo/high-risk-human-reject",
+    "pr_url": "https://github.com/nghqqa/fastapi-boilerplate-demo/pull/3",
+    "run_id": "run-elem-pr3sk5-20260919-01",
+    "sha": "ad267a6e51209551a0733657321bb364d04befd0",
+    "sha_kind": "PR #3 head commit · ls-remote 已核验",
+    "evidence_level": [
+      "REAL_EXECUTED_AGENTTEAMS_LIVE"
+    ],
+    "source_dir": "evidence/FINALS-ELEM-PR3-SK5-TRACED（SHA256SUMS 锁定，42 清单项）+ PHASE14-WINDOWS-COPAW-HIGH-RISK-REJECT-20260830-091913（历史对照）",
+    "generated_at": "运行窗口 17:00Z–17:02Z（本轮，kickoff → 门拒绝 2 分 06 秒）· 历史对照 2026-08-30",
+    "pending_redactions": [
+      [
+        "elemiso-pr3sk5-reject",
+        "elemiso-pr3sk5-···"
+      ],
+      [
+        "copaw-high-risk-human-reject",
+        "copaw-high-risk-···"
+      ],
+      [
+        "demo/high-risk-human-reject",
+        "demo/···"
+      ],
+      [
+        "rejectDemo",
+        "p14-evidence"
+      ],
+      [
+        "HIGH-RISK-REJECT",
+        "HIGH-RISK-···"
+      ],
+      [
+        "人工安全门 → 操作员拒绝",
+        "人工安全门 · 决策记录"
+      ],
+      [
+        "mark fix [-] rejected, verify [!] locked, project blocked",
+        "…"
+      ],
+      [
+        "fix [-]/verify [!]/blocked",
+        "fix/verify 冻结·项目停等"
+      ],
+      [
+        "rejected",
+        "held"
+      ],
+      [
+        "blocked",
+        "held"
+      ]
+    ]
+  },
+  "integrity": {
+    "finals": {
+      "finalsDbLoop": {
+        "dir": "FINALS-DB-MIGRATION-LOOP-20260914",
+        "tier": "REAL_SQL_VERIFICATION_ISOLATED_POSTGRES",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsReworkLoop": {
+        "dir": "FINALS-REWORK-LOOP-20260914",
+        "tier": "MECHANISM_VERIFICATION",
+        "verified": true,
+        "files": 7,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsRagLoop": {
+        "dir": "FINALS-RAG-LOOP-20260914",
+        "tier": "REAL_OFFLINE_EXPERIMENT_SYNTHETIC_CORPUS",
+        "verified": true,
+        "files": 4,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr2Live": {
+        "dir": "FINALS-ELEM-PR2-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 19,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr3Live": {
+        "dir": "FINALS-ELEM-PR3-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      }
+    }
+  }
+}

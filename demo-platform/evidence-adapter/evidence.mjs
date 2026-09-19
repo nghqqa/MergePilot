@@ -47,10 +47,36 @@ export const EVIDENCE_DIRS = {
   // 2026-09-17 V3-TRACED round: AgentLoop instrumentation v3 (single-layer
   // genai.llm.call, loongsuite ExecuteTool semantics, gen_ai.conversation.id,
   // agentteams.delegation.link cross-agent linking) + RAG MCP hook, image
-  // copaw-worker:223ddc2-agentloop-v3rag (8e17c3667c3c). These are the two demo
-  // cases (pr1 retired); both dirs are SHA256SUMS-locked.
+  // copaw-worker:223ddc2-agentloop-v3rag (8e17c3667c3c). Retired from the demo
+  // lineup by the SK3 round below; kept resolvable as prior-round evidence
+  // (the legacy /cases/pr* archive still replays from these dirs).
+  finalsPr2V3Traced: 'FINALS-ELEM-PR2-V3-TRACED',
+  finalsPr3V3Traced: 'FINALS-ELEM-PR3-V3-TRACED',
+  // 2026-09-18 SK3-TRACED round: v3 instrumentation + RAG MCP hook + Skills
+  // MCP — deterministic skill_* tools (diff_parse / risk_classify /
+  // case_retrieval / test_runner) as advisory agent tooling, image
+  // copaw-worker:223ddc2-agentloop-v3skills (12e513075894 + hook layer).
+  // Retired from the demo lineup by the SK4 round below; kept resolvable as
+  // prior-round evidence.
   finalsPr2Sk3Traced: 'FINALS-ELEM-PR2-SK3-TRACED',
   finalsPr3Sk3Traced: 'FINALS-ELEM-PR3-SK3-TRACED',
+  // 2026-09-18 SK4-TRACED round: Skills MCP with the case knowledge source
+  // connected (elemiso-case-pg, pgvector) — skill_case_retrieval returns real
+  // historical cases (3 path-traversal/HIGH with verifiable PR citations) for
+  // the first time; image 3cdc4b897ba2. Retired from the demo lineup by the
+  // SK5 round below; kept resolvable as prior-round evidence.
+  finalsPr2Sk4Traced: 'FINALS-ELEM-PR2-SK4-TRACED',
+  finalsPr3Sk4Traced: 'FINALS-ELEM-PR3-SK4-TRACED',
+  // 2026-09-18/19 SK5 round: four packs sharing one session (see
+  // FINALS-ELEM-SK5-MASTER-README.md at the evidence root). The two demo
+  // cases (PR #2 approve / PR #3 reject) plus two new evidence lines: the
+  // low-risk auto path (FINALS-ELEM-PR1-SK5-AUTO — NOT_CONFIRMED/LOW, no
+  // human gate, skill_sast_scan first real Agent call) and the dual-reviewer
+  // inter-rater experiment (DUAL-REVIEWER-EXP-20260919). All SHA256SUMS-locked.
+  finalsPr2Sk5Traced: 'FINALS-ELEM-PR2-SK5-TRACED',
+  finalsPr3Sk5Traced: 'FINALS-ELEM-PR3-SK5-TRACED',
+  finalsPr1Sk5Auto: 'FINALS-ELEM-PR1-SK5-AUTO',
+  finalsDualReviewerExp: 'DUAL-REVIEWER-EXP-20260919',
 };
 
 export function dirPath(key) {

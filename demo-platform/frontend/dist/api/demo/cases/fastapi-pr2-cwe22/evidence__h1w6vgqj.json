@@ -1,0 +1,116 @@
+{
+  "id": "ev-fix-patch",
+  "title": "Fixer 最小修复 fix.patch",
+  "level": "REAL_EXECUTED_AGENTTEAMS",
+  "fields": [
+    [
+      "文件",
+      "backend/src/interfaces/api/v1/demo_high_risk.py"
+    ],
+    [
+      "规模",
+      "单文件 · 12 insertions / 4 deletions"
+    ],
+    [
+      "策略",
+      "Path.resolve() 归一化 + is_relative_to(DEMO_FILES_DIR) 包含性校验；越界/不存在 → 404"
+    ],
+    [
+      "blob 锚点",
+      "index 59cd8d1..b3d3b46（fix.patch git index 行）"
+    ],
+    [
+      "写入 GitHub",
+      "否 — 补丁仅以交付物形态存在（NOT_EXECUTED）"
+    ]
+  ],
+  "blocks": [
+    {
+      "title": "replayMaterials/artifacts/fix.patch",
+      "lang": "diff",
+      "text": "diff --git a/backend/src/interfaces/api/v1/demo_high_risk.py b/backend/src/interfaces/api/v1/demo_high_risk.py\nindex 59cd8d1..b3d3b46 100644\n--- a/backend/src/interfaces/api/v1/demo_high_risk.py\n+++ b/backend/src/interfaces/api/v1/demo_high_risk.py\n@@ -18,8 +18,9 @@ Rules for this demo:\n from __future__ import annotations\n \n import os\n+from pathlib import Path\n \n-from fastapi import APIRouter\n+from fastapi import APIRouter, HTTPException\n from fastapi.responses import FileResponse\n \n router = APIRouter(tags=[\"SecurityDemo\"])\n@@ -37,6 +38,13 @@ DEMO_FILES_DIR = os.path.join(os.path.dirname(__file__), \"demo_files_base\")\n     ),\n )\n async def demo_download(name: str) -> FileResponse:\n-    # VULNERABLE (intentional): no containment check on the resolved path.\n-    file_path = os.path.join(DEMO_FILES_DIR, name)\n-    return FileResponse(file_path, filename=name)\n+    # FIX (CWE-22 path traversal): normalize the resolved path and enforce\n+    # containment within DEMO_FILES_DIR. Reject any traversal that escapes\n+    # the base directory (and any name that does not resolve to a real file).\n+    base = Path(DEMO_FILES_DIR).resolve()\n+    target = (base / name).resolve()\n+    if not target.is_relative_to(base):\n+        raise HTTPException(status_code=404, detail=\"Not found\")\n+    if not target.is_file():\n+        raise HTTPException(status_code=404, detail=\"Not found\")\n+    return FileResponse(target, filename=target.name)\n"
+    }
+  ],
+  "source_ref": "replayMaterials/artifacts/fix.patch",
+  "hash": {
+    "file": "artifacts/fix.patch",
+    "dir": "PHASE14-WINDOWS-REPLAY-MATERIALS-20260829-195223",
+    "exists": true,
+    "hash_verified": true,
+    "sha256": "d92707c06ab834a0aa633f985c3f03fc59c2ed9d0fada0db2773933eb53dcabf"
+  },
+  "real": [
+    "AgentTeams/CoPaw 多 Agent 历史真实运行（2026-08-29：真实 Matrix 派单、真实 LLM、真实容器执行）",
+    "Reviewer / Fixer / Verifier 产物来自锁定证据目录（SHA256 校验）",
+    "人工审批为真实操作员记录（human-gate-approval.md）"
+  ],
+  "controlled": [
+    "本页面对证据的时间线投影与讲解文案"
+  ],
+  "not_executed": [
+    "本次演示不连接实时 GitHub / Matrix / LLM",
+    "merge / push / close / reopen 全程禁止，PR #2 保持 OPEN",
+    "per-task 云端 Trace（evidence-replay，trace_id 不存在）"
+  ],
+  "case": {
+    "case_id": "fastapi-pr2-cwe22",
+    "case_name": "FastAPI PR #2 · 路径穿越风险修复",
+    "repo": "nghqqa/fastapi-boilerplate-demo",
+    "pr": "PR #2 · demo/high-risk-human-gate",
+    "pr_url": "https://github.com/nghqqa/fastapi-boilerplate-demo/pull/2",
+    "run_id": "copaw-high-risk-human-gate（AgentTeams project）",
+    "sha": "1dedf5e1992c950557064d8f4fb9039d1523deb3",
+    "sha_kind": "PR #2 head commit",
+    "evidence_level": [
+      "HISTORICAL_REPLAY",
+      "REAL_EXECUTED_AGENTTEAMS"
+    ],
+    "source_dir": "evidence/PHASE14-WINDOWS-*（replayMaterials · fixVerify · fixAudit · finalLock · highRiskGateBlocked）",
+    "generated_at": "运行 2026-08-29 · 状态锁定 2026-08-29T13:09+08:00（pr-state-final.json）",
+    "pending_redactions": null
+  },
+  "integrity": {
+    "finals": {
+      "finalsDbLoop": {
+        "dir": "FINALS-DB-MIGRATION-LOOP-20260914",
+        "tier": "REAL_SQL_VERIFICATION_ISOLATED_POSTGRES",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsReworkLoop": {
+        "dir": "FINALS-REWORK-LOOP-20260914",
+        "tier": "MECHANISM_VERIFICATION",
+        "verified": true,
+        "files": 7,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsRagLoop": {
+        "dir": "FINALS-RAG-LOOP-20260914",
+        "tier": "REAL_OFFLINE_EXPERIMENT_SYNTHETIC_CORPUS",
+        "verified": true,
+        "files": 4,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr2Live": {
+        "dir": "FINALS-ELEM-PR2-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 19,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr3Live": {
+        "dir": "FINALS-ELEM-PR3-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      }
+    }
+  }
+}

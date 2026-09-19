@@ -1,0 +1,32 @@
+{
+  "status": "CITED",
+  "answer_text": "该案例演示高危变更的人工批准路径。",
+  "citations": [
+    {
+      "source_ref": "rag://synthetic-docs/doc-case-pr2-summary#doc-case-pr2-summary#c0",
+      "document_id": "doc-case-pr2-summary",
+      "chunk_id": "doc-case-pr2-summary#c0",
+      "score": 0.2001
+    },
+    {
+      "source_ref": "rag://synthetic-docs/doc-mergepilot-review-policy#doc-mergepilot-review-policy#c0",
+      "document_id": "doc-mergepilot-review-policy",
+      "chunk_id": "doc-mergepilot-review-policy#c0",
+      "score": 0.1907
+    },
+    {
+      "source_ref": "rag://synthetic-docs/doc-case-pr1-summary#doc-case-pr1-summary#c0",
+      "document_id": "doc-case-pr1-summary",
+      "chunk_id": "doc-case-pr1-summary#c0",
+      "score": 0.0948
+    }
+  ],
+  "query_hash": "82d137242603673f",
+  "data_mode": "SYNTHETIC",
+  "source_refs": [
+    "rag://synthetic-docs/doc-case-pr2-summary#doc-case-pr2-summary#c0",
+    "rag://synthetic-docs/doc-mergepilot-review-policy#doc-mergepilot-review-policy#c0",
+    "rag://synthetic-docs/doc-case-pr1-summary#doc-case-pr1-summary#c0"
+  ],
+  "note": "extractive answer over SYNTHETIC demo docs; not an LLM completion"
+}

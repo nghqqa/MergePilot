@@ -1,0 +1,165 @@
+{
+  "id": "ev-rej-live-gate",
+  "title": "人工安全门 → 操作员拒绝",
+  "level": "REAL_EXECUTED_AGENTTEAMS_LIVE",
+  "postgate": true,
+  "fields": [
+    [
+      "Leader 行为",
+      "审查验收后停门（团队房向 Team Admin 报告并请求门决策；与 PR #2 批准分支同会话对照）"
+    ],
+    [
+      "操作员决策",
+      "HUMAN_SECURITY_REJECTED —— 不授权修复（按运行前书面授权自动投递，17:02:34Z）"
+    ],
+    [
+      "绑定效应",
+      "pr3sk5-fix-1 标记 [-] REJECTED（never delegated）· pr3sk5-verify-1 标记 [!] LOCKED · 项目 status=blocked（PROJECT_BLOCKED_HUMAN_REJECTED）"
+    ],
+    [
+      "事件",
+      "拒绝记录 gate-rejection-sent.json（DM/团队房双事件号）· 团队房 17:02:34Z [HUMAN SECURITY GATE REJECTED] 实时留痕"
+    ],
+    [
+      "门记录",
+      "human-gate-rejection.md 落盘项目存储（四条绑定效应 + 零 GitHub 写入边界）"
+    ]
+  ],
+  "blocks": [
+    {
+      "title": "FINALS-ELEM-PR3-SK5-TRACED/project/human-gate-rejection.md",
+      "lang": "text",
+      "text": "# Human Security Gate REJECTION — run-elem-pr3sk5-20260919-01\n\n- Project: elemiso-pr3sk5-reject (team elemiso-team)\n- Task reviewed: pr3sk5-review-1 (Reviewer, copaw runtime, AgentLoop-traced)\n- Head SHA under review: ad267a6e51209551a0733657321bb364d04befd0 (PR #3 nghqqa/fastapi-boilerplate-demo)\n- Gate decision time: 2026-09-18T17:02:34Z (host clock; operator present, decision made via interactive gate prompt)\n- Approver: repository/workspace owner (human operator)\n- Decision: **HUMAN_SECURITY_REJECTED — no remediation authorized**\n\n## Confirmed findings (Reviewer result, real execution)\n\n- STATUS: FINDING_CONFIRMED; SEVERITY: HIGH; HUMAN_VERIFICATION_REQUIRED: YES\n- CWE-78 OS command injection / unauth RCE; skill_risk_classify advisory L1 vs reviewer HIGH\n\n## Binding effects ordered by the operator\n\n1. pr3sk5-fix-1: **rejected — MUST NOT be delegated**; plan line marked `[-] rejected`.\n2. pr3sk5-verify-1: **locked — MUST NOT be delegated** (depends on an unauthorized fix); plan line marked `[!] locked`.\n3. Project status: **blocked** — the system stops; no further dispatch of any task in this project.\n4. All review evidence is retained; nothing is pushed/merged/closed on GitHub; the PR stays OPEN.\n"
+    },
+    {
+      "title": "FINALS-ELEM-PR3-SK5-TRACED/project/plan.md（拒绝后的 plan 快照）",
+      "lang": "text",
+      "text": "# Team Project: PR #3 SK5 (run-elem-pr3sk5-20260919-01)\n\n**ID**: elemiso-pr3sk5-reject\n**Created**: 2026-09-18T17:00:25Z\n\n## DAG Task Plan\n\n**Plan Type**: dag\n\n- [x] pr3sk5-review-1 — Independent security review of PR #3 (assigned: @reviewer:elemiso-matrix:6167)\n- [-] pr3sk5-fix-1 — Minimal fix only if human gate approves (assigned: @fixer:elemiso-matrix:6167, depends: pr3sk5-review-1) — REJECTED by human gate 2026-09-18T17:02:34Z; never delegated\n- [!] pr3sk5-verify-1 — Independent verification only if fix authorized and accepted (assigned: @verifier:elemiso-matrix:6167, depends: pr3sk5-fix-1) — LOCKED; dependency pr3sk5-fix-1 not authorized; never delegated\n\n## Human Security Gate\n\n- Decision: **PROJECT_BLOCKED_HUMAN_REJECTED** (HUMAN_SECURITY_REJECTED — no remediation authorized)\n- Decided: 2026-09-18T17:02:34Z\n- Record: `shared/projects/elemiso-pr3sk5-reject/human-gate-rejection.md`\n- Effect: pr3sk5-fix-1 rejected, pr3sk5-verify-1 locked, all work on this project stopped. PR #3 stays OPEN; zero GitHub writes.\n"
+    },
+    {
+      "title": "FINALS-ELEM-PR3-SK5-TRACED/gate-rejection-sent.json",
+      "lang": "json",
+      "text": "{\r\n \"mode\": \"reject\",\r\n \"run\": \"run-elem-pr3sk5-20260919-01\",\r\n \"project\": \"elemiso-pr3sk5-reject\",\r\n \"ts\": \"2026-09-18T17:02:34Z\",\r\n \"record_written\": true,\r\n \"dm_event\": \"$fAA7WkFf9W_cW4UA8OUuVAZAxWMpbfCQDb6QYG7xsFY\",\r\n \"team_event\": \"$WD7QaYFL40LZ9VhnE_PLzLkSuRYbiT-VzOMvroaXmvc\"\r\n}\r\n"
+    }
+  ],
+  "source_ref": "finalsPr3Sk5Traced/project/human-gate-rejection.md",
+  "hash": {
+    "file": "project/human-gate-rejection.md",
+    "dir": "FINALS-ELEM-PR3-SK5-TRACED",
+    "exists": true,
+    "hash_verified": true,
+    "sha256": "5d53e1af5f6cd9473412b589e3b85f2eb643740d7ea5568379e975998a49654a"
+  },
+  "real": [
+    "真实执行（SK5-TRACED）：Reviewer 独立审查（含确定性 skill_* 与 rag_retrieve 引用实录）、操作员拒绝（按运行前书面授权自动投递）、Leader 落实绑定效应；全部 event_id 留痕；fix/verify 从未派发（零派发三重核验）"
+  ],
+  "controlled": [
+    "本页面为证据的只读回放与讲解文案；拒绝为终态，演示层不可翻转"
+  ],
+  "not_executed": [
+    "Fixer / Verifier 从未派发（两轮均 0 消费留痕）",
+    "零 GitHub 写入；PR #3 保持 OPEN",
+    "direct-probe 本轮采集修复（stdin 方式，4/4 非空）——此前四轮未采集的已知操作缺陷闭环"
+  ],
+  "case": {
+    "case_id": "fastapi-pr3-reject",
+    "case_name": "FastAPI PR #3 · 高风险变更 · 人工拒绝停等",
+    "repo": "nghqqa/fastapi-boilerplate-demo",
+    "pr": "PR #3 · demo/high-risk-human-reject",
+    "pr_url": "https://github.com/nghqqa/fastapi-boilerplate-demo/pull/3",
+    "run_id": "run-elem-pr3sk5-20260919-01",
+    "sha": "ad267a6e51209551a0733657321bb364d04befd0",
+    "sha_kind": "PR #3 head commit · ls-remote 已核验",
+    "evidence_level": [
+      "REAL_EXECUTED_AGENTTEAMS_LIVE"
+    ],
+    "source_dir": "evidence/FINALS-ELEM-PR3-SK5-TRACED（SHA256SUMS 锁定，42 清单项）+ PHASE14-WINDOWS-COPAW-HIGH-RISK-REJECT-20260830-091913（历史对照）",
+    "generated_at": "运行窗口 17:00Z–17:02Z（本轮，kickoff → 门拒绝 2 分 06 秒）· 历史对照 2026-08-30",
+    "pending_redactions": [
+      [
+        "elemiso-pr3sk5-reject",
+        "elemiso-pr3sk5-···"
+      ],
+      [
+        "copaw-high-risk-human-reject",
+        "copaw-high-risk-···"
+      ],
+      [
+        "demo/high-risk-human-reject",
+        "demo/···"
+      ],
+      [
+        "rejectDemo",
+        "p14-evidence"
+      ],
+      [
+        "HIGH-RISK-REJECT",
+        "HIGH-RISK-···"
+      ],
+      [
+        "人工安全门 → 操作员拒绝",
+        "人工安全门 · 决策记录"
+      ],
+      [
+        "mark fix [-] rejected, verify [!] locked, project blocked",
+        "…"
+      ],
+      [
+        "fix [-]/verify [!]/blocked",
+        "fix/verify 冻结·项目停等"
+      ],
+      [
+        "rejected",
+        "held"
+      ],
+      [
+        "blocked",
+        "held"
+      ]
+    ]
+  },
+  "integrity": {
+    "finals": {
+      "finalsDbLoop": {
+        "dir": "FINALS-DB-MIGRATION-LOOP-20260914",
+        "tier": "REAL_SQL_VERIFICATION_ISOLATED_POSTGRES",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsReworkLoop": {
+        "dir": "FINALS-REWORK-LOOP-20260914",
+        "tier": "MECHANISM_VERIFICATION",
+        "verified": true,
+        "files": 7,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsRagLoop": {
+        "dir": "FINALS-RAG-LOOP-20260914",
+        "tier": "REAL_OFFLINE_EXPERIMENT_SYNTHETIC_CORPUS",
+        "verified": true,
+        "files": 4,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr2Live": {
+        "dir": "FINALS-ELEM-PR2-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 19,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr3Live": {
+        "dir": "FINALS-ELEM-PR3-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      }
+    }
+  }
+}

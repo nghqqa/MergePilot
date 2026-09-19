@@ -1,0 +1,51 @@
+{
+  "drawer": "event",
+  "data_mode": "historical replay",
+  "trace_mode": "evidence-replay",
+  "integrity_status": "verified",
+  "event_id": "pr2v3-ev-002",
+  "matrix_event_id": "$jtMx6XatnDws6qpEcI1QIgtN52BcIkSXB6e1Hq2j9vE",
+  "trace_id": null,
+  "trace_note": "per-event 无独立 trace（per-task/事件维度仍为 evidence-replay）；平台级历史权威 Trace 见总览页 AgentLoop Cloud Trace 区块",
+  "project_id": "elemiso-pr2v3-gate",
+  "task_id": null,
+  "agent_role": "leader",
+  "runtime": "copaw-worker:223ddc2-agentloop-v3rag（image 8e17c3667c3c）",
+  "event_type": "tool_call",
+  "source": "matrix",
+  "source_label": "Matrix event",
+  "source_ref": "finalsPr2V3Traced/team-room-messages.json",
+  "source_hash": {
+    "ref": "finalsPr2V3Traced/team-room-messages.json",
+    "dir": "FINALS-ELEM-PR2-V3-TRACED",
+    "dir_key": "finalsPr2V3Traced",
+    "file": "team-room-messages.json",
+    "abs_path": "D:\\goai\\mergepilot-demo\\evidence\\FINALS-ELEM-PR2-V3-TRACED\\team-room-messages.json",
+    "exists": true,
+    "evidence_root_readonly": true,
+    "sha256_actual": "83b9047189557306098f4ca2b50346597d62863b4e1e56d9f504f83478fbceb2",
+    "sha256_expected": "83b9047189557306098f4ca2b50346597d62863b4e1e56d9f504f83478fbceb2",
+    "hash_verified": true,
+    "sums_source": "FINALS-ELEM-PR2-V3-TRACED/SHA256SUMS"
+  },
+  "timestamp": "2026-09-17T03:02:53Z",
+  "timestamp_precision": "exact",
+  "timestamp_note": null,
+  "summary": "kickoff 后 7 秒：Leader taskflow(delegate_task) 委派 review-1 @reviewer（m.mentions 命中；v3 首轮：委派消息注入 m.agentloop.traceparent，接收侧生成 agentteams.delegation.link span——跨 Agent 关联首次在真实运行生效；本轮为属性级关联：携带 Leader trace_id 可检索，但因实现缺陷未作为 parent 嵌入 Leader 瀑布，已修复于后续镜像）",
+  "detail": null,
+  "hash_verified": true,
+  "redaction_status": {
+    "redaction_layer": "applied (evidence-adapter/redact.mjs)",
+    "scan_hits": [],
+    "status": "CLEAN — redaction applied; PR#2 demo placeholders allow-listed",
+    "forbidden_fields_excluded": [
+      "Authorization",
+      "Cookie",
+      "API key",
+      "Matrix token",
+      "password",
+      "完整工具参数",
+      "完整 prompt/completion"
+    ]
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "levels": {
+    "REAL_EXECUTED_AGENTTEAMS_LIVE": "真实运行 · AgentTeams",
+    "REAL_EXECUTED_AGENTTEAMS": "真实执行 · AgentTeams（历史运行）",
+    "REAL_OFFLINE_EXPERIMENT": "真实离线实验 · 合成语料",
+    "POST_RUN_DESIGN": "运行后固化设计 · 非运行时证据",
+    "LOCAL_REAL_SQL": "本地真实 SQL（隔离 PostgreSQL）",
+    "CONTROL_PLANE_MECHANISM": "控制面机制验证",
+    "SYNTHETIC": "合成数据",
+    "HISTORICAL_REPLAY": "历史回放",
+    "NOT_EXECUTED": "未执行"
+  }
+}

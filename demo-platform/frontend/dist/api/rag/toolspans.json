@@ -1,0 +1,171 @@
+{
+  "data_mode": "SYNTHETIC",
+  "contract": [
+    "tool",
+    "arguments_hash",
+    "result_status",
+    "row_count",
+    "document_count",
+    "latency_ms",
+    "data_mode",
+    "source_refs",
+    "ts"
+  ],
+  "recent": [
+    {
+      "ts": "2026-09-19T00:45:10.966Z",
+      "tool": "database.assert_data",
+      "arguments_hash": "9b43b1c81625abc3",
+      "result_status": "FAILED",
+      "branch_id": "branch_candidate-b_mu7o17sm",
+      "row_count": 10000,
+      "latency_ms": 0,
+      "data_mode": "SIMULATED",
+      "source_refs": [
+        "fixture://polardb-branch/assert-data"
+      ]
+    },
+    {
+      "ts": "2026-09-19T00:45:10.966Z",
+      "tool": "database.rollback_check",
+      "arguments_hash": "9b43b1c81625abc3",
+      "result_status": "OK",
+      "branch_id": "branch_candidate-b_mu7o17sm",
+      "latency_ms": 0,
+      "data_mode": "SIMULATED",
+      "source_refs": [
+        "fixture://polardb-branch/rollback"
+      ]
+    },
+    {
+      "ts": "2026-09-19T00:45:10.966Z",
+      "tool": "database.create_branch",
+      "arguments_hash": "6554aac86c18ecc3",
+      "result_status": "OK",
+      "branch_id": "branch_candidate-c_mu7o17sm",
+      "latency_ms": 0,
+      "data_mode": "SIMULATED",
+      "source_refs": [
+        "fixture://polardb-branch/branch_candidate-c_mu7o17sm"
+      ]
+    },
+    {
+      "ts": "2026-09-19T00:45:10.966Z",
+      "tool": "database.validate_migration",
+      "arguments_hash": "5290daf0cc1e9c8a",
+      "result_status": "OK",
+      "branch_id": "branch_candidate-c_mu7o17sm",
+      "assertion_count": 5,
+      "failed_assertions": [],
+      "latency_ms": 0,
+      "data_mode": "SIMULATED",
+      "source_refs": [
+        "fixture://polardb-branch/schema-baseline"
+      ]
+    },
+    {
+      "ts": "2026-09-19T00:45:10.967Z",
+      "tool": "database.assert_data",
+      "arguments_hash": "5290daf0cc1e9c8a",
+      "result_status": "OK",
+      "branch_id": "branch_candidate-c_mu7o17sm",
+      "row_count": 10000,
+      "latency_ms": 0,
+      "data_mode": "SIMULATED",
+      "source_refs": [
+        "fixture://polardb-branch/assert-data"
+      ]
+    },
+    {
+      "ts": "2026-09-19T00:45:10.967Z",
+      "tool": "database.rollback_check",
+      "arguments_hash": "5290daf0cc1e9c8a",
+      "result_status": "OK",
+      "branch_id": "branch_candidate-c_mu7o17sm",
+      "latency_ms": 0,
+      "data_mode": "SIMULATED",
+      "source_refs": [
+        "fixture://polardb-branch/rollback"
+      ]
+    },
+    {
+      "ts": "2026-09-19T00:45:10.969Z",
+      "tool": "rag.retrieve",
+      "arguments_hash": "82d137242603673f",
+      "result_status": "OK",
+      "document_count": 4,
+      "latency_ms": 0,
+      "data_mode": "SYNTHETIC",
+      "source_refs": [
+        "rag://synthetic-docs/doc-case-pr2-summary#doc-case-pr2-summary#c0",
+        "rag://synthetic-docs/doc-mergepilot-review-policy#doc-mergepilot-review-policy#c0",
+        "rag://synthetic-docs/doc-case-pr1-summary#doc-case-pr1-summary#c0",
+        "rag://synthetic-docs/doc-case-pr3-summary#doc-case-pr3-summary#c0"
+      ]
+    },
+    {
+      "ts": "2026-09-19T00:45:11.016Z",
+      "tool": "rag.retrieve",
+      "arguments_hash": "82d137242603673f",
+      "result_status": "OK",
+      "document_count": 3,
+      "latency_ms": 1,
+      "data_mode": "SYNTHETIC",
+      "source_refs": [
+        "rag://synthetic-docs/doc-case-pr2-summary#doc-case-pr2-summary#c0",
+        "rag://synthetic-docs/doc-mergepilot-review-policy#doc-mergepilot-review-policy#c0",
+        "rag://synthetic-docs/doc-case-pr1-summary#doc-case-pr1-summary#c0"
+      ]
+    },
+    {
+      "ts": "2026-09-19T00:45:11.016Z",
+      "tool": "rag.answer",
+      "arguments_hash": "82d137242603673f",
+      "result_status": "CITED",
+      "document_count": 3,
+      "latency_ms": 1,
+      "data_mode": "SYNTHETIC",
+      "source_refs": [
+        "rag://synthetic-docs/doc-case-pr2-summary#doc-case-pr2-summary#c0",
+        "rag://synthetic-docs/doc-mergepilot-review-policy#doc-mergepilot-review-policy#c0",
+        "rag://synthetic-docs/doc-case-pr1-summary#doc-case-pr1-summary#c0"
+      ]
+    },
+    {
+      "ts": "2026-09-19T00:45:11.017Z",
+      "tool": "database.query",
+      "arguments_hash": "a3b70c818ecb82aa",
+      "result_status": "OK",
+      "row_count": 3,
+      "latency_ms": 0,
+      "data_mode": "SIMULATED",
+      "source_refs": [
+        "fixture://polardb-compatible/pr_cases"
+      ]
+    },
+    {
+      "ts": "2026-09-19T00:45:11.019Z",
+      "tool": "database.query",
+      "arguments_hash": "0ae9af77e3726d75",
+      "result_status": "OK",
+      "row_count": 2,
+      "latency_ms": 0,
+      "data_mode": "SIMULATED",
+      "source_refs": [
+        "fixture://polardb-compatible/pr_cases"
+      ]
+    },
+    {
+      "ts": "2026-09-19T00:45:11.020Z",
+      "tool": "database.query",
+      "arguments_hash": "226de8409145345b",
+      "result_status": "OK",
+      "row_count": 2,
+      "latency_ms": 0,
+      "data_mode": "SIMULATED",
+      "source_refs": [
+        "fixture://polardb-compatible/review_findings"
+      ]
+    }
+  ]
+}

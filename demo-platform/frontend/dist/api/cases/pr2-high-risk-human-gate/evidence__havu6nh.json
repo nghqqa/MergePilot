@@ -1,0 +1,51 @@
+{
+  "drawer": "event",
+  "data_mode": "historical replay",
+  "trace_mode": "evidence-replay",
+  "integrity_status": "verified",
+  "event_id": "pr2v3-ev-007",
+  "matrix_event_id": "$Pbdr68h1bKJJ8q2fvcMFNKkeEavJwtBU0-vpS2vacDM（TASK_COMPLETED: run-elem-pr2v3-20260917-01-review；meta submitted_at 03:12:36Z）",
+  "trace_id": null,
+  "trace_note": "per-event 无独立 trace（per-task/事件维度仍为 evidence-replay）；平台级历史权威 Trace 见总览页 AgentLoop Cloud Trace 区块",
+  "project_id": "elemiso-pr2v3-gate",
+  "task_id": null,
+  "agent_role": "reviewer",
+  "runtime": "copaw-worker:223ddc2-agentloop-v3rag（image 8e17c3667c3c）",
+  "event_type": "task_state",
+  "source": "matrix",
+  "source_label": "Matrix event",
+  "source_ref": "finalsPr2V3Traced/tasks/pr2v3-review-1/result.md",
+  "source_hash": {
+    "ref": "finalsPr2V3Traced/tasks/pr2v3-review-1/result.md",
+    "dir": "FINALS-ELEM-PR2-V3-TRACED",
+    "dir_key": "finalsPr2V3Traced",
+    "file": "tasks/pr2v3-review-1/result.md",
+    "abs_path": "D:\\goai\\mergepilot-demo\\evidence\\FINALS-ELEM-PR2-V3-TRACED\\tasks\\pr2v3-review-1\\result.md",
+    "exists": true,
+    "evidence_root_readonly": true,
+    "sha256_actual": "fabca167252f9d13b7c54eb8a99e33851ef098dd44edfa7920fc0055d540fb00",
+    "sha256_expected": "fabca167252f9d13b7c54eb8a99e33851ef098dd44edfa7920fc0055d540fb00",
+    "hash_verified": true,
+    "sums_source": "FINALS-ELEM-PR2-V3-TRACED/SHA256SUMS"
+  },
+  "timestamp": "2026-09-17T03:12:39Z",
+  "timestamp_precision": "exact",
+  "timestamp_note": null,
+  "summary": "HIGH_RISK_FOUND — review-1 提交：FINDING_CONFIRMED / SEVERITY: HIGH / HUMAN_VERIFICATION_REQUIRED: YES（CWE-22 路径穿越任意文件读取；真实 PoC：../outside-secret.txt 200 泄露、../../../etc/hostname 200 任意读）",
+  "detail": "附加独立发现：PR 自带测试#2 失败是 fixture/payload 错位（../../../ 越过 tmp 到 /tmp），非缓解。",
+  "hash_verified": true,
+  "redaction_status": {
+    "redaction_layer": "applied (evidence-adapter/redact.mjs)",
+    "scan_hits": [],
+    "status": "CLEAN — redaction applied; PR#2 demo placeholders allow-listed",
+    "forbidden_fields_excluded": [
+      "Authorization",
+      "Cookie",
+      "API key",
+      "Matrix token",
+      "password",
+      "完整工具参数",
+      "完整 prompt/completion"
+    ]
+  }
+}

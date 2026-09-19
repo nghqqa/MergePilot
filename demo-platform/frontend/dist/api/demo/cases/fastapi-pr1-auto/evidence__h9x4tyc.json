@@ -1,0 +1,115 @@
+{
+  "id": "ev-auto-meta",
+  "title": "CASE-MANIFEST（低风险自动路径：单节点 DAG + 技能能力声明）",
+  "level": "REAL_EXECUTED_AGENTTEAMS_LIVE",
+  "fields": [
+    [
+      "run_id / project",
+      "run-elem-pr1sk5-20260919-01 · elemiso-pr1sk5-auto"
+    ],
+    [
+      "head SHA",
+      "4cd5bf099f88c3f3f85ee4c06b7adfe9925a6e5c（PR #1 bootstrap head · base fdde4f41…）"
+    ],
+    [
+      "DAG",
+      "单节点 pr1sk5-review-1——无 fix/verify/人工门（低风险按分级设计）"
+    ],
+    [
+      "知识库与技能",
+      "manifest 明示确定性 Skill 可用（advisory-only）：diff_parse / risk_classify / sast_scan / case_retrieval；rag_retrieve（citation-only）"
+    ],
+    [
+      "锁定边界",
+      "SK5 包 SHA256SUMS 锁定 39 项；kickoff 快照未随包，建项（17:04:12Z）与房间导出留痕"
+    ]
+  ],
+  "blocks": [
+    {
+      "title": "finalsPr1Sk5Auto/project/plan.md（单节点 DAG 计划）",
+      "lang": "markdown",
+      "text": "# Team Project: PR #1 low-risk auto path (run-elem-pr1sk5-20260919-01)\n\n**ID**: elemiso-pr1sk5-auto\n**Created**: 2026-09-18T17:04:12Z\n\n## DAG Task Plan\n\n**Plan Type**: dag\n\n- [x] pr1sk5-review-1 — Routine security review of PR #1 bootstrap (assigned: @reviewer:elemiso-matrix:6167)\n"
+    }
+  ],
+  "source_ref": "finalsPr1Sk5Auto/project/plan.md",
+  "hash": {
+    "file": "project/plan.md",
+    "dir": "FINALS-ELEM-PR1-SK5-AUTO",
+    "exists": true,
+    "hash_verified": true,
+    "sha256": "903c3e4c83651c8a21c7f428e7cad62f9f7c4af0fd787c68e1a33261e7701a0e"
+  },
+  "real": [
+    "真实执行（低风险自动路径）：NOT_CONFIRMED / LOW → 单节点 DAG 审查即结、项目自动 completed，无人工门——按风险分级设计，非跳过",
+    "skill_sast_scan 首次被 Agent 调用：唯一命中为测试文件 subprocess.run（argv 列表、非 shell=True），Agent 诚实裁决 false positive 并留痕"
+  ],
+  "controlled": [
+    "页面为只读回放；确定性 Skill 输出为 advisory（其 SKILL.md 自述 never an authorization decision）",
+    "case_retrieval 检索使用离线确定性 hash embedding（非语义模型）——本轮如实返回空匹配（无相关历史案例）"
+  ],
+  "not_executed": [
+    "无人工门——NOT_CONFIRMED/LOW 未触发停等条件（设计行为）；无修复/验证对象，Fixer/Verifier 未派发",
+    "零 GitHub 写入；PR #1 保持 OPEN",
+    "锁定 usage 工件未单列 pr1 窗口——用量以会话合计与轮次说明估计值两口径并列披露"
+  ],
+  "case": {
+    "case_id": "fastapi-pr1-auto",
+    "case_name": "FastAPI PR #1 · 低风险自动闭环",
+    "repo": "nghqqa/fastapi-boilerplate-demo",
+    "pr": "PR #1 · bootstrap 基线",
+    "pr_url": "https://github.com/nghqqa/fastapi-boilerplate-demo/pull/1",
+    "run_id": "run-elem-pr1sk5-20260919-01",
+    "sha": "4cd5bf099f88c3f3f85ee4c06b7adfe9925a6e5c",
+    "sha_kind": "PR #1 head commit · ls-remote 已核验",
+    "evidence_level": [
+      "REAL_EXECUTED_AGENTTEAMS_LIVE"
+    ],
+    "source_dir": "evidence/FINALS-ELEM-PR1-SK5-AUTO（SHA256SUMS 锁定，39 清单项）",
+    "generated_at": "运行窗口 17:04Z–17:06Z（建项 → 自动完成；与 PR #3 同会话接力）",
+    "pending_redactions": null
+  },
+  "integrity": {
+    "finals": {
+      "finalsDbLoop": {
+        "dir": "FINALS-DB-MIGRATION-LOOP-20260914",
+        "tier": "REAL_SQL_VERIFICATION_ISOLATED_POSTGRES",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsReworkLoop": {
+        "dir": "FINALS-REWORK-LOOP-20260914",
+        "tier": "MECHANISM_VERIFICATION",
+        "verified": true,
+        "files": 7,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsRagLoop": {
+        "dir": "FINALS-RAG-LOOP-20260914",
+        "tier": "REAL_OFFLINE_EXPERIMENT_SYNTHETIC_CORPUS",
+        "verified": true,
+        "files": 4,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr2Live": {
+        "dir": "FINALS-ELEM-PR2-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 19,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr3Live": {
+        "dir": "FINALS-ELEM-PR3-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      }
+    }
+  }
+}

@@ -1,0 +1,117 @@
+{
+  "id": "ev-live-gate",
+  "title": "人工安全门批准（本次真实批准，修复前）",
+  "level": "REAL_EXECUTED_AGENTTEAMS_LIVE",
+  "postgate": true,
+  "fields": [
+    [
+      "决策",
+      "操作员在查看具体 findings 后批准修复+验证（不复用任何历史批准）"
+    ],
+    [
+      "位置",
+      "门保持在 Reviewer 之后、Fixer 之前 —— 与 P14 历史一致"
+    ],
+    [
+      "附带处置",
+      "Leader 曾在门前违规委派 → 已作废并回滚；Fixer 曾未委派自启 → 已叫停（如实披露，见 AUDIT §3）"
+    ]
+  ],
+  "blocks": [
+    {
+      "title": "finalsPr2Live/human-gate-approval.md",
+      "lang": "text",
+      "text": "# Human Security Gate Approval — run-elem-fastapi-pr2-20260916-01\n\n- Project: elemiso-pr2-gate (team elemiso-team)\n- Task reviewed: pr2-review-1 (Reviewer, copaw runtime)\n- Head SHA under review: 1dedf5e1992c950557064d8f4fb9039d1523deb3 (PR #2 nghqqa/fastapi-boilerplate-demo, branch demo/high-risk-human-gate)\n- Gate decision time (host clock, UTC+8): 2026-09-16 (recorded by operator; see clock-skew note in AUDIT)\n- Approver: repository/workspace owner (human operator), via interactive gate prompt\n- Recorded by: operator, on behalf of the approver\n\n## Confirmed findings (Reviewer result, real execution)\n\n- STATUS: FINDING_CONFIRMED; SEVERITY: HIGH; HUMAN_VERIFICATION_REQUIRED: YES\n- CWE-22 path traversal / arbitrary file read in `demo_download`\n  (`backend/src/interfaces/api/v1/demo_high_risk.py` L41 `os.path.join(DEMO_FILES_DIR, name)`, L42 `FileResponse`)\n- Real pre-fix reproduction: endpoint returned a file OUTSIDE the base directory (HTTP 200);\n  reviewer-authored PoC read `../../../etc/hostname` via traversal (HTTP 200)\n\n## Approval scope\n\n1. Findings confirmed as HIGH, CWE-22.\n2. Leader is authorized to (re-)delegate pr2-fix-1 to the Fixer: minimal fix of\n   `demo_high_risk.py` only, local patch delivery, self-check only.\n3. After fix-1 is submitted and accepted, Leader is authorized to delegate pr2-verify-1\n   to the Verifier: independent clean-workspace verification (fresh clone, apply patch,\n   behavior probes: traversal rejected / legitimate access preserved / missing → 404;\n   regression semantics: the frozen repo test asserts pre-fix behavior and is EXPECTED\n   to fail after the patch — not a rejection reason).\n4. If pr2-verify-1 returns VERDICT=FAIL, Leader may re-delegate pr2-fix-1 once (attempt=2).\n\n## Prohibitions (fail-safe)\n\n- NO push / merge / close / reopen / comment on GitHub — zero GitHub writes; PR #2 stays OPEN.\n- NO modification of any repository test file (backend/tests/unit/test_demo_high_risk_path_traversal.py is frozen).\n- No fabricated rework: only a real FAIL → revision → re-delegate → re-verify may be called a rework.\n- Any failure → stop and keep evidence.\n\n## Anomalies recorded before this gate (handled by operator)\n\n1. Leader delegated pr2-fix-1 BEFORE the gate decision (protocol violation).\n   Operator voided that delegation, reverted the plan node to pending, removed the\n   premature task files (local store, agentteams-fs view, MinIO team shared prefix,\n   fixer's pulled copy), and ordered Leader to hold. Evidence: Matrix event\n   $-Fp2BXToECtXUJrBpVt2MwliNnNhAp9ajgEdFKOiGXY (void order to Leader).\n2. Fixer self-started work triggered by shared-room context replay, without delegation.\n   Operator ordered a stop and workspace discard. Evidence: Matrix event\n   $sOmHHoIoeCl4prVmv2i_7tLcwHV8AG6zWHgDlUU2KeU (stop order to Fixer).\n   Fixer's unrequested work is excluded from evidence; fix-1 will be executed only\n   after this gate via formal delegation.\n"
+    }
+  ],
+  "source_ref": "finalsPr2Live/human-gate-approval.md",
+  "hash": {
+    "file": "human-gate-approval.md",
+    "dir": "FINALS-ELEM-PR2-LIVE-20260916",
+    "exists": true,
+    "hash_verified": true,
+    "sha256": "7c4434f524eb42d9e1c54f5aedeaa85212a987f366013fa790d56e20d8a08a84"
+  },
+  "real": [
+    "本次真实执行（2026-09-16）：真实 Matrix 派单、真实容器内 clone/测试，全部 event_id 可审计；Reviewer 复现与定级独立",
+    "漏洞类别与目标文件由 kickoff 指令点名（非盲测）；人工门为操作员真实批准（修复前）",
+    "Verifier 在独立干净工作区验证，patch sha256 独立复现一致；请求模型 deepseek-chat（网关记录响应 model=deepseek-flash）"
+  ],
+  "controlled": [
+    "本页面为证据的只读回放与讲解文案"
+  ],
+  "not_executed": [
+    "本次演示不连接实时 GitHub / Matrix / LLM",
+    "merge / push / close / reopen 全程禁止，PR #2 保持 OPEN",
+    "GitHub 写入未执行（NOT_EXECUTED）"
+  ],
+  "case": {
+    "case_id": "fastapi-pr2-live-20260916",
+    "case_name": "FastAPI PR #2 · 本次真实运行（2026-09-16）",
+    "repo": "nghqqa/fastapi-boilerplate-demo",
+    "pr": "PR #2 · demo/high-risk-human-gate",
+    "pr_url": "https://github.com/nghqqa/fastapi-boilerplate-demo/pull/2",
+    "run_id": "run-elem-fastapi-pr2-20260916-01",
+    "sha": "1dedf5e1992c950557064d8f4fb9039d1523deb3",
+    "sha_kind": "PR #2 head commit（运行前后 GitHub API 双向核验一致）",
+    "evidence_level": [
+      "REAL_EXECUTED_AGENTTEAMS_LIVE"
+    ],
+    "source_dir": "evidence/FINALS-ELEM-PR2-LIVE-20260916（本次新证据，SHA256SUMS 锁定）",
+    "generated_at": "运行 2026-09-15T17:19Z–2026-09-16T00:5xZ（UTC；墙钟 ≈7.6h，含操作员离席等待，见 AUDIT §2）",
+    "pending_redactions": [
+      [
+        "demo/high-risk-human-gate",
+        "demo/···"
+      ],
+      [
+        "copaw-high-risk-human-gate",
+        "copaw-high-risk-···"
+      ]
+    ]
+  },
+  "integrity": {
+    "finals": {
+      "finalsDbLoop": {
+        "dir": "FINALS-DB-MIGRATION-LOOP-20260914",
+        "tier": "REAL_SQL_VERIFICATION_ISOLATED_POSTGRES",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsReworkLoop": {
+        "dir": "FINALS-REWORK-LOOP-20260914",
+        "tier": "MECHANISM_VERIFICATION",
+        "verified": true,
+        "files": 7,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsRagLoop": {
+        "dir": "FINALS-RAG-LOOP-20260914",
+        "tier": "REAL_OFFLINE_EXPERIMENT_SYNTHETIC_CORPUS",
+        "verified": true,
+        "files": 4,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr2Live": {
+        "dir": "FINALS-ELEM-PR2-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 19,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr3Live": {
+        "dir": "FINALS-ELEM-PR3-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      }
+    }
+  }
+}

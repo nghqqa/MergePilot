@@ -1,0 +1,133 @@
+{
+  "drawer": "task",
+  "data_mode": "historical replay",
+  "trace_mode": "evidence-replay",
+  "integrity_status": "verified",
+  "event_id": null,
+  "trace_id": null,
+  "trace_note": "同上（全运行追踪 + delegation.link 关联）。披露：直连探针本轮未采集成功（采集命令静默失败，direct-probe-*.json 0 字节，SHA256SUMS 如实锁定，README 已披露）；导出证据以容器内 OTEL_EXPORT SUCCESS 234 批 0 失败为准",
+  "project_id": "elemiso-pr2v3-gate",
+  "task_id": "verify-1",
+  "agent_role": "verifier",
+  "runtime": "copaw-worker:223ddc2-agentloop-v3rag",
+  "event_type": "task_state",
+  "source": "minio",
+  "source_label": "MinIO task result",
+  "source_ref": "finalsPr2V3Traced/tasks/pr2v3-verify-1/meta.json + finalsPr2V3Traced/tasks/pr2v3-verify-1/workspace/verification.md",
+  "source_hash": {
+    "ref": "finalsPr2V3Traced/tasks/pr2v3-verify-1/meta.json + finalsPr2V3Traced/tasks/pr2v3-verify-1/workspace/verification.md",
+    "dir": "FINALS-ELEM-PR2-V3-TRACED",
+    "dir_key": "finalsPr2V3Traced",
+    "file": "tasks/pr2v3-verify-1/meta.json",
+    "abs_path": "D:\\goai\\mergepilot-demo\\evidence\\FINALS-ELEM-PR2-V3-TRACED\\tasks\\pr2v3-verify-1\\meta.json",
+    "exists": true,
+    "evidence_root_readonly": true,
+    "sha256_actual": "1bb4f2fc3d422196de84239db8f43b7e12bbcdf8ba0ce64896fc8aeb16730260",
+    "sha256_expected": "1bb4f2fc3d422196de84239db8f43b7e12bbcdf8ba0ce64896fc8aeb16730260",
+    "hash_verified": true,
+    "sums_source": "FINALS-ELEM-PR2-V3-TRACED/SHA256SUMS"
+  },
+  "timestamp": "2026-09-17T03:14:16Z → 2026-09-17T03:15:04Z",
+  "timestamp_precision": "exact",
+  "assignee": "verifier",
+  "result_summary": "VERIFIED (PASS) — 修复前 3 逃逸向量全 200 泄露（含绝对路径 /etc/hostname）→ 修复后全 400；合法 200/缺失 404；PR 测试断言反转（预期内）如实记录。",
+  "result_status": "SUCCESS",
+  "effective": true,
+  "effective_note": null,
+  "input_context": "独立验证（不信任 Fixer 结论）：干净 clone、补丁 sha256 复算、自设计探针（含绝对路径向量）、PR 测试断言反转记录。",
+  "tool_calls_summary": "taskflow ack/submit；git clone+apply --check；自设计探针（TestClient）；pytest 前后对照；rag_retrieve ×1",
+  "artifacts": [
+    {
+      "name": "verification.md",
+      "source": "finalsPr2V3Traced/tasks/pr2v3-verify-1/workspace/verification.md",
+      "resolved": {
+        "dir": "FINALS-ELEM-PR2-V3-TRACED",
+        "file": "tasks/pr2v3-verify-1/workspace/verification.md",
+        "exists": true,
+        "hash_verified": true,
+        "sha256_actual": "893b75dc5d86a84ac237a0f41c0bb60616fc91ed166e739cfb9174e6cabb2d94"
+      }
+    },
+    {
+      "name": "verify_probe.py",
+      "source": "finalsPr2V3Traced/tasks/pr2v3-verify-1/workspace/verify_probe.py",
+      "resolved": {
+        "dir": "FINALS-ELEM-PR2-V3-TRACED",
+        "file": "tasks/pr2v3-verify-1/workspace/verify_probe.py",
+        "exists": true,
+        "hash_verified": true,
+        "sha256_actual": "fefe0e7cf2532e69e6750761072cddfb924991423c6373c2b41bfcfd8b6ae5df"
+      }
+    },
+    {
+      "name": "attempt-1.diff（独立复放）",
+      "source": "finalsPr2V3Traced/tasks/pr2v3-verify-1/workspace/attempt-1.diff",
+      "resolved": {
+        "dir": "FINALS-ELEM-PR2-V3-TRACED",
+        "file": "tasks/pr2v3-verify-1/workspace/attempt-1.diff",
+        "exists": true,
+        "hash_verified": true,
+        "sha256_actual": "674356fc9a661faa49b97b789d75ff4529b95a5fac7f39dad0301397c0116081"
+      }
+    }
+  ],
+  "status_history": [
+    {
+      "at": "2026-09-17T03:02:46Z",
+      "event_id": "pr2v3-ev-001",
+      "status": "pending",
+      "status_label": "PENDING · 等待派发",
+      "locked_reason": "DAG 依赖：等待 fix-1 完成"
+    },
+    {
+      "at": "2026-09-17T03:12:50Z",
+      "event_id": "pr2v3-ev-008",
+      "status": "waiting_human",
+      "status_label": "WAITING_HUMAN · 人工门停等",
+      "locked_reason": "人工安全门：HUMAN_SECURITY_REVIEW_REQUIRED — 未批准禁止派发"
+    },
+    {
+      "at": "2026-09-17T03:13:25Z",
+      "event_id": "pr2v3-ev-009",
+      "status": "blocked",
+      "status_label": "BLOCKED · 锁定",
+      "locked_reason": "依赖锁定：fix-1 未完成前 Verifier 禁止启动"
+    },
+    {
+      "at": "2026-09-17T03:14:07Z",
+      "event_id": "pr2v3-ev-012",
+      "status": "pending",
+      "status_label": "PENDING · 等待派发",
+      "locked_reason": null
+    },
+    {
+      "at": "2026-09-17T03:14:16Z",
+      "event_id": "pr2v3-ev-013",
+      "status": "running",
+      "status_label": "RUNNING · 执行中",
+      "locked_reason": null
+    },
+    {
+      "at": "2026-09-17T03:15:04Z",
+      "event_id": "pr2v3-ev-016",
+      "status": "completed",
+      "status_label": "COMPLETED · 完成",
+      "locked_reason": null
+    }
+  ],
+  "hash_verified": true,
+  "redaction_status": {
+    "redaction_layer": "applied (evidence-adapter/redact.mjs)",
+    "scan_hits": [],
+    "status": "CLEAN — redaction applied; PR#2 demo placeholders allow-listed",
+    "forbidden_fields_excluded": [
+      "Authorization",
+      "Cookie",
+      "API key",
+      "Matrix token",
+      "password",
+      "完整工具参数",
+      "完整 prompt/completion"
+    ]
+  }
+}

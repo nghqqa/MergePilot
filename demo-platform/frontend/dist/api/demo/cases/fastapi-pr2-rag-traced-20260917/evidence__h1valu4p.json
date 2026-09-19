@@ -1,0 +1,139 @@
+{
+  "id": "ev-sk-fix",
+  "title": "Fixer 补丁 pr2sk5-fix-1（skill 辅助下的确定性修复）",
+  "level": "REAL_EXECUTED_AGENTTEAMS_LIVE",
+  "postgate": true,
+  "fields": [
+    [
+      "关键验收",
+      "门批准后 12 秒 Leader 发出全新委派事件 $3xgqje5vDux1KpHCr0G6z8hk8I9v93R4Pw3l_xeVXks（16:55:00Z 委派）"
+    ],
+    [
+      "交付",
+      "attempt-1.diff 单文件 +13/−7；sha256 674356fc…16081 —— 与此前各轮独立产出逐字节一致（本轮第八次）；提交 16:55:30Z（委派后 30 秒）"
+    ]
+  ],
+  "blocks": [
+    {
+      "title": "finalsPr2Sk5Traced/tasks/pr2sk5-fix-1/attempt-1.diff",
+      "lang": "diff",
+      "text": "diff --git a/backend/src/interfaces/api/v1/demo_high_risk.py b/backend/src/interfaces/api/v1/demo_high_risk.py\nindex 59cd8d1..6140d63 100644\n--- a/backend/src/interfaces/api/v1/demo_high_risk.py\n+++ b/backend/src/interfaces/api/v1/demo_high_risk.py\n@@ -19,7 +19,7 @@ from __future__ import annotations\n \n import os\n \n-from fastapi import APIRouter\n+from fastapi import APIRouter, HTTPException\n from fastapi.responses import FileResponse\n \n router = APIRouter(tags=[\"SecurityDemo\"])\n@@ -30,13 +30,19 @@ DEMO_FILES_DIR = os.path.join(os.path.dirname(__file__), \"demo_files_base\")\n \n @router.get(\n     \"/demo/download\",\n-    summary=\"SECURITY DEMO: file download (intentionally vulnerable)\",\n+    summary=\"SECURITY DEMO: file download (path traversal contained)\",\n     description=(\n-        \"Competition demo endpoint. ``name`` is unsanitized: '../' sequences \"\n-        \"escape DEMO_FILES_DIR (path traversal / arbitrary file read).\"\n+        \"Competition demo endpoint. ``name`` is resolved and confined to \"\n+        \"DEMO_FILES_DIR; '../' traversal / arbitrary file read is rejected.\"\n     ),\n )\n async def demo_download(name: str) -> FileResponse:\n-    # VULNERABLE (intentional): no containment check on the resolved path.\n-    file_path = os.path.join(DEMO_FILES_DIR, name)\n-    return FileResponse(file_path, filename=name)\n+    # FIX (CWE-22): normalise the request path and enforce containment within\n+    # the base directory. Any escape is rejected; missing files return 404.\n+    base_real = os.path.realpath(DEMO_FILES_DIR)\n+    file_real = os.path.realpath(os.path.join(base_real, name))\n+    if os.path.commonpath([base_real, file_real]) != base_real:\n+        raise HTTPException(status_code=400, detail=\"Invalid file path\")\n+    if not os.path.isfile(file_real):\n+        raise HTTPException(status_code=404, detail=\"File not found\")\n+    return FileResponse(file_real, filename=name)\n"
+    },
+    {
+      "title": "finalsPr2Sk5Traced/tasks/pr2sk5-fix-1/result.md",
+      "lang": "text",
+      "text": "STATUS: SUCCESS\nSUMMARY: FIX_APPLIED + SELF_CHECK_PASSED. Minimal CWE-22 containment fix in backend/src/interfaces/api/v1/demo_high_risk.py only (function demo_download); no test files modified (frozen); zero GitHub writes; PR #2 stays OPEN. Fresh clone ~/pr2sk5-fix-work at head SHA 1dedf5e1992c950557064d8f4fb9039d1523deb3 (git rev-parse HEAD verified); scope git diff 4cd5bf0..HEAD --stat = 2 files, +122/-0. Acceptance behavior verified: (a) traversal names rejected 400 with no out-of-base content returned, (b) legitimate in-base file returns 200 with content, (c) missing file returns 404. /opt/venv/standard/bin/python -m py_compile passes. Self-check loads the module directly via importlib and bypasses the repo conftest, so the Google OAuth env requirement noted by the Reviewer does not affect it; no repo files modified. Patch: shared/tasks/pr2sk5-fix-1/attempt-1.diff. Optional rag_retrieve was not available this environment (FunctionNotFoundError); optional per manifest and not needed since evidence rests on own reproduction. Notes: [patch sha256=674356fc9a661faa49b97b789d75ff4529b95a5fac7f39dad0301397c0116081; normalization=os.path.realpath on base dir and joined request path (canonicalizes '..', '.', symlinks); boundary check=os.path.commonpath([base_real, file_real]) != base_real (canonical containment, separator-aware, avoids string-prefix pitfall); error strategy=HTTP 400 'Invalid file path' for traversal/escape, HTTP 404 'File not found' for missing/non-file in-base, HTTP 200 with content for legitimate in-base files]. Authorization: explicit taskId delegation with human gate APPROVED 2026-09-18T16:54:48Z.\n\nDELIVERABLES:\n- shared/tasks/pr2sk5-fix-1/attempt-1.diff\n- shared/tasks/pr2sk5-fix-1/workspace/notes.md\n"
+    },
+    {
+      "title": "finalsPr2Sk5Traced/tasks/pr2sk5-fix-1/workspace/notes.md",
+      "lang": "text",
+      "text": "# pr2sk5-fix-1 — Minimal fix for confirmed CWE-22 path traversal (attempt 1)\n\n- **Run ID**: run-elem-pr2sk5-20260919-01\n- **Role**: Fixer\n- **Human security gate**: APPROVED (2026-09-18T16:54:48Z)\n- **Repo**: https://github.com/nghqqa/fastapi-boilerplate-demo (read-only)\n- **PR**: #2 — stays OPEN\n- **Head SHA verified**: `1dedf5e1992c950557064d8f4fb9039d1523deb3` (`git rev-parse HEAD` = same)\n- **Clone**: `~/pr2sk5-fix-work` (new directory; no `rm -rf` used)\n- **Scope confirmed**: `git diff 4cd5bf0..HEAD --stat` → 2 files, +122/-0\n- **File changed (only)**: `backend/src/interfaces/api/v1/demo_high_risk.py`\n- **Tests modified**: none (`backend/tests/unit/test_demo_high_risk_path_traversal.py` frozen)\n- **GitHub writes**: zero (no push / PR / comment / merge)\n- **Patch**: `shared/tasks/pr2sk5-fix-1/attempt-1.diff`\n- **Patch sha256**: `674356fc9a661faa49b97b789d75ff4529b95a5fac7f39dad0301397c0116081`\n\n## Before → After\n\n### Before (vulnerable, head SHA)\n```python\nasync def demo_download(name: str) -> FileResponse:\n    # VULNERABLE (intentional): no containment check on the resolved path.\n    file_path = os.path.join(DEMO_FILES_DIR, name)\n    return FileResponse(file_path, filename=name)\n```\n`name` was joined to the base directory with no normalization or containment check, so\n`../` sequences escaped `DEMO_FILES_DIR` and read arbitrary process-readable files\n(HTTP 200, e.g. `name=../../../etc/hostname`).\n\n### After (fixed)\n```python\nasync def demo_download(name: str) -> FileResponse:\n    # FIX (CWE-22): normalise the request path and enforce containment within\n    # the base directory. Any escape is rejected; missing files return 404.\n    base_real = os.path.realpath(DEMO_FILES_DIR)\n    file_real = os.path.realpath(os.path.join(base_real, name))\n    if os.path.commonpath([base_real, file_real]) != base_real:\n        raise HTTPException(status_code=400, detail=\"Invalid file path\")\n    if not os.path.isfile(file_real):\n        raise HTTPException(status_code=404, detail=\"File not found\")\n    return FileResponse(file_real, filename=name)\n```\n\n## Three required explanations\n\n1. **Path normalization**: `os.path.realpath()` is applied to both the base directory and\n   the joined request path. It canonicalizes the path (resolving `..`, `.`, and symlinks),\n   collapsing traversal sequences to a canonical absolute path before any decision.\n2. **Directory boundary check**: `os.path.commonpath([base_real, file_real]) != base_real`\n   enforces containment. The canonicalized request path must have the canonicalized base\n   directory as its common path prefix; anything outside the base (parent, sibling,\n   absolute target) fails and is rejected. `commonpath` is separator-aware and avoids the\n   `/base` vs `/base-evil` string-prefix pitfall of `startswith`.\n3. **Error strategy**: traversal/escape → **HTTP 400** `{\"detail\":\"Invalid file path\"}`\n   (rejected input; escaped content is never served). Missing or non-file target inside\n   the base → **HTTP 404** `{\"detail\":\"File not found\"}`. Legitimate in-base files →\n   **HTTP 200** with content.\n\n## Self-check evidence (real output)\n\n```\n$ /opt/venv/standard/bin/python -m py_compile backend/src/interfaces/api/v1/demo_high_risk.py\nPY_COMPILE: PASS\n\n$ git status --short\n M backend/src/interfaces/api/v1/demo_high_risk.py      # only the one target file\n\n$ cd ~/pr2sk5-fix-work && REPO_ROOT=\"$(pwd)\" /opt/venv/standard/bin/python /tmp/fix_accept_check_sk5.py\nbase (realpath): /tmp/fixer-accept-5shvmtcs/demo-files\n\n[PASS] (b) legit in-base file     'ok.txt'                            -> 200 (exp 200) body='LEGIT-INSIDE-BASE'\n[PASS] (a) traversal ../ escapes  '../outside-secret.txt'             -> 400 (exp 400) body='{\"detail\":\"Invalid file path\"}'\n[PASS] (a) traversal via sub dir  'sub/../../deep-secret.txt'         -> 400 (exp 400) body='{\"detail\":\"Invalid file path\"}'\n[PASS] (a) absolute file escape   '../../../../../../etc/hostname'    -> 400 (exp 400) body='{\"detail\":\"Invalid file path\"}'\n[PASS] (c) missing file           'missing.txt'                       -> 404 (exp 404) body='{\"detail\":\"File not found\"}'\n\nACCEPTANCE: PASS\n```\n\nAll three acceptance criteria are satisfied. Verification used throwaway temp files only;\nno real credentials.\n\n## Notes on environment and optional tooling\n\n- The repo conftest requires non-empty Google OAuth env values to import. My self-check\n  loads `demo_high_risk.py` directly via `importlib`, bypassing the conftest, so it is\n  unaffected. No repo files were modified.\n- Optional `rag_retrieve` was **not available** in this environment this run\n  (`FunctionNotFoundError`). It is optional per the manifest and was not needed: the fix\n  and all PASS/FAIL evidence above rest entirely on my own reproduction.\n\n## Role-contract compliance note\n\nAuthorization: work began only after an explicit @mention delegation naming me and the\ntaskId (`pr2sk5-fix-1`), with the human security gate APPROVED (2026-09-18T16:54:48Z).\nNo un-delegated work was performed in this run. `~/task/ROLE-CONTRACT.md` and\n`~/task/PR-METADATA.md` were present and consistent with this task.\n"
+    }
+  ],
+  "source_ref": "finalsPr2Sk5Traced/tasks/pr2sk5-fix-1/attempt-1.diff",
+  "hash": {
+    "file": "tasks/pr2sk5-fix-1/attempt-1.diff",
+    "dir": "FINALS-ELEM-PR2-SK5-TRACED",
+    "exists": true,
+    "hash_verified": true,
+    "sha256": "674356fc9a661faa49b97b789d75ff4529b95a5fac7f39dad0301397c0116081"
+  },
+  "real": [
+    "真实执行（SK5-TRACED）：非预设 SPEC、真实人工门（按操作员运行前书面授权自动投递）、批准后 12 秒 Leader 全新委派、Reviewer/Fixer/Verifier 真实调用确定性 skill_* 工具（tool.skill_* 独立 span + 宿主审计流水）",
+    "SK5 会话四线并行：PR #2 批准路径 + PR #3 拒绝路径 + PR #1 低风险自动路径（NOT_CONFIRMED/LOW，无人工门，skill_sast_scan 首次被 Agent 调用并诚实识别 false positive）+ 双 Reviewer 信度实验（两独立容器同一 head 结论完全一致）；direct-probe 以 stdin 方式修复采集，4/4 非空"
+  ],
+  "controlled": [
+    "页面为只读回放；RAG 语料为知识型 SYNTHETIC（citation-only，无案例结论）；确定性 Skill 输出为 advisory（其 SKILL.md 自述 never an authorization decision）",
+    "case_retrieval 的向量检索使用仓库自带的离线确定性 hash embedding（非语义模型）——排序为确定性向量相似度，升级语义检索属赛后项"
+  ],
+  "not_executed": [
+    "操作员对 Fixer 零执行指令介入；merge/push/close/reopen 未执行（PR #2 保持 OPEN，github-branches-after-sk5.txt 双分支 head 核验不变）",
+    "SK5-MASTER-README 的用量表为估计口径，与本包锁定 usage-summary.json 的实测窗口不一致——本页以锁定工件为准",
+    "直连探针本轮已修复采集（stdin 方式，4/4 非空）——此前四轮\"未采集\"的已知操作缺陷闭环"
+  ],
+  "case": {
+    "case_id": "fastapi-pr2-rag-traced-20260917",
+    "case_name": "FastAPI PR #2 · 高风险变更 · 人工批准闭环",
+    "repo": "nghqqa/fastapi-boilerplate-demo",
+    "pr": "PR #2 · demo/high-risk-human-gate",
+    "pr_url": "https://github.com/nghqqa/fastapi-boilerplate-demo/pull/2",
+    "run_id": "run-elem-pr2sk5-20260919-01",
+    "sha": "1dedf5e1992c950557064d8f4fb9039d1523deb3",
+    "sha_kind": "PR #2 head commit · ls-remote 已核验",
+    "evidence_level": [
+      "REAL_EXECUTED_AGENTTEAMS_LIVE"
+    ],
+    "source_dir": "evidence/FINALS-ELEM-PR2-SK5-TRACED（SHA256SUMS 锁定，54 清单项）",
+    "generated_at": "运行窗口 16:51Z–16:57Z（墙钟 5 分 31 秒，含人工门决策等待 1 分 00 秒）",
+    "pending_redactions": [
+      [
+        "demo/high-risk-human-gate",
+        "demo/···"
+      ],
+      [
+        "copaw-high-risk-human-gate",
+        "copaw-high-risk-···"
+      ],
+      [
+        "sast_scan 首战 + case_retrieval 持续产出",
+        "核心增量：确定性 Skill 全家桶接入"
+      ],
+      [
+        "Fixer 补丁 pr2sk5-fix-1（skill 辅助下的确定性修复）",
+        "门后任务产物（决策后可见）"
+      ],
+      [
+        "Verifier 独立验证（VERIFIED PASS，首次通过）",
+        "门后任务产物（决策后可见）"
+      ],
+      [
+        "人工安全门（按操作员运行前授权自动投递：批准）",
+        "人工安全门 · 决策记录"
+      ]
+    ]
+  },
+  "integrity": {
+    "finals": {
+      "finalsDbLoop": {
+        "dir": "FINALS-DB-MIGRATION-LOOP-20260914",
+        "tier": "REAL_SQL_VERIFICATION_ISOLATED_POSTGRES",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsReworkLoop": {
+        "dir": "FINALS-REWORK-LOOP-20260914",
+        "tier": "MECHANISM_VERIFICATION",
+        "verified": true,
+        "files": 7,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsRagLoop": {
+        "dir": "FINALS-RAG-LOOP-20260914",
+        "tier": "REAL_OFFLINE_EXPERIMENT_SYNTHETIC_CORPUS",
+        "verified": true,
+        "files": 4,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr2Live": {
+        "dir": "FINALS-ELEM-PR2-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 19,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr3Live": {
+        "dir": "FINALS-ELEM-PR3-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      }
+    }
+  }
+}

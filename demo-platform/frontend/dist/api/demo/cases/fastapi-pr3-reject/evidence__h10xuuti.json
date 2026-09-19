@@ -1,0 +1,152 @@
+{
+  "id": "ev-rej-state",
+  "title": "【历史对照】拒绝后的系统状态（不再派发）",
+  "level": "REAL_EXECUTED_AGENTTEAMS",
+  "postgate": true,
+  "fields": [
+    [
+      "plan",
+      "fix-1 标记 rejected · verify-1 保持 locked（见 post-rejection-plan.md）"
+    ],
+    [
+      "项目状态",
+      "blocked(paused) —— 系统没有继续执行"
+    ],
+    [
+      "审计",
+      "pre/post rejection 的 fixer/verifier activity 对照：零消费"
+    ]
+  ],
+  "blocks": [
+    {
+      "title": "rejectDemo/post-rejection-plan.md",
+      "lang": "text",
+      "text": "# Team Project: High-risk human-reject workflow: PR #3 review-fix-verify with human approval gate\n\n**ID**: copaw-high-risk-human-reject\n**Created**: 2026-08-30T01:25:53Z\n\n## DAG Task Plan\n\n**Plan Type**: dag\n\n- [x] review-1 — High-risk security review of PR #3 (assigned: p14h2-copaw-worker-reviewer)\n- [!] fix-1 — Remediate high-risk findings (assigned: p14h2-copaw-worker-fixer, depends: review-1) — REJECTED by human security review (HUMAN_SECURITY_REJECTED, 2026-08-30); never dispatch\n- [!] verify-1 — Verify remediation of PR #3 (assigned: p14h2-copaw-worker-verifier, depends: fix-1) — locked, never dispatch (fix-1 rejected)\n"
+    },
+    {
+      "title": "rejectDemo/post-rejection-task-state.json",
+      "lang": "json",
+      "text": "{\n  \"phase\": \"Phase 14.2H-WD-COPAW-HIGH-RISK-REJECT-DEMO\",\n  \"recorded_at\": \"2026-08-30T09:32:00+08:00\",\n  \"mode\": \"live-demo\",\n  \"source_commit\": \"PR#3 head ad267a6e51209551a0733657321bb364d04befd0\",\n  \"evidence_refs\": [\n    \"post-rejection-plan.md (Leader store plan.md 快照)\",\n    \"post-rejection-project-meta.json\",\n    \"leader-key-messages.json (.final_locked_report)\",\n    \"human-gate-rejection.md\"\n  ],\n  \"status\": \"PASS\",\n  \"captured_at_utc\": \"2026-08-30T01:32:00Z (人工拒绝执行完毕之后)\",\n  \"project\": \"copaw-high-risk-human-reject\",\n  \"plan_markers\": [\n    \"[x] review-1 — completed (HIGH_RISK_FOUND, critical)\",\n    \"[!] fix-1 — REJECTED by human security review (HUMAN_SECURITY_REJECTED, 2026-08-30); never dispatch\",\n    \"[!] verify-1 — locked, never dispatch (fix-1 rejected)\"\n  ],\n  \"project_status\": \"paused (meta.json status=paused, via projectflow pause_project; NOT completed)\",\n  \"leader_final_report_event_utc\": \"2026-08-30T01:31:05Z\",\n  \"leader_self_reported\": {\n    \"fix1\": \"rejected, never dispatched\",\n    \"verify1\": \"locked, never dispatched\",\n    \"project\": \"paused, DAG not advanced past review-1\",\n    \"rejection_record_read_back\": true,\n    \"github\": \"untouched, PR #3 OPEN and unfixed\"\n  },\n  \"verdict_mapping\": {\n    \"review-1\": \"completed\",\n    \"fix-1\": \"blocked/rejected\",\n    \"verify-1\": \"locked\",\n    \"project\": \"blocked (paused)\",\n    \"pr\": \"OPEN\",\n    \"pr_write_actions\": \"NONE\"\n  }\n}"
+    }
+  ],
+  "source_ref": "rejectDemo/post-rejection-task-state.json",
+  "hash": {
+    "file": "post-rejection-task-state.json",
+    "dir": "PHASE14-WINDOWS-COPAW-HIGH-RISK-REJECT-20260830-091913",
+    "exists": true,
+    "hash_verified": true,
+    "sha256": "b3228d434e277f5a8c0b534c9247b44c7cea50586c4a034a2ead6b55800a9cca"
+  },
+  "real": [
+    "真实执行（SK5-TRACED）：Reviewer 独立审查（含确定性 skill_* 与 rag_retrieve 引用实录）、操作员拒绝（按运行前书面授权自动投递）、Leader 落实绑定效应；全部 event_id 留痕；fix/verify 从未派发（零派发三重核验）"
+  ],
+  "controlled": [
+    "本页面为证据的只读回放与讲解文案；拒绝为终态，演示层不可翻转"
+  ],
+  "not_executed": [
+    "Fixer / Verifier 从未派发（两轮均 0 消费留痕）",
+    "零 GitHub 写入；PR #3 保持 OPEN",
+    "direct-probe 本轮采集修复（stdin 方式，4/4 非空）——此前四轮未采集的已知操作缺陷闭环"
+  ],
+  "case": {
+    "case_id": "fastapi-pr3-reject",
+    "case_name": "FastAPI PR #3 · 高风险变更 · 人工拒绝停等",
+    "repo": "nghqqa/fastapi-boilerplate-demo",
+    "pr": "PR #3 · demo/high-risk-human-reject",
+    "pr_url": "https://github.com/nghqqa/fastapi-boilerplate-demo/pull/3",
+    "run_id": "run-elem-pr3sk5-20260919-01",
+    "sha": "ad267a6e51209551a0733657321bb364d04befd0",
+    "sha_kind": "PR #3 head commit · ls-remote 已核验",
+    "evidence_level": [
+      "REAL_EXECUTED_AGENTTEAMS_LIVE"
+    ],
+    "source_dir": "evidence/FINALS-ELEM-PR3-SK5-TRACED（SHA256SUMS 锁定，42 清单项）+ PHASE14-WINDOWS-COPAW-HIGH-RISK-REJECT-20260830-091913（历史对照）",
+    "generated_at": "运行窗口 17:00Z–17:02Z（本轮，kickoff → 门拒绝 2 分 06 秒）· 历史对照 2026-08-30",
+    "pending_redactions": [
+      [
+        "elemiso-pr3sk5-reject",
+        "elemiso-pr3sk5-···"
+      ],
+      [
+        "copaw-high-risk-human-reject",
+        "copaw-high-risk-···"
+      ],
+      [
+        "demo/high-risk-human-reject",
+        "demo/···"
+      ],
+      [
+        "rejectDemo",
+        "p14-evidence"
+      ],
+      [
+        "HIGH-RISK-REJECT",
+        "HIGH-RISK-···"
+      ],
+      [
+        "人工安全门 → 操作员拒绝",
+        "人工安全门 · 决策记录"
+      ],
+      [
+        "mark fix [-] rejected, verify [!] locked, project blocked",
+        "…"
+      ],
+      [
+        "fix [-]/verify [!]/blocked",
+        "fix/verify 冻结·项目停等"
+      ],
+      [
+        "rejected",
+        "held"
+      ],
+      [
+        "blocked",
+        "held"
+      ]
+    ]
+  },
+  "integrity": {
+    "finals": {
+      "finalsDbLoop": {
+        "dir": "FINALS-DB-MIGRATION-LOOP-20260914",
+        "tier": "REAL_SQL_VERIFICATION_ISOLATED_POSTGRES",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsReworkLoop": {
+        "dir": "FINALS-REWORK-LOOP-20260914",
+        "tier": "MECHANISM_VERIFICATION",
+        "verified": true,
+        "files": 7,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsRagLoop": {
+        "dir": "FINALS-RAG-LOOP-20260914",
+        "tier": "REAL_OFFLINE_EXPERIMENT_SYNTHETIC_CORPUS",
+        "verified": true,
+        "files": 4,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr2Live": {
+        "dir": "FINALS-ELEM-PR2-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 19,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr3Live": {
+        "dir": "FINALS-ELEM-PR3-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      }
+    }
+  }
+}

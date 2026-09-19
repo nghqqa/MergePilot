@@ -1,0 +1,102 @@
+{
+  "id": "ev-stage-runs",
+  "title": "阶段序列与事件链（stage_runs · stage_events）",
+  "level": "CONTROL_PLANE_MECHANISM",
+  "fields": [
+    [
+      "stage_runs",
+      "review#1 → fix#1 → verify#1=FAIL → fix#2 → verify#2=PASS"
+    ],
+    [
+      "events_injected",
+      "34"
+    ],
+    [
+      "checks",
+      "9/9 通过"
+    ]
+  ],
+  "blocks": [
+    {
+      "title": "stage_events（event_id ↔ stage）",
+      "lang": "json",
+      "text": "[\n  {\n    \"event_id\": \"$8ed35485fc3c44af98b5e5\",\n    \"sender\": \"@admin:matrix-local.hiclaw.io:18080\",\n    \"event_type\": \"TASK_SUBMITTED\",\n    \"stage\": \"review\",\n    \"status\": \"PROCESSED\"\n  },\n  {\n    \"event_id\": \"$dc25a959d52949888f28a9\",\n    \"sender\": \"@reviewer:matrix-local.hiclaw.io:18080\",\n    \"event_type\": \"TASK_COMPLETED\",\n    \"stage\": \"review\",\n    \"status\": \"PROCESSED\"\n  },\n  {\n    \"event_id\": \"$63d5eb4d85ed427e91cf42\",\n    \"sender\": \"@fixer:matrix-local.hiclaw.io:18080\",\n    \"event_type\": \"TASK_COMPLETED\",\n    \"stage\": \"fix\",\n    \"status\": \"PROCESSED\"\n  },\n  {\n    \"event_id\": \"$a18aec01140f47b485c15a\",\n    \"sender\": \"@verifier:matrix-local.hiclaw.io:18080\",\n    \"event_type\": \"TASK_COMPLETED\",\n    \"stage\": \"verify\",\n    \"status\": \"PROCESSED\"\n  },\n  {\n    \"event_id\": \"$804bf3a4763d4eeeb65f68\",\n    \"sender\": \"@fixer:matrix-local.hiclaw.io:18080\",\n    \"event_type\": \"TASK_COMPLETED\",\n    \"stage\": \"fix\",\n    \"status\": \"PROCESSED\"\n  },\n  {\n    \"event_id\": \"$fb370c9f948e43999c8dbe\",\n    \"sender\": \"@verifier:matrix-local.hiclaw.io:18080\",\n    \"event_type\": \"TASK_COMPLETED\",\n    \"stage\": \"verify\",\n    \"status\": \"PROCESSED\"\n  }\n]"
+    }
+  ],
+  "source_ref": "evidence/FINALS-REWORK-LOOP-20260914/report.json → scenarios.A.final",
+  "real": [
+    "workflow-controller 控制器代码真实执行",
+    "PostgreSQL 审计链真实写入",
+    "验收测试真实执行并决定 VERDICT"
+  ],
+  "controlled": [
+    "Reviewer 结论（reviewer_findings.json）",
+    "Fixer 两个补丁（patches/*.diff）"
+  ],
+  "not_executed": [
+    "LLM 调用",
+    "Matrix/Element 真实交接",
+    "GitHub 写入",
+    "CoPaw 容器运行"
+  ],
+  "case": {
+    "case_id": "rework-payments",
+    "case_name": "支付幂等 · 返工机制案例",
+    "repo": "mergepilot/payments-demo（本地案例仓库）",
+    "pr": "PR #7（本地编号，非可核验外部 PR）",
+    "pr_url": null,
+    "run_id": "run-rework-f1-a",
+    "sha": "255490e3831dab05a39421e0867eeb1bd5d69e2a",
+    "sha_kind": "attempt-2 tree_sha",
+    "evidence_level": [
+      "CONTROL_PLANE_MECHANISM"
+    ],
+    "source_dir": "evidence/FINALS-REWORK-LOOP-20260914 · tools/agentteams/rework_case/base",
+    "generated_at": "2026-09-15T02:14:34Z",
+    "pending_redactions": null
+  },
+  "integrity": {
+    "finals": {
+      "finalsDbLoop": {
+        "dir": "FINALS-DB-MIGRATION-LOOP-20260914",
+        "tier": "REAL_SQL_VERIFICATION_ISOLATED_POSTGRES",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsReworkLoop": {
+        "dir": "FINALS-REWORK-LOOP-20260914",
+        "tier": "MECHANISM_VERIFICATION",
+        "verified": true,
+        "files": 7,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsRagLoop": {
+        "dir": "FINALS-RAG-LOOP-20260914",
+        "tier": "REAL_OFFLINE_EXPERIMENT_SYNTHETIC_CORPUS",
+        "verified": true,
+        "files": 4,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr2Live": {
+        "dir": "FINALS-ELEM-PR2-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 19,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr3Live": {
+        "dir": "FINALS-ELEM-PR3-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      }
+    }
+  }
+}

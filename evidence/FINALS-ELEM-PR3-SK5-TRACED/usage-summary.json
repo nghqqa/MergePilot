@@ -1,27 +1,29 @@
 {
  "windows": {
-  "pr2": {
-   "calls": 90,
-   "inp": 6218954,
-   "cached": 6154368,
-   "outp": 30647
+  "pr2sk5": {
+   "calls": 86,
+   "inp": 15643868,
+   "cached": 14554752,
+   "outp": 36522
   },
-  "pr3": {
-   "calls": 32,
-   "inp": 2392229,
-   "cached": 2376704,
-   "outp": 9552
+  "pr3sk5": {
+   "calls": 33,
+   "inp": 3882302,
+   "cached": 3862400,
+   "outp": 9022
   },
-  "session": {
-   "calls": 133,
-   "inp": 8960469,
-   "cached": 8878336,
-   "outp": 40623
+  "pr1sk5": {
+   "calls": 45,
+   "inp": 5084301,
+   "cached": 5060096,
+   "outp": 14661
+  },
+  "dualrev": {
+   "calls": 31,
+   "inp": 2177070,
+   "cached": 2151040,
+   "outp": 4827
   }
  },
- "models": [
-  "",
-  "deepseek-flash"
- ],
- "note": "deepseek-flash is the vendor-reported model name per request; requested model is deepseek-chat (see R1 audit)"
+ "note": "Per-run case windows (kickoff->terminal state), derived from Higress gateway per-call usage records queried live on 2026-09-19; requested model deepseek-chat (vendor-reported name deepseek-flash, see R1 audit). Replaces a stale pre-SK5 usage-summary.json written by a packager path bug; corrected and re-locked 2026-09-19."
 }

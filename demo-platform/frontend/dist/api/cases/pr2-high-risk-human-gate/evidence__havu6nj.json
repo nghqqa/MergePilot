@@ -1,0 +1,51 @@
+{
+  "drawer": "event",
+  "data_mode": "historical replay",
+  "trace_mode": "evidence-replay",
+  "integrity_status": "verified",
+  "event_id": "pr2v3-ev-009",
+  "matrix_event_id": "$qnZ1ipJJKMiHFyoGYIXHA1jpMYsh_5qAHORGYCMpl14（团队房 $-0UELWrDqRRIP_gSnS1kokTafrnorRAoenYP48QJVfw）",
+  "trace_id": null,
+  "trace_note": "per-event 无独立 trace（per-task/事件维度仍为 evidence-replay）；平台级历史权威 Trace 见总览页 AgentLoop Cloud Trace 区块",
+  "project_id": "elemiso-pr2v3-gate",
+  "task_id": null,
+  "agent_role": "human",
+  "runtime": "copaw-worker:223ddc2-agentloop-v3rag（image 8e17c3667c3c）",
+  "event_type": "approval",
+  "source": "matrix",
+  "source_label": "Matrix event",
+  "source_ref": "finalsPr2V3Traced/project/human-gate-approval.md",
+  "source_hash": {
+    "ref": "finalsPr2V3Traced/project/human-gate-approval.md",
+    "dir": "FINALS-ELEM-PR2-V3-TRACED",
+    "dir_key": "finalsPr2V3Traced",
+    "file": "project/human-gate-approval.md",
+    "abs_path": "D:\\goai\\mergepilot-demo\\evidence\\FINALS-ELEM-PR2-V3-TRACED\\project\\human-gate-approval.md",
+    "exists": true,
+    "evidence_root_readonly": true,
+    "sha256_actual": "45c79517b6c0052b2300a3a41abd4b3aae0e7aecbd52c386572a41156934a652",
+    "sha256_expected": "45c79517b6c0052b2300a3a41abd4b3aae0e7aecbd52c386572a41156934a652",
+    "hash_verified": true,
+    "sums_source": "FINALS-ELEM-PR2-V3-TRACED/SHA256SUMS"
+  },
+  "timestamp": "2026-09-17T03:13:25Z",
+  "timestamp_precision": "exact",
+  "timestamp_note": null,
+  "summary": "HUMAN_SECURITY_APPROVED_FIX — 操作员批准（按操作员运行前书面授权自动投递；批准记录先于派发落盘项目目录），授权派发 fix-1/verify-1，禁 merge/push/close/reopen，PR #2 保持 OPEN",
+  "detail": "批准范围与验收口径（记录原文）：①确认 HIGH/CWE-22 结论；②授权 Leader 自行委派 pr2v3-fix-1（仅 Reviewer 标记文件、测试冻结、零 GitHub 写入）；③fix 验收后委派 pr2v3-verify-1；④FAIL 则 pr2v3-fix-2 重派一次。验收口径：团队房必须出现全新 fix 委派事件且 Fixer 仅在其后开工。",
+  "hash_verified": true,
+  "redaction_status": {
+    "redaction_layer": "applied (evidence-adapter/redact.mjs)",
+    "scan_hits": [],
+    "status": "CLEAN — redaction applied; PR#2 demo placeholders allow-listed",
+    "forbidden_fields_excluded": [
+      "Authorization",
+      "Cookie",
+      "API key",
+      "Matrix token",
+      "password",
+      "完整工具参数",
+      "完整 prompt/completion"
+    ]
+  }
+}

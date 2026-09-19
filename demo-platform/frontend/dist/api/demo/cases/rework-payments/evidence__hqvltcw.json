@@ -1,0 +1,110 @@
+{
+  "id": "ev-run-meta",
+  "title": "运行元数据 run-meta.json",
+  "level": "CONTROL_PLANE_MECHANISM",
+  "fields": [
+    [
+      "run_id",
+      "run-rework-f1-a"
+    ],
+    [
+      "generated_at",
+      "2026-09-15T02:14:34Z"
+    ],
+    [
+      "git_head",
+      "0fba982196340b4ecb3913e83bc3eb673bee817a"
+    ],
+    [
+      "command",
+      "python tools/agentteams/rework_loop_harness.py --pg-port 55432 --out evidence/FINALS-REWORK-LOOP-20260914"
+    ],
+    [
+      "evidence_tier",
+      "MECHANISM_VERIFICATION"
+    ]
+  ],
+  "blocks": [
+    {
+      "title": "run-meta.json",
+      "lang": "json",
+      "text": "{\n  \"generated_at\": \"2026-09-15T02:14:34Z\",\n  \"python\": \"3.9.25\",\n  \"git_head\": \"0fba982196340b4ecb3913e83bc3eb673bee817a\",\n  \"command\": \"python tools/agentteams/rework_loop_harness.py --pg-port 55432 --out evidence/FINALS-REWORK-LOOP-20260914\",\n  \"evidence_tier\": \"MECHANISM_VERIFICATION\"\n}"
+    }
+  ],
+  "source_ref": "evidence/FINALS-REWORK-LOOP-20260914/run-meta.json",
+  "real": [
+    "workflow-controller 控制器代码真实执行",
+    "PostgreSQL 审计链真实写入",
+    "验收测试真实执行并决定 VERDICT"
+  ],
+  "controlled": [
+    "Reviewer 结论（reviewer_findings.json）",
+    "Fixer 两个补丁（patches/*.diff）"
+  ],
+  "not_executed": [
+    "LLM 调用",
+    "Matrix/Element 真实交接",
+    "GitHub 写入",
+    "CoPaw 容器运行"
+  ],
+  "case": {
+    "case_id": "rework-payments",
+    "case_name": "支付幂等 · 返工机制案例",
+    "repo": "mergepilot/payments-demo（本地案例仓库）",
+    "pr": "PR #7（本地编号，非可核验外部 PR）",
+    "pr_url": null,
+    "run_id": "run-rework-f1-a",
+    "sha": "255490e3831dab05a39421e0867eeb1bd5d69e2a",
+    "sha_kind": "attempt-2 tree_sha",
+    "evidence_level": [
+      "CONTROL_PLANE_MECHANISM"
+    ],
+    "source_dir": "evidence/FINALS-REWORK-LOOP-20260914 · tools/agentteams/rework_case/base",
+    "generated_at": "2026-09-15T02:14:34Z",
+    "pending_redactions": null
+  },
+  "integrity": {
+    "finals": {
+      "finalsDbLoop": {
+        "dir": "FINALS-DB-MIGRATION-LOOP-20260914",
+        "tier": "REAL_SQL_VERIFICATION_ISOLATED_POSTGRES",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsReworkLoop": {
+        "dir": "FINALS-REWORK-LOOP-20260914",
+        "tier": "MECHANISM_VERIFICATION",
+        "verified": true,
+        "files": 7,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsRagLoop": {
+        "dir": "FINALS-RAG-LOOP-20260914",
+        "tier": "REAL_OFFLINE_EXPERIMENT_SYNTHETIC_CORPUS",
+        "verified": true,
+        "files": 4,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr2Live": {
+        "dir": "FINALS-ELEM-PR2-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 19,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr3Live": {
+        "dir": "FINALS-ELEM-PR3-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      }
+    }
+  }
+}

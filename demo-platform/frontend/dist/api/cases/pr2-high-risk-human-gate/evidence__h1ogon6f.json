@@ -1,0 +1,99 @@
+{
+  "drawer": "trace",
+  "case_id": "pr2-high-risk-human-gate",
+  "status": "EVIDENCE REPLAY ONLY",
+  "display": "待接入",
+  "trace_mode": "evidence-replay",
+  "data_mode": "historical replay (trace schema only)",
+  "cloud_trace": "VERIFIED / VERIFIED",
+  "smoke": {
+    "status": "VERIFIED",
+    "source": "Aliyun AgentLoop OTLP smoke evidence",
+    "refs": [
+      "PHASE14-WINDOWS-AGENTLOOP-OTEL-20260829-200307/trace-schema.json",
+      "PHASE14-WINDOWS-REPLAY-MATERIALS-20260829-195223/08-scope-boundary.md"
+    ],
+    "refs_note": "smoke 判定依据阶段指令；相关文档存在 1 个已记录 SHA256 drift（08-scope-boundary.md），故该文件中的 LIVE 断言不作为 VERIFIED 依据"
+  },
+  "live_copaw_run": {
+    "status": "VERIFIED",
+    "trace_mode": "LIVE CLOUD",
+    "source": "Aliyun AgentLoop console trace detail — operator-confirmed screenshot (Phase 14.2H, 2026-08-30)",
+    "verdict": "AGENTLOOP_ALIYUN_TRACE_VISIBILITY_CONFIRMED_BY_OPERATOR",
+    "evidence_dir": "evidence/PHASE14-WINDOWS-AGENTLOOP-MERGED-TRACE-FINALIZE-20260830-181813",
+    "evidence_dir_in_package": false,
+    "evidence_dir_note": "该目录属于项目完整证据库，本演示包随附的 11 个证据目录未包含它；包内 AgentLoop 相关证据为 PHASE14-WINDOWS-AGENTLOOP-OTEL-20260829-200307（OTLP smoke + trace schema）",
+    "sample_note": "历史权威 Trace · 已确认样本 n=1（2026-08-30），非当前实时数据",
+    "refs": [
+      "cloud-trace-confirmation.json",
+      "span-tree.json",
+      "coverage-matrix.json",
+      "relay-stability.json",
+      "SHA256SUMS"
+    ],
+    "refs_note": "真实 Matrix 触发 run（observability-validation-run-4 / project agentloop-innerhook-4），非 synthetic smoke、非 evidence replay；云端可见性由操作员控制台确认，本地 relay(75/75 HTTP 200) 与四 worker 埋点(span 名录+LLM 审计)构成旁证",
+    "trace": {
+      "trace_id": "fbf4a3cec0493990d76e10a102418be1",
+      "session_id": "N2KQqHVSBsSZc9utWsEeZ5f",
+      "started_at_utc": "2026-08-30T10:07:26Z",
+      "duration": "17.6s",
+      "agent_calls": 1,
+      "llm_calls": 24,
+      "tool_calls": 8,
+      "tokens_total": 51890,
+      "tokens_input": 49867,
+      "tokens_output": 2023,
+      "model": "deepseek-chat",
+      "service": "mergepilot-copaw"
+    },
+    "span_tree": "agent_step → invoke_agent Friday → {chat deepseek-chat (native) + genai.llm.call (loongsuite wrapper) + tool.projectflow + tool.taskflow + matrix.send}",
+    "merged_span_note": "原生 agentscope span 与 loongsuite wrapper span 同 Trace：zz 埋点在解释器启动时抢占全局 TracerProvider（service.name=mergepilot-copaw），runtime 复用同一 Provider，同批导出",
+    "drifted_claim_file": "PHASE14-WINDOWS-REPLAY-MATERIALS-20260829-195223/08-scope-boundary.md"
+  },
+  "tool_span": {
+    "status": "VERIFIED",
+    "source": "console 工具调用=8（trace fbf4a3cec0493990d76e10a102418be1）+ worker span 日志 tool.projectflow/tool.taskflow 同 run 产出",
+    "refs": [
+      "span-tree.json",
+      "relay-stability.json"
+    ]
+  },
+  "coverage": {
+    "status": "VERIFIED",
+    "scope": "Agent / LLM / Tool span 同一 Trace 覆盖（历史权威 Trace · 已确认样本 n=1 完整真实运行；不声称多轮稳定覆盖）",
+    "refs": [
+      "coverage-matrix.json"
+    ]
+  },
+  "historical_replay": {
+    "status": "VERIFIED",
+    "mode": "evidence-replay"
+  },
+  "trace_id": "fbf4a3cec0493990d76e10a102418be1",
+  "span_count": 32,
+  "trace_source": "agentloop-plane live cloud trace",
+  "cloud_visibility": true,
+  "trajectory_evaluation": null,
+  "result_evaluation": null,
+  "reason": "平台内 per-task Trace 仍为 evidence-replay（历史证据回放）；AgentLoop 平面已切换 LIVE CLOUD：真实 CoPaw run 的合并 Trace（Agent+LLM+Tool）已在阿里云控制台由操作员确认（verdict: AGENTLOOP_ALIYUN_TRACE_VISIBILITY_CONFIRMED_BY_OPERATOR）。per-task 维度接入为下一阶段（Phase 15）工作",
+  "schema_only": {
+    "exists": true,
+    "path": "PHASE14-WINDOWS-AGENTLOOP-OTEL-20260829-200307/trace-schema.json",
+    "note": "evidence-replay 模式 schema（mode 恒为 evidence-replay，spans 永不以 live capture 呈现）"
+  },
+  "integrity_status": "verified（schema 文件存在；smoke/live 状态见上）",
+  "redaction_status": {
+    "redaction_layer": "applied (evidence-adapter/redact.mjs)",
+    "scan_hits": [],
+    "status": "CLEAN — redaction applied; PR#2 demo placeholders allow-listed",
+    "forbidden_fields_excluded": [
+      "Authorization",
+      "Cookie",
+      "API key",
+      "Matrix token",
+      "password",
+      "完整工具参数",
+      "完整 prompt/completion"
+    ]
+  }
+}

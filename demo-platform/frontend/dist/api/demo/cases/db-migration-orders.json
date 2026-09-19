@@ -1,0 +1,627 @@
+{
+  "case_id": "db-migration-orders",
+  "portfolio_role": "附录 · 数据库迁移与版本绑定",
+  "shape": "brief",
+  "extra": true,
+  "name": "订单库迁移 · 历史数据兼容",
+  "short_name": "附加证据 · 数据库迁移",
+  "one_liner": "迁移在隔离 PostgreSQL 真实执行：rev1 被历史数据挡下（23502），上下文补取后 rev2 11/11 断言通过。",
+  "repo": "mergepilot/orders-demo",
+  "pr": "PR #4 · orders-schema-change",
+  "pr_url": null,
+  "run_id": "run-dbv-084723-rev2",
+  "sha": "a7db33c36313f5f4c963bd6000b108ca8279d96a",
+  "sha_kind": "rev2 head（git tree object id）",
+  "evidence_level": [
+    "LOCAL_REAL_SQL"
+  ],
+  "replay_note": null,
+  "purpose": "附加证据：数据库迁移与历史数据兼容风险的本地真实 SQL 验证",
+  "risk_tags": [
+    "数据库迁移",
+    "历史数据兼容",
+    "SQLSTATE 23502"
+  ],
+  "status": {
+    "verdict": "PASS",
+    "label": "验证通过 11/11 · 审批后被 follow-up 取代（STALE）"
+  },
+  "facts": {
+    "real_github_pr": {
+      "value": "否 —— 本地案例（SYNTHETIC 数据）",
+      "ok": false,
+      "note": ""
+    },
+    "real_agentteams_run": {
+      "value": "否 —— 真实 SQL 执行，但非 AgentTeams 运行",
+      "ok": false,
+      "note": ""
+    },
+    "github_write": {
+      "value": "未写入 —— NOT_EXECUTED",
+      "ok": false,
+      "note": ""
+    }
+  },
+  "banner": null,
+  "stage_timeline": null,
+  "chain": null,
+  "generated_at": "2026-09-15T08:47:27Z",
+  "source_dir": "evidence/FINALS-DB-MIGRATION-LOOP-20260914",
+  "honesty": {
+    "real": [
+      "隔离 PostgreSQL 16.14 clone 上真实执行迁移与断言 SQL",
+      "审批/绑定/gate 记录真实写入审计库",
+      "政策网关 wrapper 以模块导入方式真实执行"
+    ],
+    "controlled": [
+      "案例数据（orders-demo 基线与种子为 SYNTHETIC 合成数据）"
+    ],
+    "not_executed": [
+      "PolarDB 连接（NOT CONNECTED）",
+      "Agentic Database Branch",
+      "GitHub 写入",
+      "生产发布（NOT PERFORMED）"
+    ]
+  },
+  "blocks": [
+    {
+      "id": "risk",
+      "title": "风险类型",
+      "rows": [
+        {
+          "k": "风险",
+          "v": "数据库迁移 · 历史数据兼容 —— 新代码假设的约束直接加在含脏数据的存量库上"
+        },
+        {
+          "k": "触发点",
+          "v": "orders.customer_id SET NOT NULL + payments.order_id UNIQUE；存量库含 137 条 NULL customer_id、2 条重复支付"
+        },
+        {
+          "k": "数据模式",
+          "v": "SYNTHETIC（orders-demo 合成基线 10000 订单 / 10002 支付）· PolarDB NOT CONNECTED"
+        }
+      ],
+      "evidence": [
+        "ev-baseline",
+        "ev-mig-rev1"
+      ]
+    },
+    {
+      "id": "evidence",
+      "title": "关键证据",
+      "rows": [
+        {
+          "k": "rev1 验证",
+          "v": "FAIL / HISTORICAL_DATA_INCOMPATIBLE —— SQLSTATE 23502：orders.customer_id 含 NULL；断言 3/11"
+        },
+        {
+          "k": "上下文补取",
+          "v": "legacy_order_owner 覆盖 120 条，17 条不可解（12.41% ≤ 20%）→ REVISE_CANDIDATE 而非升级人工"
+        },
+        {
+          "k": "rev2 修订",
+          "v": "回填 120 + 哨兵 17（写入审计表）+ 归档重复支付 + DEFAULT 0 保旧程序兼容 + 最后加约束"
+        }
+      ],
+      "evidence": [
+        "ev-fail-23502",
+        "ev-context-fetch",
+        "ev-mig-rev2"
+      ]
+    },
+    {
+      "id": "verdict",
+      "title": "验证结论",
+      "rows": [
+        {
+          "k": "rev2 验证",
+          "v": "PASS · 11/11 断言 · verification_id=mv-04f9e460e5b26e9f2af6e745"
+        },
+        {
+          "k": "执行环境",
+          "v": "隔离 PostgreSQL 16.14 clone（CREATE DATABASE … TEMPLATE）· 真实 SQL 执行"
+        }
+      ],
+      "evidence": [
+        "ev-assert-pass"
+      ]
+    },
+    {
+      "id": "disposition",
+      "title": "最终处置",
+      "rows": [
+        {
+          "k": "人工审批",
+          "v": "已执行并记录于真实审计库：ticket tkt-523e97c2-19ae-49dc-bfb5-356cddf6dbda 绑定 verification+head，approved_by=mergepilot"
+        },
+        {
+          "k": "gate 语义",
+          "v": "follow-up 提交（app/orders_service.py gains cancel_order(); migration unchanged）后审批 STALE_SUPERSEDED_BY_NEW_REVISION → 发布阻断，需对新 head 重新验证"
+        },
+        {
+          "k": "生产发布",
+          "v": "NOT PERFORMED —— trial clone 不是生产发布；执行需按计划包受控发布"
+        },
+        {
+          "k": "GitHub 写入",
+          "v": "未执行 —— NOT_EXECUTED"
+        }
+      ],
+      "evidence": [
+        "ev-approval-bind",
+        "ev-gate-stale",
+        "ev-plan-package"
+      ]
+    }
+  ],
+  "decision": {
+    "verified": {
+      "verdict": "PASS",
+      "text": "11/11 断言（隔离 PostgreSQL 真实执行）"
+    },
+    "human_approval": {
+      "needed": true,
+      "text": "需要且已记录（S7_l2_approve · 绑定 verification_id + head_sha）",
+      "level": "LOCAL_REAL_SQL"
+    },
+    "merge_allowed": {
+      "allowed": false,
+      "text": "数据库发布门：仅当审批绑定当前 head 时放行；follow-up 后 STALE，需重新验证"
+    },
+    "github_write": {
+      "done": false,
+      "text": "未写入 —— NOT_EXECUTED",
+      "level": "NOT_EXECUTED"
+    },
+    "execution_nature": {
+      "text": "历史回放 · LOCAL_REAL_SQL：隔离 PostgreSQL 真实执行；案例数据 SYNTHETIC",
+      "level": "LOCAL_REAL_SQL"
+    }
+  },
+  "evidence_index": [
+    {
+      "id": "ev-baseline",
+      "title": "历史基线（S1_baseline）",
+      "level": "LOCAL_REAL_SQL"
+    },
+    {
+      "id": "ev-mig-rev1",
+      "title": "迁移候选 rev1（直接加约束）",
+      "level": "LOCAL_REAL_SQL"
+    },
+    {
+      "id": "ev-fail-23502",
+      "title": "rev1 验证失败（SQLSTATE 23502）",
+      "level": "LOCAL_REAL_SQL"
+    },
+    {
+      "id": "ev-context-fetch",
+      "title": "上下文补取与修订决策（S5b）",
+      "level": "LOCAL_REAL_SQL"
+    },
+    {
+      "id": "ev-mig-rev2",
+      "title": "迁移候选 rev2（回填+归档+兼容）",
+      "level": "LOCAL_REAL_SQL"
+    },
+    {
+      "id": "ev-assert-pass",
+      "title": "rev2 验证通过（11/11 断言）",
+      "level": "LOCAL_REAL_SQL"
+    },
+    {
+      "id": "ev-approval-bind",
+      "title": "真实审批记录（绑定 verification + head）",
+      "level": "LOCAL_REAL_SQL"
+    },
+    {
+      "id": "ev-gate-stale",
+      "title": "follow-up 提交后审批失效（gate timeline）",
+      "level": "LOCAL_REAL_SQL"
+    },
+    {
+      "id": "ev-plan-package",
+      "title": "迁移计划包与负向测试",
+      "level": "LOCAL_REAL_SQL"
+    }
+  ],
+  "items": [
+    {
+      "id": "ev-baseline",
+      "title": "历史基线（S1_baseline）",
+      "level": "LOCAL_REAL_SQL",
+      "fields": [
+        [
+          "baseline_id",
+          "bl-64c381926f051578"
+        ],
+        [
+          "行数",
+          "customers=500 · legacy_order_owner=120 · orders=10000 · payments=10002"
+        ],
+        [
+          "历史 NULL customer_id",
+          "137"
+        ],
+        [
+          "重复支付行",
+          "2"
+        ],
+        [
+          "PostgreSQL",
+          "16.14 (Debian 16.14-1.pgdg12+1)"
+        ]
+      ],
+      "blocks": [
+        {
+          "title": "baseline/schema.sql",
+          "lang": "sql",
+          "text": "-- Baseline schema for the orders-schema-change case (SYNTHETIC business data).\n-- Represents the state BEFORE the PR: customer_id is nullable, payments may\n-- carry duplicate order_id rows (both are real legacy defects the PR wants to\n-- close with constraints).\nCREATE TABLE customers (\n  customer_id BIGINT PRIMARY KEY,\n  name        TEXT NOT NULL\n);\n\nCREATE TABLE orders (\n  order_id     BIGINT PRIMARY KEY,\n  customer_id  BIGINT REFERENCES customers(customer_id),   -- nullable in the legacy schema\n  amount_cents INTEGER NOT NULL CHECK (amount_cents > 0),\n  status       TEXT NOT NULL CHECK (status IN ('new','paid','shipped','cancelled')),\n  created_at   TIMESTAMPTZ NOT NULL\n);\n\nCREATE TABLE payments (\n  payment_id   BIGINT PRIMARY KEY,\n  order_id     BIGINT NOT NULL REFERENCES orders(order_id),  -- no UNIQUE in the legacy schema\n  amount_cents INTEGER NOT NULL,\n  paid_at      TIMESTAMPTZ NOT NULL\n);\n\n-- Side table left behind by the previous ordering system; the only place the\n-- owner of some legacy orders can still be recovered from.\nCREATE TABLE legacy_order_owner (\n  order_id    BIGINT PRIMARY KEY,\n  customer_id BIGINT NOT NULL\n);\n"
+        }
+      ],
+      "source_ref": "evidence/FINALS-DB-MIGRATION-LOOP-20260914/report.json → S1_baseline",
+      "real": [
+        "隔离 PostgreSQL 16.14 clone 上真实执行迁移与断言 SQL",
+        "审批/绑定/gate 记录真实写入审计库",
+        "政策网关 wrapper 以模块导入方式真实执行"
+      ],
+      "controlled": [
+        "案例数据（orders-demo 基线与种子为 SYNTHETIC 合成数据）"
+      ],
+      "not_executed": [
+        "PolarDB 连接（NOT CONNECTED）",
+        "Agentic Database Branch",
+        "GitHub 写入",
+        "生产发布（NOT PERFORMED）"
+      ]
+    },
+    {
+      "id": "ev-mig-rev1",
+      "title": "迁移候选 rev1（直接加约束）",
+      "level": "LOCAL_REAL_SQL",
+      "fields": [
+        [
+          "candidate_id",
+          "mc-31b545c0e9f6c391a44e19f5"
+        ],
+        [
+          "head_sha",
+          "b22fc0622b497de2fca0c1ccf3853618939400b2"
+        ],
+        [
+          "script_digest",
+          "223e27fcecbf63e4824ab9650349630ed8903acebea4dffb0858df05e18ad5bc"
+        ]
+      ],
+      "blocks": [
+        {
+          "title": "candidate-a.rev1.sql",
+          "lang": "sql",
+          "text": "-- candidate-a · revision 1 — \"直接加约束\"\n-- The PR's first migration: enforce the two invariants the new code assumes.\n-- Passes on an EMPTY database; fails on the historical baseline (137 NULL\n-- customer_id rows, 2 duplicate payment rows).\nBEGIN;\nALTER TABLE orders ALTER COLUMN customer_id SET NOT NULL;\nALTER TABLE payments ADD CONSTRAINT uq_payments_order_id UNIQUE (order_id);\nCOMMIT;\n"
+        }
+      ],
+      "source_ref": "evidence/FINALS-DB-MIGRATION-LOOP-20260914/case/migrations/candidate-a.rev1.sql",
+      "real": [
+        "隔离 PostgreSQL 16.14 clone 上真实执行迁移与断言 SQL",
+        "审批/绑定/gate 记录真实写入审计库",
+        "政策网关 wrapper 以模块导入方式真实执行"
+      ],
+      "controlled": [
+        "案例数据（orders-demo 基线与种子为 SYNTHETIC 合成数据）"
+      ],
+      "not_executed": [
+        "PolarDB 连接（NOT CONNECTED）",
+        "Agentic Database Branch",
+        "GitHub 写入",
+        "生产发布（NOT PERFORMED）"
+      ]
+    },
+    {
+      "id": "ev-fail-23502",
+      "title": "rev1 验证失败（SQLSTATE 23502）",
+      "level": "LOCAL_REAL_SQL",
+      "fields": [
+        [
+          "verification_id",
+          "mv-d83d4d53b1c4854bff7d680f"
+        ],
+        [
+          "failure_class",
+          "HISTORICAL_DATA_INCOMPATIBLE"
+        ],
+        [
+          "migration error",
+          "ERROR:  column \"customer_id\" of relation \"orders\" contains null values"
+        ],
+        [
+          "断言",
+          "3/11 通过"
+        ]
+      ],
+      "blocks": [
+        {
+          "title": "失败断言明细",
+          "lang": "json",
+          "text": "[\n  {\n    \"name\": \"no_null_customer_id\",\n    \"kind\": \"scalar\",\n    \"expect\": 0,\n    \"actual\": 137,\n    \"passed\": false\n  },\n  {\n    \"name\": \"payments_order_id_unique\",\n    \"kind\": \"scalar\",\n    \"expect\": 0,\n    \"actual\": 2,\n    \"passed\": false\n  },\n  {\n    \"name\": \"not_null_constraint_present\",\n    \"kind\": \"scalar\",\n    \"expect\": \"NO\",\n    \"actual\": \"YES\",\n    \"passed\": false\n  },\n  {\n    \"name\": \"unique_constraint_present\",\n    \"kind\": \"scalar\",\n    \"expect\": 1,\n    \"actual\": 0,\n    \"passed\": false\n  },\n  {\n    \"name\": \"orders_row_count_preserved\",\n    \"kind\": \"scalar\",\n    \"expect\": 10000,\n    \"actual\": 10000,\n    \"passed\": true\n  },\n  {\n    \"name\": \"payments_preserved_incl_archive\",\n    \"kind\": \"scalar\",\n    \"expect\": 10002,\n    \"actual\": \"ERROR\",\n    \"error\": {\n      \"sqlstate\": \"42P01\",\n      \"message\": \"ERROR:  relation \\\"payments_dedup_archive\\\" does not exist\"\n    },\n    \"passed\": false\n  },\n  {\n    \"name\": \"backfill_fully_audited\",\n    \"kind\": \"scalar\",\n    \"expect\": 137,\n    \"actual\": \"ERROR\",\n    \"error\": {\n      \"sqlstate\": \"42P01\",\n      \"message\": \"ERROR:  relation \\\"orders_backfill_audit\\\" does not exist\"\n    },\n    \"passed\": false\n  },\n  {\n    \"name\": \"sentinel_rows_flagged_for_follow_up\",\n    \"kind\": \"scalar\",\n    \"expect\": 17,\n    \"actual\": \"ERROR\",\n    \"error\": {\n      \"sqlstate\": \"42P01\",\n      \"message\": \"ERROR:  relation \\\"orders_backfill_audit\\\" does not exist\"\n    },\n    \"passed\": false\n  },\n  {\n    \"name\": \"old_worker_compat_insert\",\n    \"kind\": \"probe\",\n    \"expect\": \"OK\",\n    \"actual\": \"OK\",\n    \"passed\": true\n  },\n  {\n    \"name\": \"new_code_insert\",\n    \"kind\": \"probe\",\n    \"expect\": \"OK\",\n    \"actual\": \"OK\",\n    \"passed\": true\n  },\n  {\n    \"name\": \"duplicate_payment_now_rejected\",\n    \"kind\": \"probe\",\n    \"expect\": \"ERROR\",\n    \"actual\": \"OK\",\n    \"passed\": false\n  }\n]"
+        }
+      ],
+      "source_ref": "evidence/FINALS-DB-MIGRATION-LOOP-20260914/report.json → verify_rev1_attempt1",
+      "real": [
+        "隔离 PostgreSQL 16.14 clone 上真实执行迁移与断言 SQL",
+        "审批/绑定/gate 记录真实写入审计库",
+        "政策网关 wrapper 以模块导入方式真实执行"
+      ],
+      "controlled": [
+        "案例数据（orders-demo 基线与种子为 SYNTHETIC 合成数据）"
+      ],
+      "not_executed": [
+        "PolarDB 连接（NOT CONNECTED）",
+        "Agentic Database Branch",
+        "GitHub 写入",
+        "生产发布（NOT PERFORMED）"
+      ]
+    },
+    {
+      "id": "ev-context-fetch",
+      "title": "上下文补取与修订决策（S5b）",
+      "level": "LOCAL_REAL_SQL",
+      "fields": [
+        [
+          "missing_context",
+          "owner (customer_id) for 137 historical orders; SQLSTATE 23502 says nothing about whether it can be recovered"
+        ],
+        [
+          "可回填 / 哨兵",
+          "120 / 17"
+        ],
+        [
+          "unresolvable_share",
+          "0.1241"
+        ],
+        [
+          "decision",
+          "REVISE_CANDIDATE（≤ 20% → 修订候选，否则升级人工）"
+        ]
+      ],
+      "blocks": [
+        {
+          "title": "补取查询",
+          "lang": "sql",
+          "text": "SELECT count(*) FROM legacy_order_owner l JOIN orders o USING (order_id) WHERE o.customer_id IS NULL"
+        }
+      ],
+      "source_ref": "evidence/FINALS-DB-MIGRATION-LOOP-20260914/report.json → S5b_context_fetch",
+      "real": [
+        "隔离 PostgreSQL 16.14 clone 上真实执行迁移与断言 SQL",
+        "审批/绑定/gate 记录真实写入审计库",
+        "政策网关 wrapper 以模块导入方式真实执行"
+      ],
+      "controlled": [
+        "案例数据（orders-demo 基线与种子为 SYNTHETIC 合成数据）"
+      ],
+      "not_executed": [
+        "PolarDB 连接（NOT CONNECTED）",
+        "Agentic Database Branch",
+        "GitHub 写入",
+        "生产发布（NOT PERFORMED）"
+      ]
+    },
+    {
+      "id": "ev-mig-rev2",
+      "title": "迁移候选 rev2（回填+归档+兼容）",
+      "level": "LOCAL_REAL_SQL",
+      "fields": [
+        [
+          "candidate_id",
+          "mc-109d93c429f38e6f5139654e"
+        ],
+        [
+          "parent_candidate",
+          "mc-31b545c0e9f6c391a44e19f5"
+        ],
+        [
+          "head_sha",
+          "a7db33c36313f5f4c963bd6000b108ca8279d96a"
+        ],
+        [
+          "script_digest",
+          "5c3d64e04bad548136b63b50e87d26b83af5ada425c7aee052bcb9958623069e"
+        ]
+      ],
+      "blocks": [
+        {
+          "title": "candidate-a.rev2.sql",
+          "lang": "sql",
+          "text": "-- candidate-a · revision 2 — \"先回填、归档重复、再加约束，并保留旧程序兼容\"\n-- Same candidate, revised after revision 1 failed on historical data.\n--   1. recover owners from legacy_order_owner; unresolvable rows get the\n--      sentinel customer 0 (UNKNOWN_LEGACY) and are written to an audit table\n--      so the business can follow up — no silent data invention.\n--   2. duplicate payments are archived (not deleted) before UNIQUE is added.\n--   3. NOT NULL is added together with DEFAULT 0 so workers still running the\n--      old code (which omits customer_id) keep working during the rollout\n--      window; the new code always supplies a real customer_id.\nBEGIN;\n\nINSERT INTO customers(customer_id, name) VALUES (0, 'UNKNOWN_LEGACY')\nON CONFLICT (customer_id) DO NOTHING;\n\nCREATE TABLE IF NOT EXISTS orders_backfill_audit (\n  order_id        BIGINT PRIMARY KEY,\n  old_customer_id BIGINT,\n  new_customer_id BIGINT NOT NULL,\n  source          TEXT NOT NULL CHECK (source IN ('legacy_order_owner','sentinel')),\n  applied_at      TIMESTAMPTZ NOT NULL DEFAULT now()\n);\n\nINSERT INTO orders_backfill_audit(order_id, old_customer_id, new_customer_id, source)\nSELECT o.order_id, o.customer_id, COALESCE(l.customer_id, 0),\n       CASE WHEN l.customer_id IS NULL THEN 'sentinel' ELSE 'legacy_order_owner' END\nFROM orders o\nLEFT JOIN legacy_order_owner l ON l.order_id = o.order_id\nWHERE o.customer_id IS NULL\nON CONFLICT (order_id) DO NOTHING;\n\nUPDATE orders o\n   SET customer_id = a.new_customer_id\n  FROM orders_backfill_audit a\n WHERE a.order_id = o.order_id AND o.customer_id IS NULL;\n\nCREATE TABLE IF NOT EXISTS payments_dedup_archive (LIKE payments INCLUDING ALL);\n\nINSERT INTO payments_dedup_archive\nSELECT p.* FROM payments p\nWHERE p.payment_id IN (\n  SELECT payment_id FROM (\n    SELECT payment_id, row_number() OVER (PARTITION BY order_id ORDER BY payment_id) AS rn\n    FROM payments) t\n  WHERE t.rn > 1)\nON CONFLICT (payment_id) DO NOTHING;\n\nDELETE FROM payments WHERE payment_id IN (SELECT payment_id FROM payments_dedup_archive);\n\nALTER TABLE orders ALTER COLUMN customer_id SET DEFAULT 0;\nALTER TABLE orders ALTER COLUMN customer_id SET NOT NULL;\nALTER TABLE payments ADD CONSTRAINT uq_payments_order_id UNIQUE (order_id);\n\nCOMMIT;\n"
+        }
+      ],
+      "source_ref": "evidence/FINALS-DB-MIGRATION-LOOP-20260914/case/migrations/candidate-a.rev2.sql",
+      "real": [
+        "隔离 PostgreSQL 16.14 clone 上真实执行迁移与断言 SQL",
+        "审批/绑定/gate 记录真实写入审计库",
+        "政策网关 wrapper 以模块导入方式真实执行"
+      ],
+      "controlled": [
+        "案例数据（orders-demo 基线与种子为 SYNTHETIC 合成数据）"
+      ],
+      "not_executed": [
+        "PolarDB 连接（NOT CONNECTED）",
+        "Agentic Database Branch",
+        "GitHub 写入",
+        "生产发布（NOT PERFORMED）"
+      ]
+    },
+    {
+      "id": "ev-assert-pass",
+      "title": "rev2 验证通过（11/11 断言）",
+      "level": "LOCAL_REAL_SQL",
+      "fields": [
+        [
+          "verification_id",
+          "mv-04f9e460e5b26e9f2af6e745"
+        ],
+        [
+          "结果",
+          "PASS · 11/11 断言通过"
+        ],
+        [
+          "clone → migrate",
+          "33 ms → 31 ms"
+        ],
+        [
+          "代码测试",
+          "PASS · 7 tests（python -m unittest discover -s tools/dbverify/case/orders-schema-change/app -p 'test_*.py'）"
+        ]
+      ],
+      "blocks": [
+        {
+          "title": "断言明细",
+          "lang": "json",
+          "text": "[\n  {\n    \"name\": \"no_null_customer_id\",\n    \"kind\": \"scalar\",\n    \"expect\": 0,\n    \"actual\": 0,\n    \"passed\": true\n  },\n  {\n    \"name\": \"payments_order_id_unique\",\n    \"kind\": \"scalar\",\n    \"expect\": 0,\n    \"actual\": 0,\n    \"passed\": true\n  },\n  {\n    \"name\": \"not_null_constraint_present\",\n    \"kind\": \"scalar\",\n    \"expect\": \"NO\",\n    \"actual\": \"NO\",\n    \"passed\": true\n  },\n  {\n    \"name\": \"unique_constraint_present\",\n    \"kind\": \"scalar\",\n    \"expect\": 1,\n    \"actual\": 1,\n    \"passed\": true\n  },\n  {\n    \"name\": \"orders_row_count_preserved\",\n    \"kind\": \"scalar\",\n    \"expect\": 10000,\n    \"actual\": 10000,\n    \"passed\": true\n  },\n  {\n    \"name\": \"payments_preserved_incl_archive\",\n    \"kind\": \"scalar\",\n    \"expect\": 10002,\n    \"actual\": 10002,\n    \"passed\": true\n  },\n  {\n    \"name\": \"backfill_fully_audited\",\n    \"kind\": \"scalar\",\n    \"expect\": 137,\n    \"actual\": 137,\n    \"passed\": true\n  },\n  {\n    \"name\": \"sentinel_rows_flagged_for_follow_up\",\n    \"kind\": \"scalar\",\n    \"expect\": 17,\n    \"actual\": 17,\n    \"passed\": true\n  },\n  {\n    \"name\": \"old_worker_compat_insert\",\n    \"kind\": \"probe\",\n    \"expect\": \"OK\",\n    \"actual\": \"OK\",\n    \"passed\": true\n  },\n  {\n    \"name\": \"new_code_insert\",\n    \"kind\": \"probe\",\n    \"expect\": \"OK\",\n    \"actual\": \"OK\",\n    \"passed\": true\n  },\n  {\n    \"name\": \"duplicate_payment_now_rejected\",\n    \"kind\": \"probe\",\n    \"expect\": \"ERROR\",\n    \"actual\": \"ERROR\",\n    \"error\": {\n      \"sqlstate\": \"23505\",\n      \"message\": \"ERROR:  duplicate key value violates unique constraint \\\"uq_payments_order_id\\\"\"\n    },\n    \"passed\": true\n  }\n]"
+        }
+      ],
+      "source_ref": "evidence/FINALS-DB-MIGRATION-LOOP-20260914/report.json → verify_rev2_attempt1",
+      "real": [
+        "隔离 PostgreSQL 16.14 clone 上真实执行迁移与断言 SQL",
+        "审批/绑定/gate 记录真实写入审计库",
+        "政策网关 wrapper 以模块导入方式真实执行"
+      ],
+      "controlled": [
+        "案例数据（orders-demo 基线与种子为 SYNTHETIC 合成数据）"
+      ],
+      "not_executed": [
+        "PolarDB 连接（NOT CONNECTED）",
+        "Agentic Database Branch",
+        "GitHub 写入",
+        "生产发布（NOT PERFORMED）"
+      ]
+    },
+    {
+      "id": "ev-approval-bind",
+      "title": "真实审批记录（绑定 verification + head）",
+      "level": "LOCAL_REAL_SQL",
+      "fields": [
+        [
+          "ticket_id",
+          "tkt-523e97c2-19ae-49dc-bfb5-356cddf6dbda"
+        ],
+        [
+          "bound_verification",
+          "mv-04f9e460e5b26e9f2af6e745"
+        ],
+        [
+          "bound_head",
+          "未提供"
+        ],
+        [
+          "approved",
+          "APPROVED · by mergepilot"
+        ]
+      ],
+      "blocks": [],
+      "note": "审批在真实审计库中绑定（verification_id, head_sha）；本演示界面不重复该操作，只展示记录。",
+      "source_ref": "evidence/FINALS-DB-MIGRATION-LOOP-20260914/report.json → S7_*",
+      "real": [
+        "隔离 PostgreSQL 16.14 clone 上真实执行迁移与断言 SQL",
+        "审批/绑定/gate 记录真实写入审计库",
+        "政策网关 wrapper 以模块导入方式真实执行"
+      ],
+      "controlled": [
+        "案例数据（orders-demo 基线与种子为 SYNTHETIC 合成数据）"
+      ],
+      "not_executed": [
+        "PolarDB 连接（NOT CONNECTED）",
+        "Agentic Database Branch",
+        "GitHub 写入",
+        "生产发布（NOT PERFORMED）"
+      ]
+    },
+    {
+      "id": "ev-gate-stale",
+      "title": "follow-up 提交后审批失效（gate timeline）",
+      "level": "LOCAL_REAL_SQL",
+      "fields": [
+        [
+          "followup head",
+          "a0b4633592c13ea66aca46c14c0c73bbe7a5b814"
+        ],
+        [
+          "gate_after",
+          "STALE_SUPERSEDED_BY_NEW_REVISION"
+        ],
+        [
+          "followup 变更",
+          "app/orders_service.py gains cancel_order(); migration unchanged"
+        ]
+      ],
+      "blocks": [
+        {
+          "title": "gate_timeline",
+          "lang": "json",
+          "text": "[\n  {\n    \"label\": \"before_bind\",\n    \"valid\": false,\n    \"reason\": \"NOT_BOUND_TO_VERIFICATION\",\n    \"bound_head_sha\": null,\n    \"current_head_sha\": null\n  },\n  {\n    \"label\": \"bound_not_yet_approved\",\n    \"valid\": false,\n    \"reason\": \"TICKET_NOT_APPROVED\",\n    \"bound_head_sha\": \"a7db33c36313f5f4c963bd6000b108ca8279d96a\",\n    \"current_head_sha\": \"a7db33c36313f5f4c963bd6000b108ca8279d96a\"\n  },\n  {\n    \"label\": \"approved_current_version\",\n    \"valid\": true,\n    \"reason\": \"OK\",\n    \"bound_head_sha\": \"a7db33c36313f5f4c963bd6000b108ca8279d96a\",\n    \"current_head_sha\": \"a7db33c36313f5f4c963bd6000b108ca8279d96a\"\n  },\n  {\n    \"label\": \"approved_same_data_digest\",\n    \"valid\": true,\n    \"reason\": \"OK\",\n    \"bound_head_sha\": \"a7db33c36313f5f4c963bd6000b108ca8279d96a\",\n    \"current_head_sha\": \"a7db33c36313f5f4c963bd6000b108ca8279d96a\"\n  },\n  {\n    \"label\": \"target_data_changed\",\n    \"valid\": false,\n    \"reason\": \"TARGET_DATA_DIGEST_MISMATCH\",\n    \"bound_head_sha\": \"a7db33c36313f5f4c963bd6000b108ca8279d96a\",\n    \"current_head_sha\": \"a7db33c36313f5f4c963bd6000b108ca8279d96a\"\n  },\n  {\n    \"label\": \"after_followup_commit\",\n    \"valid\": false,\n    \"reason\": \"STALE_SUPERSEDED_BY_NEW_REVISION\",\n    \"bound_head_sha\": \"a7db33c36313f5f4c963bd6000b108ca8279d96a\",\n    \"current_head_sha\": \"a0b4633592c13ea66aca46c14c0c73bbe7a5b814\"\n  },\n  {\n    \"label\": \"after_late_pass_callback\",\n    \"valid\": false,\n    \"reason\": \"STALE_SUPERSEDED_BY_NEW_REVISION\",\n    \"bound_head_sha\": \"a7db33c36313f5f4c963bd6000b108ca8279d96a\",\n    \"current_head_sha\": \"a0b4633592c13ea66aca46c14c0c73bbe7a5b814\"\n  },\n  {\n    \"label\": \"post_claim_recheck_same_head\",\n    \"valid\": true,\n    \"reason\": \"OK\",\n    \"bound_head_sha\": \"a0b4633592c13ea66aca46c14c0c73bbe7a5b814\",\n    \"current_head_sha\": \"a0b4633592c13ea66aca46c14c0c73bbe7a5b814\"\n  },\n  {\n    \"label\": \"post_claim_recheck_after_new_revision\",\n    \"valid\": false,\n    \"reason\": \"STALE_SUPERSEDED_BY_NEW_REVISION\",\n    \"bound_head_sha\": \"a0b4633592c13ea66aca46c14c0c73bbe7a5b814\",\n    \"current_head_sha\": \"7cd779ad3daa11ca9f930c7e36432e72b42b9bd2\"\n  },\n  {\n    \"label\": \"expired_ticket\",\n    \"valid\": false,\n    \"reason\": \"TICKET_EXPIRED\",\n    \"bound_head_sha\": \"a0b4633592c13ea66aca46c14c0c73bbe7a5b814\",\n    \"current_head_sha\": \"7cd779ad3daa11ca9f930c7e36432e72b42b9bd2\"\n  }\n]"
+        }
+      ],
+      "source_ref": "evidence/FINALS-DB-MIGRATION-LOOP-20260914/report.json → gate_timeline",
+      "real": [
+        "隔离 PostgreSQL 16.14 clone 上真实执行迁移与断言 SQL",
+        "审批/绑定/gate 记录真实写入审计库",
+        "政策网关 wrapper 以模块导入方式真实执行"
+      ],
+      "controlled": [
+        "案例数据（orders-demo 基线与种子为 SYNTHETIC 合成数据）"
+      ],
+      "not_executed": [
+        "PolarDB 连接（NOT CONNECTED）",
+        "Agentic Database Branch",
+        "GitHub 写入",
+        "生产发布（NOT PERFORMED）"
+      ]
+    },
+    {
+      "id": "ev-plan-package",
+      "title": "迁移计划包与负向测试",
+      "level": "LOCAL_REAL_SQL",
+      "fields": [
+        [
+          "plan path",
+          "release/migration-plans/orders-schema-change/candidate-a.rev2"
+        ],
+        [
+          "plan files",
+          "01-preflight.sql · 02-migrate.sql · 03-postcheck.sql · 04-rollback.sql · README.md · SHA256SUMS · manifest.json"
+        ],
+        [
+          "negative tests",
+          "28/28 通过"
+        ],
+        [
+          "final_disposition",
+          "见下方 blocks"
+        ]
+      ],
+      "blocks": [
+        {
+          "title": "final_disposition",
+          "lang": "json",
+          "text": "{\n  \"candidate_a_rev1\": \"FAIL on historical data (SQLSTATE 23502) — code tests PASS\",\n  \"candidate_a_rev2\": \"PASS (11/11 assertions) — approved on head a7db33c36313, ticket tkt-523e97c2-19ae-49dc-bfb5-356cddf6dbda\",\n  \"after_followup_commit\": \"approval tkt-523e97c2-19ae-49dc-bfb5-356cddf6dbda → STALE_SUPERSEDED_BY_NEW_REVISION; release blocked until re-verification on head a0b4633592c1\",\n  \"production_release\": \"NOT PERFORMED — trial database clone is not a production release; execution requires a controlled rollout using the plan package\"\n}"
+        }
+      ],
+      "source_ref": "evidence/FINALS-DB-MIGRATION-LOOP-20260914/report.json",
+      "real": [
+        "隔离 PostgreSQL 16.14 clone 上真实执行迁移与断言 SQL",
+        "审批/绑定/gate 记录真实写入审计库",
+        "政策网关 wrapper 以模块导入方式真实执行"
+      ],
+      "controlled": [
+        "案例数据（orders-demo 基线与种子为 SYNTHETIC 合成数据）"
+      ],
+      "not_executed": [
+        "PolarDB 连接（NOT CONNECTED）",
+        "Agentic Database Branch",
+        "GitHub 写入",
+        "生产发布（NOT PERFORMED）"
+      ]
+    }
+  ]
+}

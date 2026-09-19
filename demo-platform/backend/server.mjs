@@ -76,8 +76,21 @@ const server = http.createServer(async (req, res) => {
         }
       }
       // strip authorization-ish headers from any logging/echo surface; never echo them
-      const result = await handle(req.method, pathname, url.searchParams, body);
-      return sendJson(res, 200, result);
+      try {
+        const result = await handle(req.method, pathname, url.searchParams, body);
+        return sendJson(res, 200, result);
+      } catch (e) {
+        // fallback: a static-mode build calls baked endpoints as /api/**.json —
+        // serve the baked file so the local server works with either bundle.
+        if (req.method === 'GET' && pathname.endsWith('.json') && (e.status === 404 || e.status === 400)) {
+          const abs = path.normalize(path.join(DIST, pathname));
+          if (abs.startsWith(DIST) && fs.existsSync(abs) && fs.statSync(abs).isFile()) {
+            res.writeHead(200, { 'content-type': MIME['.json'], 'cache-control': 'no-store' });
+            return fs.createReadStream(abs).pipe(res);
+          }
+        }
+        throw e;
+      }
     }
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       return sendJson(res, 405, { error: 'METHOD_NOT_ALLOWED', detail: 'only GET/HEAD outside /api' });

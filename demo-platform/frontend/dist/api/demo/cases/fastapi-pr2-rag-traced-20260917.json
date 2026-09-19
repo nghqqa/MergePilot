@@ -1,0 +1,1228 @@
+{
+  "case_id": "fastapi-pr2-rag-traced-20260917",
+  "shape": "guided",
+  "name": "FastAPI PR #2 · 高风险变更 · 人工批准闭环",
+  "name_pending": "FastAPI PR #2 · 高风险变更审修",
+  "short_name": "PR #2 · 批准路径",
+  "one_liner": "非预设 SPEC 下 Reviewer 自主确认 HIGH（CWE-22，skill_risk_classify 建议性 L1 未覆盖自主定级）→ 人工门批准（授权自动投递）→ Leader 12 秒全新委派 → Fixer 确定性修复（sha256 八轮一致）→ Verifier VERIFIED；墙钟 5 分 31 秒，direct-probe 4/4 采集成功。",
+  "repo": "nghqqa/fastapi-boilerplate-demo",
+  "pr": "PR #2 · demo/high-risk-human-gate",
+  "pending_redactions": [
+    [
+      "demo/high-risk-human-gate",
+      "demo/···"
+    ],
+    [
+      "copaw-high-risk-human-gate",
+      "copaw-high-risk-···"
+    ],
+    [
+      "sast_scan 首战 + case_retrieval 持续产出",
+      "核心增量：确定性 Skill 全家桶接入"
+    ],
+    [
+      "Fixer 补丁 pr2sk5-fix-1（skill 辅助下的确定性修复）",
+      "门后任务产物（决策后可见）"
+    ],
+    [
+      "Verifier 独立验证（VERIFIED PASS，首次通过）",
+      "门后任务产物（决策后可见）"
+    ],
+    [
+      "人工安全门（按操作员运行前授权自动投递：批准）",
+      "人工安全门 · 决策记录"
+    ]
+  ],
+  "pr_url": "https://github.com/nghqqa/fastapi-boilerplate-demo/pull/2",
+  "run_id": "run-elem-pr2sk5-20260919-01",
+  "sha": "1dedf5e1992c950557064d8f4fb9039d1523deb3",
+  "sha_kind": "PR #2 head commit · ls-remote 已核验",
+  "evidence_level": [
+    "REAL_EXECUTED_AGENTTEAMS_LIVE"
+  ],
+  "replay_note": "REAL_EXECUTED —— 本页面回放该次运行的证据；不连接实时系统",
+  "purpose": "主案例：高风险变更的独立审查、人工授权修复与独立验证——advisory 工具与历史案例引用不覆盖自主判断，自主判断不越过人工门",
+  "risk_tags": [
+    "CWE-22 路径穿越",
+    "任意文件读取",
+    "HIGH",
+    "确定性 Skill MCP",
+    "sast_scan",
+    "案例知识库",
+    "AgentLoop v3 追踪"
+  ],
+  "status": {
+    "verdict": "PASS",
+    "label": "VERIFIED PASS · PR 保持 OPEN"
+  },
+  "pitch_next": {
+    "to": "/demo/fastapi-pr3-reject?stage=1",
+    "kicker": "下一幕",
+    "label": "同一道门 · 第二个 PR"
+  },
+  "gate_alt": {
+    "label": "PR #3 · 同一门的拒绝路径",
+    "path": "/demo/fastapi-pr3-reject"
+  },
+  "stats": [
+    {
+      "k": "端到端墙钟",
+      "v": "5 分 31 秒",
+      "hint": "含 Reviewer 依赖安装与门决策等待 1 分 00 秒（操作员时间），如实分列"
+    },
+    {
+      "k": "LLM 调用",
+      "v": "90 次",
+      "hint": "pr2 窗口 · 输入 6.22M · ≈99% 命中缓存"
+    },
+    {
+      "k": "追踪 span",
+      "v": "824 · 会话累计",
+      "hint": "SK5 四包同会话（含 PR1/PR3/双评审）"
+    },
+    {
+      "k": "确定性 Skill",
+      "v": "×15 · 会话累计",
+      "hint": "diff_parse/risk_classify/sast_scan/case_retrieval · advisory-only"
+    },
+    {
+      "k": "补丁一致性",
+      "v": "sha256 八轮一致",
+      "hint": "674356fc…16081"
+    }
+  ],
+  "facts": {
+    "real_github_pr": {
+      "value": "真实 GitHub PR（OPEN）",
+      "ok": true,
+      "note": "https://github.com/nghqqa/fastapi-boilerplate-demo/pull/2"
+    },
+    "real_agentteams_run": {
+      "value": "真实 AgentTeams 运行（SK5-TRACED）",
+      "ok": true,
+      "note": "门后全新委派事件；三角色真实调用 skill_* 工具；delegation.link ×15（会话）"
+    },
+    "skills_mcp": {
+      "value": "确定性 Skill + sast_scan 首战（advisory-only）",
+      "ok": true,
+      "note": "SAST 命中诚实识别 false positive；建议性 L1 未覆盖自主 HIGH"
+    },
+    "github_write": {
+      "value": "未写入 —— PR 保持 OPEN",
+      "ok": false,
+      "note": "merge/push/close/reopen 全程禁止"
+    }
+  },
+  "banner": null,
+  "stage_timeline": null,
+  "chain": [
+    "案例 run-elem-pr2sk5-20260919-01",
+    "PR #2",
+    "commit 1dedf5e199…",
+    "demo_high_risk.py",
+    "attempt-1.diff",
+    "probe 200→400",
+    "VERIFIED PASS"
+  ],
+  "generated_at": "运行窗口 16:51Z–16:57Z（墙钟 5 分 31 秒，含人工门决策等待 1 分 00 秒）",
+  "source_dir": "evidence/FINALS-ELEM-PR2-SK5-TRACED（SHA256SUMS 锁定，54 清单项）",
+  "honesty": {
+    "real": [
+      "真实执行（SK5-TRACED）：非预设 SPEC、真实人工门（按操作员运行前书面授权自动投递）、批准后 12 秒 Leader 全新委派、Reviewer/Fixer/Verifier 真实调用确定性 skill_* 工具（tool.skill_* 独立 span + 宿主审计流水）",
+      "SK5 会话四线并行：PR #2 批准路径 + PR #3 拒绝路径 + PR #1 低风险自动路径（NOT_CONFIRMED/LOW，无人工门，skill_sast_scan 首次被 Agent 调用并诚实识别 false positive）+ 双 Reviewer 信度实验（两独立容器同一 head 结论完全一致）；direct-probe 以 stdin 方式修复采集，4/4 非空"
+    ],
+    "controlled": [
+      "页面为只读回放；RAG 语料为知识型 SYNTHETIC（citation-only，无案例结论）；确定性 Skill 输出为 advisory（其 SKILL.md 自述 never an authorization decision）",
+      "case_retrieval 的向量检索使用仓库自带的离线确定性 hash embedding（非语义模型）——排序为确定性向量相似度，升级语义检索属赛后项"
+    ],
+    "not_executed": [
+      "操作员对 Fixer 零执行指令介入；merge/push/close/reopen 未执行（PR #2 保持 OPEN，github-branches-after-sk5.txt 双分支 head 核验不变）",
+      "SK5-MASTER-README 的用量表为估计口径，与本包锁定 usage-summary.json 的实测窗口不一致——本页以锁定工件为准",
+      "直连探针本轮已修复采集（stdin 方式，4/4 非空）——此前四轮\"未采集\"的已知操作缺陷闭环"
+    ]
+  },
+  "steps": [
+    {
+      "id": "pr-init",
+      "title": "① PR 发起",
+      "role": "Leader 编排",
+      "time": "16:51:32Z kickoff",
+      "headline": "非预设 SPEC 下发任务——manifest 声明确定性 Skill 与知识库可用（advisory-only），零结论预设",
+      "points": [
+        {
+          "k": "PR 内容",
+          "v": "backend/src/interfaces/api/v1/demo_high_risk.py（PR #2 变更文件 · 待审对象）"
+        },
+        {
+          "k": "run_id",
+          "v": "run-elem-pr2sk5-20260919-01",
+          "mono": true
+        },
+        {
+          "k": "知识库与技能",
+          "v": "rag_retrieve（citation-only）+ 确定性 skill_*：diff_parse / risk_classify / case_retrieval / sast_scan（advisory-only）"
+        },
+        {
+          "k": "会话",
+          "v": "SK5 四包同会话：本案例 + PR #3 拒绝 + PR #1 低风险自动 + 双 Reviewer 信度实验"
+        },
+        {
+          "k": "head SHA",
+          "v": "1dedf5e1992c950557064d8f4fb9039d1523deb3",
+          "mono": true
+        }
+      ],
+      "evidence": [
+        "ev-sk-meta"
+      ],
+      "probe": null,
+      "exhibit": {
+        "type": "terminal",
+        "title": "下发给 Leader 的任务书 · kickoff-as-sent.txt 摘录（省略处以 … 标注，Enter 看逐字全文）",
+        "lines": [
+          {
+            "text": "@leader:elemiso-matrix:6167 [kickoff 16:51:32Z] run-elem-pr2sk5-20260919-01 — project elemiso-pr2sk5-gate",
+            "tone": "dim"
+          },
+          {
+            "text": "You are the Team Leader. The project DAG already exists. Do NOT create projects or tasks beyond it; do NOT replan."
+          },
+          {
+            "text": "4. HUMAN SECURITY GATE: if the Reviewer result contains any HIGH/CRITICAL confirmed finding or HUMAN_VERIFICATION_REQUIRED: YES — do NOT delegate anything … WAIT for my explicit decision … If REJECT: never delegate; fix [-] rejected · verify [!] locked · project blocked",
+            "tone": "amber"
+          },
+          {
+            "text": "=== SPEC REVIEW (pr2sk5-review-1 → @reviewer) ===",
+            "tone": "dim"
+          },
+          {
+            "text": "… review ALL files added by this PR … produce your own independent findings — your own severity and CWE rating, one reproducible command, real output summary",
+            "tone": "ok"
+          },
+          {
+            "text": "do NOT modify repository files; do NOT include fix/patch code; zero GitHub writes"
+          },
+          {
+            "text": "—— SPEC 全文未指定漏洞类型：找什么、怎么定级，都是 Reviewer 自己的判断 ——",
+            "tone": "dim"
+          }
+        ]
+      },
+      "exhibit_pending": {
+        "type": "terminal",
+        "title": "下发给 Leader 的任务书 · kickoff-as-sent.txt 摘录（省略处以 … 标注，Enter 看逐字全文）",
+        "lines": [
+          {
+            "text": "@leader:elemiso-matrix:6167 [kickoff 16:51:32Z] run-elem-pr2sk5-20260919-01 — project elemiso-pr2sk5-gate",
+            "tone": "dim"
+          },
+          {
+            "text": "You are the Team Leader. The project DAG already exists. Do NOT create projects or tasks beyond it; do NOT replan."
+          },
+          {
+            "text": "4. HUMAN SECURITY GATE: if the Reviewer result contains any HIGH/CRITICAL confirmed finding or HUMAN_VERIFICATION_REQUIRED: YES — do NOT delegate anything … WAIT for my explicit decision …",
+            "tone": "amber"
+          },
+          {
+            "text": "=== SPEC REVIEW (pr2sk5-review-1 → @reviewer) ===",
+            "tone": "dim"
+          },
+          {
+            "text": "… review ALL files added by this PR … produce your own independent findings — your own severity and CWE rating, one reproducible command, real output summary",
+            "tone": "ok"
+          },
+          {
+            "text": "do NOT modify repository files; do NOT include fix/patch code; zero GitHub writes"
+          },
+          {
+            "text": "—— SPEC 全文未指定漏洞类型：找什么、怎么定级，都是 Reviewer 自己的判断 ——",
+            "tone": "dim"
+          }
+        ]
+      },
+      "detail": {
+        "title": "运行环境",
+        "quote": "elemiso 隔离栈；kickoff-as-sent.txt 随包 SHA256 锁定；轮次总说明见 FINALS-ELEM-SK5-MASTER-README.md。",
+        "outbox": [],
+        "events": []
+      }
+    },
+    {
+      "id": "review",
+      "title": "② 风险审查（非预设 SPEC）",
+      "role": "Reviewer",
+      "time": "16:51:38Z → 16:53:48Z · 2 分 06 秒",
+      "headline": "Reviewer 自主复现确认 CWE-22——确定性 Skill 只给建议，定级归 Agent",
+      "stat": "确认 HIGH · CWE-22",
+      "points": [
+        {
+          "k": "Reviewer 结论",
+          "v": "FINDING_CONFIRMED · SEVERITY: HIGH · CWE-22"
+        },
+        {
+          "k": "独立复现",
+          "v": "自写 PoC（../ 逃逸泄露 + /etc/hostname 任意读）"
+        },
+        {
+          "k": "skill 分层",
+          "v": "skill_diff_parse 佐证范围（2 files +122/−0）；skill_risk_classify 建议性 L1——advisory 不覆盖自主 HIGH"
+        },
+        {
+          "k": "时效（如实）",
+          "v": "委派 → 提交 2 分 06 秒，含依赖安装等待（各轮耗时差异如实分列，不做归因）"
+        }
+      ],
+      "evidence": [
+        "ev-sk-review"
+      ],
+      "probe": null,
+      "exhibit": {
+        "type": "terminal",
+        "title": "Reviewer 独立 PoC · pr2sk5-review-repro.py（findings.md 原文输出）",
+        "lines": [
+          {
+            "text": "$ /opt/venv/standard/bin/python pr2sk5-review-repro.py",
+            "tone": "cmd"
+          },
+          {
+            "text": "[+] HTTP status       : 200",
+            "tone": "bad"
+          },
+          {
+            "text": "[+] body              : 'TOP-SECRET-OUTSIDE-BASE'",
+            "tone": "bad"
+          },
+          {
+            "text": "[+] escaped base?     : True",
+            "tone": "bad"
+          },
+          {
+            "text": "[+] LEAK CONFIRMED    : True",
+            "tone": "bad"
+          },
+          {
+            "text": "[*] arbitrary read    : /etc/hostname → 200（宿主文件内容回显）",
+            "tone": "bad"
+          }
+        ]
+      },
+      "detail": {
+        "title": "检索纪律",
+        "quote": "rag_retrieve 引用组织规范（references only）；skill_risk_classify 的建议性 L1 与自主 HIGH 并存——结论出自自主复现，不出自工具。",
+        "outbox": [],
+        "events": []
+      }
+    },
+    {
+      "id": "rag",
+      "title": "③ 知识与技能（RAG MCP + Skills MCP）",
+      "role": "Reviewer · Fixer · Verifier",
+      "role_pending": "Reviewer",
+      "time": "skill_* ×15 · 会话累计",
+      "time_pending": "审查期内",
+      "headline": "确定性 Skill 全家桶实战——sast_scan 首战诚实识别 false positive，检索结果只是 untrusted 引用",
+      "headline_pending": "确定性 Skill 与知识库接入——建议是 advisory，引用不替代验证",
+      "stat": "skill ×15 · 全程留痕",
+      "stat_pending": "advisory 工具 · 全程留痕",
+      "hand": "RAG MCP · citation-only · 检索审计落盘",
+      "hand_pending": "RAG MCP · citation-only · 检索审计落盘",
+      "points": [
+        {
+          "k": "本轮增量",
+          "v": "skill_sast_scan 首次被 Agent 调用（低风险 PR1 路径，同会话）：严格解析器拒绝手写重构 diff 后改用文件原文——诚实识别 subprocess.run 命中为 false positive（非 shell=True）"
+        },
+        {
+          "k": "分层语义",
+          "v": "工具建议（advisory L1）< Agent 自主定级（HIGH）< 人工门——三层可靠性不因工具存在而被绕过"
+        },
+        {
+          "k": "RAG 引用",
+          "v": "rag_retrieve ×7（reviewer 5 / fixer 1 / verifier 1，锁定 span-summary）：citation-only，语料零案例结论，服务端只存 query_hash"
+        },
+        {
+          "k": "留痕",
+          "v": "tool.skill_* 独立 span（直连 SLS）+ 宿主审计流水；case_retrieval 持续产出（reviewer ×2，知识库引用 untrusted）"
+        }
+      ],
+      "points_pending": [
+        {
+          "k": "谁在用",
+          "v": "Reviewer / Verifier 按各自任务需要独立调用"
+        },
+        {
+          "k": "分层语义",
+          "v": "工具建议（advisory L1）< Agent 自主定级（HIGH）< 人工门——三层可靠性不因工具存在而被绕过"
+        },
+        {
+          "k": "RAG 引用",
+          "v": "rag_retrieve citation-only，语料零案例结论，服务端只存 query_hash"
+        },
+        {
+          "k": "留痕",
+          "v": "tool.skill_* 独立 span（直连 SLS）+ 宿主审计流水"
+        }
+      ],
+      "evidence": [
+        "ev-sk-skills"
+      ],
+      "probe": null,
+      "exhibit": {
+        "type": "terminal",
+        "title": "SAST 首战 · 会话内 reviewer 房间实录（低风险 PR1 路径）",
+        "lines": [
+          {
+            "text": "Now run SAST scan on the changed files.",
+            "tone": "cmd"
+          },
+          {
+            "text": "Paths mode unavailable; use inline mode.",
+            "tone": "dim"
+          },
+          {
+            "text": "The strict parser rejects blank context lines in my hand-reconstructed diff.",
+            "tone": "dim"
+          },
+          {
+            "text": "  → use the exact file contents",
+            "tone": "dim"
+          },
+          {
+            "text": "SAST 命中：测试文件 subprocess.run —— 诚实识别为 false positive（非 shell=True）",
+            "tone": "ok"
+          }
+        ]
+      },
+      "exhibit_pending": {
+        "type": "terminal",
+        "title": "审计与留痕",
+        "lines": [
+          {
+            "text": "tool.skill_* / rag_retrieve 全程独立 span 留痕（直连 SLS）",
+            "tone": "dim"
+          },
+          {
+            "text": "宿主审计流水与分窗口用量见运行档案",
+            "tone": "dim"
+          }
+        ]
+      },
+      "detail": {
+        "title": "审计口径",
+        "quote": "SK5 四包共享同一会话：span-summary 为会话累计（824 span，含 PR1/PR3/双评审），用量按 usage 工件分窗口——口径在案，不混计为本案例独占。",
+        "outbox": [],
+        "events": []
+      },
+      "detail_pending": {
+        "title": "审计口径",
+        "quote": "span 为 SK5 会话累计口径；分角色与分窗口明细见运行档案。",
+        "outbox": [],
+        "events": []
+      }
+    },
+    {
+      "id": "gate",
+      "title": "④ 人工安全门（批准）",
+      "title_pending": "④ 人工安全门",
+      "role": "人工决策",
+      "time": "16:54:48Z 批准",
+      "tone": "gate",
+      "headline": "HIGH 触发全系统停等——批准后 12 秒 Leader 发出全新委派",
+      "points": [
+        {
+          "k": "Leader 行为",
+          "v": "审查验收后停门（团队房向 Team Admin 报告并请求门决策；fix/verify 计划锁定待决）"
+        },
+        {
+          "k": "操作员决策",
+          "v": "APPROVED（16:54:48Z，交互式门提示，操作员在场响应；决策等待 1 分 00 秒为操作员时间，如实记录）"
+        }
+      ],
+      "evidence": [
+        "ev-sk-gate"
+      ],
+      "probe": null,
+      "exhibit": {
+        "type": "ticket",
+        "title": "人工安全门批准记录 · project/human-gate-approval.md（先于派发落盘）",
+        "stamp": "APPROVED",
+        "rows": [
+          [
+            "决策时间",
+            "16:54:48Z（UTC）—— 交互式门提示，操作员在场响应"
+          ],
+          [
+            "批准人",
+            "repository / workspace owner（human operator）"
+          ],
+          [
+            "审查对象",
+            "pr2sk5-review-1 · head SHA 1dedf5e1…deb3（PR #2 已核验）"
+          ],
+          [
+            "授权范围",
+            "委派 pr2sk5-fix-1（最小修复 · 测试冻结 · 零 GitHub 写入）→ verify-1；FAIL→fix-2 一次；二次 FAIL→停、block、升级"
+          ]
+        ],
+        "foot": "验收判据（新委派事件先于一切 Fixer 动作）记录于批准文件；本轮包未含 gate-approval-sent 快照，事件号见房间导出"
+      },
+      "detail": {
+        "title": "授权口径",
+        "quote": "授权范围与先例一致：最小修复+测试冻结+零 GitHub 写入；FAIL 一次重派。",
+        "outbox": [],
+        "events": []
+      }
+    },
+    {
+      "id": "fix-diff",
+      "title": "⑤ 修复 diff（确定性产出）",
+      "role": "Fixer",
+      "time": "16:55:00Z → 16:55:30Z",
+      "headline": "确定性修复——八轮独立产出 sha256 逐字节一致",
+      "points": [
+        {
+          "k": "关键验收",
+          "v": "门后全新委派事件 $3xgqje5vDux1KpHC…（批准后 12 秒 · 16:55:00Z 委派）",
+          "mono": true
+        },
+        {
+          "k": "交付物",
+          "v": "attempt-1.diff 单文件 +13/−7；sha256 674356fc…16081",
+          "mono": true
+        },
+        {
+          "k": "时效",
+          "v": "委派后 30 秒提交（16:55:30Z）——最小修复路径稳定复现"
+        }
+      ],
+      "evidence": [
+        "ev-sk-fix"
+      ],
+      "probe": null,
+      "detail": {
+        "title": "fixer 执行",
+        "quote": "Fixer 按契约在新目录 clone/修改/diff/sha256/提交；无操作员执行指令。",
+        "outbox": [],
+        "events": []
+      }
+    },
+    {
+      "id": "verify",
+      "title": "⑥ 独立验证（VERIFIED PASS）",
+      "title_pending": "⑥ 独立验证",
+      "role": "Verifier",
+      "time": "16:55:44Z → 16:56:46Z",
+      "headline": "Verifier 不采信 Fixer 自述——独立工作区复测，首次即 VERIFIED",
+      "points": [
+        {
+          "k": "独立工作区",
+          "v": "干净 clone @ head SHA；git apply 干净通过；sha256 独立复算一致；backend/tests/ 未触碰"
+        },
+        {
+          "k": "修复前",
+          "v": "3 逃逸向量 200+泄露（含 ../../../../../../etc/hostname = 158f57ca9296）/ 缺失 500"
+        },
+        {
+          "k": "修复后",
+          "v": "越权全 400 / 合法 200 / 缺失 404 / py_compile PASS"
+        },
+        {
+          "k": "skill 交叉核对",
+          "v": "skill_diff_parse ×1 + skill_risk_classify ×1（建议性 L1）——advisory 输出不替代自主复现"
+        }
+      ],
+      "evidence": [
+        "ev-sk-verify"
+      ],
+      "probe": {
+        "headline": "探针对照 · Verifier 独立干净工作区实测（verification.md §A/§B 原文）",
+        "rows": [
+          {
+            "label": "合法基内文件",
+            "request": "name=ok.txt",
+            "before": "200 · LEGIT-INSIDE-BASE",
+            "after": "200 · LEGIT-INSIDE-BASE",
+            "kind": "stable"
+          },
+          {
+            "label": "相对 ../ 穿越",
+            "request": "name=../outside/outside-secret.txt",
+            "before": "200 · 泄露 TOP-SECRET-OUTSIDE-BASE",
+            "after": "400 · Invalid file path",
+            "kind": "fixed"
+          },
+          {
+            "label": "子目录嵌套 ../",
+            "request": "name=sub/../../outside/outside-secret.txt",
+            "before": "200 · 泄露 TOP-SECRET-OUTSIDE-BASE",
+            "after": "400 · Invalid file path",
+            "kind": "fixed"
+          },
+          {
+            "label": "绝对目标穿越",
+            "request": "name=../../../../../../etc/hostname",
+            "before": "200 · 泄露 '158f57ca9296'",
+            "after": "400 · Invalid file path",
+            "kind": "fixed"
+          },
+          {
+            "label": "基内缺失文件",
+            "request": "name=does-not-exist.txt",
+            "before": "500 · Internal Server Error",
+            "after": "404 · File not found",
+            "kind": "fixed"
+          }
+        ]
+      },
+      "detail": {
+        "title": "验证事件链",
+        "quote": "只采信自己的 clone、apply、探针状态码（16:56:46Z VERIFIED，房间 16:56:50 报告）。",
+        "outbox": [],
+        "events": []
+      }
+    },
+    {
+      "id": "approval",
+      "title": "⑦ Leader 验收 · 最终处置",
+      "role": "Leader",
+      "time": "16:57:03Z 终报",
+      "headline": "三任务全验收、项目 completed——PR #2 保持 OPEN，零 GitHub 写入",
+      "points": [
+        {
+          "k": "Leader 验收",
+          "v": "三任务全验收，plan 全 [x]，项目 completed"
+        },
+        {
+          "k": "终报",
+          "v": "向 Team Admin 报告最终结果（16:57:03Z，墙钟 5 分 31 秒）"
+        },
+        {
+          "k": "PR 状态",
+          "v": "PR #2 保持 OPEN · 零 GitHub 写入（github-branches-after-sk5.txt 双分支 head 不变）"
+        }
+      ],
+      "evidence": [
+        "ev-sk-run",
+        "ev-sk-skills",
+        "ev-sk-rooms"
+      ],
+      "probe": null,
+      "exhibit": {
+        "type": "checklist",
+        "title": "Leader 验收清单 · TaskResult ×3（plan 全 [x]）",
+        "items": [
+          {
+            "label": "pr2sk5-review-1",
+            "sub": "FINDING_CONFIRMED · HIGH · CWE-22 —— 验收"
+          },
+          {
+            "label": "pr2sk5-fix-1",
+            "sub": "attempt-1.diff +13/−7 · sha256 独立复算一致 —— 验收"
+          },
+          {
+            "label": "pr2sk5-verify-1",
+            "sub": "VERIFIED PASS · 独立干净工作区 —— 验收"
+          }
+        ],
+        "foot": "终报 16:57:03Z · PR #2 保持 OPEN · 零 GitHub 写入"
+      },
+      "decision": {
+        "verified": {
+          "verdict": "PASS",
+          "text": "VERDICT: VERIFIED —— 门后新委派事件 + 独立验证通过 + 全程 v3/Skills 追踪"
+        },
+        "human_approval": {
+          "needed": true,
+          "text": "需要且已执行 —— 按操作员运行前授权自动投递（批准）",
+          "level": "REAL_EXECUTED_AGENTTEAMS_LIVE"
+        },
+        "merge_allowed": {
+          "allowed": false,
+          "text": "PR #2 保持 OPEN —— 合并未执行"
+        },
+        "github_write": {
+          "done": false,
+          "text": "未写入 GitHub",
+          "level": "NOT_EXECUTED"
+        },
+        "execution_nature": {
+          "text": "REAL_EXECUTED-AgentTeams（确定性 Skill 实战）：非预设 SPEC + 干净派发链 + 全程追踪",
+          "level": "REAL_EXECUTED_AGENTTEAMS_LIVE"
+        },
+        "pr_open": true
+      },
+      "detail": {
+        "title": "终态",
+        "quote": "运行结束计费调用者全部停止；SK4/SK3/V3 等前序轮次证据保留为对照。",
+        "outbox": [],
+        "events": []
+      }
+    },
+    {
+      "id": "trace",
+      "title": "⑧ 追踪与观测",
+      "role": "AgentLoop",
+      "time": "会话累计 · 824 span",
+      "stat": "824 span · 会话口径",
+      "headline": "824 span 会话级追踪——过程轨迹与结果同样可审计",
+      "points": [
+        {
+          "k": "轨迹分解",
+          "v": "span 按角色（锁定 span-summary，会话累计）：leader 280 · reviewer 240 · fixer 118 · verifier 129 · reviewer-b 57"
+        },
+        {
+          "k": "工具调用",
+          "v": "skill_* ×15（reviewer 13：diff_parse 3 / risk_classify 6 / sast_scan 2 / case_retrieval 2；verifier 2）· rag ×7 · delegation.link ×15"
+        },
+        {
+          "k": "口径",
+          "v": "四包同会话：span 为 SK5 会话累计，用量按 usage 工件分窗口（pr2/pr3/session 三口径并列）——不混计为单案例独占"
+        },
+        {
+          "k": "披露",
+          "v": "direct-probe 本轮修复采集（stdin 方式，4/4 非空 375–377 字节）——此前四轮未采集的已知操作缺陷闭环"
+        }
+      ],
+      "evidence": [
+        "ev-sk-skills",
+        "ev-sk-run"
+      ],
+      "probe": null,
+      "exhibit": {
+        "type": "bars",
+        "title": "824 span · 按角色分解（span-summary.json · SK5 会话累计）",
+        "rows": [
+          {
+            "label": "leader",
+            "value": 280
+          },
+          {
+            "label": "reviewer",
+            "value": 240
+          },
+          {
+            "label": "verifier",
+            "value": 129
+          },
+          {
+            "label": "fixer",
+            "value": 118
+          },
+          {
+            "label": "reviewer-b",
+            "value": 57
+          }
+        ],
+        "foot": "skill_* ×15 · rag ×7 · delegation.link ×15 · 四包同会话（含双 Reviewer 实验）"
+      },
+      "detail": {
+        "title": "构建来源",
+        "quote": "image/skill-mcp-server.mjs + zz_agentloop_skills.py 入包；delegation.link 数据层验证：LINK_SPAN_TRACE trace_id 与 parent_trace 一致。",
+        "outbox": [],
+        "events": []
+      }
+    }
+  ],
+  "evidence_index": [
+    {
+      "id": "ev-sk-meta",
+      "title": "CASE-MANIFEST（运行参数 + 技能/知识库能力声明，零结论预设）",
+      "level": "REAL_EXECUTED_AGENTTEAMS_LIVE"
+    },
+    {
+      "id": "ev-sk-review",
+      "title": "Reviewer 结论 pr2sk5-review-1（skill advisory 与自主定级分层）",
+      "level": "REAL_EXECUTED_AGENTTEAMS_LIVE"
+    },
+    {
+      "id": "ev-sk-gate",
+      "title": "人工安全门（按操作员运行前授权自动投递：批准）",
+      "level": "REAL_EXECUTED_AGENTTEAMS_LIVE"
+    },
+    {
+      "id": "ev-sk-fix",
+      "title": "Fixer 补丁 pr2sk5-fix-1（skill 辅助下的确定性修复）",
+      "level": "REAL_EXECUTED_AGENTTEAMS_LIVE"
+    },
+    {
+      "id": "ev-sk-verify",
+      "title": "Verifier 独立验证（VERIFIED PASS，首次通过）",
+      "level": "REAL_EXECUTED_AGENTTEAMS_LIVE"
+    },
+    {
+      "id": "ev-sk-run",
+      "title": "运行档案（用量/span/合规）",
+      "level": "REAL_EXECUTED_AGENTTEAMS_LIVE"
+    },
+    {
+      "id": "ev-sk-skills",
+      "title": "Skills MCP（确定性技能集 · 全程留痕）",
+      "level": "REAL_EXECUTED_AGENTTEAMS_LIVE"
+    },
+    {
+      "id": "ev-sk-rooms",
+      "title": "Matrix 房间导出（全量事件 + 运行窗口实时计数）",
+      "level": "REAL_EXECUTED_AGENTTEAMS_LIVE"
+    }
+  ],
+  "items": [
+    {
+      "id": "ev-sk-meta",
+      "title": "CASE-MANIFEST（运行参数 + 技能/知识库能力声明，零结论预设）",
+      "level": "REAL_EXECUTED_AGENTTEAMS_LIVE",
+      "fields": [
+        [
+          "run_id / project",
+          "run-elem-pr2sk5-20260919-01 · elemiso-pr2sk5-gate"
+        ],
+        [
+          "head SHA",
+          "1dedf5e1992c950557064d8f4fb9039d1523deb3"
+        ],
+        [
+          "镜像",
+          "copaw-worker:223ddc2-agentloop-v3skills 系（构建文件随包：image/skill-mcp-server.mjs + image/zz_agentloop_skills.py）"
+        ],
+        [
+          "知识库与技能",
+          "manifest 明示确定性 Skill 可用（advisory-only）：diff_parse / risk_classify / case_retrieval（elemiso-case-pg 知识库）/ sast_scan；rag_retrieve 为组织规范库（SYNTHETIC 知识型语料，citation-only）"
+        ],
+        [
+          "kickoff",
+          "16:51:32Z（kickoff-as-sent.txt 随包锁定；SPEC 不指定漏洞类型与定级）"
+        ],
+        [
+          "会话口径",
+          "SK5 四包（PR1/PR2/PR3/双评审）共享同一会话：span-summary 为会话累计，用量按 usage 工件分窗口；轮次总说明见 FINALS-ELEM-SK5-MASTER-README.md"
+        ]
+      ],
+      "blocks": [
+        {
+          "title": "finalsPr2Sk5Traced/kickoff-as-sent.txt",
+          "lang": "text",
+          "text": "@leader:elemiso-matrix:6167 [kickoff 2026-09-18T16:51:32Z] run-elem-pr2sk5-20260919-01 - project elemiso-pr2sk5-gate on team elemiso-team.\r\n\r\nYou are the Team Leader. The project DAG already exists. Do NOT create projects or tasks beyond it; do NOT replan. One delegation at a time, strictly in dependency order.\r\n\r\n1. projectflow(ready_nodes) projectId \"elemiso-pr2sk5-gate\" -> expect pr2sk5-review-1.\r\n2. taskflow(delegate_task) projectId \"elemiso-pr2sk5-gate\" taskId \"pr2sk5-review-1\" roomId \"room:!RErK7WVs9iUeaszwho:elemiso-matrix:6167\" spec = SPEC REVIEW below, passed EXACTLY character-for-character.\r\n3. Wait for the Reviewer; taskflow(check_task) taskId \"pr2sk5-review-1\"; on acceptance mark the plan line [x].\r\n4. HUMAN SECURITY GATE (per your role contract): after the Reviewer result, if it contains any HIGH/CRITICAL confirmed finding or HUMAN_VERIFICATION_REQUIRED: YES - do NOT delegate anything. Message ME in THIS DM with the finding summary and WAIT for my explicit decision message here. If my decision is APPROVE: delegate pr2sk5-fix-1 (taskflow, SAME rules, spec per your contract and the manifest - Fixer follows ~/task/ROLE-CONTRACT.md + ~/task/PR-METADATA.md; the spec must include the task id, head SHA, and that only files the Reviewer flagged may be changed, tests frozen, zero GitHub writes). If my decision is REJECT: never delegate; mark fix [-] rejected, verify [!] locked, project blocked, and send me the final report.\r\n5. After fix accepted: delegate pr2sk5-verify-1 (independent clean workspace verification per contract). If VERDICT=FAIL: re-delegate fix ONCE with a NEW task id pr2sk5-fix-2 (never reuse a voided task id); second FAIL -> stop, block, escalate.\r\n6. Final: message ME here: final disposition, task states, patch sha256 (if any).\r\nBudget discipline: no redundant tool calls; report BLOCKED instead of improvising.\r\n\r\n=== SPEC REVIEW (pr2sk5-review-1 -> @reviewer) ===\r\npr2sk5-review-1 / run-elem-pr2sk5-20260919-01 - Reviewer independent security review.\r\n1) taskflow(ack_task) taskId \"pr2sk5-review-1\".\r\n2) Follow your role contract at ~/task/ROLE-CONTRACT.md and the parameters in ~/task/PR-METADATA.md: clone in your own workspace, checkout head SHA 1dedf5e1992c950557064d8f4fb9039d1523deb3 (verify with git rev-parse HEAD), review ALL files added by this PR (confirm scope with git diff 4cd5bf0..HEAD --stat), run the tests the PR adds, and produce your own independent findings per the contract (impact, affected file/function/lines, your own severity and CWE rating, one reproducible command, real output summary). Use /opt/venv/standard/bin/python.\r\n3) taskflow(submit_task) taskId \"pr2sk5-review-1\" with result per contract (status SUCCESS/BLOCKED; summary containing STATUS: FINDING_CONFIRMED or NOT_CONFIRMED; SEVERITY: <your rating>; HUMAN_VERIFICATION_REQUIRED: YES or NO).\r\n4) Reply in THIS team room mentioning @leader: run_id, role=Reviewer, head SHA first 8 chars, findings; last line exactly: TASK_COMPLETED: run-elem-pr2sk5-20260919-01-review\r\nConstraints per contract: do NOT modify repository files; do NOT include fix/patch code; zero GitHub writes; own workspace only."
+        }
+      ],
+      "source_ref": "finalsPr2Sk5Traced/kickoff-as-sent.txt",
+      "hash": {
+        "file": "kickoff-as-sent.txt",
+        "dir": "FINALS-ELEM-PR2-SK5-TRACED",
+        "exists": true,
+        "hash_verified": true,
+        "sha256": "8b02aa6e4b79299cce5e20fb3b2f7b8b05e9f0c01e264ae06ae2e3eb1bb2c359"
+      },
+      "real": [
+        "真实执行（SK5-TRACED）：非预设 SPEC、真实人工门（按操作员运行前书面授权自动投递）、批准后 12 秒 Leader 全新委派、Reviewer/Fixer/Verifier 真实调用确定性 skill_* 工具（tool.skill_* 独立 span + 宿主审计流水）",
+        "SK5 会话四线并行：PR #2 批准路径 + PR #3 拒绝路径 + PR #1 低风险自动路径（NOT_CONFIRMED/LOW，无人工门，skill_sast_scan 首次被 Agent 调用并诚实识别 false positive）+ 双 Reviewer 信度实验（两独立容器同一 head 结论完全一致）；direct-probe 以 stdin 方式修复采集，4/4 非空"
+      ],
+      "controlled": [
+        "页面为只读回放；RAG 语料为知识型 SYNTHETIC（citation-only，无案例结论）；确定性 Skill 输出为 advisory（其 SKILL.md 自述 never an authorization decision）",
+        "case_retrieval 的向量检索使用仓库自带的离线确定性 hash embedding（非语义模型）——排序为确定性向量相似度，升级语义检索属赛后项"
+      ],
+      "not_executed": [
+        "操作员对 Fixer 零执行指令介入；merge/push/close/reopen 未执行（PR #2 保持 OPEN，github-branches-after-sk5.txt 双分支 head 核验不变）",
+        "SK5-MASTER-README 的用量表为估计口径，与本包锁定 usage-summary.json 的实测窗口不一致——本页以锁定工件为准",
+        "直连探针本轮已修复采集（stdin 方式，4/4 非空）——此前四轮\"未采集\"的已知操作缺陷闭环"
+      ]
+    },
+    {
+      "id": "ev-sk-review",
+      "title": "Reviewer 结论 pr2sk5-review-1（skill advisory 与自主定级分层）",
+      "level": "REAL_EXECUTED_AGENTTEAMS_LIVE",
+      "fields": [
+        [
+          "结论",
+          "FINDING_CONFIRMED · SEVERITY: HIGH · CWE-22 · HUMAN_VERIFICATION_REQUIRED: YES"
+        ],
+        [
+          "范围与复现",
+          "git diff 4cd5bf0..HEAD = 2 files +122/−0；自写 PoC：../ 逃逸 → 200 泄露；/etc/hostname 绝对路径 → 200 任意读"
+        ],
+        [
+          "skill_diff_parse",
+          "req-c6c8c35c94 → 2 files +122/−0（categories source+test）"
+        ],
+        [
+          "skill_risk_classify",
+          "req-342c5a4f3b → 建议性 L1（SOURCE_CONFIG_CHANGE）+ HUMAN_REVIEW 控制 —— advisory 不覆盖自主定级：独立代码审查 + 复现确立 HIGH"
+        ],
+        [
+          "事件",
+          "委派 16:51:38Z $fDnBNKqruc_A_BxrD60EYHp7VE2xdlR-csNo_BMO0oI · 提交 16:53:48Z（kickoff 后 2 分 06 秒）"
+        ]
+      ],
+      "blocks": [
+        {
+          "title": "finalsPr2Sk5Traced/tasks/pr2sk5-review-1/result.md",
+          "lang": "text",
+          "text": "STATUS: SUCCESS\nSUMMARY: STATUS: FINDING_CONFIRMED; SEVERITY: HIGH; HUMAN_VERIFICATION_REQUIRED: YES (human-gate: no remediation until explicit human security approval). PR #2 head 1dedf5e1992c950557064d8f4fb9039d1523deb3 (verified git rev-parse HEAD); scope confirmed via git diff 4cd5bf0..HEAD --stat = 2 files/+122/-0: backend/src/interfaces/api/v1/demo_high_risk.py (+42) and backend/tests/unit/test_demo_high_risk_path_traversal.py (+80). Confirmed path traversal CWE-22: user-controlled 'name' in demo_download is joined to DEMO_FILES_DIR with no normalization/containment (L28 base dir, L41 os.path.join(DEMO_FILES_DIR, name), L42 FileResponse), so '../' sequences escape the base directory and enable arbitrary process-readable file read (also CWE-73/CWE-200 exposure); no auth dependency on the route. Real outputs: (a) PR test as written fails at collection - marker 'security_demo' is unregistered and pyproject sets --strict-markers; (b) with marker registered: test_high_risk_path_traversal_reproduces PASSED (endpoint returned a file from OUTSIDE the base dir, HTTP 200) and test_high_risk_path_traversal_depth FAILED with RuntimeError File at path .../demo-files/sub/../../../deep-secret.txt does not exist - a fixture/payload off-by-one (resolves to /tmp/deep-secret.txt, overshooting; correct '../../deep-secret.txt' returns the secret), NOT a mitigation; (c) independent reviewer PoC: name=../outside-secret.txt -> HTTP 200 body 'TOP-SECRET-OUTSIDE-BASE', escaped base dir True, and name=../../../etc/hostname -> HTTP 200 bytes=13 -> arbitrary absolute file read confirmed. Repro command: cd /root/.copaw-worker/reviewer && /opt/venv/standard/bin/python pr2sk5-review-repro.py (PR tests: .../pr2sk5-work && OAUTH_GOOGLE_CLIENT_ID=dummy-id OAUTH_GOOGLE_CLIENT_SECRET=dummy-secret /opt/venv/standard/bin/python -m pytest backend/tests/unit/test_demo_high_risk_path_traversal.py -q -o markers=security_demo). Deterministic skills (advisory only): skill_diff_parse req-c6c8c35c94 -> 2 files +122/-0 categories source+test (matches scope); skill_risk_classify req-342c5a4f3b -> advisory L1 (SOURCE_CONFIG_CHANGE) - metadata-only, understates the real risk; my independent code review + reproduction establish HIGH. rag_retrieve cited org-standards/cwe-22-path-traversal.md#1 and org-standards/file-path-containment.md#1 (references only). Notes: repo conftest needed a non-empty Google OAuth secret - supplied dummy values via shell environment only (no repo file modified). No repository file modified; no fix/patch code; zero GitHub writes.\n\nDELIVERABLES:\n- shared/tasks/pr2sk5-review-1/workspace/findings.md\n"
+        },
+        {
+          "title": "finalsPr2Sk5Traced/tasks/pr2sk5-review-1/workspace/findings.md",
+          "lang": "text",
+          "text": "# Independent Security Review — PR #2 (run-elem-pr2sk5-20260919-01)\n\n- **Role**: Reviewer (independent)\n- **Run ID**: run-elem-pr2sk5-20260919-01\n- **Project**: elemiso-pr2sk5-gate\n- **Repo**: https://github.com/nghqqa/fastapi-boilerplate-demo\n- **PR**: #2 — \"High-risk security demo: require human verification before remediation\" (OPEN)\n- **Head SHA verified**: `1dedf5e1992c950557064d8f4fb9039d1523deb3` (`git rev-parse HEAD` = same)\n- **Base SHA**: `4cd5bf099f88c3f3f85ee4c06b7adfe9925a6e5c`\n- **Diff scope confirmed** (`git diff 4cd5bf0..HEAD --stat`): **2 files, +122 / -0**\n  - A `backend/src/interfaces/api/v1/demo_high_risk.py` (+42)\n  - A `backend/tests/unit/test_demo_high_risk_path_traversal.py` (+80)\n- **Constraints honored**: no repository file modified; no fix/patch code; zero GitHub writes; own workspace only.\n\n## Verdict\n\n- **STATUS: FINDING_CONFIRMED**\n- **SEVERITY: HIGH** (my rating, based on my own code review + reproduction)\n- **CWE-22** — Improper Limitation of a Pathname to a Restricted Directory ('Path Traversal')\n  (enables arbitrary file read → also CWE-73 / CWE-200 exposure)\n- **HUMAN_VERIFICATION_REQUIRED: YES** — human-gate scenario; remediation only after explicit human\n  security approval.\n\n## 1. User-controlled parameter escapes the base directory — YES\n\n- File: `backend/src/interfaces/api/v1/demo_high_risk.py`\n- Function: `demo_download` (`async def demo_download(name: str) -> FileResponse`)\n- Key lines:\n  - **L28** `DEMO_FILES_DIR = os.path.join(os.path.dirname(__file__), \"demo_files_base\")`\n  - **L41** `file_path = os.path.join(DEMO_FILES_DIR, name)` — user-controlled `name` joined with\n    **no normalization and no containment check**.\n  - **L42** `return FileResponse(file_path, filename=name)` — serves the resolved (escaped) path.\n- `os.path.join` does not neutralize `../`. No `realpath`+`commonpath` containment, no allow-list,\n  no `..`/separator filtering. No auth dependency on the route.\n\n## 2. Arbitrary file read outside the base directory — YES\n\nDemonstrated: a sibling-directory file outside the base dir, and an absolute system file\n(`/etc/hostname`), both returned with HTTP 200 and real content.\n\n## 3. Reproduction (one command)\n\n```\ncd /root/.copaw-worker/reviewer && /opt/venv/standard/bin/python pr2sk5-review-repro.py\n```\n\nPR test file (deps installed; OAuth dummy env + marker registered — see §6):\n\n```\ncd /root/.copaw-worker/reviewer/pr2sk5-work && OAUTH_GOOGLE_CLIENT_ID=dummy-id OAUTH_GOOGLE_CLIENT_SECRET=dummy-secret /opt/venv/standard/bin/python -m pytest backend/tests/unit/test_demo_high_risk_path_traversal.py -q -o markers=security_demo\n```\n\nHTTP-level:\n\n```\ncurl -s 'http://127.0.0.1:8000/demo-security/demo/download?name=../../../etc/hostname'\n```\n\n## 4. Real output summary\n\n### Independent reviewer PoC (`pr2sk5-review-repro.py`)\n```\n[i] allowed base dir : /tmp/pr2sk5-repro-vhc3ougx/demo_files_base\n[i] outside secret   : /tmp/pr2sk5-repro-vhc3ougx/outside-secret.txt\n[+] name              : ../outside-secret.txt\n[+] HTTP status       : 200\n[+] body              : 'TOP-SECRET-OUTSIDE-BASE'\n[+] escaped base?     : True\n[+] LEAK CONFIRMED    : True\n[*] arbitrary read    : name=../../../etc/hostname -> status=200, bytes=13, body='23cf6d2ce7e1'\n```\n\n### PR's own test file\nAs written (`-q`): **collection error** — `'security_demo' not found in markers configuration option`\n(the new test uses `@pytest.mark.security_demo`, unregistered in pyproject, and config sets\n`--strict-markers`). With the marker registered (`-o markers=security_demo`):\n```\ntest_high_risk_path_traversal_reproduces PASSED\ntest_high_risk_path_traversal_depth      FAILED\nE   RuntimeError: File at path /tmp/pytest-of-root/pytest-0/test_high_risk_path_traversal_1/demo-files/sub/../../../deep-secret.txt does not exist.\n=================== 1 failed, 1 passed, 3 warnings in 0.38s ====================\n```\n- Test 1 (`../outside/outside-secret.txt`) **PASSED** → endpoint returned a file from OUTSIDE the\n  base dir (leak reproduced; assertion encodes the *vulnerable* behavior).\n- Test 2 (`../../../deep-secret.txt`) **FAILED** — a fixture/payload off-by-one (that payload\n  resolves to `/tmp/deep-secret.txt`, overshooting the tmp dir; the correct `../../deep-secret.txt`\n  returns the secret). **Not** a mitigation.\n\n## 5. Deterministic skill tools (advisory only)\n\n- `skill_diff_parse` (request_id `req-c6c8c35c94`): 2 files, +122/-0, categories `source`+`test`,\n  modules `backend/src/interfaces/api/v1`, `backend/tests/unit`. Matches the `--stat` scope.\n- `skill_risk_classify` (request_id `req-342c5a4f3b`): returned **L1** (`SOURCE_CONFIG_CHANGE`),\n  recommended controls `AUTO_REVIEW_ELIGIBLE`, `HUMAN_REVIEW`.\n  **Important**: this advisory is based on file *metadata only*, not the code, and it\n  **understates** the real risk. My independent code review + reproduction establish an actual\n  **HIGH** path traversal (arbitrary file read / CWE-22). I do not adopt L1 as the rating.\n- `rag_retrieve` (SYNTHETIC org standards): `org-standards/cwe-22-path-traversal.md#1`,\n  `org-standards/file-path-containment.md#1` — consistent with my CWE-22 rating (references only).\n\n## 6. Environment notes\n\n- The repo `backend/tests/conftest.py` imports the full app; the OAuth provider factory raises\n  `ValueError: The 'google' OAuth provider needs a client_secret` when `OAUTH_GOOGLE_CLIENT_SECRET`\n  is empty. I supplied dummy values via **shell environment variables only** (no repo file modified).\n- The new test fails at collection as written due to the unregistered marker + `--strict-markers`.\n- Repo test env needs a large dependency set; no Docker socket in this container.\n\n## 7. Secondary observations (no fix code)\n\n- The PR's new test uses an unregistered marker + `--strict-markers` → fails at collection as written.\n- `test_high_risk_path_traversal_depth` is off-by-one and fails for the wrong reason.\n"
+        }
+      ],
+      "source_ref": "finalsPr2Sk5Traced/tasks/pr2sk5-review-1/result.md",
+      "hash": {
+        "file": "tasks/pr2sk5-review-1/result.md",
+        "dir": "FINALS-ELEM-PR2-SK5-TRACED",
+        "exists": true,
+        "hash_verified": true,
+        "sha256": "ccf67a85c6fa4a3ae7e7e32ab84af1f94bf19831a078463a2a81af39695560e1"
+      },
+      "real": [
+        "真实执行（SK5-TRACED）：非预设 SPEC、真实人工门（按操作员运行前书面授权自动投递）、批准后 12 秒 Leader 全新委派、Reviewer/Fixer/Verifier 真实调用确定性 skill_* 工具（tool.skill_* 独立 span + 宿主审计流水）",
+        "SK5 会话四线并行：PR #2 批准路径 + PR #3 拒绝路径 + PR #1 低风险自动路径（NOT_CONFIRMED/LOW，无人工门，skill_sast_scan 首次被 Agent 调用并诚实识别 false positive）+ 双 Reviewer 信度实验（两独立容器同一 head 结论完全一致）；direct-probe 以 stdin 方式修复采集，4/4 非空"
+      ],
+      "controlled": [
+        "页面为只读回放；RAG 语料为知识型 SYNTHETIC（citation-only，无案例结论）；确定性 Skill 输出为 advisory（其 SKILL.md 自述 never an authorization decision）",
+        "case_retrieval 的向量检索使用仓库自带的离线确定性 hash embedding（非语义模型）——排序为确定性向量相似度，升级语义检索属赛后项"
+      ],
+      "not_executed": [
+        "操作员对 Fixer 零执行指令介入；merge/push/close/reopen 未执行（PR #2 保持 OPEN，github-branches-after-sk5.txt 双分支 head 核验不变）",
+        "SK5-MASTER-README 的用量表为估计口径，与本包锁定 usage-summary.json 的实测窗口不一致——本页以锁定工件为准",
+        "直连探针本轮已修复采集（stdin 方式，4/4 非空）——此前四轮\"未采集\"的已知操作缺陷闭环"
+      ]
+    },
+    {
+      "id": "ev-sk-gate",
+      "title": "人工安全门（按操作员运行前授权自动投递：批准）",
+      "level": "REAL_EXECUTED_AGENTTEAMS_LIVE",
+      "postgate": true,
+      "fields": [
+        [
+          "Leader 行为",
+          "审查验收后停门（团队房向 Team Admin 报告并请求门决策；fix/verify 计划锁定待决）"
+        ],
+        [
+          "操作员决策",
+          "APPROVED（16:54:48Z，交互式门提示，操作员在场响应；决策等待 1 分 00 秒为操作员时间，如实记录）"
+        ],
+        [
+          "批准记录",
+          "先于派发落盘 project/human-gate-approval.md；本轮包未含 gate-approval-sent 快照，DM/团队房事件号见房间导出"
+        ]
+      ],
+      "blocks": [
+        {
+          "title": "finalsPr2Sk5Traced/project/human-gate-approval.md",
+          "lang": "text",
+          "text": "# Human Security Gate APPROVAL — run-elem-pr2sk5-20260919-01\n\n- Project: elemiso-pr2sk5-gate (team elemiso-team)\n- Task reviewed: pr2sk5-review-1 (Reviewer, copaw runtime, AgentLoop-traced)\n- Head SHA under review: 1dedf5e1992c950557064d8f4fb9039d1523deb3 (PR #2 nghqqa/fastapi-boilerplate-demo)\n- Gate decision: **APPROVED — remediation authorized**\n- Decision time: 2026-09-18T16:54:48Z (host clock; operator present and responsive, decision made via interactive gate prompt)\n- Approver: repository/workspace owner (human operator)\n\n## Confirmed findings (Reviewer result, real execution — SPEC was non-prescriptive)\n\n- STATUS: FINDING_CONFIRMED; SEVERITY: HIGH; HUMAN_VERIFICATION_REQUIRED: YES\n- CWE-22 path traversal; PoC confirmed; skill_risk_classify advisory L1 vs reviewer HIGH\n\n## Approval scope\n\n1. Leader delegates pr2sk5-fix-1 (minimal fix; only Reviewer-flagged files; tests frozen; zero GitHub writes).\n2. After fix acceptance: Leader delegates pr2sk5-verify-1 (independent clean-workspace verification).\n3. On verify VERDICT=FAIL: one re-delegation as pr2sk5-fix-2; second FAIL -> stop, block, escalate.\n\n## Acceptance criterion (recorded before dispatch)\n\nAfter this approval, the team room MUST contain a NEW fix delegation event issued by the Leader (taskflow),\ndistinct from any earlier/voided event id. The Fixer must start work only after that event, with no operator\nexecution instructions in between. Every step is exported as OpenTelemetry spans to AgentLoop (SLS, direct).\n"
+        },
+        {
+          "title": "finalsPr2Sk5Traced/project/plan.md（批准后的 plan 快照）",
+          "lang": "text",
+          "text": "# Team Project: PR #2 SK5 (run-elem-pr2sk5-20260919-01)\n\n**ID**: elemiso-pr2sk5-gate\n**Created**: 2026-09-18T16:50:39Z\n\n## DAG Task Plan\n\n**Plan Type**: dag\n\n- [x] pr2sk5-review-1 — Independent security review of PR #2 (assigned: @reviewer:elemiso-matrix:6167)\n- [x] pr2sk5-fix-1 — Minimal fix only if human gate approves (assigned: @fixer:elemiso-matrix:6167, depends: pr2sk5-review-1)\n- [x] pr2sk5-verify-1 — Independent verification only if fix authorized and accepted (assigned: @verifier:elemiso-matrix:6167, depends: pr2sk5-fix-1)\n"
+        }
+      ],
+      "source_ref": "finalsPr2Sk5Traced/project/human-gate-approval.md",
+      "hash": {
+        "file": "project/human-gate-approval.md",
+        "dir": "FINALS-ELEM-PR2-SK5-TRACED",
+        "exists": true,
+        "hash_verified": true,
+        "sha256": "76d38792a4ca1cf10fe185882471ed5e5c484f858165f45cf335cc79c3219e89"
+      },
+      "real": [
+        "真实执行（SK5-TRACED）：非预设 SPEC、真实人工门（按操作员运行前书面授权自动投递）、批准后 12 秒 Leader 全新委派、Reviewer/Fixer/Verifier 真实调用确定性 skill_* 工具（tool.skill_* 独立 span + 宿主审计流水）",
+        "SK5 会话四线并行：PR #2 批准路径 + PR #3 拒绝路径 + PR #1 低风险自动路径（NOT_CONFIRMED/LOW，无人工门，skill_sast_scan 首次被 Agent 调用并诚实识别 false positive）+ 双 Reviewer 信度实验（两独立容器同一 head 结论完全一致）；direct-probe 以 stdin 方式修复采集，4/4 非空"
+      ],
+      "controlled": [
+        "页面为只读回放；RAG 语料为知识型 SYNTHETIC（citation-only，无案例结论）；确定性 Skill 输出为 advisory（其 SKILL.md 自述 never an authorization decision）",
+        "case_retrieval 的向量检索使用仓库自带的离线确定性 hash embedding（非语义模型）——排序为确定性向量相似度，升级语义检索属赛后项"
+      ],
+      "not_executed": [
+        "操作员对 Fixer 零执行指令介入；merge/push/close/reopen 未执行（PR #2 保持 OPEN，github-branches-after-sk5.txt 双分支 head 核验不变）",
+        "SK5-MASTER-README 的用量表为估计口径，与本包锁定 usage-summary.json 的实测窗口不一致——本页以锁定工件为准",
+        "直连探针本轮已修复采集（stdin 方式，4/4 非空）——此前四轮\"未采集\"的已知操作缺陷闭环"
+      ]
+    },
+    {
+      "id": "ev-sk-fix",
+      "title": "Fixer 补丁 pr2sk5-fix-1（skill 辅助下的确定性修复）",
+      "level": "REAL_EXECUTED_AGENTTEAMS_LIVE",
+      "postgate": true,
+      "fields": [
+        [
+          "关键验收",
+          "门批准后 12 秒 Leader 发出全新委派事件 $3xgqje5vDux1KpHCr0G6z8hk8I9v93R4Pw3l_xeVXks（16:55:00Z 委派）"
+        ],
+        [
+          "交付",
+          "attempt-1.diff 单文件 +13/−7；sha256 674356fc…16081 —— 与此前各轮独立产出逐字节一致（本轮第八次）；提交 16:55:30Z（委派后 30 秒）"
+        ]
+      ],
+      "blocks": [
+        {
+          "title": "finalsPr2Sk5Traced/tasks/pr2sk5-fix-1/attempt-1.diff",
+          "lang": "diff",
+          "text": "diff --git a/backend/src/interfaces/api/v1/demo_high_risk.py b/backend/src/interfaces/api/v1/demo_high_risk.py\nindex 59cd8d1..6140d63 100644\n--- a/backend/src/interfaces/api/v1/demo_high_risk.py\n+++ b/backend/src/interfaces/api/v1/demo_high_risk.py\n@@ -19,7 +19,7 @@ from __future__ import annotations\n \n import os\n \n-from fastapi import APIRouter\n+from fastapi import APIRouter, HTTPException\n from fastapi.responses import FileResponse\n \n router = APIRouter(tags=[\"SecurityDemo\"])\n@@ -30,13 +30,19 @@ DEMO_FILES_DIR = os.path.join(os.path.dirname(__file__), \"demo_files_base\")\n \n @router.get(\n     \"/demo/download\",\n-    summary=\"SECURITY DEMO: file download (intentionally vulnerable)\",\n+    summary=\"SECURITY DEMO: file download (path traversal contained)\",\n     description=(\n-        \"Competition demo endpoint. ``name`` is unsanitized: '../' sequences \"\n-        \"escape DEMO_FILES_DIR (path traversal / arbitrary file read).\"\n+        \"Competition demo endpoint. ``name`` is resolved and confined to \"\n+        \"DEMO_FILES_DIR; '../' traversal / arbitrary file read is rejected.\"\n     ),\n )\n async def demo_download(name: str) -> FileResponse:\n-    # VULNERABLE (intentional): no containment check on the resolved path.\n-    file_path = os.path.join(DEMO_FILES_DIR, name)\n-    return FileResponse(file_path, filename=name)\n+    # FIX (CWE-22): normalise the request path and enforce containment within\n+    # the base directory. Any escape is rejected; missing files return 404.\n+    base_real = os.path.realpath(DEMO_FILES_DIR)\n+    file_real = os.path.realpath(os.path.join(base_real, name))\n+    if os.path.commonpath([base_real, file_real]) != base_real:\n+        raise HTTPException(status_code=400, detail=\"Invalid file path\")\n+    if not os.path.isfile(file_real):\n+        raise HTTPException(status_code=404, detail=\"File not found\")\n+    return FileResponse(file_real, filename=name)\n"
+        },
+        {
+          "title": "finalsPr2Sk5Traced/tasks/pr2sk5-fix-1/result.md",
+          "lang": "text",
+          "text": "STATUS: SUCCESS\nSUMMARY: FIX_APPLIED + SELF_CHECK_PASSED. Minimal CWE-22 containment fix in backend/src/interfaces/api/v1/demo_high_risk.py only (function demo_download); no test files modified (frozen); zero GitHub writes; PR #2 stays OPEN. Fresh clone ~/pr2sk5-fix-work at head SHA 1dedf5e1992c950557064d8f4fb9039d1523deb3 (git rev-parse HEAD verified); scope git diff 4cd5bf0..HEAD --stat = 2 files, +122/-0. Acceptance behavior verified: (a) traversal names rejected 400 with no out-of-base content returned, (b) legitimate in-base file returns 200 with content, (c) missing file returns 404. /opt/venv/standard/bin/python -m py_compile passes. Self-check loads the module directly via importlib and bypasses the repo conftest, so the Google OAuth env requirement noted by the Reviewer does not affect it; no repo files modified. Patch: shared/tasks/pr2sk5-fix-1/attempt-1.diff. Optional rag_retrieve was not available this environment (FunctionNotFoundError); optional per manifest and not needed since evidence rests on own reproduction. Notes: [patch sha256=674356fc9a661faa49b97b789d75ff4529b95a5fac7f39dad0301397c0116081; normalization=os.path.realpath on base dir and joined request path (canonicalizes '..', '.', symlinks); boundary check=os.path.commonpath([base_real, file_real]) != base_real (canonical containment, separator-aware, avoids string-prefix pitfall); error strategy=HTTP 400 'Invalid file path' for traversal/escape, HTTP 404 'File not found' for missing/non-file in-base, HTTP 200 with content for legitimate in-base files]. Authorization: explicit taskId delegation with human gate APPROVED 2026-09-18T16:54:48Z.\n\nDELIVERABLES:\n- shared/tasks/pr2sk5-fix-1/attempt-1.diff\n- shared/tasks/pr2sk5-fix-1/workspace/notes.md\n"
+        },
+        {
+          "title": "finalsPr2Sk5Traced/tasks/pr2sk5-fix-1/workspace/notes.md",
+          "lang": "text",
+          "text": "# pr2sk5-fix-1 — Minimal fix for confirmed CWE-22 path traversal (attempt 1)\n\n- **Run ID**: run-elem-pr2sk5-20260919-01\n- **Role**: Fixer\n- **Human security gate**: APPROVED (2026-09-18T16:54:48Z)\n- **Repo**: https://github.com/nghqqa/fastapi-boilerplate-demo (read-only)\n- **PR**: #2 — stays OPEN\n- **Head SHA verified**: `1dedf5e1992c950557064d8f4fb9039d1523deb3` (`git rev-parse HEAD` = same)\n- **Clone**: `~/pr2sk5-fix-work` (new directory; no `rm -rf` used)\n- **Scope confirmed**: `git diff 4cd5bf0..HEAD --stat` → 2 files, +122/-0\n- **File changed (only)**: `backend/src/interfaces/api/v1/demo_high_risk.py`\n- **Tests modified**: none (`backend/tests/unit/test_demo_high_risk_path_traversal.py` frozen)\n- **GitHub writes**: zero (no push / PR / comment / merge)\n- **Patch**: `shared/tasks/pr2sk5-fix-1/attempt-1.diff`\n- **Patch sha256**: `674356fc9a661faa49b97b789d75ff4529b95a5fac7f39dad0301397c0116081`\n\n## Before → After\n\n### Before (vulnerable, head SHA)\n```python\nasync def demo_download(name: str) -> FileResponse:\n    # VULNERABLE (intentional): no containment check on the resolved path.\n    file_path = os.path.join(DEMO_FILES_DIR, name)\n    return FileResponse(file_path, filename=name)\n```\n`name` was joined to the base directory with no normalization or containment check, so\n`../` sequences escaped `DEMO_FILES_DIR` and read arbitrary process-readable files\n(HTTP 200, e.g. `name=../../../etc/hostname`).\n\n### After (fixed)\n```python\nasync def demo_download(name: str) -> FileResponse:\n    # FIX (CWE-22): normalise the request path and enforce containment within\n    # the base directory. Any escape is rejected; missing files return 404.\n    base_real = os.path.realpath(DEMO_FILES_DIR)\n    file_real = os.path.realpath(os.path.join(base_real, name))\n    if os.path.commonpath([base_real, file_real]) != base_real:\n        raise HTTPException(status_code=400, detail=\"Invalid file path\")\n    if not os.path.isfile(file_real):\n        raise HTTPException(status_code=404, detail=\"File not found\")\n    return FileResponse(file_real, filename=name)\n```\n\n## Three required explanations\n\n1. **Path normalization**: `os.path.realpath()` is applied to both the base directory and\n   the joined request path. It canonicalizes the path (resolving `..`, `.`, and symlinks),\n   collapsing traversal sequences to a canonical absolute path before any decision.\n2. **Directory boundary check**: `os.path.commonpath([base_real, file_real]) != base_real`\n   enforces containment. The canonicalized request path must have the canonicalized base\n   directory as its common path prefix; anything outside the base (parent, sibling,\n   absolute target) fails and is rejected. `commonpath` is separator-aware and avoids the\n   `/base` vs `/base-evil` string-prefix pitfall of `startswith`.\n3. **Error strategy**: traversal/escape → **HTTP 400** `{\"detail\":\"Invalid file path\"}`\n   (rejected input; escaped content is never served). Missing or non-file target inside\n   the base → **HTTP 404** `{\"detail\":\"File not found\"}`. Legitimate in-base files →\n   **HTTP 200** with content.\n\n## Self-check evidence (real output)\n\n```\n$ /opt/venv/standard/bin/python -m py_compile backend/src/interfaces/api/v1/demo_high_risk.py\nPY_COMPILE: PASS\n\n$ git status --short\n M backend/src/interfaces/api/v1/demo_high_risk.py      # only the one target file\n\n$ cd ~/pr2sk5-fix-work && REPO_ROOT=\"$(pwd)\" /opt/venv/standard/bin/python /tmp/fix_accept_check_sk5.py\nbase (realpath): /tmp/fixer-accept-5shvmtcs/demo-files\n\n[PASS] (b) legit in-base file     'ok.txt'                            -> 200 (exp 200) body='LEGIT-INSIDE-BASE'\n[PASS] (a) traversal ../ escapes  '../outside-secret.txt'             -> 400 (exp 400) body='{\"detail\":\"Invalid file path\"}'\n[PASS] (a) traversal via sub dir  'sub/../../deep-secret.txt'         -> 400 (exp 400) body='{\"detail\":\"Invalid file path\"}'\n[PASS] (a) absolute file escape   '../../../../../../etc/hostname'    -> 400 (exp 400) body='{\"detail\":\"Invalid file path\"}'\n[PASS] (c) missing file           'missing.txt'                       -> 404 (exp 404) body='{\"detail\":\"File not found\"}'\n\nACCEPTANCE: PASS\n```\n\nAll three acceptance criteria are satisfied. Verification used throwaway temp files only;\nno real credentials.\n\n## Notes on environment and optional tooling\n\n- The repo conftest requires non-empty Google OAuth env values to import. My self-check\n  loads `demo_high_risk.py` directly via `importlib`, bypassing the conftest, so it is\n  unaffected. No repo files were modified.\n- Optional `rag_retrieve` was **not available** in this environment this run\n  (`FunctionNotFoundError`). It is optional per the manifest and was not needed: the fix\n  and all PASS/FAIL evidence above rest entirely on my own reproduction.\n\n## Role-contract compliance note\n\nAuthorization: work began only after an explicit @mention delegation naming me and the\ntaskId (`pr2sk5-fix-1`), with the human security gate APPROVED (2026-09-18T16:54:48Z).\nNo un-delegated work was performed in this run. `~/task/ROLE-CONTRACT.md` and\n`~/task/PR-METADATA.md` were present and consistent with this task.\n"
+        }
+      ],
+      "source_ref": "finalsPr2Sk5Traced/tasks/pr2sk5-fix-1/attempt-1.diff",
+      "hash": {
+        "file": "tasks/pr2sk5-fix-1/attempt-1.diff",
+        "dir": "FINALS-ELEM-PR2-SK5-TRACED",
+        "exists": true,
+        "hash_verified": true,
+        "sha256": "674356fc9a661faa49b97b789d75ff4529b95a5fac7f39dad0301397c0116081"
+      },
+      "real": [
+        "真实执行（SK5-TRACED）：非预设 SPEC、真实人工门（按操作员运行前书面授权自动投递）、批准后 12 秒 Leader 全新委派、Reviewer/Fixer/Verifier 真实调用确定性 skill_* 工具（tool.skill_* 独立 span + 宿主审计流水）",
+        "SK5 会话四线并行：PR #2 批准路径 + PR #3 拒绝路径 + PR #1 低风险自动路径（NOT_CONFIRMED/LOW，无人工门，skill_sast_scan 首次被 Agent 调用并诚实识别 false positive）+ 双 Reviewer 信度实验（两独立容器同一 head 结论完全一致）；direct-probe 以 stdin 方式修复采集，4/4 非空"
+      ],
+      "controlled": [
+        "页面为只读回放；RAG 语料为知识型 SYNTHETIC（citation-only，无案例结论）；确定性 Skill 输出为 advisory（其 SKILL.md 自述 never an authorization decision）",
+        "case_retrieval 的向量检索使用仓库自带的离线确定性 hash embedding（非语义模型）——排序为确定性向量相似度，升级语义检索属赛后项"
+      ],
+      "not_executed": [
+        "操作员对 Fixer 零执行指令介入；merge/push/close/reopen 未执行（PR #2 保持 OPEN，github-branches-after-sk5.txt 双分支 head 核验不变）",
+        "SK5-MASTER-README 的用量表为估计口径，与本包锁定 usage-summary.json 的实测窗口不一致——本页以锁定工件为准",
+        "直连探针本轮已修复采集（stdin 方式，4/4 非空）——此前四轮\"未采集\"的已知操作缺陷闭环"
+      ]
+    },
+    {
+      "id": "ev-sk-verify",
+      "title": "Verifier 独立验证（VERIFIED PASS，首次通过）",
+      "level": "REAL_EXECUTED_AGENTTEAMS_LIVE",
+      "postgate": true,
+      "fields": [
+        [
+          "独立工作区",
+          "干净 clone @ head SHA；git apply 干净通过；sha256 独立复算一致；backend/tests/ 未触碰"
+        ],
+        [
+          "修复前",
+          "pristine checkout 上 3 逃逸向量全 200 泄露（含 ../../../../../../etc/hostname = 158f57ca9296）；缺失 500"
+        ],
+        [
+          "修复后",
+          "越权全 400 Invalid file path · 合法 ok.txt 200 · 缺失 404 · py_compile PASS；PR 测试断言反转如实记录"
+        ],
+        [
+          "skill 交叉核对",
+          "skill_diff_parse ×1 + skill_risk_classify ×1（建议性 L1，低估 vs 自主 HIGH）——advisory 输出不替代自主复现"
+        ],
+        [
+          "事件",
+          "委派 16:55:44Z $0PQZDxKql3Aj4Q1JrD2OQnM6ZxgUORqvmF4IZPqjGI0 · 提交 VERIFIED 16:56:46Z（房间 16:56:50 报告）"
+        ]
+      ],
+      "blocks": [
+        {
+          "title": "finalsPr2Sk5Traced/tasks/pr2sk5-verify-1/result.md",
+          "lang": "text",
+          "text": "STATUS: SUCCESS\nSUMMARY: INDEPENDENT VERIFICATION of pr2sk5-fix-1 (run-elem-pr2sk5-20260919-01): VERIFIED. In my OWN fresh clone (~/pr2sk5-verify-work) at head SHA 1dedf5e1992c950557064d8f4fb9039d1523deb3 (git rev-parse HEAD verified; scope 2 files +122/-0), patch shared/tasks/pr2sk5-fix-1/attempt-1.diff applied cleanly (git apply --check and git apply exit 0; applied diff byte-identical to patch) and its sha256 was independently reproduced as 674356fc9a661faa49b97b789d75ff4529b95a5fac7f39dad0301397c0116081 (matches Fixer). Only backend/src/interfaces/api/v1/demo_high_risk.py changed; backend/tests untouched. (4a) On a PRISTINE checkout the vulnerability reproduces: my independent probe returned HTTP 200 + out-of-base content for ../outside/outside-secret.txt (TOP-SECRET-OUTSIDE-BASE), nested sub/../../outside/outside-secret.txt (TOP-SECRET-OUTSIDE-BASE) and ../../../../../../etc/hostname (158f57ca9296); missing -> 500; PR test = 1 passed/1 failed (matches Reviewer). (4b) With the patch applied all cases PASS: legit in-base file -> 200 'LEGIT-INSIDE-BASE'; ../outside/outside-secret.txt -> 400 {\"detail\":\"Invalid file path\"}; sub/../../outside/outside-secret.txt -> 400; ../../../../../../etc/hostname -> 400; missing in-base -> 404 {\"detail\":\"File not found\"} — no out-of-base content ever returned. (4c) python -m py_compile PASS both pre and post. Post-fix PR test = 2 failed, which is the EXPECTED assertion inversion (the PR test asserts the pre-fix 200/leak behavior, now 400) per spec step 5, i.e. the flaw is CLOSED, not a regression. Deterministic skills (advisory only, per manifest): skill_diff_parse req-c95384c75f confirmed scope (2 files +122/-0, source+test); skill_risk_classify req-83ea050b22 returned advisory L1 SOURCE_CONFIG_CHANGE (metadata-only, understated; actual severity HIGH CWE-22 per my code review + reproduction); rag_retrieve returned CWE-22 org standards (SYNTHETIC). None replaced my own reproduction. Zero GitHub writes; no repo test or other file modified. VERDICT: VERIFIED (PASS). Evidence: shared/tasks/pr2sk5-verify-1/workspace/verification.md\n\nDELIVERABLES:\n- shared/tasks/pr2sk5-verify-1/workspace/verification.md\n- shared/tasks/pr2sk5-verify-1/workspace/verify_probe.py\n- shared/tasks/pr2sk5-verify-1/workspace/attempt-1.diff\n"
+        },
+        {
+          "title": "finalsPr2Sk5Traced/tasks/pr2sk5-verify-1/workspace/verification.md",
+          "lang": "markdown",
+          "text": "# pr2sk5-verify-1 — Independent clean-workspace verification of the authorized fix patch (attempt 1)\n\n- **run_id**: run-elem-pr2sk5-20260919-01\n- **Role**: Verifier (independent)\n- **Repo**: https://github.com/nghqqa/fastapi-boilerplate-demo\n- **PR**: #2 (OPEN) — zero GitHub writes performed\n- **Human security gate**: APPROVED (remediation authorized)\n- **head SHA**: `1dedf5e1992c950557064d8f4fb9039d1523deb3` (verified `git rev-parse HEAD` = same) on my OWN fresh clone `~/pr2sk5-verify-work`; pristine comparison clone `~/pr2sk5-verify-prefix` at same SHA\n- **Diff scope (base..head)**: 2 files, +122/-0 (confirmed `git diff 4cd5bf0..HEAD --stat`)\n- **Patch verified**: `shared/tasks/pr2sk5-fix-1/attempt-1.diff`\n  - **sha256** = `674356fc9a661faa49b97b789d75ff4529b95a5fac7f39dad0301397c0116081` — **matches the fixer's claim** (independent `sha256sum`)\n  - `git apply --check` exit 0; `git apply` exit 0; applied `git diff` is **byte-identical** to the patch (`diff` exit 0)\n  - only `backend/src/interfaces/api/v1/demo_high_risk.py` modified; **`backend/tests/` untouched** (`git status --short -- backend/tests/` empty)\n- **Python**: `/opt/venv/standard/bin/python` (3.11.15); deps: fastapi 0.141.1, httpx 0.28.1, pytest 9.1.1\n\n## VERDICT: VERIFIED (PASS)\n\n---\n\n## A. Pre-fix baseline (PRISTINE clone, no patch) — vulnerability present\n\nIndependent probe `workspace/verify_probe.py` (loads the real module via importlib, mounts a fresh\nFastAPI app + `TestClient`, monkeypatches `DEMO_FILES_DIR` at runtime; lives OUTSIDE the repo;\nmodifies NO repo test; direct import also bypasses the repo conftest):\n\n```\n[i] /etc/hostname       : '158f57ca9296'\n[PASS] legit in-base file         'ok.txt'                              -> 200  body='LEGIT-INSIDE-BASE'\n[FAIL] traversal ../              '../outside/outside-secret.txt'       -> 200  body='TOP-SECRET-OUTSIDE-BASE'  !! LEAK\n[FAIL] nested ../ via sub dir     'sub/../../outside/outside-secret.txt'-> 200  body='TOP-SECRET-OUTSIDE-BASE'  !! LEAK\n[FAIL] absolute-target traversal  '../../../../../../etc/hostname'      -> 200  body='158f57ca9296\\n'           !! LEAK\n[FAIL] missing in-base file       'does-not-exist.txt'                  -> 500  'Internal Server Error'\nPROBE_ACCEPTANCE: FAIL   (exit=1)\n```\n\nPre-fix PR test (pristine clone, `--noconftest -o markers=security_demo`):\n\n```\n1 failed, 1 passed, 2 warnings in 0.47s\n- test_high_risk_path_traversal_reproduces  PASSED   (leak from OUTSIDE base returned; 200)\n- test_high_risk_path_traversal_depth       FAILED   RuntimeError: File at path\n    /tmp/pytest-of-root/.../demo-files/sub/../../../deep-secret.txt does not exist.\n```\n\n**The harness genuinely detects the flaw.**\n\n## B. Post-fix behavior (patch applied to `~/pr2sk5-verify-work`)\n\n```\n[PASS] legit in-base file         'ok.txt'                              -> 200  body='LEGIT-INSIDE-BASE'\n[PASS] traversal ../              '../outside/outside-secret.txt'       -> 400  body='{\"detail\":\"Invalid file path\"}'\n[PASS] nested ../ via sub dir     'sub/../../outside/outside-secret.txt'-> 400  body='{\"detail\":\"Invalid file path\"}'\n[PASS] absolute-target traversal  '../../../../../../etc/hostname'      -> 400  body='{\"detail\":\"Invalid file path\"}'\n[PASS] missing in-base file       'does-not-exist.txt'                  -> 404  body='{\"detail\":\"File not found\"}'\nPROBE_ACCEPTANCE: PASS   (exit=0)\n```\n\nPost-fix PR test (same invocation):\n\n```\n2 failed, 2 warnings in 0.22s\n- test_high_risk_path_traversal_reproduces  FAILED  AssertionError: {\"detail\":\"Invalid file path\"} / assert 400 == 200\n- test_high_risk_path_traversal_depth       FAILED  AssertionError: {\"detail\":\"Invalid file path\"} / assert 400 == 200\n```\n\n**Expected assertion inversion** (the PR test asserts the PRE-FIX vulnerable 200 behavior; after the\npatch it is 400) — the flaw is CLOSED, not a regression (per spec step 5).\n\n## C. py_compile\n\n```\nPRE-FIX  : PASS\nPOST-FIX : PASS\n```\n\n## Requirement coverage\n\n| # | Requirement | Result |\n|---|-------------|--------|\n| 4a | PRISTINE leaks (harness detects vuln) | `../` relative, nested `sub/../../`, and absolute-target traversal ALL → 200 with outside content — PASS |\n| 4b | post-fix `../` relative rejected | **400** `Invalid file path` — PASS |\n| 4b | post-fix nested `../` rejected | **400** `Invalid file path` — PASS |\n| 4b | post-fix absolute-target traversal rejected | **400** `Invalid file path` — PASS |\n| 4b | post-fix missing in-base file | **404** `File not found` — PASS |\n| 4b | post-fix legit in-base file | **200** `LEGIT-INSIDE-BASE` — PASS |\n| 4c | py_compile pre & post | PASS |\n| 3 | patch applies cleanly; sha256 matches | PASS |\n| 6 | tests untouched; no extra repo files; zero GitHub writes | PASS |\n\n## Deterministic skill tools & RAG (advisory only, per manifest)\n\n- **`skill_diff_parse`** (`req-c95384c75f`): matched scope exactly — 2 files, +122/-0, categories\n  `source`+`test`.\n- **`skill_risk_classify`** (`req-83ea050b22`): **advisory L1** (`SOURCE_CONFIG_CHANGE`,\n  recommends `HUMAN_REVIEW`) — **metadata-only and understated**; it does not read code. My\n  independent code inspection + reproduction establish the actual **HIGH CWE-22** severity. The\n  tool marks itself `advisory_only: true` (\"never replaces human approval\").\n- **`rag_retrieve`**: OK — `org-standards/fastapi-endpoint-checklist.md#1`,\n  `org-standards/cwe-22-path-traversal.md#1`, `org-standards/file-path-containment.md#1`\n  (`data_mode=SYNTHETIC`).\n\nAll advisory; **none replaced my own reproduction**.\n\n## Notes\n\n- **Environment:** the repo-level `backend/tests/conftest.py` requires non-empty Google OAuth env\n  values to import. I ran the PR test with `--noconftest` + registered `security_demo` marker; my\n  decisive evidence is the independent behavior probe, which loads `demo_high_risk.py` directly via\n  importlib and bypasses the conftest entirely. No repo file was modified.\n- Containment logic inspected: `realpath` + `commonpath([base_real, file_real]) != base_real`\n  with an `isfile` 404 path — correct; no `startswith` `/base` vs `/base-evil` prefix pitfall.\n- The patch (byte-identical, same sha256) replicates the earlier accepted fix; this independent\n  re-run reconfirms it on a fresh clone.\n"
+        }
+      ],
+      "source_ref": "finalsPr2Sk5Traced/tasks/pr2sk5-verify-1/result.md",
+      "hash": {
+        "file": "tasks/pr2sk5-verify-1/result.md",
+        "dir": "FINALS-ELEM-PR2-SK5-TRACED",
+        "exists": true,
+        "hash_verified": true,
+        "sha256": "83a1ed88c5994f986bc9e9d5cc7bc413d4ed6127bd2b6aa02fc0f5430369402b"
+      },
+      "real": [
+        "真实执行（SK5-TRACED）：非预设 SPEC、真实人工门（按操作员运行前书面授权自动投递）、批准后 12 秒 Leader 全新委派、Reviewer/Fixer/Verifier 真实调用确定性 skill_* 工具（tool.skill_* 独立 span + 宿主审计流水）",
+        "SK5 会话四线并行：PR #2 批准路径 + PR #3 拒绝路径 + PR #1 低风险自动路径（NOT_CONFIRMED/LOW，无人工门，skill_sast_scan 首次被 Agent 调用并诚实识别 false positive）+ 双 Reviewer 信度实验（两独立容器同一 head 结论完全一致）；direct-probe 以 stdin 方式修复采集，4/4 非空"
+      ],
+      "controlled": [
+        "页面为只读回放；RAG 语料为知识型 SYNTHETIC（citation-only，无案例结论）；确定性 Skill 输出为 advisory（其 SKILL.md 自述 never an authorization decision）",
+        "case_retrieval 的向量检索使用仓库自带的离线确定性 hash embedding（非语义模型）——排序为确定性向量相似度，升级语义检索属赛后项"
+      ],
+      "not_executed": [
+        "操作员对 Fixer 零执行指令介入；merge/push/close/reopen 未执行（PR #2 保持 OPEN，github-branches-after-sk5.txt 双分支 head 核验不变）",
+        "SK5-MASTER-README 的用量表为估计口径，与本包锁定 usage-summary.json 的实测窗口不一致——本页以锁定工件为准",
+        "直连探针本轮已修复采集（stdin 方式，4/4 非空）——此前四轮\"未采集\"的已知操作缺陷闭环"
+      ]
+    },
+    {
+      "id": "ev-sk-run",
+      "title": "运行档案（用量/span/合规）",
+      "level": "REAL_EXECUTED_AGENTTEAMS_LIVE",
+      "postgate": true,
+      "fields": [
+        [
+          "墙钟",
+          "kickoff 16:51:32Z → 项目 completed 16:57:03Z = 5 分 31 秒（含 Reviewer 依赖安装；门决策等待 1 分 00 秒为操作员时间，如实分列）"
+        ],
+        [
+          "用量（锁定工件 pr2 窗口）",
+          "90 次调用 · 输入 6,218,954（缓存 6,154,368 ≈99%）· 输出 30,647；SK5 会话合计 133 次 / 输入 8,960,469 / 输出 40,623（四包同会话）"
+        ],
+        [
+          "追踪（会话累计）",
+          "锁定 span-summary：824 span（leader 280 / reviewer 240 / fixer 118 / verifier 129 / reviewer-b 57）· tool.rag_retrieve ×7 · agentteams.delegation.link ×15 · skill_* ×15（reviewer 13 + verifier 2）"
+        ],
+        [
+          "合规",
+          "PR #2 全程 OPEN · github-branches-after-sk5.txt：两分支 head 运行后与记录一致 · 零 GitHub 写入"
+        ]
+      ],
+      "blocks": [
+        {
+          "title": "finalsPr2Sk5Traced/project/result.md（项目终报）",
+          "lang": "markdown",
+          "text": "# Project Result: PR #2 review-remediation SK5\n\n- **Project ID**: elemiso-pr2sk5-gate\n- **Run ID**: run-elem-pr2sk5-20260919-01\n- **Requester**: admin (Team Admin, via Leader DM)\n- **Repo**: https://github.com/nghqqa/fastapi-boilerplate-demo\n- **PR**: #2 (head SHA `1dedf5e1992c950557064d8f4fb9039d1523deb3`, base `4cd5bf099f88c3f3f85ee4c06b7adfe9925a6e5c`)\n- **Status**: COMPLETE — all DAG nodes accepted\n- **Human security gate**: APPROVED (remediation authorized)\n\n## Outcome\n\nA HIGH-severity CWE-22 path traversal was independently confirmed, a minimal\ncontainment fix was produced and delivered locally (after explicit human gate\napproval), and the fix was independently verified in a clean workspace. PR #2\nremains OPEN; **zero GitHub writes** were performed.\n\n## DAG Execution\n\n- [x] `pr2sk5-review-1` — Independent security review (reviewer) — **FINDING_CONFIRMED / HIGH / CWE-22**\n- [x] `pr2sk5-fix-1` — Minimal local fix + patch delivery (fixer) — **FIX_APPLIED / SELF_CHECK_PASSED**\n- [x] `pr2sk5-verify-1` — Independent clean-workspace verification (verifier) — **VERIFIED (PASS)**\n\n## Key Findings\n\n- Vulnerable: `backend/src/interfaces/api/v1/demo_high_risk.py`, function\n  `demo_download`; L41 `os.path.join(DEMO_FILES_DIR, name)` (untrusted `name`)\n  with no normalization/containment → arbitrary process-readable file read\n  (also CWE-73 / CWE-200 exposure). No auth dependency on the route.\n- Pre-fix reproduction: `../outside-secret.txt` → HTTP 200 out-of-base content;\n  nested `sub/../../outside/outside-secret.txt` and `../../../etc/hostname` →\n  HTTP 200.\n- Severity: HIGH (CWE-22).\n\n## Deterministic skill / retrieval tooling (advisory only)\n\n- `skill_diff_parse` — confirmed scope (2 files, +122/-0, source+test).\n- `skill_risk_classify` — advisory **L1** (`SOURCE_CONFIG_CHANGE`); metadata-only\n  and understated vs. the actual HIGH CWE-22 established by code review and\n  reproduction. Advisory output never replaces own reproduction.\n- `rag_retrieve` — CWE-22 org standards (SYNTHETIC; references only); unavailable\n  in some environments (optional).\n\n## Fix\n\n- File changed (only): `backend/src/interfaces/api/v1/demo_high_risk.py`.\n- Approach: `os.path.realpath` normalization on both base and joined path, plus\n  `os.path.commonpath([base_real, file_real]) != base_real` containment check.\n- Error strategy: escape → 400 `Invalid file path`; missing in-base → 404\n  `File not found`; legitimate in-base file → 200.\n- Tests untouched (frozen); no GitHub writes; PR #2 stays OPEN.\n- Patch: `shared/tasks/pr2sk5-fix-1/attempt-1.diff`\n  (sha256 `674356fc9a661faa49b97b789d75ff4529b95a5fac7f39dad0301397c0116081`).\n\n## Verification\n\nIndependent verifier reproduced the patch sha256, applied it cleanly in a fresh\nclone, confirmed the pristine checkout was vulnerable (3 traversal vectors\nleaked out-of-base content at HTTP 200, including nested `../` and absolute\n`/etc/hostname`), and confirmed all post-fix cases: legit in-base → 200; all\nescape vectors → 400; missing → 404; `py_compile` PASS. Post-fix PR test =\n2 failed = expected assertion inversion (the PR's own test asserts the pre-fix\nvulnerable 200 behavior), i.e. flaw closed, not a regression.\n\n## Deliverables\n\n- `shared/tasks/pr2sk5-review-1/workspace/findings.md` — independent review findings\n- `shared/tasks/pr2sk5-fix-1/attempt-1.diff` — minimal fix patch\n- `shared/tasks/pr2sk5-fix-1/workspace/notes.md` — fix rationale and self-check\n- `shared/tasks/pr2sk5-verify-1/workspace/verification.md` — independent verification\n- `shared/tasks/pr2sk5-verify-1/workspace/verify_probe.py` — verification probe\n- `shared/tasks/pr2sk5-verify-1/workspace/attempt-1.diff` — applied patch copy\n\n## Notes\n\n- Gate discipline honored: the Leader stopped at the human security gate after\n  the HIGH finding and did not delegate `pr2sk5-fix-1` until the Team Admin\n  posted explicit approval.\n- The deterministic risk classifier understated the real severity (advisory L1\n  vs. actual HIGH); the authoritative conclusion came from independent code\n  review and reproduction.\n- PR #2 stays OPEN. Any GitHub-side action (e.g. PR comment/review) requires\n  explicit authorization.\n"
+        },
+        {
+          "title": "finalsPr2Sk5Traced/usage-summary.json（分窗口用量）",
+          "lang": "json",
+          "text": "{\r\n \"windows\": {\r\n  \"pr2\": {\r\n   \"calls\": 90,\r\n   \"inp\": 6218954,\r\n   \"cached\": 6154368,\r\n   \"outp\": 30647\r\n  },\r\n  \"pr3\": {\r\n   \"calls\": 32,\r\n   \"inp\": 2392229,\r\n   \"cached\": 2376704,\r\n   \"outp\": 9552\r\n  },\r\n  \"session\": {\r\n   \"calls\": 133,\r\n   \"inp\": 8960469,\r\n   \"cached\": 8878336,\r\n   \"outp\": 40623\r\n  }\r\n },\r\n \"models\": [\r\n  \"\",\r\n  \"deepseek-flash\"\r\n ],\r\n \"note\": \"deepseek-flash is the vendor-reported model name per request; requested model is deepseek-chat (see R1 audit)\"\r\n}"
+        },
+        {
+          "title": "finalsPr2Sk5Traced/span-summary.json（SK5 会话累计）",
+          "lang": "json",
+          "text": "{\r\n \"leader\": {\r\n  \"spans\": 280,\r\n  \"skill\": {},\r\n  \"skill_total\": 0,\r\n  \"rag\": 0,\r\n  \"link\": 0\r\n },\r\n \"reviewer\": {\r\n  \"spans\": 240,\r\n  \"skill\": {\r\n   \"tool.skill_diff_parse\": 3,\r\n   \"tool.skill_risk_classify\": 6,\r\n   \"tool.skill_sast_scan\": 2,\r\n   \"tool.skill_case_retrieval\": 2\r\n  },\r\n  \"skill_total\": 13,\r\n  \"rag\": 5,\r\n  \"link\": 5\r\n },\r\n \"fixer\": {\r\n  \"spans\": 118,\r\n  \"skill\": {},\r\n  \"skill_total\": 0,\r\n  \"rag\": 1,\r\n  \"link\": 5\r\n },\r\n \"verifier\": {\r\n  \"spans\": 129,\r\n  \"skill\": {\r\n   \"tool.skill_diff_parse\": 1,\r\n   \"tool.skill_risk_classify\": 1\r\n  },\r\n  \"skill_total\": 2,\r\n  \"rag\": 1,\r\n  \"link\": 5\r\n },\r\n \"reviewer-b\": {\r\n  \"spans\": 57,\r\n  \"skill\": {},\r\n  \"skill_total\": 0,\r\n  \"rag\": 0,\r\n  \"link\": 0\r\n }\r\n}"
+        },
+        {
+          "title": "finalsPr2Sk5Traced/github-branches-after-sk5.txt",
+          "lang": "text",
+          "text": "1dedf5e1992c950557064d8f4fb9039d1523deb3\trefs/heads/demo/high-risk-human-gate\nad267a6e51209551a0733657321bb364d04befd0\trefs/heads/demo/high-risk-human-reject\n"
+        },
+        {
+          "title": "finalsPr2Sk5Traced/rag/rag-tool-spans.jsonl（服务端审计流水，跨轮累积）",
+          "lang": "json",
+          "text": "{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"79d5a6933166c03c\",\"result_status\":\"OK\",\"document_count\":2,\"latency_ms\":1,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/fastapi-endpoint-checklist.md#1\",\"org-standards/cwe-22-path-traversal.md#1\"],\"ts\":\"2026-09-16T16:52:10.101Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"24b53a7e559593e3\",\"result_status\":\"OK\",\"document_count\":2,\"latency_ms\":0,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/cwe-78-command-injection.md#2\",\"org-standards/command-execution.md#2\"],\"ts\":\"2026-09-16T16:54:36.993Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"24b53a7e559593e3\",\"result_status\":\"OK\",\"document_count\":2,\"latency_ms\":0,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/cwe-78-command-injection.md#2\",\"org-standards/command-execution.md#2\"],\"ts\":\"2026-09-16T17:08:59.881Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"24b53a7e559593e3\",\"result_status\":\"OK\",\"document_count\":2,\"latency_ms\":14,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/cwe-78-command-injection.md#2\",\"org-standards/command-execution.md#2\"],\"ts\":\"2026-09-16T17:08:59.885Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"9281c8a7fbcebfed\",\"result_status\":\"OK\",\"document_count\":2,\"latency_ms\":0,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/fastapi-endpoint-checklist.md#1\",\"org-standards/cwe-22-path-traversal.md#1\"],\"ts\":\"2026-09-16T17:15:22.988Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"9281c8a7fbcebfed\",\"result_status\":\"OK\",\"document_count\":2,\"latency_ms\":12,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/fastapi-endpoint-checklist.md#1\",\"org-standards/cwe-22-path-traversal.md#1\"],\"ts\":\"2026-09-16T17:15:22.992Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"9281c8a7fbcebfed\",\"result_status\":\"OK\",\"document_count\":2,\"latency_ms\":0,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/fastapi-endpoint-checklist.md#1\",\"org-standards/cwe-22-path-traversal.md#1\"],\"ts\":\"2026-09-16T17:15:23.194Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"9281c8a7fbcebfed\",\"result_status\":\"OK\",\"document_count\":2,\"latency_ms\":10,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/fastapi-endpoint-checklist.md#1\",\"org-standards/cwe-22-path-traversal.md#1\"],\"ts\":\"2026-09-16T17:15:23.197Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"9281c8a7fbcebfed\",\"result_status\":\"OK\",\"document_count\":2,\"latency_ms\":0,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/fastapi-endpoint-checklist.md#1\",\"org-standards/cwe-22-path-traversal.md#1\"],\"ts\":\"2026-09-16T17:15:23.418Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"9281c8a7fbcebfed\",\"result_status\":\"OK\",\"document_count\":2,\"latency_ms\":11,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/fastapi-endpoint-checklist.md#1\",\"org-standards/cwe-22-path-traversal.md#1\"],\"ts\":\"2026-09-16T17:15:23.421Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"9281c8a7fbcebfed\",\"result_status\":\"OK\",\"document_count\":2,\"latency_ms\":0,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/fastapi-endpoint-checklist.md#1\",\"org-standards/cwe-22-path-traversal.md#1\"],\"ts\":\"2026-09-16T17:15:23.467Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"9281c8a7fbcebfed\",\"result_status\":\"OK\",\"document_count\":2,\"latency_ms\":11,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/fastapi-endpoint-checklist.md#1\",\"org-standards/cwe-22-path-traversal.md#1\"],\"ts\":\"2026-09-16T17:15:23.470Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"22072a7c42c0897e\",\"result_status\":\"OK\",\"document_count\":3,\"latency_ms\":1,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/cwe-22-path-traversal.md#1\",\"org-standards/file-path-containment.md#1\",\"org-standards/cwe-78-command-injection.md#1\"],\"ts\":\"2026-09-16T17:17:56.804Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"22072a7c42c0897e\",\"result_status\":\"OK\",\"document_count\":3,\"latency_ms\":15,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/cwe-22-path-traversal.md#1\",\"org-standards/file-path-containment.md#1\",\"org-standards/cwe-78-command-injection.md#1\"],\"ts\":\"2026-09-16T17:17:56.808Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"bfda1437e417da8c\",\"result_status\":\"OK\",\"document_count\":3,\"latency_ms\":0,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/cwe-22-path-traversal.md#1\",\"org-standards/file-path-containment.md#2\",\"org-standards/file-path-containment.md#1\"],\"ts\":\"2026-09-16T17:19:22.552Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"bfda1437e417da8c\",\"result_status\":\"OK\",\"document_count\":3,\"latency_ms\":11,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/cwe-22-path-traversal.md#1\",\"org-standards/file-path-containment.md#2\",\"org-standards/file-path-containment.md#1\"],\"ts\":\"2026-09-16T17:19:22.556Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"f994d0972b9e9be8\",\"result_status\":\"OK\",\"document_count\":3,\"latency_ms\":1,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/fastapi-endpoint-checklist.md#1\",\"org-standards/cwe-22-path-traversal.md#1\",\"org-standards/file-path-containment.md#1\"],\"ts\":\"2026-09-16T17:20:19.821Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"f994d0972b9e9be8\",\"result_status\":\"OK\",\"document_count\":3,\"latency_ms\":11,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/fastapi-endpoint-checklist.md#1\",\"org-standards/cwe-22-path-traversal.md#1\",\"org-standards/file-path-containment.md#1\"],\"ts\":\"2026-09-16T17:20:19.824Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"132afabf0719ce86\",\"result_status\":\"OK\",\"document_count\":3,\"latency_ms\":0,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/cwe-78-command-injection.md#1\",\"org-standards/command-execution.md#1\",\"org-standards/cwe-78-command-injection.md#2\"],\"ts\":\"2026-09-16T17:25:31.109Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"132afabf0719ce86\",\"result_status\":\"OK\",\"document_count\":3,\"latency_ms\":12,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/cwe-78-command-injection.md#1\",\"org-standards/command-execution.md#1\",\"org-standards/cwe-78-command-injection.md#2\"],\"ts\":\"2026-09-16T17:25:31.113Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"22072a7c42c0897e\",\"result_status\":\"OK\",\"document_count\":3,\"latency_ms\":2,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/cwe-22-path-traversal.md#1\",\"org-standards/file-path-containment.md#1\",\"org-standards/cwe-78-command-injection.md#1\"],\"ts\":\"2026-09-17T03:12:23.941Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"22072a7c42c0897e\",\"result_status\":\"OK\",\"document_count\":3,\"latency_ms\":15,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/cwe-22-path-traversal.md#1\",\"org-standards/file-path-containment.md#1\",\"org-standards/cwe-78-command-injection.md#1\"],\"ts\":\"2026-09-17T03:12:23.946Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"d5b4f3a29603d92d\",\"result_status\":\"OK\",\"document_count\":3,\"latency_ms\":1,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/cwe-22-path-traversal.md#1\",\"org-standards/file-path-containment.md#2\",\"org-standards/file-path-containment.md#1\"],\"ts\":\"2026-09-17T03:13:51.820Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"d5b4f3a29603d92d\",\"result_status\":\"OK\",\"document_count\":3,\"latency_ms\":11,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/cwe-22-path-traversal.md#1\",\"org-standards/file-path-containment.md#2\",\"org-standards/file-path-containment.md#1\"],\"ts\":\"2026-09-17T03:13:51.824Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"f994d0972b9e9be8\",\"result_status\":\"OK\",\"document_count\":3,\"latency_ms\":1,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/fastapi-endpoint-checklist.md#1\",\"org-standards/cwe-22-path-traversal.md#1\",\"org-standards/file-path-containment.md#1\"],\"ts\":\"2026-09-17T03:14:50.040Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"f994d0972b9e9be8\",\"result_status\":\"OK\",\"document_count\":3,\"latency_ms\":13,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/fastapi-endpoint-checklist.md#1\",\"org-standards/cwe-22-path-traversal.md#1\",\"org-standards/file-path-containment.md#1\"],\"ts\":\"2026-09-17T03:14:50.044Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"132afabf0719ce86\",\"result_status\":\"OK\",\"document_count\":3,\"latency_ms\":1,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/cwe-78-command-injection.md#1\",\"org-standards/command-execution.md#1\",\"org-standards/cwe-78-command-injection.md#2\"],\"ts\":\"2026-09-17T03:19:27.524Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"132afabf0719ce86\",\"result_status\":\"OK\",\"document_count\":3,\"latency_ms\":12,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/cwe-78-command-injection.md#1\",\"org-standards/command-execution.md#1\",\"org-standards/cwe-78-command-injection.md#2\"],\"ts\":\"2026-09-17T03:19:27.529Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"758d61f26a444483\",\"result_status\":\"OK\",\"document_count\":1,\"latency_ms\":1,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/command-execution.md#1\"],\"ts\":\"2026-09-18T10:51:17.206Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"22072a7c42c0897e\",\"result_status\":\"OK\",\"document_count\":3,\"latency_ms\":1,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/cwe-22-path-traversal.md#1\",\"org-standards/file-path-containment.md#1\",\"org-standards/cwe-78-command-injection.md#1\"],\"ts\":\"2026-09-18T10:51:47.822Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"22072a7c42c0897e\",\"result_status\":\"OK\",\"document_count\":3,\"latency_ms\":13,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/cwe-22-path-traversal.md#1\",\"org-standards/file-path-containment.md#1\",\"org-standards/cwe-78-command-injection.md#1\"],\"ts\":\"2026-09-18T10:51:47.826Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"4717782c89305388\",\"result_status\":\"OK\",\"document_count\":3,\"latency_ms\":0,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/cwe-22-path-traversal.md#1\",\"org-standards/file-path-containment.md#1\",\"org-standards/cwe-78-command-injection.md#1\"],\"ts\":\"2026-09-18T10:57:45.928Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"4717782c89305388\",\"result_status\":\"OK\",\"document_count\":3,\"latency_ms\":11,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/cwe-22-path-traversal.md#1\",\"org-standards/file-path-containment.md#1\",\"org-standards/cwe-78-command-injection.md#1\"],\"ts\":\"2026-09-18T10:57:45.931Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"132afabf0719ce86\",\"result_status\":\"OK\",\"document_count\":3,\"latency_ms\":1,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/cwe-78-command-injection.md#1\",\"org-standards/command-execution.md#1\",\"org-standards/cwe-78-command-injection.md#2\"],\"ts\":\"2026-09-18T11:03:34.424Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"132afabf0719ce86\",\"result_status\":\"OK\",\"document_count\":3,\"latency_ms\":13,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/cwe-78-command-injection.md#1\",\"org-standards/command-execution.md#1\",\"org-standards/cwe-78-command-injection.md#2\"],\"ts\":\"2026-09-18T11:03:34.428Z\"}\n{\"tool\":\"skill_diff_parse\",\"arguments_hash\":\"req-abfaea0718\",\"result_status\":\"OK\",\"document_count\":0,\"latency_ms\":168,\"data_mode\":\"DETERMINISTIC_SKILL\",\"source_refs\":[\"skills/diff_parse\"],\"ts\":\"2026-09-18T11:25:16.068Z\"}\n{\"tool\":\"skill_risk_classify\",\"arguments_hash\":\"req-80c4ce0590\",\"result_status\":\"OK\",\"document_count\":0,\"latency_ms\":153,\"data_mode\":\"DETERMINISTIC_SKILL\",\"source_refs\":[\"skills/risk_classify\"],\"ts\":\"2026-09-18T11:25:18.626Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"22072a7c42c0897e\",\"result_status\":\"OK\",\"document_count\":3,\"latency_ms\":1,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/cwe-22-path-traversal.md#1\",\"org-standards/file-path-containment.md#1\",\"org-standards/cwe-78-command-injection.md#1\"],\"ts\":\"2026-09-18T11:26:04.134Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"22072a7c42c0897e\",\"result_status\":\"OK\",\"document_count\":3,\"latency_ms\":12,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/cwe-22-path-traversal.md#1\",\"org-standards/file-path-containment.md#1\",\"org-standards/cwe-78-command-injection.md#1\"],\"ts\":\"2026-09-18T11:26:04.138Z\"}\n{\"tool\":\"skill_case_retrieval\",\"arguments_hash\":\"req-35541787e3\",\"result_status\":\"ERROR\",\"document_count\":0,\"latency_ms\":151,\"data_mode\":\"DETERMINISTIC_SKILL\",\"source_refs\":[\"skills/case_retrieval\"],\"ts\":\"2026-09-18T11:26:04.293Z\"}\n{\"tool\":\"skill_case_retrieval\",\"arguments_hash\":\"req-e8d28393bb\",\"result_status\":\"ERROR\",\"document_count\":0,\"latency_ms\":129,\"data_mode\":\"DETERMINISTIC_SKILL\",\"source_refs\":[\"skills/case_retrieval\"],\"ts\":\"2026-09-18T11:26:06.036Z\"}\n{\"tool\":\"skill_case_retrieval\",\"arguments_hash\":\"req-9e0f664422\",\"result_status\":\"ERROR\",\"document_count\":0,\"latency_ms\":131,\"data_mode\":\"DETERMINISTIC_SKILL\",\"source_refs\":[\"skills/case_retrieval\"],\"ts\":\"2026-09-18T11:26:07.962Z\"}\n{\"tool\":\"skill_diff_parse\",\"arguments_hash\":\"req-8f16c3b216\",\"result_status\":\"ERROR\",\"document_count\":0,\"latency_ms\":164,\"data_mode\":\"DETERMINISTIC_SKILL\",\"source_refs\":[\"skills/diff_parse\"],\"ts\":\"2026-09-18T11:34:34.928Z\"}\n{\"tool\":\"skill_diff_parse\",\"arguments_hash\":\"req-617a986b6c\",\"result_status\":\"ERROR\",\"document_count\":0,\"latency_ms\":124,\"data_mode\":\"DETERMINISTIC_SKILL\",\"source_refs\":[\"skills/diff_parse\"],\"ts\":\"2026-09-18T11:34:43.415Z\"}\n{\"tool\":\"skill_diff_parse\",\"arguments_hash\":\"req-184624747c\",\"result_status\":\"OK\",\"document_count\":0,\"latency_ms\":157,\"data_mode\":\"DETERMINISTIC_SKILL\",\"source_refs\":[\"skills/diff_parse\"],\"ts\":\"2026-09-18T11:35:44.597Z\"}\n{\"tool\":\"skill_risk_classify\",\"arguments_hash\":\"req-ec0bc28cfc\",\"result_status\":\"OK\",\"document_count\":0,\"latency_ms\":148,\"data_mode\":\"DETERMINISTIC_SKILL\",\"source_refs\":[\"skills/risk_classify\"],\"ts\":\"2026-09-18T11:35:46.746Z\"}\n{\"tool\":\"skill_case_retrieval\",\"arguments_hash\":\"req-c1920f1414\",\"result_status\":\"ERROR\",\"document_count\":0,\"latency_ms\":149,\"data_mode\":\"DETERMINISTIC_SKILL\",\"source_refs\":[\"skills/case_retrieval\"],\"ts\":\"2026-09-18T11:35:48.712Z\"}\n{\"tool\":\"skill_diff_parse\",\"arguments_hash\":\"req-05aca37e90\",\"result_status\":\"OK\",\"document_count\":0,\"latency_ms\":137,\"data_mode\":\"DETERMINISTIC_SKILL\",\"source_refs\":[\"skills/diff_parse\"],\"ts\":\"2026-09-18T11:41:12.944Z\"}\n{\"tool\":\"skill_risk_classify\",\"arguments_hash\":\"req-6bc2fc62d1\",\"result_status\":\"OK\",\"document_count\":0,\"latency_ms\":147,\"data_mode\":\"DETERMINISTIC_SKILL\",\"source_refs\":[\"skills/risk_classify\"],\"ts\":\"2026-09-18T11:41:15.648Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"132afabf0719ce86\",\"result_status\":\"OK\",\"document_count\":3,\"latency_ms\":1,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/cwe-78-command-injection.md#1\",\"org-standards/command-execution.md#1\",\"org-standards/cwe-78-command-injection.md#2\"],\"ts\":\"2026-09-18T11:41:30.231Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"132afabf0719ce86\",\"result_status\":\"OK\",\"document_count\":3,\"latency_ms\":11,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/cwe-78-command-injection.md#1\",\"org-standards/command-execution.md#1\",\"org-standards/cwe-78-command-injection.md#2\"],\"ts\":\"2026-09-18T11:41:30.235Z\"}\n{\"tool\":\"skill_case_retrieval\",\"arguments_hash\":\"\",\"result_status\":\"OK\",\"document_count\":0,\"latency_ms\":175,\"data_mode\":\"DETERMINISTIC_SKILL\",\"source_refs\":[\"skills/case_retrieval\"],\"ts\":\"2026-09-18T15:50:55.971Z\"}\n{\"tool\":\"skill_diff_parse\",\"arguments_hash\":\"req-7d53d9340b\",\"result_status\":\"OK\",\"document_count\":0,\"latency_ms\":162,\"data_mode\":\"DETERMINISTIC_SKILL\",\"source_refs\":[\"skills/diff_parse\"],\"ts\":\"2026-09-18T15:56:00.268Z\"}\n{\"tool\":\"skill_risk_classify\",\"arguments_hash\":\"req-ac593410f9\",\"result_status\":\"OK\",\"document_count\":0,\"latency_ms\":160,\"data_mode\":\"DETERMINISTIC_SKILL\",\"source_refs\":[\"skills/risk_classify\"],\"ts\":\"2026-09-18T15:56:02.889Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"22072a7c42c0897e\",\"result_status\":\"OK\",\"document_count\":3,\"latency_ms\":3,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/cwe-22-path-traversal.md#1\",\"org-standards/file-path-containment.md#1\",\"org-standards/cwe-78-command-injection.md#1\"],\"ts\":\"2026-09-18T15:57:40.618Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"22072a7c42c0897e\",\"result_status\":\"OK\",\"document_count\":3,\"latency_ms\":14,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/cwe-22-path-traversal.md#1\",\"org-standards/file-path-containment.md#1\",\"org-standards/cwe-78-command-injection.md#1\"],\"ts\":\"2026-09-18T15:57:40.622Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"80a5bbfe0e59d70b\",\"result_status\":\"OK\",\"document_count\":3,\"latency_ms\":0,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/cwe-22-path-traversal.md#1\",\"org-standards/file-path-containment.md#1\",\"org-standards/cwe-78-command-injection.md#1\"],\"ts\":\"2026-09-18T16:00:04.904Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"80a5bbfe0e59d70b\",\"result_status\":\"OK\",\"document_count\":3,\"latency_ms\":12,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/cwe-22-path-traversal.md#1\",\"org-standards/file-path-containment.md#1\",\"org-standards/cwe-78-command-injection.md#1\"],\"ts\":\"2026-09-18T16:00:04.909Z\"}\n{\"tool\":\"skill_diff_parse\",\"arguments_hash\":\"req-c2b945615f\",\"result_status\":\"ERROR\",\"document_count\":0,\"latency_ms\":154,\"data_mode\":\"DETERMINISTIC_SKILL\",\"source_refs\":[\"skills/diff_parse\"],\"ts\":\"2026-09-18T16:01:21.834Z\"}\n{\"tool\":\"skill_diff_parse\",\"arguments_hash\":\"req-8873903e2e\",\"result_status\":\"OK\",\"document_count\":0,\"latency_ms\":138,\"data_mode\":\"DETERMINISTIC_SKILL\",\"source_refs\":[\"skills/diff_parse\"],\"ts\":\"2026-09-18T16:01:28.552Z\"}\n{\"tool\":\"skill_risk_classify\",\"arguments_hash\":\"req-aaaed6910d\",\"result_status\":\"OK\",\"document_count\":0,\"latency_ms\":134,\"data_mode\":\"DETERMINISTIC_SKILL\",\"source_refs\":[\"skills/risk_classify\"],\"ts\":\"2026-09-18T16:01:31.010Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"f994d0972b9e9be8\",\"result_status\":\"OK\",\"document_count\":3,\"latency_ms\":1,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/fastapi-endpoint-checklist.md#1\",\"org-standards/cwe-22-path-traversal.md#1\",\"org-standards/file-path-containment.md#1\"],\"ts\":\"2026-09-18T16:01:32.718Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"f994d0972b9e9be8\",\"result_status\":\"OK\",\"document_count\":3,\"latency_ms\":11,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/fastapi-endpoint-checklist.md#1\",\"org-standards/cwe-22-path-traversal.md#1\",\"org-standards/file-path-containment.md#1\"],\"ts\":\"2026-09-18T16:01:32.722Z\"}\n{\"tool\":\"skill_case_retrieval\",\"arguments_hash\":\"\",\"result_status\":\"OK\",\"document_count\":0,\"latency_ms\":179,\"data_mode\":\"DETERMINISTIC_SKILL\",\"source_refs\":[\"skills/case_retrieval\"],\"ts\":\"2026-09-18T16:01:32.902Z\"}\n{\"tool\":\"skill_diff_parse\",\"arguments_hash\":\"req-97276f447a\",\"result_status\":\"OK\",\"document_count\":0,\"latency_ms\":138,\"data_mode\":\"DETERMINISTIC_SKILL\",\"source_refs\":[\"skills/diff_parse\"],\"ts\":\"2026-09-18T16:05:40.909Z\"}\n{\"tool\":\"skill_risk_classify\",\"arguments_hash\":\"req-10260e3c2a\",\"result_status\":\"OK\",\"document_count\":0,\"latency_ms\":130,\"data_mode\":\"DETERMINISTIC_SKILL\",\"source_refs\":[\"skills/risk_classify\"],\"ts\":\"2026-09-18T16:05:43.376Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"132afabf0719ce86\",\"result_status\":\"OK\",\"document_count\":3,\"latency_ms\":1,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/cwe-78-command-injection.md#1\",\"org-standards/command-execution.md#1\",\"org-standards/cwe-78-command-injection.md#2\"],\"ts\":\"2026-09-18T16:05:54.194Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"132afabf0719ce86\",\"result_status\":\"OK\",\"document_count\":3,\"latency_ms\":11,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/cwe-78-command-injection.md#1\",\"org-standards/command-execution.md#1\",\"org-standards/cwe-78-command-injection.md#2\"],\"ts\":\"2026-09-18T16:05:54.197Z\"}\n{\"tool\":\"skill_sast_scan\",\"arguments_hash\":\"req-1ba1827099\",\"result_status\":\"OK\",\"document_count\":0,\"latency_ms\":169,\"data_mode\":\"DETERMINISTIC_SKILL\",\"source_refs\":[\"skills/sast_scan\"],\"ts\":\"2026-09-18T16:45:34.054Z\"}\n{\"tool\":\"skill_sast_scan\",\"arguments_hash\":\"req-2e793995e6\",\"result_status\":\"OK\",\"document_count\":0,\"latency_ms\":159,\"data_mode\":\"DETERMINISTIC_SKILL\",\"source_refs\":[\"skills/sast_scan\"],\"ts\":\"2026-09-18T16:46:15.210Z\"}\n{\"tool\":\"skill_diff_parse\",\"arguments_hash\":\"req-c6c8c35c94\",\"result_status\":\"OK\",\"document_count\":0,\"latency_ms\":188,\"data_mode\":\"DETERMINISTIC_SKILL\",\"source_refs\":[\"skills/diff_parse\"],\"ts\":\"2026-09-18T16:51:57.675Z\"}\n{\"tool\":\"skill_risk_classify\",\"arguments_hash\":\"req-342c5a4f3b\",\"result_status\":\"OK\",\"document_count\":0,\"latency_ms\":173,\"data_mode\":\"DETERMINISTIC_SKILL\",\"source_refs\":[\"skills/risk_classify\"],\"ts\":\"2026-09-18T16:52:00.410Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"22072a7c42c0897e\",\"result_status\":\"OK\",\"document_count\":3,\"latency_ms\":1,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/cwe-22-path-traversal.md#1\",\"org-standards/file-path-containment.md#1\",\"org-standards/cwe-78-command-injection.md#1\"],\"ts\":\"2026-09-18T16:53:24.849Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"22072a7c42c0897e\",\"result_status\":\"OK\",\"document_count\":3,\"latency_ms\":15,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/cwe-22-path-traversal.md#1\",\"org-standards/file-path-containment.md#1\",\"org-standards/cwe-78-command-injection.md#1\"],\"ts\":\"2026-09-18T16:53:24.853Z\"}\n{\"tool\":\"skill_diff_parse\",\"arguments_hash\":\"req-c95384c75f\",\"result_status\":\"OK\",\"document_count\":0,\"latency_ms\":168,\"data_mode\":\"DETERMINISTIC_SKILL\",\"source_refs\":[\"skills/diff_parse\"],\"ts\":\"2026-09-18T16:56:32.963Z\"}\n{\"tool\":\"skill_risk_classify\",\"arguments_hash\":\"req-83ea050b22\",\"result_status\":\"OK\",\"document_count\":0,\"latency_ms\":139,\"data_mode\":\"DETERMINISTIC_SKILL\",\"source_refs\":[\"skills/risk_classify\"],\"ts\":\"2026-09-18T16:56:35.405Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"f994d0972b9e9be8\",\"result_status\":\"OK\",\"document_count\":3,\"latency_ms\":1,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/fastapi-endpoint-checklist.md#1\",\"org-standards/cwe-22-path-traversal.md#1\",\"org-standards/file-path-containment.md#1\"],\"ts\":\"2026-09-18T16:56:35.416Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"f994d0972b9e9be8\",\"result_status\":\"OK\",\"document_count\":3,\"latency_ms\":12,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/fastapi-endpoint-checklist.md#1\",\"org-standards/cwe-22-path-traversal.md#1\",\"org-standards/file-path-containment.md#1\"],\"ts\":\"2026-09-18T16:56:35.420Z\"}\n{\"tool\":\"skill_diff_parse\",\"arguments_hash\":\"req-40836ff48f\",\"result_status\":\"OK\",\"document_count\":0,\"latency_ms\":200,\"data_mode\":\"DETERMINISTIC_SKILL\",\"source_refs\":[\"skills/diff_parse\"],\"ts\":\"2026-09-18T17:00:48.972Z\"}\n{\"tool\":\"skill_risk_classify\",\"arguments_hash\":\"req-106c11f083\",\"result_status\":\"OK\",\"document_count\":0,\"latency_ms\":212,\"data_mode\":\"DETERMINISTIC_SKILL\",\"source_refs\":[\"skills/risk_classify\"],\"ts\":\"2026-09-18T17:00:51.239Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"132afabf0719ce86\",\"result_status\":\"OK\",\"document_count\":3,\"latency_ms\":2,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/cwe-78-command-injection.md#1\",\"org-standards/command-execution.md#1\",\"org-standards/cwe-78-command-injection.md#2\"],\"ts\":\"2026-09-18T17:01:00.913Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"132afabf0719ce86\",\"result_status\":\"OK\",\"document_count\":3,\"latency_ms\":15,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[\"org-standards/cwe-78-command-injection.md#1\",\"org-standards/command-execution.md#1\",\"org-standards/cwe-78-command-injection.md#2\"],\"ts\":\"2026-09-18T17:01:00.918Z\"}\n{\"tool\":\"skill_sast_scan\",\"arguments_hash\":\"req-d1421b3615\",\"result_status\":\"ERROR\",\"document_count\":0,\"latency_ms\":195,\"data_mode\":\"DETERMINISTIC_SKILL\",\"source_refs\":[\"skills/sast_scan\"],\"ts\":\"2026-09-18T17:05:32.624Z\"}\n{\"tool\":\"skill_diff_parse\",\"arguments_hash\":\"req-ae9f0b6b7a\",\"result_status\":\"ERROR\",\"document_count\":0,\"latency_ms\":143,\"data_mode\":\"DETERMINISTIC_SKILL\",\"source_refs\":[\"skills/diff_parse\"],\"ts\":\"2026-09-18T17:05:40.902Z\"}\n{\"tool\":\"skill_sast_scan\",\"arguments_hash\":\"req-c2c37caad4\",\"result_status\":\"OK\",\"document_count\":0,\"latency_ms\":119,\"data_mode\":\"DETERMINISTIC_SKILL\",\"source_refs\":[\"skills/sast_scan\"],\"ts\":\"2026-09-18T17:05:48.439Z\"}\n{\"tool\":\"skill_risk_classify\",\"arguments_hash\":\"req-9122a78c28\",\"result_status\":\"ERROR\",\"document_count\":0,\"latency_ms\":116,\"data_mode\":\"DETERMINISTIC_SKILL\",\"source_refs\":[\"skills/risk_classify\"],\"ts\":\"2026-09-18T17:05:51.356Z\"}\n{\"tool\":\"skill_risk_classify\",\"arguments_hash\":\"req-31140b95a2\",\"result_status\":\"ERROR\",\"document_count\":0,\"latency_ms\":134,\"data_mode\":\"DETERMINISTIC_SKILL\",\"source_refs\":[\"skills/risk_classify\"],\"ts\":\"2026-09-18T17:05:53.791Z\"}\n{\"tool\":\"skill_risk_classify\",\"arguments_hash\":\"req-73c676101f\",\"result_status\":\"ERROR\",\"document_count\":0,\"latency_ms\":119,\"data_mode\":\"DETERMINISTIC_SKILL\",\"source_refs\":[\"skills/risk_classify\"],\"ts\":\"2026-09-18T17:05:56.548Z\"}\n{\"tool\":\"skill_risk_classify\",\"arguments_hash\":\"req-b654cd1fda\",\"result_status\":\"OK\",\"document_count\":0,\"latency_ms\":128,\"data_mode\":\"DETERMINISTIC_SKILL\",\"source_refs\":[\"skills/risk_classify\"],\"ts\":\"2026-09-18T17:05:58.843Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"8a061dde3df45fa9\",\"result_status\":\"EMPTY\",\"document_count\":0,\"latency_ms\":1,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[],\"ts\":\"2026-09-18T17:06:03.053Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"8a061dde3df45fa9\",\"result_status\":\"EMPTY\",\"document_count\":0,\"latency_ms\":10,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[],\"ts\":\"2026-09-18T17:06:03.056Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"9e3b8db3c35d69f4\",\"result_status\":\"EMPTY\",\"document_count\":0,\"latency_ms\":1,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[],\"ts\":\"2026-09-18T17:06:04.187Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"9e3b8db3c35d69f4\",\"result_status\":\"EMPTY\",\"document_count\":0,\"latency_ms\":2,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[],\"ts\":\"2026-09-18T17:06:04.188Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"89d6cee5631cea61\",\"result_status\":\"EMPTY\",\"document_count\":0,\"latency_ms\":0,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[],\"ts\":\"2026-09-18T17:06:06.740Z\"}\n{\"tool\":\"rag.retrieve\",\"arguments_hash\":\"89d6cee5631cea61\",\"result_status\":\"EMPTY\",\"document_count\":0,\"latency_ms\":2,\"data_mode\":\"SYNTHETIC\",\"source_refs\":[],\"ts\":\"2026-09-18T17:06:06.742Z\"}\n{\"tool\":\"skill_case_retrieval\",\"arguments_hash\":\"\",\"result_status\":\"OK\",\"document_count\":0,\"latency_ms\":215,\"data_mode\":\"DETERMINISTIC_SKILL\",\"source_refs\":[\"skills/case_retrieval\"],\"ts\":\"2026-09-18T17:06:08.224Z\"}\n{\"tool\":\"skill_case_retrieval\",\"arguments_hash\":\"\",\"result_status\":\"OK\",\"document_count\":0,\"latency_ms\":154,\"data_mode\":\"DETERMINISTIC_SKILL\",\"source_refs\":[\"skills/case_retrieval\"],\"ts\":\"2026-09-18T17:06:09.357Z\"}\n"
+        }
+      ],
+      "source_ref": "finalsPr2Sk5Traced/project/result.md",
+      "hash": {
+        "file": "project/result.md",
+        "dir": "FINALS-ELEM-PR2-SK5-TRACED",
+        "exists": true,
+        "hash_verified": true,
+        "sha256": "35392d9dd42dbe4a0e3381b91e951dc49cc7ca9a65db061f14904ac25d45a05c"
+      },
+      "real": [
+        "真实执行（SK5-TRACED）：非预设 SPEC、真实人工门（按操作员运行前书面授权自动投递）、批准后 12 秒 Leader 全新委派、Reviewer/Fixer/Verifier 真实调用确定性 skill_* 工具（tool.skill_* 独立 span + 宿主审计流水）",
+        "SK5 会话四线并行：PR #2 批准路径 + PR #3 拒绝路径 + PR #1 低风险自动路径（NOT_CONFIRMED/LOW，无人工门，skill_sast_scan 首次被 Agent 调用并诚实识别 false positive）+ 双 Reviewer 信度实验（两独立容器同一 head 结论完全一致）；direct-probe 以 stdin 方式修复采集，4/4 非空"
+      ],
+      "controlled": [
+        "页面为只读回放；RAG 语料为知识型 SYNTHETIC（citation-only，无案例结论）；确定性 Skill 输出为 advisory（其 SKILL.md 自述 never an authorization decision）",
+        "case_retrieval 的向量检索使用仓库自带的离线确定性 hash embedding（非语义模型）——排序为确定性向量相似度，升级语义检索属赛后项"
+      ],
+      "not_executed": [
+        "操作员对 Fixer 零执行指令介入；merge/push/close/reopen 未执行（PR #2 保持 OPEN，github-branches-after-sk5.txt 双分支 head 核验不变）",
+        "SK5-MASTER-README 的用量表为估计口径，与本包锁定 usage-summary.json 的实测窗口不一致——本页以锁定工件为准",
+        "直连探针本轮已修复采集（stdin 方式，4/4 非空）——此前四轮\"未采集\"的已知操作缺陷闭环"
+      ]
+    },
+    {
+      "id": "ev-sk-skills",
+      "title": "Skills MCP（确定性技能集 · 全程留痕）",
+      "level": "REAL_EXECUTED_AGENTTEAMS_LIVE",
+      "fields": [
+        [
+          "技能集",
+          "skill_diff_parse · skill_risk_classify（advisory L1）· skill_case_retrieval（elemiso-case-pg 知识库）· skill_sast_scan（静态扫描）· skill_test_runner"
+        ],
+        [
+          "sast_scan 首战",
+          "低风险 PR1 路径（同会话）reviewer 对 bootstrap 文件跑 SAST：tool.skill_sast_scan ×2；严格解析器拒绝手写重构 diff 后改用文件原文——诚实识别测试文件中 subprocess.run 为 false positive（非 shell=True）"
+        ],
+        [
+          "分层语义",
+          "工具输出 advisory-only：建议性 L1 < Agent 自主定级（HIGH）< 人工门；SAST 命中不等于漏洞结论——false positive 如实入档"
+        ],
+        [
+          "构建",
+          "image/skill-mcp-server.mjs + image/zz_agentloop_skills.py 入包"
+        ]
+      ],
+      "blocks": [
+        {
+          "title": "finalsPr2Sk5Traced/image/skill-mcp-server.mjs（前 3000 字；全文见证据目录）",
+          "lang": "javascript",
+          "text": "#!/usr/bin/env node\n// skill-mcp-server.mjs — exposes the M4-F deterministic Skills as MCP tools so\n// AgentTeam members can call them exactly like rag_retrieve (same stdio channel,\n// same tracing path: every call lands in the AgentLoop as tool.* span).\n//\n// Wrapped skills (implemented under skills/, deterministic pure-compute, no\n// network / no DB / no LLM — safe to run inside the worker container):\n//   skill_diff_parse     skills.diff_parse      diff text -> structured change_context\n//   skill_risk_classify  skills.risk_classify   change_context -> advisory L0/L2 + recommended controls\n//   skill_test_runner    skills.test_runner     deterministic regression baseline (parse profile; runs pytest)\n//   skill_case_retrieval skills.case_retrieval  historical case lookup\n//\n// Pipeline note: skill_diff_parse output.change_context feeds skill_risk_classify\n// input.change_context directly (the two contracts are designed to chain).\n//\n// MCP stdio protocol (same minimal impl as rag-mcp-server.mjs). Zero npm deps.\nimport http from 'node:http';\nimport readline from 'node:readline';\nimport { spawnSync } from 'node:child_process';\n\nconst REPO = process.env.SKILL_REPO_ROOT || '/opt/mergepilot';   // repo checkout inside the worker image\nconst PY = process.env.SKILL_PYTHON || '/opt/venv/standard/bin/python';\n\nfunction httpJson(url, { method = 'GET', body } = {}) {\n  return new Promise((resolve, reject) => {\n    const u = new URL(url);\n    const req = http.request(\n      { host: u.hostname, port: u.port || 80, path: u.pathname + u.search, method,\n        headers: body ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) } : {} },\n      (res) => {\n        const chunks = [];\n        res.on('data', (c) => chunks.push(c));\n        res.on('end', () => {\n          const text = Buffer.concat(chunks).toString('utf-8');\n          try { resolve(JSON.parse(text)); } catch { reject(new Error('non-JSON upstream: ' + text.slice(0, 120))); }\n        });\n      });\n    req.on('error', reject);\n    if (body) req.write(body);\n    req.end();\n  });\n}\n\nconst AUDIT_ENDPOINT = process.env.SKILL_AUDIT_ENDPOINT || 'http://host.docker.internal:4184/api/rag/toolspan-audit';\nfunction audit(record) {\n  const body = JSON.stringify({ ...record, data_mode: 'DETERMINISTIC_SKILL' });\n  httpJson(AUDIT_ENDPOINT, { method: 'POST', body }).catch(() => {});\n}\n\n// Run one skill via the common runtime CLI (validates envelope in-process).\n// We spawn a fresh python per call: pure compute, cold start ~100ms, and the\n// worker process stays stateless.\nfunction runSkill(module, inputObj, viaHandle) {\n  const call = viaHandle\n    ? `import os\nfrom skills.case_retrieval.embedding.fastembed_provider import DeterministicFakeProvider\nprov = DeterministicFakeProvider()\nimport skills.case_retrieval.run as _run_mod\n_orig_run = _run_mod.core.run\ndef _patched_run(inp, **kw):\n    kw.setdefault('embedding_provider', prov)\n    return _orig_run(inp, **kw)\n_run_mod.core.run = _patched\n…"
+        },
+        {
+          "title": "finalsPr2Sk5Traced/image/zz_agentloop_skills.py（前 3000 字）",
+          "lang": "python",
+          "text": "\"\"\"AgentLoop Skills-MCP integration hook for CoPaw workers — DEFERRED (v1).\n\nInjects the deterministic Skills MCP client (stdio: node /usr/local/bin/skill-mcp-server.mjs\n-> skill_diff_parse / skill_risk_classify / skill_test_runner / skill_case_retrieval) into\nevery CoPawAgent, APPENDING to whatever MCP clients already exist (the rag hook may have\ninjected rag_mcp first — both are wanted).\n\nSame deferred discipline as zz_agentloop_otel / zz_agentloop_rag:\n  .pth import = stdlib only + one daemon watcher thread; patching happens only after\n  /etc/agentloop-skills.json enables it AND the boot grace period elapsed; only modules\n  already in sys.modules are touched. StdIOStatefulClient is connect()ed before injection\n  (toolkit validates connection state; empty cwd breaks the node spawn).\n\"\"\"\nimport json\nimport os\nimport sys\nimport threading\nimport time\n\nCFG_PATH = os.environ.get(\"AGENTLOOP_SKILLS_CONFIG\", \"/etc/agentloop-skills.json\")\nGRACE_SECONDS = float(os.environ.get(\"AGENTLOOP_SKILLS_GRACE\", \"90\"))\nLOG = \"/tmp/agentloop-skills-hook.log\"\n\n_state = {\"patched\": False, \"activated_at\": None, \"lock\": threading.Lock()}\n\n\ndef _log(msg):\n    try:\n        with open(LOG, \"a\") as f:\n            f.write(time.strftime(\"%Y-%m-%dT%H:%M:%SZ\", time.gmtime()) + \" \" + str(msg)[:220] + \"\\n\")\n    except Exception:\n        pass\n\n\ndef _read_cfg():\n    try:\n        if not os.path.exists(CFG_PATH):\n            return None\n        with open(CFG_PATH) as f:\n            cfg = json.load(f)\n        if isinstance(cfg, dict) and cfg.get(\"enabled\"):\n            return cfg\n    except Exception as e:\n        _log(\"cfg error: \" + type(e).__name__)\n    return None\n\n\ndef _apply(cfg):\n    try:\n        from copaw.agents.react_agent import CoPawAgent\n        from copaw.app.mcp import StdIOStatefulClient\n    except Exception as e:\n        _log(\"import failed (will retry): \" + type(e).__name__ + \":\" + str(e)[:120])\n        return False\n\n    if getattr(CoPawAgent, \"_skills_hook_installed\", False):\n        _state[\"patched\"] = True\n        return True\n\n    client_kwargs = {\n        \"name\": \"skills_mcp\",\n        \"command\": \"node\",\n        \"args\": [cfg.get(\"mcp_server_path\", \"/usr/local/bin/skill-mcp-server.mjs\")],\n        \"env\": {\n            \"SKILL_REPO_ROOT\": cfg.get(\"skill_repo_root\", \"/opt/mergepilot\"),\n            \"PYTHONPATH\": cfg.get(\"skill_repo_root\", \"/opt/mergepilot\"),\n            \"SKILL_AUDIT_ENDPOINT\": cfg.get(\"audit_endpoint\", \"http://host.docker.internal:4184/api/rag/toolspan-audit\"),\n            **(cfg.get(\"extra_env\") or {}),\n        },\n    }\n\n    orig = CoPawAgent.register_mcp_clients\n\n    async def patched(self, *args, **kwargs):\n        already = [c for c in (getattr(self, \"_mcp_clients\", None) or [])\n                   if getattr(c, \"name\", \"\") == \"skills_mcp\"]\n        if already:\n            _log(\"skills_mcp already present; skipping injection\")\n        else:\n            try:\n                client = StdIOStatefulClient(**client_kwargs)\n                await client.conne\n…"
+        }
+      ],
+      "source_ref": "finalsPr2Sk5Traced/image/skill-mcp-server.mjs",
+      "hash": {
+        "file": "image/skill-mcp-server.mjs",
+        "dir": "FINALS-ELEM-PR2-SK5-TRACED",
+        "exists": true,
+        "hash_verified": true,
+        "sha256": "a07a89e80fe87a9dc5858998c0de226feaac6fc81e71fa09cc5cd39b27dcd3fe"
+      },
+      "real": [
+        "真实执行（SK5-TRACED）：非预设 SPEC、真实人工门（按操作员运行前书面授权自动投递）、批准后 12 秒 Leader 全新委派、Reviewer/Fixer/Verifier 真实调用确定性 skill_* 工具（tool.skill_* 独立 span + 宿主审计流水）",
+        "SK5 会话四线并行：PR #2 批准路径 + PR #3 拒绝路径 + PR #1 低风险自动路径（NOT_CONFIRMED/LOW，无人工门，skill_sast_scan 首次被 Agent 调用并诚实识别 false positive）+ 双 Reviewer 信度实验（两独立容器同一 head 结论完全一致）；direct-probe 以 stdin 方式修复采集，4/4 非空"
+      ],
+      "controlled": [
+        "页面为只读回放；RAG 语料为知识型 SYNTHETIC（citation-only，无案例结论）；确定性 Skill 输出为 advisory（其 SKILL.md 自述 never an authorization decision）",
+        "case_retrieval 的向量检索使用仓库自带的离线确定性 hash embedding（非语义模型）——排序为确定性向量相似度，升级语义检索属赛后项"
+      ],
+      "not_executed": [
+        "操作员对 Fixer 零执行指令介入；merge/push/close/reopen 未执行（PR #2 保持 OPEN，github-branches-after-sk5.txt 双分支 head 核验不变）",
+        "SK5-MASTER-README 的用量表为估计口径，与本包锁定 usage-summary.json 的实测窗口不一致——本页以锁定工件为准",
+        "直连探针本轮已修复采集（stdin 方式，4/4 非空）——此前四轮\"未采集\"的已知操作缺陷闭环"
+      ]
+    },
+    {
+      "id": "ev-sk-rooms",
+      "title": "Matrix 房间导出（全量事件 + 运行窗口实时计数）",
+      "level": "REAL_EXECUTED_AGENTTEAMS_LIVE",
+      "postgate": true,
+      "fields": [
+        [
+          "团队房",
+          "!RErK7WVs9iUeaszwho:elemiso-matrix:6167（导出 1600 事件，跨 09-16/09-17/09-18 多轮房史；SK5 PR2 窗口 16:51–16:58Z 消息 47 条）"
+        ],
+        [
+          "Leader DM",
+          "!VocOLrDhUMBcBjzIuY:elemiso-matrix:6167（导出 991 事件；SK5 PR2 窗口消息 6 条）"
+        ]
+      ],
+      "blocks": [
+        {
+          "title": "finalsPr2Sk5Traced/team-room-messages.json + leader-dm-messages.json（实时计数）",
+          "lang": "json",
+          "text": "{\n  \"team_room\": \"!RErK7WVs9iUeaszwho:elemiso-matrix:6167\",\n  \"team_export_events\": 1600,\n  \"team_window_messages\": 47,\n  \"leader_dm\": \"!VocOLrDhUMBcBjzIuY:elemiso-matrix:6167\",\n  \"dm_export_events\": 991,\n  \"dm_window_messages\": 6,\n  \"window\": \"2026-09-18T16:51Z–16:58Z（PR2 运行窗口）\"\n}"
+        }
+      ],
+      "source_ref": "finalsPr2Sk5Traced/team-room-messages.json",
+      "hash": {
+        "file": "team-room-messages.json",
+        "dir": "FINALS-ELEM-PR2-SK5-TRACED",
+        "exists": true,
+        "hash_verified": true,
+        "sha256": "0ced5c0c5f48fab7800d96dc1d67191982887ae3e4e21be00c44d6e7e00af498"
+      },
+      "real": [
+        "真实执行（SK5-TRACED）：非预设 SPEC、真实人工门（按操作员运行前书面授权自动投递）、批准后 12 秒 Leader 全新委派、Reviewer/Fixer/Verifier 真实调用确定性 skill_* 工具（tool.skill_* 独立 span + 宿主审计流水）",
+        "SK5 会话四线并行：PR #2 批准路径 + PR #3 拒绝路径 + PR #1 低风险自动路径（NOT_CONFIRMED/LOW，无人工门，skill_sast_scan 首次被 Agent 调用并诚实识别 false positive）+ 双 Reviewer 信度实验（两独立容器同一 head 结论完全一致）；direct-probe 以 stdin 方式修复采集，4/4 非空"
+      ],
+      "controlled": [
+        "页面为只读回放；RAG 语料为知识型 SYNTHETIC（citation-only，无案例结论）；确定性 Skill 输出为 advisory（其 SKILL.md 自述 never an authorization decision）",
+        "case_retrieval 的向量检索使用仓库自带的离线确定性 hash embedding（非语义模型）——排序为确定性向量相似度，升级语义检索属赛后项"
+      ],
+      "not_executed": [
+        "操作员对 Fixer 零执行指令介入；merge/push/close/reopen 未执行（PR #2 保持 OPEN，github-branches-after-sk5.txt 双分支 head 核验不变）",
+        "SK5-MASTER-README 的用量表为估计口径，与本包锁定 usage-summary.json 的实测窗口不一致——本页以锁定工件为准",
+        "直连探针本轮已修复采集（stdin 方式，4/4 非空）——此前四轮\"未采集\"的已知操作缺陷闭环"
+      ]
+    }
+  ]
+}

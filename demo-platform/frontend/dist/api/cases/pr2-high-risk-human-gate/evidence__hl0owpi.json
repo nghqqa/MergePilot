@@ -1,0 +1,126 @@
+{
+  "drawer": "task",
+  "data_mode": "historical replay",
+  "trace_mode": "evidence-replay",
+  "integrity_status": "verified",
+  "event_id": null,
+  "trace_id": null,
+  "trace_note": "同上（全运行追踪 + delegation.link 关联）",
+  "project_id": "elemiso-pr2v3-gate",
+  "task_id": "fix-1",
+  "agent_role": "fixer",
+  "runtime": "copaw-worker:223ddc2-agentloop-v3rag",
+  "event_type": "task_state",
+  "source": "minio",
+  "source_label": "MinIO task result",
+  "source_ref": "finalsPr2V3Traced/tasks/pr2v3-fix-1/meta.json + finalsPr2V3Traced/team-room-messages.json",
+  "source_hash": {
+    "ref": "finalsPr2V3Traced/tasks/pr2v3-fix-1/meta.json + finalsPr2V3Traced/team-room-messages.json",
+    "dir": "FINALS-ELEM-PR2-V3-TRACED",
+    "dir_key": "finalsPr2V3Traced",
+    "file": "tasks/pr2v3-fix-1/meta.json",
+    "abs_path": "D:\\goai\\mergepilot-demo\\evidence\\FINALS-ELEM-PR2-V3-TRACED\\tasks\\pr2v3-fix-1\\meta.json",
+    "exists": true,
+    "evidence_root_readonly": true,
+    "sha256_actual": "bb393cc4701c03d6eb828b1e8a14d3f41e58a001e2fa7494c70dadb3959da30f",
+    "sha256_expected": "bb393cc4701c03d6eb828b1e8a14d3f41e58a001e2fa7494c70dadb3959da30f",
+    "hash_verified": true,
+    "sums_source": "FINALS-ELEM-PR2-V3-TRACED/SHA256SUMS"
+  },
+  "timestamp": "2026-09-17T03:13:35Z → 2026-09-17T03:14:07Z",
+  "timestamp_precision": "exact",
+  "assignee": "fixer",
+  "result_summary": "STATUS: SUCCESS / FIX_APPLIED / SELF_CHECK_PASSED — realpath 归一化 + 包含性校验，越界 400、缺失 404、合法 200。单文件 +13/−7。sha256 674356fc…16081（与 R1/R2/R3-TRACED/RAG-TRACED 独立产出逐字节一致，第五次；机理：RAG 组织规范 file-path-containment.md 即该实现模式）",
+  "result_status": "SUCCESS",
+  "effective": true,
+  "effective_note": null,
+  "input_context": "人工门批准后执行最小必要修复：仅 Reviewer 标记文件；测试冻结；零 GitHub 写入。",
+  "tool_calls_summary": "taskflow ack/submit；git clone；apply 修复；自检探针；rag_retrieve ×1（组织修复规范）",
+  "artifacts": [
+    {
+      "name": "attempt-1.diff",
+      "source": "finalsPr2V3Traced/tasks/pr2v3-fix-1/attempt-1.diff",
+      "resolved": {
+        "dir": "FINALS-ELEM-PR2-V3-TRACED",
+        "file": "tasks/pr2v3-fix-1/attempt-1.diff",
+        "exists": true,
+        "hash_verified": true,
+        "sha256_actual": "674356fc9a661faa49b97b789d75ff4529b95a5fac7f39dad0301397c0116081"
+      }
+    },
+    {
+      "name": "notes.md",
+      "source": "finalsPr2V3Traced/tasks/pr2v3-fix-1/workspace/notes.md",
+      "resolved": {
+        "dir": "FINALS-ELEM-PR2-V3-TRACED",
+        "file": "tasks/pr2v3-fix-1/workspace/notes.md",
+        "exists": true,
+        "hash_verified": true,
+        "sha256_actual": "7dc1f6ac62eb0e270bb7e36b4d0070d941e5a7d8cfc92d60f22099222bbb5cb9"
+      }
+    },
+    {
+      "name": "spec.md",
+      "source": "finalsPr2V3Traced/tasks/pr2v3-fix-1/spec.md",
+      "resolved": {
+        "dir": "FINALS-ELEM-PR2-V3-TRACED",
+        "file": "tasks/pr2v3-fix-1/spec.md",
+        "exists": true,
+        "hash_verified": true,
+        "sha256_actual": "221d6f4e78d230297fc2f99089f9d8fa47d97b65bd279e6351cff0060b744c06"
+      }
+    }
+  ],
+  "status_history": [
+    {
+      "at": "2026-09-17T03:02:46Z",
+      "event_id": "pr2v3-ev-001",
+      "status": "pending",
+      "status_label": "PENDING · 等待派发",
+      "locked_reason": "DAG 依赖：等待 review-1 结论"
+    },
+    {
+      "at": "2026-09-17T03:12:50Z",
+      "event_id": "pr2v3-ev-008",
+      "status": "waiting_human",
+      "status_label": "WAITING_HUMAN · 人工门停等",
+      "locked_reason": "人工安全门：HUMAN_SECURITY_REVIEW_REQUIRED — 未批准禁止派发"
+    },
+    {
+      "at": "2026-09-17T03:13:25Z",
+      "event_id": "pr2v3-ev-009",
+      "status": "pending",
+      "status_label": "PENDING · 等待派发",
+      "locked_reason": null
+    },
+    {
+      "at": "2026-09-17T03:13:35Z",
+      "event_id": "pr2v3-ev-010",
+      "status": "running",
+      "status_label": "RUNNING · 执行中",
+      "locked_reason": null
+    },
+    {
+      "at": "2026-09-17T03:14:07Z",
+      "event_id": "pr2v3-ev-012",
+      "status": "completed",
+      "status_label": "COMPLETED · 完成",
+      "locked_reason": null
+    }
+  ],
+  "hash_verified": true,
+  "redaction_status": {
+    "redaction_layer": "applied (evidence-adapter/redact.mjs)",
+    "scan_hits": [],
+    "status": "CLEAN — redaction applied; PR#2 demo placeholders allow-listed",
+    "forbidden_fields_excluded": [
+      "Authorization",
+      "Cookie",
+      "API key",
+      "Matrix token",
+      "password",
+      "完整工具参数",
+      "完整 prompt/completion"
+    ]
+  }
+}

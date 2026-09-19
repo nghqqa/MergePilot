@@ -1,0 +1,108 @@
+{
+  "id": "ev-fix-result",
+  "title": "Fixer 交付 fix-1.result.md",
+  "level": "REAL_EXECUTED_AGENTTEAMS",
+  "fields": [
+    [
+      "STATUS",
+      "SUCCESS / FIX_APPLIED / TESTS_PASSED"
+    ],
+    [
+      "交付物",
+      "fix.patch · demo_high_risk.fixed.py · test-evidence.md"
+    ],
+    [
+      "Leader 验收",
+      "effective=true（fixVerify/AUDIT.md）"
+    ]
+  ],
+  "blocks": [
+    {
+      "title": "fixVerify/artifacts/fix-1.result.md",
+      "lang": "text",
+      "text": "STATUS: SUCCESS\nSUMMARY: FIX_APPLIED TESTS_PASSED - Remediated CWE-22 path traversal (arbitrary file read) in PR#2 demo_download by normalizing the resolved path (Path.resolve) and enforcing containment within DEMO_FILES_DIR via is_relative_to, returning 404 on violation. Fix verified locally: traversal request (name=../outside/outside-secret.txt) now returns 404 and no longer leaks the external secret; the legitimate demo file inside the base is still served (HTTP 200, WELCOME-LEGIT-DEMO). Minimal single-file change to demo_high_risk.py only. Local work only; PR#2 stays open. (Note: the repo's own unmodified tests assert the pre-fix 200/disclosure behavior and now fail with 404, which is the expected confirmation the flaw is closed; see test-evidence.md.)\nDELIVERABLES:\n- shared/projects/copaw-high-risk-human-gate/tasks/fix-1/workspace/fix.patch\n- shared/projects/copaw-high-risk-human-gate/tasks/fix-1/workspace/demo_high_risk.fixed.py\n- shared/projects/copaw-high-risk-human-gate/tasks/fix-1/workspace/test-evidence.md\n"
+    }
+  ],
+  "source_ref": "fixVerify/artifacts/fix-1.result.md",
+  "hash": {
+    "file": "artifacts/fix-1.result.md",
+    "dir": "PHASE14-WINDOWS-COPAW-HIGH-RISK-FIX-VERIFY-20260829-180548",
+    "exists": true,
+    "hash_verified": true,
+    "sha256": "30a758cd30922eab2678270a2ddeada875fc069e9156f4764b301868e4ea31c2"
+  },
+  "real": [
+    "AgentTeams/CoPaw 多 Agent 历史真实运行（2026-08-29：真实 Matrix 派单、真实 LLM、真实容器执行）",
+    "Reviewer / Fixer / Verifier 产物来自锁定证据目录（SHA256 校验）",
+    "人工审批为真实操作员记录（human-gate-approval.md）"
+  ],
+  "controlled": [
+    "本页面对证据的时间线投影与讲解文案"
+  ],
+  "not_executed": [
+    "本次演示不连接实时 GitHub / Matrix / LLM",
+    "merge / push / close / reopen 全程禁止，PR #2 保持 OPEN",
+    "per-task 云端 Trace（evidence-replay，trace_id 不存在）"
+  ],
+  "case": {
+    "case_id": "fastapi-pr2-cwe22",
+    "case_name": "FastAPI PR #2 · 路径穿越风险修复",
+    "repo": "nghqqa/fastapi-boilerplate-demo",
+    "pr": "PR #2 · demo/high-risk-human-gate",
+    "pr_url": "https://github.com/nghqqa/fastapi-boilerplate-demo/pull/2",
+    "run_id": "copaw-high-risk-human-gate（AgentTeams project）",
+    "sha": "1dedf5e1992c950557064d8f4fb9039d1523deb3",
+    "sha_kind": "PR #2 head commit",
+    "evidence_level": [
+      "HISTORICAL_REPLAY",
+      "REAL_EXECUTED_AGENTTEAMS"
+    ],
+    "source_dir": "evidence/PHASE14-WINDOWS-*（replayMaterials · fixVerify · fixAudit · finalLock · highRiskGateBlocked）",
+    "generated_at": "运行 2026-08-29 · 状态锁定 2026-08-29T13:09+08:00（pr-state-final.json）",
+    "pending_redactions": null
+  },
+  "integrity": {
+    "finals": {
+      "finalsDbLoop": {
+        "dir": "FINALS-DB-MIGRATION-LOOP-20260914",
+        "tier": "REAL_SQL_VERIFICATION_ISOLATED_POSTGRES",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsReworkLoop": {
+        "dir": "FINALS-REWORK-LOOP-20260914",
+        "tier": "MECHANISM_VERIFICATION",
+        "verified": true,
+        "files": 7,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsRagLoop": {
+        "dir": "FINALS-RAG-LOOP-20260914",
+        "tier": "REAL_OFFLINE_EXPERIMENT_SYNTHETIC_CORPUS",
+        "verified": true,
+        "files": 4,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr2Live": {
+        "dir": "FINALS-ELEM-PR2-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 19,
+        "mismatched": [],
+        "missing": []
+      },
+      "finalsPr3Live": {
+        "dir": "FINALS-ELEM-PR3-LIVE-20260916",
+        "tier": "REAL_EXECUTED_AGENTTEAMS_LIVE_20260916",
+        "verified": true,
+        "files": 8,
+        "mismatched": [],
+        "missing": []
+      }
+    }
+  }
+}
