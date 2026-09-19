@@ -1,1 +1,16 @@
-[]
+[
+ {
+  "delivery_id": "38c1c5f0-b407-11f1-907b-1f4dd494c001",
+  "event_name": "pull_request",
+  "action": "synchronize",
+  "repo": "nghqqa/fastapi-boilerplate-demo",
+  "pr_number": 2,
+  "observed_head_sha": "65de83d6d061413ec98c1e79515f470313ef9806",
+  "observed_base_sha": "4cd5bf099f88c3f3f85ee4c06b7adfe9925a6e5c",
+  "status": "PROCESSED",
+  "error": "completed/pass_verified (manual close; check 105874262425)",
+  "received_at": "2026-09-19T08:50:55.965706+00:00",
+  "claimed_at": "2026-09-19T08:50:58.007332+00:00",
+  "processed_at": "2026-09-19T09:35:46.479726+00:00"
+ }
+]
