@@ -110,11 +110,11 @@ def seed_project(proj, task, d, run):
         f"## DAG Task Plan\n\n**Plan Type**: dag\n\n"
         f"- [ ] {task} — Independent security review of PR #{d['pr_number']} "
         f"(assigned: @reviewer:elemiso-matrix:6167)\n"
-        f"- [ ] gh-pr{d['pr_number']}-fix-1 — Minimal fix only if human gate approves "
+        f"- [ ] gh-pr{d['pr_number']}-{d['observed_head_sha'][:8]}-fix-1 — Minimal fix only if human gate approves "
         f"(assigned: @fixer:elemiso-matrix:6167, depends: {task})\n"
-        f"- [ ] gh-pr{d['pr_number']}-verify-1 — Independent verification only if fix "
+        f"- [ ] gh-pr{d['pr_number']}-{d['observed_head_sha'][:8]}-verify-1 — Independent verification only if fix "
         f"authorized and accepted (assigned: @verifier:elemiso-matrix:6167, "
-        f"depends: gh-pr{d['pr_number']}-fix-1)\n")
+        f"depends: gh-pr{d['pr_number']}-{d['observed_head_sha'][:8]}-fix-1)\n")
     base = f"teams/elemiso-team/shared/projects/{proj}"
     return (minio_put(f"{base}/meta.json", json.dumps(meta, ensure_ascii=False, indent=2))
             and minio_put(f"{base}/plan.md", plan))
@@ -140,7 +140,8 @@ def build_kickoff(d):
     run = "run-gh-pr%d-%s-%s" % (d["pr_number"], d["observed_head_sha"][:8],
                                  time.strftime("%H%M%S", time.gmtime()))
     proj = "elemiso-gh-pr%d-%s" % (d["pr_number"], d["observed_head_sha"][:8])
-    task = "gh-pr%d-review-1" % d["pr_number"]
+    # 任务 ID 必须跨轮唯一(shared/tasks/ 是扁平命名空间,同 PR 重跑会撞上轮目录)
+    task = "gh-pr%d-%s-review-1" % (d["pr_number"], d["observed_head_sha"][:8])
     ws = "ghwork-" + run
     spec = (
         f"{task} / {run} - Independent security review of PR #{d['pr_number']} "
@@ -161,7 +162,10 @@ def build_kickoff(d):
         f"the current session (ignore any memory of earlier unavailability — that was a "
         f"previous session's configuration issue, now fixed). For any code-bearing diff "
         f"you MUST call skill_diff_parse at minimum; if a first MCP call errors, wait 10s "
-        f"and retry once (lazy connect at task start).\n"
+        f"and retry once (lazy connect at task start). If you CONFIRM a security finding, "
+        f"also consult rag_retrieve for the matching org standard (references only, never "
+        f"a substitute for your own reproduction) and skill_case_retrieval for similar "
+        f"historical cases (advisory context only).\n"
         f"4) taskflow(submit_task) with YOUR independent conclusion, including exactly: "
         f"STATUS: FINDING_CONFIRMED|NOT_CONFIRMED; SEVERITY: HIGH|MEDIUM|LOW; "
         f"HUMAN_VERIFICATION_REQUIRED: YES|NO; plus evidence (PoC outputs / file:line).\n"
@@ -350,7 +354,13 @@ def main():
             print(json.dumps(d, ensure_ascii=False))
         return
     while True:
-        for d in pending_deliveries():
+        try:
+            pend = pending_deliveries()
+        except Exception as e:
+            print("poll error (will retry):", type(e).__name__, str(e)[:120], flush=True)
+            time.sleep(20)
+            continue
+        for d in pend:
             try:
                 process(d, a.timeout_min, a.dry_run)
             except Exception as e:
