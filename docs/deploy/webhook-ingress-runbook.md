@@ -37,10 +37,14 @@ DNSPod 添加 A 记录：`mergepilot.nghqqa.cn → <服务器公网IP>`，线路
 ## S2 · 服务器装 Docker
 
 ```bash
-curl -fsSL https://get.docker.com | bash -s docker --mirror Aliyun
+# 先确认是否已装
+docker -v || curl -fsSL https://get.docker.com | bash -s docker --mirror Aliyun
 systemctl enable --now docker
 docker compose version   # 确认 v2
 ```
+
+> 本机实测记录（腾讯云 2C2G · CentOS）：内存 available 1.3G、已有 swap 2G（无需再加）、
+> 磁盘剩余 24G——满足 Phase 1/2 全部要求。
 
 ## S3 · 镜像上传（推荐：本机导出，规避国内拉取 GitHub/DockerHub 的不确定性）
 
@@ -112,14 +116,40 @@ curl -s http://127.0.0.1:8090/healthz   # 期望 {"ok":true,...}
 
 ## S6 · TLS 证书 + NGINX 反代
 
-```bash
-apt install -y certbot python3-certbot-nginx   # 按服务器包管理器调整
+> CentOS 注意：老版本（7 系已 EOL）yum 源指向 vault，装包易失败。**推荐用 docker 版
+> certbot（零主机依赖，任何发行版一致）**；若系统较新也可 `dnf install certbot python3-certbot-nginx`。
 
-# 先建 80 端口 server block 供 certbot 验证
+```bash
+# 1) NGINX server block：80 端口 + webroot（供证书验证）
+mkdir -p /var/www/certbot
 cat > /etc/nginx/conf.d/mergepilot-webhook.conf <<'EOF'
 server {
     listen 80;
     server_name mergepilot.nghqqa.cn;
+    location /.well-known/acme-challenge/ { root /var/www/certbot; }
+    location / { return 301 https://$host$request_uri; }
+}
+EOF
+nginx -t && systemctl reload nginx
+
+# 2) docker 版 certbot 签发（webroot 模式）
+docker run --rm -v /etc/letsencrypt:/etc/letsencrypt -v /var/lib/letsencrypt:/var/lib/letsencrypt \
+  -v /var/www/certbot:/var/www/certbot certbot/certbot certonly --webroot -w /var/www/certbot \
+  -d mergepilot.nghqqa.cn --email <你的邮箱> --agree-tos --no-eff-email
+
+# 3) HTTPS server block
+cat > /etc/nginx/conf.d/mergepilot-webhook.conf <<'EOF'
+server {
+    listen 80;
+    server_name mergepilot.nghqqa.cn;
+    location /.well-known/acme-challenge/ { root /var/www/certbot; }
+    location / { return 301 https://$host$request_uri; }
+}
+server {
+    listen 443 ssl;
+    server_name mergepilot.nghqqa.cn;
+    ssl_certificate     /etc/letsencrypt/live/mergepilot.nghqqa.cn/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/mergepilot.nghqqa.cn/privkey.pem;
     location / {
         proxy_pass http://127.0.0.1:8090;
         proxy_set_header Host $host;
@@ -130,10 +160,12 @@ server {
 }
 EOF
 nginx -t && systemctl reload nginx
-
-certbot --nginx -d mergepilot.nghqqa.cn   # 自动改写 443 + 续期
 curl -s https://mergepilot.nghqqa.cn/healthz   # 公网验证
 ```
+
+> 续期：`docker run --rm -v /etc/letsencrypt:/etc/letsencrypt -v /var/lib/letsencrypt:/var/lib/letsencrypt \
+> -v /var/www/certbot:/var/www/certbot certbot/certbot renew --webroot -w /var/www/certbot && nginx -s reload`
+> 加入 crontab 每月执行一次即可。
 
 ## S7 · GitHub 注册 webhook
 
