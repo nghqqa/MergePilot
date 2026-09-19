@@ -50,7 +50,7 @@ services:
       # canonical thin Dockerfile in tools/policy-gateway/ stays for
       # standalone subdir builds.
       context: .
-      dockerfile: Dockerfile.policy-gateway
+      dockerfile: docker/Dockerfile.policy-gateway
     pull_policy: never
     depends_on:
       postgres:
@@ -78,7 +78,7 @@ services:
       # Retry v3: build context unified with the builder/orchestrator
       # contract (root wrapper Dockerfile) — five-layer consistency.
       context: .
-      dockerfile: Dockerfile.controller
+      dockerfile: docker/Dockerfile.controller
     pull_policy: never
     depends_on:
       postgres:
@@ -120,7 +120,7 @@ services:
     image: mergepilot-isolated-gh-webhook:local
     build:
       context: .
-      dockerfile: Dockerfile.gh-webhook
+      dockerfile: docker/Dockerfile.gh-webhook
     pull_policy: never
     depends_on:
       postgres:
@@ -149,7 +149,7 @@ services:
     image: mergepilot-isolated-demo-console:local
     build:
       context: .
-      dockerfile: Dockerfile.demo-console
+      dockerfile: docker/Dockerfile.demo-console
     pull_policy: never
     depends_on:
       # Retry v3: healthy, not merely started — the full stack requires the
@@ -224,7 +224,7 @@ services:
     image: mergepilot-isolated-console-edge:local
     build:
       context: .
-      dockerfile: Dockerfile.console-edge
+      dockerfile: docker/Dockerfile.console-edge
     pull_policy: never
     depends_on:
       demo-console:
@@ -245,7 +245,7 @@ services:
     image: mergepilot-isolated-preflight:local
     build:
       context: .
-      dockerfile: Dockerfile.preflight
+      dockerfile: docker/Dockerfile.preflight
     pull_policy: never
     depends_on:
       # Review-gap Fix 3: the gate matrix runs only after the demo-console

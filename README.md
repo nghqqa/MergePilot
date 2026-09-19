@@ -63,9 +63,9 @@ Node.js ≥ 18 即可，无需 `npm install`：前端已预构建（`frontend/di
 | **gh-bridge** | 台账消费 → 项目播种 → 唤醒 → kickoff → 终态判读（`tools/gh-bridge/`） | WH 轮验证 |
 | **结论回写** | GitHub App（仅 Checks 读写）check run 回写 PR，与 CI 并排 | WH 轮验证 |
 
-历史离线交付（v0.2.1 镜像包）保留在 [Releases](https://github.com/nghqqa/MergePilot/releases)——含 9 镜像 zstd 单包、配置包与一键启动器，外部 Windows 机器 10/10 验收通过。**当前 Agent 运行镜像 `copaw-worker:223ddc2-agentloop-v4boot` 为最新版**——OTel/Skill/RAG 激活自举（配置从 worker 自有 MinIO 前缀拉取，密钥不进镜像），冷容器出生即全链；构建配方见 `Dockerfile.v4boot`（前一版 `v3skills` 保留于 `Dockerfile.v3skills`）。
+历史离线交付（v0.2.1 镜像包）保留在 [Releases](https://github.com/nghqqa/MergePilot/releases)——含 9 镜像 zstd 单包、配置包与一键启动器，外部 Windows 机器 10/10 验收通过。**当前 Agent 运行镜像 `copaw-worker:223ddc2-agentloop-v4boot` 为最新版**——OTel/Skill/RAG 激活自举（配置从 worker 自有 MinIO 前缀拉取，密钥不进镜像），冷容器出生即全链；构建配方见 `docker/Dockerfile.v4boot`（前一版保留于 `docker/Dockerfile.v3skills`，全部配方在 `docker/` 目录）。
 
-仓库内的 `docker-compose.yml` 与 `Dockerfile.*` 是隔离栈的构建配方。源码开发与本地测试命令见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+仓库内的 `docker-compose.yml` 与 `docker/Dockerfile.*` 是隔离栈的构建配方。源码开发与本地测试命令见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## 三条安全决策路径
 
@@ -182,7 +182,7 @@ MergePilot/
 ├── evidence/            # 36 个锁定证据包（十二轮真实运行，SHA256SUMS）
 ├── skills/              # 确定性 Skill（纯计算、schema 校验、fail-closed）
 ├── skill-mcp-server.mjs # Skill MCP 服务器（Agent 按需调用）
-├── Dockerfile.v4boot    # ★ 最新 worker 镜像：OTel/Skill/RAG 激活自举（配置从 MinIO 拉取）
+├── docker/              # ★ 全部镜像配方 + 运行时 hooks(自举激活/OTel/Skill/RAG)
 ├── shared/ docs/ config/ LICENSE（Apache 2.0）
 ```
 
