@@ -3114,7 +3114,7 @@ COMMIT;
 CREATE TABLE IF NOT EXISTS public.github_deliveries (
   delivery_id       TEXT PRIMARY KEY
                     CHECK (delivery_id ~ '^[A-Za-z0-9][A-Za-z0-9-]{7,63}$'),
-  event_name        TEXT NOT NULL CHECK (event_name IN ('ping','pull_request','other')),
+  event_name        TEXT NOT NULL CHECK (event_name ~ '^[a-z_]{1,64}$'),  -- 对齐 receiver._EVENT_NAME_RE:交付台账记录一切事件名(push 等记 IGNORED),原 IN('ping','pull_request','other') 与接收端写原始事件名的实现冲突,真实 webhook 流量实证 push 触发 check violation→503
   action            TEXT NOT NULL CHECK (action ~ '^[a-z_]{1,64}$'),
   installation_id   BIGINT CHECK (installation_id IS NULL OR installation_id > 0),
   repo              TEXT CHECK (repo IS NULL OR repo ~ '^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$'),
