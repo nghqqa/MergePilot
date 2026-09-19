@@ -105,6 +105,10 @@ chmod 600 postgres.env gh_webhook.env .env
 ## S5 · 起库、初始化表结构、起接收端
 
 ```bash
+# compose 对 env_file 的存在性做全文件校验——未启动的服务（controller/demo-console/
+# preflight）引用的 env 也必须存在；Phase 1 用空占位（这些服务不会被启动）
+touch controller.env demo_console.env && chmod 600 controller.env demo_console.env
+
 docker compose up -d postgres
 sleep 8
 # 按序执行 db-init（000 角色 → 001 表 → 002 console → 003 登录账号 → 004 环境 → 005 种子）
