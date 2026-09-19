@@ -1,0 +1,74 @@
+{
+ "leader": {
+  "spans": 595,
+  "by_name": {
+   "genai.llm.call": 174,
+   "matrix.receive": 124,
+   "matrix.send": 69,
+   "tool.projectflow": 42,
+   "agent.session.run": 37,
+   "tool.filesync": 33,
+   "tool.taskflow": 30,
+   "tool.execute_shell_command": 20,
+   "tool.edit_file": 20,
+   "taskflow.notify_assignment": 14,
+   "tool.read_file": 14,
+   "tool.message": 13,
+   "tool.write_file": 5
+  }
+ },
+ "reviewer": {
+  "spans": 378,
+  "by_name": {
+   "matrix.receive": 111,
+   "genai.llm.call": 98,
+   "matrix.send": 56,
+   "tool.execute_shell_command": 31,
+   "tool.write_file": 20,
+   "tool.taskflow": 16,
+   "agentteams.delegation.link": 13,
+   "tool.skill_diff_parse": 9,
+   "agent.session.run": 7,
+   "tool.rag_retrieve": 4,
+   "tool.skill_case_retrieval": 4,
+   "tool.skill_sast_scan": 4,
+   "tool.read_file": 3,
+   "tool.skill_risk_classify": 2
+  }
+ },
+ "fixer": {
+  "spans": 250,
+  "by_name": {
+   "matrix.receive": 144,
+   "genai.llm.call": 35,
+   "matrix.send": 23,
+   "agentteams.delegation.link": 13,
+   "tool.execute_shell_command": 12,
+   "tool.taskflow": 6,
+   "tool.edit_file": 6,
+   "tool.write_file": 6,
+   "agent.session.run": 3,
+   "tool.read_file": 2
+  }
+ },
+ "verifier": {
+  "spans": 305,
+  "by_name": {
+   "matrix.receive": 138,
+   "genai.llm.call": 56,
+   "matrix.send": 29,
+   "tool.execute_shell_command": 28,
+   "agentteams.delegation.link": 13,
+   "tool.write_file": 10,
+   "tool.taskflow": 7,
+   "tool.filesync": 6,
+   "tool.skill_sast_scan": 4,
+   "agent.session.run": 3,
+   "tool.read_file": 3,
+   "tool.skill_diff_parse": 3,
+   "tool.skill_risk_classify": 3,
+   "tool.skill_case_retrieval": 2
+  }
+ },
+ "total": 1528
+}
