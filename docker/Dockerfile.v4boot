@@ -6,10 +6,10 @@
 #   3. rag hook 注入守卫由"客户端列表为空"改为"按名查重"(copaw 预置客户端,实测)
 FROM agentteams/copaw-worker:223ddc2-agentloop-v3skills
 
-COPY zz_agentloop_skills.py /opt/venv/standard/lib/python3.11/site-packages/zz_agentloop_skills.py
-COPY zz_agentloop_rag.py    /opt/venv/standard/lib/python3.11/site-packages/zz_agentloop_rag.py
-COPY zz_agentloop_bootstrap.py /opt/venv/standard/lib/python3.11/site-packages/zz_agentloop_bootstrap.py
-COPY zzz_bootstrap.pth      /opt/venv/standard/lib/python3.11/site-packages/zzz_bootstrap.pth
+COPY hooks/zz_agentloop_skills.py /opt/venv/standard/lib/python3.11/site-packages/zz_agentloop_skills.py
+COPY hooks/zz_agentloop_rag.py    /opt/venv/standard/lib/python3.11/site-packages/zz_agentloop_rag.py
+COPY hooks/zz_agentloop_bootstrap.py /opt/venv/standard/lib/python3.11/site-packages/zz_agentloop_bootstrap.py
+COPY hooks/zzz_bootstrap.pth      /opt/venv/standard/lib/python3.11/site-packages/zzz_bootstrap.pth
 
 RUN chmod 0644 /opt/venv/standard/lib/python3.11/site-packages/zz_agentloop_skills.py \
                /opt/venv/standard/lib/python3.11/site-packages/zz_agentloop_rag.py \
@@ -22,5 +22,5 @@ LABEL agentloop.instrumentation="v4boot(self-activating)" \
 # 2.1 冷启动卡死修复:entrypoint 在一切 import 之前 export COPAW_WORKING_DIR
 #     (copaw.constant 在 import 时锁定 WORKING_DIR;竞态时锁到 HOME 默认树,
 #      custom_channels 缺失 → matrix 通道不装配 → Agent 零消费,restart 即愈)
-COPY entrypoint-fix.sh /tmp/entrypoint-fix.sh
+COPY hooks/entrypoint-fix.sh /tmp/entrypoint-fix.sh
 RUN chmod +x /tmp/entrypoint-fix.sh && /tmp/entrypoint-fix.sh && rm /tmp/entrypoint-fix.sh

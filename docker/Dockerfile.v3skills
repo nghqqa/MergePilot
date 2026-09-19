@@ -11,9 +11,9 @@ COPY skill-mcp-server.mjs /usr/local/bin/skill-mcp-server.mjs
 COPY tools/otel /opt/mergepilot/tools/otel
 
 RUN /opt/venv/standard/bin/pip install --no-cache-dir psycopg2-binary
-COPY zz_agentloop_skills.py /opt/venv/standard/lib/python3.11/site-packages/zz_agentloop_skills.py
-COPY zzz_skills_hook.pth  /opt/venv/standard/lib/python3.11/site-packages/zzz_skills_hook.pth
-COPY agentloop-skills.json /etc/agentloop-skills.json
+COPY hooks/zz_agentloop_skills.py /opt/venv/standard/lib/python3.11/site-packages/zz_agentloop_skills.py
+COPY hooks/zzz_skills_hook.pth  /opt/venv/standard/lib/python3.11/site-packages/zzz_skills_hook.pth
+COPY hooks/agentloop-skills.json /etc/agentloop-skills.json
 
 LABEL agentloop.instrumentation="v3+rag+skills" \
       mp.task="skill-integration-run-20260917"
