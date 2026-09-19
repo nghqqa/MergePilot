@@ -18,7 +18,7 @@ import threading
 import time
 
 CFG_PATH = os.environ.get("AGENTLOOP_SKILLS_CONFIG", "/etc/agentloop-skills.json")
-GRACE_SECONDS = float(os.environ.get("AGENTLOOP_SKILLS_GRACE", "90"))
+GRACE_SECONDS = float(os.environ.get("AGENTLOOP_SKILLS_GRACE", "0"))  # 与 rag(4s)错峰:同时打补丁会互覆
 LOG = "/tmp/agentloop-skills-hook.log"
 
 _state = {"patched": False, "activated_at": None, "lock": threading.Lock()}

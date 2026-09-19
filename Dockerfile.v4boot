@@ -1,0 +1,20 @@
+# v4boot: v3skills 之上加"激活自举"——配置从本栈 MinIO secrets 拉取,密钥永不进镜像。
+# 变更(相对 v3skills):
+#   1. zz_agentloop_bootstrap + .pth: 启动时从 MinIO 拉取 agentloop-activation.json
+#      落盘三份 /etc/agentloop-*.json(已启用的不覆盖)
+#   2. skills hook 默认 grace 90->0,rag 90->4:错峰打补丁(同时打会互覆,实测竞态)
+#   3. rag hook 注入守卫由"客户端列表为空"改为"按名查重"(copaw 预置客户端,实测)
+FROM agentteams/copaw-worker:223ddc2-agentloop-v3skills
+
+COPY zz_agentloop_skills.py /opt/venv/standard/lib/python3.11/site-packages/zz_agentloop_skills.py
+COPY zz_agentloop_rag.py    /opt/venv/standard/lib/python3.11/site-packages/zz_agentloop_rag.py
+COPY zz_agentloop_bootstrap.py /opt/venv/standard/lib/python3.11/site-packages/zz_agentloop_bootstrap.py
+COPY zzz_bootstrap.pth      /opt/venv/standard/lib/python3.11/site-packages/zzz_bootstrap.pth
+
+RUN chmod 0644 /opt/venv/standard/lib/python3.11/site-packages/zz_agentloop_skills.py \
+               /opt/venv/standard/lib/python3.11/site-packages/zz_agentloop_rag.py \
+               /opt/venv/standard/lib/python3.11/site-packages/zz_agentloop_bootstrap.py \
+               /opt/venv/standard/lib/python3.11/site-packages/zzz_bootstrap.pth
+
+LABEL agentloop.instrumentation="v4boot(self-activating)" \
+      agentloop.activation="minio-secrets-bootstrap"
