@@ -123,14 +123,14 @@ Agent 只承担语义判断，六类 Skill 以 Schema、deadline、错误码和 
 
 全部运行的标准 span 直连上报阿里云 AgentLoop / SLS：Agent 会话（AGENT_STEP）、LLM 调用（单层 genai.llm.call）、工具调用（genai 语义）三类齐全，**累计 450-530 span/轮 · 导出批次零失败**。
 
-**最新轮（SK5 三路径 + dual-reviewer）实测**：824 span / 141 LLM 调用 / 15 次 skill 调用（含 sast_scan 首次）；PR #1 自动路径 45 次 / 5.08M token / 62 秒完成。跨 Agent 关联：委派通知携带 W3C traceparent，接手 Agent 上报同 trace 关联 span（delegation.link，属性级）——**一条追踪 ID 串联两个容器的证据**。
+**最新轮（SK5 三路径 + dual-reviewer）实测**：824 span / 197 个 LLM 调用 span / 15 次 skill 调用（含 sast_scan 首次）；PR #1 自动路径 45 次 / 5.08M token / 62 秒完成。跨 Agent 关联：委派通知携带 W3C traceparent，接手 Agent 上报同 trace 关联 span（delegation.link，属性级）——**一条追踪 ID 串联两个容器的证据**。
 
 | 指标 | SK5 轮（PR #2） | SK5 轮（PR #3） | SK5 轮（PR #1 自动） | Dual-Reviewer |
 | --- | --- | --- | --- | --- |
 | 调用次数 | 86 | 33 | 45 | 31 |
 | 输入 token | 15,643,868（93%） | 3,882,302（99%） | 5,084,301（99%） | 2,177,070（98%） |
 | 输出 token | 36,522 | 9,022 | 14,661 | 4,827 |
-| skill 调用 | diff_parse + risk_classify | risk_classify | **sast_scan ×2（首次）** + risk_classify | — |
+| skill 调用 | diff_parse + risk_classify + case_retrieval | diff_parse + risk_classify | **sast_scan ×2（首次）** + risk_classify | — |
 
 检索方式：AgentLoop 控制台按 service.name=`mergepilot-copaw` + 运行时间窗筛选，或按 run 对应的 trace id 直查（trace id 与 run 的映射见各证据包 README）。
 | 会话 ID | N2KQqHVSBsSZc9utWsEeZ5f |
