@@ -39,28 +39,28 @@ cd MergePilot/demo-platform
 node backend/server.mjs        # 打开 http://127.0.0.1:4173
 ```
 
-Node.js ≥ 18 即可，无需 `npm install`：前端已预构建（`frontend/dist/`），两个核心案例（确定性 Skill + RAG + AgentLoop 追踪）的回放证据随仓库分发（`evidence/FINALS-ELEM-*` 等 25 个 SHA256SUMS 锁定目录）。Windows 也可直接双击 `demo-platform/start-demo.bat`。
+Node.js ≥ 18 即可，无需 `npm install`：前端已预构建（`frontend/dist/`），两个核心案例（确定性 Skill + RAG + AgentLoop 追踪）的回放证据随仓库分发（`evidence/FINALS-ELEM-*` 等 29 个 SHA256SUMS 锁定目录，含九轮真实运行）。Windows 也可直接双击 `demo-platform/start-demo.bat`。
 
-自测：`node backend/test/selftest.mjs`（61 项：脱敏、回放完整性、API 契约、无泄密扫描、决赛证据等级与版本绑定闸门；2026-09-13 前为 54 项；[CI 在 Node 18/20/22 上自动运行](https://github.com/nghqqa/MergePilot/actions/workflows/selftest.yml)）。
+自测：`node backend/test/selftest.mjs`（57 项：脱敏、回放完整性、API 契约、无泄密扫描、证据等级与版本绑定闸门；[CI 在 Node 18/20/22 上自动运行](https://github.com/nghqqa/MergePilot/actions/workflows/selftest.yml)）。
 
-不想 clone？下载离线演示包（含两案例证据与一键启动，见 [Releases](https://github.com/nghqqa/MergePilot/releases)），解压后双击 `start-demo.bat` 或执行 `node */backend/server.mjs`。视频与历史版本见 [Releases](https://github.com/nghqqa/MergePilot/releases)。
+不想 clone？下载离线演示包（含两案例证据与一键启动，见 [Releases](https://github.com/nghqqa/MergePilot/releases)），解压后双击 `start-demo.bat` 或执行 `node */backend/server.mjs`。
 
-### 完整隔离栈（离线镜像 + 一键启动）
+### 完整隔离栈（Agent 运行环境）
 
-当前交付：**[Release v0.2.1](https://github.com/nghqqa/MergePilot/releases/tag/v0.2.1)**——9 镜像 · zstd 单包（265MB · 逐镜像 digest 清单）+ **offline-config 配置包**（数据库 schema/角色初始化五件套 + `start-stack.bat|.sh` 两阶段启动器 + env 模板）。
+九轮真实运行使用的 Agent 运行环境（非演示平台，需要 Docker）：
 
-```text
-1. 下载 v0.2.1 的镜像包与配置包，解压到同一目录
-2. load-images（Windows PowerShell / Linux 脚本均随包提供）
-3. 双击 start-stack.bat —— 自动测量容器网络、写 .env、启动 7 服务
-4. 验证：6 服务 healthy + PREFLIGHT_OK + http://127.0.0.1:8600 返回 200
-```
+| 组件 | 说明 | 状态 |
+|---|---|---|
+| AgentTeams 控制面 | Worker CR 调解 + Matrix 消息 + MinIO 存储 + Higress 网关 | 九轮验证 |
+| 4 个 CoPaw Worker | Leader / Reviewer / Fixer / Verifier（动态容器） | 九轮验证 |
+| AgentLoop 埋点 | v3 OTel span 直连 SLS + 跨 Agent traceparent 关联 | 九轮验证 |
+| RAG MCP | 组织规范知识库（citation-only） | SK2 验证 |
+| Skills MCP | 5 个确定性 Skill（diff_parse / risk_classify / sast_scan / test_runner / case_retrieval） | SK3–SK5 验证 |
+| 案例知识库 | PostgreSQL 16 + pgvector，7 条真实历史案例 | SK4 接通 |
 
-**可复现性证据**：在一台独立外部 Windows 机器上完成两轮验证与一次复验——第一轮暴露交付缺口，十个启动门禁逐个拦下 8 类真实故障；修复后 rev2 版本 **10/10 通过标准全 PASS、零干预一键启动**。完整加载、校验与故障对照见 [DEPLOY.md](DEPLOY.md)。
+历史离线交付（v0.2.1 镜像包）保留在 [Releases](https://github.com/nghqqa/MergePilot/releases)——含 9 镜像 zstd 单包、配置包与一键启动器，外部 Windows 机器 10/10 验收通过。**当前 Agent 运行镜像 `copaw-worker:223ddc2-agentloop-v3skills` 为最新版**（含全部埋点与 Skill MCP），构建配方见 `Dockerfile.v3skills`。
 
-AgentTeams（HiClaw）运行时镜像（嵌入式 Manager + CoPaw worker：Reviewer / Fixer / Verifier）单独提供：[runtime-images-20260912](https://github.com/nghqqa/MergePilot/releases/tag/runtime-images-20260912)。项目最初运行在 WSL2，后整体迁移至 **Docker Desktop for Windows** 并跑通全流程（由 Controller 统一 reconcile），三条案例的回放数据即产自该环境。
-
-仓库内的 `docker-compose.yml` 与 `Dockerfile.*` 是隔离栈镜像的构建配方：开发态由 `tools/demo_console/one_click_startup.py` 编排调用；离线交付态由配置包内的 `start-stack` 脚本驱动 `docker compose`（含数据库 schema 初始化挂载）。源码开发与本地测试命令见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+仓库内的 `docker-compose.yml` 与 `Dockerfile.*` 是隔离栈的构建配方。源码开发与本地测试命令见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## 三条安全决策路径
 
