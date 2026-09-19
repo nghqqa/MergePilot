@@ -41,7 +41,7 @@ cd MergePilot/demo-platform
 node backend/server.mjs        # 打开 http://127.0.0.1:4173
 ```
 
-Node.js ≥ 18 即可，无需 `npm install`：前端已预构建（`frontend/dist/`），两个核心案例（确定性 Skill + RAG + AgentLoop 追踪）的回放证据随仓库分发（`evidence/FINALS-ELEM-*` 等 36 个 SHA256SUMS 锁定目录，含十二轮真实运行）。Windows 也可直接双击 `demo-platform/start-demo.bat`。
+Node.js ≥ 18 即可，无需 `npm install`：前端已预构建（`frontend/dist/`），三个核心案例（PR #2 高危批准 / PR #3 高危拒绝 / PR #1 低风险自动，全链 Skill+RAG+AgentLoop）的回放证据随仓库分发（`evidence/FINALS-ELEM-*` 等 59 个 SHA256SUMS 锁定目录，含十二轮真实运行）。Windows 也可直接双击 `demo-platform/start-demo.bat`。
 
 自测：`node backend/test/selftest.mjs`（57 项：脱敏、回放完整性、API 契约、无泄密扫描、证据等级与版本绑定闸门；[CI 在 Node 18/20/22 上自动运行](https://github.com/nghqqa/MergePilot/actions/workflows/selftest.yml)）。
 
@@ -179,7 +179,7 @@ MergePilot/
 │   └── test/            # 自测脚本
 ├── tools/gh-bridge/     # ★ webhook 台账→AgentTeams→check-run 回写的桥（Phase 3）
 ├── tools/gh-app/        # webhook 接收端（HMAC 验签/交付台账）+ check run 发布器 + App 令牌
-├── evidence/            # 36 个锁定证据包（十二轮真实运行，SHA256SUMS）
+├── evidence/            # 59 个锁定证据包（十二轮真实运行，SHA256SUMS）
 ├── skills/              # 确定性 Skill（纯计算、schema 校验、fail-closed）
 ├── skill-mcp-server.mjs # Skill MCP 服务器（Agent 按需调用）
 ├── docker/              # ★ 全部镜像配方 + 运行时 hooks(自举激活/OTel/Skill/RAG)
