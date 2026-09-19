@@ -1,17 +1,15 @@
 {
- "id": 105858422491,
- "name": "mergepilot/review",
+ "id": 105875453297,
  "conclusion": "failure",
- "html_url": "https://github.com/nghqqa/fastapi-boilerplate-demo/runs/105858422491",
+ "html_url": "https://github.com/nghqqa/fastapi-boilerplate-demo/runs/105875453297",
  "app": "mergepilot-reporter",
  "output": {
   "title": "MergePilot review: HIGH finding — human gate REJECTED (blocked, zero fix/verify dispatch)",
-  "summary": "run_id: run-gh-pr3-3daa6fb4-065641\nverdict: rejected\ntriggered by: pull_request synchronize #3 @ 3daa6fb46463\n\nleader report (excerpt):\n## gate record | # Human Security Gate REJECTION — run-gh-pr3-3daa6fb4-065708 | - Project: elemiso-gh-pr3-3daa6fb4 (team elemiso-team) | - Task reviewed: gh-pr3-review-1 (Reviewer, copaw runtime, AgentLoop-traced) | - Head SHA under review: 3daa6fb46463ea41a877e84356dfd320e7f3fe62 (PR #3) | - Gate decision time: 2026-09-19T07:05:55Z (host clock; operator present, decision made via interactive gate prompt) | - Approver: repository/workspace owner (human operator) | - Decision: **HUMAN_SECURITY_REJECTED — no remediation authorized** | ## Confirmed findings (Reviewer result, real execution) | SUM",
+  "summary": "run_id: run-gh-pr3-03312d65-091817\nverdict: rejected\ntriggered by: pull_request synchronize #3 @ 03312d6596f0\n\nleader report (excerpt):\n## gate record | # Human Security Gate REJECTION — run-gh-pr3-03312d65-091817 | - Project: elemiso-gh-pr3-03312d65 (team elemiso-team) | - Task reviewed: gh-pr3-03312d65-review-1 (Reviewer, copaw runtime, AgentLoop-traced) | - Head SHA under review: 03312d6596f0b894a3324e958461a5fc336f2ff5 (PR #3) | - Gate decision time: 2026-09-19T09:27:15Z (host clock; operator present, decision made via interactive gate prompt) | - Approver: repository/workspace owner (human operator) | - Decision: **HUMAN_SECURITY_REJECTED — no remediation authorized** | ## Confirmed findings (Reviewer result, real executi",
   "text": null,
   "annotations_count": 0,
-  "annotations_url": "https://api.github.com/repos/nghqqa/fastapi-boilerplate-demo/check-runs/105858422491/annotations"
+  "annotations_url": "https://api.github.com/repos/nghqqa/fastapi-boilerplate-demo/check-runs/105875453297/annotations"
  },
- "started_at": "2026-09-19T07:06:46Z",
- "completed_at": "2026-09-19T07:06:46Z",
- "check_suite_url": null
+ "started_at": "2026-09-19T09:28:04Z",
+ "completed_at": "2026-09-19T09:28:04Z"
 }
