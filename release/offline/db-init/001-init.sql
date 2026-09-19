@@ -3137,9 +3137,11 @@ CREATE TABLE IF NOT EXISTS public.github_deliveries (
   received_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
   processed_at      TIMESTAMPTZ,
   -- 映射事件必须携带完整最小 envelope(ping/other 允许缺省):
+  -- installation_id 仅 GitHub App webhook 载荷携带(Phase 2);repo webhook(Phase 1)
+  -- 无 installation 对象,实测强约束会把真实 pull_request 交付挡成 503,故不作为必需字段。
   CONSTRAINT gh_deliveries_pull_request_envelope CHECK (
     event_name <> 'pull_request' OR (
-      installation_id IS NOT NULL AND repo IS NOT NULL
+      repo IS NOT NULL
       AND pr_number IS NOT NULL AND observed_head_sha IS NOT NULL
       AND observed_base_sha IS NOT NULL AND action IN
         ('opened','synchronize','reopened'))
