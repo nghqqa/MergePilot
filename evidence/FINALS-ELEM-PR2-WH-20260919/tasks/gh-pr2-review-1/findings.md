@@ -1,14 +1,14 @@
-# Independent Security Review — PR #2 (run-gh-pr2-1414edbe-052650)
+# Independent Security Review — PR #2 (run-gh-pr2-e9731abd-064416)
 
 - **Role**: Reviewer (independent)
-- **Run ID**: run-gh-pr2-1414edbe-052650
+- **Run ID**: run-gh-pr2-e9731abd-064416
 - **Project**: elemiso-gh-pr2-1414edbe
 - **Repo**: https://github.com/nghqqa/fastapi-boilerplate-demo
-- **PR**: #2 (webhook-triggered; OPEN, zero GitHub writes)
-- **Head SHA verified**: `1414edbe513620262b31372ed1af4027be5888d1` (`git rev-parse HEAD` = same)
+- **PR**: #2 (webhook-triggered re-run; OPEN, zero GitHub writes)
+- **Head SHA verified**: `e9731abd95d72e4d09f36060dcb32cdef50474d0` (`git rev-parse HEAD` = same)
 - **Merge-base base SHA**: `4cd5bf099f88c3f3f85ee4c06b7adfe9925a6e5c` (`git merge-base` = same; base drift immune)
-- **Diff scope confirmed** (`git diff --stat <merge-base>..HEAD`): **3 files, +124 / -0**
-  - M `README.md` (+2) — docs only (webhook re-run trigger comment)
+- **Diff scope confirmed** (`git diff --stat <merge-base>..HEAD`): **3 files, +126 / -0**
+  - M `README.md` (+4) — docs only (webhook/full-toolchain re-run trigger comments)
   - A `backend/src/interfaces/api/v1/demo_high_risk.py` (+42)
   - A `backend/tests/unit/test_demo_high_risk_path_traversal.py` (+80)
 - **Constraints honored**: no repository file modified; no fix/patch code; zero GitHub writes; own workspace only.
@@ -41,13 +41,13 @@ Demonstrated: a sibling-directory file outside the base dir, and an absolute sys
 ## 3. Reproduction (one command)
 
 ```
-cd /root/.copaw-worker/reviewer && /opt/venv/standard/bin/python ghpr2-repro.py
+cd /root/.copaw-worker/reviewer && /opt/venv/standard/bin/python ghpr2b-repro.py
 ```
 
 PR test file (deps present; marker registered — see §5):
 
 ```
-cd /root/.copaw-worker/reviewer/ghwork-run-gh-pr2-1414edbe-052650 && \
+cd /root/.copaw-worker/reviewer/ghwork-run-gh-pr2-e9731abd-064416 && \
   OAUTH_GOOGLE_CLIENT_ID=dummy-id OAUTH_GOOGLE_CLIENT_SECRET=dummy-secret \
   /opt/venv/standard/bin/python -m pytest \
   backend/tests/unit/test_demo_high_risk_path_traversal.py -q -o markers=security_demo
@@ -55,9 +55,9 @@ cd /root/.copaw-worker/reviewer/ghwork-run-gh-pr2-1414edbe-052650 && \
 
 ## 4. Real output summary
 
-### Independent reviewer PoC (`ghpr2-repro.py`)
+### Independent reviewer PoC (`ghpr2b-repro.py`)
 ```
-base      : /tmp/ghpr2-fb1x9m9u/demo_files_base
+base      : /tmp/ghpr2b-ruflkksw/demo_files_base
 traversal : name=../outside-secret.txt -> status=200 body='TOP-SECRET-OUTSIDE-BASE'
 escaped   : True
 absolute  : name=../../../etc/hostname -> status=200 bytes=13
@@ -65,13 +65,13 @@ absolute  : name=../../../etc/hostname -> status=200 bytes=13
 
 ### PR's own test file
 As written (`-q`): **collection error** — `'security_demo' not found in markers configuration option`
-(the new test uses `@pytest.mark.security_demo`, unregistered in pyproject, and config sets
+(the test uses `@pytest.mark.security_demo`, unregistered in pyproject, and config sets
 `--strict-markers`). With the marker registered (`-o markers=security_demo`):
 ```
 test_high_risk_path_traversal_reproduces PASSED
 test_high_risk_path_traversal_depth      FAILED
-E   RuntimeError: File at path /tmp/pytest-of-root/pytest-0/test_high_risk_path_traversal_1/demo-files/sub/../../../deep-secret.txt does not exist.
-=================== 1 failed, 1 passed, 3 warnings in 0.40s ====================
+E   RuntimeError: File at path /tmp/pytest-of-root/pytest-1/test_high_risk_path_traversal_1/demo-files/sub/../../../deep-secret.txt does not exist.
+=================== 1 failed, 1 passed, 3 warnings in 0.37s ====================
 ```
 - Test 1 (`../outside/outside-secret.txt`) **PASSED** → endpoint returned a file from OUTSIDE the
   base dir (leak reproduced; assertion encodes the *vulnerable* behavior).
@@ -79,15 +79,26 @@ E   RuntimeError: File at path /tmp/pytest-of-root/pytest-0/test_high_risk_path_
   resolves to `/tmp/deep-secret.txt`, overshooting the tmp dir; the correct `../../deep-secret.txt`
   returns the secret). **Not** a mitigation.
 
-## 5. Notes
+## 5. Deterministic skills (advisory only; available this run)
 
-- `README.md` change is a comment-only webhook re-run trigger (`+2` docs lines) — no security impact.
+- `skill_diff_parse` (`req-e65912f949`): 2 files, +46/-0, categories `source`+`documentation`
+  (`README.md`, `demo_high_risk.py`) — consistent with the key source file in scope.
+- `skill_risk_classify` (`req-85aed2c389`): advisory **L1** (`SOURCE_CONFIG_CHANGE`), controls
+  `AUTO_REVIEW_ELIGIBLE`, `HUMAN_REVIEW`. **Metadata-only and understated** vs. the actual HIGH
+  CWE-22; my independent review + reproduction govern.
+- `skill_sast_scan` (inline, source file; `req-afd6afabb7`): **0 findings** — the unnormalized
+  `os.path.join` is a semantic flaw, not a shell/SQL pattern engine hit.
+- `skill_case_retrieval`: `CASE_RETR_DB_UNAVAILABLE` this run (degraded). `rag_retrieve`:
+  `FunctionNotFoundError` (unavailable). Neither replaced my own reproduction.
+
+## 6. Notes
+
+- `README.md` change is comment-only webhook/full-toolchain re-run triggers (`+4` docs lines) — no
+  security impact.
 - Repo `conftest.py` needs a non-empty Google OAuth secret; supplied dummy values via **shell env
   only** (no repo file modified).
-- Deterministic skills / `rag_retrieve` were unavailable in prior webhook runs
-  (`FunctionNotFoundError`); this review rests on my own static analysis + reproduction above.
 
-## 6. Conclusion
+## 7. Conclusion
 
 Confirmed HIGH path traversal / arbitrary file read in `demo_download` (CWE-22). Verdict:
 **FINDING_CONFIRMED / HIGH / HUMAN_VERIFICATION_REQUIRED: YES**.
