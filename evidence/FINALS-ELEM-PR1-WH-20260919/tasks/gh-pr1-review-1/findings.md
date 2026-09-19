@@ -1,15 +1,15 @@
-# Independent Security Review — PR #1 (run-gh-pr1-fa3f85f8-054038)
+# Independent Security Review — PR #1 (run-gh-pr1-0fae3afd-070752)
 
 - **Role**: Reviewer (independent)
-- **Run ID**: run-gh-pr1-fa3f85f8-054038
+- **Run ID**: run-gh-pr1-0fae3afd-070752
 - **Project**: elemiso-gh-pr1-fa3f85f8
 - **Repo**: https://github.com/nghqqa/fastapi-boilerplate-demo
-- **PR**: #1 (webhook-triggered; OPEN, zero GitHub writes)
-- **Head SHA verified**: `fa3f85f8218f77b0d15505a51f8016f1e0e18ad0` (`git rev-parse HEAD` = same)
+- **PR**: #1 (webhook-triggered re-run; OPEN, zero GitHub writes)
+- **Head SHA verified**: `0fae3afd77f46eb3ff3d5bf5ef7d0019c04a43d4` (`git rev-parse HEAD` = same)
 - **Merge-base base SHA**: `fdde4f4142606336c7b7b25f176949dc5882d89a` (`git merge-base` = same; base drift immune)
-- **Diff scope confirmed** (`git diff --stat <merge-base>..HEAD`): **7 files, +170 / -1**
+- **Diff scope confirmed** (`git diff --stat <merge-base>..HEAD`): **7 files, +172 / -1**
   - A `PR_DESCRIPTION.md` (+33)
-  - M `README.md` (+2) — docs only (webhook re-run trigger comment)
+  - M `README.md` (+4) — docs only (webhook/full-toolchain re-run trigger comments)
   - A `backend/migrations/versions/0001_uq_api_keys_user_name.py` (+28)
   - M `backend/src/modules/api_keys/models.py` (+2/-1)
   - A `backend/tests/integration/migrations/__init__.py` (0)
@@ -35,7 +35,7 @@
    ["user_id","name"])`; `downgrade()` drops it. Static DDL; no dynamic SQL, no user input.
 3. **Tests + baseline helper**: integration tests guarded by `P14_BASELINE_TREE`; helper emits
    fixed DDL against a throwaway schema.
-4. **`README.md` (+2)** and **`PR_DESCRIPTION.md`**: documentation only.
+4. **`README.md` (+4)** and **`PR_DESCRIPTION.md`**: documentation only.
 
 No request path, no authn/authz change, no new dependency, no new attack surface.
 
@@ -43,10 +43,10 @@ No request path, no authn/authz change, no new dependency, no new attack surface
 
 - **No injection**: identifiers/table names are constants; no external input concatenated into
   SQL/DDL.
-- **No secrets**: scan of added lines for `secret|token|password|api_key|private key` returned no
-  credential material (only `api_keys`/`uq_api_keys_user_name` identifiers).
-- **No shell/eval/exec**: scan for `eval(|exec(|os.system|shell=True` returned none; the only
-  `subprocess` use is in the test file with an **argv list**, `shell=False`, constant args.
+- **No secrets**: scan of added lines for `secret|token|password|api_key|private key` matched only
+  the `api_keys`/`uq_api_keys_user_name` identifiers — no credential material.
+- **No shell/eval/exec in production code**: the only `subprocess.run` is in the test file (argv
+  list, `shell=False`, constant args) — see §5.
 - **No authn/authz/route change; no new dependency.**
 
 ## 3. Seeded risk — NOT a security finding (disclosed; no fix code)
@@ -66,11 +66,10 @@ before this change).
 Because it is explicitly declared and outside the security classes in scope, it does **not** change
 my security verdict. Recorded for completeness; no fix proposed (contract forbids patch code).
 
-## 4. Tools / tests run (real output)
+## 4. Tests (real output)
 
-### PR's own tests
 ```
-cd /root/.copaw-worker/reviewer/ghwork-run-gh-pr1-fa3f85f8-054038
+cd /root/.copaw-worker/reviewer/ghwork-run-gh-pr1-0fae3afd-070752
 OAUTH_GOOGLE_CLIENT_ID=dummy-id OAUTH_GOOGLE_CLIENT_SECRET=dummy-secret \
   /opt/venv/standard/bin/python -m pytest \
   backend/tests/integration/migrations/test_uq_user_key_name.py -v
@@ -83,21 +82,24 @@ Both skip because `P14_BASELINE_TREE` is unset and `/var/run/docker.sock` is abs
 Postgres/harness in this container). Environment limitation, not a code defect; the tests are
 correctly guarded by `@needs_baseline`.
 
-### Optional tools
-- Deterministic skills (`skill_diff_parse` / `skill_risk_classify` / `skill_sast_scan`) and
-  `rag_retrieve` were **unavailable** (`FunctionNotFoundError`); conclusion rests on my own static
-  analysis + reproduction above.
+## 5. Deterministic skills (advisory; available this run)
 
-## 5. Reproduction
+- `skill_sast_scan` (inline; `req-6f38bb2a60`): **1 finding** — `AST_DANGEROUS_SUBPROCESS_SHELL`
+  high/L2 at `test_uq_user_key_name.py:7` (`subprocess.run`). Adjudicated **false positive**: the
+  call passes an argv list (`[sys.executable, "-m", "alembic", ...]`) with `shell=False` and
+  constant arguments; no untrusted interpolation.
+- No shell/eval/SQL sink exists in the production files added/modified by this PR.
+
+## 6. Reproduction
 
 ```
-cd /root/.copaw-worker/reviewer/ghwork-run-gh-pr1-fa3f85f8-054038 && \
+cd /root/.copaw-worker/reviewer/ghwork-run-gh-pr1-0fae3afd-070752 && \
   git diff --stat $(git merge-base fdde4f4142606336c7b7b25f176949dc5882d89a HEAD)..HEAD && \
   git diff $(git merge-base fdde4f4142606336c7b7b25f176949dc5882d89a HEAD)..HEAD -- README.md backend/src/modules/api_keys/models.py && \
   cat -n backend/migrations/versions/0001_uq_api_keys_user_name.py
 ```
 
-## 6. Conclusion
+## 7. Conclusion
 
 No new security vulnerability is introduced by PR #1; the diff is additive (documentation, a static
 DDL migration, a model constraint, and guarded integration tests). The only substantive non-security

@@ -1,14 +1,14 @@
-# Independent Security Review — PR #3 (run-gh-pr3-9fd86556-053436)
+# Independent Security Review — PR #3 (run-gh-pr3-3daa6fb4-065641)
 
 - **Role**: Reviewer (independent)
-- **Run ID**: run-gh-pr3-9fd86556-053436
+- **Run ID**: run-gh-pr3-3daa6fb4-065641
 - **Project**: elemiso-gh-pr3-9fd86556
 - **Repo**: https://github.com/nghqqa/fastapi-boilerplate-demo
-- **PR**: #3 (webhook-triggered; OPEN, zero GitHub writes)
-- **Head SHA verified**: `9fd8655633ba788eee17871c73c43e0bb7ea6b11` (`git rev-parse HEAD` = same)
+- **PR**: #3 (webhook-triggered re-run; OPEN, zero GitHub writes)
+- **Head SHA verified**: `3daa6fb46463ea41a877e84356dfd320e7f3fe62` (`git rev-parse HEAD` = same)
 - **Merge-base base SHA**: `4cd5bf099f88c3f3f85ee4c06b7adfe9925a6e5c` (`git merge-base` = same; base drift immune)
-- **Diff scope confirmed** (`git diff --stat <merge-base>..HEAD`): **3 files, +84 / -0**
-  - M `README.md` (+2) — docs only (webhook re-run trigger comment)
+- **Diff scope confirmed** (`git diff --stat <merge-base>..HEAD`): **3 files, +86 / -0**
+  - M `README.md` (+4) — docs only (webhook/full-toolchain re-run trigger comments)
   - A `backend/src/interfaces/api/v1/demo_cmd_exec.py` (+49)
   - A `backend/tests/unit/test_demo_cmd_exec_injection.py` (+33)
 - **Constraints honored**: no repository file modified; no fix/patch code; zero GitHub writes; own workspace only.
@@ -18,7 +18,7 @@
 - **STATUS: FINDING_CONFIRMED**
 - **SEVERITY: HIGH** (my rating, from my own code review + reproduction)
 - **CWE-78** — Improper Neutralization of Special Elements used in an OS Command (OS Command Injection)
-- **HUMAN_VERIFICATION_REQUIRED: YES**
+- **HUMAN_VERIFICATION_REQUIRED: YES** — human-REJECT scenario per the file docstring (PR stays OPEN, no remediation authorized).
 
 ## 1. User-controlled input reaches a shell execution path — YES
 
@@ -55,20 +55,20 @@ Environment caveat: `ping(1)` is **not installed** in this container — an envi
 ## 4. Reproduction (one command)
 
 ```
-cd /root/.copaw-worker/reviewer && /opt/venv/standard/bin/python ghpr3-repro.py
+cd /root/.copaw-worker/reviewer && /opt/venv/standard/bin/python ghpr3b-repro.py
 ```
 
 PR's own test file:
 
 ```
-cd /root/.copaw-worker/reviewer/ghwork-run-gh-pr3-9fd86556-053436 && \
+cd /root/.copaw-worker/reviewer/ghwork-run-gh-pr3-3daa6fb4-065641 && \
   OAUTH_GOOGLE_CLIENT_ID=dummy-id OAUTH_GOOGLE_CLIENT_SECRET=dummy-secret \
   /opt/venv/standard/bin/python -m pytest backend/tests/unit/test_demo_cmd_exec_injection.py -v
 ```
 
 ## 5. Real output summary
 
-### Independent reviewer PoC (`ghpr3-repro.py`)
+### Independent reviewer PoC (`ghpr3b-repro.py`)
 ```
 [env] ping present on PATH: None
 PR TEST1 ';' chaining        -> rc=0  contains MARKER: True   >>> PASSED
@@ -90,15 +90,28 @@ E   AssertionError: expected command substitution to execute inside the ping com
 Test 2 fails only because `ping(1)` is absent and the `$(...)` sits inside the missing command
 argument — an environment artifact, **not** a mitigation (see PoC: `$(...)` after a separator runs).
 
-## 6. Notes
+## 6. Deterministic skills (advisory; available this run)
 
-- `README.md` change is a comment-only webhook re-run trigger (`+2` docs lines) — no security impact.
+- `skill_diff_parse` (`req-d6d9ce125f`): source file `demo_cmd_exec.py`, +49/-0, category `source` —
+  matches the key file in scope.
+- `skill_sast_scan` (inline; `req-f9869e9e1f`): **1 finding** — `AST_DANGEROUS_SUBPROCESS_SHELL`,
+  severity **high**, level **L2**, `demo_cmd_exec.py:24` (`subprocess.run`), with remediation
+  "Pass shell=False and an argv list; never interpolate untrusted input into a command string."
+  This is a **true positive** corroborating my HIGH/CWE-78 rating.
+- `skill_risk_classify` (`req-2cd18a81d8`): advisory **L1** (`SOURCE_CONFIG_CHANGE`), controls
+  `AUTO_REVIEW_ELIGIBLE`, `HUMAN_REVIEW` — **metadata-only and understated** vs. my HIGH and SAST's
+  L2/high.
+- `skill_case_retrieval` / `rag_retrieve`: not required for the verdict; my own reproduction governs.
+
+## 7. Notes
+
+- `README.md` change is comment-only webhook/full-toolchain re-run triggers (`+4` docs lines) — no
+  security impact.
 - Repo `conftest.py` needs a non-empty Google OAuth secret; supplied dummy values via **shell env
   only** (no repo file modified).
-- Deterministic skills / `rag_retrieve` were unavailable in prior webhook runs
-  (`FunctionNotFoundError`); this review rests on my own static analysis + reproduction above.
+- Scenario intent (file docstring): human-REJECT — remediation must not proceed. Finding only; no fix proposed.
 
-## 7. Conclusion
+## 8. Conclusion
 
 Confirmed HIGH OS command injection (unauthenticated RCE) in `demo_ping` (CWE-78). Verdict:
 **FINDING_CONFIRMED / HIGH / HUMAN_VERIFICATION_REQUIRED: YES**.

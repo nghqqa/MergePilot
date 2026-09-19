@@ -1,0 +1,57 @@
+{
+ "run": "run-gh-pr3-3daa6fb4-065708",
+ "window": [
+  "2026-09-19T06:56",
+  "2026-09-19T07:07"
+ ],
+ "invocations": [
+  {
+   "tool": "skill_diff_parse",
+   "arguments_hash": "req-8e5ca6d132",
+   "result_status": "ERROR",
+   "document_count": 0,
+   "latency_ms": 85,
+   "data_mode": "DETERMINISTIC_SKILL",
+   "source_refs": [
+    "skills/diff_parse"
+   ],
+   "ts": "2026-09-19T06:57:01.548Z"
+  },
+  {
+   "tool": "skill_diff_parse",
+   "arguments_hash": "req-d6d9ce125f",
+   "result_status": "OK",
+   "document_count": 0,
+   "latency_ms": 80,
+   "data_mode": "DETERMINISTIC_SKILL",
+   "source_refs": [
+    "skills/diff_parse"
+   ],
+   "ts": "2026-09-19T06:57:07.949Z"
+  },
+  {
+   "tool": "skill_sast_scan",
+   "arguments_hash": "req-f9869e9e1f",
+   "result_status": "OK",
+   "document_count": 0,
+   "latency_ms": 86,
+   "data_mode": "DETERMINISTIC_SKILL",
+   "source_refs": [
+    "skills/sast_scan"
+   ],
+   "ts": "2026-09-19T06:57:10.088Z"
+  },
+  {
+   "tool": "skill_risk_classify",
+   "arguments_hash": "req-2cd18a81d8",
+   "result_status": "OK",
+   "document_count": 0,
+   "latency_ms": 81,
+   "data_mode": "DETERMINISTIC_SKILL",
+   "source_refs": [
+    "skills/risk_classify"
+   ],
+   "ts": "2026-09-19T06:57:12.145Z"
+  }
+ ]
+}

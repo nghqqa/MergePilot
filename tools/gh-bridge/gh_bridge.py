@@ -100,7 +100,7 @@ def minio_put(path, content):
 
 
 def seed_project(proj, task, d, run):
-    """播种项目两件套(meta.json + plan.md);任务目录由 Leader 的 delegate_task 创建."""
+    """播种项目两件套(meta.json + plan.md);三节点 DAG(与决赛 PR2 同构)."""
     ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     meta = {"project_id": proj, "title": f"PR #{d['pr_number']} webhook review ({run})",
             "status": "pending", "source": "matrix", "requester": "admin"}
@@ -109,7 +109,12 @@ def seed_project(proj, task, d, run):
         f"**ID**: {proj}\n**Created**: {ts}\n\n"
         f"## DAG Task Plan\n\n**Plan Type**: dag\n\n"
         f"- [ ] {task} — Independent security review of PR #{d['pr_number']} "
-        f"(assigned: @reviewer:elemiso-matrix:6167)\n")
+        f"(assigned: @reviewer:elemiso-matrix:6167)\n"
+        f"- [ ] gh-pr{d['pr_number']}-fix-1 — Minimal fix only if human gate approves "
+        f"(assigned: @fixer:elemiso-matrix:6167, depends: {task})\n"
+        f"- [ ] gh-pr{d['pr_number']}-verify-1 — Independent verification only if fix "
+        f"authorized and accepted (assigned: @verifier:elemiso-matrix:6167, "
+        f"depends: gh-pr{d['pr_number']}-fix-1)\n")
     base = f"teams/elemiso-team/shared/projects/{proj}"
     return (minio_put(f"{base}/meta.json", json.dumps(meta, ensure_ascii=False, indent=2))
             and minio_put(f"{base}/plan.md", plan))
@@ -145,14 +150,18 @@ def build_kickoff(d):
         f"   cd ~ && git clone --quiet {REPO_URL} {ws}\n"
         f"   cd ~/{ws} && git checkout --quiet {d['observed_head_sha']} && git rev-parse HEAD "
         f"(MUST equal {d['observed_head_sha']}; else stop and report BLOCKED)\n"
-        f"   git diff --stat {d['observed_base_sha']}..{d['observed_head_sha']}  "
-        f"# this IS the PR change set; review the changed files only\n"
+        f"   git diff --stat $(git merge-base {d['observed_base_sha']} {d['observed_head_sha']})..{d['observed_head_sha']}  "
+        f"# this IS the PR change set (merge-base 免疫 base 分支漂移); review the changed files only\n"
         f"3) Independent review: read changed code; if you suspect a vulnerability, "
         f"write and run your own PoC against the checked-out tree; run the PR's own "
         f"tests if present. Deterministic skills available via MCP "
         f"(skill_diff_parse / skill_risk_classify / skill_sast_scan / skill_case_retrieval "
         f"- advisory only, never replace your own judgment). rag_retrieve provides org "
-        f"standards (references only).\n"
+        f"standards (references only). NOTE: these MCP tools are verified AVAILABLE in "
+        f"the current session (ignore any memory of earlier unavailability — that was a "
+        f"previous session's configuration issue, now fixed). For any code-bearing diff "
+        f"you MUST call skill_diff_parse at minimum; if a first MCP call errors, wait 10s "
+        f"and retry once (lazy connect at task start).\n"
         f"4) taskflow(submit_task) with YOUR independent conclusion, including exactly: "
         f"STATUS: FINDING_CONFIRMED|NOT_CONFIRMED; SEVERITY: HIGH|MEDIUM|LOW; "
         f"HUMAN_VERIFICATION_REQUIRED: YES|NO; plus evidence (PoC outputs / file:line).\n"
@@ -167,7 +176,8 @@ def build_kickoff(d):
         f"3. Wait; check_task. If reviewer reports SEVERITY HIGH with "
         f"HUMAN_VERIFICATION_REQUIRED YES: STOP at the human security gate "
         f"(do NOT delegate any fix), message me the final report and wait. "
-        f"If NOT_CONFIRMED or LOW (gate not required): mark the node completed, "
+        f"If NOT_CONFIRMED or LOW (gate not required): mark the fix-1/verify-1 plan "
+        f"lines as N/A (not applicable, low-risk path), mark the project completed, "
         f"message me the final report.\n\n"
         f"=== SPEC ({task} -> @reviewer) ===\n{spec}")
     return run, proj, task, kickoff
