@@ -1,0 +1,16 @@
+[
+ {
+  "delivery_id": "ade2ff10-b3ea-11f1-8b27-2d39e0f3ffed",
+  "event_name": "pull_request",
+  "action": "synchronize",
+  "repo": "nghqqa/fastapi-boilerplate-demo",
+  "pr_number": 2,
+  "observed_head_sha": "1414edbe513620262b31372ed1af4027be5888d1",
+  "observed_base_sha": "4cd5bf099f88c3f3f85ee4c06b7adfe9925a6e5c",
+  "status": "PROCESSED",
+  "error": "completed/pass_verified; {\"http\": 201, \"check_run_id\": 105847205375, \"url\": \"https://github.com/nghqqa/fastapi-boilerplate-demo/runs/105847205375\"}",
+  "received_at": "2026-09-19T05:26:36.860105+00:00",
+  "claimed_at": "2026-09-19T05:26:50.132935+00:00",
+  "processed_at": "2026-09-19T05:31:55.893647+00:00"
+ }
+]

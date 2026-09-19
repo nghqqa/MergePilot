@@ -1,0 +1,13 @@
+{
+  "task_id": "gh-pr3-review-1",
+  "project_id": "elemiso-gh-pr3-9fd86556",
+  "task_title": "Independent security review of PR #3",
+  "assigned_to": "reviewer",
+  "room_id": "room:!RErK7WVs9iUeaszwho:elemiso-matrix:6167",
+  "status": "submitted",
+  "depends_on": [],
+  "assigned_at": "2026-09-19T05:34:43Z",
+  "acknowledged_at": "2026-09-19T05:34:44Z",
+  "submitted_at": "2026-09-19T05:35:11Z",
+  "event_id": "$P4kaNYtj2ttPf0CTgr8FcyUNH6qhUp5nFFYzgk7ymm4"
+}
