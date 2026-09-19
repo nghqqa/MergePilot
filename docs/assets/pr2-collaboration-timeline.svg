@@ -1,0 +1,116 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1700" height="760" viewBox="0 0 1700 760" font-family="Noto Sans SC, Microsoft YaHei, Arial">
+<rect width="1700" height="760" fill="#f8fbff" rx="20"/>
+<text x="60" y="48" font-size="26" font-weight="700" fill="#0f172a">PR #2 收官轮 · 真实多 Agent 协作时间线</text>
+<text x="60" y="78" font-size="15" fill="#475569">run-gh-pr2-65de83d6-085056 · 2026-09-19 · Matrix 团队房+Leader DM 共 48 条锁定事件 · 墙钟 ≈23 分钟(含人工门等待 ≈20 分钟,如实分列)</text>
+<defs><marker id="arr" markerWidth="8" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#dc2626"/></marker></defs>
+<rect x="50" y="110" width="1600" height="102" rx="14" fill="#ffffff" stroke="#e2e8f0"/>
+<rect x="50" y="110" width="120" height="102" rx="14" fill="#ea580c"/>
+<text x="110" y="166" text-anchor="middle" font-size="15" font-weight="700" fill="#fff">操作员</text>
+<rect x="50" y="220" width="1600" height="102" rx="14" fill="#f1f5f9" stroke="#e2e8f0"/>
+<rect x="50" y="220" width="120" height="102" rx="14" fill="#2563eb"/>
+<text x="110" y="276" text-anchor="middle" font-size="15" font-weight="700" fill="#fff">Leader</text>
+<rect x="50" y="330" width="1600" height="102" rx="14" fill="#ffffff" stroke="#e2e8f0"/>
+<rect x="50" y="330" width="120" height="102" rx="14" fill="#7c3aed"/>
+<text x="110" y="386" text-anchor="middle" font-size="15" font-weight="700" fill="#fff">Reviewer</text>
+<rect x="50" y="440" width="1600" height="102" rx="14" fill="#f1f5f9" stroke="#e2e8f0"/>
+<rect x="50" y="440" width="120" height="102" rx="14" fill="#0891b2"/>
+<text x="110" y="496" text-anchor="middle" font-size="15" font-weight="700" fill="#fff">Fixer</text>
+<rect x="50" y="550" width="1600" height="102" rx="14" fill="#ffffff" stroke="#e2e8f0"/>
+<rect x="50" y="550" width="120" height="102" rx="14" fill="#16a34a"/>
+<text x="110" y="606" text-anchor="middle" font-size="15" font-weight="700" fill="#fff">Verifier</text>
+<rect x="274" y="110" width="1194" height="102" fill="#fff7ed" fill-opacity="0.55"/>
+<rect x="274" y="220" width="1194" height="102" fill="#fff7ed" fill-opacity="0.55"/>
+<rect x="274" y="330" width="1194" height="102" fill="#fff7ed" fill-opacity="0.55"/>
+<rect x="274" y="440" width="1194" height="102" fill="#fff7ed" fill-opacity="0.55"/>
+<rect x="274" y="550" width="1194" height="102" fill="#fff7ed" fill-opacity="0.55"/>
+<text x="871" y="103" text-anchor="middle" font-size="13" fill="#ea580c" font-weight="600">⏸ 人工门等待(操作员决策 ≈20 分钟)</text>
+<circle cx="209.1" cy="161.0" r="4" fill="#ea580c" fill-opacity="0.6"/>
+<circle cx="215.2" cy="271.0" r="4" fill="#2563eb" fill-opacity="0.6"/>
+<circle cx="217.2" cy="381.0" r="4" fill="#7c3aed" fill-opacity="0.6"/>
+<circle cx="218.3" cy="381.0" r="4" fill="#7c3aed" fill-opacity="0.6"/>
+<circle cx="218.3" cy="271.0" r="4" fill="#2563eb" fill-opacity="0.6"/>
+<circle cx="221.3" cy="381.0" r="4" fill="#7c3aed" fill-opacity="0.6"/>
+<circle cx="222.3" cy="381.0" r="4" fill="#7c3aed" fill-opacity="0.6"/>
+<circle cx="226.4" cy="381.0" r="4" fill="#7c3aed" fill-opacity="0.6"/>
+<circle cx="233.5" cy="381.0" r="4" fill="#7c3aed" fill-opacity="0.6"/>
+<circle cx="242.6" cy="381.0" r="4" fill="#7c3aed" fill-opacity="0.6"/>
+<circle cx="255.8" cy="381.0" r="4" fill="#7c3aed" fill-opacity="0.6"/>
+<circle cx="257.8" cy="271.0" r="4" fill="#2563eb" fill-opacity="0.6"/>
+<circle cx="258.8" cy="271.0" r="4" fill="#2563eb" fill-opacity="0.6"/>
+<circle cx="261.9" cy="271.0" r="4" fill="#2563eb" fill-opacity="0.6"/>
+<circle cx="263.9" cy="271.0" r="4" fill="#2563eb" fill-opacity="0.6"/>
+<circle cx="271.0" cy="271.0" r="4" fill="#2563eb" fill-opacity="0.6"/>
+<circle cx="274.0" cy="271.0" r="4" fill="#2563eb" fill-opacity="0.6"/>
+<circle cx="1468.6" cy="161.0" r="4" fill="#ea580c" fill-opacity="0.6"/>
+<circle cx="1468.6" cy="161.0" r="4" fill="#ea580c" fill-opacity="0.6"/>
+<circle cx="1482.8" cy="271.0" r="4" fill="#2563eb" fill-opacity="0.6"/>
+<circle cx="1483.8" cy="491.0" r="4" fill="#0891b2" fill-opacity="0.6"/>
+<circle cx="1484.8" cy="271.0" r="4" fill="#2563eb" fill-opacity="0.6"/>
+<circle cx="1485.9" cy="491.0" r="4" fill="#0891b2" fill-opacity="0.6"/>
+<circle cx="1488.9" cy="491.0" r="4" fill="#0891b2" fill-opacity="0.6"/>
+<circle cx="1493.0" cy="491.0" r="4" fill="#0891b2" fill-opacity="0.6"/>
+<circle cx="1495.0" cy="491.0" r="4" fill="#0891b2" fill-opacity="0.6"/>
+<circle cx="1501.1" cy="491.0" r="4" fill="#0891b2" fill-opacity="0.6"/>
+<circle cx="1503.1" cy="491.0" r="4" fill="#0891b2" fill-opacity="0.6"/>
+<circle cx="1517.3" cy="491.0" r="4" fill="#0891b2" fill-opacity="0.6"/>
+<circle cx="1519.3" cy="271.0" r="4" fill="#2563eb" fill-opacity="0.6"/>
+<circle cx="1520.3" cy="271.0" r="4" fill="#2563eb" fill-opacity="0.6"/>
+<circle cx="1523.4" cy="271.0" r="4" fill="#2563eb" fill-opacity="0.6"/>
+<circle cx="1526.4" cy="271.0" r="4" fill="#2563eb" fill-opacity="0.6"/>
+<circle cx="1527.4" cy="601.0" r="4" fill="#16a34a" fill-opacity="0.6"/>
+<circle cx="1528.5" cy="271.0" r="4" fill="#2563eb" fill-opacity="0.6"/>
+<circle cx="1528.5" cy="601.0" r="4" fill="#16a34a" fill-opacity="0.6"/>
+<circle cx="1531.5" cy="601.0" r="4" fill="#16a34a" fill-opacity="0.6"/>
+<circle cx="1531.5" cy="271.0" r="4" fill="#2563eb" fill-opacity="0.6"/>
+<circle cx="1535.5" cy="601.0" r="4" fill="#16a34a" fill-opacity="0.6"/>
+<circle cx="1541.6" cy="601.0" r="4" fill="#16a34a" fill-opacity="0.6"/>
+<circle cx="1544.7" cy="601.0" r="4" fill="#16a34a" fill-opacity="0.6"/>
+<circle cx="1550.8" cy="601.0" r="4" fill="#16a34a" fill-opacity="0.6"/>
+<circle cx="1558.9" cy="601.0" r="4" fill="#16a34a" fill-opacity="0.6"/>
+<circle cx="1577.1" cy="601.0" r="4" fill="#16a34a" fill-opacity="0.6"/>
+<circle cx="1578.1" cy="271.0" r="4" fill="#2563eb" fill-opacity="0.6"/>
+<circle cx="1580.2" cy="271.0" r="4" fill="#2563eb" fill-opacity="0.6"/>
+<circle cx="1583.2" cy="271.0" r="4" fill="#2563eb" fill-opacity="0.6"/>
+<circle cx="1592.3" cy="271.0" r="4" fill="#2563eb" fill-opacity="0.6"/>
+<line x1="215.2" y1="271.0" x2="215.2" y2="381.0" stroke="#dc2626" stroke-width="2.5" marker-end="url(#arr)"/>
+<line x1="1482.8" y1="271.0" x2="1482.8" y2="491.0" stroke="#dc2626" stroke-width="2.5" marker-end="url(#arr)"/>
+<line x1="1526.4" y1="271.0" x2="1526.4" y2="601.0" stroke="#dc2626" stroke-width="2.5" marker-end="url(#arr)"/>
+<line x1="209.1" y1="161.0" x2="209.1" y2="143.0" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3 3"/>
+<text x="209.1" y="133.0" text-anchor="middle" font-size="11" font-weight="600" fill="#334155">08:50:59 kickoff 指令</text>
+<line x1="215.2" y1="271.0" x2="215.2" y2="297.0" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3 3"/>
+<text x="215.2" y="305.0" text-anchor="middle" font-size="11" font-weight="600" fill="#334155">08:51:05 委派 review-1</text>
+<line x1="233.5" y1="381.0" x2="233.5" y2="363.0" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3 3"/>
+<text x="233.5" y="353.0" text-anchor="middle" font-size="11" font-weight="600" fill="#334155">08:51:23 Skill 调用(diff/sast/risk)</text>
+<line x1="255.8" y1="381.0" x2="255.8" y2="407.0" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3 3"/>
+<text x="255.8" y="415.0" text-anchor="middle" font-size="11" font-weight="600" fill="#334155">08:51:45 HIGH/CWE-22 提交</text>
+<line x1="271.0" y1="271.0" x2="271.0" y2="253.0" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3 3"/>
+<text x="271.0" y="243.0" text-anchor="middle" font-size="11" font-weight="600" fill="#334155">08:52:00 停等人工门</text>
+<line x1="1468.6" y1="161.0" x2="1468.6" y2="187.0" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3 3"/>
+<text x="1468.6" y="195.0" text-anchor="middle" font-size="11" font-weight="600" fill="#334155">09:11:41 人工门批准</text>
+<line x1="1482.8" y1="271.0" x2="1482.8" y2="253.0" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3 3"/>
+<text x="1482.8" y="243.0" text-anchor="middle" font-size="11" font-weight="600" fill="#334155">09:11:55 委派 fix-1</text>
+<line x1="1517.3" y1="491.0" x2="1517.3" y2="517.0" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3 3"/>
+<text x="1517.3" y="525.0" text-anchor="middle" font-size="11" font-weight="600" fill="#334155">09:12:29 补丁 sha256 674356fc</text>
+<line x1="1526.4" y1="271.0" x2="1526.4" y2="253.0" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3 3"/>
+<text x="1526.4" y="243.0" text-anchor="middle" font-size="11" font-weight="600" fill="#334155">09:12:38 委派 verify-1</text>
+<line x1="1541.6" y1="601.0" x2="1541.6" y2="627.0" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3 3"/>
+<text x="1541.6" y="635.0" text-anchor="middle" font-size="11" font-weight="600" fill="#334155">09:12:53 修复前 3 逃逸向量 200</text>
+<line x1="1544.7" y1="601.0" x2="1544.7" y2="583.0" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3 3"/>
+<text x="1544.7" y="573.0" text-anchor="middle" font-size="11" font-weight="600" fill="#334155">09:12:56 修复后全部 400</text>
+<line x1="1580.2" y1="271.0" x2="1580.2" y2="297.0" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3 3"/>
+<text x="1580.2" y="305.0" text-anchor="middle" font-size="11" font-weight="600" fill="#334155">09:13:31 VERIFIED 终态</text>
+<line x1="200" y1="715" x2="1640" y2="715" stroke="#64748b" stroke-width="2"/>
+<line x1="149.3" y1="715" x2="149.3" y2="721" stroke="#64748b" stroke-width="2"/>
+<text x="149.3" y="737" text-anchor="middle" font-size="12" fill="#64748b">08:50Z</text>
+<line x1="453.5" y1="715" x2="453.5" y2="721" stroke="#64748b" stroke-width="2"/>
+<text x="453.5" y="737" text-anchor="middle" font-size="12" fill="#64748b">08:55Z</text>
+<line x1="757.7" y1="715" x2="757.7" y2="721" stroke="#64748b" stroke-width="2"/>
+<text x="757.7" y="737" text-anchor="middle" font-size="12" fill="#64748b">09:00Z</text>
+<line x1="1062.0" y1="715" x2="1062.0" y2="721" stroke="#64748b" stroke-width="2"/>
+<text x="1062.0" y="737" text-anchor="middle" font-size="12" fill="#64748b">09:05Z</text>
+<line x1="1366.2" y1="715" x2="1366.2" y2="721" stroke="#64748b" stroke-width="2"/>
+<text x="1366.2" y="737" text-anchor="middle" font-size="12" fill="#64748b">09:10Z</text>
+<line x1="1548.7" y1="715" x2="1548.7" y2="721" stroke="#64748b" stroke-width="2"/>
+<text x="1548.7" y="737" text-anchor="middle" font-size="12" fill="#64748b">09:13Z</text>
+<text x="60" y="752" font-size="11" fill="#94a3b8">数据源: FINALS-ELEM-PR2-WH-20260919/team-room-messages.json + leader-dm-messages.json (SHA256SUMS 锁定) · 生成: 2026-09-19</text>
+</svg>
