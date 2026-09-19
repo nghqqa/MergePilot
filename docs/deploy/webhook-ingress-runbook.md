@@ -211,6 +211,20 @@ docker compose exec postgres psql -U mergepilot -d mergepilot_audit \
 - [ ] `mergepilot.nghqqa.cn` 不在 CDN 加速名单
 - [ ] certbot 自动续期：`systemctl list-timers | grep certbot`
 
+## 实测记录（Phase 1 闭环 · 2026-09-19）
+
+端到端验证于 2026-09-19T04:10:34Z 完成：真实 `pull_request/synchronize` 事件
+（fastapi-boilerplate-demo PR #4）→ HTTPS → HMAC 验签 → `github_deliveries`
+PENDING 入库 → HTTP **202**；ping 按合同 IGNORED。测试 PR 验证后已关闭留痕。
+
+首次真实流量暴露并修复了三处 P14 遗留问题（均已在仓库提交）：
+
+1. `github_deliveries.event_name` CHECK 白名单与接收端写原始事件名冲突（push 事件 503）→ 约束放宽为接收端同款正则；
+2. 接收端 `classify()` 强制 `installation_id`——repo webhook 载荷无此字段（400）→ 不再必需（Phase 2 接 GitHub App 后自然填充）；
+3. `gh_deliveries_pull_request_envelope` 约束同样要求 installation 非空（503）→ 放开该字段，其余校验保留。
+
+结论：入口实现此前从未被真实 GitHub 事件验证过，本日链路为首个真实流量验证。
+
 ## Phase 2 预告 · GitHub App + 结果回写
 
 复用已实现的 `tools/gh-app/token_provider.py`（App JWT/installation token）与
