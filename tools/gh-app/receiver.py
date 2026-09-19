@@ -150,7 +150,9 @@ def classify(envelope: dict, allowlist: Optional[frozenset]) -> str:
     repo = envelope.get("repo")
     if not repo:
         raise ReceiverError(HTTP_BAD_REQUEST, "pull_request missing repo")
-    for field in ("installation_id", "pr_number", "observed_head_sha",
+    # installation_id 仅 GitHub App webhook 载荷携带(Phase 2);repo webhook
+    # (Phase 1)无 installation 对象——schema 列本就允许 NULL,不作必需字段。
+    for field in ("pr_number", "observed_head_sha",
                   "observed_base_sha"):
         if envelope.get(field) is None:
             raise ReceiverError(HTTP_BAD_REQUEST,
