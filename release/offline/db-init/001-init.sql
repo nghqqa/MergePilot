@@ -3143,8 +3143,7 @@ CREATE TABLE IF NOT EXISTS public.github_deliveries (
     event_name <> 'pull_request' OR (
       repo IS NOT NULL
       AND pr_number IS NOT NULL AND observed_head_sha IS NOT NULL
-      AND observed_base_sha IS NOT NULL AND action IN
-        ('opened','synchronize','reopened'))
+      AND observed_base_sha IS NOT NULL)  -- 动作白名单由 receiver.classify 裁决;DB 约束不重复 enforce(closed/assigned 等非映射动作按 IGNORED 记账)
   )
 );
 
