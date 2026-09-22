@@ -478,12 +478,66 @@ def _worker_image_id(container):
         return None
 
 
+_WORKER_CFG = "/root/.copaw-worker/%s/openclaw.json"
+_SKILL_DIR = "/opt/mergepilot/skills"
+# MCP 工具名(skill_*)与镜像内目录名的映射(R5 探查核实,2026-09-22)
+_SKILL_DIRS = {"skill_diff_parse": "diff_parse", "skill_risk_classify": "risk_classify",
+               "skill_sast_scan": "sast_scan", "skill_case_retrieval": "case_retrieval"}
+
+
+def _worker_model_id(container, role):
+    """只读取 worker 配置中的主模型标识;仅提取 model 字段,不搬运其余配置。"""
+    try:
+        r = subprocess.run(["docker", "exec", container, "cat", _WORKER_CFG % role],
+                           capture_output=True, text=True, timeout=15)
+        if r.returncode != 0:
+            return None
+        cfg = json.loads(r.stdout)
+        return (((cfg.get("agents") or {}).get("defaults") or {})
+                .get("model") or {}).get("primary")
+    except Exception:
+        return None
+
+
+def _skills_content_hashes(container, skills=SKILLS_IN_SPEC):
+    """对 worker 镜像内 skill 目录做内容哈希(sha256 of 排序后逐文件 sha256)。
+
+    工具名→目录名经 _SKILL_DIRS 映射;目录不存在或无文件时不输出该 skill
+    (宁可缺失进 missing[],也不产出空串哈希冒充)。"""
+    try:
+        pairs = ["%s %s" % (s, _SKILL_DIRS[s]) for s in skills if s in _SKILL_DIRS]
+        r = subprocess.run(
+            ["docker", "exec", container, "sh", "-c",
+             "cd %s || exit 1; while read -r s d; do "
+             "cnt=$(find \"$d\" -type f ! -path '*__pycache__*' 2>/dev/null | wc -l); "
+             "[ \"$cnt\" -gt 0 ] || continue; "
+             "printf '%%s ' \"$s\"; "
+             "find \"$d\" -type f ! -path '*__pycache__*' -exec sha256sum {} \\; "
+             "| awk '{print $1}' | sort | sha256sum | cut -d' ' -f1; done <<'EOF'\n%s\nEOF"
+             % (_SKILL_DIR, "\n".join(pairs))],
+            capture_output=True, text=True, timeout=30)
+        if r.returncode != 0:
+            return None
+        out = {}
+        for line in r.stdout.splitlines():
+            parts = line.split()
+            if len(parts) == 2 and re.fullmatch(r"[0-9a-f]{64}", parts[1]):
+                out[parts[0]] = parts[1]
+        return out or None
+    except Exception:
+        return None
+
+
 def build_manifest(d, run, proj, task, kickoff_base, timeout_min):
     """派发时的版本事实快照。缺失即标注(备忘九.2:可追溯≠可复算)。"""
-    workers = {n: _worker_image_id("elemiso-" + n)
+    workers = {n: _worker_image_id("elemiso-worker-" + n)
                for n in ("leader", "reviewer", "fixer", "verifier")}
     bridge_sha = _bridge_source_sha()
     git = _git_commit()
+    # R5 探查(2026-09-22):模型标识与 Skill 内容哈希可从 reviewer 只读取得;
+    # RAG 版本仅剩 :4184 endpoint(rag-live 未运行),无从取版本 → 保持 missing。
+    model_id = _worker_model_id("elemiso-worker-reviewer", "reviewer")
+    skill_hashes = _skills_content_hashes("elemiso-worker-reviewer")
     cfg = {"allow_repos": sorted(ALLOW_REPOS), "repo_url": REPO_URL,
            "leader": LEADER, "team_room": TEAM_ROOM, "dm_room": DM_ROOM,
            "watch_poll_s": WATCH_POLL_S, "timeout_min": timeout_min,
@@ -501,12 +555,19 @@ def build_manifest(d, run, proj, task, kickoff_base, timeout_min):
                    "kickoff_base_sha256": _sha_text(kickoff_base)},
         "orchestrator": {"bridge_source_sha256": bridge_sha, "git_commit": git},
         "workers": {"images": workers},
-        "skills": {"names": list(SKILLS_IN_SPEC), "content_sha256": None},
-        "model": {"identifiers": None},
-        "rag": {"version": None},
+        "skills": {"names": list(SKILLS_IN_SPEC), "content_sha256": skill_hashes},
+        "model": {"primary": model_id,
+                  "generation_params": None,   # agentloop 不外露;不伪造
+                  "note": "primary from reviewer openclaw.json; fixer/verifier assumed同模型池"},
+        "rag": {"version": None,
+                "endpoint_configured": "host.docker.internal:4184 (rag-live; 未运行无版本可取)"},
         "config": {"canonical": cfg, "sha256": _sha_text(_canon(cfg))},
     }
-    missing = ["model.identifiers", "skills.content_sha256", "rag.version"]
+    missing = ["model.generation_params", "rag.version"]
+    if model_id is None:
+        missing.append("model.primary")
+    if skill_hashes is None:
+        missing.append("skills.content_sha256")
     if any(v is None for v in workers.values()):
         missing.append("workers.images")
     if bridge_sha is None:

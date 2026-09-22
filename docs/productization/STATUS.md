@@ -14,9 +14,9 @@
 | M1-3 场景6 PR 更新失效 | 🔒 结构保证+单测 | check-run 绑 head_sha + already_processed 按 head 去重；真实双 head 实证待授权案例轮 |
 | M2-A 审批票据规格（四问） | ✅ 规格已定 | docs/productization/M2-APPROVAL-SPEC.md；merge 语义剥离；决策项 D-1/D-2/D-3 列明未拍板 |
 | M2-A 绑定校验器+单测 | ✅ 已实现+已测试 | tools/approval/（纯逻辑层）；tests/approval/ 34 passed；未接真实执行路径 |
-| run-manifest 派发前置清单（备忘九.2） | ✅ 已实现+单测级 | 桥 process() 派发前 write-once 持久化 + kickoff 引用 sha256 + resume 只读；模型/RAG/Skill 内容哈希诚实标 missing（待 worker 侧上报） |
+| run-manifest 派发前置清单（备忘九.2） | ✅ 已实现+单测级+只读冒烟 | 桥 process() 派发前 write-once 持久化 + kickoff 引用 sha256 + resume 只读；模型标识/Skill 哈希/镜像 ID 已从 worker 只读接入（DECISIONS #9），missing 只剩生成参数与 RAG 版本（诚实不可得） |
 | 成本计量脚手架（备忘四.4） | ✅ 脚手架+单测级 | tools/costmeter/ 预算守卫（预留/重试/结算/超限/并发/缺失/崩溃恢复 16 单测）+ 本地 span 计数收集器；**未接真实路径**（token 源在 OTel 外部 collector，预算金额未拍板） |
-| 真实集成授权请求集中化 | ✅ 清单已出 | INTEGRATION-AUTH-REQUESTS.md（R1-R6：目标/操作/影响/证据/回退/权限），等待用户逐项授权 |
+| 真实集成授权请求集中化 | ✅ 清单已出 | INTEGRATION-AUTH-REQUESTS.md（R1-R6：目标/操作/影响/证据/回退/权限），等待用户逐项授权；**R5 只读部分已执行**（探查结论入 DECISIONS #9，manifest 已接入） |
 
 ## 已验证结果（证据，2026-09-22 实测 @ 工作树）
 
@@ -36,9 +36,9 @@
 
 ## 下一条可执行动作（按序）
 
-1. **R5 只读探查**（零授权成本）：ctrl/worker 内模型标识、Skill 内容哈希、RAG 版本的可得位置——补 run-manifest missing 项的上报方案；
-2. **门 Web 化预研**：M2 票据存储落点方案对比（PG approvals 改造 vs MinIO 票据对象），输出预研记录（依赖 D-1/D-2 拍板的仅是启用，不阻塞方案设计）；
-3. **待授权项**：用户批复 R1-R4 后按建议顺序执行真实集成轮。
+1. **门 Web 化预研**：M2 票据存储落点方案对比（PG approvals 改造 vs MinIO 票据对象），输出预研记录（依赖 D-1/D-2 拍板的仅是启用，不阻塞方案设计）；
+2. **R6 方案细化**：token usage 源二选一（外部 OTel collector 查询 vs worker 本地台账）——需用户选路；
+3. **待授权项**：用户批复 R1-R4 后按建议顺序执行真实集成轮（M1 场景 3/6/7 实证 + 副本同步 + 真 manifest 落盘验证）。
 
 ## 提交记录
 

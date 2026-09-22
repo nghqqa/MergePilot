@@ -28,9 +28,13 @@ class BuildManifestTests(unittest.TestCase):
         img = over.pop("img", "sha256:img")
         bsha = over.pop("bsha", "b" * 64)
         git = over.pop("git", "deadbee")
+        model = over.pop("model", "agentteams-gateway/deepseek-chat")
+        skh = over.pop("skh", {"diff_parse": "a" * 64})
         with mock.patch.object(br, "_worker_image_id", side_effect=lambda c: img), \
              mock.patch.object(br, "_bridge_source_sha", return_value=bsha), \
-             mock.patch.object(br, "_git_commit", return_value=git):
+             mock.patch.object(br, "_git_commit", return_value=git), \
+             mock.patch.object(br, "_worker_model_id", side_effect=lambda c, r: model), \
+             mock.patch.object(br, "_skills_content_hashes", side_effect=lambda c: skh):
             return br.build_manifest(d, "run-x", "elemiso-gh-pr2-abcd1234",
                                      "gh-pr2-abcd1234-review-1", _base_kickoff(), 20)
 
@@ -45,11 +49,22 @@ class BuildManifestTests(unittest.TestCase):
 
     def test_missing_items_marked_not_fabricated(self):
         m = self._build()
-        self.assertIsNone(m["model"]["identifiers"])
-        self.assertIsNone(m["skills"]["content_sha256"])
+        self.assertIsNone(m["model"]["generation_params"])
         self.assertIsNone(m["rag"]["version"])
-        for key in ("model.identifiers", "skills.content_sha256", "rag.version"):
+        for key in ("model.generation_params", "rag.version"):
             self.assertIn(key, m["missing"])
+        self.assertNotIn("model.primary", m["missing"])           # 已从 worker 取得
+        self.assertNotIn("skills.content_sha256", m["missing"])
+        self.assertEqual(m["model"]["primary"], "agentteams-gateway/deepseek-chat")
+        self.assertEqual(m["skills"]["content_sha256"]["diff_parse"], "a" * 64)
+
+    def test_unavailable_worker_sources_fall_back_to_missing(self):
+        """worker 探查失败时:不伪造,退回 null + missing(清单仍可派发)。"""
+        m = self._build(model=None, skh=None)
+        self.assertIsNone(m["model"]["primary"])
+        self.assertIsNone(m["skills"]["content_sha256"])
+        self.assertIn("model.primary", m["missing"])
+        self.assertIn("skills.content_sha256", m["missing"])
 
     def test_unavailable_worker_images_marked_missing(self):
         m = self._build(img=None)

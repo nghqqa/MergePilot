@@ -44,3 +44,15 @@ repo `tools/gh-bridge/gh_bridge.py` 为事实源；**运行副本在 `D:\goai\r3
 ## #8 互斥边界客观核实：lease_expires_at（2026-09-22）
 
 桥 claim 不写 `lease_expires_at`（NULL）⇒ github_drain 接管谓词（`lease_expires_at < now()`）对桥在途行**恒不成立**——Controller 抢不走桥的行，这是结构保证而非约定。反向由 `%-bridge-%` 命名空间保证（UUID 字符集不含 b/r/i/g 不会撞段）。**代价**：cutover 时桥在途行对 Controller 不可见，必须按契约 §6 三步程序（桥停认领→排空→启 drain），否则产生只有桥能回收的孤儿行。已写入 ORCHESTRATION-CONTRACT.md §6。
+
+## #9 run-manifest missing 项来源（R5 只读探查结论，2026-09-22）
+
+| 项 | 来源（只读） | 状态 |
+|---|---|---|
+| 模型标识 | worker `/root/.copaw-worker/{role}/openclaw.json` → `agents.defaults.model.primary`（reviewer 实测 = `agentteams-gateway/deepseek-chat`）。**只提取该字段**，不搬运其余配置 | ✅ 已接入清单 |
+| Skill 内容哈希 | worker 镜像 `/opt/mergepilot/skills/{diff_parse,risk_classify,sast_scan,case_retrieval}`，sha256 of 排序逐文件 sha256；工具名→目录名映射 `_SKILL_DIRS`（`skill_*`→无前缀，**映射错会静默产出空串哈希**——已修并加空目录守卫） | ✅ 已接入清单 |
+| Worker 镜像 ID | `docker inspect --format {{.Image}} elemiso-worker-{role}`（容器名带 `-worker-` 段） | ✅ 已接入清单 |
+| RAG 版本 | 配置只有 `:4184` endpoint（rag-live 未运行），无版本可取 | ⬜ 保持 missing |
+| 生成参数 | agentloop 不外露 | ⬜ 保持 missing（不伪造） |
+
+冒烟实测（只读，2026-09-22）：清单 missing[] 只剩上两行。教训：探查脚本对"哈希了空输入"必须显式失败——e3b0c442…（空 sha256）曾冒充四个 skill 的哈希，被只读冒烟抓出。
