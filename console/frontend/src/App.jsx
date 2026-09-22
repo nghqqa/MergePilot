@@ -22,57 +22,51 @@ function BrandMark() {
   );
 }
 
-function TopbarClock() {
-  const [now, setNow] = useState(() => new Date().toISOString());
-  useEffect(() => {
-    const t = setInterval(() => setNow(new Date().toISOString()), 1000);
-    return () => clearInterval(t);
-  }, []);
-  return <span className="topbar-time">{fmtTime(now)}</span>;
-}
-
-function ModeChip() {
-  const [health, setHealth] = useState(null);
+function TopbarContext() {
+  // 数据模式 + 采集范围：静态事实标注，不用跳动时钟暗示实时。
+  const [range, setRange] = useState(null);
   const [err, setErr] = useState(null);
   useEffect(() => {
-    api.health().then(setHealth).catch(setErr);
+    api.health().then(setErr(null)).catch(setErr);
+    api.runs({ limit: 200 }).then((d) => {
+      const times = (d.items ?? []).map((r) => r.created_at).filter(Boolean).sort();
+      if (times.length) {
+        const short = (iso) => iso.slice(0, 10);
+        setRange(`${short(times[0])} ~ ${short(times[times.length - 1])}`);
+      }
+    }).catch(() => {});
   }, []);
   return (
-    <span
-      className={`mode-chip ${err ? 'mode-chip-bad' : ''}`}
-      title={
-        err
-          ? `后端不可达：${err.message}`
-          : health
-            ? `数据模式 snapshot —— 真实历史运行证据包（锁定只读、非实时），live 模式未接入。当前索引 ${health.runs} 个运行包，${health.packs_with_sums} 个带 SHA256SUMS。`
-            : '连接后端中…'
-      }
-    >
-      <span className={`mode-dot ${err ? 'mode-dot-bad' : ''}`} aria-hidden />
-      <strong>SNAPSHOT</strong>
-      <span className="mode-chip-sub">{err ? '后端不可达' : '真实历史证据 · 只读 · 非实时'}</span>
+    <span className="mode-wrap">
+      <span
+        className={`mode-chip ${err ? 'mode-chip-bad' : ''}`}
+        title={
+          err
+            ? `后端不可达：${err.message}`
+            : '数据模式 snapshot：全部数据来自仓库内锁定的真实历史运行证据包（SHA256SUMS 校验、只读）。live 实时模式未接入；服务仅监听 127.0.0.1 回环地址，无写操作接口，不下发凭证。'
+        }
+      >
+        <span className={`mode-dot ${err ? 'mode-dot-bad' : ''}`} aria-hidden />
+        <strong>{err ? '后端不可达' : '历史快照 · 只读'}</strong>
+      </span>
+      {!err && range ? <span className="mode-range">数据采集于 {range}</span> : null}
     </span>
   );
 }
 
 const NAV_SECTIONS = [
   {
-    label: '运行中心',
+    label: '审查',
     items: [
-      { to: '/runs', label: '运行', icon: Activity, ready: true, end: true },
+      { to: '/runs', label: '审查运行', icon: Activity, ready: true, end: true },
     ],
   },
   {
-    label: '数据资产',
+    label: '尚未接入',
     items: [
       { to: '/repos', label: '仓库', icon: FolderGit2, ready: false, note: '仓库接入状态依赖 GitHub App installation 数据源（未接入）' },
       { to: '/rag', label: 'RAG', icon: Database, ready: false, note: 'RAG 服务状态依赖 rag-live :4184 与检索调用记录（run 详情内已有历史调用快照）' },
       { to: '/skills', label: 'Skill', icon: Wrench, ready: false, note: 'Skill 版本总览依赖 MinIO skill store / worker 上报（未接入；run 详情内有包内记录）' },
-    ],
-  },
-  {
-    label: '治理',
-    items: [
       { to: '/approvals', label: '审批', icon: ShieldCheck, ready: false, note: '审批需 M2 决策项 D-1/D-2/D-3 拍板 + 票据存储落地（后端会话负责）' },
       { to: '/usage', label: '用量', icon: Gauge, ready: false, note: '用量总览依赖 usage 数据源接入（run 详情内已有包内记录）' },
     ],
@@ -86,7 +80,7 @@ export default function App() {
   }, []);
 
   const sectionByPath = () => {
-    if (loc.pathname.startsWith('/runs/')) return { crumb: ['运行', '/runs'], current: '运行详情' };
+    if (loc.pathname.startsWith('/runs/')) return { crumb: ['审查运行', '/runs'], current: '运行详情' };
     const flat = NAV_SECTIONS.flatMap((s) => s.items);
     const hit = flat.find((n) => loc.pathname.startsWith(n.to));
     return { crumb: null, current: hit?.label ?? '控制台' };
@@ -127,8 +121,9 @@ export default function App() {
           ))}
         </nav>
         <div className="sidebar-foot">
-          <div className="foot-row"><ListChecks size={12} strokeWidth={1.75} aria-hidden /> 只读 · 无写操作接口</div>
-          <div className="foot-row">仅监听 127.0.0.1 · 无凭证下发</div>
+          <div className="foot-row" title="本服务仅监听 127.0.0.1 回环地址；不下发任何凭证">
+            <ListChecks size={12} strokeWidth={1.75} aria-hidden /> 只读 · 无写操作 · 无凭证下发
+          </div>
         </div>
       </aside>
 
@@ -146,8 +141,7 @@ export default function App() {
             )}
           </div>
           <div className="topbar-right">
-            <ModeChip />
-            <TopbarClock />
+            <TopbarContext />
           </div>
         </header>
         <main className="content" key={loc.pathname}>

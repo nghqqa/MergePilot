@@ -64,17 +64,17 @@ export function Spinner({ label = '加载中…' }) {
   );
 }
 
-export function SkeletonRows({ rows = 8 }) {
+export function SkeletonRows({ rows = 8, cols = 7 }) {
   return (
     <div className="table-scroll" aria-hidden>
       <table className="runs-table">
         <thead>
-          <tr>{Array.from({ length: 8 }).map((_, i) => <th key={i}>&nbsp;</th>)}</tr>
+          <tr>{Array.from({ length: cols }).map((_, i) => <th key={i}>&nbsp;</th>)}</tr>
         </thead>
         <tbody>
           {Array.from({ length: rows }).map((_, r) => (
             <tr key={r}>
-              {Array.from({ length: 8 }).map((_, c) => (
+              {Array.from({ length: cols }).map((_, c) => (
                 <td key={c}><span className="skeleton" style={{ width: `${45 + ((r * 7 + c * 13) % 40)}%` }} /></td>
               ))}
             </tr>

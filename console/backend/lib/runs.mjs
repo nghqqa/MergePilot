@@ -77,6 +77,8 @@ function parsePrMetadataMd(packDir) {
   if (head) out.head_sha = head[1];
   const base = text.match(/base SHA：([0-9a-f]{40})/);
   if (base) out.base_sha = base[1];
+  const title = text.match(/^-\s*标题：(.+)$/m);
+  if (title) out.title = title[1].trim();
   return out;
 }
 
@@ -195,6 +197,11 @@ function parseTasks(packDir) {
       submitted_at: meta.submitted_at ?? null,
       result_path: existsFile(path.join(dir, e.name, 'result.md')) ? `tasks/${e.name}/result.md` : null,
       spec_path: existsFile(path.join(dir, e.name, 'spec.md')) ? `tasks/${e.name}/spec.md` : null,
+      findings_path: existsFile(path.join(dir, e.name, 'findings.md'))
+        ? `tasks/${e.name}/findings.md`
+        : existsFile(path.join(dir, e.name, 'workspace/findings.md'))
+          ? `tasks/${e.name}/workspace/findings.md`
+          : null,
     });
   }
   tasks.sort((a, b) => (a.assigned_at ?? '').localeCompare(b.assigned_at ?? ''));
@@ -365,6 +372,7 @@ export function buildRunRecord(packId, packDir) {
     run_id: runId,
     repo,
     pr_number: prNumber,
+    pr_title: prMeta?.title ?? null,
     pr_url: prUrl,
     head_sha: headSha,
     base_sha: baseSha,

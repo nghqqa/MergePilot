@@ -36,10 +36,12 @@ Query：`repo`（包含匹配）、`pr`（精确）、`execution`、`verdict`、
 | `run_id` | string? | kickoff.json `run` > check-run.json summary `run_id:` > project/result.md `**Run ID**:` > PR-METADATA.md |
 | `repo` | "owner/name"? | delivery-ledger `repo` > result.md `**Repo**:` > PR-METADATA.md > 门决策文件 `Head SHA under review:` 行 > check-run html_url |
 | `pr_number` / `pr_url` | int? / string? | 同上来源次序；url 由 repo+pr 构造 |
+| `pr_title` | string? | PR-METADATA.md `标题：` 行（仅部分包记录；缺失即 null，前端显示 PR #n 不造标题） |
 | `head_sha` / `base_sha` | 40hex? | ledger `observed_*_sha` > result.md 反引号 40hex > PR-METADATA.md > kickoff-as-sent.txt > 门决策文件 |
 | `trigger` | "webhook"/"matrix"/"unknown" | 有 ledger=webhook；有 kickoff=matrix |
 | `execution` | obj | webhook 轮：ledger 的 status/received_at/claimed_at/processed_at/note/delivery_id；matrix 轮：project/meta.json 的 status（`source` 字段标明） |
-| `review` | obj | `verdict`：result.md DAG review 节点 > reviewer 任务 result.md `STATUS:` > check-run summary；`severity`/`cwe` 同源；`human_gate`：gate-approval-sent.json mode > result.md > 门决策 md 文件（APPROVED/REJECTED/RECORDED） |
+| `review` | obj | `verdict`：result.md DAG review 节点 > reviewer 任务 result.md `STATUS:` > check-run summary；`severity`/`cwe` 同源；`human_gate`：gate-approval-sent.json mode > result.md > 门决策 md 文件（APPROVED/REJECTED/RECORDED）；`human_gate_source`：门决策来源文件路径 |
+| tasks 内 `findings_path` | string? | review 任务目录 findings.md（或 workspace/findings.md） |
 | `publish` | obj | check-run.json → `published`（id/conclusion/url/时间）；无 → `not_recorded`（Matrix 轮零 GitHub 写入）或 `processed_no_checkrun_record` |
 | `created_at` / `duration_ms` / `duration_human` | — | ledger received→processed；matrix 轮 kickoff→最后任务提交 |
 | `has_sums` | bool | 包内有无 SHA256SUMS |

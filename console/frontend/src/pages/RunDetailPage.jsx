@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useLocation, useParams } from 'react-router-dom';
 import {
   Braces, Check, ChevronsLeft, CloudUpload, Download, File, FileCode, FileDiff,
   FileSearch, FileText, FolderOpen, Hand, History, LayoutDashboard, ListChecks,
@@ -34,20 +34,20 @@ function fileIcon(path) {
 function EvidenceDrawer({ packId, filePath, onClose }) {
   const [content, setContent] = useState(null);
   const [error, setError] = useState(null);
-  const closeBtnRef = React.useRef(null);
+  const drawerRef = React.useRef(null);
   useEffect(() => {
     setContent(null);
     setError(null);
     if (filePath) {
       api.evidenceContent(packId, filePath).then(setContent).catch(setError);
-      // 焦点移入对话框（Esc 已有全局监听； Tab 循环圈闭属后续 a11y 轮）
-      requestAnimationFrame(() => closeBtnRef.current?.focus());
+      // 焦点移入对话框容器（Esc 已有全局监听； Tab 循环圈闭属后续 a11y 轮）
+      setTimeout(() => drawerRef.current?.focus(), 0);
     }
   }, [packId, filePath]);
   if (!filePath) return null;
   return (
     <div className="drawer-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="drawer" role="dialog" aria-label={`证据查看 ${filePath}`}>
+      <div ref={drawerRef} className="drawer" role="dialog" tabIndex={-1} aria-label={`证据查看 ${filePath}`}>
         <div className="drawer-head">
           <div className="drawer-head-main">
             <div className="drawer-title mono">{filePath}</div>
@@ -75,7 +75,7 @@ function EvidenceDrawer({ packId, filePath, onClose }) {
             >
               <Download size={13} strokeWidth={1.75} aria-hidden /> 下载
             </a>
-            <button ref={closeBtnRef} className="btn btn-icon" onClick={onClose} aria-label="关闭（Esc）" title="关闭（Esc）">
+            <button className="btn btn-icon" onClick={onClose} aria-label="关闭（Esc）" title="关闭（Esc）">
               <X size={15} strokeWidth={1.75} />
             </button>
           </div>
@@ -109,8 +109,15 @@ function StatusCell({ icon: Icon, label, children, source, title }) {
   );
 }
 
-function OverviewTab({ run }) {
+function OverviewTab({ run, onOpenEvidence }) {
   const e = run.execution;
+  const reviewTask = (run.tasks ?? []).find((t) => /-review-\d+/.test(t.task_id ?? ''));
+  const basisLinks = [
+    { label: '审查结果原文', path: run.review.source },
+    { label: 'findings 明细', path: reviewTask?.findings_path ?? null },
+  ].filter((l) => l.path);
+  const openDag = (run.dag ?? []).filter((d) => d.mark !== 'x');
+  const doneDag = (run.dag ?? []).filter((d) => d.mark === 'x');
   return (
     <div>
       <div className="status-strip">
@@ -132,21 +139,52 @@ function OverviewTab({ run }) {
         </StatusCell>
         <StatusCell
           icon={Hand}
-          label="人工门"
+          label="人工确认"
           title="人工安全门决策"
           source={run.review.human_gate_source ?? (run.review.human_gate ? null : '包内无门记录')}
         >
-          <GateBadge gate={run.review.human_gate} />
+          <GateBadge gate={run.review.human_gate} source={run.review.human_gate_source} />
         </StatusCell>
         <StatusCell
           icon={CloudUpload}
-          label="发布状态"
-          title="GitHub 发布：check-run 回写事实"
-          source={run.publish.url ? 'check-run 已发布' : '本轮零 GitHub 写入'}
+          label="GitHub 检查"
+          title="GitHub 发布：check-run 回写事实 + 检查结论"
+          source={run.publish.url ? 'check-run 已发布' : '未找到发布记录'}
         >
           <PublishBadge publish={run.publish} />
         </StatusCell>
       </div>
+
+      <Section title="审查发现" icon={FileSearch} note="先看发现与依据：结论来自包内锁定的 reviewer 结果，链接可打开原文核对">
+        <div className="finding-statement">
+          {run.review.verdict ? (
+            <>
+              <VerdictBadge review={run.review} />
+              <span className="finding-text">
+                {run.review.cwe ? <code className="mono">{run.review.cwe}</code> : null}
+                {basisLinks.length ? <span className="muted">依据：</span> : <span className="muted">（包内无可链接的结论原文）</span>}
+                {basisLinks.map((l) => (
+                  <button key={l.path} className="link-btn" onClick={() => onOpenEvidence(l.path)} title={`打开 ${l.path}`}>
+                    {l.label}
+                  </button>
+                ))}
+              </span>
+            </>
+          ) : (
+            <span className="muted">结论未记录 — 包内无独立审查结论，无依据可展示；这不等于"无问题"。</span>
+          )}
+        </div>
+        {openDag.length ? (
+          <div className="dag-remaining">
+            <span className="dag-remaining-label">未执行 / 未授权节点：</span>
+            <ul className="compact-list mono">
+              {openDag.map((d, i) => <li key={i}>[{d.mark}] {d.task_id}</li>)}
+            </ul>
+          </div>
+        ) : doneDag.length ? (
+          <p className="section-note">DAG 全部节点均已执行（{doneDag.length} 个）。</p>
+        ) : null}
+      </Section>
 
       <div className="kv-grid">
         <div className="kv"><div className="kv-label">run_id</div><div className="kv-value mono">{run.run_id ?? '未记录'}</div></div>
@@ -155,7 +193,8 @@ function OverviewTab({ run }) {
         <div className="kv">
           <div className="kv-label">PR</div>
           <div className="kv-value">
-            {run.pr_number ? (run.pr_url ? <a href={run.pr_url} target="_blank" rel="noreferrer">#{run.pr_number} ↗</a> : `#${run.pr_number}`) : '未记录'}
+            {run.pr_number ? (run.pr_url ? <a href={run.pr_url} target="_blank" rel="noreferrer" aria-label="GitHub PR 页面（新窗口）" title="GitHub PR 页面 — 非 head 绑定的永久证据链接">#{run.pr_number} ↗</a> : `#${run.pr_number}`) : '未记录'}
+            {run.pr_title ? <div className="kv-note" title="标题来自证据包内 PR-METADATA 记录">{run.pr_title}</div> : null}
           </div>
         </div>
         <div className="kv" title="该运行的全部结论、证据、时间线绑定此 commit">
@@ -168,24 +207,36 @@ function OverviewTab({ run }) {
         <div className="kv"><div className="kv-label">项目</div><div className="kv-value mono">{run.project?.project_id ?? '未记录'}</div></div>
       </div>
 
-      {run.review.status_line ? (
-        <Section title="结果摘要">
-          <p className="result-line">{run.review.status_line}</p>
-        </Section>
-      ) : null}
-
       {e?.note ? (
         <Section title="投递备注（原文）" note="来自投递台账 error/note 字段，原样展示">
           <p className="result-line mono">{e.note}</p>
         </Section>
       ) : null}
 
-      <Section title="归属一致性">
-        <ul className="compact-list">
-          <li>本页全部结论、证据、时间线均归属于上方 head SHA 与 run_id；该 PR 若有新 commit，将以新运行记录呈现，不会覆盖本记录。</li>
-          <li>数据来源：证据包 <code>{run.pack_id}</code>（锁定只读快照）。</li>
-        </ul>
-      </Section>
+      <details className="tech-details">
+        <summary>技术详情（DAG 原文标记 / span 汇总 / 归属声明）</summary>
+        <div className="tech-body">
+          {run.dag?.length ? (
+            <>
+              <h4>DAG 节点（project/result.md 原文）</h4>
+              <ul className="compact-list mono">
+                {run.dag.map((d, i) => <li key={i}>[{d.mark}] {d.task_id} — {d.rest}</li>)}
+              </ul>
+            </>
+          ) : null}
+          {run.versions?.span_summary ? (
+            <>
+              <h4>span 汇总（原始 JSON）</h4>
+              <pre className="result-line mono">{JSON.stringify(run.versions.span_summary, null, 2)}</pre>
+            </>
+          ) : null}
+          <h4>归属一致性</h4>
+          <ul className="compact-list">
+            <li>本页全部结论、证据、时间线均归属于上方 head SHA 与 run_id；该 PR 若有新 commit，将以新运行记录呈现，不会覆盖本记录。</li>
+            <li>数据来源：证据包 <code>{run.pack_id}</code>（锁定只读快照，数据模式 snapshot）。</li>
+          </ul>
+        </div>
+      </details>
     </div>
   );
 }
@@ -484,11 +535,23 @@ function UsageTab({ run }) {
 
 export default function RunDetailPage() {
   const { packId } = useParams();
+  const location = useLocation();
+  const backTo = location.state?.from ?? '/runs';
   const [run, setRun] = useState(null);
   const [error, setError] = useState(null);
   const [tab, setTab] = useState('概览');
   const [evidenceFile, setEvidenceFile] = useState(null);
   const [integrity, setIntegrity] = useState(null);
+  const openTriggerRef = React.useRef(null); // 抽屉关闭后焦点恢复到触发元素
+
+  const openEvidence = (filePath) => {
+    openTriggerRef.current = document.activeElement;
+    setEvidenceFile(filePath);
+  };
+  const closeEvidence = () => {
+    setEvidenceFile(null);
+    setTimeout(() => openTriggerRef.current?.focus?.(), 0);
+  };
 
   useEffect(() => {
     setRun(null); setError(null); setIntegrity(null); setTab('概览');
@@ -496,7 +559,7 @@ export default function RunDetailPage() {
   }, [packId]);
 
   useEffect(() => {
-    const onKey = (e) => e.key === 'Escape' && setEvidenceFile(null);
+    const onKey = (e) => e.key === 'Escape' && closeEvidence();
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
@@ -513,7 +576,7 @@ export default function RunDetailPage() {
   return (
     <div>
       <div className="breadcrumb">
-        <Link to="/runs" className="crumb-back">
+        <Link to={backTo} className="crumb-back" title="返回列表（保留返回时的筛选条件）">
           <ChevronsLeft size={14} strokeWidth={1.75} aria-hidden /> 运行列表
         </Link>
       </div>
@@ -528,6 +591,7 @@ export default function RunDetailPage() {
             <div className="detail-head-main">
               <h1 className="mono detail-title" title={run.run_id ?? ''}>{run.run_id ?? 'run_id 未记录'}</h1>
               <div className="detail-chips">
+                <Chip title="数据模式：来自仓库内锁定的真实历史证据包，只读、非实时">历史快照</Chip>
                 <Chip mono title="证据包目录名（详情路由键）">{run.pack_id}</Chip>
                 <Chip title="触发方式">{run.trigger === 'webhook' ? 'webhook 投递' : run.trigger === 'matrix' ? 'Matrix kickoff' : '触发未记录'}</Chip>
                 {run.has_sums ? <Chip title="包内有 SHA256SUMS，可执行完整校验">SHA256SUMS</Chip> : null}
@@ -570,10 +634,10 @@ export default function RunDetailPage() {
             ))}
           </div>
 
-          {tab === '概览' && <OverviewTab run={run} />}
+          {tab === '概览' && <OverviewTab run={run} onOpenEvidence={setEvidenceFile} />}
           {tab === '时间线' && <TimelineTab run={run} />}
-          {tab === '任务' && <TasksTab run={run} onOpenEvidence={setEvidenceFile} />}
-          {tab === '证据' && <EvidenceTab packId={packId} onOpenEvidence={setEvidenceFile} />}
+          {tab === '任务' && <TasksTab run={run} onOpenEvidence={openEvidence} />}
+          {tab === '证据' && <EvidenceTab packId={packId} onOpenEvidence={openEvidence} />}
           {tab === '版本清单' && <VersionsTab run={run} />}
           {tab === 'Skill' && (
             run.versions?.skills?.length || run.skill_audit ? (
@@ -604,7 +668,7 @@ export default function RunDetailPage() {
           {tab === 'RAG' && <RagTab run={run} />}
           {tab === '用量' && <UsageTab run={run} />}
 
-          <EvidenceDrawer packId={packId} filePath={evidenceFile} onClose={() => setEvidenceFile(null)} />
+          <EvidenceDrawer packId={packId} filePath={evidenceFile} onClose={closeEvidence} />
         </>
       )}
     </div>
