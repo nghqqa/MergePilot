@@ -343,7 +343,7 @@ td.th-right { text-align: right; }
   padding: 5px 12px; border: 1px solid var(--c-border-strong);
   border-radius: var(--r-sm); background: var(--c-panel); color: var(--c-text);
   font-size: var(--fs-sm); font-weight: var(--fw-semibold); cursor: pointer; text-decoration: none;
-  box-shadow: var(--shadow-xs);
+  box-shadow: var(--shadow-xs); white-space: nowrap;
   transition: border-color 140ms var(--ease), color 140ms var(--ease), background 140ms var(--ease);
 }
 .btn:hover { border-color: var(--c-accent); color: var(--c-accent-strong); text-decoration: none; }
@@ -571,6 +571,7 @@ td.th-right { text-align: right; }
 
 .pr-table { min-width: 880px; }
 .pr-table th, .pr-table td { white-space: nowrap; }
+.pr-table td.cell-pr { min-width: 220px; }
 .cell-context { font-size: var(--fs-sm); }
 .cell-context .cell-sub { margin-top: 3px; display: flex; gap: 5px; align-items: center; }
 .head-chip {
@@ -661,4 +662,10 @@ td.th-right { text-align: right; }
   .pr-table th:nth-child(5), .pr-table td.cell-time { display: none; }
   .pr-table { min-width: 560px; }
   .repo-card { flex-direction: column; align-items: flex-start; }
+  /* 顶栏让位：面包屑隐藏（页面内有层级），当前项与模式徽章截断防溢出 */
+  .topbar { padding: 0 12px; }
+  .topbar .crumb { display: none; }
+  .crumb-current { max-width: 34vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mode-chip { max-width: 46vw; overflow: hidden; }
+  .mode-range { display: none; }
 }
