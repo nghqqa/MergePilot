@@ -97,3 +97,8 @@ repo `tools/gh-bridge/gh_bridge.py` 为事实源；**运行副本在 `D:\goai\r3
 - **hook 错误持久痕迹**：v3_shadow_hook 的 fail-soft（不阻断旧链路）原先只写 stdout——持续性故障对监控不可见。整改：异常尽力写入 RunStore 专用 `v3_hook_errors` 表（与 runs 分表；记录本身再失败则只剩 stdout，双重兜底），控制台新增只读 `GET /api/hook-errors`。fail-soft 语义不变（仍不阻断旧链路），改变的是**可观测性**。
 - **取代保真**：PR 更新取消旧 run 时，重建 StageRecord 原先丢失 error/detail/时间戳——取代只改状态（RUNNING/PENDING→CANCELLED），已完成维度的历史错误信息必须保留（审计需要"为什么降级"长期可查）。
 - 两处均为最小修复+回归测试，无语义变更。
+## #15 R4/R7 执行记录与同步范围决策（2026-09-22 第八轮，用户批准）
+
+- **同步范围最小化**：R4 只同步桥运行必需集（gh_bridge.py + orchestrator/* + rag/corpus_tool.py，12 文件）——approval/costmeter/console_v3 非桥运行时依赖，不入运行副本（减少运行面）；rag-live 服务从 **repo 事实源路径**启动（r3work 服务文件保持旧版未动），运行语料经 corpus_tool 幂等导入（结果=零操作，语料本就同字节）。
+- **off 冒烟方法学**：不在共享台账认领真实投递（会触发真实派发），改用三段只读冒烟——status 只读 SELECT、模块级 hook 调用（off=零日志零写库）、shadow 能力注入假 fetcher 验证诚实降级。
+- **rag-live 生命周期**：按批准条件"仅用于健康检查和本地检索验证"，验证后停止；启动命令存档于 EXECUTION-RECORD，后续真实案例轮（R1/R2 获批后）再按需启动。

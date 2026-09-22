@@ -1,8 +1,17 @@
 # MergePilot 产品化推进状态（STATUS）
 
-**更新**：2026-09-22（第七轮：授权前验证关口——本地准备收口）｜ **分支**：`chore/backfill-r3-ops` ｜ 授权范围：M1→M4 至 V0 技术就绪
+**更新**：2026-09-22（第八轮：R4+R7 已获批执行完成）｜ **分支**：`chore/backfill-r3-ops` ｜ 授权范围：M1→M4 至 V0 技术就绪
 
-## 本轮新增：授权前本地准备（零外部副作用）
+## 本轮新增：R4+R7 执行（用户已批准；证据见 R4-R7-EXECUTION-RECORD.md）
+
+| 工作项 | 状态 | 结果 |
+|---|---|---|
+| R4 运行副本同步 | ✅ 完成 | 备份 3 份(.bak-20260922-204703)；同步 12 文件（bridge+orchestrator+corpus_tool）全部 sha256 双侧一致；off 冒烟 PASS（status 只读 exit 0、adapter 从 r3work 加载、off 零副作用、shadow 诚实降级）；**MERGEPILOT_REVIEW_V3 保持 off** |
+| R7 语料同步+rag-live | ✅ 完成 | 幂等导入 changed=false（语料本就同字节 fd34c304…）；/health chunks=12+corpus_file_sha256 部署一致；检索验证命中 source_refs 正确；run_id 透传入审计；**服务按条件已停止** |
+| 回退 | 未需要 | 回退命令已记录并存档（EXECUTION-RECORD §回退） |
+| 边界遵守 | ✅ | 零 R1/R2/R3 操作、零 GitHub 写入、零共享环境故障注入、零模型调用；现网桥未运行，下次启动=加固版默认 off |
+
+## 前轮：授权前本地准备（第七轮）
 
 | 工作项 | 状态 | 说明 |
 |---|---|---|
@@ -90,7 +99,8 @@
 
 ## 当前阻塞（外部条件）
 
-- R1-R7 真实环境授权与选择；D-1/D-2/D-3 产品决策；预算金额；密钥轮换（用户挂起）。
+- **R1/R2/R3 待批**（第二/三阶段：真实故障恢复、真实 Agent/RAG 案例、GitHub 回写矩阵——批准后按 AUTH-DECISION-PACKAGE 三阶段顺序执行，v3 shadow 将随第二阶段产出对照证据）；
+- D-1/D-2/D-3 产品决策；预算金额（D-4）；R6 路线（D-5）；密钥轮换（D-6，建议与 R2 同批）。
 
 ## 提交记录（第四/五轮新增，均未 push）
 
@@ -101,5 +111,5 @@
 ## 环境事实（2026-09-22 实测）
 
 - 本地栈 8 容器运行中；rag-live 未运行；worker rag_mcp hook 最近激活 2026-09-21。
-- 桥运行副本 r3work **未同步**（repo 领先，待 R4/R7 授权后按备份/回退规程同步）。
+- 桥运行副本 **已于 R4 同步**（12 文件 sha256 一致，含 v3 hook，默认 off）；rag-live 已停止，启动命令见 EXECUTION-RECORD。
 

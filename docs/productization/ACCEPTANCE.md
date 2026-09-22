@@ -203,4 +203,16 @@ v2 备忘一.3 硬门槛 3 = "审批不越权：批准的语义、绑定对象�
 | R4/R7 同步计划含 备份→校验→同步→off 冒烟/核对→回退 | ✅ steps.py（未执行，属授权后操作） |
 | rag-live /health 暴露 corpus_file_sha256；search 可选 run_id 落审计 | ✅ test_01_health.../test_01b_run_id_passthrough（rag_live 套件） |
 
-**边界**：本节全部为本地准备与测试；R1-R7 实际执行仍未授权未发生。
+**边界**：本节全部为本地准备与测试；~~R1-R7 实际执行仍未授权未发生~~ → **2026-09-22 更新：R4/R7 已获用户批准并执行完成**（R1/R2/R3 仍未授权未发生）。
+
+## R4/R7 执行验收（2026-09-22 第八轮，证据见 R4-R7-EXECUTION-RECORD.md）
+
+| 批准条件 | 验收结果 |
+|---|---|
+| 按 integration_prep 既定步骤 | ✅ R4_SYNC_PLAN/R7_SYNC_PLAN 逐步骤执行 |
+| 先备份并记录摘要 | ✅ 3 份 .bak（sha256 记录于 EXECUTION-RECORD） |
+| 保持 MERGEPILOT_REVIEW_V3=off | ✅ off 冒烟：adapter 从 r3work 加载、hook 零日志、RunStore 未动 |
+| 同步后旧链路行为不变 | ✅ status 只读 exit 0；台账/kickoff/回写语义零改动；桥未在跑，下次启动才生效 |
+| rag-live 仅健康检查+本地检索 | ✅ /health 一致；检索命中正确；run_id 入审计；**服务已停止** |
+| 校验失败/冒烟异常即回退 | 未触发（全部通过）；回退命令已存档 |
+| 不执行 R1/R2/R3 | ✅ 零操作 |
