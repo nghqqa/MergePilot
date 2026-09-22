@@ -41,6 +41,12 @@ CREATE TABLE IF NOT EXISTS v3_runs (
     updated_at      TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_v3_runs_pr ON v3_runs(repo, pr_number);
+CREATE TABLE IF NOT EXISTS v3_hook_errors (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    delivery_id TEXT NOT NULL,
+    error       TEXT NOT NULL,
+    created_at  TEXT NOT NULL
+);
 """
 
 _COLS = ("run_id,repo,pr_number,head_sha,base_sha,mode,risk_tier,risk_json,"
@@ -137,6 +143,25 @@ class RunStore:
             "SELECT %s FROM v3_runs WHERE repo=? AND pr_number=? "
             "ORDER BY updated_at DESC" % _COLS, (repo, pr_number))
         return [self._row_to_record(r) for r in cur.fetchall()]
+
+    def record_hook_error(self, delivery_id: str, error: str, at: str) -> None:
+        """hook fail-soft 异常的持久痕迹(可观测;尽力而为,调用方不再抛)。"""
+        with self._lock:
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                self._conn.execute(
+                    "INSERT INTO v3_hook_errors(delivery_id, error, created_at) "
+                    "VALUES (?,?,?)", (delivery_id, error[:300], at))
+                self._conn.execute("COMMIT")
+            except Exception:
+                self._conn.execute("ROLLBACK")
+
+    def list_hook_errors(self, limit: int = 20) -> List[Dict[str, Any]]:
+        cur = self._conn.execute(
+            "SELECT delivery_id, error, created_at FROM v3_hook_errors "
+            "ORDER BY id DESC LIMIT ?", (limit,))
+        return [{"delivery_id": r[0], "error": r[1], "created_at": r[2]}
+                for r in cur.fetchall()]
 
     def mark_superseded(self, run_id: str, at: str) -> bool:
         """PR 更新使旧 run 失效(记录层标记;状态机侧 CANCELLED 由 adapter 完成)。"""

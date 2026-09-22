@@ -177,3 +177,10 @@ v2 备忘一.3 硬门槛 3 = "审批不越权：批准的语义、绑定对象�
 **持久化清单核验**：run_id/repo/PR/head/base/mode/risk_tier/plan/维度状态/coverage_missing/降级原因/finding_validation/patch_validation/RAG snapshot/manifest_hash/时间戳——全部落 RunStore（v3_runs 表，SQLite WAL 单实例边界沿用 P-1）。
 **控制台核验**：GET-only（写方法 405）；shadow/fixture 徽标；部分完成不压缩为成功；无批准/拒绝/派发/写按钮。
 **未验证**：真实 Agent 接入（mode=on 的真实路径，待 R1/R2）；shadow 对真实 GitHub 匿名 GET 的线上行为（本地下不可测）；共享环境部署（永不自动）。
+
+## M3.5 复核与冒烟（2026-09-22 第六轮补记）
+
+- **复核九项清单**：1-8 通过；第 9 项（fail-soft 吞错误）发现缺口→修复：hook 异常持久化至 v3_hook_errors 表 + `GET /api/hook-errors`（3 项新测试：record/list、桥失败落痕、端点只读）。
+- **取代保真**：_supersede_old_runs 重建记录丢失 error/时间戳→已保留（测试断言 SUCCEEDED 维度 error 不丢失）。
+- **本地冒烟（真实服务进程 :4191 + 浏览器）**：/healthz、/api/runs、/api/runs/<id>、页面全部浏览器访问并截图；shadow run（MANUAL_ATTENTION，红色，coverage 三缺失，degradations 带原因）与 fixture run（REVIEW_COMPLETED，绿色）同屏对照；POST/PUT/DELETE=405；页面无写按钮。视觉检查**已完成**（截图为证，存会话工件）。
+- 复核后全套 **200 passed**。

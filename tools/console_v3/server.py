@@ -89,6 +89,8 @@ def make_handler(store: RunStore):
             path = self.path.split("?", 1)[0]
             if path == "/healthz":
                 return self._send(200, {"ok": True, "mode": "read-only"})
+            if path == "/api/hook-errors":
+                return self._send(200, {"errors": store.list_hook_errors()})
             if path == "/api/runs":
                 runs = [{"run_id": r["run_id"], "mode": r["mode"],
                          "repo": r["repo"], "pr_number": r["pr_number"],

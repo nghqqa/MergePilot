@@ -246,12 +246,16 @@ class ShadowHonestyTests(unittest.TestCase):
                         "superseded": 0, "updated_at": "t0", "created_at": "t0",
                         "stages_json": json.dumps({
                             "review:generic": {"status": "RUNNING", "attempts": 1},
-                            "risk": {"status": "SUCCEEDED", "attempts": 1}})}
+                            "risk": {"status": "SUCCEEDED", "attempts": 1,
+                                     "error": "seeded error"}}),
+        }
         self.store.save_run(runstore_rec)
         adapter._supersede_old_runs(self.store, "team/demo", 2, "8" * 40, "t5")
         rec = self.store.get_run("old")
         self.assertEqual(rec["stages"]["review:generic"]["status"], stages.CANCELLED)
         self.assertEqual(rec["stages"]["risk"]["status"], stages.SUCCEEDED)
+        # 保真:已完成维度的 error 字段不因取代而丢失
+        self.assertEqual(rec["stages"]["risk"]["error"], "seeded error")
 
     def test_shadow_budget_hook_recorded(self):
         ev = adapter.run_v3_shadow(_delivery(head="3" * 40), run_store=self.store,

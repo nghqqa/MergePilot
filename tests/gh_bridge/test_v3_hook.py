@@ -15,8 +15,14 @@ def _make_stub(mode, evidence=None, raise_error=None):
     stub.calls = []
 
     class _FakeStore:
+        def __init__(self):
+            self.hook_errors = []
+
         def close(self):
             pass
+
+        def record_hook_error(self, delivery_id, error, at):
+            self.hook_errors.append((delivery_id, error, at))
 
     def run_v3_shadow(d, *, run_store, rag_snapshot=None, **kw):
         stub.calls.append({"delivery_id": d["delivery_id"],
@@ -27,7 +33,12 @@ def _make_stub(mode, evidence=None, raise_error=None):
                             "outcome": {"coverage_missing": []}}
 
     stub.run_v3_shadow = run_v3_shadow
-    stub.open_run_store = lambda path=None: _FakeStore()
+    stub.stores = []
+    def _open(path=None):
+        st = _FakeStore()
+        stub.stores.append(st)
+        return st
+    stub.open_run_store = _open
     return stub
 
 
@@ -92,6 +103,17 @@ class V3HookBoundaryTests(unittest.TestCase):
         self.assertEqual(len(stub.calls), 1)                   # 尝试过
         self.assertEqual(len(fins), 1)
         self.assertIn("status='PROCESSED'", fins[0])           # 旧链路照常完成
+
+    def test_shadow_error_leaves_persistent_trace(self):
+        """复核整改:fail-soft 不等于不可观测——hook 失败落 v3_hook_errors。"""
+        stub = _make_stub("shadow", raise_error=RuntimeError("shadow exploded"))
+        sys.modules["mp_v3_adapter"] = stub
+        self._process()
+        self.assertTrue(stub.stores and stub.stores[-1].hook_errors,
+                        "hook 失败必须留下持久痕迹")
+        did, err, _ts = stub.stores[-1].hook_errors[0]
+        self.assertEqual(did, _delivery()["delivery_id"][:24])
+        self.assertIn("shadow exploded", err)
 
 
 if __name__ == "__main__":

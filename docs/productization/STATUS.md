@@ -1,8 +1,18 @@
 # MergePilot 产品化推进状态（STATUS）
 
-**更新**：2026-09-22（第五轮：M3.5 v3 本地接线与只读可观测闭环）｜ **分支**：`chore/backfill-r3-ops` ｜ 授权范围：M1→M4 至 V0 技术就绪
+**更新**：2026-09-22（第六轮：M3.5 复核+冒烟+授权决策包）｜ **分支**：`chore/backfill-r3-ops` ｜ 授权范围：M1→M4 至 V0 技术就绪
 
-## 本轮新增：M3.5（验收见 ACCEPTANCE-M35）
+## 本轮新增：复核 + 本地冒烟 + 授权决策包
+
+| 工作项 | 状态 | 说明 |
+|---|---|---|
+| b00a095 提交复核（九项清单） | ✅ 完成 | 197 项声称与当前代码对应当✓；清单第 9 项发现缺口→已修（见下） |
+| fail-soft 可观测性修复 | ✅ 修复+测试 | hook 异常原只写 stdout→新增 v3_hook_errors 表持久痕迹 + GET /api/hook-errors；测试 3 项 |
+| 取代保真修复 | ✅ 修复+测试 | _supersede_old_runs 重建 StageRecord 丢失 error/时间戳→保留字段；取代不再抹掉既有降级原因 |
+| 本地冒烟（真实服务+浏览器） | ✅ 完成 | 端口 4191 真实进程；shadow+fixture 两条 run；浏览器截图核验页面/API/详情；POST/PUT/DELETE=405；MANUAL_ATTENTION 红色/部分完成未压缩为成功 |
+| 授权决策包 | ✅ 产出 | AUTH-DECISION-PACKAGE.md：R1-R7 合并表（推荐/目标/操作/影响/证据/回退/权限/外部写费用）+ D-1/2/3、预算、R6、密钥轮换独立决策；**未代用户批准** |
+
+## 前轮：M3.5 v3 本地接线（验收见 ACCEPTANCE-M35）
 
 | 工作项 | 状态 | 说明 |
 |---|---|---|
@@ -62,7 +72,8 @@
 
 ## 已验证结果（证据，2026-09-22 实测 @ 工作树）
 
-- `python -X utf8 -m pytest tests/gh_bridge/ tests/console_v3/ tests/orchestrator/ tests/approval/ tests/rag_live/ tests/costmeter/ -q` → **197 passed**（bridge 49 + console 6 + orchestrator 58 + approval 50 + rag_live 17 + costmeter 17；<5s）
+- `python -X utf8 -m pytest tests/gh_bridge/ tests/console_v3/ tests/orchestrator/ tests/approval/ tests/rag_live/ tests/costmeter/ -q` → **200 passed**（bridge 50 + console 7 + orchestrator 59 + approval 50 + rag_live 17 + costmeter 17；<6s；第六轮复核后实测）
+- 本地冒烟（.smoke 临时目录，已清理）：console 真实进程 :4191；shadow run=MANUAL_ATTENTION（coverage 三缺失+degradations 带原因）；fixture run=REVIEW_COMPLETED；写方法 405；浏览器截图与 DOM 双重核验
 - `python -X utf8 -m pytest tests/gh_app/ -q` → 816 passed, 5 skipped（上轮实测；本轮不触其引用面）
 - RAG 双副本快照一致（fd34c304…）；M1 九场景 1/2/3/4/5/7/8 ✅单测、9 ✅契约、6 🔒结构保证
 

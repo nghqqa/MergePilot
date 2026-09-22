@@ -91,3 +91,9 @@ repo `tools/gh-bridge/gh_bridge.py` 为事实源；**运行副本在 `D:\goai\r3
 - **shadow 诚实语义**：审查器槽位显式 SKIPPED("agent not executed")，关键审查器跳过 ⇒ derive_outcome=MANUAL_ATTENTION——shadow run 永不产生"完成/通过"结论；diff 取不到 → risk FAILED + 档位未知降级，不猜测。
 - **控制台**：GET-only（写方法 405），shadow/fixture 强制标签，部分完成/降级逐字段可见；真实审批端点在 D-1/D-2 拍板前不存在。
 - **fixture 语义**：本地假审查器全链路仅用于机制验证/演示，mode=fixture 入库，永不冒充真实运行。
+
+## #14 M3.5 复核整改：fail-soft 必须可观测 + 取代保真（2026-09-22 第六轮）
+
+- **hook 错误持久痕迹**：v3_shadow_hook 的 fail-soft（不阻断旧链路）原先只写 stdout——持续性故障对监控不可见。整改：异常尽力写入 RunStore 专用 `v3_hook_errors` 表（与 runs 分表；记录本身再失败则只剩 stdout，双重兜底），控制台新增只读 `GET /api/hook-errors`。fail-soft 语义不变（仍不阻断旧链路），改变的是**可观测性**。
+- **取代保真**：PR 更新取消旧 run 时，重建 StageRecord 原先丢失 error/detail/时间戳——取代只改状态（RUNNING/PENDING→CANCELLED），已完成维度的历史错误信息必须保留（审计需要"为什么降级"长期可查）。
+- 两处均为最小修复+回归测试，无语义变更。

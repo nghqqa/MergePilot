@@ -112,6 +112,12 @@ class ConsoleServerTests(unittest.TestCase):
         self.assertEqual(payload["rag"]["snapshot_id"], "fd34")
         self.assertFalse(payload["coverage"]["complete"])
 
+    def test_hook_errors_endpoint_readonly(self):
+        self.store.record_hook_error("del-x", "RuntimeError: boom", "t3")
+        status, body = _get(self._url("/api/hook-errors"))
+        data = json.loads(body)
+        self.assertEqual(data["errors"][-1]["delivery_id"], "del-x")
+
     def test_unknown_run_404(self):
         try:
             _get(self._url("/api/runs/nope"))

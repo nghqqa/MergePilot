@@ -97,6 +97,14 @@ class RunStoreTests(unittest.TestCase):
         self.assertEqual([r["run_id"] for r in self.store.runs_for_pr("team/demo", 3)],
                          ["run-2"])
 
+    def test_hook_error_recorded_and_listed(self):
+        self.store.record_hook_error("del-123", "RuntimeError: db locked", "t1")
+        self.store.record_hook_error("del-124", "ValueError: x", "t2")
+        errs = self.store.list_hook_errors()
+        self.assertEqual(len(errs), 2)
+        self.assertEqual(errs[0]["delivery_id"], "del-124")  # 最新在前
+        self.assertIn("db locked", errs[1]["error"])
+
     def test_evidence_hash_deterministic(self):
         h1 = runstore.evidence_hash({"a": 1, "b": [1, 2]})
         h2 = runstore.evidence_hash({"b": [1, 2], "a": 1})

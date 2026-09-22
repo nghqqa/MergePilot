@@ -102,6 +102,10 @@ def _supersede_old_runs(store, repo: str, pr_number: int, head_sha: str, now: st
                 r = st.record(dim)
                 r.status = rec.get("status", stages.PENDING)
                 r.attempts = rec.get("attempts", 0)
+                r.error = rec.get("error")           # 保真:取代不抹掉既有降级原因
+                r.detail = rec.get("detail", "")
+                r.started_at = rec.get("started_at")
+                r.ended_at = rec.get("ended_at")
                 if r.status in (stages.PENDING, stages.RUNNING):
                     st.transition(dim, stages.CANCELLED, at=now,
                                   error="superseded by new head")

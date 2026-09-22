@@ -737,6 +737,18 @@ def v3_shadow_hook(d, cid, log):
     except Exception as e:
         log("v3 shadow hook error (legacy continues): %s %s"
             % (type(e).__name__, str(e)[:120]))
+        try:  # 持久痕迹:fail-soft 不等于不可观测(复核整改,2026-09-22)
+            if adapter is not None:
+                estore = adapter.open_run_store()
+                try:
+                    estore.record_hook_error(
+                        str(d.get("delivery_id", "?"))[:24],
+                        "%s %s" % (type(e).__name__, str(e)[:200]),
+                        time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+                finally:
+                    estore.close()
+        except Exception:
+            pass  # 连错误记录都失败时,只能依赖上面的 stdout 日志
 
 
 # ── 主流程 ──────────────────────────────────────────────────────────────────
