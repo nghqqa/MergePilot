@@ -108,3 +108,30 @@ export function paginate(items, page = 1, perPage = 10) {
     items: (items ?? []).slice((p - 1) * perPage, p * perPage),
   };
 }
+
+// ---- 权威当前 head 关联（契约 v2 /api/pulls 语义：latest_result.stale = head_sha ≠ current_head_sha） ----
+//
+// 只有调用方拿到 GitHub 当前 head 权威（currentHeadSha 非空）时才启用本函数：
+//   1. 结论所属 head == 当前 head，才可作为"当前 head 的结果"；
+//   2. 当前 head 只有进行中的 run、没有完成结果 → 'running_no_result'，明确说明，
+//      绝不用旧 head 的成功结论顶上（不用"最近成功的一次"掩盖当前失败或未完成）；
+//   3. 其余 run 全部归入 stale（历史结果，保留并标记）。
+// currentHeadSha 为空（snapshot 现状）→ 返回 null，调用方维持"最近记录"展示，不显示当前结论。
+export function associateCurrentHead(runs, currentHeadSha) {
+  if (!currentHeadSha) return null;
+  const head = String(currentHeadSha).toLowerCase();
+  const sorted = [...(runs ?? [])].sort(byTimeDesc);
+  const sameHead = sorted.filter((r) => String(r.head_sha ?? '').toLowerCase() === head);
+  const staleRuns = sorted.filter((r) => String(r.head_sha ?? '').toLowerCase() !== head);
+  const completedRun = sameHead.find((r) => EXEC_DONE.has(String(r.execution?.status ?? '').toUpperCase())) ?? null;
+  const latestOnHead = sameHead[0] ?? null;
+  return {
+    head: String(currentHeadSha),
+    state: sameHead.length === 0
+      ? 'no_run_on_current_head'
+      : (completedRun ? 'result' : 'running_no_result'),
+    completedRun,
+    latestRun: latestOnHead,
+    staleRuns,
+  };
+}

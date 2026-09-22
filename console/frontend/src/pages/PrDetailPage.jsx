@@ -83,7 +83,7 @@ export default function PrDetailPage() {
       <p className="section-note">
         当前 head 与 PR 状态以 GitHub 为准；快照无当前 head 权威数据（C-10），
         以下摘要{summaryBasis}，不自动代表当前 head 结论。
-        站内审批未接入（C-11 提案）；站内合并为已记录的范围变更（C-12），未启用。
+        站内审批未接入（C-11 未实现）；站内合并为已记录的范围变更（C-12），未启用。
       </p>
 
       <section className="section">

@@ -133,7 +133,7 @@ export default function ApprovalsPage() {
           <h1>待审批</h1>
           <p className="page-sub">
             人工安全门的决策入口。当前后端仅有票据存储的落点（SQLite WAL，C-4/P-1），
-            只读票视图与决策接口均为提案（C-11）—— 真实审批在接口与权限就绪前不启用。
+            只读票视图与决策接口均为需求（C-11，后端未实现）—— 真实审批在接口与权限就绪前不启用。
           </p>
         </div>
         <div className="detail-actions">
@@ -151,7 +151,7 @@ export default function ApprovalsPage() {
       <div className={`state-box ${fixtureMode ? 'state-warn' : 'state-empty'}`} role="status">
         {fixtureMode
           ? '测试数据模式：以下为合成票据（FIXTURE-*），交互全链路在本页内存中演练，不触达任何后端或数据库。'
-          : '审批服务未接入 —— 无只读票据数据源（C-4 只读视图未实现），无决策接口（C-11 提案）。'}
+          : '审批服务未接入 —— 无只读票据数据源（C-4 只读视图未实现），无决策接口（C-11 未实现）。'}
       </div>
 
       {fixtureMode ? (

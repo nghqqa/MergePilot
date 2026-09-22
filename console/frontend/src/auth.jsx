@@ -1,10 +1,12 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { api } from './api.js';
+import { fetchSession } from './api-live.js';
 
-// 会话交互结构（批次 B）。
-// 边界：本组件只做交互状态机与守卫体验，不实现也不伪造认证；
-// 身份与仓库权限由后端提供（INTEGRATION-REQUESTS C-8 提案，当前 GET /api/session=404）。
-// 只读演示预览 = 明确标注的未认证浏览方式（sessionStorage，非登录、非长期凭证）。
+// 会话交互结构（契约 v2 @7ccecb9 对齐）。
+// 正式端点：GET /api/auth/session（未登录 401 JSON，服务端不重定向）；GitHub OAuth + 服务端会话
+// 方案已定——等待后端实现与 D-9 配置；控制台不自建账号库、不伪造登录成功。
+// 会话权威 = 服务端 Cookie（mp_session）；浏览器不保存 token/私钥/长期凭证，不用 localStorage 缓存身份。
+// 只读演示预览 = 明确标注的未认证浏览（sessionStorage 标记，非登录）：仅本地脱敏 snapshot 数据，
+// 不发起 live API 调用、不因预览标记获得真实用户身份。
 const DEMO_KEY = 'mp-console-demo-preview';
 
 export function readDemoPreview() {
@@ -17,43 +19,23 @@ export function readDemoPreview() {
 
 const AuthCtx = createContext(null);
 
+// 演示预览的放行状态集：登录服务不可用（auth_unavailable/网络不可达）时按契约不开放产品，也不放行预览。
+const DEMO_BLOCKED = new Set(['checking', 'unavailable', 'auth_unavailable']);
+
 export function AuthProvider({ children }) {
-  // status: checking | anonymous | authed | expired | unavailable
-  const [status, setStatus] = useState('checking');
-  const [user, setUser] = useState(null);
-  const [sessionSupported, setSessionSupported] = useState(false);
+  // status: checking | anonymous | authed | expired | forbidden | auth_unavailable | not_implemented | unavailable
+  const [session, setSession] = useState({ state: 'checking', user: null, reason: null, expiresAt: null });
   const [demo, setDemo] = useState(readDemoPreview);
 
   const refresh = useCallback(async () => {
-    setStatus('checking');
-    try {
-      await api.health();
-    } catch {
-      setStatus('unavailable');
-      return;
-    }
-    try {
-      const s = await api.session();
-      setSessionSupported(true);
-      if (s?.user) {
-        setUser(s.user);
-        setStatus('authed');
-      } else {
-        setUser(null);
-        setStatus('anonymous');
-      }
-    } catch (e) {
-      if (e.status === 401) {
-        setSessionSupported(true);
-        setUser(null);
-        setStatus('expired');
-        return;
-      }
-      // 404/501：后端未提供会话接口（现状）；403：已登录但无权限，按匿名呈现
-      setSessionSupported(false);
-      setUser(null);
-      setStatus('anonymous');
-    }
+    setSession({ state: 'checking', user: null, reason: null, expiresAt: null });
+    const r = await fetchSession();
+    setSession({
+      state: r.state,
+      user: r.user ?? null,
+      reason: r.reason ?? null,
+      expiresAt: r.expiresAt ?? null,
+    });
   }, []);
 
   useEffect(() => {
@@ -74,11 +56,19 @@ export function AuthProvider({ children }) {
     setDemo(false);
   }, []);
 
+  const status = session.state;
   const value = useMemo(() => ({
-    status, user, sessionSupported, demo, refresh, enterDemo, exitDemo,
-    // 是否放行浏览：后端已认证，或用户显式进入只读演示预览
-    admitted: status === 'authed' || (demo && status !== 'checking' && status !== 'unavailable'),
-  }), [status, user, sessionSupported, demo, refresh, enterDemo, exitDemo]);
+    status,
+    user: session.user,
+    expiresAt: session.expiresAt,
+    reason: session.reason,
+    demo,
+    refresh,
+    enterDemo,
+    exitDemo,
+    // 放行浏览：后端已认证，或用户显式进入只读演示预览（服务不可用/登录服务不可用时一律不放行）
+    admitted: status === 'authed' || (demo && !DEMO_BLOCKED.has(status)),
+  }), [status, session.user, session.expiresAt, session.reason, demo, refresh, enterDemo, exitDemo]);
 
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;
 }

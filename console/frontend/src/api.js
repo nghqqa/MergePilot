@@ -17,7 +17,8 @@ async function get(path) {
   }
   if (!res.ok) {
     const err = new Error(body?.error?.message ?? `HTTP ${res.status}`);
-    err.status = res.status; // 401=会话过期 403=无权限 404=不存在/未实现 —— 调用方分开处理
+    err.status = res.status;                    // 401=未登录/过期 403=无权限 404=不存在/未实现 503=服务不可用
+    err.reason = body?.error?.reason ?? null;   // 契约 v2 machine code（not_authenticated/session_expired/…）
     throw err;
   }
   return body;
@@ -25,8 +26,9 @@ async function get(path) {
 
 export const api = {
   health: () => get('/api/health'),
-  // 会话探测：后端当前未实现（404）。401/403 语义为将来接入后端认证时区分（C-8 提案）。
-  session: () => get('/api/session'),
+  // 会话：正式契约端点 GET /api/auth/session（未登录 401 JSON，不重定向；7ccecb9）。
+  // 交互层请用 api-live.fetchSession（带状态分类）；此处保留通用 GET。
+  session: () => get('/api/auth/session'),
   runs: (params = {}) => {
     const q = new URLSearchParams(
       Object.entries(params).filter(([, v]) => v !== '' && v != null)

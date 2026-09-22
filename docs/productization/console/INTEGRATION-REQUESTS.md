@@ -50,33 +50,42 @@
 - **需要**：live 模式接入后，run 记录需带 PR 标题（GitHub 只读 API `pulls/{n}.title` 或等价数据源），字段名对齐 `pr_title`。
 - **边界**：控制台只展示，不缓存不改写；无标题继续显示 `PR #n`。
 
-## C-8 用户身份与会话（PR 工作台轮新增，2026-09-22）
+## C-8 用户身份与会话（已对齐正式契约——等待实现）
 
-- **现状**：控制台无任何会话接口（`GET /api/session` = 404，已实测）。前端已实现会话交互结构：
-  检查中 / 未登录 / 已登录 / 会话过期（401）/ 服务不可达 五态分离 + 明确标注的"只读演示预览"
-  （sessionStorage 标记，非登录、非长期凭证）；登录页不渲染假表单、不模拟登录成功。
-- **需要**：`GET /api/session` → 200 `{user: {id, name, login?}}` 或 `{user: null}`；401 = 会话过期；
-  403 = 已认证但无权限；登出端点（方案随认证方式定）。
-- **认证方案待后端拍板**（GitHub OAuth / 本地账号 / 反向代理身份均可，控制台只消费会话）。
-- **边界**：控制台不自建账号密码库；GitHub App 私钥 / installation token 永不进浏览器；
-  路由守卫只改善交互，授权以后端为准。
+- **状态更新（2026-09-23）**：会话契约已由设计窗口定稿并接受——`API-AUTH-MERGE-V0.md` v2
+  （`docs/architecture-audit-20260922` @ **7ccecb9**，接受记录 c664df2）：
+  **GitHub OAuth + 服务端会话**（Cookie `mp_session` 为权威）；会话端点 **`GET /api/auth/session`**
+  （未登录 401 JSON、服务端不重定向；reason 区分 not_authenticated/session_expired）；
+  登录入口 `/api/auth/github/login|callback`（豁免端点）；`POST /api/auth/logout`（CSRF）。
+  ~~原"认证方案待拍板"~~ 已删除——不再是用户决策项。
+- **前端已完成**：适配层（api-live.js：端点/分类/CSRF 预留）+ 会话状态机
+  （authed/anonymous/expired/forbidden/auth_unavailable/not_implemented/unavailable）+ 契约测试。
+  当前实测 `/api/auth/session` = 404 → 前端如实显示"等待后端实现与 D-9 配置"，不伪装已登录。
+- **阻塞**：后端实现 + D-9（GitHub OAuth App）配置。验收样例见 CONTRACT-ACCEPTANCE-SAMPLES.md §1。
 
-## C-9 仓库列表与访问权限（PR 工作台轮新增）
+## C-9 仓库列表与访问权限（已对齐——等待实现）
 
-- **现状**：仓库列表由前端从历史快照推导，页面已标注"历史数据中的仓库"，不虚构连接状态与活跃度。
-- **需要**：`GET /api/repos` → `[{owner, name, permission, installation_status, data_mode}]`，
-  按当前用户权限过滤（依赖 C-8）。
+- **对齐（2026-09-23）**：能力与权限查询按契约 v2 落在 `GET /api/me/capabilities?repo=owner%2Fname`
+  （installation_state + operations[].allowed/reason），repo 寻址统一 `?repo=` 查询参数；
+  仓库级总览由 installation 映射提供（PRODUCT-SCOPE-V0 §3 页面 1）。
+- **前端已完成**：URL 构造与编码、能力渲染约定（不可用动作标注原因，不显示假按钮）。
+  快照推导的仓库列表继续标注"历史数据中的仓库"，待 C-9 实现后替换为授权列表。
+- **阻塞**：后端实现（依赖 C-8 会话）。
 
-## C-10 按仓库 PR 分页 + 当前 head 权威（本轮最关键的诚实缺口）
+## C-10 按仓库 PR 列表 + 当前 head 权威（已对齐契约 v2 §2——等待实现；最关键诚实缺口）
 
-- **现状**：PR 聚合在前端完成（同仓库+PR 编号分组，多历史 head 并存）。因快照无当前 head 权威，
-  所有摘要一律降级为"最近记录"，页面不得声称"当前 PR 审查结果"。
-- **需要**：
-  - `GET /api/repos/{owner}/{name}/prs?page&per_page&q` → `{total, items:[{pr_number, title, github_head_sha, url, latest_run:{run_id, pack_id, verdict, severity, created_at}, ...}]}`（建议按活动时间倒序）；
-  - `GET /api/repos/{owner}/{name}/prs/{n}` → 当前 head + 关联 run 列表 + GitHub 状态（开放/合并/关闭）。
-- 有了 `github_head_sha` 权威后，前端即可区分"当前 head 结论 / 旧 head 历史"两类展示，替换现有降级口径。
+- **对齐（2026-09-23）**：契约 v2 §2 已定 PR 聚合视图——
+  `GET /api/pulls?repo=owner%2Fname&state&limit&offset`（一 PR 一行三列分离：
+  `current_head_sha` GitHub 实时 / `latest_run` 编排状态 / `latest_result` 最新终态结论 + `stale` 标记）与
+  `GET /api/pulls/:prNumber?repo=`（run 执行历史展开 + merge_panel + patch_delivery）。
+  ~~此前前端自拟的 `/api/repos/{owner}/{name}/prs` 形状~~ 以契约 v2 为准，不再维护两套。
+- **前端已完成**：`api-live.js` 端点适配 + `pr-model.associateCurrentHead()`（结论所属 head==当前 head
+  才关联为当前结果；当前 head 进行中→"无完成结果"明确说明；旧 head 结论全部标 stale，不用最近成功掩盖
+  当前失败/未完成）+ stale/fixture 形状契约测试。snapshot 现状（无权威 head）维持"最近记录"展示。
+- **阻塞**：后端实现；PG 读模型（PgRunStore.get_run/runs_for_pr/get_stages）已具备，
+  缺正式 HTTP 接线（FRONTEND-HANDOFF §7）。
 
-## C-11 审批只读票视图 + 决策接口（对 C-4 边界的更新）
+## C-11 审批只读票视图 + 决策接口（对 C-4 边界的更新；已对齐——等待实现）
 
 - **更新（2026-09-22 PR 工作台轮）**：控制台已落地审批交互结构，并在**测试数据模式（合成票据 FIXTURE-*，
   本页内存演练，零真实写操作）**下验证四条路径：正常提交 / head 冲突预检拦截 / 过期预检拦截 /
@@ -84,16 +93,23 @@
   **后端决策接口与权限就绪后，控制台可启用真实批准/拒绝**（仍受 D-1/D-2/D-3 约束）。
 - **需要**：
   - `GET /api/approvals?status=PENDING` → 五元组（run_id/repo/head_sha/params_hash/指纹）+ TTL + attempt + approved_by（C-4 原需求）；
-  - `POST /api/approvals/{id}/decision` `{decision: APPROVED|REJECTED, expected_head_sha, idempotency_key}` → 200 结果 / 409 head 已更新 / 410 票据过期 / 403 无权限；
+  - `POST /api/approvals/{id}/decision` `{decision: APPROVED|REJECTED, expected_head_sha, idempotency_key}` + `X-CSRF-Token` → 200 结果 / 409 head 已更新 / 410 票据过期 / 403 无权限；
   - `GET /api/approvals/{id}` → 查询实际结果（请求超时后控制台先查询，不重发）。
+- **前端已完成（2026-09-23）**：只读适配器形状（api-live.js `approvalsUrl/approvalUrl/approvalDecisionUrl`）
+  与 fixture 演练适配器（ApprovalsPage 内存状态机）**彻底分离**；隔离后端下的
+  成功/冲突/过期/结果未知四路径已有测试覆盖。
 - 决策的有效性（head 一致、未过期、操作者权限、幂等）由服务端权威校验；控制台提交的
   `expected_head_sha` 只是客户端预检，不构成授权。
+- **阻塞**：后端实现（依赖 C-8 会话与 D-1/D-2/D-3 拍板）；本轮真实票据操作保持关闭。
 
-## C-12 站内合并能力（范围变更记录，本轮未实现）
+## C-12 站内合并能力（范围变更记录；契约 v2 §3 已定——保持关闭，等待启用条件）
 
 - **范围变更**：用户提出未来希望在控制台直接执行 merge（原口径为"合并仅在 GitHub"）。已记录为范围变更；
-  本轮控制台未实现、未调用任何 GitHub merge API、未申请新权限。
-- **控制台本轮已做**：PR 详情顶部 GitHub 查看入口；操作区明确"审批与合并是两件事"（审批授权 ≠ 可合并）；
+  本轮控制台未实现、未调用任何 GitHub merge API、未申请新权限、未新增合并执行代码。
+- **对齐（2026-09-23）**：契约 v2 §3 已定站内合并为**目标能力、默认关闭**（发起/二次确认/查询三端点、
+  202+幂等返回、409 stale_head、422 github_rules_not_satisfied 不降级、unknown 对账收敛三态）——
+  前端将按 `merge_panel.enabled=false` 渲染外链态，不实现执行代码抢跑后端。
+- **控制台已做**：PR 详情顶部 GitHub 查看入口；操作区明确"审批与合并是两件事"（审批授权 ≠ 可合并）；
   不放置点击后永远"开发中"的假合并按钮。
 - **启用条件（须由后端逐项证明，前端只按能力标识渲染）**：用户对该仓库有合并权限；PR 当前 head 与用户
   确认的 head 一致；GitHub 分支保护 / required checks / review 规则满足；未知或冲突状态不允许绕过；
@@ -102,7 +118,10 @@
   `POST /api/repos/{owner}/{name}/prs/{n}/merge` `{method, expected_head_sha, idempotency_key}`。
 - **边界**：前端绝不仅凭 MergePilot 审查通过或票据 APPROVED 判定允许合并。
 
-## C-13 功能能力标识（PR 工作台轮新增）
+## C-13 功能能力标识（已对齐——等待实现）
 
-- **需要**：`GET /api/capabilities` → `{live, session, approvals_read, approvals_write, merge, ...}`。
-  控制台按能力标识渲染入口，避免任何"永远开发中"的假按钮；未声明的能力一律显示"未接入"。
+- **对齐（2026-09-23）**：契约 v2 §1 `GET /api/me/capabilities?repo=owner%2Fname` 已覆盖能力标识
+  （installation_state + operations[].allowed/reason/detail/github_url；§0.3 执行时服务端重校验）。
+  ~~此前前端自拟的 `GET /api/capabilities` 全局开关~~ 以契约 v2 为准。
+- **前端约定**：按 allowed/reason 渲染入口，不可用动作隐藏或标注原因（如 merge_disabled + GitHub 外链）；
+  未声明的能力一律显示"未接入"；不出现"永远开发中"的假按钮。

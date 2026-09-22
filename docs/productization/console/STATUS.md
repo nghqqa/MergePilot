@@ -1,7 +1,31 @@
 # 控制台推进状态（console/STATUS）
 
-**更新**：2026-09-22（第三轮：仓库/PR 中心工作台 + 登录/审批交互边界）｜ **分支**：`feat/admin-console`（worktree `D:\goai\mp-worktrees\console`，基线 `0ae8843`）
+**更新**：2026-09-23（第四轮：契约 v2 对齐 + 后端查询接线准备）｜ **分支**：`feat/admin-console`（worktree `D:\goai\mp-worktrees\console`，基线 `0ae8843`）
 **负责目录**：`console/`（前后端）+ `docs/productization/console/`。未改动 gh-bridge / workflow-controller / approval / rag / costmeter / 共享数据结构 / r3work。
+
+## 第四轮：契约对齐 + 接线准备（2026-09-23）
+
+后端尚未完成真实 PR 闭环的 HTTP 层（FRONTEND-HANDOFF：PG 仅存储层+读模型函数，**尚无正式 HTTP 接线**）。
+本轮为"契约对齐与接线准备"：按已接受契约 7ccecb9（接受记录 c664df2）对齐，不宣称真实闭环完成。
+
+| 工作项 | 状态 | 说明 |
+|---|---|---|
+| 后端实际接口核实 | ✅ | 真实 HTTP 仅 console_v3 只读 `/api/runs`/`/healthz`（SQLite，数据自标 shadow/fixture）；契约 v2 端点（auth/session、capabilities、pulls、approvals、merge）**全部未实现**；PG 无 HTTP |
+| 会话端点对齐 | ✅ | `GET /api/auth/session`（原 `/api/session` 偏差已修正）；401(not_authenticated/session_expired)/403(not_a_member)/503(auth_unavailable)/404(未实现) 分类矩阵；~~"认证方案待拍板"~~ 已删——契约已定（GitHub OAuth+服务端会话），等待后端实现 + D-9 配置 |
+| 契约适配层 | ✅ | 新增 `api-live.js`：session/capabilities/pulls/approvals 端点形状、`?repo=` 寻址编码、CSRF（全部副作用方法含 PATCH，缺 token 本地拦截）、错误 envelope reason 透传；**不含后端业务逻辑** |
+| head 权威逻辑 | ✅ | `pr-model.associateCurrentHead()`：有权威 head 时结论按 head 匹配才归当前；当前 head 进行中→"无完成结果"明确说明；旧 head 全标 stale（不用最近成功掩盖当前失败）；无权威（snapshot 现状）维持"最近记录" |
+| fixture/模式分离 | ✅ | pulls 契约 fixture（data_mode:"fixture"，含 stale+running 场景）；审批 fixture 适配器与只读适配器（approvalsUrl 等）彻底分离；真实审批/合并保持关闭 |
+| 契约测试 | ✅ 56/56 | 新增 live-api 8 项（路径/分类矩阵/CSRF/fixture 形状/head 关联）+ pr-model 关联 3 项；集成测试 live-v3（环境门控，MERGEPILOT_V3_URL 未设置自动跳过） |
+| 隔离联调 | ✅ 真实 HTTP | console_v3 @ :4191（隔离 fixture 库）：列表→适配聚合→详情→404→405 全链路通过；数据保留 shadow/fixture 标签、不标为真实运行；证据 `verification/console-contract-alignment/v3-itest.log` |
+| 验收样例 | ✅ | `CONTRACT-ACCEPTANCE-SAMPLES.md`：后端可复现的请求/响应样例（session/capabilities/pulls/pulls/:n/merge 403/已联调 console_v3） |
+| 文案对齐 | ✅ | 登录页/设置页"认证方案待拍板"→"契约已定（7ccecb9）等待实现+D-9"；待处理页改"历史记录中需关注"（历史 HIGH 不生成当前待办，真实待办待 C-4/C-11 票据） |
+| 浏览器验收 | ✅ 状态矩阵 | 会话 404→登录页（新文案）→演示预览→各页正常；不重复上轮全量视觉测试 |
+
+**仍未接通（如实）**：真实登录（等后端+D-9）、真实 PR 列表/详情（等 /api/pulls 实现）、
+PG 运行记录展示（等正式 HTTP 只读 API——"适配与契约完成，接线未验证"）、真实审批（等票据 HTTP+D-1~D-3）、
+站内合并（契约默认关闭）。
+
+---
 
 ## 第三轮：仓库/PR 中心工作台（2026-09-22）
 

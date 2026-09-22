@@ -22,15 +22,16 @@ export default function PendingPage() {
         <div>
           <h1>待处理</h1>
           <p className="page-sub">
-            需要用户决策的 PR（判定：最近一次记录存在未闭环的审查发现）。
-            审批服务未接入（C-11 提案）——此处先汇聚事实，不提供可执行的审批操作。
+            历史模式：以下为"历史记录中需关注"的 PR（判定：各自最近一次运行记录存在未闭环发现；
+            历史 HIGH 不生成当前待办）。真实待办由后端的有效票据/当前状态提供（C-4/C-11 未实现）——
+            本页不提供可执行的真实审批操作。
           </p>
         </div>
       </div>
 
       {error ? <ErrorBox error={error} onRetry={retry} /> : !data ? <SkeletonRows rows={4} cols={6} /> : (
         <>
-          <div className="table-meta">{pending.length} 个 PR 待处理（按 PR 统计，依据 = 各自最近一次运行记录）</div>
+          <div className="table-meta">{pending.length} 个 PR 需关注（历史口径，按 PR 统计，依据 = 各自最近一次运行记录；非当前 head 结论）</div>
           {!pending.length ? (
             <div className="state-box state-ok">当前快照范围内没有"有待处理发现"的 PR。</div>
           ) : (
@@ -84,7 +85,7 @@ export default function PendingPage() {
             <div>
               <strong>审批服务未接入</strong>
               <div className="muted">
-                票据存储已拍板 SQLite WAL（C-4/P-1）；站内决策接口为提案 C-11。
+                票据存储已拍板 SQLite WAL（C-4/P-1）；站内决策接口未实现（C-11）。
                 可在测试数据模式下演练审批交互（合成票据，不产生真实审批）。
               </div>
             </div>

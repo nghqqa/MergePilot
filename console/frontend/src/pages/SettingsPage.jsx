@@ -13,9 +13,12 @@ export default function SettingsPage() {
 
   const statusLabel = {
     checking: '检查中…',
-    anonymous: auth.sessionSupported ? '未登录' : '后端未提供会话接口（GET /api/session = 404）',
-    authed: `已登录：${auth.user?.name ?? auth.user?.login ?? '未知用户'}`,
-    expired: '会话已过期',
+    anonymous: '未登录',
+    authed: `已登录：${auth.user?.display_name ?? auth.user?.github_login ?? auth.user?.name ?? '未知用户'}`,
+    expired: '会话已过期（session_expired）',
+    forbidden: '未获准入（not_a_member）',
+    auth_unavailable: '登录服务不可用（auth_unavailable）',
+    not_implemented: '会话端点未实现（GET /api/auth/session = 404）',
     unavailable: '服务不可达',
   }[auth.status] ?? '未知';
 
@@ -44,9 +47,11 @@ export default function SettingsPage() {
             </div>
           </div>
           <div className="kv">
-            <div className="kv-label">认证方案</div>
+            <div className="kv-label">登录方案（契约已定）</div>
             <div className="kv-value">
-              由后端会话拍板（提案 C-8）—— 控制台不自建账号库；路由守卫只改善交互，授权以后端为准。
+              GitHub OAuth + 服务端会话（API-AUTH-MERGE-V0 v2 @ 7ccecb9）——等待后端实现与 D-9 配置。
+              会话 Cookie（mp_session）为权威；浏览器不保存 App token / 私钥 / 长期凭证；
+              路由守卫只改善交互，授权以后端为准。
             </div>
           </div>
         </div>
@@ -71,7 +76,7 @@ export default function SettingsPage() {
         <ul className="compact-list">
           <li>服务仅监听 127.0.0.1 回环；全站只读，无写操作接口，不下发凭证。</li>
           <li>快照数据可展示真实历史结果，但不提供针对历史数据的真实审批或合并操作。</li>
-          <li>站内审批：等待后端决策接口（C-11 提案）。站内合并：范围变更已记录（C-12），启用条件由后端证明。</li>
+          <li>站内审批：等待后端决策接口（C-11 未实现）。站内合并：范围变更已记录（C-12），启用条件由后端证明。</li>
           <li>GitHub App 安装授权与用户登录是两条流程，控制台不混用、不代持凭证。</li>
         </ul>
       </section>
