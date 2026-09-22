@@ -42,7 +42,8 @@ export function groupRunsByPr(runs) {
     pr.latestCompleted = pr.runs.find((r) => EXEC_DONE.has(String(r.execution?.status ?? '').toUpperCase())) ?? null;
     pr.heads = groupRunsByHead(pr.runs);
     pr.activityAt = pr.latest?.created_at ?? null;
-    pr.title = pr.latest?.pr_title ?? null;
+    // 标题：同属一个 PR 的任意一次记录里最近出现的非空标题（仅部分历史包有记录）
+    pr.title = pr.runs.map((r) => r.pr_title).find(Boolean) ?? null;
     pr.prUrl = pr.latest?.pr_url ?? null;
     pr.attention = attentionOf(pr.latest);
   }

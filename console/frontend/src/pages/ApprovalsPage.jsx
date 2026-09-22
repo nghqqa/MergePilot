@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import fixture from '../fixtures/approvals.fixture.json';
 import { SUBMIT_PHASE_LABEL, submissionReducer, validateDecision } from '../approvals-model.js';
 import { fmtTime } from '../format.js';
+import { useAuth } from '../auth.jsx';
 
 // fixture 模拟提交：按票据的 _outcome 演练对应路径（隔离内存变换，零真实写操作）。
 function simulateSubmit(t, decision) {
@@ -95,18 +96,22 @@ function TicketCard({ t, authed }) {
           ) : null}
           <div className="ticket-actions">
             <button
-              type="button" className="btn btn-primary" disabled={state.phase !== 'idle'}
+              type="button" className="btn btn-primary" disabled={state.phase !== 'idle' || !precheck.ok}
               onClick={() => submit('APPROVED')}
             >
               {state.phase === 'submitting' && state.decision === 'APPROVED' ? '提交中…' : '批准'}
             </button>
             <button
-              type="button" className="btn" disabled={state.phase !== 'idle'}
+              type="button" className="btn" disabled={state.phase !== 'idle' || !precheck.ok}
               onClick={() => submit('REJECTED')}
             >
               {state.phase === 'submitting' && state.decision === 'REJECTED' ? '提交中…' : '拒绝'}
             </button>
-            <span className="muted">测试数据模式：操作仅作用于合成票据 FIXTURE-*，不产生真实审批。</span>
+            {state.phase === 'idle' && !precheck.ok ? (
+              <span className="muted">预检不通过，操作禁用（真实场景由服务端最终校验）。</span>
+            ) : (
+              <span className="muted">测试数据模式：操作仅作用于合成票据 FIXTURE-*，不产生真实审批。</span>
+            )}
           </div>
         </div>
       ) : null}

@@ -14,6 +14,28 @@ export function BrandMark() {
   );
 }
 
+// 单页渲染异常兜底：一页出错不白屏整个控制台（错误只落到当前内容区）。
+export class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="state-box state-error" role="alert">
+          页面渲染出错：{String(this.state.error?.message ?? this.state.error)} —
+          {' '}可<a href="/repos">返回仓库工作台</a>或刷新页面。
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 // 语义化状态徽章：色点 + 文字（颜色永不单独承载状态）。
 // tabIndex=0 兑现"悬停或聚焦可查看"的承诺：键盘 Tab 到徽章即可读到 title 里的语义边界与来源。
 const TONES = {

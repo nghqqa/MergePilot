@@ -3,7 +3,7 @@ import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { Activity, Database, FolderGit2, Hand, History, LogOut, Settings } from 'lucide-react';
 import { api } from './api.js';
 import { AuthProvider, useAuth } from './auth.jsx';
-import { BrandMark } from './ui.jsx';
+import { BrandMark, ErrorBoundary } from './ui.jsx';
 import RunsPage from './pages/RunsPage.jsx';
 import RunDetailPage from './pages/RunDetailPage.jsx';
 import ReposPage from './pages/ReposPage.jsx';
@@ -149,7 +149,8 @@ function Shell() {
           </div>
         </header>
         <main className="content" key={loc.pathname}>
-          <Routes>
+          <ErrorBoundary>
+            <Routes>
             <Route path="/" element={<Navigate to="/repos" replace />} />
             <Route path="/repos" element={<ReposPage />} />
             <Route path="/repos/:owner/:name" element={<RepoPrsPage />} />
@@ -165,7 +166,8 @@ function Shell() {
             <Route path="/skills" element={<Navigate to="/knowledge" replace />} />
             <Route path="/usage" element={<Navigate to="/knowledge" replace />} />
             <Route path="*" element={<Navigate to="/repos" replace />} />
-          </Routes>
+            </Routes>
+          </ErrorBoundary>
         </main>
       </div>
     </div>

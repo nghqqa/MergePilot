@@ -91,6 +91,14 @@ test('latestCompleted 只认执行终态（PROCESSED/COMPLETED），全未完成
   assert.equal(none[0].latestCompleted, null, 'BLOCKED 是受控停止，不算完成');
 });
 
+test('标题取同 PR 任一记录中最近的非空标题（仅部分历史包有记录）', () => {
+  const prs = groupRunsByPr([
+    run({ pack_id: 'HAS_TITLE', pr_title: 'Real PR title', created_at: '2026-09-16T10:00:00Z' }),
+    run({ pack_id: 'NO_TITLE', pr_title: null, created_at: '2026-09-19T10:00:00Z' }),
+  ]);
+  assert.equal(prs[0].title, 'Real PR title');
+});
+
 test('分页：页码钳制、末页切片、总数正确', () => {
   const items = Array.from({ length: 23 }, (_, i) => i);
   const p1 = paginate(items, 1, 10);
