@@ -102,3 +102,8 @@ repo `tools/gh-bridge/gh_bridge.py` 为事实源；**运行副本在 `D:\goai\r3
 - **同步范围最小化**：R4 只同步桥运行必需集（gh_bridge.py + orchestrator/* + rag/corpus_tool.py，12 文件）——approval/costmeter/console_v3 非桥运行时依赖，不入运行副本（减少运行面）；rag-live 服务从 **repo 事实源路径**启动（r3work 服务文件保持旧版未动），运行语料经 corpus_tool 幂等导入（结果=零操作，语料本就同字节）。
 - **off 冒烟方法学**：不在共享台账认领真实投递（会触发真实派发），改用三段只读冒烟——status 只读 SELECT、模块级 hook 调用（off=零日志零写库）、shadow 能力注入假 fetcher 验证诚实降级。
 - **rag-live 生命周期**：按批准条件"仅用于健康检查和本地检索验证"，验证后停止；启动命令存档于 EXECUTION-RECORD，后续真实案例轮（R1/R2 获批后）再按需启动。
+## #16 首个真实案例的预算现实与 v3 缺口（2026-09-22 第九轮）
+
+- **预算现实**：worker 进程内硬预算**不存在**（agentloop 在镜像层，改造=R5）。dispatch hook/事后 OTel 均不能单独证明 worker 模型调用受硬预算控制——不为开跑把脚手架标记为已接入。首次真实案例有界方案：①单 PR 单 head 单投递；②桥 --timeout-min 20 硬观察截止（代码内）；③发布重试 3 次有界（代码内）；④provider 侧对 gateway key 设消费硬上限（用户控制面，唯一真硬上限）；⑤运行后 OTel+审计事后计量校准（D-5a）。agentloop 内部重试/后台子任务无界=已知缺口，随 R5 处理。
+- **v3 真实 on 缺口**：adapter 无真实 Agent runner——首个真实案例验证对象是**加固旧链路**，v3 以 shadow 模式同轮产出对照证据（计划/状态/记录），不构成 v3 并行审查的运行验证。真实 on 需实现 runner 并属 R2 后续授权。
+- **触发决策**：台账 0 PENDING 且全部开放 head 已 PROCESSED（重放被 already_processed 跳过=场景5正确行为）⇒ 自然触发=获批测试分支推一个空提交。

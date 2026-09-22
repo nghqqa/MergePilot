@@ -216,3 +216,9 @@ v2 备忘一.3 硬门槛 3 = "审批不越权：批准的语义、绑定对象�
 | rag-live 仅健康检查+本地检索 | ✅ /health 一致；检索命中正确；run_id 入审计；**服务已停止** |
 | 校验失败/冒烟异常即回退 | 未触发（全部通过）；回退命令已存档 |
 | 不执行 R1/R2/R3 | ✅ 零操作 |
+
+## 运行前门禁（ACCEPTANCE-PRERUN，2026-09-22 第九轮）
+
+实现：tools/integration_prep/prerun_gate.py（九项检查，全注入探针，门函数零 IO）｜ 测试：tests/integration_prep/test_prerun_gate.py（8 项）
+检查项：git 固定+干净 / 运行副本 sha 一致 / 语料快照一致 / v3 模式符合期望 / 唯一执行者（无在跑桥+台账零 RUNNING）/ 容器在位 / RAG 按需健康 / **预算硬边界（MISSING_ACK 即 FAIL，不为开跑放宽）** / 投递前置（head 未处理过）。
+真实案例启动前必须全绿；任一 FAIL 不启动。
