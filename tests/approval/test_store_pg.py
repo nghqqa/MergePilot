@@ -55,6 +55,23 @@ APPROVER = "test-approver"
 GATED = os.environ.get("MERGEPILOT_PG_CONTRACT") == "1"
 
 
+def _ensure_db(dbname: str):
+    """确保隔离测试数据库存在(测试基础设施,非共享库)。"""
+    import psycopg2
+    admin = psycopg2.connect(
+        "host=127.0.0.1 port=55432 user=mp_contract "
+        "password=mp-contract-local-test dbname=postgres")
+    admin.autocommit = True
+    cur = admin.cursor()
+    cur.execute("SELECT 1 FROM pg_database WHERE datname=%s", (dbname,))
+    if cur.fetchone() is None:
+        cur.execute("CREATE DATABASE " + dbname)
+    admin.close()
+
+
+_ensure_db("mp_pg_contract")
+
+
 def _admin_conn():
     import psycopg2
     return psycopg2.connect(_DSN_ADMIN)

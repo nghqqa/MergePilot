@@ -83,21 +83,19 @@ class MigrationRunnerRehearsalTests(unittest.TestCase):
         conn = psycopg2.connect(dsn)
         conn.autocommit = True
         cur = conn.cursor()
-        cur.execute((_MIG_DIRS[0] / "001_approval_tickets.sql").read_text(
-            encoding="utf-8"))
         cur.execute(
             "INSERT INTO approval.tickets (ticket_id, run_id, repo_id, "
             "head_sha, action, params_hash, patch_fingerprint, finding_id, "
-            "attempt_no, status, created_at, "
+            "target_key, attempt_no, status, created_at, "
             "approval_expires_at) VALUES "
             "('tkt-keep', 'run-old', 'team/demo', '%s', 'generate_patch', "
-            "'%s', '%s', 'F1', 1, 'APPROVED', now(), now())"
+            "'%s', '%s', 'F1', 'F1', 1, 'APPROVED', now(), now())"
             % ("a" * 40, "1" * 64, "2" * 64))
         conn.close()
-        # 阶段2:全量执行器应用 002+003(001 已登记自动跳过)
+        # 阶段2:全量执行器应用 003(001+002 已登记自动跳过)
         report = self._apply(dsn)
         self.assertEqual(report["applied_now"],
-                         ["002_tickets_target_key.sql", "003_run_domain.sql"])
+                         ["003_run_domain.sql"])
         conn = psycopg2.connect(dsn)
         cur = conn.cursor()
         cur.execute("SELECT status, target_key FROM approval.tickets "

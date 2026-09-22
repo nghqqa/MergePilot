@@ -36,8 +36,26 @@ import psycopg2  # noqa: E402
 _DSN = os.environ.get(
     "MERGEPILOT_PG_TEST_DSN",
     "host=127.0.0.1 port=55432 user=mp_contract "
-    "password=mp-contract-local-test dbname=mp_contract")
+    "password=mp-contract-local-test dbname=mp_pg_runstore")
+_MIG_DIRS = [Path(__file__).resolve().parents[2] / "tools" / "orchestrator" / "pg" / "migrations"]
 GATED = os.environ.get("MERGEPILOT_PG_CONTRACT") == "1"
+
+
+def _ensure_db(dbname: str):
+    """确保隔离测试数据库存在(测试基础设施,非共享库)。"""
+    import psycopg2
+    admin = psycopg2.connect(
+        "host=127.0.0.1 port=55432 user=mp_contract "
+        "password=mp-contract-local-test dbname=postgres")
+    admin.autocommit = True
+    cur = admin.cursor()
+    cur.execute("SELECT 1 FROM pg_database WHERE datname=%s", (dbname,))
+    if cur.fetchone() is None:
+        cur.execute("CREATE DATABASE " + dbname)
+    admin.close()
+
+
+_ensure_db("mp_pg_runstore")
 
 REPO = "nghqqa/fastapi-boilerplate-demo"
 HEAD = "a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4"
@@ -62,6 +80,16 @@ def _pg_worker_create(queue, request_key, chain, run_class):
 
 @unittest.skipUnless(GATED, "MERGEPILOT_PG_CONTRACT=1 未设置:跳过真实 PG 验证")
 class PgRunStoreTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        """run 域 schema 保障:全新重建(测试环境安全,正式迁移严格由 runner 管理)。"""
+        conn = pg_runstore._connect(_DSN)
+        conn.autocommit = True
+        conn.cursor().execute("DROP SCHEMA IF EXISTS run CASCADE")
+        conn.cursor().execute(
+            (_MIG_DIRS[-1] / "003_run_domain.sql").read_text(encoding="utf-8"))
+        conn.close()
+
     def setUp(self):
         self.store = pg_runstore.PgRunStore(_DSN)
         conn = pg_runstore._connect(_DSN)

@@ -1,12 +1,15 @@
 # 后端执行进度（BACKEND PROGRESS）
 
 **分支**：`feat/backend-pg-storage`（基于 `chore/backfill-r3-ops` @ `67d6446`）｜ **负责窗口**：后端实现
-**文件责任边界**：本窗口拥有 `tools/approval/store*`、`tools/integration_prep/`、`tools/costmeter/hooks.py`、`tests/approval/`、`tests/integration_prep/`、`docs/productization/backend/`；**不修改** ARCHITECTURE-V3（设计窗口）与 tools/console_v3（管理平台窗口）。
+**设计基线**：`docs/architecture-audit-20260922` @ **`caf6909`**（用户已接受 c664df2 + 210f70c；机制增补 f588302 已采纳）
+**文件责任边界**：本窗口拥有 `tools/approval/store*`、`tools/integration_prep/`、`tools/costmeter/hooks.py`、`tools/console_pg/`、`tests/approval/`、`tests/integration_prep/`、`tests/console_pg/`、`docs/productization/backend/`；**不修改** ARCHITECTURE-V3（设计窗口）与 tools/console_v3（管理平台窗口）。
 
 ## 基线与状态
 
-- 基线提交：`c179601`（受控案例准备完成：repo 约束缺失为其中已知项，本轮修复）
-- 本轮分支提交：见 git log（执行保护修复 → PG 准备 → 盘点工具）
+- 基线提交：`c179601` → 后续：`51e1a89`（执行保护+迁移 runner）→ `4a686a8`（对账身份+RunStore+前端交接）→ `0500a12`（PGTicketStore）→ 当前
+- 设计基线：caf6909（target_key/NULLS NOT DISTINCT 两形态均合规，0500a12 实现已确认合规）
+- 机制增补：f588302 P1 finding anchor 校验（后续工作包）、P2 有界取消（设计契约已读）、P3 反馈/版本化
+- 认证/合并设计：7ccecb9 auth v2（会话/Capabilities/CSRF——后端暂不实现，留待 D-9）
 
 ## 已完成（本轮）
 

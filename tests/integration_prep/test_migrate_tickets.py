@@ -70,13 +70,36 @@ GOOD_TEMPLATE = {"ticket_id": "tkt-g1", "run_id": None, "repo": "team/demo",
 class MigrateToolTests(unittest.TestCase):
     """测试副本演练:隔离 PG(55432)+ 合成源库。"""
 
+    @classmethod
+    def setUpClass(cls):
+        """确保 approval + run schema 在位(全新安装演练)。"""
+        import psycopg2
+        conn = psycopg2.connect(
+            "host=127.0.0.1 port=55432 user=mp_contract "
+            "password=mp-contract-local-test dbname=mp_pg_migrate")
+        conn.autocommit = True
+        conn.cursor().execute("DROP SCHEMA IF EXISTS run CASCADE")
+        conn.cursor().execute("DROP SCHEMA IF EXISTS approval CASCADE")
+        mig_dir = (Path(__file__).resolve().parents[2] /
+                   "tools" / "approval" / "pg" / "migrations")
+        run_dir = (Path(__file__).resolve().parents[2] /
+                   "tools" / "orchestrator" / "pg" / "migrations")
+        for f in sorted(list(mig_dir.glob("*.sql")) +
+                        list(run_dir.glob("*.sql")),
+                        key=lambda x: int(x.name[:3])):
+            conn.cursor().execute(f.read_text(encoding="utf-8"))
+        conn.cursor().execute(
+            "INSERT INTO run.repos (repo_id) VALUES ('team/demo') "
+            "ON CONFLICT DO NOTHING")
+        conn.close()
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.sqlite_path = os.path.join(self.tmp.name, "src.db")
         dsn = os.environ.get(
             "MERGEPILOT_PG_TEST_DSN",
             "host=127.0.0.1 port=55432 user=mp_contract "
-            "password=mp-contract-local-test dbname=mp_contract")
+            "password=mp-contract-local-test dbname=mp_pg_migrate")
         if not (os.environ.get("MERGEPILOT_PG_CONTRACT") == "1"):
             self.skipTest("MERGEPILOT_PG_CONTRACT=1 未设置:跳过真实 PG 演练")
         self.dsn = dsn

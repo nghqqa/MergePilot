@@ -69,11 +69,18 @@ class PgRunStore:
         if not dsn:
             raise ValueError("PgRunStore 需要 DSN")
         self.dsn = dsn
-        self._conn = _connect(dsn)
+        self._conn = None   # 惰性连接:服务可先于 DB 就绪;中断后自动重连
+
+    def _ensure(self):
+        if self._conn is None or self._conn.closed:
+            self._conn = _connect(self.dsn)
+        return self._conn
 
     def close(self):
-        with contextlib.suppress(Exception):
-            self._conn.close()
+        if self._conn is not None:
+            with contextlib.suppress(Exception):
+                self._conn.close()
+            self._conn = None
 
     # ── target ───────────────────────────────────────────────────────────
     def ensure_target(self, repo: str, pr: int, head: str,
@@ -81,8 +88,8 @@ class PgRunStore:
                       delivery_id: Optional[str] = None) -> str:
         """幂等确保 target 存在(UNIQUE(repo,pr,head) 收敛),返回 target_id。"""
         target_id = derive_target_id(repo, pr, head)
-        with self._conn:
-            cur = self._conn.cursor()
+        with self._ensure():
+            cur = self._ensure().cursor()
             cur.execute("INSERT INTO run.repos (repo_id) VALUES (%s) "
                         "ON CONFLICT (repo_id) DO NOTHING", (repo,))
             cur.execute(
@@ -111,8 +118,8 @@ class PgRunStore:
             raise ValueError("chain 必须 legacy|v3")
         if run_class not in ("execution", "evidence"):
             raise ValueError("run_class 必须 execution|evidence")
-        with self._conn:
-            cur = self._conn.cursor()
+        with self._ensure():
+            cur = self._ensure().cursor()
             # a. 幂等确保 target(无仲裁器 DO NOTHING:任何唯一约束冲突含
             #    并发 PK 竞争都归为"行已存在",随后按已提交快照读取)
             cur.execute("INSERT INTO run.repos (repo_id) VALUES (%s) "
@@ -192,7 +199,8 @@ class PgRunStore:
                     "run_class, mode, trigger_kind, repo_id, pr_number, "
                     "head_sha, base_sha, risk_tier, risk_json, plan_json, "
                     "outcome, coverage_missing, status, request_key, "
-                    "superseded_by_run_id, created_at, updated_at "
+                    "superseded_by_run_id, created_at, updated_at, "
+                    "manifest_sha256, evidence_path "
                     "FROM run.runs WHERE run_id=%s", (run_id,))
         r = cur.fetchone()
         if r is None:
@@ -204,10 +212,11 @@ class PgRunStore:
                 "risk_tier": r[12], "risk_json": r[13], "plan_json": r[14],
                 "outcome": r[15], "coverage_missing": r[16], "status": r[17],
                 "request_key": r[18], "superseded_by_run_id": r[19],
-                "created_at": r[20], "updated_at": r[21]}
+                "created_at": r[20], "updated_at": r[21],
+                "manifest_sha256": r[22], "evidence_path": r[23]}
 
     def get_run(self, run_id: str) -> Optional[Dict[str, Any]]:
-        cur = self._conn.cursor()
+        cur = self._ensure().cursor()
         return self._load_run(cur, run_id)
 
     # ── 阶段状态(当前态 UPSERT;历史取证属 stage_attempts,后续包) ─────────
@@ -215,8 +224,8 @@ class PgRunStore:
                     expected_status: Optional[str] = None) -> int:
         """保存维度状态快照。expected_status 给定时受期望状态约束
         (旧执行者不能覆盖新执行者)。返回受影响行数。"""
-        with self._conn:
-            cur = self._conn.cursor()
+        with self._ensure():
+            cur = self._ensure().cursor()
             n = 0
             for dim, rec in sorted(stages.stages.items()):
                 cur.execute(
@@ -245,8 +254,8 @@ class PgRunStore:
 
     def append_event(self, run_id: str, event_type: str,
                      payload: Optional[Dict] = None) -> None:
-        with self._conn:
-            cur = self._conn.cursor()
+        with self._ensure():
+            cur = self._ensure().cursor()
             cur.execute("INSERT INTO run.run_events (run_id, event_type, payload) "
                         "VALUES (%s,%s,%s)",
                         (run_id, event_type,
@@ -254,8 +263,8 @@ class PgRunStore:
 
     def supersede_run(self, old_run_id: str, new_run_id: str) -> bool:
         """显式重跑:旧 run 链接新 run 并标 SUPERSEDED(历史行不改写内容)。"""
-        with self._conn:
-            cur = self._conn.cursor()
+        with self._ensure():
+            cur = self._ensure().cursor()
             cur.execute(
                 "UPDATE run.runs SET superseded_by_run_id=%s, status='SUPERSEDED', "
                 "updated_at=%s WHERE run_id=%s "
@@ -266,8 +275,8 @@ class PgRunStore:
     def transition_status(self, run_id: str, new_status: str,
                           expected_status: Optional[str] = "PENDING") -> bool:
         """run 状态推进(期望状态守卫:旧执行者不能覆盖新执行者)。"""
-        with self._conn:
-            cur = self._conn.cursor()
+        with self._ensure():
+            cur = self._ensure().cursor()
             where = ("AND status=%s" if expected_status else "")
             cur.execute(
                 "UPDATE run.runs SET status=%s, updated_at=%s "
@@ -277,7 +286,7 @@ class PgRunStore:
             return cur.rowcount == 1
 
     def get_stages(self, run_id: str) -> Dict[str, Dict[str, Any]]:
-        cur = self._conn.cursor()
+        cur = self._ensure().cursor()
         cur.execute("SELECT stage, status, attempts, error, detail, "
                     "started_at, ended_at FROM run.stages WHERE run_id=%s "
                     "ORDER BY stage", (run_id,))
@@ -285,8 +294,52 @@ class PgRunStore:
                        "detail": r[4], "started_at": r[5], "ended_at": r[6]}
                 for r in cur.fetchall()}
 
+    def list_repos(self) -> list:
+        """仓库列表(有 run 的仓库;含 pr/run 计数与最近活动)。"""
+        cur = self._ensure().cursor()
+        cur.execute(
+            "SELECT repo_id, COUNT(DISTINCT pr_number), COUNT(*), "
+            "MAX(updated_at) FROM run.runs GROUP BY repo_id ORDER BY repo_id")
+        return [{"repo_id": r[0], "pr_count": r[1], "run_count": r[2],
+                 "latest_activity": r[3]} for r in cur.fetchall()]
+
+    def list_prs(self, repo_id: str, limit: int = 50,
+                 offset: int = 0) -> Dict[str, Any]:
+        """仓库内 PR 列表(分页;每 PR 汇总 run 数与最新状态)。"""
+        cur = self._ensure().cursor()
+        cur.execute("SELECT COUNT(DISTINCT pr_number) FROM run.runs "
+                    "WHERE repo_id=%s", (repo_id,))
+        total = cur.fetchone()[0]
+        cur.execute(
+            "SELECT pr_number, MIN(head_sha), COUNT(*), "
+            "MAX(updated_at) FROM run.runs WHERE repo_id=%s "
+            "GROUP BY pr_number ORDER BY MAX(updated_at) DESC "
+            "LIMIT %s OFFSET %s", (repo_id, limit, offset))
+        items = []
+        for pr_number, head, run_count, updated in cur.fetchall():
+            cur.execute(
+                "SELECT status FROM run.runs WHERE repo_id=%s AND pr_number=%s "
+                "ORDER BY updated_at DESC LIMIT 1", (repo_id, pr_number))
+            latest_status = cur.fetchone()[0]
+            items.append({"repo_id": repo_id, "pr_number": pr_number,
+                          "head_sha": head, "run_count": run_count,
+                          "latest_status": latest_status,
+                          "latest_activity": updated})
+        return {"total": total, "limit": limit, "offset": offset,
+                "items": items}
+
+    def recent_events(self, run_id: str, limit: int = 50) -> list:
+        cur = self._ensure().cursor()
+        cur.execute("SELECT event_type, payload, created_at FROM run.run_events "
+                    "WHERE run_id=%s ORDER BY id DESC LIMIT %s",
+                    (run_id, limit))
+        return [{"event_type": r[0],
+                 "payload": r[1] if isinstance(r[1], (dict, list))
+                 else (json.loads(r[1]) if r[1] else None),
+                 "created_at": str(r[2])} for r in cur.fetchall()]
+
     def runs_for_pr(self, repo_id: str, pr: int) -> list:
-        cur = self._conn.cursor()
+        cur = self._ensure().cursor()
         cur.execute(
             "SELECT run_id, target_id, chain, run_class, exec_seq, mode, status, "
             "risk_tier, outcome, superseded_by_run_id, head_sha, created_at "
