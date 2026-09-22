@@ -210,9 +210,10 @@ a:hover { text-decoration: underline; text-underline-offset: 2px; }
   padding: 0 10px; border: 1px solid var(--c-border-strong); border-radius: var(--r-sm);
   background: var(--c-panel); color: var(--c-text-3);
   transition: border-color 140ms var(--ease), box-shadow 140ms var(--ease);
+  max-width: 428px; width: 100%;
 }
 .search-wrap:focus-within { border-color: var(--c-accent); box-shadow: 0 0 0 3px var(--c-accent-ring); }
-.search-wrap input { border: none; outline: none; background: none; padding: 6px 0; font-size: var(--fs-sm); width: 230px; color: var(--c-text); }
+.search-wrap input { border: none; outline: none; background: none; padding: 6px 0; font-size: var(--fs-sm); width: 100%; min-width: 0; color: var(--c-text); }
 .f-field select {
   padding: 6px 10px; border: 1px solid var(--c-border-strong); border-radius: var(--r-sm);
   font-size: var(--fs-sm); background: var(--c-panel); color: var(--c-text); min-width: 120px;
@@ -228,7 +229,8 @@ a:hover { text-decoration: underline; text-underline-offset: 2px; }
 }
 
 /* ---- 表格 ---- */
-.table-scroll { overflow-x: auto; }
+/* 表格自滚动 + sticky 表头：垂直滚动发生在本容器内，th 的 sticky 才会生效 */
+.table-scroll { overflow: auto; max-height: calc(100vh - 264px); }
 table { border-collapse: collapse; width: 100%; font-size: var(--fs-sm); }
 th, td { text-align: left; padding: 9px 14px; border-bottom: 1px solid var(--c-border); vertical-align: middle; }
 th {
@@ -246,7 +248,7 @@ tbody tr:hover { background: #f7f9fb; }
 .runs-table td, .runs-table th { padding: 9px 12px; }
 .runs-table td { white-space: nowrap; }
 .runs-table .sha code { white-space: nowrap; }
-.runs-table td.cell-pr { max-width: none; white-space: normal; min-width: 240px; }
+.runs-table .cell-pr { max-width: 460px; white-space: normal; min-width: 240px; }
 .runs-table .cell-repo .row-link { white-space: nowrap; }
 .cell-title { font-size: var(--fs-base); font-weight: var(--fw-semibold); overflow-wrap: anywhere; white-space: normal !important; }
 .cell-title-line { display: flex; align-items: baseline; gap: 7px; min-width: 0; }
@@ -275,6 +277,17 @@ tbody tr:hover { background: #f7f9fb; }
 .cell-time { white-space: nowrap; font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--c-text-2); }
 .th-right { text-align: right !important; }
 td.th-right { text-align: right; }
+
+/* 表头排序按钮：默认排序已是最优（严重度→时间），图标仅在悬停/激活时出现，保持表头安静 */
+.th-sort {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: none; border: none; padding: 0; margin: 0;
+  font-weight: var(--fw-semibold); color: inherit; cursor: pointer; border-radius: 4px;
+}
+.th-sort:hover { color: var(--c-accent-strong); }
+.sort-ico { opacity: 0; transition: opacity 120ms var(--ease), transform 120ms var(--ease); }
+.th-sort:hover .sort-ico, .th-sort-active .sort-ico { opacity: 1; }
+.th-sort-asc .sort-ico { transform: rotate(180deg); }
 .cell-path { max-width: 460px; overflow-wrap: anywhere; white-space: nowrap; }
 .cell-src { max-width: 320px; overflow-wrap: anywhere; font-size: var(--fs-xs); color: var(--c-text-2); }
 .cell-actions { white-space: nowrap; }
@@ -556,7 +569,6 @@ td.th-right { text-align: right; }
   .content { padding: 14px 14px 40px; }
   .timeline-ts { width: 108px; flex: 0 0 108px; }
   .detail-head { flex-direction: column; }
-  .search-wrap input { width: 150px; }
 }
 @media (max-width: 700px) {
   /* 顶栏采集范围让位于模式徽章；滚动提示改为纯视觉渐隐，避免与元信息重叠 */
@@ -566,5 +578,4 @@ td.th-right { text-align: right; }
   .table-meta { max-width: 100%; overflow-wrap: anywhere; }
   .quick-filters { flex-wrap: wrap; }
   .f-field, .f-grow { flex: 1 1 100%; }
-  .search-wrap input { width: 100%; }
 }
