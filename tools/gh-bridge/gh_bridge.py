@@ -20,6 +20,7 @@
 """
 import argparse
 import base64
+import hashlib
 import json
 import os
 import re
@@ -430,6 +431,126 @@ def publish_with_retry(d, verdict, report, run, proj, log):
     return last
 
 
+# ── run 级版本清单(产品化备忘九.2):派发前持久化,派发引用其内容摘要 ────────
+# 原则:只记录桥在派发时能真实取得的值;取不到的写 null 并列入 missing[],
+# 不伪造、不把事后版本当成执行时版本。write-once:已存在且哈希一致→采纳,
+# 不一致→拒绝覆盖(版本绑定 run,恢复路径只读不重写)。
+MANIFEST_PATH = "teams/elemiso-team/shared/projects/%s/run-manifest.json"
+SKILLS_IN_SPEC = ("skill_diff_parse", "skill_risk_classify", "skill_sast_scan",
+                  "skill_case_retrieval")
+
+
+def _canon(obj):
+    return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def _sha_text(t):
+    return hashlib.sha256(t.encode("utf-8")).hexdigest()
+
+
+def manifest_sha(m):
+    return _sha_text(_canon(m))
+
+
+def _bridge_source_sha():
+    try:
+        with open(os.path.join(_HERE, "gh_bridge.py"), "rb") as f:
+            return hashlib.sha256(f.read()).hexdigest()
+    except Exception:
+        return None
+
+
+def _git_commit():
+    try:
+        r = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=_HERE,
+                           capture_output=True, text=True, timeout=10)
+        return r.stdout.strip() or None if r.returncode == 0 else None
+    except Exception:
+        return None
+
+
+def _worker_image_id(container):
+    try:
+        r = subprocess.run(["docker", "inspect", "--format", "{{.Image}}", container],
+                           capture_output=True, text=True, timeout=15)
+        return r.stdout.strip() or None if r.returncode == 0 else None
+    except Exception:
+        return None
+
+
+def build_manifest(d, run, proj, task, kickoff_base, timeout_min):
+    """派发时的版本事实快照。缺失即标注(备忘九.2:可追溯≠可复算)。"""
+    workers = {n: _worker_image_id("elemiso-" + n)
+               for n in ("leader", "reviewer", "fixer", "verifier")}
+    bridge_sha = _bridge_source_sha()
+    git = _git_commit()
+    cfg = {"allow_repos": sorted(ALLOW_REPOS), "repo_url": REPO_URL,
+           "leader": LEADER, "team_room": TEAM_ROOM, "dm_room": DM_ROOM,
+           "watch_poll_s": WATCH_POLL_S, "timeout_min": timeout_min,
+           "publish_attempts": PUBLISH_ATTEMPTS, "stale_minutes": STALE_MINUTES,
+           "requeue_max": REQUEUE_MAX, "server": SERVER}
+    m = {
+        "manifest_version": 1,
+        "run_id": run,
+        "project_id": proj,
+        "delivery_id": d["delivery_id"],
+        "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "code": {"repo": d["repo"], "head_sha": d["observed_head_sha"],
+                 "base_sha": d["observed_base_sha"]},
+        "prompt": {"task_id": task,
+                   "kickoff_base_sha256": _sha_text(kickoff_base)},
+        "orchestrator": {"bridge_source_sha256": bridge_sha, "git_commit": git},
+        "workers": {"images": workers},
+        "skills": {"names": list(SKILLS_IN_SPEC), "content_sha256": None},
+        "model": {"identifiers": None},
+        "rag": {"version": None},
+        "config": {"canonical": cfg, "sha256": _sha_text(_canon(cfg))},
+    }
+    missing = ["model.identifiers", "skills.content_sha256", "rag.version"]
+    if any(v is None for v in workers.values()):
+        missing.append("workers.images")
+    if bridge_sha is None:
+        missing.append("orchestrator.bridge_source_sha256")
+    if git is None:
+        missing.append("orchestrator.git_commit")
+    m["missing"] = missing
+    return m
+
+
+def read_run_manifest(proj):
+    p = subprocess.run(["docker", "exec", "elemiso-ctrl", "mc", "cat",
+                        f"{BUCKET}/{MANIFEST_PATH % proj}"],
+                       capture_output=True, text=True, timeout=30)
+    if p.returncode != 0 or not p.stdout.strip():
+        return None
+    try:
+        return json.loads(p.stdout)
+    except Exception:
+        return None
+
+
+def write_run_manifest(proj, m):
+    """write-once:无则写;有且哈希一致→adopted;有但不一致→拒绝(不覆盖)。"""
+    old = read_run_manifest(proj)
+    if old is not None:
+        if manifest_sha(old) == manifest_sha(m):
+            return {"ok": True, "adopted": True}
+        return {"ok": False, "reason": "run-manifest conflict (write-once per run)"}
+    return {"ok": minio_put(MANIFEST_PATH % proj,
+                            json.dumps(m, ensure_ascii=False, indent=2))}
+
+
+def prepare_run_manifest(d, run, proj, task, kickoff_base, timeout_min):
+    """派发前置:构建+持久化清单,返回带引用行的 kickoff 或 None(fail-closed)。"""
+    man = build_manifest(d, run, proj, task, kickoff_base, timeout_min)
+    mw = write_run_manifest(proj, man)
+    if not mw.get("ok"):
+        return None, mw.get("reason", "write failed")
+    ref = ("\n\nrun-manifest: sha256 %s (projects/%s/run-manifest.json)\n"
+           % (manifest_sha(man), proj))
+    return kickoff_base + ref, None
+
+
 # ── 主流程 ──────────────────────────────────────────────────────────────────
 def conclude(d, st, report, run, proj, cid, log):
     """终态→结论→发布→终结。process 与 resume 共用(场景7 语义)。"""
@@ -491,7 +612,14 @@ def process(d, timeout_min, dry):
         finish(d, False, "worker wake failed", cid)
         log("worker wake FAILED — delivery marked ERROR")
         return
-    log("workers awake; sending kickoff to leader DM")
+    log("workers awake; preparing run-manifest (pre-dispatch, fail-closed)")
+    kickoff2, merr = prepare_run_manifest(d, run, proj, task, kickoff, timeout_min)
+    if kickoff2 is None:
+        finish(d, False, "run-manifest failed: " + str(merr)[:120], cid)
+        log("run-manifest FAILED — no dispatch (fail-closed):", merr)
+        return
+    kickoff = kickoff2
+    log("run-manifest persisted; sending kickoff to leader DM")
     r = mx.send(DM_ROOM, LEADER, kickoff, txn_prefix="ghbridge")
     if not r.get("event_id"):
         finish(d, False, "kickoff send failed: " + str(r.get("error"))[:120], cid)
@@ -548,6 +676,17 @@ def resume(d, timeout_min, log):
     cid = d["_cid"]
     proj = "elemiso-gh-pr%d-%s" % (d["pr_number"], d["observed_head_sha"][:8])
     run = "resume-%s" % d["delivery_id"][:8]
+    try:
+        man = read_run_manifest(proj)
+    except Exception:
+        man = None
+    if man:
+        log("resumed %s: run-manifest %s (bound at dispatch; read-only)"
+            % (d["delivery_id"][:12], manifest_sha(man)[:12]))
+    else:
+        # 前期 run 无清单属已知缺失,不阻断恢复(恢复语义以项目权威状态为准)。
+        log("resumed %s: no run-manifest (pre-manifest run or lost); continuing"
+            % d["delivery_id"][:12])
     rcpt = read_receipt(proj)
     if rcpt and rcpt.get("check_run_id"):
         finish(d, True, "recovered via receipt; check_run=%s (orig run %s)"

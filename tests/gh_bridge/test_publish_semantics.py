@@ -215,6 +215,8 @@ class ProcessTerminalSemantics(unittest.TestCase):
              mock.patch.object(br, "already_processed", return_value=False), \
              mock.patch.object(br, "seed_project", return_value=True), \
              mock.patch.object(br, "wake_workers", return_value=True), \
+             mock.patch.object(br, "prepare_run_manifest",
+                               return_value=("kickoff+manifest-ref", None)), \
              mock.patch.object(br.mx, "send",
                                return_value={"event_id": "$ev"}), \
              mock.patch.object(br, "watch_run",

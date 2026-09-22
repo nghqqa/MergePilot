@@ -14,13 +14,14 @@
 | M1-3 场景6 PR 更新失效 | 🔒 结构保证+单测 | check-run 绑 head_sha + already_processed 按 head 去重；真实双 head 实证待授权案例轮 |
 | M2-A 审批票据规格（四问） | ✅ 规格已定 | docs/productization/M2-APPROVAL-SPEC.md；merge 语义剥离；决策项 D-1/D-2/D-3 列明未拍板 |
 | M2-A 绑定校验器+单测 | ✅ 已实现+已测试 | tools/approval/（纯逻辑层）；tests/approval/ 34 passed；未接真实执行路径 |
+| run-manifest 派发前置清单（备忘九.2） | ✅ 已实现+单测级 | 桥 process() 派发前 write-once 持久化 + kickoff 引用 sha256 + resume 只读；模型/RAG/Skill 内容哈希诚实标 missing（待 worker 侧上报） |
 
 ## 已验证结果（证据，2026-09-22 实测 @ 工作树）
 
-- `python -X utf8 -m pytest tests/gh_bridge/ -q` → **23 passed**
+- `python -X utf8 -m pytest tests/gh_bridge/ -q` → **36 passed**（23 M1 + 13 run-manifest）
+- `python -X utf8 -m pytest tests/approval/ -q` → **34 passed**（M2-A）
 - `python -X utf8 -m pytest tests/gh_app/ -q` → **816 passed, 5 skipped（821 collected）**
   - **勘误**：本文件前版记录"831 passed"在当前干净树（8b30fb1，tests/gh_app 自 b46e8ba 字节未变）不可复现；821 为本轮两次独立实测一致值。差额 15 疑为当时混入未跟踪文件或转抄误差，不影响 M1 结论（无失败）。
-- `python -X utf8 -m pytest tests/approval/ -q` → **34 passed**（M2-A：动作集剥离 merge/绑定形状/批准拒绝竞争/幂等创建/新 head 失效/逐字段执行校验/过期/单次有效）
 - M1 九场景状态：1/2/3/4/5/7/8 ✅单测；9 ✅契约+单测；6 🔒结构保证（真实双 head 实证待授权）
 
 ## 当前阻塞
@@ -29,10 +30,10 @@
 
 ## 下一条可执行动作（按序）
 
-1. **run 级版本清单（备忘九.2）**：桥在 kickoff 后写 run-manifest（镜像标识+激活配置哈希+桥版本+提示词摘要），恢复时校验；
-2. **成本计量脚手架**：usage 汇总脚本（数据源=agentloop spans/skill 审计）+ 单 run 硬预算断言挂点；
+1. **成本计量脚手架**：usage 汇总脚本（数据源=agentloop spans/skill 审计）+ 单 run 硬预算断言挂点；
+2. **worker 侧版本上报**：run-manifest 的 missing 项（模型标识/Skill 内容哈希/RAG 版本）从 worker/ctrl 侧取得并补录——需读 ctrl 容器 agt/agentloop 接口；
 3. **门 Web 化预研**：M2 票据存储落点（PG approvals 改造 vs MinIO 票据对象），依赖 D-1/D-2 拍板；
-4. **待授权项集中提出**（真实集成轮）：服务器 PG 下故障注入（kill -9 各阶段）、真实 GitHub reconcile/POST、场景6 双 head 实证、运行副本同步 r3work 后真实案例回归。
+4. **待授权项集中提出**（真实集成轮）：服务器 PG 下故障注入（kill -9 各阶段）、真实 GitHub reconcile/POST、场景6 双 head 实证、运行副本同步 r3work 后真实案例回归（含真实 run-manifest 落盘验证）。
 
 ## 提交记录
 

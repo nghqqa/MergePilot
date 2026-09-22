@@ -57,3 +57,23 @@ v2 备忘一.3 硬门槛 3 = "审批不越权：批准的语义、绑定对象�
 | 过期 | approve/start_exec 过期即拒；在途执行允许收尾 | test_expired_cannot_execute / test_expired_blocks_other_transitions_first / test_executing_completes_after_approval_deadline | ✅单测 |
 
 **边界声明**：以上全部为纯逻辑层隔离单测（InMemoryTicketStore 参考存储）。真实 DB 存储、并发进程竞争、门 Web 页签发、真实审批人——均未实现、未验证。**D-1/D-2/D-3 未拍板前不接任何真实执行路径**（规格 §6）。M2 里程碑通过还差：存储落地 + 决策项拍板 + 门 Web 化，均未开始。
+
+---
+
+# run 级版本清单（ACCEPTANCE-MANIFEST，备忘九.2）
+
+实现：gh_bridge.py `build_manifest`/`write_run_manifest`/`prepare_run_manifest` ｜ 测试：tests/gh_bridge/test_run_manifest.py（13 项，2026-09-22 全绿）
+
+| 要求（备忘九.2 / 提示词七.B） | 实现 | 状态 |
+|---|---|---|
+| 首次派发前持久化，派发引用内容摘要 | `process()`：seed→wake→manifest 持久化→kickoff 追加 `run-manifest: sha256`→发送；write 失败即 ERROR 不派发（fail-closed） | ✅单测 |
+| 被审查代码 SHA | code.repo/head_sha/base_sha（delivery 原值） | ✅ |
+| 提示词内容摘要 | prompt.kickoff_base_sha256（发送的 kickoff 基底+SPEC 的 SHA） | ✅ |
+| 编排代码版本 | orchestrator.bridge_source_sha256 + git_commit（取不到→null+missing） | ✅ |
+| 镜像摘要 | workers.images（派发时 docker inspect 四 worker；不可得→null+missing） | ✅单测（真实值待集成轮） |
+| 模型标识/生成参数、Skill 内容哈希、RAG 版本 | 桥不可见 → **null + missing[] 显式标注，不伪造** | ✅机制；真实值源⬜未做（需 worker 侧上报，后续工作项） |
+| 有效配置摘要 | config.canonical（allowlist/房间/超时/重试参数）+ sha256；无秘密字段 | ✅单测（secret-shape 断言） |
+| 不可变：运行中升级不改变既有 run 清单 | write-once：已存在且哈希一致→采纳；不一致→拒绝覆盖 | ✅单测 |
+| 恢复只读不重写 | resume() 只读清单并记日志；缺失不阻断恢复（前期 run 无清单属已知缺失） | ✅单测 |
+
+**边界声明**：单测级（mock MinIO/docker）。真实 MinIO 写入、真实 worker 镜像读取、以及"清单中 missing 项的 worker 侧上报"（模型/RAG/Skill 内容哈希）——未验证/未实现。当前状态 = **可追溯骨架**，不等于备忘九.1 的"完整可复算"。
