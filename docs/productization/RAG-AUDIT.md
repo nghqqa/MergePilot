@@ -38,8 +38,8 @@ RAG 在本系统里是**已接线、有真实运行与消费证据、但当前�
 
 - Skill 在 worker 镜像 `/opt/mergepilot/skills/case_retrieval`（已实现）；DSN 经 `agentloop-skills.json` 注入（case-pg 专用凭证）。
 - case-pg **在运行**，`knowledge` 表 7 行、单 repo_scope、含 source_version/embedding_model/embedding_version/adopted 列（结构满足追溯）。
-- 审计记录：`skill_case_retrieval` 8 次 OK 但 **document_count 全 0**——调用成功、零命中（要么查询不匹配、要么库当时为空）。**未验证**：非零命中的真实行为。
-- 判定：案例链 = 已接线 + 调用证据（零命中），**历史案例对当前 commit 的覆盖能力未验证** → V0 RAG 验收以 A 链为主场景，B 链列为补充（证据要求同标准时另立项）。
+- 审计记录：`skill_case_retrieval` 8 次调用（09-18 16:01/17:06 UTC）。**勘误（本轮排查）**：审计 JSONL 中所有 `skill_*` 工具的 document_count 恒为 0（连 skill_diff_parse 也是——skill 路径的审计模板未填该字段），故"零命中"推断**不成立**；案例库 7 行于同日 14:01 入库，调用发生在入库之后，实际命中情况**未知**（OTel spans 或 result.md 引用才可判定；当前未找到 case 引用证据）。
+- 判定：案例链 = 已接线 + 调用证据，**命中与消费行为未验证** → V0 RAG 验收以 A 链为主场景，B 链命中验证列入待授权项（真实案例轮一并取证）。
 
 ## 4. 审计问题清单逐答（提示词四.1-10 关键项）
 

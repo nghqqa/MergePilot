@@ -57,6 +57,7 @@ v2 备忘一.3 硬门槛 3 = "审批不越权：批准的语义、绑定对象�
 | 过期 | approve/start_exec 过期即拒；在途执行允许收尾 | test_expired_cannot_execute / test_expired_blocks_other_transitions_first / test_executing_completes_after_approval_deadline | ✅单测 |
 
 **边界声明**：以上全部为纯逻辑层隔离单测（InMemoryTicketStore 参考存储）。真实 DB 存储、并发进程竞争、门 Web 页签发、真实审批人——均未实现、未验证。**D-1/D-2/D-3 未拍板前不接任何真实执行路径**（规格 §6）。M2 里程碑通过还差：存储落地 + 决策项拍板 + 门 Web 化，均未开始。
+**2026-09-22 第三轮更新**：存储已落地——SQLite WAL（DECISIONS P-1，tests/approval/test_store_sqlite.py 7 项：跨连接竞争 CAS/并发幂等创建/崩溃重开/红线往返）；操作面 tools/approval/gate_cli.py（tests/approval/test_gate_cli.py 6 项：签发→批准→校验/绑定不匹配拒/过期拒/身份必填/未拍板提示显式）。**并发进程竞争与崩溃恢复已从"未验证"升级为"隔离验证通过"**；仍未做：真实审批主体接入（D-2）、门 Web 页、执行路径接线（D-1）。
 
 ---
 

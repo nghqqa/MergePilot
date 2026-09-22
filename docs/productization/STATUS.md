@@ -12,7 +12,9 @@
 | RAG_REQUIRED 派发门（RAG-6） | ✅ 实现+测试 | 默认 advisory（现状语义，降级经 manifest 可见）；=1 时快照不可读或服务不可达→拒派发 ERROR fail-closed |
 | 隔离集成测试（第 2 层） | ✅ 12 测试 | 真实 rag-live-server.mjs 进程：已知命中/合法空/审计链/快照一致/注入语料形状/不可达/变更即新快照 |
 | 票据存储 P-1 | ✅ 已决策+实现 | **SQLite WAL**（推翻 MinIO 提案）：跨连接竞争 CAS/崩溃重开/partial UNIQUE 幂等，7 测试；见 DECISIONS P-1 |
+| 票据操作面 gate_cli | ✅ 实现+测试 | 签发/批准/拒绝/查看/执行前校验 CLI（6 测试）；未拍板状态显式提示（D-1 note），不接真实执行 |
 | 预算重试语义 | ✅ 复查+固化 | 预留去重≠成本去重，累计结算契约入测试（DECISIONS #11） |
+| B 案例链排查 | ✅ 勘误完成 | 审计 JSONL 的 skill_* document_count 恒为 0（模板未填），前判"零命中"不成立；命中情况未知，取证列入真实案例轮 |
 
 ## 阻塞重新分类（取代上轮"全部待拍板"口径）
 
@@ -36,13 +38,13 @@
 
 ## 下一条可执行动作（按序）
 
-1. **门 Web 页骨架（只读展示票据）**：消费 SQLite 票据库的只读页 + 签发 API 骨架（本地、不接真实审批主体，D-1/D-2 拍板前不可放行真实动作）；
-2. **B 案例链零命中排查**：skill_case_retrieval 8 次调用全 document_count=0——查 case-pg 数据时间线与查询形状（只读，可自主）；
+1. **门 Web 页（只读票据列表+详情）**：消费同一 SQLite 票据库；签发/批准 UI 依赖 D-1/D-2 拍板，先只读；
+2. **B 案例链命中取证**：并入 R1/R2 真实案例轮（审计字段不填命中数，需 spans 或 result.md 引用判定）；
 3. **待授权批复后**：R7（语料同步）→ R1+R2+R4 合并真实案例轮 → R3 双 head。
 
 ## 已验证结果（证据，2026-09-22 实测 @ 工作树）
 
-- `python -X utf8 -m pytest tests/gh_bridge/ tests/rag_live/ tests/approval/ tests/costmeter/ -q` → **121 passed**（bridge 46 + rag_live 20 + approval 41 + costmeter 17；2.9s）
+- `python -X utf8 -m pytest tests/gh_bridge/ tests/rag_live/ tests/approval/ tests/costmeter/ -q` → **127 passed**（bridge 46 + rag_live 17 + approval 47 + costmeter 17；3.5s）
 - `python -X utf8 -m pytest tests/gh_app/ -q` → 816 passed, 5 skipped（上轮实测；本轮改动不触其引用面）
 - RAG 双副本快照实测一致：repo 与 r3work 语料 snapshot_id 同为 fd34c304…
 - M1 九场景：1/2/3/4/5/7/8 ✅单测；9 ✅契约+单测；6 🔒结构保证（实证待授权）
