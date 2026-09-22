@@ -61,12 +61,18 @@ def _admin_conn():
 
 
 def _apply_migration():
+    """全新安装演练:drop 旧 schema → 按序应用正式迁移 → 测试夹具。"""
+    import psycopg2
     conn = _admin_conn()
     conn.autocommit = True
     cur = conn.cursor()
+    cur.execute("DROP SCHEMA IF EXISTS approval CASCADE")
+    cur.execute("DROP SCHEMA IF EXISTS run CASCADE")
     for m in MIGRATIONS:
         cur.execute((_MIG_DIR / m).read_text(encoding="utf-8"))
-    # 夹具父数据(tickets 的 repo_id 值参照;tickets 无 FK 依赖 run.runs)
+    # 测试夹具(非正式迁移):run schema 由测试自建,便于隔离与清理
+    cur.execute("CREATE SCHEMA IF NOT EXISTS run")
+    cur.execute("CREATE TABLE IF NOT EXISTS run.repos (repo_id TEXT PRIMARY KEY)")
     cur.execute("INSERT INTO run.repos (repo_id) VALUES ('team/demo') "
                 "ON CONFLICT DO NOTHING")
     # 运行时最小权限角色(不存在则建;密码=本地隔离测试专用)
@@ -78,7 +84,7 @@ def _apply_migration():
     cur.execute("GRANT SELECT, INSERT ON approval.ticket_audit TO mp_runtime")
     cur.execute("GRANT USAGE, SELECT ON SEQUENCE "
                 "approval.ticket_audit_id_seq TO mp_runtime")
-    cur.execute("GRANT SELECT, INSERT, UPDATE ON run.runs, run.repos TO mp_runtime")
+    cur.execute("GRANT SELECT, INSERT, UPDATE ON run.repos TO mp_runtime")
     conn.close()
 
 
@@ -338,6 +344,11 @@ class PgSpecificAcceptance(unittest.TestCase):
             core.validate_binding_shape(self._binding(finding_id=""))
         # 迁移映射口径:COALESCE(finding_id,'_run_') 只对 NULL 生效;
         # 源库空串行迁移时计为校验错误(migrate 工具已实现),不静默归入 run 级。
+        # 保留命名空间:下划线前缀 finding_id 在绑定校验即拒绝(防与 '_run_' 碰撞)
+        with self.assertRaises(ValueError):
+            core.validate_binding_shape(self._binding(finding_id="_run_"))
+        with self.assertRaises(ValueError):
+            core.validate_binding_shape(self._binding(finding_id="_internal"))
 
     def test_audit_appended_on_transition(self):
         t, _ = self.store.create(self._binding(finding_id="AU"),

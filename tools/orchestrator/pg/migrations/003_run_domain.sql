@@ -8,11 +8,11 @@
 
 CREATE SCHEMA IF NOT EXISTS run;
 
-CREATE TABLE IF NOT EXISTS run.repos (
+CREATE TABLE run.repos (
   repo_id  TEXT PRIMARY KEY                            -- 'owner/name'
 );
 
-CREATE TABLE IF NOT EXISTS run.targets (
+CREATE TABLE run.targets (
   target_id  TEXT PRIMARY KEY,                         -- 'tgt-' + sha256(canon)[:20]
   repo_id    TEXT NOT NULL REFERENCES run.repos(repo_id),
   pr_number  INTEGER NOT NULL CHECK (pr_number >= 1),
@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS run.targets (
   UNIQUE (repo_id, pr_number, head_sha)
 );
 
-CREATE TABLE IF NOT EXISTS run.runs (
+CREATE TABLE run.runs (
   run_id       TEXT PRIMARY KEY,                       -- 'gh-' + sha256(canon)[:24]
   target_id    TEXT NOT NULL REFERENCES run.targets(target_id),
   delivery_id  TEXT,                                   -- 无 UNIQUE:delivery 1:N runs
@@ -59,14 +59,14 @@ CREATE TABLE IF NOT EXISTS run.runs (
   UNIQUE (target_id, chain, run_class, request_key)
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_runs_one_active
+CREATE UNIQUE INDEX uq_runs_one_active
   ON run.runs (target_id, chain, run_class)
   WHERE status IN ('PENDING','RUNNING');
 
-CREATE INDEX IF NOT EXISTS idx_runs_delivery ON run.runs (delivery_id);
-CREATE INDEX IF NOT EXISTS idx_runs_pr ON run.runs (repo_id, pr_number, created_at DESC);
+CREATE INDEX idx_runs_delivery ON run.runs (delivery_id);
+CREATE INDEX idx_runs_pr ON run.runs (repo_id, pr_number, created_at DESC);
 
-CREATE TABLE IF NOT EXISTS run.stages (
+CREATE TABLE run.stages (
   run_id   TEXT NOT NULL REFERENCES run.runs(run_id),
   stage    TEXT NOT NULL,
   status   TEXT NOT NULL CHECK (status IN
@@ -80,7 +80,7 @@ CREATE TABLE IF NOT EXISTS run.stages (
   PRIMARY KEY (run_id, stage)
 );
 
-CREATE TABLE IF NOT EXISTS run.run_events (
+CREATE TABLE run.run_events (
   id         BIGSERIAL PRIMARY KEY,
   run_id     TEXT NOT NULL REFERENCES run.runs(run_id),
   event_type TEXT NOT NULL,

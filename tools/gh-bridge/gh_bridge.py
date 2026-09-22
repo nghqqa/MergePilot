@@ -362,16 +362,18 @@ p = GitHubAppTokenProvider(TokenProviderConfig.from_env())
 tok = p.get_token()
 spec = json.loads(base64.b64decode(sys.argv[1]).decode())
 req = urllib.request.Request(
-    'https://api.github.com/repos/%s/commits/%s/check-runs' % (spec['repo'], spec['head_sha']),
+    'https://api.github.com/repos/%s/commits/%s/check-runs?per_page=100'
+    % (spec['repo'], spec['head_sha']),
     headers={'Authorization': 'Bearer ' + tok, 'Accept': 'application/vnd.github+json'})
 try:
     r = urllib.request.urlopen(req, timeout=20)
     d = json.load(r)
-    print(json.dumps({'http': r.status, 'matches': [
-        {'check_run_id': c['id'], 'conclusion': c.get('conclusion'),
-         'url': c.get('html_url'), 'app': (c.get('app') or {}).get('slug'),
-         'head_sha': c.get('head_sha')}
-        for c in d.get('check_runs', []) if c.get('name') == 'mergepilot/review']}))
+    ms = [{'check_run_id': c['id'], 'conclusion': c.get('conclusion'),
+           'url': c.get('html_url'), 'app': (c.get('app') or {}).get('slug'),
+           'head_sha': c.get('head_sha')}
+          for c in d.get('check_runs', []) if c.get('name') == 'mergepilot/review']
+    print(json.dumps({'http': r.status, 'matches': ms,
+                      'truncated': len(ms) >= 100}))
 except urllib.error.HTTPError as e:
     print(json.dumps({'http': e.code, 'error': str(e.reason), 'matches': None}))
 except Exception as e:
@@ -396,30 +398,35 @@ def parse_publish_out(out):
 
 
 def decide_reconcile_adopt(matches, recorded_check_run_id=None,
-                           expected_app="mergepilot"):
-    """对账采纳决策(纯函数)。新版 run 身份(cas6909 §3)下同 head 可并存多执行
-    (legacy/v3 evidence/显式重跑),head+名称一致不再足以归属到本次运行。
+                           expected_app="mergepilot", truncated=False):
+    """对账采纳决策(纯函数;执行保护复核 v2 收紧)。
+
+    新版 run 身份(cas6909 §3)下同 head 可并存多执行(legacy/v3 evidence/
+    显式重跑),**head+名称+App+单条记录均不足以证明归属本次执行**——
+    采纳必须有可信执行标识:数据库/凭据记录的 check_run_id(recorded)。
 
     决策:
-      recorded 存在且在 matches 中  → 采纳该 id(权威凭据优先);
-      recorded 存在但不在 matches   → 不采纳(记录与 GitHub 不一致,人工对账);
-      恰好一条 match                → 采纳(单执行现实;app 归属不符则歧义);
-      多条 match                    → 歧义,不采纳(人工对账);
-      空                            → 不采纳(NO_MATCH ≠ 未创建)。"""
+      recorded 匹配某 match(且 App 归属相符) → 采纳该 id(RECORD_MATCH);
+      recorded 不在任何 match / matches 歧义 / 无 recorded 且有 match
+                                    → UNATTRIBUTED(人工对账,不猜测采纳);
+      无任何 match                  → NO_MATCH(证明该 head 无本应用 check,
+                                      允许安全 POST——这是"证明无副作用"的唯一途径)。
+    matches 需含 app 字段(reconcile 脚本输出);列表分页不全时调用方须传入
+    truncated 标记,截断列表一律 UNATTRIBUTED(不能断言不存在/唯一)。"""
     ms = list(matches or [])
     if recorded_check_run_id:
         for m in ms:
             if m.get("check_run_id") == recorded_check_run_id:
+                if expected_app and m.get("app") and m["app"] != expected_app:
+                    return None, "AMBIGUOUS:record-app-mismatch"
                 return m.get("check_run_id"), "RECORD_MATCH"
-        return None, "AMBIGUOUS:record-not-found"
-    if len(ms) == 1:
-        m = ms[0]
-        if expected_app and m.get("app") and m["app"] != expected_app:
-            return None, "AMBIGUOUS:app-mismatch"
-        return m.get("check_run_id"), "SINGLE_MATCH"
-    if len(ms) > 1:
-        return None, "AMBIGUOUS:multiple-matches"
-    return None, "NO_MATCH"
+        return None, "UNATTRIBUTED:record-not-found"
+    if truncated:
+        # 列表可能不完整:不能断言不存在/唯一,一律人工对账
+        return None, "UNATTRIBUTED:truncated"
+    if not ms:
+        return None, "NO_MATCH"
+    return None, "UNATTRIBUTED:no-trusted-execution-id"
 
 
 def parse_reconcile_out(out):
@@ -491,7 +498,8 @@ def publish_with_retry(d, verdict, report, run, proj, log):
         rec = parse_reconcile_out(rec_out)
         if not rec.get("ok"):
             return {"transport_failed": True, "matches": None, "raw": rec.get("raw", "")}
-        return {"transport_failed": False, "matches": rec["matches"], "raw": ""}
+        return {"transport_failed": False, "matches": rec["matches"],
+                "truncated": rec.get("truncated", False), "raw": ""}
 
     for i in range(1, PUBLISH_ATTEMPTS + 1):
         # 每次尝试先对账:已存在本运行 check → 采纳,不重复 POST(场景3)
@@ -502,15 +510,16 @@ def publish_with_retry(d, verdict, report, run, proj, log):
                     "raw": "reconcile unavailable: " + r["raw"][:120]}
             log("reconcile unavailable — no POST (unknown, manual reconcile)")
             break
-        adopt_id, decision = decide_reconcile_adopt(r["matches"])
+        adopt_id, decision = decide_reconcile_adopt(
+            r["matches"], truncated=r.get("truncated", False))
         if adopt_id is not None:
             rec = {"ok": True, "check_run_id": adopt_id, "url": "",
                    "http": 200, "adopted": True}
             write_receipt(proj, rec, d, run, verdict)
             return rec
-        if decision.startswith("AMBIGUOUS"):
+        if decision.startswith("UNATTRIBUTED") or decision.startswith("AMBIGUOUS"):
             last = {"ok": False, "outcome": "unknown", "raw": "reconcile " + decision}
-            log("reconcile ambiguous (%s) — no POST, manual reconcile" % decision)
+            log("reconcile %s — no POST, manual reconcile" % decision)
             break
         out, ok = _reporter_exec(s64, b64)
         last_unknown = not ok          # 传输层失败=POST 结果未知;结构化报错=可分类
@@ -899,12 +908,21 @@ def conclude(d, st, report, run, proj, cid, log):
         finish(d, True, note, cid)
         log("published:", note)
     elif not pub["ok"] and st in ("completed", "blocked"):
-        if pub.get("outcome") == "unknown":
-            # 结果未知:停止自动重试,先 reconcile 人工/受控确认,防重复 check-run。
+        outcome = pub.get("outcome")
+        if outcome == "unknown":
             finish(d, False, "PUBLISH_UNKNOWN(manual-reconcile) %s/%s; last=%s"
                    % (st, verdict, pub.get("raw", "")[:100]), cid)
             log("PUBLISH UNKNOWN — delivery ERROR (manual reconcile before any retry)")
-        else:
+        elif outcome == "auth":
+            # 401 历经有界重试(每次 reporter 新进程取新 token)仍失败=凭证配置问题,非过期缓存
+            finish(d, False, "PUBLISH_AUTH(manual) %s/%s; last=%s"
+                   % (st, verdict, pub.get("raw", "")[:100]), cid)
+            log("PUBLISH AUTH — delivery ERROR (credential config, manual)")
+        elif outcome == "permanent":
+            finish(d, False, "PUBLISH_REJECTED(permanent) %s/%s; last=%s"
+                   % (st, verdict, pub.get("raw", "")[:100]), cid)
+            log("PUBLISH REJECTED — delivery ERROR (permanent, manual)")
+        else:   # retryable:有界重试已耗尽且兜底对账未见 check(证明未产生副作用)
             finish(d, False, "PUBLISH_FAILED(retryable) %s/%s; last=%s"
                    % (st, verdict, pub.get("raw", "")[:100]), cid)
             log("PUBLISH FAILED after %d attempts — delivery ERROR (recoverable)" % PUBLISH_ATTEMPTS)

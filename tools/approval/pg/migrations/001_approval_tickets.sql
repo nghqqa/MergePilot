@@ -3,24 +3,14 @@
 --           (列形状=tools/approval/store_sqlite.py tickets;状态机=M2-APPROVAL-SPEC 不变)
 -- 执行环境: 隔离测试实例(mp-pg-contract-test, PG16, 127.0.0.1:55432);共享库禁用。
 --
--- 对设计稿的一处偏离(待设计窗口确认,已登记 backend/PROGRESS.md 问题#1):
---   uq_active_ticket 使用 NULLS NOT DISTINCT(PG15+)——否则 finding_id 为 NULL 的
---   活动票在 PG 默认 NULL-distinct 语义下不受唯一约束(设计稿未处理该点)。
---   若设计窗口否决,替代方案=两个部分唯一索引(分别覆盖 NULL/非 NULL)。
+-- 历史:本文件首版曾含 NULLS NOT DISTINCT 偏离与夹具父表;
+-- 设计 v2(caf6909)改用非空 target_key,由 002 迁移对齐。001 现为纯 v1 形状。
 
+-- 形式:无 IF NOT EXISTS——执行器(approval/pg/apply_migrations.py)按
+-- schema_migrations 跟踪幂等;未登记的既有同名表 = 明确失败,不被静默掩盖。
 CREATE SCHEMA IF NOT EXISTS approval;
 
--- 父表(夹具级,仅满足 tickets 外键;正式定义见设计文档 §5.2/5.3,由统一迁移建)
-CREATE SCHEMA IF NOT EXISTS run;
-CREATE TABLE IF NOT EXISTS run.repos (
-  repo_id  TEXT PRIMARY KEY
-);
-CREATE TABLE IF NOT EXISTS run.runs (
-  run_id   TEXT PRIMARY KEY,
-  repo_id  TEXT
-);
-
-CREATE TABLE IF NOT EXISTS approval.tickets (
+CREATE TABLE approval.tickets (
   ticket_id         TEXT PRIMARY KEY,
   run_id            TEXT NOT NULL,
   repo_id           TEXT NOT NULL,
@@ -43,11 +33,10 @@ CREATE TABLE IF NOT EXISTS approval.tickets (
   error             TEXT
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS uq_active_ticket
+CREATE UNIQUE INDEX uq_active_ticket
   ON approval.tickets (run_id, action, finding_id)
   NULLS NOT DISTINCT                        -- 语法位置:列清单后、WHERE 前(PG15+)
   WHERE status IN ('PENDING','APPROVED','EXECUTING');
-  -- 偏离点见文件头(待设计确认)
 
 CREATE TABLE IF NOT EXISTS approval.ticket_audit (   -- append-only,不 UPDATE/DELETE
   id          BIGSERIAL PRIMARY KEY,

@@ -60,8 +60,19 @@ class ParseTests(unittest.TestCase):
         r = self.br.parse_reconcile_out(json.dumps(
             {"http": 200, "matches": [{"check_run_id": 9, "url": "x"}]}))
         self.assertTrue(r["ok"] and r["matches"] == [{"check_run_id": 9, "url": "x"}])
+        # 收紧后:无 recorded 执行标识 → 不采纳(UNATTRIBUTED,人工对账)
         adopt_id, decision = self.br.decide_reconcile_adopt(r["matches"])
-        self.assertEqual((adopt_id, decision), (9, "SINGLE_MATCH"))
+        self.assertEqual((adopt_id, decision),
+                         (None, "UNATTRIBUTED:no-trusted-execution-id"))
+        # 有可信执行标识(recorded)才采纳,并校验 App 归属
+        m = dict(r["matches"][0], app="mergepilot")
+        adopt_id, decision = self.br.decide_reconcile_adopt(
+            [m], recorded_check_run_id=9)
+        self.assertEqual((adopt_id, decision), (9, "RECORD_MATCH"))
+        bad_app = dict(m, app="other-app")
+        adopt_id, decision = self.br.decide_reconcile_adopt(
+            [bad_app], recorded_check_run_id=9)
+        self.assertEqual((adopt_id, decision), (None, "AMBIGUOUS:record-app-mismatch"))
         empty = self.br.parse_reconcile_out(json.dumps({"http": 200, "matches": []}))
         self.assertTrue(empty["ok"] and empty["matches"] == [])
         self.assertFalse(self.br.parse_reconcile_out("ssh broke")["ok"])
@@ -194,13 +205,17 @@ class PublishRetryTests(unittest.TestCase):
         self.assertTrue(res["ok"] and res["adopted"] and res["from"] == "receipt")
         self.assertEqual(calls["exec"], [])  # 零网络调用
 
-    def test_reconcile_adopt_writes_receipt(self):
-        # 场景3:GitHub 已有本 App 的 check-run(此前发布过但本地未记录)→ 采纳,不重发
+    def test_reconcile_match_without_recorded_id_is_unknown(self):
+        """收紧后:reconcile 命中 match 但本地无 recorded 执行标识 →
+        无法证明归属本次执行 → UNKNOWN(人工对账),不采纳、不 POST、不写回执。"""
         res, calls = self._run(exec_results=[
-            ('{"http": 200, "matches": [{"check_run_id": 5}]}', True)])
-        self.assertTrue(res["ok"] and res["adopted"] and res["check_run_id"] == 5)
-        self.assertEqual(len(calls["receipts"]), 1)
+            ('{"http": 200, "matches": [{"check_run_id": 5, "app": "mergepilot"}]}',
+             True)])
+        self.assertFalse(res["ok"])
+        self.assertEqual(res["outcome"], "unknown")
+        self.assertEqual(res["raw"], "reconcile UNATTRIBUTED:no-trusted-execution-id")
         self.assertEqual(len(calls["exec"]), 1)  # 只对账,零 POST
+        self.assertEqual(calls["receipts"], [])  # 未采纳未记录
 
     def test_post_success_first_try(self):
         res, calls = self._run(exec_results=[
