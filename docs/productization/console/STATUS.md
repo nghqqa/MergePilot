@@ -1,7 +1,29 @@
 # 控制台推进状态（console/STATUS）
 
-**更新**：2026-09-23（第四轮：契约 v2 对齐 + 后端查询接线准备）｜ **分支**：`feat/admin-console`（worktree `D:\goai\mp-worktrees\console`，基线 `0ae8843`）
+**更新**：2026-09-23（第五轮：页面级契约验收完成——PG 联调待接口）｜ **分支**：`feat/admin-console`（worktree `D:\goai\mp-worktrees\console`，基线 `0ae8843`）
 **负责目录**：`console/`（前后端）+ `docs/productization/console/`。未改动 gh-bridge / workflow-controller / approval / rag / costmeter / 共享数据结构 / r3work。
+
+## 第五轮：页面级接入准备 + 契约 fixture 页面验收（2026-09-23）
+
+后端仍未交付 PG 只读 HTTP（HEAD 4a686a8 复核：仅 console_v3 只读 /api/runs；PG 为存储层+读模型函数）。
+本轮完成"页面级接入准备"并以 dev-only fixture harness 完成**正式契约 HTTP fixture 页面验收**（非 PG 接通、非真实运行）。
+
+| 工作项 | 状态 | 说明 |
+|---|---|---|
+| 适配层接入盘点 | ✅ | 上轮 api-live 仅 fetchSession 进页面路径，其余仅测试调用；本轮补齐页面级接入 |
+| 数据源注入机制 | ✅ | `src/data/`（config/pr-view/sources）：模式由提供服务的后端经 /api/health `sources` 声明（console 后端已扩展该声明）；sessionStorage/URL 无权授予 contract/live；声明缺失保守回退 snapshot |
+| 页面双来源 | ✅ | ReposPage/RepoPrsPage/PrDetailPage 经 `useDataSource` 消费统一数据源：snapshot（原路径不变）/ contract（/api/pulls 契约形状 → PrView 映射）；运行历史导航按能力呈现（契约源隐藏 + 路由如实说明） |
+| 契约语义 | ✅ | contract 视图：current_head_sha=权威；latest_result.stale→"旧 head 结论"标注；当前 head RUNNING 无完成结果→明确"进行中，不用旧结果顶替"；has_pending_tickets=后端权威真实待办；历史 HIGH 只标"历史记录中需关注"不生成当前待办 |
+| fixture harness | ✅ | `dev/contract-fixture-harness.mjs`（NODE_ENV=production 拒启；无存储/授权/审批状态机；合成数据）：静态 dist + /api/health + session/capabilities/pulls/pulls/:n + 合成补丁文件 |
+| 浏览器页面验收 | ✅ | harness :4192 实测：仓库→PR 列表→详情→历史→返回；跨仓库同编号 PR #9 不串数据（widget/other 深链接互证）；stale/进行中/权威 head 场景正确；补丁下载入口与"下载≠已应用"、缺失项如实显示不制造空链接；fixture 标识常驻（模式 chip + 会话 chip + 详情 chip）；截图 4 张 `verification/console-contract-alignment/` |
+| snapshot 回归 | ✅ | 4730 演示预览：仓库/待处理/运行历史导航与数据照常（双模式互不干扰） |
+| 测试 | ✅ 65 项 | 新增 data-layer 8 项（配置回退/源分离互不调用/失败不回退不冒充空数据/竞态守卫/契约视图映射/pending_tickets 权威）；56+8 passed + 1 门控跳过 |
+| 本轮修复 | ✅ | harness 数据构造缺陷：current_head_sha 曾由 latest_result 派生（违背契约权威语义）——改为显式声明并核对前端展示与接口一致 |
+
+**仍未接通（如实）**：与第四轮一致——真实登录（后端+D-9）、/api/pulls 正式实现（PG HTTP）、真实审批、站内合并。
+本轮结论 = **页面级契约验收完成，PG 联调待接口**。
+
+---
 
 ## 第四轮：契约对齐 + 接线准备（2026-09-23）
 

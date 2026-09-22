@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useState } from 'react';
 import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Activity, Database, FolderGit2, Hand, History, LogOut, Settings } from 'lucide-react';
 import { api } from './api.js';
 import { AuthProvider, useAuth } from './auth.jsx';
 import { BrandMark, ErrorBoundary } from './ui.jsx';
+import { useDataSource, useRuntimeConfig } from './hooks.js';
 import RunsPage from './pages/RunsPage.jsx';
 import RunDetailPage from './pages/RunDetailPage.jsx';
 import ReposPage from './pages/ReposPage.jsx';
@@ -15,6 +16,29 @@ import SettingsPage from './pages/SettingsPage.jsx';
 import LoginPage from './pages/LoginPage.jsx';
 import ApprovalsPage from './pages/ApprovalsPage.jsx';
 
+// 可信运行配置上下文：数据源模式由提供服务的后端声明（/api/health），
+// sessionStorage/URL 无权改变（见 data/config.js）。
+const ConfigCtx = createContext(null);
+export function useAppConfig() {
+  return useContext(ConfigCtx);
+}
+
+function Configured() {
+  const { config } = useRuntimeConfig();
+  if (!config) {
+    return (
+      <div className="login-wrap" role="status">
+        <div className="login-card"><p className="login-note">正在读取服务配置…</p></div>
+      </div>
+    );
+  }
+  return (
+    <ConfigCtx.Provider value={config}>
+      <Guarded />
+    </ConfigCtx.Provider>
+  );
+}
+
 const NAV = [
   { to: '/repos', label: '仓库', icon: FolderGit2, end: true },
   { to: '/pending', label: '待处理', icon: Hand, end: false },
@@ -24,9 +48,12 @@ const NAV = [
 ];
 
 function TopbarContext() {
-  // 数据模式 + 采集范围：静态事实标注，完整说明见设置页
+  const config = useAppConfig();
+  // 数据模式 + 采集范围：来自可信服务配置（不客户端猜测）
   const [range, setRange] = useState(null);
+  const snapshot = config?.mode !== 'contract';
   useEffect(() => {
+    if (!snapshot) return undefined;
     api.runs({ limit: 200 }).then((d) => {
       const times = (d.items ?? []).map((r) => r.created_at).filter(Boolean).sort();
       if (times.length) {
@@ -34,7 +61,18 @@ function TopbarContext() {
         setRange(`${short(times[0])} ~ ${short(times[times.length - 1])}`);
       }
     }).catch(() => {});
-  }, []);
+    return undefined;
+  }, [snapshot]);
+  if (!snapshot) {
+    return (
+      <span className="mode-wrap">
+        <span className="mode-chip" title="数据源：正式契约 v2 端点（API-AUTH-MERGE-V0）。data_mode=fixture 时全部数据为合成 fixture——非真实运行、非历史快照。">
+          <span className="mode-dot" aria-hidden />
+          <strong>{config.dataMode === 'fixture' ? '契约数据源 · Fixture' : '契约数据源 · Live'}</strong>
+        </span>
+      </span>
+    );
+  }
   return (
     <span className="mode-wrap">
       <span className="mode-chip" title="数据模式 snapshot：全部数据来自仓库内锁定的真实历史运行证据包（SHA256SUMS 校验、只读）。live 实时模式未接入；服务仅监听 127.0.0.1 回环地址，无写操作接口，不下发凭证。">
@@ -48,11 +86,20 @@ function TopbarContext() {
 
 function AuthChip() {
   const auth = useAuth();
+  const config = useAppConfig();
+  // fixture 验收环境（可信配置声明 data_mode=fixture）：会话即合成用户，标识常驻可见
+  const fixtureSession = config?.dataMode === 'fixture' && auth.status === 'authed';
   if (auth.status === 'authed') {
     return (
       <span className="auth-chip">
-        <span className="auth-user">{auth.user?.name ?? auth.user?.login ?? '已登录'}</span>
-        <button type="button" className="btn btn-ghost btn-sm" onClick={auth.refresh} title="登出需后端会话接口（C-8 提案）">
+        {fixtureSession ? (
+          <span className="chip auth-demo-chip" title="Fixture 验收会话：合成用户（非真实 GitHub 身份），数据为合成 fixture——仅开发/测试环境使用">
+            Fixture 验收会话 · 非真实
+          </span>
+        ) : (
+          <span className="auth-user">{auth.user?.display_name ?? auth.user?.github_login ?? auth.user?.name ?? '已登录'}</span>
+        )}
+        <button type="button" className="btn btn-ghost btn-sm" onClick={auth.refresh} title="登出需后端会话接口（契约 v2 POST /api/auth/logout）">
           <LogOut size={12} strokeWidth={1.75} aria-hidden /> 退出
         </button>
       </span>
@@ -94,7 +141,11 @@ function topbarCtx(pathname) {
 
 function Shell() {
   const loc = useLocation();
+  const config = useAppConfig();
+  const { source } = useDataSource(config);
   const ctx = topbarCtx(loc.pathname);
+  // 契约数据源不提供 run 级全量历史（那是 snapshot 取证视图）——导航按能力呈现
+  const nav = NAV.filter((n) => !(source.kind === 'contract' && n.to === '/runs'));
 
   return (
     <div className="app">
@@ -107,7 +158,7 @@ function Shell() {
           </div>
         </div>
         <nav aria-label="主导航">
-          {NAV.map((n) => (
+          {nav.map((n) => (
             <NavLink
               key={n.to}
               to={n.to}
@@ -151,21 +202,21 @@ function Shell() {
         <main className="content" key={loc.pathname}>
           <ErrorBoundary>
             <Routes>
-            <Route path="/" element={<Navigate to="/repos" replace />} />
-            <Route path="/repos" element={<ReposPage />} />
-            <Route path="/repos/:owner/:name" element={<RepoPrsPage />} />
-            <Route path="/repos/:owner/:name/pr/:prNumber" element={<PrDetailPage />} />
-            <Route path="/pending" element={<PendingPage />} />
-            <Route path="/knowledge" element={<KnowledgePage />} />
-            <Route path="/runs" element={<RunsPage />} />
-            <Route path="/runs/:packId" element={<RunDetailPage />} />
-            <Route path="/approvals" element={<ApprovalsPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
-            <Route path="/login" element={<Navigate to="/repos" replace />} />
-            <Route path="/rag" element={<Navigate to="/knowledge" replace />} />
-            <Route path="/skills" element={<Navigate to="/knowledge" replace />} />
-            <Route path="/usage" element={<Navigate to="/knowledge" replace />} />
-            <Route path="*" element={<Navigate to="/repos" replace />} />
+              <Route path="/" element={<Navigate to="/repos" replace />} />
+              <Route path="/repos" element={<ReposPage />} />
+              <Route path="/repos/:owner/:name" element={<RepoPrsPage />} />
+              <Route path="/repos/:owner/:name/pr/:prNumber" element={<PrDetailPage />} />
+              <Route path="/pending" element={<PendingPage />} />
+              <Route path="/knowledge" element={<KnowledgePage />} />
+              <Route path="/runs" element={<RunsHistoryRoute />} />
+              <Route path="/runs/:packId" element={<RunDetailPage />} />
+              <Route path="/approvals" element={<ApprovalsPage />} />
+              <Route path="/settings" element={<SettingsPage />} />
+              <Route path="/login" element={<Navigate to="/repos" replace />} />
+              <Route path="/rag" element={<Navigate to="/knowledge" replace />} />
+              <Route path="/skills" element={<Navigate to="/knowledge" replace />} />
+              <Route path="/usage" element={<Navigate to="/knowledge" replace />} />
+              <Route path="*" element={<Navigate to="/repos" replace />} />
             </Routes>
           </ErrorBoundary>
         </main>
@@ -174,10 +225,25 @@ function Shell() {
   );
 }
 
+// 运行历史是 snapshot 取证视图：契约数据源不提供 run 级全量历史，如实说明而非伪装空列表
+function RunsHistoryRoute() {
+  const config = useAppConfig();
+  const { source } = useDataSource(config);
+  if (source.kind === 'contract') {
+    return (
+      <div className="state-box state-warn" role="status">
+        运行历史为 snapshot 取证视图——契约数据源不提供 run 级全量历史。PR 维度历史在各 PR 详情的
+        "运行历史"展开中查看。返回<Link to="/repos">仓库工作台</Link>。
+      </div>
+    );
+  }
+  return <RunsPage />;
+}
+
 export default function App() {
   return (
     <AuthProvider>
-      <Guarded />
+      <Configured />
     </AuthProvider>
   );
 }

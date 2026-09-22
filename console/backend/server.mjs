@@ -78,6 +78,14 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
       data_mode: 'snapshot',
       data_mode_note: '真实历史运行证据包（锁定只读），非实时数据；live 模式未接入',
       live: { configured: false, note: '实时接口（服务器 PG github_deliveries / MinIO meta）未接入，见 INTEGRATION-REQUESTS.md' },
+      // 可信数据源配置：前端据此选择数据源（页面不做环境判断，sessionStorage/URL 无权改变）。
+      // 契约 v2（API-AUTH-MERGE-V0 @ 7ccecb9）端点由正式后端交付后，由部署配置把 primary 切为
+      // 'contract' 并给出 base——控制台前端不会自行探测或猜测切换。
+      sources: {
+        primary: 'snapshot',
+        snapshot: { available: true, note: '锁定证据包（真实历史运行，只读）' },
+        contract_v2: { available: false, reason: 'not_delivered', note: '等待正式后端 HTTP 实现（FRONTEND-HANDOFF §7）' },
+      },
       evidence_root: evidenceRoot,
       runs: packs.length,
       packs_with_sums: withSums,

@@ -1,9 +1,10 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
   ArrowRight, ArrowUpRight, Clock, FileSearch, Hand, ShieldCheck, Workflow,
 } from 'lucide-react';
-import { useAllRuns } from '../hooks.js';
+import { useAppConfig } from '../App.jsx';
+import { useDataSource, useSourceQuery } from '../hooks.js';
 import { groupRunsByPr } from '../pr-model.js';
 import { ExecutionBadge, VerdictBadge, GateBadge, PublishBadge } from '../status.jsx';
 import { fmtTime } from '../format.js';
@@ -20,15 +21,35 @@ function MiniState({ icon: Icon, label, children }) {
   );
 }
 
-// PR 详情：以 PR 为主对象，run 降为历史。
-// 摘要一律标注基于哪条记录（最近/最近完成）；审批与合并是两件事，站内均未启用。
+// PR 详情入口：按数据源分派（页面结构两种来源共用，数据形状各自映射）。
 export default function PrDetailPage() {
   const params = useParams();
   const owner = params.owner ?? '';
   const name = params.name ?? '';
   const prNumber = Number(params.prNumber);
+  const config = useAppConfig();
+  const { source } = useDataSource(config);
+
+  if (source.kind === 'contract') {
+    return <ContractPrDetail owner={owner} name={name} prNumber={prNumber} />;
+  }
+  return <SnapshotPrDetail owner={owner} name={name} prNumber={prNumber} />;
+}
+
+// ---- snapshot 源：历史证据包聚合（原有路径） ----
+
+function SnapshotPrDetail({ owner, name, prNumber }) {
   const repo = `${owner}/${name}`;
-  const { data, error, retry } = useAllRuns();
+  const { data, error, retry } = useSourceQuery(async () => {
+    const res = await fetch('/api/runs?limit=200', { credentials: 'same-origin' });
+    if (!res.ok) {
+      const body = await res.json().catch(() => null);
+      const err = new Error(body?.error?.message ?? `HTTP ${res.status}`);
+      err.status = res.status;
+      throw err;
+    }
+    return res.json();
+  }, [repo, prNumber]);
 
   const pr = useMemo(() => groupRunsByPr(data?.items ?? [])
     .find((p) => p.repo === repo && p.prNumber === prNumber), [data, repo, prNumber]);
@@ -173,6 +194,172 @@ export default function PrDetailPage() {
             ))}
           </div>
         </details>
+      </section>
+    </div>
+  );
+}
+
+// ---- contract 源：正式契约 v2 /api/pulls/:n（当前由 fixture harness 供数） ----
+
+function ContractPrDetail({ owner, name, prNumber }) {
+  const repo = `${owner}/${name}`;
+  const config = useAppConfig();
+  const { source } = useDataSource(config);
+  const [attempt, setAttempt] = useState(0);
+  const q = useSourceQuery(() => source.getPr(repo, prNumber), [source, repo, prNumber, attempt]);
+
+  const repoTo = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`;
+
+  if (q.status === 'error') {
+    return (
+      <div>
+        <div className="breadcrumb"><Link className="crumb-back" to={repoTo}>返回 {repo}</Link></div>
+        {q.error?.status === 404 ? (
+          <div className="state-box state-warn">
+            契约端点未提供 {repo} PR #{prNumber || '？'} 的数据（404）——不回退到历史快照数据。
+          </div>
+        ) : (
+          <ErrorBox error={q.error} onRetry={() => setAttempt((n) => n + 1)} />
+        )}
+      </div>
+    );
+  }
+  if (q.status !== 'done') return <div className="detail-skeleton"><SkeletonRows rows={6} /></div>;
+
+  const { view, detail } = q.data ?? {};
+  if (!view) {
+    return (
+      <div>
+        <div className="breadcrumb"><Link className="crumb-back" to={repoTo}>返回 {repo}</Link></div>
+        <Empty>契约端点未返回该 PR 的数据</Empty>
+      </div>
+    );
+  }
+
+  const lr = detail?.latest_result ?? null;
+  const lrun = detail?.latest_run ?? null;
+  const runs = detail?.runs ?? [];
+  const currentHead = detail?.current_head_sha ?? view.currentHead;
+  const githubUrl = detail?.merge_panel?.github_url ?? view.prUrl;
+  const patch = detail?.patch_delivery ?? null;
+  const basis = !lr
+    ? '当前 head 暂无完成结果'
+    : (lr.stale
+      ? `旧 head 结论（head ${(lr.head_sha ?? '').slice(0, 8)}）——当前 head 无完成结果，以下不代表当前状态`
+      : '当前 head 的完成结果');
+
+  return (
+    <div>
+      <div className="breadcrumb">
+        <Link to={repoTo} className="crumb-back">{repo}</Link>
+        <span className="crumb-sep">/</span>
+        <span className="crumb-current">PR #{view.prNumber}</span>
+      </div>
+
+      <div className="detail-head">
+        <div className="detail-head-main">
+          <h1 className="detail-title">{view.title ?? `PR #${view.prNumber}`}</h1>
+          <div className="detail-chips">
+            <span className="chip">PR #{view.prNumber}</span>
+            <span className="chip mono">{repo}</span>
+            <span className="chip mono" title="GitHub 当前 head（权威）">当前 head {(currentHead ?? '').slice(0, 8) || '未记录'}</span>
+            <span className="chip">{runs.length} 次运行（执行历史）</span>
+            <span className="chip">{config?.dataMode === 'fixture' ? 'Fixture 数据' : '契约数据源'}</span>
+          </div>
+        </div>
+        <div className="detail-actions">
+          {githubUrl ? (
+            <a className="btn btn-primary" href={githubUrl} target="_blank" rel="noreferrer">
+              <ArrowUpRight size={13} strokeWidth={1.75} aria-hidden /> 在 GitHub 查看 PR
+            </a>
+          ) : null}
+        </div>
+      </div>
+
+      <p className="section-note">
+        数据来自正式契约端点 GET /api/pulls/{view.prNumber}（data_mode={config?.dataMode ?? 'unknown'}
+        {config?.dataMode === 'fixture' ? '——合成数据，非真实运行' : ''}）。
+        站内审批未接入（C-11 未实现）；站内合并默认关闭（C-12），仅提供 GitHub 入口。
+      </p>
+
+      <section className="section">
+        <div className="section-head">
+          <FileSearch size={14} strokeWidth={1.75} aria-hidden className="section-ico" />
+          <h3>审查摘要</h3>
+        </div>
+        <div className="finding-statement">
+          <VerdictBadge review={lr ?? view.review.review} />
+          <span className="finding-text muted">
+            {lr?.cwe ? <code className="mono">{lr.cwe}</code> : null}
+            {basis}
+            {lr ? <> · run {lr.run_id}</> : null}
+          </span>
+        </div>
+        {lrun && String(lrun.status).toUpperCase() === 'RUNNING' ? (
+          <p className="section-note">当前 head 审查进行中（run {lrun.run_id}）——完成前不显示结论，不用旧 head 结果顶替。</p>
+        ) : null}
+      </section>
+
+      <section className="section">
+        <div className="section-head">
+          <Workflow size={14} strokeWidth={1.75} aria-hidden className="section-ico" />
+          <h3>阶段与运行历史（{runs.length} 次）</h3>
+        </div>
+        <div className="panel">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>时间</th><th>run_id</th><th>class / 序列</th><th>mode</th><th>状态</th><th>结果</th><th>head</th>
+              </tr>
+            </thead>
+            <tbody>
+              {runs.map((r) => (
+                <tr key={`${r.run_id}-${r.exec_seq ?? ''}`}>
+                  <td className="cell-time">{fmtTime(r.created_at) ?? '—'}</td>
+                  <td className="mono">{r.run_id}</td>
+                  <td>{r.class ?? '—'} #{r.exec_seq ?? '—'}</td>
+                  <td><span className="chip">{r.mode ?? '—'}</span></td>
+                  <td>{r.status ?? '—'}</td>
+                  <td>{r.outcome ?? '—'}</td>
+                  <td className="mono">
+                    {(r.head_sha ?? '').slice(0, 8) || '—'}
+                    {r.stale ? <span className="muted">（旧 head）</span> : <span className="muted">（当前）</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="section-note">
+          stale 行是旧 head 的历史结果，仅作记录保留，不代表当前 head；无完成结果的 run 如实显示状态。
+        </p>
+      </section>
+
+      <section className="section">
+        <div className="section-head">
+          <ShieldCheck size={14} strokeWidth={1.75} aria-hidden className="section-ico" />
+          <h3>修复补丁与合并面板</h3>
+        </div>
+        <div className="mini-states">
+          <MiniState icon={ShieldCheck} label="补丁交付">
+            {patch?.download_url
+              ? <a className="link-btn" href={patch.download_url} download>{patch.label ?? '下载补丁'}</a>
+              : <span className="muted">补丁未生成（无下载入口）</span>}
+          </MiniState>
+          <MiniState icon={ShieldCheck} label="是否已应用到 PR">
+            {patch ? `${patch.applied_to_pr === true ? '已应用' : '未应用'}——下载 ≠ 已应用，以 GitHub 记录为准` : '未记录'}
+          </MiniState>
+          <MiniState icon={Workflow} label="站内合并">
+            {(detail?.merge_panel?.enabled ?? false)
+              ? '已启用'
+              : `关闭（${(detail?.merge_panel?.reasons ?? ['merge_disabled']).join(', ')}）— 使用 GitHub 原生合并`}
+          </MiniState>
+        </div>
+        {detail?.findings ? (
+          <p className="section-note">findings：共 {detail.findings.total} 条{detail.findings.by_source ? `（来源：${Object.entries(detail.findings.by_source).map(([k, v]) => `${k} ${v}`).join('，')}）` : ''}——明细与验证以 run 记录为准。</p>
+        ) : (
+          <p className="section-note">本响应未携带 findings 明细——如实显示，不制造入口。</p>
+        )}
       </section>
     </div>
   );

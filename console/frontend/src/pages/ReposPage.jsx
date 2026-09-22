@@ -1,19 +1,24 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, FolderGit2 } from 'lucide-react';
-import { useAllRuns } from '../hooks.js';
-import { groupRunsByPr, reposFromPrs } from '../pr-model.js';
+import { useAppConfig } from '../App.jsx';
+import { useDataSource, useSourceQuery } from '../hooks.js';
 import { fmtTime } from '../format.js';
 import { ErrorBox, SkeletonRows } from '../ui.jsx';
 
-// 仓库工作台（默认入口）。仓库列表来自历史快照 —— 标注"历史数据中的仓库"，
-// 不展示虚构的连接状态或活跃度；PR 数与 run 数分开统计。
+// 仓库工作台（默认入口）。
+// snapshot 源：仓库列表来自历史数据（标注"历史数据中的仓库"，PR/run 分口径统计）；
+// contract 源：仓库清单由可信服务配置声明（未来来自 installation 映射），无虚构计数。
 export default function ReposPage() {
-  const { data, error, retry } = useAllRuns();
-  const prs = useMemo(() => groupRunsByPr(data?.items ?? []), [data]);
-  const repos = useMemo(() => reposFromPrs(prs), [prs]);
-  const latestActivity = prs[0]?.activityAt ?? null;
-  const totalRuns = repos.reduce((n, r) => n + r.runCount, 0);
+  const config = useAppConfig();
+  const { source } = useDataSource(config);
+  const [attempt, setAttempt] = React.useState(0);
+  const reposQ = useSourceQuery(() => source.listRepos(), [source, attempt]);
+  const repos = reposQ.status === 'done' ? reposQ.data : [];
+  const contract = source.kind === 'contract';
+  const totalPrs = repos.reduce((n, r) => n + (r.prCount ?? 0), 0);
+  const totalRuns = repos.reduce((n, r) => n + (r.runCount ?? 0), 0);
+  const latestActivity = repos.reduce((a, r) => (r.activityAt && (!a || r.activityAt > a) ? r.activityAt : a), null);
 
   return (
     <div>
@@ -21,17 +26,25 @@ export default function ReposPage() {
         <div>
           <h1>仓库</h1>
           <p className="page-sub">
-            以仓库和 PR 为中心的管理工作台。当前数据模式 snapshot：以下仓库来自历史数据中的运行记录，
-            不是已授权接入的实时连接。
+            以仓库和 PR 为中心的管理工作台。
+            {contract
+              ? ' 数据源为正式契约端点'
+              : ' 当前数据模式 snapshot：以下仓库来自历史数据中的运行记录，不是已授权接入的实时连接。'}
           </p>
         </div>
       </div>
 
-      {error ? <ErrorBox error={error} onRetry={retry} /> : !data ? <SkeletonRows rows={4} cols={3} /> : (
+      {reposQ.status === 'error' ? (
+        <ErrorBox error={reposQ.error} onRetry={() => setAttempt((n) => n + 1)} />
+      ) : reposQ.status !== 'done' ? (
+        <SkeletonRows rows={4} cols={3} />
+      ) : (
         <>
           <div className="table-meta">
-            {repos.length} 个仓库 · {prs.length} 个 PR · {totalRuns} 次运行记录
-            （PR / run 分别统计）{latestActivity ? <> · 数据截至最近记录 {fmtTime(latestActivity)}</> : null}
+            {repos.length} 个仓库
+            {contract
+              ? '（由服务配置声明）'
+              : ` · ${totalPrs} 个 PR · ${totalRuns} 次运行记录（PR / run 分别统计）${latestActivity ? ` · 数据截至最近记录 ${fmtTime(latestActivity)}` : ''}`}
           </div>
           <div className="repo-list">
             {repos.map((r) => (
@@ -43,9 +56,18 @@ export default function ReposPage() {
                       {r.repo}
                     </Link>
                     <div className="repo-card-meta">
-                      <span className="chip">历史数据中的仓库</span>
-                      <span className="chip">{r.prCount} 个 PR</span>
-                      <span className="chip">{r.runCount} 次运行记录</span>
+                      {contract ? (
+                        <>
+                          <span className="chip">已接入仓库（契约数据源）</span>
+                          {config?.dataMode === 'fixture' ? <span className="chip">Fixture 数据</span> : null}
+                        </>
+                      ) : (
+                        <>
+                          <span className="chip">历史数据中的仓库</span>
+                          <span className="chip">{r.prCount} 个 PR</span>
+                          <span className="chip">{r.runCount} 次运行记录</span>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -58,7 +80,7 @@ export default function ReposPage() {
                 </Link>
               </div>
             ))}
-            {!repos.length ? <div className="state-box state-empty">历史快照中没有可聚合的 PR 运行记录</div> : null}
+            {!repos.length ? <div className="state-box state-empty">没有可展示的仓库</div> : null}
           </div>
         </>
       )}

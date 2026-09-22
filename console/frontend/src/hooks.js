@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { api } from './api.js';
+import { createDataSource } from './data/sources.js';
+import { loadRuntimeConfig } from './data/config.js';
 
-// 全量运行快照（≤200 条，loopback 单用户工具，够用且与现有页面一致）
+// 全量运行快照（snapshot 源专用：运行历史页/客户端聚合）
 export function useAllRuns() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
@@ -35,4 +37,48 @@ export function useScrollRestore() {
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
   }, [location.key]);
+}
+
+// ---- 数据源注入（页面只经此消费数据；模式来自可信服务配置，客户端无权切换） ----
+
+export function useRuntimeConfig() {
+  const [config, setConfig] = useState(null);
+  const [error, setError] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    loadRuntimeConfig().then(
+      (c) => alive && setConfig(c),
+      (e) => alive && setError(e),
+    );
+    return () => { alive = false; };
+  }, []);
+  return { config, error };
+}
+
+export function useDataSource(config) {
+  return useMemo(
+    () => (config ? { source: createDataSource(config), config } : { source: null, config }),
+    [config],
+  );
+}
+
+// 竞态守卫查询：deps 变化/卸载后，晚到的旧响应一律丢弃（不覆盖当前仓库页面）
+export function useSourceQuery(queryFn, deps, { enabled = true } = {}) {
+  const [state, setState] = useState({ status: enabled ? 'loading' : 'idle' });
+  const aliveRef = useRef(true);
+  useEffect(() => {
+    aliveRef.current = true;
+    if (!enabled) {
+      setState({ status: 'idle' });
+      return undefined;
+    }
+    setState({ status: 'loading' });
+    Promise.resolve()
+      .then(queryFn)
+      .then((data) => { if (aliveRef.current) setState({ status: 'done', data }); })
+      .catch((error) => { if (aliveRef.current) setState({ status: 'error', error }); });
+    return () => { aliveRef.current = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+  return state;
 }
