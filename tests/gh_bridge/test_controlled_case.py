@@ -63,7 +63,8 @@ class TargetFilterTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     br.target_filter_sql()
 
-    def test_any_missing_component_is_inactive(self):
+    def test_partial_config_fails_closed(self):
+        """部分配置 → ValueError 拒绝(FAIL-CLOSED,绝不退回全队列处理)。"""
         br = self.br
         full = {br.TARGET_REPO_ENV: "team/demo", br.TARGET_PR_ENV: "9",
                 br.TARGET_HEAD_ENV: HEAD}
@@ -71,8 +72,22 @@ class TargetFilterTests(unittest.TestCase):
             env = dict(full)
             env[miss] = ""
             with mock.patch.dict("os.environ", env):
-                extra, pair = br.target_filter_sql()
-            self.assertEqual((extra, pair), ("", None))
+                with self.assertRaises(ValueError):
+                    br.target_filter_sql()
+        # 空字符串同样视为未设置(部分=拒绝)
+        env = dict(full)
+        env[br.TARGET_PR_ENV] = "   "
+        with mock.patch.dict("os.environ", env):
+            with self.assertRaises(ValueError):
+                br.target_filter_sql()
+
+    def test_all_unset_is_normal_mode(self):
+        br = self.br
+        with mock.patch.dict("os.environ", {
+                br.TARGET_REPO_ENV: "", br.TARGET_PR_ENV: "",
+                br.TARGET_HEAD_ENV: ""}):
+            extra, pair = br.target_filter_sql()
+        self.assertEqual((extra, pair), ("", None))
 
     def test_process_with_target_skips_other_rows(self):
         """非目标行在认领前被查询层过滤——不认领、不终结、保持 PENDING。"""

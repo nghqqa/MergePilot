@@ -76,10 +76,12 @@ class InterfaceConformanceTests(unittest.TestCase):
             finally:
                 store.close()
 
-    def test_pg_store_is_explicit_placeholder(self):
+    def test_pg_store_connection_error_is_distinct(self):
+        """要求⑦:连接失败抛 StorageUnavailable,不伪装成业务拒绝。"""
+        from approval_pkg.pg_store import StorageUnavailable
         from approval_pkg.store import PostgreSQLTicketStore
-        with self.assertRaises(NotImplementedError):
-            PostgreSQLTicketStore("postgresql://u:p@h/db")
+        with self.assertRaises(StorageUnavailable):
+            PostgreSQLTicketStore("postgresql://u:p@nonexistent-host/db")
 
     def test_pg_store_requires_dsn(self):
         from approval_pkg.store import PostgreSQLTicketStore

@@ -27,19 +27,34 @@
 - 结论：真实案例（待授权）前需要一次**增量同步**（仅 gh_bridge.py），方案同 R4（备份→校验→复制→off 冒烟），**待新增授权执行**。
 - 明细：backend/version-delta-20260922.json
 
-## 待设计窗口决定（接口问题，非竞争方案）
+## 已完成（本轮二：PostgreSQLTicketStore 实现+真实隔离 PG 验收）
 
-1. tickets 迁移 PG 的正式列清单与类型（尤其 approval_expires_at/approved_at：timestamptz vs 保留 ISO 字符串）；
-2. 活动票唯一是否采用 PG 部分唯一索引（spike 已证明可行性，见 test_pg_cas_spike）；
-3. ticket_id 形态：保留 `tkt-` 前缀 TEXT PK 或改 UUID；
-4. v3_runs / v3_hook_errors 进入统一 PG 的命名空间与保留策略；
+设计基线：`docs/architecture-audit-20260922` 分支 e247b80 的 DATA-ARCHITECTURE-PG.md §5.4（列形状/状态枚举/部分唯一索引/ticket_audit 同事务均已明确，作为实现基线；版本已记录）。
+
+| 工作包 | 内容 | 验证 |
+|---|---|---|
+| 迁移文件 | tools/approval/pg/migrations/001_approval_tickets.sql（schema approval + tickets + ticket_audit + 夹具父表 run.repos/run.runs[仅满足 FK，正式定义属设计文档]） | 在隔离 PG 应用通过 |
+| PostgreSQLTicketStore | tools/approval/pg_store.py：实现 TicketStore 接口；复用 approval.transition 纯逻辑（零状态机重写）；参数化 SQL；显式事务+回滚；SELECT FOR UPDATE + 前置守卫 UPDATE（CAS 可判定）；ticket_audit 同事务；StorageUnavailable 与业务拒绝分离；时间统一 aware UTC（ISO 自动归一）；store.py 再导出（默认路径不切换） | 真实隔离 PG 契约集 7/7 + PG 专属 9/9 |
+| PG 专属验收 | NULL(finding_id) 唯一性[NULLS NOT DISTINCT]/非 NULL 唯一/不同目标不互斥/**跨进程竞争（spawn 独立进程）恰好一胜**/终态让位新 attempt/时区与到期边界/回滚原子性（审计与状态同事务）/最小权限（runtime 角色可 DML 不可 DDL）/审计追加核对 | test_store_pg.py 16/16 |
+| 迁移工具+演练 | migrate_tickets_sqlite_pg.py：源只读/默认 dry-run/校验（状态/形状/时间/重复活动票）/父记录缺失跳过不伪造/冲突不覆盖可重跑/逐字段核对/事务失败整体回滚 | 测试副本→隔离 PG 演练 5/5（dry-run 不写/导入核对/重跑幂等/非法源中止/孤儿不伪造） |
+
+## 已知偏离与实现期修复（记录，不属设计窗口拍板范围外自作主张）
+
+1. **NULLS NOT DISTINCT（已偏离设计稿并登记）**：设计稿的部分唯一索引未处理 finding_id=NULL（PG 默认 NULL-distinct ⇒ NULL 活动票不受唯一约束）。实现采用 `NULLS NOT DISTINCT`（PG15+，运行环境 PG16 满足）。**待设计窗口确认**；否决则替代=两个部分唯一索引。
+2. **实现期真实缺陷修复**（非测试放宽）：
+   - `create()` 未把 approval_expires_at 传入票据（到期永为 NULL ⇒ 永不过期）——已修；
+   - PG TIMESTAMPTZ 返回 datetime 与调用方 ISO 字符串 now 不可比——transition 入口归一化；
+   - `_expired` 源头容错 ISO 字符串/naive UTC（纯逻辑小改，语义不变，SQLite/PG 共同受益）。
+
+## 待设计窗口决定（剩余接口问题）
+
+4. v3_runs / v3_hook_errors 进入统一 PG 的命名空间与保留策略（RunStore PG 适配器的唯一前置）；
 5. 预算台账落 PG 表还是仅外部计量（D-4/D-5 决策依赖）；
 6. case-pg 的 knowledge 检索数据是否并入统一 PG（pgvector），迁移时机。
 
-## PostgreSQLTicketStore 实现前置条件
+## RunStore 后续（未实现，前置=上述#4）
 
-- 设计窗口契约确认上述 1–3（表结构级）后即可实现：语义层直接复用 approval.transition（零改动），PG 侧仅需 `_Txn`（BEGIN IMMEDIATE → `SELECT ... FOR UPDATE`/事务隔离映射）与 DSN 连接；契约集（store_contract.py）原样复用即为验收。
-- 环境已就绪（隔离容器 55432），无外部阻塞。
+RunStore 契约测试可按 store_contract 同模式抽取；同 delivery 的 legacy/shadow 关联、同 head 重跑与 shadow→on 区分、run/stage/attempt 关系——**契约未明确前不自行实现**（提示词七节）。
 
 ## 待外部输入（真实案例线，集中列出）
 

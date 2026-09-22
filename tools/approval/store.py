@@ -39,22 +39,32 @@ class TicketStore(Protocol):
 
 
 class PostgreSQLTicketStore:
-    """PostgreSQL 实现占位(多 Controller/多用户/共享部署的目标形态)。
+    """PostgreSQL 实现(2026-09-22 设计契约 e247b80 §5.4 落地,见 pg_store.py)。
 
-    迁移设计(不在 V0 实现):
-    - 表形状沿用 tools/approval/store_sqlite.py 的 tickets 列;
-    - 活动票唯一:`CREATE UNIQUE INDEX ... ON tickets(run_id, action, finding_id)
-      WHERE status IN ('PENDING','APPROVED','EXECUTING')`(PG 部分索引,同形);
-    - 事务:`SELECT ... FOR UPDATE` 或 `UPDATE ... WHERE status=<prev>`(rowcount CAS),
-      与 SQLite 版同一语义;连接 DSN 形状与 case-pg/receiver 惯例一致;
-    - 演进触发条件:多 Controller(cutover)、多部署实例或共享部署立项时实现,
-      届时 M2 语义单测(approval.transition 层)与 store 契约测试全部复用。
+    保留原占位签名兼容:空 DSN → ValueError;实现本体在 tools/approval/pg_store.py。
     """
 
     def __init__(self, dsn: str):
         if not dsn:
             raise ValueError("PostgreSQLTicketStore 需要 DSN")
+        from .pg_store import PostgreSQLTicketStore as _Impl
+        self._impl = _Impl(dsn)
         self.dsn = dsn
-        raise NotImplementedError(
-            "PostgreSQLTicketStore 是迁移占位:多 Controller/共享部署时实现"
-            "(见 ARCHITECTURE-V3 §6);V0 使用 SQLiteTicketStore")
+
+    def create(self, binding, attempt_no: int = 1, created_at: str = "",
+               created_by_run: str = "",
+               approval_expires_at: Any = None):
+        return self._impl.create(binding, attempt_no, created_at,
+                                 created_by_run, approval_expires_at)
+
+    def get(self, ticket_id: str):
+        return self._impl.get(ticket_id)
+
+    def active_for(self, binding):
+        return self._impl.active_for(binding)
+
+    def transition(self, ticket_id: str, event: str, **kw: Any):
+        return self._impl.transition(ticket_id, event, **kw)
+
+    def close(self):
+        self._impl.close()

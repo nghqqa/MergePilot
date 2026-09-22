@@ -76,13 +76,18 @@ TARGET_HEAD_ENV = "MERGEPILOT_TARGET_HEAD"  # 且只认领该 head(空提交产�
 
 
 def target_filter_sql():
-    """定向认领过滤(受控案例用):repo+PR+完整 head 三者都设置才激活。
-    未匹配行保持 PENDING 不动(跳过而非终结);不触碰 already_processed 语义。"""
+    """定向认领过滤(受控案例用,FAIL-CLOSED):三项全设=过滤;三项全 unset=普通模式;
+    部分设置/空值/非法值 → ValueError 拒绝启动(绝不退回全队列处理)。"""
     repo = os.environ.get(TARGET_REPO_ENV, "").strip()
     pr = os.environ.get(TARGET_PR_ENV, "").strip()
     head = os.environ.get(TARGET_HEAD_ENV, "").strip().lower()
-    if not repo or not pr or not head:
+    set_count = sum(1 for v in (repo, pr, head) if v)
+    if set_count == 0:
         return "", None
+    if set_count != 3:
+        raise ValueError(
+            "定向认领配置不完整(MERGEPILOT_TARGET_REPO/PR/HEAD 需三项同时设置,"
+            "收到 %d/3)——拒绝退回全队列处理" % set_count)
     if not re.fullmatch(r"[A-Za-z0-9._-]+/[A-Za-z0-9._-]+", repo):
         raise ValueError("MERGEPILOT_TARGET_REPO 格式非法: %r" % repo)
     if not re.fullmatch(r"\d+", pr):
@@ -125,13 +130,15 @@ def claim(d):
 
 
 def finish(d, ok, note="", cid=None):
-    """终结投递。带 cid 时精确匹配(租约正确性);不带时仅限认领前拒绝路径。"""
+    """终结投递。带 cid 时精确匹配(租约正确性);不带时仅限认领前拒绝路径——
+    按 status='PENDING' AND claim_id IS NULL 终结(F1 修复:原 LIKE '%-bridge%'
+    对 PENDING 行(claim_id NULL)永不匹配,导致拒绝行静默滞留被反复轮询)。"""
     status = "PROCESSED" if ok else "ERROR"
     where = "delivery_id='%s'" % d["delivery_id"]
     if cid:
         where += " AND claim_id='%s'" % cid
     else:
-        where += " AND claim_id LIKE '%-bridge%'"
+        where += " AND status='PENDING' AND claim_id IS NULL"
     q = ("UPDATE public.github_deliveries SET status='%s', processed_at=now(), "
          "error='%s' WHERE %s" % (status, note.replace("'", " ")[:180], where))
     return ssh_psql(q)
@@ -990,6 +997,11 @@ def main():
             print(json.dumps(d, ensure_ascii=False))
         return
     log = lambda *m: print(time.strftime("[%H:%M:%S]"), *m, flush=True)
+    try:
+        target_filter_sql()   # FAIL-CLOSED:部分定向配置在启动时即拒绝
+    except ValueError as e:
+        print("TARGET CONFIG ERROR:", e, flush=True)
+        sys.exit(2)
     # 启动即接管崩溃残留的孤儿租约(场景1:认领后崩溃可恢复)
     try:
         stale = take_over_stale()

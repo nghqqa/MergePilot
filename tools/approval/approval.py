@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import copy
+import datetime as dt
 import hashlib
 import json
 import re
@@ -138,8 +139,26 @@ def create_ticket(binding: Binding, attempt_no: int = 1, created_at: str = "",
 
 
 def _expired(ticket: Ticket, now: Any) -> bool:
-    return (ticket.approval_expires_at is not None and now is not None
-            and now >= ticket.approval_expires_at)
+    """now 与 expires 需同一时序域:ISO 字符串与 aware datetime 均可(统一解析为 UTC)。"""
+    if ticket.approval_expires_at is None or now is None:
+        return False
+    now_v = _coerce_dt(now)
+    exp_v = _coerce_dt(ticket.approval_expires_at)
+    if now_v is None or exp_v is None:
+        return False
+    return now_v >= exp_v
+
+
+def _coerce_dt(v: Any) -> Optional[dt.datetime]:
+    if isinstance(v, dt.datetime):
+        return v if v.tzinfo else v.replace(tzinfo=dt.timezone.utc)
+    if isinstance(v, str):
+        try:
+            d = dt.datetime.fromisoformat(v.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        return d if d.tzinfo else d.replace(tzinfo=dt.timezone.utc)
+    return None
 
 
 # ── 状态机(CAS 转移) ─────────────────────────────────────────────────────

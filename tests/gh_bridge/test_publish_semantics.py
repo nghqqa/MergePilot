@@ -96,7 +96,41 @@ class ClaimFinishTests(unittest.TestCase):
         self.assertIn("claim_id='abc-bridge-0000ffff'", q)
         self.assertNotIn("LIKE", q)
 
-    def test_finish_prec_claim_path_keeps_like(self):
+    def test_finish_no_cid_terminates_pending_row_f1(self):
+        """F1 修复:预认领拒绝(无 cid)按 status='PENDING' AND claim_id IS NULL
+        终结——原 LIKE '%-bridge%' 对 PENDING 行(claim NULL)静默无效。"""
+        br = self.br
+        captured = []
+
+        def fake_ssh(q):
+            captured.append(q)
+            return "UPDATE 1"
+
+        with mock.patch.object(br, "ssh_psql", side_effect=fake_ssh):
+            ok = br.finish(_delivery(), False, "repo not in bridge allowlist")
+        self.assertTrue(ok)
+        q = captured[0]
+        self.assertIn("status='PENDING' AND claim_id IS NULL", q)
+        self.assertNotIn("LIKE", q)
+
+    def test_finish_no_cid_does_not_touch_claimed_row(self):
+        """无 cid 的拒绝不得波及已被认领(RUNNING/带 cid)的行。"""
+        br = self.br
+        captured = []
+
+        def fake_ssh(q):
+            captured.append(q)
+            return "UPDATE 1"
+
+        with mock.patch.object(br, "ssh_psql", side_effect=fake_ssh):
+            br.finish(_delivery(), False, "reject", cid=None)
+        q = captured[0]
+        self.assertIn("claim_id IS NULL", q)   # 只会命中未认领行
+
+    def test_finish_no_cid_uses_pending_null_predicate(self):
+        """F1 修复(设计审计):无 cid 终结按 PENDING+claim NULL 定位——
+        原 LIKE '%-bridge%' 对 PENDING 行(claim NULL)永不匹配,拒绝行静默滞留。"""
+        br = self.br
         captured = []
 
         def fake_ssh(q):
@@ -106,8 +140,12 @@ class ClaimFinishTests(unittest.TestCase):
         d = _delivery()
         with mock.patch.object(self.br, "ssh_psql", side_effect=fake_ssh):
             self.br.finish(d, False, "not in allowlist")
-        self.assertIn("LIKE '%-bridge%'", captured[0])
+        q = captured[0]
+        self.assertIn("status='PENDING' AND claim_id IS NULL", q)
+        self.assertNotIn("LIKE", q)
 
+    # (原 test_finish_prec_claim_path_keeps_like 已被 F1 修复取代:
+    #  无 cid 终结按 PENDING+claim NULL 定位,见 test_finish_no_cid_*)
     def test_already_processed_guard(self):
         d = _delivery()
         captured = []
