@@ -1,64 +1,71 @@
 # MergePilot 产品化推进状态（STATUS）
 
-**更新**：2026-09-22（第三轮：RAG 审计与接入闭环）｜ **分支**：`chore/backfill-r3-ops` ｜ 授权范围：M1→M4 至 V0 技术就绪
+**更新**：2026-09-22（第四轮：架构 v3 骨架）｜ **分支**：`chore/backfill-r3-ops` ｜ 授权范围：M1→M4 至 V0 技术就绪
 
-## 本轮新增：RAG 审计 + V0 最小闭环（详见 RAG-AUDIT.md / ACCEPTANCE-RAG）
+## 本轮新增：架构 v3 分级并行审查骨架（设计见 ARCHITECTURE-V3.md，验收见 ACCEPTANCE-ARCHV3）
 
 | 工作项 | 状态 | 说明 |
 |---|---|---|
-| RAG 全链路审计 | ✅ 完成 | RAG-AUDIT.md：A 知识链（rag_retrieve→rag-live BM25→org 标准语料）**已接线且有历史运行/消费证据**（64 次调用、result.md 实际引用）；当前服务未运行；失败语义与版本绑定缺失 |
-| 语料事实源入库 + 快照版本 | ✅ 实现+测试 | tools/rag/corpus/（snapshot fd34c304…，与运行副本实测同字节）+ corpus_tool（内容寻址/幂等导入/原子更新）+ live/ 服务事实源入库 |
-| 桥派发绑定 RAG 快照（RAG-4） | ✅ 实现+测试 | manifest.rag.snapshot_id/chunks/data_mode/service_state_at_dispatch/policy |
-| RAG_REQUIRED 派发门（RAG-6） | ✅ 实现+测试 | 默认 advisory（现状语义，降级经 manifest 可见）；=1 时快照不可读或服务不可达→拒派发 ERROR fail-closed |
-| 隔离集成测试（第 2 层） | ✅ 12 测试 | 真实 rag-live-server.mjs 进程：已知命中/合法空/审计链/快照一致/注入语料形状/不可达/变更即新快照 |
-| 票据存储 P-1 | ✅ 已决策+实现 | **SQLite WAL**（推翻 MinIO 提案）：跨连接竞争 CAS/崩溃重开/partial UNIQUE 幂等，7 测试；见 DECISIONS P-1 |
-| 票据操作面 gate_cli | ✅ 实现+测试 | 签发/批准/拒绝/查看/执行前校验 CLI（6 测试）；未拍板状态显式提示（D-1 note），不接真实执行 |
-| 预算重试语义 | ✅ 复查+固化 | 预留去重≠成本去重，累计结算契约入测试（DECISIONS #11） |
-| B 案例链排查 | ✅ 勘误完成 | 审计 JSONL 的 skill_* document_count 恒为 0（模板未填），前判"零命中"不成立；命中情况未知，取证列入真实案例轮 |
+| 架构 v3 文档与状态机 | ✅ 完成 | 11 步流水线；finding validation 与 patch validation 为两个独立阶段；维度状态×run outcome 正交 |
+| 风险分级纯逻辑 | ✅ 实现+测试 | Trivial/Lite/Full 可配置规则；敏感路径命中无条件 FULL+人工强制复核；无 LLM 调度 |
+| 调度器接口 | ✅ 实现+测试 | DispatchPlanner 唯一调度权；多 PR 上限 1 固化；审查器并发 2（barrier 并行证明）；串行模式 |
+| 聚合器+verifier 接口 | ✅ 实现+测试 | 去重保源（精确+Jaccard 近似）；verifier 输入类型构造性隔离推理字段 |
+| 降级与预算 | ✅ 实现+测试 | 关键审查器超时→MANUAL 不通过；非关键超时→PARTIAL 可发布；重试预算/全局预算钩子 |
+| 控制台字段契约 | ✅ 实现+测试 | 部分完成/降级/超时原因逐字段可见，禁止单一绿色 |
+| TicketStore 抽象 | ✅ 实现+测试 | Protocol 固化五操作；SQLite 单实例边界；PG 迁移占位（DECISIONS P-1/#12） |
+| feature flag | ✅ 默认关 | MERGEPILOT_REVIEW_V3；v3 未接线 bridge，旧串行链未删 |
+| 真实 Agent 接入（v3 第 11 步） | ⬜ 待授权 | R1/R2 批复后最后执行 |
 
-## 阻塞重新分类（取代上轮"全部待拍板"口径）
+## 历史工作项（第二/三轮）
+
+| 工作项 | 状态 | 说明 |
+|---|---|---|
+| RAG 全链路审计 + V0 最小闭环 | ✅ 第1/2层 | RAG-AUDIT.md；语料快照绑定（fd34c304…）+ RAG_REQUIRED fail-closed 门；第3/4层待授权 |
+| M2 审批：规格+纯逻辑+SQLite 存储+CLI | ✅ 实现层 | 47 测试；真实审批主体/动作启用待 D-1/D-2/D-3 |
+| 成本计量脚手架 | ✅ 逻辑层 | 预留/重试累计/结算/并发/崩溃 17 测试；未接真实路径 |
+| M1 桥加固（发布语义/恢复/互斥契约） | ✅ 单测级 | 46 测试；场景 3/6/7/9 真实实证待授权 |
+
+## 阻塞重新分类（第三轮定稿）
 
 | 项 | 分类 | 处置 |
 |---|---|---|
-| P-1 票据存储 | B 普通工程选择 | **本轮已自主决策并实现**（SQLite WAL，可逆，不涉共享环境） |
-| D-1 审批动作集 / D-2 审批人 / D-3 TTL | D 真业务决策 | 机制已全部实现且拒绝未配置状态（approved_by 非空强制、动作集白名单、TTL 参数化）；**启用**仍需用户定 |
-| 预算金额 | D 真业务决策 | 接口/持久化/预留/结算/并发/崩溃全部已实现+测试；未配置不产生任何消费授权 |
-| R1-R4（真实集成轮） | C/D 外部授权 | 待批；每场景独立触发条件与判据见 INTEGRATION-AUTH-REQUESTS，**不预设一轮完成全部 M1 验收** |
-| R5 镜像层改动 | C 需授权（worker 重启） | 只读探查已完成（RAG/manifest 已受益）；镜像改动待批 |
-| R6 usage 源 | C 需选路+权限 | 二选一待用户选 |
-| R7 语料部署同步 | C 需授权（本地部署操作） | 已列清单：备份/导入/回退齐备 |
+| P-1 票据存储 | B 已自主决策 | SQLite WAL + TicketStore 接口（PG 迁移路径固化） |
+| D-1/D-2/D-3 审批政策 | D 真业务决策 | 机制全实现且拒绝未配置状态；启用待用户 |
+| 预算金额 | D 真业务决策 | 接口全实现；未配置不产生消费授权 |
+| R1-R4/R7 真实环境 | C/D 外部授权 | 待批；每场景独立判据 |
+| R5 镜像层 / R6 usage 源 | C 需授权/选路 | 待批 |
 | 密钥轮换 | D 用户挂起中 | M4 出口条件 |
 
 ## 里程碑真实状态
 
-- **M1**：单测级收口 + 契约完备；场景 3/6/7/9 的**真实环境实证未做**——未通过，不因桥加固冒充接管。
-- **M2**：规格+纯逻辑+SQLite 存储+隔离测试完成；门 Web 页、真实审批主体与动作启用未做——未通过。
-- **M3**：未开始（污染测试需真实 run，待授权）。
-- **M4**：RAG 第 1/2 层达成（第 3/4 层待授权）、成本接口层达成、版本清单达成；**V0 技术就绪未达成**，真实内测未开始。
+- **M1**：单测级收口；真实实证未做——未通过。
+- **M2**：规格+存储+CLI 完成；真实审批未启用——未通过。
+- **M3**：未开始（待真实 run）。
+- **M4**：RAG 第1/2层、成本接口层、v3 本地骨架达成；**V0 技术就绪未达成**，真实内测未开始。
 
 ## 下一条可执行动作（按序）
 
-1. **门 Web 页（只读票据列表+详情）**：消费同一 SQLite 票据库；签发/批准 UI 依赖 D-1/D-2 拍板，先只读；
-2. **B 案例链命中取证**：并入 R1/R2 真实案例轮（审计字段不填命中数，需 spans 或 result.md 引用判定）；
-3. **待授权批复后**：R7（语料同步）→ R1+R2+R4 合并真实案例轮 → R3 双 head。
+1. **v3 run 记录持久化**：RunStages/console payload 落 MinIO 项目目录（随 run-manifest 同通道），供控制台读；
+2. **门 Web 页（只读）**：消费 SQLite 票据库+v3 控制台契约字段；
+3. **待授权批复后**：R7 语料同步 → R1+R2+R4 真实案例轮（含 v3 双审查器真实并行）→ R3 双 head。
 
 ## 已验证结果（证据，2026-09-22 实测 @ 工作树）
 
-- `python -X utf8 -m pytest tests/gh_bridge/ tests/rag_live/ tests/approval/ tests/costmeter/ -q` → **127 passed**（bridge 46 + rag_live 17 + approval 47 + costmeter 17；3.5s）
-- `python -X utf8 -m pytest tests/gh_app/ -q` → 816 passed, 5 skipped（上轮实测；本轮改动不触其引用面）
-- RAG 双副本快照实测一致：repo 与 r3work 语料 snapshot_id 同为 fd34c304…
-- M1 九场景：1/2/3/4/5/7/8 ✅单测；9 ✅契约+单测；6 🔒结构保证（实证待授权）
-- gh_app "831" 勘误见前版记录（821 collected 为准）
+- `python -X utf8 -m pytest tests/orchestrator/ tests/approval/ tests/gh_bridge/ tests/rag_live/ tests/costmeter/ -q` → **171 passed**（orchestrator 41 + approval 50 + bridge 46 + rag_live 17 + costmeter 17；约 4s）
+- `python -X utf8 -m pytest tests/gh_app/ -q` → 816 passed, 5 skipped（上轮实测；本轮不触其引用面）
+- RAG 双副本快照一致（fd34c304…）；M1 九场景 1/2/3/4/5/7/8 ✅单测、9 ✅契约、6 🔒结构保证
 
 ## 当前阻塞（外部条件）
 
-- R1-R4/R5/R6/R7 真实环境授权与选择；D-1/D-2/D-3 产品决策；预算金额；密钥轮换（用户挂起）。
+- R1-R7 真实环境授权与选择；D-1/D-2/D-3 产品决策；预算金额；密钥轮换（用户挂起）。
 
 ## 提交记录（本轮新增，均未 push）
 
-- 本轮 RAG+P-1 提交（见 git log）：RAG 审计/语料入库/桥快照门/隔离集成测试 + SQLite 票据存储 + 预算语义
+- TicketStore 接口抽象（SQLite 边界+PG 占位）
+- 架构 v3 骨架（风险/状态/调度/聚合/verifier/控制台契约/flag + 41 测试）
 
 ## 环境事实（2026-09-22 实测）
 
-- 本地栈 8 容器运行中；**rag-live 未运行**（netstat 4174/4184 无监听）；worker 镜像内 rag_mcp hook 最近激活 2026-09-21。
-- 桥运行副本 `D:\goai\r3work\scripts\gh_bridge.py` **本轮未同步**（repo 领先：M1 加固+manifest+RAG 门，待 R4/R7 授权后按备份/回退规程同步）。
+- 本地栈 8 容器运行中；rag-live 未运行；worker rag_mcp hook 最近激活 2026-09-21。
+- 桥运行副本 r3work **未同步**（repo 领先，待 R4/R7 授权后按备份/回退规程同步）。
+

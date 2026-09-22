@@ -70,3 +70,15 @@ repo `tools/gh-bridge/gh_bridge.py` 为事实源；**运行副本在 `D:\goai\r3
 ## #11 预算重试语义复查结论（2026-09-22 第二轮）
 
 `reserve(retry_of)` 是**预留去重**（同一逻辑调用不重复占额），不是成本豁免：真实重发的模型调用照常计费，结算必须传累计实际用量（test_retry_reissued_call_commits_cumulative_cost 固化）。脚手架仍未接真实调用路径——硬预算验收不变。
+
+## #12 架构 v3：分级并行审查流水线（2026-09-22 第四轮，已决策+骨架落地）
+
+- **动机**：固定串行 reviewer→fixer→verifier 无法表达风险分级、并行审查、独立问题验证与部分完成语义；升级为 11 步流水线（ARCHITECTURE-V3.md），**finding validation 与 patch validation 是两个不可合并的独立阶段**。
+- **风险分级**：纯规则可配置（Trivial/Lite/Full），敏感路径命中无条件 FULL + human_review_required（小 diff 不豁免）；规则随 manifest 落盘；无 LLM 调度 Agent。
+- **状态模型**：维度状态（8 态，SUCCEEDED/SKIPPED/NOT_APPLICABLE/CANCELLED 不可逆；FAILED/TIMEOUT 仅预算内可回 RUNNING）与 run 级 outcome（9 态）正交——总状态绝不覆盖维度状态；部分完成/降级强制可见。
+- **并发**：多 PR 全局上限 1（常量固化，两路并发测试通过并授权前不调高）；单 PR 审查器并发 2（可 1=串行）；worker 一次一任务；全局预算共享钩子（costmeter）。
+- **调度权唯一**：DispatchPlanner 是 v3 派发决策唯一出处；flag（MERGEPILOT_REVIEW_V3）默认关闭，旧串行链未删未改，回归通过+接线授权前不替换。
+- **门语义**：needs_fix=True 而 gate_enabled=False → 计划期即拒绝（D-1/D-2 未拍板不得进 fixer）。
+- **模型不可用**：delay/degrade/manual 三策略显式配置，**不自动更换模型**。
+- **存储**：TicketStore Protocol 固定五操作契约；SQLite 限单实例（见 P-1），PostgreSQLTicketStore 为显式迁移占位（多 Controller/共享部署触发）。
+- **验证层级**：本轮全部为本地确定性测试（含线程级并行证明）；真实 Agent 接入是最后一步（R1/R2 授权后），测试通过不冒充生产验证。

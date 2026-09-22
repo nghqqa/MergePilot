@@ -120,3 +120,35 @@ v2 备忘一.3 硬门槛 3 = "审批不越权：批准的语义、绑定对象�
 | RAG-8 计量接入 | rag-live 审计 JSONL 记录延迟/命中数；成本计量见 ACCEPTANCE-COST（token 面 ⬜） | 第2层✅（延迟/计数）；token 面待 R6 |
 
 **明确未验证/未做**：第 3/4 层（真实 agent 复跑 + 真实模型端到端）待 R1/R2/R4 授权；B 案例链（skill_case_retrieval）非零命中行为未验证；语料部署同步到运行环境（r3work/rag-live）待授权（INTEGRATION-AUTH-REQUESTS R7）。**RAG V0 验收未整体通过**——第 1/2 层达成，第 3/4 层待真实环境。
+
+---
+
+# 架构 v3 验收（ACCEPTANCE-ARCHV3，2026-09-22 新增；设计见 ARCHITECTURE-V3.md）
+
+实现：tools/orchestrator/（risk/stages/scheduler/aggregate/verify_finding/console_contract/flag）｜ 测试：tests/orchestrator/test_v3.py（41 项，全本地确定性，2026-09-22 全绿）
+**层级声明：本节全部为本地纯逻辑/线程级验证。真实 Agent、真实 RAG、真实 GitHub 集成未验证；feature flag 默认关闭，旧串行链未删未改。**
+
+| 验收项 | 测试 | 状态 |
+|---|---|---|
+| Trivial/Lite/Full 三档路由 | test_trivial_route / test_lite_route_by_lines / test_lite_route_by_files / test_full_route_by_size | ✅本地 |
+| 敏感路径强制升级（小 diff 不豁免） | test_sensitive_path_forces_full_even_tiny_diff / test_sensitive_full_includes_all_specialists | ✅本地 |
+| 规则可配置+可解释 | test_custom_thresholds_and_reasons / test_grade_dict_shape | ✅本地 |
+| 两审查器并行 | test_two_reviewers_run_in_parallel（双 barrier 并行证明） | ✅本地线程级 |
+| 串行模式（并发=1） | test_serial_mode_when_concurrency_one | ✅本地 |
+| findings 去重且来源保留 | test_exact_dedupe_keeps_all_sources / test_near_duplicate_merged_by_title_similarity / test_distinct_findings_not_merged / test_severity_max_and_ranking / test_same_path_different_category_not_merged | ✅本地 |
+| verifier 不读其他 agent 推理 | test_input_rejects_reasoning_fields / test_base_verifier_has_no_access_path（类型构造性隔离） | ✅本地 |
+| 单审查器超时但其他可发布 | test_noncritical_timeout_others_publishable（→REVIEW_PARTIAL 不伪装） | ✅本地 |
+| 关键审查器超时不能标通过 | test_critical_timeout_never_passes / test_critical_timeout_not_pass（→MANUAL_ATTENTION） | ✅本地 |
+| run 级生命周期分离（完成/发布/待批/修复/补丁验证/回写） | test_lifecycle_stage_separation | ✅本地 |
+| PR 更新使旧 run 失效 | test_pr_update_cancels_old_run（CANCELLED≠完成） | ✅本地 |
+| 重试预算耗尽/重试后成功 | test_retry_budget_exhaustion / test_retry_then_success / test_retry_reentry_and_attempt_counting | ✅本地 |
+| 全局预算共享（超限阻断） | test_global_budget_hook_blocks | ✅本地 |
+| fixer 仅在门启用后进计划 | test_fix_requires_gate_enabled / test_plan_with_gate_includes_patch_validation | ✅本地 |
+| 多 PR 并发上限 1 不擅自调高 | test_global_pr_concurrency_constant | ✅本地 |
+| 补丁验证独立于 finding 验证 | 两独立计划步骤 + gate→fix→patch 顺序断言 | ✅本地 |
+| 控制台展示部分完成/降级（非单一绿色） | test_partial_completion_visible_not_single_green / test_contract_fields_present / test_rag_snapshot_in_console | ✅本地 |
+| SQLite 单实例边界 + TicketStore 接口抽象 | tests/approval/test_store_sqlite.py::InterfaceConformanceTests + DECISIONS P-1 | ✅本地 |
+| RAG snapshot 与 run 一致 | run-manifest 机制（ACCEPTANCE-RAG RAG-4）+ 控制台字段 | ✅机制 |
+| 真实 Agent 并行/真实 RAG/真实 GitHub | — | ⬜待授权（R1/R2，最后执行） |
+
+**边界**：v3 未接线 bridge/Controller（flag 默认关）；调度权唯一归属 DispatchPlanner，无第二调度事实源；run 硬上限为配置项（run_hard_deadline_s），执行器级强制随真实 Agent 适配落地。
