@@ -22,9 +22,10 @@
 
 - 同 C-2 授权范围。字段需求：项目 status/title/project_id、check-run receipt（id/conclusion/时间）。
 
-## C-4 审批门页只读数据（依赖 P-1 拍板）
+## C-4 审批门页只读数据（P-1 已拍板：SQLite WAL）
 
-- **需要**：票据存储落地（P-1 方案 B MinIO 单写者）后，控制台需要**只读**票视图：五元组绑定（run_id/repo/head_sha/params_hash/指纹）、状态（PENDING/APPROVED/REJECTED/USED/INVALIDATED）、TTL 剩余、attempt。
+- **更新（2026-09-22）**：后端会话已提交 `260e1f6 feat(approval): SQLite WAL ticket store (P-1 decided) + retry-cost contract` 与 `e29e7aa feat(approval): gate_cli ticket operations`——P-1 落点为 SQLite WAL（非早前预研推荐的 MinIO 方案 B）。本需求不变，存储指向按已拍板实现。
+- **需要**：控制台的**只读**票视图：五元组绑定（run_id/repo/head_sha/params_hash/指纹）、状态（PENDING/APPROVED/REJECTED/USED/INVALIDATED）、TTL 剩余、attempt、approved_by。
 - **边界**：控制台**不做任何 approve/reject 写操作**——M2 规格要求后端权威校验 + D-1/D-2/D-3 拍板，控制台只渲染与链接。写操作接口即使后端提供，控制台 V0 也不接。
 
 ## C-5 usage 数据源（R6 二选一拍板后）
