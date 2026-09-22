@@ -24,6 +24,8 @@ const CORPUS = process.env.RAG_LIVE_CORPUS || path.join(__dirname, 'rag-live-cor
 const AUDIT = process.env.RAG_LIVE_AUDIT || path.join(__dirname, 'rag-tool-spans.jsonl');
 
 const corpus = JSON.parse(fs.readFileSync(CORPUS, 'utf8'));
+const CORPUS_FILE_SHA256 = crypto.createHash('sha256')
+  .update(fs.readFileSync(CORPUS)).digest('hex');   // 原始字节哈希:部署核对用
 const chunks = [];
 for (const doc of corpus.documents) {
   for (const ch of doc.chunks) {
@@ -71,7 +73,7 @@ function score(query) {
     .sort((a, b) => b.score - a.score);
 }
 
-function retrieve(query, topK) {
+function retrieve(query, topK, runId) {
   const t0 = Date.now();
   const query_hash = sha16(query);
   const k = Math.max(1, Math.min(Number(topK) || 3, 10));
@@ -84,11 +86,14 @@ function retrieve(query, topK) {
     data_mode: corpus.data_mode,
   }));
   const latency_ms = Date.now() - t0;
-  writeAudit({
+  const auditRec = {
     tool: 'rag.retrieve', arguments_hash: query_hash,
     result_status: results.length ? 'OK' : 'EMPTY', document_count: results.length,
     latency_ms, data_mode: corpus.data_mode, source_refs: results.map((r) => r.source_ref),
-  });
+    corpus_file_sha256: CORPUS_FILE_SHA256,
+  };
+  if (runId) auditRec.run_id = String(runId).slice(0, 80);  // 审计关联 run(可选透传)
+  writeAudit(auditRec);
   return {
     query_hash, top_k: results.length, retrieval_mode: corpus.retrieval_mode,
     retrieval_strategy: corpus.strategy_id, data_mode: corpus.data_mode, results, latency_ms,
@@ -111,11 +116,12 @@ const server = http.createServer((req, res) => {
     res.end(body);
   };
   try {
-    if (url.pathname === '/health') return send(200, { ok: true, service: 'rag-live', corpus: path.basename(CORPUS), chunks: chunks.length, data_mode: corpus.data_mode });
+    if (url.pathname === '/health') return send(200, { ok: true, service: 'rag-live', corpus: path.basename(CORPUS), chunks: chunks.length, data_mode: corpus.data_mode, corpus_file_sha256: CORPUS_FILE_SHA256 });
     if (url.pathname === '/api/rag/search' && req.method === 'GET') {
       const q = (url.searchParams.get('q') || '').trim();
       if (!q) return send(400, { error: 'EMPTY_QUERY' });
-      return send(200, retrieve(q, url.searchParams.get('k')));
+      return send(200, retrieve(q, url.searchParams.get('k'),
+                               url.searchParams.get('run_id')));
     }
     if (url.pathname === '/api/rag/toolspan-audit' && req.method === 'POST') {
       const chunks2 = [];

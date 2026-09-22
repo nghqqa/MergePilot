@@ -1,8 +1,18 @@
 # MergePilot 产品化推进状态（STATUS）
 
-**更新**：2026-09-22（第六轮：M3.5 复核+冒烟+授权决策包）｜ **分支**：`chore/backfill-r3-ops` ｜ 授权范围：M1→M4 至 V0 技术就绪
+**更新**：2026-09-22（第七轮：授权前验证关口——本地准备收口）｜ **分支**：`chore/backfill-r3-ops` ｜ 授权范围：M1→M4 至 V0 技术就绪
 
-## 本轮新增：复核 + 本地冒烟 + 授权决策包
+## 本轮新增：授权前本地准备（零外部副作用）
+
+| 工作项 | 状态 | 说明 |
+|---|---|---|
+| 最终决策/授权表 | ✅ 产出 | AUTH-DECISION-PACKAGE.md 重构：A 决定类（D-1..D-6 含预算/R6/密钥轮换）+ B 授权类（R4/R7/R1/R2/R3，各 6 要素）+ 三阶段执行顺序 + 启用铁律；**未代批** |
+| integration_prep 包 | ✅ 实现+测试 | R1/R2/R3 声明式执行计划（步骤+证据点）、R4/R7 同步计划（备份/校验/同步/off 冒烟/回退）、证据采集器（集中脱敏：gh-token/DSN/API key/OTel key）、授权闸门（默认 dry-run，执行需批复+MERGEPILOT_IT_AUTH=1） |
+| rag-live 事实源增强 | ✅ 实现+测试 | /health 暴露 corpus_file_sha256（部署核对）；search 可选 run_id 透传落审计（R5 接通即闭合 run 关联；向后兼容） |
+| 预算接入点工厂 | ✅ 实现+测试 | costmeter/hooks.py：MERGEPILOT_RUN_BUDGET_TOKENS 设置即 fail-closed（超限拒+台账恢复），未设置=None（现状语义不变）；接入点盘点：桥派发/调度执行器（已可接）/worker 面（R5） |
+| 既有问题登记 | ✅ 记录 | tests/ 全目录跑时 m4c/m4e/skills 模块重名收集冲突为陈年问题（无 __init__.py），不在本轮范围 |
+
+## 前轮：M3.5 复核+冒烟+决策包（第六轮）
 
 | 工作项 | 状态 | 说明 |
 |---|---|---|
@@ -72,7 +82,8 @@
 
 ## 已验证结果（证据，2026-09-22 实测 @ 工作树）
 
-- `python -X utf8 -m pytest tests/gh_bridge/ tests/console_v3/ tests/orchestrator/ tests/approval/ tests/rag_live/ tests/costmeter/ -q` → **200 passed**（bridge 50 + console 7 + orchestrator 59 + approval 50 + rag_live 17 + costmeter 17；<6s；第六轮复核后实测）
+- `python -X utf8 -m pytest tests/gh_bridge/ tests/console_v3/ tests/orchestrator/ tests/approval/ tests/rag_live/ tests/costmeter/ tests/integration_prep/ -q` → **217 passed**（第七轮实测；bridge 50 + console 7 + orchestrator 59 + approval 50 + rag_live 19 + costmeter 21 + prep 12 ≈ 218，含 1 项顺序敏感偶发重跑通过）
+- tests/ 全目录跑含 m4c/m4e/skills 3 个陈年收集冲突（模块重名，非本轮引入），按目录分套运行为准
 - 本地冒烟（.smoke 临时目录，已清理）：console 真实进程 :4191；shadow run=MANUAL_ATTENTION（coverage 三缺失+degradations 带原因）；fixture run=REVIEW_COMPLETED；写方法 405；浏览器截图与 DOM 双重核验
 - `python -X utf8 -m pytest tests/gh_app/ -q` → 816 passed, 5 skipped（上轮实测；本轮不触其引用面）
 - RAG 双副本快照一致（fd34c304…）；M1 九场景 1/2/3/4/5/7/8 ✅单测、9 ✅契约、6 🔒结构保证

@@ -23,6 +23,10 @@
 - shadow：`MERGEPILOT_REVIEW_V3=shadow` 运行桥（真实 PR 只读元数据/diff，无 Agent、无外部写）；
 - fixture：测试内 `adapter.run_v3_fixture(...)`（本地假审查器，mode=fixture）。
 
+## rag-live 事实源增强（2026-09-22，第七轮，部署属 R7）
+
+/tools/rag/live/rag-live-server.mjs（repo 事实源，运行副本未同步）：/health 暴露 `corpus_file_sha256`（原始字节哈希，与 manifest 的 canonical snapshot_id 互补，用于部署核对）；`/api/rag/search` 接受可选 `run_id` 参数并写入审计记录（R5 接通 MCP server 透传后，RAG 审计的 run 关联即闭合；不传则不出现该字段，向后兼容）。
+
 ## 冒烟记录（2026-09-22，第六轮）
 
 真实进程 :4191 + 浏览器截图核验：shadow run（MANUAL_ATTENTION 红色，coverage 三缺失，degradations 带"shadow: agent not executed"原因）与 fixture run（REVIEW_COMPLETED 绿色）同屏对照；POST/PUT/DELETE=405；/healthz、/api/runs、详情端点浏览器访问通过。冒烟数据与 .smoke 目录为临时产物，已清理。

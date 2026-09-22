@@ -99,6 +99,7 @@ v2 备忘一.3 硬门槛 3 = "审批不越权：批准的语义、绑定对象�
 **数据源事实（2026-09-22 核对）**：token 级 usage 仅存在于 worker OTel LLM spans（`gen_ai.usage.input/output_tokens`），经 OTLP 导出外部 collector；本地容器只有 span 名序列与审计日志；rag toolspans 在 :4184（未运行）。故本地收集器只产出**调用计数面**（tokens=None + missing 标注），token/币值面 ⬜ 未接通。币值换算仅在显式提供价目表时进行，缺价模型返回 unknown_models，不伪造。
 **M4 前还差**：真实 usage 源接入（OTel collector 查询或 worker 本地台账）、预算挂点接入派发/调用路径、预算金额拍板、跨进程预留存储、端到端验证——均未开始。
 **重试语义（2026-09-22 复查）**：`reserve(retry_of)` 只做**预留去重**（同一逻辑调用不重复占额）；真实重发的模型调用照常计费，结算必须传累计实际用量——test_retry_reissued_call_commits_cumulative_cost 固化该契约。
+**接入点准备（2026-09-22 第七轮）**：costmeter/hooks.py 工厂——`MERGEPILOT_RUN_BUDGET_TOKENS` 配置即返回 fail-closed hook（超限拒、台账崩溃恢复，测试覆盖），未设置返回 None（不检查、不产生授权）。接入点盘点：①桥派发边界 ②SerialReviewExecutor.budget_hook（两者已可直接传入）③worker 模型调用面（R5 镜像层，未接）。硬预算"已完成"仍以端到端验证为准。
 
 ---
 
@@ -184,3 +185,22 @@ v2 备忘一.3 硬门槛 3 = "审批不越权：批准的语义、绑定对象�
 - **取代保真**：_supersede_old_runs 重建记录丢失 error/时间戳→已保留（测试断言 SUCCEEDED 维度 error 不丢失）。
 - **本地冒烟（真实服务进程 :4191 + 浏览器）**：/healthz、/api/runs、/api/runs/<id>、页面全部浏览器访问并截图；shadow run（MANUAL_ATTENTION，红色，coverage 三缺失，degradations 带原因）与 fixture run（REVIEW_COMPLETED，绿色）同屏对照；POST/PUT/DELETE=405；页面无写按钮。视觉检查**已完成**（截图为证，存会话工件）。
 - 复核后全套 **200 passed**。
+
+
+---
+
+# 授权前准备（ACCEPTANCE-PREP，2026-09-22 第七轮）
+
+实现：tools/integration_prep/（steps 声明式计划 + collect 证据脱敏 + authgate 闸门）｜ 测试：tests/integration_prep/test_prep.py（12 项）
+
+| 项 | 状态 |
+|---|---|
+| R1 计划覆盖 认领后/派发后/发布前 三阶段 + 清场 | ✅ test_r1_covers_three_crash_stages_and_cleanup |
+| R3 计划覆盖 回写成功/重复 webhook/PR 更新/失败恢复/旧 run 失效 | ✅ test_r3_covers_required_scenarios |
+| 计划为声明式（含证据点，无可执行破坏串） | ✅ test_plans_are_documentation_only / test_all_five_plans_exist_with_evidence |
+| 授权闸门默认拒绝；仅 MERGEPILOT_IT_AUTH=1 放行；他值不放行 | ✅ AuthGateTests（3 项） |
+| 证据脱敏（gh-token/DSN/API key/OTel key，JSON 键值引号容忍） | ✅ RedactTests（5 项） |
+| R4/R7 同步计划含 备份→校验→同步→off 冒烟/核对→回退 | ✅ steps.py（未执行，属授权后操作） |
+| rag-live /health 暴露 corpus_file_sha256；search 可选 run_id 落审计 | ✅ test_01_health.../test_01b_run_id_passthrough（rag_live 套件） |
+
+**边界**：本节全部为本地准备与测试；R1-R7 实际执行仍未授权未发生。

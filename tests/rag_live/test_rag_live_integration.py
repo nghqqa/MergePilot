@@ -120,12 +120,35 @@ class RagLiveIntegration(unittest.TestCase):
                                     timeout=5) as r:
             return json.load(r)
 
+    def _search_with_run_id(self, q, run_id, k=3):
+        with urllib.request.urlopen(
+                "%s/api/rag/search?q=%s&k=%d&run_id=%s"
+                % (self.base, urllib.parse.quote(q), k, urllib.parse.quote(run_id)),
+                timeout=5) as r:
+            return json.load(r)
+
     def test_01_health_reports_corpus_facts(self):
         with urllib.request.urlopen(self.base + "/health", timeout=3) as r:
             h = json.load(r)
         self.assertTrue(h["ok"])
         self.assertEqual(h["chunks"], 3)
         self.assertEqual(h["data_mode"], "SYNTHETIC")
+        # 部署核对字段:语料原始字节 sha256(与 manifest snapshot_id 互补)
+        import hashlib
+        expected = hashlib.sha256(
+            open(self.corpus_path, "rb").read()).hexdigest()
+        self.assertEqual(h["corpus_file_sha256"], expected)
+
+    def test_01b_run_id_passthrough_reaches_audit(self):
+        """RAG 审计 run 关联:run_id 查询参数透传进审计记录(可选,向后兼容)。"""
+        self._search("路径穿越 traversal", k=1)
+        self._search_with_run_id("命令注入 injection", "run-xyz-1")
+        with open(self.audit_path, encoding="utf-8") as f:
+            recs = [json.loads(l) for l in f if l.strip()]
+        with_run = [r for r in recs if r.get("run_id") == "run-xyz-1"]
+        without = [r for r in recs if "run_id" not in r]
+        self.assertTrue(with_run)      # 传了就记
+        self.assertTrue(without)       # 不传不出现(向后兼容)
 
     def test_02_known_corpus_retrievable_with_citation_fields(self):
         """RAG-1/3:已知语料可被检索;来源与片段可核对。"""
