@@ -20,7 +20,10 @@ from .approval import (  # noqa: F401
 
 
 def __getattr__(name):  # 延迟导入:SQLite 为可选依赖面(标准库,按需连接)
-    if name == "SqliteTicketStore":
-        from .store_sqlite import SqliteTicketStore
-        return SqliteTicketStore
+    if name in ("SqliteTicketStore", "SQLiteTicketStore"):
+        from .store_sqlite import SQLiteTicketStore
+        return SQLiteTicketStore  # 旧名别名兼容
+    if name == "TicketStore" or name == "PostgreSQLTicketStore":
+        import importlib
+        return getattr(importlib.import_module(".store", __package__), name)
     raise AttributeError(name)

@@ -32,7 +32,8 @@ def _load(name, path):
 core = _load("approval", _APPROVAL_DIR / "approval.py")
 _smod = _load("store_sqlite", _APPROVAL_DIR / "store_sqlite.py")
 
-SqliteTicketStore = _smod.SqliteTicketStore
+SQLiteTicketStore = _smod.SQLiteTicketStore
+SqliteTicketStore = SQLiteTicketStore  # 旧名别名(兼容历史引用)
 
 NOW = "2026-09-22T12:00:00+00:00"
 LATER = "2026-09-22T13:00:00+00:00"
@@ -54,7 +55,7 @@ class SqliteStoreTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.path = os.path.join(self.tmp.name, "tickets.db")
-        self.store = SqliteTicketStore(self.path)
+        self.store = SQLiteTicketStore(self.path)
 
     def tearDown(self):
         self.store.close()
@@ -86,7 +87,7 @@ class SqliteStoreTests(unittest.TestCase):
     def test_cross_connection_race_approve_vs_reject(self):
         """跨连接竞争:approve 与 reject 先到先得,失败方 INVALID_TRANSITION。"""
         t, _ = self.store.create(_binding(), approval_expires_at=LATER)
-        store2 = SqliteTicketStore(self.path)
+        store2 = SQLiteTicketStore(self.path)
         try:
             r1 = self.store.transition(t.ticket_id, "approve", now=NOW, actor=APPROVER)
             r2 = store2.transition(t.ticket_id, "reject", now=NOW, actor=APPROVER)
@@ -110,7 +111,7 @@ class SqliteStoreTests(unittest.TestCase):
 
         threads = [threading.Thread(target=worker) for _ in range(2)]
         # 两个独立连接(不是共享连接的线程模型)
-        store2 = SqliteTicketStore(self.path)
+        store2 = SQLiteTicketStore(self.path)
 
         def worker2():
             try:
@@ -134,7 +135,7 @@ class SqliteStoreTests(unittest.TestCase):
         t, _ = self.store.create(_binding(), approval_expires_at=LATER)
         self.store.transition(t.ticket_id, "approve", now=NOW, actor=APPROVER)
         # 模拟崩溃:放弃旧连接(不 close),直接重开
-        reopened = SqliteTicketStore(self.path)
+        reopened = SQLiteTicketStore(self.path)
         try:
             got = reopened.get(t.ticket_id)
             self.assertEqual(got.status, "APPROVED")
@@ -168,3 +169,26 @@ class SqliteStoreTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class InterfaceConformanceTests(unittest.TestCase):
+    """TicketStore 接口(P-1 后续演化:SQLite→PG 只换适配器,契约不变)。"""
+
+    def test_sqlite_store_satisfies_ticketstore_protocol(self):
+        from approval_pkg.store import TicketStore
+        with tempfile.TemporaryDirectory() as t:
+            store = SQLiteTicketStore(os.path.join(t, "x.db"))
+            try:
+                self.assertIsInstance(store, TicketStore)
+            finally:
+                store.close()
+
+    def test_pg_store_is_explicit_placeholder(self):
+        from approval_pkg.store import PostgreSQLTicketStore
+        with self.assertRaises(NotImplementedError):
+            PostgreSQLTicketStore("postgresql://u:p@h/db")
+
+    def test_pg_store_requires_dsn(self):
+        from approval_pkg.store import PostgreSQLTicketStore
+        with self.assertRaises(ValueError):
+            PostgreSQLTicketStore("")

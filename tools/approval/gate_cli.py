@@ -2,7 +2,7 @@
 
 定位:D-1/D-2/D-3 拍板前,这是票据机制的**可测试操作工具**,不是产品审批入口;
 它不接任何真实执行路径(执行方必须经 check_execution 且启用集非空)。
-未来门 Web 页消费同一 SqliteTicketStore,语义与状态机完全一致。
+未来门 Web 页消费同一 SQLiteTicketStore(TicketStore 接口),语义与状态机完全一致。
 
 用例:
   python gate_cli.py new  --db t.db --run run-1 --repo o/r --head <40hex> \
@@ -22,7 +22,7 @@ import json
 import sys
 
 from .approval import Binding, ExecutionRequest, canonical_hash, check_execution
-from .store_sqlite import SqliteTicketStore
+from .store_sqlite import SQLiteTicketStore
 
 
 def _now_iso():
@@ -75,7 +75,7 @@ def main(argv=None):
     p.add_argument("--patch-fp", default=None)
 
     a = ap.parse_args(argv)
-    store = SqliteTicketStore(a.db)
+    store = SQLiteTicketStore(a.db)
     try:
         if a.cmd == "new":
             params = json.loads(a.params)

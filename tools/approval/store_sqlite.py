@@ -62,8 +62,12 @@ def _row_to_ticket(row) -> Ticket:
                   approved_at=row[15], result_fingerprint=row[16], error=row[17])
 
 
-class SqliteTicketStore:
-    """跨进程票据存储。同文件多连接/多线程安全:
+class SQLiteTicketStore:
+    """TicketStore 的 V0 单实例实现(接口见 store.py)。
+
+    **边界**:单 Controller、单部署实例、WAL 单文件——不承诺多实例高可用,
+    不承诺多用户 SaaS;多 Controller/共享部署迁 PostgreSQLTicketStore(store.py)。
+    同文件多连接/多线程安全:
     - 本实例内多线程:check_same_thread=False + 实例锁串行化事务;
     - 跨进程:BEGIN IMMEDIATE 写锁排队(busy_timeout)+ 前置状态守卫 UPDATE;
     - create 并发兜底:partial UNIQUE INDEX,冲突方捕获后返回既有票。"""
@@ -104,7 +108,7 @@ class SqliteTicketStore:
             return False
 
     def _txn(self):
-        return SqliteTicketStore._Txn(self)
+        return SQLiteTicketStore._Txn(self)
 
     # ── 幂等创建(活动票唯一由 partial UNIQUE INDEX 跨进程强制) ───────────
     def create(self, binding: Binding, attempt_no: int = 1, created_at: str = "",
