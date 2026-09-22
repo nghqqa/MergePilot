@@ -1,0 +1,72 @@
+{
+  "_note": "SYNTHETIC — 审批 fixture（隔离交互测试数据）。票据 ID/状态/有效期/操作者为合成；绑定的仓库/PR/head/run 取自真实历史证据包（snapshot）。仅用于测试数据模式下的交互演练，不产生任何真实审批。",
+  "_fixture_assumptions": "assume_current_head 为 fixture 假设的'当前 head'，仅用于演练 head 冲突路径；真实当前 head 权威需后端提供（C-10）。",
+  "tickets": [
+    {
+      "id": "FIXTURE-APV-001",
+      "repo": "nghqqa/fastapi-boilerplate-demo",
+      "pr_number": 3,
+      "head_sha": "03312d6596f0b894a3324e958461a5fc336f2ff5",
+      "run_id": "run-gh-pr3-03312d65-091817",
+      "pack_id": "FINALS-ELEM-PR3-WH-20260919",
+      "action": "APPROVE_REMEDIATION",
+      "action_label": "批准修复授权",
+      "params": { "mode": "auto" },
+      "summary": "审查确认 CWE-78（HIGH）；人工批准修复授权 = 仅授权修复流程，不代表已修复或已合并",
+      "status": "PENDING",
+      "expires_at": "2026-12-31T00:00:00Z",
+      "created_at": "2026-09-19T17:20:00Z",
+      "_outcome": "approved",
+      "_assume_current_head": "03312d6596f0b894a3324e958461a5fc336f2ff5"
+    },
+    {
+      "id": "FIXTURE-APV-002",
+      "repo": "nghqqa/fastapi-boilerplate-demo",
+      "pr_number": 3,
+      "head_sha": "ad267a6e51209551a0733657321bb364d04befd0",
+      "run_id": "run-elem-fastapi-pr3-20260916-01",
+      "pack_id": "FINALS-ELEM-PR3-LIVE-20260916",
+      "action": "APPROVE_REMEDIATION",
+      "action_label": "批准修复授权",
+      "params": { "mode": "auto" },
+      "summary": "旧 head（ad267a6e）票据：fixture 假设当前 head 已是 03312d65 → 演练 head 冲突路径",
+      "status": "PENDING",
+      "expires_at": "2026-12-31T00:00:00Z",
+      "created_at": "2026-09-16T09:00:00Z",
+      "_outcome": "conflict",
+      "_assume_current_head": "03312d6596f0b894a3324e958461a5fc336f2ff5"
+    },
+    {
+      "id": "FIXTURE-APV-003",
+      "repo": "nghqqa/fastapi-boilerplate-demo",
+      "pr_number": 2,
+      "head_sha": "65de83d6d061413ec98c1e79515f470313ef9806",
+      "run_id": "run-gh-pr2-65de83d6-085056",
+      "pack_id": "FINALS-ELEM-PR2-WH-20260919",
+      "action": "APPROVE_REMEDIATION",
+      "action_label": "批准修复授权",
+      "params": { "mode": "auto" },
+      "summary": "已过有效期的票据 → 演练过期拒绝路径",
+      "status": "PENDING",
+      "expires_at": "2026-09-20T00:00:00Z",
+      "created_at": "2026-09-19T09:00:00Z",
+      "_outcome": "expired"
+    },
+    {
+      "id": "FIXTURE-APV-004",
+      "repo": "nghqqa/fastapi-boilerplate-demo",
+      "pr_number": 1,
+      "head_sha": "575aa8e13146998da65a8f62816740dbb5e539ca",
+      "run_id": "run-gh-pr1-575aa8e1-093022",
+      "pack_id": "FINALS-ELEM-PR1-WH-20260919",
+      "action": "APPROVE_REMEDIATION",
+      "action_label": "批准修复授权",
+      "params": { "mode": "auto" },
+      "summary": "提交超时 → 结果未知 → 查询服务端状态后确认已记录（演练不得盲目重发）",
+      "status": "PENDING",
+      "expires_at": "2026-12-31T00:00:00Z",
+      "created_at": "2026-09-19T09:35:00Z",
+      "_outcome": "timeout_then_approved"
+    }
+  ]
+}

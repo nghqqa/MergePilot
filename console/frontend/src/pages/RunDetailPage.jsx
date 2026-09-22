@@ -598,8 +598,8 @@ export default function RunDetailPage() {
   return (
     <div>
       <div className="breadcrumb">
-        <Link to={backTo} className="crumb-back" title="返回列表（保留返回时的筛选条件）">
-          <ChevronsLeft size={14} strokeWidth={1.75} aria-hidden /> 运行列表
+        <Link to={backTo} className="crumb-back" title="返回运行历史（保留返回时的筛选条件）">
+          <ChevronsLeft size={14} strokeWidth={1.75} aria-hidden /> 运行历史
         </Link>
       </div>
 

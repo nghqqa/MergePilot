@@ -1,6 +1,19 @@
 import React, { useState } from 'react';
 import { AlertTriangle, Check, Copy, Inbox, Loader2, RotateCcw } from 'lucide-react';
 
+// 品牌标：两条分支汇入一条主干（merge），自绘 SVG，深青单色。
+export function BrandMark() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path d="M6 4v6c0 3 2 5 5 5h7" stroke="#2dd4bf" strokeWidth="2" strokeLinecap="round" />
+      <path d="M18 4v6c0 1.5-.6 2.8-1.6 3.8" stroke="#0e6b62" strokeWidth="2" strokeLinecap="round" opacity="0.85" />
+      <circle cx="6" cy="4" r="2.2" fill="#2dd4bf" />
+      <circle cx="18" cy="4" r="2.2" fill="#0e6b62" />
+      <circle cx="18" cy="15" r="2.2" fill="#e6f2f0" />
+    </svg>
+  );
+}
+
 // 语义化状态徽章：色点 + 文字（颜色永不单独承载状态）。
 // tabIndex=0 兑现"悬停或聚焦可查看"的承诺：键盘 Tab 到徽章即可读到 title 里的语义边界与来源。
 const TONES = {

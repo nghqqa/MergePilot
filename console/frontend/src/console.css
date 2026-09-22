@@ -224,8 +224,8 @@ a:hover { text-decoration: underline; text-underline-offset: 2px; }
 }
 
 /* ---- 表格 ---- */
-/* 表格自滚动 + sticky 表头：垂直滚动发生在本容器内，th 的 sticky 才会生效 */
-.table-scroll { overflow: auto; max-height: calc(100vh - 264px); }
+/* 单一滚动：页面级滚动，表格只做横向溢出（避免页面与表格同时滚动的嵌套滚动） */
+.table-scroll { overflow-x: auto; }
 table { border-collapse: collapse; width: 100%; font-size: var(--fs-sm); }
 th, td { text-align: left; padding: 9px 14px; border-bottom: 1px solid var(--c-border); vertical-align: middle; }
 th {
@@ -560,9 +560,87 @@ td.th-right { text-align: right; }
 .tech-body h4 { margin: 10px 0 4px; font-size: var(--fs-sm); color: var(--c-text-2); }
 .tech-body h4:first-child { margin-top: 0; }
 
+/* ---- 仓库工作台 / PR 列表 ---- */
+.repo-list { display: flex; flex-direction: column; gap: 10px; }
+.repo-card { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px 16px; }
+.repo-card-main { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.repo-card-ico { color: var(--c-accent); flex: 0 0 auto; }
+.repo-card-name { font-size: var(--fs-md); font-weight: var(--fw-semibold); color: var(--c-text); }
+.repo-card-name:hover { color: var(--c-accent-strong); text-decoration: none; }
+.repo-card-meta { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+
+.pr-table { min-width: 880px; }
+.pr-table th, .pr-table td { white-space: nowrap; }
+.cell-context { font-size: var(--fs-sm); }
+.cell-context .cell-sub { margin-top: 3px; display: flex; gap: 5px; align-items: center; }
+.head-chip {
+  background: var(--c-inset); border: 1px solid var(--c-border); border-radius: 4px;
+  padding: 1px 6px; font-size: var(--fs-xs); color: var(--c-text-2); cursor: copy;
+}
+.head-chip:hover { border-color: var(--c-accent); color: var(--c-accent-strong); }
+.attention-flag { display: inline-flex; align-items: center; gap: 6px; color: var(--c-bad); }
+.attention-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--c-bad-dot); flex: 0 0 7px; }
+.pager { display: flex; align-items: center; gap: 12px; margin: 12px 0 0; }
+.pager-status { font-size: var(--fs-sm); color: var(--c-text-2); font-variant-numeric: tabular-nums; }
+
+/* ---- PR 详情 ---- */
+.mini-states { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+.mini-state {
+  background: var(--c-panel); border: 1px solid var(--c-border); border-radius: var(--r-md);
+  padding: 10px 12px; box-shadow: var(--shadow-xs);
+}
+.mini-state-label {
+  display: flex; align-items: center; gap: 5px;
+  font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--c-text-3); margin-bottom: 6px;
+}
+.head-group { margin: 0 0 16px; }
+.head-group h4 { margin: 0 0 8px; font-size: var(--fs-sm); }
+.head-group .data-table { font-size: var(--fs-sm); }
+
+/* ---- 知识库 / 审批入口 / 票据 ---- */
+.knowledge-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-bottom: 14px; }
+.knowledge-card { padding: 16px 18px; }
+.knowledge-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.knowledge-ico { margin: 0; width: 36px; height: 36px; border-radius: var(--r-md); flex: 0 0 36px; }
+.knowledge-title { margin: 0 0 4px; font-size: var(--fs-base); font-weight: var(--fw-semibold); }
+.knowledge-body { margin: 0 0 6px; font-size: var(--fs-sm); color: var(--c-text-2); line-height: 1.6; }
+
+.approvals-entry {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  padding: 14px 16px; margin-top: 14px; flex-wrap: wrap;
+}
+.ticket-card { margin: 10px 0; }
+.ticket-head {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  background: none; border: none; padding: 10px 14px; cursor: pointer;
+  font-size: var(--fs-sm); color: var(--c-text); text-align: left;
+}
+.ticket-head:hover { color: var(--c-accent-strong); }
+.ticket-head .chip { margin-left: auto; }
+.ticket-body { padding: 0 14px 14px; border-top: 1px solid var(--c-border); padding-top: 10px; }
+.ticket-binding { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); margin: 10px 0; }
+.ticket-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ticket-actions .muted { font-size: var(--fs-xs); }
+
+/* ---- 顶栏会话区 / 登录页 ---- */
+.auth-chip { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
+.auth-user { font-size: var(--fs-sm); color: var(--c-text-2); }
+.auth-demo-chip { border-color: rgba(181, 71, 8, 0.35); background: var(--c-warn-bg); color: var(--c-warn); cursor: help; }
+
+.login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--c-bg); padding: 24px; }
+.login-card {
+  width: min(460px, 100%); background: var(--c-panel);
+  border: 1px solid var(--c-border); border-radius: var(--r-lg);
+  box-shadow: var(--shadow-sm); padding: 28px 30px;
+}
+.login-brand { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+.login-brand .brand-name { color: var(--c-text); font-size: var(--fs-md); font-weight: var(--fw-semibold); }
+.login-note { font-size: var(--fs-sm); color: var(--c-text-2); line-height: 1.7; margin: 0 0 14px; }
+.login-main { width: 100%; justify-content: center; padding: 9px 12px; }
+.login-sub { font-size: var(--fs-xs); color: var(--c-text-3); line-height: 1.7; margin: 12px 0 0; }
+
 /* ---- 小屏 ---- */
-@media (max-width: 960px) {
-  .sidebar { width: 52px; flex: 0 0 52px; }
+@media (max-width: 960px) {  .sidebar { width: 52px; flex: 0 0 52px; }
   .brand-text, .nav-section-label, .nav-tag, .sidebar-foot, .nav-label { display: none; }
   .brand { justify-content: center; padding: 14px 8px; }
   .nav-item { justify-content: center; padding: 9px 6px; margin: 1px 6px; }
@@ -578,4 +656,9 @@ td.th-right { text-align: right; }
   .table-meta { max-width: 100%; overflow-wrap: anywhere; }
   .quick-filters { flex-wrap: wrap; }
   .f-field, .f-grow { flex: 1 1 100%; }
+  /* PR 行在小屏收窄：隐藏次要列（上下文/最近活动），保留 PR/摘要/需要处理/详情 */
+  .pr-table th:nth-child(2), .pr-table td.cell-context,
+  .pr-table th:nth-child(5), .pr-table td.cell-time { display: none; }
+  .pr-table { min-width: 560px; }
+  .repo-card { flex-direction: column; align-items: flex-start; }
 }

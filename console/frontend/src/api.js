@@ -5,7 +5,9 @@ async function get(path) {
   try {
     res = await fetch(path);
   } catch (e) {
-    throw new Error(`无法连接控制台后端（${e.message}）— 请确认 server.mjs 正在运行`);
+    const err = new Error(`无法连接控制台后端（${e.message}）— 请确认 server.mjs 正在运行`);
+    err.code = 'NETWORK';
+    throw err;
   }
   let body = null;
   try {
@@ -14,13 +16,17 @@ async function get(path) {
     /* non-json (e.g. static) */
   }
   if (!res.ok) {
-    throw new Error(body?.error?.message ?? `HTTP ${res.status}`);
+    const err = new Error(body?.error?.message ?? `HTTP ${res.status}`);
+    err.status = res.status; // 401=会话过期 403=无权限 404=不存在/未实现 —— 调用方分开处理
+    throw err;
   }
   return body;
 }
 
 export const api = {
   health: () => get('/api/health'),
+  // 会话探测：后端当前未实现（404）。401/403 语义为将来接入后端认证时区分（C-8 提案）。
+  session: () => get('/api/session'),
   runs: (params = {}) => {
     const q = new URLSearchParams(
       Object.entries(params).filter(([, v]) => v !== '' && v != null)

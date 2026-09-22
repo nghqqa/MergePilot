@@ -1,33 +1,32 @@
 import React, { useEffect, useState } from 'react';
-import { NavLink, Route, Routes, useLocation } from 'react-router-dom';
-import {
-  Activity, Database, FolderGit2, Gauge, ListChecks, ShieldCheck, Wrench,
-} from 'lucide-react';
+import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { Activity, Database, FolderGit2, Hand, History, LogOut, Settings } from 'lucide-react';
 import { api } from './api.js';
-import { fmtTime } from './format.js';
+import { AuthProvider, useAuth } from './auth.jsx';
+import { BrandMark } from './ui.jsx';
 import RunsPage from './pages/RunsPage.jsx';
 import RunDetailPage from './pages/RunDetailPage.jsx';
-import StubPage from './pages/StubPage.jsx';
+import ReposPage from './pages/ReposPage.jsx';
+import RepoPrsPage from './pages/RepoPrsPage.jsx';
+import PrDetailPage from './pages/PrDetailPage.jsx';
+import PendingPage from './pages/PendingPage.jsx';
+import KnowledgePage from './pages/KnowledgePage.jsx';
+import SettingsPage from './pages/SettingsPage.jsx';
+import LoginPage from './pages/LoginPage.jsx';
+import ApprovalsPage from './pages/ApprovalsPage.jsx';
 
-// 品牌标：两条分支汇入一条主干（merge），自绘 SVG，深青单色。
-function BrandMark() {
-  return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <path d="M6 4v6c0 3 2 5 5 5h7" stroke="#2dd4bf" strokeWidth="2" strokeLinecap="round" />
-      <path d="M18 4v6c0 1.5-.6 2.8-1.6 3.8" stroke="#0e6b62" strokeWidth="2" strokeLinecap="round" opacity="0.85" />
-      <circle cx="6" cy="4" r="2.2" fill="#2dd4bf" />
-      <circle cx="18" cy="4" r="2.2" fill="#0e6b62" />
-      <circle cx="18" cy="15" r="2.2" fill="#e6f2f0" />
-    </svg>
-  );
-}
+const NAV = [
+  { to: '/repos', label: '仓库', icon: FolderGit2, end: true },
+  { to: '/pending', label: '待处理', icon: Hand, end: false },
+  { to: '/knowledge', label: '知识库', icon: Database, end: true },
+  { to: '/runs', label: '运行历史', icon: History, end: false },
+  { to: '/settings', label: '设置', icon: Settings, end: true },
+];
 
 function TopbarContext() {
-  // 数据模式 + 采集范围：静态事实标注，不用跳动时钟暗示实时。
+  // 数据模式 + 采集范围：静态事实标注，完整说明见设置页
   const [range, setRange] = useState(null);
-  const [err, setErr] = useState(null);
   useEffect(() => {
-    api.health().then(setErr(null)).catch(setErr);
     api.runs({ limit: 200 }).then((d) => {
       const times = (d.items ?? []).map((r) => r.created_at).filter(Boolean).sort();
       if (times.length) {
@@ -38,54 +37,64 @@ function TopbarContext() {
   }, []);
   return (
     <span className="mode-wrap">
-      <span
-        className={`mode-chip ${err ? 'mode-chip-bad' : ''}`}
-        title={
-          err
-            ? `后端不可达：${err.message}`
-            : '数据模式 snapshot：全部数据来自仓库内锁定的真实历史运行证据包（SHA256SUMS 校验、只读）。live 实时模式未接入；服务仅监听 127.0.0.1 回环地址，无写操作接口，不下发凭证。'
-        }
-      >
-        <span className={`mode-dot ${err ? 'mode-dot-bad' : ''}`} aria-hidden />
-        <strong>{err ? '后端不可达' : '历史快照 · 只读'}</strong>
+      <span className="mode-chip" title="数据模式 snapshot：全部数据来自仓库内锁定的真实历史运行证据包（SHA256SUMS 校验、只读）。live 实时模式未接入；服务仅监听 127.0.0.1 回环地址，无写操作接口，不下发凭证。">
+        <span className="mode-dot" aria-hidden />
+        <strong>历史快照 · 只读</strong>
       </span>
-      {!err && range ? <span className="mode-range">数据采集于 {range}</span> : null}
+      {range ? <span className="mode-range">数据采集于 {range}</span> : null}
     </span>
   );
 }
 
-const NAV_SECTIONS = [
-  {
-    label: '审查',
-    items: [
-      { to: '/runs', label: '审查运行', icon: Activity, ready: true, end: true },
-    ],
-  },
-  {
-    label: '尚未接入',
-    items: [
-      { to: '/repos', label: '仓库', icon: FolderGit2, ready: false, note: '仓库接入状态依赖 GitHub App installation 数据源（未接入）' },
-      { to: '/rag', label: 'RAG', icon: Database, ready: false, note: 'RAG 服务状态依赖 rag-live :4184 与检索调用记录（run 详情内已有历史调用快照）' },
-      { to: '/skills', label: 'Skill', icon: Wrench, ready: false, note: 'Skill 版本总览依赖 MinIO skill store / worker 上报（未接入；run 详情内有包内记录）' },
-      { to: '/approvals', label: '审批', icon: ShieldCheck, ready: false, note: '审批需 M2 决策项 D-1/D-2/D-3 拍板 + 票据存储落地（后端会话负责）' },
-      { to: '/usage', label: '用量', icon: Gauge, ready: false, note: '用量总览依赖 usage 数据源接入（run 详情内已有包内记录）' },
-    ],
-  },
-];
+function AuthChip() {
+  const auth = useAuth();
+  if (auth.status === 'authed') {
+    return (
+      <span className="auth-chip">
+        <span className="auth-user">{auth.user?.name ?? auth.user?.login ?? '已登录'}</span>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={auth.refresh} title="登出需后端会话接口（C-8 提案）">
+          <LogOut size={12} strokeWidth={1.75} aria-hidden /> 退出
+        </button>
+      </span>
+    );
+  }
+  return (
+    <span className="auth-chip">
+      <span className="chip auth-demo-chip" title="只读演示预览：未认证浏览，使用现有脱敏历史快照；非登录态。">
+        只读演示预览 · 未认证
+      </span>
+      <button type="button" className="btn btn-ghost btn-sm" onClick={auth.exitDemo} title="退出演示预览，返回登录页">
+        <LogOut size={12} strokeWidth={1.75} aria-hidden /> 退出
+      </button>
+    </span>
+  );
+}
 
-export default function App() {
+// 仓库上下文在顶栏持续可见：标题、面包屑、切换入口
+function topbarCtx(pathname) {
+  let seg = [];
+  try {
+    seg = pathname.split('/').filter(Boolean).map((s) => decodeURIComponent(s));
+  } catch {
+    seg = pathname.split('/').filter(Boolean);
+  }
+  if (seg[0] === 'repos' && seg.length >= 3) {
+    const repo = `${seg[1]}/${seg[2]}`;
+    if (seg[3] === 'pr' && seg[4]) {
+      return { crumb: [['仓库', '/repos'], [repo, `/repos/${seg[1]}/${seg[2]}`]], current: `PR #${seg[4]}` };
+    }
+    return { crumb: [['仓库', '/repos']], current: repo };
+  }
+  if (seg[0] === 'runs' && seg.length > 1) {
+    return { crumb: [['运行历史', '/runs']], current: '运行详情' };
+  }
+  const hit = NAV.find((n) => pathname === n.to || (n.end === false && pathname.startsWith(n.to)));
+  return { crumb: null, current: hit?.label ?? '控制台' };
+}
+
+function Shell() {
   const loc = useLocation();
-  useEffect(() => {
-    document.title = 'MergePilot Console';
-  }, []);
-
-  const sectionByPath = () => {
-    if (loc.pathname.startsWith('/runs/')) return { crumb: ['审查运行', '/runs'], current: '运行详情' };
-    const flat = NAV_SECTIONS.flatMap((s) => s.items);
-    const hit = flat.find((n) => loc.pathname.startsWith(n.to));
-    return { crumb: null, current: hit?.label ?? '控制台' };
-  };
-  const ctx = sectionByPath();
+  const ctx = topbarCtx(loc.pathname);
 
   return (
     <div className="app">
@@ -98,31 +107,21 @@ export default function App() {
           </div>
         </div>
         <nav aria-label="主导航">
-          {NAV_SECTIONS.map((sec) => (
-            <div key={sec.label} className="nav-section">
-              <div className="nav-section-label">{sec.label}</div>
-              {sec.items.map((n) => (
-                <NavLink
-                  key={n.to}
-                  to={n.ready ? n.to : `${n.to}#stub`}
-                  end={n.end}
-                  className={({ isActive }) => `nav-item${isActive ? ' active' : ''}${n.ready ? '' : ' nav-stub'}`}
-                  title={n.ready ? undefined : `${n.label}：未接入 — ${n.note}`}
-                  onClick={(e) => {
-                    if (!n.ready) e.preventDefault();
-                  }}
-                >
-                  <n.icon size={15} strokeWidth={1.75} aria-hidden />
-                  <span className="nav-label">{n.label}</span>
-                  {!n.ready && <span className="nav-tag">未接入</span>}
-                </NavLink>
-              ))}
-            </div>
+          {NAV.map((n) => (
+            <NavLink
+              key={n.to}
+              to={n.to}
+              end={n.end}
+              className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+            >
+              <n.icon size={15} strokeWidth={1.75} aria-hidden />
+              <span className="nav-label">{n.label}</span>
+            </NavLink>
           ))}
         </nav>
         <div className="sidebar-foot">
           <div className="foot-row" title="本服务仅监听 127.0.0.1 回环地址；不下发任何凭证">
-            <ListChecks size={12} strokeWidth={1.75} aria-hidden /> 只读 · 无写操作 · 无凭证下发
+            <Activity size={12} strokeWidth={1.75} aria-hidden /> 只读 · 无写操作 · 无凭证下发
           </div>
         </div>
       </aside>
@@ -132,8 +131,12 @@ export default function App() {
           <div className="topbar-context">
             {ctx.crumb ? (
               <span className="crumb">
-                <NavLink to={ctx.crumb[1]}>{ctx.crumb[0]}</NavLink>
-                <span className="crumb-sep">/</span>
+                {ctx.crumb.map(([label, to]) => (
+                  <span key={to}>
+                    <NavLink to={to}>{label}</NavLink>
+                    <span className="crumb-sep">/</span>
+                  </span>
+                ))}
                 <span className="crumb-current">{ctx.current}</span>
               </span>
             ) : (
@@ -142,22 +145,52 @@ export default function App() {
           </div>
           <div className="topbar-right">
             <TopbarContext />
+            <AuthChip />
           </div>
         </header>
         <main className="content" key={loc.pathname}>
           <Routes>
-            <Route path="/" element={<RunsPage />} />
+            <Route path="/" element={<Navigate to="/repos" replace />} />
+            <Route path="/repos" element={<ReposPage />} />
+            <Route path="/repos/:owner/:name" element={<RepoPrsPage />} />
+            <Route path="/repos/:owner/:name/pr/:prNumber" element={<PrDetailPage />} />
+            <Route path="/pending" element={<PendingPage />} />
+            <Route path="/knowledge" element={<KnowledgePage />} />
             <Route path="/runs" element={<RunsPage />} />
             <Route path="/runs/:packId" element={<RunDetailPage />} />
-            <Route path="/repos" element={<StubPage section="仓库" icon={FolderGit2} />} />
-            <Route path="/rag" element={<StubPage section="RAG" icon={Database} />} />
-            <Route path="/skills" element={<StubPage section="Skill" icon={Wrench} />} />
-            <Route path="/approvals" element={<StubPage section="审批" icon={ShieldCheck} />} />
-            <Route path="/usage" element={<StubPage section="用量" icon={Gauge} />} />
-            <Route path="*" element={<StubPage section="页面" icon={Activity} />} />
+            <Route path="/approvals" element={<ApprovalsPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/login" element={<Navigate to="/repos" replace />} />
+            <Route path="/rag" element={<Navigate to="/knowledge" replace />} />
+            <Route path="/skills" element={<Navigate to="/knowledge" replace />} />
+            <Route path="/usage" element={<Navigate to="/knowledge" replace />} />
+            <Route path="*" element={<Navigate to="/repos" replace />} />
           </Routes>
         </main>
       </div>
     </div>
   );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <Guarded />
+    </AuthProvider>
+  );
+}
+
+// 路由守卫：只改善交互（未认证先见登录页），不代替后端授权。
+// 服务不可用与未登录分开呈现（见 LoginPage），不无限跳转。
+function Guarded() {
+  const auth = useAuth();
+  if (auth.status === 'checking') {
+    return (
+      <div className="login-wrap" role="status">
+        <div className="login-card"><p className="login-note">正在检查会话…</p></div>
+      </div>
+    );
+  }
+  if (!auth.admitted) return <LoginPage />;
+  return <Shell />;
 }

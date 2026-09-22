@@ -213,8 +213,8 @@ export default function RunsPage() {
         <div>
           <h1>审查运行</h1>
           <p className="page-sub">
-            先看 PR 与审查结论，再核对执行、人工确认与 GitHub 检查。
-            各状态徽章可悬停或键盘聚焦查看语义边界；缺失字段如实显示"未记录"。
+            全部运行记录（按 run 维度，时间倒序）。PR 维度的聚合视图见仓库工作台；
+            同一 PR 的多次运行在 PR 详情按 head 分组。各状态徽章可悬停或键盘聚焦查看语义边界。
           </p>
         </div>
       </div>
