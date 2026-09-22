@@ -368,7 +368,9 @@ try:
     r = urllib.request.urlopen(req, timeout=20)
     d = json.load(r)
     print(json.dumps({'http': r.status, 'matches': [
-        {'check_run_id': c['id'], 'conclusion': c.get('conclusion'), 'url': c.get('html_url')}
+        {'check_run_id': c['id'], 'conclusion': c.get('conclusion'),
+         'url': c.get('html_url'), 'app': (c.get('app') or {}).get('slug'),
+         'head_sha': c.get('head_sha')}
         for c in d.get('check_runs', []) if c.get('name') == 'mergepilot/review']}))
 except urllib.error.HTTPError as e:
     print(json.dumps({'http': e.code, 'error': str(e.reason), 'matches': None}))
@@ -393,19 +395,44 @@ def parse_publish_out(out):
     return {"ok": False, "http": None, "raw": (out or "")[:200]}
 
 
+def decide_reconcile_adopt(matches, recorded_check_run_id=None,
+                           expected_app="mergepilot"):
+    """对账采纳决策(纯函数)。新版 run 身份(cas6909 §3)下同 head 可并存多执行
+    (legacy/v3 evidence/显式重跑),head+名称一致不再足以归属到本次运行。
+
+    决策:
+      recorded 存在且在 matches 中  → 采纳该 id(权威凭据优先);
+      recorded 存在但不在 matches   → 不采纳(记录与 GitHub 不一致,人工对账);
+      恰好一条 match                → 采纳(单执行现实;app 归属不符则歧义);
+      多条 match                    → 歧义,不采纳(人工对账);
+      空                            → 不采纳(NO_MATCH ≠ 未创建)。"""
+    ms = list(matches or [])
+    if recorded_check_run_id:
+        for m in ms:
+            if m.get("check_run_id") == recorded_check_run_id:
+                return m.get("check_run_id"), "RECORD_MATCH"
+        return None, "AMBIGUOUS:record-not-found"
+    if len(ms) == 1:
+        m = ms[0]
+        if expected_app and m.get("app") and m["app"] != expected_app:
+            return None, "AMBIGUOUS:app-mismatch"
+        return m.get("check_run_id"), "SINGLE_MATCH"
+    if len(ms) > 1:
+        return None, "AMBIGUOUS:multiple-matches"
+    return None, "NO_MATCH"
+
+
 def parse_reconcile_out(out):
+    """对账输出 → 全量匹配列表;采纳决策交给 decide_reconcile_adopt(不盲选)。"""
     try:
         j = json.loads(out)
         if isinstance(j, dict) and j.get("http") in (200, 201):
-            m = j.get("matches") or []
-            if m:
-                best = m[-1]
-                return {"ok": True, "check_run_id": best["check_run_id"],
-                        "url": best.get("url", ""), "http": j["http"], "adopted": True}
-            return {"ok": True, "matches": 0, "adopted": False}
+            return {"ok": True, "http": j["http"],
+                    "matches": j.get("matches") or []}
     except Exception:
         pass
     return {"ok": False, "raw": (out or "")[:200]}
+
 
 
 # ── 发布凭据(MinIO 回执):POST 成功/对账采纳后落盘,崩溃恢复据此免重发 ──────
@@ -454,15 +481,39 @@ def publish_with_retry(d, verdict, report, run, proj, log):
     q64 = base64.b64encode(json.dumps(
         {"repo": d["repo"], "head_sha": d["observed_head_sha"]}).encode()).decode()
     last = {"ok": False, "raw": "not attempted"}
-    last_unknown = False   # 最后一次尝试是否"结果未知"(传输层失败,非明确拒绝)
-    for i in range(1, PUBLISH_ATTEMPTS + 1):
+    last_unknown = False   # 最后一次尝试是否"结果未知"(传输失败/歧义,非明确拒绝)
+
+    def _reconcile_step():
+        """单次对账:返回 {transport_failed, matches, raw}。"""
         rec_out, rec_ok = _reporter_exec(r64, q64)
-        rec = parse_reconcile_out(rec_out) if rec_ok else {"ok": False, "raw": rec_out[:200]}
-        if rec.get("ok") and rec.get("adopted"):
+        if not rec_ok:
+            return {"transport_failed": True, "matches": None, "raw": rec_out[:200]}
+        rec = parse_reconcile_out(rec_out)
+        if not rec.get("ok"):
+            return {"transport_failed": True, "matches": None, "raw": rec.get("raw", "")}
+        return {"transport_failed": False, "matches": rec["matches"], "raw": ""}
+
+    for i in range(1, PUBLISH_ATTEMPTS + 1):
+        # 每次尝试先对账:已存在本运行 check → 采纳,不重复 POST(场景3)
+        r = _reconcile_step()
+        if r["transport_failed"]:
+            # 对账失败/暂时不可见 ≠ 未创建:禁止盲目 POST,保持 UNKNOWN
+            last = {"ok": False, "outcome": "unknown",
+                    "raw": "reconcile unavailable: " + r["raw"][:120]}
+            log("reconcile unavailable — no POST (unknown, manual reconcile)")
+            break
+        adopt_id, decision = decide_reconcile_adopt(r["matches"])
+        if adopt_id is not None:
+            rec = {"ok": True, "check_run_id": adopt_id, "url": "",
+                   "http": 200, "adopted": True}
             write_receipt(proj, rec, d, run, verdict)
             return rec
+        if decision.startswith("AMBIGUOUS"):
+            last = {"ok": False, "outcome": "unknown", "raw": "reconcile " + decision}
+            log("reconcile ambiguous (%s) — no POST, manual reconcile" % decision)
+            break
         out, ok = _reporter_exec(s64, b64)
-        last_unknown = not ok          # 传输层失败=POST 结果未知;有结构化输出=可分类
+        last_unknown = not ok          # 传输层失败=POST 结果未知;结构化报错=可分类
         res = parse_publish_out(out) if ok else {"ok": False, "raw": out[:200]}
         if res["ok"]:
             if not write_receipt(proj, res, d, run, verdict):
@@ -472,6 +523,18 @@ def publish_with_retry(d, verdict, report, run, proj, log):
         log("publish attempt %d/%d failed: %s" % (i, PUBLISH_ATTEMPTS, res.get("raw", "")[:120]))
         if i < PUBLISH_ATTEMPTS:
             time.sleep(PUBLISH_BACKOFF_S[min(i - 1, len(PUBLISH_BACKOFF_S) - 1)])
+
+    # 兜底对账:最后一次尝试可能有副作用(传输失败/5xx)→ 再对账一次
+    if last_unknown or (last.get("outcome") == "retryable"):
+        r = _reconcile_step()
+        if not r["transport_failed"]:
+            adopt_id, decision = decide_reconcile_adopt(r["matches"])
+            if adopt_id is not None:
+                rec = {"ok": True, "check_run_id": adopt_id, "url": "",
+                       "http": 200, "adopted": True}
+                write_receipt(proj, rec, d, run, verdict)
+                return rec
+
     # 结果分类(2026-09-22 执行保护复核):
     # unknown      传输层失败/超时——可能已产生 check-run,禁止盲目重发,先对账;
     # auth         401——installation token 由 provider 按次刷新,有界重试后仍 401 视为配置问题;

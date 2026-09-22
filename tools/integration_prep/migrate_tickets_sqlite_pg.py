@@ -106,16 +106,19 @@ def import_rows(pg_conn, rows) -> Dict[str, int]:
     inserted = skipped_conflict = 0
     for r in rows:
         created = _parse_iso(r.get("created_at"))[0]
+        # 设计 v2 §5.4:target_key 非空 = COALESCE(finding_id, '_run_')
+        target_key = r["finding_id"] if r["finding_id"] is not None else "_run_"
         cur.execute(
             "INSERT INTO approval.tickets (ticket_id, run_id, repo_id, head_sha, "
             "action, params_hash, patch_fingerprint, finding_fingerprint, "
-            "finding_id, attempt_no, status, created_at, created_by_run, "
-            "approval_expires_at, approved_by, approved_at, result_fingerprint, "
-            "error) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+            "finding_id, target_key, attempt_no, status, created_at, "
+            "created_by_run, approval_expires_at, approved_by, approved_at, "
+            "result_fingerprint, error) VALUES "
+            "(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
             "ON CONFLICT (ticket_id) DO NOTHING",
             (r["ticket_id"], r["run_id"], r["repo"], r["head_sha"], r["action"],
              r["params_hash"], r.get("patch_fingerprint"),
-             r.get("finding_fingerprint"), r.get("finding_id"),
+             r.get("finding_fingerprint"), r.get("finding_id"), target_key,
              r.get("attempt_no", 1), r["status"], created,
              r.get("created_by_run"), _parse_iso(r.get("approval_expires_at"))[0],
              r.get("approved_by"), _parse_iso(r.get("approved_at"))[0],

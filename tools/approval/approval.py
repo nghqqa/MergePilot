@@ -121,6 +121,10 @@ def validate_binding_shape(b: Binding) -> None:
             raise ValueError("BINDING: %s 必须 64hex 或省略" % name)
     if b.patch_fingerprint is None and b.finding_fingerprint is None:
         raise ValueError("BINDING: patch_fingerprint 与 finding_fingerprint 至少其一")
+    if b.finding_id is not None and not b.finding_id.strip():
+        # 异常源数据(空串 finding_id)不静默转换:target_key 派生依赖
+        # NULL/非 NULL 的明确区分,空串会让 run 级/finding 级归属歧义。
+        raise ValueError("BINDING: finding_id 为空串(应使用 None 表示 run 级审批)")
 
 
 def create_ticket(binding: Binding, attempt_no: int = 1, created_at: str = "",

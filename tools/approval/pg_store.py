@@ -22,6 +22,14 @@ import psycopg2.extras
 
 from .approval import Binding, Ticket, TransitionResult, create_ticket, transition
 
+RUN_LEVEL_TARGET_KEY = "_run_"   # 设计契约 e247b80→caf6909 §5.4:run 级审批恒 '_run_'
+
+
+def target_key_for(binding: Binding) -> str:
+    """target_key 派生(一致性归属权威):finding 级=finding_id;run 级='_run_'。
+    由绑定内部派生,不接受外部传入——外部无法借道绕过绑定校验(M2 §3 红线不变)。"""
+    return binding.finding_id if binding.finding_id else RUN_LEVEL_TARGET_KEY
+
 
 class StorageUnavailable(RuntimeError):
     """连接/事务基础设施失败——与业务拒绝(INVALID_TRANSITION)严格分离。"""
@@ -52,12 +60,12 @@ def _as_utc_dt(value: Any, field: str) -> dt.datetime:
 
 
 _COLS = ("ticket_id, run_id, repo_id, head_sha, action, params_hash, "
-         "patch_fingerprint, finding_fingerprint, finding_id, attempt_no, "
-         "status, created_at, created_by_run, approval_expires_at, "
+         "patch_fingerprint, finding_fingerprint, finding_id, target_key, "
+         "attempt_no, status, created_at, created_by_run, approval_expires_at, "
          "approved_by, approved_at, result_fingerprint, error")
 
 _INSERT = ("INSERT INTO approval.tickets (%s) VALUES (%s)"
-           % (_COLS, ",".join(["%s"] * 18)))
+           % (_COLS, ",".join(["%s"] * 19)))
 
 
 class PostgreSQLTicketStore:
@@ -80,16 +88,20 @@ class PostgreSQLTicketStore:
     # ── 内部 ─────────────────────────────────────────────────────────────
     @staticmethod
     def _row_to_ticket(row) -> Ticket:
+        # 列序:0 ticket_id,1 run_id,2 repo_id,3 head_sha,4 action,5 params_hash,
+        #       6 patch_fp,7 finding_fp,8 finding_id,9 target_key,10 attempt_no,
+        #       11 status,12 created_at,13 created_by_run,14 expires,15 approved_by,
+        #       16 approved_at,17 result_fp,18 error
         b = Binding(run_id=row[1], repo=row[2], head_sha=row[3],
                     action=row[4], params_hash=row[5],
                     patch_fingerprint=row[6], finding_fingerprint=row[7],
                     finding_id=row[8])
-        return Ticket(ticket_id=row[0], binding=b, attempt_no=row[9],
-                      status=row[10], created_at=str(row[11]),
-                      created_by_run=row[12] or "",
-                      approval_expires_at=row[13], approved_by=row[14],
-                      approved_at=row[15], result_fingerprint=row[16],
-                      error=row[17])
+        return Ticket(ticket_id=row[0], binding=b, attempt_no=row[10],
+                      status=row[11], created_at=str(row[12]),
+                      created_by_run=row[13] or "",
+                      approval_expires_at=row[14], approved_by=row[15],
+                      approved_at=row[16], result_fingerprint=row[17],
+                      error=row[18])
 
     def _select(self, cur, where: str, args: tuple):
         cur.execute("SELECT %s FROM approval.tickets WHERE %s"
@@ -101,9 +113,10 @@ class PostgreSQLTicketStore:
     def _insert_args(t: Ticket, b: Binding) -> tuple:
         return (t.ticket_id, b.run_id, b.repo, b.head_sha, b.action,
                 b.params_hash, b.patch_fingerprint, b.finding_fingerprint,
-                b.finding_id, t.attempt_no, t.status, t.created_at or _now_utc(),
-                t.created_by_run, t.approval_expires_at, t.approved_by,
-                t.approved_at, t.result_fingerprint, t.error)
+                b.finding_id, target_key_for(b), t.attempt_no, t.status,
+                t.created_at or _now_utc(), t.created_by_run,
+                t.approval_expires_at, t.approved_by, t.approved_at,
+                t.result_fingerprint, t.error)
 
     # ── TicketStore 接口 ─────────────────────────────────────────────────
     def create(self, binding: Binding, attempt_no: int = 1, created_at: str = "",
@@ -141,9 +154,9 @@ class PostgreSQLTicketStore:
         try:
             rows = self._select(
                 self._conn.cursor(),
-                "run_id=%s AND action=%s AND finding_id IS NOT DISTINCT FROM %s "
+                "run_id=%s AND action=%s AND target_key=%s "
                 "AND status IN ('PENDING','APPROVED','EXECUTING')",
-                (binding.run_id, binding.action, binding.finding_id))
+                (binding.run_id, binding.action, target_key_for(binding)))
         except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
             raise StorageUnavailable(str(e)[:160]) from e
         return rows[0] if rows else None

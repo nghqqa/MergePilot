@@ -56,13 +56,15 @@ def _seed_sqlite(path: str, rows):
     conn.close()
 
 
-GOOD = {"ticket_id": "tkt-g1", "run_id": "run-contract", "repo": "team/demo",
-        "head_sha": "a" * 40, "action": "generate_patch",
-        "params_hash": "1" * 64, "patch_fingerprint": "2" * 64,
-        "finding_id": "F1", "attempt_no": 1, "status": "APPROVED",
-        "created_at": "2026-09-22T10:00:00+00:00", "created_by_run": "run-contract",
-        "approval_expires_at": "2099-01-01T00:00:00+00:00",
-        "approved_by": "test-approver", "approved_at": "2026-09-22T11:00:00+00:00"}
+GOOD_TEMPLATE = {"ticket_id": "tkt-g1", "run_id": None, "repo": "team/demo",
+                 "head_sha": "a" * 40, "action": "generate_patch",
+                 "params_hash": "1" * 64, "patch_fingerprint": "2" * 64,
+                 "finding_id": "F1", "attempt_no": 1, "status": "APPROVED",
+                 "created_at": "2026-09-22T10:00:00+00:00",
+                 "created_by_run": "legacy",
+                 "approval_expires_at": "2099-01-01T00:00:00+00:00",
+                 "approved_by": "test-approver",
+                 "approved_at": "2026-09-22T11:00:00+00:00"}
 
 
 class MigrateToolTests(unittest.TestCase):
@@ -77,25 +79,39 @@ class MigrateToolTests(unittest.TestCase):
             "password=mp-contract-local-test dbname=mp_contract")
         if not (os.environ.get("MERGEPILOT_PG_CONTRACT") == "1"):
             self.skipTest("MERGEPILOT_PG_CONTRACT=1 未设置:跳过真实 PG 演练")
-        import psycopg2
-        admin = psycopg2.connect(dsn)
-        admin.autocommit = True
-        cur = admin.cursor()
-        # 复用 PG 契约套件已建的 schema;确保夹具父行存在
-        cur.execute("INSERT INTO run.repos (repo_id) VALUES ('team/demo') "
-                    "ON CONFLICT DO NOTHING")
-        cur.execute("INSERT INTO run.runs (run_id, repo_id) VALUES "
-                    "('run-contract', 'team/demo') ON CONFLICT DO NOTHING")
-        cur.execute("DELETE FROM approval.ticket_audit WHERE actor='migration'")
-        cur.execute("DELETE FROM approval.tickets WHERE ticket_id='tkt-g1'")
-        admin.close()
         self.dsn = dsn
+        # 清理历史票据(独立测试库;仅本任务测试数据)
+        conn0 = __import__("psycopg2").connect(dsn)
+        conn0.autocommit = True
+        cur0 = conn0.cursor()
+        cur0.execute("DELETE FROM approval.ticket_audit WHERE actor='migration'")
+        cur0.execute("DELETE FROM approval.tickets WHERE ticket_id LIKE 'tkt-%'")
+        conn0.close()
+        # 经 PgRunStore 合法创建 target+run(父记录真实存在,不伪造)
+        _oppkg = __import__("types").ModuleType("orchestrator_v3")
+        _orch = Path(__file__).resolve().parents[2] / "tools" / "orchestrator"
+        _oppkg.__path__ = [str(_orch)]
+        __import__("sys").modules.setdefault("orchestrator_v3", _oppkg)
+        spec = importlib.util.spec_from_file_location(
+            "orchestrator_v3.pg_runstore",
+            Path(__file__).resolve().parents[2] / "tools" / "orchestrator" / "pg_runstore.py")
+        mod = importlib.util.module_from_spec(spec)
+        __import__("sys").modules["orchestrator_v3.pg_runstore"] = mod
+        spec.loader.exec_module(mod)
+        store = mod.PgRunStore(dsn)
+        run, _ = store.create_run("team/demo", 9, "a" * 40, "legacy", "execution",
+                                  "migrate-setup:legacy:execution")
+        store.close()
+        self.run_id = run["run_id"]
 
     def tearDown(self):
         self.tmp.cleanup()
 
+    def _good(self, ticket_id="tkt-g1"):
+        return dict(GOOD_TEMPLATE, ticket_id=ticket_id, run_id=self.run_id)
+
     def test_dry_run_default_writes_nothing(self):
-        _seed_sqlite(self.sqlite_path, [GOOD])
+        _seed_sqlite(self.sqlite_path, [self._good()])
         report = mig.run(self.sqlite_path, self.dsn, apply=False)
         self.assertEqual(report["mode"], "dry-run")
         import psycopg2
@@ -106,27 +122,29 @@ class MigrateToolTests(unittest.TestCase):
         conn.close()
 
     def test_apply_import_and_field_verification(self):
-        _seed_sqlite(self.sqlite_path, [GOOD])
+        _seed_sqlite(self.sqlite_path, [self._good()])
         report = mig.run(self.sqlite_path, self.dsn, apply=True)
-        self.assertTrue(report["verify"]["ok"], report)
+        self.assertTrue(
+            report.get("verify", {}).get("ok"),
+            json.dumps(report, ensure_ascii=False, default=str))
         import psycopg2
         conn = psycopg2.connect(self.dsn)
         cur = conn.cursor()
         cur.execute("SELECT run_id, repo_id, head_sha, status, approved_by, "
                     "approval_expires_at FROM approval.tickets "
-                    "WHERE ticket_id='tkt-g1'")
+                    "WHERE ticket_id=%s", (self.run_id and "tkt-g1",))
         row = cur.fetchone()
         cur.execute("SELECT to_status FROM approval.ticket_audit "
                     "WHERE ticket_id='tkt-g1' AND actor='migration'")
         audit = cur.fetchall()
         conn.close()
-        self.assertEqual(row[0], "run-contract")
+        self.assertEqual(row[0], self.run_id)
         self.assertEqual(row[3], "APPROVED")
         self.assertEqual(row[4], "test-approver")
         self.assertEqual(audit, [("APPROVED",)])   # 迁移审计行存在
 
     def test_rerun_idempotent_conflicts_not_overwritten(self):
-        _seed_sqlite(self.sqlite_path, [GOOD])
+        _seed_sqlite(self.sqlite_path, [self._good()])
         mig.run(self.sqlite_path, self.dsn, apply=True)
         # 目标侧人为改动:冲突行不得被重跑覆盖
         import psycopg2
@@ -145,14 +163,14 @@ class MigrateToolTests(unittest.TestCase):
         conn.close()
 
     def test_invalid_source_aborts_before_write(self):
-        _seed_sqlite(self.sqlite_path, [dict(GOOD, ticket_id="tkt-bad",
+        _seed_sqlite(self.sqlite_path, [dict(self._good(), ticket_id="tkt-bad",
                                              status="NOT_A_STATUS")])
         report = mig.run(self.sqlite_path, self.dsn, apply=True)
         self.assertTrue(str(report["result"]).startswith("ABORT"))
         self.assertIn("非法状态", report["validation_errors"][0])
 
     def test_missing_parent_skipped_not_fabricated(self):
-        _seed_sqlite(self.sqlite_path, [dict(GOOD, ticket_id="tkt-orphan",
+        _seed_sqlite(self.sqlite_path, [dict(self._good(), ticket_id="tkt-orphan",
                                              run_id="run-nonexistent")])
         report = mig.run(self.sqlite_path, self.dsn, apply=True)
         self.assertEqual(report["parent_missing"][0]["ticket_id"], "tkt-orphan")

@@ -24,8 +24,9 @@ _DSN_RUNTIME = os.environ.get(
     "MERGEPILOT_PG_RUNTIME_DSN",
     "host=127.0.0.1 port=55432 user=mp_runtime "
     "password=mp-runtime-local-test dbname=mp_contract")
-MIGRATION = (Path(__file__).resolve().parents[2] / "tools" / "approval" / "pg" /
-             "migrations" / "001_approval_tickets.sql")
+MIGRATIONS = ["001_approval_tickets.sql", "002_tickets_target_key.sql"]
+_MIG_DIR = (Path(__file__).resolve().parents[2] / "tools" / "approval" / "pg" /
+            "migrations")
 
 _APPROVAL_DIR = Path(__file__).resolve().parents[2] / "tools" / "approval"
 _pkg = __import__("types").ModuleType("approval_pkg")
@@ -63,12 +64,11 @@ def _apply_migration():
     conn = _admin_conn()
     conn.autocommit = True
     cur = conn.cursor()
-    cur.execute(MIGRATION.read_text(encoding="utf-8"))
-    # 夹具父数据(tickets FK 目标)
+    for m in MIGRATIONS:
+        cur.execute((_MIG_DIR / m).read_text(encoding="utf-8"))
+    # 夹具父数据(tickets 的 repo_id 值参照;tickets 无 FK 依赖 run.runs)
     cur.execute("INSERT INTO run.repos (repo_id) VALUES ('team/demo') "
                 "ON CONFLICT DO NOTHING")
-    cur.execute("INSERT INTO run.runs (run_id, repo_id) VALUES ('run-contract', "
-                "'team/demo') ON CONFLICT DO NOTHING")
     # 运行时最小权限角色(不存在则建;密码=本地隔离测试专用)
     cur.execute("DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE "
                 "rolname='mp_runtime') THEN CREATE ROLE mp_runtime LOGIN "
@@ -268,6 +268,76 @@ class PgSpecificAcceptance(unittest.TestCase):
         self.assertTrue(created)
         r = self.runtime.transition(t.ticket_id, "approve", now=NOW, actor=APPROVER)
         self.assertTrue(r.ok)
+
+    def test_target_key_run_level_and_finding_level(self):
+        """设计 v2 验收:run 级 target_key='_run_';finding 级=finding_id。"""
+        from approval_pkg.pg_store import target_key_for
+        self.assertEqual(target_key_for(self._binding(finding_id=None)), "_run_")
+        self.assertEqual(target_key_for(self._binding(finding_id="F9")), "F9")
+        cur = _admin_conn().cursor()
+        b_run = self._binding(finding_id=None)
+        b_f = self._binding(finding_id="F5", action="run_poc")
+        t1, c1 = self.store.create(b_run)
+        t2, c2 = self.store.create(b_f)
+        self.assertTrue(c1 and c2)
+        cur.execute("SELECT target_key FROM approval.tickets WHERE ticket_id=%s",
+                    (t1.ticket_id,))
+        self.assertEqual(cur.fetchone()[0], "_run_")
+        cur.execute("SELECT target_key FROM approval.tickets WHERE ticket_id=%s",
+                    (t2.ticket_id,))
+        self.assertEqual(cur.fetchone()[0], "F5")
+
+    def test_same_target_no_duplicate_active_tickets(self):
+        """相同目标(run 级):重复活动票被唯一索引拒绝——修复 NULL 漏洞。"""
+        import psycopg2
+        b = self._binding(finding_id=None)
+        t1, c1 = self.store.create(b)
+        self.assertTrue(c1)
+        with self.assertRaises(psycopg2.errors.UniqueViolation):
+            cur = _admin_conn().cursor()
+            conn2 = _admin_conn()
+            conn2.autocommit = True
+            cur2 = conn2.cursor()
+            cur2.execute(
+                "INSERT INTO approval.tickets (ticket_id, run_id, repo_id, "
+                "head_sha, action, params_hash, patch_fingerprint, finding_id, "
+                "target_key, attempt_no, status, created_at) "
+                "VALUES ('tkt-forced','run-contract','team/demo',%s,"
+                "'generate_patch',%s,NULL,NULL,'_run_',1,'PENDING',now())",
+                ("a" * 40, "1" * 64))
+            conn2.close()
+
+    def test_different_targets_not_cross_mutex(self):
+        """不同合法目标(run 级 vs finding 级;不同 finding)不错误互斥。"""
+        t1, c1 = self.store.create(self._binding(finding_id=None))
+        t2, c2 = self.store.create(self._binding(finding_id="F8"))
+        t3, c3 = self.store.create(self._binding(finding_id="F8",
+                                                 action="run_poc"))
+        self.assertTrue(c1 and c2 and c3)
+        self.assertEqual(len({t1.ticket_id, t2.ticket_id, t3.ticket_id}), 3)
+
+    def test_external_target_key_cannot_bypass_binding(self):
+        """target_key 由绑定内部派生,外部无法注入——执行请求仍按绑定五元组校验。"""
+        b = self._binding(finding_id="FX")
+        t, _ = self.store.create(b)
+        r = self.store.transition(t.ticket_id, "approve", now=NOW, actor=APPROVER)
+        self.assertTrue(r.ok)
+        got = self.store.get(t.ticket_id)
+        # 伪造"同一 target_key 但另一 run/head"的执行请求 → 绑定校验拒绝
+        forged = core.ExecutionRequest(
+            ticket_id=t.ticket_id, run_id="run-evil", repo="team/demo",
+            head_sha="b" * 40, params_hash=b.params_hash,
+            patch_fingerprint=b.patch_fingerprint)
+        res = core.check_execution(got, forged, now=NOW)
+        self.assertFalse(res.ok)
+        self.assertEqual(res.reason, "BINDING_MISMATCH:run_id")
+
+    def test_anomalous_source_finding_not_silently_converted(self):
+        """源数据异常(空串 finding_id)在绑定校验即拒绝——不静默转 '_run_'。"""
+        with self.assertRaises(ValueError):
+            core.validate_binding_shape(self._binding(finding_id=""))
+        # 迁移映射口径:COALESCE(finding_id,'_run_') 只对 NULL 生效;
+        # 源库空串行迁移时计为校验错误(migrate 工具已实现),不静默归入 run 级。
 
     def test_audit_appended_on_transition(self):
         t, _ = self.store.create(self._binding(finding_id="AU"),

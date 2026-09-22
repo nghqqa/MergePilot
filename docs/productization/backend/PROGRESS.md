@@ -38,23 +38,43 @@
 | PG 专属验收 | NULL(finding_id) 唯一性[NULLS NOT DISTINCT]/非 NULL 唯一/不同目标不互斥/**跨进程竞争（spawn 独立进程）恰好一胜**/终态让位新 attempt/时区与到期边界/回滚原子性（审计与状态同事务）/最小权限（runtime 角色可 DML 不可 DDL）/审计追加核对 | test_store_pg.py 16/16 |
 | 迁移工具+演练 | migrate_tickets_sqlite_pg.py：源只读/默认 dry-run/校验（状态/形状/时间/重复活动票）/父记录缺失跳过不伪造/冲突不覆盖可重跑/逐字段核对/事务失败整体回滚 | 测试副本→隔离 PG 演练 5/5（dry-run 不写/导入核对/重跑幂等/非法源中止/孤儿不伪造） |
 
-## 已知偏离与实现期修复（记录，不属设计窗口拍板范围外自作主张）
+## 已知偏离与实现期修复（v1 阶段记录，历史保留）
 
-1. **NULLS NOT DISTINCT（已偏离设计稿并登记）**：设计稿的部分唯一索引未处理 finding_id=NULL（PG 默认 NULL-distinct ⇒ NULL 活动票不受唯一约束）。实现采用 `NULLS NOT DISTINCT`（PG15+，运行环境 PG16 满足）。**待设计窗口确认**；否决则替代=两个部分唯一索引。
+1. ~~NULLS NOT DISTINCT~~：已被 target_key 方案取代（见本轮三）。
 2. **实现期真实缺陷修复**（非测试放宽）：
    - `create()` 未把 approval_expires_at 传入票据（到期永为 NULL ⇒ 永不过期）——已修；
    - PG TIMESTAMPTZ 返回 datetime 与调用方 ISO 字符串 now 不可比——transition 入口归一化；
    - `_expired` 源头容错 ISO 字符串/naive UTC（纯逻辑小改，语义不变，SQLite/PG 共同受益）。
 
+## 已完成（本轮三：设计基线 caf6909 对齐 + PG RunStore 最小纵向）
+
+**设计基线已固定并记录：`docs/architecture-audit-20260922` @ `caf6909`**（含 ad4ce90、374851b 累计修订；旧基线 e247b80 的 NULLS NOT DISTINCT 偏离已被 target_key 方案**取代并废弃**——非"待确认"状态）。
+
+| 工作包 | 内容 | 验证 |
+|---|---|---|
+| 审批 target_key 对齐 | 002 迁移（加列→回填 COALESCE(finding_id,'_run_')→NOT NULL→换索引 uq_active_ticket）；pg_store 派生 `target_key_for(binding)`（内部派生，外部不可注入） | 真实 PG 16/16 |
+| target_key 专项 | run 级='_run_'/finding 级=finding_id/相同目标不重复活动票/不同目标不错误互斥/外部伪造 target_key 不能绕过绑定校验（仍 BINDING_MISMATCH）/空串 finding_id 在绑定校验即拒绝（不静默转换） | 5 项 |
+| 发布身份修复 | `decide_reconcile_adopt(matches, recorded)` 纯函数：recorded 优先（权威凭据）、单 match 采纳（app 归属校验）、多条/record 不符→歧义人工；reconcile 失败→UNKNOWN 禁止盲目 POST；循环后兜底对账；**旧"同 repo+pr+head ⇒ 同 run"假设已随 run 身份 v2 废弃** | 桥发布测试重写+新增（gh_bridge 67 passed） |
+| PG RunStore 最小纵向 | tools/orchestrator/pg_runstore.py + 003_run_domain.sql（run.repos/targets/runs/stages/run_events；findings/validations/attempts 留待后续包；delivery_id/first_delivery_id/knowledge_manifest_id 无 FK——共享表不在隔离实例，已登记偏离）：确定性 run_id（§3.2 规范 JSON+向量锁定测试）/request_key 幂等重放/exec_seq target 行锁分配/活跃部分唯一/INSERT-only/supersede 链接不改写历史/阶段+事件同事务/期望状态守卫 | 真实 PG 10/10（含 spawn 双进程并发首建收敛同一 run、恰好一创建者） |
+
+## 已知偏离与实现期修复（记录，不属设计窗口拍板范围外自作主张）
+
+1. **NULLS NOT DISTINCT（历史项，已被 target_key 取代）**：v1 索引的 finding_id=NULL 漏洞由设计 v2 的非空 target_key 修复；002 迁移为显式后续（不回改 001）。
+2. **实现期真实缺陷修复**（非测试放宽）：
+   - `create()` 未把 approval_expires_at 传入票据（到期永为 NULL ⇒ 永不过期）——已修；
+   - PG TIMESTAMPTZ 返回 datetime 与调用方 ISO 字符串 now 不可比——transition 入口归一化；
+   - `_expired` 源头容错 ISO 字符串/naive UTC（纯逻辑小改，语义不变，SQLite/PG 共同受益）；
+   - gh_bridge 曾出现 parse/decide 函数重复定义（区间重写事故）——已整体重建为单一定义（382–429 行区）。
+
 ## 待设计窗口决定（剩余接口问题）
 
-4. v3_runs / v3_hook_errors 进入统一 PG 的命名空间与保留策略（RunStore PG 适配器的唯一前置）；
-5. 预算台账落 PG 表还是仅外部计量（D-4/D-5 决策依赖）；
-6. case-pg 的 knowledge 检索数据是否并入统一 PG（pgvector），迁移时机。
+- knowledge_manifests 与 run 的关联（runs.knowledge_manifest_id 目标表已定义，未落迁移）；
+- findings/validations/stage_attempts 迁移（设计已给形状，最小闭环未含）；
+- v3_hook_errors 的统一归属（现 SQLite）。
 
-## RunStore 后续（未实现，前置=上述#4）
+## RunStore 后续（已实现最小纵向，扩展项）
 
-RunStore 契约测试可按 store_contract 同模式抽取；同 delivery 的 legacy/shadow 关联、同 head 重跑与 shadow→on 区分、run/stage/attempt 关系——**契约未明确前不自行实现**（提示词七节）。
+后续包：stage_attempts 记录、findings/validations 落库、delivery 1:N 关联的共享库 FK 补齐（统一迁移时）。
 
 ## 待外部输入（真实案例线，集中列出）
 

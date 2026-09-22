@@ -56,11 +56,14 @@ class ParseTests(unittest.TestCase):
             self.assertFalse(self.br.parse_publish_out(out)["ok"], out)
 
     def test_reconcile_adopt_and_empty(self):
+        """新形态:parse 返回全量 matches;采纳决策归 decide_reconcile_adopt。"""
         r = self.br.parse_reconcile_out(json.dumps(
             {"http": 200, "matches": [{"check_run_id": 9, "url": "x"}]}))
-        self.assertTrue(r["ok"] and r["adopted"] and r["check_run_id"] == 9)
+        self.assertTrue(r["ok"] and r["matches"] == [{"check_run_id": 9, "url": "x"}])
+        adopt_id, decision = self.br.decide_reconcile_adopt(r["matches"])
+        self.assertEqual((adopt_id, decision), (9, "SINGLE_MATCH"))
         empty = self.br.parse_reconcile_out(json.dumps({"http": 200, "matches": []}))
-        self.assertTrue(empty["ok"] and not empty["adopted"] and empty["matches"] == 0)
+        self.assertTrue(empty["ok"] and empty["matches"] == [])
         self.assertFalse(self.br.parse_reconcile_out("ssh broke")["ok"])
 
 
@@ -219,10 +222,12 @@ class PublishRetryTests(unittest.TestCase):
 
     def test_exhausted_returns_failure(self):
         res, calls = self._run(exec_results=[
-            ('{"http": 200, "matches": []}', True), ("x", False)] * 3)
+            ('{"http": 200, "matches": []}', True), ("x", False)] * 3
+            + [('{"http": 200, "matches": []}', True)])   # 兜底对账
         self.assertFalse(res["ok"])
-        self.assertEqual(len(calls["exec"]), 6)
+        self.assertEqual(len(calls["exec"]), 7)      # 3 轮×2 + 兜底对账(1)
         self.assertEqual(calls["sleeps"], [10, 30])
+        self.assertEqual(res.get("outcome"), "unknown")  # 未知:停止自动重试
 
     def test_receipt_write_failure_non_fatal(self):
         res, calls = self._run(receipt_write=False, exec_results=[
