@@ -70,24 +70,31 @@ def ssh_psql(sql, as_json=False):
     return json.loads(out)
 
 
-TARGET_PR_ENV = "MERGEPILOT_TARGET_PR"      # 受控案例:只认领该 PR
+TARGET_REPO_ENV = "MERGEPILOT_TARGET_REPO"  # 且只认领该仓库(owner/name)
+TARGET_PR_ENV = "MERGEPILOT_TARGET_PR"      # 且只认领该 PR
 TARGET_HEAD_ENV = "MERGEPILOT_TARGET_HEAD"  # 且只认领该 head(空提交产生的新 SHA)
 
 
 def target_filter_sql():
-    """定向认领过滤(M3.5 后受控案例用):两 env 都设置才激活。
+    """定向认领过滤(受控案例用):repo+PR+完整 head 三者都设置才激活。
     未匹配行保持 PENDING 不动(跳过而非终结);不触碰 already_processed 语义。"""
+    repo = os.environ.get(TARGET_REPO_ENV, "").strip()
     pr = os.environ.get(TARGET_PR_ENV, "").strip()
     head = os.environ.get(TARGET_HEAD_ENV, "").strip().lower()
-    if not pr or not head:
+    if not repo or not pr or not head:
         return "", None
-    if not re.fullmatch(r"\d+", pr) or not re.fullmatch(r"[0-9a-f]{40}", head):
-        raise ValueError("MERGEPILOT_TARGET_PR/HEAD 格式非法: %r/%r" % (pr, head))
-    return (" AND pr_number=%s AND observed_head_sha='%s'" % (pr, head)), (pr, head)
+    if not re.fullmatch(r"[A-Za-z0-9._-]+/[A-Za-z0-9._-]+", repo):
+        raise ValueError("MERGEPILOT_TARGET_REPO 格式非法: %r" % repo)
+    if not re.fullmatch(r"\d+", pr):
+        raise ValueError("MERGEPILOT_TARGET_PR 格式非法: %r" % pr)
+    if not re.fullmatch(r"[0-9a-f]{40}", head):
+        raise ValueError("MERGEPILOT_TARGET_HEAD 格式非法: %r" % head)
+    return (" AND repo='%s' AND pr_number=%s AND observed_head_sha='%s'"
+            % (repo, pr, head)), (repo, pr, head)
 
 
 def pending_deliveries():
-    extra, _pair = target_filter_sql()
+    extra, _pair = target_filter_sql()  # repo+PR+head 三元组过滤(见 target_filter_sql)
     return ssh_psql(
         "SELECT json_agg(t) FROM (SELECT delivery_id, event_name, action, repo, "
         "pr_number, observed_head_sha, observed_base_sha, received_at "
@@ -350,24 +357,33 @@ spec = json.loads(base64.b64decode(sys.argv[1]).decode())
 req = urllib.request.Request(
     'https://api.github.com/repos/%s/commits/%s/check-runs' % (spec['repo'], spec['head_sha']),
     headers={'Authorization': 'Bearer ' + tok, 'Accept': 'application/vnd.github+json'})
-r = urllib.request.urlopen(req, timeout=20)
-d = json.load(r)
-print(json.dumps({'http': r.status, 'matches': [
-    {'check_run_id': c['id'], 'conclusion': c.get('conclusion'), 'url': c.get('html_url')}
-    for c in d.get('check_runs', []) if c.get('name') == 'mergepilot/review']}))
+try:
+    r = urllib.request.urlopen(req, timeout=20)
+    d = json.load(r)
+    print(json.dumps({'http': r.status, 'matches': [
+        {'check_run_id': c['id'], 'conclusion': c.get('conclusion'), 'url': c.get('html_url')}
+        for c in d.get('check_runs', []) if c.get('name') == 'mergepilot/review']}))
+except urllib.error.HTTPError as e:
+    print(json.dumps({'http': e.code, 'error': str(e.reason), 'matches': None}))
+except Exception as e:
+    print(json.dumps({'http': None, 'error': type(e).__name__ + ': ' + str(e)[:120], 'matches': None}))
 '''
 
 
 def parse_publish_out(out):
-    """reporter 输出 → 结构化结果;仅 HTTP 200/201 且带 check_run_id 视为成功."""
+    """reporter 输出 → 结构化结果;仅 HTTP 200/201 且带 check_run_id 视为成功.
+    失败保留 http 状态码供分类(unknown/permanent/retryable/auth)."""
     try:
         j = json.loads(out)
         if isinstance(j, dict) and j.get("http") in (200, 201) and j.get("check_run_id"):
             return {"ok": True, "check_run_id": j["check_run_id"],
                     "url": j.get("url", ""), "http": j["http"], "adopted": False}
+        if isinstance(j, dict) and "http" in j:
+            return {"ok": False, "http": j.get("http"),
+                    "raw": (out or "")[:200]}
     except Exception:
         pass
-    return {"ok": False, "raw": (out or "")[:200]}
+    return {"ok": False, "http": None, "raw": (out or "")[:200]}
 
 
 def parse_reconcile_out(out):
@@ -439,7 +455,7 @@ def publish_with_retry(d, verdict, report, run, proj, log):
             write_receipt(proj, rec, d, run, verdict)
             return rec
         out, ok = _reporter_exec(s64, b64)
-        last_unknown = not ok          # 传输层失败=POST 结果未知;明确报错=拒绝
+        last_unknown = not ok          # 传输层失败=POST 结果未知;有结构化输出=可分类
         res = parse_publish_out(out) if ok else {"ok": False, "raw": out[:200]}
         if res["ok"]:
             if not write_receipt(proj, res, d, run, verdict):
@@ -449,9 +465,23 @@ def publish_with_retry(d, verdict, report, run, proj, log):
         log("publish attempt %d/%d failed: %s" % (i, PUBLISH_ATTEMPTS, res.get("raw", "")[:120]))
         if i < PUBLISH_ATTEMPTS:
             time.sleep(PUBLISH_BACKOFF_S[min(i - 1, len(PUBLISH_BACKOFF_S) - 1)])
-    # 结果未知 ≠ 明确拒绝:未知不得自动重试(可能已产生 check-run),
-    # 恢复路径=人工/受控 reconcile(先查后建)。
-    last["outcome"] = "unknown" if last_unknown else "rejected"
+    # 结果分类(2026-09-22 执行保护复核):
+    # unknown      传输层失败/超时——可能已产生 check-run,禁止盲目重发,先对账;
+    # auth         401——installation token 由 provider 按次刷新,有界重试后仍 401 视为配置问题;
+    # retryable    5xx/429/403 rate limit——有界重试;
+    # permanent    403(非限频)/404/422——参数或权限问题,重试无意义。
+    http = last.get("http")
+    if last_unknown:
+        last["outcome"] = "unknown"
+    elif http == 401:
+        last["outcome"] = "auth"
+    elif http == 429 or http in (500, 502, 503, 504) or (
+            http == 403 and "rate limit" in str(last.get("raw", "")).lower()):
+        last["outcome"] = "retryable"
+    elif http in (403, 404, 422):
+        last["outcome"] = "permanent"
+    else:
+        last["outcome"] = "unknown"   # 无法归类的一律按未知处理(保守)
     return last
 
 
