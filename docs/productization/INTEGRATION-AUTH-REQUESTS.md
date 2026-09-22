@@ -57,6 +57,19 @@
 - **回退**：a) 无；b) 同 R5。
 - **所需权限**：a) OTel collector 查询权限（key 已有，存放见 secrets 备忘）；b) 同 R5。
 
+## R7 语料部署同步（RAG 快照切换到运行环境）
+
+- **目标**：repo `tools/rag/corpus/org-security-knowledge-v1.json`（事实源，snapshot fd34c304…）→ 运行语料 `D:\goai\r3work\rag-live\rag-live-corpus.json`；如服务侧有改动，`tools/rag/live/rag-live-server.mjs` → r3work 同名文件。
+- **操作**：备份运行语料（.bak-<date>）→ corpus_tool.import（内容相同则零操作）→ 启动/重启 rag-live（当前未运行；启动本身属本项授权）→ 校验 /health 与 snapshot 一致。
+- **影响**：检索内容切换到 repo 版本化语料；服务在宿主机监听 4184（仅本机回环面）。
+- **验收证据**：/health chunks=12 + data_mode；桥 manifest rag.snapshot_id 与 corpus_tool 输出一致。
+- **回退**：`copy rag-live-corpus.json.bak-<date> → rag-live-corpus.json`；停服务=结束 node 进程。
+- **所需权限**：本机文件写入 + 启动本地服务（宿主机，非共享环境）。
+
+## R5 扩展（RAG 审计 run 关联，随 R5 镜像层一并评估）
+
+rag-mcp-server.mjs 的审计记录目前无 run_id（仅 query_hash+ts），run 关联靠 manifest 时间窗推断。将 run_id/trace_id 注入审计记录需改 worker 侧 MCP server（镜像层）——并入 R5 的镜像改动评估，不单独立项。
+
 ## 已知挂起（引用，非新请求）
 
 - **密钥轮换**：用户决定挂起（DECISIONS #5）；M4 出口条件强制恢复执行。

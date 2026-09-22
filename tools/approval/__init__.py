@@ -17,3 +17,10 @@ from .approval import (  # noqa: F401
     transition,
     validate_binding_shape,
 )
+
+
+def __getattr__(name):  # 延迟导入:SQLite 为可选依赖面(标准库,按需连接)
+    if name == "SqliteTicketStore":
+        from .store_sqlite import SqliteTicketStore
+        return SqliteTicketStore
+    raise AttributeError(name)

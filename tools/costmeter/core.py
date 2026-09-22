@@ -106,7 +106,11 @@ class BudgetGuard:
     # ── 核心语义 ────────────────────────────────────────────────────────
     def reserve(self, amount: int, retry_of: Optional[str] = None,
                 now: Optional[float] = None) -> str:
-        """调用前预留。amount>0;retry_of 指定原预留 id 时沿用之(重试不重复占额)。"""
+        """调用前预留。amount>0;retry_of 指定原预留 id 时沿用之(重试不重复占额)。
+
+        **预留去重 ≠ 成本去重**:重试若是真实重新发出的模型调用,其用量
+        照常计费——结算时 commit(actual=各次尝试用量之和,累计值)。
+        预留去重只解决"同一逻辑调用不重复占用额度",不豁免任何真实成本。"""
         if amount <= 0:
             raise ValueError("reserve amount 必须 >0")
         now = time.time() if now is None else now

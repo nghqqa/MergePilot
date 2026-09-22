@@ -97,3 +97,25 @@ v2 备忘一.3 硬门槛 3 = "审批不越权：批准的语义、绑定对象�
 
 **数据源事实（2026-09-22 核对）**：token 级 usage 仅存在于 worker OTel LLM spans（`gen_ai.usage.input/output_tokens`），经 OTLP 导出外部 collector；本地容器只有 span 名序列与审计日志；rag toolspans 在 :4184（未运行）。故本地收集器只产出**调用计数面**（tokens=None + missing 标注），token/币值面 ⬜ 未接通。币值换算仅在显式提供价目表时进行，缺价模型返回 unknown_models，不伪造。
 **M4 前还差**：真实 usage 源接入（OTel collector 查询或 worker 本地台账）、预算挂点接入派发/调用路径、预算金额拍板、跨进程预留存储、端到端验证——均未开始。
+**重试语义（2026-09-22 复查）**：`reserve(retry_of)` 只做**预留去重**（同一逻辑调用不重复占额）；真实重发的模型调用照常计费，结算必须传累计实际用量——test_retry_reissued_call_commits_cumulative_cost 固化该契约。
+
+---
+
+# RAG 接入验收（ACCEPTANCE-RAG，2026-09-22 新增；完整链路现状见 RAG-AUDIT.md）
+
+实现：tools/rag/corpus_tool.py + tools/rag/corpus/（语料事实源）+ tools/rag/live/（服务事实源）+ 桥 rag 快照绑定/派发门 ｜
+测试：tests/rag_live/（20：第 1+2 层）+ tests/gh_bridge/test_rag_gate.py（9）｜ 全部 121 passed（2026-09-22 实测）。
+**层级标注**：第 1 层=单测；第 2 层=本地真实检索集成（真实 rag-live-server.mjs 进程+真实 HTTP）；第 3 层=模拟模型调用链；第 4 层=真实模型端到端。
+
+| 条目 | 实现 | 验证 | 层级 |
+|---|---|---|---|
+| RAG-1 真实语料真实检索 | BM25 词法（lexical-zh-en-v1）+ 组织安全标准语料（repo 事实源副本） | test_02 已知文档命中且来源/片段字段齐 | 第2层✅ |
+| RAG-2 接入实际审查调用路径 | worker MCP rag_retrieve（hook 注入，2026-09-21 激活日志）+ kickoff 提示词引导 | 历史审计 64 次调用（58 OK）+ result.md 实际引用；**当前代码版本未复跑** | 历史证据；复跑=第4层待授权 |
+| RAG-3 来源/片段/版本可核对、关联 run | source_ref+chunk_id 返回并强制引用规则；**run 关联靠 manifest 时间窗+query_hash（审计 JSONL 无 run_id——运行时变更待授权 R5 扩展）** | test_04 审计记录（query_hash+source_refs，无查询明文） | 第2层✅ + 1项待授权 |
+| RAG-4 派发前固定快照 | manifest.rag.snapshot_id=语料内容寻址 sha256（corpus_tool，幂等导入/更新即新快照）；任何内容变化≠旧 run 身份 | test_05 快照一致 + test_07 变更即新 ID + 双副本（repo/r3work）snapshot 实测一致 | 第1+2层✅ |
+| RAG-5 结论可追溯检索证据 | citation_rule 强制 + 历史结论实际引用 source_ref | 历史证据（elemiso-pr2rag-gate/result.md） | 历史；当前复跑待授权 |
+| RAG-6 失败语义显式 | 服务不可达=结构化 unreachable；合法空=HTTP200空（test_03）；`MERGEPILOT_RAG_REQUIRED=1` 时快照不可读/服务不可达→**拒派发 ERROR，不静默降级**（默认 advisory=现状，状态入 manifest 可见） | test_08 + rag gate 9 测试 | 第1+2层✅ |
+| RAG-7 注入语料不改权限/审批 | 检索服务无指令执行面（输出即 JSON 数据，test_06）；审批/权限在 tools/approval+gateway 与 RAG 内容无关；模型层遵从=第3/4层 | 第2层✅（工具层）；模型层待授权 |
+| RAG-8 计量接入 | rag-live 审计 JSONL 记录延迟/命中数；成本计量见 ACCEPTANCE-COST（token 面 ⬜） | 第2层✅（延迟/计数）；token 面待 R6 |
+
+**明确未验证/未做**：第 3/4 层（真实 agent 复跑 + 真实模型端到端）待 R1/R2/R4 授权；B 案例链（skill_case_retrieval）非零命中行为未验证；语料部署同步到运行环境（r3work/rag-live）待授权（INTEGRATION-AUTH-REQUESTS R7）。**RAG V0 验收未整体通过**——第 1/2 层达成，第 3/4 层待真实环境。

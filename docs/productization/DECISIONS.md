@@ -57,6 +57,16 @@ repo `tools/gh-bridge/gh_bridge.py` 为事实源；**运行副本在 `D:\goai\r3
 
 冒烟实测（只读，2026-09-22）：清单 missing[] 只剩上两行。教训：探查脚本对"哈希了空输入"必须显式失败——e3b0c442…（空 sha256）曾冒充四个 skill 的哈希，被只读冒烟抓出。
 
-## P-1【待确认提案】门票据存储 = MinIO 单写者（2026-09-22，预研结论非决定）
+## P-1【已决定，工程自主】门票据存储 = SQLite WAL（2026-09-22 第二轮，推翻原 MinIO 提案）
 
-推荐方案 B（MinIO 票据对象 + 单写者仲裁，零 schema 变更），方案 A（服务器 PG approvals 改造）留作 Controller cutover 时搭车授权；方案 C（本地案例库 PG）否决。理由与切换成本见 M2-GATE-STORAGE-OPTIONS.md。**此为提案，待用户拍板**；拍板前只做 MinioTicketStore 实现与只读门页，不接真实执行。
+原提案（MinIO 单写者）**否决**：mc 客户端无条件写原语，"单写者约定"无法证明并发正确性，而门页多请求并发批准/拒绝是真实场景。**决定**：`tools/approval/store_sqlite.py`（SQLite WAL）——真跨进程 CAS（BEGIN IMMEDIATE 写锁排队 + 前置状态守卫 UPDATE rowcount）、活动票唯一由 partial UNIQUE INDEX 跨进程强制、WAL+synchronous=FULL 崩溃恢复、零新服务、单文件可备份。**状态机不重写**：存储层复用 approval.transition 纯逻辑（34 单测语义零漂移）。测试证明跨连接竞争（approve/reject 先到先得、并发创建收敛同一票）、崩溃重开续转移、红线校验往返成立。**迁移路径**：Controller cutover 需要服务器共享存储时按同形状迁 PG，语义单测不变。这是可逆的普通工程选择，不涉共享环境变更。
+
+## #10 RAG 用途认定与修复范围（2026-09-22 第二轮）
+
+- **认定**（依据语料 disclosure+审计记录 data_mode，无产品范围歧义，不提请决策）：A 知识链（rag_retrieve，组织安全标准，advisory）为 V0 RAG 验收主场景；B 案例链（skill_case_retrieval，历史案例，repo_scope 隔离）为补充，非零命中行为未验证；仓库代码检索不走 RAG（reviewer 直接 clone）。
+- **修复**：语料事实源入库 + corpus_tool（内容寻址 snapshot_id、幂等导入）+ 服务事实源入库；桥派发前绑定快照 + RAG_REQUIRED fail-closed 门（默认 advisory 保持现语义，降级经 manifest 可见）。运行副本（r3work）零改动。
+- **遗留待授权**：审计 JSONL 加 run_id（运行时变更）；第 3/4 层验证；语料部署同步（R7）。
+
+## #11 预算重试语义复查结论（2026-09-22 第二轮）
+
+`reserve(retry_of)` 是**预留去重**（同一逻辑调用不重复占额），不是成本豁免：真实重发的模型调用照常计费，结算必须传累计实际用量（test_retry_reissued_call_commits_cumulative_cost 固化）。脚手架仍未接真实调用路径——硬预算验收不变。

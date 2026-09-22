@@ -61,6 +61,16 @@ class ReserveTests(unittest.TestCase):
         self.assertEqual(r["consumed"], 250)
         self.assertEqual(r["remaining"], 750)  # 300 预留,实耗 250,退 50
 
+    def test_retry_reissued_call_commits_cumulative_cost(self):
+        """预留去重 ≠ 成本去重:重试真实重发的用量必须累计结算,不得漏计。"""
+        g = core.BudgetGuard(run_id="r1", limit=1000)
+        rid = g.reserve(300)
+        g.reserve(300, retry_of=rid)          # 第 2 次尝试沿用同一预留
+        # 两次真实模型调用:尝试1 耗 200(中途失败也计费),尝试2 耗 250
+        r = g.commit(rid, actual=200 + 250)   # 结算必须传累计值
+        self.assertEqual(r["consumed"], 450)
+        self.assertEqual(r["remaining"], 550)
+
     def test_retry_of_settled_reservation_rejected(self):
         g = core.BudgetGuard(run_id="r1", limit=1000)
         rid = g.reserve(100)

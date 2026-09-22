@@ -1,6 +1,7 @@
 # M2 门票据存储落点预研（GATE-STORAGE-OPTIONS）
 
-**日期**：2026-09-22 ｜ **性质**：决策支持预研，非决定 ｜ **待用户拍板**（列为 DECISIONS 提案 P-1）
+**日期**：2026-09-22 ｜ **状态**：已决策（见下与 DECISIONS P-1）——原提案 B 否决，最终方案 = SQLite WAL（tools/approval/store_sqlite.py）
+**决策理由（摘要）**：原方案 B 的"单写者约定"无法证明并发正确性（mc 无条件写原语）；SQLite 提供真跨进程 CAS（BEGIN IMMEDIATE+状态守卫 UPDATE）、崩溃恢复（WAL）、partial UNIQUE INDEX 强制活动票唯一，零新服务、零共享环境变更，状态机复用 approval.py 纯逻辑。下文保留原三案分析作为决策依据存档；方案 A（服务器 PG）仍是 cutover 时的目标形态。
 
 问题：M2-APPROVAL-SPEC 的票据模型（tools/approval/，纯逻辑已完成+87 单测面）需要一个真实存储，使 门 Web 页（签发/批准/拒绝）与执行方（桥，校验后动作）共享同一份票据事实。三个候选：
 
