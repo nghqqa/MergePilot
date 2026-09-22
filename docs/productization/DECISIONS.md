@@ -56,3 +56,7 @@ repo `tools/gh-bridge/gh_bridge.py` 为事实源；**运行副本在 `D:\goai\r3
 | 生成参数 | agentloop 不外露 | ⬜ 保持 missing（不伪造） |
 
 冒烟实测（只读，2026-09-22）：清单 missing[] 只剩上两行。教训：探查脚本对"哈希了空输入"必须显式失败——e3b0c442…（空 sha256）曾冒充四个 skill 的哈希，被只读冒烟抓出。
+
+## P-1【待确认提案】门票据存储 = MinIO 单写者（2026-09-22，预研结论非决定）
+
+推荐方案 B（MinIO 票据对象 + 单写者仲裁，零 schema 变更），方案 A（服务器 PG approvals 改造）留作 Controller cutover 时搭车授权；方案 C（本地案例库 PG）否决。理由与切换成本见 M2-GATE-STORAGE-OPTIONS.md。**此为提案，待用户拍板**；拍板前只做 MinioTicketStore 实现与只读门页，不接真实执行。
