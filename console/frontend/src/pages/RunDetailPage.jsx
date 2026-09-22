@@ -175,10 +175,10 @@ function OverviewTab({ run, onOpenEvidence }) {
             <span className="muted">结论未记录 — 包内无独立审查结论，无依据可展示；这不等于"无问题"。</span>
           )}
         </div>
-        {(/finding-confirmed/i.test(run.review.verdict ?? '') || run.publish?.status === 'published') ? (
+        {(/finding[_-]confirmed/i.test(run.review.verdict ?? '') || run.publish?.status === 'published') ? (
           <p className="section-note">
             语义边界：
-            {/finding-confirmed/i.test(run.review.verdict ?? '') ? '发现确认 ≠ 已修复；' : null}
+            {/finding[_-]confirmed/i.test(run.review.verdict ?? '') ? '发现确认 ≠ 已修复；' : null}
             {run.publish?.status === 'published' ? 'GitHub 回写成功 ≠ 补丁已验证或已合并；' : null}
             执行、结论、发布三个状态相互独立，需逐项核对。
           </p>
