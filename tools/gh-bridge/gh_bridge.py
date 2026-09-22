@@ -484,6 +484,58 @@ _SKILL_DIR = "/opt/mergepilot/skills"
 _SKILL_DIRS = {"skill_diff_parse": "diff_parse", "skill_risk_classify": "risk_classify",
                "skill_sast_scan": "sast_scan", "skill_case_retrieval": "case_retrieval"}
 
+# ── RAG 快照绑定与派发门(RAG-AUDIT 缺口修复,RAG-4/6) ─────────────────────
+# 语料事实源在 repo(tools/rag/corpus/);运行副本按布局回退查找,env 可覆盖。
+# required 模式:快照不可读或服务不可达即拒绝派发(fail-closed,不静默降级)。
+# 默认 advisory(当前产品语义):RAG 不可用照常派发,但状态写入 manifest 可见。
+RAG_CORPUS_ENV = "MERGEPILOT_RAG_CORPUS"
+RAG_HEALTH_ENV = "MERGEPILOT_RAG_HEALTH_URL"
+RAG_REQUIRED_ENV = "MERGEPILOT_RAG_REQUIRED"
+
+
+def _rag_corpus_path():
+    env = os.environ.get(RAG_CORPUS_ENV)
+    if env:
+        return env
+    for cand in (os.path.normpath(os.path.join(_HERE, "..", "rag-live",
+                                               "rag-live-corpus.json")),   # r3work 运行布局
+                 os.path.normpath(os.path.join(_HERE, "..", "rag", "corpus",
+                                               "org-security-knowledge-v1.json"))):  # repo 事实源
+        if os.path.isfile(cand):
+            return cand
+    return None
+
+
+def _rag_snapshot_info():
+    """派发时语料快照(内容寻址)。读不到 → None(调用方决定 required 行为)。"""
+    path = _rag_corpus_path()
+    if not path:
+        return None
+    try:
+        _rt = os.path.dirname(os.path.abspath(__file__))
+        for p in (os.path.normpath(os.path.join(_rt, "..", "rag")),
+                  os.path.normpath(os.path.join(_rt, "rag"))):
+            if p not in sys.path:
+                sys.path.insert(0, p)
+        import corpus_tool
+        doc = corpus_tool.load(path)
+        info = corpus_tool.describe(doc)
+        info["source"] = os.path.basename(path)
+        return info
+    except Exception:
+        return None
+
+
+def _rag_service_state(url=None, timeout_s=2.0):
+    """只读 /health 探测(dispatch 时服务状态)。任何失败 = unreachable。"""
+    url = url or os.environ.get(RAG_HEALTH_ENV, "http://host.docker.internal:4184/health")
+    try:
+        import urllib.request
+        with urllib.request.urlopen(url, timeout=timeout_s) as r:
+            return "reachable" if r.status == 200 else "unreachable"
+    except Exception:
+        return "unreachable"
+
 
 def _worker_model_id(container, role):
     """只读取 worker 配置中的主模型标识;仅提取 model 字段,不搬运其余配置。"""
@@ -538,6 +590,9 @@ def build_manifest(d, run, proj, task, kickoff_base, timeout_min):
     # RAG 版本仅剩 :4184 endpoint(rag-live 未运行),无从取版本 → 保持 missing。
     model_id = _worker_model_id("elemiso-worker-reviewer", "reviewer")
     skill_hashes = _skills_content_hashes("elemiso-worker-reviewer")
+    rag_snap = _rag_snapshot_info()
+    rag_state = _rag_service_state()
+    rag_required = os.environ.get(RAG_REQUIRED_ENV, "") == "1"
     cfg = {"allow_repos": sorted(ALLOW_REPOS), "repo_url": REPO_URL,
            "leader": LEADER, "team_room": TEAM_ROOM, "dm_room": DM_ROOM,
            "watch_poll_s": WATCH_POLL_S, "timeout_min": timeout_min,
@@ -559,11 +614,19 @@ def build_manifest(d, run, proj, task, kickoff_base, timeout_min):
         "model": {"primary": model_id,
                   "generation_params": None,   # agentloop 不外露;不伪造
                   "note": "primary from reviewer openclaw.json; fixer/verifier assumed同模型池"},
-        "rag": {"version": None,
-                "endpoint_configured": "host.docker.internal:4184 (rag-live; 未运行无版本可取)"},
+        "rag": {"snapshot_id": rag_snap["snapshot_id"] if rag_snap else None,
+                "chunks": rag_snap["chunks"] if rag_snap else None,
+                "data_mode": rag_snap["data_mode"] if rag_snap else None,
+                "retrieval_mode": rag_snap["retrieval_mode"] if rag_snap else None,
+                "strategy_id": rag_snap["strategy_id"] if rag_snap else None,
+                "corpus": rag_snap["source"] if rag_snap else None,
+                "service_state_at_dispatch": rag_state,
+                "policy": "required" if rag_required else "optional"},
         "config": {"canonical": cfg, "sha256": _sha_text(_canon(cfg))},
     }
-    missing = ["model.generation_params", "rag.version"]
+    missing = ["model.generation_params"]
+    if rag_snap is None:
+        missing.append("rag.snapshot_id")   # 语料不可读:知识版本不可追溯
     if model_id is None:
         missing.append("model.primary")
     if skill_hashes is None:
@@ -576,6 +639,25 @@ def build_manifest(d, run, proj, task, kickoff_base, timeout_min):
         missing.append("orchestrator.git_commit")
     m["missing"] = missing
     return m
+
+
+def rag_dispatch_gate():
+    """RAG_REQUIRED=1 时的派发前置门( fail-closed,不静默降级)。
+
+    返回 (ok, detail)。required 模式下语料快照不可读或服务不可达 → 拒派发;
+    advisory 模式(默认)恒放行,状态由 manifest 如实记录。"""
+    required = os.environ.get(RAG_REQUIRED_ENV, "") == "1"
+    snap = _rag_snapshot_info()
+    state = _rag_service_state()
+    if not required:
+        return True, {"policy": "optional", "snapshot": bool(snap),
+                      "service": state}
+    if snap is None:
+        return False, "RAG_REQUIRED_UNAVAILABLE: corpus snapshot unreadable"
+    if state != "reachable":
+        return False, "RAG_REQUIRED_UNAVAILABLE: rag service %s" % state
+    return True, {"policy": "required", "snapshot": snap["snapshot_id"][:12],
+                  "service": state}
 
 
 def read_run_manifest(proj):
@@ -663,6 +745,11 @@ def process(d, timeout_min, dry):
     if dry:
         log("DRY-RUN kickoff:\n" + kickoff)
         finish(d, False, "dry-run (no dispatch)", cid)
+        return
+    rag_ok, rag_detail = rag_dispatch_gate()
+    if not rag_ok:
+        finish(d, False, str(rag_detail)[:160], cid)
+        log("RAG gate REFUSED — no dispatch:", rag_detail)
         return
     if not seed_project(proj, task, d, run):
         finish(d, False, "project seeding failed (mc pipe)", cid)

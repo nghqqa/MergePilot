@@ -34,7 +34,8 @@ class BuildManifestTests(unittest.TestCase):
              mock.patch.object(br, "_bridge_source_sha", return_value=bsha), \
              mock.patch.object(br, "_git_commit", return_value=git), \
              mock.patch.object(br, "_worker_model_id", side_effect=lambda c, r: model), \
-             mock.patch.object(br, "_skills_content_hashes", side_effect=lambda c: skh):
+             mock.patch.object(br, "_skills_content_hashes", side_effect=lambda c: skh), \
+             mock.patch.object(br, "_rag_service_state", return_value="unreachable"):
             return br.build_manifest(d, "run-x", "elemiso-gh-pr2-abcd1234",
                                      "gh-pr2-abcd1234-review-1", _base_kickoff(), 20)
 
@@ -49,10 +50,8 @@ class BuildManifestTests(unittest.TestCase):
 
     def test_missing_items_marked_not_fabricated(self):
         m = self._build()
-        self.assertIsNone(m["model"]["generation_params"])
-        self.assertIsNone(m["rag"]["version"])
-        for key in ("model.generation_params", "rag.version"):
-            self.assertIn(key, m["missing"])
+        self.assertIsNone(m["model"]["generation_params"])   # agentloop 不外露,不伪造
+        # repo 语料回退存在时快照可得;不可读路径时进 missing(见 test_rag_gate.py)
         self.assertNotIn("model.primary", m["missing"])           # 已从 worker 取得
         self.assertNotIn("skills.content_sha256", m["missing"])
         self.assertEqual(m["model"]["primary"], "agentteams-gateway/deepseek-chat")
@@ -168,6 +167,7 @@ class ProcessDispatchGateTests(unittest.TestCase):
 
         with mock.patch.object(br, "ssh_psql", side_effect=fake_ssh), \
              mock.patch.object(br, "already_processed", return_value=False), \
+             mock.patch.object(br, "rag_dispatch_gate", return_value=(True, {})), \
              mock.patch.object(br, "seed_project", return_value=True), \
              mock.patch.object(br, "wake_workers", return_value=True), \
              mock.patch.object(br, "prepare_run_manifest",

@@ -213,6 +213,7 @@ class ProcessTerminalSemantics(unittest.TestCase):
 
         with mock.patch.object(br, "ssh_psql", side_effect=fake_ssh), \
              mock.patch.object(br, "already_processed", return_value=False), \
+             mock.patch.object(br, "rag_dispatch_gate", return_value=(True, {})), \
              mock.patch.object(br, "seed_project", return_value=True), \
              mock.patch.object(br, "wake_workers", return_value=True), \
              mock.patch.object(br, "prepare_run_manifest",
