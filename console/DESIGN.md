@@ -94,7 +94,7 @@ components:
   mode-chip:
     shape: "pill"
     background: "{colors.accent-teal-soft}"
-    content: "脉冲点 + SNAPSHOT + 口径短语"
+    content: "静态点 + 历史快照·只读 + 口径短语；脉冲动画暗示实时，与 snapshot 语义相反，禁用"
   status-badge:
     shape: "pill"
     anatomy: "色点(6px) + 文字；颜色永不单独承载状态"

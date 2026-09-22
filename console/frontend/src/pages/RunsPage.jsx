@@ -210,7 +210,7 @@ export default function RunsPage() {
           <h1>审查运行</h1>
           <p className="page-sub">
             先看 PR 与审查结论，再核对执行、人工确认与 GitHub 检查。
-            各状态悬停或聚焦可查看字段来源与语义边界；缺失字段如实显示"未记录"。
+            各状态徽章可悬停或键盘聚焦查看语义边界；缺失字段如实显示"未记录"。
           </p>
         </div>
       </div>

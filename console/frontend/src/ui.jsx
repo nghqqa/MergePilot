@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { AlertTriangle, Check, Copy, Inbox, Loader2 } from 'lucide-react';
 
 // 语义化状态徽章：色点 + 文字（颜色永不单独承载状态）。
+// tabIndex=0 兑现"悬停或聚焦可查看"的承诺：键盘 Tab 到徽章即可读到 title 里的语义边界与来源。
 const TONES = {
   ok: 'var(--c-ok)',
   info: 'var(--c-info)',
@@ -13,7 +14,7 @@ const TONES = {
 
 export function Badge({ tone = 'neutral', title, dot = true, children }) {
   return (
-    <span className={`badge badge-${tone}`} title={title}>
+    <span className={`badge badge-${tone}`} title={title} tabIndex={0}>
       {dot ? <span className="badge-dot" aria-hidden /> : null}
       {children}
     </span>
