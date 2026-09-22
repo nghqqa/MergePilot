@@ -21,12 +21,19 @@
 import argparse
 import base64
 import json
+import os
 import re
 import subprocess
 import sys
 import time
+import uuid
 
-sys.path.insert(0, r"D:\goai\r3work\scripts")
+_HERE = os.path.dirname(os.path.abspath(__file__))
+for _cand in (os.path.normpath(os.path.join(_HERE, "..", "r3ops")),
+              r"D:\goai\r3work\scripts"):
+    if os.path.isdir(_cand):
+        sys.path.insert(0, _cand)
+        break
 import matrix as mx  # noqa: E402
 
 SERVER = "root@159.75.42.106"
@@ -70,19 +77,36 @@ def pending_deliveries():
         "AND repo IS NOT NULL ORDER BY received_at) t", as_json=True)
 
 
+def already_processed(d):
+    """同 repo+PR+head 已有 PROCESSED 投递 → 跳过(重复 webhook/重发不重复执行)."""
+    q = ("SELECT count(*) FROM public.github_deliveries WHERE repo='%s' "
+         "AND pr_number=%s AND observed_head_sha='%s' AND status='PROCESSED'"
+         % (d["repo"], int(d["pr_number"]), d["observed_head_sha"]))
+    return ssh_psql(q) not in ("0", "")
+
+
 def claim(d):
-    """CAS 认领:PENDING→RUNNING。rowcount=1 才继续(并发安全)."""
+    """CAS 认领:PENDING→RUNNING。rowcount=1 才继续(并发安全)。
+
+    claim_id 每次认领轮换(对照 github_drain 合同):含 8 hex 随机尾,
+    终结(finish)必须精确匹配本次 claim_id,防旧执行者覆盖新执行者状态。"""
+    cid = "%s-bridge-%s" % (d["delivery_id"][:14], uuid.uuid4().hex[:8])
     q = ("UPDATE public.github_deliveries SET status='RUNNING', claim_id='%s', "
          "claimed_at=now() WHERE delivery_id='%s' AND status='PENDING'"
-         % (d["delivery_id"][:24] + "-bridge", d["delivery_id"]))
-    return ssh_psql(q) == "UPDATE 1"
+         % (cid, d["delivery_id"]))
+    return cid if ssh_psql(q) == "UPDATE 1" else None
 
 
-def finish(d, ok, note=""):
+def finish(d, ok, note="", cid=None):
+    """终结投递。带 cid 时精确匹配(租约正确性);不带时仅限认领前拒绝路径。"""
     status = "PROCESSED" if ok else "ERROR"
+    where = "delivery_id='%s'" % d["delivery_id"]
+    if cid:
+        where += " AND claim_id='%s'" % cid
+    else:
+        where += " AND claim_id LIKE '%-bridge%'"
     q = ("UPDATE public.github_deliveries SET status='%s', processed_at=now(), "
-         "error='%s' WHERE delivery_id='%s' AND claim_id LIKE '%%-bridge'"
-         % (status, note.replace("'", " ")[:180], d["delivery_id"]))
+         "error='%s' WHERE %s" % (status, note.replace("'", " ")[:180], where))
     return ssh_psql(q)
 
 
@@ -246,22 +270,6 @@ def watch_run(run, proj, deadline_ts):
 
 
 # ── 回写:经服务器 reporter 容器以 App 身份 POST check-run ───────────────────
-CHECK_PAYLOAD_SCRIPT = r'''
-import base64, json, sys, urllib.request
-from token_provider import GitHubAppTokenProvider, TokenProviderConfig
-p = GitHubAppTokenProvider(TokenProviderConfig.from_env())
-tok = p.get_token()
-spec = json.loads(base64.b64decode(sys.argv[1]).decode())
-req = urllib.request.Request('https://api.github.com/repos/%s/check-runs' % spec['repo'],
-    data=json.dumps(spec['body']).encode(), method='POST',
-    headers={'Authorization': 'Bearer ' + tok, 'Accept': 'application/vnd.github+json',
-             'Content-Type': 'application/json'})
-r = urllib.request.urlopen(req, timeout=20)
-d = json.load(r)
-print(json.dumps({'http': r.status, 'check_run_id': d['id'], 'url': d['html_url']}))
-'''
-
-
 def post_check(d, verdict, report, run):
     concl, title = {
         "pass": ("success", "MergePilot review: passed (auto-completed)"),
@@ -283,15 +291,143 @@ def post_check(d, verdict, report, run):
         "head_sha": d["observed_head_sha"],
         "status": "completed", "conclusion": concl,
         "output": {"title": title, "summary": summary[:60000]}}}
-    b64 = base64.b64encode(json.dumps(payload).encode()).decode()
-    s64 = base64.b64encode(CHECK_PAYLOAD_SCRIPT.encode()).decode()
-    # 脚本与载荷全部 base64,单行无引号——免疫 ssh/bash 转义
+    return payload
+
+
+def _reporter_exec(script_b64, payload_b64):
+    """在服务器 reporter 容器内执行 base64 脚本,返回 (stdout, ok)."""
     cmd = (f"cd {COMPOSE_DIR} && docker exec mp-checks-reporter python -c "
-           f"\"import base64;exec(base64.b64decode('{s64}').decode())\" {b64}")
+           f"\"import base64;exec(base64.b64decode('{script_b64}').decode())\" {payload_b64}")
     r = subprocess.run(["ssh", *SSH_OPTS, SERVER, cmd],
                        capture_output=True, text=True, timeout=90)
-    out = (r.stdout or "").strip() or (r.stderr or "").strip()[:200]
-    return out
+    out = (r.stdout or "").strip()
+    return out, r.returncode == 0 and bool(out)
+
+
+CHECK_PAYLOAD_SCRIPT = r'''
+import base64, json, sys, urllib.request
+from token_provider import GitHubAppTokenProvider, TokenProviderConfig
+p = GitHubAppTokenProvider(TokenProviderConfig.from_env())
+tok = p.get_token()
+spec = json.loads(base64.b64decode(sys.argv[1]).decode())
+req = urllib.request.Request('https://api.github.com/repos/%s/check-runs' % spec['repo'],
+    data=json.dumps(spec['body']).encode(), method='POST',
+    headers={'Authorization': 'Bearer ' + tok, 'Accept': 'application/vnd.github+json',
+             'Content-Type': 'application/json'})
+r = urllib.request.urlopen(req, timeout=20)
+d = json.load(r)
+print(json.dumps({'http': r.status, 'check_run_id': d['id'], 'url': d['html_url']}))
+'''
+
+# 对账收敛(场景3):POST 前先查该 head_sha 上是否已有本 App 的 mergepilot/review
+# check-run——"GitHub 已接受但本地未记录"时直接采纳,不重复发布。
+CHECK_RECONCILE_SCRIPT = r'''
+import base64, json, sys, urllib.request
+from token_provider import GitHubAppTokenProvider, TokenProviderConfig
+p = GitHubAppTokenProvider(TokenProviderConfig.from_env())
+tok = p.get_token()
+spec = json.loads(base64.b64decode(sys.argv[1]).decode())
+req = urllib.request.Request(
+    'https://api.github.com/repos/%s/commits/%s/check-runs' % (spec['repo'], spec['head_sha']),
+    headers={'Authorization': 'Bearer ' + tok, 'Accept': 'application/vnd.github+json'})
+r = urllib.request.urlopen(req, timeout=20)
+d = json.load(r)
+print(json.dumps({'http': r.status, 'matches': [
+    {'check_run_id': c['id'], 'conclusion': c.get('conclusion'), 'url': c.get('html_url')}
+    for c in d.get('check_runs', []) if c.get('name') == 'mergepilot/review']}))
+'''
+
+
+def parse_publish_out(out):
+    """reporter 输出 → 结构化结果;仅 HTTP 200/201 且带 check_run_id 视为成功."""
+    try:
+        j = json.loads(out)
+        if isinstance(j, dict) and j.get("http") in (200, 201) and j.get("check_run_id"):
+            return {"ok": True, "check_run_id": j["check_run_id"],
+                    "url": j.get("url", ""), "http": j["http"], "adopted": False}
+    except Exception:
+        pass
+    return {"ok": False, "raw": (out or "")[:200]}
+
+
+def parse_reconcile_out(out):
+    try:
+        j = json.loads(out)
+        if isinstance(j, dict) and j.get("http") in (200, 201):
+            m = j.get("matches") or []
+            if m:
+                best = m[-1]
+                return {"ok": True, "check_run_id": best["check_run_id"],
+                        "url": best.get("url", ""), "http": j["http"], "adopted": True}
+            return {"ok": True, "matches": 0, "adopted": False}
+    except Exception:
+        pass
+    return {"ok": False, "raw": (out or "")[:200]}
+
+
+# ── 发布凭据(MinIO 回执):POST 成功/对账采纳后落盘,崩溃恢复据此免重发 ──────
+def _receipt_path(proj):
+    return f"teams/elemiso-team/shared/projects/{proj}/check-run-receipt.json"
+
+
+def write_receipt(proj, res, d, run, verdict):
+    body = {"check_run_id": res.get("check_run_id"), "url": res.get("url", ""),
+            "head_sha": d["observed_head_sha"], "run_id": run, "verdict": verdict,
+            "adopted": bool(res.get("adopted")),
+            "written_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+    return minio_put(_receipt_path(proj), json.dumps(body, ensure_ascii=False, indent=2))
+
+
+def read_receipt(proj):
+    p = subprocess.run(["docker", "exec", "elemiso-ctrl", "mc", "cat",
+                        f"{BUCKET}/{_receipt_path(proj)}"],
+                       capture_output=True, text=True, timeout=30)
+    if p.returncode != 0 or not p.stdout.strip():
+        return None
+    try:
+        return json.loads(p.stdout)
+    except Exception:
+        return None
+
+
+PUBLISH_ATTEMPTS = 3          # 有界重试(场景4):发布类失败最多 3 次
+PUBLISH_BACKOFF_S = (10, 30)  # 退避间隔
+
+
+def publish_with_retry(d, verdict, report, run, proj, log):
+    """发布结论。顺序:本地回执 → GitHub 对账 → POST(有界重试)→ 回执落盘。
+
+    返回 {'ok':True,...} 或 {'ok':False,'raw':...}。任一成功路径都会写回执;
+    回执写失败不视为发布失败(check_run_id 记入 note,恢复时对账兜底)。"""
+    rcpt = read_receipt(proj)
+    if rcpt and rcpt.get("check_run_id"):
+        return {"ok": True, "check_run_id": rcpt["check_run_id"],
+                "url": rcpt.get("url", ""), "http": None, "adopted": True,
+                "from": "receipt"}
+    payload = post_check(d, verdict, report, run)
+    b64 = base64.b64encode(json.dumps(payload).encode()).decode()
+    s64 = base64.b64encode(CHECK_PAYLOAD_SCRIPT.encode()).decode()
+    r64 = base64.b64encode(CHECK_RECONCILE_SCRIPT.encode()).decode()
+    q64 = base64.b64encode(json.dumps(
+        {"repo": d["repo"], "head_sha": d["observed_head_sha"]}).encode()).decode()
+    last = {"ok": False, "raw": "not attempted"}
+    for i in range(1, PUBLISH_ATTEMPTS + 1):
+        rec_out, rec_ok = _reporter_exec(r64, q64)
+        rec = parse_reconcile_out(rec_out) if rec_ok else {"ok": False, "raw": rec_out[:200]}
+        if rec.get("ok") and rec.get("adopted"):
+            write_receipt(proj, rec, d, run, verdict)
+            return rec
+        out, ok = _reporter_exec(s64, b64)
+        res = parse_publish_out(out) if ok else {"ok": False, "raw": out[:200]}
+        if res["ok"]:
+            if not write_receipt(proj, res, d, run, verdict):
+                log("receipt write failed (non-fatal; reconcile covers recovery)")
+            return res
+        last = res
+        log("publish attempt %d/%d failed: %s" % (i, PUBLISH_ATTEMPTS, res.get("raw", "")[:120]))
+        if i < PUBLISH_ATTEMPTS:
+            time.sleep(PUBLISH_BACKOFF_S[min(i - 1, len(PUBLISH_BACKOFF_S) - 1)])
+    return last
 
 
 # ── 主流程 ──────────────────────────────────────────────────────────────────
@@ -299,28 +435,33 @@ def process(d, timeout_min, dry):
     if d["repo"] not in ALLOW_REPOS:
         finish(d, False, "repo not in bridge allowlist")
         return
-    if not claim(d):
+    if already_processed(d):
+        # 场景5:同 repo+PR+head 已成功投递过,重复投递只标记不重跑
+        finish(d, True, "duplicate: same repo/pr/head already PROCESSED")
+        return
+    cid = claim(d)
+    if not cid:
         return  # 被并发认领
     run, proj, task, kickoff = build_kickoff(d)
     log = lambda *a: print(time.strftime("[%H:%M:%S]"), *a, flush=True)
-    log(f"claimed {d['delivery_id'][:18]} PR#{d['pr_number']} {d['action']} -> {run}")
+    log(f"claimed {d['delivery_id'][:18]} PR#{d['pr_number']} {d['action']} -> {run} (claim {cid[-8:]})")
     if dry:
         log("DRY-RUN kickoff:\n" + kickoff)
-        finish(d, False, "dry-run (no dispatch)")
+        finish(d, False, "dry-run (no dispatch)", cid)
         return
     if not seed_project(proj, task, d, run):
-        finish(d, False, "project seeding failed (mc pipe)")
+        finish(d, False, "project seeding failed (mc pipe)", cid)
         log("project seeding FAILED — delivery marked ERROR")
         return
     log(f"seeded project {proj} (meta.json + plan.md)")
     if not wake_workers():
-        finish(d, False, "worker wake failed")
+        finish(d, False, "worker wake failed", cid)
         log("worker wake FAILED — delivery marked ERROR")
         return
     log("workers awake; sending kickoff to leader DM")
     r = mx.send(DM_ROOM, LEADER, kickoff, txn_prefix="ghbridge")
     if not r.get("event_id"):
-        finish(d, False, "kickoff send failed: " + str(r.get("error"))[:120])
+        finish(d, False, "kickoff send failed: " + str(r.get("error"))[:120], cid)
         return
     log("kickoff sent:", r["event_id"])
     st, report = watch_run(run, proj, time.time() + timeout_min * 60)
@@ -337,9 +478,23 @@ def process(d, timeout_min, dry):
         "## leader report\n" + (report or ""),
     ] if x.strip())
     log("terminal:", st, "-> verdict:", verdict)
-    cr = post_check(d, verdict, evidence, run)
-    log("check-run:", cr)
-    finish(d, st in ("completed", "blocked"), f"{st}/{verdict}; {cr[:150]}")
+    # 场景7:GitHub 回写成功才算投递完成;失败=可恢复 ERROR,不标 PROCESSED。
+    # 审查未终态(timeout)时即使 neutral check 已发布,投递也不算完成(manual)。
+    pub = publish_with_retry(d, verdict, evidence, run, proj, log)
+    if pub["ok"] and st in ("completed", "blocked"):
+        note = "%s/%s; check_run=%s" % (st, verdict, pub.get("check_run_id"))
+        if pub.get("adopted"):
+            note += " (adopted via %s)" % pub.get("from", "reconcile")
+        finish(d, True, note, cid)
+        log("published:", note)
+    elif not pub["ok"] and st in ("completed", "blocked"):
+        finish(d, False, "PUBLISH_FAILED(retryable) %s/%s; last=%s"
+               % (st, verdict, pub.get("raw", "")[:100]), cid)
+        log("PUBLISH FAILED after %d attempts — delivery ERROR (recoverable)" % PUBLISH_ATTEMPTS)
+    else:
+        finish(d, False, "TIMEOUT(manual) %s; publish=%s"
+               % (st, "ok" if pub.get("ok") else "failed"), cid)
+        log("review TIMEOUT — delivery ERROR (manual attention)")
 
 
 def main():
