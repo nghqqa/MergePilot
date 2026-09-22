@@ -370,6 +370,7 @@ td.th-right { text-align: right; }
   box-shadow: var(--shadow-xs); font-size: var(--fs-sm);
 }
 .state-error { border-color: rgba(180, 35, 24, 0.35); color: var(--c-bad); background: var(--c-bad-bg); }
+.error-hint { font-size: var(--fs-xs); opacity: 0.85; margin-top: 2px; }
 .state-ok { border-color: rgba(6, 118, 71, 0.35); color: var(--c-ok); background: var(--c-ok-bg); }
 .state-warn { border-color: rgba(181, 71, 8, 0.35); color: var(--c-warn); background: var(--c-warn-bg); }
 .state-empty { justify-content: center; color: var(--c-text-3); min-height: 120px; }
@@ -399,6 +400,10 @@ td.th-right { text-align: right; }
 }
 .tab:hover { color: var(--c-text); }
 .tab-active { color: var(--c-accent-strong); font-weight: var(--fw-semibold); border-bottom-color: var(--c-accent); }
+.tab-zero {
+  font-size: var(--fs-xs); line-height: 1; padding: 1px 5px; border-radius: 999px;
+  background: var(--c-inset); border: 1px solid var(--c-border); color: var(--c-text-3);
+}
 
 /* ---- sections ---- */
 .section { margin: 22px 0; }

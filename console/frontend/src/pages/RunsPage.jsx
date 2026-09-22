@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { ArrowDown, ArrowRight, Clock, RotateCcw, Search } from 'lucide-react';
+import { ArrowDown, ArrowRight, ArrowUpRight, Clock, RotateCcw, Search } from 'lucide-react';
 import { api } from '../api.js';
 import { ErrorBox, Empty, SkeletonRows } from '../ui.jsx';
 import { ExecutionBadge, VerdictBadge, GateBadge, PublishBadge } from '../status.jsx';
@@ -92,7 +92,7 @@ export default function RunsPage() {
     setSearchParams(new URLSearchParams(), { replace: true });
   };
 
-  useEffect(() => {
+  const load = useCallback(() => {
     setData(null);
     setError(null);
     // severity 与 verdict=NOT_RECORDED（结论未记录）为客户端维度，后端不识别，不下发
@@ -106,6 +106,10 @@ export default function RunsPage() {
     }).then(setData).catch(setError);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   useEffect(() => {
     api.runs({ limit: 200 }).then(setAllData).catch(() => {});
@@ -318,7 +322,7 @@ export default function RunsPage() {
         ) : null}
       </div>
 
-      {error ? <ErrorBox error={error} /> : !data ? <SkeletonRows /> : !pageItems.length ? (
+      {error ? <ErrorBox error={error} onRetry={load} /> : !data ? <SkeletonRows /> : !pageItems.length ? (
         <Empty>没有匹配的运行 — 调整或清除筛选后重试</Empty>
       ) : (
         <>
@@ -377,7 +381,7 @@ export default function RunsPage() {
                                 aria-label={`在 GitHub 打开 PR #${r.pr_number} 页面（新窗口）`}
                                 title="GitHub PR 页面链接 — 是 PR 当前状态页，不是绑定该 head 的永久证据链接（证据以 head SHA 为准）"
                               >
-                                ↗
+                                <ArrowUpRight size={11} strokeWidth={1.75} aria-hidden />
                               </a>
                             ) : null}
                           </span>

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { AlertTriangle, Check, Copy, Inbox, Loader2 } from 'lucide-react';
+import { AlertTriangle, Check, Copy, Inbox, Loader2, RotateCcw } from 'lucide-react';
 
 // 语义化状态徽章：色点 + 文字（颜色永不单独承载状态）。
 // tabIndex=0 兑现"悬停或聚焦可查看"的承诺：键盘 Tab 到徽章即可读到 title 里的语义边界与来源。
@@ -86,14 +86,20 @@ export function SkeletonRows({ rows = 8, cols = 7 }) {
   );
 }
 
-export function ErrorBox({ error }) {
+export function ErrorBox({ error, onRetry }) {
   return (
     <div className="state-box state-error" role="alert">
       <AlertTriangle size={16} strokeWidth={1.75} aria-hidden />
       <div>
         <strong>加载失败</strong>
         <div>{String(error?.message ?? error)}</div>
+        {onRetry ? <div className="error-hint">快照读取失败时可重试；若持续失败，请检查证据包目录是否完整。</div> : null}
       </div>
+      {onRetry ? (
+        <button type="button" className="btn btn-sm" onClick={onRetry}>
+          <RotateCcw size={12} strokeWidth={1.75} aria-hidden /> 重试
+        </button>
+      ) : null}
     </div>
   );
 }

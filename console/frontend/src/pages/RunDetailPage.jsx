@@ -1,7 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import {
-  Braces, Check, ChevronsLeft, CloudUpload, Download, File, FileCode, FileDiff,
+  ArrowUpRight, Braces, Check, ChevronsLeft, CloudUpload, Download, File, FileCode, FileDiff,
   FileSearch, FileText, FolderOpen, Hand, History, LayoutDashboard, ListChecks,
   ScrollText, Search, ShieldCheck, Tag, Wrench, X, Workflow,
 } from 'lucide-react';
@@ -35,15 +35,16 @@ function EvidenceDrawer({ packId, filePath, onClose }) {
   const [content, setContent] = useState(null);
   const [error, setError] = useState(null);
   const drawerRef = React.useRef(null);
-  useEffect(() => {
+  const loadContent = useCallback(() => {
     setContent(null);
     setError(null);
-    if (filePath) {
-      api.evidenceContent(packId, filePath).then(setContent).catch(setError);
-      // 焦点移入对话框容器（Esc 已有全局监听； Tab 循环圈闭属后续 a11y 轮）
-      setTimeout(() => drawerRef.current?.focus(), 0);
-    }
+    if (filePath) api.evidenceContent(packId, filePath).then(setContent).catch(setError);
   }, [packId, filePath]);
+  useEffect(() => {
+    loadContent();
+    // 焦点移入对话框容器（Esc 已有全局监听； Tab 循环圈闭属后续 a11y 轮）
+    if (filePath) setTimeout(() => drawerRef.current?.focus(), 0);
+  }, [loadContent, filePath]);
   if (!filePath) return null;
   return (
     <div className="drawer-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
@@ -82,7 +83,7 @@ function EvidenceDrawer({ packId, filePath, onClose }) {
         </div>
         <div className="drawer-body">
           {error ? (
-            <ErrorBox error={error} />
+            <ErrorBox error={error} onRetry={loadContent} />
           ) : !content ? (
             <Spinner />
           ) : content.encoding === 'binary' ? (
@@ -201,7 +202,7 @@ function OverviewTab({ run, onOpenEvidence }) {
         <div className="kv">
           <div className="kv-label">PR</div>
           <div className="kv-value">
-            {run.pr_number ? (run.pr_url ? <a href={run.pr_url} target="_blank" rel="noreferrer" aria-label="GitHub PR 页面（新窗口）" title="GitHub PR 页面 — 非 head 绑定的永久证据链接">#{run.pr_number} ↗</a> : `#${run.pr_number}`) : '未记录'}
+            {run.pr_number ? (run.pr_url ? <a href={run.pr_url} target="_blank" rel="noreferrer" aria-label="GitHub PR 页面（新窗口）" title="GitHub PR 页面 — 非 head 绑定的永久证据链接">#{run.pr_number}<ArrowUpRight size={11} strokeWidth={1.75} aria-hidden /></a> : `#${run.pr_number}`) : '未记录'}
             {run.pr_title ? <div className="kv-note" title="标题来自证据包内 PR-METADATA 记录">{run.pr_title}</div> : null}
           </div>
         </div>
@@ -552,6 +553,11 @@ export default function RunDetailPage() {
   const [integrity, setIntegrity] = useState(null);
   const openTriggerRef = React.useRef(null); // 抽屉关闭后焦点恢复到触发元素
 
+  const loadRun = useCallback(() => {
+    setRun(null); setError(null); setIntegrity(null); setTab('概览');
+    api.run(packId).then(setRun).catch(setError);
+  }, [packId]);
+
   const openEvidence = (filePath) => {
     openTriggerRef.current = document.activeElement;
     setEvidenceFile(filePath);
@@ -562,9 +568,8 @@ export default function RunDetailPage() {
   };
 
   useEffect(() => {
-    setRun(null); setError(null); setIntegrity(null); setTab('概览');
-    api.run(packId).then(setRun).catch(setError);
-  }, [packId]);
+    loadRun();
+  }, [loadRun]);
 
   useEffect(() => {
     const onKey = (e) => e.key === 'Escape' && closeEvidence();
@@ -581,6 +586,15 @@ export default function RunDetailPage() {
     }
   };
 
+  // 空数据维度在 tab 上标注 0：不用逐个点开排雷（有数据的维度不标，保持安静）
+  const tabZero = run ? {
+    时间线: run.timeline?.length ?? 0,
+    任务: run.tasks?.length ?? 0,
+    Skill: (run.versions?.skills?.length ?? 0) + (run.skill_audit?.invocations?.length ?? 0),
+    RAG: run.rag?.calls?.length ?? 0,
+    用量: run.usage ? Object.keys(run.usage.windows ?? {}).length : 0,
+  } : {};
+
   return (
     <div>
       <div className="breadcrumb">
@@ -589,7 +603,7 @@ export default function RunDetailPage() {
         </Link>
       </div>
 
-      {error ? <ErrorBox error={error} /> : !run ? (
+      {error ? <ErrorBox error={error} onRetry={loadRun} /> : !run ? (
         <div className="detail-skeleton">
           <SkeletonRows rows={5} />
         </div>
@@ -638,6 +652,9 @@ export default function RunDetailPage() {
               >
                 <t.icon size={14} strokeWidth={1.75} aria-hidden />
                 {t.key}
+                {tabZero[t.key] === 0 ? (
+                  <span className="tab-zero" title="本证据包在此维度无数据（0 条）— 如实标注，不以其他数据冒充">0</span>
+                ) : null}
               </button>
             ))}
           </div>
