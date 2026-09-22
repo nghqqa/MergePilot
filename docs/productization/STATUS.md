@@ -1,8 +1,19 @@
 # MergePilot 产品化推进状态（STATUS）
 
-**更新**：2026-09-22（第四轮：架构 v3 骨架）｜ **分支**：`chore/backfill-r3-ops` ｜ 授权范围：M1→M4 至 V0 技术就绪
+**更新**：2026-09-22（第五轮：M3.5 v3 本地接线与只读可观测闭环）｜ **分支**：`chore/backfill-r3-ops` ｜ 授权范围：M1→M4 至 V0 技术就绪
 
-## 本轮新增：架构 v3 分级并行审查骨架（设计见 ARCHITECTURE-V3.md，验收见 ACCEPTANCE-ARCHV3）
+## 本轮新增：M3.5（验收见 ACCEPTANCE-M35）
+
+| 工作项 | 状态 | 说明 |
+|---|---|---|
+| v3 adapter 三态接线 | ✅ 实现+测试 | off（默认零开销）/ shadow（真实 PR 只读→分级+计划+状态持久化，零 Agent 零外部写）/ on（授权前按 shadow 并显式记录） |
+| 桥派发边界 hook | ✅ 实现+测试 | v3_shadow_hook fail-soft：shadow 炸掉旧链路照常 PROCESSED；桥内不重写任何 v3 逻辑 |
+| RunStore（v3_runs 表） | ✅ 实现+测试 | 幂等 UPSERT/重启恢复/取代标记；与票据库分库，状态机唯一（stages.RunStages） |
+| 纵向链路（fixture） | ✅ 13 测试 | risk→plan→并行 reviewers→聚合去重保源→finding validation→outcome→store→read model |
+| shadow 诚实性 | ✅ 5 测试 | 审查器 SKIPPED 不伪装；diff 不可得档位 FAILED；关键跳过⇒MANUAL_ATTENTION |
+| 只读控制台 | ✅ 实现+6 测试 | GET-only（写方法 405）；shadow/fixture 强制标签；部分完成不压缩为成功；交接见 docs/productization/console/STATUS.md |
+
+## 前轮：架构 v3 骨架（设计见 ARCHITECTURE-V3.md，验收见 ACCEPTANCE-ARCHV3）
 
 | 工作项 | 状态 | 说明 |
 |---|---|---|
@@ -45,13 +56,13 @@
 
 ## 下一条可执行动作（按序）
 
-1. **v3 run 记录持久化**：RunStages/console payload 落 MinIO 项目目录（随 run-manifest 同通道），供控制台读；
-2. **门 Web 页（只读）**：消费 SQLite 票据库+v3 控制台契约字段；
-3. **待授权批复后**：R7 语料同步 → R1+R2+R4 真实案例轮（含 v3 双审查器真实并行）→ R3 双 head。
+1. **（可选）shadow 证据同步到 MinIO 项目目录**：当前 run 记录在本地 RunStore（~/.mergepilot/v3-runs.db）；如需随证据包走，加导出钩子（本地操作，可自主）；
+2. **门 Web 只读页对接 RunStore**：复用 console_v3 读模型 + gate_cli 票据数据（UI 依赖 D-1/D-2 的部分仍关闭）；
+3. **待授权批复后**：R7 语料同步 → R1+R2+R4 真实案例轮（v3 shadow 模式将随第一轮真实案例产出对照证据；on 模式真实 Agent 验证在 R1/R2 之内）→ R3 双 head。
 
 ## 已验证结果（证据，2026-09-22 实测 @ 工作树）
 
-- `python -X utf8 -m pytest tests/orchestrator/ tests/approval/ tests/gh_bridge/ tests/rag_live/ tests/costmeter/ -q` → **171 passed**（orchestrator 41 + approval 50 + bridge 46 + rag_live 17 + costmeter 17；约 4s）
+- `python -X utf8 -m pytest tests/gh_bridge/ tests/console_v3/ tests/orchestrator/ tests/approval/ tests/rag_live/ tests/costmeter/ -q` → **197 passed**（bridge 49 + console 6 + orchestrator 58 + approval 50 + rag_live 17 + costmeter 17；<5s）
 - `python -X utf8 -m pytest tests/gh_app/ -q` → 816 passed, 5 skipped（上轮实测；本轮不触其引用面）
 - RAG 双副本快照一致（fd34c304…）；M1 九场景 1/2/3/4/5/7/8 ✅单测、9 ✅契约、6 🔒结构保证
 
@@ -59,10 +70,11 @@
 
 - R1-R7 真实环境授权与选择；D-1/D-2/D-3 产品决策；预算金额；密钥轮换（用户挂起）。
 
-## 提交记录（本轮新增，均未 push）
+## 提交记录（第四/五轮新增，均未 push）
 
 - TicketStore 接口抽象（SQLite 边界+PG 占位）
 - 架构 v3 骨架（风险/状态/调度/聚合/verifier/控制台契约/flag + 41 测试）
+- M3.5：adapter 三态接线 + RunStore + 桥 hook + 只读控制台（65 新测试）
 
 ## 环境事实（2026-09-22 实测）
 

@@ -82,3 +82,12 @@ repo `tools/gh-bridge/gh_bridge.py` 为事实源；**运行副本在 `D:\goai\r3
 - **模型不可用**：delay/degrade/manual 三策略显式配置，**不自动更换模型**。
 - **存储**：TicketStore Protocol 固定五操作契约；SQLite 限单实例（见 P-1），PostgreSQLTicketStore 为显式迁移占位（多 Controller/共享部署触发）。
 - **验证层级**：本轮全部为本地确定性测试（含线程级并行证明）；真实 Agent 接入是最后一步（R1/R2 授权后），测试通过不冒充生产验证。
+
+## #13 M3.5：v3 本地接线模式与 run 存储（2026-09-22 第五轮）
+
+- **三态接线**（MERGEPILOT_REVIEW_V3）：off（默认，零开销）/ shadow（真实 PR 只读数据→分级+计划+阶段状态持久化，**零 Agent、零 GitHub 写、零旧链改动**）/ on（真实 Agent 需 R1/R2；授权前桥侧 on 按 shadow 运行并显式记录，不冒充）。
+- **接线点**：桥 process() 认领后、dry-run 之后的派发边界，`v3_shadow_hook` 单函数，任何异常只记日志（fail-soft，测试覆盖 shadow 炸掉旧链路照常 PROCESSED）。风险分级/调度/聚合/状态机**不在桥内重写**——桥只调 adapter。
+- **RunStore 与票据库分离**：v3 run 记录用独立 SQLite 表（v3_runs），不做票据语义；状态转移仍只经 stages.RunStages（唯一状态机），存储为哑层。SQLite 单实例边界沿用 P-1，PG 迁移点=Controller cutover。
+- **shadow 诚实语义**：审查器槽位显式 SKIPPED("agent not executed")，关键审查器跳过 ⇒ derive_outcome=MANUAL_ATTENTION——shadow run 永不产生"完成/通过"结论；diff 取不到 → risk FAILED + 档位未知降级，不猜测。
+- **控制台**：GET-only（写方法 405），shadow/fixture 强制标签，部分完成/降级逐字段可见；真实审批端点在 D-1/D-2 拍板前不存在。
+- **fixture 语义**：本地假审查器全链路仅用于机制验证/演示，mode=fixture 入库，永不冒充真实运行。

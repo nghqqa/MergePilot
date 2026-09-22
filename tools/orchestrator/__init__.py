@@ -24,3 +24,10 @@ from .verify_finding import (  # noqa: F401
 )
 from .console_contract import build_console_payload  # noqa: F401
 from .flag import review_v3_enabled  # noqa: F401
+
+
+def __getattr__(name):  # 延迟加载:adapter/runstore 依赖面较重,按需引入
+    if name in ("adapter", "runstore"):
+        import importlib
+        return importlib.import_module("." + name, __package__)
+    raise AttributeError(name)

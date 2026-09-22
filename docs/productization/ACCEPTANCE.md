@@ -152,3 +152,28 @@ v2 备忘一.3 硬门槛 3 = "审批不越权：批准的语义、绑定对象�
 | 真实 Agent 并行/真实 RAG/真实 GitHub | — | ⬜待授权（R1/R2，最后执行） |
 
 **边界**：v3 未接线 bridge/Controller（flag 默认关）；调度权唯一归属 DispatchPlanner，无第二调度事实源；run 硬上限为配置项（run_hard_deadline_s），执行器级强制随真实 Agent 适配落地。
+
+---
+
+# M3.5 验收：v3 本地接线与只读可观测闭环（ACCEPTANCE-M35，2026-09-22）
+
+实现：tools/orchestrator/adapter.py + runstore.py（RunStore）+ bridge `v3_shadow_hook` + tools/console_v3/server.py ｜
+测试：tests/orchestrator/test_adapter_vertical.py + test_runstore.py + tests/gh_bridge/test_v3_hook.py + tests/console_v3/test_server.py ｜ 全套 **197 passed**（2026-09-22 实测）
+**层级声明：shadow=真实 PR 形状数据+零 Agent 零外部写；fixture=本地假审查器全链路。二者都不是真实 Agent 验证。**
+
+| 验收项（M3.5 提示词六） | 测试 | 状态 |
+|---|---|---|
+| 1 off 模式旧链路行为不变 | test_off_mode_no_adapter_invocation_legacy_unchanged（旧结论逐项不变+适配器零调用） | ✅本地 |
+| 2 shadow 只读且无外部副作用 | test_shadow_with_real_shape_diff_readonly（external_writes=none，仅 1 次只读 GET） | ✅本地 |
+| 3 v3 计划与 run-manifest 一致 | manifest_hash=证据内容寻址 sha256 存库；计划/阶段/档位入记录 | ✅本地 |
+| 4 状态机与控制台读模型一致 | test_full_chain_...outcome（store→build_read_model 逐字段断言） | ✅本地 |
+| 5 PR 更新不继续用旧 run | test_pr_update_supersedes_old_run / test_shadow_pr_update_supersedes_and_cancels（RUNNING 维度 CANCELLED，superseded 标记） | ✅本地 |
+| 6 并行计划不重复派发 | 双 barrier 并行证明（test_v3）+ fixture 双审查器各执行一次（来源计数断言） | ✅本地 |
+| 7 budget hook 阻止超预算计划 | test_budget_exhaustion_blocks_plan / test_global_budget_hook_blocks | ✅本地 |
+| 8 SQLite 重启后状态恢复 | test_restart_recovery（RunStore）/ test_crash_recovery_reopen（TicketStore） | ✅本地 |
+| 9 关键超时不派生为通过 | test_critical_reviewer_timeout_never_passes（→MANUAL_ATTENTION） | ✅本地 |
+| 10 RAG snapshot 缺失按既定降级 | shadow：rag_snapshot=None 记录 missing[]（既有）；diff 不可得→risk FAILED 降级不伪造（test_shadow_diff_unavailable...） | ✅本地 |
+
+**持久化清单核验**：run_id/repo/PR/head/base/mode/risk_tier/plan/维度状态/coverage_missing/降级原因/finding_validation/patch_validation/RAG snapshot/manifest_hash/时间戳——全部落 RunStore（v3_runs 表，SQLite WAL 单实例边界沿用 P-1）。
+**控制台核验**：GET-only（写方法 405）；shadow/fixture 徽标；部分完成不压缩为成功；无批准/拒绝/派发/写按钮。
+**未验证**：真实 Agent 接入（mode=on 的真实路径，待 R1/R2）；shadow 对真实 GitHub 匿名 GET 的线上行为（本地下不可测）；共享环境部署（永不自动）。

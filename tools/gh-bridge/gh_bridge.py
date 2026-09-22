@@ -21,6 +21,7 @@
 import argparse
 import base64
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -694,6 +695,50 @@ def prepare_run_manifest(d, run, proj, task, kickoff_base, timeout_min):
     return kickoff_base + ref, None
 
 
+# ── v3 adapter 钩子(M3.5):off=零开销;shadow=只读证据;失败不影响旧链路 ───
+def _load_v3_adapter():
+    """桥侧加载 v3 adapter(repo 布局);运行副本无此文件 → None(诚实降级)。"""
+    name = "mp_v3_adapter"
+    if name in sys.modules:
+        return sys.modules[name]
+    path = os.path.normpath(os.path.join(_HERE, "..", "orchestrator", "adapter.py"))
+    if not os.path.isfile(path):
+        return None
+    spec = importlib.util.spec_from_file_location(name, path)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod  # dataclass/相对导入的宿主注册
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def v3_shadow_hook(d, cid, log):
+    """MERGEPILOT_REVIEW_V3=shadow 时在派发边界产出 v3 只读证据。
+    任何失败只记日志,绝不改变旧链路行为;off 时零开销。"""
+    try:
+        adapter = _load_v3_adapter()
+        if adapter is None:
+            return  # 运行副本未同步 adapter:旧链路照常
+        mode = adapter.review_v3_mode()
+        if mode == "off":
+            return
+        if mode == "on":
+            log("v3 mode=on requires R1/R2 authorization; running shadow-only")
+        rag = _rag_snapshot_info()
+        store = adapter.open_run_store()
+        try:
+            ev = adapter.run_v3_shadow(
+                d, run_store=store,
+                rag_snapshot=(rag or {}).get("snapshot_id"))
+            log("v3 shadow evidence: %s manifest=%s coverage=%s"
+                % (ev["run_id"], ev["manifest_hash"][:12],
+                   ev["outcome"]["coverage_missing"] or "none"))
+        finally:
+            store.close()
+    except Exception as e:
+        log("v3 shadow hook error (legacy continues): %s %s"
+            % (type(e).__name__, str(e)[:120]))
+
+
 # ── 主流程 ──────────────────────────────────────────────────────────────────
 def conclude(d, st, report, run, proj, cid, log):
     """终态→结论→发布→终结。process 与 resume 共用(场景7 语义)。"""
@@ -746,6 +791,7 @@ def process(d, timeout_min, dry):
         log("DRY-RUN kickoff:\n" + kickoff)
         finish(d, False, "dry-run (no dispatch)", cid)
         return
+    v3_shadow_hook(d, cid, log)   # M3.5:off=零开销;shadow=只读证据,不改旧链路
     rag_ok, rag_detail = rag_dispatch_gate()
     if not rag_ok:
         finish(d, False, str(rag_detail)[:160], cid)

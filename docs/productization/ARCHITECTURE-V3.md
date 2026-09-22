@@ -90,11 +90,11 @@ class PostgreSQLTicketStore(TicketStore)  # 迁移占位（NotImplementedError +
 | 4 | 调度器接口 | ✅ scheduler.py（串行默认 + 并发2 执行器） |
 | 5 | 聚合器纯逻辑 | ✅ aggregate.py |
 | 6 | finding verifier 接口 | ✅ verify_finding.py |
-| 7 | feature flag 默认关 | ✅ flag.py；bridge 未接线 |
+| 7 | feature flag 三态接线 | ✅ off(默认)/shadow/on；**桥派发边界已接 shadow**（v3_shadow_hook，fail-soft），on 仍不接真实 Agent |
 | 8 | 两审查器并行本地测试 | ✅ tests/orchestrator/ |
 | 9 | 超时/部分完成/降级测试 | ✅ tests/orchestrator/ |
 | 10 | 控制台字段契约 | ✅ console_contract.py |
-| 11 | 真实 Agent 接入 | ⬜ 最后（R1/R2 授权后） |
+| 11 | 真实 Agent 接入 | ⬜ 最后（R1/R2 授权后）；本地纵向链路已通（adapter fixture/shadow，M3.5） |
 
 旧串行链（bridge process/conclude）**在新流程通过回归并获接线授权前不得删除**。
 
