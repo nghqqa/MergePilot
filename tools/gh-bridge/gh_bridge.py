@@ -17,6 +17,7 @@
 用法:
   python gh_bridge.py status            # 查看待处理交付
   python gh_bridge.py run [--once] [--timeout-min 20] [--dry-run]
+  受控案例定向认领: MERGEPILOT_TARGET_PR=9 MERGEPILOT_TARGET_HEAD=<40hex>     python gh_bridge.py run --once   # 只认领该 PR+head;其他 PENDING 行保持不动
 """
 import argparse
 import base64
@@ -69,14 +70,31 @@ def ssh_psql(sql, as_json=False):
     return json.loads(out)
 
 
+TARGET_PR_ENV = "MERGEPILOT_TARGET_PR"      # 受控案例:只认领该 PR
+TARGET_HEAD_ENV = "MERGEPILOT_TARGET_HEAD"  # 且只认领该 head(空提交产生的新 SHA)
+
+
+def target_filter_sql():
+    """定向认领过滤(M3.5 后受控案例用):两 env 都设置才激活。
+    未匹配行保持 PENDING 不动(跳过而非终结);不触碰 already_processed 语义。"""
+    pr = os.environ.get(TARGET_PR_ENV, "").strip()
+    head = os.environ.get(TARGET_HEAD_ENV, "").strip().lower()
+    if not pr or not head:
+        return "", None
+    if not re.fullmatch(r"\d+", pr) or not re.fullmatch(r"[0-9a-f]{40}", head):
+        raise ValueError("MERGEPILOT_TARGET_PR/HEAD 格式非法: %r/%r" % (pr, head))
+    return (" AND pr_number=%s AND observed_head_sha='%s'" % (pr, head)), (pr, head)
+
+
 def pending_deliveries():
+    extra, _pair = target_filter_sql()
     return ssh_psql(
         "SELECT json_agg(t) FROM (SELECT delivery_id, event_name, action, repo, "
         "pr_number, observed_head_sha, observed_base_sha, received_at "
         "FROM public.github_deliveries "
         "WHERE status='PENDING' AND event_name='pull_request' "
         "AND action IN ('opened','synchronize','reopened') "
-        "AND repo IS NOT NULL ORDER BY received_at) t", as_json=True)
+        "AND repo IS NOT NULL%s ORDER BY received_at) t" % extra, as_json=True)
 
 
 def already_processed(d):
@@ -413,6 +431,7 @@ def publish_with_retry(d, verdict, report, run, proj, log):
     q64 = base64.b64encode(json.dumps(
         {"repo": d["repo"], "head_sha": d["observed_head_sha"]}).encode()).decode()
     last = {"ok": False, "raw": "not attempted"}
+    last_unknown = False   # 最后一次尝试是否"结果未知"(传输层失败,非明确拒绝)
     for i in range(1, PUBLISH_ATTEMPTS + 1):
         rec_out, rec_ok = _reporter_exec(r64, q64)
         rec = parse_reconcile_out(rec_out) if rec_ok else {"ok": False, "raw": rec_out[:200]}
@@ -420,6 +439,7 @@ def publish_with_retry(d, verdict, report, run, proj, log):
             write_receipt(proj, rec, d, run, verdict)
             return rec
         out, ok = _reporter_exec(s64, b64)
+        last_unknown = not ok          # 传输层失败=POST 结果未知;明确报错=拒绝
         res = parse_publish_out(out) if ok else {"ok": False, "raw": out[:200]}
         if res["ok"]:
             if not write_receipt(proj, res, d, run, verdict):
@@ -429,6 +449,9 @@ def publish_with_retry(d, verdict, report, run, proj, log):
         log("publish attempt %d/%d failed: %s" % (i, PUBLISH_ATTEMPTS, res.get("raw", "")[:120]))
         if i < PUBLISH_ATTEMPTS:
             time.sleep(PUBLISH_BACKOFF_S[min(i - 1, len(PUBLISH_BACKOFF_S) - 1)])
+    # 结果未知 ≠ 明确拒绝:未知不得自动重试(可能已产生 check-run),
+    # 恢复路径=人工/受控 reconcile(先查后建)。
+    last["outcome"] = "unknown" if last_unknown else "rejected"
     return last
 
 
@@ -776,9 +799,15 @@ def conclude(d, st, report, run, proj, cid, log):
         finish(d, True, note, cid)
         log("published:", note)
     elif not pub["ok"] and st in ("completed", "blocked"):
-        finish(d, False, "PUBLISH_FAILED(retryable) %s/%s; last=%s"
-               % (st, verdict, pub.get("raw", "")[:100]), cid)
-        log("PUBLISH FAILED after %d attempts — delivery ERROR (recoverable)" % PUBLISH_ATTEMPTS)
+        if pub.get("outcome") == "unknown":
+            # 结果未知:停止自动重试,先 reconcile 人工/受控确认,防重复 check-run。
+            finish(d, False, "PUBLISH_UNKNOWN(manual-reconcile) %s/%s; last=%s"
+                   % (st, verdict, pub.get("raw", "")[:100]), cid)
+            log("PUBLISH UNKNOWN — delivery ERROR (manual reconcile before any retry)")
+        else:
+            finish(d, False, "PUBLISH_FAILED(retryable) %s/%s; last=%s"
+                   % (st, verdict, pub.get("raw", "")[:100]), cid)
+            log("PUBLISH FAILED after %d attempts — delivery ERROR (recoverable)" % PUBLISH_ATTEMPTS)
     else:
         finish(d, False, "TIMEOUT(manual) %s; publish=%s"
                % (st, "ok" if pub.get("ok") else "failed"), cid)

@@ -1,13 +1,23 @@
 # MergePilot 产品化推进状态（STATUS）
 
-**更新**：2026-09-22（第九轮：首个真实案例运行前准备）｜ **分支**：`chore/backfill-r3-ops` ｜ 授权范围：M1→M4 至 V0 技术就绪
+**更新**：2026-09-22（第十轮：执行前核查与最小修复）｜ **分支**：`chore/backfill-r3-ops` ｜ 授权范围：M1→M4 至 V0 技术就绪
 
-## 本轮新增：真实案例运行前核对 + 运行前门禁 + 一次确认
+## 本轮新增：执行前核查与最小修复（运行手册 CASE1-RUNBOOK.md）
+
+| 工作项 | 状态 | 说明 |
+|---|---|---|
+| 定向认领机制 | ✅ 新增+7 测试 | MERGEPILOT_TARGET_PR/HEAD（双 env 才激活，SQL 层过滤，非法值拒绝）；非目标行保持 PENDING 不动；already_processed 未触碰。此前 --once 会处理该轮全部 PENDING 行=缺口已补 |
+| 发布未知态分类 | ✅ 新增+2 测试 | 最后一次尝试传输层失败→outcome=unknown → 台账 PUBLISH_UNKNOWN(manual-reconcile)，停止自动重试（防重复 check-run）；明确拒绝仍=PUBLISH_FAILED(retryable) |
+| 凭证链探查（只读） | ✅ 记录 | worker→本地网关(ctrl:8080, 64位 key)→上游供应商；**本地网关 key 非计费凭证**，累计消费硬上限只能在 provider 控制面设定；仅共享凭证的影响已写入 RUNBOOK §3 |
+| 取消演练 | ✅ 可逆 | docker stop/start reviewer 容器往返成功——实际切断 agent 调用的手段是停专用容器（桥超时只停编排）；独占条件=案例期间栈专用+仅动 reviewer 单容器 |
+| 案例运行手册 | ✅ 产出 | CASE1-RUNBOOK.md：旧链路实际角色与调用范围（勘误 TRIVIAL 推断）/两类验收（合法空≠失败，单案例≠RAG 有效性证明）/执行序列/确认单 4 项 |
+
+## 前轮：首个真实案例运行前准备（第九轮）
 
 | 工作项 | 状态 | 说明 |
 |---|---|---|
 | 触发路径核对（只读） | ✅ | 台账 0 PENDING；全部开放 PR 当前 head 均已 PROCESSED（already_processed 会跳过重放）⇒ 新真实案例的自然触发 = 向获批测试分支推**一个空提交**（synchronize → 新 head → 天然全链） |
-| 候选目标 | ✅ 已定 | **PR #9**（feat/skill-exercise，head `f0dc76fbba030779fa28f647e8eb6b40b6dd1002`，2 文件 +29 行）⇒ 分级 TRIVIAL（单审查器）＝最小真实用例规模 |
+| 候选目标 | ✅ 已定 | **PR #9**（feat/skill-exercise，head `f0dc76fbba030779fa28f647e8eb6b40b6dd1002`，2 文件 +29 行）。**勘误（第十轮）**：旧链路不做风险分级，"TRIVIAL 单审查器"是 v3 推断不适用于本轮——旧链路固定角色=leader+reviewer 出模型调用，fixer/verifier 唤醒但空闲（门关闭）；小 PR 的意义=审查轮次与消耗天然有界 |
 | 运行前门禁 | ✅ 实现+8 测试 | tools/integration_prep/prerun_gate.py：git 固定/副本摘要/语料快照/模式/唯一执行者/容器/RAG/**预算 MISSING_ACK 即 FAIL**/投递前置 九项检查，全绿才允许起桥 |
 | 口径勘误（五项） | ✅ 完成 | off 冒烟≠端到端回归；status 只读；run_id=服务端参数级（worker MCP 未透传，R5）；217/225=分套口径非全仓库；回退已备未演练（见第八轮节与 EXECUTION-RECORD） |
 | 预算现实核对 | ✅ 记录（DECISIONS #16） | worker 进程内硬预算不存在（R5 缺口）——首次案例有界方案=单投递+20min 硬观察截止+3 次发布重试+provider 侧 gateway key 消费硬上限+运行后 OTel/审计事后计量；**不为开跑把脚手架标记为已接入** |
