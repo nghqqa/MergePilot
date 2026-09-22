@@ -26,3 +26,21 @@ repo `tools/gh-bridge/gh_bridge.py` 为事实源；**运行副本在 `D:\goai\r3
 ## #5 密钥轮换挂起（用户决定，2026-09-21）
 
 为测试方便暂不轮换 WEBHOOK_SECRET/reader/PUB_PASS；恢复时按 secrets-locations 备忘的四级联执行。**V0 内测（M4）前必须恢复此决策的执行**——已列入 M4 出口条件。
+
+## #6 M2 审批语义重定义（2026-09-22，规格+纯逻辑层已实现）
+
+- **票据机制形状复用 l2（存在性+状态流转+attempt），流程全部重定义**：V0 动作集={generate_patch, run_poc, publish_result}（启用子集=决策项 D-1）；**merge/close/revert 剥离不迁移**（v2 二.2a）。旧 `USED→MERGED/l2_done` 合并审批链留在决赛 demo 资产里，不改动、不导入。
+- **绑定五元组**：run_id + repo + head_sha(40hex) + params_hash(64hex) + 补丁/finding 指纹，frozen 不可变；执行前逐字段校验（红线"批A执B"的防线），拒绝先于副作用。
+- **PR 更新失效双保险**：显式 INVALIDATED 标记（门页展示用）+ 正确性独立于标记（新 run/head 必然绑定不匹配）。
+- **竞争仲裁**：PENDING 唯一分支态，approve/reject CAS 先到先得，幂等重放 NOOP；同 (run,action,finding) 活动票幂等返回；终态后允许 attempt+1。
+- **审批期限语义**：approve/start_exec 过期即拒；已开始的执行允许收尾（执行时长归编排侧 deadline，不重复设门）。
+- **决策项未拍板**（规格 §6）：D-1 启用动作子集、D-2 审批人权限映射、D-3 TTL 默认值。拍板前校验器只用于隔离测试（测试身份 test-approver），**不接真实执行路径**。
+- 实现形态：tools/approval/ 纯逻辑零依赖；生产存储在门 Web 化工作项接入（PG approvals 改造 vs MinIO 票据对象，待预研）。
+
+## #7 记录勘误：gh_app 测试计数（2026-09-22 第二轮实测）
+
+干净树 8b30fb1 实测 gh_app = 821 collected（816 passed + 5 skipped），与 #4 时期记录的"831 passed"差 15。tests/gh_app 自 b46e8ba 字节未变 ⇒ 差额不可能来自提交内容，判定为当时未跟踪文件混入或转抄误差。**以 821/816 为准**（已订正 STATUS/ACCEPTANCE）。无失败用例，M1 回归结论不变。
+
+## #8 互斥边界客观核实：lease_expires_at（2026-09-22）
+
+桥 claim 不写 `lease_expires_at`（NULL）⇒ github_drain 接管谓词（`lease_expires_at < now()`）对桥在途行**恒不成立**——Controller 抢不走桥的行，这是结构保证而非约定。反向由 `%-bridge-%` 命名空间保证（UUID 字符集不含 b/r/i/g 不会撞段）。**代价**：cutover 时桥在途行对 Controller 不可见，必须按契约 §6 三步程序（桥停认领→排空→启 drain），否则产生只有桥能回收的孤儿行。已写入 ORCHESTRATION-CONTRACT.md §6。

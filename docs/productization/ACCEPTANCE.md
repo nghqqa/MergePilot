@@ -3,6 +3,8 @@
 v2 备忘五节 M1 出口 = 故障注入清单全过。状态：✅已验证（单测级）／🔒已实现待集成／⬜未做。
 **注**：以下"单测级"= 全 mock 单元测试（无真实 SSH/GitHub/Matrix/MinIO）；"真实集成"另计，见底注。
 
+**证据基线勘误（2026-09-22 第二轮）**：gh_app 在干净树 8b30fb1 实测 = 821 collected（816 passed + 5 skipped）；前版记录的"831 passed"不可复现（tests/gh_app 自 b46e8ba 字节未变，差额 15 疑为当时未跟踪文件或转抄误差）。当前以实测为准。
+
 | # | 场景（提示词四.） | 当前实现 | 缺口 | 验证方法 | 状态 |
 |---|---|---|---|---|---|
 | 1 | 认领后崩溃可恢复 | `take_over_stale()` CAS 接管 + `resume()` 续接；启动即执行 | 真实 PG/kill -9 注入待授权 | `test_takeover_cas_and_format` 等 7 项 | ✅单测 |
@@ -35,3 +37,23 @@ v2 备忘五节 M1 出口 = 故障注入清单全过。状态：✅已验证（�
 - 真实 GitHub：reconcile GET 与 POST 201；同 PR 两 head 并存 check（场景6 实证）；
 - 真实崩溃注入（kill -9 桥进程于各阶段）。
 上述列入 M4 V0 内测前的集成轮，需用户授权启动服务器/真实案例（V0 允许仓库 nghqqa/fastapi-boilerplate-demo 在列）。
+
+---
+
+# M2 审批正确性（ACCEPTANCE-M2）
+
+v2 备忘一.3 硬门槛 3 = "审批不越权：批准的语义、绑定对象、失效条件、权限人、并发竞争全部有测试"。
+规格：M2-APPROVAL-SPEC.md ｜ 实现：tools/approval/approval.py ｜ 测试：tests/approval/test_approval.py（34 passed，2026-09-22）。
+
+| 要求（v2 一.3） | 实现 | 测试层级 | 状态 |
+|---|---|---|---|
+| 批准的语义（动作集，merge 剥离） | ALLOWED_ACTIONS={generate_patch,run_poc,publish_result}；merge/close/revert 创建即 ValueError | 单测 test_action_set_excludes_merge / test_binding_rejects_merge_action | ✅单测 |
+| 绑定对象（五元组） | Binding(run_id,repo,head_sha,action,params_hash,+补丁/finding指纹) frozen dataclass | test_valid_binding_roundtrip / test_params_hash_required_64hex / test_head_sha_must_be_full_40hex / test_repo_must_be_owner_slash_name | ✅单测 |
+| 失效条件（PR 更新） | invalidate_for_new_head 标 INVALIDATED（幂等）；正确性独立于标记（执行校验按绑定拒绝新 run/head） | test_new_head_invalidates_active_ticket / test_invalidated_cannot_execute / test_invalidation_is_correctness_independent | ✅单测 |
+| 权限人 | approve 要求 approved_by 非空（IDENT_REQUIRED）；**权限映射=D-2 未拍板** | test_approve_requires_identity | ✅机制单测；映射⬜未做 |
+| 并发竞争（批准/拒绝） | PENDING 唯一分支态 + CAS 先到先得 + 幂等重放 NOOP | test_approve_then_reject_race_first_wins / test_reject_then_approve_race_first_wins / test_duplicate_approve_is_noop / test_duplicate_reject_is_noop / test_duplicate_create_returns_existing_ticket / test_new_attempt_allowed_after_terminal | ✅单测（单进程 CAS 语义） |
+| 红线"批A执B" | check_execution 五元组逐字段匹配，先于副作用 | test_execution_binding_mismatch_rejected_per_field（run/repo/head/params/补丁逐字段）/ test_ticket_mismatch | ✅单测 |
+| 单次有效 | USED 终态不可再执行；EXECUTING 可续验（恢复场景） | test_used_is_single_use | ✅单测 |
+| 过期 | approve/start_exec 过期即拒；在途执行允许收尾 | test_expired_cannot_execute / test_expired_blocks_other_transitions_first / test_executing_completes_after_approval_deadline | ✅单测 |
+
+**边界声明**：以上全部为纯逻辑层隔离单测（InMemoryTicketStore 参考存储）。真实 DB 存储、并发进程竞争、门 Web 页签发、真实审批人——均未实现、未验证。**D-1/D-2/D-3 未拍板前不接任何真实执行路径**（规格 §6）。M2 里程碑通过还差：存储落地 + 决策项拍板 + 门 Web 化，均未开始。

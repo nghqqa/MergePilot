@@ -33,3 +33,16 @@
 
 - ✅ 单测：精确 claim 终结（`test_finish_requires_exact_claim`）、接管 CAS 与格式（`test_takeover_*`）、恢复不重发 kickoff（`test_terminal_project_resumes_publish_without_kickoff` / `test_inflight_project_only_watches`）。
 - ⬜ 待授权集成：真实服务器 PG 下双方并发认领互斥（kill -9 注入 + 双编排器同跑一轮）——列入 M4 前集成轮（见 ACCEPTANCE.md 底注）。
+
+## 6. lease_expires_at 的客观边界（2026-09-22 代码核实）
+
+桥的 `claim()` **不写** `lease_expires_at`（保持 NULL）。github_drain 的认领 CTE 对过期 RUNNING 的接管谓词是
+`status='RUNNING' AND lease_expires_at < now()`——NULL 比较不成立，因此：
+
+1. **Controller 不会抢走桥的在途行**（比 §2 的 LIKE 命名空间边界更强的客观保证，非约定依赖）；
+2. 桥的接管谓词含 `%-bridge-%`，也不会碰 Controller 的行（UUID 字符集不含 `bridge`，`gen_random_uuid()` 不会撞命名空间）；
+3. PENDING 行是中性命名空间：双方都会以 CAS 认领，每行单胜者——但两编排器**同时推进**仍违反场景 9 的运维约束（各自的项目派发/恢复语义不同），"同时只跑一个 drain"仍然是硬规则，不是可选项。
+
+**接管切换（cutover）程序含义**：桥的在途 RUNNING 行（lease=NULL）对 github_drain **不可见**。从桥切到 Controller 时必须：
+(a) 桥停止认领新行 → (b) 等桥把在途行全部终结或由桥自身 `take_over_stale()` 收敛完 → (c) 再启动 github_drain。
+跳过 (b) 会让这些行成为"只有桥能回收"的孤儿（只能手工 SQL 修复）。此程序列入 Controller 接管工作项的验收前置。
