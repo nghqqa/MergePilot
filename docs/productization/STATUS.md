@@ -91,8 +91,8 @@
 
 ## 已验证结果（证据，2026-09-22 实测 @ 工作树）
 
-- `python -X utf8 -m pytest tests/gh_bridge/ tests/console_v3/ tests/orchestrator/ tests/approval/ tests/rag_live/ tests/costmeter/ tests/integration_prep/ -q` → **217 passed**（第七轮实测；bridge 50 + console 7 + orchestrator 59 + approval 50 + rag_live 19 + costmeter 21 + prep 12 ≈ 218，含 1 项顺序敏感偶发重跑通过）
-- tests/ 全目录跑含 m4c/m4e/skills 3 个陈年收集冲突（模块重名，非本轮引入），按目录分套运行为准
+- `python -X utf8 -m pytest tests/gh_bridge/ tests/console_v3/ tests/orchestrator/ tests/approval/ tests/rag_live/ tests/costmeter/ tests/integration_prep/ -q` → **217 passed**（分套口径=上述 7 个目录；**不等于仓库全部测试通过**：m4c/m4e/skills 存在陈年收集冲突未纳入，另有 1 项顺序敏感偶发（重跑通过，保留观察））
+- **口径勘误（第八轮）**：off 冒烟≠加固桥端到端回归（含发布/恢复/manifest/RAG 门改动待真实案例验证）；RAG run_id 透传=服务端参数级验证，worker MCP 未透传；回退命令已备未演练。
 - 本地冒烟（.smoke 临时目录，已清理）：console 真实进程 :4191；shadow run=MANUAL_ATTENTION（coverage 三缺失+degradations 带原因）；fixture run=REVIEW_COMPLETED；写方法 405；浏览器截图与 DOM 双重核验
 - `python -X utf8 -m pytest tests/gh_app/ -q` → 816 passed, 5 skipped（上轮实测；本轮不触其引用面）
 - RAG 双副本快照一致（fd34c304…）；M1 九场景 1/2/3/4/5/7/8 ✅单测、9 ✅契约、6 🔒结构保证

@@ -25,7 +25,8 @@
 3. off 模式 hook 调用：零日志、`~/.mergepilot/v3-runs.db` 未创建/未改动；
 4. shadow 能力在位且诚实：注入 diff 不可得 → `risk=None`、`external_writes=none`（临时目录存储，未污染）。
 
-**旧链路行为不变结论**：桥进程此前未运行；同步不改变任何在跑进程。下次启动的现网桥 = 加固版，默认 off = 对外行为与旧链路一致（台账语义、kickoff、回写全部未改，v3 只在派发边界追加只读证据且可关）。
+**结论（勘误后口径，2026-09-22 第三次修订）**：桥进程此前未运行；同步不改变任何在跑进程。off 冒烟只证明 **v3 hook 不介入**，且 status 为只读路径——它**不是**加固桥相对历史桥的端到端回归（本次同步同时包含发布语义、崩溃恢复、manifest 与 RAG 门改动，这些要待首个真实案例才获行为级验证）。台账/kickoff/回写的**语义设计**未变，v3 只在派发边界追加只读证据且可关。
+**回退演练口径**：回退命令已准备并核对路径存在，**未实际执行过回退演练**；首次需要回退时按命令执行并记录。
 
 ## R7 语料同步 + rag-live（已完成，服务按条件已停止）
 
@@ -36,7 +37,7 @@
 | 启动（repo 事实源路径） | `node tools/rag/live/rag-live-server.mjs`，RAG_LIVE_PORT=4184，运行语料/审计路径 env 指向 r3work |
 | /health | ok=true，chunks=12，data_mode=SYNTHETIC，`corpus_file_sha256=c83d8e83…10ed`（与部署文件一致） |
 | 本地检索验证 | 查询 "CWE-22 路径穿越 path traversal" → 命中 `doc-cwe22-def#1`(14.25) + `doc-path-containment#2`(9.16)，source_refs 正确 |
-| run_id 透传 | `run_id=r4r7-smoke-1` 进入审计记录（含 corpus_file_sha256）——R5 接通 MCP 透传后 run 关联即闭合 |
+| run_id 透传 | `run_id=r4r7-smoke-1` 进入审计记录（含 corpus_file_sha256）。**验证层级=服务端 HTTP 参数**；worker MCP 尚未透传 run_id（R5 缺口），真实案例的检索-run 关联仍需时间窗+query_hash+引用交叉印证 |
 | 快照一致性 | 同步副本桥 `_rag_snapshot_info()` → `fd34c304…1afa4` == manifest 绑定值 == corpus_tool 输出 |
 | 服务停止 | 按条件 5 停止（pid 216304 killed，:4184 无监听确认）；启动命令已记录（见下） |
 
