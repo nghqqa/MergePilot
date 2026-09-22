@@ -21,3 +21,7 @@ demo-platform/frontend/node_modules/
 # Local model/API credentials used only for authorized offline/isolated runs.
 key.key
 run-secrets/
+
+# console frontend build deps (dist is committed, node_modules is not)
+console/frontend/node_modules/
+.impeccable/

@@ -1,0 +1,9 @@
+{
+ "KICKOFF_EVENT_ID": "$fixture-kickoff-event",
+ "KICKOFF_TS_UTC": "2026-09-18T16:51:32Z",
+ "KICKOFF_BYTES": 3123,
+ "run": "run-elem-fixture-matrix-01",
+ "project": "elemiso-fixture-matrix",
+ "room": "!fixture:elemiso-matrix:6167",
+ "error": null
+}

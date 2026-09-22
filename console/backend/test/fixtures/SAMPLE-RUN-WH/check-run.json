@@ -1,0 +1,14 @@
+{
+ "id": 105876323522,
+ "conclusion": "success",
+ "html_url": "https://github.com/nghqqa/fastapi-boilerplate-demo/runs/105876323522",
+ "app": "mergepilot-reporter",
+ "output": {
+  "title": "MergePilot review: passed (auto-completed)",
+  "summary": "run_id: run-gh-pr9-aabbcc-093022\nverdict: pass\ntriggered by: pull_request synchronize #9 @ 575aa8e13146\n",
+  "text": null,
+  "annotations_count": 0
+ },
+ "started_at": "2026-09-19T09:35:20Z",
+ "completed_at": "2026-09-19T09:35:20Z"
+}
