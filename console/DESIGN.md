@@ -35,6 +35,13 @@ colors:
   neutral-chip-bg: "#f2f4f7"
   neutral-dot: "#98a2b3"
 typography:
+  scale:
+    xs: "11.5px（--fs-xs：徽章/标签/来源行）"
+    sm: "12.5px（--fs-sm：次要正文/表格）"
+    base: "13px（--fs-base：正文）"
+    md: "16px（--fs-md：组件标题）"
+    lg: "20px（--fs-lg：页面/详情标题）"
+  weights: "400 / 600 / 700（--fw-regular/semibold/bold）；550/650 禁用 — 中文回退字体无中间字重轴，混排跳变"
   body:
     fontFamily: "system-ui, 'Segoe UI', 'Microsoft YaHei', sans-serif"
     fontSize: "13px"
@@ -42,24 +49,27 @@ typography:
     lineHeight: 1.5
   page-title:
     fontFamily: "system-ui, 'Segoe UI', 'Microsoft YaHei', sans-serif"
-    fontSize: "16px"
-    fontWeight: 650
+    fontSize: "20px"
+    fontWeight: 700
     letterSpacing: "-0.01em"
+    lineHeight: 1.3
   section-title:
     fontSize: "13px"
-    fontWeight: 650
+    fontWeight: 600
   label:
-    fontSize: "11px"
+    fontSize: "11.5px"
     fontWeight: 600
     color: "{colors.text-tertiary}"
   table-header:
-    fontSize: "11px"
+    fontSize: "11.5px"
     fontWeight: 600
-    letterSpacing: "0.05em"
-    textTransform: "uppercase"
+    note: "中文表头不用 uppercase / letter-spacing（对中文是无效装饰）"
+  status-badge:
+    fontSize: "11.5px"
+    fontWeight: 600
   data-mono:
     fontFamily: "ui-monospace, 'Cascadia Code', 'JetBrains Mono', Consolas, Menlo, monospace"
-    fontSize: "11-12px"
+    fontSize: "11.5-12.5px"
     fontVariantNumeric: "tabular-nums"
 rounded:
   sm: "6px"
@@ -80,7 +90,7 @@ components:
     width: "236px"
     background: "{colors.nav-ink}"
     activeItem: "{colors.nav-active} 背景 + 600 字重"
-    sectionLabel: "10.5px 600 大写 +0.08em nav-dim"
+    sectionLabel: "11.5px 600 +0.05em nav-dim（中文不用大写变换）"
   mode-chip:
     shape: "pill"
     background: "{colors.accent-teal-soft}"
@@ -88,12 +98,12 @@ components:
   status-badge:
     shape: "pill"
     anatomy: "色点(6px) + 文字；颜色永不单独承载状态"
-    tones: "ok/info/warn/bad/neutral 五档，title 写明语义与来源"
+    tones: "ok/info/warn/bad/neutral 五档，title 写明语义与来源；11.5px/600 — 全表最不能看错的信息不占最小字号"
   qf-chip:
     shape: "pill + 内嵌计数徽标"
     active: "{colors.accent-teal} 实底白字"
   data-table:
-    header: "sticky、inset 灰、11px 大写"
+    header: "sticky、inset 灰、11.5px（无大写变换）"
     row: "44px、悬停 #f7f9fb、全列 nowrap（列表）；长文本表格按 anywhere"
   evidence-drawer:
     width: "min(780px, 92vw)"
