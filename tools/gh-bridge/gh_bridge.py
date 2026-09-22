@@ -431,6 +431,39 @@ def publish_with_retry(d, verdict, report, run, proj, log):
 
 
 # ── 主流程 ──────────────────────────────────────────────────────────────────
+def conclude(d, st, report, run, proj, cid, log):
+    """终态→结论→发布→终结。process 与 resume 共用(场景7 语义)。"""
+    if st == "completed":
+        verdict = "pass_verified" if gate_record(proj, "approval") else "pass"
+    elif st == "blocked":
+        verdict = "rejected"
+    else:
+        verdict = "timeout"
+    evidence = "\n\n".join(x for x in [
+        project_result(proj),
+        "## gate record\n" + (gate_record(proj, "approval") or gate_record(proj, "rejection")),
+        "## leader report\n" + (report or ""),
+    ] if x.strip())
+    log("terminal:", st, "-> verdict:", verdict)
+    # 场景7:GitHub 回写成功才算投递完成;失败=可恢复 ERROR,不标 PROCESSED。
+    # 审查未终态(timeout)时即使 neutral check 已发布,投递也不算完成(manual)。
+    pub = publish_with_retry(d, verdict, evidence, run, proj, log)
+    if pub["ok"] and st in ("completed", "blocked"):
+        note = "%s/%s; check_run=%s" % (st, verdict, pub.get("check_run_id"))
+        if pub.get("adopted"):
+            note += " (adopted via %s)" % pub.get("from", "reconcile")
+        finish(d, True, note, cid)
+        log("published:", note)
+    elif not pub["ok"] and st in ("completed", "blocked"):
+        finish(d, False, "PUBLISH_FAILED(retryable) %s/%s; last=%s"
+               % (st, verdict, pub.get("raw", "")[:100]), cid)
+        log("PUBLISH FAILED after %d attempts — delivery ERROR (recoverable)" % PUBLISH_ATTEMPTS)
+    else:
+        finish(d, False, "TIMEOUT(manual) %s; publish=%s"
+               % (st, "ok" if pub.get("ok") else "failed"), cid)
+        log("review TIMEOUT — delivery ERROR (manual attention)")
+
+
 def process(d, timeout_min, dry):
     if d["repo"] not in ALLOW_REPOS:
         finish(d, False, "repo not in bridge allowlist")
@@ -465,36 +498,80 @@ def process(d, timeout_min, dry):
         return
     log("kickoff sent:", r["event_id"])
     st, report = watch_run(run, proj, time.time() + timeout_min * 60)
-    # 终态→结论,以权威产物(meta.json 状态 + result.md + gate 记录)裁决
-    if st == "completed":
-        verdict = "pass_verified" if gate_record(proj, "approval") else "pass"
-    elif st == "blocked":
-        verdict = "rejected"
-    else:
-        verdict = "timeout"
-    evidence = "\n\n".join(x for x in [
-        project_result(proj),
-        "## gate record\n" + (gate_record(proj, "approval") or gate_record(proj, "rejection")),
-        "## leader report\n" + (report or ""),
-    ] if x.strip())
-    log("terminal:", st, "-> verdict:", verdict)
-    # 场景7:GitHub 回写成功才算投递完成;失败=可恢复 ERROR,不标 PROCESSED。
-    # 审查未终态(timeout)时即使 neutral check 已发布,投递也不算完成(manual)。
-    pub = publish_with_retry(d, verdict, evidence, run, proj, log)
-    if pub["ok"] and st in ("completed", "blocked"):
-        note = "%s/%s; check_run=%s" % (st, verdict, pub.get("check_run_id"))
-        if pub.get("adopted"):
-            note += " (adopted via %s)" % pub.get("from", "reconcile")
-        finish(d, True, note, cid)
-        log("published:", note)
-    elif not pub["ok"] and st in ("completed", "blocked"):
-        finish(d, False, "PUBLISH_FAILED(retryable) %s/%s; last=%s"
-               % (st, verdict, pub.get("raw", "")[:100]), cid)
-        log("PUBLISH FAILED after %d attempts — delivery ERROR (recoverable)" % PUBLISH_ATTEMPTS)
-    else:
-        finish(d, False, "TIMEOUT(manual) %s; publish=%s"
-               % (st, "ok" if pub.get("ok") else "failed"), cid)
-        log("review TIMEOUT — delivery ERROR (manual attention)")
+    conclude(d, st, report, run, proj, cid, log)
+
+
+# ── 崩溃恢复(场景1/2/8):接管过期桥租约,按项目权威状态续接 ──────────────────
+STALE_MINUTES = 45   # 一轮含人工门可达 ~30min;超过 45min 视为孤儿租约
+REQUEUE_MAX = 2      # 无项目回队上限(跨崩溃有界,场景4)
+
+
+def _new_cid(d):
+    return "%s-bridge-%s" % (d["delivery_id"][:14], uuid.uuid4().hex[:8])
+
+
+def take_over_stale(mins=STALE_MINUTES):
+    """接管过期 RUNNING 桥租约:CAS 换新 claim_id(旧执行者此后 rowcount=0)。
+
+    只认本桥新格式 claim_id(含 '-bridge-' 尾段)——为 Controller 留互斥边界:
+    其他编排器的认领格式不同,不会被本桥接管(场景9 契约的一半)。"""
+    rows = ssh_psql(
+        "SELECT json_agg(t) FROM (SELECT delivery_id, event_name, action, repo, "
+        "pr_number, observed_head_sha, observed_base_sha, received_at, claim_id, error "
+        "FROM public.github_deliveries WHERE status='RUNNING' "
+        "AND claim_id LIKE '%%-bridge-%%' "
+        "AND claimed_at < now() - interval '%d minutes' ORDER BY claimed_at) t" % mins,
+        as_json=True) or []
+    taken = []
+    for r in rows:
+        new = _new_cid(r)
+        q = ("UPDATE public.github_deliveries SET claim_id='%s', claimed_at=now() "
+             "WHERE delivery_id='%s' AND claim_id='%s' AND status='RUNNING'"
+             % (new, r["delivery_id"], r["claim_id"]))
+        if ssh_psql(q) == "UPDATE 1":
+            d = dict(r)
+            d["_cid"] = new
+            taken.append(d)
+    return taken
+
+
+def _requeue_count(d):
+    m = re.match(r"RQ(\d+)", d.get("error") or "")
+    return int(m.group(1)) if m else 0
+
+
+def resume(d, timeout_min, log):
+    """按项目权威状态续接(场景2:不重发 kickoff,无重复业务副作用)。
+
+    分流:receipt→直接终结;项目终态→续发布;项目非终态→只续观察;
+    无项目→有界回队 PENDING(计数 RQn,超限转 MANUAL)。"""
+    cid = d["_cid"]
+    proj = "elemiso-gh-pr%d-%s" % (d["pr_number"], d["observed_head_sha"][:8])
+    run = "resume-%s" % d["delivery_id"][:8]
+    rcpt = read_receipt(proj)
+    if rcpt and rcpt.get("check_run_id"):
+        finish(d, True, "recovered via receipt; check_run=%s (orig run %s)"
+               % (rcpt.get("check_run_id"), rcpt.get("run_id", "?")), cid)
+        log("resumed %s: receipt present -> PROCESSED" % d["delivery_id"][:12])
+        return
+    st = project_status(proj)
+    if st is None:
+        n = _requeue_count(d)
+        if n >= REQUEUE_MAX:
+            finish(d, False, "MANUAL: requeued %d times, project never appeared" % n, cid)
+            log("resumed %s: requeue budget exhausted -> MANUAL" % d["delivery_id"][:12])
+        else:
+            q = ("UPDATE public.github_deliveries SET status='PENDING', claim_id=NULL, "
+                 "claimed_at=NULL, error='RQ%d' WHERE delivery_id='%s' AND claim_id='%s' "
+                 "AND status='RUNNING'" % (n + 1, d["delivery_id"], cid))
+            ssh_psql(q)
+            log("resumed %s: no project -> requeued (RQ%d)" % (d["delivery_id"][:12], n + 1))
+        return
+    if st in ("completed", "blocked"):
+        conclude(d, st, None, run, proj, cid, log)
+        return
+    st2, report = watch_run(run, proj, time.time() + timeout_min * 60)
+    conclude(d, st2, report, run, proj, cid, log)
 
 
 def main():
@@ -508,6 +585,19 @@ def main():
         for d in pending_deliveries():
             print(json.dumps(d, ensure_ascii=False))
         return
+    log = lambda *m: print(time.strftime("[%H:%M:%S]"), *m, flush=True)
+    # 启动即接管崩溃残留的孤儿租约(场景1:认领后崩溃可恢复)
+    try:
+        stale = take_over_stale()
+        for d in stale:
+            try:
+                log("recovering stale", d["delivery_id"][:12])
+                resume(d, a.timeout_min, log)
+            except Exception as e:
+                print("resume error:", type(e).__name__, str(e)[:150], flush=True)
+    except Exception as e:
+        print("take_over_stale error (will continue):",
+              type(e).__name__, str(e)[:150], flush=True)
     while True:
         try:
             pend = pending_deliveries()

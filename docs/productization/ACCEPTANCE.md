@@ -5,10 +5,10 @@ v2 备忘五节 M1 出口 = 故障注入清单全过。状态：✅已验证（�
 
 | # | 场景（提示词四.） | 当前实现 | 缺口 | 验证方法 | 状态 |
 |---|---|---|---|---|---|
-| 1 | 认领后崩溃可恢复 | M1-2 `recover_stale()` | 实现+测试中 | 单测：stale RUNNING 接管后续接 | 🔒 |
-| 2 | 发任务后崩溃不重复有害副作用 | M1-2 续接按项目权威状态分流（receipt/终态/非终态/无项目） | 同上 | 单测：非终态只续观察不重发 kickoff；无项目才回队 | 🔒 |
+| 1 | 认领后崩溃可恢复 | `take_over_stale()` CAS 接管 + `resume()` 续接；启动即执行 | 真实 PG/kill -9 注入待授权 | `test_takeover_cas_and_format` 等 7 项 | ✅单测 |
+| 2 | 发任务后崩溃不重复有害副作用 | `resume()` 四路分流，绝不重发 kickoff；无项目有界回队 RQn | 同上 | `test_terminal_project_resumes_publish_without_kickoff`/`test_inflight_project_only_watches`/`test_missing_project_requeues_bounded` | ✅单测 |
 | 3 | GitHub 已接受本地未记录可对账收敛 | `publish_with_retry` 首步 GET check-runs 采纳 + MinIO receipt 短路 | 真实 GitHub 验证待授权 | 单测 `test_reconcile_adopt_writes_receipt`、`test_receipt_short_circuit` | ✅单测 |
-| 4 | 超时与重试有界 | `PUBLISH_ATTEMPTS=3` + 退避 (10s,30s)；watch 有 deadline | 回队次数上限（M1-2） | `test_bounded_retry_then_success`/`test_exhausted_returns_failure` | ✅单测 |
+| 4 | 超时与重试有界 | `PUBLISH_ATTEMPTS=3` + 退避 (10s,30s)；watch 有 deadline 已实现（REQUEUE_MAX=2，RQn 计数，超限 MANUAL） | `test_bounded_retry_then_success`/`test_exhausted_returns_failure` | ✅单测 |
 | 5 | 重复 webhook 不重复执行 | receiver 以 delivery GUID 为 PK INSERT（同 GUID 重发不新行）；桥 `already_processed` 按 repo+PR+head 查 PROCESSED 去重 | receiver PK 冲突路径的真实行为复核（单测已有 test_receiver.py 覆盖） | `test_already_processed_guard` | ✅单测 |
 | 6 | PR 更新后旧结论不代表新 commit | check-run 绑定 observed_head_sha（结构保证）；新 head=新 delivery=新 run | 需一条实证：同 PR 两 head 两 check 并存 | M1-3 集成验证（待真实案例轮） | ⬜ |
 | 7 | 回写失败不能标记投递成功 | `process()` 尾段：PROCESSED 仅当 pub.ok **且** 审查终态；失败=PUBLISH_FAILED(retryable)；timeout=TIMEOUT(manual) | — | `test_processed_only_after_publish_success`/`test_publish_failure_marks_recoverable_error`/`test_timeout_marks_manual_error_even_if_published` | ✅单测 |
