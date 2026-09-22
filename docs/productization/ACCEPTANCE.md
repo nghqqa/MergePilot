@@ -77,3 +77,23 @@ v2 备忘一.3 硬门槛 3 = "审批不越权：批准的语义、绑定对象�
 | 恢复只读不重写 | resume() 只读清单并记日志；缺失不阻断恢复（前期 run 无清单属已知缺失） | ✅单测 |
 
 **边界声明**：单测级（mock MinIO/docker）。真实 MinIO 写入、真实 worker 镜像读取、以及"清单中 missing 项的 worker 侧上报"（模型/RAG/Skill 内容哈希）——未验证/未实现。当前状态 = **可追溯骨架**，不等于备忘九.1 的"完整可复算"。
+
+---
+
+# 成本计量（ACCEPTANCE-COST，备忘四.4 / V0 硬门槛 4）
+
+实现：tools/costmeter/（core.py 预算守卫 + collect.py 收集器）｜ 测试：tests/costmeter/test_costmeter.py（16 项，2026-09-22 全绿）
+**SCAFFOLD 声明：以下是脚手架的逻辑层验证，不等于硬预算控制已完成**；未接入任何真实调用路径（预算金额未定，不构成消费授权）。
+
+| M4 前验证要求（提示词七.C） | 脚手架逻辑 | 单测 | 真实路径接入 |
+|---|---|---|---|
+| 实际调用前检查并预留额度 | `reserve()` 余额不足抛 BudgetExceeded | test_over_limit_denied 等 | ⬜未接（挂点待定：桥派发前 or worker agentloop） |
+| 重试计入预算 | `reserve(retry_of=)` 沿用原预留，不重复占额 | test_retry_reuses_reservation | ⬜ |
+| 调用结束后结算 | `commit(actual)` 多退少补 | test_commit_* | ⬜ |
+| 超限阻止后续调用 | reserve fail-closed；结算面超余额也拒 | test_commit_over_estimate_beyond_budget_denies | ⬜ |
+| 并发预留不重复使用同一额度 | 进程内锁 + 20 线程并发预留恰好 10 成功 10 拒 | test_parallel_reserves_never_oversubscribe | ⬜（跨进程需 DB/存储层，未做） |
+| usage 缺失明确处理 | 按预留消耗 + 记 gap（保守），gap 计数入 status | test_usage_missing_consumes_estimate_and_records_gap | ⬜ |
+| 执行崩溃明确处理 | 台账 write-through + 重启 load + 过时预留回收 | CrashRecoveryTests | ⬜ |
+
+**数据源事实（2026-09-22 核对）**：token 级 usage 仅存在于 worker OTel LLM spans（`gen_ai.usage.input/output_tokens`），经 OTLP 导出外部 collector；本地容器只有 span 名序列与审计日志；rag toolspans 在 :4184（未运行）。故本地收集器只产出**调用计数面**（tokens=None + missing 标注），token/币值面 ⬜ 未接通。币值换算仅在显式提供价目表时进行，缺价模型返回 unknown_models，不伪造。
+**M4 前还差**：真实 usage 源接入（OTel collector 查询或 worker 本地台账）、预算挂点接入派发/调用路径、预算金额拍板、跨进程预留存储、端到端验证——均未开始。
