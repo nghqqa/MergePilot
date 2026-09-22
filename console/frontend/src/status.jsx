@@ -6,7 +6,7 @@ import { Badge } from './ui.jsx';
 
 export function ExecutionBadge({ execution }) {
   if (!execution?.status) {
-    return <Badge tone="neutral" title="该运行无投递台账记录（早期/Matrix 轮）">执行状态 未记录</Badge>;
+    return <Badge tone="neutral" title="该运行无投递台账记录（早期/Matrix 轮）">执行未记录</Badge>;
   }
   const s = String(execution.status).toUpperCase();
   const source =
@@ -30,7 +30,7 @@ export function ExecutionBadge({ execution }) {
 
 export function VerdictBadge({ review }) {
   if (!review?.verdict) {
-    return <Badge tone="neutral" title="包内无审查结论记录">结论 未记录</Badge>;
+    return <Badge tone="neutral" title="包内无审查结论记录">结论未记录</Badge>;
   }
   if (review.verdict === 'FINDING_CONFIRMED' || review.verdict === 'finding-confirmed') {
     return (
@@ -57,19 +57,19 @@ export function VerdictBadge({ review }) {
 }
 
 export function GateBadge({ gate }) {
-  if (!gate) return <Badge tone="neutral" title="包内无人工门记录">门 未记录</Badge>;
+  if (!gate) return <Badge tone="neutral" title="包内无人工门记录">门未记录</Badge>;
   const map = {
-    APPROVED: ['ok', '人工门已批准（仅授权修复流程，非代码推送）'],
-    REJECTED: ['bad', '人工门已拒绝 — 后续 Agent 保持锁定'],
-    NOT_REQUIRED: ['neutral', '低风险自动路径，未触发人工门'],
-    RECORDED: ['info', '存在门决策记录，结论见证据文件'],
+    APPROVED: ['ok', 'APPROVED', '人工门已批准（仅授权修复流程，非代码推送）'],
+    REJECTED: ['bad', 'REJECTED', '人工门已拒绝 — 后续 Agent 保持锁定'],
+    NOT_REQUIRED: ['neutral', '无需门', 'NOT_REQUIRED — 低风险自动路径，未触发人工门'],
+    RECORDED: ['info', 'RECORDED', '存在门决策记录，结论见证据文件'],
   };
-  const [tone, desc] = map[gate] ?? ['neutral', gate];
-  return <Badge tone={tone} title={desc}>{gate}</Badge>;
+  const [tone, label, desc] = map[gate] ?? ['neutral', gate, gate];
+  return <Badge tone={tone} title={desc}>{label}</Badge>;
 }
 
 export function PublishBadge({ publish }) {
-  if (!publish) return <Badge tone="neutral">发布 未记录</Badge>;
+  if (!publish) return <Badge tone="neutral">发布未记录</Badge>;
   if (publish.status === 'published') {
     const ok = publish.conclusion === 'success';
     return (
@@ -81,7 +81,7 @@ export function PublishBadge({ publish }) {
   if (publish.status === 'processed_no_checkrun_record') {
     return (
       <Badge tone="warn" title="台账 PROCESSED 但包内无 check-run.json — 该轮发布凭据未随包保存">
-        已处理·回写未随包记录
+        已处理 · 回写未随包记录
       </Badge>
     );
   }

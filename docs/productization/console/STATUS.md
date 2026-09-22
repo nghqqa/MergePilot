@@ -1,9 +1,27 @@
 # 控制台推进状态（console/STATUS）
 
-**更新**：2026-09-22 ｜ **分支**：`feat/admin-console`（worktree `D:\goai\mp-worktrees\console`，基线 `0ae8843` = `chore/backfill-r3-ops` 已提交顶端）
+**更新**：2026-09-22（第二轮：前端视觉世界重构）｜ **分支**：`feat/admin-console`（worktree `D:\goai\mp-worktrees\console`，基线 `0ae8843`）
 **负责目录**：`console/`（前后端）+ `docs/productization/console/`。未改动 gh-bridge / workflow-controller / approval / rag / costmeter / 共享数据结构 / r3work。
 
-## 本轮交付：运行查询闭环（snapshot 模式）
+## 第二轮：前端重构"运行取证台"（2026-09-22）
+
+用户反馈"页面过于抽象"，要求现代管理系统设计美学。按 impeccable new-work 流程执行**表面级视觉世界替换**（brief-pinned，Operate 模式）：
+
+| 工作项 | 状态 | 说明 |
+|---|---|---|
+| 方向契约 | ✅ | index.html `impeccable:direction` 注释（THESIS/OWN-WORLD/STORY/FIRST VIEWPORT/FORM/FINISH），构建产物已验证存活 |
+| 视觉世界替换 | ✅ | 冷灰阶 + 墨色侧边栏 236px + 深青 #0e6b62 唯一强调 + 四状态色仅状态；lucide-react 图标系统（新增唯一前端依赖）；tabular-nums；浏览器面接管（selection/焦点环/滚动条/caret） |
+| 组件重构 | ✅ | 分区图标导航、SNAPSHOT 模式徽章（走针时钟）、计数快筛 chips、骨架屏、文件类型图标、徽章"点+文字"、证据抽屉 220ms 滑入 + 焦点移入 |
+| 产品真相保留 | ✅ | 三态分离/诚实空值/只读边界/证据转义全部不变；后端仅新增 review.human_gate_source 字段 |
+| 截图检查 | ✅ 两轮 | 桌面 1280 + 窄屏 768；修复批次：表格列断行/宽度压缩（发布状态列落回 1280 首屏+滚动提示）、计数 chip 空串 bug、门徽章语义标签 |
+| Finish review | ✅（替代评审，披露） | 新鲜上下文子代理按 craft-floor 评审：裁决 fix → 修复批次（M1 SHA 断行、M2 首屏三态、7 minors）→ 复评确认见 .impeccable/review/ |
+| 设计记录 | ✅ | console/DESIGN.md（表面级，从建成世界提取；根 DESIGN.md 属 E2E 演示控制台不约束本表面）+ surface brief |
+
+**决策记录**：①重设计而非打磨（用户 brief 钉死新美学，旧"交接班看板"世界作 anti-reference）；②lucide-react 为唯一新增依赖（构建期，随 bundle 打包，无运行时外部请求）；③根 DESIGN.md 不改写（属另一表面的既有记录），以 console/DESIGN.md + 文件级 ignore 豁免（.impeccable/config.json，理由注明）；④"全部"计数 chip 空串 `??` 不触发是本轮抓到的真实 JS bug。
+
+---
+
+## 第一轮：运行查询闭环（snapshot 模式）
 
 | 工作项 | 状态 | 说明 |
 |---|---|---|

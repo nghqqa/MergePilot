@@ -1,44 +1,83 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import {
+  Braces, Check, ChevronsLeft, CloudUpload, Download, File, FileCode, FileDiff,
+  FileSearch, FileText, FolderOpen, Hand, History, LayoutDashboard, ListChecks,
+  ScrollText, Search, ShieldCheck, Tag, Wrench, X, Workflow,
+} from 'lucide-react';
 import { api } from '../api.js';
-import { Spinner, ErrorBox, Empty, Sha, Badge, KV, Section, EvidencePre } from '../ui.jsx';
+import { Spinner, ErrorBox, Empty, Sha, Chip, Section, EvidencePre, SkeletonRows } from '../ui.jsx';
 import { ExecutionBadge, VerdictBadge, GateBadge, PublishBadge, RagStateBadge } from '../status.jsx';
-import { fmtTime, fmtBytes, fmtInt, NULL_TEXT } from '../format.js';
+import { fmtTime, fmtBytes, fmtInt } from '../format.js';
 
-const TABS = ['概览', '时间线', '任务', '证据', '版本清单', 'Skill', 'RAG', '用量'];
+const TABS = [
+  { key: '概览', icon: LayoutDashboard },
+  { key: '时间线', icon: History },
+  { key: '任务', icon: ListChecks },
+  { key: '证据', icon: FolderOpen },
+  { key: '版本清单', icon: Tag },
+  { key: 'Skill', icon: Wrench },
+  { key: 'RAG', icon: FileSearch },
+  { key: '用量', icon: CloudUpload },
+];
+
+function fileIcon(path) {
+  const ext = path.split('.').pop().toLowerCase();
+  if (ext === 'md' || ext === 'txt') return [FileText, 'ft-doc'];
+  if (ext === 'log') return [ScrollText, 'ft-log'];
+  if (ext === 'json' || ext === 'jsonl') return [Braces, 'ft-json'];
+  if (ext === 'diff' || ext === 'patch') return [FileDiff, 'ft-diff'];
+  if (['py', 'js', 'mjs', 'sh'].includes(ext)) return [FileCode, 'ft-code'];
+  return [File, 'ft-other'];
+}
 
 function EvidenceDrawer({ packId, filePath, onClose }) {
   const [content, setContent] = useState(null);
   const [error, setError] = useState(null);
+  const closeBtnRef = React.useRef(null);
   useEffect(() => {
     setContent(null);
     setError(null);
-    if (filePath) api.evidenceContent(packId, filePath).then(setContent).catch(setError);
+    if (filePath) {
+      api.evidenceContent(packId, filePath).then(setContent).catch(setError);
+      // 焦点移入对话框（Esc 已有全局监听； Tab 循环圈闭属后续 a11y 轮）
+      requestAnimationFrame(() => closeBtnRef.current?.focus());
+    }
   }, [packId, filePath]);
   if (!filePath) return null;
   return (
     <div className="drawer-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="drawer" role="dialog" aria-label={`证据查看 ${filePath}`}>
         <div className="drawer-head">
-          <div>
+          <div className="drawer-head-main">
             <div className="drawer-title mono">{filePath}</div>
-            <div className="drawer-sub">
-              归属 {packId} ·{' '}
-              {content
-                ? `${fmtBytes(content.bytes)} · ${content.encoding}${content.sums_status !== 'no_sums' ? ` · SUMS: ${content.sums_status}` : ' · 无 SUMS'}`
-                : '加载中'}
+            <div className="drawer-meta">
+              <Chip title={`证据归属运行包 ${packId}`}>{packId}</Chip>
+              {content ? (
+                <>
+                  <Chip title="文件大小">{fmtBytes(content.bytes)}</Chip>
+                  <Chip title="传输编码（内容按纯文本转义渲染）">{content.encoding}</Chip>
+                  {content.sums_status !== 'no_sums' ? (
+                    <Chip title="是否列入包内 SHA256SUMS 锁定清单">SUMS: {content.sums_status}</Chip>
+                  ) : (
+                    <Chip title="该包无 SHA256SUMS 清单">无 SUMS</Chip>
+                  )}
+                </>
+              ) : null}
             </div>
           </div>
           <div className="drawer-actions">
             <a
-              className="btn"
+              className="btn btn-primary"
               href={api.evidenceDownloadUrl(packId, filePath)}
               download
               title="下载原始文件（不推送、不修改任何远端）"
             >
-              下载
+              <Download size={13} strokeWidth={1.75} aria-hidden /> 下载
             </a>
-            <button className="btn" onClick={onClose}>关闭 (Esc)</button>
+            <button ref={closeBtnRef} className="btn btn-icon" onClick={onClose} aria-label="关闭（Esc）" title="关闭（Esc）">
+              <X size={15} strokeWidth={1.75} />
+            </button>
           </div>
         </div>
         <div className="drawer-body">
@@ -57,59 +96,76 @@ function EvidenceDrawer({ packId, filePath, onClose }) {
   );
 }
 
+function StatusCell({ icon: Icon, label, children, source, title }) {
+  return (
+    <div className="status-cell" title={title}>
+      <div className="status-head">
+        <span className="status-ico" aria-hidden><Icon size={13} strokeWidth={1.75} /></span>
+        <span className="status-label">{label}</span>
+      </div>
+      <div className="status-badge">{children}</div>
+      {source ? <div className="status-source">{source}</div> : null}
+    </div>
+  );
+}
+
 function OverviewTab({ run }) {
   const e = run.execution;
   return (
     <div>
       <div className="status-strip">
-        <div className="status-cell" title="执行状态：投递台账（webhook 轮）或项目 meta（Matrix 轮）">
-          <div className="status-label">执行状态</div>
+        <StatusCell
+          icon={Workflow}
+          label="执行状态"
+          title="执行状态：投递台账（webhook 轮）或项目 meta（Matrix 轮）"
+          source={e?.source === 'delivery_ledger' ? 'delivery-ledger.json' : e?.source === 'project_meta' ? 'project/meta.json（无台账）' : null}
+        >
           <ExecutionBadge execution={e} />
-          <div className="status-source">
-            {e?.source === 'delivery_ledger' ? '来源 delivery-ledger.json' : e?.source === 'project_meta' ? '来源 project/meta.json（无台账）' : NULL_TEXT}
-          </div>
-        </div>
-        <div className="status-cell" title="审查结论：独立安全审查结果，绑定下方 head SHA">
-          <div className="status-label">审查结论</div>
+        </StatusCell>
+        <StatusCell
+          icon={FileSearch}
+          label="审查结论"
+          title="审查结论：独立安全审查结果，绑定下方 head SHA"
+          source={run.review.source ?? null}
+        >
           <VerdictBadge review={run.review} />
-          <div className="status-source">
-            {run.review.source ? `来源 ${run.review.source}` : NULL_TEXT}
-            {run.review.cwe ? ` · ${run.review.cwe}` : ''}
-          </div>
-        </div>
-        <div className="status-cell" title="人工安全门">
-          <div className="status-label">人工门</div>
+        </StatusCell>
+        <StatusCell
+          icon={Hand}
+          label="人工门"
+          title="人工安全门决策"
+          source={run.review.human_gate_source ?? (run.review.human_gate ? null : '包内无门记录')}
+        >
           <GateBadge gate={run.review.human_gate} />
-          <div className="status-source">{'\u00a0'}</div>
-        </div>
-        <div className="status-cell" title="GitHub 发布：check-run 回写事实">
-          <div className="status-label">发布状态</div>
+        </StatusCell>
+        <StatusCell
+          icon={CloudUpload}
+          label="发布状态"
+          title="GitHub 发布：check-run 回写事实"
+          source={run.publish.url ? 'check-run 已发布' : '本轮零 GitHub 写入'}
+        >
           <PublishBadge publish={run.publish} />
-          <div className="status-source">
-            {run.publish.url ? (
-              <a href={run.publish.url} target="_blank" rel="noreferrer">check-run {run.publish.check_run_id} ↗</a>
-            ) : (
-              '本轮零 GitHub 写入'
-            )}
-          </div>
-        </div>
+        </StatusCell>
       </div>
 
       <div className="kv-grid">
-        <KV label="run_id"><span className="mono">{run.run_id ?? NULL_TEXT}</span></KV>
-        <KV label="证据包"><span className="mono">{run.pack_id}</span></KV>
-        <KV label="仓库"><span className="mono">{run.repo ?? NULL_TEXT}</span></KV>
-        <KV label="PR">
-          {run.pr_number ? (
-            run.pr_url ? <a href={run.pr_url} target="_blank" rel="noreferrer">#{run.pr_number} ↗</a> : `#${run.pr_number}`
-          ) : NULL_TEXT}
-        </KV>
-        <KV label="head SHA（结论绑定）"><Sha value={run.head_sha} n={12} /></KV>
-        <KV label="base SHA"><Sha value={run.base_sha} n={12} /></KV>
-        <KV label="触发方式">{run.trigger === 'webhook' ? 'webhook（GitHub 投递）' : run.trigger === 'matrix' ? 'Matrix 手动 kickoff' : NULL_TEXT}</KV>
-        <KV label="开始时间">{fmtTime(run.created_at) ?? NULL_TEXT}</KV>
-        <KV label="耗时">{run.duration_human ?? NULL_TEXT}</KV>
-        <KV label="项目"><span className="mono">{run.project?.project_id ?? NULL_TEXT}</span></KV>
+        <div className="kv"><div className="kv-label">run_id</div><div className="kv-value mono">{run.run_id ?? '未记录'}</div></div>
+        <div className="kv"><div className="kv-label">证据包</div><div className="kv-value mono">{run.pack_id}</div></div>
+        <div className="kv"><div className="kv-label">仓库</div><div className="kv-value mono">{run.repo ?? '未记录'}</div></div>
+        <div className="kv">
+          <div className="kv-label">PR</div>
+          <div className="kv-value">
+            {run.pr_number ? (run.pr_url ? <a href={run.pr_url} target="_blank" rel="noreferrer">#{run.pr_number} ↗</a> : `#${run.pr_number}`) : '未记录'}
+          </div>
+        </div>
+        <div className="kv" title="该运行的全部结论、证据、时间线绑定此 commit">
+          <div className="kv-label">head SHA（结论绑定）</div><div className="kv-value"><Sha value={run.head_sha} n={12} /></div>
+        </div>
+        <div className="kv"><div className="kv-label">base SHA</div><div className="kv-value"><Sha value={run.base_sha} n={12} /></div></div>
+        <div className="kv"><div className="kv-label">触发方式</div><div className="kv-value">{run.trigger === 'webhook' ? 'webhook（GitHub 投递）' : run.trigger === 'matrix' ? 'Matrix 手动 kickoff' : '未记录'}</div></div>
+        <div className="kv"><div className="kv-label">开始时间</div><div className="kv-value num">{fmtTime(run.created_at) ?? '未记录'}</div></div>
+        <div className="kv"><div className="kv-label">耗时</div><div className="kv-value num">{run.duration_human ?? '未记录'}</div></div>
+        <div className="kv"><div className="kv-label">项目</div><div className="kv-value mono">{run.project?.project_id ?? '未记录'}</div></div>
       </div>
 
       {run.review.status_line ? (
@@ -119,7 +175,7 @@ function OverviewTab({ run }) {
       ) : null}
 
       {e?.note ? (
-        <Section title="投递备注（原文）">
+        <Section title="投递备注（原文）" note="来自投递台账 error/note 字段，原样展示">
           <p className="result-line mono">{e.note}</p>
         </Section>
       ) : null}
@@ -127,7 +183,7 @@ function OverviewTab({ run }) {
       <Section title="归属一致性">
         <ul className="compact-list">
           <li>本页全部结论、证据、时间线均归属于上方 head SHA 与 run_id；该 PR 若有新 commit，将以新运行记录呈现，不会覆盖本记录。</li>
-          <li>数据来源：证据包 {run.pack_id}（锁定只读快照）。</li>
+          <li>数据来源：证据包 <code>{run.pack_id}</code>（锁定只读快照）。</li>
         </ul>
       </Section>
     </div>
@@ -137,11 +193,13 @@ function OverviewTab({ run }) {
 function TimelineTab({ run }) {
   if (!run.timeline?.length) return <Empty>时间线未记录</Empty>;
   return (
-    <ol className="timeline">
+    <ol className="timeline panel">
       {run.timeline.map((t, i) => (
         <li key={i} className={t.ts ? '' : 'timeline-nts'}>
-          <div className="timeline-ts mono">{fmtTime(t.ts) ?? '时间未记录'}</div>
-          <div className="timeline-dot" aria-hidden />
+          <div className="timeline-ts mono num">{fmtTime(t.ts) ?? '时间未记录'}</div>
+          <div className="timeline-rail" aria-hidden>
+            <span className="timeline-dot" />
+          </div>
           <div className="timeline-body">
             <div>{t.label}</div>
             <div className="timeline-src">{t.source}{t.detail ? ` · ${t.detail}` : ''}</div>
@@ -155,33 +213,35 @@ function TimelineTab({ run }) {
 function TasksTab({ run, onOpenEvidence }) {
   if (!run.tasks?.length) return <Empty>包内无任务 meta 记录</Empty>;
   return (
-    <div className="table-scroll">
-      <table className="data-table">
-        <thead>
-          <tr>
-            <th>task_id</th><th>角色</th><th>状态</th><th>委派</th><th>确认</th><th>提交</th><th>结果</th>
-          </tr>
-        </thead>
-        <tbody>
-          {run.tasks.map((t) => (
-            <tr key={t.task_id}>
-              <td className="mono" title={t.title ?? ''}>{t.task_id}</td>
-              <td>{t.role ?? NULL_TEXT}</td>
-              <td>{t.status ?? NULL_TEXT}</td>
-              <td className="cell-time">{fmtTime(t.assigned_at) ?? '—'}</td>
-              <td className="cell-time">{fmtTime(t.acknowledged_at) ?? '—'}</td>
-              <td className="cell-time">{fmtTime(t.submitted_at) ?? '—'}</td>
-              <td>
-                {t.result_path ? (
-                  <button className="link-btn" onClick={() => onOpenEvidence(t.result_path)}>result.md</button>
-                ) : '—'}
-              </td>
+    <div>
+      <div className="table-scroll panel">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>task_id</th><th>角色</th><th>状态</th><th>委派</th><th>确认</th><th>提交</th><th>结果</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {run.tasks.map((t) => (
+              <tr key={t.task_id}>
+                <td className="mono" title={t.title ?? ''}>{t.task_id}</td>
+                <td>{t.role ?? '未记录'}</td>
+                <td>{t.status ?? '未记录'}</td>
+                <td className="cell-time num">{fmtTime(t.assigned_at) ?? '—'}</td>
+                <td className="cell-time num">{fmtTime(t.acknowledged_at) ?? '—'}</td>
+                <td className="cell-time num">{fmtTime(t.submitted_at) ?? '—'}</td>
+                <td>
+                  {t.result_path ? (
+                    <button className="link-btn" onClick={() => onOpenEvidence(t.result_path)}>result.md</button>
+                  ) : '—'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
       {run.dag?.length ? (
-        <Section title="DAG 节点（project/result.md 原文标记）">
+        <Section title="DAG 节点" note="project/result.md 原文标记，原样展示">
           <ul className="compact-list mono">
             {run.dag.map((d, i) => (
               <li key={i}>[{d.mark}] {d.task_id} — {d.rest}</li>
@@ -200,7 +260,7 @@ function EvidenceTab({ packId, onOpenEvidence }) {
   useEffect(() => {
     api.evidence(packId).then(setList).catch(setError);
   }, [packId]);
-  const items = React.useMemo(() => {
+  const items = useMemo(() => {
     if (!list) return null;
     const f = filter.trim().toLowerCase();
     return f ? list.items.filter((i) => i.path.toLowerCase().includes(f)) : list.items;
@@ -211,41 +271,48 @@ function EvidenceTab({ packId, onOpenEvidence }) {
         证据为锁定快照；查看按纯文本渲染（不执行脚本/不渲染 HTML）；下载不构成任何代码推送。
         未列入 SHA256SUMS 的文件单独标注。
       </p>
-      {error ? <ErrorBox error={error} /> : !list ? <Spinner /> : !items.length ? <Empty>无匹配文件</Empty> : (
-        <div className="table-scroll">
+      <div className="search-wrap evidence-search">
+        <Search size={14} strokeWidth={1.75} aria-hidden />
+        <input
+          placeholder="按路径过滤（包含匹配）"
+          value={filter}
+          onChange={(e) => setFilter(e.target.value)}
+          aria-label="证据文件过滤"
+        />
+      </div>
+      {error ? <ErrorBox error={error} /> : !items ? <SkeletonRows rows={6} /> : !items.length ? <Empty>无匹配文件</Empty> : (
+        <div className="table-scroll panel">
           <table className="data-table">
             <thead>
-              <tr><th>文件</th><th>大小</th><th title="是否列入包内 SHA256SUMS">SUMS</th><th>操作</th></tr>
+              <tr><th>文件</th><th className="th-right">大小</th><th title="是否列入包内 SHA256SUMS">SUMS</th><th>操作</th></tr>
             </thead>
             <tbody>
-              {items.map((f) => (
-                <tr key={f.path}>
-                  <td className="mono cell-path" title={f.path}>{f.path}</td>
-                  <td>{fmtBytes(f.bytes)}</td>
-                  <td>
-                    {f.sums_status === 'listed' ? <Badge tone="ok">已列</Badge>
-                      : f.sums_status === 'unlisted' ? <Badge tone="warn" title="未列入锁定清单">未列</Badge>
-                      : <Badge tone="neutral">无 SUMS</Badge>}
-                  </td>
-                  <td className="cell-actions">
-                    <button className="link-btn" onClick={() => onOpenEvidence(f.path)}>查看</button>
-                    {' '}
-                    <a className="link-btn" href={api.evidenceDownloadUrl(packId, f.path)} download>下载</a>
-                  </td>
-                </tr>
-              ))}
+              {items.map((f) => {
+                const [Icon, tone] = fileIcon(f.path);
+                return (
+                  <tr key={f.path}>
+                    <td className="cell-path">
+                      <span className={`ft-ico ${tone}`} aria-hidden><Icon size={14} strokeWidth={1.6} /></span>
+                      <span className="mono" title={f.path}>{f.path}</span>
+                    </td>
+                    <td className="num th-right">{fmtBytes(f.bytes)}</td>
+                    <td>
+                      {f.sums_status === 'listed' ? <span className="sums-chip" title="已列入锁定清单">已列</span>
+                        : f.sums_status === 'unlisted' ? <span className="sums-chip sums-none" title="未列入锁定清单">未列</span>
+                        : <span className="sums-chip sums-unknown" title="该包无 SHA256SUMS">无 SUMS</span>}
+                    </td>
+                    <td className="cell-actions">
+                      <button className="link-btn" onClick={() => onOpenEvidence(f.path)}>查看</button>
+                      <span className="cell-actions-sep">·</span>
+                      <a className="link-btn" href={api.evidenceDownloadUrl(packId, f.path)} download>下载</a>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
       )}
-      <input
-        className="filter-input"
-        placeholder="按路径过滤（包含匹配）"
-        value={filter}
-        onChange={(e) => setFilter(e.target.value)}
-        aria-label="证据文件过滤"
-        style={{ marginTop: 8 }}
-      />
     </div>
   );
 }
@@ -255,31 +322,37 @@ function VersionsTab({ run }) {
   return (
     <div>
       <div className="kv-grid">
-        <KV label="run-manifest" title="桥自 81e0045 起在派发前写入 MinIO 的 run 级版本清单；历史证据包早于该机制">
-          {v?.run_manifest ? <span className="mono">{v.run_manifest}</span> : <Badge tone="warn">未记录（早于 manifest 机制）</Badge>}
-        </KV>
-        <KV label="模型标识" title={v?.model_basis ?? ''}>
-          {v?.model ? <span className="mono">{v.model}</span> : NULL_TEXT}
+        <div className="kv" title="桥自 81e0045 起在派发前写入 MinIO 的 run 级版本清单；历史证据包早于该机制">
+          <div className="kv-label">run-manifest</div>
+          <div className="kv-value">
+            {v?.run_manifest ? <span className="mono">{v.run_manifest}</span> : <span className="missing-chip" title="历史证据包早于 manifest 机制">未记录（早于 manifest 机制）</span>}
+          </div>
+        </div>
+        <div className="kv" title={v?.model_basis ?? ''}>
+          <div className="kv-label">模型标识</div>
+          <div className="kv-value mono">{v?.model ?? '未记录'}</div>
           {v?.model_basis ? <div className="kv-note">{v.model_basis}</div> : null}
-        </KV>
-        <KV label="worker 镜像" title={v?.image_basis ?? ''}>
-          {v?.image ? <span className="mono">{v.image}</span> : NULL_TEXT}
+        </div>
+        <div className="kv" title={v?.image_basis ?? ''}>
+          <div className="kv-label">worker 镜像</div>
+          <div className="kv-value mono">{v?.image ?? '未记录'}</div>
           {v?.image_basis ? <div className="kv-note">{v.image_basis}</div> : null}
-        </KV>
-        <KV label="RAG 快照标识">
-          <Badge tone="warn" title="历史包内无 RAG 索引版本标识（rag-live 未运行期）">未记录</Badge>
-        </KV>
+        </div>
+        <div className="kv">
+          <div className="kv-label">RAG 快照标识</div>
+          <div className="kv-value"><span className="missing-chip" title="历史包内无 RAG 索引版本标识（rag-live 未运行期）">未记录</span></div>
+        </div>
       </div>
       {v?.note ? <p className="section-note">{v.note}</p> : null}
       {v?.skills?.length ? (
-        <Section title="本 run Skill 调用聚合（来自包内 skill-audit）">
-          <div className="table-scroll">
+        <Section title="本 run Skill 调用聚合" note="来自包内 skill-audit.json">
+          <div className="table-scroll panel">
             <table className="data-table">
-              <thead><tr><th>工具</th><th>次数</th><th>数据模式</th><th>来源</th></tr></thead>
+              <thead><tr><th>工具</th><th className="th-right">次数</th><th>数据模式</th><th>来源</th></tr></thead>
               <tbody>
                 {v.skills.map((s) => (
                   <tr key={s.tool}>
-                    <td className="mono">{s.tool}</td><td>{s.count}</td>
+                    <td className="mono">{s.tool}</td><td className="num">{s.count}</td>
                     <td>{s.data_modes.join(', ')}</td>
                     <td className="mono cell-src">{s.source_refs.join(', ')}</td>
                   </tr>
@@ -291,14 +364,14 @@ function VersionsTab({ run }) {
       ) : null}
       {v?.span_summary ? (
         <Section title="span 汇总（按角色）">
-          <div className="table-scroll">
+          <div className="table-scroll panel">
             <table className="data-table">
-              <thead><tr><th>角色</th><th>spans</th><th>skill 调用</th><th>rag 调用</th></tr></thead>
+              <thead><tr><th>角色</th><th className="th-right">spans</th><th className="th-right">skill 调用</th><th className="th-right">rag 调用</th></tr></thead>
               <tbody>
                 {Object.entries(v.span_summary).map(([role, s]) => (
                   <tr key={role}>
-                    <td>{role}</td><td>{fmtInt(s.spans)}</td>
-                    <td>{fmtInt(s.skill_total)}</td><td>{fmtInt(s.rag)}</td>
+                    <td>{role}</td><td className="num">{fmtInt(s.spans)}</td>
+                    <td className="num">{fmtInt(s.skill_total)}</td><td className="num">{fmtInt(s.rag)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -333,25 +406,25 @@ function RagTab({ run }) {
             下表可能包含同会话其他 run 的调用；WH 收官轮的 skill-audit 已按 run 窗口严格重切（见包内 CORRECTIONS.md）。
             仅显示 rag.* 检索调用（{ragOnly.length}/{rag.calls.length} 行）。
           </p>
-          <div className="table-scroll">
+          <div className="table-scroll panel">
             <table className="data-table">
               <thead>
-                <tr><th>时间</th><th>工具</th><th>状态</th><th title="命中返回的文档/片段数">命中数</th><th>来源 refs</th><th>数据模式</th><th>耗时</th></tr>
+                <tr><th>时间</th><th>工具</th><th>状态</th><th className="th-right" title="命中返回的文档/片段数">命中数</th><th>来源 refs</th><th>数据模式</th><th className="th-right">耗时</th></tr>
               </thead>
               <tbody>
                 {ragOnly.map((c, i) => (
                   <tr key={i}>
-                    <td className="cell-time">{c.ts ?? '—'}</td>
+                    <td className="cell-time num">{c.ts ?? '—'}</td>
                     <td className="mono">{c.tool}</td>
                     <td>{c.result_status}</td>
-                    <td>{c.document_count ?? '—'}</td>
+                    <td className="num">{c.document_count ?? '—'}</td>
                     <td className="mono cell-src" title={(c.source_refs ?? []).join(', ')}>{(c.source_refs ?? []).join(', ') || '—'}</td>
                     <td>
                       {c.data_mode === 'SYNTHETIC' ? (
-                        <Badge tone="warn" title="该轮检索语料为合成演示语料，非真实案例库">SYNTHETIC</Badge>
+                        <span className="sums-chip sums-warn" title="该轮检索语料为合成演示语料，非真实案例库">SYNTHETIC</span>
                       ) : c.data_mode ?? '—'}
                     </td>
-                    <td>{c.latency_ms != null ? `${c.latency_ms}ms` : '—'}</td>
+                    <td className="num">{c.latency_ms != null ? `${c.latency_ms}ms` : '—'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -381,24 +454,25 @@ function UsageTab({ run }) {
       </p>
       {w ? (
         <div className="kv-grid">
-          <KV label="匹配窗口"><span className="mono">{w.key}</span></KV>
-          <KV label="调用次数">{fmtInt(w.calls)}</KV>
-          <KV label="输入 tokens">{fmtInt(w.inp)}</KV>
-          <KV label="其中缓存命中">{fmtInt(w.cached)}</KV>
-          <KV label="输出 tokens">{fmtInt(w.outp)}</KV>
+          <div className="kv"><div className="kv-label">匹配窗口</div><div className="kv-value mono">{w.key}</div></div>
+          <div className="kv"><div className="kv-label">调用次数</div><div className="kv-value num">{fmtInt(w.calls)}</div></div>
+          <div className="kv"><div className="kv-label">输入 tokens</div><div className="kv-value num">{fmtInt(w.inp)}</div></div>
+          <div className="kv"><div className="kv-label">其中缓存命中</div><div className="kv-value num">{fmtInt(w.cached)}</div></div>
+          <div className="kv"><div className="kv-label">输出 tokens</div><div className="kv-value num">{fmtInt(w.outp)}</div></div>
         </div>
       ) : (
         <p className="section-note">包内 usage 为会话级多窗口，无法唯一对应本 run — 全部窗口见下。</p>
       )}
-      <div className="table-scroll">
+      <div className="table-scroll panel">
         <table className="data-table">
-          <thead><tr><th>窗口</th><th>calls</th><th>inp</th><th>cached</th><th>outp</th>{w ? <th>本 run</th> : null}</tr></thead>
+          <thead><tr><th>窗口</th><th className="th-right">calls</th><th className="th-right">inp</th><th className="th-right">cached</th><th className="th-right">outp</th>{w ? <th>本 run</th> : null}</tr></thead>
           <tbody>
             {Object.entries(u.windows ?? {}).map(([k, v]) => (
               <tr key={k} className={w && k === w.key ? 'row-highlight' : ''}>
                 <td className="mono">{k}</td>
-                <td>{fmtInt(v.calls)}</td><td>{fmtInt(v.inp)}</td><td>{fmtInt(v.cached)}</td><td>{fmtInt(v.outp)}</td>
-                {w ? <td>{k === w.key ? '✓' : ''}</td> : null}
+                <td className="num">{fmtInt(v.calls)}</td><td className="num">{fmtInt(v.inp)}</td>
+                <td className="num">{fmtInt(v.cached)}</td><td className="num">{fmtInt(v.outp)}</td>
+                {w ? <td>{k === w.key ? <Check size={14} strokeWidth={2} aria-label="本 run 匹配窗口" /> : ''}</td> : null}
               </tr>
             ))}
           </tbody>
@@ -439,44 +513,62 @@ export default function RunDetailPage() {
   return (
     <div>
       <div className="breadcrumb">
-        <Link to="/runs">← 运行列表</Link>
+        <Link to="/runs" className="crumb-back">
+          <ChevronsLeft size={14} strokeWidth={1.75} aria-hidden /> 运行列表
+        </Link>
       </div>
-      {error ? <ErrorBox error={error} /> : !run ? <Spinner /> : (
+
+      {error ? <ErrorBox error={error} /> : !run ? (
+        <div className="detail-skeleton">
+          <SkeletonRows rows={5} />
+        </div>
+      ) : (
         <>
-          <div className="page-head">
-            <h1 className="mono" title={run.run_id ?? ''}>{run.run_id ?? 'run_id 未记录'}</h1>
-            <p className="page-sub mono">{run.pack_id}</p>
+          <div className="detail-head">
+            <div className="detail-head-main">
+              <h1 className="mono detail-title" title={run.run_id ?? ''}>{run.run_id ?? 'run_id 未记录'}</h1>
+              <div className="detail-chips">
+                <Chip mono title="证据包目录名（详情路由键）">{run.pack_id}</Chip>
+                <Chip title="触发方式">{run.trigger === 'webhook' ? 'webhook 投递' : run.trigger === 'matrix' ? 'Matrix kickoff' : '触发未记录'}</Chip>
+                {run.has_sums ? <Chip title="包内有 SHA256SUMS，可执行完整校验">SHA256SUMS</Chip> : null}
+                {run.review.cwe ? <Chip title="审查确认的缺陷编号">{run.review.cwe}</Chip> : null}
+              </div>
+            </div>
+            <div className="detail-actions">
+              <button className="btn" onClick={runIntegrity} disabled={integrity?.checking}>
+                <ShieldCheck size={13} strokeWidth={1.75} aria-hidden />
+                {integrity?.checking ? '校验中…' : '校验包完整性'}
+              </button>
+            </div>
           </div>
 
-          <div className="tab-bar" role="tablist">
-            {TABS.map((t) => (
-              <button
-                key={t}
-                role="tab"
-                aria-selected={tab === t}
-                className={`tab${tab === t ? ' tab-active' : ''}`}
-                onClick={() => setTab(t)}
-              >
-                {t}
-              </button>
-            ))}
-            <span className="tab-spacer" />
-            <button className="btn" onClick={runIntegrity} disabled={integrity?.checking}>
-              {integrity?.checking ? '校验中…' : '校验包完整性'}
-            </button>
-          </div>
           {integrity && !integrity.checking ? (
             <div className={`state-box ${integrity.error ? 'state-error' : integrity.status === 'verified' ? 'state-ok' : 'state-warn'}`}>
               {integrity.error ? `校验失败：${integrity.error}` : (
                 <>
-                  SHA256SUMS 校验：<strong>{integrity.status === 'verified' ? '通过' : integrity.status === 'mismatch' ? '不一致！' : '无清单'}</strong>
-                  {' '}· 清单 {integrity.listed} 项 · 验证 {integrity.verified} 项
-                  {integrity.mismatched?.length ? ` · 不一致: ${integrity.mismatched.map((m) => m.path).join(', ')}` : ''}
-                  {integrity.unlisted_count ? ` · 未列入清单 ${integrity.unlisted_count} 项` : ''}
+                  <strong>SHA256SUMS 校验：{integrity.status === 'verified' ? '通过' : integrity.status === 'mismatch' ? '不一致！' : '无清单'}</strong>
+                  <span>清单 {integrity.listed} 项 · 验证 {integrity.verified} 项</span>
+                  {integrity.mismatched?.length ? <span>不一致：{integrity.mismatched.map((m) => m.path).join(', ')}</span> : null}
+                  {integrity.unlisted_count ? <span>未列入清单 {integrity.unlisted_count} 项</span> : null}
                 </>
               )}
             </div>
           ) : null}
+
+          <div className="tab-bar" role="tablist">
+            {TABS.map((t) => (
+              <button
+                key={t.key}
+                role="tab"
+                aria-selected={tab === t.key}
+                className={`tab${tab === t.key ? ' tab-active' : ''}`}
+                onClick={() => setTab(t.key)}
+              >
+                <t.icon size={14} strokeWidth={1.75} aria-hidden />
+                {t.key}
+              </button>
+            ))}
+          </div>
 
           {tab === '概览' && <OverviewTab run={run} />}
           {tab === '时间线' && <TimelineTab run={run} />}
@@ -487,16 +579,16 @@ export default function RunDetailPage() {
             run.versions?.skills?.length || run.skill_audit ? (
               <div>
                 <p className="section-note">以下为 run 实际使用的 Skill 调用记录（包内审计导出），非 worker 当前安装版本。</p>
-                <div className="table-scroll">
+                <div className="table-scroll panel">
                   <table className="data-table">
-                    <thead><tr><th>时间</th><th>工具</th><th>状态</th><th>延迟</th><th>数据模式</th><th>来源 refs</th></tr></thead>
+                    <thead><tr><th>时间</th><th>工具</th><th>状态</th><th className="th-right">延迟</th><th>数据模式</th><th>来源 refs</th></tr></thead>
                     <tbody>
                       {(run.skill_audit?.invocations ?? []).map((inv, i) => (
                         <tr key={i}>
-                          <td className="cell-time">{inv.ts ?? '—'}</td>
+                          <td className="cell-time num">{inv.ts ?? '—'}</td>
                           <td className="mono">{inv.tool}</td>
                           <td>{inv.result_status ?? '—'}</td>
-                          <td>{inv.latency_ms != null ? `${inv.latency_ms}ms` : '—'}</td>
+                          <td className="num">{inv.latency_ms != null ? `${inv.latency_ms}ms` : '—'}</td>
                           <td>{inv.data_mode ?? '—'}</td>
                           <td className="mono cell-src" title={(inv.source_refs ?? []).join(', ')}>{(inv.source_refs ?? []).join(', ') || '—'}</td>
                         </tr>

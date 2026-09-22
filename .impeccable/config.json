@@ -1,3 +1,36 @@
 {
-  "buildPath": "code"
+  "buildPath": "code",
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "design-system-radius",
+        "value": "*",
+        "files": [
+          "console/frontend/src/console.css"
+        ],
+        "createdAt": "2026-09-22T11:12:45.045Z",
+        "reason": "表面级视觉世界重设计（用户 brief 2026-09-22：现代管理系统设计美学；replacement world per impeccable new-work），新令牌系统将在 finish 时由 console/DESIGN.md 记录；根 DESIGN.md 属 E2E 演示控制台表面，不约束本表面 — 控制台开发会话"
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "*",
+        "files": [
+          "console/frontend/src/console.css"
+        ],
+        "createdAt": "2026-09-22T11:12:45.146Z",
+        "reason": "表面级视觉世界重设计（用户 brief 2026-09-22：现代管理系统设计美学；replacement world per impeccable new-work），新令牌系统将在 finish 时由 console/DESIGN.md 记录；根 DESIGN.md 属 E2E 演示控制台表面，不约束本表面 — 控制台开发会话"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "*",
+        "files": [
+          "console/frontend/src/console.css"
+        ],
+        "createdAt": "2026-09-22T11:12:45.246Z",
+        "reason": "表面级视觉世界重设计（用户 brief 2026-09-22：现代管理系统设计美学；replacement world per impeccable new-work），新令牌系统将在 finish 时由 console/DESIGN.md 记录；根 DESIGN.md 属 E2E 演示控制台表面，不约束本表面 — 控制台开发会话"
+      }
+    ]
+  }
 }

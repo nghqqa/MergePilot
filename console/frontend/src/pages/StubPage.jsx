@@ -1,5 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import { ArrowRight } from 'lucide-react';
 
 const REASONS = {
   仓库: '依赖 GitHub App installation / 仓库授权数据源，当前未接入任何实时接口。运行列表中的仓库字段来自历史证据包。',
@@ -10,17 +11,20 @@ const REASONS = {
   页面: '该路由不存在。',
 };
 
-export default function StubPage({ section }) {
+export default function StubPage({ section, icon: Icon }) {
   return (
-    <div>
-      <div className="page-head">
-        <h1>{section}</h1>
-      </div>
-      <div className="state-box state-stub">
-        <div className="stub-title">未接入</div>
-        <p>{REASONS[section] ?? '该功能依赖未接入的后端能力，如实标注，不以演示数据填充。'}</p>
-        <p className="muted">详见 docs/productization/console/INTEGRATION-REQUESTS.md（给后端会话的接口需求清单）。</p>
-        <Link className="btn" to="/runs">前往运行列表（已接入）</Link>
+    <div className="stub-wrap">
+      <div className="stub-card">
+        <div className="stub-ico" aria-hidden>
+          {Icon ? <Icon size={22} strokeWidth={1.5} /> : null}
+        </div>
+        <div className="stub-badge">未接入</div>
+        <h1 className="stub-title">{section}</h1>
+        <p className="stub-body">{REASONS[section] ?? '该功能依赖未接入的后端能力，如实标注，不以演示数据填充。'}</p>
+        <p className="stub-note">接口需求清单见 <code>docs/productization/console/INTEGRATION-REQUESTS.md</code>（给后端会话的精确需求）。</p>
+        <Link className="btn btn-primary" to="/runs">
+          前往运行列表 <ArrowRight size={13} strokeWidth={1.75} aria-hidden />
+        </Link>
       </div>
     </div>
   );

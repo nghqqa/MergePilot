@@ -303,6 +303,11 @@ export function buildRunRecord(packId, packDir) {
         ? 'REJECTED'
         : gateSent.mode
     : resultMd?.gate ?? gateMd?.decision ?? null;
+  const gateSource = gateSent?.mode
+    ? 'gate-approval-sent.json'
+    : resultMd?.gate
+      ? 'project/result.md'
+      : gateMd?.raw ?? null;
   const review = {
     source: resultMd ? 'project/result.md' : reviewTask ? reviewTask.raw : checkRun ? 'check-run.json (summary)' : null,
     project_status: projectMeta?.status ?? null,
@@ -310,6 +315,7 @@ export function buildRunRecord(packId, packDir) {
     severity: resultMd?.severity ?? reviewTask?.severity ?? null,
     cwe: resultMd?.cwe ?? reviewTask?.cwe ?? null,
     human_gate: gateDecision,
+    human_gate_source: gateSource,
     status_line: resultMd?.status_line ?? null,
   };
 
