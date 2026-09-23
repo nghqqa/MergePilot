@@ -167,3 +167,47 @@
   （m5_0c resolver 需 docker CLI、demo_console 缺烘焙产物、isolated_live 需 compose、
   m4c/m4e/m4f1 证据线）；清单+收口方向登记在 docs/productization/backend/TEST-DEBT.md。
   本轮门禁维持相关目录 101+ 全绿。
+
+
+## 第三十轮（2026-09-24）：CASE2 真实 RAG 消费达成（A1-A5 获批执行）
+
+**授权范围**：nghqqa/fastapi-boilerplate-demo PR #2；A1 空提交 / A2 flash 真实审查 / A3 rag-live 启停 / A4 单 check-run / A5 费用风险接受。fixer/verifier/故障注入/自动修复/merge 未授权未执行。
+
+### 执行时间线（全部真实调用，无 fixture/shadow）
+1. 门禁七项全绿（flash 生效、副本同步、认领 fail-closed、语料在位、台账零 PENDING）。
+2. A1：单一空提交 `65de83d..254f61c`，新 head `254f61ce2ff5`，远端 tip 核实一致。
+3. webhook 入账 `82c9c210` PENDING → 定向认领唯一 run `run-gh-pr2-254f61ce-104621`。
+4. rag-live :4184 启动（health OK，12 chunks SYNTHETIC）。
+5. **首次尝试 kickoff 失败**：matrix.py 读已删除的决赛期密钥文件路径（ctrl.env 已清理）。
+   无业务副作用（kickoff 未发、零模型调用）。处置=环境变量注入同一凭据（零代码改动）+
+   桥自身 requeue 语义 CAS 恢复投递行 + 清理本案例失败尝试的 4 个 MinIO 工件（已归档
+   r3work/model-switch/case2-failed-attempt/）。**运行时代码未改、未同步共享副本。**
+6. A2 执行：审查员 skill_diff_parse + skill_sast_scan（req-32fada7f83/req-8fa470c5fb）→
+   **rag_retrieve 自然触发 2 次（docs=3，命中 cwe-22-path-traversal#1 + file-path-containment#1）**
+   → 结论 **FINDING_CONFIRMED / HIGH / HUMAN_VERIFICATION_REQUIRED=YES**（CWE-22 任意文件读，
+   独立 PoC：base 目录外文件 HTTP 200 读出、/etc/hostname 可读）→ leader 按规范停人工门。
+7. 20min 截止 → conclude(timeout) → **唯一 check-run `107153647233`**（mergepilot/review，
+   app=mergepilot-reporter，head=254f61ce，conclusion=neutral=超时语义）→ receipt 落盘
+   adopted=false → delivery=ERROR `TIMEOUT(manual); publish=ok`。
+8. **run_context 首次全链生效**：bridge.run_context/run_end 边界记录入审计流（run_id+
+   attempt_no=1+manifest_id dd8b2acd…）；回放归属窗口内 7 条记录。
+
+### RAG 消费判定（首个真实消费案例）
+审查员 findings 明确引用 rag_retrieve 返回的 source_refs（cwe-22 定义+文件路径包含性组织标准）
+作为定级佐证——**自然触发、有引用、无强迫**。BM25=lexical-zh-en-v1。skill_case_retrieval 返回
+CASE_RETR_SCOPE_MISSING（如实记录）。sast_scan 0 findings（语义型漏洞非 AST 模式）已被审查员
+独立复现推翻，未影响结论。
+
+### 已知缺陷（如实登记，待修）
+- manifest `rag.service_state_at_dispatch=unreachable` 与事实不符：桥从宿主机探测
+  `host.docker.internal:4184`（该名宿主侧解析失败）；实际服务可达（审计佐证）。修法=宿主侧
+  探测改 127.0.0.1（advisory 字段，未影响执行，未当场改代码）。
+- 主循环异常路径 finish() 未带 claim 匹配导致首试行残留 RUNNING（本轮以镜像 requeue 恢复）。
+- leader 停人工门时项目永不终态→只能以 timeout/neutral 收尾；action_required 结论在现行桥
+  语义下不会出现（post_check 有映射但 conclude 不产出）——人工门语义待后续轮设计。
+
+### 状态
+- 人工门**等待操作员决策**（HIGH + HUMAN_VERIFICATION_REQUIRED=YES；未批准、未修复、未 merge）。
+- rag-live 已停；worker 容器维持执行前 Up 状态；无未终止的在途请求（终态后无新模型调用）。
+- M1 部分（+1 真实正常案例，gate-wait 路径）；M2 部分；M3 未开始；M4 未开始。
+- **首个真实 RAG 消费达成 ≠ RAG 有效性证明**（单案例）。
