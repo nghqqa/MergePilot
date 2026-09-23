@@ -303,3 +303,33 @@ a 幂等单票 / b 绑定字段 / c approve-reject 跨连接竞争唯一赢家 /
 ### 回归与状态
 - approval+bridge+gateway+skills **280 passed/29 skipped**；PG 门控 **25/26**（唯一失败=Windows spawn 竞争，基线既有，TEST-DEBT 已登记，口径未变）。
 - **状态**：运行副本=已同步（本轮，回滚点在案）；case_retrieval=仅隔离实例接线，**未部署共享环境**；TicketStore=代码+隔离验证完成，**未接真实部署/真实审批**；approve/reject=仍是本地隔离接口；D-1/D-2/OAuth/fixer-verifier/真实 CASE2=**仍未启用**。隔离 smoke ≠ 真实审批验收。
+
+
+## 第三十四轮（2026-09-24）：pgvector 隔离验证 + 部署接线验收
+
+基线 25c3a70。无真实审查/无空提交/无付费模型/无 check-run/无真实 approve-reject/未动共享 case-pg。
+
+### pgvector 隔离实例（一次性，已销毁）
+镜像 `pgvector/pgvector:pg16` = PostgreSQL 16.15 + pgvector **0.8.6**；端口 55433、库 cr_pg_smoke、
+migration 001（case_retrieval_reader 只读角色：SELECT-only + default_transaction_read_only +
+语句/锁超时）。凭据随机生成、文件已删除、验证后容器已移除。**未触碰共享 case-pg**。
+
+### 完整查询 smoke（pgvector_smoke.py，**11/11**）
+- 有效 repo scope + 只读连接 + 相似度查询：只命中本 scope 2 行（total_found/knowledge_base_size=2，
+  范围外与未打标行不可见），结果含 citation.source_url/verifiable、score、case_id、issue_summary；
+  document_count 口径=stats.total_found/returned；latency 脚本计时；失败分类=CaseRetrievalError.subcode。
+- 失败矩阵全部 fail-closed：缺 DSN→DB_UNAVAILABLE；缺 scope/错误作者/缺文件→SCOPE_MISSING；
+  scope 不一致（env vs run-context）→validate_env exit 3；无 pgvector 库→干净映射失败。
+  **零全库回退**（适配器 SQL 结构性 WHERE repo_scope 起始）。
+- reader 账号写入尝试→ReadOnlySqlTransaction 拒绝（只读强制实测）。
+- 脱敏：错误/输出不含口令片段。
+- **本轮修复一个真集成缺陷**：桥 `build_run_context` 产出 repo 在**顶层**，上轮写的
+  core/validate_env 读取器只认 `code.repo`——真实文件必挂。已兼容两形状并补
+  "桥真实生成形状"测试（tests/gh_bridge/test_case2_fixes.py 28 项）。
+- D-7 合规：查询嵌入=DeterministicFakeProvider（本地确定性），未下载任何 embedding 模型。
+
+### controller/Worker 接线（隔离验证通过，正式未部署）
+隔离 env（MERGEPILOT_CR_PG_DSN=只读账号 + MERGEPILOT_CR_REPO_SCOPE_FILE=桥生成 run-context）
+→ validate_env ready(0) + 核心管线端到端跑通=**隔离接线验收完成**。生产 r3work 运行副本与
+controller 均未注入任何配置。回归：**281 passed/29 skipped**；PG 门控 25/26（race=基线既有）；
+CASE1/CASE2 证据 hash 逐一核对不变。D-1/D-2、真实审批、fixer/verifier、CASE2 仍全部关闭。

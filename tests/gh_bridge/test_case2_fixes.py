@@ -330,6 +330,28 @@ class CaseRetrievalScopeFallbackTests(unittest.TestCase):
                 "MERGEPILOT_CR_REPO_SCOPE_FILE": p})
             self.assertEqual(cfg["scope"], "nghqqa/fastapi-boilerplate-demo")
 
+    def test_scope_from_real_bridge_generated_shape(self):
+        """桥真实产出形状:repo 在顶层(build_run_context),code.repo 缺省。"""
+        import importlib
+        rc = importlib.import_module("mp_gh_run_context") if "mp_gh_run_context" in sys.modules \
+            else _load_rc()
+        man = {"run_id": "run-gh-pr2-254f61ce-104621",
+               "code": {"repo": "nghqqa/fastapi-boilerplate-demo",
+                        "head_sha": "2" * 40, "base_sha": "4" * 40},
+               "skills": {"content_sha256": {"s": "a" * 32}},
+               "rag": {"retrieval_mode": "lexical-zh-en-v1"}}
+        delivery = {"delivery_id": "82c9c210", "repo": "nghqqa/fastapi-boilerplate-demo",
+                    "pr_number": 2, "observed_head_sha": "2" * 40}
+        ctx = rc.build_run_context(man, delivery, attempt_no=1, manifest_id="d" * 64)
+        with tempfile.TemporaryDirectory() as tmp:
+            p = os.path.join(tmp, "run-context.json")
+            with open(p, "w", encoding="utf-8") as f:
+                json.dump(ctx, f)
+            cfg = self.core.load_trusted_config({
+                "MERGEPILOT_CR_PG_DSN": "postgresql://x",
+                "MERGEPILOT_CR_REPO_SCOPE_FILE": p})
+            self.assertEqual(cfg["scope"], "nghqqa/fastapi-boilerplate-demo")
+
     def test_foreign_author_file_rejected(self):
         with tempfile.TemporaryDirectory() as tmp:
             p = self._write_ctx(tmp, {"authored_by": "reviewer-model",

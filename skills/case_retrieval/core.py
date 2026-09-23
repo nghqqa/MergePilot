@@ -115,8 +115,11 @@ def _scope_from_run_context_file(path):
         return None
     if not isinstance(data.get("run_id"), str) or not data.get("run_id"):
         return None
-    code = data.get("code") if isinstance(data.get("code"), dict) else {}
-    repo = code.get("repo") if isinstance(code.get("repo"), str) else None
+    # 真实桥产出:repo 在顶层(build_run_context);code.repo 为兼容形态。
+    repo = data.get("repo")
+    if not isinstance(repo, str) or not repo:
+        code = data.get("code") if isinstance(data.get("code"), dict) else {}
+        repo = code.get("repo") if isinstance(code.get("repo"), str) else None
     if not repo or len(repo) > 256 or any(ord(c) < 32 for c in repo):
         return None
     return repo

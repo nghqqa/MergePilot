@@ -40,8 +40,11 @@ def _load_run_context(path):
         return None, "untrusted author (must be %s)" % _TRUSTED_AUTHOR
     if not isinstance(data.get("run_id"), str) or not data.get("run_id"):
         return None, "run_id missing"
-    code = data.get("code") if isinstance(data.get("code"), dict) else {}
-    repo = code.get("repo")
+    # 真实桥产出:repo 在顶层;code.repo 兼容
+    repo = data.get("repo")
+    if not isinstance(repo, str) or not repo:
+        code = data.get("code") if isinstance(data.get("code"), dict) else {}
+        repo = code.get("repo")
     if not isinstance(repo, str) or not _REPO_RE.fullmatch(repo):
         return None, "repo missing/invalid"
     return repo, ""
