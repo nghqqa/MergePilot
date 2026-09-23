@@ -46,13 +46,14 @@ _binding_cls = None
 def _get_binding_cls():
     global _binding_cls
     if _binding_cls is None:
-        # 由外部(sys.path 已含 approval)导入
-        from approval.approval import Binding
-        _binding_cls = Binding
+        # 从 approval_pkg 包上下文获取(与测试/运行时加载方式一致)
+        import importlib
+        m = importlib.import_module("approval_pkg.approval")
+        _binding_cls = m.Binding
     return _binding_cls
 
 
-def make_handler(run_store, ticket_store=None, test_auth=False):
+def make_handler(run_store, ticket_store=None, test_auth=False, policy=None):
     """构建 HTTP handler。run_store: PgRunStore;ticket_store: PostgreSQLTicketStore 或 None。"""
 
     class Handler(BaseHTTPRequestHandler):
@@ -233,6 +234,14 @@ def make_handler(run_store, ticket_store=None, test_auth=False):
                     500, "internal", type(e).__name__ + ":" + str(e)[:160]))
 
         def _create_approval(self, body, principal):
+            if policy and not policy.allows_action(body.get("action", "")):
+                self._send(403, _err(403, "action_not_enabled",
+                    "action not in D-1 enabled set"))
+                return
+            if policy and hasattr(policy, 'can_approve') and                not policy.can_approve(principal, body.get("repo", "")):
+                self._send(403, _err(403, "not_an_approver",
+                    "principal not in D-2 approver map"))
+                return
             # 实际逻辑由 ticket_store.create 完成;此处做最简参数透传
             Binding = _get_binding_cls()
             ph = body.get("params_hash") or body.get("params", "")
