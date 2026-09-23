@@ -130,9 +130,10 @@ class PrepareDispatchTests(unittest.TestCase):
         d = _delivery()
         with mock.patch.object(br, "build_manifest", return_value={"m": 1}), \
              mock.patch.object(br, "write_run_manifest", return_value={"ok": True}):
-            kickoff, err = br.prepare_run_manifest(
+            kickoff, man, err = br.prepare_run_manifest(
                 d, "run-x", "proj", "task", _base_kickoff(), 20)
         self.assertIsNone(err)
+        self.assertEqual(man, {"m": 1})
         self.assertTrue(kickoff.startswith(_base_kickoff()))
         ref = re.search(r"run-manifest: sha256 ([0-9a-f]{64})", kickoff)
         self.assertIsNotNone(ref)
@@ -144,9 +145,10 @@ class PrepareDispatchTests(unittest.TestCase):
         with mock.patch.object(br, "build_manifest", return_value={"m": 1}), \
              mock.patch.object(br, "write_run_manifest",
                                return_value={"ok": False, "reason": "mc pipe failed"}):
-            kickoff, err = br.prepare_run_manifest(
+            kickoff, man, err = br.prepare_run_manifest(
                 d, "run-x", "proj", "task", _base_kickoff(), 20)
         self.assertIsNone(kickoff)
+        self.assertIsNone(man)
         self.assertEqual(err, "mc pipe failed")
 
 
@@ -171,7 +173,10 @@ class ProcessDispatchGateTests(unittest.TestCase):
              mock.patch.object(br, "seed_project", return_value=True), \
              mock.patch.object(br, "wake_workers", return_value=True), \
              mock.patch.object(br, "prepare_run_manifest",
-                               return_value=(prep_ret, prep_err)), \
+                               return_value=(prep_ret, {"m": 1}, prep_err)), \
+             mock.patch.object(br, "prepare_run_context",
+                               return_value=({"run_id": "r", "attempt_no": 1}, None)), \
+             mock.patch.object(br, "read_run_context", return_value=None), \
              mock.patch.object(br.mx, "send",
                                side_effect=lambda *a, **k: sent.append(a) or {"event_id": "$e"}), \
              mock.patch.object(br, "watch_run", return_value=("completed", "r")), \

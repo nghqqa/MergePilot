@@ -66,7 +66,10 @@ class V3HookBoundaryTests(unittest.TestCase):
              mock.patch.object(self.br, "seed_project", return_value=True), \
              mock.patch.object(self.br, "wake_workers", return_value=True), \
              mock.patch.object(self.br, "prepare_run_manifest",
-                               return_value=("kickoff+ref", None)), \
+                               return_value=("kickoff+ref", {"m": 1}, None)), \
+             mock.patch.object(self.br, "prepare_run_context",
+                               return_value=({"run_id": "r", "attempt_no": 1}, None)), \
+             mock.patch.object(self.br, "read_run_context", return_value=None), \
              mock.patch.object(self.br.mx, "send",
                                return_value={"event_id": "$ev"}), \
              mock.patch.object(self.br, "watch_run",

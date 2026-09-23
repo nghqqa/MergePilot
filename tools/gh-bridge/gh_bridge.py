@@ -39,6 +39,16 @@ for _cand in (os.path.normpath(os.path.join(_HERE, "..", "r3ops")),
         break
 import matrix as mx  # noqa: E402
 
+# R5 透传修复(2026-09-23):可信 run 上下文(纯逻辑模块;缺失=降级为旧行为)。
+_rc_path = os.path.join(_HERE, "run_context.py")
+if os.path.isfile(_rc_path):
+    _rc_spec = importlib.util.spec_from_file_location("mp_gh_run_context", _rc_path)
+    _rc = importlib.util.module_from_spec(_rc_spec)
+    sys.modules["mp_gh_run_context"] = _rc
+    _rc_spec.loader.exec_module(_rc)
+else:
+    _rc = None
+
 SERVER = "root@159.75.42.106"
 COMPOSE_DIR = "/opt/mergepilot"
 SSH_OPTS = ["-o", "BatchMode=yes", "-o", "ConnectTimeout=10"]
@@ -102,7 +112,7 @@ def pending_deliveries():
     extra, _pair = target_filter_sql()  # repo+PR+head 三元组过滤(见 target_filter_sql)
     return ssh_psql(
         "SELECT json_agg(t) FROM (SELECT delivery_id, event_name, action, repo, "
-        "pr_number, observed_head_sha, observed_base_sha, received_at "
+        "pr_number, observed_head_sha, observed_base_sha, error, received_at "
         "FROM public.github_deliveries "
         "WHERE status='PENDING' AND event_name='pull_request' "
         "AND action IN ('opened','synchronize','reopened') "
@@ -617,6 +627,52 @@ _SKILL_DIR = "/opt/mergepilot/skills"
 _SKILL_DIRS = {"skill_diff_parse": "diff_parse", "skill_risk_classify": "risk_classify",
                "skill_sast_scan": "sast_scan", "skill_case_retrieval": "case_retrieval"}
 
+# ── 模型目录探测(2026-09-23 切换准备;advisory,不阻断派发) ────────────────
+# 网关 = worker 内 http://elemiso-controller:8080/v1(higress → api.deepseek.com)。
+# key 只在 worker 容器内读取使用,绝不回传宿主机/日志。
+_GATEWAY_PROBE_ENV = "MERGEPILOT_MODEL"          # 操作员请求的模型(可缺省)
+# 注意:provider json 的 api_key 是 ENC: 加密态(运行时由 CoPaw 解密),直接打网关
+# 会 401;生效明文键在 openclaw.json 的 models.providers["agentteams-gateway"].apiKey。
+_GATEWAY_OPENCLAW_CFG = "/root/.copaw-worker/reviewer/openclaw.json"
+_GATEWAY_BASE_URL = "http://elemiso-controller:8080/v1"
+
+
+def _model_catalog_state(container="elemiso-worker-reviewer"):
+    """派发时网关实时模型目录(advisory)。只输出模型 id,任何失败=unchecked。"""
+    probe = (
+        "import json,urllib.request;"
+        "oc=json.load(open(%r));"
+        "key=((oc.get('models') or {}).get('providers') or {})"
+        ".get('agentteams-gateway',{}).get('apiKey') or '';"
+        "req=urllib.request.Request('%s/models',headers={'Authorization':'Bearer '+key});"
+        "r=urllib.request.urlopen(req,timeout=5);"
+        "print(json.dumps(sorted(m.get('id') for m in json.load(r).get('data',[]) if m.get('id'))))"
+        % (_GATEWAY_OPENCLAW_CFG, _GATEWAY_BASE_URL))
+    try:
+        r = subprocess.run(["docker", "exec", container, "python3", "-c", probe],
+                           capture_output=True, text=True, timeout=20)
+        if r.returncode == 0 and r.stdout.strip().startswith("["):
+            models = json.loads(r.stdout)
+            return {"checked": True, "models": models}
+    except Exception:
+        pass
+    return {"checked": False, "models": None}
+
+
+def build_model_manifest_block(model_id, timeout_min=None):
+    """manifest 的 model 块(切换准备):配置侧 primary + 派发时实时目录。"""
+    requested = (os.environ.get(_GATEWAY_PROBE_ENV) or "").strip() or None
+    catalog = _model_catalog_state()
+    block = {"primary": model_id,
+             "requested": requested,
+             "catalog_state_at_dispatch": catalog,
+             "generation_params": None,   # agentloop 不外露;不伪造
+             "note": "primary from reviewer openclaw.json; fixer/verifier assumed同模型池; "
+                     "catalog probed live via gateway /models at dispatch"}
+    if requested is not None and catalog.get("checked"):
+        block["requested_present"] = requested in (catalog.get("models") or [])
+    return block, catalog
+
 # ── RAG 快照绑定与派发门(RAG-AUDIT 缺口修复,RAG-4/6) ─────────────────────
 # 语料事实源在 repo(tools/rag/corpus/);运行副本按布局回退查找,env 可覆盖。
 # required 模式:快照不可读或服务不可达即拒绝派发(fail-closed,不静默降级)。
@@ -726,6 +782,7 @@ def build_manifest(d, run, proj, task, kickoff_base, timeout_min):
     rag_snap = _rag_snapshot_info()
     rag_state = _rag_service_state()
     rag_required = os.environ.get(RAG_REQUIRED_ENV, "") == "1"
+    model_block, model_catalog = build_model_manifest_block(model_id)
     cfg = {"allow_repos": sorted(ALLOW_REPOS), "repo_url": REPO_URL,
            "leader": LEADER, "team_room": TEAM_ROOM, "dm_room": DM_ROOM,
            "watch_poll_s": WATCH_POLL_S, "timeout_min": timeout_min,
@@ -744,9 +801,7 @@ def build_manifest(d, run, proj, task, kickoff_base, timeout_min):
         "orchestrator": {"bridge_source_sha256": bridge_sha, "git_commit": git},
         "workers": {"images": workers},
         "skills": {"names": list(SKILLS_IN_SPEC), "content_sha256": skill_hashes},
-        "model": {"primary": model_id,
-                  "generation_params": None,   # agentloop 不外露;不伪造
-                  "note": "primary from reviewer openclaw.json; fixer/verifier assumed同模型池"},
+        "model": model_block,
         "rag": {"snapshot_id": rag_snap["snapshot_id"] if rag_snap else None,
                 "chunks": rag_snap["chunks"] if rag_snap else None,
                 "data_mode": rag_snap["data_mode"] if rag_snap else None,
@@ -762,6 +817,8 @@ def build_manifest(d, run, proj, task, kickoff_base, timeout_min):
         missing.append("rag.snapshot_id")   # 语料不可读:知识版本不可追溯
     if model_id is None:
         missing.append("model.primary")
+    if not model_catalog.get("checked"):
+        missing.append("model.catalog_state_at_dispatch")   # 网关目录未探明(advisory)
     if skill_hashes is None:
         missing.append("skills.content_sha256")
     if any(v is None for v in workers.values()):
@@ -817,14 +874,93 @@ def write_run_manifest(proj, m):
 
 
 def prepare_run_manifest(d, run, proj, task, kickoff_base, timeout_min):
-    """派发前置:构建+持久化清单,返回带引用行的 kickoff 或 None(fail-closed)。"""
+    """派发前置:构建+持久化清单,返回 (kickoff带引用行, manifest, err) 或
+    (None, None, reason)——fail-closed。"""
     man = build_manifest(d, run, proj, task, kickoff_base, timeout_min)
     mw = write_run_manifest(proj, man)
     if not mw.get("ok"):
-        return None, mw.get("reason", "write failed")
+        return None, None, mw.get("reason", "write failed")
     ref = ("\n\nrun-manifest: sha256 %s (projects/%s/run-manifest.json)\n"
            % (manifest_sha(man), proj))
-    return kickoff_base + ref, None
+    return (kickoff_base + ref), man, None
+
+
+# ── 可信 run 上下文透传(R5 缺口修复,2026-09-23) ───────────────────────────
+# 字段唯一来源 = run-manifest(桥 write-once) + 投递行 + 桥自身计数;
+# 模型输出/普通请求参数写不进这条记录(authored_by=gh_bridge 契约)。
+RUN_CONTEXT_PATH = "teams/elemiso-team/shared/projects/%s/run-context.json"
+RUNCONTEXT_AUDIT_URL_ENV = "MERGEPILOT_RUNCONTEXT_AUDIT_URL"
+RUNCONTEXT_AUDIT_URL_DEFAULT = "http://127.0.0.1:4184/api/rag/toolspan-audit"
+
+
+def read_run_context(proj):
+    p = subprocess.run(["docker", "exec", "elemiso-ctrl", "mc", "cat",
+                        f"{BUCKET}/{RUN_CONTEXT_PATH % proj}"],
+                       capture_output=True, text=True, timeout=30)
+    if p.returncode != 0 or not p.stdout.strip():
+        return None
+    try:
+        return json.loads(p.stdout)
+    except Exception:
+        return None
+
+
+def write_run_context(proj, ctx):
+    """write-once(与 run-manifest 同语义):无则写;一致→采纳;不一致→拒绝。"""
+    old = read_run_context(proj)
+    if old is not None:
+        if _canon(old) == _canon(ctx):
+            return {"ok": True, "adopted": True}
+        return {"ok": False, "reason": "run-context conflict (write-once per run)"}
+    return {"ok": minio_put(RUN_CONTEXT_PATH % proj,
+                            json.dumps(ctx, ensure_ascii=False, indent=2))}
+
+
+def audit_post_record(record, url=None, timeout_s=2.0):
+    """审计流 best-effort 追加(advisory):服务不可达只返回 False,不抛不阻断。"""
+    url = url or os.environ.get(RUNCONTEXT_AUDIT_URL_ENV, RUNCONTEXT_AUDIT_URL_DEFAULT)
+    try:
+        import urllib.request
+        req = urllib.request.Request(
+            url, data=json.dumps(record).encode("utf-8"), method="POST",
+            headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=timeout_s) as r:
+            return r.status == 200
+    except Exception:
+        return False
+
+
+def prepare_run_context(man, d, proj, attempt_no):
+    """构造+持久化 run context(manifest 成功之后调用)。返回 (ctx, err)。"""
+    if _rc is None:
+        return None, "run_context module not synced (legacy passthrough only)"
+    try:
+        ctx = _rc.build_run_context(
+            man, d, attempt_no=attempt_no, manifest_id=manifest_sha(man))
+        wc = write_run_context(proj, ctx)
+        if not wc.get("ok"):
+            return None, wc.get("reason", "run-context write failed")
+        rec = _rc.context_record(ctx)
+        if not audit_post_record(rec):
+            log_compat("run-context audit post unavailable (advisory; "
+                       "MinIO write-once copy is the durable record)")
+        return ctx, None
+    except Exception as e:
+        return None, "%s %s" % (type(e).__name__, str(e)[:140])
+
+
+def emit_run_end(ctx, terminal_status):
+    """终态时审计流补右边界(best-effort;失败不影响任何已有语义)。"""
+    if _rc is None or not ctx:
+        return
+    try:
+        audit_post_record(_rc.end_record(ctx, terminal_status))
+    except Exception:
+        pass
+
+
+def log_compat(*a):
+    print(time.strftime("[%H:%M:%S]"), *a, flush=True)
 
 
 # ── v3 adapter 钩子(M3.5):off=零开销;shadow=只读证据;失败不影响旧链路 ───
@@ -883,6 +1019,11 @@ def v3_shadow_hook(d, cid, log):
             pass  # 连错误记录都失败时,只能依赖上面的 stdout 日志
 
 
+def attempt_no_for(d):
+    """桥自身计数:1 + 回队次数(RQn;投递行自带 error 字段,零额外查询)。"""
+    return 1 + _requeue_count(d)
+
+
 # ── 主流程 ──────────────────────────────────────────────────────────────────
 def conclude(d, st, report, run, proj, cid, log):
     """终态→结论→发布→终结。process 与 resume 共用(场景7 语义)。"""
@@ -898,6 +1039,11 @@ def conclude(d, st, report, run, proj, cid, log):
         "## leader report\n" + (report or ""),
     ] if x.strip())
     log("terminal:", st, "-> verdict:", verdict)
+    # R5 透传:审计流右边界(best-effort;失败不影响发布/终结语义)
+    try:
+        emit_run_end(read_run_context(proj), st)
+    except Exception as _e:
+        log("run_end audit unavailable (advisory):", type(_e).__name__)
     # 场景7:GitHub 回写成功才算投递完成;失败=可恢复 ERROR,不标 PROCESSED。
     # 审查未终态(timeout)时即使 neutral check 已发布,投递也不算完成(manual)。
     pub = publish_with_retry(d, verdict, evidence, run, proj, log)
@@ -966,12 +1112,20 @@ def process(d, timeout_min, dry):
         log("worker wake FAILED — delivery marked ERROR")
         return
     log("workers awake; preparing run-manifest (pre-dispatch, fail-closed)")
-    kickoff2, merr = prepare_run_manifest(d, run, proj, task, kickoff, timeout_min)
-    if kickoff2 is None:
+    kickoff2, man, merr = prepare_run_manifest(d, run, proj, task, kickoff, timeout_min)
+    if kickoff2 is None or man is None:
         finish(d, False, "run-manifest failed: " + str(merr)[:120], cid)
         log("run-manifest FAILED — no dispatch (fail-closed):", merr)
         return
     kickoff = kickoff2
+    ctx, rcerr = prepare_run_context(man, d, proj, attempt_no_for(d))
+    if ctx is None:
+        # 透传失败不静默:降级为旧行为(kickoff 文本引用),但 delivery 记录痕迹
+        finish(d, False, "run-context failed: " + str(rcerr)[:120], cid)
+        log("run-context FAILED — no dispatch (fail-closed):", rcerr)
+        return
+    log("run-context persisted (attempt %s, manifest %s)"
+        % (ctx.get("attempt_no"), str(ctx.get("manifest_id"))[:12]))
     log("run-manifest persisted; sending kickoff to leader DM")
     r = mx.send(DM_ROOM, LEADER, kickoff, txn_prefix="ghbridge")
     if not r.get("event_id"):

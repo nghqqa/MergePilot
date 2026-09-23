@@ -111,3 +111,27 @@
 | M3 隔离证明 | 未开始 | 需真实 run 后污染测试 |
 | M4 V0 内测 | 未开始 | M1–M3 + D-1/D-2 + 预算前置 |
 | 真实 PR 首例 | ✅ 本轮完成 | 见上表 |
+
+
+## 第二十六轮（2026-09-23）：CASE1 证据复核 + run 上下文透传 + 模型切换准备
+
+### CASE1 证据审计结论（标注:**旧链路首个真实正常案例**）
+- 台账/GitHub/manifest/审计/回执五方一致:delivery `90cf0420` PROCESSED、check-run `107056305844`(app=mergepilot-reporter,head/conclusion 匹配)、receipt(MinIO,adopted=false)、manifest bridge_source_sha256=bb1fafae 与 repo 桥逐字节一致。
+- 审计流(143 条)中 CASE1 窗口仅 skill_diff_parse+skill_sast_scan 两条,**无 rag.retrieve 调用**(PASS 无 HIGH,合理);rag-live 当时在 :4184,manifest `service_state_at_dispatch=unreachable` 系桥探测默认端点差异。
+- **无崩溃/重试痕迹**:投递行单次认领(05:21:52)无 RQ/ERROR;项目目录仅一套 manifest;09-23 当日审计流无更早 reviewer 调用。result.md 的 "(re-run)" 系 leader 自身叙述(大概率受 09-19 同 PR 两个历史项目影响),不构成编排事实。
+- 口径不变:不标 M1 完成,不标真实 RAG 已验证。
+
+### run_id 透传修复(R5)
+- 新 `tools/gh-bridge/run_context.py`:可信 run 上下文(run_id/attempt_no/repo/PR/head/skill_digest/retrieval_mode/manifest_id),字段只来自 run-manifest(write-once)+投递行+桥自身计数;`authored_by=gh_bridge` 契约,模型输出/请求参数不可写。
+- 桥接线:派发边界写 MinIO `run-context.json`(write-once,冲突 fail-closed)+审计流 `bridge.run_context`/`bridge.run_end` 边界记录(best-effort advisory);终态补右边界。不改既有执行逻辑。
+- 隔离回放:`attribute_audit_calls()` 窗口相关法(毫秒级时间戳边界处理;strict 模式无边界记录即拒判)。CASE1 真实数据回放:2 条归入、141 条如实不归属(r3work/model-switch/case1-replay-attribution.json)。
+
+### 模型切换准备(DeepSeek Flash)
+- 事实:链路 = worker → higress(elemiso-controller:8080/v1,OpenAI-compatible)→ api.deepseek.com。**上游实时目录仅 deepseek-flash/deepseek-v4-pro**;deepseek-flash 为上游真名非本地 alias。deepseek-chat 已不在目录但**实际调用仍 200**(退役不停服,回滚路径仍可用)。
+- 配置面 `tools/model_gateway/`:MERGEPILOT_MODEL/PROVIDER_BASE_URL/MODEL_API_KEY_ENV(只存变量名)/TIMEOUT_S/MAX_ATTEMPTS/TEMPERATURE/MAX_TOKENS;默认值=已验证 deepseek-chat。切换操作杆=MinIO `agents/<role>/.copaw.secret/providers/active_model.json`(+openclaw.json 同步)+worker wake。
+- key 坑:provider json 的 api_key 为 ENC: 加密态(直打网关 401);生效明文键在 openclaw.json `models.providers["agentteams-gateway"].apiKey`。
+- 隔离 smoke 八点 **PASS**(reviewer 容器内、生产同路径):目录含 deepseek-flash;最小请求 200 响应 model=deepseek-flash(无静默改写);usage 完整(含 prompt_cache_hit_tokens/reasoning_tokens);401→auth/400→permanent/timeout→timeout 分类正确;429/5xx 分类由单测覆盖不在线制造;零 GitHub 写。报告:r3work/model-switch/smoke-report-20260923.json。
+- manifest 增 `model.requested`+`model.catalog_state_at_dispatch`(派发时网关实时目录,advisory;未探明进 missing[])。
+
+### 测试
+- 新 29+5 用例:run_context 契约/回放、model_gateway 配置/分类/smoke 离线驱动、桥接线 fail-closed;既有 96 桥用例全绿(桩对齐三元组)。
