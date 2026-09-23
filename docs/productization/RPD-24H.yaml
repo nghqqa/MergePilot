@@ -173,11 +173,11 @@ tasks:
       - git log --oneline -1
       - gh pr view --json url,state,headRefName
     evidence_paths: [evidence/rpd-24h/rpd-07/pr-record.md]
-    commit: 84ad9af
+    commit: 8e00041
     started_at: "2026-09-23T16:45:00Z"
     completed_at: "2026-09-23T17:00:00Z"
     blocker: ""
-    notes: PR #233(OPEN,核验);首次 push 403=明确失败,gh 凭据通道完成;远端 tip 核验一致
+    notes: PR #233(OPEN,核验);git 默认凭据 403(已知),gh 凭据通道完成;远端 tip=8e00041 核验一致
 
   - id: RPD-08
     title: 最终报告和早晨验收
@@ -190,7 +190,7 @@ tasks:
     acceptance_commands:
       - ls evidence/rpd-24h/
     evidence_paths: [evidence/rpd-24h/rpd-08/final-report.md]
-    commit: 84ad9af
+    commit: 8e00041
     started_at: "2026-09-23T17:00:00Z"
     completed_at: "2026-09-23T17:05:00Z"
     blocker: ""

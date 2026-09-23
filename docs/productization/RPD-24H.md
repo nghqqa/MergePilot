@@ -1,7 +1,7 @@
 # RPD-24H 展示视图（24h 自主交付轮）
 
 **轮次**: RPD-24H-20260923 ｜ **开始**: 2026-09-23T15:09:04Z ｜ **BASE_HEAD**: `b79cd39`
-**分支**: `feat/backend-pg-storage` ｜ 状态源: [RPD-24H.yaml](RPD-24H.yaml)
+**分支**: `feat/rpd-24h-delivery`（PR #233 → main） ｜ 状态源: [RPD-24H.yaml](RPD-24H.yaml)
 
 ## 任务板
 
