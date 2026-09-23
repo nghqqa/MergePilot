@@ -216,7 +216,20 @@ pr_scope_audit:
              evidence/rpd-24h/pr-audit/unrelated-files.md]
   split_proposal: "方案 A=保留综合 PR(推荐);方案 B=四段拆分(见 pr-scope-report);均待用户选择"
 
-final_state: MANUAL-REQUIRED
+# ── 夜轮(2026-09-23 深夜,授权=D-E+D-A+D-C A1-A5;D-B 暂不批;D-D 等票) ──
+night_round:
+  approvals: {"D-E": true, "D-A": true, "D-C": ["A1", "A2", "A3", "A4", "A5"], "D-B": false, "D-D": "wait-ticket"}
+  tasks:
+    - {id: NR-01, title: push PR #233 本地提交, status: DONE, evidence: "evidence/rpd-24h/night-run/pr-push.md"}
+    - {id: NR-02, title: D-A 正式 case_retrieval 接线, status: BLOCKED,
+       blocker: "controller 不实现 spec.env(apply 静默丢弃, kine 存储证明); 三条解锁路径待用户选择",
+       evidence: "evidence/rpd-24h/D-A/wiring-report.md"}
+    - {id: NR-03, title: A1 新 head 空提交+对账, status: BLOCKED, blocker: "依赖 NR-02(D-A), 按§七停止进入 CASE2"}
+    - {id: NR-04, title: A2/A3 真实 run+rag 采集, status: BLOCKED, blocker: "同 NR-03"}
+    - {id: NR-05, title: 人工门停止+证据+报告, status: DONE, evidence: "evidence/rpd-24h/night-run/final-night-report.md"}
+
+final_state: BLOCKED
+final_blocker: "D-A: AgentTeams controller 不支持 spec.env 注入(官方接口不足); 解锁路径三选一待用户决策"
 
 # ── 人工决策登记(2026-09-23 复核轮新增;批准须用"批准 D-X"或"修改条件:…"明确表达) ──
 human_decisions:
