@@ -50,6 +50,14 @@
 部分批准只执行对应范围，其余保持 WAITING_HUMAN，整体状态保持 MANUAL-REQUIRED。
 D-E 明确决定前：**零新的 GitHub 写入**（本复核轮的 RPD 更新仅本地提交，不推送）。
 
+## D-A 解锁（2026-09-24 调查修复轮）：**正式接线完成，PRODUCTION PREFLIGHT PASS**
+
+根因=**agt apply CLI 丢弃 spec.env**（controller 本身支持：223ddc2 `member_reconcile.go:923` 调用
+`mergeUserEnv(workerEnv, m.Spec.Env, ...)`）。修复=经 kube-apiserver 原生 PUT 写入 spec.env 两键
+（D-A 已批准的注入内容），controller 检测 Env 变化自动重建 reviewer 容器，env 注入实测=2，
+容器内 preflight 全绿（只读角色/超时/表能力/scope 信任）。**本轮按指令未执行 CASE2**；
+A1-A5 授权保留。回滚=apiserver PUT 移除 spec.env 两键+容器重建。
+
 ## 夜轮结果（2026-09-24 收口）：**BLOCKED**
 
 NR-01 push ✅（PR #233 @ 5c2312f）；NR-02 D-A 接线 ⛔ **BLOCKED**——controller 不实现 CRD 已声明的
