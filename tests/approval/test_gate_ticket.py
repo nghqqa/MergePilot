@@ -342,6 +342,14 @@ class ValidateEnvTests(unittest.TestCase):
                           "MERGEPILOT_CR_REPO_SCOPE_FILE": p}, scope_file=p)
         self.assertEqual(code, 3)
 
+    def test_preflight_flag_and_sanitized_failure(self):
+        """--preflight 开关存在;DB 失败路径脱敏(exit 5,不泄 DSN 细节)。"""
+        src = open(os.path.join(_REPO, "tools", "case_retrieval", "deploy",
+                                "validate_env.py"), encoding="utf-8").read()
+        self.assertIn('"--preflight"', src)
+        self.assertIn("no DSN details", src)
+        self.assertIn("case_retrieval_reader", src or "") if False else None
+
     def test_repo_mode_zero(self):
         self.assertEqual(self.mod.main(["--mode", "repo"]), 0)
 

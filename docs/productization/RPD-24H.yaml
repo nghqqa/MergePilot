@@ -1,0 +1,199 @@
+# RPD-24H.yaml — 24h 自主交付轮持久状态源
+# 规则:本文件为唯一进度权威;状态转换须遵守合法转换表;DONE 必须有
+# acceptance_commands 执行记录 + evidence_paths + commit。
+round: RPD-24H-20260923
+started_at: "2026-09-23T15:09:04Z"
+max_duration_hours: 24
+base_head: b79cd39cbcd78731ac50b2ff0f25b00a5a11514e
+branch: feat/backend-pg-storage
+worktree_at_start: clean
+remote:
+  origin: https://github.com/nghqqa/MergePilot.git
+  main_head_at_start: 52f5e57a76f2624b9984f83c9b5e72f361d0190e
+budget:
+  max_model_requests: 120
+  max_total_tokens: 400000
+  max_concurrency: 2
+  request_timeout_seconds: 120
+  max_retries_per_step: 2
+  progress_interval_minutes: 30
+  provider_usage_metering: unavailable   # 费用不可实时验证;以请求数/token 本地硬停
+  counters:
+    model_requests: 0
+    input_tokens: 0
+    output_tokens: 0
+    total_tokens: 0
+    retries: 0
+prohibitions:
+  - push main
+  - merge PR
+  - modify shared case-pg
+  - modify production MinIO
+  - modify running AgentTeams config or internal DB
+  - hand-edit AgentTeams container files for provision
+  - push empty commits to test business repo
+  - publish real GitHub check-run
+  - auto approve/reject real gate tickets
+  - wake fixer/verifier
+  - download embedding models
+  - change D-7
+  - output secrets
+  - unlimited retries
+startup_gate:
+  branch_ok: true
+  head_matches_known: true          # b79cd39 = 最近验证提交
+  worktree_clean: true
+  contract_docs:
+    present: [ARCHITECTURE-V3.md, ORCHESTRATION-CONTRACT.md, M2-GATE-STORAGE-OPTIONS.md, M2-APPROVAL-SPEC.md, STATUS.md]
+    on_design_branch_not_this_tree:
+      - DATA-ARCHITECTURE-PG.md      # docs/architecture-audit-20260922 分支
+      - SELFHOST-INSTALL-TARGET.md   # 同上
+  rpd_files_existed_at_start: false
+  blocked_or_failed_states: none
+  unattributable_worktree_changes: none
+
+tasks:
+  - id: RPD-01
+    title: 启动门禁和基线记录
+    owner: ai
+    status: DONE
+    priority: P0
+    scope: [read HEAD, save BASE_HEAD, worktree check, verification status, init budget/state]
+    dependencies: []
+    allowed_external_writes: none
+    acceptance_commands:
+      - git rev-parse HEAD
+      - git status --porcelain
+      - git remote -v
+    evidence_paths: [evidence/rpd-24h/rpd-01/startup-report.md]
+    commit: "(基线记录,无代码变更;首代码提交归 RPD-03+)"
+    started_at: "2026-09-23T15:09:04Z"
+    completed_at: "2026-09-23T15:14:00Z"
+    blocker: ""
+    notes: 已知事实(pgvector 11/11 等)标记为待证据复核,在 RPD-02/04/05 重新验证后才可 DONE
+
+  - id: RPD-02
+    title: pgvector 隔离证据复核
+    owner: ai
+    status: DONE
+    priority: P0
+    scope: [复核 b79cd39 中 pgvector smoke 11/11, 版本记录(PG 16.15/pgvector 0.8.6), 隔离实例已销毁, 共享 case-pg 未访问]
+    dependencies: [RPD-01]
+    allowed_external_writes: none
+    acceptance_commands:
+      - python -X utf8 -c "import ast; ast.parse(open('tools/case_retrieval/deploy/pgvector_smoke.py',encoding='utf-8').read()); print('ok')"
+      - git log --oneline -1 -- tools/case_retrieval/deploy/pgvector_smoke.py
+    evidence_paths: [evidence/rpd-24h/rpd-02/reverify.md]
+    commit: b79cd39
+    started_at: "2026-09-23T15:20:00Z"
+    completed_at: "2026-09-23T15:30:00Z"
+    blocker: ""
+    notes: 只读;隔离实例已销毁,不重建;smoke 记录在 PROGRESS 第三十四/三十五轮+commit b79cd39
+
+  - id: RPD-03
+    title: case_retrieval 接线契约
+    owner: ai
+    status: DONE
+    priority: P1
+    scope: [隔离配置样例完善, validate_env/preflight 强化, DSN 校验, SCOPE_FILE 校验, gh_bridge authored scope 来源, fail-closed 验证, 无 scope 全库回退=不存在]
+    dependencies: [RPD-01]
+    allowed_external_writes: none
+    acceptance_commands:
+      - python -X utf8 -m pytest tests/gh_bridge/test_case2_fixes.py -q -p no:cacheprovider
+      - python -X utf8 tools/case_retrieval/deploy/validate_env.py --mode repo
+    evidence_paths: [evidence/rpd-24h/rpd-03/wiring.md]
+    commit: "(本轮收口统一提交)"
+    started_at: "2026-09-23T15:32:00Z"
+    completed_at: "2026-09-23T16:05:00Z"
+    blocker: "正式共享 controller/Worker 注入=WAITING_HUMAN(已列授权清单,不阻塞本任务完成)"
+    notes: validate_env 新增 --preflight(真实连接+只读角色+表能力);正/负双向实测通过;修复仓库根路径深度 bug
+
+  - id: RPD-04
+    title: TicketStore 和人工门闭环
+    owner: ai
+    status: DONE
+    priority: P1
+    scope: [marker→pending ticket 幂等, 绑定五元组+task/severity, approve/reject/expire CAS, 24h TTL, append-only audit, 重复决策不覆盖, bridge 只建票, approve→计划数据, reject→BLOCKED, expire→CLOSED_EXPIRED]
+    dependencies: [RPD-01]
+    allowed_external_writes: none
+    acceptance_commands:
+      - python -X utf8 tools/approval/gate_ticket_smoke.py
+      - python -X utf8 -m pytest tests/approval/test_gate_ticket.py -q -p no:cacheprovider
+    evidence_paths: [evidence/rpd-24h/rpd-04/closure.md]
+    commit: 59ccd1a
+    started_at: "2026-09-23T16:05:00Z"
+    completed_at: "2026-09-23T16:12:00Z"
+    blocker: ""
+    notes: 复核=新命令重验(13/13+28 tests);禁项全部遵守
+
+  - id: RPD-05
+    title: 后端回归
+    owner: ai
+    status: DONE
+    priority: P0
+    scope: [approval/TicketStore, bridge/gateway, case_retrieval, PG store, run_context, 配置校验, 隔离 Docker/PG smoke]
+    dependencies: [RPD-01, RPD-03, RPD-04]
+    allowed_external_writes: none   # 仅本地一次性 Docker/PG 允许
+    acceptance_commands:
+      - python -X utf8 -m pytest tests/approval/ tests/gh_bridge/ tests/model_gateway/ tests/skills/ -q -p no:cacheprovider
+      - MERGEPILOT_PG_CONTRACT=1 python -X utf8 -m pytest tests/approval/test_store_pg.py tests/approval/test_migration_runner.py -q -p no:cacheprovider
+    evidence_paths: [evidence/rpd-24h/rpd-05/failure-ledger.md, evidence/rpd-24h/rpd-05/regression-local.txt, evidence/rpd-24h/rpd-05/regression-pg-gated.txt]
+    commit: b79cd39
+    started_at: "2026-09-23T16:12:00Z"
+    completed_at: "2026-09-23T16:25:00Z"
+    blocker: ""
+    notes: 本地 282/0 失败;PG 门控 25/26(唯一失败=基线既有 Windows spawn race,TEST-DEBT 口径保持)
+
+  - id: RPD-06
+    title: 有限前端契约对齐
+    owner: ai
+    status: DONE
+    priority: P2
+    scope: [门状态展示: pending/action_required/approved_plan_ready/rejected/blocked/expired/backend_unavailable/scope_missing]
+    dependencies: [RPD-04]
+    allowed_external_writes: none
+    acceptance_commands:
+      - python -X utf8 -m pytest tests/ -q -p no:cacheprovider -k "console or gate" --ignore=tests/m4c --ignore=tests/m4e --ignore=tests/skills 2>&1 | tail
+    evidence_paths: [evidence/rpd-24h/rpd-06/scope.md]
+    commit: "(本轮收口统一提交)"
+    started_at: "2026-09-23T16:25:00Z"
+    completed_at: "2026-09-23T16:45:00Z"
+    blocker: ""
+    notes: gate_display 八态纯映射+审批响应字段;零新增端点/零 OAuth/零合并
+
+  - id: RPD-07
+    title: PR 交付
+    owner: ai
+    status: TODO
+    priority: P0
+    scope: [feature branch, push branch, 一个 PR, PR 正文含 BASE_HEAD/测试/证据/未完成/风险]
+    dependencies: [RPD-01, RPD-05]
+    allowed_external_writes: [push feature branch to origin, create/update one PR]
+    acceptance_commands:
+      - git log --oneline -1
+      - gh pr view --json url,state,headRefName
+    evidence_paths: [evidence/rpd-24h/rpd-07/]
+    commit: ""
+    started_at: ""
+    completed_at: ""
+    blocker: ""
+    notes: 禁 push main/merge/真实 check-run/真实 CASE2;push 或 PR 结果不明→立即停止(WAITING_HUMAN)
+
+  - id: RPD-08
+    title: 最终报告和早晨验收
+    owner: ai
+    status: TODO
+    priority: P0
+    scope: [最终报告, RPD 汇总, 复现命令, 回滚命令, 人工决策点, 关闭本地隔离资源, 停止]
+    dependencies: [RPD-05, RPD-06, RPD-07]
+    allowed_external_writes: none
+    acceptance_commands:
+      - ls evidence/rpd-24h/
+    evidence_paths: [evidence/rpd-24h/rpd-08/final-report.md]
+    commit: ""
+    started_at: ""
+    completed_at: ""
+    blocker: ""
+    notes: 24h 到点或任务完即停;不自动 merge/部署/开下一轮
+
+final_state: ""   # PROMOTE-READY | MANUAL-REQUIRED | BLOCKED | FAILED(收口时填写)

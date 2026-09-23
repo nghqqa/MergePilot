@@ -50,12 +50,53 @@ def _load_run_context(path):
     return repo, ""
 
 
+def _preflight_db(env) -> int:
+    """连接 DSN(只读)并校验角色/表能力;脱敏:失败只打印类别,不打印 DSN。"""
+    try:
+        _root = os.path.abspath(__file__)
+        for _ in range(4):          # deploy -> case_retrieval -> tools -> 仓库根
+            _root = os.path.dirname(_root)
+        sys.path.insert(0, _root)
+        from skills.case_retrieval.adapters.pg_vector import PgVectorAdapter  # noqa: E402
+    except Exception as e:  # noqa
+        print("FAIL preflight adapter import: %s" % type(e).__name__)
+        return 5
+    adapter = PgVectorAdapter({
+        "dsn": env.get("MERGEPILOT_CR_PG_DSN"),
+        "schema": env.get("MERGEPILOT_CR_DB_SCHEMA", "public"),
+        "table": env.get("MERGEPILOT_CR_DB_TABLE", "knowledge"),
+        "statement_timeout_ms": 5000,
+        "lock_timeout_ms": 3000,
+        "connect_timeout_ms": 5000,
+    })
+    try:
+        # 以下三步 = 适配器真实启动校验序列(只读会话,零业务查询)
+        conn = adapter._connect()
+        adapter._verify_role()
+        adapter._verify_schema_capability()
+        conn.rollback()
+        print("ok   preflight: connection + read-only role + table capability verified")
+        return 0
+    except Exception as e:  # noqa
+        sub = getattr(e, "subcode", type(e).__name__)
+        print("FAIL preflight: %s (sanitized, no DSN details)" % sub)
+        return 5
+    finally:
+        try:
+            adapter.close()
+        except Exception:
+            pass
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--mode", choices=("container", "repo"), default="repo")
     ap.add_argument("--scope-file", default=None,
                     help="显式校验一个 run-context 文件(覆盖 env)")
+    ap.add_argument("--preflight", action="store_true",
+                    help="container 模式附加:真实连接 DSN 并校验只读角色与表能力"
+                         "(不执行任何业务查询);退出码 5=连接/校验失败")
     a = ap.parse_args(argv)
 
     if a.mode == "repo":
@@ -66,6 +107,12 @@ def main(argv=None) -> int:
         print("FAIL MERGEPILOT_CR_PG_DSN missing -> skill will fail CASE_RETR_DB_UNAVAILABLE")
         return 2
     print("ok   MERGEPILOT_CR_PG_DSN present")
+
+    if a.preflight:
+        # 启动前预检:真实连接 + 只读角色/表能力校验(只读会话,零业务查询)。
+        rc_code = _preflight_db(os.environ)
+        if rc_code != 0:
+            return rc_code
 
     env_scope = (os.environ.get("MERGEPILOT_CR_REPO_SCOPE") or "").strip()
     file_path = a.scope_file or os.environ.get("MERGEPILOT_CR_REPO_SCOPE_FILE") or ""

@@ -1,0 +1,15 @@
+PASS a.idempotent-one-active-ticket
+PASS b.binding-fields
+PASS c.race-one-winner
+PASS d.no-overwrite
+PASS e.ttl-persists-expired
+PASS f.identity-required
+PASS g.audit-every-attempt | rows=3
+PASS h.bridge-creates-only | bridge calls open_gate_ticket; no decide/approve in bridge path
+PASS e2e.pending->GATE_WAIT
+PASS e2e.approve->APPROVED_PLAN_READY(no dispatch)
+PASS e2e.reject->BLOCKED
+PASS e2e.expire->CLOSED_EXPIRED
+PASS e2e.mapping-readonly (no run-store writes by design)
+
+== 13/13 passed ==

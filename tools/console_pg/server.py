@@ -64,6 +64,18 @@ def _get_binding_cls():
     return _binding_cls
 
 
+def _gate_display(status):
+    """票据状态 → 前端展示契约(有限八态;导入失败=诚实降级为 pending 域外态)。"""
+    try:
+        from console_pg.gate_display import gate_display
+    except ImportError:
+        try:
+            from .gate_display import gate_display
+        except ImportError:
+            return "pending"
+    return gate_display(status)
+
+
 def make_handler(run_store, ticket_store=None, test_auth=False, policy=None):
     """构建 HTTP handler。run_store: PgRunStore;ticket_store: PostgreSQLTicketStore 或 None。"""
 
@@ -185,7 +197,10 @@ def make_handler(run_store, ticket_store=None, test_auth=False, policy=None):
                         "note": "fixture 数据:隔离 PG 测试记录,非真实 PR 流程",
                     })
                 if path == "/api/approvals" and ticket_store:
-                    return self._fixture({"items": _list_pending(ticket_store)})
+                    items = _list_pending(ticket_store)
+                    for it in items:
+                        it["gate_display"] = _gate_display(it.get("status", "PENDING"))
+                    return self._fixture({"items": items})
                 if path.startswith("/api/approvals/") and ticket_store:
                     tid = path[len("/api/approvals/"):].strip("/")
                     t = ticket_store.get(tid)
@@ -194,6 +209,7 @@ def make_handler(run_store, ticket_store=None, test_auth=False, policy=None):
                                                     "unknown ticket: " + tid))
                     return self._fixture({"ticket_id": t.ticket_id,
                                           "status": t.status,
+                                          "gate_display": _gate_display(t.status),
                                           "binding": {"run_id": t.binding.run_id,
                                                       "repo": t.binding.repo,
                                                       "head_sha": t.binding.head_sha,

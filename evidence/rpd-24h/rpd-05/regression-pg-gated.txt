@@ -1,0 +1,68 @@
+.........F................                                               [100%]
+================================== FAILURES ===================================
+_________ PgSpecificAcceptance.test_cross_process_race_single_winner __________
+
+self = <approval.test_store_pg.PgSpecificAcceptance testMethod=test_cross_process_race_single_winner>
+
+    def test_cross_process_race_single_winner(self):
+        """跨进程(独立 OS 进程)approve/reject 竞争:恰好一个成功。"""
+        import multiprocessing
+        t, _ = self.store.create(self._binding(), approval_expires_at=LATER)
+        q = multiprocessing.get_context("spawn").Queue()
+        procs = [
+            multiprocessing.Process(target=_pg_worker,
+                                    args=(q, _DSN_RUNTIME, t.ticket_id, ev, APPROVER))
+            for ev in ("approve", "reject")]
+        for p in procs:
+            p.start()
+        for p in procs:
+            p.join(timeout=30)
+>       results = [q.get(timeout=5) for _ in procs]
+
+tests\approval\test_store_pg.py:215: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+tests\approval\test_store_pg.py:215: in <listcomp>
+    results = [q.get(timeout=5) for _ in procs]
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <multiprocessing.queues.Queue object at 0x000001D83FC12BE0>, block = True
+timeout = 5.0
+
+    def get(self, block=True, timeout=None):
+        if self._closed:
+            raise ValueError(f"Queue {self!r} is closed")
+        if block and timeout is None:
+            with self._rlock:
+                res = self._recv_bytes()
+            self._sem.release()
+        else:
+            if block:
+                deadline = time.monotonic() + timeout
+            if not self._rlock.acquire(block, timeout):
+                raise Empty
+            try:
+                if block:
+                    timeout = deadline - time.monotonic()
+                    if not self._poll(timeout):
+>                       raise Empty
+E                       _queue.Empty
+
+C:\Users\ngh\miniconda3\lib\multiprocessing\queues.py:114: Empty
+---------------------------- Captured stderr call -----------------------------
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "C:\Users\ngh\miniconda3\lib\multiprocessing\spawn.py", line 116, in spawn_main
+    exitcode = _main(fd, parent_sentinel)
+  File "C:\Users\ngh\miniconda3\lib\multiprocessing\spawn.py", line 126, in _main
+    self = reduction.pickle.load(from_parent)
+ModuleNotFoundError: No module named 'approval'
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "C:\Users\ngh\miniconda3\lib\multiprocessing\spawn.py", line 116, in spawn_main
+    exitcode = _main(fd, parent_sentinel)
+  File "C:\Users\ngh\miniconda3\lib\multiprocessing\spawn.py", line 126, in _main
+    self = reduction.pickle.load(from_parent)
+ModuleNotFoundError: No module named 'approval'
+=========================== short test summary info ===========================
+FAILED tests/approval/test_store_pg.py::PgSpecificAcceptance::test_cross_process_race_single_winner
+1 failed, 25 passed in 7.89s
