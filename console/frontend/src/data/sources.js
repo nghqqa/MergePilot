@@ -95,7 +95,107 @@ function contractSource(fetchImpl, config) {
 
 export function createDataSource(config, fetchImpl = (typeof fetch !== 'undefined' ? fetch : null)) {
   if (config?.mode === 'contract') return contractSource(fetchImpl, config);
+  if (config?.mode === 'console-pg') return consolePgSource(fetchImpl, config);
   return snapshotSource(fetchImpl);
+}
+
+// ---- console_pg 源（DEV/隔离联调适配 —— 明确标记，非正式契约 /api/pulls） ----
+//
+// 后端：tools/console_pg/server.py v0.2.0（只读；data_mode 恒 fixture；认证未实现 → 401）。
+// 与正式契约的差异（已记录 INTEGRATION-REQUESTS C-10 备注，不默默双轨）：
+//   - 端点 /api/prs（非 /api/pulls），列表项无 title/state/current_head_sha/verdict/
+//     has_pending_tickets —— PG 读模型暂无结论与待办字段；
+//   - head_sha 为该 PR 各 run 的 MIN(head)，不是 GitHub 当前 head 权威 → 本源
+//     currentHead 恒 null，页面维持"最近记录"口径，绝不显示当前结论；
+//   - 已知后端缺陷（已在交接记录，适配层规避而非掩盖）：/api/runs?repo&pr 组合
+//     KeyError → 连接重置；except StorageUnavailable 未定义 → NameError。
+// 本源仅用于隔离 PG fixture 联调；正式后端交付契约端点后由配置切回 contract。
+function consolePgSource(fetchImpl, config) {
+  const base = (config.pgBase ?? '/pg').replace(/\/$/, '');
+  const get = async (url) => {
+    const res = await fetchImpl(url, { credentials: 'same-origin' });
+    const body = await res.json().catch(() => null);
+    if (!res.ok) {
+      const err = new Error(body?.error?.message ?? `HTTP ${res.status}`);
+      err.status = res.status;
+      err.reason = body?.error?.reason ?? null;
+      throw err;
+    }
+    return body;
+  };
+  const pgTs = (v) => (v ? String(v).replace(' ', 'T') : null);
+
+  const runRow = (r) => ({
+    run_id: r.run_id,
+    head_sha: r.head_sha ?? null,
+    created_at: pgTs(r.created_at) ?? pgTs(r.updated_at),
+    execution: { status: String(r.status ?? '').toUpperCase() || null },
+    review: {}, // 读模型无独立结论字段——绝不伪造 verdict
+    mode: r.mode ?? null,
+    outcome: r.outcome ?? null,
+    runClass: r.run_class ?? null,
+    superseded: Boolean(r.superseded_by_run_id) || String(r.status).toUpperCase() === 'SUPERSEDED',
+  });
+
+  const prView = (repo, item, runItems) => ({
+    kind: 'console-pg',
+    key: `${repo}#${item.pr_number}`,
+    repo,
+    owner: repo.split('/')[0],
+    name: repo.split('/').slice(1).join('/'),
+    prNumber: item.pr_number,
+    title: null,
+    prUrl: `https://github.com/${repo}/pull/${item.pr_number}`,
+    activityAt: pgTs(item.latest_activity),
+    attention: { flag: 'no-data', label: 'PG 读模型未提供结论/待办字段' },
+    review: { basis: 'not-in-read-model', review: {}, stale: null },
+    currentHead: null, // 后端无 GitHub 当前 head 权威（如实）
+    heads: [],
+    runs: runItems,
+    latest: runItems[0] ?? null,
+    latestCompleted: runItems.find((r) => ['SUCCEEDED', 'FAILED'].includes(String(r.execution.status))) ?? null,
+    runCountExact: true,
+    runCount: item.run_count ?? runItems.length,
+  });
+
+  return {
+    kind: 'console-pg',
+    dataMode: 'fixture',
+    async listRepos() {
+      const body = await get(`${base}/api/repos`);
+      return (body?.items ?? []).map((r) => ({
+        repo: r.repo_id,
+        owner: String(r.repo_id ?? '').split('/')[0],
+        name: String(r.repo_id ?? '').split('/').slice(1).join('/'),
+        prCount: r.pr_count ?? null,
+        runCount: r.run_count ?? null,
+        activityAt: pgTs(r.latest_activity),
+        kind: 'console-pg',
+      }));
+    },
+    async listPrs(repo) {
+      const body = await get(`${base}/api/prs?repo=${encodeURIComponent(repo)}`);
+      const items = [];
+      for (const it of body?.items ?? []) {
+        // 规避后端 /api/runs?repo&pr 缺陷：repo 级查询 + 客户端按 pr_number 过滤
+        const runsBody = await get(`${base}/api/runs?repo=${encodeURIComponent(repo)}`);
+        const runItems = (runsBody?.items ?? [])
+          .filter((r) => r.pr_number === it.pr_number)
+          .map(runRow)
+          .sort((a, b) => (a.created_at ?? '').localeCompare(b.created_at ?? ''));
+        items.push(prView(repo, it, runItems.reverse()));
+      }
+      return items;
+    },
+    async getPr(repo, prNumber) {
+      const views = await this.listPrs(repo);
+      const found = views.find((v) => v.prNumber === prNumber) ?? null;
+      return found ? { view: found, detail: { runs: found.runs } } : null;
+    },
+    async getRunDetail(runId) {
+      return get(`${base}/api/runs/${encodeURIComponent(runId)}`);
+    },
+  };
 }
 
 // ---- 请求竞态守卫：切换仓库后晚到的旧响应不得覆盖当前页面 ----

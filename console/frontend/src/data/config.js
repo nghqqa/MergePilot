@@ -10,13 +10,20 @@ export function normalizeConfig(healthBody) {
   const sources = healthBody?.sources ?? null;
   const primary = sources?.primary;
   const contract = sources?.contract_v2 ?? {};
-  // 仅当服务明确声明 contract 可用时才启用契约数据源；其余一律 snapshot。
-  const mode = primary === 'contract' && contract.available === true ? 'contract' : 'snapshot';
+  const consolePg = sources?.console_pg ?? {};
+  // 仅当服务明确声明对应源可用时才启用；其余一律 snapshot。
+  // 'console-pg' 为 DEV/联调适配源（后端 tools/console_pg 只读服务；形状差异见
+  // INTEGRATION-REQUESTS C-10 备注），生产 console 后端不会声明该值。
+  let mode = 'snapshot';
+  if (primary === 'contract' && contract.available === true) mode = 'contract';
+  if (primary === 'console-pg' && consolePg.available === true) mode = 'console-pg';
   return {
     mode,
-    dataMode: healthBody?.data_mode ?? (mode === 'contract' ? 'fixture' : 'snapshot'),
+    dataMode: healthBody?.data_mode ?? (mode === 'snapshot' ? 'snapshot' : 'fixture'),
     contractAvailable: contract.available === true,
     contractReason: contract.reason ?? null,
+    consolePgAvailable: consolePg.available === true,
+    pgBase: consolePg.base ?? '/pg',
     // 契约模式下的仓库列表由可信配置声明（未来来自 installation 映射），不由前端猜测
     declaredRepos: Array.isArray(healthBody?.declared_repos) ? healthBody.declared_repos : [],
     service: healthBody?.service ?? null,

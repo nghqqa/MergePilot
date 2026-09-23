@@ -76,7 +76,9 @@ export default function RepoPrsPage() {
           <p className="page-sub">
             {contract
               ? '数据源为正式契约端点：当前 head 为 GitHub 权威值。'
-              : '历史数据中的仓库 · PR 摘要基于各 PR 最近一次运行记录 —— 快照无 GitHub 当前 head 权威数据，不代表当前 head 状态（接口需求 C-10）。'}
+              : source.kind === 'console-pg'
+                ? '数据源为隔离 PG 只读服务：无当前 head 权威与结论字段——仅执行记录（最近记录口径）。'
+                : '历史数据中的仓库 · PR 摘要基于各 PR 最近一次运行记录 —— 快照无 GitHub 当前 head 权威数据，不代表当前 head 状态（接口需求 C-10）。'}
           </p>
         </div>
       </div>
@@ -131,9 +133,9 @@ export default function RepoPrsPage() {
                 <thead>
                   <tr>
                     <th scope="col">PR</th>
-                    <th scope="col">{contract ? '当前 head（GitHub 权威）' : '上下文'}</th>
-                    <th scope="col" title={contract ? '来自 latest_result：stale=true 表示属旧 head，非当前结论' : '基于该 PR 最近一次运行记录，非当前 head 结论'}>
-                      {contract ? '最新完成结果' : '最近审查（最近记录）'}
+                    <th scope="col">{contract ? '当前 head（GitHub 权威）' : source.kind === 'console-pg' ? '执行记录' : '上下文'}</th>
+                    <th scope="col" title={contract ? '来自 latest_result：stale=true 表示属旧 head，非当前结论' : source.kind === 'console-pg' ? 'PG 读模型未提供独立结论字段——不伪造' : '基于该 PR 最近一次运行记录，非当前 head 结论'}>
+                      {contract ? '最新完成结果' : source.kind === 'console-pg' ? '结论（读模型）' : '最近审查（最近记录）'}
                     </th>
                     <th scope="col">需要处理</th>
                     <th scope="col">最近活动</th>
@@ -176,6 +178,11 @@ export default function RepoPrsPage() {
                             <>
                               <span className="head-chip mono" title="GitHub 当前 head（权威）">{(pr.currentHead ?? '').slice(0, 8) || '未记录'}</span>
                               {pr.review.stale ? <span className="cell-sub"><span className="muted">结论属旧 head</span></span> : null}
+                            </>
+                          ) : source.kind === 'console-pg' ? (
+                            <>
+                              <span className="chip" title="该 PR 的 run 记录数（PG 读模型）">{pr.runCount} 次运行</span>
+                              <div className="cell-sub muted">多 head/多 run 明细见详情</div>
                             </>
                           ) : (
                             <>

@@ -1,4 +1,5 @@
 import React from 'react';
+import { useAppConfig } from '../App.jsx';
 import { useAuth } from '../auth.jsx';
 import { BrandMark } from '../ui.jsx';
 
@@ -27,6 +28,8 @@ const STATUS_COPY = {
 
 export default function LoginPage() {
   const auth = useAuth();
+  const config = useAppConfig();
+  const pgMode = config?.mode === 'console-pg';
   const copy = STATUS_COPY[auth.status];
 
   return (
@@ -36,7 +39,7 @@ export default function LoginPage() {
           <BrandMark />
           <div>
             <div className="brand-name">MergePilot 管理控制台</div>
-            <div className="brand-sub">运行取证台 · snapshot</div>
+            <div className="brand-sub">运行取证台 · {pgMode ? '隔离 PG fixture' : 'snapshot'}</div>
           </div>
         </div>
 
@@ -48,17 +51,29 @@ export default function LoginPage() {
         ) : (
           <>
             <p className="login-note">
-              登录方式已定：GitHub OAuth + 服务端会话（契约 API-AUTH-MERGE-V0 v2 @ 7ccecb9；
-              会话 Cookie 为权威，浏览器不保存 App token / 私钥）。
-              后端尚未实现会话端点（当前 GET /api/auth/session = 404）——
-              本页没有可提交的登录表单，不模拟成功登录；真实启用依赖后端实现与 D-9 配置。
+              {pgMode ? (
+                <>
+                  当前连接的是只读隔离 PG fixture 服务（tools/console_pg）：
+                  认证未实现（GET /api/auth/session → 401 not_authenticated）——
+                  页面将以未认证 fixture 状态浏览隔离 PG 测试记录（非真实运行）。
+                </>
+              ) : (
+                <>
+                  登录方式已定：GitHub OAuth + 服务端会话（契约 API-AUTH-MERGE-V0 v2 @ 7ccecb9；
+                  会话 Cookie 为权威，浏览器不保存 App token / 私钥）。
+                  后端尚未实现会话端点（当前 GET /api/auth/session = 404）——
+                  本页没有可提交的登录表单，不模拟成功登录；真实启用依赖后端实现与 D-9 配置。
+                </>
+              )}
             </p>
             <button type="button" className="btn btn-primary login-main" onClick={auth.enterDemo}>
               以只读演示预览进入
             </button>
             <p className="login-sub">
-              演示预览 = 明确标注的未认证浏览：仅本地脱敏历史快照，不绕过 live API 认证、不携带真实写权限；
-              页面顶部全程显示「只读演示预览 · 未认证」，可随时在设置中退出。
+              演示预览 = 明确标注的未认证浏览：{pgMode
+                ? '仅隔离 PG 测试记录（fixture），不发起真实审批/写操作'
+                : '仅本地脱敏历史快照，不绕过 live API 认证、不携带真实写权限'}；
+              页面顶部全程显示未认证标识，可随时在设置中退出。
             </p>
           </>
         )}

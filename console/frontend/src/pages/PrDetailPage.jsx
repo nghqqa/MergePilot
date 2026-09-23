@@ -8,7 +8,7 @@ import { useDataSource, useSourceQuery } from '../hooks.js';
 import { groupRunsByPr } from '../pr-model.js';
 import { ExecutionBadge, VerdictBadge, GateBadge, PublishBadge } from '../status.jsx';
 import { fmtTime } from '../format.js';
-import { Empty, ErrorBox, SkeletonRows } from '../ui.jsx';
+import { Empty, ErrorBox, SkeletonRows, Spinner } from '../ui.jsx';
 
 function MiniState({ icon: Icon, label, children }) {
   return (
@@ -33,7 +33,171 @@ export default function PrDetailPage() {
   if (source.kind === 'contract') {
     return <ContractPrDetail owner={owner} name={name} prNumber={prNumber} />;
   }
+  if (source.kind === 'console-pg') {
+    return <PgPrDetail owner={owner} name={name} prNumber={prNumber} />;
+  }
   return <SnapshotPrDetail owner={owner} name={name} prNumber={prNumber} />;
+}
+
+// ---- console_pg 源（DEV/隔离联调适配：tools/console_pg 只读服务，PG fixture 记录） ----
+
+function PgPrDetail({ owner, name, prNumber }) {
+  const repo = `${owner}/${name}`;
+  const config = useAppConfig();
+  const { source } = useDataSource(config);
+  const [attempt, setAttempt] = useState(0);
+  const [openRun, setOpenRun] = useState(null);
+  const q = useSourceQuery(() => source.getPr(repo, prNumber), [source, repo, prNumber, attempt]);
+  const detailQ = useSourceQuery(() => source.getRunDetail(openRun), [openRun], { enabled: !!openRun });
+
+  const repoTo = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`;
+
+  if (q.status === 'error') {
+    return (
+      <div>
+        <div className="breadcrumb"><Link className="crumb-back" to={repoTo}>返回 {repo}</Link></div>
+        {q.error?.status === 404 ? (
+          <div className="state-box state-warn">PG 服务未提供 {repo} PR #{prNumber || '？'} 的记录（404）——不回退到历史快照数据。</div>
+        ) : (
+          <ErrorBox error={q.error} onRetry={() => setAttempt((n) => n + 1)} />
+        )}
+      </div>
+    );
+  }
+  if (q.status !== 'done') return <div className="detail-skeleton"><SkeletonRows rows={6} /></div>;
+  const { view, detail } = q.data ?? {};
+  if (!view) {
+    return (
+      <div>
+        <div className="breadcrumb"><Link className="crumb-back" to={repoTo}>返回 {repo}</Link></div>
+        <Empty>PG 服务未返回该 PR 的记录</Empty>
+      </div>
+    );
+  }
+  const runs = view.runs ?? [];
+
+  return (
+    <div>
+      <div className="breadcrumb">
+        <Link to={repoTo} className="crumb-back">{repo}</Link>
+        <span className="crumb-sep">/</span>
+        <span className="crumb-current">PR #{view.prNumber}</span>
+      </div>
+
+      <div className="detail-head">
+        <div className="detail-head-main">
+          <h1 className="detail-title">{view.title ?? `PR #${view.prNumber}`}</h1>
+          <div className="detail-chips">
+            <span className="chip">PR #{view.prNumber}</span>
+            <span className="chip mono">{repo}</span>
+            <span className="chip">{runs.length} 次运行记录</span>
+            <span className="chip">PG 只读 · Fixture（隔离测试记录，非真实运行）</span>
+          </div>
+        </div>
+        <div className="detail-actions">
+          {view.prUrl ? (
+            <a className="btn btn-primary" href={view.prUrl} target="_blank" rel="noreferrer">
+              <ArrowUpRight size={13} strokeWidth={1.75} aria-hidden /> 在 GitHub 查看 PR
+            </a>
+          ) : null}
+        </div>
+      </div>
+
+      <p className="section-note">
+        数据来自隔离 PG 只读服务 GET /api/prs + /api/runs（data_mode=fixture——隔离测试记录，
+        非真实 PR 审查完成）。PG 读模型暂无独立审查结论字段与 GitHub 当前 head 权威——
+        本页仅呈现执行记录（最近记录口径），不显示当前结论；站内审批/合并均未接入。
+      </p>
+
+      <section className="section">
+        <div className="section-head">
+          <Workflow size={14} strokeWidth={1.75} aria-hidden className="section-ico" />
+          <h3>运行历史（{runs.length} 次）— 点击展开阶段/事件/证据</h3>
+        </div>
+        <div className="panel">
+          <table className="data-table">
+            <thead>
+              <tr><th>时间</th><th>run_id</th><th>chain / class</th><th>mode</th><th>状态</th><th>结果</th><th>head</th></tr>
+            </thead>
+            <tbody>
+              {runs.map((r) => (
+                <tr key={r.run_id} className={openRun === r.run_id ? 'row-highlight' : ''}>
+                  <td className="cell-time">{fmtTime(r.created_at) ?? '—'}</td>
+                  <td className="mono">
+                    <button type="button" className="link-btn" onClick={() => setOpenRun(openRun === r.run_id ? null : r.run_id)}>
+                      {r.run_id}
+                    </button>
+                    {r.superseded ? <span className="muted">（已被取代）</span> : null}
+                  </td>
+                  <td>{r.runClass ?? '—'} / {r.mode ?? '—'}</td>
+                  <td><span className="chip">{r.mode ?? '—'}</span></td>
+                  <td><span className="chip">{r.execution.status ?? '—'}</span></td>
+                  <td>{r.outcome ?? '—'}</td>
+                  <td className="mono">{(r.head_sha ?? '').slice(0, 8) || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {openRun ? (
+          <div className="panel" style={{ marginTop: 10 }}>
+            <div className="section-head" style={{ padding: '10px 14px 0' }}>
+              <h3 className="mono">{openRun}</h3>
+            </div>
+            {detailQ.status === 'loading' ? <Spinner /> : detailQ.status === 'error' ? (
+              <div style={{ padding: '0 14px 10px' }}><ErrorBox error={detailQ.error} onRetry={() => setAttempt((n) => n + 1)} /></div>
+            ) : (
+              <div style={{ padding: '0 14px 12px' }}>
+                {(() => {
+                  const d = detailQ.data ?? {};
+                  const stages = Object.entries(d.stages ?? {});
+                  return (
+                    <>
+                      <h4 className="muted" style={{ margin: '8px 0 4px' }}>阶段（{stages.length}）</h4>
+                      {stages.length ? (
+                        <table className="data-table">
+                          <thead><tr><th>stage</th><th>状态</th><th>attempts</th><th>error</th></tr></thead>
+                          <tbody>
+                            {stages.map(([dim, s]) => (
+                              <tr key={dim}>
+                                <td className="mono">{dim}</td>
+                                <td>{s.status ?? '—'}</td>
+                                <td className="num">{s.attempts ?? '—'}</td>
+                                <td className="cell-src">{s.error ?? '—'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      ) : <p className="section-note">该 run 无阶段记录。</p>}
+                      <h4 className="muted" style={{ margin: '10px 0 4px' }}>事件（{(d.events ?? []).length}）</h4>
+                      {(d.events ?? []).length ? (
+                        <ul className="compact-list mono">
+                          {(d.events ?? []).slice(0, 10).map((e, i) => (
+                            <li key={i}>{e.created_at} · {e.event_type}</li>
+                          ))}
+                        </ul>
+                      ) : <p className="section-note">无事件记录。</p>}
+                      <h4 className="muted" style={{ margin: '10px 0 4px' }}>证据与结论字段（如实）</h4>
+                      <ul className="compact-list">
+                        <li>evidence：manifest {d.evidence?.manifest_sha256 ?? '未记录'} / path {d.evidence?.evidence_path ?? '未记录'}——{d.evidence?.note ?? 'MinIO 证据未接线'}</li>
+                        <li>findings：{typeof d.findings === 'string' ? d.findings : `共 ${(d.findings ?? []).length} 条`}</li>
+                        <li>validations：{typeof d.validations === 'string' ? d.validations : `${(d.validations ?? []).length} 条`}</li>
+                        <li>站内合并：关闭（{(d.merge_panel?.reasons ?? ['merge_disabled']).join(', ')}）</li>
+                      </ul>
+                    </>
+                  );
+                })()}
+              </div>
+            )}
+          </div>
+        ) : null}
+        <p className="section-note">
+          以上为隔离 PG 测试记录（data_mode=fixture）：仅执行编排事实，不含审查结论与发布状态；
+          不构成"真实 PR 审查完成"。
+        </p>
+      </section>
+    </div>
+  );
 }
 
 // ---- snapshot 源：历史证据包聚合（原有路径） ----

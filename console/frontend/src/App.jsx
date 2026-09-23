@@ -51,7 +51,7 @@ function TopbarContext() {
   const config = useAppConfig();
   // 数据模式 + 采集范围：来自可信服务配置（不客户端猜测）
   const [range, setRange] = useState(null);
-  const snapshot = config?.mode !== 'contract';
+  const snapshot = (config?.mode ?? 'snapshot') === 'snapshot';
   useEffect(() => {
     if (!snapshot) return undefined;
     api.runs({ limit: 200 }).then((d) => {
@@ -64,11 +64,17 @@ function TopbarContext() {
     return undefined;
   }, [snapshot]);
   if (!snapshot) {
+    const label = config.mode === 'console-pg'
+      ? 'PG 只读 · Fixture（未认证）'
+      : (config.dataMode === 'fixture' ? '契约数据源 · Fixture' : '契约数据源 · Live');
+    const title = config.mode === 'console-pg'
+      ? '数据源：隔离 PG 只读服务（tools/console_pg）——数据为隔离测试记录，非真实运行；认证未实现（401），页面处于未认证 fixture 状态。'
+      : '数据源：正式契约 v2 端点（API-AUTH-MERGE-V0）。data_mode=fixture 时全部数据为合成 fixture——非真实运行、非历史快照。';
     return (
       <span className="mode-wrap">
-        <span className="mode-chip" title="数据源：正式契约 v2 端点（API-AUTH-MERGE-V0）。data_mode=fixture 时全部数据为合成 fixture——非真实运行、非历史快照。">
+        <span className="mode-chip" title={title}>
           <span className="mode-dot" aria-hidden />
-          <strong>{config.dataMode === 'fixture' ? '契约数据源 · Fixture' : '契约数据源 · Live'}</strong>
+          <strong>{label}</strong>
         </span>
       </span>
     );
@@ -89,6 +95,8 @@ function AuthChip() {
   const config = useAppConfig();
   // fixture 验收环境（可信配置声明 data_mode=fixture）：会话即合成用户，标识常驻可见
   const fixtureSession = config?.dataMode === 'fixture' && auth.status === 'authed';
+  // console-pg 联调环境：认证未实现（401）——页面必须显示未认证/fixture 状态
+  const pgUnauthed = config?.mode === 'console-pg' && auth.status !== 'authed';
   if (auth.status === 'authed') {
     return (
       <span className="auth-chip">
@@ -101,6 +109,18 @@ function AuthChip() {
         )}
         <button type="button" className="btn btn-ghost btn-sm" onClick={auth.refresh} title="登出需后端会话接口（契约 v2 POST /api/auth/logout）">
           <LogOut size={12} strokeWidth={1.75} aria-hidden /> 退出
+        </button>
+      </span>
+    );
+  }
+  if (pgUnauthed) {
+    return (
+      <span className="auth-chip">
+        <span className="chip auth-demo-chip" title="隔离 PG fixture 服务：认证未实现（GET /api/auth/session → 401 not_authenticated）——未认证状态，非真实用户会话。">
+          PG Fixture · 未认证
+        </span>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={auth.refresh} title="重新探测会话端点">
+          重查会话
         </button>
       </span>
     );
@@ -144,8 +164,8 @@ function Shell() {
   const config = useAppConfig();
   const { source } = useDataSource(config);
   const ctx = topbarCtx(loc.pathname);
-  // 契约数据源不提供 run 级全量历史（那是 snapshot 取证视图）——导航按能力呈现
-  const nav = NAV.filter((n) => !(source.kind === 'contract' && n.to === '/runs'));
+  // 导航按数据源能力呈现：run 级全量历史仅 snapshot 取证视图提供
+  const nav = NAV.filter((n) => !(source.kind !== 'snapshot' && n.to === '/runs'));
 
   return (
     <div className="app">
@@ -225,15 +245,15 @@ function Shell() {
   );
 }
 
-// 运行历史是 snapshot 取证视图：契约数据源不提供 run 级全量历史，如实说明而非伪装空列表
+// 运行历史是 snapshot 取证视图：其他数据源不提供 run 级全量历史，如实说明而非伪装空列表
 function RunsHistoryRoute() {
   const config = useAppConfig();
   const { source } = useDataSource(config);
-  if (source.kind === 'contract') {
+  if (source.kind !== 'snapshot') {
     return (
       <div className="state-box state-warn" role="status">
-        运行历史为 snapshot 取证视图——契约数据源不提供 run 级全量历史。PR 维度历史在各 PR 详情的
-        "运行历史"展开中查看。返回<Link to="/repos">仓库工作台</Link>。
+        运行历史为 snapshot 取证视图——当前数据源（{source.kind}）不提供 run 级全量历史。
+        PR 维度历史在各 PR 详情的"运行历史"展开中查看。返回<Link to="/repos">仓库工作台</Link>。
       </div>
     );
   }
