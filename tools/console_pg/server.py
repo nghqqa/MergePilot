@@ -194,12 +194,13 @@ def make_handler(run_store, ticket_store=None, test_auth=False, policy=None):
                         501, "not_implemented",
                         "approval endpoints require ticket_store; not configured"))
                 return self._send(404, _err(404, "NOT_FOUND", "unknown path"))
-            except StorageUnavailable as e:
-                return self._send(503, _err(
-                    503, "backend_unavailable", str(e)[:160]))
-            except Exception as e:
+            except Exception as conn_err:
+                # DB 连接/查询失败 → 503(区别于业务 404/409)
+                if isinstance(conn_err, RuntimeError):
+                    return self._send(503, _err(
+                        503, "backend_unavailable", str(conn_err)[:160]))
                 return self._send(500, _err(
-                    500, "internal", type(e).__name__ + ":" + str(e)[:160]))
+                    500, "internal", type(conn_err).__name__ + ":" + str(conn_err)[:160]))
 
         def do_POST(self):
             url = urlparse(self.path)
