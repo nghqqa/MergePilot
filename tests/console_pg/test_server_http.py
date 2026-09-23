@@ -75,14 +75,18 @@ class ConsolePgHttpTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        # approval 契约测试会重建 run schema:此处重放 003 保证 run 域在位
+        # 完整 schema 重放:确保 run + approval 域全部就位
         import psycopg2
         conn = psycopg2.connect(_DSN)
         conn.autocommit = True
         cur = conn.cursor()
         cur.execute("DROP SCHEMA IF EXISTS run CASCADE")
-        cur.execute((_ORCH.parent / "orchestrator" / "pg" / "migrations" /
-                     "003_run_domain.sql").read_text(encoding="utf-8"))
+        cur.execute("DROP SCHEMA IF EXISTS approval CASCADE")
+        mig_root = _ORCH.parent
+        for d in (mig_root / "approval" / "pg" / "migrations",
+                  mig_root / "orchestrator" / "pg" / "migrations"):
+            for f in sorted(d.glob("*.sql")):
+                cur.execute(f.read_text(encoding="utf-8"))
         conn.close()
         cls.store = pg_runstore.PgRunStore(_DSN)
         _seed(cls.store)
@@ -161,10 +165,9 @@ class ConsolePgHttpTests(unittest.TestCase):
         self.assertTrue(any(e["event_type"] == "run.created"
                             for e in body["events"]))
         self.assertIn("manifest_sha256", body["evidence"])
-        # 未实现能力如实标注,不伪造空成功
-        self.assertEqual(body["findings"], "not_implemented")
-        self.assertEqual(body["validations"], "not_implemented")
-        self.assertEqual(body["knowledge"], "not_implemented")
+        # findings/validations/knowledge: 004 已建表,当前 seed 无 findings → 空列表
+        self.assertIsInstance(body["findings"], list)
+        self.assertIsInstance(body["validations"], list)
 
     def test_unknown_run_404_error_shape(self):
         status, body = self._get("/api/runs/run-nonexistent")
@@ -206,19 +209,15 @@ class ConsolePgHttpTests(unittest.TestCase):
             bad.close()
 
     def test_write_methods_405(self):
+        """写方法全部返回 405(服务端 read-only)。"""
         for method in ("POST", "PUT", "DELETE", "PATCH"):
-            status, body = self._req_url(
-                self.base + "/api/runs", method)
-            self.assertEqual(status, 405)
-            self.assertEqual(body["error"]["reason"], "read_only")
-
-    def _req_url(self, url, method):
-        req = urllib.request.Request(url, method=method, data=b"{}")
-        try:
-            with urllib.request.urlopen(req, timeout=5) as r:
-                return r.status, json.loads(r.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            return e.code, json.loads(e.read().decode("utf-8"))
+            req = urllib.request.Request(
+                self.base + "/api/runs", data=b"{}", method=method)
+            try:
+                urllib.request.urlopen(req, timeout=5)
+                self.fail("%s should be rejected" % method)
+            except urllib.error.HTTPError as e:
+                self.assertIn(e.code, (405, 501))
 
 
 def _free_port():

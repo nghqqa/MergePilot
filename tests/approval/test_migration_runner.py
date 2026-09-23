@@ -65,7 +65,8 @@ class MigrationRunnerRehearsalTests(unittest.TestCase):
         self.assertEqual(report["applied_now"],
                          ["001_approval_tickets.sql",
                           "002_tickets_target_key.sql",
-                          "003_run_domain.sql"])
+                          "003_run_domain.sql",
+                          "004_findings_validations.sql"])
 
     def test_rerun_is_explicit_noop(self):
         dsn = _fresh()
@@ -73,7 +74,7 @@ class MigrationRunnerRehearsalTests(unittest.TestCase):
         report = self._apply(dsn)
         self.assertEqual(report["result"], "OK")
         self.assertEqual(report["applied_now"], [])
-        self.assertEqual(len(report["skipped"]), 3)
+        self.assertEqual(len(report["skipped"]), 4)
 
     def test_upgrade_from_delivered_structure_preserves_records(self):
         """从已交付结构(仅 001,已登记)升级到当前:002+003 依次应用,既有合法记录保留。"""
@@ -92,10 +93,10 @@ class MigrationRunnerRehearsalTests(unittest.TestCase):
             "'%s', '%s', 'F1', 'F1', 1, 'APPROVED', now(), now())"
             % ("a" * 40, "1" * 64, "2" * 64))
         conn.close()
-        # 阶段2:全量执行器应用 003(001+002 已登记自动跳过)
+        # 阶段2:全量执行器应用 003+004(001+002 已登记自动跳过)
         report = self._apply(dsn)
         self.assertEqual(report["applied_now"],
-                         ["003_run_domain.sql"])
+                         ["003_run_domain.sql", "004_findings_validations.sql"])
         conn = psycopg2.connect(dsn)
         cur = conn.cursor()
         cur.execute("SELECT status, target_key FROM approval.tickets "

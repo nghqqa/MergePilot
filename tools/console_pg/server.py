@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -41,6 +42,16 @@ def _clamp_offset(raw):
 
 
 _binding_cls = None
+
+
+def _get_canonical_hash():
+    global _canonical_hash_fn
+    if _canonical_hash_fn is None:
+        import importlib
+        m = importlib.import_module("approval_pkg.approval")
+        _canonical_hash_fn = m.canonical_hash
+    return _canonical_hash_fn
+_canonical_hash_fn = None
 
 
 def _get_binding_cls():
@@ -222,10 +233,11 @@ def make_handler(run_store, ticket_store=None, test_auth=False, policy=None):
                 if path == "/api/approvals":
                     return self._create_approval(body, principal)
                 if "/approve" in path:
-                    tid = path.rstrip("/").rsplit("/", 1)[-1].replace("/approve", "")
+                    # path = /api/approvals/<tid>/approve → tid 是倒数第二段
+                    tid = path.rstrip("/").split("/")[-2]
                     return self._transition(tid, "approve", principal)
                 if "/reject" in path:
-                    tid = path.rstrip("/").rsplit("/", 1)[-1].replace("/reject", "")
+                    tid = path.rstrip("/").split("/")[-2]
                     return self._transition(tid, "reject", principal)
                 return self._send(404, _err(404, "NOT_FOUND", "unknown path"))
             except json.JSONDecodeError:
@@ -235,23 +247,33 @@ def make_handler(run_store, ticket_store=None, test_auth=False, policy=None):
                     500, "internal", type(e).__name__ + ":" + str(e)[:160]))
 
         def _create_approval(self, body, principal):
-            if policy and not policy.allows_action(body.get("action", "")):
+            if policy and hasattr(policy, 'allows_action') and \
+               not policy.allows_action(body.get("action", "")):
                 self._send(403, _err(403, "action_not_enabled",
                     "action not in D-1 enabled set"))
                 return
-            if policy and hasattr(policy, 'can_approve') and                not policy.can_approve(principal, body.get("repo", "")):
+            if policy and hasattr(policy, 'can_approve') and \
+               not policy.can_approve(principal, body.get("repo", "")):
                 self._send(403, _err(403, "not_an_approver",
                     "principal not in D-2 approver map"))
                 return
-            # 实际逻辑由 ticket_store.create 完成;此处做最简参数透传
             Binding = _get_binding_cls()
-            ph = body.get("params_hash") or body.get("params", "")
-            b = Binding(run_id=body["run_id"], repo=body["repo"],
-                        head_sha=body["head_sha"], action=body["action"],
-                        params_hash=ph,
-                        patch_fingerprint=body.get("patch_fingerprint"),
-                        finding_fingerprint=body.get("finding_fingerprint"),
-                        finding_id=body.get("finding_id"))
+            canonical_hash = _get_canonical_hash()
+            raw = body.get("params_hash") or body.get("params") or {}
+            ph = raw if (isinstance(raw, str) and
+                         len(raw) == 64 and
+                         re.fullmatch(r'[0-9a-f]{64}', raw)) \
+                else canonical_hash(raw)
+            try:
+                b = Binding(run_id=body["run_id"], repo=body["repo"],
+                            head_sha=body["head_sha"], action=body["action"],
+                            params_hash=ph,
+                            patch_fingerprint=body.get("patch_fingerprint"),
+                            finding_fingerprint=body.get("finding_fingerprint"),
+                            finding_id=body.get("finding_id"))
+            except ValueError as e:
+                self._send(422, _err(422, "invalid_binding", str(e)[:200]))
+                return
             t, created = ticket_store.create(
                 b, attempt_no=body.get("attempt", 1),
                 created_by_run=principal,
@@ -261,8 +283,11 @@ def make_handler(run_store, ticket_store=None, test_auth=False, policy=None):
                 "created": created})
 
         def _transition(self, ticket_id, action, principal):
+            import sys as _sys
+            print('DEBUG transition:', ticket_id[:16], action, 'now=', _now_iso(), file=_sys.stderr)
             r = ticket_store.transition(ticket_id, action,
                                         now=_now_iso(), actor=principal)
+            print('DEBUG result:', r.ok, r.status, r.reason, file=_sys.stderr)
             code = 200 if r.ok else 409
             self._send(code, {"ok": r.ok, "status": r.status, "reason": r.reason})
 

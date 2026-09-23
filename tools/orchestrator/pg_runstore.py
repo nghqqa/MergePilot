@@ -427,10 +427,10 @@ class PgRunStore:
         cur = self._ensure().cursor()
         cur.execute(
             "SELECT run_id, target_id, chain, run_class, exec_seq, mode, status, "
-            "risk_tier, outcome, superseded_by_run_id, head_sha, created_at "
+            "risk_tier, outcome, superseded_by_run_id, head_sha, repo_id, created_at "
             "FROM run.runs WHERE repo_id=%s AND pr_number=%s "
             "ORDER BY created_at DESC", (repo_id, pr))
         keys = ("run_id", "target_id", "chain", "run_class", "exec_seq", "mode",
                 "status", "risk_tier", "outcome", "superseded_by_run_id",
-                "head_sha", "created_at")
+                "head_sha", "repo_id", "created_at")
         return [dict(zip(keys, r)) for r in cur.fetchall()]
