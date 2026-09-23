@@ -1,6 +1,8 @@
 # 契约 v2 验收样例（CONTRACT-ACCEPTANCE-SAMPLES）
 
-**目的**：给后端会话一组可直接复现的请求/响应样例——实现完成后按此逐条验收，前端适配层（`console/frontend/src/api-live.js`）即按这些形状消费。
+**目的**：给后端会话一组可直接复现的请求/响应样例——实现完成后按此逐条验收。
+**口径**：交付后前端**按最终契约评估适配（如存在差异，差异记入 INTEGRATION-REQUESTS 并由双方确认），
+并重新执行隔离联调与页面验收**——不预设"无需前端改动"。
 **契约依据**：`console/API-AUTH-MERGE-V0.md` v2（设计分支 `docs/architecture-audit-20260922` @ **7ccecb9**，接受记录 c664df2）。
 **状态（2026-09-23）**：以下 1–5 后端**均未实现**——前端已完成适配层、契约测试（`console/backend/test/live-api.test.mjs`）与明确标注的 fixture；第 6 节为**已联调**的真实只读接口（console_v3）。
 

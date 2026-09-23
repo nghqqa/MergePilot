@@ -74,9 +74,11 @@ export default function SettingsPage() {
       <section className="section">
         <div className="section-head"><h3>运行边界</h3></div>
         <ul className="compact-list">
-          <li>服务仅监听 127.0.0.1 回环；全站只读，无写操作接口，不下发凭证。</li>
-          <li>快照数据可展示真实历史结果，但不提供针对历史数据的真实审批或合并操作。</li>
-          <li>站内审批：等待后端决策接口（C-11 未实现）。站内合并：范围变更已记录（C-12），启用条件由后端证明。</li>
+          <li>服务仅监听 127.0.0.1 回环；不下发凭证。</li>
+          <li>snapshot / contract 页面验收模式：全站只读（控制台本体接口仅 GET）。</li>
+          <li>console-pg 联调模式（test-auth）：审批决策请求仅写隔离 fixture 库（X-Test-Principal 测试主体），不触达任何真实系统或 GitHub。</li>
+          <li>快照数据显示真实历史结果，但不提供针对历史数据的真实审批或合并操作。</li>
+          <li>站内审批：待后端决策接口与 D-1/D-2/D-3 授权策略（生产主体须经认证与授权校验）。站内合并：范围变更已记录（C-12），启用条件由后端证明。</li>
           <li>GitHub App 安装授权与用户登录是两条流程，控制台不混用、不代持凭证。</li>
         </ul>
       </section>

@@ -25,7 +25,8 @@ nghqqa: a2/a1 双 run，互不覆盖）⑧分页稳定（/api/prs offset=1 → t
 | 项 | 值 |
 |---|---|
 | 前端入口 | http://127.0.0.1:4194（dev harness `--pg` 模式：静态 dist + 可信配置 + /pg 反代） |
-| 后端只读服务 | console_pg v0.2.0-pg-approval @ http://127.0.0.1:4193（`dev/console-pg-launch.py` 启动；仅 127.0.0.1） |
+| 后端只读服务 | console_pg v0.2.0-pg-approval @ http://127.0.0.1:4193（`dev/console-pg-launch.py` 启动；仅 127.0.0.1）。
+  注：服务名义"只读查询"，在 `--allow-test-auth` 下**含审批决策 POST**（仅写隔离 fixture 库票据，X-Test-Principal 主体）——非纯只读 |
 | 数据 | 隔离 PG 实例 127.0.0.1:55432 / db=**mp_pg_console_fe**（独立于后端测试库，避免 schema drop 竞争）；4 条 fixture run 经**后端 PgRunStore API** 写入（create_run/save_stages/transition_status/append_event），迁移经后端 apply_migrations.py 应用 |
 | 数据性质 | data_mode=fixture（隔离测试记录）——**非真实运行、非真实 PR 审查完成** |
 

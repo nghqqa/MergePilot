@@ -58,7 +58,7 @@ verdict/待办字段、真实认证（D-9）、审批读写（D-1~D-3，本轮�
 | 接口核实（可复现请求） | ✅ | console_pg @ :4193（`dev/console-pg-launch.py` 启动，独立库 mp_pg_console_fe，4 条确定性 fixture run 经后端 PgRunStore API 写入）；不再沿用"PG 无 HTTP"旧结论 |
 | 形状对比 | ✅ 记录 | console_pg 为 console-0.1.0 形状（/api/prs），非契约 v2 /api/pulls 聚合；无 current_head 权威/verdict/has_pending_tickets——前端**如实降级**为最近记录口径，不显示当前结论、不从历史 HIGH 生成待办；差异记录于 C-10 备注 + verification/console-pg-itest/README.md |
 | console-pg 适配层 | ✅ dev-only | sources.js consolePgSource（明确标记"DEV/隔离联调适配，非正式契约"）：/api/repos、/api/prs、/api/runs（规避后端 /api/runs?repo&pr 缺陷：repo 级查询+客户端过滤）、/api/runs/:id（stages/events/evidence/merge_panel 懒加载） |
-| harness PG 模式 | ✅ | `contract-fixture-harness.mjs --pg <base>`：/api/health 声明 console-pg 源 + /pg/* 只读反代（同源，解决无 CORS）+ session 透传（401 如实）；NODE_ENV=production 拒启 |
+| harness PG 模式 | ✅ | `contract-fixture-harness.mjs --pg <base>`：/api/health 声明 console-pg 源 + /pg/* 透传代理（GET 查询 + test-auth 审批决策 POST——写仅限隔离 fixture 票据，由隔离后端强制校验；同源解决无 CORS）+ session 透传（401 如实）；NODE_ENV=production 拒启 |
 | 浏览器联调十项 | ✅ 9/10 +1 记录 | ①仓库列表 ②PR 列表 ③PR 详情 ④多 head ⑤多 run ⑥stages/events/evidence ⑦跨仓库同编号 #9 不串 ⑧分页稳定 ⑨不存在 run 404（不回退快照）——全过；⑩PG 不可达 503：**后端缺陷致无法返回**（见下），语义已按契约在前端预留 |
 | 认证/隔离专项 | ✅ | session 401 如实 → "PG Fixture · 未认证"常驻；live/PG 失败不回退私有 snapshot（源分离测试）；模式仅由 /api/health sources 声明；浏览器无 token/私钥 |
 | 测试 | ✅ 64/64 | 全套（不含门控跳过的 console_v3 集成）；snapshot 模式 4730 回归通过 |

@@ -49,6 +49,7 @@ const NAV = [
 
 function TopbarContext() {
   const config = useAppConfig();
+  const auth = useAuth();
   // 数据模式 + 采集范围：来自可信服务配置（不客户端猜测）
   const [range, setRange] = useState(null);
   const snapshot = (config?.mode ?? 'snapshot') === 'snapshot';
@@ -64,11 +65,15 @@ function TopbarContext() {
     return undefined;
   }, [snapshot]);
   if (!snapshot) {
+    const testAuth = auth.status === 'authed';
     const label = config.mode === 'console-pg'
-      ? 'PG 只读 · Fixture（未认证）'
+      ? (testAuth ? 'PG 只读 · Fixture（测试主体）' : 'PG 只读 · Fixture（未认证）')
       : (config.dataMode === 'fixture' ? '契约数据源 · Fixture' : '契约数据源 · Live');
     const title = config.mode === 'console-pg'
-      ? '数据源：隔离 PG 只读服务（tools/console_pg）——数据为隔离测试记录，非真实运行；认证未实现（401），页面处于未认证 fixture 状态。'
+      ? '数据源：隔离 PG 只读查询服务（tools/console_pg）——数据为隔离测试记录，非真实运行。'
+        + (testAuth
+          ? '当前为 test-auth 隔离主体：审批决策请求仅写隔离 fixture 库，不触达真实系统。'
+          : '会话未认证（401 not_authenticated）。')
       : '数据源：正式契约 v2 端点（API-AUTH-MERGE-V0）。data_mode=fixture 时全部数据为合成 fixture——非真实运行、非历史快照。';
     return (
       <span className="mode-wrap">
@@ -191,8 +196,11 @@ function Shell() {
           ))}
         </nav>
         <div className="sidebar-foot">
-          <div className="foot-row" title="本服务仅监听 127.0.0.1 回环地址；不下发任何凭证">
-            <Activity size={12} strokeWidth={1.75} aria-hidden /> 只读 · 无写操作 · 无凭证下发
+          <div className="foot-row" title={source.kind === 'console-pg'
+            ? '隔离联调环境：数据为 fixture 测试记录；审批决策请求仅写隔离 fixture 库（test-auth 主体），不触达任何真实系统或 GitHub；不下发凭证'
+            : '本服务仅监听 127.0.0.1 回环地址；不下发任何凭证'}>
+            <Activity size={12} strokeWidth={1.75} aria-hidden />
+            {source.kind === 'console-pg' ? '隔离联调 · 审批决策仅写 fixture 库' : '只读 · 无写操作 · 无凭证下发'}
           </div>
         </div>
       </aside>

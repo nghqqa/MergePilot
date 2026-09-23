@@ -125,3 +125,30 @@
   ~~此前前端自拟的 `GET /api/capabilities` 全局开关~~ 以契约 v2 为准。
 - **前端约定**：按 allowed/reason 渲染入口，不可用动作隐藏或标注原因（如 merge_disabled + GitHub 外链）；
   未声明的能力一律显示"未接入"；不出现"永远开发中"的假按钮。
+
+## 恢复条件与验收项（前端视角，2026-09-23 口径修正轮新增）
+
+**总原则**：后端交付后，前端**按最终契约评估适配并重新验收**——不预设"无需前端改动"；
+若交付形状与 CONTRACT-ACCEPTANCE-SAMPLES 存在差异，差异记入本文件并由双方确认
+（一次性开发适配须明确标记 dev-only，不默认长期维护两套正式接口）。
+
+| 恢复条件 | 依赖 | 前端动作 | 验收项（通过标准） |
+|---|---|---|---|
+| R-1 正式 PR 聚合端点 `GET /api/pulls?repo=`、`GET /api/pulls/:n?repo=`（C-10） | 后端 HTTP→PG 接线 | sources 声明切 contract；退役 console-pg dev 适配层 | 按 CONTRACT-ACCEPTANCE-SAMPLES §3/§4 逐字段对照；current_head 权威生效（"当前结论/stale/进行中无结果"三类展示正确）；多 head 历史保留；分页 offset 稳定；404/503 语义正确 |
+| R-2 审批详情字段补齐 `expires_at`/`params`/PR 关联（C-11 缺口） | 后端审批只读响应扩展 | PgTicketRow 展示 TTL/params/PR（现为"响应未携带"如实标注） | 详情含 TTL 倒计时与五元组完整字段；过期票据在列表/详情均可辨识 |
+| R-3 决策接口 head 冲突语义（expected_head 或等价参数） | 后端决策接口定义 | 前端预检恢复 expected_head 提交 + 409 冲突展示 | 409 stale_head 场景 UI 显示"绑定 head 与当前不一致，需重签"，不静默放行 |
+| R-4 OAuth 会话（C-8 + D-9） | 后端登录三端点 + 会话 | LoginPage 移除"演示预览为唯一入口"态；登出/过期拦截全启用 | `GET /api/auth/session` 200/401 分类实测；403 not_a_member 页面态；CSRF 头按契约携带；浏览器无 token/PAT 存留 |
+
+通用验收（每次恢复都含）：data_mode/fixture 标识不丢失；live/PG 查询失败不回退私有 snapshot；
+跨仓库同编号 PR 不串；64 项既有测试全绿 + 新增契约测试按交付形状补齐。
+
+## 前端现有模式与边界（口径基准，2026-09-23 修正）
+
+| 模式 | 触发 | 读/写边界 |
+|---|---|---|
+| snapshot（默认/生产现状） | console 后端 health 声明 | 只读（控制台本体仅 GET） |
+| contract fixture 页面验收 | dev harness（非生产） | 只读 + 合成数据 |
+| console-pg 隔离联调 | dev harness `--pg` + console_pg test-auth | GET 查询 + **审批决策 POST（写仅限隔离 fixture 库票据，X-Test-Principal 主体）**——非只读，不触达真实系统 |
+
+注：dev harness 在 PG 模式下是**透传代理**（GET 查询 + 审批决策 POST），不是"只读反代"——
+写操作仅限隔离 fixture 票据，由隔离后端强制主体校验，harness 自身无业务逻辑。

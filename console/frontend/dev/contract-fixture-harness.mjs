@@ -7,7 +7,9 @@
 //    数据来自同目录 contract-harness-data.json（合成）。
 // 2) PG 联调模式（--pg http://127.0.0.1:4193）：
 //    /api/health → sources.primary='console-pg'（可信配置声明）；
-//    /api/auth/session 与 /pg/* 反向代理到隔离 console_pg 只读服务（透传 401/503 如实）。
+//    /api/auth/session 与 /pg/* 透传代理到隔离 console_pg 服务：
+//      GET 查询 + test-auth 审批决策 POST（写仅限隔离 fixture 票据，
+//      由隔离后端强制主体校验；harness 自身无业务逻辑）。401/503 如实透传。
 //
 // 共同边界：不实现存储、授权策略或审批状态机；不打包进生产构建；
 // NODE_ENV=production 拒绝启动；所有响应带 X-Data-Mode: fixture。
