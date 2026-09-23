@@ -35,7 +35,7 @@ class BuildManifestTests(unittest.TestCase):
              mock.patch.object(br, "_git_commit", return_value=git), \
              mock.patch.object(br, "_worker_model_id", side_effect=lambda c, r: model), \
              mock.patch.object(br, "_skills_content_hashes", side_effect=lambda c: skh), \
-             mock.patch.object(br, "_rag_service_state", return_value="unreachable"):
+             mock.patch.object(br, "_rag_service_state", return_value={"state": "probe_failed", "endpoint": "http://127.0.0.1:4184/health", "failure_kind": "connect", "detail": ""}):
             return br.build_manifest(d, "run-x", "elemiso-gh-pr2-abcd1234",
                                      "gh-pr2-abcd1234-review-1", _base_kickoff(), 20)
 

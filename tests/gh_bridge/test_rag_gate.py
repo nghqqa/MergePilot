@@ -41,7 +41,7 @@ class RagSnapshotTests(unittest.TestCase):
         br = self.br
         d = _delivery()
         with mock.patch.dict(os.environ, {br.RAG_CORPUS_ENV: CORPUS}), \
-             mock.patch.object(br, "_rag_service_state", return_value="unreachable"), \
+             mock.patch.object(br, "_rag_service_state", return_value={"state": "probe_failed", "endpoint": "http://127.0.0.1:4184/health", "failure_kind": "connect", "detail": ""}), \
              mock.patch.object(br, "_worker_image_id", return_value="sha256:x"), \
              mock.patch.object(br, "_bridge_source_sha", return_value="b" * 64), \
              mock.patch.object(br, "_git_commit", return_value="deadbee"), \
@@ -49,7 +49,8 @@ class RagSnapshotTests(unittest.TestCase):
              mock.patch.object(br, "_skills_content_hashes", return_value={"s": "a" * 64}):
             m = br.build_manifest(d, "run-x", "proj", "task", "kick", 20)
         self.assertEqual(m["rag"]["snapshot_id"], br._rag_snapshot_info()["snapshot_id"])
-        self.assertEqual(m["rag"]["service_state_at_dispatch"], "unreachable")
+        self.assertEqual(m["rag"]["service_state_at_dispatch"], "probe_failed")
+        self.assertEqual(m["rag"]["service_probe"]["failure_kind"], "connect")
         self.assertEqual(m["rag"]["policy"], "optional")
         self.assertNotIn("rag.snapshot_id", m["missing"])
 
@@ -57,7 +58,7 @@ class RagSnapshotTests(unittest.TestCase):
         br = self.br
         d = _delivery()
         with mock.patch.dict(os.environ, {br.RAG_CORPUS_ENV: "Z:/no.json"}), \
-             mock.patch.object(br, "_rag_service_state", return_value="unreachable"), \
+             mock.patch.object(br, "_rag_service_state", return_value={"state": "probe_failed", "endpoint": "http://127.0.0.1:4184/health", "failure_kind": "connect", "detail": ""}), \
              mock.patch.object(br, "_worker_image_id", return_value="sha256:x"), \
              mock.patch.object(br, "_bridge_source_sha", return_value="b" * 64), \
              mock.patch.object(br, "_git_commit", return_value="deadbee"), \
@@ -77,7 +78,7 @@ class RagGateTests(unittest.TestCase):
         br = self.br
         with mock.patch.dict(os.environ, {br.RAG_CORPUS_ENV: "Z:/no.json",
                                           br.RAG_REQUIRED_ENV: ""}), \
-             mock.patch.object(br, "_rag_service_state", return_value="unreachable"):
+             mock.patch.object(br, "_rag_service_state", return_value={"state": "probe_failed", "endpoint": "http://127.0.0.1:4184/health", "failure_kind": "connect", "detail": ""}):
             ok, detail = br.rag_dispatch_gate()
         self.assertTrue(ok)  # advisory:降级可见但不阻断
         self.assertEqual(detail["policy"], "optional")
@@ -86,7 +87,7 @@ class RagGateTests(unittest.TestCase):
         br = self.br
         with mock.patch.dict(os.environ, {br.RAG_CORPUS_ENV: "Z:/no.json",
                                           br.RAG_REQUIRED_ENV: "1"}), \
-             mock.patch.object(br, "_rag_service_state", return_value="reachable"):
+             mock.patch.object(br, "_rag_service_state", return_value={"state": "reachable", "endpoint": "http://127.0.0.1:4184/health", "failure_kind": None, "detail": ""}):
             ok, detail = br.rag_dispatch_gate()
         self.assertFalse(ok)
         self.assertIn("RAG_REQUIRED_UNAVAILABLE", detail)
@@ -95,16 +96,17 @@ class RagGateTests(unittest.TestCase):
         br = self.br
         with mock.patch.dict(os.environ, {br.RAG_CORPUS_ENV: CORPUS,
                                           br.RAG_REQUIRED_ENV: "1"}), \
-             mock.patch.object(br, "_rag_service_state", return_value="unreachable"):
+             mock.patch.object(br, "_rag_service_state", return_value={"state": "probe_failed", "endpoint": "http://127.0.0.1:4184/health", "failure_kind": "connect", "detail": ""}):
             ok, detail = br.rag_dispatch_gate()
         self.assertFalse(ok)
-        self.assertIn("unreachable", detail)
+        self.assertIn("probe_failed", detail)
+        self.assertIn("connect", detail)   # 失败类型可见,而非断言服务已停
 
     def test_required_passes_when_snapshot_and_service_ok(self):
         br = self.br
         with mock.patch.dict(os.environ, {br.RAG_CORPUS_ENV: CORPUS,
                                           br.RAG_REQUIRED_ENV: "1"}), \
-             mock.patch.object(br, "_rag_service_state", return_value="reachable"):
+             mock.patch.object(br, "_rag_service_state", return_value={"state": "reachable", "endpoint": "http://127.0.0.1:4184/health", "failure_kind": None, "detail": ""}):
             ok, detail = br.rag_dispatch_gate()
         self.assertTrue(ok)
         self.assertEqual(detail["policy"], "required")

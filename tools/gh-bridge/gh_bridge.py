@@ -32,12 +32,22 @@ import time
 import uuid
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-for _cand in (os.path.normpath(os.path.join(_HERE, "..", "r3ops")),
+# 2026-09-24:matrix.py 正典已收编本目录;优先本目录,旧运行布局作回退。
+for _cand in (_HERE,
+              os.path.normpath(os.path.join(_HERE, "..", "r3ops")),
               r"D:\goai\r3work\scripts"):
-    if os.path.isdir(_cand):
-        sys.path.insert(0, _cand)
+    if os.path.isfile(os.path.join(_cand, "matrix.py")):
+        if _cand not in sys.path:
+            sys.path.insert(0, _cand)
         break
 import matrix as mx  # noqa: E402
+
+if not hasattr(mx, "preflight"):
+    # fail-closed:运行副本的 matrix.py 缺预检 → 拒绝启动(逼出显式同步决策,
+    # 不静默跳过凭证检查)。
+    print("CREDENTIAL PREFLIGHT UNAVAILABLE: matrix.py lacks preflight(); "
+          "sync the runtime copy before running the bridge", flush=True)
+    sys.exit(2)
 
 # R5 透传修复(2026-09-23):可信 run 上下文(纯逻辑模块;缺失=降级为旧行为)。
 _rc_path = os.path.join(_HERE, "run_context.py")
@@ -246,8 +256,13 @@ def build_kickoff(d):
         f"2. taskflow(delegate_task) projectId \"{proj}\" taskId \"{task}\" "
         f"roomId \"room:{TEAM_ROOM}\" spec = SPEC below.\n"
         f"3. Wait; check_task. If reviewer reports SEVERITY HIGH with "
-        f"HUMAN_VERIFICATION_REQUIRED YES: STOP at the human security gate "
-        f"(do NOT delegate any fix), message me the final report and wait. "
+        f"HUMAN_VERIFICATION_REQUIRED YES: FIRST write the structured gate marker file "
+        f"shared/projects/{proj}/human-gate-required.json (via your file-sharing tool) with EXACTLY "
+        f'these keys: {{"version": 1, "run_id": "{run}", "task_id": "{task}", '
+        f'"severity": "<HIGH|MEDIUM|LOW>", "requested_by": "leader", "requested_at": "<UTC ISO>"}}; '
+        f"then STOP at the human security gate (do NOT delegate any fix), "
+        f"message me the final report and wait. The bridge reads that file as the only "
+        f"machine-actionable gate signal; natural-language messages alone are not. "
         f"If NOT_CONFIRMED or LOW (gate not required): mark the fix-1/verify-1 plan "
         f"lines as N/A (not applicable, low-risk path), mark the project completed, "
         f"message me the final report.\n\n"
@@ -282,10 +297,58 @@ def gate_record(proj, kind):
     return (p.stdout or "").strip() if p.returncode == 0 else ""
 
 
-def watch_run(run, proj, deadline_ts):
-    """终态以项目 meta.json 权威状态为准(completed/blocked);房间消息仅作进度线索."""
+GATE_MARKER_VERSION = 1
+GATE_MARKER_SEVERITIES = ("HIGH", "MEDIUM", "LOW")
+
+
+def gate_marker(proj, run_id, task_id=None):
+    """读取并校验人工门结构化标记(2026-09-24, CASE2 缺陷②)。
+
+    契约:leader(受委托的编排角色)在停人工门**之前**写
+      projects/<proj>/human-gate-required.json
+      {"version":1, "run_id":<本 run>, "task_id":<任务>, "severity":"HIGH|MEDIUM|LOW",
+       "requested_by":"leader", "requested_at":"<UTC ISO>"}
+    桥只认**结构化且归属正确**的标记(run_id/task_id 精确匹配本次执行);
+    模型自然语言报告不构成机器可执行的 gate 证据。任何不匹配 → 视为无标记,
+    返回 (None, reason),流程照常走真实超时语义。
+
+    信任层级说明:与既有 human-gate-approval.md 同级——项目目录命名空间 +
+    leader 角色归属;不承担跨身份认证(该升级属审批票据域,TicketStore)。
+    """
+    p = subprocess.run(["docker", "exec", "elemiso-ctrl", "mc", "cat",
+                        f"{BUCKET}/teams/elemiso-team/shared/projects/{proj}/human-gate-required.json"],
+                       capture_output=True, text=True, timeout=30)
+    if p.returncode != 0 or not p.stdout.strip():
+        return None, "no marker"
+    try:
+        m = json.loads(p.stdout)
+    except Exception:
+        return None, "marker not json"
+    if not isinstance(m, dict):
+        return None, "marker not object"
+    if m.get("version") != GATE_MARKER_VERSION:
+        return None, "marker version mismatch"
+    if m.get("run_id") != run_id:
+        return None, "marker run_id mismatch (attribution refused)"
+    if task_id is not None and m.get("task_id") != task_id:
+        return None, "marker task_id mismatch"
+    if m.get("severity") not in GATE_MARKER_SEVERITIES:
+        return None, "marker severity invalid"
+    if m.get("requested_by") != "leader":
+        return None, "marker requested_by must be leader"
+    if not isinstance(m.get("requested_at"), str) or not m.get("requested_at"):
+        return None, "marker requested_at missing"
+    return m, ""
+
+
+def watch_run(run, proj, deadline_ts, task_id=None):
+    """终态以项目 meta.json 权威状态为准(completed/blocked);房间消息仅作进度线索.
+
+    2026-09-24:合法 gate 标记 → 提前返回 "gate"(审查阶段完成、等待人工),
+    与真实超时(无标记、无终态)严格区分;终态优先于 gate 标记。"""
     t0_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 5))
     seen, report = set(), None
+    gate_logged = False
     while time.time() < deadline_ts:
         st = project_status(proj)
         if st in ("completed", "blocked", "cancelled"):
@@ -295,6 +358,22 @@ def watch_run(run, proj, deadline_ts):
                     break
                 time.sleep(5)
             return st, report or ""
+        marker, mreason = gate_marker(proj, run, task_id)
+        if marker:
+            if not gate_logged:
+                gate_logged = True
+                print(time.strftime("[%H:%M:%S]"),
+                      "gate marker accepted (severity=%s) — review phase complete, awaiting human"
+                      % marker.get("severity"), flush=True)
+            # gate 后宽限:让 findings/result 发布完整
+            for _ in range(6):
+                if project_result(proj):
+                    break
+                time.sleep(5)
+            return "gate", report or ""
+        if not gate_logged and mreason != "no marker":
+            gate_logged = True
+            print(time.strftime("[%H:%M:%S]"), "gate marker refused:", mreason, flush=True)
         for rid in (TEAM_ROOM, DM_ROOM):
             try:
                 evs = mx.since(rid, t0_iso)
@@ -716,14 +795,54 @@ def _rag_snapshot_info():
 
 
 def _rag_service_state(url=None, timeout_s=2.0):
-    """只读 /health 探测(dispatch 时服务状态)。任何失败 = unreachable。"""
-    url = url or os.environ.get(RAG_HEALTH_ENV, "http://host.docker.internal:4184/health")
+    """只读 /health 探测(宿主桥视角)。
+
+    修复(2026-09-24, CASE2 缺陷①):宿主桥探测默认改回环地址 127.0.0.1:4184——
+    旧默认 host.docker.internal 是容器网络 DNS 名,宿主侧不可解析,曾把
+    "探测失败"误记为服务不可达(CASE2 实录:审计流证明当时服务可达)。
+    容器侧检索地址(host.docker.internal:4184,worker 内 MCP 使用)是另一个
+    网络面,由镜像配置,不在此探测、也不做全局替换。
+
+    返回结构化结果,区分失败类型,不把 DNS/连接失败表述为服务已停止:
+      {"state": "reachable" | "probe_failed", "endpoint": url,
+       "failure_kind": None | "dns" | "connect" | "timeout" | "http_<n>",
+       "detail": str}  # detail 不含响应体
+    """
+    url = url or os.environ.get(RAG_HEALTH_ENV, "http://127.0.0.1:4184/health")
+    import socket
+    import urllib.error
+    import urllib.request
     try:
-        import urllib.request
         with urllib.request.urlopen(url, timeout=timeout_s) as r:
-            return "reachable" if r.status == 200 else "unreachable"
-    except Exception:
-        return "unreachable"
+            if r.status == 200:
+                return {"state": "reachable", "endpoint": url,
+                        "failure_kind": None, "detail": ""}
+            return {"state": "probe_failed", "endpoint": url,
+                    "failure_kind": "http_%d" % r.status,
+                    "detail": "health returned http %d" % r.status}
+    except urllib.error.HTTPError as e:
+        return {"state": "probe_failed", "endpoint": url,
+                "failure_kind": "http_%d" % e.code,
+                "detail": "http %d" % e.code}
+    except (socket.timeout, TimeoutError):
+        return {"state": "probe_failed", "endpoint": url,
+                "failure_kind": "timeout", "detail": "probe timeout"}
+    except urllib.error.URLError as e:
+        reason = getattr(e, "reason", None)
+        if isinstance(reason, socket.gaierror):
+            return {"state": "probe_failed", "endpoint": url,
+                    "failure_kind": "dns",
+                    "detail": "endpoint host not resolvable from bridge host"}
+        if isinstance(reason, ConnectionRefusedError):
+            return {"state": "probe_failed", "endpoint": url,
+                    "failure_kind": "connect", "detail": "connection refused"}
+        return {"state": "probe_failed", "endpoint": url,
+                "failure_kind": "connect",
+                "detail": type(reason).__name__ if reason is not None else "url error"}
+    except OSError as e:
+        return {"state": "probe_failed", "endpoint": url,
+                "failure_kind": "connect",
+                "detail": type(e).__name__}
 
 
 def _worker_model_id(container, role):
@@ -780,7 +899,7 @@ def build_manifest(d, run, proj, task, kickoff_base, timeout_min):
     model_id = _worker_model_id("elemiso-worker-reviewer", "reviewer")
     skill_hashes = _skills_content_hashes("elemiso-worker-reviewer")
     rag_snap = _rag_snapshot_info()
-    rag_state = _rag_service_state()
+    rag_probe = _rag_service_state()
     rag_required = os.environ.get(RAG_REQUIRED_ENV, "") == "1"
     model_block, model_catalog = build_model_manifest_block(model_id)
     cfg = {"allow_repos": sorted(ALLOW_REPOS), "repo_url": REPO_URL,
@@ -808,7 +927,13 @@ def build_manifest(d, run, proj, task, kickoff_base, timeout_min):
                 "retrieval_mode": rag_snap["retrieval_mode"] if rag_snap else None,
                 "strategy_id": rag_snap["strategy_id"] if rag_snap else None,
                 "corpus": rag_snap["source"] if rag_snap else None,
-                "service_state_at_dispatch": rag_state,
+                "service_state_at_dispatch": rag_probe["state"],
+                "service_probe": {"endpoint": rag_probe["endpoint"],
+                                  "failure_kind": rag_probe["failure_kind"],
+                                  "detail": rag_probe["detail"],
+                                  "checked_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                                  "note": "host-side probe; container-side retrieval uses "
+                                          "host.docker.internal:4184 (separate network surface)"},
                 "policy": "required" if rag_required else "optional"},
         "config": {"canonical": cfg, "sha256": _sha_text(_canon(cfg))},
     }
@@ -838,16 +963,19 @@ def rag_dispatch_gate():
     advisory 模式(默认)恒放行,状态由 manifest 如实记录。"""
     required = os.environ.get(RAG_REQUIRED_ENV, "") == "1"
     snap = _rag_snapshot_info()
-    state = _rag_service_state()
+    probe = _rag_service_state()
     if not required:
         return True, {"policy": "optional", "snapshot": bool(snap),
-                      "service": state}
+                      "service": probe["state"],
+                      "failure_kind": probe["failure_kind"]}
     if snap is None:
         return False, "RAG_REQUIRED_UNAVAILABLE: corpus snapshot unreadable"
-    if state != "reachable":
-        return False, "RAG_REQUIRED_UNAVAILABLE: rag service %s" % state
+    if probe["state"] != "reachable":
+        # probe_failed ≠ 服务已停,但 required 语义要求"可证可达",否则 fail-closed
+        return False, ("RAG_REQUIRED_UNAVAILABLE: probe %s (%s)"
+                       % (probe["state"], probe["failure_kind"]))
     return True, {"policy": "required", "snapshot": snap["snapshot_id"][:12],
-                  "service": state}
+                  "service": probe["state"]}
 
 
 def read_run_manifest(proj):
@@ -1031,6 +1159,9 @@ def conclude(d, st, report, run, proj, cid, log):
         verdict = "pass_verified" if gate_record(proj, "approval") else "pass"
     elif st == "blocked":
         verdict = "rejected"
+    elif st == "gate":
+        # 审查阶段完成并需要人工处理(结构化标记已核验);业务运行尚未结束
+        verdict = "gate"
     else:
         verdict = "timeout"
     evidence = "\n\n".join(x for x in [
@@ -1072,6 +1203,12 @@ def conclude(d, st, report, run, proj, cid, log):
             finish(d, False, "PUBLISH_FAILED(retryable) %s/%s; last=%s"
                    % (st, verdict, pub.get("raw", "")[:100]), cid)
             log("PUBLISH FAILED after %d attempts — delivery ERROR (recoverable)" % PUBLISH_ATTEMPTS)
+    elif st == "gate":
+        # gate:check-run(action_required)已发布,但业务未终结——投递 ERROR 留人工,
+        # 后续批准/拒绝是新的业务决策(批准→fix→verify 走新一轮派发语义)。
+        finish(d, False, "GATE_WAIT(manual) verdict=gate; check_run=%s"
+               % pub.get("check_run_id"), cid)
+        log("HUMAN GATE reached — delivery ERROR (awaiting operator decision)")
     else:
         finish(d, False, "TIMEOUT(manual) %s; publish=%s"
                % (st, "ok" if pub.get("ok") else "failed"), cid)
@@ -1132,7 +1269,7 @@ def process(d, timeout_min, dry):
         finish(d, False, "kickoff send failed: " + str(r.get("error"))[:120], cid)
         return
     log("kickoff sent:", r["event_id"])
-    st, report = watch_run(run, proj, time.time() + timeout_min * 60)
+    st, report = watch_run(run, proj, time.time() + timeout_min * 60, task_id=task)
     conclude(d, st, report, run, proj, cid, log)
 
 
@@ -1216,7 +1353,8 @@ def resume(d, timeout_min, log):
     if st in ("completed", "blocked"):
         conclude(d, st, None, run, proj, cid, log)
         return
-    st2, report = watch_run(run, proj, time.time() + timeout_min * 60)
+    orig_run = (man or {}).get("run_id") if isinstance(man, dict) else None
+    st2, report = watch_run(orig_run or run, proj, time.time() + timeout_min * 60)
     conclude(d, st2, report, run, proj, cid, log)
 
 
@@ -1236,6 +1374,15 @@ def main():
         target_filter_sql()   # FAIL-CLOSED:部分定向配置在启动时即拒绝
     except ValueError as e:
         print("TARGET CONFIG ERROR:", e, flush=True)
+        sys.exit(2)
+    # §三(2026-09-24):凭证可用性预检前移——认领与任何 write-once 工件创建之前。
+    # 缺失只给脱敏诊断并退出(不认领、不写 manifest/run-context),避免再次出现
+    # CASE2 首试的"已认领+已写工件才发现发不出 kickoff"残留。
+    ok, why = mx.preflight()
+    if not ok:
+        print("CREDENTIAL PREFLIGHT FAILED:", why, flush=True)
+        print("(set AGENTTEAMS_ADMIN_PASSWORD env or restore the secrets file; "
+              "no claim/artifacts were created)", flush=True)
         sys.exit(2)
     # 启动即接管崩溃残留的孤儿租约(场景1:认领后崩溃可恢复)
     try:

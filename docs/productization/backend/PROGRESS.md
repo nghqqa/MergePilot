@@ -211,3 +211,37 @@ CASE_RETR_SCOPE_MISSING（如实记录）。sast_scan 0 findings（语义型漏�
 - rag-live 已停；worker 容器维持执行前 Up 状态；无未终止的在途请求（终态后无新模型调用）。
 - M1 部分（+1 真实正常案例，gate-wait 路径）；M2 部分；M3 未开始；M4 未开始。
 - **首个真实 RAG 消费达成 ≠ RAG 有效性证明**（单案例）。
+
+
+## 第三十一轮（2026-09-24）：CASE2 暴露问题收口（三项修复+凭证预检）
+
+基线 b6e338f。本轮授权=本地修复/隔离测试/脱敏分析/文档/本地提交；**未同步运行副本**（§三约束，待用户确认后一次性同步）。
+
+### 事实校准（不改历史证据）
+- CASE2 MinIO 工件/台账/归档副本逐字节未动（哈希在案）。
+- **票据核实**：桥从未接 TicketStore——CASE2 **无正式审批票据**（结构性事实）；gate 证据现状=审查员/leader 模型文本+无 human-gate 文件+无票据，三者都不构成可信审批。
+- 身份三层现状：①**边界关联=已实现**（bridge.run_context/run_end + 窗口回放）；②**逐调用身份透传=未实现**（skill/RAG MCP 调用不带 run 身份，只有窗口归属）；③**PG 审计落库=未实现**（审计仍 :4184 JSONL，PG audit 域 P3 未动）。
+- “终态后无新调用”≠“无在途请求”：**无请求级证据，无法确认**（如实声明）。
+
+### 修复1：RAG 探测分离+失败分类
+宿主桥探测默认 `127.0.0.1:4184`（回环），容器侧检索地址（host.docker.internal:4184）为独立网络面由镜像持有，不做全局替换。`_rag_service_state()` 返回 {state, endpoint, failure_kind(dns/connect/timeout/http_N), detail}——**DNS/连接失败不再表述为服务已停**。manifest 增 `rag.service_probe`（端点/失败类型/时间/注记），`service_state_at_dispatch` 取 reachable|probe_failed。required 门仅 reachable 放行（probe_failed=fail-closed）。
+
+### 修复2：人工门结构化处理（先核契约再实现）
+- 契约核对：post_check 本就有 verdict→action_required 映射（"gate"）但 conclude 从不产出；gate_record 只读 approval/rejection 文本文件（决赛遗留，弱归属）。
+- 新契约：leader 停门前写 `projects/<proj>/human-gate-required.json`（kickoff 明确 schema：version/run_id/task_id/severity/requested_by=leader/requested_at）；桥 `gate_marker()` 校验**结构+归属**（run_id/task_id 精确匹配本执行，非 leader 作者/坏 severity/坏 version 一律拒绝并记日志）——**模型自然语言不构成机器可执行 gate 证据**。
+- watch_run：终态优先于标记；合法标记→提前返回 "gate"；无标记无终态→真超时。conclude：gate→verdict="gate"→发布 action_required（沿用 reconcile-first/单次发布/回执约束）→ delivery=ERROR `GATE_WAIT(manual)`（业务未终结，批准/拒绝属后续决策）。三分支严格区分：gate≠timeout≠普通完成。
+- 信任层级如实声明：标记与既有 approval 文件同级（项目目录命名空间+leader 角色归属），**不承担跨身份认证**——该升级属审批票据域（TicketStore），列为待办。
+
+### 修复3：CASE_RETR_SCOPE_MISSING
+追踪结论：scope 来自部署侧 env（MERGEPILOT_CR_REPO_SCOPE/PG_DSN），reviewer 容器初始 env 两项皆无；干净复现=CASE_RETR_DB_UNAVAILABLE（dsn 先失败），审查员会话 env 有 DSN 无 scope 故报 SCOPE_MISSING。**scope 值可由桥的可信 run-context 确定**→repo 侧实现 `MERGEPILOT_CR_REPO_SCOPE_FILE` 透传（只认 authored_by=gh_bridge 的 run-context.json，取 code.repo；形状/作者不符→保持 SCOPE_MISSING 明确失败，不伪造不扩大）。**部署通道（容器 env 注入或 shared 路径传递）未打通**——需共享环境授权，列为最小决策项。
+
+### §三：凭证预检前移
+matrix.py 新增 `preflight()`（复用既有加载：env 优先/secrets 文件回退；脱敏诊断不含凭据内容）。桥 main() 在 target 校验后、**认领与任何 write-once 工件创建之前**调用，失败 exit(2)——杜绝 CASE2 首试“已认领+已写工件才发现发不出”的残留。matrix.py 正典收编 repo tools/gh-bridge/（运行副本已还原冻结）；桥优先本目录 import，回退旧布局；**运行副本 matrix.py 缺 preflight 时桥拒绝启动**（fail-closed，逼出显式同步）。手工删 manifest/重置台账未变成机制（本轮未新增任何此类代码）。
+
+### 验证（隔离+脱敏回放）
+- 新增 tests/gh_bridge/test_case2_fixes.py 27 用例：探测分类（dns/connect/timeout/http）、默认回环端点、required 门 probe_failed 拒绝、gate/真超时/成功三分支、终态优先级、错误归属拒绝（run_id/task/作者/severity/version）、自然语言≠证据、无凭证不认领不建工件（exit 2）、scope 文件透传+外来作者/缺文件/超长 repo 拒绝、CASE2 脱敏审计回放（边界关联法+无 call_id 口径）。
+- 回归：tests/gh_bridge+model_gateway **128/128 绿**（旧桩对齐新探测契约，断言收紧非放宽）；tests/skills **75/75 绿**（case_retrieval 改动零破坏）。
+- 历史 CASE1/CASE2 证据哈希核对不变。全树债务清单（TEST-DEBT.md）无变化——本轮未触碰 84F+21E 所在套件。
+
+### 运行副本状态（待确认后同步）
+r3work/scripts/{gh_bridge.py,run_context.py}=上轮版本（CASE2 实测版）；matrix.py 已还原冻结。**下次真实 run 前必须一次性同步 repo→r3work**（含 preflight/gate/probe 三修复），否则新桥会因 matrix 缺 preflight 拒启（按设计）。同步属运行时变更，待批。
