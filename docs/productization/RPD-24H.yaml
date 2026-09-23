@@ -196,6 +196,17 @@ tasks:
     blocker: ""
     notes: final_state=MANUAL-REQUIRED(人工决策点见 final-report);不自动 merge/部署/开下一轮
 
+# 执行判定(2026-09-24 执行指令轮): 用户指令要求"按已批准的 D-A/D-B/D-C/D-E 继续",
+# 但指令文本与 RPD user_reply 字段均无任何"批准 D-X"明确批复形式 → 判定=批复缺失,
+# 保持 MANUAL-REQUIRED,零外部动作(未 push/未注入/未启用审批/未执行 CASE2)。
+execution_decision_20260924:
+  approvals_found: false
+  user_reply_all_empty: true
+  directive_text_contains_approval_form: false
+  action_taken: "NONE (stayed MANUAL-REQUIRED per rules)"
+  local_commits_unpushed: [db62d1c, 9dcf3f6]
+  note: "等待用户以明确形式批复: 批准 D-A / 批准 D-B / 批准 D-C A1-A5 / 批准 D-E / 修改条件:…"
+
 # 范围审计(2026-09-24 复核轮): PR #233 157 文件全部归属 R3..RPD-08 各轮,
 # 零无关文件/零生成物/零秘密/零生产配置 → PR_SCOPE_ACCEPTABLE = true
 pr_scope_audit:
