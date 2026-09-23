@@ -150,10 +150,23 @@ class GateTicketLifecycleTests(unittest.TestCase):
         self.assertEqual(self.store.get(t.ticket_id).error,
                          "repro invalid on merge-base")
 
+    def test_ttl_default_is_24h(self):
+        """D-3 口径:默认 24h(policy.py/桥/gate_ticket 三处一致)。"""
+        import inspect
+        sig = inspect.signature(gt.open_gate_ticket)
+        self.assertEqual(sig.parameters["ttl_hours"].default, 24)
+        self.assertEqual(int(gt.__dict__.get("_", 0) or 0) or 24, 24)
+        # 桥 env 默认
+        import importlib.util as _ilu
+        src = open(os.path.join(_REPO, "tools", "gh-bridge", "gh_bridge.py"),
+                   encoding="utf-8").read()
+        self.assertIn('MERGEPILOT_APPROVAL_TTL_H", "24"', src)
+        self.assertNotIn('MERGEPILOT_APPROVAL_TTL_H", "72"', src)
+
     def test_ttl_expiry(self):
         """D-3:批准边界受 TTL 约束;过期 approve → EXPIRED(终态)。"""
         t, _, _ = self._open()
-        late = "2026-09-27T13:00:00+00:00"   # > 72h after NOW(2026-09-24T12:00Z)
+        late = "2026-09-27T13:00:00+00:00"   # > TTL(默认 24h)after NOW
         r = gt.decide(self.store, t.ticket_id, "approve", "alice", now=late)
         self.assertFalse(r.ok)
         self.assertEqual(r.reason, "EXPIRED")

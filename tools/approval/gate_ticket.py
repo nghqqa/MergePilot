@@ -86,12 +86,13 @@ def marker_binding(marker: Dict[str, Any], run_id: str, repo: str,
 
 
 def open_gate_ticket(store, marker: Dict[str, Any], run_id: str, repo: str,
-                     head_sha: str, task_id: str, ttl_hours: int = 72,
+                     head_sha: str, task_id: str, ttl_hours: int = 24,
                      now: Optional[str] = None) -> Tuple[Any, bool, str]:
     """marker → pending ticket(幂等)。返回 (ticket, created, reason)。
 
     fail-closed:校验不符时返回 (None, False, reason),不创建任何记录。
-    TTL(D-3 参数化,默认 72h):批准边界;过期由状态机 approve→EXPIRED。"""
+    TTL(D-3,默认 24h——对齐 policy.py 既有默认与 AUTH-DECISION-PACKAGE l2
+    惯例):批准边界;过期由状态机 approve→EXPIRED。"""
     why = validate_marker_for_ticket(marker, run_id, task_id)
     if why:
         return None, False, why

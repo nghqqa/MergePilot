@@ -279,3 +279,27 @@ tools/case_retrieval/deploy/：README（变量/行为/网络/挂载要点）、a
 
 ### 状态声明（防口径漂移）
 TicketStore 闭环=**已实现（代码+单测）**；PG 版=已有实现+审计对齐，本轮回归通过，但**未接任何真实部署**；决策接口=本地隔离工具，**真实审批仍未启用**（D-1/D-2 未批）；controller env=本地准备**未部署**；运行副本**未同步**；D-7/OAuth/fixer-verifier**仍未启用**。**单测通过≠真实审批验收通过**。
+
+
+## 第三十三轮（2026-09-24）：TicketStore/接线验证 + 运行副本同步 + 隔离 smoke
+
+基线 59ccd1a。授权=验证与隔离 smoke+同步批准的后端文件；无真实审查/付费模型/空提交/check-run/真实 approve-reject/共享 case-pg 写入。
+
+### TTL 口径统一（D-3）
+发现不一致：AUTH-DECISION-PACKAGE D-3 建议案=**24h**（l2 惯例）、policy.py 既有默认=24，而上轮 gate_ticket/桥默认误写 72。**统一为 24h**（gate_ticket 默认参数+桥 env 默认），补三处一致性测试（test_ttl_default_is_24h）。历史轮 PROGRESS 中的 72h 为历史记录不改。
+
+### 运行副本同步（含备份与回滚点）
+- 同步前 hash 差异：gh_bridge/matrix DIFF，run_context 一致，approval 包 7 文件在 r3work **缺失**（首次落位）。
+- 备份：`r3work/rollback-20260923-222605/`（scripts 三文件原版+ROLLBACK.md 清单；approval-old 空=原不存在）。
+- 同步（repo→r3work）：scripts/{gh_bridge,matrix,run_context}.py + approval/{gate_ticket,approval,store_sqlite,store,policy,gate_cli,pg_store,__init__}.py → **11/11 hash 一致**。
+- preflight 双向验证：旧 matrix.py（备份版，无 preflight）→ 桥拒启 exit=2（脱敏提示）；新 matrix+真实凭据 env 注入 → preflight ok。
+
+### case_retrieval 隔离接线（isolated_smoke.py **9/9**）
+隔离实例=mp-pg-contract-test（**非共享 case-pg**），一次性库 cr_smoke+migration 001（case_retrieval_reader 只读角色）。验证矩阵：①DSN 缺→DB_UNAVAILABLE ②scope 全缺→SCOPE_MISSING ③文件作者不符→SCOPE_MISSING ④文件缺失→SCOPE_MISSING ⑤有效配置→连接/只读角色/表能力校验通过，查询在缺 pgvector 处**干净失败不回退**（适配器 SQL 结构性以 WHERE repo_scope 起始=防全库回退）⑥-⑧validate_env ready(0)/no-dsn(2)/mismatch(3)。全流程脱敏。**缺口**：完整查询路径（pgvector 相似度检索）需含 pgvector 的隔离实例——登记待办。
+
+### TicketStore 隔离 smoke（gate_ticket_smoke.py **13/13**）
+a 幂等单票 / b 绑定字段 / c approve-reject 跨连接竞争唯一赢家 / d 重复决策不覆盖 / e TTL 内部转移持久化 EXPIRED / f 无身份 fail-closed / g 每次尝试留审计（3 条：被拒+成功+被拒） / h 桥只建票不决策（结构性断言）；端到端：marker→ticket→GATE_WAIT→approve(APPROVED_PLAN_READY 不派发)/reject(BLOCKED)/expire(CLOSED_EXPIRED)；映射纯函数对 run 终态只读。
+
+### 回归与状态
+- approval+bridge+gateway+skills **280 passed/29 skipped**；PG 门控 **25/26**（唯一失败=Windows spawn 竞争，基线既有，TEST-DEBT 已登记，口径未变）。
+- **状态**：运行副本=已同步（本轮，回滚点在案）；case_retrieval=仅隔离实例接线，**未部署共享环境**；TicketStore=代码+隔离验证完成，**未接真实部署/真实审批**；approve/reject=仍是本地隔离接口；D-1/D-2/OAuth/fixer-verifier/真实 CASE2=**仍未启用**。隔离 smoke ≠ 真实审批验收。

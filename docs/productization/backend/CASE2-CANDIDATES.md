@@ -101,6 +101,8 @@ head 变化→stale 停止；预算不足→不发新 attempt；manifest 冲突�
 
 ## 8. 人工门 TicketStore 闭环状态（2026-09-24）
 
+**更新（第三十三轮）**：运行副本已同步（回滚点 r3work/rollback-20260923-222605）；TTL 口径统一=24h；隔离 smoke：gate_ticket_smoke 13/13 + case_retrieval isolated_smoke 9/9（隔离实例 cr_smoke，未动共享 case-pg）。以下为上轮原始状态：
+
 - **已实现（代码+隔离单测）**：gate marker → TicketStore 幂等建票（generate_patch/run 级/72h TTL）；
   approve/reject CAS（先到先得、身份必需、重复不覆盖、过期 fail-closed）；审计 append-only（每次尝试留痕，
   SQLite/PG 同事务同语义）；门状态映射纯函数（GATE_WAIT/APPROVED_PLAN_READY(不派发)/BLOCKED/CLOSED_EXPIRED）；

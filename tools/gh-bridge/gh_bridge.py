@@ -1210,7 +1210,7 @@ def open_gate_ticket_for_marker(proj, d, st, log):
                 store, marker, run_id=marker.get("run_id") or "",
                 repo=d["repo"], head_sha=d["observed_head_sha"],
                 task_id=marker.get("task_id") or "",
-                ttl_hours=int(os.environ.get("MERGEPILOT_APPROVAL_TTL_H", "72")))
+                ttl_hours=int(os.environ.get("MERGEPILOT_APPROVAL_TTL_H", "24")))
             if ticket is None:
                 log("gate ticket REFUSED:", why)
                 return None
