@@ -24,6 +24,20 @@
 | 15:14 | RPD-02 | b79cd39 | — | 0/0 | 无 | pgvector 证据复核 |
 | 15:30 | RPD-03 | b79cd39 | smoke 重放 11/11 | 0/0 | 无 | case_retrieval 接线契约 |
 
+## 人工决策登记（2026-09-23 复核轮）
+
+| decision_id | 内容 | 状态 | 用户答复 |
+|---|---|---|---|
+| D-A | controller/Worker 环境注入 + case-pg 只读账号 + Worker 重启 | **WAITING_HUMAN** | 无 |
+| D-B | D-1/D-2 真实审批（动作子集/具名审批人/24h TTL/真实决策面/仅出计划） | **WAITING_HUMAN** | 无 |
+| D-C | CASE2 运行授权（A1 空提交 / A2 flash 审查 / A3 rag-live / A4 单 check-run / A5 费用风险） | **WAITING_HUMAN** | 无 |
+| D-D | 具体票据的人工门决策 | **WAITING_FOR_CASE2_TICKET** | 无（票据未产生） |
+| D-E | gh CLI 凭据通道（限本仓库 feature branch/禁输出 token/禁 push main/禁 merge） | **WAITING_HUMAN** | 无 |
+
+批准格式：`批准 D-A` / `批准 D-C A1-A5` / `修改条件：…`；模糊表达（"继续/可以/开始"）不构成批准。
+部分批准只执行对应范围，其余保持 WAITING_HUMAN，整体状态保持 MANUAL-REQUIRED。
+D-E 明确决定前：**零新的 GitHub 写入**（本复核轮的 RPD 更新仅本地提交，不推送）。
+
 ## 最终状态：MANUAL-REQUIRED
 
 人工决策点：①CASE2 门决策 ②D-1/D-2 真实审批 ③controller/Worker 正式注入 ④真实 CASE2 执行 ⑤凭据通道统一。

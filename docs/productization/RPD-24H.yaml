@@ -196,4 +196,74 @@ tasks:
     blocker: ""
     notes: final_state=MANUAL-REQUIRED(人工决策点见 final-report);不自动 merge/部署/开下一轮
 
-final_state: MANUAL-REQUIRED   # PROMOTE-READY | MANUAL-REQUIRED | BLOCKED | FAILED(收口时填写)
+final_state: MANUAL-REQUIRED
+
+# ── 人工决策登记(2026-09-23 复核轮新增;批准须用"批准 D-X"或"修改条件:…"明确表达) ──
+human_decisions:
+  - decision_id: D-A
+    title: 正式 controller/Worker 环境注入
+    status: WAITING_HUMAN
+    user_reply: ""
+    impact: [共享 controller/Worker CR 写入, case-pg 只读账号创建/配置, 相关 Worker 重启]
+    allowed_external_writes: []          # 批准前为空
+    effective_at: ""
+    evidence: [tools/case_retrieval/deploy/README.md, tools/case_retrieval/deploy/validate_env.py,
+               evidence/rpd-24h/rpd-03/wiring.md]
+    audit: "登记于本轮 RPD;未获明确批准前不执行任何共享环境变更"
+    subitems:
+      - 设置 MERGEPILOT_CR_PG_DSN 与 MERGEPILOT_CR_REPO_SCOPE_FILE
+      - 创建/配置 case-pg 只读账号
+      - 重启相关 Worker 以加载配置
+
+  - decision_id: D-B
+    title: D-1/D-2 真实审批启用
+    status: WAITING_HUMAN
+    user_reply: ""
+    impact: [TicketStore 真实决策面, 审批人身份, 动作子集, TTL 政策]
+    allowed_external_writes: []          # 批准后仍只生成计划,不自动派发
+    effective_at: ""
+    evidence: [docs/productization/M2-APPROVAL-SPEC.md, docs/productization/AUTH-DECISION-PACKAGE.md,
+               tools/approval/gate_ticket.py]
+    audit: "即使批准 D-B,也不得自动批准具体 CASE2 票据"
+    subitems:
+      - 批准审批动作子集(候选: generate_patch/run_poc/publish_result)
+      - 指定至少一名具名审批主体
+      - 批准 24h TTL
+      - 允许真实 approve/reject 进入 TicketStore
+      - 允许批准后仅生成 fix/verify 计划
+
+  - decision_id: D-C
+    title: CASE2 运行授权(A1-A5,须全部明确批准)
+    status: WAITING_HUMAN
+    user_reply: ""
+    impact: [业务仓库空提交, deepseek-flash 真实调用, rag-live 窗口, 单 check-run, 费用风险]
+    allowed_external_writes: []          # A1-A5 全批后才非空
+    effective_at: ""
+    evidence: [docs/productization/backend/CASE2-CANDIDATES.md]
+    audit: "约束: 单仓库/单 PR/单 head/单 run;fixer/verifier 不启用;v3 shadow;不自动修复/推修复/merge;20min 本地截止;超时或人工门后停止"
+    subitems:
+      - A1 向 demo/high-risk-human-gate 推送一个空提交
+      - A2 leader+reviewer 使用 deepseek-flash 一次真实审查
+      - A3 案例窗口启动 rag-live
+      - A4 reconcile-first 至多一个 check-run
+      - A5 接受无 provider 硬上限与在途计费风险
+
+  - decision_id: D-D
+    title: 人工门决策(针对具体 CASE2 票据)
+    status: WAITING_FOR_CASE2_TICKET
+    user_reply: ""
+    impact: [单个真实票据的 approve/reject]
+    allowed_external_writes: []
+    effective_at: ""
+    evidence: [tools/approval/gate_ticket.py]
+    audit: "票据未产生,不可提前批准/拒绝;产生后 bridge 只建票,AI 不得代批;票据须绑定 run_id/repo/PR/head_sha/task_id/severity;批准→APPROVED_PLAN_READY,拒绝→BLOCKED,过期→CLOSED_EXPIRED,均不自动派发 fixer/verifier"
+
+  - decision_id: D-E
+    title: Git 凭据通道(gh CLI credential helper)
+    status: WAITING_HUMAN
+    user_reply: ""
+    impact: [本仓库 feature branch 推送通道, PR 创建/更新]
+    allowed_external_writes: []          # 明确决定前不做新的 GitHub 写入
+    effective_at: ""
+    evidence: [evidence/rpd-24h/rpd-07/pr-record.md]
+    audit: "事实记录:首次 git push 默认凭据 403(旧凭据无此仓库写权限),改用 gh CLI 凭据助手(token 含 repo scope)成功;登记问题:①是否允许后续 feature branch 继续用 gh 通道 ②禁止输出 token ③限制到当前仓库 ④允许创建/更新 PR ⑤禁止 push main ⑥禁止 merge"   # PROMOTE-READY | MANUAL-REQUIRED | BLOCKED | FAILED(收口时填写)
