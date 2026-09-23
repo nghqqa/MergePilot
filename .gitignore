@@ -21,3 +21,4 @@ demo-platform/frontend/node_modules/
 # Local model/API credentials used only for authorized offline/isolated runs.
 key.key
 run-secrets/
+.case1_evidence/

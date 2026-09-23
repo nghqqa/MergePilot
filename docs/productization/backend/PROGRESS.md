@@ -84,3 +84,30 @@
 1. 外部写入与服务变更范围：空提交触发 + check-run 发布 + rag-live/worker 容器操作（CASE1-RUNBOOK §7.1/7.3）；
 2. 预算金额与有效限制方式：provider 侧 gateway 上游 key 消费硬上限（本地网关 key 非计费凭证；限频/超时/事后计量均非硬预算）；
 3. 凭证处理决定：现网凭证（未轮换）是否满足本次真实运行条件。
+
+
+## CASE1 真实 PR 审查结果（2026-09-23）
+
+**首次真实 PR 审查完成**：PR #9（feat/skill-exercise）head `89c65a47` 经加固旧链路（leader+reviewer 真实模型调用，agentteams-gateway/deepseek-chat）完成审查。
+
+| 维度 | 结果 | 证据 |
+|---|---|---|
+| 真实 PR 审查 | ✅ 完成 | 加固桥首次真实案例通过 |
+| GitHub check | ✅ 已发布 | `mergepilot/review` check_run `107056305844` on head `89c65a47`，conclusion=success |
+| 台账 | ✅ PROCESSED | `completed/pass; check_run=107056305844` |
+| 运行副本 | ✅ 已同步 | 12 文件 sha256 一致（R4 授权，备份 .bak-20260923-050213） |
+| RAG | snapshot 已绑定 | `fd34c304` 写入 manifest；reviewer 未调用 rag_retrieve（PASS 无 HIGH finding），rag-live 已按 R7 停止 |
+| 凭证 | 现网可用 | 用户确认（D-6），未轮换 |
+| 预算 | 人工兜底 | 无 provider 硬上限；20min 截止+人工停止（D-4） |
+
+**口径**：这是**加固旧链路的首个真实案例**。不等于 M1 通过（其他故障场景未验证），不等于 M2 真实审批启用（D-1/D-2 未拍板），不等于 M3 隔离验证，不等于 M4 V0 就绪。证据包见 `.case1_evidence/`（不入库）。
+
+## 里程碑状态（CASE1 后）
+
+| 里程碑 | 状态 | 说明 |
+|---|---|---|
+| M1 可靠性接管 | 部分 | 加固桥首次真实案例通过；其余故障场景待 R1 授权 |
+| M2 审批正确性 | 部分 | 机制完备+隔离验证；真实审批待 D-1/D-2 拍板 |
+| M3 隔离证明 | 未开始 | 需真实 run 后污染测试 |
+| M4 V0 内测 | 未开始 | M1–M3 + D-1/D-2 + 预算前置 |
+| 真实 PR 首例 | ✅ 本轮完成 | 见上表 |
