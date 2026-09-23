@@ -1,6 +1,26 @@
-# console_pg 隔离 PG 只读 HTTP 联调记录（2026-09-23）
+# console_pg 隔离 PG 只读 HTTP 联调记录（2026-09-23；第六轮初验 + 第七轮修复后 10/10 复验）
 
-## 实际连接
+## 复验结论（第七轮，后端 HEAD e82bcfa）
+
+上一轮记录的缺陷 ①② 在后端后续提交中**已修复**（代码核实 + 实测）：
+
+| 缺陷 | 修复确认 |
+|---|---|
+| ① runs_for_pr 行缺 repo_id → _run_record KeyError | ✅ SELECT/keys 已补 repo_id；`GET /api/runs?repo=X&pr=N` 实测 200 |
+| ② except StorageUnavailable NameError（503 语义失效） | ✅ 改为 `except Exception` + `isinstance(conn_err, RuntimeError)` → 503；`StorageUnavailable(RuntimeError)` 基类核实；不可达 DSN 实例实测返回 `503 {"reason":"backend_unavailable"}` |
+| ③ 只读连接 idle in transaction（阻塞他窗 DDL） | ⚠️ 未改（pg_runstore `_connect` 仍 autocommit=False）——协调项保留；前端联调已用独立库规避 |
+
+**修复后 10/10 验收全部通过**（记录见 rerun-10of10.log + 截图 05~08）：
+①仓库列表（2 仓库/计数来自 PG）②PR 列表 ③PR 详情 ④多 head（PR#9 a2a2a2a2/a1a1a1a1 两行）
+⑤多 run（RUNNING/SUCCEEDED 并存）⑥stages/events/evidence（展开面板如实：MinIO 未接线、
+findings/validations 数量、合并关闭）⑦跨仓库同编号 #9 不串（other: c1c1c1c1 单 run；
+nghqqa: a2/a1 双 run，互不覆盖）⑧分页稳定（/api/prs offset=1 → total 2 items[9]；UI 分页）
+⑨不存在 run/PR → 404（curl + UI "PG 服务未返回该 PR 的记录"，不回退快照）
+⑩不可达库 → 503 backend_unavailable JSON（curl 实测，错误不冒充空列表）。
+
+---
+
+## 实际连接（首验与复验相同）
 
 | 项 | 值 |
 |---|---|
@@ -37,19 +57,16 @@
 - PG 读模型无 verdict/current_head 权威 → 页面显示"结论未记录"，
   **不显示当前结论、不从历史 HIGH/APPROVED 生成待办**（待处理页在非 snapshot 源显示说明而非汇总）。
 
-## 后端需修正（tools/console_pg/server.py @ 18586cc，已精确复现）
+## 后端缺陷处置状态（更新于第七轮）
 
-1. **`_run_record` KeyError**：`GET /api/runs?repo=X&pr=N`（runs_for_pr 路径）的行缺
-   `repo_id` 键 → `_run_record` KeyError → 连接重置（curl 000）。
-   修复建议：runs_for_pr 查询补 repo_id 列，或 `_run_record` 用 `r.get("repo_id")`。
-2. **`except StorageUnavailable` NameError**：该名未在 server.py 定义/导入——
-   PG 不可达时（StorageUnavailable 正常抛出）503 语义被 NameError 替换成连接重置。
-   复现：任意 --dsn 指向不可达端口后 GET /api/repos。
-   修复建议：`from orchestrator_v3.pg_runstore import StorageUnavailable`（与调用方一致加载）。
-3. **共享 fixture 库竞争**（协调项）：console_pg 连接空闲持有事务
-   （pg_runstore 默认非 autocommit），会阻塞后端测试窗口的 `DROP SCHEMA run CASCADE`；
-   建议只读服务连接使用 autocommit（或专用只读库）——前端联调已改用独立库
-   mp_pg_console_fe 规避。
+1. ~~**`_run_record` KeyError**~~：**已修复**（runs_for_pr 查询补 repo_id 列）；前端仍保留
+   repo 级查询 + 客户端过滤的写法（等价结果，非规避缺陷）。
+2. ~~**`except StorageUnavailable` NameError**~~：**已修复**（改为 `except Exception` +
+   `isinstance(conn_err, RuntimeError)` → 503 backend_unavailable；StorageUnavailable 继承
+   RuntimeError 已核实）。注：过宽的 RuntimeError 捕获会把其他 RuntimeError 也归为 503——
+   低风险，建议后续收敛为精确类型（非阻塞）。
+3. **只读连接 idle in transaction**：未改（autocommit=False 保留）——仅在后端测试窗口
+   并发跑 DDL 时构成互相阻塞；前端联调使用独立库 mp_pg_console_fe 规避。
 
 ## 未接通（如实）
 

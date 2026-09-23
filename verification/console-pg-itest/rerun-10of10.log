@@ -1,0 +1,13 @@
+== 后端 HEAD e82bcfa（51e1a89+18586cc 之后的缺陷修复已生效）==
+== ⑩ 503 语义（不可达 DSN 实例 :4195，现已停止）==
+GET /api/repos -> 503 {"error":{"code":503,"reason":"backend_unavailable","message":"PG 连接失败: …"}}
+
+== ⑨ 404 ==
+GET /api/runs/NOPE -> 404
+== ⑧ 分页 offset=1 ==
+total 2 offset 1 items [9]
+== ① repos ==
+{
+ "items": [
+  {
+   "repo_id": "acme/other",

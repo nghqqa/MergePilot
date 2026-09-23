@@ -28,8 +28,10 @@ export default function ReposPage() {
           <p className="page-sub">
             以仓库和 PR 为中心的管理工作台。
             {contract
-              ? ' 数据源为正式契约端点'
-              : ' 当前数据模式 snapshot：以下仓库来自历史数据中的运行记录，不是已授权接入的实时连接。'}
+              ? ' 数据源为正式契约端点。'
+              : source.kind === 'console-pg'
+                ? ' 数据源为隔离 PG 只读服务：以下为 fixture 测试记录（非真实运行），仓库含 run 的 pr/run 计数。'
+                : ' 当前数据模式 snapshot：以下仓库来自历史数据中的运行记录，不是已授权接入的实时连接。'}
           </p>
         </div>
       </div>
@@ -60,6 +62,12 @@ export default function ReposPage() {
                         <>
                           <span className="chip">已接入仓库（契约数据源）</span>
                           {config?.dataMode === 'fixture' ? <span className="chip">Fixture 数据</span> : null}
+                        </>
+                      ) : source.kind === 'console-pg' ? (
+                        <>
+                          <span className="chip">PG Fixture 测试记录</span>
+                          <span className="chip">{r.prCount} 个 PR</span>
+                          <span className="chip">{r.runCount} 次运行记录</span>
                         </>
                       ) : (
                         <>

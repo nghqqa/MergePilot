@@ -1,7 +1,28 @@
 # 控制台推进状态（console/STATUS）
 
-**更新**：2026-09-23（第六轮：隔离 PG 只读 HTTP 联调完成）｜ **分支**：`feat/admin-console`（worktree `D:\goai\mp-worktrees\console`，基线 `0ae8843`）
+**更新**：2026-09-23（第七轮：缺陷修复确认 + 隔离 PG 联调 10/10 复验）｜ **分支**：`feat/admin-console`（worktree `D:\goai\mp-worktrees\console`，基线 `0ae8843`）
 **负责目录**：`console/`（前后端）+ `docs/productization/console/`。未改动 gh-bridge / workflow-controller / approval / rag / costmeter / 共享数据结构 / r3work。
+
+## 第七轮：后端缺陷修复确认 + PG 联调 10/10（2026-09-23）
+
+后端 HEAD 推进至 `e82bcfa`（51e1a89 + 18586cc + 973fb80 + 903e995 + b8dae41 + e82bcfa）。
+上轮记录的 console_pg 缺陷①②已在最新代码修复并实测确认；缺陷③（autocommit/idle-in-transaction）
+未改，保留为协调项（前端联调用独立库规避）。
+
+| 工作项 | 状态 | 说明 |
+|---|---|---|
+| 缺陷① runs_for_pr repo_id | ✅ 已修复 | SELECT/keys 补 repo_id（代码核实）；`GET /api/runs?repo&pr` 实测 200 |
+| 缺陷② StorageUnavailable NameError | ✅ 已修复 | 改 `except Exception` + isinstance(RuntimeError) → 503；不可达 DSN 实例实测返回 `503 backend_unavailable` JSON |
+| 缺陷③ idle-in-transaction | ⚠️ 保留 | autocommit=False 未改——仅与后端测试窗口并发 DDL 时互塞；前端联调已用独立库规避 |
+| 10/10 浏览器复验 | ✅ | 仓库列表/PR 列表/PR 详情/多 head（PR#9 a2+a1）/多 run（RUNNING+SUCCEEDED）/stages+events+evidence（MinIO 未接线如实）/跨仓库同编号 #9 不串/分页 offset 稳定/404 不回退快照/503 backend_unavailable——全过 |
+| 文案诚实性 | ✅ | ReposPage 在 console-pg 模式不再误标"当前数据模式 snapshot"，改"隔离 PG 只读服务：fixture 测试记录"+ "PG Fixture 测试记录" chips |
+| 证据 | ✅ | verification/console-pg-itest/：rerun-10of10.log + 截图 05~08（修复后复验）+ 首验 01~04 |
+
+**结论**：隔离 PG 只读 HTTP 联调 **10/10 通过**（后端 HEAD e82bcfa，数据 data_mode=fixture，
+非真实 PR 审查完成）。仍未接通：契约 v2 /api/pulls 聚合与 current_head 权威（C-10）、
+verdict/待办字段、真实认证（D-9）、审批读写（D-1~D-3，本轮未启用 test-auth）、站内合并（关闭）。
+
+---
 
 ## 第六轮：console_pg 隔离 PG 只读联调（2026-09-23）
 
