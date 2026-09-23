@@ -97,3 +97,14 @@ head 变化→stale 停止；预算不足→不发新 attempt；manifest 冲突�
 
 约束重申：单仓库/单 PR/单 head/单 run；PR #9 既有授权与 PAT 凭证**不**构成 CASE2 授权；
 审查自然调用 rag_retrieve→记录 BM25 模式与审计证据；未调用→如实报零消费，不强 Call、不改结论。
+
+
+## 8. 人工门 TicketStore 闭环状态（2026-09-24）
+
+- **已实现（代码+隔离单测）**：gate marker → TicketStore 幂等建票（generate_patch/run 级/72h TTL）；
+  approve/reject CAS（先到先得、身份必需、重复不覆盖、过期 fail-closed）；审计 append-only（每次尝试留痕，
+  SQLite/PG 同事务同语义）；门状态映射纯函数（GATE_WAIT/APPROVED_PLAN_READY(不派发)/BLOCKED/CLOSED_EXPIRED）；
+  桥 conclude gate 分支自动建票（marker↔manifest 归属核对，fail-closed）。
+- **接口仍关闭**：真实审批（D-1/D-2 未批）、HTTP 门页接真实票库、批准后 fix→verify 派发、
+  PG 版真实部署、controller env 注入（本地准备未部署）、运行副本同步。
+- **口径**：单测/隔离契约通过 ≠ 真实审批验收通过。CASE2 的 HIGH 仍在人工门等待操作员决策。

@@ -28,6 +28,8 @@
 | tests/m4f1/test_release_evidence.py | 1 | bash wiring 检查路径依赖 | 路径参数化 |
 | tests/demo_console/test_dynamic_refresh.py | 1 | 同 showcase（Dockerfile 缺失） | 同上 |
 | tests/isolated_live/test_demo_console_entrypoint.py | 21 setup errors | 全部集中于该单模块（需 compose 环境） | 随 isolated_live 标记方案一并处理 |
+| tests/approval/test_store_pg.py::test_cross_process_race_single_winner（PG 门控） | 1 | Windows spawn 进程队列 Empty（基线即失败，与本轮 pg_store 改动无关——stash 对照验证） | 改用线程池或 fork-server 语义重写竞争注入 |
+| tests/approval/test_store_pg.py 其余 25 项（PG 门控） | 0 失败 | 本轮 25/25 通过（含 ticket_audit 审计语义） | 保持门控运行 |
 
 原则：不修断言、不降标准；只补环境守卫（skip with reason）/缺失产物/隔离标记。
 逐项收口后在本表打勾并更新全树基线数。

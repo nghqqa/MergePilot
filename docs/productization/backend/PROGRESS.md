@@ -245,3 +245,37 @@ matrix.py 新增 `preflight()`（复用既有加载：env 优先/secrets 文件�
 
 ### 运行副本状态（待确认后同步）
 r3work/scripts/{gh_bridge.py,run_context.py}=上轮版本（CASE2 实测版）；matrix.py 已还原冻结。**下次真实 run 前必须一次性同步 repo→r3work**（含 preflight/gate/probe 三修复），否则新桥会因 matrix 缺 preflight 拒启（按设计）。同步属运行时变更，待批。
+
+
+## 第三十二轮（2026-09-24）：人工门 TicketStore 闭环 + case_retrieval 部署接线准备
+
+基线 9a998b3。授权=代码/测试/文档/本地提交；未 push、无真实审查、无付费模型、无 GitHub 写、未动共享 case-pg、**运行副本仍未同步**、controller env 仅本地准备未部署。
+
+### 只读核对结论（不重复实现）
+已存在并复用：approval.py 纯状态机（五元组 Binding/CAS/check_execution 红线）、TicketStore 协议（5 操作）、SQLiteTicketStore（WAL+BEGIN IMMEDIATE+partial UNIQUE INDEX 幂等）、PostgreSQLTicketStore（CAS+audit）、gate_cli 操作面、PG 迁移 001-002（tickets+ticket_audit）、存储契约测试架。
+本轮新增：SQLite 库缺 audit 表（镜像 PG 001 补齐）、marker→ticket 创建、门状态映射、桥接线、部署接线准备。
+
+### TicketStore 最小闭环（tools/approval/gate_ticket.py）
+- **marker → pending ticket 幂等创建**：action=generate_patch（既有动作集）、run 级审批（finding_id=None）、params_hash=canonical_hash(marker 载荷)、finding_fingerprint=canonical_hash(task/severity/repo/head)——既有字段值派生，无新字段。同 run/action/finding 活动票唯一（存储层强制），重复 marker 收敛同一张票。
+- **绑定**：run_id/repo/head_sha 来自投递行与 manifest（可信），severity/task 经哈希绑定；marker 归属二次校验（version/run_id/task_id/severity/requested_by），任一不符拒绝建票。
+- **CAS 决策**：approve/reject 先到先得；重复决策 NOOP/INVALID_TRANSITION（不覆盖历史，审计留痕尝试者）；D-2 无身份 approve=IDENT_REQUIRED；D-3 TTL 默认 72h（env MERGEPILOT_APPROVAL_TTL_H），过期 approve→EXPIRED；reason 落票据 error 字段+审计 request_hash。
+- **marker≠批准**：建票只是把 Agent 请求结构化登记；决策必须操作员经 CAS 显式做出。
+- **可审计**：SQLite 补 ticket_audit（append-only，与状态写回同事务）；两存储语义对齐收紧为"**每次转移尝试都留痕**"（成功/NOOP/被拒含 IDENT_REQUIRED/INVALID_TRANSITION/EXPIRED）。
+- **修复两存储同一潜在缺陷**：纯逻辑状态机内部连带转移（过期 approve 的 PENDING→EXPIRED）此前不持久化——改为状态变化即写（守卫仍锚定 prev，CAS 不变）。
+
+### gate 状态映射（纯函数，对 run 终态只读）
+PENDING→GATE_WAIT；APPROVED→APPROVED_PLAN_READY（生成 fix/verify **计划数据**，auto_dispatch=False，不派发 fixer）；REJECTED→BLOCKED；EXPIRED→CLOSED_EXPIRED。TicketStore 不修改已完成 run 的终态、不绕过 PG/CAS/fencing；reconcile-first 与每 run 一个 check-run 约束未动。
+
+### 桥接线
+conclude gate 分支：marker→建票（幂等）→ticket_id 进台账 note；**归属 fail-closed**：marker.run_id≠manifest.run_id 或 manifest 缺失→拒绝建票（降级纯标记语义，明确记日志）；store 不可用→降级不阻断门。决策接口仍为本地隔离（gate_cli/console），桥不自动决策。
+
+### case_retrieval 部署接线（本地准备，未部署）
+tools/case_retrieval/deploy/：README（变量/行为/网络/挂载要点）、agentteams-cr.env.example + docker-compose.cr.example.yml（占位符，只读挂载示意）、validate_env.py（容器内启动前校验：DSN 缺=2、scope 缺/不一致/文件不可信=3、文件读取失败=4；脱敏不打印值；scope 唯一可信来源=gh_bridge run-context，作者不符拒绝）。**未向运行中 r3work/controller 注入任何配置**。
+
+### 测试与债务
+- 新增 tests/approval/test_gate_ticket.py **26 用例**（幂等/绑定/CAS/重复/TTL/身份/错误 head/重启恢复/审计/映射/桥归属/env 校验器）全绿。
+- 回归：approval+gh_bridge+model_gateway+skills **279 passed/29 skipped** 全绿（含既有 store 契约集）；PG 门控套件 **25/26**——唯一失败 test_cross_process_race_single_winner 为**基线既有**（stash 对照验证；Windows spawn 队列怪癖），已登记 TEST-DEBT.md。
+- 历史证据未动；失败清单口径不变。
+
+### 状态声明（防口径漂移）
+TicketStore 闭环=**已实现（代码+单测）**；PG 版=已有实现+审计对齐，本轮回归通过，但**未接任何真实部署**；决策接口=本地隔离工具，**真实审批仍未启用**（D-1/D-2 未批）；controller env=本地准备**未部署**；运行副本**未同步**；D-7/OAuth/fixer-verifier**仍未启用**。**单测通过≠真实审批验收通过**。

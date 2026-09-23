@@ -1,0 +1,15 @@
+# 示例片段（仅示意挂载与 env 注入形状；不是可直接部署的完整 compose）。
+# 应用方式 = 合入 controller 的 worker compose 定义，属共享环境变更，未授权不执行。
+services:
+  worker-reviewer:
+    environment:
+      MERGEPILOT_CR_PG_DSN: "postgresql://cr_reader:SUBSTITUTE_AT_DEPLOY@elemiso-case-pg:5432/cases"
+      # 推荐通道：scope 来自桥 write-once 的 run-context（authored_by=gh_bridge）
+      MERGEPILOT_CR_REPO_SCOPE_FILE: "/ctx/current/run-context.json"
+    volumes:
+      # 只读挂载：仅暴露 run-context 所在目录，容器内不可写
+      - "agentteams-shared:/mnt/shared:ro"
+      - "/opt/mergepilot/cr/current:/ctx/current:ro"
+volumes:
+  agentteams-shared:
+    external: true

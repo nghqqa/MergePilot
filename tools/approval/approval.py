@@ -211,6 +211,8 @@ def transition(ticket: Ticket, event: str, now: Any = None,
             return TransitionResult(False, ticket.status, "INVALID_TRANSITION:%s" % ticket.status)
         ticket.status = REJECTED
         ticket.approved_by = actor  # 记录拒绝人(可空:拒绝是收紧,不要求身份非空)
+        if error:
+            ticket.error = error    # 拒绝原因落既有 error 字段(2026-09-24 门闭环启用)
         return TransitionResult(True, REJECTED, "OK")
 
     if event == "start_exec":

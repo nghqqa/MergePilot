@@ -29,6 +29,7 @@ import re
 import subprocess
 import sys
 import time
+import types
 import uuid
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -58,6 +59,39 @@ if os.path.isfile(_rc_path):
     _rc_spec.loader.exec_module(_rc)
 else:
     _rc = None
+
+# 人工门票据闭环(2026-09-24):gate marker → TicketStore 幂等建票。
+# 失败=降级为纯标记语义(明确记日志),绝不阻断门流程。
+# 加载方式:fake-package(adapter.py 同款,仓库验证过的模式)——tools/approval
+# 以包身份注册,approval/gate_ticket/store_sqlite 的相对导入全部可用。
+_APPROVAL_DIR = os.path.normpath(os.path.join(_HERE, "..", "approval"))
+_gt = None
+try:
+    if os.path.isdir(_APPROVAL_DIR):
+        _pkg_name = "mp_approval_pkg"
+        _pkg = sys.modules.get(_pkg_name)
+        if _pkg is None:
+            _pkg = types.ModuleType(_pkg_name)
+            _pkg.__path__ = [_APPROVAL_DIR]
+            sys.modules[_pkg_name] = _pkg
+
+        def _load_sub(name):
+            full = _pkg_name + "." + name
+            if full in sys.modules:
+                return sys.modules[full]
+            spec = importlib.util.spec_from_file_location(
+                full, os.path.join(_APPROVAL_DIR, name + ".py"))
+            mod = importlib.util.module_from_spec(spec)
+            mod.__package__ = _pkg_name
+            sys.modules[full] = mod
+            spec.loader.exec_module(mod)
+            return mod
+
+        _load_sub("approval")
+        _load_sub("store_sqlite")
+        _gt = _load_sub("gate_ticket")
+except Exception:
+    _gt = None
 
 SERVER = "root@159.75.42.106"
 COMPOSE_DIR = "/opt/mergepilot"
@@ -1147,6 +1181,50 @@ def v3_shadow_hook(d, cid, log):
             pass  # 连错误记录都失败时,只能依赖上面的 stdout 日志
 
 
+def open_gate_ticket_for_marker(proj, d, st, log):
+    """gate marker → TicketStore 幂等建票(审计闭环;marker≠批准)。
+
+    任何失败都只降级为纯标记语义并记日志(不阻断门流程/发布);决策
+    (approve/reject)必须经 TicketStore CAS,属操作员本地接口(gate_cli/
+    console),不在本桥自动执行。"""
+    if _gt is None:
+        return None
+    try:
+        marker, _mreason = gate_marker(proj, None, None)   # 只取内容;归属校验在下方
+        if not marker:
+            return None
+        # 归属(fail-closed):marker.run_id 必须等于本 run 的 write-once manifest
+        # 记录——manifest 缺失或不一致都拒绝建票(纯标记语义继续)。
+        man = read_run_manifest(proj)
+        if not isinstance(man, dict) or marker.get("run_id") != man.get("run_id"):
+            log("gate ticket REFUSED: marker run_id mismatch vs run-manifest")
+            return None
+        store_path = os.environ.get(
+            "MERGEPILOT_APPROVAL_DB",
+            os.path.join(os.path.expanduser("~"), ".mergepilot", "gate-tickets.db"))
+        os.makedirs(os.path.dirname(store_path), exist_ok=True)
+        store_mod = sys.modules.get("mp_approval_pkg.store_sqlite")
+        store = store_mod.SQLiteTicketStore(store_path)
+        try:
+            ticket, created, why = _gt.open_gate_ticket(
+                store, marker, run_id=marker.get("run_id") or "",
+                repo=d["repo"], head_sha=d["observed_head_sha"],
+                task_id=marker.get("task_id") or "",
+                ttl_hours=int(os.environ.get("MERGEPILOT_APPROVAL_TTL_H", "72")))
+            if ticket is None:
+                log("gate ticket REFUSED:", why)
+                return None
+            log("gate ticket %s (%s)" % (ticket.ticket_id,
+                                         "created" if created else "existing"))
+            return ticket.ticket_id
+        finally:
+            store.close()
+    except Exception as e:
+        log("gate ticket unavailable (degraded to marker-only):",
+            type(e).__name__, str(e)[:120])
+        return None
+
+
 def attempt_no_for(d):
     """桥自身计数:1 + 回队次数(RQn;投递行自带 error 字段,零额外查询)。"""
     return 1 + _requeue_count(d)
@@ -1206,9 +1284,12 @@ def conclude(d, st, report, run, proj, cid, log):
     elif st == "gate":
         # gate:check-run(action_required)已发布,但业务未终结——投递 ERROR 留人工,
         # 后续批准/拒绝是新的业务决策(批准→fix→verify 走新一轮派发语义)。
-        finish(d, False, "GATE_WAIT(manual) verdict=gate; check_run=%s"
-               % pub.get("check_run_id"), cid)
-        log("HUMAN GATE reached — delivery ERROR (awaiting operator decision)")
+        ticket_id = open_gate_ticket_for_marker(proj, d, st, log)
+        suffix = "; ticket=%s" % ticket_id if ticket_id else ""
+        finish(d, False, "GATE_WAIT(manual) verdict=gate; check_run=%s%s"
+               % (pub.get("check_run_id"), suffix), cid)
+        log("HUMAN GATE reached — delivery ERROR (awaiting operator decision)"
+            + ("; ticket %s" % ticket_id if ticket_id else "; ticket creation unavailable"))
     else:
         finish(d, False, "TIMEOUT(manual) %s; publish=%s"
                % (st, "ok" if pub.get("ok") else "failed"), cid)

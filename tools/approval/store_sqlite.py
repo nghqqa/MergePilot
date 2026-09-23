@@ -44,6 +44,15 @@ CREATE TABLE IF NOT EXISTS tickets (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_active_ticket
     ON tickets(run_id, action, finding_id)
     WHERE status IN ('PENDING','APPROVED','EXECUTING');
+CREATE TABLE IF NOT EXISTS ticket_audit (   -- append-only,不 UPDATE/DELETE(镜像 PG 001)
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticket_id    TEXT NOT NULL,
+    from_status  TEXT,
+    to_status    TEXT,
+    actor        TEXT,
+    request_hash TEXT,
+    at           TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
 """
 
 _COLS = ("ticket_id,run_id,repo,head_sha,action,params_hash,patch_fingerprint,"
@@ -173,7 +182,11 @@ class SQLiteTicketStore:
             t = _row_to_ticket(row)
             prev = t.status
             result = transition(t, event, **kw)
-            if result.ok:
+            # 纯逻辑状态机可能在事件内部连带转移(如过期 approve 触发
+            # PENDING→EXPIRED):只要状态确实变化就持久化;守卫仍锚定 prev,
+            # CAS 语义不变(另一进程抢先改状态时 rowcount=0 → 拒绝)。
+            changed = t.status != prev
+            if result.ok or changed:
                 updated = conn.execute(
                     "UPDATE tickets SET status=?, approved_by=?, approved_at=?, "
                     "result_fingerprint=?, error=? "
@@ -182,4 +195,12 @@ class SQLiteTicketStore:
                      t.result_fingerprint, t.error, ticket_id, prev))
                 if updated.rowcount == 0:
                     return TransitionResult(False, prev, "INVALID_TRANSITION:%s" % prev)
+            # 审计与状态写回同事务(原子;镜像 PG approval.ticket_audit 列形状)。
+            # 语义(2026-09-24 门闭环收紧):每次转移尝试都留痕——成功、幂等 NOOP、
+            # 被拒尝试(IDENT_REQUIRED/INVALID_TRANSITION/EXPIRED)一律 append-only,
+            # 审批过程不可抵赖;request_hash 记录裁决原因。
+            conn.execute(
+                "INSERT INTO ticket_audit (ticket_id, from_status, to_status, actor, "
+                "request_hash) VALUES (?,?,?,?,?)",
+                (ticket_id, prev, t.status, kw.get("actor"), result.reason))
             return result

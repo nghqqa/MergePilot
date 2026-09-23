@@ -181,7 +181,13 @@ class PostgreSQLTicketStore:
                 t = self._row_to_ticket(rows[0])
                 prev = t.status
                 result = transition(t, event, **kw)
-                if not result.ok:
+                # 纯逻辑状态机可能内部连带转移(过期 approve → PENDING→EXPIRED):
+                # 状态变化即持久化(守卫仍锚定 prev,CAS 不变);无变化且不 ok = 只读。
+                if not result.ok and t.status == prev:
+                    # 无状态变化的不 ok 尝试也要留痕(先审计再返回)——
+                    # 与 SQLiteTicketStore 同语义:每次转移尝试 append-only。
+                    self._audit(cur, ticket_id, prev, t.status,
+                                kw.get("actor"), result.reason)
                     return result      # 无写发生;事务提交(只读)
                 cur.execute(
                     "UPDATE approval.tickets SET status=%s, approved_by=%s, "
