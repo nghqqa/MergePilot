@@ -13,8 +13,8 @@
 | RPD-04 | TicketStore 和人工门闭环 | TODO | P1 | — | 禁真实决策/派发 |
 | RPD-05 | 后端回归 | TODO | P0 | — | 保留 TEST-DEBT 口径 |
 | RPD-06 | 有限前端契约对齐 | TODO | P2 | — | 仅八种门状态展示 |
-| RPD-07 | PR 交付 | TODO | P0 | — | 一个 feature PR;结果不明即停 |
-| RPD-08 | 最终报告 | TODO | P0 | — | 到点即停 |
+| RPD-07 | PR 交付 | **DONE** | P0 | [pr-record](../evidence/rpd-24h/rpd-07/pr-record.md) | **PR #233** OPEN(核验) |
+| RPD-08 | 最终报告 | **DONE** | P0 | [final-report](../evidence/rpd-24h/rpd-08/final-report.md) | **MANUAL-REQUIRED** |
 
 ## 进度快照（每 30 分钟追加）
 
@@ -24,7 +24,12 @@
 | 15:14 | RPD-02 | b79cd39 | — | 0/0 | 无 | pgvector 证据复核 |
 | 15:30 | RPD-03 | b79cd39 | smoke 重放 11/11 | 0/0 | 无 | case_retrieval 接线契约 |
 
-## 已知事实 → 待证据复核映射
+## 最终状态：MANUAL-REQUIRED
+
+人工决策点：①CASE2 门决策 ②D-1/D-2 真实审批 ③controller/Worker 正式注入 ④真实 CASE2 执行 ⑤凭据通道统一。
+PR：https://github.com/nghqqa/MergePilot/pull/233
+
+## 已知事实 → 待证据复核映射（全部已复核）
 
 | 已知事实 | 复核任务 | 命令 |
 |---|---|---|

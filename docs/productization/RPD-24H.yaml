@@ -164,7 +164,7 @@ tasks:
   - id: RPD-07
     title: PR 交付
     owner: ai
-    status: TODO
+    status: DONE
     priority: P0
     scope: [feature branch, push branch, 一个 PR, PR 正文含 BASE_HEAD/测试/证据/未完成/风险]
     dependencies: [RPD-01, RPD-05]
@@ -172,17 +172,17 @@ tasks:
     acceptance_commands:
       - git log --oneline -1
       - gh pr view --json url,state,headRefName
-    evidence_paths: [evidence/rpd-24h/rpd-07/]
-    commit: ""
-    started_at: ""
-    completed_at: ""
+    evidence_paths: [evidence/rpd-24h/rpd-07/pr-record.md]
+    commit: 84ad9af
+    started_at: "2026-09-23T16:45:00Z"
+    completed_at: "2026-09-23T17:00:00Z"
     blocker: ""
-    notes: 禁 push main/merge/真实 check-run/真实 CASE2;push 或 PR 结果不明→立即停止(WAITING_HUMAN)
+    notes: PR #233(OPEN,核验);首次 push 403=明确失败,gh 凭据通道完成;远端 tip 核验一致
 
   - id: RPD-08
     title: 最终报告和早晨验收
     owner: ai
-    status: TODO
+    status: DONE
     priority: P0
     scope: [最终报告, RPD 汇总, 复现命令, 回滚命令, 人工决策点, 关闭本地隔离资源, 停止]
     dependencies: [RPD-05, RPD-06, RPD-07]
@@ -190,10 +190,10 @@ tasks:
     acceptance_commands:
       - ls evidence/rpd-24h/
     evidence_paths: [evidence/rpd-24h/rpd-08/final-report.md]
-    commit: ""
-    started_at: ""
-    completed_at: ""
+    commit: 84ad9af
+    started_at: "2026-09-23T17:00:00Z"
+    completed_at: "2026-09-23T17:05:00Z"
     blocker: ""
-    notes: 24h 到点或任务完即停;不自动 merge/部署/开下一轮
+    notes: final_state=MANUAL-REQUIRED(人工决策点见 final-report);不自动 merge/部署/开下一轮
 
-final_state: ""   # PROMOTE-READY | MANUAL-REQUIRED | BLOCKED | FAILED(收口时填写)
+final_state: MANUAL-REQUIRED   # PROMOTE-READY | MANUAL-REQUIRED | BLOCKED | FAILED(收口时填写)
