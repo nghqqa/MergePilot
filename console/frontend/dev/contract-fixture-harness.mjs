@@ -78,13 +78,27 @@ const healthPg = (target) => ({
   note: `开发/测试 harness：/pg/* 反向代理至隔离 console_pg（${target}）；模式由本配置声明`,
 });
 
-async function proxy(res, target, reqPath, search) {
+async function proxy(res, target, reqPath, search, { method = 'GET', req } = {}) {
   try {
-    const upstream = await fetch(`${target.replace(/\/$/, '')}${reqPath}${search}`, {
-      method: 'GET',
+    const init = {
+      method,
       headers: { Accept: 'application/json' },
       signal: AbortSignal.timeout(10000),
-    });
+    };
+    // 审批决策为 POST：透传请求体（隔离后端自身强制只读/主体校验；harness 无业务逻辑）
+    if (method === 'POST' && req) {
+      const chunks = [];
+      for await (const ch of req) chunks.push(ch);
+      const raw = Buffer.concat(chunks);
+      if (raw.length) {
+        init.body = raw;
+        init.headers['Content-Type'] = req.headers['content-type'] ?? 'application/json; charset=utf-8';
+      }
+      if (req.headers['x-test-principal']) {
+        init.headers['X-Test-Principal'] = req.headers['x-test-principal'];
+      }
+    }
+    const upstream = await fetch(`${target.replace(/\/$/, '')}${reqPath}${search}`, init);
     const body = Buffer.from(await upstream.arrayBuffer());
     res.writeHead(upstream.status, {
       'Content-Type': upstream.headers.get('content-type') ?? 'application/json; charset=utf-8',
@@ -101,8 +115,11 @@ async function proxy(res, target, reqPath, search) {
 const server = http.createServer((req, res) => {
   const u = new URL(req.url, `http://127.0.0.1:${PORT}`);
   const p = u.pathname;
-  if (req.method !== 'GET' && req.method !== 'HEAD') {
-    return sendJson(res, 405, { error: { code: 405, reason: 'read_only', message: 'harness 仅提供 GET（测试只读面）' } });
+  const isReadVerb = req.method === 'GET' || req.method === 'HEAD';
+  const isProxyablePost = req.method === 'POST' && PG_TARGET &&
+    (p === '/api/auth/session' || p === '/pg' || p.startsWith('/pg/'));
+  if (!isReadVerb && !isProxyablePost) {
+    return sendJson(res, 405, { error: { code: 405, reason: 'read_only', message: 'harness 测试只读面（仅 /pg 代理可透传 POST）' } });
   }
 
   // ---- PG 联调模式（--pg）----
@@ -110,7 +127,7 @@ const server = http.createServer((req, res) => {
     if (p === '/api/health') return sendJson(res, 200, healthPg(PG_TARGET));
     if (p === '/api/auth/session' || p === '/pg' || p.startsWith('/pg/')) {
       const rest = p.startsWith('/pg/') ? p.slice(3) : p;
-      return proxy(res, PG_TARGET, rest || '/', u.search);
+      return proxy(res, PG_TARGET, rest || '/', u.search, { method: req.method, req });
     }
     if (p.startsWith('/api/')) {
       return sendJson(res, 404, { error: { code: 404, reason: 'not_in_pg_mode', message: 'PG 联调模式：契约 fixture 端点未启用（数据走 /pg 代理）' } });

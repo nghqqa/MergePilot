@@ -1,7 +1,30 @@
 # 控制台推进状态（console/STATUS）
 
-**更新**：2026-09-23（第七轮：缺陷修复确认 + 隔离 PG 联调 10/10 复验）｜ **分支**：`feat/admin-console`（worktree `D:\goai\mp-worktrees\console`，基线 `0ae8843`）
-**负责目录**：`console/`（前后端）+ `docs/productization/console/`。未改动 gh-bridge / workflow-controller / approval / rag / costmeter / 共享数据结构 / r3work。
+**更新**：2026-09-23（第八轮：test-auth 审批浏览器联调完成）｜ **分支**：`feat/admin-console`（worktree `D:\goai\mp-worktrees\console`，基线 `0ae8843`）
+**负责目录**：`console/`（前后端）+ `docs/productization/console/`。未改动 gh-bridge / workflow-controller / approval 状态机本体 / rag / costmeter / 共享数据结构 / r3work。
+
+## 第八轮：test-auth 审批联调（2026-09-23）
+
+console_pg 0.2.0 已带审批只读+决策端点（POST /api/approvals 创建、/:id/approve|reject 决策、
+GET 列表/详情；--allow-test-auth + X-Test-Principal 隔离主体）。本轮在独立 PG（mp_pg_console_fe）
+上完成**真实页面路径的 test-auth 审批浏览器联调**——票据为隔离 fixture 库合成数据，**非真实票据、
+非真实 GitHub 操作；批准只生成后续动作意图**。
+
+| 工作项 | 状态 | 说明 |
+|---|---|---|
+| 审批端点核实 | ✅ | 实测形状：GET /api/approvals（PENDING 列表）、GET /:id（binding/approved_by/attempt_no；**expires_at 未携带——缺口记录**）、POST 创建 201/200、approve/reject 200={ok:true,status,reason:NOOP 幂等}/409={ok:false,reason:EXPIRED\|INVALID_TRANSITION}、无主体 422 principal_required、生产模式 POST 405 |
+| console-pg 审批适配 | ✅ | sources.js listApprovals/getApproval/decideApproval（dev-only 标记；决策路由 /approve\|/reject；X-Test-Principal 仅 test-auth 模式）；与内存 fixture 演练彻底分离 |
+| ApprovalsPage 双模式 | ✅ | console-pg 源 → 真实 test-auth 票据列表/详情/批准/拒绝；其他源 → 未接入 + 合成票据演练（原样保留） |
+| 浏览器九路径 | ✅ | 列表（HTTP→PG）→详情字段（repo/head/run/finding/action+TTL 缺口如实）→批准 T6 200 APPROVED→刷新后 GET 详情仍 APPROVED（持久化一致）→提交中按钮禁用（防重复）→已 APPROVED 重复决策 200 NOOP（不重复生效）→过期票 409 EXPIRED"需后端重签，控制台不续期"→无主体 422→生产模式 401/405 |
+| head 冲突语义 | ✅ 差异记录 | 后端决策接口无 expected_head 参数（head 校验属使用/合并阶段 D-3）——UI 展示绑定 head 供核对，"head 冲突"错误语义暂无对应端点行为 |
+| 缺陷修复 | ✅ | harness 反代透传 POST 方法/请求体/X-Test-Principal（此前 GET 降级 + 头丢失导致决策 422/404）；decideApproval 决策枚举误拼路由（/APPROVED→/approve）修复 |
+| 测试 | ✅ 64/64 | 全套回归通过；未新增长期规避逻辑 |
+
+**仍未接通（如实）**：真实 OAuth 登录（D-9）、正式审批授权策略（D-1/D-2/D-3 决策仍待拍板——
+当前 test-auth 主体绕过 D-2 检查，仅限隔离环境）、契约 v2 /api/pulls 聚合与 current_head 权威（C-10）、
+站内合并（C-12 关闭）。**PG HTTP 联调与 test-auth 审批联调已完成；真实 PR 闭环仍未达成。**
+
+---
 
 ## 第七轮：后端缺陷修复确认 + PG 联调 10/10（2026-09-23）
 

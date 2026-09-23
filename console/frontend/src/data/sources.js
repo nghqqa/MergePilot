@@ -195,6 +195,32 @@ function consolePgSource(fetchImpl, config) {
     async getRunDetail(runId) {
       return get(`${base}/api/runs/${encodeURIComponent(runId)}`);
     },
+
+    // ---- 审批只读 + 决策（后端 0.2.0 test-auth 联调语义，差异已在 C-11 记录） ----
+    // 差异（相对正式契约）：决策以 X-Test-Principal 头标识隔离测试主体（生产应使用
+    // 会话 Cookie + X-CSRF-Token）；响应不含 TTL/params/PR 字段；approve 无 expected_head
+    // 参数（head 校验属使用/合并阶段 D-3）。批准只生成后续动作意图。
+    async listApprovals() {
+      return get(`${base}/api/approvals`);
+    },
+    async getApproval(ticketId) {
+      return get(`${base}/api/approvals/${encodeURIComponent(ticketId)}`);
+    },
+    async decideApproval(ticketId, decision, principal = 'test-principal') {
+      // decision ∈ APPROVED|REJECTED（状态枚举）；后端路由为 /approve | /reject
+      const actionPath = decision === 'APPROVED' ? 'approve' : 'reject';
+      const res = await fetchImpl(`${base}/api/approvals/${encodeURIComponent(ticketId)}/${actionPath}`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Test-Principal': principal, // 后端 0.2.0 test-auth 约定；非生产主体
+        },
+        body: JSON.stringify({}),
+      });
+      const body = await res.json().catch(() => null);
+      return { httpStatus: res.status, body }; // 200={ok:true,status,reason?} / 409={ok:false,status,reason} / 422=principal_required
+    },
   };
 }
 

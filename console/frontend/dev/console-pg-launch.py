@@ -41,10 +41,29 @@ def _load(full, path):
 
 srv = _load("console_pg_server", _CON / "server.py")
 
+# server.py 的审批路径依赖两个外部约定（与 tests/console_pg 同款）：
+#   1) sys.modules['approval_pkg'] → tools/approval（--approval-dsn 时 import）
+#   2) sys.path 含 tools/（from approval.approval import Binding）
+_TOOLS = _CON.parent
+if str(_TOOLS) not in sys.path:
+    sys.path.insert(0, str(_TOOLS))
+_apppkg = types.ModuleType("approval_pkg")
+_apppkg.__path__ = [str(_TOOLS / "approval")]
+sys.modules["approval_pkg"] = _apppkg
+
 ap = argparse.ArgumentParser()
 ap.add_argument("--port", type=int, default=4193)
 ap.add_argument("--dsn", default=(
     "host=127.0.0.1 port=55432 user=mp_contract "
     "password=mp-contract-local-test dbname=mp_pg_runstore"))
+ap.add_argument("--approval-dsn", default=None,
+                help="隔离审批库 DSN（提供后审批只读端点可用）")
+ap.add_argument("--allow-test-auth", action="store_true",
+                help="启用隔离联调测试主体（X-Test-Principal）；生产模式严禁")
 args = ap.parse_args()
-sys.exit(srv.main(["--dsn", args.dsn, "--port", str(args.port)]))
+cli = ["--dsn", args.dsn, "--port", str(args.port)]
+if args.approval_dsn:
+    cli += ["--approval-dsn", args.approval_dsn]
+if args.allow_test_auth:
+    cli += ["--allow-test-auth"]
+sys.exit(srv.main(cli))
