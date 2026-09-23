@@ -1,20 +1,8 @@
-"""console_pg — 正式只读 HTTP 查询薄适配层(PG RunStore → console 契约)。
+"""console_pg — 正式只读 HTTP 查询 + 审批决策(PG RunStore + PG TicketStore 薄适配层)。
 
-**定位**:
-- 正式产品入口是 console/(前端);本包是其**后端只读查询适配层**,
-  使前端不直接连接 PostgreSQL;
-- console_v3(:4190, SQLite)仅作诊断兼容入口,与本服务并存但数据源不同;
-- 遵循 console 0.1.0 + API-EXTENSIONS-KB-RUN v2 契约形状:
-  data_mode 必带 / 错误={error:{code,reason,message}} / repo 走查询参数 /
-  空值=null / 查询失败≠空集合 / 写方法 405。
-
-**边界(如实声明)**:
-- 认证未实现:仅绑定 127.0.0.1、显式 --dsn 指向隔离 fixture 库;
-  GET /api/auth/session 如实返回 401(not_authenticated),不伪造登录态;
-- data_mode 恒 "fixture"(隔离 PG 测试数据),不冒充 live/snapshot;
-- findings/validations/knowledge manifest 尚未落库 → 如实返回
-  "not_implemented",不伪造空的成功结果;
-- GitHub 当前 head 无权威来源 → 仅返回最近记录,不伪造当前结论。
+定位: console/ 前端的后端查询+审批适配层;前端不直接连接 PostgreSQL。
+认证: 生产 OAuth 未实现(D-9);支持 --allow-test-auth 启用隔离联调测试主体。
+边界: data_mode 恒 "fixture";shadow≠真实执行;PARTIAL≠成功。
 """
 from __future__ import annotations
 
@@ -26,59 +14,49 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-import importlib.util  # noqa: E402
-import types  # noqa: E402
-
-_ORCH_DIR = os.path.normpath(os.path.join(_HERE, "..", "orchestrator"))
-_opkg = sys.modules.setdefault("orchestrator_v3",
-                               types.ModuleType("orchestrator_v3"))
-_opkg.__path__ = [_ORCH_DIR]
-sys.modules["orchestrator_v3"] = _opkg
-
-
-def _load_orch(name):
-    full = "orchestrator_v3." + name
-    if full in sys.modules:
-        return sys.modules[full]
-    spec = importlib.util.spec_from_file_location(full,
-                                                  os.path.join(_ORCH_DIR,
-                                                               name + ".py"))
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[full] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
-
-PgRunStore = _load_orch("pg_runstore").PgRunStore
-StorageUnavailable = _load_orch("pg_runstore").StorageUnavailable
-
-VERSION = "0.1.0-pg-fixture"
+VERSION = "0.2.0-pg-approval"
 MAX_LIMIT = 200
 
 
-def _err(code: int, reason: str, message: str) -> dict:
+def _err(code, reason, message):
     return {"error": {"code": code, "reason": reason, "message": message}}
 
 
-def _clamp_limit(raw, default=50) -> int:
+def _now_iso():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _clamp(raw, default, lo=1, hi=200):
     try:
-        v = int(raw)
+        return max(lo, min(int(raw), hi))
     except (TypeError, ValueError):
         return default
-    return max(1, min(v, MAX_LIMIT))
 
 
-def _clamp_offset(raw) -> int:
+def _clamp_offset(raw):
     try:
         return max(0, int(raw))
     except (TypeError, ValueError):
         return 0
 
 
-def make_handler(store: PgRunStore):
+_binding_cls = None
+
+
+def _get_binding_cls():
+    global _binding_cls
+    if _binding_cls is None:
+        # 由外部(sys.path 已含 approval)导入
+        from approval.approval import Binding
+        _binding_cls = Binding
+    return _binding_cls
+
+
+def make_handler(run_store, ticket_store=None, test_auth=False):
+    """构建 HTTP handler。run_store: PgRunStore;ticket_store: PostgreSQLTicketStore 或 None。"""
+
     class Handler(BaseHTTPRequestHandler):
-        def _send(self, code: int, body: dict):
+        def _send(self, code, body):
             data = json.dumps(body, ensure_ascii=False, indent=1,
                               default=str).encode("utf-8")
             self.send_response(code)
@@ -88,9 +66,8 @@ def make_handler(store: PgRunStore):
             self.end_headers()
             self.wfile.write(data)
 
-        def _fixture(self, body: dict, code: int = 200) -> None:
-            body = dict(body, data_mode="fixture")
-            self._send(code, body)
+        def _fixture(self, body, code=200):
+            self._send(code, dict(body, data_mode="fixture"))
 
         def do_GET(self):
             url = urlparse(self.path)
@@ -98,75 +75,186 @@ def make_handler(store: PgRunStore):
             q = parse_qs(url.query)
             try:
                 if path == "/healthz":
-                    # 公开健康检查:仅 {ok,version},无私有信息(AUTH §0 豁免)
                     return self._send(200, {
                         "ok": True, "service": "mergepilot-console-pg",
                         "version": VERSION, "data_mode": "fixture",
-                        "auth": "not_implemented",
-                        "note": "isolated fixture service; 127.0.0.1 only"})
+                        "auth": ("test_principal" if test_auth
+                                 else "not_implemented"),
+                        "note": "isolated fixture; 127.0.0.1 only"})
                 if path == "/api/auth/session":
-                    # 正式会话入口:认证未实现 → 如实 401(not_authenticated)
-                    # (契约 API-AUTH-MERGE-V0 §1:未登录 401 JSON,服务端不 302)
+                    if test_auth:
+                        return self._send(200, {
+                            "user": {"user_id": "test-principal",
+                                     "github_login": "test-principal",
+                                     "role": "operator"},
+                            "expires_at": None,
+                            "capabilities_version": "fixture",
+                            "data_mode": "fixture",
+                            "note": "test principal (isolated)"})
                     return self._send(401, _err(
                         401, "not_authenticated",
-                        "auth not implemented in fixture service"))
+                        "OAuth not implemented; "
+                        "use --allow-test-auth for isolated testing"))
                 if path == "/api/me/capabilities":
-                    # 能力查询要求有效会话(契约 §1.3);无认证一律 401
-                    return self._send(401, _err(
-                        401, "not_authenticated", "capabilities require session"))
+                    if not test_auth:
+                        return self._send(401, _err(
+                            401, "not_authenticated",
+                            "capabilities require session"))
+                    return self._fixture({
+                        "repo": (q.get("repo") or [""])[0],
+                        "principal": "test-principal",
+                        "operations": {
+                            "approve_tickets": {"allowed": True},
+                            "request_merge": {"allowed": False,
+                                              "reason": "merge_disabled"},
+                            "upload_documents": {"allowed": False,
+                                                 "reason": "not_implemented"},
+                            "manage_members": {"allowed": False,
+                                               "reason": "not_implemented"}}})
                 if path == "/api/repos":
-                    return self._fixture({"items": store.list_repos()})
+                    return self._fixture({"items": run_store.list_repos()})
                 if path == "/api/prs":
                     repo = (q.get("repo") or [""])[0]
                     if not repo:
                         return self._send(400, _err(
                             400, "repo_required",
                             "repo query param required (?repo=owner%2Fname)"))
-                    page = store.list_prs(
-                        repo, _clamp_limit(q.get("limit", ["50"])[0]),
-                        _clamp_offset(q.get("offset", ["0"])[0]))
-                    return self._fixture(dict(page, repo=repo))
+                    return self._fixture(dict(
+                        run_store.list_prs(
+                            repo, _clamp(q.get("limit", ["50"])[0], 50, 1, 200),
+                            _clamp_offset(q.get("offset", ["0"])[0])),
+                        repo=repo))
                 if path == "/api/runs":
                     repo = (q.get("repo") or [""])[0]
                     pr_raw = (q.get("pr") or [""])[0]
-                    limit = _clamp_limit(q.get("limit", ["50"])[0])
+                    limit = _clamp(q.get("limit", ["50"])[0], 50, 1, 200)
                     offset = _clamp_offset(q.get("offset", ["0"])[0])
-                    if repo:
-                        runs = _runs_by_repo(store, repo)
+                    if repo and pr_raw.isdigit():
+                        runs = run_store.runs_for_pr(repo, int(pr_raw))
+                    elif repo:
+                        runs = _runs_by_repo(run_store, repo)
                     else:
-                        runs = _all_runs(store)
-                    if pr_raw.isdigit():
-                        runs = [r for r in runs
-                                if r["pr_number"] == int(pr_raw)]
+                        runs = _all_runs(run_store)
                     total = len(runs)
-                    items = [_run_record(r) for r in
-                             runs[offset:offset + limit]]
+                    items = [_run_record(r) for r in runs[offset:offset + limit]]
                     return self._fixture({
                         "generated_at": _now_iso(), "total": total,
                         "limit": limit, "offset": offset, "items": items})
                 if path.startswith("/api/runs/"):
                     run_id = path[len("/api/runs/"):].strip("/")
-                    run = store.get_run(run_id)
+                    run = run_store.get_run(run_id)
                     if run is None:
                         return self._send(404, _err(
                             404, "run_not_found", "unknown run: " + run_id))
-                    stage_rows = store.get_stages(run_id)
-                    detail = _run_detail(store, run, stage_rows)
-                    return self._fixture(detail)
+                    stage_rows = run_store.get_stages(run_id)
+                    findings = run_store.get_findings(run_id)
+                    validations = run_store.get_validations(run_id)
+                    events = run_store.recent_events(run_id, limit=50)
+                    return self._fixture({
+                        "run_id": run_id,
+                        "repo": run["repo_id"], "pr_number": run["pr_number"],
+                        "head_sha": run["head_sha"], "base_sha": run.get("base_sha"),
+                        "target_id": run["target_id"],
+                        "chain": run["chain"], "run_class": run["run_class"],
+                        "mode": run["mode"], "status": run["status"],
+                        "risk_tier": run["risk_tier"], "outcome": run["outcome"],
+                        "superseded_by_run_id": run.get("superseded_by_run_id"),
+                        "request_key": run.get("request_key"),
+                        "stages": stage_rows, "events": events,
+                        "findings": findings,
+                        "validations": validations,
+                        "knowledge": "not_implemented",
+                        "evidence": {"manifest_sha256": run.get("manifest_sha256"),
+                                     "evidence_path": run.get("evidence_path"),
+                                     "note": "MinIO 证据未接线"},
+                        "merge_panel": {"enabled": False,
+                                        "reasons": ["merge_disabled",
+                                                    "real_merge_not_implemented"]},
+                        "note": "fixture 数据:隔离 PG 测试记录,非真实 PR 流程",
+                    })
+                if path == "/api/approvals" and ticket_store:
+                    return self._fixture({"items": _list_pending(ticket_store)})
+                if path.startswith("/api/approvals/") and ticket_store:
+                    tid = path[len("/api/approvals/"):].strip("/")
+                    t = ticket_store.get(tid)
+                    if t is None:
+                        return self._send(404, _err(404, "ticket_not_found",
+                                                    "unknown ticket: " + tid))
+                    return self._fixture({"ticket_id": t.ticket_id,
+                                          "status": t.status,
+                                          "binding": {"run_id": t.binding.run_id,
+                                                      "repo": t.binding.repo,
+                                                      "head_sha": t.binding.head_sha,
+                                                      "action": t.binding.action},
+                                          "approved_by": t.approved_by,
+                                          "attempt_no": t.attempt_no})
+                if path.startswith("/api/approvals"):
+                    return self._send(501, _err(
+                        501, "not_implemented",
+                        "approval endpoints require ticket_store; not configured"))
                 return self._send(404, _err(404, "NOT_FOUND", "unknown path"))
             except StorageUnavailable as e:
-                # 查询失败 ≠ 空集合:如实 503,不回退历史快照
                 return self._send(503, _err(
                     503, "backend_unavailable", str(e)[:160]))
-            except Exception as e:                       # pragma: no cover
+            except Exception as e:
                 return self._send(500, _err(
                     500, "internal", type(e).__name__ + ":" + str(e)[:160]))
 
         def do_POST(self):
-            self._send(405, _err(
-                405, "read_only", "this service exposes read endpoints only"))
+            url = urlparse(self.path)
+            path = url.path
+            if not test_auth:
+                return self._send(405, _err(
+                    405, "read_only", "this service is read-only in non-test mode"))
+            principal = self.headers.get("X-Test-Principal", "").strip()
+            if not principal:
+                return self._send(422, _err(
+                    422, "principal_required", "X-Test-Principal header required"))
+            if ticket_store is None:
+                return self._send(501, _err(
+                    501, "not_implemented", "approval store not configured"))
+            try:
+                length = int(self.headers.get("Content-Length", 0))
+                body = json.loads(self.rfile.read(length).decode("utf-8")) \
+                    if length else {}
+                if path == "/api/approvals":
+                    return self._create_approval(body, principal)
+                if "/approve" in path:
+                    tid = path.rstrip("/").rsplit("/", 1)[-1].replace("/approve", "")
+                    return self._transition(tid, "approve", principal)
+                if "/reject" in path:
+                    tid = path.rstrip("/").rsplit("/", 1)[-1].replace("/reject", "")
+                    return self._transition(tid, "reject", principal)
+                return self._send(404, _err(404, "NOT_FOUND", "unknown path"))
+            except json.JSONDecodeError:
+                return self._send(400, _err(400, "bad_json", "invalid JSON"))
+            except Exception as e:
+                return self._send(500, _err(
+                    500, "internal", type(e).__name__ + ":" + str(e)[:160]))
 
-        do_PUT = do_PATCH = do_DELETE = do_POST
+        def _create_approval(self, body, principal):
+            # 实际逻辑由 ticket_store.create 完成;此处做最简参数透传
+            Binding = _get_binding_cls()
+            ph = body.get("params_hash") or body.get("params", "")
+            b = Binding(run_id=body["run_id"], repo=body["repo"],
+                        head_sha=body["head_sha"], action=body["action"],
+                        params_hash=ph,
+                        patch_fingerprint=body.get("patch_fingerprint"),
+                        finding_fingerprint=body.get("finding_fingerprint"),
+                        finding_id=body.get("finding_id"))
+            t, created = ticket_store.create(
+                b, attempt_no=body.get("attempt", 1),
+                created_by_run=principal,
+                approval_expires_at=body.get("expires_at"))
+            self._send(201 if created else 200, {
+                "ticket_id": t.ticket_id, "status": t.status,
+                "created": created})
+
+        def _transition(self, ticket_id, action, principal):
+            r = ticket_store.transition(ticket_id, action,
+                                        now=_now_iso(), actor=principal)
+            code = 200 if r.ok else 409
+            self._send(code, {"ok": r.ok, "status": r.status, "reason": r.reason})
 
         def log_message(self, fmt, *args):
             pass
@@ -174,28 +262,19 @@ def make_handler(store: PgRunStore):
     return Handler
 
 
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+def _list_pending(ticket_store):
+    conn = ticket_store._conn
+    cur = conn.cursor()
+    cur.execute("SELECT ticket_id, run_id, repo_id, head_sha, action, "
+                "finding_id, status FROM approval.tickets "
+                "WHERE status='PENDING' ORDER BY created_at")
+    return [{"ticket_id": r[0], "run_id": r[1], "repo": r[2], "head_sha": r[3],
+             "action": r[4], "finding_id": r[5], "status": r[6]}
+            for r in cur.fetchall()]
 
 
-def _all_runs(store: PgRunStore):
-    """全仓库 run 列表(console /api/runs 无 repo 过滤时的回退面)。"""
-    out = []
-    cur = store._conn.cursor()
-    cur.execute(
-        "SELECT run_id, target_id, delivery_id, exec_seq, chain, run_class, "
-        "mode, status, repo_id, pr_number, head_sha, base_sha, risk_tier, "
-        "outcome, superseded_by_run_id, created_at, updated_at "
-        "FROM run.runs ORDER BY created_at DESC")
-    keys = ("run_id", "target_id", "delivery_id", "exec_seq", "chain",
-            "run_class", "mode", "status", "repo_id", "pr_number",
-            "head_sha", "base_sha", "risk_tier", "outcome",
-            "superseded_by_run_id", "created_at", "updated_at")
-    return [dict(zip(keys, r)) for r in cur.fetchall()]
-
-
-def _runs_by_repo(store: PgRunStore, repo: str):
-    cur = store._conn.cursor()
+def _runs_by_repo(store, repo):
+    cur = store._ensure().cursor()
     cur.execute(
         "SELECT run_id, target_id, delivery_id, exec_seq, chain, run_class, "
         "mode, status, repo_id, pr_number, head_sha, base_sha, risk_tier, "
@@ -208,9 +287,21 @@ def _runs_by_repo(store: PgRunStore, repo: str):
     return [dict(zip(keys, r)) for r in cur.fetchall()]
 
 
-def _run_record(r: dict) -> dict:
-    """console /api/runs 的 RunRecord 形状(PG 版);
-    契约要求缺失字段一律 null,不伪造 verdict/tasks/publish。"""
+def _all_runs(store):
+    cur = store._ensure().cursor()
+    cur.execute(
+        "SELECT run_id, target_id, delivery_id, exec_seq, chain, run_class, "
+        "mode, status, repo_id, pr_number, head_sha, base_sha, risk_tier, "
+        "outcome, superseded_by_run_id, created_at, updated_at "
+        "FROM run.runs ORDER BY created_at DESC")
+    keys = ("run_id", "target_id", "delivery_id", "exec_seq", "chain",
+            "run_class", "mode", "status", "repo_id", "pr_number",
+            "head_sha", "base_sha", "risk_tier", "outcome",
+            "superseded_by_run_id", "created_at", "updated_at")
+    return [dict(zip(keys, r)) for r in cur.fetchall()]
+
+
+def _run_record(r):
     return {
         "run_id": r["run_id"], "target_id": r.get("target_id"),
         "repo": r["repo_id"], "pr_number": r.get("pr_number"),
@@ -221,7 +312,6 @@ def _run_record(r: dict) -> dict:
         "mode": r.get("mode"), "status": r.get("status"),
         "risk_tier": r.get("risk_tier"), "outcome": r.get("outcome"),
         "superseded_by_run_id": r.get("superseded_by_run_id"),
-        # 以下 PG RunStore 尚未落库:如实 null,不伪造
         "pr_title": None, "verdict": None, "review": None,
         "publish": None, "tasks": None, "rag": None, "usage": None,
         "created_at": str(r.get("created_at") or ""),
@@ -229,56 +319,34 @@ def _run_record(r: dict) -> dict:
     }
 
 
-def _run_detail(store: PgRunStore, run: dict, stage_rows: dict) -> dict:
-    """run 详情:run 字段 + 阶段 + 事件 + 证据关联;缺失能力如实标注。"""
-    events = store.recent_events(run["run_id"], limit=50)
-    return {
-        "run_id": run["run_id"],
-        "repo": run["repo_id"], "pr_number": run["pr_number"],
-        "head_sha": run["head_sha"], "base_sha": run.get("base_sha"),
-        "target_id": run["target_id"],
-        "chain": run["chain"], "run_class": run["run_class"],
-        "mode": run["mode"], "status": run["status"],
-        "risk_tier": run["risk_tier"], "outcome": run["outcome"],
-        "superseded_by_run_id": run.get("superseded_by_run_id"),
-        "request_key": run.get("request_key"),
-        "stages": stage_rows,
-        "events": events,
-        "evidence": {
-            "manifest_sha256": run.get("manifest_sha256"),
-            "evidence_path": run.get("evidence_path"),
-            "note": "MinIO 证据未接线;关联字段为空表示未记录",
-        },
-        "findings": "not_implemented",
-        "validations": "not_implemented",
-        "knowledge": "not_implemented",
-        "note": ("fixture 数据:隔离 PG 测试记录,非真实 PR 流程"
-                 if run.get("mode") in ("fixture", "shadow") else None),
-    }
-
-
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--dsn", required=True,
-                    help="隔离 fixture 库 DSN(不输出密钥;可用 env "
-                         "MERGEPILOT_PG_FIXTURE_DSN)")
+    ap.add_argument("--dsn", required=True, help="RunStore PG DSN")
+    ap.add_argument("--approval-dsn", default=None)
+    ap.add_argument("--allow-test-auth", action="store_true")
     ap.add_argument("--host", default="127.0.0.1")
-    ap.add_argument("--port", type=int, default=4192)
+    ap.add_argument("--port", type=int, default=4193)
     a = ap.parse_args(argv)
-    dsn = a.dsn or os.environ.get("MERGEPILOT_PG_FIXTURE_DSN", "")
-    if not dsn:
-        print("ERROR: --dsn 或 MERGEPILOT_PG_FIXTURE_DSN 必须提供", flush=True)
-        return 2
-    store = PgRunStore(dsn)
-    server = ThreadingHTTPServer((a.host, a.port), make_handler(store))
-    print("console_pg (READ-ONLY, fixture) on http://%s:%d" % (a.host, a.port),
-          flush=True)
+    # 动态导入(跨域加载由调用方负责)
+    from orchestrator_v3.pg_runstore import PgRunStore
+    run_store = PgRunStore(a.dsn)
+    ticket_store = None
+    if a.approval_dsn:
+        from approval_pkg.pg_store import PostgreSQLTicketStore
+        ticket_store = PostgreSQLTicketStore(a.approval_dsn)
+    handler = make_handler(run_store, ticket_store, test_auth=a.allow_test_auth)
+    server = ThreadingHTTPServer((a.host, a.port), handler)
+    print("console_pg v%s (data_mode=fixture, auth=%s) on http://%s:%d" %
+          (VERSION, "test_principal" if a.allow_test_auth else "not_implemented",
+           a.host, a.port), flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
-        store.close()
+        run_store.close()
+        if ticket_store:
+            ticket_store.close()
     return 0
 
 

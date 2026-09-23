@@ -338,6 +338,91 @@ class PgRunStore:
                  else (json.loads(r[1]) if r[1] else None),
                  "created_at": str(r[2])} for r in cur.fetchall()]
 
+    # ── findings/validations 持久化 ─────────────────────────────────────
+    def save_findings(self, run_id: str, findings: List[Dict[str, Any]]) -> int:
+        """批量持久化 findings(幂等:同 finding_key 覆盖)。"""
+        with self._ensure():
+            cur = self._conn.cursor()
+            n = 0
+            for f in findings:
+                cur.execute(
+                    "INSERT INTO run.findings (finding_id, run_id, finding_key, "
+                    "source_stage, category, severity, confidence, title, "
+                    "path, side, line, evidence_sha256, evidence_text, "
+                    "sources_json, status, data_mode) VALUES "
+                    "(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+                    "ON CONFLICT (finding_id) DO UPDATE SET "
+                    "severity=EXCLUDED.severity, confidence=EXCLUDED.confidence, "
+                    "evidence_text=EXCLUDED.evidence_text, status=EXCLUDED.status",
+                    (f["finding_id"], run_id, f["finding_key"],
+                     f.get("source_stage", "review"), f.get("category"),
+                     f.get("severity"), f.get("confidence"), f["title"],
+                     f.get("path"), f.get("side"), f.get("line"),
+                     f.get("evidence_sha256"), f.get("evidence_text"),
+                     json.dumps(f.get("sources", []), ensure_ascii=False)
+                     if f.get("sources") else None,
+                     f.get("status", "AGGREGATED"), f.get("data_mode", "fixture")))
+                n += 1
+            cur.execute(
+                "INSERT INTO run.run_events (run_id, event_type, payload) "
+                "VALUES (%s,'findings.saved',%s)",
+                (run_id, json.dumps({"count": n}, ensure_ascii=False)))
+        return n
+
+    def get_findings(self, run_id: str) -> List[Dict[str, Any]]:
+        cur = self._ensure().cursor()
+        cur.execute(
+            "SELECT finding_id, finding_key, source_stage, category, severity, "
+            "confidence, title, path, side, line, evidence_text, sources_json, "
+            "status, data_mode, created_at FROM run.findings "
+            "WHERE run_id=%s ORDER BY created_at", (run_id,))
+        keys = ("finding_id", "finding_key", "source_stage", "category",
+                "severity", "confidence", "title", "path", "side", "line",
+                "evidence_text", "sources_json", "status", "data_mode",
+                "created_at")
+        out = []
+        for r in cur.fetchall():
+            d = dict(zip(keys, r))
+            if d.get("sources_json") and isinstance(d["sources_json"], str):
+                d["sources"] = json.loads(d.pop("sources_json"))
+            elif d.get("sources_json"):
+                d["sources"] = d.pop("sources_json")
+            else:
+                d.pop("sources_json", None)
+            out.append(d)
+        return out
+
+    def save_validation(self, run_id: str, finding_id: str, verdict: str,
+                        anchor_status: Optional[str] = None,
+                        evidence_path: Optional[str] = None,
+                        reason: Optional[str] = None) -> None:
+        with self._ensure():
+            cur = self._conn.cursor()
+            cur.execute(
+                "INSERT INTO run.finding_validations (finding_id, verdict, "
+                "anchor_status, evidence_path, reason, decided_at) "
+                "VALUES (%s,%s,%s,%s,%s,now()) "
+                "ON CONFLICT (finding_id) DO UPDATE SET "
+                "verdict=EXCLUDED.verdict, anchor_status=EXCLUDED.anchor_status, "
+                "evidence_path=EXCLUDED.evidence_path, reason=EXCLUDED.reason, "
+                "decided_at=EXCLUDED.decided_at",
+                (finding_id, verdict, anchor_status, evidence_path, reason))
+            cur.execute(
+                "UPDATE run.findings SET status=%s WHERE finding_id=%s",
+                (verdict, finding_id))
+
+    def get_validations(self, run_id: str) -> List[Dict[str, Any]]:
+        cur = self._ensure().cursor()
+        cur.execute(
+            "SELECT fv.finding_id, fv.verdict, fv.anchor_status, "
+            "fv.evidence_path, fv.reason, fv.decided_at "
+            "FROM run.finding_validations fv "
+            "JOIN run.findings f ON f.finding_id = fv.finding_id "
+            "WHERE f.run_id=%s ORDER BY fv.decided_at", (run_id,))
+        keys = ("finding_id", "verdict", "anchor_status", "evidence_path",
+                "reason", "decided_at")
+        return [dict(zip(keys, r)) for r in cur.fetchall()]
+
     def runs_for_pr(self, repo_id: str, pr: int) -> list:
         cur = self._ensure().cursor()
         cur.execute(
