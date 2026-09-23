@@ -135,3 +135,35 @@
 
 ### 测试
 - 新 29+5 用例:run_context 契约/回放、model_gateway 配置/分类/smoke 离线驱动、桥接线 fail-closed;既有 96 桥用例全绿(桩对齐三元组)。
+
+
+## 第二十七轮（2026-09-23）：deepseek-flash 官方路径切换生效 + 第二案例验收就绪
+
+### 模型切换（已生效，可逆）
+- **平台原生操作杆 = `agt update worker --name <role> --model deepseek-flash`**
+  （controller 更新 Worker CR spec.model → 再生 openclaw.json 推 MinIO → sleep/wake 重建容器）。
+  手工改 MinIO/容器文件都会被 reconcile 翻掉（merge-openclaw-config local-first + worker 启动
+  mirror_all remote→local --overwrite + controller 按自身模板重推）——此坑已实测记录。
+- 切换后验证：reviewer/leader 两容器 openclaw primary = agentteams-gateway/deepseek-flash、
+  active_model.json = deepseek-flash、models map 含 flash；桥探针 `_worker_model_id` 读回 flash；
+  manifest 模型块 = {primary: flash, requested: 派发时 env, catalog_state_at_dispatch: 实测目录}。
+- 门禁顺序执行：配置摘要（无秘密）→ MinIO+本地双备份(.bak-20260923-151612) → 上游目录核对 →
+  reviewer 容器 smoke 八点 PASS(切换前+切换后各一轮) → 回滚探测(deepseek-chat 仍 200) → 零 GitHub 写。
+- 回滚 = `agt update worker --model deepseek-chat`（上游退役但仍服）+ 备份对象。
+- 默认配置未动：代码/桥默认仍 deepseek-chat；MERGEPILOT_MODEL 未设。
+
+### 第二案例（未执行——目标/空提交未获明确授权）
+- 零 GitHub 写入；仅交付验收采集就绪清单：run_context 八字段全自动入审计流
+  （本桥版本起）；rag-live 审计含 result_status/document_count/latency；manifest 含
+  rag 快照+model 目录双绑定。差距登记：①rag_retrieve call_id 不入审计（仅窗口相关回放）；
+  ②RAG 审计仍在 :4184 JSONL，PG audit 域(P3)未实现；③响应侧 model id 容器内不回传。
+  授权后的执行清单见用户 §三/§五（单 repo/PR/head、无 fixer/verifier、v3 shadow、
+  单 check-run、20min 截止、失败处理矩阵）。
+
+### 测试口径（TEST-DEBT.md 建立）
+- 收集冲突已修：pyproject `addopts=--import-mode=importlib`，全树 4345 项/0 收集错误。
+  （补 __init__.py 方案会破坏 conftest sys.path 自举，已实测回退，勿重试。）
+- 全树实测基线：84 failed + 21 setup errors，全部集中于环境/产物依赖套件
+  （m5_0c resolver 需 docker CLI、demo_console 缺烘焙产物、isolated_live 需 compose、
+  m4c/m4e/m4f1 证据线）；清单+收口方向登记在 docs/productization/backend/TEST-DEBT.md。
+  本轮门禁维持相关目录 101+ 全绿。
