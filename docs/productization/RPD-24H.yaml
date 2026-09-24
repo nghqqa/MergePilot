@@ -284,6 +284,32 @@ night_round:
        evidence: "evidence/rpd-24h/case2b/"}
     - {id: NR-05, title: 人工门停止+证据+报告, status: DONE, evidence: "evidence/rpd-24h/night-run/final-night-report.md"}
 
+# ── closure 批次(2026-09-24:结构化建票→有效审批→fixer→独立verifier→补丁交付) ──
+closure_round:
+  started_at: "2026-09-24T12:30:00Z"
+  base_head: e94be2e
+  branch: feat/rpd-24h-delivery
+  model_budget:
+    max_requests: 40
+    max_total_tokens: 200000
+    max_output_per_request: 8000
+    concurrency: 1
+    request_timeout_s: 120
+    fix_verify_rounds: 2
+    model_window_min: 60
+    provider_fee_hard_cap: absent   # 如实声明;在途请求可能继续计费
+    guard_implemented: false        # CL-08 前置:先验证预算守卫可执行
+  tasks:
+    - {id: CL-01, title: 缺口分析, status: DONE, evidence: "evidence/rpd-24h/closure/cl01-gaps.md"}
+    - {id: CL-02, title: 结构化建票通道, status: DONE, evidence: "tests/iso_chain/test_closure.py"}
+    - {id: CL-03, title: 审批接线(head新鲜度/身份/TTL/CAS/审计), status: DONE, evidence: "tests/iso_chain/test_closure.py"}
+    - {id: CL-04, title: 票据驱动fixer派发(outbox/幂等/fencing), status: DONE, evidence: "tests/iso_chain/test_closure.py"}
+    - {id: CL-05, title: 独立verifier(隔离实例/仅目标输入), status: DONE, evidence: "tools/iso_chain/verifier.py"}
+    - {id: CL-06, title: 补丁产物与干净checkout验证, status: DONE, evidence: "tools/iso_chain/patchwork.py"}
+    - {id: CL-07, title: 确定性故障测试, status: DONE, evidence: "tests/iso_chain/test_closure.py"}
+    - {id: CL-08, title: 真实模型隔离链, status: TODO, blocker: "预算守卫未验证不得调用"}
+    - {id: CL-09, title: 回归/证据/PR/验收授权单, status: TODO}
+
 final_state: MANUAL-REQUIRED
 final_blocker: "CASE2-B 已执行(run-gh-pr2-42ed1787-003205,rag 消费达成,HIGH finding 等待人工决策;ticket 未产生——leader marker 契约未执行)"
 

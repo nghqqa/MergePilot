@@ -90,6 +90,8 @@ try:
         _load_sub("approval")
         _load_sub("store_sqlite")
         _gt = _load_sub("gate_ticket")
+        sys.modules.setdefault("gate_ticket", sys.modules.get(
+            "mp_approval_pkg.gate_ticket"))
 except Exception:
     _gt = None
 

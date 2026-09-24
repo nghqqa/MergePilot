@@ -36,6 +36,7 @@ def _load(name):
 core = _load("approval")
 _smod = _load("store_sqlite")
 gt = _load("gate_ticket")
+sys.modules.setdefault("gate_ticket", sys.modules["approval_pkg.gate_ticket"])
 SQLiteTicketStore = _smod.SQLiteTicketStore
 
 RUN = "run-gh-pr2-254f61ce-104621"
