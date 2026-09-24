@@ -35,6 +35,11 @@ class StructuredGateError(Exception):
         self.detail = detail
 
 
+def _sys_modules_get(full):
+    import sys
+    return sys.modules.get(full)
+
+
 def parse_reviewer_verdict(result_text: str) -> Dict[str, str]:
     """从 reviewer result 证据解析结构化结论行。
 
@@ -69,8 +74,7 @@ def open_structured_gate_ticket(store, *, executor_id: str,
     try:
         import gate_ticket as gt
     except ImportError:
-        import sys as _sys
-        gt = _sys.modules.get("approval_pkg.gate_ticket")
+        gt = _sys_modules_get("approval_pkg.gate_ticket")
         if gt is None:
             return None, False, "gate_ticket module unavailable"
 

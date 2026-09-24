@@ -307,7 +307,9 @@ closure_round:
     - {id: CL-05, title: 独立verifier(隔离实例/仅目标输入), status: DONE, evidence: "tools/iso_chain/verifier.py"}
     - {id: CL-06, title: 补丁产物与干净checkout验证, status: DONE, evidence: "tools/iso_chain/patchwork.py"}
     - {id: CL-07, title: 确定性故障测试, status: DONE, evidence: "tests/iso_chain/test_closure.py"}
-    - {id: CL-08, title: 真实模型隔离链, status: TODO, blocker: "预算守卫未验证不得调用"}
+    - {id: CL-08, title: 真实模型隔离链, status: BLOCKED,
+       blocker: "deepseek-flash 为推理模型: 8000 completion tokens 全部耗于 reasoning, 最终 content 为空(实测 2 次, usage 如实计费); 需决策: 提高单请求上限 / 更换模型 / 接受",
+       evidence: "evidence/rpd-24h/closure/"}
     - {id: CL-09, title: 回归/证据/PR/验收授权单, status: TODO}
 
 final_state: MANUAL-REQUIRED

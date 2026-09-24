@@ -3,15 +3,15 @@
   "started_at": "2026-09-23T15:09:04Z",
   "base_head": "b79cd39cbcd78731ac50b2ff0f25b00a5a11514e",
   "branch": "feat/backend-pg-storage",
-  "current_task": "CL-08",
+  "current_task": "CL-08-BLOCKED",
   "status": "MANUAL-REQUIRED",
   "counters": {
     "model_requests": 0,
     "total_tokens": 0,
     "retries": 0
   },
-  "last_progress_at": "2026-09-24T13:00:00Z",
-  "blocker": "AgentTeams controller does not implement spec.env injection",
+  "last_progress_at": "2026-09-24T13:30:00Z",
+  "blocker": "deepseek-flash reasoning exhausts 8000-token per-request cap; user decision needed: raise cap / switch model / accept",
   "next_action": "await user: D-B approval / CASE2-B fix dispatch semantics / next steps",
   "final_head": "05d6d40",
   "round_review": "review-round-20260923",
@@ -21,6 +21,7 @@
   "final_state": "BLOCKED",
   "da_wiring": "PRODUCTION PREFLIGHT PASS",
   "rag_image_sync": "v6scope deployed and verified in production container",
-  "model_requests": 0,
-  "model_tokens": 0
+  "model_requests": 6,
+  "model_tokens": 0,
+  "model_tokens_charged": 67570
 }

@@ -39,7 +39,7 @@ def run_chain(*, store, outbox, budget, model_client, sandbox_runner,
               test_code: str, finding_block: str, standard_excerpt: str,
               poc_cases: List[Dict[str, Any]],
               approve_identity: str, tip_sha: str,
-              artifacts_dir: str, max_tokens: int = 4000,
+              artifacts_dir: str, max_tokens: int = 8000,
               log: Callable = print) -> Dict[str, Any]:
     """执行隔离闭环。所有模型调用经 budget;所有状态迁移经票据 CAS。"""
     import dispatch as disp
@@ -107,9 +107,14 @@ def run_chain(*, store, outbox, budget, model_client, sandbox_runner,
             return report
         outbox.mark(dispatch_id, "EXECUTED", now)
         if not fr.get("ok"):
+            raw_path = os.path.join(artifacts_dir,
+                                    "round%d-fixer-raw.txt" % attempt)
+            os.makedirs(artifacts_dir, exist_ok=True)
+            with open(raw_path, "w", encoding="utf-8") as f:
+                f.write(fr.get("model_text") or "")
             report.setdefault("failures", []).append(
                 {"attempt": attempt, "stage": "fixer",
-                 "detail": fr.get("detail")})
+                 "detail": fr.get("detail"), "raw": raw_path})
             store.transition(ticket.ticket_id, "fail",
                              error="fixer: " + str(fr.get("detail"))[:120])
             report["final"] = "FIXER_FAILED"
@@ -198,8 +203,14 @@ def run_tests(sandbox_runner, workspace_clean: str,
         "        body = open(p).read()[:40] if p and os.path.isfile(p) else '?'\n"
         "        results.append({'name': name, 'result': 'HTTP200 body=%%r' %% body})\n"
         "    except Exception as e:\n"
-        "        results.append({'name': name, 'result': 'REJECTED: %%s' %% type(e).__name__})\n"
-        "all_passed = all('REJECTED' in r['result'] for r in results)\n"
+        "        results.append({'name': name, 'result': 'REJECTED: %s (%s)' % (type(e).__name__, str(e)[:50])})\n"
+        "def _met(c, r):\n"
+        "    if c['expect'] == 'rejected':\n"
+        "        return 'REJECTED' in r['result'] or '400' in r['result'] or '404' in r['result']\n"
+        "    if c['expect'] == 'served':\n"
+        "        return 'HTTP200' in r['result'] and c.get('content') in r['result']\n"
+        "    return False\n"
+        "all_passed = all(_met(c, r) for c, r in zip(cases, results))\n"
         "print(%r + json.dumps({'all_passed': all_passed, 'cases': results}))\n"
         % (payload, HARNESS_RESULT_MARK))
     out = sandbox_runner(["python", "-c", harness],

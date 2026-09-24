@@ -71,7 +71,7 @@ def extract_diff(model_text: str) -> Optional[str]:
 
 def call_fixer(model_client, budget, prompt: str, *,
                model: str = "deepseek-flash",
-               max_tokens: int = 4000) -> Dict[str, Any]:
+               max_tokens: int = 8000) -> Dict[str, Any]:
     """经预算守卫调用 fixer 模型。返回 {ok, diff, model_text, usage, rid}。"""
     rid = budget.reserve(est_input=len(prompt) // 3)
     resp = model_client.chat(model, [{"role": "user", "content": prompt}],
