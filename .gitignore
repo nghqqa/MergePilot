@@ -25,3 +25,6 @@ run-secrets/
 # console frontend build deps (dist is committed, node_modules is not)
 console/frontend/node_modules/
 .impeccable/
+
+# Mimosa 安全钩子本地状态
+.mimosa/

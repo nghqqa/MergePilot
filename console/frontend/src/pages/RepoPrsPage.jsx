@@ -208,11 +208,11 @@ export default function RepoPrsPage() {
                             </>
                           )}
                         </td>
-                        <td>
+                        <td data-label="最近审查">
                           <VerdictBadge review={pr.review.review} />
                           {pr.review.stale ? <div className="cell-sub muted">旧 head 结论</div> : null}
                         </td>
-                        <td className="cell-attention">
+                        <td className="cell-attention" data-label="需要处理">
                           {needsAttention(pr) ? (
                             <span className="attention-flag"><span className="attention-dot" aria-hidden />{pr.attention.label}</span>
                           ) : (

@@ -19,24 +19,41 @@ export function useAllRuns() {
   return { data, error, retry: load };
 }
 
-// 返回列表时恢复滚动位置：按路由 entry key 存取（sessionStorage，随会话结束丢弃）
+// 返回列表时恢复滚动位置：作用在真正的滚动容器 .content 上
+// （页面级滚动发生在 .content，window 不滚动）
 export function useScrollRestore() {
   const location = useLocation();
   useEffect(() => {
+    const container = document.querySelector('.content');
+    if (!container) return undefined;
     const key = `mp-scroll:${location.key}`;
     let saved = null;
     try {
       saved = sessionStorage.getItem(key);
     } catch { /* ignore */ }
-    if (saved) window.scrollTo(0, Number(saved) || 0);
+    if (saved) container.scrollTop = Number(saved) || 0;
     const onScroll = () => {
       try {
-        sessionStorage.setItem(key, String(window.scrollY));
+        sessionStorage.setItem(key, String(container.scrollTop));
       } catch { /* ignore */ }
     };
-    window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
+    container.addEventListener('scroll', onScroll, { passive: true });
+    return () => container.removeEventListener('scroll', onScroll);
   }, [location.key]);
+}
+
+// /api/runs 会话内共享缓存：顶栏与页面共用同一次请求，不重复打后端
+let runsSnapshotPromise = null;
+export function fetchRunsSnapshotOnce() {
+  if (!runsSnapshotPromise) {
+    runsSnapshotPromise = fetch('/api/runs?limit=200', { credentials: 'same-origin' })
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .catch((e) => { runsSnapshotPromise = null; throw e; });
+  }
+  return runsSnapshotPromise;
 }
 
 // ---- 数据源注入（页面只经此消费数据；模式来自可信服务配置，客户端无权切换） ----
@@ -44,15 +61,14 @@ export function useScrollRestore() {
 export function useRuntimeConfig() {
   const [config, setConfig] = useState(null);
   const [error, setError] = useState(null);
-  useEffect(() => {
-    let alive = true;
-    loadRuntimeConfig().then(
-      (c) => alive && setConfig(c),
-      (e) => alive && setError(e),
+  const load = useCallback((force = false) => {
+    loadRuntimeConfig(undefined, force).then(
+      (c) => { setConfig(c); return c; },
+      (e) => { setError(e); },
     );
-    return () => { alive = false; };
   }, []);
-  return { config, error };
+  useEffect(() => { load(); }, [load]);
+  return { config, error, reload: () => load(true) };
 }
 
 export function useDataSource(config) {

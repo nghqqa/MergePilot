@@ -392,10 +392,10 @@ export default function RunsPage() {
                             {r.head_sha ? <span className="cell-sha mono" title={`结论绑定的完整 head SHA：${r.head_sha}`}>{r.head_sha.slice(0, 8)}</span> : null}
                           </div>
                         </td>
-                        <td><VerdictBadge review={r.review} /></td>
-                        <td><ExecutionBadge execution={r.execution} /></td>
-                        <td><GateBadge gate={r.review.human_gate} source={r.review.human_gate_source} /></td>
-                        <td><PublishBadge publish={r.publish} /></td>
+                        <td data-label="审查结论"><VerdictBadge review={r.review} /></td>
+                        <td data-label="执行状态"><ExecutionBadge execution={r.execution} /></td>
+                        <td data-label="人工确认"><GateBadge gate={r.review.human_gate} source={r.review.human_gate_source} /></td>
+                        <td data-label="GitHub 检查"><PublishBadge publish={r.publish} /></td>
                         <td className="cell-time">
                           <div>{fmtTime(r.created_at) ?? '未记录'}</div>
                           <div className={r.duration_human ? 'cell-dur' : 'cell-dur muted'} title="投递接收→处理完成，或 kickoff→最后任务提交">

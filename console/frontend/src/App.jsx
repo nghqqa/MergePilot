@@ -1,12 +1,18 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
-import { Activity, Database, FolderGit2, Hand, History, LogOut, Settings } from 'lucide-react';
+import {
+  Activity, ClipboardList, Database, FolderGit2, Hand, History, LogOut,
+  PlugZap, Settings,
+} from 'lucide-react';
 import { api } from './api.js';
 import { AuthProvider, useAuth } from './auth.jsx';
 import { BrandMark, ErrorBoundary } from './ui.jsx';
 import { useDataSource, useRuntimeConfig } from './hooks.js';
+import { resolveWorkspaceState, WorkspacePanel } from './components/WorkspaceStatusPanel.jsx';
 import RunsPage from './pages/RunsPage.jsx';
 import RunDetailPage from './pages/RunDetailPage.jsx';
+import DataSourcesPage from './pages/DataSourcesPage.jsx';
+import DiagnosticsPage from './pages/DiagnosticsPage.jsx';
 import ReposPage from './pages/ReposPage.jsx';
 import RepoPrsPage from './pages/RepoPrsPage.jsx';
 import PrDetailPage from './pages/PrDetailPage.jsx';
@@ -24,7 +30,7 @@ export function useAppConfig() {
 }
 
 function Configured() {
-  const { config } = useRuntimeConfig();
+  const { config, reload } = useRuntimeConfig();
   if (!config) {
     return (
       <div className="login-wrap" role="status">
@@ -32,65 +38,66 @@ function Configured() {
       </div>
     );
   }
+  // reloadConfig 挂在配置对象上（工作区面板"重试"用）；其余消费方仍按字段读取
+  const ctx = Object.assign({}, config, { reloadConfig: () => reload(true) });
   return (
-    <ConfigCtx.Provider value={config}>
+    <ConfigCtx.Provider value={ctx}>
       <Guarded />
     </ConfigCtx.Provider>
   );
 }
 
+// 一级导航：待处理（默认工作队列）→ 仓库 → 运行
 const NAV = [
-  { to: '/repos', label: '仓库', icon: FolderGit2, end: true },
   { to: '/pending', label: '待处理', icon: Hand, end: false },
+  { to: '/repos', label: '仓库', icon: FolderGit2, end: true },
+  { to: '/runs', label: '运行', icon: History, end: false },
+];
+// 二级"系统"区：知识库 / 设置 / 数据源与联调 / 审计诊断
+const SYSTEM_NAV = [
   { to: '/knowledge', label: '知识库', icon: Database, end: true },
-  { to: '/runs', label: '运行历史', icon: History, end: false },
   { to: '/settings', label: '设置', icon: Settings, end: true },
+  { to: '/datasources', label: '数据源与联调', icon: PlugZap, end: true },
+  { to: '/diagnostics', label: '审计诊断', icon: ClipboardList, end: true },
 ];
 
 function TopbarContext() {
   const config = useAppConfig();
   const auth = useAuth();
-  // 数据模式 + 采集范围：来自可信服务配置（不客户端猜测）
-  const [range, setRange] = useState(null);
-  const snapshot = (config?.mode ?? 'snapshot') === 'snapshot';
-  useEffect(() => {
-    if (!snapshot) return undefined;
-    api.runs({ limit: 200 }).then((d) => {
-      const times = (d.items ?? []).map((r) => r.created_at).filter(Boolean).sort();
-      if (times.length) {
-        const short = (iso) => iso.slice(0, 10);
-        setRange(`${short(times[0])} ~ ${short(times[times.length - 1])}`);
-      }
-    }).catch(() => {});
-    return undefined;
-  }, [snapshot]);
-  if (!snapshot) {
-    const testAuth = auth.status === 'authed';
-    const label = config.mode === 'console-pg'
-      ? (testAuth ? 'PG 只读 · Fixture（测试主体）' : 'PG 只读 · Fixture（未认证）')
-      : (config.dataMode === 'fixture' ? '契约数据源 · Fixture' : '契约数据源 · Live');
-    const title = config.mode === 'console-pg'
-      ? '数据源：隔离 PG 只读查询服务（tools/console_pg）——数据为隔离测试记录，非真实运行。'
-        + (testAuth
-          ? '当前为 test-auth 隔离主体：审批决策请求仅写隔离 fixture 库，不触达真实系统。'
-          : '会话未认证（401 not_authenticated）。')
-      : '数据源：正式契约 v2 端点（API-AUTH-MERGE-V0）。data_mode=fixture 时全部数据为合成 fixture——非真实运行、非历史快照。';
-    return (
-      <span className="mode-wrap">
-        <span className="mode-chip" title={title}>
-          <span className="mode-dot" aria-hidden />
-          <strong>{label}</strong>
-        </span>
-      </span>
-    );
-  }
+  const { source } = useDataSource(config);
+  const [open, setOpen] = useState(false);
+  const state = resolveWorkspaceState(config, auth.status);
+  const toneCls = `ws-tone-${state.tone}`;
+  const snapshot = source.kind === 'snapshot';
+
   return (
-    <span className="mode-wrap">
-      <span className="mode-chip" title="数据模式 snapshot：全部数据来自仓库内锁定的真实历史运行证据包（SHA256SUMS 校验、只读）。live 实时模式未接入；服务仅监听 127.0.0.1 回环地址，无写操作接口，不下发凭证。">
+    <span className="ws-wrap">
+      <button
+        type="button"
+        className={`mode-chip ${state.tone === 'bad' ? 'mode-chip-bad' : ''}`}
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        onClick={() => setOpen((v) => !v)}
+        title="工作区状态——点击展开数据来源、只读/写操作、身份与接线详情"
+      >
         <span className="mode-dot" aria-hidden />
-        <strong>历史快照 · 只读</strong>
-      </span>
-      {range ? <span className="mode-range">数据采集于 {range}</span> : null}
+        <strong>{state.label}</strong>
+      </button>
+      {open ? (
+        <div className="ws-pop" role="dialog" aria-label="工作区状态详情">
+          <WorkspacePanel
+            config={config}
+            auth={auth}
+            onRetry={() => { auth.refresh(); }}
+          />
+          <div className="ws-pop-foot">
+            {snapshot ? <span className="ws-sub">运行级全量历史见"运行"页。</span> : (
+              <Link to="/runs" className="ws-sub">运行历史为 snapshot 取证视图（当前源不提供）。</Link>
+            )}
+            <button type="button" className="btn btn-sm" onClick={() => setOpen(false)}>收起</button>
+          </div>
+        </div>
+      ) : null}
     </span>
   );
 }
@@ -112,8 +119,8 @@ function AuthChip() {
         ) : (
           <span className="auth-user">{auth.user?.display_name ?? auth.user?.github_login ?? auth.user?.name ?? '已登录'}</span>
         )}
-        <button type="button" className="btn btn-ghost btn-sm" onClick={auth.refresh} title="登出需后端会话接口（契约 v2 POST /api/auth/logout）">
-          <LogOut size={12} strokeWidth={1.75} aria-hidden /> 退出
+        <button type="button" className="btn btn-ghost btn-sm" onClick={auth.refresh} title="登出端点未接线（POST /api/auth/logout，C-8）——此按钮重新探测会话状态">
+          <LogOut size={12} strokeWidth={1.75} aria-hidden /> 重查会话
         </button>
       </span>
     );
@@ -160,7 +167,10 @@ function topbarCtx(pathname) {
   if (seg[0] === 'runs' && seg.length > 1) {
     return { crumb: [['运行历史', '/runs']], current: '运行详情' };
   }
-  const hit = NAV.find((n) => pathname === n.to || (n.end === false && pathname.startsWith(n.to)));
+  const all = [...NAV, ...SYSTEM_NAV];
+  const hit = all.find((n) => pathname === n.to
+    || (n.to !== '/' && pathname.startsWith(n.to + '/'))
+    || (n.end === false && pathname.startsWith(n.to)));
   return { crumb: null, current: hit?.label ?? '控制台' };
 }
 
@@ -188,6 +198,22 @@ function Shell() {
               key={n.to}
               to={n.to}
               end={n.end}
+              title={n.label}
+              aria-label={n.label}
+              className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+            >
+              <n.icon size={15} strokeWidth={1.75} aria-hidden />
+              <span className="nav-label">{n.label}</span>
+            </NavLink>
+          ))}
+          <div className="nav-section">系统</div>
+          {SYSTEM_NAV.map((n) => (
+            <NavLink
+              key={n.to}
+              to={n.to}
+              end={n.end}
+              title={n.label}
+              aria-label={n.label}
               className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
             >
               <n.icon size={15} strokeWidth={1.75} aria-hidden />
@@ -230,7 +256,9 @@ function Shell() {
         <main className="content" key={loc.pathname}>
           <ErrorBoundary>
             <Routes>
-              <Route path="/" element={<Navigate to="/repos" replace />} />
+              <Route path="/" element={<Navigate to="/pending" replace />} />
+              <Route path="/datasources" element={<DataSourcesPage />} />
+              <Route path="/diagnostics" element={<DiagnosticsPage />} />
               <Route path="/repos" element={<ReposPage />} />
               <Route path="/repos/:owner/:name" element={<RepoPrsPage />} />
               <Route path="/repos/:owner/:name/pr/:prNumber" element={<PrDetailPage />} />
@@ -240,11 +268,11 @@ function Shell() {
               <Route path="/runs/:packId" element={<RunDetailPage />} />
               <Route path="/approvals" element={<ApprovalsPage />} />
               <Route path="/settings" element={<SettingsPage />} />
-              <Route path="/login" element={<Navigate to="/repos" replace />} />
+              <Route path="/login" element={<Navigate to="/pending" replace />} />
               <Route path="/rag" element={<Navigate to="/knowledge" replace />} />
               <Route path="/skills" element={<Navigate to="/knowledge" replace />} />
               <Route path="/usage" element={<Navigate to="/knowledge" replace />} />
-              <Route path="*" element={<Navigate to="/repos" replace />} />
+              <Route path="*" element={<Navigate to="/pending" replace />} />
             </Routes>
           </ErrorBoundary>
         </main>

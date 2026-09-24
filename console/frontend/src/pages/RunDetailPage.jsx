@@ -35,6 +35,7 @@ function EvidenceDrawer({ packId, filePath, onClose }) {
   const [content, setContent] = useState(null);
   const [error, setError] = useState(null);
   const drawerRef = React.useRef(null);
+  const titleId = React.useId().replace(/:/g, '');
   const loadContent = useCallback(() => {
     setContent(null);
     setError(null);
@@ -42,13 +43,48 @@ function EvidenceDrawer({ packId, filePath, onClose }) {
   }, [packId, filePath]);
   useEffect(() => {
     loadContent();
-    // 焦点移入对话框容器（Esc 已有全局监听； Tab 循环圈闭属后续 a11y 轮）
     if (filePath) setTimeout(() => drawerRef.current?.focus(), 0);
   }, [loadContent, filePath]);
+  // 焦点陷阱：Tab 循环圈闭在抽屉内
+  const trapTab = (e) => {
+    if (e.key !== 'Tab' || !drawerRef.current) return;
+    const focusables = drawerRef.current.querySelectorAll(
+      'button, a[href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+    if (!focusables.length) return;
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault(); last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault(); first.focus();
+    }
+  };
+  // 背景滚动锁定（.content 与 body）
+  useEffect(() => {
+    if (!filePath) return undefined;
+    const content = document.querySelector('.content');
+    const prevOverflow = content?.style.overflow;
+    const prevBody = document.body.style.overflow;
+    if (content) content.style.overflow = 'hidden';
+    document.body.style.overflow = 'hidden';
+    return () => {
+      if (content) content.style.overflow = prevOverflow ?? '';
+      document.body.style.overflow = prevBody;
+    };
+  }, [filePath]);
   if (!filePath) return null;
   return (
     <div className="drawer-backdrop" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div ref={drawerRef} className="drawer" role="dialog" tabIndex={-1} aria-label={`证据查看 ${filePath}`}>
+      <div
+        ref={drawerRef}
+        className="drawer"
+        role="dialog"
+        aria-modal="true"
+        tabIndex={-1}
+        aria-labelledby={titleId}
+        onKeyDown={trapTab}
+      >
+        <span id={titleId} className="sr-only">{`证据查看 ${filePath}`}</span>
         <div className="drawer-head">
           <div className="drawer-head-main">
             <div className="drawer-title mono">{filePath}</div>
@@ -641,25 +677,46 @@ export default function RunDetailPage() {
             </div>
           ) : null}
 
-          <div className="tab-bar" role="tablist">
-            {TABS.map((t) => (
-              <button
-                key={t.key}
-                role="tab"
-                aria-selected={tab === t.key}
-                className={`tab${tab === t.key ? ' tab-active' : ''}`}
-                onClick={() => setTab(t.key)}
-              >
-                <t.icon size={14} strokeWidth={1.75} aria-hidden />
-                {t.key}
-                {tabZero[t.key] === 0 ? (
-                  <span className="tab-zero" title="本证据包在此维度无数据（0 条）— 如实标注，不以其他数据冒充">0</span>
-                ) : null}
-              </button>
-            ))}
+          <div className="tab-bar" role="tablist" aria-label="运行详情分区"
+            onKeyDown={(e) => {
+              const keys = ['ArrowRight', 'ArrowLeft', 'Home', 'End'];
+              if (!keys.includes(e.key)) return;
+              e.preventDefault();
+              const idx = TABS.findIndex((t) => t.key === tab);
+              let next = idx;
+              if (e.key === 'ArrowRight') next = (idx + 1) % TABS.length;
+              if (e.key === 'ArrowLeft') next = (idx - 1 + TABS.length) % TABS.length;
+              if (e.key === 'Home') next = 0;
+              if (e.key === 'End') next = TABS.length - 1;
+              setTab(TABS[next].key);
+              requestAnimationFrame(() => {
+                document.getElementById(`tab-${TABS[next].key}`)?.focus();
+              });
+            }}
+          >
+            {TABS.map((t) => {
+              const selected = tab === t.key;
+              return (
+                <button
+                  key={t.key}
+                  id={`tab-${t.key}`}
+                  role="tab"
+                  aria-selected={selected}
+                  aria-controls={`tabpanel-${t.key}`}
+                  tabIndex={selected ? 0 : -1}
+                  className={`tab${selected ? ' tab-active' : ''}`}
+                  onClick={() => setTab(t.key)}
+                >
+                  <t.icon size={14} strokeWidth={1.75} aria-hidden />
+                  {t.key}
+                  {tabZero[t.key] === 0 ? (
+                    <span className="tab-zero" title="本证据包在此维度无数据（0 条）— 如实标注，不以其他数据冒充">0</span>
+                  ) : null}
+                </button>
+              );
+            })}
           </div>
-
-          {tab === '概览' && <OverviewTab run={run} onOpenEvidence={setEvidenceFile} />}
+          <div role="tabpanel" id={`tabpanel-${tab}`} aria-labelledby={`tab-${tab}`}>
           {tab === '时间线' && <TimelineTab run={run} />}
           {tab === '任务' && <TasksTab run={run} onOpenEvidence={openEvidence} />}
           {tab === '证据' && <EvidenceTab packId={packId} onOpenEvidence={openEvidence} />}
@@ -693,6 +750,7 @@ export default function RunDetailPage() {
           {tab === 'RAG' && <RagTab run={run} />}
           {tab === '用量' && <UsageTab run={run} />}
 
+          </div>
           <EvidenceDrawer packId={packId} filePath={evidenceFile} onClose={closeEvidence} />
         </>
       )}

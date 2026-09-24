@@ -39,11 +39,22 @@
   --r-sm: 6px;
   --r-md: 8px;
   --r-lg: 10px;
+  --border-w: 1px;
+  /* 间距（4 的倍数；新布局优先用 token） */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 22px;
+  --sp-6: 32px;
+  /* 触控目标下限 */
+  --tap: 44px;
   /* 字阶（5 档）与字重（3 档）：中文回退字体（Microsoft YaHei）只有 400/700 两轴，
-     550/650 等中间字重会在中英混排时跳变，一律不用 */
+     550/650 等中间字重会在中英混排时跳变，一律不用。
+     字号适配中文长时间阅读：正文 14px、表格 13px（生产化轮上调） */
   --fs-xs: 11.5px;
-  --fs-sm: 12.5px;
-  --fs-base: 13px;
+  --fs-sm: 13px;
+  --fs-base: 14px;
   --fs-md: 16px;
   --fs-lg: 20px;
   --fw-regular: 400;
@@ -84,6 +95,12 @@ input, button, textarea { font: inherit; caret-color: var(--c-accent); }
 
 a { color: var(--c-info); text-decoration: none; }
 a:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+/* 无障碍：视觉隐藏但读屏可达（导航小屏可访问名等） */
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
 
 /* ---- 布局 ---- */
 .app { display: flex; height: 100vh; }
@@ -307,7 +324,7 @@ td.th-right { text-align: right; }
 .chip {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 2px 8px; border-radius: var(--r-sm);
-  background: var(--c-inset); border: 1px solid var(--c-border);
+  background: var(--c-inset); border: none;
   font-size: var(--fs-xs); color: var(--c-text-2); white-space: nowrap;
 }
 .chip code { font-family: var(--font-mono); font-size: var(--fs-xs); }
@@ -642,14 +659,40 @@ td.th-right { text-align: right; }
 
 /* ---- 小屏 ---- */
 @media (max-width: 960px) {  .sidebar { width: 52px; flex: 0 0 52px; }
-  .brand-text, .nav-section-label, .nav-tag, .sidebar-foot, .nav-label { display: none; }
+  .brand-text, .nav-section-label, .nav-section, .nav-tag, .sidebar-foot { display: none; }
   .brand { justify-content: center; padding: 14px 8px; }
   .nav-item { justify-content: center; padding: 9px 6px; margin: 1px 6px; }
   .content { padding: 14px 14px 40px; }
   .timeline-ts { width: 108px; flex: 0 0 108px; }
   .detail-head { flex-direction: column; }
+  /* 导航文字改为读屏可达的视觉隐藏（不再 display:none 丢可访问名），并补 tooltip */
+  .nav-label { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 }
 @media (max-width: 700px) {
+  /* 触控目标下限 44px */
+  .btn, .nav-item, .tab, .qf-chip { min-height: var(--tap); }
+  .nav-item { align-items: center; }
+  /* 表格卡片化：优先字段纵排，去掉强制横向滚动 */
+  .runs-table, .pr-table { min-width: 0; }
+  .runs-table thead, .pr-table thead { display: none; }
+  .runs-table tr, .pr-table tr {
+    display: block; background: var(--c-panel);
+    border: var(--border-w) solid var(--c-border); border-radius: var(--r-md);
+    margin: 0 0 var(--sp-2);
+  }
+  .runs-table td, .pr-table td {
+    display: flex; justify-content: space-between; align-items: flex-start; gap: var(--sp-3);
+    padding: 7px 12px; white-space: normal; text-align: right;
+    border-bottom: none;
+  }
+  .runs-table td::before, .pr-table td::before {
+    content: attr(data-label); color: var(--c-text-3);
+    font-size: var(--fs-xs); text-align: left; flex: 0 0 auto; padding-top: 2px;
+  }
+  .runs-table td.cell-pr::before, .pr-table td.cell-pr::before,
+  .runs-table td.th-right::before, .pr-table td.th-right::before { content: none; }
+  .runs-table td.cell-pr, .pr-table td.cell-pr { min-width: 0; max-width: none; }
   /* 顶栏采集范围让位于模式徽章；滚动提示改为纯视觉渐隐，避免与元信息重叠 */
   .mode-range { display: none; }
   .scroll-hint { display: none; }

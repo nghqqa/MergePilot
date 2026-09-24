@@ -4,7 +4,7 @@ import {
   ArrowRight, ArrowUpRight, Clock, FileSearch, Hand, ShieldCheck, Workflow,
 } from 'lucide-react';
 import { useAppConfig } from '../App.jsx';
-import { useDataSource, useSourceQuery } from '../hooks.js';
+import { fetchRunsSnapshotOnce, useDataSource, useSourceQuery } from '../hooks.js';
 import { groupRunsByPr } from '../pr-model.js';
 import { ExecutionBadge, VerdictBadge, GateBadge, PublishBadge } from '../status.jsx';
 import { fmtTime } from '../format.js';
@@ -204,16 +204,7 @@ function PgPrDetail({ owner, name, prNumber }) {
 
 function SnapshotPrDetail({ owner, name, prNumber }) {
   const repo = `${owner}/${name}`;
-  const { data, error, retry } = useSourceQuery(async () => {
-    const res = await fetch('/api/runs?limit=200', { credentials: 'same-origin' });
-    if (!res.ok) {
-      const body = await res.json().catch(() => null);
-      const err = new Error(body?.error?.message ?? `HTTP ${res.status}`);
-      err.status = res.status;
-      throw err;
-    }
-    return res.json();
-  }, [repo, prNumber]);
+  const { data, error, retry } = useSourceQuery(() => fetchRunsSnapshotOnce(), [repo, prNumber]);
 
   const pr = useMemo(() => groupRunsByPr(data?.items ?? [])
     .find((p) => p.repo === repo && p.prNumber === prNumber), [data, repo, prNumber]);

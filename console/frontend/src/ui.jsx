@@ -1,16 +1,38 @@
 import React, { useState } from 'react';
 import { AlertTriangle, Check, Copy, Inbox, Loader2, RotateCcw } from 'lucide-react';
 
-// 品牌标：两条分支汇入一条主干（merge），自绘 SVG，深青单色。
-export function BrandMark() {
+// 品牌标：两条分支经中央控制节点汇入闸门输出（M / gate 形态）。
+// variant: 'light'（浅色背景）| 'dark'（深色背景）| 'mono'（单色，跟随 currentColor）
+const BRAND = {
+  light: { in: '#0e6b62', out: '#14b8a6', node: '#0e6b62' },
+  dark: { in: '#5eead4', out: '#2dd4bf', node: '#f8fafc' },
+  mono: { in: 'currentColor', out: 'currentColor', node: 'currentColor' },
+};
+
+export function BrandMark({ variant = 'light', size = 22 }) {
+  const c = BRAND[variant] ?? BRAND.light;
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <path d="M6 4v6c0 3 2 5 5 5h7" stroke="#2dd4bf" strokeWidth="2" strokeLinecap="round" />
-      <path d="M18 4v6c0 1.5-.6 2.8-1.6 3.8" stroke="#0e6b62" strokeWidth="2" strokeLinecap="round" opacity="0.85" />
-      <circle cx="6" cy="4" r="2.2" fill="#2dd4bf" />
-      <circle cx="18" cy="4" r="2.2" fill="#0e6b62" />
-      <circle cx="18" cy="15" r="2.2" fill="#e6f2f0" />
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path d="M5 3.5v5.4a4.6 4.6 0 0 0 4.6 4.6h.4" stroke={c.in} strokeWidth="2.2" strokeLinecap="round"/>
+      <path d="M19 3.5v5.4a4.6 4.6 0 0 1-4.6 4.6h-.4" stroke={c.out} strokeWidth="2.2" strokeLinecap="round"/>
+      <circle cx="12" cy="13.5" r="2.5" fill={c.node}/>
+      <path d="M12 16v5" stroke={c.in} strokeWidth="2.2" strokeLinecap="round"/>
+      <path d="M9.6 18.9h4.8" stroke={c.out} strokeWidth="1.8" strokeLinecap="round"/>
     </svg>
+  );
+}
+
+// 文字标（用于登录页/文档头）：mark + 字标，浅色背景用深字，深色背景用浅字
+export function Wordmark({ variant = 'light', size = 22 }) {
+  const c = BRAND[variant] ?? BRAND.light;
+  const textColor = variant === 'dark' ? '#f8fafc' : '#131a26';
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: textColor }}>
+      <BrandMark variant={variant} size={size} />
+      <span style={{ fontSize: 16, fontWeight: 600, letterSpacing: '0.2px', fontFamily: "system-ui, 'Segoe UI', 'Microsoft YaHei', sans-serif" }}>
+        MergePilot
+      </span>
+    </span>
   );
 }
 
