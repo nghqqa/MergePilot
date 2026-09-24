@@ -22,3 +22,5 @@ demo-platform/frontend/node_modules/
 key.key
 run-secrets/
 .case1_evidence/
+
+.mimosa/
