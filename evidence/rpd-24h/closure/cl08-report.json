@@ -1,0 +1,27 @@
+{
+  "report": {
+    "rounds": [],
+    "ticket_id": "tkt-26bda0b1f6d84754afdc1e83cd0f6417",
+    "final": "APPLY_FAILED",
+    "ticket_created": true,
+    "failures": [
+      {
+        "attempt": 1,
+        "stage": "apply",
+        "detail": "error: corrupt patch at line 3"
+      }
+    ]
+  },
+  "budget": {
+    "requests": 1,
+    "max_requests": 40,
+    "remaining_tokens": 158988,
+    "unreliable": false,
+    "last_error": ""
+  },
+  "diag": {
+    "ok": true,
+    "finish_reason": "stop",
+    "reasoning_tokens": null
+  }
+}

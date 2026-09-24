@@ -1,0 +1,12 @@
+{
+  "run_id": "run-gh-pr2-42ed1787-003205",
+  "head_sha": "42ed17879becbc02e31551938afbbf689351df96",
+  "ticket_id": "tkt-26bda0b1f6d84754afdc1e83cd0f6417",
+  "attempt": 1,
+  "patch_sha256": "33d267ffbe564b34027d745e68f58bc9de90d735a0e55eff46bfacf24caf94c5",
+  "files_changed": [
+    "backend/src/interfaces/api/v1/demo_high_risk.py",
+    "backend/tests/unit/test_demo_high_risk_path_traversal.py"
+  ],
+  "report": {}
+}

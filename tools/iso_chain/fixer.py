@@ -8,6 +8,11 @@
 from __future__ import annotations
 
 import re
+
+try:
+    import diffsan
+except ImportError:
+    import diffsan as diffsan  # noqa
 from typing import Any, Callable, Dict, List, Optional
 
 FIXER_PROMPT_TEMPLATE = """You are a SECURITY FIXER. Produce a minimal unified git diff that remediates the confirmed finding.
@@ -88,6 +93,8 @@ def call_fixer(model_client, budget, prompt: str, *,
         "completion_tokens": resp.get("usage", {}).get("completion_tokens")})
     text = resp.get("content") or ""
     diff = extract_diff(text)
+    if diff:
+        diff = diffsan.sanitize_diff(diff)
     return {"ok": diff is not None, "diff": diff, "model_text": text,
             "usage": resp.get("usage"), "rid": rid,
             "detail": None if diff else "no unified diff in response"}

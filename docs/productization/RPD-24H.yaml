@@ -308,7 +308,7 @@ closure_round:
     - {id: CL-06, title: 补丁产物与干净checkout验证, status: DONE, evidence: "tools/iso_chain/patchwork.py"}
     - {id: CL-07, title: 确定性故障测试, status: DONE, evidence: "tests/iso_chain/test_closure.py"}
     - {id: CL-08, title: 真实模型隔离链, status: BLOCKED,
-       blocker: "deepseek-flash 为推理模型: 8000 completion tokens 全部耗于 reasoning, 最终 content 为空(实测 2 次, usage 如实计费); 需决策: 提高单请求上限 / 更换模型 / 接受",
+       blocker: "两阶段失败已确诊: ①thinking 开启(默认)时 8000 completion 全耗于 reasoning, content 空; ②thinking 禁用后(finish=stop, usage 正常)diff 的 @@ 头损坏(@ 占位), git apply 2/2 候选失败; 需决策: 换模型(v4-pro)/人工修复 diff/提高上限",
        evidence: "evidence/rpd-24h/closure/"}
     - {id: CL-09, title: 回归/证据/PR/验收授权单, status: TODO}
 
