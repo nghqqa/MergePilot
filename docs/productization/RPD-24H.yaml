@@ -217,6 +217,7 @@ case2b_high_decision:
   decided_at: "2026-09-24T11:45:00Z"
   requested_by: operator
   user_reply: "B：批准 CASE2-B HIGH finding 进入 fix 计划，但不自动派发 fixer。"
+  reconfirmed_at: "2026-09-24T02:54:00Z"   # 校准轮用户重申: 批准进入人工 fix 计划; 仅处置意向,非 D-B/TicketStore 正式 approve
   run_id: run-gh-pr2-42ed1787-003205
   head_sha: 42ed17879becbc02e31551938afbbf689351df96
   finding: "CWE-22 arbitrary file read (CWE-73/200 exposure)"
@@ -230,7 +231,8 @@ case2b_high_decision:
     target_head: 42ed17879becbc02e31551938afbbf689351df96
     auto_dispatch: false
   NOT_AN_OFFICIAL_APPROVE: "本次 B 仅为人工处置意向登记,不是 TicketStore 正式 approve;正式审批仍需 D-B+合法 ticket+具名审批人+24h TTL;启用前不得触发 fix/verify"
-RAG-IMAGE-SYNC: DONE                # v6scope 镜像(单文件增量)+agt --image 更新+容器内验收全过(含真实 case-pg scope 查询)
+RAG-IMAGE-SYNC: DONE                # 历史事实(2026-09-24): v6scope 镜像(单文件增量)+agt --image 更新+容器内验收全过(含真实 case-pg scope 查询)
+RAG-IMAGE-SYNC-ROUND-20260924-CALIBRATION: FROZEN_NO_NEW_ACTION   # 本轮零镜像构建/零 agt 更新/零容器操作; 历史 DONE 事实保留不回写
 rag_image_sync:
   old_tag: agentteams/copaw-worker:223ddc2-agentloop-v5fix
   old_digest: 4bfe8eccfe4f
@@ -239,21 +241,36 @@ rag_image_sync:
   build: "FROM old + COPY case_retrieval/core.py (single-file delta)"
   evidence: [evidence/rpd-24h/rag-image-sync/exec-report.md]
   rollback: "agt update worker --name reviewer --image agentteams/copaw-worker:223ddc2-agentloop-v5fix"
-D-B: WAITING_HUMAN
+D-B: WAITING_HUMAN                  # 2026-09-24 校准轮重申保持;不阻塞人工漏洞修复的事实记录,但正式产品审批面仍待决
 D-7: 未批准
-CASE2-FIX-VERIFY: WAITING_HUMAN      # 在 D-B+合法 ticket(或用户明确指示)前不得触发
+CASE2-FIX-VERIFY: MANUAL_FIX_VERIFIED   # 人工路线子任务(见 case2b_fix);生产 Fixer/Verifier 派发仍 WAITING_HUMAN(D-B+合法票据前不得触发,零启动保持)
 
-# CASE2-B-HIGH-DECISION 完整绑定
-case2b_high_decision:
-  run_id: run-gh-pr2-42ed1787-003205
-  head_sha: 42ed17879becbc02e31551938afbbf689351df96
-  finding: "CWE-22 arbitrary file read (CWE-73/200 exposure)"
-  severity: HIGH
-  current_state: WAITING_HUMAN
-  ticket_id: null
-  requested_by: "reviewer finding evidence"
-  decision: WAITING_HUMAN
-  note: "人工处置意向决定 ≠ TicketStore 正式 approve/reject;正式审批需 D-B+合法 ticket+具名身份+24h TTL;正式审批启用前不得触发 fix/verify"
+# CASE2-B 人工修复(2026-09-24 校准轮): 补丁生成→人工验证, 零模型调用
+CASE2-B-FIX: MANUAL_FIX_VERIFIED
+case2b_fix:
+  patch_file: evidence/rpd-24h/case2b-fix/patch.diff
+  patch_sha256: 6d9e9905ed4ccb1c8c1126a220425268e92e1414219b767d0f398f9602070090
+  target_commit: 42ed17879becbc02e31551938afbbf689351df96   # PR #2 head(2026-09-24T02:54Z 核验=仍 OPEN 同 head)
+  files_changed:
+    - backend/src/interfaces/api/v1/demo_high_risk.py
+    - backend/tests/unit/test_demo_high_risk_containment.py   # 新增 123 行
+    - backend/tests/unit/test_demo_high_risk_path_traversal.py
+  git_apply_check: "exit=0 干净应用(临时一次性 clone @42ed1787, 已销毁)"
+  tests: "13 passed / 1 skipped(symlink=Windows 特权限制,测试内建 skip) / 0 failed, exit=0"
+  pre_fix_control: "未修复代码上主 PoC 用例复现泄漏 PASSED(漏洞真实存在); depth 用例失败=原始测试自身路径算术差一级(补丁前已有缺陷,非补丁问题,如实登记)"
+  verified_at: "2026-09-24T02:54:00Z"
+  evidence: [evidence/rpd-24h/case2b-fix/verify-report.md]
+  model_requests_this_round: 0
+  model_tokens_this_round: 0
+  NOT_PRODUCTION_VERIFIER: "本地一次性副本上的人工复核; 生产 Fixer/Verifier 零启动; ≠FIXER_COMPLETED/VERIFIER_COMPLETED; ≠TicketStore 正式审批闭环; 补丁正式派发/推送/合并仍待 D-B+合法票据+用户明确指示"
+
+# 校准轮决策登记(2026-09-24T02:54Z 用户指令): 人工 fix 计划批准仅是处置意向重申
+case2b_high_decision_reconfirm_20260924:
+  decision: APPROVED_PLAN_READY
+  scope: "批准进入人工 fix 计划(处置意向); 非 D-B/TicketStore 正式 approve"
+  manual_fix_route: "CL-08 选择人工修复; 本轮起不再调用真实模型, 不增加模型 token"
+  fixer_verifier_production: "零启动保持"
+  rag_image_sync_this_round: "FROZEN/NO_NEW_ACTION(历史 DONE 保留)"
 
 # D-A 解锁调查轮(2026-09-24): 只读调查+隔离复现+方案评估;零共享环境修改
 D-A-REMEDIATION: DONE             # 根因=agt apply CLI 丢弃 spec.env;controller 本身支持(223ddc2 member_reconcile.go:923)
@@ -307,13 +324,35 @@ closure_round:
     - {id: CL-05, title: 独立verifier(隔离实例/仅目标输入), status: DONE, evidence: "tools/iso_chain/verifier.py"}
     - {id: CL-06, title: 补丁产物与干净checkout验证, status: DONE, evidence: "tools/iso_chain/patchwork.py"}
     - {id: CL-07, title: 确定性故障测试, status: DONE, evidence: "tests/iso_chain/test_closure.py"}
-    - {id: CL-08, title: 真实模型隔离链, status: BLOCKED,
-       blocker: "两阶段失败已确诊: ①thinking 开启(默认)时 8000 completion 全耗于 reasoning, content 空; ②thinking 禁用后(finish=stop, usage 正常)diff 的 @@ 头损坏(@ 占位), git apply 2/2 候选失败; 需决策: 换模型(v4-pro)/人工修复 diff/提高上限",
-       evidence: "evidence/rpd-24h/closure/"}
-    - {id: CL-09, title: 回归/证据/PR/验收授权单, status: TODO}
+    - {id: CL-08, title: 真实模型隔离链, status: RESOLVED_MANUAL_FIX,
+       blocker: "历史根因(保留): 两阶段失败已确诊 ①thinking 开启(默认)时 8000 completion 全耗于 reasoning, content 空; ②thinking 禁用后(finish=stop, usage 正常)diff 的 @@ 头损坏(@ 占位), git apply 2/2 候选失败",
+       decision_20260924: "用户三选一已决=人工修复; 模型路线关闭, 本轮零模型调用/零新增 token; 人工补丁验证见 case2b_fix(VERIFY 全过)",
+       evidence: "evidence/rpd-24h/closure/cl08-blocked.md + evidence/rpd-24h/case2b-fix/verify-report.md"}
+    - {id: CL-09, title: 回归/证据/PR/验收授权单, status: TODO,
+       note: "2026-09-24 校准轮完成证据段(case2b-fix verify-report+状态三源同步);PR 更新/验收授权单仍待用户;本轮未 push 未改 PR"}
 
 final_state: MANUAL-REQUIRED
-final_blocker: "两项人工决策: ①CASE2-B HIGH finding 处置(批准入 fix 计划/拒绝+原因) ②CL-08 解锁(flash reasoning 耗尽 8000 上限→需提高上限/换模型/接受); RAG-IMAGE-SYNC DONE 待验收追认"
+final_blocker: "CASE2-B 人工修复已验证(MANUAL_FIX_VERIFIED, 子任务级); 但 D-B 正式审批启用仍待决 → 产品化决策面整体保持 MANUAL-REQUIRED, 不得为变绿隐藏待决项"
+
+# ── 状态校准轮(2026-09-24T02:54Z): 只改状态/证据索引/报告, 不改业务代码 ──
+calibration_round_20260924:
+  started_at: "2026-09-24T02:54:00Z"
+  scope: "状态校准+文档收口; 零业务代码修改; 不触碰 CASE2-B 人工补丁文件本体(只读验证)"
+  local_head: 74a2782c54b4f990d789734c476351c233ea0ec4        # git rev-parse 实读
+  pushed_head: 74a2782c54b4f990d789734c476351c233ea0ec4       # gh pr view 233 + git ls-remote 实读(与 local 一致)
+  pr_233: "OPEN, headRefOid=74a2782c(=本地, 无漂移)"
+  model_requests_this_round: 0
+  model_tokens_this_round: 0
+  production_fixer_verifier_started: 0
+  github_writes_this_round: none        # 未 push/未 merge/未改 PR/未发 check-run
+  user_decisions_registered:
+    - "CASE2-B-HIGH-DECISION=批准进入人工 fix 计划(仅处置意向, 非 D-B/TicketStore 正式 approve)"
+    - "CL-08=选择人工修复; 本轮不再调用真实模型, 不增加模型 token"
+    - "D-B=保持 WAITING_HUMAN/DISABLED"
+    - "Fixer/Verifier 生产角色=保持零启动"
+    - "RAG-IMAGE-SYNC=历史 DONE 保留, 本轮 FROZEN/NO_NEW_ACTION"
+    - "D-A、D-C A1-A5、D-E=按已有真实证据登记为已完成(夜轮批准+后继轮执行), 不得重新执行"
+  case2b_fix_status: MANUAL_FIX_VERIFIED   # 依据=case2b-fix/verify-report.md(apply 干净+PoC 阻断+合法回归+13/1s/0f)
 
 # ── 人工决策登记(2026-09-23 复核轮新增;批准须用"批准 D-X"或"修改条件:…"明确表达) ──
 human_decisions:
