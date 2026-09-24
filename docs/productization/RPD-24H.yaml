@@ -209,6 +209,26 @@ execution_decision_20260924:
 
 # 范围审计(2026-09-24 复核轮): PR #233 157 文件全部归属 R3..RPD-08 各轮,
 # 零无关文件/零生成物/零秘密/零生产配置 → PR_SCOPE_ACCEPTABLE = true
+# ── CASE2-B 收口轮(2026-09-24): 证据复核+人工决策登记 ──
+CASE2-B: DONE                        # 证据 14/14 复核通过(含 manifest_sha 权威重算)
+CASE2-B-HIGH-DECISION: WAITING_HUMAN # ticket_id=null;requested_by=reviewer finding evidence;等用户 A(拒绝/关闭) 或 B(批准入 fix 计划)
+RAG-IMAGE-SYNC: WAITING_HUMAN        # 镜像重建/替换=独立部署授权;最小面=core.py 单文件;方案已写 evidence
+D-B: WAITING_HUMAN
+D-7: 未批准
+CASE2-FIX-VERIFY: WAITING_HUMAN      # 在 D-B+合法 ticket(或用户明确指示)前不得触发
+
+# CASE2-B-HIGH-DECISION 完整绑定
+case2b_high_decision:
+  run_id: run-gh-pr2-42ed1787-003205
+  head_sha: 42ed17879becbc02e31551938afbbf689351df96
+  finding: "CWE-22 arbitrary file read (CWE-73/200 exposure)"
+  severity: HIGH
+  current_state: WAITING_HUMAN
+  ticket_id: null
+  requested_by: "reviewer finding evidence"
+  decision: WAITING_HUMAN
+  note: "人工处置意向决定 ≠ TicketStore 正式 approve/reject;正式审批需 D-B+合法 ticket+具名身份+24h TTL;正式审批启用前不得触发 fix/verify"
+
 # D-A 解锁调查轮(2026-09-24): 只读调查+隔离复现+方案评估;零共享环境修改
 D-A-REMEDIATION: DONE             # 根因=agt apply CLI 丢弃 spec.env;controller 本身支持(223ddc2 member_reconcile.go:923)
 D-A-ISOLATED-REPRO: DONE          # 生产 kine 存储证明 + 官方源码比对(隔离 controller 实例启动未成,改用生产存储证据+源码)

@@ -36,6 +36,20 @@
 → 判定=**批复缺失**：保持 MANUAL-REQUIRED，零外部动作（未 push db62d1c/9dcf3f6、未注入环境、未启用审批、未执行 CASE2）。
 等待明确批复：`批准 D-A` / `批准 D-B` / `批准 D-C A1-A5` / `批准 D-E` / `修改条件：…`。
 
+## CASE2-B 收口与人工决策（2026-09-24 复核轮）
+
+**证据复核 14/14**（manifest_sha 权威重算一致；零 fix/verify 任务；秘密扫描净）——[case2b-evidence-recheck](../evidence/rpd-24h/pr-audit/case2b-evidence-recheck.md)
+
+| 决定/任务 | 状态 | 说明 |
+|---|---|---|
+| **CASE2-B-HIGH-DECISION** | **WAITING_HUMAN** | CWE-22 任意文件读(HIGH)，ticket_id=null；等 A（拒绝/关闭+原因）或 B（批准入 fix 计划，不派发） |
+| RAG-IMAGE-SYNC | **WAITING_HUMAN** | 镜像 core.py 缺 scope-file 回退；最小面=单文件重建镜像；[rag-image-sync](../evidence/rpd-24h/pr-audit/rag-image-sync.md) |
+| D-D | WAITING_FOR_CASE2_TICKET | leader 未写 marker→无合法 ticket，不补造 |
+| D-B | WAITING_HUMAN | 未批；正式 approve/reject 未启用 |
+| CASE2 fix/verify | WAITING_HUMAN | D-B+合法 ticket（或用户明确指示）前不得触发 |
+
+处置意向决定 ≠ TicketStore 正式 approve/reject（后者需 D-B+合法 ticket+具名身份+24h TTL）。
+
 ## 人工决策登记（2026-09-23 复核轮）
 
 | decision_id | 内容 | 状态 | 用户答复 |
