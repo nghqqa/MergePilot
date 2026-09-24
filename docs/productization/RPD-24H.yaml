@@ -204,7 +204,7 @@ execution_decision_20260924:
   user_reply_all_empty: true
   directive_text_contains_approval_form: false
   action_taken: "NONE (stayed MANUAL-REQUIRED per rules)"
-  local_commits_unpushed: [db62d1c, 9dcf3f6]
+  local_commits_unpushed: [db62d1c, 9dcf3f6]   # 历史记录(当时); 后继夜轮已 push, 2026-09-24 远端=2e98d4e
   note: "等待用户以明确形式批复: 批准 D-A / 批准 D-B / 批准 D-C A1-A5 / 批准 D-E / 修改条件:…"
 
 # 范围审计(2026-09-24 复核轮): PR #233 157 文件全部归属 R3..RPD-08 各轮,
@@ -248,6 +248,7 @@ CASE2-FIX-VERIFY: MANUAL_FIX_VERIFIED   # 人工路线子任务(见 case2b_fix);
 # CASE2-B 人工修复(2026-09-24 校准轮): 补丁生成→人工验证, 零模型调用
 CASE2-B-FIX: MANUAL_FIX_VERIFIED
 case2b_fix:
+  status: MANUAL_FIX_VERIFIED
   patch_file: evidence/rpd-24h/case2b-fix/patch.diff
   patch_sha256: 6d9e9905ed4ccb1c8c1126a220425268e92e1414219b767d0f398f9602070090
   target_commit: 42ed17879becbc02e31551938afbbf689351df96   # PR #2 head(2026-09-24T02:54Z 核验=仍 OPEN 同 head)
@@ -258,8 +259,13 @@ case2b_fix:
   git_apply_check: "exit=0 干净应用(临时一次性 clone @42ed1787, 已销毁)"
   tests: "13 passed / 1 skipped(symlink=Windows 特权限制,测试内建 skip) / 0 failed, exit=0"
   pre_fix_control: "未修复代码上主 PoC 用例复现泄漏 PASSED(漏洞真实存在); depth 用例失败=原始测试自身路径算术差一级(补丁前已有缺陷,非补丁问题,如实登记)"
-  verified_at: "2026-09-24T02:54:00Z"
-  evidence: [evidence/rpd-24h/case2b-fix/verify-report.md]
+  verified_at: '2026-09-24T02:54:00Z(独立复核); 并行补丁会话容器验证=2026-09-24 10:55 +0800'
+  dual_verification:
+    primary: '人工补丁会话(并行)——独立 checkout+受限容器(network=none/非root/512m/1cpu), PoC before/after 对照, 14 passed(containment 10+反转回归 4); 见 fix-report.md+poc-results.json+test-output.txt'
+    independent_recheck: '状态校准轮(本节所属轮)——一次性临时 clone @42ed1787, git apply --check exit=0, 13 passed/1 skipped(symlink=Windows 特权)/0 failed; 见 verify-report.md; 两链结论一致'
+    business_repo_branch: 'fix/cwe22-containment @ f95d99d(父=42ed178, 业务仓库本地分支, 未推送)'
+  evidence: [evidence/rpd-24h/case2b-fix/fix-report.md, evidence/rpd-24h/case2b-fix/poc-results.json,
+             evidence/rpd-24h/case2b-fix/test-output.txt, evidence/rpd-24h/case2b-fix/verify-report.md]
   model_requests_this_round: 0
   model_tokens_this_round: 0
   NOT_PRODUCTION_VERIFIER: "本地一次性副本上的人工复核; 生产 Fixer/Verifier 零启动; ≠FIXER_COMPLETED/VERIFIER_COMPLETED; ≠TicketStore 正式审批闭环; 补丁正式派发/推送/合并仍待 D-B+合法票据+用户明确指示"
@@ -291,7 +297,7 @@ pr_scope_audit:
 night_round:
   approvals: {"D-E": true, "D-A": true, "D-C": ["A1", "A2", "A3", "A4", "A5"], "D-B": false, "D-D": "wait-ticket"}
   tasks:
-    - {id: NR-01, title: push PR #233 本地提交, status: DONE, evidence: "evidence/rpd-24h/night-run/pr-push.md"}
+    - {id: NR-01, title: "push PR #233 本地提交", status: DONE, evidence: "evidence/rpd-24h/night-run/pr-push.md"}
     - {id: NR-02, title: D-A 正式 case_retrieval 接线, status: BLOCKED,
        blocker: "controller 不实现 spec.env(apply 静默丢弃, kine 存储证明); 三条解锁路径待用户选择",
        evidence: "evidence/rpd-24h/D-A/wiring-report.md"}
@@ -338,13 +344,15 @@ final_blocker: "CASE2-B 人工修复已验证(MANUAL_FIX_VERIFIED, 子任务级)
 calibration_round_20260924:
   started_at: "2026-09-24T02:54:00Z"
   scope: "状态校准+文档收口; 零业务代码修改; 不触碰 CASE2-B 人工补丁文件本体(只读验证)"
-  local_head: 74a2782c54b4f990d789734c476351c233ea0ec4        # git rev-parse 实读
-  pushed_head: 74a2782c54b4f990d789734c476351c233ea0ec4       # gh pr view 233 + git ls-remote 实读(与 local 一致)
-  pr_233: "OPEN, headRefOid=74a2782c(=本地, 无漂移)"
+  head_at_calibration_start: 74a2782c54b4f990d789734c476351c233ea0ec4   # 校准轮开始时 git rev-parse 实读
+  parallel_patch_session_commits: [ec66209, 81e2b25, 2e98d4e]            # CASE2-B 人工补丁会话(并行)同窗追加且已 push; 属该会话自身授权范围(夜轮 D-E 通道), 如实登记非本校准轮动作
+  pushed_head: 2e98d4e26e1ac76e58e7895ead11531abfe388f5       # git ls-remote + gh pr view 233 实读
+  local_head_at_write_time: 2e98d4e26e1ac76e58e7895ead11531abfe388f5      # 本轮收口提交前基线; 收口提交后 local 前进且未 push→local 领先 pushed(分别记录不混写)
+  pr_233: 'OPEN, headRefOid=2e98d4e; main 未动未 merge'
   model_requests_this_round: 0
   model_tokens_this_round: 0
   production_fixer_verifier_started: 0
-  github_writes_this_round: none        # 未 push/未 merge/未改 PR/未发 check-run
+  github_writes_this_round: 'none(校准轮自身——未 push/未 merge/未改 PR/未发 check-run); 并行补丁会话的 push 见 parallel_patch_session_commits'
   user_decisions_registered:
     - "CASE2-B-HIGH-DECISION=批准进入人工 fix 计划(仅处置意向, 非 D-B/TicketStore 正式 approve)"
     - "CL-08=选择人工修复; 本轮不再调用真实模型, 不增加模型 token"
@@ -358,14 +366,14 @@ calibration_round_20260924:
 human_decisions:
   - decision_id: D-A
     title: 正式 controller/Worker 环境注入
-    status: WAITING_HUMAN
-    user_reply: ""
+    status: APPROVED_EXECUTED           # 夜轮(2026-09-23 深夜)批准; 后继轮已执行完毕, 2026-09-24 校准轮补登记; 不得重新执行
+    user_reply: "夜轮授权 D-A(见 night_round.approvals); 批准时间以夜轮记录为准"
     impact: [共享 controller/Worker CR 写入, case-pg 只读账号创建/配置, 相关 Worker 重启]
-    allowed_external_writes: []          # 批准前为空
-    effective_at: ""
+    allowed_external_writes: []          # 已执行完毕, 无待执行项
+    effective_at: "夜轮批准; 执行=commit 88e2e4d(k8s 原生 apiserver PUT spec.env 两键+容器重建, 生产 preflight PASS)"
     evidence: [tools/case_retrieval/deploy/README.md, tools/case_retrieval/deploy/validate_env.py,
-               evidence/rpd-24h/rpd-03/wiring.md]
-    audit: "登记于本轮 RPD;未获明确批准前不执行任何共享环境变更"
+               evidence/rpd-24h/rpd-03/wiring.md, evidence/rpd-24h/D-A/wiring-report.md]
+    audit: "登记于本轮 RPD;夜轮批准后经 kube-apiserver 原生 PUT 完成注入(agt apply CLI 丢弃 spec.env 的缺陷已登记上游);回滚=apiserver PUT 移除两键+容器重建"
     subitems:
       - 设置 MERGEPILOT_CR_PG_DSN 与 MERGEPILOT_CR_REPO_SCOPE_FILE
       - 创建/配置 case-pg 只读账号
@@ -390,13 +398,14 @@ human_decisions:
 
   - decision_id: D-C
     title: CASE2 运行授权(A1-A5,须全部明确批准)
-    status: WAITING_HUMAN
-    user_reply: ""
+    status: APPROVED_EXECUTED           # 夜轮批准 A1-A5; CASE2-B 已按授权执行完毕, 2026-09-24 校准轮补登记; 不得重新执行
+    user_reply: "夜轮授权 D-C A1-A5(见 night_round.approvals); 批准时间以夜轮记录为准"
     impact: [业务仓库空提交, deepseek-flash 真实调用, rag-live 窗口, 单 check-run, 费用风险]
-    allowed_external_writes: []          # A1-A5 全批后才非空
-    effective_at: ""
-    evidence: [docs/productization/backend/CASE2-CANDIDATES.md]
-    audit: "约束: 单仓库/单 PR/单 head/单 run;fixer/verifier 不启用;v3 shadow;不自动修复/推修复/merge;20min 本地截止;超时或人工门后停止"
+    allowed_external_writes: []          # 已执行完毕, 无待执行项
+    effective_at: "夜轮批准; 执行=CASE2-B(run-gh-pr2-42ed1787-003205: A1 空提交 head=42ed1787/A2 真实审查/A3 rag-live 真实检索×2/A4 单 check-run 107446711189/A5 费用风险已承受)"
+    evidence: [docs/productization/backend/CASE2-CANDIDATES.md, evidence/rpd-24h/case2b/run-report.md,
+               evidence/rpd-24h/case2b/run-context.json]
+    audit: "约束已遵守: 单仓库/单 PR/单 head/单 run;fixer/verifier 未启用;20min 收口;ticket 未补造;终态=timeout(leader 未写 marker,模型指令遵循局限已记录)"
     subitems:
       - A1 向 demo/high-risk-human-gate 推送一个空提交
       - A2 leader+reviewer 使用 deepseek-flash 一次真实审查
@@ -416,10 +425,10 @@ human_decisions:
 
   - decision_id: D-E
     title: Git 凭据通道(gh CLI credential helper)
-    status: WAITING_HUMAN
-    user_reply: ""
+    status: APPROVED_EXECUTED           # 夜轮批准; NR-01 已 push PR #233 本地提交, 2026-09-24 校准轮补登记; 不得重新执行
+    user_reply: "夜轮授权 D-E(见 night_round.approvals); 批准时间以夜轮记录为准"
     impact: [本仓库 feature branch 推送通道, PR 创建/更新]
-    allowed_external_writes: []          # 明确决定前不做新的 GitHub 写入
-    effective_at: ""
-    evidence: [evidence/rpd-24h/rpd-07/pr-record.md]
-    audit: "事实记录:首次 git push 默认凭据 403(旧凭据无此仓库写权限),改用 gh CLI 凭据助手(token 含 repo scope)成功;登记问题:①是否允许后续 feature branch 继续用 gh 通道 ②禁止输出 token ③限制到当前仓库 ④允许创建/更新 PR ⑤禁止 push main ⑥禁止 merge"   # PROMOTE-READY | MANUAL-REQUIRED | BLOCKED | FAILED(收口时填写)
+    allowed_external_writes: []          # 通道已投用完毕; 校准轮零 GitHub 写入(无本轮授权)
+    effective_at: "夜轮批准; 执行=NR-01 push(远端 tip 核验 74a2782c, 见 evidence/rpd-24h/night-run/pr-push.md)"
+    evidence: [evidence/rpd-24h/rpd-07/pr-record.md, evidence/rpd-24h/night-run/pr-push.md]
+    audit: "批准范围已执行:feature branch push 经 gh 凭据通道;未 push main/未 merge/token 未输出;2026-09-24 校准轮无新 GitHub 写入授权→零 GitHub 写入"

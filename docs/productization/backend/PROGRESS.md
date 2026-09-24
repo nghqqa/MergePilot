@@ -333,3 +333,46 @@ migration 001（case_retrieval_reader 只读角色：SELECT-only + default_trans
 → validate_env ready(0) + 核心管线端到端跑通=**隔离接线验收完成**。生产 r3work 运行副本与
 controller 均未注入任何配置。回归：**281 passed/29 skipped**；PG 门控 25/26（race=基线既有）；
 CASE1/CASE2 证据 hash 逐一核对不变。D-1/D-2、真实审批、fixer/verifier、CASE2 仍全部关闭。
+
+
+## 第三十五轮（2026-09-24，校准轮追溯登记）：closure/CASE2-B/人工修复收口 + 状态三源校准
+
+> 本条由状态校准轮补记：第三十四轮之后的夜轮/D-A 修复/CASE2-B/RAG-IMAGE-SYNC/closure 批次
+> 此前仅记录于 RPD-24H.yaml 与 evidence/ 各目录，未入本文件；现按发生顺序追溯索引，不改写任何历史证据。
+
+### 追溯事实链（证据在案）
+- 夜轮（2026-09-23 深夜，授权 D-E+D-A+D-C A1-A5）：push PR #233 本地提交（NR-01）；D-A 接线被
+  agt apply 丢弃 spec.env 阻塞（NR-02，kine 存储证明）→ 当轮 BLOCKED。
+- D-A 修复：kube-apiserver 原生 PUT 注入 spec.env 两键+容器重建，**生产 preflight PASS**
+  （evidence/rpd-24h/D-A/wiring-report.md）。
+- CASE2-B（run-gh-pr2-42ed1787-003205）：第二次真实 RAG 消费（rag_retrieve×2 引用两条组织标准）；
+  HIGH=CWE-22 任意文件读；leader 未写 marker→无合法 ticket；终态 timeout+单 check-run
+  （evidence/rpd-24h/case2b/run-report.md）。复核 14/14 通过；用户批复 B=APPROVED_PLAN_READY（处置意向）。
+- RAG-IMAGE-SYNC：v6scope 镜像部署生产 reviewer，真实 case-pg scope 查询验收 OK
+  （evidence/rpd-24h/rag-image-sync/exec-report.md）。
+- closure 批次 CL-01..07：结构化建票/iso 审批/派发 fencing+outbox/独立 verifier/补丁产物/确定性测试
+  （tests/iso_chain/test_closure.py）DONE；CL-08 真实模型隔离链两阶段失败
+  （reasoning 耗尽 8000 上限；thinking 禁用后 diff @@ 头损坏 2/2，evidence/rpd-24h/closure/cl08-blocked.md）。
+
+### 本轮（校准）动作：仅状态/证据索引/报告，零业务代码
+1. **CASE2-B 人工补丁验证（→MANUAL_FIX_VERIFIED）**：patch.diff（SHA256 6d9e9905…，目标 42ed1787，
+   3 文件 +167/−30）在一次性临时 clone 验证：git apply --check exit=0；修复后 **13 passed/1 skipped
+   （symlink=Windows 特权）/0 failed**；未修复对照=主 PoC 复现泄漏（漏洞真实）→修复后同向量 400 阻断；
+   合法路径回归 3/3；depth 对照失败=原始测试自身路径算术缺陷（非补丁问题，如实登记）。
+   证据=evidence/rpd-24h/case2b-fix/verify-report.md。人工复核≠生产 Verifier；补丁未推送目标仓库。
+2. 用户决策登记：HIGH-DECISION 重申（人工 fix 计划，仅处置意向）；CL-08 三选一已决=人工修复
+   （本轮零模型/零 token，根因保留）；D-B 保持 WAITING_HUMAN/DISABLED；生产 Fixer/Verifier 零启动；
+   RAG-IMAGE-SYNC 历史 DONE 保留+本轮 FROZEN/NO_NEW_ACTION；D-A/D-C A1-A5/D-E 补登记 APPROVED_EXECUTED。
+3. 三源同步（RPD-24H.yaml 权威 + execution-state.json 机器态 + RPD-24H.md 展示）+ final-report 追述。
+   修复 yaml 重复 case2b_high_decision 键（后者覆盖前者的解析缺陷）+ NR-01 行未引号 `#233` 触发
+   YAML 注释的预存解析缺陷（HEAD 版本本就无法 safe_load，本轮修复后三源可机器校验）。
+   HEAD 分层实读：校准轮起点=74a2782；并行 CASE2-B 人工补丁会话（自身授权=夜轮 D-E 通道）同窗追加
+   ec66209/81e2b25/2e98d4e 并已 push（含隔离容器验证：独立 checkout+network=none/非 root 容器+
+   PoC before/after 对照+14 passed，fix-report.md/poc-results.json/test-output.txt）——与校准轮的
+   临时 clone 独立复核（verify-report.md，13 passed/1 skipped）构成双验证链，结论一致。
+   远端 pushed_head=2e98d4e；校准轮零 GitHub 写入；收口提交后 local 领先 pushed 1 提交（分别记录）。
+
+### 状态声明（防口径漂移）
+CASE2-B 修复=**人工路线子任务 MANUAL_FIX_VERIFIED**；**≠** FIXER_COMPLETED/VERIFIER_COMPLETED/
+正式审批闭环/D-B 批准。D-B/D-D 仍待决 → 产品化决策面整体 **MANUAL-REQUIRED**。
+本轮模型请求 0/token 0；未 push/未 merge/未改 PR；共享环境零变更。

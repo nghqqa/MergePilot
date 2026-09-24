@@ -3,25 +3,71 @@
   "started_at": "2026-09-23T15:09:04Z",
   "base_head": "b79cd39cbcd78731ac50b2ff0f25b00a5a11514e",
   "branch": "feat/backend-pg-storage",
-  "current_task": "CL-08-BLOCKED",
+  "current_task": "CALIBRATION-20260924-CLOSED",
   "status": "MANUAL-REQUIRED",
   "counters": {
     "model_requests": 0,
     "total_tokens": 0,
     "retries": 0
   },
-  "last_progress_at": "2026-09-24T13:30:00Z",
-  "blocker": "deepseek-flash reasoning exhausts 8000-token per-request cap; user decision needed: raise cap / switch model / accept",
-  "next_action": "await user: D-B approval / CASE2-B fix dispatch semantics / next steps",
-  "final_head": "05d6d40",
+  "last_progress_at": "2026-09-24T02:54:00Z",
+  "blocker": "D-B formal approval enablement still WAITING_HUMAN; D-D waiting for a legitimate CASE ticket; PR split proposal (A/B) awaiting user choice",
+  "next_action": "await user: D-B approval / CASE2-B patch dispatch-or-close semantics (manual fix verified, not pushed to target repo) / PR #233 merge decision",
+  "final_head": "2e98d4e",
+  "local_head": "2e98d4e26e1ac76e58e7895ead11531abfe388f5",
+  "pushed_head": "2e98d4e26e1ac76e58e7895ead11531abfe388f5",
+  "pr_233": {
+    "state": "OPEN",
+    "head_ref": "feat/rpd-24h-delivery",
+    "head_oid": "2e98d4e26e1ac76e58e7895ead11531abfe388f5",
+    "local_matches_pushed": true,
+    "local_matches_pushed_note": "at write time; calibration commit advances local beyond pushed (not pushed this round)",
+    "main_touched": false,
+    "merged": false
+  },
   "round_review": "review-round-20260923",
-  "local_head_after_review": "fe454a6 (not pushed - D-E pending)",
   "approvals_found": false,
   "night_approvals": "D-E+D-A+D-C(A1-A5)",
-  "final_state": "BLOCKED",
+  "final_state": "MANUAL-REQUIRED",
   "da_wiring": "PRODUCTION PREFLIGHT PASS",
-  "rag_image_sync": "v6scope deployed and verified in production container",
+  "rag_image_sync": {
+    "history": "DONE (v6scope deployed and verified in production container, 2026-09-24)",
+    "this_round_20260924_calibration": "FROZEN / NO_NEW_ACTION (zero image build, zero agt update, zero container op)"
+  },
+  "case2b_fix": {
+    "status": "MANUAL_FIX_VERIFIED",
+    "patch_sha256": "6d9e9905ed4ccb1c8c1126a220425268e92e1414219b767d0f398f9602070090",
+    "target_commit": "42ed17879becbc02e31551938afbbf689351df96",
+    "git_apply_check": "exit=0",
+    "tests": "13 passed / 1 skipped / 0 failed, exit=0",
+    "evidence": "evidence/rpd-24h/case2b-fix/verify-report.md",
+    "not_production_verifier": true,
+    "not_ticketstore_approval": true,
+    "pushed_to_target_repo": false,
+    "dual_verification": {
+      "primary": "parallel patch session: isolated checkout + restricted container, PoC before/after, 14 passed (fix-report.md/poc-results.json/test-output.txt)",
+      "independent_recheck": "calibration round: one-off temp clone @42ed1787, git apply --check exit=0, 13 passed/1 skipped/0 failed (verify-report.md)"
+    }
+  },
+  "cl08": {
+    "status": "RESOLVED_MANUAL_FIX",
+    "root_cause_history": "deepseek-flash reasoning exhausted 8000-token per-request cap; then disabled-thinking run produced diff with corrupted @@ headers (git apply 2/2 failed)",
+    "decision_20260924": "manual fix chosen; model route closed for this round"
+  },
+  "production_fixer_verifier_started": 0,
   "model_requests": 6,
   "model_tokens": 0,
-  "model_tokens_charged": 67570
+  "model_tokens_charged": 67570,
+  "model_requests_this_round": 0,
+  "model_tokens_this_round": 0,
+  "github_writes_this_round": "none",
+  "head_layering": {
+    "calibration_start": "74a2782c54b4f990d789734c476351c233ea0ec4",
+    "parallel_patch_session_commits": [
+      "ec66209",
+      "81e2b25",
+      "2e98d4e"
+    ],
+    "note": "parallel CASE2-B manual-patch session committed and pushed 3 commits during the calibration window under its own authorization (night-round D-E channel); the calibration round itself performed zero GitHub writes; after the calibration commit lands, local leads pushed by 1 commit (recorded separately, never mixed)"
+  }
 }
