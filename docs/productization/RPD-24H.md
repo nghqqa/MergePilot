@@ -58,14 +58,8 @@ D-E 明确决定前：**零新的 GitHub 写入**（本复核轮的 RPD 更新�
 容器内 preflight 全绿（只读角色/超时/表能力/scope 信任）。**本轮按指令未执行 CASE2**；
 A1-A5 授权保留。回滚=apiserver PUT 移除 spec.env 两键+容器重建。
 
-## 夜轮结果（2026-09-24 收口）：**BLOCKED**
+## 夜轮结果（2026-09-24 收口）：BLOCKED → 后继轮已按新授权完成 CASE2-B（见上节）
 
-NR-01 push ✅（PR #233 @ 5c2312f）；NR-02 D-A 接线 ⛔ **BLOCKED**——controller 不实现 CRD 已声明的
-`spec.env`（apply 报 configured 但 kine 存储被静默丢弃，容器 env 计数=0；DB 侧接线本身已验证 exit 0）。
-按 §七"AgentTeams 官方接口不足"停止进入 CASE2：NR-03/04 BLOCKED，**CASE2 未执行、零模型调用、零 ticket**。
-解锁三选一：①升级 controller 支持 env ②ctrl compose env 模板注入（需重启 elemiso-ctrl）③镜像内置 env 默认值。
-D-D 维持 WAITING_FOR_CASE2_TICKET。详见 [final-night-report](../evidence/rpd-24h/night-run/final-night-report.md)、
-[D-A wiring-report](../evidence/rpd-24h/D-A/wiring-report.md)。
 
 ## 最终状态（前轮）：MANUAL-REQUIRED
 

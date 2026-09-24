@@ -232,12 +232,14 @@ night_round:
     - {id: NR-02, title: D-A 正式 case_retrieval 接线, status: BLOCKED,
        blocker: "controller 不实现 spec.env(apply 静默丢弃, kine 存储证明); 三条解锁路径待用户选择",
        evidence: "evidence/rpd-24h/D-A/wiring-report.md"}
-    - {id: NR-03, title: A1 新 head 空提交+对账, status: BLOCKED, blocker: "依赖 NR-02(D-A), 按§七停止进入 CASE2"}
-    - {id: NR-04, title: A2/A3 真实 run+rag 采集, status: BLOCKED, blocker: "同 NR-03"}
+    - {id: NR-03, title: A1 新 head 空提交+对账, status: DONE,
+       evidence: "case2b 节(后继轮次按新授权执行: 42ed1787,delivery 2432e0f0 PENDING→处理)"}
+    - {id: NR-04, title: A2/A3 真实 run+rag 采集, status: DONE,
+       evidence: "evidence/rpd-24h/case2b/"}
     - {id: NR-05, title: 人工门停止+证据+报告, status: DONE, evidence: "evidence/rpd-24h/night-run/final-night-report.md"}
 
 final_state: MANUAL-REQUIRED
-final_blocker: "D-A 已解锁(生产 preflight PASS); CASE2 按本轮指令暂不执行,等待用户放行"
+final_blocker: "CASE2-B 已执行(run-gh-pr2-42ed1787-003205,rag 消费达成,HIGH finding 等待人工决策;ticket 未产生——leader marker 契约未执行)"
 
 # ── 人工决策登记(2026-09-23 复核轮新增;批准须用"批准 D-X"或"修改条件:…"明确表达) ──
 human_decisions:
