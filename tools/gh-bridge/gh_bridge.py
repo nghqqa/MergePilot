@@ -13,6 +13,9 @@
     send_kickoff_pr1sk5 模板,项目由控制面从 kickoff 消息自动创建.
   * HIGH → action_required(人工门停等,门决策仍属操作员);NOT_CONFIRMED/LOW → success
     (低风险自动路径,PR1SK5 同构);超时 → neutral.
+  * 2026-09-24 建票所有权冻结轮:正式票据由控制面依结构化 ReviewOutcome
+    (review-outcome.v1)确定性创建(ensure_gate_ticket,幂等);leader marker
+    仅作兼容信号(缺失不阻塞,冲突仅记录);模型文本/缺失不导致 HIGH 丢票。
 
 用法:
   python gh_bridge.py status            # 查看待处理交付
@@ -94,6 +97,26 @@ try:
             "mp_approval_pkg.gate_ticket"))
 except Exception:
     _gt = None
+
+# 确定性建票控制面(2026-09-24 建票所有权冻结轮):结构化 ReviewOutcome →
+# ensure_gate_ticket。缺失=回退纯 marker 语义(响亮记日志,不静默)。
+_ro = None
+try:
+    _ro_path = os.path.join(_HERE, "review_outcome.py")
+    if os.path.isfile(_ro_path):
+        _ro_spec = importlib.util.spec_from_file_location("mp_review_outcome", _ro_path)
+        _ro = importlib.util.module_from_spec(_ro_spec)
+        sys.modules["mp_review_outcome"] = _ro
+        _ro_spec.loader.exec_module(_ro)
+except Exception:
+    _ro = None
+_orch = None
+try:
+    if os.path.isdir(_APPROVAL_DIR):
+        _load_sub("policy")
+        _orch = _load_sub("orchestration")
+except Exception:
+    _orch = None
 
 SERVER = "root@159.75.42.106"
 COMPOSE_DIR = "/opt/mergepilot"
@@ -292,13 +315,21 @@ def build_kickoff(d):
         f"2. taskflow(delegate_task) projectId \"{proj}\" taskId \"{task}\" "
         f"roomId \"room:{TEAM_ROOM}\" spec = SPEC below.\n"
         f"3. Wait; check_task. If reviewer reports SEVERITY HIGH with "
-        f"HUMAN_VERIFICATION_REQUIRED YES: FIRST write the structured gate marker file "
-        f"shared/projects/{proj}/human-gate-required.json (via your file-sharing tool) with EXACTLY "
+        f"HUMAN_VERIFICATION_REQUIRED YES: FIRST write TWO structured files via your "
+        f"file-sharing tool, then STOP at the human security gate (do NOT delegate any fix). "
+        f"File A shared/projects/{proj}/review-outcome.json (preferred signal) with EXACTLY "
+        f'these keys and no others: {{"schema_version": "review-outcome.v1", '
+        f'"run_id": "{run}", "repo": "{d["repo"]}", "pr_number": {d["pr_number"]}, '
+        f'"head_sha": "{d["observed_head_sha"]}", '
+        f'"finding_validation": "CONFIRMED", "findings": [{{"finding_id": "<short-id>", '
+        f'"severity": "HIGH", "cwe": "CWE-<n>"}}]}}. '
+        f"File B shared/projects/{proj}/human-gate-required.json with EXACTLY "
         f'these keys: {{"version": 1, "run_id": "{run}", "task_id": "{task}", '
         f'"severity": "<HIGH|MEDIUM|LOW>", "requested_by": "leader", "requested_at": "<UTC ISO>"}}; '
         f"then STOP at the human security gate (do NOT delegate any fix), "
-        f"message me the final report and wait. The bridge reads that file as the only "
-        f"machine-actionable gate signal; natural-language messages alone are not. "
+        f"message me the final report and wait. The bridge derives the formal approval "
+        f"ticket from the structured review-outcome signal itself; your files and messages "
+        f"cannot create, approve, or reject tickets by themselves. "
         f"If NOT_CONFIRMED or LOW (gate not required): mark the fix-1/verify-1 plan "
         f"lines as N/A (not applicable, low-risk path), mark the project completed, "
         f"message me the final report.\n\n"
@@ -377,14 +408,37 @@ def gate_marker(proj, run_id, task_id=None):
     return m, ""
 
 
-def watch_run(run, proj, deadline_ts, task_id=None):
+def watch_run(run, proj, deadline_ts, task_id=None, outcome_box=None):
     """终态以项目 meta.json 权威状态为准(completed/blocked);房间消息仅作进度线索.
 
     2026-09-24:合法 gate 标记 → 提前返回 "gate"(审查阶段完成、等待人工),
-    与真实超时(无标记、无终态)严格区分;终态优先于 gate 标记。"""
+    与真实超时(无标记、无终态)严格区分;终态优先于 gate 标记。
+    2026-09-24 建票所有权冻结轮:outcome_box(dict,含 pr_number)非 None 时
+    启用确定性审查结论通道——结构化 ReviewOutcome 优先于 marker/终态映射:
+    CONFIRMED HIGH/CRITICAL → "gate"(marker 缺失照样成立);INCONCLUSIVE →
+    "inconclusive";OUTCOME_ENFORCE=1 且 outcome 无效 → "attention"。
+    outcome/err 回填 outcome_box 供 conclude 使用;outcome_box=None 保持旧语义。"""
     t0_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 5))
     seen, report = set(), None
     gate_logged = False
+
+    def _outcome_state(enforce_on_error):
+        """确定性裁决(仅 outcome_box 路径)。返回 watch 状态或 None(走旧映射)。
+
+        enforce_on_error=False(轮询中):取数失败只继续轮询——产物尚未写出
+        不等于无效 outcome;True(终态/标记):无效 outcome → attention。"""
+        outcome, err = fetch_review_outcome(proj, outcome_box)
+        outcome_box["outcome"], outcome_box["err"] = outcome, err
+        if err is None:
+            if _ro.gate_worthy(outcome):
+                return "gate"
+            if outcome.get("finding_validation") == "INCONCLUSIVE":
+                return "inconclusive"
+            return None    # NOT_CONFIRMED/LOW → 旧映射(终态/超时语义不变)
+        if enforce_on_error and outcome_enforce():
+            return "attention"
+        return None
+
     while time.time() < deadline_ts:
         st = project_status(proj)
         if st in ("completed", "blocked", "cancelled"):
@@ -393,6 +447,10 @@ def watch_run(run, proj, deadline_ts, task_id=None):
                 if project_result(proj):
                     break
                 time.sleep(5)
+            if outcome_box is not None:
+                decided = _outcome_state(enforce_on_error=True)
+                if decided:
+                    return decided, report or ""
             return st, report or ""
         marker, mreason = gate_marker(proj, run, task_id)
         if marker:
@@ -406,10 +464,20 @@ def watch_run(run, proj, deadline_ts, task_id=None):
                 if project_result(proj):
                     break
                 time.sleep(5)
+            if outcome_box is not None:
+                decided = _outcome_state(enforce_on_error=True)
+                if decided:
+                    return decided, report or ""
             return "gate", report or ""
         if not gate_logged and mreason != "no marker":
             gate_logged = True
             print(time.strftime("[%H:%M:%S]"), "gate marker refused:", mreason, flush=True)
+        if outcome_box is not None:
+            # 无终态、无 marker:直接轮询结构化产物——leader 卡死不再导致
+            # HIGH finding 丢票/超时掩盖(review_outcome.json/结果头/findings)。
+            decided = _outcome_state(enforce_on_error=False)
+            if decided:
+                return decided, report or ""
         for rid in (TEAM_ROOM, DM_ROOM):
             try:
                 evs = mx.since(rid, t0_iso)
@@ -429,7 +497,9 @@ def watch_run(run, proj, deadline_ts, task_id=None):
 
 
 # ── 回写:经服务器 reporter 容器以 App 身份 POST check-run ───────────────────
-def post_check(d, verdict, report, run):
+def post_check(d, verdict, report, run, detail=None):
+    """三事实分离(2026-09-24):审查结论(verdict)/票据事实(detail)/交付状态
+    (delivery note)各自独立表达;neutral 只用于真正无法得出结论的场景。"""
     concl, title = {
         "pass": ("success", "MergePilot review: passed (auto-completed)"),
         "pass_verified": ("success",
@@ -437,14 +507,22 @@ def post_check(d, verdict, report, run):
         "high": ("action_required", "MergePilot review: HIGH finding — human gate required"),
         "rejected": ("failure",
                      "MergePilot review: HIGH finding — human gate REJECTED (blocked, zero fix/verify dispatch)"),
-        "gate": ("action_required", "MergePilot review: stopped at human gate"),
+        "gate": ("action_required", "MergePilot review: HIGH finding — human gate required"),
         "timeout": ("neutral", "MergePilot review: bridge timeout (manual check needed)"),
+        "inconclusive": ("neutral",
+                         "MergePilot review: inconclusive — no conclusion, no ticket"),
+        "attention": ("neutral",
+                      "MergePilot review: manual attention — outcome/ticket control-plane failure"),
     }[verdict]
+    if detail:
+        title += " — " + detail
     excerpt = (report or "").strip().replace("`", "'").replace("\r", " ")
     excerpt = re.sub(r"\n+", " | ", excerpt)[:600]
     summary = (f"run_id: {run}\nverdict: {verdict}\n"
                f"triggered by: pull_request {d['action']} #{d['pr_number']} @ "
                f"{d['observed_head_sha'][:12]}\n\nleader report (excerpt):\n{excerpt}")
+    if detail:
+        summary = "control-plane: %s\n\n%s" % (detail, summary)
     payload = {"repo": d["repo"], "body": {
         "name": "mergepilot/review",
         "head_sha": d["observed_head_sha"],
@@ -596,17 +674,18 @@ PUBLISH_ATTEMPTS = 3          # 有界重试(场景4):发布类失败最多 3 �
 PUBLISH_BACKOFF_S = (10, 30)  # 退避间隔
 
 
-def publish_with_retry(d, verdict, report, run, proj, log):
+def publish_with_retry(d, verdict, report, run, proj, log, detail=None):
     """发布结论。顺序:本地回执 → GitHub 对账 → POST(有界重试)→ 回执落盘。
 
     返回 {'ok':True,...} 或 {'ok':False,'raw':...}。任一成功路径都会写回执;
-    回执写失败不视为发布失败(check_run_id 记入 note,恢复时对账兜底)。"""
+    回执写失败不视为发布失败(check_run_id 记入 note,恢复时对账兜底)。
+    detail:控制面事实(票据状态等),进 check-run 标题/摘要——三事实分离。"""
     rcpt = read_receipt(proj)
     if rcpt and rcpt.get("check_run_id"):
         return {"ok": True, "check_run_id": rcpt["check_run_id"],
                 "url": rcpt.get("url", ""), "http": None, "adopted": True,
                 "from": "receipt"}
-    payload = post_check(d, verdict, report, run)
+    payload = post_check(d, verdict, report, run, detail=detail)
     b64 = base64.b64encode(json.dumps(payload).encode()).decode()
     s64 = base64.b64encode(CHECK_PAYLOAD_SCRIPT.encode()).decode()
     r64 = base64.b64encode(CHECK_RECONCILE_SCRIPT.encode()).decode()
@@ -1037,6 +1116,93 @@ def write_run_manifest(proj, m):
                             json.dumps(m, ensure_ascii=False, indent=2))}
 
 
+# ── 结构化 ReviewOutcome(建票所有权冻结轮,2026-09-24) ─────────────────────
+# 票据创建输入只认结构化已校验数据;绑定锚 = write-once run-manifest。
+OUTCOME_ENFORCE_ENV = "MERGEPILOT_OUTCOME_ENFORCE"   # 1=无效 outcome→MANUAL_ATTENTION
+TICKET_MODE_ENV = "MERGEPILOT_TICKET_MODE"           # auto(默认)/observe(只读回滚)
+
+
+def outcome_enforce():
+    return os.environ.get(OUTCOME_ENFORCE_ENV, "") == "1"
+
+
+def _mc_cat(rel_path):
+    """读 MinIO 对象文本;不存在/失败 → None(gate_marker 同通道)。"""
+    p = subprocess.run(["docker", "exec", "elemiso-ctrl", "mc", "cat",
+                        f"{BUCKET}/{rel_path}"],
+                       capture_output=True, text=True, timeout=30)
+    if p.returncode != 0 or not p.stdout.strip():
+        return None
+    return p.stdout
+
+
+def fetch_review_outcome(proj, d):
+    """构建 ReviewOutcome(取数优先级):review-outcome.json → leader result.md
+    报告头令牌 → reviewer findings.md 令牌(leader 卡死时的确定性通道)。
+
+    json 存在但无效 → 拒绝(不静默降级为文本解析);返回 (outcome|None, err)。
+    d 需含 pr_number;可含 task_id(findings 交付物路径)。"""
+    if _ro is None:
+        return None, "review_outcome module unavailable"
+    man = read_run_manifest(proj)
+    if not isinstance(man, dict) or not (man.get("code") or {}).get("head_sha"):
+        return None, "run-manifest unavailable"
+    doc = _mc_cat(_ro.OUTCOME_JSON_PATH % proj)
+    if doc is not None:
+        return _ro.parse_outcome_json(doc, man, d["pr_number"])
+    result_text = project_result(proj)
+    if result_text:
+        out, err = _ro.build_outcome_from_report(result_text, man, d["pr_number"])
+        if out is not None:
+            return out, None
+        last_err = err
+    else:
+        last_err = "no outcome doc and no result text"
+    task_id = d.get("task_id")
+    if task_id:
+        findings = _mc_cat("teams/elemiso-team/shared/tasks/%s/workspace/findings.md"
+                           % task_id)
+        if findings:
+            return _ro.build_outcome_from_findings(findings, man, d["pr_number"])
+    return None, last_err
+
+
+def _open_approval_store():
+    store_path = os.environ.get(
+        "MERGEPILOT_APPROVAL_DB",
+        os.path.join(os.path.expanduser("~"), ".mergepilot", "gate-tickets.db"))
+    os.makedirs(os.path.dirname(store_path), exist_ok=True)
+    return sys.modules["mp_approval_pkg.store_sqlite"].SQLiteTicketStore(store_path)
+
+
+def ensure_ticket_for_outcome(outcome, marker, log, expected_head_sha=None):
+    """确定性建票(控制面;创建≠批准)。失败返回带 reason 的结果,绝不抛出阻断。
+
+    expected_head_sha:投递行观测 head(可信新鲜度锚;旧 outcome 重放被拒)。"""
+    if _orch is None:
+        log("ensure unavailable (orchestration module missing)")
+        return None
+    try:
+        policy = sys.modules["mp_approval_pkg.policy"].load_policy()
+        store = _open_approval_store()
+        try:
+            res = _orch.ensure_gate_ticket(
+                outcome, policy, store,
+                mode=os.environ.get(TICKET_MODE_ENV, "auto"), marker=marker,
+                expected_head_sha=expected_head_sha)
+            log("ensure_gate_ticket:", res.reason, "| action=%s marker=%s"
+                % (res.action, res.marker_status),
+                ("ticket=%s created=%s invalidated=%d"
+                 % (res.ticket_id, res.created, len(res.invalidated))) if res.ok else "")
+            return res
+        finally:
+            store.close()
+    except Exception as e:
+        log("ensure_gate_ticket error:", type(e).__name__, str(e)[:140])
+        return None
+
+
+
 def prepare_run_manifest(d, run, proj, task, kickoff_base, timeout_min):
     """派发前置:构建+持久化清单,返回 (kickoff带引用行, manifest, err) 或
     (None, None, reason)——fail-closed。"""
@@ -1233,15 +1399,25 @@ def attempt_no_for(d):
 
 
 # ── 主流程 ──────────────────────────────────────────────────────────────────
-def conclude(d, st, report, run, proj, cid, log):
-    """终态→结论→发布→终结。process 与 resume 共用(场景7 语义)。"""
+def conclude(d, st, report, run, proj, cid, log, outcome=None):
+    """终态→结论→发布→终结。process 与 resume 共用(场景7 语义)。
+
+    2026-09-24 建票所有权冻结轮:st="gate" 且带结构化 outcome 时,票据由
+    ensure_ticket_for_outcome 确定性创建(marker 只作兼容信号,冲突仅记录);
+    建票成功先于发布,check-run 携带票据事实(action_required=等待人工审批)。
+    建票被拒 → MANUAL_ATTENTION(写明确错误)。st="inconclusive"/"attention"
+    为新增终态(无票据)。outcome=None 保持 marker-only 兼容语义。"""
     if st == "completed":
         verdict = "pass_verified" if gate_record(proj, "approval") else "pass"
     elif st == "blocked":
         verdict = "rejected"
     elif st == "gate":
-        # 审查阶段完成并需要人工处理(结构化标记已核验);业务运行尚未结束
+        # 审查阶段完成并需要人工处理;业务运行尚未结束
         verdict = "gate"
+    elif st == "inconclusive":
+        verdict = "inconclusive"
+    elif st == "attention":
+        verdict = "attention"
     else:
         verdict = "timeout"
     evidence = "\n\n".join(x for x in [
@@ -1255,6 +1431,59 @@ def conclude(d, st, report, run, proj, cid, log):
         emit_run_end(read_run_context(proj), st)
     except Exception as _e:
         log("run_end audit unavailable (advisory):", type(_e).__name__)
+
+    if st == "gate":
+        # 先建票后发布:check-run 必须表达票据事实(三事实分离,2026-09-24)。
+        res = None
+        if outcome is not None:
+            marker, _mreason = gate_marker(proj, None, None)
+            res = ensure_ticket_for_outcome(outcome, marker, log,
+                                            expected_head_sha=d.get("observed_head_sha"))
+        if res is not None and res.ok:
+            ticket_id = res.ticket_id
+            detail = ("ticket PENDING %s (creator=control-plane; action=%s; marker=%s)"
+                      % (res.ticket_id, res.action, res.marker_status))
+        elif res is not None:
+            ticket_id = None
+            detail = ("ticket REFUSED: %s (marker=%s) — manual attention required"
+                      % (res.reason, res.marker_status))
+        else:
+            # marker-only 兼容路径(无结构化 outcome;如旧运行副本/模块缺失)
+            ticket_id = open_gate_ticket_for_marker(proj, d, st, log)
+            detail = ("ticket PENDING %s (creator=control-plane:marker-compat)" % ticket_id
+                      if ticket_id else "ticket unavailable (marker-only semantics)")
+        pub = publish_with_retry(d, "gate", evidence, run, proj, log, detail=detail)
+        if res is not None and not res.ok:
+            # 审查确认了 HIGH 但控制面无法落票 → MANUAL_ATTENTION(明确错误)
+            note = "MANUAL_ATTENTION(ticket refused: %s) check_run=%s" % (
+                res.reason, pub.get("check_run_id"))
+            if "OBSERVE_MODE" in (res.reason or ""):
+                note += " [observe mode: no state written]"
+            finish(d, False, note, cid)
+            log("HUMAN GATE formed but ticket REFUSED — MANUAL_ATTENTION:", res.reason)
+            return
+        suffix = "; ticket=%s" % ticket_id if ticket_id else ""
+        finish(d, False, "GATE_WAIT(manual) verdict=gate; check_run=%s%s"
+               % (pub.get("check_run_id"), suffix), cid)
+        log("HUMAN GATE reached — delivery ERROR (awaiting operator decision)"
+            + ("; ticket %s" % ticket_id if ticket_id else "; ticket creation unavailable"))
+        return
+
+    if st == "inconclusive":
+        pub = publish_with_retry(d, "inconclusive", evidence, run, proj, log)
+        finish(d, True, "INCONCLUSIVE(no ticket); check_run=%s" % pub.get("check_run_id"), cid)
+        log("review INCONCLUSIVE — neutral published, no ticket")
+        return
+
+    if st == "attention":
+        err = (outcome if isinstance(outcome, str) else None) or "structured outcome failure"
+        pub = publish_with_retry(d, "attention", evidence, run, proj, log,
+                                 detail="manual attention: %s" % err[:160])
+        finish(d, False, "MANUAL_ATTENTION(%s); check_run=%s"
+               % (err[:160], pub.get("check_run_id")), cid)
+        log("review outcome UNREADABLE/FAILED — MANUAL_ATTENTION:", err[:160])
+        return
+
     # 场景7:GitHub 回写成功才算投递完成;失败=可恢复 ERROR,不标 PROCESSED。
     # 审查未终态(timeout)时即使 neutral check 已发布,投递也不算完成(manual)。
     pub = publish_with_retry(d, verdict, evidence, run, proj, log)
@@ -1283,15 +1512,6 @@ def conclude(d, st, report, run, proj, cid, log):
             finish(d, False, "PUBLISH_FAILED(retryable) %s/%s; last=%s"
                    % (st, verdict, pub.get("raw", "")[:100]), cid)
             log("PUBLISH FAILED after %d attempts — delivery ERROR (recoverable)" % PUBLISH_ATTEMPTS)
-    elif st == "gate":
-        # gate:check-run(action_required)已发布,但业务未终结——投递 ERROR 留人工,
-        # 后续批准/拒绝是新的业务决策(批准→fix→verify 走新一轮派发语义)。
-        ticket_id = open_gate_ticket_for_marker(proj, d, st, log)
-        suffix = "; ticket=%s" % ticket_id if ticket_id else ""
-        finish(d, False, "GATE_WAIT(manual) verdict=gate; check_run=%s%s"
-               % (pub.get("check_run_id"), suffix), cid)
-        log("HUMAN GATE reached — delivery ERROR (awaiting operator decision)"
-            + ("; ticket %s" % ticket_id if ticket_id else "; ticket creation unavailable"))
     else:
         finish(d, False, "TIMEOUT(manual) %s; publish=%s"
                % (st, "ok" if pub.get("ok") else "failed"), cid)
@@ -1352,8 +1572,12 @@ def process(d, timeout_min, dry):
         finish(d, False, "kickoff send failed: " + str(r.get("error"))[:120], cid)
         return
     log("kickoff sent:", r["event_id"])
-    st, report = watch_run(run, proj, time.time() + timeout_min * 60, task_id=task)
-    conclude(d, st, report, run, proj, cid, log)
+    outcome_box = {"pr_number": d["pr_number"], "task_id": task,
+                   "outcome": None, "err": None}
+    st, report = watch_run(run, proj, time.time() + timeout_min * 60, task_id=task,
+                           outcome_box=(outcome_box if _ro else None))
+    conclude(d, st, report, run, proj, cid, log,
+             outcome=outcome_box.get("outcome"))
 
 
 # ── 崩溃恢复(场景1/2/8):接管过期桥租约,按项目权威状态续接 ──────────────────
@@ -1434,11 +1658,30 @@ def resume(d, timeout_min, log):
             log("resumed %s: no project -> requeued (RQ%d)" % (d["delivery_id"][:12], n + 1))
         return
     if st in ("completed", "blocked"):
+        # 崩溃恢复:终态已到但票据可能未落——确定性通道同样适用(ensure 幂等)。
+        outcome = None
+        if _ro is not None:
+            box = {"pr_number": d["pr_number"],
+                   "task_id": (man or {}).get("prompt", {}).get("task_id")
+                   if isinstance(man, dict) else None,
+                   "outcome": None, "err": None}
+            outcome, err = fetch_review_outcome(proj, box)
+            if err is not None and outcome_enforce():
+                conclude(d, "attention", None, run, proj, cid, log, outcome=err)
+                return
+            conclude(d, st, None, run, proj, cid, log, outcome=outcome)
+            return
         conclude(d, st, None, run, proj, cid, log)
         return
     orig_run = (man or {}).get("run_id") if isinstance(man, dict) else None
-    st2, report = watch_run(orig_run or run, proj, time.time() + timeout_min * 60)
-    conclude(d, st2, report, run, proj, cid, log)
+    outcome_box = {"pr_number": d["pr_number"],
+                   "task_id": (man or {}).get("prompt", {}).get("task_id")
+                   if isinstance(man, dict) else None,
+                   "outcome": None, "err": None}
+    st2, report = watch_run(orig_run or run, proj, time.time() + timeout_min * 60,
+                            outcome_box=(outcome_box if _ro else None))
+    conclude(d, st2, report, run, proj, cid, log,
+             outcome=outcome_box.get("outcome"))
 
 
 def main():

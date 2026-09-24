@@ -101,11 +101,14 @@ def authorize_reject(store, policy, ticket_id: str, *, actor_id: str,
 
 
 def authorize_dispatch(policy, ticket) -> Dict[str, Any]:
-    """派发前策略闸(dispatch 调用;ticket 须为 APPROVED)。
+    """派发前策略闸(dispatch 调用;ticket 须为 APPROVED/EXECUTING)。
 
     未配置政策 → DISPATCH_CLOSED(fail-closed: feature flag 关闭时无法
     创建真实执行路径)。动作未启用 → 同样拒绝。
-    REJECTED/EXPIRED/FAILED/INVALIDATED 状态 → 派发关闭(仅 APPROVED/EXECUTING 可)。"""
+    派发状态白名单:仅 APPROVED/EXECUTING 可派发;PENDING(未批准)与全部
+    终态(REJECTED/EXPIRED/FAILED/INVALIDATED)一律关闭。
+    (2026-09-24 勘误:原实现为终态黑名单,PENDING 被误放行——与本 docstring
+    及"批准才可执行"契约矛盾,已改白名单。)"""
     if not _policy_configured(policy):
         return {"ok": False, "reason": "DISPATCH_CLOSED:POLICY_NOT_CONFIGURED"}
     if not policy.allows_action(ticket.binding.action):
@@ -113,7 +116,7 @@ def authorize_dispatch(policy, ticket) -> Dict[str, Any]:
                 "reason": "DISPATCH_CLOSED:ACTION_NOT_ENABLED:%s"
                           % ticket.binding.action}
     status = getattr(ticket, "status", "")
-    if status in ("REJECTED", "EXPIRED", "FAILED", "INVALIDATED"):
+    if status not in ("APPROVED", "EXECUTING"):
         return {"ok": False,
-                "reason": "DISPATCH_CLOSED:TICKET_%s" % status}
+                "reason": "DISPATCH_CLOSED:TICKET_%s" % (status or "UNKNOWN")}
     return {"ok": True}

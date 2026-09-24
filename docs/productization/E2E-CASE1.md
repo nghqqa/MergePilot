@@ -88,3 +88,25 @@ git push origin --delete demo/high-risk-human-gate  # 不推荐——会删除�
 # rag-live：已停止
 # bridge：已自然退出
 ```
+
+
+## 口径校准（2026-09-24 建票可靠性整改轮；只校准决策状态，不改上方任何运行事实）
+
+- **D-B 已确认**：具名审批人（稳定 GitHub node ID）、动作子集
+  `generate_patch,run_poc`、TTL 24h 均已批复；状态 =
+  **D_B_ENABLED_PREFLIGHT_VERIFIED**（合成验证 13/13，未在真实 run 启用）。
+- **CL-08 已决**：deepseek-flash 推理耗尽上限 → 选择**人工修复路线**
+  （CASE2-B 人工补丁 f95d99d 已独立验证，未推送业务仓库）；CL-08 不再是阻塞。
+- **当前唯一链路阻塞**：正式审批票据未创建——leader 连续两案未写
+  `human-gate-required.json` marker，而彼时建票仍以 marker 为输入。
+  整改：票据创建权收归确定性控制面（结构化 ReviewOutcome →
+  ensure_gate_ticket），marker 降级为兼容信号。
+- **RAG 消费口径（维持原判）**：本轮 rag_retrieve 消费**不可确认**
+  （审计流零新调用；findings 引用组织标准不构成实时调用证据）。
+- **Check Run 107543692249 口径**：`neutral` 是 bridge 20min 超时的
+  **收口语义**，既不是审查成功、也不是审查失败的结论；审查事实
+  （HIGH/CWE-22 复确认）以 reviewer 结构化结论为准。
+- **触发提交的 hook 事实（保留）**：本轮触发用空提交
+  （42ed1787→26ed8f1e）推送时**绕过了业务侧本地 hook 检查**
+  （--no-verify 路径）；此事实不据以宣称任何扫描通过。后续整改轮
+  R2 触发提交同样属于该操作类别，须如实登记。

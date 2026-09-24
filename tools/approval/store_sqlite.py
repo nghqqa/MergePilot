@@ -171,6 +171,24 @@ class SQLiteTicketStore:
         row = cur.fetchone()
         return _row_to_ticket(row) if row else None
 
+    def active_by_repo(self, repo: str):
+        """repo 下全部活动票(供确定性编排:旧 head 失效/顺序纪律判定;只读)。"""
+        cur = self._conn.execute(
+            "SELECT %s FROM tickets WHERE repo=? "
+            "AND status IN ('PENDING','APPROVED','EXECUTING') ORDER BY created_at"
+            % _COLS, (repo,))
+        return [_row_to_ticket(r) for r in cur.fetchall()]
+
+    def record_event(self, ticket_id: str, from_status: Optional[str],
+                     to_status: Optional[str], actor: Optional[str],
+                     request_hash: Optional[str]) -> None:
+        """append-only 审计事件(非状态转移,如确定性建票 ENSURE_*;不可 UPDATE/DELETE)。"""
+        with self._txn() as conn:
+            conn.execute(
+                "INSERT INTO ticket_audit (ticket_id, from_status, to_status, actor, "
+                "request_hash) VALUES (?,?,?,?,?)",
+                (ticket_id, from_status, to_status, actor, request_hash))
+
     # ── CAS 转移:复用纯逻辑状态机 + 前置状态守卫写回 ─────────────────────
     def transition(self, ticket_id: str, event: str, **kw) -> TransitionResult:
         with self._txn() as conn:  # 写锁排队:竞争在此串行,先到先得

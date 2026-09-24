@@ -136,7 +136,7 @@ class ResumeTests(unittest.TestCase):
         calls = {}
         br = self.br
 
-        def fake_watch(run, proj, deadline):
+        def fake_watch(run, proj, deadline, **kwargs):
             calls["run"] = run
             return ("completed", "late report")
 

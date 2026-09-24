@@ -161,6 +161,28 @@ class PostgreSQLTicketStore:
             raise StorageUnavailable(str(e)[:160]) from e
         return rows[0] if rows else None
 
+    def active_by_repo(self, repo: str):
+        """repo 下全部活动票(确定性编排用:旧 head 失效/顺序纪律;只读)。"""
+        try:
+            rows = self._select(
+                self._conn.cursor(),
+                "repo_id=%s AND status IN ('PENDING','APPROVED','EXECUTING') "
+                "ORDER BY created_at", (repo,))
+        except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
+            raise StorageUnavailable(str(e)[:160]) from e
+        return rows
+
+    def record_event(self, ticket_id: str, from_status: Optional[str],
+                     to_status: Optional[str], actor: Optional[str],
+                     request_hash: Optional[str]) -> None:
+        """append-only 审计事件(非状态转移,如确定性建票 ENSURE_*)。"""
+        try:
+            with self._conn:
+                self._audit(self._conn.cursor(), ticket_id, from_status,
+                            to_status, actor, request_hash)
+        except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
+            raise StorageUnavailable(str(e)[:160]) from e
+
     def transition(self, ticket_id: str, event: str, **kw: Any) -> TransitionResult:
         """CAS 转移:SELECT FOR UPDATE 串行化 → 纯逻辑转移 → 前置状态守卫 UPDATE
         → 审计同事务。连接错误抛 StorageUnavailable(非业务拒绝)。

@@ -25,6 +25,7 @@ class ApprovalPolicy:
     approver_map: Dict[str, List[str]]  # D-2: {repo: [github_login,...]}
     ttl_hours: int                      # D-3: 审批有效期(小时)
     configured: bool = True             # False=未配置(fail-closed)
+    policy_version: str = ""            # 空=由内容规范哈希派生(orchestration.policy_fingerprint)
 
     def allows_action(self, action: str) -> bool:
         return action in self.allowed_actions
@@ -70,6 +71,7 @@ def load_policy(env: Dict[str, str] = None) -> ApprovalPolicy:
       MERGEPILOT_APPROVAL_ACTIONS  = "generate_patch,publish_result"
       MERGEPILOT_APPROVERS         = '{"team/demo":["alice","bob"]}'
       MERGEPILOT_APPROVAL_TTL_H    = "24"
+      MERGEPILOT_APPROVAL_POLICY_VERSION = "db-2026-09-24"   # 可选;空=内容哈希
     """
     env = os.environ if env is None else env
     actions_raw = env.get("MERGEPILOT_APPROVAL_ACTIONS", "")
@@ -80,4 +82,5 @@ def load_policy(env: Dict[str, str] = None) -> ApprovalPolicy:
     approvers = json.loads(approvers_raw)
     ttl = int(env.get("MERGEPILOT_APPROVAL_TTL_H", "24"))
     return ApprovalPolicy(allowed_actions=actions, approver_map=approvers,
-                          ttl_hours=ttl)
+                          ttl_hours=ttl,
+                          policy_version=env.get("MERGEPILOT_APPROVAL_POLICY_VERSION", ""))

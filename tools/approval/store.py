@@ -33,6 +33,14 @@ class TicketStore(Protocol):
 
     def active_for(self, binding: Binding) -> Optional[Ticket]: ...
 
+    def active_by_repo(self, repo: str) -> list: ...
+        # 确定性编排只读查询(2026-09-24):旧 head 失效/顺序纪律判定。
+
+    def record_event(self, ticket_id: str, from_status: Optional[str],
+                     to_status: Optional[str], actor: Optional[str],
+                     request_hash: Optional[str]) -> None: ...
+        # append-only 审计事件(非状态转移,如 ENSURE_CREATED/ENSURE_REPLAYED)。
+
     def transition(self, ticket_id: str, event: str, **kw: Any) -> TransitionResult: ...
 
     def close(self) -> None: ...
@@ -62,6 +70,13 @@ class PostgreSQLTicketStore:
 
     def active_for(self, binding):
         return self._impl.active_for(binding)
+
+    def active_by_repo(self, repo):
+        return self._impl.active_by_repo(repo)
+
+    def record_event(self, ticket_id, from_status, to_status, actor, request_hash):
+        self._impl.record_event(ticket_id, from_status, to_status, actor,
+                                request_hash)
 
     def transition(self, ticket_id: str, event: str, **kw: Any):
         return self._impl.transition(ticket_id, event, **kw)

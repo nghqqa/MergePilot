@@ -13,6 +13,7 @@ from __future__ import annotations
 import importlib.util
 import multiprocessing
 import os
+import sys
 import unittest
 from pathlib import Path
 
@@ -381,6 +382,118 @@ class PgSpecificAcceptance(unittest.TestCase):
         rows = cur.fetchall()
         admin.close()
         self.assertIn(("PENDING", "APPROVED", APPROVER), rows)
+
+
+@unittest.skipUnless(GATED, "MERGEPILOT_PG_CONTRACT=1 未设置:跳过真实 PG 验证")
+class PgOrchestrationAcceptance(unittest.TestCase):
+    """确定性建票控制面在真实 PG 上端到端(2026-09-24 建票所有权冻结轮):
+    ensure_gate_ticket 幂等建票 / active_by_repo / record_event / 旧 head 失效。"""
+
+    @classmethod
+    def setUpClass(cls):
+        _apply_migration()
+        _orch_dir = Path(__file__).resolve().parents[2] / "tools" / "gh-bridge"
+        spec = importlib.util.spec_from_file_location(
+            "mp_review_outcome_pg", _orch_dir / "review_outcome.py")
+        cls.ro = importlib.util.module_from_spec(spec)
+        sys.modules["mp_review_outcome_pg"] = cls.ro
+        spec.loader.exec_module(cls.ro)
+        # orchestration 用相对导入(from .approval/.policy)——以包身份加载
+        approval_dir = Path(__file__).resolve().parents[2] / "tools" / "approval"
+        import types
+        pkg = types.ModuleType("approval_pkg_pg")
+        pkg.__path__ = [str(approval_dir)]
+        sys.modules.setdefault("approval_pkg_pg", pkg)
+
+        def _load(name, path):
+            full = "approval_pkg_pg." + name
+            if full in sys.modules:
+                return sys.modules[full]
+            s = importlib.util.spec_from_file_location(full, path)
+            mod = importlib.util.module_from_spec(s)
+            mod.__package__ = "approval_pkg_pg"
+            sys.modules[full] = mod
+            s.loader.exec_module(mod)
+            return mod
+
+        _load("approval", approval_dir / "approval.py")
+        cls.policy_mod = _load("policy", approval_dir / "policy.py")
+        cls.orch = _load("orchestration", approval_dir / "orchestration.py")
+
+    def setUp(self):
+        _cleanup_tickets()
+        self.store = pg_store.PostgreSQLTicketStore(_DSN_ADMIN)
+
+    def tearDown(self):
+        self.store.close()
+
+    def _mk_outcome(self, head, run="run-pg-orch-1"):
+        fid, fp = self.ro.finding_identity("CONFIRMED", "HIGH", "CWE-22")
+        return {"schema_version": "review-outcome.v1", "run_id": run,
+                "repo": "team/demo", "pr_number": 2, "head_sha": head,
+                "finding_validation": "CONFIRMED",
+                "findings": [{"finding_id": fid, "severity": "HIGH",
+                              "cwe": "CWE-22", "fingerprint": fp}],
+                "validations": [], "outcome_source": "test"}
+
+    def _policy(self):
+        return self.policy_mod.ApprovalPolicy(
+            allowed_actions=frozenset({"run_poc", "generate_patch"}),
+            approver_map={"team/demo": ["approver-a"]}, ttl_hours=24)
+
+    def test_ensure_pending_idempotent_and_invalidate_on_pg(self):
+        head1, head2 = "a" * 40, "b" * 40
+        r1 = self.orch.ensure_gate_ticket(
+            self._mk_outcome(head1), self._policy(), self.store, now=NOW,
+            expected_head_sha=head1)
+        self.assertTrue(r1.ok)
+        self.assertTrue(r1.created)
+        t = self.store.get(r1.ticket_id)
+        self.assertEqual(t.status, "PENDING")
+        self.assertIsNone(t.approved_by)            # 创建≠批准
+        r1b = self.orch.ensure_gate_ticket(
+            self._mk_outcome(head1), self._policy(), self.store, now=NOW,
+            expected_head_sha=head1)
+        self.assertEqual(r1.ticket_id, r1b.ticket_id)
+        self.assertFalse(r1b.created)               # 幂等重放
+        # 新 head → 旧票确定性失效
+        r2 = self.orch.ensure_gate_ticket(
+            self._mk_outcome(head2, run="run-pg-orch-2"), self._policy(),
+            self.store, now=LATER, expected_head_sha=head2)
+        self.assertTrue(r2.ok)
+        self.assertIn(r1.ticket_id, r2.invalidated)
+        self.assertEqual(self.store.get(r1.ticket_id).status, "INVALIDATED")
+        # 新票 PENDING
+        self.assertEqual(self.store.get(r2.ticket_id).status, "PENDING")
+
+    def test_ensure_audit_and_event_api_on_pg(self):
+        head = "c" * 40
+        r = self.orch.ensure_gate_ticket(
+            self._mk_outcome(head), self._policy(), self.store, now=NOW,
+            expected_head_sha=head)
+        self.assertTrue(r.ok)
+        self.store.record_event(r.ticket_id, "PENDING", "PENDING",
+                                "op:note", "evt-pg-1")
+        with pg_store._connect(_DSN_ADMIN) as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT to_status, actor, request_hash FROM approval.ticket_audit "
+                "WHERE ticket_id=%s ORDER BY id", (r.ticket_id,))
+            rows = cur.fetchall()
+        self.assertTrue(any(x[1] == "control-plane:ensure" and
+                            "ENSURE_CREATED" in (x[2] or "") for x in rows))
+        self.assertTrue(any(x[1] == "op:note" for x in rows))
+
+    def test_active_by_repo_on_pg(self):
+        head = "d" * 40
+        r = self.orch.ensure_gate_ticket(
+            self._mk_outcome(head), self._policy(), self.store, now=NOW,
+            expected_head_sha=head)
+        self.assertTrue(r.ok)
+        active = self.store.active_by_repo("team/demo")
+        self.assertEqual([t.ticket_id for t in active], [r.ticket_id])
+        self.store.record_event(r.ticket_id, "PENDING", "PENDING", "x", "close-evt")
+        self.store.transition(r.ticket_id, "reject", actor="approver-a", now=NOW)
+        self.assertEqual(self.store.active_by_repo("team/demo"), [])
 
 
 if __name__ == "__main__":
