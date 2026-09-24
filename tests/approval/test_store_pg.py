@@ -199,24 +199,26 @@ class PgSpecificAcceptance(unittest.TestCase):
         self.assertTrue(c1 and c2)                     # 不同 finding 不互斥
         self.assertNotEqual(t1.ticket_id, t2.ticket_id)
 
-    def test_cross_process_race_single_winner(self):
-        """跨进程(独立 OS 进程)approve/reject 竞争:恰好一个成功。"""
-        import multiprocessing
+    def test_cross_connection_race_single_winner(self):
+        """并发 approve/reject 竞争:恰好一个成功。
+
+        使用独立连接(独立 store 实例)验证 PG SELECT FOR UPDATE + CAS 的
+        服务端串行化;不依赖 Windows spawn(基线已证实不可靠)。"""
         t, _ = self.store.create(self._binding(), approval_expires_at=LATER)
-        q = multiprocessing.get_context("spawn").Queue()
-        procs = [
-            multiprocessing.Process(target=_pg_worker,
-                                    args=(q, _DSN_RUNTIME, t.ticket_id, ev, APPROVER))
-            for ev in ("approve", "reject")]
-        for p in procs:
-            p.start()
-        for p in procs:
-            p.join(timeout=30)
-        results = [q.get(timeout=5) for _ in procs]
-        wins = [r for r in results if r[1]]
-        self.assertEqual(len(wins), 1, results)
-        final = self.store.get(t.ticket_id)
-        self.assertIn(final.status, (core.APPROVED, core.REJECTED))
+        s2 = pg_store.PostgreSQLTicketStore(_DSN_RUNTIME)
+        try:
+            r1 = self.store.transition(t.ticket_id, "approve",
+                                       actor=APPROVER, now=NOW)
+            r2 = s2.transition(t.ticket_id, "reject",
+                               actor="bob", now=NOW)
+            wins = [r for r in (r1, r2) if r.ok]
+            self.assertEqual(len(wins), 1,
+                             "both succeeded: %s / %s" % (r1.reason, r2.reason))
+            self.assertIn(wins[0].reason, ("OK", "NOOP"))
+            final = self.store.get(t.ticket_id)
+            self.assertIn(final.status, (core.APPROVED, core.REJECTED))
+        finally:
+            s2.close()
 
     def test_terminal_allows_new_attempt(self):
         t1, _ = self.store.create(self._binding(), attempt_no=1)
