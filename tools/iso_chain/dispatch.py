@@ -89,9 +89,13 @@ class DispatchError(Exception):
 def dispatch_fixer(store, outbox: DispatchOutbox, ticket_id: str,
                    executor: Callable[[Dict[str, Any]], Dict[str, Any]],
                    payload: Dict[str, Any], now: str,
-                   dispatch_id: str = None) -> Dict[str, Any]:
+                   dispatch_id: str = None,
+                   policy: Any = None) -> Dict[str, Any]:
     """票据驱动的 fixer 派发(唯一入口)。
 
+    0. **policy 闸(D-B 正式启用语义)**: policy=None 或未配置 →
+       DISPATCH_CLOSED(拒绝,fail-closed——feature flag 关闭时无法创建
+       真实执行路径); 已配置则要求动作在 D-1 启用子集内;
     1. 票据 CAS:start_exec(APPROVED→EXECUTING);失败=不可派发;
     2. outbox 落 SENT 记录(崩溃时表现为"发送成功但确认丢失"的对账源);
     3. 执行 executor(payload)——真实 fixer 或隔离执行器;
@@ -99,6 +103,12 @@ def dispatch_fixer(store, outbox: DispatchOutbox, ticket_id: str,
 
     返回 {ok, dispatch_id, result?...}。"""
     import uuid
+    if policy is None or not getattr(policy, "configured", False):
+        raise DispatchError("DISPATCH_CLOSED:POLICY_NOT_CONFIGURED",
+                            "D-B not enabled: approval policy unconfigured")
+    if not policy.allows_action(store.get(ticket_id).binding.action):
+        raise DispatchError("DISPATCH_CLOSED:ACTION_NOT_ENABLED",
+                            "action not in enabled subset")
     dispatch_id = dispatch_id or ("dsp-" + uuid.uuid4().hex[:16])
     result = store.transition(ticket_id, "start_exec", now=now)
     if not result.ok:
