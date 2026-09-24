@@ -36,6 +36,14 @@
 → 判定=**批复缺失**：保持 MANUAL-REQUIRED，零外部动作（未 push db62d1c/9dcf3f6、未注入环境、未启用审批、未执行 CASE2）。
 等待明确批复：`批准 D-A` / `批准 D-B` / `批准 D-C A1-A5` / `批准 D-E` / `修改条件：…`。
 
+## CL-08 阻塞（2026-09-24 深夜）：**deepseek-flash reasoning 耗尽单请求上限**
+
+实测（usage 真实计费）：fixer 提示词下 `completion_tokens=8000` 全部为 `reasoning_tokens`，
+`content=""`。max_tokens 已提至授权上限 8000 仍耗尽。**CL-08=BLOCKED**，三选一待用户：
+(a) 提高单请求输出上限；(b) 更换 fixer/verifier 模型（如 deepseek-v4-pro，需扩 D-C A2 范围）；(c) 接受现状。
+链上其余组件全部验证可用（结构化建票/iso 审批/派发 fencing+outbox/预算守卫/网关桥）。
+已消耗：~6 请求 / ~67.5k tokens 保守入账（200k 预算内）。
+
 ## CASE2-B 收口与人工决策（2026-09-24 复核轮）
 
 **证据复核 14/14**（manifest_sha 权威重算一致；零 fix/verify 任务；秘密扫描净）——[case2b-evidence-recheck](../evidence/rpd-24h/pr-audit/case2b-evidence-recheck.md)

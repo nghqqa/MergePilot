@@ -313,7 +313,7 @@ closure_round:
     - {id: CL-09, title: 回归/证据/PR/验收授权单, status: TODO}
 
 final_state: MANUAL-REQUIRED
-final_blocker: "CASE2-B 已执行(run-gh-pr2-42ed1787-003205,rag 消费达成,HIGH finding 等待人工决策;ticket 未产生——leader marker 契约未执行)"
+final_blocker: "两项人工决策: ①CASE2-B HIGH finding 处置(批准入 fix 计划/拒绝+原因) ②CL-08 解锁(flash reasoning 耗尽 8000 上限→需提高上限/换模型/接受); RAG-IMAGE-SYNC DONE 待验收追认"
 
 # ── 人工决策登记(2026-09-23 复核轮新增;批准须用"批准 D-X"或"修改条件:…"明确表达) ──
 human_decisions:
