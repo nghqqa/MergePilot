@@ -42,8 +42,8 @@
 
 | 决定/任务 | 状态 | 说明 |
 |---|---|---|
-| **CASE2-B-HIGH-DECISION** | **WAITING_HUMAN** | CWE-22 任意文件读(HIGH)，ticket_id=null；等 A（拒绝/关闭+原因）或 B（批准入 fix 计划，不派发） |
-| RAG-IMAGE-SYNC | **WAITING_HUMAN** | 镜像 core.py 缺 scope-file 回退；最小面=单文件重建镜像；[rag-image-sync](../evidence/rpd-24h/pr-audit/rag-image-sync.md) |
+| **CASE2-B-HIGH-DECISION** | **APPROVED_PLAN_READY**（2026-09-24 用户批复 B） | 仅生成计划数据（fix=CWE-22 path containment / verify=PoC 回归+边界），auto_dispatch=false；**非 TicketStore 正式 approve**（正式审批仍需 D-B+合法 ticket） |
+| RAG-IMAGE-SYNC | **DONE**（2026-09-24 用户批准） | v6scope 镜像+agt 更新+容器内验收全过：**真实 case-pg scope 查询 OK**（4 found/107ms）+ SCOPE_MISSING 负向 fail-closed；[exec-report](../evidence/rpd-24h/rag-image-sync/exec-report.md) |
 | D-D | WAITING_FOR_CASE2_TICKET | leader 未写 marker→无合法 ticket，不补造 |
 | D-B | WAITING_HUMAN | 未批；正式 approve/reject 未启用 |
 | CASE2 fix/verify | WAITING_HUMAN | D-B+合法 ticket（或用户明确指示）前不得触发 |
