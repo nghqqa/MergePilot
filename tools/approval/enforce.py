@@ -104,11 +104,16 @@ def authorize_dispatch(policy, ticket) -> Dict[str, Any]:
     """派发前策略闸(dispatch 调用;ticket 须为 APPROVED)。
 
     未配置政策 → DISPATCH_CLOSED(fail-closed: feature flag 关闭时无法
-    创建真实执行路径)。动作未启用 → 同样拒绝。"""
+    创建真实执行路径)。动作未启用 → 同样拒绝。
+    REJECTED/EXPIRED/FAILED/INVALIDATED 状态 → 派发关闭(仅 APPROVED/EXECUTING 可)。"""
     if not _policy_configured(policy):
         return {"ok": False, "reason": "DISPATCH_CLOSED:POLICY_NOT_CONFIGURED"}
     if not policy.allows_action(ticket.binding.action):
         return {"ok": False,
                 "reason": "DISPATCH_CLOSED:ACTION_NOT_ENABLED:%s"
                           % ticket.binding.action}
+    status = getattr(ticket, "status", "")
+    if status in ("REJECTED", "EXPIRED", "FAILED", "INVALIDATED"):
+        return {"ok": False,
+                "reason": "DISPATCH_CLOSED:TICKET_%s" % status}
     return {"ok": True}
