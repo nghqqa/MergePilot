@@ -1,9 +1,9 @@
 {
   "schemaVersion": "mimosa-hook-status/v1",
-  "recordedAt": "2026-09-24T04:27:05.920Z",
+  "recordedAt": "2026-09-24T06:47:01.212Z",
   "sessionId": "sess_3de6bfbd-2011-4592-a2c1-dfecab33cd69",
   "event": "PostToolUse",
-  "toolName": "Write",
+  "toolName": "Edit",
   "file": "tests/iso_chain/test_db_enforce.py",
   "outcome": "clear",
   "coverage": "complete",
