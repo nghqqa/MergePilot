@@ -1,0 +1,9 @@
+{
+  "check_run_id": 107446711189,
+  "url": "https://github.com/nghqqa/fastapi-boilerplate-demo/runs/107446711189",
+  "head_sha": "42ed17879becbc02e31551938afbbf689351df96",
+  "run_id": "run-gh-pr2-42ed1787-003205",
+  "verdict": "timeout",
+  "adopted": false,
+  "written_at": "2026-09-24T00:52:16Z"
+}

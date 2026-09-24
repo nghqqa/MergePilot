@@ -1,0 +1,94 @@
+{
+  "manifest_version": 1,
+  "run_id": "run-gh-pr2-42ed1787-003205",
+  "project_id": "elemiso-gh-pr2-42ed1787",
+  "delivery_id": "2432e0f0-b7af-11f1-94c5-ff03aa78aa3c",
+  "created_at": "2026-09-24T00:32:08Z",
+  "code": {
+    "repo": "nghqqa/fastapi-boilerplate-demo",
+    "head_sha": "42ed17879becbc02e31551938afbbf689351df96",
+    "base_sha": "4cd5bf099f88c3f3f85ee4c06b7adfe9925a6e5c"
+  },
+  "prompt": {
+    "task_id": "gh-pr2-42ed1787-review-1",
+    "kickoff_base_sha256": "d27a0d8ee2dbacaff22b4d54d0df58100453857ccbbfeff4c6748f9e896e2927"
+  },
+  "orchestrator": {
+    "bridge_source_sha256": "45f7158d7b6cb5acaf89e2e5f890e3d310ae4fe289d4486d261a7b5705baef87",
+    "git_commit": null
+  },
+  "workers": {
+    "images": {
+      "leader": "sha256:4bfe8eccfe4fba13eebdd1ccb9d123f358769ce7f6de57377712b6cf54da56de",
+      "reviewer": "sha256:4bfe8eccfe4fba13eebdd1ccb9d123f358769ce7f6de57377712b6cf54da56de",
+      "fixer": "sha256:4bfe8eccfe4fba13eebdd1ccb9d123f358769ce7f6de57377712b6cf54da56de",
+      "verifier": "sha256:4bfe8eccfe4fba13eebdd1ccb9d123f358769ce7f6de57377712b6cf54da56de"
+    }
+  },
+  "skills": {
+    "names": [
+      "skill_diff_parse",
+      "skill_risk_classify",
+      "skill_sast_scan",
+      "skill_case_retrieval"
+    ],
+    "content_sha256": {
+      "skill_diff_parse": "fe338d293fb6641074414194d7adf62ea3abba9d2c750bf2e8e56106a695a9e2",
+      "skill_risk_classify": "383aaa3ac963150cb0c6d8626b9d11ff7287c0098b6a7c44bc1f34057084a0dd",
+      "skill_sast_scan": "aefbfd1ec9e0d2139f6825e3f79d8d9c1c5cfb60f4ee2304e0ab7cee7ae0573f",
+      "skill_case_retrieval": "a1365ccd2a13c1d04dabfe017fb195484088c20ac5dbd3f6c96c71fc53e8923c"
+    }
+  },
+  "model": {
+    "primary": "agentteams-gateway/deepseek-flash",
+    "requested": null,
+    "catalog_state_at_dispatch": {
+      "checked": true,
+      "models": [
+        "deepseek-flash",
+        "deepseek-v4-pro"
+      ]
+    },
+    "generation_params": null,
+    "note": "primary from reviewer openclaw.json; fixer/verifier assumed同模型池; catalog probed live via gateway /models at dispatch"
+  },
+  "rag": {
+    "snapshot_id": "fd34c304e1da487f8b1aa71e77fdb1789d82b9d1a2c213ad20e49c460a21afa4",
+    "chunks": 12,
+    "data_mode": "SYNTHETIC",
+    "retrieval_mode": "lexical-zh-en-v1",
+    "strategy_id": "live-run-knowledge-only-v1",
+    "corpus": "rag-live-corpus.json",
+    "service_state_at_dispatch": "reachable",
+    "service_probe": {
+      "endpoint": "http://127.0.0.1:4184/health",
+      "failure_kind": null,
+      "detail": "",
+      "checked_at": "2026-09-24T00:32:08Z",
+      "note": "host-side probe; container-side retrieval uses host.docker.internal:4184 (separate network surface)"
+    },
+    "policy": "optional"
+  },
+  "config": {
+    "canonical": {
+      "allow_repos": [
+        "nghqqa/fastapi-boilerplate-demo"
+      ],
+      "repo_url": "https://github.com/nghqqa/fastapi-boilerplate-demo.git",
+      "leader": "@leader:elemiso-matrix:6167",
+      "team_room": "!RErK7WVs9iUeaszwho:elemiso-matrix:6167",
+      "dm_room": "!VocOLrDhUMBcBjzIuY:elemiso-matrix:6167",
+      "watch_poll_s": 10,
+      "timeout_min": 20,
+      "publish_attempts": 3,
+      "stale_minutes": 45,
+      "requeue_max": 2,
+      "server": "root@159.75.42.106"
+    },
+    "sha256": "3ca4d0282e6c1b9b831a407d2d3549f2f070bf468595eddd22b0a31fa6a352fc"
+  },
+  "missing": [
+    "model.generation_params",
+    "orchestrator.git_commit"
+  ]
+}
