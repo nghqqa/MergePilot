@@ -27,3 +27,8 @@ dev = ["pytest>=8", "pydantic>=2", "PyYAML>=6", "psycopg2-binary>=2.9"]
 [tool.setuptools.packages.find]
 include = ["tools.cli"]
 namespaces = true
+
+[tool.pytest.ini_options]
+# 同名测试模块(m4b/m4c/m4e test_integration 等)分布于无 __init__.py 的目录:
+# importlib 模式按文件路径导入,消除 basename 冲突(2026-09-23 TEST-DEBT 收口)。
+addopts = "--import-mode=importlib"

@@ -1,0 +1,20 @@
+{
+  "context_version": 1,
+  "run_id": "run-gh-pr2-42ed1787-003205",
+  "attempt_no": 1,
+  "repo": "nghqqa/fastapi-boilerplate-demo",
+  "pr": 2,
+  "head_sha": "42ed17879becbc02e31551938afbbf689351df96",
+  "skill_digest": {
+    "skill_diff_parse": "fe338d293fb6641074414194d7adf62ea3abba9d2c750bf2e8e56106a695a9e2",
+    "skill_risk_classify": "383aaa3ac963150cb0c6d8626b9d11ff7287c0098b6a7c44bc1f34057084a0dd",
+    "skill_sast_scan": "aefbfd1ec9e0d2139f6825e3f79d8d9c1c5cfb60f4ee2304e0ab7cee7ae0573f",
+    "skill_case_retrieval": "a1365ccd2a13c1d04dabfe017fb195484088c20ac5dbd3f6c96c71fc53e8923c"
+  },
+  "retrieval_mode": "lexical-zh-en-v1",
+  "manifest_id": "172e744aa9b7eaea76c1afd2d2c9bcc3dda9364c1449b37162ab0cf1977e5545",
+  "delivery_id": "2432e0f0-b7af-11f1-94c5-ff03aa78aa3c",
+  "authored_by": "gh_bridge",
+  "created_at": "2026-09-24T00:32:08Z",
+  "missing": []
+}

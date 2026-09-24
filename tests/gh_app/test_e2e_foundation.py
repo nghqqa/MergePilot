@@ -876,7 +876,7 @@ class TestReporterEnvContractB2(unittest.TestCase):
 
 class TestB2DockerfileWiring(unittest.TestCase):
 
-    ROOT_DOCKERFILE = (ROOT / "Dockerfile.gh-webhook").read_text(
+    ROOT_DOCKERFILE = (ROOT / "docker" / "Dockerfile.gh-webhook").read_text(
         encoding="utf-8")
     CANON_DOCKERFILE = (ROOT / "tools" / "gh-app" / "Dockerfile").read_text(
         encoding="utf-8")
@@ -903,7 +903,7 @@ class TestB2DockerfileWiring(unittest.TestCase):
         # modified controller/gateway/console Dockerfiles
         for name in ("Dockerfile.controller", "Dockerfile.policy-gateway",
                      "Dockerfile.preflight", "Dockerfile.demo-console"):
-            text = (ROOT / name).read_text(encoding="utf-8")
+            text = (ROOT / "docker" / name).read_text(encoding="utf-8")
             self.assertNotIn("token_provider", text)
             self.assertNotIn("requirements-reporter.lock", text)
 
@@ -931,7 +931,7 @@ class TestDockerfileInstructionLevel(unittest.TestCase):
     """M8-GH-4B2 pre-push §2: parse the REAL instructions — no isolated
     keyword matching, no literal backslash-n, identical contract."""
 
-    FILES = ("Dockerfile.gh-webhook", "tools/gh-app/Dockerfile")
+    FILES = ("docker/Dockerfile.gh-webhook", "tools/gh-app/Dockerfile")
 
     def test_no_literal_backslash_n(self):
         # The REAL §2 bug was a literal backslash + 'n' inside the RUN

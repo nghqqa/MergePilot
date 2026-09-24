@@ -1,0 +1,23 @@
+{
+  "report": {
+    "rounds": [],
+    "ticket_id": "tkt-5308455b7fa2431484618af12c5b1ca4",
+    "final": "FIXER_FAILED",
+    "ticket_created": true,
+    "failures": [
+      {
+        "attempt": 1,
+        "stage": "fixer",
+        "detail": "no unified diff in response",
+        "raw": "D:\\goai\\MergePilot\\evidence\\rpd-24h\\closure\\artifacts\\round1-fixer-raw.txt"
+      }
+    ]
+  },
+  "budget": {
+    "requests": 1,
+    "max_requests": 40,
+    "remaining_tokens": 164156,
+    "unreliable": false,
+    "last_error": ""
+  }
+}

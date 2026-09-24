@@ -1,0 +1,24 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.16, pytest-9.0.3, pluggy-1.6.0 -- /usr/local/bin/python
+cachedir: .pytest_cache
+rootdir: /work/backend
+configfile: pyproject.toml
+plugins: anyio-4.15.1
+collecting ... collected 14 items
+
+test_demo_high_risk_containment.py::TestEscapesRejected::test_escape_rejected[../outside-secret.txt] PASSED [  7%]
+test_demo_high_risk_containment.py::TestEscapesRejected::test_escape_rejected[../../outside-secret.txt] PASSED [ 14%]
+test_demo_high_risk_containment.py::TestEscapesRejected::test_escape_rejected[../../../etc/hostname] PASSED [ 21%]
+test_demo_high_risk_containment.py::TestEscapesRejected::test_escape_rejected[/etc/hostname] PASSED [ 28%]
+test_demo_high_risk_containment.py::TestEscapesRejected::test_escape_rejected[..\\..\\outside-secret.txt] PASSED [ 35%]
+test_demo_high_risk_containment.py::TestEscapesRejected::test_escape_rejected[..%2Foutside-secret.txt] PASSED [ 42%]
+test_demo_high_risk_containment.py::TestEscapesRejected::test_escape_rejected[sub/../../outside-secret.txt] PASSED [ 50%]
+test_demo_high_risk_containment.py::TestEscapesRejected::test_symlink_escape_rejected PASSED [ 57%]
+test_demo_high_risk_containment.py::TestEscapesRejected::test_empty_name_is_404_not_base_listing PASSED [ 64%]
+test_demo_high_risk_containment.py::TestLegitimateReads::test_inside_file_served PASSED [ 71%]
+test_demo_high_risk_containment.py::TestLegitimateReads::test_subdir_file_served PASSED [ 78%]
+test_demo_high_risk_containment.py::TestLegitimateReads::test_missing_inside_file_is_404 PASSED [ 85%]
+test_demo_high_risk_path_traversal.py::test_high_risk_path_traversal_now_contained PASSED [ 92%]
+test_demo_high_risk_path_traversal.py::test_high_risk_depth_now_contained PASSED [100%]
+
+======================== 14 passed, 5 warnings in 0.40s ========================

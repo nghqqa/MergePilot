@@ -1,0 +1,2 @@
+stored spec keys: ['containerManaged', 'image', 'model', 'runtime', 'state']
+env stored: False

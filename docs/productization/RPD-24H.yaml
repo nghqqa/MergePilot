@@ -1,0 +1,434 @@
+# RPD-24H.yaml — 24h 自主交付轮持久状态源
+# 规则:本文件为唯一进度权威;状态转换须遵守合法转换表;DONE 必须有
+# acceptance_commands 执行记录 + evidence_paths + commit。
+round: RPD-24H-20260923
+started_at: "2026-09-23T15:09:04Z"
+max_duration_hours: 24
+base_head: b79cd39cbcd78731ac50b2ff0f25b00a5a11514e
+branch: feat/backend-pg-storage
+worktree_at_start: clean
+remote:
+  origin: https://github.com/nghqqa/MergePilot.git
+  main_head_at_start: 52f5e57a76f2624b9984f83c9b5e72f361d0190e
+budget:
+  max_model_requests: 120
+  max_total_tokens: 400000
+  max_concurrency: 2
+  request_timeout_seconds: 120
+  max_retries_per_step: 2
+  progress_interval_minutes: 30
+  provider_usage_metering: unavailable   # 费用不可实时验证;以请求数/token 本地硬停
+  counters:
+    model_requests: 0
+    input_tokens: 0
+    output_tokens: 0
+    total_tokens: 0
+    retries: 0
+prohibitions:
+  - push main
+  - merge PR
+  - modify shared case-pg
+  - modify production MinIO
+  - modify running AgentTeams config or internal DB
+  - hand-edit AgentTeams container files for provision
+  - push empty commits to test business repo
+  - publish real GitHub check-run
+  - auto approve/reject real gate tickets
+  - wake fixer/verifier
+  - download embedding models
+  - change D-7
+  - output secrets
+  - unlimited retries
+startup_gate:
+  branch_ok: true
+  head_matches_known: true          # b79cd39 = 最近验证提交
+  worktree_clean: true
+  contract_docs:
+    present: [ARCHITECTURE-V3.md, ORCHESTRATION-CONTRACT.md, M2-GATE-STORAGE-OPTIONS.md, M2-APPROVAL-SPEC.md, STATUS.md]
+    on_design_branch_not_this_tree:
+      - DATA-ARCHITECTURE-PG.md      # docs/architecture-audit-20260922 分支
+      - SELFHOST-INSTALL-TARGET.md   # 同上
+  rpd_files_existed_at_start: false
+  blocked_or_failed_states: none
+  unattributable_worktree_changes: none
+
+tasks:
+  - id: RPD-01
+    title: 启动门禁和基线记录
+    owner: ai
+    status: DONE
+    priority: P0
+    scope: [read HEAD, save BASE_HEAD, worktree check, verification status, init budget/state]
+    dependencies: []
+    allowed_external_writes: none
+    acceptance_commands:
+      - git rev-parse HEAD
+      - git status --porcelain
+      - git remote -v
+    evidence_paths: [evidence/rpd-24h/rpd-01/startup-report.md]
+    commit: "(基线记录,无代码变更;首代码提交归 RPD-03+)"
+    started_at: "2026-09-23T15:09:04Z"
+    completed_at: "2026-09-23T15:14:00Z"
+    blocker: ""
+    notes: 已知事实(pgvector 11/11 等)标记为待证据复核,在 RPD-02/04/05 重新验证后才可 DONE
+
+  - id: RPD-02
+    title: pgvector 隔离证据复核
+    owner: ai
+    status: DONE
+    priority: P0
+    scope: [复核 b79cd39 中 pgvector smoke 11/11, 版本记录(PG 16.15/pgvector 0.8.6), 隔离实例已销毁, 共享 case-pg 未访问]
+    dependencies: [RPD-01]
+    allowed_external_writes: none
+    acceptance_commands:
+      - python -X utf8 -c "import ast; ast.parse(open('tools/case_retrieval/deploy/pgvector_smoke.py',encoding='utf-8').read()); print('ok')"
+      - git log --oneline -1 -- tools/case_retrieval/deploy/pgvector_smoke.py
+    evidence_paths: [evidence/rpd-24h/rpd-02/reverify.md]
+    commit: b79cd39
+    started_at: "2026-09-23T15:20:00Z"
+    completed_at: "2026-09-23T15:30:00Z"
+    blocker: ""
+    notes: 只读;隔离实例已销毁,不重建;smoke 记录在 PROGRESS 第三十四/三十五轮+commit b79cd39
+
+  - id: RPD-03
+    title: case_retrieval 接线契约
+    owner: ai
+    status: DONE
+    priority: P1
+    scope: [隔离配置样例完善, validate_env/preflight 强化, DSN 校验, SCOPE_FILE 校验, gh_bridge authored scope 来源, fail-closed 验证, 无 scope 全库回退=不存在]
+    dependencies: [RPD-01]
+    allowed_external_writes: none
+    acceptance_commands:
+      - python -X utf8 -m pytest tests/gh_bridge/test_case2_fixes.py -q -p no:cacheprovider
+      - python -X utf8 tools/case_retrieval/deploy/validate_env.py --mode repo
+    evidence_paths: [evidence/rpd-24h/rpd-03/wiring.md]
+    commit: "(本轮收口统一提交)"
+    started_at: "2026-09-23T15:32:00Z"
+    completed_at: "2026-09-23T16:05:00Z"
+    blocker: "正式共享 controller/Worker 注入=WAITING_HUMAN(已列授权清单,不阻塞本任务完成)"
+    notes: validate_env 新增 --preflight(真实连接+只读角色+表能力);正/负双向实测通过;修复仓库根路径深度 bug
+
+  - id: RPD-04
+    title: TicketStore 和人工门闭环
+    owner: ai
+    status: DONE
+    priority: P1
+    scope: [marker→pending ticket 幂等, 绑定五元组+task/severity, approve/reject/expire CAS, 24h TTL, append-only audit, 重复决策不覆盖, bridge 只建票, approve→计划数据, reject→BLOCKED, expire→CLOSED_EXPIRED]
+    dependencies: [RPD-01]
+    allowed_external_writes: none
+    acceptance_commands:
+      - python -X utf8 tools/approval/gate_ticket_smoke.py
+      - python -X utf8 -m pytest tests/approval/test_gate_ticket.py -q -p no:cacheprovider
+    evidence_paths: [evidence/rpd-24h/rpd-04/closure.md]
+    commit: 59ccd1a
+    started_at: "2026-09-23T16:05:00Z"
+    completed_at: "2026-09-23T16:12:00Z"
+    blocker: ""
+    notes: 复核=新命令重验(13/13+28 tests);禁项全部遵守
+
+  - id: RPD-05
+    title: 后端回归
+    owner: ai
+    status: DONE
+    priority: P0
+    scope: [approval/TicketStore, bridge/gateway, case_retrieval, PG store, run_context, 配置校验, 隔离 Docker/PG smoke]
+    dependencies: [RPD-01, RPD-03, RPD-04]
+    allowed_external_writes: none   # 仅本地一次性 Docker/PG 允许
+    acceptance_commands:
+      - python -X utf8 -m pytest tests/approval/ tests/gh_bridge/ tests/model_gateway/ tests/skills/ -q -p no:cacheprovider
+      - MERGEPILOT_PG_CONTRACT=1 python -X utf8 -m pytest tests/approval/test_store_pg.py tests/approval/test_migration_runner.py -q -p no:cacheprovider
+    evidence_paths: [evidence/rpd-24h/rpd-05/failure-ledger.md, evidence/rpd-24h/rpd-05/regression-local.txt, evidence/rpd-24h/rpd-05/regression-pg-gated.txt]
+    commit: b79cd39
+    started_at: "2026-09-23T16:12:00Z"
+    completed_at: "2026-09-23T16:25:00Z"
+    blocker: ""
+    notes: 本地 282/0 失败;PG 门控 25/26(唯一失败=基线既有 Windows spawn race,TEST-DEBT 口径保持)
+
+  - id: RPD-06
+    title: 有限前端契约对齐
+    owner: ai
+    status: DONE
+    priority: P2
+    scope: [门状态展示: pending/action_required/approved_plan_ready/rejected/blocked/expired/backend_unavailable/scope_missing]
+    dependencies: [RPD-04]
+    allowed_external_writes: none
+    acceptance_commands:
+      - python -X utf8 -m pytest tests/ -q -p no:cacheprovider -k "console or gate" --ignore=tests/m4c --ignore=tests/m4e --ignore=tests/skills 2>&1 | tail
+    evidence_paths: [evidence/rpd-24h/rpd-06/scope.md]
+    commit: "(本轮收口统一提交)"
+    started_at: "2026-09-23T16:25:00Z"
+    completed_at: "2026-09-23T16:45:00Z"
+    blocker: ""
+    notes: gate_display 八态纯映射+审批响应字段;零新增端点/零 OAuth/零合并
+
+  - id: RPD-07
+    title: PR 交付
+    owner: ai
+    status: DONE
+    priority: P0
+    scope: [feature branch, push branch, 一个 PR, PR 正文含 BASE_HEAD/测试/证据/未完成/风险]
+    dependencies: [RPD-01, RPD-05]
+    allowed_external_writes: [push feature branch to origin, create/update one PR]
+    acceptance_commands:
+      - git log --oneline -1
+      - gh pr view --json url,state,headRefName
+    evidence_paths: [evidence/rpd-24h/rpd-07/pr-record.md]
+    commit: 05d6d40
+    started_at: "2026-09-23T16:45:00Z"
+    completed_at: "2026-09-23T17:00:00Z"
+    blocker: ""
+    notes: PR #233(OPEN,核验);git 默认凭据 403(已知),gh 凭据通道完成;远端 tip 核验一致(最终 05d6d40)
+
+  - id: RPD-08
+    title: 最终报告和早晨验收
+    owner: ai
+    status: DONE
+    priority: P0
+    scope: [最终报告, RPD 汇总, 复现命令, 回滚命令, 人工决策点, 关闭本地隔离资源, 停止]
+    dependencies: [RPD-05, RPD-06, RPD-07]
+    allowed_external_writes: none
+    acceptance_commands:
+      - ls evidence/rpd-24h/
+    evidence_paths: [evidence/rpd-24h/rpd-08/final-report.md]
+    commit: 05d6d40
+    started_at: "2026-09-23T17:00:00Z"
+    completed_at: "2026-09-23T17:05:00Z"
+    blocker: ""
+    notes: final_state=MANUAL-REQUIRED(人工决策点见 final-report);不自动 merge/部署/开下一轮
+
+# 执行判定(2026-09-24 执行指令轮): 用户指令要求"按已批准的 D-A/D-B/D-C/D-E 继续",
+# 但指令文本与 RPD user_reply 字段均无任何"批准 D-X"明确批复形式 → 判定=批复缺失,
+# 保持 MANUAL-REQUIRED,零外部动作(未 push/未注入/未启用审批/未执行 CASE2)。
+execution_decision_20260924:
+  approvals_found: false
+  user_reply_all_empty: true
+  directive_text_contains_approval_form: false
+  action_taken: "NONE (stayed MANUAL-REQUIRED per rules)"
+  local_commits_unpushed: [db62d1c, 9dcf3f6]   # 历史记录(当时); 后继夜轮已 push, 2026-09-24 远端=2e98d4e
+  note: "等待用户以明确形式批复: 批准 D-A / 批准 D-B / 批准 D-C A1-A5 / 批准 D-E / 修改条件:…"
+
+# 范围审计(2026-09-24 复核轮): PR #233 157 文件全部归属 R3..RPD-08 各轮,
+# 零无关文件/零生成物/零秘密/零生产配置 → PR_SCOPE_ACCEPTABLE = true
+# ── CASE2-B 收口轮(2026-09-24): 证据复核+人工决策登记 ──
+CASE2-B: DONE                        # 证据 14/14 复核通过(含 manifest_sha 权威重算)
+CASE2-B-HIGH-DECISION: APPROVED_PLAN_READY
+case2b_high_decision:
+  decision: APPROVED_PLAN_READY
+  decided_at: "2026-09-24T11:45:00Z"
+  requested_by: operator
+  user_reply: "B：批准 CASE2-B HIGH finding 进入 fix 计划，但不自动派发 fixer。"
+  reconfirmed_at: "2026-09-24T02:54:00Z"   # 校准轮用户重申: 批准进入人工 fix 计划; 仅处置意向,非 D-B/TicketStore 正式 approve
+  run_id: run-gh-pr2-42ed1787-003205
+  head_sha: 42ed17879becbc02e31551938afbbf689351df96
+  finding: "CWE-22 arbitrary file read (CWE-73/200 exposure)"
+  severity: HIGH
+  ticket_id: null                    # 无合法 ticket;本决定≠TicketStore 正式 approve
+  plan:
+    fix_scope: "CWE-22 path containment (realpath+commonpath, per org-standards/file-path-containment.md)"
+    verify_scope: "PoC regression + boundary tests (escape attempts, depth off-by-one, charset)"
+    target_repo: nghqqa/fastapi-boilerplate-demo
+    target_pr: 2
+    target_head: 42ed17879becbc02e31551938afbbf689351df96
+    auto_dispatch: false
+  NOT_AN_OFFICIAL_APPROVE: "本次 B 仅为人工处置意向登记,不是 TicketStore 正式 approve;正式审批仍需 D-B+合法 ticket+具名审批人+24h TTL;启用前不得触发 fix/verify"
+RAG-IMAGE-SYNC: DONE                # 历史事实(2026-09-24): v6scope 镜像(单文件增量)+agt --image 更新+容器内验收全过(含真实 case-pg scope 查询)
+RAG-IMAGE-SYNC-ROUND-20260924-CALIBRATION: FROZEN_NO_NEW_ACTION   # 本轮零镜像构建/零 agt 更新/零容器操作; 历史 DONE 事实保留不回写
+rag_image_sync:
+  old_tag: agentteams/copaw-worker:223ddc2-agentloop-v5fix
+  old_digest: 4bfe8eccfe4f
+  new_tag: agentteams/copaw-worker:223ddc2-agentloop-v6scope
+  new_digest: f1702d75675c
+  build: "FROM old + COPY case_retrieval/core.py (single-file delta)"
+  evidence: [evidence/rpd-24h/rag-image-sync/exec-report.md]
+  rollback: "agt update worker --name reviewer --image agentteams/copaw-worker:223ddc2-agentloop-v5fix"
+D-B: WAITING_HUMAN                  # 2026-09-24 校准轮重申保持;不阻塞人工漏洞修复的事实记录,但正式产品审批面仍待决
+D-7: 未批准
+CASE2-FIX-VERIFY: MANUAL_FIX_VERIFIED   # 人工路线子任务(见 case2b_fix);生产 Fixer/Verifier 派发仍 WAITING_HUMAN(D-B+合法票据前不得触发,零启动保持)
+
+# CASE2-B 人工修复(2026-09-24 校准轮): 补丁生成→人工验证, 零模型调用
+CASE2-B-FIX: MANUAL_FIX_VERIFIED
+case2b_fix:
+  status: MANUAL_FIX_VERIFIED
+  patch_file: evidence/rpd-24h/case2b-fix/patch.diff
+  patch_sha256: 6d9e9905ed4ccb1c8c1126a220425268e92e1414219b767d0f398f9602070090
+  target_commit: 42ed17879becbc02e31551938afbbf689351df96   # PR #2 head(2026-09-24T02:54Z 核验=仍 OPEN 同 head)
+  files_changed:
+    - backend/src/interfaces/api/v1/demo_high_risk.py
+    - backend/tests/unit/test_demo_high_risk_containment.py   # 新增 123 行
+    - backend/tests/unit/test_demo_high_risk_path_traversal.py
+  git_apply_check: "exit=0 干净应用(临时一次性 clone @42ed1787, 已销毁)"
+  tests: "13 passed / 1 skipped(symlink=Windows 特权限制,测试内建 skip) / 0 failed, exit=0"
+  pre_fix_control: "未修复代码上主 PoC 用例复现泄漏 PASSED(漏洞真实存在); depth 用例失败=原始测试自身路径算术差一级(补丁前已有缺陷,非补丁问题,如实登记)"
+  verified_at: '2026-09-24T02:54:00Z(独立复核); 并行补丁会话容器验证=2026-09-24 10:55 +0800'
+  dual_verification:
+    primary: '人工补丁会话(并行)——独立 checkout+受限容器(network=none/非root/512m/1cpu), PoC before/after 对照, 14 passed(containment 10+反转回归 4); 见 fix-report.md+poc-results.json+test-output.txt'
+    independent_recheck: '状态校准轮(本节所属轮)——一次性临时 clone @42ed1787, git apply --check exit=0, 13 passed/1 skipped(symlink=Windows 特权)/0 failed; 见 verify-report.md; 两链结论一致'
+    business_repo_branch: 'fix/cwe22-containment @ f95d99d(父=42ed178, 业务仓库本地分支, 未推送)'
+  evidence: [evidence/rpd-24h/case2b-fix/fix-report.md, evidence/rpd-24h/case2b-fix/poc-results.json,
+             evidence/rpd-24h/case2b-fix/test-output.txt, evidence/rpd-24h/case2b-fix/verify-report.md]
+  model_requests_this_round: 0
+  model_tokens_this_round: 0
+  NOT_PRODUCTION_VERIFIER: "本地一次性副本上的人工复核; 生产 Fixer/Verifier 零启动; ≠FIXER_COMPLETED/VERIFIER_COMPLETED; ≠TicketStore 正式审批闭环; 补丁正式派发/推送/合并仍待 D-B+合法票据+用户明确指示"
+
+# 校准轮决策登记(2026-09-24T02:54Z 用户指令): 人工 fix 计划批准仅是处置意向重申
+case2b_high_decision_reconfirm_20260924:
+  decision: APPROVED_PLAN_READY
+  scope: "批准进入人工 fix 计划(处置意向); 非 D-B/TicketStore 正式 approve"
+  manual_fix_route: "CL-08 选择人工修复; 本轮起不再调用真实模型, 不增加模型 token"
+  fixer_verifier_production: "零启动保持"
+  rag_image_sync_this_round: "FROZEN/NO_NEW_ACTION(历史 DONE 保留)"
+
+# D-A 解锁调查轮(2026-09-24): 只读调查+隔离复现+方案评估;零共享环境修改
+D-A-REMEDIATION: DONE             # 根因=agt apply CLI 丢弃 spec.env;controller 本身支持(223ddc2 member_reconcile.go:923)
+D-A-ISOLATED-REPRO: DONE          # 生产 kine 存储证明 + 官方源码比对(隔离 controller 实例启动未成,改用生产存储证据+源码)
+D-A-REMEDIATION-PLAN: DONE        # 修复=k8s 原生 apiserver PUT(官方机制;agt CLI 缺陷已登记上游)
+D-A-REMEDIATION-APPLY: DONE       # 已执行:spec.env 两键注入,容器重建,生产 preflight PASS
+CASE2: BLOCKED                    # 本轮指令"暂不执行 CASE2";A1-A5 授权保留,D-A 已解锁
+D-D: WAITING_FOR_CASE2_TICKET
+
+pr_scope_audit:
+  pr_scope_acceptable: true
+  evidence: [evidence/rpd-24h/pr-audit/pr-scope-report.md,
+             evidence/rpd-24h/pr-audit/sensitive-scan.md,
+             evidence/rpd-24h/pr-audit/unrelated-files.md]
+  split_proposal: "方案 A=保留综合 PR(推荐);方案 B=四段拆分(见 pr-scope-report);均待用户选择"
+
+# ── 夜轮(2026-09-23 深夜,授权=D-E+D-A+D-C A1-A5;D-B 暂不批;D-D 等票) ──
+night_round:
+  approvals: {"D-E": true, "D-A": true, "D-C": ["A1", "A2", "A3", "A4", "A5"], "D-B": false, "D-D": "wait-ticket"}
+  tasks:
+    - {id: NR-01, title: "push PR #233 本地提交", status: DONE, evidence: "evidence/rpd-24h/night-run/pr-push.md"}
+    - {id: NR-02, title: D-A 正式 case_retrieval 接线, status: BLOCKED,
+       blocker: "controller 不实现 spec.env(apply 静默丢弃, kine 存储证明); 三条解锁路径待用户选择",
+       evidence: "evidence/rpd-24h/D-A/wiring-report.md"}
+    - {id: NR-03, title: A1 新 head 空提交+对账, status: DONE,
+       evidence: "case2b 节(后继轮次按新授权执行: 42ed1787,delivery 2432e0f0 PENDING→处理)"}
+    - {id: NR-04, title: A2/A3 真实 run+rag 采集, status: DONE,
+       evidence: "evidence/rpd-24h/case2b/"}
+    - {id: NR-05, title: 人工门停止+证据+报告, status: DONE, evidence: "evidence/rpd-24h/night-run/final-night-report.md"}
+
+# ── closure 批次(2026-09-24:结构化建票→有效审批→fixer→独立verifier→补丁交付) ──
+closure_round:
+  started_at: "2026-09-24T12:30:00Z"
+  base_head: e94be2e
+  branch: feat/rpd-24h-delivery
+  model_budget:
+    max_requests: 40
+    max_total_tokens: 200000
+    max_output_per_request: 8000
+    concurrency: 1
+    request_timeout_s: 120
+    fix_verify_rounds: 2
+    model_window_min: 60
+    provider_fee_hard_cap: absent   # 如实声明;在途请求可能继续计费
+    guard_implemented: false        # CL-08 前置:先验证预算守卫可执行
+  tasks:
+    - {id: CL-01, title: 缺口分析, status: DONE, evidence: "evidence/rpd-24h/closure/cl01-gaps.md"}
+    - {id: CL-02, title: 结构化建票通道, status: DONE, evidence: "tests/iso_chain/test_closure.py"}
+    - {id: CL-03, title: 审批接线(head新鲜度/身份/TTL/CAS/审计), status: DONE, evidence: "tests/iso_chain/test_closure.py"}
+    - {id: CL-04, title: 票据驱动fixer派发(outbox/幂等/fencing), status: DONE, evidence: "tests/iso_chain/test_closure.py"}
+    - {id: CL-05, title: 独立verifier(隔离实例/仅目标输入), status: DONE, evidence: "tools/iso_chain/verifier.py"}
+    - {id: CL-06, title: 补丁产物与干净checkout验证, status: DONE, evidence: "tools/iso_chain/patchwork.py"}
+    - {id: CL-07, title: 确定性故障测试, status: DONE, evidence: "tests/iso_chain/test_closure.py"}
+    - {id: CL-08, title: 真实模型隔离链, status: RESOLVED_MANUAL_FIX,
+       blocker: "历史根因(保留): 两阶段失败已确诊 ①thinking 开启(默认)时 8000 completion 全耗于 reasoning, content 空; ②thinking 禁用后(finish=stop, usage 正常)diff 的 @@ 头损坏(@ 占位), git apply 2/2 候选失败",
+       decision_20260924: "用户三选一已决=人工修复; 模型路线关闭, 本轮零模型调用/零新增 token; 人工补丁验证见 case2b_fix(VERIFY 全过)",
+       evidence: "evidence/rpd-24h/closure/cl08-blocked.md + evidence/rpd-24h/case2b-fix/verify-report.md"}
+    - {id: CL-09, title: 回归/证据/PR/验收授权单, status: TODO,
+       note: "2026-09-24 校准轮完成证据段(case2b-fix verify-report+状态三源同步);PR 更新/验收授权单仍待用户;本轮未 push 未改 PR"}
+
+final_state: MANUAL-REQUIRED
+final_blocker: "CASE2-B 人工修复已验证(MANUAL_FIX_VERIFIED, 子任务级); 但 D-B 正式审批启用仍待决 → 产品化决策面整体保持 MANUAL-REQUIRED, 不得为变绿隐藏待决项"
+
+# ── 状态校准轮(2026-09-24T02:54Z): 只改状态/证据索引/报告, 不改业务代码 ──
+calibration_round_20260924:
+  started_at: "2026-09-24T02:54:00Z"
+  scope: "状态校准+文档收口; 零业务代码修改; 不触碰 CASE2-B 人工补丁文件本体(只读验证)"
+  head_at_calibration_start: 74a2782c54b4f990d789734c476351c233ea0ec4   # 校准轮开始时 git rev-parse 实读
+  parallel_patch_session_commits: [ec66209, 81e2b25, 2e98d4e]            # CASE2-B 人工补丁会话(并行)同窗追加且已 push; 属该会话自身授权范围(夜轮 D-E 通道), 如实登记非本校准轮动作
+  pushed_head: 2e98d4e26e1ac76e58e7895ead11531abfe388f5       # git ls-remote + gh pr view 233 实读
+  local_head_at_write_time: 2e98d4e26e1ac76e58e7895ead11531abfe388f5      # 本轮收口提交前基线; 收口提交后 local 前进且未 push→local 领先 pushed(分别记录不混写)
+  pr_233: 'OPEN, headRefOid=2e98d4e; main 未动未 merge'
+  model_requests_this_round: 0
+  model_tokens_this_round: 0
+  production_fixer_verifier_started: 0
+  github_writes_this_round: 'none(校准轮自身——未 push/未 merge/未改 PR/未发 check-run); 并行补丁会话的 push 见 parallel_patch_session_commits'
+  user_decisions_registered:
+    - "CASE2-B-HIGH-DECISION=批准进入人工 fix 计划(仅处置意向, 非 D-B/TicketStore 正式 approve)"
+    - "CL-08=选择人工修复; 本轮不再调用真实模型, 不增加模型 token"
+    - "D-B=保持 WAITING_HUMAN/DISABLED"
+    - "Fixer/Verifier 生产角色=保持零启动"
+    - "RAG-IMAGE-SYNC=历史 DONE 保留, 本轮 FROZEN/NO_NEW_ACTION"
+    - "D-A、D-C A1-A5、D-E=按已有真实证据登记为已完成(夜轮批准+后继轮执行), 不得重新执行"
+  case2b_fix_status: MANUAL_FIX_VERIFIED   # 依据=case2b-fix/verify-report.md(apply 干净+PoC 阻断+合法回归+13/1s/0f)
+
+# ── 人工决策登记(2026-09-23 复核轮新增;批准须用"批准 D-X"或"修改条件:…"明确表达) ──
+human_decisions:
+  - decision_id: D-A
+    title: 正式 controller/Worker 环境注入
+    status: APPROVED_EXECUTED           # 夜轮(2026-09-23 深夜)批准; 后继轮已执行完毕, 2026-09-24 校准轮补登记; 不得重新执行
+    user_reply: "夜轮授权 D-A(见 night_round.approvals); 批准时间以夜轮记录为准"
+    impact: [共享 controller/Worker CR 写入, case-pg 只读账号创建/配置, 相关 Worker 重启]
+    allowed_external_writes: []          # 已执行完毕, 无待执行项
+    effective_at: "夜轮批准; 执行=commit 88e2e4d(k8s 原生 apiserver PUT spec.env 两键+容器重建, 生产 preflight PASS)"
+    evidence: [tools/case_retrieval/deploy/README.md, tools/case_retrieval/deploy/validate_env.py,
+               evidence/rpd-24h/rpd-03/wiring.md, evidence/rpd-24h/D-A/wiring-report.md]
+    audit: "登记于本轮 RPD;夜轮批准后经 kube-apiserver 原生 PUT 完成注入(agt apply CLI 丢弃 spec.env 的缺陷已登记上游);回滚=apiserver PUT 移除两键+容器重建"
+    subitems:
+      - 设置 MERGEPILOT_CR_PG_DSN 与 MERGEPILOT_CR_REPO_SCOPE_FILE
+      - 创建/配置 case-pg 只读账号
+      - 重启相关 Worker 以加载配置
+
+  - decision_id: D-B
+    title: D-1/D-2 真实审批启用
+    status: WAITING_HUMAN
+    user_reply: ""
+    impact: [TicketStore 真实决策面, 审批人身份, 动作子集, TTL 政策]
+    allowed_external_writes: []          # 批准后仍只生成计划,不自动派发
+    effective_at: ""
+    evidence: [docs/productization/M2-APPROVAL-SPEC.md, docs/productization/AUTH-DECISION-PACKAGE.md,
+               tools/approval/gate_ticket.py]
+    audit: "即使批准 D-B,也不得自动批准具体 CASE2 票据"
+    subitems:
+      - 批准审批动作子集(候选: generate_patch/run_poc/publish_result)
+      - 指定至少一名具名审批主体
+      - 批准 24h TTL
+      - 允许真实 approve/reject 进入 TicketStore
+      - 允许批准后仅生成 fix/verify 计划
+
+  - decision_id: D-C
+    title: CASE2 运行授权(A1-A5,须全部明确批准)
+    status: APPROVED_EXECUTED           # 夜轮批准 A1-A5; CASE2-B 已按授权执行完毕, 2026-09-24 校准轮补登记; 不得重新执行
+    user_reply: "夜轮授权 D-C A1-A5(见 night_round.approvals); 批准时间以夜轮记录为准"
+    impact: [业务仓库空提交, deepseek-flash 真实调用, rag-live 窗口, 单 check-run, 费用风险]
+    allowed_external_writes: []          # 已执行完毕, 无待执行项
+    effective_at: "夜轮批准; 执行=CASE2-B(run-gh-pr2-42ed1787-003205: A1 空提交 head=42ed1787/A2 真实审查/A3 rag-live 真实检索×2/A4 单 check-run 107446711189/A5 费用风险已承受)"
+    evidence: [docs/productization/backend/CASE2-CANDIDATES.md, evidence/rpd-24h/case2b/run-report.md,
+               evidence/rpd-24h/case2b/run-context.json]
+    audit: "约束已遵守: 单仓库/单 PR/单 head/单 run;fixer/verifier 未启用;20min 收口;ticket 未补造;终态=timeout(leader 未写 marker,模型指令遵循局限已记录)"
+    subitems:
+      - A1 向 demo/high-risk-human-gate 推送一个空提交
+      - A2 leader+reviewer 使用 deepseek-flash 一次真实审查
+      - A3 案例窗口启动 rag-live
+      - A4 reconcile-first 至多一个 check-run
+      - A5 接受无 provider 硬上限与在途计费风险
+
+  - decision_id: D-D
+    title: 人工门决策(针对具体 CASE2 票据)
+    status: WAITING_FOR_CASE2_TICKET
+    user_reply: ""
+    impact: [单个真实票据的 approve/reject]
+    allowed_external_writes: []
+    effective_at: ""
+    evidence: [tools/approval/gate_ticket.py]
+    audit: "票据未产生,不可提前批准/拒绝;产生后 bridge 只建票,AI 不得代批;票据须绑定 run_id/repo/PR/head_sha/task_id/severity;批准→APPROVED_PLAN_READY,拒绝→BLOCKED,过期→CLOSED_EXPIRED,均不自动派发 fixer/verifier"
+
+  - decision_id: D-E
+    title: Git 凭据通道(gh CLI credential helper)
+    status: APPROVED_EXECUTED           # 夜轮批准; NR-01 已 push PR #233 本地提交, 2026-09-24 校准轮补登记; 不得重新执行
+    user_reply: "夜轮授权 D-E(见 night_round.approvals); 批准时间以夜轮记录为准"
+    impact: [本仓库 feature branch 推送通道, PR 创建/更新]
+    allowed_external_writes: []          # 通道已投用完毕; 校准轮零 GitHub 写入(无本轮授权)
+    effective_at: "夜轮批准; 执行=NR-01 push(远端 tip 核验 74a2782c, 见 evidence/rpd-24h/night-run/pr-push.md)"
+    evidence: [evidence/rpd-24h/rpd-07/pr-record.md, evidence/rpd-24h/night-run/pr-push.md]
+    audit: "批准范围已执行:feature branch push 经 gh 凭据通道;未 push main/未 merge/token 未输出;2026-09-24 校准轮无新 GitHub 写入授权→零 GitHub 写入"

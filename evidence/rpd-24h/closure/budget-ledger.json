@@ -1,0 +1,51 @@
+{
+  "run_id": "run-gh-pr2-42ed1787-003205",
+  "limit": 200000,
+  "unit": "tokens",
+  "remaining": 158988,
+  "gaps": 2,
+  "reservations": [
+    {
+      "rid": "5ea7161d825147e2",
+      "amount": 9795,
+      "created_ts": 1790215225.002857,
+      "state": "settled"
+    },
+    {
+      "rid": "a258a23ddbb54a73",
+      "amount": 9795,
+      "created_ts": 1790215396.0895553,
+      "state": "settled"
+    },
+    {
+      "rid": "717a7f7ed6f24e0e",
+      "amount": 9795,
+      "created_ts": 1790215691.4627829,
+      "state": "settled"
+    },
+    {
+      "rid": "6a050a82073848ab",
+      "amount": 9795,
+      "created_ts": 1790215780.977587,
+      "state": "settled"
+    },
+    {
+      "rid": "efde665d0ed842d7",
+      "amount": 9795,
+      "created_ts": 1790215892.7835054,
+      "state": "settled"
+    },
+    {
+      "rid": "39c118a69bf74916",
+      "amount": 9786,
+      "created_ts": 1790216939.6758323,
+      "state": "settled"
+    },
+    {
+      "rid": "487c596660c34dc6",
+      "amount": 9786,
+      "created_ts": 1790217137.5887496,
+      "state": "settled"
+    }
+  ]
+}

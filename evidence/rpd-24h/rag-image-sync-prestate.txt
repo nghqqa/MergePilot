@@ -1,0 +1,1 @@
+container_id_prefix=1479e682161cb | image_tag=agentteams/copaw-worker:223ddc2-agentloop-v5fix | image_id=4bfe8eccfe4fb

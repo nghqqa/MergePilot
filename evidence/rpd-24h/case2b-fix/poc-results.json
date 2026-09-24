@@ -1,0 +1,24 @@
+POC_RESULTS:
+{
+ "cases": [
+  {
+   "name": "../outside-secret.txt",
+   "expect": "rejected",
+   "before": "HTTP 200, body=TOP-SECRET-OUTSIDE-BASE (leak)",
+   "after": "REJECTED: HTTPException (400: invalid path)"
+  },
+  {
+   "name": "../../../etc/hostname",
+   "expect": "rejected",
+   "before": "HTTP 200, body=HOSTNAME (arbitrary read)",
+   "after": "REJECTED: HTTPException (400: invalid path)"
+  },
+  {
+   "name": "inside.txt",
+   "expect": "served",
+   "before": "HTTP 200, body=LEGIT-INSIDE (legitimate)",
+   "after": "HTTP200 body='LEGIT-INSIDE'"
+  }
+ ],
+ "all_passed": true
+}

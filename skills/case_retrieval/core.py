@@ -7,6 +7,7 @@ trust boundary even though the adapter is required to scope its query.
 from __future__ import annotations
 
 import inspect
+import json
 import math
 import os
 import re
@@ -98,12 +99,46 @@ def _positive_int(value, field: str, default: int, maximum: int) -> int:
     return parsed
 
 
+def _scope_from_run_context_file(path):
+    """从桥编写的 run-context.json 提取 repo scope(可信来源校验)。
+
+    只接受 authored_by == "gh_bridge" 的记录(编排器唯一合法作者);取 code.repo。
+    任何形状/作者不符 → 返回 None(调用方保持 SCOPE_MISSING)。"""
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception:
+        return None
+    if not isinstance(data, dict):
+        return None
+    if data.get("authored_by") != "gh_bridge":
+        return None
+    if not isinstance(data.get("run_id"), str) or not data.get("run_id"):
+        return None
+    # 真实桥产出:repo 在顶层(build_run_context);code.repo 为兼容形态。
+    repo = data.get("repo")
+    if not isinstance(repo, str) or not repo:
+        code = data.get("code") if isinstance(data.get("code"), dict) else {}
+        repo = code.get("repo") if isinstance(code.get("repo"), str) else None
+    if not repo or len(repo) > 256 or any(ord(c) < 32 for c in repo):
+        return None
+    return repo
+
+
 def load_trusted_config(env=None) -> dict:
     e = os.environ if env is None else env
     dsn = e.get("MERGEPILOT_CR_PG_DSN")
     if not dsn:
         raise CaseRetrievalError(DB_UNAVAILABLE, "dsn missing")
     scope = e.get("MERGEPILOT_CR_REPO_SCOPE")
+    if not scope:
+        # 2026-09-24(CASE2 复盘):scope 可经由桥编写的可信 run-context 文件透传
+        # (bridge-authored, write-once, 经 shared/ 镜像进容器)。env 未设时尝试
+        # MERGEPILOT_CR_REPO_SCOPE_FILE;文件缺位/形状/作者不符 → 仍为 SCOPE_MISSING
+        # (明确失败,不猜测、不扩大检索范围)。
+        file_path = e.get("MERGEPILOT_CR_REPO_SCOPE_FILE")
+        if file_path:
+            scope = _scope_from_run_context_file(file_path)
     if not scope:
         raise CaseRetrievalError(SCOPE_MISSING, "scope missing")
     if len(scope) > 256 or any(ord(c) < 32 for c in scope):

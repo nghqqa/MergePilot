@@ -30,7 +30,7 @@ except ImportError:
     _HAVE_YAML = False
 
 COMPOSE_TEXT = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
-DOCKERFILE_TEXT = (ROOT / "Dockerfile.gh-webhook").read_text(
+DOCKERFILE_TEXT = (ROOT / "docker" / "Dockerfile.gh-webhook").read_text(
     encoding="utf-8")
 EXAMPLE_MAP = (ROOT / "config" / "gh-app" / "room-map.example.yaml") \
     .read_text(encoding="utf-8")
