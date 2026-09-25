@@ -260,6 +260,39 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
       applyCookies(res, r.setCookie);
       return sendJson(res, 200, { ok: true });
     }
+    // ── A 链组织知识检索（受控代理；feature flag 显式启用，仅隔离 staging）──
+    if (p === '/api/rag/org-search' && req.method === 'GET') {
+      const auth = getSession(tokenFromCookieHeader(req.headers.cookie));
+      if (!auth) return sendJson(res, 401, anonymousBody());
+      if (process.env.MERGEPILOT_ORG_RAG_A_CHAIN !== '1') {
+        return sendJson(res, 200, { service_state: 'a_chain_disabled',
+          note: 'A 链未启用（feature flag 关闭）——不伪装检索', source: 'ORG_RAG' });
+      }
+      const query = String(q.q || '');
+      const k = Math.min(Number(q.k || 5), 20);
+      const base = process.env.ORG_RAG_LIVE_URL || 'http://host.docker.internal:48210';
+      try {
+        const r = await fetch(`${base}/api/rag/search?q=${encodeURIComponent(query)}&k=${k}`);
+        const body = await r.json().catch(() => ({}));
+        if (r.status !== 200 || body.service_state === 'degraded') {
+          res.setHeader('x-rag-service-state', 'degraded');
+          return sendJson(res, 503, { service_state: 'degraded', source: 'ORG_RAG',
+            degraded_reason: body.degraded_reason || 'upstream_non_200',
+            http_status: r.status, results: [],
+            note: '组织知识检索暂不可用——显式降级，不伪装为空成功' });
+        }
+        return sendJson(res, 200, { ...body, source: 'ORG_RAG',
+          knowledge_type: 'org_knowledge',
+          usage_note: 'org-standard reference only — reference only, does not constitute finding/gate/ticket input' });
+      } catch (e) {
+        res.setHeader('x-rag-service-state', 'degraded');
+        return sendJson(res, 503, { service_state: 'degraded', source: 'ORG_RAG',
+          degraded_reason: 'service_unreachable', results: [],
+          error: String(e.cause?.code || e.message).slice(0, 80),
+          note: 'rag-live 不可达——显式降级' });
+      }
+    }
+
     if (p === '/api/overview' && req.method === 'GET') {
       const auth = getSession(tokenFromCookieHeader(req.headers.cookie));
       if (!auth) return sendJson(res, 401, anonymousBody());
