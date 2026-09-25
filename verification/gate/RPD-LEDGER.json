@@ -114,5 +114,11 @@
     "staging": "persistent local isolated, image 1056df76",
     "valid_until": "2026-10-02T00:00:00+08:00",
     "source": "owner session explicit message (see authorization.log)"
+  },
+  "last_monitor_round": {
+    "at": "2026-09-25T15:32:34.839Z",
+    "pass": 12,
+    "total": 12,
+    "stop": null
   }
 }
