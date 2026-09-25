@@ -91,7 +91,7 @@
       "rollback": "N/A (not deployed)"
     }
   ],
-  "overall_status": "PILOT_VERIFIED",
+  "overall_status": "PILOT_CLOSED",
   "c_chain_gaps_kept_separate": [
     "approved model cache (operator-provided manifest + files)",
     "case_provider_metadata live contract-test attestation",
@@ -116,7 +116,7 @@
     "source": "owner session explicit message (see authorization.log)"
   },
   "last_monitor_round": {
-    "at": "2026-09-25T15:32:34.839Z",
+    "at": "2026-09-25T21:38:45.997Z",
     "pass": 12,
     "total": 12,
     "stop": null
