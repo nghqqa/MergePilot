@@ -1,0 +1,47 @@
+{
+  "corpus_name": "org-security-standards",
+  "corpus_version": "v1",
+  "data_mode": "org_knowledge",
+  "publication_status": "published_internal",
+  "note": "组织安全标准语料（A 链受控事实源）。内容为本轮撰写的通用安全标准条文，不含仓库事实、历史案例与企业敏感数据；screening 门禁强制核验。",
+  "documents": [
+    {
+      "doc_id": "std-001",
+      "title": "密码与凭证标准",
+      "source_ref": "org-standards/security/password-v3#L1-L24",
+      "chunks": [
+        "所有生产系统登录必须使用唯一的个人凭证，禁止共享账号。密码最短长度为 14 个字符，必须包含大小写字母、数字与符号。",
+        "静态密钥（API key、token、数据库密码）必须存放于受管密钥存储，禁止写入代码仓库、配置文件或工单。密钥轮换周期不超过 90 天。",
+        "发现凭证泄露时，必须在 1 小时内完成撤销与轮换，并记录事件与影响面。"
+      ]
+    },
+    {
+      "doc_id": "std-002",
+      "title": "代码审查安全标准",
+      "source_ref": "org-standards/security/code-review-v2#L1-L30",
+      "chunks": [
+        "涉及鉴权、加密、文件路径处理、命令执行与依赖变更的改动，必须经过安全审查并在合并前获得人工批准。",
+        "高危发现（如路径穿越、命令注入、硬编码密钥）必须阻断自动合并，进入人工门流程；未经人工批准不得放行。",
+        "审查记录必须可追溯：发现指纹、审查版本与结论需要与具体代码版本绑定。"
+      ]
+    },
+    {
+      "doc_id": "std-003",
+      "title": "依赖与供应链标准",
+      "source_ref": "org-standards/security/supply-chain-v2#L1-L18",
+      "chunks": [
+        "新增第三方依赖必须经过漏洞扫描；存在高危漏洞且无修复版本时禁止引入。依赖版本必须锁定，禁止使用可变标签。",
+        "构建产物必须生成物料清单（SBOM）并完成镜像漏洞扫描；高危漏洞未处置的制品不得进入受控试点。"
+      ]
+    },
+    {
+      "doc_id": "std-004",
+      "title": "审计与可观测标准",
+      "source_ref": "org-standards/security/audit-v1#L1-L14",
+      "chunks": [
+        "所有改变系统状态的操作必须留下不可篡改的审计记录，包含操作者、时间、对象与结果。",
+        "服务降级或不可用时必须在对外状态中显式标记 degraded，禁止以正常状态伪装。"
+      ]
+    }
+  ]
+}
