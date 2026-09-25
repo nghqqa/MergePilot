@@ -113,3 +113,33 @@ test('BACKEND_ERROR honest when DSN unreachable', async () => {
     server.close();
   } finally { delete process.env.CONSOLE_PG_DSN; }
 });
+
+// ── /api/overview 契约（CANONICAL_CONSOLE_OPERATIONAL_OVERVIEW）────────
+test('GET /api/overview — 401 unauth; authed shape with honest stages', async () => {
+  const { server, base } = await start();
+  try {
+    const u = await call(base, '/api/overview');
+    assert.strictEqual(u.status, 401);
+    const ok = await call(base, '/api/auth/login', { method: 'POST',
+      headers: { 'content-type': 'application/json' }, body: JSON.stringify({ user: 'pilot', password: 'pw-test' }) });
+    const cookie = (ok.headers.get('set-cookie') || '').split(';')[0];
+    const r = await call(base, '/api/overview', { headers: { cookie } });
+    assert.strictEqual(r.status, 200);
+    const b = r.body;
+    for (const k of ['schema_version', 'generated_at', 'source', 'stage_counts',
+                     'repository_counts', 'trend', 'pending_summary', 'incidents', 'health']) {
+      assert.ok(k in b, 'field ' + k);
+    }
+    assert.strictEqual(b.schema_version, 1);
+    assert.ok(['POSTGRESQL_LIVE', 'BACKEND_NOT_WIRED', 'BACKEND_ERROR'].includes(b.source));
+    for (const st of ['REVIEWING', 'ACTION_REQUIRED', 'REMEDIATING', 'VERIFYING', 'PASSED', 'BLOCKED', 'STALE']) {
+      assert.ok(st in b.stage_counts, 'stage ' + st);
+    }
+    // NOT_WIRED（无 DSN）：聚合为空、不虚构
+    assert.strictEqual(b.source, 'BACKEND_NOT_WIRED');
+    assert.strictEqual(Object.values(b.stage_counts).reduce((a, c) => a + c, 0), 0);
+    assert.deepStrictEqual(b.prs, []);
+    assert.strictEqual(b.trend.length, 14);
+    assert.strictEqual(b.health.postgres, 'NOT_WIRED');
+  } finally { server.close(); }
+});

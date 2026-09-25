@@ -722,3 +722,9 @@ td.th-right { text-align: right; }
   .mode-chip { max-width: 46vw; overflow: hidden; }
   .mode-range { display: none; }
 }
+
+/* ---- 运营总览图表布局（移动纵向 + 横向滚动） ---- */
+.ov-charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: var(--sp-5); margin-top: var(--sp-3); }
+.ov-chart-scroll { overflow-x: auto; border: var(--border-w) solid var(--c-border); border-radius: var(--r-md);
+  background: var(--c-panel); padding: var(--sp-3) var(--sp-4); }
+@media (max-width: 960px) { .ov-charts { grid-template-columns: 1fr; } }

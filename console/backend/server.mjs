@@ -17,7 +17,7 @@ import { listRunPacks, safeResolve, listPackFiles, verifyPack, parseSha256Sums, 
 import { buildRunRecord, buildRunDetail } from './lib/runs.mjs';
 import { login, logout, getSession, sessionBody, anonymousBody, tokenFromCookieHeader,
          repoAllowlist, sessionTtlMs } from './lib/session.mjs';
-import { corePilotState } from './lib/core-pilot.mjs';
+import { corePilotState, overviewState } from './lib/core-pilot.mjs';
 
 function readJsonBody(req, limit = 64 * 1024) {
   return new Promise((resolve, reject) => {
@@ -259,6 +259,12 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
       if (!r.ok) return sendJson(res, r.status, { error: { reason: r.code } });
       applyCookies(res, r.setCookie);
       return sendJson(res, 200, { ok: true });
+    }
+    if (p === '/api/overview' && req.method === 'GET') {
+      const auth = getSession(tokenFromCookieHeader(req.headers.cookie));
+      if (!auth) return sendJson(res, 401, anonymousBody());
+      const ov = await overviewState(auth.repos);
+      return sendJson(res, 200, ov);
     }
     if (['/api/pulls', '/api/pending', '/api/tickets', '/api/evidence', '/api/audit'].includes(p) && req.method === 'GET') {
       const auth = getSession(tokenFromCookieHeader(req.headers.cookie));

@@ -8,7 +8,7 @@ import { Layout, Menu as AntMenu, Drawer, Button } from 'antd';
 import {
   InboxOutlined, FolderOpenOutlined, HistoryOutlined, AuditOutlined,
   DashboardOutlined, DatabaseOutlined, ApiOutlined, MedicineBoxOutlined,
-  SettingOutlined, MenuOutlined,
+  SettingOutlined, MenuOutlined, AppstoreOutlined,
 } from '@ant-design/icons';
 import { api } from './api.js';
 import { AuthProvider, useAuth } from './auth.jsx';
@@ -24,6 +24,7 @@ import RepoPrsPage from './pages/RepoPrsPage.jsx';
 import PrDetailPage from './pages/PrDetailPage.jsx';
 import PendingPage from './pages/PendingPage.jsx';
 import CorePage from './pages/CorePage.jsx';
+import OverviewPage from './pages/OverviewPage.jsx';
 import KnowledgePage from './pages/KnowledgePage.jsx';
 import SettingsPage from './pages/SettingsPage.jsx';
 import LoginPage from './pages/LoginPage.jsx';
@@ -56,6 +57,7 @@ function Configured() {
 
 // 审查工作台主导航：待处理（默认队列）→ 仓库 → 运行 → 审计
 const NAV = [
+  { to: '/overview', label: '运营总览', icon: AppstoreOutlined, end: true },
   { to: '/pending', label: '待处理', icon: InboxOutlined, end: false },
   { to: '/repos', label: '仓库', icon: FolderOpenOutlined, end: true },
   { to: '/runs', label: '运行', icon: HistoryOutlined, end: false },
@@ -276,7 +278,8 @@ function Shell() {
         <main className="content" key={loc.pathname}>
           <ErrorBoundary>
             <Routes>
-              <Route path="/" element={<Navigate to="/pending" replace />} />
+              <Route path="/" element={<Navigate to="/overview" replace />} />
+              <Route path="/overview" element={<OverviewPage />} />
               <Route path="/core" element={<CorePage />} />
               <Route path="/datasources" element={<DataSourcesPage />} />
               <Route path="/diagnostics" element={<DiagnosticsPage />} />
