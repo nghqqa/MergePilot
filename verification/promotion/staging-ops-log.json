@@ -1,0 +1,114 @@
+{
+ "summary": {
+  "total": 8,
+  "pass": 8
+ },
+ "results": [
+  {
+   "id": "O1",
+   "name": "登录生命周期：错误 401 → 成功 → echo → CSRF logout 200→401 → 重登 LIVE",
+   "pass": true
+  },
+  {
+   "id": "O2",
+   "name": "/overview /pending /repos PR-detail audit 全 POSTGRESQL_LIVE",
+   "pass": true
+  },
+  {
+   "id": "O3",
+   "name": "两 PR repo/PR/head/run/receipt/gate/stage 与 PG 一致",
+   "pass": true
+  },
+  {
+   "id": "O4",
+   "name": "未授权 403 / 未知 pack 404 / API 零泄漏（含 staging fixture 仓不可见）",
+   "pass": true
+  },
+  {
+   "id": "O5",
+   "name": "fail-closed：重复行稳定 / 漂移 CONFLICT 拒绝（本轮已录）/ 过期票 past-due 且隐藏",
+   "pass": true
+  },
+  {
+   "id": "O5b",
+   "name": "stale head → gate REFUSE",
+   "pass": true
+  },
+  {
+   "id": "O8",
+   "name": "MinIO 证据读回 digest 一致",
+   "pass": true
+  },
+  {
+   "id": "O8b",
+   "name": "PG audit 读回（API 计数=PG）",
+   "pass": true
+  }
+ ],
+ "events": [
+  {
+   "kind": "auth_failure",
+   "detail": "bad password -> 401",
+   "at": "2026-09-25T12:08:36.338Z"
+  },
+  {
+   "id": "O1",
+   "pass": true,
+   "detail": "401/200/200/401/POSTGRESQL_LIVE",
+   "at": "2026-09-25T12:08:36.359Z"
+  },
+  {
+   "id": "O2",
+   "pass": true,
+   "detail": "POSTGRESQL_LIVE,POSTGRESQL_LIVE,POSTGRESQL_LIVE,POSTGRESQL_LIVE,POSTGRESQL_LIVE",
+   "at": "2026-09-25T12:08:36.366Z"
+  },
+  {
+   "id": "O3",
+   "pass": true,
+   "detail": "receipts 4=4 tz.head=c4431509 stages={\"REVIEWING\":0,\"ACTION_REQUIRED\":0,\"REMEDIATING\":0,\"VERIFYING\":0,\"PASSED\":2,\"BLOCKED\":0,\"STALE\":0}",
+   "at": "2026-09-25T12:08:37.081Z"
+  },
+  {
+   "id": "O4",
+   "pass": true,
+   "detail": "403/404",
+   "at": "2026-09-25T12:08:37.085Z"
+  },
+  {
+   "id": "O5",
+   "pass": true,
+   "detail": "rows 2/2 expTicket=1 hidden=true",
+   "at": "2026-09-25T12:08:37.923Z"
+  },
+  {
+   "id": "O5b",
+   "pass": true,
+   "detail": "REFUSE SKILL_GATE_REFUSED_STALE",
+   "at": "2026-09-25T12:08:37.923Z"
+  },
+  {
+   "id": "O8",
+   "pass": true,
+   "detail": "",
+   "at": "2026-09-25T12:08:39.705Z"
+  },
+  {
+   "id": "O8b",
+   "pass": true,
+   "detail": "2=2",
+   "at": "2026-09-25T12:08:39.957Z"
+  },
+  {
+   "kind": "source_state",
+   "detail": "all LIVE during ops",
+   "at": "2026-09-25T12:08:39.957Z"
+  },
+  {
+   "kind": "request_errors",
+   "detail": "0 recorded (all fetches ok)",
+   "at": "2026-09-25T12:08:39.957Z"
+  }
+ ],
+ "finished_at": "2026-09-25T12:08:39.957Z"
+}
