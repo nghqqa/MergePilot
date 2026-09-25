@@ -1,0 +1,36 @@
+# Canonical console container image (CANONICAL_CONSOLE_PROMOTION).
+#
+# Serves the promoted read-only pilot capability: contract-v2 session
+# (mp_session) + repo allowlist + the five Core APIs (pulls/pending/tickets/
+# evidence/audit) plus the console SPA (dist) and snapshot evidence browsing.
+# Build context: repository root of the console worktree.
+#
+# Base pinned by digest (node:22-alpine — same base as the verified
+# demo-platform candidate). npm CLI stripped after install (its bundled
+# toolchain deps carry HIGH CVEs; runtime needs only the node binary).
+FROM node@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402
+
+WORKDIR /app
+ENV NODE_ENV=production CONSOLE_HOST=0.0.0.0 CONSOLE_PORT=4730
+
+# `pg` is optional at runtime (NOT_WIRED without DSN) — install for live mode.
+# The console backend itself is zero-dependency; this manifest exists solely
+# to pin pg for the container (single formal runtime dep).
+COPY docker/console-runtime-package.json ./package.json
+COPY docker/console-runtime-package-lock.json ./package-lock.json
+RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force \
+ && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+           /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
+
+COPY console/backend ./backend
+COPY console/frontend/dist ./frontend/dist
+
+# snapshot evidence packs ship via ro-mount at /app/evidence (CONSOLE_EVIDENCE_ROOT)
+ENV CONSOLE_EVIDENCE_ROOT=/app/evidence
+RUN mkdir -p /app/evidence && chown node:node /app/evidence
+USER node
+EXPOSE 4730
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:4730/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
+CMD ["node", "backend/server.mjs"]

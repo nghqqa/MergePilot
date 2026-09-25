@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import {
   Activity, ClipboardList, Database, FolderGit2, Hand, History, LogOut,
-  PlugZap, Settings,
+  PlugZap, Settings, ShieldCheck,
 } from 'lucide-react';
 import { api } from './api.js';
 import { AuthProvider, useAuth } from './auth.jsx';
@@ -17,6 +17,7 @@ import ReposPage from './pages/ReposPage.jsx';
 import RepoPrsPage from './pages/RepoPrsPage.jsx';
 import PrDetailPage from './pages/PrDetailPage.jsx';
 import PendingPage from './pages/PendingPage.jsx';
+import CorePage from './pages/CorePage.jsx';
 import KnowledgePage from './pages/KnowledgePage.jsx';
 import SettingsPage from './pages/SettingsPage.jsx';
 import LoginPage from './pages/LoginPage.jsx';
@@ -49,6 +50,7 @@ function Configured() {
 
 // 一级导航：待处理（默认工作队列）→ 仓库 → 运行
 const NAV = [
+  { to: '/core', label: '核心控制面', icon: ShieldCheck, end: true },
   { to: '/pending', label: '待处理', icon: Hand, end: false },
   { to: '/repos', label: '仓库', icon: FolderGit2, end: true },
   { to: '/runs', label: '运行', icon: History, end: false },
@@ -257,6 +259,7 @@ function Shell() {
           <ErrorBoundary>
             <Routes>
               <Route path="/" element={<Navigate to="/pending" replace />} />
+            <Route path="/core" element={<CorePage />} />
               <Route path="/datasources" element={<DataSourcesPage />} />
               <Route path="/diagnostics" element={<DiagnosticsPage />} />
               <Route path="/repos" element={<ReposPage />} />
