@@ -85,3 +85,30 @@ RUN_BINDING_AUTH=NOT_WIRED · 无 GitHub 写入 · Fixer/Verifier 未启动 ·
 ## 判定
 
 **ORG_KNOWLEDGE_RAG_CONTROLLED_READY**
+
+---
+
+# ORG_KNOWLEDGE_A_CHAIN_REFERENCE_ONLY_STAGING — staging 启用验证
+
+授权记录：verification/rag-org-knowledge/authorization.log（owner 会话指令，
+2026-09-25T22:57+08:00，reference-only / 不参与风险决策）。
+同一镜像（sha256:1056df76）仅追加 env MERGEPILOT_ORG_RAG_A_CHAIN=1 重建容器。
+
+## 验证矩阵（staging-a-chain.mjs 9/9）
+
+| # | 验证 | 结果 |
+|---|---|---|
+| A1/A1b | known-hit：org_knowledge + snapshot_id + corpus_digest + source_refs + reference-only 声明 + lexical-zh-en-v1 | ✓ |
+| A2 | 合法空：空数组 + ok + 不伪造 | ✓ |
+| A3 | 不可达：503 + degraded + 响应头 + 不静默空成功 | ✓ |
+| A4 | 语料损坏：拒载 degraded（不用旧语料） | ✓ |
+| A5 | 审计五字段（14 条记录全字段） | ✓ |
+| A6 | 检索前后两 PR：receipts 4 / tickets 1 / audit 2 / PASSED 2 / 零新 finding | ✓ |
+| A7 | 控制台：reference-only + ORG_RAG；无 finding/severity/verdict/approved 标记 | ✓ |
+| A8 | 开/关/故障/恢复可回滚 | ✓ |
+
+停止条件零触发。
+
+## 判定
+
+**ORG_KNOWLEDGE_A_CHAIN_REFERENCE_ONLY_STAGING_VERIFIED**
