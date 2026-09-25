@@ -45,3 +45,10 @@ rollback 复供）。停止条件零触发；范围未扩大。
 
 **等待人工确认后**输出 CANONICAL_READONLY_OPERATIONS_VERIFIED（本报告即暂停点）。
 不宣称：生产上线 · 全量用户内测就绪 · RAG 已接入 · 自动修复启用 · GitHub 写入开启。
+
+---
+
+## 人工确认（终判）
+
+- 确认时间：2026-09-25（会话内，仓库 owner）
+- **最终判定：CANONICAL_READONLY_OPERATIONS_VERIFIED**
