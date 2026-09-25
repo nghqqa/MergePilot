@@ -68,7 +68,8 @@
 html, body, #root { height: 100%; margin: 0; }
 
 body {
-  font-family: system-ui, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+  font-family: system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'HarmonyOS Sans SC',
+    'Noto Sans CJK SC', 'Source Han Sans SC', 'Microsoft YaHei', sans-serif;
   font-size: var(--fs-base);
   line-height: 1.5;
   color: var(--c-text);
@@ -90,6 +91,15 @@ body {
 input, button, textarea { font: inherit; caret-color: var(--c-accent); }
 
 .mono { font-family: var(--font-mono); font-size: var(--fs-sm); }
+/* 长标识符截断：仓库名 / PR 标题 / SHA / run_id —— flex 子项需 min-width:0 */
+.truncate { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sha { font-family: var(--font-mono); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
+.nav-menu-btn { display: none; align-items: center; gap: 6px; height: 34px; padding: 0 10px;
+  border: var(--border-w) solid var(--c-border); border-radius: var(--r-sm);
+  background: var(--c-panel); color: var(--c-text); font-size: var(--fs-sm); font-weight: var(--fw-medium);
+  cursor: pointer; }
+.nav-menu-btn:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 2px; }
+.nav-backdrop { position: fixed; inset: 0; background: rgba(11, 15, 25, 0.38); z-index: 39; }
 .num, td.num, .cell-time { font-variant-numeric: tabular-nums; }
 .muted { color: var(--c-text-3); }
 
@@ -262,7 +272,7 @@ tbody tr:hover { background: #f7f9fb; }
 .runs-table .sha code { white-space: nowrap; }
 .runs-table .cell-pr { max-width: 460px; white-space: normal; min-width: 240px; }
 .runs-table .cell-repo .row-link { white-space: nowrap; }
-.cell-title { font-size: var(--fs-base); font-weight: var(--fw-semibold); overflow-wrap: anywhere; white-space: normal !important; }
+.cell-title { min-width: 0; font-size: var(--fs-base); font-weight: var(--fw-semibold); overflow-wrap: anywhere; white-space: normal !important; }
 .cell-title-line { display: flex; align-items: baseline; gap: 7px; min-width: 0; }
 .gh-link { color: var(--c-text-3); font-size: var(--fs-xs); flex: 0 0 auto; }
 .gh-link:hover { color: var(--c-info); }
@@ -655,20 +665,24 @@ td.th-right { text-align: right; }
 .login-brand .brand-name { color: var(--c-text); font-size: var(--fs-md); font-weight: var(--fw-semibold); }
 .login-note { font-size: var(--fs-sm); color: var(--c-text-2); line-height: 1.7; margin: 0 0 14px; }
 .login-main { width: 100%; justify-content: center; padding: 9px 12px; }
-.login-sub { font-size: var(--fs-xs); color: var(--c-text-3); line-height: 1.7; margin: 12px 0 0; }
+.login-sub { font-size: var(--fs-xs); color: var(--c-text-3); line-height: 1.7; margin: 8px 0 0; }
+.login-scope { margin: 14px 0 0; padding: 10px 12px; border: var(--border-w) solid var(--c-border);
+  border-radius: var(--r-sm); background: var(--c-inset); display: grid; gap: 3px;
+  font-size: var(--fs-xs); color: var(--c-text-2); }
+.login-scope strong { font-size: var(--fs-xs); color: var(--c-text); font-weight: var(--fw-semibold); }
+.login-demo { margin-top: 14px; padding-top: 12px; border-top: var(--border-w) solid var(--c-border); }
 
-/* ---- 小屏 ---- */
-@media (max-width: 960px) {  .sidebar { width: 52px; flex: 0 0 52px; }
-  .brand-text, .nav-section-label, .nav-section, .nav-tag, .sidebar-foot { display: none; }
-  .brand { justify-content: center; padding: 14px 8px; }
-  .nav-item { justify-content: center; padding: 9px 6px; margin: 1px 6px; }
+/* ---- 小屏：侧栏转为抽屉（文字标签始终可见，不再折叠为纯图标） ---- */
+@media (max-width: 960px) {
+  .sidebar { position: fixed; inset: 0 auto 0 0; width: 232px; z-index: 40;
+    transform: translateX(-100%); transition: transform 160ms ease-out; }
+  .app.nav-open .sidebar { transform: translateX(0); box-shadow: var(--shadow-drawer); }
+  .nav-menu-btn { display: inline-flex; }
   .content { padding: 14px 14px 40px; }
   .timeline-ts { width: 108px; flex: 0 0 108px; }
   .detail-head { flex-direction: column; }
-  /* 导航文字改为读屏可达的视觉隐藏（不再 display:none 丢可访问名），并补 tooltip */
-  .nav-label { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
-    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 }
+@media (min-width: 961px) { .nav-backdrop { display: none; } }
 @media (max-width: 700px) {
   /* 触控目标下限 44px */
   .btn, .nav-item, .tab, .qf-chip { min-height: var(--tap); }

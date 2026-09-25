@@ -157,8 +157,8 @@ let H = {}, CSRF = '';
 {
   const q = (sql) => execSync(`docker exec mp-cc-pg psql -U mpcc -d mpcc -tAc "${sql}"`,
     { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
-  const st = q("SELECT count(*) FROM skill_receipt_outbox WHERE payload->>'run_id'='run-canary4-st-426'");
-  const tz = q("SELECT count(*) FROM skill_receipt_outbox WHERE payload->>'run_id'='run-canary4-tz-2'");
+  const st = q("SELECT count(*) FROM skill_receipt_outbox WHERE payload->>'run_id'='run-canary5-st-426'");
+  const tz = q("SELECT count(*) FROM skill_receipt_outbox WHERE payload->>'run_id'='run-canary5-tz-2'");
   rec('P8', 'duplicate invariant: rows stable at 2/run after divergent replay was CONFLICT-refused',
     st === '2' && tz === '2', `st=${st} tz=${tz}`);
 }

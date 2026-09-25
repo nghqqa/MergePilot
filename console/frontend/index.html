@@ -10,12 +10,16 @@
   </head>
   <body>
     <!-- impeccable:direction
-    THESIS: 一块"运行取证台"——管理系统的秩序感服务于取证的可信度：执行/结论/发布三态分离永不合并，
-    界面越安静，数据越可信。拒绝的默认排布：hero 大数卡阵列与装饰性图表。
+    THESIS: 一台"审查工作台"——导航与页面服务审查者的日常动作（哪个 PR 需要处理、风险是什么、
+    证据在哪、下一步做什么）；接线与系统状态退入系统区。拒绝的默认排布：hero 大数卡阵列、
+    营销式首屏、渐变/玻璃/发光装饰。
     OWN-WORLD: 冷灰阶工作区（#f5f6f8 地面 / 白面板 / #0b0f19 墨色侧边栏）+ MergePilot 深青 #0e6b62
     唯一强调色 + 绿/琥珀/红/蓝四状态色（仅用于状态）；1px 发丝线 + 柔和双层阴影 + 6/8/10px 圆角；
-    lucide 线性图标统一笔画；一切数据（SHA/run_id/时间/token）等宽 + tabular-nums。
-    STORY: 以仓库和 PR 为中心（第三轮起）：维护者 5 秒看清哪个 PR 需要处理，30 秒判定一次审查的可信度
+    lucide 线性图标统一笔画；本地中文系统字体栈（PingFang SC/HarmonyOS Sans SC/Noto Sans CJK SC/
+    Microsoft YaHei，零远程字体）；正文 14px、表格 13px；SHA/run_id/时间一律等宽 + tabular-nums；
+    长仓库名/PR 标题/SHA 以 ellipsis 截断（title 提示全文），绝不破坏布局。
+    小屏（≤960px）侧栏为抽屉式可展开导航——文字标签始终可见，不折叠为纯图标。
+STORY: 以仓库和 PR 为中心（第三轮起）：维护者 5 秒看清哪个 PR 需要处理，30 秒判定一次审查的可信度
     （三态各自独立、来源可考）；PR 为主对象、run 降为历史（按 head 分组，旧 head 不冒充当前结论）；
     snapshot 无当前 head 权威，PR 级摘要一律只说"最近记录"（Latest-Record Rule）；
     未接通能力（登录/审批/合并）如实显示未接入，不放假按钮。

@@ -220,7 +220,7 @@ export default function PendingPage() {
                       <span className={`chip ${it.kind === 'approval' ? 'chip-kind-approval' : 'chip-kind-review'}`}>
                         {it.kindLabel}
                       </span>
-                      <Link className="row-link cell-title" to={it.href}>{it.title}</Link>
+                      <Link className="row-link cell-title truncate" to={it.href}>{it.title}</Link>
                       {it.prNumber != null ? <span className="muted">#{it.prNumber}</span> : null}
                       {it.fixture ? <span className="chip chip-fixture">联调数据</span> : null}
                     </div>

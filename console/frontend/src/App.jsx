@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import {
   Activity, ClipboardList, Database, FolderGit2, Hand, History, LogOut,
-  PlugZap, Settings, ShieldCheck,
+  Menu, PlugZap, Settings, ShieldCheck,
 } from 'lucide-react';
 import { api } from './api.js';
 import { AuthProvider, useAuth } from './auth.jsx';
@@ -48,19 +48,20 @@ function Configured() {
   );
 }
 
-// 一级导航：待处理（默认工作队列）→ 仓库 → 运行
+// 审查工作台主导航：待处理（默认队列）→ 仓库 → 运行 → 审计
 const NAV = [
-  { to: '/core', label: '核心控制面', icon: ShieldCheck, end: true },
   { to: '/pending', label: '待处理', icon: Hand, end: false },
   { to: '/repos', label: '仓库', icon: FolderGit2, end: true },
   { to: '/runs', label: '运行', icon: History, end: false },
+  { to: '/approvals', label: '审计', icon: ClipboardList, end: true },
 ];
-// 二级"系统"区：知识库 / 设置 / 数据源与联调 / 审计诊断
+// 系统区（非首要工作流）：系统状态与接线 / 知识库 / 数据源 / 诊断 / 设置
 const SYSTEM_NAV = [
+  { to: '/core', label: '系统状态', icon: ShieldCheck, end: true },
   { to: '/knowledge', label: '知识库', icon: Database, end: true },
+  { to: '/datasources', label: '数据源', icon: PlugZap, end: true },
+  { to: '/diagnostics', label: '诊断', icon: Activity, end: true },
   { to: '/settings', label: '设置', icon: Settings, end: true },
-  { to: '/datasources', label: '数据源与联调', icon: PlugZap, end: true },
-  { to: '/diagnostics', label: '审计诊断', icon: ClipboardList, end: true },
 ];
 
 function TopbarContext() {
@@ -181,20 +182,30 @@ function Shell() {
   const config = useAppConfig();
   const { source } = useDataSource(config);
   const ctx = topbarCtx(loc.pathname);
+  // 移动导航抽屉（≤960px）：文字标签始终可见，不再折叠为纯图标
+  const [navOpen, setNavOpen] = useState(false);
+  useEffect(() => {
+    if (!navOpen) return;
+    const onKey = (e) => { if (e.key === 'Escape') setNavOpen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [navOpen]);
+  useEffect(() => { setNavOpen(false); }, [loc.pathname]);
   // 导航按数据源能力呈现：run 级全量历史仅 snapshot 取证视图提供
   const nav = NAV.filter((n) => !(source.kind !== 'snapshot' && n.to === '/runs'));
 
   return (
-    <div className="app">
-      <aside className="sidebar">
+    <div className={`app${navOpen ? ' nav-open' : ''}`}>
+      {navOpen ? <div className="nav-backdrop" onClick={() => setNavOpen(false)} aria-hidden /> : null}
+      <aside className="sidebar" aria-label="侧边导航">
         <div className="brand">
           <BrandMark />
           <div className="brand-text">
             <div className="brand-name">MergePilot</div>
-            <div className="brand-sub">管理控制台 <span className="brand-v0">V0</span></div>
+            <div className="brand-sub">审查工作台 <span className="brand-v0">V0</span></div>
           </div>
         </div>
-        <nav aria-label="主导航">
+        <nav id="sidebar-nav" aria-label="主导航">
           {nav.map((n) => (
             <NavLink
               key={n.to}
@@ -235,6 +246,11 @@ function Shell() {
 
       <div className="main">
         <header className="topbar">
+          <button type="button" className="nav-menu-btn" aria-expanded={navOpen}
+                  aria-controls="sidebar-nav" onClick={() => setNavOpen((v) => !v)}>
+            <Menu size={16} strokeWidth={1.75} aria-hidden />
+            <span>菜单</span>
+          </button>
           <div className="topbar-context">
             {ctx.crumb ? (
               <span className="crumb">

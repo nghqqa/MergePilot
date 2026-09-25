@@ -56,12 +56,12 @@ export default function CorePage() {
   if (auth.status !== 'authed') {
     return (
       <div>
-        <div className="page-head"><div><h1>核心控制面</h1>
-          <p className="page-sub">五个 Core API（pulls / pending / tickets / evidence / audit）的实时只读视图。</p>
+        <div className="page-head"><div><h1>系统状态与接线</h1>
+          <p className="page-sub">核心 API 接线与健康视图：供排查"是坏了还是没接"，非日常工作流。</p>
         </div></div>
         <section className="section">
           <div className="state-box state-warn" role="status">
-            需要登录 — 核心 API 受服务端会话（mp_session）与仓库 allowlist 保护，未认证返回 401。
+            需要登录 — 本页数据受服务端会话与仓库 allowlist 保护。
           </div>
         </section>
       </div>
@@ -75,7 +75,7 @@ export default function CorePage() {
     <div>
       <div className="page-head">
         <div>
-          <h1>核心控制面</h1>
+          <h1>系统状态与接线</h1>
           <p className="page-sub">
             授权仓库：{auth.user?.repos?.join(' · ') || '（allowlist 未配置）'}
             {lastRefresh ? ` · 刷新于 ${lastRefresh} · 每 ${REFRESH_MS / 1000}s` : ''}

@@ -89,7 +89,8 @@ function PgPrDetail({ owner, name, prNumber }) {
           <h1 className="detail-title">{view.title ?? `PR #${view.prNumber}`}</h1>
           <div className="detail-chips">
             <span className="chip">PR #{view.prNumber}</span>
-            <span className="chip mono">{repo}</span>
+            <span className="chip mono truncate">{repo}</span>
+            <span className="chip">最近 head <span className="sha">{String(currentHead ?? lr?.head_sha ?? view.currentHead ?? '').slice(0, 8) || '—'}</span></span>
             <span className="chip">{runs.length} 次运行记录</span>
             <span className="chip">PG 只读 · Fixture（隔离测试记录，非真实运行）</span>
           </div>
@@ -241,7 +242,7 @@ function SnapshotPrDetail({ owner, name, prNumber }) {
           <h1 className="detail-title">{pr.title ?? `PR #${pr.prNumber}`}</h1>
           <div className="detail-chips">
             <span className="chip">PR #{pr.prNumber}</span>
-            <span className="chip mono">{repo}</span>
+            <span className="chip mono truncate">{repo}</span>
             <span className="chip">{pr.heads.length} 个历史 head</span>
             <span className="chip">{pr.runs.length} 次运行记录</span>
             <span className="chip">历史快照</span>
@@ -416,7 +417,7 @@ function ContractPrDetail({ owner, name, prNumber }) {
           <h1 className="detail-title">{view.title ?? `PR #${view.prNumber}`}</h1>
           <div className="detail-chips">
             <span className="chip">PR #{view.prNumber}</span>
-            <span className="chip mono">{repo}</span>
+            <span className="chip mono truncate">{repo}</span>
             <span className="chip mono" title="GitHub 当前 head（权威）">当前 head {(currentHead ?? '').slice(0, 8) || '未记录'}</span>
             <span className="chip">{runs.length} 次运行（执行历史）</span>
             <span className="chip">{config?.dataMode === 'fixture' ? 'Fixture 数据' : '契约数据源'}</span>
