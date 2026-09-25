@@ -139,3 +139,30 @@ RUN_BINDING_AUTH=NOT_WIRED · 无 GitHub 写入 · Fixer/Verifier 未启动 ·
 ## 判定
 
 **ORG_KNOWLEDGE_A_CHAIN_LIMITED_USER_OPERATIONS_VERIFIED**
+
+---
+
+# CONTROLLED_REFERENCE_RAG_PILOT — 授权执行（2026-09-25）
+
+授权：owner 会话消息（authorization.log 2026-09-25T23:24:47+08:00）。
+范围：pilot / speaktype#426+tizhou#2 / A 链 ON reference-only / 持久 staging /
+有效期至 2026-10-02 或停止条件触发。
+
+## 验证矩阵（pilot-final.mjs 10/10 + 浏览器零错）
+
+| # | 验证 | 结果 |
+|---|---|---|
+| P1 | known-hit 全合同（五字段审计 + reference-only + lexical-zh-en-v1 + snapshot/digest） | ✓ |
+| P2 | 零风险字段（finding/severity/verdict/approved） | ✓ |
+| P3/P3b | degraded 触发（503+头+体一致）→ 恢复 456ms | ✓ |
+| P4 | 审计五字段连续性（最近 8 条含 degraded 记录） | ✓ |
+| P5 | 两 PR 零变化（4/1/2 → 4/1/2；PASSED 2） | ✓ |
+| P6 | allowlist 零越权（403 + overview 无越权数据） | ✓ |
+| P7 | GitHub 写入 = 0 | ✓ |
+| P8 | stale REFUSE + 过期票 past-due | ✓ |
+| P9 | org-search 未登录 401 | ✓ |
+| B | 浏览器四页路由零 JS error / unhandled rejection | ✓ |
+
+## 判定
+
+**CONTROLLED_REFERENCE_RAG_PILOT_VERIFIED**

@@ -14,11 +14,23 @@
         "verification/promotion/STAGING-UA-REPORT.md (acceptance VERIFIED)"
       ],
       "scope": {
-        "operators": ["pilot"],
-        "repositories": ["wookat/speaktype", "nghqqa/tizhou"],
-        "pull_requests": ["speaktype#426", "tizhou#2"]
+        "operators": [
+          "pilot"
+        ],
+        "repositories": [
+          "wookat/speaktype",
+          "nghqqa/tizhou"
+        ],
+        "pull_requests": [
+          "speaktype#426",
+          "tizhou#2"
+        ]
       },
-      "constraints": ["read-only", "server-side allowlist", "no GitHub writes"],
+      "constraints": [
+        "read-only",
+        "server-side allowlist",
+        "no GitHub writes"
+      ],
       "next_gate": null,
       "rollback": "docker rm -f mp-stage-console; rerun with mp-canonical-console:rollback-prev (sha256:41bd3029)"
     },
@@ -32,14 +44,28 @@
         "verification/rag-org-knowledge/integration-report.json (CI 12/12)",
         "verification/rag-org-knowledge/staging-a-chain-report.json (staging 9/9)",
         "verification/rag-org-knowledge/limited-user-ops-report.json (LUO 10/10)",
-        "verification/rag-org-knowledge/authorization.log (owner directive)"
+        "verification/rag-org-knowledge/authorization.log (owner directive)",
+        "verification/rag-org-knowledge/pilot-final-report.json (authorized pilot 10/10)"
       ],
       "scope": {
-        "operators": ["pilot"],
-        "repositories": ["wookat/speaktype", "nghqqa/tizhou"],
-        "pull_requests": ["speaktype#426", "tizhou#2"]
+        "operators": [
+          "pilot"
+        ],
+        "repositories": [
+          "wookat/speaktype",
+          "nghqqa/tizhou"
+        ],
+        "pull_requests": [
+          "speaktype#426",
+          "tizhou#2"
+        ]
       },
-      "constraints": ["reference-only", "lexical-zh-en-v1", "feature-flag controlled", "no risk-decision involvement"],
+      "constraints": [
+        "reference-only",
+        "lexical-zh-en-v1",
+        "feature-flag controlled",
+        "no risk-decision involvement"
+      ],
       "next_gate": "HUMAN_AUTH: continue reference-only pilot authorization",
       "rollback": "unset MERGEPILOT_ORG_RAG_A_CHAIN env; recreate container without flag"
     },
@@ -56,15 +82,37 @@
         "repositories": [],
         "pull_requests": []
       },
-      "constraints": ["requires operator-approved model cache", "requires provider metadata attestation", "requires RUN_BINDING_AUTH key distribution"],
+      "constraints": [
+        "requires operator-approved model cache",
+        "requires provider metadata attestation",
+        "requires RUN_BINDING_AUTH key distribution"
+      ],
       "next_gate": "OPERATOR: provide approved model cache + attest + key distribution",
       "rollback": "N/A (not deployed)"
     }
   ],
-  "overall_status": "WAITING_HUMAN_AUTH",
+  "overall_status": "PILOT_VERIFIED",
   "c_chain_gaps_kept_separate": [
     "approved model cache (operator-provided manifest + files)",
     "case_provider_metadata live contract-test attestation",
     "RUN_BINDING_AUTH key distribution mechanism"
-  ]
+  ],
+  "authorization": {
+    "authorized_at": "2026-09-25T23:24:47+08:00",
+    "operators": [
+      "pilot"
+    ],
+    "repositories": [
+      "wookat/speaktype",
+      "nghqqa/tizhou"
+    ],
+    "pull_requests": [
+      "speaktype#426",
+      "tizhou#2"
+    ],
+    "a_chain": "ON reference-only",
+    "staging": "persistent local isolated, image 1056df76",
+    "valid_until": "2026-10-02T00:00:00+08:00",
+    "source": "owner session explicit message (see authorization.log)"
+  }
 }
