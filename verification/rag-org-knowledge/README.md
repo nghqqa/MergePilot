@@ -112,3 +112,30 @@ RUN_BINDING_AUTH=NOT_WIRED · 无 GitHub 写入 · Fixer/Verifier 未启动 ·
 ## 判定
 
 **ORG_KNOWLEDGE_A_CHAIN_REFERENCE_ONLY_STAGING_VERIFIED**
+
+---
+
+# ORG_KNOWLEDGE_A_CHAIN_LIMITED_USER_OPERATIONS — 用户运维轮
+
+基线 13f8f25（不回退）。staging A 链=ON（reference-only）。
+
+## 验证矩阵（limited-user-ops.mjs 10/10 + 浏览器零错）
+
+| # | 验证 | 结果 |
+|---|---|---|
+| UO1 | known-hit 全合同：ORG_RAG + lexical-zh-en-v1 + snapshot/digest + reference-only + degraded 可区分 | ✓ |
+| UO2 | 结果零风险字段（finding/severity/verdict/approved） | ✓ |
+| UO3 | 合法空：空数组 + ok + 不伪造 | ✓ |
+| UO4 | 不可达：503 + degraded + 头 + 不静默空成功 | ✓ |
+| UO5 | 恢复后 known-hit 正常（不旧语料） | ✓ |
+| UO6 | 语料损坏：拒载 degraded（screening 绕过为零） | ✓ |
+| UO7 | console 重启：旧会话失效重登 + known-hit | ✓ |
+| UO8 | 两 PR 全不变：4/1/2 + PASSED 2 + 零 finding + success/action_required 无变化 | ✓ |
+| UO9 | 401 + 403 + 404（org-search 未登录 401 也覆盖） | ✓ |
+| UO10 | 审计五字段 + 连续性（最近 10 条全过） | ✓ |
+
+浏览器：/overview → /pending → PR detail 路由切换 **零 JS error / unhandled rejection**。
+
+## 判定
+
+**ORG_KNOWLEDGE_A_CHAIN_LIMITED_USER_OPERATIONS_VERIFIED**
