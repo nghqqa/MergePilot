@@ -1,0 +1,70 @@
+{
+  "goal_id": "CONTROLLED_REFERENCE_RAG_PILOT",
+  "updated_at": "2026-09-25T23:30:00+08:00",
+  "workstreams": [
+    {
+      "workstream": "console",
+      "status": "DONE",
+      "baseline_commit": "ea6b8ef",
+      "latest_commit": "9b4fd82",
+      "evidence": [
+        "verification/promotion/RC-FINAL-REPORT.md (RC READY)",
+        "verification/promotion/STAGING-PROMOTION-REPORT.md (staging READY 8/8)",
+        "verification/promotion/STAGING-OPS-REPORT.md (ops VERIFIED 10/10)",
+        "verification/promotion/STAGING-UA-REPORT.md (acceptance VERIFIED)"
+      ],
+      "scope": {
+        "operators": ["pilot"],
+        "repositories": ["wookat/speaktype", "nghqqa/tizhou"],
+        "pull_requests": ["speaktype#426", "tizhou#2"]
+      },
+      "constraints": ["read-only", "server-side allowlist", "no GitHub writes"],
+      "next_gate": null,
+      "rollback": "docker rm -f mp-stage-console; rerun with mp-canonical-console:rollback-prev (sha256:41bd3029)"
+    },
+    {
+      "workstream": "org_rag_a_chain",
+      "status": "DONE",
+      "baseline_commit": "6458a12",
+      "latest_commit": "9b4fd82",
+      "evidence": [
+        "verification/rag-org-knowledge/README.md (preflight 11/11)",
+        "verification/rag-org-knowledge/integration-report.json (CI 12/12)",
+        "verification/rag-org-knowledge/staging-a-chain-report.json (staging 9/9)",
+        "verification/rag-org-knowledge/limited-user-ops-report.json (LUO 10/10)",
+        "verification/rag-org-knowledge/authorization.log (owner directive)"
+      ],
+      "scope": {
+        "operators": ["pilot"],
+        "repositories": ["wookat/speaktype", "nghqqa/tizhou"],
+        "pull_requests": ["speaktype#426", "tizhou#2"]
+      },
+      "constraints": ["reference-only", "lexical-zh-en-v1", "feature-flag controlled", "no risk-decision involvement"],
+      "next_gate": "HUMAN_AUTH: continue reference-only pilot authorization",
+      "rollback": "unset MERGEPILOT_ORG_RAG_A_CHAIN env; recreate container without flag"
+    },
+    {
+      "workstream": "case_retrieval",
+      "status": "BLOCKED",
+      "baseline_commit": "a079367",
+      "latest_commit": "a079367",
+      "evidence": [
+        "verification/rag-artifacts/ARTIFACT-PREPARATION-REPORT.md (RAG_ARTIFACTS_BLOCKED)"
+      ],
+      "scope": {
+        "operators": [],
+        "repositories": [],
+        "pull_requests": []
+      },
+      "constraints": ["requires operator-approved model cache", "requires provider metadata attestation", "requires RUN_BINDING_AUTH key distribution"],
+      "next_gate": "OPERATOR: provide approved model cache + attest + key distribution",
+      "rollback": "N/A (not deployed)"
+    }
+  ],
+  "overall_status": "WAITING_HUMAN_AUTH",
+  "c_chain_gaps_kept_separate": [
+    "approved model cache (operator-provided manifest + files)",
+    "case_provider_metadata live contract-test attestation",
+    "RUN_BINDING_AUTH key distribution mechanism"
+  ]
+}
