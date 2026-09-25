@@ -49,7 +49,7 @@ let H = {}, CSRF = '';
   const lo1 = await raw('/api/auth/logout', { method: 'POST', headers: { ...H } });
   const alive = await raw('/api/pulls', { headers: H });
   rec('P2', 'login lifecycle: bad 401 → ok 200 → session echo → logout w/o CSRF 403 (session kept)',
-    bad.status === 401 && l.status === 200 && s.json?.user === 'pilot'
+    bad.status === 401 && l.status === 200 && (s.json?.user?.name ?? s.json?.user) === 'pilot'
       && s.json?.repos?.length === 2 && lo1.status === 403 && alive.status === 200,
     `${bad.status}/${l.status}/${s.status}/lo=${lo1.status}/alive=${alive.status}`);
 }
