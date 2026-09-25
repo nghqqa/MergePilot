@@ -1,0 +1,141 @@
+{
+ "summary": {
+  "total": 11,
+  "pass": 11,
+  "fail": 0,
+  "skipped": 1
+ },
+ "results": [
+  {
+   "id": "O1",
+   "name": "login: bad creds 401 → success 200 → session echo",
+   "pass": true
+  },
+  {
+   "id": "O2",
+   "name": "logout (with CSRF) invalidates session",
+   "pass": true
+  },
+  {
+   "id": "O3",
+   "name": "/core surface: LIVE + both PRs + heads + receipts + gate audit",
+   "pass": true
+  },
+  {
+   "id": "O4",
+   "name": "allowlist: zero leaks + per-repo scopes pure",
+   "pass": true
+  },
+  {
+   "id": "O5",
+   "name": "cross-repo isolation: receipts repo-bound per run (PG)",
+   "pass": true
+  },
+  {
+   "id": "O6",
+   "name": "401 / 403 / 404 / 400",
+   "pass": true
+  },
+  {
+   "id": "O7",
+   "name": "BACKEND_NOT_WIRED (empty) · BACKEND_ERROR (detail)",
+   "pass": true
+  },
+  {
+   "id": "O8",
+   "name": "stale head → gate REFUSE (never success)",
+   "pass": true
+  },
+  {
+   "id": "O9",
+   "name": "duplicate rows stable; divergent replay CONFLICT kept originals (recorded this round)",
+   "pass": true
+  },
+  {
+   "id": "O10",
+   "name": "TTL-expired ticket past-due in store (hidden from console by allowlist — by design)",
+   "pass": true
+  },
+  {
+   "id": "O11",
+   "name": "TTL expiry 200→401 (real knob) · restart: old 401 → re-login LIVE",
+   "pass": true
+  }
+ ],
+ "skips": [
+  {
+   "id": "S1",
+   "name": "console_v3 只读 HTTP 联调 (live-v3.integration.test.mjs)",
+   "reason": "MERGEPILOT_V3_URL 未设置 — console_v3 服务不在本轮拓扑；snapshot 为正式数据源，不伪装联调已发生"
+  }
+ ],
+ "events": [
+  {
+   "id": "O1",
+   "name": "login: bad creds 401 → success 200 → session echo",
+   "pass": true,
+   "detail": "401/200/200"
+  },
+  {
+   "id": "O2",
+   "name": "logout (with CSRF) invalidates session",
+   "pass": true,
+   "detail": "200/401"
+  },
+  {
+   "id": "O3",
+   "name": "/core surface: LIVE + both PRs + heads + receipts + gate audit",
+   "pass": true,
+   "detail": "evidence=4 gates=3"
+  },
+  {
+   "id": "O4",
+   "name": "allowlist: zero leaks + per-repo scopes pure",
+   "pass": true,
+   "detail": "leaks=0"
+  },
+  {
+   "id": "O5",
+   "name": "cross-repo isolation: receipts repo-bound per run (PG)",
+   "pass": true,
+   "detail": "crossrows=0"
+  },
+  {
+   "id": "O6",
+   "name": "401 / 403 / 404 / 400",
+   "pass": true,
+   "detail": "401/403/404/400"
+  },
+  {
+   "id": "O7",
+   "name": "BACKEND_NOT_WIRED (empty) · BACKEND_ERROR (detail)",
+   "pass": true,
+   "detail": "BACKEND_NOT_WIRED/BACKEND_ERROR"
+  },
+  {
+   "id": "O8",
+   "name": "stale head → gate REFUSE (never success)",
+   "pass": true,
+   "detail": "REFUSE SKILL_GATE_REFUSED_STALE"
+  },
+  {
+   "id": "O9",
+   "name": "duplicate rows stable; divergent replay CONFLICT kept originals (recorded this round)",
+   "pass": true,
+   "detail": "st=2 tz=2"
+  },
+  {
+   "id": "O10",
+   "name": "TTL-expired ticket past-due in store (hidden from console by allowlist — by design)",
+   "pass": true,
+   "detail": "rows=1"
+  },
+  {
+   "id": "O11",
+   "name": "TTL expiry 200→401 (real knob) · restart: old 401 → re-login LIVE",
+   "pass": true,
+   "detail": "ttl=200->401 dead=401 fresh=POSTGRESQL_LIVE"
+  }
+ ],
+ "finished_at": "2026-09-25T07:29:10.563Z"
+}
