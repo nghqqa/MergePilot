@@ -54,7 +54,8 @@ test('login lifecycle: bad creds 401 → login 200 → session echo → logout r
     const csrfM = (ok.headers.get('set-cookie') || '').match(/mp_csrf=([0-9a-f]+)/);
     const sess = await call(base, '/api/auth/session', { headers: { cookie } });
     assert.strictEqual(sess.status, 200);
-    assert.strictEqual(sess.body?.user, 'pilot');
+    // R4（FB-06）：user 为结构化对象——前端显示真实用户名，不再"未知用户"
+    assert.deepStrictEqual(sess.body?.user, { name: 'pilot' });
     assert.deepStrictEqual(sess.body?.repos, ['wookat/speaktype', 'nghqqa/tizhou']);
     const lo1 = await call(base, '/api/auth/logout', { method: 'POST', headers: { cookie } });
     assert.strictEqual(lo1.status, 403, 'logout without CSRF rejected');

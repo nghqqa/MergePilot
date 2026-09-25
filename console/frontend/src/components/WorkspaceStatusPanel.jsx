@@ -18,6 +18,11 @@ const SOURCE_LABEL = {
   'console-pg': '隔离 PG 只读服务（fixture 测试记录）',
 };
 
+// R4（FB-02）：live 已配置时数据模式如实标注，不再把契约数据统称"Fixture"
+function isLive(config) {
+  return config?.dataMode === 'live' || config?.raw?.data_mode === 'live';
+}
+
 export function resolveWorkspaceState(config, authStatus) {
   if (!config) return { key: 'loading', label: '正在获取状态…', tone: 'neutral' };
   if (config.mode === 'snapshot' && !config.raw) {
@@ -32,6 +37,11 @@ export function resolveWorkspaceState(config, authStatus) {
       : { key: 'fixture', label: '隔离联调（未认证）', tone: 'warn' };
   }
   if (config.mode === 'contract') {
+    if (isLive(config)) {
+      return authStatus === 'authed'
+        ? { key: 'live-auth', label: 'PG 实时（staging · 会话 allowlist）', tone: 'ok' }
+        : { key: 'live', label: 'PG 实时（未认证）', tone: 'warn' };
+    }
     return { key: 'contract', label: '契约数据（Fixture）', tone: 'warn' };
   }
   // snapshot
@@ -59,15 +69,16 @@ export function WorkspacePanel({ config, auth, onRetry }) {
   const state = resolveWorkspaceState(config, auth.status);
   const mode = config?.mode ?? 'snapshot';
   const health = config?.raw ?? {};
+  const live = isLive(config);
   const testAuth = auth.status === 'authed' && config?.dataMode === 'fixture';
   const pgMode = mode === 'console-pg';
 
   const wiring = [
-    { name: '运行查询（快照）', state: mode === 'snapshot' ? '已接入' : '不适用（当前非快照源）', ok: mode === 'snapshot' },
-    { name: 'PR 聚合（/api/pulls 正式契约）', state: '未交付——等待后端（C-10）', ok: false },
-    { name: '审批只读', state: pgMode ? '已接入（隔离 test-auth）' : '未接线（C-4/C-11）', ok: pgMode },
+    { name: '运行查询（快照）', state: mode === 'snapshot' ? '已接入' : '不适用（当前为实时源；run 证据详情页仍为快照）', ok: true },
+    { name: 'PR 聚合（/api/pulls 正式契约）', state: live ? '已接入（PG 实时，会话 allowlist 过滤）' : '未交付——等待后端（C-10）', ok: live },
+    { name: '审批只读', state: pgMode ? '已接入（隔离 test-auth）' : live ? '已接入（实时票据，会话 allowlist）' : '未接线（C-4/C-11）', ok: pgMode || live },
     { name: '审批决策', state: pgMode ? '隔离 test-auth（仅 fixture 票据）' : '未接线（C-11 + D-1/D-2/D-3）', ok: false },
-    { name: 'OAuth 登录', state: '未接线（C-8 + D-9）', ok: false },
+    { name: 'OAuth 登录', state: '未接线（C-8 + D-9）——当前为具名操作员密码登录', ok: false },
     { name: '站内合并', state: '关闭（C-12，仅 GitHub 外链）', ok: false },
     { name: '知识库 / 用量', state: '未接线（数据源待交付）', ok: false },
   ];
@@ -95,11 +106,13 @@ export function WorkspacePanel({ config, auth, onRetry }) {
         {auth.status === 'authed'
           ? (config?.dataMode === 'fixture'
               ? <>test-principal（隔离测试主体，非真实 GitHub 身份）</>
-              : <>{auth.user?.display_name ?? auth.user?.github_login ?? '已登录'}（真实会话）</>)
+              : <>{auth.user?.name ?? auth.user?.display_name ?? auth.user?.github_login ?? '已登录'}（控制台会话；非 GitHub OAuth）</>)
           : <>未认证——无真实 GitHub 身份</>}
       </Row>
       <Row label="生产后端">
-        <span className="ws-no">未连接</span>——当前全部为快照 / 隔离 fixture；生产接线由后端交付后经配置切换
+        {live
+          ? <><span className="ws-yes">已连接</span>——PG 实时（staging 隔离库）；run 证据详情页仍为快照</>
+          : <><span className="ws-no">未连接</span>——当前全部为快照 / 隔离 fixture；生产接线由后端交付后经配置切换</>}
       </Row>
       <Row label="是否真实 GitHub 操作">
         <YesNo yes={false} yesText="有" noText="无——任何模式都不写 GitHub" />

@@ -373,7 +373,9 @@ function ContractPrDetail({ owner, name, prNumber }) {
         <div className="breadcrumb"><Link className="crumb-back" to={repoTo}>返回 {repo}</Link></div>
         {q.error?.status === 404 ? (
           <div className="state-box state-warn">
-            契约端点未提供 {repo} PR #{prNumber || '？'} 的数据（404）——不回退到历史快照数据。
+            实时数据源中无 {repo} PR #{prNumber || '？'} 的记录
+            {q.error?.reason ? <code className="mono">（{q.error.reason}）</code> : null}
+            ——不回退到历史快照数据，也不伪装为成功。
           </div>
         ) : (
           <ErrorBox error={q.error} onRetry={() => setAttempt((n) => n + 1)} />
@@ -419,9 +421,30 @@ function ContractPrDetail({ owner, name, prNumber }) {
           <div className="detail-chips">
             <span className="chip">PR #{view.prNumber}</span>
             <span className="chip mono truncate">{repo}</span>
+            {/* R4（FB-03）：控制面实时事实（与 /api/overview 同源同边界） */}
+            {detail?.stage ? (
+              <span className="chip" title={`阶段来源：${detail.stage_source ?? '—'}`}>
+                控制面阶段：{detail.stage}
+              </span>
+            ) : null}
+            {detail?.head_sha ? (
+              <span className="chip mono" title="最近一次审查的 head（非 GitHub 当前 head 权威）">
+                审查 head {(detail.head_sha ?? '').slice(0, 8)}
+              </span>
+            ) : null}
+            {detail?.receipts ? (
+              <span className="chip" title="skill 回执：总数 / OK / 完整性冲突">
+                回执 {detail.receipts.total}（OK {detail.receipts.ok} / 冲突 {detail.receipts.integrity_conflicts}）
+              </span>
+            ) : null}
+            {detail?.gate_audit?.length ? (
+              <span className="chip" title="gate 审计记录数（本 PR 的 run 集）">
+                gate 审计 {detail.gate_audit.length}
+              </span>
+            ) : null}
             <span className="chip mono" title="GitHub 当前 head（权威）">当前 head {(currentHead ?? '').slice(0, 8) || '未记录'}</span>
             <span className="chip">{runs.length} 次运行（执行历史）</span>
-            <span className="chip">{config?.dataMode === 'fixture' ? 'Fixture 数据' : '契约数据源'}</span>
+            <span className="chip">{config?.dataMode === 'fixture' ? 'Fixture 数据' : 'PG 实时（staging）'}</span>
           </div>
         </div>
         <div className="detail-actions">

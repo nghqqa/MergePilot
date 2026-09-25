@@ -106,8 +106,9 @@ export function getSession(token) {
 }
 
 export function sessionBody(auth) {
-  // 契约 §1：200 带 user；401 JSON 不重定向
-  return { user: auth.user, expires_at: new Date(auth.expiresAt).toISOString(),
+  // 契约 §1：200 带 user；401 JSON 不重定向。
+  // R4（FB-06）：user 为结构化对象（前端不再显示"未知用户"）。
+  return { user: { name: auth.user }, expires_at: new Date(auth.expiresAt).toISOString(),
            repos: auth.repos };
 }
 

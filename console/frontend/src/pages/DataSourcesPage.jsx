@@ -27,7 +27,9 @@ export default function DataSourcesPage() {
       <section className="section">
         <div className="section-head"><h3>模式说明（人话版）</h3></div>
         <ul className="compact-list">
-          <li><strong>只读快照</strong>——真实历史运行的存档，只能看，不能操作。</li>
+          <li><strong>只读快照</strong>——真实历史运行的存档，只能看，不能操作（run 证据详情页）。</li>
+          <li><strong>PG 实时（live）</strong>——隔离 staging 库的实时只读查询；overview/待处理/仓库/PR 详情
+            按会话 allowlist 过滤，不触达任何真实 GitHub 或共享生产库。</li>
           <li><strong>隔离联调</strong>——测试库里的演练数据；批准/拒绝只作用于演练库，
             不会碰真实的 GitHub、PR 或生产数据。</li>
           <li><strong>契约数据</strong>——按正式接口约定提供的验收数据（当前为 fixture）。</li>

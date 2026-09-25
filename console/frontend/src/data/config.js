@@ -14,8 +14,11 @@ export function normalizeConfig(healthBody) {
   // 仅当服务明确声明对应源可用时才启用；其余一律 snapshot。
   // 'console-pg' 为 DEV/联调适配源（后端 tools/console_pg 只读服务；形状差异见
   // INTEGRATION-REQUESTS C-10 备注），生产 console 后端不会声明该值。
+  // R4（OVERVIEW_REMEDIATION 二）：服务端 primary='contract_v2'（live DSN 已配置时）
+  // → 全站页面统一走服务端 allowlist 过滤的实时契约端点，不再回退 snapshot 默认。
   let mode = 'snapshot';
   if (primary === 'contract' && contract.available === true) mode = 'contract';
+  if (primary === 'contract_v2' && contract.available === true) mode = 'contract';
   if (primary === 'console-pg' && consolePg.available === true) mode = 'console-pg';
   return {
     mode,
@@ -24,7 +27,7 @@ export function normalizeConfig(healthBody) {
     contractReason: contract.reason ?? null,
     consolePgAvailable: consolePg.available === true,
     pgBase: consolePg.base ?? '/pg',
-    // 契约模式下的仓库列表由可信配置声明（未来来自 installation 映射），不由前端猜测
+    // 契约模式下的仓库列表由可信配置声明（服务端 allowlist 权威下发），不由前端猜测
     declaredRepos: Array.isArray(healthBody?.declared_repos) ? healthBody.declared_repos : [],
     service: healthBody?.service ?? null,
     raw: healthBody ?? null,

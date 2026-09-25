@@ -7,6 +7,16 @@
 const CACHE_TTL_MS = 5000;
 let cache = { data: null, at: 0 };
 
+// R4（FB-05）：时间值 → UTC 日期桶（YYYY-MM-DD）。字符串取 ISO 前 10 位；
+// Date（pg 驱动对 timestamptz 的返回）走 toISOString。非法/缺失 → null。
+export function isoDayOf(v) {
+  if (v == null || v === '') return null;
+  if (v instanceof Date) return isNaN(v.getTime()) ? null : v.toISOString().slice(0, 10);
+  if (typeof v === 'string') return /^\d{4}-\d{2}-\d{2}/.test(v) ? v.slice(0, 10) : null;
+  const d = new Date(v);
+  return isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+}
+
 function parseDsn(s) {
   const cfg = {};
   for (const kv of s.trim().split(/\s+/)) {
@@ -253,10 +263,13 @@ export async function overviewState(allowRepos) {
   }
   out.repository_counts = [...byRepo.values()].map((d) => ({ repo: d.repo, prs: d.prs.size, runs: d.runs, pending: d.pending }));
   // 趋势：近 14 天每日 run 数（receipts 最早出现日）
+  // R4 修复（FB-05）：created_at 来自 pg 驱动时是 Date 对象——String(Date) 会得到
+  // "Wed Sep 25 2026…" 这类串，slice(0,10) 永远匹配不上 ISO 日期桶 → 当日数据恒 0。
+  // 统一 isoDayOf：字符串取前 10 位（ISO），Date 走 toISOString（UTC 日期桶）。
   const days = new Map();
   for (const g of byRun.values()) {
-    if (!g.latest_at) continue;
-    const day = String(g.latest_at).slice(0, 10);
+    const day = isoDayOf(g.latest_at);
+    if (!day) continue;
     days.set(day, (days.get(day) || 0) + 1);
   }
   for (const t of out.trend) t.runs = days.get(t.date) || 0;

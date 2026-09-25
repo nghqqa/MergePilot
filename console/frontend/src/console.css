@@ -723,8 +723,23 @@ td.th-right { text-align: right; }
   .mode-range { display: none; }
 }
 
-/* ---- 运营总览图表布局（移动纵向 + 横向滚动） ---- */
+/* ---- 运营总览图表布局 ---- */
+/* R4（FB-04）：图表 autoFit 依赖稳定容器——移除固定 width 与横向滚动条，
+   容器 width:100% + min-width:0 让 plots 在桌面/移动宽度都正确测量（不再首测为 0）。 */
 .ov-charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: var(--sp-5); margin-top: var(--sp-3); }
-.ov-chart-scroll { overflow-x: auto; border: var(--border-w) solid var(--c-border); border-radius: var(--r-md);
-  background: var(--c-panel); padding: var(--sp-3) var(--sp-4); }
+.ov-chart-box { border: var(--border-w) solid var(--c-border); border-radius: var(--r-md);
+  background: var(--c-panel); padding: var(--sp-3) var(--sp-4); min-width: 0; }
+.ov-chart-box .ov-chart-nav { display: inline-block; margin-top: var(--sp-2); font-size: 12px; }
 @media (max-width: 960px) { .ov-charts { grid-template-columns: 1fr; } }
+@media (max-width: 480px) { .ov-charts { grid-template-columns: minmax(0, 1fr); }
+  .ov-chart-box { padding: var(--sp-3); } }
+/* R4：小屏顶栏按钮限宽省略；表格容器内自滚动（不撑破页面） */
+@media (max-width: 480px) {
+  .topbar .btn { max-width: 30vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ant-table-wrapper { overflow-x: auto; }
+}
+/* R4：小屏顶栏按钮收窄（文字隐藏保留图标 aria-label），表格容器内自滚动 */
+@media (max-width: 480px) {
+  .topbar .btn .btn-label { display: none; }
+  .ant-table-wrapper { overflow-x: auto; }
+}

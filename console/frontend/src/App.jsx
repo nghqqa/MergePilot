@@ -223,7 +223,9 @@ function Shell() {
     </div>
   );
   const menu = (
-    <AntMenu theme="dark" mode="inline" items={menuItems} selectedKeys={selectedKey} />
+    // R4（FB-07）：focusable=false 移除 rc-menu 对 UL 的 tabindex=0 吸收——
+    // Tab 不再被困在菜单容器上，可顺次进入各菜单项内的真实链接（有 href）并离开到主内容。
+    <AntMenu theme="dark" mode="inline" items={menuItems} selectedKeys={selectedKey} focusable={false} />
   );
 
   return (

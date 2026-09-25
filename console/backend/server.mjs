@@ -16,7 +16,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { listRunPacks, safeResolve, listPackFiles, verifyPack, parseSha256Sums, looksTextual } from './lib/pack.mjs';
 import { buildRunRecord, buildRunDetail } from './lib/runs.mjs';
 import { login, logout, getSession, sessionBody, anonymousBody, tokenFromCookieHeader,
-         repoAllowlist, sessionTtlMs } from './lib/session.mjs';
+  repoAllowlist, sessionTtlMs } from './lib/session.mjs';
 import { corePilotState, overviewState } from './lib/core-pilot.mjs';
 
 function readJsonBody(req, limit = 64 * 1024) {
@@ -100,25 +100,32 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
   const apiHealth = () => {
     const packs = listRunPacks(evidenceRoot);
     const withSums = packs.filter((p) => fs.existsSync(path.join(p.dir, 'SHA256SUMS'))).length;
+    const liveConfigured = Boolean(process.env.CONSOLE_PG_DSN);
+    // R4（OVERVIEW_REMEDIATION 二）：DSN 已配置 → 数据模式如实声明 live，
+    // primary=contract_v2（前端据此前往 /api/pulls 等服务端 allowlist 过滤的实时端点）；
+    // 未配置 → 维持 snapshot 声明（诚实降级，不假成功）。
     return {
       ok: true,
       service: 'mergepilot-console',
       version: '0.1.0',
-      data_mode: 'snapshot',
-      data_mode_note: '真实历史运行证据包（锁定只读），非实时数据；live 模式未接入',
-      // CANONICAL_CONSOLE_PROMOTION：核心控制面五 API 已在本服务交付（契约 v2 形状），
-      // live 配置与否如实上报（无 DSN → configured:false，页面显示 NOT_WIRED 诚实态）。
-      live: process.env.CONSOLE_PG_DSN
-        ? { configured: true, note: '核心控制面 API（pulls/pending/tickets/evidence/audit）实时读 PG' }
+      data_mode: liveConfigured ? 'live' : 'snapshot',
+      data_mode_note: liveConfigured
+        ? 'PG 实时（staging 隔离库）：overview/pending/仓库/PR 详情/审计按会话 allowlist 实时读取；run 证据详情页仍为锁定快照只读'
+        : '真实历史运行证据包（锁定只读），非实时数据；live 模式未接入',
+      live: liveConfigured
+        ? { configured: true, note: '核心控制面 API（overview/pulls/pending/tickets/evidence/audit）实时读 PG（会话 allowlist 过滤）' }
         : { configured: false, note: 'CONSOLE_PG_DSN 未配置 — 核心 API 返回 BACKEND_NOT_WIRED' },
       // 可信数据源配置：前端据此选择数据源（页面不做环境判断，sessionStorage/URL 无权改变）。
-      // 契约 v2（API-AUTH-MERGE-V0 @ 7ccecb9）端点由正式后端交付后，由部署配置把 primary 切为
-      // 'contract' 并给出 base——控制台前端不会自行探测或猜测切换。
+      // R4：live 已配置时 primary=contract_v2 并声明 allowlist 仓库清单（仓库页数据），
+      // 页面不再回退到未过滤 snapshot 作为默认数据。
       sources: {
-        primary: 'snapshot',
-        snapshot: { available: true, note: '锁定证据包（真实历史运行，只读）' },
-        contract_v2: { available: true, reason: 'delivered_readonly_core', note: '核心控制面五 API + 会话已交付（只读 pilot 能力迁移）' },
+        primary: liveConfigured ? 'contract_v2' : 'snapshot',
+        snapshot: { available: true, note: '锁定证据包（真实历史运行，只读；run 证据详情页使用）' },
+        contract_v2: liveConfigured
+          ? { available: true, reason: 'delivered_readonly_core', note: '核心控制面 API + 会话 + PR 详情（会话 allowlist 过滤）' }
+          : { available: false, reason: 'pg_not_configured', note: 'CONSOLE_PG_DSN 未配置' },
       },
+      declared_repos: liveConfigured ? repoAllowlist() : [],
       evidence_root: evidenceRoot,
       runs: packs.length,
       packs_with_sums: withSums,
@@ -249,7 +256,7 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
       if (!r.ok) return sendJson(res, r.status, r.code === 'auth_unavailable'
         ? r.error : anonymousBody(r.error?.reason));
       applyCookies(res, r.setCookie);
-      return sendJson(res, 200, { user: body.user, repos: repoAllowlist(),
+      return sendJson(res, 200, { user: { name: String(body.user ?? '') }, repos: repoAllowlist(),
         expires_at: new Date(Date.now() + sessionTtlMs()).toISOString() });
     }
     if (p === '/api/auth/logout' && req.method === 'POST') {
@@ -332,12 +339,40 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
     }
 
     if (p === '/api/health') return sendJson(res, 200, apiHealth());
-    if (p === '/api/runs') return sendJson(res, 200, apiRuns(q));
+
+    // R4（OVERVIEW_REMEDIATION 一）：snapshot 运行查询按会话边界过滤。
+    // 已认证 → 仅返回 allowlist 内仓库的记录（repo 未知的 pack 一并隐藏，不泄露存在性）；
+    // 未认证 → 维持登录页明示的只读演示语义（本地历史快照，非授权范围数据）。
+    // 实时数据查询一律走 /api/overview、/api/pulls（服务端 allowlist 强制）。
+    const runsScopeAuth = getSession(tokenFromCookieHeader(req.headers.cookie));
+    const runsScope = runsScopeAuth ? new Set(runsScopeAuth.repos) : null;
+    const runsRepoAllowed = (repo) => !runsScope || (repo ? runsScope.has(repo) : false);
+
+    if (p === '/api/runs') {
+      const body = apiRuns(q);
+      const items = (body.items ?? []).filter((r) => runsRepoAllowed(r.repo ?? null));
+      return sendJson(res, 200, { ...body, items,
+        scope: runsScope ? 'session_allowlist' : 'demo_snapshot' });
+    }
 
     const runMatch = p.match(/^\/api\/runs\/([\w.-]+)(?:\/(.*))?$/);
     if (runMatch) {
       const [, packId, sub] = runMatch;
-      if (!sub) return sendJson(res, 200, buildRunDetail(packId, packDirOf(packId)));
+      if (!sub) {
+        const detail = buildRunDetail(packId, packDirOf(packId));
+        if (!runsRepoAllowed(detail?.run?.repo ?? detail?.repo ?? null)) {
+          // 不泄露存在性：越权 pack 对已认证会话同样返回 404
+          return sendError(res, 404, `unknown run pack: ${packId}`);
+        }
+        return sendJson(res, 200, detail);
+      }
+      {
+        // 证据子资源与 pack 同边界：先按 pack 记录的 repo 校验
+        const rec = buildRunRecord(packId, packDirOf(packId));
+        if (!runsRepoAllowed(rec?.repo ?? null)) {
+          return sendError(res, 404, `unknown run pack: ${packId}`);
+        }
+      }
       if (sub === 'evidence') {
         const dir = packDirOf(packId);
         const sums = parseSha256Sums(dir);
@@ -352,6 +387,63 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
       if (sub === 'evidence/download') return apiEvidenceContent(packId, q.path, res, { download: true });
       return sendError(res, 404, `unknown api path: ${p}`);
     }
+
+    // R4（OVERVIEW_REMEDIATION 三）：PR 详情正式端点（与 /api/overview 同一 live 数据源，
+    // 同一会话 allowlist 边界）。repo 寻址走查询参数（契约 §0.5 同形）。
+    const pullMatch = p.match(/^\/api\/pulls\/(\d+)$/);
+    if (pullMatch && req.method === 'GET') {
+      const auth = getSession(tokenFromCookieHeader(req.headers.cookie));
+      if (!auth) return sendJson(res, 401, anonymousBody());
+      const prNumber = Number(pullMatch[1]);
+      const repo = q.repo;
+      if (!repo || !auth.repos.includes(repo)) {
+        return sendJson(res, 403, { error: { reason: 'repo_not_in_allowlist', repo: repo ?? null } });
+      }
+      const ov = await overviewState(auth.repos);
+      const rows = (ov.prs || []).filter((r) => r.repo === repo && r.pr_number === prNumber);
+      if (rows.length === 0) {
+        return sendJson(res, 404, { error: { reason: 'no_live_record', repo, pr_number: prNumber } });
+      }
+      // 最新 run 为当前结论（overview 已按 updated_at 降序）；其余为历史行
+      const [cur, ...history] = rows;
+      const allow = new Set(auth.repos);
+      // receipts / gate audit（同数据源；allowlist 内 + 本 PR 的 run 集）
+      const runIds = new Set(rows.map((r) => r.run_id));
+      const st = await corePilotState();
+      const receipts = (st.evidence || []).filter(
+        (r) => runIds.has(r.run_id) && r.repo && allow.has(r.repo));
+      const gateAudit = (st.gate_decisions || []).filter((g) => {
+        const grepo = g.decision && g.decision.repo;
+        return runIds.has(g.run_id) && grepo && allow.has(grepo);
+      });
+      return sendJson(res, 200, {
+        repo, pr_number: prNumber,
+        title: null,
+        // GitHub 当前 head 权威未接入——如实 null，不以最近审查 head 冒充
+        current_head_sha: null,
+        stage: cur.stage, stage_source: cur.stage_source,
+        head_sha: cur.head_sha, run_id: cur.run_id, updated_at: cur.updated_at,
+        runs: rows.map((r) => ({
+          run_id: r.run_id, created_at: r.updated_at,
+          class: null, exec_seq: null, mode: null, status: null,
+          stage: r.stage, stage_source: r.stage_source,
+          outcome: r.stage, head_sha: r.head_sha,
+          stale: r.head_sha !== cur.head_sha,
+        })),
+        receipts: {
+          total: receipts.length,
+          ok: receipts.filter((r) => r.status === 'OK' && (!r.integrity || r.integrity === 'OK')).length,
+          integrity_conflicts: receipts.filter((r) => r.integrity && r.integrity !== 'OK').length,
+        },
+        gate_audit: gateAudit.map((g) => ({
+          run_id: g.run_id, decision: g.decision, created_at: g.created_at,
+        })),
+        has_pending_tickets: false,
+        merge_panel: { enabled: false, reasons: ['merge_disabled'], github_url: `https://github.com/${repo}/pull/${prNumber}` },
+        source: ov.source,
+      });
+    }
+
     return sendError(res, 404, `unknown api path: ${p}`);
   };
 

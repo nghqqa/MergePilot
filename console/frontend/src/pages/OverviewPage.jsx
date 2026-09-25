@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Alert, Spin, Table, Tag, Typography } from 'antd';
 import { Column, Line } from '@ant-design/plots';
 import { useAuth } from '../auth.jsx';
@@ -139,42 +139,45 @@ export default function OverviewPage() {
             <Tag color="success">后端只读 OK</Tag>
           </Typography.Paragraph>
 
-          {/* 图表区（移动端纵向 + 容器横向滚动） */}
-          <div className="ov-charts" role="region" aria-label="运营图表（键盘可用，柱体可点击跳转）">
-            <section aria-label="各阶段 PR 数量（点击柱体跳转待处理）">
+          {/* 图表区（可视化摘要；数据明细见表格——键盘/读屏主路径。
+              R4：柱体/折线点击为鼠标增强；导航一律有键盘可达的文字链接兜底） */}
+          <div className="ov-charts" role="region" aria-label="运营图表（可视化摘要；明细与导航见表格与下方链接）">
+            <section aria-label="各阶段 PR 数量（导航：查看待处理）">
               <Typography.Title level={3}>各阶段 PR</Typography.Title>
-              <div className="ov-chart-scroll">
+              <div className="ov-chart-box">
                 <Column
-                  {...baseCol} width={460}
+                  {...baseCol}
                   data={stageData}
                   xField="stage" yField="count" colorField="stage"
                   onEvent={(chart, event) => {
                     if (event.type === 'element:click') navigate('/pending');
                   }}
                 />
+                <Link className="ov-chart-nav" to="/pending">查看待处理 →</Link>
               </div>
             </section>
             <section aria-label="最近运行趋势（14 天）">
               <Typography.Title level={3}>最近运行趋势（14 天）</Typography.Title>
-              <div className="ov-chart-scroll">
+              <div className="ov-chart-box">
                 <Line
-                  {...baseCol} width={520}
+                  {...baseCol}
                   data={data.trend} xField="date" yField="runs"
                   point={{ size: 3 }}
                 />
               </div>
             </section>
-            <section aria-label="各仓库分布（点击柱体跳转仓库）">
+            <section aria-label="各仓库分布（导航：查看仓库）">
               <Typography.Title level={3}>各仓库分布</Typography.Title>
-              <div className="ov-chart-scroll">
+              <div className="ov-chart-box">
                 <Column
-                  {...baseCol} width={360}
+                  {...baseCol}
                   data={data.repository_counts}
                   xField="repo" yField="runs" colorField="repo"
                   onEvent={(chart, event) => {
                     if (event.type === 'element:click') navigate('/repos');
                   }}
                 />
+                <Link className="ov-chart-nav" to="/repos">查看仓库 →</Link>
               </div>
             </section>
           </div>
@@ -184,16 +187,17 @@ export default function OverviewPage() {
           <Table
             size="small" rowKey={(r) => r.repo + r.run_id + r.head_sha}
             pagination={{ pageSize: 10, hideOnSinglePage: true }}
+            scroll={{ x: 'max-content' }}
             dataSource={data.prs}
             locale={{ emptyText: '没有 PR 记录（诚实零值）' }}
             columns={[
               { title: '仓库 / PR', ellipsis: true,
                 render: (_, r) => (
-                  <a role="link" tabIndex={0} style={{ cursor: 'pointer' }}
-                     onClick={() => navigate(`/repos/${r.repo.split('/')[0]}/${r.repo.split('/')[1]}/pr/${r.pr_number}`)}
-                     onKeyDown={(e) => { if (e.key === 'Enter') navigate(`/repos/${r.repo.split('/')[0]}/${r.repo.split('/')[1]}/pr/${r.pr_number}`); }}>
+                  // R4（FB-03）：真实 href（React Router Link）——可直接打开/中键/键盘 Enter，
+                  // 不再是无 href 的伪链接
+                  <Link to={`/repos/${r.repo.split('/')[0]}/${r.repo.split('/')[1]}/pr/${r.pr_number}`}>
                     {r.repo} #{r.pr_number}
-                  </a>
+                  </Link>
                 ) },
               { title: 'Head', dataIndex: 'head_sha', width: 120, ellipsis: true,
                 render: (v) => <span className="sha">{v?.slice(0, 12) || '—'}</span> },
@@ -209,8 +213,7 @@ export default function OverviewPage() {
           />
           <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginTop: 8 }}>
             <details><summary style={{ cursor: 'pointer' }}>审计入口</summary>
-              gate 审计与票据明细见 <a role="link" tabIndex={0} style={{ cursor: 'pointer' }}
-                onClick={() => navigate('/core')} onKeyDown={(e) => { if (e.key === 'Enter') navigate('/core'); }}>系统状态</a>。
+              gate 审计与票据明细见 <Link to="/core">系统状态</Link>。
               REMEDIATING / VERIFYING 需要 Fixer/Verifier（本部署禁用）——计数恒 0，不虚构。
             </details>
           </Typography.Paragraph>
