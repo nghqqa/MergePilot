@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { Alert, Table, Tag, Typography } from 'antd';
 import { useAuth } from '../auth.jsx';
+import { STATUS_META } from '../theme.js';
 
-// 核心控制面（CANONICAL_CONSOLE_PROMOTION 迁移页）：五个 Core API 的实时视图。
-// 诚实语义：未登录 401 → 引导登录；无 DSN → BACKEND_NOT_WIRED；连接失败 →
-// BACKEND_ERROR；成功 → POSTGRESQL_LIVE。不伪造任何状态。
+// 系统状态与接线（antd 版）：五个 Core API 的实时只读视图，供排查"是坏了还是没接"。
+// 诚实语义：未登录 401 → 引导；无 DSN → 未接线；连接失败 → 后端错误；成功 → 实时数据。
+// 人话标签为主显示，机器值（source/error）入标签内次级文本。
 const REFRESH_MS = 10_000;
 
 async function apiGet(path) {
@@ -18,12 +20,15 @@ async function apiGet(path) {
   return body;
 }
 
-function Dot({ tone }) {
-  return <span className={`dot dot-${tone}`} aria-hidden style={{
-    display: 'inline-block', width: 8, height: 8, borderRadius: '50%',
-    background: tone === 'ok' ? 'var(--c-ok)' : tone === 'warn' ? 'var(--c-warn)' : 'var(--c-bad)',
-    marginRight: 6,
-  }} />;
+function SourceTag({ source, error }) {
+  const meta = STATUS_META[source] || { label: source, tone: 'default' };
+  return (
+    <Tag color={meta.tone}>
+      {meta.label}
+      <Typography.Text type="secondary" style={{ fontSize: 11, marginLeft: 6 }}>{source}</Typography.Text>
+      {error ? <Typography.Text type="danger" style={{ fontSize: 11, marginLeft: 6 }}>{error}</Typography.Text> : null}
+    </Tag>
+  );
 }
 
 export default function CorePage() {
@@ -56,132 +61,93 @@ export default function CorePage() {
   if (auth.status !== 'authed') {
     return (
       <div>
-        <div className="page-head"><div><h1>系统状态与接线</h1>
-          <p className="page-sub">核心 API 接线与健康视图：供排查"是坏了还是没接"，非日常工作流。</p>
-        </div></div>
-        <section className="section">
-          <div className="state-box state-warn" role="status">
-            需要登录 — 本页数据受服务端会话与仓库 allowlist 保护。
-          </div>
-        </section>
+        <Typography.Title level={1} style={{ fontSize: 24 }}>系统状态与接线</Typography.Title>
+        <Alert type="warning" showIcon
+          message="需要登录"
+          description="本页数据受服务端会话与仓库 allowlist 保护（未认证返回 401）。" />
       </div>
     );
   }
 
-  const source = data?.pulls?.source;
-  const tone = source === 'POSTGRESQL_LIVE' ? 'ok' : source === 'BACKEND_ERROR' ? 'bad' : 'warn';
+  const src = data?.pulls?.source;
+  const srcError = data?.pulls?.error;
 
   return (
     <div>
-      <div className="page-head">
-        <div>
-          <h1>系统状态与接线</h1>
-          <p className="page-sub">
-            授权仓库：{auth.user?.repos?.join(' · ') || '（allowlist 未配置）'}
-            {lastRefresh ? ` · 刷新于 ${lastRefresh} · 每 ${REFRESH_MS / 1000}s` : ''}
-          </p>
-        </div>
-      </div>
+      <Typography.Title level={1} style={{ fontSize: 24, marginBottom: 4 }}>系统状态与接线</Typography.Title>
+      <Typography.Paragraph type="secondary">
+        核心 API 接线与健康视图：供排查"是坏了还是没接"，非日常工作流。
+        授权仓库：{auth.user?.repos?.join(' · ') || '（allowlist 未配置）'}
+        {lastRefresh ? ` · 刷新于 ${lastRefresh}` : ''}
+      </Typography.Paragraph>
 
-      <section className="section">
-        <div className="section-head"><h3>接线状态</h3></div>
-        {error ? (
-          <div className="state-box state-error" role="status">
-            请求失败 — {String(error.message || error)}（{error.status === 401 ? '会话可能已过期，请刷新重登' : 'API 错误'}）
-          </div>
-        ) : !data ? (
-          <div className="state-box" role="status">加载中…</div>
-        ) : source === 'POSTGRESQL_LIVE' ? (
-          <div className="state-box state-ok" role="status"><Dot tone="ok" />
-            PostgreSQL 实时查询 · <code>source: POSTGRESQL_LIVE</code>
-          </div>
-        ) : source === 'BACKEND_NOT_WIRED' ? (
-          <div className="state-box state-warn" role="status"><Dot tone="warn" />
-            后端未接线 — CONSOLE_PG_DSN 未配置；以下为空状态，非真实数据。
-          </div>
-        ) : (
-          <div className="state-box state-error" role="status"><Dot tone="bad" />
-            后端错误 — {data.pulls?.error}。请检查 PG 连接。
-          </div>
-        )}
-      </section>
+      {error ? (
+        <Alert type="error" showIcon message="请求失败"
+          description={`${error.message}${error.status === 401 ? '（会话可能已过期，请刷新重登）' : ''}`} />
+      ) : !data ? (
+        <Alert message="加载中…" />
+      ) : src === 'POSTGRESQL_LIVE' ? (
+        <Alert type="success" showIcon message={<SourceTag source={src} />} />
+      ) : src === 'BACKEND_NOT_WIRED' ? (
+        <Alert type="warning" showIcon message={<SourceTag source={src} />}
+          description="CONSOLE_PG_DSN 未配置；以下为空状态，非真实数据。" />
+      ) : (
+        <Alert type="error" showIcon message={<SourceTag source={src} error={srcError} />}
+          description="请检查 PG 连接。" />
+      )}
 
-      <section className="section">
-        <div className="section-head"><h3>Gate / Bridge 分层</h3></div>
-        <div className="panel" style={{ fontSize: 13, lineHeight: 1.9 }}>
-          <strong>Skill Gate PRODUCE</strong> = Skill receipts 齐备、有效、绑定正确 —
-          <em>不等于安全风险已批准</em>；<br />
-          <strong>HIGH finding 人工门</strong> 由 Bridge 风险策略执行 → 输出
-          <code> action_required</code>（≠ success）· 当前 pilot 禁止 approve/reject；<br />
-          RAG = <strong>EXCLUDED</strong> · Fixer/Verifier = <strong>DISABLED</strong> ·
-          merge/push = <strong>DISABLED</strong>。
-        </div>
-      </section>
+      <Typography.Title level={3} style={{ marginTop: 24 }}>Gate / Bridge 分层</Typography.Title>
+      <Typography.Paragraph type="secondary">
+        Skill Gate PRODUCE = receipts 齐备有效绑定（不等于安全已批准）；HIGH 人工门由 Bridge 执行 →
+        action_required（≠ success）。RAG=EXCLUDED · Fixer/Verifier=DISABLED · merge/push=DISABLED。
+      </Typography.Paragraph>
 
       {data && (
         <>
-          <section className="section">
-            <div className="section-head"><h3>PR / Head（{data.pulls.pulls?.length ?? 0}）</h3></div>
-            <div className="panel">
-              <table className="data-table">
-                <thead><tr><th>Repo</th><th>PR#</th><th>Head SHA</th><th>Run ID</th></tr></thead>
-                <tbody>
-                  {(data.pulls.pulls || []).map((p, i) => (
-                    <tr key={i}>
-                      <td>{p.repo}</td>
-                      <td>{p.pr_number != null ? `#${p.pr_number}` : '—'}</td>
-                      <td><code>{p.head_sha?.slice(0, 12)}</code></td>
-                      <td><code>{p.run_id}</code></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
-
-          <section className="section">
-            <div className="section-head"><h3>待处理队列（{data.pending.pending?.length ?? 0}）</h3></div>
-            <div className="panel">
-              <table className="data-table">
-                <thead><tr><th>Ticket</th><th>Repo / PR</th><th>Action</th><th>TTL</th><th>状态</th></tr></thead>
-                <tbody>
-                  {(data.pending.pending || []).map((t, i) => {
-                    const expired = t.approval_expires_at ? new Date(t.approval_expires_at) < new Date() : false;
-                    return (
-                      <tr key={i}>
-                        <td><code>{t.ticket_id?.slice(0, 16)}…</code></td>
-                        <td>{t.repo} {t.pr_number != null ? `#${t.pr_number}` : ''}</td>
-                        <td>{t.action}</td>
-                        <td>{expired ? '已过期' : '有效'}</td>
-                        <td>{expired ? 'EXPIRED' : t.status}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-              {!data.pending.pending?.length && (
-                <p className="page-sub" style={{ padding: 8 }}>队列为空（诚实零值 — 无伪造门）。</p>
-              )}
-            </div>
-          </section>
-
-          <section className="section">
-            <div className="section-head"><h3>Gate 审计（{data.audit.gate_decisions?.length ?? 0}）</h3></div>
-            <div className="panel">
-              <table className="data-table">
-                <thead><tr><th>Run</th><th>Decision</th><th>时间</th></tr></thead>
-                <tbody>
-                  {(data.audit.gate_decisions || []).map((g, i) => (
-                    <tr key={i}>
-                      <td><code>{g.run_id}</code></td>
-                      <td><code>{JSON.stringify(g.decision).slice(0, 80)}</code></td>
-                      <td>{g.created_at ? new Date(g.created_at).toLocaleString() : ''}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </section>
+          <Typography.Title level={3}>PR / Head</Typography.Title>
+          <Table
+            size="small" rowKey={(r) => r.repo + r.head_sha}
+            pagination={false}
+            dataSource={data.pulls.pulls || []}
+            columns={[
+              { title: '仓库', dataIndex: 'repo', ellipsis: true },
+              { title: 'PR', dataIndex: 'pr_number', width: 80,
+                render: (v) => (v != null ? `#${v}` : '—') },
+              { title: 'Head', dataIndex: 'head_sha', width: 130, ellipsis: true,
+                render: (v) => <span className="sha">{v?.slice(0, 12)}</span> },
+              { title: 'Run', dataIndex: 'run_id', ellipsis: true,
+                render: (v) => <span className="mono">{v}</span> },
+            ]}
+          />
+          <Typography.Title level={3} style={{ marginTop: 20 }}>待处理</Typography.Title>
+          <Table
+            size="small" rowKey="ticket_id" pagination={false}
+            dataSource={data.pending.pending || []}
+            locale={{ emptyText: '队列为空（诚实零值 — 无伪造门）' }}
+            columns={[
+              { title: '票据', dataIndex: 'ticket_id', ellipsis: true, render: (v) => <span className="mono">{v?.slice(0, 16)}…</span> },
+              { title: '仓库 / PR', ellipsis: true,
+                render: (_, r) => `${r.repo} ${r.pr_number != null ? '#' + r.pr_number : ''}` },
+              { title: '动作', dataIndex: 'action', width: 130 },
+              { title: 'TTL', width: 90,
+                render: (_, r) => (r.approval_expires_at && new Date(r.approval_expires_at) < new Date()
+                  ? <Tag color="warning">已过期</Tag> : '有效') },
+              { title: '状态', dataIndex: 'status', width: 110,
+                render: (v) => <Tag color={STATUS_META[v]?.tone}>{STATUS_META[v]?.label ?? v}</Tag> },
+            ]}
+          />
+          <Typography.Title level={3} style={{ marginTop: 20 }}>Gate 审计</Typography.Title>
+          <Table
+            size="small" rowKey="run_id" pagination={false}
+            dataSource={data.audit.gate_decisions || []}
+            columns={[
+              { title: 'Run', dataIndex: 'run_id', ellipsis: true, render: (v) => <span className="mono">{v}</span> },
+              { title: '决策', ellipsis: true,
+                render: (_, r) => <span className="mono">{JSON.stringify(r.decision).slice(0, 90)}</span> },
+              { title: '时间', dataIndex: 'created_at', width: 170,
+                render: (v) => (v ? new Date(v).toLocaleString() : '') },
+            ]}
+          />
         </>
       )}
     </div>

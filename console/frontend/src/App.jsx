@@ -4,6 +4,12 @@ import {
   Activity, ClipboardList, Database, FolderGit2, Hand, History, LogOut,
   Menu, PlugZap, Settings, ShieldCheck,
 } from 'lucide-react';
+import { Layout, Menu as AntMenu, Drawer, Button } from 'antd';
+import {
+  InboxOutlined, FolderOpenOutlined, HistoryOutlined, AuditOutlined,
+  DashboardOutlined, DatabaseOutlined, ApiOutlined, MedicineBoxOutlined,
+  SettingOutlined, MenuOutlined,
+} from '@ant-design/icons';
 import { api } from './api.js';
 import { AuthProvider, useAuth } from './auth.jsx';
 import { BrandMark, ErrorBoundary } from './ui.jsx';
@@ -50,18 +56,18 @@ function Configured() {
 
 // 审查工作台主导航：待处理（默认队列）→ 仓库 → 运行 → 审计
 const NAV = [
-  { to: '/pending', label: '待处理', icon: Hand, end: false },
-  { to: '/repos', label: '仓库', icon: FolderGit2, end: true },
-  { to: '/runs', label: '运行', icon: History, end: false },
-  { to: '/approvals', label: '审计', icon: ClipboardList, end: true },
+  { to: '/pending', label: '待处理', icon: InboxOutlined, end: false },
+  { to: '/repos', label: '仓库', icon: FolderOpenOutlined, end: true },
+  { to: '/runs', label: '运行', icon: HistoryOutlined, end: false },
+  { to: '/approvals', label: '审计', icon: AuditOutlined, end: true },
 ];
 // 系统区（非首要工作流）：系统状态与接线 / 知识库 / 数据源 / 诊断 / 设置
 const SYSTEM_NAV = [
-  { to: '/core', label: '系统状态', icon: ShieldCheck, end: true },
-  { to: '/knowledge', label: '知识库', icon: Database, end: true },
-  { to: '/datasources', label: '数据源', icon: PlugZap, end: true },
-  { to: '/diagnostics', label: '诊断', icon: Activity, end: true },
-  { to: '/settings', label: '设置', icon: Settings, end: true },
+  { to: '/core', label: '系统状态', icon: DashboardOutlined, end: true },
+  { to: '/knowledge', label: '知识库', icon: DatabaseOutlined, end: true },
+  { to: '/datasources', label: '数据源', icon: ApiOutlined, end: true },
+  { to: '/diagnostics', label: '诊断', icon: MedicineBoxOutlined, end: true },
+  { to: '/settings', label: '设置', icon: SettingOutlined, end: true },
 ];
 
 function TopbarContext() {
@@ -182,75 +188,71 @@ function Shell() {
   const config = useAppConfig();
   const { source } = useDataSource(config);
   const ctx = topbarCtx(loc.pathname);
-  // 移动导航抽屉（≤960px）：文字标签始终可见，不再折叠为纯图标
   const [navOpen, setNavOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(
+    typeof window !== 'undefined' && window.matchMedia('(max-width: 960px)').matches);
   useEffect(() => {
-    if (!navOpen) return;
-    const onKey = (e) => { if (e.key === 'Escape') setNavOpen(false); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [navOpen]);
+    const mq = window.matchMedia('(max-width: 960px)');
+    const on = (e) => setIsMobile(e.matches);
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, []);
   useEffect(() => { setNavOpen(false); }, [loc.pathname]);
+
   // 导航按数据源能力呈现：run 级全量历史仅 snapshot 取证视图提供
   const nav = NAV.filter((n) => !(source.kind !== 'snapshot' && n.to === '/runs'));
 
-  return (
-    <div className={`app${navOpen ? ' nav-open' : ''}`}>
-      {navOpen ? <div className="nav-backdrop" onClick={() => setNavOpen(false)} aria-hidden /> : null}
-      <aside className="sidebar" aria-label="侧边导航">
-        <div className="brand">
-          <BrandMark />
-          <div className="brand-text">
-            <div className="brand-name">MergePilot</div>
-            <div className="brand-sub">审查工作台 <span className="brand-v0">V0</span></div>
-          </div>
-        </div>
-        <nav id="sidebar-nav" aria-label="主导航">
-          {nav.map((n) => (
-            <NavLink
-              key={n.to}
-              to={n.to}
-              end={n.end}
-              title={n.label}
-              aria-label={n.label}
-              className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
-            >
-              <n.icon size={15} strokeWidth={1.75} aria-hidden />
-              <span className="nav-label">{n.label}</span>
-            </NavLink>
-          ))}
-          <div className="nav-section">系统</div>
-          {SYSTEM_NAV.map((n) => (
-            <NavLink
-              key={n.to}
-              to={n.to}
-              end={n.end}
-              title={n.label}
-              aria-label={n.label}
-              className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
-            >
-              <n.icon size={15} strokeWidth={1.75} aria-hidden />
-              <span className="nav-label">{n.label}</span>
-            </NavLink>
-          ))}
-        </nav>
-        <div className="sidebar-foot">
-          <div className="foot-row" title={source.kind === 'console-pg'
-            ? '隔离联调环境：数据为 fixture 测试记录；审批决策请求仅写隔离 fixture 库（test-auth 主体），不触达任何真实系统或 GitHub；不下发凭证'
-            : '本服务仅监听 127.0.0.1 回环地址；不下发任何凭证'}>
-            <Activity size={12} strokeWidth={1.75} aria-hidden />
-            {source.kind === 'console-pg' ? '隔离联调 · 审批决策仅写 fixture 库' : '只读 · 无写操作 · 无凭证下发'}
-          </div>
-        </div>
-      </aside>
+  const menuItems = [
+    ...nav.map((n) => ({ key: n.to, icon: <n.icon />, label: <NavLink to={n.to}>{n.label}</NavLink> })),
+    { type: 'group', label: '系统', children: SYSTEM_NAV.map((n) => ({
+      key: n.to, icon: <n.icon />, label: <NavLink to={n.to}>{n.label}</NavLink> })) },
+  ];
+  const selectedKey = [...nav, ...SYSTEM_NAV]
+    .filter((n) => loc.pathname === n.to || (n.end === false && loc.pathname.startsWith(n.to)))
+    .map((n) => n.to);
 
-      <div className="main">
+  const brand = (
+    <div className="brand">
+      <BrandMark />
+      <div className="brand-text">
+        <div className="brand-name">MergePilot</div>
+        <div className="brand-sub">审查工作台 <span className="brand-v0">V0</span></div>
+      </div>
+    </div>
+  );
+  const menu = (
+    <AntMenu theme="dark" mode="inline" items={menuItems} selectedKeys={selectedKey} />
+  );
+
+  return (
+    <Layout className="app" style={{ minHeight: '100vh' }}>
+      {!isMobile ? (
+        <Layout.Sider width={216} className="sidebar" breakpoint={false}>
+          {brand}
+          <nav aria-label="主导航">{menu}</nav>
+          <div className="sidebar-foot">
+            <div className="foot-row" title="本服务仅监听 127.0.0.1 回环地址；不下发任何凭证">
+              <Activity size={12} strokeWidth={1.75} aria-hidden />
+              只读 · 无写操作 · 无凭证下发
+            </div>
+          </div>
+        </Layout.Sider>
+      ) : (
+        <Drawer
+          placement="left" width={232} open={navOpen} onClose={() => setNavOpen(false)}
+          title={brand} styles={{ body: { padding: 0, background: '#0b0f19' } }}
+          closeIcon={<MenuOutlined aria-label="关闭菜单" />}
+        >
+          <nav aria-label="主导航">{menu}</nav>
+        </Drawer>
+      )}
+      <Layout>
         <header className="topbar">
-          <button type="button" className="nav-menu-btn" aria-expanded={navOpen}
-                  aria-controls="sidebar-nav" onClick={() => setNavOpen((v) => !v)}>
-            <Menu size={16} strokeWidth={1.75} aria-hidden />
-            <span>菜单</span>
-          </button>
+          {isMobile ? (
+            <Button type="text" aria-expanded={navOpen} aria-label="打开菜单"
+                    icon={<MenuOutlined />} onClick={() => setNavOpen(true)}
+                    style={{ marginRight: 8 }} />
+          ) : null}
           <div className="topbar-context">
             {ctx.crumb ? (
               <span className="crumb">
@@ -275,7 +277,7 @@ function Shell() {
           <ErrorBoundary>
             <Routes>
               <Route path="/" element={<Navigate to="/pending" replace />} />
-            <Route path="/core" element={<CorePage />} />
+              <Route path="/core" element={<CorePage />} />
               <Route path="/datasources" element={<DataSourcesPage />} />
               <Route path="/diagnostics" element={<DiagnosticsPage />} />
               <Route path="/repos" element={<ReposPage />} />
@@ -295,12 +297,11 @@ function Shell() {
             </Routes>
           </ErrorBoundary>
         </main>
-      </div>
-    </div>
+      </Layout>
+    </Layout>
   );
 }
 
-// 运行历史是 snapshot 取证视图：其他数据源不提供 run 级全量历史，如实说明而非伪装空列表
 function RunsHistoryRoute() {
   const config = useAppConfig();
   const { source } = useDataSource(config);

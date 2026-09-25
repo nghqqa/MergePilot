@@ -1,3 +1,4 @@
+import { Typography } from 'antd';
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { useAppConfig } from '../App.jsx';
@@ -14,14 +15,10 @@ export default function DataSourcesPage() {
 
   return (
     <div>
-      <div className="page-head">
-        <div>
-          <h1>数据源与联调</h1>
-          <p className="page-sub">
+      <Typography.Title level={1} style={{ fontSize: 24, marginBottom: 4 }}>数据源与联调</Typography.Title>
+      <Typography.Paragraph type="secondary">
             当前数据从哪来、能做什么、哪些能力还在等待后端。术语的完整定义见下方说明。
-          </p>
-        </div>
-      </div>
+          </Typography.Paragraph>
 
       <div className="panel" style={{ padding: 'var(--sp-4)' }}>
         <WorkspacePanel config={config} auth={auth} onRetry={auth.refresh} />

@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, ArrowUpRight, Inbox, Search } from 'lucide-react';
+import { Alert, Button, Input, Select, Table, Tag, Typography } from 'antd';
 import { useAppConfig } from '../App.jsx';
 import { fetchRunsSnapshotOnce, useDataSource, useSourceQuery } from '../hooks.js';
 import { groupRunsByPr } from '../pr-model.js';
@@ -132,21 +133,16 @@ export default function PendingPage() {
 
   return (
     <div>
-      <div className="page-head">
-        <div>
-          <h1>待处理</h1>
-          <p className="page-sub">
-            需要人工处理的事项：等待决策的审查发现、失败或卡住的执行、等待审批的票据。
-            历史记录里的旧结论不会出现在这里。
-          </p>
-        </div>
-      </div>
+      <Typography.Title level={1} style={{ fontSize: 24, marginBottom: 4 }}>待处理</Typography.Title>
+      <Typography.Paragraph type="secondary">
+        需要人工处理的事项：等待决策的审查发现、失败或卡住的执行、等待审批的票据。
+        历史记录里的旧结论不会出现在这里。
+      </Typography.Paragraph>
 
       {q.status === 'error' ? (
         kind !== 'snapshot' && q.error?.status === 404 ? (
-          <div className="state-box state-warn" role="status">
-            当前数据源没有待办数据（404）——不回退到历史快照。返回 <Link to="/repos">仓库</Link>。
-          </div>
+          <Alert type="warning" showIcon message="当前数据源没有待办数据（404）——不回退到历史快照。"
+            description={<Link to="/repos">返回仓库</Link>} />
         ) : (
           <ErrorBox error={q.error} onRetry={() => setAttempt((n) => n + 1)} />
         )
@@ -154,93 +150,58 @@ export default function PendingPage() {
         <SkeletonRows rows={5} cols={5} />
       ) : (
         <>
-          <div className="filter-bar" role="search" aria-label="待处理事项筛选">
-            <label className="f-field f-grow">
-              <span className="f-label">搜索</span>
-              <span className="search-wrap">
-                <Search size={14} strokeWidth={1.75} aria-hidden />
-                <input placeholder="仓库 / PR / 状态" value={filters.q}
-                  onChange={(e) => setFResetPage('q', e.target.value)} aria-label="搜索待处理事项" />
-              </span>
-            </label>
+          <div className="filter-bar" role="search" aria-label="待处理事项筛选" style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+            <Input allowClear placeholder="仓库 / PR / 状态" prefix={<Search size={14} aria-hidden />}
+                   value={filters.q} onChange={(e) => setFResetPage('q', e.target.value)}
+                   aria-label="搜索待处理事项" style={{ maxWidth: 280 }} />
             {repoOptions.length > 1 ? (
-              <label className="f-field">
-                <span className="f-label">仓库</span>
-                <select value={filters.repo} onChange={(e) => setFResetPage('repo', e.target.value)}
-                  aria-label="按仓库筛选">
-                  <option value="">全部仓库</option>
-                  {repoOptions.map((r) => <option key={r} value={r}>{r}</option>)}
-                </select>
-              </label>
+              <Select allowClear placeholder="全部仓库" value={filters.repo || undefined}
+                      onChange={(v) => setFResetPage('repo', v ?? '')} aria-label="按仓库筛选"
+                      style={{ minWidth: 180 }}
+                      options={repoOptions.map((r) => ({ value: r, label: r }))} />
             ) : null}
-            <label className="f-field">
-              <span className="f-label">严重度</span>
-              <select value={filters.severity} onChange={(e) => setFResetPage('severity', e.target.value)}
-                aria-label="按严重度筛选">
-                <option value="">全部</option>
-                <option value="HIGH">高</option>
-                <option value="MEDIUM">中</option>
-                <option value="LOW">低</option>
-                <option value="未分级">未分级</option>
-              </select>
-            </label>
-            <label className="f-field">
-              <span className="f-label">类型</span>
-              <select value={filters.kind} onChange={(e) => setFResetPage('kind', e.target.value)}
-                aria-label="按类型筛选">
-                <option value="">全部类型</option>
-                {Object.entries(KIND_LABEL).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
-              </select>
-            </label>
+            <Select allowClear placeholder="全部严重度" value={filters.severity || undefined}
+                    onChange={(v) => setFResetPage('severity', v ?? '')} aria-label="按严重度筛选"
+                    style={{ minWidth: 120 }}
+                    options={[['HIGH', '高'], ['MEDIUM', '中'], ['LOW', '低'], ['未分级', '未分级']].map(([v, l]) => ({ value: v, label: l }))} />
+            <Select allowClear placeholder="全部类型" value={filters.kind || undefined}
+                    onChange={(v) => setFResetPage('kind', v ?? '')} aria-label="按类型筛选"
+                    style={{ minWidth: 130 }}
+                    options={Object.entries(KIND_LABEL).map(([k, label]) => ({ value: k, label }))} />
           </div>
 
-          <div className="table-meta">
+          <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
             {filtered.length} 项待处理
             {kind === 'console-pg' ? '（审批待办来自隔离联调库——非真实生产待办）' : '（依据最近一次运行记录，非当前 head 结论）'}
-          </div>
+          </Typography.Paragraph>
 
-          {!filtered.length ? (
-            <div className="panel" style={{ padding: 'var(--sp-6)', textAlign: 'center' }}>
-              <Inbox size={22} strokeWidth={1.5} aria-hidden style={{ color: 'var(--c-text-3)' }} />
-              <p style={{ fontWeight: 600, margin: '8px 0 4px' }}>没有需要处理的事项</p>
-              <p className="muted" style={{ margin: '0 0 var(--sp-3)' }}>
-                可以去仓库按 PR 浏览，或在运行历史里检索完整记录。
-              </p>
-              <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
-                <Link className="btn" to="/repos">前往仓库</Link>
-                <Link className="btn" to="/runs">打开运行历史</Link>
-              </div>
-            </div>
-          ) : (
-            <div className="queue-list">
-              {filtered.map((it) => (
-                <div key={it.id + (it.kind ?? '')} className={`panel queue-item${it.fixture ? ' queue-item-fixture' : ''}`}>
-                  <div className="queue-main">
-                    <div className="queue-title-line">
-                      <span className={`chip ${it.kind === 'approval' ? 'chip-kind-approval' : 'chip-kind-review'}`}>
-                        {it.kindLabel}
-                      </span>
-                      <Link className="row-link cell-title truncate" to={it.href}>{it.title}</Link>
-                      {it.prNumber != null ? <span className="muted">#{it.prNumber}</span> : null}
-                      {it.fixture ? <span className="chip chip-fixture">联调数据</span> : null}
-                    </div>
-                    <div className="queue-sub">
-                      <span className="mono">{it.repo}</span>
-                      {it.prNumber != null ? null : null}
-                      <span> · {it.statusLabel}</span>
-                      {it.severity && SEV_LABEL[it.severity] ? (
-                        <span className={`sev-tag sev-${it.severity}`}>严重度：{SEV_LABEL[it.severity]}</span>
-                      ) : null}
-                      {it.at ? <span> · {fmtTime(it.at)}</span> : null}
-                    </div>
-                  </div>
-                  <Link className="btn btn-sm" to={it.href} aria-label={`打开：${it.title ?? it.repo}`}>
-                    打开 <ArrowRight size={12} strokeWidth={1.75} aria-hidden />
+          <Table
+            size="small" rowKey={(it) => it.id + (it.kind ?? '')}
+            pagination={{ pageSize: 20, hideOnSinglePage: true }}
+            dataSource={filtered}
+            locale={{ emptyText: '没有需要处理的事项' }}
+            columns={[
+              { title: '类型', dataIndex: 'kindLabel', width: 100,
+                render: (v, it) => <Tag color={it.kind === 'approval' ? 'processing' : 'warning'}>{v}</Tag> },
+              { title: '事项', ellipsis: true,
+                render: (_, it) => (
+                  <Link className="row-link truncate" to={it.href}>{it.title}</Link>
+                ) },
+              { title: '仓库', dataIndex: 'repo', width: 220, ellipsis: true,
+                render: (v) => <span className="mono">{v}</span> },
+              { title: '状态', dataIndex: 'statusLabel', ellipsis: true },
+              { title: '严重度', dataIndex: 'severity', width: 100,
+                render: (v) => (v && SEV_LABEL[v] ? <Tag color={v === 'HIGH' ? 'error' : v === 'MEDIUM' ? 'warning' : 'processing'}>{SEV_LABEL[v]}</Tag> : '—') },
+              { title: '时间', dataIndex: 'at', width: 160,
+                render: (v) => (v ? <span className="mono">{fmtTime(v)}</span> : '—') },
+              { title: '', width: 90,
+                render: (_, it) => (
+                  <Link to={it.href} aria-label={`打开：${it.title ?? it.repo}`}>
+                    <Button size="small">打开 <ArrowRight size={12} strokeWidth={1.75} aria-hidden /></Button>
                   </Link>
-                </div>
-              ))}
-            </div>
-          )}
+                ) },
+            ]}
+          />
         </>
       )}
     </div>

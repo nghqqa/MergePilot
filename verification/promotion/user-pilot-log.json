@@ -33,5 +33,5 @@
    "reason": "browser + MinIO + rollback executed as separate scripted steps this round; results recorded in report"
   }
  ],
- "finished_at": "2026-09-25T08:13:26.606Z"
+ "finished_at": "2026-09-25T08:31:03.615Z"
 }

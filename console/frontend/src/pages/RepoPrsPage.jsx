@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowRight, ArrowUpRight, Search } from 'lucide-react';
+import { Button as AButton, Input as AInput, Typography } from 'antd';
 import { useAppConfig } from '../App.jsx';
 import { useDataSource, useScrollRestore, useSourceQuery } from '../hooks.js';
 import { paginate } from '../pr-model.js';
@@ -98,26 +99,13 @@ export default function RepoPrsPage() {
       ) : (
         <>
           <div className="filter-bar" role="search" aria-label="PR 筛选">
-            <label className="f-field f-grow">
-              <span className="f-label">搜索</span>
-              <span className="search-wrap">
-                <Search size={14} strokeWidth={1.75} aria-hidden />
-                <input
-                  placeholder="PR 标题 / 编号 / head SHA / run_id"
-                  value={q}
-                  onChange={(e) => setParam('q', e.target.value)}
-                  aria-label="在本仓库的 PR 中搜索"
-                />
-              </span>
-            </label>
-            <button
-              type="button"
-              className={`qf-chip${attentionOnly ? ' qf-active' : ''}`}
-              onClick={() => setParam('attention', attentionOnly ? '' : '1')}
-              aria-pressed={attentionOnly}
-            >
-              需要处理
-            </button>
+            <AInput allowClear placeholder="PR 标题 / 编号 / head SHA / run_id"
+                    prefix={<Search size={14} strokeWidth={1.75} aria-hidden />}
+                    value={q} onChange={(e) => setParam('q', e.target.value)}
+                    aria-label="在本仓库的 PR 中搜索" style={{ maxWidth: 340 }} />
+            <AButton type={attentionOnly ? 'primary' : 'default'}
+                     onClick={() => setParam('attention', attentionOnly ? '' : '1')}
+                     aria-pressed={attentionOnly}>需要处理</AButton>
           </div>
 
           <div className="table-meta">

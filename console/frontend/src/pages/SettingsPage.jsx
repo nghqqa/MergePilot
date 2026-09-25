@@ -1,3 +1,4 @@
+import { Typography } from 'antd';
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../auth.jsx';
 import { api } from '../api.js';
@@ -24,12 +25,8 @@ export default function SettingsPage() {
 
   return (
     <div>
-      <div className="page-head">
-        <div>
-          <h1>设置</h1>
-          <p className="page-sub">数据模式、会话与运行边界。</p>
-        </div>
-      </div>
+      <Typography.Title level={1} style={{ fontSize: 24, marginBottom: 4 }}>设置</Typography.Title>
+      <Typography.Paragraph type="secondary">数据模式、会话与运行边界。</Typography.Paragraph>
 
       <section className="section">
         <div className="section-head"><h3>会话</h3></div>

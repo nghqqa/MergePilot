@@ -1,3 +1,4 @@
+import { Typography } from 'antd';
 import React, { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
@@ -86,7 +87,7 @@ function PgPrDetail({ owner, name, prNumber }) {
 
       <div className="detail-head">
         <div className="detail-head-main">
-          <h1 className="detail-title">{view.title ?? `PR #${view.prNumber}`}</h1>
+          <h1 className="detail-title" style={{ fontSize: 24 }}>{view.title ?? `PR #${view.prNumber}`}</h1>
           <div className="detail-chips">
             <span className="chip">PR #{view.prNumber}</span>
             <span className="chip mono truncate">{repo}</span>
@@ -239,7 +240,7 @@ function SnapshotPrDetail({ owner, name, prNumber }) {
 
       <div className="detail-head">
         <div className="detail-head-main">
-          <h1 className="detail-title">{pr.title ?? `PR #${pr.prNumber}`}</h1>
+          <h1 className="detail-title" style={{ fontSize: 24 }}>{pr.title ?? `PR #${pr.prNumber}`}</h1>
           <div className="detail-chips">
             <span className="chip">PR #{pr.prNumber}</span>
             <span className="chip mono truncate">{repo}</span>
@@ -414,7 +415,7 @@ function ContractPrDetail({ owner, name, prNumber }) {
 
       <div className="detail-head">
         <div className="detail-head-main">
-          <h1 className="detail-title">{view.title ?? `PR #${view.prNumber}`}</h1>
+          <h1 className="detail-title" style={{ fontSize: 24 }}>{view.title ?? `PR #${view.prNumber}`}</h1>
           <div className="detail-chips">
             <span className="chip">PR #{view.prNumber}</span>
             <span className="chip mono truncate">{repo}</span>

@@ -1,3 +1,4 @@
+import { Typography } from 'antd';
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { useAppConfig } from '../App.jsx';
@@ -25,14 +26,10 @@ export default function DiagnosticsPage() {
 
   return (
     <div>
-      <div className="page-head">
-        <div>
-          <h1>审计诊断</h1>
-          <p className="page-sub">
+      <Typography.Title level={1} style={{ fontSize: 24, marginBottom: 4 }}>审计诊断</Typography.Title>
+      <Typography.Paragraph type="secondary">
             接线状态、后端健康与审计记录入口。异常时先看这里判断"是坏了"还是"还没接"。
-          </p>
-        </div>
-      </div>
+          </Typography.Paragraph>
 
       <section className="section">
         <div className="section-head"><h3>当前状态</h3></div>

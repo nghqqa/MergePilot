@@ -113,10 +113,11 @@ a:hover { text-decoration: underline; text-underline-offset: 2px; }
 }
 
 /* ---- 布局 ---- */
-.app { display: flex; height: 100vh; }
+/* V2: .app flex 由 antd Layout 接管；此类保留给非迁移页兜底 */
+.app.ant-layout { display: flex; }
 
-.sidebar {
-  width: 236px; flex: 0 0 236px;
+.sidebar.ant-layout-sider {
+  flex: 0 0 216px;
   background: var(--c-nav); color: var(--c-nav-text);
   display: flex; flex-direction: column;
 }
@@ -672,17 +673,12 @@ td.th-right { text-align: right; }
 .login-scope strong { font-size: var(--fs-xs); color: var(--c-text); font-weight: var(--fw-semibold); }
 .login-demo { margin-top: 14px; padding-top: 12px; border-top: var(--border-w) solid var(--c-border); }
 
-/* ---- 小屏：侧栏转为抽屉（文字标签始终可见，不再折叠为纯图标） ---- */
+/* ---- 小屏：导航由 antd Drawer 承载（文字标签恒可见）；此处仅保留内容区适配 ---- */
 @media (max-width: 960px) {
-  .sidebar { position: fixed; inset: 0 auto 0 0; width: 232px; z-index: 40;
-    transform: translateX(-100%); transition: transform 160ms ease-out; }
-  .app.nav-open .sidebar { transform: translateX(0); box-shadow: var(--shadow-drawer); }
-  .nav-menu-btn { display: inline-flex; }
   .content { padding: 14px 14px 40px; }
   .timeline-ts { width: 108px; flex: 0 0 108px; }
   .detail-head { flex-direction: column; }
 }
-@media (min-width: 961px) { .nav-backdrop { display: none; } }
 @media (max-width: 700px) {
   /* 触控目标下限 44px */
   .btn, .nav-item, .tab, .qf-chip { min-height: var(--tap); }

@@ -2,10 +2,10 @@
   "$schema": "http://cyclonedx.org/schema/bom-1.7.schema.json",
   "bomFormat": "CycloneDX",
   "specVersion": "1.7",
-  "serialNumber": "urn:uuid:d8a744ec-1362-42e7-a79b-dd732b98e95a",
+  "serialNumber": "urn:uuid:761fbb32-45a3-42af-a004-3b027c274ae5",
   "version": 1,
   "metadata": {
-    "timestamp": "2026-09-25T07:22:00+00:00",
+    "timestamp": "2026-09-25T08:35:20+00:00",
     "tools": {
       "components": [
         {
@@ -20,10 +20,10 @@
       ]
     },
     "component": {
-      "bom-ref": "pkg:oci/mp-canonical-console@sha256:3f1a228d4f8672246c695a43bedbee1015b36ccd829041112aff84c3ff9b6c09?arch=amd64&repository_url=index.docker.io%2Flibrary%2Fmp-canonical-console",
+      "bom-ref": "pkg:oci/mp-canonical-console@sha256:ca7832ff3bc5c9f85c6b273895208edd1cd592e67bc638ad30f5adec208de9c1?arch=amd64&repository_url=index.docker.io%2Flibrary%2Fmp-canonical-console",
       "type": "container",
       "name": "mp-canonical-console:candidate",
-      "purl": "pkg:oci/mp-canonical-console@sha256:3f1a228d4f8672246c695a43bedbee1015b36ccd829041112aff84c3ff9b6c09?arch=amd64&repository_url=index.docker.io%2Flibrary%2Fmp-canonical-console",
+      "purl": "pkg:oci/mp-canonical-console@sha256:ca7832ff3bc5c9f85c6b273895208edd1cd592e67bc638ad30f5adec208de9c1?arch=amd64&repository_url=index.docker.io%2Flibrary%2Fmp-canonical-console",
       "properties": [
         {
           "name": "aquasecurity:trivy:DiffID",
@@ -32,10 +32,6 @@
         {
           "name": "aquasecurity:trivy:DiffID",
           "value": "sha256:3d632e9ec8321287436eda837f83bd38983848ede025d37d27bd5af3078a9140"
-        },
-        {
-          "name": "aquasecurity:trivy:DiffID",
-          "value": "sha256:404813c053281985063589e216164c8a10d84f8701a3c2538719883b63621148"
         },
         {
           "name": "aquasecurity:trivy:DiffID",
@@ -63,7 +59,11 @@
         },
         {
           "name": "aquasecurity:trivy:DiffID",
-          "value": "sha256:c4f58c9347bc67bbce6eb2278ad875824483a1508508b1c4eb328be55ce09e3f"
+          "value": "sha256:bb616cead7065c155e117756beeccdfa38f1b1b0ecc8b9f4b038378533027c32"
+        },
+        {
+          "name": "aquasecurity:trivy:DiffID",
+          "value": "sha256:e8dc6d82d3b51f4a65dfe0397291d20cddaea5c5cebaae7c3272f790a16b7655"
         },
         {
           "name": "aquasecurity:trivy:DiffID",
@@ -71,7 +71,7 @@
         },
         {
           "name": "aquasecurity:trivy:ImageID",
-          "value": "sha256:3f1a228d4f8672246c695a43bedbee1015b36ccd829041112aff84c3ff9b6c09"
+          "value": "sha256:ca7832ff3bc5c9f85c6b273895208edd1cd592e67bc638ad30f5adec208de9c1"
         },
         {
           "name": "aquasecurity:trivy:Reference",
@@ -79,7 +79,7 @@
         },
         {
           "name": "aquasecurity:trivy:RepoDigest",
-          "value": "mp-canonical-console@sha256:3f1a228d4f8672246c695a43bedbee1015b36ccd829041112aff84c3ff9b6c09"
+          "value": "mp-canonical-console@sha256:ca7832ff3bc5c9f85c6b273895208edd1cd592e67bc638ad30f5adec208de9c1"
         },
         {
           "name": "aquasecurity:trivy:RepoTag",
@@ -91,14 +91,14 @@
         },
         {
           "name": "aquasecurity:trivy:Size",
-          "value": "172809216"
+          "value": "173630976"
         }
       ]
     }
   },
   "components": [
     {
-      "bom-ref": "6f4f89ce-0c24-4967-bc36-c63f7b77afa0",
+      "bom-ref": "e7e7cc41-d34f-4a75-a23d-cdfb7baa15b9",
       "type": "operating-system",
       "name": "alpine",
       "version": "3.24.2",
@@ -1592,7 +1592,7 @@
   ],
   "dependencies": [
     {
-      "ref": "6f4f89ce-0c24-4967-bc36-c63f7b77afa0",
+      "ref": "e7e7cc41-d34f-4a75-a23d-cdfb7baa15b9",
       "dependsOn": [
         "pkg:apk/alpine/alpine-baselayout@3.7.2-r1?arch=x86_64&distro=3.24.2",
         "pkg:apk/alpine/alpine-release@3.24.2-r0?arch=x86_64&distro=3.24.2",
@@ -1780,9 +1780,9 @@
       "dependsOn": []
     },
     {
-      "ref": "pkg:oci/mp-canonical-console@sha256:3f1a228d4f8672246c695a43bedbee1015b36ccd829041112aff84c3ff9b6c09?arch=amd64&repository_url=index.docker.io%2Flibrary%2Fmp-canonical-console",
+      "ref": "pkg:oci/mp-canonical-console@sha256:ca7832ff3bc5c9f85c6b273895208edd1cd592e67bc638ad30f5adec208de9c1?arch=amd64&repository_url=index.docker.io%2Flibrary%2Fmp-canonical-console",
       "dependsOn": [
-        "6f4f89ce-0c24-4967-bc36-c63f7b77afa0",
+        "e7e7cc41-d34f-4a75-a23d-cdfb7baa15b9",
         "pkg:npm/mergepilot-console-runtime@1.0.0",
         "pkg:npm/pg-cloudflare@1.4.0",
         "pkg:npm/pg-connection-string@2.14.0",
