@@ -42,9 +42,9 @@ export default function CorePage() {
     try {
       const [pulls, pending, tickets, evidence, audit] = await Promise.all([
         apiGet('/api/pulls'), apiGet('/api/pending'), apiGet('/api/tickets'),
-        apiGet('/api/evidence'), apiGet('/api/audit'),
+        apiGet('/api/evidence'), apiGet('/api/audit'), apiGet('/api/fxv/attempts').catch(() => ({ source: 'FETCH_ERROR', attempts: [] })),
       ]);
-      setData({ pulls, pending, tickets, evidence, audit });
+      setData({ pulls, pending, tickets, evidence, audit, fxv });
       setLastRefresh(new Date().toLocaleTimeString());
     } catch (e) {
       setError(e);
@@ -148,6 +148,21 @@ export default function CorePage() {
                 render: (_, r) => <span className="mono">{JSON.stringify(r.decision).slice(0, 90)}</span> },
               { title: '时间', dataIndex: 'created_at', width: 170,
                 render: (v) => (v ? new Date(v).toLocaleString() : '') },
+            ]}
+          />
+          <Typography.Title level={3} style={{ marginTop: 20 }}>FXV 修复编排</Typography.Title>
+          <Table
+            size="small" rowKey="attempt_id" pagination={false}
+            dataSource={data.fxv?.attempts || []}
+            locale={{ emptyText: data.fxv?.source === 'POSTGRESQL_LIVE' ? '没有修复编排记录（诚实零值）' : `FXV 数据源=${data.fxv?.source || '未知'}（不伪造记录）` }}
+            columns={[
+              { title: 'Attempt', dataIndex: 'attempt_id', ellipsis: true, render: (v) => <span className="mono">{v}</span> },
+              { title: '仓库/分支', ellipsis: true, render: (_, r) => `${r.repo}@${r.branch}` },
+              { title: '状态', dataIndex: 'state', width: 150,
+                render: (v) => <Tag color={STATUS_META[v]?.tone || 'default'}>{STATUS_META[v]?.label ?? v}</Tag> },
+              { title: '最近原因', dataIndex: 'last_reason', ellipsis: true },
+              { title: '更新', dataIndex: 'updated_at', width: 170,
+                render: (v) => (v ? new Date(v).toLocaleString() : '—') },
             ]}
           />
         </>

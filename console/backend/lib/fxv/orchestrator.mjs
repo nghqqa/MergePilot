@@ -152,6 +152,8 @@ export async function runPipeline(store, cfg, handlers, attemptId, actor = 'fxv-
         {
           const r = await step('generatePatch', STATES.APPROVED, STATES.PATCH_GENERATING, async () => {
             const out = await handlers.generatePatch(cur);
+            if (!out.patch_text || !String(out.patch_text).trim()) throw Object.assign(
+              new Error('patch is empty (no changes produced)'), { code: 'PATCH_EMPTY' });
             if (out.patch_digest !== cur.patch_digest) throw Object.assign(
               new Error(`digest drift: filed=${cur.patch_digest} produced=${out.patch_digest}`), { code: 'DIGEST_DRIFT' });
             const leak = secretShapedIn(out.patch_text ?? '');

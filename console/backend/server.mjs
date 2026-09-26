@@ -18,6 +18,7 @@ import { buildRunRecord, buildRunDetail } from './lib/runs.mjs';
 import { login, logout, getSession, sessionBody, anonymousBody, tokenFromCookieHeader,
   repoAllowlist, sessionTtlMs } from './lib/session.mjs';
 import { corePilotState, overviewState } from './lib/core-pilot.mjs';
+import { fxvAttempts } from './lib/fxv/api.mjs';
 
 function readJsonBody(req, limit = 64 * 1024) {
   return new Promise((resolve, reject) => {
@@ -305,6 +306,13 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
       if (!auth) return sendJson(res, 401, anonymousBody());
       const ov = await overviewState(auth.repos);
       return sendJson(res, 200, ov);
+    }
+    if (p === '/api/fxv/attempts' && req.method === 'GET') {
+      const auth = getSession(tokenFromCookieHeader(req.headers.cookie));
+      if (!auth) return sendJson(res, 401, anonymousBody());
+      const r = await fxvAttempts(process.env.CONSOLE_PG_DSN, { limit: 50 });
+      const allow = new Set(auth.repos);
+      return sendJson(res, 200, { ...r, attempts: r.attempts.filter((a) => allow.has(a.repo)) });
     }
     if (['/api/pulls', '/api/pending', '/api/tickets', '/api/evidence', '/api/audit'].includes(p) && req.method === 'GET') {
       const auth = getSession(tokenFromCookieHeader(req.headers.cookie));
