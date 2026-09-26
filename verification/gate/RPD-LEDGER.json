@@ -91,7 +91,7 @@
       "rollback": "N/A (not deployed)"
     }
   ],
-  "overall_status": "DISTRIBUTION_PREPARED_WAITING_HUMAN_AUTH",
+  "overall_status": "REAL_PR_CANARY_WAITING_HUMAN_AUTH",
   "c_chain_gaps_kept_separate": [
     "approved model cache (operator-provided manifest + files)",
     "case_provider_metadata live contract-test attestation",
@@ -182,5 +182,13 @@
     "env_template": true,
     "cross_machine_verified": true,
     "authorization_items": 10
+  },
+  "real_pr_canary": {
+    "both_prs_findings": 0,
+    "finding_status": "真实 PR 无可修复 finding（sast_scan 零发现，不伪造）",
+    "path_a": "隔离 clone（零 GitHub 写入）— 可立即执行",
+    "path_b": "真实测试分支（需逐项授权）",
+    "fxv_chain": "READY（preflight+staging+canary 全过）",
+    "authorization_items": "见 REAL-PR-CANARY-AUTH-REQUEST.md"
   }
 }
