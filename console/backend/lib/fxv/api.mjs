@@ -7,8 +7,12 @@ export async function fxvAttempts(dsn, { limit = 50 } = {}) {
   try {
     await client.connect();
     const r = await client.query(
-      `SELECT attempt_id, ticket_id, repo, branch, state, updated_at, expires_at,
-              state_detail->>'last_reason' AS last_reason
+      `SELECT attempt_id, ticket_id, repo, branch, state, updated_at, created_at, expires_at,
+              attempts_count, state_detail->>'last_reason' AS last_reason,
+              state_detail->>'artifact_status' AS artifact_status,
+              state_detail->>'artifact_problem' AS artifact_problem,
+              state_detail->'artifacts' AS artifacts,
+              (SELECT count(*)::int FROM fxv.audit_events e WHERE e.attempt_id = fxv.attempts.attempt_id) AS audit_events
          FROM fxv.attempts ORDER BY updated_at DESC LIMIT $1`, [limit]);
     return { source: 'POSTGRESQL_LIVE', attempts: r.rows };
   } catch (e) {

@@ -19,6 +19,7 @@ import { login, logout, getSession, sessionBody, anonymousBody, tokenFromCookieH
   repoAllowlist, sessionTtlMs } from './lib/session.mjs';
 import { corePilotState, overviewState } from './lib/core-pilot.mjs';
 import { fxvAttempts } from './lib/fxv/api.mjs';
+import { fxvMetrics } from './lib/fxv/metrics.mjs';
 
 function readJsonBody(req, limit = 64 * 1024) {
   return new Promise((resolve, reject) => {
@@ -306,6 +307,11 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
       if (!auth) return sendJson(res, 401, anonymousBody());
       const ov = await overviewState(auth.repos);
       return sendJson(res, 200, ov);
+    }
+    if (p === '/api/fxv/metrics' && req.method === 'GET') {
+      const auth = getSession(tokenFromCookieHeader(req.headers.cookie));
+      if (!auth) return sendJson(res, 401, anonymousBody());
+      return sendJson(res, 200, await fxvMetrics(process.env.CONSOLE_PG_DSN));
     }
     if (p === '/api/fxv/attempts' && req.method === 'GET') {
       const auth = getSession(tokenFromCookieHeader(req.headers.cookie));

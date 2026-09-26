@@ -42,7 +42,7 @@ export default function CorePage() {
     try {
       const [pulls, pending, tickets, evidence, audit] = await Promise.all([
         apiGet('/api/pulls'), apiGet('/api/pending'), apiGet('/api/tickets'),
-        apiGet('/api/evidence'), apiGet('/api/audit'), apiGet('/api/fxv/attempts').catch(() => ({ source: 'FETCH_ERROR', attempts: [] })),
+        apiGet('/api/evidence'), apiGet('/api/audit'), Promise.all([apiGet('/api/fxv/attempts'), apiGet('/api/fxv/metrics').catch(() => null)]).then(([a, m]) => ({ ...a, metrics: m })),
       ]);
       setData({ pulls, pending, tickets, evidence, audit, fxv });
       setLastRefresh(new Date().toLocaleTimeString());
@@ -151,6 +151,14 @@ export default function CorePage() {
             ]}
           />
           <Typography.Title level={3} style={{ marginTop: 20 }}>FXV 修复编排</Typography.Title>
+          {data.fxv?.metrics?.alerts?.length ? (
+            <Alert type="warning" showIcon style={{ marginBottom: 12 }} message={`FXV 告警：${data.fxv.metrics.alerts.join('；')}`} />
+          ) : null}
+          {data.fxv?.metrics?.metrics ? (
+            <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
+              成功率 {data.fxv.metrics.metrics.success_rate ?? '—'} · 失败 {data.fxv.metrics.metrics.failed ?? 0} · 超时 {data.fxv.metrics.metrics.timeouts ?? 0} · digest 漂移 {data.fxv.metrics.metrics.digest_drifts ?? 0} · 并发冲突 {data.fxv.metrics.metrics.concurrent_conflicts ?? 0} · 恢复 {data.fxv.metrics.metrics.recoveries ?? 0} · P50/P95 {data.fxv.metrics.metrics.duration_s?.p50 ?? '—'}/{data.fxv.metrics.metrics.duration_s?.p95 ?? '—'}s
+            </Typography.Paragraph>
+          ) : null}
           <Table
             size="small" rowKey="attempt_id" pagination={false}
             dataSource={data.fxv?.attempts || []}
@@ -161,6 +169,9 @@ export default function CorePage() {
               { title: '状态', dataIndex: 'state', width: 150,
                 render: (v) => <Tag color={STATUS_META[v]?.tone || 'default'}>{STATUS_META[v]?.label ?? v}</Tag> },
               { title: '最近原因', dataIndex: 'last_reason', ellipsis: true },
+              { title: 'Artifact', dataIndex: 'artifact_status', width: 110,
+                render: (v) => <Tag color={v === 'OK' ? 'success' : v === 'FAILED' ? 'error' : 'default'}>{v || 'NONE'}</Tag> },
+              { title: '审计', dataIndex: 'audit_events', width: 70, render: (v) => v ?? 0 },
               { title: '更新', dataIndex: 'updated_at', width: 170,
                 render: (v) => (v ? new Date(v).toLocaleString() : '—') },
             ]}
