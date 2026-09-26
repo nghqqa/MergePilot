@@ -41,7 +41,9 @@ export function createArtifactStore({ endpoint, bucket, accessKey, secretKey, re
     const signing = hmac(hmac(hmac(hmac(`AWS4${creds.sk}`, date), creds.region), 's3'), 'aws4_request');
     const sig = crypto.createHmac('sha256', signing).update(sts).digest('hex');
     h.authorization = `AWS4-HMAC-SHA256 Credential=${creds.ak}/${scope}, SignedHeaders=${signedHeaders}, Signature=${sig}`;
-    const res = await fetchImpl(url, { method, headers: h, body });
+    let res;
+    try { res = await fetchImpl(url, { method, headers: h, body }); }
+    catch (e) { return { ok: false, status: 0, _network: String(e?.cause?.message || e?.message || e) }; }
     return res;
   }
 
@@ -103,6 +105,7 @@ export function attemptManifestKey(attemptId) { return `fxv/attempts/${attemptId
 export async function writeAttemptManifest(store, attempt, entries) {
   const manifest = { attempt_id: attempt.attempt_id, ticket_id: attempt.ticket_id, finding_id: attempt.finding_id,
     repo: attempt.repo, branch: attempt.branch, base_head_sha: attempt.base_head_sha, patch_digest: attempt.patch_digest,
+    pr: (attempt.state_detail && attempt.state_detail.pr) || null, run_id: (attempt.state_detail && attempt.state_detail.run_id) || attempt.receipt_id || null,
     state: attempt.state, entries, updated_at: new Date().toISOString() };
   const buf = Buffer.from(JSON.stringify(manifest, null, 2));
   const leak = artifactSecretShaped(buf.toString());

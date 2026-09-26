@@ -6,6 +6,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
 import crypto from 'node:crypto';
+import { recordArtifact } from '../archive.mjs';
 import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -33,19 +34,27 @@ function runWorker(script, payload, timeoutMs = 120_000) {
 
 const wsRoot = (root) => path.join(root, 'fxv-ws-' + crypto.randomBytes(6).toString('hex'));
 
-export function makeExecHandlers({ cfg, repoUrl, workspaceRoot = os.tmpdir(), testCmd }) {
+export function makeExecHandlers({ cfg, repoUrl, workspaceRoot = os.tmpdir(), testCmd, store = null, artifactStore = null }) {
   fs.mkdirSync(workspaceRoot, { recursive: true });
   let lastPatch = null;
   let lastVerifier = null;
+  let lastAttemptId = null;
   return {
     generatePatch: async (cur) => {
       const r = await runWorker(FIXER, {
         repo_url: repoUrl(cur.repo), base_head_sha: cur.base_head_sha,
-        finding: { file: cur.rule_file, pattern: cur.rule_pattern, replacement: cur.rule_replacement },
+        finding: { file: cur.rule_file ?? cur.state_detail?.rule_file, pattern: cur.rule_pattern ?? cur.state_detail?.rule_pattern, replacement: cur.rule_replacement ?? cur.state_detail?.rule_replacement },
         workspace: wsRoot(workspaceRoot),
       });
       if (!r.ok) throw Object.assign(new Error(`fixer: ${r.reason}`), { code: r.reason === 'EMPTY_PATCH' ? 'PATCH_EMPTY' : 'FIXER_FAILED' });
       lastPatch = r.patch_text;
+      lastAttemptId = cur.attempt_id;
+      if (store && artifactStore?.configured) {
+        await recordArtifact(store, cur.attempt_id, 'patch', () => artifactStore.putContent('patch',
+          JSON.stringify({ attempt_id: cur.attempt_id, ticket_id: cur.ticket_id, repo: cur.repo,
+            pr: cur.state_detail?.pr ?? null, base_head_sha: cur.base_head_sha,
+            patch_digest: r.patch_digest, patch_text: r.patch_text }, null, 2)));
+      }
       return { patch_text: r.patch_text, patch_digest: r.patch_digest };
     },
     dryRunApply: async (cur) => {
@@ -55,15 +64,27 @@ export function makeExecHandlers({ cfg, repoUrl, workspaceRoot = os.tmpdir(), te
         test_cmd: testCmd, workspace: wsRoot(workspaceRoot),
       });
       lastVerifier = r;
+      if (store && artifactStore?.configured) {
+        await recordArtifact(store, cur.attempt_id, 'verifier_verdict', () => artifactStore.putContent('verifier',
+          JSON.stringify({ attempt_id: cur.attempt_id, verdict: r.verdict, reason: r.reason,
+            evidence: r.evidence, independently_derived: true }, null, 2)));
+      }
       if (r.evidence?.applied !== true) {
         throw Object.assign(new Error(`verifier: ${r.reason} ${JSON.stringify(r.evidence||{}).slice(0,300)}`), { code: 'PATCH_NOT_APPLICABLE' });
       }
       return { applied: true, verdict: r.verdict };
     },
-    runTests: async () => lastVerifier
-      ? { passed: lastVerifier.verdict === 'VERIFIED', output: `${lastVerifier.reason}
-${lastVerifier.evidence?.output ?? ''}` }
-      : { passed: false, output: 'verifier result missing' },
+    runTests: async (cur) => {
+      const result = lastVerifier
+        ? { passed: lastVerifier.verdict === 'VERIFIED', output: `${lastVerifier.reason}\n${lastVerifier.evidence?.output ?? ''}` }
+        : { passed: false, output: 'verifier result missing' };
+      const aid = lastAttemptId || cur?.attempt_id;
+      if (store && artifactStore?.configured && aid) {
+        await recordArtifact(store, aid, 'test_results', () => artifactStore.putContent('tests',
+          JSON.stringify({ attempt_id: aid, harness: 'verifier-inprocess', ...result }, null, 2)));
+      }
+      return result;
+    },
   };
 }
 
