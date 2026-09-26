@@ -91,7 +91,7 @@
       "rollback": "N/A (not deployed)"
     }
   ],
-  "overall_status": "FXV_VERIFIED",
+  "overall_status": "FINAL_GATE_WAITING_HUMAN_AUTH",
   "c_chain_gaps_kept_separate": [
     "approved model cache (operator-provided manifest + files)",
     "case_provider_metadata live contract-test attestation",
@@ -156,5 +156,22 @@
     "production_deploy": "NOT allowed",
     "valid_until": "2026-10-03 or stop-condition",
     "source": "owner session explicit message"
+  },
+  "final_gate": {
+    "completed_at": "2026-09-26T07:30+08:00",
+    "verification": "10/10",
+    "fxv": "18/18",
+    "iso_chain_tests": "29/29",
+    "c_chain": "RAG_CASE_RETRIEVAL=BLOCKED (3 gaps)",
+    "image": "sha256:1056df76 Trivy 0",
+    "findings": [
+      {
+        "id": "FG-FB-01",
+        "severity": "P3",
+        "desc": "staging password in test scripts"
+      }
+    ],
+    "authorization_items": 12,
+    "overall": "PROJECT_AUTONOMOUS_CLOSURE_AUTHORIZATION_READY"
   }
 }
