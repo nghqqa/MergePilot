@@ -96,10 +96,10 @@
   },
   {
    "id": "M9",
-   "name": "本轮耗时 2171ms（含登录+7 面+A 链×2+logout+re-login）",
+   "name": "本轮耗时 1529ms（含登录+7 面+A 链×2+logout+re-login）",
    "pass": true
   }
  ],
- "duration_ms": 2171,
- "finished_at": "2026-09-26T02:27:57.801Z"
+ "duration_ms": 1529,
+ "finished_at": "2026-09-26T07:01:44.156Z"
 }
