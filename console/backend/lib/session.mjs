@@ -17,11 +17,19 @@ function secret() {
   return process.env.CONSOLE_SESSION_SECRET || '';
 }
 
+import { parseAccessModel, resolveRepos } from './permissions.mjs';
+
 export function consoleAuthConfigured() {
   return Boolean(secret() && process.env.CONSOLE_PILOT_USER && process.env.CONSOLE_PILOT_PASSWORD);
 }
 
 export function repoAllowlist() {
+  // 2026-09-26：配置访问模型时按主体解析（最小权限：模型内无此主体=空）；
+  // 未配置回落 legacy 单用户 allowlist。
+  const model = parseAccessModel();
+  if (model.mode === 'model') {
+    return resolveRepos(model, process.env.CONSOLE_PILOT_USER || '');
+  }
   return (process.env.CONSOLE_REPO_ALLOWLIST || '')
     .split(',').map((s) => s.trim()).filter(Boolean);
 }
