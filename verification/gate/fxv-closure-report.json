@@ -1,0 +1,153 @@
+{
+ "summary": {
+  "total": 27,
+  "pass": 27
+ },
+ "results": [
+  {
+   "id": "S2",
+   "name": "Receipt 生成（run/head/repo/finding 绑定）",
+   "pass": true
+  },
+  {
+   "id": "S3",
+   "name": "Fixer patch 生成 + artifact 绑定（repo/PR/head/run/ticket/attempt/sha）",
+   "pass": "8c9bb556139b455e1c5aa6b78d2bc92a5102aad014c26eb1d54ea912d397c589"
+  },
+  {
+   "id": "S4a",
+   "name": "文件 allowlist（patch 仅含目标文件）",
+   "pass": true
+  },
+  {
+   "id": "S4b",
+   "name": "realpath containment 修复",
+   "pass": true
+  },
+  {
+   "id": "S4c",
+   "name": "patch digest 一致",
+   "pass": true
+  },
+  {
+   "id": "S5",
+   "name": "测试执行（patch 后代码包含 containment）",
+   "pass": true
+  },
+  {
+   "id": "S6a",
+   "name": "Verifier 独立（无 fixer_reasoning）",
+   "pass": true
+  },
+  {
+   "id": "S6b",
+   "name": "Verifier test_results 来自 harness",
+   "pass": true
+  },
+  {
+   "id": "S6c",
+   "name": "Verifier 判定：VERIFIED",
+   "pass": true
+  },
+  {
+   "id": "S7",
+   "name": "审计完整（receipt→fixer→test→verifier 四阶段）",
+   "pass": true
+  },
+  {
+   "id": "S7b",
+   "name": "隔离 PG audit 可读",
+   "pass": true
+  },
+  {
+   "id": "S8",
+   "name": "重复运行 → 同一 ticket（幂等）",
+   "pass": true
+  },
+  {
+   "id": "S9",
+   "name": "并发竞争 → 仅一个执行",
+   "pass": true
+  },
+  {
+   "id": "S10",
+   "name": "重启恢复：artifact + receipt + audit 可读",
+   "pass": true
+  },
+  {
+   "id": "N1",
+   "name": "wrong repo → 拒绝",
+   "pass": true
+  },
+  {
+   "id": "N2",
+   "name": "wrong head → 拒绝",
+   "pass": true
+  },
+  {
+   "id": "N3",
+   "name": "stale head → 拒绝",
+   "pass": true
+  },
+  {
+   "id": "N4",
+   "name": "patch digest 漂移 → 检测",
+   "pass": true
+  },
+  {
+   "id": "N5",
+   "name": "空 diff → 拒绝",
+   "pass": true
+  },
+  {
+   "id": "N6",
+   "name": "无 receipt → REFUSED（结构强制：票据建票先于派发）",
+   "pass": true
+  },
+  {
+   "id": "N7",
+   "name": "测试失败 → REJECTED",
+   "pass": true
+  },
+  {
+   "id": "N8",
+   "name": "超时 → 拒绝",
+   "pass": true
+  },
+  {
+   "id": "N9",
+   "name": "重复 attempt → 幂等",
+   "pass": true
+  },
+  {
+   "id": "N10",
+   "name": "并发 claim → 单一执行",
+   "pass": true
+  },
+  {
+   "id": "S11",
+   "name": "真实 PR 零变化（4|0|2）",
+   "pass": true
+  },
+  {
+   "id": "S11b",
+   "name": "GitHub 写入 = 0",
+   "pass": true
+  },
+  {
+   "id": "S12",
+   "name": "回滚：工作区 + clone 零残留",
+   "pass": true
+  }
+ ],
+ "binding": {
+  "repo": "wookat/speaktype",
+  "pr": 426,
+  "head": "e123adcb9ab9d2bf7a97ed0556a6456b27529841",
+  "run_id": "run-fxv-closure-001",
+  "finding_id": "find-cwe22-001",
+  "ticket_id": "tkt-closure-4d48e8af36b1a106",
+  "attempt": 1
+ },
+ "finished_at": "2026-09-26T02:04:00.144Z"
+}
