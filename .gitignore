@@ -28,3 +28,18 @@ console/frontend/node_modules/
 
 # Mimosa 安全钩子本地状态
 .mimosa/
+
+# Internal-only (not for open-source release)
+distribution/internal/
+evidence/
+verification/
+pilot/
+release/
+benchmark/
+samples/
+skills/
+tools/
+tests/
+docs/productization/
+docs/showcase/
+docs/architecture-audit/
