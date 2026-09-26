@@ -24,7 +24,7 @@ Status: BLOCKED (3 gaps, all require operator action).
 
 ### Gap 1: Approved model cache
 - Requires: operator offline model acquisition + SHA256 manifest + signed approval
-- Template: verification/rag-artifacts/approved-cache-manifest.template.json
+- Template: included in deployment package (docs/secrets/)
 
 ### Gap 2: Provider metadata attestation
 - Requires: case_provider_metadata table + live contract tests + tests_attested=true
