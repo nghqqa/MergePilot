@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { redact, scanForSecrets, redactionMeta } from '../../evidence-adapter/redact.mjs';
 import { EVIDENCE_ROOT, resolveSourceRef } from '../../evidence-adapter/evidence.mjs';
 import { getReplayData, replayAudit } from '../../evidence-adapter/replay-provider.mjs';
+import { evidenceStatus } from '../../evidence-adapter/evidence.mjs';
 import { handle } from '../lib/api.mjs';
 
 // The RAG tool-span audit log is append-only by design and is tracked in git;
@@ -70,6 +71,53 @@ await test('scanForSecrets flags crafted leaks', () => {
   const hits = scanForSecrets('{"api_key": "AKIA-REDACTED-PLACEHOLDER-0001"}');
   assert.ok(hits.length > 0);
 });
+
+// ── 2026-09-26 公开 CI 降级：evidence 包不随公开仓库分发 ──
+// 第 2/3/4(全量)/5/15/7 节依赖竞赛期 evidence fixture；缺失时显式 SKIP（输出原因），
+// 改跑"降级契约"断言：空态诚实、无 mock 冒充、无泄密。不降低任何已运行检查的强度。
+const ES = evidenceStatus();
+if (!ES.available) {
+  console.log('== 2..7) SKIP — evidence packs not distributed in public repo ==');
+  console.log(`   reason: ${ES.reason}; missing: ${ES.missing.join(', ')}`);
+  console.log('   skipped: 2 replay integrity / 3 API smoke (replay) / 4 no-secret scan (full surface) / 5 credibility / 15 RAG / 7 finals tiers');
+
+  console.log('== 2d) degraded contract (public checkout) ==');
+  const qd = (obj = {}) => new Map(Object.entries(obj));
+  await test('degraded /api/health: ok + honest evidence_available=false + zero PR writes', async () => {
+    const r = await handle('GET', '/api/health', qd(), null);
+    assert.equal(r.status, 'ok');
+    assert.equal(r.degraded.evidence_available, false);
+    assert.equal(r.degraded.reason, 'EVIDENCE_PACKS_NOT_DISTRIBUTED');
+    assert.ok(r.constraints.pr_write_operations.includes('NONE'));
+  });
+  await test('degraded /api/cases: empty list + reason (no mock cases)', async () => {
+    const r = await handle('GET', '/api/cases', qd(), null);
+    assert.deepEqual(r.cases, []);
+    assert.equal(r.evidence_available, false);
+  });
+  await test('degraded case detail: 503 EVIDENCE_UNAVAILABLE (fail-closed, not 404-mock)', async () => {
+    await assert.rejects(
+      handle('GET', '/api/cases/pr2-high-risk-human-gate', qd(), null),
+      (e) => e.status === 503 && e.body?.error === 'EVIDENCE_UNAVAILABLE');
+  });
+  await test('degraded /api/modes: replay unavailable reported honestly', async () => {
+    const r = await handle('GET', '/api/modes', qd({ mode: 'live' }), null);
+    assert.equal(r.replay.available, false);
+    assert.equal(r.live.available, false);
+  });
+  await test('degraded no-secret scan on degraded responses', async () => {
+    for (const p of ['/api/health', '/api/modes', '/api/cases']) {
+      const r = await handle('GET', p, qd(), null);
+      const hits = scanForSecrets(JSON.stringify(r));
+      assert.equal(hits.length, 0, `secret-shaped leak in degraded ${p}`);
+    }
+  });
+
+  console.log(`
+selftest: ${passed} passed, ${failed} failed (+ explicit SKIPs: evidence-dependent sections)`);
+  if (failed > 0) { console.error(JSON.stringify(failures, null, 2)); process.exit(1); }
+  process.exit(0);
+}
 
 console.log('== 2) replay integrity ==');
 const data = getReplayData();

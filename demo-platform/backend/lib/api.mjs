@@ -5,7 +5,7 @@
 import { getReplayData, replayAudit } from '../../evidence-adapter/replay-provider.mjs';
 import { liveStatus, livePrState, liveApprovalTarget } from '../../evidence-adapter/live-provider.mjs';
 import { redact, redactionMeta, scanForSecrets } from '../../evidence-adapter/redact.mjs';
-import { EVIDENCE_ROOT, readText, resolveSourceRef, redactionStatusOf, integritySplit, EVIDENCE_DIRS } from '../../evidence-adapter/evidence.mjs';
+import { EVIDENCE_ROOT, readText, resolveSourceRef, redactionStatusOf, integritySplit, EVIDENCE_DIRS, evidenceStatus } from '../../evidence-adapter/evidence.mjs';
 import { datasetInventory, retrieve, answer, toolSpanTail, lastQueryMeta, RAG_DATA_MODE, EMBEDDING_BACKEND, RETRIEVAL_MODE, ingestExternalToolSpan } from './rag.mjs';
 import { polardbAudit, fixtureQuery, fixtureInventory } from './polardb.mjs';
 import { connectionState, evaluateLiveGates, SCHEMA_BASELINE, CANDIDATES, createBranch, validateMigration, assertData, rollbackCheck, branchState } from './polardb_adapter.mjs';
@@ -1085,6 +1085,25 @@ const routes = {
 
 // route dispatcher
 export async function handle(method, pathname, query, body) {
+  // 2026-09-26 诚实降级：公开 checkout 无 evidence 包时，只提供元路由的
+  // 诚实空态（绝不以 mock 冒充回放数据），其余回放路由明确 503。
+  const es = evidenceStatus();
+  if (!es.available && !pathname.startsWith('/api/demo/')) {
+    const degraded = { evidence_available: false, reason: es.reason, missing: es.missing };
+    if (pathname === '/api/health') {
+      return { status: 'ok', service: 'mergepilot-demo-backend', degraded,
+        constraints: { pr_write_operations: ['NONE'] } };
+    }
+    if (pathname === '/api/modes') {
+      return { degraded, replay: { available: false, reason: es.reason },
+        live: { available: false, sources: ['evidence packs not distributed in public repo'] } };
+    }
+    if (pathname === '/api/cases') {
+      return { cases: [], ...degraded, note: '公开仓库不分发竞赛期 evidence 包；本地完整回放见 evidence/ 目录说明' };
+    }
+    throw new ApiError(503, 'EVIDENCE_UNAVAILABLE',
+      `replay data unavailable in this checkout (${es.reason}); missing: ${es.missing.join(', ')}`);
+  }
   const key = `${method} ${pathname}`;
   if (routes[key]) return routes[key](query, {}, body);
   const m = pathname.match(/^\/api\/cases\/([^/]+)(\/[a-z]+)?$/);

@@ -10,6 +10,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { handle, redact } from './lib/api.mjs';
 import { getReplayData } from '../evidence-adapter/replay-provider.mjs';
+import { evidenceStatus } from '../evidence-adapter/evidence.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DIST = path.resolve(__dirname, '..', 'frontend', 'dist');
@@ -103,7 +104,14 @@ const server = http.createServer(async (req, res) => {
 });
 
 // startup self-checks: evidence integrity + replay source integrity
-const data = getReplayData();
+// 2026-09-26 公开 checkout（无 evidence 包）以降级模式启动；API 层给出诚实空态。
+const bootEvidence = evidenceStatus();
+let data = null;
+if (!bootEvidence.available) {
+  console.warn(`[boot] DEGRADED MODE — evidence packs not distributed (${bootEvidence.reason}); missing: ${bootEvidence.missing.join(', ')}`);
+  console.warn('[boot] replay API returns honest empty/503; /api/health reports degraded status.');
+} else {
+data = getReplayData();
 if (!data.integrity.all_ok) {
   console.error('[boot] WARNING: evidence SHA256SUMS drift detected:', JSON.stringify(data.integrity.dirs, null, 2));
 }
@@ -113,6 +121,7 @@ if (!data.replay_integrity.ok) {
 }
 console.log(`[boot] replay integrity OK — pr2 ${data.replay_integrity.events_pr2} events, pr3 ${data.replay_integrity.events_pr3} events, ${data.replay_integrity.source_refs_checked} source refs verified`);
 console.log(`[boot] evidence integrity: ${data.integrity.ok_files}/${data.integrity.total_files} files match SHA256SUMS`);
+}
 
 // Windows（Hyper-V/WSL NAT）常保留大段端口，4173 落在保留段时报 EACCES。
 // 策略：从 DEMO_PORT 起连续顺延最多 DEMO_PORT_TRIES-1 个端口；仍失败则交给

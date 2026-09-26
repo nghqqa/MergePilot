@@ -83,6 +83,19 @@ export function dirPath(key) {
   return path.join(EVIDENCE_ROOT, EVIDENCE_DIRS[key] ?? key);
 }
 
+// 2026-09-26 公开 CI 降级支持：竞赛期 evidence 包不随公开仓库分发。
+// 缺失时 demo-platform 以诚实降级模式启动（空态+原因），不伪造回放数据。
+export function evidenceStatus() {
+  const required = ['finalsPr2Sk3Traced', 'finalsPr3Sk3Traced'];
+  const missing = required.filter((k) => !fs.existsSync(dirPath(k)));
+  return {
+    available: missing.length === 0,
+    missing,
+    root: EVIDENCE_ROOT,
+    reason: 'EVIDENCE_PACKS_NOT_DISTRIBUTED',
+  };
+}
+
 export function exists(relKey, file = '') {
   try {
     fs.accessSync(path.join(dirPath(relKey), file));
