@@ -91,7 +91,7 @@
       "rollback": "N/A (not deployed)"
     }
   ],
-  "overall_status": "PILOT_CLOSED",
+  "overall_status": "WAITING_HUMAN_AUTH",
   "c_chain_gaps_kept_separate": [
     "approved model cache (operator-provided manifest + files)",
     "case_provider_metadata live contract-test attestation",
@@ -120,5 +120,21 @@
     "pass": 12,
     "total": 12,
     "stop": null
+  },
+  "autonomous_closure": {
+    "started_at": "2026-09-26T06:15+08:00",
+    "baseline": "544607d",
+    "completed_at": "2026-09-26T06:45+08:00",
+    "phases": {
+      "I_startup": "PASS",
+      "II_review_agent": "PASS",
+      "III_a_chain_closeout": "PASS (a_chain_disabled, 4-1-2 unchanged)",
+      "IV_fixer_preflight": "FIXER_PREFLIGHT_READY (11/11)",
+      "V_verifier_preflight": "VERIFIER_PREFLIGHT_READY (7/7)",
+      "VI_integration": "FIXER_VERIFIER_ISOLATED_INTEGRATION_READY (29/29)",
+      "VII_c_chain": "RAG_CASE_RETRIEVAL=BLOCKED (3 gaps unchanged)",
+      "VIII_image_distribution": "PASS (export/import digest match, Trivy 0)"
+    },
+    "overall": "WAITING_HUMAN_AUTHORIZATION"
   }
 }
