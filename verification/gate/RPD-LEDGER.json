@@ -91,7 +91,7 @@
       "rollback": "N/A (not deployed)"
     }
   ],
-  "overall_status": "REAL_PR_CANARY_WAITING_HUMAN_AUTH",
+  "overall_status": "RELEASE_CANDIDATE_READY",
   "c_chain_gaps_kept_separate": [
     "approved model cache (operator-provided manifest + files)",
     "case_provider_metadata live contract-test attestation",
