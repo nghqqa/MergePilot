@@ -8,6 +8,7 @@
 //   * 重启恢复：非终态 attempts 由 recover() 重新校验 TTL/head 并续跑或转 MANUAL_WAIT
 import { assertTargetAllowed } from './config.mjs';
 import { consumePipelineGrant, makeWriteGate } from './github-gate.mjs';
+import { enforceGate } from '../cchain/wiring.mjs';
 
 export const STATES = Object.freeze({
   FILED: 'FILED',                          // 票据立案（绑定字段已固化）
@@ -119,6 +120,18 @@ export async function runPipeline(store, cfg, handlers, attemptId, actor = 'fxv-
   const ctx = () => store.getAttempt(attemptId);
   let cur = await ctx();
   if (!cur) throw new TransitionConflict('attempt_not_found', { attemptId });
+  // C 链 enforcement gate（默认 off）：MERGEPILOT_CCHAIN_ENFORCE=1 或 cfg.cchain_enforce
+  // 时，C 链未 READY → 拒绝启动（不转迁状态，attempt 留在 FILED 按 TTL 诚实到期）。
+  // cfg.cchain_env 仅供测试注入隔离 env；生产读 process.env。
+  const gate = await enforceGate(cfg?.cchain_env ?? process.env, cfg?.cchain_enforce);
+  if (gate.enforced && !gate.allowed) {
+    try {
+      await store.recordEvent({ attempt_id: attemptId, kind: 'CCHAIN_ENFORCED_BLOCK',
+        actor, reason: 'cchain not READY — run start refused',
+        meta: { blocked_conditions: gate.blocked_conditions } });
+    } catch { /* 审计失败不解除拦截（fail-closed），错误由上层日志呈现 */ }
+    return { blocked: 'CCHAIN_BLOCKED', blocked_conditions: gate.blocked_conditions };
+  }
   const allow = assertTargetAllowed(cfg, cur.repo, cur.branch);
   if (!allow.ok) return toTerminal(store, cur, STATES.ERROR_FATAL, actor, allow.reason, { ...allow, repo: undefined, allowlist: allow.allowlist?.length });
 

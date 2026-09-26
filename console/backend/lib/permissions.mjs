@@ -7,8 +7,10 @@
 //     "branches":["main"],"can_fxv":true,"roles":["viewer"]},
 //    {"subject":"eng","kind":"team","repos":["acme/app","acme/lib"],"branches":["*"]}]
 //
-// 已知边界（诚实登记）：多凭证认证（每用户独立密码/OIDC）未接线（G-07）——
-// 当前模型决定"已认证会话映射到某主体后可见/可做什么"，不决定"谁能登录"。
+// 已知边界（诚实登记，2026-09-26 G-07 已接线后更新）：每用户独立口令多凭证
+// 已接线（CONSOLE_ACCESS_MODEL_JSON + CONSOLE_USER_CREDENTIALS_JSON，session.mjs）；
+// 仍缺：OIDC/外部 IdP、自助凭证管理接口。本模型决定"已认证会话映射到某主体后
+// 可见/可做什么"；"谁能登录"由凭据表（env，绝不入库入仓）决定。
 export function parseAccessModel(env = process.env) {
   const raw = env.CONSOLE_ACCESS_MODEL_JSON;
   if (!raw) return { mode: 'legacy', entries: [] };
