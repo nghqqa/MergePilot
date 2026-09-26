@@ -42,4 +42,7 @@ export const api = {
   evidenceDownloadUrl: (packId, path) =>
     `/api/runs/${encodeURIComponent(packId)}/evidence/download?path=${encodeURIComponent(path)}`,
   integrity: (packId) => get(`/api/runs/${encodeURIComponent(packId)}/integrity`),
+  // C 链（cchain）真实状态/指标（B 轨接线；BLOCKED 即如实显示 BLOCKED）
+  cchainStatus: () => get('/api/cchain/status'),
+  cchainMetrics: () => get('/api/cchain/metrics'),
 };

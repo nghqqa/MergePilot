@@ -8,7 +8,7 @@ import { Layout, Menu as AntMenu, Drawer, Button } from 'antd';
 import {
   InboxOutlined, FolderOpenOutlined, HistoryOutlined, AuditOutlined,
   DashboardOutlined, DatabaseOutlined, ApiOutlined, MedicineBoxOutlined,
-  SettingOutlined, MenuOutlined, AppstoreOutlined,
+  SettingOutlined, MenuOutlined, AppstoreOutlined, SafetyCertificateOutlined,
 } from '@ant-design/icons';
 import { api } from './api.js';
 import { AuthProvider, useAuth } from './auth.jsx';
@@ -18,6 +18,7 @@ import { resolveWorkspaceState, WorkspacePanel } from './components/WorkspaceSta
 import RunsPage from './pages/RunsPage.jsx';
 import RunDetailPage from './pages/RunDetailPage.jsx';
 import DataSourcesPage from './pages/DataSourcesPage.jsx';
+import CChainPage from './pages/CChainPage.jsx';
 import DiagnosticsPage from './pages/DiagnosticsPage.jsx';
 import ReposPage from './pages/ReposPage.jsx';
 import RepoPrsPage from './pages/RepoPrsPage.jsx';
@@ -68,6 +69,7 @@ const SYSTEM_NAV = [
   { to: '/core', label: '系统状态', icon: DashboardOutlined, end: true },
   { to: '/knowledge', label: '知识库', icon: DatabaseOutlined, end: true },
   { to: '/datasources', label: '数据源', icon: ApiOutlined, end: true },
+  { to: '/cchain', label: 'C 链', icon: SafetyCertificateOutlined, end: true },
   { to: '/diagnostics', label: '诊断', icon: MedicineBoxOutlined, end: true },
   { to: '/settings', label: '设置', icon: SettingOutlined, end: true },
 ];
@@ -284,6 +286,7 @@ function Shell() {
               <Route path="/overview" element={<OverviewPage />} />
               <Route path="/core" element={<CorePage />} />
               <Route path="/datasources" element={<DataSourcesPage />} />
+              <Route path="/cchain" element={<CChainPage />} />
               <Route path="/diagnostics" element={<DiagnosticsPage />} />
               <Route path="/repos" element={<ReposPage />} />
               <Route path="/repos/:owner/:name" element={<RepoPrsPage />} />

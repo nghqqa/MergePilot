@@ -1,5 +1,11 @@
 # FXV 受控生产试点发行包（CONTROLLED_PRODUCTION_PILOT）。镜像按 digest 固定。
 # 独立 PG/MinIO/Console/网络/卷；dry-run 默认开、GitHub 写默认关。
+# B 轨加固（feat/core-b-parallel 2026-09-26）：
+#   * minio digest 由占位符改为真实 pin（与受控 staging 验证所用同源）；
+#   * console 必须 CONSOLE_HOST=0.0.0.0（容器内 127.0.0.1 会导致端口映射不可达）；
+#   * console 增加 healthcheck（wget /api/health）、depends_on minio healthy；
+#   * C 链 env 透传（model cache / keystore / provider attestation / enforce）；
+#   * G-07 多凭证 env 透传（CONSOLE_ACCESS_MODEL_JSON / CONSOLE_USER_CREDENTIALS_JSON）。
 services:
   pg:
     image: postgres:16-alpine
@@ -9,7 +15,8 @@ services:
     healthcheck: { test: ["CMD-SHELL", "pg_isready -U postgres"], interval: 10s, timeout: 5s, retries: 5 }
     networks: [fxv-pilot-net]
   minio:
-    image: minio/minio:latest@sha256:_NO-pin-placeholder # 部署时替换为 digest（见 OPERATIONS.md）
+    # digest pin：与受控 staging 验证同源镜像（curl 健康检查已实测 200）
+    image: elestio/minio@sha256:25348a257f1ece1b192f25f6cd9854618fa86422ac87b494b5d4e629c556d4bd
     restart: unless-stopped
     command: server /data
     environment: { MINIO_ROOT_USER: "${FXV_MINIO_USER}", MINIO_ROOT_PASSWORD: "${FXV_MINIO_PASSWORD}" }
@@ -19,21 +26,37 @@ services:
   console:
     image: ghcr.io/nghqqa/mergepilot-console@sha256:947ab1b69cdf76fce1a19f18f04021f96bfc326cdc11b378b2775787240083f2
     restart: unless-stopped
-    depends_on: { pg: { condition: service_healthy } }
+    depends_on:
+      pg: { condition: service_healthy }
+      minio: { condition: service_healthy }
     environment:
       CONSOLE_PG_DSN: "postgres://postgres:${FXV_PG_PASSWORD}@pg:5432/fxv"
+      # 容器内必须 0.0.0.0：默认 127.0.0.1 时宿主端口映射不可达（staging 实测坑）
+      CONSOLE_HOST: "0.0.0.0"
       CONSOLE_PILOT_USER: "${FXV_CONSOLE_USER}"
       CONSOLE_PILOT_PASSWORD: "${FXV_CONSOLE_PASSWORD}"
       CONSOLE_SESSION_SECRET: "${FXV_SESSION_SECRET}"
       CONSOLE_REPO_ALLOWLIST: "${FXV_REPO_ALLOWLIST}"
+      # G-07 多凭证（可选；未配置回落 legacy 单用户）
+      CONSOLE_ACCESS_MODEL_JSON: "${FXV_ACCESS_MODEL_JSON:-}"
+      CONSOLE_USER_CREDENTIALS_JSON: "${FXV_USER_CREDENTIALS_JSON:-}"
       FXV_S3_ENDPOINT: "http://minio:9000"
       FXV_S3_BUCKET: "${FXV_S3_BUCKET}"
       FXV_S3_ACCESS_KEY: "${FXV_MINIO_USER}"
       FXV_S3_SECRET_KEY: "${FXV_MINIO_PASSWORD}"
+      # C 链（默认全部未配置 → /api/cchain/status 如实 BLOCKED；绝不伪造 READY）
+      MERGEPILOT_MODEL_CACHE_DIR: "${FXV_MODEL_CACHE_DIR:-/data/model-cache}"
+      MERGEPILOT_RUN_BINDING_KEYSTORE: "${FXV_RUN_BINDING_KEYSTORE:-/data/cchain-keystore}"
+      MERGEPILOT_PROVIDER_ATTEST_URL: "${FXV_PROVIDER_ATTEST_URL:-}"
+      MERGEPILOT_PROVIDER_EXPECTED_KEY_ID: "${FXV_PROVIDER_EXPECTED_KEY_ID:-}"
+      MERGEPILOT_CCHAIN_ENFORCE: "${FXV_CCHAIN_ENFORCE:-0}"
     volumes:
       - fxv-workspace:/app/workspace
       - fxv-evidence:/app/evidence
+      - fxv-modelcache:/data/model-cache
+      - fxv-keystore:/data/cchain-keystore
     ports: ["127.0.0.1:${FXV_CONSOLE_PORT:-48410}:4730"]
+    healthcheck: { test: ["CMD", "wget", "-qO-", "--timeout=5", "http://127.0.0.1:4730/api/health"], interval: 15s, timeout: 5s, retries: 5, start_period: 10s }
     networks: [fxv-pilot-net]
-volumes: { fxv-pgdata: {}, fxv-miniodata: {}, fxv-workspace: {}, fxv-evidence: {} }
+volumes: { fxv-pgdata: {}, fxv-miniodata: {}, fxv-workspace: {}, fxv-evidence: {}, fxv-modelcache: {}, fxv-keystore: {} }
 networks: { fxv-pilot-net: {} }

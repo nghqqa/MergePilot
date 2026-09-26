@@ -20,6 +20,9 @@ import { login, logout, getSession, sessionBody, anonymousBody, tokenFromCookieH
 import { corePilotState, overviewState } from './lib/core-pilot.mjs';
 import { fxvAttempts } from './lib/fxv/api.mjs';
 import { fxvMetrics } from './lib/fxv/metrics.mjs';
+import { parseAccessModel, authorize, denialAudit } from './lib/permissions.mjs';
+import { cchainStatusObserved, verifyRunBindingAndAudit, rotateKeystore,
+         cchainMetricsSnapshot, rememberStatusForMetrics } from './lib/cchain/wiring.mjs';
 
 function readJsonBody(req, limit = 64 * 1024) {
   return new Promise((resolve, reject) => {
@@ -300,6 +303,49 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
           error: String(e.cause?.code || e.message).slice(0, 80),
           note: 'rag-live 不可达——显式降级' });
       }
+    }
+
+    // ── C 链（cchain）状态/验签/轮换 —— B 轨接线（feat/core-b-parallel）──
+    // 状态与 metrics：需会话（读观测面）；验签：机器对机器 HMAC（无会话，替代凭证）；
+    // 轮换：会话 + CSRF + admin 角色（授权操作）。全部真实状态，BLOCKED 即 BLOCKED。
+    if (p === '/api/cchain/status' && req.method === 'GET') {
+      const auth = getSession(tokenFromCookieHeader(req.headers.cookie));
+      if (!auth) return sendJson(res, 401, anonymousBody());
+      const status = await cchainStatusObserved(process.env, process.env.CONSOLE_PG_DSN);
+      rememberStatusForMetrics(status);
+      return sendJson(res, 200, { ...status,
+        enforce: { flag: process.env.MERGEPILOT_CCHAIN_ENFORCE === '1',
+          note: 'enforce=on 时 FXV run 启动被 C 链 READY 门禁拦截（默认 off）' } });
+    }
+    if (p === '/api/cchain/metrics' && req.method === 'GET') {
+      const auth = getSession(tokenFromCookieHeader(req.headers.cookie));
+      if (!auth) return sendJson(res, 401, anonymousBody());
+      return sendJson(res, 200, cchainMetricsSnapshot(process.env));
+    }
+    if (p === '/api/cchain/run-bindings/verify' && req.method === 'POST') {
+      // 机器端点：RUN_BINDING_AUTH 入站验签（HMAC full-sha256 + nonce 防重放 + 时间窗）。
+      // 审计失败不吞：audit_written=false 如实返回（actor=run-binding:<run_id>）。
+      const body = await readJsonBody(req);
+      const r = await verifyRunBindingAndAudit(process.env, process.env.CONSOLE_PG_DSN, body ?? {});
+      return sendJson(res, r.status, r.body);
+    }
+    if (p === '/api/cchain/keystore/rotate' && req.method === 'POST') {
+      const auth = getSession(tokenFromCookieHeader(req.headers.cookie));
+      if (!auth) return sendJson(res, 401, anonymousBody());
+      // 契约 §0.1：副作用方法必须携带 X-CSRF-Token
+      if (!auth.csrf || req.headers['x-csrf-token'] !== auth.csrf) {
+        return sendJson(res, 403, { error: { reason: 'csrf_required' } });
+      }
+      const model = parseAccessModel();
+      const decision = authorize(model, auth.user, { action: 'admin' });
+      if (!decision.ok) {
+        return sendJson(res, 403, { error: { reason: decision.reason, detail: decision.detail },
+          denial: denialAudit(auth.user, decision, { action: 'admin' }) });
+      }
+      const body = await readJsonBody(req);
+      const r = await rotateKeystore(process.env, process.env.CONSOLE_PG_DSN,
+        { operator: auth.user, grace_ms: Number(body?.grace_ms || 0) });
+      return sendJson(res, r.status, r.body);
     }
 
     if (p === '/api/overview' && req.method === 'GET') {
