@@ -91,7 +91,7 @@
       "rollback": "N/A (not deployed)"
     }
   ],
-  "overall_status": "FXV_STAGING_VERIFIED",
+  "overall_status": "FXV_CANARY_VERIFIED",
   "c_chain_gaps_kept_separate": [
     "approved model cache (operator-provided manifest + files)",
     "case_provider_metadata live contract-test attestation",
