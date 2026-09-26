@@ -9,7 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { createConsole } from '../server.mjs';
-import { auditEvent, enforceGate, resetGateCache, resetCchainObserver } from '../lib/cchain/wiring.mjs';
+import { auditEvent, enforceGate, resetGateCache, resetCchainObserver, resetDenyAuditLimiter } from '../lib/cchain/wiring.mjs';
 import { createRunBindingAuth } from '../lib/cchain/index.mjs';
 import { runPipeline } from '../lib/fxv/orchestrator.mjs';
 
@@ -56,7 +56,7 @@ before(async () => {
     MERGEPILOT_CCHAIN_ENFORCE: '',
   });
   delete process.env.CONSOLE_PG_DSN;
-  resetCchainObserver(); resetGateCache();
+  resetCchainObserver(); resetGateCache(); resetDenyAuditLimiter();
   const { server } = createConsole({ evidenceRoot: tmp() });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   BASE = `http://127.0.0.1:${server.address().port}`;
@@ -76,6 +76,7 @@ test('status：未认证 401；认证后 200 且三组件真实状态（attestat
   assert.equal(comps.model_cache, 'READY'); // fixture 缓存真实校验通过
   assert.equal(comps.provider_attestation, 'NOT_CONFIGURED');
   assert.equal(comps.run_binding_auth, 'READY'); // fixture keystore 有有效 key
+  // NOT_DISTRIBUTED 语义：B 栈 promote2 部署（keystore 空目录）时状态 MISSING + not_distributed=true（见 Phase6 验证）
   assert.ok(body.blocked_conditions.some((c) => c.includes('provider_attestation')));
   assert.equal(body.enforce.flag, false);
   // 无 DSN：状态变化审计必须诚实标注未落库
@@ -90,7 +91,7 @@ test('metrics：未认证 401；认证后计数器/快照形状（无伪造 READ
   const m = await res.json();
   assert.equal(m.source, 'cchain');
   assert.deepEqual(Object.keys(m.counters).sort(),
-    ['key_rotations', 'run_binding_verify_denied', 'run_binding_verify_ok']);
+    ['key_rotations', 'run_binding_verify_denied', 'run_binding_verify_denied_suppressed', 'run_binding_verify_ok']);
   assert.equal(m.gauges.cchain_model_cache_ready, 1);
   assert.equal(m.gauges.cchain_provider_attested, 0);
   assert.equal(m.gauges.cchain_run_binding_ready, 1);
@@ -238,4 +239,137 @@ test('模型缓存负向：篡改文件后 status 探测到 CORRUPT（内容寻�
   const mc = body.components.find((c) => c.component === 'model_cache');
   assert.equal(mc.state, 'CORRUPT');
   assert.equal(body.overall, 'BLOCKED');
+});
+
+// ── 加固波测试（2026-09-27）：M-1 nonce 有界 / M-2 审计封顶 / L-1 时间戳 / L-2 CSRF ──
+
+test('L-1：timestamp 非有限数值 fail-closed（NaN/Infinity/非数字 → 401 INVALID_TIMESTAMP）；缺字段仍 400', async () => {
+  const post = (payload) => fetch(BASE + '/api/cchain/run-bindings/verify', { method: 'POST',
+    headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
+  // JSON 无法携带 NaN/Infinity（序列化为 null）→ 走缺字段 400 BAD_REQUEST（fail-closed）
+  for (const bad of [NaN, Infinity, -Infinity, null]) {
+    const r = await post({ run_id: 'run-l1', nonce: crypto.randomBytes(8).toString('hex'),
+      timestamp: bad, signature: 'a'.repeat(64) });
+    assert.equal(r.status, 400, `timestamp=${String(bad)} 经 JSON 为 null → BAD_REQUEST`);
+    assert.equal((await r.json()).reason, 'BAD_REQUEST');
+  }
+  // 直接到达 verify 层的非数字值（JSON 可携带的字符串/对象）→ 401 INVALID_TIMESTAMP
+  for (const bad of ['not-a-number', { v: 1 }]) {
+    const r = await post({ run_id: 'run-l1', nonce: crypto.randomBytes(8).toString('hex'),
+      timestamp: bad, signature: 'a'.repeat(64) });
+    assert.equal(r.status, 401, `timestamp=${JSON.stringify(bad)}`);
+    assert.equal((await r.json()).reason, 'INVALID_TIMESTAMP');
+  }
+  let r = await post({ run_id: 'run-l1', nonce: 'n', timestamp: Date.now() }); // 缺 signature
+  assert.equal(r.status, 400);
+  r = await post({ run_id: 'run-l1', nonce: 'n', timestamp: Date.now() - 7 * 60_000, signature: 'a'.repeat(64) });
+  assert.equal((await r.json()).reason, 'TIMESTAMP_SKEW'); // skew 语义保持
+});
+
+test('M-1：nonce TTL 过期自动清理 + 清理后捕获重放被 skew 拒绝（时钟注入，默认 TTL=10min 下限）', async () => {
+  const kdir = tmp();
+  const key = { key_id: 'k-ttl', secret: crypto.randomBytes(32).toString('hex'),
+    created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 3600_000).toISOString(), revoked: false };
+  fs.writeFileSync(path.join(kdir, 'k-ttl.key.json'), JSON.stringify(key));
+  // 注入时钟：T0 真实时刻起算（签名时间戳用 T0，之后推进 11min > TTL 下限 10min）
+  const T0 = Date.now(); let clock = T0;
+  const auth = createRunBindingAuth({ MERGEPILOT_RUN_BINDING_KEYSTORE: kdir }, { now: () => clock });
+  assert.equal(auth.nonceStats().ttl_ms, 10 * 60_000, 'TTL 钳制下限 = 2× skew 窗口');
+  const n = 'ttl-nonce-1'; const ts = T0;
+  assert.equal(auth.verify({ run_id: 'r', nonce: n, timestamp: ts,
+    signature: auth.sign(key.secret, { run_id: 'r', nonce: n, timestamp: ts }) }).ok, true);
+  assert.equal(auth.nonceStats().size, 1);
+  clock = T0 + 11 * 60_000; // 推进 11min：nonce TTL(10min) 过期 → 自动清理
+  assert.equal(auth.nonceStats().size, 0, '过期 nonce 应被清理');
+  // 捕获重放（同 nonce+原 timestamp）：TTL ≥ 2×skew 保证 ts 已出窗 → TIMESTAMP_SKEW 先拒绝
+  const replay = auth.verify({ run_id: 'r', nonce: n, timestamp: ts,
+    signature: auth.sign(key.secret, { run_id: 'r', nonce: n, timestamp: ts }) });
+  assert.equal(replay.reason, 'TIMESTAMP_SKEW');
+});
+
+test('M-1：容量上限 FIFO 淘汰（CAP=4：第 5 个成功验签后最旧 nonce 被淘汰，占用恒 ≤ CAP）', async () => {
+  const kdir = tmp();
+  const key = { key_id: 'k-cap', secret: crypto.randomBytes(32).toString('hex'),
+    created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 3600_000).toISOString(), revoked: false };
+  fs.writeFileSync(path.join(kdir, 'k-cap.key.json'), JSON.stringify(key));
+  const auth = createRunBindingAuth({ MERGEPILOT_RUN_BINDING_KEYSTORE: kdir, MERGEPILOT_NONCE_CAP: 4 });
+  const doOk = (nonce) => { const ts = Date.now();
+    return auth.verify({ run_id: 'r', nonce, timestamp: ts,
+      signature: auth.sign(key.secret, { run_id: 'r', nonce, timestamp: ts }) }); };
+  assert.equal(doOk('cap-n0').ok, true);
+  for (let i = 1; i <= 4; i++) assert.equal(doOk('cap-n' + i).ok, true); // 共 5 个成功
+  const st = auth.nonceStats();
+  assert.equal(st.capacity, 4);
+  assert.equal(st.size, 4, '超容量后 FIFO 淘汰，占用=CAP');
+  // 已声明的有界权衡：被 FIFO 淘汰的最旧 nonce（cap-n0）在新 timestamp+有效签名下可再用
+  const reused = doOk('cap-n0');
+  assert.equal(reused.ok, true, 'FIFO 淘汰后的复用（需持有效密钥+新 ts，权衡已在 index.mjs 注释声明）');
+  // 未淘汰的 nonce 重放仍拒绝
+  const again = doOk('cap-n3');
+  assert.equal(again.reason, 'REPLAYED_NONCE');
+});
+
+test('M-1：并发语义——20 个并发同 nonce 验签恰好 1 个成功；30 个并发不同 nonce 全部成功', async () => {
+  const kdir = tmp();
+  const key = { key_id: 'k-conc', secret: crypto.randomBytes(32).toString('hex'),
+    created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 3600_000).toISOString(), revoked: false };
+  fs.writeFileSync(path.join(kdir, 'k-conc.key.json'), JSON.stringify(key));
+  const auth = createRunBindingAuth({ MERGEPILOT_RUN_BINDING_KEYSTORE: kdir });
+  const ts = Date.now(); const n = 'race-nonce';
+  const payload = { run_id: 'r', nonce: n, timestamp: ts,
+    signature: auth.sign(key.secret, { run_id: 'r', nonce: n, timestamp: ts }) };
+  const results = await Promise.all(Array.from({ length: 20 }, () => Promise.resolve(auth.verify(payload))));
+  assert.equal(results.filter((r) => r.ok).length, 1, '同 nonce 并发恰好一次成功');
+  assert.equal(results.filter((r) => r.reason === 'REPLAYED_NONCE').length, 19);
+  const many = await Promise.all(Array.from({ length: 30 }, (_, i) => {
+    const nn = 'conc-' + i; const tts = Date.now();
+    return Promise.resolve(auth.verify({ run_id: 'r', nonce: nn, timestamp: tts,
+      signature: auth.sign(key.secret, { run_id: 'r', nonce: nn, timestamp: tts }) }));
+  }));
+  assert.equal(many.filter((r) => r.ok).length, 30);
+  assert.ok(auth.nonceStats().size <= 8192);
+});
+
+test('M-2：同源拒绝审计封顶（cap=5：8 次失败→5 次审计+3 次 suppressed；拒绝语义不变；成功验签不受限）', async () => {
+  resetDenyAuditLimiter();
+  const prevCap = process.env.MERGEPILOT_VERIFY_AUDIT_DENY_CAP;
+  process.env.MERGEPILOT_VERIFY_AUDIT_DENY_CAP = '5';
+  try {
+    const post = (payload) => fetch(BASE + '/api/cchain/run-bindings/verify', { method: 'POST',
+      headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
+    const bodies = [];
+    for (let i = 0; i < 8; i++) {
+      const r = await post({ run_id: 'run-m2', nonce: 'm2-' + i, timestamp: Date.now(), signature: 'f'.repeat(64) });
+      assert.equal(r.status, 401); // 拒绝语义不变
+      bodies.push(await r.json());
+    }
+    assert.equal(bodies.filter((b) => !b.audit_suppressed).length, 5, '前 5 次拒绝正常走审计路径');
+    assert.equal(bodies.filter((b) => b.audit_suppressed === true).length, 3, '超限后审计被抑制并如实标注');
+    const m = await (await fetch(BASE + '/api/cchain/metrics', { headers: { cookie: cookieHeader(jar) } })).json();
+    assert.ok(m.counters.run_binding_verify_denied_suppressed >= 3, 'suppressed 计数可观测');
+    // 成功验签不受封顶影响（audit_suppressed 不出现）
+    const keysNow = fs.readdirSync(KEYS).filter((f) => f.endsWith('.key.json'))
+      .map((f) => JSON.parse(fs.readFileSync(path.join(KEYS, f), 'utf8')))
+      .filter((k) => !k.revoked && new Date(k.expires_at) > new Date())
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
+    const signer = createRunBindingAuth({ MERGEPILOT_RUN_BINDING_KEYSTORE: KEYS });
+    const ts = Date.now(); const n = 'm2-ok-' + crypto.randomBytes(4).toString('hex');
+    const r = await post({ run_id: 'run-m2', nonce: n, timestamp: ts,
+      signature: signer.sign(keysNow.secret, { run_id: 'run-m2', nonce: n, timestamp: ts }) });
+    const body = await r.json();
+    assert.equal(r.status, 200);
+    assert.notEqual(body.audit_suppressed, true, '成功验签不封顶');
+  } finally {
+    if (prevCap === undefined) delete process.env.MERGEPILOT_VERIFY_AUDIT_DENY_CAP;
+    else process.env.MERGEPILOT_VERIFY_AUDIT_DENY_CAP = prevCap;
+    resetDenyAuditLimiter();
+  }
+});
+
+test('L-2：rotate 的 CSRF timing-safe——错误 token 403 / 长度不同 token 403 / 正确 token 200', async () => {
+  const rotate = (hdr) => fetch(BASE + '/api/cchain/keystore/rotate', { method: 'POST',
+    headers: { cookie: cookieHeader(jar), 'x-csrf-token': hdr }, body: '{}' });
+  assert.equal((await rotate('wrong-token-xyz')).status, 403);
+  assert.equal((await rotate('short')).status, 403); // 长度不同（safeEqual 先拒绝）
+  assert.equal((await rotate(jar.mp_csrf)).status, 200); // 正确 token（timing-safe 相等）
 });
