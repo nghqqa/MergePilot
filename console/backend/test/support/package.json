@@ -1,0 +1,9 @@
+{
+  "name": "mergepilot-fxv-test-support",
+  "private": true,
+  "description": "dev-only test deps (pg) for fxv store integration tests",
+  "type": "module",
+  "dependencies": {
+    "pg": "^8.23.0"
+  }
+}
