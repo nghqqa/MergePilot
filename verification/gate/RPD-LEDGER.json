@@ -91,7 +91,7 @@
       "rollback": "N/A (not deployed)"
     }
   ],
-  "overall_status": "FXV_CANARY_VERIFIED",
+  "overall_status": "DISTRIBUTION_PREPARED_WAITING_HUMAN_AUTH",
   "c_chain_gaps_kept_separate": [
     "approved model cache (operator-provided manifest + files)",
     "case_provider_metadata live contract-test attestation",
@@ -173,5 +173,14 @@
     ],
     "authorization_items": 12,
     "overall": "PROJECT_AUTONOMOUS_CLOSURE_AUTHORIZATION_READY"
+  },
+  "distribution": {
+    "prepared_at": "2026-09-26T10:00+08:00",
+    "image": "sha256:1056df76 Trivy 0",
+    "docs": 16,
+    "compose": true,
+    "env_template": true,
+    "cross_machine_verified": true,
+    "authorization_items": 10
   }
 }

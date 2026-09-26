@@ -1,0 +1,87 @@
+# MergePilot Console — Docker Compose deployment template.
+# Usage: copy .env.example to .env, fill in secrets, then `docker compose up -d`.
+# Security: all services on isolated network; console publishes loopback only.
+version: "3.9"
+
+services:
+  pg:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${PG_DB:-mergepilot}
+      POSTGRES_USER: ${PG_USER:-mergepilot}
+      POSTGRES_PASSWORD: ${PG_PASSWORD:?Set PG_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks: [mergepilot-internal]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PG_USER:-mergepilot}"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits: { memory: 512M }
+
+  minio:
+    image: elestio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_USER:?Set MINIO_USER in .env}
+      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD:?Set MINIO_PASSWORD in .env}
+    volumes:
+      - miniodata:/data
+    networks: [mergepilot-internal]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits: { memory: 512M }
+
+  console:
+    image: mp-canonical-console:candidate  # pin: sha256:1056df76...
+    restart: unless-stopped
+    depends_on:
+      pg: { condition: service_healthy }
+      minio: { condition: service_healthy }
+    environment:
+      # PostgreSQL (internal network)
+      CONSOLE_PG_DSN: host=pg port=5432 user=${PG_USER:-mergepilot} password=${PG_PASSWORD} dbname=${PG_DB:-mergepilot} connect_timeout=5
+      # Authentication (server-side session)
+      CONSOLE_PILOT_USER: ${CONSOLE_USER:?Set CONSOLE_USER in .env}
+      CONSOLE_PILOT_PASSWORD: ${CONSOLE_PASSWORD:?Set CONSOLE_PASSWORD in .env}
+      CONSOLE_SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in .env}
+      # Repository allowlist (comma-separated, server-enforced)
+      CONSOLE_REPO_ALLOWLIST: ${REPO_ALLOWLIST:?Set REPO_ALLOWLIST in .env}
+      # A-chain organization knowledge retrieval (DEFAULT: OFF)
+      # MERGEPILOT_ORG_RAG_A_CHAIN: "1"
+      # ORG_RAG_LIVE_URL: http://host.docker.internal:48210
+    volumes:
+      - ${EVIDENCE_ROOT:-./evidence}:/app/evidence:ro
+    ports:
+      - "${CONSOLE_PORT:-4730}:4730"  # bind to 127.0.0.1 for local-only
+    networks: [mergepilot-internal]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4730/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits: { memory: 256M }
+
+networks:
+  mergepilot-internal:
+    driver: bridge
+    internal: true  # no external network access for PG/MinIO
+
+volumes:
+  pgdata:
+    driver: local
+  miniodata:
+    driver: local
