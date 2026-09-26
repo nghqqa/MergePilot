@@ -17,7 +17,15 @@ function secret() {
   return process.env.CONSOLE_SESSION_SECRET || '';
 }
 
-import { parseAccessModel, resolveRepos } from './permissions.mjs';
+import { parseAccessModel, resolveRepos, resolveSubject } from './permissions.mjs';
+
+// G-07 多凭证：每用户独立口令（来自受控 env/secrets，绝不入库入仓）。
+// 默认拒绝：模型无此主体 或 凭据表无此用户 => 401。
+function userCredentials() {
+  const raw = process.env.CONSOLE_USER_CREDENTIALS_JSON;
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch { return null; }
+}
 
 export function consoleAuthConfigured() {
   return Boolean(secret() && process.env.CONSOLE_PILOT_USER && process.env.CONSOLE_PILOT_PASSWORD);
@@ -32,6 +40,12 @@ export function repoAllowlist() {
   }
   return (process.env.CONSOLE_REPO_ALLOWLIST || '')
     .split(',').map((s) => s.trim()).filter(Boolean);
+}
+
+function timingSafeEqualString(a, b) {
+  const x = Buffer.from(a); const y = Buffer.from(b);
+  if (x.length !== y.length) { const n = Math.max(x.length, y.length); const t = Buffer.alloc(n); crypto.timingSafeEqual(t, t); return false; }
+  return crypto.timingSafeEqual(x, y);
 }
 
 function sign(sid) {
@@ -73,6 +87,21 @@ function csrfCookie(token) {
 }
 
 export function login(user, password) {
+  const model = parseAccessModel();
+  const creds = userCredentials();
+  if (model.mode === 'model' && creds && typeof creds === 'object') {
+    const subject = resolveSubject(model, String(user ?? ''));
+    const expect = creds[String(user ?? '')] ?? creds[String(user ?? '')]?.password ?? null;
+    if (!subject || !expect || typeof password !== 'string' ||
+        !timingSafeEqualString(String(password), String(expect))) {
+      return { ok: false, status: 401, code: 'not_authenticated',
+        error: { reason: 'not_authenticated' } };
+    }
+    const sid = crypto.randomUUID();
+    const csrf = crypto.randomBytes(24).toString('base64url');
+    store.set(sid, { user: subject.subject, repos: resolveRepos(model, subject.subject), csrf, expiresAt: Date.now() + TTL_MS });
+    return { ok: true, setCookie: [sessionCookie(sign(sid), TTL_MS), csrfCookie(csrf)] };
+  }
   if (!consoleAuthConfigured()) {
     return { ok: false, status: 503, code: 'auth_unavailable',
       error: { reason: 'auth_unavailable' } };

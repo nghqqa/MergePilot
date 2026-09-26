@@ -1,0 +1,39 @@
+# FXV 受控生产试点发行包（CONTROLLED_PRODUCTION_PILOT）。镜像按 digest 固定。
+# 独立 PG/MinIO/Console/网络/卷；dry-run 默认开、GitHub 写默认关。
+services:
+  pg:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment: { POSTGRES_PASSWORD: "${FXV_PG_PASSWORD}", POSTGRES_DB: fxv }
+    volumes: [fxv-pgdata:/var/lib/postgresql/data]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U postgres"], interval: 10s, timeout: 5s, retries: 5 }
+    networks: [fxv-pilot-net]
+  minio:
+    image: minio/minio:latest@sha256:_NO-pin-placeholder # 部署时替换为 digest（见 OPERATIONS.md）
+    restart: unless-stopped
+    command: server /data
+    environment: { MINIO_ROOT_USER: "${FXV_MINIO_USER}", MINIO_ROOT_PASSWORD: "${FXV_MINIO_PASSWORD}" }
+    volumes: [fxv-miniodata:/data]
+    healthcheck: { test: ["CMD", "curl", "-sf", "http://localhost:9000/minio/health/live"], interval: 15s, timeout: 5s, retries: 5 }
+    networks: [fxv-pilot-net]
+  console:
+    image: ghcr.io/nghqqa/mergepilot-console@sha256:947ab1b69cdf76fce1a19f18f04021f96bfc326cdc11b378b2775787240083f2
+    restart: unless-stopped
+    depends_on: { pg: { condition: service_healthy } }
+    environment:
+      CONSOLE_PG_DSN: "postgres://postgres:${FXV_PG_PASSWORD}@pg:5432/fxv"
+      CONSOLE_PILOT_USER: "${FXV_CONSOLE_USER}"
+      CONSOLE_PILOT_PASSWORD: "${FXV_CONSOLE_PASSWORD}"
+      CONSOLE_SESSION_SECRET: "${FXV_SESSION_SECRET}"
+      CONSOLE_REPO_ALLOWLIST: "${FXV_REPO_ALLOWLIST}"
+      FXV_S3_ENDPOINT: "http://minio:9000"
+      FXV_S3_BUCKET: "${FXV_S3_BUCKET}"
+      FXV_S3_ACCESS_KEY: "${FXV_MINIO_USER}"
+      FXV_S3_SECRET_KEY: "${FXV_MINIO_PASSWORD}"
+    volumes:
+      - fxv-workspace:/app/workspace
+      - fxv-evidence:/app/evidence
+    ports: ["127.0.0.1:${FXV_CONSOLE_PORT:-48410}:4730"]
+    networks: [fxv-pilot-net]
+volumes: { fxv-pgdata: {}, fxv-miniodata: {}, fxv-workspace: {}, fxv-evidence: {} }
+networks: { fxv-pilot-net: {} }

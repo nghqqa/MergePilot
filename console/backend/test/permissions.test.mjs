@@ -110,3 +110,39 @@ test('会话回归：未配置模型时 legacy allowlist 语义不变', async ()
     assert.deepEqual(sr.repos, ['wookat/speaktype', 'nghqqa/tizhou']);
   } finally { server.close(); delete process.env.CONSOLE_REPO_ALLOWLIST; }
 });
+
+// ── G-07 多凭证（默认拒绝/越权 403/会话吊销/审计）──
+test('G-07: alice/bob 各自登录、bob 越权 403、未知用户默认拒绝', async () => {
+  process.env.CONSOLE_ACCESS_MODEL_JSON = JSON.stringify([
+    { subject: 'alice', kind: 'user', repos: ['acme/app'], branches: ['*'], can_fxv: true },
+    { subject: 'bob', kind: 'user', repos: ['acme/lib'], branches: ['*'] },
+  ]);
+  process.env.CONSOLE_USER_CREDENTIALS_JSON = JSON.stringify({ alice: 'pw-a-123456', bob: 'pw-b-654321' });
+  process.env.CONSOLE_PILOT_USER = 'legacy'; process.env.CONSOLE_PILOT_PASSWORD = 'pw-legacy';
+  process.env.CONSOLE_SESSION_SECRET = 'test-secret';
+  delete process.env.CONSOLE_PG_DSN;
+  const { server } = createConsole({ evidenceRoot: __dirname, distDir: path.join(__dirname, 'no-dist') });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const login = async (u, p) => (await fetch(base + '/api/auth/login', { method: 'POST',
+    headers: { 'content-type': 'application/json' }, body: JSON.stringify({ user: u, password: p }) }));
+  try {
+    assert.equal((await login('alice', 'wrong')).status, 401);
+    assert.equal((await login('ghost', 'pw-a-123456')).status, 401, '未知主体默认拒绝');
+    assert.equal((await login('alice', 'pw-a-123456')).status, 200);
+    const ar = await login('alice', 'pw-a-123456');
+    const ac = (ar.headers.getSetCookie?.() || []).map((c) => c.split(';')[0]).join('; ');
+    const sr = await (await fetch(base + '/api/auth/session', { headers: { cookie: ac } })).json();
+    assert.equal(sr.user.name, 'alice'); assert.deepEqual(sr.repos, ['acme/app']);
+    const br = await login('bob', 'pw-b-654321');
+    assert.equal(br.status, 200);
+    const bc = (br.headers.getSetCookie?.() || []).map((c) => c.split(';')[0]).join('; ');
+    const denied = await fetch(base + '/api/pulls?repo=acme/app', { headers: { cookie: bc } });
+    assert.equal(denied.status, 403, 'bob 越权 alice 仓库被拒');
+    const csrf = (br.headers.getSetCookie?.() || []).find((c) => c.startsWith('mp_csrf=')).split(';')[0].split('=')[1];
+    assert.equal((await fetch(base + '/api/auth/logout', { method: 'POST', headers: { cookie: bc, 'x-csrf-token': csrf } })).status, 200);
+    assert.equal((await fetch(base + '/api/auth/session', { headers: { cookie: bc } })).status, 401, '吊销后会话失效');
+    assert.equal((await login('legacy', 'pw-legacy')).status, 401, '多凭证模式下 legacy 单户被拒');
+  } finally { server.close();
+    delete process.env.CONSOLE_ACCESS_MODEL_JSON; delete process.env.CONSOLE_USER_CREDENTIALS_JSON; }
+});
