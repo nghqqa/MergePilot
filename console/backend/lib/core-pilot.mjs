@@ -66,10 +66,12 @@ export async function corePilotState() {
       "payload->>'repo' AS repo, payload->>'head_sha' AS head_sha, attempt, " +
       "(payload->>'duration_ms') AS duration_ms, created_at " +
       "FROM skill_receipt_outbox ORDER BY created_at DESC LIMIT 50");
-    let audit = { rows: [] };
+    let audit = { rows: [], audit_table: 'present' };
     try {
       audit = await client.query('SELECT run_id, decision, created_at FROM skill_gate_audit ORDER BY created_at DESC LIMIT 50');
-    } catch { /* 表可能不存在于部分部署 */
+    } catch {
+      // 表可能不存在于部分部署：显式标记 missing（不再与"零决策"不可区分）
+      audit.audit_table = 'missing';
     }
     const pending = tickets.rows.filter(t => t.status === 'PENDING').map(t => ({
       ticket_id: t.ticket_id, run_id: t.run_id, repo: t.repo_id, pr_number: t.pr_number,
@@ -95,6 +97,7 @@ export async function corePilotState() {
         integrity: r.integrity, run_id: r.run_id, repo: r.repo, head_sha: r.head_sha,
         attempt: r.attempt, duration_ms: r.duration_ms, created_at: r.created_at,
       })),
+      audit_table: audit.audit_table,
       gate_decisions: audit.rows.map(a => ({
         run_id: a.run_id, decision: a.decision, created_at: a.created_at,
       })),

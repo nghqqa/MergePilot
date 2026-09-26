@@ -108,6 +108,7 @@ export default function CorePage() {
           <Table
             size="small" rowKey={(r) => r.repo + r.head_sha}
             pagination={false}
+            locale={{ emptyText: data.pulls.source === 'POSTGRESQL_LIVE' ? '没有 PR/head 记录（诚实零值）' : `数据源=${data.pulls.source}（不伪造记录）` }}
             dataSource={data.pulls.pulls || []}
             columns={[
               { title: '仓库', dataIndex: 'repo', ellipsis: true },
@@ -139,6 +140,7 @@ export default function CorePage() {
           <Typography.Title level={3} style={{ marginTop: 20 }}>Gate 审计</Typography.Title>
           <Table
             size="small" rowKey="run_id" pagination={false}
+            locale={{ emptyText: data.audit.core_source === 'POSTGRESQL_LIVE' ? (data.audit.audit_table === 'missing' ? '审计表缺失（skill_gate_audit）——如实报告，不冒充零决策' : '没有 gate 决策记录（诚实零值）') : `数据源=${data.audit.core_source}（不伪造记录）` }}
             dataSource={data.audit.gate_decisions || []}
             columns={[
               { title: 'Run', dataIndex: 'run_id', ellipsis: true, render: (v) => <span className="mono">{v}</span> },

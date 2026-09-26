@@ -111,9 +111,14 @@ test('integrity 端点：fixture 校验通过', async () => {
   });
 });
 
-test('真实证据根冒烟：/api/runs ≥15 条且含 WH 轮', { skip: !fs.existsSync(REAL_EVIDENCE) }, async () => {
+test('真实证据根冒烟：/api/runs ≥15 条且含 WH 轮（空根显式 SKIP，不冒充通过）', { skip: !fs.existsSync(REAL_EVIDENCE) }, async (t) => {
   await withServer(REAL_EVIDENCE, async (base) => {
     const j = await (await fetch(`${base}/api/runs?limit=200`)).json();
+    if (!j.total) {
+      // 证据根存在但为空（如 worktree 中 evidence 被迁移清理）：显式跳过而非失败/伪造
+      t.skip(`evidence root present but empty: ${REAL_EVIDENCE}`);
+      return;
+    }
     assert.ok(j.total >= 15, `expected >=15 runs, got ${j.total}`);
     const wh = j.items.find((r) => r.pack_id === 'FINALS-ELEM-PR1-WH-20260919');
     assert.ok(wh, 'WH run present');

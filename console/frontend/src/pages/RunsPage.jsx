@@ -112,9 +112,10 @@ export default function RunsPage() {
   }, [load]);
 
   useEffect(() => {
-    api.runs({ limit: 200 }).then(setAllData).catch(() => {});
+    api.runs({ limit: 200 }).then(setAllData).catch(() => setFacetError(true));
   }, []);
 
+  const [facetError, setFacetError] = React.useState(false);
   useEffect(() => {
     const el = tableWrapRef.current;
     if (!el) return undefined;
@@ -322,6 +323,11 @@ export default function RunsPage() {
         ) : null}
       </div>
 
+      {facetError && (
+        <div style={{ padding: "8px 12px", marginBottom: 12, border: "1px solid #f0ad4e", borderRadius: 6, color: "#8a6d3b", background: "#fdf6ec", fontSize: 13 }}>
+          筛选统计加载失败——计数不可用（不回退为伪造计数）
+        </div>
+      )}
       {error ? <ErrorBox error={error} onRetry={load} /> : !data ? <SkeletonRows /> : !pageItems.length ? (
         <Empty>没有匹配的运行 — 调整或清除筛选后重试</Empty>
       ) : (

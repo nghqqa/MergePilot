@@ -145,6 +145,9 @@ export default function OverviewPage() {
             <section aria-label="各阶段 PR 数量（导航：查看待处理）">
               <Typography.Title level={3}>各阶段 PR</Typography.Title>
               <div className="ov-chart-box">
+                {(stageData.length === 0) ? (
+                  <div style={{ padding: '32px 0', color: '#888', textAlign: 'center' }}>没有阶段数据（{data.source}——不渲染空轴冒充）</div>
+                ) : (
                 <Column
                   {...baseCol}
                   data={stageData}
@@ -153,6 +156,7 @@ export default function OverviewPage() {
                     if (event.type === 'element:click') navigate('/pending');
                   }}
                 />
+                )}
                 <Link className="ov-chart-nav" to="/pending">查看待处理 →</Link>
               </div>
             </section>
@@ -169,6 +173,9 @@ export default function OverviewPage() {
             <section aria-label="各仓库分布（导航：查看仓库）">
               <Typography.Title level={3}>各仓库分布</Typography.Title>
               <div className="ov-chart-box">
+                {(!data.repository_counts || data.repository_counts.length === 0) ? (
+                  <div style={{ padding: '32px 0', color: '#888', textAlign: 'center' }}>没有仓库分布数据（{data.source}——不渲染空轴冒充）</div>
+                ) : (
                 <Column
                   {...baseCol}
                   data={data.repository_counts}
@@ -177,6 +184,7 @@ export default function OverviewPage() {
                     if (event.type === 'element:click') navigate('/repos');
                   }}
                 />
+                )}
                 <Link className="ov-chart-nav" to="/repos">查看仓库 →</Link>
               </div>
             </section>

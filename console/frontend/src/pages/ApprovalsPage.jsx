@@ -265,6 +265,11 @@ function PgApprovalsSection({ source }) {
             {listQ.data?.items?.length ?? 0} 张待审批票据（PENDING，来自隔离 PG approval.tickets）
             —— 有效期/TTL 字段后端响应未携带（缺口已记录 C-11）。
           </div>
+          {(listQ.data?.items ?? []).length === 0 ? (
+            <div className="empty-note" style={{ padding: '24px 0', color: '#888', textAlign: 'center' }}>
+              没有待审批票据（诚实零值——approval.tickets 无 PENDING 记录）
+            </div>
+          ) : null}
           {(listQ.data?.items ?? []).map((t) => (
             <PgTicketRow key={t.ticket_id} t={t} source={source} />
           ))}

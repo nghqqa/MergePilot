@@ -49,7 +49,8 @@ function PgPrDetail({ owner, name, prNumber }) {
   const [attempt, setAttempt] = useState(0);
   const [openRun, setOpenRun] = useState(null);
   const q = useSourceQuery(() => source.getPr(repo, prNumber), [source, repo, prNumber, attempt]);
-  const detailQ = useSourceQuery(() => source.getRunDetail(openRun), [openRun], { enabled: !!openRun });
+  const [detailAttempt, setDetailAttempt] = useState(0);
+  const detailQ = useSourceQuery(() => source.getRunDetail(openRun), [openRun, detailAttempt], { enabled: !!openRun });
 
   const repoTo = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`;
 
@@ -91,7 +92,7 @@ function PgPrDetail({ owner, name, prNumber }) {
           <div className="detail-chips">
             <span className="chip">PR #{view.prNumber}</span>
             <span className="chip mono truncate">{repo}</span>
-            <span className="chip">最近 head <span className="sha">{String(currentHead ?? lr?.head_sha ?? view.currentHead ?? '').slice(0, 8) || '—'}</span></span>
+            <span className="chip">最近 head <span className="sha">{String(view.currentHead ?? '').slice(0, 8) || '—'}</span></span>
             <span className="chip">{runs.length} 次运行记录</span>
             <span className="chip">PG 只读 · Fixture（隔离测试记录，非真实运行）</span>
           </div>
@@ -147,7 +148,7 @@ function PgPrDetail({ owner, name, prNumber }) {
               <h3 className="mono">{openRun}</h3>
             </div>
             {detailQ.status === 'loading' ? <Spinner /> : detailQ.status === 'error' ? (
-              <div style={{ padding: '0 14px 10px' }}><ErrorBox error={detailQ.error} onRetry={() => setAttempt((n) => n + 1)} /></div>
+              <div style={{ padding: '0 14px 10px' }}><ErrorBox error={detailQ.error} onRetry={() => setDetailAttempt((n) => n + 1)} /></div>
             ) : (
               <div style={{ padding: '0 14px 12px' }}>
                 {(() => {
