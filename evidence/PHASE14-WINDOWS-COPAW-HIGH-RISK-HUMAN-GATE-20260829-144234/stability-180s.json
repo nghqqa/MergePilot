@@ -1,9 +1,0 @@
-{
-  "phase": "Phase 14.2H-WD-COPAW-HIGH-RISK-PR-DEMO",
-  "recorded_at": "2026-08-29T14:48:00+08:00",
-  "check_type": "stability-180s",
-  "result": "PASS",
-  "window": "during the reviewer-wait: the reviewer container produced no log output (its app idle) while the container stayed running; the direct per-container verification at audit close: all 10 containers running, RestartCount=0, StartedAt constant",
-  "containers": "10/10 running (ctrl, manager, 4 openclaw workers, 4 copaw workers)",
-  "no_reconcile_loops": true
-}

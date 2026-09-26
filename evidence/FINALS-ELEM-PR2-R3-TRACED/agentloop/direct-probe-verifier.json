@@ -1,1 +1,0 @@
-{"probe": "agentloop.direct_export_probe", "worker": "verifier", "endpoint_host": "proj-xtrace-98a0a58e103d37e424adc3fdffb5f51-cn-hangzhou.cn-hangzhou.log.aliyuncs.com", "headers_sent": ["x-arms-license-key", "x-arms-project", "x-cms-workspace"], "payload_bytes": 769, "http_status": 200, "latency_ms": 128, "response_body": "", "trace_id": "2c14de8b8ea76604614a867e1e6f4568"}

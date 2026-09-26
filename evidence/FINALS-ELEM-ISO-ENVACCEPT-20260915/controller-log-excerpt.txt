@@ -1,1 +1,0 @@
-    228 warning: failed to write manager local config /root/agentteams-fs/agents/manager/openclaw.json: open /root/agentteams-fs/agents/manager/openclaw.json: no such file or directory

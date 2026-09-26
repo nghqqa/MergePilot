@@ -1,4 +1,0 @@
-agentteams-worker-p14h2-copaw-worker-verifier | Up 10 minutes
-agentteams-worker-p14h2-copaw-worker-fixer | Up 10 minutes
-agentteams-worker-p14h2-copaw-worker-reviewer | Up 10 minutes
-agentteams-worker-p14h2-copaw-worker-manager | Up 4 minutes

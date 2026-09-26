@@ -1,7 +1,0 @@
-{
-  "phase": "Phase 14.2H-WD-COPAW-E2E-FULL",
-  "check_type": "copaw-store-before",
-  "result": "RECORDED",
-  "state": "plan.md duplicated double-section (seed + runtime rewrite residue); review-1 delegated [~] from prior dispatch; fix-1/verify-1 premature [~] markers; no result.md files yet",
-  "see_also": "runtime-freeze.json known_defect"
-}

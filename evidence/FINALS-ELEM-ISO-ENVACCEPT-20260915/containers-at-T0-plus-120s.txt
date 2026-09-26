@@ -1,5 +1,0 @@
-elemiso-worker-verifier	Exited (0) 4 minutes ago	
-elemiso-worker-fixer	Exited (0) 4 minutes ago	
-elemiso-worker-reviewer	Exited (0) 4 minutes ago	
-elemiso-manager	Exited (0) 3 minutes ago	
-elemiso-ctrl	Exited (0) 3 minutes ago	elem-iso-20260915

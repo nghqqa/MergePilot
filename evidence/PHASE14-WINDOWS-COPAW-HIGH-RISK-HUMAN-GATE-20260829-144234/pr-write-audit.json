@@ -1,9 +1,0 @@
-{
-  "phase": "Phase 14.2H-WD-COPAW-HIGH-RISK-PR-DEMO",
-  "recorded_at": "2026-08-29T14:47:00+08:00",
-  "check_type": "pr-write-audit",
-  "result": "PASS - NO PR WRITE OPERATIONS",
-  "pr_write_operations_performed": [],
-  "pr_state": "PR #2 OPEN (the demo PR itself is the deliverable; it must NOT be merged)",
-  "read_only_operations": ["PR #2 metadata via gh pr view (read-only)"]
-}

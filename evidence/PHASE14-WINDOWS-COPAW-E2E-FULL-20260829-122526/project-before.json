@@ -1,9 +1,0 @@
-{
-  "phase": "Phase 14.2H-WD-COPAW-E2E-FULL",
-  "check_type": "project-before",
-  "result": "PASS",
-  "project_id": "copaw-sandbox",
-  "status": "active",
-  "team": "p14h2-copaw",
-  "unique_project": true
-}

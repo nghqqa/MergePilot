@@ -1,5 +1,0 @@
-elemiso-worker-verifier	Up 18 minutes
-elemiso-worker-fixer	Up 18 minutes
-elemiso-worker-reviewer	Up 18 minutes
-elemiso-manager	Up 23 minutes
-elemiso-ctrl	Up 23 minutes

@@ -1,9 +1,0 @@
-{
-  "phase": "Phase 14.2H-WD-CREDENTIAL-ROTATION",
-  "recorded_at": "2026-08-29T13:07:00+08:00",
-  "check_type": "consumer-inventory-before",
-  "result": "RECORDED",
-  "in_scope_consumers": ["manager", "worker-p14h2-wd-worker-manager", "worker-p14h2-wd-worker-reviewer", "worker-p14h2-wd-worker-fixer", "worker-p14h2-wd-worker-verifier"],
-  "each": {"cred_type": "key-auth", "source": "BEARER", "values_count_before": 1},
-  "out_of_scope": ["worker-p14h2-copaw-worker-* consumers (created after the echo, never exposed)"]
-}

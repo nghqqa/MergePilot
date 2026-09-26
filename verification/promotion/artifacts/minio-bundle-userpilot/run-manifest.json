@@ -1,8 +1,0 @@
-{
- "runs": [
-  "run-canary6-st-426",
-  "run-canary6-tz-2"
- ],
- "round": "CONTROLLED_READONLY_USER_PILOT",
- "generated_at": "2026-09-25T07:37:01.115442+00:00"
-}

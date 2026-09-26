@@ -1,8 +1,0 @@
-FROM agentteams/copaw-worker:223ddc2-agentloop-rag
-# v3+RAG combined: v3 instrumentation (single-layer LLM, genai semantics,
-# cross-agent traceparent) + the RAG MCP hook from the -rag lineage.
-COPY zz_agentloop_otel_v3.py /opt/venv/standard/lib/python3.11/site-packages/zz_agentloop_otel.py
-RUN /opt/venv/standard/bin/pip install --no-cache-dir "loongsuite-otel-util-genai>=0.6.1"
-
-LABEL agentloop.instrumentation="v3-single-layer+genai+cross-agent+rag" \
-      mp.task="finals-v3-rag-rerun-20260917"

@@ -1,9 +1,0 @@
-{
-  "generated_at": "2026-09-15T08:47:27Z",
-  "python": "3.10.21",
-  "git_head": "2c579fcf60698469eda9ce061f9451514c6b3062",
-  "trial_instance": "docker:fb2a17be83b4@sha256:7f58c9936b2ef7f3e1fa20ac7d13cc1d7337ebf2380eec75677efe0204daadf0",
-  "image": "pgvector/pgvector:pg16",
-  "command": "python tools/dbverify/run_migration_loop.py --pg-port 55433 --trial-instance ... --out evidence/FINALS-DB-MIGRATION-LOOP-20260914",
-  "evidence_tier": "REAL_SQL_VERIFICATION_ISOLATED_POSTGRES (not Agentic Database branch)"
-}

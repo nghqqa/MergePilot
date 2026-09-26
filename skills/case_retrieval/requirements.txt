@@ -1,2 +1,0 @@
-psycopg2-binary==2.9.12
-fastembed==0.7.4

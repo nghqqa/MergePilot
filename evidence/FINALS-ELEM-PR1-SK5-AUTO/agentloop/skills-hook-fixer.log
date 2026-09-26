@@ -1,6 +1,0 @@
-2026-09-18T16:48:53Z config enabled; grace 90.0s before patching
-2026-09-18T16:50:23Z CoPawAgent.register_mcp_clients patched (deterministic Skills MCP, append mode)
-2026-09-18T16:55:00Z skills_mcp connected and appended (total=1)
-2026-09-18T16:55:16Z config enabled; grace 90.0s before patching
-2026-09-18T16:55:16Z config enabled; grace 90.0s before patching
-2026-09-18T17:52:26Z config enabled; grace 90.0s before patching

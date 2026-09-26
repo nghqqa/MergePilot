@@ -1,8 +1,0 @@
-2026-09-16T17:13:17Z config enabled; grace 90.0s before patching
-2026-09-16T17:14:47Z CoPawAgent.register_mcp_clients patched (live-run SYNTHETIC RAG, endpoint=http://host.docker.internal:4184/api/rag/search)
-2026-09-16T17:15:21Z register_mcp_clients ENTRY pre_clients=0
-2026-09-16T17:15:21Z rag_mcp connected and injected (endpoint=http://host.docker.internal:4184/api/rag/search)
-2026-09-16T17:19:06Z register_mcp_clients ENTRY pre_clients=0
-2026-09-16T17:19:06Z rag_mcp connected and injected (endpoint=http://host.docker.internal:4184/api/rag/search)
-2026-09-16T17:19:20Z config enabled; grace 90.0s before patching
-2026-09-16T17:19:20Z config enabled; grace 90.0s before patching

@@ -1,8 +1,0 @@
-{
-  "phase": "Phase 14.2H-WD-CREDENTIAL-ROTATION",
-  "recorded_at": "2026-08-29T13:07:00+08:00",
-  "check_type": "provider-before",
-  "result": "RECORDED",
-  "provider_deepseek": {"name": "deepseek", "type": "deepseek", "protocol": "openai/v1", "tokens_count_before": 1, "route_binding": "default-ai-route /v1 -> provider deepseek", "token_exposure": "transcript echo in WD2-LA (rotation target)"},
-  "provider_qwen": {"name": "qwen", "tokens_count": 1, "in_rotation_scope": false, "note": "pre-existing, unused by any live route"}
-}

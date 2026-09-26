@@ -1,6 +1,0 @@
-{
- "window_start": "2026-09-16T17:25:00Z",
- "team_room_events": 16,
- "dm_events": 6,
- "note": "span logs are session-cumulative (incl. PR2-RAG run and smokes); PR3-RAG window deltas see PR2 pkg summary + audit slices"
-}

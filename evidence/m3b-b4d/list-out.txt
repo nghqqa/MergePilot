@@ -1,7 +1,0 @@
-PENDING L2 tickets (as mergepilot_approver @ audit-pg; approvable = approval_expires_at>now):
-                ticket_id                 | action |             repo_pr              | approvable |          created_at           | ttl_remaining
-------------------------------------------+--------+----------------------------------+------------+-------------------------------+---------------
- tkt-eec6e446-e5e1-41e7-b6ac-54c13fc20396 | merge  | nghqqa/MergePilot-e2e-fixture#25 | EXPIRED    | 2026-07-28 03:55:01.186044+00 | -01:00:08
- tkt-72142661-fb69-4b10-a9a9-79ba54cf75f4 | merge  | nghqqa/MergePilot-e2e-fixture#26 | yes        | 2026-07-28 03:55:08.84693+00  | 23:59:58
-(2 rows)
-

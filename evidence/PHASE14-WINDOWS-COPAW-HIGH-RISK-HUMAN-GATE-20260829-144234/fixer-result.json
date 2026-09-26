@@ -1,8 +1,0 @@
-{
-  "phase": "Phase 14.2H-WD-COPAW-HIGH-RISK-PR-DEMO",
-  "recorded_at": "2026-08-29T14:47:00+08:00",
-  "check_type": "fixer-result",
-  "result": "NOT_RUN",
-  "reason": "the human security gate precedes the Fixer dispatch; the gate has not been reached (the reviewer execution is stalled - see reviewer-high-risk-result.json)",
-  "constraint": "the Fixer must only start after explicit human approval of the high-risk finding"
-}

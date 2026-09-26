@@ -1,7 +1,0 @@
-{
-  "enabled": false,
-  "mcp_server_path": "/usr/local/bin/rag-mcp-server.mjs",
-  "rag_endpoint": "http://host.docker.internal:4184/api/rag/search",
-  "audit_endpoint": "http://host.docker.internal:4184/api/rag/toolspan-audit",
-  "_doc": "RAG MCP hook switch. Image default = disabled. Enable at runtime by rewriting this file (enabled=true); zz_agentloop_rag watcher picks it up in ~2s and patches CoPawAgent.register_mcp_clients after the grace period. Endpoints point at the LIVE-RUN knowledge-only RAG service (host :4184)."
-}

@@ -1,8 +1,0 @@
-{
-  "phase": "Phase 14.2H-WD-COPAW-HIGH-RISK-PR-DEMO",
-  "recorded_at": "2026-08-29T14:46:00+08:00",
-  "check_type": "reviewer-high-risk-result",
-  "result": "NOT_ACHIEVED (the reviewer has not consumed/executed the review - see verdict.json blocker)",
-  "reviewer_state": {"container": "agentteams-worker-p14h2-copaw-worker-reviewer", "status": "running", "matrix_consumer": "idle-stopped since 12:13 local", "delegation_receipt": "none (the @mention is in the Team Room history; the reviewer's sync loop is silent)"},
-  "expected_on_delivery": "STATUS: HIGH_RISK_FOUND / SEVERITY: HIGH / HUMAN_VERIFICATION_REQUIRED: true + category/affected file/impact/repro/risk/fix suggestion/test evidence"
-}
