@@ -76,6 +76,7 @@ test('status：未认证 401；认证后 200 且三组件真实状态（attestat
   assert.equal(comps.model_cache, 'READY'); // fixture 缓存真实校验通过
   assert.equal(comps.provider_attestation, 'NOT_CONFIGURED');
   assert.equal(comps.run_binding_auth, 'READY'); // fixture keystore 有有效 key
+  // NOT_DISTRIBUTED 语义：B 栈 promote2 部署（keystore 空目录）时状态 MISSING + not_distributed=true（见 Phase6 验证）
   assert.ok(body.blocked_conditions.some((c) => c.includes('provider_attestation')));
   assert.equal(body.enforce.flag, false);
   // 无 DSN：状态变化审计必须诚实标注未落库

@@ -68,9 +68,9 @@ export async function fetchProviderAttestation(env = process.env, fetchImpl = fe
 export function runBindingAuthStatus(env = process.env) {
   const dir = env.MERGEPILOT_RUN_BINDING_KEYSTORE;
   if (!dir) return { state: 'NOT_CONFIGURED', blocked_condition: 'MERGEPILOT_RUN_BINDING_KEYSTORE 未设置' };
-  if (!fs.existsSync(dir)) return { state: 'MISSING', dir, blocked_condition: 'keystore 目录不存在（密钥分发未执行）' };
+  if (!fs.existsSync(dir)) return { state: 'MISSING', not_distributed: true, dir, blocked_condition: 'keystore 目录不存在（密钥分发未执行=NOT_DISTRIBUTED）' };
   const keys = fs.readdirSync(dir).filter((f) => f.endsWith('.key.json'));
-  if (keys.length === 0) return { state: 'MISSING', dir, blocked_condition: 'keystore 无密钥记录（RUN_BINDING_AUTH 密钥分发未闭合）' };
+  if (keys.length === 0) return { state: 'MISSING', not_distributed: true, dir, blocked_condition: 'keystore 无密钥记录（RUN_BINDING_AUTH 密钥分发未闭合=NOT_DISTRIBUTED）' };
   return { state: 'READY', dir, key_count: keys.length };
 }
 
