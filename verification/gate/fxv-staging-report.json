@@ -1,0 +1,65 @@
+{
+ "summary": {
+  "total": 11,
+  "pass": 11
+ },
+ "results": [
+  {
+   "id": "S1",
+   "name": "Success path: patch → verify → VERIFIED (audit recorded)",
+   "pass": true
+  },
+  {
+   "id": "S2",
+   "name": "Failing tests → REJECTED (not VERIFIED)",
+   "pass": true
+  },
+  {
+   "id": "S3",
+   "name": "Head drift → rejected",
+   "pass": true
+  },
+  {
+   "id": "S4",
+   "name": "Patch digest drift → detected",
+   "pass": true
+  },
+  {
+   "id": "S5",
+   "name": "Duplicate run → same ticket id (idempotent)",
+   "pass": true
+  },
+  {
+   "id": "S6",
+   "name": "No receipt → REFUSED (no success)",
+   "pass": true
+  },
+  {
+   "id": "S7",
+   "name": "Restart recovery: artifact reload preserves binding",
+   "pass": true
+  },
+  {
+   "id": "S8",
+   "name": "Audit trail: all phases recorded + timestamped",
+   "pass": true
+  },
+  {
+   "id": "S9",
+   "name": "PG audit readable (real staging untouched)",
+   "pass": true
+  },
+  {
+   "id": "S10",
+   "name": "Real PR zero-change (4|1|2)",
+   "pass": true
+  },
+  {
+   "id": "S11",
+   "name": "Rollback: fixture workspace cleaned",
+   "pass": true
+  }
+ ],
+ "authorized_at": "2026-09-26T08:00+08:00",
+ "finished_at": "2026-09-26T00:56:43.873Z"
+}
