@@ -71,7 +71,8 @@ function sweep() {
   for (const [k, v] of store) if (v.expiresAt < now) store.delete(k);
 }
 
-function safeEqual(a, b) {
+// L-2（2026-09-27 加固波）：导出供全部安全敏感比较统一使用（logout/rotate 等）。
+export function safeEqual(a, b) {
   const ba = Buffer.from(String(a));
   const bb = Buffer.from(String(b));
   if (ba.length !== bb.length) return false;

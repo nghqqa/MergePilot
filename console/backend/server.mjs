@@ -16,7 +16,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { listRunPacks, safeResolve, listPackFiles, verifyPack, parseSha256Sums, looksTextual } from './lib/pack.mjs';
 import { buildRunRecord, buildRunDetail } from './lib/runs.mjs';
 import { login, logout, getSession, sessionBody, anonymousBody, tokenFromCookieHeader,
-  repoAllowlist, sessionTtlMs } from './lib/session.mjs';
+  repoAllowlist, sessionTtlMs, safeEqual } from './lib/session.mjs';
 import { corePilotState, overviewState } from './lib/core-pilot.mjs';
 import { fxvAttempts } from './lib/fxv/api.mjs';
 import { fxvMetrics } from './lib/fxv/metrics.mjs';
@@ -325,15 +325,18 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
     if (p === '/api/cchain/run-bindings/verify' && req.method === 'POST') {
       // 机器端点：RUN_BINDING_AUTH 入站验签（HMAC full-sha256 + nonce 防重放 + 时间窗）。
       // 审计失败不吞：audit_written=false 如实返回（actor=run-binding:<run_id>）。
+      // M-2：拒绝侧审计按来源+窗口封顶（防未认证刷审计）；source=连接来源地址。
       const body = await readJsonBody(req);
-      const r = await verifyRunBindingAndAudit(process.env, process.env.CONSOLE_PG_DSN, body ?? {});
+      const r = await verifyRunBindingAndAudit(process.env, process.env.CONSOLE_PG_DSN, body ?? {},
+        { source: req.socket?.remoteAddress ?? 'unknown' });
       return sendJson(res, r.status, r.body);
     }
     if (p === '/api/cchain/keystore/rotate' && req.method === 'POST') {
       const auth = getSession(tokenFromCookieHeader(req.headers.cookie));
       if (!auth) return sendJson(res, 401, anonymousBody());
       // 契约 §0.1：副作用方法必须携带 X-CSRF-Token
-      if (!auth.csrf || req.headers['x-csrf-token'] !== auth.csrf) {
+      // L-2：与 logout 一致的 timing-safe 比较（长度不等直接拒绝）
+      if (!auth.csrf || !safeEqual(String(req.headers['x-csrf-token'] ?? ''), auth.csrf)) {
         return sendJson(res, 403, { error: { reason: 'csrf_required' } });
       }
       const model = parseAccessModel();

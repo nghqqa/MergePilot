@@ -74,9 +74,29 @@ export function runBindingAuthStatus(env = process.env) {
   return { state: 'READY', dir, key_count: keys.length };
 }
 
-export function createRunBindingAuth(env = process.env) {
+export function createRunBindingAuth(env = process.env, { now = Date.now } = {}) {
   const dir = env.MERGEPILOT_RUN_BINDING_KEYSTORE;
-  const seen = new Map(); // nonce -> ts（单实例防重放）
+  // M-1（2026-09-27 加固波）：nonce 存储有界化——TTL + 容量上限 + FIFO 淘汰。
+  // * 安全不变量：TTL ≥ 2× 时间窗（钳制下限 10min）。原因：被清理 nonce 的
+  //   "捕获重放"（同 nonce+原 timestamp）必须先撞上 ±5min TIMESTAMP_SKEW；
+  //   若允许 TTL < skew 窗口，重放载荷在清理后仍新鲜 → 绕过防重放。env 只能调高。
+  // * 容量默认 8192（对齐 rag-live 有界 FIFO 惯例）为内存兜底：仅"验签成功"
+  //   占用槽位（无密钥者无法灌入）；达上限先清过期，仍满则 FIFO 淘汰最旧
+  //   （此时被淘汰 nonce 若在 TTL 内被同 key 重签重放理论上可过——需持有有效
+  //   密钥且窗口受限，属已声明的有界权衡）。
+  // * MERGEPILOT_NONCE_CAP 可覆盖（供容量边界测试）；now 时钟注入仅供测试。
+  const NONCE_TTL_MS = Math.max(Number(env.MERGEPILOT_NONCE_TTL_MS ?? 0) || 10 * 60_000, 10 * 60_000);
+  const NONCE_CAP = Number(env.MERGEPILOT_NONCE_CAP || 8192);
+  const seen = new Map(); // nonce -> 过期时刻（Map 插入序 = FIFO 依据）
+  function pruneExpired(at = now()) {
+    for (const [n, exp] of seen) if (exp <= at) seen.delete(n);
+  }
+  function rememberNonce(nonce) {
+    const at = now();
+    pruneExpired(at);
+    if (seen.size >= NONCE_CAP) seen.delete(seen.keys().next().value); // FIFO 淘汰最旧
+    seen.set(nonce, at + NONCE_TTL_MS);
+  }
   function loadKeys() {
     if (!dir || !fs.existsSync(dir)) return [];
     return fs.readdirSync(dir).filter((f) => f.endsWith('.key.json'))
@@ -88,7 +108,11 @@ export function createRunBindingAuth(env = process.env) {
       const keys = loadKeys();
       if (keys.length === 0) return { ok: false, reason: 'RUN_BINDING_AUTH_BLOCKED', detail: runBindingAuthStatus(env).blocked_condition };
       if (!run_id || !nonce || !timestamp || !signature) return { ok: false, reason: 'BAD_REQUEST' };
-      if (Math.abs(Date.now() - Number(timestamp)) > 5 * 60_000) return { ok: false, reason: 'TIMESTAMP_SKEW' };
+      // L-1（2026-09-27 加固波）：timestamp 必须是有限数值。NaN/Infinity/非数字
+      // 此前会绕过 skew 比较（NaN>x 恒 false）——现 fail-closed 拒绝。
+      const ts = Number(timestamp);
+      if (!Number.isFinite(ts)) return { ok: false, reason: 'INVALID_TIMESTAMP' };
+      if (Math.abs(now() - ts) > 5 * 60_000) return { ok: false, reason: 'TIMESTAMP_SKEW' };
       if (seen.has(nonce)) return { ok: false, reason: 'REPLAYED_NONCE' };
       const payload = `${run_id}|${nonce}|${timestamp}`;
       let matched = false;
@@ -97,9 +121,11 @@ export function createRunBindingAuth(env = process.env) {
         if (crypto.timingSafeEqual(Buffer.from(expect), Buffer.from(String(signature).padEnd(expect.length).slice(0, expect.length)))) { matched = true; break; }
       }
       if (!matched) return { ok: false, reason: 'BAD_SIGNATURE' };
-      seen.set(nonce, Date.now());
+      rememberNonce(nonce);
       return { ok: true };
     },
+    // 运维/测试观测：nonce 存储当前占用（清理过期后的实时值）
+    nonceStats() { pruneExpired(); return { size: seen.size, capacity: NONCE_CAP, ttl_ms: NONCE_TTL_MS }; },
     // 仅为测试/运维签发工具提供（生产密钥由受控分发通道写入 keystore，不进 Git）
     sign(keySecret, { run_id, nonce, timestamp }) {
       return crypto.createHmac('sha256', keySecret).update(`${run_id}|${nonce}|${timestamp}`).digest('hex');

@@ -48,6 +48,7 @@ export async function auditEvent(dsn, e) {
 // ── 状态观测（带变化审计：overall 变化时写一条 CCHAIN_STATE_CHANGED）────
 let lastOverall = null;
 export function resetCchainObserver() { lastOverall = null; } // 仅供测试隔离
+export function resetDenyAuditLimiter() { denyAuditBySource.clear(); } // 仅供测试隔离
 
 export async function cchainStatusObserved(env = process.env, dsn = process.env.CONSOLE_PG_DSN) {
   const status = await cchainStatus(env);
@@ -64,9 +65,33 @@ export async function cchainStatusObserved(env = process.env, dsn = process.env.
 }
 
 // ── RUN_BINDING_AUTH 入站验签（机器对机器：HMAC 替代会话）──────────────
-// 计数器（进程内存，重启归零——诚实语义，metrics 注明）。
-const counters = { run_binding_verify_ok: 0, run_binding_verify_denied: 0, key_rotations: 0 };
+// 计数器（进程内存，重启归零——诚实语义）。
+const counters = { run_binding_verify_ok: 0, run_binding_verify_denied: 0,
+  run_binding_verify_denied_suppressed: 0, key_rotations: 0 };
 export function cchainCounters() { return { ...counters }; }
+
+// M-2（2026-09-27 加固波）：拒绝侧审计防膨胀。verify 端点未认证即可调用，
+// 若每次拒绝都落一行审计，单一来源可无限制造 audit 行（表膨胀/存储放大）。
+// 策略：按来源（remoteAddress）+ 滚动窗口对"拒绝审计"封顶（默认 30 条/10min）；
+// 超限后拒绝结果照常返回（语义不变），仅不再写审计行并在响应/metrics 中标注
+// suppressed。成功验签不受限（能通过 HMAC 的必持有效密钥，不可伪造灌入）。
+// env：MERGEPILOT_VERIFY_AUDIT_DENY_CAP（默认 30，<=0 显式关闭封顶）、
+//      MERGEPILOT_VERIFY_AUDIT_WINDOW_MS（默认 600000）。
+const denyAuditBySource = new Map(); // source -> { window_start, count }
+function denyAuditAllowed(env, source) {
+  const cap = Number(env.MERGEPILOT_VERIFY_AUDIT_DENY_CAP ?? 30);
+  const win = Number(env.MERGEPILOT_VERIFY_AUDIT_WINDOW_MS ?? 600_000);
+  if (!(cap > 0)) return true;
+  const now = Date.now();
+  if (denyAuditBySource.size > 10_000) { // 来源表自身防膨胀：清掉窗口外条目
+    for (const [k, st] of denyAuditBySource) if (now - st.window_start >= win) denyAuditBySource.delete(k);
+  }
+  const key = source ?? 'unknown';
+  let st = denyAuditBySource.get(key);
+  if (!st || now - st.window_start >= win) { st = { window_start: now, count: 0 }; denyAuditBySource.set(key, st); }
+  st.count += 1;
+  return st.count <= cap;
+}
 
 let verifierSingleton = null; let verifierDir = undefined;
 function verifier(env) {
@@ -85,19 +110,23 @@ function verifier(env) {
 
 const DENY_STATUS = { BAD_REQUEST: 400 };
 
-export async function verifyRunBindingAndAudit(env = process.env, dsn = process.env.CONSOLE_PG_DSN, payload = {}) {
+export async function verifyRunBindingAndAudit(env = process.env, dsn = process.env.CONSOLE_PG_DSN, payload = {}, { source } = {}) {
   const r = verifier(env).verify({
     run_id: payload.run_id, nonce: payload.nonce,
     timestamp: payload.timestamp, signature: payload.signature,
   });
   if (r.ok) counters.run_binding_verify_ok += 1; else counters.run_binding_verify_denied += 1;
-  const audit = await auditEvent(dsn, {
-    kind: r.ok ? 'RUN_BINDING_VERIFY_OK' : 'RUN_BINDING_VERIFY_DENIED',
-    actor: `run-binding:${String(payload.run_id ?? 'unknown').slice(0, 64)}`,
-    reason: r.ok ? 'verified' : r.reason,
-    meta: { nonce_prefix: String(payload.nonce ?? '').slice(0, 8) },
-  });
-  const body = { ok: r.ok, ...(r.ok ? {} : { reason: r.reason, ...(r.detail ? { detail: r.detail } : {}) }), audit_written: audit.written, ...(audit.error ? { audit_error: audit.error } : {}) };
+  const suppress = !r.ok && !denyAuditAllowed(env, source);
+  if (suppress) counters.run_binding_verify_denied_suppressed += 1;
+  const audit = suppress
+    ? { written: false, suppressed: true, note: 'deny-audit cap（同源窗口内拒绝审计已封顶）' }
+    : await auditEvent(dsn, {
+        kind: r.ok ? 'RUN_BINDING_VERIFY_OK' : 'RUN_BINDING_VERIFY_DENIED',
+        actor: `run-binding:${String(payload.run_id ?? 'unknown').slice(0, 64)}`,
+        reason: r.ok ? 'verified' : r.reason,
+        meta: { nonce_prefix: String(payload.nonce ?? '').slice(0, 8), ...(source ? { source } : {}) },
+      });
+  const body = { ok: r.ok, ...(r.ok ? {} : { reason: r.reason, ...(r.detail ? { detail: r.detail } : {}) }), audit_written: audit.written, ...(audit.suppressed ? { audit_suppressed: true } : {}), ...(audit.error ? { audit_error: audit.error } : {}) };
   return { status: r.ok ? 200 : (DENY_STATUS[r.reason] ?? 401), body };
 }
 

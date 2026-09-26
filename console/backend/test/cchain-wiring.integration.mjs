@@ -52,7 +52,7 @@ before(async () => {
     CONSOLE_PG_DSN: DSN,
   });
   const { createConsole } = await import('../server.mjs');
-  const { resetCchainObserver } = await import('../lib/cchain/wiring.mjs');
+  const { resetCchainObserver, resetDenyAuditLimiter } = await import('../lib/cchain/wiring.mjs');
   resetCchainObserver();
   const { server } = createConsole({ evidenceRoot: fs.mkdtempSync(path.join(os.tmpdir(), 'ev-')) });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
@@ -120,4 +120,42 @@ test('keystore 轮换审计（actor=操作员）+ 新旧 key 生效切换', asyn
     body: JSON.stringify({ run_id: 'it-run-2', nonce: n, timestamp: ts,
       signature: signer.sign(SEED.secret, { run_id: 'it-run-2', nonce: n, timestamp: ts }) }) });
   assert.equal(r2.status, 401);
+});
+
+test('M-2（PG 实证）：同源拒绝审计封顶——7 次失败仅落 4 行审计，成功验签不受限', async () => {
+  const { resetDenyAuditLimiter } = await import('../lib/cchain/wiring.mjs');
+  resetDenyAuditLimiter();
+  const prevCap = process.env.MERGEPILOT_VERIFY_AUDIT_DENY_CAP;
+  process.env.MERGEPILOT_VERIFY_AUDIT_DENY_CAP = '4';
+  try {
+    const before = (await auditRows('RUN_BINDING_VERIFY_DENIED')).length;
+    const post = (payload) => fetch(BASE + '/api/cchain/run-bindings/verify', { method: 'POST',
+      headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload) });
+    let suppressed = 0;
+    for (let i = 0; i < 7; i++) {
+      const r = await post({ run_id: 'it-m2', nonce: 'm2p-' + i, timestamp: Date.now(), signature: 'e'.repeat(64) });
+      assert.equal(r.status, 401);
+      if ((await r.json()).audit_suppressed) suppressed++;
+    }
+    assert.equal(suppressed, 3, '7 次失败中 3 次审计被抑制');
+    const after = (await auditRows('RUN_BINDING_VERIFY_DENIED')).length;
+    assert.equal(after - before, 4, 'PG 实际新增审计行=封顶 4');
+    // 成功验签仍落审计（不受封顶）
+    const { createRunBindingAuth } = await import('../lib/cchain/index.mjs');
+    const keys = fs.readdirSync(KEYS).filter((f) => f.endsWith('.key.json'))
+      .map((f) => JSON.parse(fs.readFileSync(path.join(KEYS, f), 'utf8')))
+      .filter((k) => !k.revoked && new Date(k.expires_at) > new Date())
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
+    const signer = createRunBindingAuth({ MERGEPILOT_RUN_BINDING_KEYSTORE: KEYS });
+    const ts = Date.now(); const n = 'm2p-ok-' + crypto.randomBytes(4).toString('hex');
+    const r = await post({ run_id: 'it-m2', nonce: n, timestamp: ts,
+      signature: signer.sign(keys.secret, { run_id: 'it-m2', nonce: n, timestamp: ts }) });
+    assert.equal(r.status, 200);
+    assert.equal((await r.json()).audit_written, true);
+    assert.equal((await auditRows('RUN_BINDING_VERIFY_OK')).length >= 2, true, '成功验签审计持续落库');
+  } finally {
+    if (prevCap === undefined) delete process.env.MERGEPILOT_VERIFY_AUDIT_DENY_CAP;
+    else process.env.MERGEPILOT_VERIFY_AUDIT_DENY_CAP = prevCap;
+    resetDenyAuditLimiter();
+  }
 });
