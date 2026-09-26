@@ -1,0 +1,59 @@
+{
+ "summary": {
+  "total": 10,
+  "pass": 10
+ },
+ "results": [
+  {
+   "id": "UO1",
+   "name": "known-hit：ORG_RAG source + lexical-zh-en-v1 + snapshot/digest + reference-only + degraded 可区分",
+   "pass": true
+  },
+  {
+   "id": "UO2",
+   "name": "结果零风险决策字段（finding/severity/verdict/approved）",
+   "pass": true
+  },
+  {
+   "id": "UO3",
+   "name": "合法空：空数组 + ok + 不伪造",
+   "pass": true
+  },
+  {
+   "id": "UO4",
+   "name": "不可达：503 + degraded + 头 + 审计状态一致（不静默空成功）",
+   "pass": true
+  },
+  {
+   "id": "UO5",
+   "name": "恢复后 known-hit 正常 + 不用未校验旧语料",
+   "pass": true
+  },
+  {
+   "id": "UO6",
+   "name": "语料损坏：拒载 → degraded 503（screening+内容寻址校验绕过为零）",
+   "pass": true
+  },
+  {
+   "id": "UO7",
+   "name": "console 重启：旧会话失效重登 + known-hit 正常",
+   "pass": true
+  },
+  {
+   "id": "UO8",
+   "name": "两 PR 全不变：4/1/2 + PASSED 2 + 零 finding + success/action_required 无变化",
+   "pass": true
+  },
+  {
+   "id": "UO9",
+   "name": "401（未登录 org-search）+ 403（未授权仓）+ 404（未知 pack）",
+   "pass": true
+  },
+  {
+   "id": "UO10",
+   "name": "审计五字段完整 + 连续性（最近 10 条全过）",
+   "pass": true
+  }
+ ],
+ "finished_at": "2026-09-25T15:07:05.392Z"
+}

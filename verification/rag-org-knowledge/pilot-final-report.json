@@ -1,0 +1,61 @@
+{
+ "summary": {
+  "total": 10,
+  "pass": 10
+ },
+ "results": [
+  {
+   "id": "P1",
+   "name": "known-hit：五字段审计 + reference-only + lexical-zh-en-v1 + snapshot/digest",
+   "pass": true
+  },
+  {
+   "id": "P2",
+   "name": "零风险字段（finding/severity/verdict/approved）",
+   "pass": true
+  },
+  {
+   "id": "P3",
+   "name": "degraded 触发：503 + 头 + 响应体一致",
+   "pass": true
+  },
+  {
+   "id": "P3b",
+   "name": "恢复：known-hit 正常（恢复耗时 456ms）",
+   "pass": true
+  },
+  {
+   "id": "P4",
+   "name": "审计五字段连续性（最近 8 条，含 degraded 记录）",
+   "pass": true
+  },
+  {
+   "id": "P5",
+   "name": "两 PR 零变化（4|1|2 → 4|1|2；PASSED 2）",
+   "pass": true
+  },
+  {
+   "id": "P6",
+   "name": "allowlist 零越权（403 + overview 无越权数据）",
+   "pass": true
+  },
+  {
+   "id": "P7",
+   "name": "GitHub 写入次数 = 0（本轮零 gh CLI 调用）",
+   "pass": true
+  },
+  {
+   "id": "P8",
+   "name": "fail-closed：stale REFUSE + 过期票 past-due",
+   "pass": true
+  },
+  {
+   "id": "P9",
+   "name": "org-search 未登录 401",
+   "pass": true
+  }
+ ],
+ "authorized_at": "2026-09-25T23:24:47+08:00",
+ "valid_until": "2026-10-02T00:00:00+08:00",
+ "finished_at": "2026-09-25T15:25:21.823Z"
+}

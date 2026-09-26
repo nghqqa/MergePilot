@@ -1,0 +1,110 @@
+{
+ "summary": {
+  "total": 20,
+  "pass": 20
+ },
+ "results": [
+  {
+   "id": "R1",
+   "name": "两 PR 绑定完整（repo/pr/head/run/receipt/gate）",
+   "pass": true
+  },
+  {
+   "id": "R2",
+   "name": "PG head/receipt/gate 绑定（与 API 一致）",
+   "pass": true
+  },
+  {
+   "id": "R3",
+   "name": "真实 PR 零变化（4|1|2）",
+   "pass": true
+  },
+  {
+   "id": "R4",
+   "name": "阶段不变（PASSED 2）",
+   "pass": true
+  },
+  {
+   "id": "R5",
+   "name": "A 链 disabled + C 链 blocked",
+   "pass": true
+  },
+  {
+   "id": "C1",
+   "name": "Fixer: patch 生成 + 全绑定（repo/PR/head/run/ticket/attempt/sha）",
+   "pass": "f8c6c454c5e5cac6d93352471ae9f303df53cf085b3340bf4a376b2600c2748a"
+  },
+  {
+   "id": "C2",
+   "name": "Verifier: 独立读取（无 fixer_reasoning）",
+   "pass": true
+  },
+  {
+   "id": "C3",
+   "name": "测试失败 → REJECTED",
+   "pass": true
+  },
+  {
+   "id": "C4",
+   "name": "错误 repo → 拒绝",
+   "pass": true
+  },
+  {
+   "id": "C5",
+   "name": "stale head → 拒绝",
+   "pass": true
+  },
+  {
+   "id": "C6",
+   "name": "patch digest 漂移 → 检测",
+   "pass": true
+  },
+  {
+   "id": "C7",
+   "name": "无 receipt → 无 success",
+   "pass": true
+  },
+  {
+   "id": "C8",
+   "name": "空 diff → 拒绝",
+   "pass": true
+  },
+  {
+   "id": "C9",
+   "name": "并发竞争 → 仅一个执行",
+   "pass": true
+  },
+  {
+   "id": "C10",
+   "name": "重启恢复：artifact/audit/receipt 仍可读",
+   "pass": true
+  },
+  {
+   "id": "C11",
+   "name": "回滚：工作区零残留",
+   "pass": true
+  },
+  {
+   "id": "C12",
+   "name": "真实 PR 仍零变化（4|1|2）",
+   "pass": true
+  },
+  {
+   "id": "C13",
+   "name": "GitHub 写入 = 0",
+   "pass": true
+  },
+  {
+   "id": "C14",
+   "name": "无生产 Fixer/Verifier 容器",
+   "pass": true
+  },
+  {
+   "id": "C15",
+   "name": "A 链 disabled + C 链 blocked（终态确认）",
+   "pass": true
+  }
+ ],
+ "authorized_at": "2026-09-26T09:00+08:00",
+ "finished_at": "2026-09-26T01:04:04.307Z"
+}

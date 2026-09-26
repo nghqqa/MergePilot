@@ -1,0 +1,6 @@
+PASS [U1] user sees ONLY authorized repos (unauthorized rows exist in PG but invisible) — visible=nghqqa/tizhou,wookat/speaktype hiddenInPg=true
+PASS [U2] 401/403 · bad password · logout · TTL expiry · restart recovery — 401/403/401/200/401 ttl=200->401 fresh=POSTGRESQL_LIVE
+PASS [U3] API ↔ PG consistency: heads exact, receipts & gate counts match — heads=c4431509/dc425e12 receipts=4/4 gates=2/2
+PASS [U4] fail-closed: stale REFUSE · duplicate stable · CONFLICT kept originals · expired ticket past-due + invisible — REFUSE SKILL_GATE_REFUSED_STALE rows=2/2 expTicket=1 hidden=true
+
+user pilot: 4/4 PASS

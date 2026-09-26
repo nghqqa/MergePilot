@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#0b0f19" />
+    <title>MergePilot Console</title>
+  </head>
+  <body>
+    <!-- impeccable:direction
+    THESIS: 一台"审查工作台"——导航与页面服务审查者的日常动作（哪个 PR 需要处理、风险是什么、
+    证据在哪、下一步做什么）；接线与系统状态退入系统区。拒绝的默认排布：hero 大数卡阵列、
+    营销式首屏、渐变/玻璃/发光装饰。
+    OWN-WORLD: 冷灰阶工作区（#f5f6f8 地面 / 白面板 / #0b0f19 墨色侧边栏）+ MergePilot 深青 #0e6b62
+    唯一强调色 + 绿/琥珀/红/蓝四状态色（仅用于状态）；1px 发丝线 + 柔和双层阴影 + 6/8/10px 圆角；
+    lucide 线性图标统一笔画；本地中文系统字体栈（PingFang SC/HarmonyOS Sans SC/Noto Sans CJK SC/
+    Microsoft YaHei，零远程字体）；正文 14px、表格 13px；SHA/run_id/时间一律等宽 + tabular-nums；
+    长仓库名/PR 标题/SHA 以 ellipsis 截断（title 提示全文），绝不破坏布局。
+    小屏（≤960px）侧栏为抽屉式可展开导航——文字标签始终可见，不折叠为纯图标。
+STORY: 以仓库和 PR 为中心（第三轮起）：维护者 5 秒看清哪个 PR 需要处理，30 秒判定一次审查的可信度
+    （三态各自独立、来源可考）；PR 为主对象、run 降为历史（按 head 分组，旧 head 不冒充当前结论）；
+    snapshot 无当前 head 权威，PR 级摘要一律只说"最近记录"（Latest-Record Rule）；
+    未接通能力（登录/审批/合并）如实显示未接入，不放假按钮。
+    FIRST VIEWPORT: 左 236px 墨色侧边栏（品牌标 + 仓库/待处理/知识库/运行历史/设置五项导航 + 只读安全脚注）；
+    顶栏（面包屑含仓库上下文 + snapshot 模式徽章 + 会话状态 chip）；仓库工作台仓库卡列表；
+    登录守卫首屏无假表单，只提供明确标注的只读演示预览。
+    FORM: brief-pinned 现代管理系统语法（用户 brief 2026-09-22"现代管理系统设计美学"；brief 钉死世界，
+    未掷方向 seed）；工艺基准 = Linear / Vercel Dashboard / Ant Design Pro。
+    签名交互：证据抽屉 220ms 滑入 + 计数 chips 即时过滤 + PR 历史运行按 head 分组折叠。
+    FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review,
+    the verdict, DESIGN.md, and every shipping raster carrying its provenance.
+    -->
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

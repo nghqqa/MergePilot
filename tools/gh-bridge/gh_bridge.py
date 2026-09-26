@@ -20,13 +20,21 @@
 """
 import argparse
 import base64
+import hashlib
 import json
+import os
 import re
 import subprocess
 import sys
 import time
+import uuid
 
-sys.path.insert(0, r"D:\goai\r3work\scripts")
+_HERE = os.path.dirname(os.path.abspath(__file__))
+for _cand in (os.path.normpath(os.path.join(_HERE, "..", "r3ops")),
+              r"D:\goai\r3work\scripts"):
+    if os.path.isdir(_cand):
+        sys.path.insert(0, _cand)
+        break
 import matrix as mx  # noqa: E402
 
 SERVER = "root@159.75.42.106"
@@ -70,19 +78,36 @@ def pending_deliveries():
         "AND repo IS NOT NULL ORDER BY received_at) t", as_json=True)
 
 
+def already_processed(d):
+    """同 repo+PR+head 已有 PROCESSED 投递 → 跳过(重复 webhook/重发不重复执行)."""
+    q = ("SELECT count(*) FROM public.github_deliveries WHERE repo='%s' "
+         "AND pr_number=%s AND observed_head_sha='%s' AND status='PROCESSED'"
+         % (d["repo"], int(d["pr_number"]), d["observed_head_sha"]))
+    return ssh_psql(q) not in ("0", "")
+
+
 def claim(d):
-    """CAS 认领:PENDING→RUNNING。rowcount=1 才继续(并发安全)."""
+    """CAS 认领:PENDING→RUNNING。rowcount=1 才继续(并发安全)。
+
+    claim_id 每次认领轮换(对照 github_drain 合同):含 8 hex 随机尾,
+    终结(finish)必须精确匹配本次 claim_id,防旧执行者覆盖新执行者状态。"""
+    cid = "%s-bridge-%s" % (d["delivery_id"][:14], uuid.uuid4().hex[:8])
     q = ("UPDATE public.github_deliveries SET status='RUNNING', claim_id='%s', "
          "claimed_at=now() WHERE delivery_id='%s' AND status='PENDING'"
-         % (d["delivery_id"][:24] + "-bridge", d["delivery_id"]))
-    return ssh_psql(q) == "UPDATE 1"
+         % (cid, d["delivery_id"]))
+    return cid if ssh_psql(q) == "UPDATE 1" else None
 
 
-def finish(d, ok, note=""):
+def finish(d, ok, note="", cid=None):
+    """终结投递。带 cid 时精确匹配(租约正确性);不带时仅限认领前拒绝路径。"""
     status = "PROCESSED" if ok else "ERROR"
+    where = "delivery_id='%s'" % d["delivery_id"]
+    if cid:
+        where += " AND claim_id='%s'" % cid
+    else:
+        where += " AND claim_id LIKE '%-bridge%'"
     q = ("UPDATE public.github_deliveries SET status='%s', processed_at=now(), "
-         "error='%s' WHERE delivery_id='%s' AND claim_id LIKE '%%-bridge'"
-         % (status, note.replace("'", " ")[:180], d["delivery_id"]))
+         "error='%s' WHERE %s" % (status, note.replace("'", " ")[:180], where))
     return ssh_psql(q)
 
 
@@ -246,22 +271,6 @@ def watch_run(run, proj, deadline_ts):
 
 
 # ── 回写:经服务器 reporter 容器以 App 身份 POST check-run ───────────────────
-CHECK_PAYLOAD_SCRIPT = r'''
-import base64, json, sys, urllib.request
-from token_provider import GitHubAppTokenProvider, TokenProviderConfig
-p = GitHubAppTokenProvider(TokenProviderConfig.from_env())
-tok = p.get_token()
-spec = json.loads(base64.b64decode(sys.argv[1]).decode())
-req = urllib.request.Request('https://api.github.com/repos/%s/check-runs' % spec['repo'],
-    data=json.dumps(spec['body']).encode(), method='POST',
-    headers={'Authorization': 'Bearer ' + tok, 'Accept': 'application/vnd.github+json',
-             'Content-Type': 'application/json'})
-r = urllib.request.urlopen(req, timeout=20)
-d = json.load(r)
-print(json.dumps({'http': r.status, 'check_run_id': d['id'], 'url': d['html_url']}))
-'''
-
-
 def post_check(d, verdict, report, run):
     concl, title = {
         "pass": ("success", "MergePilot review: passed (auto-completed)"),
@@ -283,48 +292,329 @@ def post_check(d, verdict, report, run):
         "head_sha": d["observed_head_sha"],
         "status": "completed", "conclusion": concl,
         "output": {"title": title, "summary": summary[:60000]}}}
-    b64 = base64.b64encode(json.dumps(payload).encode()).decode()
-    s64 = base64.b64encode(CHECK_PAYLOAD_SCRIPT.encode()).decode()
-    # 脚本与载荷全部 base64,单行无引号——免疫 ssh/bash 转义
+    return payload
+
+
+def _reporter_exec(script_b64, payload_b64):
+    """在服务器 reporter 容器内执行 base64 脚本,返回 (stdout, ok)."""
     cmd = (f"cd {COMPOSE_DIR} && docker exec mp-checks-reporter python -c "
-           f"\"import base64;exec(base64.b64decode('{s64}').decode())\" {b64}")
+           f"\"import base64;exec(base64.b64decode('{script_b64}').decode())\" {payload_b64}")
     r = subprocess.run(["ssh", *SSH_OPTS, SERVER, cmd],
                        capture_output=True, text=True, timeout=90)
-    out = (r.stdout or "").strip() or (r.stderr or "").strip()[:200]
-    return out
+    out = (r.stdout or "").strip()
+    return out, r.returncode == 0 and bool(out)
+
+
+CHECK_PAYLOAD_SCRIPT = r'''
+import base64, json, sys, urllib.request
+from token_provider import GitHubAppTokenProvider, TokenProviderConfig
+p = GitHubAppTokenProvider(TokenProviderConfig.from_env())
+tok = p.get_token()
+spec = json.loads(base64.b64decode(sys.argv[1]).decode())
+req = urllib.request.Request('https://api.github.com/repos/%s/check-runs' % spec['repo'],
+    data=json.dumps(spec['body']).encode(), method='POST',
+    headers={'Authorization': 'Bearer ' + tok, 'Accept': 'application/vnd.github+json',
+             'Content-Type': 'application/json'})
+r = urllib.request.urlopen(req, timeout=20)
+d = json.load(r)
+print(json.dumps({'http': r.status, 'check_run_id': d['id'], 'url': d['html_url']}))
+'''
+
+# 对账收敛(场景3):POST 前先查该 head_sha 上是否已有本 App 的 mergepilot/review
+# check-run——"GitHub 已接受但本地未记录"时直接采纳,不重复发布。
+CHECK_RECONCILE_SCRIPT = r'''
+import base64, json, sys, urllib.request
+from token_provider import GitHubAppTokenProvider, TokenProviderConfig
+p = GitHubAppTokenProvider(TokenProviderConfig.from_env())
+tok = p.get_token()
+spec = json.loads(base64.b64decode(sys.argv[1]).decode())
+req = urllib.request.Request(
+    'https://api.github.com/repos/%s/commits/%s/check-runs' % (spec['repo'], spec['head_sha']),
+    headers={'Authorization': 'Bearer ' + tok, 'Accept': 'application/vnd.github+json'})
+r = urllib.request.urlopen(req, timeout=20)
+d = json.load(r)
+print(json.dumps({'http': r.status, 'matches': [
+    {'check_run_id': c['id'], 'conclusion': c.get('conclusion'), 'url': c.get('html_url')}
+    for c in d.get('check_runs', []) if c.get('name') == 'mergepilot/review']}))
+'''
+
+
+def parse_publish_out(out):
+    """reporter 输出 → 结构化结果;仅 HTTP 200/201 且带 check_run_id 视为成功."""
+    try:
+        j = json.loads(out)
+        if isinstance(j, dict) and j.get("http") in (200, 201) and j.get("check_run_id"):
+            return {"ok": True, "check_run_id": j["check_run_id"],
+                    "url": j.get("url", ""), "http": j["http"], "adopted": False}
+    except Exception:
+        pass
+    return {"ok": False, "raw": (out or "")[:200]}
+
+
+def parse_reconcile_out(out):
+    try:
+        j = json.loads(out)
+        if isinstance(j, dict) and j.get("http") in (200, 201):
+            m = j.get("matches") or []
+            if m:
+                best = m[-1]
+                return {"ok": True, "check_run_id": best["check_run_id"],
+                        "url": best.get("url", ""), "http": j["http"], "adopted": True}
+            return {"ok": True, "matches": 0, "adopted": False}
+    except Exception:
+        pass
+    return {"ok": False, "raw": (out or "")[:200]}
+
+
+# ── 发布凭据(MinIO 回执):POST 成功/对账采纳后落盘,崩溃恢复据此免重发 ──────
+def _receipt_path(proj):
+    return f"teams/elemiso-team/shared/projects/{proj}/check-run-receipt.json"
+
+
+def write_receipt(proj, res, d, run, verdict):
+    body = {"check_run_id": res.get("check_run_id"), "url": res.get("url", ""),
+            "head_sha": d["observed_head_sha"], "run_id": run, "verdict": verdict,
+            "adopted": bool(res.get("adopted")),
+            "written_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+    return minio_put(_receipt_path(proj), json.dumps(body, ensure_ascii=False, indent=2))
+
+
+def read_receipt(proj):
+    p = subprocess.run(["docker", "exec", "elemiso-ctrl", "mc", "cat",
+                        f"{BUCKET}/{_receipt_path(proj)}"],
+                       capture_output=True, text=True, timeout=30)
+    if p.returncode != 0 or not p.stdout.strip():
+        return None
+    try:
+        return json.loads(p.stdout)
+    except Exception:
+        return None
+
+
+PUBLISH_ATTEMPTS = 3          # 有界重试(场景4):发布类失败最多 3 次
+PUBLISH_BACKOFF_S = (10, 30)  # 退避间隔
+
+
+def publish_with_retry(d, verdict, report, run, proj, log):
+    """发布结论。顺序:本地回执 → GitHub 对账 → POST(有界重试)→ 回执落盘。
+
+    返回 {'ok':True,...} 或 {'ok':False,'raw':...}。任一成功路径都会写回执;
+    回执写失败不视为发布失败(check_run_id 记入 note,恢复时对账兜底)。"""
+    rcpt = read_receipt(proj)
+    if rcpt and rcpt.get("check_run_id"):
+        return {"ok": True, "check_run_id": rcpt["check_run_id"],
+                "url": rcpt.get("url", ""), "http": None, "adopted": True,
+                "from": "receipt"}
+    payload = post_check(d, verdict, report, run)
+    b64 = base64.b64encode(json.dumps(payload).encode()).decode()
+    s64 = base64.b64encode(CHECK_PAYLOAD_SCRIPT.encode()).decode()
+    r64 = base64.b64encode(CHECK_RECONCILE_SCRIPT.encode()).decode()
+    q64 = base64.b64encode(json.dumps(
+        {"repo": d["repo"], "head_sha": d["observed_head_sha"]}).encode()).decode()
+    last = {"ok": False, "raw": "not attempted"}
+    for i in range(1, PUBLISH_ATTEMPTS + 1):
+        rec_out, rec_ok = _reporter_exec(r64, q64)
+        rec = parse_reconcile_out(rec_out) if rec_ok else {"ok": False, "raw": rec_out[:200]}
+        if rec.get("ok") and rec.get("adopted"):
+            write_receipt(proj, rec, d, run, verdict)
+            return rec
+        out, ok = _reporter_exec(s64, b64)
+        res = parse_publish_out(out) if ok else {"ok": False, "raw": out[:200]}
+        if res["ok"]:
+            if not write_receipt(proj, res, d, run, verdict):
+                log("receipt write failed (non-fatal; reconcile covers recovery)")
+            return res
+        last = res
+        log("publish attempt %d/%d failed: %s" % (i, PUBLISH_ATTEMPTS, res.get("raw", "")[:120]))
+        if i < PUBLISH_ATTEMPTS:
+            time.sleep(PUBLISH_BACKOFF_S[min(i - 1, len(PUBLISH_BACKOFF_S) - 1)])
+    return last
+
+
+# ── run 级版本清单(产品化备忘九.2):派发前持久化,派发引用其内容摘要 ────────
+# 原则:只记录桥在派发时能真实取得的值;取不到的写 null 并列入 missing[],
+# 不伪造、不把事后版本当成执行时版本。write-once:已存在且哈希一致→采纳,
+# 不一致→拒绝覆盖(版本绑定 run,恢复路径只读不重写)。
+MANIFEST_PATH = "teams/elemiso-team/shared/projects/%s/run-manifest.json"
+SKILLS_IN_SPEC = ("skill_diff_parse", "skill_risk_classify", "skill_sast_scan",
+                  "skill_case_retrieval")
+
+
+def _canon(obj):
+    return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def _sha_text(t):
+    return hashlib.sha256(t.encode("utf-8")).hexdigest()
+
+
+def manifest_sha(m):
+    return _sha_text(_canon(m))
+
+
+def _bridge_source_sha():
+    try:
+        with open(os.path.join(_HERE, "gh_bridge.py"), "rb") as f:
+            return hashlib.sha256(f.read()).hexdigest()
+    except Exception:
+        return None
+
+
+def _git_commit():
+    try:
+        r = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=_HERE,
+                           capture_output=True, text=True, timeout=10)
+        return r.stdout.strip() or None if r.returncode == 0 else None
+    except Exception:
+        return None
+
+
+def _worker_image_id(container):
+    try:
+        r = subprocess.run(["docker", "inspect", "--format", "{{.Image}}", container],
+                           capture_output=True, text=True, timeout=15)
+        return r.stdout.strip() or None if r.returncode == 0 else None
+    except Exception:
+        return None
+
+
+_WORKER_CFG = "/root/.copaw-worker/%s/openclaw.json"
+_SKILL_DIR = "/opt/mergepilot/skills"
+# MCP 工具名(skill_*)与镜像内目录名的映射(R5 探查核实,2026-09-22)
+_SKILL_DIRS = {"skill_diff_parse": "diff_parse", "skill_risk_classify": "risk_classify",
+               "skill_sast_scan": "sast_scan", "skill_case_retrieval": "case_retrieval"}
+
+
+def _worker_model_id(container, role):
+    """只读取 worker 配置中的主模型标识;仅提取 model 字段,不搬运其余配置。"""
+    try:
+        r = subprocess.run(["docker", "exec", container, "cat", _WORKER_CFG % role],
+                           capture_output=True, text=True, timeout=15)
+        if r.returncode != 0:
+            return None
+        cfg = json.loads(r.stdout)
+        return (((cfg.get("agents") or {}).get("defaults") or {})
+                .get("model") or {}).get("primary")
+    except Exception:
+        return None
+
+
+def _skills_content_hashes(container, skills=SKILLS_IN_SPEC):
+    """对 worker 镜像内 skill 目录做内容哈希(sha256 of 排序后逐文件 sha256)。
+
+    工具名→目录名经 _SKILL_DIRS 映射;目录不存在或无文件时不输出该 skill
+    (宁可缺失进 missing[],也不产出空串哈希冒充)。"""
+    try:
+        pairs = ["%s %s" % (s, _SKILL_DIRS[s]) for s in skills if s in _SKILL_DIRS]
+        r = subprocess.run(
+            ["docker", "exec", container, "sh", "-c",
+             "cd %s || exit 1; while read -r s d; do "
+             "cnt=$(find \"$d\" -type f ! -path '*__pycache__*' 2>/dev/null | wc -l); "
+             "[ \"$cnt\" -gt 0 ] || continue; "
+             "printf '%%s ' \"$s\"; "
+             "find \"$d\" -type f ! -path '*__pycache__*' -exec sha256sum {} \\; "
+             "| awk '{print $1}' | sort | sha256sum | cut -d' ' -f1; done <<'EOF'\n%s\nEOF"
+             % (_SKILL_DIR, "\n".join(pairs))],
+            capture_output=True, text=True, timeout=30)
+        if r.returncode != 0:
+            return None
+        out = {}
+        for line in r.stdout.splitlines():
+            parts = line.split()
+            if len(parts) == 2 and re.fullmatch(r"[0-9a-f]{64}", parts[1]):
+                out[parts[0]] = parts[1]
+        return out or None
+    except Exception:
+        return None
+
+
+def build_manifest(d, run, proj, task, kickoff_base, timeout_min):
+    """派发时的版本事实快照。缺失即标注(备忘九.2:可追溯≠可复算)。"""
+    workers = {n: _worker_image_id("elemiso-worker-" + n)
+               for n in ("leader", "reviewer", "fixer", "verifier")}
+    bridge_sha = _bridge_source_sha()
+    git = _git_commit()
+    # R5 探查(2026-09-22):模型标识与 Skill 内容哈希可从 reviewer 只读取得;
+    # RAG 版本仅剩 :4184 endpoint(rag-live 未运行),无从取版本 → 保持 missing。
+    model_id = _worker_model_id("elemiso-worker-reviewer", "reviewer")
+    skill_hashes = _skills_content_hashes("elemiso-worker-reviewer")
+    cfg = {"allow_repos": sorted(ALLOW_REPOS), "repo_url": REPO_URL,
+           "leader": LEADER, "team_room": TEAM_ROOM, "dm_room": DM_ROOM,
+           "watch_poll_s": WATCH_POLL_S, "timeout_min": timeout_min,
+           "publish_attempts": PUBLISH_ATTEMPTS, "stale_minutes": STALE_MINUTES,
+           "requeue_max": REQUEUE_MAX, "server": SERVER}
+    m = {
+        "manifest_version": 1,
+        "run_id": run,
+        "project_id": proj,
+        "delivery_id": d["delivery_id"],
+        "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "code": {"repo": d["repo"], "head_sha": d["observed_head_sha"],
+                 "base_sha": d["observed_base_sha"]},
+        "prompt": {"task_id": task,
+                   "kickoff_base_sha256": _sha_text(kickoff_base)},
+        "orchestrator": {"bridge_source_sha256": bridge_sha, "git_commit": git},
+        "workers": {"images": workers},
+        "skills": {"names": list(SKILLS_IN_SPEC), "content_sha256": skill_hashes},
+        "model": {"primary": model_id,
+                  "generation_params": None,   # agentloop 不外露;不伪造
+                  "note": "primary from reviewer openclaw.json; fixer/verifier assumed同模型池"},
+        "rag": {"version": None,
+                "endpoint_configured": "host.docker.internal:4184 (rag-live; 未运行无版本可取)"},
+        "config": {"canonical": cfg, "sha256": _sha_text(_canon(cfg))},
+    }
+    missing = ["model.generation_params", "rag.version"]
+    if model_id is None:
+        missing.append("model.primary")
+    if skill_hashes is None:
+        missing.append("skills.content_sha256")
+    if any(v is None for v in workers.values()):
+        missing.append("workers.images")
+    if bridge_sha is None:
+        missing.append("orchestrator.bridge_source_sha256")
+    if git is None:
+        missing.append("orchestrator.git_commit")
+    m["missing"] = missing
+    return m
+
+
+def read_run_manifest(proj):
+    p = subprocess.run(["docker", "exec", "elemiso-ctrl", "mc", "cat",
+                        f"{BUCKET}/{MANIFEST_PATH % proj}"],
+                       capture_output=True, text=True, timeout=30)
+    if p.returncode != 0 or not p.stdout.strip():
+        return None
+    try:
+        return json.loads(p.stdout)
+    except Exception:
+        return None
+
+
+def write_run_manifest(proj, m):
+    """write-once:无则写;有且哈希一致→adopted;有但不一致→拒绝(不覆盖)。"""
+    old = read_run_manifest(proj)
+    if old is not None:
+        if manifest_sha(old) == manifest_sha(m):
+            return {"ok": True, "adopted": True}
+        return {"ok": False, "reason": "run-manifest conflict (write-once per run)"}
+    return {"ok": minio_put(MANIFEST_PATH % proj,
+                            json.dumps(m, ensure_ascii=False, indent=2))}
+
+
+def prepare_run_manifest(d, run, proj, task, kickoff_base, timeout_min):
+    """派发前置:构建+持久化清单,返回带引用行的 kickoff 或 None(fail-closed)。"""
+    man = build_manifest(d, run, proj, task, kickoff_base, timeout_min)
+    mw = write_run_manifest(proj, man)
+    if not mw.get("ok"):
+        return None, mw.get("reason", "write failed")
+    ref = ("\n\nrun-manifest: sha256 %s (projects/%s/run-manifest.json)\n"
+           % (manifest_sha(man), proj))
+    return kickoff_base + ref, None
 
 
 # ── 主流程 ──────────────────────────────────────────────────────────────────
-def process(d, timeout_min, dry):
-    if d["repo"] not in ALLOW_REPOS:
-        finish(d, False, "repo not in bridge allowlist")
-        return
-    if not claim(d):
-        return  # 被并发认领
-    run, proj, task, kickoff = build_kickoff(d)
-    log = lambda *a: print(time.strftime("[%H:%M:%S]"), *a, flush=True)
-    log(f"claimed {d['delivery_id'][:18]} PR#{d['pr_number']} {d['action']} -> {run}")
-    if dry:
-        log("DRY-RUN kickoff:\n" + kickoff)
-        finish(d, False, "dry-run (no dispatch)")
-        return
-    if not seed_project(proj, task, d, run):
-        finish(d, False, "project seeding failed (mc pipe)")
-        log("project seeding FAILED — delivery marked ERROR")
-        return
-    log(f"seeded project {proj} (meta.json + plan.md)")
-    if not wake_workers():
-        finish(d, False, "worker wake failed")
-        log("worker wake FAILED — delivery marked ERROR")
-        return
-    log("workers awake; sending kickoff to leader DM")
-    r = mx.send(DM_ROOM, LEADER, kickoff, txn_prefix="ghbridge")
-    if not r.get("event_id"):
-        finish(d, False, "kickoff send failed: " + str(r.get("error"))[:120])
-        return
-    log("kickoff sent:", r["event_id"])
-    st, report = watch_run(run, proj, time.time() + timeout_min * 60)
-    # 终态→结论,以权威产物(meta.json 状态 + result.md + gate 记录)裁决
+def conclude(d, st, report, run, proj, cid, log):
+    """终态→结论→发布→终结。process 与 resume 共用(场景7 语义)。"""
     if st == "completed":
         verdict = "pass_verified" if gate_record(proj, "approval") else "pass"
     elif st == "blocked":
@@ -337,9 +627,151 @@ def process(d, timeout_min, dry):
         "## leader report\n" + (report or ""),
     ] if x.strip())
     log("terminal:", st, "-> verdict:", verdict)
-    cr = post_check(d, verdict, evidence, run)
-    log("check-run:", cr)
-    finish(d, st in ("completed", "blocked"), f"{st}/{verdict}; {cr[:150]}")
+    # 场景7:GitHub 回写成功才算投递完成;失败=可恢复 ERROR,不标 PROCESSED。
+    # 审查未终态(timeout)时即使 neutral check 已发布,投递也不算完成(manual)。
+    pub = publish_with_retry(d, verdict, evidence, run, proj, log)
+    if pub["ok"] and st in ("completed", "blocked"):
+        note = "%s/%s; check_run=%s" % (st, verdict, pub.get("check_run_id"))
+        if pub.get("adopted"):
+            note += " (adopted via %s)" % pub.get("from", "reconcile")
+        finish(d, True, note, cid)
+        log("published:", note)
+    elif not pub["ok"] and st in ("completed", "blocked"):
+        finish(d, False, "PUBLISH_FAILED(retryable) %s/%s; last=%s"
+               % (st, verdict, pub.get("raw", "")[:100]), cid)
+        log("PUBLISH FAILED after %d attempts — delivery ERROR (recoverable)" % PUBLISH_ATTEMPTS)
+    else:
+        finish(d, False, "TIMEOUT(manual) %s; publish=%s"
+               % (st, "ok" if pub.get("ok") else "failed"), cid)
+        log("review TIMEOUT — delivery ERROR (manual attention)")
+
+
+def process(d, timeout_min, dry):
+    if d["repo"] not in ALLOW_REPOS:
+        finish(d, False, "repo not in bridge allowlist")
+        return
+    if already_processed(d):
+        # 场景5:同 repo+PR+head 已成功投递过,重复投递只标记不重跑
+        finish(d, True, "duplicate: same repo/pr/head already PROCESSED")
+        return
+    cid = claim(d)
+    if not cid:
+        return  # 被并发认领
+    run, proj, task, kickoff = build_kickoff(d)
+    log = lambda *a: print(time.strftime("[%H:%M:%S]"), *a, flush=True)
+    log(f"claimed {d['delivery_id'][:18]} PR#{d['pr_number']} {d['action']} -> {run} (claim {cid[-8:]})")
+    if dry:
+        log("DRY-RUN kickoff:\n" + kickoff)
+        finish(d, False, "dry-run (no dispatch)", cid)
+        return
+    if not seed_project(proj, task, d, run):
+        finish(d, False, "project seeding failed (mc pipe)", cid)
+        log("project seeding FAILED — delivery marked ERROR")
+        return
+    log(f"seeded project {proj} (meta.json + plan.md)")
+    if not wake_workers():
+        finish(d, False, "worker wake failed", cid)
+        log("worker wake FAILED — delivery marked ERROR")
+        return
+    log("workers awake; preparing run-manifest (pre-dispatch, fail-closed)")
+    kickoff2, merr = prepare_run_manifest(d, run, proj, task, kickoff, timeout_min)
+    if kickoff2 is None:
+        finish(d, False, "run-manifest failed: " + str(merr)[:120], cid)
+        log("run-manifest FAILED — no dispatch (fail-closed):", merr)
+        return
+    kickoff = kickoff2
+    log("run-manifest persisted; sending kickoff to leader DM")
+    r = mx.send(DM_ROOM, LEADER, kickoff, txn_prefix="ghbridge")
+    if not r.get("event_id"):
+        finish(d, False, "kickoff send failed: " + str(r.get("error"))[:120], cid)
+        return
+    log("kickoff sent:", r["event_id"])
+    st, report = watch_run(run, proj, time.time() + timeout_min * 60)
+    conclude(d, st, report, run, proj, cid, log)
+
+
+# ── 崩溃恢复(场景1/2/8):接管过期桥租约,按项目权威状态续接 ──────────────────
+STALE_MINUTES = 45   # 一轮含人工门可达 ~30min;超过 45min 视为孤儿租约
+REQUEUE_MAX = 2      # 无项目回队上限(跨崩溃有界,场景4)
+
+
+def _new_cid(d):
+    return "%s-bridge-%s" % (d["delivery_id"][:14], uuid.uuid4().hex[:8])
+
+
+def take_over_stale(mins=STALE_MINUTES):
+    """接管过期 RUNNING 桥租约:CAS 换新 claim_id(旧执行者此后 rowcount=0)。
+
+    只认本桥新格式 claim_id(含 '-bridge-' 尾段)——为 Controller 留互斥边界:
+    其他编排器的认领格式不同,不会被本桥接管(场景9 契约的一半)。"""
+    rows = ssh_psql(
+        "SELECT json_agg(t) FROM (SELECT delivery_id, event_name, action, repo, "
+        "pr_number, observed_head_sha, observed_base_sha, received_at, claim_id, error "
+        "FROM public.github_deliveries WHERE status='RUNNING' "
+        "AND claim_id LIKE '%%-bridge-%%' "
+        "AND claimed_at < now() - interval '%d minutes' ORDER BY claimed_at) t" % mins,
+        as_json=True) or []
+    taken = []
+    for r in rows:
+        new = _new_cid(r)
+        q = ("UPDATE public.github_deliveries SET claim_id='%s', claimed_at=now() "
+             "WHERE delivery_id='%s' AND claim_id='%s' AND status='RUNNING'"
+             % (new, r["delivery_id"], r["claim_id"]))
+        if ssh_psql(q) == "UPDATE 1":
+            d = dict(r)
+            d["_cid"] = new
+            taken.append(d)
+    return taken
+
+
+def _requeue_count(d):
+    m = re.match(r"RQ(\d+)", d.get("error") or "")
+    return int(m.group(1)) if m else 0
+
+
+def resume(d, timeout_min, log):
+    """按项目权威状态续接(场景2:不重发 kickoff,无重复业务副作用)。
+
+    分流:receipt→直接终结;项目终态→续发布;项目非终态→只续观察;
+    无项目→有界回队 PENDING(计数 RQn,超限转 MANUAL)。"""
+    cid = d["_cid"]
+    proj = "elemiso-gh-pr%d-%s" % (d["pr_number"], d["observed_head_sha"][:8])
+    run = "resume-%s" % d["delivery_id"][:8]
+    try:
+        man = read_run_manifest(proj)
+    except Exception:
+        man = None
+    if man:
+        log("resumed %s: run-manifest %s (bound at dispatch; read-only)"
+            % (d["delivery_id"][:12], manifest_sha(man)[:12]))
+    else:
+        # 前期 run 无清单属已知缺失,不阻断恢复(恢复语义以项目权威状态为准)。
+        log("resumed %s: no run-manifest (pre-manifest run or lost); continuing"
+            % d["delivery_id"][:12])
+    rcpt = read_receipt(proj)
+    if rcpt and rcpt.get("check_run_id"):
+        finish(d, True, "recovered via receipt; check_run=%s (orig run %s)"
+               % (rcpt.get("check_run_id"), rcpt.get("run_id", "?")), cid)
+        log("resumed %s: receipt present -> PROCESSED" % d["delivery_id"][:12])
+        return
+    st = project_status(proj)
+    if st is None:
+        n = _requeue_count(d)
+        if n >= REQUEUE_MAX:
+            finish(d, False, "MANUAL: requeued %d times, project never appeared" % n, cid)
+            log("resumed %s: requeue budget exhausted -> MANUAL" % d["delivery_id"][:12])
+        else:
+            q = ("UPDATE public.github_deliveries SET status='PENDING', claim_id=NULL, "
+                 "claimed_at=NULL, error='RQ%d' WHERE delivery_id='%s' AND claim_id='%s' "
+                 "AND status='RUNNING'" % (n + 1, d["delivery_id"], cid))
+            ssh_psql(q)
+            log("resumed %s: no project -> requeued (RQ%d)" % (d["delivery_id"][:12], n + 1))
+        return
+    if st in ("completed", "blocked"):
+        conclude(d, st, None, run, proj, cid, log)
+        return
+    st2, report = watch_run(run, proj, time.time() + timeout_min * 60)
+    conclude(d, st2, report, run, proj, cid, log)
 
 
 def main():
@@ -353,6 +785,19 @@ def main():
         for d in pending_deliveries():
             print(json.dumps(d, ensure_ascii=False))
         return
+    log = lambda *m: print(time.strftime("[%H:%M:%S]"), *m, flush=True)
+    # 启动即接管崩溃残留的孤儿租约(场景1:认领后崩溃可恢复)
+    try:
+        stale = take_over_stale()
+        for d in stale:
+            try:
+                log("recovering stale", d["delivery_id"][:12])
+                resume(d, a.timeout_min, log)
+            except Exception as e:
+                print("resume error:", type(e).__name__, str(e)[:150], flush=True)
+    except Exception as e:
+        print("take_over_stale error (will continue):",
+              type(e).__name__, str(e)[:150], flush=True)
     while True:
         try:
             pend = pending_deliveries()

@@ -26,7 +26,9 @@ colors:
   border-strong: "#b9bab2"
 typography:
   body:
-    fontFamily: "system-ui, 'Segoe UI', 'Microsoft YaHei', sans-serif"
+    # 审查工作台轮（2026-09-25）：本地可验证中文字体栈——零远程字体；
+    # 正文 14px（长文阅读），表格 13px；SHA/run_id/时间等宽 + tabular-nums
+    fontFamily: "system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'HarmonyOS Sans SC', 'Noto Sans CJK SC', 'Source Han Sans SC', 'Microsoft YaHei', sans-serif"
     fontSize: "13px"
     fontWeight: 400
     lineHeight: 1.45
@@ -193,3 +195,15 @@ components:
 - **Don't** 添加任何写操作按钮（apply/delete/rewire/rollback）。
 - **Don't** 用颜色作为唯一状态载体，或用状态色做装饰。
 - **Don't** 入场动画、逐项 stagger、滚动视差。
+
+## 审查工作台信息架构（CANONICAL_CONSOLE_UI_REDESIGN，2026-09-25）
+
+- 定位从"运行取证台"演进为**审查工作台**：导航与页面服务审查者的日常动作，
+  系统状态退入次级区。
+- 主导航：待处理 / 仓库 / 运行 / 审计（/approvals）。系统区：系统状态（/core，
+  标题"系统状态与接线"）/ 知识库 / 数据源 / 诊断 / 设置。
+- 登录页三区：①登录表单（具名操作员，服务端校验）②当前数据范围 ③只读演示
+  （分隔线后的次级路径）；文案缩短，不承诺未接通能力。
+- 响应式：≤960px 侧栏为抽屉式可展开导航（顶栏"菜单"按钮 + 遮罩 + Escape 关闭），
+  文字标签始终可见——不折叠为纯图标；长仓库名/PR 标题/SHA 以 ellipsis 截断。
+- 等宽字体只用于代码、标识符与测量值（.mono/.sha）；正文/标签/导航一律正体。

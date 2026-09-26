@@ -1,0 +1,7 @@
+{
+ "runs": {
+  "run-canary6-st-426": "PRODUCE",
+  "run-canary6-tz-2": "PRODUCE"
+ },
+ "enforce": true
+}

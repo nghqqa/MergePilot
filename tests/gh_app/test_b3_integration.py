@@ -208,7 +208,7 @@ class TestProxyProtocol(unittest.TestCase):
 class TestMcpBridgeSupplyChain(unittest.TestCase):
 
     def test_dockerfile_digest_pinned(self):
-        text = (ROOT / "Dockerfile.mcp-bridge").read_text(encoding="utf-8")
+        text = (ROOT / "docker" / "Dockerfile.mcp-bridge").read_text(encoding="utf-8")
         self.assertIn(
             "ghcr.io/github/github-mcp-server@"
             "sha256:881b53d6f75f69bdbc1b5b10fc2f1361717c19054143b3a8529fb5c32061a50e",
@@ -238,7 +238,7 @@ class TestMcpBridgeSupplyChain(unittest.TestCase):
                       text)
 
     def test_dockerfile_no_secrets(self):
-        text = (ROOT / "Dockerfile.mcp-bridge").read_text(encoding="utf-8")
+        text = (ROOT / "docker" / "Dockerfile.mcp-bridge").read_text(encoding="utf-8")
         for forbidden in ("ghp_", "ghs_", "BEGIN PRIVATE", "password=",
                           "postgresql://"):
             self.assertNotIn(forbidden, text)
@@ -253,18 +253,18 @@ class TestMcpBridgeSupplyChain(unittest.TestCase):
 class TestProxyDockerfile(unittest.TestCase):
 
     def test_stdlib_only_no_pip(self):
-        text = (ROOT / "Dockerfile.gh-proxy").read_text(encoding="utf-8")
+        text = (ROOT / "docker" / "Dockerfile.gh-proxy").read_text(encoding="utf-8")
         self.assertNotIn("pip install", text)
 
     def test_digest_and_uid(self):
-        text = (ROOT / "Dockerfile.gh-proxy").read_text(encoding="utf-8")
+        text = (ROOT / "docker" / "Dockerfile.gh-proxy").read_text(encoding="utf-8")
         self.assertIn("sha256:9e869b08", text)
         self.assertIn("-u 9090", text)
         self.assertIn("-g 9090", text)
         self.assertIn("USER mergepilot-gh", text)
 
     def test_no_secrets_no_socket(self):
-        text = (ROOT / "Dockerfile.gh-proxy").read_text(encoding="utf-8")
+        text = (ROOT / "docker" / "Dockerfile.gh-proxy").read_text(encoding="utf-8")
         for forbidden in ("ghp_", "BEGIN PRIVATE", "docker.sock",
                           "password="):
             self.assertNotIn(forbidden, text)

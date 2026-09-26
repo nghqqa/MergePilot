@@ -1,0 +1,76 @@
+{
+ "summary": {
+  "total": 11,
+  "pass": 11,
+  "fail": 0
+ },
+ "results": [
+  {
+   "id": "P1",
+   "name": "语料装载：shape+screening 通过；snapshot_id/digest 内容寻址",
+   "pass": true,
+   "detail": "snap-d903481f1e12674609bce8a4208173bb"
+  },
+  {
+   "id": "P2",
+   "name": "检索版本固定 lexical-zh-en-v1",
+   "pass": true,
+   "detail": ""
+  },
+  {
+   "id": "P3",
+   "name": "记录完备：documents/chunks/source_ref/data_mode/publication_status",
+   "pass": true,
+   "detail": "docs=4 chunks=10"
+  },
+  {
+   "id": "P4",
+   "name": "screening 负向：注入仓库事实 → 拒绝",
+   "pass": true,
+   "detail": "[{\"rule\":\"repo-fact\",\"sample\":\"所有生产系统登录必须使用唯一的个人凭证，禁止共享账号。密码最短长度为 14 个字\"}]"
+  },
+  {
+   "id": "P5",
+   "name": "已知命中：密码/密钥标准检索到 std-001",
+   "pass": true,
+   "detail": "hits=4 top=std-001"
+  },
+  {
+   "id": "P6",
+   "name": "已知命中：代码审查标准检索到 std-002",
+   "pass": true,
+   "detail": "docs=std-002,std-001,std-003"
+  },
+  {
+   "id": "P7",
+   "name": "合法空结果：零命中如实返回（非降级）",
+   "pass": true,
+   "detail": ""
+  },
+  {
+   "id": "P8",
+   "name": "服务不可达：显式不可达（worker 侧标记 degraded 的前置事实）",
+   "pass": true,
+   "detail": "TypeError: fetch failed"
+  },
+  {
+   "id": "P9",
+   "name": "审计关联：预检驱动的每次检索含 snapshot_id/query_hash/source_refs/service_state/run_id",
+   "pass": true,
+   "detail": "driven=3 total=4"
+  },
+  {
+   "id": "P10",
+   "name": "语料损坏/敏感内容 → 拒绝装载，服务 degraded 503（不伪装正常检索）",
+   "pass": true,
+   "detail": "503/corpus_unavailable"
+  },
+  {
+   "id": "P11",
+   "name": "核心面不受影响：两授权 PR 只读路径正常",
+   "pass": true,
+   "detail": "POSTGRESQL_LIVE repos=2"
+  }
+ ],
+ "finished_at": "2026-09-25T11:47:31.560Z"
+}

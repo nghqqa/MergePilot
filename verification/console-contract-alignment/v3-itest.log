@@ -1,0 +1,50 @@
+✔ console_v3 只读 HTTP 联调：列表→聚合→详情→404→只读边界 (37.0202ms)
+ℹ list data_mode=shadow/fixture only runs=3
+ℹ aggregated 2 PR(s) from 3 run(s)
+ℹ detail run_id=fx-run-100 mode=shadow repo=acme/other#9
+ℹ tests 1
+ℹ suites 0
+ℹ pass 1
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 140.2166
+=== raw /healthz ===
+{
+ "ok": true,
+ "mode": "read-only"
+}=== raw /api/runs (truncated 2 runs) ===
+{
+ "runs": [
+  {
+   "run_id": "fx-run-100",
+   "mode": "shadow",
+   "repo": "acme/other",
+   "pr_number": 9,
+   "head_sha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+   "risk_tier": "high",
+   "outcome": null,
+   "review_complete": null,
+   "coverage_missing": [
+    "patch_validation"
+   ],
+   "superseded": false,
+   "updated_at": "2026-09-23T09:03:00Z"
+  },
+  {
+   "run_id": "fx-run-91",
+   "mode": "fixture",
+   "repo": "acme/widget",
+   "pr_number": 9,
+   "head_sha": "cccccccccccccccccccccccccccccccccccccccc",
+   "risk_tier": "medium",
+   "outcome": null,
+   "review_complete": null,
+   "coverage_missing": [
+    "patch_validation"
+   ],
+   "superseded": false,
+=== 404 sample ===
+GET /api/runs/NO-SUCH-RUN -> 404
+POST /api/runs -> 405 (read-only)

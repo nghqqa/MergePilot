@@ -1,0 +1,105 @@
+{
+ "summary": {
+  "total": 19,
+  "pass": 19
+ },
+ "results": [
+  {
+   "id": "M1",
+   "name": "health 200",
+   "pass": true
+  },
+  {
+   "id": "M1b",
+   "name": "PG 可读",
+   "pass": true
+  },
+  {
+   "id": "M1c",
+   "name": "MinIO 可达",
+   "pass": true
+  },
+  {
+   "id": "M1d",
+   "name": "镜像 = rc-20260926",
+   "pass": true
+  },
+  {
+   "id": "M2",
+   "name": "错误凭据 401",
+   "pass": true
+  },
+  {
+   "id": "M2b",
+   "name": "foreign 403",
+   "pass": true
+  },
+  {
+   "id": "M2c",
+   "name": "unknown 404",
+   "pass": true
+  },
+  {
+   "id": "M2d",
+   "name": "unauth 401",
+   "pass": true
+  },
+  {
+   "id": "M2e",
+   "name": "CSRF logout 200",
+   "pass": true
+  },
+  {
+   "id": "M2f",
+   "name": "post-logout 401",
+   "pass": true
+  },
+  {
+   "id": "M3",
+   "name": "Console 浏览 7/7",
+   "pass": true
+  },
+  {
+   "id": "M4",
+   "name": "两 PR PASSED",
+   "pass": true
+  },
+  {
+   "id": "M5",
+   "name": "A 链 known-hit",
+   "pass": true
+  },
+  {
+   "id": "M5b",
+   "name": "A 链合法空",
+   "pass": true
+  },
+  {
+   "id": "M5c",
+   "name": "零风险字段",
+   "pass": true
+  },
+  {
+   "id": "M6",
+   "name": "PR 零变化（4|0|2→4|0|2）",
+   "pass": true
+  },
+  {
+   "id": "M7",
+   "name": "GitHub 写入 = 0",
+   "pass": true
+  },
+  {
+   "id": "M8",
+   "name": "C 链/embedding/pgvector/RUN_BINDING_AUTH 关闭",
+   "pass": true
+  },
+  {
+   "id": "M9",
+   "name": "本轮耗时 1529ms（含登录+7 面+A 链×2+logout+re-login）",
+   "pass": true
+  }
+ ],
+ "duration_ms": 1529,
+ "finished_at": "2026-09-26T07:01:44.156Z"
+}

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" role="img" aria-label="MergePilot">
+  <path d="M5 3.5v5.4a4.6 4.6 0 0 0 4.6 4.6h.4" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+  <path d="M19 3.5v5.4a4.6 4.6 0 0 1-4.6 4.6h-.4" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+  <circle cx="12" cy="13.5" r="2.5" fill="currentColor"/>
+  <path d="M12 16v5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+  <path d="M9.6 18.9h4.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+</svg>

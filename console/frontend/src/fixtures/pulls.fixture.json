@@ -1,0 +1,27 @@
+{
+  "data_mode": "fixture",
+  "_note": "SYNTHETIC — 契约 v2（API-AUTH-MERGE-V0 §2）GET /api/pulls 响应形状的适配层测试夹具。全部字段为合成值，非真实运行、非历史快照。",
+  "total": 2,
+  "items": [
+    {
+      "repo": "acme/widget",
+      "pr_number": 9,
+      "title": "合成 PR：当前 head 已有完成结果",
+      "state": "open",
+      "current_head_sha": "cccccccccccccccccccccccccccccccccccccccc",
+      "latest_run": { "run_id": "fx-run-91", "status": "RUNNING", "class": "execution", "mode": "on", "started_at": "2026-09-23T10:00:00Z" },
+      "latest_result": { "run_id": "fx-run-90", "head_sha": "cccccccccccccccccccccccccccccccccccccccc", "stale": false, "verdict": "NOT_CONFIRMED", "severity": null, "published": { "check_run_id": 501, "conclusion": "success" } },
+      "has_pending_tickets": 0
+    },
+    {
+      "repo": "acme/widget",
+      "pr_number": 10,
+      "title": "合成 PR：当前 head 进行中，旧 head 结论必须保持 stale",
+      "state": "open",
+      "current_head_sha": "dddddddddddddddddddddddddddddddddddddddd",
+      "latest_run": { "run_id": "fx-run-101", "status": "RUNNING", "class": "execution", "mode": "on", "started_at": "2026-09-23T11:00:00Z" },
+      "latest_result": { "run_id": "fx-run-100", "head_sha": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "stale": true, "verdict": "FINDING_CONFIRMED", "severity": "HIGH", "published": { "check_run_id": 502, "conclusion": "action_required" } },
+      "has_pending_tickets": 1
+    }
+  ]
+}

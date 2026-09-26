@@ -1,0 +1,89 @@
+{
+ "summary": {
+  "total": 16,
+  "pass": 16
+ },
+ "results": [
+  {
+   "id": "AP1",
+   "name": "Console 浏览：overview/pending/repos/PR-detail/audit/evidence 全 200",
+   "pass": true
+  },
+  {
+   "id": "AP2",
+   "name": "Review Agent：两 PR 只读 PASSED",
+   "pass": true
+  },
+  {
+   "id": "AP3",
+   "name": "A 链 known-hit（reference-only）",
+   "pass": true
+  },
+  {
+   "id": "AP3b",
+   "name": "A 链合法空",
+   "pass": true
+  },
+  {
+   "id": "AP3c",
+   "name": "A 链零风险字段",
+   "pass": true
+  },
+  {
+   "id": "AP4a",
+   "name": "错误凭据 401",
+   "pass": true
+  },
+  {
+   "id": "AP4b",
+   "name": "foreign 403",
+   "pass": true
+  },
+  {
+   "id": "AP4c",
+   "name": "unknown 404",
+   "pass": true
+  },
+  {
+   "id": "AP4d",
+   "name": "unauth 401",
+   "pass": true
+  },
+  {
+   "id": "AP5",
+   "name": "Fixer/Verifier 隔离就绪（27/27 closure + 20/20 canary）",
+   "pass": true
+  },
+  {
+   "id": "AP6a",
+   "name": "PG receipts 可读",
+   "pass": true
+  },
+  {
+   "id": "AP6b",
+   "name": "MinIO 可达",
+   "pass": true
+  },
+  {
+   "id": "AP7",
+   "name": "镜像 = ghcr.io rc-20260926",
+   "pass": true
+  },
+  {
+   "id": "AP8",
+   "name": "真实 PR 零变化（4|0|2 → 4|0|2）",
+   "pass": true
+  },
+  {
+   "id": "AP9",
+   "name": "GitHub 写入 = 0",
+   "pass": true
+  },
+  {
+   "id": "AP10",
+   "name": "C 链/embedding/pgvector/RUN_BINDING_AUTH 关闭",
+   "pass": true
+  }
+ ],
+ "finished_at": "2026-09-26T02:17:05.789Z"
+}

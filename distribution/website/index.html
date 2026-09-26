@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MergePilot — 安全审查工作台</title>
+  <meta name="description" content="自托管安全审查工作台：PR 审查、安全发现管理、修复验证和审计">
+  <style>
+    :root { --c-bg:#f5f6f8; --c-panel:#fff; --c-nav:#0b0f19; --c-accent:#0e6b62; --c-text:#131a26; --c-text2:#4a5468; --c-ok:#067647; --c-warn:#b54708; --c-bad:#b42318; }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:system-ui,-apple-system,'Segoe UI','PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif; background:var(--c-bg); color:var(--c-text); line-height:1.6; }
+    .nav { background:var(--c-nav); padding:16px 32px; display:flex; align-items:center; gap:12px; }
+    .nav .logo { color:#fff; font-size:20px; font-weight:700; }
+    .nav .sub { color:#7d879e; font-size:13px; }
+    .container { max-width:960px; margin:0 auto; padding:40px 24px; }
+    h1 { font-size:32px; margin-bottom:12px; color:var(--c-text); }
+    h2 { font-size:22px; margin:32px 0 12px; color:var(--c-text); }
+    .tagline { font-size:16px; color:var(--c-text2); margin-bottom:32px; }
+    .card { background:var(--c-panel); border:1px solid #e5e8ee; border-radius:10px; padding:24px; margin-bottom:20px; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:16px; margin:20px 0; }
+    .feature { background:var(--c-panel); border:1px solid #e5e8ee; border-radius:8px; padding:20px; }
+    .feature h3 { font-size:16px; margin-bottom:8px; color:var(--c-accent); }
+    .feature p { font-size:14px; color:var(--c-text2); }
+    .boundary { background:#fff9eb; border:1px solid #e6d9b8; border-radius:8px; padding:20px; margin:20px 0; }
+    .boundary h3 { color:var(--c-warn); margin-bottom:10px; }
+    .boundary li { font-size:14px; color:var(--c-text2); margin:6px 0; list-style:none; }
+    .boundary li::before { content:"✗ "; color:var(--c-bad); font-weight:700; }
+    pre { background:var(--c-nav); color:#d4dae6; padding:16px 20px; border-radius:8px; font-size:13px; overflow-x:auto; margin:16px 0; }
+    code { font-family:ui-monospace,'Cascadia Code',Consolas,monospace; }
+    footer { text-align:center; padding:32px; color:var(--c-text2); font-size:13px; border-top:1px solid #e5e8ee; margin-top:40px; }
+    .ok-badge { display:inline-block; background:#ebfdf3; color:var(--c-ok); padding:2px 8px; border-radius:4px; font-size:12px; font-weight:600; margin-right:8px; }
+    .warn-badge { display:inline-block; background:#fef3f2; color:var(--c-bad); padding:2px 8px; border-radius:4px; font-size:12px; font-weight:600; margin-right:8px; }
+  </style>
+</head>
+<body>
+  <nav class="nav">
+    <span class="logo">MergePilot</span>
+    <span class="sub">安全审查工作台</span>
+  </nav>
+
+  <div class="container">
+    <h1>安全审查工作台</h1>
+    <p class="tagline">自托管的 PR 审查、安全发现管理和修复验证平台，带完整审计追踪。</p>
+
+    <div class="card">
+      <p><span class="ok-badge">✓ 只读审查</span>
+         <span class="ok-badge">✓ 审计追踪</span>
+         <span class="ok-badge">✓ Docker 部署</span>
+         <span class="ok-badge">✓ 组织标准检索</span>
+         <span class="warn-badge">✗ 自动 merge</span>
+         <span class="warn-badge">✗ 完整 RAG</span>
+         <span class="warn-badge">✗ 自动修复</span>
+      </p>
+    </div>
+
+    <h2>核心能力</h2>
+    <div class="grid">
+      <div class="feature">
+        <h3>Review Agent</h3>
+        <p>只读 PR 审查与安全阶段推导。七个权威阶段：REVIEWING → ACTION_REQUIRED → REMEDIATING → VERIFYING → PASSED → BLOCKED → STALE。</p>
+      </div>
+      <div class="feature">
+        <h3>Console</h3>
+        <p>实时控制台：运营总览、待处理队列、仓库浏览、PR 钻取、审计查询。服务端会话与仓库 allowlist。</p>
+      </div>
+      <div class="feature">
+        <h3>Fixer / Verifier</h3>
+        <p>隔离环境中的自动修复与独立验证。Fixer 生成安全补丁，Verifier 独立判定（不接受 Fixer 推理）。</p>
+      </div>
+      <div class="feature">
+        <h3>组织标准检索</h3>
+        <p>词法检索组织安全标准（CWE/密码/供应链/审计规范），仅作为审查参考，不参与风险决策。</p>
+      </div>
+    </div>
+
+    <div class="boundary">
+      <h3>能力边界（诚实声明）</h3>
+      <ul>
+        <li>自动 merge 未启用 — 所有合并决策由人工执行</li>
+        <li>完整 RAG 未完成 — 历史案例检索（C 链）处于 BLOCKED 状态</li>
+        <li>生产自动修复未启用 — Fixer/Verifier 仅在隔离环境中运行</li>
+        <li>embedding 未启用 — 不下载、不生成向量</li>
+        <li>GitHub 写入默认关闭 — 只读审查</li>
+        <li>自动 approve 未启用 — 审批由人工操作</li>
+      </ul>
+    </div>
+
+    <h2>快速开始</h2>
+    <div class="card">
+      <pre><code># 1. 导入镜像
+docker load -i mp-console-image.tar
+
+# 2. 配置
+cp .env.example .env
+# 编辑 .env 填入生成的密钥
+
+# 3. 启动
+docker compose up -d
+
+# 4. 访问
+open http://localhost:4730</code></pre>
+    </div>
+
+    <h2>安全模型</h2>
+    <div class="card">
+      <ul style="list-style:none; padding:0;">
+        <li style="margin:8px 0;">🔐 <strong>服务端会话</strong> — HMAC 签名 cookie + CSRF + TTL</li>
+        <li style="margin:8px 0;">🛡 <strong>仓库 Allowlist</strong> — 服务端行级过滤，未授权仓库不可见</li>
+        <li style="margin:8px 0;">🔒 <strong>网络隔离</strong> — PG/MinIO 在内部网络，Console 绑定回环地址</li>
+        <li style="margin:8px 0;">📝 <strong>审计追踪</strong> — 每次操作记录五字段（snapshot/query/refs/state/run）</li>
+        <li style="margin:8px 0;">⚠️ <strong>Fail-Closed</strong> — 缺失数据 = 拒绝，不降级</li>
+      </ul>
+    </div>
+
+    <h2>限制</h2>
+    <div class="card">
+      <p style="font-size:14px; color:var(--c-text2);">
+        MergePilot 目前处于内部试用阶段。以下功能受限或未启用：
+        C 链历史案例检索（需模型缓存+密钥分发）、生产环境自动修复、
+        多用户 RBAC、公网部署。详见文档中的 LIMITATIONS。
+      </p>
+    </div>
+
+    <h2>文档</h2>
+    <div class="card">
+      <ul style="list-style:none; padding:0; font-size:14px;">
+        <li style="margin:6px 0;">📋 <a href="docs/QUICKSTART.md">Quickstart</a> — 5 分钟启动</li>
+        <li style="margin:6px 0;">🏗 <a href="docs/ARCHITECTURE.md">Architecture</a> — 系统架构</li>
+        <li style="margin:6px 0;">📜 <a href="docs/API-CONTRACTS.md">API Contracts</a> — 接口合同</li>
+        <li style="margin:6px 0;">🔒 <a href="docs/SECURITY.md">Security</a> — 安全模型</li>
+        <li style="margin:6px 0;">↩️ <a href="docs/ROLLBACK.md">Rollback</a> — 回滚手册</li>
+        <li style="margin:6px 0;">📖 <a href="docs/RAG-STATUS.md">RAG Status</a> — RAG 链路状态</li>
+      </ul>
+    </div>
+  </div>
+
+  <footer>
+    MergePilot v0.1.0-rc1 · 安全审查工作台 · 内部试用阶段
+  </footer>
+</body>
+</html>
