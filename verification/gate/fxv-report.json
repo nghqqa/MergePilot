@@ -1,0 +1,100 @@
+{
+ "summary": {
+  "total": 18,
+  "pass": 18
+ },
+ "results": [
+  {
+   "id": "A1",
+   "name": "Fixer: patch sha256 digest",
+   "pass": true
+  },
+  {
+   "id": "A2",
+   "name": "Fixer: artifact binding fields (run/head/ticket/attempt)",
+   "pass": "1cc216cd5a203d498788d604436ebc294e881d5db1c7dd36b7a2eceb32cc3f1e"
+  },
+  {
+   "id": "A3",
+   "name": "Fixer: patch contains realpath containment",
+   "pass": true
+  },
+  {
+   "id": "A4",
+   "name": "Fixer: empty diff → sha256 of empty ≠ valid patch",
+   "pass": true
+  },
+  {
+   "id": "A5",
+   "name": "Fixer: wrong head sha rejected (digest mismatch)",
+   "pass": true
+  },
+  {
+   "id": "A6",
+   "name": "Fixer: fixture contains no secrets",
+   "pass": true
+  },
+  {
+   "id": "B1",
+   "name": "Verifier: input has finding/patch/code/results (no fixer_reasoning)",
+   "pass": true
+  },
+  {
+   "id": "B2",
+   "name": "Verifier: repo/pr/head binding",
+   "pass": true
+  },
+  {
+   "id": "B3",
+   "name": "Verifier: verdict enum (VERIFIED|REJECTED)",
+   "pass": true
+  },
+  {
+   "id": "B4",
+   "name": "Verifier: failing tests → cannot produce VERIFIED",
+   "pass": true
+  },
+  {
+   "id": "B5",
+   "name": "Verifier: test_results structure from harness",
+   "pass": true
+  },
+  {
+   "id": "C1",
+   "name": "Chain: ticket CAS fencing (APPROVED→EXECUTING only once)",
+   "pass": true
+  },
+  {
+   "id": "C2",
+   "name": "Chain: head freshness check (stale rejected)",
+   "pass": true
+  },
+  {
+   "id": "C3",
+   "name": "Chain: duplicate run → same ticket (idempotent)",
+   "pass": true
+  },
+  {
+   "id": "C4",
+   "name": "Audit: all binding fields present",
+   "pass": "1cc216cd5a203d498788d604436ebc294e881d5db1c7dd36b7a2eceb32cc3f1e"
+  },
+  {
+   "id": "C5",
+   "name": "Integration: zero real GitHub / zero real gate change",
+   "pass": true
+  },
+  {
+   "id": "C6",
+   "name": "Integration: real PR zero mutation",
+   "pass": true
+  },
+  {
+   "id": "D1",
+   "name": "Real PR: PG counts unchanged (4|1|2)",
+   "pass": true
+  }
+ ],
+ "authorized_at": "2026-09-26T07:00+08:00",
+ "finished_at": "2026-09-26T00:29:21.443Z"
+}
