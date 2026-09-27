@@ -7,10 +7,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createRagTrialStore, RagTrialError } from './store.mjs';
+import { createJobQueue } from './queue.mjs';
+import { resolveProvider, ensureProviderAttested } from './embed.mjs';
 import {
   toAuxEvidence, canAutoPromote, fixerPatchInputs, verifierAccepts,
   promotionRequest, attachToRun,
 } from './review.mjs';
+import { verifyRunBindingAndAudit } from '../cchain/wiring.mjs';
+import { runBindingAuthStatus } from '../cchain/index.mjs';
 
 const BODY_LIMIT = 8 * 1024 * 1024; // 语料摄取走 body（默认 64KB 不够）
 const inMemory = { error_states: {} }; // PG 不可达时的 error 态计数（PG 日志不可能写下）
@@ -19,25 +23,43 @@ function errKindCount(kind) {
   inMemory.error_states[kind] = (inMemory.error_states[kind] ?? 0) + 1;
 }
 let storePromise = null;
+let queuePromise = null;
+function getPool(env) {
+  return (async () => {
+    const pg = await import('pg').catch(() => null);
+    if (!pg) throw new RagTrialError('pg module unavailable', 'pg_unavailable', 503);
+    const pool = new pg.Pool({ connectionString: env.CONSOLE_PG_DSN, max: 4 });
+    // PG 中断时 idle 连接会发 'error' 事件；不挂监听会成为未捕获异常把进程打死
+    // （S12 实测坑）。查询路径自己处理连接错误，这里只记录保活。
+    pool.on('error', (err) => {
+      errKindCount('pool_connection_error');
+      console.error(`[ragtrial] pg pool error (kept alive): ${String(err.message).slice(0, 120)}`);
+    });
+    return pool;
+  })();
+}
 async function getStore(env) {
   if (!env.CONSOLE_PG_DSN) return null;
   if (!storePromise) {
     storePromise = (async () => {
-      const pg = await import('pg').catch(() => null);
-      if (!pg) throw new RagTrialError('pg module unavailable', 'pg_unavailable', 503);
-      const pool = new pg.Pool({ connectionString: env.CONSOLE_PG_DSN, max: 4 });
-      // PG 中断时 idle 连接会发 'error' 事件；不挂监听会成为未捕获异常把进程打死
-      // （S12 实测坑）。查询路径自己处理连接错误，这里只记录保活。
-      pool.on('error', (err) => {
-        errKindCount('pool_connection_error');
-        console.error(`[ragtrial] pg pool error (kept alive): ${String(err.message).slice(0, 120)}`);
-      });
+      const pool = await getPool(env);
       const store = await createRagTrialStore({ pool, env });
       await store.initSchema();
       return store;
     })().catch((e) => { storePromise = null; throw e; });
   }
   return storePromise;
+}
+async function getQueue(env) {
+  if (!env.CONSOLE_PG_DSN) return null;
+  if (!queuePromise) {
+    queuePromise = (async () => {
+      const pool = await getPool(env);
+      await createRagTrialStore({ pool, env }).then((s) => s.initSchema()); // 确保 schema（jobs 表）
+      return createJobQueue({ pool });
+    })().catch((e) => { queuePromise = null; throw e; });
+  }
+  return queuePromise;
 }
 
 async function buildS3(env) {
@@ -75,6 +97,48 @@ export async function ragTrialApi(req, res, ctx) {
   const env = process.env;
   const actorOf = (auth) => auth?.user?.name || auth?.user || 'rag-trial-operator';
 
+  // ── 机器端点：RUN_BINDING_AUTH 验签（无会话；HMAC 替代会话，与 cchain 同 keystore）──
+  // 密钥未分发/keystore 缺失 → 如实 RUN_BINDING_AUTH_BLOCKED（BLOCKED 语义，不降级）。
+  if (p === '/api/rag-trial/machine/query' && req.method === 'POST') {
+    const body = await readJsonBody(req) ?? {};
+    const source = req.socket?.remoteAddress ?? null;
+    const verify = await verifyRunBindingAndAudit(env, env.CONSOLE_PG_DSN, {
+      run_id: body.run_id, nonce: body.nonce, timestamp: body.timestamp, signature: body.signature,
+    }, { source });
+    if (!verify.body.ok) {
+      return sendJson(res, verify.status, { ...verify.body,
+        note: 'RUN_BINDING_AUTH 拒绝——机器查询通道保持 BLOCKED，不回退到匿名访问' });
+    }
+    let mstore;
+    try { mstore = await getStore(env); }
+    catch (e) {
+      return sendJson(res, 503, { service_state: 'error', error_kind: 'pg_unavailable' });
+    }
+    if (!mstore) return sendJson(res, 200, { service_state: 'backend_not_wired' });
+    const q = String(body.q || '');
+    const repo = String(body.repo || '');
+    const branch = String(body.branch || '');
+    if (!q || !repo || !branch) return sendJson(res, 400, { error: { reason: 'q/repo/branch required' } });
+    try {
+      const r = await mstore.search({
+        q, repo, branch, k: Number(body.k || 5),
+        modelId: body.model_id ? String(body.model_id) : null,
+        actor: `run-binding:${String(body.run_id).slice(0, 64)}`,
+      });
+      // 机器通道产出与人工通道同受 Review 边界约束：reference only
+      const aux = (r.results ?? []).map((h) => toAuxEvidence(h, { runId: body.run_id }));
+      return sendJson(res, 200, {
+        ...r, results: undefined, auxiliary_evidence: aux,
+        policy: { usage: 'reference_only', may_auto_promote: false,
+          excluded_from: ['finding', 'ticket', 'gate', 'VERIFIED', 'fixer_patch_input', 'verifier_evidence'] },
+      });
+    } catch (e) {
+      const kind = e instanceof RagTrialError ? e.kind : 'internal';
+      errKindCount(kind);
+      return sendJson(res, e?.status ?? 503, { service_state: 'error', error_kind: kind, error: String(e.message).slice(0, 160) });
+    }
+  }
+
   // 全部端点需会话
   const auth = await requireSession();
   if (!auth) return sendJson(res, 401, { error: { reason: 'unauthorized' } });
@@ -101,9 +165,98 @@ export async function ragTrialApi(req, res, ctx) {
   const json = async (limit = 64 * 1024) => readJsonBody(req, limit);
 
   try {
-    // ── 状态 ──
+    // ── 状态（含生产就绪组件：语义 provider attestation / RUN_BINDING / 队列） ──
     if (p === '/api/rag-trial/status' && req.method === 'GET') {
-      return sendJson(res, 200, { service_state: 'ready', ...(await store.status()) });
+      const base = await store.status();
+      // 语义 provider：远端配置时做一次真实 /manifest attestation（fail-closed 观测）
+      const provider = resolveProvider(env);
+      let semantic;
+      if (provider.kind === 'local') {
+        semantic = { state: 'NOT_CONFIGURED', note: 'RAGTRIAL_EMBED_ENDPOINT 未配置——语义 provider 未接线（BLOCKED，不伪装）' };
+      } else if (!provider.expected_manifest) {
+        semantic = { state: 'BLOCKED', blocked_condition: 'RAGTRIAL_EMBED_EXPECTED_MANIFEST 未配置（attestation 强制缺失=BLOCKED）' };
+      } else {
+        try {
+          const a = await ensureProviderAttested(provider);
+          semantic = a.attested
+            ? { state: 'ATTESTED', manifest_sha256: a.manifest_sha256, dims: a.dims, model_id: provider.model_id }
+            : { state: 'BLOCKED', blocked_condition: a.note };
+        } catch (e) {
+          semantic = { state: e?.name === 'ModelBlockedError' ? 'BLOCKED' : 'UNREACHABLE',
+            blocked_condition: String(e.message).slice(0, 120) };
+        }
+      }
+      const binding = runBindingAuthStatus(env);
+      let queueStats = null;
+      try { queueStats = await (await getQueue(env)).stats(); }
+      catch { queueStats = { state: 'error' }; }
+      return sendJson(res, 200, {
+        service_state: 'ready', ...base,
+        production_readiness: {
+          semantic_provider: semantic,
+          run_binding_auth: binding.state === 'READY'
+            ? { state: 'READY', key_count: binding.key_count }
+            : { state: 'BLOCKED', blocked_condition: binding.blocked_condition },
+          persistent_queue: queueStats,
+          note: '任一组件 BLOCKED 时生产候选保持 TRIAL_READY，不宣称 PRODUCTION_READY',
+        },
+      });
+    }
+
+    // ── 持久任务队列 ──
+    if (p === '/api/rag-trial/jobs' && req.method === 'POST') {
+      const queue = await getQueue(env);
+      const body = await json(BODY_LIMIT) ?? {};
+      const jobs = body.jobs ?? (body.kind ? [body] : null);
+      if (!Array.isArray(jobs) || !jobs.length
+          || jobs.some((j) => !j?.kind || !j?.repo || !j?.branch || !j?.model_id)) {
+        return sendJson(res, 400, { error: { reason: 'jobs[{kind,repo,branch,model_id,(doc_path,text)}] 必填' } });
+      }
+      const out = [];
+      for (const j of jobs) {
+        // ingest_doc 允许 text 内联（worker 消费）；delete_doc 需 doc_path
+        if (j.kind === 'delete_doc' && !j.doc_path) {
+          return sendJson(res, 400, { error: { reason: 'delete_doc 需要 doc_path' } });
+        }
+        out.push(await queue.enqueue(j, { actor }));
+      }
+      return sendJson(res, 200, { ok: true, enqueued: out });
+    }
+    if (p === '/api/rag-trial/jobs' && req.method === 'GET') {
+      const queue = await getQueue(env);
+      return sendJson(res, 200, { jobs: await queue.list({ state: q.state ?? null, limit: Number(q.limit || 50) }) });
+    }
+    if (p.startsWith('/api/rag-trial/jobs/') && p.endsWith('/requeue') && req.method === 'POST') {
+      const queue = await getQueue(env);
+      const jobId = p.slice('/api/rag-trial/jobs/'.length, -'/requeue'.length);
+      const r = await queue.requeueDead(jobId, { actor });
+      if (!r.ok) return sendJson(res, 409, { error: { reason: r.reason } });
+      return sendJson(res, 200, r);
+    }
+    if (p === '/api/rag-trial/queue/metrics' && req.method === 'GET') {
+      const queue = await getQueue(env);
+      return sendJson(res, 200, await queue.stats());
+    }
+
+    // ── 模型注册（语义模型：dims+manifest 链式绑定） ──
+    if (p === '/api/rag-trial/models' && req.method === 'POST') {
+      const body = await json(BODY_LIMIT) ?? {};
+      const modelId = String(body.model_id || '');
+      const dims = Number(body.dims || 0);
+      const manifest = body.manifest;
+      if (!modelId || ![256, 1024].includes(dims) || !manifest || typeof manifest !== 'object') {
+        return sendJson(res, 400, { error: { reason: 'model_id + dims(256|1024) + manifest{} 必填' } });
+      }
+      // spec digest 绑定：model_id+dims+manifest 内容+runtime——任一变化即 digest 冲突
+      const spec = {
+        model_id: modelId, dims, provider: 'remote-attested',
+        manifest, distance: 'cosine', pooling: manifest.pooling ?? 'cls_l2',
+        runtime: manifest.runtime ?? 'numpy-bert-v1',
+      };
+      const r = await store.registerModel(spec, 'remote', {
+        actor, dims, manifest, force: body.force === true,
+      });
+      return sendJson(res, 200, r);
     }
 
     // ── 摄取（body docs 或 corpus_dir） ──
@@ -122,7 +275,7 @@ export async function ragTrialApi(req, res, ctx) {
       }
       const s3 = await buildS3(env);
       if (s3.configured) await s3.ensureBucket(); // 幂等（已存在→409 容忍）
-      const r = await store.ingestDocuments({ docs, repo, branch, actor, objectStore: s3.configured ? s3 : null });
+      const r = await store.ingestDocuments({ docs, repo, branch, actor, objectStore: s3.configured ? s3 : null, modelId: body.model_id ? String(body.model_id) : null });
       return sendJson(res, 200, r);
     }
 
@@ -223,6 +376,7 @@ export async function ragTrialApi(req, res, ctx) {
         as_finding: promotionRequest({ target: 'finding', evidence }),
         as_ticket: promotionRequest({ target: 'ticket', evidence }),
         as_gate: promotionRequest({ target: 'gate', evidence }),
+        as_VERIFIED: promotionRequest({ target: 'VERIFIED', evidence }),
         fixer: fixerPatchInputs(evidence),
         verifier: Array.isArray(evidence)
           ? evidence.map((e) => verifierAccepts(e))

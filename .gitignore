@@ -43,3 +43,6 @@ tests/
 docs/productization/
 docs/showcase/
 docs/architecture-audit/
+
+# rag-prod 评估栈本地合成 keystore（绝不提交）
+deploy/rag-prod/keystore-local/

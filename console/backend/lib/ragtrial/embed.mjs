@@ -105,8 +105,18 @@ export class ProviderUnavailableError extends Error {
   constructor(detail) { super(`embedding provider unavailable: ${detail}`); this.name = 'ProviderUnavailableError'; }
 }
 
-// provider 解析：{kind:'local'} 或 {kind:'remote', endpoint, model, api_key_ref}。
-// remote 仅试验占位：POST {input:[...]} → {data:[{embedding}...]}（openai 兼容形状）。
+// fail-closed 阻断（区别于网络不可达的 degraded）：attestation 不匹配/维度不匹配
+// 是安全态 BLOCKED，绝不回退、绝不降级为空结果。
+export class ModelBlockedError extends Error {
+  constructor(message, reason = 'model_attestation_failed') {
+    super(message); this.name = 'ModelBlockedError'; this.reason = reason;
+  }
+}
+
+// provider 解析：{kind:'local'} 或 {kind:'remote', endpoint, ...attestation}。
+// remote POST {input:[...]} → {data:[{embedding}...]}（openai 兼容形状）+ GET /manifest。
+// RAGTRIAL_EMBED_EXPECTED_MANIFEST 设置时启用 fail-closed attestation：
+// sidecar /manifest 的 canonical-sha256 必须精确匹配，否则 ModelBlockedError。
 export function resolveProvider(env = process.env) {
   const endpoint = env.RAGTRIAL_EMBED_ENDPOINT;
   if (!endpoint) return { kind: 'local', model_id: LOCAL_MODEL_ID };
@@ -116,13 +126,61 @@ export function resolveProvider(env = process.env) {
     endpoint,
     api_key_ref: env.RAGTRIAL_EMBED_API_KEY_REF || null, // 仅引用名，绝不接收明文 key
     timeout_ms: Number(env.RAGTRIAL_EMBED_TIMEOUT_MS || 5000),
+    dims: Number(env.RAGTRIAL_EMBED_DIMS || 0) || null,
+    expected_manifest: env.RAGTRIAL_EMBED_EXPECTED_MANIFEST || null,
   };
+}
+
+const manifestCache = new Map(); // endpoint → {at, sha256, manifest}
+
+export function canonicalJsonOf(value) { return canonicalJson(value); }
+
+export async function fetchProviderManifest(provider, { fetchImpl = fetch } = {}) {
+  const base = String(provider.endpoint).replace(/\/embed$/, '');
+  let res;
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), Math.min(provider.timeout_ms, 3000));
+    res = await fetchImpl(`${base}/manifest`, { signal: ctrl.signal });
+    clearTimeout(timer);
+  } catch (e) {
+    throw new ProviderUnavailableError(`manifest fetch: ${String(e?.cause?.code || e?.message || e).slice(0, 80)}`);
+  }
+  if (!res.ok) throw new ProviderUnavailableError(`manifest HTTP ${res.status}`);
+  const text = await res.text();
+  let manifest;
+  try { manifest = JSON.parse(text); }
+  catch { throw new ModelBlockedError('provider manifest 非合法 JSON'); }
+  const sha = sha256hex(text);
+  manifestCache.set(provider.endpoint, { at: Date.now(), sha256: sha, manifest });
+  return { sha256: sha, manifest };
+}
+
+export async function ensureProviderAttested(provider, { fetchImpl = fetch, force = false } = {}) {
+  if (!provider.expected_manifest) return { attested: false, note: 'RAGTRIAL_EMBED_EXPECTED_MANIFEST 未配置——不启用 attestation（生产候选必须配置）' };
+  const cached = manifestCache.get(provider.endpoint);
+  let entry = (!force && cached && Date.now() - cached.at < 300_000) ? cached : null;
+  if (!entry) {
+    const r = await fetchProviderManifest(provider, { fetchImpl });
+    entry = { sha256: r.sha256, manifest: r.manifest };
+  }
+  if (entry.sha256 !== provider.expected_manifest) {
+    throw new ModelBlockedError(
+      `provider manifest digest 不匹配：expected=${provider.expected_manifest?.slice(0, 16)}… got=${entry.sha256.slice(0, 16)}…（fail-closed）`);
+  }
+  const dims = Number(entry.manifest?.dims ?? 0);
+  if (provider.dims && dims && dims !== provider.dims) {
+    throw new ModelBlockedError(`provider manifest dims=${dims} 与配置 RAGTRIAL_EMBED_DIMS=${provider.dims} 不一致`, 'dimension_mismatch');
+  }
+  return { attested: true, manifest_sha256: entry.sha256, dims };
 }
 
 export async function embedBatch(provider, texts, { fetchImpl = fetch } = {}) {
   if (provider.kind === 'local') {
     return texts.map((t) => embedLocal(t));
   }
+  // fail-closed 前置：attestation（缓存 5min）必须在任何嵌入调用前通过
+  await ensureProviderAttested(provider, { fetchImpl });
   let res;
   try {
     const ctrl = new AbortController();
@@ -146,5 +204,10 @@ export async function embedBatch(provider, texts, { fetchImpl = fetch } = {}) {
       || data.some((d) => !Array.isArray(d?.embedding))) {
     throw new ProviderUnavailableError('malformed embedding response');
   }
-  return data.map((d) => d.embedding.map((v) => +Number(v).toFixed(8)));
+  const out = data.map((d) => d.embedding.map((v) => +Number(v).toFixed(8)));
+  if (provider.dims && out.some((v) => v.length !== provider.dims)) {
+    throw new ModelBlockedError(
+      `embedding 维度不匹配（期望 ${provider.dims}，实际 ${out.map((v) => v.length).filter((n, i, a) => a.indexOf(n) === i).join('/')}）`, 'dimension_mismatch');
+  }
+  return out;
 }

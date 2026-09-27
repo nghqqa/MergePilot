@@ -23,6 +23,7 @@ export default function RagTrialPage() {
   const [repo, setRepo] = useState('nghqqa/mergepilot');
   const [branch, setBranch] = useState('feat/local-rag-trial');
   const [k, setK] = useState(5);
+  const [modelId, setModelId] = useState('');
   const [result, setResult] = useState(null);
   const [querying, setQuerying] = useState(false);
   const [ingesting, setIngesting] = useState(false);
@@ -51,7 +52,7 @@ export default function RagTrialPage() {
 
   const runQuery = async () => {
     setQuerying(true); setResult(null);
-    try { setResult(await api.ragTrialQuery({ q, repo, branch, k })); }
+    try { setResult(await api.ragTrialQuery({ q, repo, branch, k, model_id: modelId || undefined })); }
     catch (e) { setResult({ service_state: 'error', error_kind: e.reason ?? 'http', error: e.message }); }
     finally { setQuerying(false); refresh(); }
   };
@@ -124,6 +125,8 @@ export default function RagTrialPage() {
           <Input style={{ width: 220 }} addonBefore="repo" value={repo} onChange={(e) => setRepo(e.target.value)} />
           <Input style={{ width: 220 }} addonBefore="branch" value={branch} onChange={(e) => setBranch(e.target.value)} />
           <InputNumber min={1} max={20} value={k} onChange={(v) => setK(v || 5)} addonAfter="k" />
+          <Input style={{ width: 200 }} placeholder="model_id（默认 local-hash-v1）" value={modelId}
+            onChange={(e) => setModelId(e.target.value)} />
           <Button type="primary" icon={<SearchOutlined />} loading={querying} disabled={!q} onClick={runQuery}>查询</Button>
           <Button icon={<ThunderboltOutlined />} loading={ingesting} onClick={runIngest}>灌入语料（/app/rag-corpus）</Button>
         </Space>
@@ -204,6 +207,20 @@ export default function RagTrialPage() {
               { title: 'index_version', dataIndex: 'index_version' },
               { title: 'active', dataIndex: 'active', render: (v) => <Tag color={v ? 'green' : 'default'}>{String(v)}</Tag> },
             ]} />
+        </Card>
+      ) : null}
+
+      {status?.production_readiness ? (
+        <Card title="生产就绪组件（BLOCKED 即如实 BLOCKED）" size="small" style={{ marginBottom: 16 }}>
+          <Space size="large" wrap>
+            <span>语义 provider：<Tag color={status.production_readiness.semantic_provider?.state === 'ATTESTED' ? 'green' : 'orange'}>
+              {status.production_readiness.semantic_provider?.state ?? 'UNKNOWN'}</Tag>
+              {status.production_readiness.semantic_provider?.blocked_condition ? <Typography.Text type="secondary" style={{ fontSize: 12 }}>{status.production_readiness.semantic_provider.blocked_condition}</Typography.Text> : null}
+            </span>
+            <span>RUN_BINDING_AUTH：<Tag color={status.production_readiness.run_binding_auth?.state === 'READY' ? 'green' : 'orange'}>
+              {status.production_readiness.run_binding_auth?.state ?? 'UNKNOWN'}</Tag></span>
+            <span>持久队列：<Tag color="blue">{JSON.stringify(status.production_readiness.persistent_queue?.by_state ?? {})}</Tag></span>
+          </Space>
         </Card>
       ) : null}
 

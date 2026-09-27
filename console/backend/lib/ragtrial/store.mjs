@@ -14,10 +14,11 @@
 //     删除后该文档任何词都不可再检索（验证由测试保证）。
 //  4) audit_events.actor NOT NULL（沿用 fxv 契约）。
 
-import { RAGTRIAL_SCHEMA_SQL, RETAINED_INDEX_VERSIONS } from './schema.mjs';
+import { RAGTRIAL_SCHEMA_SQL, RETAINED_INDEX_VERSIONS, chunkTableFor } from './schema.mjs';
 import {
   LOCAL_MODEL_ID, localModelSpec, modelDigest, resolveProvider,
-  embedBatch, embedLocal, tokenize, vectorLiteral, ProviderUnavailableError, sha256hex,
+  embedBatch, embedLocal, tokenize, vectorLiteral,
+  ProviderUnavailableError, ModelBlockedError, sha256hex,
 } from './embed.mjs';
 import { prepareDocument } from './ingest.mjs';
 
@@ -25,9 +26,11 @@ export const QUERY_STATES = [
   'hit', 'empty', 'model_missing', 'index_stale', 'provider_unavailable', 'error',
 ];
 
-// 混合打分地板：final = 0.5·vec + 0.5·lex。零重叠查询 final ≤0.5·碰撞噪声
-// （256 维实测 ≤0.05 → final ≤0.03）；多 token 真命中 final ≥0.15。取 0.1 分界。
-export const SCORE_FLOOR = 0.1;
+// 混合打分地板（按 provider 维度区分；bench 实测校准，见 deploy/rag-prod 证据）：
+//  - local-hash-v1（256 维）：零重叠 final ≤0.5·碰撞噪声（≤0.03），真命中 ≥0.15 → 0.1 分界；
+//  - bge 语义（1024 维）：bench 实测（evidence/rag-prod/*/benchmark.json）——
+//    相关命中最低 0.582，最差假阳（fluent 乱词）0.48 → 取 0.52 分界（两侧 ≥0.06 余量）。
+export const SCORE_FLOORS = { local: 0.1, semantic: 0.52 };
 
 export class RagTrialError extends Error {
   constructor(message, kind = 'internal', status = 500) {
@@ -78,9 +81,10 @@ export async function createRagTrialStore({ pool, env = process.env, fetchImpl =
   }
 
   // ── 模型注册/解析 ─────────────────────────────────────────────
-  async function registerModel(spec, providerKind = 'local', { actor = 'rag-trial-operator', force = false, silent = false } = {}) {
+  async function registerModel(spec, providerKind = 'local', { actor = 'rag-trial-operator', force = false, silent = false, dims = null, manifest = null } = {}) {
     await ensurePgvector();
     const digest = modelDigest(spec);
+    const modelDims = Number(dims ?? spec?.dims ?? 256);
     const existing = await q(`SELECT * FROM ragtrial.models WHERE model_id=$1`, [spec.model_id]);
     if (existing.rows.length) {
       const row = existing.rows[0];
@@ -91,22 +95,23 @@ export async function createRagTrialStore({ pool, env = process.env, fetchImpl =
       }
       if (row.model_digest === digest) {
         if (!silent) await audit('MODEL_REGISTER', actor, { detail: { model_id: spec.model_id, model_digest: digest, idempotent: true } });
-        return { model_id: spec.model_id, model_digest: digest, index_version: row.index_version, idempotent: true };
+        return { model_id: spec.model_id, model_digest: digest, index_version: row.index_version, dims: row.dims, idempotent: true };
       }
       // force 覆盖 → index_version 递增（旧版本行保留供回滚）
       const r = await q(
         `UPDATE ragtrial.models SET model_digest=$2, spec=$3::jsonb, provider_kind=$4,
-           index_version=index_version+1, updated_at=now() WHERE model_id=$1 RETURNING *`,
-        [spec.model_id, digest, JSON.stringify(spec), providerKind]);
-      await audit('MODEL_REGISTER', actor, { detail: { model_id: spec.model_id, model_digest: digest, index_version: r.rows[0].index_version, force } });
-      return { model_id: spec.model_id, model_digest: digest, index_version: r.rows[0].index_version, force };
+           index_version=index_version+1, dims=$5, manifest=$6::jsonb, updated_at=now()
+         WHERE model_id=$1 RETURNING *`,
+        [spec.model_id, digest, JSON.stringify(spec), providerKind, modelDims, manifest ? JSON.stringify(manifest) : null]);
+      await audit('MODEL_REGISTER', actor, { detail: { model_id: spec.model_id, model_digest: digest, index_version: r.rows[0].index_version, dims: modelDims, force } });
+      return { model_id: spec.model_id, model_digest: digest, index_version: r.rows[0].index_version, dims: modelDims, force };
     }
     await q(
-      `INSERT INTO ragtrial.models (model_id, model_digest, spec, provider_kind)
-       VALUES ($1,$2,$3::jsonb,$4)`,
-      [spec.model_id, digest, JSON.stringify(spec), providerKind]);
-    if (!silent) await audit('MODEL_REGISTER', actor, { detail: { model_id: spec.model_id, model_digest: digest } });
-    return { model_id: spec.model_id, model_digest: digest, index_version: 1 };
+      `INSERT INTO ragtrial.models (model_id, model_digest, spec, provider_kind, dims, manifest)
+       VALUES ($1,$2,$3::jsonb,$4,$5,$6::jsonb)`,
+      [spec.model_id, digest, JSON.stringify(spec), providerKind, modelDims, manifest ? JSON.stringify(manifest) : null]);
+    if (!silent) await audit('MODEL_REGISTER', actor, { detail: { model_id: spec.model_id, model_digest: digest, dims: modelDims } });
+    return { model_id: spec.model_id, model_digest: digest, index_version: 1, dims: modelDims };
   }
 
   async function resolveModel(modelId) {
@@ -119,18 +124,32 @@ export async function createRagTrialStore({ pool, env = process.env, fetchImpl =
   }
 
   // ── 摄取（增量）/ 删除 ────────────────────────────────────────
-  async function ingestDocuments({ docs, repo, branch, actor = 'rag-trial-operator', objectStore = null }) {
+  // modelId 指定目标模型（local-hash-v1 或语义模型）；按 models.dims 路由到
+  // 白名单物理表（256→chunks / 1024→chunks_semantic），其它维度 fail-closed。
+  async function ingestDocuments({ docs, repo, branch, actor = 'rag-trial-operator', objectStore = null, modelId = null }) {
     await ensurePgvector();
-    const model = await resolveModel(null);
-    if (!model) throw new RagTrialError('no active model registered', 'model_missing', 409);
-    const provider = resolveProvider(env);
-    const embedFn = (texts) => embedBatch(provider, texts, { fetchImpl });
+    const model = await resolveModel(modelId);
+    if (!model) throw new RagTrialError(`no active model registered: ${modelId ?? '(default)'}`, 'model_missing', 409);
+    const table = chunkTableFor(model.dims);
+    // provider 按模型选择（models.provider_kind）：local 永远本地确定性嵌入，
+    // remote 走 env 配置的 attested sidecar——env 有 sidecar 不影响 local 模型。
+    const embedFn = model.provider_kind === 'remote'
+      ? (texts) => embedBatch(resolveProvider(env), texts, { fetchImpl })
+      : (texts) => texts.map((t) => embedLocal(t));
     const report = [];
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
       for (const d of docs) {
         const doc = await prepareDocument({ repo, branch, doc_path: d.path, text: d.text }, embedFn);
+        // 维度 fail-closed：provider 输出必须与 models.dims 一致（pgvector 列宽也会拦，这里前置给出清晰错误）
+        for (const c of doc.chunks) {
+          if (c.embedding && c.embedding.length !== Number(model.dims)) {
+            throw new RagTrialError(
+              `embedding 维度不匹配：model ${model.model_id} dims=${model.dims}，chunk 输出 ${c.embedding.length}（fail-closed）`,
+              'dimension_mismatch', 422);
+          }
+        }
         // MinIO 内容寻址原始文档归档（可选；失败不阻断摄取，如实记录）
         let objectKey = null, objectStatus = 'not_configured';
         if (objectStore && objectStore.configured) {
@@ -146,18 +165,18 @@ export async function createRagTrialStore({ pool, env = process.env, fetchImpl =
           [repo, branch, d.path]);
         const row = cur.rows[0];
         if (row && row.state === 'active' && row.doc_sha256 === doc.doc_sha256
-            && row.index_version === model.index_version) {
+            && row.index_version === model.index_version && row.model_id === model.model_id) {
           report.push({ doc_path: d.path, action: 'unchanged', chunks: row.chunk_count });
           continue;
         }
         // 变更/新文档：替换当前版本 chunk 行（旧版本行保留）
         await client.query(
-          `DELETE FROM ragtrial.chunks
+          `DELETE FROM ${table}
             WHERE repo=$1 AND branch=$2 AND doc_path=$3 AND index_version=$4`,
           [repo, branch, d.path, model.index_version]);
         for (const c of doc.chunks) {
           await client.query(
-            `INSERT INTO ragtrial.chunks
+            `INSERT INTO ${table}
                (repo,branch,doc_path,doc_sha256,chunk_index,chunk_sha256,para_index,
                 line_start,line_end,char_start,char_end,text,embedding,
                 model_id,model_digest,index_version)
@@ -192,27 +211,38 @@ export async function createRagTrialStore({ pool, env = process.env, fetchImpl =
     } catch (e) {
       await client.query('ROLLBACK').catch(() => {});
       client.release();
-      if (e instanceof ProviderUnavailableError) {
-        throw new RagTrialError(e.message, 'provider_unavailable', 503);
-      }
-      throw e;
+      throw wrapEmbedError(e);
     }
     client.release();
-    await pruneOldVersions(repo, branch);
+    await pruneOldVersions(repo, branch, table);
     const counts = report.reduce((acc, r) => { acc[r.action] = (acc[r.action] ?? 0) + 1; return acc; }, {});
     await audit('INGEST', actor, {
       repo, branch,
-      detail: { docs: report.length, ...counts, model_digest: model.model_digest, index_version: model.index_version },
+      detail: { docs: report.length, ...counts, model_id: model.model_id, model_digest: model.model_digest, index_version: model.index_version },
     });
-    return { ok: true, model: { model_id: model.model_id, model_digest: model.model_digest, index_version: model.index_version }, report };
+    return { ok: true, model: { model_id: model.model_id, model_digest: model.model_digest, index_version: model.index_version, dims: Number(model.dims) }, report };
   }
 
-  async function pruneOldVersions(repo, branch) {
+  function wrapEmbedError(e) {
+    if (e instanceof RagTrialError) return e;
+    if (e instanceof ModelBlockedError) {
+      return new RagTrialError(e.message, e.reason ?? 'model_attestation_failed', 503);
+    }
+    if (e instanceof ProviderUnavailableError) {
+      return new RagTrialError(e.message, 'provider_unavailable', 503);
+    }
+    if (e?.kind === 'dimension_mismatch') {
+      return new RagTrialError(e.message, 'dimension_mismatch', 422);
+    }
+    return e;
+  }
+
+  async function pruneOldVersions(repo, branch, table = 'ragtrial.chunks') {
     // 只保留最近 RETAINED_INDEX_VERSIONS 个版本的 chunk 行（回滚窗口）
     await q(
-      `DELETE FROM ragtrial.chunks
+      `DELETE FROM ${table}
         WHERE repo=$1 AND branch=$2 AND index_version NOT IN (
-          SELECT index_version FROM ragtrial.chunks
+          SELECT index_version FROM ${table}
            WHERE repo=$1 AND branch=$2
            GROUP BY index_version ORDER BY index_version DESC LIMIT $3)`,
       [repo, branch, RETAINED_INDEX_VERSIONS]);
@@ -220,15 +250,19 @@ export async function createRagTrialStore({ pool, env = process.env, fetchImpl =
 
   async function deleteDocument({ repo, branch, doc_path }, { actor = 'rag-trial-operator' } = {}) {
     await ensurePgvector();
-    const r = await q(`DELETE FROM ragtrial.chunks
-        WHERE repo=$1 AND branch=$2 AND doc_path=$3 RETURNING chunk_id`,
-      [repo, branch, doc_path]);
+    let removed = 0;
+    for (const table of ['ragtrial.chunks', 'ragtrial.chunks_semantic']) {
+      const r = await q(`DELETE FROM ${table}
+          WHERE repo=$1 AND branch=$2 AND doc_path=$3 RETURNING chunk_id`,
+        [repo, branch, doc_path]);
+      removed += r.rowCount;
+    }
     await q(
       `UPDATE ragtrial.documents SET state='deleted', chunk_count=0, updated_at=now()
         WHERE repo=$1 AND branch=$2 AND doc_path=$3`,
       [repo, branch, doc_path]);
-    await audit('DOC_DELETE', actor, { repo, branch, detail: { doc_path, chunks_removed: r.rowCount } });
-    return { ok: true, doc_path, chunks_removed: r.rowCount };
+    await audit('DOC_DELETE', actor, { repo, branch, detail: { doc_path, chunks_removed: removed } });
+    return { ok: true, doc_path, chunks_removed: removed };
   }
 
   // ── 检索（六状态） ────────────────────────────────────────────
@@ -260,7 +294,10 @@ export async function createRagTrialStore({ pool, env = process.env, fetchImpl =
       return r;
     }
 
-    // 2) 范围检查（空索引 / stale）
+    // 2) 范围检查（空索引 / stale）—— 按 models.dims 路由物理表
+    let table;
+    try { table = chunkTableFor(model.dims); }
+    catch (e) { throw wrapEmbedError(e); }
     let scope;
     try {
       scope = await q(
@@ -268,7 +305,7 @@ export async function createRagTrialStore({ pool, env = process.env, fetchImpl =
                 count(*) FILTER (WHERE model_digest=$3 AND index_version=$4)::int live,
                 count(*) FILTER (WHERE model_digest<>$3 OR index_version<>$4)::int drifted,
                 count(*) FILTER (WHERE line_start IS NULL OR line_end IS NULL OR doc_path IS NULL)::int uncited
-           FROM ragtrial.chunks
+           FROM ${table}
           WHERE repo=$1 AND branch=$2`,
         [repo, branch, model.model_digest, model.index_version]);
     } catch (e) { throw pgWrap(e); }
@@ -289,9 +326,9 @@ export async function createRagTrialStore({ pool, env = process.env, fetchImpl =
       return r;
     }
 
-    // 3) 查询向量化（provider_unavailable — 仅 remote provider）
+    // 3) 查询向量化（按模型 provider_kind；provider_unavailable=网络不可达；ModelBlocked=fail-closed）
     let qvec;
-    const provider = resolveProvider(env);
+    const provider = model.provider_kind === 'remote' ? resolveProvider(env) : { kind: 'local' };
     if (provider.kind === 'remote') {
       try { qvec = (await embedBatch(provider, [queryText], { fetchImpl }))[0]; }
       catch (e) {
@@ -302,7 +339,7 @@ export async function createRagTrialStore({ pool, env = process.env, fetchImpl =
           await audit('QUERY_PROVIDER_UNAVAILABLE', actor, { repo, branch, detail: { reason: 'embed_provider_unreachable' } });
           return r;
         }
-        throw e;
+        throw wrapEmbedError(e);
       }
     } else {
       qvec = embedLocal(queryText);
@@ -315,13 +352,13 @@ export async function createRagTrialStore({ pool, env = process.env, fetchImpl =
     //    真命中（多 token 重叠）final ≥0.15；单 token 精确命中 lex→1 也可靠命中。
     let rows;
     try {
-      const pool = Math.min(Math.max(k * 3, 15), 30);
+      const pool2 = Math.min(Math.max(k * 3, 15), 30);
       const r = await q(
         `SELECT c.chunk_id, c.doc_path, c.doc_sha256, c.chunk_index, c.chunk_sha256,
                 c.para_index, c.line_start, c.line_end, c.text,
                 c.model_id, c.model_digest, c.index_version,
                 1 - (c.embedding <=> $1::vector) AS vec_score
-           FROM ragtrial.chunks c
+           FROM ${table} c
            JOIN ragtrial.documents d
              ON d.repo=c.repo AND d.branch=c.branch AND d.doc_path=c.doc_path AND d.state='active'
           WHERE c.repo=$2 AND c.branch=$3
@@ -329,10 +366,11 @@ export async function createRagTrialStore({ pool, env = process.env, fetchImpl =
             AND c.doc_path IS NOT NULL AND c.line_start IS NOT NULL AND c.line_end IS NOT NULL
           ORDER BY c.embedding <=> $1::vector
           LIMIT $6`,
-        [vectorLiteral(qvec), repo, branch, model.model_digest, model.index_version, pool]);
+        [vectorLiteral(qvec), repo, branch, model.model_digest, model.index_version, pool2]);
       rows = r.rows;
     } catch (e) { throw pgWrap(e); }
 
+    const scoreFloor = Number(model.dims) === 1024 ? SCORE_FLOORS.semantic : SCORE_FLOORS.local;
     const qTokens = new Set(tokenize(queryText));
     const scored = rows.map((r) => {
       const dTokens = new Set(tokenize(r.text));
@@ -343,7 +381,7 @@ export async function createRagTrialStore({ pool, env = process.env, fetchImpl =
       const vec = Number(r.vec_score);
       return { r, lex, vec, final: 0.5 * vec + 0.5 * lex };
     })
-      .filter((s) => s.final >= SCORE_FLOOR)
+      .filter((s) => s.final >= scoreFloor)
       .sort((a, b) => b.final - a.final)
       .slice(0, Math.min(Math.max(k, 1), 20));
 
@@ -373,7 +411,7 @@ export async function createRagTrialStore({ pool, env = process.env, fetchImpl =
       model_digest: model.model_digest,
       index_version: model.index_version,
       results,
-      score_floor: SCORE_FLOOR,
+      score_floor: scoreFloor,
       hits: results.length,
       cited_hits: results.length, // 引用契约：返回的命中必带引用（缺失行已被过滤）
       dropped_uncited: uncited,
@@ -418,8 +456,9 @@ export async function createRagTrialStore({ pool, env = process.env, fetchImpl =
   async function rollbackIndex({ toVersion, modelId = null, actor = 'rag-trial-operator' } = {}) {
     const model = await resolveModel(modelId);
     if (!model) throw new RagTrialError('model not found', 'model_missing', 409);
+    const table = chunkTableFor(model.dims);
     const exists = await q(
-      `SELECT 1 FROM ragtrial.chunks WHERE index_version=$1 AND model_digest=$2 LIMIT 1`,
+      `SELECT 1 FROM ${table} WHERE index_version=$1 AND model_digest=$2 LIMIT 1`,
       [toVersion, model.model_digest]);
     if (!exists.rows.length) {
       throw new RagTrialError(
@@ -434,14 +473,14 @@ export async function createRagTrialStore({ pool, env = process.env, fetchImpl =
     return { ok: true, model_id: model.model_id, index_version: toVersion };
   }
 
-  // ── QA 评测（Recall@K） ──────────────────────────────────────
-  async function evalQa({ qa, repo, branch, k = 5, qaSet = 'inline', actor = 'rag-trial-operator' }) {
-    const model = await resolveModel(null);
+  // ── QA 评测（Recall@K；modelId 可指定 provider） ──────────────
+  async function evalQa({ qa, repo, branch, k = 5, qaSet = 'inline', actor = 'rag-trial-operator', modelId = null }) {
+    const model = await resolveModel(modelId);
     if (!model) throw new RagTrialError('no active model registered', 'model_missing', 409);
     let hitAtK = 0;
     const detail = [];
     for (const item of qa) {
-      const r = await search({ q: item.q, repo, branch, k, actor: 'eval-runner' });
+      const r = await search({ q: item.q, repo, branch, k, actor: 'eval-runner', modelId: model.model_id });
       const got = (r.results ?? []).map((x) => x.citation.doc_path);
       const hit = got.includes(item.expect_doc);
       if (hit) hitAtK++;
@@ -461,20 +500,28 @@ export async function createRagTrialStore({ pool, env = process.env, fetchImpl =
 
   // ── 状态与指标（从真实表推导，无 mock） ──────────────────────
   async function status() {
-    const models = await q(`SELECT model_id, model_digest, provider_kind, index_version, active, updated_at FROM ragtrial.models ORDER BY created_at`);
+    const models = await q(`SELECT model_id, model_digest, provider_kind, dims, index_version, active, updated_at FROM ragtrial.models ORDER BY created_at`);
     const docs = await q(
       `SELECT count(*)::int total,
               count(*) FILTER (WHERE state='active')::int active,
               count(*) FILTER (WHERE state='deleted')::int deleted
          FROM ragtrial.documents`);
     const chunks = await q(
-      `SELECT count(*)::int total, count(DISTINCT index_version)::int versions FROM ragtrial.chunks`);
+      `SELECT (SELECT count(*)::int FROM ragtrial.chunks) hash_chunks,
+              (SELECT count(*)::int FROM ragtrial.chunks_semantic) semantic_chunks,
+              (SELECT count(DISTINCT index_version)::int FROM ragtrial.chunks) hash_versions,
+              (SELECT count(DISTINCT index_version)::int FROM ragtrial.chunks_semantic) semantic_versions`);
     const ext = await q(`SELECT extname, extversion FROM pg_extension WHERE extname='vector'`);
     return {
       pgvector: ext.rows[0] ?? null,
       models: models.rows,
       documents: docs.rows[0],
-      chunks: chunks.rows[0],
+      chunks: {
+        total: Number(chunks.rows[0].hash_chunks) + Number(chunks.rows[0].semantic_chunks),
+        hash: Number(chunks.rows[0].hash_chunks),
+        semantic: Number(chunks.rows[0].semantic_chunks),
+        versions: Number(chunks.rows[0].hash_versions) + Number(chunks.rows[0].semantic_versions),
+      },
     };
   }
 
