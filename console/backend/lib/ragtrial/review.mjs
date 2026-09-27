@@ -69,7 +69,7 @@ export function verifierAccepts(evidence) {
 }
 
 // 生成 finding/ticket/gate 的统一入口守卫：RAG 证据直接拒绝
-const PROMOTION_TARGETS = ['finding', 'ticket', 'gate'];
+const PROMOTION_TARGETS = ['finding', 'ticket', 'gate', 'VERIFIED'];
 export function promotionRequest({ target, evidence }) {
   if (!PROMOTION_TARGETS.includes(target)) {
     return { allowed: false, reason: `unknown_promotion_target:${target}` };

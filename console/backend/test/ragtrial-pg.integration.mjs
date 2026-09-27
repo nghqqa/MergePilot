@@ -198,6 +198,74 @@ try {
   const localQ = await store.search({ q: '审计', repo: REPO, branch: BR, k: 2 });
   ok('local provider 查询不产生 provider_unavailable', localQ.service_state !== 'provider_unavailable');
 
+  // ── 混合评分 v2：IDF 词法 + RAGTRIAL_HYBRID_JSON 覆盖（默认零行为变化） ──
+  const { HYBRID_CONFIGS } = await import('../lib/ragtrial/store.mjs');
+  ok('HYB1 默认配置=部署现行值（256/768/1024 三档，零行为变化）',
+    HYBRID_CONFIGS[256].floor === 0.1 && HYBRID_CONFIGS[768].floor === 0.45 && HYBRID_CONFIGS[1024].floor === 0.52
+    && HYBRID_CONFIGS[256].w === 0.5);
+  const sstore2 = await createRagTrialStore({ pool, env: { ...process.env,
+    CONSOLE_PG_DSN: undefined, RAGTRIAL_EMBED_ENDPOINT: undefined,
+    RAGTRIAL_HYBRID_JSON: JSON.stringify({ 'local-hash-v1': { lexMode: 'idf', w: 0.3, floor: 0.1 } }) } });
+  const idfHit = await sstore2.search({ q: '审计事件必须携带 actor 字段', repo: REPO, branch: BR, k: 3 });
+  ok('HYB2 IDF 词法路径可用（覆盖配置生效，命中引用链完整）',
+    idfHit.service_state === 'hit' && idfHit.results.every((h) => h.citation.doc_path));
+  const plainStore = await createRagTrialStore({ pool, env: { ...process.env, CONSOLE_PG_DSN: undefined, RAGTRIAL_EMBED_ENDPOINT: undefined } });
+  const plainHit = await plainStore.search({ q: '审计事件必须携带 actor 字段', repo: REPO, branch: BR, k: 3 });
+  ok('HYB3 无覆盖=默认 plain 路径（与 v1 行为一致）', plainHit.service_state === 'hit');
+  const badOverride = await createRagTrialStore({ pool, env: { ...process.env, CONSOLE_PG_DSN: undefined,
+    RAGTRIAL_EMBED_ENDPOINT: undefined, RAGTRIAL_HYBRID_JSON: '{"local-hash-v1":{"floor":9}}' } });
+  const badHit = await badOverride.search({ q: '审计事件', repo: REPO, branch: BR, k: 3 });
+  ok('HYB4 非法覆盖回退安全默认（floor=9 被拒→默认 0.1 仍可命中）', badHit.service_state === 'hit');
+
+  // ── F1 修复三类：正常 IDF 无降级标注 / DF 失败→plain 回退+df_unavailable / DF 失败→严格模式 fail-closed ──
+  ok('HYB5 正常 IDF（DF 可用）无 df_unavailable 标注',
+    idfHit.service_state === 'hit' && idfHit.df_unavailable === undefined);
+  const dfFailPool = {
+    query: (text, params) => {
+      if (text.includes('ragtrial.documents d ON') && text.includes("state='active'")) {
+        return Promise.reject(Object.assign(new Error('simulated DF scan failure'), { code: 'ECONNREFUSED' }));
+      }
+      return pool.query(text, params);
+    },
+  };
+  const fbStore = await createRagTrialStore({ pool: dfFailPool, env: { ...process.env,
+    CONSOLE_PG_DSN: undefined, RAGTRIAL_EMBED_ENDPOINT: undefined,
+    RAGTRIAL_HYBRID_JSON: JSON.stringify({ 'local-hash-v1': { lexMode: 'idf', w: 0.3, floor: 0.1 } }) } });
+  const fbHit = await fbStore.search({ q: '审计事件必须携带 actor 字段', repo: REPO, branch: BR, k: 3 });
+  ok('HYB6 DF 失败→回退 plain 词法（非静默：df_unavailable=true，命中与引用链完整）',
+    fbHit.service_state === 'hit' && fbHit.df_unavailable === true
+    && fbHit.results.every((h) => h.citation.doc_path)
+    && fbHit.results.some((h) => h.lex_score > 0));
+  const strictStore = await createRagTrialStore({ pool: dfFailPool, env: { ...process.env,
+    CONSOLE_PG_DSN: undefined, RAGTRIAL_EMBED_ENDPOINT: undefined,
+    RAGTRIAL_HYBRID_JSON: JSON.stringify({ 'local-hash-v1': { lexMode: 'idf-required', w: 0.3, floor: 0.1 } }) } });
+  let strictErr = null;
+  try { await strictStore.search({ q: '审计事件', repo: REPO, branch: BR, k: 3 }); }
+  catch (e) { strictErr = e; }
+  ok('HYB7 DF 失败→idf-required 严格模式 fail-closed（503 df_scan_failed，无结果冒充）',
+    strictErr && strictErr.kind === 'df_scan_failed' && strictErr.status === 503);
+
+  // ── F1 观测补丁：fallback metrics 计数 + 有界去重 audit ──
+  const mBefore = await fbStore.metrics();
+  const fbHit2 = await fbStore.search({ q: '密钥轮换流程', repo: REPO, branch: BR, k: 3, actor: 'hyb-observer' });
+  const mAfter = await fbStore.metrics();
+  ok('HYB8 fallback metrics 计数准确：idf 回退 +1/query；二次回退仍 df_unavailable',
+    mAfter.hybrid_df_fallbacks === mBefore.hybrid_df_fallbacks + 1
+    && fbHit2.df_unavailable === true && fbHit2.service_state === 'hit');
+  const mPlain = await plainStore.metrics();
+  ok('HYB8b plain 模式不计数（0）', mPlain.hybrid_df_fallbacks === 0);
+  const mStrict = await strictStore.metrics();
+  ok('HYB8c idf-required fail-closed 不伪装成 fallback（计数 0，错误契约不变）',
+    mStrict.hybrid_df_fallbacks === 0 && strictErr.kind === 'df_scan_failed');
+  const evRows = (await pool.query(
+    `SELECT kind, repo, branch, detail FROM ragtrial.audit_events WHERE kind='HYBRID_DF_FALLBACK'`)).rows;
+  ok('HYB9 audit 恰一条（5min 同键去重：2 次回退 → 1 事件）', evRows.length === 1);
+  const dfEv = evRows[0] ?? {};
+  const d = typeof dfEv.detail === 'string' ? JSON.parse(dfEv.detail) : (dfEv.detail ?? {});
+  ok('HYB9b audit 字段有界（仅 lex_mode/fallback 两枚举值；无 DSN/路径/查询原文/凭据）',
+    evRows.length === 1 && Object.keys(d).length === 2
+    && d.lex_mode === 'idf' && d.fallback === 'plain' && dfEv.repo === REPO && dfEv.branch === BR);
+
 } catch (e) {
   fail++;
   console.error('FATAL', e);

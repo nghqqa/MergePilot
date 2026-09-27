@@ -1,0 +1,36 @@
+{
+  "qa_set": "trial-corpus-en-v1",
+  "repo": "nghqqa/mergepilot",
+  "branch": "feat/rag-prod-readiness",
+  "k": 5,
+  "qa": [
+    { "q": "how do we check the rollback anchor before deploying", "expect_doc": "ops-runbook.md" },
+    { "q": "how long does each canary batch observe metrics", "expect_doc": "ops-runbook.md" },
+    { "q": "what is the first step of a rollback", "expect_doc": "ops-runbook.md" },
+    { "q": "may secrets be committed to the repository", "expect_doc": "security-baseline.md" },
+    { "q": "which field must every audit event carry", "expect_doc": "security-baseline.md" },
+    { "q": "how are production data and trial data isolated", "expect_doc": "security-baseline.md" },
+    { "q": "how is chinese text tokenized", "expect_doc": "rag-design.md" },
+    { "q": "how is the model digest computed", "expect_doc": "rag-design.md" },
+    { "q": "how many index versions are retained", "expect_doc": "rag-design.md" },
+    { "q": "which citation fields must every hit carry", "expect_doc": "rag-design.md" },
+    { "q": "what are the six service states", "expect_doc": "api-states.md" },
+    { "q": "what is the difference between empty and degraded", "expect_doc": "api-states.md" },
+    { "q": "may the fixer modify code from retrieval text alone", "expect_doc": "review-policy.md" },
+    { "q": "which evidence kinds does the verifier accept", "expect_doc": "review-policy.md" },
+    { "q": "who holds ticket ownership", "expect_doc": "architecture.md" },
+    { "q": "what is the default state of the auto merge channel", "expect_doc": "architecture.md" },
+    { "q": "how to troubleshoot an unreachable database", "expect_doc": "troubleshooting.md" },
+    { "q": "what happens to hits missing line numbers", "expect_doc": "troubleshooting.md" },
+    { "q": "can a deleted document still be retrieved", "expect_doc": "data-retention.md" },
+    { "q": "is re-ingesting identical content idempotent", "expect_doc": "data-retention.md" }
+  ],
+  "empty_queries": [
+    { "q": "qwijbhvx zkmpf blorptastic quarbun", "note": "zero-overlap gibberish" },
+    { "q": "flumberration of the winteredgarten smool", "note": "morphologically plausible nonsense" },
+    { "q": "zq9xj4 kp2vw8", "note": "alnum noise" },
+    { "q": "purple elephant rides the stock ticker", "note": "fluent but topic-absent" },
+    { "q": "how to bake sourdough bread at home", "note": "real question, absent topic" },
+    { "q": "vacation rental prices in coastal towns", "note": "real question, absent topic" }
+  ]
+}

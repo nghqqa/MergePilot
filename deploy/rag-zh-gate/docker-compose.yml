@@ -1,0 +1,174 @@
+# RAG_ZH_GATE 独立中文评估栈（feat/rag-zh-gate 波）。
+#
+# 隔离合同：与 promote3/rag-prod-eval/local-rag-trial 等所有栈零共享——独立
+# project/网络/卷/端口段（console-zh 48480 / console-e5 48483 / pg 15439 /
+# minio 9116 / bge-sidecar 48481 / e5-sidecar 48482，全部 127.0.0.1）。
+# 双 console 共享本栈 PG（无状态，状态全在 PG），各自指向一个 attested sidecar；
+# local-hash-v1 走任一 console 均可（本地确定性，不经 sidecar）。
+# 模型只读挂载（HF 快照符号链接需挂整个仓库目录）；绝无运行时下载。
+name: rag-zh-gate
+
+services:
+  bge-sidecar:
+    image: rag-zh-bge-sidecar:local
+    pull_policy: never
+    build: { context: ../.., dockerfile: deploy/rag-prod/bge-sidecar/Dockerfile }
+    environment:
+      BGE_MODEL_DIR: /app/hf-model/snapshots/d4aa6901d3a41ba39fb536a557fa166f842b0e09
+      BGE_MANIFEST: /app/manifest/bge-large-en-v1.5.manifest.json
+    volumes:
+      - type: bind
+        read_only: true
+        source: ${RAGZH_BGE_HUB_DIR:-C:/Users/ngh/.cache/huggingface/hub/models--BAAI--bge-large-en-v1.5}
+        target: /app/hf-model
+      - type: bind
+        read_only: true
+        source: ../rag-prod/bge-large-en-v1.5.manifest.json
+        target: /app/manifest/bge-large-en-v1.5.manifest.json
+    ports: ["127.0.0.1:${RAGZH_BGE_PORT:-48481}:8080"]
+    networks: [rag-zh-net]
+    healthcheck: &sidecar_hc
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8080/health',timeout=3)"]
+      interval: 20s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+
+  e5-sidecar:
+    image: rag-zh-e5-sidecar:local
+    pull_policy: never
+    build: { context: ../.., dockerfile: deploy/rag-prod/bge-sidecar/Dockerfile }
+    environment:
+      BGE_MODEL_DIR: /app/hf-model/snapshots/f52bf8ec8c7124536f0efb74aca902b2995e5bcd
+      BGE_MANIFEST: /app/manifest/e5-base-v2.manifest.json
+    volumes:
+      - type: bind
+        read_only: true
+        source: ${RAGZH_E5_HUB_DIR:-C:/Users/ngh/.cache/huggingface/hub/models--intfloat--e5-base-v2}
+        target: /app/hf-model
+      - type: bind
+        read_only: true
+        source: ./e5-base-v2.manifest.json
+        target: /app/manifest/e5-base-v2.manifest.json
+    ports: ["127.0.0.1:${RAGZH_E5_PORT:-48482}:8080"]
+    networks: [rag-zh-net]
+    healthcheck: *sidecar_hc
+
+  pg:
+    image: pgvector/pgvector:pg16
+    pull_policy: never
+    environment:
+      POSTGRES_PASSWORD: "${RAGZH_PG_PASSWORD}"
+      POSTGRES_DB: ragzh
+    volumes: [ragzh-pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ragzh"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    networks: [rag-zh-net]
+    ports: ["127.0.0.1:${RAGZH_PG_PORT:-15439}:5432"]
+
+  minio:
+    image: elestio/minio@sha256:25348a257f1ece1b192f25f6cd9854618fa86422ac87b494b5d4e629c556d4bd
+    pull_policy: never
+    command: server /data
+    environment:
+      MINIO_ROOT_USER: "${RAGZH_MINIO_USER}"
+      MINIO_ROOT_PASSWORD: "${RAGZH_MINIO_PASSWORD}"
+    volumes: [ragzh-miniodata:/data]
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+    networks: [rag-zh-net]
+    ports: ["127.0.0.1:${RAGZH_MINIO_PORT:-9116}:9000"]
+
+  # console-bge：RAGTRIAL_EMBED_* 指向 bge sidecar（1024 维）
+  console:
+    image: rag-zh-console:local
+    pull_policy: never
+    build: { context: ../.., dockerfile: docker/Dockerfile.canonical-console }
+    restart: unless-stopped
+    depends_on:
+      pg: { condition: service_healthy }
+      minio: { condition: service_healthy }
+      bge-sidecar: { condition: service_healthy }
+    environment: &console_env
+      CONSOLE_PG_DSN: "postgres://postgres:${RAGZH_PG_PASSWORD}@pg:5432/ragzh"
+      CONSOLE_HOST: "0.0.0.0"
+      CONSOLE_PILOT_USER: "${RAGZH_CONSOLE_USER}"
+      CONSOLE_PILOT_PASSWORD: "${RAGZH_CONSOLE_PASSWORD}"
+      CONSOLE_SESSION_SECRET: "${RAGZH_SESSION_SECRET}"
+      RAGTRIAL_S3_ENDPOINT: "http://minio:9000"
+      RAGTRIAL_S3_BUCKET: "ragzh"
+      RAGTRIAL_S3_ACCESS_KEY: "${RAGZH_MINIO_USER}"
+      RAGTRIAL_S3_SECRET_KEY: "${RAGZH_MINIO_PASSWORD}"
+      RAGTRIAL_CORPUS_DIR: "/app/rag-corpus"
+      RAGTRIAL_ALLOWED_SCOPES: "${RAGZH_ALLOWED_SCOPES}"
+      RAGTRIAL_EMBED_ENDPOINT: "http://bge-sidecar:8080/embed"
+      RAGTRIAL_EMBED_MODEL_ID: "bge-large-en-v1.5"
+      RAGTRIAL_EMBED_DIMS: "1024"
+      RAGTRIAL_EMBED_TIMEOUT_MS: "30000"
+      RAGTRIAL_EMBED_EXPECTED_MANIFEST: "${RAGZH_BGE_EXPECTED_MANIFEST}"
+      MERGEPILOT_RUN_BINDING_KEYSTORE: "/app/keystore"
+    volumes:
+      - ./corpus:/app/rag-corpus:ro
+      - ./keystore-local:/app/keystore:ro
+    ports: ["127.0.0.1:${RAGZH_CONSOLE_PORT:-48480}:4730"]
+    healthcheck: &console_hc
+      test: ["CMD", "wget", "-qO-", "--timeout=5", "http://127.0.0.1:4730/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks: [rag-zh-net]
+
+  # console-e5：同一 PG，embed 指向 e5 sidecar（768 维）
+  console-e5:
+    image: rag-zh-console:local
+    pull_policy: never
+    depends_on:
+      pg: { condition: service_healthy }
+      minio: { condition: service_healthy }
+      e5-sidecar: { condition: service_healthy }
+    environment:
+      <<: *console_env
+      RAGTRIAL_EMBED_ENDPOINT: "http://e5-sidecar:8080/embed"
+      RAGTRIAL_EMBED_MODEL_ID: "e5-base-v2"
+      RAGTRIAL_EMBED_DIMS: "768"
+      RAGTRIAL_EMBED_EXPECTED_MANIFEST: "${RAGZH_E5_EXPECTED_MANIFEST}"
+    volumes:
+      - ./corpus:/app/rag-corpus:ro
+      - ./keystore-local:/app/keystore:ro
+    ports: ["127.0.0.1:${RAGZH_CONSOLE_E5_PORT:-48483}:4730"]
+    healthcheck: *console_hc
+    networks: [rag-zh-net]
+
+  # 常驻 worker 部署形态（接口就绪，默认不启动；--profile resident-worker 启用）。
+  # 生产形态：console 镜像内 node 运行 tools/rag-worker.mjs 常驻循环（心跳/退避/
+  # 陈旧重占/死信已由 queue.mjs 全语义覆盖）；此处挂载 worktree 源码仅为本地演示。
+  worker:
+    image: rag-zh-console:local
+    pull_policy: never
+    profiles: ["resident-worker"]
+    depends_on:
+      pg: { condition: service_healthy }
+    environment:
+      CONSOLE_PG_DSN: "postgres://postgres:${RAGZH_PG_PASSWORD}@pg:5432/ragzh"
+      RAGTRIAL_CORPUS_DIR: "/app/rag-corpus"
+      RAGTRIAL_ALLOWED_SCOPES: "${RAGZH_ALLOWED_SCOPES}"
+    volumes:
+      - ./corpus:/app/rag-corpus:ro
+      - ../../tools/rag-worker.mjs:/app/worker/rag-worker.mjs:ro
+      - ../../console/backend:/app/console/backend:ro
+    command: ["node", "/app/worker/rag-worker.mjs", "--dsn", "postgres://postgres:${RAGZH_PG_PASSWORD}@pg:5432/ragzh", "--worker", "zh-resident-1"]
+    networks: [rag-zh-net]
+
+volumes:
+  ragzh-pgdata: {}
+  ragzh-miniodata: {}
+
+networks:
+  rag-zh-net: {}

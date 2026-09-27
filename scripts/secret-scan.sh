@@ -36,7 +36,7 @@ case "$MODE" in
     git grep -InE "$PATTERNS" "$TARGET" -- 2>/dev/null | sed "s|^\($TARGET:\)|\1|" > "$RAW" ;;
   --path)
     # node_modules 为本地安装产物（由 lockfile 治理，非仓库内容；--staged/--head 只扫 git 跟踪文件，天然不受影响）
-    ( cd "$TARGET" 2>/dev/null && grep -rInE --exclude-dir=.git --exclude-dir=node_modules "$PATTERNS" . 2>/dev/null ) > "$RAW" ;;
+    ( cd "$TARGET" 2>/dev/null && grep -rInE --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=keystore-local "$PATTERNS" . 2>/dev/null ) > "$RAW" ;;
   *) echo "unknown mode: $MODE" >&2; exit 2 ;;
 esac
 

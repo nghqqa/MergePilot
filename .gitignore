@@ -43,3 +43,10 @@ tests/
 docs/productization/
 docs/showcase/
 docs/architecture-audit/
+
+# rag-prod 评估栈本地合成 keystore（绝不提交）
+deploy/rag-prod/keystore-local/
+deploy/rag-zh-gate/keystore-local/
+
+# 本地测试 junction（host 侧 server 模块解析 pg 用；勿提交）
+node_modules/
