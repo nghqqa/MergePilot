@@ -75,8 +75,20 @@ export function makeExecHandlers({ cfg, repoUrl, workspaceRoot = os.tmpdir(), te
       return { applied: true, verdict: r.verdict };
     },
     runTests: async (cur) => {
+      // P2 输出边界：判定语（verdict/reason 机器码）与原始 harness 日志分字段承载，
+      // 组合视图 output 带显式定界——原始日志永不伪装成 verdict，且保持原文可追溯。
       const result = lastVerifier
-        ? { passed: lastVerifier.verdict === 'VERIFIED', output: `${lastVerifier.reason}\n${lastVerifier.evidence?.output ?? ''}` }
+        ? {
+            passed: lastVerifier.verdict === 'VERIFIED',
+            verdict: lastVerifier.verdict,
+            reason: lastVerifier.reason,
+            log: lastVerifier.evidence?.output ?? null,
+            output: [
+              `[verdict] ${lastVerifier.verdict} (reason=${lastVerifier.reason ?? 'unknown'})`,
+              lastVerifier.evidence?.output ? '----- raw harness output -----' : '(no harness output captured)',
+            ].join('\n')
+              + (lastVerifier.evidence?.output ? '\n' + lastVerifier.evidence.output : ''),
+          }
         : { passed: false, output: 'verifier result missing' };
       const aid = lastAttemptId || cur?.attempt_id;
       if (store && artifactStore?.configured && aid) {

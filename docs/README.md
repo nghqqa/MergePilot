@@ -1,19 +1,15 @@
 # MergePilot documentation guide
 
-Use this page to choose documentation by purpose and time horizon.
+Documentation navigation is consolidated in **[docs/INDEX.md](INDEX.md)** (Chinese-first;
+see also [GLOSSARY.md](GLOSSARY.md) for the terminology and language contract).
 
-| Need | Start here | Status |
-|---|---|---|
-| Understand the project, supported entry points, and current truth boundaries | [Root README](../README.md) | Current public entry point |
-| Contribute code or documentation | [CONTRIBUTING.md](../CONTRIBUTING.md) | Current contributor guidance |
-| Follow rules for coding agents | [AGENTS.md](../AGENTS.md) | Current agent guidance |
-| Understand the isolated-stack architecture | [Isolated-live design](ISOLATED-LIVE-PG-Ephemeral-Verification-Design.md) | Design record; M8 is not complete |
-| Operate the isolated stack locally | [MergePilot CLI](mergepilot-cli.md) | Minimal local operator entry (development preview; Windows 10/11 + WSL2 only) |
-| Run the showcase | [Showcase demo script](showcase/demo-script.md) | Deterministic demonstration material, not production evidence |
-| Review benchmark methodology | [Benchmark summary](../benchmark/formal-summary.md) | Engineering and research material |
-| Review milestone history | [Project status record](项目状态.md) | Historical record; read its date and scope |
-| Review competition-era evidence | [Evidence index](初赛证据索引.md) and [claim matrix](初赛声明-证据矩阵.md) | Historical snapshots |
-| Review past runtime notes | [Historical run records](README-历史运行记录.md) | Historical notes, not installation guidance |
-| Inspect retained verification assets | [`evidence/`](../evidence/) and [`verification/`](../verification/) | Archived evidence and verification conventions |
+Language boundary: Chinese for user-facing navigation, guides, and summaries;
+English is reserved for machine contracts ([API-CONTRACTS.md](../distribution/docs/API-CONTRACTS.md))
+and tool-generated schemas.
 
-Historical records are kept for traceability. They are not independent promises about the current main branch, production readiness, external-customer use, or M8 completion.
+Historical records linked from INDEX.md are kept for traceability. They are not independent
+promises about the current main branch, production readiness, external-customer use, or M8
+completion. Evidence packs (`evidence/`), verification assets (`verification/`), the Python test
+suite (`tests/`), and benchmark materials (`benchmark/`) are internal retained assets and are
+deliberately **not part of this public repository** — see `.gitignore` and CONTRIBUTING.md for
+what can be checked locally.

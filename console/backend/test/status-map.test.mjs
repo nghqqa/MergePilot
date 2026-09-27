@@ -6,8 +6,10 @@ import assert from 'node:assert/strict';
 import {
   executionMap, verdictMap, gateMap, publishMap, EXECUTION, GATE,
   SEVERITY, SEVERITY_ORDER, FXV, CCHAIN, CCHAIN_OVERALL, RAG, TICKET, TICKET_ACTION,
+  STAGE, STAGE_ORDER, OUTCOME,
   fxvMap, fxvArtifactMap, cchainMap, cchainOverallMap, ragMap, ticketMap, ticketActionMap,
-  toneToColor, VERDICT_SEVERITY_TONE,
+  stageMap, outcomeMap,
+  toneToColor, unknownEntry, VERDICT_SEVERITY_TONE,
 } from '../../frontend/src/status-map.js';
 import { STATES as FXV_STATES_REF } from '../lib/fxv/orchestrator.mjs';
 
@@ -184,4 +186,43 @@ test('toneToColor：五档语义色 → antd 预设色完整', () => {
     ['ok', 'info', 'warn', 'bad', 'neutral'].map((t) => toneToColor(t)),
     ['success', 'processing', 'warning', 'error', 'default']);
   assert.equal(toneToColor('nonsense'), 'default');
+});
+
+// ── P2 修复波新增：控制面阶段 / 运行结果 / console-pg·contract 执行状态族 ──
+
+test('STAGE 键空间：8 值全覆盖（与 core-pilot STAGES 对齐），UNKNOWN fail-closed', async () => {
+  const src = await import('node:fs').then((fs) =>
+    fs.readFileSync(new URL('../lib/core-pilot.mjs', import.meta.url), 'utf8'));
+  const m = src.match(/const STAGES = \[([^\]]+)\]/);
+  const backendStages = m[1].split(',').map((x) => x.trim().replace(/'/g, '')).filter(Boolean);
+  assert.deepEqual(backendStages, STAGE_ORDER, '前后端阶段枚举必须一一对齐');
+  for (const s of backendStages) {
+    assert.ok(STAGE[s], `${s} 必须有映射`);
+    assert.notEqual(stageMap(s).label, s, `${s} 必须有中文标签`);
+  }
+  assert.equal(stageMap('PASSED').tone, 'ok');
+  assert.equal(stageMap('BLOCKED').tone, 'bad');
+  assert.equal(stageMap('UNKNOWN').tone, 'warn', '决策缺失是需人工注意的数据异常');
+  assert.match(stageMap('WEIRD_STAGE').note, /未知状态/);
+  assert.equal(stageMap(undefined).label, undefined ?? 'UNKNOWN');
+});
+
+test('OUTCOME 键空间：结果摘要 ≠ 审查结论；缺失显示"未记录"', () => {
+  assert.equal(outcomeMap('REVIEW_COMPLETED_OK').tone, 'ok');
+  assert.match(outcomeMap('REVIEW_COMPLETED_OK').note, /不等于绝对无风险/);
+  assert.equal(outcomeMap('REVIEW_COMPLETED_ACTION_REQUIRED').tone, 'warn');
+  assert.equal(outcomeMap(null).label, '未记录');
+  assert.match(outcomeMap(null).note, /不等于无结果/);
+  assert.match(outcomeMap('SOMETHING_ELSE').note, /未知状态/);
+});
+
+test('EXECUTION 扩展：console-pg/contract 执行族（SUCCEEDED/FAILED/SUPERSEDED）', () => {
+  assert.equal(executionMap({ status: 'SUCCEEDED' }).tone, 'ok');
+  assert.match(executionMap({ status: 'SUCCEEDED' }).note, /审查结论另见/);
+  assert.equal(executionMap({ status: 'FAILED' }).tone, 'bad');
+  assert.equal(executionMap({ status: 'SUPERSEDED' }).tone, 'neutral');
+  assert.equal(executionMap({ status: 'SUPERSEDED' }).label, '已被取代');
+  // 快照族既有语义不回归
+  assert.equal(executionMap({ status: 'PROCESSED' }).tone, 'neutral');
+  assert.equal(executionMap({ status: 'ERROR' }).tone, 'bad');
 });

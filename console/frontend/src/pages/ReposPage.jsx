@@ -60,7 +60,7 @@ export default function ReposPage() {
                 render: (_, r) => (
                   <>
                     <Tag>{contract ? '契约数据源'
-                      : source.kind === 'console-pg' ? 'PG Fixture 测试记录' : '历史数据中的仓库'}</Tag>
+                      : source.kind === 'console-pg' ? '隔离联调（PG fixture）测试记录' : '历史数据中的仓库'}</Tag>
                     {contract && config?.dataMode === 'fixture' ? <Tag>Fixture 数据</Tag> : null}
                   </>
                 ) },
