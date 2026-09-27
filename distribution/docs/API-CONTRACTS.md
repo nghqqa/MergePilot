@@ -42,6 +42,12 @@
 
 ## GET /api/rag/org-search
 - Auth: session required
+- Vocabulary contract (2026-09-27 language-consistency fix wave): retrieval success is `hit` on this
+  endpoint and on `/api/rag-trial/query` alike (single shared vocabulary; an upstream org-rag `ok`
+  is normalized to `hit` at this boundary). Machine enums stay English; human notes are Chinese.
 - A-chain OFF: `{service_state: "a_chain_disabled"}`
-- A-chain ON + hit: `{service_state: "ok", results, snapshot_id, corpus_digest, retrieval_version, source_refs, knowledge_type: "org_knowledge"}`
+- A-chain ON + hit: `{service_state: "hit", results, snapshot_id, corpus_digest, retrieval_version, source_refs, knowledge_type: "org_knowledge"}`
+- A-chain ON + ragtrial internal wiring mid-states (passthrough, honest — never fake a hit):
+  `empty` / `model_missing` / `index_stale` / `provider_unavailable`
 - A-chain ON + degraded: 503, `{service_state: "degraded", degraded_reason}`
+- Results are reference-only: never an input for finding/gate/ticket/VERIFIED/fixer.

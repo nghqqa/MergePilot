@@ -117,7 +117,8 @@ export async function ragTrialApi(req, res, ctx) {
         docs = readCorpusDir(body.corpus_dir, { base: env.RAGTRIAL_CORPUS_DIR || '/app/rag-corpus' });
       }
       if (!Array.isArray(docs) || !docs.length || docs.some((d) => !d?.path || typeof d.text !== 'string')) {
-        return sendJson(res, 400, { error: { reason: 'docs[{path,text}] 或 corpus_dir 必填' } });
+        // 机器字段契约：reason 为稳定英文机器码；中文解释放 detail（语言策略见 docs/GLOSSARY.md）
+        return sendJson(res, 400, { error: { reason: 'docs or corpus_dir required', detail: 'docs[{path,text}] 或 corpus_dir 必填' } });
       }
       const s3 = await buildS3(env);
       if (s3.configured) await s3.ensureBucket(); // 幂等（已存在→409 容忍）

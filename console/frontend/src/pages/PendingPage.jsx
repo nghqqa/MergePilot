@@ -7,12 +7,15 @@ import { fetchRunsSnapshotOnce, useDataSource, useSourceQuery } from '../hooks.j
 import { groupRunsByPr } from '../pr-model.js';
 import { fmtTime } from '../format.js';
 import { Empty, ErrorBox, SkeletonRows } from '../ui.jsx';
+import { SEVERITY, SEVERITY_ORDER, toneToColor, ticketActionMap } from '../status-map.js';
 
 // 工作队列：需要人工处理的事项集中在这一页。
 // 口径（人话）：待决策的审查发现 / 失败或卡住的执行 / 等待审批的票据。
 // 历史 HIGH 只代表"最近一次记录"，不自动生成当前待办（无权威当前 head 时如实说明）。
 
-const SEV_LABEL = { HIGH: '高', MEDIUM: '中', LOW: '低' };
+// 严重度映射与 status-map.js 单源同构（CRITICAL 必须可见——最严重等级不得被吞为"—"）
+const SEV_LABEL = Object.fromEntries(Object.entries(SEVERITY).map(([k, v]) => [k, v.label]));
+const SEV_RANK = Object.fromEntries(SEVERITY_ORDER.map((k, i) => [k, SEVERITY_ORDER.length - i]));
 const KIND_LABEL = {
   approval: '审批待办',
   review: '审查发现',
@@ -56,7 +59,7 @@ function pgQueue(items) {
     id: t.ticket_id,
     kind: 'approval', kindLabel: KIND_LABEL.approval,
     repo: t.repo ?? '未记录',
-    prNumber: null, title: `${t.action}（run ${t.run_id ?? '未记录'}）`,
+    prNumber: null, title: `${ticketActionMap(t.action).label}（run ${t.run_id ?? '未记录'}）`,
     href: '/approvals',
     severity: null,
     statusLabel: '等待审批（隔离联调库）',
@@ -125,7 +128,7 @@ export default function PendingPage() {
   const repoOptions = [...new Set(items.map((i) => i.repo))];
   const filtered = items.filter((i) => matches(i, filters));
   filtered.sort((a, b) => {
-    const sev = (x) => (x.severity === 'HIGH' ? 3 : x.severity === 'MEDIUM' ? 2 : x.severity === 'LOW' ? 1 : 0);
+    const sev = (x) => SEV_RANK[String(x.severity ?? '').toUpperCase()] ?? 0;
     return (sev(b) - sev(a)) || String(b.at ?? '').localeCompare(String(a.at ?? ''));
   });
 
@@ -163,7 +166,7 @@ export default function PendingPage() {
             <Select allowClear placeholder="全部严重度" value={filters.severity || undefined}
                     onChange={(v) => setFResetPage('severity', v ?? '')} aria-label="按严重度筛选"
                     style={{ minWidth: 120 }}
-                    options={[['HIGH', '高'], ['MEDIUM', '中'], ['LOW', '低'], ['未分级', '未分级']].map(([v, l]) => ({ value: v, label: l }))} />
+                    options={[...SEVERITY_ORDER.map((v) => [v, SEVERITY[v].label]), ['未分级', '未分级']].map(([v, l]) => ({ value: v, label: l }))} />
             <Select allowClear placeholder="全部类型" value={filters.kind || undefined}
                     onChange={(v) => setFResetPage('kind', v ?? '')} aria-label="按类型筛选"
                     style={{ minWidth: 130 }}
@@ -191,7 +194,10 @@ export default function PendingPage() {
                 render: (v) => <span className="mono">{v}</span> },
               { title: '状态', dataIndex: 'statusLabel', ellipsis: true },
               { title: '严重度', dataIndex: 'severity', width: 100,
-                render: (v) => (v && SEV_LABEL[v] ? <Tag color={v === 'HIGH' ? 'error' : v === 'MEDIUM' ? 'warning' : 'processing'}>{SEV_LABEL[v]}</Tag> : '—') },
+                render: (v) => {
+                  const m = v ? SEVERITY[String(v).toUpperCase()] : null;
+                  return m ? <Tag color={toneToColor(m.tone)} title={m.note}>{m.label}</Tag> : '—';
+                } },
               { title: '时间', dataIndex: 'at', width: 160,
                 render: (v) => (v ? <span className="mono">{fmtTime(v)}</span> : '—') },
               { title: '', width: 90,

@@ -7,6 +7,7 @@ import { useAuth } from '../auth.jsx';
 import { ErrorBox, SkeletonRows } from '../ui.jsx';
 import { useAppConfig } from '../App.jsx';
 import { useDataSource, useSourceQuery } from '../hooks.js';
+import { ticketMap, ticketActionMap } from '../status-map.js';
 
 // 决策响应映射（console_pg 0.2.0 test-auth 语义，实测）：
 //   200 {ok:true,status[,reason:NOOP]} → 已记录（NOOP=幂等重放：对已处目标态重复决策返回既有状态）
@@ -178,13 +179,13 @@ function PgTicketRow({ t, source }) {
     <div className="panel ticket-card">
       <button type="button" className="ticket-head" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
         <span className="mono">{t.ticket_id.slice(0, 18)}…</span>
-        <span className="muted">{t.action} · {t.repo} · head {(t.head_sha ?? '').slice(0, 8)}</span>
-        <span className="chip">{t.status}{state.phase !== 'idle' ? ` → ${SUBMIT_PHASE_LABEL[state.phase]}` : ''}</span>
+        <span className="muted">{ticketActionMap(t.action).label} · {t.repo} · head {(t.head_sha ?? '').slice(0, 8)}</span>
+        <span className="chip">{ticketMap(t.status).label}{state.phase !== 'idle' ? ` → ${SUBMIT_PHASE_LABEL[state.phase]}` : ''}</span>
       </button>
       {open ? (
         <div className="ticket-body">
           <dl className="kv-grid ticket-binding">
-            <div className="kv"><div className="kv-label">动作</div><div className="kv-value">{t.action}</div></div>
+            <div className="kv"><div className="kv-label">动作</div><div className="kv-value" title={ticketActionMap(t.action).note}>{ticketActionMap(t.action).label}<span className="muted">（{t.action}）</span></div></div>
             <div className="kv"><div className="kv-label">仓库</div><div className="kv-value mono">{t.repo}</div></div>
             <div className="kv"><div className="kv-label">run_id</div><div className="kv-value mono">{t.run_id ?? '未记录'}</div></div>
             <div className="kv"><div className="kv-label" title="票据绑定的完整 head SHA——决策对象以它为准">绑定 head</div><div className="kv-value mono">{t.head_sha ?? '未记录'}</div></div>
@@ -229,7 +230,7 @@ function PgTicketRow({ t, source }) {
               <span className="muted">隔离 PG fixture 库 · data_mode=fixture · test-auth 主体——非真实 GitHub 操作</span>
             </div>
           ) : (
-            <p className="section-note">该票据不在待审批状态（{t.status}）——决策端点仅对 PENDING 生效。</p>
+            <p className="section-note">该票据不在待审批状态（{ticketMap(t.status).label} / {t.status}）——决策端点仅对 PENDING 生效。</p>
           )}
         </div>
       ) : null}

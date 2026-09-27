@@ -285,7 +285,9 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
       const k = Math.min(Number(q.k || 5), 20);
       // RAG 本地试验内部接线（feat/rag-integration 联调）：flag=ragtrial 时同进程直查
       // 隔离栈索引（六状态语义 + query_log/audit 与 /api/rag-trial/query 完全一致）。
-      // 结果一律 reference_only 辅助引用——不构成 finding/gate/ticket/fixer 输入。
+      // 结果一律 reference_only 辅助引用——不构成 finding/gate/ticket/VERIFIED/fixer 输入。
+      // 命中态词汇契约：A 链端点与 ragtrial 内部统一发射 'hit'（不再改写为 'ok'，
+      // 上游 org-rag 的 'ok' 在边界归一为 'hit'；契约文档 distribution/docs/API-CONTRACTS.md 同步）。
       if (process.env.MERGEPILOT_RAG_TRIAL_A_CHAIN === 'ragtrial') {
         const r = await ragTrialInternalQuery(process.env, {
           q: query, k, actor: auth.user,
@@ -305,11 +307,11 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
             note: b.note || `ragtrial 状态=${b.service_state}（如实返回，不伪装命中）` });
         }
         return sendJson(res, 200, {
-          service_state: 'ok', source: 'RAG_TRIAL', knowledge_type: 'rag_trial_reference',
+          service_state: b.service_state, source: 'RAG_TRIAL', knowledge_type: 'rag_trial_reference',
           model: { model_id: b.model_id, model_digest: b.model_digest, index_version: b.index_version },
           latency_ms: b.latency_ms,
           results: (b.results || []).map((h) => ({ score: h.score, snippet: h.snippet, citation: h.citation, reference_only: true })),
-          usage_note: 'RAG trial 辅助引用（reference only）——不构成 finding/gate/ticket/fixer 输入；Verifier 只接受独立测试证据',
+          usage_note: 'RAG trial 辅助引用（reference only）——不构成 finding/gate/ticket/VERIFIED/fixer 输入；Verifier 只接受独立测试证据',
         });
       }
       const base = process.env.ORG_RAG_LIVE_URL || 'http://host.docker.internal:48210';
@@ -323,9 +325,14 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
             http_status: r.status, results: [],
             note: '组织知识检索暂不可用——显式降级，不伪装为空成功' });
         }
-        return sendJson(res, 200, { ...body, source: 'ORG_RAG',
+        return sendJson(res, 200, {
+          ...body,
+          // 词汇契约归一（边界转换）：上游 org-rag 的 'ok' 在 A 链端点统一为 'hit'
+          service_state: body.service_state === 'ok' ? 'hit' : body.service_state,
+          source: 'ORG_RAG',
           knowledge_type: 'org_knowledge',
-          usage_note: 'org-standard reference only — reference only, does not constitute finding/gate/ticket input' });
+          usage_note: '组织规范仅作参考（reference only）——不构成 finding/gate/ticket/VERIFIED 输入',
+        });
       } catch (e) {
         res.setHeader('x-rag-service-state', 'degraded');
         return sendJson(res, 503, { service_state: 'degraded', source: 'ORG_RAG',

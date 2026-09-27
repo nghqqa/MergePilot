@@ -87,3 +87,9 @@ jobs:
           npm ci --no-audit --no-fund
           npm run build
         working-directory: console/frontend
+
+      # /core 页面加载冒烟（P1 修复波）：esbuild 打包 + react-test-renderer 渲染，
+      # mock fetch 全端点——锁"页面不因加载异常进入错误态"（回归：fxv ReferenceError）
+      - name: Frontend /core smoke (react-test-renderer, no browser)
+        run: node --test test/core-page.smoke.test.mjs
+        working-directory: console/frontend

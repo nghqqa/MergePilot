@@ -2,21 +2,17 @@ import { Alert, Button, Card, Descriptions, Input, InputNumber, Space, Table, Ta
 import { ReloadOutlined, SearchOutlined, ThunderboltOutlined } from '@ant-design/icons';
 import React, { useCallback, useEffect, useState } from 'react';
 import { api } from '../api.js';
+import { ragMap, toneToColor } from '../status-map.js';
 
 // RAG 本地试验页（LOCAL_RAG_TRIAL）。数据 100% 来自 /api/rag-trial/*：
 // 六状态如实显示（hit/empty/model_missing/index_stale/provider_unavailable/
 // error + backend_not_wired）；每条命中必须携带引用，否则该行后端已丢弃——
 // 本页不渲染任何无引用内容，也不把 RAG 结果表述为证据。
-
-const STATE_COLOR = {
-  hit: 'green', empty: 'default',
-  model_missing: 'orange', index_stale: 'orange',
-  provider_unavailable: 'red', error: 'red',
-  backend_not_wired: 'default',
-};
+// 状态映射走 status-map.js 独立键空间（RAG）：人话标签 + 语义色，未知枚举兜底。
 
 function stateTag(state) {
-  return <Tag color={STATE_COLOR[state] ?? 'red'}>{state ?? 'UNKNOWN'}</Tag>;
+  const m = ragMap(state);
+  return <Tag color={toneToColor(m.tone)} title={m.note}>{m.label}</Tag>;
 }
 
 export default function RagTrialPage() {
@@ -74,14 +70,14 @@ export default function RagTrialPage() {
       <Typography.Title level={1} style={{ fontSize: 24, marginBottom: 4 }}>RAG 本地试验</Typography.Title>
       <Typography.Paragraph type="secondary">
         LOCAL_RAG_TRIAL：独立 pgvector 索引 + MinIO 原文归档。检索结果仅作<b>带引用的参考</b>，
-        不构成 finding/ticket/gate 输入；无引用命中在后端即被丢弃，本页不显示无来源内容。
+        不构成 finding/ticket/gate/VERIFIED 输入；无引用命中在后端即被丢弃，本页不显示无来源内容。
       </Typography.Paragraph>
 
       <div className="panel" style={{ padding: 'var(--sp-4)', marginBottom: 16 }}>
         <Typography.Title level={3} style={{ fontSize: 16 }}>A 链 org-search × ragtrial（集成联调）</Typography.Title>
         <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
           /api/rag/org-search 内部接线（MERGEPILOT_RAG_TRIAL_A_CHAIN=ragtrial）——结果一律 <b>reference_only</b> 辅助引用，
-          不构成 finding/gate/ticket/fixer 输入；Verifier 只接受独立测试证据。
+          不构成 finding/gate/ticket/VERIFIED/fixer 输入；Verifier 只接受独立测试证据。
         </Typography.Paragraph>
         <Space.Compact style={{ width: '100%', maxWidth: 560 }}>
           <Input placeholder="组织知识检索词（如：回滚 锚点）" value={orgQ}
@@ -92,7 +88,7 @@ export default function RagTrialPage() {
           <div style={{ marginTop: 12 }}>
             <Space size="small" wrap>
               <Tag>{orgRes.source ?? '-'}</Tag>
-              <Tag color={orgRes.service_state === 'ok' || orgRes.service_state === 'hit' ? 'green' : 'orange'}>{orgRes.service_state}</Tag>
+              <Tag color={orgRes.service_state === 'hit' ? 'green' : 'orange'}>{orgRes.service_state}</Tag>
               {orgRes.model ? <Tag color="blue">{orgRes.model.model_id}@iv{orgRes.model.index_version}</Tag> : null}
             </Space>
             {orgRes.note ? <p className="section-note" style={{ marginTop: 8 }}>{orgRes.note}</p> : null}
@@ -185,9 +181,9 @@ export default function RagTrialPage() {
       </Card>
 
       {status && status.service_state === 'backend_not_wired' ? (
-        <Alert type="warning" showIcon message="BACKEND_NOT_WIRED" description={status.note} />
+        <Alert type="warning" showIcon message={ragMap('backend_not_wired').label} description={status.note} />
       ) : status && status.service_state !== undefined && status.service_state !== 'ready' ? (
-        <Alert type="warning" showIcon message={status.service_state}
+        <Alert type="warning" showIcon message={ragMap(status.service_state).label}
           description={status.note ?? status.error ?? 'ragtrial 显式失败——不伪装'} />
       ) : null}
 

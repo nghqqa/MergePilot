@@ -40,9 +40,14 @@ async function post(path, body) {
   let data = null;
   try { data = await res.json(); } catch { /* non-json */ }
   if (!res.ok) {
-    const err = new Error(data?.error ?? `HTTP ${res.status}`);
+    // 错误形状：{error:{reason(机器码), detail/message(人读)}} 或字符串——都不得渲染成 [object Object]
+    const e = data?.error;
+    const message = (typeof e === 'string' && e) || e?.message || e?.detail
+      || (typeof e?.reason === 'string' ? e.reason : null) || `HTTP ${res.status}`;
+    const err = new Error(message);
     err.status = res.status;
-    err.reason = data?.error_kind ?? null;
+    err.reason = (e && typeof e === 'object' && typeof e.reason === 'string' ? e.reason : null)
+      ?? (typeof data?.error_kind === 'string' ? data.error_kind : null);
     throw err;
   }
   return data;

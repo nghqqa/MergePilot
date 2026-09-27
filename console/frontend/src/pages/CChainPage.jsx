@@ -2,19 +2,22 @@ import { Alert, Button, Space, Table, Tag, Typography } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
 import React, { useCallback, useEffect, useState } from 'react';
 import { api } from '../api.js';
+import { cchainMap, cchainOverallMap, toneToColor } from '../status-map.js';
 
 // C 链状态面板（B 轮接线 feat/core-b-parallel）。
 // 数据 100% 来自 /api/cchain/status（真实接口层）：缺真实依赖时显示 BLOCKED 与
 // 具体阻塞条件——前端不做任何"猜测可用"或 fixture 冒充。
-
-const STATE_COLOR = {
-  READY: 'green', ATTESTED: 'green',
-  NOT_CONFIGURED: 'default', MISSING: 'orange', CORRUPT: 'red',
-  UNREACHABLE: 'red', INVALID: 'red',
-};
+// 状态映射走 status-map.js 独立键空间（CCHAIN/CCHAIN_OVERALL）：人话标签 + 语义色，
+// 未知枚举兜底显示原始值并标注"未知状态"。
 
 function stateTag(state) {
-  return <Tag color={STATE_COLOR[state] ?? 'red'}>{state ?? 'UNKNOWN'}</Tag>;
+  const m = cchainMap(state);
+  return <Tag color={toneToColor(m.tone)} title={m.note}>{m.label}</Tag>;
+}
+
+function overallTag(overall) {
+  const m = cchainOverallMap(overall);
+  return <Tag color={toneToColor(m.tone)} title={m.note}>{m.label}</Tag>;
 }
 
 export default function CChainPage() {
@@ -60,7 +63,7 @@ export default function CChainPage() {
         <>
           <div className="panel" style={{ padding: 'var(--sp-4)', marginBottom: 16 }}>
             <Space size="large" wrap>
-              <span>总体：<Tag color={overallOk ? 'green' : 'red'}>{status.overall}</Tag></span>
+              <span>总体：{overallTag(status.overall)}</span>
               <span>enforce 门禁：<Tag color={status.enforce?.flag ? 'orange' : 'default'}>
                 {status.enforce?.flag ? 'ON（FXV run 启动受 READY 门禁）' : 'off'}</Tag></span>
               {status.audit_note?.written === false && status.audit_note?.error ? (
