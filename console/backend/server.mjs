@@ -25,6 +25,10 @@ import { cchainStatusObserved, verifyRunBindingAndAudit, rotateKeystore,
          cchainMetricsSnapshot, rememberStatusForMetrics } from './lib/cchain/wiring.mjs';
 import { ragTrialApi, ragTrialInternalQuery } from './lib/ragtrial/api.mjs';
 
+// 进程启动时刻（health.started_at 的唯一来源）。必须在模块加载时求值——
+// 放进 apiHealth() 会变成"响应时刻"，容器 Up 时长与该字段即相互矛盾（2026-09-27 实测教训）。
+const PROCESS_STARTED_AT = new Date().toISOString();
+
 function readJsonBody(req, limit = 64 * 1024) {
   return new Promise((resolve, reject) => {
     const chunks = [];
@@ -116,7 +120,7 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
       version: '0.1.0',
       data_mode: liveConfigured ? 'live' : 'snapshot',
       data_mode_note: liveConfigured
-        ? 'PG 实时（staging 隔离库）：overview/pending/仓库/PR 详情/审计按会话 allowlist 实时读取；run 证据详情页仍为锁定快照只读'
+        ? 'PG 实时（live）·隔离 staging 库：overview/pending/仓库/PR 详情/审计按会话 allowlist 实时读取；run 证据详情页仍为锁定快照只读'
         : '真实历史运行证据包（锁定只读），非实时数据；live 模式未接入',
       live: liveConfigured
         ? { configured: true, note: '核心控制面 API（overview/pulls/pending/tickets/evidence/audit）实时读 PG（会话 allowlist 过滤）' }
@@ -135,7 +139,7 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
       evidence_root: evidenceRoot,
       runs: packs.length,
       packs_with_sums: withSums,
-      started_at: new Date().toISOString(),
+      started_at: PROCESS_STARTED_AT,
     };
   };
 
