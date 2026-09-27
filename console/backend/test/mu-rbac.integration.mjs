@@ -199,6 +199,137 @@ try {
   ok('MU-E1 拒绝审计在库（MU_AUTH_DENIED）且 detail 仅含 action/reason（无查询正文/凭据）',
     auditRows.length >= 2 && auditRows.every((r) =>
       Object.keys(r.detail).every((k) => ['action', 'reason'].includes(k))), auditRows.slice(0, 2));
+
+  // ══ Phase 3 电池：GitHub 身份边界 + PR/ReviewRecord + 隔离矩阵 ══
+  const muTenA = admin.json.tenant.tenant_id; // 本 fixture 的 tenant A = 迁移 default tenant
+  // 补齐角色 fixture：erin(contributor)/frank(reviewer)/gina(auditor)（tenant A）
+  for (const [login, role] of [['erin', 'contributor'], ['frank', 'reviewer'], ['gina', 'auditor']]) {
+    const r = await call('/api/mu/members', { method: 'POST', cookie: admin.cookie, csrf: admin.csrf,
+      body: { login, role } });
+    if (r.status !== 200) throw new Error(`member ${login} setup failed: ${JSON.stringify(r.json)}`);
+  }
+  const erin = await muLogin('fixture:erin');
+  const frank = await muLogin('fixture:frank');
+  const gina = await muLogin('fixture:gina');
+
+  // ── MU-F*：同 PR number + 同 head_sha 双 tenant 播种 ──
+  const HEAD = 'abc123def4567890abc123def4567890abc12345';
+  const prA = await call('/api/mu/fixtures/pr', { method: 'POST', cookie: dana.cookie, csrf: dana.csrf,
+    body: { repo_id: repoAId, number: 42, head_sha: HEAD, branch_protection_status: 'unknown', title: 'same PR in tenant A' } });
+  ok('MU-F1 tenant A 播种 PR #42（protection=unknown）', prA.status === 200 && Boolean(prA.json?.pull_request?.pr_id), prA.json);
+  const prAId = prA.json?.pull_request?.pr_id;
+  const prB = await call('/api/mu/fixtures/pr', { method: 'POST', cookie: carol.cookie, csrf: carol.csrf,
+    body: { repo_id: carolRepo.json?.repository?.repo_id, number: 42, head_sha: HEAD,
+      branch_protection_status: 'known_clean', title: 'same PR in tenant B' } });
+  ok('MU-F2 tenant B 播种同 number+head PR（独立行）',
+    prB.status === 200 && Boolean(prB.json?.pull_request?.pr_id) && prB.json.pull_request.pr_id !== prAId);
+  const prBId = prB.json?.pull_request?.pr_id;
+
+  // ── MU-G*：跨 tenant 全动作拒绝（读/写/审查/修复/成员） ──
+  ok('MU-G1 跨 tenant PR 读 → 404（tenant 收窄）',
+    (await call(`/api/mu/prs/${prBId}`, { cookie: dana.cookie })).status === 404);
+  ok('MU-G2 跨 tenant 审批写 → 404',
+    (await call(`/api/mu/prs/${prAId}/decision`, { method: 'POST', cookie: carol.cookie, csrf: carol.csrf,
+      body: { action: 'approve' } })).status === 404);
+  ok('MU-G3 跨 tenant 触发审查 → 404',
+    (await call(`/api/mu/prs/${prAId}/review`, { method: 'POST', cookie: carol.cookie, csrf: carol.csrf })).status === 404);
+  ok('MU-G4 跨 tenant 修复 → 404',
+    (await call(`/api/mu/prs/${prAId}/repair`, { method: 'POST', cookie: carol.cookie, csrf: carol.csrf })).status === 404);
+  const crossMember = await call('/api/mu/members', { method: 'POST', cookie: dana.cookie, csrf: dana.csrf,
+    body: { tenant_id: tenantBId, login: 'sneaky', role: 'maintainer' } });
+  ok('MU-G5 跨 tenant 成员管理不可达（body tenant_id 被忽略 → 403，B 成员数不变）',
+    crossMember.status === 403
+      && (await pool.query(`SELECT count(*)::int n FROM mu.membership WHERE tenant_id=$1`, [tenantBId])).rows[0].n === 2,
+    crossMember.json);
+
+  // ── MU-H*：角色门（Contributor/Reviewer/Auditor/PlatformAdmin） ──
+  ok('MU-H1 Contributor 不可审批', (await call(`/api/mu/prs/${prAId}/decision`, { method: 'POST',
+    cookie: erin.cookie, csrf: erin.csrf, body: { action: 'approve' } })).json?.error?.reason === 'action_not_granted');
+  ok('MU-H2 Contributor 不可修复', (await call(`/api/mu/prs/${prAId}/repair`, { method: 'POST',
+    cookie: erin.cookie, csrf: erin.csrf })).json?.error?.reason === 'action_not_granted');
+  ok('MU-H3 Contributor 不可触发审查（reviewer 起）', (await call(`/api/mu/prs/${prAId}/review`, { method: 'POST',
+    cookie: erin.cookie, csrf: erin.csrf })).json?.error?.reason === 'action_not_granted');
+  ok('MU-H4 Contributor 可读 PR/摘录/RAG（读面完整）',
+    (await call(`/api/mu/prs/${prAId}`, { cookie: erin.cookie })).status === 200
+      && (await call(`/api/mu/prs/${prAId}/changed-excerpt`, { cookie: erin.cookie })).status === 200
+      && (await call(`/api/mu/repositories/${repoAId}/rag-search?q=回滚`, { cookie: erin.cookie })).status === 200);
+  ok('MU-H5 Reviewer 可触发只读审查',
+    (await call(`/api/mu/prs/${prAId}/review`, { method: 'POST', cookie: frank.cookie, csrf: frank.csrf })).status === 200);
+  ok('MU-H6 Reviewer 不可审批', (await call(`/api/mu/prs/${prAId}/decision`, { method: 'POST',
+    cookie: frank.cookie, csrf: frank.csrf, body: { action: 'approve' } })).json?.error?.reason === 'action_not_granted');
+  ok('MU-H7 Auditor 不可读代码摘录', (await call(`/api/mu/prs/${prAId}/changed-excerpt`, { cookie: gina.cookie })).status === 403);
+  ok('MU-H8 Auditor 不可 RAG 检索', (await call(`/api/mu/repositories/${repoAId}/rag-search?q=审计`, { cookie: gina.cookie })).status === 403);
+  ok('MU-H9 Auditor 不可读 PR（只读审计元数据）', (await call(`/api/mu/prs/${prAId}`, { cookie: gina.cookie })).status === 403);
+  ok('MU-H10 Auditor 可读审计（metadata only）', (await call('/api/mu/audit', { cookie: gina.cookie })).status === 200);
+  ok('MU-H11 PlatformAdmin 不自动获得代码读取', (await call(`/api/mu/prs/${prAId}/changed-excerpt`, { cookie: admin.cookie })).status === 403);
+
+  // ── MU-I*：branch protection 未知 → 禁止可合并结论；任务执行与撤销复查 ──
+  const ap1 = await call(`/api/mu/prs/${prAId}/decision`, { method: 'POST', cookie: dana.cookie, csrf: dana.csrf,
+    body: { action: 'approve' } });
+  ok('MU-I1 protection=unknown 的 approve → 422 cannot_conclude_mergeable（fail-closed，无合并路径）',
+    ap1.status === 422 && ap1.json?.error?.reason === 'cannot_conclude_mergeable', ap1.json);
+  const ap2 = await call(`/api/mu/prs/${prAId}/decision`, { method: 'POST', cookie: dana.cookie, csrf: dana.csrf,
+    body: { action: 'reject', note: 'not ready' } });
+  ok('MU-I2 protection=unknown 的 reject 允许（拒绝不产生可合并结论）', ap2.status === 200);
+  const ap3 = await call(`/api/mu/prs/${prBId}/decision`, { method: 'POST', cookie: carol.cookie, csrf: carol.csrf,
+    body: { action: 'approve' } });
+  ok('MU-I3 protection=known_clean 的 approve 允许（记录携带状态快照）',
+    ap3.status === 200 && ap3.json?.review_record?.branch_protection_status === 'known_clean');
+
+  // 撤销复查：frank（含 MU-H5 已入队的一单）再入队 → 撤销 frank → tick 全部拒绝
+  const frJob = await call(`/api/mu/prs/${prAId}/review`, { method: 'POST', cookie: frank.cookie, csrf: frank.csrf });
+  const revokedFrank = await call('/api/mu/members/frank/revoke', { method: 'POST', cookie: admin.cookie, csrf: admin.csrf });
+  ok('MU-I4 frank 入队审查 + 撤销成员', frJob.status === 200 && revokedFrank.status === 200);
+  ok('MU-I5 撤销后新请求拒绝（403 membership_inactive）',
+    (await call('/api/mu/session', { cookie: frank.cookie })).status === 403);
+  const frankUid = (await pool.query(`SELECT user_id FROM mu.app_user WHERE login='frank'`)).rows[0].user_id;
+  const frAiBefore = (await pool.query(
+    `SELECT count(*)::int n FROM mu.review_record WHERE actor_user_id=$1 AND kind='ai_review'`, [frankUid])).rows[0].n;
+  const tick1 = await call('/api/mu/jobs/tick', { method: 'POST', cookie: dana.cookie, csrf: dana.csrf });
+  ok('MU-I6 已排队任务执行前复查成员关系 → 拒绝执行（零 provider 写入）',
+    (tick1.json?.processed ?? []).filter((j) => j.state === 'rejected' && j.reason === 'membership_inactive').length === 2,
+    tick1.json?.processed);
+  const frAiAfter = (await pool.query(
+    `SELECT count(*)::int n FROM mu.review_record WHERE actor_user_id=$1 AND kind='ai_review'`, [frankUid])).rows[0].n;
+  ok('MU-I7 被拒任务未产生任何审查记录', frAiAfter === frAiBefore, { frAiBefore, frAiAfter });
+
+  // 审查 happy path + 跨 tenant 记录隔离
+  const danaReview = await call(`/api/mu/prs/${prAId}/review`, { method: 'POST', cookie: dana.cookie, csrf: dana.csrf });
+  ok('MU-I8 maintainer 触发只读审查（dana）', danaReview.status === 200);
+  await call('/api/mu/jobs/tick', { method: 'POST', cookie: dana.cookie, csrf: dana.csrf });
+  const detailA = await call(`/api/mu/prs/${prAId}`, { cookie: dana.cookie });
+  const detailB = await call(`/api/mu/prs/${prBId}`, { cookie: carol.cookie });
+  ok('MU-I9 同 number+head 双 tenant 零共享：A 有 ai_review，B 零 ai_review 只有自己 approve',
+    (detailA.json?.review_records ?? []).some((r) => r.kind === 'ai_review') === true
+      && (detailB.json?.review_records ?? []).every((r) => r.kind !== 'ai_review') === true
+      && (detailB.json?.review_records ?? []).some((r) => r.decision === 'approve') === true,
+    { a: (detailA.json?.review_records ?? []).length, b: (detailB.json?.review_records ?? []).length });
+
+  // ── MU-J*：修复（受控）+ Binding 篡改/吊销 + 分区直证 ──
+  const rep1 = await call(`/api/mu/prs/${prAId}/repair`, { method: 'POST', cookie: dana.cookie, csrf: dana.csrf,
+    body: { binding_id: '00000000-0000-0000-0000-000000000000' } });
+  ok('MU-J1 maintainer 发起受控修复（body.binding_id 被忽略，服务端解析真 binding）', rep1.status === 200, rep1.json);
+  await call('/api/mu/jobs/tick', { method: 'POST', cookie: dana.cookie, csrf: dana.csrf });
+  const recA = await call(`/api/mu/prs/${prAId}`, { cookie: dana.cookie });
+  ok('MU-J2 修复执行产生 repair_record（fixture 写，零真实 GitHub）',
+    (recA.json?.review_records ?? []).some((r) => r.kind === 'repair_record') === true);
+  await call(`/api/mu/repositories/${repoAId}/binding/revoke`, { method: 'POST', cookie: dana.cookie, csrf: dana.csrf });
+  const rep2 = await call(`/api/mu/prs/${prAId}/repair`, { method: 'POST', cookie: dana.cookie, csrf: dana.csrf,
+    body: { binding_id: 'forged-any-id' } });
+  ok('MU-J3 Binding 吊销后修复拒绝（binding_required，伪造 binding_id 不可扩大权限）',
+    rep2.status === 403 && rep2.json?.error?.reason === 'binding_required');
+
+  const jobsA = (await pool.query(`SELECT count(*)::int n FROM mu.job WHERE tenant_id=$1`, [muTenA])).rows[0].n;
+  const jobsB = (await pool.query(`SELECT count(*)::int n FROM mu.job WHERE tenant_id=$1`, [tenantBId])).rows[0].n;
+  ok('MU-J4 job 表按 tenant 分区（A≥2，B=0——B 从未入队）', jobsA >= 2 && jobsB === 0, { jobsA, jobsB });
+  const sharedHead = (await pool.query(`SELECT tenant_id, count(*)::int n FROM mu.review_record
+      WHERE head_sha=$1 GROUP BY tenant_id`, [HEAD])).rows;
+  ok('MU-J5 同 head_sha 的 ReviewRecord 按 tenant 分组（无跨 tenant 共享行）',
+    sharedHead.length === 2 && sharedHead.every((r) => Number(r.n) > 0), sharedHead);
+
+  ok('MU-J6 GitHub OAuth/App 流程状态端点如实未接入',
+    (await call('/api/mu/auth/oauth/github/start')).status === 501
+      && (await call('/api/mu/installations/github/status', { cookie: dana.cookie })).json?.configured === false);
 } catch (e) {
   fail++;
   console.error('FATAL', e);

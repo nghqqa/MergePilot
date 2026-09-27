@@ -13,6 +13,8 @@
 import crypto from 'node:crypto';
 import { createMuStore } from './store.mjs';
 import { authorize, roleActions, MU_ROLES } from './authz.mjs';
+import { githubOAuthStatus, githubAppStatus,
+  fixtureChangedExcerpt, fixtureRagSearch, fixtureReviewRun, fixtureRepairPush } from './provider.mjs';
 import { createMuSession, safeEqual } from '../session.mjs';
 
 let muStorePromise = null;
@@ -94,6 +96,13 @@ export async function muApi(req, res, ctx) {
         detail: 'GitHub OAuth 登录流程保留（见 PR 未完成项）；本版本仅 fixture 身份提供商' } });
     }
     return sendJson(res, 400, { error: { reason: 'unknown_provider' } });
+  }
+
+  // GitHub OAuth 流程启动端点（流程保留位；免会话——流程起点）。真实接入为未完成项，
+  // 永远如实 501，不伪装可配置。
+  if (p === '/api/mu/auth/oauth/github/start' && req.method === 'GET') {
+    const st = githubOAuthStatus(env);
+    return sendJson(res, 501, { reason: st.reason, flow: 'github_oauth', note: st.note });
   }
 
   // ── 以下全部需要多用户会话 ──
@@ -276,6 +285,198 @@ export async function muApi(req, res, ctx) {
       await store.audit('MU_BINDING_REVOKED', { tenantId: mu.tenantId, actorUserId: mu.userId,
         detail: { repo_id: g.repo.repo_id } });
       return sendJson(res, 200, { ok: true, revoked: Boolean(revoked) });
+    }
+
+    // ── PR 快照播种（fixture 端点：仅 MU_FIXTURES 开启时可用——dev/test 数据面，
+    //    非产品契约；真实 PR 数据来自 GitHub App webhook，为未完成项） ──
+    if (p === '/api/mu/fixtures/pr' && req.method === 'POST') {
+      if (env.MU_FIXTURES === '0') return sendJson(res, 403, { error: { reason: 'fixtures_disabled' } });
+      if (!csrfOk()) return sendJson(res, 403, { error: { reason: 'csrf_required' } });
+      const body = await json();
+      const g = await guard('read_pull_request', { repoId: body.repo_id });
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const number = Number(body.number);
+      const headSha = String(body.head_sha || '');
+      const bps = ['unknown', 'known_clean', 'blocked'].includes(body.branch_protection_status)
+        ? body.branch_protection_status : 'unknown';
+      if (!Number.isInteger(number) || number < 1 || !/^[0-9a-f]{6,40}$/i.test(headSha)) {
+        return sendJson(res, 400, { error: { reason: 'number + head_sha(6-40 hex) required' } });
+      }
+      const pr = await store.upsertPullRequest({ tenantId: mu.tenantId, repoId: g.repo.repo_id,
+        providerPrNumber: number, headSha, headRef: body.head_ref ? String(body.head_ref) : null,
+        baseRef: body.base_ref ? String(body.base_ref) : null, title: body.title ? String(body.title) : null,
+        branchProtectionStatus: bps });
+      return sendJson(res, 200, { ok: true, pull_request: pr });
+    }
+
+    // ── PR 读面（列表/详情：tenant 收窄 + 审查记录） ──
+    if (p === '/api/mu/prs' && req.method === 'GET') {
+      const g = await guard('read_pull_request');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const rows = await store.findPullRequests(mu.tenantId, {
+        repoId: q.repo_id ? String(q.repo_id) : null,
+        number: q.number ? Number(q.number) : null });
+      return sendJson(res, 200, { pull_requests: rows });
+    }
+    const prMatch = p.match(/^\/api\/mu\/prs\/([^/]+)(?:\/(.*))?$/);
+    if (prMatch && req.method === 'GET') {
+      const pr = await store.resolvePullRequest(mu.tenantId, prMatch[1]);
+      if (!pr) return sendJson(res, 404, { error: { reason: 'pull_request_not_found' } });
+      const sub = prMatch[2] ?? null;
+      if (sub === 'changed-excerpt') {
+        const g = await guard('read_code_content', { repoId: pr.repo_id });
+        if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+        return sendJson(res, 200, { pr_id: pr.pr_id, head_sha: pr.head_sha,
+          excerpt: fixtureChangedExcerpt(pr), note: 'fixture 合成摘录（授权边界验证用）' });
+      }
+      if (sub === null) {
+        const g = await guard('read_pull_request', { repoId: pr.repo_id });
+        if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+        const records = await store.listReviewRecords(mu.tenantId, pr.pr_id);
+        return sendJson(res, 200, { pull_request: pr, review_records: records,
+          my_permissions: { actions: roleActions(liveMembership.role) ?? [] } });
+      }
+      return sendJson(res, 404, { error: { reason: 'unknown pr subpath' } });
+    }
+
+    // ── 审查触发（reviewer+；只读审查 job） ──
+    if (prMatch && prMatch[2] === 'review' && req.method === 'POST') {
+      if (!csrfOk()) return sendJson(res, 403, { error: { reason: 'csrf_required' } });
+      const pr = await store.resolvePullRequest(mu.tenantId, prMatch[1]);
+      if (!pr) return sendJson(res, 404, { error: { reason: 'pull_request_not_found' } });
+      const g = await guard('request_review', { repoId: pr.repo_id });
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const job = await store.enqueueJob({ tenantId: mu.tenantId, repoId: pr.repo_id,
+        prId: pr.pr_id, kind: 'review_run', requestedBy: mu.userId,
+        requestedRole: g.membership.role, payload: { head_sha: pr.head_sha } });
+      await store.audit('MU_REVIEW_REQUESTED', { tenantId: mu.tenantId, actorUserId: mu.userId,
+        detail: { pr_id: pr.pr_id, job_id: job.job_id } });
+      return sendJson(res, 200, { ok: true, job_id: job.job_id, state: job.state });
+    }
+
+    // ── 人工审批（maintainer+；branch protection 未知 → 禁止可合并结论） ──
+    if (prMatch && prMatch[2] === 'decision' && req.method === 'POST') {
+      if (!csrfOk()) return sendJson(res, 403, { error: { reason: 'csrf_required' } });
+      const pr = await store.resolvePullRequest(mu.tenantId, prMatch[1]);
+      if (!pr) return sendJson(res, 404, { error: { reason: 'pull_request_not_found' } });
+      const g = await guard('decide_review', { repoId: pr.repo_id });
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const body = await json();
+      const action = String(body.action || '');
+      if (!['approve', 'reject'].includes(action)) {
+        return sendJson(res, 400, { error: { reason: 'action(approve|reject) required' } });
+      }
+      if (action === 'approve' && pr.branch_protection_status !== 'known_clean') {
+        await store.audit('MU_DECISION_BLOCKED', { tenantId: mu.tenantId, actorUserId: mu.userId,
+          detail: { pr_id: pr.pr_id, branch_protection_status: pr.branch_protection_status } });
+        return sendJson(res, 422, { error: { reason: 'cannot_conclude_mergeable',
+          detail: `branch protection 状态为 ${pr.branch_protection_status}——禁止生成可合并结论（fail-closed；本切片无任何合并执行路径）` } });
+      }
+      const record = await store.insertReviewRecord({ tenantId: mu.tenantId, repoId: pr.repo_id,
+        prId: pr.pr_id, kind: 'human_decision', actorUserId: mu.userId, decision: action,
+        headSha: pr.head_sha, branchProtectionStatus: pr.branch_protection_status,
+        payload: { note: String(body.note || '').slice(0, 200) } });
+      await store.audit('MU_DECISION_RECORDED', { tenantId: mu.tenantId, actorUserId: mu.userId,
+        detail: { pr_id: pr.pr_id, decision: action } });
+      return sendJson(res, 200, { ok: true, review_record: record });
+    }
+
+    // ── 受控修复（maintainer+ 且需 active Binding；执行前还会在 job 认领时复查） ──
+    if (prMatch && prMatch[2] === 'repair' && req.method === 'POST') {
+      if (!csrfOk()) return sendJson(res, 403, { error: { reason: 'csrf_required' } });
+      const pr = await store.resolvePullRequest(mu.tenantId, prMatch[1]);
+      if (!pr) return sendJson(res, 404, { error: { reason: 'pull_request_not_found' } });
+      const g = await guard('request_repair', { repoId: pr.repo_id, needBinding: true });
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const job = await store.enqueueJob({ tenantId: mu.tenantId, repoId: pr.repo_id,
+        prId: pr.pr_id, kind: 'repair_push', requestedBy: mu.userId,
+        requestedRole: g.membership.role, payload: { head_sha: pr.head_sha } });
+      await store.audit('MU_REPAIR_REQUESTED', { tenantId: mu.tenantId, actorUserId: mu.userId,
+        detail: { pr_id: pr.pr_id, job_id: job.job_id } });
+      return sendJson(res, 200, { ok: true, job_id: job.job_id, state: job.state });
+    }
+
+    // ── RAG 检索面（rag_query；fixture 语料——Auditor/PlatformAdmin 默认无此动作） ──
+    const ragMatch = p.match(/^\/api\/mu\/repositories\/([^/]+)\/rag-search$/);
+    if (ragMatch && req.method === 'GET') {
+      const g = await guard('rag_query', { repoId: ragMatch[1] });
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      return sendJson(res, 200, fixtureRagSearch(g.repo, q.q ?? ''));
+    }
+
+    // ── 任务（列表=成员可见，tenant 收窄；tick=fixture 执行器） ──
+    if (p === '/api/mu/jobs' && req.method === 'GET') {
+      const g = await guard('read_repository');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const rows = await store.listJobs(mu.tenantId, { state: q.state ? String(q.state) : null });
+      return sendJson(res, 200, { jobs: rows });
+    }
+    if (p === '/api/mu/jobs/tick' && req.method === 'POST') {
+      if (env.MU_FIXTURES === '0') return sendJson(res, 403, { error: { reason: 'fixtures_disabled' } });
+      if (!csrfOk()) return sendJson(res, 403, { error: { reason: 'csrf_required' } });
+      const g = await guard('read_repository'); // 触发执行器须为 active 成员
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const processed = [];
+      for (;;) {
+        const job = await store.claimNextJob();
+        if (!job) break;
+        // 执行前复查（授权快照不可信）：请求者成员关系 + 角色仍允许 + 修复需 Binding
+        const m = await store.getMembership(job.tenant_id, job.requested_by);
+        const action = job.kind === 'review_run' ? 'request_review' : 'request_repair';
+        let binding = null;
+        if (job.kind === 'repair_push') binding = await store.getBindingForRepo(job.tenant_id, job.repo_id);
+        const decision = authorize({ membership: m ?? undefined, action, binding });
+        if (!decision.ok) {
+          await store.finishJob(job.job_id, 'rejected', { reason: decision.reason });
+          await store.audit('MU_JOB_REJECTED', { tenantId: job.tenant_id, actorUserId: job.requested_by,
+            detail: { job_id: job.job_id, kind: job.kind, reason: decision.reason } });
+          processed.push({ job_id: job.job_id, state: 'rejected', reason: decision.reason });
+          continue; // 拒绝路径绝不执行任何 provider 写入
+        }
+        const pr = job.pr_id ? await store.resolvePullRequest(job.tenant_id, job.pr_id) : null;
+        if (job.kind === 'review_run' && pr) {
+          const result = fixtureReviewRun(pr);
+          await store.insertReviewRecord({ tenantId: job.tenant_id, repoId: job.repo_id,
+            prId: job.pr_id, kind: 'ai_review', actorUserId: job.requested_by,
+            decision: 'read_only_review', headSha: pr.head_sha,
+            branchProtectionStatus: pr.branch_protection_status, payload: result });
+          await store.finishJob(job.job_id, 'done', result);
+          await store.audit('MU_JOB_DONE', { tenantId: job.tenant_id, actorUserId: job.requested_by,
+            detail: { job_id: job.job_id, kind: job.kind, provider: 'fixture' } });
+          processed.push({ job_id: job.job_id, state: 'done', kind: job.kind });
+        } else if (job.kind === 'repair_push' && pr) {
+          const wrote = fixtureRepairPush(pr, job);
+          await store.insertReviewRecord({ tenantId: job.tenant_id, repoId: job.repo_id,
+            prId: job.pr_id, kind: 'repair_record', actorUserId: job.requested_by,
+            decision: 'fixture_executed', headSha: pr.head_sha,
+            branchProtectionStatus: pr.branch_protection_status, payload: wrote });
+          await store.finishJob(job.job_id, 'done', wrote);
+          await store.audit('MU_JOB_DONE', { tenantId: job.tenant_id, actorUserId: job.requested_by,
+            detail: { job_id: job.job_id, kind: job.kind, provider: 'fixture', wrote_ref: wrote.ref } });
+          processed.push({ job_id: job.job_id, state: 'done', kind: job.kind });
+        } else {
+          await store.finishJob(job.job_id, 'failed', { reason: 'pr_not_resolvable' });
+          processed.push({ job_id: job.job_id, state: 'failed' });
+        }
+      }
+      return sendJson(res, 200, { ok: true, processed });
+    }
+
+    // ── 审计（read_audit：metadata only——Auditor/PlatformAdmin） ──
+    if (p === '/api/mu/audit' && req.method === 'GET') {
+      const g = await guard('read_audit');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const rows = await store.listAudit(mu.tenantId, { limit: Number(q.limit || 100) });
+      return sendJson(res, 200, { audit: rows });
+    }
+
+    // ── 身份流程保留位（GitHub App 安装流程状态——会话内查询） ──
+    if (p === '/api/mu/installations/github/status' && req.method === 'GET') {
+      const g = await guard('read_repository');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const st = githubAppStatus(env);
+      return sendJson(res, 200, { flow: 'github_app_installation', configured: st.configured,
+        reason: st.reason, note: st.note });
     }
 
     return sendJson(res, 404, { error: { reason: `unknown mu path: ${p}` } });
