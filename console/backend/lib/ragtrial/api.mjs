@@ -260,3 +260,28 @@ export async function ragTrialApi(req, res, ctx) {
     });
   }
 }
+
+// ── A 链集成联调（feat/rag-integration，2026-09-27）──────────────────
+// 供 /api/rag/org-search 的"内部 ragtrial 接线"调用（MERGEPILOT_RAG_TRIAL_A_CHAIN=ragtrial）：
+// 同进程直查隔离栈索引，不经外部网络；语义与 /api/rag-trial/query 完全一致
+// （六状态 + query_log + audit）；结果一律 reference_only 辅助引用。
+export async function ragTrialInternalQuery(env = process.env, { q, repo, branch, k = 5, actor = 'a-chain-org-search' } = {}) {
+  let store;
+  try { store = await getStore(env); }
+  catch (e) {
+    const kind = e instanceof RagTrialError ? e.kind : 'pg_unavailable';
+    errKindCount(kind);
+    return { status: 503, body: { service_state: 'error', error_kind: kind } };
+  }
+  if (!store) return { status: 200, body: { service_state: 'backend_not_wired', results: [] } };
+  try {
+    const r = await store.search({ q, repo, branch, k, actor });
+    return { status: 200, body: r };
+  } catch (e) {
+    if (e instanceof RagTrialError) {
+      if (e.kind === 'pg_unavailable' || e.kind === 'pgvector_unavailable') errKindCount(e.kind);
+      return { status: 503, body: { service_state: 'error', error_kind: e.kind, error: String(e.message).slice(0, 120) } };
+    }
+    return { status: 503, body: { service_state: 'error', error_kind: 'internal', error: String(e?.message || e).slice(0, 120) } };
+  }
+}

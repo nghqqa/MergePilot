@@ -43,6 +43,16 @@ export default function RagTrialPage() {
 
   useEffect(() => { refresh(); }, [refresh]);
 
+  const [orgQ, setOrgQ] = useState('');
+  const [orgRes, setOrgRes] = useState(null);
+  const [orgLoading, setOrgLoading] = useState(false);
+  const runOrgSearch = async () => {
+    setOrgLoading(true); setOrgRes(null);
+    try { setOrgRes(await api.ragOrgSearch(orgQ)); }
+    catch (e) { setOrgRes({ service_state: 'error', error: e.message }); }
+    finally { setOrgLoading(false); }
+  };
+
   const runQuery = async () => {
     setQuerying(true); setResult(null);
     try { setResult(await api.ragTrialQuery({ q, repo, branch, k })); }
@@ -66,6 +76,40 @@ export default function RagTrialPage() {
         LOCAL_RAG_TRIAL：独立 pgvector 索引 + MinIO 原文归档。检索结果仅作<b>带引用的参考</b>，
         不构成 finding/ticket/gate 输入；无引用命中在后端即被丢弃，本页不显示无来源内容。
       </Typography.Paragraph>
+
+      <div className="panel" style={{ padding: 'var(--sp-4)', marginBottom: 16 }}>
+        <Typography.Title level={3} style={{ fontSize: 16 }}>A 链 org-search × ragtrial（集成联调）</Typography.Title>
+        <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
+          /api/rag/org-search 内部接线（MERGEPILOT_RAG_TRIAL_A_CHAIN=ragtrial）——结果一律 <b>reference_only</b> 辅助引用，
+          不构成 finding/gate/ticket/fixer 输入；Verifier 只接受独立测试证据。
+        </Typography.Paragraph>
+        <Space.Compact style={{ width: '100%', maxWidth: 560 }}>
+          <Input placeholder="组织知识检索词（如：回滚 锚点）" value={orgQ}
+            onChange={(e) => setOrgQ(e.target.value)} onPressEnter={runOrgSearch} />
+          <Button type="primary" loading={orgLoading} disabled={!orgQ} onClick={runOrgSearch}>org-search</Button>
+        </Space.Compact>
+        {orgRes ? (
+          <div style={{ marginTop: 12 }}>
+            <Space size="small" wrap>
+              <Tag>{orgRes.source ?? '-'}</Tag>
+              <Tag color={orgRes.service_state === 'ok' || orgRes.service_state === 'hit' ? 'green' : 'orange'}>{orgRes.service_state}</Tag>
+              {orgRes.model ? <Tag color="blue">{orgRes.model.model_id}@iv{orgRes.model.index_version}</Tag> : null}
+            </Space>
+            {orgRes.note ? <p className="section-note" style={{ marginTop: 8 }}>{orgRes.note}</p> : null}
+            {(orgRes.results ?? []).length ? (
+              <ul className="compact-list" style={{ marginTop: 8 }}>
+                {orgRes.results.map((r, i) => (
+                  <li key={i}>
+                    <Tag color="purple">reference_only</Tag>
+                    <code>{r.citation.doc_path}</code> · L{r.citation.line_start}-{r.citation.line_end} · score {r.score?.toFixed(3)}
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{String(r.snippet ?? '').slice(0, 120)}…</div>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
 
       <Alert type="info" showIcon style={{ marginBottom: 16 }}
         message="安全边界：RAG 结果 = reference only"

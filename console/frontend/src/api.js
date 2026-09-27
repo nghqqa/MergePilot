@@ -57,6 +57,8 @@ export const api = {
   ragTrialIngest: (body) => post('/api/rag-trial/ingest', body),
   ragTrialEval: (body) => post('/api/rag-trial/eval', body),
   ragTrialReviewAux: (body) => post('/api/rag-trial/review-aux', body),
+  // A 链 org-search × ragtrial 内部接线（feat/rag-integration；reference_only 辅助引用）
+  ragOrgSearch: (q, k = 5) => get(`/api/rag/org-search?q=${encodeURIComponent(q)}&k=${k}`),
   // 会话：正式契约端点 GET /api/auth/session（未登录 401 JSON，不重定向；7ccecb9）。
   // 交互层请用 api-live.fetchSession（带状态分类）；此处保留通用 GET。
   session: () => get('/api/auth/session'),
