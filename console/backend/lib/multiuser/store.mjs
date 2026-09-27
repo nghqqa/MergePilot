@@ -1,0 +1,280 @@
+// console/backend/lib/multiuser/store.mjs — MU 持久化层（Developer Edition 最小切片）。
+//
+// 原则：
+//  * 版本化迁移（mu.schema_migrations）——只前进不重放；bootstrap 幂等（ON CONFLICT DO NOTHING）；
+//  * 全部读路径按 tenant_id 收窄（resolveRepository/getBinding 等显式带 tenant 维度）；
+//  * 凭据红线：本层任何 API 都不接受/不存储 token、密码、密钥。
+import crypto from 'node:crypto';
+import { MU_MIGRATIONS } from './schema.mjs';
+
+export async function createMuStore({ pool, env = process.env } = {}) {
+  if (!pool || typeof pool.query !== 'function') {
+    throw new Error('createMuStore: pool with .query() required (pg Pool)');
+  }
+  const q = (text, params) => pool.query(text, params);
+
+  async function initSchema() {
+    await q(`CREATE SCHEMA IF NOT EXISTS mu`);
+    await q(`CREATE TABLE IF NOT EXISTS mu.schema_migrations (
+      version INT PRIMARY KEY, name TEXT NOT NULL, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())`);
+    for (const m of MU_MIGRATIONS) {
+      const r = await q(`SELECT 1 FROM mu.schema_migrations WHERE version=$1`, [m.version]);
+      if (r.rowCount) continue;
+      // 逐条执行（语句数组非事务包裹的单个多语句串，便于定位失败语句）
+      for (const sql of m.sql) await q(sql);
+      await q(`INSERT INTO mu.schema_migrations (version, name) VALUES ($1,$2)`, [m.version, m.name]);
+    }
+    return true;
+  }
+
+  // ── bootstrap（幂等）：迁移 tenant + pilot 操作员 → PlatformAdmin 映射 ──
+  async function bootstrap() {
+    const adminLogin = String(env.MU_BOOTSTRAP_ADMIN_LOGIN || env.CONSOLE_PILOT_USER || 'pilot-admin');
+    const adminSubject = String(env.MU_BOOTSTRAP_ADMIN_SUBJECT || `fixture:${adminLogin}`);
+    const tenant = await ensureTenant({ slug: 'default', displayName: 'Migration Default Tenant', isMigrationTenant: true });
+    const user = await ensureUser({ login: adminLogin, displayName: 'Pilot Admin (migrated)' });
+    await ensureIdentity({ userId: user.user_id, provider: 'fixture', subject: adminSubject });
+    const membership = await ensureMembership({ tenantId: tenant.tenant_id, userId: user.user_id, role: 'platform_admin' });
+    return { tenant, user, membership };
+  }
+
+  async function audit(kind, { tenantId = null, actorUserId = null, detail = {} } = {}) {
+    await q(`INSERT INTO mu.audit_event (tenant_id, actor_user_id, kind, detail)
+             VALUES ($1,$2,$3,$4::jsonb)`,
+      [tenantId, actorUserId, kind, JSON.stringify(detail)]);
+  }
+
+  // ── 实体（ensure* 幂等；返回现存或新建行） ──
+  async function ensureTenant({ slug, displayName, isMigrationTenant = false }) {
+    const r = await q(
+      `INSERT INTO mu.tenant (slug, display_name, is_migration_tenant)
+       VALUES ($1,$2,$3) ON CONFLICT (slug) DO UPDATE SET display_name = EXCLUDED.display_name
+       RETURNING *`, [slug, displayName, isMigrationTenant]);
+    return r.rows[0];
+  }
+  async function getTenantBySlug(slug) {
+    const r = await q(`SELECT * FROM mu.tenant WHERE slug=$1`, [slug]);
+    return r.rows[0] ?? null;
+  }
+  async function getTenant(tenantId) {
+    const r = await q(`SELECT * FROM mu.tenant WHERE tenant_id=$1 AND state='active'`, [tenantId]);
+    return r.rows[0] ?? null;
+  }
+
+  async function ensureUser({ login, displayName = null }) {
+    const r = await q(
+      `INSERT INTO mu.app_user (login, display_name) VALUES ($1,$2)
+       ON CONFLICT (login) DO UPDATE SET display_name = COALESCE(EXCLUDED.display_name, mu.app_user.display_name)
+       RETURNING *`, [login, displayName]);
+    return r.rows[0];
+  }
+  async function getUser(userId) {
+    const r = await q(`SELECT * FROM mu.app_user WHERE user_id=$1 AND state='active'`, [userId]);
+    return r.rows[0] ?? null;
+  }
+  async function getUserByLogin(login) {
+    const r = await q(`SELECT * FROM mu.app_user WHERE login=$1 AND state='active'`, [login]);
+    return r.rows[0] ?? null;
+  }
+
+  async function ensureIdentity({ userId, provider, subject }) {
+    const r = await q(
+      `INSERT INTO mu.external_identity (user_id, provider, subject) VALUES ($1,$2,$3)
+       ON CONFLICT (provider, subject) DO NOTHING RETURNING *`, [userId, provider, subject]);
+    if (r.rows.length) return r.rows[0];
+    const cur = await q(`SELECT * FROM mu.external_identity WHERE provider=$1 AND subject=$2`, [provider, subject]);
+    return cur.rows[0] ?? null;
+  }
+  async function getUserByIdentity(provider, subject) {
+    const r = await q(
+      `SELECT u.* FROM mu.app_user u
+         JOIN mu.external_identity i ON i.user_id = u.user_id
+        WHERE i.provider=$1 AND i.subject=$2 AND u.state='active'`, [provider, subject]);
+    return r.rows[0] ?? null;
+  }
+
+  async function ensureMembership({ tenantId, userId, role, grantedBy = null }) {
+    const r = await q(
+      `INSERT INTO mu.membership (tenant_id, user_id, role, granted_by)
+       VALUES ($1,$2,$3,$4) ON CONFLICT (tenant_id, user_id)
+       DO UPDATE SET role = EXCLUDED.role, state = 'active', updated_at = now()
+       RETURNING *`, [tenantId, userId, role, grantedBy]);
+    return r.rows[0];
+  }
+  async function getMembership(tenantId, userId) {
+    const r = await q(
+      `SELECT * FROM mu.membership WHERE tenant_id=$1 AND user_id=$2`, [tenantId, userId]);
+    return r.rows[0] ?? null; // 含 state——active 判定交给 authz（fail-closed）
+  }
+  async function revokeMembership(tenantId, userId) {
+    const r = await q(
+      `UPDATE mu.membership SET state='revoked', updated_at=now()
+        WHERE tenant_id=$1 AND user_id=$2 AND state='active' RETURNING *`, [tenantId, userId]);
+    return r.rows[0] ?? null;
+  }
+  async function listMembers(tenantId) {
+    const r = await q(
+      `SELECT m.membership_id, m.user_id, m.role, m.state, m.created_at, u.login, u.display_name
+         FROM mu.membership m JOIN mu.app_user u ON u.user_id = m.user_id
+        WHERE m.tenant_id=$1 ORDER BY m.created_at`, [tenantId]);
+    return r.rows;
+  }
+  async function listMembershipsOfUser(userId) {
+    const r = await q(
+      `SELECT m.*, t.slug AS tenant_slug, t.display_name AS tenant_display_name
+         FROM mu.membership m JOIN mu.tenant t ON t.tenant_id = m.tenant_id
+        WHERE m.user_id=$1 ORDER BY m.created_at`, [userId]);
+    return r.rows;
+  }
+
+  async function ensureRepository({ tenantId, provider, providerRepoId, owner, name, defaultBranch = null }) {
+    const r = await q(
+      `INSERT INTO mu.repository (tenant_id, provider, provider_repo_id, owner, name, default_branch)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       ON CONFLICT (tenant_id, provider, provider_repo_id)
+       DO UPDATE SET owner = EXCLUDED.owner, name = EXCLUDED.name, state='active'
+       RETURNING *`, [tenantId, provider, providerRepoId, owner, name, defaultBranch]);
+    return r.rows[0];
+  }
+  // tenant 收窄解析：跨 tenant 的 repo_id 永远 miss（防篡改关联）
+  async function resolveRepository(tenantId, repoId) {
+    const r = await q(
+      `SELECT * FROM mu.repository WHERE tenant_id=$1 AND repo_id=$2 AND state='active'`,
+      [tenantId, repoId]);
+    return r.rows[0] ?? null;
+  }
+  async function listRepositories(tenantId) {
+    const r = await q(
+      `SELECT r.*, b.binding_id, b.kind AS binding_kind, b.installation_id, b.installation_state,
+              b.granted_scopes, b.state AS binding_state
+         FROM mu.repository r
+         LEFT JOIN mu.binding b ON b.repo_id = r.repo_id AND b.state='active'
+        WHERE r.tenant_id=$1 AND r.state='active' ORDER BY r.created_at`, [tenantId]);
+    return r.rows;
+  }
+
+  async function ensureBinding({ tenantId, repoId, kind, installationId = null, installationState = 'active', grantedScopes = [], createdBy = null }) {
+    const r = await q(
+      `INSERT INTO mu.binding (tenant_id, repo_id, kind, installation_id, installation_state, granted_scopes, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7)
+       ON CONFLICT (tenant_id, repo_id, kind)
+       DO UPDATE SET installation_id = EXCLUDED.installation_id,
+                     installation_state = EXCLUDED.installation_state,
+                     granted_scopes = EXCLUDED.granted_scopes,
+                     state = 'active', updated_at = now()
+       RETURNING *`, [tenantId, repoId, kind, installationId, installationState, JSON.stringify(grantedScopes), createdBy]);
+    return r.rows[0];
+  }
+  async function getBindingForRepo(tenantId, repoId) {
+    const r = await q(
+      `SELECT * FROM mu.binding WHERE tenant_id=$1 AND repo_id=$2 AND state='active' AND installation_state='active'
+       ORDER BY created_at LIMIT 1`, [tenantId, repoId]);
+    return r.rows[0] ?? null;
+  }
+  async function revokeBinding(tenantId, repoId) {
+    const r = await q(
+      `UPDATE mu.binding SET state='revoked', updated_at=now()
+        WHERE tenant_id=$1 AND repo_id=$2 AND state='active' RETURNING *`, [tenantId, repoId]);
+    return r.rows[0] ?? null;
+  }
+
+  // ── PR / ReviewRecord / Job（migration 0002）──
+  async function upsertPullRequest({ tenantId, repoId, providerPrNumber, headSha, headRef = null, baseRef = null, title = null, branchProtectionStatus = 'unknown' }) {
+    const r = await q(
+      `INSERT INTO mu.pull_request (tenant_id, repo_id, provider_pr_number, head_sha, head_ref, base_ref, title, branch_protection_status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+       ON CONFLICT (tenant_id, repo_id, provider_pr_number, head_sha)
+       DO UPDATE SET title = EXCLUDED.title, branch_protection_status = EXCLUDED.branch_protection_status,
+                     updated_at = now()
+       RETURNING *`,
+      [tenantId, repoId, providerPrNumber, headSha, headRef, baseRef, title, branchProtectionStatus]);
+    return r.rows[0];
+  }
+  async function resolvePullRequest(tenantId, prId) {
+    const r = await q(
+      `SELECT p.*, r.owner AS repo_owner, r.name AS repo_name, r.provider AS repo_provider
+         FROM mu.pull_request p JOIN mu.repository r ON r.repo_id = p.repo_id
+        WHERE p.tenant_id=$1 AND p.pr_id=$2`, [tenantId, prId]);
+    return r.rows[0] ?? null;
+  }
+  async function findPullRequests(tenantId, { repoId = null, number = null } = {}) {
+    const params = [tenantId];
+    let where = `p.tenant_id=$1`;
+    if (repoId) { params.push(repoId); where += ` AND p.repo_id=$${params.length}`; }
+    if (number) { params.push(number); where += ` AND p.provider_pr_number=$${params.length}`; }
+    const r = await q(
+      `SELECT p.*, r.owner AS repo_owner, r.name AS repo_name
+         FROM mu.pull_request p JOIN mu.repository r ON r.repo_id = p.repo_id
+        WHERE ${where} ORDER BY p.updated_at DESC LIMIT 50`, params);
+    return r.rows;
+  }
+  async function insertReviewRecord({ tenantId, repoId, prId, kind, actorUserId = null, decision = null, headSha, branchProtectionStatus = 'unknown', payload = null, detail = {} }) {
+    const payloadSha = payload ? crypto.createHash('sha256').update(JSON.stringify(payload)).digest('hex') : null;
+    const r = await q(
+      `INSERT INTO mu.review_record (tenant_id, repo_id, pr_id, kind, actor_user_id, decision, head_sha, branch_protection_status, payload_sha256, detail)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb) RETURNING *`,
+      [tenantId, repoId, prId, kind, actorUserId, decision, headSha, branchProtectionStatus, payloadSha, JSON.stringify(detail)]);
+    return r.rows[0];
+  }
+  async function listReviewRecords(tenantId, prId) {
+    const r = await q(
+      `SELECT v.*, u.login AS actor_login FROM mu.review_record v
+         LEFT JOIN mu.app_user u ON u.user_id = v.actor_user_id
+        WHERE v.tenant_id=$1 AND v.pr_id=$2 ORDER BY v.created_at`, [tenantId, prId]);
+    return r.rows;
+  }
+
+  async function enqueueJob({ tenantId, repoId, prId = null, kind, requestedBy, requestedRole, payload = {} }) {
+    const r = await q(
+      `INSERT INTO mu.job (tenant_id, repo_id, pr_id, kind, requested_by, requested_role, payload)
+       VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb) RETURNING *`,
+      [tenantId, repoId, prId, kind, requestedBy, requestedRole, JSON.stringify(payload)]);
+    return r.rows[0];
+  }
+  async function listJobs(tenantId, { state = null } = {}) {
+    const params = [tenantId];
+    let where = `tenant_id=$1`;
+    if (state) { params.push(state); where += ` AND state=$${params.length}`; }
+    const r = await q(
+      `SELECT j.*, u.login AS requested_by_login FROM mu.job j
+         LEFT JOIN mu.app_user u ON u.user_id = j.requested_by
+        WHERE ${where} ORDER BY j.created_at DESC LIMIT 100`, params);
+    return r.rows;
+  }
+  // 认领（单进程 dev worker）：CAS queued→running，带回请求者上下文供执行前复查
+  async function claimNextJob() {
+    const r = await q(
+      `UPDATE mu.job SET state='running', updated_at=now()
+        WHERE job_id = (SELECT job_id FROM mu.job WHERE state='queued' ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED)
+       RETURNING *`);
+    return r.rows[0] ?? null;
+  }
+  async function finishJob(jobId, state, result = {}) {
+    const r = await q(
+      `UPDATE mu.job SET state=$2, result=$3::jsonb, updated_at=now() WHERE job_id=$1 RETURNING *`,
+      [jobId, state, JSON.stringify(result)]);
+    return r.rows[0] ?? null;
+  }
+
+  async function listAudit(tenantId, { limit = 100 } = {}) {
+    const r = await q(
+      `SELECT a.seq, a.kind, a.created_at, u.login AS actor_login, a.detail
+         FROM mu.audit_event a LEFT JOIN mu.app_user u ON u.user_id = a.actor_user_id
+        WHERE a.tenant_id=$1 ORDER BY a.seq DESC LIMIT $2`, [tenantId, Math.min(limit, 500)]);
+    return r.rows;
+  }
+
+  return {
+    initSchema, bootstrap, audit,
+    ensureTenant, getTenantBySlug, getTenant,
+    ensureUser, getUser, getUserByLogin,
+    ensureIdentity, getUserByIdentity,
+    ensureMembership, getMembership, revokeMembership, listMembers, listMembershipsOfUser,
+    ensureRepository, resolveRepository, listRepositories,
+    ensureBinding, getBindingForRepo, revokeBinding,
+    upsertPullRequest, resolvePullRequest, findPullRequests,
+    insertReviewRecord, listReviewRecords,
+    enqueueJob, listJobs, claimNextJob, finishJob,
+    listAudit,
+  };
+}
