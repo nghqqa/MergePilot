@@ -21,3 +21,10 @@
 ## mainline-20260927 溯源镜像（2026-09-27）
 - console 固定 `sha256:f7ffce6d…fea6`（mainline-20260927：.dockerignore 重建，镜像不含 test/internal；远端 digest 与本地逐字节核对一致）。
 - 回滚锚点双保留：8a6427b0（上一候选 hardening）/ 947ab1b6（6h 基线）。promote3 栈已实测 f7ffce6d↔8a6427b0 双向 6s 切换恢复。
+
+## RAG Trial 发行（2026-09-27，rag-trial-20260927）
+- **状态声明**：RAG = **TRIAL_READY 非生产级**——使用 **local-hash-v1 词法级试验模型（非生产 embedding）**；**不自动生成 finding/ticket/gate/VERIFIED**；Fixer 不接受 RAG-only 输入；Verifier 只接受独立 harness/test 证据。真实 embedding、worker 接线、机器间验签、C 链三输入仍未完成。
+- **console digest**：`sha256:dec398d0…bb6b`（三锚点回滚见 compose 注释；**旧镜像无 RAG 端点时 404 属预期**）。promote3 实测双向切换 5s/6s。
+- **PG = pgvector/pg16（digest pin）**：RAG vector 扩展必需。**从 postgres:16-alpine 升级必须重建 fxv-pgdata 卷**（musl↔glibc 跨 libc collation 不兼容；FXV schema 幂等重建；卷内验证数据可重置）。备份/恢复照旧（pg_dump/tar 均适用）。
+- **语料**：部署后 `docker compose cp console ./corpus/. /app/rag-corpus/` 灌入（或 bind 挂载）；须带逐文件 SHA256 manifest；容器内只读。
+- **回滚**：仅改 console image 行 → `up -d`；pg 卷无需随 console 回滚重建（pgvector 向后兼容纯 SQL 数据）。

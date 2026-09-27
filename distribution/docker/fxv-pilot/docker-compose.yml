@@ -1,14 +1,20 @@
 # FXV 受控生产试点发行包（CONTROLLED_PRODUCTION_PILOT）。镜像按 digest 固定。
 # 独立 PG/MinIO/Console/网络/卷；dry-run 默认开、GitHub 写默认关。
 # B 轨加固（feat/core-b-parallel 2026-09-26）：
-#   * minio digest 由占位符改为真实 pin（与受控 staging 验证所用同源）；
-#   * console 必须 CONSOLE_HOST=0.0.0.0（容器内 127.0.0.1 会导致端口映射不可达）；
-#   * console 增加 healthcheck（wget /api/health）、depends_on minio healthy；
-#   * C 链 env 透传（model cache / keystore / provider attestation / enforce）；
-#   * G-07 多凭证 env 透传（CONSOLE_ACCESS_MODEL_JSON / CONSOLE_USER_CREDENTIALS_JSON）。
+#   * minio digest 真实 pin；console CONSOLE_HOST=0.0.0.0 + healthcheck；
+#   * C 链 env 透传；G-07 多凭证 env 透传。
+# RAG Trial 发行（chore/rag-trial-distribution 2026-09-27）：
+#   * console 固定 rag-trial-20260927（含 RAG Trial 接线，TRIAL_READY 非生产）；
+#   * PG 固定 pgvector/pgvector:pg16（RAG vector 扩展必需）——从 postgres:16-alpine
+#     迁移必须重建 pg 卷（跨 libc collation 风险，见 OPERATIONS.md）；
+#   * RAG Trial env + 语料只读挂载；RAG 仅 reference-only。
 services:
   pg:
-    image: postgres:16-alpine
+    # pgvector（postgres 16 同 major；digest pin）。迁移注意：从 postgres:16-alpine 换来
+    # 【必须重建 fxv-pgdata 卷】——musl↔glibc 跨 libc collation 不兼容（文本索引排序风险）。
+    # 步骤：docker compose down → docker volume rm <project>_fxv-pgdata → up -d
+    #（FXV schema 幂等重建；卷内为验证数据时可接受重置——生产数据迁移不在本包范围）。
+    image: pgvector/pgvector:pg16@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b
     restart: unless-stopped
     environment: { POSTGRES_PASSWORD: "${FXV_PG_PASSWORD}", POSTGRES_DB: fxv }
     volumes: [fxv-pgdata:/var/lib/postgresql/data]
@@ -24,15 +30,15 @@ services:
     healthcheck: { test: ["CMD", "curl", "-sf", "http://localhost:9000/minio/health/live"], interval: 15s, timeout: 5s, retries: 5 }
     networks: [fxv-pilot-net]
   console:
-    # 当前候选：mainline-20260927（b09378d+6f74e75 溯源重建：.dockerignore 裁剪，镜像无 test/internal；
-    # Trivy HIGH/CRITICAL=0、SBOM 35；远端 digest 与本地逐字节核对一致 2026-09-27）
-    image: ghcr.io/nghqqa/mergepilot-console@sha256:f7ffce6d6b87b24f1e63858dc1ec021b1582417bf1de1162dcadb4d22a66fea6
-    # 回滚锚点 1（ROLLBACK ANCHOR）：上一候选（fxv-staging-20260927-hardening，PR#235/#236，main=c07a4d89）
-    #   ghcr.io/nghqqa/mergepilot-console@sha256:8a6427b0dd2c887d466fffcd65bcb30b950e2a61947e754a40380b18eb747d17
-    # 回滚锚点 2：6h 稳定性验证基线（a0bfa15）
-    #   ghcr.io/nghqqa/mergepilot-console@sha256:947ab1b69cdf76fce1a19f18f04021f96bfc326cdc11b378b2775787240083f2
-    # 回滚步骤见 OPERATIONS.md（改 image 行 → up -d；数据卷向后兼容，fxv schema 幂等；
-    # 注意：锚点 2 旧镜像无 /api/cchain/* 端点，回滚期间 C 链面板 404 属预期）。
+    # 当前候选：rag-trial-20260927（main=1d7ab981 含 RAG Trial；远端=本地逐字节核对一致；
+    # 全新 Trivy DB HIGH/CRITICAL=0、SBOM 35）。RAG=TRIAL_READY 非生产（状态声明见 OPERATIONS.md）。
+    image: ghcr.io/nghqqa/mergepilot-console@sha256:dec398d084465d8befbf8ff9557e6442edff7aa9bf813fa22bea61d7c778bb6b
+    # 回滚锚点 1：f7ffce6d6b87b24f1e63858dc1ec021b1582417bf1de1162dcadb4d22a66fea6（mainline-20260927）
+    # 回滚锚点 2：8a6427b0dd2c887d466fffcd65bcb30b950e2a61947e754a40380b18eb747d17（hardening 候选）
+    # 回滚锚点 3：947ab1b69cdf76fce1a19f18f04021f96bfc326cdc11b378b2775787240083f2（6h 基线）
+    # 回滚语义：三锚点镜像均无 /api/rag-trial/* 与 RAG Trial 接线——回滚期间该端点 404、
+    # org-search 走外部代理路径或 503 显式降级【属预期】；锚点 2/3 亦无 /api/cchain/*。
+    # 回滚步骤见 OPERATIONS.md（改 image 行 → up -d；pg 卷无需随 console 回滚重建）。
     restart: unless-stopped
     depends_on:
       pg: { condition: service_healthy }
@@ -52,6 +58,17 @@ services:
       FXV_S3_BUCKET: "${FXV_S3_BUCKET}"
       FXV_S3_ACCESS_KEY: "${FXV_MINIO_USER}"
       FXV_S3_SECRET_KEY: "${FXV_MINIO_PASSWORD}"
+      # RAG Trial（TRIAL_READY，reference-only；local-hash-v1 词法级试验模型，非生产 embedding。
+      # 不自动生成 finding/ticket/gate/VERIFIED；Fixer 不接受 RAG-only；Verifier 只认独立 harness/test）
+      RAGTRIAL_S3_ENDPOINT: "http://minio:9000"
+      RAGTRIAL_S3_BUCKET: "${FXV_RAG_BUCKET:-ragtrial}"
+      RAGTRIAL_S3_ACCESS_KEY: "${FXV_MINIO_USER}"
+      RAGTRIAL_S3_SECRET_KEY: "${FXV_MINIO_PASSWORD}"
+      RAGTRIAL_CORPUS_DIR: "/app/rag-corpus"
+      MERGEPILOT_ORG_RAG_A_CHAIN: "${FXV_RAG_A_CHAIN:-1}"
+      MERGEPILOT_RAG_TRIAL_A_CHAIN: "ragtrial"
+      RAGTRIAL_A_CHAIN_REPO: "${FXV_RAG_REPO:-nghqqa/mergepilot}"
+      RAGTRIAL_A_CHAIN_BRANCH: "${FXV_RAG_BRANCH:-feat/local-rag-trial}"
       # C 链（默认全部未配置 → /api/cchain/status 如实 BLOCKED；绝不伪造 READY）
       MERGEPILOT_MODEL_CACHE_DIR: "${FXV_MODEL_CACHE_DIR:-/data/model-cache}"
       MERGEPILOT_RUN_BINDING_KEYSTORE: "${FXV_RUN_BINDING_KEYSTORE:-/data/cchain-keystore}"
@@ -63,8 +80,11 @@ services:
       - fxv-evidence:/app/evidence
       - fxv-modelcache:/data/model-cache
       - fxv-keystore:/data/cchain-keystore
+      # 语料只读挂载：部署后用 docker cp <console> ./corpus/. /app/rag-corpus/ 灌入
+      #（或改 bind 挂载指向宿主语料目录）；语料须带逐文件 SHA256 manifest
+      - fxv-rag-corpus:/app/rag-corpus:ro
     ports: ["127.0.0.1:${FXV_CONSOLE_PORT:-48410}:4730"]
     healthcheck: { test: ["CMD", "wget", "-qO-", "--timeout=5", "http://127.0.0.1:4730/api/health"], interval: 15s, timeout: 5s, retries: 5, start_period: 10s }
     networks: [fxv-pilot-net]
-volumes: { fxv-pgdata: {}, fxv-miniodata: {}, fxv-workspace: {}, fxv-evidence: {}, fxv-modelcache: {}, fxv-keystore: {} }
+volumes: { fxv-pgdata: {}, fxv-miniodata: {}, fxv-workspace: {}, fxv-evidence: {}, fxv-modelcache: {}, fxv-keystore: {}, fxv-rag-corpus: {} }
 networks: { fxv-pilot-net: {} }
