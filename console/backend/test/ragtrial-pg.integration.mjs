@@ -245,6 +245,27 @@ try {
   ok('HYB7 DF 失败→idf-required 严格模式 fail-closed（503 df_scan_failed，无结果冒充）',
     strictErr && strictErr.kind === 'df_scan_failed' && strictErr.status === 503);
 
+  // ── F1 观测补丁：fallback metrics 计数 + 有界去重 audit ──
+  const mBefore = await fbStore.metrics();
+  const fbHit2 = await fbStore.search({ q: '密钥轮换流程', repo: REPO, branch: BR, k: 3, actor: 'hyb-observer' });
+  const mAfter = await fbStore.metrics();
+  ok('HYB8 fallback metrics 计数准确：idf 回退 +1/query；二次回退仍 df_unavailable',
+    mAfter.hybrid_df_fallbacks === mBefore.hybrid_df_fallbacks + 1
+    && fbHit2.df_unavailable === true && fbHit2.service_state === 'hit');
+  const mPlain = await plainStore.metrics();
+  ok('HYB8b plain 模式不计数（0）', mPlain.hybrid_df_fallbacks === 0);
+  const mStrict = await strictStore.metrics();
+  ok('HYB8c idf-required fail-closed 不伪装成 fallback（计数 0，错误契约不变）',
+    mStrict.hybrid_df_fallbacks === 0 && strictErr.kind === 'df_scan_failed');
+  const evRows = (await pool.query(
+    `SELECT kind, repo, branch, detail FROM ragtrial.audit_events WHERE kind='HYBRID_DF_FALLBACK'`)).rows;
+  ok('HYB9 audit 恰一条（5min 同键去重：2 次回退 → 1 事件）', evRows.length === 1);
+  const dfEv = evRows[0] ?? {};
+  const d = typeof dfEv.detail === 'string' ? JSON.parse(dfEv.detail) : (dfEv.detail ?? {});
+  ok('HYB9b audit 字段有界（仅 lex_mode/fallback 两枚举值；无 DSN/路径/查询原文/凭据）',
+    evRows.length === 1 && Object.keys(d).length === 2
+    && d.lex_mode === 'idf' && d.fallback === 'plain' && dfEv.repo === REPO && dfEv.branch === BR);
+
 } catch (e) {
   fail++;
   console.error('FATAL', e);

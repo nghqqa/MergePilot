@@ -71,6 +71,11 @@ export async function createRagTrialStore({ pool, env = process.env, fetchImpl =
   const q = (text, params) => pool.query(text, params);
   let pgvectorOk = null; // 三态：null=未知 true=可用 false=缺失
   const dfCache = new Map(); // scope|digest|version → {at, N, df:Map}（5min TTL）
+  // F1 观测（仅 idf 回退路径）：per-query 进程内计数（重启归零，与 in-memory 计数惯例一致）
+  // + HYBRID_DF_FALLBACK 审计按同键 5min 去重（防失败窗口内 audit 洪泛；字段有界：
+  // lex_mode/fallback 两枚举值——绝不记录 DSN/路径/凭据/查询原文/模型内容）。
+  let hybridDfFallbacks = 0;
+  const dfFallbackAudited = new Map(); // dfCache 同键 → 上次 audit ts
 
   async function audit(kind, actor, { repo = null, branch = null, detail = {} } = {}) {
     if (!actor) throw new Error('audit: actor required (NOT NULL)');
@@ -427,6 +432,18 @@ export async function createRagTrialStore({ pool, env = process.env, fetchImpl =
               'df_scan_failed', 503);
           }
           dfFallback = true;
+          hybridDfFallbacks += 1;
+          // 有界审计：同键 5min 去重；best-effort（PG 不稳是 DF 失败的常见根因，
+          // 降级路径不得因审计失败而中断；计数器已保证进程内可观测）
+          const lastAudit = dfFallbackAudited.get(key) ?? 0;
+          if (Date.now() - lastAudit > 300_000) {
+            dfFallbackAudited.set(key, Date.now());
+            try {
+              await audit('HYBRID_DF_FALLBACK', actor, {
+                repo, branch, detail: { lex_mode: 'idf', fallback: 'plain' },
+              });
+            } catch { /* 审计尽力而为；不回滚已发生的透明降级 */ }
+          }
         } else {
           const df = new Map();
           for (const row of r2.rows) for (const t of new Set(tokenize(row.text))) df.set(t, (df.get(t) ?? 0) + 1);
@@ -627,6 +644,9 @@ export async function createRagTrialStore({ pool, env = process.env, fetchImpl =
       },
       eval_runs: evals.rows,
       audit_events_by_kind: Object.fromEntries(auditKinds.rows.map((r) => [r.kind, r.n])),
+      // F1 观测：idf DF 失败回退 plain 的 per-query 进程内计数（重启归零）；
+      // 审计聚合见 audit_events_by_kind.HYBRID_DF_FALLBACK（同键 5min 去重后的事件数）。
+      hybrid_df_fallbacks: hybridDfFallbacks,
     };
   }
 
