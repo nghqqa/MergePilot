@@ -49,8 +49,9 @@ services:
     ports: ["127.0.0.1:${RAGPS_MINIO_PORT:-9118}:9000"]
 
   console:
-    # 候选镜像按 digest 锚定（ENABLEMENT 波构建自 feat/rag-zh-admission@df1b6f6+MC）
-    image: rag-staging-candidate:admission-df1b6f6
+    # 候选镜像 digest 固定：rag-prod-candidate:b01e62e（合并 main=b01e62e，树恒等于 feat/rag-zh-admission@32bc234）
+    # = sha256:f7c08854d762f61e…（Trivy H/C=0 fresh DB；SBOM 35；本地构建，pull_policy=never）
+    image: rag-prod-candidate@sha256:f7c08854d762f61eeeb5a7fe2a7ffd796a15f56cb5bf5864f830e5f83e198d49
     pull_policy: never
     restart: unless-stopped
     depends_on:
@@ -89,7 +90,7 @@ services:
 
   # resident worker（默认不启动；--profile resident-worker 启用）
   worker:
-    image: rag-staging-candidate:admission-df1b6f6
+    image: rag-prod-candidate@sha256:f7c08854d762f61eeeb5a7fe2a7ffd796a15f56cb5bf5864f830e5f83e198d49
     pull_policy: never
     profiles: ["resident-worker"]
     depends_on: { pg: { condition: service_healthy } }

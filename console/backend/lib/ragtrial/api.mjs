@@ -14,7 +14,7 @@ import {
   promotionRequest, attachToRun,
 } from './review.mjs';
 import { verifyRunBindingAndAudit } from '../cchain/wiring.mjs';
-import { runBindingAuthStatus } from '../cchain/index.mjs';
+import { runBindingAuthStatus, providerAttestConfig, fetchProviderAttestation } from '../cchain/index.mjs';
 
 const BODY_LIMIT = 8 * 1024 * 1024; // 语料摄取走 body（默认 64KB 不够）
 const inMemory = { error_states: {} }; // PG 不可达时的 error 态计数（PG 日志不可能写下）
@@ -193,6 +193,40 @@ export async function ragTrialApi(req, res, ctx) {
   const auth = await requireSession();
   if (!auth) return sendJson(res, 401, { error: { reason: 'unauthorized' } });
   const actor = actorOf(auth);
+
+  // ── 生产依赖就绪监控（HARDENING 波）：实时探测+告警字段+可观测性日志 ──
+  // 返回 keystore/attestation 逐项状态+告警阈值+上次探测时间——缺失=BLOCKED 不伪装。
+  // 置于 PG 接线门之前：该端点只探测 env/keystore/外部 attestation，不依赖 PG；
+  // 依赖异常期恰是最需要它的时刻（Prometheus/值班抓取不应因存储不可用而失明）。
+  if (p === '/api/rag-trial/dependency-status' && req.method === 'GET') {
+    const ks = runBindingAuthStatus(env);
+    const attestCfg = providerAttestConfig(env);
+    const attest = attestCfg.configured
+      ? await fetchProviderAttestation(env).catch(() => ({ state: 'UNREACHABLE', blocked_condition: '探测异常（fail-closed，不降级为未配置）' }))
+      : null;
+    const now = new Date().toISOString();
+    const deps = {
+      timestamp: now,
+      keystore: {
+        state: ks.state,
+        blocked_condition: ks.blocked_condition ?? null,
+        key_count: ks.key_count ?? 0,
+        not_distributed: ks.not_distributed ?? false,
+      },
+      attestation: attest
+        ? { state: attest.state, blocked_condition: attest.blocked_condition ?? null, key_id: attest.key_id ?? null }
+        : { state: 'NOT_CONFIGURED', blocked_condition: attestCfg.blocked_condition ?? '未设置' },
+    };
+    deps.overall = (deps.keystore.state === 'READY' && deps.attestation.state === 'ATTESTED') ? 'READY' : 'BLOCKED';
+    // 告警字段（运维可挂 Prometheus/Grafana）：缺失即告警
+    deps.alerts = [];
+    if (deps.keystore.state !== 'READY') deps.alerts.push({ severity: 'CRITICAL', component: 'keystore', condition: deps.keystore.state });
+    if (deps.attestation.state !== 'ATTESTED') deps.alerts.push({ severity: 'CRITICAL', component: 'attestation', condition: deps.attestation.state });
+    // 可观测性日志（结构化——不落任何凭据/路径原值）
+    console.log(JSON.stringify({ ts: now, level: 'info', component: 'ragtrial.dependency',
+      keystore_state: deps.keystore.state, attestation_state: deps.attestation.state, overall: deps.overall }));
+    return sendJson(res, 200, deps);
+  }
 
   let store;
   try { store = await getStore(env); }
