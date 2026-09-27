@@ -187,7 +187,7 @@ export async function ensureProviderAttested(provider, { fetchImpl = fetch, forc
   return { attested: true, manifest_sha256: entry.sha256, dims, manifest: m };
 }
 
-export async function embedBatch(provider, texts, { fetchImpl = fetch } = {}) {
+export async function embedBatch(provider, texts, { fetchImpl = fetch, mode = null } = {}) {
   if (provider.kind === 'local') {
     return texts.map((t) => embedLocal(t));
   }
@@ -200,7 +200,8 @@ export async function embedBatch(provider, texts, { fetchImpl = fetch } = {}) {
     res = await fetchImpl(provider.endpoint, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ input: texts, model: provider.model_id }),
+      // mode: e5 系官方用法前缀（query/passage）；bge 无前缀（sidecar 按 manifest 决定）
+      body: JSON.stringify({ input: texts, model: provider.model_id, ...(mode ? { mode } : {}) }),
       signal: ctrl.signal,
     });
     clearTimeout(timer);

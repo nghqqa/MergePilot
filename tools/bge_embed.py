@@ -1,8 +1,9 @@
 #!/usr/bin/env python
-# tools/bge_embed.py — bge-large-en-v1.5 离线嵌入运行时（PRODUCTION_RAG_READINESS）。
+# tools/bge_embed.py — BERT 系嵌入模型离线运行时（bge/e5 等 sentence-transformers 布局）。
 #
 # 真实语义模型 provider 的本地推理器：直接读取 HF 缓存的 model.safetensors
 # （纯 numpy 前向，不依赖 torch/transformers，不做任何网络访问）。
+# 池化方式按各模型官方 1_Pooling/config.json（bge=CLS，e5=mean）
 # 可审计性：--manifest-out 生成模型文件 SHA256 清单；--verify 在运行前逐文件
 # 校验摘要，任何缺失/漂移即退出非零（fail-closed，绝不带病出向量）。
 #
@@ -66,7 +67,7 @@ class BgeRuntime:
         self.A = cfg["num_attention_heads"]
         self.eps = cfg["layer_norm_eps"]
         pooling = json.load(open(f"{self.dir}/1_Pooling/config.json"))
-        assert pooling.get("pooling_mode_cls_token") is True, "bge-large-en-v1.5 应为 CLS 池化"
+        self.pooling = 'mean' if pooling.get("pooling_mode_mean_tokens") else 'cls'
         self.t = Tokenizer.from_file(f"{self.dir}/tokenizer.json")
         t0 = time.time()
         self.w = load_safetensors(f"{self.dir}/model.safetensors")
@@ -114,8 +115,8 @@ class BgeRuntime:
             h = self.gelu(x @ w[p + "intermediate.dense.weight"].T + w[p + "intermediate.dense.bias"])
             h = h @ w[p + "output.dense.weight"].T + w[p + "output.dense.bias"]
             x = self.ln(x + h, w[p + "output.LayerNorm.weight"], w[p + "output.LayerNorm.bias"])
-        vec = x[0]  # CLS
-        vec = vec / np.linalg.norm(vec)
+        vec = x.mean(axis=0) if self.pooling == 'mean' else x[0]
+        vec = vec / (np.linalg.norm(vec) or 1.0)
         return [round(float(z), 8) for z in vec]
 
     def check(self, name):
@@ -134,8 +135,10 @@ class BgeRuntime:
 REQUIRED_ARTIFACTS = ["model.safetensors", "tokenizer.json", "config.json"]  # 权重/tokenizer/配置
 
 
-def build_manifest(model_dir):
+def build_manifest(model_dir, model_id=None, query_prefix=None, passage_prefix=None):
     import os
+    cfg = json.load(open(f"{model_dir}/config.json"))
+    pooling_cfg = json.load(open(f"{model_dir}/1_Pooling/config.json"))
     files = []
     for f in MODEL_FILES:
         p = f"{model_dir}/{f}"
@@ -143,11 +146,12 @@ def build_manifest(model_dir):
             files.append({"name": f, "sha256": sha256_file(p), "bytes": os.path.getsize(p)})
     return {
         "manifest_version": 2,
-        "model_id": "bge-large-en-v1.5",
-        "source": "local HF cache (offline, no runtime download)",
-        "pooling": "cls_l2",
+        "model_id": model_id or cfg.get("_name_or_path", "unknown").split("/")[-1],
+        "pooling": "mean" if pooling_cfg.get("pooling_mode_mean_tokens") else "cls_l2",
         "distance": "cosine",
-        "dims": 1024,
+        "dims": cfg.get("hidden_size"),
+        "usage": {"query_prefix": query_prefix, "passage_prefix": passage_prefix},
+        "source": "local HF cache (offline, no runtime download)",
         "runtime": "numpy-bert-v1",
         "runtime_spec": {"gelu": "erf(scipy)", "ln_eps": 1e-12, "max_len": 128,
                          "dtype": "F32", "framework": "numpy+tokenizers"},
@@ -201,10 +205,13 @@ def main():
     ap.add_argument("--manifest", help="运行前校验清单（fail-closed）")
     ap.add_argument("--self-check", action="store_true")
     ap.add_argument("--verify-only", action="store_true", help="仅执行 manifest 校验后退出（不加载权重）")
+    ap.add_argument("--model-id", default=None, help="manifest 模型名（缺省从 config 推断）")
+    ap.add_argument("--query-prefix", default=None)
+    ap.add_argument("--passage-prefix", default=None)
     args = ap.parse_args()
 
     if args.manifest_out:
-        m = build_manifest(args.model_dir)
+        m = build_manifest(args.model_dir, args.model_id, args.query_prefix, args.passage_prefix)
         json.dump(m, open(args.manifest_out, "w", encoding="utf-8"), indent=2, ensure_ascii=False)
         print(json.dumps(m, indent=2, ensure_ascii=False))
         return
@@ -220,6 +227,7 @@ def main():
     if args.verify_only:
         print(json.dumps({"ok": True, "verified": "sha256+bytes+count"}))
         return
+    _ = args
     rt = BgeRuntime(args.model_dir, args.max_len)
     if args.self_check:
         print(json.dumps({"ok": True, "sanity": rt.check("self")}))

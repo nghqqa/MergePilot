@@ -32,6 +32,17 @@ if problems:
 
 RT = bge_embed.BgeRuntime(MODEL_DIR, max_len=int(os.environ.get("BGE_MAX_LEN", "128")))
 MANIFEST_BYTES = open(MANIFEST, "rb").read()
+USAGE = json.loads(MANIFEST_BYTES).get("usage") or {}
+MODEL_NAME = json.loads(MANIFEST_BYTES).get("model_id", "unknown")
+
+
+def _apply_prefix(text, mode):
+    # e5 系官方用法：query/passage 前缀（manifest.usage 声明；未声明=原样）
+    if mode == "query" and USAGE.get("query_prefix"):
+        return USAGE["query_prefix"] + text
+    if mode == "passage" and USAGE.get("passage_prefix"):
+        return USAGE["passage_prefix"] + text
+    return text
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -45,7 +56,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == "/health":
-            self._send(200, {"ok": True, "model": "bge-large-en-v1.5", "dims": 1024})
+            self._send(200, {"ok": True, "model": MODEL_NAME, "dims": json.loads(MANIFEST_BYTES).get("dims")})
         elif self.path == "/manifest":
             # 原始字节回放——sha256 与 pin 精确一致
             self._send(200, MANIFEST_BYTES)
@@ -69,8 +80,9 @@ class Handler(BaseHTTPRequestHandler):
         if len(inputs) > 16:
             self._send(429, {"error": "batch too large (max 16)"})
             return
-        data = [{"embedding": RT.encode(t)} for t in inputs]
-        self._send(200, {"data": data, "model": body.get("model", "bge-large-en-v1.5")})
+        mode = body.get("mode")  # 'query' | 'passage' | None（模型用法前缀）
+        data = [{"embedding": RT.encode(_apply_prefix(t, mode))} for t in inputs]
+        self._send(200, {"data": data, "model": body.get("model", MODEL_NAME)})
 
     def log_message(self, fmt, *args):  # 精简日志
         sys.stderr.write("[bge-sidecar] " + fmt % args + "\n")

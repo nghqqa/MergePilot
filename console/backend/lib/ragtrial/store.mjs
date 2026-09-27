@@ -30,7 +30,7 @@ export const QUERY_STATES = [
 //  - local-hash-v1（256 维）：零重叠 final ≤0.5·碰撞噪声（≤0.03），真命中 ≥0.15 → 0.1 分界；
 //  - bge 语义（1024 维）：bench 实测（evidence/rag-prod/*/benchmark.json）——
 //    相关命中最低 0.582，最差假阳（fluent 乱词）0.48 → 取 0.52 分界（两侧 ≥0.06 余量）。
-export const SCORE_FLOORS = { local: 0.1, semantic: 0.52 };
+export const SCORE_FLOORS = { local: 0.1, semantic: 0.52, semantic768: 0.45 };
 
 export class RagTrialError extends Error {
   constructor(message, kind = 'internal', status = 500) {
@@ -134,7 +134,7 @@ export async function createRagTrialStore({ pool, env = process.env, fetchImpl =
     // provider 按模型选择（models.provider_kind）：local 永远本地确定性嵌入，
     // remote 走 env 配置的 attested sidecar——env 有 sidecar 不影响 local 模型。
     const embedFn = model.provider_kind === 'remote'
-      ? (texts) => embedBatch(resolveProvider(env), texts, { fetchImpl })
+      ? (texts) => embedBatch(resolveProvider(env), texts, { fetchImpl, mode: 'passage' })
       : (texts) => texts.map((t) => embedLocal(t));
     const report = [];
     const client = await pool.connect();
@@ -251,7 +251,7 @@ export async function createRagTrialStore({ pool, env = process.env, fetchImpl =
   async function deleteDocument({ repo, branch, doc_path }, { actor = 'rag-trial-operator' } = {}) {
     await ensurePgvector();
     let removed = 0;
-    for (const table of ['ragtrial.chunks', 'ragtrial.chunks_semantic']) {
+    for (const table of ['ragtrial.chunks', 'ragtrial.chunks_semantic', 'ragtrial.chunks_semantic_768']) {
       const r = await q(`DELETE FROM ${table}
           WHERE repo=$1 AND branch=$2 AND doc_path=$3 RETURNING chunk_id`,
         [repo, branch, doc_path]);
@@ -330,7 +330,7 @@ export async function createRagTrialStore({ pool, env = process.env, fetchImpl =
     let qvec;
     const provider = model.provider_kind === 'remote' ? resolveProvider(env) : { kind: 'local' };
     if (provider.kind === 'remote') {
-      try { qvec = (await embedBatch(provider, [queryText], { fetchImpl }))[0]; }
+      try { qvec = (await embedBatch(provider, [queryText], { fetchImpl, mode: 'query' }))[0]; }
       catch (e) {
         if (e instanceof ProviderUnavailableError) {
           const r = await finish('provider_unavailable', {
@@ -370,7 +370,8 @@ export async function createRagTrialStore({ pool, env = process.env, fetchImpl =
       rows = r.rows;
     } catch (e) { throw pgWrap(e); }
 
-    const scoreFloor = Number(model.dims) === 1024 ? SCORE_FLOORS.semantic : SCORE_FLOORS.local;
+    const scoreFloor = Number(model.dims) === 1024 ? SCORE_FLOORS.semantic
+      : Number(model.dims) === 768 ? SCORE_FLOORS.semantic768 : SCORE_FLOORS.local;
     const qTokens = new Set(tokenize(queryText));
     const scored = rows.map((r) => {
       const dTokens = new Set(tokenize(r.text));
@@ -509,6 +510,7 @@ export async function createRagTrialStore({ pool, env = process.env, fetchImpl =
     const chunks = await q(
       `SELECT (SELECT count(*)::int FROM ragtrial.chunks) hash_chunks,
               (SELECT count(*)::int FROM ragtrial.chunks_semantic) semantic_chunks,
+              (SELECT count(*)::int FROM ragtrial.chunks_semantic_768) semantic768_chunks,
               (SELECT count(DISTINCT index_version)::int FROM ragtrial.chunks) hash_versions,
               (SELECT count(DISTINCT index_version)::int FROM ragtrial.chunks_semantic) semantic_versions`);
     const ext = await q(`SELECT extname, extversion FROM pg_extension WHERE extname='vector'`);
@@ -517,9 +519,10 @@ export async function createRagTrialStore({ pool, env = process.env, fetchImpl =
       models: models.rows,
       documents: docs.rows[0],
       chunks: {
-        total: Number(chunks.rows[0].hash_chunks) + Number(chunks.rows[0].semantic_chunks),
+        total: Number(chunks.rows[0].hash_chunks) + Number(chunks.rows[0].semantic_chunks) + Number(chunks.rows[0].semantic768_chunks ?? 0),
         hash: Number(chunks.rows[0].hash_chunks),
         semantic: Number(chunks.rows[0].semantic_chunks),
+        semantic_768: Number(chunks.rows[0].semantic768_chunks ?? 0),
         versions: Number(chunks.rows[0].hash_versions) + Number(chunks.rows[0].semantic_versions),
       },
     };

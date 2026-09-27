@@ -335,7 +335,7 @@ export async function ragTrialApi(req, res, ctx) {
       const modelId = String(body.model_id || '');
       const dims = Number(body.dims || 0);
       const manifest = body.manifest;
-      if (!modelId || ![256, 1024].includes(dims) || !manifest || typeof manifest !== 'object') {
+      if (!modelId || ![256, 768, 1024].includes(dims) || !manifest || typeof manifest !== 'object') {
         return sendJson(res, 400, { error: { reason: 'model_id + dims(256|1024) + manifest{} 必填' } });
       }
       // spec digest 绑定：model_id+dims+manifest 内容+runtime——任一变化即 digest 冲突

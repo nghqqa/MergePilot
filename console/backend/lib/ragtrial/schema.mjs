@@ -91,6 +91,30 @@ export const RAGTRIAL_SCHEMA_SQL = [
    )`,
   `CREATE INDEX IF NOT EXISTS ragtrial_chunks_semantic_scope_idx
      ON ragtrial.chunks_semantic (repo, branch, index_version)`,
+  // 768 维语义表（e5-base-v2 等；与 1024 表并行，路由按 models.dims 白名单）
+  `CREATE TABLE IF NOT EXISTS ragtrial.chunks_semantic_768 (
+     chunk_id      BIGSERIAL PRIMARY KEY,
+     repo          TEXT NOT NULL,
+     branch        TEXT NOT NULL,
+     doc_path      TEXT NOT NULL,
+     doc_sha256    TEXT NOT NULL,
+     chunk_index   INT NOT NULL,
+     chunk_sha256  TEXT NOT NULL,
+     para_index    INT NOT NULL,
+     line_start    INT,
+     line_end      INT,
+     char_start    INT,
+     char_end      INT,
+     text          TEXT NOT NULL,
+     embedding     vector(768),
+     model_id      TEXT NOT NULL,
+     model_digest  TEXT NOT NULL,
+     index_version INT NOT NULL,
+     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+     UNIQUE (repo, branch, doc_path, chunk_index, index_version)
+   )`,
+  `CREATE INDEX IF NOT EXISTS ragtrial_chunks_semantic768_scope_idx
+     ON ragtrial.chunks_semantic_768 (repo, branch, index_version)`,
   `CREATE TABLE IF NOT EXISTS ragtrial.query_log (
      seq            BIGSERIAL PRIMARY KEY,
      actor          TEXT NOT NULL,
@@ -165,7 +189,7 @@ export const RAGTRIAL_SCHEMA_SQL = [
 export const RETAINED_INDEX_VERSIONS = 2;
 
 // 维度 → 物理表白名单（其它维度一律 dimension_mismatch fail-closed）
-export const CHUNK_TABLES = { 256: 'ragtrial.chunks', 1024: 'ragtrial.chunks_semantic' };
+export const CHUNK_TABLES = { 256: 'ragtrial.chunks', 768: 'ragtrial.chunks_semantic_768', 1024: 'ragtrial.chunks_semantic' };
 export function chunkTableFor(dims) {
   const t = CHUNK_TABLES[Number(dims)];
   if (!t) {
