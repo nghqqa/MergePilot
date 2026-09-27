@@ -217,6 +217,34 @@ try {
   const badHit = await badOverride.search({ q: '审计事件', repo: REPO, branch: BR, k: 3 });
   ok('HYB4 非法覆盖回退安全默认（floor=9 被拒→默认 0.1 仍可命中）', badHit.service_state === 'hit');
 
+  // ── F1 修复三类：正常 IDF 无降级标注 / DF 失败→plain 回退+df_unavailable / DF 失败→严格模式 fail-closed ──
+  ok('HYB5 正常 IDF（DF 可用）无 df_unavailable 标注',
+    idfHit.service_state === 'hit' && idfHit.df_unavailable === undefined);
+  const dfFailPool = {
+    query: (text, params) => {
+      if (text.includes('ragtrial.documents d ON') && text.includes("state='active'")) {
+        return Promise.reject(Object.assign(new Error('simulated DF scan failure'), { code: 'ECONNREFUSED' }));
+      }
+      return pool.query(text, params);
+    },
+  };
+  const fbStore = await createRagTrialStore({ pool: dfFailPool, env: { ...process.env,
+    CONSOLE_PG_DSN: undefined, RAGTRIAL_EMBED_ENDPOINT: undefined,
+    RAGTRIAL_HYBRID_JSON: JSON.stringify({ 'local-hash-v1': { lexMode: 'idf', w: 0.3, floor: 0.1 } }) } });
+  const fbHit = await fbStore.search({ q: '审计事件必须携带 actor 字段', repo: REPO, branch: BR, k: 3 });
+  ok('HYB6 DF 失败→回退 plain 词法（非静默：df_unavailable=true，命中与引用链完整）',
+    fbHit.service_state === 'hit' && fbHit.df_unavailable === true
+    && fbHit.results.every((h) => h.citation.doc_path)
+    && fbHit.results.some((h) => h.lex_score > 0));
+  const strictStore = await createRagTrialStore({ pool: dfFailPool, env: { ...process.env,
+    CONSOLE_PG_DSN: undefined, RAGTRIAL_EMBED_ENDPOINT: undefined,
+    RAGTRIAL_HYBRID_JSON: JSON.stringify({ 'local-hash-v1': { lexMode: 'idf-required', w: 0.3, floor: 0.1 } }) } });
+  let strictErr = null;
+  try { await strictStore.search({ q: '审计事件', repo: REPO, branch: BR, k: 3 }); }
+  catch (e) { strictErr = e; }
+  ok('HYB7 DF 失败→idf-required 严格模式 fail-closed（503 df_scan_failed，无结果冒充）',
+    strictErr && strictErr.kind === 'df_scan_failed' && strictErr.status === 503);
+
 } catch (e) {
   fail++;
   console.error('FATAL', e);
