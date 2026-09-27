@@ -88,6 +88,14 @@ function csrfCookie(token) {
 }
 
 export function login(user, password) {
+  // MU Phase 2：正式多用户模式下禁止 legacy 共享/环境账号登录（迁移模式例外须显式
+  // MU_LEGACY_LOGIN=1）。默认 MU_MODE=legacy——本门只在显式 multiuser 时生效，
+  // Phase 0a 及全部既有登录语义零改动。
+  if (process.env.MU_MODE === 'multiuser' && process.env.MU_LEGACY_LOGIN !== '1') {
+    return { ok: false, status: 403, code: 'legacy_login_disabled_in_multiuser',
+      error: { reason: 'legacy_login_disabled_in_multiuser',
+        detail: '正式多用户模式禁用共享操作员账号——使用 /api/mu/auth/login（OAuth/身份提供商）' } };
+  }
   const model = parseAccessModel();
   const creds = userCredentials();
   if (model.mode === 'model' && creds && typeof creds === 'object') {
@@ -139,8 +147,22 @@ export function getSession(token) {
   if (!sid) return null;
   const s = store.get(sid);
   if (!s || s.expiresAt < Date.now()) return null;
-  const { user, repos, csrf, expiresAt } = s;
-  return { user, repos, csrf, expiresAt };
+  const { user, repos, csrf, expiresAt, mu } = s;
+  return { user, repos, csrf, expiresAt, ...(mu ? { mu } : {}) };
+}
+
+// MU Phase 2：多用户会话签发（身份已由调用方经 ExternalIdentity 解析——本层不认
+// 任何密码/token）。会话载荷附 mu={userId,tenantId,login,role,provider}；
+// cookie/CSRF/TTL 与 legacy 会话同一纪律（HttpOnly+SameSite=Strict+HMAC 签名 sid）。
+export function createMuSession({ login: muLogin, userId, tenantId, role, provider }) {
+  sweep();
+  const sid = crypto.randomUUID();
+  const csrf = crypto.randomBytes(24).toString('base64url');
+  store.set(sid, {
+    user: muLogin, repos: [], csrf, expiresAt: Date.now() + TTL_MS,
+    mu: { userId, tenantId, login: muLogin, role, provider },
+  });
+  return { ok: true, csrf, setCookie: [sessionCookie(sign(sid), TTL_MS), csrfCookie(csrf)] };
 }
 
 export function sessionBody(auth) {
