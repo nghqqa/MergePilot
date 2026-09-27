@@ -282,6 +282,32 @@ try {
       HYBRID_CONFIGS[256].floor === 0.1 && HYBRID_CONFIGS[768].floor === 0.45 && HYBRID_CONFIGS[1024].floor === 0.52);
   }
 
+  // ── ENABLEMENT：模型准入固化 fail-closed（MODEL_CONFIGS 版本化）──
+  {
+    const { MODEL_CONFIGS, MODEL_CONFIGS_VERSION, HYBRID_CONFIGS } = await import('../lib/ragtrial/store.mjs');
+    ok('MC1 MODEL_CONFIGS 版本化且只含双生产候选（local/bge-en/e5 不被覆盖）',
+      MODEL_CONFIGS_VERSION === 1 && Object.keys(MODEL_CONFIGS).length === 2
+      && !('local-hash-v1' in MODEL_CONFIGS) && !('bge-large-en-v1.5' in MODEL_CONFIGS) && !('e5-base-v2' in MODEL_CONFIGS));
+    ok('MC2 双候选配置=校准固化值（m3 idf/0.35；zh plain/0.30）',
+      MODEL_CONFIGS['bge-m3'].w === 0.7 && MODEL_CONFIGS['bge-m3'].lexMode === 'idf' && MODEL_CONFIGS['bge-m3'].floor === 0.35
+      && MODEL_CONFIGS['bge-large-zh-v1.5'].lexMode === 'plain' && MODEL_CONFIGS['bge-large-zh-v1.5'].floor === 0.30);
+    ok('MC3 默认三档不受影响（G5b 复验）',
+      HYBRID_CONFIGS[256].floor === 0.1 && HYBRID_CONFIGS[768].floor === 0.45 && HYBRID_CONFIGS[1024].floor === 0.52);
+    // 模型选择 fail-closed：未注册模型
+    const ghost = await store.search({ q: 'x', repo: REPO, branch: BR, k: 3, modelId: 'no-such-model' });
+    ok('MC4 未注册模型 → model_missing', ghost.service_state === 'model_missing');
+    // 配置漂移：MODEL_CONFIGS 值域校验（hybridConfigFor 内建拒绝非法值——floor=0.99 仍可运行但合法；
+    // 漂移防护=manifest/模型注册链：篡改 models 表 digest → index_stale）
+    await pool.query(`UPDATE ragtrial.models SET model_digest='${'f'.repeat(64)}' WHERE model_id='local-hash-v1'`);
+    const drift = await store.search({ q: '审计', repo: REPO, branch: BR, k: 3 });
+    ok('MC5 models 表 digest 篡改 → index_stale（配置漂移 fail-closed）', drift.service_state === 'index_stale');
+    // 恢复：重新查询 models 表原始 digest（从 initSchema 重放不可行——直接从 chunks 取）
+    const orig = (await pool.query(`SELECT DISTINCT model_digest FROM ragtrial.chunks LIMIT 1`)).rows[0].model_digest;
+    await pool.query(`UPDATE ragtrial.models SET model_digest=$1 WHERE model_id='local-hash-v1'`, [orig]);
+    const rec = await store.search({ q: '审计事件必须携带 actor 字段', repo: REPO, branch: BR, k: 3 });
+    ok('MC6 恢复后检索回归 hit', rec.service_state === 'hit');
+  }
+
 } catch (e) {
   fail++;
   console.error('FATAL', e);

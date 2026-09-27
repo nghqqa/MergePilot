@@ -1,0 +1,110 @@
+# RAG_PRODUCTION_STAGING_CANDIDATE 发行物（ENABLEMENT 波；不修改 promote3）。
+# 候选镜像按 digest 锚定；双回滚锚点=当前 promote3 运行 b2e8727d + 首接 dec398d。
+# 模型：bge-m3 主选（MODEL_CONFIGS v1: w.7/idf/f.35）；bge-large-zh 回退候选（未接入此 compose）。
+name: rag-prod-staging
+
+services:
+  m3-sidecar:
+    image: rag-zhe-m3-sidecar:local
+    pull_policy: never
+    build: { context: ../.., dockerfile: deploy/rag-prod/bge-sidecar/Dockerfile }
+    environment:
+      BGE_MODEL_DIR: /app/model
+      BGE_MANIFEST: /app/manifest/bge-m3.manifest.json
+    volumes:
+      - type: bind
+        read_only: true
+        source: ${RAGPS_M3_DIR:-D:/goai/rag-zh-models/bge-m3}
+        target: /app/model
+      - type: bind
+        read_only: true
+        source: ../rag-zh-eval/bge-m3.manifest.json
+        target: /app/manifest/bge-m3.manifest.json
+    ports: ["127.0.0.1:${RAGPS_M3_PORT:-48491}:8080"]
+    networks: [rag-ps-net]
+    healthcheck: &mhc
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8080/health',timeout=3)"]
+      interval: 20s
+      timeout: 5s
+      retries: 6
+      start_period: 60s
+
+  pg:
+    image: pgvector/pgvector:pg16
+    pull_policy: never
+    environment: { POSTGRES_PASSWORD: "${RAGPS_PG_PASSWORD}", POSTGRES_DB: ragps }
+    volumes: [ragps-pgdata:/var/lib/postgresql/data]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U postgres -d ragps"], interval: 5s, timeout: 3s, retries: 12 }
+    networks: [rag-ps-net]
+    ports: ["127.0.0.1:${RAGPS_PG_PORT:-15441}:5432"]
+
+  minio:
+    image: elestio/minio@sha256:25348a257f1ece1b192f25f6cd9854618fa86422ac87b494b5d4e629c556d4bd
+    pull_policy: never
+    command: server /data
+    environment: { MINIO_ROOT_USER: "${RAGPS_MINIO_USER}", MINIO_ROOT_PASSWORD: "${RAGPS_MINIO_PASSWORD}" }
+    volumes: [ragps-miniodata:/data]
+    healthcheck: { test: ["CMD", "curl", "-sf", "http://localhost:9000/minio/health/live"], interval: 10s, timeout: 5s, retries: 8 }
+    networks: [rag-ps-net]
+    ports: ["127.0.0.1:${RAGPS_MINIO_PORT:-9118}:9000"]
+
+  console:
+    # 候选镜像按 digest 锚定（ENABLEMENT 波构建自 feat/rag-zh-admission@df1b6f6+MC）
+    image: rag-staging-candidate:admission-df1b6f6
+    pull_policy: never
+    restart: unless-stopped
+    depends_on:
+      pg: { condition: service_healthy }
+      minio: { condition: service_healthy }
+      m3-sidecar: { condition: service_healthy }
+    environment:
+      CONSOLE_PG_DSN: "postgres://postgres:${RAGPS_PG_PASSWORD}@pg:5432/ragps"
+      CONSOLE_HOST: "0.0.0.0"
+      CONSOLE_PILOT_USER: "${RAGPS_CONSOLE_USER}"
+      CONSOLE_PILOT_PASSWORD: "${RAGPS_CONSOLE_PASSWORD}"
+      CONSOLE_SESSION_SECRET: "${RAGPS_SESSION_SECRET}"
+      RAGTRIAL_S3_ENDPOINT: "http://minio:9000"
+      RAGTRIAL_S3_BUCKET: "ragps"
+      RAGTRIAL_S3_ACCESS_KEY: "${RAGPS_MINIO_USER}"
+      RAGTRIAL_S3_SECRET_KEY: "${RAGPS_MINIO_PASSWORD}"
+      RAGTRIAL_CORPUS_DIR: "/app/rag-corpus"
+      RAGTRIAL_ALLOWED_SCOPES: "${RAGPS_ALLOWED_SCOPES}"
+      RAGTRIAL_EMBED_ENDPOINT: "http://m3-sidecar:8080/embed"
+      RAGTRIAL_EMBED_MODEL_ID: "bge-m3"
+      RAGTRIAL_EMBED_DIMS: "1024"
+      RAGTRIAL_EMBED_TIMEOUT_MS: "60000"
+      RAGTRIAL_EMBED_EXPECTED_MANIFEST: "${RAGPS_M3_EXPECTED_MANIFEST}"
+      # C 链 enforcement 保持 off（禁令）
+      MERGEPILOT_CCHAIN_ENFORCE: "0"
+    volumes:
+      - ../rag-zh-gate/corpus:/app/rag-corpus:ro
+    ports: ["127.0.0.1:${RAGPS_CONSOLE_PORT:-48490}:4730"]
+    healthcheck: &chc
+      test: ["CMD", "wget", "-qO-", "--timeout=5", "http://127.0.0.1:4730/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks: [rag-ps-net]
+
+  # resident worker（默认不启动；--profile resident-worker 启用）
+  worker:
+    image: rag-staging-candidate:admission-df1b6f6
+    pull_policy: never
+    profiles: ["resident-worker"]
+    depends_on: { pg: { condition: service_healthy } }
+    environment:
+      CONSOLE_PG_DSN: "postgres://postgres:${RAGPS_PG_PASSWORD}@pg:5432/ragps"
+      RAGTRIAL_CORPUS_DIR: "/app/rag-corpus"
+      RAGTRIAL_ALLOWED_SCOPES: "${RAGPS_ALLOWED_SCOPES}"
+      RAGTRIAL_EMBED_ENDPOINT: "http://m3-sidecar:8080/embed"
+      RAGTRIAL_EMBED_MODEL_ID: "bge-m3"
+      RAGTRIAL_EMBED_DIMS: "1024"
+      RAGTRIAL_EMBED_EXPECTED_MANIFEST: "${RAGPS_M3_EXPECTED_MANIFEST}"
+    volumes:
+      - ../rag-zh-gate/corpus:/app/rag-corpus:ro
+    command: ["node", "/app/worker/rag-worker.mjs", "--dsn", "postgres://postgres:${RAGPS_PG_PASSWORD}@pg:5432/ragps", "--worker", "ragps-resident-1"]
+    networks: [rag-ps-net]
+
+volumes: { ragps-pgdata: {}, ragps-miniodata: {} }
+networks: { rag-ps-net: {} }

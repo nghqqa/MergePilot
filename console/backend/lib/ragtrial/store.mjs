@@ -41,6 +41,15 @@ export const HYBRID_CONFIGS = {
   1024: { w: 0.5, lexMode: 'plain', floor: 0.52 },
 };
 
+// 模型专属版本化配置（ENABLEMENT 波固化；calib 选择=calib 全绿+holdout 0.9231+全集 0.9615）。
+// 优先级：env 覆盖 > MODEL_CONFIGS[model_id] > HYBRID_CONFIGS[dims]。
+// 默认 local-hash/bge-en/e5 无条目=行为不被覆盖；e5/reranker 保持内部/离线实验（无生产配置）。
+export const MODEL_CONFIGS_VERSION = 1;
+export const MODEL_CONFIGS = {
+  'bge-m3': { w: 0.7, lexMode: 'idf', floor: 0.35, source: 'calib(zh-gate-v1) 2026-09-27', dims: 1024 },
+  'bge-large-zh-v1.5': { w: 0.7, lexMode: 'plain', floor: 0.30, source: 'calib(zh-gate-v1) 2026-09-27', dims: 1024 },
+};
+
 export class RagTrialError extends Error {
   constructor(message, kind = 'internal', status = 500) {
     super(message); this.name = 'RagTrialError'; this.kind = kind; this.status = status;
@@ -58,7 +67,9 @@ function hybridConfigFor(env, model) {
     } catch { override = null; /* 非法 JSON 静默忽略，走安全默认 */ }
   }
   const base = HYBRID_CONFIGS[Number(model.dims)] ?? { w: 0.5, lexMode: 'plain', floor: 0.1 };
-  const cfg = { ...base, ...(override ?? {}) };
+  const modelCfg = MODEL_CONFIGS[model.model_id] ?? {}; // 模型专属（版本化；不含 source 元键）
+  const { source: _s, dims: _d, ...modelParams } = modelCfg;
+  const cfg = { ...base, ...modelParams, ...(override ?? {}) };
   if (!(cfg.w >= 0 && cfg.w <= 1) || !['plain', 'idf', 'idf-required'].includes(cfg.lexMode)
       || !(cfg.floor >= 0 && cfg.floor <= 1)) return base;
   return cfg;
