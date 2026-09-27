@@ -10,7 +10,11 @@
 #   - 仅 127.0.0.1 发布端口：console 48440 / pg 15436（host e2e 观测用）/ minio 9103；
 #   - 凭据全部为本地一次性试验值（.env，gitignored；.env.example 为占位模板），
 #     绝不读取/复用任何真实环境凭据；
-#   - 语料目录只读挂载到 console（/app/rag-corpus），容器不可写语料。
+#   - 语料目录只读挂载到 console（/app/rag-corpus），容器不可写语料；
+#   - RAG scope 门默认拒绝（backend checkScope：未配置/为空 → 查询一律 403）。
+#     console 环境以 interpolation 默认值放行唯一试验 scope
+#     （= e2e 常量 nghqqa/mergepilot@feat/local-rag-trial）；.env 中设置
+#     RAGTRIAL_ALLOWED_SCOPES 可覆盖（逗号分隔多 scope）；显式置空 = 全拒绝。
 name: local-rag-trial
 
 services:
@@ -68,6 +72,9 @@ services:
       RAGTRIAL_S3_ACCESS_KEY: "${RAGTRIAL_MINIO_USER}"
       RAGTRIAL_S3_SECRET_KEY: "${RAGTRIAL_MINIO_PASSWORD}"
       RAGTRIAL_CORPUS_DIR: "/app/rag-corpus"
+      # scope 门（fail-closed）：.env 未设 → 仅放行试验 scope（e2e 同值）；
+      # 显式置空（RAGTRIAL_ALLOWED_SCOPES=）→ 全拒绝（403 scope_not_configured）
+      RAGTRIAL_ALLOWED_SCOPES: "${RAGTRIAL_ALLOWED_SCOPES-nghqqa/mergepilot@feat/local-rag-trial}"
     volumes:
       - ./corpus:/app/rag-corpus:ro
       - localragtrial-evidence:/app/evidence
