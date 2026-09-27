@@ -161,6 +161,12 @@ export function createJobQueue({ pool, staleAfterMs = 90_000 } = {}) {
     return r.rows;
   }
 
+  // PHASE0A：单任务读取——HTTP requeue 路径的会话仓库授权输入（越权 404 不泄露存在性）
+  async function get(jobId) {
+    const r = await q(`SELECT * FROM ragtrial.jobs WHERE job_id=$1`, [jobId]);
+    return r.rows[0] ?? null;
+  }
+
   async function stats() {
     const byState = await q(
       `SELECT state, count(*)::int n,
@@ -182,5 +188,5 @@ export function createJobQueue({ pool, staleAfterMs = 90_000 } = {}) {
     };
   }
 
-  return { enqueue, claim, heartbeat, complete, fail, requeueDead, list, stats, audit };
+  return { enqueue, claim, heartbeat, complete, fail, requeueDead, list, get, stats, audit };
 }

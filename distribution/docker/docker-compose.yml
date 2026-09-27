@@ -63,7 +63,10 @@ services:
     volumes:
       - ${EVIDENCE_ROOT:-./evidence}:/app/evidence:ro
     ports:
-      - "${CONSOLE_PORT:-4730}:4730"  # bind to 127.0.0.1 for local-only
+      # 默认仅绑定回环（与文件头 Security 声明及 docs/DOCKER-DEPLOY.md 网络安全节一致。
+      # PHASE0A 修复：此前默认 "${CONSOLE_PORT:-4730}:4730" 实际发布到 0.0.0.0，
+      # 与注释宣称的 loopback 相悖）。外部访问须显式改绑定前缀并配套防火墙+TLS。
+      - "127.0.0.1:${CONSOLE_PORT:-4730}:4730"
     networks: [mergepilot-internal]
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4730/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]

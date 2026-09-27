@@ -138,8 +138,67 @@ async function scopeDeny(env, { store, actor, repo, branch, source, kind }) {
     ...(bounded ? {} : { audit_suppressed: true, note: '同源窗口内拒绝审计已封顶' }) } };
 }
 
+// ── 会话仓库授权（PHASE0A：与部署 scope 取交集的会话层门）────────────────
+// 有效授权 = 部署级 RAGTRIAL_ALLOWED_SCOPES（repo@branch）∩ 已认证会话的
+// 授权仓库面 auth.repos（repo 级，来自 CONSOLE_ACCESS_MODEL_JSON 主体解析或
+// legacy CONSOLE_REPO_ALLOWLIST）。两层缺一不可；请求参数/body/job payload
+// 只能缩小（被校验），不能扩大该交集。机器端点（machine/query）不经会话层，
+// 保持 HMAC+部署 scope 的既有语义不变。
+export function sessionRepoAllowed(auth, repo) {
+  return Array.isArray(auth?.repos) && auth.repos.includes(String(repo ?? ''));
+}
+
+export function resetScopeDenyLimiter() { scopeDenyBySource.clear(); } // 仅供测试隔离（对齐 cchain resetDenyAuditLimiter 惯例）
+
+async function sessionRepoDeny(env, { store, auth, actor, repo, branch, source }) {
+  if (sessionRepoAllowed(auth, repo)) return { status: 200 };
+  const bounded = scopeDenyAuditAllowed(env, source);
+  if (store && bounded) {
+    await store.audit('RAG_REPO_DENIED', actor, {
+      repo, branch,
+      detail: { reason: 'repo_not_in_allowlist', channel: 'session-repo',
+        session_repo_count: Array.isArray(auth?.repos) ? auth.repos.length : 0 },
+    }).catch(() => {});
+  }
+  return { status: 403, body: { error: { reason: 'repo_not_in_allowlist',
+    detail: '会话授权仓库面不含该 repo（服务端强制，默认拒绝；与 /api/pulls 同语义）' },
+    ...(bounded ? {} : { audit_suppressed: true, note: '同源窗口内拒绝审计已封顶' }) } };
+}
+
+// 组合门：部署 scope（先判，保持既有 reason 语义与测试断言不变）→ 会话 repo（后判）。
+// 两路拒绝均有界脱敏审计：只记 repo@branch、reason 与计数，不落查询正文/密钥/allowlist 原值。
+async function authorizeRepo(env, { store, auth, actor, repo, branch, source, kind }) {
+  const sd = await scopeDeny(env, { store, actor, repo, branch, source, kind });
+  if (sd.status === 403) return sd;
+  return sessionRepoDeny(env, { store, auth, actor, repo, branch, source });
+}
+
+// 全局索引操作（index/invalidate、index/rollback）跨界门：操作目标模型的
+// 现存文档仓库集合必须 ⊆ 会话授权面，否则拒绝（脱敏：只报越界数量不回显清单）。
+async function indexBoundaryGuard(env, { store, auth, actor, modelId, source }) {
+  let info = null;
+  try { info = await store.modelRepos(modelId); }
+  catch { return { status: 200 }; } // 存储异常交由后续原生路径如实失败
+  if (!info) return { status: 200 }; // 模型不存在 → 后续 invalidate/rollback 原生 409
+  const outOfScope = info.repos.filter((r) => !sessionRepoAllowed(auth, r));
+  if (!outOfScope.length) return { status: 200 };
+  const bounded = scopeDenyAuditAllowed(env, source);
+  if (store && bounded) {
+    await store.audit('RAG_REPO_DENIED', actor, {
+      repo: outOfScope[0], branch: null,
+      detail: { reason: 'index_op_crosses_repo_boundary', channel: 'index-boundary',
+        model_id: info.model_id, out_of_scope_count: outOfScope.length },
+    }).catch(() => {});
+  }
+  return { status: 403, body: { error: { reason: 'index_op_crosses_repo_boundary',
+    detail: `模型索引覆盖仓库超出会话授权面（${outOfScope.length} 个越界，脱敏不回显清单）——全局索引操作拒绝` },
+    ...(bounded ? {} : { audit_suppressed: true }) } };
+}
+
 export async function ragTrialApi(req, res, ctx) {
-  const { p, sendJson, readJsonBody, requireSession } = ctx;
+  // q（查询参数）自 ctx 解构——PHASE0A 修复存量缺陷：GET /jobs 曾引用未解构的
+  // q（ReferenceError→500，此前无 HTTP 层测试覆盖，SA8 首次命中）
+  const { p, q, sendJson, readJsonBody, requireSession } = ctx;
   const env = process.env;
   const actorOf = (auth) => auth?.user?.name || auth?.user || 'rag-trial-operator';
 
@@ -279,7 +338,13 @@ export async function ragTrialApi(req, res, ctx) {
       }
       const binding = runBindingAuthStatus(env);
       let queueStats = null;
-      try { queueStats = await (await getQueue(env)).stats(); }
+      try {
+        queueStats = await (await getQueue(env)).stats();
+        // PHASE0A：死信清单按会话授权面过滤（聚合计数保持全局观测语义）
+        if (queueStats && Array.isArray(queueStats.dead_letters)) {
+          queueStats.dead_letters = queueStats.dead_letters.filter((d) => sessionRepoAllowed(auth, d.repo));
+        }
+      }
       catch { queueStats = { state: 'error' }; }
       return sendJson(res, 200, {
         service_state: 'ready', ...base,
@@ -304,6 +369,15 @@ export async function ragTrialApi(req, res, ctx) {
         return sendJson(res, 400, { error: { reason: 'jobs[{kind,repo,branch,model_id,(doc_path,text)}] 必填' } });
       }
       const out = [];
+      // PHASE0A：整批先过组合授权门——任一 job 越权即全批拒绝，零入队副作用
+      const jobsSource = req.socket?.remoteAddress ?? null;
+      for (const j of jobs) {
+        const sdJ = await authorizeRepo(env, { store, auth, actor,
+          repo: String(j.repo), branch: String(j.branch || ''), source: jobsSource, kind: 'session' });
+        if (sdJ.status === 403) {
+          return sendJson(res, sdJ.status, { ...sdJ.body, batch_rejected: true });
+        }
+      }
       for (const j of jobs) {
         // ingest_doc 允许 text 内联（worker 消费）；delete_doc 需 doc_path
         if (j.kind === 'delete_doc' && !j.doc_path) {
@@ -315,18 +389,43 @@ export async function ragTrialApi(req, res, ctx) {
     }
     if (p === '/api/rag-trial/jobs' && req.method === 'GET') {
       const queue = await getQueue(env);
-      return sendJson(res, 200, { jobs: await queue.list({ state: q.state ?? null, limit: Number(q.limit || 50) }) });
+      // PHASE0A：任务列表按会话授权面服务端过滤（越权仓库的 job 零行返回）
+      const rows = (await queue.list({ state: q.state ?? null, limit: Number(q.limit || 50) }))
+        .filter((j) => sessionRepoAllowed(auth, j.repo));
+      return sendJson(res, 200, { jobs: rows });
     }
     if (p.startsWith('/api/rag-trial/jobs/') && p.endsWith('/requeue') && req.method === 'POST') {
       const queue = await getQueue(env);
       const jobId = p.slice('/api/rag-trial/jobs/'.length, -'/requeue'.length);
+      // PHASE0A/F-1：不存在与"存在但越权"统一 404（消除存在性差分——此前不存在
+      // →409 not_dead、越权→404，状态码本身构成存在性预言机）。job 状态语义对
+      // 已授权调用者保持：存在+授权+非 dead → 409 not_dead 原样。
+      // 越权存在仍在服务端留有界审计（审计为可信侧，不回显差异给调用者）。
+      const target = await queue.get(jobId);
+      if (!target || !sessionRepoAllowed(auth, target.repo)) {
+        if (target) {
+          const bounded = scopeDenyAuditAllowed(env, req.socket?.remoteAddress ?? null);
+          if (store && bounded) {
+            await store.audit('RAG_REPO_DENIED', actor, {
+              repo: target.repo, branch: target.branch,
+              detail: { reason: 'repo_not_in_allowlist', channel: 'requeue' },
+            }).catch(() => {});
+          }
+        }
+        return sendJson(res, 404, { error: { reason: 'unknown_job' } });
+      }
       const r = await queue.requeueDead(jobId, { actor });
       if (!r.ok) return sendJson(res, 409, { error: { reason: r.reason } });
       return sendJson(res, 200, r);
     }
     if (p === '/api/rag-trial/queue/metrics' && req.method === 'GET') {
       const queue = await getQueue(env);
-      return sendJson(res, 200, await queue.stats());
+      const qm = await queue.stats();
+      // PHASE0A：死信明细按会话授权面过滤（状态聚合计数保持全局观测语义）
+      if (Array.isArray(qm.dead_letters)) {
+        qm.dead_letters = qm.dead_letters.filter((d) => sessionRepoAllowed(auth, d.repo));
+      }
+      return sendJson(res, 200, qm);
     }
 
     // ── 供应链披露（自 B 波选择性吸收）：只报类型/模型/摘要/维度/验证状态 ──
@@ -390,6 +489,10 @@ export async function ragTrialApi(req, res, ctx) {
       const repo = String(body.repo || '');
       const branch = String(body.branch || '');
       if (!repo || !branch) return sendJson(res, 400, { error: { reason: 'repo/branch required' } });
+      // PHASE0A 组合授权门（scope → 会话 repo）：越权 403，零摄取副作用
+      const sdIng = await authorizeRepo(env, { store, auth, actor, repo, branch,
+        source: req.socket?.remoteAddress ?? null, kind: 'session' });
+      if (sdIng.status === 403) return sendJson(res, sdIng.status, sdIng.body);
       let docs = body.docs;
       if (!docs && body.corpus_dir) {
         docs = readCorpusDir(body.corpus_dir, { base: env.RAGTRIAL_CORPUS_DIR || '/app/rag-corpus' });
@@ -411,6 +514,10 @@ export async function ragTrialApi(req, res, ctx) {
       if (!repo || !branch || !doc_path) {
         return sendJson(res, 400, { error: { reason: 'repo/branch/doc_path required' } });
       }
+      // PHASE0A 组合授权门（scope → 会话 repo）：越权 403，零删除副作用
+      const sdDel = await authorizeRepo(env, { store, auth, actor, repo: String(repo), branch: String(branch),
+        source: req.socket?.remoteAddress ?? null, kind: 'session' });
+      if (sdDel.status === 403) return sendJson(res, sdDel.status, sdDel.body);
       return sendJson(res, 200, await store.deleteDocument({ repo, branch, doc_path }, { actor }));
     }
 
@@ -423,8 +530,8 @@ export async function ragTrialApi(req, res, ctx) {
       if (!q || !repo || !branch) {
         return sendJson(res, 400, { error: { reason: 'q/repo/branch required' } });
       }
-      // scope 门（默认拒绝；env 撤销即时生效；越权 403+有界脱敏审计）
-      const sd = await scopeDeny(env, { store, actor, repo, branch,
+      // PHASE0A 组合授权门（scope → 会话 repo；默认拒绝；env 撤销即时生效；越权 403+有界脱敏审计）
+      const sd = await authorizeRepo(env, { store, auth, actor, repo, branch,
         source: req.socket?.remoteAddress ?? null, kind: 'session' });
       if (sd.status === 403) return sendJson(res, sd.status, sd.body);
       const r = await store.search({
@@ -455,6 +562,11 @@ export async function ragTrialApi(req, res, ctx) {
           || qa.some((i) => !i?.q || !i?.expect_doc)) {
         return sendJson(res, 400, { error: { reason: 'repo/branch/qa[{q,expect_doc}] required' } });
       }
+      // PHASE0A 组合授权门（scope → 会话 repo）：越权 403，零评测泄露
+      // （evalQa detail 含逐条命中 doc_path——拒绝路径必须先于任何检索）
+      const sdEval = await authorizeRepo(env, { store, auth, actor, repo: String(repo), branch: String(branch),
+        source: req.socket?.remoteAddress ?? null, kind: 'session' });
+      if (sdEval.status === 403) return sendJson(res, sdEval.status, sdEval.body);
       return sendJson(res, 200, await store.evalQa({
         qa, repo, branch, k: Number(body.k || 5),
         qaSet: String(body.qa_set || 'inline'), actor,
@@ -464,6 +576,11 @@ export async function ragTrialApi(req, res, ctx) {
     // ── 索引失效 / 回滚 ──
     if (p === '/api/rag-trial/index/invalidate' && req.method === 'POST') {
       const body = await json() ?? {};
+      // PHASE0A 跨界门：模型现存文档仓库 ⊆ 会话授权面，否则全局索引操作越权拒绝
+      const igInv = await indexBoundaryGuard(env, { store, auth, actor,
+        modelId: body.model_id ? String(body.model_id) : null,
+        source: req.socket?.remoteAddress ?? null });
+      if (igInv.status === 403) return sendJson(res, igInv.status, igInv.body);
       return sendJson(res, 200, await store.invalidateIndex({
         modelId: body.model_id ? String(body.model_id) : null, actor,
       }));
@@ -474,6 +591,11 @@ export async function ragTrialApi(req, res, ctx) {
       if (!Number.isInteger(toVersion) || toVersion < 1) {
         return sendJson(res, 400, { error: { reason: 'to_index_version (int>=1) required' } });
       }
+      // PHASE0A 跨界门（同 invalidate）：模型现存文档仓库 ⊆ 会话授权面
+      const igRb = await indexBoundaryGuard(env, { store, auth, actor,
+        modelId: body.model_id ? String(body.model_id) : null,
+        source: req.socket?.remoteAddress ?? null });
+      if (igRb.status === 403) return sendJson(res, igRb.status, igRb.body);
       return sendJson(res, 200, await store.rollbackIndex({
         toVersion, modelId: body.model_id ? String(body.model_id) : null, actor,
       }));
@@ -486,6 +608,11 @@ export async function ragTrialApi(req, res, ctx) {
       if (!q || !repo || !branch) {
         return sendJson(res, 400, { error: { reason: 'q/repo/branch required' } });
       }
+      // PHASE0A 组合授权门（scope → 会话 repo）：修复 review-aux 旁路（复核 CT-01）——
+      // 越权 403 先于任何检索，响应不含 snippet/citation/doc_path
+      const sdAux = await authorizeRepo(env, { store, auth, actor, repo: String(repo), branch: String(branch),
+        source: req.socket?.remoteAddress ?? null, kind: 'session' });
+      if (sdAux.status === 403) return sendJson(res, sdAux.status, sdAux.body);
       const r = await store.search({ q, repo, branch, k: Number(body.k || 5), actor });
       const aux = (r.results ?? []).map((h) => toAuxEvidence(h, { runId: run_id ?? null }));
       const runView = attachToRun(

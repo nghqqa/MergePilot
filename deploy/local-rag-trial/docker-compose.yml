@@ -67,6 +67,9 @@ services:
       CONSOLE_PILOT_USER: "${RAGTRIAL_CONSOLE_USER}"
       CONSOLE_PILOT_PASSWORD: "${RAGTRIAL_CONSOLE_PASSWORD}"
       CONSOLE_SESSION_SECRET: "${RAGTRIAL_SESSION_SECRET}"
+      # PHASE0A 会话仓库授权面（与 /api/pulls 同语义；默认覆盖试验 repo）：
+      # 会话端 RAG 端点 = 本 allowlist ∩ RAGTRIAL_ALLOWED_SCOPES，空=默认拒
+      CONSOLE_REPO_ALLOWLIST: "${RAGTRIAL_REPO_ALLOWLIST:-nghqqa/mergepilot}"
       RAGTRIAL_S3_ENDPOINT: "http://minio:9000"
       RAGTRIAL_S3_BUCKET: "ragtrial"
       RAGTRIAL_S3_ACCESS_KEY: "${RAGTRIAL_MINIO_USER}"
