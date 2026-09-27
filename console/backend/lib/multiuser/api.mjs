@@ -11,18 +11,31 @@
 //  * 拒绝写 mu.audit_event（metadata only：action/reason/actor，无查询正文/凭据）；
 //  * 本切片不实现自动 approve、不实现任何绕过 branch protection 的合并。
 import crypto from 'node:crypto';
+import { createRequire } from 'node:module';
 import { createMuStore } from './store.mjs';
 import { authorize, roleActions, MU_ROLES } from './authz.mjs';
 import { githubOAuthStatus, githubAppStatus,
   fixtureChangedExcerpt, fixtureRagSearch, fixtureReviewRun, fixtureRepairPush } from './provider.mjs';
 import { createMuSession, safeEqual } from '../session.mjs';
 
+// pg 解析：容器/镜像内走标准 node_modules；CI/主机测试进程回退到 test/support
+// 安装的 dev-only pg（与 cchain/wiring.mjs loadPg 同一惯例——CI runner 无根 junction）。
+let muPgMod = undefined;
+async function loadPg() {
+  if (muPgMod !== undefined) return muPgMod;
+  try { muPgMod = await import('pg'); return muPgMod; } catch { /* fall through */ }
+  try {
+    muPgMod = createRequire(new URL('../../test/support/noop.js', import.meta.url))('pg');
+  } catch { muPgMod = null; }
+  return muPgMod;
+}
+
 let muStorePromise = null;
 function getMuStore(env) {
   if (!env.CONSOLE_PG_DSN) return null;
   if (!muStorePromise) {
     muStorePromise = (async () => {
-      const pg = await import('pg').catch(() => null);
+      const pg = await loadPg();
       if (!pg) throw new Error('pg module unavailable');
       const pool = new pg.Pool({ connectionString: env.CONSOLE_PG_DSN, max: 4 });
       pool.on('error', () => { /* 连接错误由查询路径如实上报（S12 语义） */ });
