@@ -19,7 +19,7 @@ default embedding  = local-hash-v1（确定性哈希，256 维，零模型下载
 optional embedding = bge-m3（1024 维，自带工件 + manifest fail-closed）
 A-chain (org knowledge lexical) = OFF (a_chain_disabled)
 C-chain (skill_case_retrieval)  = BLOCKED（Enterprise Roadmap）
-scope gate (RAGTRIAL_ALLOWED_SCOPES) = DEFAULT DENY（未配置 → 查询 403）
+scope gate (RAGTRIAL_ALLOWED_SCOPES) = DEFAULT DENY（未配置/置空 → 403；栈 compose 默认放行试验 scope `nghqqa/mergepilot@feat/local-rag-trial`，.env 可覆盖）
 ```
 
 两条路径统一口径：**不宣称生产级 RAG**；检索结果 reference-only。

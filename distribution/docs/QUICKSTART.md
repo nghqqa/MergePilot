@@ -75,18 +75,15 @@ docker compose ps   # 三服务 healthy
 # 5. 访问 http://127.0.0.1:48440 → 登录 → 「RAG 试验」页
 ```
 
-首次查询前须配置 RAG scope allowlist（默认拒绝，未配置时查询返回 403
-`scope_not_configured`）。在 `deploy/local-rag-trial/` 下创建
-`docker-compose.override.yml`（不要改动仓库自带的 compose 文件）：
+RAG scope 门已**默认配置**（compose 内置默认值仅放行试验 scope
+`nghqqa/mergepilot@feat/local-rag-trial`）。要检索自己的仓库，在 `.env` 中覆盖：
 
-```yaml
-services:
-  console:
-    environment:
-      RAGTRIAL_ALLOWED_SCOPES: "your-repo@main"
+```bash
+RAGTRIAL_ALLOWED_SCOPES=your-repo@main   # 逗号分隔多 scope
 ```
 
-然后 `docker compose up -d` 生效。语料导入/检索/删除/备份恢复的完整操作见
+改后 `docker compose up -d` 重建生效。显式置空（`RAGTRIAL_ALLOWED_SCOPES=`）=
+全拒绝（fail-closed，查询 403）。语料导入/检索/删除/备份恢复的完整操作见
 [LOCAL-RAG-GUIDE](LOCAL-RAG-GUIDE.md)。
 
 可选：`bge-m3` 语义嵌入（8C16G 档，需自带模型工件）见

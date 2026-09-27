@@ -21,23 +21,20 @@
 
 - 路径 B 栈已启动（`docker compose ps` 三服务 healthy，console 在
   `http://127.0.0.1:48440`）；
-- 已配置 RAG scope allowlist（见下）——**默认拒绝**：未配置时所有查询返回
-  403 `scope_not_configured`，这是有意的 fail-closed 设计，不是故障。
+- RAG scope 门**默认已配置**——compose 内置默认值仅放行试验 scope
+  `nghqqa/mergepilot@feat/local-rag-trial`；检索自己的仓库按下节在 `.env` 覆盖。
 
-### 配置 scope allowlist（首次必做）
+### scope allowlist（默认已配，可覆盖）
 
-在 `deploy/local-rag-trial/` 下创建 `docker-compose.override.yml`（compose
-会自动加载，**不要改动仓库自带的 compose 文件**）：
-
-```yaml
-services:
-  console:
-    environment:
-      RAGTRIAL_ALLOWED_SCOPES: "your-repo@main"
-```
-
-多个 scope 用逗号分隔（`repo-a@main,repo-b@dev`）。改完 `docker compose up -d`
-重建生效；从列表移除即即时撤销（每次请求现读 env）。
+- **默认**：`nghqqa/mergepilot@feat/local-rag-trial`（compose 插值默认值，与
+  栈内 e2e 常量同源）——开箱即可查询试验语料；
+- **覆盖**：`.env` 中设 `RAGTRIAL_ALLOWED_SCOPES=your-repo@main`（逗号分隔多
+  scope，如 `repo-a@main,repo-b@dev`），`docker compose up -d` 重建生效；
+- **全拒绝**：显式置空（`RAGTRIAL_ALLOWED_SCOPES=`）→ 所有查询 403
+  `scope_not_configured`——门本身**默认拒绝**（未配置/为空即拒，这是有意的
+  fail-closed 设计），撤销 env 即时生效（每次请求现读）；
+- 越界 scope → 403 `scope_not_allowed` + 有界脱敏审计（仅记 repo@branch 与
+  原因，不落查询文本）。
 
 ## 语料库操作
 

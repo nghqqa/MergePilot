@@ -10,8 +10,9 @@
 - 预构建发行包（v0.1.0 镜像）不含本地 RAG 端点（`/api/rag-trial/*`）
 - 本地 RAG 为试用（TRIAL）状态：默认 `local-hash-v1` 哈希嵌入，无语义泛化
   能力；`bge-m3` 语义嵌入需自带工件 + manifest（8C16G 档）
-- scope 门默认拒绝：`RAGTRIAL_ALLOWED_SCOPES` 未配置 → 查询 403（fail-closed，
-  需 docker-compose.override.yml 显式开启，见 LOCAL-RAG-GUIDE）
+- scope 门默认拒绝（未配置/为空 → 查询 403）；栈 compose 已内置默认 scope
+  （`nghqqa/mergepilot@feat/local-rag-trial`），`.env` 可覆盖、显式置空=全拒绝
+  （见 LOCAL-RAG-GUIDE）
 - A-chain: implemented but default OFF
 - C-chain（案例库）: Enterprise Roadmap（3 gaps, see RAG-STATUS.md）
 - 检索结果 reference-only：不自动生成 finding/ticket/gate/VERIFIED
