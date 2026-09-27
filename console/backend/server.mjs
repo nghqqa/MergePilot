@@ -23,6 +23,7 @@ import { fxvMetrics } from './lib/fxv/metrics.mjs';
 import { parseAccessModel, authorize, denialAudit } from './lib/permissions.mjs';
 import { cchainStatusObserved, verifyRunBindingAndAudit, rotateKeystore,
          cchainMetricsSnapshot, rememberStatusForMetrics } from './lib/cchain/wiring.mjs';
+import { ragTrialApi, ragTrialInternalQuery } from './lib/ragtrial/api.mjs';
 
 function readJsonBody(req, limit = 64 * 1024) {
   return new Promise((resolve, reject) => {
@@ -282,6 +283,35 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
       }
       const query = String(q.q || '');
       const k = Math.min(Number(q.k || 5), 20);
+      // RAG 本地试验内部接线（feat/rag-integration 联调）：flag=ragtrial 时同进程直查
+      // 隔离栈索引（六状态语义 + query_log/audit 与 /api/rag-trial/query 完全一致）。
+      // 结果一律 reference_only 辅助引用——不构成 finding/gate/ticket/fixer 输入。
+      if (process.env.MERGEPILOT_RAG_TRIAL_A_CHAIN === 'ragtrial') {
+        const r = await ragTrialInternalQuery(process.env, {
+          q: query, k, actor: auth.user,
+          repo: process.env.RAGTRIAL_A_CHAIN_REPO || 'nghqqa/mergepilot',
+          branch: process.env.RAGTRIAL_A_CHAIN_BRANCH || 'feat/local-rag-trial',
+        });
+        const b = r.body;
+        if (r.status !== 200 || b.service_state === 'error') {
+          res.setHeader('x-rag-service-state', 'degraded');
+          return sendJson(res, 503, { service_state: 'degraded', source: 'RAG_TRIAL',
+            degraded_reason: b.error_kind || 'internal', results: [],
+            note: 'ragtrial 检索不可用——显式降级，不伪装为空成功' });
+        }
+        if (b.service_state !== 'hit') {
+          return sendJson(res, 200, { service_state: b.service_state, source: 'RAG_TRIAL',
+            results: [], model: b.model_id ? { model_id: b.model_id, model_digest: b.model_digest, index_version: b.index_version } : undefined,
+            note: b.note || `ragtrial 状态=${b.service_state}（如实返回，不伪装命中）` });
+        }
+        return sendJson(res, 200, {
+          service_state: 'ok', source: 'RAG_TRIAL', knowledge_type: 'rag_trial_reference',
+          model: { model_id: b.model_id, model_digest: b.model_digest, index_version: b.index_version },
+          latency_ms: b.latency_ms,
+          results: (b.results || []).map((h) => ({ score: h.score, snippet: h.snippet, citation: h.citation, reference_only: true })),
+          usage_note: 'RAG trial 辅助引用（reference only）——不构成 finding/gate/ticket/fixer 输入；Verifier 只接受独立测试证据',
+        });
+      }
       const base = process.env.ORG_RAG_LIVE_URL || 'http://host.docker.internal:48210';
       try {
         const r = await fetch(`${base}/api/rag/search?q=${encodeURIComponent(query)}&k=${k}`);
@@ -504,6 +534,16 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
         has_pending_tickets: false,
         merge_panel: { enabled: false, reasons: ['merge_disabled'], github_url: `https://github.com/${repo}/pull/${prNumber}` },
         source: ov.source,
+      });
+    }
+
+    // ── RAG 本地试验（LOCAL_RAG_TRIAL；与 A 链 /api/rag/org-search、C 链 /api/cchain/* 并行且隔离）──
+    if (p.startsWith('/api/rag-trial/')) {
+      return ragTrialApi(req, res, {
+        p, q,
+        sendJson,
+        readJsonBody,
+        requireSession: async () => getSession(tokenFromCookieHeader(req.headers.cookie)),
       });
     }
 
