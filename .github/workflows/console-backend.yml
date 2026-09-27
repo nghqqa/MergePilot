@@ -73,6 +73,11 @@ jobs:
       - name: Backend unit + contract suites (env-skips preserved, reasons in header)
         run: node --test console/backend/test/*.test.mjs
 
+      # 生产依赖就绪 fail-closed（HARDENING 波接入）：17 场景（SM-1~9 keystore + EA-1~8 attestation）
+      # 全部合成 fixture——零真实凭据、零真实端点、NOT_CONFIGURED/BLOCKED 不得 skip 隐藏。
+      - name: "Dependency readiness fail-closed (17 scenarios: SM-1~9 + EA-1~8)"
+        run: node --test console/backend/test/ragtrial-dependency-readiness.test.mjs
+
       - name: FXV PG integration (18 scenarios)
         run: node --test console/backend/test/fxv-pg.integration.mjs
 
