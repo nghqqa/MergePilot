@@ -23,6 +23,7 @@ import { fxvMetrics } from './lib/fxv/metrics.mjs';
 import { parseAccessModel, authorize, denialAudit } from './lib/permissions.mjs';
 import { cchainStatusObserved, verifyRunBindingAndAudit, rotateKeystore,
          cchainMetricsSnapshot, rememberStatusForMetrics } from './lib/cchain/wiring.mjs';
+import { ragTrialApi } from './lib/ragtrial/api.mjs';
 
 function readJsonBody(req, limit = 64 * 1024) {
   return new Promise((resolve, reject) => {
@@ -504,6 +505,16 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
         has_pending_tickets: false,
         merge_panel: { enabled: false, reasons: ['merge_disabled'], github_url: `https://github.com/${repo}/pull/${prNumber}` },
         source: ov.source,
+      });
+    }
+
+    // ── RAG 本地试验（LOCAL_RAG_TRIAL；与 A 链 /api/rag/org-search、C 链 /api/cchain/* 并行且隔离）──
+    if (p.startsWith('/api/rag-trial/')) {
+      return ragTrialApi(req, res, {
+        p, q,
+        sendJson,
+        readJsonBody,
+        requireSession: async () => getSession(tokenFromCookieHeader(req.headers.cookie)),
       });
     }
 

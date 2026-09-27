@@ -1,0 +1,28 @@
+{
+  "qa_set": "trial-corpus-v1",
+  "repo": "nghqqa/mergepilot",
+  "branch": "feat/local-rag-trial",
+  "k": 5,
+  "qa": [
+    { "q": "回滚锚点摘要如何检查", "expect_doc": "ops-runbook.md" },
+    { "q": "灰度发布每批观察多久", "expect_doc": "ops-runbook.md" },
+    { "q": "回滚的第一步是什么", "expect_doc": "ops-runbook.md" },
+    { "q": "密钥可以提交到仓库吗", "expect_doc": "security-baseline.md" },
+    { "q": "审计事件必须携带什么字段", "expect_doc": "security-baseline.md" },
+    { "q": "生产数据与试验数据如何隔离", "expect_doc": "security-baseline.md" },
+    { "q": "中文分词怎么处理", "expect_doc": "rag-design.md" },
+    { "q": "模型摘要是怎么计算的", "expect_doc": "rag-design.md" },
+    { "q": "索引版本保留几个版本", "expect_doc": "rag-design.md" },
+    { "q": "检索命中必须携带哪些引用", "expect_doc": "rag-design.md" },
+    { "q": "六种服务状态是什么", "expect_doc": "api-states.md" },
+    { "q": "空结果和降级有什么区别", "expect_doc": "api-states.md" },
+    { "q": "修复者可以只依据检索文本改代码吗", "expect_doc": "review-policy.md" },
+    { "q": "验证者接受哪些证据类型", "expect_doc": "review-policy.md" },
+    { "q": "控制面持有什么所有权", "expect_doc": "architecture.md" },
+    { "q": "自动合并通道默认状态", "expect_doc": "architecture.md" },
+    { "q": "数据库不可达怎么排查", "expect_doc": "troubleshooting.md" },
+    { "q": "缺少行号的命中会怎样", "expect_doc": "troubleshooting.md" },
+    { "q": "删除后的文档还能被检索到吗", "expect_doc": "data-retention.md" },
+    { "q": "重复摄取是幂等的吗", "expect_doc": "data-retention.md" }
+  ]
+}

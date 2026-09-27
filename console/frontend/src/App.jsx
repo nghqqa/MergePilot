@@ -8,7 +8,7 @@ import { Layout, Menu as AntMenu, Drawer, Button } from 'antd';
 import {
   InboxOutlined, FolderOpenOutlined, HistoryOutlined, AuditOutlined,
   DashboardOutlined, DatabaseOutlined, ApiOutlined, MedicineBoxOutlined,
-  SettingOutlined, MenuOutlined, AppstoreOutlined, SafetyCertificateOutlined,
+  SettingOutlined, MenuOutlined, AppstoreOutlined, SafetyCertificateOutlined, FileSearchOutlined,
 } from '@ant-design/icons';
 import { api } from './api.js';
 import { AuthProvider, useAuth } from './auth.jsx';
@@ -19,6 +19,7 @@ import RunsPage from './pages/RunsPage.jsx';
 import RunDetailPage from './pages/RunDetailPage.jsx';
 import DataSourcesPage from './pages/DataSourcesPage.jsx';
 import CChainPage from './pages/CChainPage.jsx';
+import RagTrialPage from './pages/RagTrialPage.jsx';
 import DiagnosticsPage from './pages/DiagnosticsPage.jsx';
 import ReposPage from './pages/ReposPage.jsx';
 import RepoPrsPage from './pages/RepoPrsPage.jsx';
@@ -70,6 +71,7 @@ const SYSTEM_NAV = [
   { to: '/knowledge', label: '知识库', icon: DatabaseOutlined, end: true },
   { to: '/datasources', label: '数据源', icon: ApiOutlined, end: true },
   { to: '/cchain', label: 'C 链', icon: SafetyCertificateOutlined, end: true },
+  { to: '/rag-trial', label: 'RAG 试验', icon: FileSearchOutlined, end: true },
   { to: '/diagnostics', label: '诊断', icon: MedicineBoxOutlined, end: true },
   { to: '/settings', label: '设置', icon: SettingOutlined, end: true },
 ];
@@ -287,6 +289,7 @@ function Shell() {
               <Route path="/core" element={<CorePage />} />
               <Route path="/datasources" element={<DataSourcesPage />} />
               <Route path="/cchain" element={<CChainPage />} />
+              <Route path="/rag-trial" element={<RagTrialPage />} />
               <Route path="/diagnostics" element={<DiagnosticsPage />} />
               <Route path="/repos" element={<ReposPage />} />
               <Route path="/repos/:owner/:name" element={<RepoPrsPage />} />
