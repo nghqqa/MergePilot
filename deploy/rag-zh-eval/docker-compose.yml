@@ -1,0 +1,146 @@
+# RAG_ZH_MODEL_RERANKER_EVALUATION 隔离评估栈（rag-zh-eval）。
+# 独立 PG/MinIO/console×2/双 sidecar/网络/卷；模型只读挂载自隔离缓存 D:/goai/rag-zh-models；
+# 与 promote3/rag-prod-eval/rag-zh-gate 零共享。绝无运行时下载。
+name: rag-zh-eval
+
+services:
+  m3-sidecar:
+    image: rag-zhe-m3-sidecar:local
+    pull_policy: never
+    build: { context: ../.., dockerfile: deploy/rag-prod/bge-sidecar/Dockerfile }
+    environment:
+      BGE_MODEL_DIR: /app/model
+      BGE_MANIFEST: /app/manifest/bge-m3.manifest.json
+    volumes:
+      - type: bind
+        read_only: true
+        source: ${RAGZHE_M3_DIR:-D:/goai/rag-zh-models/bge-m3}
+        target: /app/model
+      - type: bind
+        read_only: true
+        source: ../rag-zh-eval/bge-m3.manifest.json
+        target: /app/manifest/bge-m3.manifest.json
+    ports: ["127.0.0.1:${RAGZHE_M3_PORT:-48487}:8080"]
+    networks: [zh-eval-net]
+    healthcheck: &hc
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8080/health',timeout=3)"]
+      interval: 20s
+      timeout: 5s
+      retries: 6
+      start_period: 60s
+
+  zh-sidecar:
+    image: rag-zhe-zh-sidecar:local
+    pull_policy: never
+    build: { context: ../.., dockerfile: deploy/rag-prod/bge-sidecar/Dockerfile }
+    environment:
+      BGE_MODEL_DIR: /app/model
+      BGE_MANIFEST: /app/manifest/bge-large-zh.manifest.json
+    volumes:
+      - type: bind
+        read_only: true
+        source: ${RAGZHE_ZH_DIR:-D:/goai/rag-zh-models/bge-large-zh}
+        target: /app/model
+      - type: bind
+        read_only: true
+        source: ../rag-zh-eval/bge-large-zh.manifest.json
+        target: /app/manifest/bge-large-zh.manifest.json
+    ports: ["127.0.0.1:${RAGZHE_ZH_PORT:-48488}:8080"]
+    networks: [zh-eval-net]
+    healthcheck: *hc
+
+  pg:
+    image: pgvector/pgvector:pg16
+    pull_policy: never
+    environment:
+      POSTGRES_PASSWORD: "${RAGZHE_PG_PASSWORD}"
+      POSTGRES_DB: ragzhe
+    volumes: [ragzhe-pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ragzhe"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    networks: [zh-eval-net]
+    ports: ["127.0.0.1:${RAGZHE_PG_PORT:-15440}:5432"]
+
+  minio:
+    image: elestio/minio@sha256:25348a257f1ece1b192f25f6cd9854618fa86422ac87b494b5d4e629c556d4bd
+    pull_policy: never
+    command: server /data
+    environment:
+      MINIO_ROOT_USER: "${RAGZHE_MINIO_USER}"
+      MINIO_ROOT_PASSWORD: "${RAGZHE_MINIO_PASSWORD}"
+    volumes: [ragzhe-miniodata:/data]
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+    networks: [zh-eval-net]
+    ports: ["127.0.0.1:${RAGZHE_MINIO_PORT:-9117}:9000"]
+
+  console-m3:
+    image: rag-zhe-console:local
+    pull_policy: never
+    build: { context: ../.., dockerfile: docker/Dockerfile.canonical-console }
+    restart: unless-stopped
+    depends_on:
+      pg: { condition: service_healthy }
+      minio: { condition: service_healthy }
+      m3-sidecar: { condition: service_healthy }
+    environment: &cenv
+      CONSOLE_PG_DSN: "postgres://postgres:${RAGZHE_PG_PASSWORD}@pg:5432/ragzhe"
+      CONSOLE_HOST: "0.0.0.0"
+      CONSOLE_PILOT_USER: "${RAGZHE_CONSOLE_USER}"
+      CONSOLE_PILOT_PASSWORD: "${RAGZHE_CONSOLE_PASSWORD}"
+      CONSOLE_SESSION_SECRET: "${RAGZHE_SESSION_SECRET}"
+      RAGTRIAL_S3_ENDPOINT: "http://minio:9000"
+      RAGTRIAL_S3_BUCKET: "ragzhe"
+      RAGTRIAL_S3_ACCESS_KEY: "${RAGZHE_MINIO_USER}"
+      RAGTRIAL_S3_SECRET_KEY: "${RAGZHE_MINIO_PASSWORD}"
+      RAGTRIAL_CORPUS_DIR: "/app/rag-corpus"
+      RAGTRIAL_ALLOWED_SCOPES: "${RAGZHE_ALLOWED_SCOPES}"
+      RAGTRIAL_EMBED_ENDPOINT: "http://m3-sidecar:8080/embed"
+      # 校准配置（矩阵 calib 选择：calib R@5=1.0/empty=1.0；holdout 0.9231/0.75）——评估注入，生产化时固化进 HYBRID_CONFIGS
+      RAGTRIAL_HYBRID_JSON: "{\"bge-m3\":{\"w\":0.7,\"lexMode\":\"idf\",\"floor\":0.35}}"
+      RAGTRIAL_EMBED_MODEL_ID: "bge-m3"
+      RAGTRIAL_EMBED_DIMS: "1024"
+      RAGTRIAL_EMBED_TIMEOUT_MS: "60000"
+      RAGTRIAL_EMBED_EXPECTED_MANIFEST: "${RAGZHE_M3_EXPECTED_MANIFEST}"
+    volumes:
+      - ../rag-zh-gate/corpus:/app/rag-corpus:ro
+    ports: ["127.0.0.1:${RAGZHE_CONSOLE_M3_PORT:-48485}:4730"]
+    healthcheck: &chc
+      test: ["CMD", "wget", "-qO-", "--timeout=5", "http://127.0.0.1:4730/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks: [zh-eval-net]
+
+  console-zh:
+    image: rag-zhe-console:local
+    pull_policy: never
+    depends_on:
+      pg: { condition: service_healthy }
+      minio: { condition: service_healthy }
+      zh-sidecar: { condition: service_healthy }
+    environment:
+      <<: *cenv
+      RAGTRIAL_EMBED_ENDPOINT: "http://zh-sidecar:8080/embed"
+      RAGTRIAL_HYBRID_JSON: "{\"bge-large-zh-v1.5\":{\"w\":0.7,\"lexMode\":\"plain\",\"floor\":0.3}}"
+      RAGTRIAL_EMBED_MODEL_ID: "bge-large-zh-v1.5"
+      RAGTRIAL_EMBED_EXPECTED_MANIFEST: "${RAGZHE_ZH_EXPECTED_MANIFEST}"
+    volumes:
+      - ../rag-zh-gate/corpus:/app/rag-corpus:ro
+    ports: ["127.0.0.1:${RAGZHE_CONSOLE_ZH_PORT:-48486}:4730"]
+    healthcheck: *chc
+    networks: [zh-eval-net]
+
+volumes:
+  ragzhe-pgdata: {}
+  ragzhe-miniodata: {}
+
+networks:
+  zh-eval-net: {}

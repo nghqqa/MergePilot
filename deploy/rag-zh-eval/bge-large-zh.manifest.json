@@ -1,0 +1,74 @@
+{
+  "manifest_version": 2,
+  "model_id": "bge-large-zh-v1.5",
+  "pooling": "cls_l2",
+  "distance": "cosine",
+  "dims": 1024,
+  "usage": {
+    "query_prefix": null,
+    "passage_prefix": null
+  },
+  "source": "local HF cache (offline, no runtime download)",
+  "runtime": "numpy-bert-v1",
+  "runtime_spec": {
+    "gelu": "erf(scipy)",
+    "ln_eps": 1e-12,
+    "max_len": 128,
+    "dtype": "F32",
+    "framework": "numpy+tokenizers"
+  },
+  "files": [
+    {
+      "name": "1_Pooling-config.json",
+      "sha256": "e54c164a07274f2eb45bb724f54a79d1efcc90c41573887cd9a29aeee0597352",
+      "bytes": 191
+    },
+    {
+      "name": "config.json",
+      "sha256": "2d4f53504b43a856f982dad647835c0ae98f91a73c8ff0db95ab89e3e4806fa9",
+      "bytes": 1000
+    },
+    {
+      "name": "config_sentence_transformers.json",
+      "sha256": "940d5f50db195fa6e5e6a4f122c095f77880de259d74b14a65779ed48bdd7c56",
+      "bytes": 124
+    },
+    {
+      "name": "model.safetensors",
+      "sha256": "23bc370e08d6c495618aa5e7afcd8e99c875a8806f1aeb743ce2e8ab06add241",
+      "bytes": 1302138720
+    },
+    {
+      "name": "modules.json",
+      "sha256": "84e40c8e006c9b1d6c122e02cba9b02458120b5fb0c87b746c41e0207cf642cf",
+      "bytes": 349
+    },
+    {
+      "name": "sentence_bert_config.json",
+      "sha256": "84e39fda68ccbff05bfa723ae9c0e70e23e2ec373b76e0f8c6e71af72a693cbf",
+      "bytes": 52
+    },
+    {
+      "name": "special_tokens_map.json",
+      "sha256": "b6d346be366a7d1d48332dbc9fdf3bf8960b5d879522b7799ddba59e76237ee3",
+      "bytes": 125
+    },
+    {
+      "name": "tokenizer.json",
+      "sha256": "7dfbf1966ebf99d471c3796e9b457329d2b2182b817e144f1e904b957745c839",
+      "bytes": 439124
+    },
+    {
+      "name": "tokenizer_config.json",
+      "sha256": "e1790949631401af1bfb6c9c7aeec7fcf612e274d73579d99f704faea40c8ba7",
+      "bytes": 394
+    },
+    {
+      "name": "vocab.txt",
+      "sha256": "45bbac6b341c319adc98a532532882e91a9cefc0329aa57bac9ae761c27b291c",
+      "bytes": 109540
+    }
+  ],
+  "files_count": 10,
+  "total_bytes": 1302689619
+}
