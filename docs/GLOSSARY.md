@@ -36,9 +36,10 @@ RAG 六状态全集（`lib/ragtrial/store.mjs` `QUERY_STATES`）：
 
 - **单一权威源**：`console/frontend/src/status-map.js`。各状态族使用**独立键空间**，避免同名枚举
   语义/颜色冲突（如 `APPROVED` 在票据=已批准、FXV=审批通过、门禁=已批准修复，三键空间互不共用）。
-- 覆盖键空间：`EXECUTION`（投递/执行）、`GATE`（人工门）、`SEVERITY`（严重度，含 `CRITICAL`）、
-  `FXV`（修复编排 23 态）、`FXV_ARTIFACT`（工件归档）、`CCHAIN` / `CCHAIN_OVERALL`（C 链）、
-  `RAG`（检索服务）、`TICKET` / `TICKET_ACTION`（审批票据）。
+- 覆盖键空间：`EXECUTION`（投递/执行 + console-pg·contract 执行族 SUCCEEDED/FAILED/SUPERSEDED）、
+  `GATE`（人工门）、`SEVERITY`（严重度，含 `CRITICAL`）、`STAGE`（控制面阶段 8 值，含 UNKNOWN）、
+  `OUTCOME`（运行结果摘要）、`FXV`（修复编排 23 态）、`FXV_ARTIFACT`（工件归档）、
+  `CCHAIN` / `CCHAIN_OVERALL`（C 链）、`RAG`（检索服务）、`TICKET` / `TICKET_ACTION`（审批票据）。
 - **未知枚举兜底**：label 保留原始机器值、note 标注"未知状态（原始枚举：X）"——永不吞掉机器值。
 - 契约测试：`console/backend/test/status-map.test.mjs`（node --test，锁语义红线与覆盖度）。
 

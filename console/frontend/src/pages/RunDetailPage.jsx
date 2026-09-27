@@ -10,15 +10,17 @@ import { Spinner, ErrorBox, Empty, Sha, Chip, Section, EvidencePre, SkeletonRows
 import { ExecutionBadge, VerdictBadge, GateBadge, PublishBadge, RagStateBadge } from '../status.jsx';
 import { fmtTime, fmtBytes, fmtInt } from '../format.js';
 
+// P2 解耦：key 为稳定标识（组件内部状态，非 URL/API 契约），label 为显示文案——
+// 未来文案调整不再牵动状态判断；键值不在任何机器契约中出现。
 const TABS = [
-  { key: '概览', icon: LayoutDashboard },
-  { key: '时间线', icon: History },
-  { key: '任务', icon: ListChecks },
-  { key: '证据', icon: FolderOpen },
-  { key: '版本清单', icon: Tag },
-  { key: 'Skill', icon: Wrench },
-  { key: 'RAG', icon: FileSearch },
-  { key: '用量', icon: CloudUpload },
+  { key: 'overview', label: '概览', icon: LayoutDashboard },
+  { key: 'timeline', label: '时间线', icon: History },
+  { key: 'tasks', label: '任务', icon: ListChecks },
+  { key: 'evidence', label: '证据', icon: FolderOpen },
+  { key: 'versions', label: '版本清单', icon: Tag },
+  { key: 'skills', label: 'Skill', icon: Wrench },
+  { key: 'rag', label: 'RAG', icon: FileSearch },
+  { key: 'usage', label: '用量', icon: CloudUpload },
 ];
 
 function fileIcon(path) {
@@ -322,7 +324,7 @@ function TasksTab({ run, onOpenEvidence }) {
               <tr key={t.task_id}>
                 <td className="mono" title={t.title ?? ''}>{t.task_id}</td>
                 <td>{t.role ?? '未记录'}</td>
-                <td>{t.status ?? '未记录'}</td>
+                <td><ExecutionBadge execution={{ status: t.status }} /></td>
                 <td className="cell-time num">{fmtTime(t.assigned_at) ?? '—'}</td>
                 <td className="cell-time num">{fmtTime(t.acknowledged_at) ?? '—'}</td>
                 <td className="cell-time num">{fmtTime(t.submitted_at) ?? '—'}</td>
@@ -512,7 +514,7 @@ function RagTab({ run }) {
                   <tr key={i}>
                     <td className="cell-time num">{c.ts ?? '—'}</td>
                     <td className="mono">{c.tool}</td>
-                    <td>{c.result_status}</td>
+                    <td><ExecutionBadge execution={{ status: c.result_status }} /></td>
                     <td className="num">{c.document_count ?? '—'}</td>
                     <td className="mono cell-src" title={(c.source_refs ?? []).join(', ')}>{(c.source_refs ?? []).join(', ') || '—'}</td>
                     <td>
@@ -584,13 +586,13 @@ export default function RunDetailPage() {
   const backTo = location.state?.from ?? '/runs';
   const [run, setRun] = useState(null);
   const [error, setError] = useState(null);
-  const [tab, setTab] = useState('概览');
+  const [tab, setTab] = useState('overview');
   const [evidenceFile, setEvidenceFile] = useState(null);
   const [integrity, setIntegrity] = useState(null);
   const openTriggerRef = React.useRef(null); // 抽屉关闭后焦点恢复到触发元素
 
   const loadRun = useCallback(() => {
-    setRun(null); setError(null); setIntegrity(null); setTab('概览');
+    setRun(null); setError(null); setIntegrity(null); setTab('overview');
     api.run(packId).then(setRun).catch(setError);
   }, [packId]);
 
@@ -624,11 +626,11 @@ export default function RunDetailPage() {
 
   // 空数据维度在 tab 上标注 0：不用逐个点开排雷（有数据的维度不标，保持安静）
   const tabZero = run ? {
-    时间线: run.timeline?.length ?? 0,
-    任务: run.tasks?.length ?? 0,
-    Skill: (run.versions?.skills?.length ?? 0) + (run.skill_audit?.invocations?.length ?? 0),
-    RAG: run.rag?.calls?.length ?? 0,
-    用量: run.usage ? Object.keys(run.usage.windows ?? {}).length : 0,
+    timeline: run.timeline?.length ?? 0,
+    tasks: run.tasks?.length ?? 0,
+    skills: (run.versions?.skills?.length ?? 0) + (run.skill_audit?.invocations?.length ?? 0),
+    rag: run.rag?.calls?.length ?? 0,
+    usage: run.usage ? Object.keys(run.usage.windows ?? {}).length : 0,
   } : {};
 
   return (
@@ -708,7 +710,7 @@ export default function RunDetailPage() {
                   onClick={() => setTab(t.key)}
                 >
                   <t.icon size={14} strokeWidth={1.75} aria-hidden />
-                  {t.key}
+                  {t.label}
                   {tabZero[t.key] === 0 ? (
                     <span className="tab-zero" title="本证据包在此维度无数据（0 条）— 如实标注，不以其他数据冒充">0</span>
                   ) : null}
@@ -717,11 +719,11 @@ export default function RunDetailPage() {
             })}
           </div>
           <div role="tabpanel" id={`tabpanel-${tab}`} aria-labelledby={`tab-${tab}`}>
-          {tab === '时间线' && <TimelineTab run={run} />}
-          {tab === '任务' && <TasksTab run={run} onOpenEvidence={openEvidence} />}
-          {tab === '证据' && <EvidenceTab packId={packId} onOpenEvidence={openEvidence} />}
-          {tab === '版本清单' && <VersionsTab run={run} />}
-          {tab === 'Skill' && (
+          {tab === 'timeline' && <TimelineTab run={run} />}
+          {tab === 'tasks' && <TasksTab run={run} onOpenEvidence={openEvidence} />}
+          {tab === 'evidence' && <EvidenceTab packId={packId} onOpenEvidence={openEvidence} />}
+          {tab === 'versions' && <VersionsTab run={run} />}
+          {tab === 'skills' && (
             run.versions?.skills?.length || run.skill_audit ? (
               <div>
                 <p className="section-note">以下为 run 实际使用的 Skill 调用记录（包内审计导出），非 worker 当前安装版本。</p>
@@ -747,8 +749,8 @@ export default function RunDetailPage() {
               <Empty>包内无 Skill 调用审计记录（早期轮未导出）— 不以 worker 当前版本冒充</Empty>
             )
           )}
-          {tab === 'RAG' && <RagTab run={run} />}
-          {tab === '用量' && <UsageTab run={run} />}
+          {tab === 'rag' && <RagTab run={run} />}
+          {tab === 'usage' && <UsageTab run={run} />}
 
           </div>
           <EvidenceDrawer packId={packId} filePath={evidenceFile} onClose={closeEvidence} />

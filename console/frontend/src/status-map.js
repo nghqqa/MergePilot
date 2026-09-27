@@ -29,6 +29,22 @@ const EXECUTION = {
     label: '已阻断',
     note: '流程被阻断停止（project/meta: blocked）— 人工拒绝或验证失败后的受控停止，PR 保持 OPEN',
   },
+  // P2 补充：console-pg / contract 执行记录族（tools/console_pg 与契约端点 status 值域）
+  SUCCEEDED: {
+    tone: 'ok',
+    label: '成功',
+    note: '执行成功（console-pg/contract: SUCCEEDED）— 执行事实，审查结论另见审查摘要',
+  },
+  FAILED: {
+    tone: 'bad',
+    label: '失败',
+    note: '执行失败（console-pg/contract: FAILED）— 需人工查看该 run 的阶段与错误明细',
+  },
+  SUPERSEDED: {
+    tone: 'neutral',
+    label: '已被取代',
+    note: '该 run 已被更新记录取代（superseded）— 历史记录保留，不代表当前状态',
+  },
 };
 
 const VERDICT_SEVERITY_TONE = { CRITICAL: 'bad', HIGH: 'bad', MEDIUM: 'warn', LOW: 'warn' };
@@ -41,6 +57,35 @@ const SEVERITY = {
   LOW: { tone: 'warn', label: '低', note: '低风险（LOW）' },
 };
 const SEVERITY_ORDER = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
+
+// ── 控制面阶段（独立键空间；权威定义 lib/core-pilot.mjs STAGES 8 值，与 /api/overview 同源同边界）──
+// P2 收敛：OverviewPage 与 PR 详情（contract 路径"控制面阶段"chip）共用本映射，不再各持一份。
+const STAGE = {
+  REVIEWING: { tone: 'info', label: '审查中', note: '有回执、尚无 gate 决策（stage: REVIEWING）' },
+  ACTION_REQUIRED: { tone: 'warn', label: '需人工处理', note: '最新 run 存在未过期 PENDING 票据（stage: ACTION_REQUIRED）' },
+  REMEDIATING: { tone: 'info', label: '修复中', note: '需要 Fixer（本部署 DISABLED，计数恒 0——枚举保留不虚构）' },
+  VERIFYING: { tone: 'info', label: '验证中', note: '需要 Verifier（本部署 DISABLED，计数恒 0——枚举保留不虚构）' },
+  PASSED: { tone: 'ok', label: '已通过', note: '回执齐备 + gate PRODUCE + 无待办票（stage: PASSED）' },
+  BLOCKED: { tone: 'bad', label: '已阻断', note: 'gate REFUSE 或回执完整性冲突（stage: BLOCKED）' },
+  STALE: { tone: 'neutral', label: '已过期(head)', note: '同 PR 存在更新 head，该 run 绑定旧 head（stage: STALE）' },
+  UNKNOWN: { tone: 'warn', label: '未知（决策缺失）', note: 'gate 记录存在但 decision 缺失/无法识别（stage: UNKNOWN，fail-closed）' },
+};
+const STAGE_ORDER = ['REVIEWING', 'ACTION_REQUIRED', 'REMEDIATING', 'VERIFYING', 'PASSED', 'BLOCKED', 'STALE', 'UNKNOWN'];
+
+// ── 运行结果摘要（独立键空间；console-pg / contract 的 run.outcome 值域）──
+// 语义红线：outcome 是结果摘要事实，不替代审查结论（verdict）与门禁（gate）。
+const OUTCOME = {
+  REVIEW_COMPLETED_OK: {
+    tone: 'ok',
+    label: '审查完成 · 未见问题',
+    note: '本轮审查完成且未确认新问题（outcome: REVIEW_COMPLETED_OK）— 不等于绝对无风险，也不代表已合并',
+  },
+  REVIEW_COMPLETED_ACTION_REQUIRED: {
+    tone: 'warn',
+    label: '审查完成 · 需人工处理',
+    note: '本轮审查完成并存在待人工处理事项（outcome: REVIEW_COMPLETED_ACTION_REQUIRED）— 具体待办见审批页',
+  },
+};
 
 // ── FXV 修复编排状态机（独立键空间；权威定义 lib/fxv/orchestrator.mjs STATES，23 态）──
 // 语义红线：VERIFIED=独立测试证据支撑的成功终态；DRY_RUN_*=隔离验证，≠生产验证；
@@ -140,6 +185,11 @@ function cchainOverallMap(state) { return CCHAIN_OVERALL[state] ?? unknownEntry(
 function ragMap(state) { return RAG[state] ?? unknownEntry(state); }
 function ticketMap(state) { return TICKET[state] ?? unknownEntry(state); }
 function ticketActionMap(action) { return action ? (TICKET_ACTION[action] ?? unknownEntry(action)) : unknownEntry(action); }
+function stageMap(s) { return STAGE[String(s ?? '').toUpperCase()] ?? unknownEntry(s); }
+function outcomeMap(v) {
+  if (v == null || v === '') return { tone: 'neutral', label: '未记录', note: '该运行无结果摘要（outcome 缺失）— 不等于无结果' };
+  return OUTCOME[String(v).toUpperCase()] ?? unknownEntry(v);
+}
 
 const GATE = {
   APPROVED: {
@@ -254,6 +304,8 @@ function gateMap(gate, source) {
 export {
   executionMap, verdictMap, gateMap, publishMap, EXECUTION, GATE, VERDICT_SEVERITY_TONE,
   SEVERITY, SEVERITY_ORDER, FXV, FXV_ARTIFACT, CCHAIN, CCHAIN_OVERALL, RAG, TICKET, TICKET_ACTION,
+  STAGE, STAGE_ORDER, OUTCOME,
   fxvMap, fxvArtifactMap, cchainMap, cchainOverallMap, ragMap, ticketMap, ticketActionMap,
+  stageMap, outcomeMap,
   toneToColor, unknownEntry,
 };

@@ -39,7 +39,7 @@ export function resolveWorkspaceState(config, authStatus) {
   if (config.mode === 'contract') {
     if (isLive(config)) {
       return authStatus === 'authed'
-        ? { key: 'live-auth', label: 'PG 实时（staging · 会话 allowlist）', tone: 'ok' }
+        ? { key: 'live-auth', label: 'PG 实时（live · 会话 allowlist）', tone: 'ok' }
         : { key: 'live', label: 'PG 实时（未认证）', tone: 'warn' };
     }
     return { key: 'contract', label: '契约数据（Fixture）', tone: 'warn' };
@@ -111,7 +111,7 @@ export function WorkspacePanel({ config, auth, onRetry }) {
       </Row>
       <Row label="生产后端">
         {live
-          ? <><span className="ws-yes">已连接</span>——PG 实时（staging 隔离库）；run 证据详情页仍为快照</>
+          ? <><span className="ws-yes">已连接</span>——PG 实时（live）·隔离 staging 库；run 证据详情页仍为快照</>
           : <><span className="ws-no">未连接</span>——当前全部为快照 / 隔离 fixture；生产接线由后端交付后经配置切换</>}
       </Row>
       <Row label="是否真实 GitHub 操作">

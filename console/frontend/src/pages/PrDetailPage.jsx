@@ -8,8 +8,12 @@ import { useAppConfig } from '../App.jsx';
 import { fetchRunsSnapshotOnce, useDataSource, useSourceQuery } from '../hooks.js';
 import { groupRunsByPr } from '../pr-model.js';
 import { ExecutionBadge, VerdictBadge, GateBadge, PublishBadge } from '../status.jsx';
+import { stageMap, outcomeMap } from '../status-map.js';
 import { fmtTime } from '../format.js';
-import { Empty, ErrorBox, SkeletonRows, Spinner } from '../ui.jsx';
+import { Badge, Empty, ErrorBox, SkeletonRows, Spinner } from '../ui.jsx';
+
+// P2 收敛：PG/contract 路径的状态展示与快照路径同一来源（status-map.js 单源徽章），
+// 未知枚举走统一兜底（label=原始值 + note"未知状态"），不再裸枚举直出。
 
 function MiniState({ icon: Icon, label, children }) {
   return (
@@ -20,6 +24,16 @@ function MiniState({ icon: Icon, label, children }) {
       <div>{children}</div>
     </div>
   );
+}
+
+function OutcomeBadge({ outcome }) {
+  const m = outcomeMap(outcome);
+  return <Badge tone={m.tone} title={m.note}>{m.label}</Badge>;
+}
+
+function StageBadge({ stage }) {
+  const m = stageMap(stage);
+  return <Badge tone={m.tone} title={m.note}>{m.label}</Badge>;
 }
 
 // PR 详情入口：按数据源分派（页面结构两种来源共用，数据形状各自映射）。
@@ -94,7 +108,7 @@ function PgPrDetail({ owner, name, prNumber }) {
             <span className="chip mono truncate">{repo}</span>
             <span className="chip">最近 head <span className="sha">{String(view.currentHead ?? '').slice(0, 8) || '—'}</span></span>
             <span className="chip">{runs.length} 次运行记录</span>
-            <span className="chip">PG 只读 · Fixture（隔离测试记录，非真实运行）</span>
+            <span className="chip">隔离联调 · PG 只读（fixture 测试记录，非真实运行）</span>
           </div>
         </div>
         <div className="detail-actions">
@@ -107,7 +121,7 @@ function PgPrDetail({ owner, name, prNumber }) {
       </div>
 
       <p className="section-note">
-        数据来自隔离 PG 只读服务 GET /api/prs + /api/runs（data_mode=fixture——隔离测试记录，
+        数据来自隔离联调 PG 只读服务 GET /api/prs + /api/runs（data_mode=fixture——隔离测试记录，
         非真实 PR 审查完成）。PG 读模型暂无独立审查结论字段与 GitHub 当前 head 权威——
         本页仅呈现执行记录（最近记录口径），不显示当前结论；站内审批/合并均未接入。
       </p>
@@ -134,8 +148,8 @@ function PgPrDetail({ owner, name, prNumber }) {
                   </td>
                   <td>{r.runClass ?? '—'} / {r.mode ?? '—'}</td>
                   <td><span className="chip">{r.mode ?? '—'}</span></td>
-                  <td><span className="chip">{r.execution.status ?? '—'}</span></td>
-                  <td>{r.outcome ?? '—'}</td>
+                  <td><ExecutionBadge execution={r.execution} /></td>
+                  <td><OutcomeBadge outcome={r.outcome} /></td>
                   <td className="mono">{(r.head_sha ?? '').slice(0, 8) || '—'}</td>
                 </tr>
               ))}
@@ -164,7 +178,7 @@ function PgPrDetail({ owner, name, prNumber }) {
                             {stages.map(([dim, s]) => (
                               <tr key={dim}>
                                 <td className="mono">{dim}</td>
-                                <td>{s.status ?? '—'}</td>
+                                <td><ExecutionBadge execution={{ status: s.status }} /></td>
                                 <td className="num">{s.attempts ?? '—'}</td>
                                 <td className="cell-src">{s.error ?? '—'}</td>
                               </tr>
@@ -425,7 +439,7 @@ function ContractPrDetail({ owner, name, prNumber }) {
             {/* R4（FB-03）：控制面实时事实（与 /api/overview 同源同边界） */}
             {detail?.stage ? (
               <span className="chip" title={`阶段来源：${detail.stage_source ?? '—'}`}>
-                控制面阶段：{detail.stage}
+                控制面阶段：<StageBadge stage={detail.stage} />
               </span>
             ) : null}
             {detail?.head_sha ? (
@@ -445,7 +459,7 @@ function ContractPrDetail({ owner, name, prNumber }) {
             ) : null}
             <span className="chip mono" title="GitHub 当前 head（权威）">当前 head {(currentHead ?? '').slice(0, 8) || '未记录'}</span>
             <span className="chip">{runs.length} 次运行（执行历史）</span>
-            <span className="chip">{config?.dataMode === 'fixture' ? 'Fixture 数据' : 'PG 实时（staging）'}</span>
+            <span className="chip">{config?.dataMode === 'fixture' ? 'Fixture 数据' : 'PG 实时（live）'}</span>
           </div>
         </div>
         <div className="detail-actions">
@@ -500,8 +514,8 @@ function ContractPrDetail({ owner, name, prNumber }) {
                   <td className="mono">{r.run_id}</td>
                   <td>{r.class ?? '—'} #{r.exec_seq ?? '—'}</td>
                   <td><span className="chip">{r.mode ?? '—'}</span></td>
-                  <td>{r.status ?? '—'}</td>
-                  <td>{r.outcome ?? '—'}</td>
+                  <td><ExecutionBadge execution={{ status: r.status }} /></td>
+                  <td><OutcomeBadge outcome={r.outcome} /></td>
                   <td className="mono">
                     {(r.head_sha ?? '').slice(0, 8) || '—'}
                     {r.stale ? <span className="muted">（旧 head）</span> : <span className="muted">（当前）</span>}

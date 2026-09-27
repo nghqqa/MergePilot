@@ -3,23 +3,13 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Alert, Spin, Table, Tag, Typography } from 'antd';
 import { Column, Line } from '@ant-design/plots';
 import { useAuth } from '../auth.jsx';
+import { STAGE_ORDER, stageMap, toneToColor } from '../status-map.js';
 
 // 运营总览（默认工作台入口）。全部数据来自 GET /api/overview 的后端权威推导；
 // source/机器码/数据来源放详情；无数据/未接线/错误/401 诚实显示；
 // 图表不使用 fixture/snapshot 填充。阶段 = 人话标签 + 颜色双表达。
+// P2 收敛：阶段映射/顺序与 PR 详情"控制面阶段"同源（status-map.js STAGE 键空间）。
 const REFRESH_MS = 30_000;
-
-const STAGE_LABEL = {
-  REVIEWING: { label: '审查中', color: 'processing' },
-  ACTION_REQUIRED: { label: '需人工处理', color: 'warning' },
-  REMEDIATING: { label: '修复中', color: 'processing' },
-  VERIFYING: { label: '验证中', color: 'processing' },
-  PASSED: { label: '已通过', color: 'success' },
-  BLOCKED: { label: '已阻断', color: 'error' },
-  STALE: { label: '已过期(head)', color: 'default' },
-  UNKNOWN: { label: '未知（决策缺失）', color: 'warning' },
-};
-const STAGE_ORDER = ['REVIEWING', 'ACTION_REQUIRED', 'REMEDIATING', 'VERIFYING', 'PASSED', 'BLOCKED', 'STALE', 'UNKNOWN'];
 
 async function apiGet(path) {
   const res = await fetch(path, { credentials: 'same-origin' });
@@ -96,7 +86,7 @@ export default function OverviewPage() {
   const totalRuns = data.repository_counts.reduce((n, r) => n + r.runs, 0);
 
   const stageData = STAGE_ORDER
-    .map((s) => ({ stage: STAGE_LABEL[s].label, key: s, count: data.stage_counts[s] || 0 }))
+    .map((s) => ({ stage: stageMap(s).label, key: s, count: data.stage_counts[s] || 0 }))
     .filter((d) => d.count > 0 || ['REVIEWING', 'ACTION_REQUIRED', 'PASSED'].includes(d.key));
 
   const baseCol = {
@@ -213,7 +203,10 @@ export default function OverviewPage() {
               { title: 'Run', dataIndex: 'run_id', ellipsis: true,
                 render: (v) => v ? <span className="mono">{v}</span> : '—' },
               { title: '阶段', dataIndex: 'stage', width: 130,
-                render: (v) => <Tag color={STAGE_LABEL[v]?.color}>{STAGE_LABEL[v]?.label ?? v}</Tag> },
+                render: (v) => {
+                  const m = stageMap(v);
+                  return <Tag color={toneToColor(m.tone)} title={m.note}>{m.label}</Tag>;
+                } },
               { title: '阶段来源', dataIndex: 'stage_source', ellipsis: true,
                 render: (v) => <span className="mono" style={{ fontSize: 11 }}>{v}</span> },
               { title: '更新时间', dataIndex: 'updated_at', width: 160,

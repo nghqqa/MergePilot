@@ -13,7 +13,7 @@ function csrfFromCookie() {
 }
 
 const DATA_MODE_COPY = {
-  live: 'live（PG 实时，staging 隔离库）：overview/待处理/仓库/PR 详情按会话 allowlist 实时读取；run 证据详情页仍为快照只读。',
+  live: 'PG 实时（live）——隔离 staging 库：overview/待处理/仓库/PR 详情按会话 allowlist 实时读取；run 证据详情页仍为快照只读。',
   snapshot: 'snapshot（真实历史运行证据包，锁定只读）。',
 };
 

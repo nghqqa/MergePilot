@@ -122,16 +122,30 @@ function TopbarContext() {
 function AuthChip() {
   const auth = useAuth();
   const config = useAppConfig();
+  const [logoutHint, setLogoutHint] = useState(null);
   // 登出（与设置页同一契约）：POST /api/auth/logout + X-CSRF-Token（mp_csrf Cookie）；
-  // 完成后刷新会话，以服务端状态为准。失败（如 CSRF 缺失 403）时刷新后仍显示登录态。
+  // 完成后刷新会话，以服务端状态为准。失败（如 CSRF 缺失 403）时给出明确中文提示；
+  // 刷新后会话若仍有效则如实保持登录——不伪造退出成功。
   const doLogout = async () => {
+    setLogoutHint(null);
+    let ok = false;
+    let code = null;
     try {
-      await fetch('/api/auth/logout', {
+      const res = await fetch('/api/auth/logout', {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'X-CSRF-Token': readCsrfCookie() ?? '' },
       });
-    } catch { /* 网络失败也刷新——以服务端会话状态为准 */ }
+      ok = res.ok;
+      code = res.status;
+    } catch (e) {
+      code = `网络错误：${String(e?.message ?? '').slice(0, 40)}`;
+    }
+    if (!ok) {
+      setLogoutHint(code === 403
+        ? '退出未生效（403：CSRF 校验失败或会话已变化）——以服务端会话为准，请重试或用"设置"页退出'
+        : `退出未生效（${code ?? '未知'}）——以服务端会话为准，请重试`);
+    }
     auth.refresh();
   };
   // fixture 验收环境（可信配置声明 data_mode=fixture）：会话即合成用户，标识常驻可见
@@ -152,6 +166,7 @@ function AuthChip() {
           title="结束服务端会话（POST /api/auth/logout，携带 CSRF）；退出后需重新登录">
           <LogOut size={12} strokeWidth={1.75} aria-hidden /> 退出登录
         </button>
+        {logoutHint ? <span className="auth-logout-hint" role="alert" title={logoutHint}>{logoutHint}</span> : null}
       </span>
     );
   }

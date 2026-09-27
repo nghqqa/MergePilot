@@ -92,50 +92,50 @@ print(json.dumps(env))
 const TOOLS = [
   {
     name: 'skill_diff_parse',
-    description: 'DETERMINISTIC skill: parse a unified diff into a structured change_context '
-      + '(files, hunks, stats, categories). Its output.change_context feeds skill_risk_classify. '
-      + 'Pure compute, no LLM. Required: repo, base_sha, head_sha, diff_format, diff_text.',
+    description: '确定性 Skill（DETERMINISTIC，纯计算、无 LLM/网络/DB）：把 unified diff 解析为结构化 '
+      + 'change_context（files/hunks/stats/categories）。其 output.change_context 可直接作为 skill_risk_classify '
+      + '的输入。必填：repo、base_sha、head_sha、diff_format、diff_text。',
     inputSchema: {
       type: 'object',
       properties: {
         repo: { type: 'string' }, base_sha: { type: 'string' }, head_sha: { type: 'string' },
-        diff_format: { type: 'string', description: 'unified' },
-        diff_text: { type: 'string', description: 'full unified diff body' },
+        diff_format: { type: 'string', description: 'unified（当前仅支持 unified diff 格式）' },
+        diff_text: { type: 'string', description: '完整 unified diff 正文' },
       },
       required: ['repo', 'base_sha', 'head_sha', 'diff_format', 'diff_text'],
     },
   },
   {
     name: 'skill_risk_classify',
-    description: 'DETERMINISTIC skill: classify a structured change_context (from skill_diff_parse) '
-      + 'into an advisory L0/L1/L2 risk level with explainable reasons and recommended controls '
-      + '(e.g. HUMAN_REVIEW). Advisory-only: never an authorization decision — the human gate decides.',
+    description: '确定性 Skill（DETERMINISTIC）：对结构化 change_context（来自 skill_diff_parse）做可解释的 '
+      + 'L0/L1/L2 咨询级风险分级，并给出原因与建议控制（如 HUMAN_REVIEW）。仅咨询参考——'
+      + '永不构成授权决策，人工门（human gate）才是决定者。',
     inputSchema: {
       type: 'object',
-      properties: { change_context: { type: 'object', description: 'change_context from skill_diff_parse output' } },
+      properties: { change_context: { type: 'object', description: '来自 skill_diff_parse 输出的 change_context' } },
       required: ['change_context'],
     },
   },
   {
     name: 'skill_test_runner',
-    description: 'DETERMINISTIC skill: run the repo test baseline against a profile and return a '
-      + 'structured verdict (pass/fail counts, failures). Use before submitting a fix.',
+    description: '确定性 Skill（DETERMINISTIC）：按 profile 运行仓库测试基线，返回结构化判定'
+      + '（通过/失败计数与失败明细）。提交修复前先跑本工具。',
     inputSchema: {
       type: 'object',
-      properties: { profile: { type: 'string', description: 'test profile name' }, head_sha: { type: 'string' } },
+      properties: { profile: { type: 'string', description: '测试 profile 名' }, head_sha: { type: 'string' } },
       required: ['profile'],
     },
   },
   {
     name: 'skill_case_retrieval',
-    description: 'DETERMINISTIC skill: retrieve similar historical PR review/fix/verify cases '
-      + 'for a change context. Requires query text; optional top_k. Returns severity, score, '
-      + 'issue/fix summaries and verifiable citations (PR url / commit sha).',
+    description: '确定性 Skill（DETERMINISTIC）：按查询文本检索相似的历史 PR 审查/修复/验证案例。'
+      + '必填 query；可选 top_k。返回 severity、score、issue/fix 摘要与可核验引用'
+      + '（PR url / commit sha）。',
     inputSchema: {
       type: 'object',
       properties: {
         query: { type: 'string', description: '检索文本（与历史案例的 issue/fix 匹配）' },
-        change_context: { type: 'object', description: 'optional structured context' },
+        change_context: { type: 'object', description: '可选：结构化变更上下文' },
         top_k: { type: 'number' },
       },
       required: ['query'],
@@ -143,28 +143,27 @@ const TOOLS = [
   },
   {
     name: 'skill_sast_scan',
-    description: 'DETERMINISTIC skill: static analysis scan of file contents. '
-      + 'Runs secret detection (PAT tokens, API keys, AWS keys) + Python AST rules '
-      + '(dangerous eval/exec, subprocess shell=True, SQL injection, path traversal) '
-      + '+ dependency vulnerability checks. Returns structured findings with rule_id, '
-      + 'severity, risk_level, line numbers and remediation. Pure compute, no network.',
+    description: '确定性 Skill（DETERMINISTIC，纯计算、无网络）：对文件内容做静态分析——'
+      + '密钥检测（PAT token/API key/AWS key）+ Python AST 规则（eval/exec、subprocess shell=True、'
+      + 'SQL 注入、路径穿越）+ 依赖漏洞检查。返回含 rule_id、severity、risk_level、行号与修复建议的'
+      + '结构化 findings。',
     inputSchema: {
       type: 'object',
       properties: {
-        mode: { type: 'string', enum: ['inline', 'paths'], description: 'inline = pass files directly' },
+        mode: { type: 'string', enum: ['inline', 'paths'], description: 'inline = 直接传入文件内容' },
         files: {
           type: 'array',
-          description: 'inline mode: array of {path, content} objects',
+          description: 'inline 模式：{path, content} 对象数组',
           items: {
             type: 'object',
             properties: {
-              path: { type: 'string', description: 'file path (e.g. backend/src/api.py)' },
-              content: { type: 'string', description: 'full file content' },
+              path: { type: 'string', description: '文件路径（如 backend/src/api.py）' },
+              content: { type: 'string', description: '完整文件内容' },
             },
             required: ['path', 'content'],
           },
         },
-        paths: { type: 'array', items: { type: 'string' }, description: 'paths mode: file paths under workspace' },
+        paths: { type: 'array', items: { type: 'string' }, description: 'paths 模式：workspace 下的文件路径' },
       },
       required: ['mode'],
     },

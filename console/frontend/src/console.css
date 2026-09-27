@@ -655,6 +655,7 @@ td.th-right { text-align: right; }
 .auth-chip { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
 .auth-user { font-size: var(--fs-sm); color: var(--c-text-2); }
 .auth-demo-chip { border-color: rgba(181, 71, 8, 0.35); background: var(--c-warn-bg); color: var(--c-warn); cursor: help; }
+.auth-logout-hint { font-size: var(--fs-xs); color: var(--c-bad, #b42318); max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: help; }
 
 .login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--c-bg); padding: 24px; }
 .login-card {

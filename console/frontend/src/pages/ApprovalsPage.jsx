@@ -143,7 +143,7 @@ function TicketCard({ t, authed }) {
   );
 }
 
-// ---- 真实 test-auth 审批（隔离 PG fixture 库，HTTP→PG；与上面的内存 fixture 演练彻底分离） ----
+// ---- 真实 test-auth 审批（隔离联调 PG fixture 库，HTTP→PG；与上面的内存 fixture 演练彻底分离） ----
 
 function PgQueryButton({ source, ticketId, dispatch }) {
   const [busy, setBusy] = useState(false);
@@ -227,7 +227,7 @@ function PgTicketRow({ t, source }) {
                 onClick={() => submit('REJECTED')}>
                 {state.phase === 'submitting' && state.decision === 'REJECTED' ? '提交中…' : '拒绝'}
               </button>
-              <span className="muted">隔离 PG fixture 库 · data_mode=fixture · test-auth 主体——非真实 GitHub 操作</span>
+              <span className="muted">隔离联调（PG fixture）· data_mode=fixture · test-auth 主体——非真实 GitHub 操作</span>
             </div>
           ) : (
             <p className="section-note">该票据不在待审批状态（{ticketMap(t.status).label} / {t.status}）——决策端点仅对 PENDING 生效。</p>

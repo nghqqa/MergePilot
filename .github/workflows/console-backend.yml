@@ -93,3 +93,9 @@ jobs:
       - name: Frontend /core smoke (react-test-renderer, no browser)
         run: node --test test/core-page.smoke.test.mjs
         working-directory: console/frontend
+
+      # 页面渲染冒烟（P2 修复波）：PrDetail(console-pg)/C 链/RAG/Core-FXV 走完整
+      # App+MemoryRouter 集成渲染——锁 status-map 中文标签真实上屏
+      - name: Frontend pages smoke (PrDetail/CChain/RAG/Core-FXV)
+        run: node --test test/pages-smoke.test.mjs
+        working-directory: console/frontend
