@@ -22,6 +22,7 @@ const argOf = (name) => {
 };
 const DSN = argOf('dsn') ?? process.env.CONSOLE_PG_DSN;
 const ONCE = args.includes('--once');
+const MAX_JOBS = ONCE ? 1 : Number(argOf('max-jobs') || 0); // 0=无限
 const WORKER = argOf('worker') ?? `rag-worker-${process.pid}`;
 const CORPUS_ROOT = path.resolve(argOf('corpus-dir') ?? process.env.RAGTRIAL_CORPUS_DIR ?? '.');
 const HEARTBEAT_MS = 15_000;
@@ -91,11 +92,15 @@ async function execute(job) {
 }
 
 let stopping = false;
+let processed = 0;
 process.on('SIGINT', () => { stopping = true; console.log('[worker] SIGINT — finishing current job'); });
 
 // 主循环
 for (;;) {
-  if (stopping) { console.log('[worker] stopped'); process.exit(0); }
+  if (stopping || (MAX_JOBS > 0 && processed >= MAX_JOBS)) {
+    console.log(`[worker] stopped (processed=${processed})`);
+    process.exit(0);
+  }
   let jobs;
   try {
     jobs = await queue.claim({ worker: WORKER, limit: ONCE ? 1 : 1 });
@@ -110,6 +115,6 @@ for (;;) {
     await new Promise((r) => setTimeout(r, 1000));
     continue;
   }
-  for (const job of jobs) await execute(job);
+  for (const job of jobs) { await execute(job); processed++; }
   if (ONCE) process.exit(0);
 }

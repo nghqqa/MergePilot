@@ -168,11 +168,23 @@ export async function ensureProviderAttested(provider, { fetchImpl = fetch, forc
     throw new ModelBlockedError(
       `provider manifest digest 不匹配：expected=${provider.expected_manifest?.slice(0, 16)}… got=${entry.sha256.slice(0, 16)}…（fail-closed）`);
   }
-  const dims = Number(entry.manifest?.dims ?? 0);
+  // 结构完整性（fail-closed）：model_id/dims/runtime/files 必备且非空——
+  // 权重/tokenizer/配置清单缺失的 manifest 拒绝视为已验证
+  const m = entry.manifest ?? {};
+  const required = ['model_id', 'dims', 'runtime', 'files'];
+  const structural = required.filter((k) => m[k] === undefined || m[k] === null || m[k] === '');
+  const filesOk = Array.isArray(m.files) ? m.files.length > 0
+    : (m.files && typeof m.files === 'object' && Object.keys(m.files).length > 0);
+  if (structural.length || !filesOk) {
+    throw new ModelBlockedError(
+      `provider manifest 结构不完整（缺 ${structural.join('/') || 'files'}）——权重/tokenizer/配置清单缺失即 fail-closed`,
+      'model_attestation_failed');
+  }
+  const dims = Number(m.dims ?? 0);
   if (provider.dims && dims && dims !== provider.dims) {
     throw new ModelBlockedError(`provider manifest dims=${dims} 与配置 RAGTRIAL_EMBED_DIMS=${provider.dims} 不一致`, 'dimension_mismatch');
   }
-  return { attested: true, manifest_sha256: entry.sha256, dims };
+  return { attested: true, manifest_sha256: entry.sha256, dims, manifest: m };
 }
 
 export async function embedBatch(provider, texts, { fetchImpl = fetch } = {}) {

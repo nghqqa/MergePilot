@@ -128,8 +128,21 @@ class BgeRuntime:
         return {"sim_paraphrase": round(sim_ab, 4), "sim_unrelated": round(sim_ac, 4)}
 
 
+# manifest v2（CANONICAL_A 加固，自 B 波选择性吸收）：
+#   files: [{name, sha256, bytes}] + files_count + total_bytes——
+#   校验三重（文件数 / 每文件字节数 / 每文件 sha256）+ 总字节数 + 必需工件强制。
+REQUIRED_ARTIFACTS = ["model.safetensors", "tokenizer.json", "config.json"]  # 权重/tokenizer/配置
+
+
 def build_manifest(model_dir):
+    import os
+    files = []
+    for f in MODEL_FILES:
+        p = f"{model_dir}/{f}"
+        if os.path.exists(p):
+            files.append({"name": f, "sha256": sha256_file(p), "bytes": os.path.getsize(p)})
     return {
+        "manifest_version": 2,
         "model_id": "bge-large-en-v1.5",
         "source": "local HF cache (offline, no runtime download)",
         "pooling": "cls_l2",
@@ -138,22 +151,45 @@ def build_manifest(model_dir):
         "runtime": "numpy-bert-v1",
         "runtime_spec": {"gelu": "erf(scipy)", "ln_eps": 1e-12, "max_len": 128,
                          "dtype": "F32", "framework": "numpy+tokenizers"},
-        "files": {f: sha256_file(f"{model_dir}/{f}") for f in MODEL_FILES
-                  if __import__("os").path.exists(f"{model_dir}/{f}")},
+        "files": files,
+        "files_count": len(files),
+        "total_bytes": sum(f["bytes"] for f in files),
     }
 
 
 def verify_manifest(model_dir, manifest):
+    """fail-closed 校验（结果用于披露时只报问题类别，不回显路径/内容）。"""
+    import os
     problems = []
-    for f, expect in manifest.get("files", {}).items():
-        import os
-        p = f"{model_dir}/{f}"
+    files = manifest.get("files")
+    if not isinstance(files, list) or not files:
+        return ["manifest_files_missing_or_not_v2"]
+    names = {f.get("name") for f in files}
+    # 必需工件：权重/tokenizer/config 任一缺失即 fail-closed
+    for req in REQUIRED_ARTIFACTS:
+        if req not in names:
+            problems.append(f"required_missing:{req}")
+    # 文件数：目录内多出的受管文件视为漂移（防夹带）；缺失同样拒绝
+    on_disk = {f for f in MODEL_FILES if os.path.exists(os.path.join(model_dir, f))}
+    if on_disk - names:
+        problems.append("unexpected_files:" + ",".join(sorted(on_disk - names)[:3]))
+    total = 0
+    for f in files:
+        p = os.path.join(model_dir, str(f.get("name")))
         if not os.path.exists(p):
-            problems.append(f"missing:{f}")
+            problems.append(f"missing:{f.get('name')}")
             continue
-        got = sha256_file(p)
-        if got != expect:
-            problems.append(f"digest_drift:{f}")
+        size = os.path.getsize(p)
+        total += size
+        if isinstance(f.get("bytes"), int) and size != f["bytes"]:
+            problems.append(f"bytes_drift:{f.get('name')}")
+            continue
+        if sha256_file(p) != f.get("sha256"):
+            problems.append(f"digest_drift:{f.get('name')}")
+    if isinstance(manifest.get("total_bytes"), int) and total != manifest["total_bytes"]:
+        problems.append(f"total_bytes_drift:{total}!={manifest['total_bytes']}")
+    if isinstance(manifest.get("files_count"), int) and len(on_disk) != manifest["files_count"]:
+        problems.append(f"files_count_drift:{len(on_disk)}!={manifest['files_count']}")
     return problems
 
 
@@ -164,6 +200,7 @@ def main():
     ap.add_argument("--manifest-out")
     ap.add_argument("--manifest", help="运行前校验清单（fail-closed）")
     ap.add_argument("--self-check", action="store_true")
+    ap.add_argument("--verify-only", action="store_true", help="仅执行 manifest 校验后退出（不加载权重）")
     args = ap.parse_args()
 
     if args.manifest_out:
@@ -180,6 +217,9 @@ def main():
             sys.exit(3)
         print("[bge] manifest verified (fail-closed gate passed)", file=sys.stderr)
 
+    if args.verify_only:
+        print(json.dumps({"ok": True, "verified": "sha256+bytes+count"}))
+        return
     rt = BgeRuntime(args.model_dir, args.max_len)
     if args.self_check:
         print(json.dumps({"ok": True, "sanity": rt.check("self")}))

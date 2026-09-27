@@ -188,7 +188,8 @@ try {
 
   // ── provider 维度不符（manifest 说 1024，返回 768）→ blocked ──
   const wrongDimsSidecar = await mockSidecar({ dims: 768, manifestOverride: {
-    model_id: 'mock-semantic-v1', dims: 1024, pooling: 'cls_l2', files: {}, runtime: 'x',
+    model_id: 'mock-semantic-v1', dims: 1024, pooling: 'cls_l2',
+    files: [{ name: 'weights.bin', sha256: 'a'.repeat(64), bytes: 16 }], runtime: 'x',
   } });
   // 同一 manifest 语义但 embed 返回 768 维
   const wdEnv = envWith(dsn, {

@@ -66,8 +66,9 @@ async function main() {
 
   const st = await call('GET', '/api/rag-trial/status');
   save('01-status.json', st.json);
-  ok('P1', 'status 聚合：语义 provider ATTESTED + RUN_BINDING READY + 队列统计',
-    st.json?.production_readiness?.semantic_provider?.state === 'ATTESTED'
+  ok('P1', 'status 聚合：语义 provider LOCAL_MANIFEST_VERIFIED（外部 attestation 如实 NOT_CONFIGURED）+ RUN_BINDING READY + 队列统计',
+    st.json?.production_readiness?.semantic_provider?.state === 'LOCAL_MANIFEST_VERIFIED'
+    && st.json?.production_readiness?.semantic_provider?.external_attestation?.state === 'NOT_CONFIGURED'
     && st.json?.production_readiness?.run_binding_auth?.state === 'READY'
     && st.json?.production_readiness?.persistent_queue?.by_state !== undefined,
     st.json?.production_readiness);
@@ -106,6 +107,20 @@ async function main() {
     { ...good, nonce: crypto.randomBytes(12).toString('hex'), timestamp: ts - 20 * 60_000,
       signature: signPayload({ run_id, nonce: 'x', timestamp: ts - 20 * 60_000 }) });
   ok('M4', '时间窗外的旧签名 → 401 TIMESTAMP_SKEW', m4.status === 401 && m4.json?.reason === 'TIMESTAMP_SKEW');
+
+  // M6：机器身份 scope 越权（验签通过但 repo 越界 → 403）
+  {
+    const mOver = await call('POST', '/api/rag-trial/machine/query',
+      { run_id, nonce: crypto.randomBytes(10).toString('hex'), timestamp: Date.now(),
+        q: 'rollback anchor', repo: 'other/repo', branch: BR, k: 3 });
+    // 补签名
+    const nb = crypto.randomBytes(10).toString('hex'); const tb = Date.now();
+    const mOver2 = await call('POST', '/api/rag-trial/machine/query',
+      { run_id, nonce: nb, timestamp: tb, signature: signPayload({ run_id, nonce: nb, timestamp: tb }),
+        q: 'rollback anchor', repo: 'other/repo', branch: BR, k: 3 });
+    ok('M6', '机器身份越权（有效签名）→ 403 scope_not_allowed',
+      mOver2.status === 403 && mOver2.json?.error?.reason === 'scope_not_allowed', { s: mOver2.status, j: mOver2.json });
+  }
 
   // 无 keystore 探针（一次性容器，端口 48472）→ BLOCKED
   let blocked = null;

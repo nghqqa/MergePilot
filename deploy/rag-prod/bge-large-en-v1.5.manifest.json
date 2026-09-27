@@ -1,4 +1,5 @@
 {
+  "manifest_version": 2,
   "model_id": "bge-large-en-v1.5",
   "source": "local HF cache (offline, no runtime download)",
   "pooling": "cls_l2",
@@ -12,16 +13,58 @@
     "dtype": "F32",
     "framework": "numpy+tokenizers"
   },
-  "files": {
-    "model.safetensors": "45e1954914e29bd74080e6c1510165274ff5279421c89f76c418878732f64ae7",
-    "tokenizer.json": "d241a60d5e8f04cc1b2b3e9ef7a4921b27bf526d9f6050ab90f9267a1f9e5c66",
-    "config.json": "446712fac367857b4b1302762fe1cd7bfa8b3c4b77b4dc5d77c4025407660896",
-    "special_tokens_map.json": "b6d346be366a7d1d48332dbc9fdf3bf8960b5d879522b7799ddba59e76237ee3",
-    "vocab.txt": "07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3",
-    "modules.json": "84e40c8e006c9b1d6c122e02cba9b02458120b5fb0c87b746c41e0207cf642cf",
-    "1_Pooling/config.json": "e54c164a07274f2eb45bb724f54a79d1efcc90c41573887cd9a29aeee0597352",
-    "sentence_bert_config.json": "84e39fda68ccbff05bfa723ae9c0e70e23e2ec373b76e0f8c6e71af72a693cbf",
-    "config_sentence_transformers.json": "940d5f50db195fa6e5e6a4f122c095f77880de259d74b14a65779ed48bdd7c56",
-    "tokenizer_config.json": "9261e7d79b44c8195c1cada2b453e55b00aeb81e907a6664974b4d7776172ab3"
-  }
+  "files": [
+    {
+      "name": "model.safetensors",
+      "sha256": "45e1954914e29bd74080e6c1510165274ff5279421c89f76c418878732f64ae7",
+      "bytes": 1340616616
+    },
+    {
+      "name": "tokenizer.json",
+      "sha256": "d241a60d5e8f04cc1b2b3e9ef7a4921b27bf526d9f6050ab90f9267a1f9e5c66",
+      "bytes": 711396
+    },
+    {
+      "name": "config.json",
+      "sha256": "446712fac367857b4b1302762fe1cd7bfa8b3c4b77b4dc5d77c4025407660896",
+      "bytes": 779
+    },
+    {
+      "name": "special_tokens_map.json",
+      "sha256": "b6d346be366a7d1d48332dbc9fdf3bf8960b5d879522b7799ddba59e76237ee3",
+      "bytes": 125
+    },
+    {
+      "name": "vocab.txt",
+      "sha256": "07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3",
+      "bytes": 231508
+    },
+    {
+      "name": "modules.json",
+      "sha256": "84e40c8e006c9b1d6c122e02cba9b02458120b5fb0c87b746c41e0207cf642cf",
+      "bytes": 349
+    },
+    {
+      "name": "1_Pooling/config.json",
+      "sha256": "e54c164a07274f2eb45bb724f54a79d1efcc90c41573887cd9a29aeee0597352",
+      "bytes": 191
+    },
+    {
+      "name": "sentence_bert_config.json",
+      "sha256": "84e39fda68ccbff05bfa723ae9c0e70e23e2ec373b76e0f8c6e71af72a693cbf",
+      "bytes": 52
+    },
+    {
+      "name": "config_sentence_transformers.json",
+      "sha256": "940d5f50db195fa6e5e6a4f122c095f77880de259d74b14a65779ed48bdd7c56",
+      "bytes": 124
+    },
+    {
+      "name": "tokenizer_config.json",
+      "sha256": "9261e7d79b44c8195c1cada2b453e55b00aeb81e907a6664974b4d7776172ab3",
+      "bytes": 366
+    }
+  ],
+  "files_count": 10,
+  "total_bytes": 1341561506
 }

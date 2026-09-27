@@ -92,6 +92,52 @@ function readCorpusDir(dir, { base }) {
   return out;
 }
 
+// ── RAG scope allowlist（CANONICAL_A：自 B 波选择性吸收并加固）────────────
+// 合同：默认拒绝——RAGTRIAL_ALLOWED_SCOPES 未设置/为空 → 一律 403
+// （缺配置不得扩大范围）；撤销 env 即时生效（每次请求现读 env）；
+// 拒绝审计有界且脱敏：仅记录 repo@branch 与原因（不落查询文本、不回显 allowlist），
+// 同源+滚动窗口封顶（默认 30 条/10min，对齐 cchain M-2 防膨胀惯例）。
+const scopeDenyBySource = new Map(); // source -> { window_start, count }
+function scopeDenyAuditAllowed(env, source) {
+  const cap = Number(env.RAGTRIAL_SCOPE_AUDIT_DENY_CAP ?? 30);
+  const win = Number(env.RAGTRIAL_SCOPE_AUDIT_WINDOW_MS ?? 600_000);
+  if (!(cap > 0)) return true;
+  const now = Date.now();
+  if (scopeDenyBySource.size > 10_000) {
+    for (const [k, st] of scopeDenyBySource) if (now - st.window_start >= win) scopeDenyBySource.delete(k);
+  }
+  const key = source ?? 'unknown';
+  let st = scopeDenyBySource.get(key);
+  if (!st || now - st.window_start >= win) st = { window_start: now, count: 0 };
+  scopeDenyBySource.set(key, st);
+  st.count += 1;
+  return st.count <= cap;
+}
+
+export function checkScope(env, repo, branch) {
+  const raw = String(env.RAGTRIAL_ALLOWED_SCOPES ?? '').trim();
+  if (!raw) return { ok: false, reason: 'scope_not_configured' }; // 默认拒绝
+  const allowed = raw.split(',').map((x) => x.trim()).filter(Boolean);
+  return allowed.includes(`${repo}@${branch}`)
+    ? { ok: true }
+    : { ok: false, reason: 'scope_not_allowed', allowed_count: allowed.length }; // 脱敏：只报数量
+}
+
+async function scopeDeny(env, { store, actor, repo, branch, source, kind }) {
+  const check = checkScope(env, repo, branch);
+  if (check.ok) return { status: 200 }; // allow 短路——只在拒绝时产生 403/审计
+  const bounded = scopeDenyAuditAllowed(env, source);
+  if (store && bounded) {
+    await store.audit('QUERY_SCOPE_DENIED', actor, {
+      repo, branch,
+      detail: { reason: check.reason, channel: kind, allowed_count: check.allowed_count ?? 0 },
+    }).catch(() => {});
+  }
+  return { status: 403, body: { error: { reason: check.reason,
+    detail: `repo@branch 不在 RAGTRIAL_ALLOWED_SCOPES（env 撤销即时生效${check.reason === 'scope_not_configured' ? '；未配置=默认拒绝' : ''}）` },
+    ...(bounded ? {} : { audit_suppressed: true, note: '同源窗口内拒绝审计已封顶' }) } };
+}
+
 export async function ragTrialApi(req, res, ctx) {
   const { p, sendJson, readJsonBody, requireSession } = ctx;
   const env = process.env;
@@ -119,6 +165,10 @@ export async function ragTrialApi(req, res, ctx) {
     const repo = String(body.repo || '');
     const branch = String(body.branch || '');
     if (!q || !repo || !branch) return sendJson(res, 400, { error: { reason: 'q/repo/branch required' } });
+    // scope 门（机器身份与人工同权约束：越权 403，不因验签通过而放宽）
+    const sd = await scopeDeny(env, { store: mstore, actor: `run-binding:${String(body.run_id).slice(0, 64)}`,
+      repo, branch, source, kind: 'machine' });
+    if (sd.status === 403) return sendJson(res, sd.status, sd.body);
     try {
       const r = await mstore.search({
         q, repo, branch, k: Number(body.k || 5),
@@ -179,7 +229,14 @@ export async function ragTrialApi(req, res, ctx) {
         try {
           const a = await ensureProviderAttested(provider);
           semantic = a.attested
-            ? { state: 'ATTESTED', manifest_sha256: a.manifest_sha256, dims: a.dims, model_id: provider.model_id }
+            ? { state: 'LOCAL_MANIFEST_VERIFIED',
+                provider_kind: 'remote-sidecar-local-manifest',
+                model_id: provider.model_id,
+                manifest_sha256: a.manifest_sha256, dims: a.dims,
+                runtime: a.manifest?.runtime ?? null,
+                verification: 'sha256+bytes+count（sidecar 启动 fail-closed + 查询期 pin 比对）',
+                external_attestation: { state: 'NOT_CONFIGURED',
+                  note: '本地 manifest 验证不等于外部 attestation——外部服务未接入，如实 NOT_CONFIGURED' } }
             : { state: 'BLOCKED', blocked_condition: a.note };
         } catch (e) {
           semantic = { state: e?.name === 'ModelBlockedError' ? 'BLOCKED' : 'UNREACHABLE',
@@ -236,6 +293,40 @@ export async function ragTrialApi(req, res, ctx) {
     if (p === '/api/rag-trial/queue/metrics' && req.method === 'GET') {
       const queue = await getQueue(env);
       return sendJson(res, 200, await queue.stats());
+    }
+
+    // ── 供应链披露（自 B 波选择性吸收）：只报类型/模型/摘要/维度/验证状态 ──
+    if (p === '/api/rag-trial/providers' && req.method === 'GET') {
+      const provider = resolveProvider(env);
+      const deterministic = {
+        provider_kind: 'deterministic-hash', model_id: 'local-hash-v1', dims: 256,
+        role: '测试与回归基线（不宣称真实语义能力）',
+      };
+      let semantic;
+      if (provider.kind === 'local') {
+        semantic = { state: 'NOT_CONFIGURED',
+          blocked_condition: 'RAGTRIAL_EMBED_ENDPOINT 未设置——语义 provider 未接线' };
+      } else if (!provider.expected_manifest) {
+        semantic = { state: 'BLOCKED', blocked_condition: 'RAGTRIAL_EMBED_EXPECTED_MANIFEST 未配置' };
+      } else {
+        try {
+          const a = await ensureProviderAttested(provider);
+          semantic = a.attested
+            ? { state: 'LOCAL_MANIFEST_VERIFIED', provider_kind: 'remote-sidecar-local-manifest',
+                model_id: provider.model_id, manifest_sha256: a.manifest_sha256, dims: a.dims,
+                runtime: a.manifest?.runtime ?? null,
+                external_attestation: { state: 'NOT_CONFIGURED' } }
+            : { state: 'BLOCKED', blocked_condition: a.note };
+        } catch (e) {
+          semantic = { state: e?.name === 'ModelBlockedError' ? 'BLOCKED' : 'UNREACHABLE',
+            blocked_condition: String(e.message).slice(0, 120) };
+        }
+      }
+      return sendJson(res, 200, {
+        primary_requested: provider.kind === 'local' ? 'deterministic' : 'semantic-sidecar',
+        deterministic, semantic,
+        disclosure_note: '不回显密钥、keystore 路径或 env 原值；本地 manifest 验证不标记为外部 attestation 成功',
+      });
     }
 
     // ── 模型注册（语义模型：dims+manifest 链式绑定） ──
@@ -298,6 +389,10 @@ export async function ragTrialApi(req, res, ctx) {
       if (!q || !repo || !branch) {
         return sendJson(res, 400, { error: { reason: 'q/repo/branch required' } });
       }
+      // scope 门（默认拒绝；env 撤销即时生效；越权 403+有界脱敏审计）
+      const sd = await scopeDeny(env, { store, actor, repo, branch,
+        source: req.socket?.remoteAddress ?? null, kind: 'session' });
+      if (sd.status === 403) return sendJson(res, sd.status, sd.body);
       const r = await store.search({
         q, repo, branch,
         k: Number(body.k || 5),
@@ -429,6 +524,14 @@ export async function ragTrialInternalQuery(env = process.env, { q, repo, branch
     return { status: 503, body: { service_state: 'error', error_kind: kind } };
   }
   if (!store) return { status: 200, body: { service_state: 'backend_not_wired', results: [] } };
+  // scope 门（内部通道与 HTTP 通道同权；默认拒绝，撤销即时生效）
+  const check = checkScope(env, repo, branch);
+  if (!check.ok) {
+    await store.audit('QUERY_SCOPE_DENIED', actor, {
+      repo, branch, detail: { reason: check.reason, channel: 'a-chain-internal', allowed_count: check.allowed_count ?? 0 },
+    }).catch(() => {});
+    return { status: 403, body: { error: { reason: check.reason }, results: [] } };
+  }
   try {
     const r = await store.search({ q, repo, branch, k, actor });
     return { status: 200, body: r };

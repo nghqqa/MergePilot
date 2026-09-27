@@ -96,6 +96,8 @@ services:
       RAGTRIAL_EMBED_EXPECTED_MANIFEST: "${RAGPROD_EXPECTED_MANIFEST}"
       # 机器通道 keystore（合成测试密钥，由 scripts/bootstrap-keystore.mjs 生成，绝不提交）
       MERGEPILOT_RUN_BINDING_KEYSTORE: "/app/keystore"
+      # scope allowlist（默认拒绝；缺配置=全拒。评估栈放行基准 scope）
+      RAGTRIAL_ALLOWED_SCOPES: "${RAGPROD_ALLOWED_SCOPES:-nghqqa/mergepilot@feat/rag-prod-readiness}"
     volumes:
       - ./corpus:/app/rag-corpus:ro
       - ./keystore-local:/app/keystore:ro
