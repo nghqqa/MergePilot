@@ -1,0 +1,84 @@
+name: console-backend
+
+# 后端/前端全量门禁（2026-09-27 生产候选轮补齐——此前仅 secret-scan+selftest，
+# console 后端测试无 CI 自动化，为评审登记缺口）。
+# 覆盖：后端单测/合同全量（node --test test/*.test.mjs）、FXV PG 集成（18 场景）、
+# FXV e2e 归档（15 场景，真 git+PG+MinIO）、C 链 PG 审计集成、前端构建。
+#
+# env-skip 登记（不删除、不降低门禁）：
+#  * live-v3.integration.test.mjs —— 需 legacy 4191 contract-fixture harness
+#    （console/frontend/dev/contract-fixture-harness.mjs，历史 console_v3 轮产物，
+#    本仓库 CI 未携带该 harness 的启动约定），保持 MERGEPILOT_V3_URL 未设即跳过。
+#  * 其余 *.test.mjs 中 10 项 env-skip 与本地口径一致（集成依赖按上述单独步骤起服务）。
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  console-backend:
+    name: console backend + frontend gate
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: test-password-pg-ci
+          POSTGRES_DB: fxv
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s --health-timeout 5s --health-retries 5
+    env:
+      FXV_PG_TEST_DSN: postgres://postgres:test-password-pg-ci@127.0.0.1:5432/fxv
+      CCHAIN_TEST_DSN: postgres://postgres:test-password-pg-ci@127.0.0.1:5432/fxv
+      FXV_S3_ENDPOINT: http://127.0.0.1:9000
+      FXV_S3_ACCESS_KEY: ci-minio
+      FXV_S3_SECRET_KEY: ci-minio-secret-123456
+      FXV_S3_BUCKET: fxv-artifacts-e2e
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # MinIO（digest pin：与受控 staging 验证同源镜像；curl 健康检查已实证）
+      - name: Start MinIO
+        run: |
+          docker run -d --name minio -p 9000:9000 \
+            -e MINIO_ROOT_USER=ci-minio -e MINIO_ROOT_PASSWORD=ci-minio-secret-123456 \
+            elestio/minio@sha256:25348a257f1ece1b192f25f6cd9854618fa86422ac87b494b5d4e629c556d4bd \
+            server /data
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:9000/minio/health/live >/dev/null && break
+            sleep 2
+          done
+          curl -sf http://127.0.0.1:9000/minio/health/live >/dev/null
+
+      - name: Install backend test deps (dev-only pg)
+        run: npm ci --no-audit --no-fund
+        working-directory: console/backend/test/support
+
+      - name: Backend unit + contract suites (env-skips preserved, reasons in header)
+        run: node --test console/backend/test/*.test.mjs
+
+      - name: FXV PG integration (18 scenarios)
+        run: node --test console/backend/test/fxv-pg.integration.mjs
+
+      - name: C-chain PG audit integration
+        run: node --test console/backend/test/cchain-wiring.integration.mjs
+
+      - name: FXV e2e archive (15 scenarios, real git+PG+MinIO)
+        run: node console/backend/test/fxv-e2e-archive.integration.mjs
+
+      - name: Frontend build
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+        working-directory: console/frontend
