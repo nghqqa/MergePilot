@@ -1,0 +1,89 @@
+# LOCAL_RAG_TRIAL 独立本地栈（feat/local-rag-trial 波）。
+#
+# 隔离合同（由 scripts/run-e2e.mjs 与 OPERATIONS.md 共同维护）：
+#   - 与 promote*/fxv-stage/mp-stage/coreb 等既有栈零共享：独立 project 名、
+#     独立网络 local-rag-trial-net、独立卷前缀 localragtrial-*、独立端口段；
+#   - 全部镜像本地已存在（pull_policy: never），离线可起：
+#       pgvector/pgvector:pg16（与根 compose ISOLATED_LIVE 同源本地镜像）
+#       elestio/minio@sha256:25348a25…（与 fxv-pilot 发行包同一 digest pin，本地已有）
+#       local-rag-trial-console:local（本分支源码本地构建）
+#   - 仅 127.0.0.1 发布端口：console 48440 / pg 15436（host e2e 观测用）/ minio 9103；
+#   - 凭据全部为本地一次性试验值（.env，gitignored；.env.example 为占位模板），
+#     绝不读取/复用任何真实环境凭据；
+#   - 语料目录只读挂载到 console（/app/rag-corpus），容器不可写语料。
+name: local-rag-trial
+
+services:
+  pg:
+    image: pgvector/pgvector:pg16
+    pull_policy: never
+    environment:
+      POSTGRES_PASSWORD: "${RAGTRIAL_PG_PASSWORD}"
+      POSTGRES_DB: ragtrial
+    volumes:
+      - localragtrial-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ragtrial"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    networks: [ragtrial-net]
+    ports: ["127.0.0.1:${RAGTRIAL_PG_PORT:-15436}:5432"]
+
+  minio:
+    image: elestio/minio@sha256:25348a257f1ece1b192f25f6cd9854618fa86422ac87b494b5d4e629c556d4bd
+    pull_policy: never
+    command: server /data
+    environment:
+      MINIO_ROOT_USER: "${RAGTRIAL_MINIO_USER}"
+      MINIO_ROOT_PASSWORD: "${RAGTRIAL_MINIO_PASSWORD}"
+    volumes:
+      - localragtrial-miniodata:/data
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+    networks: [ragtrial-net]
+    ports: ["127.0.0.1:${RAGTRIAL_MINIO_PORT:-9103}:9000"]
+
+  console:
+    image: local-rag-trial-console:local
+    pull_policy: never
+    restart: unless-stopped
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile.canonical-console
+    depends_on:
+      pg: { condition: service_healthy }
+      minio: { condition: service_healthy }
+    environment:
+      CONSOLE_PG_DSN: "postgres://postgres:${RAGTRIAL_PG_PASSWORD}@pg:5432/ragtrial"
+      CONSOLE_HOST: "0.0.0.0"   # 容器内必须 0.0.0.0（staging 实测坑）
+      CONSOLE_PILOT_USER: "${RAGTRIAL_CONSOLE_USER}"
+      CONSOLE_PILOT_PASSWORD: "${RAGTRIAL_CONSOLE_PASSWORD}"
+      CONSOLE_SESSION_SECRET: "${RAGTRIAL_SESSION_SECRET}"
+      RAGTRIAL_S3_ENDPOINT: "http://minio:9000"
+      RAGTRIAL_S3_BUCKET: "ragtrial"
+      RAGTRIAL_S3_ACCESS_KEY: "${RAGTRIAL_MINIO_USER}"
+      RAGTRIAL_S3_SECRET_KEY: "${RAGTRIAL_MINIO_PASSWORD}"
+      RAGTRIAL_CORPUS_DIR: "/app/rag-corpus"
+    volumes:
+      - ./corpus:/app/rag-corpus:ro
+      - localragtrial-evidence:/app/evidence
+    ports: ["127.0.0.1:${RAGTRIAL_CONSOLE_PORT:-48440}:4730"]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "--timeout=5", "http://127.0.0.1:4730/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks: [ragtrial-net]
+
+volumes:
+  localragtrial-pgdata: {}
+  localragtrial-miniodata: {}
+  localragtrial-evidence: {}
+
+networks:
+  ragtrial-net: {}
