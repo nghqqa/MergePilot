@@ -24,12 +24,15 @@ services:
     healthcheck: { test: ["CMD", "curl", "-sf", "http://localhost:9000/minio/health/live"], interval: 15s, timeout: 5s, retries: 5 }
     networks: [fxv-pilot-net]
   console:
-    # 当前候选：fxv-staging-20260927-hardening（含 C 链接线+安全加固波，PR#235/#236，main=c07a4d89）
-    image: ghcr.io/nghqqa/mergepilot-console@sha256:8a6427b0dd2c887d466fffcd65bcb30b950e2a61947e754a40380b18eb747d17
-    # 回滚锚点（ROLLBACK ANCHOR）：上一受控验证镜像（6h 稳定性验证基线，a0bfa15）
+    # 当前候选：mainline-20260927（b09378d+6f74e75 溯源重建：.dockerignore 裁剪，镜像无 test/internal；
+    # Trivy HIGH/CRITICAL=0、SBOM 35；远端 digest 与本地逐字节核对一致 2026-09-27）
+    image: ghcr.io/nghqqa/mergepilot-console@sha256:f7ffce6d6b87b24f1e63858dc1ec021b1582417bf1de1162dcadb4d22a66fea6
+    # 回滚锚点 1（ROLLBACK ANCHOR）：上一候选（fxv-staging-20260927-hardening，PR#235/#236，main=c07a4d89）
+    #   ghcr.io/nghqqa/mergepilot-console@sha256:8a6427b0dd2c887d466fffcd65bcb30b950e2a61947e754a40380b18eb747d17
+    # 回滚锚点 2：6h 稳定性验证基线（a0bfa15）
     #   ghcr.io/nghqqa/mergepilot-console@sha256:947ab1b69cdf76fce1a19f18f04021f96bfc326cdc11b378b2775787240083f2
     # 回滚步骤见 OPERATIONS.md（改 image 行 → up -d；数据卷向后兼容，fxv schema 幂等；
-    # 注意：旧镜像无 /api/cchain/* 端点，回滚期间 C 链面板 404 属预期）。
+    # 注意：锚点 2 旧镜像无 /api/cchain/* 端点，回滚期间 C 链面板 404 属预期）。
     restart: unless-stopped
     depends_on:
       pg: { condition: service_healthy }

@@ -1,0 +1,41 @@
+# .dockerignore — console 镜像构建上下文裁剪（2026-09-27 主线溯源轮）。
+# 目的：镜像只携带运行时所需（backend 源码 + frontend/dist + runtime package 清单），
+# 排除测试/验证/内部文档/临时产物/依赖目录/本地秘密——不改变任何业务代码。
+# 运行时 pg 依赖由 docker/console-runtime-package.json 经 npm ci 安装于 /app/node_modules
+#（wiring.mjs 的 test/support 回退仅在 host 测试进程生效，镜像内主路径即可解析）。
+
+# 测试与验证
+**/test/
+**/tests/
+verification/
+**/fixtures/
+
+# 内部/发行文档与配置（镜像不含）
+distribution/
+docs/
+*.md
+!console/frontend/README.md
+
+# 依赖与构建中间产物（npm ci 在镜像内完成）
+**/node_modules/
+console/frontend/node_modules/
+console/frontend/dist-*/
+
+# 本地秘密与环境文件（绝不入镜像）
+.env
+.env.*
+**/.env
+**/.env.*
+secrets/
+*.key
+*.pem
+
+# 临时日志与工作区
+*.log
+logs/
+tmp/
+workspace/
+evidence/
+.git/
+.gitignore
+.mimosa/

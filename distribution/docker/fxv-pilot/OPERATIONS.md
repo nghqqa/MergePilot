@@ -17,3 +17,7 @@
 - console 镜像固定到 **sha256:8a6427b0dd2c…747d17**（`fxv-staging-20260927-hardening`，Trivy HIGH/CRITICAL=0，SBOM 49；含 C 链接线与安全加固波）。compose 内保留旧 digest 为**回滚锚点**（947ab1b6…，6h 稳定性验证基线）。
 - 回滚：将 image 行换回锚点 digest → `docker compose up -d` → 健康检查 /api/health。旧镜像无 /api/cchain/* 端点——回滚期间 C 链面板/端点 404 属预期，不影响 FXV 主链。
 - 后端 CI：新增 `.github/workflows/console-backend.yml`（单测/合同全量 + FXV 18 + E2E 15 + C 链合同/PG 审计 + 前端构建，PG/MinIO 服务容器化）；live-v3 集成保持 env-skip（需 legacy 4191 fixture harness，历史项，非本仓库可在 CI 起的服务——skip 原因登记于 workflow 注释与本文件）。
+
+## mainline-20260927 溯源镜像（2026-09-27）
+- console 固定 `sha256:f7ffce6d…fea6`（mainline-20260927：.dockerignore 重建，镜像不含 test/internal；远端 digest 与本地逐字节核对一致）。
+- 回滚锚点双保留：8a6427b0（上一候选 hardening）/ 947ab1b6（6h 基线）。promote3 栈已实测 f7ffce6d↔8a6427b0 双向 6s 切换恢复。
