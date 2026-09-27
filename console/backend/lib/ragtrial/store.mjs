@@ -26,16 +26,40 @@ export const QUERY_STATES = [
   'hit', 'empty', 'model_missing', 'index_stale', 'provider_unavailable', 'error',
 ];
 
-// 混合打分地板（按 provider 维度区分；bench 实测校准，见 deploy/rag-prod 证据）：
-//  - local-hash-v1（256 维）：零重叠 final ≤0.5·碰撞噪声（≤0.03），真命中 ≥0.15 → 0.1 分界；
-//  - bge 语义（1024 维）：bench 实测（evidence/rag-prod/*/benchmark.json）——
-//    相关命中最低 0.582，最差假阳（fluent 乱词）0.48 → 取 0.52 分界（两侧 ≥0.06 余量）。
-export const SCORE_FLOORS = { local: 0.1, semantic: 0.52, semantic768: 0.45 };
+// 混合打分配置（按模型维度区分；校准证据见 evidence/rag-zh-gate/*/calibration.json
+// 与 evidence/rag-prod/*/benchmark.json）：
+//   final = w·vec + (1-w)·lex，lex 按 lexMode ∈ {plain, idf}：
+//   plain = |q∩d|/min(|q|,|d|)；idf = Σ idf(q∩d)/Σ idf(q)（语料驱动 DF，缓存 5min）。
+// 默认值 = 各模型部署现行值（本波零行为变化）。校准结论：现有模型在空准确=1.0
+// 约束下同义/跨表述上限不足（能力界，非调参界）——生产 zh 模型到位后经
+// calibrate-hybrid.mjs + holdout 重校准并通过 RAGTRIAL_HYBRID_JSON 覆盖验证。
+export const HYBRID_CONFIGS = {
+  256: { w: 0.5, lexMode: 'plain', floor: 0.1 },
+  768: { w: 0.5, lexMode: 'plain', floor: 0.45 },
+  1024: { w: 0.5, lexMode: 'plain', floor: 0.52 },
+};
 
 export class RagTrialError extends Error {
   constructor(message, kind = 'internal', status = 500) {
     super(message); this.name = 'RagTrialError'; this.kind = kind; this.status = status;
   }
+}
+
+// 内部试验用覆盖：RAGTRIAL_HYBRID_JSON={"<model_id>":{"w":..,"lexMode":..,"floor":..}}
+// （模型 id 优先，dims 默认兜底；不影响生产默认值——e5 内部试验高召回档等用途）
+function hybridConfigFor(env, model) {
+  let override = null;
+  if (env.RAGTRIAL_HYBRID_JSON) {
+    try {
+      const o = JSON.parse(env.RAGTRIAL_HYBRID_JSON);
+      override = o?.[model.model_id] ?? o?.[`dims:${model.dims}`] ?? null;
+    } catch { override = null; /* 非法 JSON 静默忽略，走安全默认 */ }
+  }
+  const base = HYBRID_CONFIGS[Number(model.dims)] ?? { w: 0.5, lexMode: 'plain', floor: 0.1 };
+  const cfg = { ...base, ...(override ?? {}) };
+  if (!(cfg.w >= 0 && cfg.w <= 1) || !['plain', 'idf'].includes(cfg.lexMode)
+      || !(cfg.floor >= 0 && cfg.floor <= 1)) return base;
+  return cfg;
 }
 
 export async function createRagTrialStore({ pool, env = process.env, fetchImpl = fetch }) {
@@ -44,6 +68,7 @@ export async function createRagTrialStore({ pool, env = process.env, fetchImpl =
   }
   const q = (text, params) => pool.query(text, params);
   let pgvectorOk = null; // 三态：null=未知 true=可用 false=缺失
+  const dfCache = new Map(); // scope|digest|version → {at, N, df:Map}（5min TTL）
 
   async function audit(kind, actor, { repo = null, branch = null, detail = {} } = {}) {
     if (!actor) throw new Error('audit: actor required (NOT NULL)');
@@ -370,17 +395,37 @@ export async function createRagTrialStore({ pool, env = process.env, fetchImpl =
       rows = r.rows;
     } catch (e) { throw pgWrap(e); }
 
-    const scoreFloor = Number(model.dims) === 1024 ? SCORE_FLOORS.semantic
-      : Number(model.dims) === 768 ? SCORE_FLOORS.semantic768 : SCORE_FLOORS.local;
-    const qTokens = new Set(tokenize(queryText));
+    const hyb = hybridConfigFor(env, model);
+    const scoreFloor = hyb.floor;
+    // IDF 词法：DF 取该 scope 全部活跃 chunk（真语料驱动；缓存 5min。生产大语料
+    // 需持久化 DF 表——接口已按此设计预留，见报告）
+    let idfFn = null;
+    if (hyb.lexMode === 'idf') {
+      const key = `${repo}|${branch}|${model.model_digest}|${model.index_version}`;
+      let entry = dfCache.get(key);
+      if (!entry || Date.now() - entry.at > 300_000) {
+        const r2 = await q(
+          `SELECT c.text FROM ${table} c
+             JOIN ragtrial.documents d ON d.repo=c.repo AND d.branch=c.branch AND d.doc_path=c.doc_path AND d.state='active'
+            WHERE c.repo=$1 AND c.branch=$2`, [repo, branch]).catch(() => null);
+        const df = new Map();
+        if (r2) for (const row of r2.rows) for (const t of new Set(tokenize(row.text))) df.set(t, (df.get(t) ?? 0) + 1);
+        entry = { at: Date.now(), N: r2 ? r2.rows.length : 0, df };
+        dfCache.set(key, entry);
+      }
+      idfFn = (t) => Math.log(1 + entry.N / (1 + (entry.df.get(t) ?? 0)));
+    }
+    const qTokens = [...new Set(tokenize(queryText))];
+    const qIdfSum = idfFn ? qTokens.reduce((s2, t) => s2 + idfFn(t), 0) || 1 : 0;
     const scored = rows.map((r) => {
       const dTokens = new Set(tokenize(r.text));
-      let shared = 0;
-      for (const t of qTokens) if (dTokens.has(t)) shared++;
-      const lex = qTokens.size && dTokens.size
-        ? shared / Math.min(qTokens.size, dTokens.size) : 0;
+      let shared = 0, sharedIdf = 0;
+      for (const t of qTokens) if (dTokens.has(t)) { shared++; if (idfFn) sharedIdf += idfFn(t); }
+      const lex = idfFn
+        ? sharedIdf / qIdfSum
+        : (qTokens.length && dTokens.size ? shared / Math.min(qTokens.length, dTokens.size) : 0);
       const vec = Number(r.vec_score);
-      return { r, lex, vec, final: 0.5 * vec + 0.5 * lex };
+      return { r, lex, vec, final: hyb.w * vec + (1 - hyb.w) * lex };
     })
       .filter((s) => s.final >= scoreFloor)
       .sort((a, b) => b.final - a.final)

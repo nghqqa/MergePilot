@@ -146,6 +146,26 @@ services:
     healthcheck: *console_hc
     networks: [rag-zh-net]
 
+  # 常驻 worker 部署形态（接口就绪，默认不启动；--profile resident-worker 启用）。
+  # 生产形态：console 镜像内 node 运行 tools/rag-worker.mjs 常驻循环（心跳/退避/
+  # 陈旧重占/死信已由 queue.mjs 全语义覆盖）；此处挂载 worktree 源码仅为本地演示。
+  worker:
+    image: rag-zh-console:local
+    pull_policy: never
+    profiles: ["resident-worker"]
+    depends_on:
+      pg: { condition: service_healthy }
+    environment:
+      CONSOLE_PG_DSN: "postgres://postgres:${RAGZH_PG_PASSWORD}@pg:5432/ragzh"
+      RAGTRIAL_CORPUS_DIR: "/app/rag-corpus"
+      RAGTRIAL_ALLOWED_SCOPES: "${RAGZH_ALLOWED_SCOPES}"
+    volumes:
+      - ./corpus:/app/rag-corpus:ro
+      - ../../tools/rag-worker.mjs:/app/worker/rag-worker.mjs:ro
+      - ../../console/backend:/app/console/backend:ro
+    command: ["node", "/app/worker/rag-worker.mjs", "--dsn", "postgres://postgres:${RAGZH_PG_PASSWORD}@pg:5432/ragzh", "--worker", "zh-resident-1"]
+    networks: [rag-zh-net]
+
 volumes:
   ragzh-pgdata: {}
   ragzh-miniodata: {}

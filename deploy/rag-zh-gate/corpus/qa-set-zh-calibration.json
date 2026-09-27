@@ -1,0 +1,91 @@
+{
+ "qa": [
+  {
+   "cat": "direct",
+   "q": "灰度发布每批观察多久指标",
+   "expect_doc": "部署与回滚.md"
+  },
+  {
+   "cat": "direct",
+   "q": "索引保留几个版本",
+   "expect_doc": "数据保留.md"
+  },
+  {
+   "cat": "synonym",
+   "q": "线上出问题怎么把版本退回去",
+   "expect_doc": "部署与回滚.md"
+  },
+  {
+   "cat": "synonym",
+   "q": "发布新版本之前要做哪些准备检查",
+   "expect_doc": "发布流程.md"
+  },
+  {
+   "cat": "synonym",
+   "q": "证书轮换之后旧的还能用吗",
+   "expect_doc": "密钥管理.md"
+  },
+  {
+   "cat": "synonym",
+   "q": "搜出来的结果没有标注出处会怎么样",
+   "expect_doc": "检索系统设计.md"
+  },
+  {
+   "cat": "cross",
+   "q": "自动合并什么时候开",
+   "expect_doc": "架构总览.md"
+  },
+  {
+   "cat": "cross",
+   "q": "测试都过了凭什么不让我发版",
+   "expect_doc": "测试与验证.md"
+  },
+  {
+   "cat": "cross",
+   "q": "机器都要挂了有什么报警",
+   "expect_doc": "监控告警.md"
+  },
+  {
+   "cat": "cross",
+   "q": "别的团队能不能查我们仓库的东西",
+   "expect_doc": "权限模型.md"
+  },
+  {
+   "cat": "mixed",
+   "q": "keystore 分发走什么通道",
+   "expect_doc": "密钥管理.md"
+  },
+  {
+   "cat": "mixed",
+   "q": "audit 事件必须带哪些必填字段",
+   "expect_doc": "审计规范.md"
+  },
+  {
+   "cat": "mixed",
+   "q": "CPU 内存水位属于哪个监控维度",
+   "expect_doc": "监控告警.md"
+  }
+ ],
+ "empty_queries": [
+  {
+   "q": "出境旅游签证要准备哪些文件",
+   "note": "fluent zh absent-topic"
+  },
+  {
+   "q": "英语四六级报名时间和入口",
+   "note": "fluent zh absent-topic"
+  },
+  {
+   "q": "紫氖奎卯缈叁瞑 乱码零重叠探测",
+   "note": "zh gibberish"
+  },
+  {
+   "q": "驾照到期了换证需要什么材料",
+   "note": "fluent zh absent-topic"
+  }
+ ],
+ "qa_set": "zh-gate-v1-calibration",
+ "repo": "nghqqa/mergepilot",
+ "branch": "feat/rag-zh-gate",
+ "k": 5
+}

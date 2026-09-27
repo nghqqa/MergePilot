@@ -1,0 +1,91 @@
+{
+ "qa": [
+  {
+   "cat": "direct",
+   "q": "审计记录保留多久",
+   "expect_doc": "审计规范.md"
+  },
+  {
+   "cat": "direct",
+   "q": "回滚的第一步是什么",
+   "expect_doc": "部署与回滚.md"
+  },
+  {
+   "cat": "synonym",
+   "q": "查不到数据时怎么定位数据库连不上的问题",
+   "expect_doc": "故障排查.md"
+  },
+  {
+   "cat": "synonym",
+   "q": "机器调用接口要带什么凭证",
+   "expect_doc": "权限模型.md"
+  },
+  {
+   "cat": "synonym",
+   "q": "秘钥能不能提交进代码仓库",
+   "expect_doc": "安全基线.md"
+  },
+  {
+   "cat": "synonym",
+   "q": "口令泄露了要怎么处理",
+   "expect_doc": "发布流程.md"
+  },
+  {
+   "cat": "cross",
+   "q": "删掉的文档还能再被搜到吗",
+   "expect_doc": "数据保留.md"
+  },
+  {
+   "cat": "cross",
+   "q": "谁干的活都要记下来吧，记录里必须有哪些东西",
+   "expect_doc": "审计规范.md"
+  },
+  {
+   "cat": "cross",
+   "q": "系统坏了想撤回刚发的版本，第一步干啥",
+   "expect_doc": "部署与回滚.md"
+  },
+  {
+   "cat": "cross",
+   "q": "改动很小还要全部重新建索引吗",
+   "expect_doc": "数据保留.md"
+  },
+  {
+   "cat": "mixed",
+   "q": "mirror 按摘要固定还是用浮动 tag",
+   "expect_doc": "部署与回滚.md"
+  },
+  {
+   "cat": "mixed",
+   "q": "manifest 校验失败会不会 fail-closed",
+   "expect_doc": "检索系统设计.md"
+  },
+  {
+   "cat": "mixed",
+   "q": "canary 发布每批观察几分钟",
+   "expect_doc": "部署与回滚.md"
+  }
+ ],
+ "empty_queries": [
+  {
+   "q": "缇棂薮翳 佶屈聱牙",
+   "note": "zh gibberish"
+  },
+  {
+   "q": "红烧肉怎么做好吃又软烂",
+   "note": "fluent zh absent-topic"
+  },
+  {
+   "q": "如何申请育儿补贴",
+   "note": "fluent zh absent-topic"
+  },
+  {
+   "q": "公积金提取的条件和流程",
+   "note": "fluent zh absent-topic"
+  }
+ ],
+ "qa_set": "zh-gate-v1-holdout",
+ "repo": "nghqqa/mergepilot",
+ "branch": "feat/rag-zh-gate",
+ "k": 5
+}

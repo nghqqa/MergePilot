@@ -198,6 +198,25 @@ try {
   const localQ = await store.search({ q: '审计', repo: REPO, branch: BR, k: 2 });
   ok('local provider 查询不产生 provider_unavailable', localQ.service_state !== 'provider_unavailable');
 
+  // ── 混合评分 v2：IDF 词法 + RAGTRIAL_HYBRID_JSON 覆盖（默认零行为变化） ──
+  const { HYBRID_CONFIGS } = await import('../lib/ragtrial/store.mjs');
+  ok('HYB1 默认配置=部署现行值（256/768/1024 三档，零行为变化）',
+    HYBRID_CONFIGS[256].floor === 0.1 && HYBRID_CONFIGS[768].floor === 0.45 && HYBRID_CONFIGS[1024].floor === 0.52
+    && HYBRID_CONFIGS[256].w === 0.5);
+  const sstore2 = await createRagTrialStore({ pool, env: { ...process.env,
+    CONSOLE_PG_DSN: undefined, RAGTRIAL_EMBED_ENDPOINT: undefined,
+    RAGTRIAL_HYBRID_JSON: JSON.stringify({ 'local-hash-v1': { lexMode: 'idf', w: 0.3, floor: 0.1 } }) } });
+  const idfHit = await sstore2.search({ q: '审计事件必须携带 actor 字段', repo: REPO, branch: BR, k: 3 });
+  ok('HYB2 IDF 词法路径可用（覆盖配置生效，命中引用链完整）',
+    idfHit.service_state === 'hit' && idfHit.results.every((h) => h.citation.doc_path));
+  const plainStore = await createRagTrialStore({ pool, env: { ...process.env, CONSOLE_PG_DSN: undefined, RAGTRIAL_EMBED_ENDPOINT: undefined } });
+  const plainHit = await plainStore.search({ q: '审计事件必须携带 actor 字段', repo: REPO, branch: BR, k: 3 });
+  ok('HYB3 无覆盖=默认 plain 路径（与 v1 行为一致）', plainHit.service_state === 'hit');
+  const badOverride = await createRagTrialStore({ pool, env: { ...process.env, CONSOLE_PG_DSN: undefined,
+    RAGTRIAL_EMBED_ENDPOINT: undefined, RAGTRIAL_HYBRID_JSON: '{"local-hash-v1":{"floor":9}}' } });
+  const badHit = await badOverride.search({ q: '审计事件', repo: REPO, branch: BR, k: 3 });
+  ok('HYB4 非法覆盖回退安全默认（floor=9 被拒→默认 0.1 仍可命中）', badHit.service_state === 'hit');
+
 } catch (e) {
   fail++;
   console.error('FATAL', e);
