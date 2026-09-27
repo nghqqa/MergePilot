@@ -43,7 +43,7 @@ export default function DataSourcesPage() {
           <li>日常处理：<Link to="/pending">待处理</Link></li>
           <li>按仓库浏览：<Link to="/repos">仓库</Link></li>
           <li>完整运行档案：<Link to="/runs">运行</Link></li>
-          <li>诊断与健康：<Link to="/diagnostics">审计诊断</Link></li>
+          <li>诊断与健康：<Link to="/diagnostics">诊断</Link></li>
         </ul>
         {state.key === 'unavailable' ? (
           <p className="section-note">提示：当前后端不可用，以上页面暂无数据——这不是"没有数据"。</p>

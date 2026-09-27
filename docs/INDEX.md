@@ -4,6 +4,7 @@
 | 文档 | 内容 |
 |---|---|
 | [README.md](../README.md) | 项目主页（快速开始 / 三条安全路径 / 十二轮运行 / 架构图） |
+| [docs/GLOSSARY.md](GLOSSARY.md) | 术语表与语言契约（状态词表 / 中文优先策略 / 机器字段边界） |
 | [docs/architecture/](architecture/) | 架构图（SVG 源文件） |
 | [PRODUCT.md](../PRODUCT.md) | 产品定位 |
 | [DESIGN.md](../DESIGN.md) | 系统设计概要 |

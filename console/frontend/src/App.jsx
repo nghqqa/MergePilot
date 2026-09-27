@@ -11,6 +11,7 @@ import {
   SettingOutlined, MenuOutlined, AppstoreOutlined, SafetyCertificateOutlined, FileSearchOutlined,
 } from '@ant-design/icons';
 import { api } from './api.js';
+import { readCsrfCookie } from './api-live.js';
 import { AuthProvider, useAuth } from './auth.jsx';
 import { BrandMark, ErrorBoundary } from './ui.jsx';
 import { useDataSource, useRuntimeConfig } from './hooks.js';
@@ -57,13 +58,14 @@ function Configured() {
   );
 }
 
-// 审查工作台主导航：待处理（默认队列）→ 仓库 → 运行 → 审计
+// 审查工作台主导航：待处理（默认队列）→ 仓库 → 运行 → 审批
+// （命名契约：/approvals=审批（人工放行动作）；审计=skill_gate_audit 等记录留痕，见"诊断"与 /core 的 Gate 审计区）
 const NAV = [
   { to: '/overview', label: '运营总览', icon: AppstoreOutlined, end: true },
   { to: '/pending', label: '待处理', icon: InboxOutlined, end: false },
   { to: '/repos', label: '仓库', icon: FolderOpenOutlined, end: true },
   { to: '/runs', label: '运行', icon: HistoryOutlined, end: false },
-  { to: '/approvals', label: '审计', icon: AuditOutlined, end: true },
+  { to: '/approvals', label: '审批', icon: AuditOutlined, end: true },
 ];
 // 系统区（非首要工作流）：系统状态与接线 / 知识库 / 数据源 / 诊断 / 设置
 const SYSTEM_NAV = [
@@ -120,6 +122,18 @@ function TopbarContext() {
 function AuthChip() {
   const auth = useAuth();
   const config = useAppConfig();
+  // 登出（与设置页同一契约）：POST /api/auth/logout + X-CSRF-Token（mp_csrf Cookie）；
+  // 完成后刷新会话，以服务端状态为准。失败（如 CSRF 缺失 403）时刷新后仍显示登录态。
+  const doLogout = async () => {
+    try {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'X-CSRF-Token': readCsrfCookie() ?? '' },
+      });
+    } catch { /* 网络失败也刷新——以服务端会话状态为准 */ }
+    auth.refresh();
+  };
   // fixture 验收环境（可信配置声明 data_mode=fixture）：会话即合成用户，标识常驻可见
   const fixtureSession = config?.dataMode === 'fixture' && auth.status === 'authed';
   // console-pg 联调环境：认证未实现（401）——页面必须显示未认证/fixture 状态
@@ -134,8 +148,9 @@ function AuthChip() {
         ) : (
           <span className="auth-user">{auth.user?.display_name ?? auth.user?.github_login ?? auth.user?.name ?? '已登录'}</span>
         )}
-        <button type="button" className="btn btn-ghost btn-sm" onClick={auth.refresh} title="登出端点未接线（POST /api/auth/logout，C-8）——此按钮重新探测会话状态">
-          <LogOut size={12} strokeWidth={1.75} aria-hidden /> 重查会话
+        <button type="button" className="btn btn-ghost btn-sm" onClick={doLogout}
+          title="结束服务端会话（POST /api/auth/logout，携带 CSRF）；退出后需重新登录">
+          <LogOut size={12} strokeWidth={1.75} aria-hidden /> 退出登录
         </button>
       </span>
     );

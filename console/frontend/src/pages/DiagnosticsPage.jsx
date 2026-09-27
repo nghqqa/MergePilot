@@ -5,7 +5,8 @@ import { useAppConfig } from '../App.jsx';
 import { useAuth } from '../auth.jsx';
 import { resolveWorkspaceState } from '../components/WorkspaceStatusPanel.jsx';
 
-// 审计诊断：接线状态与健康摘要的集中呈现 + 审计记录入口。
+// 诊断：接线状态与健康摘要的集中呈现 + 审计记录入口。
+// 命名契约：本页=「诊断」（含审计记录入口）；「审批」=/approvals 的人工放行页——两者不混用。
 // 只如实列出已接入与未接入项；未接线项等待后端交付（对应 INTEGRATION-REQUESTS R-1~R-4）。
 export default function DiagnosticsPage() {
   const config = useAppConfig();
@@ -26,7 +27,7 @@ export default function DiagnosticsPage() {
 
   return (
     <div>
-      <Typography.Title level={1} style={{ fontSize: 24, marginBottom: 4 }}>审计诊断</Typography.Title>
+      <Typography.Title level={1} style={{ fontSize: 24, marginBottom: 4 }}>诊断</Typography.Title>
       <Typography.Paragraph type="secondary">
             接线状态、后端健康与审计记录入口。异常时先看这里判断"是坏了"还是"还没接"。
           </Typography.Paragraph>

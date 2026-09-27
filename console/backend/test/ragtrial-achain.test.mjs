@@ -5,6 +5,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import http from 'node:http';
 import os from 'node:os';
 import { createConsole } from '../server.mjs';
 import { toAuxEvidence, canAutoPromote, fixerPatchInputs, verifierAccepts, promotionRequest } from '../lib/ragtrial/review.mjs';
@@ -53,6 +54,42 @@ test('PG 不可达 → 503 显式降级（degraded + error_kind，不伪装空�
   } finally { delete process.env.CONSOLE_PG_DSN; }
 });
 
+// ── 词汇契约（P1 修复：hit/ok 统一）──
+// A 链端点对"检索成功"只发射 'hit'：上游 org-rag 的 'ok' 在边界归一为 'hit'；
+// 上游 degraded 原样透传为 503 degraded。前端只消费单一 'hit'（RagTrialPage）。
+test('词汇契约：上游 org-rag ok → 端点归一为 hit；degraded 透传', async () => {
+  const upstream = http.createServer((rq, rs) => {
+    const ok = new URL(rq.url, 'http://x').searchParams.get('q') === 'okcase';
+    rs.setHeader('content-type', 'application/json');
+    rs.end(JSON.stringify(ok
+      ? { service_state: 'ok', results: [], snapshot_id: 's1', knowledge_type: 'org_knowledge' }
+      : { service_state: 'degraded', degraded_reason: 'stub_down' }));
+  });
+  await new Promise((r) => upstream.listen(0, '127.0.0.1', r));
+  const prevFlag = process.env.MERGEPILOT_RAG_TRIAL_A_CHAIN;
+  const prevUrl = process.env.ORG_RAG_LIVE_URL;
+  process.env.MERGEPILOT_RAG_TRIAL_A_CHAIN = '';
+  process.env.ORG_RAG_LIVE_URL = `http://127.0.0.1:${upstream.address().port}`;
+  try {
+    const r1 = await fetch(BASE + '/api/rag/org-search?q=okcase', { headers: cookie() });
+    assert.equal(r1.status, 200);
+    const b1 = await r1.json();
+    assert.equal(b1.service_state, 'hit', "上游 'ok' 必须归一为 'hit'（词汇单值契约）");
+    assert.equal(b1.source, 'ORG_RAG');
+    assert.match(b1.usage_note ?? '', /reference only/);
+
+    const r2 = await fetch(BASE + '/api/rag/org-search?q=other', { headers: cookie() });
+    assert.equal(r2.status, 503);
+    const b2 = await r2.json();
+    assert.equal(b2.service_state, 'degraded');
+    assert.equal(b2.degraded_reason, 'stub_down');
+  } finally {
+    process.env.MERGEPILOT_RAG_TRIAL_A_CHAIN = prevFlag;
+    if (prevUrl) process.env.ORG_RAG_LIVE_URL = prevUrl; else delete process.env.ORG_RAG_LIVE_URL;
+    upstream.close();
+  }
+});
+
 test('Review 安全边界：org-search 形状的结果不可自动晋升/不可作 fixer 输入/Verifier 恒拒收', () => {
   // 与 org-search ragtrial 分支的实际返回形状一致（citation + reference_only）
   const orgHit = { score: 0.45, snippet: '部署前必须检查回滚锚点…',
@@ -72,11 +109,12 @@ test('Review 安全边界：org-search 形状的结果不可自动晋升/不可�
     assert.equal(r.allowed, false, `${target} 必须拒绝：${r.reason}`);
     assert.match(r.reason, /rag_evidence_cannot_auto_promote/);
   }
-  // fixer 输入剔除 RAG 后为空 → 不可启动
+  // fixer 输入剔除 RAG 后为空 → 不可启动（reason=机器码，中文解释在 note）
   const fx = fixerPatchInputs([ev]);
   assert.equal(fx.allowed.length, 0);
   assert.equal(fx.fixer_may_run, false);
-  assert.match(fx.reason, /不得只依据 RAG/);
+  assert.equal(fx.reason, 'no_non_rag_evidence');
+  assert.match(fx.note ?? '', /不得只依据 RAG/);
   // Verifier 只认独立证据
   assert.equal(verifierAccepts(ev).accepted, false);
   assert.equal(verifierAccepts({ kind: 'harness_report' }).accepted, true);

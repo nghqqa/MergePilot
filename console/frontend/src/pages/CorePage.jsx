@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Alert, Table, Tag, Typography } from 'antd';
 import { useAuth } from '../auth.jsx';
 import { STATUS_META } from '../theme.js';
+import { fxvMap, fxvArtifactMap, ticketMap, ticketActionMap, toneToColor } from '../status-map.js';
 
 // 系统状态与接线（antd 版）：五个 Core API 的实时只读视图，供排查"是坏了还是没接"。
 // 诚实语义：未登录 401 → 引导；无 DSN → 未接线；连接失败 → 后端错误；成功 → 实时数据。
@@ -40,7 +41,7 @@ export default function CorePage() {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [pulls, pending, tickets, evidence, audit] = await Promise.all([
+      const [pulls, pending, tickets, evidence, audit, fxv] = await Promise.all([
         apiGet('/api/pulls'), apiGet('/api/pending'), apiGet('/api/tickets'),
         apiGet('/api/evidence'), apiGet('/api/audit'), Promise.all([apiGet('/api/fxv/attempts'), apiGet('/api/fxv/metrics').catch(() => null)]).then(([a, m]) => ({ ...a, metrics: m })),
       ]);
@@ -129,12 +130,19 @@ export default function CorePage() {
               { title: '票据', dataIndex: 'ticket_id', ellipsis: true, render: (v) => <span className="mono">{v?.slice(0, 16)}…</span> },
               { title: '仓库 / PR', ellipsis: true,
                 render: (_, r) => `${r.repo} ${r.pr_number != null ? '#' + r.pr_number : ''}` },
-              { title: '动作', dataIndex: 'action', width: 130 },
+              { title: '动作', dataIndex: 'action', width: 130,
+                render: (v) => {
+                  const m = ticketActionMap(v);
+                  return <Tag color={toneToColor(m.tone)} title={m.note}>{m.label}</Tag>;
+                } },
               { title: 'TTL', width: 90,
                 render: (_, r) => (r.approval_expires_at && new Date(r.approval_expires_at) < new Date()
                   ? <Tag color="warning">已过期</Tag> : '有效') },
               { title: '状态', dataIndex: 'status', width: 110,
-                render: (v) => <Tag color={STATUS_META[v]?.tone}>{STATUS_META[v]?.label ?? v}</Tag> },
+                render: (v) => {
+                  const m = ticketMap(v);
+                  return <Tag color={toneToColor(m.tone)} title={m.note}>{m.label}</Tag>;
+                } },
             ]}
           />
           <Typography.Title level={3} style={{ marginTop: 20 }}>Gate 审计</Typography.Title>
@@ -167,10 +175,16 @@ export default function CorePage() {
               { title: 'Attempt', dataIndex: 'attempt_id', ellipsis: true, render: (v) => <span className="mono">{v}</span> },
               { title: '仓库/分支', ellipsis: true, render: (_, r) => `${r.repo}@${r.branch}` },
               { title: '状态', dataIndex: 'state', width: 150,
-                render: (v) => <Tag color={STATUS_META[v]?.tone || 'default'}>{STATUS_META[v]?.label ?? v}</Tag> },
+                render: (v) => {
+                  const m = fxvMap(v);
+                  return <Tag color={toneToColor(m.tone)} title={m.note}>{m.label}</Tag>;
+                } },
               { title: '最近原因', dataIndex: 'last_reason', ellipsis: true },
-              { title: 'Artifact', dataIndex: 'artifact_status', width: 110,
-                render: (v) => <Tag color={v === 'OK' ? 'success' : v === 'FAILED' ? 'error' : 'default'}>{v || 'NONE'}</Tag> },
+              { title: 'Artifact', dataIndex: 'artifact_status', width: 130,
+                render: (v) => {
+                  const m = fxvArtifactMap(v);
+                  return <Tag color={toneToColor(m.tone)} title={m.note}>{m.label}</Tag>;
+                } },
               { title: '审计', dataIndex: 'audit_events', width: 70, render: (v) => v ?? 0 },
               { title: '更新', dataIndex: 'updated_at', width: 170,
                 render: (v) => (v ? new Date(v).toLocaleString() : '—') },

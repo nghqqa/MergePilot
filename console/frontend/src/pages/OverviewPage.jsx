@@ -17,8 +17,9 @@ const STAGE_LABEL = {
   PASSED: { label: '已通过', color: 'success' },
   BLOCKED: { label: '已阻断', color: 'error' },
   STALE: { label: '已过期(head)', color: 'default' },
+  UNKNOWN: { label: '未知（决策缺失）', color: 'warning' },
 };
-const STAGE_ORDER = ['REVIEWING', 'ACTION_REQUIRED', 'REMEDIATING', 'VERIFYING', 'PASSED', 'BLOCKED', 'STALE'];
+const STAGE_ORDER = ['REVIEWING', 'ACTION_REQUIRED', 'REMEDIATING', 'VERIFYING', 'PASSED', 'BLOCKED', 'STALE', 'UNKNOWN'];
 
 async function apiGet(path) {
   const res = await fetch(path, { credentials: 'same-origin' });

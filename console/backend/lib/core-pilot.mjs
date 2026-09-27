@@ -119,14 +119,27 @@ export function clearCorePilotCache() { cache = { data: null, at: 0 }; }
 // GET /api/overview 的数据推导。阶段只能由后端权威状态（PG 事实）给出：
 //   ACTION_REQUIRED = 最新 run 存在未过期 PENDING 票据（approval.tickets）
 //   BLOCKED         = gate 审计 REFUSE（skill_gate_audit）或回执 integrity != OK
-//   PASSED          = 回执齐备 + gate PRODUCE + 无待办票
+//   PASSED          = 回执齐备 + gate PRODUCE + 无待办票（fail-closed：decision 缺失/无法识别不标 PASSED）
 //   REVIEWING       = 有回执、尚无 gate 决策
+//   UNKNOWN         = gate 记录存在但 decision 缺失/无法识别（数据异常——不冒充通过，也不武断阻断）
 //   STALE           = 同 PR 存在更新 head 而该 run 绑定旧 head（head 排序推导）
 //   REMEDIATING/VERIFYING = 需要 Fixer/Verifier（本部署 DISABLED）——计数恒 0，
 //                            枚举保留但不虚构（stage_source 注明 not_applicable）。
 // 每行保留 repo/pr_number/head_sha/run_id/stage/stage_source/updated_at。
 const OVERVIEW_SCHEMA_VERSION = 1;
-const STAGES = ['REVIEWING', 'ACTION_REQUIRED', 'REMEDIATING', 'VERIFYING', 'PASSED', 'BLOCKED', 'STALE'];
+const STAGES = ['REVIEWING', 'ACTION_REQUIRED', 'REMEDIATING', 'VERIFYING', 'PASSED', 'BLOCKED', 'STALE', 'UNKNOWN'];
+
+// gate 记录 → 阶段（纯函数，fail-closed）。P1 修复：decision 缺失/无法识别时
+// 不得标 PASSED（也不得断言不存在的 PRODUCE 决策）——落 UNKNOWN 等人工核查。
+export function stageForGateDecision(gate) {
+  const decision = String(gate?.decision?.decision ?? '').toUpperCase();
+  if (decision === 'PRODUCE') return { stage: 'PASSED', stage_source: 'skill_gate_audit (PRODUCE)' };
+  if (decision === 'REFUSE') return { stage: 'BLOCKED', stage_source: 'skill_gate_audit (REFUSE)' };
+  return {
+    stage: 'UNKNOWN',
+    stage_source: `skill_gate_audit (decision=${decision || 'missing'} — unrecognized, fail-closed)`,
+  };
+}
 
 export async function overviewState(allowRepos) {
   const base = await corePilotState();
@@ -238,11 +251,7 @@ export async function overviewState(allowRepos) {
         } else {
           const gate = gates.get(g.run_id);
           if (!gate) { stage = 'REVIEWING'; stage_source = 'skill_receipt_outbox (no gate decision yet)'; }
-          else if (String(gate.decision?.decision || '').toUpperCase() === 'REFUSE') {
-            stage = 'BLOCKED'; stage_source = 'skill_gate_audit (REFUSE)';
-          } else {
-            stage = 'PASSED'; stage_source = 'skill_gate_audit (PRODUCE)';
-          }
+          else ({ stage, stage_source } = stageForGateDecision(gate));
         }
         out.stage_counts[stage] += 1;
         out.prs.push({ repo: pr.repo, pr_number: pr.pr_number, head_sha: g.head_sha,
