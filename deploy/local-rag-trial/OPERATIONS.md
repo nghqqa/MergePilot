@@ -31,6 +31,18 @@ docker compose down -v              # 销毁（连卷删除，慎用）
 - 索引回滚：`POST /api/rag-trial/index/rollback {"to_index_version":1}`
   （只允许回到保留窗口内的版本；窗口=最近 2 个版本）
 
+## scope 门（fail-closed，默认拒绝）
+
+查询按 `repo@branch` 过 RAGTRIAL_ALLOWED_SCOPES 门：未配置/为空 → 一律 403
+`scope_not_configured`；越界 scope → 403 `scope_not_allowed`（有界脱敏审计）。
+compose 以 interpolation 默认值放行唯一试验 scope
+`nghqqa/mergepilot@feat/local-rag-trial`（与 e2e 常量同源）；在 `.env` 中：
+
+- 覆盖：`RAGTRIAL_ALLOWED_SCOPES=my/repo@main,my/repo@dev`（逗号分隔多 scope）
+- 全拒绝：`RAGTRIAL_ALLOWED_SCOPES=`（显式置空，改后 `docker compose up -d` 重建生效）
+
+ingest/delete 不走 scope 门（仅会话认证）；门只拦查询面。
+
 ## 故障处置
 
 - **PG 不可用**：查询返回 503 `error/pg_unavailable`，进程内存计数补齐
@@ -40,11 +52,14 @@ docker compose down -v              # 销毁（连卷删除，慎用）
   回滚到基线 = 用基线代码重新 build+up（数据卷向后兼容，ragtrial schema 幂等；
   注意基线镜像无 /api/rag-trial/* 端点，回滚期间 RAG 试验页 404 属预期）。
 
-## e2e（15 项必须测试）
+## e2e（26 项断言，全新卷单跑）
 
 ```bash
 node deploy/local-rag-trial/scripts/run-e2e.mjs
 # 产物：evidence/local-rag-trial/<ts>/（summary/manifest/transcript/…）
+# 注意：S8/D1/S14a 锚定 index_version=1→2、A1 期待全新 ingest——须在干净卷上
+# 单次运行（重跑脏卷会伪影失败）；隔离验证可用 RAGTRIAL_COMPOSE_PROJECT=名
+# 配合 `docker compose -p 名` 起独立 project（默认 project=local-rag-trial）。
 ```
 
 ## 明确不做

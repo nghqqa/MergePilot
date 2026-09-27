@@ -6,7 +6,7 @@
 // 边界：只操作 local-rag-trial project；绝不触碰 promote*/fxv-stage/mp-stage/coreb 栈；
 //       一次性本地凭据来自 .env；输出不含任何真实凭据。
 
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -40,7 +40,9 @@ function ok(id, name, cond, detail) {
   return r;
 }
 
-const compose = (...args) => execFileSync('docker', ['compose', ...args], { cwd: STACK, encoding: 'utf8' });
+// compose project 名可覆盖（隔离验证用；默认与 compose 文件 name: 一致）
+const PROJECT = process.env.RAGTRIAL_COMPOSE_PROJECT || 'local-rag-trial';
+const compose = (...args) => execFileSync('docker', ['compose', '-p', PROJECT, ...args], { cwd: STACK, encoding: 'utf8' });
 const psql = (sql) => compose('exec', '-T', 'pg', 'psql', '-U', 'postgres', '-d', 'ragtrial', '-tAc', sql);
 
 let cookie = null;
@@ -129,9 +131,13 @@ try {
 
   const wrongRepo = await api.query({ q: '回滚的第一步', repo: 'other/repo', branch: BR, k: 3 });
   const wrongBranch = await api.query({ q: '回滚的第一步', repo: REPO, branch: 'main', k: 3 });
-  ok('S9', 'wrong repo/branch 零泄漏（scoped empty）',
-    wrongRepo.json?.service_state === 'empty' && wrongBranch.json?.service_state === 'empty'
-      && (wrongRepo.json?.results ?? []).length === 0 && (wrongBranch.json?.results ?? []).length === 0);
+  ok('S9', '未授权 scope → 403（scope_not_allowed）+ 零结果泄漏',
+    wrongRepo.status === 403 && wrongBranch.status === 403
+      && wrongRepo.json?.error?.reason === 'scope_not_allowed'
+      && wrongBranch.json?.error?.reason === 'scope_not_allowed'
+      && (wrongRepo.json?.results ?? []).length === 0 && (wrongBranch.json?.results ?? []).length === 0,
+    { repo_status: wrongRepo.status, repo_reason: wrongRepo.json?.error?.reason,
+      branch_status: wrongBranch.status, branch_reason: wrongBranch.json?.error?.reason });
 
   const qaSet = JSON.parse(fs.readFileSync(path.join(STACK, 'corpus', 'qa-set.json'), 'utf8'));
   const ev = await api.eval({ ...qaSet });
@@ -226,41 +232,81 @@ try {
   const badRb = await api.rollback(99);
   ok('S14b', '回滚目标无保留行 → 显式拒绝', badRb.json?.error_kind === 'rollback_target_missing' || badRb.status === 409);
 
-  // ── Phase E：provider 不可达（一次性 remote-provider console） ──
+  // ── Phase E：remote provider 可达→ingest live 行→停服→provider_unavailable ──
+  // 语义前提（store.query 检查顺序）：remote 模型须先有 live 索引行才会走到
+  // provider 调用——故先用 host 假 embed 服务 ingest，再停服查询触发显式降级。
   let providerOk = false, providerDetail = null;
+  const FAKE_PORT = 48453;
+  const fakeServer = spawn('node', ['-e', `
+    const http = require('http');
+    http.createServer((req, res) => {
+      let b = '';
+      req.on('data', (c) => { b += c; });
+      req.on('end', () => {
+        let n = 1; try { n = (JSON.parse(b || '{}').input || []).length; } catch { /* */ }
+        const data = Array.from({ length: n }, () => ({ embedding: Array.from({ length: 256 }, (_, i) => ((i % 7) + 1) / 10) }));
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ data }));
+      });
+    }).listen(${FAKE_PORT}, '127.0.0.1');
+  `], { stdio: 'ignore' });
+  await new Promise((r) => setTimeout(r, 800)); // 等假服务监听
   try {
     execFileSync('docker', ['run', '-d', '--name', 'localragtrial-provider-probe',
-      '--network', 'local-rag-trial_ragtrial-net',
+      '--network', `${PROJECT}_ragtrial-net`,
       '-p', '127.0.0.1:48451:4730',
       '-e', 'CONSOLE_HOST=0.0.0.0',
       '-e', `CONSOLE_PILOT_USER=${env.RAGTRIAL_CONSOLE_USER}`,
       '-e', `CONSOLE_PILOT_PASSWORD=${env.RAGTRIAL_CONSOLE_PASSWORD}`,
       '-e', `CONSOLE_SESSION_SECRET=${env.RAGTRIAL_SESSION_SECRET}`,
       '-e', `CONSOLE_PG_DSN=postgres://postgres:${env.RAGTRIAL_PG_PASSWORD}@pg:5432/ragtrial`,
-      '-e', 'RAGTRIAL_EMBED_ENDPOINT=http://192.0.2.1:9999/v1/embeddings',
-      '-e', 'RAGTRIAL_EMBED_TIMEOUT_MS=1500',
+      '-e', `RAGTRIAL_ALLOWED_SCOPES=${REPO}@${BR}`,
+      '-e', `RAGTRIAL_EMBED_ENDPOINT=http://host.docker.internal:${FAKE_PORT}/embed`,
+      '-e', 'RAGTRIAL_EMBED_TIMEOUT_MS=3000',
       'local-rag-trial-console:local'], { stdio: 'pipe' });
     // 等探针容器起来
     await new Promise((r) => setTimeout(r, 4000));
     const probeBase = 'http://127.0.0.1:48451';
-    const loginRes = await fetch(probeBase + '/api/auth/login', {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ user: env.RAGTRIAL_CONSOLE_USER, password: env.RAGTRIAL_CONSOLE_PASSWORD }),
-    });
-    const probeCookie = (loginRes.headers.get('set-cookie') || '').split(';')[0];
-    const pq = await (await fetch(probeBase + '/api/rag-trial/query', {
-      method: 'POST', headers: { cookie: probeCookie, 'content-type': 'application/json' },
-      body: JSON.stringify({ q: '回滚', repo: REPO, branch: BR, k: 3 }),
+    const probeCall = async (p, body) => (await fetch(probeBase + p, {
+      method: 'POST', headers: { cookie: await probeCookie(), 'content-type': 'application/json' },
+      body: JSON.stringify(body),
     })).json();
-    providerDetail = pq;
-    providerOk = pq?.service_state === 'provider_unavailable' && (pq?.results ?? []).length === 0;
+    let savedProbeCookie = null;
+    const probeCookie = async () => {
+      if (savedProbeCookie) return savedProbeCookie;
+      const res = await fetch(probeBase + '/api/auth/login', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ user: env.RAGTRIAL_CONSOLE_USER, password: env.RAGTRIAL_CONSOLE_PASSWORD }),
+      });
+      savedProbeCookie = (res.headers.get('set-cookie') || '').split(';')[0];
+      return savedProbeCookie;
+    };
+    // 1) 注册 remote 模型（dims=256 与本地表同路由）
+    const reg = await probeCall('/api/rag-trial/models',
+      { model_id: 'remote-embed-probe', dims: 256, manifest: { note: 'e2e provider probe' } });
+    // 2) provider 可达时 ingest 出该模型的 live 索引行
+    const ing = await probeCall('/api/rag-trial/ingest', {
+      repo: REPO, branch: BR, model_id: 'remote-embed-probe',
+      docs: [{ path: 'trial/provider-probe.md', text: '探针甲段：可达嵌入生成的索引行。' }],
+    });
+    // 3) 停假服务 → 同模型查询 → 显式 provider_unavailable（不伪装空结果）
+    fakeServer.kill();
+    await new Promise((r) => setTimeout(r, 300));
+    const pq = await probeCall('/api/rag-trial/query',
+      { q: '探针', repo: REPO, branch: BR, k: 3, model_id: 'remote-embed-probe' });
+    providerDetail = { register: reg?.ok ?? reg, ingest_actions: ing?.report?.map((x) => x.action), query: pq };
+    providerOk = reg?.model_id === 'remote-embed-probe' && Number.isInteger(reg?.index_version)
+      && ing?.report?.[0]?.action === 'ingested'
+      && pq?.service_state === 'provider_unavailable' && (pq?.results ?? []).length === 0;
   } catch (e) {
     providerDetail = String(e.message).slice(0, 120);
   } finally {
+    try { fakeServer.kill(); } catch { /* */ }
     try { execFileSync('docker', ['rm', '-f', 'localragtrial-provider-probe'], { stdio: 'pipe' }); } catch { /* */ }
   }
   save('06-provider-unavailable.json', providerDetail);
-  ok('S3', 'provider 不可达 → provider_unavailable（显式降级非空成功）', providerOk);
+  ok('S3', 'remote provider 停服 → provider_unavailable（显式降级非空成功）', providerOk,
+    providerDetail?.query ? { state: providerDetail.query.service_state } : providerDetail);
 
   // ── Phase F：pg 不可用 / 重启恢复 / 栈级 down-up 回滚演练 ──
   const beforeCounts = {
