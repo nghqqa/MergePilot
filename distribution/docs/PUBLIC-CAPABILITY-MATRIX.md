@@ -49,7 +49,7 @@
 | 备份恢复 | ✅ | pg_dump + 临时容器恢复演练口径；MinIO 卷 tar |
 | scope 门 | ✅ | `RAGTRIAL_ALLOWED_SCOPES` 默认拒绝（fail-closed） |
 | Fixer/Verifier | ⚙️ 受控 | 仅隔离 fixture，不自动处理真实 PR |
-| 自测 | ✅ | `node deploy/local-rag-trial/scripts/run-e2e.mjs`（15 项必测） |
+| 自测 | ✅ | `node deploy/local-rag-trial/scripts/run-e2e.mjs`（26 项断言，须干净卷单跑；早期"15 项必测"为试验初期的场景数标签，已随套件扩展过时） |
 
 红线：不宣称生产级 RAG；语义模型不自动下载；检索不参与风险决策。
 

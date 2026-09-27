@@ -72,7 +72,8 @@ cp .env.example .env
 docker compose up -d --build
 docker compose ps   # 三服务 healthy
 
-# 5. 访问 http://127.0.0.1:48440 → 登录 → 「RAG 试验」页
+# 5. 访问（端口以 .env 为准：复制模板后默认 48450，未设置时 compose 兜底 48440）
+#    → 登录 → 「RAG 试验」页
 ```
 
 RAG scope 门已**默认配置**（compose 内置默认值仅放行试验 scope

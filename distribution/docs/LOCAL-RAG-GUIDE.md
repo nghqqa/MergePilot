@@ -19,8 +19,9 @@
 
 ## 环境前提
 
-- 路径 B 栈已启动（`docker compose ps` 三服务 healthy，console 在
-  `http://127.0.0.1:48440`）；
+- 路径 B 栈已启动（`docker compose ps` 三服务 healthy；console 端口以 `.env`
+  的 `RAGTRIAL_CONSOLE_PORT` 为准——复制模板后默认 **48450**，未设置时
+  compose 兜底 **48440**）；
 - RAG scope 门**默认已配置**——compose 内置默认值仅放行试验 scope
   `nghqqa/mergepilot@feat/local-rag-trial`；检索自己的仓库按下节在 `.env` 覆盖。
 
@@ -45,7 +46,7 @@
 ### 0. 登录取会话
 
 ```bash
-BASE=http://127.0.0.1:48440
+BASE=http://127.0.0.1:48450   # 以 .env 的 RAGTRIAL_CONSOLE_PORT 为准（模板默认 48450；未设时兜底 48440）
 curl -s -c /tmp/mp.cookies -H 'content-type: application/json' \
   -d '{"user":"ragtrial-operator","password":"<PASSWORD>"}' \
   $BASE/api/auth/login

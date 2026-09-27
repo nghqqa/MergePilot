@@ -56,7 +56,8 @@ distribution/docker/
 - PG 和 MinIO 在 `internal: true` 网络中（不可外部访问）
 - Console 绑定回环地址（默认 127.0.0.1:4730）
 - 如需外部访问，修改 ports 为 `0.0.0.0:4730`（**须配置防火墙和 TLS**）
-- 路径 B 同样仅发布 127.0.0.1 端口（console 48440 / pg 15436 / minio 9103）
+- 路径 B 同样仅发布 127.0.0.1 端口（.env 模板默认 console 48450 / pg 15436 /
+  minio 9113；未设置时 compose 兜底 48440/15436/9103）
 
 ## 数据持久化
 - PG 数据：命名卷 `pgdata`（路径 B：`localragtrial-pgdata`）
