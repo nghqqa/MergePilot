@@ -9,6 +9,7 @@ import {
   InboxOutlined, FolderOpenOutlined, HistoryOutlined, AuditOutlined,
   DashboardOutlined, DatabaseOutlined, ApiOutlined, MedicineBoxOutlined,
   SettingOutlined, MenuOutlined, AppstoreOutlined, SafetyCertificateOutlined, FileSearchOutlined,
+  TeamOutlined,
 } from '@ant-design/icons';
 import { api } from './api.js';
 import { readCsrfCookie } from './api-live.js';
@@ -21,6 +22,7 @@ import RunDetailPage from './pages/RunDetailPage.jsx';
 import DataSourcesPage from './pages/DataSourcesPage.jsx';
 import CChainPage from './pages/CChainPage.jsx';
 import RagTrialPage from './pages/RagTrialPage.jsx';
+import MultiUserPage from './pages/MultiUserPage.jsx';
 import DiagnosticsPage from './pages/DiagnosticsPage.jsx';
 import ReposPage from './pages/ReposPage.jsx';
 import RepoPrsPage from './pages/RepoPrsPage.jsx';
@@ -74,6 +76,7 @@ const SYSTEM_NAV = [
   { to: '/datasources', label: '数据源', icon: ApiOutlined, end: true },
   { to: '/cchain', label: 'C 链', icon: SafetyCertificateOutlined, end: true },
   { to: '/rag-trial', label: 'RAG 试验', icon: FileSearchOutlined, end: true },
+  { to: '/multiuser', label: '多用户 (DEV)', icon: TeamOutlined, end: true },
   { to: '/diagnostics', label: '诊断', icon: MedicineBoxOutlined, end: true },
   { to: '/settings', label: '设置', icon: SettingOutlined, end: true },
 ];
@@ -320,6 +323,7 @@ function Shell() {
               <Route path="/datasources" element={<DataSourcesPage />} />
               <Route path="/cchain" element={<CChainPage />} />
               <Route path="/rag-trial" element={<RagTrialPage />} />
+              <Route path="/multiuser" element={<MultiUserPage />} />
               <Route path="/diagnostics" element={<DiagnosticsPage />} />
               <Route path="/repos" element={<ReposPage />} />
               <Route path="/repos/:owner/:name" element={<RepoPrsPage />} />

@@ -87,6 +87,13 @@ jobs:
       - name: FXV e2e archive (15 scenarios, real git+PG+MinIO)
         run: node console/backend/test/fxv-e2e-archive.integration.mjs
 
+      # MU Developer Edition 多用户（自起一次性 postgres:16-alpine 容器，随机回环端口）
+      - name: MU store schema integration (Phase 1, 16 scenarios)
+        run: node console/backend/test/mu-store.integration.mjs
+
+      - name: MU RBAC + tenant isolation integration (Phase 2/3, 59 scenarios)
+        run: node console/backend/test/mu-rbac.integration.mjs
+
       - name: Frontend build
         run: |
           npm ci --no-audit --no-fund
@@ -103,4 +110,9 @@ jobs:
       # App+MemoryRouter 集成渲染——锁 status-map 中文标签真实上屏
       - name: Frontend pages smoke (PrDetail/CChain/RAG/Core-FXV)
         run: node --test test/pages-smoke.test.mjs
+        working-directory: console/frontend
+
+      # 多用户页冒烟（MU Phase 4）：权限态/成员/绑定上屏 + 未启用诚实提示
+      - name: Frontend multi-user page smoke
+        run: node --test test/mu-page.smoke.test.mjs
         working-directory: console/frontend
