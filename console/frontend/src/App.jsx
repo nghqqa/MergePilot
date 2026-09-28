@@ -1,9 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
-import {
-  Activity, ClipboardList, Database, FolderGit2, Hand, History, LogOut,
-  Menu, PlugZap, Settings, ShieldCheck,
-} from 'lucide-react';
+import { Link, NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { Activity, History, LogOut } from 'lucide-react';
 import { Layout, Menu as AntMenu, Drawer, Button } from 'antd';
 import {
   InboxOutlined, FolderOpenOutlined, HistoryOutlined, AuditOutlined,
@@ -76,7 +73,7 @@ const SYSTEM_NAV = [
   { to: '/datasources', label: '数据源', icon: ApiOutlined, end: true },
   { to: '/cchain', label: 'C 链', icon: SafetyCertificateOutlined, end: true },
   { to: '/rag-trial', label: 'RAG 试验', icon: FileSearchOutlined, end: true },
-  { to: '/multiuser', label: '多用户 (DEV)', icon: TeamOutlined, end: true },
+  { to: '/multiuser', label: '组织与接入', icon: TeamOutlined, end: true },
   { to: '/diagnostics', label: '诊断', icon: MedicineBoxOutlined, end: true },
   { to: '/settings', label: '设置', icon: SettingOutlined, end: true },
 ];
