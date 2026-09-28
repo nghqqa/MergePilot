@@ -38,10 +38,20 @@ export async function createMuStore({ pool, env = process.env } = {}) {
     return { tenant, user, membership };
   }
 
-  async function audit(kind, { tenantId = null, actorUserId = null, detail = {} } = {}) {
+  // Beta Hardening W1：tenant 域审计必须归属（schema NOT NULL + 应用层前置拒绝）；
+  // platform 域事件走独立表（明确 scope 建模——无 nullable 歧义、无虚假 tenant）。
+  async function audit(kind, { tenantId, actorUserId = null, detail = {} } = {}) {
+    if (!tenantId) {
+      throw new Error('mu.audit: tenant 域事件必须携带 tenantId（platform 事件请用 auditPlatform）');
+    }
     await q(`INSERT INTO mu.audit_event (tenant_id, actor_user_id, kind, detail)
              VALUES ($1,$2,$3,$4::jsonb)`,
       [tenantId, actorUserId, kind, JSON.stringify(detail)]);
+  }
+  async function auditPlatform(kind, { actorUserId = null, detail = {} } = {}) {
+    await q(`INSERT INTO mu.platform_audit_event (actor_user_id, kind, detail)
+             VALUES ($1,$2,$3::jsonb)`,
+      [actorUserId, kind, JSON.stringify(detail)]);
   }
 
   // ── 实体（ensure* 幂等；返回现存或新建行） ──
@@ -275,6 +285,6 @@ export async function createMuStore({ pool, env = process.env } = {}) {
     upsertPullRequest, resolvePullRequest, findPullRequests,
     insertReviewRecord, listReviewRecords,
     enqueueJob, listJobs, claimNextJob, finishJob,
-    listAudit,
+    listAudit, auditPlatform,
   };
 }

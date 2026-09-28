@@ -228,6 +228,19 @@ try {
   const selfRevoke = await call('/api/mu/members/dev-pilot/revoke', { method: 'POST', cookie: admin.cookie, csrf: admin.csrf });
   ok('MU-D3 禁止自撤销（防锁死）→ 400 cannot_revoke_self',
     selfRevoke.status === 400 && selfRevoke.json?.error?.reason === 'cannot_revoke_self');
+  // MU-D4（Beta Hardening W1）：成员撤销存在性侧信道消除——未知 login 与
+  // "存在但属另一 tenant"（carol 仅是 B 成员）返回同形 404（逐字节一致）
+  const oraUnknown = await call('/api/mu/members/ghost-user/revoke', { method: 'POST', cookie: admin.cookie, csrf: admin.csrf });
+  const oraCross = await call('/api/mu/members/carol/revoke', { method: 'POST', cookie: admin.cookie, csrf: admin.csrf });
+  const oraAgain = await call('/api/mu/members/bob/revoke', { method: 'POST', cookie: admin.cookie, csrf: admin.csrf });
+  ok('MU-D4 未知/跨租户/已撤销三态同形 404（零存在性差分；carol 的 B 成员关系不受影响）',
+    oraUnknown.status === 404 && oraCross.status === 404 && oraAgain.status === 404
+      && JSON.stringify(oraUnknown.json) === JSON.stringify(oraCross.json)
+      && JSON.stringify(oraUnknown.json) === JSON.stringify(oraAgain.json)
+      && oraCross.json?.error?.reason === 'member_not_found'
+      && (await pool.query(`SELECT m.state FROM mu.membership m JOIN mu.app_user u ON u.user_id=m.user_id
+          WHERE u.login='carol' AND m.tenant_id=$1`, [tenantBId])).rows[0].state === 'active',
+    { unknown: oraUnknown.json, cross: oraCross.json, again: oraAgain.json });
 
   // ── MU-E*：审计（metadata only） ──
   const auditRows = (await pool.query(

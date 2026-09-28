@@ -155,6 +155,87 @@ export const MU_MIGRATIONS = [
       `CREATE INDEX IF NOT EXISTS mu_job_state_idx ON mu.job (state, created_at)`,
     ],
   },
+  {
+    // Beta Hardening W1：数据库级跨租户一致性 + 审计归属。
+    // 设计要点：
+    //  * 父表先建复合 UNIQUE（repository(tenant,repo) / pull_request(tenant,pr)），
+    //    子表挂复合 FOREIGN KEY——DB 直接拒绝跨租户 Repository/Binding/PR/
+    //    ReviewRecord/Job 组合，不依赖应用层检查；
+    //  * 既有单列 FK 保留（加法迁移，不 DROP 任何既有约束）；
+    //  * audit_event.tenant_id 收紧 NOT NULL（tenant 域事件必须归属）；
+    //    platform 域事件独立表 mu.platform_audit_event 建模——不用 nullable
+    //    表达歧义、不造虚假 tenant；
+    //  * 全部语句幂等（pg_constraint 目录守卫 / IF NOT EXISTS / SET NOT NULL 天然幂等），
+    //    迁移框架按版本只放行一次，部分失败后可直接重放本版本。
+    // 回滚说明（需 DBA 执行，向下兼容应用层）：
+    //   ALTER TABLE mu.binding        DROP CONSTRAINT mu_binding_tenant_repo_fk;
+    //   ALTER TABLE mu.pull_request   DROP CONSTRAINT mu_pr_tenant_repo_fk;
+    //   ALTER TABLE mu.review_record  DROP CONSTRAINT mu_review_tenant_repo_fk, DROP CONSTRAINT mu_review_tenant_pr_fk;
+    //   ALTER TABLE mu.job            DROP CONSTRAINT mu_job_tenant_repo_fk,  DROP CONSTRAINT mu_job_tenant_pr_fk;
+    //   ALTER TABLE mu.repository     DROP CONSTRAINT mu_repository_tenant_repo_uk;
+    //   ALTER TABLE mu.pull_request   DROP CONSTRAINT mu_pull_request_tenant_pr_uk;
+    //   ALTER TABLE mu.audit_event    ALTER COLUMN tenant_id DROP NOT NULL;
+    //   DROP TABLE IF EXISTS mu.platform_audit_event;
+    //   DELETE FROM mu.schema_migrations WHERE version = 3;
+    version: 3,
+    name: 'mu_cross_tenant_constraints',
+    sql: [
+      `DO $$ BEGIN
+         IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'mu_repository_tenant_repo_uk') THEN
+           ALTER TABLE mu.repository ADD CONSTRAINT mu_repository_tenant_repo_uk UNIQUE (tenant_id, repo_id);
+         END IF;
+       END $$`,
+      `DO $$ BEGIN
+         IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'mu_pull_request_tenant_pr_uk') THEN
+           ALTER TABLE mu.pull_request ADD CONSTRAINT mu_pull_request_tenant_pr_uk UNIQUE (tenant_id, pr_id);
+         END IF;
+       END $$`,
+      `ALTER TABLE mu.audit_event ALTER COLUMN tenant_id SET NOT NULL`,
+      `CREATE TABLE IF NOT EXISTS mu.platform_audit_event (
+         seq         BIGSERIAL PRIMARY KEY,
+         actor_user_id UUID,
+         kind        TEXT NOT NULL,
+         detail      JSONB NOT NULL DEFAULT '{}'::jsonb,
+         created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+       )`,
+      `DO $$ BEGIN
+         IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'mu_binding_tenant_repo_fk') THEN
+           ALTER TABLE mu.binding ADD CONSTRAINT mu_binding_tenant_repo_fk
+             FOREIGN KEY (tenant_id, repo_id) REFERENCES mu.repository (tenant_id, repo_id);
+         END IF;
+       END $$`,
+      `DO $$ BEGIN
+         IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'mu_pr_tenant_repo_fk') THEN
+           ALTER TABLE mu.pull_request ADD CONSTRAINT mu_pr_tenant_repo_fk
+             FOREIGN KEY (tenant_id, repo_id) REFERENCES mu.repository (tenant_id, repo_id);
+         END IF;
+       END $$`,
+      `DO $$ BEGIN
+         IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'mu_review_tenant_repo_fk') THEN
+           ALTER TABLE mu.review_record ADD CONSTRAINT mu_review_tenant_repo_fk
+             FOREIGN KEY (tenant_id, repo_id) REFERENCES mu.repository (tenant_id, repo_id);
+         END IF;
+       END $$`,
+      `DO $$ BEGIN
+         IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'mu_review_tenant_pr_fk') THEN
+           ALTER TABLE mu.review_record ADD CONSTRAINT mu_review_tenant_pr_fk
+             FOREIGN KEY (tenant_id, pr_id) REFERENCES mu.pull_request (tenant_id, pr_id);
+         END IF;
+       END $$`,
+      `DO $$ BEGIN
+         IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'mu_job_tenant_repo_fk') THEN
+           ALTER TABLE mu.job ADD CONSTRAINT mu_job_tenant_repo_fk
+             FOREIGN KEY (tenant_id, repo_id) REFERENCES mu.repository (tenant_id, repo_id);
+         END IF;
+       END $$`,
+      `DO $$ BEGIN
+         IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'mu_job_tenant_pr_fk') THEN
+           ALTER TABLE mu.job ADD CONSTRAINT mu_job_tenant_pr_fk
+             FOREIGN KEY (tenant_id, pr_id) REFERENCES mu.pull_request (tenant_id, pr_id);
+         END IF;
+       END $$`,
+    ],
+  },
 ];
 
 export const MU_SCHEMA_LATEST = MU_MIGRATIONS[MU_MIGRATIONS.length - 1].version;

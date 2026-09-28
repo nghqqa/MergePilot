@@ -254,9 +254,15 @@ export async function muApi(req, res, ctx) {
         return sendJson(res, 400, { error: { reason: 'cannot_revoke_self' } });
       }
       const revoked = await store.revokeMembership(mu.tenantId, target.user_id);
+      if (!revoked) {
+        // Beta Hardening W1：login 全局不存在 / 存在但非本 tenant 成员 / 已撤销——
+        // 三种情形统一同形 404（消除跨租户成员存在性侧信道；此前非成员返回 200
+        // revoked:false 构成差分）。合法管理员语义保持：真实成员撤销仍 200+审计。
+        return sendJson(res, 404, { error: { reason: 'member_not_found' } });
+      }
       await store.audit('MU_MEMBER_REVOKED', { tenantId: mu.tenantId, actorUserId: mu.userId,
         detail: { target_login: target.login } });
-      return sendJson(res, 200, { ok: true, revoked: Boolean(revoked) });
+      return sendJson(res, 200, { ok: true, revoked: true });
     }
 
     // ── 仓库与绑定 ──

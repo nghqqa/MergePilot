@@ -38,7 +38,7 @@ try {
   // ── MS*：迁移与 bootstrap ──
   ok('MS1 迁移应用且可重复执行（幂等）', (await store.initSchema()) === true && (await store.initSchema()) === true);
   const vers = (await pool.query(`SELECT version FROM mu.schema_migrations ORDER BY version`)).rows.map((r) => r.version);
-  ok('MS1b 版本表记录 1+2', vers.includes(1) && vers.includes(2), vers);
+  ok('MS1b 版本表记录 1+2+3', vers.includes(1) && vers.includes(2) && vers.includes(3), vers);
 
   const b1 = await store.bootstrap();
   const b2 = await store.bootstrap();
@@ -106,6 +106,50 @@ try {
   await store.ensureMembership({ tenantId: tA.tenant_id, userId: uA.user_id, role: 'reviewer' });
   ok('MS10b 重新授予恢复 active 且角色更新', (await store.getMembership(tA.tenant_id, uA.user_id))?.state === 'active'
     && (await store.getMembership(tA.tenant_id, uA.user_id))?.role === 'reviewer');
+
+  // ── MS11*（Beta Hardening W1）：数据库级跨租户一致性约束（直接 SQL 写入，非 HTTP 面）──
+  const hwA = await store.ensureTenant({ slug: `hw-a-${Date.now()}`, displayName: 'HW A' });
+  const hwB = await store.ensureTenant({ slug: `hw-b-${Date.now()}`, displayName: 'HW B' });
+  const hwRepoA = await store.ensureRepository({ tenantId: hwA.tenant_id, provider: 'github',
+    providerRepoId: `HW_${Date.now()}`, owner: 'hw', name: 'a' });
+  const hwPrA = await store.upsertPullRequest({ tenantId: hwA.tenant_id, repoId: hwRepoA.repo_id,
+    providerPrNumber: 7, headSha: 'ab'.repeat(20) });
+  const expectReject = async (label, sql, params) => {
+    try { await pool.query(sql, params); ok(label, false, 'INSERT 未被 DB 拒绝'); }
+    catch (e) { ok(label, true, String(e.code || e.message).slice(0, 40)); }
+  };
+  await expectReject('MS11 binding 跨租户（B tenant + A repo）被复合 FK 拒绝',
+    `INSERT INTO mu.binding (tenant_id, repo_id, kind) VALUES ($1,$2,'fixture')`, [hwB.tenant_id, hwRepoA.repo_id]);
+  await expectReject('MS11b pull_request 跨租户（B tenant + A repo）被复合 FK 拒绝',
+    `INSERT INTO mu.pull_request (tenant_id, repo_id, provider_pr_number, head_sha) VALUES ($1,$2,8,$3)`,
+    [hwB.tenant_id, hwRepoA.repo_id, 'cd'.repeat(20)]);
+  await expectReject('MS11c review_record 跨租户（B tenant + A repo + A pr）被复合 FK 拒绝',
+    `INSERT INTO mu.review_record (tenant_id, repo_id, pr_id, kind, head_sha) VALUES ($1,$2,$3,'ai_review','x')`,
+    [hwB.tenant_id, hwRepoA.repo_id, hwPrA.pr_id]);
+  await expectReject('MS11d job 跨租户（B tenant + A repo + A pr）被复合 FK 拒绝',
+    `INSERT INTO mu.job (tenant_id, repo_id, pr_id, kind, requested_by, requested_role) VALUES ($1,$2,$3,'review_run',$4,'reviewer')`,
+    [hwB.tenant_id, hwRepoA.repo_id, hwPrA.pr_id, uA.user_id]);
+  await expectReject('MS11e audit_event 无 tenant_id 被 NOT NULL 拒绝（tenant 域必须归属）',
+    `INSERT INTO mu.audit_event (kind) VALUES ('hw_no_tenant')`, []);
+  let auditThrows = false;
+  try { await store.audit('HW_SHOULD_THROW', { tenantId: null, detail: {} }); }
+  catch { auditThrows = true; }
+  ok('MS11f store.audit 对无 tenantId 前置拒绝（应用层+DB 双保险）', auditThrows);
+  await store.auditPlatform('HW_PLATFORM_EVENT', { detail: { probe: 1 } });
+  ok('MS11g platform 域审计独立表可写（明确 scope 建模，非 nullable 歧义）',
+    (await pool.query(`SELECT count(*)::int n FROM mu.platform_audit_event WHERE kind='HW_PLATFORM_EVENT'`)).rows[0].n === 1);
+  const cons = (await pool.query(
+    `SELECT conname FROM pg_constraint WHERE conname IN ('mu_repository_tenant_repo_uk','mu_pull_request_tenant_pr_uk',
+       'mu_binding_tenant_repo_fk','mu_pr_tenant_repo_fk','mu_review_tenant_repo_fk','mu_review_tenant_pr_fk',
+       'mu_job_tenant_repo_fk','mu_job_tenant_pr_fk')`)).rows.map((r) => r.conname);
+  ok('MS11h 八条复合约束全部在目录（2 UK + 6 FK）', cons.length === 8, cons);
+  const hwJob = await store.enqueueJob({ tenantId: hwA.tenant_id, repoId: hwRepoA.repo_id,
+    prId: hwPrA.pr_id, kind: 'review_run', requestedBy: uA.user_id, requestedRole: 'reviewer' });
+  const hwJobNoPr = await store.enqueueJob({ tenantId: hwA.tenant_id, repoId: hwRepoA.repo_id,
+    kind: 'review_run', requestedBy: uA.user_id, requestedRole: 'reviewer' });
+  ok('MS11i 同租户组合照常可写（含 pr_id NULL 的 MATCH SIMPLE 放行）',
+    Boolean(hwJob.job_id) && Boolean(hwJobNoPr.job_id));
+  ok('MS11j 迁移可重复执行（initSchema 三跑零错——语句级幂等守卫）', (await store.initSchema()) === true);
 } catch (e) {
   fail++;
   console.error('FATAL', e);

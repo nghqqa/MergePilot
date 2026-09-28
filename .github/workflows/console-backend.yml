@@ -94,6 +94,12 @@ jobs:
       - name: MU RBAC + tenant isolation integration (Phase 2/3, 59 scenarios)
         run: node console/backend/test/mu-rbac.integration.mjs
 
+      # RAG canonical 集成（Phase 0a F-6 补账）：自起一次性 pgvector 容器、随机回环
+      # 端口、finally 强制清理——不连接/复用任何常驻栈；跑在既有 job 内，required
+      # check 名称不变（main 保护零影响）
+      - name: RAG canonical integration (Phase 0a, 34 scenarios; self-boot pgvector)
+        run: node console/backend/test/ragtrial-canonical.integration.mjs
+
       - name: Frontend build
         run: |
           npm ci --no-audit --no-fund
