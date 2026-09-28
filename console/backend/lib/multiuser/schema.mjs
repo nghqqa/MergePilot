@@ -555,6 +555,17 @@ export const MU_MIGRATIONS = [
       `CREATE INDEX IF NOT EXISTS mu_dead_letter_open_idx ON mu.dead_letter (created_at DESC) WHERE resolved_at IS NULL`,
     ],
   },
+  {
+    // Wave 3 PR-B：finding 脱敏摘要列（任务书 PR-B §6 必填——evidence 脱敏纪律：
+    // 只存打码后的行摘要，原始行/diff/源码不入库）。
+    // 回滚：DELETE FROM mu.schema_migrations WHERE version=8;
+    //       ALTER TABLE mu.agent_finding DROP COLUMN IF EXISTS summary_masked;
+    version: 8,
+    name: 'mu_review_finding_summary',
+    sql: [
+      `ALTER TABLE mu.agent_finding ADD COLUMN IF NOT EXISTS summary_masked TEXT NOT NULL DEFAULT ''`,
+    ],
+  },
 ];
 
 export const MU_SCHEMA_LATEST = MU_MIGRATIONS[MU_MIGRATIONS.length - 1].version;
