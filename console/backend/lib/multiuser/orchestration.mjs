@@ -131,27 +131,26 @@ export async function finishAttempt(pool, { attemptId, status, outputDigest = nu
   return r.rows.length > 0;
 }
 
-/** findings 批量落库（幂等：同 run+rule+path+line 重复插入零新增行）。 */
+/** findings 批量落库（幂等：同 run+rule+path+line 重复插入零新增行；含脱敏摘要列）。 */
 export async function insertFindings(pool, { attemptId, runId, tenantId, repoId, prId, headSha, findings }) {
   if (!Array.isArray(findings) || !findings.length) return 0;
   const values = [];
   const params = [attemptId, runId, tenantId, repoId, prId, headSha];
-  let n = 0;
   for (const f of findings.slice(0, 500)) {
     const b = params.length;
     values.push(`($1,$2,$3,$4,$5,$6,
-      $${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5},$${b + 6},$${b + 7},$${b + 8},$${b + 9})`);
+      $${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5},$${b + 6},$${b + 7},$${b + 8},$${b + 9},$${b + 10})`);
     params.push(String(f.rule_id ?? '').slice(0, 120),
       ['P0', 'P1', 'P2', 'P3'].includes(f.severity) ? f.severity : 'P3',
       Math.min(Math.max(Number(f.confidence ?? 0), 0), 1),
       String(f.path ?? '').slice(0, 500), Number(f.line_start ?? 0) || null, Number(f.line_end ?? 0) || null,
       String(f.title ?? '').slice(0, 300), String(f.evidence_ref ?? '').slice(0, 300),
-      String(f.remediation ?? '').slice(0, 1000));
-    n++;
+      String(f.remediation ?? '').slice(0, 1000),
+      String(f.summary_masked ?? '').slice(0, 120));
   }
   const r = await Q(pool,
     `INSERT INTO mu.agent_finding (attempt_id, run_id, tenant_id, repo_id, pr_id, head_sha,
-       rule_id, severity, confidence, path, line_start, line_end, title, evidence_ref, remediation)
+       rule_id, severity, confidence, path, line_start, line_end, title, evidence_ref, remediation, summary_masked)
      VALUES ${values.join(',')}
      ON CONFLICT (run_id, rule_id, path, line_start) DO NOTHING
      RETURNING finding_id`, params);
