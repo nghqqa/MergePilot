@@ -44,13 +44,16 @@ const Q = (pool, text, params) => pool.query(text, params);
 
 /** 幂等建 run：同 (tenant,repo,pr,head_sha) 返回既有 run（created=false）。 */
 export async function createRunIfAbsent(pool, { tenantId, repoId, prId, headSha,
-  triggerSource = 'webhook', requestedBy = null, policyVersion = 'v1' }) {
+  triggerSource = 'webhook', requestedBy = null, policyVersion = 'v1',
+  agentPolicyVersion = null, llmMode = null }) {
   const r = await Q(pool,
-    `INSERT INTO mu.review_run (tenant_id, repo_id, pr_id, head_sha, trigger_source, requested_by, policy_version)
-     VALUES ($1,$2,$3,$4,$5,$6,$7)
+    `INSERT INTO mu.review_run (tenant_id, repo_id, pr_id, head_sha, trigger_source, requested_by,
+        policy_version, agent_policy_version, llm_mode)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
      ON CONFLICT (tenant_id, repo_id, pr_id, head_sha) DO NOTHING
      RETURNING *`,
-    [tenantId, repoId, prId, headSha, triggerSource, requestedBy, policyVersion]);
+    [tenantId, repoId, prId, headSha, triggerSource, requestedBy, policyVersion,
+      agentPolicyVersion, llmMode]);
   if (r.rows.length) return { run: r.rows[0], created: true };
   const ex = await Q(pool,
     `SELECT * FROM mu.review_run WHERE tenant_id=$1 AND repo_id=$2 AND pr_id=$3 AND head_sha=$4`,

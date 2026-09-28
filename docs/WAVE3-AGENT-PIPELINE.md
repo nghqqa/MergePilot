@@ -50,3 +50,7 @@ GitHub webhook（HMAC 验签 + delivery 去重）
 ## 定位声明
 
 四 Agent 已接入 Developer Edition Beta 的 MU 真实执行面。**不代表 Enterprise Production Ready**：不包含 RLS、SSO、SCIM、HA、配额限流、自动审批、自动合并、仓库写入或 branch protection 绕过。
+
+## Wave 3.2：运行策略控制面（PlatformAdmin）
+
+「组织与接入」→「Agent 与模型」面板：mode（deterministic_only/llm_assist 分段选择）、启用开关、模型（部署白名单 MU_LLM_ALLOWED_MODELS，默认 deepseek-flash/deepseek-chat）、超时（1s-120s）、输出上限（64-4096 tokens）。**配置层级**：API key 与 base URL 属部署级（仅服务器 env/Secret Manager，页面零输入/零显示/零测试）；本面板只管理非敏感运行策略。策略更新带乐观并发版本（409 冲突）+ 确认门 + 脱敏审计，**只影响新建审查任务**——run 创建时冻结 agent_policy_version+llm_mode 快照。llm_assist 启用但环境缺失/非法时 fail-closed 回落 deterministic（状态 policy_enabled_but_env_invalid，稳定 reason LLM_POLICY_ENV_MISMATCH）。

@@ -99,7 +99,7 @@ try {
   // Wave 2A 起允许 *_hash 摘要列（sha256，非明文凭据）；明文形状列仍必须为零。
   // Wave 3 PR-A 追加精确白名单：mu.agent_attempt.token_count = LLM 用量计数
   // （INT 计数器，语义为"消耗了多少 token"，非凭据材料——正则形状命中但非明文凭据）。
-  const SECRET_COL_ALLOWLIST = new Set(['token_count']);
+  const SECRET_COL_ALLOWLIST = new Set(['token_count', 'max_output_tokens']); // W3.2：LLM 输出上限计数列（INT，非凭据）
   const secretCols = cols.filter((c) => /token|secret|password|key/i.test(c.column_name)
     && !/_hash$/.test(c.column_name) && !SECRET_COL_ALLOWLIST.has(c.column_name));
   ok('MS9 schema 零明文凭据列（允许 *_hash 摘要列 + 精确白名单）', secretCols.length === 0, secretCols);

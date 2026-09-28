@@ -59,10 +59,17 @@ export async function handlePullRequestEvent(pool, cfg, { payload, servicePrinci
   const ctx = await resolveServiceContext(pool, { githubRepoId, prNumber });
   if (!ctx.ok) return { ok: false, reason: ctx.reason };
 
-  // 幂等建 run（expected_head_sha：synchronize 新 head 天然新 run）
+  // ── Wave 3.2：策略解析（创建时一次，随后冻结为 run 快照；运行中不受策略更新影响）──
+  const { getAgentPolicy, resolveEffectiveLlmPolicy } = await import('./agent-policy.mjs');
+  const agentPolicy = await getAgentPolicy(pool).catch(() => null) ?? { policy_version: 1, mode: 'deterministic_only', enabled: false };
+  const effLlm = resolveEffectiveLlmPolicy(agentPolicy, cfg.llmEnv ?? process.env);
+
+  // 幂等建 run（expected_head_sha：synchronize 新 head 天然新 run；快照列随建随冻）
   const { run, created } = await createRunIfAbsent(pool, {
     tenantId: ctx.tenantId, repoId: ctx.repoId, prId: ctx.prId, headSha,
-    triggerSource: payload.trigger_source === 'manual' ? 'manual' : 'webhook' });
+    triggerSource: payload.trigger_source === 'manual' ? 'manual' : 'webhook',
+    agentPolicyVersion: Number(agentPolicy.policy_version) || null,
+    llmMode: String(agentPolicy.mode ?? 'deterministic_only') });
   if (!run) return { ok: false, reason: 'run_create_failed' };
 
   // 已完成审查的 run：幂等返回（不重放 attempt）
@@ -130,23 +137,23 @@ export async function handlePullRequestEvent(pool, cfg, { payload, servicePrinci
       decision: inserted > 0 ? 'findings_present' : 'clean',
       rationaleRef: `attempt:${claim.attemptId}`, actorPrincipal: servicePrincipal });
 
-    // ── Wave 3.1：可选 LLM 第二阶段审查（默认 disabled 零网络；失败 fail-closed
-    //    回落 deterministic 结果——LLM 建议永不阻断也永不充当"通过"）──
-    const { resolveLlmProvider, callLlmReviewer, mockLlmReviewer } = await import('./agents/llm.mjs');
-    const llmProvider = resolveLlmProvider(cfg.llmEnv ?? process.env);
+    // ── Wave 3.1/3.2：可选 LLM 第二阶段审查（使用创建时冻结的有效策略快照 effLlm；
+    //    默认 disabled 零网络；失败 fail-closed 回落 deterministic——LLM 建议永不阻断
+    //    也永不充当"通过"）──
+    const { callLlmReviewer, mockLlmReviewer } = await import('./agents/llm.mjs');
     let llmCount = 0, llmCode = null;
-    if (llmProvider.kind !== 'disabled') {
+    if (effLlm.kind !== 'disabled') {
       const llmClaim = await claimNextAttempt(pool, { runId: run.run_id, agentRole: 'reviewer',
-        provider: llmProvider.kind, actorPrincipal: servicePrincipal,
+        provider: effLlm.kind, actorPrincipal: servicePrincipal,
         inputDigest: digestOf(`${headSha}|llm`), maxAttempts: 3, // deterministic 已占 attempt 1——LLM 取 2
         tenantId: ctx.tenantId, repoId: ctx.repoId, prId: ctx.prId, headSha });
       if (llmClaim.ok) {
         const t0 = Date.now();
         let r;
         try {
-          r = llmProvider.kind === 'deterministic_mock'
+          r = effLlm.kind === 'deterministic_mock'
             ? await mockLlmReviewer({ findings })
-            : await callLlmReviewer(llmProvider, { pr: context.pr, findings, diff: context.diff,
+            : await callLlmReviewer(effLlm, { pr: context.pr, findings, diff: context.diff,
               apiKey: (cfg.llmEnv ?? process.env).MU_LLM_API_KEY },
               { fetchImpl: cfg.llmFetch ?? fetch });
         } catch (e) {
@@ -177,7 +184,10 @@ export async function handlePullRequestEvent(pool, cfg, { payload, servicePrinci
     }
 
     return { ok: true, run: await getRun(pool, run.run_id), attempt: claim.attempt,
-      findings_count: inserted + llmCount, llm_findings: llmCount, llm_code: llmCode,
+      findings_count: inserted + llmCount, llm_findings: llmCount,
+      llm_code: llmCode ?? (effLlm.kind === 'disabled'
+        && ['LLM_POLICY_ENV_MISMATCH', 'LLM_POLICY_MODEL_NOT_ALLOWED'].includes(effLlm.reason)
+        ? effLlm.reason : null), // 策略想开但开不成：如实透出（不误报 LLM 已执行）
       stale_head: false, protection: context.protection ?? null };
   }
 

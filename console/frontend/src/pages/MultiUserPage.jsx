@@ -1,4 +1,4 @@
-import { Alert, Button, Input, Select, Space, Table, Tag, Typography } from 'antd';
+import { Alert, Button, Input, InputNumber, Modal, Popconfirm, Segmented, Select, Space, Switch, Table, Tag, Typography } from 'antd';
 import { ReloadOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { readCsrfCookie } from '../api-live.js';
@@ -191,6 +191,116 @@ function PipelinePanel({ prNumber, repoId }) {
 }
 
 // ── GitHub App 面板（含仓库列表与绑定操作；API 调用与错误语义不变） ──
+// ── Agent 与模型策略面板（Wave 3.2；PlatformAdmin 操作，其余角色只读/无权提示）──
+// 红线：无 API Key 输入框；无"测试真实模型"按钮；无 approve/merge/push/写仓库控件；
+// deploy 状态只显示布尔/host 摘要/模型白名单（后端已脱敏）。
+const RUNTIME_STATE_COPY = {
+  env_not_configured: { tone: 'warning', text: '环境未配置 LLM（服务端 env/Secret Manager 未就绪）——仅 deterministic 审查' },
+  policy_enabled_but_env_invalid: { tone: 'warning', text: '策略已启用 LLM 但环境配置非法/缺失——新任务 fail-closed 回落 deterministic' },
+  configured_disabled_or_det_only: { tone: 'info', text: 'LLM 已配置但未启用（deterministic-only）' },
+  llm_assist_active: { tone: 'success', text: 'LLM assist 已启用（新审查任务生效）' },
+};
+
+function AgentPolicyPanel({ can, actions }) {
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState(null);
+  const [draft, setDraft] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const canManage = Array.isArray(actions) && actions.includes('manage_instance');
+  const load = useCallback(async () => {
+    setErr(null);
+    const r = await fetch('/api/mu/agent-policy', { credentials: 'same-origin' });
+    if (r.status === 200) {
+      const j = await r.json().catch(() => null);
+      setData(j); setDraft(j?.policy ? { ...j.policy } : null); setMsg(null);
+    } else setErr(r.status === 403 ? 'forbidden' : `HTTP ${r.status}`);
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const save = async () => {
+    setSaving(true); setMsg(null);
+    const r = await fetch('/api/mu/agent-policy', { method: 'PUT', credentials: 'same-origin',
+      headers: { 'content-type': 'application/json', 'X-CSRF-Token': readCsrfCookie() },
+      body: JSON.stringify({ ...draft, expected_version: data.policy.policy_version, confirm: true }) });
+    const j = await r.json().catch(() => null);
+    setSaving(false);
+    if (r.status === 200) setMsg({ type: 'success', text: `已保存（策略版本 v${j.policy.policy_version}——仅影响新建审查任务）` });
+    else if (r.status === 409) setMsg({ type: 'warning', text: `版本冲突：他人已更新到 v${j?.error?.current_policy_version}——已刷新，请基于新版本重试` });
+    else setMsg({ type: 'error', text: `保存失败：${j?.error?.reason ?? r.status}` });
+    await load();
+  };
+
+  if (err === 'forbidden') {
+    return <Alert type="info" showIcon message="Agent 与模型策略"
+      description="仅平台管理员可查看与修改运行策略（当前角色无此权限）。" />;
+  }
+  if (err) return <Alert type="error" showIcon message="Agent 策略加载失败" description={err} />;
+  if (!data || !draft) return <Typography.Text type="secondary">加载中…</Typography.Text>;
+  const st = RUNTIME_STATE_COPY[data.runtime_state] ?? { tone: 'info', text: data.runtime_state };
+  const dirty = JSON.stringify(draft) !== JSON.stringify(data.policy);
+  return (
+    <div>
+      <Space size="large" wrap style={{ marginBottom: 8 }}>
+        <Alert type={st.tone} showIcon message={st.text} style={{ padding: '2px 8px' }} />
+        <Tag>策略版本 v{data.policy.policy_version}</Tag>
+        <Tag color={data.deploy.provider_configured ? 'green' : 'orange'}>
+          {data.deploy.provider_configured ? `部署已配置（${data.deploy.provider_host_summary ?? 'host 未解析'}）` : '部署未配置'}</Tag>
+      </Space>
+      <Space direction="vertical" size="middle" style={{ width: '100%', maxWidth: 640 }} aria-label="Agent 运行策略设置">
+        <div>
+          <Typography.Text type="secondary">审查模式</Typography.Text>
+          <div>
+            <Segmented value={draft.mode} disabled={!canManage} onChange={(v) => setDraft({ ...draft, mode: v })}
+              options={[{ label: '仅确定性规则', value: 'deterministic_only' },
+                { label: 'LLM 辅助（建议通道）', value: 'llm_assist' }]} />
+          </div>
+        </div>
+        <Space wrap>
+          <span>
+            <Typography.Text type="secondary">启用 LLM</Typography.Text>
+            <div><Switch checked={draft.enabled} disabled={!canManage || draft.mode !== 'llm_assist'}
+              onChange={(v) => setDraft({ ...draft, enabled: v, mode: v ? 'llm_assist' : draft.mode })}
+              aria-label="启用 LLM 辅助" /></div>
+          </span>
+          <span>
+            <Typography.Text type="secondary">模型（白名单）</Typography.Text>
+            <div><Select style={{ minWidth: 200 }} value={draft.model} disabled={!canManage}
+              onChange={(v) => setDraft({ ...draft, model: v })}
+              options={(data.deploy.allowed_models ?? []).map((m) => ({ value: m, label: m }))}
+              aria-label="模型选择" /></div>
+          </span>
+        </Space>
+        <Space wrap>
+          <span>
+            <Typography.Text type="secondary">超时（ms，1000-120000）</Typography.Text>
+            <div><InputNumber min={1000} max={120000} step={1000} value={draft.timeout_ms}
+              disabled={!canManage} onChange={(v) => setDraft({ ...draft, timeout_ms: v })}
+              aria-label="LLM 超时毫秒" /></div>
+          </span>
+          <span>
+            <Typography.Text type="secondary">输出上限（tokens，64-4096）</Typography.Text>
+            <div><InputNumber min={64} max={4096} step={64} value={draft.max_output_tokens}
+              disabled={!canManage} onChange={(v) => setDraft({ ...draft, max_output_tokens: v })}
+              aria-label="LLM 最大输出 tokens" /></div>
+          </span>
+        </Space>
+        {canManage ? (
+          <Popconfirm title="保存运行策略？" description="仅影响新建审查任务；运行中的任务沿用创建时配置。"
+            onConfirm={save} okText="确认保存" cancelText="取消" disabled={!dirty || saving}>
+            <Button type="primary" loading={saving} disabled={!dirty}>保存策略（确认门）</Button>
+          </Popconfirm>
+        ) : <Tag>只读（需平台管理员）</Tag>}
+        {msg ? <Alert type={msg.type} showIcon message={msg.text} /> : null}
+        <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 0 }}>
+          API Key 与接入端点属于部署级机密，仅由服务器环境变量或 Secret Manager 管理——本页面不提供输入、查看或测试。
+          LLM 输出仅为审查建议，不构成 GitHub required review，不触发任何仓库写操作。
+        </Typography.Paragraph>
+      </Space>
+    </div>
+  );
+}
+
 function GHAppPanel({ can, session, repos, onBound, onUnbound }) {
   const [status, setStatus] = useState(null);
   const [insts, setInsts] = useState(null);
@@ -652,6 +762,10 @@ export default function MultiUserPage() {
                   <section id="mu-ghapp">
                     <GHAppPanel can={can} session={session} repos={repos}
                       onBound={refresh} onUnbound={refresh} />
+                  </section>
+                  <section id="mu-agent-policy" style={{ marginTop: 16 }}>
+                    <div className="section-head"><h3>Agent 与模型（运行策略）</h3></div>
+                    <AgentPolicyPanel can={can} actions={session?.actions} />
                   </section>
                 </div>
               </details>
