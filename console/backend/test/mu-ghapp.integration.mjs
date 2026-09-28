@@ -45,6 +45,10 @@ process.env.MU_GITHUB_APP_ID = '999001';
 process.env.MU_GITHUB_APP_PRIVATE_KEY = 'synthetic-private-key-not-real';
 process.env.MU_GITHUB_WEBHOOK_SECRET = WEBHOOK_SECRET;
 process.env.MU_GITHUB_APP_INSTALL_CALLBACK_URL = 'http://127.0.0.1:4730/api/mu/github/install/callback';
+// 登录 OAuth 同步配置（GA11 跨用途隔离测试需要登录 callback 可达配置层之后）
+process.env.MU_GITHUB_OAUTH_CLIENT_ID = 'ov22_ghapp_test';
+process.env.MU_GITHUB_OAUTH_CLIENT_SECRET = 'ghapp-oauth-test-secret';
+process.env.MU_GITHUB_OAUTH_CALLBACK_URL = 'http://127.0.0.1:4730/api/mu/auth/oauth/github/callback';
 
 // ── mock GitHub App adapter：合成 installation/repo 表 ──
 const INSTALLATIONS = {
@@ -283,6 +287,18 @@ try {
   const leakBody = JSON.stringify(await leak.json().catch(() => ({})));
   ok('GA9 错误 body 零敏感信息（无 secret/key/原始响应）',
     !leakBody.includes(WEBHOOK_SECRET) && !leakBody.includes('synthetic-private-key') && leak.status === 401, leakBody.slice(0, 80));
+
+  // GA-11（PR253 验收修复回归）：安装 flow 不得被登录 callback 消费（purpose 对称隔离）
+  {
+    const stI = await fetch(BASE + '/api/mu/github/install/start', { method: 'POST', headers: { cookie: becky.cookie, 'x-csrf-token': becky.csrf } });
+    const corrI = (stI.headers.get('set-cookie') || '').match(/mu_oauth_corr=([^;]+)/)?.[1];
+    const stateI = new URL((await stI.json()).install_url).searchParams.get('state');
+    const crossUse = await fetch(BASE + '/api/mu/auth/oauth/github/callback?code=CODE_OK&state=' + encodeURIComponent(stateI),
+      { redirect: 'manual', headers: { cookie: 'mu_oauth_corr=' + corrI } });
+    ok('GA11 安装 flow 被登录 callback 使用 → state_invalid（purpose 隔离）',
+      crossUse.status === 302 && /mu_login_error=state_invalid/.test(crossUse.headers.get('location') || ''),
+      { status: crossUse.status, loc: crossUse.headers.get('location'), stI: stI.status });
+  }
 
   // ── GA-10 迁移三条件 ──
   {

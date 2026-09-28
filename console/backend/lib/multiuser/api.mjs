@@ -181,11 +181,14 @@ export async function muApi(req, res, ctx) {
     // Wave 2A.1：correlation cookie 必须与 flow 内摘要匹配（缺失/错配/跨浏览器/
     // 存量 2A 无摘要 flow → 统一 state_invalid，不泄露区分信息）
     const corr = muCorrFromCookieHeader(req.headers.cookie);
+    // PR253 验收修复：登录回调只消费登录流——安装流(purpose=ghapp_install)的
+    // state+corr 不得被当登录 flow 使用（对称隔离；虽无提权面仍 fail-closed）
     const corrOk = flow && flow.corr_hash && corr
-      && crypto.createHash('sha256').update(corr).digest('hex') === flow.corr_hash;
+      && crypto.createHash('sha256').update(corr).digest('hex') === flow.corr_hash
+      && flow.purpose === 'oauth_login';
     if (!flow || !corrOk) {
       await store.auditPlatform('OAUTH_FLOW_REJECTED', { detail: { reason: 'state_invalid' } });
-      return redirectLoginError('state_invalid'); // 不存在/已消费(重放)/已过期/correlation 失配 统一同因
+      return redirectLoginError('state_invalid'); // 不存在/已消费(重放)/已过期/correlation 失配/跨用途 统一同因
     }
     let identity;
     try {
