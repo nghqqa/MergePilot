@@ -89,6 +89,7 @@ async function executeEventSync(store, muPoolQuery, job, sysCtx) {
   }
   const prNumber = Number(job.payload?.pr_number ?? 0);
   const headSha = String(job.payload?.head_sha ?? '');
+  const githubRepoId = Number(job.payload?.github_repo_id ?? 0);
   if (!prNumber || !/^[0-9a-f]{6,40}$/i.test(headSha)) {
     return { state: 'failed', result: { reason: 'event_payload_invalid' } };
   }
@@ -97,7 +98,79 @@ async function executeEventSync(store, muPoolQuery, job, sysCtx) {
     title: null });
   await muPoolQuery('UPDATE mu.repository_binding SET last_sync_at = now() WHERE repo_id=$1 AND tenant_id=$2',
     [job.repo_id, job.tenant_id]).catch(() => {});
-  return { state: 'done', result: { pr_number: prNumber, head_sha_prefix: headSha.slice(0, 12) } };
+
+  // ── Wave 3 PR-E：快照后跑完整审查管线（系统主体，不伪造用户 membership）──
+  // 链路：handlePullRequestEvent（幂等 run + deterministic Reviewer）→ Leader 裁定 →
+  // （fix_required 时）Fixer dry-run + 独立 Verifier + 终裁。任一环节 fail-closed
+  // 不影响快照同步语义（快照已 done；管线结果独立落 review_run 域）。
+  const pipeline = { review: null, decision: null, fix: null };
+  try {
+    const { handlePullRequestEvent } = await import('./review-service.mjs');
+    const { advanceAfterReview } = await import('./agents/leader.mjs');
+    const cfg = ghAppConfig(process.env);
+    const pool = { query: muPoolQuery }; // 适配 orchestration 的 pool 接口
+    const rv = await handlePullRequestEvent(pool, cfg, { payload: {
+      action: String(job.payload?.action ?? 'synchronize'), github_repo_id: githubRepoId,
+      pr_number: prNumber, head_sha: headSha } });
+    pipeline.review = { ok: rv.ok, status: rv.run?.status ?? null,
+      findings: rv.findings_count ?? null, reason: rv.reason ?? null };
+    if (rv.ok && rv.run?.status === 'REVIEWED' && !rv.idempotent) {
+      const findings = (await muPoolQuery(
+        `SELECT rule_id, severity, path, line_start, summary_masked FROM mu.agent_finding
+          WHERE run_id=$1 ORDER BY severity`, [rv.run.run_id])).rows;
+      // branch protection 探测（真实 provider 已在 review 阶段拉取；此处用其结果域。
+      // 未配置/未知 → Leader fail-closed BLOCKED）
+      const dec = await advanceAfterReview(pool, { runId: rv.run.run_id,
+        tenantId: job.tenant_id, repoId: job.repo_id, prId: rv.run.pr_id, headSha,
+        findings, protection: rv.protection ?? { configured: false } });
+      pipeline.decision = dec.decision ?? dec.reason ?? null;
+      if (dec.decision === 'fix_required') {
+        const { fixVerifyRound } = await import('./agents/fix-orchestrator.mjs');
+        const dep = await buildFixDeps(muPoolQuery, { job, sysCtx, githubRepoId });
+        if (dep) {
+          const fx = await fixVerifyRound(pool, { run: rv.run,
+            binding: { tenantId: job.tenant_id, repoId: job.repo_id, prId: rv.run.pr_id, headSha },
+            deps: dep });
+          pipeline.fix = { verdict: fx.verdict ?? null, decision: fx.decision ?? null };
+        } else {
+          pipeline.fix = { skipped: 'deps_unavailable' };
+        }
+      }
+    }
+  } catch (e) {
+    // 管线异常不吞：登记独立失败结果（快照仍算 done——管线有自身死信/审计）
+    pipeline.review = pipeline.review ?? { ok: false, reason: `pipeline_error:${String(e?.message ?? e).slice(0, 80)}` };
+  }
+  return { state: 'done', result: { pr_number: prNumber, head_sha_prefix: headSha.slice(0, 12),
+    pipeline } };
+}
+
+// Fixer deps 装配（真实路径：repoUrl=公开 GitHub URL；testCmd 默认平凡——真实部署
+// 须配置 MU_FXV_TEST_CMD，默认值在文档与 evidence 中如实标注）
+async function buildFixDeps(muPoolQuery, { job, sysCtx, githubRepoId }) {
+  const rb = await muPoolQuery(
+    `SELECT owner, name, installation_id FROM mu.repository_binding
+      WHERE github_repo_id=$1 AND tenant_id=$2 AND binding_state='active' LIMIT 1`,
+    [githubRepoId, job.tenant_id]).catch(() => null);
+  if (!rb?.rows?.length) return null;
+  const row = rb.rows[0];
+  const overrides = global.__WAVE3_TEST_DEPS; // 仅测试注入（E2E 用本地仓库/定制 testCmd）
+  return {
+    repoUrl: overrides?.repoUrl ?? `https://github.com/${row.owner}/${row.name}.git`,
+    testCmd: overrides?.testCmd ?? (process.env.MU_FXV_TEST_CMD || 'node -e process.exit(0)'),
+    providerCfg: ghAppConfig(process.env),
+    installationId: String(row.installation_id),
+    owner: row.owner, repoName: row.name, prNumber: Number(job.payload?.pr_number ?? 0),
+    assertServiceChain: async () => {
+      const chk = await muPoolQuery(
+        `SELECT 1 FROM mu.repository_binding rb
+          JOIN mu.github_app_installation i ON i.installation_id = rb.installation_id
+          WHERE rb.github_repo_id=$1 AND rb.tenant_id=$2 AND rb.binding_state='active'
+            AND i.revoked_at IS NULL AND i.suspended_at IS NULL`,
+        [githubRepoId, job.tenant_id]).catch(() => null);
+      return Boolean(chk?.rows?.length);
+    },
+  };
 }
 
 export async function muApi(req, res, ctx) {
@@ -345,13 +418,32 @@ export async function muApi(req, res, ctx) {
           await store.setInstallationState(instId, { suspended: false });
           await store.setBindingsStateForInstallation(instId, 'active');
         }
-      } else if (event === 'installation_repositories' && Array.isArray(body.repositories_removed)
-        && body.repositories_removed.length) {
-        for (const r of body.repositories_removed) {
-          const gid = Number(r.id ?? 0);
-          if (!gid) continue;
-          const hit = await muPoolQ(`SELECT repo_id FROM mu.repository_binding WHERE github_repo_id=$1 AND tenant_id=$2`, [gid, tenantId]);
-          for (const row of hit.rows) await store.setBindingState(tenantId, row.repo_id, 'revoked', 'repository_removed');
+      } else if (event === 'installation_repositories') {
+        // Wave 3 PR-E：added → upsert binding（此前无写入方）；removed → revoke（原有语义）
+        if (Array.isArray(body.repositories_added)) {
+          for (const r of body.repositories_added) {
+            const gid = Number(r.id ?? 0);
+            if (!gid) continue;
+            const repoRow = await store.ensureRepository({ tenantId, provider: 'github',
+              providerRepoId: String(gid), owner: String(r.full_name?.split('/')[0] ?? r.name ?? ''),
+              name: String(r.name ?? ''), defaultBranch: null });
+            await muPoolQ(
+              `INSERT INTO mu.repository_binding (tenant_id, repo_id, github_repo_id, owner, name,
+                  installation_id, default_branch, binding_state)
+               VALUES ($1,$2,$3,$4,$5,$6,NULL,'active')
+               ON CONFLICT (github_repo_id) DO UPDATE SET binding_state='active',
+                 revoked_at=NULL, installation_id=EXCLUDED.installation_id, updated_at=now()`,
+              [tenantId, repoRow.repo_id, gid,
+                String(r.full_name?.split('/')[0] ?? r.name ?? ''), String(r.name ?? ''), instId]);
+          }
+        }
+        if (Array.isArray(body.repositories_removed) && body.repositories_removed.length) {
+          for (const r of body.repositories_removed) {
+            const gid = Number(r.id ?? 0);
+            if (!gid) continue;
+            const hit = await muPoolQ(`SELECT repo_id FROM mu.repository_binding WHERE github_repo_id=$1 AND tenant_id=$2`, [gid, tenantId]);
+            for (const row of hit.rows) await store.setBindingState(tenantId, row.repo_id, 'revoked', 'repository_removed');
+          }
         }
       } else if (event === 'pull_request' && body.pull_request && body.repository) {
         const gid = Number(body.repository.id ?? 0);
@@ -362,6 +454,7 @@ export async function muApi(req, res, ctx) {
             kind: 'event_sync', requestedBy: null, requestedRole: 'maintainer',
             payload: { event: 'pull_request', delivery_id: deliveryId,
               installation_id: instId,
+              github_repo_id: gid,
               pr_number: Number(body.pull_request.number ?? 0),
               head_sha: String(body.pull_request.head?.sha ?? ''),
               action: String(body.action ?? '') } });
@@ -496,8 +589,24 @@ export async function muApi(req, res, ctx) {
       await store.upsertInstallation({ installationId, tenantId: mu.tenantId,
         accountId: repos[0]?.owner_id ?? 0, accountLogin: owner0, accountType: 'User',
         appId: cfgGh.appId });
+      // Wave 3 PR-E：安装落库时同步登记 repository_binding（PR 事件入队/审查服务链
+      // 的数据源——此前无任何写入方，属实现断层）。幂等 upsert；已存在则保持 active。
+      for (const r of repos) {
+        const repoRow = await store.ensureRepository({ tenantId: mu.tenantId, provider: 'github',
+          providerRepoId: String(r.id), owner: r.owner_login, name: r.name,
+          defaultBranch: r.default_branch });
+        await muPoolQ(
+          `INSERT INTO mu.repository_binding (tenant_id, repo_id, github_repo_id, owner, name,
+              installation_id, default_branch, binding_state, created_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,'active',$8)
+           ON CONFLICT (github_repo_id) DO UPDATE SET binding_state='active',
+             revoked_at=NULL, updated_at=now()`,
+          [mu.tenantId, repoRow.repo_id, Number(r.id), r.owner_login, r.name,
+            Number(installationId), r.default_branch, mu.userId]);
+      }
       await store.audit('GHAPP_INSTALLATION_REGISTERED', { tenantId: mu.tenantId, actorUserId: mu.userId,
-        detail: { installation_id: installationId, repos_count: repos.length } });
+        detail: { installation_id: installationId, repos_count: repos.length,
+          bindings_upserted: repos.length } });
       res.setHeader('Set-Cookie', appendCorrClear([]));
       res.writeHead(302, { Location: '/multiuser' });
       return res.end();
@@ -967,6 +1076,59 @@ export async function muApi(req, res, ctx) {
         }
       }
       return sendJson(res, 200, { ok: true, processed });
+    }
+
+    // ── 审查管线只读查询（Wave 3 PR-E；read_pull_request 角色）──
+    // 错误不泄露 tenant/repo/PR/用户存在性：统一 not_found/unauthorized 短语。
+    if (p === '/api/mu/runs' && req.method === 'GET') {
+      const g = await guard('read_pull_request');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const rows = await muPoolQ(
+        `SELECT r.run_id, r.status, r.trigger_source, r.head_sha, r.created_at, r.updated_at,
+                pr.provider_pr_number, rep.owner, rep.name repo_name,
+                (SELECT count(*) FROM mu.agent_finding f WHERE f.run_id = r.run_id) findings_count,
+                (SELECT max(severity) FROM mu.agent_finding f WHERE f.run_id = r.run_id) top_severity
+           FROM mu.review_run r
+           JOIN mu.pull_request pr ON pr.pr_id = r.pr_id
+           JOIN mu.repository rep ON rep.repo_id = r.repo_id
+          WHERE r.tenant_id = $1
+            ${q.repo_id ? 'AND r.repo_id = $2' : ''}
+          ORDER BY r.created_at DESC LIMIT 50`,
+        q.repo_id ? [mu.tenantId, String(q.repo_id)] : [mu.tenantId]);
+      return sendJson(res, 200, { runs: rows.rows.map((x) => ({ ...x,
+        findings_count: Number(x.findings_count) })) });
+    }
+    const runMatch = p.match(/^\/api\/mu\/runs\/([0-9a-f-]{36})$/);
+    if (runMatch && req.method === 'GET') {
+      const g = await guard('read_pull_request');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const runId = runMatch[1];
+      const run = await muPoolQ(
+        `SELECT r.*, pr.provider_pr_number, rep.owner, rep.name repo_name
+           FROM mu.review_run r JOIN mu.pull_request pr ON pr.pr_id = r.pr_id
+           JOIN mu.repository rep ON rep.repo_id = r.repo_id
+          WHERE r.run_id=$1 AND r.tenant_id=$2`,
+        [runId, mu.tenantId]);
+      if (!run.rows.length) return sendJson(res, 404, { error: { reason: 'not_found' } });
+      const [attempts, findings, fixes, verifies, decisions, dlq] = await Promise.all([
+        muPoolQ(`SELECT agent_role, attempt, status, provider, error_code, latency_ms,
+                  input_digest, output_digest, created_at FROM mu.agent_attempt
+                 WHERE run_id=$1 ORDER BY created_at`, [runId]),
+        muPoolQ(`SELECT rule_id, severity, confidence, path, line_start, line_end, title,
+                  summary_masked, evidence_ref, remediation FROM mu.agent_finding
+                 WHERE run_id=$1 ORDER BY severity, path`, [runId]),
+        muPoolQ(`SELECT attempt, status, patch_digest, artifact_ref, error_code, created_at
+                 FROM mu.fix_attempt WHERE run_id=$1 ORDER BY attempt`, [runId]),
+        muPoolQ(`SELECT attempt, verdict, error_code, created_at FROM mu.verification_attempt
+                 WHERE run_id=$1 ORDER BY attempt`, [runId]),
+        muPoolQ(`SELECT stage, decision, rationale_ref, actor_principal, policy_version, created_at
+                 FROM mu.orchestration_decision WHERE run_id=$1 ORDER BY created_at`, [runId]),
+        muPoolQ(`SELECT kind, reason, retry_count, payload_ref, created_at FROM mu.dead_letter
+                 WHERE run_id=$1 AND resolved_at IS NULL`, [runId]),
+      ]);
+      return sendJson(res, 200, { run: run.rows[0], attempts: attempts.rows,
+        findings: findings.rows, fixes: fixes.rows, verifications: verifies.rows,
+        decisions: decisions.rows, dead_letters: dlq.rows });
     }
 
     // ── 审计（read_audit：metadata only——Auditor/PlatformAdmin） ──
