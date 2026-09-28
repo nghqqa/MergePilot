@@ -96,7 +96,7 @@ input, button, textarea { font: inherit; caret-color: var(--c-accent); }
 .sha { font-family: var(--font-mono); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
 .nav-menu-btn { display: none; align-items: center; gap: 6px; height: 34px; padding: 0 10px;
   border: var(--border-w) solid var(--c-border); border-radius: var(--r-sm);
-  background: var(--c-panel); color: var(--c-text); font-size: var(--fs-sm); font-weight: var(--fw-medium);
+  background: var(--c-panel); color: var(--c-text); font-size: var(--fs-sm); font-weight: var(--fw-semibold);
   cursor: pointer; }
 .nav-menu-btn:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 2px; }
 .nav-backdrop { position: fixed; inset: 0; background: rgba(11, 15, 25, 0.38); z-index: 39; }
@@ -674,6 +674,55 @@ td.th-right { text-align: right; }
 .login-scope strong { font-size: var(--fs-xs); color: var(--c-text); font-weight: var(--fw-semibold); }
 .login-demo { margin-top: 14px; padding-top: 12px; border-top: var(--border-w) solid var(--c-border); }
 
+/* ---- Onboarding 渐进轨道（组织与接入页） ---- */
+.onb-panel { padding: var(--sp-4); }
+.onb-track {
+  list-style: none; display: flex; flex-wrap: wrap; gap: 8px;
+  padding: 0; margin: 0 0 10px;
+}
+.onb-step {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 5px 12px; border: 1px solid var(--c-border); border-radius: 999px;
+  background: var(--c-inset); font-size: var(--fs-xs); color: var(--c-text-3);
+}
+.onb-ico { flex: 0 0 auto; font-weight: var(--fw-bold); }
+.onb-state { color: var(--c-text-3); }
+.onb-step-done { color: var(--c-ok); background: var(--c-ok-bg); border-color: rgba(6, 118, 71, 0.22); }
+.onb-step-done .onb-state { color: var(--c-ok); }
+.onb-step-current {
+  color: var(--c-accent-strong); background: var(--c-accent-soft);
+  border-color: rgba(14, 107, 98, 0.35); font-weight: var(--fw-semibold);
+}
+.onb-step-current .onb-state { color: var(--c-accent-strong); }
+.onb-done { margin: 0 0 10px; }
+.onb-current-card {
+  border: 1px solid rgba(14, 107, 98, 0.28); border-radius: var(--r-md);
+  padding: 14px 16px; background: var(--c-panel); box-shadow: var(--shadow-xs);
+}
+.onb-current-label {
+  font-size: var(--fs-xs); font-weight: var(--fw-semibold);
+  color: var(--c-accent-strong); letter-spacing: 0.05em;
+}
+.onb-current-title { font-size: var(--fs-md); font-weight: var(--fw-bold); margin: 2px 0 6px; }
+.onb-note { color: var(--c-text-2); font-size: var(--fs-sm); margin: 0 0 10px; }
+
+/* ---- 组织与接入页：PR 控件与键盘可访问的 PR 打开按钮 ---- */
+.mu-controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; min-width: 0; }
+.mu-pr-open {
+  background: none; border: none; padding: 2px 4px; margin: -2px -4px;
+  color: inherit; font: inherit; cursor: pointer; border-radius: 4px;
+  text-align: left; min-height: 32px;
+}
+.mu-pr-open:hover { color: var(--c-accent-strong); text-decoration: underline; text-underline-offset: 2px; }
+.mu-pr-open:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 2px; }
+
+/* ---- RAG 查询控件：流式布局，杜绝固定宽度导致的页面级横向溢出 ---- */
+.rag-controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; min-width: 0; }
+.rag-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1 1 190px; }
+.rag-field-wide { flex: 3 1 260px; }
+.rag-field-auto { flex: 0 0 auto; }
+.rag-field .ant-input, .rag-field .ant-select, .rag-field .ant-input-number { width: 100%; min-width: 0; }
+
 /* ---- 小屏：导航由 antd Drawer 承载（文字标签恒可见）；此处仅保留内容区适配 ---- */
 @media (max-width: 960px) {
   .content { padding: 14px 14px 40px; }
@@ -711,16 +760,35 @@ td.th-right { text-align: right; }
   .table-meta { max-width: 100%; overflow-wrap: anywhere; }
   .quick-filters { flex-wrap: wrap; }
   .f-field, .f-grow { flex: 1 1 100%; }
-  /* PR 行在小屏收窄：隐藏次要列（上下文/最近活动），保留 PR/摘要/需要处理/详情 */
+  /* PR 行在小屏收窄：隐藏次要列（上下文/最近活动），保留 PR/最近审查/需要处理/详情 */
   .pr-table th:nth-child(2), .pr-table td.cell-context,
   .pr-table th:nth-child(5), .pr-table td.cell-time { display: none; }
-  .pr-table { min-width: 560px; }
+  /* 组织与接入页 PR 表保留全部列（head SHA/更新时间是小卡内单行字段，不产生横向溢出） */
+  .pr-table.mu-pr-table th:nth-child(2),
+  .pr-table.mu-pr-table td:nth-child(2),
+  .pr-table.mu-pr-table td.cell-time { display: flex; }
+  .mu-pr-open { min-height: var(--tap); }
   .repo-card { flex-direction: column; align-items: flex-start; }
+  /* antd 按钮/输入移动端触控目标下限 44px（仅小屏生效，桌面不动） */
+  .content .ant-btn { min-height: var(--tap); }
+  .content .ant-input { min-height: var(--tap); }
+  .content .ant-select-selector { min-height: var(--tap) !important; }
+  .content .ant-input-number { min-height: var(--tap); }
+  .content .ant-checkbox + span { font-size: var(--fs-sm); }
+  /* RAG 查询控件小屏纵向堆叠：字段占满整行，按钮全宽可点 */
+  .rag-field, .rag-field-wide { flex: 1 1 100%; }
+  .rag-field-auto { flex: 1 1 100%; }
+  .rag-field-auto .ant-btn { width: 100%; }
+  .mu-controls > .ant-select, .mu-controls > .ant-input { flex: 1 1 100%; max-width: none; }
   /* 顶栏让位：面包屑隐藏（页面内有层级），当前项与模式徽章截断防溢出 */
-  .topbar { padding: 0 12px; }
+  .topbar { flex-wrap: wrap; height: auto; flex: 0 0 auto; min-height: 50px; padding: 6px 12px; row-gap: 6px; }
+  .topbar-right { flex-wrap: wrap; row-gap: 6px; }
+  .ws-wrap { max-width: 100%; }
   .topbar .crumb { display: none; }
   .crumb-current { max-width: 34vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .mode-chip { max-width: 46vw; overflow: hidden; }
+  .auth-demo-chip { max-width: 46vw; overflow: hidden; text-overflow: ellipsis; }
+  .auth-logout-hint { max-width: 100%; flex-basis: 100%; }
   .mode-range { display: none; }
 }
 
