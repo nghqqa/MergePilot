@@ -305,18 +305,58 @@ curl -X DELETE http://<你的地址>/api/mu/repositories/<repo_id>/ghapp-binding
 
 ### 启用步骤
 
-1. 配置 `RAGTRIAL_ALLOWED_SCOPES`（定义可检索的 repo@branch 范围）
-2. 配置 `RAGTRIAL_REPO_ALLOWLIST`（定义会话端可见仓库）
+1. 配置 `RAGTRIAL_ALLOWED_SCOPES`（部署级 scope 门——定义可检索的 repo@branch 范围，fail-closed：未设置=全拒绝 403 `scope_not_configured`）
+   ```bash
+   # .env 示例：允许检索你绑定的仓库
+   RAGTRIAL_ALLOWED_SCOPES=your-owner/your-repo@main
+   # 多个用逗号分隔
+   RAGTRIAL_ALLOWED_SCOPES=owner/repo-a@main,owner/repo-b@dev
+   ```
+2. 配置 `RAGTRIAL_REPO_ALLOWLIST`（会话端仓库授权面——与部署 scope 取交集后才是有效授权）
+   ```bash
+   RAGTRIAL_REPO_ALLOWLIST=your-owner/your-repo
+   ```
+   有效授权 = `RAGTRIAL_ALLOWED_SCOPES` ∩ `RAGTRIAL_REPO_ALLOWLIST`，两层缺一不可。请求参数/body 只能被校验，不能扩大该交集。
+
 3. 通过 `/api/rag-trial/ingest` 导入语料
 4. 通过 `/api/rag-trial/query` 检索
 
 详见 [LOCAL-RAG-GUIDE](../distribution/docs/LOCAL-RAG-GUIDE.md)
+
+### 多用户 RAG 会话
+
+- **multiuser 模式下 RAG 端点支持 `mu_session` 持久化会话**（`/api/rag-trial/*` 同时识别 legacy `mp_session` 和 MU `mu_session`）
+- 逐请求检查：session 有效 + 用户 active + 成员关系 active + 角色 `rag_query` 动作 + tenant 仓库列表（全部服务端）
+- **Auditor 和 PlatformAdmin 默认无 `rag_query` 动作 → RAG 401**（角色矩阵）
+- 成员撤销后既有 session **立即失权**（逐请求 membership live 检查）
+
+### hash 嵌入与 `state=empty`
+
+默认嵌入策略 `local-hash-v1` 是确定性哈希（非语义），对**短中文查询可能返回 `state=empty`**（无精确词匹配）——这是"无结果"而非"认证失败"或"权限拒绝"。如需语义检索能力，请配置 `bge-m3`（8C16G 档，需自带模型工件 + manifest 校验，详见 [LOCAL-RAG-GUIDE](../distribution/docs/LOCAL-RAG-GUIDE.md#嵌入策略)）。
 
 ### RAG 安全红线
 
 - 检索结果**仅作 reference**，不自动生成 finding/ticket/gate/VERIFIED
 - 不参与风险决策
 - 语义模型须自带并过 manifest 校验（零下载）
+
+## 8.1 测试后清理（GitHub App 卸载与凭据清理）
+
+真实测试完成后请按以下步骤清理：
+
+1. **卸载 GitHub App**：https://github.com/settings/installations → 找到测试 App → Uninstall
+   - Console 自动收到 `installation deleted` webhook → installation 进入 `revoked` + 所有关联 binding 进入 `revoked`
+   - 后续 webhook 和 worker 写入被拒绝（fail-closed）
+2. **删除测试 App**（可选，如不再需要）：https://github.com/settings/apps/{app-name} → Delete GitHub App
+3. **清理本地凭据**：
+   ```bash
+   rm .env                          # 含 App ID/private key/webhook secret
+   rm ~/Downloads/*.private-key.pem # GitHub App 私钥文件
+   docker compose down -v           # 删除所有数据（慎重）
+   ```
+4. **验证清理**：`curl http://<你的地址>/api/mu/github/app/status` 应返回 `configured: false`
+
+> **注意**：以上真实 E2E 验证均使用测试 App 和测试仓库（非生产环境），不代表你的部署环境无需配置验证。生产部署请按 §4-§5 重新配置并验证。
 
 ## 9. FXV 修复验证
 
