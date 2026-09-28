@@ -596,6 +596,40 @@ export const MU_MIGRATIONS = [
        END $$`,
     ],
   },
+  {
+    // Wave 3.2：Agent 运行策略控制面（平台级单行；非敏感字段 only——
+    // 无 base URL、无 API key、无凭据形状列；endpoint/key 仍部署级 env）。
+    // 回滚：DELETE FROM mu.schema_migrations WHERE version=11;
+    //       DROP TABLE IF EXISTS mu.agent_policy;
+    //       ALTER TABLE mu.review_run DROP COLUMN IF EXISTS agent_policy_version;
+    //       ALTER TABLE mu.review_run DROP COLUMN IF EXISTS llm_mode;
+    version: 11,
+    name: 'mu_agent_policy',
+    sql: [
+      `CREATE TABLE IF NOT EXISTS mu.agent_policy (
+         id INT PRIMARY KEY CHECK (id = 1),
+         mode TEXT NOT NULL DEFAULT 'deterministic_only'
+           CHECK (mode IN ('deterministic_only','llm_assist')),
+         provider TEXT NOT NULL DEFAULT 'openai_compatible'
+           CHECK (provider IN ('openai_compatible')),
+         model TEXT NOT NULL DEFAULT 'deepseek-flash'
+           CHECK (model ~ '^[a-z0-9][a-z0-9._/-]{0,63}$'),
+         timeout_ms INT NOT NULL DEFAULT 30000
+           CHECK (timeout_ms >= 1000 AND timeout_ms <= 120000),
+         max_output_tokens INT NOT NULL DEFAULT 1024
+           CHECK (max_output_tokens >= 64 AND max_output_tokens <= 4096),
+         enabled BOOLEAN NOT NULL DEFAULT false,
+         policy_version INT NOT NULL DEFAULT 1 CHECK (policy_version >= 1),
+         updated_by UUID,
+         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+         updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+       )`,
+      `INSERT INTO mu.agent_policy (id) VALUES (1) ON CONFLICT DO NOTHING`,
+      // run 级冻结快照（新列——与 PR-A 的 review_run.policy_version TEXT(Leader 策略)语义分离）
+      `ALTER TABLE mu.review_run ADD COLUMN IF NOT EXISTS agent_policy_version INT`,
+      `ALTER TABLE mu.review_run ADD COLUMN IF NOT EXISTS llm_mode TEXT`,
+    ],
+  },
 ];
 
 export const MU_SCHEMA_LATEST = MU_MIGRATIONS[MU_MIGRATIONS.length - 1].version;

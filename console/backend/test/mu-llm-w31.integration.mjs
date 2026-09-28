@@ -146,7 +146,10 @@ try {
   const attsA = (await pool.query(`SELECT provider FROM mu.agent_attempt WHERE run_id=$1 AND (provider LIKE 'llm%' OR provider='deterministic_mock')`, [rA.run.run_id])).rows;
   ok('W6a 默认 disabled：零 LLM attempt、deterministic 正常', rA.ok === true && rA.llm_findings === 0 && attsA.length === 0 && rA.findings_count >= 1);
 
-  // W6b mock provider 启用：LLM finding 落库 + attempt 记录（digest/无正文）
+  // W6b mock provider 启用（W3.2 起须先开策略：控制面是 LLM 阶段的权威门）
+  const apMod = await import('../lib/multiuser/agent-policy.mjs');
+  await apMod.updateAgentPolicy(pool, { expectedVersion: (await apMod.getAgentPolicy(pool)).policy_version,
+    patch: { enabled: true, mode: 'llm_assist', model: 'deepseek-flash' }, actorId: null });
   const head2 = 'c'.repeat(40);
   await store.upsertPullRequest({ tenantId: T, repoId: repo.repo_id, providerPrNumber: 3, headSha: head2 });
   const rB = await svc.handlePullRequestEvent(pool, { configured: true,

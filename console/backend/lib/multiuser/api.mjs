@@ -1078,6 +1078,55 @@ export async function muApi(req, res, ctx) {
       return sendJson(res, 200, { ok: true, processed });
     }
 
+    // ── Agent 运行策略（Wave 3.2；PlatformAdmin 读写；零凭据字段）──
+    if (p === '/api/mu/agent-policy' && req.method === 'GET') {
+      const g = await guard('manage_instance');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const ap = await import('./agent-policy.mjs');
+      const policy = await ap.getAgentPolicy({ query: muPoolQ });
+      return sendJson(res, 200, { policy: {
+        mode: policy.mode, provider: policy.provider, model: policy.model,
+        timeout_ms: Number(policy.timeout_ms), max_output_tokens: Number(policy.max_output_tokens),
+        enabled: Boolean(policy.enabled), policy_version: Number(policy.policy_version),
+        updated_at: policy.updated_at },
+        deploy: ap.deployStatus(env), // 布尔+host 摘要+模型白名单（永不含完整 URL/key）
+        runtime_state: ap.runtimeState(policy, env) });
+    }
+    if (p === '/api/mu/agent-policy' && req.method === 'PUT') {
+      if (!csrfOk()) return sendJson(res, 403, { error: { reason: 'csrf_required' } });
+      const g = await guard('manage_instance');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const body = await json();
+      if (body?.confirm !== true) {
+        return sendJson(res, 400, { error: { reason: 'confirm_required',
+          detail: '策略变更须显式 confirm:true（仅影响新建审查任务）' } });
+      }
+      const patch = (({ mode, provider, model, timeout_ms, max_output_tokens, enabled }) =>
+        ({ mode, provider, model, timeout_ms, max_output_tokens, enabled }))(body ?? {});
+      const ap = await import('./agent-policy.mjs');
+      const v = ap.validatePolicyPatch(patch, env);
+      if (!v.ok) return sendJson(res, 400, { error: { reason: v.code } });
+      const up = await ap.updateAgentPolicy({ query: muPoolQ }, {
+        expectedVersion: Number(body.expected_version), patch, actorId: mu.userId });
+      if (!up.ok) {
+        if (up.code === 'version_conflict') {
+          return sendJson(res, 409, { error: { reason: 'version_conflict',
+            current_policy_version: Number(up.current.policy_version) } });
+        }
+        return sendJson(res, 400, { error: { reason: up.code } });
+      }
+      await store.audit('AGENT_POLICY_UPDATED', { tenantId: mu.tenantId, actorUserId: mu.userId,
+        detail: { mode: up.policy.mode, enabled: Boolean(up.policy.enabled),
+          model: up.policy.model, timeout_ms: Number(up.policy.timeout_ms),
+          max_output_tokens: Number(up.policy.max_output_tokens),
+          policy_version: Number(up.policy.policy_version) } }); // 脱敏：只有策略字段，无 env/凭据
+      return sendJson(res, 200, { ok: true, policy: {
+        mode: up.policy.mode, provider: up.policy.provider, model: up.policy.model,
+        timeout_ms: Number(up.policy.timeout_ms), max_output_tokens: Number(up.policy.max_output_tokens),
+        enabled: Boolean(up.policy.enabled), policy_version: Number(up.policy.policy_version),
+        updated_at: up.policy.updated_at } });
+    }
+
     // ── 审查管线只读查询（Wave 3 PR-E；read_pull_request 角色）──
     // 错误不泄露 tenant/repo/PR/用户存在性：统一 not_found/unauthorized 短语。
     if (p === '/api/mu/runs' && req.method === 'GET') {
