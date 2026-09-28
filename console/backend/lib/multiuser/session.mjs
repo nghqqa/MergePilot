@@ -68,6 +68,26 @@ export function muCsrfOk(session, req) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
+// ── Wave 2A.1：OAuth correlation cookie（login-CSRF 防护；一次性，全路径清理） ──
+const MU_CORR_COOKIE = 'mu_oauth_corr';
+export function muCorrCookie(value, maxAgeMs) {
+  return `${MU_CORR_COOKIE}=${value}; ${cookieAttrs()}; Max-Age=${Math.floor(maxAgeMs / 1000)}`;
+}
+export function muCorrClear() {
+  return `${MU_CORR_COOKIE}=; ${cookieAttrs()}; Max-Age=0`;
+}
+export function muCorrFromCookieHeader(header) {
+  if (typeof header !== 'string') return '';
+  for (const part of header.split(';')) {
+    const [k, ...v] = part.trim().split('=');
+    if (k === MU_CORR_COOKIE) return v.join('=');
+  }
+  return '';
+}
+export function appendCorrClear(existingSetCookie) {
+  return [...(Array.isArray(existingSetCookie) ? existingSetCookie : []), muCorrClear()];
+}
+
 export async function rotateMuSession(store, sessionId, { tenantId, role }) {
   const rotated = await store.rotateSession(sessionId, { tenantId, role });
   if (!rotated) return null;
