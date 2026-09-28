@@ -409,6 +409,25 @@ try {
       (tickW.json?.processed ?? []).some((x) => x.state === 'rejected' && /membership/.test(String(x.reason))));
   }
 
+  // ES9（PR254 验收 P1 回归）：生产路径（MU_FIXTURES 关闭）tick 仅消费系统事件
+  {
+    const savedFix = process.env.MU_FIXTURES;
+    delete process.env.MU_FIXTURES;
+    await pool.query(`UPDATE mu.repository_binding SET binding_state='active', revoked_at=NULL, error_code=NULL WHERE github_repo_id=9001`);
+    await hook('pull_request', { installation: { id: 7001 }, repository: { id: 9001 }, action: 'opened',
+      pull_request: { number: 47, head: { sha: '77'.repeat(20) } } }, { delivery: 'd-es-prod' });
+    const repoP = (await pool.query(`SELECT repo_id FROM mu.repository_binding WHERE github_repo_id=9001`)).rows[0].repo_id;
+    const frankId = (await pool.query(`SELECT user_id FROM mu.app_user WHERE login='frank'`)).rows[0].user_id;
+    await store0.enqueueJob({ tenantId: dana.json?.tenant?.tenant_id, repoId: repoP,
+      kind: 'review_run', requestedBy: frankId, requestedRole: 'reviewer', payload: {} });
+    const tickProd = await call('/api/mu/jobs/tick', { method: 'POST', cookie: dana2.cookie, csrf: dana2.csrf });
+    const pr47 = (await pool.query(`SELECT count(*)::int n FROM mu.pull_request WHERE provider_pr_number=47`)).rows[0].n;
+    const humanJob = (await pool.query(`SELECT state FROM mu.job WHERE kind='review_run' ORDER BY created_at DESC LIMIT 1`)).rows[0];
+    ok('ES9 生产路径（无 MU_FIXTURES）：event_sync 被消费（PR 47 落库）；人工 job 原样 queued',
+      tickProd.status === 200 && pr47 === 1 && humanJob?.state === 'queued', { pr47, humanJob, tick: tickProd.status });
+    process.env.MU_FIXTURES = savedFix;
+  }
+
   // ── GA-10 迁移三条件 ──
   {
     let replayErr = null; let replayOk = false;

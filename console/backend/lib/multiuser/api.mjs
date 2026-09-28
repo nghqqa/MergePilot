@@ -881,8 +881,10 @@ export async function muApi(req, res, ctx) {
       return sendJson(res, 200, { jobs: rows });
     }
     if (p === '/api/mu/jobs/tick' && req.method === 'POST') {
-      // PR248 复核 P1 修复：fixture 执行器触发默认【关闭】——须显式 MU_FIXTURES=1
-      if (env.MU_FIXTURES !== '1') return sendJson(res, 403, { error: { reason: 'fixtures_disabled' } });
+      // PR254 验收 P1 修复：生产路径不得依赖 fixture 开关——tick 在 MU_FIXTURES!=1
+      // 时仍处理【仅系统事件 job】（event_sync，真实 store 操作零 fixture 依赖）；
+      // 人工 job（review_run/repair_push，fixture 执行器）仍须显式 MU_FIXTURES=1。
+      const fixturesOn = env.MU_FIXTURES === '1';
       if (!csrfOk()) return sendJson(res, 403, { error: { reason: 'csrf_required' } });
       const g = await guard('read_repository'); // 触发执行器须为 active 成员
       if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
@@ -890,6 +892,11 @@ export async function muApi(req, res, ctx) {
       for (;;) {
         const job = await store.claimNextJob();
         if (!job) break;
+        if (!fixturesOn && job.kind !== 'event_sync') {
+          // 非 fixture 模式仅消费系统事件：人工 job 原样回队（不执行不审计）
+          await store.requeueJob(job.job_id);
+          break; // 队首为人工 job 即停（避免空转重取同一行）
+        }
         // Wave 2B.1：系统事件 job（event_sync，requested_by=NULL）走独立分支——
         // 授权上下文=已验证的 installation→binding→tenant/repo 服务链，绝不伪造
         // 用户 membership（不通过 getMembership(null) 冒充未登录拒绝，也不借

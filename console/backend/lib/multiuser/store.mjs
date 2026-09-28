@@ -270,6 +270,14 @@ export async function createMuStore({ pool, env = process.env } = {}) {
        RETURNING *`);
     return r.rows[0] ?? null;
   }
+  // Wave 2B.1：人工 job 在非 fixture 模式原样回队（不执行不审计；mu.job 无
+  // locked_by/locked_at 列——那是 ragtrial.jobs 的——仅状态回退）
+  async function requeueJob(jobId) {
+    const r = await q(`UPDATE mu.job SET state='queued', updated_at=now()
+       WHERE job_id=$1 RETURNING job_id`, [jobId]);
+    return r.rows.length > 0;
+  }
+
   async function finishJob(jobId, state, result = {}) {
     const r = await q(
       `UPDATE mu.job SET state=$2, result=$3::jsonb, updated_at=now() WHERE job_id=$1 RETURNING *`,
@@ -487,6 +495,6 @@ export async function createMuStore({ pool, env = process.env } = {}) {
     createInvitation, listInvitations, getInvitation, findClaimableInvitation, claimInvitation,
     upsertInstallation, getInstallation, listInstallations, setInstallationState,
     upsertRepositoryBinding, getBindingByRepo, setBindingState, setBindingsStateForInstallation,
-    claimWebhookDelivery, finishWebhookDelivery,
+    claimWebhookDelivery, finishWebhookDelivery, requeueJob,
   };
 }
