@@ -565,7 +565,14 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
         p, q,
         sendJson,
         readJsonBody,
-        requireSession: async () => getSession(tokenFromCookieHeader(req.headers.cookie)),
+        // Dogfooding P1 修复：legacy 会话优先（非 multiuser 零回归），MU 会话回退
+        // （multiuser 模式下 rag-trial 端点可达——逐请求 DB 解析+角色/仓库服务端校验）
+        requireSession: async () => {
+          const legacy = getSession(tokenFromCookieHeader(req.headers.cookie));
+          if (legacy) return legacy;
+          const { resolveMuAuthForRag } = await import('./lib/ragtrial/muAuthBridge.mjs');
+          return resolveMuAuthForRag(req, process.env);
+        },
       });
     }
 
