@@ -81,9 +81,14 @@ function writeFixture(mutate = () => {}) {
   return dir;
 }
 function pyVerify(dir, manifestName = 'manifest.json') {
-  const r = spawnSync('python', ['-X', 'utf8', path.join(REPO_ROOT, 'tools', 'bge_embed.py'),
-    '--model-dir', dir, '--manifest', path.join(dir, manifestName), '--verify-only'],
-    { encoding: 'utf8', cwd: REPO_ROOT });
+  // Beta Hardening W1：python→python3 回退（CI runner 通常只有 python3；
+  // 本地 Windows 有 python）。ENOENT（status null）才切换，不影响既有失败语义。
+  const args = ['-X', 'utf8', path.join(REPO_ROOT, 'tools', 'bge_embed.py'),
+    '--model-dir', dir, '--manifest', path.join(dir, manifestName), '--verify-only'];
+  let r = spawnSync('python', args, { encoding: 'utf8', cwd: REPO_ROOT });
+  if (r.status === null && /ENOENT|not found/i.test(String(r.error))) {
+    r = spawnSync('python3', args, { encoding: 'utf8', cwd: REPO_ROOT });
+  }
   return r.status;
 }
 

@@ -24,9 +24,22 @@ function errKindCount(kind) {
 }
 let storePromise = null;
 let queuePromise = null;
+// Beta Hardening W1（canonical 接入 CI 的必要工程）：pg 解析双通道——容器/镜像内走
+// 标准 node_modules；CI/主机测试进程回退 test/support 的 dev-only pg（与 cchain
+// wiring loadPg / mu api loadPg 同一惯例——此前仅靠本地根 node_modules junction）。
+let ragPgMod = undefined;
+async function loadPg() {
+  if (ragPgMod !== undefined) return ragPgMod;
+  try { ragPgMod = await import('pg'); return ragPgMod; } catch { /* fall through */ }
+  try {
+    const { createRequire } = await import('node:module');
+    ragPgMod = createRequire(new URL('../../test/support/noop.js', import.meta.url))('pg');
+  } catch { ragPgMod = null; }
+  return ragPgMod;
+}
 function getPool(env) {
   return (async () => {
-    const pg = await import('pg').catch(() => null);
+    const pg = await loadPg();
     if (!pg) throw new RagTrialError('pg module unavailable', 'pg_unavailable', 503);
     const pool = new pg.Pool({ connectionString: env.CONSOLE_PG_DSN, max: 4 });
     // PG 中断时 idle 连接会发 'error' 事件；不挂监听会成为未捕获异常把进程打死
