@@ -127,9 +127,11 @@ try {
     const f0 = await call('/api/mu/fixtures/pr', { method: 'POST', cookie: admin.cookie, csrf: admin.csrf,
       body: { repo_id: '00000000-0000-0000-0000-000000000000', number: 1, head_sha: 'a'.repeat(40) } });
     const t0 = await call('/api/mu/jobs/tick', { method: 'POST', cookie: admin.cookie, csrf: admin.csrf });
-    ok('MU-F0 fixtures 端点默认关闭（pr 播种与 tick 均 403 fixtures_disabled）',
+    // PR254 验收 P1 修正后语义：pr 播种（fixture 专用）默认关；tick 生产路径开放
+  // （仅消费系统事件）——人工 job 原样回队不执行
+  ok('MU-F0 fixtures 播种端点默认关闭（403 fixtures_disabled）；tick 生产路径开放（200）',
       f0.status === 403 && f0.json?.error?.reason === 'fixtures_disabled'
-        && t0.status === 403 && t0.json?.error?.reason === 'fixtures_disabled');
+        && t0.status === 200);
     process.env.MU_FIXTURES = savedFixtures;
   }
 
