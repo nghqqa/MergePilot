@@ -24,6 +24,7 @@ import { parseAccessModel, authorize, denialAudit } from './lib/permissions.mjs'
 import { cchainStatusObserved, verifyRunBindingAndAudit, rotateKeystore,
          cchainMetricsSnapshot, rememberStatusForMetrics } from './lib/cchain/wiring.mjs';
 import { ragTrialApi, ragTrialInternalQuery } from './lib/ragtrial/api.mjs';
+import { muApi } from './lib/multiuser/api.mjs';
 
 // 进程启动时刻（health.started_at 的唯一来源）。必须在模块加载时求值——
 // 放进 apiHealth() 会变成"响应时刻"，容器 Up 时长与该字段即相互矛盾（2026-09-27 实测教训）。
@@ -545,6 +546,16 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
         has_pending_tickets: false,
         merge_panel: { enabled: false, reasons: ['merge_disabled'], github_url: `https://github.com/${repo}/pull/${prNumber}` },
         source: ov.source,
+      });
+    }
+
+    // ── Developer Edition 多用户面（MU；MU_MODE=multiuser 启用，默认 legacy 不生效）──
+    if (p.startsWith('/api/mu/')) {
+      return muApi(req, res, {
+        p, q,
+        sendJson,
+        readJsonBody,
+        requireSession: async () => getSession(tokenFromCookieHeader(req.headers.cookie)),
       });
     }
 

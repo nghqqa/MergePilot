@@ -8,6 +8,11 @@
 //        （python 子进程 --verify-only，exit 3 fail-closed）；
 //   WC*：双 worker 并发 claim 竞争（SKIP LOCKED）——全部任务恰一次、无重复索引；
 //   KR*：keystore 轮换/撤销——旧密钥签名失效（401）、新密钥生效（200）。
+//   SA*：PHASE0A 会话仓库授权（复核 CT-01 修复）——session∩部署 scope 组合门：
+//        query/review-aux/eval/ingest/delete/jobs/index 的会话层拒绝、拒绝路径
+//        零内容泄露（无 snippet/citation/doc_path）、写路径零副作用、批量整批
+//        拒绝、index 跨界门（invalidate SA7 + rollback 独立回归 SA7b/F-2）、
+//        列表/死信过滤、越权 requeue 404 与不存在同形零差分（F-1）、机器通道不受会话层影响。
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
@@ -32,7 +37,9 @@ function ok(name, cond, detail) {
 const CTR = `ragcanon-it-${crypto.randomBytes(4).toString('hex')}`;
 const PORT = 15900 + Math.floor(Math.random() * 90);
 const REPO = 'nghqqa/mergepilot', BR = 'feat/rag-prod-readiness';
-const SCOPES = `${REPO}@${BR}`;
+// SA*（PHASE0A）：acme/rag、zeta/priv 在部署 scope 内但不在 console 会话
+// allowlist（下）——用于让请求"过 scope 层、被会话层拒"（两层都可独立命中）
+const SCOPES = `${REPO}@${BR},acme/rag@main,zeta/priv@main`;
 const sign = (secret, { run_id, nonce, timestamp }) =>
   crypto.createHmac('sha256', secret).update(`${run_id}|${nonce}|${timestamp}`).digest('hex');
 
@@ -107,6 +114,9 @@ process.env.CONSOLE_PILOT_USER = 'canon-op';
 process.env.CONSOLE_PILOT_PASSWORD = 'canon-test-password';
 process.env.CONSOLE_SESSION_SECRET = 'canon-secret';
 process.env.RAGTRIAL_ALLOWED_SCOPES = SCOPES;
+// SA*（PHASE0A）：会话仓库授权面——刻意不含 acme/rag、zeta/priv（它们在 scope 内）；
+// 含 other/repo 以保证 SC2/SC3 仍命中 scope 层（reason 语义不变）
+process.env.CONSOLE_REPO_ALLOWLIST = `${REPO},other/repo`;
 process.env.MERGEPILOT_RUN_BINDING_KEYSTORE = KS;
 process.env.RAGTRIAL_SCOPE_AUDIT_DENY_CAP = '3';
 
@@ -230,6 +240,115 @@ try {
     && rows.length === 1 && rows[0].state === 'done' && Number(rows[0].n) === N && Number(rows[0].att) === N,
     { rows, w1: w1.out.slice(-80), w2: w2.out.slice(-80) });
   ok('WC2 无重复索引（6 文档各 1 chunk）', Number(chunks.docs) === N && Number(chunks.rows) === N, chunks);
+
+  // ── SA*：PHASE0A 会话仓库授权（session∩部署 scope 组合门；复核 CT-01 修复） ──
+  const { resetScopeDenyLimiter } = await import('../lib/ragtrial/api.mjs');
+  resetScopeDenyLimiter(); // 与 SC7 同源封顶计数器隔离，保证本组审计计数断言确定性
+  const repoDeniedCount = async () =>
+    (await pool.query(`SELECT count(*)::int n FROM ragtrial.audit_events WHERE kind='RAG_REPO_DENIED'`)).rows[0].n;
+  const noLeak = (j) => !JSON.stringify(j).includes('snippet')
+    && !JSON.stringify(j).includes('citation') && !JSON.stringify(j).includes('doc_path');
+
+  const saQ = await call('/api/rag-trial/query', { q: 'canary', repo: 'zeta/priv', branch: 'main', k: 3 });
+  ok('SA1 query 过 scope 层但被会话层拒 → 403 repo_not_in_allowlist + 零内容泄露',
+    saQ.status === 403 && saQ.json?.error?.reason === 'repo_not_in_allowlist' && noLeak(saQ.json), saQ.json);
+  ok('SA1b 会话层拒绝落有界审计（RAG_REPO_DENIED=1）', await repoDeniedCount() === 1);
+
+  const saAux = await call('/api/rag-trial/review-aux', { q: 'canary', repo: 'zeta/priv', branch: 'main', run_id: 'sa-run' });
+  ok('SA2 review-aux 旁路已封（CT-01 修复）→ 403 + 零 snippet/citation/doc_path',
+    saAux.status === 403 && saAux.json?.error?.reason === 'repo_not_in_allowlist' && noLeak(saAux.json), saAux.json);
+
+  const saEv = await call('/api/rag-trial/eval', { repo: 'zeta/priv', branch: 'main', qa: [{ q: 'x', expect_doc: 'y.md' }] });
+  ok('SA3 eval 旁路已封（CT-01 修复）→ 403 + 响应无评测 detail（doc_path 预言机关闭）',
+    saEv.status === 403 && saEv.json?.error?.reason === 'repo_not_in_allowlist' && saEv.json?.detail === undefined, saEv.json);
+  ok('SA3b 前三次拒绝审计在界（RAG_REPO_DENIED=3，cap=3）', await repoDeniedCount() === 3);
+
+  const saIng = await call('/api/rag-trial/ingest', { repo: 'zeta/priv', branch: 'main', docs: [{ path: 'z/p.md', text: 'must never be indexed' }] });
+  ok('SA4 ingest 越权 → 403 + 审计封顶标注 + 零索引副作用（documents/jobs 无行）',
+    saIng.status === 403 && saIng.json?.audit_suppressed === true
+      && (await pool.query(`SELECT count(*)::int n FROM ragtrial.documents WHERE repo='zeta/priv'`)).rows[0].n === 0
+      && (await pool.query(`SELECT count(*)::int n FROM ragtrial.jobs WHERE repo='zeta/priv'`)).rows[0].n === 0, saIng.json);
+
+  const saDel = await call('/api/rag-trial/delete', { repo: 'zeta/priv', branch: 'main', doc_path: 'canon/a.md' });
+  ok('SA5 delete 越权 → 403（授权面内 canon 文档不受影响）',
+    saDel.status === 403
+      && (await pool.query(`SELECT count(*)::int n FROM ragtrial.documents WHERE repo=$1 AND doc_path='canon/a.md'`, [REPO])).rows[0].n >= 1);
+
+  const saBatch = await call('/api/rag-trial/jobs', { jobs: [
+    { kind: 'ingest_doc', repo: REPO, branch: BR, model_id: 'local-hash-v1',
+      doc_path: 'canon/batch-ok.md', content_sha256: crypto.createHash('sha256').update('batch ok').digest('hex'), payload: { text: 'batch ok' } },
+    { kind: 'ingest_doc', repo: 'zeta/priv', branch: 'main', model_id: 'local-hash-v1', doc_path: 'z/b.md', payload: { text: 'x' } },
+  ] });
+  ok('SA6 jobs 批量含越权 → 整批拒绝（batch_rejected=true）且零入队（含合法项）',
+    saBatch.status === 403 && saBatch.json?.batch_rejected === true
+      && (await pool.query(`SELECT count(*)::int n FROM ragtrial.jobs WHERE doc_path IN ('canon/batch-ok.md','z/b.md')`)).rows[0].n === 0, saBatch.json);
+
+  // acme/rag：scope 内、会话外——跨界门/列表过滤/越权 requeue/机器对照的载体
+  await store.ingestDocuments({ docs: [{ path: 'acme/rag-doc.md', text: 'acme rag boundary probe' }], repo: 'acme/rag', branch: 'main' });
+  const vBefore = (await pool.query(`SELECT index_version v FROM ragtrial.models WHERE model_id='local-hash-v1'`)).rows[0].v;
+  const saInv = await call('/api/rag-trial/index/invalidate', {});
+  const vAfter = (await pool.query(`SELECT index_version v FROM ragtrial.models WHERE model_id='local-hash-v1'`)).rows[0].v;
+  ok('SA7 index/invalidate 跨界（模型文档仓库超出会话面）→ 403 index_op_crosses_repo_boundary 且 index_version 不变',
+    saInv.status === 403 && saInv.json?.error?.reason === 'index_op_crosses_repo_boundary' && vAfter === vBefore,
+    { saInv: saInv.json, vBefore, vAfter });
+
+  // SA7b（F-2）：index/rollback 跨界独立回归——拒绝且 index_version/文档/jobs 零变更
+  const docsBefore = (await pool.query(`SELECT count(*)::int n FROM ragtrial.documents`)).rows[0].n;
+  const jobsBefore = (await pool.query(`SELECT count(*)::int n FROM ragtrial.jobs`)).rows[0].n;
+  const saRb = await call('/api/rag-trial/index/rollback', { to_index_version: 1 });
+  const vAfterRb = (await pool.query(`SELECT index_version v FROM ragtrial.models WHERE model_id='local-hash-v1'`)).rows[0].v;
+  const docsAfterRb = (await pool.query(`SELECT count(*)::int n FROM ragtrial.documents`)).rows[0].n;
+  const jobsAfterRb = (await pool.query(`SELECT count(*)::int n FROM ragtrial.jobs`)).rows[0].n;
+  ok('SA7b index/rollback 跨界独立回归（F-2）→ 403 同因且 index_version/documents/jobs 零变更',
+    saRb.status === 403 && saRb.json?.error?.reason === 'index_op_crosses_repo_boundary'
+      && vAfterRb === vBefore && docsAfterRb === docsBefore && jobsAfterRb === jobsBefore,
+    { saRb: saRb.json, vBefore, vAfterRb, docsBefore, docsAfterRb, jobsBefore, jobsAfterRb });
+
+  // 越权死信 requeue 播种：直插 acme/rag 的 dead job（绕过 HTTP——HTTP 已被会话层挡住）
+  const deadSeed = await queue.enqueue({ kind: 'ingest_doc', repo: 'acme/rag', branch: 'main',
+    doc_path: 'acme/dead.md', content_sha256: crypto.createHash('sha256').update('dead').digest('hex'),
+    model_id: 'local-hash-v1', payload: { text: 'dead' } });
+  await pool.query(`UPDATE ragtrial.jobs SET state='dead', last_error='seeded-dead' WHERE job_id=$1`, [deadSeed.job_id]);
+
+  const saList = await call('/api/rag-trial/jobs');
+  ok('SA8 jobs 列表按会话面过滤（WC 的 REPO 行可见、acme/rag 死信不可见）',
+    saList.status === 200
+      && saList.json?.jobs?.some((j) => j.repo === REPO) === true
+      && saList.json?.jobs?.every((j) => j.repo !== 'acme/rag' && j.repo !== 'zeta/priv') === true,
+    { rows: saList.json?.jobs?.length });
+
+  // F-1：不存在与"存在但越权"统一 404——重置封顶计数器保证本组审计断言确定性
+  resetScopeDenyLimiter();
+  const deniedBeforeRq = await repoDeniedCount();
+  const requeuePost = async (id) => {
+    const res = await fetch(BASE + `/api/rag-trial/jobs/${id}/requeue`, { method: 'POST', headers: { cookie, 'content-type': 'application/json' } });
+    let json = null; try { json = await res.json(); } catch { /* */ }
+    return { status: res.status, json };
+  };
+  const saRq = await requeuePost(deadSeed.job_id);
+  ok('SA9 越权 job requeue → 404 unknown_job，任务保持 dead，且服务端留有界审计（不回显差异）',
+    saRq.status === 404 && saRq.json?.error?.reason === 'unknown_job'
+      && (await pool.query(`SELECT state FROM ragtrial.jobs WHERE job_id=$1`, [deadSeed.job_id])).rows[0].state === 'dead'
+      && (await repoDeniedCount()) === deniedBeforeRq + 1, saRq.json);
+  const saRq2 = await requeuePost('00000000-0000-0000-0000-000000000000');
+  ok('SA9b 不存在的 job requeue → 与越权同形 404 unknown_job（F-1：零存在性差分），且不产生越权审计',
+    saRq2.status === 404 && saRq2.json?.error?.reason === 'unknown_job'
+      && (await repoDeniedCount()) === deniedBeforeRq + 1
+      && JSON.stringify(saRq2.json) === JSON.stringify(saRq.json), saRq2.json);
+  const authJob = (saList.json?.jobs ?? []).find((j) => j.repo === REPO);
+  const saRq3 = authJob ? await requeuePost(authJob.job_id) : { status: 0, json: null };
+  ok('SA9c 已授权+存在+非 dead → 409 not_dead（job 状态语义保持，不受 F-1 影响）',
+    saRq3.status === 409 && saRq3.json?.error?.reason === 'not_dead', saRq3.json);
+
+  const saQm = await call('/api/rag-trial/queue/metrics');
+  ok('SA10 queue/metrics 死信明细按会话面过滤（聚合计数保留全局观测语义）',
+    saQm.status === 200 && (saQm.json?.dead_letters ?? []).every((d) => d.repo !== 'acme/rag') === true
+      && saQm.json?.by_state !== undefined, saQm.json?.dead_letters);
+
+  const saM = await machine(msign(key2.secret, { run_id: 'sa-machine-1', q: 'boundary probe', repo: 'acme/rag', branch: 'main', k: 3 }));
+  ok('SA11 机器端点不经会话层（scope 允许即放行——既有 HMAC+scope 语义未收紧）',
+    saM.status === 200, saM.json);
+
 
   // ── 披露端点 ──
   const prov = await call('/api/rag-trial/providers');

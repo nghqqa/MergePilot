@@ -31,17 +31,28 @@ docker compose down -v              # 销毁（连卷删除，慎用）
 - 索引回滚：`POST /api/rag-trial/index/rollback {"to_index_version":1}`
   （只允许回到保留窗口内的版本；窗口=最近 2 个版本）
 
-## scope 门（fail-closed，默认拒绝）
+## 授权门（fail-closed，默认拒绝；PHASE0A 起双层）
 
-查询按 `repo@branch` 过 RAGTRIAL_ALLOWED_SCOPES 门：未配置/为空 → 一律 403
-`scope_not_configured`；越界 scope → 403 `scope_not_allowed`（有界脱敏审计）。
+会话端 RAG 端点（query/review-aux/eval/ingest/delete/jobs/index 操作）过**组合授权门**：
+
+1. **部署 scope 门**（`RAGTRIAL_ALLOWED_SCOPES`，`repo@branch`）：未配置/为空 →
+   一律 403 `scope_not_configured`；越界 → 403 `scope_not_allowed`；
+2. **会话 repo 门**（`CONSOLE_REPO_ALLOWLIST`，repo 级；compose 默认
+   `nghqqa/mergepilot`，经 `RAGTRIAL_REPO_ALLOWLIST` 可覆盖）：会话授权面不含
+   该 repo → 403 `repo_not_in_allowlist`（与 /api/pulls 同语义）。
+
+有效授权 = 两层交集；请求参数/body/job payload 只能被校验、不能扩大交集。
+批量 jobs 任一越权 → 整批拒绝零入队；index/invalidate、index/rollback 要求
+模型现存文档仓库 ⊆ 会话授权面，否则 403 `index_op_crosses_repo_boundary`。
+两路拒绝均写有界脱敏审计（不落查询正文/密钥/allowlist 原值）。
+机器端点（machine/query）不经会话层：保持 HMAC 验签 + 部署 scope 原语义。
+
 compose 以 interpolation 默认值放行唯一试验 scope
 `nghqqa/mergepilot@feat/local-rag-trial`（与 e2e 常量同源）；在 `.env` 中：
 
 - 覆盖：`RAGTRIAL_ALLOWED_SCOPES=my/repo@main,my/repo@dev`（逗号分隔多 scope）
 - 全拒绝：`RAGTRIAL_ALLOWED_SCOPES=`（显式置空，改后 `docker compose up -d` 重建生效）
-
-ingest/delete 不走 scope 门（仅会话认证）；门只拦查询面。
+- 会话授权面：`RAGTRIAL_REPO_ALLOWLIST=my/repo,other/org`（逗号分隔；缺省=试验 repo）
 
 ## 故障处置
 

@@ -661,10 +661,21 @@ export async function createRagTrialStore({ pool, env = process.env, fetchImpl =
     };
   }
 
+  // PHASE0A：模型现存（active）文档的仓库集合——index/invalidate、index/rollback
+  // 这类全局索引操作的跨界授权输入（调用方校验 repos ⊆ 会话授权面）。
+  async function modelRepos(modelId = null) {
+    const model = await resolveModel(modelId);
+    if (!model) return null;
+    const r = await q(
+      `SELECT DISTINCT repo FROM ragtrial.documents WHERE model_id=$1 AND state='active' ORDER BY repo`,
+      [model.model_id]);
+    return { model_id: model.model_id, repos: r.rows.map((x) => x.repo) };
+  }
+
   return {
     initSchema, registerModel, resolveModel,
     ingestDocuments, deleteDocument, search,
     invalidateIndex, rollbackIndex, evalQa,
-    status, metrics, audit, ensurePgvector,
+    status, metrics, audit, ensurePgvector, modelRepos,
   };
 }
