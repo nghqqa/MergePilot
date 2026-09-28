@@ -448,8 +448,10 @@ export async function muApi(req, res, ctx) {
       if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
       const cfgGh = ghAppConfig(env);
       if (!cfgGh.configured) {
-        return sendJson(res, 503, { error: { reason: 'github_app_not_configured',
-          detail: '需 MU_GITHUB_APP_ID/_PRIVATE_KEY/_WEBHOOK_SECRET/_INSTALL_CALLBACK_URL 显式配置' } });
+        return sendJson(res, 503, { error: { reason: cfgGh.reason ?? 'github_app_not_configured',
+          detail: '需 MU_GITHUB_APP_ID/_APP_SLUG/_PRIVATE_KEY/_WEBHOOK_SECRET/_INSTALL_CALLBACK_URL 显式配置'
+            + (cfgGh.reason === 'github_app_slug_not_configured'
+              ? '（MU_GITHUB_APP_SLUG 缺失或为 placeholder——GitHub App URL slug，见 github.com/settings/apps/{slug}）' : '') } });
       }
       const state = crypto.randomBytes(32).toString('base64url');
       const corr = crypto.randomBytes(32).toString('base64url');

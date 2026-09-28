@@ -43,6 +43,7 @@ process.env.CONSOLE_PILOT_USER = 'dev-pilot';
 process.env.MU_ALLOW_FIXTURE_LOGIN = '1';
 process.env.MU_FIXTURES = '1'; // ES 电池需触发 fixture 执行器（tick）
 process.env.MU_GITHUB_APP_ID = '999001';
+process.env.MU_GITHUB_APP_SLUG = 'mergepilot-e2e-test-app';
 process.env.MU_GITHUB_APP_PRIVATE_KEY = 'synthetic-private-key-not-real';
 process.env.MU_GITHUB_WEBHOOK_SECRET = WEBHOOK_SECRET;
 process.env.MU_GITHUB_APP_INSTALL_CALLBACK_URL = 'http://127.0.0.1:4730/api/mu/github/install/callback';
@@ -426,6 +427,28 @@ try {
     ok('ES9 生产路径（无 MU_FIXTURES）：event_sync 被消费（PR 47 落库）；人工 job 原样 queued',
       tickProd.status === 200 && pr47 === 1 && humanJob?.state === 'queued', { pr47, humanJob, tick: tickProd.status });
     process.env.MU_FIXTURES = savedFix;
+  }
+
+  // GA-12（slug P1 修复回归）：install_url 使用配置 slug；旧 slug 不再出现
+  {
+    const stS = await call('/api/mu/github/app/status', { cookie: dana.cookie });
+    ok('GA12 app/status configured=true（slug 在位）', stS.json?.configured === true);
+    // start 一次确认 URL 用配置 slug
+    const stS2 = await fetch(BASE + '/api/mu/github/install/start', { method: 'POST',
+      headers: { cookie: becky.cookie, 'x-csrf-token': becky.csrf } });
+    const stS2Json = await stS2.json().catch(() => null);
+    ok('GA12b install_url 使用配置 slug（mergepilot-e2e-test-app），旧 slug 零出现',
+      stS2.status === 200 && stS2Json?.install_url?.includes('/apps/mergepilot-e2e-test-app/installations/new')
+        && !stS2Json?.install_url?.includes('margepilot-dev'), stS2Json?.install_url?.slice(0, 80));
+    // 缺 slug fail-closed
+    const savedSlug = process.env.MU_GITHUB_APP_SLUG;
+    delete process.env.MU_GITHUB_APP_SLUG;
+    const stNoSlug = await fetch(BASE + '/api/mu/github/install/start', { method: 'POST',
+      headers: { cookie: becky.cookie, 'x-csrf-token': becky.csrf } });
+    const noSlugJson = await stNoSlug.json().catch(() => null);
+    ok('GA12c 缺 MU_GITHUB_APP_SLUG → 503 github_app_slug_not_configured（fail-closed）',
+      stNoSlug.status === 503 && noSlugJson?.error?.reason === 'github_app_slug_not_configured', noSlugJson);
+    process.env.MU_GITHUB_APP_SLUG = savedSlug;
   }
 
   // ── GA-10 迁移三条件 ──
