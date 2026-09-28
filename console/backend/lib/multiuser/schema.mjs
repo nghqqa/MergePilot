@@ -566,6 +566,18 @@ export const MU_MIGRATIONS = [
       `ALTER TABLE mu.agent_finding ADD COLUMN IF NOT EXISTS summary_masked TEXT NOT NULL DEFAULT ''`,
     ],
   },
+  {
+    // Wave 3 PR-C：死信上下文约束（PR-A P2-3 修复）——run_id 与 job_id 至少其一
+    // 非空，杜绝无上下文死信（reason 必填已保底）。
+    // 回滚：DELETE FROM mu.schema_migrations WHERE version=9;
+    //       ALTER TABLE mu.dead_letter DROP CONSTRAINT IF EXISTS mu_dead_letter_ctx_check;
+    version: 9,
+    name: 'mu_dead_letter_context',
+    sql: [
+      `ALTER TABLE mu.dead_letter DROP CONSTRAINT IF EXISTS mu_dead_letter_ctx_check`,
+      `ALTER TABLE mu.dead_letter ADD CONSTRAINT mu_dead_letter_ctx_check CHECK (run_id IS NOT NULL OR job_id IS NOT NULL)`,
+    ],
+  },
 ];
 
 export const MU_SCHEMA_LATEST = MU_MIGRATIONS[MU_MIGRATIONS.length - 1].version;
