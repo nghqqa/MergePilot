@@ -452,7 +452,7 @@ export const MU_MIGRATIONS = [
          agent_role TEXT NOT NULL CHECK (agent_role IN ('leader','reviewer','fixer','verifier')),
          attempt INT NOT NULL CHECK (attempt >= 1),
          status TEXT NOT NULL DEFAULT 'RUNNING' CHECK (status IN ('RUNNING','DONE','FAILED','TIMEOUT','SKIPPED')),
-         provider TEXT NOT NULL CHECK (provider IN ('deterministic','llm','mock','fxv','deterministic_mock','openai_compatible')),
+         provider TEXT NOT NULL CHECK (provider IN ('deterministic','llm','mock','fxv','deterministic_mock','openai_compatible','agentteams')),
          actor_principal TEXT NOT NULL DEFAULT 'system:leader',
          input_digest TEXT, output_digest TEXT,
          model_id TEXT, prompt_version TEXT,
@@ -591,7 +591,7 @@ export const MU_MIGRATIONS = [
       `DO $$ BEGIN
          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'mu_agent_attempt_provider_check2') THEN
            ALTER TABLE mu.agent_attempt ADD CONSTRAINT mu_agent_attempt_provider_check2
-             CHECK (provider IN ('deterministic','llm','mock','fxv','deterministic_mock','openai_compatible'));
+             CHECK (provider IN ('deterministic','llm','mock','fxv','deterministic_mock','openai_compatible','agentteams'));
          END IF;
        END $$`,
     ],
@@ -628,6 +628,24 @@ export const MU_MIGRATIONS = [
       // run 级冻结快照（新列——与 PR-A 的 review_run.policy_version TEXT(Leader 策略)语义分离）
       `ALTER TABLE mu.review_run ADD COLUMN IF NOT EXISTS agent_policy_version INT`,
       `ALTER TABLE mu.review_run ADD COLUMN IF NOT EXISTS llm_mode TEXT`,
+    ],
+  },
+  {
+    // Wave 3.3：agent_attempt.provider 枚举 += agentteams（外部运行时执行器）。
+    // 回滚：DELETE FROM mu.schema_migrations WHERE version=12;
+    //       ALTER TABLE mu.agent_attempt DROP CONSTRAINT mu_agent_attempt_provider_check2;
+    //       ALTER TABLE mu.agent_attempt ADD CONSTRAINT mu_agent_attempt_provider_check2
+    //         CHECK (provider IN ('deterministic','llm','mock','fxv','deterministic_mock','openai_compatible'));
+    version: 12,
+    name: 'mu_agentteams_provider_value',
+    sql: [
+      `ALTER TABLE mu.agent_attempt DROP CONSTRAINT IF EXISTS mu_agent_attempt_provider_check2`,
+      `DO $$ BEGIN
+         IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'mu_agent_attempt_provider_check2') THEN
+           ALTER TABLE mu.agent_attempt ADD CONSTRAINT mu_agent_attempt_provider_check2
+             CHECK (provider IN ('deterministic','llm','mock','fxv','deterministic_mock','openai_compatible','agentteams'));
+         END IF;
+       END $$`,
     ],
   },
 ];
