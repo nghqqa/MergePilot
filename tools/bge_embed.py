@@ -22,9 +22,21 @@ import struct
 import sys
 import time
 
-import numpy as np
-from scipy.special import erf
-from tokenizers import Tokenizer
+# Beta Hardening W1：重依赖惰性化——--verify-only / --manifest-out 路径仅需 stdlib
+# （hashlib/os/json），使 CI runner（无 numpy/scipy/tokenizers）可执行 manifest 校验；
+# 模型前向路径在首次使用处经 _load_heavy() 加载，缺失时报可读 ImportError。
+np = None
+erf = None
+Tokenizer = None
+
+def _load_heavy():
+    global np, erf, Tokenizer
+    if np is not None:
+        return
+    import numpy as _np
+    from scipy.special import erf as _erf
+    from tokenizers import Tokenizer as _Tokenizer
+    np, erf, Tokenizer = _np, _erf, _Tokenizer
 
 MODEL_FILES = ["model.safetensors", "tokenizer.json", "config.json",
                "special_tokens_map.json", "vocab.txt", "modules.json",
@@ -41,6 +53,7 @@ def sha256_file(path):
 
 
 def load_safetensors(path):
+    _load_heavy()
     with open(path, "rb") as f:
         n = struct.unpack("<Q", f.read(8))[0]
         header = json.loads(f.read(n))
@@ -88,14 +101,17 @@ class _RestrictedUnpickler(pickle.Unpickler):
         raise pickle.UnpicklingError(f"forbidden global: {module}.{name}")
 
 
-_STORAGE_DTYPES = {
-    'FloatStorage': np.float32, 'HalfStorage': np.float16,
-    'LongStorage': np.int64, 'IntStorage': np.int32, 'DoubleStorage': np.float64,
-}
+def _storage_dtypes():
+    _load_heavy()
+    return {
+        'FloatStorage': np.float32, 'HalfStorage': np.float16,
+        'LongStorage': np.int64, 'Int32Storage': np.int32, 'DoubleStorage': np.float64,
+    }
 
 
 def load_torch_bin(path):
     """读取 pytorch_model.bin（zip 格式）→ {name: ndarray}（受限 unpickler，无任意代码执行）。"""
+    _load_heavy()
     zf = zipfile.ZipFile(path)
     names = zf.namelist()
     pkl_name = [n for n in names if n.endswith('data.pkl')][0]
@@ -106,7 +122,7 @@ def load_torch_bin(path):
     def persistent_load(saved_id):
         # ('storage', StorageType, key, location, numel, view_metadata)
         storage_type, key, numel = saved_id[1], saved_id[2], saved_id[4]
-        dtype = _STORAGE_DTYPES.get(storage_type.__name__, np.float32)
+        dtype = _storage_dtypes().get(storage_type.__name__, np.float32)
         data_name = [n for n in names if n.endswith('data/' + key)][0]
         raw = zf.read(data_name)
         return np.frombuffer(raw, dtype=dtype, count=numel)
@@ -149,6 +165,7 @@ class BgeRuntime:
     """
 
     def __init__(self, model_dir, max_len=128):
+        _load_heavy()
         import os
         self.dir = model_dir.rstrip("/\\")
         self.max_len = max_len
