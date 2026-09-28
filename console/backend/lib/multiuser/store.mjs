@@ -7,6 +7,12 @@
 import crypto from 'node:crypto';
 import { MU_MIGRATIONS } from './schema.mjs';
 
+// platform 域审计事件白名单（Wave 2A 首批）：OAuth 流程与会话生命周期
+export const PLATFORM_AUDIT_KINDS = [
+  'OAUTH_FLOW_STARTED', 'OAUTH_FLOW_CONSUMED', 'OAUTH_FLOW_REJECTED',
+  'SESSION_REVOKED', 'SESSIONS_REVOKED_ALL',
+];
+
 export async function createMuStore({ pool, env = process.env } = {}) {
   if (!pool || typeof pool.query !== 'function') {
     throw new Error('createMuStore: pool with .query() required (pg Pool)');
@@ -48,7 +54,12 @@ export async function createMuStore({ pool, env = process.env } = {}) {
              VALUES ($1,$2,$3,$4::jsonb)`,
       [tenantId, actorUserId, kind, JSON.stringify(detail)]);
   }
+  // Beta Identity Wave 2A：platform 域审计首批受限事件类型（注册表制——新增类型
+  // 须显式扩充此表并过评审；未知 kind 一律拒绝，防 platform 表成为通用垃圾桶）
   async function auditPlatform(kind, { actorUserId = null, detail = {} } = {}) {
+    if (!PLATFORM_AUDIT_KINDS.includes(kind)) {
+      throw new Error(`mu.auditPlatform: 未登记的 platform 事件类型 ${kind}（允许：${PLATFORM_AUDIT_KINDS.join(',')}）`);
+    }
     await q(`INSERT INTO mu.platform_audit_event (actor_user_id, kind, detail)
              VALUES ($1,$2,$3::jsonb)`,
       [actorUserId, kind, JSON.stringify(detail)]);
@@ -266,6 +277,113 @@ export async function createMuStore({ pool, env = process.env } = {}) {
     return r.rows[0] ?? null;
   }
 
+  // ── Beta Identity Wave 2A：OAuth flow / 持久会话 / 邀请（全部摘要存储） ──
+  const sha256Of = (v) => crypto.createHash('sha256').update(String(v)).digest('hex');
+
+  async function insertOAuthFlow({ stateHash, inviteId = null, ttlMs = 10 * 60_000 }) {
+    const r = await q(
+      `INSERT INTO mu.oauth_flow (state_hash, invite_id, expires_at)
+       VALUES ($1,$2, now() + ($3 || ' milliseconds')::interval) RETURNING *`,
+      [stateHash, inviteId, String(ttlMs)]);
+    return r.rows[0];
+  }
+  // 单次消费：consumed_at CAS——0 行=不存在/已消费/已过期
+  async function consumeOAuthFlow(stateHash) {
+    const r = await q(
+      `UPDATE mu.oauth_flow SET consumed_at = now()
+        WHERE state_hash=$1 AND consumed_at IS NULL AND expires_at > now()
+       RETURNING *`, [stateHash]);
+    return r.rows[0] ?? null;
+  }
+
+  async function createSession({ userId, tenantId, login, role, provider, ttlMs, csrfHash }) {
+    const token = crypto.randomBytes(32).toString('base64url');
+    const r = await q(
+      `INSERT INTO mu.session (token_hash, user_id, tenant_id, csrf_hash, login, role_snapshot, provider, expires_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7, now() + ($8 || ' milliseconds')::interval)
+       RETURNING session_id, expires_at`,
+      [sha256Of(token), userId, tenantId, csrfHash, login, role, provider, String(ttlMs)]);
+    return { token, sessionId: r.rows[0].session_id, expiresAt: r.rows[0].expires_at };
+  }
+  async function findSessionByToken(token) {
+    const r = await q(
+      `SELECT s.*, u.state AS user_state FROM mu.session s
+         JOIN mu.app_user u ON u.user_id = s.user_id
+        WHERE s.token_hash=$1 AND s.revoked_at IS NULL AND s.expires_at > now()
+          AND u.state='active'`,
+      [sha256Of(token)]);
+    if (!r.rows.length) return null;
+    await q(`UPDATE mu.session SET last_seen_at=now() WHERE session_id=$1`, [r.rows[0].session_id]).catch(() => {});
+    return r.rows[0];
+  }
+  async function rotateSession(sessionId, { tenantId, role }) {
+    // 轮换：作废旧 token、签发新 token（tenant 切换时使用；行保持延续性）
+    const token = crypto.randomBytes(32).toString('base64url');
+    const csrf = crypto.randomBytes(24).toString('base64url');
+    const r = await q(
+      `UPDATE mu.session SET token_hash=$2, csrf_hash=$3, tenant_id=$4, role_snapshot=$5, last_seen_at=now()
+        WHERE session_id=$1 AND revoked_at IS NULL AND expires_at > now()
+       RETURNING expires_at`,
+      [sessionId, sha256Of(token), sha256Of(csrf), tenantId, role]);
+    if (!r.rows.length) return null;
+    return { token, csrf, expiresAt: r.rows[0].expires_at };
+  }
+  async function revokeSessionByToken(token, reason = 'logout') {
+    const r = await q(
+      `UPDATE mu.session SET revoked_at=now(), revoke_reason=$2
+        WHERE token_hash=$1 AND revoked_at IS NULL RETURNING session_id`,
+      [sha256Of(token), reason]);
+    return r.rows.length > 0;
+  }
+  async function revokeAllSessionsForUser(userId, reason = 'revoke_all') {
+    const r = await q(
+      `UPDATE mu.session SET revoked_at=now(), revoke_reason=$2
+        WHERE user_id=$1 AND revoked_at IS NULL AND expires_at > now()
+       RETURNING session_id`, [userId, reason]);
+    return r.rows.length;
+  }
+
+  async function createInvitation({ tenantId, role, expectedSubject = null, expectedLogin = null, note = null, createdBy = null, ttlMs = 24 * 3600_000 }) {
+    if (!expectedSubject && !expectedLogin) throw new Error('invitation 需要 expected_subject 或 expected_login 之一');
+    const r = await q(
+      `INSERT INTO mu.invitation (tenant_id, role, expected_subject, expected_login, note, created_by, expires_at)
+       VALUES ($1,$2,$3,$4,$5,$6, now() + ($7 || ' milliseconds')::interval)
+       RETURNING *`,
+      [tenantId, role, expectedSubject, expectedLogin, note, createdBy, String(ttlMs)]);
+    return r.rows[0];
+  }
+  async function listInvitations(tenantId) {
+    const r = await q(
+      `SELECT i.*, t.slug AS tenant_slug FROM mu.invitation i
+         JOIN mu.tenant t ON t.tenant_id = i.tenant_id
+        WHERE i.tenant_id=$1 ORDER BY i.created_at DESC LIMIT 100`, [tenantId]);
+    return r.rows;
+  }
+  async function getInvitation(inviteId) {
+    const r = await q(
+      `SELECT i.*, t.slug AS tenant_slug FROM mu.invitation i
+         JOIN mu.tenant t ON t.tenant_id = i.tenant_id
+        WHERE i.invite_id=$1`, [inviteId]);
+    return r.rows[0] ?? null;
+  }
+  // 可认领邀请匹配：优先精确 subject，其次 login 句柄（身份键仍是 subject）
+  async function findClaimableInvitation({ subject = null, login = null }) {
+    const r = await q(
+      `SELECT * FROM mu.invitation
+        WHERE claimed_at IS NULL AND expires_at > now()
+          AND ( ($1::text IS NOT NULL AND expected_subject = $1)
+             OR ($2::text IS NOT NULL AND expected_login  = $2) )
+        ORDER BY created_at LIMIT 1`, [subject, login]);
+    return r.rows[0] ?? null;
+  }
+  async function claimInvitation(inviteId, userId) {
+    const r = await q(
+      `UPDATE mu.invitation SET claimed_at=now(), claimed_by_user_id=$2
+        WHERE invite_id=$1 AND claimed_at IS NULL AND expires_at > now()
+       RETURNING *`, [inviteId, userId]);
+    return r.rows[0] ?? null;
+  }
+
   async function listAudit(tenantId, { limit = 100 } = {}) {
     const r = await q(
       `SELECT a.seq, a.kind, a.created_at, u.login AS actor_login, a.detail
@@ -286,5 +404,8 @@ export async function createMuStore({ pool, env = process.env } = {}) {
     insertReviewRecord, listReviewRecords,
     enqueueJob, listJobs, claimNextJob, finishJob,
     listAudit, auditPlatform,
+    insertOAuthFlow, consumeOAuthFlow,
+    createSession, findSessionByToken, rotateSession, revokeSessionByToken, revokeAllSessionsForUser,
+    createInvitation, listInvitations, getInvitation, findClaimableInvitation, claimInvitation,
   };
 }

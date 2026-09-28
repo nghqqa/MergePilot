@@ -87,8 +87,8 @@ try {
   ok('MU-A3 未登录 /api/mu/session → 401', unauth.status === 401);
 
   const gh = await call('/api/mu/auth/login', { method: 'POST', body: { provider: 'github', subject: 'u1' } });
-  ok('MU-A4 GitHub OAuth 流程保留位 → 501 oauth_provider_not_configured（不伪装已实现）',
-    gh.status === 501 && gh.json?.error?.reason === 'oauth_provider_not_configured');
+  ok('MU-A4 GitHub JSON 登录端点指流程序（Wave 2A：authorization-code 流程在 /start）',
+    gh.status === 409 && gh.json?.error?.reason === 'use_oauth_flow');
 
   // MU-A7（PR248 复核 P1 回归）：fixture 登录默认关闭——不设 MU_ALLOW_FIXTURE_LOGIN
   // 的独立 server 实例上，已知 bootstrap subject 也被拒（fail-closed）
@@ -109,7 +109,7 @@ try {
   }
 
 
-  const admin = await muLogin('fixture:dev-pilot');
+  let admin = await muLogin('fixture:dev-pilot');
   ok('MU-A5 bootstrap pilot 操作员经 fixture 身份登录 → platform_admin + 迁移 tenant',
     admin.status === 200 && admin.json?.role === 'platform_admin' && admin.json?.tenant?.slug === 'default',
     admin.json);
@@ -197,11 +197,24 @@ try {
     body: { login: 'carol', role: 'maintainer' } });
   ok('MU-C4 admin（B 会话）给 B 添加 maintainer carol', addCarol.status === 200);
 
+
   const repoAId = addRepoA.json?.repository?.repo_id;
   const tamper = await call(`/api/mu/repositories/${repoAId}/binding/revoke`, {
     method: 'POST', cookie: adminBCookie, csrf: adminBCsrf });
   ok('MU-C5 跨 tenant 篡改 repo_id → 404 repository_not_found（tenant 收窄解析，不泄露存在性）',
     tamper.status === 404 && tamper.json?.error?.reason === 'repository_not_found');
+
+  // Wave 2A：tenant 切换=token 轮换（旧 admin cookie 已失效）——切回 default 取新会话
+  {
+    const back = await fetch(BASE + '/api/mu/auth/tenant', {
+      method: 'POST', headers: { cookie: adminBCookie, 'content-type': 'application/json', 'x-csrf-token': adminBCsrf },
+      body: JSON.stringify({ tenant_id: admin.json?.tenant?.tenant_id }),
+    });
+    const backJson = await back.json().catch(() => null);
+    if (back.status !== 200) throw new Error('switch-back failed: ' + JSON.stringify(backJson));
+    admin = { cookie: (back.headers.get('set-cookie') || '').split(';')[0], csrf: backJson?.csrf,
+      json: admin.json };
+  }
 
   const bodyTamper = await call('/api/mu/repositories', { method: 'POST', cookie: bob.cookie, csrf: bob.csrf,
     body: { tenant_id: tenantBId, provider_repo_id: 'R_x', owner: 'x', name: 'x' } });
@@ -376,8 +389,8 @@ try {
   ok('MU-J5 同 head_sha 的 ReviewRecord 按 tenant 分组（无跨 tenant 共享行）',
     sharedHead.length === 2 && sharedHead.every((r) => Number(r.n) > 0), sharedHead);
 
-  ok('MU-J6 GitHub OAuth/App 流程状态端点如实未接入',
-    (await call('/api/mu/auth/oauth/github/start')).status === 501
+  ok('MU-J6 App installation 仍如实未接入；OAuth start 未配置时 fail-closed（Wave 2A 语义）',
+    (await call('/api/mu/auth/oauth/github/start')).status === 503
       && (await call('/api/mu/installations/github/status', { cookie: dana.cookie })).json?.configured === false);
 } catch (e) {
   fail++;

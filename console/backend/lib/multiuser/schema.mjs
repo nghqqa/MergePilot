@@ -256,6 +256,63 @@ export const MU_MIGRATIONS = [
        END $$`,
     ],
   },
+  {
+    // Beta Identity Wave 2A：GitHub OAuth 登录 + 数据库持久化安全会话 + 邀请。
+    // 红线：
+    //  * session/oauth_flow/invitation 一律只存摘要（sha256），绝不存明文 token/state；
+    //  * oauth_flow.state 高熵单次消费（consumed_at CAS）+ 短 TTL；
+    //  * invitation 短期单次（claimed_at CAS）绑定 tenant 与预期 GitHub 身份
+    //    （expected_subject=github-oauth:<数字id> 或 expected_login 句柄）；
+    //  * 身份键 = GitHub 数字 user id（subject），不按 login/email 合并；
+    //    login 仅作邀请匹配句柄，改名后身份不变；
+    //  * 回滚：DROP TABLE mu.oauth_flow/mu.session/mu.invitation; DELETE FROM
+    //    mu.schema_migrations WHERE version=4;（均为新表，向下兼容——移除后
+    //    fixture 登录与 legacy 面不受影响，仅 OAuth/持久会话能力消失）。
+    version: 4,
+    name: 'mu_oauth_session_invitation',
+    sql: [
+      `CREATE TABLE IF NOT EXISTS mu.oauth_flow (
+         flow_id     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+         state_hash  TEXT NOT NULL UNIQUE,
+         invite_id   UUID,
+         created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+         expires_at  TIMESTAMPTZ NOT NULL,
+         consumed_at TIMESTAMPTZ
+       )`,
+      `CREATE INDEX IF NOT EXISTS mu_oauth_flow_exp_idx ON mu.oauth_flow (expires_at)`,
+      `CREATE TABLE IF NOT EXISTS mu.session (
+         session_id  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+         token_hash  TEXT NOT NULL UNIQUE,
+         user_id     UUID NOT NULL REFERENCES mu.app_user(user_id),
+         tenant_id   UUID NOT NULL REFERENCES mu.tenant(tenant_id),
+         csrf_hash   TEXT NOT NULL,
+         login       TEXT NOT NULL,
+         role_snapshot TEXT NOT NULL,
+         provider    TEXT NOT NULL,
+         created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+         last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+         expires_at  TIMESTAMPTZ NOT NULL,
+         revoked_at  TIMESTAMPTZ,
+         revoke_reason TEXT
+       )`,
+      `CREATE INDEX IF NOT EXISTS mu_session_user_idx ON mu.session (user_id, revoked_at)`,
+      `CREATE TABLE IF NOT EXISTS mu.invitation (
+         invite_id   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+         tenant_id   UUID NOT NULL REFERENCES mu.tenant(tenant_id),
+         role        TEXT NOT NULL CHECK (role IN
+                     ('contributor','reviewer','maintainer','platform_admin','auditor')),
+         expected_subject TEXT,
+         expected_login   TEXT,
+         note        TEXT,
+         created_by  UUID,
+         created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+         expires_at  TIMESTAMPTZ NOT NULL,
+         claimed_at  TIMESTAMPTZ,
+         claimed_by_user_id UUID
+       )`,
+      `CREATE INDEX IF NOT EXISTS mu_invitation_claim_idx ON mu.invitation (tenant_id, claimed_at)`,
+    ],
+  },
 ];
 
 export const MU_SCHEMA_LATEST = MU_MIGRATIONS[MU_MIGRATIONS.length - 1].version;

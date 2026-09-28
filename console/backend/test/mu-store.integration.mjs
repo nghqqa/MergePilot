@@ -96,8 +96,9 @@ try {
   // 凭据红线：核心表无任何 token/secret 形状列
   const cols = (await pool.query(
     `SELECT table_name, column_name FROM information_schema.columns WHERE table_schema='mu'`)).rows;
-  const secretCols = cols.filter((c) => /token|secret|password|key/i.test(c.column_name));
-  ok('MS9 schema 零凭据列（无 token/secret/password/key 形状列）', secretCols.length === 0, secretCols);
+  // Wave 2A 起允许 *_hash 摘要列（sha256，非明文凭据）；明文形状列仍必须为零
+  const secretCols = cols.filter((c) => /token|secret|password|key/i.test(c.column_name) && !/_hash$/.test(c.column_name));
+  ok('MS9 schema 零明文凭据列（允许 *_hash 摘要列）', secretCols.length === 0, secretCols);
 
   // ── MS*：membership 撤销语义 ──
   await store.revokeMembership(tA.tenant_id, uA.user_id);
@@ -135,9 +136,12 @@ try {
   try { await store.audit('HW_SHOULD_THROW', { tenantId: null, detail: {} }); }
   catch { auditThrows = true; }
   ok('MS11f store.audit 对无 tenantId 前置拒绝（应用层+DB 双保险）', auditThrows);
-  await store.auditPlatform('HW_PLATFORM_EVENT', { detail: { probe: 1 } });
+  await store.auditPlatform('SESSION_REVOKED', { detail: { probe: 1 } });
   ok('MS11g platform 域审计独立表可写（明确 scope 建模，非 nullable 歧义）',
-    (await pool.query(`SELECT count(*)::int n FROM mu.platform_audit_event WHERE kind='HW_PLATFORM_EVENT'`)).rows[0].n === 1);
+    (await pool.query(`SELECT count(*)::int n FROM mu.platform_audit_event WHERE kind='SESSION_REVOKED' AND detail->>'probe'='1'`)).rows[0].n === 1);
+  let kindRejected = false;
+  try { await store.auditPlatform('BOGUS_KIND', { detail: {} }); } catch { kindRejected = true; }
+  ok('MS11g2 platform 审计 kind 注册表 fail-closed（未知类型拒绝）', kindRejected);
   const cons = (await pool.query(
     `SELECT conname FROM pg_constraint WHERE conname IN ('mu_repository_tenant_repo_uk','mu_pull_request_tenant_pr_uk',
        'mu_binding_tenant_repo_fk','mu_pr_tenant_repo_fk','mu_review_tenant_repo_fk','mu_review_tenant_pr_fk',
