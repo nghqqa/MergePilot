@@ -80,6 +80,73 @@ function computeOnboardingSteps({ session, providers, ghStatus, installations, r
   ]};
 }
 
+// ── 审查管线面板（Wave 3 PR-E：只读展示 review_run 全链状态）──
+// 九态人话 + attempt/retry + finding 定位 + fix dry-run/verifier verdict + blocked 原因。
+// 无 approve/merge/write 按钮（人工审批仍走上方既有决策区）。
+const PIPE_LABEL = {
+  RECEIVED: '已接收', REVIEW_QUEUED: '审查排队', REVIEWING: '审查中', REVIEWED: '已审查',
+  FIX_QUEUED: '修复排队', FIXING: '修复预演', VERIFY_QUEUED: '验证排队', VERIFYING: '验证中',
+  VERIFIED: '已验证', REWORK_REQUIRED: '需返工', BLOCKED: '受阻', FAILED: '失败', COMPLETED: '已完成',
+};
+const SEV_TONE = { P0: 'red', P1: 'volcano', P2: 'orange', P3: 'gold' };
+
+function PipelinePanel({ prNumber, repoId }) {
+  const [detail, setDetail] = useState(null);
+  const [noRun, setNoRun] = useState(false);
+  useEffect(() => {
+    if (!prNumber || !repoId) return;
+    setDetail(null); setNoRun(false);
+    (async () => {
+      try {
+        const lr = await fetch(`/api/mu/runs?repo_id=${encodeURIComponent(repoId)}`, { credentials: 'same-origin' })
+          .then((r) => r.json().catch(() => null));
+        const run = (lr?.runs ?? []).find((r) => Number(r.provider_pr_number) === Number(prNumber));
+        if (!run) { setNoRun(true); return; }
+        const d = await fetch(`/api/mu/runs/${run.run_id}`, { credentials: 'same-origin' })
+          .then((r) => r.json().catch(() => null));
+        setDetail(d);
+      } catch { setNoRun(true); }
+    })();
+  }, [prNumber, repoId]);
+  if (noRun) return <Alert style={{ marginTop: 12 }} type="info" showIcon
+    message="审查管线：该 PR 暂无自动审查运行（webhook 触发后自动开始）" />;
+  if (!detail?.run) return null;
+  const r = detail.run;
+  return (
+    <div style={{ marginTop: 16 }}>
+      <Typography.Title level={5} style={{ marginBottom: 8 }}>审查管线（自动化 Agent 运行）</Typography.Title>
+      <Space size="large" wrap>
+        <Tag color={r.status === 'COMPLETED' ? 'green' : ['BLOCKED', 'FAILED'].includes(r.status) ? 'red' : 'blue'}>
+          {PIPE_LABEL[r.status] ?? r.status}
+        </Tag>
+        <span>触发：<Tag>{r.trigger_source === 'manual' ? '手动' : 'GitHub 事件'}</Tag></span>
+        <span>head：<code>{String(r.head_sha ?? '').slice(0, 12)}</code></span>
+        {(detail.dead_letters ?? []).length > 0 ? (
+          <Tag color="red">受阻原因：{detail.dead_letters[0].reason}</Tag>) : null}
+      </Space>
+      {(detail.findings ?? []).length > 0 ? (
+        <Table style={{ marginTop: 8 }} rowKey={(f) => `${f.rule_id}-${f.path}-${f.line_start}`}
+          size="small" pagination={false} dataSource={detail.findings}
+          columns={[
+            { title: '级别', dataIndex: 'severity', width: 60,
+              render: (v) => <Tag color={SEV_TONE[v] ?? 'default'}>{v}</Tag> },
+            { title: '规则', dataIndex: 'rule_id', render: (v) => <code>{v}</code> },
+            { title: '位置', render: (f) => <code>{f.path}{f.line_start ? `:${f.line_start}` : ''}</code> },
+            { title: '摘要', dataIndex: 'summary_masked', ellipsis: true },
+            { title: '建议', dataIndex: 'remediation', ellipsis: true },
+          ]} />
+      ) : <Typography.Text type="secondary" style={{ fontSize: 12 }}>未发现风险项。</Typography.Text>}
+      <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginTop: 8, marginBottom: 0 }}>
+        Agent 执行：{(detail.attempts ?? []).map((a) =>
+          `${a.agent_role}#${a.attempt}(${a.status})`).join(' · ') || '—'}
+        {(detail.fixes ?? []).length ? `；修复预演：${detail.fixes.map((f) => `${f.status}`).join('/')}` : ''}
+        {(detail.verifications ?? []).length ? `；验证：${detail.verifications.map((v) => v.verdict).join('/')}` : ''}
+        。修复为 dry-run（不写 GitHub）；AI 审查不构成 GitHub required review。
+      </Typography.Paragraph>
+    </div>
+  );
+}
+
 // ── GitHub App 面板（含仓库列表与绑定操作） ──
 function GHAppPanel({ can, session, repos, onBound, onUnbound }) {
   const [status, setStatus] = useState(null);
@@ -465,6 +532,8 @@ export default function MultiUserPage() {
                         { title: 'protection', dataIndex: 'branch_protection_status' },
                         { title: '时间', dataIndex: 'created_at', render: (v) => String(v ?? '').slice(0, 19).replace('T', ' ') },
                       ]} />
+                    <PipelinePanel prNumber={Number(prDetail.pull_request?.provider_pr_number)}
+                      repoId={prQuery.repoId} />
                   </div>
                 ) : null}
 

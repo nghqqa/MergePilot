@@ -130,7 +130,7 @@ export async function handlePullRequestEvent(pool, cfg, { payload, servicePrinci
       decision: inserted > 0 ? 'findings_present' : 'clean',
       rationaleRef: `attempt:${claim.attemptId}`, actorPrincipal: servicePrincipal });
     return { ok: true, run: await getRun(pool, run.run_id), attempt: claim.attempt,
-      findings_count: inserted, stale_head: false };
+      findings_count: inserted, stale_head: false, protection: context.protection ?? null };
   }
 
   // 重试耗尽 → 死信 + BLOCKED（fail-closed：无输入不放行）
