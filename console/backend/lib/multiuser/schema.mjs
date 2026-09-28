@@ -170,10 +170,10 @@ export const MU_MIGRATIONS = [
     // 回滚说明（需 DBA 执行，向下兼容应用层）：
     //   ALTER TABLE mu.binding        DROP CONSTRAINT mu_binding_tenant_repo_fk;
     //   ALTER TABLE mu.pull_request   DROP CONSTRAINT mu_pr_tenant_repo_fk;
-    //   ALTER TABLE mu.review_record  DROP CONSTRAINT mu_review_tenant_repo_fk, DROP CONSTRAINT mu_review_tenant_pr_fk;
-    //   ALTER TABLE mu.job            DROP CONSTRAINT mu_job_tenant_repo_fk,  DROP CONSTRAINT mu_job_tenant_pr_fk;
+    //   ALTER TABLE mu.review_record  DROP CONSTRAINT mu_review_tenant_repo_fk, DROP CONSTRAINT mu_review_tenant_pr_fk, DROP CONSTRAINT mu_review_tenant_repo_pr_fk;
+    //   ALTER TABLE mu.job            DROP CONSTRAINT mu_job_tenant_repo_fk,  DROP CONSTRAINT mu_job_tenant_pr_fk, DROP CONSTRAINT mu_job_tenant_repo_pr_fk;
     //   ALTER TABLE mu.repository     DROP CONSTRAINT mu_repository_tenant_repo_uk;
-    //   ALTER TABLE mu.pull_request   DROP CONSTRAINT mu_pull_request_tenant_pr_uk;
+    //   ALTER TABLE mu.pull_request   DROP CONSTRAINT mu_pull_request_tenant_pr_uk, DROP CONSTRAINT mu_pull_request_tenant_repo_pr_uk;
     //   ALTER TABLE mu.audit_event    ALTER COLUMN tenant_id DROP NOT NULL;
     //   DROP TABLE IF EXISTS mu.platform_audit_event;
     //   DELETE FROM mu.schema_migrations WHERE version = 3;
@@ -188,6 +188,11 @@ export const MU_MIGRATIONS = [
       `DO $$ BEGIN
          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'mu_pull_request_tenant_pr_uk') THEN
            ALTER TABLE mu.pull_request ADD CONSTRAINT mu_pull_request_tenant_pr_uk UNIQUE (tenant_id, pr_id);
+         END IF;
+       END $$`,
+      `DO $$ BEGIN
+         IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'mu_pull_request_tenant_repo_pr_uk') THEN
+           ALTER TABLE mu.pull_request ADD CONSTRAINT mu_pull_request_tenant_repo_pr_uk UNIQUE (tenant_id, repo_id, pr_id);
          END IF;
        END $$`,
       `ALTER TABLE mu.audit_event ALTER COLUMN tenant_id SET NOT NULL`,
@@ -232,6 +237,21 @@ export const MU_MIGRATIONS = [
          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'mu_job_tenant_pr_fk') THEN
            ALTER TABLE mu.job ADD CONSTRAINT mu_job_tenant_pr_fk
              FOREIGN KEY (tenant_id, pr_id) REFERENCES mu.pull_request (tenant_id, pr_id);
+         END IF;
+       END $$`,
+      // PR250 复核 P1 修复：三列复合 FK——同 tenant 内 repo/pr 交叉组合也由 DB 拒绝
+      // （业务模型要求 review/job 的 repo 与 pr 一致：应用层全部写入方均由 pr 行派生
+      // repo_id；此前 (tenant,repo)+(tenant,pr) 两两校验放行了 (repoA, prB) 组合）
+      `DO $$ BEGIN
+         IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'mu_review_tenant_repo_pr_fk') THEN
+           ALTER TABLE mu.review_record ADD CONSTRAINT mu_review_tenant_repo_pr_fk
+             FOREIGN KEY (tenant_id, repo_id, pr_id) REFERENCES mu.pull_request (tenant_id, repo_id, pr_id);
+         END IF;
+       END $$`,
+      `DO $$ BEGIN
+         IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'mu_job_tenant_repo_pr_fk') THEN
+           ALTER TABLE mu.job ADD CONSTRAINT mu_job_tenant_repo_pr_fk
+             FOREIGN KEY (tenant_id, repo_id, pr_id) REFERENCES mu.pull_request (tenant_id, repo_id, pr_id);
          END IF;
        END $$`,
     ],

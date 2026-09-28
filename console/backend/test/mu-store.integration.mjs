@@ -150,6 +150,41 @@ try {
   ok('MS11i 同租户组合照常可写（含 pr_id NULL 的 MATCH SIMPLE 放行）',
     Boolean(hwJob.job_id) && Boolean(hwJobNoPr.job_id));
   ok('MS11j 迁移可重复执行（initSchema 三跑零错——语句级幂等守卫）', (await store.initSchema()) === true);
+
+  // ── MS11k..m（PR250 复核 P1 回归）：同 tenant 内 repo/pr 交叉组合由三列 FK 拒绝 ──
+  const hwRepoB = await store.ensureRepository({ tenantId: hwA.tenant_id, provider: 'github',
+    providerRepoId: `HW_B_${Date.now()}`, owner: 'hw', name: 'b' });
+  await expectReject('MS11k review_record 同租户 repo/pr 交叉（repoA + repoB 的 PR）被三列 FK 拒绝',
+    `INSERT INTO mu.review_record (tenant_id, repo_id, pr_id, kind, head_sha) VALUES ($1,$2,$3,'ai_review','x')`,
+    [hwA.tenant_id, hwRepoA.repo_id, (await store.upsertPullRequest({ tenantId: hwA.tenant_id,
+      repoId: hwRepoB.repo_id, providerPrNumber: 9, headSha: '99'.repeat(20) })).pr_id]);
+  await expectReject('MS11l job 同租户 repo/pr 交叉被三列 FK 拒绝',
+    `INSERT INTO mu.job (tenant_id, repo_id, pr_id, kind, requested_by, requested_role) VALUES ($1,$2,$3,'review_run',$4,'reviewer')`,
+    [hwA.tenant_id, hwRepoA.repo_id, (await store.upsertPullRequest({ tenantId: hwA.tenant_id,
+      repoId: hwRepoB.repo_id, providerPrNumber: 10, headSha: '88'.repeat(20) })).pr_id, uA.user_id]);
+  const okJob = await store.enqueueJob({ tenantId: hwA.tenant_id, repoId: hwRepoB.repo_id,
+    prId: (await store.upsertPullRequest({ tenantId: hwA.tenant_id, repoId: hwRepoB.repo_id,
+      providerPrNumber: 11, headSha: '77'.repeat(20) })).pr_id,
+    kind: 'review_run', requestedBy: uA.user_id, requestedRole: 'reviewer' });
+  ok('MS11m repo/pr 一致的合法组合照常可写', Boolean(okJob.job_id));
+
+  // ── MS12（PR250 验收要求）：已有数据升级 / 失败可诊断 / 自愈重放 ──
+  // 12a 模拟"v2 数据 + v3 升级"：删版本行 + 摘一条 FK → initSchema 在已有合法数据上重放 v3 重加约束
+  await pool.query(`DELETE FROM mu.schema_migrations WHERE version = 3`);
+  await pool.query(`ALTER TABLE mu.job DROP CONSTRAINT mu_job_tenant_repo_pr_fk`);
+  ok('MS12a 已有合法数据上重放 migration v3（重加 FK 校验存量行）成功', (await store.initSchema()) === true
+    && (await pool.query(`SELECT 1 FROM pg_constraint WHERE conname='mu_job_tenant_repo_pr_fk'`)).rowCount === 1);
+  // 12b 失败可诊断：audit 历史脏行（NULL tenant）使 SET NOT NULL 失败并报可定位错误；清理后自愈
+  await pool.query(`ALTER TABLE mu.audit_event ALTER COLUMN tenant_id DROP NOT NULL`);
+  await pool.query(`INSERT INTO mu.audit_event (kind) VALUES ('hw_legacy_null_tenant')`);
+  await pool.query(`DELETE FROM mu.schema_migrations WHERE version = 3`);
+  let diagErr = null;
+  try { await store.initSchema(); } catch (e) { diagErr = e; }
+  ok('MS12b 历史脏行升级失败可诊断（PG 23502 含列名提示）',
+    diagErr !== null && /tenant_id|null/i.test(String(diagErr?.message ?? diagErr)), String(diagErr?.message ?? '').slice(0, 90));
+  await pool.query(`DELETE FROM mu.audit_event WHERE kind='hw_legacy_null_tenant'`);
+  ok('MS12c 清理脏行后重放自愈（部分失败幂等恢复）', (await store.initSchema()) === true
+    && (await pool.query(`SELECT attnotnull FROM pg_attribute WHERE attrelid='mu.audit_event'::regclass AND attname='tenant_id'`)).rows[0].attnotnull === true);
 } catch (e) {
   fail++;
   console.error('FATAL', e);
