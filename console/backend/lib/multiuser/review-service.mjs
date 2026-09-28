@@ -129,8 +129,56 @@ export async function handlePullRequestEvent(pool, cfg, { payload, servicePrinci
       prId: ctx.prId, headSha, stage: 'review_done',
       decision: inserted > 0 ? 'findings_present' : 'clean',
       rationaleRef: `attempt:${claim.attemptId}`, actorPrincipal: servicePrincipal });
+
+    // ── Wave 3.1：可选 LLM 第二阶段审查（默认 disabled 零网络；失败 fail-closed
+    //    回落 deterministic 结果——LLM 建议永不阻断也永不充当"通过"）──
+    const { resolveLlmProvider, callLlmReviewer, mockLlmReviewer } = await import('./agents/llm.mjs');
+    const llmProvider = resolveLlmProvider(cfg.llmEnv ?? process.env);
+    let llmCount = 0, llmCode = null;
+    if (llmProvider.kind !== 'disabled') {
+      const llmClaim = await claimNextAttempt(pool, { runId: run.run_id, agentRole: 'reviewer',
+        provider: llmProvider.kind, actorPrincipal: servicePrincipal,
+        inputDigest: digestOf(`${headSha}|llm`), maxAttempts: 3, // deterministic 已占 attempt 1——LLM 取 2
+        tenantId: ctx.tenantId, repoId: ctx.repoId, prId: ctx.prId, headSha });
+      if (llmClaim.ok) {
+        const t0 = Date.now();
+        let r;
+        try {
+          r = llmProvider.kind === 'deterministic_mock'
+            ? await mockLlmReviewer({ findings })
+            : await callLlmReviewer(llmProvider, { pr: context.pr, findings, diff: context.diff,
+              apiKey: (cfg.llmEnv ?? process.env).MU_LLM_API_KEY },
+              { fetchImpl: cfg.llmFetch ?? fetch });
+        } catch (e) {
+          r = { ok: false, code: `LLM_UNEXPECTED:${String(e?.message ?? '').slice(0, 0) || 'error'}` }; // 无正文
+        }
+        if (r.ok) {
+          const mapped = (r.findings ?? []).map((f) => ({
+            rule_id: `LLM-${f.category}`, severity: f.severity, confidence: Number(f.confidence ?? 0.5),
+            path: String(f.location?.path ?? 'unknown').slice(0, 500),
+            line_start: Number(f.location?.line ?? 0) || null, line_end: null,
+            title: String(f.summary ?? '').slice(0, 300), evidence_ref: 'llm:citation-required',
+            remediation: String(f.recommendation ?? '').slice(0, 1000),
+            summary_masked: 'LLM 建议详见 remediation（输出已过 schema 校验）' }));
+          llmCount = await insertFindings(pool, { attemptId: llmClaim.attemptId, runId: run.run_id,
+            tenantId: ctx.tenantId, repoId: ctx.repoId, prId: ctx.prId, headSha, findings: mapped });
+          await finishAttempt(pool, { attemptId: llmClaim.attemptId, status: 'DONE',
+            outputDigest: r.outputDigest, modelId: r.model, promptVersion: r.promptVersion,
+            latencyMs: r.latencyMs ?? Date.now() - t0, tokenCount: null,
+            evidenceRef: `attempt:${llmClaim.attemptId}` });
+        } else {
+          llmCode = r.code;
+          await finishAttempt(pool, { attemptId: llmClaim.attemptId, status: 'FAILED',
+            errorCode: String(r.code).slice(0, 60), latencyMs: r.latencyMs ?? Date.now() - t0,
+            evidenceRef: `attempt:${llmClaim.attemptId}` });
+          // 稳定失败记档（无正文）——pipeline 继续走 deterministic 结果
+        }
+      }
+    }
+
     return { ok: true, run: await getRun(pool, run.run_id), attempt: claim.attempt,
-      findings_count: inserted, stale_head: false, protection: context.protection ?? null };
+      findings_count: inserted + llmCount, llm_findings: llmCount, llm_code: llmCode,
+      stale_head: false, protection: context.protection ?? null };
   }
 
   // 重试耗尽 → 死信 + BLOCKED（fail-closed：无输入不放行）
