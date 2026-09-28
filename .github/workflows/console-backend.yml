@@ -104,6 +104,10 @@ jobs:
       - name: MU OAuth + persistent session integration (Wave 2A, 29 scenarios)
         run: node console/backend/test/mu-oauth.integration.mjs
 
+      # Wave 2B：GitHub App 只读安装/绑定/webhook 验签（mock adapter，合成密钥）
+      - name: MU GitHub App binding + webhook integration (Wave 2B, 34 scenarios)
+        run: node console/backend/test/mu-ghapp.integration.mjs
+
       - name: Frontend build
         run: |
           npm ci --no-audit --no-fund

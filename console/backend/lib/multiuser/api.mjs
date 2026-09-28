@@ -21,6 +21,8 @@ import { oauthConfig, newState, buildAuthorizeUrl, exchangeForIdentity } from '.
 import { issueMuSession, resolveMuSession, muCsrfOk, rotateMuSession,
          muTokenFromCookieHeader, muClearCookies,
          muCorrCookie, muCorrClear, muCorrFromCookieHeader, appendCorrClear } from './session.mjs';
+import { ghAppConfig, listInstallationRepositories } from './ghapp.mjs';
+import { verifyWebhookSignature, readRawBody } from './webhookVerify.mjs';
 
 // pg 解析：容器/镜像内走标准 node_modules；CI/主机测试进程回退到 test/support
 // 安装的 dev-only pg（与 cchain/wiring.mjs loadPg 同一惯例——CI runner 无根 junction）。
@@ -179,11 +181,14 @@ export async function muApi(req, res, ctx) {
     // Wave 2A.1：correlation cookie 必须与 flow 内摘要匹配（缺失/错配/跨浏览器/
     // 存量 2A 无摘要 flow → 统一 state_invalid，不泄露区分信息）
     const corr = muCorrFromCookieHeader(req.headers.cookie);
+    // PR253 验收修复：登录回调只消费登录流——安装流(purpose=ghapp_install)的
+    // state+corr 不得被当登录 flow 使用（对称隔离；虽无提权面仍 fail-closed）
     const corrOk = flow && flow.corr_hash && corr
-      && crypto.createHash('sha256').update(corr).digest('hex') === flow.corr_hash;
+      && crypto.createHash('sha256').update(corr).digest('hex') === flow.corr_hash
+      && flow.purpose === 'oauth_login';
     if (!flow || !corrOk) {
       await store.auditPlatform('OAUTH_FLOW_REJECTED', { detail: { reason: 'state_invalid' } });
-      return redirectLoginError('state_invalid'); // 不存在/已消费(重放)/已过期/correlation 失配 统一同因
+      return redirectLoginError('state_invalid'); // 不存在/已消费(重放)/已过期/correlation 失配/跨用途 统一同因
     }
     let identity;
     try {
@@ -241,6 +246,92 @@ export async function muApi(req, res, ctx) {
     return res.end();
   }
 
+  // mu 直查 pool（webhook 事件解析用；函数声明+let 置于使用前避免 TDZ）
+  let muPool = null;
+  async function muPoolQ(text, params) {
+    if (!muPool) {
+      const pg = await loadPg();
+      muPool = new pg.Pool({ connectionString: env.CONSOLE_PG_DSN, max: 2 });
+    }
+    return muPool.query(text, params);
+  }
+
+  // ── GitHub App webhook（Wave 2B）：仅签名认证，不接受浏览器会话 ──
+  if (p === '/api/mu/github/webhook' && req.method === 'POST') {
+    const cfgGh = ghAppConfig(env);
+    const raw = await readRawBody(req).catch(() => null);
+    const sig = String(req.headers['x-hub-signature-256'] ?? '');
+    const v = raw ? verifyWebhookSignature(raw, sig, cfgGh.webhookSecret) : { ok: false, reason: 'empty_body' };
+    const deliveryId = String(req.headers['x-github-delivery'] ?? '');
+    const event = String(req.headers['x-github-event'] ?? '');
+    if (!v.ok) {
+      // fail-closed：验签失败不解析 body（先验签原则）；delivery 仍去重登记（脱敏 reason）
+      if (deliveryId) await store.claimWebhookDelivery(deliveryId, { event: event || 'unknown' }).catch(() => {});
+      await store.auditPlatform('OAUTH_FLOW_REJECTED', { detail: { reason: 'webhook_rejected', sig: v.reason } }).catch(() => {});
+      return sendJson(res, 401, { error: { reason: 'webhook_signature_invalid' } });
+    }
+    let body = null;
+    try { body = JSON.parse(raw); } catch { body = null; }
+    if (!body || !deliveryId || !event) return sendJson(res, 400, { error: { reason: 'bad_request' } });
+    // delivery 去重（一次性）：重复即 200 幂等返回，不重复写入/入队/审计
+    const claim = await store.claimWebhookDelivery(deliveryId, {
+      installationId: Number(body.installation?.id ?? 0) || null, event,
+    });
+    if (!claim) { await store.finishWebhookDelivery(deliveryId, 'duplicate'); return sendJson(res, 200, { ok: true, duplicate: true }); }
+    // 先确认 installation（验签后第一道落库前校验）
+    const instId = Number(body.installation?.id ?? 0);
+    const installation = instId ? await store.getInstallation(instId) : null;
+    if (!installation) {
+      await store.finishWebhookDelivery(deliveryId, 'rejected');
+      return sendJson(res, 200, { ok: true, ignored: 'installation_unknown' });
+    }
+    const tenantId = installation.tenant_id;
+    try {
+      if (event === 'installation') {
+        const action = String(body.action ?? '');
+        if (action === 'deleted') {
+          await store.setInstallationState(instId, { revoked: true });
+          await store.setBindingsStateForInstallation(instId, 'revoked');
+        } else if (action === 'suspend') {
+          await store.setInstallationState(instId, { suspended: true });
+          await store.setBindingsStateForInstallation(instId, 'suspended');
+        } else if (action === 'unsuspend') {
+          await store.setInstallationState(instId, { suspended: false });
+          await store.setBindingsStateForInstallation(instId, 'active');
+        }
+      } else if (event === 'installation_repositories' && Array.isArray(body.repositories_removed)
+        && body.repositories_removed.length) {
+        for (const r of body.repositories_removed) {
+          const gid = Number(r.id ?? 0);
+          if (!gid) continue;
+          const hit = await muPoolQ(`SELECT repo_id FROM mu.repository_binding WHERE github_repo_id=$1 AND tenant_id=$2`, [gid, tenantId]);
+          for (const row of hit.rows) await store.setBindingState(tenantId, row.repo_id, 'revoked', 'repository_removed');
+        }
+      } else if (event === 'pull_request' && body.pull_request && body.repository) {
+        const gid = Number(body.repository.id ?? 0);
+        const hit = await muPoolQ(`SELECT repo_id FROM mu.repository_binding WHERE github_repo_id=$1 AND tenant_id=$2 AND binding_state='active'`, [gid, tenantId]);
+        if (hit.rows.length) {
+          // 入队前完成 tenant/repo 解析；异步 worker 执行时复查 binding/installation/membership
+          await store.enqueueJob({ tenantId, repoId: hit.rows[0].repo_id,
+            kind: 'event_sync', requestedBy: null, requestedRole: 'maintainer',
+            payload: { event: 'pull_request', delivery_id: deliveryId,
+              pr_number: Number(body.pull_request.number ?? 0),
+              head_sha: String(body.pull_request.head?.sha ?? ''),
+              action: String(body.action ?? '') } });
+        }
+      }
+      await store.finishWebhookDelivery(deliveryId, 'processed');
+      await store.audit('GHAPP_WEBHOOK_PROCESSED', { tenantId, actorUserId: null,
+        detail: { event, delivery_prefix: deliveryId.slice(0, 8), installation_id: instId } });
+      return sendJson(res, 200, { ok: true });
+    } catch (e) {
+      console.error('[mu-webhook]', String(e?.message ?? e).slice(0, 200));
+      await store.finishWebhookDelivery(deliveryId, 'received'); // 可重试（幂等）
+      return sendJson(res, 500, { error: { reason: 'webhook_processing_failed' } });
+    }
+  }
+
+
   // ── 以下全部需要多用户会话（Wave 2A 起为 DB 持久会话：重启可恢复、撤销即时生效） ──
   const muSession = await resolveMuSession(store, req);
   if (!muSession) return sendJson(res, 401, { error: { reason: 'unauthorized' } });
@@ -294,6 +385,140 @@ export async function muApi(req, res, ctx) {
       await store.auditPlatform('SESSIONS_REVOKED_ALL', { actorUserId: mu.userId, detail: { count: n } });
       res.setHeader('Set-Cookie', appendCorrClear(muClearCookies()));
       return sendJson(res, 200, { ok: true, revoked: n });
+    }
+
+    // ── GitHub App 安装与仓库绑定（Wave 2B；Maintainer 门） ──
+    if (p === '/api/mu/github/app/status' && req.method === 'GET') {
+      const g = await guard('manage_repository_binding');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const cfgGh = ghAppConfig(env);
+      return sendJson(res, 200, { configured: cfgGh.configured,
+        ...(cfgGh.configured ? { app_id: cfgGh.appId, permissions: cfgGh.permissions, events: cfgGh.events } : { reason: cfgGh.reason }) });
+    }
+    if (p === '/api/mu/github/install/start' && req.method === 'POST') {
+      if (!csrfOk()) return sendJson(res, 403, { error: { reason: 'csrf_required' } });
+      const g = await guard('manage_repository_binding');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const cfgGh = ghAppConfig(env);
+      if (!cfgGh.configured) {
+        return sendJson(res, 503, { error: { reason: 'github_app_not_configured',
+          detail: '需 MU_GITHUB_APP_ID/_PRIVATE_KEY/_WEBHOOK_SECRET/_INSTALL_CALLBACK_URL 显式配置' } });
+      }
+      const state = crypto.randomBytes(32).toString('base64url');
+      const corr = crypto.randomBytes(32).toString('base64url');
+      const ttlMs = Number(env.MU_OAUTH_FLOW_TTL_MS || 10 * 60_000);
+      const flow = await store.insertOAuthFlow({
+        stateHash: crypto.createHash('sha256').update(state).digest('hex'),
+        corrHash: crypto.createHash('sha256').update(corr).digest('hex'),
+        inviteId: null, ttlMs,
+      });
+      await muPoolQ('UPDATE mu.oauth_flow SET purpose=$1 WHERE flow_id=$2', ['ghapp_install', flow.flow_id]);
+      await store.auditPlatform('OAUTH_FLOW_STARTED', { actorUserId: mu.userId, detail: { purpose: 'ghapp_install' } });
+      res.setHeader('Set-Cookie', muCorrCookie(corr, ttlMs));
+      return sendJson(res, 200, { install_url: cfgGh.installUrl + '?state=' + encodeURIComponent(state)
+        + '&redirect_uri=' + encodeURIComponent(cfgGh.installCallbackUrl) });
+    }
+    if (p === '/api/mu/github/install/callback' && req.method === 'GET') {
+      const cfgGh = ghAppConfig(env);
+      const failGh = (reason) => {
+        res.writeHead(302, { Location: '/multiuser?ghapp_error=' + reason, 'Set-Cookie': muCorrClear() });
+        res.end();
+      };
+      if (!cfgGh.configured) return failGh('oauth_not_configured');
+      const state = String(q.state ?? '');
+      const installationId = Number(q.installation_id ?? 0);
+      const stateHash = state ? crypto.createHash('sha256').update(state).digest('hex') : '';
+      const flow = stateHash ? await store.consumeOAuthFlow(stateHash) : null;
+      const corr = muCorrFromCookieHeader(req.headers.cookie);
+      const corrOk = flow && flow.corr_hash && corr
+        && crypto.createHash('sha256').update(corr).digest('hex') === flow.corr_hash
+        && flow.purpose === 'ghapp_install';
+      if (!flow || !corrOk || !installationId || !['install', 'update'].includes(String(q.setup_action ?? ''))) {
+        await store.auditPlatform('OAUTH_FLOW_REJECTED', { detail: { reason: 'state_invalid', purpose: 'ghapp_install' } });
+        return failGh('state_invalid');
+      }
+      let repos;
+      try { repos = await listInstallationRepositories(cfgGh, installationId); }
+      catch (e) {
+        await store.auditPlatform('OAUTH_FLOW_REJECTED', { detail: { reason: 'installation_unreadable' } });
+        return failGh('installation_unreadable');
+      }
+      const owner0 = repos[0]?.owner_login ?? 'unknown';
+      await store.upsertInstallation({ installationId, tenantId: mu.tenantId,
+        accountId: repos[0]?.owner_id ?? 0, accountLogin: owner0, accountType: 'User',
+        appId: cfgGh.appId });
+      await store.audit('GHAPP_INSTALLATION_REGISTERED', { tenantId: mu.tenantId, actorUserId: mu.userId,
+        detail: { installation_id: installationId, repos_count: repos.length } });
+      res.setHeader('Set-Cookie', appendCorrClear([]));
+      res.writeHead(302, { Location: '/multiuser' });
+      return res.end();
+    }
+    if (p === '/api/mu/github/installations' && req.method === 'GET') {
+      const g = await guard('manage_repository_binding');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const rows = await store.listInstallations(mu.tenantId);
+      return sendJson(res, 200, { installations: rows.map((r) => ({
+        installation_id: r.installation_id, account_login: r.account_login,
+        suspended: Boolean(r.suspended_at), revoked: Boolean(r.revoked_at), created_at: r.created_at })) });
+    }
+    const ghReposMatch = p.match(/^\/api\/mu\/github\/installations\/(\d+)\/repositories$/);
+    if (ghReposMatch && req.method === 'GET') {
+      const g = await guard('manage_repository_binding');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const instId = Number(ghReposMatch[1]);
+      const inst = await store.getInstallation(instId);
+      if (!inst || inst.tenant_id !== mu.tenantId) {
+        return sendJson(res, 404, { error: { reason: 'installation_not_found' } });
+      }
+      if (inst.revoked_at) return sendJson(res, 409, { error: { reason: 'installation_revoked' } });
+      if (inst.suspended_at) return sendJson(res, 409, { error: { reason: 'installation_suspended' } });
+      const cfgGh = ghAppConfig(env);
+      let repos;
+      try { repos = await listInstallationRepositories(cfgGh, instId); }
+      catch (e) { return sendJson(res, 502, { error: { reason: 'github_read_failed' } }); }
+      return sendJson(res, 200, { repositories: repos });
+    }
+    const bindMatch = p.match(/^\/api\/mu\/repositories\/([^/]+)\/ghapp-binding$/);
+    if (bindMatch && req.method === 'POST') {
+      if (!csrfOk()) return sendJson(res, 403, { error: { reason: 'csrf_required' } });
+      const g = await guard('manage_repository_binding', { repoId: bindMatch[1] });
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const body = await json();
+      const instId = Number(body.installation_id ?? 0);
+      const ghRepoId = Number(body.github_repo_id ?? 0);
+      if (!instId || !ghRepoId) return sendJson(res, 400, { error: { reason: 'installation_id + github_repo_id required' } });
+      const inst = await store.getInstallation(instId);
+      if (!inst || inst.tenant_id !== mu.tenantId) return sendJson(res, 404, { error: { reason: 'installation_not_found' } });
+      if (inst.revoked_at) return sendJson(res, 409, { error: { reason: 'installation_revoked' } });
+      if (inst.suspended_at) return sendJson(res, 409, { error: { reason: 'installation_suspended' } });
+      const cfgGh = ghAppConfig(env);
+      let repos;
+      try { repos = await listInstallationRepositories(cfgGh, instId); }
+      catch (e) { return sendJson(res, 502, { error: { reason: 'github_read_failed' } }); }
+      const target = repos.find((r) => Number(r.id) === ghRepoId);
+      if (!target) return sendJson(res, 404, { error: { reason: 'repository_not_authorized' } });
+      const dup = await muPoolQ("SELECT tenant_id FROM mu.repository_binding WHERE github_repo_id=$1 AND binding_state='active'", [ghRepoId]);
+      if (dup.rows.length && dup.rows[0].tenant_id !== mu.tenantId) {
+        return sendJson(res, 409, { error: { reason: 'repository_already_bound' } });
+      }
+      const repo = await store.ensureRepository({ tenantId: mu.tenantId, provider: 'github',
+        providerRepoId: String(ghRepoId), owner: target.owner_login, name: target.name,
+        defaultBranch: target.default_branch });
+      const binding = await store.upsertRepositoryBinding({ tenantId: mu.tenantId, repoId: repo.repo_id,
+        githubRepoId: ghRepoId, owner: target.owner_login, name: target.name,
+        installationId: instId, defaultBranch: target.default_branch, createdBy: mu.userId });
+      await store.audit('GHAPP_REPO_BOUND', { tenantId: mu.tenantId, actorUserId: mu.userId,
+        detail: { repo_id: repo.repo_id, installation_id: instId, github_repo_id: ghRepoId } });
+      return sendJson(res, 200, { ok: true, binding });
+    }
+    if (bindMatch && req.method === 'DELETE') {
+      if (!csrfOk()) return sendJson(res, 403, { error: { reason: 'csrf_required' } });
+      const g = await guard('manage_repository_binding', { repoId: bindMatch[1] });
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const revoked = await store.setBindingState(mu.tenantId, g.repo.repo_id, 'revoked', 'manual_unbind');
+      await store.audit('GHAPP_REPO_UNBOUND', { tenantId: mu.tenantId, actorUserId: mu.userId,
+        detail: { repo_id: g.repo.repo_id } });
+      return sendJson(res, 200, { ok: true, revoked: Boolean(revoked) });
     }
 
     // ── 邀请（manage_membership；唯一 onboarding 通道——短期/单次/摘要存储） ──

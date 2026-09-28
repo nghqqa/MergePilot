@@ -30,6 +30,57 @@ async function muPost(path, payload) {
   return { status: res.status, body };
 }
 
+function GHAppPanel({ can, refresh }) {
+  const [status, setStatus] = useState(null);
+  const [insts, setInsts] = useState(null);
+  const [msg, setMsg] = useState(null);
+  const load = useCallback(async () => {
+    const st = await fetch('/api/mu/github/app/status').then((r) => r.json().catch(() => null));
+    setStatus(st);
+    if (st?.configured) {
+      const list = await fetch('/api/mu/github/installations').then((r) => r.json().catch(() => null));
+      setInsts(list?.installations ?? []);
+    }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  const canBind = can('manage_repository_binding');
+  return (
+    <div>
+      {status?.configured === false ? (
+        <Alert type="info" showIcon message="GitHub App 未配置（fail-closed）"
+          description="需 MU_GITHUB_APP_ID/_PRIVATE_KEY/_WEBHOOK_SECRET/_INSTALL_CALLBACK_URL 显式配置；本面板零推断数据。" />
+      ) : (
+        <>
+          <Space size="large" wrap style={{ marginBottom: 8 }}>
+            <span>App #{status?.app_id} · 只读权限：{(status?.permissions ?? []).map((x) => <Tag key={x}><code>{x}</code></Tag>)}</span>
+            {canBind ? <Button size="small" onClick={async () => {
+              const r = await fetch('/api/mu/github/install/start', {
+                method: 'POST', headers: { 'x-csrf-token': readCsrfCookie() } });
+              const j = await r.json().catch(() => null);
+              if (j?.install_url) window.location.href = j.install_url;
+              else setMsg({ type: 'warning', text: `安装发起失败：${j?.error?.reason ?? r.status}` });
+            }}>安装 / 更新 GitHub App</Button> : <Tag>绑定权限不足（需 Maintainer）</Tag>}
+          </Space>
+          {insts !== null ? (
+            <Table rowKey="installation_id" size="small" pagination={false} dataSource={insts}
+              columns={[
+                { title: 'installation', dataIndex: 'installation_id' },
+                { title: '账号', dataIndex: 'account_login' },
+                { title: '状态', render: (_, r) => <Tag color={r.revoked ? 'red' : r.suspended ? 'orange' : 'green'}>
+                  {r.revoked ? 'revoked' : r.suspended ? 'suspended' : 'active'}</Tag> },
+              ]} />
+          ) : null}
+          {msg ? <Alert style={{ marginTop: 8 }} type={msg.type} showIcon message={msg.text} /> : null}
+          <Typography.Paragraph type="secondary" style={{ marginTop: 8, marginBottom: 0 }}>
+            只读 Developer Edition 接入——不支持自动 approve/merge、不支持绕过 branch protection；
+            仓库绑定与解绑经后端 Maintainer 校验执行（按钮仅反映权限）。绑定状态见仓库表。
+          </Typography.Paragraph>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function MultiUserPage() {
   const [session, setSession] = useState(null);
   const [notEnabled, setNotEnabled] = useState(false);
@@ -181,6 +232,11 @@ export default function MultiUserPage() {
                   : <Tag>未绑定</Tag>) },
                 { title: '权限快照', render: (_, r) => (r.granted_scopes ?? []).map((s) => <Tag key={s}><code>{s}</code></Tag>) },
               ]} />
+          </section>
+
+          <section className="section">
+            <div className="section-head"><h3>GitHub App（只读接入）</h3></div>
+            <GHAppPanel can={can} csrf={() => readCsrfCookie()} refresh={refresh} />
           </section>
 
           <section className="section">
