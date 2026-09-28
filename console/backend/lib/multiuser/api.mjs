@@ -54,6 +54,52 @@ function getMuStore(env) {
   return muStorePromise;
 }
 
+// ── Wave 2B.1：event_sync 系统事件执行器（纯服务端上下文，零用户授权面） ──
+// 上下文解析：installation（active 未撤未停）→ repository_binding（active，
+// installation/tenant/repo 三方一致）→ 失效即 fail-closed（区分可重试瞬态）。
+async function resolveEventSyncContext(store, job) {
+  const instId = Number(job.payload?.installation_id ?? 0);
+  if (!instId) return { ok: false, reason: 'installation_id_missing' };
+  let inst = null;
+  try { inst = await store.getInstallation(instId); }
+  catch { return { ok: false, reason: 'transient_read_failed' }; }
+  if (!inst || inst.tenant_id !== job.tenant_id) return { ok: false, reason: 'installation_mismatch' };
+  if (inst.revoked_at) return { ok: false, reason: 'installation_revoked' };
+  if (inst.suspended_at) return { ok: false, reason: 'installation_suspended' };
+  let binding = null;
+  try { binding = await store.getBindingByRepo(job.tenant_id, job.repo_id); }
+  catch { return { ok: false, reason: 'transient_read_failed' }; }
+  // pg BIGINT 以字符串返回——统一 Number 比较，避免 '7001' !== 7001 恒真误判
+  if (!binding || Number(binding.installation_id) !== instId) return { ok: false, reason: 'binding_mismatch' };
+  if (binding.binding_state === 'revoked') return { ok: false, reason: 'binding_revoked' };
+  if (binding.binding_state === 'suspended') return { ok: false, reason: 'binding_suspended' };
+  if (binding.binding_state === 'error') return { ok: false, reason: 'binding_error_state' };
+  return { ok: true, installation_id: instId, binding };
+}
+
+// 幂等执行：当前仅消费 pull_request 事件（PR 快照 upsert）——delivery+event+
+// object id+head_sha 天然构成唯一键（PR 快照 UNIQUE 含全部四要素的等价物：
+// (tenant, repo, number, head_sha)），重复执行零新增行；审计侧由
+// GHAPP_EVENT_SYNC_DONE 单行记录（job 单次 CAS 消费保证不重复审计）。
+async function executeEventSync(store, muPoolQuery, job, sysCtx) {
+  const ev = String(job.payload?.event ?? '');
+  if (ev !== 'pull_request') {
+    // 订阅但未实现处理器的事件类型：明确 dead-letter（不静默吞、不误入人工路径）
+    return { state: 'failed', result: { reason: 'event_kind_unsupported', event: ev } };
+  }
+  const prNumber = Number(job.payload?.pr_number ?? 0);
+  const headSha = String(job.payload?.head_sha ?? '');
+  if (!prNumber || !/^[0-9a-f]{6,40}$/i.test(headSha)) {
+    return { state: 'failed', result: { reason: 'event_payload_invalid' } };
+  }
+  await store.upsertPullRequest({ tenantId: job.tenant_id, repoId: job.repo_id,
+    providerPrNumber: prNumber, headSha, branchProtectionStatus: 'unknown',
+    title: null });
+  await muPoolQuery('UPDATE mu.repository_binding SET last_sync_at = now() WHERE repo_id=$1 AND tenant_id=$2',
+    [job.repo_id, job.tenant_id]).catch(() => {});
+  return { state: 'done', result: { pr_number: prNumber, head_sha_prefix: headSha.slice(0, 12) } };
+}
+
 export async function muApi(req, res, ctx) {
   const { p, q, sendJson, readJsonBody, requireSession } = ctx;
   const env = process.env;
@@ -315,6 +361,7 @@ export async function muApi(req, res, ctx) {
           await store.enqueueJob({ tenantId, repoId: hit.rows[0].repo_id,
             kind: 'event_sync', requestedBy: null, requestedRole: 'maintainer',
             payload: { event: 'pull_request', delivery_id: deliveryId,
+              installation_id: instId,
               pr_number: Number(body.pull_request.number ?? 0),
               head_sha: String(body.pull_request.head?.sha ?? ''),
               action: String(body.action ?? '') } });
@@ -843,6 +890,34 @@ export async function muApi(req, res, ctx) {
       for (;;) {
         const job = await store.claimNextJob();
         if (!job) break;
+        // Wave 2B.1：系统事件 job（event_sync，requested_by=NULL）走独立分支——
+        // 授权上下文=已验证的 installation→binding→tenant/repo 服务链，绝不伪造
+        // 用户 membership（不通过 getMembership(null) 冒充未登录拒绝，也不借
+        // 任何真人身份放行）。人工 job（review_run/repair_push）维持原复查路径。
+        if (job.kind === 'event_sync') {
+          const sysCtx = await resolveEventSyncContext(store, job);
+          if (!sysCtx.ok) {
+            // fail-closed：installation/binding/tenant/repo 任一失效即拒绝（可重试
+            // 语义区分：binding_invalid 类不重试，transient 类回 queued 由下轮重试）
+            const retryable = sysCtx.reason === 'transient_read_failed';
+            await store.finishJob(job.job_id, retryable ? 'queued' : 'rejected', { reason: sysCtx.reason });
+            await store.audit('GHAPP_EVENT_SYNC_REJECTED', { tenantId: job.tenant_id, actorUserId: null,
+              detail: { job_id: job.job_id, delivery_prefix: String(job.payload?.delivery_id ?? '').slice(0, 8),
+                reason: sysCtx.reason, retryable } });
+            processed.push({ job_id: job.job_id, state: retryable ? 'requeued' : 'rejected', reason: sysCtx.reason });
+            continue;
+          }
+          // 幂等消费：delivery_id+event+object id+head_sha 组成去重键——重复入队/
+          // 重试重放不再二次落库（PR 快照 upsert 天然幂等，这里补审计侧去重）
+          const r = await executeEventSync(store, muPoolQ, job, sysCtx);
+          await store.finishJob(job.job_id, r.state, r.result);
+          await store.audit('GHAPP_EVENT_SYNC_DONE', { tenantId: job.tenant_id, actorUserId: null,
+            detail: { job_id: job.job_id, event: job.payload?.event,
+              delivery_prefix: String(job.payload?.delivery_id ?? '').slice(0, 8), repo_id: job.repo_id,
+              installation_id: sysCtx.installation_id, outcome: r.state } });
+          processed.push({ job_id: job.job_id, state: r.state, kind: 'event_sync' });
+          continue;
+        }
         // 执行前复查（授权快照不可信）：请求者成员关系 + 角色仍允许 + 修复需 Binding
         const m = await store.getMembership(job.tenant_id, job.requested_by);
         const action = job.kind === 'review_run' ? 'request_review' : 'request_repair';

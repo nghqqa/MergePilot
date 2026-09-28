@@ -41,6 +41,7 @@ process.env.CONSOLE_PG_DSN = dsn;
 process.env.CONSOLE_SESSION_SECRET = 'mu-ghapp-it-secret';
 process.env.CONSOLE_PILOT_USER = 'dev-pilot';
 process.env.MU_ALLOW_FIXTURE_LOGIN = '1';
+process.env.MU_FIXTURES = '1'; // ES 电池需触发 fixture 执行器（tick）
 process.env.MU_GITHUB_APP_ID = '999001';
 process.env.MU_GITHUB_APP_PRIVATE_KEY = 'synthetic-private-key-not-real';
 process.env.MU_GITHUB_WEBHOOK_SECRET = WEBHOOK_SECRET;
@@ -74,6 +75,8 @@ const { server } = createConsole({ evidenceRoot: HERE, distDir: path.join(HERE, 
 await new Promise((r) => server.listen(0, '127.0.0.1', r));
 const BASE = `http://127.0.0.1:${server.address().port}`;
 const pool = new Pool({ connectionString: dsn });
+const { createMuStore } = await import('../lib/multiuser/store.mjs');
+const store0 = await createMuStore({ pool, env: process.env });
 
 async function fixtureLogin(subject, tenantSlug) {
   const res = await fetch(BASE + '/api/mu/auth/login', {
@@ -300,11 +303,117 @@ try {
       { status: crossUse.status, loc: crossUse.headers.get('location'), stI: stI.status });
   }
 
+  // ══ Wave 2B.1 专项回归（ES*：event_sync worker 修复） ══
+  await pool.query(`UPDATE mu.membership SET state='active' WHERE user_id=(SELECT user_id FROM mu.app_user WHERE login='dana')`);
+  const dana2 = await fixtureLogin('fixture:dana');
+  if (dana2.status !== 200) throw new Error('dana2 login failed: ' + dana2.status);
+  await pool.query(`UPDATE mu.github_app_installation SET revoked_at=NULL, suspended_at=NULL WHERE installation_id=7001`);
+  await pool.query(`UPDATE mu.repository_binding SET binding_state='active', revoked_at=NULL, error_code=NULL WHERE github_repo_id=9001`);
+  const rEs = await hook('pull_request', { installation: { id: 7001 }, repository: { id: 9001 }, action: 'opened',
+    pull_request: { number: 43, head: { sha: 'cd'.repeat(20) } } }, { delivery: 'd-es-1' });
+  ok('ES0 event_sync 入队（合法 binding/active）', rEs.status === 200);
+  const tick0 = await call('/api/mu/jobs/tick', { method: 'POST', cookie: dana2.cookie, csrf: dana2.csrf });
+  const es0 = (tick0.json?.processed ?? []).find((x) => x.kind === 'event_sync');
+  ok('ES1 event_sync 成功执行（不再被 getMembership(null) 拒绝；PR 快照落库）',
+    es0?.state === 'done'
+      && (await pool.query(`SELECT count(*)::int n FROM mu.pull_request WHERE tenant_id=$1 AND repo_id=(SELECT repo_id FROM mu.repository_binding WHERE github_repo_id=9001) AND provider_pr_number=43`, [dana.json?.tenant?.tenant_id])).rows[0].n === 1,
+    { tick: tick0.json?.processed, jobs: (await pool.query(`SELECT state, result FROM mu.job WHERE kind='event_sync' ORDER BY created_at DESC LIMIT 3`)).rows });
+  const esAudit = (await pool.query(`SELECT * FROM mu.audit_event WHERE kind='GHAPP_EVENT_SYNC_DONE' ORDER BY seq DESC LIMIT 1`)).rows[0];
+  ok('ES2 审计=system actor（NULL）+tenant/repo/installation+delivery 前 8 位（无完整 payload）',
+    esAudit?.actor_user_id === null && esAudit?.tenant_id === dana.json?.tenant?.tenant_id
+      && String(JSON.stringify(esAudit?.detail)).includes('installation_id')
+      && !String(JSON.stringify(esAudit?.detail)).includes('cdcdcdcdcdcdcdcdcdcd'), esAudit?.detail);
+  await hook('pull_request', { installation: { id: 7001 }, repository: { id: 9001 }, action: 'synchronize',
+    pull_request: { number: 43, head: { sha: 'cd'.repeat(20) } } }, { delivery: 'd-es-2' });
+  await call('/api/mu/jobs/tick', { method: 'POST', cookie: dana2.cookie, csrf: dana2.csrf });
+  ok('ES3 重试/重复消费幂等（PR 行唯一；审计各一条）',
+    (await pool.query(`SELECT count(*)::int n FROM mu.pull_request WHERE tenant_id=$1 AND provider_pr_number=43`, [dana.json?.tenant?.tenant_id])).rows[0].n === 1
+      && (await pool.query(`SELECT count(*)::int n FROM mu.audit_event WHERE kind='GHAPP_EVENT_SYNC_DONE' AND (detail->>'delivery_prefix')='d-es-1'`)).rows[0].n === 1
+      && (await pool.query(`SELECT count(*)::int n FROM mu.audit_event WHERE kind='GHAPP_EVENT_SYNC_DONE' AND (detail->>'delivery_prefix')='d-es-2'`)).rows[0].n === 1);
+  // ES4 双闸验证：①入队闸——revoked binding 的 webhook 不入队；②执行闸——入队后
+  // 撤销（模拟撤销晚于入队）worker 执行前复查拒绝
+  await pool.query(`UPDATE mu.repository_binding SET binding_state='revoked' WHERE github_repo_id=9001`);
+  await hook('pull_request', { installation: { id: 7001 }, repository: { id: 9001 }, action: 'opened',
+    pull_request: { number: 44, head: { sha: 'ef'.repeat(20) } } }, { delivery: 'd-es-3' });
+  const es3Enqueued = (await pool.query(`SELECT count(*)::int n FROM mu.job WHERE payload->>'delivery_id'='d-es-3'`)).rows[0].n;
+  // 执行闸：手工入队一条（绑定撤销后创建的 job）→ worker 复查拒绝
+  await pool.query(`UPDATE mu.repository_binding SET binding_state='active', revoked_at=NULL WHERE github_repo_id=9001`);
+  const repoA1 = (await pool.query(`SELECT repo_id FROM mu.repository_binding WHERE github_repo_id=9001`)).rows[0].repo_id;
+  await store0.enqueueJob({ tenantId: dana.json?.tenant?.tenant_id, repoId: repoA1,
+    kind: 'event_sync', requestedBy: null, requestedRole: 'maintainer',
+    payload: { event: 'pull_request', delivery_id: 'd-es-3w', installation_id: 7001,
+      pr_number: 44, head_sha: 'ef'.repeat(20) } });
+  await pool.query(`UPDATE mu.repository_binding SET binding_state='revoked' WHERE github_repo_id=9001`);
+  const tick3 = await call('/api/mu/jobs/tick', { method: 'POST', cookie: dana2.cookie, csrf: dana2.csrf });
+  const es3 = (tick3.json?.processed ?? []).find((x) => x.reason === 'binding_revoked');
+  ok('ES4 revoked binding 双闸：入队闸零 job（d-es-3 无行）+ 执行闸 worker 复查拒绝（d-es-3w rejected）',
+    es3Enqueued === 0 && Boolean(es3)
+      && (await pool.query(`SELECT count(*)::int n FROM mu.pull_request WHERE provider_pr_number=44`)).rows[0].n === 0,
+    { es3Enqueued, tick3: (tick3.json?.processed ?? []).slice(0, 2) });
+  await pool.query(`UPDATE mu.repository_binding SET binding_state='active', revoked_at=NULL, error_code=NULL WHERE github_repo_id=9001`);
+  await pool.query(`UPDATE mu.github_app_installation SET suspended_at=now() WHERE installation_id=7001`);
+  await hook('pull_request', { installation: { id: 7001 }, repository: { id: 9001 }, action: 'opened',
+    pull_request: { number: 45, head: { sha: 'ab'.repeat(20) } } }, { delivery: 'd-es-4' });
+  const tick4 = await call('/api/mu/jobs/tick', { method: 'POST', cookie: dana2.cookie, csrf: dana2.csrf });
+  ok('ES5 suspended installation → event_sync 拒绝（PR 45 零落库）',
+    (tick4.json?.processed ?? []).some((x) => x.reason === 'installation_suspended')
+      && (await pool.query(`SELECT count(*)::int n FROM mu.pull_request WHERE provider_pr_number=45`)).rows[0].n === 0);
+  await pool.query(`UPDATE mu.github_app_installation SET suspended_at=NULL WHERE installation_id=7001`);
+  {
+    // B 租户伪造：给 B 造一个同名 repo 行（合法 FK），job 声称 A 的 installation 7001
+    const repoBfake = await store0.ensureRepository({ tenantId: mkB.json?.tenant?.tenant_id,
+      provider: 'github', providerRepoId: 'fake-9001', owner: 'x', name: 'fake' });
+    await store0.enqueueJob({ tenantId: mkB.json?.tenant?.tenant_id, repoId: repoBfake.repo_id,
+      kind: 'event_sync', requestedBy: null, requestedRole: 'maintainer',
+      payload: { event: 'pull_request', delivery_id: 'd-es-fake', installation_id: 7001,
+        pr_number: 46, head_sha: '99'.repeat(20) } });
+    const tickF = await call('/api/mu/jobs/tick', { method: 'POST', cookie: dana2.cookie, csrf: dana2.csrf });
+    ok('ES6 跨 tenant 伪造 job（B tenant 引 A repo+installation）→ mismatch 拒绝零落库',
+      (tickF.json?.processed ?? []).some((x) => x.reason === 'binding_mismatch' || x.reason === 'installation_mismatch')
+        && (await pool.query(`SELECT count(*)::int n FROM mu.pull_request WHERE provider_pr_number=46`)).rows[0].n === 0);
+  }
+  {
+    await pool.query(`UPDATE mu.repository_binding SET binding_state='active', revoked_at=NULL, error_code=NULL WHERE github_repo_id=9001`);
+    const repoC = (await pool.query(`SELECT repo_id FROM mu.repository_binding WHERE github_repo_id=9001`)).rows[0].repo_id;
+    // 缺 installation_id → fail-closed 拒绝（fail-closed 与 dead-letter 区分）
+    await store0.enqueueJob({ tenantId: dana.json?.tenant?.tenant_id, repoId: repoC,
+      kind: 'event_sync', requestedBy: null, requestedRole: 'maintainer',
+      payload: { event: 'check_run', delivery_id: 'd-es-cr0' } });
+    // 合法 context 的未支持 kind → 明确 dead-letter
+    await store0.enqueueJob({ tenantId: dana.json?.tenant?.tenant_id, repoId: repoC,
+      kind: 'event_sync', requestedBy: null, requestedRole: 'maintainer',
+      payload: { event: 'check_run', delivery_id: 'd-es-cr', installation_id: 7001 } });
+    const tickC = await call('/api/mu/jobs/tick', { method: 'POST', cookie: dana2.cookie, csrf: dana2.csrf });
+    const dl0 = (await pool.query(`SELECT state, result FROM mu.job WHERE payload->>'delivery_id'='d-es-cr0'`)).rows[0];
+    const dl = (await pool.query(`SELECT state, result FROM mu.job WHERE payload->>'delivery_id'='d-es-cr'`)).rows[0];
+    ok('ES7 语义区分：缺 installation_id=fail-closed rejected；合法 context 未支持 kind=dead-letter failed',
+      dl0?.state === 'rejected' && /installation_id_missing/.test(JSON.stringify(dl0?.result))
+        && dl?.state === 'failed' && /event_kind_unsupported/.test(JSON.stringify(dl?.result)), { dl0, dl });
+  }
+  {
+    // dana=maintainer 无 manage_membership 且 admin 会话已轮换到 B——SQL 直建 frank（reviewer/A）
+    const frankU = await store0.ensureUser({ login: 'frank' });
+    await store0.ensureIdentity({ userId: frankU.user_id, provider: 'fixture', subject: 'fixture:frank' });
+    await store0.ensureMembership({ tenantId: dana.json?.tenant?.tenant_id, userId: frankU.user_id, role: 'reviewer' });
+    const frank = await fixtureLogin('fixture:frank');
+    if (frank.status !== 200) throw new Error('frank login failed: ' + frank.status);
+    const repoA = (await pool.query(`SELECT repo_id FROM mu.repository_binding WHERE github_repo_id=9001`)).rows[0].repo_id;
+    const prF = await store0.upsertPullRequest({ tenantId: dana.json?.tenant?.tenant_id, repoId: repoA,
+      providerPrNumber: 50, headSha: '55'.repeat(20) });
+    const revF = await fetch(BASE + '/api/mu/prs/' + prF.pr_id + '/review', { method: 'POST',
+      headers: { cookie: frank.cookie, 'x-csrf-token': frank.csrf } });
+    if (revF.status !== 200) throw new Error('frank review enqueue failed: ' + revF.status + ' loginStatus=' + frank.status + ' ' + (await revF.text()).slice(0, 100));
+    await pool.query(`UPDATE mu.membership SET state='revoked' WHERE user_id=(SELECT user_id FROM mu.app_user WHERE login='frank')`);
+    const tickW = await call('/api/mu/jobs/tick', { method: 'POST', cookie: dana2.cookie, csrf: dana2.csrf });
+    ok('ES8 人工 job 执行前撤权仍拒绝（修复不放松人工路径）',
+      (tickW.json?.processed ?? []).some((x) => x.state === 'rejected' && /membership/.test(String(x.reason))));
+  }
+
   // ── GA-10 迁移三条件 ──
   {
     let replayErr = null; let replayOk = false;
     try {
-      const store2 = await (await import('../lib/multiuser/store.mjs')).createMuStore({ pool, env: process.env });
+      const store2 = store0;
       replayOk = (await store2.initSchema()) === true;
     } catch (e) { replayErr = e; }
     const kept = (await pool.query(`SELECT count(*)::int n FROM mu.webhook_delivery WHERE delivery_id='d-pr-1'`)).rows[0].n;
