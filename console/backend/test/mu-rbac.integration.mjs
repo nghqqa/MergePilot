@@ -40,6 +40,10 @@ process.env.CONSOLE_PG_DSN = dsn;
 process.env.CONSOLE_PILOT_USER = 'dev-pilot';            // bootstrap 映射源
 process.env.CONSOLE_PILOT_PASSWORD = 'legacy-test-password';
 process.env.CONSOLE_SESSION_SECRET = 'mu-it-session-secret';
+// PR248 复核 P1 回归基线：fixture 能力默认关闭——本套件显式开启以测正向路径，
+// 默认关闭行为由 MU-A7/MU-F0 单独断言
+process.env.MU_ALLOW_FIXTURE_LOGIN = '1';
+process.env.MU_FIXTURES = '1';
 
 const { server } = createConsole({ evidenceRoot: HERE, distDir: path.join(HERE, 'no-dist') });
 await new Promise((r) => server.listen(0, '127.0.0.1', r));
@@ -86,6 +90,25 @@ try {
   ok('MU-A4 GitHub OAuth 流程保留位 → 501 oauth_provider_not_configured（不伪装已实现）',
     gh.status === 501 && gh.json?.error?.reason === 'oauth_provider_not_configured');
 
+  // MU-A7（PR248 复核 P1 回归）：fixture 登录默认关闭——不设 MU_ALLOW_FIXTURE_LOGIN
+  // 的独立 server 实例上，已知 bootstrap subject 也被拒（fail-closed）
+  {
+    const savedFlag = process.env.MU_ALLOW_FIXTURE_LOGIN;
+    delete process.env.MU_ALLOW_FIXTURE_LOGIN;
+    const srv2 = createConsole({ evidenceRoot: HERE, distDir: path.join(HERE, 'no-dist') });
+    await new Promise((r) => srv2.server.listen(0, '127.0.0.1', r));
+    try {
+      const r2 = await fetch(`http://127.0.0.1:${srv2.server.address().port}/api/mu/auth/login`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ provider: 'fixture', subject: 'fixture:dev-pilot' }),
+      });
+      const j2 = await r2.json().catch(() => null);
+      ok('MU-A7 fixture 登录默认关闭（未显式 MU_ALLOW_FIXTURE_LOGIN=1 → 403 fixture_login_disabled）',
+        r2.status === 403 && j2?.error?.reason === 'fixture_login_disabled', j2);
+    } finally { srv2.server.close(); process.env.MU_ALLOW_FIXTURE_LOGIN = savedFlag; }
+  }
+
+
   const admin = await muLogin('fixture:dev-pilot');
   ok('MU-A5 bootstrap pilot 操作员经 fixture 身份登录 → platform_admin + 迁移 tenant',
     admin.status === 200 && admin.json?.role === 'platform_admin' && admin.json?.tenant?.slug === 'default',
@@ -96,6 +119,19 @@ try {
     sessA.status === 200 && sessA.json?.role === 'platform_admin'
       && sessA.json.actions.includes('manage_membership') === true
       && sessA.json.actions.includes('read_code_content') === false, sessA.json?.actions);
+
+  // MU-F0（PR248 复核 P1 回归）：fixtures 播种/执行器默认关闭（env 逐请求读取，可内联翻转）
+  {
+    const savedFixtures = process.env.MU_FIXTURES;
+    delete process.env.MU_FIXTURES;
+    const f0 = await call('/api/mu/fixtures/pr', { method: 'POST', cookie: admin.cookie, csrf: admin.csrf,
+      body: { repo_id: '00000000-0000-0000-0000-000000000000', number: 1, head_sha: 'a'.repeat(40) } });
+    const t0 = await call('/api/mu/jobs/tick', { method: 'POST', cookie: admin.cookie, csrf: admin.csrf });
+    ok('MU-F0 fixtures 端点默认关闭（pr 播种与 tick 均 403 fixtures_disabled）',
+      f0.status === 403 && f0.json?.error?.reason === 'fixtures_disabled'
+        && t0.status === 403 && t0.json?.error?.reason === 'fixtures_disabled');
+    process.env.MU_FIXTURES = savedFixtures;
+  }
 
   // ── MU-B*：成员管理 + 角色门 ──
   const noCsrf = await call('/api/mu/members', { method: 'POST', body: { login: 'bob', role: 'contributor' }, cookie: admin.cookie });

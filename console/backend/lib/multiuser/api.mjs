@@ -72,8 +72,12 @@ export async function muApi(req, res, ctx) {
     const subject = String(body.subject || '');
     if (!subject) return sendJson(res, 400, { error: { reason: 'subject required' } });
     if (provider === 'fixture') {
-      if (env.MU_ALLOW_FIXTURE_LOGIN === '0') {
-        return sendJson(res, 403, { error: { reason: 'fixture_login_disabled' } });
+      // PR248 复核 P1 修复：fixture 身份登录默认【关闭】——须显式 MU_ALLOW_FIXTURE_LOGIN=1
+      // （fail-closed，对齐 FXV_REPO_ALLOWLIST/scope 门惯例；防止 multiuser 部署忘配时
+      // 可猜测的 bootstrap subject（fixture:<pilot 操作员名>）被用于登录）
+      if (env.MU_ALLOW_FIXTURE_LOGIN !== '1') {
+        return sendJson(res, 403, { error: { reason: 'fixture_login_disabled',
+          detail: 'fixture 身份提供商仅开发/测试用——需显式 MU_ALLOW_FIXTURE_LOGIN=1' } });
       }
       const user = await store.getUserByIdentity('fixture', subject);
       if (!user) return sendJson(res, 401, { error: { reason: 'identity_unknown',
@@ -303,7 +307,8 @@ export async function muApi(req, res, ctx) {
     // ── PR 快照播种（fixture 端点：仅 MU_FIXTURES 开启时可用——dev/test 数据面，
     //    非产品契约；真实 PR 数据来自 GitHub App webhook，为未完成项） ──
     if (p === '/api/mu/fixtures/pr' && req.method === 'POST') {
-      if (env.MU_FIXTURES === '0') return sendJson(res, 403, { error: { reason: 'fixtures_disabled' } });
+      // PR248 复核 P1 修复：fixture 播种端点默认【关闭】——须显式 MU_FIXTURES=1
+      if (env.MU_FIXTURES !== '1') return sendJson(res, 403, { error: { reason: 'fixtures_disabled' } });
       if (!csrfOk()) return sendJson(res, 403, { error: { reason: 'csrf_required' } });
       const body = await json();
       const g = await guard('read_pull_request', { repoId: body.repo_id });
@@ -425,7 +430,8 @@ export async function muApi(req, res, ctx) {
       return sendJson(res, 200, { jobs: rows });
     }
     if (p === '/api/mu/jobs/tick' && req.method === 'POST') {
-      if (env.MU_FIXTURES === '0') return sendJson(res, 403, { error: { reason: 'fixtures_disabled' } });
+      // PR248 复核 P1 修复：fixture 执行器触发默认【关闭】——须显式 MU_FIXTURES=1
+      if (env.MU_FIXTURES !== '1') return sendJson(res, 403, { error: { reason: 'fixtures_disabled' } });
       if (!csrfOk()) return sendJson(res, 403, { error: { reason: 'csrf_required' } });
       const g = await guard('read_repository'); // 触发执行器须为 active 成员
       if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
