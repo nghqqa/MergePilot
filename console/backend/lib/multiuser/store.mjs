@@ -280,11 +280,11 @@ export async function createMuStore({ pool, env = process.env } = {}) {
   // ── Beta Identity Wave 2A：OAuth flow / 持久会话 / 邀请（全部摘要存储） ──
   const sha256Of = (v) => crypto.createHash('sha256').update(String(v)).digest('hex');
 
-  async function insertOAuthFlow({ stateHash, inviteId = null, ttlMs = 10 * 60_000 }) {
+  async function insertOAuthFlow({ stateHash, corrHash = null, inviteId = null, ttlMs = 10 * 60_000 }) {
     const r = await q(
-      `INSERT INTO mu.oauth_flow (state_hash, invite_id, expires_at)
-       VALUES ($1,$2, now() + ($3 || ' milliseconds')::interval) RETURNING *`,
-      [stateHash, inviteId, String(ttlMs)]);
+      `INSERT INTO mu.oauth_flow (state_hash, corr_hash, invite_id, expires_at)
+       VALUES ($1,$2,$3, now() + ($4 || ' milliseconds')::interval) RETURNING *`,
+      [stateHash, corrHash, inviteId, String(ttlMs)]);
     return r.rows[0];
   }
   // 单次消费：consumed_at CAS——0 行=不存在/已消费/已过期
@@ -366,14 +366,15 @@ export async function createMuStore({ pool, env = process.env } = {}) {
         WHERE i.invite_id=$1`, [inviteId]);
     return r.rows[0] ?? null;
   }
-  // 可认领邀请匹配：优先精确 subject，其次 login 句柄（身份键仍是 subject）
-  async function findClaimableInvitation({ subject = null, login = null }) {
+  // Wave 2A.1：认领只按 GitHub 数字 id（expected_subject）——login 句柄不可作为
+  // 授权条件（GitHub handle 可夺注：原持有人改名后他人可注册同名，构成认领竞态）。
+  // expected_login 仅保留为展示/预筛选字段。存量 login-only 邀请 fail-closed 不可认领。
+  async function findClaimableInvitation({ subject = null }) {
+    if (!subject) return null;
     const r = await q(
       `SELECT * FROM mu.invitation
-        WHERE claimed_at IS NULL AND expires_at > now()
-          AND ( ($1::text IS NOT NULL AND expected_subject = $1)
-             OR ($2::text IS NOT NULL AND expected_login  = $2) )
-        ORDER BY created_at LIMIT 1`, [subject, login]);
+        WHERE claimed_at IS NULL AND expires_at > now() AND expected_subject = $1
+        ORDER BY created_at LIMIT 1`, [subject]);
     return r.rows[0] ?? null;
   }
   async function claimInvitation(inviteId, userId) {

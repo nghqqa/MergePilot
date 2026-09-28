@@ -19,7 +19,8 @@ import { githubAppStatus,
 import { safeEqual } from '../session.mjs';
 import { oauthConfig, newState, buildAuthorizeUrl, exchangeForIdentity } from './oauth.mjs';
 import { issueMuSession, resolveMuSession, muCsrfOk, rotateMuSession,
-         muTokenFromCookieHeader, muClearCookies } from './session.mjs';
+         muTokenFromCookieHeader, muClearCookies,
+         muCorrCookie, muCorrClear, muCorrFromCookieHeader, appendCorrClear } from './session.mjs';
 
 // pg 解析：容器/镜像内走标准 node_modules；CI/主机测试进程回退到 test/support
 // 安装的 dev-only pg（与 cchain/wiring.mjs loadPg 同一惯例——CI runner 无根 junction）。
@@ -125,7 +126,8 @@ export async function muApi(req, res, ctx) {
   ]);
   const redirectLoginError = (reason) => {
     const r = LOGIN_ERROR_WHITELIST.has(reason) ? reason : 'login_failed';
-    res.writeHead(302, { Location: `/multiuser?mu_login_error=${r}` });
+    res.writeHead(302, { Location: `/multiuser?mu_login_error=${r}`,
+      'Set-Cookie': muCorrClear() }); // 失败路径清理 correlation cookie（一次性语义）
     res.end();
   };
 
@@ -154,12 +156,16 @@ export async function muApi(req, res, ctx) {
       inviteId = inv.invite_id;
     }
     const state = newState();
+    const corr = crypto.randomBytes(32).toString('base64url'); // login-CSRF 防护：一次性 correlation
+    const ttlMs = Number(env.MU_OAUTH_FLOW_TTL_MS || 10 * 60_000);
     await store.insertOAuthFlow({
       stateHash: crypto.createHash('sha256').update(state).digest('hex'),
+      corrHash: crypto.createHash('sha256').update(corr).digest('hex'),
       inviteId,
-      ttlMs: Number(env.MU_OAUTH_FLOW_TTL_MS || 10 * 60_000),
+      ttlMs,
     });
     await store.auditPlatform('OAUTH_FLOW_STARTED', { detail: { invite_bound: Boolean(inviteId) } });
+    res.setHeader('Set-Cookie', muCorrCookie(corr, ttlMs));
     return sendJson(res, 200, { authorize_url: buildAuthorizeUrl(cfg, state) });
   }
 
@@ -170,9 +176,14 @@ export async function muApi(req, res, ctx) {
     const code = String(q.code ?? '');
     const stateHash = state ? crypto.createHash('sha256').update(state).digest('hex') : '';
     const flow = stateHash ? await store.consumeOAuthFlow(stateHash) : null;
-    if (!flow) {
+    // Wave 2A.1：correlation cookie 必须与 flow 内摘要匹配（缺失/错配/跨浏览器/
+    // 存量 2A 无摘要 flow → 统一 state_invalid，不泄露区分信息）
+    const corr = muCorrFromCookieHeader(req.headers.cookie);
+    const corrOk = flow && flow.corr_hash && corr
+      && crypto.createHash('sha256').update(corr).digest('hex') === flow.corr_hash;
+    if (!flow || !corrOk) {
       await store.auditPlatform('OAUTH_FLOW_REJECTED', { detail: { reason: 'state_invalid' } });
-      return redirectLoginError('state_invalid'); // 不存在/已消费(重放)/已过期 统一同因
+      return redirectLoginError('state_invalid'); // 不存在/已消费(重放)/已过期/correlation 失配 统一同因
     }
     let identity;
     try {
@@ -188,8 +199,8 @@ export async function muApi(req, res, ctx) {
     if (!user) {
       const inv = flow.invite_id ? await store.getInvitation(flow.invite_id) : null;
       const usable = inv && !inv.claimed_at && inv.expires_at > new Date()
-        && (inv.expected_subject === identity.subject || inv.expected_login === identity.login) ? inv : null;
-      const claim = usable ?? await store.findClaimableInvitation({ subject: identity.subject, login: identity.login });
+        && inv.expected_subject === identity.subject ? inv : null;
+      const claim = usable ?? await store.findClaimableInvitation({ subject: identity.subject });
       if (!claim) {
         await store.auditPlatform('OAUTH_FLOW_REJECTED', { detail: { reason: 'not_invited' } });
         return redirectLoginError('not_invited'); // 无公共自动注册
@@ -225,6 +236,7 @@ export async function muApi(req, res, ctx) {
       detail: { flow_id: flow.flow_id } });
     await store.audit('MU_LOGIN', { tenantId, actorUserId: user.user_id,
       detail: { provider: 'github-oauth', subject_prefix: identity.subject.split(':').pop().slice(0, 8) } });
+    res.setHeader('Set-Cookie', appendCorrClear(sess.setCookie)); // 成功路径清理 correlation
     res.writeHead(302, { Location: '/multiuser' }); // 固定落地，不采纳任何请求参数
     return res.end();
   }
@@ -273,14 +285,14 @@ export async function muApi(req, res, ctx) {
       const token = muTokenFromCookieHeader(req.headers.cookie);
       const revoked = await store.revokeSessionByToken(token, 'logout');
       await store.auditPlatform('SESSION_REVOKED', { actorUserId: mu.userId, detail: { revoked } });
-      res.setHeader('Set-Cookie', muClearCookies());
+      res.setHeader('Set-Cookie', appendCorrClear(muClearCookies()));
       return sendJson(res, 200, { ok: true, revoked });
     }
     if (p === '/api/mu/auth/sessions/revoke-all' && req.method === 'POST') {
       if (!csrfOk()) return sendJson(res, 403, { error: { reason: 'csrf_required' } });
       const n = await store.revokeAllSessionsForUser(mu.userId, 'revoke_all');
       await store.auditPlatform('SESSIONS_REVOKED_ALL', { actorUserId: mu.userId, detail: { count: n } });
-      res.setHeader('Set-Cookie', muClearCookies());
+      res.setHeader('Set-Cookie', appendCorrClear(muClearCookies()));
       return sendJson(res, 200, { ok: true, revoked: n });
     }
 
@@ -299,6 +311,9 @@ export async function muApi(req, res, ctx) {
       if (!MU_ROLES.includes(role)) {
         return sendJson(res, 400, { error: { reason: 'role(五角色词汇) required' } });
       }
+      // Wave 2A.1：生产邀请必须绑定 GitHub 数字 user id（handle 可夺注——login 句柄
+      // 仅作展示/预筛选，不可作为授权条件）。存量 login-only 邀请 fail-closed 不可认领，
+      // 运营迁移=以数字 id 重建邀请（见 PR 迁移说明）。
       let expectedSubject = null;
       if (body.expected_subject) {
         const digits = String(body.expected_subject).replace(/^github-oauth:/, '');
@@ -306,11 +321,11 @@ export async function muApi(req, res, ctx) {
           return sendJson(res, 400, { error: { reason: 'expected_subject 须为 GitHub 数字 id（或 github-oauth:<id>）' } });
         }
         expectedSubject = `github-oauth:${digits}`;
+      } else {
+        return sendJson(res, 400, { error: { reason: 'expected_subject_required',
+          detail: '邀请必须绑定 GitHub 数字 user id（expected_subject）；login 句柄仅可选作展示（expected_login）' } });
       }
       const expectedLogin = body.expected_login ? String(body.expected_login) : null;
-      if (!expectedSubject && !expectedLogin) {
-        return sendJson(res, 400, { error: { reason: 'expected_subject 或 expected_login 至少一项' } });
-      }
       const inv = await store.createInvitation({ tenantId: mu.tenantId, role,
         expectedSubject, expectedLogin, note: body.note ? String(body.note).slice(0, 200) : null,
         createdBy: mu.userId, ttlMs: Math.min(Number(body.ttl_minutes || 1440), 1440) * 60_000 });

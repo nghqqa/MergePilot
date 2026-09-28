@@ -313,6 +313,22 @@ export const MU_MIGRATIONS = [
       `CREATE INDEX IF NOT EXISTS mu_invitation_claim_idx ON mu.invitation (tenant_id, claimed_at)`,
     ],
   },
+  {
+    // Beta Identity Wave 2A.1：login-CSRF 收尾——OAuth flow 增 correlation cookie 摘要。
+    //  * start 时签发一次性 mu_oauth_corr cookie（HttpOnly/SameSite=Lax/Path=/，
+    //    prod 强制 Secure），其 sha256 存 corr_hash；callback 必须同时匹配
+    //    state 摘要与 correlation 摘要——跨浏览器/缺失/错配/重放一律 state_invalid；
+    //  * 存量 2A flow（corr_hash NULL）：callback 拒绝（fail-closed——旧 flow 仅存活
+    //    ≤10min，重发起即可，无迁移负担）；
+    //  * 回滚：ALTER TABLE mu.oauth_flow DROP COLUMN IF EXISTS corr_hash;
+    //    DELETE FROM mu.schema_migrations WHERE version=5;（移除后 callback 校验
+    //    分支自然失效需同版本代码回滚——纯加列向下兼容存储层）。
+    version: 5,
+    name: 'mu_oauth_correlation',
+    sql: [
+      `ALTER TABLE mu.oauth_flow ADD COLUMN IF NOT EXISTS corr_hash TEXT`,
+    ],
+  },
 ];
 
 export const MU_SCHEMA_LATEST = MU_MIGRATIONS[MU_MIGRATIONS.length - 1].version;
