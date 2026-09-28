@@ -408,6 +408,153 @@ export const MU_MIGRATIONS = [
        END $$`,
     ],
   },
+  {
+    // Wave 3 PR-A：审查编排数据模型（七个实体 + 复合 FK 防跨 tenant/repo/pr 组合）。
+    // 回滚：DELETE FROM mu.schema_migrations WHERE version = 7; 再 DROP 七表与
+    // mu_pull_request_composite_uk（纯新增，向下兼容）。
+    // 契约要点：
+    //  * review_run UNIQUE(tenant,repo,pr,head_sha) —— 同 PR 新 head 必建新 run，
+    //    旧 head 结果永不被覆盖（查询按 head 隔离）；
+    //  * 状态机 13 态见 orchestration.mjs RUN_STATES（DB CHECK 双保险）；
+    //  * 所有子表经 (tenant_id, repo_id, pr_id, run_id) 复合 FK 锚定父 run——
+    //    跨 tenant/repo/pr 的行在数据库层直接拒绝；
+    //  * dead_letter 只存引用（payload_ref），不存 payload 正文/代码/diff。
+    version: 7,
+    name: 'mu_review_orchestration',
+    sql: [
+      `ALTER TABLE mu.pull_request DROP CONSTRAINT IF EXISTS mu_pr_composite_uk`,
+      `ALTER TABLE mu.pull_request ADD CONSTRAINT mu_pr_composite_uk UNIQUE (tenant_id, repo_id, pr_id)`,
+      `CREATE TABLE IF NOT EXISTS mu.review_run (
+         run_id  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+         tenant_id UUID NOT NULL REFERENCES mu.tenant(tenant_id),
+         repo_id UUID NOT NULL REFERENCES mu.repository(repo_id),
+         pr_id   UUID NOT NULL,
+         head_sha TEXT NOT NULL,
+         status  TEXT NOT NULL DEFAULT 'RECEIVED' CHECK (status IN
+                 ('RECEIVED','REVIEW_QUEUED','REVIEWING','REVIEWED','FIX_QUEUED','FIXING',
+                  'VERIFY_QUEUED','VERIFYING','VERIFIED','REWORK_REQUIRED','BLOCKED',
+                  'FAILED','COMPLETED')),
+         trigger_source TEXT NOT NULL DEFAULT 'webhook' CHECK (trigger_source IN ('webhook','manual')),
+         requested_by UUID,
+         policy_version TEXT NOT NULL DEFAULT 'v1',
+         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+         updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+         UNIQUE (tenant_id, repo_id, pr_id, head_sha),
+         UNIQUE (tenant_id, repo_id, pr_id, run_id),
+         FOREIGN KEY (tenant_id, repo_id, pr_id)
+           REFERENCES mu.pull_request (tenant_id, repo_id, pr_id)
+       )`,
+      `CREATE TABLE IF NOT EXISTS mu.agent_attempt (
+         attempt_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+         run_id  UUID NOT NULL,
+         tenant_id UUID NOT NULL, repo_id UUID NOT NULL, pr_id UUID NOT NULL,
+         head_sha TEXT NOT NULL,
+         agent_role TEXT NOT NULL CHECK (agent_role IN ('leader','reviewer','fixer','verifier')),
+         attempt INT NOT NULL CHECK (attempt >= 1),
+         status TEXT NOT NULL DEFAULT 'RUNNING' CHECK (status IN ('RUNNING','DONE','FAILED','TIMEOUT','SKIPPED')),
+         provider TEXT NOT NULL CHECK (provider IN ('deterministic','llm','mock','fxv')),
+         actor_principal TEXT NOT NULL DEFAULT 'system:leader',
+         input_digest TEXT, output_digest TEXT,
+         model_id TEXT, prompt_version TEXT,
+         latency_ms INT, token_count INT,
+         error_code TEXT,
+         evidence_ref TEXT NOT NULL DEFAULT '',
+         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+         updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+         UNIQUE (run_id, agent_role, attempt),
+         UNIQUE (attempt_id, run_id),
+         FOREIGN KEY (tenant_id, repo_id, pr_id, run_id)
+           REFERENCES mu.review_run (tenant_id, repo_id, pr_id, run_id)
+       )`,
+      `CREATE TABLE IF NOT EXISTS mu.agent_finding (
+         finding_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+         attempt_id UUID NOT NULL,
+         run_id  UUID NOT NULL,
+         tenant_id UUID NOT NULL, repo_id UUID NOT NULL, pr_id UUID NOT NULL,
+         head_sha TEXT NOT NULL,
+         rule_id TEXT NOT NULL,
+         severity TEXT NOT NULL CHECK (severity IN ('P0','P1','P2','P3')),
+         confidence REAL NOT NULL DEFAULT 0 CHECK (confidence >= 0 AND confidence <= 1),
+         path TEXT NOT NULL,
+         line_start INT, line_end INT,
+         title TEXT NOT NULL,
+         evidence_ref TEXT NOT NULL DEFAULT '',
+         remediation TEXT NOT NULL DEFAULT '',
+         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+         UNIQUE (run_id, rule_id, path, line_start),
+         FOREIGN KEY (tenant_id, repo_id, pr_id, run_id)
+           REFERENCES mu.review_run (tenant_id, repo_id, pr_id, run_id),
+         FOREIGN KEY (attempt_id, run_id)
+           REFERENCES mu.agent_attempt (attempt_id, run_id)
+       )`,
+      `CREATE TABLE IF NOT EXISTS mu.fix_attempt (
+         fix_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+         run_id UUID NOT NULL,
+         tenant_id UUID NOT NULL, repo_id UUID NOT NULL, pr_id UUID NOT NULL,
+         head_sha TEXT NOT NULL,
+         attempt INT NOT NULL CHECK (attempt >= 1),
+         status TEXT NOT NULL DEFAULT 'PLANNED' CHECK (status IN ('PLANNED','DRY_RUN','FAILED','SKIPPED')),
+         mode TEXT NOT NULL DEFAULT 'dry_run' CHECK (mode IN ('dry_run')),
+         patch_digest TEXT,
+         artifact_ref TEXT,
+         evidence_ref TEXT NOT NULL DEFAULT '',
+         error_code TEXT,
+         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+         updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+         UNIQUE (run_id, attempt),
+         UNIQUE (fix_id, run_id),
+         FOREIGN KEY (tenant_id, repo_id, pr_id, run_id)
+           REFERENCES mu.review_run (tenant_id, repo_id, pr_id, run_id)
+       )`,
+      `CREATE TABLE IF NOT EXISTS mu.verification_attempt (
+         verify_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+         run_id UUID NOT NULL,
+         fix_id UUID NOT NULL,
+         tenant_id UUID NOT NULL, repo_id UUID NOT NULL, pr_id UUID NOT NULL,
+         head_sha TEXT NOT NULL,
+         attempt INT NOT NULL CHECK (attempt >= 1),
+         verdict TEXT NOT NULL CHECK (verdict IN ('PASS','FAIL','BLOCKED')),
+         evidence_ref TEXT NOT NULL DEFAULT '',
+         error_code TEXT,
+         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+         UNIQUE (run_id, attempt),
+         FOREIGN KEY (tenant_id, repo_id, pr_id, run_id)
+           REFERENCES mu.review_run (tenant_id, repo_id, pr_id, run_id),
+         FOREIGN KEY (fix_id, run_id)
+           REFERENCES mu.fix_attempt (fix_id, run_id)
+       )`,
+      `CREATE TABLE IF NOT EXISTS mu.orchestration_decision (
+         decision_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+         run_id UUID NOT NULL,
+         tenant_id UUID NOT NULL, repo_id UUID NOT NULL, pr_id UUID NOT NULL,
+         head_sha TEXT NOT NULL,
+         stage TEXT NOT NULL,
+         decision TEXT NOT NULL,
+         rationale_ref TEXT NOT NULL DEFAULT '',
+         actor_principal TEXT NOT NULL DEFAULT 'system:leader',
+         policy_version TEXT NOT NULL DEFAULT 'v1',
+         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+         FOREIGN KEY (tenant_id, repo_id, pr_id, run_id)
+           REFERENCES mu.review_run (tenant_id, repo_id, pr_id, run_id)
+       )`,
+      `CREATE TABLE IF NOT EXISTS mu.dead_letter (
+         dlq_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+         run_id UUID, tenant_id UUID, repo_id UUID, pr_id UUID, head_sha TEXT,
+         agent_role TEXT,
+         job_id UUID,
+         kind TEXT NOT NULL,
+         reason TEXT NOT NULL,
+         retry_count INT NOT NULL DEFAULT 0,
+         payload_ref TEXT,
+         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+         resolved_at TIMESTAMPTZ
+       )`,
+      `CREATE INDEX IF NOT EXISTS mu_review_run_pr_idx ON mu.review_run (tenant_id, repo_id, pr_id, created_at DESC)`,
+      `CREATE INDEX IF NOT EXISTS mu_agent_attempt_run_idx ON mu.agent_attempt (run_id, agent_role, attempt)`,
+      `CREATE INDEX IF NOT EXISTS mu_agent_finding_run_idx ON mu.agent_finding (run_id, severity)`,
+      `CREATE INDEX IF NOT EXISTS mu_dead_letter_open_idx ON mu.dead_letter (created_at DESC) WHERE resolved_at IS NULL`,
+    ],
+  },
 ];
 
 export const MU_SCHEMA_LATEST = MU_MIGRATIONS[MU_MIGRATIONS.length - 1].version;

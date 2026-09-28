@@ -96,9 +96,13 @@ try {
   // 凭据红线：核心表无任何 token/secret 形状列
   const cols = (await pool.query(
     `SELECT table_name, column_name FROM information_schema.columns WHERE table_schema='mu'`)).rows;
-  // Wave 2A 起允许 *_hash 摘要列（sha256，非明文凭据）；明文形状列仍必须为零
-  const secretCols = cols.filter((c) => /token|secret|password|key/i.test(c.column_name) && !/_hash$/.test(c.column_name));
-  ok('MS9 schema 零明文凭据列（允许 *_hash 摘要列）', secretCols.length === 0, secretCols);
+  // Wave 2A 起允许 *_hash 摘要列（sha256，非明文凭据）；明文形状列仍必须为零。
+  // Wave 3 PR-A 追加精确白名单：mu.agent_attempt.token_count = LLM 用量计数
+  // （INT 计数器，语义为"消耗了多少 token"，非凭据材料——正则形状命中但非明文凭据）。
+  const SECRET_COL_ALLOWLIST = new Set(['token_count']);
+  const secretCols = cols.filter((c) => /token|secret|password|key/i.test(c.column_name)
+    && !/_hash$/.test(c.column_name) && !SECRET_COL_ALLOWLIST.has(c.column_name));
+  ok('MS9 schema 零明文凭据列（允许 *_hash 摘要列 + 精确白名单）', secretCols.length === 0, secretCols);
 
   // ── MS*：membership 撤销语义 ──
   await store.revokeMembership(tA.tenant_id, uA.user_id);
