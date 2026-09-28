@@ -41,16 +41,21 @@ export default function MultiUserPage() {
   const [prDetail, setPrDetail] = useState(null);
   const [actionMsg, setActionMsg] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [providers, setProviders] = useState(null);
 
   const refresh = useCallback(async () => {
     setLoading(true); setError(null); setActionMsg(null);
     try {
       const s = await muGet('/api/mu/session');
+      const pv = await muGet('/api/mu/auth/providers').catch(() => null);
+      if (pv?.status === 200) setProviders(pv.body);
       if (s.status === 200 && s.body?.user) {
         setSession(s.body); setNotEnabled(false);
         const [m, r] = await Promise.all([muGet('/api/mu/members'), muGet('/api/mu/repositories')]);
         if (m.status === 200) setMembers(m.body?.members ?? []);
         if (r.status === 200) setRepos(r.body?.repositories ?? []);
+      } else if (s.status === 401) {
+        setSession(null); setError(null); // 未登录（非错误态）——显示登录盒
       } else if (s.body?.service_state === 'multiuser_not_enabled') {
         setNotEnabled(true); setSession(null);
       } else {
@@ -103,6 +108,35 @@ export default function MultiUserPage() {
       {notEnabled ? (
         <Alert type="info" showIcon message="多用户面未启用"
           description="MU_MODE != multiuser（当前为 legacy 模式）。启用需设置 MU_MODE=multiuser 并配置 CONSOLE_PG_DSN——本页不显示任何推断数据。" />
+      ) : null}
+
+      {!session && !notEnabled && !error ? (
+        <div className="panel" style={{ padding: 'var(--sp-4)', marginBottom: 16 }}>
+          <Space direction="vertical" size="small">
+            <b>登录多用户面</b>
+            <Button type="primary" disabled={providers?.github?.configured !== true}
+              onClick={async () => {
+                const r = await muGet('/api/mu/auth/oauth/github/start');
+                if (r.status === 200 && r.body?.authorize_url) window.location.href = r.body.authorize_url;
+              }}>
+              使用 GitHub 登录
+            </Button>
+            {providers?.github && providers.github.configured === false ? (
+              <Typography.Text type="secondary">
+                GitHub OAuth 未配置（configured:false，fail-closed）——需 MU_GITHUB_OAUTH_CLIENT_ID/_CLIENT_SECRET/_CALLBACK_URL。
+              </Typography.Text>
+            ) : null}
+            {providers?.fixture?.configured ? <Typography.Text type="secondary">fixture 登录通道开启（测试配置）。</Typography.Text> : null}
+            {new URLSearchParams(window.location.search).get('mu_login_error') ? (
+              <Alert type="warning" showIcon message={`登录未完成：${
+                ({ not_invited: '身份未被邀请（无公共自动注册）', state_invalid: 'state 无效或已使用（请重新发起）',
+                   state_expired: '流程已过期', oauth_exchange_failed: 'GitHub 授权交换失败',
+                   oauth_identity_invalid: 'GitHub 身份读取失败', oauth_not_configured: 'OAuth 未配置',
+                   no_active_membership: '无有效成员关系', user_disabled: '账户已停用' })[new URLSearchParams(window.location.search).get('mu_login_error')]
+                  ?? new URLSearchParams(window.location.search).get('mu_login_error')}`} />
+            ) : null}
+          </Space>
+        </div>
       ) : null}
 
       {error ? (

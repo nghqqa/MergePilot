@@ -14,9 +14,12 @@ import crypto from 'node:crypto';
 import { createRequire } from 'node:module';
 import { createMuStore } from './store.mjs';
 import { authorize, roleActions, MU_ROLES } from './authz.mjs';
-import { githubOAuthStatus, githubAppStatus,
+import { githubAppStatus,
   fixtureChangedExcerpt, fixtureRagSearch, fixtureReviewRun, fixtureRepairPush } from './provider.mjs';
-import { createMuSession, safeEqual } from '../session.mjs';
+import { safeEqual } from '../session.mjs';
+import { oauthConfig, newState, buildAuthorizeUrl, exchangeForIdentity } from './oauth.mjs';
+import { issueMuSession, resolveMuSession, muCsrfOk, rotateMuSession,
+         muTokenFromCookieHeader, muClearCookies } from './session.mjs';
 
 // pg 解析：容器/镜像内走标准 node_modules；CI/主机测试进程回退到 test/support
 // 安装的 dev-only pg（与 cchain/wiring.mjs loadPg 同一惯例——CI runner 无根 junction）。
@@ -96,8 +99,8 @@ export async function muApi(req, res, ctx) {
       if (!membership || !tenant) {
         return sendJson(res, 403, { error: { reason: 'no_active_membership' } });
       }
-      const sess = createMuSession({ login: user.login, userId: user.user_id,
-        tenantId: tenant.tenant_id, role: membership.role, provider: 'fixture' });
+      const sess = await issueMuSession(store, { userId: user.user_id,
+        tenantId: tenant.tenant_id, login: user.login, role: membership.role, provider: 'fixture' });
       res.setHeader('Set-Cookie', sess.setCookie);
       await store.audit('MU_LOGIN', { tenantId: tenant.tenant_id, actorUserId: user.user_id,
         detail: { provider: 'fixture', subject_prefix: subject.slice(0, 12) } });
@@ -107,27 +110,130 @@ export async function muApi(req, res, ctx) {
         role: membership.role });
     }
     if (provider === 'github') {
-      // GitHub OAuth 流程为设计保留位（两条独立身份流程之一）；本切片未接真实
-      // GitHub——fail-closed 明示，不伪装已实现。
-      return sendJson(res, 501, { error: { reason: 'oauth_provider_not_configured',
-        detail: 'GitHub OAuth 登录流程保留（见 PR 未完成项）；本版本仅 fixture 身份提供商' } });
+      // Wave 2A：GitHub 登录走 authorization-code 浏览器流程——入口为
+      // GET /api/mu/auth/oauth/github/start（本 JSON 端点不再直连）
+      return sendJson(res, 409, { error: { reason: 'use_oauth_flow',
+        detail: 'GitHub 登录请走 GET /api/mu/auth/oauth/github/start（authorization-code 流程）' } });
     }
     return sendJson(res, 400, { error: { reason: 'unknown_provider' } });
   }
 
-  // GitHub OAuth 流程启动端点（流程保留位；免会话——流程起点）。真实接入为未完成项，
-  // 永远如实 501，不伪装可配置。
-  if (p === '/api/mu/auth/oauth/github/start' && req.method === 'GET') {
-    const st = githubOAuthStatus(env);
-    return sendJson(res, 501, { reason: st.reason, flow: 'github_oauth', note: st.note });
+  // ── GitHub OAuth（Wave 2A：真实 authorization-code 流程；免会话——流程起点/回跳） ──
+  const LOGIN_ERROR_WHITELIST = new Set([
+    'not_invited', 'no_active_membership', 'state_invalid', 'state_expired',
+    'oauth_exchange_failed', 'oauth_identity_invalid', 'oauth_not_configured', 'user_disabled',
+  ]);
+  const redirectLoginError = (reason) => {
+    const r = LOGIN_ERROR_WHITELIST.has(reason) ? reason : 'login_failed';
+    res.writeHead(302, { Location: `/multiuser?mu_login_error=${r}` });
+    res.end();
+  };
+
+  // 身份提供商状态（无秘密；配置缺失如实 configured:false）
+  if (p === '/api/mu/auth/providers' && req.method === 'GET') {
+    const cfg = oauthConfig(env);
+    return sendJson(res, 200, {
+      github: { configured: cfg.configured, ...(cfg.configured ? {} : { reason: cfg.reason }),
+        callback_url: cfg.callbackUrl || null, scope: cfg.scope },
+      fixture: { configured: env.MU_ALLOW_FIXTURE_LOGIN === '1' },
+    });
   }
 
-  // ── 以下全部需要多用户会话 ──
-  const auth = await requireSession();
-  if (!auth) return sendJson(res, 401, { error: { reason: 'unauthorized' } });
-  const mu = auth.mu ?? null;
-  if (!mu) return sendJson(res, 403, { error: { reason: 'multiuser_session_required',
-    detail: '该端点需要 /api/mu/auth/login 建立的多用户会话' } });
+  if (p === '/api/mu/auth/oauth/github/start' && req.method === 'GET') {
+    const cfg = oauthConfig(env);
+    if (!cfg.configured) {
+      return sendJson(res, 503, { error: { reason: 'oauth_not_configured',
+        detail: '需 MU_GITHUB_OAUTH_CLIENT_ID/_CLIENT_SECRET/_CALLBACK_URL 三项显式配置（fail-closed）' } });
+    }
+    let inviteId = null;
+    if (q.invite) {
+      const inv = await store.getInvitation(String(q.invite));
+      if (!inv || inv.claimed_at || inv.expires_at <= new Date()) {
+        return sendJson(res, 404, { error: { reason: 'invitation_not_found' } });
+      }
+      inviteId = inv.invite_id;
+    }
+    const state = newState();
+    await store.insertOAuthFlow({
+      stateHash: crypto.createHash('sha256').update(state).digest('hex'),
+      inviteId,
+      ttlMs: Number(env.MU_OAUTH_FLOW_TTL_MS || 10 * 60_000),
+    });
+    await store.auditPlatform('OAUTH_FLOW_STARTED', { detail: { invite_bound: Boolean(inviteId) } });
+    return sendJson(res, 200, { authorize_url: buildAuthorizeUrl(cfg, state) });
+  }
+
+  if (p === '/api/mu/auth/oauth/github/callback' && req.method === 'GET') {
+    const cfg = oauthConfig(env);
+    if (!cfg.configured) return redirectLoginError('oauth_not_configured');
+    const state = String(q.state ?? '');
+    const code = String(q.code ?? '');
+    const stateHash = state ? crypto.createHash('sha256').update(state).digest('hex') : '';
+    const flow = stateHash ? await store.consumeOAuthFlow(stateHash) : null;
+    if (!flow) {
+      await store.auditPlatform('OAUTH_FLOW_REJECTED', { detail: { reason: 'state_invalid' } });
+      return redirectLoginError('state_invalid'); // 不存在/已消费(重放)/已过期 统一同因
+    }
+    let identity;
+    try {
+      if (!code) throw new Error('missing_code');
+      identity = await exchangeForIdentity(cfg, code); // token 即弃
+    } catch (e) {
+      await store.auditPlatform('OAUTH_FLOW_REJECTED', { detail: { reason: 'oauth_exchange_failed' } });
+      return redirectLoginError('oauth_exchange_failed');
+    }
+    // 身份解析：既有用户（身份键=数字 id，login 改名不影响）或邀请认领（唯一注册通道）
+    let user = await store.getUserByIdentity('github-oauth', identity.subject);
+    let grantedTenantId = null; let grantedRole = null;
+    if (!user) {
+      const inv = flow.invite_id ? await store.getInvitation(flow.invite_id) : null;
+      const usable = inv && !inv.claimed_at && inv.expires_at > new Date()
+        && (inv.expected_subject === identity.subject || inv.expected_login === identity.login) ? inv : null;
+      const claim = usable ?? await store.findClaimableInvitation({ subject: identity.subject, login: identity.login });
+      if (!claim) {
+        await store.auditPlatform('OAUTH_FLOW_REJECTED', { detail: { reason: 'not_invited' } });
+        return redirectLoginError('not_invited'); // 无公共自动注册
+      }
+      // 不按 login 合并：login 撞名时后缀化（身份绑定只认 subject）
+      const existingByLogin = await store.getUserByLogin(identity.login);
+      const newLogin = existingByLogin ? `${identity.login}#gh${identity.subject.split(':').pop()}` : identity.login;
+      user = await store.ensureUser({ login: newLogin, displayName: identity.login });
+      await store.ensureIdentity({ userId: user.user_id, provider: 'github-oauth', subject: identity.subject });
+      const claimed = await store.claimInvitation(claim.invite_id, user.user_id);
+      if (!claimed) { // 并发认领竞态失败——按未邀请处理
+        await store.auditPlatform('OAUTH_FLOW_REJECTED', { detail: { reason: 'not_invited' } });
+        return redirectLoginError('not_invited');
+      }
+      await store.ensureMembership({ tenantId: claim.tenant_id, userId: user.user_id, role: claim.role });
+      await store.audit('MU_MEMBER_ONBOARDED', { tenantId: claim.tenant_id, actorUserId: user.user_id,
+        detail: { via: 'invitation', invite_id: claim.invite_id, role: claim.role } });
+      grantedTenantId = claim.tenant_id; grantedRole = claim.role;
+    }
+    const memberships = await store.listMembershipsOfUser(user.user_id);
+    const active = memberships.filter((m) => m.state === 'active');
+    let tenantId = grantedTenantId;
+    if (!tenantId) tenantId = active[0]?.tenant_id ?? null;
+    const membership = grantedTenantId ? { role: grantedRole } : active[0] ?? null;
+    if (!tenantId || !membership) {
+      await store.auditPlatform('OAUTH_FLOW_REJECTED', { detail: { reason: 'no_active_membership' } });
+      return redirectLoginError('no_active_membership');
+    }
+    const sess = await issueMuSession(store, { userId: user.user_id, tenantId,
+      login: user.login, role: membership.role, provider: 'github-oauth' });
+    res.setHeader('Set-Cookie', sess.setCookie);
+    await store.auditPlatform('OAUTH_FLOW_CONSUMED', { actorUserId: user.user_id,
+      detail: { flow_id: flow.flow_id } });
+    await store.audit('MU_LOGIN', { tenantId, actorUserId: user.user_id,
+      detail: { provider: 'github-oauth', subject_prefix: identity.subject.split(':').pop().slice(0, 8) } });
+    res.writeHead(302, { Location: '/multiuser' }); // 固定落地，不采纳任何请求参数
+    return res.end();
+  }
+
+  // ── 以下全部需要多用户会话（Wave 2A 起为 DB 持久会话：重启可恢复、撤销即时生效） ──
+  const muSession = await resolveMuSession(store, req);
+  if (!muSession) return sendJson(res, 401, { error: { reason: 'unauthorized' } });
+  const mu = { userId: muSession.user_id, tenantId: muSession.tenant_id,
+    login: muSession.login, sessionId: muSession.session_id };
 
   // 会话快照的 tenant 可能已被撤销/变更——每次请求现查 live membership
   const liveMembership = await store.getMembership(mu.tenantId, mu.userId);
@@ -136,10 +242,7 @@ export async function muApi(req, res, ctx) {
       detail: '会话绑定的成员关系已失效——重新登录/切换 tenant' } });
   }
 
-  const csrfOk = () => {
-    const token = String(req.headers['x-csrf-token'] ?? '');
-    return auth.csrf && token && safeEqual(token, auth.csrf);
-  };
+  const csrfOk = () => muCsrfOk(muSession, req);
 
   // 统一授权 guard：动作判定 + tenant 收窄 repo 解析 + Binding 要求（默认拒绝）
   async function guard(action, { repoId = null, needBinding = false } = {}) {
@@ -164,6 +267,61 @@ export async function muApi(req, res, ctx) {
   }
 
   try {
+    // ── 会话生命周期（Wave 2A） ──
+    if (p === '/api/mu/auth/logout' && req.method === 'POST') {
+      if (!csrfOk()) return sendJson(res, 403, { error: { reason: 'csrf_required' } });
+      const token = muTokenFromCookieHeader(req.headers.cookie);
+      const revoked = await store.revokeSessionByToken(token, 'logout');
+      await store.auditPlatform('SESSION_REVOKED', { actorUserId: mu.userId, detail: { revoked } });
+      res.setHeader('Set-Cookie', muClearCookies());
+      return sendJson(res, 200, { ok: true, revoked });
+    }
+    if (p === '/api/mu/auth/sessions/revoke-all' && req.method === 'POST') {
+      if (!csrfOk()) return sendJson(res, 403, { error: { reason: 'csrf_required' } });
+      const n = await store.revokeAllSessionsForUser(mu.userId, 'revoke_all');
+      await store.auditPlatform('SESSIONS_REVOKED_ALL', { actorUserId: mu.userId, detail: { count: n } });
+      res.setHeader('Set-Cookie', muClearCookies());
+      return sendJson(res, 200, { ok: true, revoked: n });
+    }
+
+    // ── 邀请（manage_membership；唯一 onboarding 通道——短期/单次/摘要存储） ──
+    if (p === '/api/mu/invitations' && req.method === 'GET') {
+      const g = await guard('manage_membership');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      return sendJson(res, 200, { invitations: await store.listInvitations(mu.tenantId) });
+    }
+    if (p === '/api/mu/invitations' && req.method === 'POST') {
+      if (!csrfOk()) return sendJson(res, 403, { error: { reason: 'csrf_required' } });
+      const g = await guard('manage_membership');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const body = await json();
+      const role = String(body.role || '');
+      if (!MU_ROLES.includes(role)) {
+        return sendJson(res, 400, { error: { reason: 'role(五角色词汇) required' } });
+      }
+      let expectedSubject = null;
+      if (body.expected_subject) {
+        const digits = String(body.expected_subject).replace(/^github-oauth:/, '');
+        if (!/^\d{1,20}$/.test(digits)) {
+          return sendJson(res, 400, { error: { reason: 'expected_subject 须为 GitHub 数字 id（或 github-oauth:<id>）' } });
+        }
+        expectedSubject = `github-oauth:${digits}`;
+      }
+      const expectedLogin = body.expected_login ? String(body.expected_login) : null;
+      if (!expectedSubject && !expectedLogin) {
+        return sendJson(res, 400, { error: { reason: 'expected_subject 或 expected_login 至少一项' } });
+      }
+      const inv = await store.createInvitation({ tenantId: mu.tenantId, role,
+        expectedSubject, expectedLogin, note: body.note ? String(body.note).slice(0, 200) : null,
+        createdBy: mu.userId, ttlMs: Math.min(Number(body.ttl_minutes || 1440), 1440) * 60_000 });
+      await store.audit('MU_INVITATION_CREATED', { tenantId: mu.tenantId, actorUserId: mu.userId,
+        detail: { invite_id: inv.invite_id, role,
+          bind: expectedSubject ? 'subject' : 'login', ttl_minutes: Math.min(Number(body.ttl_minutes || 1440), 1440) } });
+      return sendJson(res, 200, { ok: true, invitation: {
+        invite_id: inv.invite_id, role: inv.role, expires_at: inv.expires_at,
+        expected: expectedSubject ?? expectedLogin } });
+    }
+
     // ── 会话摘要（前端权限态唯一来源；按钮只反映权限，授权以后端为准） ──
     if (p === '/api/mu/session' && req.method === 'GET') {
       const tenant = await store.getTenant(mu.tenantId);
@@ -189,8 +347,8 @@ export async function muApi(req, res, ctx) {
       if (!target || !m || m.state !== 'active') {
         return sendJson(res, 403, { error: { reason: 'not_a_member' } });
       }
-      const sess = createMuSession({ login: mu.login, userId: mu.userId,
-        tenantId, role: m.role, provider: mu.provider });
+      const sess = await rotateMuSession(store, mu.sessionId, { tenantId, role: m.role });
+      if (!sess) return sendJson(res, 401, { error: { reason: 'unauthorized' } });
       res.setHeader('Set-Cookie', sess.setCookie);
       await store.audit('MU_TENANT_SWITCHED', { tenantId, actorUserId: mu.userId, detail: {} });
       return sendJson(res, 200, { ok: true, csrf: sess.csrf, role: m.role });

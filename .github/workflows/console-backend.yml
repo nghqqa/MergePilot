@@ -100,6 +100,10 @@ jobs:
       - name: RAG canonical integration (Phase 0a, 34 scenarios; self-boot pgvector)
         run: node console/backend/test/ragtrial-canonical.integration.mjs
 
+      # Beta Identity Wave 2A：OAuth 登录/持久会话/邀请（GitHub 全部走本地 mock adapter）
+      - name: MU OAuth + persistent session integration (Wave 2A, 29 scenarios)
+        run: node console/backend/test/mu-oauth.integration.mjs
+
       - name: Frontend build
         run: |
           npm ci --no-audit --no-fund
