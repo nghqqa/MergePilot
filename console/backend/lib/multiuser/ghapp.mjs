@@ -23,11 +23,19 @@ export function ghAppConfig(env = process.env) {
   const privateKey = env.MU_GITHUB_APP_PRIVATE_KEY || '';
   const webhookSecret = env.MU_GITHUB_WEBHOOK_SECRET || '';
   const installCallbackUrl = env.MU_GITHUB_APP_INSTALL_CALLBACK_URL || '';
-  const configured = Boolean(appId && privateKey && webhookSecret && installCallbackUrl);
-  return { configured, appId, webhookSecret, installCallbackUrl,
-    reason: configured ? null : 'github_app_not_configured',
+  // PR253 真实 E2E 暴露 P1 修复：install_url 硬编码为错误 slug 'margepilot-dev'
+  // ——改为显式配置 MU_GITHUB_APP_SLUG（GitHub App 的 URL slug，即
+  // https://github.com/settings/apps/{slug} 中的 {slug}）。缺失或 placeholder
+  // 时 configured:false fail-closed，不生成指向错误 App 的 URL。
+  const appSlug = String(env.MU_GITHUB_APP_SLUG || '').trim();
+  const slugValid = appSlug && !/^(your|change|test|placeholder|example|margepilot)/i.test(appSlug)
+    && /^[a-z0-9-]{1,60}$/i.test(appSlug);
+  const configured = Boolean(appId && privateKey && webhookSecret && installCallbackUrl && slugValid);
+  return { configured, appId, webhookSecret, installCallbackUrl, appSlug,
+    reason: configured ? null : (appId && privateKey && webhookSecret && installCallbackUrl
+      ? 'github_app_slug_not_configured' : 'github_app_not_configured'),
     permissions: GHAPP_PERMISSIONS, events: GHAPP_EVENTS,
-    installUrl: 'https://github.com/apps/margepilot-dev/installations/new' };
+    installUrl: slugValid ? `https://github.com/apps/${appSlug}/installations/new` : null };
 }
 
 // RS256 app JWT（真实路径；私钥仅驻内存）
