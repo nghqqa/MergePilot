@@ -76,7 +76,11 @@ export async function getLatestRunForPr(pool, { tenantId, repoId, prId }) {
  * 返回 {ok:true, run} 或 {ok:false, reason:'invalid_transition'|'cas_conflict'|'not_found'}。
  */
 export async function transitionRun(pool, { runId, from, to }) {
-  if (!RUN_TRANSITIONS[from]?.includes(to)) return { ok: false, reason: 'invalid_transition' };
+  // from 支持单态或数组（多前态 CAS）；每个前态都必须允许迁往 to（fail-closed）
+  const froms = Array.isArray(from) ? from : [from];
+  if (!froms.length || !froms.every((f) => RUN_TRANSITIONS[f]?.includes(to))) {
+    return { ok: false, reason: 'invalid_transition' };
+  }
   const r = await Q(pool,
     `UPDATE mu.review_run SET status=$2, updated_at=now()
       WHERE run_id=$1 AND status = ANY($3::text[])
