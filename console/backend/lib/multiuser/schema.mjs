@@ -329,6 +329,85 @@ export const MU_MIGRATIONS = [
       `ALTER TABLE mu.oauth_flow ADD COLUMN IF NOT EXISTS corr_hash TEXT`,
     ],
   },
+  {
+    // Wave 2B：GitHub App 只读安装 + 仓库绑定 + webhook 验签/去重。
+    // 红线：
+    //  * github_app_installation / repository_binding 零凭据列（不存 private key/
+    //    token/webhook secret——仅数字 id 与展示字段）；
+    //  * installation 为 tenant 域资产（安装回调时由发起租户认领）；复合 FK
+    //    (tenant_id, installation_id) 保证绑定不得指向他租户 installation；
+    //  * github_repo_id 全局唯一——同一 GitHub 仓库默认只允许一个租户绑定
+    //    （跨租户双绑定为设计禁止；DB 层 UNIQUE 直接拒绝）；
+    //  * 数字 id 为稳定主标识：owner/name 仅展示缓存，改名不产生第二逻辑仓库
+    //    （repository.provider_repo_id 存 String(github_repo_id)，ensure 幂等）；
+    //  * webhook_delivery.delivery_id PK 去重——重复 delivery 不重复写入/入队/审计；
+    //  * oauth_flow 增 purpose 列区分登录流与安装流（复用 state+corr 安全机制）；
+    //  * job kind 增 'event_sync'（webhook 仓库级事件异步处理）。
+    // 回滚：DROP TABLE mu.webhook_delivery, mu.repository_binding, mu.github_app_installation;
+    //   ALTER TABLE mu.oauth_flow DROP COLUMN IF EXISTS purpose;
+    //   ALTER TABLE mu.job DROP CONSTRAINT mu_job_kind_check2, ADD CONSTRAINT ... 原词表（或保留——加法枚举向下兼容）;
+    //   DELETE FROM mu.schema_migrations WHERE version=6;
+    version: 6,
+    name: 'mu_github_app_binding',
+    sql: [
+      `ALTER TABLE mu.oauth_flow ADD COLUMN IF NOT EXISTS purpose TEXT NOT NULL DEFAULT 'oauth_login'`,
+      `CREATE TABLE IF NOT EXISTS mu.github_app_installation (
+         installation_id BIGINT PRIMARY KEY,
+         tenant_id   UUID NOT NULL REFERENCES mu.tenant(tenant_id),
+         account_id  BIGINT NOT NULL,
+         account_login TEXT NOT NULL,
+         account_type  TEXT NOT NULL DEFAULT 'User',
+         app_id      BIGINT NOT NULL,
+         suspended_at TIMESTAMPTZ,
+         revoked_at  TIMESTAMPTZ,
+         created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+         updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+         UNIQUE (tenant_id, installation_id)
+       )`,
+      `CREATE TABLE IF NOT EXISTS mu.repository_binding (
+         binding_id  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+         tenant_id   UUID NOT NULL REFERENCES mu.tenant(tenant_id),
+         repo_id     UUID NOT NULL REFERENCES mu.repository(repo_id),
+         github_repo_id BIGINT NOT NULL,
+         owner       TEXT NOT NULL,
+         name        TEXT NOT NULL,
+         installation_id BIGINT NOT NULL,
+         default_branch TEXT,
+         binding_state TEXT NOT NULL DEFAULT 'active' CHECK (binding_state IN
+                     ('active','suspended','revoked','error')),
+         last_sync_at TIMESTAMPTZ,
+         revoked_at  TIMESTAMPTZ,
+         error_code  TEXT,
+         created_by  UUID,
+         created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+         updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+         UNIQUE (tenant_id, repo_id),
+         UNIQUE (github_repo_id),
+         FOREIGN KEY (tenant_id, installation_id)
+           REFERENCES mu.github_app_installation (tenant_id, installation_id)
+       )`,
+      `CREATE INDEX IF NOT EXISTS mu_binding_install_idx ON mu.repository_binding (installation_id, binding_state)`,
+      `CREATE TABLE IF NOT EXISTS mu.webhook_delivery (
+         delivery_id TEXT PRIMARY KEY,
+         tenant_id   UUID,
+         installation_id BIGINT,
+         event      TEXT NOT NULL,
+         received_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+         processed_at TIMESTAMPTZ,
+         state      TEXT NOT NULL DEFAULT 'received' CHECK (state IN
+                     ('received','processed','duplicate','rejected'))
+       )`,
+      `ALTER TABLE mu.job DROP CONSTRAINT IF EXISTS job_kind_check`,
+      `ALTER TABLE mu.job DROP CONSTRAINT IF EXISTS mu_job_kind_check`,
+      `ALTER TABLE mu.job ALTER COLUMN requested_by DROP NOT NULL`,
+      `DO $$ BEGIN
+         IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'mu_job_kind_check2') THEN
+           ALTER TABLE mu.job ADD CONSTRAINT mu_job_kind_check2 CHECK (kind IN
+             ('review_run','repair_push','event_sync'));
+         END IF;
+       END $$`,
+    ],
+  },
 ];
 
 export const MU_SCHEMA_LATEST = MU_MIGRATIONS[MU_MIGRATIONS.length - 1].version;

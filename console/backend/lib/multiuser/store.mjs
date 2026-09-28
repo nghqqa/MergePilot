@@ -385,6 +385,83 @@ export async function createMuStore({ pool, env = process.env } = {}) {
     return r.rows[0] ?? null;
   }
 
+  // ── Wave 2B：GitHub App installation / repository binding / webhook delivery ──
+  async function upsertInstallation({ installationId, tenantId, accountId, accountLogin, accountType = 'User', appId }) {
+    const r = await q(
+      `INSERT INTO mu.github_app_installation (installation_id, tenant_id, account_id, account_login, account_type, app_id)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       ON CONFLICT (installation_id) DO UPDATE SET
+         account_id = EXCLUDED.account_id, account_login = EXCLUDED.account_login,
+         account_type = EXCLUDED.account_type, updated_at = now()
+       RETURNING *`,
+      [installationId, tenantId, accountId, accountLogin, accountType, appId]);
+    return r.rows[0];
+  }
+  async function getInstallation(installationId) {
+    const r = await q(`SELECT * FROM mu.github_app_installation WHERE installation_id=$1`, [installationId]);
+    return r.rows[0] ?? null;
+  }
+  async function listInstallations(tenantId) {
+    const r = await q(
+      `SELECT * FROM mu.github_app_installation WHERE tenant_id=$1 ORDER BY created_at`, [tenantId]);
+    return r.rows;
+  }
+  async function setInstallationState(installationId, { suspended = null, revoked = null }) {
+    // 布尔语义：true→now()，false→NULL（清除）；无变化跳过
+    const sets = ['updated_at = now()'];
+    const params = [installationId];
+    if (suspended === true) sets.push('suspended_at = now()');
+    else if (suspended === false) sets.push('suspended_at = NULL');
+    if (revoked === true) sets.push('revoked_at = now()');
+    else if (revoked === false) sets.push('revoked_at = NULL');
+    const r = await q(`UPDATE mu.github_app_installation SET ${sets.join(', ')} WHERE installation_id=$1 RETURNING *`, params);
+    return r.rows[0] ?? null;
+  }
+  async function upsertRepositoryBinding({ tenantId, repoId, githubRepoId, owner, name, installationId, defaultBranch = null, createdBy = null }) {
+    const r = await q(
+      `INSERT INTO mu.repository_binding (tenant_id, repo_id, github_repo_id, owner, name, installation_id, default_branch, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+       ON CONFLICT (tenant_id, repo_id) DO UPDATE SET
+         github_repo_id = EXCLUDED.github_repo_id, owner = EXCLUDED.owner, name = EXCLUDED.name,
+         installation_id = EXCLUDED.installation_id, default_branch = EXCLUDED.default_branch,
+         binding_state = 'active', revoked_at = NULL, error_code = NULL, updated_at = now()
+       RETURNING *`,
+      [tenantId, repoId, githubRepoId, owner, name, installationId, defaultBranch, createdBy]);
+    return r.rows[0];
+  }
+  async function getBindingByRepo(tenantId, repoId) {
+    const r = await q(
+      `SELECT * FROM mu.repository_binding WHERE tenant_id=$1 AND repo_id=$2`, [tenantId, repoId]);
+    return r.rows[0] ?? null;
+  }
+  async function setBindingState(tenantId, repoId, state, errorCode = null) {
+    const r = await q(
+      `UPDATE mu.repository_binding SET binding_state=$3, error_code=$4,
+         revoked_at = CASE WHEN $3='revoked' THEN now() ELSE revoked_at END, updated_at=now()
+        WHERE tenant_id=$1 AND repo_id=$2 RETURNING *`,
+      [tenantId, repoId, state, errorCode]);
+    return r.rows[0] ?? null;
+  }
+  async function setBindingsStateForInstallation(installationId, state) {
+    const r = await q(
+      `UPDATE mu.repository_binding SET binding_state=$2,
+         revoked_at = CASE WHEN $2='revoked' THEN now() ELSE revoked_at END, updated_at=now()
+        WHERE installation_id=$1 RETURNING repo_id`, [installationId, state]);
+    return r.rows.length;
+  }
+  async function claimWebhookDelivery(deliveryId, { tenantId = null, installationId = null, event }) {
+    // 幂等去重：首次插入=received；冲突即重复
+    const r = await q(
+      `INSERT INTO mu.webhook_delivery (delivery_id, tenant_id, installation_id, event)
+       VALUES ($1,$2,$3,$4) ON CONFLICT (delivery_id) DO NOTHING RETURNING *`,
+      [deliveryId, tenantId, installationId, event]);
+    return r.rows[0] ?? null;
+  }
+  async function finishWebhookDelivery(deliveryId, state) {
+    await q(`UPDATE mu.webhook_delivery SET state=$2, processed_at=now() WHERE delivery_id=$1`,
+      [deliveryId, state]);
+  }
+
   async function listAudit(tenantId, { limit = 100 } = {}) {
     const r = await q(
       `SELECT a.seq, a.kind, a.created_at, u.login AS actor_login, a.detail
@@ -408,5 +485,8 @@ export async function createMuStore({ pool, env = process.env } = {}) {
     insertOAuthFlow, consumeOAuthFlow,
     createSession, findSessionByToken, rotateSession, revokeSessionByToken, revokeAllSessionsForUser,
     createInvitation, listInvitations, getInvitation, findClaimableInvitation, claimInvitation,
+    upsertInstallation, getInstallation, listInstallations, setInstallationState,
+    upsertRepositoryBinding, getBindingByRepo, setBindingState, setBindingsStateForInstallation,
+    claimWebhookDelivery, finishWebhookDelivery,
   };
 }
