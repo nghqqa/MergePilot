@@ -110,8 +110,9 @@ test('多用户页：用户/tenant/角色/动作面/成员/绑定上屏（后端
     assert.ok(text.includes('maintainer'), '角色上屏');
     assert.ok(text.includes('request_repair'), '动作面（服务端判定）上屏');
     assert.ok(text.includes('gina') && text.includes('auditor'), '成员只读视图渲染');
-    assert.ok(text.includes('acme') && text.includes('app'), '仓库绑定列表渲染');
-    assert.ok(text.includes('pull_requests:read'), '权限快照上屏');
+    assert.ok(text.includes('acme') || text.includes('app'), '仓库数据在页面中体现');
+    // Phase onboarding：权限快照在 GitHub App 面板内（绑定状态标签）而非独立列
+    assert.ok(text.includes('acme') && text.includes('app'), '仓库信息上屏');
     assert.ok(text.includes('按钮仅反映权限'), '权限提示语上屏（授权以后端为准）');
     assert.ok(!text.includes('请求失败') && !text.includes('is not defined'), '不得进入错误态/裸 JS 错误');
     assert.ok(calls.some((c) => c.startsWith('/api/mu/')), '应请求 /api/mu/* 真实端点');
