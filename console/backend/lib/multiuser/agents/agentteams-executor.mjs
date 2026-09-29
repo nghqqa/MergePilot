@@ -1,17 +1,22 @@
 // console/backend/lib/multiuser/agents/agentteams-executor.mjs — Wave 3.3：外部 AgentTeams 运行时 adapter。
 //
 // 来源（阶段 1 实证）：github.com/agentscope-ai/AgentTeams（Apache-2.0，v1.2.x）。
-// 调用契约（docs/usage/{project-workflow-api,resource-management}.md）：
-//  * PUT  /api/v1/workers/{name}        merge-patch 幂等创建/更新具名 Worker
+// 调用契约（docs/usage/{project-workflow-api,resource-management}.md；2026-09-29 真实 controller 223ddc2 实测修订）：
+//  * POST /api/v1/workers                创建具名 Worker（name 顶层；409=已存在）
+//  * PUT  /api/v1/workers/{name}         merge-patch 更新（update-only——对不存在 worker 404）
+//  * GET  /api/v1/workers                列表（存在性/完整性校验）
 //  * POST /api/v1/projects               创建项目（project_id 客户端指定，409 冲突）
 //  * POST /api/v1/projects/{id}/replan   任务图（taskId/title/assignedTo/dependsOn）
 //  * GET  /api/v1/projects/{id}/workflow?includeTasks=true  轮询状态
 //  * POST /api/v1/projects/{id}/tasks/{taskId}/cancel       幂等取消（submissionId 围栏）
 //  * Bearer 认证（K8s SA token 或 Matrix token——AGENTS_TOKEN 为部署级 secret，仅 env）
 //
-// 安全契约（任务书阶段 2/3）：
-//  * 默认 disabled（MU_EXECUTOR=internal）——零外部请求；未知值/缺配置/健康检查失败
-//    一律拒绝启用或回退 internal，绝不静默宣称 AgentTeams 已运行；
+// 安全契约（AgentTeams-first，2026-09-29 原始架构原则）：
+//  * 正式执行器=外部 AgentTeams（MU_EXECUTOR=agentteams）。未配置/未知值/internal
+//    未带显式降级开关 → kind:'rejected' fail-closed（调用方必须拒绝该轮次并留
+//    审计，绝不静默回退 internal）；
+//  * internal 仅 development/test/emergency 显式路径：
+//    MU_EXECUTOR=internal + MU_EXECUTOR_INTERNAL_ALLOW ∈ 三值之一；
 //  * MergePilot 的 DB/GitHub/LLM 凭据永不出站；任务载荷只含脱敏 finding 摘要
 //    （与 LLM egress 同白名单，≤2KiB/任务），无 diff/源码/webhook body/PII；
 //  * 外部输出必须过 schema（findings/verdict 白名单）——失败 fail-closed；
@@ -33,16 +38,54 @@ export const AT_LIMITS = Object.freeze({
   summaryMaxBytes: 16 * 1024,
 });
 
-/** 部署级配置解析：仅 MU_EXECUTOR/MU_AGENTTEAMS_BASE_URL/MU_AGENTTEAMS_TOKEN/MU_AGENTTEAMS_TIMEOUT_MS。 */
+/** internal 显式降级开关的合法 scope（production 不在其中——internal 非生产路径）。 */
+export const INTERNAL_ALLOW_SCOPES = Object.freeze(['development', 'test', 'emergency']);
+
+/**
+ * 部署级配置解析（AgentTeams-first fail-closed）。
+ * env 白名单：MU_EXECUTOR / MU_EXECUTOR_INTERNAL_ALLOW / MU_AGENTTEAMS_BASE_URL /
+ * MU_AGENTTEAMS_TOKEN / MU_AGENTTEAMS_TIMEOUT_MS / MU_AGENTTEAMS_RUNTIME / MU_AGENTTEAMS_MODEL。
+ * 返回三种之一：
+ *  * {kind:'agentteams', baseUrl, token, timeout, runtime, model} —— 正式路径
+ *  * {kind:'internal', internalScope} —— 仅显式降级（须 MU_EXECUTOR_INTERNAL_ALLOW）
+ *  * {kind:'rejected', reason} —— fail-closed：调用方必须拒绝执行，绝不回退
+ *    reason ∈ EXECUTOR_MODE_UNSET | EXECUTOR_MODE_INVALID | EXECUTOR_INTERNAL_NOT_ALLOWED
+ *           | AT_NOT_CONFIGURED | AT_BAD_URL
+ */
 export function resolveAgentTeamsConfig(env = process.env) {
-  const mode = String(env.MU_EXECUTOR ?? 'internal').trim();
-  if (mode !== 'agentteams') return { kind: 'internal' };
+  const mode = String(env.MU_EXECUTOR ?? '').trim();
+  if (!mode) return { kind: 'rejected', reason: 'EXECUTOR_MODE_UNSET' };
+  if (mode === 'internal') {
+    const scope = String(env.MU_EXECUTOR_INTERNAL_ALLOW ?? '').trim();
+    if (!INTERNAL_ALLOW_SCOPES.includes(scope)) return { kind: 'rejected', reason: 'EXECUTOR_INTERNAL_NOT_ALLOWED' };
+    return { kind: 'internal', internalScope: scope };
+  }
+  if (mode !== 'agentteams') return { kind: 'rejected', reason: 'EXECUTOR_MODE_INVALID' };
   const base = String(env.MU_AGENTTEAMS_BASE_URL ?? '').trim();
   const token = String(env.MU_AGENTTEAMS_TOKEN ?? '').trim();
-  if (!base || !token) return { kind: 'internal', reason: 'AT_NOT_CONFIGURED' };
-  if (!/^https?:\/\//.test(base)) return { kind: 'internal', reason: 'AT_BAD_URL' };
+  if (!base || !token) return { kind: 'rejected', reason: 'AT_NOT_CONFIGURED' };
+  if (!/^https?:\/\//.test(base)) return { kind: 'rejected', reason: 'AT_BAD_URL' };
   return { kind: 'agentteams', baseUrl: base.replace(/\/+$/, ''), token,
+    runtime: String(env.MU_AGENTTEAMS_RUNTIME ?? 'copaw').trim() || 'copaw',
+    model: String(env.MU_AGENTTEAMS_MODEL ?? 'deepseek-chat').trim() || 'deepseek-chat',
     timeout: Math.min(Number(env.MU_AGENTTEAMS_TIMEOUT_MS) || AT_LIMITS.pollTimeoutMs, 300_000) };
+}
+
+/** 执行器模式摘要（供 GET /api/mu/agent-policy 与前端——脱敏，永不含 token/完整 URL）。 */
+export function executorStatusSummary(env = process.env) {
+  const cfg = resolveAgentTeamsConfig(env);
+  if (cfg.kind === 'agentteams') {
+    let host = null;
+    try { host = new URL(cfg.baseUrl).host; } catch { host = null; }
+    return { mode: 'agentteams', production_path: true, base_host_summary: host,
+      runtime: cfg.runtime, model: cfg.model };
+  }
+  if (cfg.kind === 'internal') {
+    return { mode: 'internal', production_path: false, internal_scope: cfg.internalScope,
+      note: 'internal 执行器为开发/测试/应急路径，非生产执行器' };
+  }
+  return { mode: 'rejected', production_path: false, fail_reason: cfg.reason,
+    note: '正式路径要求 MU_EXECUTOR=agentteams；当前配置 fail-closed 拒绝执行' };
 }
 
 const atFetch = async (cfg, path, opts = {}, fetchImpl = fetch) => {
@@ -56,9 +99,9 @@ const atFetch = async (cfg, path, opts = {}, fetchImpl = fetch) => {
   } finally { clearTimeout(t); }
 };
 
-/** 健康检查（未启用/不可达/未授权 → 不启用；绝不静默宣称已运行）。 */
+/** 健康检查（非 agentteams 配置/不可达/未授权 → 不放行；绝不静默宣称已运行）。 */
 export async function agentTeamsHealthy(cfg, fetchImpl = fetch) {
-  if (cfg.kind !== 'agentteams') return { ok: false, reason: 'AT_DISABLED' };
+  if (cfg.kind !== 'agentteams') return { ok: false, reason: cfg.kind === 'rejected' ? cfg.reason : 'AT_DISABLED' };
   try {
     const r = await atFetch(cfg, '/api/v1/projects?limit=1', {}, fetchImpl);
     if (r.status === 401 || r.status === 403) return { ok: false, reason: 'AT_AUTH_FAILED' };
@@ -69,19 +112,58 @@ export async function agentTeamsHealthy(cfg, fetchImpl = fetch) {
   }
 }
 
-/** 幂等创建四个具名 Agent（merge-patch；不暴露端口、不挂 MCP、无凭据注入）。 */
+/**
+ * 幂等确保四个具名 Agent 就位（不暴露端口、不挂 MCP、无凭据注入）。
+ * 真实契约（2026-09-29 controller 223ddc2 实测）：POST /api/v1/workers 创建
+ * （PUT 对不存在 worker 404=update-only）。流程：GET 列表判存在 → 缺者 POST
+ * create、在者 PUT merge-patch 对齐 identity/model → 复查完整性（防假成功/半建，
+ * 不完整 → AT_WORKERS_INCOMPLETE fail-closed）。runtime/model 来自部署配置
+ * （cfg.runtime/cfg.model，如 copaw/deepseek-chat）——与目标集群对齐由部署方负责。
+ */
 export async function ensureFourAgents(cfg, { model, fetchImpl = fetch } = {}) {
   if (cfg.kind !== 'agentteams') return { ok: false, reason: 'AT_DISABLED' };
+  const runtime = String(cfg.runtime ?? 'copaw');
+  const workerModel = String(model ?? cfg.model ?? 'deepseek-chat');
+  const listWorkers = async () => {
+    const r = await atFetch(cfg, '/api/v1/workers', {}, fetchImpl);
+    if (!r.ok) return { ok: false, reason: `AT_WORKERS_LIST_HTTP_${r.status}` };
+    const j = await r.json().catch(() => null);
+    return { ok: true, names: new Set((j?.workers ?? []).map((w) => String(w?.name ?? ''))) };
+  };
+  let present;
+  try { present = await listWorkers(); } catch { return { ok: false, reason: 'AT_WORKERS_LIST_UNREACHABLE' }; }
+  if (!present.ok) return present;
   const created = [];
   for (const def of Object.values(AGENTTEAMS_WORKERS)) {
+    const spec = { runtime, model: workerModel, identity: def.identity,
+      state: 'Running', skills: [], mcpServers: [], expose: [] };
     try {
-      const r = await atFetch(cfg, `/api/v1/workers/${def.name}`, { method: 'PUT',
-        body: JSON.stringify({ spec: { runtime: 'qwenpaw', model: String(model ?? 'deepseek-flash'),
-          identity: def.identity, state: 'Running', skills: [], mcpServers: [], expose: [] } }) }, fetchImpl);
-      if (!r.ok && r.status !== 409) return { ok: false, reason: `AT_WORKER_HTTP_${r.status}`, worker: def.name };
-      created.push(def.name);
+      if (present.names.has(def.name)) {
+        const r = await atFetch(cfg, `/api/v1/workers/${def.name}`, { method: 'PUT',
+          body: JSON.stringify({ spec }) }, fetchImpl);
+        if (r.status === 404) {
+          // 真实 controller PUT 是 update-only：列表时在、更新时 404（半建/竞态）→ 转 POST 自愈
+          const rc = await atFetch(cfg, '/api/v1/workers', { method: 'POST',
+            body: JSON.stringify({ name: def.name, spec }) }, fetchImpl);
+          if (!rc.ok && rc.status !== 409) return { ok: false, reason: `AT_WORKER_HTTP_${rc.status}`, worker: def.name };
+          created.push(def.name);
+        } else if (!r.ok && r.status !== 409) {
+          return { ok: false, reason: `AT_WORKER_HTTP_${r.status}`, worker: def.name };
+        }
+      } else {
+        const r = await atFetch(cfg, '/api/v1/workers', { method: 'POST',
+          body: JSON.stringify({ name: def.name, spec }) }, fetchImpl);
+        if (!r.ok && r.status !== 409) return { ok: false, reason: `AT_WORKER_HTTP_${r.status}`, worker: def.name };
+        created.push(def.name);
+      }
     } catch { return { ok: false, reason: 'AT_WORKER_UNREACHABLE', worker: def.name }; }
   }
+  // 完整性复查：集群侧必须能看到全部四个具名 Agent
+  let after;
+  try { after = await listWorkers(); } catch { return { ok: false, reason: 'AT_WORKERS_LIST_UNREACHABLE' }; }
+  if (!after.ok) return after;
+  const missing = Object.values(AGENTTEAMS_WORKERS).map((d) => d.name).filter((n) => !after.names.has(n));
+  if (missing.length) return { ok: false, reason: 'AT_WORKERS_INCOMPLETE', missing };
   return { ok: true, created };
 }
 

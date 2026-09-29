@@ -21,14 +21,28 @@ let netCalls = 0;
 const noNet = async () => { netCalls++; throw new Error('MUST_NOT_CALL'); };
 
 // mock AgentTeams controller（注入 fetchImpl；Bearer 必带；状态可编程）
+const FOUR_NAMES = ['mergepilot-leader', 'mergepilot-reviewer', 'mergepilot-fixer', 'mergepilot-verifier'];
 function mkAtApi({ health = 200, projectStatus = 'completed', verifySummary = '{"verdict":"PASS","note":"ok"}',
   fixSummary = '{"suggestion":"参数化","patch_hint":"改写为占位"}', projectCreate = 201, replan = 200,
-  workerPut = 200, pollStatuses = null } = {}) {
+  workerPut = 200, pollStatuses = null, workerList = 'all' } = {}) {
+  const baseNames = workerList === 'all' ? FOUR_NAMES : workerList === 'incomplete'
+    ? FOUR_NAMES.slice(0, 3) : workerList === 'empty' ? [] : workerList;
+  const stubborn = workerList === 'stubborn'; // POST 201 但列表永不出现（假成功/半建）
+  const createdNow = new Set(); // POST-created names join subsequent listings（完整性复查语义）
   return async (url, opts = {}) => {
     netCalls++;
     const auth = String(opts.headers?.authorization ?? '');
     if (!auth.startsWith('Bearer ')) return { status: 401 };
     if (url.endsWith('/api/v1/projects?limit=1')) return { status: health, ok: health === 200, json: async () => ({ projects: [] }) };
+    if (url.endsWith('/api/v1/workers') && (!opts.method || opts.method === 'GET')) {
+      const names = stubborn ? baseNames : [...new Set([...baseNames, ...createdNow])];
+      return { status: 200, ok: true, json: async () => ({ workers: names.map((n) => ({ name: n })) }) };
+    }
+    if (url.endsWith('/api/v1/workers') && opts.method === 'POST') {
+      const body = JSON.parse(opts.body ?? '{}');
+      createdNow.add(body.name);
+      return { status: 201, ok: true, json: async () => ({ name: body.name, phase: 'Pending' }) };
+    }
     if (/\/api\/v1\/workers\/[\w-]+$/.test(url) && opts.method === 'PUT') {
       return { status: workerPut, ok: workerPut === 200 || workerPut === 409 };
     }
@@ -50,15 +64,30 @@ function mkAtApi({ health = 200, projectStatus = 'completed', verifySummary = '{
 const CFG = { kind: 'agentteams', baseUrl: 'http://at.test', timeout: 5_000 };
 const ENV_ON = { MU_EXECUTOR: 'agentteams', MU_AGENTTEAMS_BASE_URL: 'http://at.test', MU_AGENTTEAMS_TOKEN: 'at-tok' };
 
-// ── W1 配置解析与 disabled 默认零网络 ──
+// ── W1 配置解析（AgentTeams-first 三态：rejected / internal+显式 scope / agentteams）──
 netCalls = 0;
-ok('W1a 默认 internal', at.resolveAgentTeamsConfig({}).kind === 'internal');
-ok('W1b 未知值回退 internal+reason', at.resolveAgentTeamsConfig({ MU_EXECUTOR: 'chaos' }).kind === 'internal');
-ok('W1c 缺 token 拒绝', at.resolveAgentTeamsConfig({ MU_EXECUTOR: 'agentteams', MU_AGENTTEAMS_BASE_URL: 'http://x' }).reason === 'AT_NOT_CONFIGURED');
-ok('W1d 非 http(s) URL 拒绝', at.resolveAgentTeamsConfig({ MU_EXECUTOR: 'agentteams', MU_AGENTTEAMS_BASE_URL: 'ftp://x', MU_AGENTTEAMS_TOKEN: 't' }).reason === 'AT_BAD_URL');
-ok('W1e 合法配置', at.resolveAgentTeamsConfig(ENV_ON).kind === 'agentteams');
-const h = await at.agentTeamsHealthy(at.resolveAgentTeamsConfig({}), noNet);
-ok('W1f internal/disabled 健康检查零网络', netCalls === 0 && h.reason === 'AT_DISABLED');
+ok('W1a 未配置 → rejected fail-closed', at.resolveAgentTeamsConfig({}).kind === 'rejected'
+  && at.resolveAgentTeamsConfig({}).reason === 'EXECUTOR_MODE_UNSET');
+ok('W1b 未知值 → rejected', at.resolveAgentTeamsConfig({ MU_EXECUTOR: 'chaos' }).reason === 'EXECUTOR_MODE_INVALID');
+ok('W1c internal 无显式降级开关 → rejected', at.resolveAgentTeamsConfig({ MU_EXECUTOR: 'internal' }).reason === 'EXECUTOR_INTERNAL_NOT_ALLOWED');
+ok('W1c2 非法 scope → rejected', at.resolveAgentTeamsConfig({ MU_EXECUTOR: 'internal', MU_EXECUTOR_INTERNAL_ALLOW: 'production' }).reason === 'EXECUTOR_INTERNAL_NOT_ALLOWED');
+for (const scope of at.INTERNAL_ALLOW_SCOPES) {
+  const c = at.resolveAgentTeamsConfig({ MU_EXECUTOR: 'internal', MU_EXECUTOR_INTERNAL_ALLOW: scope });
+  if (!(c.kind === 'internal' && c.internalScope === scope)) { ok(`W1c3 internal scope=${scope}`, false, c); break; }
+}
+ok('W1c3 三个合法 scope 均放行', true);
+ok('W1d agentteams 缺 token → rejected', at.resolveAgentTeamsConfig({ MU_EXECUTOR: 'agentteams', MU_AGENTTEAMS_BASE_URL: 'http://x' }).reason === 'AT_NOT_CONFIGURED');
+ok('W1e 非 http(s) URL → rejected', at.resolveAgentTeamsConfig({ MU_EXECUTOR: 'agentteams', MU_AGENTTEAMS_BASE_URL: 'ftp://x', MU_AGENTTEAMS_TOKEN: 't' }).reason === 'AT_BAD_URL');
+const cfgOn = at.resolveAgentTeamsConfig({ ...ENV_ON, MU_AGENTTEAMS_RUNTIME: 'copaw', MU_AGENTTEAMS_MODEL: 'deepseek-chat' });
+ok('W1f 合法配置（runtime/model 可配）', cfgOn.kind === 'agentteams' && cfgOn.runtime === 'copaw' && cfgOn.model === 'deepseek-chat');
+const hRej = await at.agentTeamsHealthy(at.resolveAgentTeamsConfig({}), noNet);
+ok('W1g rejected 健康检查零网络+透传 reason', netCalls === 0 && hRej.reason === 'EXECUTOR_MODE_UNSET');
+const sumA = at.executorStatusSummary({ ...ENV_ON });
+const sumI = at.executorStatusSummary({ MU_EXECUTOR: 'internal', MU_EXECUTOR_INTERNAL_ALLOW: 'test' });
+const sumR = at.executorStatusSummary({});
+ok('W1h 执行器摘要三态（脱敏）', sumA.mode === 'agentteams' && sumA.production_path === true
+  && !JSON.stringify(sumA).includes('at-tok') && sumI.mode === 'internal' && sumI.production_path === false && sumI.internal_scope === 'test'
+  && sumR.mode === 'rejected' && sumR.fail_reason === 'EXECUTOR_MODE_UNSET');
 
 // ── W2 健康检查失败模式 ──
 for (const [health, code] of [[401, 'AT_AUTH_FAILED'], [403, 'AT_AUTH_FAILED'], [500, 'AT_HTTP_500']]) {
@@ -68,15 +97,18 @@ for (const [health, code] of [[401, 'AT_AUTH_FAILED'], [403, 'AT_AUTH_FAILED'], 
 const rNet = await at.agentTeamsHealthy(CFG, async () => { throw new Error('ECONNREFUSED'); });
 ok('W2d 断连 → AT_UNREACHABLE', rNet.reason === 'AT_UNREACHABLE');
 
-// ── W3 ensureFourAgents：恰好四个具名 Agent、角色不越权（无 expose/mcp/凭据注入）──
-let putBodies = [];
+// ── W3 ensureFourAgents（真实契约：GET 判存在→POST 建/已存在 PUT 对齐→完整性复查）──
+let putBodies = [], postBodies = [];
 const spyApi = mkAtApi({});
-const spyPut = async (url, opts) => {
-  if (/\/workers\//.test(url) && opts.method === 'PUT') putBodies.push({ url, body: JSON.parse(opts.body) });
+const spyWrite = async (url, opts) => {
+  if (/\/workers\/[\w-]+$/.test(url) && opts.method === 'PUT') putBodies.push({ url, body: JSON.parse(opts.body) });
+  if (url.endsWith('/api/v1/workers') && opts.method === 'POST') postBodies.push({ url, body: JSON.parse(opts.body) });
   return spyApi(url, opts);
 };
-const ens = await at.ensureFourAgents(CFG, { fetchImpl: spyPut });
-ok('W3a 四 Agent 幂等创建成功', ens.ok === true && ens.created.length === 4);
+// 已存在四名 → 全 PUT 对齐（创建为零）
+const ens = await at.ensureFourAgents(CFG, { fetchImpl: spyWrite });
+ok('W3a 已存在四 Agent → PUT 对齐成功（零新建）', ens.ok === true && ens.created.length === 0
+  && putBodies.length === 4);
 const names = putBodies.map((p) => p.url.split('/').pop()).sort();
 ok('W3b 恰好 leader/reviewer/fixer/verifier 四名', JSON.stringify(names)
   === JSON.stringify(['mergepilot-fixer', 'mergepilot-leader', 'mergepilot-reviewer', 'mergepilot-verifier']));
@@ -84,8 +116,27 @@ const specAll = putBodies.map((p) => p.body.spec);
 ok('W3c 零暴露端口/零 MCP/零凭据字段', specAll.every((s) => Array.isArray(s.expose) && s.expose.length === 0
   && Array.isArray(s.mcpServers) && s.mcpServers.length === 0
   && !JSON.stringify(s).match(/api[_-]?key|token|secret|password/i)));
+ok('W3c2 runtime/model 来自部署配置（非写死 qwenpaw）', specAll.every((s) => s.runtime === 'copaw' && s.model === 'deepseek-chat'),
+  specAll[0]);
+// 集群空 → 全 POST 创建（name 顶层）
+putBodies = []; postBodies = [];
+const emptyApi = mkAtApi({ workerList: 'empty' }); // 单实例：POST 后的列表状态需跨请求保持
+const spyEmpty = async (url, opts) => {
+  if (/\/workers\/[\w-]+$/.test(url) && opts.method === 'PUT') putBodies.push({ url, body: JSON.parse(opts.body) });
+  if (url.endsWith('/api/v1/workers') && opts.method === 'POST') postBodies.push({ url, body: JSON.parse(opts.body) });
+  return emptyApi(url, opts);
+};
+const ens2 = await at.ensureFourAgents(CFG, { fetchImpl: spyEmpty });
+ok('W3d 空集群 → POST 创建四具名 Agent（name 顶层）', ens2.ok === true && ens2.created.length === 4
+  && postBodies.length === 4 && postBodies.every((p) => p.body.name && p.body.spec.runtime === 'copaw'));
 const w403 = await at.ensureFourAgents(CFG, { fetchImpl: mkAtApi({ workerPut: 403 }) });
-ok('W3d worker 创建被拒 → 稳定 reason', w403.ok === false && String(w403.reason).startsWith('AT_WORKER_'));
+ok('W3e worker 写入被拒 → 稳定 reason', w403.ok === false && String(w403.reason).startsWith('AT_WORKER_'));
+const wInc = await at.ensureFourAgents(CFG, { fetchImpl: mkAtApi({ workerList: 'incomplete' }) });
+ok('W3f 列表缺一名 → POST 自愈后复查通过', wInc.ok === true
+  && wInc.created.includes('mergepilot-verifier'), wInc);
+const wStub = await at.ensureFourAgents(CFG, { fetchImpl: mkAtApi({ workerList: 'stubborn' }) });
+ok('W3g 假成功（POST 201 但列表不出现）→ AT_WORKERS_INCOMPLETE fail-closed', wStub.ok === false
+  && wStub.reason === 'AT_WORKERS_INCOMPLETE' && Array.isArray(wStub.missing) && wStub.missing.includes('mergepilot-verifier'), wStub);
 
 // ── W4 出站脱敏 ──
 let replanBody = null;
@@ -172,7 +223,48 @@ try {
   ok('W7f token/原始 secret/任务正文全库零泄漏', leaks.length === 0, leaks.slice(0, 3));
   delete process.env.MU_AGENTTEAMS_TOKEN;
 
-  // W8 默认 internal 回归（同环境不配 MU_EXECUTOR → internal 子进程路径）
+  // W8 执行器门：未配置 → rejected fail-closed（不回退）
+  const prR = await store.upsertPullRequest({ tenantId: T, repoId: repo.repo_id, providerPrNumber: 7, headSha: 'd'.repeat(40) });
+  const bindingR = { tenantId: T, repoId: repo.repo_id, prId: prR.pr_id, headSha: 'd'.repeat(40) };
+  const { run: runR } = await orch.createRunIfAbsent(pool, { ...bindingR });
+  for (const [f, t] of [['RECEIVED', 'REVIEW_QUEUED'], ['REVIEW_QUEUED', 'REVIEWING'], ['REVIEWING', 'REVIEWED'], ['REVIEWED', 'FIX_QUEUED']]) {
+    await orch.transitionRun(pool, { runId: runR.run_id, from: [f], to: t });
+  }
+  const attR = await orch.claimNextAttempt(pool, { runId: runR.run_id, agentRole: 'reviewer', provider: 'deterministic', maxAttempts: 3, ...bindingR });
+  await orch.insertFindings(pool, { attemptId: attR.attemptId, runId: runR.run_id, ...bindingR,
+    findings: [{ rule_id: 'R-SECRET', severity: 'P0', confidence: 0.9, path: 's.js', line_start: 2,
+      line_end: 2, title: 'x', evidence_ref: 'e', summary_masked: 'ghp_***' }] });
+  const netBeforeGate = netCalls;
+  const rGate = await fxo.fixVerifyRound(pool, { run: runR, binding: bindingR,
+    deps: { ...deps, env: {}, assertServiceChain: async () => true } });
+  const runRafter = await orch.getRun(pool, runR.run_id);
+  const gateAudit = (await pool.query(`SELECT kind, detail FROM mu.audit_event WHERE kind='executor_gate_rejected' AND detail::text LIKE $1`, [`%${runR.run_id}%`])).rows;
+  const gateFix = (await pool.query(`SELECT count(*) c FROM mu.fix_attempt WHERE run_id=$1`, [runR.run_id])).rows[0];
+  ok('W8a 未配置 → 拒绝（stage/reason）+ 零外部请求', rGate.ok === false
+    && rGate.stage === 'executor_gate_rejected' && rGate.reason === 'EXECUTOR_MODE_UNSET' && netCalls === netBeforeGate, rGate);
+  ok('W8b run 停留 FIX_QUEUED（可恢复）且零 fix_attempt（不冒充执行）',
+    runRafter.status === 'FIX_QUEUED' && Number(gateFix.c) === 0, { st: runRafter.status, c: gateFix.c });
+  ok('W8c 审计记 executor_gate_rejected', gateAudit.length >= 1);
+  // W8d agentteams 健康失败 → fail-closed 不回退（零 internal 执行痕迹）
+  const prH = await store.upsertPullRequest({ tenantId: T, repoId: repo.repo_id, providerPrNumber: 8, headSha: 'c'.repeat(40) });
+  const bindingH = { tenantId: T, repoId: repo.repo_id, prId: prH.pr_id, headSha: 'c'.repeat(40) };
+  const { run: runH } = await orch.createRunIfAbsent(pool, { ...bindingH });
+  for (const [f, t] of [['RECEIVED', 'REVIEW_QUEUED'], ['REVIEW_QUEUED', 'REVIEWING'], ['REVIEWING', 'REVIEWED'], ['REVIEWED', 'FIX_QUEUED']]) {
+    await orch.transitionRun(pool, { runId: runH.run_id, from: [f], to: t });
+  }
+  const attH = await orch.claimNextAttempt(pool, { runId: runH.run_id, agentRole: 'reviewer', provider: 'deterministic', maxAttempts: 3, ...bindingH });
+  await orch.insertFindings(pool, { attemptId: attH.attemptId, runId: runH.run_id, ...bindingH,
+    findings: [{ rule_id: 'R-SECRET', severity: 'P0', confidence: 0.9, path: 's.js', line_start: 2,
+      line_end: 2, title: 'x', evidence_ref: 'e', summary_masked: 'ghp_***' }] });
+  const rHealth = await fxo.fixVerifyRound(pool, { run: runH, binding: bindingH,
+    deps: { ...deps, env: { ...ENV_ON }, atFetch: mkAtApi({ health: 401 }), assertServiceChain: async () => true } });
+  const runHafter = await orch.getRun(pool, runH.run_id);
+  const healthFix = (await pool.query(`SELECT count(*) c FROM mu.fix_attempt WHERE run_id=$1`, [runH.run_id])).rows[0];
+  const healthAudit = (await pool.query(`SELECT count(*) c FROM mu.audit_event WHERE kind='executor_gate_rejected' AND detail::text LIKE $1`, [`%${runH.run_id}%`])).rows[0];
+  ok('W8d 健康失败（401）→ fail-closed 不回退 internal', rHealth.ok === false
+    && rHealth.stage === 'at_health_failed' && rHealth.reason === 'AT_AUTH_FAILED'
+    && runHafter.status === 'FIX_QUEUED' && Number(healthFix.c) === 0 && Number(healthAudit.c) >= 1, rHealth);
+  // W9 显式 internal（test scope）：子进程路径照常
   const pr2 = await store.upsertPullRequest({ tenantId: T, repoId: repo.repo_id, providerPrNumber: 5, headSha: 'e'.repeat(40) });
   const binding2 = { tenantId: T, repoId: repo.repo_id, prId: pr2.pr_id, headSha: 'e'.repeat(40) };
   const { run: run2 } = await orch.createRunIfAbsent(pool, { ...binding2 });
@@ -192,10 +284,12 @@ try {
       fetched_head_sha: 'e'.repeat(40) };
   } });
   const rInt = await fxo.fixVerifyRound(pool, { run: run2, binding: binding2,
-    deps: { ...deps, env: { MU_EXECUTOR: 'internal' }, assertServiceChain: async () => true } });
+    deps: { ...deps, env: { MU_EXECUTOR: 'internal', MU_EXECUTOR_INTERNAL_ALLOW: 'test' }, assertServiceChain: async () => true } });
   __setGhProviderForTests; // 已设置——后续 finally 中有 __resetGhProvider 时也会清理
-  ok('W8 默认 internal：零外部请求 + 子进程路径照常', rInt.ok === true && rInt.executor !== 'agentteams'
+  const intAudit = (await pool.query(`SELECT count(*) c FROM mu.audit_event WHERE kind='executor_internal_round' AND detail::text LIKE $1`, [`%${run2.run_id}%`])).rows[0];
+  ok('W9a 显式 internal（test scope）：零外部请求 + 子进程路径照常', rInt.ok === true && rInt.executor !== 'agentteams'
     && netCalls === beforeNet, rInt);
+  ok('W9b internal 轮次审计标注 scope', Number(intAudit.c) >= 1);
 } catch (e) { fail++; console.error('HARNESS ERROR', e); }
 finally {
   await pool.end().catch(() => {});

@@ -51,6 +51,8 @@ for (let i = 0; i < 150; i++) { try { const p = new Pool({ connectionString: dsn
 const WEBHOOK_SECRET = 'whsec_w3e2e_synthetic';
 const savedEnv = { ...process.env };
 process.env.MU_MODE = 'multiuser';
+process.env.MU_EXECUTOR = 'internal'; // explicit dev/test path (AgentTeams-first gate would reject unset)
+process.env.MU_EXECUTOR_INTERNAL_ALLOW = 'test';
 process.env.CONSOLE_PG_DSN = dsn;
 process.env.CONSOLE_SESSION_SECRET = 'w3e2e-secret';
 process.env.MU_ALLOW_FIXTURE_LOGIN = '1';
