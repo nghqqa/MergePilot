@@ -31,12 +31,15 @@ export function resolveMatrixConfig(env = process.env) {
   return { kind: 'matrix', baseUrl: url.replace(/\/+$/, ''), user, password };
 }
 
-let cachedLogin = null; // { baseUrl, user, token } —— 模块级；换配置即失效
+import crypto from 'node:crypto';
+let cachedLogin = null; // { baseUrl, user, pwTag, token } —— 模块级；换配置（含凭据轮换）即失效
 export function __resetMatrixLoginForTests() { cachedLogin = null; }
+const pwTag = (cfg) => crypto.createHash('sha256').update(String(cfg.password ?? '')).digest('hex').slice(0, 16);
 
 /** 登录（缓存+失效重登）。返回 {ok, token} 或 {ok:false, reason}。 */
 export async function matrixLogin(cfg, fetchImpl = fetch) {
-  if (cachedLogin && cachedLogin.baseUrl === cfg.baseUrl && cachedLogin.user === cfg.user) {
+  if (cachedLogin && cachedLogin.baseUrl === cfg.baseUrl && cachedLogin.user === cfg.user
+    && cachedLogin.pwTag === pwTag(cfg)) {
     return { ok: true, token: cachedLogin.token };
   }
   try {
@@ -46,19 +49,54 @@ export async function matrixLogin(cfg, fetchImpl = fetch) {
     if (!r.ok) return { ok: false, reason: `MT_LOGIN_HTTP_${r.status}` };
     const j = await r.json().catch(() => null);
     if (!j?.access_token) return { ok: false, reason: 'MT_LOGIN_NO_TOKEN' };
-    cachedLogin = { baseUrl: cfg.baseUrl, user: cfg.user, token: j.access_token };
+    cachedLogin = { baseUrl: cfg.baseUrl, user: cfg.user, pwTag: pwTag(cfg), token: j.access_token };
     return { ok: true, token: j.access_token };
   } catch { return { ok: false, reason: 'MT_LOGIN_UNREACHABLE' }; }
 }
 
-/** 任务信封（@mention 前缀 + mp_task JSON——worker 原生消费格式）。 */
+/**
+ * 任务信封（@mention 前缀 + marker + 内联数据 + 显式输出契约）。
+ * 实测定型（2026-09-29）：不得携带可回显的外层 JSON 包装（worker LLM 会把结构化
+ * 信封当作“确认/回显任务”处理）；submissionId/correlationId/role 以 marker 与
+ * 括号元数据承载，数据（脱敏 brief）独立成行，输出契约句式显式“非复制任务”。
+ */
+const OUTPUT_HINT = {
+  reviewer: '{"findings":[{"severity":"P0","path":"...","summary":"..."}]}',
+  leader: '{"recommendation":"fix_required","confidence":0.8}',
+  fixer: '{"suggestion":"...","patch_hint":"..."}',
+  verifier: '{"verdict":"PASS|FAIL|BLOCKED","note":"short"}',
+};
 export function buildTaskEnvelope({ workerMatrixId, taskId, correlationId, submissionId, role, brief }) {
   const marker = `[mp:${submissionId}]`;
-  const envelope = JSON.stringify({ mp_task: { taskId, correlationId, submissionId, role,
-    brief: String(brief ?? '').slice(0, MT_LIMITS.maxBodyChars) } });
-  const body = `${workerMatrixId} task ${taskId} ${marker}\n${envelope}\n`
-    + `Reply with exactly: ${marker} then ONE compact JSON on the same message obeying your role contract. No other text.`;
+  const data = String(brief ?? '').slice(0, MT_LIMITS.maxBodyChars);
+  // 无元数据括号（实测诱导 LLM 回显元数据字段）；绑定全部在 marker
+  const body = `${workerMatrixId} ${marker}\nDATA (do not copy): ${data}\n`
+    + `Reply with exactly: ${marker} then ONE compact JSON containing ONLY the contract keys of ${OUTPUT_HINT[role] ?? 'your role contract'} — the actual result, never task metadata or a copy of DATA.`;
   return { body, marker };
+}
+
+/**
+ * 角色白名单投影：从 worker 回复中提取合规键子集（LLM 常混入任务元数据回显——
+ * 实测 2026-09-29）。安全等价：仅取白名单键值，投影后仍须过 validateAgentTeamsOutput
+ * （含 FORBIDDEN_CONTENT 与长度约束）——不放宽任何 schema 边界。
+ */
+export function projectToRoleSchema(role, json) {
+  if (!json || typeof json !== 'object' || Array.isArray(json)) return null;
+  if (role === 'reviewer' && Array.isArray(json.findings)) {
+    const findings = json.findings.map((f) => (f && typeof f === 'object'
+      ? { severity: f.severity, path: f.path, summary: f.summary } : null)).filter(Boolean);
+    return findings.length ? { findings } : null;
+  }
+  if (role === 'leader' && json.recommendation !== undefined) {
+    return { recommendation: json.recommendation, confidence: json.confidence };
+  }
+  if (role === 'fixer' && json.suggestion !== undefined) {
+    return { suggestion: json.suggestion, patch_hint: json.patch_hint };
+  }
+  if (role === 'verifier' && json.verdict !== undefined) {
+    return { verdict: json.verdict, note: json.note };
+  }
+  return null;
 }
 
 /**

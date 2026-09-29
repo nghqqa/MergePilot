@@ -31,13 +31,12 @@ ok('M1c 合法配置', mt.resolveMatrixConfig(MT_ENV).kind === 'matrix');
 // ── 信封结构 ──
 const { body, marker } = mt.buildTaskEnvelope({ workerMatrixId: '@mergepilot-fixer:dom', taskId: 't-fix',
   correlationId: 'run-1', submissionId: 'run-1:t-fix:1', role: 'fixer', brief: 'BRIEF' });
-ok('M2a 信封含 @mention+mp_task JSON+marker', body.startsWith('@mergepilot-fixer:dom task t-fix [mp:run-1:t-fix:1]')
-  && body.includes('"mp_task"') && body.includes('"taskId":"t-fix"') && body.includes('"correlationId":"run-1"')
-  && body.includes('"submissionId":"run-1:t-fix:1"') && body.includes('"role":"fixer"'));
+ok('M2a 信封含 @mention+marker+DATA 内联+输出契约（无元数据括号）',
+  body.startsWith('@mergepilot-fixer:dom [mp:run-1:t-fix:1]') && body.includes('DATA (do not copy): BRIEF')
+  && body.includes('ONLY the contract keys') && !body.includes('(correlation') && !body.includes('mp_task'));
 ok('M2b marker 可派生', marker === '[mp:run-1:t-fix:1]');
-ok('M2c 信封不含 brief 之外的凭据形状字段', !/api[_-]?key|token|password|secret/i.test(body.replace(/BRIEF/g, '')) === false || true);
-const envParsed = JSON.parse(/(\{"mp_task".*\})/.exec(body)?.[1] ?? '{}');
-ok('M2d mp_task.brief 透传且限长', envParsed.mp_task?.brief === 'BRIEF');
+ok('M2c 信封不含凭据形状字段名', !/api[_-]?key|password/i.test(body));
+ok('M2d 无可回显的外层 JSON 包装（实测防回显）', !body.includes('mp_task'));
 
 // ── JSON 提取边界 ──
 ok('M3a 提取末尾完整对象（跳过 code fence）', mt.extractReplyJson('```json\n{"findings":[{"severity":"P0"}]}\n```')?.findings?.[0]?.severity === 'P0');

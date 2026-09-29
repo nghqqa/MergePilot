@@ -285,8 +285,15 @@ async function runExternalRound(pool, atMod, atCfg, { run, binding, deps }) {
         sinceTs: sent.ts - mt.MT_LIMITS.markerGuardMs, timeoutMs: mtTimeout,
         fetchImpl: mtFetch, sleepImpl: mtSleep });
       if (got.ok) {
-        const v = atMod.validateAgentTeamsOutput(rp.schema, got.json);
-        if (v.ok) { reply = got; break; }
+        let candidate = got.json;
+        let v = atMod.validateAgentTeamsOutput(rp.schema, candidate);
+        if (!v.ok) {
+          // 白名单投影（LLM 常混入任务元数据回显）→ 投影后二次校验（不放宽任何 schema 边界）
+          const projected = mt.projectToRoleSchema(role, candidate);
+          if (projected && atMod.validateAgentTeamsOutput(rp.schema, projected).ok) candidate = projected;
+          v = atMod.validateAgentTeamsOutput(rp.schema, candidate);
+        }
+        if (v.ok) { reply = { ...got, json: candidate }; break; }
         lastReason = v.code; // schema 无效 → 重试一次（新 submissionId/新 event）
       } else lastReason = got.reason; // 超时/读失败 → 重试一次
     }
