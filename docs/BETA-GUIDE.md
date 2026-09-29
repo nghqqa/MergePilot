@@ -165,6 +165,28 @@ MU_SESSION_TTL_MS=28800000      # 会话 TTL（默认 8h）
 MU_OAUTH_FLOW_TTL_MS=600000     # OAuth state 有效期（默认 10min）
 ```
 
+### 执行器（AgentTeams-first，2026-09-29 起）
+
+正式/Beta 路径必须使用外部 AgentTeams Runtime；未配置、健康检查失败、认证失败或 worker 不完整时 **fail-closed 拒绝执行（不静默回退 internal）**：
+
+```bash
+MU_EXECUTOR=agentteams                        # 正式路径（唯一生产选项）
+MU_AGENTTEAMS_BASE_URL=http://<agentteams-controller>:8090
+MU_AGENTTEAMS_TOKEN=<部署级 Bearer token>
+MU_AGENTTEAMS_RUNTIME=copaw                   # 与目标集群 runtime 对齐（如 copaw）
+MU_AGENTTEAMS_MODEL=deepseek-chat             # 与目标集群模型对齐
+# MU_AGENTTEAMS_TIMEOUT_MS=120000             # 可选；轮询/请求超时上限（≤300000）
+```
+
+internal 执行器仅限开发/测试/应急路径，必须同时显式声明降级开关（缺失即拒绝）：
+
+```bash
+MU_EXECUTOR=internal
+MU_EXECUTOR_INTERNAL_ALLOW=development        # 三选一：development | test | emergency
+```
+
+其他任何值（含未设置）→ 执行器门拒绝（`EXECUTOR_MODE_UNSET` / `EXECUTOR_MODE_INVALID` / `EXECUTOR_INTERNAL_NOT_ALLOWED`），审计记 `executor_gate_rejected`。前端与 `/api/mu/agent-policy` 展示当前执行器模式。
+
 ### RAG 查询 scope（用于本地 RAG 试用）
 
 ```bash

@@ -131,7 +131,11 @@ async function executeEventSync(store, muPoolQuery, job, sysCtx) {
           const fx = await fixVerifyRound(pool, { run: rv.run,
             binding: { tenantId: job.tenant_id, repoId: job.repo_id, prId: rv.run.pr_id, headSha },
             deps: dep });
-          pipeline.fix = { verdict: fx.verdict ?? null, decision: fx.decision ?? null };
+          // 执行器门控失败（executor_gate_rejected/at_health_failed 等）→ skipped+reason，
+          // 绝不冒充 fix 完成；成功时标注实际执行器（agentteams=正式/internal=显式降级）
+          pipeline.fix = fx.ok
+            ? { verdict: fx.verdict ?? null, decision: fx.decision ?? null, executor: fx.executor ?? 'internal' }
+            : { skipped: fx.stage ?? 'fix_failed', reason: fx.reason ?? null };
         } else {
           pipeline.fix = { skipped: 'deps_unavailable' };
         }
@@ -1090,6 +1094,7 @@ export async function muApi(req, res, ctx) {
         enabled: Boolean(policy.enabled), policy_version: Number(policy.policy_version),
         updated_at: policy.updated_at },
         deploy: ap.deployStatus(env), // 布尔+host 摘要+模型白名单（永不含完整 URL/key）
+        executor: (await import('./agents/agentteams-executor.mjs')).executorStatusSummary(env),
         runtime_state: ap.runtimeState(policy, env) });
     }
     if (p === '/api/mu/agent-policy' && req.method === 'PUT') {

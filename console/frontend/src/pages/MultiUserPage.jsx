@@ -185,6 +185,9 @@ function PipelinePanel({ prNumber, repoId }) {
         {(state.detail.fixes ?? []).length ? `；修复预演：${state.detail.fixes.map((f) => `${f.status}`).join('/')}` : ''}
         {(state.detail.verifications ?? []).length ? `；验证：${state.detail.verifications.map((v) => v.verdict).join('/')}` : ''}
         。修复为 dry-run（不写 GitHub）；AI 审查不构成 GitHub required review。
+        {(state.detail.attempts ?? []).some((a) => a.provider === 'agentteams')
+          ? '执行器：外部 AgentTeams（正式路径）。'
+          : (state.detail.attempts ?? []).length ? '执行器：internal（开发/测试路径，非生产）。' : ''}
       </Typography.Paragraph>
     </div>
   );
@@ -246,6 +249,13 @@ function AgentPolicyPanel({ can, actions }) {
         <Tag>策略版本 v{data.policy.policy_version}</Tag>
         <Tag color={data.deploy.provider_configured ? 'green' : 'orange'}>
           {data.deploy.provider_configured ? `部署已配置（${data.deploy.provider_host_summary ?? 'host 未解析'}）` : '部署未配置'}</Tag>
+        {data.executor ? (
+          <Tag color={data.executor.mode === 'agentteams' ? 'green' : data.executor.mode === 'internal' ? 'orange' : 'red'}>
+            {data.executor.mode === 'agentteams'
+              ? `执行器：AgentTeams（正式路径，${data.executor.runtime ?? ''}/${data.executor.model ?? ''}）`
+              : data.executor.mode === 'internal'
+                ? `执行器：internal（${data.executor.internal_scope}—非生产路径）`
+                : `执行器：未配置/拒绝（${data.executor.fail_reason}—fail-closed）`}</Tag>) : null}
       </Space>
       <Space direction="vertical" size="middle" style={{ width: '100%', maxWidth: 640 }} aria-label="Agent 运行策略设置">
         <div>

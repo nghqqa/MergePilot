@@ -34,20 +34,48 @@ export async function fixVerifyRound(pool, { run, binding, deps }) {
     return { ok: false, stage: 'aborted', reason: 'service_chain_invalid' };
   }
 
-  // ── Wave 3.3：外部 AgentTeams 执行器（部署级 MU_EXECUTOR=agentteams 显式启用）──
-  // 默认 internal；健康检查失败/未配置一律回退 internal 路径（不静默宣称外部已运行）。
-  // 外部结果仅是建议：verdict 经 MergePilot 侧 schema 校验后仍由 advanceAfterVerify
-  // 终裁（服务端策略复核）；Fixer 只产出建议文本（不应用/不提交/不 push）。
+  // ── AgentTeams-first 执行器门控（2026-09-29 原始架构原则）──
+  // 三路分发，绝不静默回退 internal：
+  //  * rejected（未配置/未知值/internal 无显式降级开关/URL 缺失非法）→ fail-closed：
+  //    本轮拒绝执行（run 停留 FIX_QUEUED 可恢复），审计落 executor_gate_rejected；
+  //  * agentteams（正式路径）→ 健康检查失败 → fail-closed（同上）；健康通过则
+  //    全轮次外部执行，任何失败（含意外异常）落死信+BLOCKED——不回退 internal；
+  //  * internal（MU_EXECUTOR=internal + MU_EXECUTOR_INTERNAL_ALLOW 显式声明）→
+  //    开发/测试/应急路径（非生产执行器），审计标注 internal_scope。
   const atMod = await import('./agentteams-executor.mjs');
   const atCfg = atMod.resolveAgentTeamsConfig(deps.env ?? process.env);
+  const gateAudit = async (kind, detail) => {
+    await pool.query(
+      `INSERT INTO mu.audit_event (tenant_id, actor_user_id, kind, detail)
+       VALUES ($1, NULL, $2, $3)`,
+      [tenantId, kind, JSON.stringify({ run_id: runId, ...detail })]).catch(() => {});
+  };
+  if (atCfg.kind === 'rejected') {
+    await gateAudit('executor_gate_rejected', { reason: atCfg.reason, executor_mode: 'unset_or_invalid' });
+    return { ok: false, stage: 'executor_gate_rejected', reason: atCfg.reason };
+  }
   if (atCfg.kind === 'agentteams') {
     const health = await atMod.agentTeamsHealthy(atCfg, deps.atFetch);
-    if (health.ok) {
-      const ext = await runExternalRound(pool, atMod, atCfg, { run, binding, deps });
-      if (ext.ok || ext.reason?.startsWith('AT_')) return ext;
-      // 其他异常 → 回退 internal 继续本轮
+    if (!health.ok) {
+      await gateAudit('executor_gate_rejected', { reason: health.reason, executor_mode: 'agentteams_health_failed' });
+      return { ok: false, stage: 'at_health_failed', reason: health.reason };
     }
+    let ext;
+    try {
+      ext = await runExternalRound(pool, atMod, atCfg, { run, binding, deps });
+    } catch (e) {
+      // 意外异常同样 fail-closed（死信+BLOCKED）——绝不回退 internal
+      await moveToDeadLetter(pool, { runId, tenantId, repoId, prId, headSha, agentRole: 'fixer',
+        kind: 'at_round_crashed', reason: `AT_ROUND_CRASHED:${String(e?.message ?? e).slice(0, 100)}`,
+        retryCount: 0, payloadRef: `run:${runId}` });
+      await transitionRun(pool, { runId, from: ['FIXING'], to: 'BLOCKED' }).catch(() => {});
+      await transitionRun(pool, { runId, from: ['FIX_QUEUED'], to: 'BLOCKED' }).catch(() => {});
+      return { ok: false, stage: 'at_round_crashed', reason: 'AT_ROUND_CRASHED' };
+    }
+    return ext; // 成功或已落死信的失败——一律返回，不回退
   }
+  // internal：显式降级路径（审计标注；生产形态禁用——resolveAgentTeamsConfig 已把关）
+  await gateAudit('executor_internal_round', { internal_scope: atCfg.internalScope, run_id: runId });
 
   // FIX_QUEUED / REWORK_REQUIRED → FIXING（CAS；并发轮次输家幂等退出）
   const fixing = await transitionRun(pool, { runId, from: ['FIX_QUEUED'], to: 'FIXING' }); // 回派先经 requeueFix(REWORK→FIX_QUEUED)，FIXING 只从 FIX_QUEUED 进入（状态机合法边）

@@ -90,6 +90,8 @@ try {
 
   const deps = (testCmd) => ({ repoUrl: REPO_DIR, testCmd, providerCfg: { configured: true },
     installationId: String(INS), owner: 'prd', repoName: 'repo', prNumber: PRN,
+    // internal executor requires an explicit development/test/emergency allow
+    env: { MU_EXECUTOR: 'internal', MU_EXECUTOR_INTERNAL_ALLOW: 'test' },
     assertServiceChain: async () => true });
 
   // ── D1 Fixer dry-run → Verifier PASS → COMPLETED ──
