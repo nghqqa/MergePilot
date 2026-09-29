@@ -168,6 +168,22 @@ export async function ensureFourAgents(cfg, { model, fetchImpl = fetch } = {}) {
 }
 
 // 任务简报：与 LLM egress 同白名单——仅 finding 脱敏摘要，≤2KiB，无 diff/源码/凭据
+/** worker 详情列表（name→{phase, roomID, matrixUserID}——Matrix 传输的绑定源）。 */
+export async function listWorkersDetail(cfg, { fetchImpl = fetch } = {}) {
+  if (cfg.kind !== 'agentteams') return { ok: false, reason: 'AT_DISABLED' };
+  try {
+    const r = await atFetch(cfg, '/api/v1/workers', {}, fetchImpl);
+    if (!r.ok) return { ok: false, reason: `AT_WORKERS_LIST_HTTP_${r.status}` };
+    const j = await r.json().catch(() => null);
+    const map = new Map();
+    for (const w of (j?.workers ?? [])) {
+      map.set(String(w?.name ?? ''), { phase: String(w?.phase ?? ''), roomID: String(w?.roomID ?? ''),
+        matrixUserID: String(w?.matrixUserID ?? '') });
+    }
+    return { ok: true, workers: map };
+  } catch { return { ok: false, reason: 'AT_WORKERS_LIST_UNREACHABLE' }; }
+}
+
 export function sanitizeBrief(findings) {
   const brief = (findings ?? []).slice(0, 20).map((f) => ({
     rule_id: String(f.rule_id ?? '').slice(0, 60), severity: f.severity,

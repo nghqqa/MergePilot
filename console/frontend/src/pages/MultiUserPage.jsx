@@ -211,8 +211,11 @@ function AgentPolicyPanel({ can, actions }) {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null);
   const canManage = Array.isArray(actions) && actions.includes('manage_instance');
+  const [atStatus, setAtStatus] = useState(null);
   const load = useCallback(async () => {
     setErr(null);
+    fetch('/api/mu/agentteams-status', { credentials: 'same-origin' })
+      .then((r) => (r.ok ? r.json() : null)).then(setAtStatus).catch(() => setAtStatus(null));
     const r = await fetch('/api/mu/agent-policy', { credentials: 'same-origin' });
     if (r.status === 200) {
       const j = await r.json().catch(() => null);
@@ -249,6 +252,13 @@ function AgentPolicyPanel({ can, actions }) {
         <Tag>策略版本 v{data.policy.policy_version}</Tag>
         <Tag color={data.deploy.provider_configured ? 'green' : 'orange'}>
           {data.deploy.provider_configured ? `部署已配置（${data.deploy.provider_host_summary ?? 'host 未解析'}）` : '部署未配置'}</Tag>
+        {atStatus ? (
+          <Tag color={atStatus.runtime_state === 'active' ? 'green' : atStatus.runtime_state === 'degraded' ? 'orange' : 'red'}>
+            {'AgentTeams：' + (atStatus.runtime_state === 'active' ? 'active' : atStatus.runtime_state === 'degraded'
+              ? 'degraded（有未解决死信）' : atStatus.runtime_state === 'internal_non_production'
+                ? 'internal（非生产）' : 'unavailable/fail-closed')
+              + (atStatus.controller ? ' · controller ' + atStatus.controller : '')
+              + (typeof atStatus.workers_ready === 'number' ? ' · worker ' + atStatus.workers_ready + '/' + atStatus.workers_total : '')}</Tag>) : null}
         {data.executor ? (
           <Tag color={data.executor.mode === 'agentteams' ? 'green' : data.executor.mode === 'internal' ? 'orange' : 'red'}>
             {data.executor.mode === 'agentteams'
