@@ -33,8 +33,8 @@ for ROLE in leader reviewer fixer verifier; do
     verifier) IDENTITY="MergePilot 验证 Verifier：独立判断修复建议是否解决 finding，不信任 Fixer 自述。";;
   esac
   case "$ROLE" in
-    leader) CONSOLE_PORT=28101;; reviewer) CONSOLE_PORT=28102;;
-    fixer) CONSOLE_PORT=28103;; verifier) CONSOLE_PORT=28104;;
+    leader) CONSOLE_PORT=38101;; reviewer) CONSOLE_PORT=38104;;
+    fixer) CONSOLE_PORT=38107;; verifier) CONSOLE_PORT=38110;;
   esac
 
   # 1) 幂等创建（已存在 → 409 → 复用）
