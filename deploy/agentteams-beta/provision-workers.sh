@@ -31,7 +31,7 @@ for ROLE in leader reviewer fixer verifier; do
     fixer)    IDENTITY="MergePilot 修复 Fixer：仅产出 dry-run 修复建议文本，禁止执行命令或写仓库。";;
     verifier) IDENTITY="MergePilot 验证 Verifier：独立判断修复建议是否解决 finding，不信任 Fixer 自述。";;
   esac
-  CONSOLE_PORT=$(( 28101 + $(case $ROLE in leader) echo 0;; reviewer) echo 1;; fixer) echo 2;; verifier) echo 3;; esac) ))
+  case "$ROLE" in leader) CONSOLE_PORT=28101;; reviewer) CONSOLE_PORT=28102;; fixer) CONSOLE_PORT=28103;; verifier) CONSOLE_PORT=28104;; esac
 
   # 1) 幂等创建（已存在 → 409 → 复用）
   CODE=$(curl -s -m 30 -o /dev/null -w "%{http_code}" -X POST \
@@ -84,5 +84,5 @@ for ROLE in leader reviewer fixer verifier; do
 done
 sleep 20
 curl -s -H "Authorization: Bearer $TOK" "http://127.0.0.1:$PORT/api/v1/workers" \
-  | python3 -c 'import json,sys; ws=json.load(sys.stdin)["workers"]; [print(w["name"], w["phase"]) for w in ws]; exit(0 if all(w["phase"]=="Running" for w in ws if w["name"].startswith("mergepilot-")) else 1)' \
+  | "$(command -v python3 || command -v python)" -c 'import json,sys; ws=json.load(sys.stdin)["workers"]; [print(w["name"], w["phase"]) for w in ws]; sys.exit(0 if all(w["phase"]=="Running" for w in ws if w["name"].startswith("mergepilot-")) else 1)' \
   && echo "PROVISION-OK" || { echo "PROVISION-INCOMPLETE (re-run this script to self-heal)"; exit 1; }
