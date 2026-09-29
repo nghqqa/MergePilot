@@ -34,10 +34,40 @@ export function resolveMatrixConfig(env = process.env) {
 import crypto from 'node:crypto';
 let cachedLogin = null; // { baseUrl, user, pwTag, token } —— 模块级；换配置（含凭据轮换）即失效
 export function __resetMatrixLoginForTests() { cachedLogin = null; }
+export function __cachedTokenForTests() { return cachedLogin?.token ?? null; }
+// 请求级超时（P1 修复 2026-09-29，标准升级 2026-09-29b）：
+//  * AbortController 真取消（真 fetch 响应 signal——连接资源被释放，不留后台请求）；
+//  * race 兜底（注入的 fetchImpl 可能不尊重 signal——超时同样返回，不悬挂）；
+//  * 语义边界：本超时仅约束【单次 HTTP 请求】（登录/发送/读消息均为快速请求）；
+//    任务级 deadline 由 collectReply 的 timeoutMs 轮询循环承担（默认 240s），
+//    互不替代——不用请求超时误杀长轮询任务，也不用任务 deadline 放宽单请求悬挂。
+//  * 迟到响应安全：超时返回后函数已退出，迟到的 resolve 被丢弃；发送类副作用由
+//    txnId 幂等（同 submissionId 同 event）与 marker 绑定（重试轮新 marker，旧轮
+//    回复被四重绑定过滤）共同防护——迟到结果不得改变 run/attempt。
+const MT_REQ_TIMEOUT_MS = 10_000;
+const mtTimeoutError = (scope) => { const e = new Error(`MT_${scope}_TIMEOUT`); e.code = 'MT_REQ_TIMEOUT'; return e; };
+const withTimeout = (fetchImpl, scope = 'REQ', ms = MT_REQ_TIMEOUT_MS) => async (url, opts = {}) => {
+  const ctrl = new AbortController();
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => { ctrl.abort(); reject(mtTimeoutError(scope)); }, ms);
+  });
+  try {
+    return await Promise.race([
+      Promise.resolve(fetchImpl(url, { ...opts, signal: ctrl.signal })).catch((e) => {
+        if (ctrl.signal.aborted) throw mtTimeoutError(scope); // abort 引发的拒绝统一为超时
+        throw e;
+      }),
+      timeout,
+    ]);
+  } finally { clearTimeout(timer); }
+};
+
 const pwTag = (cfg) => crypto.createHash('sha256').update(String(cfg.password ?? '')).digest('hex').slice(0, 16);
 
 /** 登录（缓存+失效重登）。返回 {ok, token} 或 {ok:false, reason}。 */
-export async function matrixLogin(cfg, fetchImpl = fetch) {
+export async function matrixLogin(cfg, fetchImpl0 = fetch) {
+  const fetchImpl = withTimeout(fetchImpl0, 'LOGIN');
   if (cachedLogin && cachedLogin.baseUrl === cfg.baseUrl && cachedLogin.user === cfg.user
     && cachedLogin.pwTag === pwTag(cfg)) {
     return { ok: true, token: cachedLogin.token };
@@ -51,7 +81,7 @@ export async function matrixLogin(cfg, fetchImpl = fetch) {
     if (!j?.access_token) return { ok: false, reason: 'MT_LOGIN_NO_TOKEN' };
     cachedLogin = { baseUrl: cfg.baseUrl, user: cfg.user, pwTag: pwTag(cfg), token: j.access_token };
     return { ok: true, token: j.access_token };
-  } catch { return { ok: false, reason: 'MT_LOGIN_UNREACHABLE' }; }
+  } catch (e) { return { ok: false, reason: e?.code === 'MT_REQ_TIMEOUT' ? 'MT_LOGIN_TIMEOUT' : 'MT_LOGIN_UNREACHABLE' }; }
 }
 
 /**
@@ -104,8 +134,9 @@ export function projectToRoleSchema(role, json) {
  * 重发得到同一 event id，Matrix PUT txn 语义天然幂等）。返回 {ok, eventId, ts}。
  */
 export async function sendTaskDelegation(cfg, { room, workerMatrixId, taskId, correlationId,
-  submissionId, role, brief, fetchImpl = fetch, tsNow = Date.now }) {
-  const lg = await matrixLogin(cfg, fetchImpl);
+  submissionId, role, brief, fetchImpl: fetchImpl0 = fetch, tsNow = Date.now }) {
+  const fetchImpl = withTimeout(fetchImpl0, 'SEND');
+  const lg = await matrixLogin(cfg, fetchImpl0); // 登录用原始实现（内部自包 LOGIN 超时——避免双层包装）
   if (!lg.ok) return lg;
   const { body } = buildTaskEnvelope({ workerMatrixId, taskId, correlationId, submissionId, role, brief });
   const txnId = 'mp' + Buffer.from(String(submissionId)).toString('base64url').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 60)
@@ -115,7 +146,7 @@ export async function sendTaskDelegation(cfg, { room, workerMatrixId, taskId, co
       { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ msgtype: 'm.text', body }) });
     if (r.status === 401) { // token 过期 → 重登一次
       cachedLogin = null;
-      const lg2 = await matrixLogin(cfg, fetchImpl);
+      const lg2 = await matrixLogin(cfg, fetchImpl0); // 原始实现——内部自包 LOGIN 超时
       if (!lg2.ok) return lg2;
       const r2 = await fetchImpl(`${cfg.baseUrl}/_matrix/client/v3/rooms/${encodeURIComponent(room)}/send/m.room.message/${txnId}?access_token=${lg2.token}`,
         { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ msgtype: 'm.text', body }) });
@@ -126,7 +157,7 @@ export async function sendTaskDelegation(cfg, { room, workerMatrixId, taskId, co
     if (!r.ok) return { ok: false, reason: `MT_SEND_HTTP_${r.status}` };
     const j = await r.json().catch(() => null);
     return { ok: true, eventId: j?.event_id ?? null, ts: tsNow() };
-  } catch { return { ok: false, reason: 'MT_SEND_UNREACHABLE' }; }
+  } catch (e) { return { ok: false, reason: e?.code === 'MT_REQ_TIMEOUT' ? 'MT_SEND_TIMEOUT' : 'MT_SEND_UNREACHABLE' }; }
 }
 
 /** 从回复正文提取最后一个平衡 JSON 对象（固定末 `}`、从右向左找可解析完整对象）。 */
@@ -148,11 +179,12 @@ export function extractReplyJson(text) {
  * 轮询至超时；忽略一切不满足绑定的消息。返回 {ok, json, raw, ts} 或 {ok:false, reason}。
  */
 export async function collectReply(cfg, { room, expectedSender, marker, sinceTs,
-  timeoutMs = MT_LIMITS.defaultRoleTimeoutMs, fetchImpl = fetch, sleepImpl = (ms) => new Promise((r) => setTimeout(r, ms)),
+  timeoutMs = MT_LIMITS.defaultRoleTimeoutMs, fetchImpl: fetchImpl0 = fetch, sleepImpl = (ms) => new Promise((r) => setTimeout(r, ms)),
   tsNow = Date.now }) {
+  const fetchImpl = withTimeout(fetchImpl0, 'READ');
   const deadline = tsNow() + timeoutMs;
   for (;;) {
-    const lg = await matrixLogin(cfg, fetchImpl);
+    const lg = await matrixLogin(cfg, fetchImpl0); // 原始实现——内部自包 LOGIN 超时
     if (!lg.ok) return lg;
     try {
       const r = await fetchImpl(`${cfg.baseUrl}/_matrix/client/v3/rooms/${encodeURIComponent(room)}/messages?dir=b&limit=20&access_token=${lg.token}`);
@@ -170,7 +202,7 @@ export async function collectReply(cfg, { room, expectedSender, marker, sinceTs,
         if (json) return { ok: true, json, raw: body.slice(0, MT_LIMITS.maxBodyChars), ts: e.origin_server_ts };
         // marker 在但无 JSON → 继续（worker 可能分多条；窗口内等下一条）
       }
-    } catch { return { ok: false, reason: 'MT_READ_UNREACHABLE' }; }
+    } catch (e) { return { ok: false, reason: e?.code === 'MT_REQ_TIMEOUT' ? 'MT_READ_TIMEOUT' : 'MT_READ_UNREACHABLE' }; }
     if (tsNow() > deadline) return { ok: false, reason: 'MT_REPLY_TIMEOUT' };
     await sleepImpl(MT_LIMITS.replyPollMs);
   }

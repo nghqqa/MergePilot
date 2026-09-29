@@ -85,6 +85,13 @@ embedded 栈的 Matrix(6167)/MinIO(9000) 仅 controller netns 内监听。MergeP
 - 风险接受（Beta）：R-1 漏洞多为 OS 包且暴露面仅内网+LLM 出站；R-2 controller 挂 docker proxy socket（上游设计，容器命名空间受控）；R-3 controller 不可 read-only/非 root（supervisord 全家桶写需求）
 - 阻断项核查：可远程利用且命中当前暴露面=无；digest 未固定=无；来源不可验证=无；镜像含真实凭据=无；worker privileged/宿主 socket=无（仅 controller，R-2 接受）
 
+## 13. Wave 3.5 staging 实测补录（2026-09-29）
+- **controller 重启恢复**：`docker restart` 后等待 API 200（最长 ~6 分钟，内嵌全家桶初始化慢）**再**执行 provision——过早 provision 会因内部 K8s 未就绪而失败（实测两次）
+- **测量陷阱**：高负载下 `docker exec` 建立慢（>5s）——**健康探测必须 host 直测发布端口**（soak.sh 已修：token 循环内缓存+host 直测），不得以 exec 成败判定服务可用性
+- **F-1（已修复，2026-09-29b）**：copaw worker 日志 msgs_str 调试行（runner.py INFO 级）记录入站任务消息截断正文。修复：provision 向 worker 容器注入 `COPAW_LOG_LEVEL=warning`（copaw 官方配置面，标准 logging root 传播）——INFO 调试行被抑制、WARNING/ERROR 保留（不屏蔽错误日志）；部署后实测验证：任务轮次后 worker 日志零正文命中（untrusted_findings/marker/mp_task）
+- **SIGSTOP 类半开连接（L-1）**：传输层请求级超时在单测验证通过（M7a/b），但真实 undici 对 STOP 进程的已建连接行为存在差异（Windows/Docker Desktop 环境实测）——典型故障形态（进程崩溃→supervisor 自动拉起、端口拒绝→立即 fail-closed）已实证；SIGSTOP 人为挂起为非典型注入
+- **故障演练结论**（十项，2026-09-29 staging）：worker/controller 重启恢复 ✓（D2 含人工 provision 步骤=本 RUNBOOK 路径）；tuwunel 崩溃 supervisor 自动恢复 ✓；坏 LLM key→死信 fail-closed+provision 自愈 ✓；取消幂等（未 delegate 稳定 404）✓；伪造 sender 忽略 ✓；重复 delivery 幂等 ✓；两轮重试→死信→BLOCKED ✓（零 internal 回退全程）
+
 ## 12. 安全红线（重申）
 - 四 Agent 不持有 GitHub/DB/OAuth/MergePilot-LLM 凭据；载荷仅 untrusted_findings 白名单 ≤2KiB
 - Fixer 仅 dry-run 文本；Verifier 独立判定；MergePilot Leader 终裁

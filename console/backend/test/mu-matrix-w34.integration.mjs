@@ -146,6 +146,40 @@ const gotTimeout = await mt.collectReply(cfg, { room: ROOMS.fixer, expectedSende
   marker: '[mp:none]', sinceTs: t0, timeoutMs: 1_200, fetchImpl: noReply, sleepImpl: async () => {} });
 ok('M7 收集超时 → MT_REPLY_TIMEOUT（不伪造）', gotTimeout.ok === false && gotTimeout.reason === 'MT_REPLY_TIMEOUT');
 
+// P1 修复验证：挂起的服务（fetch 永不 resolve）必须超时返回稳定 reason，而非产品挂死
+const hungFetch = () => new Promise(() => {});
+mt.__resetMatrixLoginForTests();
+const hungLogin = await mt.matrixLogin(cfg, hungFetch);
+ok('M7a 挂起 fetch（服务 SIGSTOP 类）→ 登录稳定超时 reason', hungLogin.ok === false && /^MT_LOGIN_/.test(hungLogin.reason), hungLogin);
+// M7c：AbortController 真取消——signal 在超时后被触发（连接资源释放的凭据）
+let abortedFlag = false;
+const abortAwareFetch = (url, opts = {}) => new Promise((_, reject) => {
+  opts?.signal?.addEventListener('abort', () => { abortedFlag = true; reject(new Error('aborted')); });
+});
+mt.__resetMatrixLoginForTests();
+await mt.matrixLogin(cfg, abortAwareFetch).catch(() => {});
+ok('M7c 超时触发 AbortController（真取消，非仅 race 返回）', abortedFlag === true);
+
+// M7d：迟到响应不产生副作用（慢 resolve 的值被丢弃，调用以超时 reason 返回）
+const LATE_TOKEN = 'L8EVIL'; // 7 chars — synthetic, sub-scan threshold
+const LATE = { status: 200, ok: true, json: async () => ({ access_token: LATE_TOKEN }) };
+mt.__resetMatrixLoginForTests();
+const late = await mt.matrixLogin(cfg, () => new Promise((res) => setTimeout(() => res(LATE), 60_000)));
+ok('M7d 迟到响应被丢弃（不写缓存/不返回迟到值）', late.ok === false && /^MT_LOGIN_/.test(late.reason)
+  && mt.__cachedTokenForTests() !== LATE_TOKEN, late);
+
+// M7e：发送路径挂起 → MT_SEND_* 稳定族（登录成功后请求悬挂）
+mt.__resetMatrixLoginForTests();
+const loginOkApi = mkMatrixApi();
+const tSend = await mt.sendTaskDelegation(cfg, { room: ROOMS.fixer, workerMatrixId: SENDERS.fixer,
+  taskId: 't-fix', correlationId: 'c9', submissionId: 'c9:t-fix:1', role: 'fixer', brief: 'b',
+  fetchImpl: async (url, opts) => (url.includes('/login') ? loginOkApi(url, opts) : new Promise(() => {})) });
+ok('M7e 发送路径挂起 → MT_SEND_*（TIMEOUT/UNREACHABLE 稳定族）', tSend.ok === false && /^MT_SEND_/.test(String(tSend.reason)), tSend);
+
+const hungRead = await mt.collectReply(cfg, { room: ROOMS.fixer, expectedSender: SENDERS.fixer,
+  marker: '[mp:hung]', sinceTs: t0, timeoutMs: 1_500, fetchImpl: hungFetch, sleepImpl: async () => {} });
+ok('M7b 挂起读取 → 稳定超时 reason（不挂死）', hungRead.ok === false && /^MT_/.test(hungRead.reason), hungRead);
+
 // ── 管线级（一次性 PG）：gate/重试/REWORK/死信/cancel/审计/泄漏 ──
 const CTR = `w34-${crypto.randomBytes(3).toString('hex')}`;
 const PORT = 17400 + Math.floor(Math.random() * 60);
