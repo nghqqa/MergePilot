@@ -34,6 +34,21 @@ export async function fixVerifyRound(pool, { run, binding, deps }) {
     return { ok: false, stage: 'aborted', reason: 'service_chain_invalid' };
   }
 
+  // ── Wave 3.3：外部 AgentTeams 执行器（部署级 MU_EXECUTOR=agentteams 显式启用）──
+  // 默认 internal；健康检查失败/未配置一律回退 internal 路径（不静默宣称外部已运行）。
+  // 外部结果仅是建议：verdict 经 MergePilot 侧 schema 校验后仍由 advanceAfterVerify
+  // 终裁（服务端策略复核）；Fixer 只产出建议文本（不应用/不提交/不 push）。
+  const atMod = await import('./agentteams-executor.mjs');
+  const atCfg = atMod.resolveAgentTeamsConfig(deps.env ?? process.env);
+  if (atCfg.kind === 'agentteams') {
+    const health = await atMod.agentTeamsHealthy(atCfg, deps.atFetch);
+    if (health.ok) {
+      const ext = await runExternalRound(pool, atMod, atCfg, { run, binding, deps });
+      if (ext.ok || ext.reason?.startsWith('AT_')) return ext;
+      // 其他异常 → 回退 internal 继续本轮
+    }
+  }
+
   // FIX_QUEUED / REWORK_REQUIRED → FIXING（CAS；并发轮次输家幂等退出）
   const fixing = await transitionRun(pool, { runId, from: ['FIX_QUEUED'], to: 'FIXING' }); // 回派先经 requeueFix(REWORK→FIX_QUEUED)，FIXING 只从 FIX_QUEUED 进入（状态机合法边）
   if (!fixing.ok) {
@@ -153,4 +168,82 @@ export async function fixVerifyRound(pool, { run, binding, deps }) {
   const final = await advanceAfterVerify(pool, { runId, tenantId, repoId, prId, headSha,
     verdict, unresolvedP0P1: [], fixAttemptNo: fixClaim.attempt });
   return { ok: true, stage: 'verified', verdict, decision: final.decision };
+}
+
+// ── Wave 3.3：外部 AgentTeams 轮次（fix+verify 交给外部四 Agent；MergePilot 终裁）──
+async function runExternalRound(pool, atMod, atCfg, { run, binding, deps }) {
+  const { runId } = { runId: run.run_id };
+  const { tenantId, repoId, prId, headSha } = binding;
+  const fetchImpl = deps.atFetch ?? fetch;
+  // 幂等建四 Agent（merge-patch；不暴露端口/无 MCP/无凭据注入）
+  const ensured = await atMod.ensureFourAgents(atCfg, { fetchImpl });
+  if (!ensured.ok) return { ok: false, stage: 'at_ensure_failed', reason: ensured.reason };
+  // 取 P0/P1 finding 摘要（脱敏出站）
+  const fRows = await pool.query(
+    `SELECT rule_id, severity, path, line_start, summary_masked FROM mu.agent_finding
+      WHERE run_id=$1 AND severity IN ('P0','P1') ORDER BY severity, created_at LIMIT 20`, [runId]);
+  const submitted = await atMod.submitExternalRound(atCfg, { runId, findings: fRows.rows, fetchImpl });
+  if (!submitted.ok) return { ok: false, stage: 'at_submit_failed', reason: submitted.reason };
+  const proj = submitted.project_id;
+  // 状态迁移与 attempt 记录（provider=agentteams）
+  await transitionRun(pool, { runId, from: ['FIX_QUEUED'], to: 'FIXING' });
+  const fixClaim = await retryClaim(pool, { runId, agentRole: 'fixer', provider: 'agentteams',
+    actorPrincipal: 'system:leader', inputDigest: digestOf(`${runId}|at-fix`),
+    maxAttempts: MAX_FIX_ROUNDS * 2, tenantId, repoId, prId, headSha });
+  const polled = await atMod.pollExternalRound(atCfg, { projectId: proj, fetchImpl,
+    maxWaitMs: atCfg.timeout });
+  if (!polled.ok) {
+    await atMod.cancelExternalRound(atCfg, { projectId: proj, taskId: 't-fix',
+      reason: 'mergepilot-poll-failed', submissionId: proj, fetchImpl }).catch(() => {});
+    if (fixClaim.ok) await finishAttemptOrSkip(pool, fixClaim.attemptId, 'FAILED', polled.reason);
+    await moveToDeadLetter(pool, { runId, tenantId, repoId, prId, headSha, agentRole: 'fixer',
+      kind: 'at_round_failed', reason: String(polled.reason).slice(0, 120), retryCount: fixClaim.ok ? fixClaim.attempt : 0,
+      payloadRef: `at:${atMod.atDigest(proj)}` });
+    await transitionRun(pool, { runId, from: ['FIXING'], to: 'BLOCKED' });
+    return { ok: false, stage: 'at_poll_failed', reason: polled.reason };
+  }
+  // Fixer 结果（建议文本——不应用；只校验形状并留 evidence 摘要）
+  const fixRes = await atMod.fetchTaskSummary(atCfg, { projectId: proj, taskId: 't-fix', fetchImpl });
+  let fixHintOk = false;
+  if (fixRes.ok) {
+    try {
+      const parsed = JSON.parse(fixRes.summary);
+      fixHintOk = atMod.validateAgentTeamsOutput('fixer', parsed).ok;
+    } catch { fixHintOk = false; }
+  }
+  await pool.query(
+    `INSERT INTO mu.fix_attempt (run_id, tenant_id, repo_id, pr_id, head_sha, attempt, status,
+        patch_digest, artifact_ref, error_code, evidence_ref)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING fix_id`,
+    [runId, tenantId, repoId, prId, headSha, fixClaim.ok ? fixClaim.attempt : 1,
+      fixHintOk ? 'DRY_RUN' : 'FAILED', fixHintOk ? digestOf(fixRes.summary) : null,
+      fixHintOk ? `at:${atMod.atDigest(proj)}` : null,
+      fixHintOk ? null : 'at_fix_output_invalid', fixClaim.ok ? `attempt:${fixClaim.attemptId}` : 'at']);
+  if (fixClaim.ok) await finishAttemptOrSkip(pool, fixClaim.attemptId, fixHintOk ? 'DONE' : 'FAILED',
+    fixHintOk ? null : 'at_fix_output_invalid');
+  // Verifier 结果（外部独立验证；MergePilot 仍做 schema 校验+策略终裁）
+  await transitionRun(pool, { runId, from: ['FIXING'], to: 'VERIFY_QUEUED' });
+  await transitionRun(pool, { runId, from: ['VERIFY_QUEUED'], to: 'VERIFYING' });
+  const verClaim = await retryClaim(pool, { runId, agentRole: 'verifier', provider: 'agentteams',
+    actorPrincipal: 'system:leader', inputDigest: digestOf(`${runId}|at-verify`),
+    maxAttempts: MAX_FIX_ROUNDS * 2, tenantId, repoId, prId, headSha });
+  const verRes = await atMod.fetchTaskSummary(atCfg, { projectId: proj, taskId: 't-verify', fetchImpl });
+  let verdict = 'BLOCKED', verCode = 'at_verify_output_invalid';
+  if (verRes.ok) {
+    try {
+      const parsed = JSON.parse(verRes.summary);
+      const v = atMod.validateAgentTeamsOutput('verifier', parsed);
+      if (v.ok) { verdict = parsed.verdict; verCode = null; }
+    } catch { /* 保持 BLOCKED */ }
+  }
+  await pool.query(
+    `INSERT INTO mu.verification_attempt (run_id, fix_id, tenant_id, repo_id, pr_id, head_sha, attempt, verdict, evidence_ref, error_code)
+     SELECT $1, (SELECT fix_id FROM mu.fix_attempt WHERE run_id=$1 ORDER BY attempt DESC LIMIT 1), $2,$3,$4,$5,$6,$7,$8,$9`,
+    [runId, tenantId, repoId, prId, headSha, verClaim.ok ? verClaim.attempt : 1, verdict,
+      verClaim.ok ? `attempt:${verClaim.attemptId}` : 'at', verCode]);
+  if (verClaim.ok) await finishAttemptOrSkip(pool, verClaim.attemptId, 'DONE');
+  await transitionRun(pool, { runId, from: ['VERIFYING'], to: 'VERIFIED' });
+  const final = await advanceAfterVerify(pool, { runId, tenantId, repoId, prId, headSha,
+    verdict, unresolvedP0P1: [], fixAttemptNo: fixClaim.ok ? fixClaim.attempt : 1 });
+  return { ok: true, stage: 'at_verified', verdict, decision: final.decision, executor: 'agentteams' };
 }
