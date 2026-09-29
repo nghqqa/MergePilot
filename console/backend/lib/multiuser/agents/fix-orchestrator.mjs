@@ -259,11 +259,16 @@ async function runExternalRound(pool, atMod, atCfg, { run, binding, deps }) {
     maxAttempts: MAX_FIX_ROUNDS * 2, tenantId, repoId, prId, headSha });
 
   // ── 四角色 Matrix 串行轮次（reviewer → leader → fixer → verifier）──
+  // 角色链：reviewer findings → leader 裁定 → fixer 建议 → verifier 独立验证
+  // （verifier 的验证对象=fixer 建议文本——注入其任务 brief；不采信自述仍由其独立判断）
   const ROLE_PROMPTS = {
     reviewer: { taskId: 't-review', ask: (b) => `review ${b}. Produce structured findings.`, schema: 'reviewer' },
-    leader: { taskId: 't-leader', ask: () => 'decide from masked findings only (no writes): recommend next action.', schema: 'leader' },
-    fixer: { taskId: 't-fix', ask: () => 'produce a dry-run fix suggestion ONLY (no commands, no repo writes).', schema: 'fixer' },
-    verifier: { taskId: 't-verify', ask: () => 'independently verify whether the fixer suggestion resolves the finding; do NOT trust fixer claims.', schema: 'verifier' },
+    leader: { taskId: 't-leader', ask: (b, r) => {
+      const n = Array.isArray(r?.reviewer?.findings) ? r.reviewer.findings.length : 0;
+      return `review conclusion input ${b} plus reviewer findings count ${n}. Recommend next action (no writes).`;
+    }, schema: 'leader' },
+    fixer: { taskId: 't-fix', ask: (b) => `fix suggestion for ${b}. Dry-run ONLY (no commands, no repo writes).`, schema: 'fixer' },
+    verifier: { taskId: 't-verify', ask: (b, r) => `independently verify whether this fix suggestion resolves the finding in ${b}: ${JSON.stringify(r?.fixer ?? {})} - do NOT trust the fixer claims, judge on merits.`, schema: 'verifier' },
   };
   const results = {};
   for (const role of ['reviewer', 'leader', 'fixer', 'verifier']) {
@@ -273,7 +278,7 @@ async function runExternalRound(pool, atMod, atCfg, { run, binding, deps }) {
       const submissionId = `${runId}:${rp.taskId}:${attemptNo}`;
       const sent = await mt.sendTaskDelegation(mtCfg, { room: bindings[role].roomID,
         workerMatrixId: bindings[role].matrixUserID, taskId: rp.taskId, correlationId: runId,
-        submissionId, role, brief: `${rp.ask(brief)}`, fetchImpl: mtFetch });
+        submissionId, role, brief: rp.ask(brief, results), fetchImpl: mtFetch });
       if (!sent.ok) { lastReason = sent.reason; break; }
       const got = await mt.collectReply(mtCfg, { room: bindings[role].roomID,
         expectedSender: bindings[role].matrixUserID, marker: `[mp:${submissionId}]`,
