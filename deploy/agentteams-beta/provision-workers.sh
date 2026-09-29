@@ -57,6 +57,7 @@ for ROLE in leader reviewer fixer verifier; do
     --volume "$AUTHVOL:/var/run/secrets/agentteams" \
     --restart unless-stopped \
     "${ENVARGS[@]}" --env=AGENTTEAMS_CONSOLE_PORT=$CONSOLE_PORT \
+    --env=COPAW_LOG_LEVEL=warning \
     --env=DEEPSEEK_API_KEY="$ATB_LLM_KEY" $IMG >/dev/null
 
   # 3) reconcile touch（Sleeping→Running；幂等）——先于模型 patch（见头部注释）

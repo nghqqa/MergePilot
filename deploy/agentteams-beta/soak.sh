@@ -14,25 +14,28 @@ INTERVAL=${INTERVAL:-300}
 DURATION_H=${DURATION_H:-8}
 OUT=${OUT:-soak.jsonl}
 : "${MERGEPILOT_BASE:?MERGEPILOT_BASE required (MergePilot Beta base URL)}"
-TOK=$(docker exec $CTRL sh -c 'tr -d "\n\r" < /var/run/agentteams/cli-token' 2>/dev/null || echo "")
+TOK=""  # token 在循环内获取并缓存（启动时 docker exec 高负载下可能失败——2026-09-29 实测）
 END=$(( $(date +%s) + DURATION_H * 3600 ))
-INIT_RESTARTS=$(for r in leader reviewer fixer verifier; do docker inspect -f '{{.RestartCount}}' $STACK-worker-mergepilot-$r 2>/dev/null || echo 0; done | paste -sd+ | bc)
+INIT_RESTARTS=$(for r in leader reviewer fixer verifier; do docker inspect -f '{{.RestartCount}}' $STACK-worker-mergepilot-$r 2>/dev/null || echo 0; done | awk '{s+=$1} END {print s+0}')
 
 echo "# soak start $(date -u +%FT%TZ) interval=${INTERVAL}s duration=${DURATION_H}h" >> "$OUT"
 while [ "$(date +%s)" -lt "$END" ]; do
   TS=$(date -u +%FT%TZ)
-  # 1) controller + 四 Agent（controller API）
+  if [ -z "$TOK" ]; then
+    TOK=$(timeout 20 docker exec $CTRL sh -c 'tr -d "\n\r" < /var/run/agentteams/cli-token' 2>/dev/null || echo "")
+  fi
+  # 1) controller + 四 Agent（host 直测发布端口——docker exec 在高负载下测量失真，2026-09-29 实测修正）
   CTRL_OK=0; READY=0
-  if [ -n "$TOK" ] && curl -sf -m 5 -H "Authorization: Bearer $TOK" "http://127.0.0.1:$PORT/api/v1/workers" >/tmp/atb-soak-workers.json 2>/dev/null; then
+  if [ -n "$TOK" ] && curl -sf -m 4 -H "Authorization: Bearer $TOK" "http://127.0.0.1:$PORT/api/v1/workers" >"$OUT.workers" 2>/dev/null; then
     CTRL_OK=1
-    READY=$(python3 -c 'import json; ws=[w for w in json.load(open("/tmp/atb-soak-workers.json"))["workers"] if w["name"].startswith("mergepilot-")]; print(sum(1 for w in ws if w["phase"]=="Running"))' 2>/dev/null || echo 0)
+    READY="$("$(command -v python3 || command -v python)" -c 'import json,sys; ws=[w for w in json.load(open(sys.argv[1]))["workers"] if w["name"].startswith("mergepilot-")]; print(sum(1 for w in ws if w["phase"]=="Running"))' "$OUT.workers" 2>/dev/null || echo 0)"
   fi
   # 2) MergePilot 侧执行器状态（若提供 manage_instance 会话不可得则跳过——只读端点需登录；
   #    soak 主要以 controller 侧为准，此字段尽力而为）
   MP_STATE=unknown
   # 3) 容器资源/重启
   STATS=$(docker stats --no-stream --format "{{.Name}} {{.CPUPerc}} {{.MemUsage}}" 2>/dev/null | grep -E "$CTRL|worker-mergepilot" | tr '\n' ';' | sed 's/;$//')
-  RESTARTS=$(for r in leader reviewer fixer verifier; do docker inspect -f '{{.RestartCount}}' $STACK-worker-mergepilot-$r 2>/dev/null || echo 0; done | paste -sd+ | bc)
+  RESTARTS=$(for r in leader reviewer fixer verifier; do docker inspect -f '{{.RestartCount}}' $STACK-worker-mergepilot-$r 2>/dev/null || echo 0; done | awk '{s+=$1} END {print s+0}')
   DISK=$(docker system df --format '{{.Type}} {{.Size}}' 2>/dev/null | grep Images | head -1)
   # 4) 可选合成 review（签名 webhook——需要真实 Beta 实例的凭据）
   TRIG=skipped
@@ -48,7 +51,7 @@ while [ "$(date +%s)" -lt "$END" ]; do
     "$TS" "$CTRL_OK" "$READY" "$RESTARTS" "$TRIG" "$STATS" "$DISK" >> "$OUT"
   sleep "$INTERVAL"
 done
-FINAL_RESTARTS=$(for r in leader reviewer fixer verifier; do docker inspect -f '{{.RestartCount}}' $STACK-worker-mergepilot-$r 2>/dev/null || echo 0; done | paste -sd+ | bc)
+FINAL_RESTARTS=$(for r in leader reviewer fixer verifier; do docker inspect -f '{{.RestartCount}}' $STACK-worker-mergepilot-$r 2>/dev/null || echo 0; done | awk '{s+=$1} END {print s+0}')
 echo "# soak end $(date -u +%FT%TZ) restarts_total=$FINAL_RESTARTS (init=$INIT_RESTARTS)" >> "$OUT"
 
 # 判定标准（人工评估 soak.jsonl）：
