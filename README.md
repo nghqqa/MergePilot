@@ -24,6 +24,7 @@ MergePilot 是一台跑在你自己机器上的 PR 安全审查工作台：通�
 | DB 持久安全会话（重启可恢复、撤销即时生效、HttpOnly/Lax/Prod Secure） | ✅ |
 | 邀请制 onboarding（GitHub 数字 user id 绑定，无公共自动注册） | ✅ |
 | Review Agent（只读 PR 审查 + 阶段推导） | ✅ |
+| AgentTeams 执行器（外部 runtime 四 Agent：leader/reviewer/fixer/verifier；AgentTeams-first fail-closed） | ⚙️ 受控 Beta（2h 稳定性验证，长期 soak 未做） |
 | Console（React SPA + 实时控制台） | ✅ |
 | FXV 修复验证（dry-run 默认 + 真 git 隔离环境） | ⚙️ 受控 |
 | 本地 RAG 语料检索（reference-only，`local-hash-v1` 默认） | ⚙️ 试用 |
@@ -38,6 +39,9 @@ MergePilot 是一台跑在你自己机器上的 PR 安全审查工作台：通�
 - ❌ **默认不做任何模型下载** — `local-hash-v1` 零下载；语义模型须自带并过 manifest 校验
 - ❌ **无 RLS 行级隔离** — 应用层租户约束（非 PostgreSQL RLS）
 - ❌ **无 SSO/SCIM/HA/配额限流** — Developer Edition 不含
+- ℹ️ **AgentTeams 四 Agent 仅产出建议** — Reviewer/Fixer/Verifier 输出为 LLM 建议（脱敏 finding 摘要输入）；Fixer 仅 dry-run 文本（不应用不提交）；Verifier 判定为模型意见（无代码执行/测试证据时不构成"修复已验证"）；最终裁决由 MergePilot 内部 Leader 做出
+- ℹ️ **AgentTeams 为正式执行路径** — `MU_EXECUTOR=agentteams`；未配置/不健康/worker 不完整即 fail-closed 拒绝（不回退 internal）；internal 仅限开发/测试/显式 emergency（须 `MU_EXECUTOR_INTERNAL_ALLOW` 开关）
+- ℹ️ **AgentTeams 栈 Controller 重启后需人工重跑 provision** — 见 deploy/agentteams-beta/RUNBOOK.md §3/§13
 
 ## Quickstart
 
@@ -73,6 +77,16 @@ GitHub ──(GitHub App read-only)──► Webhook (HMAC 验签) ──► Con
                     │                    │                         │
                   PG (13+ 表)         MinIO (证据包)         React SPA
                (mu schema 六版迁移)   (内容寻址)
+                    │
+                    ▼ （MU_EXECUTOR=agentteams，fail-closed）
+        AgentTeams Runtime（外部，Beta 受控）
+        ├─ mergepilot-leader（编排建议）
+        ├─ mergepilot-reviewer（审查建议）
+        ├─ mergepilot-fixer（dry-run 修复建议）
+        └─ mergepilot-verifier（独立验证意见）
+                    │ 全部输出仅建议 —— MergePilot Leader 终裁
+                    ▼
+        Controller API + Matrix 任务传输（见 deploy/agentteams-beta/RUNBOOK.md）
 ```
 
 详见 [ARCHITECTURE.md](distribution/docs/ARCHITECTURE.md)
