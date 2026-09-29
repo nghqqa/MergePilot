@@ -11,6 +11,7 @@ import { transitionRun, getRun, recordDecision, moveToDeadLetter, digestOf } fro
 import { retryClaim, finishAttemptOrSkip, advanceAfterVerify, MAX_FIX_ROUNDS } from './leader-helpers.mjs';
 import { fixerDryRun, verifierVerify, isForbiddenFixZone } from './fxv-adapter.mjs';
 import { fetchPrContext } from '../ghprovider.mjs';
+import * as mt from './matrix-transport.mjs';
 import { parseDiff } from '../reviewer-rules.mjs';
 
 // 每类 finding 的确定性修复规则（pattern=原始行文本；replacement=安全占位改写）
@@ -198,79 +199,137 @@ export async function fixVerifyRound(pool, { run, binding, deps }) {
   return { ok: true, stage: 'verified', verdict, decision: final.decision };
 }
 
-// ── Wave 3.3：外部 AgentTeams 轮次（fix+verify 交给外部四 Agent；MergePilot 终裁）──
+// ── 外部 AgentTeams 轮次（Wave 3.4：controller 资源层 + Matrix 正式任务传输层）──
+// 派发/收集由产品代码承担（matrix-transport.mjs）：与上游 delegate_task 同协议
+// （worker room 消息）；上游 DAG 自动消费链在 223ddc2 断（见 PHASE1 审计 G1/G2）。
+// 四重绑定：固定 room + 精确 sender + 时间窗 + submissionId marker；角色输出过
+// schema；单角色失败重试一次（新 txnId）；仍失败 → 真实 cancel + 死信 + BLOCKED。
 async function runExternalRound(pool, atMod, atCfg, { run, binding, deps }) {
   const { runId } = { runId: run.run_id };
   const { tenantId, repoId, prId, headSha } = binding;
   const fetchImpl = deps.atFetch ?? fetch;
-  // 幂等建四 Agent（merge-patch；不暴露端口/无 MCP/无凭据注入）
+  const mtFetch = deps.mtFetch ?? fetch;
+  const mtSleep = deps.mtSleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
+  const mtTimeout = Number(deps.mtRoleTimeoutMs) || mt.MT_LIMITS.defaultRoleTimeoutMs;
+  const env = deps.env ?? process.env;
+
+  const gateAudit = async (kind, detail) => {
+    await pool.query(
+      `INSERT INTO mu.audit_event (tenant_id, actor_user_id, kind, detail) VALUES ($1, NULL, $2, $3)`,
+      [tenantId, kind, JSON.stringify({ run_id: runId, ...detail })]).catch(() => {});
+  };
+
+  // Matrix 传输配置门（agentteams 正式路径要求 controller + Matrix 双配置，fail-closed）
+  const mtCfg = mt.resolveMatrixConfig(env);
+  if (mtCfg.kind === 'rejected') {
+    await gateAudit('executor_gate_rejected', { reason: mtCfg.reason, executor_mode: 'agentteams_matrix_missing' });
+    return { ok: false, stage: 'executor_gate_rejected', reason: mtCfg.reason };
+  }
+
+  // 幂等确保四 Agent（controller 资源层）
   const ensured = await atMod.ensureFourAgents(atCfg, { fetchImpl });
   if (!ensured.ok) return { ok: false, stage: 'at_ensure_failed', reason: ensured.reason };
-  // 取 P0/P1 finding 摘要（脱敏出站）
+  // 四 worker 绑定源（roomID/matrixUserID——controller 登记）
+  const detail = await atMod.listWorkersDetail(atCfg, { fetchImpl });
+  if (!detail.ok) return { ok: false, stage: 'at_workers_detail_failed', reason: detail.reason };
+  const workers = atMod.AGENTTEAMS_WORKERS;
+  const bindings = {};
+  for (const [role, def] of Object.entries(workers)) {
+    const w = detail.workers.get(def.name);
+    if (!w || !w.roomID || !w.matrixUserID) {
+      const reason = 'AT_WORKERS_INCOMPLETE';
+      await gateAudit('executor_gate_rejected', { reason, executor_mode: 'agentteams_worker_binding_missing', role });
+      return { ok: false, stage: 'at_workers_detail_failed', reason };
+    }
+    bindings[role] = w;
+  }
+
+  // 取 P0/P1 finding 摘要（脱敏出站——与 controller DAG 登记共用同一 brief）
   const fRows = await pool.query(
     `SELECT rule_id, severity, path, line_start, summary_masked FROM mu.agent_finding
       WHERE run_id=$1 AND severity IN ('P0','P1') ORDER BY severity, created_at LIMIT 20`, [runId]);
+  const brief = atMod.sanitizeBrief(fRows.rows);
   const submitted = await atMod.submitExternalRound(atCfg, { runId, findings: fRows.rows, fetchImpl });
   if (!submitted.ok) return { ok: false, stage: 'at_submit_failed', reason: submitted.reason };
   const proj = submitted.project_id;
-  // 状态迁移与 attempt 记录（provider=agentteams）
+
   await transitionRun(pool, { runId, from: ['FIX_QUEUED'], to: 'FIXING' });
   const fixClaim = await retryClaim(pool, { runId, agentRole: 'fixer', provider: 'agentteams',
     actorPrincipal: 'system:leader', inputDigest: digestOf(`${runId}|at-fix`),
     maxAttempts: MAX_FIX_ROUNDS * 2, tenantId, repoId, prId, headSha });
-  const polled = await atMod.pollExternalRound(atCfg, { projectId: proj, fetchImpl,
-    maxWaitMs: atCfg.timeout });
-  if (!polled.ok) {
-    await atMod.cancelExternalRound(atCfg, { projectId: proj, taskId: 't-fix',
-      reason: 'mergepilot-poll-failed', submissionId: proj, fetchImpl }).catch(() => {});
-    if (fixClaim.ok) await finishAttemptOrSkip(pool, fixClaim.attemptId, 'FAILED', polled.reason);
-    await moveToDeadLetter(pool, { runId, tenantId, repoId, prId, headSha, agentRole: 'fixer',
-      kind: 'at_round_failed', reason: String(polled.reason).slice(0, 120), retryCount: fixClaim.ok ? fixClaim.attempt : 0,
-      payloadRef: `at:${atMod.atDigest(proj)}` });
-    await transitionRun(pool, { runId, from: ['FIXING'], to: 'BLOCKED' });
-    return { ok: false, stage: 'at_poll_failed', reason: polled.reason };
+
+  // ── 四角色 Matrix 串行轮次（reviewer → leader → fixer → verifier）──
+  const ROLE_PROMPTS = {
+    reviewer: { taskId: 't-review', ask: (b) => `review ${b}. Produce structured findings.`, schema: 'reviewer' },
+    leader: { taskId: 't-leader', ask: () => 'decide from masked findings only (no writes): recommend next action.', schema: 'leader' },
+    fixer: { taskId: 't-fix', ask: () => 'produce a dry-run fix suggestion ONLY (no commands, no repo writes).', schema: 'fixer' },
+    verifier: { taskId: 't-verify', ask: () => 'independently verify whether the fixer suggestion resolves the finding; do NOT trust fixer claims.', schema: 'verifier' },
+  };
+  const results = {};
+  for (const role of ['reviewer', 'leader', 'fixer', 'verifier']) {
+    const rp = ROLE_PROMPTS[role];
+    let reply = null, lastReason = null;
+    for (let attemptNo = 1; attemptNo <= 2 && !reply; attemptNo++) {
+      const submissionId = `${runId}:${rp.taskId}:${attemptNo}`;
+      const sent = await mt.sendTaskDelegation(mtCfg, { room: bindings[role].roomID,
+        workerMatrixId: bindings[role].matrixUserID, taskId: rp.taskId, correlationId: runId,
+        submissionId, role, brief: `${rp.ask(brief)}`, fetchImpl: mtFetch });
+      if (!sent.ok) { lastReason = sent.reason; break; }
+      const got = await mt.collectReply(mtCfg, { room: bindings[role].roomID,
+        expectedSender: bindings[role].matrixUserID, marker: `[mp:${submissionId}]`,
+        sinceTs: sent.ts - mt.MT_LIMITS.markerGuardMs, timeoutMs: mtTimeout,
+        fetchImpl: mtFetch, sleepImpl: mtSleep });
+      if (got.ok) {
+        const v = atMod.validateAgentTeamsOutput(rp.schema, got.json);
+        if (v.ok) { reply = got; break; }
+        lastReason = v.code; // schema 无效 → 重试一次（新 submissionId/新 event）
+      } else lastReason = got.reason; // 超时/读失败 → 重试一次
+    }
+    if (!reply) {
+      // fail-closed：真实 cancel + 死信 + BLOCKED——绝不伪造结果、绝不回退 internal
+      await atMod.cancelExternalRound(atCfg, { projectId: proj, taskId: rp.taskId,
+        reason: `mergepilot-${lastReason}`, submissionId: proj, fetchImpl }).catch(() => {});
+      if (fixClaim.ok) await finishAttemptOrSkip(pool, fixClaim.attemptId, 'FAILED', String(lastReason).slice(0, 80));
+      await moveToDeadLetter(pool, { runId, tenantId, repoId, prId, headSha, agentRole: role,
+        kind: 'mt_round_failed', reason: String(lastReason).slice(0, 120),
+        retryCount: fixClaim.ok ? fixClaim.attempt : 0, payloadRef: `at:${atMod.atDigest(proj)}` });
+      await transitionRun(pool, { runId, from: ['FIXING'], to: 'BLOCKED' });
+      return { ok: false, stage: 'mt_round_failed', reason: lastReason, role };
+    }
+    results[role] = reply.json;
   }
-  // Fixer 结果（建议文本——不应用；只校验形状并留 evidence 摘要）
-  const fixRes = await atMod.fetchTaskSummary(atCfg, { projectId: proj, taskId: 't-fix', fetchImpl });
-  let fixHintOk = false;
-  if (fixRes.ok) {
-    try {
-      const parsed = JSON.parse(fixRes.summary);
-      fixHintOk = atMod.validateAgentTeamsOutput('fixer', parsed).ok;
-    } catch { fixHintOk = false; }
-  }
+
+  // fixer 落库（仅 DRY_RUN 建议文本——不应用；digest 摘要）
+  const fixHint = results.fixer;
   await pool.query(
     `INSERT INTO mu.fix_attempt (run_id, tenant_id, repo_id, pr_id, head_sha, attempt, status,
         patch_digest, artifact_ref, error_code, evidence_ref)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING fix_id`,
+     VALUES ($1,$2,$3,$4,$5,$6,'DRY_RUN',$7,$8,null,$9)`,
     [runId, tenantId, repoId, prId, headSha, fixClaim.ok ? fixClaim.attempt : 1,
-      fixHintOk ? 'DRY_RUN' : 'FAILED', fixHintOk ? digestOf(fixRes.summary) : null,
-      fixHintOk ? `at:${atMod.atDigest(proj)}` : null,
-      fixHintOk ? null : 'at_fix_output_invalid', fixClaim.ok ? `attempt:${fixClaim.attemptId}` : 'at']);
-  if (fixClaim.ok) await finishAttemptOrSkip(pool, fixClaim.attemptId, fixHintOk ? 'DONE' : 'FAILED',
-    fixHintOk ? null : 'at_fix_output_invalid');
-  // Verifier 结果（外部独立验证；MergePilot 仍做 schema 校验+策略终裁）
+      digestOf(JSON.stringify(fixHint)), `at:${atMod.atDigest(proj)}`,
+      fixClaim.ok ? `attempt:${fixClaim.attemptId}` : 'at']);
+  if (fixClaim.ok) await finishAttemptOrSkip(pool, fixClaim.attemptId, 'DONE');
+
+  // verifier 落库（独立判定）
   await transitionRun(pool, { runId, from: ['FIXING'], to: 'VERIFY_QUEUED' });
   await transitionRun(pool, { runId, from: ['VERIFY_QUEUED'], to: 'VERIFYING' });
   const verClaim = await retryClaim(pool, { runId, agentRole: 'verifier', provider: 'agentteams',
     actorPrincipal: 'system:leader', inputDigest: digestOf(`${runId}|at-verify`),
     maxAttempts: MAX_FIX_ROUNDS * 2, tenantId, repoId, prId, headSha });
-  const verRes = await atMod.fetchTaskSummary(atCfg, { projectId: proj, taskId: 't-verify', fetchImpl });
-  let verdict = 'BLOCKED', verCode = 'at_verify_output_invalid';
-  if (verRes.ok) {
-    try {
-      const parsed = JSON.parse(verRes.summary);
-      const v = atMod.validateAgentTeamsOutput('verifier', parsed);
-      if (v.ok) { verdict = parsed.verdict; verCode = null; }
-    } catch { /* 保持 BLOCKED */ }
-  }
+  const verdict = String(results.verifier?.verdict ?? 'BLOCKED');
   await pool.query(
     `INSERT INTO mu.verification_attempt (run_id, fix_id, tenant_id, repo_id, pr_id, head_sha, attempt, verdict, evidence_ref, error_code)
-     SELECT $1, (SELECT fix_id FROM mu.fix_attempt WHERE run_id=$1 ORDER BY attempt DESC LIMIT 1), $2,$3,$4,$5,$6,$7,$8,$9`,
+     SELECT $1, (SELECT fix_id FROM mu.fix_attempt WHERE run_id=$1 ORDER BY attempt DESC LIMIT 1), $2,$3,$4,$5,$6,$7,$8,null`,
     [runId, tenantId, repoId, prId, headSha, verClaim.ok ? verClaim.attempt : 1, verdict,
-      verClaim.ok ? `attempt:${verClaim.attemptId}` : 'at', verCode]);
+      verClaim.ok ? `attempt:${verClaim.attemptId}` : 'at']);
   if (verClaim.ok) await finishAttemptOrSkip(pool, verClaim.attemptId, 'DONE');
   await transitionRun(pool, { runId, from: ['VERIFYING'], to: 'VERIFIED' });
+
+  // 审计：外部轮次摘要（仅 ID 与判定摘要，无正文）
+  await gateAudit('agentteams_round_completed', { project_id: proj, verdict,
+    reviewer_findings: Array.isArray(results.reviewer?.findings) ? results.reviewer.findings.length : null,
+    leader_recommendation: results.leader?.recommendation ?? null });
+
   const final = await advanceAfterVerify(pool, { runId, tenantId, repoId, prId, headSha,
     verdict, unresolvedP0P1: [], fixAttemptNo: fixClaim.ok ? fixClaim.attempt : 1 });
   return { ok: true, stage: 'at_verified', verdict, decision: final.decision, executor: 'agentteams' };

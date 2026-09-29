@@ -178,6 +178,14 @@ MU_AGENTTEAMS_MODEL=deepseek-chat             # 与目标集群模型对齐
 # MU_AGENTTEAMS_TIMEOUT_MS=120000             # 可选；轮询/请求超时上限（≤300000）
 ```
 
+正式路径同时要求 Matrix 任务传输层（Wave 3.4 —— 与上游 delegate 同协议的 worker room 消息通道；缺配置 fail-closed `MT_NOT_CONFIGURED`）：
+
+```bash
+MU_AGENTTEAMS_MATRIX_URL=http://<agentteams-controller>:6167   # Matrix CS API（见 deploy/agentteams-beta/RUNBOOK.md §10）
+MU_AGENTTEAMS_MATRIX_USER=<AgentTeams admin 用户>
+MU_AGENTTEAMS_MATRIX_PASSWORD=<部署级凭据（进程环境注入，不入库/日志）>
+```
+
 internal 执行器仅限开发/测试/应急路径，必须同时显式声明降级开关（缺失即拒绝）：
 
 ```bash

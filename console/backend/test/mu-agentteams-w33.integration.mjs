@@ -36,7 +36,8 @@ function mkAtApi({ health = 200, projectStatus = 'completed', verifySummary = '{
     if (url.endsWith('/api/v1/projects?limit=1')) return { status: health, ok: health === 200, json: async () => ({ projects: [] }) };
     if (url.endsWith('/api/v1/workers') && (!opts.method || opts.method === 'GET')) {
       const names = stubborn ? baseNames : [...new Set([...baseNames, ...createdNow])];
-      return { status: 200, ok: true, json: async () => ({ workers: names.map((n) => ({ name: n })) }) };
+      return { status: 200, ok: true, json: async () => ({ workers: names.map((n) => ({ name: n,
+        roomID: `!${n}:dom`, matrixUserID: `@${n}:dom`, phase: 'Running' })) }) };
     }
     if (url.endsWith('/api/v1/workers') && opts.method === 'POST') {
       const body = JSON.parse(opts.body ?? '{}');
@@ -63,6 +64,45 @@ function mkAtApi({ health = 200, projectStatus = 'completed', verifySummary = '{
 }
 const CFG = { kind: 'agentteams', baseUrl: 'http://at.test', timeout: 5_000 };
 const ENV_ON = { MU_EXECUTOR: 'agentteams', MU_AGENTTEAMS_BASE_URL: 'http://at.test', MU_AGENTTEAMS_TOKEN: 'at-tok' };
+const ENV_MT = { ...ENV_ON, MU_AGENTTEAMS_MATRIX_URL: 'http://mt.test', MU_AGENTTEAMS_MATRIX_USER: 'mp-admin', MU_AGENTTEAMS_MATRIX_PASSWORD: 'mt-pass' };
+const MT_ROOMS = { reviewer: '!mergepilot-reviewer:dom', leader: '!mergepilot-leader:dom', fixer: '!mergepilot-fixer:dom', verifier: '!mergepilot-verifier:dom' };
+const MT_SENDERS = { reviewer: '@mergepilot-reviewer:dom', leader: '@mergepilot-leader:dom',
+  fixer: '@mergepilot-fixer:dom', verifier: '@mergepilot-verifier:dom' };
+const MT_REPLY = {
+  reviewer: { findings: [{ severity: 'P0', path: 'src/a.js', summary: 'hardcoded token' }] },
+  leader: { recommendation: 'fix_required', confidence: 0.8 },
+  fixer: { suggestion: 'move secret to env var', patch_hint: 'replace token with process.env.PAT' },
+  verifier: { verdict: 'PASS', note: 'ok' },
+};
+// 模拟 Matrix CS API（登录/发送（记录 marker）/读取（按 room 角色回增带 marker 的合法回复））
+function mkMatrixApi({ replyOverride = {}, swallowFirstN = 0, wrongSender = false } = {}) {
+  const sent = [];
+  return async (url, opts = {}) => {
+    if (url.includes('/login')) return { status: 200, ok: true, json: async () => ({ access_token: 'mt-tok' }) };
+    if (url.includes('/send/m.room.message/')) {
+      const body = JSON.parse(opts.body ?? '{}').body ?? '';
+      const m = /\[mp:([^\]]+)\]/.exec(body);
+      sent.push({ marker: m ? m[1] : null, taskId: m ? m[1].split(':')[1] : null });
+      return { status: 200, ok: true, json: async () => ({ event_id: '$e' + sent.length }) };
+    }
+    if (url.includes('/messages?')) {
+      const room = decodeURIComponent(/rooms\/([^/]+)\/messages/.exec(url)[1]);
+      const role = Object.keys(MT_ROOMS).find((r) => MT_ROOMS[r] === room);
+      if (!role) return { status: 200, ok: true, json: async () => ({ chunk: [] }) };
+      const chunk = [];
+      const TASK_ROLE = { 't-review': 'reviewer', 't-leader': 'leader', 't-fix': 'fixer', 't-verify': 'verifier' };
+      sent.forEach((x, i) => {
+        if (!x.marker || TASK_ROLE[x.taskId] !== role) return;
+        if (i < swallowFirstN) return; // 模拟首条丢失（重试语义）
+        const json = replyOverride[role] ?? MT_REPLY[role];
+        chunk.push({ type: 'm.room.message', sender: wrongSender ? '@attacker:dom' : MT_SENDERS[role],
+          origin_server_ts: Date.now(), content: { body: `[mp:${x.marker}] ${JSON.stringify(json)}` } });
+      });
+      return { status: 200, ok: true, json: async () => ({ chunk }) };
+    }
+    return { status: 404, ok: false };
+  };
+}
 
 // ── W1 配置解析（AgentTeams-first 三态：rejected / internal+显式 scope / agentteams）──
 netCalls = 0;
@@ -196,7 +236,8 @@ try {
     findings: [{ rule_id: 'R-SECRET', severity: 'P0', confidence: 0.9, path: 's.js', line_start: 2,
       line_end: 2, title: 'x', evidence_ref: 'e', summary_masked: 'ghp_***' }] });
   process.env.MU_AGENTTEAMS_TOKEN = 'at-tok';
-  const deps = { env: { ...ENV_ON }, atFetch: mkAtApi(), assertServiceChain: async () => true,
+  const deps = { env: { ...ENV_MT }, atFetch: mkAtApi(), mtFetch: mkMatrixApi(),
+    mtSleep: async () => {}, mtRoleTimeoutMs: 2_000, assertServiceChain: async () => true,
     repoUrl: 'x', testCmd: 'node -e process.exit(0)', providerCfg: {}, installationId: '1',
     owner: 'w33', repoName: 'r', prNumber: 4 };
   const rExt = await fxo.fixVerifyRound(pool, { run, binding, deps });

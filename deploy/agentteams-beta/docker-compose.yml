@@ -1,0 +1,91 @@
+# AgentTeams Beta 栈（Wave 3.4 部署清单）— Developer Edition Beta 受控运行
+#
+# 用法（凭据全部经进程环境注入——禁止写入本文件或 .env 提交仓库）：
+#   export ATB_ADMIN_PASSWORD=...  ATB_MINIO_PASSWORD=...  ATB_MANAGER_PASSWORD=...
+#   export ATB_REGISTRATION_TOKEN=...  ATB_LLM_KEY=<一次性非生产 deepseek key>
+#   docker compose -p agentteams-beta up -d
+#   bash provision-workers.sh   # 四具名 worker（controller API 创建+容器接管+模型配置）
+#
+# 镜像 digest 锁定（2026-09-29 供应链裁决，见 RUNBOOK）：
+#   agentteams/agentteams-embedded:223ddc2 @ sha256:ae47995d209f…
+#   agentteams/copaw-worker:223ddc2-agentloop-v5fix @ sha256:4be8eccfe4fb…
+#   （manager/worker-agent 由 controller 内嵌引用 223ddc2 线）
+#
+# 上游约束（如实登记，非本清单缺陷）：
+#  * embedded controller 给 worker 容器注入 127.0.0.1 URL（全服务 localhost-only）
+#    → worker 容器共享 controller 网络命名空间（provision-workers.sh 以
+#    --network container:<ctrl> 接管，同 controller 生成凭据）；
+#  * controller 需挂 Docker socket 管理 worker 容器（上游设计；Beta 风险接受
+#    项 R-2——仅本 compose 项目命名空间内创建 <project>-worker-* 容器）。
+name: agentteams-beta
+
+services:
+  at-controller:
+    image: agentteams/agentteams-embedded:223ddc2
+    container_name: agentteams-beta-ctrl
+    hostname: agentteams-beta-ctrl
+    restart: unless-stopped
+    networks:
+      atnet:
+        aliases: [agentteams-beta-controller, agentteams-beta-matrix]
+    ports:
+      # 仅 controller API 对 MergePilot 网络开放；host 发布仅限回环（Beta 单机形态）
+      - "127.0.0.1:${ATB_API_PORT:-28462}:8090"
+    volumes:
+      - at-data:/data
+      - /run/host-services/docker.proxy.sock:/var/run/docker.sock:ro
+    environment:
+      AGENTTEAMS_ADMIN_USER: agentteams-beta-admin
+      AGENTTEAMS_ADMIN_PASSWORD: ${ATB_ADMIN_PASSWORD}
+      AGENTTEAMS_MINIO_USER: agentteams-beta-minio
+      AGENTTEAMS_MINIO_PASSWORD: ${ATB_MINIO_PASSWORD}
+      AGENTTEAMS_MANAGER_PASSWORD: ${ATB_MANAGER_PASSWORD}
+      AGENTTEAMS_REGISTRATION_TOKEN: ${ATB_REGISTRATION_TOKEN}
+      AGENTTEAMS_LLM_PROVIDER: openai-compat
+      AGENTTEAMS_OPENAI_BASE_URL: https://api.deepseek.com
+      AGENTTEAMS_DEFAULT_MODEL: deepseek-chat
+      AGENTTEAMS_OPENAI_API_KEY: ${ATB_LLM_KEY}
+      AGENTTEAMS_MANAGER_IMAGE: agentteams/manager:223ddc2
+      AGENTTEAMS_COPAW_WORKER_IMAGE: agentteams/copaw-worker:223ddc2-agentloop-v5fix
+      AGENTTEAMS_WORKER_IMAGE: agentteams/worker-agent:223ddc2
+      AGENTTEAMS_MANAGER_RUNTIME: openclaw
+      AGENTTEAMS_DEFAULT_WORKER_RUNTIME: copaw
+      AGENTTEAMS_RESOURCE_PREFIX: agentteams-beta-
+      AGENTTEAMS_MODEL_MAX_TOKENS: "8000"
+      AGENTTEAMS_MATRIX_DOMAIN: agentteams-beta-matrix:6167
+      AGENTTEAMS_MATRIX_URL: http://agentteams-beta-controller:6167
+      AGENTTEAMS_FS_ENDPOINT: http://agentteams-beta-controller:9000
+      AGENTTEAMS_MATRIX_E2EE: "0"
+      AGENTTEAMS_MATRIX_APPSERVICE_ENABLED: "false"
+      AGENTTEAMS_DOCKER_PROXY: "0"
+      AGENTTEAMS_WORKER_IDLE_TIMEOUT: "720"
+      AGENTTEAMS_DATA_DIR: agentteams-beta-data
+      AGENTTEAMS_WORKSPACE_DIR: /tmp/atb-ws
+      AGENTTEAMS_HOST_SHARE_DIR: /tmp/atb-host
+      AGENTTEAMS_DASHBOARD: "0"
+      AGENTTEAMS_FS_BUCKET: agentteams-storage
+      AGENTTEAMS_DOCKER_NETWORK: agentteams-beta_atnet
+      AGENTTEAMS_MC_MIRROR_SCOPE: controller
+      AGENTTEAMS_AI_GATEWAY_DOMAIN: agentteams-beta-controller
+    deploy:
+      resources:
+        limits: { cpus: "4.0", memory: 6g }
+    logging: { driver: json-file, options: { max-size: "50m", max-file: "5" } }
+    security_opt: [no-new-privileges:true]
+    # read-only filesystem 不可用（embedded supervisord 全家桶需写 /data、/tmp、/root）
+    # ——上游约束，RUNBOOK R-3 风险接受
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:8090/api/v1/projects?limit=1 >/dev/null 2>&1 || curl -sf http://127.0.0.1:8090/api/v1/projects?limit=1 >/dev/null"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 120s
+    stop_grace_period: 60s
+
+networks:
+  atnet:
+    name: agentteams-beta_atnet
+
+volumes:
+  at-data:
+    name: agentteams-beta-data

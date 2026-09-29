@@ -1083,6 +1083,50 @@ export async function muApi(req, res, ctx) {
     }
 
     // ── Agent 运行策略（Wave 3.2；PlatformAdmin 读写；零凭据字段）──
+    // ── AgentTeams 运行状态（Wave 3.4；只读探测；脱敏——无 token/prompt/正文）──
+    if (p === '/api/mu/agentteams-status' && req.method === 'GET') {
+      const g = await guard('manage_instance');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const atMod = await import('./agents/agentteams-executor.mjs');
+      const mtMod = await import('./agents/matrix-transport.mjs');
+      const cfg = atMod.resolveAgentTeamsConfig(env);
+      const mtCfg = mtMod.resolveMatrixConfig(env);
+      const out = { executor: atMod.executorStatusSummary(env),
+        controller: null, matrix_transport: mtCfg.kind === 'matrix' ? 'configured' : mtCfg.reason,
+        workers_ready: 0, workers_total: 4, last_stable_reason: null };
+      if (cfg.kind === 'agentteams') {
+        const probe = { ...cfg, timeout: Math.min(cfg.timeout, 3_000) };
+        const h = await atMod.agentTeamsHealthy(probe).catch(() => ({ ok: false, reason: 'AT_PROBE_FAILED' }));
+        out.controller = h.ok ? 'reachable' : h.reason;
+        if (h.ok) {
+          const d = await atMod.listWorkersDetail(probe).catch(() => null);
+          if (d?.ok) {
+            const four = Object.values(atMod.AGENTTEAMS_WORKERS).map((w) => d.workers.get(w.name)).filter(Boolean);
+            out.workers_ready = four.filter((w) => w.phase === 'Running' && w.roomID && w.matrixUserID).length;
+          }
+        }
+        const dlq = await muPoolQ(`SELECT reason, created_at FROM mu.dead_letter
+          WHERE kind IN ('mt_round_failed','at_round_failed','at_round_crashed') ORDER BY created_at DESC LIMIT 1`).catch(() => null);
+        if (dlq?.rows?.length) out.last_stable_reason = String(dlq.rows[0].reason ?? '').slice(0, 60);
+        const dlqN = await muPoolQ(`SELECT count(*) c FROM mu.dead_letter
+          WHERE kind IN ('mt_round_failed','at_round_failed','at_round_crashed') AND resolved_at IS NULL`).catch(() => null);
+        out.dead_letter_open = Number(dlqN?.rows?.[0]?.c ?? 0);
+        const pend = await muPoolQ(`SELECT count(*) c FROM mu.job WHERE state='queued'`).catch(() => null);
+        out.queue_backlog = Number(pend?.rows?.[0]?.c ?? 0);
+        const tmo = await muPoolQ(`SELECT count(*) c FROM mu.agent_attempt
+          WHERE provider='agentteams' AND status='FAILED' AND created_at > now() - interval '24 hours'`).catch(() => null);
+        out.agentteams_attempts_failed_24h = Number(tmo?.rows?.[0]?.c ?? 0);
+        const okN = await muPoolQ(`SELECT count(*) c, max(created_at) latest FROM mu.agent_attempt
+          WHERE provider='agentteams' AND status='DONE'`).catch(() => null);
+        out.agentteams_attempts_done = Number(okN?.rows?.[0]?.c ?? 0);
+        out.last_success_at = okN?.rows?.[0]?.latest ?? null;
+      }
+      const st = out.executor.mode === 'agentteams' && out.controller === 'reachable' && out.workers_ready === 4
+        ? (out.dead_letter_open > 0 ? 'degraded' : 'active')
+        : out.executor.mode === 'agentteams' ? 'unavailable_fail_closed'
+        : out.executor.mode === 'internal' ? 'internal_non_production' : 'not_configured_fail_closed';
+      return sendJson(res, 200, { ...out, runtime_state: st });
+    }
     if (p === '/api/mu/agent-policy' && req.method === 'GET') {
       const g = await guard('manage_instance');
       if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
