@@ -93,7 +93,98 @@ function contractSource(fetchImpl, config) {
   };
 }
 
+// ---- multiuser 源（Wave 3.7 数据源纯化：MU 部署正式路径） ----
+//
+// 数据面全部 /api/mu/* canonical（会话内 tenant 收窄，服务端 RBAC）：
+//   仓库清单 GET /api/mu/repositories（MU 模式 health 不携带租户仓库名——租户隔离）
+//   PR 列表   GET /api/mu/prs?repo_id=
+//   PR 详情   GET /api/mu/prs/:prId（含 run/verdict 投影）
+// 失败一律抛错给页面错误态——绝不回退 snapshot/fixture（纯化红线）。
+
+function multiuserSource(fetchImpl) {
+  const get = async (url) => {
+    const res = await fetchImpl(url, { credentials: 'same-origin' });
+    const body = await res.json().catch(() => null);
+    if (!res.ok) {
+      const err = new Error(body?.error?.reason ?? `HTTP ${res.status}`);
+      err.status = res.status;
+      err.reason = body?.error?.reason ?? null;
+      throw err;
+    }
+    return body;
+  };
+  let repoCache = null; // 会话内仓库清单缓存（按会话域，无 tenant 键——数据本身即本租户）
+  const repoKey = (repo) => (typeof repo === 'string' ? repo : `${repo.owner}/${repo.name}`);
+  async function resolveRepoId(repo) {
+    const key = repoKey(repo);
+    if (!repoCache) {
+      const body = await get('/api/mu/repositories');
+      repoCache = (body?.repositories ?? []).map((r) => ({
+        repo_id: r.repo_id, repo: `${r.owner}/${r.name}`, owner: r.owner, name: r.name,
+        prCount: Number(r.pr_count ?? 0) || null, runCount: null, activityAt: r.created_at ?? null,
+        kind: 'multiuser', binding_state: r.binding_state ?? null,
+      }));
+    }
+    const hit = repoCache.find((r) => r.repo === key);
+    if (!hit) throw Object.assign(new Error(`repo_not_bound: ${key}`), { status: 404, reason: 'repo_not_bound' });
+    return hit;
+  }
+  return {
+    kind: 'multiuser',
+    dataMode: 'live',
+    async listRepos() {
+      await resolveRepoId(''); // 触发缓存填充（空 key 不命中，仅加载清单）
+      return repoCache;
+    },
+    async listPrs(repo) {
+      const r = await resolveRepoId(repo);
+      const body = await get(`/api/mu/prs?repo_id=${encodeURIComponent(r.repo_id)}`);
+      return (body?.pull_requests ?? body?.prs ?? []).map((pr) => ({
+        kind: 'multiuser',
+        key: `${r.repo}#${pr.provider_pr_number}`,
+        repo: r.repo,
+        prNumber: pr.provider_pr_number,
+        title: pr.title ?? null,
+        currentHead: pr.head_sha ?? null,
+        state: pr.state ?? null,
+        latestResult: pr.run_status
+          ? { verdict: ['COMPLETED', 'VERIFIED'].includes(pr.run_status) ? 'PASS'
+            : ['BLOCKED', 'REWORK_REQUIRED', 'FAILED'].includes(pr.run_status) ? 'BLOCKED' : 'RUNNING',
+            severity: null, stale: false, runId: pr.run_id ?? null }
+          : null,
+        latestRun: pr.run_id ? { runId: pr.run_id, status: String(pr.run_status ?? 'RUNNING'), startedAt: null } : null,
+        hasPendingTickets: false,
+      }));
+    },
+    async getPr(repo, prNumber) {
+      const r = await resolveRepoId(repo);
+      const body = await get(`/api/mu/prs/${encodeURIComponent(String(prNumber))}`);
+      const pull = body?.pull_request ?? null;
+      const records = Array.isArray(body?.review_records) ? body.review_records : [];
+      const lr = records[0] ?? null;
+      const view = {
+        kind: 'multiuser',
+        key: `${r.repo}#${prNumber}`,
+        repo: r.repo,
+        prNumber,
+        title: pull?.title ?? null,
+        currentHead: pull?.head_sha ?? null,
+        state: pull?.state ?? null,
+        latestResult: lr ? {
+          verdict: ['COMPLETED', 'VERIFIED'].includes(lr.status) ? 'PASS'
+            : ['BLOCKED', 'REWORK_REQUIRED', 'FAILED'].includes(lr.status) ? 'BLOCKED' : 'RUNNING',
+          severity: null, stale: false, runId: lr.run_id ?? null,
+        } : null,
+        latestRun: lr ? { runId: lr.run_id, status: String(lr.status ?? 'RUNNING'), startedAt: null } : null,
+        hasPendingTickets: false,
+      };
+      return { view, detail: body };
+    },
+  };
+}
+
 export function createDataSource(config, fetchImpl = (typeof fetch !== 'undefined' ? fetch : null)) {
+  if (config?.mode === 'multiuser') return multiuserSource(fetchImpl);
   if (config?.mode === 'contract') return contractSource(fetchImpl, config);
   if (config?.mode === 'console-pg') return consolePgSource(fetchImpl, config);
   return snapshotSource(fetchImpl);

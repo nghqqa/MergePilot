@@ -159,6 +159,11 @@ export default function CorePage() {
             ]}
           />
           <Typography.Title level={3} style={{ marginTop: 20 }}>FXV 修复编排</Typography.Title>
+          {data.fxv?.capability === 'fxv_persistence_not_tenant_scoped' ? (
+            <Alert type="info" showIcon style={{ marginBottom: 12 }}
+              message="FXV 全局指标在多用户控制台不展示"
+              description="FXV 持久层未按租户隔离——展示全局聚合会跨租户泄露。修复型执行记录见「多用户」页的 PR 审查管线。" />
+          ) : null}
           {data.fxv?.metrics?.alerts?.length ? (
             <Alert type="warning" showIcon style={{ marginBottom: 12 }} message={`FXV 告警：${data.fxv.metrics.alerts.join('；')}`} />
           ) : null}
@@ -170,7 +175,7 @@ export default function CorePage() {
           <Table
             size="small" rowKey="attempt_id" pagination={false}
             dataSource={data.fxv?.attempts || []}
-            locale={{ emptyText: data.fxv?.source === 'POSTGRESQL_LIVE' ? '没有修复编排记录（诚实零值）' : `FXV 数据源=${data.fxv?.source || '未知'}（不伪造记录）` }}
+            locale={{ emptyText: data.fxv?.source === 'POSTGRESQL_LIVE' ? '没有修复编排记录（诚实零值）' : data.fxv?.capability === 'fxv_persistence_not_tenant_scoped' ? '多用户控制台不展示 FXV 全局尝试（租户隔离）' : data.fxv?.source === 'FXV_PERSISTENCE_ABSENT' ? 'FXV 持久层未初始化（诚实零值）' : `FXV 数据源=${data.fxv?.source || '未知'}（不伪造记录）` }}
             columns={[
               { title: 'Attempt', dataIndex: 'attempt_id', ellipsis: true, render: (v) => <span className="mono">{v}</span> },
               { title: '仓库/分支', ellipsis: true, render: (_, r) => `${r.repo}@${r.branch}` },
