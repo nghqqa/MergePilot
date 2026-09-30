@@ -242,8 +242,11 @@ try {
   const run2 = await orch.getRun(pool, s2.run.run_id);
   ok('P2a 四角色 Matrix 轮次完成（executor=agentteams）', r2.ok === true && r2.executor === 'agentteams' && r2.verdict === 'PASS', r2);
   ok('P2b 终裁 COMPLETED', run2.status === 'COMPLETED', run2.status);
-  const atts2 = (await pool.query(`SELECT agent_role, provider FROM mu.agent_attempt WHERE run_id=$1`, [s2.run.run_id])).rows;
+  const atts2 = (await pool.query(`SELECT agent_role, provider, status, output_digest FROM mu.agent_attempt WHERE run_id=$1`, [s2.run.run_id])).rows;
   ok('P2c fixer/verifier attempt provider=agentteams', atts2.some((a) => a.agent_role === 'fixer' && a.provider === 'agentteams') && atts2.some((a) => a.agent_role === 'verifier' && a.provider === 'agentteams'));
+  ok('P2c2 reviewer/leader attempt 行 DONE+digest（四 Agent 全可见）',
+    atts2.some((a) => a.agent_role === 'reviewer' && a.status === 'DONE' && a.output_digest)
+    && atts2.some((a) => a.agent_role === 'leader' && a.status === 'DONE' && a.output_digest), atts2);
   const fix2 = (await pool.query(`SELECT status FROM mu.fix_attempt WHERE run_id=$1`, [s2.run.run_id])).rows[0];
   ok('P2d 外部 Fixer 仅 DRY_RUN', fix2?.status === 'DRY_RUN');
   const audit2 = (await pool.query(`SELECT detail FROM mu.audit_event WHERE kind='agentteams_round_completed' AND detail::text LIKE $1`, [`%${s2.run.run_id}%`])).rows[0];

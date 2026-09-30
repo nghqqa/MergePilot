@@ -271,8 +271,19 @@ async function runExternalRound(pool, atMod, atCfg, { run, binding, deps }) {
     verifier: { taskId: 't-verify', ask: (b, r) => `independently verify whether this fix suggestion resolves the finding in ${b}: ${JSON.stringify(r?.fixer ?? {})} - do NOT trust the fixer claims, judge on merits.`, schema: 'verifier' },
   };
   const results = {};
+  // 四角色 attempt 行补全：reviewer/leader 的 Matrix 轮次此前不落 mu.agent_attempt（UI/审计
+  // 只能看到 fixer/verifier）——此处为其补 claim；fixer/verifier 沿用既有 fixClaim/verClaim，
+  // 不重复 claim（attempt 序号唯一约束）。失败路径：当前角色行标 FAILED（error_code=原因）。
+  const roleClaims = {};
+  for (const role of ['reviewer', 'leader']) {
+    const c = await retryClaim(pool, { runId, agentRole: role, provider: 'agentteams',
+      actorPrincipal: 'system:leader', inputDigest: digestOf(`${runId}|at-${role}`),
+      maxAttempts: MAX_FIX_ROUNDS * 2, tenantId, repoId, prId, headSha }).catch(() => ({ ok: false }));
+    if (c.ok) roleClaims[role] = c;
+  }
   for (const role of ['reviewer', 'leader', 'fixer', 'verifier']) {
     const rp = ROLE_PROMPTS[role];
+    const roleT0 = Date.now();
     let reply = null, lastReason = null;
     for (let attemptNo = 1; attemptNo <= 2 && !reply; attemptNo++) {
       const submissionId = `${runId}:${rp.taskId}:${attemptNo}`;
@@ -301,6 +312,7 @@ async function runExternalRound(pool, atMod, atCfg, { run, binding, deps }) {
       // fail-closed：真实 cancel + 死信 + BLOCKED——绝不伪造结果、绝不回退 internal
       await atMod.cancelExternalRound(atCfg, { projectId: proj, taskId: rp.taskId,
         reason: `mergepilot-${lastReason}`, submissionId: proj, fetchImpl }).catch(() => {});
+      if (roleClaims[role]) await finishAttemptOrSkip(pool, roleClaims[role].attemptId, 'FAILED', String(lastReason).slice(0, 80));
       if (fixClaim.ok) await finishAttemptOrSkip(pool, fixClaim.attemptId, 'FAILED', String(lastReason).slice(0, 80));
       await moveToDeadLetter(pool, { runId, tenantId, repoId, prId, headSha, agentRole: role,
         kind: 'mt_round_failed', reason: String(lastReason).slice(0, 120),
@@ -309,6 +321,11 @@ async function runExternalRound(pool, atMod, atCfg, { run, binding, deps }) {
       return { ok: false, stage: 'mt_round_failed', reason: lastReason, role };
     }
     results[role] = reply.json;
+    // 本角色轮次成功 → attempt 行 DONE（摘要 digest——正文不入库，与审计纪律一致）
+    if (roleClaims[role]) {
+      await finishAttemptOrSkip(pool, roleClaims[role].attemptId, 'DONE', null,
+        digestOf(JSON.stringify(results[role])), Date.now() - roleT0);
+    }
   }
 
   // fixer 落库（仅 DRY_RUN 建议文本——不应用；digest 摘要）
@@ -320,7 +337,8 @@ async function runExternalRound(pool, atMod, atCfg, { run, binding, deps }) {
     [runId, tenantId, repoId, prId, headSha, fixClaim.ok ? fixClaim.attempt : 1,
       digestOf(JSON.stringify(fixHint)), `at:${atMod.atDigest(proj)}`,
       fixClaim.ok ? `attempt:${fixClaim.attemptId}` : 'at']);
-  if (fixClaim.ok) await finishAttemptOrSkip(pool, fixClaim.attemptId, 'DONE');
+  if (fixClaim.ok) await finishAttemptOrSkip(pool, fixClaim.attemptId, 'DONE', null,
+    digestOf(JSON.stringify(fixHint)));
 
   // verifier 落库（独立判定）
   await transitionRun(pool, { runId, from: ['FIXING'], to: 'VERIFY_QUEUED' });

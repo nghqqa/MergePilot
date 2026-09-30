@@ -246,8 +246,8 @@ try {
   const runAfter = await orch.getRun(pool, run.run_id);
   ok('W7c MergePilot Leader 终裁 COMPLETED（服务端复核）', runAfter.status === 'COMPLETED');
   const atAtt = (await pool.query(`SELECT agent_role, provider, status FROM mu.agent_attempt WHERE run_id=$1 AND provider='agentteams'`, [run.run_id])).rows;
-  ok('W7d fixer/verifier attempt 记 agentteams provider', atAtt.length === 2
-    && atAtt.some((a) => a.agent_role === 'fixer') && atAtt.some((a) => a.agent_role === 'verifier'));
+  ok('W7d 四角色 attempt 记 agentteams provider（reviewer/leader/fixer/verifier）', atAtt.length === 4
+    && ['reviewer', 'leader', 'fixer', 'verifier'].every((role) => atAtt.some((a) => a.agent_role === role)));
   const fixRow = (await pool.query(`SELECT status FROM mu.fix_attempt WHERE run_id=$1`, [run.run_id])).rows[0];
   ok('W7e 外部 Fixer 仅 DRY_RUN 建议（不应用）', fixRow?.status === 'DRY_RUN');
   // 泄漏扫描：AT token/原始 secret/任务正文不入库
