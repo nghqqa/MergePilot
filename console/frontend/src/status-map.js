@@ -99,7 +99,7 @@ const FXV = {
   PATCH_READY: { tone: 'neutral', label: '补丁就绪', note: '补丁已生成待应用（fxv: PATCH_READY）' },
   DRY_RUN_APPLY: { tone: 'info', label: '隔离应用中', note: '隔离工作区应用补丁（fxv: DRY_RUN_APPLY）' },
   DRY_RUN_VERIFIED: { tone: 'ok', label: '隔离验证通过', note: '隔离测试通过（fxv: DRY_RUN_VERIFIED）— 隔离验证，不等于生产验证' },
-  DRY_RUN_COMPLETE: { tone: 'ok', label: '试运行完成', note: '预演终态（未执行真实 GitHub 写入）' },
+  DRY_RUN_COMPLETE: { tone: 'ok', label: '试运行完成', note: '预演终态（fxv: DRY_RUN_COMPLETE）— 未执行真实 GitHub 写入' },
   AWAITING_GITHUB_GRANT: { tone: 'warn', label: '待写入授权', note: '人工等待：GitHub 写入授权（fxv: AWAITING_GITHUB_GRANT）' },
   GRANTED: { tone: 'info', label: '已授权写入', note: '写入授权已发放（fxv: GRANTED）— 一次性 grant' },
   COMMITTING: { tone: 'info', label: '提交中', note: '真实提交+推送执行中（fxv: COMMITTING）' },
