@@ -153,6 +153,11 @@ function PipelinePanel({ prNumber, repoId }) {
       message="审查管线：该 PR 暂无自动审查运行（webhook 触发后自动开始）" />;
   }
   const r = state.detail.run;
+  const ROLE_LABEL = { leader: 'Leader（裁定）', reviewer: 'Reviewer（审查）', fixer: 'Fixer（修复建议）', verifier: 'Verifier（独立验证）' };
+  const ROLE_TONE = { leader: 'purple', reviewer: 'blue', fixer: 'cyan', verifier: 'geekblue' };
+  const ATT_LABEL = { DONE: '完成', FAILED: '失败', RUNNING: '运行中', SKIPPED: '已跳过' };
+  const attempts = state.detail.attempts ?? [];
+  const decisions = state.detail.decisions ?? [];
   return (
     <div style={{ marginTop: 16 }}>
       <Typography.Title level={5} style={{ marginBottom: 8 }}>审查管线（自动化 Agent 运行）</Typography.Title>
@@ -165,9 +170,29 @@ function PipelinePanel({ prNumber, repoId }) {
         {(state.detail.dead_letters ?? []).length > 0 ? (
           <Tag color="red">受阻原因：{state.detail.dead_letters[0].reason}</Tag>) : null}
       </Space>
+      {attempts.length > 0 ? (
+        <div className="table-scroll" style={{ marginTop: 8 }}>
+          <Table rowKey={(a) => `${a.agent_role}-${a.attempt}`} size="small" pagination={false}
+            dataSource={attempts} aria-label="四 Agent 执行记录"
+            columns={[
+              { title: 'Agent', dataIndex: 'agent_role', width: 180,
+                render: (v) => <Tag color={ROLE_TONE[v] ?? 'default'}>{ROLE_LABEL[v] ?? v}</Tag> },
+              { title: '轮次', dataIndex: 'attempt', width: 60 },
+              { title: '状态', dataIndex: 'status', width: 90,
+                render: (v) => <Tag color={v === 'DONE' ? 'green' : v === 'FAILED' ? 'red' : v === 'RUNNING' ? 'blue' : 'default'}>{ATT_LABEL[v] ?? v}</Tag> },
+              { title: '执行器', dataIndex: 'provider', width: 130,
+                render: (v) => v === 'agentteams' ? 'AgentTeams（外部）' : v === 'deterministic' ? '规则引擎' : v },
+              { title: '耗时', width: 80, render: (a) => a.latency_ms ? `${(Number(a.latency_ms) / 1000).toFixed(1)}s` : '—' },
+              { title: '开始时间', width: 110, render: (a) => a.created_at ? new Date(a.created_at).toLocaleTimeString() : '—' },
+              { title: '错误码', dataIndex: 'error_code', ellipsis: true,
+                render: (v) => v ? <Tag color="red"><code>{v}</code></Tag> : '—' },
+            ]} />
+        </div>
+      ) : null}
       {(state.detail.findings ?? []).length > 0 ? (
         <div className="table-scroll">
-          <Table style={{ marginTop: 8 }} rowKey={(f) => `${f.rule_id}-${f.path}-${f.line_start}`}
+          <Typography.Title level={5} style={{ marginTop: 12, marginBottom: 4 }}>风险项（Reviewer 发现）</Typography.Title>
+          <Table rowKey={(f) => `${f.rule_id}-${f.path}-${f.line_start}`}
             size="small" pagination={false} scroll={{ x: true }} dataSource={state.detail.findings}
             columns={[
               { title: '级别', dataIndex: 'severity', width: 60,
@@ -179,15 +204,26 @@ function PipelinePanel({ prNumber, repoId }) {
             ]} />
         </div>
       ) : <Typography.Text type="secondary" style={{ fontSize: 12 }}>未发现风险项。</Typography.Text>}
+      {(state.detail.fixes ?? []).length > 0 ? (
+        <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginTop: 8, marginBottom: 0 }}>
+          修复预演（dry-run，不写 GitHub）：{state.detail.fixes.map((f, i) =>
+            <Tag key={i} color="cyan">{`第${f.attempt}轮 ${f.status}`}</Tag>)}
+        </Typography.Paragraph>) : null}
+      {(state.detail.verifications ?? []).length > 0 ? (
+        <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginTop: 4, marginBottom: 0 }}>
+          独立验证：{state.detail.verifications.map((v, i) =>
+            <Tag key={i} color={v.verdict === 'PASS' ? 'green' : 'orange'}>{`第${v.attempt}轮 ${v.verdict}`}</Tag>)}
+        </Typography.Paragraph>) : null}
+      {decisions.length > 0 ? (
+        <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginTop: 4, marginBottom: 0 }}>
+          Leader 终裁：{decisions.map((d, i) =>
+            <Tag key={i}>{`${d.stage}=${d.decision}`}</Tag>)}
+        </Typography.Paragraph>) : null}
       <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginTop: 8, marginBottom: 0 }}>
-        Agent 执行：{(state.detail.attempts ?? []).map((a) =>
-          `${a.agent_role}#${a.attempt}(${a.status})`).join(' · ') || '—'}
-        {(state.detail.fixes ?? []).length ? `；修复预演：${state.detail.fixes.map((f) => `${f.status}`).join('/')}` : ''}
-        {(state.detail.verifications ?? []).length ? `；验证：${state.detail.verifications.map((v) => v.verdict).join('/')}` : ''}
-        。修复为 dry-run（不写 GitHub）；AI 审查不构成 GitHub required review。
-        {(state.detail.attempts ?? []).some((a) => a.provider === 'agentteams')
-          ? '执行器：外部 AgentTeams（正式路径）。'
-          : (state.detail.attempts ?? []).length ? '执行器：internal（开发/测试路径，非生产）。' : ''}
+        {attempts.some((a) => a.provider === 'agentteams')
+          ? '执行器：外部 AgentTeams 四 Agent（正式路径）。'
+          : attempts.length ? '执行器：internal 规则引擎（开发/测试路径，非生产）。' : ''}
+        修复为 dry-run（不写 GitHub）；AI 审查不构成 GitHub required review。
       </Typography.Paragraph>
     </div>
   );
@@ -198,10 +234,10 @@ function PipelinePanel({ prNumber, repoId }) {
 // 红线：无 API Key 输入框；无"测试真实模型"按钮；无 approve/merge/push/写仓库控件；
 // deploy 状态只显示布尔/host 摘要/模型白名单（后端已脱敏）。
 const RUNTIME_STATE_COPY = {
-  env_not_configured: { tone: 'warning', text: '环境未配置 LLM（服务端 env/Secret Manager 未就绪）——仅 deterministic 审查' },
-  policy_enabled_but_env_invalid: { tone: 'warning', text: '策略已启用 LLM 但环境配置非法/缺失——新任务 fail-closed 回落 deterministic' },
-  configured_disabled_or_det_only: { tone: 'info', text: 'LLM 已配置但未启用（deterministic-only）' },
-  llm_assist_active: { tone: 'success', text: 'LLM assist 已启用（新审查任务生效）' },
+  env_not_configured: { tone: 'info', text: '内置 LLM 辅助通道未配置（可选功能）——四 Agent 审查不受影响（AgentTeams 执行器独立运行自带模型）' },
+  policy_enabled_but_env_invalid: { tone: 'warning', text: '策略已启用 LLM 但环境配置非法/缺失——新任务 fail-closed 回落 deterministic（四 Agent 审查不受影响）' },
+  configured_disabled_or_det_only: { tone: 'info', text: 'LLM 已配置但策略未启用（当前走 deterministic 规则 + AgentTeams 四 Agent）' },
+  llm_assist_active: { tone: 'success', text: 'LLM assist 已启用（新审查任务生效；AgentTeams 四 Agent 管线不变）' },
 };
 
 function AgentPolicyPanel({ can, actions }) {

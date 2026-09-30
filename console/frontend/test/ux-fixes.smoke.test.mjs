@@ -324,7 +324,7 @@ test('PipelinePanel：run 命中时展示 13 态状态、findings、agent 尝试
     '/api/mu/runs/run-9': () => [200, {
       run: { run_id: 'run-9', status: 'COMPLETED', trigger_source: 'webhook', head_sha: 'bbb2' },
       findings: [{ rule_id: 'P0-secret', severity: 'P0', path: 'src/a.js', line_start: 12, summary_masked: '疑似硬编码密钥（已脱敏）', remediation: '改用环境变量' }],
-      attempts: [{ agent_role: 'reviewer', attempt: 1, status: 'OK' }, { agent_role: 'leader', attempt: 1, status: 'OK' }],
+      attempts: [{ agent_role: 'reviewer', attempt: 1, status: 'DONE', provider: 'agentteams', latency_ms: 1200, created_at: '2026-09-29T11:00:00Z' }, { agent_role: 'leader', attempt: 1, status: 'DONE', provider: 'agentteams', latency_ms: 800, created_at: '2026-09-29T11:00:05Z' }],
       fixes: [{ status: 'DRY_RUN_OK' }],
       verifications: [{ verdict: 'PASS' }],
       dead_letters: [],
@@ -338,7 +338,10 @@ test('PipelinePanel：run 命中时展示 13 态状态、findings、agent 尝试
     assert.ok(text.includes('GitHub 事件'), '触发来源上屏');
     assert.ok(text.includes('P0-secret'), 'findings 规则上屏');
     assert.ok(text.includes('疑似硬编码密钥（已脱敏）'), '脱敏摘要在只读展示内');
-    assert.ok(text.includes('reviewer#1(OK)'), 'agent 尝试行上屏');
+    assert.ok(text.includes('Reviewer（审查）') && text.includes('Leader（裁定）'), '四 Agent 执行表上屏（角色标签）');
+    assert.ok(text.includes('AgentTeams（外部）'), '执行器列上屏');
+    assert.ok(text.includes('修复预演'), '修复预演段上屏');
+    assert.ok(text.includes('独立验证'), '独立验证段上屏');
     assert.ok(text.includes('修复为 dry-run（不写 GitHub）'), 'dry-run 边界文案');
     assert.ok(!text.includes('合并到 main') && !text.includes('Merge pull request'), '无 merge 写操作入口');
   } finally { await act(async () => { renderer.unmount(); }); }
