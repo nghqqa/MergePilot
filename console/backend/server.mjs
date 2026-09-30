@@ -479,6 +479,17 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
     if (['/api/pulls', '/api/pending', '/api/tickets', '/api/evidence', '/api/audit'].includes(p) && req.method === 'GET') {
       const gate = await authGate(req);
       if (gate.denied) return sendJson(res, gate.denied, anonymousBody());
+      if (gate.principal.authMode === 'multiuser') {
+        const muApi2 = await getMuConsoleApi();
+        if (muApi2) {
+          const tid = gate.principal.tenantId;
+          if (p === '/api/pulls') return sendJson(res, 200, { pulls: await muApi2.pulls(tid), source: 'MU_CANONICAL_LIVE' });
+          if (p === '/api/pending') return sendJson(res, 200, { pending: await muApi2.pending(tid), source: 'MU_CANONICAL_LIVE' });
+          if (p === '/api/tickets') return sendJson(res, 200, { tickets: [], source: 'MU_CANONICAL_LIVE' });
+          if (p === '/api/evidence') return sendJson(res, 200, { evidence: [], source: 'MU_CANONICAL_LIVE' });
+          if (p === '/api/audit') return sendJson(res, 200, { audit: await muApi2.audit(tid), source: 'MU_CANONICAL_LIVE' });
+        }
+      }
       const auth = gate.principal.legacyAuth ?? gate.principal;
       if (p === '/api/pulls' && q.repo && !auth.repos.includes(q.repo)) {
         return sendJson(res, 403, { error: { reason: 'repo_not_in_allowlist', repo: q.repo } });
@@ -572,6 +583,14 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
     const pullMatch = p.match(/^\/api\/pulls\/(\d+)$/);
     if (pullMatch && req.method === 'GET') {
       const gate = await authGate(req);
+      if (gate.principal.authMode === 'multiuser') {
+        const muApi2 = await getMuConsoleApi();
+        if (muApi2) {
+          const prNumber = Number(pullMatch[1]);
+          const detail = await muApi2.runDetail(gate.principal.tenantId, String(prNumber));
+          if (detail) return sendJson(res, 200, { ...detail, source: 'MU_CANONICAL_LIVE' });
+        }
+      }
       if (gate.denied) return sendJson(res, gate.denied, anonymousBody());
       const auth = gate.principal.legacyAuth ?? gate.principal;
       const prNumber = Number(pullMatch[1]);
