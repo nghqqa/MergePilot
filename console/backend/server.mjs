@@ -245,7 +245,10 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
     }
     const ext = path.extname(abs).toLowerCase();
     const buf = fs.readFileSync(abs);
-    return send(res, 200, buf, { 'Content-Type': MIME[ext] ?? 'application/octet-stream' });
+    // HTML 不缓存（bundle 名变了必须拿到新 index.html）；hash 命名的静态资产可长缓存
+    const isHtml = ext === '.html' || p === '/';
+    return send(res, 200, buf, { 'Content-Type': MIME[ext] ?? 'application/octet-stream',
+      'Cache-Control': isHtml ? 'no-cache, no-store, must-revalidate' : 'public, max-age=31536000, immutable' });
   };
 
   const route = async (req, res) => {
