@@ -36,7 +36,8 @@ function muTokenFromCookie(header) {
   return '';
 }
 
-const sha256Of = (v) => require('node:crypto').createHash('sha256').update(String(v)).digest('hex');
+import { createHash } from 'node:crypto';
+const sha256Of = (v) => createHash('sha256').update(String(v)).digest('hex');
 
 /**
  * 统一认证解析（仅 MU 模式——legacy 由调用方自行处理）
@@ -51,10 +52,15 @@ export async function resolvePrincipal(req, opts = {}) {
   const session = await opts.muStore.findSessionByToken(muToken).catch(() => null);
   if (!session) return notAuth;
   const userId = String(session.user_id ?? '');
+  const membership = await opts.muStore.getMembership(
+    String(session.tenant_id ?? ''), userId).catch(() => null);
+  const role = (membership && membership.state === 'active') ? membership.role
+    : (session.role ?? 'contributor');
+  const user = await opts.muStore.getUser(userId).catch(() => null);
   return { authenticated: true, userId,
-    username: session.login ?? 'mu-user',
+    username: user?.login ?? session.login ?? 'mu-user',
     orgId: String(session.tenant_id ?? ''), tenantId: String(session.tenant_id ?? ''),
-    roles: [session.role ?? 'contributor'],
-    permissions: permissionsForRole(session.role ?? 'contributor'),
+    roles: [role],
+    permissions: permissionsForRole(role),
     authMode: 'multiuser', sessionId: muToken, muSession: session };
 }

@@ -617,8 +617,8 @@ export default function MultiUserPage() {
         ]);
         if (m.status === 200) setMembers(m.body?.members ?? []);
         if (r.status === 200) setRepos(r.body?.repositories ?? []);
-        if (gs?.status === 200) {
-          setGhStatus(gs.body);
+        if (gs) {
+          setGhStatus(gs.status === 200 ? gs.body : { configured: gs.status >= 500 ? null : false, _status: gs.status });
           if (gs.body?.configured) {
             const il = await muGet('/api/mu/github/installations').catch(() => null);
             if (il?.status === 200) setInstallations(il.body?.installations ?? []);
