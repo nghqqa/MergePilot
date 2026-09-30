@@ -75,7 +75,7 @@ services:
     # read-only filesystem 不可用（embedded supervisord 全家桶需写 /data、/tmp、/root）
     # ——上游约束，RUNBOOK R-3 风险接受
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:8090/api/v1/projects?limit=1 >/dev/null 2>&1 || curl -sf http://127.0.0.1:8090/api/v1/projects?limit=1 >/dev/null"]
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:8090/healthz >/dev/null 2>&1 || curl -sf http://127.0.0.1:8090/healthz >/dev/null"]
       interval: 30s
       timeout: 5s
       retries: 5
