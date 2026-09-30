@@ -216,7 +216,17 @@ export async function createMuStore({ pool, env = process.env } = {}) {
       `SELECT p.*, r.owner AS repo_owner, r.name AS repo_name, r.provider AS repo_provider
          FROM mu.pull_request p JOIN mu.repository r ON r.repo_id = p.repo_id
         WHERE p.tenant_id=$1 AND p.pr_id=$2`, [tenantId, prId]);
-    return r.rows[0] ?? null;
+    if (r.rows[0]) return r.rows[0];
+    // 编号寻址兜底（PR 详情路由携带 GitHub 编号；UUID 解析失败后按编号解析——
+    // 编号在 tenant 内跨仓库可重号，取最近更新行）。仍严格 tenant 收窄。
+    const n = Number(prId);
+    if (!Number.isInteger(n) || n <= 0) return null;
+    const r2 = await q(
+      `SELECT p.*, r.owner AS repo_owner, r.name AS repo_name, r.provider AS repo_provider
+         FROM mu.pull_request p JOIN mu.repository r ON r.repo_id = p.repo_id
+        WHERE p.tenant_id=$1 AND p.provider_pr_number=$2
+        ORDER BY p.updated_at DESC LIMIT 1`, [tenantId, n]);
+    return r2.rows[0] ?? null;
   }
   async function findPullRequests(tenantId, { repoId = null, number = null } = {}) {
     const params = [tenantId];

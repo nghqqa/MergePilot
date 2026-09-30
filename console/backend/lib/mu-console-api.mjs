@@ -249,5 +249,79 @@ export function createMuConsoleApi({ pool }) {
     return { attempts_done: done, attempts_failed: failed };
   }
 
-  return { overview, pulls, pending, runs, runDetail, repositories, audit, agentteamsStatus };
+  // ── PR 详情（contract 形状——/api/pulls/:n 的 MU facade 后端）──
+  // 全程 tenant_id 收窄：repo 按 owner/name 解析（tenant 内唯一），PR 按 repo+编号。
+  // verdict 由 run 状态映射（不伪造 GitHub review）；stale=run head ≠ PR 当前 head。
+  const VERDICT_BY_RUN = {
+    COMPLETED: 'PASS', VERIFIED: 'PASS',
+    BLOCKED: 'BLOCKED', REWORK_REQUIRED: 'BLOCKED', FAILED: 'BLOCKED',
+    RECEIVED: 'RUNNING', REVIEW_QUEUED: 'RUNNING', REVIEWING: 'RUNNING',
+    REVIEWED: 'RUNNING', FIX_QUEUED: 'RUNNING', FIXING: 'RUNNING',
+    VERIFY_QUEUED: 'RUNNING', VERIFYING: 'RUNNING',
+  };
+  async function pullDetail(tenantId, repoFullName, prNumber) {
+    if (!repoFullName || !prNumber) return null;
+    const repoRows = await q(
+      `SELECT repo_id, owner, name FROM mu.repository
+        WHERE tenant_id=$1 AND state='active' AND owner || '/' || name = $2 LIMIT 1`,
+      [tenantId, String(repoFullName)]);
+    if (!repoRows.length) return null;
+    const repo = repoRows[0];
+    const prRows = await q(
+      `SELECT pr_id, provider_pr_number, title, state, head_sha, updated_at FROM mu.pull_request
+        WHERE tenant_id=$1 AND repo_id=$2 AND provider_pr_number=$3
+        ORDER BY updated_at DESC LIMIT 1`, [tenantId, repo.repo_id, Number(prNumber)]);
+    if (!prRows.length) return null;
+    const pr = prRows[0];
+    const runRows = await q(
+      `SELECT run_id, status, head_sha, trigger_source, created_at, updated_at FROM mu.review_run
+        WHERE tenant_id=$1 AND repo_id=$2 AND pr_id=$3
+        ORDER BY created_at DESC LIMIT 50`, [tenantId, repo.repo_id, pr.pr_id]);
+    const cur = runRows[0] ?? null;
+    const findings = cur ? await q(
+      `SELECT severity FROM mu.agent_finding WHERE run_id=$1 ORDER BY severity LIMIT 500`, [cur.run_id]) : [];
+    const sevRank = { P0: 0, P1: 1, P2: 2, P3: 3 };
+    const topSeverity = findings.length
+      ? findings.map((f) => f.severity).sort((a, b) => (sevRank[a] ?? 9) - (sevRank[b] ?? 9))[0]
+      : null;
+    return {
+      repo: repo.owner + '/' + repo.name,
+      pr_number: pr.provider_pr_number,
+      title: pr.title ?? null,
+      // GitHub 当前 head 权威以 mu.pull_request 快照为准（webhook 同步），不以审查 head 冒充
+      current_head_sha: pr.head_sha ?? null,
+      state: pr.state ?? null,
+      stage: cur ? (MU_TO_STAGE[cur.status] ?? 'UNKNOWN') : 'PENDING',
+      stage_source: cur ? 'mu_review_run' : 'mu_pull_request',
+      head_sha: cur?.head_sha ?? null,
+      run_id: cur?.run_id ?? null,
+      updated_at: cur?.updated_at ?? pr.updated_at,
+      latest_result: cur ? {
+        run_id: cur.run_id, head_sha: cur.head_sha,
+        verdict: VERDICT_BY_RUN[cur.status] ?? 'RUNNING',
+        severity: topSeverity,
+        stale: pr.head_sha ? cur.head_sha !== pr.head_sha : false,
+        published: false, // AI 审查不构成 GitHub required review——绝不宣称已发布
+      } : null,
+      latest_run: cur ? { run_id: cur.run_id, status: cur.status, started_at: cur.created_at } : null,
+      runs: runRows.map((r) => ({
+        run_id: r.run_id, created_at: r.created_at, status: r.status,
+        stage: MU_TO_STAGE[r.status] ?? 'UNKNOWN', stage_source: 'mu_review_run',
+        outcome: r.status, head_sha: r.head_sha,
+        stale: pr.head_sha ? r.head_sha !== pr.head_sha : false,
+        trigger: r.trigger_source === 'manual' ? 'manual' : 'github_event',
+      })),
+      receipts: { total: 0, ok: 0, integrity_conflicts: 0 },
+      gate_audit: [],
+      has_pending_tickets: false,
+      merge_panel: { enabled: false, reasons: ['merge_disabled'],
+        github_url: `https://github.com/${repo.owner}/${repo.name}/pull/${pr.provider_pr_number}` },
+      data_source: 'MU_CANONICAL_LIVE',
+      tenant_scope: 'self',
+      as_of: new Date().toISOString(),
+      schema_version: 1,
+    };
+  }
+
+  return { overview, pulls, pending, runs, runDetail, pullDetail, repositories, audit, agentteamsStatus };
 }
