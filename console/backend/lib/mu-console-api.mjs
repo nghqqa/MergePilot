@@ -91,7 +91,7 @@ export function createMuConsoleApi({ pool }) {
     const pendingCount = Number(pendingRows[0]?.c ?? 0);
 
     return {
-      pulls: prs.map(p => ({
+      prs: prs.map(p => ({
         repo: p.owner + '/' + p.repo_name,
         pr: p.provider_pr_number,
         head_sha: p.head_sha,
