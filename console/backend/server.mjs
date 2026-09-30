@@ -583,14 +583,6 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
     const pullMatch = p.match(/^\/api\/pulls\/(\d+)$/);
     if (pullMatch && req.method === 'GET') {
       const gate = await authGate(req);
-      if (gate.principal.authMode === 'multiuser') {
-        const muApi2 = await getMuConsoleApi();
-        if (muApi2) {
-          const prNumber = Number(pullMatch[1]);
-          const detail = await muApi2.runDetail(gate.principal.tenantId, String(prNumber));
-          if (detail) return sendJson(res, 200, { ...detail, source: 'MU_CANONICAL_LIVE' });
-        }
-      }
       if (gate.denied) return sendJson(res, gate.denied, anonymousBody());
       const auth = gate.principal.legacyAuth ?? gate.principal;
       const prNumber = Number(pullMatch[1]);
