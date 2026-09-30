@@ -37,7 +37,7 @@ async function loadPg() {
 }
 
 let muStorePromise = null;
-function getMuStore(env) {
+export function getMuStore(env) {
   if (!env.CONSOLE_PG_DSN) return null;
   if (!muStorePromise) {
     muStorePromise = (async () => {

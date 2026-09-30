@@ -24,7 +24,7 @@ import { parseAccessModel, authorize, denialAudit } from './lib/permissions.mjs'
 import { cchainStatusObserved, verifyRunBindingAndAudit, rotateKeystore,
          cchainMetricsSnapshot, rememberStatusForMetrics } from './lib/cchain/wiring.mjs';
 import { ragTrialApi, ragTrialInternalQuery } from './lib/ragtrial/api.mjs';
-import { muApi } from './lib/multiuser/api.mjs';
+import { muApi, getMuStore } from './lib/multiuser/api.mjs';
 
 // 进程启动时刻（health.started_at 的唯一来源）。必须在模块加载时求值——
 // 放进 apiHealth() 会变成"响应时刻"，容器 Up 时长与该字段即相互矛盾（2026-09-27 实测教训）。
@@ -257,9 +257,27 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
 
     // ── 契约 v2 会话三件套 + 核心控制面五 API（CANONICAL_CONSOLE_PROMOTION 迁移）──
     if (p === '/api/auth/session') {
-      const auth = getSession(tokenFromCookieHeader(req.headers.cookie));
-      if (!auth) return sendJson(res, 401, anonymousBody());
-      return sendJson(res, 200, sessionBody(auth));
+      const legacyAuth = getSession(tokenFromCookieHeader(req.headers.cookie));
+      if (legacyAuth) return sendJson(res, 200, sessionBody(legacyAuth));
+      // MU 桥接：MU_MODE=multiuser 时检查 mu_session
+      if (process.env.MU_MODE === 'multiuser') {
+        try {
+          const store = await getMuStore(process.env);
+          if (store) {
+            const { resolvePrincipal } = await import('./lib/principal.mjs');
+            const principal = await resolvePrincipal(req, { muStore: store });
+            if (principal.authenticated) {
+              return sendJson(res, 200, {
+                user: { name: principal.username, github_login: principal.username,
+                  display_name: principal.username },
+                repos: repoAllowlist(),
+                expires_at: principal.muSession?.expires_at ?? null,
+                session_source: 'mu_session', role: principal.roles?.[0] ?? null });
+            }
+          }
+        } catch { /* mu store 不可用走 401 */ }
+      }
+      return sendJson(res, 401, anonymousBody());
     }
     if (p === '/api/auth/login' && req.method === 'POST') {
       const body = await readJsonBody(req);
