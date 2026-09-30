@@ -17,23 +17,48 @@ export function createMuConsoleApi({ pool }) {
   }
 
   // ── Overview ──
+  const STAGES = ['REVIEWING', 'ACTION_REQUIRED', 'PASSED', 'BLOCKED', 'FAILED', 'PENDING'];
+
   async function overview(tenantId) {
-    const repos = await q(
-      `SELECT repo_id, owner, name, state, created_at FROM mu.repository
-       WHERE tenant_id=$1 AND state='active' ORDER BY created_at DESC`, [tenantId]);
+    // repos with PR and run counts
+    const repoCounts = await q(
+      `SELECT r.owner || '/' || r.name AS repo,
+              count(DISTINCT pr.pr_id) AS prs,
+              count(DISTINCT rr.run_id) AS runs,
+              count(DISTINCT CASE WHEN rr.status IN ('FIX_QUEUED','VERIFY_QUEUED','REWORK_REQUIRED') THEN rr.run_id END) AS pending
+       FROM mu.repository r
+       LEFT JOIN mu.pull_request pr ON pr.repo_id = r.repo_id AND pr.tenant_id = r.tenant_id
+       LEFT JOIN mu.review_run rr ON rr.repo_id = r.repo_id AND rr.tenant_id = r.tenant_id
+       WHERE r.tenant_id=$1 AND r.state='active'
+       GROUP BY r.owner, r.name ORDER BY r.created_at DESC`, [tenantId]);
+
+    // PR list with latest run status
     const prs = await q(
       `SELECT pr.pr_id, pr.provider_pr_number, pr.title, pr.state, pr.head_sha,
-              r.owner, r.name AS repo_name, rr.status AS run_status, rr.run_id,
-              rr.created_at AS run_created
+              r.owner, r.name AS repo_name,
+              COALESCE(latest_rr.status, 'PENDING') AS stage,
+              'mu_review_run' AS stage_source,
+              latest_rr.run_id, latest_rr.created_at AS latest
        FROM mu.pull_request pr
        JOIN mu.repository r ON r.repo_id = pr.repo_id
        LEFT JOIN LATERAL (
          SELECT run_id, status, created_at FROM mu.review_run
           WHERE tenant_id=$1 AND repo_id=pr.repo_id AND pr_id=pr.pr_id
           ORDER BY created_at DESC LIMIT 1
-       ) rr ON true
+       ) latest_rr ON true
        WHERE pr.tenant_id=$1
        ORDER BY pr.updated_at DESC LIMIT 50`, [tenantId]);
+
+    // stage counts
+    const stageRows = await q(
+      `SELECT status, count(*) AS c FROM mu.review_run WHERE tenant_id=$1 GROUP BY status`, [tenantId]);
+    const stage_counts = Object.fromEntries(STAGES.map(s => [s, 0]));
+    for (const row of stageRows) {
+      if (stage_counts[row.status] !== undefined) stage_counts[row.status] = Number(row.c);
+      else stage_counts['REVIEWING'] = (stage_counts['REVIEWING'] ?? 0) + Number(row.c);
+    }
+
+    // findings (recent)
     const findings = await q(
       `SELECT f.rule_id, f.severity, f.path, f.summary_masked, f.created_at,
               r.owner, r.name AS repo_name
@@ -42,19 +67,22 @@ export function createMuConsoleApi({ pool }) {
        JOIN mu.repository r ON r.repo_id = rr.repo_id
        WHERE rr.tenant_id=$1
        ORDER BY f.created_at DESC LIMIT 20`, [tenantId]);
+
+    // blocked runs
     const blocked = await q(
       `SELECT run_id, status, updated_at FROM mu.review_run
        WHERE tenant_id=$1 AND status IN ('BLOCKED','REWORK_REQUIRED')
        ORDER BY updated_at DESC LIMIT 10`, [tenantId]);
+
     return {
       pulls: prs.map(p => ({
         repo: p.owner + '/' + p.repo_name,
         pr: p.provider_pr_number,
         head_sha: p.head_sha,
         run_id: p.run_id,
-        latest: p.run_created,
-        stage: p.run_status ?? 'PENDING',
-        stage_source: 'mu_review_run',
+        latest: p.latest,
+        stage: p.stage,
+        stage_source: p.stage_source,
       })),
       tickets: [],
       evidence: findings.map(f => ({
@@ -65,8 +93,13 @@ export function createMuConsoleApi({ pool }) {
         run_id: b.run_id, decision: { stage: b.status },
         created_at: b.updated_at,
       })),
+      repository_counts: repoCounts.map(r => ({
+        repo: r.repo, prs: Number(r.prs), runs: Number(r.runs), pending: Number(r.pending),
+      })),
+      stage_counts,
       mode: 'mu_canonical',
-      total_repos: repos.length,
+      source: 'MU_CANONICAL_LIVE',
+      total_repos: repoCounts.length,
       total_prs: prs.length,
       total_findings: findings.length,
       total_blocked: blocked.length,
