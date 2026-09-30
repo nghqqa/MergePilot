@@ -88,6 +88,19 @@ function sendJson(res, status, obj) {
   send(res, status, JSON.stringify(obj, null, 2), { 'Content-Type': 'application/json; charset=utf-8' });
 }
 
+async function authGate(req) {
+  if (process.env.MU_MODE === 'multiuser') {
+    const store = await getMuStore(process.env).catch(() => null);
+    const { resolvePrincipal } = await import('./lib/principal.mjs');
+    const principal = await resolvePrincipal(req, { muStore: store });
+    if (!principal.authenticated) return { denied: 401 };
+    return { principal };
+  }
+  const auth = getSession(tokenFromCookieHeader(req.headers.cookie));
+  if (!auth) return { denied: 401 };
+  return { principal: { authenticated: true, authMode: 'legacy', legacyAuth: auth } };
+}
+
 function sendError(res, status, message) {
   sendJson(res, status, { error: { code: status, message } });
 }
@@ -301,8 +314,9 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
     }
     // ── A 链组织知识检索（受控代理；feature flag 显式启用，仅隔离 staging）──
     if (p === '/api/rag/org-search' && req.method === 'GET') {
-      const auth = getSession(tokenFromCookieHeader(req.headers.cookie));
-      if (!auth) return sendJson(res, 401, anonymousBody());
+      const gate = await authGate(req);
+      if (gate.denied) return sendJson(res, gate.denied, anonymousBody());
+      const auth = gate.principal;
       if (process.env.MERGEPILOT_ORG_RAG_A_CHAIN !== '1') {
         return sendJson(res, 200, { service_state: 'a_chain_disabled',
           note: 'A 链未启用（feature flag 关闭）——不伪装检索', source: 'ORG_RAG' });
@@ -372,8 +386,9 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
     // 状态与 metrics：需会话（读观测面）；验签：机器对机器 HMAC（无会话，替代凭证）；
     // 轮换：会话 + CSRF + admin 角色（授权操作）。全部真实状态，BLOCKED 即 BLOCKED。
     if (p === '/api/cchain/status' && req.method === 'GET') {
-      const auth = getSession(tokenFromCookieHeader(req.headers.cookie));
-      if (!auth) return sendJson(res, 401, anonymousBody());
+      const gate = await authGate(req);
+      if (gate.denied) return sendJson(res, gate.denied, anonymousBody());
+      const auth = gate.principal;
       const status = await cchainStatusObserved(process.env, process.env.CONSOLE_PG_DSN);
       rememberStatusForMetrics(status);
       return sendJson(res, 200, { ...status,
@@ -381,8 +396,9 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
           note: 'enforce=on 时 FXV run 启动被 C 链 READY 门禁拦截（默认 off）' } });
     }
     if (p === '/api/cchain/metrics' && req.method === 'GET') {
-      const auth = getSession(tokenFromCookieHeader(req.headers.cookie));
-      if (!auth) return sendJson(res, 401, anonymousBody());
+      const gate = await authGate(req);
+      if (gate.denied) return sendJson(res, gate.denied, anonymousBody());
+      const auth = gate.principal;
       return sendJson(res, 200, cchainMetricsSnapshot(process.env));
     }
     if (p === '/api/cchain/run-bindings/verify' && req.method === 'POST') {
@@ -395,8 +411,9 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
       return sendJson(res, r.status, r.body);
     }
     if (p === '/api/cchain/keystore/rotate' && req.method === 'POST') {
-      const auth = getSession(tokenFromCookieHeader(req.headers.cookie));
-      if (!auth) return sendJson(res, 401, anonymousBody());
+      const gate = await authGate(req);
+      if (gate.denied) return sendJson(res, gate.denied, anonymousBody());
+      const auth = gate.principal;
       // 契约 §0.1：副作用方法必须携带 X-CSRF-Token
       // L-2：与 logout 一致的 timing-safe 比较（长度不等直接拒绝）
       if (!auth.csrf || !safeEqual(String(req.headers['x-csrf-token'] ?? ''), auth.csrf)) {
@@ -415,26 +432,30 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
     }
 
     if (p === '/api/overview' && req.method === 'GET') {
-      const auth = getSession(tokenFromCookieHeader(req.headers.cookie));
-      if (!auth) return sendJson(res, 401, anonymousBody());
+      const gate = await authGate(req);
+      if (gate.denied) return sendJson(res, gate.denied, anonymousBody());
+      const auth = gate.principal;
       const ov = await overviewState(auth.repos);
       return sendJson(res, 200, ov);
     }
     if (p === '/api/fxv/metrics' && req.method === 'GET') {
-      const auth = getSession(tokenFromCookieHeader(req.headers.cookie));
-      if (!auth) return sendJson(res, 401, anonymousBody());
+      const gate = await authGate(req);
+      if (gate.denied) return sendJson(res, gate.denied, anonymousBody());
+      const auth = gate.principal;
       return sendJson(res, 200, await fxvMetrics(process.env.CONSOLE_PG_DSN));
     }
     if (p === '/api/fxv/attempts' && req.method === 'GET') {
-      const auth = getSession(tokenFromCookieHeader(req.headers.cookie));
-      if (!auth) return sendJson(res, 401, anonymousBody());
+      const gate = await authGate(req);
+      if (gate.denied) return sendJson(res, gate.denied, anonymousBody());
+      const auth = gate.principal;
       const r = await fxvAttempts(process.env.CONSOLE_PG_DSN, { limit: 50 });
       const allow = new Set(auth.repos);
       return sendJson(res, 200, { ...r, attempts: r.attempts.filter((a) => allow.has(a.repo)) });
     }
     if (['/api/pulls', '/api/pending', '/api/tickets', '/api/evidence', '/api/audit'].includes(p) && req.method === 'GET') {
-      const auth = getSession(tokenFromCookieHeader(req.headers.cookie));
-      if (!auth) return sendJson(res, 401, anonymousBody());
+      const gate = await authGate(req);
+      if (gate.denied) return sendJson(res, gate.denied, anonymousBody());
+      const auth = gate.principal;
       if (p === '/api/pulls' && q.repo && !auth.repos.includes(q.repo)) {
         return sendJson(res, 403, { error: { reason: 'repo_not_in_allowlist', repo: q.repo } });
       }
@@ -470,7 +491,8 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
     // 已认证 → 仅返回 allowlist 内仓库的记录（repo 未知的 pack 一并隐藏，不泄露存在性）；
     // 未认证 → 维持登录页明示的只读演示语义（本地历史快照，非授权范围数据）。
     // 实时数据查询一律走 /api/overview、/api/pulls（服务端 allowlist 强制）。
-    const runsScopeAuth = getSession(tokenFromCookieHeader(req.headers.cookie));
+    const runsGate = await authGate(req);
+    const runsScopeAuth = runsGate.principal?.legacyAuth ?? null;
     const runsScope = runsScopeAuth ? new Set(runsScopeAuth.repos) : null;
     const runsRepoAllowed = (repo) => !runsScope || (repo ? runsScope.has(repo) : false);
 
@@ -518,8 +540,9 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
     // 同一会话 allowlist 边界）。repo 寻址走查询参数（契约 §0.5 同形）。
     const pullMatch = p.match(/^\/api\/pulls\/(\d+)$/);
     if (pullMatch && req.method === 'GET') {
-      const auth = getSession(tokenFromCookieHeader(req.headers.cookie));
-      if (!auth) return sendJson(res, 401, anonymousBody());
+      const gate = await authGate(req);
+      if (gate.denied) return sendJson(res, gate.denied, anonymousBody());
+      const auth = gate.principal;
       const prNumber = Number(pullMatch[1]);
       const repo = q.repo;
       if (!repo || !auth.repos.includes(repo)) {
