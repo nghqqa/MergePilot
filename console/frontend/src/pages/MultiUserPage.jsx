@@ -723,7 +723,30 @@ export default function MultiUserPage() {
           description="MU_MODE != multiuser（当前为 legacy 模式）。启用需设置 MU_MODE=multiuser 并配置 CONSOLE_PG_DSN——本页不显示任何推断数据。" />
       ) : null}
 
-      {!notEnabled ? (
+      {!notEnabled && !session && !loading ? (
+        <div style={{ marginBottom: 24, padding: '32px 24px', textAlign: 'center',
+            border: '1px solid #d9d9d9', borderRadius: 8, background: '#fafafa' }}>
+          <Typography.Title level={3} style={{ marginBottom: 8 }}>登录以继续</Typography.Title>
+          <Typography.Paragraph type="secondary" style={{ marginBottom: 20 }}>
+            使用 GitHub OAuth 登录本工作台。登录后按邀请获得角色。
+          </Typography.Paragraph>
+          <Button type="primary" size="large"
+            disabled={providers?.github?.configured !== true}
+            onClick={async () => {
+              const r = await muGet('/api/mu/auth/oauth/github/start');
+              if (r.status === 200 && r.body?.authorize_url) window.location.href = r.body.authorize_url;
+            }}>
+            使用 GitHub 登录
+          </Button>
+          {providers?.github && providers.github.configured === false ? (
+            <Typography.Text type="secondary" style={{ display: 'block', marginTop: 8 }}>
+              GitHub OAuth 未配置——需 MU_GITHUB_OAUTH_* 三项（BETA-GUIDE §5）。
+            </Typography.Text>
+          ) : null}
+        </div>
+      ) : null}
+
+      {!notEnabled && session ? (
         <div style={{ marginBottom: 16 }}>
           <OnboardingPanel
             ob={ob} session={session} providers={providers} loginError={loginError}
