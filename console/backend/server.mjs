@@ -330,6 +330,13 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
       const r = logout(token, auth ? req.headers['x-csrf-token'] : undefined);
       if (!r.ok) return sendJson(res, r.status, { error: { reason: r.code } });
       applyCookies(res, r.setCookie);
+      // MU 会话桥接登出：同时清除 mu_session（MU_MODE=multiuser 时两套会话同步退出）
+      const muCookies = ['mu_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0',
+        'mp_csrf=; Path=/; SameSite=Lax; Max-Age=0',
+        'mu_oauth_corr=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0'];
+      const prevCookies = res.getHeader('Set-Cookie');
+      const allCookies = (Array.isArray(prevCookies) ? prevCookies : prevCookies ? [prevCookies] : []).concat(muCookies);
+      res.setHeader('Set-Cookie', allCookies);
       return sendJson(res, 200, { ok: true });
     }
     // ── A 链组织知识检索（受控代理；feature flag 显式启用，仅隔离 staging）──
