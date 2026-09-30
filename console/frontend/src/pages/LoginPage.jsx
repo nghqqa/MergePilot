@@ -61,6 +61,25 @@ export default function LoginPage() {
           </>
         ) : (
           <>
+            <Button
+              block size="large"
+              style={{ marginTop: 16, marginBottom: 12 }}
+              onClick={async () => {
+                setBusy(true); setFormError(null);
+                try {
+                  const r = await fetch('/api/mu/auth/oauth/github/start', { credentials: 'same-origin' });
+                  const body = await r.json().catch(() => null);
+                  if (r.ok && body?.authorize_url) {
+                    window.location.href = body.authorize_url;
+                    return;
+                  }
+                  setFormError(body?.error?.reason === 'oauth_not_configured'
+                    ? 'GitHub OAuth 未配置——联系管理员设置 MU_GITHUB_OAUTH_* 三项' : '无法发起 GitHub 登录');
+                } catch { setFormError('网络错误 — 无法连接后端'); } finally { setBusy(false); }
+              }}>
+              使用 GitHub 登录
+            </Button>
+            <div style={{ textAlign: 'center', color: '#999', margin: '4px 0 0' }}>—— 或使用具名操作员 ——</div>
             <Form layout="vertical" onFinish={submit} disabled={busy} style={{ marginTop: 16 }}>
               <Form.Item label="具名操作员" name="user" rules={[{ required: true, message: '请输入用户名' }]}>
                 <Input id="login-user" prefix={<UserOutlined aria-label />} placeholder="用户名"
