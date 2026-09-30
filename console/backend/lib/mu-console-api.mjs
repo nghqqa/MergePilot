@@ -30,7 +30,7 @@ export function createMuConsoleApi({ pool }) {
        LEFT JOIN mu.pull_request pr ON pr.repo_id = r.repo_id AND pr.tenant_id = r.tenant_id
        LEFT JOIN mu.review_run rr ON rr.repo_id = r.repo_id AND rr.tenant_id = r.tenant_id
        WHERE r.tenant_id=$1 AND r.state='active'
-       GROUP BY r.owner, r.name ORDER BY r.created_at DESC`, [tenantId]);
+       GROUP BY r.owner, r.name, r.created_at ORDER BY r.created_at DESC`, [tenantId]);
 
     // PR list with latest run status
     const prs = await q(
