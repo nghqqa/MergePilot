@@ -94,9 +94,11 @@ let _muApiInstance = null;
 async function getMuConsoleApi() {
   if (process.env.MU_MODE !== 'multiuser') return null;
   if (!_muApiInstance) {
-    const store = await getMuStore(process.env).catch(() => null);
-    if (!store) return null;
-    _muApiInstance = createMuConsoleApi({ pool: store.pool ?? store._pool });
+    // 创建独立 pool（mu store 的 pool 在闭包中不可外部访问）
+    const pg = (await import('pg')).default;
+    const pool = new pg.Pool({ connectionString: process.env.CONSOLE_PG_DSN, max: 2 });
+    pool.on('error', () => {});
+    _muApiInstance = createMuConsoleApi({ pool });
   }
   return _muApiInstance;
 }
