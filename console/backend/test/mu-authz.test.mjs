@@ -17,7 +17,7 @@ test('角色×动作矩阵（设计报告 §3 的 Developer 切片）', () => {
   }
   assert.deepEqual(roleActions('auditor'), ['read_audit'], 'Auditor 只读审计元数据');
   assert.ok(!roleActions('platform_admin').includes('read_code_content'), 'PlatformAdmin 不自动获得代码读取');
-  assert.ok(!roleActions('platform_admin').includes('rag_query'), 'PlatformAdmin 不自动获得 RAG 语料');
+  assert.ok(roleActions('platform_admin').includes('rag_query'), 'PlatformAdmin 单管理员试用放开 RAG 检索（Beta 调整）');
   assert.ok(roleActions('platform_admin').includes('manage_membership'));
 });
 
