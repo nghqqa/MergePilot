@@ -29,7 +29,7 @@ const ROLE_ACTIONS = {
   reviewer: [...CONTRIBUTOR, 'request_review'],
   maintainer: [...CONTRIBUTOR, 'request_review', 'decide_review', 'request_repair', 'manage_repository_binding'],
   auditor: ['read_audit'],
-  platform_admin: ['read_repository', 'manage_membership', 'read_audit', 'manage_instance'],
+  platform_admin: ['read_repository', 'read_pull_request', 'request_review', 'request_repair', 'manage_repository_binding', 'manage_membership', 'read_audit', 'manage_instance'],
 };
 
 // 需要 active Binding 才允许的动作（provider 侧连接存在性由调用方传入 binding 判定）

@@ -169,8 +169,8 @@ try {
   // platform_admin 无 manage_repository_binding（矩阵语义）——绑定由 maintainer 执行
   const adminBind = await call('/api/mu/repositories', { method: 'POST', cookie: admin.cookie, csrf: admin.csrf,
     body: { provider_repo_id: 'R_gh_9001', owner: 'acme', name: 'app' } });
-  ok('MU-C0 platform_admin 不可绑定仓库（矩阵：绑定属 maintainer）→ 403',
-    adminBind.status === 403 && adminBind.json?.error?.reason === 'action_not_granted');
+  ok('MU-C0 platform_admin 可绑定仓库（Beta：PlatformAdmin 含 manage_repository_binding）→ 200',
+    adminBind.status === 200 || adminBind.status === 201, adminBind.status);
   await call('/api/mu/members', { method: 'POST', cookie: admin.cookie, csrf: admin.csrf,
     body: { login: 'dana', role: 'maintainer' } });
   const dana = await muLogin('fixture:dana');
