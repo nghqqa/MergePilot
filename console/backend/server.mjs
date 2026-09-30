@@ -104,14 +104,19 @@ async function getMuConsoleApi() {
 async function authGate(req) {
   if (process.env.MU_MODE === 'multiuser') {
     const store = await getMuStore(process.env).catch(() => null);
-    const { resolvePrincipal } = await import('./lib/principal.mjs');
-    const principal = await resolvePrincipal(req, { muStore: store });
-    if (!principal.authenticated) return { denied: 401 };
-    return { principal };
+    if (store) {
+      const { resolvePrincipal } = await import('./lib/principal.mjs');
+      const principal = await resolvePrincipal(req, { muStore: store }).catch(() => null);
+      if (principal?.authenticated) return { principal };
+    }
+    // mu store 不可用或 mu_session 无效 → 401（不回退 mp_session，安全边界）
+    return { denied: 401 };
   }
+  // legacy：原有 mp_session 行为（返回原始 session 对象——下游端点依赖其形状）
   const auth = getSession(tokenFromCookieHeader(req.headers.cookie));
   if (!auth) return { denied: 401 };
-  return { principal: { authenticated: true, authMode: 'legacy', legacyAuth: auth } };
+  // 返回原始 auth 对象（含 .user/.repos 等旧属性）+ MU 兼容标记
+  return { principal: { ...auth, authenticated: true, authMode: 'legacy' }, legacyAuth: auth };
 }
 
 function sendError(res, status, message) {
@@ -329,7 +334,7 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
     if (p === '/api/rag/org-search' && req.method === 'GET') {
       const gate = await authGate(req);
       if (gate.denied) return sendJson(res, gate.denied, anonymousBody());
-      const auth = gate.principal;
+      const auth = gate.principal.legacyAuth ?? gate.principal;
       if (process.env.MERGEPILOT_ORG_RAG_A_CHAIN !== '1') {
         return sendJson(res, 200, { service_state: 'a_chain_disabled',
           note: 'A 链未启用（feature flag 关闭）——不伪装检索', source: 'ORG_RAG' });
@@ -401,7 +406,7 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
     if (p === '/api/cchain/status' && req.method === 'GET') {
       const gate = await authGate(req);
       if (gate.denied) return sendJson(res, gate.denied, anonymousBody());
-      const auth = gate.principal;
+      const auth = gate.principal.legacyAuth ?? gate.principal;
       const status = await cchainStatusObserved(process.env, process.env.CONSOLE_PG_DSN);
       rememberStatusForMetrics(status);
       return sendJson(res, 200, { ...status,
@@ -411,7 +416,7 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
     if (p === '/api/cchain/metrics' && req.method === 'GET') {
       const gate = await authGate(req);
       if (gate.denied) return sendJson(res, gate.denied, anonymousBody());
-      const auth = gate.principal;
+      const auth = gate.principal.legacyAuth ?? gate.principal;
       return sendJson(res, 200, cchainMetricsSnapshot(process.env));
     }
     if (p === '/api/cchain/run-bindings/verify' && req.method === 'POST') {
@@ -426,7 +431,7 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
     if (p === '/api/cchain/keystore/rotate' && req.method === 'POST') {
       const gate = await authGate(req);
       if (gate.denied) return sendJson(res, gate.denied, anonymousBody());
-      const auth = gate.principal;
+      const auth = gate.principal.legacyAuth ?? gate.principal;
       // 契约 §0.1：副作用方法必须携带 X-CSRF-Token
       // L-2：与 logout 一致的 timing-safe 比较（长度不等直接拒绝）
       if (!auth.csrf || !safeEqual(String(req.headers['x-csrf-token'] ?? ''), auth.csrf)) {
@@ -458,13 +463,13 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
     if (p === '/api/fxv/metrics' && req.method === 'GET') {
       const gate = await authGate(req);
       if (gate.denied) return sendJson(res, gate.denied, anonymousBody());
-      const auth = gate.principal;
+      const auth = gate.principal.legacyAuth ?? gate.principal;
       return sendJson(res, 200, await fxvMetrics(process.env.CONSOLE_PG_DSN));
     }
     if (p === '/api/fxv/attempts' && req.method === 'GET') {
       const gate = await authGate(req);
       if (gate.denied) return sendJson(res, gate.denied, anonymousBody());
-      const auth = gate.principal;
+      const auth = gate.principal.legacyAuth ?? gate.principal;
       const r = await fxvAttempts(process.env.CONSOLE_PG_DSN, { limit: 50 });
       const allow = new Set(auth.repos);
       return sendJson(res, 200, { ...r, attempts: r.attempts.filter((a) => allow.has(a.repo)) });
@@ -472,7 +477,7 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
     if (['/api/pulls', '/api/pending', '/api/tickets', '/api/evidence', '/api/audit'].includes(p) && req.method === 'GET') {
       const gate = await authGate(req);
       if (gate.denied) return sendJson(res, gate.denied, anonymousBody());
-      const auth = gate.principal;
+      const auth = gate.principal.legacyAuth ?? gate.principal;
       if (p === '/api/pulls' && q.repo && !auth.repos.includes(q.repo)) {
         return sendJson(res, 403, { error: { reason: 'repo_not_in_allowlist', repo: q.repo } });
       }
@@ -509,7 +514,7 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
     // 未认证 → 维持登录页明示的只读演示语义（本地历史快照，非授权范围数据）。
     // 实时数据查询一律走 /api/overview、/api/pulls（服务端 allowlist 强制）。
     const runsGate = await authGate(req);
-    const runsScopeAuth = runsGate.principal?.legacyAuth ?? null;
+    const runsScopeAuth = runsGate.principal?.legacyAuth ?? (runsGate.principal?.authenticated ? runsGate.principal : null);
     const runsScope = runsScopeAuth ? new Set(runsScopeAuth.repos) : null;
     const runsRepoAllowed = (repo) => !runsScope || (repo ? runsScope.has(repo) : false);
 
@@ -566,7 +571,7 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
     if (pullMatch && req.method === 'GET') {
       const gate = await authGate(req);
       if (gate.denied) return sendJson(res, gate.denied, anonymousBody());
-      const auth = gate.principal;
+      const auth = gate.principal.legacyAuth ?? gate.principal;
       const prNumber = Number(pullMatch[1]);
       const repo = q.repo;
       if (!repo || !auth.repos.includes(repo)) {
