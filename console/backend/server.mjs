@@ -25,6 +25,7 @@ import { cchainStatusObserved, verifyRunBindingAndAudit, rotateKeystore,
          cchainMetricsSnapshot, rememberStatusForMetrics } from './lib/cchain/wiring.mjs';
 import { ragTrialApi, ragTrialInternalQuery } from './lib/ragtrial/api.mjs';
 import { muApi, getMuStore } from './lib/multiuser/api.mjs';
+import { createMuConsoleApi } from './lib/mu-console-api.mjs';
 
 // 进程启动时刻（health.started_at 的唯一来源）。必须在模块加载时求值——
 // 放进 apiHealth() 会变成"响应时刻"，容器 Up 时长与该字段即相互矛盾（2026-09-27 实测教训）。
@@ -86,6 +87,18 @@ function send(res, status, body, headers = {}) {
 
 function sendJson(res, status, obj) {
   send(res, status, JSON.stringify(obj, null, 2), { 'Content-Type': 'application/json; charset=utf-8' });
+}
+
+// ── MU Console 数据适配层 ──
+let _muApiInstance = null;
+async function getMuConsoleApi() {
+  if (process.env.MU_MODE !== 'multiuser') return null;
+  if (!_muApiInstance) {
+    const store = await getMuStore(process.env).catch(() => null);
+    if (!store) return null;
+    _muApiInstance = createMuConsoleApi({ pool: store.pool ?? store._pool });
+  }
+  return _muApiInstance;
 }
 
 async function authGate(req) {
@@ -434,7 +447,11 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
     if (p === '/api/overview' && req.method === 'GET') {
       const gate = await authGate(req);
       if (gate.denied) return sendJson(res, gate.denied, anonymousBody());
-      const auth = gate.principal;
+      if (gate.principal.authMode === 'multiuser') {
+        const api = await getMuConsoleApi();
+        if (api) return sendJson(res, 200, await api.overview(gate.principal.tenantId));
+      }
+      const auth = gate.principal.legacyAuth ?? gate.principal;
       const ov = await overviewState(auth.repos);
       return sendJson(res, 200, ov);
     }
@@ -496,6 +513,13 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
     const runsScope = runsScopeAuth ? new Set(runsScopeAuth.repos) : null;
     const runsRepoAllowed = (repo) => !runsScope || (repo ? runsScope.has(repo) : false);
 
+    if (p === '/api/runs' && process.env.MU_MODE === 'multiuser') {
+      const gate = await authGate(req);
+      if (gate.denied) return sendJson(res, gate.denied, anonymousBody());
+      const api = await getMuConsoleApi();
+      const runs = api ? await api.runs(gate.principal.tenantId) : [];
+      return sendJson(res, 200, { runs });
+    }
     if (p === '/api/runs') {
       const body = apiRuns(q);
       const items = (body.items ?? []).filter((r) => runsRepoAllowed(r.repo ?? null));
