@@ -17,10 +17,23 @@ export function createMuConsoleApi({ pool }) {
   }
 
   // ── Overview ──
-  const STAGES = ['REVIEWING', 'ACTION_REQUIRED', 'PASSED', 'BLOCKED', 'FAILED', 'PENDING'];
+  // MU 状态 → legacy stage 映射（OverviewPage 使用 legacy stage key 空间）
+  const MU_TO_STAGE = {
+    'RECEIVED': 'PENDING',
+    'REVIEW_QUEUED': 'PENDING',
+    'REVIEWING': 'REVIEWING',
+    'REVIEWED': 'REVIEWING',
+    'FIX_QUEUED': 'REMEDIATING',
+    'VERIFY_QUEUED': 'VERIFYING',
+    'VERIFYING': 'VERIFYING',
+    'VERIFIED': 'PASSED',
+    'REWORK_REQUIRED': 'ACTION_REQUIRED',
+    'BLOCKED': 'BLOCKED',
+    'COMPLETED': 'PASSED',
+  };
+  const STAGE_KEYS = ['REVIEWING', 'ACTION_REQUIRED', 'REMEDIATING', 'VERIFYING', 'PASSED', 'BLOCKED', 'STALE', 'UNKNOWN', 'PENDING'];
 
   async function overview(tenantId) {
-    // repos with PR and run counts
     const repoCounts = await q(
       `SELECT r.owner || '/' || r.name AS repo,
               count(DISTINCT pr.pr_id) AS prs,
@@ -32,7 +45,6 @@ export function createMuConsoleApi({ pool }) {
        WHERE r.tenant_id=$1 AND r.state='active'
        GROUP BY r.owner, r.name, r.created_at ORDER BY r.created_at DESC`, [tenantId]);
 
-    // PR list with latest run status
     const prs = await q(
       `SELECT pr.pr_id, pr.provider_pr_number, pr.title, pr.state, pr.head_sha,
               r.owner, r.name AS repo_name,
@@ -49,16 +61,15 @@ export function createMuConsoleApi({ pool }) {
        WHERE pr.tenant_id=$1
        ORDER BY pr.updated_at DESC LIMIT 50`, [tenantId]);
 
-    // stage counts
+    // stage_counts 映射到 legacy stage key 空间
     const stageRows = await q(
       `SELECT status, count(*) AS c FROM mu.review_run WHERE tenant_id=$1 GROUP BY status`, [tenantId]);
-    const stage_counts = Object.fromEntries(STAGES.map(s => [s, 0]));
+    const stage_counts = Object.fromEntries(STAGE_KEYS.map(s2 => [s2, 0]));
     for (const row of stageRows) {
-      if (stage_counts[row.status] !== undefined) stage_counts[row.status] = Number(row.c);
-      else stage_counts['REVIEWING'] = (stage_counts['REVIEWING'] ?? 0) + Number(row.c);
+      const mapped = MU_TO_STAGE[row.status] ?? 'UNKNOWN';
+      stage_counts[mapped] = (stage_counts[mapped] ?? 0) + Number(row.c);
     }
 
-    // findings (recent)
     const findings = await q(
       `SELECT f.rule_id, f.severity, f.path, f.summary_masked, f.created_at,
               r.owner, r.name AS repo_name
@@ -68,11 +79,16 @@ export function createMuConsoleApi({ pool }) {
        WHERE rr.tenant_id=$1
        ORDER BY f.created_at DESC LIMIT 20`, [tenantId]);
 
-    // blocked runs
     const blocked = await q(
       `SELECT run_id, status, updated_at FROM mu.review_run
        WHERE tenant_id=$1 AND status IN ('BLOCKED','REWORK_REQUIRED')
        ORDER BY updated_at DESC LIMIT 10`, [tenantId]);
+
+    // pending summary（待处理数量）
+    const pendingRows = await q(
+      `SELECT count(*) AS c FROM mu.review_run
+       WHERE tenant_id=$1 AND status IN ('FIX_QUEUED','VERIFY_QUEUED','REWORK_REQUIRED','BLOCKED')`, [tenantId]);
+    const pendingCount = Number(pendingRows[0]?.c ?? 0);
 
     return {
       pulls: prs.map(p => ({
@@ -81,7 +97,7 @@ export function createMuConsoleApi({ pool }) {
         head_sha: p.head_sha,
         run_id: p.run_id,
         latest: p.latest,
-        stage: p.stage,
+        stage: MU_TO_STAGE[p.stage] ?? p.stage,
         stage_source: p.stage_source,
       })),
       tickets: [],
@@ -97,6 +113,7 @@ export function createMuConsoleApi({ pool }) {
         repo: r.repo, prs: Number(r.prs), runs: Number(r.runs), pending: Number(r.pending),
       })),
       stage_counts,
+      pending_summary: { count: pendingCount },
       mode: 'mu_canonical',
       source: 'MU_CANONICAL_LIVE',
       total_repos: repoCounts.length,
