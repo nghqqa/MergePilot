@@ -26,11 +26,13 @@ export default function ReposPage() {
       <Typography.Title level={1} style={{ fontSize: 24, marginBottom: 4 }}>仓库</Typography.Title>
       <Typography.Paragraph type="secondary">
         以仓库和 PR 为中心的管理工作台。
-        {contract
-          ? ' 数据源为正式契约端点。'
-          : source.kind === 'console-pg'
-            ? ' 数据源为隔离 PG 只读服务：以下为 fixture 测试记录（非真实运行）。'
-            : ' 当前数据模式 snapshot：以下仓库来自历史数据中的运行记录，不是已授权接入的实时连接。'}
+        {source.kind === 'multiuser'
+          ? ' 数据源为多用户 canonical 面（会话内租户收窄，实时只读）。'
+          : contract
+            ? ' 数据源为正式契约端点。'
+            : source.kind === 'console-pg'
+              ? ' 数据源为隔离 PG 只读服务：以下为 fixture 测试记录（非真实运行）。'
+              : ' 当前数据模式 snapshot：以下仓库来自历史数据中的运行记录，不是已授权接入的实时连接。'}
       </Typography.Paragraph>
 
       {reposQ.status === 'error' ? (

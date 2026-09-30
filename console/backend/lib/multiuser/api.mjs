@@ -99,6 +99,22 @@ async function executeEventSync(store, muPoolQuery, job, sysCtx) {
   await muPoolQuery('UPDATE mu.repository_binding SET last_sync_at = now() WHERE repo_id=$1 AND tenant_id=$2',
     [job.repo_id, job.tenant_id]).catch(() => {});
 
+  // ── PR 生命周期状态收敛（Wave 3.7 数据源纯化·九）：closed/reopened 如实落库 ──
+  // 此前 action 仅记档：closed 事件会再触发一轮审查管线且 state 永不更新——
+  // overview/pulls 的 open 统计在 PR 关闭后不收敛。closed 不进入审查管线（关闭的
+  // PR 无需审查，head 不变旧 run 保持 stale 语义）。
+  const prAction = String(job.payload?.action ?? '');
+  if (prAction === 'closed' || prAction === 'reopened') {
+    await muPoolQuery(
+      `UPDATE mu.pull_request SET state=$1, updated_at=now()
+        WHERE tenant_id=$2 AND repo_id=$3 AND provider_pr_number=$4`,
+      [prAction === 'closed' ? 'closed' : 'open', job.tenant_id, job.repo_id, prNumber]).catch(() => {});
+    if (prAction === 'closed') {
+      return { state: 'done', result: { pr_number: prNumber, head_sha_prefix: headSha.slice(0, 12),
+        pipeline: { skipped: 'pr_closed' } } };
+    }
+  }
+
   // ── Wave 3 PR-E：快照后跑完整审查管线（系统主体，不伪造用户 membership）──
   // 链路：handlePullRequestEvent（幂等 run + deterministic Reviewer）→ Leader 裁定 →
   // （fix_required 时）Fixer dry-run + 独立 Verifier + 终裁。任一环节 fail-closed

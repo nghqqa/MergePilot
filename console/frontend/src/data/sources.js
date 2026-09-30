@@ -133,7 +133,14 @@ function multiuserSource(fetchImpl) {
     kind: 'multiuser',
     dataMode: 'live',
     async listRepos() {
-      await resolveRepoId(''); // 触发缓存填充（空 key 不命中，仅加载清单）
+      if (!repoCache) {
+        const body = await get('/api/mu/repositories');
+        repoCache = (body?.repositories ?? []).map((r) => ({
+          repo_id: r.repo_id, repo: `${r.owner}/${r.name}`, owner: r.owner, name: r.name,
+          prCount: Number(r.pr_count ?? 0) || null, runCount: null, activityAt: r.created_at ?? null,
+          kind: 'multiuser', binding_state: r.binding_state ?? null,
+        }));
+      }
       return repoCache;
     },
     async listPrs(repo) {

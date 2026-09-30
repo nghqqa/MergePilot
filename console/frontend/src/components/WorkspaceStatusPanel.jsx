@@ -10,12 +10,14 @@ const MODE_LABEL = {
   snapshot: '只读快照',
   contract: '契约数据',
   'console-pg': '隔离联调',
+  multiuser: 'MU 实时',
 };
 
 const SOURCE_LABEL = {
   snapshot: '本地快照证据包（真实历史运行，锁定只读）',
   contract: '契约数据源（按 API-AUTH-MERGE-V0 形状）',
   'console-pg': '隔离 PG 只读服务（fixture 测试记录）',
+  multiuser: '多用户 canonical 数据面（/api/mu/*，会话内租户收窄）',
 };
 
 // R4（FB-02）：live 已配置时数据模式如实标注，不再把契约数据统称"Fixture"
@@ -43,6 +45,11 @@ export function resolveWorkspaceState(config, authStatus) {
         : { key: 'live', label: 'PG 实时（未认证）', tone: 'warn' };
     }
     return { key: 'contract', label: '契约数据（Fixture）', tone: 'warn' };
+  }
+  if (config.mode === 'multiuser') {
+    return authStatus === 'authed'
+      ? { key: 'mu-auth', label: '多用户实时（canonical · 会话租户）', tone: 'ok' }
+      : { key: 'mu', label: '多用户实时（未认证）', tone: 'warn' };
   }
   // snapshot
   if (authStatus === 'forbidden' || authStatus === 'expired') {
