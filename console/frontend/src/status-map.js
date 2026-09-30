@@ -99,7 +99,7 @@ const FXV = {
   PATCH_READY: { tone: 'neutral', label: '补丁就绪', note: '补丁已生成待应用（fxv: PATCH_READY）' },
   DRY_RUN_APPLY: { tone: 'info', label: '隔离应用中', note: '隔离工作区应用补丁（fxv: DRY_RUN_APPLY）' },
   DRY_RUN_VERIFIED: { tone: 'ok', label: '隔离验证通过', note: '隔离测试通过（fxv: DRY_RUN_VERIFIED）— 隔离验证，不等于生产验证' },
-  DRY_RUN_COMPLETE: { tone: 'ok', label: '试运行完成', note: 'dry-run 终态（fxv: DRY_RUN_COMPLETE，默认路径）— 未执行真实 GitHub 写入' },
+  DRY_RUN_COMPLETE: { tone: 'ok', label: '试运行完成', note: '预演终态（未执行真实 GitHub 写入）' },
   AWAITING_GITHUB_GRANT: { tone: 'warn', label: '待写入授权', note: '人工等待：GitHub 写入授权（fxv: AWAITING_GITHUB_GRANT）' },
   GRANTED: { tone: 'info', label: '已授权写入', note: '写入授权已发放（fxv: GRANTED）— 一次性 grant' },
   COMMITTING: { tone: 'info', label: '提交中', note: '真实提交+推送执行中（fxv: COMMITTING）' },
@@ -129,12 +129,12 @@ const FXV_ARTIFACT = {
 // 语义红线：缺真实依赖 = BLOCKED/缺失态如实显示，绝不伪装 READY。
 const CCHAIN = {
   READY: { tone: 'ok', label: '就绪', note: '组件就绪（cchain: READY）' },
-  ATTESTED: { tone: 'ok', label: '已公证', note: 'provider 在线 attestation 通过（cchain: ATTESTED）' },
+  ATTESTED: { tone: 'ok', label: '已公证', note: '修复方在线公证通过' },
   NOT_CONFIGURED: { tone: 'neutral', label: '未配置', note: '相关环境变量未设置（cchain: NOT_CONFIGURED）' },
   MISSING: { tone: 'warn', label: '缺失', note: '依赖文件/记录不存在（cchain: MISSING）— 具体条件见 blocked_condition' },
   CORRUPT: { tone: 'bad', label: '损坏', note: '内容寻址校验失败（cchain: CORRUPT）' },
   UNREACHABLE: { tone: 'bad', label: '不可达', note: 'provider 网络不可达（cchain: UNREACHABLE）' },
-  INVALID: { tone: 'bad', label: '无效', note: 'attestation 形状校验失败（cchain: INVALID）' },
+  INVALID: { tone: 'bad', label: '无效', note: '公证结果形状校验失败' },
 };
 const CCHAIN_OVERALL = {
   READY: { tone: 'ok', label: '全部就绪', note: '三组件均 READY/ATTESTED（overall: READY）' },
@@ -153,7 +153,7 @@ const RAG = {
   backend_not_wired: { tone: 'neutral', label: '后端未接线', note: 'ragtrial 后端未接线（backend_not_wired）' },
   ready: { tone: 'ok', label: '服务就绪', note: 'ragtrial 服务就绪（ready）' },
   degraded: { tone: 'bad', label: '已降级', note: '检索服务显式降级（degraded）— 不伪装为空成功' },
-  a_chain_disabled: { tone: 'neutral', label: 'A 链未启用', note: 'A 链 feature flag 关闭（a_chain_disabled）' },
+  a_chain_disabled: { tone: 'neutral', label: '知识检索未启用', note: '知识检索功能开关关闭（a_chain_disabled）' },
 };
 
 // ── 审批票据（独立键空间；与 FXV/门禁的 APPROVED 语义互相独立，不共用键）──
@@ -250,7 +250,7 @@ function publishMap(publish) {
   return {
     tone: 'neutral',
     label: '未找到发布记录',
-    note: '包内无发布记录（Matrix 手动轮为设计上的零 GitHub 写入；webhook 轮缺失属历史证据不完整）— 不推导为"未回写"',
+    note: '包内无发布记录（手动轮为设计上的零 GitHub 写入；自动轮缺失属历史证据不完整）— 不推导为"未回写"',
   };
 }
 

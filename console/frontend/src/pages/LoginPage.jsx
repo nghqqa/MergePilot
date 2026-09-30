@@ -79,9 +79,9 @@ export default function LoginPage() {
               }}>
               使用 GitHub 登录
             </Button>
-            <div style={{ textAlign: 'center', color: '#999', margin: '4px 0 0' }}>—— 或使用具名操作员 ——</div>
+            <div style={{ textAlign: 'center', color: '#999', margin: '4px 0 0' }}>—— 或使用操作员账号 ——</div>
             <Form layout="vertical" onFinish={submit} disabled={busy} style={{ marginTop: 16 }}>
-              <Form.Item label="具名操作员" name="user" rules={[{ required: true, message: '请输入用户名' }]}>
+              <Form.Item label="操作员账号" name="user" rules={[{ required: true, message: '请输入用户名' }]}>
                 <Input id="login-user" prefix={<UserOutlined aria-label />} placeholder="用户名"
                        autoComplete="username" size="large" />
               </Form.Item>

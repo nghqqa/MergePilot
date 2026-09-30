@@ -15,7 +15,7 @@ import { ragMap, toneToColor } from '../status-map.js';
 // 常见失败的人话映射（reason 为后端稳定机器码；未知时回落到 message 截断）
 function ragHumanError(e) {
   const reason = String(e?.reason ?? '');
-  if (e?.status === 403 || reason.includes('scope')) return '当前账户没有这个仓库的 RAG 权限（scope 门默认拒绝）。请联系管理员把仓库加入授权范围。';
+  if (e?.status === 403 || reason.includes('scope')) return '当前账户没有这个仓库的知识检索权限（默认拒绝）。请联系管理员把仓库加入授权范围。';
   if (e?.status === 401) return '登录状态已失效——请重新登录后再试。';
   if (e?.status === 503) return '检索服务暂不可用（依赖的数据库或模型未就绪）——稍后重试。';
   if (e?.status === 400) return '请求参数不完整——请确认已选择仓库与分支后重试。';
@@ -25,7 +25,7 @@ function ragHumanError(e) {
 
 function ragRetryHint(e) {
   if (e?.status === 403 || String(e?.reason ?? '').includes('scope')) {
-    return '可以做的：换一个已授权的仓库；或联系管理员把该仓库加入 RAGTRIAL_ALLOWED_SCOPES。';
+    return '可以做的：换一个已授权的仓库；或联系管理员把该仓库加入知识检索授权范围。';
   }
   if (e?.status === 503) return '可以做的：稍后重试；若持续失败请联系管理员检查服务状态。';
   return '可以做的：确认仓库与分支填写正确、该仓库已灌入过语料；重试一次；仍失败时附上下方技术详情联系管理员。';
@@ -145,7 +145,7 @@ export default function RagTrialPage() {
 
   return (
     <div>
-      <Typography.Title level={1} style={{ fontSize: 24, marginBottom: 4 }}>RAG 本地试验</Typography.Title>
+      <Typography.Title level={1} style={{ fontSize: 24, marginBottom: 4 }}>知识检索（试用）</Typography.Title>
       <Typography.Paragraph type="secondary">
         LOCAL_RAG_TRIAL：独立 pgvector 索引 + MinIO 原文归档。检索结果仅作<b>带引用的参考</b>，
         不构成 finding/ticket/gate/VERIFIED 输入；无引用命中在后端即被丢弃，本页不显示无来源内容。
@@ -190,12 +190,12 @@ export default function RagTrialPage() {
       </div>
 
       <Alert type="info" showIcon style={{ marginBottom: 16 }}
-        message="安全边界：RAG 结果 = reference only"
+        message="安全边界：知识检索结果仅供参考（reference only）"
         description="Review 可读取引用作辅助证据；Fixer 不得只依据 RAG 文本改码；Verifier 只接受独立 harness/test 证据。" />
 
       {error ? (
         <Alert type="error" showIcon style={{ marginBottom: 16 }}
-          message="RAG 试验服务暂不可用"
+          message="知识检索服务暂不可用"
           description="后端未接线或数据库不可达时如实显示错误，不显示任何推断数据。可稍后重试，或联系管理员检查服务配置。" />
       ) : null}
 

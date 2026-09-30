@@ -42,7 +42,7 @@ const GHAPP_ERROR_MAP = {
   installation_revoked: '此 installation 已被撤销——请重新安装 GitHub App',
   installation_suspended: '此 installation 已被暂停——请在 GitHub 设置中恢复',
   repository_not_authorized: '此仓库不在 installation 授权范围内——请在 GitHub App 设置中添加',
-  repository_already_bound: '此仓库已被其他租户绑定——每个仓库只允许一个租户',
+  repository_already_bound: '此仓库已被其他组织绑定——每个仓库只能属于一个组织',
   github_read_failed: 'GitHub API 读取失败——请稍后重试',
 };
 
@@ -146,11 +146,11 @@ function PipelinePanel({ prNumber, repoId }) {
   }
   if (state.phase === 'error') {
     return <Alert style={{ marginTop: 12 }} type="warning" showIcon
-      message={`审查管线暂时无法读取${state.status ? `（HTTP ${state.status}）` : ''}——可稍后重试；若持续失败请联系管理员检查 webhook 与运行记录。`} />;
+      message={`审查管线暂时无法读取${state.status ? `（HTTP ${state.status}）` : ''}——可稍后重试；若持续失败请联系管理员检查 GitHub 通知与运行记录。`} />;
   }
   if (state.phase === 'empty') {
     return <Alert style={{ marginTop: 12 }} type="info" showIcon
-      message="审查管线：该 PR 暂无自动审查运行（webhook 触发后自动开始）" />;
+      message="审查管线：该 PR 暂无自动审查运行（PR 更新后自动开始）" />;
   }
   const r = state.detail.run;
   const ROLE_LABEL = { leader: 'Leader（裁定）', reviewer: 'Reviewer（审查）', fixer: 'Fixer（修复建议）', verifier: 'Verifier（独立验证）' };
@@ -889,7 +889,7 @@ export default function MultiUserPage() {
               {prsState === 'loading' ? <Typography.Text type="secondary">正在读取 PR 列表…</Typography.Text> : null}
               {prsState === 'error' ? (
                 <Alert type="warning" showIcon message="PR 列表暂时无法读取"
-                  description="可稍后点击「立即刷新」重试；若持续失败请联系管理员检查 webhook 与 App 事件订阅。" />
+                  description="可稍后点击「立即刷新」重试；若持续失败请联系管理员检查 GitHub App 通知配置。" />
               ) : null}
               {prsState === 'ready' && shownPrs.length === 0 ? (
                 <Alert type="info" showIcon

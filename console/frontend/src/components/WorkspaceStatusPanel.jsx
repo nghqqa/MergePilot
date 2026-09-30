@@ -17,7 +17,7 @@ const SOURCE_LABEL = {
   snapshot: '本地快照证据包（真实历史运行，锁定只读）',
   contract: '契约数据源（按 API-AUTH-MERGE-V0 形状）',
   'console-pg': '隔离 PG 只读服务（fixture 测试记录）',
-  multiuser: '多用户 canonical 数据面（/api/mu/*，会话内租户收窄）',
+  multiuser: '多用户实时数据（按登录组织隔离）',
 };
 
 // R4（FB-02）：live 已配置时数据模式如实标注，不再把契约数据统称"Fixture"
@@ -48,7 +48,7 @@ export function resolveWorkspaceState(config, authStatus) {
   }
   if (config.mode === 'multiuser') {
     return authStatus === 'authed'
-      ? { key: 'mu-auth', label: '多用户实时（canonical · 会话租户）', tone: 'ok' }
+      ? { key: 'mu-auth', label: '多用户实时（按组织隔离）', tone: 'ok' }
       : { key: 'mu', label: '多用户实时（未认证）', tone: 'warn' };
   }
   // snapshot
@@ -85,7 +85,7 @@ export function WorkspacePanel({ config, auth, onRetry }) {
     { name: 'PR 聚合（/api/pulls 正式契约）', state: live ? '已接入（PG 实时，会话 allowlist 过滤）' : '未交付——等待后端（C-10）', ok: live },
     { name: '审批只读', state: pgMode ? '已接入（隔离 test-auth）' : live ? '已接入（实时票据，会话 allowlist）' : '未接线（C-4/C-11）', ok: pgMode || live },
     { name: '审批决策', state: pgMode ? '隔离 test-auth（仅 fixture 票据）' : '未接线（C-11 + D-1/D-2/D-3）', ok: false },
-    { name: 'OAuth 登录', state: '未接线（C-8 + D-9）——当前为具名操作员密码登录', ok: false },
+    { name: 'OAuth 登录', state: '未接线——当前为操作员账号密码登录', ok: false },
     { name: '站内合并', state: '关闭（C-12，仅 GitHub 外链）', ok: false },
     { name: '知识库 / 用量', state: '未接线（数据源待交付）', ok: false },
   ];

@@ -173,7 +173,7 @@ test('组织与接入：waiting 阶段（已绑定仓库、无 PR）显示等待
     const text = json();
     assert.ok(text.includes('检查 PR 同步'), 'waiting 阶段主 CTA 上屏');
     assert.ok(text.includes('该仓库还没有 PR'), '空 PR 人话空态上屏');
-    assert.ok(text.includes('等待 PR 同步') || text.includes('webhook'), 'webhook 等待说明上屏');
+    assert.ok(text.includes('等待 PR 同步') || text.includes('自动开始'), 'PR 同步等待说明上屏（术语纯化后）');
     assert.equal(countPrimaryButtons(renderer.toJSON()), 1, 'waiting 阶段全页仅 1 个主 CTA');
   } finally { await act(async () => { renderer.unmount(); }); }
 });
@@ -248,7 +248,7 @@ test('RAG 灌入：确认门开启前禁用；失败保留输入、人话报错�
     for (let i = 0; i < 10; i++) await act(async () => { await Promise.resolve(); });
     const text2 = allText(renderer.toJSON());
     assert.equal(ingestCalls, 1, '灌入端点恰好调用一次（进行中禁用重复提交）');
-    assert.ok(text2.includes('没有这个仓库的 RAG 权限'), '失败人话说明上屏');
+    assert.ok(text2.includes('没有这个仓库的知识检索权限'), '失败人话说明上屏（术语纯化后）');
     assert.ok(text2.includes('scope_denied'), '技术详情含机器 reason（可展开）');
     assert.ok(!text2.includes('\n    at '), '不渲染调用堆栈');
     assert.ok(text2.includes('acme/app') && text2.includes('main'), '失败后目标输入保留');

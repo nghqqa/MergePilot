@@ -27,7 +27,7 @@ export default function ReposPage() {
       <Typography.Paragraph type="secondary">
         以仓库和 PR 为中心的管理工作台。
         {source.kind === 'multiuser'
-          ? ' 数据源为多用户 canonical 面（会话内租户收窄，实时只读）。'
+          ? ' 数据源为多用户实时数据（按登录组织隔离，只读）。'
           : contract
             ? ' 数据源为正式契约端点。'
             : source.kind === 'console-pg'
