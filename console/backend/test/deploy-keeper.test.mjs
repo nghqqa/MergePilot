@@ -43,10 +43,12 @@ const writeObj = (primary) => {
 };
 const readPrimary = () => JSON.parse(fs.readFileSync(objPath, 'utf8')).agents.defaults.model.primary;
 
-// 假 mc：cat <obj> → stdout；pipe <obj> ← stdin（写入本地文件）
+// 假 mc：cat <obj> → stdout；pipe <obj> ← stdin（临时文件+原子替换——
+// 真实 mc pipe 写远端对象；本地同文件管道直写会截断 stage1 的读取源）。
 const fakeMc = () => `#!/bin/sh
-if [ "$1" = "cat" ]; then cat "${objPath.split('\\').join('\\\\')}"; exit 0; fi
-if [ "$1" = "pipe" ]; then cat > "${objPath.split('\\').join('\\\\')}"; exit 0; fi
+OBJ="${objPath.split('\\').join('\\\\')}"
+if [ "$1" = "cat" ]; then cat "$OBJ"; exit 0; fi
+if [ "$1" = "pipe" ]; then cat > "$OBJ.tmp" && mv "$OBJ.tmp" "$OBJ"; exit 0; fi
 exit 1`;
 
 beforeEach(() => {
