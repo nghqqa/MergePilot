@@ -234,6 +234,9 @@ async function runExternalRound(pool, atMod, atCfg, { run, binding, deps }) {
   if (!detail.ok) return { ok: false, stage: 'at_workers_detail_failed', reason: detail.reason };
   const workers = atMod.AGENTTEAMS_WORKERS;
   const bindings = {};
+  // Wave 3.13 runtime readiness：worker phase 非 Running（controller 重启/recreate
+  // 后桥接不可消费的权威信号）→ 不启动轮次，run 停留 FIX_QUEUED 可重试态+审计。
+  const notRunning = [];
   for (const [role, def] of Object.entries(workers)) {
     const w = detail.workers.get(def.name);
     if (!w || !w.roomID || !w.matrixUserID) {
@@ -241,7 +244,12 @@ async function runExternalRound(pool, atMod, atCfg, { run, binding, deps }) {
       await gateAudit('executor_gate_rejected', { reason, executor_mode: 'agentteams_worker_binding_missing', role });
       return { ok: false, stage: 'at_workers_detail_failed', reason };
     }
+    if (String(w.phase ?? '').toLowerCase() !== 'running') notRunning.push(role);
     bindings[role] = w;
+  }
+  if (notRunning.length) {
+    await gateAudit('executor_gate_rejected', { reason: 'AT_WORKER_NOT_RUNNING', executor_mode: 'agentteams_runtime_not_ready', roles: notRunning.join(',') });
+    return { ok: false, stage: 'runtime_not_ready', reason: 'AT_WORKER_NOT_READY', retryable: true, workers: notRunning };
   }
 
   // 取 P0/P1 finding 摘要（脱敏出站——与 controller DAG 登记共用同一 brief）
