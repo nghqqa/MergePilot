@@ -312,7 +312,13 @@ async function runExternalRound(pool, atMod, atCfg, { run, binding, deps }) {
       // fail-closed：真实 cancel + 死信 + BLOCKED——绝不伪造结果、绝不回退 internal
       await atMod.cancelExternalRound(atCfg, { projectId: proj, taskId: rp.taskId,
         reason: `mergepilot-${lastReason}`, submissionId: proj, fetchImpl }).catch(() => {});
-      if (roleClaims[role]) await finishAttemptOrSkip(pool, roleClaims[role].attemptId, 'FAILED', String(lastReason).slice(0, 80));
+      // Wave 3.8 验收修正：roleClaims 在循环前统一预领取——任一角色失败时，
+      // 其余预领取角色（reviewer/leader）必须一并收尾 FAILED，否则终态 BLOCKED
+      // run 会永久残留 RUNNING attempt（真实四 Agent 探针实证：fixer 失败 →
+      // leader#1 RUNNING 卡死）。
+      for (const rc of Object.values(roleClaims)) {
+        await finishAttemptOrSkip(pool, rc.attemptId, 'FAILED', String(lastReason).slice(0, 80));
+      }
       if (fixClaim.ok) await finishAttemptOrSkip(pool, fixClaim.attemptId, 'FAILED', String(lastReason).slice(0, 80));
       await moveToDeadLetter(pool, { runId, tenantId, repoId, prId, headSha, agentRole: role,
         kind: 'mt_round_failed', reason: String(lastReason).slice(0, 120),
