@@ -55,10 +55,14 @@ beforeEach(() => {
   fs.mkdirSync(binDir);
   objPath = path.join(TMP, 'openclaw.json');
   fs.writeFileSync(path.join(binDir, 'mc'), fakeMc(), { mode: 0o755 });
-  // python3 shim：转交系统 python（keeper 的 JSON 变换用标准库）
-  fs.writeFileSync(path.join(binDir, 'python3'), '#!/bin/sh\nexec python "$@"', { mode: 0o755 });
+  // python3 shim：转交宿主 python（keeper 的 JSON 变换用标准库）
+  const PY = process.platform === 'win32' ? 'python'
+    : (fs.existsSync('/usr/bin/python3') ? 'python3' : 'python');
+  fs.writeFileSync(path.join(binDir, 'python3'), '#!/bin/sh\nexec ' + PY + ' "$@"', { mode: 0o755 });
 });
-const SH = process.env.KEEPER_SH || 'C:/Program Files/Git/bin/sh.exe';
+// 跨平台：Windows 用 Git Bash 的 sh（脚本含 nohup 等 POSIX 语义），Linux 用 /bin/sh
+const SH = process.env.KEEPER_SH
+  || (process.platform === 'win32' ? 'C:/Program Files/Git/bin/sh.exe' : '/bin/sh');
 
 afterEach(() => {
   try { fs.rmSync(TMP, { recursive: true, force: true }); } catch { /* */ }
