@@ -335,7 +335,7 @@ try {
 finally {
   await pool.end().catch(() => {});
   delete process.env.MU_AGENTTEAMS_TOKEN;
-  try { execFileSync('docker', ['rm', '-f', CTR], { stdio: 'pipe' }); } catch { /* */ }
+  try { execFileSync('docker', ['rm', '-f', '-v', CTR], { stdio: 'pipe' }); } catch { /* */ }
 }
 console.log(`\n${pass} pass, ${fail} fail`);
 process.exit(fail ? 1 : 0);

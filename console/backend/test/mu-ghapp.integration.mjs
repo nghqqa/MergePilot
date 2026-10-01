@@ -471,7 +471,7 @@ try {
   Object.assign(process.env, savedEnv);
   server.close();
   await pool.end().catch(() => {});
-  try { execFileSync('docker', ['rm', '-f', CTR], { stdio: 'pipe' }); } catch { /* */ }
+  try { execFileSync('docker', ['rm', '-f', '-v', CTR], { stdio: 'pipe' }); } catch { /* */ }
 }
 console.log(`\nmu-ghapp.integration: ${pass} pass / ${fail} fail`);
 process.exit(fail ? 1 : 0);

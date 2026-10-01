@@ -238,11 +238,11 @@ try {
 
   server.close();
   // fresh DB 清理
-  execFileSync('docker', ['rm', '-f', CTR2], { stdio: 'pipe' });
+  execFileSync('docker', ['rm', '-f', '-v', CTR2], { stdio: 'pipe' });
 } finally {
   Object.assign(process.env, savedEnv);
   try { fs.rmSync(TMP, { recursive: true, force: true }); } catch { /* */ }
-  try { execFileSync('docker', ['rm', '-f', CTR], { stdio: 'pipe' }); } catch { /* */ }
+  try { execFileSync('docker', ['rm', '-f', '-v', CTR], { stdio: 'pipe' }); } catch { /* */ }
   await adminPool.end().catch(() => {});
 }
 console.log(`\n${pass} pass, ${fail} fail`);
