@@ -276,6 +276,13 @@ try {
   ok('P5a schema 两轮无效 → mt_round_failed 死信+BLOCKED（不伪造/不回退）', r5.ok === false && r5.stage === 'mt_round_failed'
     && run5.status === 'BLOCKED' && dl5?.kind === 'mt_round_failed', { r: r5.reason, dl: dl5 });
   ok('P5b 失败角色=fixer', r5.role === 'fixer' && dl5?.agent_role === 'fixer');
+  const orphan5 = (await pool.query(
+    `SELECT count(*)::int c FROM mu.agent_attempt WHERE run_id=$1 AND status='RUNNING' AND provider='agentteams'`, [s5.run.run_id])).rows[0].c;
+  const rlFailed5 = (await pool.query(
+    `SELECT count(*)::int c FROM mu.agent_attempt WHERE run_id=$1 AND agent_role IN ('reviewer','leader')
+       AND provider='agentteams' AND status='FAILED'`, [s5.run.run_id])).rows[0].c;
+  ok('P5b2 后续角色失败时预领取角色一并 FAILED（零 RUNNING 残留）',
+    orphan5 === 0 && rlFailed5 === 2, { orphan5, rlFailed5 });
 
   // P6 错误 sender（伪造）→ 两轮超时 → 死信（拒绝伪造回复）
   mt.__resetMatrixLoginForTests();
