@@ -96,3 +96,45 @@ embedded 栈的 Matrix(6167)/MinIO(9000) 仅 controller netns 内监听。MergeP
 - 四 Agent 不持有 GitHub/DB/OAuth/MergePilot-LLM 凭据；载荷仅 untrusted_findings 白名单 ≤2KiB
 - Fixer 仅 dry-run 文本；Verifier 独立判定；MergePilot Leader 终裁
 - 无 approve/merge/push/仓库写入能力；branch protection 不因本栈改变
+
+---
+
+## Wave 3.9 Beta 硬化增补（2026-10-01）
+
+### G-9 GitHub App 权限边界（branch protection 读取）
+
+当前 App（mergepilot-dev-e2e-test）权限仅 `contents:read` + `pull_requests:read`，
+**无 `Administration: read`** → 运行时无法读取 branch protection → `fetchPrContext`
+恒返回 protection=unknown → Leader 依设计 **fail-closed BLOCKED**（findings>0 也不进
+四 Agent 修复链；绝不凭猜测显示 PASS）。
+
+- 若 Beta 需要「审查通过后自动进入修复链」：维护者须在 App 设置页为安装升级权限
+  （Administration: read），重装/升级后无需改代码。
+- 若不授权：维持 fail-closed；四 Agent 链仍可经受控内部触发（修复演练）验证，
+  但生产 webhook 路径到 Leader 裁定为止——**这是有意的安全语义，不是缺陷**。
+
+### G-10 worker 模型配置 keeper（deepseek-direct）
+
+manager/controller 的 reconcile 会把 worker 的 openclaw.json 重写回
+`agentteams-gateway` 模板（其 /v1/chat/completions 在本部署 404）→ 全 worker
+LLM 调用失败 → Matrix 轮次 MT_REPLY_TIMEOUT。已部署自愈 keeper：
+
+- 位置：每 worker `/usr/local/bin/ensure-deepseek-model.sh`（boot 补丁 + 30s
+  漂移 watch，漂移即重补丁并 `kill -TERM 1` 自愈重启，每小时限 3 次）；
+- 挂接：`copaw-worker-entrypoint.sh` 第 3 行（boot 调用 + watch 后台）；
+- 验证：重启 manager+controller 后 30s 内配置自愈；真实四 Agent E2E PASS。
+- 镜像级固化（写入 worker 镜像/官方 provision）为后续工程项。
+
+### G-11 隧道只放行 webhook（webhook-only ingress）
+
+- `beta-webhook-proxy` 容器（node，`--restart unless-stopped`，48590→48500）：
+  仅允许 `POST /api/mu/github/webhook` 与 `GET /api/health`，其余 404；
+- cloudflared quick tunnel 指向 48590；管理面（/multiuser、其余 /api/*）不再经
+  公网暴露（本机回环 48500 不变）；
+- **quick tunnel 重启会换 URL**——须同步更新 GitHub App 的 webhook URL
+  （App 设置页或 `PATCH /app/hook/config`）。named tunnel + 自定义域为后续工程项。
+
+### G-12 schema 初始化 readiness（Wave 3.9）
+
+- console 启动即执行迁移（不再等首个 /api/mu 请求）；`/api/health.mu_schema_ready`
+  披露就绪态；业务面（muApi/facade）await 同一 promise——就绪前请求等待而非带病服务。
