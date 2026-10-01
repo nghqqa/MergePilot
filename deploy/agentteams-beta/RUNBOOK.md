@@ -113,17 +113,31 @@ embedded 栈的 Matrix(6167)/MinIO(9000) 仅 controller netns 内监听。MergeP
 - 若不授权：维持 fail-closed；四 Agent 链仍可经受控内部触发（修复演练）验证，
   但生产 webhook 路径到 Leader 裁定为止——**这是有意的安全语义，不是缺陷**。
 
-### G-10 worker 模型配置 keeper（deepseek-direct）
+### G-10 worker 模型配置 keeper v2（deepseek-direct，仓库工件可复现）
 
-manager/controller 的 reconcile 会把 worker 的 openclaw.json 重写回
+manager/controller 的 reconcile 会把 worker 的 openclaw.json（MinIO 对象）重写回
 `agentteams-gateway` 模板（其 /v1/chat/completions 在本部署 404）→ 全 worker
-LLM 调用失败 → Matrix 轮次 MT_REPLY_TIMEOUT。已部署自愈 keeper：
+LLM 调用失败 → Matrix 轮次 MT_REPLY_TIMEOUT。
 
-- 位置：每 worker `/usr/local/bin/ensure-deepseek-model.sh`（boot 补丁 + 30s
-  漂移 watch，漂移即重补丁并 `kill -TERM 1` 自愈重启，每小时限 3 次）；
-- 挂接：`copaw-worker-entrypoint.sh` 第 3 行（boot 调用 + watch 后台）；
-- 验证：重启 manager+controller 后 30s 内配置自愈；真实四 Agent E2E PASS。
-- 镜像级固化（写入 worker 镜像/官方 provision）为后续工程项。
+**v2 语义（3.10 实证修正）**：reconcile 只重写 MinIO 对象，worker 本地文件与运行
+进程不受影响——keeper 检测到 MinIO 漂移即**静默重补丁，不重启 copaw 进程、
+不重启容器**（v1 的 kill1+限流设计废除：预算耗尽会卡死自愈）。
+
+- **工件（受版本控制）**：`deploy/agentteams-beta/ensure-deepseek-model.sh`
+  （boot 补丁+30s watch；`KEEPER_NO_WATCH=1` 测试 seam）；
+- **安装（幂等）**：`provision-workers.sh` 的 Keeper 安装步骤——docker cp 脚本
+  （内容一致则覆盖无害）、entrypoint 钩子 grep 守卫防重复、chmod 755；
+- **行为**：boot 同步补丁→拉起 watch；watch 每 30s 检测，漂移即静默重补
+  （运行进程无感）；坏 JSON（配置未就绪）等待不崩；
+- **验证**：`node --test console/backend/test/deploy-keeper.test.mjs`（假 mc 驱动
+  真实脚本：K1 补丁/K2 幂等/K3 watch/K4 坏 JSON/K5 工件卫生）+ 真实栈
+  manager 重启 reconcile 自愈 + 四 Agent E2E；
+- **故障排查**：worker 内 `/var/log/model-keeper.log`；primary 恒 gateway 且
+  日志无 drift 行 → 检查 watcher 进程（`for p in /proc/[0-9]*/cmdline; do
+  tr ' ' ' ' <$p; done | grep ensure-deepseek`）与 DEEPSEEK_API_KEY env；
+- **升级/回滚**：改仓库脚本后重跑 provision 安装步骤（或单 worker docker cp+
+  restart）；回滚=删除 entrypoint 钩子行+kill watcher+重启 worker（回到
+  gateway 模板，注意其在本部署 404）。
 
 ### G-11 隧道只放行 webhook（webhook-only ingress）
 

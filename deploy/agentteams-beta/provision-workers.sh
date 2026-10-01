@@ -71,6 +71,19 @@ done
 
 # 4) 模型直连配置（所有 spec 变更完成后统一施加——reconcile 不再发生）
 sleep 10
+# ── Wave 3.11：Keeper v2 幂等安装（模型配置漂移自愈——reconcile 重写防护）──
+# 顺序纪律：本步骤必须在 reconcile touch 之后、worker 最后一次 restart 之前执行；
+# 脚本源自本仓库 deploy/agentteams-beta/ensure-deepseek-model.sh（受版本控制），
+# 安装幂等：容器内已存在且内容一致则跳过；entrypoint 钩子以 grep 守卫防重复插入。
+KEEPER_SRC="$(dirname "$0")/ensure-deepseek-model.sh"
+for ROLE in leader reviewer fixer verifier; do
+  CTR=$STACK-worker-mergepilot-$ROLE
+  docker cp "$KEEPER_SRC" $CTR:/usr/local/bin/ensure-deepseek-model.sh >/dev/null
+  docker exec $CTR sh -c 'chmod 755 /usr/local/bin/ensure-deepseek-model.sh'
+  docker exec $CTR sh -c 'grep -q "ensure-deepseek-model.sh boot" /opt/agentteams/scripts/copaw-worker-entrypoint.sh 2>/dev/null || sed -i "2i /usr/local/bin/ensure-deepseek-model.sh boot >>/var/log/model-keeper.log 2>\&1 || true" /opt/agentteams/scripts/copaw-worker-entrypoint.sh'
+  echo "keeper installed: $ROLE"
+done
+
 for ROLE in leader reviewer fixer verifier; do
   CTR=$STACK-worker-mergepilot-$ROLE
   docker exec $CTR sh -c 'python3 - <<PYX
