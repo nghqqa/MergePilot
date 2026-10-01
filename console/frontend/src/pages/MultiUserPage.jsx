@@ -285,6 +285,9 @@ function AgentPolicyPanel({ can, actions }) {
   const dirty = JSON.stringify(draft) !== JSON.stringify(data.policy);
   return (
     <div>
+      <Alert type="info" showIcon style={{ marginBottom: 8 }}
+        message="审查建议通道（可选 LLM 辅助）——不影响四 Agent 审查"
+        description={'AgentTeams 四 Agent 的大模型由部署配置管理（ATB_LLM_KEY / provision 模型配置），不经此面板；此开关只控制「审查后附加一段 LLM 建议分析」的可选通道，默认关闭即当前状态。'} />
       <Space size="large" wrap style={{ marginBottom: 8 }}>
         <Alert type={st.tone} showIcon message={st.text} style={{ padding: '2px 8px' }} />
         <Tag>策略版本 v{data.policy.policy_version}</Tag>
@@ -317,7 +320,7 @@ function AgentPolicyPanel({ can, actions }) {
         <Space wrap>
           <span>
             <Typography.Text type="secondary">启用 LLM</Typography.Text>
-            <div><Switch checked={draft.enabled} disabled={!canManage || draft.mode !== 'llm_assist'}
+            <div><Switch checked={draft.enabled} disabled={!canManage}
               onChange={(v) => setDraft({ ...draft, enabled: v, mode: v ? 'llm_assist' : draft.mode })}
               aria-label="启用 LLM 辅助" /></div>
           </span>
