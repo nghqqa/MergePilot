@@ -229,7 +229,7 @@ try {
 } finally {
   if (sidecar) sidecar.srv.close();
   if (pgres) await pgres.pool.end().catch(() => {});
-  try { execFileSync('docker', ['rm', '-f', CTR], { stdio: 'pipe' }); } catch { /* */ }
+  try { execFileSync('docker', ['rm', '-f', '-v', CTR], { stdio: 'pipe' }); } catch { /* */ }
 }
 console.log(`\nragtrial-prod.integration: ${pass} pass / ${fail} fail`);
 process.exit(fail ? 1 : 0);

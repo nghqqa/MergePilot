@@ -226,7 +226,7 @@ finally {
   await pool.end().catch(() => {});
   Object.assign(process.env, savedEnv);
   try { fs.rmSync(REPO, { recursive: true, force: true }); } catch { /* */ }
-  try { execFileSync('docker', ['rm', '-f', CTR], { stdio: 'pipe' }); } catch { /* */ }
+  try { execFileSync('docker', ['rm', '-f', '-v', CTR], { stdio: 'pipe' }); } catch { /* */ }
 }
 console.log(`\n${pass} pass, ${fail} fail`);
 process.exit(fail ? 1 : 0);

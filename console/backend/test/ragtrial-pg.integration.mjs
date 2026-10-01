@@ -314,7 +314,7 @@ try {
 } finally {
   if (pool) await pool.end().catch(() => {});
   if (!process.env.RAGTRIAL_PG_TEST_DSN) {
-    try { execFileSync('docker', ['rm', '-f', CTR], { stdio: 'pipe' }); } catch { /* already gone */ }
+    try { execFileSync('docker', ['rm', '-f', '-v', CTR], { stdio: 'pipe' }); } catch { /* already gone */ }
   }
 }
 console.log(`\nragtrial-pg.integration: ${pass} pass / ${fail} fail`);
