@@ -62,6 +62,7 @@ export default function ReposPage() {
                 render: (_, r) => (
                   <>
                     <Tag>{contract ? '契约数据源'
+                      : source.kind === 'multiuser' ? '多用户实时（组织绑定）'
                       : source.kind === 'console-pg' ? '隔离联调（PG fixture）测试记录' : '历史数据中的仓库'}</Tag>
                     {contract && config?.dataMode === 'fixture' ? <Tag>Fixture 数据</Tag> : null}
                   </>

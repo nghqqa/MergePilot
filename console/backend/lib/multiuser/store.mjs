@@ -167,7 +167,9 @@ export async function createMuStore({ pool, env = process.env } = {}) {
   async function listRepositories(tenantId) {
     const r = await q(
       `SELECT r.*, b.binding_id, b.kind AS binding_kind, b.installation_id, b.installation_state,
-              b.granted_scopes, b.state AS binding_state
+              b.granted_scopes, b.state AS binding_state,
+              (SELECT count(*) FROM mu.pull_request p
+                WHERE p.repo_id = r.repo_id AND p.tenant_id = r.tenant_id) AS pr_count
          FROM mu.repository r
          LEFT JOIN mu.binding b ON b.repo_id = r.repo_id AND b.state='active'
         WHERE r.tenant_id=$1 AND r.state='active' ORDER BY r.created_at`, [tenantId]);

@@ -77,9 +77,11 @@ export default function RepoPrsPage() {
           <p className="page-sub">
             {contract
               ? '数据源为正式契约端点：当前 head 为 GitHub 权威值。'
-              : source.kind === 'console-pg'
-                ? '数据源为隔离 PG 只读服务：无当前 head 权威与结论字段——仅执行记录（最近记录口径）。'
-                : '历史数据中的仓库 · PR 摘要基于各 PR 最近一次运行记录 —— 快照无 GitHub 当前 head 权威数据，不代表当前 head 状态（接口需求 C-10）。'}
+              : source.kind === 'multiuser'
+                ? '多用户实时数据（按登录组织隔离）：PR 与审查记录随 GitHub 事件自动同步。'
+                : source.kind === 'console-pg'
+                  ? '数据源为隔离 PG 只读服务：无当前 head 权威与结论字段——仅执行记录（最近记录口径）。'
+                  : '历史数据中的仓库 · PR 摘要基于各 PR 最近一次运行记录 —— 快照无 GitHub 当前 head 权威数据，不代表当前 head 状态（接口需求 C-10）。'}
           </p>
         </div>
       </div>
