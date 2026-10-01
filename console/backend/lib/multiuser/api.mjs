@@ -37,6 +37,27 @@ async function loadPg() {
 }
 
 let muStorePromise = null;
+let muReadyState = { ready: false, error: null, started_at: null };
+/** Wave 3.9（Beta 硬化）：schema 初始化状态（/api/health readiness 披露）。 */
+export function muSchemaReadyState() { return { ...muReadyState }; }
+/**
+ * Wave 3.9（Beta 硬化）：启动阶段显式执行 schema 初始化（readiness gate）。
+ *  * createConsole 在 MU_MODE=multiuser 且有 DSN 时即调用本函数（不等首个请求）；
+ *  * 所有 mu 业务面（muApi/getMuConsoleApi）await 本 promise——init 完成前
+ *    不接受业务任务（请求挂起至就绪，而非 503 或带病服务）；
+ *  * 幂等：与 getMuStore 共享同一 memoized promise。
+ */
+export async function ensureMuReady(env) {
+  if (!muReadyState.started_at) muReadyState.started_at = new Date().toISOString();
+  try {
+    const store = await getMuStore(env);
+    muReadyState = { ready: true, error: null, started_at: muReadyState.started_at };
+    return store;
+  } catch (e) {
+    muReadyState = { ready: false, error: String(e?.message ?? e).slice(0, 120), started_at: muReadyState.started_at };
+    throw e;
+  }
+}
 export function getMuStore(env) {
   if (!env.CONSOLE_PG_DSN) return null;
   if (!muStorePromise) {
