@@ -3,6 +3,7 @@
 // 证明桥"真正可消费任务"，而非仅 service/heartbeat 存活。
 // 零正文泄漏：输出只含 probe_reply 布尔与 reason code。
 const mt = await import('file:///be/console/backend/lib/multiuser/agents/matrix-transport.mjs');
+const atMod = await import('file:///be/console/backend/lib/multiuser/agents/agentteams-executor.mjs');
 
 const mtCfg = {
   kind: 'matrix',
@@ -11,9 +12,10 @@ const mtCfg = {
   password: process.env.ATB_ADMIN_PASSWORD ?? '',
 };
 
-const list = await mt.listWorkersDetail(
-  { baseUrl: 'http://127.0.0.1:8090', token: process.env.AT_TOKEN ?? '' }, { fetchImpl: fetch });
-if (!list.ok) { console.log(JSON.stringify({ probe_reply: false, reason: 'AT_WORKERS_DETAIL_FAILED' })); process.exit(0); }
+const list = await atMod.listWorkersDetail(
+  { kind: 'agentteams', baseUrl: 'http://127.0.0.1:8090', token: process.env.AT_TOKEN ?? '', timeout: 8000 },
+  { fetchImpl: fetch });
+if (!list.ok) { console.log(JSON.stringify({ probe_reply: false, reason: list.reason ?? 'AT_WORKERS_DETAIL_FAILED' })); process.exit(0); }
 const w = list.workers.get('mergepilot-reviewer');
 if (!w?.roomID || !w?.matrixUserID) { console.log(JSON.stringify({ probe_reply: false, reason: 'AT_WORKERS_INCOMPLETE' })); process.exit(0); }
 

@@ -68,22 +68,41 @@ for i in $(seq 1 20); do
 done
 log "minio/matrix reachable via worker netns"
 
-# 5) 幂等 provision 重放（worker 重进 netns 后，touch 周期重写配置 → keeper/补丁
-#   自愈；provision 本身幂等：create 409 复用、keeper grep 守卫、钩子 grep 守卫）
+# 5) 条件化 provision 重放——仅当有 worker 容器缺失时执行（重建路径）。
+#   完整 provision 会 rm+run 每 worker 并 restart（touch 重写 MinIO → keeper 需要
+#   自愈窗口）；worker 全在且 netns 已重挂时重放 provision 只引入不必要漂移。
 DIR="$(cd "$(dirname "$0")" && pwd)"
-if [ -f "$DIR/provision-workers.sh" ]; then
-  bash "$DIR/provision-workers.sh" >/tmp/recover-provision.log 2>&1 || fail AT_PROVISION_FAILED
-  log "idempotent provision replayed (log=/tmp/recover-provision.log)"
-fi
-
-# 6) deepseek-direct 配置核对（四 worker MinIO primary 全部 correct）
+MISSING=0
 for ROLE in $ROLES; do
   CTR=$STACK-worker-mergepilot-$ROLE
-  P=$(docker exec $CTR sh -c 'mc cat "agentteams/agentteams-storage/agents/$AGENTTEAMS_WORKER_NAME/openclaw.json" 2>/dev/null' \
-    | python3 -c 'import json,sys
+  [ -n "$(docker ps -q --filter name=$CTR)" ] || MISSING=1
+done
+if [ "$MISSING" = "1" ] && [ -f "$DIR/provision-workers.sh" ]; then
+  log "worker 容器缺失 → 完整 provision 重放（重建路径）"
+  bash "$DIR/provision-workers.sh" >/tmp/recover-provision.log 2>&1 || fail AT_PROVISION_FAILED
+  log "provision replayed (log=/tmp/recover-provision.log)"
+else
+  log "worker 容器全在 → 跳过 provision 重放（避免 touch/restart 竞态）"
+fi
+
+# 6) deepseek-direct 配置核对（provision touch 重写 MinIO 后，keeper watch 需最多
+#    ~40s 自愈窗口——等待收敛而非立即判 drift；JSON 解析在 worker 容器内执行，
+#    宿主机不要求 python3）
+check_primary() {
+  docker exec "$1" sh -c 'mc cat "agentteams/agentteams-storage/agents/$AGENTTEAMS_WORKER_NAME/openclaw.json" 2>/dev/null' \
+    | docker exec -i "$1" python3 -c 'import json,sys
 try: print(json.load(sys.stdin)["agents"]["defaults"]["model"]["primary"])
-except Exception: print("PARSE_ERR")' 2>/dev/null || echo PARSE_ERR)
-  [ "$P" = "deepseek-direct/deepseek-chat" ] || fail AT_MODEL_CONFIG_DRIFT
+except Exception: print("PARSE_ERR")' 2>/dev/null || echo PARSE_ERR
+}
+for i in $(seq 1 30); do
+  ALL_OK=1
+  for ROLE in $ROLES; do
+    P=$(check_primary $STACK-worker-mergepilot-$ROLE)
+    [ "$P" = "deepseek-direct/deepseek-chat" ] || ALL_OK=0
+  done
+  [ "$ALL_OK" = "1" ] && break
+  [ "$i" = "30" ] && fail AT_MODEL_CONFIG_DRIFT
+  sleep 10
 done
 log "deepseek-direct config verified on 4 workers"
 
@@ -104,9 +123,9 @@ if [ "$BRIDGE_MODE" = "1" ] && [ -f "$DIR/../../console/backend/lib/multiuser/ag
   BE_SRC="$(cd "$DIR/../.." && pwd)"
   TOK=$(docker exec $CTRL sh -c 'tr -d "\n\r" < /var/run/agentteams/cli-token' 2>/dev/null)
   ATB_ADMIN_PASSWORD="${ATB_ADMIN_PASSWORD:?ATB_ADMIN_PASSWORD required for bridge probe}"
-  timeout 150 docker run --rm --network container:$CTRL \
+  MSYS_NO_PATHCONV=1 timeout 150 docker run --rm --network container:$CTRL \
     -v "$BE_SRC:/be" -v "$DIR:/probe" \
-    -e AT_TOKEN -e ATB_ADMIN_PASSWORD \
+    -e AT_TOKEN="$TOK" -e ATB_ADMIN_PASSWORD \
     node:22-alpine node /probe/bridge-probe.mjs >/tmp/recover-bridge.log 2>&1 \
     || fail AT_BRIDGE_NOT_READY
   grep -q '"probe_reply": *true' /tmp/recover-bridge.log || fail AT_BRIDGE_NOT_READY
