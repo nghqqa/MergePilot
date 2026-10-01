@@ -128,6 +128,11 @@ jobs:
       - name: MU queue HOL regression gate (Wave 3.8, 32 scenarios; self-boot postgres)
         run: node console/backend/test/mu-queue-hol-w38.integration.mjs
 
+      # Wave 3.9 Beta 硬化：schema 初始化启动显式执行（readiness gate）——
+      # fresh DB 零业务请求即就绪、facade 独立 pool 不再绕过、重复启动幂等
+      - name: MU eager schema init gate (Wave 3.9, 5 scenarios; self-boot postgres)
+        run: node console/backend/test/mu-eager-init.integration.mjs
+
       - name: Frontend build
         run: |
           npm ci --no-audit --no-fund

@@ -24,7 +24,7 @@ import { parseAccessModel, authorize, denialAudit } from './lib/permissions.mjs'
 import { cchainStatusObserved, verifyRunBindingAndAudit, rotateKeystore,
          cchainMetricsSnapshot, rememberStatusForMetrics } from './lib/cchain/wiring.mjs';
 import { ragTrialApi, ragTrialInternalQuery } from './lib/ragtrial/api.mjs';
-import { muApi, getMuStore } from './lib/multiuser/api.mjs';
+import { muApi, getMuStore, ensureMuReady, muSchemaReadyState } from './lib/multiuser/api.mjs';
 import { createMuConsoleApi } from './lib/mu-console-api.mjs';
 import { installQueryTraceOn, wrapSendJsonForAccessLog } from './lib/diag/trace.mjs';
 
@@ -117,6 +117,9 @@ async function loadPgModule() {
 let _muApiInstance = null;
 async function getMuConsoleApi() {
   if (process.env.MU_MODE !== 'multiuser') return null;
+  // readiness gate：facade 查询走独立 pool、绕过 getMuStore——必须等 schema 就绪
+  // （否则 fresh DB 上首个请求即 relation-not-exist）。幂等，与启动期 eager init 共享。
+  await ensureMuReady(process.env);
   if (!_muApiInstance) {
     // 创建独立 pool（mu store 的 pool 在闭包中不可外部访问）
     const pg = await loadPgModule();
@@ -595,7 +598,16 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
         ...(state.error ? { error: state.error } : {}) });
     }
 
-    if (p === '/api/health') return sendJson(res, 200, apiHealth());
+    if (p === '/api/health') {
+      const h = apiHealth();
+      if (process.env.MU_MODE === 'multiuser') {
+        h.mu_schema_ready = muSchemaReadyState().ready;
+        if (!muSchemaReadyState().ready) {
+          h.mu_schema_note = muSchemaReadyState().error ?? 'schema init in progress';
+        }
+      }
+      return sendJson(res, 200, h);
+    }
 
     // R4（OVERVIEW_REMEDIATION 一）：snapshot 运行查询按会话边界过滤。
     // 已认证 → 仅返回 allowlist 内仓库的记录（repo 未知的 pack 一并隐藏，不泄露存在性）；
@@ -766,6 +778,15 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
 
     return sendError(res, 404, `unknown api path: ${p}`);
   };
+
+  // Wave 3.9（Beta 硬化）：schema 初始化从「首个 /api/mu 请求惰性触发」改为启动阶段
+  // 显式执行——console 监听前即开始迁移；业务面经 ensureMuReady 门控（init 完成前
+  // 请求等待就绪而非带病服务）；/api/health 披露 mu_schema_ready。
+  if (process.env.MU_MODE === 'multiuser' && process.env.CONSOLE_PG_DSN) {
+    ensureMuReady(process.env).catch((e) => {
+      console.error('[mu] schema init failed:', String(e?.message ?? e).slice(0, 120));
+    });
+  }
 
   // 验收期诊断（MU_QUERY_TRACE=<path> 启用）：全进程 pg 查询表名+调用点（无参数/无文本）。
   // 首次请求时惰性安装（pg 惰性 import 的模块实例全局唯一——原型包装全局生效）。
