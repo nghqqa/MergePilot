@@ -970,7 +970,18 @@ export default function MultiUserPage() {
                   })}
                 </div>
 
-                <div className="mu-pr-detail" aria-live="polite">
+                <div className="mu-pr-detail" aria-live="polite"
+                  onKeyDown={(e) => {
+                    if (e.key !== 'Escape') return;
+                    const prevNum = document.querySelector('.mu-pr-row.is-selected')?.textContent.match(/#(\d+)/)?.[1];
+                    selectPr(null);
+                    requestAnimationFrame(() => requestAnimationFrame(() => {
+                      const row = prevNum
+                        ? [...document.querySelectorAll('.mu-pr-row')].find(x => x.textContent.includes('#' + prevNum))
+                        : null;
+                      (row ?? document.querySelector('.mu-pr-list'))?.focus?.();
+                    }));
+                  }}>
                   <button type="button" className="mu-detail-close"
                     aria-label="关闭 PR 详情"
                     onClick={() => {

@@ -1,7 +1,7 @@
 // MuPrDetailContent — PR 详情内容块（master-detail 右栏 + 独立路由页共用）。
 // 数据：/api/mu/prs/:prId（编号双寻址）+ PipelinePanel（/api/mu/runs）。
 // 状态：loading / not_found(404 或无权限) / error / ready（含空审查记录紧凑空态）。
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Button, Space, Tag, Typography } from 'antd';
 import { PipelinePanel } from './MultiUserPage.jsx';
 
@@ -17,21 +17,33 @@ export function MuPrDetailContent({ prRef, onChanged }) {
 
   const prNumber = prRef?.prNumber ?? null;
   const repoId = prRef?.repoId ?? null;
+  // 竞态守卫（终审修正）：以 repoId|prNumber 为代际键 + mountedRef——
+  // 闭包快照比对是恒等缺陷（prRef 是 useCallback 捕获的同渲染快照，永不触发）。
+  // 本模式：任何 success/403/404/500/网络异常落 state 前先比对【最新】键；
+  // 切换选择/换仓库/组件卸载均使旧响应失效。
+  const latestKeyRef = useRef(null);
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    latestKeyRef.current = `${repoId}|${prNumber}`;
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  });
+  const isStale = (myKey) => !mountedRef.current || latestKeyRef.current !== myKey;
+
   const load = useCallback(async () => {
     if (!prNumber || !repoId) { setState('not_found'); return; }
+    const myKey = `${repoId}|${prNumber}`;
     setState('loading');
-    // 竞态守卫：快速切换 A→B 时，A 的慢响应不得覆盖 B（编号+仓库双比对）
-    const myPr = prNumber, myRepo = repoId;
     try {
-      const res = await fetch(`/api/mu/prs/${myPr}?repo_id=${myRepo}`, { credentials: 'same-origin' });
-      if (myPr !== prRef?.prNumber || myRepo !== prRef?.repoId) return; // 已切走——丢弃
+      const res = await fetch(`/api/mu/prs/${prNumber}?repo_id=${repoId}`, { credentials: 'same-origin' });
+      if (isStale(myKey)) return; // 已切走/卸载——丢弃（含 403/404/500 一切分支）
       if (res.status === 404 || res.status === 403) { setState('not_found'); return; }
       if (!res.ok) { setState('error'); return; }
       const d = await res.json().catch(() => null);
-      if (myPr !== prRef?.prNumber || myRepo !== prRef?.repoId) return;
+      if (isStale(myKey)) return;
       if (d?.pull_request) { setDetail(d); setState('ready'); }
       else setState('not_found');
-    } catch { if (myPr === prRef?.prNumber && myRepo === prRef?.repoId) setState('error'); }
+    } catch { if (!isStale(myKey)) setState('error'); }
   }, [prNumber, repoId]);
 
   useEffect(() => { load(); }, [load]);
