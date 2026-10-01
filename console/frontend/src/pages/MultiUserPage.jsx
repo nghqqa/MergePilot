@@ -285,9 +285,6 @@ function AgentPolicyPanel({ can, actions }) {
   const dirty = JSON.stringify(draft) !== JSON.stringify(data.policy);
   return (
     <div>
-      <Alert type="info" showIcon style={{ marginBottom: 8 }}
-        message="审查建议通道（可选 LLM 辅助）——不影响四 Agent 审查"
-        description={'AgentTeams 四 Agent 的大模型由部署配置管理（ATB_LLM_KEY / provision 模型配置），不经此面板；此开关只控制「审查后附加一段 LLM 建议分析」的可选通道，默认关闭即当前状态。'} />
       <Space size="large" wrap style={{ marginBottom: 8 }}>
         <Alert type={st.tone} showIcon message={st.text} style={{ padding: '2px 8px' }} />
         <Tag>策略版本 v{data.policy.policy_version}</Tag>
@@ -320,7 +317,7 @@ function AgentPolicyPanel({ can, actions }) {
         <Space wrap>
           <span>
             <Typography.Text type="secondary">启用 LLM</Typography.Text>
-            <div><Switch checked={draft.enabled} disabled={!canManage}
+            <div><Switch checked={draft.enabled} disabled={!canManage || draft.mode !== 'llm_assist'}
               onChange={(v) => setDraft({ ...draft, enabled: v, mode: v ? 'llm_assist' : draft.mode })}
               aria-label="启用 LLM 辅助" /></div>
           </span>
@@ -931,7 +928,7 @@ export default function MultiUserPage() {
               </div>
 
               <div className="mu-master-detail">
-                <div className="mu-pr-list" role="listbox" aria-label="PR 列表">
+                <div className="mu-pr-list" role="listbox" aria-label="PR 列表" tabIndex={-1}>
                   {prsState === 'loading' ? <div className="mu-detail-state" role="status">正在读取 PR 列表…</div> : null}
                   {prsState === 'error' ? (
                     <Alert type="warning" showIcon message="PR 列表暂时无法读取"
@@ -974,6 +971,13 @@ export default function MultiUserPage() {
                 </div>
 
                 <div className="mu-pr-detail" aria-live="polite">
+                  <button type="button" className="mu-detail-close"
+                    aria-label="关闭 PR 详情"
+                    onClick={() => {
+                      const prevSel = document.querySelector('.mu-pr-row.is-selected');
+                      selectPr(null);
+                      requestAnimationFrame(() => (prevSel ?? document.querySelector('.mu-pr-list'))?.focus?.());
+                    }}>关闭详情</button>
                   {selectedPrRef
                     ? <MuPrDetailContent prRef={selectedPrRef} onChanged={refresh} />
                     : <div className="mu-detail-placeholder">

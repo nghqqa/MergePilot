@@ -912,3 +912,16 @@ td.th-right { text-align: right; }
   .mu-repo-select { min-width: 0; width: 100%; }
   .mu-pr-filter { width: 100%; }
 }
+
+/* 移动端详情关闭入口（桌面隐藏） */
+.mu-detail-close { display: none; }
+@media (max-width: 960px) {
+  .mu-detail-close {
+    display: inline-flex; align-items: center;
+    position: sticky; top: 0; z-index: 5;
+    margin: calc(-1 * var(--sp-4)) calc(-1 * var(--sp-4)) var(--sp-3) 0;
+    padding: var(--sp-2) var(--sp-4);
+    background: var(--c-panel); border: 1px solid var(--c-border-strong);
+    border-radius: var(--r-sm); box-shadow: var(--shadow-xs);
+  }
+}

@@ -11,23 +11,28 @@ import { PipelinePanel } from './MultiUserPage.jsx';
  *  - onChanged: 操作成功后的回调（父级刷新列表）
  */
 export function MuPrDetailContent({ prRef, onChanged }) {
-  const prNumber = prRef?.prNumber ?? null;
   const [detail, setDetail] = useState(null);
   const [state, setState] = useState('loading');
   const [actionMsg, setActionMsg] = useState(null);
 
+  const prNumber = prRef?.prNumber ?? null;
+  const repoId = prRef?.repoId ?? null;
   const load = useCallback(async () => {
-    if (!prRef?.prNumber || !prRef?.repoId) { setState('not_found'); return; }
+    if (!prNumber || !repoId) { setState('not_found'); return; }
     setState('loading');
+    // 竞态守卫：快速切换 A→B 时，A 的慢响应不得覆盖 B（编号+仓库双比对）
+    const myPr = prNumber, myRepo = repoId;
     try {
-      const res = await fetch(`/api/mu/prs/${prRef.prNumber}?repo_id=${prRef.repoId}`, { credentials: 'same-origin' });
+      const res = await fetch(`/api/mu/prs/${myPr}?repo_id=${myRepo}`, { credentials: 'same-origin' });
+      if (myPr !== prRef?.prNumber || myRepo !== prRef?.repoId) return; // 已切走——丢弃
       if (res.status === 404 || res.status === 403) { setState('not_found'); return; }
       if (!res.ok) { setState('error'); return; }
       const d = await res.json().catch(() => null);
+      if (myPr !== prRef?.prNumber || myRepo !== prRef?.repoId) return;
       if (d?.pull_request) { setDetail(d); setState('ready'); }
       else setState('not_found');
-    } catch { setState('error'); }
-  }, [prRef?.prNumber, prRef?.repoId]);
+    } catch { if (myPr === prRef?.prNumber && myRepo === prRef?.repoId) setState('error'); }
+  }, [prNumber, repoId]);
 
   useEffect(() => { load(); }, [load]);
 
