@@ -319,7 +319,7 @@ try {
 
   server.close();
 } finally {
-  try { execFileSync('docker', ['rm', '-f', CTR], { stdio: 'pipe' }); } catch { /* */ }
+  try { execFileSync('docker', ['rm', '-f', '-v', CTR], { stdio: 'pipe' }); } catch { /* */ }
   await adminPool.end().catch(() => {});
 }
 console.log(`\n${pass} pass, ${fail} fail`);
