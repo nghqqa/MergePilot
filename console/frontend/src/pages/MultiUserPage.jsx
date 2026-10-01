@@ -974,9 +974,15 @@ export default function MultiUserPage() {
                   <button type="button" className="mu-detail-close"
                     aria-label="关闭 PR 详情"
                     onClick={() => {
-                      const prevSel = document.querySelector('.mu-pr-row.is-selected');
+                      const prevNum = document.querySelector('.mu-pr-row.is-selected')?.textContent.match(/#(\d+)/)?.[1];
                       selectPr(null);
-                      requestAnimationFrame(() => (prevSel ?? document.querySelector('.mu-pr-list'))?.focus?.());
+                      requestAnimationFrame(() => requestAnimationFrame(() => {
+                        // 重渲染后再取 live 节点（清参后选中行已去高亮——按编号找回）
+                        const row = prevNum
+                          ? [...document.querySelectorAll('.mu-pr-row')].find(x => x.textContent.includes('#' + prevNum))
+                          : null;
+                        (row ?? document.querySelector('.mu-pr-list'))?.focus?.();
+                      }));
                     }}>关闭详情</button>
                   {selectedPrRef
                     ? <MuPrDetailContent prRef={selectedPrRef} onChanged={refresh} />
