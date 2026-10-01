@@ -55,10 +55,11 @@ beforeEach(() => {
   fs.mkdirSync(binDir);
   objPath = path.join(TMP, 'openclaw.json');
   fs.writeFileSync(path.join(binDir, 'mc'), fakeMc(), { mode: 0o755 });
-  // python3 shim：转交宿主 python（keeper 的 JSON 变换用标准库）
-  const PY = process.platform === 'win32' ? 'python'
-    : (fs.existsSync('/usr/bin/python3') ? 'python3' : 'python');
-  fs.writeFileSync(path.join(binDir, 'python3'), '#!/bin/sh\nexec ' + PY + ' "$@"', { mode: 0o755 });
+  // python3 shim：必须用绝对路径——shim 名为 python3，若递归解析自身将无限 exec
+  // （Linux CI 实证 ETIMEDOUT 根因）。
+  const PYABS = process.platform === 'win32' ? 'python'
+    : (fs.existsSync('/usr/bin/python3') ? '/usr/bin/python3' : 'python3');
+  fs.writeFileSync(path.join(binDir, 'python3'), '#!/bin/sh\nexec ' + PYABS + ' "$@"', { mode: 0o755 });
 });
 // 跨平台：Windows 用 Git Bash 的 sh（脚本含 nohup 等 POSIX 语义），Linux 用 /bin/sh
 const SH = process.env.KEEPER_SH
