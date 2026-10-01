@@ -152,3 +152,16 @@ LLM 调用失败 → Matrix 轮次 MT_REPLY_TIMEOUT。
 
 - console 启动即执行迁移（不再等首个 /api/mu 请求）；`/api/health.mu_schema_ready`
   披露就绪态；业务面（muApi/facade）await 同一 promise——就绪前请求等待而非带病服务。
+
+
+### G-15 ctrl recreate 上限（Wave 3.13 实证）
+
+ctrl **docker restart** 恢复：可靠（worker 重启重进 netns + provision 重放 + keeper 自愈 +
+四 Agent E2E PASS）。ctrl **容器 recreate**（docker rm + compose up）：at-data 内嵌
+Kubernetes 状态（configmaps/endpoints 等）与 Tuwunel SQLite 在非正常 stop 后可能
+损坏/不一致 → controller 接受 provision API 调用但无法创建 worker 容器（静默失败）。
+at-data wipe + 重启可恢复，但需 5+ 分钟控制器内部初始化。
+
+**发布策略结论**：Beta SLA=仅 ctrl docker restart（recover-runtime.sh 覆盖）；
+ctrl recreate 属灾难恢复（需全新部署而非 provision 重放）。RUNBOOK 与
+recover-runtime.sh 已正确区分这两种形态并 fail-closed。
