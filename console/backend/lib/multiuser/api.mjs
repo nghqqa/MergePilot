@@ -1019,15 +1019,44 @@ export async function muApi(req, res, ctx) {
       if (!csrfOk()) return sendJson(res, 403, { error: { reason: 'csrf_required' } });
       const g = await guard('read_repository'); // 触发执行器须为 active 成员
       if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      // Wave 3.8 队首阻塞修复（HOL，验收裁决 BLOCKED_BY_QUEUE_HEAD_OF_LINE）：
+      //  * 非 fixture 模式只领取 event_sync（claim 层隔离）——人工/不可处理 job
+      //    结构上不可能阻塞 webhook 消费，requeue+break 已废除；
+      //  * 每 tick 有限预算（防长 tick 独占；跳过后继续扫描后续可处理 job）；
+      //  * tick 开端回收孤立 running（worker 崩溃遗留 lease）；
+      //  * 无可领取 event_sync 时，有限清收过期人工 job → rejected 终态+审计
+      //    （reason=manual_job_expired_unconsumable；未过期人工 job 留队等待专用消费者）。
+      const TICK_BUDGET = 25;
+      const ORPHAN_MINUTES = 10;
+      const MANUAL_EXPIRY_HOURS = 24;
       const processed = [];
-      for (;;) {
-        const job = await store.claimNextJob();
-        if (!job) break;
-        if (!fixturesOn && job.kind !== 'event_sync') {
-          // 非 fixture 模式仅消费系统事件：人工 job 原样回队（不执行不审计）
-          await store.requeueJob(job.job_id);
-          break; // 队首为人工 job 即停（避免空转重取同一行）
+      {
+        const orphans = await store.requeueOrphanedJobs({ staleMinutes: ORPHAN_MINUTES, limit: 10 }).catch(() => []);
+        for (const o of orphans) {
+          await store.audit('MU_JOB_REQUEUED_ORPHAN', { tenantId: o.tenant_id, actorUserId: null,
+            detail: { job_id: o.job_id, kind: o.kind, reason: 'orphan_running_lease_recovered' } });
+          processed.push({ job_id: o.job_id, state: 'requeued', reason: 'orphan_running_lease_recovered' });
         }
+      }
+      let budget = TICK_BUDGET;
+      for (;;) {
+        if (budget <= 0) break; // 每 tick 有限预算：耗尽即停（余量留给下轮 tick）
+        const job = await store.claimNextJob(fixturesOn ? {} : { kinds: ['event_sync'] });
+        if (!job) {
+          if (!fixturesOn) {
+            const reaped = await store.rejectStaleManualJobs({ expiryHours: MANUAL_EXPIRY_HOURS, limit: 10 }).catch(() => []);
+            if (reaped.length) {
+              for (const j of reaped) {
+                await store.audit('MU_JOB_REJECTED', { tenantId: j.tenant_id, actorUserId: null,
+                  detail: { job_id: j.job_id, kind: j.kind, reason: 'manual_job_expired_unconsumable' } });
+                processed.push({ job_id: j.job_id, state: 'rejected', reason: 'manual_job_expired_unconsumable' });
+              }
+              continue; // 清收后回头再领取（预算内）
+            }
+          }
+          break;
+        }
+        budget--;
         // Wave 2B.1：系统事件 job（event_sync，requested_by=NULL）走独立分支——
         // 授权上下文=已验证的 installation→binding→tenant/repo 服务链，绝不伪造
         // 用户 membership（不通过 getMembership(null) 冒充未登录拒绝，也不借

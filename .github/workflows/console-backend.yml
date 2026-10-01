@@ -123,6 +123,11 @@ jobs:
       - name: MU data-source purification gate (Wave 3.7, 34 scenarios; self-boot postgres)
         run: node console/backend/test/mu-purify-w37.integration.mjs
 
+      # Wave 3.8 队首阻塞（HOL）回归门槛：过期人工 job 不阻塞跨租户 event_sync、
+      # 孤立 lease 回收、过期清收终态+审计、乱序/重复 delivery 幂等、状态不变量
+      - name: MU queue HOL regression gate (Wave 3.8, 32 scenarios; self-boot postgres)
+        run: node console/backend/test/mu-queue-hol-w38.integration.mjs
+
       - name: Frontend build
         run: |
           npm ci --no-audit --no-fund

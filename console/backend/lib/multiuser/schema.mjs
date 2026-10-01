@@ -744,6 +744,20 @@ export const MU_MIGRATIONS = [
        END $$`,
     ],
   },
+  {
+    // Wave 3.8 队首阻塞修复（HOL）：mu.job 增 locked_at（领取时间戳）——
+    // worker 崩溃/重启遗留的孤立 running job 可被 tick 定期回收回队（此前
+    // 无 lease 记录，running 行永久滞留）。
+    // 回滚：DELETE FROM mu.schema_migrations WHERE version=14;
+    //       DROP INDEX IF EXISTS mu_job_running_locked_idx;
+    //       ALTER TABLE mu.job DROP COLUMN IF EXISTS locked_at;
+    version: 14,
+    name: 'mu_job_locked_at',
+    sql: [
+      `ALTER TABLE mu.job ADD COLUMN IF NOT EXISTS locked_at TIMESTAMPTZ`,
+      `CREATE INDEX IF NOT EXISTS mu_job_running_locked_idx ON mu.job (state, locked_at)`,
+    ],
+  },
 ];
 
 export const MU_SCHEMA_LATEST = MU_MIGRATIONS[MU_MIGRATIONS.length - 1].version;

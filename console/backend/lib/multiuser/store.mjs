@@ -273,19 +273,51 @@ export async function createMuStore({ pool, env = process.env } = {}) {
     return r.rows;
   }
   // 认领（单进程 dev worker）：CAS queued→running，带回请求者上下文供执行前复查
-  async function claimNextJob() {
+  // Wave 3.8 队首阻塞修复（HOL）：支持 kind 过滤领取（FOR UPDATE SKIP LOCKED
+  // 保并发唯一领取）+ locked_at lease 记录（孤立 running 可回收）。
+  // 非 fixture 模式 tick 以 kinds=['event_sync'] 领取——人工 job 在 claim 层隔离，
+  // 结构上不可能阻塞 webhook 消费（requeue+break 已废除）。
+  async function claimNextJob({ kinds = null } = {}) {
     const r = await q(
-      `UPDATE mu.job SET state='running', updated_at=now()
-        WHERE job_id = (SELECT job_id FROM mu.job WHERE state='queued' ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED)
-       RETURNING *`);
+      `UPDATE mu.job SET state='running', locked_at=now(), updated_at=now()
+        WHERE job_id = (SELECT job_id FROM mu.job WHERE state='queued'
+          ${kinds ? 'AND kind = ANY($1::text[])' : ''}
+          ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED)
+       RETURNING *`, kinds ? [kinds] : []);
     return r.rows[0] ?? null;
   }
-  // Wave 2B.1：人工 job 在非 fixture 模式原样回队（不执行不审计；mu.job 无
-  // locked_by/locked_at 列——那是 ragtrial.jobs 的——仅状态回退）
+  // Wave 2B.1：人工 job 原样回队（fixture 路径保留；locked_at 一并清空）
   async function requeueJob(jobId) {
-    const r = await q(`UPDATE mu.job SET state='queued', updated_at=now()
+    const r = await q(`UPDATE mu.job SET state='queued', locked_at=NULL, updated_at=now()
        WHERE job_id=$1 RETURNING job_id`, [jobId]);
     return r.rows.length > 0;
+  }
+  // Wave 3.8（HOL）：worker 崩溃遗留的孤立 running job（locked_at 超时）回收回队
+  // ——重启后合法 job 继续被领取；有限批量，调用方负责审计。
+  async function requeueOrphanedJobs({ staleMinutes = 10, limit = 10 } = {}) {
+    const r = await q(
+      `UPDATE mu.job SET state='queued', locked_at=NULL, updated_at=now()
+        WHERE job_id IN (SELECT job_id FROM mu.job
+          WHERE state='running' AND locked_at IS NOT NULL
+            AND locked_at < now() - make_interval(mins => $1::int)
+          ORDER BY locked_at LIMIT $2)
+       RETURNING job_id, tenant_id, kind`, [staleMinutes, limit]);
+    return r.rows;
+  }
+  // Wave 3.8（HOL）：非 fixture 模式人工 job 无消费者——超过宽限期的孤立人工 job
+  // 转终态 rejected（有限批量；reason 写入 result，审计由调用方落）。
+  async function rejectStaleManualJobs({ expiryHours = 24, limit = 10 } = {}) {
+    const r = await q(
+      `UPDATE mu.job SET state='rejected',
+          result = jsonb_build_object('reason','manual_job_expired_unconsumable',
+            'detail','manual jobs have no consumer without MU_FIXTURES=1 or a dedicated worker; expired after grace period'),
+          updated_at=now()
+        WHERE job_id IN (SELECT job_id FROM mu.job
+          WHERE state='queued' AND kind <> 'event_sync'
+            AND created_at < now() - make_interval(hours => $1::int)
+          ORDER BY created_at LIMIT $2)
+       RETURNING job_id, tenant_id, kind, created_at`, [expiryHours, limit]);
+    return r.rows;
   }
 
   async function finishJob(jobId, state, result = {}) {
@@ -498,7 +530,7 @@ export async function createMuStore({ pool, env = process.env } = {}) {
     ensureBinding, getBindingForRepo, revokeBinding,
     upsertPullRequest, resolvePullRequest, findPullRequests,
     insertReviewRecord, listReviewRecords,
-    enqueueJob, listJobs, claimNextJob, finishJob,
+    enqueueJob, listJobs, claimNextJob, finishJob, requeueOrphanedJobs, rejectStaleManualJobs,
     listAudit, auditPlatform,
     insertOAuthFlow, consumeOAuthFlow,
     createSession, findSessionByToken, rotateSession, revokeSessionByToken, revokeAllSessionsForUser,
