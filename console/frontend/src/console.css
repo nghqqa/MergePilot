@@ -812,3 +812,103 @@ td.th-right { text-align: right; }
   .topbar .btn .btn-label { display: none; }
   .ant-table-wrapper { overflow-x: auto; }
 }
+
+/* ── Wave 3.16：PR 审查 master-detail 工作台 ─────────────────────
+   视口绑定双栏：左 PR 列表（320–400px，独立滚动），右详情（sticky、独立滚动）。
+   冷灰系统内语义化 class——无渐变/装饰卡片，全部取既有 token。 */
+.mu-workbench { display: flex; flex-direction: column; min-width: 0; }
+.mu-workbench-head { margin-bottom: var(--sp-3); }
+.mu-controls { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin-bottom: var(--sp-3); }
+.mu-repo-select { min-width: 220px; max-width: 100%; flex: 0 1 auto; }
+.mu-pr-filter { width: 140px; max-width: 100%; }
+
+.mu-master-detail {
+  display: grid;
+  grid-template-columns: minmax(320px, 400px) minmax(0, 1fr);
+  gap: var(--sp-4);
+  align-items: start; /* 详情 sticky 的前提 */
+  min-width: 0; /* 防横向溢出（长 SHA/仓库名由内部省略处理） */
+}
+.mu-pr-list {
+  max-height: calc(100vh - 220px);
+  overflow-y: auto;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  background: var(--c-panel);
+  padding: var(--sp-2);
+  display: flex; flex-direction: column; gap: var(--sp-1);
+}
+.mu-pr-detail {
+  position: sticky;
+  top: var(--sp-4);
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
+  border: 1px solid var(--c-border);
+  border-radius: var(--r-md);
+  background: var(--c-panel);
+  padding: var(--sp-4);
+  min-width: 0; /* 内部长 SHA 截断前提 */
+}
+
+/* PR 行（listbox option 语义；键盘 Enter/Space 打开） */
+.mu-pr-row {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  min-width: 0;
+}
+.mu-pr-row:hover { background: var(--c-inset); }
+.mu-pr-row:focus-visible { outline: 2px solid var(--c-accent); outline-offset: -2px; }
+.mu-pr-row.is-selected {
+  background: var(--c-accent-soft);
+  border-color: var(--c-accent-ring);
+}
+.mu-pr-row-title { display: flex; align-items: baseline; gap: var(--sp-2); font-weight: 600; min-width: 0; }
+.mu-pr-row-sha { font-size: 12px; color: var(--c-text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mu-pr-row-sub { display: flex; align-items: center; gap: var(--sp-2); font-size: 12px; min-width: 0; }
+.mu-pr-row-tag { margin: 0; }
+
+/* 详情区状态 */
+.mu-detail-state { padding: var(--sp-5) var(--sp-4); color: var(--c-text-3); }
+.mu-detail-placeholder {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: var(--sp-2); padding: var(--sp-6) var(--sp-4);
+  color: var(--c-text-2); text-align: center; min-height: 220px;
+}
+.mu-detail-placeholder-glyph { font-size: 28px; color: var(--c-text-3); }
+.mu-detail-head { display: flex; flex-direction: column; gap: var(--sp-2); margin-bottom: var(--sp-3); min-width: 0; }
+.mu-detail-title { font-size: 15px; overflow-wrap: anywhere; }
+.mu-detail-meta { color: var(--c-text-2); font-size: 13px; }
+.mu-detail-actions { margin-bottom: var(--sp-3); }
+.mu-detail-actionmsg { margin-bottom: var(--sp-3); }
+.mu-detail-records { margin-bottom: var(--sp-3); }
+.mu-record-list { list-style: none; margin: var(--sp-2) 0 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
+.mu-record-list li { font-size: 12px; color: var(--c-text-2); padding: var(--sp-1) var(--sp-2); background: var(--c-inset); border-radius: var(--r-sm); overflow-wrap: anywhere; }
+.mu-empty-hint { font-size: 12px; color: var(--c-text-3); margin: 0 0 var(--sp-3); }
+.mu-action-msg { margin-top: var(--sp-3); }
+.mu-admin-drawer { margin-bottom: var(--sp-4); }
+.mu-visually-hidden {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* ── 响应式 ─────────────────────────────────────────────── */
+/* 600–960px：详情改为覆盖式抽屉（列表保持视口滚动主体） */
+@media (max-width: 960px) {
+  .mu-master-detail { grid-template-columns: minmax(0, 1fr); }
+  .mu-pr-detail {
+    position: fixed; inset: auto 0 0 0; z-index: 40;
+    max-height: 82vh; border-radius: var(--r-md) var(--r-md) 0 0;
+    box-shadow: var(--shadow-drawer);
+  }
+  .mu-pr-detail:not(:has(.mu-detail-placeholder)) { display: block; }
+}
+/* <600px：详情全宽抽屉；列表即页面 */
+@media (max-width: 600px) {
+  .mu-pr-list { max-height: none; } /* 移动端列表随页滚 */
+  .mu-pr-detail { inset: 0; max-height: 100vh; border-radius: 0; }
+  .mu-repo-select { min-width: 0; width: 100%; }
+  .mu-pr-filter { width: 100%; }
+}

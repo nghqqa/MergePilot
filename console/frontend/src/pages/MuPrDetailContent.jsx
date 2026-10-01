@@ -1,0 +1,109 @@
+// MuPrDetailContent — PR 详情内容块（master-detail 右栏 + 独立路由页共用）。
+// 数据：/api/mu/prs/:prId（编号双寻址）+ PipelinePanel（/api/mu/runs）。
+// 状态：loading / not_found(404 或无权限) / error / ready（含空审查记录紧凑空态）。
+import React, { useCallback, useEffect, useState } from 'react';
+import { Alert, Button, Space, Tag, Typography } from 'antd';
+import { PipelinePanel } from './MultiUserPage.jsx';
+
+/**
+ * 详情内容块。props:
+ *  - prRef: { repoId, owner, name, prNumber }——由调用方解析（URL/列表行）
+ *  - onChanged: 操作成功后的回调（父级刷新列表）
+ */
+export function MuPrDetailContent({ prRef, onChanged }) {
+  const prNumber = prRef?.prNumber ?? null;
+  const [detail, setDetail] = useState(null);
+  const [state, setState] = useState('loading');
+  const [actionMsg, setActionMsg] = useState(null);
+
+  const load = useCallback(async () => {
+    if (!prRef?.prNumber || !prRef?.repoId) { setState('not_found'); return; }
+    setState('loading');
+    try {
+      const res = await fetch(`/api/mu/prs/${prRef.prNumber}?repo_id=${prRef.repoId}`, { credentials: 'same-origin' });
+      if (res.status === 404 || res.status === 403) { setState('not_found'); return; }
+      if (!res.ok) { setState('error'); return; }
+      const d = await res.json().catch(() => null);
+      if (d?.pull_request) { setDetail(d); setState('ready'); }
+      else setState('not_found');
+    } catch { setState('error'); }
+  }, [prRef?.prNumber, prRef?.repoId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const runAction = async (label, path, payload) => {
+    setActionMsg(null);
+    const csrf = (document.cookie.match(/(?:^|; )mp_csrf=([^;]*)/) ?? [])[1] ?? '';
+    const r = await fetch(path, { method: 'POST', credentials: 'same-origin',
+      headers: { 'content-type': 'application/json', 'X-CSRF-Token': csrf },
+      body: JSON.stringify(payload ?? {}) });
+    const body = await r.json().catch(() => null);
+    setActionMsg({ ok: r.status === 200, label, status: r.status,
+      reason: body?.error?.reason ?? null });
+    if (r.status === 200) { await load(); onChanged?.(); }
+  };
+
+  if (state === 'loading') {
+    return <div className="mu-detail-state" role="status">正在读取 PR #{prNumber} 详情…</div>;
+  }
+  if (state === 'not_found') {
+    return (
+      <Alert type="warning" showIcon message="PR 记录不可得"
+        description={`PR #${prNumber ?? '？'} 无记录或当前角色无权限（404/403 如实）——不回退其他数据源。`} />
+    );
+  }
+  if (state === 'error') {
+    return (
+      <Alert type="error" showIcon message="读取失败"
+        action={<Button size="small" onClick={load}>重试</Button>}
+        description="网络或服务暂时不可用——可重试；持续失败请联系管理员。" />
+    );
+  }
+
+  const pr = detail.pull_request;
+  return (
+    <div className="mu-detail-body">
+      <div className="mu-detail-head">
+        <span className="mu-detail-title mono">
+          {prRef.owner}/{prRef.name} <strong>#{pr.provider_pr_number}</strong>
+        </span>
+        <Space size="large" wrap>
+          <span className="mu-detail-meta">head：<code className="mono">{String(pr.head_sha ?? '').slice(0, 12)}</code></span>
+          <span className="mu-detail-meta">protection：
+            <Tag color={pr.branch_protection_status === 'known_clean' ? 'green' : 'orange'}>{pr.branch_protection_status}</Tag>
+          </span>
+          {pr.title ? <span className="mu-detail-meta muted">{String(pr.title).slice(0, 60)}</span> : null}
+        </Space>
+      </div>
+
+      <Space wrap className="mu-detail-actions">
+        <Button size="small" onClick={() => runAction('触发只读审查', `/api/mu/prs/${pr.pr_id}/review`)}>触发只读审查</Button>
+        <Button size="small" onClick={() => runAction('审批通过', `/api/mu/prs/${pr.pr_id}/decision`, { action: 'approve' })}>审批通过</Button>
+        <Button size="small" onClick={() => runAction('驳回', `/api/mu/prs/${pr.pr_id}/decision`, { action: 'reject' })}>驳回</Button>
+        <Button size="small" onClick={() => runAction('发起受控修复', `/api/mu/prs/${pr.pr_id}/repair`)}>发起受控修复</Button>
+      </Space>
+      {actionMsg ? (
+        <Alert className="mu-detail-actionmsg" type={actionMsg.ok ? 'success' : 'warning'} showIcon
+          message={`${actionMsg.label} → HTTP ${actionMsg.status}${actionMsg.reason ? `（${actionMsg.reason}）` : ''}`} />
+      ) : null}
+
+      {(detail.review_records ?? []).length > 0 ? (
+        <div className="mu-detail-records">
+          <Typography.Title level={5}>审查记录（人工操作）</Typography.Title>
+          <ul className="mu-record-list">
+            {(detail.review_records ?? []).map((rec) => (
+              <li key={rec.review_id}>
+                <code>{rec.kind}</code> · {rec.decision} · {rec.actor_login ?? '—'}
+                · <code className="mono">{String(rec.head_sha ?? '').slice(0, 10)}</code> · {String(rec.created_at ?? '').slice(0, 19).replace('T', ' ')}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <p className="mu-empty-hint">审查记录（人工操作）暂无——上方"审批/审查"按钮的操作会记录在这里。</p>
+      )}
+
+      <PipelinePanel prNumber={Number(pr.provider_pr_number)} repoId={prRef.repoId} />
+    </div>
+  );
+}

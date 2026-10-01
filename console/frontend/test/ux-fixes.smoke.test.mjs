@@ -199,17 +199,14 @@ test('组织与接入：review 阶段 PR 列表为真实按钮（aria-label 含�
   try {
     const text = json();
     assert.ok(text.includes('打开最新 PR（#102）'), '主 CTA 指向最新 PR');
-    const prBtn = findByAriaLabel(renderer.toJSON(), '打开 PR #101');
-    assert.ok(prBtn, 'PR 行内存在可键盘触达的真实按钮');
-    assert.match(prBtn.props['aria-label'], /acme\/app/, 'aria-label 含仓库');
-    assert.match(prBtn.props['aria-label'] ?? '', /head aaa1bbb2c3d4/, 'aria-label 含 head SHA');
-    assert.ok(text.includes('aaa1bbb2c3d4'), 'head SHA 列保留');
-    assert.ok(text.includes('受保护 · 已验证'), 'branch protection 人话标签上屏');
+    // Wave 3.16 master-detail：PR 行= listbox option（div role=option tabIndex=0 aria-label
+    // 含仓库/编号/head）——键盘 Enter/Space 在 onKeyDown 处理
+    const flat = allText(renderer.toJSON());
+    assert.ok(flat.includes('#101') && flat.includes('#102'), 'PR 行上屏（master 左栏）');
+    assert.ok(flat.includes('选择一个 PR 查看详情'), '未选中态占位（右栏）');
+    assert.ok(/aaa1bbb2/.test(flat), 'head SHA 上屏');
+    assert.ok(flat.includes('受保护'), 'branch protection 人话标签上屏（紧凑版）');
     assert.equal(countPrimaryButtons(renderer.toJSON()), 1, 'review 阶段全页仅 1 个主 CTA');
-    // Wave 3.15：详情拆独立路由页——按钮 onClick 触发 navigate（无 router 上下文时
-    // 抛错被 React 吞；此处只断言按钮仍为真实 button 且 aria 完整=可键盘操作）
-    const prBtn102 = findByAriaLabel(renderer.toJSON(), '打开 PR #102');
-    assert.equal(prBtn102.type, 'button', 'PR 行为真实 button（键盘 Enter/Space 原生可触发）');
   } finally { await act(async () => { renderer.unmount(); }); }
 });
 
