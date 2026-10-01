@@ -24,6 +24,7 @@ import DiagnosticsPage from './pages/DiagnosticsPage.jsx';
 import ReposPage from './pages/ReposPage.jsx';
 import RepoPrsPage from './pages/RepoPrsPage.jsx';
 import PrDetailPage from './pages/PrDetailPage.jsx';
+import { MuPrDetail } from './pages/MuPrDetail.jsx';
 import PendingPage from './pages/PendingPage.jsx';
 import CorePage from './pages/CorePage.jsx';
 import OverviewPage from './pages/OverviewPage.jsx';
@@ -325,6 +326,7 @@ function Shell() {
               <Route path="/repos" element={<ReposPage />} />
               <Route path="/repos/:owner/:name" element={<RepoPrsPage />} />
               <Route path="/repos/:owner/:name/pr/:prNumber" element={<PrDetailPage />} />
+              <Route path="/mu/repos/:owner/:name/pr/:prNumber" element={<MuPrDetail />} />
               <Route path="/pending" element={<PendingPage />} />
               <Route path="/knowledge" element={<KnowledgePage />} />
               <Route path="/runs" element={<RunsHistoryRoute />} />

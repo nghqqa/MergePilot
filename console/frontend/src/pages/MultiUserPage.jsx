@@ -1,6 +1,7 @@
 import { Alert, Button, Input, InputNumber, Modal, Popconfirm, Segmented, Select, Space, Switch, Table, Tag, Typography } from 'antd';
 import { ReloadOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { readCsrfCookie } from '../api-live.js';
 
 // 多用户面（Developer Edition Beta onboarding）。
@@ -107,7 +108,7 @@ const PIPE_LABEL = {
 };
 const SEV_TONE = { P0: 'red', P1: 'volcano', P2: 'orange', P3: 'gold' };
 
-function PipelinePanel({ prNumber, repoId }) {
+export function PipelinePanel({ prNumber, repoId }) {
   const [state, setState] = useState({ phase: 'idle' }); // idle | loading | ready | empty | denied | error
   useEffect(() => {
     if (!prNumber || !repoId) { setState({ phase: 'idle' }); return undefined; }
@@ -631,7 +632,6 @@ export default function MultiUserPage() {
   const [prs, setPrs] = useState(null);
   const [prsState, setPrsState] = useState('idle'); // idle | loading | ready | error
   const [prRepoId, setPrRepoId] = useState(null);
-  const [prDetail, setPrDetail] = useState(null);
   const [actionMsg, setActionMsg] = useState(null);
   const [loading, setLoading] = useState(false);
   const [providers, setProviders] = useState(null);
@@ -704,20 +704,14 @@ export default function MultiUserPage() {
     return () => { dead = true; };
   }, [session, effectiveRepoId]);
 
-  const detailRef = useRef(null);
-  const openPr = useCallback(async (prId) => {
-    setActionMsg(null);
-    const d = await muGet(`/api/mu/prs/${prId}`);
-    if (d.status === 200) {
-      setPrDetail(d.body);
-      // 详情面板渲染在 PR 表下方——等下一帧滚动到它，避免"点了没反应其实在视口外"
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          detailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        });
-      });
-    }
-  }, []);
+  const navigate = useNavigate();
+  // Wave 3.15：详情改独立路由页（/mu/repos/…/pr/:n）——列表与详情分离，
+  // 不再同页纵向追加（点击后详情被长表推出视口的结构性问题根除）。
+  const openPr = useCallback((prIdOrNumber) => {
+    const repo = effectiveRepo;
+    // 行内传 provider_pr_number（人类可读 URL）；prIdOrNumber 兼容 UUID（编号双寻址）
+    if (repo) navigate(`/mu/repos/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}/pr/${prIdOrNumber}`);
+  }, [navigate, effectiveRepo]);
 
   const runAction = useCallback(async (label, path, payload) => {
     setActionMsg(null);
@@ -727,8 +721,8 @@ export default function MultiUserPage() {
       reason: r.body?.error?.reason ?? null,
       note: r.body?.note ?? (r.status === 200 ? '已受理（后端授权为准）' : null),
     });
-    if (r.status === 200) await openPr(path.split('/').slice(0, 5).join('/'));
-  }, [openPr]);
+    // 详情已拆独立路由页——操作成功后刷新本页 PR 列表即可
+  }, []);
 
   const doInstall = useCallback(async () => {
     const r = await muPost('/api/mu/github/install/start');
@@ -936,7 +930,7 @@ export default function MultiUserPage() {
                             <td className="cell-pr" data-label="PR">
                               <button type="button" className="row-link cell-title mu-pr-open"
                                 aria-label={`打开 PR #${pr.provider_pr_number}（${repoLabel}，head ${sha.slice(0, 12) || '未知'}）`}
-                                onClick={() => openPr(pr.pr_id)}>
+                                onClick={() => openPr(pr.provider_pr_number)}>
                                 #{pr.provider_pr_number}
                               </button>
                             </td>
@@ -957,47 +951,6 @@ export default function MultiUserPage() {
                 </div>
               ) : null}
 
-              {prDetail ? (
-                <div ref={detailRef} className="panel" style={{ padding: 'var(--sp-4)', marginTop: 12, scrollMarginTop: 72 }}>
-                  <Space size="large" wrap>
-                    <span>repo：<code>{prDetail.pull_request?.repo_owner}/{prDetail.pull_request?.repo_name}</code></span>
-                    <span>head：<code>{prDetail.pull_request?.head_sha?.slice(0, 12)}</code></span>
-                    <span>protection：<Tag color={prDetail.pull_request?.branch_protection_status === 'known_clean' ? 'green' : 'orange'}>
-                      {prDetail.pull_request?.branch_protection_status}</Tag></span>
-                  </Space>
-                  <div style={{ marginTop: 8 }}>
-                    <Space wrap>
-                      <Button size="small" disabled={!can('request_review')}
-                        onClick={() => runAction('触发只读审查', `/api/mu/prs/${prDetail.pull_request.pr_id}/review`)}>
-                        触发只读审查{!can('request_review') ? '（需 Reviewer）' : ''}</Button>
-                      <Button size="small" disabled={!can('decide_review')}
-                        onClick={() => runAction('审批通过', `/api/mu/prs/${prDetail.pull_request.pr_id}/decision`, { action: 'approve' })}>
-                        Approve{!can('decide_review') ? '（需 Maintainer）' : ''}</Button>
-                      <Button size="small" disabled={!can('decide_review')} danger
-                        onClick={() => runAction('驳回', `/api/mu/prs/${prDetail.pull_request.pr_id}/decision`, { action: 'reject' })}>
-                        Reject{!can('decide_review') ? '（需 Maintainer）' : ''}</Button>
-                      <Button size="small" disabled={!can('request_repair')}
-                        onClick={() => runAction('发起受控修复', `/api/mu/prs/${prDetail.pull_request.pr_id}/repair`)}>
-                        受控修复{!can('request_repair') ? '（需 Maintainer）' : ''}</Button>
-                    </Space>
-                    <Typography.Paragraph type="secondary" style={{ marginTop: 4, marginBottom: 0 }}>
-                      按钮仅反映权限；protection 非 known_clean 时后端拒绝可合并结论（fail-closed）。
-                    </Typography.Paragraph>
-                  </div>
-                  <Table style={{ marginTop: 12 }} rowKey="review_id" size="small" pagination={false} scroll={{ x: true }}
-                    dataSource={prDetail.review_records ?? []}
-                    columns={[
-                      { title: 'kind', dataIndex: 'kind', render: (v) => <code>{v}</code> },
-                      { title: 'decision', dataIndex: 'decision' },
-                      { title: 'actor', dataIndex: 'actor_login' },
-                      { title: 'head', dataIndex: 'head_sha', render: (v) => <code>{String(v).slice(0, 10)}</code> },
-                      { title: 'protection', dataIndex: 'branch_protection_status' },
-                      { title: '时间', dataIndex: 'created_at', render: (v) => String(v ?? '').slice(0, 19).replace('T', ' ') },
-                    ]} />
-                  <PipelinePanel prNumber={Number(prDetail.pull_request?.provider_pr_number)}
-                    repoId={effectiveRepoId} />
-                </div>
-              ) : null}
 
               {actionMsg ? (
                 <Alert style={{ marginTop: 12 }} type={actionMsg.ok ? 'success' : 'warning'} showIcon
