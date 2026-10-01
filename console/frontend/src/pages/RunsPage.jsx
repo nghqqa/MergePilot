@@ -350,7 +350,7 @@ export default function RunsPage() {
                       sort={sort}
                       onToggle={toggleSort}
                     />
-                    <th scope="col" title="投递台账（webhook 轮）或项目执行（Matrix 轮）状态">执行状态</th>
+                    <th scope="col" title="执行状态（GitHub 事件自动触发或手动发起）">执行状态</th>
                     <th scope="col" title="人工安全门决策">人工确认</th>
                     <th scope="col" title="GitHub check-run：回写事实 + 检查结论">GitHub 检查</th>
                     <SortTh
@@ -394,7 +394,7 @@ export default function RunsPage() {
                           <div className="cell-sub">
                             {r.repo ? <span title={`仓库：${r.repo}`}>{r.repo}</span> : <span className="muted">仓库未记录</span>}
                             <span className="cell-sub-dot">·</span>
-                            <span className="muted">{r.trigger === 'webhook' ? 'webhook' : r.trigger === 'matrix' ? 'Matrix' : '触发未记录'}</span>
+                            <span className="muted">{r.trigger === 'webhook' ? 'GitHub 事件' : r.trigger === 'matrix' ? '手动发起' : '触发未记录'}</span>
                             {r.head_sha ? <span className="cell-sha mono" title={`结论绑定的完整 head SHA：${r.head_sha}`}>{r.head_sha.slice(0, 8)}</span> : null}
                           </div>
                         </td>

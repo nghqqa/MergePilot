@@ -24,11 +24,16 @@ import { parseAccessModel, authorize, denialAudit } from './lib/permissions.mjs'
 import { cchainStatusObserved, verifyRunBindingAndAudit, rotateKeystore,
          cchainMetricsSnapshot, rememberStatusForMetrics } from './lib/cchain/wiring.mjs';
 import { ragTrialApi, ragTrialInternalQuery } from './lib/ragtrial/api.mjs';
-import { muApi } from './lib/multiuser/api.mjs';
+import { muApi, getMuStore } from './lib/multiuser/api.mjs';
+import { createMuConsoleApi } from './lib/mu-console-api.mjs';
+import { installQueryTraceOn, wrapSendJsonForAccessLog } from './lib/diag/trace.mjs';
 
 // 进程启动时刻（health.started_at 的唯一来源）。必须在模块加载时求值——
 // 放进 apiHealth() 会变成"响应时刻"，容器 Up 时长与该字段即相互矛盾（2026-09-27 实测教训）。
 const PROCESS_STARTED_AT = new Date().toISOString();
+
+// 响应契约版本（数据源纯化审计：data_source/as_of/schema_version 统一元信息）。
+const SCHEMA_VERSION = 'mu-facade-v1';
 
 function readJsonBody(req, limit = 64 * 1024) {
   return new Promise((resolve, reject) => {
@@ -84,8 +89,61 @@ function send(res, status, body, headers = {}) {
   res.end(buf);
 }
 
-function sendJson(res, status, obj) {
+function _sendJsonBase(res, status, obj) {
   send(res, status, JSON.stringify(obj, null, 2), { 'Content-Type': 'application/json; charset=utf-8' });
+}
+// 验收期诊断（MU_ACCESS_LOG=<path> 启用）：服务端等价网络清单——method/path/status/data_source。
+// 默认关闭零开销；不记录参数/Cookie/凭据；验收后关闭。
+const sendJson = process.env.MU_ACCESS_LOG
+  ? wrapSendJsonForAccessLog(_sendJsonBase, process.env.MU_ACCESS_LOG)
+  : _sendJsonBase;
+
+// ── MU Console 数据适配层 ──
+// pg 加载：生产镜像 pg 在 /app/node_modules（import 直接解析）；开发/CI 仅安装于
+// console/backend/test/support（dev-only）——经 createRequire 从该处回退解析。
+// 两者都不可得 → 返回 null（调用方按 NOT_WIRED/错误态处理，绝不静默降级数据）。
+async function loadPgModule() {
+  try {
+    const m = await import('pg');
+    return m.default ?? m;
+  } catch {
+    try {
+      const { createRequire } = await import('node:module');
+      return createRequire(path.join(path.dirname(fileURLToPath(import.meta.url)),
+        'test', 'support', 'package.json'))('pg');
+    } catch { return null; }
+  }
+}
+let _muApiInstance = null;
+async function getMuConsoleApi() {
+  if (process.env.MU_MODE !== 'multiuser') return null;
+  if (!_muApiInstance) {
+    // 创建独立 pool（mu store 的 pool 在闭包中不可外部访问）
+    const pg = await loadPgModule();
+    if (!pg) throw new Error('pg_unavailable');
+    const pool = new pg.Pool({ connectionString: process.env.CONSOLE_PG_DSN, max: 2 });
+    pool.on('error', () => {});
+    _muApiInstance = createMuConsoleApi({ pool });
+  }
+  return _muApiInstance;
+}
+
+async function authGate(req) {
+  if (process.env.MU_MODE === 'multiuser') {
+    const store = await getMuStore(process.env).catch(() => null);
+    if (store) {
+      const { resolvePrincipal } = await import('./lib/principal.mjs');
+      const principal = await resolvePrincipal(req, { muStore: store }).catch(() => null);
+      if (principal?.authenticated) return { principal };
+    }
+    // mu store 不可用或 mu_session 无效 → 401（不回退 mp_session，安全边界）
+    return { denied: 401 };
+  }
+  // legacy：原有 mp_session 行为（返回原始 session 对象——下游端点依赖其形状）
+  const auth = getSession(tokenFromCookieHeader(req.headers.cookie));
+  if (!auth) return { denied: 401 };
+  // 返回原始 auth 对象（含 .user/.repos 等旧属性）+ MU 兼容标记
+  return { principal: { ...auth, authenticated: true, authMode: 'legacy' }, legacyAuth: auth };
 }
 
 function sendError(res, status, message) {
@@ -130,13 +188,20 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
       // R4：live 已配置时 primary=contract_v2 并声明 allowlist 仓库清单（仓库页数据），
       // 页面不再回退到未过滤 snapshot 作为默认数据。
       sources: {
-        primary: liveConfigured ? 'contract_v2' : 'snapshot',
+        primary: process.env.MU_MODE === 'multiuser' ? 'multiuser'
+          : liveConfigured ? 'contract_v2' : 'snapshot',
+        // MU 模式：仓库清单不进 health（tenant 隔离——匿名响应不得携带任何租户仓库名），
+        // 前端 multiuser 源经认证后的 /api/mu/repositories 获取。
+        multiuser: process.env.MU_MODE === 'multiuser'
+          ? { available: true, reason: 'mu_mode_active',
+              note: '多用户 canonical 面：仓库/PR/运行经 /api/mu/*（会话内 tenant 收窄）' }
+          : { available: false, reason: 'mu_mode_off' },
         snapshot: { available: true, note: '锁定证据包（真实历史运行，只读；run 证据详情页使用）' },
         contract_v2: liveConfigured
           ? { available: true, reason: 'delivered_readonly_core', note: '核心控制面 API + 会话 + PR 详情（会话 allowlist 过滤）' }
           : { available: false, reason: 'pg_not_configured', note: 'CONSOLE_PG_DSN 未配置' },
       },
-      declared_repos: liveConfigured ? repoAllowlist() : [],
+      declared_repos: process.env.MU_MODE === 'multiuser' ? [] : (liveConfigured ? repoAllowlist() : []),
       evidence_root: evidenceRoot,
       runs: packs.length,
       packs_with_sums: withSums,
@@ -245,7 +310,10 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
     }
     const ext = path.extname(abs).toLowerCase();
     const buf = fs.readFileSync(abs);
-    return send(res, 200, buf, { 'Content-Type': MIME[ext] ?? 'application/octet-stream' });
+    // HTML 不缓存（bundle 名变了必须拿到新 index.html）；hash 命名的静态资产可长缓存
+    const isHtml = ext === '.html' || p === '/';
+    return send(res, 200, buf, { 'Content-Type': MIME[ext] ?? 'application/octet-stream',
+      'Cache-Control': isHtml ? 'no-cache, no-store, must-revalidate' : 'public, max-age=31536000, immutable' });
   };
 
   const route = async (req, res) => {
@@ -257,9 +325,27 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
 
     // ── 契约 v2 会话三件套 + 核心控制面五 API（CANONICAL_CONSOLE_PROMOTION 迁移）──
     if (p === '/api/auth/session') {
-      const auth = getSession(tokenFromCookieHeader(req.headers.cookie));
-      if (!auth) return sendJson(res, 401, anonymousBody());
-      return sendJson(res, 200, sessionBody(auth));
+      const legacyAuth = getSession(tokenFromCookieHeader(req.headers.cookie));
+      if (legacyAuth) return sendJson(res, 200, sessionBody(legacyAuth));
+      // MU 桥接：MU_MODE=multiuser 时检查 mu_session
+      if (process.env.MU_MODE === 'multiuser') {
+        try {
+          const store = await getMuStore(process.env);
+          if (store) {
+            const { resolvePrincipal } = await import('./lib/principal.mjs');
+            const principal = await resolvePrincipal(req, { muStore: store });
+            if (principal.authenticated) {
+              return sendJson(res, 200, {
+                user: { name: principal.username, github_login: principal.username,
+                  display_name: principal.username },
+                repos: repoAllowlist(),
+                expires_at: principal.muSession?.expires_at ?? null,
+                session_source: 'mu_session', role: principal.roles?.[0] ?? null });
+            }
+          }
+        } catch { /* mu store 不可用走 401 */ }
+      }
+      return sendJson(res, 401, anonymousBody());
     }
     if (p === '/api/auth/login' && req.method === 'POST') {
       const body = await readJsonBody(req);
@@ -276,12 +362,20 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
       const r = logout(token, auth ? req.headers['x-csrf-token'] : undefined);
       if (!r.ok) return sendJson(res, r.status, { error: { reason: r.code } });
       applyCookies(res, r.setCookie);
+      // MU 会话桥接登出：同时清除 mu_session（MU_MODE=multiuser 时两套会话同步退出）
+      const muCookies = ['mu_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0',
+        'mp_csrf=; Path=/; SameSite=Lax; Max-Age=0',
+        'mu_oauth_corr=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0'];
+      const prevCookies = res.getHeader('Set-Cookie');
+      const allCookies = (Array.isArray(prevCookies) ? prevCookies : prevCookies ? [prevCookies] : []).concat(muCookies);
+      res.setHeader('Set-Cookie', allCookies);
       return sendJson(res, 200, { ok: true });
     }
     // ── A 链组织知识检索（受控代理；feature flag 显式启用，仅隔离 staging）──
     if (p === '/api/rag/org-search' && req.method === 'GET') {
-      const auth = getSession(tokenFromCookieHeader(req.headers.cookie));
-      if (!auth) return sendJson(res, 401, anonymousBody());
+      const gate = await authGate(req);
+      if (gate.denied) return sendJson(res, gate.denied, anonymousBody());
+      const auth = gate.principal.legacyAuth ?? gate.principal;
       if (process.env.MERGEPILOT_ORG_RAG_A_CHAIN !== '1') {
         return sendJson(res, 200, { service_state: 'a_chain_disabled',
           note: 'A 链未启用（feature flag 关闭）——不伪装检索', source: 'ORG_RAG' });
@@ -351,18 +445,25 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
     // 状态与 metrics：需会话（读观测面）；验签：机器对机器 HMAC（无会话，替代凭证）；
     // 轮换：会话 + CSRF + admin 角色（授权操作）。全部真实状态，BLOCKED 即 BLOCKED。
     if (p === '/api/cchain/status' && req.method === 'GET') {
-      const auth = getSession(tokenFromCookieHeader(req.headers.cookie));
-      if (!auth) return sendJson(res, 401, anonymousBody());
+      const gate = await authGate(req);
+      if (gate.denied) return sendJson(res, gate.denied, anonymousBody());
+      const auth = gate.principal.legacyAuth ?? gate.principal;
       const status = await cchainStatusObserved(process.env, process.env.CONSOLE_PG_DSN);
       rememberStatusForMetrics(status);
       return sendJson(res, 200, { ...status,
+        // 数据源契约：C 链为系统级健康/信任链域（cchain schema，非租户业务数据——批准的非业务面）
+        data_source: 'CCHAIN_SYSTEM_LIVE', tenant_scope: 'system', as_of: new Date().toISOString(),
+        schema_version: SCHEMA_VERSION,
         enforce: { flag: process.env.MERGEPILOT_CCHAIN_ENFORCE === '1',
           note: 'enforce=on 时 FXV run 启动被 C 链 READY 门禁拦截（默认 off）' } });
     }
     if (p === '/api/cchain/metrics' && req.method === 'GET') {
-      const auth = getSession(tokenFromCookieHeader(req.headers.cookie));
-      if (!auth) return sendJson(res, 401, anonymousBody());
-      return sendJson(res, 200, cchainMetricsSnapshot(process.env));
+      const gate = await authGate(req);
+      if (gate.denied) return sendJson(res, gate.denied, anonymousBody());
+      const auth = gate.principal.legacyAuth ?? gate.principal;
+      return sendJson(res, 200, { ...cchainMetricsSnapshot(process.env),
+        data_source: 'CCHAIN_SYSTEM_LIVE', tenant_scope: 'system',
+        as_of: new Date().toISOString(), schema_version: SCHEMA_VERSION });
     }
     if (p === '/api/cchain/run-bindings/verify' && req.method === 'POST') {
       // 机器端点：RUN_BINDING_AUTH 入站验签（HMAC full-sha256 + nonce 防重放 + 时间窗）。
@@ -374,8 +475,9 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
       return sendJson(res, r.status, r.body);
     }
     if (p === '/api/cchain/keystore/rotate' && req.method === 'POST') {
-      const auth = getSession(tokenFromCookieHeader(req.headers.cookie));
-      if (!auth) return sendJson(res, 401, anonymousBody());
+      const gate = await authGate(req);
+      if (gate.denied) return sendJson(res, gate.denied, anonymousBody());
+      const auth = gate.principal.legacyAuth ?? gate.principal;
       // 契约 §0.1：副作用方法必须携带 X-CSRF-Token
       // L-2：与 logout 一致的 timing-safe 比较（长度不等直接拒绝）
       if (!auth.csrf || !safeEqual(String(req.headers['x-csrf-token'] ?? ''), auth.csrf)) {
@@ -394,26 +496,76 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
     }
 
     if (p === '/api/overview' && req.method === 'GET') {
-      const auth = getSession(tokenFromCookieHeader(req.headers.cookie));
-      if (!auth) return sendJson(res, 401, anonymousBody());
+      const gate = await authGate(req);
+      if (gate.denied) return sendJson(res, gate.denied, anonymousBody());
+      if (gate.principal.authMode === 'multiuser') {
+        const api = await getMuConsoleApi();
+        if (api) {
+          const ov = await api.overview(gate.principal.tenantId);
+          return sendJson(res, 200, { ...ov, data_source: 'MU_CANONICAL_LIVE',
+            tenant_scope: 'self', as_of: ov.generated_at ?? new Date().toISOString(),
+            schema_version: SCHEMA_VERSION });
+        }
+      }
+      const auth = gate.principal.legacyAuth ?? gate.principal;
       const ov = await overviewState(auth.repos);
       return sendJson(res, 200, ov);
     }
     if (p === '/api/fxv/metrics' && req.method === 'GET') {
-      const auth = getSession(tokenFromCookieHeader(req.headers.cookie));
-      if (!auth) return sendJson(res, 401, anonymousBody());
-      return sendJson(res, 200, await fxvMetrics(process.env.CONSOLE_PG_DSN));
+      const gate = await authGate(req);
+      if (gate.denied) return sendJson(res, gate.denied, anonymousBody());
+      // MU 模式：fxv 持久层无 tenant_id 维度（旧试点表）——全局指标对租户管理员=跨租户
+      // 泄露（仅聚合数值，无内容仍不合规）。返回明确 capability 态，绝不返回全局聚合。
+      if (gate.principal.authMode === 'multiuser') {
+        return sendJson(res, 200, { data_source: 'FXV_PERSISTENCE_UNSCOPED',
+          capability: 'fxv_persistence_not_tenant_scoped',
+          note: 'FXV 持久层未按租户隔离——MU 控制台不展示全局指标；修复型执行指标见 /multiuser 的 PR 审查管线',
+          tenant_scope: 'self', as_of: new Date().toISOString(), schema_version: SCHEMA_VERSION,
+          metrics: {}, alerts: [] });
+      }
+      const r = await fxvMetrics(process.env.CONSOLE_PG_DSN);
+      return sendJson(res, 200, { ...r, schema_version: SCHEMA_VERSION });
     }
     if (p === '/api/fxv/attempts' && req.method === 'GET') {
-      const auth = getSession(tokenFromCookieHeader(req.headers.cookie));
-      if (!auth) return sendJson(res, 401, anonymousBody());
+      const gate = await authGate(req);
+      if (gate.denied) return sendJson(res, gate.denied, anonymousBody());
+      // 同上：MU 模式 capability 态（fxv.attempts 无 tenant 维度，repo allowlist 过滤
+      // 不足以构成租户边界——历史 repo 名可碰撞）。
+      if (gate.principal.authMode === 'multiuser') {
+        return sendJson(res, 200, { data_source: 'FXV_PERSISTENCE_UNSCOPED',
+          capability: 'fxv_persistence_not_tenant_scoped',
+          note: 'FXV 持久层未按租户隔离——MU 控制台不展示全局尝试列表',
+          tenant_scope: 'self', as_of: new Date().toISOString(), schema_version: SCHEMA_VERSION,
+          attempts: [] });
+      }
+      const auth = gate.principal.legacyAuth ?? gate.principal;
       const r = await fxvAttempts(process.env.CONSOLE_PG_DSN, { limit: 50 });
       const allow = new Set(auth.repos);
-      return sendJson(res, 200, { ...r, attempts: r.attempts.filter((a) => allow.has(a.repo)) });
+      return sendJson(res, 200, { ...r, attempts: r.attempts.filter((a) => allow.has(a.repo)),
+        schema_version: SCHEMA_VERSION });
     }
     if (['/api/pulls', '/api/pending', '/api/tickets', '/api/evidence', '/api/audit'].includes(p) && req.method === 'GET') {
-      const auth = getSession(tokenFromCookieHeader(req.headers.cookie));
-      if (!auth) return sendJson(res, 401, anonymousBody());
+      const gate = await authGate(req);
+      if (gate.denied) return sendJson(res, gate.denied, anonymousBody());
+      if (gate.principal.authMode === 'multiuser') {
+        const muApi2 = await getMuConsoleApi();
+        if (muApi2) {
+          const tid = gate.principal.tenantId;
+          // 数据源契约：data_source/tenant_scope/as_of/schema_version 统一元信息。
+          const muMeta = { source: 'MU_CANONICAL_LIVE', data_source: 'MU_CANONICAL_LIVE',
+            tenant_scope: 'self', as_of: new Date().toISOString(), schema_version: SCHEMA_VERSION };
+          if (p === '/api/pulls') return sendJson(res, 200, { pulls: await muApi2.pulls(tid), ...muMeta });
+          if (p === '/api/pending') return sendJson(res, 200, { pending: await muApi2.pending(tid), ...muMeta });
+          // tickets/evidence：MU 控制台由 canonical 域承担（旧人工门票据/证据包为 legacy
+          // 试点域）——诚实空集 + 明确 capability，绝不回退 legacy 表。
+          if (p === '/api/tickets') return sendJson(res, 200, { tickets: [], ...muMeta,
+            capability: 'mu_tickets_managed_in_multiuser_page' });
+          if (p === '/api/evidence') return sendJson(res, 200, { evidence: [], ...muMeta,
+            capability: 'mu_evidence_managed_in_multiuser_page' });
+          if (p === '/api/audit') return sendJson(res, 200, { audit: await muApi2.audit(tid), ...muMeta });
+        }
+      }
+      const auth = gate.principal.legacyAuth ?? gate.principal;
       if (p === '/api/pulls' && q.repo && !auth.repos.includes(q.repo)) {
         return sendJson(res, 403, { error: { reason: 'repo_not_in_allowlist', repo: q.repo } });
       }
@@ -449,10 +601,24 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
     // 已认证 → 仅返回 allowlist 内仓库的记录（repo 未知的 pack 一并隐藏，不泄露存在性）；
     // 未认证 → 维持登录页明示的只读演示语义（本地历史快照，非授权范围数据）。
     // 实时数据查询一律走 /api/overview、/api/pulls（服务端 allowlist 强制）。
-    const runsScopeAuth = getSession(tokenFromCookieHeader(req.headers.cookie));
+    const runsGate = await authGate(req);
+    const runsScopeAuth = runsGate.principal?.legacyAuth ?? (runsGate.principal?.authenticated ? runsGate.principal : null);
     const runsScope = runsScopeAuth ? new Set(runsScopeAuth.repos) : null;
     const runsRepoAllowed = (repo) => !runsScope || (repo ? runsScope.has(repo) : false);
 
+    if (p === '/api/runs' && process.env.MU_MODE === 'multiuser') {
+      const gate = await authGate(req);
+      if (gate.denied) return sendJson(res, gate.denied, anonymousBody());
+      const api = await getMuConsoleApi();
+      const runs = api ? await api.runs(gate.principal.tenantId) : [];
+      return sendJson(res, 200, { runs,
+        // items 别名：与 legacy /api/runs {items} 消费方（RunsPage 筛选视图）形状兼容，
+        // 数据本体同源（mu.review_run），不构成 mixed-source。
+        items: runs,
+        source: 'MU_CANONICAL_LIVE', data_source: 'MU_CANONICAL_LIVE',
+        tenant_scope: 'self', as_of: new Date().toISOString(), schema_version: SCHEMA_VERSION,
+        scope: 'mu_tenant' });
+    }
     if (p === '/api/runs') {
       const body = apiRuns(q);
       const items = (body.items ?? []).filter((r) => runsRepoAllowed(r.repo ?? null));
@@ -497,9 +663,26 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
     // 同一会话 allowlist 边界）。repo 寻址走查询参数（契约 §0.5 同形）。
     const pullMatch = p.match(/^\/api\/pulls\/(\d+)$/);
     if (pullMatch && req.method === 'GET') {
-      const auth = getSession(tokenFromCookieHeader(req.headers.cookie));
-      if (!auth) return sendJson(res, 401, anonymousBody());
+      const gate = await authGate(req);
+      if (gate.denied) return sendJson(res, gate.denied, anonymousBody());
       const prNumber = Number(pullMatch[1]);
+      // MU 模式：PR 详情只读 mu.* canonical（repo 参数=owner/name，tenant 内解析）。
+      // 绝不落入 legacy overviewState/corePilotState（skill_receipt_outbox 等旧表）。
+      if (gate.principal.authMode === 'multiuser') {
+        const muApi2 = await getMuConsoleApi();
+        if (muApi2) {
+          if (!q.repo) {
+            return sendJson(res, 400, { error: { reason: 'repo_required',
+              detail: 'MU 模式 PR 详情需 repo=owner/name 寻址参数' } });
+          }
+          const detail = await muApi2.pullDetail(gate.principal.tenantId, q.repo, prNumber);
+          if (!detail) {
+            return sendJson(res, 404, { error: { reason: 'no_live_record', repo: q.repo, pr_number: prNumber } });
+          }
+          return sendJson(res, 200, { ...detail, schema_version: SCHEMA_VERSION });
+        }
+      }
+      const auth = gate.principal.legacyAuth ?? gate.principal;
       const repo = q.repo;
       if (!repo || !auth.repos.includes(repo)) {
         return sendJson(res, 403, { error: { reason: 'repo_not_in_allowlist', repo: repo ?? null } });
@@ -561,9 +744,14 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
 
     // ── RAG 本地试验（LOCAL_RAG_TRIAL；与 A 链 /api/rag/org-search、C 链 /api/cchain/* 并行且隔离）──
     if (p.startsWith('/api/rag-trial/')) {
+      // 数据源契约注入（RAG 试用=批准的隔离子系统；响应缺 data_source 时补缺省标记）。
+      const ragJson = (res, status, obj) => sendJson(res, status,
+        obj && typeof obj === 'object' && !Array.isArray(obj) && obj.data_source == null
+          ? { ...obj, data_source: obj.source ?? 'RAG_TRIAL_SUBSYSTEM', schema_version: obj.schema_version ?? SCHEMA_VERSION }
+          : obj);
       return ragTrialApi(req, res, {
         p, q,
-        sendJson,
+        sendJson: ragJson,
         readJsonBody,
         // Dogfooding P1 修复：legacy 会话优先（非 multiuser 零回归），MU 会话回退
         // （multiuser 模式下 rag-trial 端点可达——逐请求 DB 解析+角色/仓库服务端校验）
@@ -578,6 +766,13 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
 
     return sendError(res, 404, `unknown api path: ${p}`);
   };
+
+  // 验收期诊断（MU_QUERY_TRACE=<path> 启用）：全进程 pg 查询表名+调用点（无参数/无文本）。
+  // 首次请求时惰性安装（pg 惰性 import 的模块实例全局唯一——原型包装全局生效）。
+  if (process.env.MU_QUERY_TRACE && !globalThis.__MU_TRACE_PG_INSTALLED) {
+    loadPgModule().then((m) => installQueryTraceOn(m, process.env.MU_QUERY_TRACE))
+      .catch(() => {});
+  }
 
   const server = http.createServer((req, res) => {
     Promise.resolve(route(req, res)).catch((e) => {

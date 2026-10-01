@@ -47,15 +47,15 @@ export default function CChainPage() {
 
   return (
     <div>
-      <Typography.Title level={1} style={{ fontSize: 24, marginBottom: 4 }}>C 链状态</Typography.Title>
+      <Typography.Title level={1} style={{ fontSize: 24, marginBottom: 4 }}>签名验证状态</Typography.Title>
       <Typography.Paragraph type="secondary">
-        模型缓存内容寻址 / Provider 在线 attestation / RUN_BINDING_AUTH 密钥分发——
-        三项均为<b>真实探测</b>：缺依赖即显示 BLOCKED 与原因，不伪装可用。
+        合并凭证的三道校验：模型缓存校验 / 修复方在线公证 / 修复凭证密钥分发——
+        三项均为<b>真实探测</b>：缺依赖即显示"已阻断"与原因，不伪装可用。
       </Typography.Paragraph>
 
       {error ? (
         <Alert type="error" showIcon
-          message="C 链状态不可用"
+          message="签名验证状态不可用"
           description={`${error.message}${error.reason ? `（${error.reason}）` : ''} — 后端未接通时此页面不显示任何推断数据。`} />
       ) : null}
 
@@ -64,8 +64,8 @@ export default function CChainPage() {
           <div className="panel" style={{ padding: 'var(--sp-4)', marginBottom: 16 }}>
             <Space size="large" wrap>
               <span>总体：{overallTag(status.overall)}</span>
-              <span>enforce 门禁：<Tag color={status.enforce?.flag ? 'orange' : 'default'}>
-                {status.enforce?.flag ? 'ON（FXV run 启动受 READY 门禁）' : 'off'}</Tag></span>
+              <span>强制校验：<Tag color={status.enforce?.flag ? 'orange' : 'default'}>
+                {status.enforce?.flag ? '开启（自动修复前必须通过就绪校验）' : '关闭'}</Tag></span>
               {status.audit_note?.written === false && status.audit_note?.error ? (
                 <span><Tag color="orange">审计未落库</Tag>{String(status.audit_note.error).slice(0, 80)}</span>
               ) : null}
@@ -94,7 +94,7 @@ export default function CChainPage() {
         <section className="section" style={{ marginTop: 24 }}>
           <div className="section-head"><h3>指标（进程内存计数，重启归零）</h3></div>
           <ul className="compact-list">
-            <li>run-binding 验签通过：<code>{metrics.counters?.run_binding_verify_ok ?? 0}</code>；
+            <li>修复凭证校验通过：<code>{metrics.counters?.run_binding_verify_ok ?? 0}</code>；
                 拒绝：<code>{metrics.counters?.run_binding_verify_denied ?? 0}</code>；
                 密钥轮换：<code>{metrics.counters?.key_rotations ?? 0}</code></li>
             <li>就绪度（1/0，最近一次观测）：

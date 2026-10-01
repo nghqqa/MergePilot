@@ -4,7 +4,7 @@
 //  * 默认拒绝：无 membership / state 非 active / 未知角色 / 角色无此动作 / 需 Binding 而无
 //    active Binding —— 一律 fail-closed（reason 机器码，供 HTTP 层 403 与审计）；
 //  * tenant_id / repo_id 永远由服务端解析（session + tenant 收窄查询），不信任请求体；
-//  * PlatformAdmin 不自动获得代码读取（GitHub 内容/RAG 语料）；
+//  * PlatformAdmin 不自动获得代码读取（GitHub 内容）；rag_query 为单管理员试用放开（Beta）；
 //  * Auditor 只读审计元数据（无 read_code_content / rag_query / 仓库/PR 读）。
 
 export const MU_ROLES = ['contributor', 'reviewer', 'maintainer', 'platform_admin', 'auditor'];
@@ -29,7 +29,7 @@ const ROLE_ACTIONS = {
   reviewer: [...CONTRIBUTOR, 'request_review'],
   maintainer: [...CONTRIBUTOR, 'request_review', 'decide_review', 'request_repair', 'manage_repository_binding'],
   auditor: ['read_audit'],
-  platform_admin: ['read_repository', 'manage_membership', 'read_audit', 'manage_instance'],
+  platform_admin: ['read_repository', 'read_pull_request', 'rag_query', 'request_review', 'request_repair', 'manage_repository_binding', 'manage_membership', 'read_audit', 'manage_instance'],
 };
 
 // 需要 active Binding 才允许的动作（provider 侧连接存在性由调用方传入 binding 判定）

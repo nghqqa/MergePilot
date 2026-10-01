@@ -63,7 +63,7 @@ const NAV = [
   { to: '/overview', label: '运营总览', icon: AppstoreOutlined, end: true },
   { to: '/pending', label: '待处理', icon: InboxOutlined, end: false },
   { to: '/repos', label: '仓库', icon: FolderOpenOutlined, end: true },
-  { to: '/runs', label: '运行', icon: HistoryOutlined, end: false },
+  { to: '/runs', label: '运行记录', icon: HistoryOutlined, end: false },
   { to: '/approvals', label: '审批', icon: AuditOutlined, end: true },
 ];
 // 系统区（非首要工作流）：系统状态与接线 / 知识库 / 数据源 / 诊断 / 设置
@@ -71,8 +71,8 @@ const SYSTEM_NAV = [
   { to: '/core', label: '系统状态', icon: DashboardOutlined, end: true },
   { to: '/knowledge', label: '知识库', icon: DatabaseOutlined, end: true },
   { to: '/datasources', label: '数据源', icon: ApiOutlined, end: true },
-  { to: '/cchain', label: 'C 链', icon: SafetyCertificateOutlined, end: true },
-  { to: '/rag-trial', label: 'RAG 试验', icon: FileSearchOutlined, end: true },
+  { to: '/cchain', label: '签名验证', icon: SafetyCertificateOutlined, end: true },
+  { to: '/rag-trial', label: '知识检索（试用）', icon: FileSearchOutlined, end: true },
   { to: '/multiuser', label: '组织与接入', icon: TeamOutlined, end: true },
   { to: '/diagnostics', label: '诊断', icon: MedicineBoxOutlined, end: true },
   { to: '/settings', label: '设置', icon: SettingOutlined, end: true },

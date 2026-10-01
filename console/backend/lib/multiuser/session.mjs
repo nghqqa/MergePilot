@@ -85,7 +85,10 @@ export function muCorrFromCookieHeader(header) {
   return '';
 }
 export function appendCorrClear(existingSetCookie) {
-  return [...(Array.isArray(existingSetCookie) ? existingSetCookie : []), muCorrClear()];
+  // 兼容 string 与 array：string 输入时包装为 [string]（修复 mu_session 被丢弃的 bug）
+  const existing = Array.isArray(existingSetCookie) ? existingSetCookie
+    : existingSetCookie ? [existingSetCookie] : [];
+  return [...existing, muCorrClear()];
 }
 
 export async function rotateMuSession(store, sessionId, { tenantId, role }) {

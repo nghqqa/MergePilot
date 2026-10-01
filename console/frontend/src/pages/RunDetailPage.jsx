@@ -163,7 +163,7 @@ function OverviewTab({ run, onOpenEvidence }) {
         <StatusCell
           icon={Workflow}
           label="执行状态"
-          title="执行状态：投递台账（webhook 轮）或项目 meta（Matrix 轮）"
+          title="执行状态（GitHub 事件自动触发或手动发起）"
           source={e?.source === 'delivery_ledger' ? 'delivery-ledger.json' : e?.source === 'project_meta' ? 'project/meta.json（无台账）' : null}
         >
           <ExecutionBadge execution={e} />
@@ -248,7 +248,7 @@ function OverviewTab({ run, onOpenEvidence }) {
           <div className="kv-label">head SHA（结论绑定）</div><div className="kv-value"><Sha value={run.head_sha} n={12} /></div>
         </div>
         <div className="kv"><div className="kv-label">base SHA</div><div className="kv-value"><Sha value={run.base_sha} n={12} /></div></div>
-        <div className="kv"><div className="kv-label">触发方式</div><div className="kv-value">{run.trigger === 'webhook' ? 'webhook（GitHub 投递）' : run.trigger === 'matrix' ? 'Matrix 手动 kickoff' : '未记录'}</div></div>
+        <div className="kv"><div className="kv-label">触发方式</div><div className="kv-value">{run.trigger === 'webhook' ? 'GitHub 事件（自动触发）' : run.trigger === 'matrix' ? '手动发起' : '未记录'}</div></div>
         <div className="kv"><div className="kv-label">开始时间</div><div className="kv-value num">{fmtTime(run.created_at) ?? '未记录'}</div></div>
         <div className="kv"><div className="kv-label">耗时</div><div className="kv-value num">{run.duration_human ?? '未记录'}</div></div>
         <div className="kv"><div className="kv-label">项目</div><div className="kv-value mono">{run.project?.project_id ?? '未记录'}</div></div>
@@ -653,7 +653,7 @@ export default function RunDetailPage() {
               <div className="detail-chips">
                 <Chip title="数据模式：来自仓库内锁定的真实历史证据包，只读、非实时">历史快照</Chip>
                 <Chip mono title="证据包目录名（详情路由键）">{run.pack_id}</Chip>
-                <Chip title="触发方式">{run.trigger === 'webhook' ? 'webhook 投递' : run.trigger === 'matrix' ? 'Matrix kickoff' : '触发未记录'}</Chip>
+                <Chip title="触发方式">{run.trigger === 'webhook' ? 'GitHub 事件' : run.trigger === 'matrix' ? '手动发起' : '触发未记录'}</Chip>
                 {run.has_sums ? <Chip title="包内有 SHA256SUMS，可执行完整校验">SHA256SUMS</Chip> : null}
                 {run.review.cwe ? <Chip title="审查确认的缺陷编号">{run.review.cwe}</Chip> : null}
               </div>

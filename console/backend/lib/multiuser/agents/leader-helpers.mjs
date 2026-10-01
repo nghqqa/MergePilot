@@ -2,6 +2,8 @@
 export { advanceAfterVerify, MAX_FIX_ROUNDS, retryClaim } from './leader.mjs';
 import { finishAttempt } from '../orchestration.mjs';
 
-export async function finishAttemptOrSkip(pool, attemptId, status, errorCode = null) {
-  return finishAttempt(pool, { attemptId, status, errorCode, evidenceRef: `attempt:${attemptId}` });
+export async function finishAttemptOrSkip(pool, attemptId, status, errorCode = null,
+  outputDigest = null, latencyMs = null) {
+  return finishAttempt(pool, { attemptId, status, errorCode, outputDigest, latencyMs,
+    evidenceRef: `attempt:${attemptId}` });
 }

@@ -1,8 +1,8 @@
 // fxv/metrics.mjs — FXV 运营指标（从 fxv.attempts/audit_events 真实推导，无 mock）。
-export async function fxvMetrics(dsn) {
-  if (!dsn) return { source: 'BACKEND_NOT_WIRED', metrics: {} };
-  const pg = await import('pg').catch(() => null);
-  if (!pg) return { source: 'BACKEND_ERROR', error: 'pg module unavailable', metrics: {} };
+export async function fxvMetrics(dsn, { pgImpl = null } = {}) {
+  if (!dsn) return { source: 'BACKEND_NOT_WIRED', data_source: 'BACKEND_NOT_WIRED', metrics: {} };
+  const pg = pgImpl ?? await import('pg').then((m) => m.default ?? m).catch(() => null);
+  if (!pg) return { source: 'BACKEND_ERROR', data_source: 'BACKEND_ERROR', error: 'pg module unavailable', metrics: {} };
   const c = new pg.Client({ connectionString: dsn, connectionTimeoutMillis: 3000 });
   try {
     await c.connect();
@@ -52,8 +52,16 @@ export async function fxvMetrics(dsn) {
     if (m.missing_artifact > 0) alerts.push(`missing_artifact=${m.missing_artifact} > 0`);
     if (m.digest_mismatch > 0) alerts.push(`digest_mismatch=${m.digest_mismatch} > 0`);
     if (Number(m.archive_latency_avg_ms) > 5000) alerts.push(`archive_latency_avg=${m.archive_latency_avg_ms}ms > 5000ms`);
-    return { source: 'POSTGRESQL_LIVE', metrics: m, alerts };
+    return { source: 'POSTGRESQL_LIVE', data_source: 'FXV_LEGACY_PERSISTENCE',
+      as_of: new Date().toISOString(), metrics: m, alerts };
   } catch (e) {
-    return { source: 'BACKEND_ERROR', error: String(e?.message || e).slice(0, 200), metrics: {} };
+    // 明确 capability 态：fxv 持久层未启用（fresh DB 未初始化 fxv schema）→ 诚实零值，
+    // 与真实故障（BACKEND_ERROR）可区分——正式页面不得渲染成"错误"。
+    if (e?.code === '42P01') {
+      return { source: 'FXV_PERSISTENCE_ABSENT', data_source: 'FXV_PERSISTENCE_ABSENT',
+        capability: 'fxv_persistence_not_initialized', metrics: {}, alerts: [] };
+    }
+    return { source: 'BACKEND_ERROR', data_source: 'BACKEND_ERROR',
+      error: String(e?.message || e).slice(0, 200), metrics: {} };
   } finally { await c.end().catch(() => {}); }
 }

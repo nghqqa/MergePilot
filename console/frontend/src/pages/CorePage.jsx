@@ -158,9 +158,14 @@ export default function CorePage() {
                 render: (v) => (v ? new Date(v).toLocaleString() : '') },
             ]}
           />
-          <Typography.Title level={3} style={{ marginTop: 20 }}>FXV 修复编排</Typography.Title>
+          <Typography.Title level={3} style={{ marginTop: 20 }}>自动修复编排</Typography.Title>
+          {data.fxv?.capability === 'fxv_persistence_not_tenant_scoped' ? (
+            <Alert type="info" showIcon style={{ marginBottom: 12 }}
+              message="自动修复的全局统计在多用户控制台不展示"
+              description="自动修复的记录库未按组织隔离——展示全局统计会跨组织泄露。修复执行记录见「组织与接入」页的 PR 审查管线。" />
+          ) : null}
           {data.fxv?.metrics?.alerts?.length ? (
-            <Alert type="warning" showIcon style={{ marginBottom: 12 }} message={`FXV 告警：${data.fxv.metrics.alerts.join('；')}`} />
+            <Alert type="warning" showIcon style={{ marginBottom: 12 }} message={`自动修复告警：${data.fxv.metrics.alerts.join('；')}`} />
           ) : null}
           {data.fxv?.metrics?.metrics ? (
             <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
@@ -170,7 +175,7 @@ export default function CorePage() {
           <Table
             size="small" rowKey="attempt_id" pagination={false}
             dataSource={data.fxv?.attempts || []}
-            locale={{ emptyText: data.fxv?.source === 'POSTGRESQL_LIVE' ? '没有修复编排记录（诚实零值）' : `FXV 数据源=${data.fxv?.source || '未知'}（不伪造记录）` }}
+            locale={{ emptyText: data.fxv?.source === 'POSTGRESQL_LIVE' ? '没有修复编排记录（诚实零值）' : data.fxv?.capability === 'fxv_persistence_not_tenant_scoped' ? '多用户控制台不展示自动修复全局记录（组织隔离）' : data.fxv?.source === 'FXV_PERSISTENCE_ABSENT' ? '自动修复记录库未初始化（暂无记录）' : `自动修复数据源=${data.fxv?.source || '未知'}（不伪造记录）` }}
             columns={[
               { title: 'Attempt', dataIndex: 'attempt_id', ellipsis: true, render: (v) => <span className="mono">{v}</span> },
               { title: '仓库/分支', ellipsis: true, render: (_, r) => `${r.repo}@${r.branch}` },

@@ -173,7 +173,7 @@ test('组织与接入：waiting 阶段（已绑定仓库、无 PR）显示等待
     const text = json();
     assert.ok(text.includes('检查 PR 同步'), 'waiting 阶段主 CTA 上屏');
     assert.ok(text.includes('该仓库还没有 PR'), '空 PR 人话空态上屏');
-    assert.ok(text.includes('等待 PR 同步') || text.includes('webhook'), 'webhook 等待说明上屏');
+    assert.ok(text.includes('等待 PR 同步') || text.includes('自动开始'), 'PR 同步等待说明上屏（术语纯化后）');
     assert.equal(countPrimaryButtons(renderer.toJSON()), 1, 'waiting 阶段全页仅 1 个主 CTA');
   } finally { await act(async () => { renderer.unmount(); }); }
 });
@@ -248,7 +248,7 @@ test('RAG 灌入：确认门开启前禁用；失败保留输入、人话报错�
     for (let i = 0; i < 10; i++) await act(async () => { await Promise.resolve(); });
     const text2 = allText(renderer.toJSON());
     assert.equal(ingestCalls, 1, '灌入端点恰好调用一次（进行中禁用重复提交）');
-    assert.ok(text2.includes('没有这个仓库的 RAG 权限'), '失败人话说明上屏');
+    assert.ok(text2.includes('没有这个仓库的知识检索权限'), '失败人话说明上屏（术语纯化后）');
     assert.ok(text2.includes('scope_denied'), '技术详情含机器 reason（可展开）');
     assert.ok(!text2.includes('\n    at '), '不渲染调用堆栈');
     assert.ok(text2.includes('acme/app') && text2.includes('main'), '失败后目标输入保留');
@@ -324,7 +324,7 @@ test('PipelinePanel：run 命中时展示 13 态状态、findings、agent 尝试
     '/api/mu/runs/run-9': () => [200, {
       run: { run_id: 'run-9', status: 'COMPLETED', trigger_source: 'webhook', head_sha: 'bbb2' },
       findings: [{ rule_id: 'P0-secret', severity: 'P0', path: 'src/a.js', line_start: 12, summary_masked: '疑似硬编码密钥（已脱敏）', remediation: '改用环境变量' }],
-      attempts: [{ agent_role: 'reviewer', attempt: 1, status: 'OK' }, { agent_role: 'leader', attempt: 1, status: 'OK' }],
+      attempts: [{ agent_role: 'reviewer', attempt: 1, status: 'DONE', provider: 'agentteams', latency_ms: 1200, created_at: '2026-09-29T11:00:00Z' }, { agent_role: 'leader', attempt: 1, status: 'DONE', provider: 'agentteams', latency_ms: 800, created_at: '2026-09-29T11:00:05Z' }],
       fixes: [{ status: 'DRY_RUN_OK' }],
       verifications: [{ verdict: 'PASS' }],
       dead_letters: [],
@@ -338,7 +338,10 @@ test('PipelinePanel：run 命中时展示 13 态状态、findings、agent 尝试
     assert.ok(text.includes('GitHub 事件'), '触发来源上屏');
     assert.ok(text.includes('P0-secret'), 'findings 规则上屏');
     assert.ok(text.includes('疑似硬编码密钥（已脱敏）'), '脱敏摘要在只读展示内');
-    assert.ok(text.includes('reviewer#1(OK)'), 'agent 尝试行上屏');
+    assert.ok(text.includes('Reviewer（审查）') && text.includes('Leader（裁定）'), '四 Agent 执行表上屏（角色标签）');
+    assert.ok(text.includes('AgentTeams（外部）'), '执行器列上屏');
+    assert.ok(text.includes('修复预演'), '修复预演段上屏');
+    assert.ok(text.includes('独立验证'), '独立验证段上屏');
     assert.ok(text.includes('修复为 dry-run（不写 GitHub）'), 'dry-run 边界文案');
     assert.ok(!text.includes('合并到 main') && !text.includes('Merge pull request'), '无 merge 写操作入口');
   } finally { await act(async () => { renderer.unmount(); }); }

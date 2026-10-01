@@ -648,6 +648,116 @@ export const MU_MIGRATIONS = [
        END $$`,
     ],
   },
+  {
+    // Wave 3.7 数据源纯化：fxv.attempts 漂移调和。
+    // 历史部署存在早期波次遗留的 fxv.attempts（attempt_id BIGSERIAL、无 state/state_detail
+    // 或 state_detail 为 TEXT），而现役读取方（lib/fxv/metrics.mjs、lib/fxv/api.mjs）按
+    // canonical 形状（state_detail JSONB、fxv.audit_events.meta JSONB）查询——TEXT 列上
+    // `->>` 直接报 `operator does not exist: text ->> unknown`，CorePage /api/fxv/* 面板
+    // 永久 BACKEND_ERROR（审计裁决 P1：正式导航页面）。
+    // 策略：canonical DDL 的唯一权威=lib/fxv/store.mjs FXV_SCHEMA_SQL（fresh DB 由其创建，
+    // 本迁移不在 fresh DB 抢先建主表避免 DDL 双源漂移）；本迁移只做「已存在漂移表」的
+    // 幂等调和 + 补齐读路径依赖的 fxv.audit_events（缺失时）。
+    // 兼容矩阵：fresh DB（无 fxv schema→全跳过）；v12 升级（漂移表→逐列调和）；空数据
+    // （循环零行）；旧 text payload（非法 JSON 逐行容错→'{}'）；新 JSONB payload
+    // （data_type 守卫直接跳过）；重复 migration（version 幂等 + 全语句可重放）；
+    // 回滚重放：DELETE FROM mu.schema_migrations WHERE version=13; 后重放安全（全守卫）。
+    version: 13,
+    name: 'fxv_attempts_drift_reconcile',
+    sql: [
+      // 0) schema 存在性（fresh DB 无 fxv schema 时后续 ALTER 不炸；仅建空命名空间，
+      //    不抢建任何表——canonical DDL 单一权威仍=fxv store）。
+      `CREATE SCHEMA IF NOT EXISTS fxv`,
+      // 1) attempt_id BIGSERIAL → TEXT（canonical 主键形状）；旧数字行转文本。
+      `DO $$
+       BEGIN
+         IF EXISTS (SELECT 1 FROM information_schema.columns
+           WHERE table_schema='fxv' AND table_name='attempts' AND column_name='attempt_id'
+             AND data_type IN ('bigint','integer','smallint')) THEN
+           ALTER TABLE fxv.attempts ALTER COLUMN attempt_id DROP DEFAULT;
+           ALTER TABLE fxv.attempts ALTER COLUMN attempt_id TYPE text USING attempt_id::text;
+         END IF;
+       END $$`,
+      // 2) state/state_detail 列补齐（旧表可能两者皆缺；fresh DB 无表→跳过）。
+      `DO $$ BEGIN
+         IF to_regclass('fxv.attempts') IS NOT NULL THEN
+           ALTER TABLE fxv.attempts ADD COLUMN IF NOT EXISTS state text;
+           ALTER TABLE fxv.attempts ADD COLUMN IF NOT EXISTS state_detail jsonb;
+         END IF;
+       END $$`,
+      // 3) state_detail TEXT → JSONB：逐行容错转换（非法 JSON→'{}'），再改列型。
+      `DO $$
+       DECLARE r record; v jsonb;
+       BEGIN
+         IF EXISTS (SELECT 1 FROM information_schema.columns
+           WHERE table_schema='fxv' AND table_name='attempts' AND column_name='state_detail'
+             AND data_type='text') THEN
+           FOR r IN SELECT attempt_id, state_detail AS sd FROM fxv.attempts LOOP
+             BEGIN
+               v := NULLIF(r.sd, '')::jsonb;
+             EXCEPTION WHEN OTHERS THEN v := NULL;
+             END;
+             UPDATE fxv.attempts SET state_detail = coalesce(v::text, '{}'::text)
+               WHERE attempt_id = r.attempt_id;
+           END LOOP;
+           ALTER TABLE fxv.attempts ALTER COLUMN state_detail TYPE jsonb USING
+             coalesce(state_detail::jsonb, '{}'::jsonb);
+           ALTER TABLE fxv.attempts ALTER COLUMN state_detail SET DEFAULT '{}'::jsonb;
+         END IF;
+       END $$`,
+      // 4) payload TEXT → JSONB（同策略；早期漂移表的 payload 曾为 TEXT）。
+      `DO $$
+       DECLARE r record; v jsonb;
+       BEGIN
+         IF EXISTS (SELECT 1 FROM information_schema.columns
+           WHERE table_schema='fxv' AND table_name='attempts' AND column_name='payload'
+             AND data_type='text') THEN
+           FOR r IN SELECT attempt_id, payload AS p FROM fxv.attempts LOOP
+             BEGIN
+               v := NULLIF(r.p, '')::jsonb;
+             EXCEPTION WHEN OTHERS THEN v := NULL;
+             END;
+             UPDATE fxv.attempts SET payload = coalesce(v::text, '{}'::text)
+               WHERE attempt_id = r.attempt_id;
+           END LOOP;
+           ALTER TABLE fxv.attempts ALTER COLUMN payload TYPE jsonb USING
+             coalesce(payload::jsonb, '{}'::jsonb);
+         END IF;
+       END $$`,
+      // 5) 读路径依赖的 fxv.audit_events（metrics 的 archive 域）缺失时补齐——
+      //    仅当 fxv.attempts 存在（子系统在用）才创建，fresh 未启用子系统不抢建。
+      `DO $$
+       BEGIN
+         IF to_regclass('fxv.attempts') IS NOT NULL THEN
+           CREATE TABLE IF NOT EXISTS fxv.audit_events (
+             seq        BIGSERIAL PRIMARY KEY,
+             attempt_id TEXT NOT NULL,
+             kind       TEXT NOT NULL,
+             from_state TEXT,
+             to_state   TEXT,
+             actor      TEXT NOT NULL,
+             reason     TEXT,
+             meta       JSONB NOT NULL DEFAULT '{}'::jsonb,
+             created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+           );
+         END IF;
+       END $$`,
+    ],
+  },
+  {
+    // Wave 3.8 队首阻塞修复（HOL）：mu.job 增 locked_at（领取时间戳）——
+    // worker 崩溃/重启遗留的孤立 running job 可被 tick 定期回收回队（此前
+    // 无 lease 记录，running 行永久滞留）。
+    // 回滚：DELETE FROM mu.schema_migrations WHERE version=14;
+    //       DROP INDEX IF EXISTS mu_job_running_locked_idx;
+    //       ALTER TABLE mu.job DROP COLUMN IF EXISTS locked_at;
+    version: 14,
+    name: 'mu_job_locked_at',
+    sql: [
+      `ALTER TABLE mu.job ADD COLUMN IF NOT EXISTS locked_at TIMESTAMPTZ`,
+      `CREATE INDEX IF NOT EXISTS mu_job_running_locked_idx ON mu.job (state, locked_at)`,
+    ],
+  },
 ];
 
 export const MU_SCHEMA_LATEST = MU_MIGRATIONS[MU_MIGRATIONS.length - 1].version;

@@ -133,7 +133,7 @@ test('C 链页：组件态/总体态走 cchainMap 中文标签（NOT_CONFIGURED/
   const { renderer, json } = await renderRoute('/cchain');
   try {
     const text = json();
-    assert.ok(text.includes('C 链状态'), 'C 链页应渲染');
+    assert.ok(text.includes('签名验证状态'), '签名验证页应渲染（术语纯化后）');
     assert.ok(text.includes('已阻断'), "overall BLOCKED 应映射'已阻断'");
     assert.ok(text.includes('未配置'), "NOT_CONFIGURED 应映射'未配置'");
     assert.ok(text.includes('已公证'), "ATTESTED 应映射'已公证'");
@@ -153,7 +153,7 @@ test('RAG 试验页：backend_not_wired 状态走 ragMap 中文标签', async ()
   const { renderer, json } = await renderRoute('/rag-trial');
   try {
     const text = json();
-    assert.ok(text.includes('RAG 本地试验'), 'RAG 页应渲染');
+    assert.ok(text.includes('知识检索（试用）'), '知识检索页应渲染（术语纯化后）');
     assert.ok(text.includes('后端未接线'), "backend_not_wired 应映射'后端未接线'");
     assert.ok(text.includes('不构成 finding/ticket/gate/VERIFIED'), '边界文案应含 VERIFIED');
   } finally {
@@ -181,7 +181,7 @@ test('Core 页 FXV 区块：ERROR_FATAL/VERIFIED 走 fxvMap 中文标签', async
   const { renderer, json } = await renderRoute('/core');
   try {
     const text = json();
-    assert.ok(text.includes('FXV 修复编排'), 'FXV 区块应渲染');
+    assert.ok(text.includes('自动修复编排'), '自动修复区块应渲染（术语纯化后）');
     assert.ok(text.includes('致命错误'), "ERROR_FATAL 应映射'致命错误'");
     assert.ok(text.includes('已验证'), "VERIFIED 应映射'已验证'");
     assert.ok(text.includes('归档校验通过'), "artifact COMPLETE 应映射'归档校验通过'");
