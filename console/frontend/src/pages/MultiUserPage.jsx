@@ -1,6 +1,6 @@
 import { Alert, Button, Input, InputNumber, Modal, Popconfirm, Segmented, Select, Space, Switch, Table, Tag, Typography } from 'antd';
 import { ReloadOutlined, CheckCircleOutlined } from '@ant-design/icons';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { readCsrfCookie } from '../api-live.js';
 
 // 多用户面（Developer Edition Beta onboarding）。
@@ -704,10 +704,19 @@ export default function MultiUserPage() {
     return () => { dead = true; };
   }, [session, effectiveRepoId]);
 
+  const detailRef = useRef(null);
   const openPr = useCallback(async (prId) => {
     setActionMsg(null);
     const d = await muGet(`/api/mu/prs/${prId}`);
-    if (d.status === 200) setPrDetail(d.body);
+    if (d.status === 200) {
+      setPrDetail(d.body);
+      // 详情面板渲染在 PR 表下方——等下一帧滚动到它，避免"点了没反应其实在视口外"
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          detailRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+      });
+    }
   }, []);
 
   const runAction = useCallback(async (label, path, payload) => {
@@ -729,8 +738,18 @@ export default function MultiUserPage() {
   const shownPrs = useMemo(() => {
     if (prsState !== 'ready' || !prs) return [];
     const needle = numFilter.trim();
-    if (!needle) return prs;
-    return prs.filter((p) => String(p.provider_pr_number ?? '').includes(needle));
+    const pool = needle
+      ? prs.filter((p) => String(p.provider_pr_number ?? '').includes(needle))
+      : prs;
+    // 同一 PR 多行（每个历史 head 一行——upsert 键含 head_sha）→ 只显最新一行，
+    // 历史 head 收进 PR 详情；避免表被同一 PR 的历史行刷长。
+    const latest = new Map();
+    for (const p of pool) {
+      const k = String(p.provider_pr_number);
+      const prev = latest.get(k);
+      if (!prev || String(p.updated_at ?? '') > String(prev.updated_at ?? '')) latest.set(k, p);
+    }
+    return [...latest.values()];
   }, [prs, prsState, numFilter]);
 
   const latestPr = useMemo(() => {
@@ -939,7 +958,7 @@ export default function MultiUserPage() {
               ) : null}
 
               {prDetail ? (
-                <div className="panel" style={{ padding: 'var(--sp-4)', marginTop: 12 }}>
+                <div ref={detailRef} className="panel" style={{ padding: 'var(--sp-4)', marginTop: 12, scrollMarginTop: 72 }}>
                   <Space size="large" wrap>
                     <span>repo：<code>{prDetail.pull_request?.repo_owner}/{prDetail.pull_request?.repo_name}</code></span>
                     <span>head：<code>{prDetail.pull_request?.head_sha?.slice(0, 12)}</code></span>
