@@ -734,6 +734,23 @@ export default function MultiUserPage() {
   const selectedPrRef = (urlPr && effectiveRepo)
     ? { repoId: effectiveRepoId, owner: effectiveRepo.owner, name: effectiveRepo.name, prNumber: urlPr }
     : null;
+  // Escape=关闭详情（文档级——焦点在列表行上时同样生效；与关闭钮/浏览器返回一致）
+  useEffect(() => {
+    if (!urlPr) return undefined;
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      const prevNum = document.querySelector('.mu-pr-row.is-selected')?.textContent.match(/#(\d+)/)?.[1];
+      selectPr(null);
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        const row = prevNum
+          ? [...document.querySelectorAll('.mu-pr-row')].find(x => x.textContent.includes('#' + prevNum))
+          : null;
+        (row ?? document.querySelector('.mu-pr-list'))?.focus?.();
+      }));
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [urlPr, selectPr]);
 
   const runAction = useCallback(async (label, path, payload) => {
     setActionMsg(null);
@@ -970,18 +987,7 @@ export default function MultiUserPage() {
                   })}
                 </div>
 
-                <div className="mu-pr-detail" aria-live="polite"
-                  onKeyDown={(e) => {
-                    if (e.key !== 'Escape') return;
-                    const prevNum = document.querySelector('.mu-pr-row.is-selected')?.textContent.match(/#(\d+)/)?.[1];
-                    selectPr(null);
-                    requestAnimationFrame(() => requestAnimationFrame(() => {
-                      const row = prevNum
-                        ? [...document.querySelectorAll('.mu-pr-row')].find(x => x.textContent.includes('#' + prevNum))
-                        : null;
-                      (row ?? document.querySelector('.mu-pr-list'))?.focus?.();
-                    }));
-                  }}>
+                <div className="mu-pr-detail" aria-live="polite">
                   <button type="button" className="mu-detail-close"
                     aria-label="关闭 PR 详情"
                     onClick={() => {
