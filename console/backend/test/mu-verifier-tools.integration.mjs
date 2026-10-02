@@ -84,6 +84,17 @@ async function mkVerifiedReadyRun(snapshot) {
   await ext.leaderConsumeFindings(pool, { run, binding: { tenantId: T1,
     repoId: repo.repo_id, prId: pr.pr_id, headSha: head }, protection: { configured: false } });
   const binding = { tenantId: T1, repoId: repo.repo_id, prId: pr.pr_id, headSha: head };
+  // v16 审批门：真实路径放行（P0/P1 票逐条 approve → run FIX_QUEUED）
+  {
+    const faMod = await import('../lib/multiuser/fix-approval.mjs');
+    await faMod.ensureFixApprovals(pool, { run, binding });
+    const ts = (await pool.query(
+      `SELECT approval_id FROM mu.fix_approval WHERE run_id=$1 AND status='PENDING'`, [run.run_id])).rows;
+    for (const t of ts) {
+      await faMod.decideFixApproval(pool, { approvalId: t.approval_id, decision: 'approve',
+        decidedBy: 'test:maintainer', tenantId: T1 });
+    }
+  }
   const fix = await fx.runFixerSandbox(pool, { run, binding, snapshot, findings: FINDINGS,
     context: { input_digest: 'f'.repeat(32) },
     deps: { fetchImpl: mkPatchFetch([]), baseUrl: 'https://mock', apiKey: 'k', model: 'deepseek-chat' } });
