@@ -78,6 +78,23 @@ export function MuPrDetailContent({ prRef, onChanged }) {
   }
 
   const pr = detail.pull_request;
+  // ADR-002 分立结果列：四域互不冒充（legacy run 零 v2 列→按"未运行"呈现，不猜值）
+  const STAGE_COPY = {
+    not_run: '未运行', no_blocking_findings: '无阻断发现', changes_requested: '要求修改',
+    inconclusive: '不确定', passed: '通过', failed: '未通过', unavailable: '不可用',
+    unknown: '未知（protection 不明）', eligible: '具备资格', ineligible: '不具备资格',
+  };
+  const STAGE_TONE = {
+    no_blocking_findings: 'green', changes_requested: 'red', inconclusive: 'orange',
+    passed: 'green', failed: 'red', unavailable: 'orange', eligible: 'green',
+    ineligible: 'red', unknown: 'orange', not_run: 'default',
+  };
+  const lr = detail.latest_run;
+  const stageTag = (label, v) => (
+    <span className="mu-detail-meta">{'\u00A0'}{label}：
+      <Tag color={STAGE_TONE[v] ?? 'default'}>{STAGE_COPY[v] ?? v ?? '未运行'}</Tag>
+    </span>
+  );
   return (
     <div className="mu-detail-body">
       <div className="mu-detail-head">
@@ -92,6 +109,34 @@ export function MuPrDetailContent({ prRef, onChanged }) {
           {pr.title ? <span className="mu-detail-meta muted">{String(pr.title).slice(0, 60)}</span> : null}
         </Space>
       </div>
+
+      {lr ? (
+        <div className="mu-stage-verdicts" style={{ margin: '8px 0', lineHeight: 2 }}>
+          {stageTag('审查结论', lr.review_verdict)}
+          {stageTag('验证结论（模型域）', lr.verification_verdict)}
+          {stageTag('测试证据（工具域）', lr.tests_status)}
+          {stageTag('合并资格', lr.merge_eligibility)}
+          {lr.model_judgment ? (
+            <span className="mu-detail-meta">模型判定（原始）：
+              <Tag color={lr.model_judgment.verdict === 'PASS' ? 'green' : lr.model_judgment.verdict === 'FAIL' ? 'red' : 'orange'}>
+                {lr.model_judgment.verdict}
+              </Tag>
+              <span className="muted" style={{ fontSize: 12 }}>（输入={lr.model_judgment.input}，仅审计留痕）</span>
+            </span>
+          ) : null}
+          {lr.test_evidence ? (
+            <span className="mu-detail-meta" style={{ fontSize: 12 }}>工具证据：<code className="mono">{lr.test_evidence}</code></span>
+          ) : null}
+          {lr.review_mode ? <span className="mu-detail-meta">模式：<Tag>{lr.review_mode === 'external_api' ? '外部 API' : lr.review_mode === 'local' ? '本地接口' : '仅证据'}</Tag></span> : null}
+          {lr.architecture_version === 'v2' && Number(lr.code_egress ?? 0) > 0 ? (
+            <span className="mu-detail-meta">出站：<Tag color="blue">{Number(lr.code_egress)} 次调用（审计在案）</Tag></span>
+          ) : null}
+          <Typography.Paragraph type="secondary" style={{ fontSize: 12, margin: 0 }}>
+            模型未读取完整 patch；Verifier 的模型结论可能为 inconclusive，工具验证结果独立有效。
+            四项独立判定互不冒充：protection 不明时合并资格恒为"未知"（fail-closed）。
+          </Typography.Paragraph>
+        </div>
+      ) : null}
 
       <Space wrap className="mu-detail-actions">
         <Button size="small" onClick={() => runAction('触发只读审查', `/api/mu/prs/${pr.pr_id}/review`)}>触发只读审查</Button>

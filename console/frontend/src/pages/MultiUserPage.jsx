@@ -359,6 +359,216 @@ function AgentPolicyPanel({ can, actions }) {
   );
 }
 
+// ── 审查架构面板（ADR-002 PR F：三档模式 + Provider consent + 出站披露）──
+// 红线：无 API Key/endpoint 输入；Provider 由注册表披露（后端脱敏投影）；
+// external_api 必须先 consent（可随时撤销——即时阻断出站）；arch_enabled=false 只读。
+const REVIEW_MODE_COPY = {
+  evidence_only: { label: '仅证据审查（零出站）', tone: 'green',
+    desc: '默认。规则引擎审查证据面，代码不出站——无 Provider 调用。' },
+  external_api: { label: '外部 API 审查', tone: 'blue',
+    desc: '代码经双通道脱敏后送出至已同意的 Provider；每次调用落出站审计。' },
+  local: { label: '本地接口（预留）', tone: 'default',
+    desc: '接口契约就绪——本版本无本地执行器，选择后审查走证据面。' },
+};
+const VERDICT_LABEL = {
+  review_verdict: '审查结论',
+  verification_verdict: '验证结论',
+  tests_status: '测试证据',
+  merge_eligibility: '合并资格',
+};
+const VERDICT_TONE = {
+  no_blocking_findings: 'green', changes_requested: 'red', inconclusive: 'orange',
+  not_run: 'default', passed: 'green', failed: 'red', unavailable: 'orange',
+  unknown: 'orange', eligible: 'green', ineligible: 'red',
+};
+
+function ReviewPolicyPanel({ can, actions }) {
+  const [data, setData] = useState(null);
+  const [providers, setProviders] = useState([]);
+  const [draft, setDraft] = useState(null);
+  const [msg, setMsg] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [egress, setEgress] = useState(null);
+  const canManage = Array.isArray(actions) && actions.includes('manage_instance');
+  const load = useCallback(async () => {
+    const r = await fetch('/api/mu/review-policy', { credentials: 'same-origin' });
+    if (r.status !== 200) { setData({ err: r.status === 403 ? 'forbidden' : `HTTP ${r.status}` }); return; }
+    const j = await r.json().catch(() => null);
+    setData(j); setDraft(j?.policy ? { ...j.policy } : null); setMsg(null);
+    const pr = await fetch('/api/mu/providers', { credentials: 'same-origin' });
+    if (pr.status === 200) setProviders((await pr.json().catch(() => null))?.providers ?? []);
+    // 出站披露（read_audit；403 时隐藏——面板主体仍可用）
+    const eg = await fetch('/api/mu/egress-events?limit=50', { credentials: 'same-origin' });
+    setEgress(eg.status === 200 ? await eg.json().catch(() => null) : null);
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const post = async (path, payload) => {
+    const r = await fetch(path, { method: 'POST', credentials: 'same-origin',
+      headers: { 'content-type': 'application/json', 'X-CSRF-Token': readCsrfCookie() },
+      body: JSON.stringify(payload ?? {}) });
+    return { status: r.status, body: await r.json().catch(() => null) };
+  };
+
+  const save = async () => {
+    setSaving(true); setMsg(null);
+    const r = await fetch('/api/mu/review-policy', { method: 'PUT', credentials: 'same-origin',
+      headers: { 'content-type': 'application/json', 'X-CSRF-Token': readCsrfCookie() },
+      body: JSON.stringify({ ...draft, expected_policy_version: data.policy.policy_version }) });
+    const j = await r.json().catch(() => null);
+    setSaving(false);
+    if (r.status === 200) setMsg({ type: 'success', text: `已保存（策略版本 v${j.policy.policy_version}——仅影响新建审查任务；运行中的任务沿用创建时快照）` });
+    else if (r.status === 409) setMsg({ type: 'warning', text: `版本冲突：他人已更新到 v${j?.error?.current_policy_version}——已刷新，请基于新版本重试` });
+    else setMsg({ type: 'error', text: `保存失败：${j?.error?.reason ?? r.status}` });
+    await load();
+  };
+
+  const acceptConsent = async () => {
+    const provider = providers.find((p) => p.provider_id === draft.provider_id);
+    if (!provider) return;
+    // 确认摘要 = 披露要素摘要（后端登记 acknowledgement digest——前端不拼造承诺文本）
+    const r = await post('/api/mu/review-policy/consent', {
+      provider_id: provider.provider_id, consent_version: `cv-${provider.provider_id}-v1`,
+      acknowledgement_digest: btoa(unescape(encodeURIComponent(
+        [provider.provider_id, provider.retention_summary, provider.training_summary,
+          provider.region_summary, provider.policy_reference].join('|')))).replace(/=+$/, ''),
+      policy_version: Number(data.policy.policy_version) });
+    setMsg(r.status === 200
+      ? { type: 'success', text: '已记录出站同意（可随时撤销——撤销即时阻断后续出站）' }
+      : { type: 'error', text: `同意失败：${r.body?.error?.reason ?? r.status}` });
+    await load();
+  };
+  const revokeConsent = async () => {
+    const r = await post('/api/mu/review-policy/consent/revoke', { provider_id: draft.provider_id });
+    setMsg(r.status === 200
+      ? { type: 'warning', text: '已撤销同意——后续出站即时阻断（进行中任务下次调用前生效）' }
+      : { type: 'error', text: `撤销失败：${r.body?.error?.reason ?? r.status}` });
+    await load();
+  };
+
+  if (data?.err === 'forbidden') {
+    return <Alert type="info" showIcon message="审查架构策略"
+      description="仅组织成员可查看（当前无权限）。" />;
+  }
+  if (data?.err) return <Alert type="error" showIcon message="审查架构策略加载失败" description={data.err} />;
+  if (!data || !draft) return <Typography.Text type="secondary">加载中…</Typography.Text>;
+
+  const p = data.policy;
+  const consented = Boolean(p.consent_version);
+  const selectedProvider = providers.find((x) => x.provider_id === draft.provider_id) ?? null;
+  const dirty = JSON.stringify(draft) !== JSON.stringify(p);
+  const mode = REVIEW_MODE_COPY[draft.review_mode] ?? { label: draft.review_mode, tone: 'default', desc: '' };
+  return (
+    <div>
+      <Space size="large" wrap style={{ marginBottom: 8 }}>
+        <Tag color={mode.tone}>{mode.label}</Tag>
+        <Tag>策略版本 v{p.policy_version}</Tag>
+        {p.review_mode === 'external_api' ? (
+          <Tag color={consented ? 'green' : 'red'}>{consented ? `已同意出站（${p.consent_version}）` : '未同意出站——外部审查将被拒绝'}</Tag>
+        ) : null}
+        {!data.arch_enabled ? <Tag color="orange">架构 v2 未启用——只读（beta.5 兼容态）</Tag> : null}
+      </Space>
+      <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>{mode.desc}</Typography.Paragraph>
+      <Space direction="vertical" size="middle" style={{ width: '100%', maxWidth: 680 }} aria-label="审查架构策略设置">
+        <div>
+          <Typography.Text type="secondary">审查模式（三档——仅影响新建任务）</Typography.Text>
+          <div>
+            <Segmented value={draft.review_mode} disabled={!canManage || !data.arch_enabled}
+              onChange={(v) => setDraft({ ...draft, review_mode: v,
+                // 切离 external_api 清空 provider 语义（后端 validate 同规则——双保险）
+                ...(v !== 'external_api' ? { provider_id: null, model_id: null } : {}) })}
+              options={Object.entries(REVIEW_MODE_COPY).map(([k, v]) => ({ value: k, label: v.label }))} />
+          </div>
+        </div>
+        {draft.review_mode === 'external_api' ? (
+          <>
+            <Space wrap>
+              <span>
+                <Typography.Text type="secondary">Provider（注册表——未经审核不可用）</Typography.Text>
+                <div><Select style={{ minWidth: 220 }} value={draft.provider_id} disabled={!canManage || !data.arch_enabled}
+                  onChange={(v) => { const pr = providers.find((x) => x.provider_id === v);
+                    setDraft({ ...draft, provider_id: v, model_id: pr?.state === 'verified' ? (draft.model_id ?? null) : null }); }}
+                  options={providers.map((pr) => ({ value: pr.provider_id,
+                    label: `${pr.display_name}（${pr.policy_status === 'verified' ? '已审核' : pr.policy_status === 'blocked' ? '已封禁' : '自担风险'}）`,
+                    disabled: pr.policy_status === 'blocked' }))}
+                  aria-label="Provider 选择" /></div>
+              </span>
+              <span>
+                <Typography.Text type="secondary">模型</Typography.Text>
+                <div><Input style={{ width: 200 }} value={draft.model_id ?? ''} disabled={!canManage || !data.arch_enabled}
+                  onChange={(e) => setDraft({ ...draft, model_id: e.target.value || null })}
+                  placeholder="如 deepseek-chat" aria-label="模型 id" /></div>
+              </span>
+            </Space>
+            {selectedProvider ? (
+              <div className="mu-consent-disclosure" style={{ padding: '8px 12px', background: 'var(--bg-inset, #fafafa)', borderRadius: 4 }}>
+                <Typography.Text strong>Provider 披露</Typography.Text>
+                <ul style={{ margin: '4px 0 0', paddingLeft: 18, fontSize: 12 }}>
+                  <li>数据保留：{selectedProvider.retention_summary ?? '—'}</li>
+                  <li>训练用途：{selectedProvider.training_summary ?? '—'}</li>
+                  <li>数据地域：{selectedProvider.region_summary ?? '—'}</li>
+                  <li>政策参考：<code>{selectedProvider.policy_reference ?? '—'}</code></li>
+                  <li>端点（仅 host）：<code>{selectedProvider.endpoint_origin ?? '—'}</code></li>
+                </ul>
+              </div>
+            ) : null}
+            {canManage && data.arch_enabled ? (
+              consented ? (
+                <Popconfirm title="撤销出站同意？" description="撤销后后续 Provider 调用即时阻断（fail-closed）。"
+                  onConfirm={revokeConsent} okText="确认撤销" cancelText="取消">
+                  <Button danger>撤销出站同意</Button>
+                </Popconfirm>
+              ) : (
+                <Popconfirm title="同意代码出站？" description="代码经双通道脱敏后送出至该 Provider；每次调用记录出站审计（文件清单+字节数+digest）。可随时撤销。"
+                  onConfirm={acceptConsent} okText="我已了解并同意" cancelText="取消"
+                  disabled={!selectedProvider}>
+                  <Button type="primary" danger ghost disabled={!selectedProvider}>同意代码出站（确认门）</Button>
+                </Popconfirm>
+              )
+            ) : null}
+          </>
+        ) : null}
+        {canManage && data.arch_enabled ? (
+          <Popconfirm title="保存审查架构策略？" description="仅影响新建审查任务；运行中的任务沿用创建时快照（policy snapshot 冻结）。"
+            onConfirm={save} okText="确认保存" cancelText="取消" disabled={!dirty || saving}>
+            <Button type="primary" loading={saving} disabled={!dirty}>保存策略（确认门）</Button>
+          </Popconfirm>
+        ) : <Tag>{canManage ? '只读（架构 v2 未启用）' : '只读（需平台管理员）'}</Tag>}
+        {msg ? <Alert type={msg.type} showIcon message={msg.text} /> : null}
+        <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 0 }}>
+          API Key 与端点属于部署级机密（服务器环境变量管理）——本页面不提供输入或查看。
+          出站前每次调用均经实时授权（模式/Provider/同意三重校验——撤销即时生效）。
+        </Typography.Paragraph>
+        {egress?.events ? (
+          <details className="tech-details">
+            <summary>出站披露（最近 {egress.events.length} 条——文件清单/字节/digest，零代码正文）</summary>
+            <div className="tech-body">
+              {egress.events.length === 0 ? <Typography.Text type="secondary">暂无出站记录（零出站模式或尚未调用）。</Typography.Text> : (
+                <Table rowKey={(e) => e.event_id} size="small" pagination={false} scroll={{ x: true }}
+                  dataSource={egress.events} aria-label="出站审计记录"
+                  columns={[
+                    { title: '时间', dataIndex: 'created_at', width: 150,
+                      render: (v) => String(v ?? '').slice(0, 19).replace('T', ' ') },
+                    { title: '阶段', dataIndex: 'agent_role', width: 80,
+                      render: (v) => <Tag>{v ?? '—'}</Tag> },
+                    { title: 'Provider/模型', width: 170,
+                      render: (e) => <code>{e.provider_id}/{e.model_id ?? '—'}</code> },
+                    { title: '文件数', width: 70, render: (e) => (e.files ?? []).length },
+                    { title: '字节/tokens', width: 120,
+                      render: (e) => `${Number(e.bytes_sent ?? 0).toLocaleString()} / ${Number(e.tokens_sent ?? 0).toLocaleString()}` },
+                    { title: '脱敏', dataIndex: 'redactions_applied', width: 70 },
+                    { title: 'input digest', dataIndex: 'input_digest', ellipsis: true,
+                      render: (v) => <code className="mono">{v}</code> },
+                  ]} />
+              )}
+            </div>
+          </details>
+        ) : null}
+      </Space>
+    </div>
+  );
+}
+
 function GHAppPanel({ can, session, repos, onBound, onUnbound }) {
   const [status, setStatus] = useState(null);
   const [insts, setInsts] = useState(null);
@@ -886,7 +1096,7 @@ export default function MultiUserPage() {
           </div>
 
           <details className="tech-details mu-admin-drawer">
-            <summary>接入管理（GitHub App · 成员 · Agent 策略）——默认折叠，PR 审查为主工作区</summary>
+            <summary>接入管理（GitHub App · 成员 · Agent 策略 · 审查架构）——默认折叠，PR 审查为主工作区</summary>
             <div className="tech-body">
           {ob.stage !== 'login' ? (
             ob.done.review ? (
@@ -900,6 +1110,10 @@ export default function MultiUserPage() {
                   <section id="mu-agent-policy" style={{ marginTop: 16 }}>
                     <div className="section-head"><h3>Agent 与模型（运行策略）</h3></div>
                     <AgentPolicyPanel can={can} actions={session?.actions} />
+                  </section>
+                  <section id="mu-review-arch" style={{ marginTop: 16 }}>
+                    <div className="section-head"><h3>审查架构（三档模式 · 出站同意 · 出站披露）</h3></div>
+                    <ReviewPolicyPanel can={can} actions={session?.actions} />
                   </section>
                 </div>
               </details>

@@ -853,6 +853,48 @@ export const MU_MIGRATIONS = [
       `ALTER TABLE mu.review_run ADD COLUMN IF NOT EXISTS code_egress INT NOT NULL DEFAULT 0`,
       `ALTER TABLE mu.review_run ADD COLUMN IF NOT EXISTS consent_version TEXT`,
       `ALTER TABLE mu.review_run ADD COLUMN IF NOT EXISTS policy_snapshot_digest TEXT`,
+      `ALTER TABLE mu.agent_attempt DROP CONSTRAINT IF EXISTS mu_agent_attempt_provider_check2`,
+      `ALTER TABLE mu.agent_attempt DROP CONSTRAINT IF EXISTS agent_attempt_provider_check`,
+      `DO $$ BEGIN
+         IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'agent_attempt_provider_check') THEN
+           ALTER TABLE mu.agent_attempt ADD CONSTRAINT agent_attempt_provider_check
+             CHECK (provider IN ('deterministic','llm','mock','fxv','deterministic_mock','openai_compatible','agentteams','external_api'));
+         END IF;
+       END $$`,
+      `ALTER TABLE mu.agent_finding ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'precheck'
+         CHECK (source IN ('precheck','reviewer'))`,
+      `ALTER TABLE mu.agent_finding DROP CONSTRAINT IF EXISTS agent_finding_run_key`,
+      `ALTER TABLE mu.agent_finding DROP CONSTRAINT IF EXISTS mu_agent_finding_unique`,
+      `DO $$ BEGIN
+         IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'mu_agent_finding_unique') THEN
+           ALTER TABLE mu.agent_finding ADD CONSTRAINT mu_agent_finding_unique
+             UNIQUE (run_id, rule_id, path, line_start, source);
+         END IF;
+       END $$`,
+      `CREATE TABLE IF NOT EXISTS mu.code_egress_event (
+         event_id      BIGSERIAL PRIMARY KEY,
+         tenant_id     UUID NOT NULL,
+         repo_id       UUID,
+         run_id        UUID NOT NULL,
+         attempt_id    UUID,
+         provider_id   TEXT NOT NULL,
+         model_id      TEXT,
+         head_sha      TEXT NOT NULL,
+         diff_digest   TEXT,
+         input_digest  TEXT NOT NULL,
+         files         TEXT[] NOT NULL DEFAULT '{}',
+         bytes_sent    INT NOT NULL DEFAULT 0,
+         tokens_sent   INT NOT NULL DEFAULT 0,
+         redactions_applied INT NOT NULL DEFAULT 0,
+         policy_version INT,
+         consent_version TEXT,
+         response_digest TEXT,
+         timeout       BOOLEAN NOT NULL DEFAULT false,
+         retry_count   INT NOT NULL DEFAULT 0,
+         created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+       )`,
+      `CREATE INDEX IF NOT EXISTS mu_code_egress_event_run_idx
+         ON mu.code_egress_event (run_id, input_digest)`,
       `DO $$ BEGIN
          IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'mu_review_run_v2_mode_check') THEN
            ALTER TABLE mu.review_run ADD CONSTRAINT mu_review_run_v2_mode_check CHECK (
@@ -869,6 +911,25 @@ export const MU_MIGRATIONS = [
              )
            );
          END IF;
+       END $$`,
+      // PR D/E：fix_attempt 状态机扩展（STALE=新 head 旧 patch 过期；APPLIED=人工应用，
+      // 本版本永不自动到达）+ verification_attempt 判定加 INCONCLUSIVE（模型不可用 fail-closed 落行可审计）。
+      // 旧约束名来自 v1/v7 建表内联 CHECK（无显式名）——按定义 pattern 查找后替换。
+      `DO $$ DECLARE c text; BEGIN
+         SELECT conname INTO c FROM pg_constraint
+          WHERE conrelid = 'mu.fix_attempt'::regclass AND contype = 'c'
+            AND pg_get_constraintdef(oid) ILIKE '%PLANNED%';
+         IF c IS NOT NULL THEN EXECUTE format('ALTER TABLE mu.fix_attempt DROP CONSTRAINT %I', c); END IF;
+         ALTER TABLE mu.fix_attempt ADD CONSTRAINT mu_fix_attempt_status_check
+           CHECK (status IN ('PLANNED','DRY_RUN','FAILED','SKIPPED','STALE','APPLIED'));
+       END $$`,
+      `DO $$ DECLARE c text; BEGIN
+         SELECT conname INTO c FROM pg_constraint
+          WHERE conrelid = 'mu.verification_attempt'::regclass AND contype = 'c'
+            AND pg_get_constraintdef(oid) ILIKE '%PASS%';
+         IF c IS NOT NULL THEN EXECUTE format('ALTER TABLE mu.verification_attempt DROP CONSTRAINT %I', c); END IF;
+         ALTER TABLE mu.verification_attempt ADD CONSTRAINT mu_verification_attempt_verdict_check
+           CHECK (verdict IN ('PASS','FAIL','BLOCKED','INCONCLUSIVE'));
        END $$`,
     ],
   },
