@@ -11,6 +11,7 @@ import { ExecutionBadge, VerdictBadge, GateBadge, PublishBadge } from '../status
 import { stageMap, outcomeMap } from '../status-map.js';
 import { fmtTime } from '../format.js';
 import { Badge, Empty, ErrorBox, SkeletonRows, Spinner } from '../ui.jsx';
+import { MuPrDetail } from './MuPrDetail.jsx';
 
 // P2 收敛：PG/contract 路径的状态展示与快照路径同一来源（status-map.js 单源徽章），
 // 未知枚举走统一兜底（label=原始值 + note"未知状态"），不再裸枚举直出。
@@ -45,6 +46,12 @@ export default function PrDetailPage() {
   const config = useAppConfig();
   const { source } = useDataSource(config);
 
+  // MU 部署（Wave 3.7 multiuser 源）：legacy 路由 /repos/:owner/:name/pr/:n 与
+  // /mu 路由参数同构——直接渲染 MU 原生详情（此前漏分派掉进 snapshot 分支，
+  // 用户 2026-10-02 报告"点进去是空页"）。URL 保持不变（书签/中键直达兼容）。
+  if (source.kind === 'multiuser') {
+    return <MuPrDetail />;
+  }
   if (source.kind === 'contract') {
     return <ContractPrDetail owner={owner} name={name} prNumber={prNumber} />;
   }

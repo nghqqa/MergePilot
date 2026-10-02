@@ -50,7 +50,9 @@ async function loadApp() {
   fs.mkdirSync(outDir, { recursive: true });
   const entry = path.join(outDir, 'entry.mjs');
   const bundle = path.join(outDir, 'bundle.cjs');
-  fs.writeFileSync(entry, `import App from ${JSON.stringify(toFwd(path.join(FRONTEND, 'src/App.jsx')))};\nexport { App };`);
+  fs.writeFileSync(entry, `import App from ${JSON.stringify(toFwd(path.join(FRONTEND, 'src/App.jsx')))};\n`
+    + `import { clearRuntimeConfigCache } from ${JSON.stringify(toFwd(path.join(FRONTEND, 'src/data/config.js')))};\n`
+    + 'export { App, clearRuntimeConfigCache };\n');
   await build({
     entryPoints: [entry], bundle: true, format: 'cjs', platform: 'node', outfile: bundle,
     jsx: 'automatic', external: ['react', 'react-dom', 'scheduler', 'react-router-dom'],
@@ -59,6 +61,11 @@ async function loadApp() {
   const mod = await import(pathToFileURL(bundle).href);
   // CJS bundle 互操作：named export `App` 可能落在 mod.App 或 mod.default.App
   return mod.App ?? mod.default?.App ?? mod.default ?? mod;
+}
+let clearConfigCache = null;
+async function appEntry() {
+  const mod = await import(pathToFileURL(path.join(FRONTEND, 'node_modules', '.pages-smoke', 'bundle.cjs')).href);
+  return (mod.clearRuntimeConfigCache ?? mod.default?.clearRuntimeConfigCache ?? null);
 }
 
 const COMMON = {
@@ -71,6 +78,10 @@ const COMMON = {
 };
 
 async function renderRoute(route) {
+  // config.js 模块级 cached 跨测试泄漏（前一个用例的 /api/health 声明会固化模式）——
+  // 每次渲染前用测试辅助清缓存，保证本用例 ROUTES 的 health 声明真实生效
+  clearConfigCache ??= await appEntry();
+  if (clearConfigCache) clearConfigCache();
   const App = await loadApp();
   let renderer;
   await act(async () => {
@@ -110,6 +121,34 @@ test('PrDetail（console-pg）：SUCCEEDED/RUNNING/outcome 走 status-map 中文
     assert.ok(text.includes('审查完成 · 需人工处理'), 'REVIEW_COMPLETED_ACTION_REQUIRED 应映射为中文标签');
     assert.ok(!text.includes('请求失败') && !text.includes('is not defined'), '不得进入错误态/裸 JS 错误');
     assert.ok(calls.some((c) => c.startsWith('/pg/api/')), '应请求 /pg/api/*（console-pg 数据源真实生效）');
+  } finally {
+    await act(async () => { renderer.unmount(); });
+  }
+});
+
+// 回归锁（2026-10-02 用户报告第二段）：MU 部署下 legacy 路由 /repos/:owner/:name/pr/:n
+// 曾漏分派 multiuser 源 → 掉进 SnapshotPrDetail（"历史快照中没有…运行记录"空页）。
+// 修复：multiuser kind → 渲染 MuPrDetail（/api/mu/prs/:n 数据）。
+test('PrDetail（multiuser）：legacy 路由分派 MuPrDetail，不再掉进历史快照空页', async () => {
+  ROUTES = {
+    '/api/auth/session': () => [200, SESSION],
+    '/api/health': () => [200, {
+      service: 'console', data_mode: 'live',
+      sources: { primary: 'multiuser', multiuser: { available: true } },
+    }],
+    '/api/mu/repositories': () => [200, { repositories: [
+      { repo_id: 'repo-1', owner: 'nghqqa', name: 'test-repo', pr_count: 1, binding_state: 'active' } ] }],
+    '/api/mu/prs/8': () => [200, {
+      pull_request: { pr_id: 'pr-1', provider_pr_number: 8, title: 'fix: sample', head_sha: 'a1b2c3d4e5f6', state: 'open', repo_id: 'repo-1' },
+      review_records: [], latest_run: null, my_permissions: { actions: [] } }],
+  };
+  calls = [];
+  const { renderer, json } = await renderRoute('/repos/nghqqa/test-repo/pr/8');
+  try {
+    const text = json();
+    assert.ok(!text.includes('历史快照中没有'), 'MU 模式不得掉进 snapshot 空页（回归锁：漏分派）');
+    assert.ok(calls.some((c) => c.startsWith('/api/mu/prs/8')), '应请求 /api/mu/prs/8（MU 详情数据源生效）');
+    assert.ok(text.includes('#8') || text.includes('PR #8'), '应显示 PR #8 标识');
   } finally {
     await act(async () => { renderer.unmount(); });
   }
