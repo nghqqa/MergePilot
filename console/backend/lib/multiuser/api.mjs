@@ -1193,6 +1193,119 @@ export async function muApi(req, res, ctx) {
         : out.executor.mode === 'internal' ? 'internal_non_production' : 'not_configured_fail_closed';
       return sendJson(res, 200, { ...out, runtime_state: st });
     }
+    // ── ADR-002 PR A：review architecture v2 控制面（三档/Provider/consent/snapshot）──
+    // 权限：读=read_repository（租户成员可见——解释 run 模式需要）；写=manage_instance
+    // （组织管理员等价——与 agent-policy 同权面，contributor/reviewer/auditor 不越权）。
+    // v2 flag 关闭时：策略面只读返回（不可写），health 披露架构版本——beta.5 行为零变化。
+    const archV2 = env.MU_REVIEW_ARCH === 'v2';
+    if (p === '/api/mu/review-policy' && req.method === 'GET') {
+      const g = await guard('read_repository');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const rps = await import('./review-policy-store.mjs');
+      const rpStore = rps.createReviewPolicyStore({ pool: { query: muPoolQ } });
+      const policy = await rpStore.getPolicy(mu.tenantId);
+      return sendJson(res, 200, {
+        policy: { ...policy, architecture_version: 'v2' },
+        arch_enabled: archV2, // false=控制面只读（beta.5 兼容态）
+        modes: ['evidence_only', 'external_api', 'local'],
+      });
+    }
+    if (p === '/api/mu/review-policy' && (req.method === 'PUT' || req.method === 'PATCH')) {
+      if (!csrfOk()) return sendJson(res, 403, { error: { reason: 'csrf_required' } });
+      const g = await guard('manage_instance');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      if (!archV2) return sendJson(res, 409, { error: { reason: 'arch_v2_not_enabled' } });
+      const body = await json();
+      const rps = await import('./review-policy-store.mjs');
+      const rpStore = rps.createReviewPolicyStore({ pool: { query: muPoolQ } });
+      const r = await rpStore.updatePolicy(mu.tenantId, mu.userId, body, {
+        expectedVersion: Number(body?.expected_policy_version ?? body?.policy_version ?? 0) });
+      if (!r.ok) {
+        const status = r.code === 'version_conflict' ? 409 : 422;
+        return sendJson(res, status, { error: { reason: r.code, ...(r.current ? { current_policy_version: r.current.policy_version } : {}) } });
+      }
+      await store.audit('REVIEW_POLICY_UPDATED', { tenantId: mu.tenantId, actorUserId: mu.userId,
+        detail: { policy_version: r.policy.policy_version, review_mode: r.policy.review_mode,
+          provider_id: r.policy.provider_id ?? null } });
+      return sendJson(res, 200, { policy: r.policy });
+    }
+    if (p === '/api/mu/review-policy/history' && req.method === 'GET') {
+      const g = await guard('read_audit');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const rps = await import('./review-policy-store.mjs');
+      const rpStore = rps.createReviewPolicyStore({ pool: { query: muPoolQ } });
+      const rows = await rpStore.listPolicyHistory(mu.tenantId, Number(q.limit) || 50);
+      return sendJson(res, 200, { revisions: rows });
+    }
+    if (p === '/api/mu/providers' && req.method === 'GET') {
+      const g = await guard('read_repository');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const rps = await import('./review-policy-store.mjs');
+      const rpStore = rps.createReviewPolicyStore({ pool: { query: muPoolQ } });
+      const providers = await rpStore.listProviders();
+      // 脱敏投影：endpoint_origin 仅 host（不含 path/scheme 细节）；零凭据列本就不存在
+      return sendJson(res, 200, { providers: providers.map((pr) => ({
+        provider_id: pr.provider_id, display_name: pr.display_name,
+        endpoint_origin: pr.endpoint_origin, policy_status: pr.policy_status,
+        retention_summary: pr.retention_summary, training_summary: pr.training_summary,
+        region_summary: pr.region_summary, policy_reference: pr.policy_reference,
+        state: pr.state, reviewed_at: pr.reviewed_at })) });
+    }
+    const psMatch = p.match(/^\/api\/mu\/runs\/([0-9a-f-]{36})\/policy-snapshot$/);
+    if (psMatch && req.method === 'GET') {
+      const g = await guard('read_pull_request');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const rr = await muPoolQ(
+        `SELECT architecture_version, review_mode, review_scope, execution_mode,
+                provider_id, model_id, provider_policy_status, code_egress,
+                consent_version, policy_snapshot_digest, tenant_id, head_sha
+           FROM mu.review_run WHERE run_id=$1`, [psMatch[1]]);
+      if (!rr.rows.length || String(rr.rows[0].tenant_id) !== String(mu.tenantId)) {
+        return sendJson(res, 404, { error: { reason: 'run_not_found' } }); // 防枚举：跨租户同 404
+      }
+      const row = rr.rows[0];
+      if (!row.architecture_version) {
+        return sendJson(res, 200, { snapshot: null, note: 'legacy_run_no_snapshot' }); // 历史 run 不冒充 v2
+      }
+      return sendJson(res, 200, { snapshot: {
+        architecture_version: row.architecture_version, review_mode: row.review_mode,
+        review_scope: row.review_scope, execution_mode: row.execution_mode,
+        provider_id: row.provider_id, model_id: row.model_id,
+        provider_policy_status: row.provider_policy_status,
+        code_egress: Number(row.code_egress ?? 0) > 0,
+        consent_version: row.consent_version, snapshot_digest: row.policy_snapshot_digest,
+        head_sha: String(row.head_sha ?? '').slice(0, 12) } });
+    }
+    if (p === '/api/mu/review-policy/consent' && req.method === 'POST') {
+      if (!csrfOk()) return sendJson(res, 403, { error: { reason: 'csrf_required' } });
+      const g = await guard('manage_instance');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      if (!archV2) return sendJson(res, 409, { error: { reason: 'arch_v2_not_enabled' } });
+      const body = await json();
+      const rps = await import('./review-policy-store.mjs');
+      const rpStore = rps.createReviewPolicyStore({ pool: { query: muPoolQ } });
+      const r = await rpStore.acceptConsent(mu.tenantId, mu.userId, {
+        providerId: String(body?.provider_id ?? ''), consentVersion: String(body?.consent_version ?? ''),
+        acknowledgementDigest: String(body?.acknowledgement_digest ?? ''),
+        policyVersion: Number(body?.policy_version ?? 1) });
+      if (!r.ok) return sendJson(res, 422, { error: { reason: r.code } });
+      await store.audit('REVIEW_CONSENT_ACCEPTED', { tenantId: mu.tenantId, actorUserId: mu.userId,
+        detail: { provider_id: body?.provider_id, consent_version: body?.consent_version } });
+      return sendJson(res, 200, { ok: true });
+    }
+    if (p === '/api/mu/review-policy/consent/revoke' && req.method === 'POST') {
+      if (!csrfOk()) return sendJson(res, 403, { error: { reason: 'csrf_required' } });
+      const g = await guard('manage_instance');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const body = await json();
+      const rps = await import('./review-policy-store.mjs');
+      const rpStore = rps.createReviewPolicyStore({ pool: { query: muPoolQ } });
+      await rpStore.revokeConsent(mu.tenantId, mu.userId, String(body?.provider_id ?? ''));
+      await store.audit('REVIEW_CONSENT_REVOKED', { tenantId: mu.tenantId, actorUserId: mu.userId,
+        detail: { provider_id: body?.provider_id } });
+      return sendJson(res, 200, { ok: true });
+    }
+
     if (p === '/api/mu/agent-policy' && req.method === 'GET') {
       const g = await guard('manage_instance');
       if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
