@@ -307,6 +307,48 @@ try {
       tk && tk.detail.severity && tk.detail.head_prefix && tk.detail.approval_id);
   }
 
+  // ── FA15：agentteams 执行器路径同受审批门（rc3 试用发现的绕过缺陷回归锁）──
+  // 场景保持 run=WAITING（不手工迁 FIX_QUEUED——那是 sweep 的 STALE 语义域）；
+  // 断言：审批前门先于执行器三路分发拒；批准后过门（消费+审计）才进执行器层。
+  {
+    const s15 = await mkRun({ findings: P0F });
+    const prevExecutor = process.env.MU_EXECUTOR;
+    const prevAllow = process.env.MU_EXECUTOR_INTERNAL_ALLOW;
+    process.env.MU_EXECUTOR = 'agentteams';
+    const dispatched = [];
+    const atEnv = { MU_EXECUTOR: 'agentteams', MU_AGENTTEAMS_BASE_URL: 'http://at.invalid', MU_AGENTTEAMS_TOKEN: 't' };
+    const r15 = await fxo.fixVerifyRound(pool, { run: { run_id: s15.run.run_id }, binding: s15.binding,
+      deps: { assertServiceChain: async () => true, env: atEnv,
+        atFetch: async () => { dispatched.push('at'); return { ok: true, status: 200, json: async () => ({}) }; } } });
+    ok('FA15a agentteams 路径审批前拒（先于执行器派发）', r15.ok === false
+      && r15.stage === 'fix_blocked_no_approval' && dispatched.length === 0, r15);
+    const execAudit15 = (await pool.query(`SELECT count(*)::int c FROM mu.audit_event
+      WHERE (kind='executor_gate_rejected' OR kind='executor_internal_round') AND detail->>'run_id'=$1`,
+      [s15.run.run_id])).rows[0].c;
+    ok('FA15b 审批前未触达任何执行器路径', Number(execAudit15) === 0, execAudit15);
+    // 批准全部票（run 经真实路径 WAITING→FIX_QUEUED）
+    const t15 = await ticketsOf(s15.run.run_id);
+    for (const t of t15) {
+      const a15 = await fa.decideFixApproval(pool, { approvalId: t.approval_id, decision: 'approve',
+        decidedBy: 'test:maintainer', tenantId: T1 });
+      if (!a15.ok) throw new Error('FA15 approve failed: ' + JSON.stringify(a15).slice(0, 120));
+    }
+    const r15b = await fxo.fixVerifyRound(pool, { run: { run_id: s15.run.run_id }, binding: s15.binding,
+      deps: { assertServiceChain: async () => true, env: atEnv,
+        atFetch: async () => ({ ok: false, status: 503, json: async () => ({}) }) } });
+    ok('FA15c 批准后越过审批门进入执行器层（不再 fix_blocked）',
+      r15b.stage !== 'fix_blocked_no_approval', r15b);
+    const gate15 = (await pool.query(`SELECT count(*)::int c FROM mu.audit_event
+      WHERE kind='FIX_STARTED_AFTER_APPROVAL' AND detail->>'run_id'=$1`, [s15.run.run_id])).rows[0].c;
+    const tk15 = (await pool.query(`SELECT status FROM mu.fix_approval WHERE run_id=$1 LIMIT 1`, [s15.run.run_id])).rows[0];
+    ok('FA15d 门消费产生（CONSUMED+FIX_STARTED_AFTER_APPROVAL 审计）',
+      Number(gate15) >= 1 && tk15?.status === 'CONSUMED', { gate15, tk: tk15?.status });
+    process.env.MU_EXECUTOR = prevExecutor ?? '';
+    process.env.MU_EXECUTOR_INTERNAL_ALLOW = prevAllow ?? 'test';
+    await orch.transitionRun(pool, { runId: s15.run.run_id, from: ['FIX_QUEUED', 'FIXING'], to: 'BLOCKED' }).catch(() => {});
+    await orch.transitionRun(pool, { runId: s15.run.run_id, from: ['WAITING_FOR_HUMAN_APPROVAL'], to: 'BLOCKED' }).catch(() => {});
+  }
+
   // ── FA14：收敛——无 RUNNING/QUEUED attempt 残留（矩阵 23）──
   {
     const stuck = (await pool.query(`SELECT count(*)::int AS c FROM mu.agent_attempt

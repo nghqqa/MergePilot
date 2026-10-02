@@ -35,6 +35,32 @@ export async function fixVerifyRound(pool, { run, binding, deps }) {
     return { ok: false, stage: 'aborted', reason: 'service_chain_invalid' };
   }
 
+  // ── v16 高危修复审批硬门（rc3 试用修复：先于执行器三路分发 rejected/agentteams/
+  // internal 与一切状态迁移/attempt 领取——任务书五节唯一 gate。原位置在 agentteams
+  // 分支 return 之后，生产执行器路径曾绕过审批门：防御纵深缺失，系统级不变量仅由
+  // FIX_QUEUED 入口门兜住）──
+  // 取待修复 P0/P1 finding（首个非禁改区且无负态票）；高危 finding 无 APPROVED 票即 fail-closed：
+  // run 停留原状态（WAITING/FIX_QUEUED 可恢复），绝不启动 Fixer。
+  const gateRows = await pool.query(
+    `SELECT f.finding_id, f.rule_id, f.path, f.line_start, f.severity
+       FROM mu.agent_finding f
+      WHERE f.run_id=$1 AND f.severity IN ('P0','P1')
+        AND NOT EXISTS (SELECT 1 FROM mu.fix_approval fa
+                         WHERE fa.finding_id=f.finding_id AND fa.status IN ('REJECTED','EXPIRED','STALE'))
+      ORDER BY f.severity, f.created_at LIMIT 1`, [runId]);
+  const gateFinding = gateRows.rows[0] ?? null;
+  if (gateFinding) {
+    const { authorizeFixExecution } = await import('../fix-approval.mjs');
+    const gate = await authorizeFixExecution(pool, { runId, findingId: gateFinding.finding_id });
+    if (!gate.ok) {
+      await recordDecision(pool, { runId, tenantId, repoId, prId, headSha,
+        stage: 'fix_gate', decision: 'blocked_no_approval', rationaleRef: gate.reason,
+        actorPrincipal: 'system:approval-gate' });
+      return { ok: false, stage: 'fix_blocked_no_approval', reason: gate.reason,
+        detail: gate.detail ?? null };
+    }
+  }
+
   // ── AgentTeams-first 执行器门控（2026-09-29 原始架构原则）──
   // 三路分发，绝不静默回退 internal：
   //  * rejected（未配置/未知值/internal 无显式降级开关/URL 缺失非法）→ fail-closed：
@@ -80,28 +106,6 @@ export async function fixVerifyRound(pool, { run, binding, deps }) {
 
   // FIX_QUEUED / REWORK_REQUIRED → FIXING（CAS；并发轮次输家幂等退出）
 
-  // ── v16 高危修复审批硬门（先于一切状态迁移/attempt 领取——任务书五节唯一 gate）──
-  // 取待修复 P0/P1 finding（首个非禁改区且无负态票）；高危 finding 无 APPROVED 票即 fail-closed：
-  // run 停留原状态（WAITING/FIX_QUEUED 可恢复），绝不启动 Fixer。
-  const gateRows = await pool.query(
-    `SELECT f.finding_id, f.rule_id, f.path, f.line_start, f.severity
-       FROM mu.agent_finding f
-      WHERE f.run_id=$1 AND f.severity IN ('P0','P1')
-        AND NOT EXISTS (SELECT 1 FROM mu.fix_approval fa
-                         WHERE fa.finding_id=f.finding_id AND fa.status IN ('REJECTED','EXPIRED','STALE'))
-      ORDER BY f.severity, f.created_at LIMIT 1`, [runId]);
-  const gateFinding = gateRows.rows[0] ?? null;
-  if (gateFinding) {
-    const { authorizeFixExecution } = await import('../fix-approval.mjs');
-    const gate = await authorizeFixExecution(pool, { runId, findingId: gateFinding.finding_id });
-    if (!gate.ok) {
-      await recordDecision(pool, { runId, tenantId, repoId, prId, headSha,
-        stage: 'fix_gate', decision: 'blocked_no_approval', rationaleRef: gate.reason,
-        actorPrincipal: 'system:approval-gate' });
-      return { ok: false, stage: 'fix_blocked_no_approval', reason: gate.reason,
-        detail: gate.detail ?? null };
-    }
-  }
   const fixing = await transitionRun(pool, { runId, from: ['FIX_QUEUED'], to: 'FIXING' }); // 回派先经 requeueFix(REWORK→FIX_QUEUED)，FIXING 只从 FIX_QUEUED 进入（状态机合法边）
   if (!fixing.ok) {
     if (fixing.reason === 'cas_conflict') return { ok: true, stage: 'already_advanced', status: fixing.current };

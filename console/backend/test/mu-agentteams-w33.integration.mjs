@@ -239,7 +239,7 @@ async function approveHighRisk(run, binding) {
   const pr = await store.upsertPullRequest({ tenantId: T, repoId: repo.repo_id, providerPrNumber: 4, headSha: 'f'.repeat(40) });
   const binding = { tenantId: T, repoId: repo.repo_id, prId: pr.pr_id, headSha: 'f'.repeat(40) };
   const { run } = await orch.createRunIfAbsent(pool, { ...binding });
-  for (const [f, t] of [['RECEIVED', 'REVIEW_QUEUED'], ['REVIEW_QUEUED', 'REVIEWING'], ['REVIEWING', 'REVIEWED'], ['REVIEWED', 'FIX_QUEUED']]) {
+  for (const [f, t] of [['RECEIVED', 'REVIEW_QUEUED'], ['REVIEW_QUEUED', 'REVIEWING'], ['REVIEWING', 'REVIEWED']]) {
     await orch.transitionRun(pool, { runId: run.run_id, from: [f], to: t });
   }
   const att = await orch.claimNextAttempt(pool, { runId: run.run_id, agentRole: 'reviewer',
@@ -247,6 +247,7 @@ async function approveHighRisk(run, binding) {
   await orch.insertFindings(pool, { attemptId: att.attemptId, runId: run.run_id, ...binding,
     findings: [{ rule_id: 'R-SECRET', severity: 'P0', confidence: 0.9, path: 's.js', line_start: 2,
       line_end: 2, title: 'x', evidence_ref: 'e', summary_masked: 'ghp_***' }] });
+  await approveHighRisk(run, binding);
   process.env.MU_AGENTTEAMS_TOKEN = 'at-tok';
   const deps = { env: { ...ENV_MT }, atFetch: mkAtApi(), mtFetch: mkMatrixApi(),
     mtSleep: async () => {}, mtRoleTimeoutMs: 2_000, assertServiceChain: async () => true,
@@ -280,13 +281,14 @@ async function approveHighRisk(run, binding) {
   const prR = await store.upsertPullRequest({ tenantId: T, repoId: repo.repo_id, providerPrNumber: 7, headSha: 'd'.repeat(40) });
   const bindingR = { tenantId: T, repoId: repo.repo_id, prId: prR.pr_id, headSha: 'd'.repeat(40) };
   const { run: runR } = await orch.createRunIfAbsent(pool, { ...bindingR });
-  for (const [f, t] of [['RECEIVED', 'REVIEW_QUEUED'], ['REVIEW_QUEUED', 'REVIEWING'], ['REVIEWING', 'REVIEWED'], ['REVIEWED', 'FIX_QUEUED']]) {
+  for (const [f, t] of [['RECEIVED', 'REVIEW_QUEUED'], ['REVIEW_QUEUED', 'REVIEWING'], ['REVIEWING', 'REVIEWED']]) {
     await orch.transitionRun(pool, { runId: runR.run_id, from: [f], to: t });
   }
   const attR = await orch.claimNextAttempt(pool, { runId: runR.run_id, agentRole: 'reviewer', provider: 'deterministic', maxAttempts: 3, ...bindingR });
   await orch.insertFindings(pool, { attemptId: attR.attemptId, runId: runR.run_id, ...bindingR,
     findings: [{ rule_id: 'R-SECRET', severity: 'P0', confidence: 0.9, path: 's.js', line_start: 2,
       line_end: 2, title: 'x', evidence_ref: 'e', summary_masked: 'ghp_***' }] });
+  await approveHighRisk(runR, bindingR);
   const netBeforeGate = netCalls;
   const rGate = await fxo.fixVerifyRound(pool, { run: runR, binding: bindingR,
     deps: { ...deps, env: {}, assertServiceChain: async () => true } });
@@ -302,13 +304,14 @@ async function approveHighRisk(run, binding) {
   const prH = await store.upsertPullRequest({ tenantId: T, repoId: repo.repo_id, providerPrNumber: 8, headSha: 'c'.repeat(40) });
   const bindingH = { tenantId: T, repoId: repo.repo_id, prId: prH.pr_id, headSha: 'c'.repeat(40) };
   const { run: runH } = await orch.createRunIfAbsent(pool, { ...bindingH });
-  for (const [f, t] of [['RECEIVED', 'REVIEW_QUEUED'], ['REVIEW_QUEUED', 'REVIEWING'], ['REVIEWING', 'REVIEWED'], ['REVIEWED', 'FIX_QUEUED']]) {
+  for (const [f, t] of [['RECEIVED', 'REVIEW_QUEUED'], ['REVIEW_QUEUED', 'REVIEWING'], ['REVIEWING', 'REVIEWED']]) {
     await orch.transitionRun(pool, { runId: runH.run_id, from: [f], to: t });
   }
   const attH = await orch.claimNextAttempt(pool, { runId: runH.run_id, agentRole: 'reviewer', provider: 'deterministic', maxAttempts: 3, ...bindingH });
   await orch.insertFindings(pool, { attemptId: attH.attemptId, runId: runH.run_id, ...bindingH,
     findings: [{ rule_id: 'R-SECRET', severity: 'P0', confidence: 0.9, path: 's.js', line_start: 2,
       line_end: 2, title: 'x', evidence_ref: 'e', summary_masked: 'ghp_***' }] });
+  await approveHighRisk(runH, bindingH);
   const rHealth = await fxo.fixVerifyRound(pool, { run: runH, binding: bindingH,
     deps: { ...deps, env: { ...ENV_ON }, atFetch: mkAtApi({ health: 401 }), assertServiceChain: async () => true } });
   const runHafter = await orch.getRun(pool, runH.run_id);
