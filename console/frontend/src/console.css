@@ -925,3 +925,8 @@ td.th-right { text-align: right; }
     border-radius: var(--r-sm); box-shadow: var(--shadow-xs);
   }
 }
+
+/* 移动端：未选中（占位态）不显示空抽屉——列表即页面，选中才出现详情层 */
+@media (max-width: 960px) {
+  .mu-pr-detail:has(.mu-detail-placeholder) { display: none; }
+}
