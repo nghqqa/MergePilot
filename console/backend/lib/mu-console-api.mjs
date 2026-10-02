@@ -154,6 +154,8 @@ export function createMuConsoleApi({ pool }) {
       pr: r.provider_pr_number,
       title: r.title,
       head_sha: r.head_sha?.slice(0, 12),
+      // run_id：SELECT 已取但此前投影丢弃——CorePage「PR / Head」表 Run 列需要（诚实展示最近 run）
+      run_id: r.run_id ?? null,
       status: r.run_status ?? 'no_review',
       stage: r.run_status ?? 'PENDING',
     }));

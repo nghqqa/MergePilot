@@ -89,6 +89,9 @@ export const mpTheme = {
 // 状态语义映射：人话标签为主显示，机器值入详情（视觉目标 5）
 export const STATUS_META = {
   POSTGRESQL_LIVE: { label: '实时数据', tone: 'success' },
+  // Wave 3.7 起 MU 部署五个 Core API 的数据源契约值（server.mjs muMeta）——同样代表
+  // 健康 PG 接线；缺这条映射时 CorePage 会把健康态渲染成红色"请检查 PG 连接"。
+  MU_CANONICAL_LIVE: { label: 'MU 实时数据', tone: 'success' },
   BACKEND_NOT_WIRED: { label: '未接线', tone: 'warning' },
   BACKEND_ERROR: { label: '后端错误', tone: 'error' },
   AUTH_REQUIRED: { label: '需要登录', tone: 'warning' },
