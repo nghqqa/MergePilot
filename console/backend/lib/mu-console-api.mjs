@@ -63,17 +63,22 @@ export function createMuConsoleApi({ pool }) {
        WHERE pr.tenant_id=$1
        ORDER BY pr.updated_at DESC LIMIT 50`, [tenantId]);
 
-    // 14 天运行趋势（按日计数）：generate_series 补齐日轴——无 run 的日子是真实 0，
-    // 不是伪造；此前 trend 恒 []（Wave 3.7 桩值），总览趋势图永远空。
-    // created_at 为 timestamptz、会话时区 UTC——与 CURRENT_DATE 同域分桶，边界一致。
-    const trendRows = await q(
-      `SELECT to_char(d, 'YYYY-MM-DD') AS date, COALESCE(c.runs, 0)::int AS runs
-         FROM generate_series(CURRENT_DATE - INTERVAL '13 days', CURRENT_DATE, INTERVAL '1 day') d
-         LEFT JOIN (
-           SELECT created_at::date AS day, count(*) AS runs
-             FROM mu.review_run WHERE tenant_id=$1 GROUP BY 1
-         ) c ON c.day = d::date
-        ORDER BY d`, [tenantId]);
+    // 14 天运行趋势（按日计数）：日轴在 JS 侧生成（纯展示逻辑），SQL 只查
+    // mu.review_run 按日计数——不用 generate_series（Wave 3.7 净化门 P3 要求
+    // MU 模式查询仅触达 mu.* 关系）。无 run 的日子=真实 0，不是伪造；
+    // created_at timestamptz、会话时区 UTC——SQL 分桶与 JS 的 UTC 日键同域。
+    // 此前 trend 恒 []（Wave 3.7 桩值），总览趋势图永远空。
+    const trendCounts = await q(
+      `SELECT to_char(created_at::date, 'YYYY-MM-DD') AS day, count(*)::int AS runs
+         FROM mu.review_run WHERE tenant_id=$1 GROUP BY 1`, [tenantId]);
+    const byDay = new Map(trendCounts.map(r => [r.day, Number(r.runs)]));
+    const trend = [];
+    const now = new Date();
+    for (let i = 13; i >= 0; i--) {
+      const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - i));
+      const key = d.toISOString().slice(0, 10);
+      trend.push({ date: key, runs: byDay.get(key) ?? 0 });
+    }
 
     // stage_counts 映射到 legacy stage key 空间
     const stageRows = await q(
@@ -135,7 +140,7 @@ export function createMuConsoleApi({ pool }) {
         minio: { state: 'AGENTTEAMS_MANAGED', note: 'MinIO 由 AgentTeams 内部管理（worker 配置/任务工件）——控制台按安全边界不直连，属正常' },
         backend: { state: 'OK', note: '本服务即后端（只读）' },
       },
-      trend: trendRows,
+      trend,
       schema_version: 1,
       generated_at: new Date().toISOString(),
       stages_enum: ['REVIEWING', 'ACTION_REQUIRED', 'REMEDIATING', 'VERIFYING', 'PASSED', 'BLOCKED', 'STALE', 'UNKNOWN', 'PENDING'],
