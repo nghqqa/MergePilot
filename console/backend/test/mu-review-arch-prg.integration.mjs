@@ -192,9 +192,9 @@ try {
   ok('G7b 零 GitHub 写（无 APPLIED patch+无 repair_push job）', applied === 0 && pushJobs === 0);
   const st7 = (await pool.query(`SELECT status, review_verdict, verification_verdict, tests_status, merge_eligibility
     FROM mu.review_run WHERE run_id=$1`, [s7.run.run_id])).rows[0];
-  ok('G7c 终态分立（VERIFIED+四列各值）',
-    st7.status === 'VERIFIED' && st7.review_verdict === 'changes_requested'
-      && st7.verification_verdict === 'passed' && st7.tests_status === 'passed'
+  ok('G7c 终态分立（VERIFYING+模型域收口 inconclusive+工具域独立）',
+    st7.status === 'VERIFYING' && st7.review_verdict === 'changes_requested'
+      && st7.verification_verdict === 'inconclusive' && st7.tests_status === 'passed'
       && st7.merge_eligibility === 'ineligible', st7);
 
   // G8 跨租户：T1 binding + T9 snapshot（构造越权）→ MISMATCH deny（实时否决不吃快照伪造）

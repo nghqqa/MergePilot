@@ -961,6 +961,10 @@ export async function muApi(req, res, ctx) {
                   review_verdict, verification_verdict, tests_status, merge_eligibility, code_egress
              FROM mu.review_run WHERE tenant_id=$1 AND pr_id=$2
             ORDER BY created_at DESC LIMIT 1`, [mu.tenantId, pr.pr_id])).rows[0] ?? null;
+        // Verifier 双域原始留痕（三.3 分显）：模型 attempt 判定+工具证据（evidence_ref）
+        const vaRow = latestRun ? (await muPoolQ(
+          `SELECT verdict, evidence_ref FROM mu.verification_attempt WHERE run_id=$1
+            ORDER BY created_at DESC LIMIT 1`, [latestRun.run_id])).rows[0] ?? null : null;
         return sendJson(res, 200, { pull_request: pr, review_records: records,
           latest_run: latestRun ? {
             run_id: latestRun.run_id, status: latestRun.status,
@@ -971,7 +975,10 @@ export async function muApi(req, res, ctx) {
             verification_verdict: latestRun.verification_verdict ?? null,
             tests_status: latestRun.tests_status ?? null,
             merge_eligibility: latestRun.merge_eligibility ?? null,
-            code_egress: Number(latestRun.code_egress ?? 0) } : null,
+            code_egress: Number(latestRun.code_egress ?? 0),
+            model_judgment: vaRow ? { verdict: vaRow.verdict,
+              input: 'digest_only', note: '模型未读取完整 patch——原始判定仅审计留痕' } : null,
+            test_evidence: vaRow?.evidence_ref ?? null } : null,
           my_permissions: { actions: roleActions(liveMembership.role) ?? [] } });
       }
       return sendJson(res, 404, { error: { reason: 'unknown pr subpath' } });

@@ -113,15 +113,27 @@ export function MuPrDetailContent({ prRef, onChanged }) {
       {lr ? (
         <div className="mu-stage-verdicts" style={{ margin: '8px 0', lineHeight: 2 }}>
           {stageTag('审查结论', lr.review_verdict)}
-          {stageTag('验证结论', lr.verification_verdict)}
-          {stageTag('测试证据', lr.tests_status)}
+          {stageTag('验证结论（模型域）', lr.verification_verdict)}
+          {stageTag('测试证据（工具域）', lr.tests_status)}
           {stageTag('合并资格', lr.merge_eligibility)}
+          {lr.model_judgment ? (
+            <span className="mu-detail-meta">模型判定（原始）：
+              <Tag color={lr.model_judgment.verdict === 'PASS' ? 'green' : lr.model_judgment.verdict === 'FAIL' ? 'red' : 'orange'}>
+                {lr.model_judgment.verdict}
+              </Tag>
+              <span className="muted" style={{ fontSize: 12 }}>（输入={lr.model_judgment.input}，仅审计留痕）</span>
+            </span>
+          ) : null}
+          {lr.test_evidence ? (
+            <span className="mu-detail-meta" style={{ fontSize: 12 }}>工具证据：<code className="mono">{lr.test_evidence}</code></span>
+          ) : null}
           {lr.review_mode ? <span className="mu-detail-meta">模式：<Tag>{lr.review_mode === 'external_api' ? '外部 API' : lr.review_mode === 'local' ? '本地接口' : '仅证据'}</Tag></span> : null}
           {lr.architecture_version === 'v2' && Number(lr.code_egress ?? 0) > 0 ? (
             <span className="mu-detail-meta">出站：<Tag color="blue">{Number(lr.code_egress)} 次调用（审计在案）</Tag></span>
           ) : null}
           <Typography.Paragraph type="secondary" style={{ fontSize: 12, margin: 0 }}>
-            四项独立判定互不冒充：protection 不明时合并资格恒为"未知"（fail-closed）；测试证据与模型判断分列。
+            模型未读取完整 patch；Verifier 的模型结论可能为 inconclusive，工具验证结果独立有效。
+            四项独立判定互不冒充：protection 不明时合并资格恒为"未知"（fail-closed）。
           </Typography.Paragraph>
         </div>
       ) : null}

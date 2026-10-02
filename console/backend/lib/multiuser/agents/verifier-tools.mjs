@@ -17,6 +17,15 @@ export const VERIFIER_TOOLS_ALLOWLIST = Object.freeze([
 // verification_attempt.verdict（大写）→ review_run.verification_verdict（小写 CHECK 域）
 const RUN_VERDICT_MAP = Object.freeze({ PASS: 'passed', FAIL: 'failed', BLOCKED: 'inconclusive' });
 
+// ── Verifier 语义收口（发布前裁决）──
+// 本版本模型域输入=digest+findings 摘要（代码最小化出站）——模型未读取完整 patch，
+// 其 PASS/FAIL 不构成修复语义验证：run 级 verification_verdict 恒为 'inconclusive'，
+// 模型原始判定只存 verification_attempt.verdict（审计留痕）。
+// VERIFIED 状态因此在本版本不可达（到达条件=未来完整 patch 输入的模型验证）。
+// 后续改进（已登记）：verifier envelope 纳入脱敏 patch 文本后，将本常量翻转为
+// false 并恢复 RUN_VERDICT_MAP 通路（配套测试同步改契约）。
+export const MODEL_INPUT_FULL_PATCH = false;
+
 const digest = (s) => crypto.createHash('sha256').update(String(s ?? '')).digest('hex').slice(0, 32);
 
 /** 静态检查：patch 不应引入新的危险模式。纯文本——不执行代码。 */
@@ -149,8 +158,12 @@ export async function runVerifier(pool, { run, binding, snapshot, findings, patc
       binding.prId, binding.headSha, claim.attempt, attemptVerdict,
       `tools:${tools.map((t) => `${t.tool}=${t.passed ? 'ok' : 'fail'}`).join(',').slice(0, 200)}`,
       modelJudgment ? null : (lastCode ?? 'VERIFIER_MODEL_UNAVAILABLE')]);
-  // run 级：verification_verdict（模型域）/tests_status（工具域）分立——互不冒充
-  const runVerdict = RUN_VERDICT_MAP[attemptVerdict] ?? 'inconclusive';
+  // run 级：verification_verdict（模型域）/tests_status（工具域）分立——互不冒充。
+  // 语义收口：digest-only 输入的模型判定不构成修复语义验证——run 级恒 inconclusive
+  // （模型原始 PASS/FAIL 已留 verification_attempt 审计）；tests_status 仅由工具域生成。
+  const runVerdict = MODEL_INPUT_FULL_PATCH
+    ? (RUN_VERDICT_MAP[attemptVerdict] ?? 'inconclusive')
+    : 'inconclusive';
   await pool.query(
     `UPDATE mu.review_run SET verification_verdict=$2, tests_status=$3 WHERE run_id=$1`,
     [run.run_id, runVerdict, testsStatus]);
@@ -161,13 +174,16 @@ export async function runVerifier(pool, { run, binding, snapshot, findings, patc
     errorCode: modelJudgment ? null : (lastCode ?? 'VERIFIER_MODEL_UNAVAILABLE'),
     latencyMs: Date.now() - t0, evidenceRef: `attempt:${claim.attemptId}` });
 
-  // 双域全绿才推进 VERIFIED（任一域未绿不推进）
-  if (modelJudgment && runVerdict === 'passed' && testsStatus === 'passed') {
+  // 状态推进仅当完整输入的模型验证通过+工具全绿——digest-only 版本结构性不可达
+  // （MODEL_INPUT_FULL_PATCH=false 时 runVerdict 恒 inconclusive）。
+  if (modelJudgment && MODEL_INPUT_FULL_PATCH && runVerdict === 'passed' && testsStatus === 'passed') {
     await transitionRun(pool, { runId: run.run_id, from: ['VERIFYING'], to: 'VERIFIED' });
   }
 
   return { ok: Boolean(modelJudgment), attempt_verdict: attemptVerdict,
     verification_verdict: runVerdict, tests_status: testsStatus,
     tools, model_judgment: modelJudgment,
-    note: 'model_judgment and test_evidence are separate domains' };
+    model_input: MODEL_INPUT_FULL_PATCH ? 'full_patch' : 'digest_only',
+    note: 'model_judgment and test_evidence are separate domains; '
+      + (MODEL_INPUT_FULL_PATCH ? '' : 'digest-only model input → run verdict inconclusive by design') };
 }

@@ -135,34 +135,35 @@ try {
       model: 'm', patchText: PATCH_TEXT } });
   ok('E4 egress deny→零调用可重试', r4.ok === false && r4.stage === 'egress_denied' && calls4.length === 0);
 
-  // E5 全链成功：model PASS + tools pass → 双绿→VERIFIED；双域分列
+  // E5 全链成功：model PASS + tools pass → 语义收口：digest-only→run=inconclusive+VERIFIED 不可达
   const s5 = await mkVerifiedReadyRun(snapshot);
   const calls5 = [];
   const r5 = await vf.runVerifier(pool, { run: s5.run, binding: s5.binding, snapshot,
     findings: FINDINGS, patchArtifact: s5.artifact,
     deps: { fetchImpl: mkVerdictFetch('PASS', calls5), baseUrl: 'https://mock', apiKey: 'k',
       model: 'deepseek-chat', patchText: PATCH_TEXT } });
-  ok('E5 Verifier 成功（model PASS + tools pass）', r5.ok === true);
-  ok('E5b 双域分列（verification=passed ≠ 冒充 tests）',
-    r5.verification_verdict === 'passed' && r5.tests_status === 'passed'
-      && r5.attempt_verdict === 'PASS');
+  ok('E5 Verifier 模型判定成功（attempt=PASS）', r5.ok === true && r5.attempt_verdict === 'PASS');
+  ok('E5b 语义收口：digest-only→run=inconclusive（不冒充完整验证）+model_input 标注',
+    r5.verification_verdict === 'inconclusive' && r5.tests_status === 'passed'
+      && r5.model_input === 'digest_only');
   const rr5 = (await pool.query(
     `SELECT verification_verdict, tests_status, status FROM mu.review_run WHERE run_id=$1`, [s5.run.run_id])).rows[0];
-  ok('E5c run 列分立持久化+推进 VERIFIED',
-    rr5.verification_verdict === 'passed' && rr5.tests_status === 'passed' && rr5.status === 'VERIFIED');
+  ok('E5c run 持久化=inconclusive+VERIFIED 不可达（留在 VERIFYING）',
+    rr5.verification_verdict === 'inconclusive' && rr5.tests_status === 'passed' && rr5.status === 'VERIFYING');
   const va5 = (await pool.query(
     `SELECT verdict, evidence_ref FROM mu.verification_attempt WHERE run_id=$1`, [s5.run.run_id])).rows[0];
-  ok('E5d verification_attempt verdict=PASS+工具证据入 evidence_ref',
+  ok('E5d 模型原始判定留痕（attempt PASS）+工具证据入 evidence_ref',
     va5?.verdict === 'PASS' && /static_check=ok/.test(va5?.evidence_ref ?? '') && /secret_scan=ok/.test(va5?.evidence_ref ?? ''));
 
-  // E6 model PASS 但 tools FAIL → tests_status=failed（分列——模型不能盖过工具证据）
+  // E6 model PASS 但 tools FAIL → tests_status=failed（分列——模型不能盖过工具证据）；
+  // run 级模型域恒 inconclusive（digest-only 收口）
   const s6 = await mkVerifiedReadyRun(snapshot);
   const r6 = await vf.runVerifier(pool, { run: s6.run, binding: s6.binding, snapshot,
     findings: FINDINGS, patchArtifact: s6.artifact,
     deps: { fetchImpl: mkVerdictFetch('PASS', []), baseUrl: 'https://mock', apiKey: 'k',
       model: 'm', patchText: PATCH_TEXT + '\n+const password = "sample-not-real-secret";' } });
   ok('E6 model PASS+tools FAIL→分列不冒充',
-    r6.ok === true && r6.verification_verdict === 'passed' && r6.tests_status === 'failed');
+    r6.ok === true && r6.verification_verdict === 'inconclusive' && r6.tests_status === 'failed');
   const rr6 = (await pool.query(`SELECT tests_status, status FROM mu.review_run WHERE run_id=$1`, [s6.run.run_id])).rows[0];
   ok('E6b tests_status=failed 持久化+不推进 VERIFIED',
     rr6?.tests_status === 'failed' && rr6?.status === 'VERIFYING');
@@ -185,13 +186,14 @@ try {
     `SELECT status, error_code FROM mu.agent_attempt WHERE run_id=$1 AND agent_role='verifier'`, [s7.run.run_id])).rows[0];
   ok('E7d verifier attempt FAILED（模型域失败独立记）', att7?.status === 'FAILED' && att7?.error_code === 'VERIFIER_HTTP_503');
 
-  // E8 模型 FAIL → verification_verdict=failed
+  // E8 模型 FAIL → attempt=FAIL 留痕；run 级仍 inconclusive（digest-only 收口）
   const s8 = await mkVerifiedReadyRun(snapshot);
   const r8 = await vf.runVerifier(pool, { run: s8.run, binding: s8.binding, snapshot,
     findings: FINDINGS, patchArtifact: s8.artifact,
     deps: { fetchImpl: mkVerdictFetch('FAIL', []), baseUrl: 'https://mock', apiKey: 'k',
       model: 'm', patchText: PATCH_TEXT } });
-  ok('E8 模型 FAIL→failed', r8.verification_verdict === 'failed');
+  ok('E8 模型 FAIL→attempt 留痕+run=inconclusive（收口）',
+    r8.attempt_verdict === 'FAIL' && r8.verification_verdict === 'inconclusive');
 
   // E9 独立 verifier attempt（不复用 reviewer/fixer 会话）
   const attRoles = (await pool.query(

@@ -179,10 +179,12 @@ test('PR 详情：四分立判定+出站计数上屏（互不冒充）', async (
       pull_request: { pr_id: 'pr-1', provider_pr_number: 4242, head_sha: 'ab'.repeat(20),
         branch_protection_status: 'unknown', title: 'fix' },
       review_records: [],
-      latest_run: { run_id: 'run-1', status: 'VERIFIED', architecture_version: 'v2',
+      latest_run: { run_id: 'run-1', status: 'VERIFYING', architecture_version: 'v2',
         review_mode: 'external_api', execution_mode: 'external_api',
-        review_verdict: 'changes_requested', verification_verdict: 'passed',
-        tests_status: 'failed', merge_eligibility: 'ineligible', code_egress: 2 },
+        review_verdict: 'changes_requested', verification_verdict: 'inconclusive',
+        tests_status: 'passed', merge_eligibility: 'ineligible', code_egress: 2,
+        model_judgment: { verdict: 'PASS', input: 'digest_only', note: '仅审计留痕' },
+        test_evidence: 'tools:static_check=ok,secret_scan=ok' },
       my_permissions: { actions: [] },
     }],
     '/api/mu/runs': () => [200, { runs: [] }],
@@ -192,10 +194,12 @@ test('PR 详情：四分立判定+出站计数上屏（互不冒充）', async (
   try {
     assert.ok(text.includes('审查结论'), '审查结论标签');
     assert.ok(text.includes('要求修改'), 'review_verdict=changes_requested 值上屏');
-    assert.ok(text.includes('验证结论') && text.includes('通过'), 'verification_verdict=passed 上屏');
-    assert.ok(text.includes('测试证据') && text.includes('未通过'), 'tests_status=failed 上屏');
+    assert.ok(text.includes('验证结论（模型域）') && text.includes('不确定'), 'verification_verdict=inconclusive 上屏（分显模型域）');
+    assert.ok(text.includes('测试证据（工具域）') && text.includes('通过'), 'tests_status=passed 上屏（分显工具域）');
     assert.ok(text.includes('合并资格') && text.includes('不具备资格'), 'merge_eligibility=ineligible 上屏');
+    assert.ok(text.includes('模型判定（原始）') && text.includes('PASS') && text.includes('digest_only'), 'model_judgment 原始判定分显');
+    assert.ok(text.includes('工具证据：') && text.includes('static_check=ok'), 'test_evidence 工具证据分显');
     assert.ok(text.includes('次调用（审计在案）'), '出站计数上屏');
-    assert.ok(text.includes('互不冒充'), '分立语义提示上屏');
+    assert.ok(text.includes('模型未读取完整 patch'), 'RC 语义措辞上屏（模型未读完整 patch/inconclusive/工具独立有效）');
   } catch (e) { console.log(text.slice(0, 3000)); throw e; }
 });
