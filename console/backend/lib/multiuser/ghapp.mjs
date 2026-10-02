@@ -13,6 +13,7 @@ import crypto from 'node:crypto';
 export const GHAPP_PERMISSIONS = [
   'metadata:read', 'contents:read', 'pull_requests:read',
   'checks:read', 'statuses:read',
+  'administration:read',  // Wave 3.15：branch protection 只读探测——Leader fix/verify 链的触发前提（G-9）
 ];
 export const GHAPP_EVENTS = [
   'installation', 'installation_repositories', 'pull_request', 'check_run', 'status',

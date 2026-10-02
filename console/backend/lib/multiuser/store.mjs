@@ -167,7 +167,9 @@ export async function createMuStore({ pool, env = process.env } = {}) {
   async function listRepositories(tenantId) {
     const r = await q(
       `SELECT r.*, b.binding_id, b.kind AS binding_kind, b.installation_id, b.installation_state,
-              b.granted_scopes, b.state AS binding_state
+              b.granted_scopes, b.state AS binding_state,
+              (SELECT count(*) FROM mu.pull_request p
+                WHERE p.repo_id = r.repo_id AND p.tenant_id = r.tenant_id) AS pr_count
          FROM mu.repository r
          LEFT JOIN mu.binding b ON b.repo_id = r.repo_id AND b.state='active'
         WHERE r.tenant_id=$1 AND r.state='active' ORDER BY r.created_at`, [tenantId]);
@@ -212,19 +214,21 @@ export async function createMuStore({ pool, env = process.env } = {}) {
     return r.rows[0];
   }
   async function resolvePullRequest(tenantId, prId) {
-    const r = await q(
-      `SELECT p.*, r.owner AS repo_owner, r.name AS repo_name, r.provider AS repo_provider
-         FROM mu.pull_request p JOIN mu.repository r ON r.repo_id = p.repo_id
-        WHERE p.tenant_id=$1 AND p.pr_id=$2`, [tenantId, prId]);
-    if (r.rows[0]) return r.rows[0];
-    // 编号寻址兜底（PR 详情路由携带 GitHub 编号；UUID 解析失败后按编号解析——
-    // 编号在 tenant 内跨仓库可重号，取最近更新行）。仍严格 tenant 收窄。
+    const COL = 'p.*, r.owner AS repo_owner, r.name AS repo_name, r.provider AS repo_provider';
+    const FROM = 'FROM mu.pull_request p JOIN mu.repository r ON r.repo_id = p.repo_id';
+    // 双寻址（Wave 3.15 拆页后路由携带 GitHub 编号）：先按形状分派——
+    // 数字直接走编号查询（非 UUID 值塞给 uuid 列会 22P02 500，而非空结果）
     const n = Number(prId);
-    if (!Number.isInteger(n) || n <= 0) return null;
+    const isNumber = Number.isInteger(n) && n > 0 && String(prId).trim() !== '';
+    if (!isNumber) {
+      const r = await q(
+        `SELECT ${COL} ${FROM} WHERE p.tenant_id=$1 AND p.pr_id=$2`, [tenantId, prId]);
+      if (r.rows[0]) return r.rows[0];
+      return null;
+    }
+    // 编号在 tenant 内跨仓库可重号，取最近更新行；仍严格 tenant 收窄
     const r2 = await q(
-      `SELECT p.*, r.owner AS repo_owner, r.name AS repo_name, r.provider AS repo_provider
-         FROM mu.pull_request p JOIN mu.repository r ON r.repo_id = p.repo_id
-        WHERE p.tenant_id=$1 AND p.provider_pr_number=$2
+      `SELECT ${COL} ${FROM} WHERE p.tenant_id=$1 AND p.provider_pr_number=$2
         ORDER BY p.updated_at DESC LIMIT 1`, [tenantId, n]);
     return r2.rows[0] ?? null;
   }

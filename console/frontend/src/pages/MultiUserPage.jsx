@@ -1,6 +1,8 @@
 import { Alert, Button, Input, InputNumber, Modal, Popconfirm, Segmented, Select, Space, Switch, Table, Tag, Typography } from 'antd';
 import { ReloadOutlined, CheckCircleOutlined } from '@ant-design/icons';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { MuPrDetailContent } from './MuPrDetailContent.jsx';
 import { readCsrfCookie } from '../api-live.js';
 
 // 多用户面（Developer Edition Beta onboarding）。
@@ -107,7 +109,7 @@ const PIPE_LABEL = {
 };
 const SEV_TONE = { P0: 'red', P1: 'volcano', P2: 'orange', P3: 'gold' };
 
-function PipelinePanel({ prNumber, repoId }) {
+export function PipelinePanel({ prNumber, repoId }) {
   const [state, setState] = useState({ phase: 'idle' }); // idle | loading | ready | empty | denied | error
   useEffect(() => {
     if (!prNumber || !repoId) { setState({ phase: 'idle' }); return undefined; }
@@ -631,7 +633,6 @@ export default function MultiUserPage() {
   const [prs, setPrs] = useState(null);
   const [prsState, setPrsState] = useState('idle'); // idle | loading | ready | error
   const [prRepoId, setPrRepoId] = useState(null);
-  const [prDetail, setPrDetail] = useState(null);
   const [actionMsg, setActionMsg] = useState(null);
   const [loading, setLoading] = useState(false);
   const [providers, setProviders] = useState(null);
@@ -704,11 +705,52 @@ export default function MultiUserPage() {
     return () => { dead = true; };
   }, [session, effectiveRepoId]);
 
-  const openPr = useCallback(async (prId) => {
-    setActionMsg(null);
-    const d = await muGet(`/api/mu/prs/${prId}`);
-    if (d.status === 200) setPrDetail(d.body);
-  }, []);
+  // Wave 3.16 master-detail：选中 PR 同步到 URL query（?repo_id=&pr=）——
+  // 刷新/直接打开/前进后退均可恢复；setSearchParams 走 router 历史（可回退）。
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlRepoId = searchParams.get('repo_id');
+  const urlPr = Number(searchParams.get('pr')) || null;
+  const selectPr = useCallback((prNumber) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (prNumber == null) next.delete('pr');
+      else next.set('pr', String(prNumber));
+      return next;
+    }, { replace: false });
+  }, [setSearchParams]);
+  const selectRepo = useCallback((repoId) => {
+    setPrRepoId(repoId);
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (repoId) next.set('repo_id', repoId); else next.delete('repo_id');
+      next.delete('pr'); // 换仓库清选中（不同仓库 PR 编号语义变化）
+      return next;
+    }, { replace: false });
+  }, [setSearchParams]);
+  // URL 携带 repo_id 时优先（直接打开/刷新恢复）
+  useEffect(() => {
+    if (urlRepoId && urlRepoId !== prRepoId) setPrRepoId(urlRepoId);
+  }, [urlRepoId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const selectedPrRef = (urlPr && effectiveRepo)
+    ? { repoId: effectiveRepoId, owner: effectiveRepo.owner, name: effectiveRepo.name, prNumber: urlPr }
+    : null;
+  // Escape=关闭详情（文档级——焦点在列表行上时同样生效；与关闭钮/浏览器返回一致）
+  useEffect(() => {
+    if (!urlPr) return undefined;
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      const prevNum = document.querySelector('.mu-pr-row.is-selected')?.textContent.match(/#(\d+)/)?.[1];
+      selectPr(null);
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        const row = prevNum
+          ? [...document.querySelectorAll('.mu-pr-row')].find(x => x.textContent.includes('#' + prevNum))
+          : null;
+        (row ?? document.querySelector('.mu-pr-list'))?.focus?.();
+      }));
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [urlPr, selectPr]);
 
   const runAction = useCallback(async (label, path, payload) => {
     setActionMsg(null);
@@ -718,8 +760,8 @@ export default function MultiUserPage() {
       reason: r.body?.error?.reason ?? null,
       note: r.body?.note ?? (r.status === 200 ? '已受理（后端授权为准）' : null),
     });
-    if (r.status === 200) await openPr(path.split('/').slice(0, 5).join('/'));
-  }, [openPr]);
+    // 详情已拆独立路由页——操作成功后刷新本页 PR 列表即可
+  }, []);
 
   const doInstall = useCallback(async () => {
     const r = await muPost('/api/mu/github/install/start');
@@ -729,8 +771,18 @@ export default function MultiUserPage() {
   const shownPrs = useMemo(() => {
     if (prsState !== 'ready' || !prs) return [];
     const needle = numFilter.trim();
-    if (!needle) return prs;
-    return prs.filter((p) => String(p.provider_pr_number ?? '').includes(needle));
+    const pool = needle
+      ? prs.filter((p) => String(p.provider_pr_number ?? '').includes(needle))
+      : prs;
+    // 同一 PR 多行（每个历史 head 一行——upsert 键含 head_sha）→ 只显最新一行，
+    // 历史 head 收进 PR 详情；避免表被同一 PR 的历史行刷长。
+    const latest = new Map();
+    for (const p of pool) {
+      const k = String(p.provider_pr_number);
+      const prev = latest.get(k);
+      if (!prev || String(p.updated_at ?? '') > String(prev.updated_at ?? '')) latest.set(k, p);
+    }
+    return [...latest.values()];
   }, [prs, prsState, numFilter]);
 
   const latestPr = useMemo(() => {
@@ -794,7 +846,7 @@ export default function MultiUserPage() {
             }}
             onInstall={doInstall}
             onCheckSync={refresh}
-            onOpenLatest={openPr}
+            onOpenLatest={selectPr}
             latestPr={latestPr} />
         </div>
       ) : null}
@@ -833,6 +885,9 @@ export default function MultiUserPage() {
             </details>
           </div>
 
+          <details className="tech-details mu-admin-drawer">
+            <summary>接入管理（GitHub App · 成员 · Agent 策略）——默认折叠，PR 审查为主工作区</summary>
+            <div className="tech-body">
           {ob.stage !== 'login' ? (
             ob.done.review ? (
               <details className="tech-details section">
@@ -871,117 +926,93 @@ export default function MultiUserPage() {
               </div>
             </details>
           </section>
+            </div>
+          </details>
+
 
           {ob.done.bind ? (
-            <section className="section" id="mu-prs">
-              <div className="section-head"><h3>PR 审查</h3></div>
-              <div className="mu-controls" style={{ marginBottom: 12 }}>
-                <Select style={{ minWidth: 220, maxWidth: '100%' }} placeholder="选择仓库"
+            <section className="section mu-workbench" id="mu-prs" aria-label="PR 审查工作台">
+              <div className="section-head mu-workbench-head"><h3>PR 审查</h3></div>
+              <div className="mu-controls">
+                <Select className="mu-repo-select" placeholder="选择仓库"
                   aria-label="选择要查看的仓库"
                   value={effectiveRepoId ?? undefined}
-                  onChange={(v) => setPrRepoId(v)}
-                  options={boundRepos.map((r) => ({ value: r.repo_id, label: `${r.owner}/${r.name}` }))} />
-                <Input style={{ width: 140, maxWidth: '100%' }} placeholder="按 PR 编号过滤" value={numFilter}
+                  onChange={(v) => selectRepo(v)}
+                  options={boundRepos.map((r) => ({ value: r.repo_id, label: `${r.owner}/${r.name}` })) } />
+                <Input className="mu-pr-filter" placeholder="按 PR 编号过滤" value={numFilter}
                   aria-label="按 PR 编号过滤"
                   onChange={(e) => setNumFilter(e.target.value)} allowClear />
               </div>
 
-              {prsState === 'loading' ? <Typography.Text type="secondary">正在读取 PR 列表…</Typography.Text> : null}
-              {prsState === 'error' ? (
-                <Alert type="warning" showIcon message="PR 列表暂时无法读取"
-                  description="可稍后点击「立即刷新」重试；若持续失败请联系管理员检查 GitHub App 通知配置。" />
-              ) : null}
-              {prsState === 'ready' && shownPrs.length === 0 ? (
-                <Alert type="info" showIcon
-                  message={numFilter ? '没有匹配该编号的 PR' : '该仓库还没有 PR'}
-                  description={numFilter ? '清除编号过滤后查看全部。' : 'PR 创建后会自动同步到这里。'} />
-              ) : null}
-
-              {shownPrs.length > 0 ? (
-                <div className="table-scroll">
-                  <table className="pr-table mu-pr-table">
-                    <thead>
-                      <tr>
-                        <th scope="col">PR</th>
-                        <th scope="col">head SHA</th>
-                        <th scope="col">branch protection</th>
-                        <th scope="col">更新时间</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {shownPrs.map((pr) => {
-                        const sha = String(pr.head_sha ?? '');
-                        const repoLabel = effectiveRepo ? `${effectiveRepo.owner}/${effectiveRepo.name}` : '';
-                        return (
-                          <tr key={pr.pr_id}>
-                            <td className="cell-pr" data-label="PR">
-                              <button type="button" className="row-link cell-title mu-pr-open"
-                                aria-label={`打开 PR #${pr.provider_pr_number}（${repoLabel}，head ${sha.slice(0, 12) || '未知'}）`}
-                                onClick={() => openPr(pr.pr_id)}>
-                                #{pr.provider_pr_number}
-                              </button>
-                            </td>
-                            <td data-label="head SHA"><code>{sha.slice(0, 12)}</code></td>
-                            <td data-label="branch protection">
-                              <Tag color={pr.branch_protection_status === 'known_clean' ? 'green' : 'orange'}>
-                                {pr.branch_protection_status === 'known_clean' ? '受保护 · 已验证' : String(pr.branch_protection_status ?? 'unknown')}
-                              </Tag>
-                            </td>
-                            <td className="cell-time" data-label="更新时间">
-                              {String(pr.updated_at ?? '').slice(0, 19).replace('T', ' ')}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+              <div className="mu-master-detail">
+                <div className="mu-pr-list" role="listbox" aria-label="PR 列表" tabIndex={-1}>
+                  {prsState === 'loading' ? <div className="mu-detail-state" role="status">正在读取 PR 列表…</div> : null}
+                  {prsState === 'error' ? (
+                    <Alert type="warning" showIcon message="PR 列表暂时无法读取"
+                      description="可稍后点击「立即刷新」重试；若持续失败请联系管理员检查 GitHub App 通知配置。" />
+                  ) : null}
+                  {prsState === 'ready' && shownPrs.length === 0 ? (
+                    <Alert type="info" showIcon
+                      message={numFilter ? '没有匹配该编号的 PR' : '该仓库还没有 PR'}
+                      description={numFilter ? '清除编号过滤后查看全部。' : 'PR 创建后会自动同步到这里。'} />
+                  ) : null}
+                  {shownPrs.map((pr) => {
+                    const sha = String(pr.head_sha ?? '');
+                    const repoLabel = effectiveRepo ? `${effectiveRepo.owner}/${effectiveRepo.name}` : '';
+                    const selected = urlPr === Number(pr.provider_pr_number);
+                    const label = `仓库 ${repoLabel}，PR ${pr.provider_pr_number}，head ${sha.slice(0, 12) || '未知'}`;
+                    return (
+                      <div key={pr.pr_id} role="option" tabIndex={0}
+                        aria-selected={selected}
+                        aria-label={label}
+                        className={`mu-pr-row${selected ? ' is-selected' : ''}`}
+                        onClick={() => selectPr(Number(pr.provider_pr_number))}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            selectPr(Number(pr.provider_pr_number));
+                          }
+                        }}>
+                        <span className="mu-pr-row-title">#{pr.provider_pr_number}
+                          <code className="mono mu-pr-row-sha">{sha.slice(0, 10) || '未知'}</code>
+                        </span>
+                        <span className="mu-pr-row-sub">
+                          <Tag className="mu-pr-row-tag" color={pr.branch_protection_status === 'known_clean' ? 'green' : 'orange'}>
+                            {pr.branch_protection_status === 'known_clean' ? '受保护' : String(pr.branch_protection_status ?? 'unknown')}
+                          </Tag>
+                          <span className="muted">{String(pr.updated_at ?? '').slice(5, 16).replace('T', ' ')}</span>
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
-              ) : null}
 
-              {prDetail ? (
-                <div className="panel" style={{ padding: 'var(--sp-4)', marginTop: 12 }}>
-                  <Space size="large" wrap>
-                    <span>repo：<code>{prDetail.pull_request?.repo_owner}/{prDetail.pull_request?.repo_name}</code></span>
-                    <span>head：<code>{prDetail.pull_request?.head_sha?.slice(0, 12)}</code></span>
-                    <span>protection：<Tag color={prDetail.pull_request?.branch_protection_status === 'known_clean' ? 'green' : 'orange'}>
-                      {prDetail.pull_request?.branch_protection_status}</Tag></span>
-                  </Space>
-                  <div style={{ marginTop: 8 }}>
-                    <Space wrap>
-                      <Button size="small" disabled={!can('request_review')}
-                        onClick={() => runAction('触发只读审查', `/api/mu/prs/${prDetail.pull_request.pr_id}/review`)}>
-                        触发只读审查{!can('request_review') ? '（需 Reviewer）' : ''}</Button>
-                      <Button size="small" disabled={!can('decide_review')}
-                        onClick={() => runAction('审批通过', `/api/mu/prs/${prDetail.pull_request.pr_id}/decision`, { action: 'approve' })}>
-                        Approve{!can('decide_review') ? '（需 Maintainer）' : ''}</Button>
-                      <Button size="small" disabled={!can('decide_review')} danger
-                        onClick={() => runAction('驳回', `/api/mu/prs/${prDetail.pull_request.pr_id}/decision`, { action: 'reject' })}>
-                        Reject{!can('decide_review') ? '（需 Maintainer）' : ''}</Button>
-                      <Button size="small" disabled={!can('request_repair')}
-                        onClick={() => runAction('发起受控修复', `/api/mu/prs/${prDetail.pull_request.pr_id}/repair`)}>
-                        受控修复{!can('request_repair') ? '（需 Maintainer）' : ''}</Button>
-                    </Space>
-                    <Typography.Paragraph type="secondary" style={{ marginTop: 4, marginBottom: 0 }}>
-                      按钮仅反映权限；protection 非 known_clean 时后端拒绝可合并结论（fail-closed）。
-                    </Typography.Paragraph>
-                  </div>
-                  <Table style={{ marginTop: 12 }} rowKey="review_id" size="small" pagination={false} scroll={{ x: true }}
-                    dataSource={prDetail.review_records ?? []}
-                    columns={[
-                      { title: 'kind', dataIndex: 'kind', render: (v) => <code>{v}</code> },
-                      { title: 'decision', dataIndex: 'decision' },
-                      { title: 'actor', dataIndex: 'actor_login' },
-                      { title: 'head', dataIndex: 'head_sha', render: (v) => <code>{String(v).slice(0, 10)}</code> },
-                      { title: 'protection', dataIndex: 'branch_protection_status' },
-                      { title: '时间', dataIndex: 'created_at', render: (v) => String(v ?? '').slice(0, 19).replace('T', ' ') },
-                    ]} />
-                  <PipelinePanel prNumber={Number(prDetail.pull_request?.provider_pr_number)}
-                    repoId={effectiveRepoId} />
+                <div className="mu-pr-detail" aria-live="polite">
+                  <button type="button" className="mu-detail-close"
+                    aria-label="关闭 PR 详情"
+                    onClick={() => {
+                      const prevNum = document.querySelector('.mu-pr-row.is-selected')?.textContent.match(/#(\d+)/)?.[1];
+                      selectPr(null);
+                      requestAnimationFrame(() => requestAnimationFrame(() => {
+                        // 重渲染后再取 live 节点（清参后选中行已去高亮——按编号找回）
+                        const row = prevNum
+                          ? [...document.querySelectorAll('.mu-pr-row')].find(x => x.textContent.includes('#' + prevNum))
+                          : null;
+                        (row ?? document.querySelector('.mu-pr-list'))?.focus?.();
+                      }));
+                    }}>关闭详情</button>
+                  {selectedPrRef
+                    ? <MuPrDetailContent prRef={selectedPrRef} onChanged={refresh} />
+                    : <div className="mu-detail-placeholder">
+                        <span className="mu-detail-placeholder-glyph" aria-hidden>⌘</span>
+                        <span>选择一个 PR 查看详情</span>
+                        <span className="muted">审查管线、风险项与操作将在这里展示</span>
+                      </div>}
                 </div>
-              ) : null}
+              </div>
 
               {actionMsg ? (
-                <Alert style={{ marginTop: 12 }} type={actionMsg.ok ? 'success' : 'warning'} showIcon
+                <Alert className="mu-action-msg" type={actionMsg.ok ? 'success' : 'warning'} showIcon
                   message={`${actionMsg.label} → HTTP ${actionMsg.status}${actionMsg.reason ? `（${actionMsg.reason}）` : ''}`}
                   description={actionMsg.note ?? undefined} />
               ) : null}

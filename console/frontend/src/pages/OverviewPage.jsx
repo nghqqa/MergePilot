@@ -126,7 +126,7 @@ export default function OverviewPage() {
             <Tag color={data.health.postgres === 'LIVE' ? 'success' : data.health.postgres === 'ERROR' ? 'error' : 'warning'}>
               {data.health.postgres === 'LIVE' ? 'PG 实时' : data.health.postgres === 'ERROR' ? 'PG 错误' : 'PG 未接线'}
             </Tag>
-            <Tag title={data.health.minio.note}>MinIO {data.health.minio.state === 'NOT_WIRED' ? '未接线' : data.health.minio.state}</Tag>
+            <Tag color={data.health.minio.state === 'AGENTTEAMS_MANAGED' ? 'success' : 'default'} title={data.health.minio.note}>MinIO {data.health.minio.state === 'AGENTTEAMS_MANAGED' ? 'AgentTeams 管理' : data.health.minio.state === 'NOT_WIRED' ? '未接线' : data.health.minio.state}</Tag>
             <Tag color="success">后端只读 OK</Tag>
           </Typography.Paragraph>
 

@@ -160,6 +160,14 @@ function multiuserSource(fetchImpl) {
             severity: null, stale: false, runId: pr.run_id ?? null }
           : null,
         latestRun: pr.run_id ? { runId: pr.run_id, status: String(pr.run_status ?? 'RUNNING'), startedAt: null } : null,
+        runs: [], hasPendingTickets: false,
+        heads: pr.head_sha ? [{ head: pr.head_sha, runs: [] }] : [],
+        attention: pr.run_status && ['BLOCKED', 'REWORK_REQUIRED', 'FAILED'].includes(pr.run_status)
+          ? { flag: 'decision', label: '审查已阻断——需关注' } : { flag: null, label: '—' },
+        review: { basis: pr.run_status ? 'current-record' : 'no-result',
+          review: { verdict: pr.run_status ? (['COMPLETED', 'VERIFIED'].includes(pr.run_status) ? 'PASS'
+            : ['BLOCKED', 'REWORK_REQUIRED', 'FAILED'].includes(pr.run_status) ? 'BLOCKED' : 'RUNNING') : null,
+          severity: null }, stale: false },
         hasPendingTickets: false,
       }));
     },

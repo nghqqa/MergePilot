@@ -117,7 +117,7 @@ export function createMuConsoleApi({ pool }) {
       incidents: { stale_count: 0, failed_receipts: 0, integrity_conflicts: 0 },
       health: {
         postgres: 'LIVE',
-        minio: { state: 'NOT_WIRED', note: '控制台不直连 MinIO（平台边界）；证据链 MinIO 只读回读在验证工件中' },
+        minio: { state: 'AGENTTEAMS_MANAGED', note: 'MinIO 由 AgentTeams 内部管理（worker 配置/任务工件）——控制台按安全边界不直连，属正常' },
         backend: { state: 'OK', note: '本服务即后端（只读）' },
       },
       trend: [],
