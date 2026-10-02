@@ -96,8 +96,8 @@ export function buildEnvelope({ files, instruction }) {
   const dataBlocks = files.map((f) =>
     `# FILE: ${f.path} (lines ${f.line_start}-${f.line_end})\n${wrapUntrusted(f.content)}`).join('\n\n');
   return {
-    // 指令区（固定——PR 内容不可能到达这里）
-    instruction: String(instruction ?? 'Review the code context for security issues. Output JSON findings only.'),
+    // 指令区（固定——PR 内容不可能到达这里）。schema 逐字钉死：真实模型首通过率关键。
+    instruction: String(instruction ?? 'Review the code context for security issues. Respond with ONLY a JSON object of exactly this shape {"findings":[{"severity":"P0"|"P1"|"P2"|"P3","path":string,"line_start":number,"summary":string,"evidence_span":string}]} — no prose, no markdown fences, no extra keys. If none: {"findings":[]}.'),
     // 数据区
     data: dataBlocks,
     serialize() {
