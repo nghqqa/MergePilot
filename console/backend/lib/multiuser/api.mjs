@@ -954,7 +954,24 @@ export async function muApi(req, res, ctx) {
         const g = await guard('read_pull_request', { repoId: pr.repo_id });
         if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
         const records = await store.listReviewRecords(mu.tenantId, pr.pr_id);
+        // ADR-002 PR F：最新 run 的分立结果列（review/verification/tests/merge_eligibility
+        // 互不冒充；legacy run 零 v2 列→前端按"未运行"呈现，不猜值）
+        const latestRun = (await muPoolQ(
+          `SELECT run_id, status, architecture_version, review_mode, execution_mode,
+                  review_verdict, verification_verdict, tests_status, merge_eligibility, code_egress
+             FROM mu.review_run WHERE tenant_id=$1 AND pr_id=$2
+            ORDER BY created_at DESC LIMIT 1`, [mu.tenantId, pr.pr_id])).rows[0] ?? null;
         return sendJson(res, 200, { pull_request: pr, review_records: records,
+          latest_run: latestRun ? {
+            run_id: latestRun.run_id, status: latestRun.status,
+            architecture_version: latestRun.architecture_version ?? null,
+            review_mode: latestRun.review_mode ?? null,
+            execution_mode: latestRun.execution_mode ?? null,
+            review_verdict: latestRun.review_verdict ?? null,
+            verification_verdict: latestRun.verification_verdict ?? null,
+            tests_status: latestRun.tests_status ?? null,
+            merge_eligibility: latestRun.merge_eligibility ?? null,
+            code_egress: Number(latestRun.code_egress ?? 0) } : null,
           my_permissions: { actions: roleActions(liveMembership.role) ?? [] } });
       }
       return sendJson(res, 404, { error: { reason: 'unknown pr subpath' } });
@@ -1304,6 +1321,44 @@ export async function muApi(req, res, ctx) {
       await store.audit('REVIEW_CONSENT_REVOKED', { tenantId: mu.tenantId, actorUserId: mu.userId,
         detail: { provider_id: body?.provider_id } });
       return sendJson(res, 200, { ok: true });
+    }
+    // ── ADR-002 PR F：出站披露（code_egress_event 只读投影——digest/计数，零正文）──
+    // 权限：read_audit（auditor+）——租户收窄；可选 run_id 过滤（run 归属校验同上防枚举）。
+    if (p === '/api/mu/egress-events' && req.method === 'GET') {
+      const g = await guard('read_audit');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const limit = Math.min(Math.max(Number(q.limit) || 50, 1), 200);
+      const params = [mu.tenantId, limit];
+      let runFilter = '';
+      if (q.run_id) {
+        const own = await muPoolQ(
+          `SELECT 1 FROM mu.review_run WHERE run_id=$1 AND tenant_id=$2`, [String(q.run_id), mu.tenantId]);
+        if (!own.rows.length) return sendJson(res, 404, { error: { reason: 'run_not_found' } });
+        params.splice(1, 0, String(q.run_id));
+        runFilter = 'AND e.run_id=$2';
+      }
+      const rows = await muPoolQ(
+        `SELECT e.event_id, e.run_id, e.provider_id, e.model_id, e.head_sha, e.input_digest,
+                e.response_digest, e.files, e.bytes_sent, e.tokens_sent, e.redactions_applied,
+                e.policy_version, e.consent_version, e.timeout, e.retry_count, e.created_at,
+                a.agent_role, a.provider AS attempt_provider, a.status AS attempt_status
+           FROM mu.code_egress_event e
+           LEFT JOIN mu.agent_attempt a ON a.attempt_id = e.attempt_id
+          WHERE e.tenant_id=$1 ${runFilter}
+          ORDER BY e.event_id DESC LIMIT $${params.length}`, params);
+      return sendJson(res, 200, { events: (rows.rows ?? []).map((e) => ({
+        event_id: e.event_id, run_id: e.run_id,
+        agent_role: e.agent_role ?? null, attempt_provider: e.attempt_provider ?? null,
+        attempt_status: e.attempt_status ?? null,
+        provider_id: e.provider_id, model_id: e.model_id,
+        head_sha: String(e.head_sha ?? '').slice(0, 12),
+        input_digest: e.input_digest, response_digest: e.response_digest,
+        files: Array.isArray(e.files) ? e.files : [], // 文件名清单（路径非正文——披露"哪些文件被送出"）
+        bytes_sent: Number(e.bytes_sent ?? 0), tokens_sent: Number(e.tokens_sent ?? 0),
+        redactions_applied: Number(e.redactions_applied ?? 0),
+        policy_version: e.policy_version, consent_version: e.consent_version,
+        timeout: Boolean(e.timeout), retry_count: Number(e.retry_count ?? 0),
+        created_at: e.created_at })) });
     }
 
     if (p === '/api/mu/agent-policy' && req.method === 'GET') {

@@ -133,6 +133,21 @@ jobs:
       - name: MU eager schema init gate (Wave 3.9, 5 scenarios; self-boot postgres)
         run: node console/backend/test/mu-eager-init.integration.mjs
 
+      # ADR-002 审查架构 v2（external-api 链，mock Provider 零真实网络）：
+      # PR A 控制面 + PR B 上下文 + PR C Reviewer + PR D Fixer + PR E Verifier + PR F 披露面
+      - name: MU review-arch v2 control plane (PR A, 33 scenarios)
+        run: node console/backend/test/mu-review-arch-v2.integration.mjs
+      - name: MU context builder integration (PR B, 15 scenarios)
+        run: node console/backend/test/mu-context-builder.integration.mjs
+      - name: MU external reviewer integration (PR C, 14 scenarios)
+        run: node console/backend/test/mu-external-reviewer.integration.mjs
+      - name: MU fixer sandbox integration (PR D, 16 scenarios)
+        run: node console/backend/test/mu-fixer-sandbox.integration.mjs
+      - name: MU verifier tools integration (PR E, 22 scenarios)
+        run: node console/backend/test/mu-verifier-tools.integration.mjs
+      - name: MU review-arch disclosure API (PR F, 12 scenarios)
+        run: node console/backend/test/mu-review-arch-prf.integration.mjs
+
       - name: Frontend build
         run: |
           npm ci --no-audit --no-fund
@@ -154,6 +169,12 @@ jobs:
       # 多用户页冒烟（MU Phase 4）：权限态/成员/绑定上屏 + 未启用诚实提示
       - name: Frontend multi-user page smoke
         run: node --test test/mu-page.smoke.test.mjs
+        working-directory: console/frontend
+
+      # ADR-002 PR F 前端冒烟：审查架构面板（三档/consent 门/出站披露）+
+      # PR 详情四分立判定上屏（互不冒充）
+      - name: Frontend review-arch smoke (PR F, 3 scenarios)
+        run: node --test test/mu-review-arch.smoke.test.mjs
         working-directory: console/frontend
 
       # 前端 UX 修复回归（8 场景；含 PipelinePanel 四 Agent 执行表断言）
