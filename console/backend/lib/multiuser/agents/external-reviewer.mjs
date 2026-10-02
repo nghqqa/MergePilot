@@ -222,7 +222,16 @@ export async function leaderConsumeFindings(pool, { run, binding, protection, se
   if (decision === 'clean_complete') {
     await transitionRun(pool, { runId: run.run_id, from: ['REVIEWED'], to: 'COMPLETED' });
   } else if (decision === 'fix_required') {
-    await transitionRun(pool, { runId: run.run_id, from: ['REVIEWED'], to: 'FIX_QUEUED' });
+    // v16 高危修复审批门（与 v1 leader.advanceAfterReview 同语义）：P0/P1 逐 finding
+    // 建 PENDING 票 + WAITING_FOR_HUMAN_APPROVAL；全部批准前绝不进 FIX_QUEUED/Fixer
+    const { ensureFixApprovals } = await import('../fix-approval.mjs');
+    const { tickets } = await ensureFixApprovals(pool, { run,
+      binding: { tenantId: binding.tenantId, repoId: binding.repoId,
+        prId: binding.prId, headSha: binding.headSha } });
+    await transitionRun(pool, { runId: run.run_id, from: ['REVIEWED'], to: 'WAITING_FOR_HUMAN_APPROVAL' });
+    return { ok: true, decision, review_verdict: reviewVerdict, merge_eligibility: mergeEligibility,
+      findings_total: findings.length, dispositions,
+      approval_tickets: tickets.length, run_status: 'WAITING_FOR_HUMAN_APPROVAL' };
   }
   // needs_human：保持 REVIEWED（人工入口）
 

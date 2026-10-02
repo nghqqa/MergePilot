@@ -66,8 +66,16 @@ export async function advanceAfterReview(pool, { runId, tenantId, repoId, prId, 
     return { ok: t.ok, decision: pol.decision, reason: pol.reason };
   }
   if (pol.decision === 'fix_required') {
-    const t = await transitionRun(pool, { runId, from: ['REVIEWED'], to: 'FIX_QUEUED' });
-    return { ok: t.ok, decision: pol.decision, transition: t.ok ? 'FIX_QUEUED' : t.reason };
+    // v16 高危修复审批门：P0/P1 逐 finding 建 PENDING 具名审批票 + run →
+    // WAITING_FOR_HUMAN_APPROVAL（全部 APPROVED 才由 decideFixApproval 放行 FIX_QUEUED；
+    // 绝不直通 Fixer——fix-orchestrator 入口另有 authorizeFixExecution 硬门兜底）
+    const { ensureFixApprovals } = await import('../fix-approval.mjs');
+    const { tickets } = await ensureFixApprovals(pool, { run,
+      binding: { tenantId, repoId, prId, headSha } });
+    const t = await transitionRun(pool, { runId, from: ['REVIEWED'], to: 'WAITING_FOR_HUMAN_APPROVAL' });
+    return { ok: t.ok, decision: pol.decision, transition: t.ok ? 'WAITING_FOR_HUMAN_APPROVAL' : t.reason,
+      run_status: t.ok ? 'WAITING_FOR_HUMAN_APPROVAL' : (t.current ?? null),
+      approval_tickets: tickets.length };
   }
   return { ok: true, decision: 'needs_human', decision_id: dec }; // 保持 REVIEWED
 }

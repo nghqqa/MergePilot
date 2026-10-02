@@ -58,6 +58,18 @@ try {
     VALUES ($1,$2,$3,'prd','repo',$4,'main','active') ON CONFLICT DO NOTHING`, [T, repo.repo_id, GHR, INS]);
 
   let headSeq = 0;
+// v16 审批门适配：真实路径放行（ensure+逐票 approve→run 至 FIX_QUEUED）
+const faMod = await import('../lib/multiuser/fix-approval.mjs');
+async function approveHighRisk(run, binding) {
+  await faMod.ensureFixApprovals(pool, { run, binding });
+  const ts = (await pool.query(
+    `SELECT approval_id FROM mu.fix_approval WHERE run_id=$1 AND status='PENDING'`, [run.run_id])).rows;
+  for (const t of ts) {
+    await faMod.decideFixApproval(pool, { approvalId: t.approval_id, decision: 'approve',
+      decidedBy: 'test:maintainer', tenantId: binding.tenantId });
+  }
+}
+
   const mkScenario = async ({ testCmd }) => {
     // 每场景一个真实（空树）提交——head_sha 必须是 worker 可 git fetch 的真 SHA
     git('commit', '-q', '--allow-empty', '-m', `scenario-${++headSeq}`);
@@ -66,7 +78,7 @@ try {
     const { run } = await orch.createRunIfAbsent(pool, { tenantId: T, repoId: repo.repo_id,
       prId: (await pool.query(`SELECT pr_id FROM mu.pull_request WHERE tenant_id=$1 AND repo_id=$2 AND provider_pr_number=$3 AND head_sha=$4`,
         [T, repo.repo_id, PRN, head])).rows[0].pr_id, headSha: head });
-    for (const [f, t] of [['RECEIVED', 'REVIEW_QUEUED'], ['REVIEW_QUEUED', 'REVIEWING'], ['REVIEWING', 'REVIEWED'], ['REVIEWED', 'FIX_QUEUED']]) {
+    for (const [f, t] of [['RECEIVED', 'REVIEW_QUEUED'], ['REVIEW_QUEUED', 'REVIEWING'], ['REVIEWING', 'REVIEWED']]) {
       await orch.transitionRun(pool, { runId: run.run_id, from: [f], to: t });
     }
     // reviewer attempt + P0 finding（供 fixer 取数）
@@ -77,6 +89,7 @@ try {
       tenantId: T, repoId: repo.repo_id, prId: run.pr_id, headSha: head,
       findings: [{ rule_id: 'R-SECRET', severity: 'P0', confidence: 0.9, path: 'src.js',
         line_start: 2, line_end: 2, title: '凭据', evidence_ref: 'diff:src.js#L2' }] });
+    await approveHighRisk(run, { tenantId: T, repoId: repo.repo_id, prId: run.pr_id, headSha: head });
     return { run, binding: { tenantId: T, repoId: repo.repo_id, prId: run.pr_id, headSha: head }, testCmd };
   };
 

@@ -161,7 +161,9 @@ async function executeEventSync(store, muPoolQuery, job, sysCtx) {
         tenantId: job.tenant_id, repoId: job.repo_id, prId: rv.run.pr_id, headSha,
         findings, protection: rv.protection ?? { configured: false } });
       pipeline.decision = dec.decision ?? dec.reason ?? null;
-      if (dec.decision === 'fix_required') {
+      // v16 审批门：fix_required 现→WAITING_FOR_HUMAN_APPROVAL（dec.run_status 携带）——
+      // 仅当 run 实际到达 FIX_QUEUED（历史数据/测试直通）才内联修复轮；否则等人工批准
+      if (dec.decision === 'fix_required' && dec.run_status === 'FIX_QUEUED') {
         const { fixVerifyRound } = await import('./agents/fix-orchestrator.mjs');
         const dep = await buildFixDeps(muPoolQuery, { job, sysCtx, githubRepoId });
         if (dep) {
@@ -209,6 +211,34 @@ async function buildFixDeps(muPoolQuery, { job, sysCtx, githubRepoId }) {
           WHERE rb.github_repo_id=$1 AND rb.tenant_id=$2 AND rb.binding_state='active'
             AND i.revoked_at IS NULL AND i.suspended_at IS NULL`,
         [githubRepoId, job.tenant_id]).catch(() => null);
+      return Boolean(chk?.rows?.length);
+    },
+  };
+}
+
+// v16 审批门：按 repo_id 装配修复轮 deps（approve 后内联启动用；
+// 与 buildFixDeps 同形状——仅键不同：绑定衈按 repo_id 查而非 github_repo_id+job）
+async function buildFixDepsForRepo(muPoolQuery, { tenantId, repoId, prNumber }) {
+  const rb = await muPoolQuery(
+    `SELECT owner, name, installation_id, github_repo_id FROM mu.repository_binding
+      WHERE repo_id=$1 AND tenant_id=$2 AND binding_state='active' LIMIT 1`,
+    [repoId, tenantId]).catch(() => null);
+  if (!rb?.rows?.length) return null;
+  const row = rb.rows[0];
+  const overrides = global.__WAVE3_TEST_DEPS;
+  return {
+    repoUrl: overrides?.repoUrl ?? `https://github.com/${row.owner}/${row.name}.git`,
+    testCmd: overrides?.testCmd ?? (process.env.MU_FXV_TEST_CMD || 'node -e process.exit(0)'),
+    providerCfg: ghAppConfig(process.env),
+    installationId: String(row.installation_id),
+    owner: row.owner, repoName: row.name, prNumber: Number(prNumber ?? 0),
+    assertServiceChain: async () => {
+      const chk = await muPoolQuery(
+        `SELECT 1 FROM mu.repository_binding rb
+          JOIN mu.github_app_installation i ON i.installation_id = rb.installation_id
+          WHERE rb.repo_id=$1 AND rb.tenant_id=$2 AND rb.binding_state='active'
+            AND i.revoked_at IS NULL AND i.suspended_at IS NULL`,
+        [repoId, tenantId]).catch(() => null);
       return Boolean(chk?.rows?.length);
     },
   };
@@ -981,7 +1011,98 @@ export async function muApi(req, res, ctx) {
             test_evidence: vaRow?.evidence_ref ?? null } : null,
           my_permissions: { actions: roleActions(liveMembership.role) ?? [] } });
       }
+      if (prMatch[2] === 'fix-approvals' && req.method === 'GET') {
+        // v16 审批门：该 PR 最新 run 的高危审批票（read_pull_request 即可见——决定动作另需 decide_review）
+        const g = await guard('read_pull_request', { repoId: pr.repo_id });
+        if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+        const { sweepFixApprovals } = await import('./fix-approval.mjs');
+        await sweepFixApprovals({ query: muPoolQ }).catch(() => {});
+        const rows = await muPoolQ(
+          `SELECT fa.approval_id, fa.run_id, fa.finding_id, fa.severity, fa.status,
+                  fa.head_sha, fa.created_at, fa.expires_at, fa.decided_by, fa.decided_at,
+                  fa.decision_reason, fa.requested_action, fa.pr_number,
+                  f.rule_id, f.path, f.line_start, f.summary_masked, rr.status AS run_status
+             FROM mu.fix_approval fa
+             JOIN mu.agent_finding f ON f.finding_id = fa.finding_id
+             JOIN mu.review_run rr ON rr.run_id = fa.run_id
+            WHERE fa.tenant_id=$1 AND fa.repo_id=$2
+            ORDER BY fa.created_at DESC LIMIT 100`, [mu.tenantId, pr.repo_id]);
+        return sendJson(res, 200, { fix_approvals: rows.rows, tenant_scope: 'self' });
+      }
       return sendJson(res, 404, { error: { reason: 'unknown pr subpath' } });
+    }
+
+    // ── v16 高危修复审批门：审批票读/决定（任务书四节）──
+    // 创建：仅 Leader 服务端（ensureFixApprovals）——本端点只读/决定；
+    // 决定：decide_review（仅 maintainer）+ CSRF；跨租户 404 防枚举。
+    if (p === '/api/mu/approvals' && req.method === 'GET') {
+      const g = await guard('read_pull_request');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const { sweepFixApprovals, listFixApprovals } = await import('./fix-approval.mjs');
+      const faPool = { query: muPoolQ };
+      await sweepFixApprovals(faPool).catch(() => {});
+      const status = ['PENDING','APPROVED','REJECTED','EXPIRED','STALE','CONSUMED']
+        .includes(String(q.status ?? '')) ? String(q.status) : null;
+      const rows = await listFixApprovals(faPool, { tenantId: mu.tenantId, status,
+        runId: q.run_id ? String(q.run_id) : null, limit: q.limit ?? 100 });
+      return sendJson(res, 200, { approvals: rows, tenant_scope: 'self' });
+    }
+    const apprMatch = p.match(/^\/api\/mu\/approvals\/([0-9a-fA-F-]{8,64})$/);
+    if (apprMatch && req.method === 'GET') {
+      const g = await guard('read_pull_request');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const { sweepFixApprovals, listFixApprovals } = await import('./fix-approval.mjs');
+      const faPool = { query: muPoolQ };
+      await sweepFixApprovals(faPool).catch(() => {});
+      const rows = await listFixApprovals(faPool, { tenantId: mu.tenantId, limit: 200 });
+      const t = rows.find((x) => x.approval_id === apprMatch[1]) ?? null;
+      if (!t) return sendJson(res, 404, { error: { reason: 'approval_not_found' } });
+      return sendJson(res, 200, { approval: t });
+    }
+    const apprDecide = p.match(/^\/api\/mu\/approvals\/([0-9a-fA-F-]{8,64})\/(approve|reject)$/);
+    if (apprDecide && req.method === 'POST') {
+      if (!csrfOk()) return sendJson(res, 403, { error: { reason: 'csrf_required' } });
+      // 决定权：decide_review（authz 矩阵仅 maintainer——contributor/reviewer/auditor/
+      // platform_admin 均无此动作；PlatformAdmin 不能绕过租户授权）
+      const g = await guard('decide_review');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const body = await json();
+      const { decideFixApproval } = await import('./fix-approval.mjs');
+      const faPool = { query: muPoolQ };
+      const dec = await decideFixApproval(faPool, {
+        approvalId: apprDecide[1], decision: apprDecide[2],
+        decidedBy: `mu:${mu.login}`, decisionReason: body?.reason ?? null,
+        tenantId: mu.tenantId });
+      if (dec.reason === 'not_found') return sendJson(res, 404, { error: { reason: 'approval_not_found' } });
+      if (!dec.ok) return sendJson(res, 409, { error: { reason: 'approval_state_conflict',
+        status: dec.status ?? null } });
+      // 全部批准→ 内联启动受控 DRY_RUN 修复轮（与 webhook 驱动同一
+      // fixVerifyRound；失败不冒充——run 停留 FIX_QUEUED 可恢复，如实回报）
+      let fixRound = null;
+      if (dec.run_ready) {
+        try {
+          const t = dec.ticket;
+          const dep = await buildFixDepsForRepo(muPoolQ, { tenantId: mu.tenantId, repoId: t.repo_id,
+            prNumber: Number(t.pr_number) });
+          if (dep) {
+            const { fixVerifyRound } = await import('./agents/fix-orchestrator.mjs');
+            const fx = await fixVerifyRound({ query: muPoolQ }, {
+              run: { run_id: t.run_id },
+              binding: { tenantId: t.tenant_id, repoId: t.repo_id, prId: t.pr_id, headSha: t.head_sha },
+              deps: dep });
+            fixRound = fx.ok
+              ? { verdict: fx.verdict ?? null, decision: fx.decision ?? null, executor: fx.executor ?? 'internal' }
+              : { skipped: fx.stage ?? 'fix_failed', reason: fx.reason ?? null };
+          } else { fixRound = { skipped: 'deps_unavailable' }; }
+        } catch (e) {
+          fixRound = { skipped: 'fix_round_error', reason: String(e?.message ?? e).slice(0, 120) };
+        }
+      }
+      return sendJson(res, 200, { ok: true, idempotent: Boolean(dec.idempotent),
+        ticket: dec.ticket, run_state: dec.run_state ?? dec.ticket.run_status ?? null,
+        run_ready: Boolean(dec.run_ready), run_blocked: Boolean(dec.run_blocked),
+        fix_round: fixRound,
+        note: '批准仅允许生成 DRY_RUN 修复建议——不写 GitHub、不自动合并、branch protection 保持有效' });
     }
 
     // ── 审查触发（reviewer+；只读审查 job） ──

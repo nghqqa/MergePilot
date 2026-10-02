@@ -24,6 +24,7 @@ export function createMuConsoleApi({ pool }) {
     'REVIEWING': 'REVIEWING',
     'REVIEWED': 'REVIEWING',
     'FIX_QUEUED': 'REMEDIATING',
+    'WAITING_FOR_HUMAN_APPROVAL': 'ACTION_REQUIRED', // v16 高危审批门
     'VERIFY_QUEUED': 'VERIFYING',
     'VERIFYING': 'VERIFYING',
     'VERIFIED': 'PASSED',
@@ -38,7 +39,7 @@ export function createMuConsoleApi({ pool }) {
       `SELECT r.owner || '/' || r.name AS repo,
               count(DISTINCT pr.pr_id) AS prs,
               count(DISTINCT rr.run_id) AS runs,
-              count(DISTINCT CASE WHEN rr.status IN ('FIX_QUEUED','VERIFY_QUEUED','REWORK_REQUIRED') THEN rr.run_id END) AS pending
+              count(DISTINCT CASE WHEN rr.status IN ('FIX_QUEUED','VERIFY_QUEUED','REWORK_REQUIRED','WAITING_FOR_HUMAN_APPROVAL') THEN rr.run_id END) AS pending
        FROM mu.repository r
        LEFT JOIN mu.pull_request pr ON pr.repo_id = r.repo_id AND pr.tenant_id = r.tenant_id
        LEFT JOIN mu.review_run rr ON rr.repo_id = r.repo_id AND rr.tenant_id = r.tenant_id
@@ -87,7 +88,7 @@ export function createMuConsoleApi({ pool }) {
     // pending summary（待处理数量）
     const pendingRows = await q(
       `SELECT count(*) AS c FROM mu.review_run
-       WHERE tenant_id=$1 AND status IN ('FIX_QUEUED','VERIFY_QUEUED','REWORK_REQUIRED','BLOCKED')`, [tenantId]);
+       WHERE tenant_id=$1 AND status IN ('FIX_QUEUED','VERIFY_QUEUED','REWORK_REQUIRED','BLOCKED','WAITING_FOR_HUMAN_APPROVAL')`, [tenantId]);
     const pendingCount = Number(pendingRows[0]?.c ?? 0);
 
     return {
@@ -166,7 +167,7 @@ export function createMuConsoleApi({ pool }) {
        FROM mu.review_run rr
        JOIN mu.repository r ON r.repo_id = rr.repo_id
        JOIN mu.pull_request pr ON pr.pr_id = rr.pr_id
-       WHERE rr.tenant_id=$1 AND rr.status IN ('FIX_QUEUED','VERIFY_QUEUED','REWORK_REQUIRED','BLOCKED')
+       WHERE rr.tenant_id=$1 AND rr.status IN ('FIX_QUEUED','VERIFY_QUEUED','REWORK_REQUIRED','BLOCKED','WAITING_FOR_HUMAN_APPROVAL')
        ORDER BY rr.updated_at DESC LIMIT 20`, [tenantId]);
     return rows.map(r => ({
       run_id: r.run_id, status: r.status,
@@ -256,7 +257,7 @@ export function createMuConsoleApi({ pool }) {
     COMPLETED: 'PASS', VERIFIED: 'PASS',
     BLOCKED: 'BLOCKED', REWORK_REQUIRED: 'BLOCKED', FAILED: 'BLOCKED',
     RECEIVED: 'RUNNING', REVIEW_QUEUED: 'RUNNING', REVIEWING: 'RUNNING',
-    REVIEWED: 'RUNNING', FIX_QUEUED: 'RUNNING', FIXING: 'RUNNING',
+    REVIEWED: 'RUNNING', WAITING_FOR_HUMAN_APPROVAL: 'RUNNING', FIX_QUEUED: 'RUNNING', FIXING: 'RUNNING',
     VERIFY_QUEUED: 'RUNNING', VERIFYING: 'RUNNING',
   };
   async function pullDetail(tenantId, repoFullName, prNumber) {

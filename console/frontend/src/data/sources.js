@@ -171,6 +171,20 @@ function multiuserSource(fetchImpl) {
         hasPendingTickets: false,
       }));
     },
+    // v16 高危修复审批门：PENDING 审批票即待办（待处理页消费）
+    async listPending() {
+      const body = await get('/api/mu/approvals?status=PENDING');
+      return (body?.approvals ?? []).map((t) => ({
+        id: t.approval_id, kind: 'approval',
+        repo: `${t.repo_owner}/${t.repo_name}`, prNumber: Number(t.pr_number),
+        title: `${t.severity} 高危修复审批 · ${t.rule_id ?? ''} ${t.path ?? ''}`.trim(),
+        href: `/mu/repos/${encodeURIComponent(t.repo_owner)}/${encodeURIComponent(t.repo_name)}/pr/${t.pr_number}`,
+        severity: t.severity ?? null,
+        statusLabel: `等待人工批准（${t.status}）`,
+        at: t.created_at ?? null,
+        runStatus: t.run_status ?? null,
+      }));
+    },
     async getPr(repo, prNumber) {
       const r = await resolveRepoId(repo);
       const body = await get(`/api/mu/prs/${encodeURIComponent(String(prNumber))}`);

@@ -104,6 +104,11 @@ export default function PendingPage() {
   const setF = (k, v) => setFilters((s) => ({ ...s, [k]: v }));
 
   const load = async () => {
+    if (kind === 'multiuser') {
+      // v16：MU 部署待办 = PENDING 高危修复审批票（后端权威；空集=诚实零值）
+      const rows = await source.listPending();
+      return rows.map((r) => ({ ...r, kindLabel: KIND_LABEL.approval, fixture: false }));
+    }
     if (kind === 'console-pg') {
       const r = await source.listApprovals();
       return pgQueue(r?.items);

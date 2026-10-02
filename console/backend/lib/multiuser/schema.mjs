@@ -933,6 +933,66 @@ export const MU_MIGRATIONS = [
        END $$`,
     ],
   },
+  {
+    // v16 高危修复审批门（fix/high-risk-fix-approval-gate）：P0/P1 修复前必须具名人工批准。
+    //  * mu.fix_approval：逐 finding 审批票（服务端唯一创建方=Leader 路径；客户端不可提交
+    //    tenant/severity/head_sha/finding_id 作可信来源——全部由服务端从 run/finding 解析）；
+    //  * 活票唯一性：同一 finding 至多一张 PENDING/APPROVED/CONSUMED 票（重复 webhook 幂等；
+    //    REJECTED 终局——同一 finding 不得反复要票绕门；EXPIRED/STALE 后可重新生成）；
+    //  * review_run.status 扩 WAITING_FOR_HUMAN_APPROVAL（REVIEWED→WAITING→FIX_QUEUED/BLOCKED）。
+    // 回滚：DELETE FROM mu.schema_migrations WHERE version=16;
+    //       DROP TABLE IF EXISTS mu.fix_approval;
+    //       （状态 CHECK 换回旧枚举须先确保无 WAITING 行——见迁移 SQL 注释）
+    version: 16,
+    name: 'mu_fix_approval_gate',
+    sql: [
+      `CREATE TABLE IF NOT EXISTS mu.fix_approval (
+         approval_id   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+         tenant_id     UUID NOT NULL REFERENCES mu.tenant(tenant_id),
+         repo_id       UUID NOT NULL,
+         pr_id         UUID NOT NULL,
+         pr_number     TEXT NOT NULL,
+         run_id        UUID NOT NULL,
+         finding_id    UUID NOT NULL,
+         severity      TEXT NOT NULL CHECK (severity IN ('P0','P1')),
+         head_sha      TEXT NOT NULL,
+         diff_digest   TEXT NOT NULL,
+         requested_action TEXT NOT NULL DEFAULT 'fixer_dry_run'
+           CHECK (requested_action IN ('fixer_dry_run')),
+         requested_by  TEXT NOT NULL DEFAULT 'system:leader',
+         created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+         expires_at    TIMESTAMPTZ NOT NULL,
+         status        TEXT NOT NULL DEFAULT 'PENDING'
+           CHECK (status IN ('PENDING','APPROVED','REJECTED','EXPIRED','STALE','CONSUMED')),
+         decided_by    TEXT,
+         decided_at    TIMESTAMPTZ,
+         decision_reason TEXT,
+         decision_digest TEXT,
+         consumed_at   TIMESTAMPTZ,
+         FOREIGN KEY (tenant_id, repo_id, pr_id)
+           REFERENCES mu.pull_request (tenant_id, repo_id, pr_id)
+       )`,
+      // 活票唯一：同 finding 至多一张未落负态的票（PENDING/APPROVED/CONSUMED）
+      `CREATE UNIQUE INDEX IF NOT EXISTS mu_fix_approval_live_uk
+         ON mu.fix_approval (finding_id) WHERE status IN ('PENDING','APPROVED','CONSUMED')`,
+      `CREATE INDEX IF NOT EXISTS mu_fix_approval_run_idx
+         ON mu.fix_approval (run_id, status)`,
+      `CREATE INDEX IF NOT EXISTS mu_fix_approval_pending_idx
+         ON mu.fix_approval (tenant_id, status, expires_at)`,
+      // review_run 状态 CHECK 换枚举（旧约束为 v1 建表内联无名 CHECK——按定义 pattern 查找替换）
+      `DO $$ DECLARE c text; BEGIN
+         SELECT conname INTO c FROM pg_constraint
+          WHERE conrelid = 'mu.review_run'::regclass AND contype = 'c'
+            AND pg_get_constraintdef(oid) ILIKE '%REVIEWED%FIX_QUEUED%';
+         IF c IS NOT NULL THEN EXECUTE format('ALTER TABLE mu.review_run DROP CONSTRAINT %I', c); END IF;
+         ALTER TABLE mu.review_run ADD CONSTRAINT mu_review_run_status_check
+           CHECK (status IN
+             ('RECEIVED','REVIEW_QUEUED','REVIEWING','REVIEWED','WAITING_FOR_HUMAN_APPROVAL',
+              'FIX_QUEUED','FIXING','VERIFY_QUEUED','VERIFYING','VERIFIED',
+              'REWORK_REQUIRED','BLOCKED','FAILED','COMPLETED'));
+       END $$`,
+    ],
+  },
 ];
 
 export const MU_SCHEMA_LATEST = MU_MIGRATIONS[MU_MIGRATIONS.length - 1].version;

@@ -220,7 +220,19 @@ execFileSync('docker', ['run', '-d', '--name', CTR, '-e', 'POSTGRES_PASSWORD=x',
 const pool = new Pool({ connectionString: `postgres://postgres:x@127.0.0.1:${PORT}/mu` });
 for (let i = 0; i < 150; i++) { try { await pool.query('SELECT 1'); break; } catch { await new Promise((r) => setTimeout(r, 400)); } }
 try {
-  const store = await createMuStore({ pool }); await store.initSchema(); await store.bootstrap();
+  const store = await createMuStore({ pool }); await store.initSchema();
+// v16 审批门适配：真实路径放行（ensure+逐票 approve→run 至 FIX_QUEUED）
+const faMod = await import('../lib/multiuser/fix-approval.mjs');
+async function approveHighRisk(run, binding) {
+  await faMod.ensureFixApprovals(pool, { run, binding });
+  const ts = (await pool.query(
+    `SELECT approval_id FROM mu.fix_approval WHERE run_id=$1 AND status='PENDING'`, [run.run_id])).rows;
+  for (const t of ts) {
+    await faMod.decideFixApproval(pool, { approvalId: t.approval_id, decision: 'approve',
+      decidedBy: 'test:maintainer', tenantId: binding.tenantId });
+  }
+}
+ await store.bootstrap();
   ok('W7a migration v12 应用', (await pool.query(`SELECT 1 FROM mu.schema_migrations WHERE version=12`)).rows.length === 1);
   const T = (await pool.query(`SELECT tenant_id FROM mu.tenant LIMIT 1`)).rows[0].tenant_id;
   const repo = await store.ensureRepository({ tenantId: T, provider: 'github', providerRepoId: '99701', owner: 'w33', name: 'r', defaultBranch: 'main' });
@@ -309,12 +321,13 @@ try {
   const pr2 = await store.upsertPullRequest({ tenantId: T, repoId: repo.repo_id, providerPrNumber: 5, headSha: 'e'.repeat(40) });
   const binding2 = { tenantId: T, repoId: repo.repo_id, prId: pr2.pr_id, headSha: 'e'.repeat(40) };
   const { run: run2 } = await orch.createRunIfAbsent(pool, { ...binding2 });
-  for (const [f, t] of [['RECEIVED', 'REVIEW_QUEUED'], ['REVIEW_QUEUED', 'REVIEWING'], ['REVIEWING', 'REVIEWED'], ['REVIEWED', 'FIX_QUEUED']]) {
+  for (const [f, t] of [['RECEIVED', 'REVIEW_QUEUED'], ['REVIEW_QUEUED', 'REVIEWING'], ['REVIEWING', 'REVIEWED']]) {
     await orch.transitionRun(pool, { runId: run2.run_id, from: [f], to: t });
   }
   const att2 = await orch.claimNextAttempt(pool, { runId: run2.run_id, agentRole: 'reviewer', provider: 'deterministic', maxAttempts: 3, ...binding2 });
   await orch.insertFindings(pool, { attemptId: att2.attemptId, runId: run2.run_id, ...binding2,
     findings: [{ rule_id: 'R-SQL-CONCAT', severity: 'P1', confidence: 0.8, path: 's.js', line_start: 1, line_end: 1, title: 'x', evidence_ref: 'e', summary_masked: 'SELECT' }] });
+  await approveHighRisk(run2, binding2);
   const beforeNet = netCalls;
   // internal 路径需要 mock GitHub provider 提供上下文
   __setGhProviderForTests({ async fetchPrContext() {

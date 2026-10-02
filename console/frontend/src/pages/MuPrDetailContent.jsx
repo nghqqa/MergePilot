@@ -2,7 +2,7 @@
 // 数据：/api/mu/prs/:prId（编号双寻址）+ PipelinePanel（/api/mu/runs）。
 // 状态：loading / not_found(404 或无权限) / error / ready（含空审查记录紧凑空态）。
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Button, Space, Tag, Typography } from 'antd';
+import { Alert, Button, Popconfirm, Space, Table, Tag, Typography } from 'antd';
 import { PipelinePanel } from './MultiUserPage.jsx';
 
 /**
@@ -14,6 +14,7 @@ export function MuPrDetailContent({ prRef, onChanged }) {
   const [detail, setDetail] = useState(null);
   const [state, setState] = useState('loading');
   const [actionMsg, setActionMsg] = useState(null);
+  const [fixApprovals, setFixApprovals] = useState([]);
 
   const prNumber = prRef?.prNumber ?? null;
   const repoId = prRef?.repoId ?? null;
@@ -47,6 +48,31 @@ export function MuPrDetailContent({ prRef, onChanged }) {
   }, [prNumber, repoId]);
 
   useEffect(() => { load(); }, [load]);
+
+  // v16 高危修复审批门：P0/P1 审批票（有票或 run WAITING 时展示面板）
+  const loadApprovals = useCallback(async () => {
+    if (!detail?.pull_request?.pr_id) return;
+    try {
+      const res = await fetch(`/api/mu/prs/${detail.pull_request.pr_id}/fix-approvals`,
+        { credentials: 'same-origin' });
+      if (!res.ok) { setFixApprovals([]); return; }
+      const body = await res.json().catch(() => null);
+      setFixApprovals(body?.fix_approvals ?? []);
+    } catch { setFixApprovals([]); }
+  }, [detail?.pull_request?.pr_id]);
+  useEffect(() => { if (state === 'ready') loadApprovals(); }, [state, loadApprovals]);
+
+  const decideApproval = async (approvalId, action) => {
+    setActionMsg(null);
+    const csrf = (document.cookie.match(/(?:^|; )mp_csrf=([^;]*)/) ?? [])[1] ?? '';
+    const r = await fetch(`/api/mu/approvals/${approvalId}/${action}`, { method: 'POST',
+      credentials: 'same-origin', headers: { 'content-type': 'application/json', 'X-CSRF-Token': csrf },
+      body: JSON.stringify({}) });
+    const body = await r.json().catch(() => null);
+    setActionMsg({ ok: r.status === 200, label: action === 'approve' ? '批准受控修复' : '拒绝修复',
+      status: r.status, reason: body?.error?.reason ?? null });
+    if (r.status === 200) { await load(); await loadApprovals(); onChanged?.(); }
+  };
 
   const runAction = async (label, path, payload) => {
     setActionMsg(null);
@@ -135,6 +161,59 @@ export function MuPrDetailContent({ prRef, onChanged }) {
             模型未读取完整 patch；Verifier 的模型结论可能为 inconclusive，工具验证结果独立有效。
             四项独立判定互不冒充：protection 不明时合并资格恒为"未知"（fail-closed）。
           </Typography.Paragraph>
+        </div>
+      ) : null}
+
+      {(fixApprovals.length > 0 || lr?.status === 'WAITING_FOR_HUMAN_APPROVAL') ? (
+        <div className="mu-fix-approvals" style={{ margin: '10px 0' }}>
+          <Typography.Title level={5}>高危修复审批（P0/P1 逐条）</Typography.Title>
+          <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
+            批准仅允许生成 DRY_RUN 修复建议（不写入 GitHub、不自动合并、branch protection 保持有效）；
+            修复建议仍需人工复核后才可能被应用；合并资格与分支保护状态另行独立判定，本面板不作合并结论。
+          </Typography.Paragraph>
+          <Table size="small" rowKey="approval_id" pagination={false}
+            dataSource={fixApprovals}
+            locale={{ emptyText: '审批票加载中/暂不可得——刷新重试' }}
+            columns={[
+              { title: '级别', dataIndex: 'severity', width: 70,
+                render: (v) => <Tag color={v === 'P0' ? 'red' : 'volcano'}>{v}</Tag> },
+              { title: '发现', ellipsis: true,
+                render: (_, t) => (
+                  <span className="mono" style={{ fontSize: 12 }}>
+                    {t.rule_id} · {t.path}{t.line_start ? `:${t.line_start}` : ''}
+                    {t.summary_masked ? <span className="muted">（{t.summary_masked}）</span> : null}
+                  </span>
+                ) },
+              { title: 'head', width: 110,
+                render: (_, t) => <code className="mono">{String(t.head_sha ?? '').slice(0, 10)}</code> },
+              { title: '状态', dataIndex: 'status', width: 110,
+                render: (v) => (
+                  <Tag color={v === 'PENDING' ? 'processing' : v === 'APPROVED' || v === 'CONSUMED' ? 'green'
+                    : v === 'REJECTED' ? 'red' : 'warning'}>{v === 'CONSUMED' ? '已消费（DRY_RUN 已启动）' : v}</Tag>
+                ) },
+              { title: '决定人/时间', width: 190,
+                render: (_, t) => t.decided_by
+                  ? <span style={{ fontSize: 12 }}>{t.decided_by} · {String(t.decided_at ?? '').slice(0, 16).replace('T', ' ')}</span>
+                  : <span style={{ fontSize: 12 }}>过期 {String(t.expires_at ?? '').slice(0, 16).replace('T', ' ')}</span> },
+              { title: '操作', width: 190,
+                render: (_, t) => t.status === 'PENDING' ? (
+                  <Space size="small">
+                    <Popconfirm title="批准受控修复（仅 DRY_RUN 建议——不写 GitHub、不自动合并）"
+                      onConfirm={() => decideApproval(t.approval_id, 'approve')}>
+                      <Button size="small" type="primary">批准受控修复</Button>
+                    </Popconfirm>
+                    <Popconfirm title="拒绝修复（Fixer 永不启动，run 进入 BLOCKED）"
+                      onConfirm={() => decideApproval(t.approval_id, 'reject')}>
+                      <Button size="small" danger>拒绝修复</Button>
+                    </Popconfirm>
+                  </Space>
+                ) : '—' },
+            ]} />
+          {lr?.status === 'WAITING_FOR_HUMAN_APPROVAL' ? (
+            <Alert type="warning" showIcon style={{ marginTop: 8 }}
+              message="Fixer 被阻塞：等待高危修复人工审批"
+              description="全部 P0/P1 票批准后才进入 DRY_RUN 修复；拒绝/过期/STALE 将阻断并保持 branch protection 有效。" />
+          ) : null}
         </div>
       ) : null}
 
