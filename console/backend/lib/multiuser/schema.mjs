@@ -758,6 +758,120 @@ export const MU_MIGRATIONS = [
       `CREATE INDEX IF NOT EXISTS mu_job_running_locked_idx ON mu.job (state, locked_at)`,
     ],
   },
+  {
+    // ADR-002 PR A：三档审查架构控制面（v15，additive/幂等/forward-only）。
+    // 回滚：forward-only 设计——回滚=应用层 flag MU_REVIEW_ARCH=v1（表保留，v1 不读写新列）。
+    // 物理回滚脚本在案但 Beta 不执行：
+    //   DELETE FROM mu.schema_migrations WHERE version=15;
+    //   DROP TABLE IF EXISTS mu.review_policy_revision, mu.provider_consent, mu.provider_registry, mu.review_policy;
+    //   ALTER TABLE mu.review_run DROP COLUMN IF EXISTS architecture_version, provider_id, model_id, ... , policy_snapshot_digest;
+    // 纪律：所有新表零凭据列（api_key/token/secret 禁入——服务校验+测试双保险）。
+    version: 15,
+    name: 'review_arch_v2_control_plane',
+    sql: [
+      `CREATE TABLE IF NOT EXISTS mu.review_policy (
+         tenant_id             UUID PRIMARY KEY REFERENCES mu.tenant(tenant_id),
+         review_mode           TEXT NOT NULL DEFAULT 'evidence_only'
+           CHECK (review_mode IN ('evidence_only','external_api','local')),
+         provider_id           TEXT,
+         model_id              TEXT,
+         provider_policy_status TEXT
+           CHECK (provider_policy_status IS NULL OR provider_policy_status IN ('verified','custom_acknowledged','blocked')),
+         code_egress_allowed   BOOLEAN NOT NULL DEFAULT false,
+         consent_version      TEXT,
+         context_budget       JSONB NOT NULL DEFAULT '{}'::jsonb,
+         retention_ack        BOOLEAN NOT NULL DEFAULT false,
+         enabled_at           TIMESTAMPTZ,
+         enabled_by           UUID,
+         policy_version       INT NOT NULL DEFAULT 1,
+         created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+         updated_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
+         CHECK (review_mode <> 'external_api' OR (provider_id IS NOT NULL AND model_id IS NOT NULL
+           AND code_egress_allowed = true AND consent_version IS NOT NULL)),
+         CHECK (review_mode <> 'evidence_only' OR code_egress_allowed = false)
+       )`,
+      `CREATE TABLE IF NOT EXISTS mu.review_policy_revision (
+         revision_id   BIGSERIAL PRIMARY KEY,
+         tenant_id     UUID NOT NULL REFERENCES mu.tenant(tenant_id),
+         policy_version INT NOT NULL,
+         review_mode   TEXT NOT NULL,
+         provider_id   TEXT, model_id TEXT, provider_policy_status TEXT,
+         code_egress_allowed BOOLEAN NOT NULL, consent_version TEXT,
+         context_budget JSONB, retention_ack BOOLEAN,
+         enabled_by    UUID, enabled_at TIMESTAMPTZ,
+         recorded_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+         record_kind   TEXT NOT NULL DEFAULT 'update'
+           CHECK (record_kind IN ('initial','update','revoke','restore'))
+       )`,
+      `CREATE INDEX IF NOT EXISTS mu_review_policy_revision_tenant_idx
+         ON mu.review_policy_revision (tenant_id, policy_version DESC)`,
+      `CREATE TABLE IF NOT EXISTS mu.provider_registry (
+         provider_id   TEXT PRIMARY KEY,
+         display_name  TEXT NOT NULL,
+         endpoint_origin TEXT NOT NULL,
+         policy_status TEXT NOT NULL
+           CHECK (policy_status IN ('verified','custom_acknowledged','blocked')),
+         retention_summary TEXT NOT NULL DEFAULT 'unknown',
+         training_summary  TEXT NOT NULL DEFAULT 'unknown',
+         region_summary    TEXT NOT NULL DEFAULT 'unknown',
+         policy_reference  TEXT,
+         reviewed_at   TIMESTAMPTZ,
+         reviewed_by   TEXT,
+         state         TEXT NOT NULL DEFAULT 'restricted_experiment'
+           CHECK (state IN ('verified_ok','custom_acknowledged','restricted_experiment','blocked','retired')),
+         created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+         updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+         CHECK (NOT (policy_status = 'verified' AND state = 'restricted_experiment'))
+       )`,
+      `CREATE TABLE IF NOT EXISTS mu.provider_consent (
+         consent_id   BIGSERIAL PRIMARY KEY,
+         tenant_id    UUID NOT NULL REFERENCES mu.tenant(tenant_id),
+         provider_id  TEXT NOT NULL,
+         consent_version TEXT NOT NULL,
+         policy_version  INT NOT NULL,
+         accepted_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+         accepted_by  UUID NOT NULL,
+         revoked_at   TIMESTAMPTZ,
+         revoked_by   UUID,
+         acknowledgement_digest TEXT NOT NULL,
+         code_egress_allowed  BOOLEAN NOT NULL DEFAULT true,
+         UNIQUE (tenant_id, provider_id, consent_version)
+       )`,
+      `CREATE INDEX IF NOT EXISTS mu_provider_consent_active_idx
+         ON mu.provider_consent (tenant_id, provider_id) WHERE revoked_at IS NULL`,
+      `ALTER TABLE mu.review_run ADD COLUMN IF NOT EXISTS architecture_version TEXT`,
+      `ALTER TABLE mu.review_run ADD COLUMN IF NOT EXISTS review_mode TEXT`,
+      `ALTER TABLE mu.review_run ADD COLUMN IF NOT EXISTS review_scope TEXT`,
+      `ALTER TABLE mu.review_run ADD COLUMN IF NOT EXISTS execution_mode TEXT`,
+      `ALTER TABLE mu.review_run ADD COLUMN IF NOT EXISTS review_verdict TEXT`,
+      `ALTER TABLE mu.review_run ADD COLUMN IF NOT EXISTS verification_verdict TEXT`,
+      `ALTER TABLE mu.review_run ADD COLUMN IF NOT EXISTS tests_status TEXT`,
+      `ALTER TABLE mu.review_run ADD COLUMN IF NOT EXISTS merge_eligibility TEXT`,
+      `ALTER TABLE mu.review_run ADD COLUMN IF NOT EXISTS provider_id TEXT`,
+      `ALTER TABLE mu.review_run ADD COLUMN IF NOT EXISTS model_id TEXT`,
+      `ALTER TABLE mu.review_run ADD COLUMN IF NOT EXISTS provider_policy_status TEXT`,
+      `ALTER TABLE mu.review_run ADD COLUMN IF NOT EXISTS code_egress INT NOT NULL DEFAULT 0`,
+      `ALTER TABLE mu.review_run ADD COLUMN IF NOT EXISTS consent_version TEXT`,
+      `ALTER TABLE mu.review_run ADD COLUMN IF NOT EXISTS policy_snapshot_digest TEXT`,
+      `DO $$ BEGIN
+         IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'mu_review_run_v2_mode_check') THEN
+           ALTER TABLE mu.review_run ADD CONSTRAINT mu_review_run_v2_mode_check CHECK (
+             (architecture_version IS NULL) OR (
+               architecture_version = 'v2'
+               AND review_mode IN ('evidence_only','external_api','local')
+               AND review_scope IN ('evidence_only','full_code')
+               AND execution_mode IN ('none','external_api','local')
+               AND (review_verdict IS NULL OR review_verdict IN ('not_run','no_blocking_findings','changes_requested','inconclusive'))
+               AND (verification_verdict IS NULL OR verification_verdict IN ('not_run','passed','failed','inconclusive'))
+               AND (tests_status IS NULL OR tests_status IN ('not_run','passed','failed','unavailable'))
+               AND (merge_eligibility IS NULL OR merge_eligibility IN ('unknown','eligible','ineligible'))
+               AND (review_mode <> 'evidence_only' OR review_scope = 'evidence_only')
+             )
+           );
+         END IF;
+       END $$`,
+    ],
+  },
 ];
 
 export const MU_SCHEMA_LATEST = MU_MIGRATIONS[MU_MIGRATIONS.length - 1].version;
