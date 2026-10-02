@@ -81,7 +81,20 @@ export async function runVerifier(pool, { run, binding, snapshot, findings, patc
     provider: 'external_api', actorPrincipal: 'system:verifier',
     inputDigest, maxAttempts: 2, tenantId: binding.tenantId, repoId: binding.repoId,
     prId: binding.prId, headSha: binding.headSha });
-  if (!claim.ok) return { ok: false, stage: 'claim_failed', reason: claim.reason };
+  if (!claim.ok) {
+    // 恢复语义（PR G）：重试耗尽 → 死信+run FAILED（fail-closed）
+    if (claim.reason === 'max_attempts') {
+      const { moveToDeadLetter } = await import('../orchestration.mjs');
+      await moveToDeadLetter(pool, { runId: run.run_id, tenantId: binding.tenantId,
+        repoId: binding.repoId, prId: binding.prId, headSha: binding.headSha,
+        agentRole: 'verifier', kind: 'verifier_max_attempts',
+        reason: 'max_attempts', retryCount: 1, payloadRef: `run:${run.run_id}` });
+      await transitionRun(pool, { runId: run.run_id,
+        from: ['VERIFY_QUEUED', 'VERIFYING'], to: 'FAILED' });
+      return { ok: false, stage: 'max_attempts_dead_letter', reason: 'max_attempts' };
+    }
+    return { ok: false, stage: 'claim_failed', reason: claim.reason };
+  }
   if (runRow.status === 'VERIFY_QUEUED') {
     await transitionRun(pool, { runId: run.run_id, from: ['VERIFY_QUEUED'], to: 'VERIFYING' });
   }

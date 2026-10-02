@@ -147,6 +147,8 @@ jobs:
         run: node console/backend/test/mu-verifier-tools.integration.mjs
       - name: MU review-arch disclosure API (PR F, 12 scenarios)
         run: node console/backend/test/mu-review-arch-prf.integration.mjs
+      - name: MU review-arch compat/security/recovery (PR G, 14 scenarios)
+        run: node console/backend/test/mu-review-arch-prg.integration.mjs
 
       - name: Frontend build
         run: |

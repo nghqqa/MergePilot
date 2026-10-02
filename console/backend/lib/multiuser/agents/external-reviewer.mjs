@@ -74,7 +74,19 @@ export async function runExternalReviewer(pool, { run, binding, snapshot, contex
     provider: 'external_api', actorPrincipal: 'system:reviewer',
     inputDigest: context.input_digest, maxAttempts: 2,
     tenantId: binding.tenantId, repoId: binding.repoId, prId: binding.prId, headSha: binding.headSha });
-  if (!claim.ok) return { ok: false, stage: 'claim_failed', reason: claim.reason };
+  if (!claim.ok) {
+    // 恢复语义（PR G）：重试耗尽 → 死信+run FAILED（fail-closed）——不留无限 RUNNING 悬念
+    if (claim.reason === 'max_attempts') {
+      await moveToDeadLetter(pool, { runId: run.run_id, tenantId: binding.tenantId,
+        repoId: binding.repoId, prId: binding.prId, headSha: binding.headSha,
+        agentRole: 'reviewer', kind: 'reviewer_max_attempts',
+        reason: 'max_attempts', retryCount: 1, payloadRef: `run:${run.run_id}` });
+      await transitionRun(pool, { runId: run.run_id,
+        from: ['REVIEWING', 'REVIEWED', 'RECEIVED', 'REVIEW_QUEUED'], to: 'FAILED' });
+      return { ok: false, stage: 'max_attempts_dead_letter', reason: 'max_attempts' };
+    }
+    return { ok: false, stage: 'claim_failed', reason: claim.reason };
+  }
 
   // 3) Provider 调用（envelope 已 redacted——本层零重构 payload）
   const t0 = Date.now();
