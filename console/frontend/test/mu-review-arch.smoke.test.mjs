@@ -232,7 +232,11 @@ test('PR 详情：WAITING_FOR_HUMAN_APPROVAL → 审批面板（逐条票+DRY_RU
       { approval_id: 'ap-1', run_id: 'run-1', finding_id: 'f-1', severity: 'P0',
         status: 'PENDING', head_sha: 'ab'.repeat(20), expires_at: '2026-10-09T00:00:00Z',
         decided_by: null, decided_at: null, pr_number: 4242,
-        rule_id: 'R-SECRET', path: 'a.js', line_start: 3, summary_masked: 'sk-***' } ] }],
+        rule_id: 'R-SECRET', path: 'a.js', line_start: 3, summary_masked: 'sk-***' },
+      { approval_id: 'ap-2', run_id: 'run-1', finding_id: 'f-2', severity: 'P1',
+        status: 'CONSUMED', head_sha: 'ab'.repeat(20), expires_at: '2026-10-09T00:00:00Z',
+        decided_by: 'mu:very-long-maintainer-identifier', decided_at: '2026-10-02T14:43:00Z', pr_number: 4242,
+        rule_id: 'R-SQL', path: 'b.js', line_start: 5, summary_masked: 'q***' } ] }],
     '/api/mu/runs': () => [200, { runs: [] }],
   };
   const { json } = await renderRoute('/mu/repos/acme/app/pr/4242');
@@ -243,6 +247,9 @@ test('PR 详情：WAITING_FOR_HUMAN_APPROVAL → 审批面板（逐条票+DRY_RU
     assert.ok(text.includes('批准受控修复') && text.includes('拒绝修复'), '批准/拒绝按钮');
     assert.ok(text.includes('DRY_RUN 修复建议') && text.includes('不自动合并'), 'DRY_RUN/不合并声明');
     assert.ok(text.includes('Fixer 被阻塞'), 'Fixer 阻塞提示');
+    assert.ok(text.includes('已消费'), 'CONSUMED 状态上屏（短标签）');
+    assert.ok(!text.includes('DRY_RUN 已启动'), 'CONSUMED 标签不携带超长后缀（溢出回归守卫）');
+    assert.ok(text.includes('mu:very-long-maintainer-identifier') && text.includes('2026-10-02 14:43'), '决定人+时间分两行上屏');
     assert.ok(!text.includes('已自动修复') && !text.includes('已修复漏洞') && !text.includes('可直接合并'), '禁词零出现');
   } catch (e) { console.log(text.slice(0, 3000)); throw e; }
 });
