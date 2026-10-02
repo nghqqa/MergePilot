@@ -48,9 +48,9 @@ globalThis.fetch = async (input) => {
   return new Response(JSON.stringify({ error: { reason: `unexpected_path:${u.pathname}` } }), { status: 404 });
 };
 
-const muOverview = (prs) => ({
+const muOverview = (prs, trend = null) => ({
   source: 'MU_CANONICAL_LIVE', data_source: 'MU_CANONICAL_LIVE',
-  prs, repository_counts: [], trend: [], stage_counts: {},
+  prs, repository_counts: [], trend: trend ?? [], stage_counts: {},
   pending_summary: { count: 0, oldest_pending_at: null, oldest_wait_minutes: null },
   incidents: { stale_count: 0, failed_receipts: 0, integrity_conflicts: 0 },
   // health 形状对齐 mu-console-api overview 投影（minio.state 等被页面直接读取）
@@ -95,9 +95,9 @@ function loadPages() {
   return pagesPromise;
 }
 
-async function renderOverview(prs) {
+async function renderOverview(prs, trend = undefined) {
   const { OverviewPage, AuthProvider, MemoryRouter } = await loadPages();
-  overviewBody = muOverview(prs);
+  overviewBody = muOverview(prs, trend);
   let renderer;
   await act(async () => {
     renderer = TestRenderer.create(
@@ -140,5 +140,26 @@ test('legacy 形状（pr_number 字段）链接照常；缺值行渲染纯文本
     assert.ok(!json.includes('/pr/undefined'), '缺值行不得生成 /pr/undefined 链接');
   } finally {
     await act(async () => { renderer.unmount(); });
+  }
+});
+
+test('趋势区诚实空态：trend=[] 显示文案不渲染空轴；有数据时不显示空态', async () => {
+  // 空数组（桩值/无数据）→ 文案，绝不画空图冒充
+  const emptyRenderer = await renderOverview([], []);
+  try {
+    const emptyJson = JSON.stringify(emptyRenderer.toJSON());
+    assert.ok(emptyJson.includes('没有趋势数据'), 'trend=[] 应显示诚实空态文案');
+    assert.ok(emptyJson.includes('不渲染空轴冒充'), '空态文案应说明不冒充');
+  } finally {
+    await act(async () => { emptyRenderer.unmount(); });
+  }
+  // 14 天数据（generate_series 桩）→ 不显示空态文案（图表本体由 plots shim 替换，不在此断言）
+  const day = (i, runs) => ({ date: `2026-09-${String(i + 1).padStart(2, '0')}`, runs });
+  const dataRenderer = await renderOverview([], Array.from({ length: 14 }, (_, i) => day(i, i)));
+  try {
+    const dataJson = JSON.stringify(dataRenderer.toJSON());
+    assert.ok(!dataJson.includes('没有趋势数据'), 'trend 有数据时不得显示空态');
+  } finally {
+    await act(async () => { dataRenderer.unmount(); });
   }
 });

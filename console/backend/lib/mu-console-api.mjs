@@ -48,6 +48,7 @@ export function createMuConsoleApi({ pool }) {
 
     const prs = await q(
       `SELECT pr.pr_id, pr.provider_pr_number, pr.title, pr.state, pr.head_sha,
+              pr.updated_at,
               r.owner, r.name AS repo_name,
               COALESCE(latest_rr.status, 'PENDING') AS stage,
               'mu_review_run' AS stage_source,
@@ -61,6 +62,18 @@ export function createMuConsoleApi({ pool }) {
        ) latest_rr ON true
        WHERE pr.tenant_id=$1
        ORDER BY pr.updated_at DESC LIMIT 50`, [tenantId]);
+
+    // 14 天运行趋势（按日计数）：generate_series 补齐日轴——无 run 的日子是真实 0，
+    // 不是伪造；此前 trend 恒 []（Wave 3.7 桩值），总览趋势图永远空。
+    // created_at 为 timestamptz、会话时区 UTC——与 CURRENT_DATE 同域分桶，边界一致。
+    const trendRows = await q(
+      `SELECT to_char(d, 'YYYY-MM-DD') AS date, COALESCE(c.runs, 0)::int AS runs
+         FROM generate_series(CURRENT_DATE - INTERVAL '13 days', CURRENT_DATE, INTERVAL '1 day') d
+         LEFT JOIN (
+           SELECT created_at::date AS day, count(*) AS runs
+             FROM mu.review_run WHERE tenant_id=$1 GROUP BY 1
+         ) c ON c.day = d::date
+        ORDER BY d`, [tenantId]);
 
     // stage_counts 映射到 legacy stage key 空间
     const stageRows = await q(
@@ -98,6 +111,7 @@ export function createMuConsoleApi({ pool }) {
         head_sha: p.head_sha,
         run_id: p.run_id,
         latest: p.latest,
+        updated_at: p.updated_at ?? null,
         stage: MU_TO_STAGE[p.stage] ?? p.stage,
         stage_source: p.stage_source,
       })),
@@ -121,7 +135,7 @@ export function createMuConsoleApi({ pool }) {
         minio: { state: 'AGENTTEAMS_MANAGED', note: 'MinIO 由 AgentTeams 内部管理（worker 配置/任务工件）——控制台按安全边界不直连，属正常' },
         backend: { state: 'OK', note: '本服务即后端（只读）' },
       },
-      trend: [],
+      trend: trendRows,
       schema_version: 1,
       generated_at: new Date().toISOString(),
       stages_enum: ['REVIEWING', 'ACTION_REQUIRED', 'REMEDIATING', 'VERIFYING', 'PASSED', 'BLOCKED', 'STALE', 'UNKNOWN', 'PENDING'],

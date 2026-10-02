@@ -154,11 +154,15 @@ export default function OverviewPage() {
             <section aria-label="最近运行趋势（14 天）">
               <Typography.Title level={3}>最近运行趋势（14 天）</Typography.Title>
               <div className="ov-chart-box">
+                {(!data.trend || data.trend.length === 0) ? (
+                  <div style={{ padding: '32px 0', color: '#888', textAlign: 'center' }}>没有趋势数据（{data.source}——不渲染空轴冒充）</div>
+                ) : (
                 <Line
                   {...baseCol}
                   data={data.trend} xField="date" yField="runs"
                   point={{ size: 3 }}
                 />
+                )}
               </div>
             </section>
             <section aria-label="各仓库分布（导航：查看仓库）">
