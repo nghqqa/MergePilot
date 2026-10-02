@@ -1045,7 +1045,9 @@ export async function muApi(req, res, ctx) {
       const status = ['PENDING','APPROVED','REJECTED','EXPIRED','STALE','CONSUMED']
         .includes(String(q.status ?? '')) ? String(q.status) : null;
       const rows = await listFixApprovals(faPool, { tenantId: mu.tenantId, status,
-        runId: q.run_id ? String(q.run_id) : null, limit: q.limit ?? 100 });
+        runId: q.run_id ? String(q.run_id) : null,
+        repoId: q.repo_id ? String(q.repo_id) : null,
+        prId: q.pr_id ? String(q.pr_id) : null, limit: q.limit ?? 100 });
       return sendJson(res, 200, { approvals: rows, tenant_scope: 'self' });
     }
     const apprMatch = p.match(/^\/api\/mu\/approvals\/([0-9a-fA-F-]{8,64})$/);

@@ -45,14 +45,16 @@ async function loadApp() {
   fs.mkdirSync(outDir, { recursive: true });
   const entry = path.join(outDir, 'entry.mjs');
   const bundle = path.join(outDir, 'bundle.cjs');
-  fs.writeFileSync(entry, `import App from ${JSON.stringify(toFwd(path.join(FRONTEND, 'src/App.jsx')))};\nexport { App };`);
+  fs.writeFileSync(entry, `import App from ${JSON.stringify(toFwd(path.join(FRONTEND, 'src/App.jsx')))};
+import { clearRuntimeConfigCache } from ${JSON.stringify(toFwd(path.join(FRONTEND, 'src/data/config.js')))};\nexport { App, clearRuntimeConfigCache };`);
   await build({
     entryPoints: [entry], bundle: true, format: 'cjs', platform: 'node', outfile: bundle,
     jsx: 'automatic', external: ['react', 'react-dom', 'scheduler', 'react-router-dom'],
     define: { 'process.env.NODE_ENV': '"test"' }, logLevel: 'silent',
   });
   const mod = await import(pathToFileURL(bundle).href);
-  return mod.App ?? mod.default?.App ?? mod.default ?? mod;
+  const pick = (k) => mod[k] ?? mod.default?.[k] ?? null;
+  return { App: pick('App'), clear: pick('clearRuntimeConfigCache') };
 }
 
 const COMMON = {
@@ -64,7 +66,9 @@ const COMMON = {
 };
 
 async function renderRoute(route) {
-  const App = await loadApp();
+  const loaded = await loadApp();
+  const App = loaded.App;
+  if (loaded.clear) loaded.clear();
   let renderer;
   await act(async () => {
     renderer = TestRenderer.create(React.createElement(MemoryRouter, { initialEntries: [route] }, React.createElement(App)));
@@ -241,4 +245,39 @@ test('PR 详情：WAITING_FOR_HUMAN_APPROVAL → 审批面板（逐条票+DRY_RU
     assert.ok(text.includes('Fixer 被阻塞'), 'Fixer 阻塞提示');
     assert.ok(!text.includes('已自动修复') && !text.includes('已修复漏洞') && !text.includes('可直接合并'), '禁词零出现');
   } catch (e) { console.log(text.slice(0, 3000)); throw e; }
+});
+
+// ── /approvals MU 接线：审批票列表直读 /api/mu/approvals（v16 审批门可见性）──
+test('审批页（MU）：票列表+状态筛选+诚实空态+DRY_RUN 声明', async () => {
+  ROUTES = {
+    ...COMMON,
+    '/api/health': () => [200, {
+      service: 'console', data_mode: 'live',
+      sources: { primary: 'multiuser', multiuser: { available: true } },
+    }],
+    '/api/mu/session': () => [200, {
+      user: { user_id: 'u-1', login: 'm1' },
+      tenant: { tenant_id: 't-1', slug: 'default', display_name: 'Default' },
+      role: 'maintainer', actions: ['read_pull_request', 'decide_review'], memberships: [],
+    }],
+    '/api/mu/approvals': (u) => {
+      const st = new URL(u.url, 'http://x').searchParams.get('status');
+      const all = [
+        { approval_id: 'ap-1', run_id: 'r-1', finding_id: 'f-1', severity: 'P0', status: 'PENDING',
+          head_sha: 'ab'.repeat(20), pr_number: 4242, repo_owner: 'acme', repo_name: 'app',
+          rule_id: 'R-SECRET', path: 'a.js', line_start: 3, summary_masked: 'sk-***',
+          created_at: '2026-10-02T10:00:00Z', expires_at: '2026-10-09T00:00:00Z',
+          decided_by: null, decided_at: null, run_status: 'WAITING_FOR_HUMAN_APPROVAL' }];
+      return [200, { approvals: st ? all.filter((t) => t.status === st) : all }];
+    },
+  };
+  const { json } = await renderRoute('/approvals');
+  const text = json();
+  try {
+    assert.ok(text.includes('待审批'), '页面标题');
+    assert.ok(text.includes('R-SECRET') && text.includes('acme') && text.includes('4242'), '票行（仓库/PR/发现）');
+    assert.ok(text.includes('PENDING'), '状态标签');
+    assert.ok(text.includes('DRY_RUN 修复建议') && text.includes('不自动合并'), 'DRY_RUN 声明');
+    assert.ok(text.includes('打开 PR'), '直达 PR 链接');
+  } catch (e) { console.log(text.slice(0, 2500)); throw e; }
 });
