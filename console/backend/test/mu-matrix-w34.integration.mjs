@@ -187,6 +187,18 @@ execFileSync('docker', ['run', '-d', '--name', CTR, '-e', 'POSTGRES_PASSWORD=x',
   '-p', `127.0.0.1:${PORT}:5432`, 'postgres:16-alpine'], { stdio: 'pipe' });
 const pool = new Pool({ connectionString: `postgres://postgres:x@127.0.0.1:${PORT}/mu` });
 for (let i = 0; i < 150; i++) { try { await pool.query('SELECT 1'); break; } catch { await sleep(400); } }
+// v16 审批门适配：真实路径放行（ensure+逐票 approve→run 至 FIX_QUEUED）
+const faMod = await import('../lib/multiuser/fix-approval.mjs');
+async function approveHighRisk(run, binding) {
+  await faMod.ensureFixApprovals(pool, { run, binding });
+  const ts = (await pool.query(
+    `SELECT approval_id FROM mu.fix_approval WHERE run_id=$1 AND status='PENDING'`, [run.run_id])).rows;
+  for (const t of ts) {
+    await faMod.decideFixApproval(pool, { approvalId: t.approval_id, decision: 'approve',
+      decidedBy: 'test:maintainer', tenantId: binding.tenantId });
+  }
+}
+
 try {
   const store = await createMuStore({ pool }); await store.initSchema(); await store.bootstrap();
   const T = (await pool.query(`SELECT tenant_id FROM mu.tenant LIMIT 1`)).rows[0].tenant_id;
@@ -212,13 +224,14 @@ try {
     const pr = await store.upsertPullRequest({ tenantId: T, repoId: repo.repo_id, providerPrNumber: prNo, headSha: shaC.repeat(40) });
     const binding = { tenantId: T, repoId: repo.repo_id, prId: pr.pr_id, headSha: shaC.repeat(40) };
     const { run } = await orch.createRunIfAbsent(pool, { ...binding });
-    for (const [f, t] of [['RECEIVED', 'REVIEW_QUEUED'], ['REVIEW_QUEUED', 'REVIEWING'], ['REVIEWING', 'REVIEWED'], ['REVIEWED', 'FIX_QUEUED']]) {
+    for (const [f, t] of [['RECEIVED', 'REVIEW_QUEUED'], ['REVIEW_QUEUED', 'REVIEWING'], ['REVIEWING', 'REVIEWED']]) {
       await orch.transitionRun(pool, { runId: run.run_id, from: [f], to: t });
     }
     const att = await orch.claimNextAttempt(pool, { runId: run.run_id, agentRole: 'reviewer', provider: 'deterministic', maxAttempts: 3, ...binding });
     await orch.insertFindings(pool, { attemptId: att.attemptId, runId: run.run_id, ...binding,
       findings: [{ rule_id: 'R-SECRET', severity: 'P0', confidence: 0.9, path: 's.js', line_start: 2,
         line_end: 2, title: 'x', evidence_ref: 'e', summary_masked: 'ghp_***' }] });
+    await approveHighRisk(run, binding);
     return { run, binding };
   };
   const depsBase = (mtFetch) => ({ env: { ...AT_ENV }, atFetch: atApi, mtFetch,

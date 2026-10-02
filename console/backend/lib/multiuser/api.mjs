@@ -1012,7 +1012,8 @@ export async function muApi(req, res, ctx) {
           my_permissions: { actions: roleActions(liveMembership.role) ?? [] } });
       }
       if (prMatch[2] === 'fix-approvals' && req.method === 'GET') {
-        // v16 审批门：该 PR 最新 run 的高危审批票（read_pull_request 即可见——决定动作另需 decide_review）
+        // v16 审批门：该 PR 的高危审批票（rc3 试用修复：按 pr_id 收窄——原按 repo 过滤
+        // 会把同仓库其他 PR 的票串页显示；read_pull_request 即可见，决定动作另需 decide_review）
         const g = await guard('read_pull_request', { repoId: pr.repo_id });
         if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
         const { sweepFixApprovals } = await import('./fix-approval.mjs');
@@ -1025,8 +1026,8 @@ export async function muApi(req, res, ctx) {
              FROM mu.fix_approval fa
              JOIN mu.agent_finding f ON f.finding_id = fa.finding_id
              JOIN mu.review_run rr ON rr.run_id = fa.run_id
-            WHERE fa.tenant_id=$1 AND fa.repo_id=$2
-            ORDER BY fa.created_at DESC LIMIT 100`, [mu.tenantId, pr.repo_id]);
+            WHERE fa.tenant_id=$1 AND fa.repo_id=$2 AND fa.pr_id=$3
+            ORDER BY fa.created_at DESC LIMIT 100`, [mu.tenantId, pr.repo_id, pr.pr_id]);
         return sendJson(res, 200, { fix_approvals: rows.rows, tenant_scope: 'self' });
       }
       return sendJson(res, 404, { error: { reason: 'unknown pr subpath' } });
