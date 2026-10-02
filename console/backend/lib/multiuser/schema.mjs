@@ -912,6 +912,25 @@ export const MU_MIGRATIONS = [
            );
          END IF;
        END $$`,
+      // PR D/E：fix_attempt 状态机扩展（STALE=新 head 旧 patch 过期；APPLIED=人工应用，
+      // 本版本永不自动到达）+ verification_attempt 判定加 INCONCLUSIVE（模型不可用 fail-closed 落行可审计）。
+      // 旧约束名来自 v1/v7 建表内联 CHECK（无显式名）——按定义 pattern 查找后替换。
+      `DO $$ DECLARE c text; BEGIN
+         SELECT conname INTO c FROM pg_constraint
+          WHERE conrelid = 'mu.fix_attempt'::regclass AND contype = 'c'
+            AND pg_get_constraintdef(oid) ILIKE '%PLANNED%';
+         IF c IS NOT NULL THEN EXECUTE format('ALTER TABLE mu.fix_attempt DROP CONSTRAINT %I', c); END IF;
+         ALTER TABLE mu.fix_attempt ADD CONSTRAINT mu_fix_attempt_status_check
+           CHECK (status IN ('PLANNED','DRY_RUN','FAILED','SKIPPED','STALE','APPLIED'));
+       END $$`,
+      `DO $$ DECLARE c text; BEGIN
+         SELECT conname INTO c FROM pg_constraint
+          WHERE conrelid = 'mu.verification_attempt'::regclass AND contype = 'c'
+            AND pg_get_constraintdef(oid) ILIKE '%PASS%';
+         IF c IS NOT NULL THEN EXECUTE format('ALTER TABLE mu.verification_attempt DROP CONSTRAINT %I', c); END IF;
+         ALTER TABLE mu.verification_attempt ADD CONSTRAINT mu_verification_attempt_verdict_check
+           CHECK (verdict IN ('PASS','FAIL','BLOCKED','INCONCLUSIVE'));
+       END $$`,
     ],
   },
 ];
