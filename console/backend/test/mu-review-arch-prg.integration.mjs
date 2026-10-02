@@ -173,6 +173,16 @@ try {
     snapshot, context: CLEAN_CTX(s7.binding), deps: DEPS(okFetch) });
   const lead7 = await ext.leaderConsumeFindings(pool, { run: s7.run, binding: s7.binding,
     protection: { configured: true } });
+  // v16 审批门：真实路径放行（P0/P1 票逐条 approve → run FIX_QUEUED）
+  {
+    const faMod = await import('../lib/multiuser/fix-approval.mjs');
+    const ts = (await pool.query(
+      `SELECT approval_id FROM mu.fix_approval WHERE run_id=$1 AND status='PENDING'`, [s7.run.run_id])).rows;
+    for (const t of ts) {
+      await faMod.decideFixApproval(pool, { approvalId: t.approval_id, decision: 'approve',
+        decidedBy: 'test:maintainer', tenantId: s7.binding.tenantId });
+    }
+  }
   const fix7 = await fx.runFixerSandbox(pool, { run: s7.run, binding: s7.binding,
     snapshot, findings: r7.findings, context: CLEAN_CTX(s7.binding),
     deps: { ...DEPS(okFetch), model: 'deepseek-chat' } });

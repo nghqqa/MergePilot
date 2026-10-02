@@ -149,8 +149,13 @@ jobs:
         run: node console/backend/test/mu-review-arch-prf.integration.mjs
       - name: MU review-arch compat/security/recovery (PR G, 14 scenarios)
         run: node console/backend/test/mu-review-arch-prg.integration.mjs
-      - name: MU migration upgrade v14->v15 + restart idempotency (18 scenarios)
+      - name: MU migration upgrade v15->v16 + restart idempotency (21 scenarios)
         run: node console/backend/test/mu-migration-upgrade.integration.mjs
+
+      # v16 高危修复审批门（fix/high-risk-fix-approval-gate）：P0/P1 逐条具名审批票+
+      # WAITING 状态+唯一调度硬门（两 Fixer 入口）+过期/STALE/篡改/并发消费/RBAC/审计
+      - name: MU fix-approval gate integration (v16, 52 scenarios)
+        run: node console/backend/test/mu-fix-approval.integration.mjs
 
       - name: Frontend build
         run: |

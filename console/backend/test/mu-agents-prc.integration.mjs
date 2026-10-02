@@ -147,7 +147,9 @@ try {
   const rFix = await mkRun();
   const a2 = await leader.advanceAfterReview(pool, { runId: rFix.run_id, ...rFix._binding,
     findings: [{ severity: 'P1' }], protection: prot });
-  ok('C9b P1 → FIX_QUEUED', a2.ok === true && (await orch.getRun(pool, rFix.run_id)).status === 'FIX_QUEUED');
+  ok('C9b P1 → WAITING_FOR_HUMAN_APPROVAL（v16 审批门；本 run 无 DB finding 行则零票）',
+    a2.ok === true && (await orch.getRun(pool, rFix.run_id)).status === 'WAITING_FOR_HUMAN_APPROVAL'
+      && a2.approval_tickets === 0);
   const rBlk = await mkRun();
   await leader.advanceAfterReview(pool, { runId: rBlk.run_id, ...rBlk._binding, findings: [], protection: {} });
   ok('C9c protection 未知 → BLOCKED', (await orch.getRun(pool, rBlk.run_id)).status === 'BLOCKED');

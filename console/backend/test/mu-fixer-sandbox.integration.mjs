@@ -36,6 +36,18 @@ const store = await createMuStore({ pool });
 await store.initSchema();
 await store.bootstrap();
 const rpStore = rpStoreMod.createReviewPolicyStore({ pool });
+// v16 审批门适配：真实路径放行（ensure+逐票 approve→run 至 FIX_QUEUED）
+const faMod = await import('../lib/multiuser/fix-approval.mjs');
+async function approveHighRisk(run, binding) {
+  await faMod.ensureFixApprovals(pool, { run, binding });
+  const ts = (await pool.query(
+    `SELECT approval_id FROM mu.fix_approval WHERE run_id=$1 AND status='PENDING'`, [run.run_id])).rows;
+  for (const t of ts) {
+    await faMod.decideFixApproval(pool, { approvalId: t.approval_id, decision: 'approve',
+      decidedBy: 'test:maintainer', tenantId: binding.tenantId });
+  }
+}
+
 
 const T1 = (await pool.query(`SELECT tenant_id FROM mu.tenant LIMIT 1`)).rows[0].tenant_id;
 const U = (await pool.query(`SELECT user_id FROM mu.app_user LIMIT 1`)).rows[0].user_id;
@@ -66,6 +78,7 @@ async function mkRun(toState, withFindings) {
     const lead = await ext.leaderConsumeFindings(pool, { run, binding: { tenantId: T1,
       repoId: repo.repo_id, prId: pr.pr_id, headSha: head }, protection: { configured: false } });
     if (lead.decision !== 'fix_required') throw new Error('setup: expected fix_required');
+    await approveHighRisk(run, { tenantId: T1, repoId: repo.repo_id, prId: pr.pr_id, headSha: head });
   }
   if (toState === 'REVIEWED') return { run, binding: { tenantId: T1, repoId: repo.repo_id, prId: pr.pr_id, headSha: head } };
   return { run, binding: { tenantId: T1, repoId: repo.repo_id, prId: pr.pr_id, headSha: head } };

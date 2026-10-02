@@ -203,3 +203,42 @@ test('PR 详情：四分立判定+出站计数上屏（互不冒充）', async (
     assert.ok(text.includes('模型未读取完整 patch'), 'RC 语义措辞上屏（模型未读完整 patch/inconclusive/工具独立有效）');
   } catch (e) { console.log(text.slice(0, 3000)); throw e; }
 });
+
+// ── v16 高危修复审批门（fix/high-risk-fix-approval-gate）：WAITING run + PENDING 票面板 ──
+test('PR 详情：WAITING_FOR_HUMAN_APPROVAL → 审批面板（逐条票+DRY_RUN 声明+禁词零出现）', async () => {
+  ROUTES = {
+    ...COMMON,
+    '/api/mu/session': () => [200, {
+      user: { user_id: 'u-1', login: 'maint1' },
+      tenant: { tenant_id: 't-1', slug: 'default', display_name: 'Default' },
+      role: 'maintainer', actions: ['read_pull_request', 'decide_review'], memberships: [],
+    }],
+    '/api/mu/repositories': () => [200, { repositories: [
+      { repo_id: 'r-1', owner: 'acme', name: 'app', provider_repo_id: 'R_gh_9001' }] }],
+    '/api/mu/prs/4242': () => [200, {
+      pull_request: { pr_id: 'pr-1', provider_pr_number: 4242, head_sha: 'ab'.repeat(20),
+        branch_protection_status: 'unknown', title: 'fix' },
+      review_records: [],
+      latest_run: { run_id: 'run-1', status: 'WAITING_FOR_HUMAN_APPROVAL',
+        architecture_version: 'v2', review_mode: 'external_api',
+        review_verdict: 'changes_requested', merge_eligibility: 'unknown' },
+      my_permissions: { actions: ['decide_review'] },
+    }],
+    '/api/mu/prs/pr-1/fix-approvals': () => [200, { fix_approvals: [
+      { approval_id: 'ap-1', run_id: 'run-1', finding_id: 'f-1', severity: 'P0',
+        status: 'PENDING', head_sha: 'ab'.repeat(20), expires_at: '2026-10-09T00:00:00Z',
+        decided_by: null, decided_at: null, pr_number: 4242,
+        rule_id: 'R-SECRET', path: 'a.js', line_start: 3, summary_masked: 'sk-***' } ] }],
+    '/api/mu/runs': () => [200, { runs: [] }],
+  };
+  const { json } = await renderRoute('/mu/repos/acme/app/pr/4242');
+  const text = json();
+  try {
+    assert.ok(text.includes('高危修复审批'), '审批面板标题');
+    assert.ok(text.includes('R-SECRET') && text.includes('a.js'), '发现摘要（rule/path）');
+    assert.ok(text.includes('批准受控修复') && text.includes('拒绝修复'), '批准/拒绝按钮');
+    assert.ok(text.includes('DRY_RUN 修复建议') && text.includes('不自动合并'), 'DRY_RUN/不合并声明');
+    assert.ok(text.includes('Fixer 被阻塞'), 'Fixer 阻塞提示');
+    assert.ok(!text.includes('已自动修复') && !text.includes('已修复漏洞') && !text.includes('可直接合并'), '禁词零出现');
+  } catch (e) { console.log(text.slice(0, 3000)); throw e; }
+});

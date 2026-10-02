@@ -34,6 +34,23 @@ export async function runFixerSandbox(pool, { run, binding, snapshot, findings, 
     return { ok: false, stage: 'not_fix_required', reason: `RUN_STATE_${runRow?.status ?? 'UNKNOWN'}` };
   }
 
+  // 0.5) v16 高危修复审批硬门：从 DB 解析本 run 的 P0/P1 finding（不信调用方
+  // findings 参数集合）——经 authorizeFixExecution 逐条把关（run 级任一票未批准即
+  // 拒）；先于 egress/attempt 领取/状态迁移。
+  const hiRiskRows = await pool.query(
+    `SELECT finding_id FROM mu.agent_finding
+      WHERE run_id=$1 AND severity IN ('P0','P1') ORDER BY severity, created_at`, [run.run_id]);
+  if (hiRiskRows.rows.length) {
+    const { authorizeFixExecution } = await import('../fix-approval.mjs');
+    for (const row of hiRiskRows.rows) {
+      const gate = await authorizeFixExecution(pool, { runId: run.run_id, findingId: row.finding_id });
+      if (!gate.ok) {
+        return { ok: false, stage: 'fix_blocked_no_approval', reason: gate.reason,
+          detail: gate.detail ?? null };
+      }
+    }
+  }
+
   // 1) 实时出站授权（patch 生成也把 finding 上下文送出——同 Reviewer 契约）
   const state = await rpStore.getEgressCurrentState(binding.tenantId, snapshot.provider_id);
   const auth = await egress.authorizeEgress(snapshot, state);

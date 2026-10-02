@@ -103,7 +103,7 @@ const STEP_TITLES = {
 // 无 approve/merge/write 按钮（人工审批仍走上方既有决策区）；只消费只读 /api/mu/runs 端点，
 // 授权由后端 read_pull_request 判定，403 时如实显示权限不足。
 const PIPE_LABEL = {
-  RECEIVED: '已接收', REVIEW_QUEUED: '审查排队', REVIEWING: '审查中', REVIEWED: '已审查',
+  RECEIVED: '已接收', REVIEW_QUEUED: '审查排队', REVIEWING: '审查中', REVIEWED: '已审查', WAITING_FOR_HUMAN_APPROVAL: '待人工批准（高危修复）',
   FIX_QUEUED: '修复排队', FIXING: '修复预演', VERIFY_QUEUED: '验证排队', VERIFYING: '验证中',
   VERIFIED: '已验证', REWORK_REQUIRED: '需返工', BLOCKED: '受阻', FAILED: '失败', COMPLETED: '已完成',
 };

@@ -1,5 +1,6 @@
 // console/backend/test/mu-migration-upgrade.integration.mjs — ADR-002 发布前验证：
-// existing DB 升级路径（v14 → v15 增量迁移）+ initSchema 幂等（restart 安全）。
+// existing DB 升级路径（v15 → v16 增量迁移）+ initSchema 幂等（restart 安全）。
+// v16=高危修复审批门（mu.fix_approval + review_run 状态扩 WAITING_FOR_HUMAN_APPROVAL）。
 // 模拟既有 beta.5 库：先只跑 migration ≤14 + 播种 v1 形状数据，再走完整 initSchema。
 import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -31,8 +32,8 @@ process.env.CONSOLE_PG_DSN = dsn;
 const { MU_MIGRATIONS, MU_SCHEMA_LATEST } = await import('../lib/multiuser/schema.mjs');
 const LAST = MU_MIGRATIONS[MU_MIGRATIONS.length - 1];
 const PRIOR = MU_MIGRATIONS[MU_MIGRATIONS.length - 2];
-if (Number(LAST.version) !== 15) {
-  console.error(`前提漂移：最新迁移=${LAST.version}（本测试钉 v15 升级路径）`);
+if (Number(LAST.version) !== 16) {
+  console.error(`前提漂移：最新迁移=${LAST.version}（本测试钉 v16 升级路径）`);
   process.exit(2);
 }
 
@@ -50,10 +51,10 @@ async function applyUpTo(maxVer) {
 }
 
 try {
-  // ── 阶段 1：既有库（只到 v14）+ 播种 v1 形状数据 ──
-  await applyUpTo(14);
-  ok('U1 前置=迁移到 v14（v15 未应用）',
-    (await pool.query(`SELECT 1 FROM mu.schema_migrations WHERE version=15`)).rowCount === 0);
+  // ── 阶段 1：既有库（只到 v15）+ 播种 v1 形状数据 ──
+  await applyUpTo(15);
+  ok('U1 前置=迁移到 v15（v16 未应用）',
+    (await pool.query(`SELECT 1 FROM mu.schema_migrations WHERE version=16`)).rowCount === 0);
   const seed = await pool.query(`INSERT INTO mu.tenant (slug, display_name) VALUES ('mig','Mig') RETURNING tenant_id`);
   const T = seed.rows[0].tenant_id;
   const U = (await pool.query(`INSERT INTO mu.app_user (login, display_name) VALUES ('mig-u','Mig U') RETURNING user_id`)).rows[0].user_id;
@@ -80,9 +81,9 @@ try {
   const { createMuStore } = await import('../lib/multiuser/store.mjs');
   const store = await createMuStore({ pool });
   await store.initSchema();
-  const v15 = (await pool.query(`SELECT 1 FROM mu.schema_migrations WHERE version=15`)).rowCount;
-  ok('U3 升级后 v15 应用', v15 === 1);
-  ok('U3b 版本=最新', Number(MU_SCHEMA_LATEST) === 15);
+  const v16 = (await pool.query(`SELECT 1 FROM mu.schema_migrations WHERE version=16`)).rowCount;
+  ok('U3 升级后 v16 应用', v16 === 1);
+  ok('U3b 版本=最新', Number(MU_SCHEMA_LATEST) === 16);
   for (const t of ['review_policy', 'review_policy_revision', 'provider_registry',
     'provider_consent', 'code_egress_event']) {
     const has = (await pool.query(`SELECT 1 FROM information_schema.tables
@@ -92,6 +93,9 @@ try {
   const col = (await pool.query(`SELECT column_name FROM information_schema.columns
     WHERE table_schema='mu' AND table_name='review_run' AND column_name='architecture_version'`)).rowCount;
   ok('U3d review_run 增列（architecture_version 等 14 列之一）', col === 1);
+  const faT = (await pool.query(`SELECT 1 FROM information_schema.tables
+    WHERE table_schema='mu' AND table_name='fix_approval'`)).rowCount;
+  ok('U3e v16 新表 mu.fix_approval 在位', faT === 1);
 
   // 旧数据零丢失
   const kept = (await pool.query(`
@@ -120,13 +124,22 @@ try {
      VALUES ($1,'reviewer',2,'external_api',$2,$3,$4,$5) RETURNING attempt_id`,
     [v1run.run_id, T, repo.repo_id, pr.pr_id, 'aa'.repeat(20)]);
   ok('U5c agent_attempt 新域 external_api 可写', extAtt.rowCount === 1);
+  // v16 约束换新：review_run 新状态可写 + 活票唯一索引在位
+  const waitRun = await pool.query(
+    `INSERT INTO mu.review_run (tenant_id, repo_id, pr_id, head_sha, status)
+     VALUES ($1,$2,$3,$4,'WAITING_FOR_HUMAN_APPROVAL') RETURNING run_id`,
+    [T, repo.repo_id, pr.pr_id, 'bb'.repeat(20)]);
+  ok('U5d v16 review_run 新态 WAITING_FOR_HUMAN_APPROVAL 可写（CHECK 已换）', waitRun.rowCount === 1);
+  const faIdx = (await pool.query(`SELECT 1 FROM pg_indexes
+    WHERE schemaname='mu' AND indexname='mu_fix_approval_live_uk'`)).rowCount;
+  ok('U5e 活票唯一索引在位', faIdx === 1);
 
   // ── 阶段 3：initSchema 重放（restart 安全/幂等）──
   await store.initSchema();
   ok('U6 initSchema 重放幂等（restart 安全——零异常）', true);
   const dupVer = (await pool.query(
-    `SELECT count(*)::int FROM mu.schema_migrations WHERE version=15`)).rows[0].count;
-  ok('U6b v15 不重复应用', Number(dupVer) === 1);
+    `SELECT count(*)::int FROM mu.schema_migrations WHERE version=16`)).rows[0].count;
+  ok('U6b v16 不重复应用', Number(dupVer) === 1);
   await store.bootstrap();
   ok('U6c bootstrap 重放幂等', true);
 } finally {
