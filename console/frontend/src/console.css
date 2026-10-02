@@ -930,3 +930,8 @@ td.th-right { text-align: right; }
 @media (max-width: 960px) {
   .mu-pr-detail:has(.mu-detail-placeholder) { display: none; }
 }
+
+/* 320px 档：模式 chip 允许换行（white-space:nowrap 致文字裁切——终审视口实测） */
+@media (max-width: 360px) {
+  .mode-chip { white-space: normal; line-height: 1.4; }
+}
