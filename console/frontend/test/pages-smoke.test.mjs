@@ -45,7 +45,9 @@ globalThis.fetch = async (input) => {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 };
 
+let appMod = null; // { App, clear }——bundle 构建一次，App 与 clearRuntimeConfigCache 同源取出
 async function loadApp() {
+  if (appMod) return appMod;
   const outDir = path.join(FRONTEND, 'node_modules', '.pages-smoke');
   fs.mkdirSync(outDir, { recursive: true });
   const entry = path.join(outDir, 'entry.mjs');
@@ -59,13 +61,10 @@ async function loadApp() {
     define: { 'process.env.NODE_ENV': '"test"' }, logLevel: 'silent',
   });
   const mod = await import(pathToFileURL(bundle).href);
-  // CJS bundle 互操作：named export `App` 可能落在 mod.App 或 mod.default.App
-  return mod.App ?? mod.default?.App ?? mod.default ?? mod;
-}
-let clearConfigCache = null;
-async function appEntry() {
-  const mod = await import(pathToFileURL(path.join(FRONTEND, 'node_modules', '.pages-smoke', 'bundle.cjs')).href);
-  return (mod.clearRuntimeConfigCache ?? mod.default?.clearRuntimeConfigCache ?? null);
+  // CJS bundle 互操作：named export 可能落在 mod.X 或 mod.default.X
+  const pick = (k) => mod[k] ?? mod.default?.[k] ?? null;
+  appMod = { App: pick('App'), clear: pick('clearRuntimeConfigCache') };
+  return appMod;
 }
 
 const COMMON = {
@@ -80,9 +79,8 @@ const COMMON = {
 async function renderRoute(route) {
   // config.js 模块级 cached 跨测试泄漏（前一个用例的 /api/health 声明会固化模式）——
   // 每次渲染前用测试辅助清缓存，保证本用例 ROUTES 的 health 声明真实生效
-  clearConfigCache ??= await appEntry();
-  if (clearConfigCache) clearConfigCache();
-  const App = await loadApp();
+  const { App, clear } = await loadApp();
+  if (clear) clear();
   let renderer;
   await act(async () => {
     renderer = TestRenderer.create(React.createElement(MemoryRouter, { initialEntries: [route] }, React.createElement(App)));
