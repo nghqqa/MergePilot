@@ -263,11 +263,14 @@ export async function authorizeFixExecution(pool, { runId, findingId, consume = 
 }
 
 /** 读路径：租户内审批票列表（含 finding 摘要联查；供 API/前端）。 */
-export async function listFixApprovals(pool, { tenantId, status = null, runId = null, limit = 100 }) {
+export async function listFixApprovals(pool, { tenantId, status = null, runId = null,
+  repoId = null, prId = null, limit = 100 }) {
   const params = [tenantId];
   let where = `fa.tenant_id=$1`;
   if (status) { params.push(String(status)); where += ` AND fa.status=$${params.length}`; }
   if (runId) { params.push(String(runId)); where += ` AND fa.run_id=$${params.length}`; }
+  if (repoId) { params.push(String(repoId)); where += ` AND fa.repo_id=$${params.length}`; }
+  if (prId) { params.push(String(prId)); where += ` AND fa.pr_id=$${params.length}`; }
   params.push(Math.min(Number(limit) || 100, 200));
   const r = await q(pool,
     `SELECT fa.approval_id, fa.tenant_id, fa.repo_id, fa.pr_id, fa.pr_number, fa.run_id,

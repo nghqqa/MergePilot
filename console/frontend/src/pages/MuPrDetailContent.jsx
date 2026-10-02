@@ -171,7 +171,8 @@ export function MuPrDetailContent({ prRef, onChanged }) {
             批准仅允许生成 DRY_RUN 修复建议（不写入 GitHub、不自动合并、branch protection 保持有效）；
             修复建议仍需人工复核后才可能被应用；合并资格与分支保护状态另行独立判定，本面板不作合并结论。
           </Typography.Paragraph>
-          <Table size="small" rowKey="approval_id" pagination={false}
+          <div className="table-scroll">
+            <Table size="small" rowKey="approval_id" pagination={false}
             dataSource={fixApprovals}
             locale={{ emptyText: '审批票加载中/暂不可得——刷新重试' }}
             columns={[
@@ -188,12 +189,17 @@ export function MuPrDetailContent({ prRef, onChanged }) {
                 render: (_, t) => <code className="mono">{String(t.head_sha ?? '').slice(0, 10)}</code> },
               { title: '状态', dataIndex: 'status', width: 110,
                 render: (v) => (
-                  <Tag color={v === 'PENDING' ? 'processing' : v === 'APPROVED' || v === 'CONSUMED' ? 'green'
-                    : v === 'REJECTED' ? 'red' : 'warning'}>{v === 'CONSUMED' ? '已消费（DRY_RUN 已启动）' : v}</Tag>
+                  <Tag style={{ whiteSpace: 'normal', height: 'auto' }}
+                    color={v === 'PENDING' ? 'processing' : v === 'APPROVED' || v === 'CONSUMED' ? 'green'
+                    : v === 'REJECTED' ? 'red' : 'warning'}>{v === 'CONSUMED' ? '已消费' : v}</Tag>
                 ) },
-              { title: '决定人/时间', width: 190,
+              { title: '决定人/时间', width: 150,
                 render: (_, t) => t.decided_by
-                  ? <span style={{ fontSize: 12 }}>{t.decided_by} · {String(t.decided_at ?? '').slice(0, 16).replace('T', ' ')}</span>
+                  ? (
+                    <div style={{ fontSize: 12, lineHeight: '18px' }}>
+                      <div style={{ wordBreak: 'break-all' }}>{t.decided_by}</div>
+                      <div className="muted">{String(t.decided_at ?? '').slice(0, 16).replace('T', ' ')}</div>
+                    </div>)
                   : <span style={{ fontSize: 12 }}>过期 {String(t.expires_at ?? '').slice(0, 16).replace('T', ' ')}</span> },
               { title: '操作', width: 190,
                 render: (_, t) => t.status === 'PENDING' ? (
@@ -209,6 +215,7 @@ export function MuPrDetailContent({ prRef, onChanged }) {
                   </Space>
                 ) : '—' },
             ]} />
+          </div>
           {lr?.status === 'WAITING_FOR_HUMAN_APPROVAL' ? (
             <Alert type="warning" showIcon style={{ marginTop: 8 }}
               message="Fixer 被阻塞：等待高危修复人工审批"
