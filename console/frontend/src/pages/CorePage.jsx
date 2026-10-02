@@ -9,6 +9,19 @@ import { fxvMap, fxvArtifactMap, ticketMap, ticketActionMap, toneToColor } from 
 // 人话标签为主显示，机器值（source/error）入标签内次级文本。
 const REFRESH_MS = 10_000;
 
+// 健康数据源集合：legacy PG 读模型与 MU 规范库（Wave 3.7 起 MU 部署返回
+// MU_CANONICAL_LIVE）都是"实时数据"——只认 POSTGRESQL_LIVE 会把健康接线误报成错误。
+const LIVE_SOURCES = ['POSTGRESQL_LIVE', 'MU_CANONICAL_LIVE'];
+const isLive = (s) => LIVE_SOURCES.includes(s);
+
+// MU pending 行的 run 状态（mu-console-api.pending 投影）→ 人话标签；未知枚举走 unknownEntry。
+const MU_RUN_STATUS = {
+  FIX_QUEUED: { tone: 'info', label: '修复排队' },
+  VERIFY_QUEUED: { tone: 'info', label: '验证排队' },
+  REWORK_REQUIRED: { tone: 'warning', label: '需返工' },
+  BLOCKED: { tone: 'error', label: '已阻断' },
+};
+
 async function apiGet(path) {
   const res = await fetch(path, { credentials: 'same-origin' });
   let body = null;
@@ -87,7 +100,7 @@ export default function CorePage() {
           description={`${error.message}${error.status === 401 ? '（会话可能已过期，请刷新重登）' : ''}`} />
       ) : !data ? (
         <Alert message="加载中…" />
-      ) : src === 'POSTGRESQL_LIVE' ? (
+      ) : isLive(src) ? (
         <Alert type="success" showIcon message={<SourceTag source={src} />} />
       ) : src === 'BACKEND_NOT_WIRED' ? (
         <Alert type="warning" showIcon message={<SourceTag source={src} />}
@@ -109,16 +122,17 @@ export default function CorePage() {
           <Table
             size="small" rowKey={(r) => r.repo + r.head_sha}
             pagination={false}
-            locale={{ emptyText: data.pulls.source === 'POSTGRESQL_LIVE' ? '没有 PR/head 记录（诚实零值）' : `数据源=${data.pulls.source}（不伪造记录）` }}
+            locale={{ emptyText: isLive(data.pulls.source) ? '没有 PR/head 记录（诚实零值）' : `数据源=${data.pulls.source}（不伪造记录）` }}
             dataSource={data.pulls.pulls || []}
             columns={[
               { title: '仓库', dataIndex: 'repo', ellipsis: true },
-              { title: 'PR', dataIndex: 'pr_number', width: 80,
-                render: (v) => (v != null ? `#${v}` : '—') },
+              // legacy 行 pr_number；MU 行 pr（mu-console-api.pulls 投影）——两者都读，缺值诚实 '—'
+              { title: 'PR', width: 80,
+                render: (_, r) => { const n = r.pr_number ?? r.pr; return n != null ? `#${n}` : '—'; } },
               { title: 'Head', dataIndex: 'head_sha', width: 130, ellipsis: true,
                 render: (v) => <span className="sha">{v?.slice(0, 12)}</span> },
               { title: 'Run', dataIndex: 'run_id', ellipsis: true,
-                render: (v) => <span className="mono">{v}</span> },
+                render: (v) => v ? <span className="mono">{v}</span> : '—' },
             ]}
           />
           <Typography.Title level={3} style={{ marginTop: 20 }}>待处理</Typography.Title>
@@ -127,25 +141,50 @@ export default function CorePage() {
             dataSource={data.pending.pending || []}
             locale={{ emptyText: '队列为空（诚实零值 — 无伪造门）' }}
             columns={[
-              { title: '票据', dataIndex: 'ticket_id', ellipsis: true, render: (v) => <span className="mono">{v?.slice(0, 16)}…</span> },
+              // 票据域（legacy：ticket_id）与 run 域（MU：run_id）同列诚实展示，缺值 '—'
+              { title: '票据 / Run', ellipsis: true,
+                render: (_, r) => { const id = r.ticket_id ?? r.run_id; return id ? <span className="mono">{id.slice(0, 16)}…</span> : '—'; } },
               { title: '仓库 / PR', ellipsis: true,
-                render: (_, r) => `${r.repo} ${r.pr_number != null ? '#' + r.pr_number : ''}` },
+                render: (_, r) => `${r.repo} ${r.pr_number != null ? '#' + r.pr_number : r.pr != null ? '#' + r.pr : ''}`.trim() },
               { title: '动作', dataIndex: 'action', width: 130,
                 render: (v) => {
+                  if (!v) return '—';
                   const m = ticketActionMap(v);
                   return <Tag color={toneToColor(m.tone)} title={m.note}>{m.label}</Tag>;
                 } },
               { title: 'TTL', width: 90,
-                render: (_, r) => (r.approval_expires_at && new Date(r.approval_expires_at) < new Date()
-                  ? <Tag color="warning">已过期</Tag> : '有效') },
+                render: (_, r) => (r.approval_expires_at
+                  ? (new Date(r.approval_expires_at) < new Date()
+                    ? <Tag color="warning">已过期</Tag> : '有效')
+                  : '—') },
               { title: '状态', dataIndex: 'status', width: 110,
                 render: (v) => {
-                  const m = ticketMap(v);
+                  const m = MU_RUN_STATUS[v] ?? ticketMap(v);
                   return <Tag color={toneToColor(m.tone)} title={m.note}>{m.label}</Tag>;
                 } },
             ]}
           />
-          <Typography.Title level={3} style={{ marginTop: 20 }}>Gate 审计</Typography.Title>
+          <Typography.Title level={3} style={{ marginTop: 20 }}>
+            {Array.isArray(data.audit.audit) ? '审计事件' : 'Gate 审计'}
+          </Typography.Title>
+          {Array.isArray(data.audit.audit) ? (
+            // MU 域（mu.audit_event 经 /api/audit）：kind/detail 投影，无 gate 决策语义
+            <Table
+              size="small" rowKey={(r) => `${r.kind}|${r.created_at}|${r.detail ? JSON.stringify(r.detail).length : 0}`} pagination={false}
+              dataSource={data.audit.audit}
+              locale={{ emptyText: isLive(data.audit.source) ? '没有审计事件（诚实零值）' : `数据源=${data.audit.source ?? '未知'}（不伪造记录）` }}
+              columns={[
+                { title: '类型', dataIndex: 'kind', width: 200, ellipsis: true,
+                  render: (v) => <span className="mono">{v}</span> },
+                { title: '详情', ellipsis: true,
+                  render: (_, r) => <span className="mono" style={{ fontSize: 11 }}>
+                    {r.detail ? JSON.stringify(r.detail).slice(0, 90) : '—'}
+                  </span> },
+                { title: '时间', dataIndex: 'created_at', width: 170,
+                  render: (v) => (v ? new Date(v).toLocaleString() : '') },
+              ]}
+            />
+          ) : (
           <Table
             size="small" rowKey="run_id" pagination={false}
             locale={{ emptyText: data.audit.core_source === 'POSTGRESQL_LIVE' ? (data.audit.audit_table === 'missing' ? '审计表缺失（skill_gate_audit）——如实报告，不冒充零决策' : '没有 gate 决策记录（诚实零值）') : `数据源=${data.audit.core_source}（不伪造记录）` }}
@@ -158,6 +197,7 @@ export default function CorePage() {
                 render: (v) => (v ? new Date(v).toLocaleString() : '') },
             ]}
           />
+          )}
           <Typography.Title level={3} style={{ marginTop: 20 }}>自动修复编排</Typography.Title>
           {data.fxv?.capability === 'fxv_persistence_not_tenant_scoped' ? (
             <Alert type="info" showIcon style={{ marginBottom: 12 }}

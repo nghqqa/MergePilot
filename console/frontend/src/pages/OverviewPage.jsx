@@ -154,11 +154,15 @@ export default function OverviewPage() {
             <section aria-label="最近运行趋势（14 天）">
               <Typography.Title level={3}>最近运行趋势（14 天）</Typography.Title>
               <div className="ov-chart-box">
+                {(!data.trend || data.trend.length === 0) ? (
+                  <div style={{ padding: '32px 0', color: '#888', textAlign: 'center' }}>没有趋势数据（{data.source}——不渲染空轴冒充）</div>
+                ) : (
                 <Line
                   {...baseCol}
                   data={data.trend} xField="date" yField="runs"
                   point={{ size: 3 }}
                 />
+                )}
               </div>
             </section>
             <section aria-label="各仓库分布（导航：查看仓库）">
@@ -191,13 +195,15 @@ export default function OverviewPage() {
             locale={{ emptyText: '没有 PR 记录（诚实零值）' }}
             columns={[
               { title: '仓库 / PR', ellipsis: true,
-                render: (_, r) => (
-                  // R4（FB-03）：真实 href（React Router Link）——可直接打开/中键/键盘 Enter，
-                  // 不再是无 href 的伪链接
-                  <Link to={`/repos/${r.repo.split('/')[0]}/${r.repo.split('/')[1]}/pr/${r.pr_number}`}>
-                    {r.repo} #{r.pr_number}
-                  </Link>
-                ) },
+                render: (_, r) => {
+                  // legacy overview 行 pr_number；MU 行 pr（mu-console-api 投影）——统一取值，
+                  // 缺值时不出链接（纯文本），绝不生成 /pr/undefined 死链
+                  const n = r.pr_number ?? r.pr;
+                  const label = n != null ? `${r.repo} #${n}` : `${r.repo}（PR 号缺失）`;
+                  return n != null ? (
+                    <Link to={`/repos/${r.repo.split('/')[0]}/${r.repo.split('/')[1]}/pr/${n}`}>{label}</Link>
+                  ) : label;
+                } },
               { title: 'Head', dataIndex: 'head_sha', width: 120, ellipsis: true,
                 render: (v) => <span className="sha">{v?.slice(0, 12) || '—'}</span> },
               { title: 'Run', dataIndex: 'run_id', ellipsis: true,

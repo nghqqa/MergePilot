@@ -61,30 +61,34 @@ globalThis.fetch = async (input) => {
 // 打包一个薄入口（AuthProvider 也在 JSX 文件中，须一并打包后才能在 node 导入）。
 // react/react-dom 标记 external 且 bundle 写入 node_modules/.core-smoke/ 下——
 // 保证与测试自身 import 的是同一个 React 实例（双实例会导致 hooks 报 null dispatcher）。
-async function loadPages() {
-  const outDir = path.join(FRONTEND, 'node_modules', '.core-smoke');
-  fs.mkdirSync(outDir, { recursive: true });
-  const entry = path.join(outDir, 'entry.mjs');
-  const bundle = path.join(outDir, 'bundle.cjs');
-  fs.writeFileSync(entry, [
-    `import CorePage from ${JSON.stringify(toFwd(path.join(FRONTEND, 'src/pages/CorePage.jsx')))};`,
-    `import { AuthProvider } from ${JSON.stringify(toFwd(path.join(FRONTEND, 'src/auth.jsx')))};`,
-    'export { CorePage, AuthProvider };',
-  ].join('\n'));
-  await build({
-    entryPoints: [entry],
-    bundle: true,
-    format: 'cjs',
-    platform: 'node',
-    outfile: bundle,
-    jsx: 'automatic',
-    external: ['react', 'react-dom', 'scheduler'],
-    define: { 'process.env.NODE_ENV': '"test"' },
-    logLevel: 'silent',
-  });
-  // CJS bundle 经 import() 拿到的是 { default: module.exports }（antd/lib 为 CJS，须 cjs 输出）
-  const mod = await import(pathToFileURL(bundle).href);
-  return mod.default ?? mod;
+let pagesPromise = null;
+function loadPages() {
+  pagesPromise ??= (async () => {
+    const outDir = path.join(FRONTEND, 'node_modules', '.core-smoke');
+    fs.mkdirSync(outDir, { recursive: true });
+    const entry = path.join(outDir, 'entry.mjs');
+    const bundle = path.join(outDir, 'bundle.cjs');
+    fs.writeFileSync(entry, [
+      `import CorePage from ${JSON.stringify(toFwd(path.join(FRONTEND, 'src/pages/CorePage.jsx')))};`,
+      `import { AuthProvider } from ${JSON.stringify(toFwd(path.join(FRONTEND, 'src/auth.jsx')))};`,
+      'export { CorePage, AuthProvider };',
+    ].join('\n'));
+    await build({
+      entryPoints: [entry],
+      bundle: true,
+      format: 'cjs',
+      platform: 'node',
+      outfile: bundle,
+      jsx: 'automatic',
+      external: ['react', 'react-dom', 'scheduler'],
+      define: { 'process.env.NODE_ENV': '"test"' },
+      logLevel: 'silent',
+    });
+    // CJS bundle 经 import() 拿到的是 { default: module.exports }（antd/lib 为 CJS，须 cjs 输出）
+    const mod = await import(pathToFileURL(bundle).href);
+    return mod.default ?? mod;
+  })();
+  return pagesPromise;
 }
 
 test('/core 页面加载冒烟：渲染主内容、请求全部端点、不进错误态', async () => {
@@ -108,6 +112,47 @@ test('/core 页面加载冒烟：渲染主内容、请求全部端点、不进�
     for (const p of Object.keys(ROUTES)) {
       assert.ok(calls.includes(p), `端点应被请求：${p}`);
     }
+  } finally {
+    await act(async () => { renderer.unmount(); });
+  }
+});
+
+// —— 回归锁（2026-10-02 用户报告）：MU 部署下 /core 误报"请检查 PG 连接"、
+// PR 列全 '—'。根因：Wave 3.7 五个 Core API 在 MU 模式返回 source=MU_CANONICAL_LIVE
+// 与 pr/run 形状（pr 非 pr_number），CorePage 只认 POSTGRESQL_LIVE + pr_number。
+test('/core MU 模式：健康接线显示成功标签，不误报 PG 错误；pr/run/审计事件诚实展示', async () => {
+  const MU_PULL = { repo: 'nghqqa/test-repo', pr: 8, title: 'fix: sample', head_sha: 'a1b2c3d4e5f6',
+    run_id: 'run-abc123', status: 'FIX_QUEUED', stage: 'FIX_QUEUED' };
+  Object.assign(ROUTES, {
+    '/api/pulls': () => [200, { source: 'MU_CANONICAL_LIVE', data_source: 'MU_CANONICAL_LIVE', pulls: [MU_PULL] }],
+    '/api/pending': () => [200, { source: 'MU_CANONICAL_LIVE', pending: [
+      { run_id: 'run-abc123', status: 'REWORK_REQUIRED', repo: 'nghqqa/test-repo', pr: 8, title: 'fix: sample', updated_at: '2026-10-02T00:00:00Z' } ] }],
+    '/api/tickets': () => [200, { tickets: [], capability: 'mu_tickets_managed_in_multiuser_page' }],
+    '/api/evidence': () => [200, { evidence: [], capability: 'mu_evidence_managed_in_multiuser_page' }],
+    '/api/audit': () => [200, { source: 'MU_CANONICAL_LIVE', audit: [
+      { kind: 'review_policy.updated', detail: { actor: 'nghqqa' }, created_at: '2026-10-02T00:00:00Z' } ] }],
+    '/api/fxv/attempts': () => [200, { capability: 'fxv_persistence_not_tenant_scoped', attempts: [] }],
+  });
+
+  const { CorePage, AuthProvider } = await loadPages();
+  let renderer;
+  await act(async () => {
+    renderer = TestRenderer.create(
+      React.createElement(AuthProvider, null, React.createElement(CorePage)),
+    );
+  });
+  for (let i = 0; i < 5; i++) await act(async () => { await Promise.resolve(); });
+
+  try {
+    const json = JSON.stringify(renderer.toJSON());
+    assert.ok(!json.includes('请检查 PG 连接'), 'MU_CANONICAL_LIVE 是健康接线，不得渲染 PG 连接错误');
+    assert.ok(!json.includes('请求失败'), 'MU 模式不得进入请求失败错误态');
+    assert.ok(json.includes('MU 实时数据'), '应显示 MU 实时数据成功标签');
+    assert.ok(json.includes('#8'), 'PR 列应显示 #8（读 pr 字段），不得为 —');
+    assert.ok(json.includes('run-abc123'), 'Run 列应显示 run_id');
+    assert.ok(json.includes('需返工'), '待处理状态应映射 MU run 状态（REWORK_REQUIRED→需返工）');
+    assert.ok(json.includes('审计事件') && json.includes('review_policy.updated'),
+      'MU audit 数组应渲染为审计事件表（kind 投影）');
   } finally {
     await act(async () => { renderer.unmount(); });
   }

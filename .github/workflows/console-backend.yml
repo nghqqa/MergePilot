@@ -169,6 +169,12 @@ jobs:
         run: node --test test/core-page.smoke.test.mjs
         working-directory: console/frontend
 
+      # 运营总览 PR 链接回归（2026-10-02）：MU 形状 pr 字段 → /pr/N 绝不 /pr/undefined；
+      # legacy pr_number 照常；缺值行纯文本（用户报告死链修复锁）
+      - name: Frontend overview PR-link smoke (MU pr field, 2 scenarios)
+        run: node --test test/overview-link.smoke.test.mjs
+        working-directory: console/frontend
+
       # 页面渲染冒烟（P2 修复波）：PrDetail(console-pg)/C 链/RAG/Core-FXV 走完整
       # App+MemoryRouter 集成渲染——锁 status-map 中文标签真实上屏
       - name: Frontend pages smoke (PrDetail/CChain/RAG/Core-FXV)
