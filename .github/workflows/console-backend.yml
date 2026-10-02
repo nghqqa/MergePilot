@@ -149,6 +149,8 @@ jobs:
         run: node console/backend/test/mu-review-arch-prf.integration.mjs
       - name: MU review-arch compat/security/recovery (PR G, 14 scenarios)
         run: node console/backend/test/mu-review-arch-prg.integration.mjs
+      - name: MU migration upgrade v14->v15 + restart idempotency (18 scenarios)
+        run: node console/backend/test/mu-migration-upgrade.integration.mjs
 
       - name: Frontend build
         run: |
