@@ -1146,6 +1146,129 @@ export const MU_MIGRATIONS = [
        END $mv18$`,
     ],
   },
+  {
+    // ── v19 Skill/RAG 调用留痕（C 波 C1；feat/c1-invocation-events）──
+    // 目标：为 Agent/Skill/RAG 每一次真实执行建立服务端唯一留痕面（recorder 是唯一
+    // 写入口，lib/multiuser/invocation-recorder.mjs），支撑"哪个技能/被哪个角色/在哪轮
+    // run/以何版本/成功与否/耗时几何"的只读审计查询（API 见 api.mjs /runs/:id/*）。
+    // 设计纪律（沿用 v16/v17/v18：版本化、幂等重放、零 destructive DDL、向下兼容说明）：
+    //  * 两张新表纯 additive——不触碰 v18 及更早任何表/约束/数据（零数据丢失面）；
+    //  * 复合 FK 锚定：(tenant,repo,pr,run)→mu.review_run、(attempt,run)→mu.agent_attempt、
+    //    (tenant,repo)→mu.repository——DB 层直接拒绝跨租户/跨 run/attempt 组合
+    //    （recorder 服务端另做前置校验，双层防御；rag 表 pr/run 可空→NULL 不触发 FK）；
+    //  * UNIQUE (tenant_id, idempotency_key)：webhook/重试不重复写（重试=新事件新键）；
+    //  * 已完成事件不可变：触发器封印——status 非 RUNNING 的行 UPDATE/DELETE 一律拒绝
+    //    （仅允许 RUNNING→终态一次流转；重放安全：CREATE OR REPLACE TRIGGER 幂等）；
+    //  * 敏感数据边界：无 prompt/response/query 原文/代码正文/secret 形状列——只存
+    //    digest（hex CHECK）/计数/脱敏错误码（recorder 运行时守卫二次拦截）；
+    //    idempotency_key 不进任何 API 读出白名单；
+    //  * rag_retrieval_event 的 pr_id/run_id 可空：唯一真实执行入口
+    //    GET /api/mu/repositories/:id/rag-search 是用户会话域（无 run 上下文）——
+    //    按诚实原则不虚构 pr/run（有 run 的调用方必须传且过复合 FK）。
+    // 幂等：CREATE TABLE IF NOT EXISTS / CREATE OR REPLACE FUNCTION/TRIGGER /
+    //   CREATE INDEX IF NOT EXISTS 全语句可重放；删版本行重放零重复；initSchema 双重跑安全。
+    // 回滚（向下兼容；新表无既有读方，回滚零影响旧面）：
+    //   DROP TABLE IF EXISTS mu.rag_retrieval_event;
+    //   DROP TABLE IF EXISTS mu.skill_invocation_event;
+    //   DROP FUNCTION IF EXISTS mu.mu_invocation_event_seal();
+    //   DELETE FROM mu.schema_migrations WHERE version = 19;
+    version: 19,
+    name: 'mu_invocation_events',
+    sql: [
+      `CREATE TABLE IF NOT EXISTS mu.skill_invocation_event (
+         event_id        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+         tenant_id       UUID NOT NULL REFERENCES mu.tenant(tenant_id),
+         repo_id         UUID NOT NULL,
+         pr_id           UUID NOT NULL,
+         run_id          UUID NOT NULL,
+         attempt_id      UUID,
+         agent_role      TEXT NOT NULL CHECK (agent_role IN
+                         ('leader','reviewer','fixer','verifier','system')),
+         skill_key       TEXT NOT NULL CHECK (char_length(skill_key) BETWEEN 1 AND 64),
+         skill_version   TEXT CHECK (skill_version IS NULL OR char_length(skill_version) <= 64),
+         invocation_kind TEXT NOT NULL CHECK (invocation_kind IN
+                         ('verifier_tool','agentteams_round','skill_mcp','rag_query','other')),
+         status          TEXT NOT NULL DEFAULT 'RUNNING' CHECK (status IN
+                         ('RUNNING','SUCCEEDED','FAILED','TIMEOUT','CANCELLED','INTERRUPTED')),
+         started_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+         completed_at    TIMESTAMPTZ,
+         latency_ms      INT,
+         input_digest    TEXT CHECK (input_digest IS NULL OR input_digest ~ '^[0-9a-f]{8,64}$'),
+         output_digest   TEXT CHECK (output_digest IS NULL OR output_digest ~ '^[0-9a-f]{8,64}$'),
+         error_code      TEXT CHECK (error_code IS NULL OR char_length(error_code) <= 120),
+         idempotency_key TEXT NOT NULL CHECK (char_length(idempotency_key) BETWEEN 1 AND 200),
+         created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+         CONSTRAINT mu_skill_invocation_event_idem_uk UNIQUE (tenant_id, idempotency_key),
+         FOREIGN KEY (tenant_id, repo_id) REFERENCES mu.repository (tenant_id, repo_id),
+         FOREIGN KEY (tenant_id, repo_id, pr_id, run_id)
+           REFERENCES mu.review_run (tenant_id, repo_id, pr_id, run_id),
+         FOREIGN KEY (attempt_id, run_id)
+           REFERENCES mu.agent_attempt (attempt_id, run_id)
+       )`,
+      `CREATE TABLE IF NOT EXISTS mu.rag_retrieval_event (
+         event_id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+         tenant_id         UUID NOT NULL REFERENCES mu.tenant(tenant_id),
+         repo_id           UUID NOT NULL,
+         pr_id             UUID,
+         run_id            UUID,
+         attempt_id        UUID,
+         agent_role        TEXT NOT NULL CHECK (agent_role IN
+                           ('leader','reviewer','fixer','verifier','system')),
+         skill_key         TEXT NOT NULL CHECK (char_length(skill_key) BETWEEN 1 AND 64),
+         query_digest      TEXT NOT NULL CHECK (query_digest ~ '^[0-9a-f]{64}$'),
+         result_count      INT NOT NULL DEFAULT 0 CHECK (result_count >= 0),
+         source_digest_list JSONB NOT NULL DEFAULT '[]'::jsonb
+                           CHECK (jsonb_typeof(source_digest_list) = 'array'
+                                  AND jsonb_array_length(source_digest_list) <= 64),
+         status            TEXT NOT NULL DEFAULT 'RUNNING' CHECK (status IN
+                           ('RUNNING','SUCCEEDED','FAILED','TIMEOUT','CANCELLED','INTERRUPTED')),
+         started_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+         completed_at      TIMESTAMPTZ,
+         latency_ms        INT,
+         error_code        TEXT CHECK (error_code IS NULL OR char_length(error_code) <= 120),
+         idempotency_key   TEXT NOT NULL CHECK (char_length(idempotency_key) BETWEEN 1 AND 200),
+         created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+         CONSTRAINT mu_rag_retrieval_event_idem_uk UNIQUE (tenant_id, idempotency_key),
+         FOREIGN KEY (tenant_id, repo_id) REFERENCES mu.repository (tenant_id, repo_id),
+         FOREIGN KEY (tenant_id, repo_id, pr_id, run_id)
+           REFERENCES mu.review_run (tenant_id, repo_id, pr_id, run_id),
+         FOREIGN KEY (attempt_id, run_id)
+           REFERENCES mu.agent_attempt (attempt_id, run_id)
+       )`,
+      // 封印触发器：OLD.status 非 RUNNING 的行拒绝 UPDATE/DELETE（函数体无表名——两表共用）
+      `CREATE OR REPLACE FUNCTION mu.mu_invocation_event_seal() RETURNS trigger LANGUAGE plpgsql AS $fn19$
+       BEGIN
+         RAISE EXCEPTION 'invocation_event_sealed: terminal events are immutable (retry with a new idempotency_key)';
+       END
+       $fn19$`,
+      `DROP TRIGGER IF EXISTS mu_skill_invocation_event_seal ON mu.skill_invocation_event`,
+      `CREATE TRIGGER mu_skill_invocation_event_seal
+         BEFORE UPDATE OR DELETE ON mu.skill_invocation_event
+         FOR EACH ROW WHEN (OLD.status <> 'RUNNING')
+         EXECUTE FUNCTION mu.mu_invocation_event_seal()`,
+      `DROP TRIGGER IF EXISTS mu_rag_retrieval_event_seal ON mu.rag_retrieval_event`,
+      `CREATE TRIGGER mu_rag_retrieval_event_seal
+         BEFORE UPDATE OR DELETE ON mu.rag_retrieval_event
+         FOR EACH ROW WHEN (OLD.status <> 'RUNNING')
+         EXECUTE FUNCTION mu.mu_invocation_event_seal()`,
+      `CREATE INDEX IF NOT EXISTS mu_skill_invocation_tenant_run_idx
+         ON mu.skill_invocation_event (tenant_id, run_id)`,
+      `CREATE INDEX IF NOT EXISTS mu_skill_invocation_run_idx
+         ON mu.skill_invocation_event (run_id)`,
+      `CREATE INDEX IF NOT EXISTS mu_skill_invocation_skill_idx
+         ON mu.skill_invocation_event (skill_key)`,
+      `CREATE INDEX IF NOT EXISTS mu_skill_invocation_status_idx
+         ON mu.skill_invocation_event (status)`,
+      `CREATE INDEX IF NOT EXISTS mu_rag_retrieval_tenant_run_idx
+         ON mu.rag_retrieval_event (tenant_id, run_id)`,
+      `CREATE INDEX IF NOT EXISTS mu_rag_retrieval_run_idx
+         ON mu.rag_retrieval_event (run_id)`,
+      `CREATE INDEX IF NOT EXISTS mu_rag_retrieval_skill_idx
+         ON mu.rag_retrieval_event (skill_key)`,
+      `CREATE INDEX IF NOT EXISTS mu_rag_retrieval_status_idx
+         ON mu.rag_retrieval_event (status)`,
+    ],
+  },
 ];
 
 export const MU_SCHEMA_LATEST = MU_MIGRATIONS[MU_MIGRATIONS.length - 1].version;
