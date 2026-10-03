@@ -1088,7 +1088,10 @@ export async function muApi(req, res, ctx) {
       }
       const repo = await store.ensureRepository({ tenantId: mu.tenantId, provider: 'github',
         providerRepoId, owner, name, defaultBranch: body.default_branch ? String(body.default_branch) : null });
-      // fixture 安装：合成 installation id（真实 GitHub App 接入为 PR 未完成项）
+      // v18 绑定统一（审计 E-2）：演示/登记路径经 store.ensureBinding 直写 mu.repository_binding
+      // （kind='fixture' 以 fixture 保留 id 区间等价表达，见 schema.mjs）；body.installation_id/
+      // granted_scopes 形参保留兼容但不再落库（授权快照仅审计留痕）。真实绑定以 ghapp-binding/
+      // 安装回调/webhook 为权威；mu.binding 自 v18 冻结为老镜像只读兼容域。
       const installationId = body.installation_id ? String(body.installation_id)
         : `fixture-install-${crypto.randomBytes(6).toString('hex')}`;
       const grantedScopes = Array.isArray(body.granted_scopes) && body.granted_scopes.length
@@ -1098,6 +1101,7 @@ export async function muApi(req, res, ctx) {
         kind, installationId, grantedScopes, createdBy: mu.userId });
       await store.audit('MU_REPO_BOUND', { tenantId: mu.tenantId, actorUserId: mu.userId,
         detail: { repo: `${owner}/${name}`, kind, installation_prefix: String(installationId).slice(0, 12),
+          binding_installation_id: binding?.installation_id ?? null, fixture_domain: true,
           scopes_count: grantedScopes.length } });
       return sendJson(res, 200, { ok: true, repository: repo, binding });
     }

@@ -10,6 +10,7 @@
 //  * 迁移用 tenant：bootstrap 创建 slug='default' + pilot 操作员 → PlatformAdmin 映射。
 //
 // 不做（Enterprise/后续阶段）：RLS、tenant 生命周期 API、SCIM/OIDC、配额、HA。
+import crypto from 'node:crypto';
 
 export const MU_MIGRATIONS = [
   {
@@ -1041,6 +1042,133 @@ export const MU_MIGRATIONS = [
          ON mu.skill_version (skill_id, created_at DESC)`,
     ],
   },
+  {
+    // ── v18 绑定读写来源统一（审计 E-2；fix/binding-source-unify）──
+    // 缺陷：写侧走 mu.repository_binding（安装回调/webhook/manual unbind），读侧走
+    // mu.binding（listRepositories LEFT JOIN / getBindingForRepo repair 门 / revokeBinding）
+    // ——经 GitHub App 绑定的仓库在仓库列表无绑定信息、repair 403 binding_required、
+    // 两表数据漂移不可收敛。
+    // 本迁移：把 mu.binding 现存绑定行【幂等回填】进 mu.repository_binding（列映射见下），
+    // 之后读侧统一切到 repository_binding；mu.binding 表【保留不删】（老镜像 ≤v17 仍读它，
+    // 向下兼容），新代码对其零写入（冻结为老镜像兼容只读域）。
+    //
+    // 列映射（mu.binding → mu.repository_binding）：
+    //   tenant_id/repo_id/owner/name/default_branch/created_by/created_at/updated_at → 同名直拷；
+    //   state + installation_state → binding_state（active+active→active；任一 revoked→revoked；
+    //     任一 suspended→suspended；其他未知值→'error' + error_code='v18_unmapped_binding_state'
+    //     ——mu.binding.state 无 CHECK 约束，fail-visible 不中断迁移）；
+    //   revoked 语义行 → revoked_at=updated_at；
+    //   granted_scopes → 无对应列，丢弃（授权快照无任何读方，MU_REPO_BOUND 审计已留 count）；
+    //   kind → 无对应列。等价表达 = 「fixture 域」：合成 installation_id 落于
+    //     MU_FIXTURE_INSTALLATION_BASE 保留区间且 github_app_installation.account_type='fixture'
+    //     （真实 GitHub installation id 与 github repo id 远低于该区间；派生函数
+    //     muFixtureInstallationIdOf/muFixtureRepoIdOf 与 store.mjs 运行时逐字同式）。
+    //     不用 error_code 表达 kind（error_code 属失败语义域，ES/运维按其判异常）。
+    // installation 解析：installation_id 为纯数字且 (tenant_id, installation_id) 已在
+    //   github_app_installation 登记 → 沿用真实安装；否则建/用 fixture 域合成安装（幂等）。
+    // github_repo_id 解析：真实安装行且 provider_repo_id 为纯数字且全局未被占用 → 沿用
+    //   真实 id（保 webhook 按 github_repo_id 关联）；否则 fixture 保留区间合成（全局唯一，
+    //   UNIQUE(github_repo_id) 极小概率撞车时 ON CONFLICT DO NOTHING 降级跳过，不中断）。
+    // 幂等：NOT EXISTS (tenant_id, repo_id) 防重——已有新表行（权威 GHApp 绑定在位）的仓库
+    //   跳过；重放（DELETE version=18 后 initSchema）零重复、已 revoke 的新表行不被复活。
+    // 回滚（向下兼容，mu.binding 未写未删无需恢复）：
+    //   DELETE FROM mu.schema_migrations WHERE version = 18;
+    //   DELETE FROM mu.repository_binding rb USING mu.github_app_installation i
+    //     WHERE rb.installation_id = i.installation_id AND i.account_type = 'fixture'
+    //       AND rb.installation_id >= 8400000000000000;   -- 仅移除 fixture 域行
+    //   DELETE FROM mu.github_app_installation WHERE account_type = 'fixture'
+    //     AND installation_id >= 8400000000000000;        -- 合成安装随回滚清除
+    version: 18,
+    name: 'mu_binding_source_unify_backfill',
+    sql: [
+      `DO $mv18$
+       DECLARE
+         b record;
+         v_inst bigint; v_gid bigint; v_state text;
+         FIXTURE_INSTALLATION_BASE constant bigint := 8400000000000000;
+         FIXTURE_REPO_BASE constant bigint := 8700000000000000;
+       BEGIN
+         FOR b IN
+           SELECT bi.tenant_id, bi.repo_id, bi.kind, bi.installation_id, bi.installation_state,
+                  bi.state, bi.created_by, bi.created_at, bi.updated_at,
+                  r.provider_repo_id, r.owner, r.name, r.default_branch
+             FROM mu.binding bi JOIN mu.repository r ON r.repo_id = bi.repo_id
+             ORDER BY bi.created_at, bi.repo_id
+         LOOP
+           -- 幂等防重：同 (tenant, repo) 新表已有行（权威绑定在位）→ 跳过，绝不重复/复活
+           CONTINUE WHEN EXISTS (SELECT 1 FROM mu.repository_binding x
+                                  WHERE x.tenant_id = b.tenant_id AND x.repo_id = b.repo_id);
+           -- installation 解析（数字且已登记 → 真实安装域；否则 fixture 合成安装域）
+           IF b.installation_id ~ '^[0-9]{1,18}$'
+              AND EXISTS (SELECT 1 FROM mu.github_app_installation i
+                           WHERE i.tenant_id = b.tenant_id
+                             AND i.installation_id = b.installation_id::bigint) THEN
+             v_inst := b.installation_id::bigint;
+             IF b.provider_repo_id ~ '^[0-9]{1,18}$'
+                AND NOT EXISTS (SELECT 1 FROM mu.repository_binding x
+                                 WHERE x.github_repo_id = b.provider_repo_id::bigint) THEN
+               v_gid := b.provider_repo_id::bigint;      -- 真实 id（保 webhook 关联）
+             ELSE
+               v_gid := FIXTURE_REPO_BASE
+                 + (('x'||substr(md5('fixture-repo:'||b.tenant_id::text||':'||b.repo_id::text),1,10))::bit(40)::bigint);
+             END IF;
+           ELSE
+             v_inst := FIXTURE_INSTALLATION_BASE
+               + (('x'||substr(md5('fixture-installation:'||b.tenant_id::text),1,10))::bit(40)::bigint);
+             INSERT INTO mu.github_app_installation
+                 (installation_id, tenant_id, account_id, account_login, account_type, app_id)
+               VALUES (v_inst, b.tenant_id, 0, left(b.owner, 80), 'fixture', 0)
+               ON CONFLICT (installation_id) DO NOTHING;
+             v_gid := FIXTURE_REPO_BASE
+               + (('x'||substr(md5('fixture-repo:'||b.tenant_id::text||':'||b.repo_id::text),1,10))::bit(40)::bigint);
+           END IF;
+           -- state 映射（未知值 fail-visible → error + error_code，绝不中断迁移）
+           IF b.state = 'revoked' OR b.installation_state = 'revoked' THEN v_state := 'revoked';
+           ELSIF b.state = 'suspended' OR b.installation_state = 'suspended' THEN v_state := 'suspended';
+           ELSIF b.state = 'active' AND b.installation_state = 'active' THEN v_state := 'active';
+           ELSE v_state := 'error';
+           END IF;
+           BEGIN
+             INSERT INTO mu.repository_binding
+                 (tenant_id, repo_id, github_repo_id, owner, name, installation_id,
+                  default_branch, binding_state, error_code, revoked_at,
+                  created_by, created_at, updated_at)
+             VALUES (b.tenant_id, b.repo_id, v_gid, b.owner, b.name, v_inst,
+                  b.default_branch, v_state,
+                  CASE WHEN v_state = 'error' THEN 'v18_unmapped_binding_state' END,
+                  CASE WHEN v_state = 'revoked' THEN b.updated_at END,
+                  b.created_by, b.created_at, b.updated_at)
+             ON CONFLICT (github_repo_id) DO NOTHING;
+           EXCEPTION WHEN unique_violation THEN
+             NULL; -- 理论不可达（前置 NOT EXISTS）；防御性跳过保迁移幂等
+           END;
+         END LOOP;
+       END $mv18$`,
+    ],
+  },
 ];
 
 export const MU_SCHEMA_LATEST = MU_MIGRATIONS[MU_MIGRATIONS.length - 1].version;
+
+// ── v18 fixture 绑定域（kind 语义的等价表达）──
+// mu.repository_binding 无 kind 列（且 installation_id BIGINT NOT NULL 复合 FK 到
+// github_app_installation、github_repo_id 全局 UNIQUE）——fixture/演示绑定以「保留 id 区间」
+// 表达：installation_id = BASE + md5 前 10 hex（bit40，0..1099511627775），
+// account_type='fixture' 为人读标记。真实 GitHub installation/repo id（当前 <1e13 量级）
+// 与保留区间 [8.4e15, 8.7011e15] 隔离数十个数量级；上限 8701099511627775 <
+// Number.MAX_SAFE_INTEGER(9007199254740991)，JS/PG 数值安全。
+// 派生表达式必须与 v18 迁移 SQL 逐字一致（'fixture-installation:'/'fixture-repo:' 键前缀、
+// md5 取前 10 hex）——两处任一改动须同步。
+export const MU_FIXTURE_INSTALLATION_BASE = 8400000000000000;
+export const MU_FIXTURE_REPO_BASE = 8700000000000000;
+
+const md5Hex40 = (s) => {
+  const h = crypto.createHash('md5').update(s).digest('hex');
+  return BigInt('0x' + h.slice(0, 10));
+};
+export function muFixtureInstallationIdOf(tenantId) {
+  return MU_FIXTURE_INSTALLATION_BASE + Number(md5Hex40(`fixture-installation:${tenantId}`));
+}
+export function muFixtureRepoIdOf(tenantId, repoId) {
+  return MU_FIXTURE_REPO_BASE + Number(md5Hex40(`fixture-repo:${tenantId}:${repoId}`));
+}
