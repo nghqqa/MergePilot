@@ -12,6 +12,9 @@ import { createRequire } from 'node:module';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const { Pool } = createRequire(path.join(HERE, 'support/noop.js'))('pg');
 const { createConsole } = await import('../server.mjs');
+// 迁移目标版本动态取自权威迁移表——新增 v19+ 迁移时本测试不再需要改版本钉。
+const { MU_MIGRATIONS } = await import('../lib/multiuser/schema.mjs');
+const LATEST_SCHEMA_VERSION = Math.max(...MU_MIGRATIONS.map((m) => m.version));
 
 let pass = 0, fail = 0;
 const ok = (name, cond, detail) => {
@@ -71,14 +74,14 @@ try {
     await fetch(BASE + '/api/mu/session').catch(() => {});
     try {
       const v = (await pool.query(`SELECT max(version) AS v FROM mu.schema_migrations`)).rows[0]?.v;
-      if (Number(v) === 17) break;
+      if (Number(v) === LATEST_SCHEMA_VERSION) break;
     } catch { /* schema_migrations 未建——继续等 */ }
     await new Promise((r) => setTimeout(r, 700));
   }
 
-  // ── SG0：fresh DB 迁移到 v17 ──
+  // ── SG0：fresh DB 迁移到最新版（动态取自 MU_MIGRATIONS）──
   const mv = (await pool.query(`SELECT max(version) AS v FROM mu.schema_migrations`)).rows[0].v;
-  ok('SG0a fresh DB 迁移到 v17', Number(mv) === 17, { v: mv });
+  ok(`SG0a fresh DB 迁移到 v${LATEST_SCHEMA_VERSION}`, Number(mv) === LATEST_SCHEMA_VERSION, { v: mv });
 
   const T1 = (await pool.query(`SELECT tenant_id FROM mu.tenant LIMIT 1`)).rows[0].tenant_id;
   const mkUser = async (tenantId, login, role) => {
