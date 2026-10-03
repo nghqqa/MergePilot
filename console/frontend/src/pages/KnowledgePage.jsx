@@ -1,12 +1,13 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { CloudUpload, Database, Wrench } from 'lucide-react';
+import RagModelInstallPanel from './RagModelInstallPanel.jsx';
 
 const ITEMS = [
   {
     icon: Database,
     title: 'RAG 检索',
-    status: '服务未接入',
+    status: '模型安装面板已上线',
     body: 'RAG 检索服务未接入控制台。每次运行的 RAG 调用记录（含数据模式标注）已在 run 详情内保留历史快照。',
     tech: '技术详情：内部检索服务 rag-live（端口 :4184）尚未接入控制台。',
     note: '后续接入时将标注 RAG 索引版本，保证结论可追溯到具体索引。',
@@ -60,6 +61,7 @@ export default function KnowledgePage() {
           </div>
         ))}
       </div>
+      <RagModelInstallPanel />
       <p className="section-note">
         逐 run 的历史证据（RAG 调用 / Skill 审计 / 用量窗口）见<Link to="/runs">运行历史</Link>。
       </p>
