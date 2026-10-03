@@ -303,6 +303,9 @@ async function runExternalRound(pool, atMod, atCfg, { run, binding, deps }) {
     verifier: { taskId: 't-verify', ask: (b, r) => `independently verify whether this fix suggestion resolves the finding in ${b}: ${JSON.stringify(r?.fixer ?? {})} - do NOT trust the fixer claims, judge on merits.`, schema: 'verifier' },
   };
   const results = {};
+
+  // ── C1 调用留痕：委托边界唯一写入口（recorder 活跃门/fail-closed 门在每次发送前强制）──
+  const rec = await import('../invocation-recorder.mjs');
   // 四角色 attempt 行补全：reviewer/leader 的 Matrix 轮次此前不落 mu.agent_attempt（UI/审计
   // 只能看到 fixer/verifier）——此处为其补 claim；fixer/verifier 沿用既有 fixClaim/verClaim，
   // 不重复 claim（attempt 序号唯一约束）。失败路径：当前角色行标 FAILED（error_code=原因）。
@@ -317,12 +320,28 @@ async function runExternalRound(pool, atMod, atCfg, { run, binding, deps }) {
     const rp = ROLE_PROMPTS[role];
     const roleT0 = Date.now();
     let reply = null, lastReason = null;
+    let roundEvt = null;
     for (let attemptNo = 1; attemptNo <= 2 && !reply; attemptNo++) {
       const submissionId = `${runId}:${rp.taskId}:${attemptNo}`;
+      // ── C1 委托边界门（任务书：MCP 调用入口=委托边界；委托前强制）──
+      // 诚实映射：控制台只知道「对外发出了一次 <role> 委托」——worker 内部细节不可观测，
+      // skill_key 恒为 'external_round'，不虚构技能映射（治理以 mu.skill 注册域为准；
+      // 'external_round' 未注册时门如实放行）。attempt 归属：reviewer/leader 用其预领取
+      // 的 attempt 行，fixer 用 fixClaim，verifier 本阶段尚未领取（可空）。
+      // 门拒绝（skill_inactive/version_mismatch/provider_blocked/consent_revoked/
+      // tenant_disabled）→ 不发送，走既有 fail-closed 路径（cancel+死信+BLOCKED）。
+      roundEvt = await rec.recordSkillInvocationStart(pool, {
+        tenantId, repoId, prId, runId,
+        attemptId: roleClaims[role]?.attemptId ?? (fixClaim.ok ? fixClaim.attemptId : null),
+        agentRole: role, skillKey: 'external_round', invocationKind: 'agentteams_round',
+        idempotencyKey: `atr:${runId}:${rp.taskId}:${attemptNo}`,
+        inputDigest: atMod.atDigest(brief) });
+      if (!roundEvt.ok) { lastReason = roundEvt.code; break; }
       const sent = await mt.sendTaskDelegation(mtCfg, { room: bindings[role].roomID,
         workerMatrixId: bindings[role].matrixUserID, taskId: rp.taskId, correlationId: runId,
         submissionId, role, brief: rp.ask(brief, results), fetchImpl: mtFetch });
       if (!sent.ok) { lastReason = sent.reason; break; }
+
       const got = await mt.collectReply(mtCfg, { room: bindings[role].roomID,
         expectedSender: bindings[role].matrixUserID, marker: `[mp:${submissionId}]`,
         sinceTs: sent.ts - mt.MT_LIMITS.markerGuardMs, timeoutMs: mtTimeout,
@@ -352,6 +371,11 @@ async function runExternalRound(pool, atMod, atCfg, { run, binding, deps }) {
         await finishAttemptOrSkip(pool, rc.attemptId, 'FAILED', String(lastReason).slice(0, 80));
       }
       if (fixClaim.ok) await finishAttemptOrSkip(pool, fixClaim.attemptId, 'FAILED', String(lastReason).slice(0, 80));
+
+      // ── C1：委托失败/超时补记（TIMEOUT 按 reason 形状归类；已终态事件 recorder 拒改）──
+      await rec.recordInvocationFailure(pool, { eventId: roundEvt.eventId,
+        status: String(lastReason ?? '').includes('TIMEOUT') ? 'TIMEOUT' : 'FAILED',
+        errorCode: String(lastReason ?? 'round_failed').slice(0, 120) });
       await moveToDeadLetter(pool, { runId, tenantId, repoId, prId, headSha, agentRole: role,
         kind: 'mt_round_failed', reason: String(lastReason).slice(0, 120),
         retryCount: fixClaim.ok ? fixClaim.attempt : 0, payloadRef: `at:${atMod.atDigest(proj)}` });
@@ -359,6 +383,10 @@ async function runExternalRound(pool, atMod, atCfg, { run, binding, deps }) {
       return { ok: false, stage: 'mt_round_failed', reason: lastReason, role };
     }
     results[role] = reply.json;
+
+    // ── C1：本轮委托真实收口（SUCCEEDED；输出仅 digest——正文不入库）──
+    await rec.recordSkillInvocationFinish(pool, { eventId: roundEvt.eventId,
+      status: 'SUCCEEDED', outputDigest: digestOf(JSON.stringify(reply.json)) });
     // 本角色轮次成功 → attempt 行 DONE（摘要 digest——正文不入库，与审计纪律一致）
     if (roleClaims[role]) {
       await finishAttemptOrSkip(pool, roleClaims[role].attemptId, 'DONE', null,
