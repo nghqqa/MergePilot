@@ -6,7 +6,7 @@ import {
   InboxOutlined, FolderOpenOutlined, HistoryOutlined, AuditOutlined,
   DashboardOutlined, DatabaseOutlined, ApiOutlined, MedicineBoxOutlined,
   SettingOutlined, MenuOutlined, AppstoreOutlined, SafetyCertificateOutlined, FileSearchOutlined,
-  TeamOutlined,
+  TeamOutlined, ToolOutlined,
 } from '@ant-design/icons';
 import { api } from './api.js';
 import { readCsrfCookie } from './api-live.js';
@@ -72,6 +72,8 @@ const NAV = [
 const SYSTEM_NAV = [
   { to: '/core', label: '系统状态', icon: DashboardOutlined, end: true },
   { to: '/knowledge', label: '知识库', icon: DatabaseOutlined, end: true },
+  // B 波补遗：#290 只接了 /skills 路由，漏了导航入口（验收时误判槽位已存在——实测用户看不到页面）
+  { to: '/skills', label: '技能', icon: ToolOutlined, end: true },
   { to: '/datasources', label: '数据源', icon: ApiOutlined, end: true },
   { to: '/cchain', label: '签名验证', icon: SafetyCertificateOutlined, end: true },
   { to: '/rag-trial', label: '知识检索（试用）', icon: FileSearchOutlined, end: true },

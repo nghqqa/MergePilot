@@ -99,6 +99,7 @@ test('技能页：管理员看到列表+发布/历史入口+区分声明', async
   const text = json();
   try {
     assert.ok(text.includes('技能版本治理'), '治理面声明标题');
+    assert.ok(text.includes('"/skills"'), '导航含 /skills 入口（B 波补遗回归锁——#290 曾漏导航项）');
     assert.ok(text.includes('一经发布不可变'), '不可变声明（页面文案）');
     assert.ok(text.includes('rag.retrieve') && text.includes('审查检索技能'), '技能行（key+显示名）');
     assert.ok(text.includes('1.1.0') && text.includes('未发布'), '当前版本列（生效+未发布两态）');
