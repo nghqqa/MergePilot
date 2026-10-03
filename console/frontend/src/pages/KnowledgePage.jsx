@@ -14,9 +14,11 @@ const ITEMS = [
   {
     icon: Wrench,
     title: 'Skill 版本',
-    status: '总览未接入',
-    body: 'MinIO skill store / worker 上报未接入。run 内实际 Skill 调用审计在 run 详情「Skill」标签（包内记录，不以 worker 当前版本冒充）。',
-    note: 'Skill 与内部执行信息放在详情/设置层，不占一级导航。',
+    status: '版本治理已上线',
+    body: '技能版本治理已在「技能」页上线：注册技能、发布带完整性指纹的不可变版本、激活/回滚当前生效版本、停用/启用，全程审计。',
+    to: '/skills',
+    linkLabel: '前往技能治理',
+    note: '数据面仍未接入：MinIO skill store / worker 上报未接入。run 内实际 Skill 调用审计在 run 详情「Skill」标签（包内记录，不以 worker 当前版本冒充）。',
   },
   {
     icon: CloudUpload,
@@ -27,18 +29,21 @@ const ITEMS = [
   },
 ];
 
-// 知识库：未接入的数据面集中一处，诚实标注，不铺成多个看似可用的空模块。
+// 知识库：数据面未接入的诚实标注集中一处；治理面（技能版本）已上线并给入口，不谎报数据面。
 export default function KnowledgePage() {
   return (
     <div>
       <div className="page-head">
         <div>
           <h1>知识库</h1>
-          <p className="page-sub">RAG / Skill / 用量等数据面集中在此。均未接入实时数据；历史证据在对应 run 详情内。</p>
+          <p className="page-sub">
+            RAG / Skill / 用量集中在此：技能版本治理已上线（见下方入口），其余数据面未接入实时数据；
+            历史证据在对应 run 详情内。
+          </p>
         </div>
       </div>
       <div className="knowledge-list">
-        {ITEMS.map(({ icon: Icon, title, status, body, tech, note }) => (
+        {ITEMS.map(({ icon: Icon, title, status, body, tech, note, to, linkLabel }) => (
           <div key={title} className="panel knowledge-card">
             <div className="knowledge-head">
               <span className="stub-ico knowledge-ico"><Icon size={18} strokeWidth={1.75} aria-hidden /></span>
@@ -47,7 +52,10 @@ export default function KnowledgePage() {
                 <span className="chip">{status}</span>
               </div>
             </div>
-            <p className="knowledge-body" title={tech}>{body}</p>
+            <p className="knowledge-body" title={tech}>
+              {body}
+              {to ? <> <Link to={to}>{linkLabel} →</Link></> : null}
+            </p>
             <p className="section-note">{note}</p>
           </div>
         ))}
