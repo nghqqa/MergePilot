@@ -99,14 +99,11 @@ const STEP_TITLES = {
 };
 
 // ── 审查管线面板（Wave 3 PR-E 移植：只读展示 review_run 全链状态）──
-// 13 态人话 + attempt/retry + finding 定位 + fix dry-run/verifier verdict + blocked 原因。
+// run 14 态与 attempt 5 态（含 TIMEOUT）人话文案 PR-2 起单源自 status-map.js
+// MU_RUN/MU_ATTEMPT 词表（本页不再自持重复表）；findings 级别色保留页面级 SEV_TONE。
 // 无 approve/merge/write 按钮（人工审批仍走上方既有决策区）；只消费只读 /api/mu/runs 端点，
 // 授权由后端 read_pull_request 判定，403 时如实显示权限不足。
-const PIPE_LABEL = {
-  RECEIVED: '已接收', REVIEW_QUEUED: '审查排队', REVIEWING: '审查中', REVIEWED: '已审查', WAITING_FOR_HUMAN_APPROVAL: '待人工批准（高危修复）',
-  FIX_QUEUED: '修复排队', FIXING: '修复预演', VERIFY_QUEUED: '验证排队', VERIFYING: '验证中',
-  VERIFIED: '已验证', REWORK_REQUIRED: '需返工', BLOCKED: '受阻', FAILED: '失败', COMPLETED: '已完成',
-};
+import { muRunMap, muAttemptMap } from '../status-map.js';
 const SEV_TONE = { P0: 'red', P1: 'volcano', P2: 'orange', P3: 'gold' };
 
 export function PipelinePanel({ prNumber, repoId }) {
@@ -157,15 +154,17 @@ export function PipelinePanel({ prNumber, repoId }) {
   const r = state.detail.run;
   const ROLE_LABEL = { leader: 'Leader（裁定）', reviewer: 'Reviewer（审查）', fixer: 'Fixer（修复建议）', verifier: 'Verifier（独立验证）' };
   const ROLE_TONE = { leader: 'purple', reviewer: 'blue', fixer: 'cyan', verifier: 'geekblue' };
-  const ATT_LABEL = { DONE: '完成', FAILED: '失败', RUNNING: '运行中', SKIPPED: '已跳过' };
+  const runMeta = muRunMap(r.status);
+  const ATT_TONE = { ok: 'green', bad: 'red', info: 'blue' }; // 语义 tone → 本面板既有视觉色
   const attempts = state.detail.attempts ?? [];
   const decisions = state.detail.decisions ?? [];
   return (
     <div style={{ marginTop: 16 }}>
       <Typography.Title level={5} style={{ marginBottom: 8 }}>审查管线（自动化 Agent 运行）</Typography.Title>
       <Space size="large" wrap>
-        <Tag color={r.status === 'COMPLETED' ? 'green' : ['BLOCKED', 'FAILED'].includes(r.status) ? 'red' : 'blue'}>
-          {PIPE_LABEL[r.status] ?? r.status}
+        <Tag title={runMeta.note}
+          color={r.status === 'COMPLETED' ? 'green' : ['BLOCKED', 'FAILED'].includes(r.status) ? 'red' : 'blue'}>
+          {runMeta.label}
         </Tag>
         <span>触发：<Tag>{r.trigger_source === 'manual' ? '手动' : 'GitHub 事件'}</Tag></span>
         <span>head：<code>{String(r.head_sha ?? '').slice(0, 12)}</code></span>
@@ -181,7 +180,10 @@ export function PipelinePanel({ prNumber, repoId }) {
                 render: (v) => <Tag color={ROLE_TONE[v] ?? 'default'}>{ROLE_LABEL[v] ?? v}</Tag> },
               { title: '轮次', dataIndex: 'attempt', width: 60 },
               { title: '状态', dataIndex: 'status', width: 90,
-                render: (v) => <Tag color={v === 'DONE' ? 'green' : v === 'FAILED' ? 'red' : v === 'RUNNING' ? 'blue' : 'default'}>{ATT_LABEL[v] ?? v}</Tag> },
+                render: (v) => {
+                  const m = muAttemptMap(v);
+                  return <Tag color={ATT_TONE[m.tone] ?? 'default'} title={m.note}>{m.label}</Tag>;
+                } },
               { title: '执行器', dataIndex: 'provider', width: 130,
                 render: (v) => v === 'agentteams' ? 'AgentTeams（外部）' : v === 'deterministic' ? '规则引擎' : v },
               { title: '耗时', width: 80, render: (a) => a.latency_ms ? `${(Number(a.latency_ms) / 1000).toFixed(1)}s` : '—' },

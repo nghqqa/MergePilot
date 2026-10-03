@@ -100,9 +100,12 @@ test('SEVERITY 含 CRITICAL（最严重等级不得被吞为"—"），排序 CR
   assert.equal(SEVERITY.CRITICAL.tone, 'bad');
   assert.equal(SEVERITY.CRITICAL.label, '危急');
   assert.equal(SEVERITY.HIGH.tone, 'bad');
-  assert.deepEqual(SEVERITY_ORDER, ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']);
-  // verdict 侧严重度色与 SEVERITY 单源一致
-  for (const k of SEVERITY_ORDER) assert.equal(VERDICT_SEVERITY_TONE[k], SEVERITY[k].tone);
+  // CRITICAL-LOW 量纲在前（legacy 域，CRITICAL 最高）；P0-P3 为 MU 修复审批域追加量纲
+  // （schema.mjs agent_finding.severity CHECK），内部 P0>P1>P2>P3，两套量纲不隐式比大小。
+  assert.deepEqual(SEVERITY_ORDER.slice(0, 4), ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW']);
+  assert.deepEqual(SEVERITY_ORDER.slice(4), ['P0', 'P1', 'P2', 'P3']);
+  // verdict 侧严重度色与 SEVERITY 单源一致（verdict 域只有 CRITICAL-LOW 量纲）
+  for (const k of SEVERITY_ORDER.slice(0, 4)) assert.equal(VERDICT_SEVERITY_TONE[k], SEVERITY[k].tone);
 });
 
 test('FXV 23 态全覆盖：与 orchestrator STATES 逐一对齐（快照锁定）', () => {
@@ -190,12 +193,17 @@ test('toneToColor：五档语义色 → antd 预设色完整', () => {
 
 // ── P2 修复波新增：控制面阶段 / 运行结果 / console-pg·contract 执行状态族 ──
 
-test('STAGE 键空间：8 值全覆盖（与 core-pilot STAGES 对齐），UNKNOWN fail-closed', async () => {
+test('STAGE 键空间：后端 8 值一一对齐 + 前端派生 PENDING 桶，UNKNOWN fail-closed', async () => {
   const src = await import('node:fs').then((fs) =>
     fs.readFileSync(new URL('../lib/core-pilot.mjs', import.meta.url), 'utf8'));
   const m = src.match(/const STAGES = \[([^\]]+)\]/);
   const backendStages = m[1].split(',').map((x) => x.trim().replace(/'/g, '')).filter(Boolean);
-  assert.deepEqual(backendStages, STAGE_ORDER, '前后端阶段枚举必须一一对齐');
+  // PENDING（待审查：PR 尚无任何审查运行）是 overview 前端派生桶，不属于
+  // core-pilot 运行阶段；其余 8 值与后端 STAGES 一一对齐（含相对顺序）。
+  assert.deepEqual(backendStages, STAGE_ORDER.filter((s) => s !== 'PENDING'), '前后端阶段枚举必须一一对齐');
+  assert.equal(STAGE_ORDER[0], 'PENDING', '前端派生 PENDING 桶必须在 STAGE_ORDER 内（overview 图表可见）');
+  assert.ok(STAGE.PENDING, 'PENDING 必须有映射');
+  assert.notEqual(stageMap('PENDING').label, 'PENDING', 'PENDING 必须有中文标签');
   for (const s of backendStages) {
     assert.ok(STAGE[s], `${s} 必须有映射`);
     assert.notEqual(stageMap(s).label, s, `${s} 必须有中文标签`);
