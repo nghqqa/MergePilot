@@ -162,6 +162,10 @@ jobs:
       - name: MU skill governance integration (v17, 45 scenarios)
         run: node console/backend/test/mu-skill-governance.integration.mjs
 
+      # 技能铺底脚本（scripts/seed-skills.mjs）：6 技能×双租户+重跑幂等+指纹钉死
+      - name: MU skill seed idempotency (9 scenarios)
+        run: node console/backend/test/mu-skill-seed.integration.mjs
+
       - name: Frontend build
         run: |
           npm ci --no-audit --no-fund
