@@ -190,7 +190,7 @@ function PgTicketRow({ t, source }) {
             <div className="kv"><div className="kv-label">run_id</div><div className="kv-value mono">{t.run_id ?? '未记录'}</div></div>
             <div className="kv"><div className="kv-label" title="票据绑定的完整 head SHA——决策对象以它为准">绑定 head</div><div className="kv-value mono">{t.head_sha ?? '未记录'}</div></div>
             <div className="kv"><div className="kv-label">finding</div><div className="kv-value mono">{t.finding_id ?? '未记录（run 级动作）'}</div></div>
-            <div className="kv"><div className="kv-label">有效期（TTL）</div><div className="kv-value">响应未携带 expires_at——字段缺口已记录（C-11）</div></div>
+            <div className="kv"><div className="kv-label">有效期（TTL）</div><div className="kv-value">后端响应未携带 expires_at——暂无法显示具体到期时间，过期与否以服务端判定为准</div></div>
             <div className="kv"><div className="kv-label">审批人</div><div className="kv-value">test-principal（隔离联调主体，非真实 GitHub 身份）</div></div>
           </dl>
           {state.phase === 'decided' ? (
@@ -263,12 +263,12 @@ function PgApprovalsSection({ source }) {
       ) : (
         <>
           <div className="table-meta">
-            {listQ.data?.items?.length ?? 0} 张待审批票据（PENDING，来自隔离 PG approval.tickets）
-            —— 有效期/TTL 字段后端响应未携带（缺口已记录 C-11）。
+            {listQ.data?.items?.length ?? 0} 张待审批票据（PENDING，存储于隔离联调数据库）
+            —— 后端响应暂未携带有效期（TTL）字段，控制台暂无法显示剩余时间。
           </div>
           {(listQ.data?.items ?? []).length === 0 ? (
             <div className="empty-note" style={{ padding: '24px 0', color: '#888', textAlign: 'center' }}>
-              没有待审批票据（诚实零值——approval.tickets 无 PENDING 记录）
+              当前没有待审批票据（诚实零值——PENDING 状态的审批票记录为零）
             </div>
           ) : null}
           {(listQ.data?.items ?? []).map((t) => (
@@ -449,8 +449,8 @@ export default function ApprovalsPage({ mode = 'auto' }) {
         <div>
           <h1>待审批</h1>
           <p className="page-sub">
-            人工安全门的决策入口。当前后端仅有票据存储的落点（SQLite WAL，C-4/P-1），
-            只读票视图与决策接口均为需求（C-11，后端未实现）—— 真实审批在接口与权限就绪前不启用。
+            人工安全门的决策入口。当前部署的审批服务仅提供审批票的存储与审计留痕（可追溯），
+            只读票视图与决策接口尚未接入——真实审批在接口与权限就绪前不启用。
           </p>
         </div>
         <div className="detail-actions">
@@ -468,7 +468,7 @@ export default function ApprovalsPage({ mode = 'auto' }) {
       <div className={`state-box ${fixtureMode ? 'state-warn' : 'state-empty'}`} role="status">
         {fixtureMode
           ? '测试数据模式：以下为合成票据（FIXTURE-*），交互全链路在本页内存中演练，不触达任何后端或数据库。'
-          : '审批服务未接入 —— 无只读票据数据源（C-4 只读视图未实现），无决策接口（C-11 未实现）。'}
+          : '审批服务未接入 —— 暂无审批票只读数据源，也无决策接口；本页不显示真实待审批项。'}
       </div>
 
       {fixtureMode ? (
@@ -481,7 +481,7 @@ export default function ApprovalsPage({ mode = 'auto' }) {
           <div>
             <strong>这里不会出现假的「批准」按钮。</strong>
             <div className="muted">
-              待后端提供只读票视图（C-4）与决策接口（C-11）后，本页将按服务端权限渲染真实操作；
+              待后端提供只读票视图与决策接口后，本页将按服务端权限渲染真实操作；
               操作必须绑定准确的票据 ID、run、head 与幂等版本。
             </div>
           </div>

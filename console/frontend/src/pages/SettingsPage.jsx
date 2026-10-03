@@ -15,7 +15,13 @@ function csrfFromCookie() {
 const DATA_MODE_COPY = {
   live: 'PG 实时（live）——隔离 staging 库：overview/待处理/仓库/PR 详情按会话 allowlist 实时读取；run 证据详情页仍为快照只读。',
   snapshot: 'snapshot（真实历史运行证据包，锁定只读）。',
+  fixture: '隔离联调（fixture）——隔离测试库中的联调数据：查询只读；审批决策仅写入隔离测试库，不触达任何真实系统或 GitHub。',
+  'console-pg': '隔离联调（console-pg）——隔离 PG 测试库的只读联调记录，非真实运行数据。',
 };
+
+// 多用户（MU）部署的数据模式专属文案：与 /api/health 实际语义一致——
+// 多用户 canonical 面、按登录会话的租户收窄；不冒用 legacy live 的"隔离 staging 库"描述。
+const MU_DATA_MODE_COPY = '多用户实时数据——多用户正式数据面：仓库 / PR / 运行记录按登录会话的租户实时收窄（仅见本组织数据）；run 证据详情页仍为快照只读。';
 
 export default function SettingsPage() {
   const auth = useAuth();
@@ -63,6 +69,10 @@ export default function SettingsPage() {
   }, [auth, navigate]);
 
   const dataMode = health?.data_mode ?? null;
+  const isMuPrimary = health?.sources?.primary === 'multiuser';
+  const dataModeCopy = isMuPrimary
+    ? MU_DATA_MODE_COPY
+    : (dataMode ? (DATA_MODE_COPY[dataMode] ?? dataMode) : '—');
 
   return (
     <div>
@@ -102,9 +112,9 @@ export default function SettingsPage() {
           </div>
           <div className="kv">
             <div className="kv-label">登录方案</div>
-            <div className="kv-value">
-              具名操作员密码登录（已交付，服务端会话）。GitHub OAuth 方案（API-AUTH-MERGE-V0 v2 @ 7ccecb9）
-              等待后端实现与 D-9 配置。会话 Cookie（mp_session）为权威；浏览器不保存 App token / 私钥 /
+            <div className="kv-value" title="技术详情：会话 Cookie 名为 mp_session；GitHub OAuth 方案（API-AUTH-MERGE-V0 v2）等待后端实现与部署配置">
+              具名操作员密码登录（已上线，服务端会话）。GitHub OAuth 登录等待后端交付。
+              登录会话由服务端会话 Cookie 承载（技术详情见悬停提示）；浏览器不保存 App token / 私钥 /
               长期凭证；授权以后端为准。
             </div>
           </div>
@@ -116,7 +126,7 @@ export default function SettingsPage() {
         <div className="kv-grid">
           <div className="kv">
             <div className="kv-label">数据模式</div>
-            <div className="kv-value">{dataMode ? (DATA_MODE_COPY[dataMode] ?? dataMode) : '—'}</div>
+            <div className="kv-value">{dataModeCopy}</div>
           </div>
           <div className="kv"><div className="kv-label">服务版本</div><div className="kv-value mono">{health?.version ?? '—'}</div></div>
           <div className="kv"><div className="kv-label">证据包</div><div className="kv-value num">{health?.runs ?? '—'} 个 · 含 SHA256SUMS {health?.packs_with_sums ?? '—'} 个</div></div>
@@ -132,7 +142,7 @@ export default function SettingsPage() {
           <li>全站只读：控制台本体接口仅 GET；不写 GitHub、不派发 Fixer/Verifier。</li>
           <li>console-pg 联调模式（test-auth）：审批决策请求仅写隔离 fixture 库（X-Test-Principal 测试主体），不触达任何真实系统或 GitHub。</li>
           <li>快照数据显示真实历史结果，但不提供针对历史数据的真实审批或合并操作。</li>
-          <li>站内审批：待后端决策接口与 D-1/D-2/D-3 授权策略（生产主体须经认证与授权校验）。站内合并：范围变更已记录（C-12），启用条件由后端证明。</li>
+          <li>站内审批：待后端决策接口与生产主体的授权策略（须经认证与授权校验）。站内合并：当前关闭，仅提供 GitHub 外链；启用条件由后端证明。</li>
           <li>GitHub App 安装授权与用户登录是两条流程，控制台不混用、不代持凭证。</li>
         </ul>
       </section>

@@ -33,7 +33,7 @@ const LOGIN_ERROR_MAP = {
   state_expired: '流程已过期（10 分钟）——请重新发起',
   oauth_exchange_failed: 'GitHub 授权交换失败——请重试',
   oauth_identity_invalid: 'GitHub 身份读取失败——请重试',
-  oauth_not_configured: 'OAuth 未配置——联系管理员设置 MU_GITHUB_OAUTH_* 三项',
+  oauth_not_configured: 'OAuth 未配置——请联系管理员启用 GitHub 登录',
   no_active_membership: '无有效成员关系——邀请可能已过期，请联系管理员',
   user_disabled: '账户已停用——请联系管理员',
 };
@@ -649,8 +649,8 @@ function GHAppPanel({ can, session, repos, onBound, onUnbound }) {
     <div>
       {status?.configured === false ? (
         <Alert type="info" showIcon message="GitHub App 未配置（fail-closed）"
-          description={`需 ${status?.reason === 'github_app_slug_not_configured'
-            ? 'MU_GITHUB_APP_SLUG（GitHub App URL slug）' : 'MU_GITHUB_APP_ID/_APP_SLUG/_PRIVATE_KEY/_WEBHOOK_SECRET/_INSTALL_CALLBACK_URL'} 显式配置。参见 BETA-GUIDE §4-§5。`} />
+          description={`需在部署侧显式配置 GitHub App ${status?.reason === 'github_app_slug_not_configured'
+            ? 'URL slug' : '凭证（App ID / slug / 私钥 / webhook secret / 安装回调）'}。参见 BETA-GUIDE。`} />
       ) : (
         <>
           <Space size="large" wrap style={{ marginBottom: 12 }}>
@@ -756,8 +756,7 @@ function OnboardingPanel({ ob, session, providers, loginError, prCount, boundCou
               onClick={onLogin}>使用 GitHub 登录</Button>
             {providers?.github && providers.github.configured === false ? (
               <Typography.Text type="secondary" style={{ display: 'block', marginTop: 8 }}>
-                GitHub OAuth 未配置（configured:false，fail-closed）——需 MU_GITHUB_OAUTH_CLIENT_ID/_CLIENT_SECRET/_CALLBACK_URL。
-                参见 BETA-GUIDE §5。
+                GitHub OAuth 未配置（configured:false，fail-closed）——需管理员在部署侧启用 GitHub 登录（参见 BETA-GUIDE）。
               </Typography.Text>
             ) : null}
             {providers?.fixture?.configured ? <Typography.Text type="secondary">fixture 登录通道开启（测试配置）。</Typography.Text> : null}
@@ -777,7 +776,7 @@ function OnboardingPanel({ ob, session, providers, loginError, prCount, boundCou
         return (
           <Alert type="info" showIcon
             message="管理员尚未配置 GitHub App——配置完成后此步骤自动解锁"
-            description="需要管理员设置 MU_GITHUB_APP_* 环境项（见 BETA-GUIDE §4-§5）。此步骤在本页无法自助完成。" />
+            description="需要管理员在部署侧配置 GitHub App 凭证（见 BETA-GUIDE）。此步骤在本页无法自助完成。" />
         );
       case 'bind':
         return <Button type="primary" href="#mu-ghapp">前往选择仓库并绑定</Button>;
@@ -1039,7 +1038,7 @@ export default function MultiUserPage() {
 
       {notEnabled ? (
         <Alert type="info" showIcon message="多用户面未启用"
-          description="MU_MODE != multiuser（当前为 legacy 模式）。启用需设置 MU_MODE=multiuser 并配置 CONSOLE_PG_DSN——本页不显示任何推断数据。" />
+          description="当前部署未启用多用户模式，本页不显示任何推断数据。启用方式见上方 BETA-GUIDE 指南，或联系部署管理员。" />
       ) : null}
 
       {!notEnabled && !session && !loading ? (
@@ -1059,7 +1058,7 @@ export default function MultiUserPage() {
           </Button>
           {providers?.github && providers.github.configured === false ? (
             <Typography.Text type="secondary" style={{ display: 'block', marginTop: 8 }}>
-              GitHub OAuth 未配置——需 MU_GITHUB_OAUTH_* 三项（BETA-GUIDE §5）。
+              GitHub OAuth 未配置——需管理员在部署侧启用 GitHub 登录（参见 BETA-GUIDE）。
             </Typography.Text>
           ) : null}
         </div>
@@ -1089,7 +1088,7 @@ export default function MultiUserPage() {
 
       {error ? (
         <Alert type="error" showIcon message="多用户会话不可用"
-          description={`${error.message} — 后端异常时本页保持空态。请检查 MU_MODE/CONSOLE_PG_DSN 配置或联系管理员。`} />
+          description={`${error.message} — 后端异常时本页保持空态。请检查多用户模式的部署配置，或联系管理员。`} />
       ) : null}
 
       {session ? (
