@@ -349,7 +349,7 @@ function Shell() {
               <Route path="/pending" element={<PendingPage />} />
               <Route path="/knowledge" element={<KnowledgePage />} />
               <Route path="/runs" element={<RunsHistoryRoute />} />
-              <Route path="/runs/:packId" element={<RunDetailPage />} />
+              <Route path="/runs/:packId" element={<RunsDetailRoute />} />
               <Route path="/approvals" element={<ApprovalsPage />} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/login" element={<Navigate to="/pending" replace />} />
@@ -365,18 +365,35 @@ function Shell() {
   );
 }
 
+// /runs 与 /runs/:packId 同门：run 历史/证据包是 snapshot 取证域，
+// MU/contract 等实时源下一律挡在门外（证据包不按租户隔离，不能直达）。
+function SnapshotGateMessage({ subject, missing }) {
+  const config = useAppConfig();
+  const { source } = useDataSource(config);
+  return (
+    <div className="state-box state-warn" role="status">
+      {subject}为 snapshot 取证视图——当前数据源（{source.kind}）{missing}。
+      PR 维度历史在各 PR 详情的"运行历史"展开中查看。返回<Link to="/repos">仓库工作台</Link>。
+    </div>
+  );
+}
+
 function RunsHistoryRoute() {
   const config = useAppConfig();
   const { source } = useDataSource(config);
   if (source.kind !== 'snapshot') {
-    return (
-      <div className="state-box state-warn" role="status">
-        运行历史为 snapshot 取证视图——当前数据源（{source.kind}）不提供 run 级全量历史。
-        PR 维度历史在各 PR 详情的"运行历史"展开中查看。返回<Link to="/repos">仓库工作台</Link>。
-      </div>
-    );
+    return <SnapshotGateMessage subject="运行历史" missing="不提供 run 级全量历史" />;
   }
   return <RunsPage />;
+}
+
+function RunsDetailRoute() {
+  const config = useAppConfig();
+  const { source } = useDataSource(config);
+  if (source.kind !== 'snapshot') {
+    return <SnapshotGateMessage subject="运行详情" missing="不提供 run 证据包详情" />;
+  }
+  return <RunDetailPage />;
 }
 
 export default function App() {
