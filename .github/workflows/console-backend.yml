@@ -166,6 +166,11 @@ jobs:
       - name: MU skill seed idempotency (9 scenarios)
         run: node console/backend/test/mu-skill-seed.integration.mjs
 
+      # RAG-model-install PR1：v19 store+状态机（manifest 真源/落库幂等/CAS 并发单赢家/
+      # 激活回退 provider 切换/进度心跳门）
+      - name: MU rag model install store (v19, 19 scenarios)
+        run: node console/backend/test/mu-rag-model-install-store.integration.mjs
+
       - name: Frontend build
         run: |
           npm ci --no-audit --no-fund
