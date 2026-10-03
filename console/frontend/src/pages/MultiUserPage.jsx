@@ -3,6 +3,7 @@ import { ReloadOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { MuPrDetailContent } from './MuPrDetailContent.jsx';
+import { RunTracePanel } from '../components/RunTracePanel.jsx';
 import { readCsrfCookie } from '../api-live.js';
 
 // 多用户面（Developer Edition Beta onboarding）。
@@ -235,6 +236,9 @@ export function PipelinePanel({ prNumber, repoId }) {
           : attempts.length ? '执行器：internal 规则引擎（开发/测试路径，非生产）。' : ''}
         修复为 dry-run（不写 GitHub）；AI 审查不构成 GitHub required review。
       </Typography.Paragraph>
+      {/* C 波 C2：本 run 的 Skill/RAG 调用留痕（MU live 域 /api/mu/runs/:runId/*）。
+          legacy 运行由面板内部如实降级为"不可用"，不伪造 v2 数据。 */}
+      {r.run_id ? <RunTracePanel runId={r.run_id} /> : null}
     </div>
   );
 }
