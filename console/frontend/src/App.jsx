@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Activity, History, LogOut } from 'lucide-react';
 import { Layout, Menu as AntMenu, Drawer, Button } from 'antd';
@@ -87,14 +87,30 @@ function TopbarContext() {
   const auth = useAuth();
   const { source } = useDataSource(config);
   const [open, setOpen] = useState(false);
+  const chipRef = useRef(null);
   const state = resolveWorkspaceState(config, auth.status);
   const toneCls = `ws-tone-${state.tone}`;
   const snapshot = source.kind === 'snapshot';
+
+  // Esc 关闭弹层并把焦点还给触发 chip（dialog 语义配套；弹层外点击仍由收起钮/再次点击 chip 关闭）
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        setOpen(false);
+        chipRef.current?.focus();
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open]);
 
   return (
     <span className="ws-wrap">
       <button
         type="button"
+        ref={chipRef}
         className={`mode-chip ${state.tone === 'bad' ? 'mode-chip-bad' : ''}`}
         aria-expanded={open}
         aria-haspopup="dialog"
