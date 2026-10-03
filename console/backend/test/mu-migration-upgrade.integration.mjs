@@ -35,7 +35,7 @@ process.env.CONSOLE_PG_DSN = dsn;
 const { MU_MIGRATIONS, MU_SCHEMA_LATEST } = await import('../lib/multiuser/schema.mjs');
 const LAST = MU_MIGRATIONS[MU_MIGRATIONS.length - 1];
 const PRIOR = MU_MIGRATIONS[MU_MIGRATIONS.length - 2];
-if (Number(LAST.version) < 18) {
+if (Number(LAST.version) < 19) {
   console.error(`前提漂移：最新迁移=${LAST.version}（本测试需覆盖 v18 绑定统一升级路径）`);
   process.exit(2);
 }
@@ -55,8 +55,8 @@ async function applyUpTo(maxVer) {
 
 try {
   // ── 阶段 1：既有库（只到 latest-1=17）+ 播种 v1 形状数据与 v16 审批票 ──
-  await applyUpTo(Number(LAST.version) - 1);
-  ok('U1 前置=迁移到 latest-1（v18 未应用）',
+  await applyUpTo(Number(PRIOR.version) - 1);
+  ok('U1 前置=迁移到 PRIOR-1（v18/v19 未应用）',
     (await pool.query(`SELECT 1 FROM mu.schema_migrations WHERE version=17`)).rowCount === 1
       && (await pool.query(`SELECT 1 FROM mu.schema_migrations WHERE version=18`)).rowCount === 0);
   const seed = await pool.query(`INSERT INTO mu.tenant (slug, display_name) VALUES ('mig','Mig') RETURNING tenant_id`);
@@ -168,6 +168,13 @@ try {
     const has = (await pool.query(`SELECT 1 FROM information_schema.tables
       WHERE table_schema='mu' AND table_name=$1`, [t])).rowCount;
     ok(`U3f v17 新表 mu.${t} 在位`, has === 1);
+  const v19 = (await pool.query(`SELECT 1 FROM mu.schema_migrations WHERE version=19`)).rowCount;
+  ok('U3v19 升级后 v19（Skill/RAG 调用留痕）应用', v19 === 1);
+  for (const t of ['skill_invocation_event', 'rag_retrieval_event']) {
+    const has = (await pool.query(`SELECT 1 FROM information_schema.tables
+      WHERE table_schema='mu' AND table_name=$1`, [t])).rowCount;
+    ok(`U3v19b v19 新表 mu.${t} 在位`, has === 1);
+  }
   }
   const sk = (await pool.query(`INSERT INTO mu.skill (tenant_id, skill_key, display_name, created_by)
     VALUES ($1,'rag.retrieve','检索技能',$2) RETURNING skill_id`, [T, U])).rows[0];

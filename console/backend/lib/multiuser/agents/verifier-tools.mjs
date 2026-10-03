@@ -14,6 +14,13 @@ export const VERIFIER_TOOLS_ALLOWLIST = Object.freeze([
   'secret_scan',    // 安全扫描（patch 文本 secret 形状）
 ]);
 
+// C1：verifier 工具 → seed 技能映射（static_check/secret_scan 同属静态规则扫描域，
+// 映射到最接近的治理注册项 skill_sast_scan——导出供测试/审计对账，非虚构专用技能）。
+export const VERIFIER_TOOL_SKILLS = Object.freeze({
+  static_check: 'skill_sast_scan',
+  secret_scan: 'skill_sast_scan',
+});
+
 // verification_attempt.verdict（大写）→ review_run.verification_verdict（小写 CHECK 域）
 const RUN_VERDICT_MAP = Object.freeze({ PASS: 'passed', FAIL: 'failed', BLOCKED: 'inconclusive' });
 
@@ -110,11 +117,38 @@ export async function runVerifier(pool, { run, binding, snapshot, findings, patc
 
   const t0 = Date.now();
   const patchText = String(deps.patchText ?? '');
-
   // 3) test_evidence 域：白名单工具真实执行（本地零网络——不需出站授权）
-  const tools = [staticCheck(patchText), secretScan(patchText)];
+  // ── C1 调用留痕：每工具一次 skill_invocation_event（invocation_kind='verifier_tool'，
+  // skill_key=工具映射的 seed 技能：static_check/secret_scan → skill_sast_scan——
+  // 二者同为静态规则扫描域，映射是最接近的治理注册项而非虚构专用技能）。
+  // recorder 内置活跃门：租户注册且停用/版本不符 → 不执行该工具，事件记 FAILED，
+  // 工具域如实降级（evidence=skipped:<code>）——不冒充通过、不崩 verifier；
+  // 未注册技能（多数测试/未铺底租户）→ 门如实放行并留痕（skill_version=NULL）。
+  const recVT = await import('../invocation-recorder.mjs');
+  const tools = [];
+  for (const toolName of VERIFIER_TOOLS_ALLOWLIST) {
+    const evt = await recVT.recordSkillInvocationStart(pool, {
+      tenantId: binding.tenantId, repoId: binding.repoId, prId: binding.prId,
+      runId: run.run_id, attemptId: claim.attemptId, agentRole: 'verifier',
+      skillKey: VERIFIER_TOOL_SKILLS[toolName] ?? 'skill_sast_scan',
+      invocationKind: 'verifier_tool',
+      idempotencyKey: `vt:${run.run_id}:${claim.attemptId}:${toolName}`,
+      inputDigest: digest(patchArtifact.patch_digest + ':' + toolName) });
+    if (!evt.ok) {
+      // 活跃门/fail-closed 门拒绝：跳过执行（事件已由 recorder 落 FAILED）
+      tools.push({ tool: toolName, passed: false, evidence: `skipped:${evt.code}` });
+      continue;
+    }
+    const toolFn = toolName === 'static_check' ? staticCheck
+      : toolName === 'secret_scan' ? secretScan : null;
+    const toolResult = toolFn
+      ? toolFn(patchText)
+      : { tool: toolName, passed: false, evidence: 'unknown_tool' };
+    await recVT.recordSkillInvocationFinish(pool, { eventId: evt.eventId,
+      status: 'SUCCEEDED', outputDigest: digest(JSON.stringify(toolResult)) });
+    tools.push(toolResult);
+  }
   const testsStatus = tools.every((t) => t.passed) ? 'passed' : 'failed';
-
   // 4) model_judgment 域：LLM 对 patch-finding 一致性判断（非测试）
   const requestText = `Judge whether this patch resolves the findings (consistency only — NOT code testing). `
     + `Patch digest: ${patchArtifact.patch_digest}. Findings: ${

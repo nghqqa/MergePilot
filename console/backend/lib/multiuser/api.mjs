@@ -69,6 +69,10 @@ export function getMuStore(env) {
       const store = await createMuStore({ pool, env });
       await store.initSchema();
       await store.bootstrap();
+      // ── C1：进程启动一次——executor 崩溃遗留的 RUNNING 调用事件补记 INTERRUPTED
+      //（best-effort：留痕恢复失败不影响 mu 面可用性）──
+      const recBoot = await import('./invocation-recorder.mjs');
+      await recBoot.recoverIncompleteInvocations(pool, { olderThanMs: 15 * 60_000 }).catch(() => {});
       return store;
     })().catch((e) => { muStorePromise = null; throw e; });
   }
@@ -1372,11 +1376,29 @@ export async function muApi(req, res, ctx) {
     }
 
     // ── RAG 检索面（rag_query；fixture 语料——Auditor/PlatformAdmin 默认无此动作） ──
-    const ragMatch = p.match(/^\/api\/mu\/repositories\/([^/]+)\/rag-search$/);
+const ragMatch = p.match(new RegExp("^/api/mu/repositories/([^/]+)/rag-search$"));
     if (ragMatch && req.method === 'GET') {
       const g = await guard('rag_query', { repoId: ragMatch[1] });
       if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
-      return sendJson(res, 200, fixtureRagSearch(g.repo, q.q ?? ''));
+      // ── C1 RAG 检索留痕：query 只以 64-hex digest 入库（原文零落库/零日志）；
+      // 命中源以稳定 digest 数组留痕；用户会话域无 run 上下文——pr/run 不虚构（NULL）。
+      // 幂等键=(tenant,repo,query digest)——同租户同库同查询收敛为一条（重试语义）。
+      const recRag = await import('./invocation-recorder.mjs');
+      const t0Rag = Date.now();
+      const ragResp = fixtureRagSearch(g.repo, q.q ?? '');
+      const ragDigest = recRag.sha256Hex(q.q ?? '');
+      const ragRec = await recRag.recordRagRetrieval({ query: muPoolQ }, {
+        tenantId: mu.tenantId, repoId: g.repo.repo_id, agentRole: 'system',
+        skillKey: 'rag.retrieve', queryDigest: ragDigest,
+        resultCount: Array.isArray(ragResp.results) ? ragResp.results.length : 0,
+        sourceDigestList: (ragResp.results ?? []).map((h) => recRag.sha256Hex(h.doc_path)),
+        status: 'SUCCEEDED', latencyMs: Date.now() - t0Rag,
+        idempotencyKey: `rag:${mu.tenantId}:${g.repo.repo_id}:${ragDigest}` });
+      if (!ragRec.ok && ragRec.code === 'skill_inactive') {
+        // 租户显式停用 rag.retrieve → fail-closed（未注册租户零行为变化）
+        return sendJson(res, 403, { error: { reason: 'skill_inactive' } });
+      }
+      return sendJson(res, 200, ragResp);
     }
 
     // ── 任务（列表=成员可见，tenant 收窄；tick=fixture 执行器） ──
@@ -1806,6 +1828,117 @@ export async function muApi(req, res, ctx) {
       if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
       const rows = await store.listAudit(mu.tenantId, { limit: Number(q.limit || 100) });
       return sendJson(res, 200, { audit: rows });
+    }
+
+    // ── C1 调用留痕只读 API（复用 runs/:id 同一会话+tenant guard；跨租户/不存在同形 404）──
+    // 响应白名单字段（与 recorder 同一投影函数）：绝无 prompt/query 原文/文档正文/
+    // 幂等键。legacy run（v19 迁移应用前创建）不可能留痕——200 + not_available（不伪造空集）。
+    const runEventsMatch = p.match(/^\/api\/mu\/runs\/([0-9a-f-]{36})\/(skill-invocations|rag-retrievals|call-summary)$/);
+    if (runEventsMatch && req.method === 'GET') {
+      const g = await guard('read_pull_request');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const recApi = await import('./invocation-recorder.mjs');
+      const runIdQ = runEventsMatch[1];
+      const view = runEventsMatch[2];
+      const runRow = (await muPoolQ(
+        `SELECT run_id, created_at FROM mu.review_run WHERE run_id=$1 AND tenant_id=$2`,
+        [runIdQ, mu.tenantId])).rows[0];
+      if (!runRow) return sendJson(res, 404, { error: { reason: 'not_found' } });
+      const v19At = (await muPoolQ(
+        `SELECT applied_at FROM mu.schema_migrations WHERE version=19`)).rows[0]?.applied_at ?? null;
+      const isLegacy = v19At != null
+        && new Date(runRow.created_at).getTime() < new Date(v19At).getTime();
+      // 过滤参数（服务端枚举白名单——非法值 400，不静默吞）
+      const filters = {};
+      const badFields = [];
+      if (q.agent_role) {
+        if (recApi.AGENT_ROLES.includes(q.agent_role)) filters.agent_role = q.agent_role;
+        else badFields.push('agent_role');
+      }
+      if (q.skill_key) {
+        if (/^[a-z0-9][a-z0-9._-]{0,63}$/.test(String(q.skill_key))) filters.skill_key = String(q.skill_key);
+        else badFields.push('skill_key');
+      }
+      if (q.status) {
+        if (recApi.INVOCATION_STATUSES.includes(q.status)) filters.status = q.status;
+        else badFields.push('status');
+      }
+      if (q.invocation_kind) {
+        if (recApi.INVOCATION_KINDS.includes(q.invocation_kind)) filters.invocation_kind = q.invocation_kind;
+        else badFields.push('invocation_kind');
+      }
+      if (badFields.length) {
+        return sendJson(res, 400, { error: { reason: 'invalid_filter', fields: badFields } });
+      }
+      const limit = Math.min(Math.max(Number(q.limit) || 50, 1), 200);
+      const offset = Math.max(Number(q.offset) || 0, 0);
+      const legacyBody = { run: { run_id: runIdQ, legacy: true },
+        items: [], total: 0, not_available: true };
+      if (view === 'skill-invocations') {
+        if (isLegacy) return sendJson(res, 200, legacyBody);
+        const where = ['run_id=$1'];
+        const params = [runIdQ];
+        for (const k of ['agent_role', 'skill_key', 'status', 'invocation_kind']) {
+          if (filters[k]) { params.push(filters[k]); where.push(`${k}=$${params.length}`); }
+        }
+        const rows = (await muPoolQ(
+          `SELECT event_id, agent_role, skill_key, skill_version, invocation_kind, status,
+                  started_at, completed_at, latency_ms, input_digest, output_digest, error_code
+             FROM mu.skill_invocation_event WHERE ${where.join(' AND ')}
+            ORDER BY started_at, event_id LIMIT ${limit} OFFSET ${offset}`, params)).rows;
+        const total = Number((await muPoolQ(
+          `SELECT count(*)::int c FROM mu.skill_invocation_event WHERE ${where.join(' AND ')}`,
+          params)).rows[0].c);
+        return sendJson(res, 200, { run: { run_id: runIdQ },
+          items: rows.map((r) => recApi.projectSkillEvent(r)), total });
+      }
+      if (view === 'rag-retrievals') {
+        if (isLegacy) return sendJson(res, 200, legacyBody);
+        const where = ['run_id=$1'];
+        const params = [runIdQ];
+        for (const k of ['agent_role', 'skill_key', 'status']) {
+          if (filters[k]) { params.push(filters[k]); where.push(`${k}=$${params.length}`); }
+        }
+        const rows = (await muPoolQ(
+          `SELECT event_id, agent_role, skill_key, status, started_at, completed_at,
+                  latency_ms, error_code, query_digest, result_count, source_digest_list
+             FROM mu.rag_retrieval_event WHERE ${where.join(' AND ')}
+            ORDER BY started_at, event_id LIMIT ${limit} OFFSET ${offset}`, params)).rows;
+        const total = Number((await muPoolQ(
+          `SELECT count(*)::int c FROM mu.rag_retrieval_event WHERE ${where.join(' AND ')}`,
+          params)).rows[0].c);
+        return sendJson(res, 200, { run: { run_id: runIdQ },
+          items: rows.map((r) => recApi.projectRagEvent(r)), total });
+      }
+      // call-summary（仅计数；同过滤器）
+      const sumWhere = ['run_id=$1'];
+      const sumParams = [runIdQ];
+      for (const k of ['agent_role', 'skill_key', 'status']) {
+        if (filters[k]) { sumParams.push(filters[k]); sumWhere.push(`${k}=$${sumParams.length}`); }
+      }
+      if (filters.invocation_kind) {
+        sumParams.push(filters.invocation_kind);
+        sumWhere.push(`invocation_kind=$${sumParams.length}`);
+      }
+      const sBy = (await muPoolQ(
+        `SELECT status, agent_role, count(*)::int c FROM mu.skill_invocation_event
+          WHERE ${sumWhere.join(' AND ')} GROUP BY status, agent_role`, sumParams)).rows;
+      const rBy = (await muPoolQ(
+        `SELECT status, count(*)::int c FROM mu.rag_retrieval_event
+          WHERE ${sumWhere.join(' AND ')} GROUP BY status`, sumParams)).rows;
+      const skill = { total: sBy.reduce((a, b) => a + Number(b.c), 0),
+        by_status: {}, by_role: {} };
+      for (const r of sBy) {
+        skill.by_status[r.status] = (skill.by_status[r.status] ?? 0) + Number(r.c);
+        skill.by_role[r.agent_role] = (skill.by_role[r.agent_role] ?? 0) + Number(r.c);
+      }
+      const rag = { total: rBy.reduce((a, b) => a + Number(b.c), 0), by_status: {} };
+      for (const r of rBy) rag.by_status[r.status] = Number(r.c);
+      return sendJson(res, 200, isLegacy
+        ? { run: { run_id: runIdQ, legacy: true },
+            skill: { total: 0, by_status: {}, by_role: {} },
+            rag: { total: 0, by_status: {} }, not_available: true }
+        : { run: { run_id: runIdQ }, skill, rag });
     }
 
     // ── 身份流程保留位（GitHub App 安装流程状态——会话内查询） ──

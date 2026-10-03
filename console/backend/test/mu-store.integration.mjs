@@ -101,8 +101,12 @@ try {
   // （INT 计数器，语义为"消耗了多少 token"，非凭据材料——正则形状命中但非明文凭据）。
   // PR B（#285）追加：mu.code_egress_event.tokens_sent = 出站 token 用量计数
   // （INT 计数器，出站审计表——与 token_count 同语义类，非凭据材料）。
+  // C1（#feat/c1-invocation-events）追加：mu.skill_invocation_event / mu.rag_retrieval_event
+  //   的 idempotency_key = 幂等去重键（UNIQUE(tenant_id, idempotency_key)；recorder 生成
+  //   的不透明串，1-200 字符，API 读出白名单排除）——命中 *key* 字面但非凭据材料。
   const SECRET_COL_ALLOWLIST = new Set(['token_count', 'max_output_tokens', 'tokens_sent', // W3.2：LLM 输出上限计数列（INT，非凭据）
-    'skill_key']); // v17 技能治理：mu.skill 标识列（小写 slug，非凭据材料——命中纯属 *key* 字面）
+    'skill_key', // v17 技能治理：mu.skill 标识列（小写 slug，非凭据材料——命中纯属 *key* 字面）
+    'idempotency_key']); // C1：两留痕表幂等去重键（recorder 不透明串，非凭据材料）
   const secretCols = cols.filter((c) => /token|secret|password|key/i.test(c.column_name)
     && !/_hash$/.test(c.column_name) && !SECRET_COL_ALLOWLIST.has(c.column_name));
   ok('MS9 schema 零明文凭据列（允许 *_hash 摘要列 + 精确白名单）', secretCols.length === 0, secretCols);
