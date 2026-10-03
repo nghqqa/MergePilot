@@ -19,7 +19,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const MANIFEST_DIR = path.resolve(HERE, '../../../../deploy/rag-model-install');
+// 真源目录：仓库版本化 manifest（deploy/rag-model-install）。
+// RMI_MANIFEST_DIR 仅供集成测试注入本地伪官方源（生产不设——api 层不透传该 env）。
+const MANIFEST_DIR = process.env.RMI_MANIFEST_DIR
+  || path.resolve(HERE, '../../../../deploy/rag-model-install');
 
 // ── 状态机 ──
 export const RMI_STATES = [
