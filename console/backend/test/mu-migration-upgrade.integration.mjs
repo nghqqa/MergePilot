@@ -1,8 +1,10 @@
 // console/backend/test/mu-migration-upgrade.integration.mjs — ADR-002 发布前验证：
-// existing DB 升级路径（v16 → v17 增量迁移）+ initSchema 幂等（restart 安全）。
-// v17=技能版本治理面（mu.skill/mu.skill_version，纯 additive）；历史断言保留
-// v15/v16 特征面（本套件自 v15 形状播种一路升到 v17——逐版本链完整性一并覆盖）。
-// 模拟既有库：先只跑 migration ≤16 + 播种 v1 形状数据与 v16 审批票，再走完整 initSchema。
+// existing DB 升级路径（latest-1 → latest 增量迁移；当前 17 → 18 绑定统一回填）+
+// initSchema 幂等（restart 安全）。v17=技能版本治理面（mu.skill/mu.skill_version，纯
+// additive）；v18=绑定读写来源统一（mu.binding 现存行幂等回填 mu.repository_binding，
+// mu.binding 原样保留）。历史断言保留 v15/v16/v17 特征面（本套件自 v15 形状播种一路
+// 升到 latest——逐版本链完整性一并覆盖）。
+// 模拟既有库：先只跑 migration ≤latest-1 + 播种 v1 形状数据与 v16 审批票，再走完整 initSchema。
 import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
@@ -33,8 +35,8 @@ process.env.CONSOLE_PG_DSN = dsn;
 const { MU_MIGRATIONS, MU_SCHEMA_LATEST } = await import('../lib/multiuser/schema.mjs');
 const LAST = MU_MIGRATIONS[MU_MIGRATIONS.length - 1];
 const PRIOR = MU_MIGRATIONS[MU_MIGRATIONS.length - 2];
-if (Number(LAST.version) !== 17) {
-  console.error(`前提漂移：最新迁移=${LAST.version}（本测试钉 v17 升级路径）`);
+if (Number(LAST.version) < 18) {
+  console.error(`前提漂移：最新迁移=${LAST.version}（本测试需覆盖 v18 绑定统一升级路径）`);
   process.exit(2);
 }
 
@@ -52,10 +54,11 @@ async function applyUpTo(maxVer) {
 }
 
 try {
-  // ── 阶段 1：既有库（只到 v16）+ 播种 v1 形状数据与 v16 审批票 ──
-  await applyUpTo(16);
-  ok('U1 前置=迁移到 v16（v17 未应用）',
-    (await pool.query(`SELECT 1 FROM mu.schema_migrations WHERE version=17`)).rowCount === 0);
+  // ── 阶段 1：既有库（只到 latest-1=17）+ 播种 v1 形状数据与 v16 审批票 ──
+  await applyUpTo(Number(LAST.version) - 1);
+  ok('U1 前置=迁移到 latest-1（v18 未应用）',
+    (await pool.query(`SELECT 1 FROM mu.schema_migrations WHERE version=17`)).rowCount === 1
+      && (await pool.query(`SELECT 1 FROM mu.schema_migrations WHERE version=18`)).rowCount === 0);
   const seed = await pool.query(`INSERT INTO mu.tenant (slug, display_name) VALUES ('mig','Mig') RETURNING tenant_id`);
   const T = seed.rows[0].tenant_id;
   const U = (await pool.query(`INSERT INTO mu.app_user (login, display_name) VALUES ('mig-u','Mig U') RETURNING user_id`)).rows[0].user_id;
@@ -77,6 +80,12 @@ try {
     pr_id, head_sha, attempt, verdict) VALUES ($1,$2,$3,$4,$5,$6,1,'PASS') RETURNING verify_id`,
     [v1run.run_id, fix.fix_id, T, repo.repo_id, pr.pr_id, 'aa'.repeat(20)])).rows[0];
   ok('U2 v1 形状数据播种（run/attempt/fix/verification）', Boolean(v1run && att && fix && ver));
+  // v1 形状 mu.binding 行（老读侧数据——升级后必须零丢失回填 repository_binding）
+  const legacyBind = (await pool.query(
+    `INSERT INTO mu.binding (tenant_id, repo_id, kind, installation_id, granted_scopes)
+     VALUES ($1,$2,'fixture','fixture-install-mig','["pull_requests:read"]'::jsonb) RETURNING binding_id, created_at, updated_at`,
+    [T, repo.repo_id])).rows[0];
+  ok('U2b v1 形状 mu.binding 行播种（fixture kind，state=active）', Boolean(legacyBind?.binding_id));
 
   // ── 阶段 2：完整 initSchema（升级路径）──
   const { createMuStore } = await import('../lib/multiuser/store.mjs');
@@ -84,7 +93,9 @@ try {
   await store.initSchema();
   const v17 = (await pool.query(`SELECT 1 FROM mu.schema_migrations WHERE version=17`)).rowCount;
   ok('U3 升级后 v17 应用', v17 === 1);
-  ok('U3b 版本=最新', Number(MU_SCHEMA_LATEST) === 17);
+  const v18 = (await pool.query(`SELECT 1 FROM mu.schema_migrations WHERE version=18`)).rowCount;
+  ok('U3v18 升级后 v18（绑定统一回填）应用', v18 === 1);
+  ok('U3b 版本=最新', Number(MU_SCHEMA_LATEST) === Number(LAST.version));
   for (const t of ['review_policy', 'review_policy_revision', 'provider_registry',
     'provider_consent', 'code_egress_event']) {
     const has = (await pool.query(`SELECT 1 FROM information_schema.tables
@@ -110,6 +121,23 @@ try {
     `SELECT architecture_version, review_verdict FROM mu.review_run WHERE run_id=$1`, [v1run.run_id])).rows[0];
   ok('U4b legacy run 增列=NULL（不冒充 v2）',
     legacyNull.architecture_version === null && legacyNull.review_verdict === null);
+
+  // v18 回填：mu.binding 现存行幂等迁入 repository_binding，原表零改动
+  const bf = (await pool.query(
+    `SELECT rb.github_repo_id, rb.binding_state, rb.installation_id, i.account_type
+       FROM mu.repository_binding rb
+       LEFT JOIN mu.github_app_installation i ON i.installation_id = rb.installation_id
+      WHERE rb.tenant_id=$1 AND rb.repo_id=$2`, [T, repo.repo_id])).rows[0];
+  ok('U4c v18 回填：legacy mu.binding 行迁入 repository_binding（binding_state=active）',
+    Boolean(bf) && bf.binding_state === 'active', bf);
+  ok('U4d v18 回填：fixture kind → fixture 域安装（account_type=fixture，id 落保留区间）',
+    bf?.account_type === 'fixture' && Number(bf?.installation_id) >= 8400000000000000, bf);
+  const legacyKept = (await pool.query(
+    `SELECT state, installation_state, kind FROM mu.binding WHERE binding_id=$1`,
+    [legacyBind.binding_id])).rows[0];
+  ok('U4e mu.binding 行原样保留（老镜像兼容：state/installation_state/kind 不动）',
+    legacyKept?.state === 'active' && legacyKept?.installation_state === 'active' && legacyKept?.kind === 'fixture',
+    legacyKept);
 
   // 约束换新（升级后新域可用）
   const staleOk = await pool.query(
@@ -157,6 +185,15 @@ try {
   const dupVer = (await pool.query(
     `SELECT count(*)::int FROM mu.schema_migrations WHERE version=17`)).rows[0].count;
   ok('U6b v17 不重复应用', Number(dupVer) === 1);
+  const dupVer18Del = await pool.query(`DELETE FROM mu.schema_migrations WHERE version=18`);
+  await store.initSchema(); // v18 DO 块真实重执行（NOT EXISTS 防重护栏生效）
+  const dupVer18 = (await pool.query(
+    `SELECT count(*)::int FROM mu.schema_migrations WHERE version=18`)).rows[0].count;
+  const rbDup = (await pool.query(
+    `SELECT count(*)::int FROM mu.repository_binding WHERE tenant_id=$1 AND repo_id=$2`,
+    [T, repo.repo_id])).rows[0].count;
+  ok('U6b2 v18 重放（删版本行重执行回填）零重复（repository_binding 恒 1 行）',
+    dupVer18Del.rowCount === 1 && Number(dupVer18) === 1 && Number(rbDup) === 1, { dupVer18, rbDup });
   const skKept = (await pool.query(`
     SELECT (SELECT count(*)::int FROM mu.skill WHERE skill_id=$1)
          + (SELECT count(*)::int FROM mu.skill_version WHERE version_id=$2) AS kept`,

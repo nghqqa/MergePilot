@@ -176,10 +176,9 @@ try {
   const dana = await muLogin('fixture:dana');
   const addRepoA = await call('/api/mu/repositories', { method: 'POST', cookie: dana.cookie, csrf: dana.csrf,
     body: { provider_repo_id: 'R_gh_9001', owner: 'acme', name: 'app' } });
-  ok('MU-C1 maintainer 绑定仓库（fixture installation + 最小权限快照）→ 200',
-    addRepoA.status === 200 && addRepoA.json?.binding?.kind === 'fixture'
-      && Array.isArray(addRepoA.json?.binding?.granted_scopes)
-      && addRepoA.json.binding.granted_scopes.includes('pull_requests:read'), addRepoA.json);
+  ok('MU-C1 maintainer 绑定仓库（v18 统一：直写 repository_binding，fixture 域安装）→ 200',
+    addRepoA.status === 200 && addRepoA.json?.binding?.binding_state === 'active'
+      && Number(addRepoA.json?.binding?.installation_id) >= 8400000000000000, addRepoA.json);
 
   const mkB = await call('/api/mu/tenants', { method: 'POST', cookie: admin.cookie, csrf: admin.csrf,
     body: { slug: 'ten-b', display_name: 'Tenant B' } });

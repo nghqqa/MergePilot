@@ -5,7 +5,8 @@
 //  * 全部读路径按 tenant_id 收窄（resolveRepository/getBinding 等显式带 tenant 维度）；
 //  * 凭据红线：本层任何 API 都不接受/不存储 token、密码、密钥。
 import crypto from 'node:crypto';
-import { MU_MIGRATIONS } from './schema.mjs';
+import { MU_MIGRATIONS, MU_FIXTURE_INSTALLATION_BASE as muFixtureInstallationBase,
+  muFixtureInstallationIdOf, muFixtureRepoIdOf } from './schema.mjs';
 
 // platform 域审计事件白名单（Wave 2A 首批）：OAuth 流程与会话生命周期
 export const PLATFORM_AUDIT_KINDS = [
@@ -165,39 +166,71 @@ export async function createMuStore({ pool, env = process.env } = {}) {
     return r.rows[0] ?? null;
   }
   async function listRepositories(tenantId) {
+    // v18 绑定统一（审计 E-2）：读侧唯一权威 = mu.repository_binding。此前 JOIN mu.binding
+    // 导致经 GitHub App 安装回调/webhook 绑定的仓库（写侧只落 repository_binding）在
+    // 仓库列表无绑定信息（GHAppPanel"已绑定仓库"为空、onboarding 卡 bind 步）。
+    // installation_state 列无新表对应——以 binding_state 别名承载（JOIN 已滤
+    // binding_state='active'，别名恒 'active'，前端 hasBinding/激活绑定语义不变）。
     const r = await q(
-      `SELECT r.*, b.binding_id, b.kind AS binding_kind, b.installation_id, b.installation_state,
-              b.granted_scopes, b.state AS binding_state,
+      `SELECT r.*, b.binding_id, b.installation_id, b.default_branch, b.last_sync_at,
+              b.binding_state, b.binding_state AS installation_state,
               (SELECT count(*) FROM mu.pull_request p
                 WHERE p.repo_id = r.repo_id AND p.tenant_id = r.tenant_id) AS pr_count
          FROM mu.repository r
-         LEFT JOIN mu.binding b ON b.repo_id = r.repo_id AND b.state='active'
+         LEFT JOIN mu.repository_binding b
+                ON b.repo_id = r.repo_id AND b.tenant_id = r.tenant_id AND b.binding_state='active'
         WHERE r.tenant_id=$1 AND r.state='active' ORDER BY r.created_at`, [tenantId]);
     return r.rows;
   }
 
-  async function ensureBinding({ tenantId, repoId, kind, installationId = null, installationState = 'active', grantedScopes = [], createdBy = null }) {
+  // ── v18 绑定统一：ensureBinding 为演示/fixture 绑定唯一写入口（写 mu.repository_binding）──
+  // 形参保持旧签名兼容（api.mjs POST /api/mu/repositories 与既有测试不破）：
+  //  * kind → fixture 域等价表达（合成 installation_id 落 MU_FIXTURE_INSTALLATION_BASE 保留
+  //    区间 + account_type='fixture'，派生与 v18 迁移 SQL 逐字同式）；
+  //  * installationId（旧 TEXT 合成值）不再落库——repository_binding.installation_id 为
+  //    BIGINT 且复合 FK，真实绑定以 ghapp-binding/安装回调/webhook 为权威路径；
+  //  * installationState/grantedScopes 无对应列（安装态并入 binding_state 生命周期；
+  //    授权快照仅 MU_REPO_BOUND 审计留痕），接受不入库；upsert 恒 (re)activation（active）。
+  // mu.binding 自 v18 起冻结：新代码零写入（老镜像 ≤v17 仍读，向下兼容）。
+  async function ensureBinding({ tenantId, repoId, kind = 'fixture', installationId = null, installationState = 'active', grantedScopes = [], createdBy = null }) {
+    const repoRow = await q(
+      `SELECT owner, name, default_branch FROM mu.repository WHERE repo_id=$1 AND tenant_id=$2`,
+      [repoId, tenantId]);
+    const repo = repoRow.rows[0];
+    if (!repo) return null; // 仓库不存在/跨租户（旧实现此处由复合 FK 拒绝——前置同形失败）
+    const instId = muFixtureInstallationIdOf(tenantId);
+    await q(
+      `INSERT INTO mu.github_app_installation
+           (installation_id, tenant_id, account_id, account_login, account_type, app_id)
+       VALUES ($1,$2,0,$3,'fixture',0) ON CONFLICT (installation_id) DO NOTHING`,
+      [instId, tenantId, repo.owner]);
     const r = await q(
-      `INSERT INTO mu.binding (tenant_id, repo_id, kind, installation_id, installation_state, granted_scopes, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7)
-       ON CONFLICT (tenant_id, repo_id, kind)
-       DO UPDATE SET installation_id = EXCLUDED.installation_id,
-                     installation_state = EXCLUDED.installation_state,
-                     granted_scopes = EXCLUDED.granted_scopes,
-                     state = 'active', updated_at = now()
-       RETURNING *`, [tenantId, repoId, kind, installationId, installationState, JSON.stringify(grantedScopes), createdBy]);
+      `INSERT INTO mu.repository_binding (tenant_id, repo_id, github_repo_id, owner, name,
+           installation_id, default_branch, binding_state, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,'active',$8)
+       ON CONFLICT (tenant_id, repo_id) DO UPDATE SET
+         owner = EXCLUDED.owner, name = EXCLUDED.name,
+         installation_id = EXCLUDED.installation_id, default_branch = EXCLUDED.default_branch,
+         binding_state = 'active', revoked_at = NULL, error_code = NULL, updated_at = now()
+       RETURNING *`, [tenantId, repoId, muFixtureRepoIdOf(tenantId, repoId),
+        repo.owner, repo.name, instId, repo.default_branch, createdBy]);
     return r.rows[0];
   }
   async function getBindingForRepo(tenantId, repoId) {
+    // v18 统一：repair 门读 repository_binding（binding_state='active' 已涵盖旧
+    // state+installation_state 双 active 语义——installation suspend/delete 生命周期
+    // 事件由 setBindingsStateForInstallation 落到同一列）。
     const r = await q(
-      `SELECT * FROM mu.binding WHERE tenant_id=$1 AND repo_id=$2 AND state='active' AND installation_state='active'
+      `SELECT * FROM mu.repository_binding WHERE tenant_id=$1 AND repo_id=$2 AND binding_state='active'
        ORDER BY created_at LIMIT 1`, [tenantId, repoId]);
     return r.rows[0] ?? null;
   }
   async function revokeBinding(tenantId, repoId) {
+    // v18 统一：吊销作用于 repository_binding（(tenant,repo) 唯一行——fixture 域与
+    // GHApp 权威域同表同行，不存在旧双表分裂下的漏吊销面）。
     const r = await q(
-      `UPDATE mu.binding SET state='revoked', updated_at=now()
-        WHERE tenant_id=$1 AND repo_id=$2 AND state='active' RETURNING *`, [tenantId, repoId]);
+      `UPDATE mu.repository_binding SET binding_state='revoked', revoked_at=now(), updated_at=now()
+        WHERE tenant_id=$1 AND repo_id=$2 AND binding_state='active' RETURNING *`, [tenantId, repoId]);
     return r.rows[0] ?? null;
   }
 
@@ -467,8 +500,12 @@ export async function createMuStore({ pool, env = process.env } = {}) {
     return r.rows[0] ?? null;
   }
   async function listInstallations(tenantId) {
+    // v18：fixture 域合成安装（account_type='fixture'，id 落保留区间）为内部脚手架，
+    // 不属用户可见 installation——列表过滤（真实 GitHub installation id 远低于保留区间）。
     const r = await q(
-      `SELECT * FROM mu.github_app_installation WHERE tenant_id=$1 ORDER BY created_at`, [tenantId]);
+      `SELECT * FROM mu.github_app_installation
+        WHERE tenant_id=$1 AND installation_id < $2 ORDER BY created_at`,
+      [tenantId, muFixtureInstallationBase]);
     return r.rows;
   }
   async function setInstallationState(installationId, { suspended = null, revoked = null }) {
