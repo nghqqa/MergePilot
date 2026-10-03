@@ -191,6 +191,13 @@ jobs:
         run: node --test test/mu-page.smoke.test.mjs
         working-directory: console/frontend
 
+      # 多用户 OAuth 登录盒冒烟（Wave 2A）：无会话态 mu_login_error 人话映射 +
+      # 联系管理员/数字 user id 指引上屏（审计 G-1：not_invited 提示此前不可达，
+      # 2026-10-03 修复后纳入显式门禁防回归）
+      - name: Frontend mu-oauth login-box smoke (Wave 2A, 2 scenarios)
+        run: node --test test/mu-oauth-page.smoke.test.mjs
+        working-directory: console/frontend
+
       # ADR-002 PR F 前端冒烟：审查架构面板（三档/consent 门/出站披露）+
       # PR 详情四分立判定上屏（互不冒充）
       - name: Frontend review-arch smoke (PR F, 3 scenarios)

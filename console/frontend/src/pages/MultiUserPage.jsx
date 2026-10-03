@@ -36,7 +36,13 @@ const LOGIN_ERROR_MAP = {
   oauth_not_configured: 'OAuth 未配置——请联系管理员启用 GitHub 登录',
   no_active_membership: '无有效成员关系——邀请可能已过期，请联系管理员',
   user_disabled: '账户已停用——请联系管理员',
+  // 后端对白名单外 reason 统一落 login_failed（multiuser/api.mjs redirectLoginError）
+  login_failed: '登录未完成——请重新发起；若持续失败请联系管理员',
 };
+
+// 需要管理员创建邀请/解除限制的失败原因 → 未会话态展示"附 GitHub 数字 user id"指引。
+// 未会话态无法代查身份，指引用公开 API 通用路径（不泄露内部细节）。
+const LOGIN_NEEDS_ADMIN = new Set(['not_invited', 'no_active_membership', 'user_disabled']);
 
 const GHAPP_ERROR_MAP = {
   state_invalid: '安装流程 state 无效——请重新点击安装按钮',
@@ -735,7 +741,9 @@ function GHAppPanel({ can, session, repos, onBound, onUnbound }) {
 }
 
 // ── Onboarding 面板：轨道 + 已完成摘要 + 当前步骤单一主 CTA ──
-function OnboardingPanel({ ob, session, providers, loginError, prCount, boundCount, onLogin, onInstall, onCheckSync, onOpenLatest, latestPr, can, checking }) {
+// （仅已会话态渲染；登录失败人话提示在无会话登录卡内——此前挂在 ob.stage==='login'
+//  条件下与本面板互斥，属不可达死代码，2026-10-03 审计 G-1 修复迁移）
+function OnboardingPanel({ ob, session, providers, prCount, boundCount, onLogin, onInstall, onCheckSync, onOpenLatest, latestPr, can, checking }) {
   const order = ['login', 'member', 'install', 'bind', 'review'];
   const stepStateText = {
     login: session ? `已登录 ${session.user?.login ?? ''}` : '未登录',
@@ -840,10 +848,6 @@ function OnboardingPanel({ ob, session, providers, loginError, prCount, boundCou
             : ob.stage === 'loading' ? '正在读取接入状态…' : STEP_TITLES[currentKey]}
         </div>
         {currentExplain ? <p className="onb-note">{currentExplain}</p> : null}
-        {ob.stage === 'login' && loginError ? (
-          <Alert type="warning" showIcon style={{ marginBottom: 10 }}
-            message={`登录未完成：${LOGIN_ERROR_MAP[loginError] ?? loginError}`} />
-        ) : null}
         {cta}
       </div>
     </div>
@@ -1064,10 +1068,22 @@ export default function MultiUserPage() {
         </div>
       ) : null}
 
+      {loginError ? (
+        <Alert type="warning" showIcon style={{ textAlign: 'left', maxWidth: 720, margin: '0 auto 20px' }}
+          message={`登录未完成：${LOGIN_ERROR_MAP[loginError] ?? LOGIN_ERROR_MAP.login_failed}`}
+          description={LOGIN_NEEDS_ADMIN.has(loginError) ? (
+            <Typography.Text>
+              下一步：请联系管理员创建邀请，并附上你的 GitHub 数字 user id
+              （获取方式：浏览器打开 <code>https://api.github.com/users/你的GitHub用户名</code>，
+              响应中的 <code>id</code> 字段即数字 user id）。
+            </Typography.Text>
+          ) : undefined} />
+      ) : null}
+
       {!notEnabled && session ? (
         <div style={{ marginBottom: 16 }}>
           <OnboardingPanel
-            ob={ob} session={session} providers={providers} loginError={loginError}
+            ob={ob} session={session} providers={providers}
             prCount={prsState === 'ready' ? (prs ?? []).length : 0}
             boundCount={boundCount} can={can} checking={loading}
             onLogin={async () => {

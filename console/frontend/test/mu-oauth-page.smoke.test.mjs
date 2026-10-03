@@ -106,6 +106,12 @@ test('登录盒：已配置态按钮可点 + mu_login_error 未邀请映射', as
   try {
     const text = json();
     assert.ok(text.includes('使用 GitHub 登录'), '已配置态按钮上屏');
+    // 审计 G-1（2026-10-03）：not_invited 无会话态错误此前在 OnboardingPanel（仅已会话
+    // 渲染）内且要求 ob.stage==='login'（仅无会话）——互斥不可达。现锁无会话登录卡内
+    // 人话映射 + 下一步指引（联系管理员 + GitHub 数字 user id 公开查询路径）真实上屏。
     assert.ok(text.includes('身份未被邀请'), '未邀请错误人话映射上屏');
+    assert.ok(text.includes('请联系管理员'), '下一步指引：联系管理员上屏');
+    assert.ok(text.includes('api.github.com/users/'), '数字 user id 公开查询路径上屏');
+    assert.ok(!text.includes('mu_login_error'), '原始机器参数不反射上屏');
   } finally { await act(async () => { renderer.unmount(); }); }
 });
