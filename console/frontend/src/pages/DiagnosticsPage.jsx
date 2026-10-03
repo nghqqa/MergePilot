@@ -16,12 +16,12 @@ export default function DiagnosticsPage() {
 
   const wiring = [
     ['运行查询（快照/隔离 PG）', '已接入', true],
-    ['PR 聚合（/api/pulls 正式契约）', '等待后端交付（C-10）', false],
-    ['审批只读 + 决策（test-auth）', '已接入（隔离 fixture；生产主体待 D-1/D-2/D-3）', true],
-    ['审批 TTL / params / PR 字段', '响应未携带——缺口已记录（C-11）', false],
-    ['决策 head 冲突语义', '决策接口暂无 expected_head 参数（D-3 阶段）', false],
-    ['OAuth 登录', '等待后端 + D-9', false],
-    ['站内合并', '关闭（C-12，仅 GitHub 外链）', false],
+    ['PR 聚合（/api/pulls 正式契约）', '等待后端交付', false],
+    ['审批只读 + 决策（test-auth）', '已接入（隔离联调测试主体；生产主体的授权策略待后端交付）', true],
+    ['审批 TTL / params / PR 字段', '响应未携带——后端响应暂缺这些字段', false],
+    ['决策 head 冲突语义', '决策接口暂不支持指定期望 head——冲突语义待后端交付', false],
+    ['OAuth 登录', '等待后端交付', false],
+    ['站内合并', '关闭——仅提供 GitHub 外链', false],
     ['findings / validations PG 查询面', '等待后端交付', false],
   ];
 

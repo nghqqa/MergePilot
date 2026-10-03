@@ -82,11 +82,11 @@ export function WorkspacePanel({ config, auth, onRetry }) {
 
   const wiring = [
     { name: '运行查询（快照）', state: mode === 'snapshot' ? '已接入' : '不适用（当前为实时源；run 证据详情页仍为快照）', ok: true },
-    { name: 'PR 聚合（/api/pulls 正式契约）', state: live ? '已接入（PG 实时，会话 allowlist 过滤）' : '未交付——等待后端（C-10）', ok: live },
-    { name: '审批只读', state: pgMode ? '已接入（隔离 test-auth）' : live ? '已接入（实时票据，会话 allowlist）' : '未接线（C-4/C-11）', ok: pgMode || live },
-    { name: '审批决策', state: pgMode ? '隔离 test-auth（仅 fixture 票据）' : '未接线（C-11 + D-1/D-2/D-3）', ok: false },
+    { name: 'PR 聚合（/api/pulls 正式契约）', state: live ? '已接入（PG 实时，会话 allowlist 过滤）' : '未交付——等待后端', ok: live },
+    { name: '审批只读', state: pgMode ? '已接入（隔离 test-auth）' : live ? '已接入（实时票据，会话 allowlist）' : '未接线——暂无审批票只读数据源', ok: pgMode || live },
+    { name: '审批决策', state: pgMode ? '隔离 test-auth（仅 fixture 票据）' : '未接线——决策接口与授权策略待后端交付', ok: false },
     { name: 'OAuth 登录', state: '未接线——当前为操作员账号密码登录', ok: false },
-    { name: '站内合并', state: '关闭（C-12，仅 GitHub 外链）', ok: false },
+    { name: '站内合并', state: '关闭——仅提供 GitHub 外链', ok: false },
     { name: '知识库 / 用量', state: '未接线（数据源待交付）', ok: false },
   ];
 

@@ -281,9 +281,9 @@ function SnapshotPrDetail({ owner, name, prNumber }) {
       </div>
 
       <p className="section-note">
-        当前 head 与 PR 状态以 GitHub 为准；快照无当前 head 权威数据（C-10），
+        当前 head 与 PR 状态以 GitHub 为准；快照不含 GitHub 当前 head 权威数据，
         以下摘要{summaryBasis}，不自动代表当前 head 结论。
-        站内审批未接入（C-11 未实现）；站内合并为已记录的范围变更（C-12），未启用。
+        站内审批未接入；站内合并未启用（仅提供 GitHub 外链）。
       </p>
 
       <section className="section">
@@ -481,7 +481,7 @@ function ContractPrDetail({ owner, name, prNumber }) {
       <p className="section-note">
         数据来自正式契约端点 GET /api/pulls/{view.prNumber}（data_mode={config?.dataMode ?? 'unknown'}
         {config?.dataMode === 'fixture' ? '——合成数据，非真实运行' : ''}）。
-        站内审批未接入（C-11 未实现）；站内合并默认关闭（C-12），仅提供 GitHub 入口。
+        站内审批未接入；站内合并默认关闭，仅提供 GitHub 入口。
       </p>
 
       <section className="section">
