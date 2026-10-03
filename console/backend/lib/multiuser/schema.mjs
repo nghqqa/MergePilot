@@ -1269,6 +1269,43 @@ export const MU_MIGRATIONS = [
          ON mu.rag_retrieval_event (status)`,
     ],
   },
+  {
+    // ── v20 RAG 模型安装控制面（v19 已被 C 波 mu_invocation_events 占用，本迁移顺延，DDL 零改动）（RAG-model-install 波；自托管 ModelScope 官方 bge-m3）──
+    // 回滚/前向兼容：纯 additive（一张新表+一个索引）——回滚 = DROP TABLE
+    // mu.rag_model_install; DELETE FROM mu.schema_migrations WHERE version=20;
+    // 审批/Skill v17/review/run 状态机零触碰；老镜像（≤v19）重放迁移幂等安全。
+    // 状态机（服务端强制，CHECK 为最后防线）：UNINSTALLED→DOWNLOADING→VERIFYING→
+    // READY→ACTIVE；失败态 DOWNLOAD_FAILED/HASH_MISMATCH/INSUFFICIENT_DISK/
+    // SIDECAR_START_FAILED/ACTIVATION_FAILED；回退=active_provider 切回 local-hash-v1。
+    version: 20,
+    name: 'mu_rag_model_install',
+    sql: [
+      `CREATE TABLE IF NOT EXISTS mu.rag_model_install (
+         install_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+         tenant_id UUID NOT NULL REFERENCES mu.tenant(tenant_id),
+         model_key TEXT NOT NULL,
+         manifest_version TEXT NOT NULL,
+         source_url TEXT NOT NULL,
+         revision TEXT NOT NULL,
+         license TEXT NOT NULL,
+         expected_files JSONB NOT NULL,
+         total_bytes BIGINT NOT NULL,
+         downloaded_bytes BIGINT NOT NULL DEFAULT 0,
+         state TEXT NOT NULL DEFAULT 'UNINSTALLED'
+           CHECK (state IN ('UNINSTALLED','DOWNLOADING','VERIFYING','READY','ACTIVE',
+                            'DOWNLOAD_FAILED','HASH_MISMATCH','INSUFFICIENT_DISK',
+                            'SIDECAR_START_FAILED','ACTIVATION_FAILED')),
+         active_provider TEXT NOT NULL DEFAULT 'local-hash-v1',
+         activated_at TIMESTAMPTZ,
+         last_error_code TEXT,
+         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+         updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+         UNIQUE (tenant_id, model_key)
+       )`,
+      `CREATE INDEX IF NOT EXISTS mu_rag_model_install_tenant_idx
+         ON mu.rag_model_install (tenant_id, state)`,
+    ],
+  },
 ];
 
 export const MU_SCHEMA_LATEST = MU_MIGRATIONS[MU_MIGRATIONS.length - 1].version;

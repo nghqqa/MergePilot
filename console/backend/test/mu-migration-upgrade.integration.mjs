@@ -54,11 +54,13 @@ async function applyUpTo(maxVer) {
 }
 
 try {
-  // ── 阶段 1：既有库（只到 latest-1=17）+ 播种 v1 形状数据与 v16 审批票 ──
+  // ── 阶段 1：既有库（只到 PRIOR-1=18：v18 回填已随链应用；v19 调用留痕与 v20 RAG 模型表留给完整 initSchema）──
+  // 播种 v1 形状数据与 v16 审批票
   await applyUpTo(Number(PRIOR.version) - 1);
-  ok('U1 前置=迁移到 PRIOR-1（v18/v19 未应用）',
-    (await pool.query(`SELECT 1 FROM mu.schema_migrations WHERE version=17`)).rowCount === 1
-      && (await pool.query(`SELECT 1 FROM mu.schema_migrations WHERE version=18`)).rowCount === 0);
+  ok('U1 前置=迁移到 PRIOR-1（v19/v20 未应用）',
+    (await pool.query(`SELECT 1 FROM mu.schema_migrations WHERE version=18`)).rowCount === 1
+      && (await pool.query(`SELECT 1 FROM mu.schema_migrations WHERE version=19`)).rowCount === 0
+      && (await pool.query(`SELECT 1 FROM mu.schema_migrations WHERE version=20`)).rowCount === 0);
   const seed = await pool.query(`INSERT INTO mu.tenant (slug, display_name) VALUES ('mig','Mig') RETURNING tenant_id`);
   const T = seed.rows[0].tenant_id;
   const U = (await pool.query(`INSERT INTO mu.app_user (login, display_name) VALUES ('mig-u','Mig U') RETURNING user_id`)).rows[0].user_id;
@@ -168,13 +170,14 @@ try {
     const has = (await pool.query(`SELECT 1 FROM information_schema.tables
       WHERE table_schema='mu' AND table_name=$1`, [t])).rowCount;
     ok(`U3f v17 新表 mu.${t} 在位`, has === 1);
+  }
+  // v19：Skill/RAG 调用留痕（C 波 C1）——升级后 bookkeeping 与新表在位
   const v19 = (await pool.query(`SELECT 1 FROM mu.schema_migrations WHERE version=19`)).rowCount;
   ok('U3v19 升级后 v19（Skill/RAG 调用留痕）应用', v19 === 1);
   for (const t of ['skill_invocation_event', 'rag_retrieval_event']) {
     const has = (await pool.query(`SELECT 1 FROM information_schema.tables
       WHERE table_schema='mu' AND table_name=$1`, [t])).rowCount;
     ok(`U3v19b v19 新表 mu.${t} 在位`, has === 1);
-  }
   }
   const sk = (await pool.query(`INSERT INTO mu.skill (tenant_id, skill_key, display_name, created_by)
     VALUES ($1,'rag.retrieve','检索技能',$2) RETURNING skill_id`, [T, U])).rows[0];
@@ -186,12 +189,31 @@ try {
      VALUES ($1,$2,'1.0.0','dup','${'cd'.repeat(32)}',$3)`, [T, sk.skill_id, U]).then(() => false, () => true);
   ok('U5f v17 唯一约束：同 skill 同版本号拒写', dupVKey === true);
 
+  // v20：RAG 模型安装表在位 + 状态 CHECK（原 v19——C 波占用 v19 后顺延）
+  {
+    const has = (await pool.query(`SELECT 1 FROM information_schema.tables
+      WHERE table_schema='mu' AND table_name='rag_model_install'`)).rowCount;
+    ok('U3g v20 新表 mu.rag_model_install 在位', has === 1);
+    const ck = (await pool.query(`SELECT count(*)::int FROM pg_constraint
+      WHERE conrelid='mu.rag_model_install'::regclass AND contype='c'`)).rows[0].count;
+    ok('U3g2 v20 状态 CHECK 在位（非法态拒写）', Number(ck) >= 1, ck);
+    const badState = await pool.query(
+      `INSERT INTO mu.rag_model_install (tenant_id, model_key, manifest_version, source_url,
+        revision, license, expected_files, total_bytes, state)
+       VALUES ($1,'x','v','https://modelscope.cn/x','r','MIT','[]'::jsonb,1,'BOGUS')`,
+      [T]).then(() => false, () => true);
+    ok('U3g3 非法状态被 DB CHECK 拒绝', badState === true);
+  }
+
   // ── 阶段 3：initSchema 重放（restart 安全/幂等）──
   await store.initSchema();
   ok('U6 initSchema 重放幂等（restart 安全——零异常）', true);
   const dupVer = (await pool.query(
-    `SELECT count(*)::int FROM mu.schema_migrations WHERE version=17`)).rows[0].count;
-  ok('U6b v17 不重复应用', Number(dupVer) === 1);
+    `SELECT count(*)::int FROM mu.schema_migrations WHERE version=19`)).rows[0].count;
+  ok('U6b v19 不重复应用', Number(dupVer) === 1);
+  const dupVer20 = (await pool.query(
+    `SELECT count(*)::int FROM mu.schema_migrations WHERE version=20`)).rows[0].count;
+  ok('U6b-v20 v20（RAG 模型安装）不重复应用', Number(dupVer20) === 1);
   const dupVer18Del = await pool.query(`DELETE FROM mu.schema_migrations WHERE version=18`);
   await store.initSchema(); // v18 DO 块真实重执行（NOT EXISTS 防重护栏生效）
   const dupVer18 = (await pool.query(
