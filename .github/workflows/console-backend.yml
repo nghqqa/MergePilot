@@ -176,6 +176,11 @@ jobs:
       - name: MU rag model download engine (20 scenarios)
         run: node console/backend/test/mu-rag-model-download.integration.mjs
 
+      # RAG-model-install PR3：激活/回退（伪 sidecar 三重门：health/manifest 字节 pin/embed
+      # 维度冒烟；READY 门槛/失败态/并发单赢家/RBAC/CSRF/审计脱敏/零回归）
+      - name: MU rag model activation (21 scenarios)
+        run: node console/backend/test/mu-rag-model-activate.integration.mjs
+
       - name: Frontend build
         run: |
           npm ci --no-audit --no-fund

@@ -679,3 +679,38 @@ export async function createRagTrialStore({ pool, env = process.env, fetchImpl =
     status, metrics, audit, ensurePgvector, modelRepos,
   };
 }
+
+// ── RAG-model-install 波 PR3：v19 激活/回退的注册表接线（additive，独立函数不复用闭包）──
+// 语义激活 = 注册 remote 模型（dims+manifest 链式绑定）+ 单活跃切换；
+// 回退 = local-hash-v1 重新激活（既有基线模型永在）。
+export async function activateSemanticModel(pool, { modelId, dims, manifest, actor = 'rag-model-install' }) {
+  const spec = {
+    model_id: modelId, dims, provider: 'remote-attested',
+    manifest, distance: 'cosine', pooling: manifest.pooling ?? 'cls_l2',
+    runtime: manifest.runtime ?? 'numpy-bert-v1',
+  };
+  const digest = modelDigest(spec);
+  await pool.query(
+    `INSERT INTO ragtrial.models (model_id, model_digest, spec, provider_kind, dims, manifest)
+     VALUES ($1,$2,$3::jsonb,'remote',$4,$5::jsonb)
+     ON CONFLICT (model_id) DO UPDATE SET model_digest=$2, spec=$3::jsonb, dims=$4, manifest=$5::jsonb, updated_at=now()`,
+    [modelId, digest, JSON.stringify(spec), dims, JSON.stringify(manifest)]);
+  await pool.query(`UPDATE ragtrial.models SET active=false WHERE active AND model_id<>$1`, [modelId]);
+  await pool.query(`UPDATE ragtrial.models SET active=true WHERE model_id=$1`, [modelId]);
+  return { ok: true, model_id: modelId, model_digest: digest };
+}
+
+export async function activateLocalModel(pool, { actor = 'rag-model-install' } = {}) {
+  const spec = localModelSpec();
+  const digest = modelDigest(spec);
+  const cur = await pool.query(`SELECT 1 FROM ragtrial.models WHERE model_id=$1`, [LOCAL_MODEL_ID]);
+  if (!cur.rowCount) {
+    await pool.query(
+      `INSERT INTO ragtrial.models (model_id, model_digest, spec, provider_kind, dims)
+       VALUES ($1,$2,$3::jsonb,'local',$4)`,
+      [LOCAL_MODEL_ID, digest, JSON.stringify(spec), spec.dims]);
+  }
+  await pool.query(`UPDATE ragtrial.models SET active=false WHERE active AND model_id<>$1`, [LOCAL_MODEL_ID]);
+  await pool.query(`UPDATE ragtrial.models SET active=true WHERE model_id=$1`, [LOCAL_MODEL_ID]);
+  return { ok: true, model_id: LOCAL_MODEL_ID, model_digest: digest };
+}
