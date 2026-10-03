@@ -6,6 +6,21 @@ import { Alert, Button, Popconfirm, Space, Table, Tag, Typography } from 'antd';
 import { PipelinePanel } from './MultiUserPage.jsx';
 import { ticketMap, SEVERITY, toneToColor, unknownEntry } from '../status-map.js';
 
+// ── 动作安全化（PR-5）──
+// 超时上限：批准受控修复（approve）端点同步内联 fixVerifyRound（clone+test，可达分钟级）
+// 给 5 分钟上限；其余快动作（job 入队/决策留痕）30 秒。超时/网络失败均提示可重试。
+const ACTION_TIMEOUT_LONG_MS = 5 * 60 * 1000;
+const ACTION_TIMEOUT_MS = 30 * 1000;
+
+// 错误分形：网络失败/超时→可重试；401→登录过期；403→角色无权；409/其他→后端 note/原文如实展示
+function actionFailure(status, body) {
+  if (status === 401) return { tone: 'warning', text: '登录已过期，请刷新页面' };
+  if (status === 403) return { tone: 'warning', text: '当前角色无权执行该动作' };
+  const detail = body?.note ?? body?.error?.detail ?? body?.error?.reason ?? null;
+  return { tone: 'warning',
+    text: detail ? `操作未完成（HTTP ${status}）：${detail}` : `操作未完成（HTTP ${status}）` };
+}
+
 /**
  * 详情内容块。props:
  *  - prRef: { repoId, owner, name, prNumber }——由调用方解析（URL/列表行）
@@ -63,29 +78,64 @@ export function MuPrDetailContent({ prRef, onChanged }) {
   }, [detail?.pull_request?.pr_id]);
   useEffect(() => { if (state === 'ready') loadApprovals(); }, [state, loadApprovals]);
 
-  const decideApproval = async (approvalId, action) => {
+  // ── 动作安全化（PR-5）：统一 POST 封装 ──
+  // busyRef 同步锁：双击只放行一次 POST（state 更新前第二次点击也进不来）；
+  // busyAction 驱动按钮 loading 文案 + disabled；成功后按既有逻辑重载详情/审批票；
+  // 失败分形见 actionFailure；finally 恢复可点。
+  const [busyAction, setBusyAction] = useState(null);
+  const busyRef = useRef(false);
+  const lastActionRef = useRef(null); // 网络失败/超时时供「重试」复用
+
+  const postAction = useCallback(async (spec) => {
+    const { key, label, path, payload, longRunning, loadingText, successText } = spec;
+    if (busyRef.current) return; // 防双击重复 POST
+    busyRef.current = true;
+    setBusyAction(key);
     setActionMsg(null);
+    lastActionRef.current = spec;
     const csrf = (document.cookie.match(/(?:^|; )mp_csrf=([^;]*)/) ?? [])[1] ?? '';
-    const r = await fetch(`/api/mu/approvals/${approvalId}/${action}`, { method: 'POST',
-      credentials: 'same-origin', headers: { 'content-type': 'application/json', 'X-CSRF-Token': csrf },
-      body: JSON.stringify({}) });
-    const body = await r.json().catch(() => null);
-    setActionMsg({ ok: r.status === 200, label: action === 'approve' ? '批准受控修复' : '拒绝修复',
-      status: r.status, reason: body?.error?.reason ?? null });
-    if (r.status === 200) { await load(); await loadApprovals(); onChanged?.(); }
+    try {
+      const r = await fetch(path, { method: 'POST', credentials: 'same-origin',
+        headers: { 'content-type': 'application/json', 'X-CSRF-Token': csrf },
+        body: JSON.stringify(payload ?? {}),
+        signal: AbortSignal.timeout(longRunning ? ACTION_TIMEOUT_LONG_MS : ACTION_TIMEOUT_MS) });
+      const body = await r.json().catch(() => null);
+      if (r.status === 200) {
+        // 不谎称已完成：长操作成功只说明服务端已受理/已记录——结果以管线面板/记录为准
+        setActionMsg({ ok: true, tone: 'success', label, note: body?.note ?? null,
+          text: successText ?? '已执行成功' });
+        await load();
+        await loadApprovals();
+        onChanged?.();
+      } else {
+        setActionMsg({ ok: false, label, ...actionFailure(r.status, body) });
+      }
+    } catch (e) {
+      const timedOut = e && (e.name === 'TimeoutError' || e.name === 'AbortError');
+      setActionMsg({ ok: false, label, tone: 'error', retry: true,
+        text: timedOut
+          ? `请求超时（${longRunning ? '5 分钟' : '30 秒'}上限）——操作可能已在服务端受理，请稍后在下方管线面板确认结果后重试`
+          : '网络失败——请重试' });
+    } finally {
+      busyRef.current = false;
+      setBusyAction(null);
+    }
+  }, [load, loadApprovals, onChanged]);
+
+  const decideApproval = (approvalId, action) => {
+    const approve = action === 'approve';
+    return postAction({
+      key: `fix-${action}-${approvalId}`, label: approve ? '批准受控修复' : '拒绝修复',
+      path: `/api/mu/approvals/${approvalId}/${action}`, payload: {},
+      longRunning: approve,
+      loadingText: approve ? '受控修复预演进行中（可能需要数分钟）…' : '提交中…',
+      successText: approve
+        ? '已记录批准，受控修复预演已受理——实际进展以下方「审查管线」面板为准（DRY_RUN：不写 GitHub、不自动合并）'
+        : '已记录拒绝——Fixer 不启动，run 保持 BLOCKED',
+    });
   };
 
-  const runAction = async (label, path, payload) => {
-    setActionMsg(null);
-    const csrf = (document.cookie.match(/(?:^|; )mp_csrf=([^;]*)/) ?? [])[1] ?? '';
-    const r = await fetch(path, { method: 'POST', credentials: 'same-origin',
-      headers: { 'content-type': 'application/json', 'X-CSRF-Token': csrf },
-      body: JSON.stringify(payload ?? {}) });
-    const body = await r.json().catch(() => null);
-    setActionMsg({ ok: r.status === 200, label, status: r.status,
-      reason: body?.error?.reason ?? null });
-    if (r.status === 200) { await load(); onChanged?.(); }
-  };
+  const runAction = (label, path, payload, opts = {}) => postAction({ label, path, payload, ...opts });
 
   if (state === 'loading') {
     return <div className="mu-detail-state" role="status">正在读取 PR #{prNumber} 详情…</div>;
@@ -105,6 +155,33 @@ export function MuPrDetailContent({ prRef, onChanged }) {
   }
 
   const pr = detail.pull_request;
+  // PR-5 权限可见性：读后端 my_permissions.actions（authz 矩阵投影——request_review=reviewer+，
+  // decide_review/request_repair=maintainer）。无权限禁用+title 说明所需角色（不隐藏，布局稳定）；
+  // 后端仍为最终授权方，前端禁用只防误点。
+  const myActions = detail.my_permissions?.actions ?? [];
+  const canDecide = myActions.includes('decide_review');
+  const ACTION_DEFS = [
+    { key: 'review', label: '触发只读审查', need: 'request_review', needRole: 'reviewer 及以上角色',
+      loadingText: '审查发起中…',
+      desc: '触发一次只读审查：仅发起审查任务，不写 GitHub、不影响分支保护',
+      run: () => runAction('触发只读审查', `/api/mu/prs/${pr.pr_id}/review`, null,
+        { key: 'review', successText: '已发起只读审查（任务已排队）——进展以下方「审查管线」面板为准' }) },
+    { key: 'approve', label: '审批通过', need: 'decide_review', needRole: 'maintainer 角色',
+      loadingText: '提交审批中…',
+      desc: '记录 approve 人工审查决策：仅结论留痕，不合并、不写 GitHub',
+      run: () => runAction('审批通过', `/api/mu/prs/${pr.pr_id}/decision`, { action: 'approve' },
+        { key: 'approve', successText: '已记录审批通过（见下方审查记录）——本动作不含任何合并执行' }) },
+    { key: 'reject', label: '驳回', need: 'decide_review', needRole: 'maintainer 角色',
+      loadingText: '提交驳回中…',
+      desc: '记录 reject 人工审查决策：仅结论留痕，不合并、不写 GitHub',
+      run: () => runAction('驳回', `/api/mu/prs/${pr.pr_id}/decision`, { action: 'reject' },
+        { key: 'reject', successText: '已记录驳回（见下方审查记录）' }) },
+    { key: 'repair', label: '发起受控修复', need: 'request_repair', needRole: 'maintainer 角色（且仓库需 active 绑定）',
+      loadingText: '修复授权发起中…',
+      desc: '发起 DRY_RUN 受控修复授权：不写 GitHub、不自动合并；执行前服务端再次复查',
+      run: () => runAction('发起受控修复', `/api/mu/prs/${pr.pr_id}/repair`, null,
+        { key: 'repair', successText: '已发起受控修复授权（DRY_RUN）——进展以下方「审查管线」面板为准' }) },
+  ];
   // ADR-002 分立结果列：四域互不冒充（legacy run 零 v2 列→按"未运行"呈现，不猜值）
   const STAGE_COPY = {
     not_run: '未运行', no_blocking_findings: '无阻断发现', changes_requested: '要求修改',
@@ -214,11 +291,17 @@ export function MuPrDetailContent({ prRef, onChanged }) {
                   <Space size="small">
                     <Popconfirm title="批准受控修复（仅 DRY_RUN 建议——不写 GitHub、不自动合并）"
                       onConfirm={() => decideApproval(t.approval_id, 'approve')}>
-                      <Button size="small" type="primary">批准受控修复</Button>
+                      <Button size="small" type="primary"
+                        title="批准后仅生成 DRY_RUN 修复建议；服务端将同步预演（可能数分钟）——需 maintainer 角色"
+                        loading={busyAction === `fix-approve-${t.approval_id}`}
+                        disabled={!canDecide || busyAction !== null}>批准受控修复</Button>
                     </Popconfirm>
                     <Popconfirm title="拒绝修复（Fixer 永不启动，run 进入 BLOCKED）"
                       onConfirm={() => decideApproval(t.approval_id, 'reject')}>
-                      <Button size="small" danger>拒绝修复</Button>
+                      <Button size="small" danger
+                        title="拒绝该票：Fixer 不启动，run 进入 BLOCKED——需 maintainer 角色"
+                        loading={busyAction === `fix-reject-${t.approval_id}`}
+                        disabled={!canDecide || busyAction !== null}>拒绝修复</Button>
                     </Popconfirm>
                   </Space>
                 ) : '—' },
@@ -233,14 +316,29 @@ export function MuPrDetailContent({ prRef, onChanged }) {
       ) : null}
 
       <Space wrap className="mu-detail-actions">
-        <Button size="small" onClick={() => runAction('触发只读审查', `/api/mu/prs/${pr.pr_id}/review`)}>触发只读审查</Button>
-        <Button size="small" onClick={() => runAction('审批通过', `/api/mu/prs/${pr.pr_id}/decision`, { action: 'approve' })}>审批通过</Button>
-        <Button size="small" onClick={() => runAction('驳回', `/api/mu/prs/${pr.pr_id}/decision`, { action: 'reject' })}>驳回</Button>
-        <Button size="small" onClick={() => runAction('发起受控修复', `/api/mu/prs/${pr.pr_id}/repair`)}>发起受控修复</Button>
+        {ACTION_DEFS.map((a) => {
+          const allowed = myActions.includes(a.need);
+          const running = busyAction === a.key;
+          const title = allowed ? a.desc : `${a.desc}——当前角色无权执行，需要${a.needRole}`;
+          const btn = (
+            <Button key={a.key} size="small" title={title}
+              loading={running}
+              disabled={!allowed || busyAction !== null}
+              onClick={a.run}>
+              {running ? a.loadingText : a.label}
+            </Button>
+          );
+          // 浏览器对 disabled 按钮不出 hover title——无权限时外包一层带 title 的 span 保持可解释
+          return allowed ? btn : <span key={a.key} title={title}>{btn}</span>;
+        })}
       </Space>
       {actionMsg ? (
-        <Alert className="mu-detail-actionmsg" type={actionMsg.ok ? 'success' : 'warning'} showIcon
-          message={`${actionMsg.label} → HTTP ${actionMsg.status}${actionMsg.reason ? `（${actionMsg.reason}）` : ''}`} />
+        <Alert className="mu-detail-actionmsg" type={actionMsg.tone ?? (actionMsg.ok ? 'success' : 'warning')} showIcon
+          message={`${actionMsg.label}：${actionMsg.text}`}
+          description={actionMsg.note ?? undefined}
+          action={actionMsg.retry && lastActionRef.current ? (
+            <Button size="small" onClick={() => postAction(lastActionRef.current)}>重试</Button>
+          ) : undefined} />
       ) : null}
 
       {(detail.review_records ?? []).length > 0 ? (
