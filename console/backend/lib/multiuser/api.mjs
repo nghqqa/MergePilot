@@ -811,7 +811,8 @@ export async function muApi(req, res, ctx) {
     // 写=platform_admin（manage_instance）。写全 CSRF+审计；审计 detail 只含
     // skill_key/version/state/rollback——不含 changelog/prompt/工件内容（脱敏合同）。
     // 版本不可变合同：发布=只新增行（同版本同指纹重复发布=幂等 200；同版本不同指纹=409）；
-    // 回滚/激活=仅 CAS 切 current_version 指针（并发单赢家审计），版本行永不 UPDATE/DELETE。
+    // 回滚/激活=仅 CAS 切 current_version 指针（同目标并发恰一赢家审计，异目标并发
+    // last-write-wins 且各审计一笔），版本行永不 UPDATE/DELETE。
     if (p === '/api/mu/skills' && req.method === 'GET') {
       const g = await guard('read_repository');
       if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
@@ -854,21 +855,9 @@ export async function muApi(req, res, ctx) {
       if (!sk.rows.length) return sendJson(res, 404, { error: { reason: 'skill_not_found' } });
       return sendJson(res, 200, { skill: sk.rows[0] });
     }
-    const skillPublishMatch = p.match(/^\/api\/mu\/skills\/([^/]+)\/versions\/([^/]+)\/publish$/);
-    if (skillPublishMatch && req.method === 'POST') {
-      if (!csrfOk()) return sendJson(res, 403, { error: { reason: 'csrf_required' } });
-      const g = await guard('manage_instance');
-      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
-      const [key, version] = [decodeURIComponent(skillPublishMatch[1]), decodeURIComponent(skillPublishMatch[2])];
-      const sk = await muPoolQ(`SELECT skill_id FROM mu.skill WHERE tenant_id=$1 AND skill_key=$2`,
-        [mu.tenantId, key]);
-      if (!sk.rows.length) return sendJson(res, 404, { error: { reason: 'skill_not_found' } });
-      const v = await muPoolQ(`SELECT version_id FROM mu.skill_version WHERE skill_id=$1 AND version=$2`,
-        [sk.rows[0].skill_id, version]);
-      if (!v.rows.length) return sendJson(res, 404, { error: { reason: 'version_not_found' } });
-      // 版本在创建时即已发布（不可变合同）——本端点幂等确认，无状态迁移故无审计。
-      return sendJson(res, 200, { ok: true, idempotent: true, published: true });
-    }
+    // （2026-10 整改：删除恒成功死端点 POST /api/mu/skills/:k/versions/:v/publish——
+    //  版本在 POST /versions 创建时即已发布，该端点无状态迁移、无审计且前端从未调用；
+    //  删除后同形路径落入统一 404 兜底（unknown mu path），集成测试锁此行为。）
     const skillVerMatch = p.match(/^\/api\/mu\/skills\/([^/]+)\/versions$/);
     if (skillVerMatch && req.method === 'POST') {
       if (!csrfOk()) return sendJson(res, 403, { error: { reason: 'csrf_required' } });
@@ -886,30 +875,58 @@ export async function muApi(req, res, ctx) {
       const sk = await muPoolQ(`SELECT * FROM mu.skill WHERE tenant_id=$1 AND skill_key=$2`,
         [mu.tenantId, decodeURIComponent(skillVerMatch[1])]);
       if (!sk.rows.length) return sendJson(res, 404, { error: { reason: 'skill_not_found' } });
+      // 响应里的 current_version 一律回读服务端真值——请求前快照在并发下可能过期，
+      // 前端不得用旧快照推断「是否已自动激活」。
+      const currentOf = async () => (await muPoolQ(
+        `SELECT current_version FROM mu.skill WHERE skill_id=$1`, [sk.rows[0].skill_id])).rows[0]?.current_version ?? null;
       const dup = await muPoolQ(
         `SELECT manifest_sha256 FROM mu.skill_version WHERE skill_id=$1 AND version=$2`,
         [sk.rows[0].skill_id, version]);
       if (dup.rows.length) {
         // 幂等边界：同版本+同指纹=幂等成功；同版本+不同指纹=不可变冲突（防替换）
         if (dup.rows[0].manifest_sha256 === sha) {
-          return sendJson(res, 200, { ok: true, idempotent: true, version });
+          return sendJson(res, 200, { ok: true, idempotent: true, version,
+            current_version: await currentOf(), activated: false });
         }
         return sendJson(res, 409, { error: { reason: 'version_immutable_conflict',
           detail: '该版本号已发布且指纹不同——版本发布后不可变，请递增版本号' } });
       }
-      const v = await muPoolQ(
-        `INSERT INTO mu.skill_version (tenant_id, skill_id, version, changelog, manifest_sha256, artifact_ref, created_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-        [mu.tenantId, sk.rows[0].skill_id, version, String(body.changelog || '').slice(0, 500),
-          sha, String(body.artifact_ref || '').slice(0, 300), mu.userId]);
-      // 首个版本发布即激活（无历史版本的技能没有「未激活」中间态可停留）
+      let vRow;
+      try {
+        const v = await muPoolQ(
+          `INSERT INTO mu.skill_version (tenant_id, skill_id, version, changelog, manifest_sha256, artifact_ref, created_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+          [mu.tenantId, sk.rows[0].skill_id, version, String(body.changelog || '').slice(0, 500),
+            sha, String(body.artifact_ref || '').slice(0, 300), mu.userId]);
+        vRow = v.rows[0];
+      } catch (e) {
+        // 并发发布同版本号撞 UNIQUE(skill_id, version)：按幂等合同收口（同指纹=幂等，异指纹=409）
+        if (e?.code !== '23505') throw e;
+        const re = await muPoolQ(
+          `SELECT manifest_sha256 FROM mu.skill_version WHERE skill_id=$1 AND version=$2`,
+          [sk.rows[0].skill_id, version]);
+        if (re.rows.length && re.rows[0].manifest_sha256 === sha) {
+          return sendJson(res, 200, { ok: true, idempotent: true, version,
+            current_version: await currentOf(), activated: false });
+        }
+        return sendJson(res, 409, { error: { reason: 'version_immutable_conflict',
+          detail: '该版本号已发布且指纹不同——版本发布后不可变，请递增版本号' } });
+      }
+      // 首个版本发布即激活，但必须走 CAS（仅当此刻仍无 current_version 才写入）：
+      // 并发发布多个「首版」时恰有一个赢家激活；输家的版本照常入库，activated=false，
+      // 由响应真值 current_version 告知前端实际生效的是谁——绝不双重激活。
+      let activated = false;
       if (!sk.rows[0].current_version) {
-        await muPoolQ(`UPDATE mu.skill SET current_version=$1, updated_at=now()
-          WHERE skill_id=$2`, [version, sk.rows[0].skill_id]);
+        const cas = await muPoolQ(
+          `UPDATE mu.skill SET current_version=$1, updated_at=now()
+            WHERE skill_id=$2 AND current_version IS NULL RETURNING current_version`,
+          [version, sk.rows[0].skill_id]);
+        activated = cas.rows.length > 0;
       }
       await store.audit('MU_SKILL_VERSION_PUBLISHED', { tenantId: mu.tenantId, actorUserId: mu.userId,
         detail: { skill_key: sk.rows[0].skill_key, version } });
-      return sendJson(res, 200, { ok: true, idempotent: false, version: v.rows[0] });
+      return sendJson(res, 200, { ok: true, idempotent: false, version: vRow,
+        current_version: await currentOf(), activated });
     }
     if (skillVerMatch && req.method === 'GET') {
       const g = await guard('read_repository');
@@ -944,7 +961,9 @@ export async function muApi(req, res, ctx) {
         return a1 !== b1 ? a1 < b1 : a2 !== b2 ? a2 < b2 : a3 < b3; };
       const prev = sk.rows[0].current_version;
       const rollback = !!prev && prev !== version && semverLt(version, prev);
-      // CAS：仅当指针确实变化时更新+审计——并发同目标只有一个赢家，重复请求幂等
+      // 并发语义（按实际行为，非「并发单赢家」一概而论）：
+      //  * 同目标并发：CAS（IS DISTINCT FROM 目标）恰一赢家更新+审计，输家 0 行命中走幂等 200；
+      //  * 异目标并发：两个 UPDATE 均命中（指针各自不同），后提交者胜（last-write-wins），各审计一笔。
       const upd = await muPoolQ(
         `UPDATE mu.skill SET current_version=$1, updated_at=now()
           WHERE skill_id=$2 AND current_version IS DISTINCT FROM $1
