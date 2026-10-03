@@ -181,6 +181,11 @@ jobs:
       - name: MU rag model activation (21 scenarios)
         run: node console/backend/test/mu-rag-model-activate.integration.mjs
 
+      # RAG-model-install PR4：安装面板冒烟（四态+只读+manifest 披露+确认语义）
+      - name: Frontend rag model panel smoke (3 scenarios)
+        run: node --test test/rag-model-panel.smoke.test.mjs
+        working-directory: console/frontend
+
       - name: Frontend build
         run: |
           npm ci --no-audit --no-fund
