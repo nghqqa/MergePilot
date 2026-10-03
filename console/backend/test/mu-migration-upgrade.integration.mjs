@@ -1,7 +1,8 @@
 // console/backend/test/mu-migration-upgrade.integration.mjs — ADR-002 发布前验证：
-// existing DB 升级路径（v15 → v16 增量迁移）+ initSchema 幂等（restart 安全）。
-// v16=高危修复审批门（mu.fix_approval + review_run 状态扩 WAITING_FOR_HUMAN_APPROVAL）。
-// 模拟既有 beta.5 库：先只跑 migration ≤14 + 播种 v1 形状数据，再走完整 initSchema。
+// existing DB 升级路径（v16 → v17 增量迁移）+ initSchema 幂等（restart 安全）。
+// v17=技能版本治理面（mu.skill/mu.skill_version，纯 additive）；历史断言保留
+// v15/v16 特征面（本套件自 v15 形状播种一路升到 v17——逐版本链完整性一并覆盖）。
+// 模拟既有库：先只跑 migration ≤16 + 播种 v1 形状数据与 v16 审批票，再走完整 initSchema。
 import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
@@ -32,8 +33,8 @@ process.env.CONSOLE_PG_DSN = dsn;
 const { MU_MIGRATIONS, MU_SCHEMA_LATEST } = await import('../lib/multiuser/schema.mjs');
 const LAST = MU_MIGRATIONS[MU_MIGRATIONS.length - 1];
 const PRIOR = MU_MIGRATIONS[MU_MIGRATIONS.length - 2];
-if (Number(LAST.version) !== 16) {
-  console.error(`前提漂移：最新迁移=${LAST.version}（本测试钉 v16 升级路径）`);
+if (Number(LAST.version) !== 17) {
+  console.error(`前提漂移：最新迁移=${LAST.version}（本测试钉 v17 升级路径）`);
   process.exit(2);
 }
 
@@ -51,10 +52,10 @@ async function applyUpTo(maxVer) {
 }
 
 try {
-  // ── 阶段 1：既有库（只到 v15）+ 播种 v1 形状数据 ──
-  await applyUpTo(15);
-  ok('U1 前置=迁移到 v15（v16 未应用）',
-    (await pool.query(`SELECT 1 FROM mu.schema_migrations WHERE version=16`)).rowCount === 0);
+  // ── 阶段 1：既有库（只到 v16）+ 播种 v1 形状数据与 v16 审批票 ──
+  await applyUpTo(16);
+  ok('U1 前置=迁移到 v16（v17 未应用）',
+    (await pool.query(`SELECT 1 FROM mu.schema_migrations WHERE version=17`)).rowCount === 0);
   const seed = await pool.query(`INSERT INTO mu.tenant (slug, display_name) VALUES ('mig','Mig') RETURNING tenant_id`);
   const T = seed.rows[0].tenant_id;
   const U = (await pool.query(`INSERT INTO mu.app_user (login, display_name) VALUES ('mig-u','Mig U') RETURNING user_id`)).rows[0].user_id;
@@ -81,9 +82,9 @@ try {
   const { createMuStore } = await import('../lib/multiuser/store.mjs');
   const store = await createMuStore({ pool });
   await store.initSchema();
-  const v16 = (await pool.query(`SELECT 1 FROM mu.schema_migrations WHERE version=16`)).rowCount;
-  ok('U3 升级后 v16 应用', v16 === 1);
-  ok('U3b 版本=最新', Number(MU_SCHEMA_LATEST) === 16);
+  const v17 = (await pool.query(`SELECT 1 FROM mu.schema_migrations WHERE version=17`)).rowCount;
+  ok('U3 升级后 v17 应用', v17 === 1);
+  ok('U3b 版本=最新', Number(MU_SCHEMA_LATEST) === 17);
   for (const t of ['review_policy', 'review_policy_revision', 'provider_registry',
     'provider_consent', 'code_egress_event']) {
     const has = (await pool.query(`SELECT 1 FROM information_schema.tables
@@ -134,12 +135,33 @@ try {
     WHERE schemaname='mu' AND indexname='mu_fix_approval_live_uk'`)).rowCount;
   ok('U5e 活票唯一索引在位', faIdx === 1);
 
+  // ── 阶段 2b：v17 技能治理面在位 + 播种技能数据（验证 restart 后零丢失）──
+  for (const t of ['skill', 'skill_version']) {
+    const has = (await pool.query(`SELECT 1 FROM information_schema.tables
+      WHERE table_schema='mu' AND table_name=$1`, [t])).rowCount;
+    ok(`U3f v17 新表 mu.${t} 在位`, has === 1);
+  }
+  const sk = (await pool.query(`INSERT INTO mu.skill (tenant_id, skill_key, display_name, created_by)
+    VALUES ($1,'rag.retrieve','检索技能',$2) RETURNING skill_id`, [T, U])).rows[0];
+  const skv = (await pool.query(`INSERT INTO mu.skill_version (tenant_id, skill_id, version,
+    changelog, manifest_sha256, created_by) VALUES ($1,$2,'1.0.0','init','${'ab'.repeat(32)}',$3) RETURNING version_id`,
+    [T, sk.skill_id, U])).rows[0];
+  const dupVKey = await pool.query(
+    `INSERT INTO mu.skill_version (tenant_id, skill_id, version, changelog, manifest_sha256, created_by)
+     VALUES ($1,$2,'1.0.0','dup','${'cd'.repeat(32)}',$3)`, [T, sk.skill_id, U]).then(() => false, () => true);
+  ok('U5f v17 唯一约束：同 skill 同版本号拒写', dupVKey === true);
+
   // ── 阶段 3：initSchema 重放（restart 安全/幂等）──
   await store.initSchema();
   ok('U6 initSchema 重放幂等（restart 安全——零异常）', true);
   const dupVer = (await pool.query(
-    `SELECT count(*)::int FROM mu.schema_migrations WHERE version=16`)).rows[0].count;
-  ok('U6b v16 不重复应用', Number(dupVer) === 1);
+    `SELECT count(*)::int FROM mu.schema_migrations WHERE version=17`)).rows[0].count;
+  ok('U6b v17 不重复应用', Number(dupVer) === 1);
+  const skKept = (await pool.query(`
+    SELECT (SELECT count(*)::int FROM mu.skill WHERE skill_id=$1)
+         + (SELECT count(*)::int FROM mu.skill_version WHERE version_id=$2) AS kept`,
+    [sk.skill_id, skv.version_id])).rows[0].kept;
+  ok('U6d 重放后技能/版本数据零丢失（2/2 原样）', Number(skKept) === 2, { skKept });
   await store.bootstrap();
   ok('U6c bootstrap 重放幂等', true);
 } finally {

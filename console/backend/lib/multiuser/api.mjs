@@ -806,6 +806,181 @@ export async function muApi(req, res, ctx) {
       });
     }
 
+    // ── 技能版本治理（v17 mu_skill_registry；B 波：治理面只决定「哪个版本生效」）──
+    // 读=任意成员（read_repository 在全成员角色基座；auditor 仅 read_audit→403 如实）；
+    // 写=platform_admin（manage_instance）。写全 CSRF+审计；审计 detail 只含
+    // skill_key/version/state/rollback——不含 changelog/prompt/工件内容（脱敏合同）。
+    // 版本不可变合同：发布=只新增行（同版本同指纹重复发布=幂等 200；同版本不同指纹=409）；
+    // 回滚/激活=仅 CAS 切 current_version 指针（并发单赢家审计），版本行永不 UPDATE/DELETE。
+    if (p === '/api/mu/skills' && req.method === 'GET') {
+      const g = await guard('read_repository');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const rows = await muPoolQ(
+        `SELECT s.skill_id, s.skill_key, s.display_name, s.description,
+                s.current_version, s.state, s.updated_at,
+                (SELECT count(*) FROM mu.skill_version v WHERE v.skill_id = s.skill_id) version_count
+           FROM mu.skill s WHERE s.tenant_id=$1 ORDER BY s.skill_key`, [mu.tenantId]);
+      return sendJson(res, 200, { skills: rows.rows });
+    }
+    if (p === '/api/mu/skills' && req.method === 'POST') {
+      if (!csrfOk()) return sendJson(res, 403, { error: { reason: 'csrf_required' } });
+      const g = await guard('manage_instance');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const body = await json();
+      const key = String(body.skill_key || '').trim();
+      if (!/^[a-z0-9][a-z0-9._-]{1,63}$/.test(key)) {
+        return sendJson(res, 400, { error: { reason: 'skill_key 须为小写字母/数字/._-（2-64 位）' } });
+      }
+      const name = String(body.display_name || '').trim();
+      if (!name) return sendJson(res, 400, { error: { reason: 'display_name required' } });
+      const dup = await muPoolQ(`SELECT 1 FROM mu.skill WHERE tenant_id=$1 AND skill_key=$2`, [mu.tenantId, key]);
+      if (dup.rows.length) return sendJson(res, 409, { error: { reason: 'skill_key_exists' } });
+      const r = await muPoolQ(
+        `INSERT INTO mu.skill (tenant_id, skill_key, display_name, description, created_by)
+         VALUES ($1,$2,$3,$4,$5) RETURNING *`,
+        [mu.tenantId, key, name, String(body.description || '').slice(0, 500), mu.userId]);
+      await store.audit('MU_SKILL_REGISTERED', { tenantId: mu.tenantId, actorUserId: mu.userId,
+        detail: { skill_key: key } });
+      return sendJson(res, 200, { ok: true, skill: r.rows[0] });
+    }
+    const skillDetailMatch = p.match(/^\/api\/mu\/skills\/([^/]+)$/);
+    if (skillDetailMatch && req.method === 'GET') {
+      const g = await guard('read_repository');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const sk = await muPoolQ(
+        `SELECT s.*, (SELECT count(*) FROM mu.skill_version v WHERE v.skill_id = s.skill_id) version_count
+           FROM mu.skill s WHERE s.tenant_id=$1 AND s.skill_key=$2`,
+        [mu.tenantId, decodeURIComponent(skillDetailMatch[1])]);
+      if (!sk.rows.length) return sendJson(res, 404, { error: { reason: 'skill_not_found' } });
+      return sendJson(res, 200, { skill: sk.rows[0] });
+    }
+    const skillPublishMatch = p.match(/^\/api\/mu\/skills\/([^/]+)\/versions\/([^/]+)\/publish$/);
+    if (skillPublishMatch && req.method === 'POST') {
+      if (!csrfOk()) return sendJson(res, 403, { error: { reason: 'csrf_required' } });
+      const g = await guard('manage_instance');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const [key, version] = [decodeURIComponent(skillPublishMatch[1]), decodeURIComponent(skillPublishMatch[2])];
+      const sk = await muPoolQ(`SELECT skill_id FROM mu.skill WHERE tenant_id=$1 AND skill_key=$2`,
+        [mu.tenantId, key]);
+      if (!sk.rows.length) return sendJson(res, 404, { error: { reason: 'skill_not_found' } });
+      const v = await muPoolQ(`SELECT version_id FROM mu.skill_version WHERE skill_id=$1 AND version=$2`,
+        [sk.rows[0].skill_id, version]);
+      if (!v.rows.length) return sendJson(res, 404, { error: { reason: 'version_not_found' } });
+      // 版本在创建时即已发布（不可变合同）——本端点幂等确认，无状态迁移故无审计。
+      return sendJson(res, 200, { ok: true, idempotent: true, published: true });
+    }
+    const skillVerMatch = p.match(/^\/api\/mu\/skills\/([^/]+)\/versions$/);
+    if (skillVerMatch && req.method === 'POST') {
+      if (!csrfOk()) return sendJson(res, 403, { error: { reason: 'csrf_required' } });
+      const g = await guard('manage_instance');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const body = await json();
+      const version = String(body.version || '').trim();
+      const sha = String(body.manifest_sha256 || '').trim();
+      if (!/^\d+\.\d+\.\d+$/.test(version)) {
+        return sendJson(res, 400, { error: { reason: 'version 须为语义化版本（如 1.0.0）' } });
+      }
+      if (!/^[0-9a-f]{64}$/.test(sha)) {
+        return sendJson(res, 400, { error: { reason: 'manifest_sha256 须为 64 位十六进制指纹' } });
+      }
+      const sk = await muPoolQ(`SELECT * FROM mu.skill WHERE tenant_id=$1 AND skill_key=$2`,
+        [mu.tenantId, decodeURIComponent(skillVerMatch[1])]);
+      if (!sk.rows.length) return sendJson(res, 404, { error: { reason: 'skill_not_found' } });
+      const dup = await muPoolQ(
+        `SELECT manifest_sha256 FROM mu.skill_version WHERE skill_id=$1 AND version=$2`,
+        [sk.rows[0].skill_id, version]);
+      if (dup.rows.length) {
+        // 幂等边界：同版本+同指纹=幂等成功；同版本+不同指纹=不可变冲突（防替换）
+        if (dup.rows[0].manifest_sha256 === sha) {
+          return sendJson(res, 200, { ok: true, idempotent: true, version });
+        }
+        return sendJson(res, 409, { error: { reason: 'version_immutable_conflict',
+          detail: '该版本号已发布且指纹不同——版本发布后不可变，请递增版本号' } });
+      }
+      const v = await muPoolQ(
+        `INSERT INTO mu.skill_version (tenant_id, skill_id, version, changelog, manifest_sha256, artifact_ref, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+        [mu.tenantId, sk.rows[0].skill_id, version, String(body.changelog || '').slice(0, 500),
+          sha, String(body.artifact_ref || '').slice(0, 300), mu.userId]);
+      // 首个版本发布即激活（无历史版本的技能没有「未激活」中间态可停留）
+      if (!sk.rows[0].current_version) {
+        await muPoolQ(`UPDATE mu.skill SET current_version=$1, updated_at=now()
+          WHERE skill_id=$2`, [version, sk.rows[0].skill_id]);
+      }
+      await store.audit('MU_SKILL_VERSION_PUBLISHED', { tenantId: mu.tenantId, actorUserId: mu.userId,
+        detail: { skill_key: sk.rows[0].skill_key, version } });
+      return sendJson(res, 200, { ok: true, idempotent: false, version: v.rows[0] });
+    }
+    if (skillVerMatch && req.method === 'GET') {
+      const g = await guard('read_repository');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const sk = await muPoolQ(`SELECT skill_id FROM mu.skill WHERE tenant_id=$1 AND skill_key=$2`,
+        [mu.tenantId, decodeURIComponent(skillVerMatch[1])]);
+      if (!sk.rows.length) return sendJson(res, 404, { error: { reason: 'skill_not_found' } });
+      const rows = await muPoolQ(
+        `SELECT v.version, v.changelog, v.manifest_sha256, v.artifact_ref, v.created_at,
+                u.login AS published_by
+           FROM mu.skill_version v
+           LEFT JOIN mu.app_user u ON u.user_id = v.created_by
+          WHERE v.skill_id=$1 ORDER BY v.created_at DESC LIMIT 50`,
+        [sk.rows[0].skill_id]);
+      return sendJson(res, 200, { versions: rows.rows });
+    }
+    const skillActivateMatch = p.match(/^\/api\/mu\/skills\/([^/]+)\/activate$/);
+    if (skillActivateMatch && req.method === 'POST') {
+      if (!csrfOk()) return sendJson(res, 403, { error: { reason: 'csrf_required' } });
+      const g = await guard('manage_instance');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const body = await json();
+      const version = String(body.version || '').trim();
+      const sk = await muPoolQ(`SELECT * FROM mu.skill WHERE tenant_id=$1 AND skill_key=$2`,
+        [mu.tenantId, decodeURIComponent(skillActivateMatch[1])]);
+      if (!sk.rows.length) return sendJson(res, 404, { error: { reason: 'skill_not_found' } });
+      const v = await muPoolQ(`SELECT 1 FROM mu.skill_version WHERE skill_id=$1 AND version=$2`,
+        [sk.rows[0].skill_id, version]);
+      if (!v.rows.length) return sendJson(res, 404, { error: { reason: 'version_not_found' } });
+      // 语义定向：切到更低 semver=回滚；切到不同且更高=前向激活；同版=幂等路径
+      const semverLt = (a, b) => { const [a1, a2, a3] = a.split('.').map(Number); const [b1, b2, b3] = b.split('.').map(Number);
+        return a1 !== b1 ? a1 < b1 : a2 !== b2 ? a2 < b2 : a3 < b3; };
+      const prev = sk.rows[0].current_version;
+      const rollback = !!prev && prev !== version && semverLt(version, prev);
+      // CAS：仅当指针确实变化时更新+审计——并发同目标只有一个赢家，重复请求幂等
+      const upd = await muPoolQ(
+        `UPDATE mu.skill SET current_version=$1, updated_at=now()
+          WHERE skill_id=$2 AND current_version IS DISTINCT FROM $1
+          RETURNING current_version`,
+        [version, sk.rows[0].skill_id]);
+      if (upd.rows.length) {
+        await store.audit(rollback ? 'MU_SKILL_ROLLED_BACK' : 'MU_SKILL_ACTIVATED',
+          { tenantId: mu.tenantId, actorUserId: mu.userId,
+            detail: { skill_key: sk.rows[0].skill_key, version, rollback } });
+        return sendJson(res, 200, { ok: true, idempotent: false, current_version: version, rollback });
+      }
+      return sendJson(res, 200, { ok: true, idempotent: true, current_version: version, rollback: false });
+    }
+    const skillStateMatch = p.match(/^\/api\/mu\/skills\/([^/]+)\/(disable|enable)$/);
+    if (skillStateMatch && req.method === 'POST') {
+      if (!csrfOk()) return sendJson(res, 403, { error: { reason: 'csrf_required' } });
+      const g = await guard('manage_instance');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const state = skillStateMatch[2] === 'disable' ? 'disabled' : 'active';
+      const sk = await muPoolQ(
+        `UPDATE mu.skill SET state=$1, updated_at=now()
+          WHERE tenant_id=$2 AND skill_key=$3 AND state IS DISTINCT FROM $1
+          RETURNING skill_key, state`,
+        [state, mu.tenantId, decodeURIComponent(skillStateMatch[1])]);
+      if (!sk.rows.length) {
+        // 幂等：目标态已达成也须区分「技能不存在」与「已是该态」
+        const exist = await muPoolQ(`SELECT state FROM mu.skill WHERE tenant_id=$1 AND skill_key=$2`,
+          [mu.tenantId, decodeURIComponent(skillStateMatch[1])]);
+        if (!exist.rows.length) return sendJson(res, 404, { error: { reason: 'skill_not_found' } });
+        return sendJson(res, 200, { ok: true, idempotent: true, state: exist.rows[0].state });
+      }
+      await store.audit('MU_SKILL_STATE_CHANGED', { tenantId: mu.tenantId, actorUserId: mu.userId,
+        detail: { skill_key: sk.rows[0].skill_key, state } });
+      return sendJson(res, 200, { ok: true, idempotent: false, state });
+    }
+
     // ── tenant 切换（须为目标 tenant 的 active 成员） ──
     if (p === '/api/mu/auth/tenant' && req.method === 'POST') {
       if (!csrfOk()) return sendJson(res, 403, { error: { reason: 'csrf_required' } });
