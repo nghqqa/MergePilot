@@ -1082,6 +1082,36 @@ export async function muApi(req, res, ctx) {
         storeMod: rmiStore, onEvent: (kind, detail) => rmiAudit(kind, detail) });
       return sendJson(res, r.ok ? 200 : 404, r);
     }
+    if (p === '/api/mu/rag-model/activate' && req.method === 'POST') {
+      if (!csrfOk()) return sendJson(res, 403, { error: { reason: 'csrf_required' } });
+      const g = await guard('manage_instance');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const body = await json();
+      const key = String(body.model_key || 'bge-m3');
+      if (!rmiStore.listInstallableModels().includes(key)) {
+        return sendJson(res, 404, { error: { reason: 'model_not_found' } });
+      }
+      await rmiStore.ensureInstallRow(muPool, { tenantId: mu.tenantId, modelKey: key });
+      const registryMod = await import('../ragtrial/store.mjs');
+      const actMod = await import('./rag-model-activate.mjs');
+      const r = await actMod.activateModel({ pool: muPool, tenantId: mu.tenantId, modelKey: key,
+        manifest: rmiStore.loadModelManifest(key), modelRoot: RMI_ROOT, storeMod: rmiStore,
+        registryMod, endpoint: env.RAGTRIAL_EMBED_ENDPOINT || null,
+        onEvent: (kind, detail) => rmiAudit(kind, detail) });
+      if (!r.ok && r.http) return sendJson(res, r.http, { error: { reason: r.reason, detail: r.detail ?? r.hint } });
+      return sendJson(res, 200, r);
+    }
+    if (p === '/api/mu/rag-model/rollback' && req.method === 'POST') {
+      if (!csrfOk()) return sendJson(res, 403, { error: { reason: 'csrf_required' } });
+      const g = await guard('manage_instance');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const key = String((await json()).model_key || 'bge-m3');
+      const registryMod = await import('../ragtrial/store.mjs');
+      const actMod = await import('./rag-model-activate.mjs');
+      const r = await actMod.rollbackToLocal({ pool: muPool, tenantId: mu.tenantId, modelKey: key,
+        storeMod: rmiStore, registryMod, onEvent: (kind, detail) => rmiAudit(kind, detail) });
+      return sendJson(res, r.ok ? 200 : r.http ?? 500, r);
+    }
     if (p === '/api/mu/rag-model/install/log' && req.method === 'GET') {
       const g = await guard('manage_instance');
       if (g.denied) return sendJson(res, g.denied.status, g.denied.body);

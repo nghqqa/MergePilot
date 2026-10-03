@@ -34,7 +34,7 @@ export const RMI_TRANSITIONS = {
   UNINSTALLED: ['DOWNLOADING', 'INSUFFICIENT_DISK', 'DOWNLOAD_FAILED'],
   DOWNLOADING: ['VERIFYING', 'DOWNLOAD_FAILED', 'INSUFFICIENT_DISK', 'UNINSTALLED'], // UNINSTALLED=用户取消（清点）
   VERIFYING: ['READY', 'HASH_MISMATCH', 'DOWNLOAD_FAILED', 'UNINSTALLED'],
-  READY: ['ACTIVE', 'VERIFYING', 'DOWNLOADING', 'UNINSTALLED'], // DOWNLOADING=重下（文件漂移/损坏）
+  READY: ['ACTIVE', 'VERIFYING', 'DOWNLOADING', 'SIDECAR_START_FAILED', 'ACTIVATION_FAILED', 'UNINSTALLED'], // DOWNLOADING=重下（文件漂移/损坏）；激活探测/注册失败落对应失败态
   ACTIVE: ['READY', 'ACTIVATION_FAILED', 'VERIFYING'], // ACTIVE→READY=回退到 local-hash
   DOWNLOAD_FAILED: ['DOWNLOADING', 'UNINSTALLED'],
   HASH_MISMATCH: ['DOWNLOADING', 'UNINSTALLED'], // 哈希不匹配只能重下（拒绝激活）
@@ -115,13 +115,14 @@ export async function transitionInstall(pool, { tenantId, modelKey, from, to, er
   return r.rows.length ? { ok: true, row: r.rows[0] } : { ok: false, reason: 'lost_race_or_state_changed' };
 }
 
-/** 激活/回退：provider CAS（并发单赢家；state 与 provider 同步迁移）。 */
+/** 激活/回退：provider CAS（并发单赢家；state 与 provider 同步迁移）。
+ *  provider 语义：'local-hash-v1'=回退（state→READY）；其他值=激活该模型（state→ACTIVE）。 */
 export async function setProviderActive(pool, { tenantId, modelKey, provider, errorCode = null }) {
-  const toState = provider === 'bge-m3' ? 'ACTIVE' : 'READY';
+  const toState = provider === 'local-hash-v1' ? 'READY' : 'ACTIVE';
   const r = await pool.query(
     `UPDATE mu.rag_model_install SET
        state=$3, active_provider=$4, updated_at=now(),
-       activated_at=CASE WHEN $4='bge-m3' THEN now() ELSE activated_at END,
+       activated_at=CASE WHEN $4='local-hash-v1' THEN activated_at ELSE now() END,
        last_error_code=$5
      WHERE tenant_id=$1 AND model_key=$2
        AND (state, active_provider) IS DISTINCT FROM ($3, $4)
