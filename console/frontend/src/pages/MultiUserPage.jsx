@@ -578,6 +578,9 @@ function GHAppPanel({ can, session, repos, onBound, onUnbound }) {
   const [selectedInst, setSelectedInst] = useState(null);
   const [msg, setMsg] = useState(null);
   const [loadingRepos, setLoadingRepos] = useState(false);
+  // PR-5 动作安全化：绑定 busy 锁（同步 ref 防双击重复 POST + state 驱动按钮 loading/disabled）
+  const [bindingRepoId, setBindingRepoId] = useState(null);
+  const bindingRef = useRef(false);
 
   const load = useCallback(async () => {
     const st = await muGet('/api/mu/github/app/status');
@@ -601,26 +604,36 @@ function GHAppPanel({ can, session, repos, onBound, onUnbound }) {
   };
 
   const bindRepo = async (repo) => {
+    if (bindingRef.current) return; // 防双击：同步锁——双击只发一次请求
+    bindingRef.current = true;
+    setBindingRepoId(repo.id);
     setMsg(null);
-    // 先在本地创建 repo 记录，再绑定（两次调用与错误语义与原实现一致）
-    const createRes = await muPost('/api/mu/repositories', {
-      provider_repo_id: String(repo.id), owner: repo.owner_login, name: repo.name,
-      default_branch: repo.default_branch,
-    });
-    if (createRes.status !== 200) {
-      setMsg({ type: 'error', text: `仓库注册失败：${createRes.body?.error?.reason ?? createRes.status}` });
-      return;
-    }
-    const repoId = createRes.body?.repository?.repo_id;
-    const bindRes = await muPost(`/api/mu/repositories/${repoId}/ghapp-binding`, {
-      installation_id: selectedInst, github_repo_id: repo.id,
-    });
-    if (bindRes.status === 200) {
-      setMsg({ type: 'success', text: `✓ ${repo.owner_login}/${repo.name} 绑定成功` });
-      if (onBound) onBound();
-    } else {
-      const reason = bindRes.body?.error?.reason;
-      setMsg({ type: 'error', text: `绑定失败：${GHAPP_ERROR_MAP[reason] ?? reason ?? bindRes.status}` });
+    try {
+      // 先在本地创建 repo 记录，再绑定（两次调用与错误语义与原实现一致）
+      const createRes = await muPost('/api/mu/repositories', {
+        provider_repo_id: String(repo.id), owner: repo.owner_login, name: repo.name,
+        default_branch: repo.default_branch,
+      });
+      if (createRes.status !== 200) {
+        setMsg({ type: 'error', text: `仓库注册失败：${createRes.body?.error?.reason ?? createRes.status}` });
+        return;
+      }
+      const repoId = createRes.body?.repository?.repo_id;
+      const bindRes = await muPost(`/api/mu/repositories/${repoId}/ghapp-binding`, {
+        installation_id: selectedInst, github_repo_id: repo.id,
+      });
+      if (bindRes.status === 200) {
+        setMsg({ type: 'success', text: `✓ ${repo.owner_login}/${repo.name} 绑定成功` });
+        if (onBound) onBound();
+      } else {
+        const reason = bindRes.body?.error?.reason;
+        setMsg({ type: 'error', text: `绑定失败：${GHAPP_ERROR_MAP[reason] ?? reason ?? bindRes.status}` });
+      }
+    } catch {
+      setMsg({ type: 'error', text: '网络失败——请重试' });
+    } finally {
+      bindingRef.current = false;
+      setBindingRepoId(null);
     }
   };
 
@@ -684,7 +697,9 @@ function GHAppPanel({ can, session, repos, onBound, onUnbound }) {
                   ? <Tag color="green" icon={<CheckCircleOutlined />}>已绑定</Tag>
                   : <Tag>未绑定</Tag> },
                 { title: '', render: (_, r) => canBind && !boundRepoIds.has(String(r.id)) ? (
-                  <Button size="small" onClick={() => bindRepo(r)}>绑定</Button>
+                  // PR-5：busy 用文案切换（同 waiting CTA——避免 CSSMotion 依赖真实 DOM）
+                  <Button size="small" disabled={bindingRepoId !== null}
+                    onClick={() => bindRepo(r)}>{bindingRepoId === r.id ? '绑定中…' : '绑定'}</Button>
                 ) : null },
               ]} />
           ) : null}
@@ -720,7 +735,7 @@ function GHAppPanel({ can, session, repos, onBound, onUnbound }) {
 }
 
 // ── Onboarding 面板：轨道 + 已完成摘要 + 当前步骤单一主 CTA ──
-function OnboardingPanel({ ob, session, providers, loginError, prCount, boundCount, onLogin, onInstall, onCheckSync, onOpenLatest, latestPr, can }) {
+function OnboardingPanel({ ob, session, providers, loginError, prCount, boundCount, onLogin, onInstall, onCheckSync, onOpenLatest, latestPr, can, checking }) {
   const order = ['login', 'member', 'install', 'bind', 'review'];
   const stepStateText = {
     login: session ? `已登录 ${session.user?.login ?? ''}` : '未登录',
@@ -769,7 +784,8 @@ function OnboardingPanel({ ob, session, providers, loginError, prCount, boundCou
       case 'waiting':
         return (
           <>
-            <Button type="primary" onClick={onCheckSync}>检查 PR 同步</Button>
+            {/* PR-5：busy 用文案切换而非 antd loading 图标——CSSMotion 需真实 DOM，测试环境（react-test-renderer）崩溃 */}
+            <Button type="primary" disabled={checking} onClick={onCheckSync}>{checking ? '检查同步中…' : '检查 PR 同步'}</Button>
             <Typography.Paragraph type="secondary" style={{ marginTop: 8, marginBottom: 0 }}>
               仓库已绑定。PR 创建后由 GitHub App webhook 自动同步（需 App 订阅 pull_request 事件），
               通常几秒内出现；长时间未同步时请检查 App 的事件订阅设置。
@@ -847,11 +863,14 @@ export default function MultiUserPage() {
   const [prRepoId, setPrRepoId] = useState(null);
   const [actionMsg, setActionMsg] = useState(null);
   const [loading, setLoading] = useState(false);
+  const refreshingRef = useRef(false); // PR-5：refresh 同步防重入门
   const [providers, setProviders] = useState(null);
   const [ghStatus, setGhStatus] = useState(null);
   const [installations, setInstallations] = useState(null);
 
   const refresh = useCallback(async () => {
+    if (refreshingRef.current) return; // 防双击：同步锁——检查同步/刷新只发一轮请求
+    refreshingRef.current = true;
     setLoading(true); setError(null); setActionMsg(null);
     try {
       const s = await muGet('/api/mu/session');
@@ -883,7 +902,7 @@ export default function MultiUserPage() {
       }
     } catch (e) {
       setError(e); setSession(null);
-    } finally { setLoading(false); }
+    } finally { refreshingRef.current = false; setLoading(false); }
   }, []);
 
   useEffect(() => { refresh(); }, [refresh]);
@@ -1051,7 +1070,7 @@ export default function MultiUserPage() {
           <OnboardingPanel
             ob={ob} session={session} providers={providers} loginError={loginError}
             prCount={prsState === 'ready' ? (prs ?? []).length : 0}
-            boundCount={boundCount} can={can}
+            boundCount={boundCount} can={can} checking={loading}
             onLogin={async () => {
               const r = await muGet('/api/mu/auth/oauth/github/start');
               if (r.status === 200 && r.body?.authorize_url) window.location.href = r.body.authorize_url;
