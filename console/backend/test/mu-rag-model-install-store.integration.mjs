@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// console/backend/test/mu-rag-model-install-store.integration.mjs — v19 store+状态机集成测试
+// console/backend/test/mu-rag-model-install-store.integration.mjs — v20 store+状态机集成测试（顺延 v20）
 // （RAG-model-install 波 PR1）：manifest 真源/落库幂等/状态机合法迁移/CAS 并发单赢家/
 // 激活回退 provider 切换/进度心跳门。运行：node console/backend/test/本文件（自起一次性 PG）。
 import { execFileSync } from 'node:child_process';

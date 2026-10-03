@@ -1,4 +1,4 @@
-// console/backend/lib/multiuser/rag-model-install.mjs — v19 RAG 模型安装控制面（store+状态机）。
+// console/backend/lib/multiuser/rag-model-install.mjs — v20 RAG 模型安装控制面（v19 已被 C 波调用留痕占用，顺延）（store+状态机）。
 //
 // 设计合同（RAG-model-install 波任务书二节）：
 //  * 状态机：UNINSTALLED→DOWNLOADING→VERIFYING→READY→ACTIVE；失败态
