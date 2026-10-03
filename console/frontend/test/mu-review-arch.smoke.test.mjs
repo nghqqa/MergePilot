@@ -77,6 +77,19 @@ async function renderRoute(route) {
   return { renderer, json: () => JSON.stringify(renderer.toJSON()) };
 }
 
+// 可见文本（字符串子节点拼接；不含 title 等属性——PR-2 起 raw enum 允许留在 title/技术详情）
+function walk(node, fn) {
+  if (node == null) return;
+  fn(node);
+  if (typeof node !== 'object') return;
+  (node.children ?? []).forEach((c) => walk(c, fn));
+}
+function allText(node) {
+  let t = '';
+  walk(node, (nd) => { if (typeof nd === 'string') t += nd; });
+  return t;
+}
+
 after(() => {
   try { domWindow.close(); } catch { /* ignore */ }
   setTimeout(() => process.exit(0), 300);
@@ -278,12 +291,16 @@ test('审批页（MU）：票列表+状态筛选+诚实空态+DRY_RUN 声明', a
       return [200, { approvals: st ? all.filter((t) => t.status === st) : all }];
     },
   };
-  const { json } = await renderRoute('/approvals');
+  const { json, renderer } = await renderRoute('/approvals');
   const text = json();
+  const visible = allText(renderer.toJSON());
   try {
     assert.ok(text.includes('待审批'), '页面标题');
     assert.ok(text.includes('R-SECRET') && text.includes('acme') && text.includes('4242'), '票行（仓库/PR/发现）');
-    assert.ok(text.includes('PENDING'), '状态标签');
+    assert.ok(visible.includes('待审批') && visible.includes('危急'), '状态/级别列走 status-map 中文词表（PENDING→待审批、P0→危急）');
+    assert.ok(!/\bPENDING\b/.test(visible) && !/\bSTALE\b/.test(visible) && !/\bCONSUMED\b/.test(visible),
+      '可见文本无裸 enum（raw 值只允许在 title/技术详情）');
+    assert.ok(text.includes('approval.tickets: PENDING'), 'raw enum 保留在 title 技术详情');
     assert.ok(text.includes('DRY_RUN 修复建议') && text.includes('不自动合并'), 'DRY_RUN 声明');
     assert.ok(text.includes('打开 PR'), '直达 PR 链接');
   } catch (e) { console.log(text.slice(0, 2500)); throw e; }

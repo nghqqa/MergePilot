@@ -50,17 +50,25 @@ const EXECUTION = {
 const VERDICT_SEVERITY_TONE = { CRITICAL: 'bad', HIGH: 'bad', MEDIUM: 'warn', LOW: 'warn' };
 
 // 严重度（独立键空间）：审查发现 severity 的唯一权威映射（PendingPage 筛选/着色/文案同源）。
+// P0-P3（MU 域）与 CRITICAL-LOW（legacy 域）是两套并存量纲：权威定义分别在
+// console/backend/lib/multiuser/schema.mjs（agent_finding.severity CHECK 'P0'-'P3'）
+// 与 legacy 审查摘要——不合并键、不隐式换算，哪套量纲由数据来源决定。
 const SEVERITY = {
   CRITICAL: { tone: 'bad', label: '危急', note: '危急（CRITICAL）— 最高严重级，必须优先处理' },
   HIGH: { tone: 'bad', label: '高', note: '高风险（HIGH）' },
   MEDIUM: { tone: 'warn', label: '中', note: '中风险（MEDIUM）' },
   LOW: { tone: 'warn', label: '低', note: '低风险（LOW）' },
+  P0: { tone: 'bad', label: '危急', note: '危急（P0）— MU 审查最高严重级，产生高危修复审批票（待人工批准后才开始修复预演）' },
+  P1: { tone: 'bad', label: '高', note: '高（P1）— MU 审查高严重级，产生高危修复审批票' },
+  P2: { tone: 'warn', label: '中', note: '中（P2）— 不产生审批票，人工裁量入口在 PR 详情页' },
+  P3: { tone: 'warn', label: '低', note: '低（P3）— 不产生审批票，人工裁量入口在 PR 详情页' },
 };
-const SEVERITY_ORDER = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'];
+const SEVERITY_ORDER = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'P0', 'P1', 'P2', 'P3'];
 
 // ── 控制面阶段（独立键空间；权威定义 lib/core-pilot.mjs STAGES 8 值，与 /api/overview 同源同边界）──
 // P2 收敛：OverviewPage 与 PR 详情（contract 路径"控制面阶段"chip）共用本映射，不再各持一份。
 const STAGE = {
+  PENDING: { tone: 'warn', label: '待审查', note: 'PR 尚无任何审查运行（stage: PENDING）— 等待事实，不代表有问题或无问题' },
   REVIEWING: { tone: 'info', label: '审查中', note: '有回执、尚无 gate 决策（stage: REVIEWING）' },
   ACTION_REQUIRED: { tone: 'warn', label: '需人工处理', note: '最新 run 存在未过期 PENDING 票据（stage: ACTION_REQUIRED）' },
   REMEDIATING: { tone: 'info', label: '修复中', note: '需要 Fixer（本部署 DISABLED，计数恒 0——枚举保留不虚构）' },
@@ -70,7 +78,7 @@ const STAGE = {
   STALE: { tone: 'neutral', label: '已过期(head)', note: '同 PR 存在更新 head，该 run 绑定旧 head（stage: STALE）' },
   UNKNOWN: { tone: 'warn', label: '未知（决策缺失）', note: 'gate 记录存在但 decision 缺失/无法识别（stage: UNKNOWN，fail-closed）' },
 };
-const STAGE_ORDER = ['REVIEWING', 'ACTION_REQUIRED', 'REMEDIATING', 'VERIFYING', 'PASSED', 'BLOCKED', 'STALE', 'UNKNOWN'];
+const STAGE_ORDER = ['PENDING', 'REVIEWING', 'ACTION_REQUIRED', 'REMEDIATING', 'VERIFYING', 'PASSED', 'BLOCKED', 'STALE', 'UNKNOWN'];
 
 // ── 运行结果摘要（独立键空间；console-pg / contract 的 run.outcome 值域）──
 // 语义红线：outcome 是结果摘要事实，不替代审查结论（verdict）与门禁（gate）。
@@ -157,16 +165,54 @@ const RAG = {
 };
 
 // ── 审批票据（独立键空间；与 FXV/门禁的 APPROVED 语义互相独立，不共用键）──
+// 权威值域（6 态）：mu.fix_approval.status CHECK（multiuser/schema.mjs）
+// = PENDING/APPROVED/REJECTED/EXPIRED/STALE/CONSUMED；USED 为 legacy console-pg 票据域键，保留。
 const TICKET = {
   PENDING: { tone: 'info', label: '待审批', note: '票据等待审批（approval.tickets: PENDING）' },
   APPROVED: { tone: 'ok', label: '已批准', note: '票据已批准（approval.tickets: APPROVED）— 仅授权后续动作，不代表已执行' },
   REJECTED: { tone: 'warn', label: '已拒绝', note: '票据已拒绝（approval.tickets: REJECTED）— 受控停止' },
   USED: { tone: 'neutral', label: '已使用', note: '票据授权已被消费（approval.tickets: USED）' },
   EXPIRED: { tone: 'warn', label: '已过期', note: '票据 TTL 已过期（approval.tickets: EXPIRED）— 需后端重签' },
+  STALE: { tone: 'warn', label: '已失效（PR head 已更新）', note: '票据已失效——PR 推进新 head 后，绑定旧 head 的票据作废（approval.tickets: STALE）— 需按新 head 重新审批，不代表修复被拒绝' },
+  CONSUMED: { tone: 'neutral', label: '已消费（修复预演已启动）', note: '票据已消费——P0/P1 票全部批准后进入 DRY_RUN 修复预演（approval.tickets: CONSUMED）— 预演不写 GitHub，不代表修复完成或已合并' },
 };
 const TICKET_ACTION = {
   APPROVE_REMEDIATION: { tone: 'info', label: '批准修复授权', note: '人工批准修复流程（action: APPROVE_REMEDIATION）' },
 };
+
+// ── MU run 状态（独立键空间；权威定义 lib/multiuser/orchestration.mjs RUN_STATES，
+// DB CHECK 双保险见 multiuser/schema.mjs mu.review_run，共 14 态）──
+// 语义红线：COMPLETED=执行终态事实≠无问题；REVIEWED=出了结论≠结论无问题；
+// WAITING_FOR_HUMAN_APPROVAL=高危审批门（P0/P1 票全部批准才进 FIX_QUEUED，拒绝/过期/STALE→BLOCKED）；
+// BLOCKED=受控半终态（人工裁定后可关闭），PR 保持 OPEN。
+const MU_RUN = {
+  RECEIVED: { tone: 'neutral', label: '已接收', note: 'webhook/手动审查请求已接收（mu.review_run: RECEIVED）' },
+  REVIEW_QUEUED: { tone: 'info', label: '审查排队', note: '审查任务已排队（mu.review_run: REVIEW_QUEUED）' },
+  REVIEWING: { tone: 'info', label: '审查中', note: '四 Agent 审查进行中（mu.review_run: REVIEWING）' },
+  REVIEWED: { tone: 'neutral', label: '已审查', note: '审查完成并出结论（mu.review_run: REVIEWED）— 结论内容见风险项/审查记录，不代表无问题' },
+  WAITING_FOR_HUMAN_APPROVAL: { tone: 'warn', label: '待人工批准（高危修复）', note: '高危修复审批门等待中（mu.review_run: WAITING_FOR_HUMAN_APPROVAL）— 全部 P0/P1 审批票批准后才进入 DRY_RUN 修复；拒绝/过期/STALE 将转入 BLOCKED' },
+  FIX_QUEUED: { tone: 'info', label: '修复排队', note: '修复（DRY_RUN 预演）已排队（mu.review_run: FIX_QUEUED）' },
+  FIXING: { tone: 'info', label: '修复预演中', note: 'Fixer 生成 DRY_RUN 修复建议中（mu.review_run: FIXING）— 不写 GitHub、不自动合并' },
+  VERIFY_QUEUED: { tone: 'info', label: '验证排队', note: '验证任务已排队（mu.review_run: VERIFY_QUEUED）' },
+  VERIFYING: { tone: 'info', label: '验证中', note: '独立验证进行中（mu.review_run: VERIFYING）' },
+  VERIFIED: { tone: 'ok', label: '已验证', note: '独立验证通过（mu.review_run: VERIFIED）— 有独立证据支撑，不代表已合并' },
+  REWORK_REQUIRED: { tone: 'warn', label: '需返工', note: '修复/验证未达标，需返工（mu.review_run: REWORK_REQUIRED）' },
+  BLOCKED: { tone: 'bad', label: '受阻', note: '流程受阻（mu.review_run: BLOCKED）— 审批拒绝/过期/STALE 或验证失败后的受控停止，PR 保持 OPEN，可人工裁定' },
+  FAILED: { tone: 'bad', label: '失败', note: '运行失败终态（mu.review_run: FAILED）— 具体原因见 dead_letter/运行详情' },
+  COMPLETED: { tone: 'neutral', label: '已完成', note: '运行执行完毕终态（mu.review_run: COMPLETED）— 执行事实，不代表无安全问题' },
+};
+function muRunMap(s) { return MU_RUN[String(s ?? '').toUpperCase()] ?? unknownEntry(s); }
+
+// ── MU agent attempt 状态（独立键空间；权威定义 multiuser/schema.mjs
+// mu.agent_attempt.status CHECK = RUNNING/DONE/FAILED/TIMEOUT/SKIPPED）──
+const MU_ATTEMPT = {
+  RUNNING: { tone: 'info', label: '运行中', note: 'Agent 尝试执行中（agent_attempt: RUNNING）' },
+  DONE: { tone: 'ok', label: '完成', note: 'Agent 尝试成功完成（agent_attempt: DONE）' },
+  FAILED: { tone: 'bad', label: '失败', note: 'Agent 尝试失败（agent_attempt: FAILED）— 错误码见 error_code 列' },
+  TIMEOUT: { tone: 'bad', label: '已超时', note: 'Agent 尝试超时（agent_attempt: TIMEOUT）— 非结论性失败，可重试或上调预算' },
+  SKIPPED: { tone: 'neutral', label: '已跳过', note: 'Agent 尝试被跳过（agent_attempt: SKIPPED）— 常见于前序失败后的短路' },
+};
+function muAttemptMap(s) { return MU_ATTEMPT[String(s ?? '').toUpperCase()] ?? unknownEntry(s); }
 
 // 未知状态兜底（统一契约）：label 保留原始机器值，note 标注"未知状态"——永不吞掉机器值。
 function unknownEntry(v) {
@@ -304,8 +350,8 @@ function gateMap(gate, source) {
 export {
   executionMap, verdictMap, gateMap, publishMap, EXECUTION, GATE, VERDICT_SEVERITY_TONE,
   SEVERITY, SEVERITY_ORDER, FXV, FXV_ARTIFACT, CCHAIN, CCHAIN_OVERALL, RAG, TICKET, TICKET_ACTION,
-  STAGE, STAGE_ORDER, OUTCOME,
+  STAGE, STAGE_ORDER, OUTCOME, MU_RUN, MU_ATTEMPT,
   fxvMap, fxvArtifactMap, cchainMap, cchainOverallMap, ragMap, ticketMap, ticketActionMap,
-  stageMap, outcomeMap,
+  stageMap, outcomeMap, muRunMap, muAttemptMap,
   toneToColor, unknownEntry,
 };

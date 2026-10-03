@@ -7,7 +7,7 @@ import { useAuth } from '../auth.jsx';
 import { ErrorBox, SkeletonRows } from '../ui.jsx';
 import { useAppConfig } from '../App.jsx';
 import { useDataSource, useSourceQuery } from '../hooks.js';
-import { ticketMap, ticketActionMap } from '../status-map.js';
+import { ticketMap, ticketActionMap, SEVERITY, toneToColor, unknownEntry } from '../status-map.js';
 
 // 决策响应映射（console_pg 0.2.0 test-auth 语义，实测）：
 //   200 {ok:true,status[,reason:NOOP]} → 已记录（NOOP=幂等重放：对已处目标态重复决策返回既有状态）
@@ -284,26 +284,29 @@ function PgApprovalsSection({ source }) {
 // 两条路径彻底分离：真实票据适配器（data/sources.js consolePgSource.decideApproval，X-Test-Principal
 // 隔离主体）与内存 fixture 演练（approvals-model 纯状态机）互不共享状态。
 // ── MU 模式（v16 高危修复审批票）：/api/mu/approvals 直读（服务端 tenant 收窄）──
+// 读取结果四态分离（PR-2）：401 登录过期 / 403 无权限 / 网络失败（显式错误块+重试钮）
+// / 真空态（诚实零值）。网络失败绝不渲染成"没有审批票"。状态列与筛选下拉走
+// status-map.js TICKET 词表的中文文案（enum 值仅作请求参数与 title 技术详情）。
 function MuApprovals() {
   const [rows, setRows] = useState(null);
   const [statusFilter, setStatusFilter] = useState('');
   const [err, setErr] = useState(null);
+  const [attempt, setAttempt] = useState(0); // 重试只重新触发既有 load，不改请求契约
   useEffect(() => {
     let dead = false;
     setErr(null);
     fetch(`/api/mu/approvals${statusFilter ? `?status=${statusFilter}` : ''}`, { credentials: 'same-origin' })
       .then(async (r) => {
-        if (r.status === 401 || r.status === 403) { if (!dead) { setRows([]); setErr('forbidden'); } return; }
+        if (r.status === 401) { if (!dead) { setRows([]); setErr('unauthorized'); } return; }
+        if (r.status === 403) { if (!dead) { setRows([]); setErr('forbidden'); } return; }
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const b = await r.json().catch(() => null);
         if (!dead) setRows(b?.approvals ?? []);
       })
       .catch(() => { if (!dead) { setRows([]); setErr('network'); } });
     return () => { dead = true; };
-  }, [statusFilter]);
+  }, [statusFilter, attempt]);
   const STATUS = ['', 'PENDING', 'APPROVED', 'REJECTED', 'EXPIRED', 'STALE', 'CONSUMED'];
-  const TONE = { PENDING: 'processing', APPROVED: 'success', CONSUMED: 'success',
-    REJECTED: 'error', EXPIRED: 'warning', STALE: 'warning' };
   return (
     <div>
       <div className="page-head">
@@ -317,11 +320,31 @@ function MuApprovals() {
         <select aria-label="按状态筛选" value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
           style={{ minWidth: 160 }}>
-          {STATUS.map((sv) => <option key={sv || 'all'} value={sv}>{sv || '全部状态'}</option>)}
+          {STATUS.map((sv) => (
+            <option key={sv || 'all'} value={sv}>{sv ? ticketMap(sv).label : '全部状态'}</option>
+          ))}
         </select>
       </div>
-      {err === 'forbidden' ? (
+      {err === 'unauthorized' ? (
+        <div className="panel approvals-entry">
+          <div>
+            <strong>登录已过期——请刷新页面重新登录。</strong>
+            <div className="muted">审批票读取需要有效会话（401 如实），不显示任何占位数据。</div>
+          </div>
+        </div>
+      ) : err === 'forbidden' ? (
         <div className="panel approvals-entry"><div className="muted">当前角色无审批票读取权限（403 如实）。</div></div>
+      ) : err === 'network' ? (
+        <div className="panel approvals-entry">
+          <div>
+            <strong>审批票读取失败（网络或服务不可用）。</strong>
+            <div className="muted">
+              未取得任何审批票数据——这不代表当前没有审批票；持续失败请联系管理员检查服务状态。
+            </div>
+            <button type="button" className="btn btn-sm" style={{ marginTop: 8 }}
+              onClick={() => setAttempt((n) => n + 1)}>重试</button>
+          </div>
+        </div>
       ) : rows === null ? (
         <div className="muted">读取审批票…</div>
       ) : rows.length === 0 ? (
@@ -334,7 +357,7 @@ function MuApprovals() {
           </div>
         </div>
       ) : (
-        <div className="table-meta">{rows.length} 张审批票 · 状态 {statusFilter || '全部'}</div>
+        <div className="table-meta">{rows.length} 张审批票 · 状态 {statusFilter ? ticketMap(statusFilter).label : '全部'}</div>
       )}
       {rows && rows.length > 0 ? (
         <table className="qf-table" style={{ width: '100%', fontSize: 13 }}>
@@ -342,25 +365,29 @@ function MuApprovals() {
             <th>级别</th><th>仓库 / PR</th><th>发现</th><th>head</th><th>状态</th><th>决定人 / 过期</th><th>run</th><th></th>
           </tr></thead>
           <tbody>
-            {rows.map((t) => (
-              <tr key={t.approval_id}>
-                <td><span className={`sev-badge sev-${t.severity}`}>{t.severity}</span></td>
-                <td className="mono">{t.repo_owner}/{t.repo_name} #{t.pr_number}</td>
-                <td className="mono" style={{ maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {t.rule_id} · {t.path}{t.line_start ? `:${t.line_start}` : ''}
-                  {t.summary_masked ? <span className="muted">（{t.summary_masked}）</span> : null}
-                </td>
-                <td className="mono">{String(t.head_sha ?? '').slice(0, 8)}</td>
-                <td><span className={`tag tag-${TONE[t.status] ?? 'default'}`}>{t.status}</span></td>
-                <td style={{ fontSize: 12 }}>
-                  {t.decided_by ? `${t.decided_by} · ${String(t.decided_at ?? '').slice(0, 16).replace('T', ' ')}` : `过期 ${String(t.expires_at ?? '').slice(0, 16).replace('T', ' ')}`}
-                </td>
-                <td className="mono" style={{ fontSize: 11 }}>{String(t.run_id ?? '').slice(0, 8)}</td>
-                <td>
-                  <Link className="btn btn-sm" to={`/mu/repos/${encodeURIComponent(t.repo_owner)}/${encodeURIComponent(t.repo_name)}/pr/${t.pr_number}`}>打开 PR</Link>
-                </td>
-              </tr>
-            ))}
+            {rows.map((t) => {
+              const sev = SEVERITY[String(t.severity ?? '').toUpperCase()] ?? unknownEntry(t.severity);
+              const sm = ticketMap(t.status);
+              return (
+                <tr key={t.approval_id}>
+                  <td><span className={`sev-badge sev-${t.severity}`} title={sev.note}>{sev.label}</span></td>
+                  <td className="mono">{t.repo_owner}/{t.repo_name} #{t.pr_number}</td>
+                  <td className="mono" style={{ maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {t.rule_id} · {t.path}{t.line_start ? `:${t.line_start}` : ''}
+                    {t.summary_masked ? <span className="muted">（{t.summary_masked}）</span> : null}
+                  </td>
+                  <td className="mono">{String(t.head_sha ?? '').slice(0, 8)}</td>
+                  <td><span className={`tag tag-${toneToColor(sm.tone)}`} title={sm.note}>{sm.label}</span></td>
+                  <td style={{ fontSize: 12 }}>
+                    {t.decided_by ? `${t.decided_by} · ${String(t.decided_at ?? '').slice(0, 16).replace('T', ' ')}` : `过期 ${String(t.expires_at ?? '').slice(0, 16).replace('T', ' ')}`}
+                  </td>
+                  <td className="mono" style={{ fontSize: 11 }}>{String(t.run_id ?? '').slice(0, 8)}</td>
+                  <td>
+                    <Link className="btn btn-sm" to={`/mu/repos/${encodeURIComponent(t.repo_owner)}/${encodeURIComponent(t.repo_name)}/pr/${t.pr_number}`}>打开 PR</Link>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       ) : null}

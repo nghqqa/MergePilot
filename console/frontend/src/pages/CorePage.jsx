@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Alert, Table, Tag, Typography } from 'antd';
 import { useAuth } from '../auth.jsx';
 import { STATUS_META } from '../theme.js';
-import { fxvMap, fxvArtifactMap, ticketMap, ticketActionMap, toneToColor } from '../status-map.js';
+import { fxvMap, fxvArtifactMap, ticketMap, ticketActionMap, toneToColor, muRunMap, MU_RUN } from '../status-map.js';
 
 // 系统状态与接线（antd 版）：五个 Core API 的实时只读视图，供排查"是坏了还是没接"。
 // 诚实语义：未登录 401 → 引导；无 DSN → 未接线；连接失败 → 后端错误；成功 → 实时数据。
@@ -14,13 +14,11 @@ const REFRESH_MS = 10_000;
 const LIVE_SOURCES = ['POSTGRESQL_LIVE', 'MU_CANONICAL_LIVE'];
 const isLive = (s) => LIVE_SOURCES.includes(s);
 
-// MU pending 行的 run 状态（mu-console-api.pending 投影）→ 人话标签；未知枚举走 unknownEntry。
-const MU_RUN_STATUS = {
-  FIX_QUEUED: { tone: 'info', label: '修复排队' },
-  VERIFY_QUEUED: { tone: 'info', label: '验证排队' },
-  REWORK_REQUIRED: { tone: 'warning', label: '需返工' },
-  BLOCKED: { tone: 'error', label: '已阻断' },
-};
+// MU pending 行的 run 状态（mu-console-api.pending 投影）→ 人话标签。
+// PR-2 单源收敛：14 态共享词表在 status-map.js MU_RUN（含 WAITING_FOR_HUMAN_APPROVAL）；
+// 本页不再自持 4 键表。legacy 票据域行（ticket status）仍回退 ticketMap；
+// 未知枚举 fail-closed（unknownEntry 保留原始值），不吞键。
+const runStatusMap = (v) => (v && MU_RUN[String(v).toUpperCase()] ? muRunMap(v) : ticketMap(v));
 
 async function apiGet(path) {
   const res = await fetch(path, { credentials: 'same-origin' });
@@ -159,7 +157,7 @@ export default function CorePage() {
                   : '—') },
               { title: '状态', dataIndex: 'status', width: 110,
                 render: (v) => {
-                  const m = MU_RUN_STATUS[v] ?? ticketMap(v);
+                  const m = runStatusMap(v);
                   return <Tag color={toneToColor(m.tone)} title={m.note}>{m.label}</Tag>;
                 } },
             ]}

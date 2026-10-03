@@ -4,6 +4,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Button, Popconfirm, Space, Table, Tag, Typography } from 'antd';
 import { PipelinePanel } from './MultiUserPage.jsx';
+import { ticketMap, SEVERITY, toneToColor, unknownEntry } from '../status-map.js';
 
 /**
  * 详情内容块。props:
@@ -177,7 +178,10 @@ export function MuPrDetailContent({ prRef, onChanged }) {
             locale={{ emptyText: '审批票加载中/暂不可得——刷新重试' }}
             columns={[
               { title: '级别', dataIndex: 'severity', width: 70,
-                render: (v) => <Tag color={v === 'P0' ? 'red' : 'volcano'}>{v}</Tag> },
+                render: (v) => {
+                  const m = SEVERITY[String(v ?? '').toUpperCase()] ?? unknownEntry(v);
+                  return <Tag color={toneToColor(m.tone)} title={m.note}>{m.label}</Tag>;
+                } },
               { title: '发现', ellipsis: true,
                 render: (_, t) => (
                   <span className="mono" style={{ fontSize: 12 }}>
@@ -188,11 +192,15 @@ export function MuPrDetailContent({ prRef, onChanged }) {
               { title: 'head', width: 110,
                 render: (_, t) => <code className="mono">{String(t.head_sha ?? '').slice(0, 10)}</code> },
               { title: '状态', dataIndex: 'status', width: 110,
-                render: (v) => (
-                  <Tag style={{ whiteSpace: 'normal', height: 'auto' }}
-                    color={v === 'PENDING' ? 'processing' : v === 'APPROVED' || v === 'CONSUMED' ? 'green'
-                    : v === 'REJECTED' ? 'red' : 'warning'}>{v === 'CONSUMED' ? '已消费' : v}</Tag>
-                ) },
+                render: (v) => {
+                  // PR-2：票据状态全部走 status-map TICKET 词表（含 STALE/CONSUMED）；
+                  // 未知枚举 fail-closed（unknownEntry 保留原始值），不吞键。
+                  const m = ticketMap(v);
+                  return (
+                    <Tag style={{ whiteSpace: 'normal', height: 'auto' }}
+                      color={toneToColor(m.tone)} title={m.note}>{m.label}</Tag>
+                  );
+                } },
               { title: '决定人/时间', width: 150,
                 render: (_, t) => t.decided_by
                   ? (
