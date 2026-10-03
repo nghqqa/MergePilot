@@ -993,6 +993,54 @@ export const MU_MIGRATIONS = [
        END $$`,
     ],
   },
+  {
+    // ── v17 技能版本治理面（B 波；源自 mu-2b1 未提交设计 v7，按当前主线重设计）──
+    // 回滚/前向兼容：
+    //  * 纯 additive（两张新表+一个索引，零改既有表）——回滚 = DROP TABLE
+    //    mu.skill_version, mu.skill; DELETE FROM mu.schema_migrations WHERE version=17;
+    //    审批/review/run 数据完全不受影响；v16 代码见到 version 17 行会因
+    //    schema_migrations 逐版本重放幂等（CREATE TABLE IF NOT EXISTS）而安全共存。
+    //  * 前向：老镜像（≤v16）连到已升 v17 的库——initSchema 重放全量迁移全部
+    //    IF NOT EXISTS 幂等，不报错不降级（MU_SCHEMA_LATEST 断言仅在更旧库触发）。
+    // 版本不可变合同：
+    //  * 版本行只在发布时写入，此后任何 API 不 UPDATE/DELETE mu.skill_version；
+    //  * UNIQUE(skill_id, version) 钉死同租户同技能版本号唯一；
+    //  * 「回滚」= 只切 mu.skill.current_version 指针，历史版本原样保留。
+    version: 17,
+    name: 'mu_skill_registry',
+    sql: [
+      // 技能注册表：治理面只决定「哪个版本生效」，不执行技能（执行在审查执行栈）。
+      // manifest_sha256 = 技能工件完整性指纹（64 hex，发布时钉死防替换）；
+      // artifact_ref = 工件引用（执行面消费；MU 面只做治理不执行）。
+      `CREATE TABLE IF NOT EXISTS mu.skill (
+         skill_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+         tenant_id UUID NOT NULL REFERENCES mu.tenant(tenant_id),
+         skill_key TEXT NOT NULL,
+         display_name TEXT NOT NULL,
+         description TEXT NOT NULL DEFAULT '',
+         current_version TEXT,
+         state TEXT NOT NULL DEFAULT 'active' CHECK (state IN ('active','disabled')),
+         created_by UUID,
+         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+         updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+         UNIQUE (tenant_id, skill_key)
+       )`,
+      `CREATE TABLE IF NOT EXISTS mu.skill_version (
+         version_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+         tenant_id UUID NOT NULL REFERENCES mu.tenant(tenant_id),
+         skill_id UUID NOT NULL REFERENCES mu.skill(skill_id) ON DELETE CASCADE,
+         version TEXT NOT NULL,
+         changelog TEXT NOT NULL DEFAULT '',
+         manifest_sha256 TEXT NOT NULL,
+         artifact_ref TEXT NOT NULL DEFAULT '',
+         created_by UUID,
+         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+         UNIQUE (skill_id, version)
+       )`,
+      `CREATE INDEX IF NOT EXISTS mu_skill_version_skill_idx
+         ON mu.skill_version (skill_id, created_at DESC)`,
+    ],
+  },
 ];
 
 export const MU_SCHEMA_LATEST = MU_MIGRATIONS[MU_MIGRATIONS.length - 1].version;

@@ -48,7 +48,7 @@ const T1 = (await pool.query(`SELECT tenant_id FROM mu.tenant LIMIT 1`)).rows[0]
 // ── FA0：迁移 v16（fresh DB；矩阵 20）──
 {
   const mv = (await pool.query(`SELECT max(version) AS v FROM mu.schema_migrations`)).rows[0].v;
-  ok('FA0a fresh DB 迁移到 v16', Number(mv) === 16, { v: mv });
+  ok('FA0a fresh DB 迁移到最新（≥v16 审批门在位）', Number(mv) >= 16, { v: mv });
   const tbl = (await pool.query(`SELECT 1 FROM information_schema.tables
     WHERE table_schema='mu' AND table_name='fix_approval'`)).rows.length;
   ok('FA0b mu.fix_approval 表存在', tbl === 1);

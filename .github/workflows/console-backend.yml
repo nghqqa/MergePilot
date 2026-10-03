@@ -149,13 +149,18 @@ jobs:
         run: node console/backend/test/mu-review-arch-prf.integration.mjs
       - name: MU review-arch compat/security/recovery (PR G, 14 scenarios)
         run: node console/backend/test/mu-review-arch-prg.integration.mjs
-      - name: MU migration upgrade v15->v16 + restart idempotency (21 scenarios)
+      - name: MU migration upgrade v16->v17 + restart idempotency (25 scenarios)
         run: node console/backend/test/mu-migration-upgrade.integration.mjs
 
       # v16 高危修复审批门（fix/high-risk-fix-approval-gate）：P0/P1 逐条具名审批票+
       # WAITING 状态+唯一调度硬门（两 Fixer 入口）+过期/STALE/篡改/并发消费/RBAC/审计
       - name: MU fix-approval gate integration (v16, 52 scenarios)
         run: node console/backend/test/mu-fix-approval.integration.mjs
+
+      # v17 技能版本治理面（feat/skill-governance）：/api/mu/skills 全矩阵——
+      # 版本不可变/激活回滚状态机/并发单赢家/幂等/RBAC/CSRF/跨租户/审计脱敏
+      - name: MU skill governance integration (v17, 45 scenarios)
+        run: node console/backend/test/mu-skill-governance.integration.mjs
 
       - name: Frontend build
         run: |
@@ -190,6 +195,12 @@ jobs:
       # PR 详情四分立判定上屏（互不冒充）
       - name: Frontend review-arch smoke (PR F, 3 scenarios)
         run: node --test test/mu-review-arch.smoke.test.mjs
+        working-directory: console/frontend
+
+      # B 波技能治理页冒烟（v17）：管理员列表+只读角色+诚实空态/错误态+
+      # 与 RAG 试用区分声明+零 fixture 演练数据
+      - name: Frontend skill page smoke (B wave, 3 scenarios)
+        run: node --test test/skill-page.smoke.test.mjs
         working-directory: console/frontend
 
       # 前端 UX 修复回归（8 场景；含 PipelinePanel 四 Agent 执行表断言）

@@ -32,6 +32,7 @@ import KnowledgePage from './pages/KnowledgePage.jsx';
 import SettingsPage from './pages/SettingsPage.jsx';
 import LoginPage from './pages/LoginPage.jsx';
 import ApprovalsPage from './pages/ApprovalsPage.jsx';
+import SkillsPage from './pages/SkillsPage.jsx';
 
 // 可信运行配置上下文：数据源模式由提供服务的后端声明（/api/health），
 // sessionStorage/URL 无权改变（见 data/config.js）。
@@ -335,7 +336,7 @@ function Shell() {
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/login" element={<Navigate to="/pending" replace />} />
               <Route path="/rag" element={<Navigate to="/knowledge" replace />} />
-              <Route path="/skills" element={<Navigate to="/knowledge" replace />} />
+              <Route path="/skills" element={<SkillsPage />} />
               <Route path="/usage" element={<Navigate to="/knowledge" replace />} />
               <Route path="*" element={<Navigate to="/pending" replace />} />
             </Routes>
