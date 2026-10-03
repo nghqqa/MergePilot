@@ -1009,3 +1009,40 @@ td.th-right { text-align: right; }
 @media (max-width: 360px) {
   .mode-chip { white-space: normal; line-height: 1.4; }
 }
+
+/* ---- 运行详情 Skill/RAG 调用留痕（C 波 C2，RunTracePanel）----
+   表格走全局 .table-scroll（overflow-x:auto）+ 粘性表头惯例：横向滚动被限制在
+   表格容器内，页面级（390 窄屏）不产生横向溢出；长名/错误码经 .trace-ellipsis
+   截断（title 全文），摘要经 .trace-digest 截断，均不撑破布局。 */
+.trace-section { margin: var(--sp-4) 0 0; }
+.trace-notes {
+  margin: 0 0 var(--sp-3); padding-left: 18px;
+  font-size: var(--fs-xs); color: var(--c-text-3);
+}
+.trace-notes li { margin: 2px 0; overflow-wrap: anywhere; }
+.trace-subtitle {
+  margin: var(--sp-3) 0 var(--sp-1);
+  font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--c-text-2);
+}
+.trace-summary { margin-bottom: var(--sp-3); }
+.trace-status-counts, .trace-role-counts { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.trace-count-chip {
+  display: inline-block; padding: 1px 7px; border-radius: 999px;
+  background: var(--c-neutral-bg); color: var(--c-text-2);
+  font-size: var(--fs-xs); font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.trace-digest { font-family: var(--font-mono); font-size: var(--fs-xs); }
+.trace-digest-list { display: inline-flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
+.trace-digest-list .trace-digest { max-width: 132px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+.trace-code { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--c-text-2); }
+.trace-partial { margin: 0 0 var(--sp-3); }
+/* 长文本单元格：省略号截断 + title 全文——布局不破、全文可达 */
+.trace-ellipsis {
+  display: inline-block; max-width: 200px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom;
+}
+.trace-skill { min-width: 0; }
+@media (max-width: 700px) {
+  .trace-ellipsis { max-width: 128px; }
+  .trace-digest-list .trace-digest { max-width: 96px; }
+}

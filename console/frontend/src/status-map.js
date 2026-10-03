@@ -214,6 +214,30 @@ const MU_ATTEMPT = {
 };
 function muAttemptMap(s) { return MU_ATTEMPT[String(s ?? '').toUpperCase()] ?? unknownEntry(s); }
 
+// ── 运行调用留痕状态（独立键空间；C 波 C2 权威值域 = C1 后端 skill-invocations /
+// rag-retrievals 的 status 字段：RUNNING/SUCCEEDED/FAILED/TIMEOUT/CANCELLED/INTERRUPTED）──
+// 语义红线：留痕是调用元数据事实——SUCCEEDED=调用成功 ≠ 审查通过/测试通过/合并资格；
+// INTERRUPTED=曾被中断、事后恢复补记 ≠ 失败；未知枚举 fail-open 显示原值并标注"未知状态"。
+const RUN_TRACE = {
+  RUNNING: { tone: 'info', label: '进行中', note: '调用仍在执行（run_trace: RUNNING）— 耗时与输出摘要可能尚未产生' },
+  SUCCEEDED: { tone: 'ok', label: '成功', note: '调用成功完成（run_trace: SUCCEEDED）— 调用事实，不代表审查通过、测试通过或合并资格' },
+  FAILED: { tone: 'bad', label: '失败', note: '调用失败（run_trace: FAILED）— 机器错误码见 error_code 列' },
+  TIMEOUT: { tone: 'bad', label: '超时', note: '调用超时（run_trace: TIMEOUT）— 非结论性失败' },
+  CANCELLED: { tone: 'warn', label: '已取消', note: '调用被取消（run_trace: CANCELLED）— 受控停止' },
+  INTERRUPTED: { tone: 'warn', label: '已恢复补记', note: '调用曾被中断、事后恢复补记（run_trace: INTERRUPTED）— 记录可能不完整' },
+};
+function runTraceMap(s) { return RUN_TRACE[String(s ?? '').toUpperCase()] ?? unknownEntry(s); }
+
+// 调用类型（invocation_kind）显示标签：示例值以 C1 实现为准——
+// 未知值兜底显示原值（不吞机器值、不崩溃）。
+const RUN_TRACE_KIND = {
+  verifier_tool: 'Verifier 工具调用',
+  agentteams_round: 'AgentTeams 轮次',
+};
+function runTraceKindMap(k) {
+  return RUN_TRACE_KIND[String(k ?? '')] ?? (k == null || k === '' ? null : String(k));
+}
+
 // 未知状态兜底（统一契约）：label 保留原始机器值，note 标注"未知状态"——永不吞掉机器值。
 function unknownEntry(v) {
   return { tone: 'neutral', label: v ?? 'UNKNOWN', note: `未知状态（原始枚举：${v ?? 'null/undefined'}）` };
@@ -350,8 +374,8 @@ function gateMap(gate, source) {
 export {
   executionMap, verdictMap, gateMap, publishMap, EXECUTION, GATE, VERDICT_SEVERITY_TONE,
   SEVERITY, SEVERITY_ORDER, FXV, FXV_ARTIFACT, CCHAIN, CCHAIN_OVERALL, RAG, TICKET, TICKET_ACTION,
-  STAGE, STAGE_ORDER, OUTCOME, MU_RUN, MU_ATTEMPT,
+  STAGE, STAGE_ORDER, OUTCOME, MU_RUN, MU_ATTEMPT, RUN_TRACE, RUN_TRACE_KIND,
   fxvMap, fxvArtifactMap, cchainMap, cchainOverallMap, ragMap, ticketMap, ticketActionMap,
-  stageMap, outcomeMap, muRunMap, muAttemptMap,
+  stageMap, outcomeMap, muRunMap, muAttemptMap, runTraceMap, runTraceKindMap,
   toneToColor, unknownEntry,
 };
