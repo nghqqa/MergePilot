@@ -106,7 +106,8 @@ try {
   //   的不透明串，1-200 字符，API 读出白名单排除）——命中 *key* 字面但非凭据材料。
   const SECRET_COL_ALLOWLIST = new Set(['token_count', 'max_output_tokens', 'tokens_sent', // W3.2：LLM 输出上限计数列（INT，非凭据）
     'skill_key', // v17 技能治理：mu.skill 标识列（小写 slug，非凭据材料——命中纯属 *key* 字面）
-    'idempotency_key']); // C1：两留痕表幂等去重键（recorder 不透明串，非凭据材料）
+    'idempotency_key', // C1：两留痕表幂等去重键（recorder 不透明串，非凭据材料）
+    'model_key']); // v20 RAG 模型安装：mu.rag_model_install 标识列（同上——非凭据）
   const secretCols = cols.filter((c) => /token|secret|password|key/i.test(c.column_name)
     && !/_hash$/.test(c.column_name) && !SECRET_COL_ALLOWLIST.has(c.column_name));
   ok('MS9 schema 零明文凭据列（允许 *_hash 摘要列 + 精确白名单）', secretCols.length === 0, secretCols);
