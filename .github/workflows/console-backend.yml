@@ -171,6 +171,11 @@ jobs:
       - name: MU rag model install store (v19, 19 scenarios)
         run: node console/backend/test/mu-rag-model-install-store.integration.mjs
 
+      # RAG-model-install PR2：下载引擎+安装 API（本地伪官方源真 HTTP：续传/幂等/
+      # 哈希 fail-closed/缺失/并发单赢家/RBAC/CSRF/审计脱敏）
+      - name: MU rag model download engine (20 scenarios)
+        run: node console/backend/test/mu-rag-model-download.integration.mjs
+
       - name: Frontend build
         run: |
           npm ci --no-audit --no-fund

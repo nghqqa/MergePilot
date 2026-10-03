@@ -1004,6 +1004,93 @@ export async function muApi(req, res, ctx) {
       return sendJson(res, 200, { ok: true, idempotent: false, state });
     }
 
+    // ── RAG 模型安装控制面（v19；RAG-model-install 波 PR2：下载/校验/取消/状态）──
+    // 读（状态/manifest）=成员基座（read_repository）；写（安装/取消/重校验/日志）=
+    // manage_instance（platform_admin）+CSRF。租户/模型键全服务端解析；未知模型 404。
+    // 审计只落元数据（model_key/manifest_version/字节数/错误码/sha256 前缀/耗时）。
+    const rmiStore = await import('./rag-model-install.mjs');
+    const rmiDl = await import('./rag-model-download.mjs');
+    await muPoolQ('SELECT 1'); // 惰性建 muPool（下方直传 store/引擎用）
+    const RMI_ROOT = process.env.RAG_MODEL_ROOT || '/app/rag-models';
+    const rmiAudit = (kind, detail) => store.audit(`RAG_MODEL_${kind}`, { tenantId: mu.tenantId, actorUserId: mu.userId, detail }).catch(() => {});
+
+    if (p === '/api/mu/rag-model/install' && req.method === 'GET') {
+      const g = await guard('read_repository');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const key = String(q.model_key || 'bge-m3');
+      if (!rmiStore.listInstallableModels().includes(key)) {
+        return sendJson(res, 404, { error: { reason: 'model_not_found' } });
+      }
+      const { row } = await rmiStore.ensureInstallRow(muPool, { tenantId: mu.tenantId, modelKey: key });
+      return sendJson(res, 200, { install: {
+        model_key: row.model_key, state: row.state, active_provider: row.active_provider,
+        manifest_version: row.manifest_version, revision: row.revision, license: row.license,
+        expected_files: row.expected_files, total_bytes: Number(row.total_bytes),
+        downloaded_bytes: Number(row.downloaded_bytes), activated_at: row.activated_at,
+        last_error_code: row.last_error_code, updated_at: row.updated_at,
+        engine_busy: rmiDl.isInstalling(mu.tenantId, key) } });
+    }
+    if (p === '/api/mu/rag-model/manifest' && req.method === 'GET') {
+      const g = await guard('read_repository');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const key = String(q.model_key || 'bge-m3');
+      try { return sendJson(res, 200, { manifest: rmiStore.loadModelManifest(key) }); }
+      catch { return sendJson(res, 404, { error: { reason: 'model_not_found' } }); }
+    }
+    if (p === '/api/mu/rag-model/install' && req.method === 'POST') {
+      if (!csrfOk()) return sendJson(res, 403, { error: { reason: 'csrf_required' } });
+      const g = await guard('manage_instance');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const key = String((await json()).model_key || 'bge-m3');
+      if (!rmiStore.listInstallableModels().includes(key)) {
+        return sendJson(res, 404, { error: { reason: 'model_not_found' } });
+      }
+      if (rmiDl.isInstalling(mu.tenantId, key)) {
+        return sendJson(res, 409, { error: { reason: 'install_in_progress' } });
+      }
+      const cur = (await rmiStore.getInstall(muPool, { tenantId: mu.tenantId, modelKey: key }))?.state;
+      if (cur === 'ACTIVE') {
+        return sendJson(res, 409, { error: { reason: 'illegal_state', detail: 'ACTIVE——先回退再重装' } });
+      }
+      // 后台 kickoff（立即返回 DOWNLOADING；进度经 GET status/心跳落库）
+      rmiDl.runInstall({ pool: muPool, tenantId: mu.tenantId, modelKey: key,
+        manifest: rmiStore.loadModelManifest(key), modelRoot: RMI_ROOT,
+        storeMod: rmiStore, onEvent: (kind, detail) => rmiAudit(kind, detail) })
+        .catch(() => {});
+      return sendJson(res, 202, { ok: true, state: 'DOWNLOADING', model_key: key });
+    }
+    if (p === '/api/mu/rag-model/install/verify' && req.method === 'POST') {
+      if (!csrfOk()) return sendJson(res, 403, { error: { reason: 'csrf_required' } });
+      const g = await guard('manage_instance');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const key = String((await json()).model_key || 'bge-m3');
+      if (!rmiStore.listInstallableModels().includes(key)) {
+        return sendJson(res, 404, { error: { reason: 'model_not_found' } });
+      }
+      const r = await rmiDl.runVerifyOnly({ pool: muPool, tenantId: mu.tenantId, modelKey: key,
+        manifest: rmiStore.loadModelManifest(key), modelRoot: RMI_ROOT, storeMod: rmiStore,
+        onEvent: (kind, detail) => rmiAudit(kind, detail) });
+      if (!r.ok && r.reason?.startsWith('illegal_state')) return sendJson(res, 409, { error: { reason: r.reason } });
+      return sendJson(res, r.ok ? 200 : 422, r);
+    }
+    if (p === '/api/mu/rag-model/install/cancel' && req.method === 'POST') {
+      if (!csrfOk()) return sendJson(res, 403, { error: { reason: 'csrf_required' } });
+      const g = await guard('manage_instance');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const key = String((await json()).model_key || 'bge-m3');
+      const r = await rmiDl.cancelInstall({ pool: muPool, tenantId: mu.tenantId, modelKey: key,
+        storeMod: rmiStore, onEvent: (kind, detail) => rmiAudit(kind, detail) });
+      return sendJson(res, r.ok ? 200 : 404, r);
+    }
+    if (p === '/api/mu/rag-model/install/log' && req.method === 'GET') {
+      const g = await guard('manage_instance');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const rows = await muPoolQ(
+        `SELECT kind, detail, created_at FROM mu.audit_event
+          WHERE tenant_id=$1 AND kind LIKE 'RAG_MODEL_%' ORDER BY seq DESC LIMIT 30`, [mu.tenantId]);
+      return sendJson(res, 200, { entries: rows.rows, in_flight: rmiDl.installLogSummary() });
+    }
+
     // ── tenant 切换（须为目标 tenant 的 active 成员） ──
     if (p === '/api/mu/auth/tenant' && req.method === 'POST') {
       if (!csrfOk()) return sendJson(res, 403, { error: { reason: 'csrf_required' } });
