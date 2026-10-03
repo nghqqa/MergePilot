@@ -54,11 +54,13 @@ async function applyUpTo(maxVer) {
 }
 
 try {
-  // ── 阶段 1：既有库（只到 PRIOR-1=18：v18 回填已随链应用；v19 调用留痕与 v20 RAG 模型表留给完整 initSchema）──
-  // 播种 v1 形状数据与 v16 审批票
-  await applyUpTo(Number(PRIOR.version) - 1);
-  ok('U1 前置=迁移到 PRIOR-1（v19/v20 未应用）',
-    (await pool.query(`SELECT 1 FROM mu.schema_migrations WHERE version=18`)).rowCount === 1
+  // ── 阶段 1：既有库（只到 v17）+ 播种 v1 形状数据与 v16 审批票 ──
+  // v18 含 legacy 回填语义——阶段 1 须停在其前一版（v17），否则播种行不经历回填；
+  // 完整 initSchema 将走 17→18（回填）→19（C 波调用留痕）→20（RAG 模型安装）全链增量。
+  await applyUpTo(17);
+  ok('U1 前置=迁移到 v17（v18/v19/v20 未应用）',
+    (await pool.query(`SELECT 1 FROM mu.schema_migrations WHERE version=17`)).rowCount === 1
+      && (await pool.query(`SELECT 1 FROM mu.schema_migrations WHERE version=18`)).rowCount === 0
       && (await pool.query(`SELECT 1 FROM mu.schema_migrations WHERE version=19`)).rowCount === 0
       && (await pool.query(`SELECT 1 FROM mu.schema_migrations WHERE version=20`)).rowCount === 0);
   const seed = await pool.query(`INSERT INTO mu.tenant (slug, display_name) VALUES ('mig','Mig') RETURNING tenant_id`);
