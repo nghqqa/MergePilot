@@ -25,7 +25,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const { Pool } = createRequire(path.join(HERE, '../console/backend/test/support/noop.js'))('pg');
+// pg 解析双路径：仓库内走 test/support junction；容器内（/app 布局）走 /app/node_modules
+let pgMod;
+try { pgMod = createRequire(path.join(HERE, '../console/backend/test/support/noop.js'))('pg'); }
+catch { pgMod = createRequire(path.join(HERE, 'package.json'))('pg'); }
+const { Pool } = pgMod;
 
 const DRY = process.argv.includes('--dry-run');
 const DSN = process.env.CONSOLE_PG_DSN;
