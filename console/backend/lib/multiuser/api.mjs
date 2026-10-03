@@ -1146,7 +1146,11 @@ export async function muApi(req, res, ctx) {
     }
     const prMatch = p.match(/^\/api\/mu\/prs\/([^/]+)(?:\/(.*))?$/);
     if (prMatch && req.method === 'GET') {
-      const pr = await store.resolvePullRequest(mu.tenantId, prMatch[1]);
+      // 审计 E-1：编号寻址消费 ?repo_id= ——带则先经 tenant 收窄把 PR 限定在该 repo
+      // 内（repo 越界/PR 不在该 repo/PR 不存在 同为 404 pull_request_not_found，
+      // 不暴露跨 tenant 存在性）；不带保持旧行为（webhook/内部调用向后兼容）。
+      const pr = await store.resolvePullRequest(mu.tenantId, prMatch[1],
+        { repoId: q.repo_id ? String(q.repo_id) : null });
       if (!pr) return sendJson(res, 404, { error: { reason: 'pull_request_not_found' } });
       const sub = prMatch[2] ?? null;
       if (sub === 'changed-excerpt') {
@@ -1286,7 +1290,9 @@ export async function muApi(req, res, ctx) {
     // ── 审查触发（reviewer+；只读审查 job） ──
     if (prMatch && prMatch[2] === 'review' && req.method === 'POST') {
       if (!csrfOk()) return sendJson(res, 403, { error: { reason: 'csrf_required' } });
-      const pr = await store.resolvePullRequest(mu.tenantId, prMatch[1]);
+      // E-1 同族：写子路径编号寻址同样消费 ?repo_id=（缺省旧行为；见 GET 分支注释）
+      const pr = await store.resolvePullRequest(mu.tenantId, prMatch[1],
+        { repoId: q.repo_id ? String(q.repo_id) : null });
       if (!pr) return sendJson(res, 404, { error: { reason: 'pull_request_not_found' } });
       const g = await guard('request_review', { repoId: pr.repo_id });
       if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
@@ -1301,7 +1307,8 @@ export async function muApi(req, res, ctx) {
     // ── 人工审批（maintainer+；branch protection 未知 → 禁止可合并结论） ──
     if (prMatch && prMatch[2] === 'decision' && req.method === 'POST') {
       if (!csrfOk()) return sendJson(res, 403, { error: { reason: 'csrf_required' } });
-      const pr = await store.resolvePullRequest(mu.tenantId, prMatch[1]);
+      const pr = await store.resolvePullRequest(mu.tenantId, prMatch[1],
+        { repoId: q.repo_id ? String(q.repo_id) : null }); // E-1 同族（见 GET 分支注释）
       if (!pr) return sendJson(res, 404, { error: { reason: 'pull_request_not_found' } });
       const g = await guard('decide_review', { repoId: pr.repo_id });
       if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
@@ -1328,7 +1335,8 @@ export async function muApi(req, res, ctx) {
     // ── 受控修复（maintainer+ 且需 active Binding；执行前还会在 job 认领时复查） ──
     if (prMatch && prMatch[2] === 'repair' && req.method === 'POST') {
       if (!csrfOk()) return sendJson(res, 403, { error: { reason: 'csrf_required' } });
-      const pr = await store.resolvePullRequest(mu.tenantId, prMatch[1]);
+      const pr = await store.resolvePullRequest(mu.tenantId, prMatch[1],
+        { repoId: q.repo_id ? String(q.repo_id) : null }); // E-1 同族（见 GET 分支注释）
       if (!pr) return sendJson(res, 404, { error: { reason: 'pull_request_not_found' } });
       const g = await guard('request_repair', { repoId: pr.repo_id, needBinding: true });
       if (g.denied) return sendJson(res, g.denied.status, g.denied.body);

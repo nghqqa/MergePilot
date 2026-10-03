@@ -213,23 +213,34 @@ export async function createMuStore({ pool, env = process.env } = {}) {
       [tenantId, repoId, providerPrNumber, headSha, headRef, baseRef, title, branchProtectionStatus]);
     return r.rows[0];
   }
-  async function resolvePullRequest(tenantId, prId) {
+  async function resolvePullRequest(tenantId, prId, { repoId = null } = {}) {
     const COL = 'p.*, r.owner AS repo_owner, r.name AS repo_name, r.provider AS repo_provider';
     const FROM = 'FROM mu.pull_request p JOIN mu.repository r ON r.repo_id = p.repo_id';
     // 双寻址（Wave 3.15 拆页后路由携带 GitHub 编号）：先按形状分派——
     // 数字直接走编号查询（非 UUID 值塞给 uuid 列会 22P02 500，而非空结果）
     const n = Number(prId);
     const isNumber = Number.isInteger(n) && n > 0 && String(prId).trim() !== '';
+    // 审计 E-1：调用方显式携带 repo_id 时按 repo 二次收窄（tenant 收窄之内的
+    // repo 归属锚定）——repo 越界（跨 tenant）/PR 不在该 repo 与"PR 不存在"同为
+    // 空结果（调用方同形 404，不泄露跨 tenant 存在性）；repo_id 形状非法亦视为
+    // miss（不把垃圾参数喂给 uuid 列吃 22P02 500）。缺省（null）保持旧行为——
+    // webhook/内部调用不带 repo_id 不受影响。
+    const repoNarrow = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(repoId ?? ''))
+      ? String(repoId) : null;
+    if (repoId != null && repoNarrow === null) return null;
+    const repoClause = repoNarrow ? ' AND p.repo_id=$3' : '';
+    const repoParams = repoNarrow ? [repoNarrow] : [];
     if (!isNumber) {
       const r = await q(
-        `SELECT ${COL} ${FROM} WHERE p.tenant_id=$1 AND p.pr_id=$2`, [tenantId, prId]);
+        `SELECT ${COL} ${FROM} WHERE p.tenant_id=$1 AND p.pr_id=$2${repoClause}`,
+        [tenantId, prId, ...repoParams]);
       if (r.rows[0]) return r.rows[0];
       return null;
     }
     // 编号在 tenant 内跨仓库可重号，取最近更新行；仍严格 tenant 收窄
     const r2 = await q(
-      `SELECT ${COL} ${FROM} WHERE p.tenant_id=$1 AND p.provider_pr_number=$2
-        ORDER BY p.updated_at DESC LIMIT 1`, [tenantId, n]);
+      `SELECT ${COL} ${FROM} WHERE p.tenant_id=$1 AND p.provider_pr_number=$2${repoClause}
+        ORDER BY p.updated_at DESC LIMIT 1`, [tenantId, n, ...repoParams]);
     return r2.rows[0] ?? null;
   }
   async function findPullRequests(tenantId, { repoId = null, number = null } = {}) {

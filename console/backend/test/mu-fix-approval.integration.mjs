@@ -64,9 +64,9 @@ const mkRepo = async (name) => (await pool.query(
 const REPO = await mkRepo('gate-repo');
 
 /** 建 run → REVIEWED → 插 findings →（可选）Leader v2 消费。返回 {run,binding,findings} */
-async function mkRun({ findings, consume = true }) {
-  const head = crypto.randomBytes(20).toString('hex');
-  const prNum = Math.floor(Math.random() * 900000) + 1000;
+async function mkRun({ findings, consume = true, prNumber = null, headSha = null }) {
+  const head = headSha ?? crypto.randomBytes(20).toString('hex');
+  const prNum = prNumber ?? Math.floor(Math.random() * 900000) + 1000;
   const pr = (await pool.query(`INSERT INTO mu.pull_request (tenant_id, repo_id, provider_pr_number, head_sha)
     VALUES ($1,$2,$3,$4) RETURNING pr_id, provider_pr_number`, [T1, REPO.repo_id, prNum, head])).rows[0];
   const { run } = await orch.createRunIfAbsent(pool, { tenantId: T1, repoId: REPO.repo_id, prId: pr.pr_id, headSha: head });
@@ -347,6 +347,33 @@ try {
     process.env.MU_EXECUTOR_INTERNAL_ALLOW = prevAllow ?? 'test';
     await orch.transitionRun(pool, { runId: s15.run.run_id, from: ['FIX_QUEUED', 'FIXING'], to: 'BLOCKED' }).catch(() => {});
     await orch.transitionRun(pool, { runId: s15.run.run_id, from: ['WAITING_FOR_HUMAN_APPROVAL'], to: 'BLOCKED' }).catch(() => {});
+  }
+
+  // ── FA16（审计 E-8 回归锁）：审批票读面按 PR 收窄——同仓不同 PR 不串票 ──
+  // prs/:n/fix-approvals 子路径（api.mjs）谓词为 fa.tenant_id+fa.repo_id+fa.pr_id
+  // 三维；此处以 listFixApprovals 同谓词在 store 层锁行为（HTTP 面另见
+  // mu-pr-addressing.integration.mjs PA5/PA6）。
+  {
+    const sA = await mkRun({ findings: P0F, prNumber: 171701, headSha: 'aa'.repeat(20) });
+    const sB = await mkRun({ findings: P0F, prNumber: 171702, headSha: 'bb'.repeat(20) }); // 同仓邻号 PR
+    const tA = await ticketsOf(sA.run.run_id);
+    const tB = await ticketsOf(sB.run.run_id);
+    const onlyA = await fa.listFixApprovals(pool, { tenantId: T1, repoId: REPO.repo_id, prId: sA.pr.pr_id });
+    ok('FA16a 按 pr_id 过滤：仅本 PR 的票（同仓邻 PR 票不可见）',
+      onlyA.length === tA.length && tA.length >= 1
+        && onlyA.every((t) => t.pr_id === sA.pr.pr_id),
+      { got: onlyA.length, want: tA.length });
+    const repoWide = await fa.listFixApprovals(pool, { tenantId: T1, repoId: REPO.repo_id });
+    // 该 repo 在前序 FA 块中已有历史票——按 pr_id 归组断言（而非总数）：
+    // 缺 pr 维度时两 PR 的票全部混入同一读面（原缺陷形态）
+    const inA = repoWide.filter((t) => t.pr_id === sA.pr.pr_id).length;
+    const inB = repoWide.filter((t) => t.pr_id === sB.pr.pr_id).length;
+    ok('FA16b 对照：仅按 repo 过滤两 PR 票全部混入（缺 pr 维度即串票——原缺陷形态）',
+      inA === tA.length && inB === tB.length && repoWide.length > tA.length,
+      { repoWide: repoWide.length, inA, inB });
+    const none = await fa.listFixApprovals(pool, { tenantId: T1, repoId: REPO.repo_id,
+      prId: crypto.randomUUID() });
+    ok('FA16c 未知 pr_id → 空集（不泄露他 PR 票存在性）', none.length === 0, none.length);
   }
 
   // ── FA14：收敛——无 RUNNING/QUEUED attempt 残留（矩阵 23）──
