@@ -186,6 +186,10 @@ jobs:
         run: node --test test/rag-model-panel.smoke.test.mjs
         working-directory: console/frontend
 
+      # RAG-model-install PR5：波级收尾（磁盘 fail-closed/仓库锚点子进程验证/DB CHECK 兜底/C 波兼容零伪造）
+      - name: MU rag model wave closeout (7 scenarios)
+        run: node console/backend/test/mu-rag-model-wave.integration.mjs
+
       - name: Frontend build
         run: |
           npm ci --no-audit --no-fund

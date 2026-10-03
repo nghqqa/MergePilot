@@ -24,6 +24,8 @@ RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force \
 
 COPY console/backend ./backend
 COPY console/frontend/dist ./frontend/dist
+# RAG-model-install（v19）：仓库版本化模型 manifest 真源（loadModelManifest 按容器锚点读取）
+COPY deploy/rag-model-install ./deploy/rag-model-install
 
 # snapshot evidence packs ship via ro-mount at /app/evidence (CONSOLE_EVIDENCE_ROOT)
 ENV CONSOLE_EVIDENCE_ROOT=/app/evidence

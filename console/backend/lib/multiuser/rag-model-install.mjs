@@ -20,9 +20,16 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 // 真源目录：仓库版本化 manifest（deploy/rag-model-install）。
-// RMI_MANIFEST_DIR 仅供集成测试注入本地伪官方源（生产不设——api 层不透传该 env）。
-const MANIFEST_DIR = process.env.RMI_MANIFEST_DIR
-  || path.resolve(HERE, '../../../../deploy/rag-model-install');
+// 候选锚点：仓库布局（console/backend/lib/multiuser → 上 4 级）与容器布局
+// （/app/backend/lib/multiuser → /app/deploy/rag-model-install，镜像内 COPY 见
+// docker/Dockerfile.canonical-console）。RMI_MANIFEST_DIR 仅供集成测试注入
+// 本地伪官方源（生产不设——api 层不透传该 env）。
+const MANIFEST_CANDIDATES = [
+  process.env.RMI_MANIFEST_DIR,
+  path.resolve(HERE, '../../../../deploy/rag-model-install'),
+  '/app/deploy/rag-model-install',
+].filter(Boolean);
+const MANIFEST_DIR = MANIFEST_CANDIDATES.find((d) => fs.existsSync(d)) ?? MANIFEST_CANDIDATES[0];
 
 // ── 状态机 ──
 export const RMI_STATES = [
