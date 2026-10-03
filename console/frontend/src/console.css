@@ -193,6 +193,80 @@ a:hover { text-decoration: underline; text-underline-offset: 2px; }
 .mode-chip-bad { background: var(--c-bad-bg); border-color: rgba(180, 35, 24, 0.25); color: var(--c-bad); }
 .mode-dot-bad { background: var(--c-bad-dot); box-shadow: 0 0 0 3px rgba(240, 68, 56, 0.15); }
 
+/* ---- 工作区状态弹层（ws-*） ----
+   顶栏 chip 的弹出面板：绝对定位于 chip 下方、右缘对齐顶栏（right:0）；
+   白面板 + 1px 发丝线 + 柔和阴影（--shadow-md），圆角 --r-lg；
+   z 取 45：高于主内容与 sticky 表头(1)、mu-pr-detail(40)、nav-backdrop(39)，低于 drawer(50)。
+   同一组 ws-* 类也用于 /datasources 全页形态（.panel 卡内），故 .ws-panel 本身不自带底色，
+   弹层底色由 .ws-pop 提供。 */
+.ws-wrap { position: relative; display: inline-flex; min-width: 0; }
+.ws-pop {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 45;
+  width: min(560px, calc(100vw - 48px));
+  display: flex; flex-direction: column;
+  max-height: calc(100vh - 88px);
+  background: var(--c-panel);
+  border: var(--border-w) solid var(--c-border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-md);
+  padding: var(--sp-4);
+  animation: fade-in 140ms var(--ease);
+}
+/* 长内容内部滚动，收起钮（.ws-pop-foot）始终可见 */
+.ws-pop .ws-panel { flex: 1 1 auto; min-height: 0; overflow-y: auto; }
+.ws-pop-foot {
+  flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); flex-wrap: wrap;
+  margin-top: var(--sp-3); padding-top: var(--sp-3);
+  border-top: var(--border-w) solid var(--c-border);
+}
+.ws-panel { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
+.ws-state-line {
+  padding: 8px 12px; border-radius: var(--r-sm);
+  border: var(--border-w) solid transparent;
+  font-size: var(--fs-sm); color: var(--c-text-2);
+}
+.ws-state-line strong { color: inherit; font-weight: var(--fw-bold); }
+.ws-tone-ok { color: var(--c-ok); background: var(--c-ok-bg); border-color: rgba(6, 118, 71, 0.25); }
+.ws-tone-warn { color: var(--c-warn); background: var(--c-warn-bg); border-color: rgba(181, 71, 8, 0.25); }
+.ws-tone-bad { color: var(--c-bad); background: var(--c-bad-bg); border-color: rgba(180, 35, 24, 0.25); }
+.ws-tone-neutral { color: var(--c-neutral); background: var(--c-neutral-bg); border-color: rgba(74, 84, 104, 0.18); }
+.ws-row { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ws-row-label { font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--c-text-3); letter-spacing: 0.02em; }
+.ws-row-value { font-size: var(--fs-sm); color: var(--c-text); line-height: 1.55; overflow-wrap: anywhere; }
+.ws-sub { font-size: var(--fs-xs); color: var(--c-text-3); overflow-wrap: anywhere; }
+a.ws-sub { color: var(--c-info); }
+.ws-yes { color: var(--c-ok); font-weight: var(--fw-semibold); }
+.ws-no { color: var(--c-text-2); font-weight: var(--fw-semibold); }
+.ws-section {
+  margin-top: var(--sp-1); padding-top: var(--sp-3);
+  border-top: var(--border-w) solid var(--c-border);
+  font-size: var(--fs-xs); font-weight: var(--fw-semibold);
+  color: var(--c-text-3); letter-spacing: 0.05em;
+}
+.ws-wiring { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+.ws-wiring li { display: flex; align-items: baseline; gap: var(--sp-2); min-width: 0; }
+.ws-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex: 0 0 8px;
+  align-self: flex-start; margin-top: 5px;
+  background: var(--c-neutral-dot);
+}
+.ws-dot-ok { background: var(--c-ok-dot); }
+.ws-dot-no { background: var(--c-neutral-dot); }
+.ws-wire-name { font-size: var(--fs-sm); font-weight: var(--fw-semibold); color: var(--c-text); overflow-wrap: anywhere; }
+.ws-wire-state { flex: 1 1 auto; min-width: 0; font-size: var(--fs-xs); color: var(--c-text-3); overflow-wrap: anywhere; }
+.ws-retry { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+
+/* ≤960px（移动/平板布局）：锚点定位在窄屏会越出视口左缘，改为近全宽底部抽屉；
+   fixed 不产生横向滚动，72vh 上限保证完整在视口内 */
+@media (max-width: 960px) {
+  .ws-pop {
+    position: fixed; top: auto; right: 10px; bottom: 10px; left: 10px;
+    width: auto; max-height: min(72vh, 560px);
+    box-shadow: var(--shadow-drawer);
+  }
+}
+
 .content { flex: 1; overflow-y: auto; padding: 20px 24px 48px; }
 
 /* ---- 页头 ---- */
