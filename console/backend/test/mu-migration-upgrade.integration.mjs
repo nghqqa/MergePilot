@@ -5,6 +5,8 @@
 // mu.binding 原样保留）。历史断言保留 v15/v16/v17 特征面（本套件自 v15 形状播种一路
 // 升到 latest——逐版本链完整性一并覆盖）。
 // 模拟既有库：先只跑 migration ≤latest-1 + 播种 v1 形状数据与 v16 审批票，再走完整 initSchema。
+// rc.10 PR-D（runner 加固）新增阶段 4-6：fresh DB 全链 v1→v20 / 重放逐位幂等 / 重启持久 /
+// 并发单赢家（advisory lock）/ 锁被占快速失败 / 中途失败注入（事务回滚+定位+修复重跑）。
 import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
@@ -52,6 +54,8 @@ async function applyUpTo(maxVer) {
     await pool.query(`INSERT INTO mu.schema_migrations (version, name) VALUES ($1,$2)`, [m.version, m.name]);
   }
 }
+
+const extraPools = []; // PR-D 新阶段专用 pool（finally 统一回收）
 
 try {
   // ── 阶段 1：既有库（只到 v17）+ 播种 v1 形状数据与 v16 审批票 ──
@@ -232,7 +236,157 @@ try {
   ok('U6d 重放后技能/版本数据零丢失（2/2 原样）', Number(skKept) === 2, { skKept });
   await store.bootstrap();
   ok('U6c bootstrap 重放幂等', true);
+
+  // ════════ rc.10 PR-D：迁移 runner 加固新场景（独立 fresh DB，走新 runner）════════
+  const mkDb = async (name) => {
+    await pool.query(`CREATE DATABASE ${name}`);
+    const p = new Pool({ connectionString: dsn.replace(/\/mu$/, `/${name}`), max: 4 });
+    extraPools.push(p);
+    await p.query('SELECT 1');
+    return p;
+  };
+  const hasTable = async (p, t) => (await p.query(`SELECT 1 FROM information_schema.tables
+    WHERE table_schema='mu' AND table_name=$1`, [t])).rowCount === 1;
+  const dsnOf = (name) => dsn.replace(/\/mu$/, `/${name}`);
+  // 三表（v18 repository_binding / v19 skill_invocation_event / v20 rag_model_install）
+  // 结构指纹：列+触发器+约束+索引（跨库逐位可比）
+  const threeTableFingerprint = (p) => Promise.all([
+    p.query(`SELECT table_name, column_name, data_type, is_nullable, column_default
+       FROM information_schema.columns
+      WHERE table_schema='mu' AND table_name IN ('repository_binding','skill_invocation_event','rag_model_install')
+      ORDER BY table_name, ordinal_position`),
+    p.query(`SELECT DISTINCT event_object_table AS table_name, trigger_name FROM information_schema.triggers
+      WHERE trigger_schema='mu' AND event_object_table IN ('repository_binding','skill_invocation_event','rag_model_install')
+      ORDER BY 1,2`),
+    p.query(`SELECT conrelid::regclass::text AS table_name, conname, pg_get_constraintdef(oid) AS def
+       FROM pg_constraint
+      WHERE conrelid IN ('mu.repository_binding'::regclass,'mu.skill_invocation_event'::regclass,'mu.rag_model_install'::regclass)
+      ORDER BY 1,2`),
+    p.query(`SELECT tablename, indexname, indexdef FROM pg_indexes
+      WHERE schemaname='mu' AND tablename IN ('repository_binding','skill_invocation_event','rag_model_install')
+      ORDER BY 1,2`),
+  ]).then(([cols, trg, con, idx]) => JSON.stringify([cols.rows, trg.rows, con.rows, idx.rows]));
+
+  // ── 阶段 4（a/c/d）：fresh DB 全链 v1→v20 + 重放逐位一致 + 重启持久 ──
+  const freshPool = await mkDb('mu_fresh');
+  const freshStore = await createMuStore({ pool: freshPool });
+  await freshStore.initSchema();
+  const fc = (await freshPool.query(
+    `SELECT count(*)::int n, count(DISTINCT version)::int d FROM mu.schema_migrations`)).rows[0];
+  ok('P1 fresh DB 全链 v1→v20：恰 20 版本行且各一次', Number(fc.n) === 20 && Number(fc.d) === 20, fc);
+  ok('P2 v18 DO 块生效：repository_binding 在位', await hasTable(freshPool, 'repository_binding'));
+  const sealFn = (await freshPool.query(`SELECT 1 FROM information_schema.routines
+    WHERE routine_schema='mu' AND routine_name='mu_invocation_event_seal'`)).rowCount;
+  const sealTrg = (await freshPool.query(`SELECT count(DISTINCT trigger_name)::int n FROM information_schema.triggers
+    WHERE trigger_schema='mu' AND trigger_name IN ('mu_skill_invocation_event_seal','mu_rag_retrieval_event_seal')`)).rows[0].n;
+  ok('P3 v19 CREATE OR REPLACE FUNCTION+TRIGGER 生效：seal 函数 + 2 触发器',
+    sealFn === 1 && Number(sealTrg) === 2, { sealFn, sealTrg });
+  const ck20 = (await freshPool.query(`SELECT count(*)::int n FROM pg_constraint
+    WHERE conrelid='mu.rag_model_install'::regclass AND contype='c'`)).rows[0].n;
+  ok('P4 v20 CHECK 约束表生效：rag_model_install + CHECK ≥1',
+    await hasTable(freshPool, 'rag_model_install') && Number(ck20) >= 1, ck20);
+  const fpFresh = await threeTableFingerprint(freshPool);
+  const fpBase = await threeTableFingerprint(pool);
+  ok('P5 三表结构与基线（增量路径库）逐位一致', fpFresh === fpBase);
+
+  // (c) 重放幂等：连跑两遍 initSchema，schema+版本行（含 applied_at）逐位不变
+  const snap = async (p) => JSON.stringify([
+    (await p.query(`SELECT table_name, column_name, data_type, is_nullable FROM information_schema.columns
+      WHERE table_schema='mu' ORDER BY table_name, ordinal_position`)).rows,
+    (await p.query(`SELECT version, name, applied_at FROM mu.schema_migrations ORDER BY version`)).rows,
+    (await p.query(`SELECT DISTINCT trigger_name FROM information_schema.triggers WHERE trigger_schema='mu' ORDER BY 1`)).rows,
+  ]);
+  const s0 = await snap(freshPool);
+  await freshStore.initSchema();
+  await freshStore.initSchema();
+  ok('P6 重放幂等：两遍 initSchema 后 schema+版本行逐位一致', (await snap(freshPool)) === s0);
+
+  // (d) 重启持久：换全新连接池（新连接=重启模拟）后 initSchema 成功、数据/版本行俱在
+  await freshPool.query(`INSERT INTO mu.tenant (slug, display_name) VALUES ('pr-d-restart','PR-D')`);
+  await freshPool.end();
+  const freshPool2 = new Pool({ connectionString: dsnOf('mu_fresh'), max: 4 });
+  extraPools.push(freshPool2);
+  const freshStore2 = await createMuStore({ pool: freshPool2 });
+  await freshStore2.initSchema();
+  const rc = (await freshPool2.query(`SELECT count(*)::int n FROM mu.schema_migrations`)).rows[0].n;
+  const reTenant = (await freshPool2.query(`SELECT 1 FROM mu.tenant WHERE slug='pr-d-restart'`)).rowCount;
+  ok('P7 重启持久：新连接池 initSchema 成功，20 版本行 + 业务数据俱在',
+    Number(rc) === 20 && reTenant === 1, { rc, reTenant });
+
+  // ── 阶段 5（e）：并发单赢家——两个独立 PG pool 同时对 fresh DB 冷启 ──
+  const concPool = await mkDb('mu_conc');
+  const concPoolB = new Pool({ connectionString: dsnOf('mu_conc'), max: 4 });
+  extraPools.push(concPoolB);
+  const storeA = await createMuStore({ pool: concPool });
+  const storeB = await createMuStore({ pool: concPoolB });
+  let maxHolders = 0;
+  const probe = setInterval(() => {
+    pool.query(`SELECT count(*)::int n FROM pg_locks
+      WHERE locktype='advisory' AND objid=hashtext('mergepilot_mu_schema_init') AND granted`)
+      .then((r) => { if (Number(r.rows[0].n) > maxHolders) maxHolders = Number(r.rows[0].n); })
+      .catch(() => {});
+  }, 10);
+  const [resA, resB] = await Promise.allSettled([storeA.initSchema(), storeB.initSchema()]);
+  clearInterval(probe);
+  ok('P8 并发冷启：两调用者均成功返回（等锁者经版本行守卫跳过）',
+    resA.status === 'fulfilled' && resB.status === 'fulfilled',
+    { a: resA.status, b: resB.status, err: resA.status === 'rejected' ? String(resA.reason) : resB.status === 'rejected' ? String(resB.reason) : null });
+  ok('P9 并发单赢家：探针采样全程任一时刻至多 1 会话持 advisory lock（max=1）', maxHolders === 1, maxHolders);
+  const cc = (await concPoolB.query(
+    `SELECT count(*)::int n, count(DISTINCT version)::int d FROM mu.schema_migrations`)).rows[0];
+  ok('P10 并发后库状态一致：恰 20 版本行无重复', Number(cc.n) === 20 && Number(cc.d) === 20, cc);
+  ok('P11 无半成品表：v18/v19/v20 关键对象齐备',
+    await hasTable(concPoolB, 'repository_binding') && await hasTable(concPoolB, 'rag_model_install')
+    && (await concPoolB.query(`SELECT count(DISTINCT trigger_name)::int n FROM information_schema.triggers
+      WHERE trigger_schema='mu' AND trigger_name='mu_rag_retrieval_event_seal'`)).rows[0].n === 1);
+  const lk = (await concPool.query(`SELECT pg_try_advisory_lock(hashtext('mergepilot_mu_schema_init')) ok`)).rows[0].ok;
+  await concPool.query(`SELECT pg_advisory_unlock(hashtext('mergepilot_mu_schema_init'))`);
+  ok('P12 锁零泄漏：赛后第三方可即刻取锁（同库检查——PG advisory lock 按 database 隔离）', lk === true);
+
+  // ── 阶段 5b（1 补充）：锁被占时上限内快速失败（mu_schema_init_locked），释放后可重试 ──
+  // 占锁者必须与 victim 同库（advisory lock 按 database 隔离）——从 concPool（mu_conc）取
+  const busyClient = await concPool.connect();
+  await busyClient.query(`SELECT pg_advisory_lock(hashtext('mergepilot_mu_schema_init'))`);
+  const busyStore = await createMuStore({ pool: concPoolB, env: { MU_SCHEMA_INIT_LOCK_TIMEOUT_MS: '400' } });
+  const busyErr = await busyStore.initSchema().then(() => null, (e) => e);
+  ok('P13 锁被占：上限内拿不到锁 → mu_schema_init_locked 快速失败（不无限挂起）',
+    busyErr instanceof Error && /mu_schema_init_locked/.test(busyErr.message), String(busyErr?.message ?? busyErr));
+  await busyClient.query(`SELECT pg_advisory_unlock(hashtext('mergepilot_mu_schema_init'))`);
+  busyClient.release();
+  await busyStore.initSchema();
+  ok('P14 锁释放后同 store 重试成功（getMuStore muStorePromise=null 重试语义可用）', true);
+
+  // ── 阶段 6（f）：中途失败可重试——事务回滚 + 版本行不落 + 失败定位 + 修复重跑 ──
+  // 注入不改生产数组：v20 副本语句 1 换成必败语句（语句 0 的 CREATE TABLE 真实执行，验证整体回滚）
+  const failPool = await mkDb('mu_fail');
+  const badV20 = { ...LAST, sql: [LAST.sql[0], `SELECT * FROM mu.__pr_d_injected_failure__`] };
+  const failStore = await createMuStore({ pool: failPool, migrations: [...MU_MIGRATIONS.slice(0, -1), badV20] });
+  const migErr = await failStore.initSchema().then(() => null, (e) => e);
+  ok('P15 注入失败：initSchema 拒绝（非静默半应用）', migErr instanceof Error);
+  ok('P16 错误信息含 version/name/statement#序号/PG 消息',
+    /mu_schema_init failed at migration 20 \(mu_rag_model_install\) statement#1: /.test(String(migErr?.message ?? '')),
+    String(migErr?.message ?? migErr).slice(0, 160));
+  ok('P17 事务回滚：v20 语句 0 已建的表被整体回滚（表不存在）', !(await hasTable(failPool, 'rag_model_install')));
+  const fv20 = (await failPool.query(`SELECT count(*)::int n FROM mu.schema_migrations WHERE version=20`)).rows[0].n;
+  const fv19 = (await failPool.query(`SELECT count(*)::int n FROM mu.schema_migrations WHERE version=19`)).rows[0].n;
+  ok('P18 版本行不落（v20 无行）且先行迁移已提交（v19 在位）',
+    Number(fv20) === 0 && Number(fv19) === 1, { fv20, fv19 });
+  // 修复注入（换回生产数组）重跑 → 成功
+  const retryStore = await createMuStore({ pool: failPool });
+  await retryStore.initSchema();
+  const rv20 = (await failPool.query(`SELECT count(*)::int n FROM mu.schema_migrations WHERE version=20`)).rows[0].n;
+  const rck = (await failPool.query(`SELECT count(*)::int n FROM pg_constraint
+    WHERE conrelid='mu.rag_model_install'::regclass AND contype='c'`)).rows[0].n;
+  ok('P19 修复重跑：v20 落版本行 + CHECK 约束表在位',
+    Number(rv20) === 1 && await hasTable(failPool, 'rag_model_install') && Number(rck) >= 1, { rv20, rck });
+  // (5) 删除版本行强制重放路径在新事务机制下仍工作（生产数组、事务包裹重执行 v20 DDL）
+  await failPool.query(`DELETE FROM mu.schema_migrations WHERE version=20`);
+  await retryStore.initSchema();
+  const rp20 = (await failPool.query(
+    `SELECT count(*)::int n FROM mu.schema_migrations WHERE version=20`)).rows[0].n;
+  ok('P20 删版本行强制重放（事务内重执行 v20 DDL）仍工作且零重复', Number(rp20) === 1, rp20);
 } finally {
+  for (const p of extraPools) { try { await p.end(); } catch { /* */ } }
   try { execFileSync('docker', ['rm', '-f', '-v', CTR], { stdio: 'pipe' }); } catch { /* */ }
   await pool.end().catch(() => {});
 }
