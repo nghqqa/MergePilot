@@ -197,6 +197,26 @@ try {
     && rDims.detail?.error_code === 'dims_mismatch', rDims.detail);
   await rmiStore.transitionInstall(pool, { tenantId: T1, modelKey: 'testm', from: 'SIDECAR_START_FAILED', to: 'READY' });
 
+  // A4b（rc.10 修复 a）：SIDECAR_START_FAILED→verify-only→READY 全链——
+  // sidecar 修复后"重新校验"直达 READY，不再只能 cancel→全量重下
+  {
+    sidecarMode = 'health_down';
+    await actMod.activateModel({ pool, tenantId: T1, modelKey: 'testm',
+      manifest: rmiStore.loadModelManifest('testm'), modelRoot: ROOT, storeMod: rmiStore,
+      registryMod, endpoint: process.env.RAGTRIAL_EMBED_ENDPOINT, onEvent });
+    const rowSf = await rmiStore.getInstall(pool, { tenantId: T1, modelKey: 'testm' });
+    ok('A4b-0 前置：激活失败落 SIDECAR_START_FAILED+错误码', rowSf.state === 'SIDECAR_START_FAILED'
+      && !!rowSf.last_error_code, { s: rowSf.state });
+    const v = await call(admin, 'POST', '/api/mu/rag-model/install/verify',
+      { csrf: true, body: { model_key: 'testm' } });
+    const rowV = await rmiStore.getInstall(pool, { tenantId: T1, modelKey: 'testm' });
+    ok('A4b-1 verify-only 全链 → 200+READY（免 cancel→重下 2.27GB）', v.status === 200
+      && v.body?.finalState === 'READY' && rowV.state === 'READY', { st: v.status, b: v.body, s: rowV.state });
+    ok('A4b-2 READY 回写进度=manifest 总量+错误码清 NULL', Number(rowV.downloaded_bytes) === MANIFEST.total_bytes
+      && Number(rowV.total_bytes) === MANIFEST.total_bytes && rowV.last_error_code === null,
+      { d: rowV.downloaded_bytes, e: rowV.last_error_code });
+  }
+
   // A5：三重门全过 → ACTIVE（v19+注册表双切）
   sidecarMode = 'ok';
   const rAct = await actMod.activateModel({ pool, tenantId: T1, modelKey: 'testm',

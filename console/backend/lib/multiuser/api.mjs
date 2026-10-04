@@ -446,6 +446,10 @@ export async function muApi(req, res, ctx) {
     if (!muPool) {
       const pg = await loadPg();
       muPool = new pg.Pool({ connectionString: env.CONSOLE_PG_DSN, max: 2 });
+      // 空闲连接崩溃不经过任何查询回调——无监听会以 unhandled error 拖垮进程（对齐 getMuStore 的 pool.on('error')）
+      muPool.on('error', (err) => {
+        console.error(`[mu:poolq] pg pool error: ${String(err?.message ?? err).slice(0, 200)}`);
+      });
     }
     return muPool.query(text, params);
   }
