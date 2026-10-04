@@ -14,24 +14,87 @@ export const PLATFORM_AUDIT_KINDS = [
   'SESSION_REVOKED', 'SESSIONS_REVOKED_ALL',
 ];
 
-export async function createMuStore({ pool, env = process.env } = {}) {
+export async function createMuStore({ pool, env = process.env, migrations = MU_MIGRATIONS } = {}) {
   if (!pool || typeof pool.query !== 'function') {
     throw new Error('createMuStore: pool with .query() required (pg Pool)');
   }
   const q = (text, params) => pool.query(text, params);
 
+  // ── 迁移 runner 加固（rc.10 PR-D；只改 runner 机制，MU_MIGRATIONS v1–v20 逐字不动）──
+  //  * advisory lock（会话级，hashtext('mergepilot_mu_schema_init')）全程持有：
+  //    lock/unlock 必须落在同一 PG 连接——从 pool.connect() 取专用 client，
+  //    finally 保证 pg_advisory_unlock + release（成功/失败两路都不泄漏锁/连接）。
+  //    注：PG advisory lock 按 database 隔离——同一 DSN（同一库）的多进程互斥，
+  //    恰好覆盖 mu schema 的保护面（schema_migrations 就在该库）。
+  //  * 锁等待有上限（MU_SCHEMA_INIT_LOCK_TIMEOUT_MS，默认 30s）：以 pg_try_advisory_lock
+  //    轮询代替无限阻塞的 pg_advisory_lock；超时抛 mu_schema_init_locked 快速失败
+  //    （api.getMuStore 的 catch 置 muStorePromise=null，下一请求可重试）。
+  //  * 单赢家并发：同一时刻至多一个 initSchema 执行 DDL；等锁成功者经既有
+  //    "SELECT 1 WHERE version" 版本行守卫整体跳过已应用迁移——多进程冷启 fresh DB
+  //    最终状态一致且恰一赢家执行 DDL。
+  //  * 每迁移事务包裹：BEGIN → 逐语句 SAVEPOINT mu_mig_stmt_<i> → 版本行 INSERT →
+  //    COMMIT（版本行与 DDL 同事务，失败即整体回滚、版本行不落）。PG 事务内 DDL 合法，
+  //    v18 单 DO 块、v19 CREATE OR REPLACE FUNCTION+DROP/CREATE TRIGGER、v20
+  //    CREATE TABLE+INDEX 均适用。SAVEPOINT 用于失败语句定位：出错 ROLLBACK TO 后整体
+  //    ROLLBACK，错误信息带 migration version/name + 语句序号（0 起，即 m.sql 数组下标）
+  //    + PG 原始消息——取代旧"非事务包裹便于定位失败语句"的注释语义。
+  //  * migrations 形参为测试专用注入点（默认生产 MU_MIGRATIONS，不改任何既有内容）。
   async function initSchema() {
-    await q(`CREATE SCHEMA IF NOT EXISTS mu`);
-    await q(`CREATE TABLE IF NOT EXISTS mu.schema_migrations (
-      version INT PRIMARY KEY, name TEXT NOT NULL, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())`);
-    for (const m of MU_MIGRATIONS) {
-      const r = await q(`SELECT 1 FROM mu.schema_migrations WHERE version=$1`, [m.version]);
-      if (r.rowCount) continue;
-      // 逐条执行（语句数组非事务包裹的单个多语句串，便于定位失败语句）
-      for (const sql of m.sql) await q(sql);
-      await q(`INSERT INTO mu.schema_migrations (version, name) VALUES ($1,$2)`, [m.version, m.name]);
+    let client;
+    try {
+      client = await pool.connect();
+    } catch (e) {
+      throw new Error(`mu_schema_init: pool.connect failed: ${e?.message ?? e}`);
     }
-    return true;
+    let locked = false;
+    try {
+      const lockWaitMs = Number(env.MU_SCHEMA_INIT_LOCK_TIMEOUT_MS || 30_000);
+      const deadline = Date.now() + lockWaitMs;
+      for (;;) {
+        const r = await client.query(`SELECT pg_try_advisory_lock(hashtext('mergepilot_mu_schema_init')) AS ok`);
+        if (r.rows[0]?.ok === true) { locked = true; break; }
+        if (Date.now() > deadline) {
+          throw new Error(`mu_schema_init_locked: advisory lock not acquired within ${lockWaitMs}ms `
+            + `(another initSchema holds mergepilot_mu_schema_init or is stuck)`);
+        }
+        await new Promise((res) => setTimeout(res, 50));
+      }
+      await client.query(`CREATE SCHEMA IF NOT EXISTS mu`);
+      await client.query(`CREATE TABLE IF NOT EXISTS mu.schema_migrations (
+        version INT PRIMARY KEY, name TEXT NOT NULL, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())`);
+      for (const m of migrations) {
+        const r = await client.query(`SELECT 1 FROM mu.schema_migrations WHERE version=$1`, [m.version]);
+        if (r.rowCount) continue; // 已记录版本跳过（等锁者据此整体跳过——单赢家语义）
+        await client.query(`BEGIN`);
+        try {
+          for (let i = 0; i < m.sql.length; i++) {
+            const sp = `mu_mig_stmt_${i}`;
+            await client.query(`SAVEPOINT ${sp}`);
+            try {
+              await client.query(m.sql[i]);
+            } catch (e) {
+              // 失败语句定位：回退到该语句前快照（事务恢复可用），再整体 ROLLBACK
+              const pgMsg = String(e?.message ?? e);
+              try { await client.query(`ROLLBACK TO SAVEPOINT ${sp}`); } catch { /* 连接级故障：交由外层 ROLLBACK */ }
+              throw new Error(`mu_schema_init failed at migration ${m.version} (${m.name}) statement#${i}: ${pgMsg}`);
+            }
+          }
+          await client.query(`INSERT INTO mu.schema_migrations (version, name) VALUES ($1,$2)`, [m.version, m.name]);
+          await client.query(`COMMIT`);
+        } catch (e) {
+          try { await client.query(`ROLLBACK`); } catch { /* 连接已断：释放时由池销毁 */ }
+          throw e;
+        }
+      }
+      return true;
+    } finally {
+      // 同一连接上解锁 + 归还（无条件执行，防泄漏；未持锁时 unlock 返回 false 无副作用）
+      if (locked) {
+        try { await client.query(`SELECT pg_advisory_unlock(hashtext('mergepilot_mu_schema_init'))`); }
+        catch { /* 会话已断：会话级锁随连接消亡 */ }
+      }
+      client.release();
+    }
   }
 
   // ── bootstrap（幂等）：迁移 tenant + pilot 操作员 → PlatformAdmin 映射 ──
