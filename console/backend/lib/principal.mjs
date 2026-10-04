@@ -27,6 +27,12 @@ const sha256Of = (v) => createHash('sha256').update(String(v)).digest('hex');
  * 统一认证解析（仅 MU 模式——legacy 由调用方自行处理）
  * @param {object} req - Node HTTP request（读 headers.cookie）
  * @param {object} opts - { muStore } 必须
+ *
+ * rc.10 PR-E（ISO-1）撤权即时失效：membership 缺失或 state!=='active' 一律返回
+ * notAuth（未认证）。此前实现回退 session.role 快照并保持 authenticated——被撤销
+ * 成员仍能以快照角色通过 authGate（server.mjs）访问 legacy 桥接面。现在逐请求
+ * live 校验 membership，撤销后下一请求即 401（/api/mu/* 面另有 membership_inactive
+ * 403 门，语义不变）。
  */
 export async function resolvePrincipal(req, opts = {}) {
   const notAuth = { authenticated: false, userId: null, username: null, orgId: null,
@@ -38,8 +44,8 @@ export async function resolvePrincipal(req, opts = {}) {
   const userId = String(session.user_id ?? '');
   const membership = await opts.muStore.getMembership(
     String(session.tenant_id ?? ''), userId).catch(() => null);
-  const role = (membership && membership.state === 'active') ? membership.role
-    : (session.role ?? 'contributor');
+  if (!membership || membership.state !== 'active') return notAuth; // 撤权即时失效
+  const role = membership.role; // 只信 live membership，绝不回退 session.role 快照
   const user = await opts.muStore.getUser(userId).catch(() => null);
   return { authenticated: true, userId,
     username: user?.login ?? session.login ?? 'mu-user',

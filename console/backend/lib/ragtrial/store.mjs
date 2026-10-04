@@ -309,18 +309,24 @@ export async function createRagTrialStore({ pool, env = process.env, fetchImpl =
   }
 
   // ── 检索（六状态） ────────────────────────────────────────────
-  async function search({ q: queryText, repo, branch, k = 5, actor = 'rag-trial-operator', modelId = null }) {
+  // tenantId（rc.10 PR-E ISO-2/SEC-4）：MU 桥接会话携带 _mu.tenantId 写入 query_log
+  // 行（用户输入语料累积面的租户归属）；legacy/机器/系统通道 NULL（历史语义）。
+  async function search({ q: queryText, repo, branch, k = 5, actor = 'rag-trial-operator', modelId = null, tenantId = null }) {
     const started = Date.now();
     const finish = async (state, extra = {}, log = true) => {
       const latency = Date.now() - started;
       if (log) {
+        // 隐私收窄：query 原文停写（query_text 列保留历史只读）——只写 64-hex
+        // sha256 digest；配合 tenant_id 实现"谁查了什么"的隔离留痕。
         await q(
           `INSERT INTO ragtrial.query_log
-             (actor,state,repo,branch,model_id,model_digest,k,latency_ms,hits,cited_hits,dropped_uncited,query_text,detail)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb)`,
+             (actor,state,repo,branch,model_id,model_digest,k,latency_ms,hits,cited_hits,dropped_uncited,query_text,query_digest,tenant_id,detail)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb)`,
           [actor, state, repo, branch, extra.model_id ?? null, extra.model_digest ?? null,
            k, latency, extra.hits ?? 0, extra.cited_hits ?? 0, extra.dropped_uncited ?? 0,
-           String(queryText ?? '').slice(0, 200),
+           null,
+           sha256hex(String(queryText ?? '')),
+           tenantId,
            JSON.stringify(extra.detail ?? {})]).catch(() => {});
       }
       return { service_state: state, latency_ms: latency, ...extra };
@@ -574,13 +580,13 @@ export async function createRagTrialStore({ pool, env = process.env, fetchImpl =
   }
 
   // ── QA 评测（Recall@K；modelId 可指定 provider） ──────────────
-  async function evalQa({ qa, repo, branch, k = 5, qaSet = 'inline', actor = 'rag-trial-operator', modelId = null }) {
+  async function evalQa({ qa, repo, branch, k = 5, qaSet = 'inline', actor = 'rag-trial-operator', modelId = null, tenantId = null }) {
     const model = await resolveModel(modelId);
     if (!model) throw new RagTrialError('no active model registered', 'model_missing', 409);
     let hitAtK = 0;
     const detail = [];
     for (const item of qa) {
-      const r = await search({ q: item.q, repo, branch, k, actor: 'eval-runner', modelId: model.model_id });
+      const r = await search({ q: item.q, repo, branch, k, actor: 'eval-runner', modelId: model.model_id, tenantId });
       const got = (r.results ?? []).map((x) => x.citation.doc_path);
       const hit = got.includes(item.expect_doc);
       if (hit) hitAtK++;

@@ -368,10 +368,19 @@ try {
       kind: 'event_sync', requestedBy: null, requestedRole: 'maintainer',
       payload: { event: 'pull_request', delivery_id: 'd-es-fake', installation_id: 7001,
         pr_number: 46, head_sha: '99'.repeat(20) } });
-    const tickF = await call('/api/mu/jobs/tick', { method: 'POST', cookie: dana2.cookie, csrf: dana2.csrf });
-    ok('ES6 跨 tenant 伪造 job（B tenant 引 A repo+installation）→ mismatch 拒绝零落库',
-      (tickF.json?.processed ?? []).some((x) => x.reason === 'binding_mismatch' || x.reason === 'installation_mismatch')
-        && (await pool.query(`SELECT count(*)::int n FROM mu.pull_request WHERE provider_pr_number=46`)).rows[0].n === 0);
+    // rc.10 PR-E（ISO-3）租户收窄：A tick 不再领取他租户 job——伪造 job 对 A 不可见；
+    // 由 B 租户自己的 tick 领取并在 installation 解析处 fail-closed 拒绝（mismatch）。
+    const tickFA = await call('/api/mu/jobs/tick', { method: 'POST', cookie: dana2.cookie, csrf: dana2.csrf });
+    const fakeJob = (await pool.query(`SELECT job_id::text id, state FROM mu.job WHERE payload->>'delivery_id'='d-es-fake'`)).rows[0];
+    const tickFB = await call('/api/mu/jobs/tick', { method: 'POST', cookie: becky.cookie, csrf: becky.csrf });
+    const fakeAfter = (await pool.query(`SELECT state FROM mu.job WHERE payload->>'delivery_id'='d-es-fake'`)).rows[0];
+    ok('ES6 跨 tenant 伪造 job（B tenant 引 A repo+installation）：A tick 不可见（租户收窄）；B tick mismatch 拒绝零落库',
+      !(tickFA.json?.processed ?? []).some((x) => String(x.job_id) === String(fakeJob?.id))
+        && fakeJob?.state === 'queued'
+        && (tickFB.json?.processed ?? []).some((x) => x.reason === 'binding_mismatch' || x.reason === 'installation_mismatch')
+        && fakeAfter?.state === 'rejected'
+        && (await pool.query(`SELECT count(*)::int n FROM mu.pull_request WHERE provider_pr_number=46`)).rows[0].n === 0,
+      { fakeJob, tickFB: tickFB.json?.processed });
   }
   {
     await pool.query(`UPDATE mu.repository_binding SET binding_state='active', revoked_at=NULL, error_code=NULL WHERE github_repo_id=9001`);

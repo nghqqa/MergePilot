@@ -58,9 +58,13 @@ async function fixtureLogin(subject) {
   const sc = res.headers.get('set-cookie') || '';
   return { status: res.status, cookie: sc.split(';')[0], csrf: sc.match(/mp_csrf=([^;]+)/)?.[1], json: await res.json().catch(() => null) };
 }
-async function ragPost(p, body, cookie) {
+// rc.10 SEC-3（PR-B）：rag-trial POST 强制 CSRF——本套件补齐 x-csrf-token（与
+// ragtrial 三测试套件同款机械修补；PR-E 顺手修正，语义零变化）。
+async function ragPost(p, body, cookie, csrf = null) {
   const res = await fetch(BASE + p, {
-    method: 'POST', headers: { ...(cookie ? { cookie } : {}), 'content-type': 'application/json' },
+    method: 'POST',
+    headers: { ...(cookie ? { cookie } : {}), ...(csrf ? { 'x-csrf-token': csrf } : {}),
+      'content-type': 'application/json' },
     body: JSON.stringify(body),
   });
   let json = null; try { json = await res.json(); } catch {}
@@ -105,14 +109,14 @@ try {
   const ing = await ragPost('/api/rag-trial/ingest', {
     repo: 'test/repo', branch: 'main',
     docs: [{ path: 'policy.md', text: '最小权限原则。参数化查询。' }],
-  }, alice.cookie);
+  }, alice.cookie, alice.csrf);
   ok('RS2 maintainer MU session → ingest OK（scope∩repo 双门通过）',
     ing.status === 200, ing.json);
 
   // RS-3：query 成功且返回结果
   const q = await ragPost('/api/rag-trial/query', {
     q: '权限', repo: 'test/repo', branch: 'main', k: 3,
-  }, alice.cookie);
+  }, alice.cookie, alice.csrf);
   ok('RS3 maintainer MU session → query OK（结果返回）',
     q.status === 200 && q.json?.service_state !== undefined,
     { status: q.status, service_state: q.json?.service_state });
@@ -120,7 +124,7 @@ try {
   // RS-4：contributor 也可访问（rag_query ✓）
   const q2 = await ragPost('/api/rag-trial/query', {
     q: '查询', repo: 'test/repo', branch: 'main', k: 3,
-  }, bob.cookie);
+  }, bob.cookie, bob.csrf);
   ok('RS4 contributor MU session → query OK', q2.status === 200, q2.json?.service_state);
 
   // RS-5：auditor 被拒（rag_query ✗ → 401 unauthorized）
@@ -133,7 +137,7 @@ try {
   // RS-6：跨 scope repo 拒绝
   const q4 = await ragPost('/api/rag-trial/query', {
     q: 'test', repo: 'other/repo', branch: 'main',
-  }, alice.cookie);
+  }, alice.cookie, alice.csrf);
   ok('RS6 越权 repo → 403 scope_not_allowed',
     q4.status === 403 && q4.json?.error?.reason === 'scope_not_allowed');
 
