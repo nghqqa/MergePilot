@@ -35,6 +35,7 @@ process.env.MU_MODE = 'multiuser';
 process.env.CONSOLE_PG_DSN = dsn;
 
 const { MU_MIGRATIONS, MU_SCHEMA_LATEST } = await import('../lib/multiuser/schema.mjs');
+const LATEST = MU_SCHEMA_LATEST; // rc.10：main 已含 v21（PR-B）——版本行断言动态化，勿再硬编码
 const LAST = MU_MIGRATIONS[MU_MIGRATIONS.length - 1];
 const PRIOR = MU_MIGRATIONS[MU_MIGRATIONS.length - 2];
 if (Number(LAST.version) < 19) {
@@ -66,7 +67,7 @@ try {
     (await pool.query(`SELECT 1 FROM mu.schema_migrations WHERE version=17`)).rowCount === 1
       && (await pool.query(`SELECT 1 FROM mu.schema_migrations WHERE version=18`)).rowCount === 0
       && (await pool.query(`SELECT 1 FROM mu.schema_migrations WHERE version=19`)).rowCount === 0
-      && (await pool.query(`SELECT 1 FROM mu.schema_migrations WHERE version=20`)).rowCount === 0);
+      && (await pool.query(`SELECT 1 FROM mu.schema_migrations WHERE version=${LATEST}`)).rowCount === 0);
   const seed = await pool.query(`INSERT INTO mu.tenant (slug, display_name) VALUES ('mig','Mig') RETURNING tenant_id`);
   const T = seed.rows[0].tenant_id;
   const U = (await pool.query(`INSERT INTO mu.app_user (login, display_name) VALUES ('mig-u','Mig U') RETURNING user_id`)).rows[0].user_id;
@@ -218,7 +219,7 @@ try {
     `SELECT count(*)::int FROM mu.schema_migrations WHERE version=19`)).rows[0].count;
   ok('U6b v19 不重复应用', Number(dupVer) === 1);
   const dupVer20 = (await pool.query(
-    `SELECT count(*)::int FROM mu.schema_migrations WHERE version=20`)).rows[0].count;
+    `SELECT count(*)::int FROM mu.schema_migrations WHERE version=${LATEST}`)).rows[0].count;
   ok('U6b-v20 v20（RAG 模型安装）不重复应用', Number(dupVer20) === 1);
   const dupVer18Del = await pool.query(`DELETE FROM mu.schema_migrations WHERE version=18`);
   await store.initSchema(); // v18 DO 块真实重执行（NOT EXISTS 防重护栏生效）
@@ -273,7 +274,7 @@ try {
   await freshStore.initSchema();
   const fc = (await freshPool.query(
     `SELECT count(*)::int n, count(DISTINCT version)::int d FROM mu.schema_migrations`)).rows[0];
-  ok('P1 fresh DB 全链 v1→v20：恰 20 版本行且各一次', Number(fc.n) === 20 && Number(fc.d) === 20, fc);
+  ok(`P1 fresh DB 全链 v1→v${LATEST}：恰 ${LATEST} 版本行且各一次`, Number(fc.n) === LATEST && Number(fc.d) === LATEST, fc);
   ok('P2 v18 DO 块生效：repository_binding 在位', await hasTable(freshPool, 'repository_binding'));
   const sealFn = (await freshPool.query(`SELECT 1 FROM information_schema.routines
     WHERE routine_schema='mu' AND routine_name='mu_invocation_event_seal'`)).rowCount;
@@ -310,8 +311,8 @@ try {
   await freshStore2.initSchema();
   const rc = (await freshPool2.query(`SELECT count(*)::int n FROM mu.schema_migrations`)).rows[0].n;
   const reTenant = (await freshPool2.query(`SELECT 1 FROM mu.tenant WHERE slug='pr-d-restart'`)).rowCount;
-  ok('P7 重启持久：新连接池 initSchema 成功，20 版本行 + 业务数据俱在',
-    Number(rc) === 20 && reTenant === 1, { rc, reTenant });
+  ok(`P7 重启持久：新连接池 initSchema 成功，${LATEST} 版本行 + 业务数据俱在`,
+    Number(rc) === LATEST && reTenant === 1, { rc, reTenant });
 
   // ── 阶段 5（e）：并发单赢家——两个独立 PG pool 同时对 fresh DB 冷启 ──
   const concPool = await mkDb('mu_conc');
@@ -334,7 +335,7 @@ try {
   ok('P9 并发单赢家：探针采样全程任一时刻至多 1 会话持 advisory lock（max=1）', maxHolders === 1, maxHolders);
   const cc = (await concPoolB.query(
     `SELECT count(*)::int n, count(DISTINCT version)::int d FROM mu.schema_migrations`)).rows[0];
-  ok('P10 并发后库状态一致：恰 20 版本行无重复', Number(cc.n) === 20 && Number(cc.d) === 20, cc);
+  ok(`P10 并发后库状态一致：恰 ${LATEST} 版本行无重复`, Number(cc.n) === LATEST && Number(cc.d) === LATEST, cc);
   ok('P11 无半成品表：v18/v19/v20 关键对象齐备',
     await hasTable(concPoolB, 'repository_binding') && await hasTable(concPoolB, 'rag_model_install')
     && (await concPoolB.query(`SELECT count(DISTINCT trigger_name)::int n FROM information_schema.triggers
@@ -357,10 +358,13 @@ try {
   ok('P14 锁释放后同 store 重试成功（getMuStore muStorePromise=null 重试语义可用）', true);
 
   // ── 阶段 6（f）：中途失败可重试——事务回滚 + 版本行不落 + 失败定位 + 修复重跑 ──
-  // 注入不改生产数组：v20 副本语句 1 换成必败语句（语句 0 的 CREATE TABLE 真实执行，验证整体回滚）
+  // 注入不改生产数组：固定注入 v20（mu_rag_model_install——含 CREATE TABLE，可验证
+  // 语句 0 真实执行后整体回滚）。rc.10 后 LAST=v21（无建表语句），不能用 slice(-1) 定位。
   const failPool = await mkDb('mu_fail');
-  const badV20 = { ...LAST, sql: [LAST.sql[0], `SELECT * FROM mu.__pr_d_injected_failure__`] };
-  const failStore = await createMuStore({ pool: failPool, migrations: [...MU_MIGRATIONS.slice(0, -1), badV20] });
+  const v20idx = MU_MIGRATIONS.findIndex((m) => m.version === 20);
+  const V20 = MU_MIGRATIONS[v20idx];
+  const badV20 = { ...V20, sql: [V20.sql[0], `SELECT * FROM mu.__pr_d_injected_failure__`] };
+  const failStore = await createMuStore({ pool: failPool, migrations: [...MU_MIGRATIONS.slice(0, v20idx), badV20] });
   const migErr = await failStore.initSchema().then(() => null, (e) => e);
   ok('P15 注入失败：initSchema 拒绝（非静默半应用）', migErr instanceof Error);
   ok('P16 错误信息含 version/name/statement#序号/PG 消息',
@@ -374,16 +378,16 @@ try {
   // 修复注入（换回生产数组）重跑 → 成功
   const retryStore = await createMuStore({ pool: failPool });
   await retryStore.initSchema();
-  const rv20 = (await failPool.query(`SELECT count(*)::int n FROM mu.schema_migrations WHERE version=20`)).rows[0].n;
+  const rv20 = (await failPool.query(`SELECT count(*)::int n FROM mu.schema_migrations WHERE version=${LATEST}`)).rows[0].n;
   const rck = (await failPool.query(`SELECT count(*)::int n FROM pg_constraint
     WHERE conrelid='mu.rag_model_install'::regclass AND contype='c'`)).rows[0].n;
   ok('P19 修复重跑：v20 落版本行 + CHECK 约束表在位',
     Number(rv20) === 1 && await hasTable(failPool, 'rag_model_install') && Number(rck) >= 1, { rv20, rck });
   // (5) 删除版本行强制重放路径在新事务机制下仍工作（生产数组、事务包裹重执行 v20 DDL）
-  await failPool.query(`DELETE FROM mu.schema_migrations WHERE version=20`);
+  await failPool.query(`DELETE FROM mu.schema_migrations WHERE version=${LATEST}`);
   await retryStore.initSchema();
   const rp20 = (await failPool.query(
-    `SELECT count(*)::int n FROM mu.schema_migrations WHERE version=20`)).rows[0].n;
+    `SELECT count(*)::int n FROM mu.schema_migrations WHERE version=${LATEST}`)).rows[0].n;
   ok('P20 删版本行强制重放（事务内重执行 v20 DDL）仍工作且零重复', Number(rp20) === 1, rp20);
 } finally {
   for (const p of extraPools) { try { await p.end(); } catch { /* */ } }
