@@ -46,7 +46,7 @@ export const RMI_TRANSITIONS = {
   DOWNLOAD_FAILED: ['DOWNLOADING', 'UNINSTALLED'],
   HASH_MISMATCH: ['DOWNLOADING', 'UNINSTALLED'], // 哈希不匹配只能重下（拒绝激活）
   INSUFFICIENT_DISK: ['DOWNLOADING', 'UNINSTALLED'],
-  SIDECAR_START_FAILED: ['READY', 'DOWNLOADING', 'UNINSTALLED'],
+  SIDECAR_START_FAILED: ['READY', 'DOWNLOADING', 'UNINSTALLED', 'VERIFYING'], // VERIFYING=sidecar 修复后重校验直达 READY（免 cancel→全量重下）
   ACTIVATION_FAILED: ['READY', 'ACTIVE', 'UNINSTALLED'],
 };
 
@@ -104,13 +104,17 @@ export async function getInstall(pool, { tenantId, modelKey }) {
 }
 
 /** CAS 状态迁移：仅合法前驱放行，并发单赢家（返回 null=输家或非法迁移）。 */
+const RMI_FAILURE_STATES = ['DOWNLOAD_FAILED', 'HASH_MISMATCH', 'INSUFFICIENT_DISK', 'SIDECAR_START_FAILED', 'ACTIVATION_FAILED'];
 export async function transitionInstall(pool, { tenantId, modelKey, from, to, errorCode = null, set = {} }) {
   const allowed = RMI_TRANSITIONS[from] ?? [];
   if (!allowed.includes(to)) return { ok: false, reason: 'illegal_transition', from, to };
   const sets = ['state=$3', 'updated_at=now()'];
   const params = [tenantId, modelKey, to];
-  if (errorCode !== null || ['DOWNLOAD_FAILED', 'HASH_MISMATCH', 'INSUFFICIENT_DISK', 'SIDECAR_START_FAILED', 'ACTIVATION_FAILED'].includes(to)) {
+  if (errorCode !== null || RMI_FAILURE_STATES.includes(to)) {
     sets.push('last_error_code=$4'); params.push(errorCode);
+  } else {
+    // 迁入非失败态且未带错误码：显式清除残留（失败→重试成功后不留旧 last_error_code）
+    sets.push('last_error_code=NULL');
   }
   for (const [k, v] of Object.entries(set)) {
     params.push(v); sets.push(`${k}=$${params.length}`);
