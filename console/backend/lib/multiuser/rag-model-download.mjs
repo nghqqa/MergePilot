@@ -25,7 +25,7 @@ export async function checkDiskSpace(dir, needBytes, { marginBytes = 1024 ** 3 }
   return { ok: avail >= needBytes + marginBytes, avail, need: needBytes + marginBytes };
 }
 
-const active = new Map(); // `${tenantId}|${modelKey}` → AbortController
+const active = new Map(); // `${tenantId}|${modelKey}` → { controller, promise }（promise=任务落定句柄，cancel 需等待终态落库）
 
 /** 单飞守卫：已有内存中进行中的安装则拒绝重复启动（409 语义由调用方落 HTTP）。 */
 export function isInstalling(tenantId, modelKey) { return active.has(`${tenantId}|${modelKey}`); }
@@ -53,8 +53,11 @@ export async function runInstall({ pool, tenantId, modelKey, manifest, modelRoot
   if (active.has(key)) return { ok: false, reason: 'install_already_running' };
   const ctl = new AbortController();
   if (signal) signal.addEventListener('abort', () => ctl.abort(), { once: true });
-  active.set(key, ctl);
-  const t0 = Date.now();
+  const entry = { controller: ctl, promise: null };
+  active.set(key, entry);
+  // 任务体包成可等待 promise：cancelInstall 触发 abort 后 await 它，确保返回时终态已落库
+  const run = (async () => {
+    const t0 = Date.now();
   try {
     // ① 磁盘预检（开始前拒绝）
     const disk = await checkDiskSpace(dir, manifest.total_bytes);
@@ -153,26 +156,45 @@ export async function runInstall({ pool, tenantId, modelKey, manifest, modelRoot
         files: bad.map((b) => b.path), got_prefixes: bad.map((b) => b.got_prefix) });
       return { ok: false, reason: 'hash_mismatch', detail: { bad } };
     }
-    await storeMod.transitionInstall(pool, { tenantId, modelKey, from: 'VERIFYING', to: 'READY' });
+    // READY 迁移同步回写进度：downloaded_bytes/total_bytes 以 manifest 为准
+    //（覆盖"整文件跳过"路径不触发 bumpProgress 导致的 0 值残留）
+    await storeMod.transitionInstall(pool, { tenantId, modelKey, from: 'VERIFYING', to: 'READY',
+      set: { downloaded_bytes: manifest.total_bytes, total_bytes: manifest.total_bytes } });
     onEvent?.('RAG_MODEL_VERIFY_PASSED', { model_key: modelKey, files: manifest.files.length,
       sha256_prefixes: manifest.files.map((f) => f.sha256.slice(0, 12)) });
     return { ok: true, finalState: 'READY', detail: { bytes: manifest.total_bytes } };
   } catch (e) {
-    const code = e?.code ?? (e?.name === 'AbortError' ? 'cancelled' : String(e?.message ?? e).slice(0, 60));
-    await storeMod.transitionInstall(pool, { tenantId, modelKey, from: 'DOWNLOADING', to: 'DOWNLOAD_FAILED', errorCode: code }).catch(() => {});
-    onEvent?.('RAG_MODEL_DOWNLOAD_FAILED', { model_key: modelKey, error_code: code, seconds: Math.round((Date.now() - t0) / 1000) });
-    return { ok: false, reason: code === 'cancelled' ? 'cancelled' : 'download_failed', detail: { code } };
+    // 判序先行：AbortError（DOMException 数值 code=20 会抢先）→ 统一字符串 'cancelled'，
+    // 再回落 e.code（仅字符串码可信；数值码落 message，杜绝 '20' 这类裸数值入库）。
+    // cause 链：undici 中途断流会把 AbortError 包进 TypeError('terminated').cause
+    const cancelled = e?.name === 'AbortError' || e?.constructor?.name === 'AbortError'
+      || e?.cause?.name === 'AbortError';
+    const code = cancelled ? 'cancelled'
+      : (typeof e?.code === 'string' && e.code ? e.code : String(e?.message ?? e).slice(0, 60));
+    if (cancelled) {
+      // 取消终态=UNINSTALLED（非 DOWNLOAD_FAILED）；错误码留痕 'cancelled'；
+      // 审计不产生 RAG_MODEL_DOWNLOAD_FAILED（取消语义由 cancelInstall 的 INSTALL_CANCELLED 承载）
+      await storeMod.transitionInstall(pool, { tenantId, modelKey, from: 'DOWNLOADING', to: 'UNINSTALLED', errorCode: 'cancelled' }).catch(() => {});
+    } else {
+      await storeMod.transitionInstall(pool, { tenantId, modelKey, from: 'DOWNLOADING', to: 'DOWNLOAD_FAILED', errorCode: code }).catch(() => {});
+      onEvent?.('RAG_MODEL_DOWNLOAD_FAILED', { model_key: modelKey, error_code: code, seconds: Math.round((Date.now() - t0) / 1000) });
+    }
+    return { ok: false, reason: cancelled ? 'cancelled' : 'download_failed', detail: { code } };
   } finally {
     active.delete(key);
   }
+  })();
+  entry.promise = run;
+  return run;
 }
 
-/** 独立重校验（READY/HASH_MISMATCH/DOWNLOAD_FAILED 均可发起；只读磁盘不下载）。 */
+/** 独立重校验（READY/HASH_MISMATCH/DOWNLOAD_FAILED/SIDECAR_START_FAILED 均可发起；只读磁盘不下载）。
+ *  SIDECAR_START_FAILED 合法：sidecar 修复后"重新校验"可直达 READY，无需 cancel→全量重下。 */
 export async function runVerifyOnly({ pool, tenantId, modelKey, manifest, modelRoot, storeMod, onEvent }) {
   const dir = path.join(modelRoot, modelKey);
   const cur = await storeMod.getInstall(pool, { tenantId, modelKey });
   const from = cur?.state;
-  if (!['READY', 'HASH_MISMATCH', 'DOWNLOAD_FAILED', 'VERIFYING'].includes(from)) {
+  if (!['READY', 'HASH_MISMATCH', 'DOWNLOAD_FAILED', 'VERIFYING', 'SIDECAR_START_FAILED'].includes(from)) {
     return { ok: false, reason: `illegal_state:${from}` };
   }
   if (from !== 'VERIFYING') {
@@ -198,18 +220,25 @@ export async function runVerifyOnly({ pool, tenantId, modelKey, manifest, modelR
     onEvent?.('RAG_MODEL_VERIFY_FAILED', { model_key: modelKey, mismatched: bad.length, missing: missing.length, files: [...missing, ...bad] });
     return { ok: false, reason: 'hash_mismatch', detail: { missing, bad } };
   }
-  await storeMod.transitionInstall(pool, { tenantId, modelKey, from: 'VERIFYING', to: 'READY' });
+  // READY 迁移同步回写进度（downloaded_bytes/total_bytes 以 manifest 为准；同 runInstall）
+  await storeMod.transitionInstall(pool, { tenantId, modelKey, from: 'VERIFYING', to: 'READY',
+    set: { downloaded_bytes: manifest.total_bytes, total_bytes: manifest.total_bytes } });
   onEvent?.('RAG_MODEL_VERIFY_PASSED', { model_key: modelKey, files: manifest.files.length, reverify: true });
   return { ok: true, finalState: 'READY' };
 }
 
-/** 取消：中止内存任务 + 态回 UNINSTALLED（保留 .part 供续传）。 */
+/** 取消：中止内存任务 + 等其落定 + 态回 UNINSTALLED（保留 .part 供续传）。
+ *  等待 promise 确保 cancel 返回时终态已落库（响应与实际状态一致，不再竞态）。 */
 export async function cancelInstall({ pool, tenantId, modelKey, storeMod, onEvent }) {
-  const ctl = active.get(`${tenantId}|${modelKey}`);
-  ctl?.abort();
+  const entry = active.get(`${tenantId}|${modelKey}`);
+  entry?.controller?.abort();
+  await entry?.promise?.catch(() => {}); // 吞错：任务体已自行落库终态（UNINSTALLED/DOWNLOAD_FAILED 等）
   const cur = await storeMod.getInstall(pool, { tenantId, modelKey });
   if (!cur) return { ok: false, reason: 'not_found' };
-  const tr = await storeMod.transitionInstall(pool, { tenantId, modelKey, from: cur.state, to: 'UNINSTALLED' });
+  // UNINSTALLED=内存任务 catch 已自行落定（cancelled 路径）——无需再迁移
+  const tr = cur.state === 'UNINSTALLED'
+    ? { ok: true }
+    : await storeMod.transitionInstall(pool, { tenantId, modelKey, from: cur.state, to: 'UNINSTALLED' });
   onEvent?.('RAG_MODEL_INSTALL_CANCELLED', { model_key: modelKey, from_state: cur.state, ok: tr.ok });
   return { ok: true, detail: { transitioned: tr.ok, note: '.part 保留以供续传' } };
 }
