@@ -180,7 +180,8 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
     return {
       ok: true,
       service: 'mergepilot-console',
-      version: '0.1.0',
+      // rc.10：版本由部署环境注入（MERGEPILOT_VERSION）；默认值本轮准确
+      version: process.env.MERGEPILOT_VERSION || '0.2.0-beta.6-rc.10',
       data_mode: liveConfigured ? 'live' : 'snapshot',
       data_mode_note: liveConfigured
         ? 'PG 实时（live）·隔离 staging 库：overview/pending/仓库/PR 详情/审计按会话 allowlist 实时读取；run 证据详情页仍为锁定快照只读'

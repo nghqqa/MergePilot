@@ -34,10 +34,11 @@ async function apiGet(path) {
 
 function SourceTag({ source, error }) {
   const meta = STATUS_META[source] || { label: source, tone: 'default' };
+  // rc.10 文案修复：人话标签与内部标识粘连（"MU 实时数据MU_CANONICAL_LIVE"）→
+  // 正文语义化（数据源：人话标签（语义副标）），内部标识入 title 技术详情。
   return (
-    <Tag color={meta.tone}>
-      {meta.label}
-      <Typography.Text type="secondary" style={{ fontSize: 11, marginLeft: 6 }}>{source}</Typography.Text>
+    <Tag color={meta.tone} title={`数据源内部标识：${source}`}>
+      数据源：{meta.label}{meta.desc ? `（${meta.desc}）` : ''}
       {error ? <Typography.Text type="danger" style={{ fontSize: 11, marginLeft: 6 }}>{error}</Typography.Text> : null}
     </Tag>
   );

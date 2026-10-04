@@ -4,7 +4,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Button, Popconfirm, Space, Table, Tag, Typography } from 'antd';
 import { PipelinePanel } from './MultiUserPage.jsx';
-import { ticketMap, SEVERITY, toneToColor, unknownEntry } from '../status-map.js';
+import { ticketMap, SEVERITY, toneToColor, unknownEntry, protectionMap } from '../status-map.js';
 
 // ── 动作安全化（PR-5）──
 // 超时上限：批准受控修复（approve）端点同步内联 fixVerifyRound（clone+test，可达分钟级）
@@ -208,7 +208,16 @@ export function MuPrDetailContent({ prRef, onChanged }) {
         <Space size="large" wrap>
           <span className="mu-detail-meta">head：<code className="mono">{String(pr.head_sha ?? '').slice(0, 12)}</code></span>
           <span className="mu-detail-meta">protection：
-            <Tag color={pr.branch_protection_status === 'known_clean' ? 'green' : 'orange'}>{pr.branch_protection_status}</Tag>
+            {(() => {
+              // rc.10：保护状态走 status-map PROTECTION 词表（raw 值入 title；unknown≠未受保护）
+              const pm = protectionMap(pr.branch_protection_status);
+              return (
+                <Tag color={pm.tone === 'ok' ? 'green' : pm.tone === 'bad' ? 'red' : 'orange'}
+                  title={`${pm.note}（branch_protection_status=${pr.branch_protection_status ?? 'unknown'}）`}>
+                  {pm.label}
+                </Tag>
+              );
+            })()}
           </span>
           {pr.title ? <span className="mu-detail-meta muted">{String(pr.title).slice(0, 60)}</span> : null}
         </Space>

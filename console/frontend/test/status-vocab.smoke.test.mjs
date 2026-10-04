@@ -3,6 +3,7 @@
 //     TICKET 补 STALE/CONSUMED；SEVERITY 补 P0-P3；STAGE 补 PENDING 且入 STAGE_ORDER；
 //     新增 MU_RUN（14 态，与后端 orchestration.mjs RUN_STATES 权威对齐）与
 //     MU_ATTEMPT（5 态含 TIMEOUT）；unknownEntry fail-closed 不吞未知值。
+//     rc.10 PR-C 补：LEADER_DECISION / PROTECTION / MU_FIX / MU_VERIFY / WIRE（A2 区）。
 //  B) 渲染冒烟（esbuild 真打包 + react-test-renderer + happy-dom）：
 //     MuApprovals 四态分离（空态 / 网络失败+重试 / 401 / 403）与状态列中文；
 //     CorePage WAITING_FOR_HUMAN_APPROVAL 走共享表；PendingPage P0-P3 自然生效；
@@ -107,6 +108,71 @@ test('词表：unknownEntry fail-closed——未知枚举保留原始值并标�
     assert.equal(e.label, 'MYSTERY_V9', `${map.name}: 原始机器值保留在 label`);
     assert.ok(e.note.includes('未知状态') && e.note.includes('MYSTERY_V9'), `${map.name}: note 标注未知状态`);
   }
+});
+
+// ── A2. rc.10 PR-C 新增词表（纯函数直测；值域对齐后端权威定义）──
+test('词表：LEADER_DECISION 覆盖 leader.mjs decideAfterReview 4 值域（needs_human→需人工裁定）', async () => {
+  const m = await import(pathToFileURL(path.join(FRONTEND, 'src/status-map.js')).href);
+  const keys = ['clean_complete', 'fix_required', 'needs_human', 'blocked'];
+  for (const k of keys) {
+    const e = m.LEADER_DECISION[k];
+    assert.ok(e, `LEADER_DECISION.${k} 存在`);
+    assert.ok(hasCJK(e.label) && e.label.length <= 12, `LEADER_DECISION.${k}.label 中文（=${e.label}）`);
+    assert.ok(hasCJK(e.note) && e.note.includes(k), `LEADER_DECISION.${k}.note 中文且含原始枚举`);
+    assert.ok(['ok', 'info', 'warn', 'bad', 'neutral'].includes(e.tone), `LEADER_DECISION.${k}.tone 合法`);
+  }
+  assert.equal(m.leaderDecisionMap('needs_human').label, '需人工裁定');
+  assert.equal(m.leaderDecisionMap('needs_human').tone, 'warn', '等待人工=warn（非失败）');
+  assert.equal(m.leaderDecisionMap('blocked').tone, 'bad', '受控停止=bad 档');
+  assert.equal(m.leaderDecisionMap('MYSTERY').label, 'MYSTERY', '未知 decision fail-closed 不吞键');
+});
+
+test('词表：PROTECTION 覆盖 api.mjs 白名单 3 值域（unknown=未知时不判定可合并）', async () => {
+  const m = await import(pathToFileURL(path.join(FRONTEND, 'src/status-map.js')).href);
+  const keys = ['known_clean', 'blocked', 'unknown'];
+  for (const k of keys) {
+    const e = m.PROTECTION[k];
+    assert.ok(e, `PROTECTION.${k} 存在`);
+    assert.ok(hasCJK(e.label) && hasCJK(e.note) && e.note.includes(k), `PROTECTION.${k} 中文 label+note 含原始枚举`);
+  }
+  assert.equal(m.protectionMap('known_clean').label, '受保护');
+  assert.equal(m.protectionMap('known_clean').tone, 'ok');
+  const u = m.protectionMap('unknown');
+  assert.equal(u.label, '保护状态未知');
+  assert.ok(u.note.includes('不判定可合并'), 'unknown note 写明 fail-closed 语义');
+  assert.equal(m.protectionMap(null).label, '保护状态未知', '缺值按 unknown 归一（不冒充受保护）');
+});
+
+test('词表：MU_FIX 覆盖 fix_attempt CHECK 4 值域；MU_VERIFY 覆盖 verification_attempt 4 值域', async () => {
+  const m = await import(pathToFileURL(path.join(FRONTEND, 'src/status-map.js')).href);
+  for (const k of ['PLANNED', 'DRY_RUN', 'FAILED', 'SKIPPED']) {
+    const e = m.MU_FIX[k];
+    assert.ok(e, `MU_FIX.${k} 存在`);
+    assert.ok(hasCJK(e.label) && hasCJK(e.note) && e.note.includes(k), `MU_FIX.${k} 中文 label+note 含原始枚举`);
+  }
+  assert.equal(m.muFixMap('DRY_RUN').label, '隔离预演');
+  assert.equal(m.muFixMap('dry_run').label, '隔离预演', '大小写归一');
+  for (const k of ['PASS', 'FAIL', 'BLOCKED', 'INCONCLUSIVE']) {
+    const e = m.MU_VERIFY[k];
+    assert.ok(e, `MU_VERIFY.${k} 存在`);
+    assert.ok(hasCJK(e.label) && hasCJK(e.note) && e.note.includes(k), `MU_VERIFY.${k} 中文 label+note 含原始枚举`);
+  }
+  assert.equal(m.muVerifyMap('PASS').tone, 'ok');
+  assert.equal(m.muVerifyMap('INCONCLUSIVE').tone, 'warn', '不确定=warn（非失败）');
+});
+
+test('词表：WIRE 接线状态 6 键中文 label+note（已接入/联调已接入/未接线/未交付/关闭/不适用）', async () => {
+  const m = await import(pathToFileURL(path.join(FRONTEND, 'src/status-map.js')).href);
+  const keys = ['wired', 'wired_test', 'not_wired', 'pending_delivery', 'closed', 'na'];
+  for (const k of keys) {
+    const e = m.WIRE[k];
+    assert.ok(e, `WIRE.${k} 存在`);
+    assert.ok(hasCJK(e.label) && hasCJK(e.note), `WIRE.${k} 中文 label+note`);
+    assert.ok(['ok', 'info', 'warn', 'bad', 'neutral'].includes(e.tone), `WIRE.${k}.tone 合法`);
+  }
+  assert.equal(m.wireMap('wired').label, '已接入');
+  assert.equal(m.wireMap('closed').tone, 'neutral', '关闭=中性事实');
+  assert.equal(m.wireMap('MYSTERY').label, 'MYSTERY', '未知 wire 值 fail-closed 不吞键');
 });
 
 // ── B. 渲染冒烟基建（复用 pages-smoke 模式：esbuild 真打包 + react-test-renderer + happy-dom）──

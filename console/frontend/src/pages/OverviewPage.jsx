@@ -24,13 +24,15 @@ async function apiGet(path) {
 }
 
 function SourceDetail({ source, error, generatedAt }) {
+  // 值缺失显示 '—'，不渲染空标签残留（rc.10 信息正确性：source: · 生成于 · 空值修复）
+  const hasGenerated = generatedAt != null && generatedAt !== '';
   return (
     <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
       <details>
         <summary style={{ cursor: 'pointer' }}>数据来源详情</summary>
-        source: <span className="mono">{source}</span>
+        source: <span className="mono">{source || '—'}</span>
         {error ? <> · 错误: <span className="mono">{error}</span></> : null}
-        {generatedAt ? <> · 生成于 <span className="mono">{new Date(generatedAt).toLocaleString()}</span></> : null}
+        {hasGenerated ? <> · 生成于 <span className="mono">{new Date(generatedAt).toLocaleString()}</span></> : null}
         · 阶段由后端权威状态推导（票据 / gate 审计 / 回执完整性 / head 排序）
       </details>
     </Typography.Paragraph>
@@ -111,12 +113,14 @@ export default function OverviewPage() {
           description={<>连接失败：<span className="mono">{data.error}</span>。请检查 PG。</>} />
       ) : (
         <>
-          {/* 概要行（文字+数字，克制排版；非装饰大数卡） */}
+          {/* 概要行（文字+数字，克制排版；非装饰大数卡）。
+              口径统一（rc.10）：此处只报"已阻断 N"（stage_counts.BLOCKED，=受控停止待人工裁定的 run 数），
+              与待处理页的窄口径（/api/mu/approvals?status=PENDING 审批票）不再共用"待处理"一词——
+              待审批票见审批页，裁定入口在各 PR 详情页。 */}
           <Typography.Paragraph style={{ marginBottom: 16 }}>
             <strong>{totalPrs}</strong> 个 PR · <strong>{totalRuns}</strong> 个运行 ·
-            待处理 <strong>{data.pending_summary.count}</strong>
-            {data.pending_summary.oldest_wait_minutes != null
-              ? <>（最长等待 <strong>{data.pending_summary.oldest_wait_minutes}</strong> 分钟）</> : null}
+            已阻断 <strong>{data.stage_counts?.BLOCKED ?? 0}</strong>（受控停止待人工裁定——待审批票见{' '}
+            <Link to="/approvals">审批页</Link>，裁定入口在各 PR 详情页）
             {' '}· 异常：stale <strong>{data.incidents.stale_count}</strong> / 失败回执 <strong>{data.incidents.failed_receipts}</strong> / 完整性冲突 <strong>{data.incidents.integrity_conflicts}</strong>
           </Typography.Paragraph>
 
