@@ -327,7 +327,7 @@ export default function RagTrialPage() {
           </div>
           <details className="tech-details" style={{ marginTop: 8 }}>
             <summary>技术详情（灌入参数）</summary>
-            <pre className="evidence-pre">{`corpus_dir: /app/rag-corpus（服务器容器内语料目录）\nendpoint:  POST /api/rag-trial/ingest（后端按 scope 门校验仓库权限）`}</pre>
+            <pre className="evidence-pre">{`corpus_dir: /app/rag-corpus（容器内路径——服务器容器内的默认语料目录）\nendpoint:  POST /api/rag-trial/ingest（后端按 scope 门校验仓库权限）`}</pre>
           </details>
           {ingesting ? (
             <Alert style={{ marginTop: 8 }} type="info" showIcon

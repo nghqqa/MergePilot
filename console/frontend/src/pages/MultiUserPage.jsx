@@ -110,8 +110,13 @@ const STEP_TITLES = {
 // MU_RUN/MU_ATTEMPT 词表（本页不再自持重复表）；findings 级别色保留页面级 SEV_TONE。
 // 无 approve/merge/write 按钮（人工审批仍走上方既有决策区）；只消费只读 /api/mu/runs 端点，
 // 授权由后端 read_pull_request 判定，403 时如实显示权限不足。
-import { muRunMap, muAttemptMap } from '../status-map.js';
+// rc.10：修复预演/独立验证/Leader 终裁的裸枚举收敛到 status-map.js 词表
+// （MU_FIX / MU_VERIFY / LEADER_DECISION——值域对齐 mu.fix_attempt、
+// mu.verification_attempt 与 leader.mjs decideAfterReview），raw 值仅留 title 技术详情。
+import { muRunMap, muAttemptMap, muFixMap, muVerifyMap, leaderDecisionMap, protectionMap } from '../status-map.js';
 const SEV_TONE = { P0: 'red', P1: 'volcano', P2: 'orange', P3: 'gold' };
+// status-map 语义 tone → 本页 antd Tag 色（面板局部视觉映射；label 为主表达）
+const TONE_TAG_COLOR = { ok: 'green', info: 'blue', warn: 'orange', bad: 'red', neutral: 'default' };
 
 export function PipelinePanel({ prNumber, repoId }) {
   const [state, setState] = useState({ phase: 'idle' }); // idle | loading | ready | empty | denied | error
@@ -217,18 +222,37 @@ export function PipelinePanel({ prNumber, repoId }) {
       ) : <Typography.Text type="secondary" style={{ fontSize: 12 }}>未发现风险项。</Typography.Text>}
       {(state.detail.fixes ?? []).length > 0 ? (
         <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginTop: 8, marginBottom: 0 }}>
-          修复预演（dry-run，不写 GitHub）：{state.detail.fixes.map((f, i) =>
-            <Tag key={i} color="cyan">{`第${f.attempt}轮 ${f.status}`}</Tag>)}
+          修复预演（dry-run，不写 GitHub）：{state.detail.fixes.map((f, i) => {
+            const fm = muFixMap(f.status);
+            return (
+              <Tag key={i} color={TONE_TAG_COLOR[fm.tone] ?? 'default'} title={fm.note}>
+                {f.attempt != null ? `第${f.attempt}轮 ` : ''}{fm.label}
+              </Tag>
+            );
+          })}
         </Typography.Paragraph>) : null}
       {(state.detail.verifications ?? []).length > 0 ? (
         <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginTop: 4, marginBottom: 0 }}>
-          独立验证：{state.detail.verifications.map((v, i) =>
-            <Tag key={i} color={v.verdict === 'PASS' ? 'green' : 'orange'}>{`第${v.attempt}轮 ${v.verdict}`}</Tag>)}
+          独立验证：{state.detail.verifications.map((v, i) => {
+            const vm = muVerifyMap(v.verdict);
+            return (
+              <Tag key={i} color={TONE_TAG_COLOR[vm.tone] ?? 'default'} title={vm.note}>
+                {v.attempt != null ? `第${v.attempt}轮 ` : ''}{vm.label}
+              </Tag>
+            );
+          })}
         </Typography.Paragraph>) : null}
       {decisions.length > 0 ? (
         <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginTop: 4, marginBottom: 0 }}>
-          Leader 终裁：{decisions.map((d, i) =>
-            <Tag key={i}>{`${d.stage}=${d.decision}`}</Tag>)}
+          Leader 终裁：{decisions.map((d, i) => {
+            const dm = leaderDecisionMap(d.decision);
+            return (
+              <Tag key={i} color={TONE_TAG_COLOR[dm.tone] ?? 'default'}
+                title={`stage=${d.stage} · decision=${d.decision}｜${dm.note}`}>
+                {dm.label}
+              </Tag>
+            );
+          })}
         </Typography.Paragraph>) : null}
       <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginTop: 8, marginBottom: 0 }}>
         {attempts.some((a) => a.provider === 'agentteams')
@@ -1231,9 +1255,17 @@ export default function MultiUserPage() {
                           <code className="mono mu-pr-row-sha">{sha.slice(0, 10) || '未知'}</code>
                         </span>
                         <span className="mu-pr-row-sub">
-                          <Tag className="mu-pr-row-tag" color={pr.branch_protection_status === 'known_clean' ? 'green' : 'orange'}>
-                            {pr.branch_protection_status === 'known_clean' ? '受保护' : String(pr.branch_protection_status ?? 'unknown')}
-                          </Tag>
+                          {(() => {
+                            // rc.10：保护状态走 status-map PROTECTION 词表（unknown=保护状态未知，不判定可合并）
+                            const pm = protectionMap(pr.branch_protection_status);
+                            return (
+                              <Tag className="mu-pr-row-tag"
+                                color={pm.tone === 'ok' ? 'green' : pm.tone === 'bad' ? 'red' : 'orange'}
+                                title={pm.note}>
+                                {pm.label}
+                              </Tag>
+                            );
+                          })()}
                           <span className="muted">{String(pr.updated_at ?? '').slice(5, 16).replace('T', ' ')}</span>
                         </span>
                       </div>

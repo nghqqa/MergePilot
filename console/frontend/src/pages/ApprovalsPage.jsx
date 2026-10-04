@@ -67,7 +67,8 @@ function TicketCard({ t, authed }) {
     ['run', t.run_id ?? '未记录'],
     ['参数', <code key="p" className="mono">{JSON.stringify(t.params)}</code>],
     ['有效期至', fmtTime(t.expires_at) ?? '未记录'],
-    ['票据状态', `${t.status}${expired ? '（已过有效期）' : ''}`],
+    // rc.10：票据状态走 status-map TICKET 词表（与筛选器文案一致），raw 枚举入 title
+    ['票据状态', <span key="ts" title={`approval status=${t.status}｜${ticketMap(t.status).note}`}>{ticketMap(t.status).label}{expired ? '（已过有效期）' : ''}</span>],
     ['审批人', authed ? '当前登录用户' : '未认证 —— 演示预览下无法确认审批人身份'],
   ];
 

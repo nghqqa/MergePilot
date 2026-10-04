@@ -238,6 +238,99 @@ function runTraceKindMap(k) {
   return RUN_TRACE_KIND[String(k ?? '')] ?? (k == null || k === '' ? null : String(k));
 }
 
+// ── MU Leader 编排决策（独立键空间；权威定义 lib/multiuser/agents/leader.mjs
+// decideAfterReview，落库 mu.orchestration_decision.decision；当前 stage=
+// leader_decision_after_review）──
+// 语义红线：needs_human=等待人工裁定（非失败，人工入口在 PR 详情页）；
+// fix_required=已转高危修复审批门（P0/P1 逐条开票，非已修复）；
+// blocked=受控停止（PR 保持 OPEN）；决策是编排裁定事实，不等于 PR 已修复或已合并。
+const LEADER_DECISION = {
+  clean_complete: {
+    tone: 'ok',
+    label: '无发现（完成）',
+    note: '审查未发现风险项，流程完成（leader: clean_complete）— 指本轮审查无发现，不等于绝对无风险，也不代表已合并',
+  },
+  fix_required: {
+    tone: 'warn',
+    label: '需修复（已转审批门）',
+    note: '存在 P0/P1 高危发现，已逐条开审批票并等待人工批准（leader: fix_required）— 批准后仅进入 DRY_RUN 预演，不代表已修复',
+  },
+  needs_human: {
+    tone: 'warn',
+    label: '需人工裁定',
+    note: '存在 P2/P3 发现，按策略不自动开票，等待人工在 PR 详情页裁定（leader: needs_human）— 等待态，非失败',
+  },
+  blocked: {
+    tone: 'bad',
+    label: '已阻断',
+    note: '流程受控停止（leader: blocked，如 branch protection 状态未知）— run 保持可追溯，PR 保持 OPEN',
+  },
+};
+function leaderDecisionMap(d) { return LEADER_DECISION[String(d ?? '').toLowerCase()] ?? unknownEntry(d); }
+
+// ── MU branch protection 状态（独立键空间；权威白名单 multiuser/api.mjs
+// ['unknown','known_clean','blocked']，schema.mjs mu.pull_request.branch_protection_status
+// DEFAULT 'unknown'）──
+// 语义红线：unknown≠未受保护——未知时不判定可合并（fail-closed，合并资格恒未知）。
+const PROTECTION = {
+  known_clean: {
+    tone: 'ok',
+    label: '受保护',
+    note: 'GitHub 分支保护已确认开启（branch_protection_status: known_clean）— 可合并类结论仅在此状态下允许',
+  },
+  blocked: {
+    tone: 'bad',
+    label: '保护受阻',
+    note: '分支保护状态受阻（branch_protection_status: blocked）— 该 PR 的可合并判定被阻止',
+  },
+  unknown: {
+    tone: 'warn',
+    label: '保护状态未知',
+    note: '分支保护状态未知（branch_protection_status: unknown）— 未知时不判定可合并：合并资格 fail-closed 恒未知；不代表未受保护',
+  },
+};
+function protectionMap(s) {
+  // 缺值按后端 DEFAULT 'unknown' 归一（schema.mjs mu.pull_request）——不冒充受保护
+  if (s == null || s === '') return PROTECTION.unknown;
+  return PROTECTION[String(s).toLowerCase()] ?? unknownEntry(s);
+}
+
+// ── MU 修复尝试状态（独立键空间；权威定义 multiuser/schema.mjs mu.fix_attempt.status
+// CHECK = PLANNED/DRY_RUN/FAILED/SKIPPED，mode 恒 'dry_run'）──
+// 语义红线：全部发生在隔离工作区（不写 GitHub）；DRY_RUN≠已修复。
+const MU_FIX = {
+  PLANNED: { tone: 'neutral', label: '已计划', note: '修复尝试已计划（fix_attempt: PLANNED）— 尚未开始预演' },
+  DRY_RUN: { tone: 'info', label: '隔离预演', note: '修复预演在隔离工作区执行（fix_attempt: DRY_RUN）— 不写 GitHub、不自动合并，预演完成不代表已修复' },
+  FAILED: { tone: 'bad', label: '预演失败', note: '修复预演失败（fix_attempt: FAILED）— 具体错误见运行详情 error_code' },
+  SKIPPED: { tone: 'neutral', label: '已跳过', note: '修复尝试被跳过（fix_attempt: SKIPPED）— 常见于前序失败后的短路' },
+};
+function muFixMap(s) { return MU_FIX[String(s ?? '').toUpperCase()] ?? unknownEntry(s); }
+
+// ── MU 独立验证结论（独立键空间；权威定义 multiuser/schema.mjs
+// mu.verification_attempt.verdict CHECK = PASS/FAIL/BLOCKED，v18+ 约束补 INCONCLUSIVE）──
+// 语义红线：PASS=独立验证通过 ≠ 已合并；INCONCLUSIVE=模型结论不确定，工具验证结果独立有效。
+const MU_VERIFY = {
+  PASS: { tone: 'ok', label: '验证通过', note: '独立验证通过（verification_attempt: PASS）— 有独立测试证据支撑，不代表已合并' },
+  FAIL: { tone: 'bad', label: '验证未通过', note: '独立验证未通过（verification_attempt: FAIL）— 具体证据见运行详情' },
+  BLOCKED: { tone: 'warn', label: '验证受阻', note: '验证被阻断未完成（verification_attempt: BLOCKED）— 非结论性失败' },
+  INCONCLUSIVE: { tone: 'warn', label: '结论不确定', note: '验证结论不确定（verification_attempt: INCONCLUSIVE）— 模型域不确定时，工具域验证结果独立有效' },
+};
+function muVerifyMap(s) { return MU_VERIFY[String(s ?? '').toUpperCase()] ?? unknownEntry(s); }
+
+// ── 接线状态（独立词表；WorkspaceStatusPanel 接线表的行状态值域）──
+// 语义红线：已接入=后端已交付且控制台已联通；联调已接入=仅隔离测试主体可用；
+// 未交付/未接线=后端未交付或未配置；关闭=设计上不提供；不适用=当前数据源下无此能力。
+// 行的补充说明（detail）与本词表 note 配合，颜色不单独承载状态。
+const WIRE = {
+  wired: { tone: 'ok', label: '已接入', note: '后端能力已交付且控制台已联通 — "已接入"不代表所有部署配置/主体下可用，主体与授权见该行补充说明' },
+  wired_test: { tone: 'warn', label: '联调已接入', note: '仅在隔离联调（test-auth/fixture）下可用 — 非生产主体能力' },
+  not_wired: { tone: 'warn', label: '未接线', note: '后端未交付或未配置 — 控制台不提供该能力，也不伪造' },
+  pending_delivery: { tone: 'warn', label: '未交付', note: '接口尚未由后端交付 — 等待后端交付期间控制台不冒充可用' },
+  closed: { tone: 'neutral', label: '关闭', note: '设计上关闭的能力（如站内合并 — 仅提供 GitHub 外链）' },
+  na: { tone: 'neutral', label: '不适用', note: '当前数据源下该能力不适用（如快照源下的实时审批）' },
+};
+function wireMap(s) { return WIRE[String(s ?? '').toLowerCase()] ?? unknownEntry(s); }
+
 // 未知状态兜底（统一契约）：label 保留原始机器值，note 标注"未知状态"——永不吞掉机器值。
 function unknownEntry(v) {
   return { tone: 'neutral', label: v ?? 'UNKNOWN', note: `未知状态（原始枚举：${v ?? 'null/undefined'}）` };
@@ -375,7 +468,9 @@ export {
   executionMap, verdictMap, gateMap, publishMap, EXECUTION, GATE, VERDICT_SEVERITY_TONE,
   SEVERITY, SEVERITY_ORDER, FXV, FXV_ARTIFACT, CCHAIN, CCHAIN_OVERALL, RAG, TICKET, TICKET_ACTION,
   STAGE, STAGE_ORDER, OUTCOME, MU_RUN, MU_ATTEMPT, RUN_TRACE, RUN_TRACE_KIND,
+  LEADER_DECISION, PROTECTION, MU_FIX, MU_VERIFY, WIRE,
   fxvMap, fxvArtifactMap, cchainMap, cchainOverallMap, ragMap, ticketMap, ticketActionMap,
   stageMap, outcomeMap, muRunMap, muAttemptMap, runTraceMap, runTraceKindMap,
+  leaderDecisionMap, protectionMap, muFixMap, muVerifyMap, wireMap,
   toneToColor, unknownEntry,
 };

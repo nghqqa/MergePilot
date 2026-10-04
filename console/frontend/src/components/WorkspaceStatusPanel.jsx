@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../auth.jsx';
+import { WIRE, wireMap } from '../status-map.js';
 
 // Workspace Status：统一的工作区状态表达。
 // - 顶部 chip：一行人类可读状态（不出现工程术语）
@@ -71,6 +72,32 @@ function YesNo({ yes, yesText = '是', noText = '否' }) {
   return <span className={yes ? 'ws-yes' : 'ws-no'}>{yes ? yesText : noText}</span>;
 }
 
+// 接线状态行统一结构：{ name, wire: status-map WIRE 词表条目, detail: 该行补充说明 }。
+// 可见文本 = 词表 label + detail（detail 保留各数据源口径的既有事实描述）；
+// 词表 note（"这是什么、不是什么"）挂在行状态 title 上——颜色/圆点不单独承载状态。
+// rc.10：MU 实时源下接线清单按真实能力渲染（OAuth/审批决策已上线），不再复用 legacy 未交付口径。
+function wiringRowsOf(mode, live, pgMode) {
+  if (mode === 'multiuser') {
+    return [
+      { name: 'OAuth 登录', wire: WIRE.wired, detail: '——GitHub OAuth 已上线（多用户生产会话，按邀请获得角色）' },
+      { name: '审批只读 + 决策', wire: WIRE.wired, detail: '——/api/mu/approvals 只读与决策端点已接线（高危修复审批门；批准仅生成 DRY_RUN 建议，需 maintainer）' },
+      { name: '数据面', wire: WIRE.wired, detail: '——多用户实时数据，按登录会话的租户隔离（仅见本组织数据）' },
+      { name: 'PR 审查', wire: WIRE.wired, detail: '——GitHub App 只读接入，PR 创建后自动同步审查' },
+      { name: '站内合并', wire: WIRE.closed, detail: '——不自动合并、不绕过 branch protection（仅 GitHub 外链）' },
+      { name: '知识库 / 用量', wire: WIRE.not_wired, detail: '（数据源待交付）' },
+    ];
+  }
+  return [
+    { name: '运行查询（快照）', wire: mode === 'snapshot' ? WIRE.wired : WIRE.na, detail: mode === 'snapshot' ? '' : '（当前为实时源；run 证据详情页仍为快照）' },
+    { name: 'PR 聚合（/api/pulls 正式契约）', wire: live ? WIRE.wired : WIRE.pending_delivery, detail: live ? '（PG 实时，会话 allowlist 过滤）' : '——等待后端' },
+    { name: '审批只读', wire: pgMode || live ? WIRE.wired : WIRE.not_wired, detail: pgMode ? '（隔离 test-auth）' : live ? '（实时票据，会话 allowlist）' : '——暂无审批票只读数据源' },
+    { name: '审批决策', wire: pgMode ? WIRE.wired_test : WIRE.not_wired, detail: pgMode ? '——隔离 test-auth（仅 fixture 票据）' : '——决策接口与授权策略待后端交付' },
+    { name: 'OAuth 登录', wire: WIRE.not_wired, detail: '——当前为操作员账号密码登录' },
+    { name: '站内合并', wire: WIRE.closed, detail: '——仅提供 GitHub 外链' },
+    { name: '知识库 / 用量', wire: WIRE.not_wired, detail: '（数据源待交付）' },
+  ];
+}
+
 // 完整状态面板（顶栏弹出与"数据源与联调"页面共用）
 export function WorkspacePanel({ config, auth, onRetry }) {
   const state = resolveWorkspaceState(config, auth.status);
@@ -80,15 +107,7 @@ export function WorkspacePanel({ config, auth, onRetry }) {
   const testAuth = auth.status === 'authed' && config?.dataMode === 'fixture';
   const pgMode = mode === 'console-pg';
 
-  const wiring = [
-    { name: '运行查询（快照）', state: mode === 'snapshot' ? '已接入' : '不适用（当前为实时源；run 证据详情页仍为快照）', ok: true },
-    { name: 'PR 聚合（/api/pulls 正式契约）', state: live ? '已接入（PG 实时，会话 allowlist 过滤）' : '未交付——等待后端', ok: live },
-    { name: '审批只读', state: pgMode ? '已接入（隔离 test-auth）' : live ? '已接入（实时票据，会话 allowlist）' : '未接线——暂无审批票只读数据源', ok: pgMode || live },
-    { name: '审批决策', state: pgMode ? '隔离 test-auth（仅 fixture 票据）' : '未接线——决策接口与授权策略待后端交付', ok: false },
-    { name: 'OAuth 登录', state: '未接线——当前为操作员账号密码登录', ok: false },
-    { name: '站内合并', state: '关闭——仅提供 GitHub 外链', ok: false },
-    { name: '知识库 / 用量', state: '未接线（数据源待交付）', ok: false },
-  ];
+  const wiring = wiringRowsOf(mode, live, pgMode);
 
   return (
     <div className="ws-panel" role="region" aria-label="工作区状态详情">
@@ -98,7 +117,11 @@ export function WorkspacePanel({ config, auth, onRetry }) {
       <Row label="数据来源">
         {sourceLabelOf(mode)}
         {health?.evidence_root ? (
-          <div className="ws-sub mono">{health.evidence_root}</div>
+          // 容器内路径属技术详情：折叠收纳，不进正文（rc.10 信息正确性 PR-C）
+          <details className="tech-details">
+            <summary>技术详情</summary>
+            <span className="ws-sub mono" title="容器内路径">{health.evidence_root}</span>
+          </details>
         ) : null}
       </Row>
       <Row label="是否只读">
@@ -126,13 +149,17 @@ export function WorkspacePanel({ config, auth, onRetry }) {
       </Row>
       <div className="ws-section">接线状态</div>
       <ul className="ws-wiring">
-        {wiring.map((w) => (
-          <li key={w.name}>
-            <span className={`ws-dot ${w.ok ? 'ws-dot-ok' : 'ws-dot-no'}`} aria-hidden />
-            <span className="ws-wire-name">{w.name}</span>
-            <span className="ws-wire-state">{w.state}</span>
-          </li>
-        ))}
+        {wiring.map((w) => {
+          // 行状态 = status-map WIRE 词表条目（容忍传键名字符串）；note 挂 title
+          const wm = (w.wire && typeof w.wire === 'object') ? w.wire : wireMap(w.wire);
+          return (
+            <li key={w.name}>
+              <span className={`ws-dot ${wm.tone === 'ok' ? 'ws-dot-ok' : 'ws-dot-no'}`} aria-hidden />
+              <span className="ws-wire-name">{w.name}</span>
+              <span className="ws-wire-state" title={wm.note}>{`${wm.label}${w.detail}`}</span>
+            </li>
+          );
+        })}
       </ul>
       {state.key === 'unavailable' ? (
         <div className="ws-retry">

@@ -112,10 +112,16 @@ export default function SettingsPage() {
           </div>
           <div className="kv">
             <div className="kv-label">登录方案</div>
-            <div className="kv-value" title="技术详情：会话 Cookie 名为 mp_session；GitHub OAuth 方案（API-AUTH-MERGE-V0 v2）等待后端实现与部署配置">
-              具名操作员密码登录（已上线，服务端会话）。GitHub OAuth 登录等待后端交付。
-              登录会话由服务端会话 Cookie 承载（技术详情见悬停提示）；浏览器不保存 App token / 私钥 /
-              长期凭证；授权以后端为准。
+            <div className="kv-value" title={isMuPrimary
+              ? '技术详情：会话 Cookie 名为 mp_session；GitHub OAuth（/api/mu/auth/oauth/github/*）已上线'
+              : '技术详情：会话 Cookie 名为 mp_session；GitHub OAuth 方案（API-AUTH-MERGE-V0 v2）等待后端实现与部署配置'}>
+              {isMuPrimary
+                ? 'GitHub OAuth 登录已上线（多用户生产会话，按邀请获得角色）；操作员账号密码登录同样可用。'
+                  + '登录会话由服务端会话 Cookie 承载（技术详情见悬停提示）；浏览器不保存 App token / 私钥 / '
+                  + '长期凭证；授权以后端为准。'
+                : '具名操作员密码登录（已上线，服务端会话）。GitHub OAuth 登录等待后端交付。'
+                  + '登录会话由服务端会话 Cookie 承载（技术详情见悬停提示）；浏览器不保存 App token / 私钥 / '
+                  + '长期凭证；授权以后端为准。'}
             </div>
           </div>
         </div>
@@ -139,10 +145,14 @@ export default function SettingsPage() {
         <div className="section-head"><h3>运行边界</h3></div>
         <ul className="compact-list">
           <li>服务仅监听 127.0.0.1 回环；不下发凭证。</li>
-          <li>全站只读：控制台本体接口仅 GET；不写 GitHub、不派发 Fixer/Verifier。</li>
+          <li>{isMuPrimary
+            ? '站内写操作仅限审批决策与审查发起（POST，需对应角色，服务端授权校验）；不写 GitHub、不派发 Fixer/Verifier。'
+            : '全站只读：控制台本体接口仅 GET；不写 GitHub、不派发 Fixer/Verifier。'}</li>
           <li>console-pg 联调模式（test-auth）：审批决策请求仅写隔离 fixture 库（X-Test-Principal 测试主体），不触达任何真实系统或 GitHub。</li>
           <li>快照数据显示真实历史结果，但不提供针对历史数据的真实审批或合并操作。</li>
-          <li>站内审批：待后端决策接口与生产主体的授权策略（须经认证与授权校验）。站内合并：当前关闭，仅提供 GitHub 外链；启用条件由后端证明。</li>
+          <li>{isMuPrimary
+            ? '站内审批：审批票只读与决策已接线（/api/mu/approvals，需 maintainer 角色）——批准仅生成 DRY_RUN 修复建议，不写 GitHub、不自动合并。站内合并：关闭，仅提供 GitHub 外链；不绕过 branch protection。'
+            : '站内审批：待后端决策接口与生产主体的授权策略（须经认证与授权校验）。站内合并：当前关闭，仅提供 GitHub 外链；启用条件由后端证明。'}</li>
           <li>GitHub App 安装授权与用户登录是两条流程，控制台不混用、不代持凭证。</li>
         </ul>
       </section>

@@ -8,10 +8,12 @@ import { resolveWorkspaceState } from '../components/WorkspaceStatusPanel.jsx';
 
 // 数据源与联调状态：工作区状态面板的全页形态（系统二级区）。
 // 目标：不要求用户理解工程术语即可判断"我现在看到的数据从哪来、能做什么"。
+// 模式说明按数据源切换（rc.10 信息正确性）：multiuser 实时源下不再宣称"契约数据=fixture"。
 export default function DataSourcesPage() {
   const config = useAppConfig();
   const auth = useAuth();
   const state = resolveWorkspaceState(config, auth.status);
+  const isMu = config?.mode === 'multiuser';
 
   return (
     <div>
@@ -27,12 +29,17 @@ export default function DataSourcesPage() {
       <section className="section">
         <div className="section-head"><h3>模式说明（人话版）</h3></div>
         <ul className="compact-list">
+          {isMu ? (
+            <li><strong>MU 实时</strong>——多用户正式数据面：仓库 / PR / 运行记录按登录会话的租户实时收窄（仅见本组织数据）；run 证据详情页仍为快照只读。</li>
+          ) : null}
           <li><strong>只读快照</strong>——真实历史运行的存档，只能看，不能操作（run 证据详情页）。</li>
           <li><strong>PG 实时（live）</strong>——隔离 staging 库的实时只读查询；overview/待处理/仓库/PR 详情
             按会话 allowlist 过滤，不触达任何真实 GitHub 或共享生产库。</li>
           <li><strong>隔离联调</strong>——测试库里的演练数据；批准/拒绝只作用于演练库，
             不会碰真实的 GitHub、PR 或生产数据。</li>
-          <li><strong>契约数据</strong>——按正式接口约定提供的验收数据（当前为 fixture）。</li>
+          <li><strong>契约数据</strong>——{isMu
+            ? '按正式接口约定提供的数据（多用户部署下由 MU 实时面提供，非 fixture）。'
+            : '按正式接口约定提供的验收数据（当前为 fixture）。'}</li>
           <li><strong>后端不可用</strong>——服务连不上，此时不提供任何数据（包括快照）。</li>
         </ul>
       </section>

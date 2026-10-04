@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Alert, Button, Card, Form, Input } from 'antd';
-import { LockOutlined, UserOutlined } from '@ant-design/icons';
+import { EyeInvisibleOutlined, EyeOutlined, LockOutlined, UserOutlined } from '@ant-design/icons';
 import { useAppConfig } from '../App.jsx';
 import { useAuth } from '../auth.jsx';
 import { BrandMark } from '../ui.jsx';
@@ -81,13 +81,18 @@ export default function LoginPage() {
             </Button>
             <div style={{ textAlign: 'center', color: '#999', margin: '4px 0 0' }}>—— 或使用操作员账号 ——</div>
             <Form layout="vertical" onFinish={submit} disabled={busy} style={{ marginTop: 16 }}>
+              {/* rc.10 可访问性：prefix 图标为装饰（字段已有 label）→ aria-hidden；
+                  密码可见性切换图标经 iconRender 补有效可访问名（antd 默认无 aria-label） */}
               <Form.Item label="操作员账号" name="user" rules={[{ required: true, message: '请输入用户名' }]}>
-                <Input id="login-user" prefix={<UserOutlined aria-label />} placeholder="用户名"
+                <Input id="login-user" prefix={<UserOutlined aria-hidden="true" />} placeholder="用户名"
                        autoComplete="username" size="large" />
               </Form.Item>
               <Form.Item label="密码" name="password" rules={[{ required: true, message: '请输入密码' }]}>
-                <Input.Password id="login-pass" prefix={<LockOutlined aria-label />} placeholder="密码"
-                       autoComplete="current-password" size="large" />
+                <Input.Password id="login-pass" prefix={<LockOutlined aria-hidden="true" />} placeholder="密码"
+                       autoComplete="current-password" size="large"
+                       iconRender={(visible) => (visible
+                         ? <EyeOutlined aria-label="隐藏密码" />
+                         : <EyeInvisibleOutlined aria-label="显示密码" />)} />
               </Form.Item>
               <Button type="primary" htmlType="submit" block size="large" loading={busy}>
                 登录

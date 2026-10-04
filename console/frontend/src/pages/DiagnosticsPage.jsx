@@ -7,14 +7,27 @@ import { resolveWorkspaceState } from '../components/WorkspaceStatusPanel.jsx';
 
 // 诊断：接线状态与健康摘要的集中呈现 + 审计记录入口。
 // 命名契约：本页=「诊断」（含审计记录入口）；「审批」=/approvals 的人工放行页——两者不混用。
-// 只如实列出已接入与未接入项；未接线项等待后端交付（对应 INTEGRATION-REQUESTS R-1~R-4）。
+// 接线清单按数据源口径切换（rc.10 信息正确性）：
+//   multiuser 实时源 → MU 面真实接线（GitHub OAuth 与审批只读+决策已上线，数据面按租户隔离）；
+//   legacy 快照/联调源 → 保留历史口径（该源下 OAuth/生产审批确实未接线，如实呈现）。
 export default function DiagnosticsPage() {
   const config = useAppConfig();
   const auth = useAuth();
   const state = resolveWorkspaceState(config, auth.status);
   const health = config?.raw ?? {};
+  const isMu = config?.mode === 'multiuser';
 
-  const wiring = [
+  // MU 实时源（v16 审批门 + Wave 2A OAuth 已上线）的真实接线
+  const muWiring = [
+    ['OAuth 登录', '已接入——GitHub OAuth 已上线（多用户生产会话，按邀请获得角色）', true],
+    ['审批只读 + 决策', '已接入——/api/mu/approvals 只读与决策端点已接线（高危修复审批门；批准仅生成 DRY_RUN 建议）', true],
+    ['数据面', '已接入——多用户实时数据，按登录会话的租户隔离（仅见本组织数据）', true],
+    ['PR 审查', '已接入——GitHub App 只读接入，PR 创建后自动同步审查', true],
+    ['站内合并', '关闭——不自动合并、不绕过 branch protection', false],
+  ];
+
+  // legacy 快照/隔离联调源的接线清单（历史口径——该源下确实如此）
+  const legacyWiring = [
     ['运行查询（快照/隔离 PG）', '已接入', true],
     ['PR 聚合（/api/pulls 正式契约）', '等待后端交付', false],
     ['审批只读 + 决策（test-auth）', '已接入（隔离联调测试主体；生产主体的授权策略待后端交付）', true],
@@ -24,6 +37,7 @@ export default function DiagnosticsPage() {
     ['站内合并', '关闭——仅提供 GitHub 外链', false],
     ['findings / validations PG 查询面', '等待后端交付', false],
   ];
+  const wiring = isMu ? muWiring : legacyWiring;
 
   return (
     <div>
@@ -75,7 +89,9 @@ export default function DiagnosticsPage() {
         <ul className="compact-list">
           <li>运行级审计与证据链：<Link to="/runs">运行</Link>（每个运行详情含时间线、任务、证据与 SHA256SUMS 校验）。</li>
           <li>PR 维度结论与关联：<Link to="/repos">仓库</Link> → 选择仓库 → PR 详情。</li>
-          <li>审批决策审计：票据决策在隔离库 approval.ticket_audit 留痕（控制台暂只读展示状态，审计明细查询待后端交付）。</li>
+          <li>审批决策审计：{isMu
+            ? '审批票决策与 PR 审批/驳回在多用户库留痕（可追溯）；控制台只读展示，审计明细查询面待后端交付。'
+            : '票据决策在隔离库 approval.ticket_audit 留痕（控制台暂只读展示状态，审计明细查询待后端交付）。'}</li>
         </ul>
       </section>
     </div>
