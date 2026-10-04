@@ -151,9 +151,10 @@ try {
   const bob = await muLogin('fixture:bob');
   ok('MU-B4 bob 登录 → contributor', bob.status === 200 && bob.json?.role === 'contributor');
 
+  // rc.10 SEC-5 收敛：members 读=read_audit（审计需要成员-角色映射）——contributor 不再可枚举
   const bobMembers = await call('/api/mu/members', { cookie: bob.cookie });
-  ok('MU-B5 成员列表读=任意 active 成员（contributor 可读，只读视图）',
-    bobMembers.status === 200 && (bobMembers.json?.members ?? []).some((m) => m.login === 'bob'));
+  ok('MU-B5 成员列表读收敛为 read_audit（contributor → 403 action_not_granted）',
+    bobMembers.status === 403 && bobMembers.json?.error?.reason === 'action_not_granted', bobMembers.json);
 
   const bobAdd = await call('/api/mu/members', { method: 'POST', cookie: bob.cookie, csrf: bob.csrf,
     body: { login: 'mallory', role: 'platform_admin' } });

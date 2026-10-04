@@ -4,28 +4,12 @@
 //  * MU_MODE=on  → mu_session 是唯一凭证（绝不回退 mp_session）
 //  * MU_MODE=off → mp_session 保留 legacy 行为（零变化）
 //  * 业务处理器不得自行读 Cookie——一律经 resolvePrincipal
+//
+// rc.10 安全收敛：本模块不再携带权限语义（roles 仅作快照展示）。
+// 唯一权威授权矩阵 = lib/multiuser/authz.mjs 的 ROLE_ACTIONS / authorize()。
+// 旧 ROLE_PERMISSIONS/hasPermission 已删除——其语义（auditor 可读 PR、
+// platform_admin='*'）与权威矩阵冲突，误用即绕过默认拒绝。
 const MU_COOKIE = 'mu_session';
-
-export const ROLE_PERMISSIONS = Object.freeze({
-  contributor: ['read:pr', 'read:run', 'read:evidence', 'read:ticket'],
-  reviewer: ['read:pr', 'read:run', 'read:evidence', 'read:ticket', 'review:pr', 'read:audit'],
-  maintainer: ['read:pr', 'read:run', 'read:evidence', 'read:ticket', 'review:pr', 'read:audit',
-    'manage:repository_binding', 'trigger:review', 'read:overview', 'read:pending', 'read:pulls',
-    'read:cchain', 'read:rag', 'read:runs', 'read:approvals', 'read:tickets'],
-  platform_admin: ['*'],
-  auditor: ['read:pr', 'read:run', 'read:evidence', 'read:ticket', 'read:audit', 'read:overview',
-    'read:pending', 'read:pulls', 'read:runs', 'read:approvals', 'read:tickets', 'read:cchain'],
-});
-
-export function permissionsForRole(role) {
-  return ROLE_PERMISSIONS[String(role ?? '').toLowerCase()] ?? [];
-}
-
-export function hasPermission(principal, perm) {
-  if (!principal?.authenticated) return false;
-  const perms = principal.permissions ?? [];
-  return perms.includes('*') || perms.includes(perm);
-}
 
 function muTokenFromCookie(header) {
   if (typeof header !== 'string') return '';
@@ -46,7 +30,7 @@ const sha256Of = (v) => createHash('sha256').update(String(v)).digest('hex');
  */
 export async function resolvePrincipal(req, opts = {}) {
   const notAuth = { authenticated: false, userId: null, username: null, orgId: null,
-    tenantId: null, roles: [], permissions: [], authMode: 'multiuser', sessionId: null };
+    tenantId: null, roles: [], authMode: 'multiuser', sessionId: null };
   const muToken = muTokenFromCookie(req.headers?.cookie);
   if (!muToken || !opts.muStore) return notAuth;
   const session = await opts.muStore.findSessionByToken(muToken).catch(() => null);
@@ -61,6 +45,5 @@ export async function resolvePrincipal(req, opts = {}) {
     username: user?.login ?? session.login ?? 'mu-user',
     orgId: String(session.tenant_id ?? ''), tenantId: String(session.tenant_id ?? ''),
     roles: [role],
-    permissions: permissionsForRole(role),
     authMode: 'multiuser', sessionId: muToken, muSession: session };
 }

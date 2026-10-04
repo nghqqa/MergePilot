@@ -129,17 +129,20 @@ const { server } = createConsole({ evidenceRoot: HERE, distDir: path.join(HERE, 
 await new Promise((r) => server.listen(0, '127.0.0.1', r));
 const BASE = `http://127.0.0.1:${server.address().port}`;
 let cookie;
+let csrf; // rc.10 SEC-3：rag-trial POST 强制 CSRF——登录 Set-Cookie 串解析 mp_csrf
 {
   const res = await fetch(BASE + '/api/auth/login', {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ user: 'canon-op', password: 'canon-test-password' }),
   });
   cookie = (res.headers.get('set-cookie') || '').split(';')[0];
+  csrf = (res.headers.get('set-cookie') || '').match(/mp_csrf=([^;,]+)/)?.[1] ?? null;
 }
 const call = async (p, body) => {
   const res = await fetch(BASE + p, {
     method: body ? 'POST' : 'GET',
-    headers: { cookie, 'content-type': 'application/json' },
+    headers: { cookie, 'content-type': 'application/json',
+      ...(body && csrf ? { 'x-csrf-token': csrf } : {}) }, // rc.10 SEC-3
     body: body ? JSON.stringify(body) : undefined,
   });
   let json = null; try { json = await res.json(); } catch { /* */ }
@@ -326,7 +329,7 @@ try {
   resetScopeDenyLimiter();
   const deniedBeforeRq = await repoDeniedCount();
   const requeuePost = async (id) => {
-    const res = await fetch(BASE + `/api/rag-trial/jobs/${id}/requeue`, { method: 'POST', headers: { cookie, 'content-type': 'application/json' } });
+    const res = await fetch(BASE + `/api/rag-trial/jobs/${id}/requeue`, { method: 'POST', headers: { cookie, 'content-type': 'application/json', ...(csrf ? { 'x-csrf-token': csrf } : {}) } });
     let json = null; try { json = await res.json(); } catch { /* */ }
     return { status: res.status, json };
   };

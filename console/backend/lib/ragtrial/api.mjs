@@ -6,6 +6,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { createRagTrialStore, RagTrialError } from './store.mjs';
 import { createJobQueue } from './queue.mjs';
 import { resolveProvider, ensureProviderAttested } from './embed.mjs';
@@ -265,6 +266,27 @@ export async function ragTrialApi(req, res, ctx) {
   const auth = await requireSession();
   if (!auth) return sendJson(res, 401, { error: { reason: 'unauthorized' } });
   const actor = actorOf(auth);
+
+  // rc.10 SEC-3：全部变更请求强制 CSRF（此前 12 个 POST 仅靠 SameSite cookie——
+  // 无 token 层兜底）。双轨比对：MU 会话=双提交（sha256(header) vs mu.session.csrf_hash，
+  // timing-safe）；legacy 内存会话=timing-safe 直比 auth.csrf。机器端点
+  //（/machine/*，HMAC 验签、无会话）在上方已 return，不经此门。
+  if (req.method !== 'GET' && req.method !== 'HEAD' && req.method !== 'OPTIONS') {
+    const header = String(req.headers['x-csrf-token'] ?? '');
+    let csrfOkRt = false;
+    if (header) {
+      if (auth._mu?.csrfHash) {
+        const digest = crypto.createHash('sha256').update(header).digest('hex');
+        csrfOkRt = digest.length === auth._mu.csrfHash.length
+          && crypto.timingSafeEqual(Buffer.from(digest), Buffer.from(auth._mu.csrfHash));
+      } else if (typeof auth.csrf === 'string' && auth.csrf) {
+        const a = Buffer.from(header);
+        const b = Buffer.from(auth.csrf);
+        csrfOkRt = a.length === b.length && crypto.timingSafeEqual(a, b);
+      }
+    }
+    if (!csrfOkRt) return sendJson(res, 403, { error: { reason: 'csrf_required' } });
+  }
 
   // ── 生产依赖就绪监控（HARDENING 波）：实时探测+告警字段+可观测性日志 ──
   // 返回 keystore/attestation 逐项状态+告警阈值+上次探测时间——缺失=BLOCKED 不伪装。

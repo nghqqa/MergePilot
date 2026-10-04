@@ -140,6 +140,12 @@ export async function handlePullRequestEvent(pool, cfg, { payload, servicePrinci
     // ── Wave 3.1/3.2：可选 LLM 第二阶段审查（使用创建时冻结的有效策略快照 effLlm；
     //    默认 disabled 零网络；失败 fail-closed 回落 deterministic——LLM 建议永不阻断
     //    也永不充当"通过"）──
+    // rc.10 SEC-2：真实出站（openai_compatible）统一接入出站治理——与 v2 external
+    // reviewer 同一六-reason 否决层（review-arch.evaluateEgressAuthorization）。
+    // v1 run 行无冻结 policy 快照（architecture_version=NULL），以当前 policy+consent
+    // 运行时装配等价 snapshot（digest=策略体内容哈希）——policy/consent/provider 任一
+    // 缺失或非 external_api 档 → EGRESS_DENIED 零网络（生产 evidence_only 恒关闭）。
+    // deterministic_mock 零网络不经过此门（如实标记 mock 的测试路径）。
     const { callLlmReviewer, mockLlmReviewer } = await import('./agents/llm.mjs');
     let llmCount = 0, llmCode = null;
     if (effLlm.kind !== 'disabled') {
@@ -149,15 +155,75 @@ export async function handlePullRequestEvent(pool, cfg, { payload, servicePrinci
         tenantId: ctx.tenantId, repoId: ctx.repoId, prId: ctx.prId, headSha });
       if (llmClaim.ok) {
         const t0 = Date.now();
-        let r;
-        try {
-          r = effLlm.kind === 'deterministic_mock'
-            ? await mockLlmReviewer({ findings })
-            : await callLlmReviewer(effLlm, { pr: context.pr, findings, diff: context.diff,
-              apiKey: (cfg.llmEnv ?? process.env).MU_LLM_API_KEY },
-              { fetchImpl: cfg.llmFetch ?? fetch });
-        } catch (e) {
-          r = { ok: false, code: `LLM_UNEXPECTED:${String(e?.message ?? '').slice(0, 0) || 'error'}` }; // 无正文
+        let r = null;
+        let egressCtx = null;
+        if (effLlm.kind !== 'deterministic_mock') {
+          // 真实出站前置门：装配运行时等价 snapshot → 六-reason 否决层（deny 零网络）
+          const { createReviewPolicyStore } = await import('./review-policy-store.mjs');
+          const rpStore = createReviewPolicyStore({ pool });
+          const { createEgressAudit } = await import('./agents/egress-audit.mjs');
+          const egress = createEgressAudit({ pool });
+          // provider 关联键=租户 policy 行声明的 provider_id（v2 控制面唯一权威；
+          // 无 policy 行时惰性默认 evidence_only → 必然 deny，与生产 evidence_only 同语义）
+          const curPolicy = await rpStore.getPolicy(ctx.tenantId).catch(() => null);
+          const providerId = String(curPolicy?.provider_id ?? effLlm.provider ?? effLlm.kind);
+          const state = await rpStore.getEgressCurrentState(ctx.tenantId, providerId)
+            .catch(() => null);
+          const { buildPolicySnapshot } = await import('./review-arch.mjs');
+          const rtSnapshot = state?.policy?.review_mode
+            ? buildPolicySnapshot({ tenantId: ctx.tenantId, policy: { ...state.policy,
+                provider_id: state.policy.provider_id ?? providerId } })
+            : null;
+          const auth = rtSnapshot
+            ? await egress.authorizeEgress(rtSnapshot, state)
+            : { authorized: false, reason: 'EGRESS_MODE_NOT_EXTERNAL' };
+          if (!auth.authorized) {
+            llmCode = `EGRESS_DENIED:${auth.reason}`;
+            await finishAttempt(pool, { attemptId: llmClaim.attemptId, status: 'FAILED',
+              errorCode: String(llmCode).slice(0, 60), latencyMs: Date.now() - t0,
+              evidenceRef: `attempt:${llmClaim.attemptId}` });
+            await pool.query(
+              `INSERT INTO mu.audit_event (tenant_id, actor_user_id, kind, detail)
+               VALUES ($1,$2,'REVIEW_LLM_EGRESS_DENIED',$3)`,
+              [ctx.tenantId, null, JSON.stringify({ run_id: run.run_id,
+                reason: auth.reason, provider_id: providerId })]).catch(() => {});
+            r = { ok: false, code: llmCode }; // 稳定失败记档——pipeline 继续走 deterministic 结果
+          } else {
+            egressCtx = { egress, providerId };
+          }
+        }
+        if (!r) {
+          try {
+            r = effLlm.kind === 'deterministic_mock'
+              ? await mockLlmReviewer({ findings })
+              : await callLlmReviewer(effLlm, { pr: context.pr, findings, diff: context.diff,
+                apiKey: (cfg.llmEnv ?? process.env).MU_LLM_API_KEY },
+                { fetchImpl: cfg.llmFetch ?? fetch });
+          } catch (e) {
+            r = { ok: false, code: `LLM_UNEXPECTED:${String(e?.message ?? '').slice(0, 0) || 'error'}` }; // 无正文
+          }
+          if (egressCtx) {
+            // 出站留痕（成败均记——manifest+digest 零正文；与 v2 external reviewer 同纪律）
+            const reqBytes = Buffer.byteLength(JSON.stringify({ pr: context.pr?.title ?? '',
+              findings: (findings ?? []).length, diff: context.diff ?? '' }));
+            await egressCtx.egress.recordEgress({ tenantId: ctx.tenantId, repoId: ctx.repoId,
+              runId: run.run_id, attemptId: llmClaim.attemptId,
+              providerId: egressCtx.providerId, modelId: effLlm.model ?? null,
+              headSha, diffDigest: digestOf(String(context.diff ?? '')),
+              inputDigest: digestOf(`${headSha}|llm`), files: [],
+              bytesSent: reqBytes, tokensSent: null,
+              redactionsApplied: 0, // 脱敏在 callLlmReviewer 内（maskLine）——计数不可得，如实记 0
+              policyVersion: Number(effLlm.policy_version ?? 0),
+              consentVersion: effLlm.consent_version ?? null,
+              responseDigest: String(r?.outputDigest ?? '').slice(0, 32) || null })
+              .catch((e2) => console.error('[mu:egress] recordEgress failed:',
+                String(e2?.message ?? e2).slice(0, 120)));
+            await pool.query(
+              `INSERT INTO mu.audit_event (tenant_id, actor_user_id, kind, detail)
+               VALUES ($1,$2,'REVIEW_LLM_EGRESS',$3)`,
+              [ctx.tenantId, null, JSON.stringify({ run_id: run.run_id,
+                ok: Boolean(r?.ok), model: effLlm.model ?? null })]).catch(() => {});
+          }
         }
         if (r.ok) {
           const mapped = (r.findings ?? []).map((f) => ({

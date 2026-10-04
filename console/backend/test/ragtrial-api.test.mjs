@@ -27,7 +27,10 @@ async function login(base) {
     body: JSON.stringify({ user: 'pilot', password: 'pw-test' }),
   });
   assert.equal(res.status, 200, '登录必须成功');
-  return (res.headers.get('set-cookie') || '').split(';')[0];
+  const cookie = (res.headers.get('set-cookie') || '').split(';')[0];
+  // rc.10 SEC-3：rag-trial POST 强制 CSRF——从登录 Set-Cookie 串解析 mp_csrf
+  const csrf = (res.headers.get('set-cookie') || '').match(/mp_csrf=([^;,]+)/)?.[1] ?? null;
+  return { cookie, csrf };
 }
 
 test('rag-trial 未登录全端点 401', async () => {
@@ -52,14 +55,15 @@ test('rag-trial 未登录全端点 401', async () => {
 
 test('已登录 + 未接线（无 DSN）→ backend_not_wired 如实返回（不伪装检索）', async () => {
   await withServer(async (base) => {
-    const cookie = await login(base);
+    const { cookie, csrf } = await login(base);
     for (const [method, p, body] of [
       ['GET', '/api/rag-trial/status', null],
       ['POST', '/api/rag-trial/query', { q: 'x', repo: 'a/b', branch: 'main' }],
       ['POST', '/api/rag-trial/policy-check', { evidence: [] }],
     ]) {
       const res = await fetch(base + p, {
-        method, headers: { cookie, 'content-type': 'application/json' },
+        method, headers: { cookie, 'content-type': 'application/json',
+          ...(method === 'POST' && csrf ? { 'x-csrf-token': csrf } : {}) },
         body: body ? JSON.stringify(body) : undefined,
       });
       assert.equal(res.status, 200, p);
@@ -74,7 +78,7 @@ test('A 链代理端点未被 ragtrial 改动（回归：flag off 如实 disable
   await withServer(async (base) => {
     const saved = process.env.MERGEPILOT_ORG_RAG_A_CHAIN;
     delete process.env.MERGEPILOT_ORG_RAG_A_CHAIN;
-    const cookie = await login(base);
+    const { cookie } = await login(base);
     const res = await fetch(base + '/api/rag/org-search?q=sec', { headers: { cookie } });
     assert.equal(res.status, 200);
     const j = await res.json();

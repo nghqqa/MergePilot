@@ -12,9 +12,19 @@ import { roleActions } from '../multiuser/authz.mjs';
 import crypto from 'node:crypto';
 
 let muPool = null;
+// pg 解析：生产镜像 /app/node_modules 常规 import 即得；测试裸仓（依赖仅装在
+// console/backend/test/support）走 createRequire fallback——解析失败如实返回 null
+//（调用方 401，不伪装可用）。
+async function loadPg() {
+  try { return await import('pg'); } catch { /* fallback below */ }
+  try {
+    const { createRequire } = await import('node:module');
+    return createRequire(new URL('../../test/support/noop.js', import.meta.url))('pg');
+  } catch { return null; }
+}
 async function getMuPool(env) {
   if (!muPool) {
-    const pg = await import('pg').catch(() => null);
+    const pg = await loadPg();
     if (!pg) return null;
     muPool = new pg.Pool({ connectionString: env.CONSOLE_PG_DSN, max: 2 });
     muPool.on('error', () => {});
@@ -37,7 +47,7 @@ export async function resolveMuAuthForRag(req, env = process.env) {
   if (!pool) return null;
   try {
     const sess = await pool.query(
-      `SELECT s.user_id, s.tenant_id, s.login, s.role_snapshot, u.state AS user_state
+      `SELECT s.user_id, s.tenant_id, s.login, s.role_snapshot, s.csrf_hash, u.state AS user_state
          FROM mu.session s JOIN mu.app_user u ON u.user_id = s.user_id
         WHERE s.token_hash = $1 AND s.revoked_at IS NULL
           AND s.expires_at > now() AND u.state = 'active'`,
@@ -63,6 +73,8 @@ export async function resolveMuAuthForRag(req, env = process.env) {
     const repoNames = repos.rows.map((r) => `${r.owner}/${r.name}`);
 
     // 构造 RAG 兼容 auth（只读，不写 legacy Map）
-    return { user: s.login, repos: repoNames, _mu: { userId: s.user_id, tenantId: s.tenant_id, role: m.role } };
+    // rc.10 SEC-3：csrf_hash 随会话解析带回（仅供服务端双提交比对，绝不下发客户端）
+    return { user: s.login, repos: repoNames,
+      _mu: { userId: s.user_id, tenantId: s.tenant_id, role: m.role, csrfHash: s.csrf_hash } };
   } catch { return null; }
 }
