@@ -43,7 +43,7 @@ test('legacy 登录未配置 allowlist → 会话 repos 为空（RAG 会话面�
     assert.deepEqual(j.repos, [], '未配置 allowlist 的会话授权面必须为空（默认拒）');
     // 无 DSN：已登录请求仍如实 backend_not_wired（未接线不伪装——既有语义保持）
     const q = await fetch(base + '/api/rag-trial/query', {
-      method: 'POST', headers: { cookie, 'content-type': 'application/json' },
+      method: 'POST', headers: { cookie, 'x-csrf-token': (login.headers.get('set-cookie') || '').match(/mp_csrf=([^;,]+)/)?.[1], 'content-type': 'application/json' },
       body: JSON.stringify({ q: 'x', repo: 'a/b', branch: 'main' }),
     });
     assert.equal(q.status, 200);

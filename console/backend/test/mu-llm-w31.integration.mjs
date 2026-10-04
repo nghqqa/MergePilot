@@ -160,6 +160,45 @@ try {
   ok('W6c LLM attempt 记 digest/model 零正文', llmA.length === 1 && llmA[0].status === 'DONE'
     && /^[0-9a-f]{64}$/.test(llmA[0].output_digest));
 
+  // W6c2（rc.10 SEC-2 治理门）：真实 provider + 未配 v2 控制面（policy 仍默认
+  // evidence_only、无 consent）→ EGRESS_DENIED 零网络；deterministic 结果保留。
+  {
+    const headE = 'e'.repeat(40);
+    await store.upsertPullRequest({ tenantId: T, repoId: repo.repo_id, providerPrNumber: 3, headSha: headE });
+    let netBefore = networkCalls;
+    const rE = await svc.handlePullRequestEvent(pool, { configured: true, llmEnv: CFG, llmFetch: spy },
+      { payload: { ...ev, head_sha: headE } });
+    const llmE = (await pool.query(`SELECT status, error_code FROM mu.agent_attempt WHERE run_id=$1 AND provider='openai_compatible'`, [rE.run.run_id])).rows;
+    const egressRows = (await pool.query(`SELECT COUNT(*)::int AS c FROM mu.code_egress_event WHERE run_id=$1`, [rE.run.run_id])).rows[0].c;
+    const denyAudit = (await pool.query(`SELECT COUNT(*)::int AS c FROM mu.audit_event WHERE kind='REVIEW_LLM_EGRESS_DENIED'`)).rows[0].c;
+    ok('W6c2 未配控制面 → EGRESS_DENIED 零网络', rE.ok === true
+      && String(rE.llm_code ?? '').startsWith('EGRESS_DENIED:')
+      && networkCalls === netBefore, { llm_code: rE.llm_code, net: networkCalls - netBefore });
+    ok('W6c2 attempt FAILED(EGRESS_DENIED:*) + 零 code_egress_event + 拒绝审计落库',
+      llmE[0]?.status === 'FAILED' && String(llmE[0]?.error_code ?? '').startsWith('EGRESS_DENIED:')
+      && egressRows === 0 && denyAudit >= 1, { attempt: llmE[0], egressRows, denyAudit });
+    ok('W6c2 deterministic 结果保留（fail-closed 回落）', rE.run.status === 'REVIEWED' && rE.findings_count >= 1);
+  }
+
+  // W6d 前置（rc.10 SEC-2）：为 W6d 配齐 v2 控制面出站链（provider 注册+consent+external_api policy）
+  {
+    const rps = await import('../lib/multiuser/review-policy-store.mjs');
+    const rpStore = rps.createReviewPolicyStore({ pool });
+    await pool.query(
+      `INSERT INTO mu.provider_registry (provider_id, display_name, endpoint_origin, policy_status, state)
+       VALUES ('openai_compatible','CI Test Provider','https://llm.example','custom_acknowledged','custom_acknowledged')
+       ON CONFLICT (provider_id) DO NOTHING`);
+    const acc = await rpStore.acceptConsent(T, '00000000-0000-0000-0000-0000000000w31'.replace('w31','31'), { providerId: 'openai_compatible',
+      consentVersion: 'v1', acknowledgementDigest: 'a'.repeat(64), policyVersion: 1 });
+    const cur = await rpStore.getPolicy(T);
+    const up = await rpStore.updatePolicy(T, null,
+      { review_mode: 'external_api', provider_id: 'openai_compatible', model_id: 'test-m',
+        consent_version: 'v1', retention_ack: true },
+      { expectedVersion: Number(cur.policy_version) });
+    ok('W6d-pre v2 控制面出站链配置成功（consent+external_api）', acc.ok !== false && up.ok !== false,
+      { acc: acc.ok, up: up.ok ?? up.code });
+  }
+
   // W6d 真实 provider 失败（注入 mock fetch 429）：attempt FAILED+code，pipeline 照常 REVIEWED
   const head3 = 'd'.repeat(40);
   await store.upsertPullRequest({ tenantId: T, repoId: repo.repo_id, providerPrNumber: 3, headSha: head3 });
@@ -169,6 +208,12 @@ try {
   ok('W6d LLM 429 → attempt FAILED(code) 管线不阻断', rC.ok === true && rC.llm_code === 'LLM_RATE_LIMITED'
     && llmC[0]?.status === 'FAILED' && llmC[0]?.error_code === 'LLM_RATE_LIMITED');
   ok('W6d2 deterministic 结果保留（fail-closed 回落）', rC.run.status === 'REVIEWED' && rC.findings_count >= 1);
+  // rc.10 SEC-2：429 属真实出站（请求已发）——code_egress_event+审计必须留痕
+  {
+    const eg = (await pool.query(`SELECT COUNT(*)::int AS c FROM mu.code_egress_event WHERE run_id=$1 AND provider_id='openai_compatible'`, [rC.run.run_id])).rows[0].c;
+    const ea = (await pool.query(`SELECT COUNT(*)::int AS c FROM mu.audit_event WHERE kind='REVIEW_LLM_EGRESS'`)).rows[0].c;
+    ok('W6d3 出站留痕：code_egress_event 1 行 + REVIEW_LLM_EGRESS 审计', eg === 1 && ea >= 1, { eg, ea });
+  }
 
   // W6e 泄漏全表扫描（key/prompt/diff/响应正文）
   let leaks = [];

@@ -198,7 +198,11 @@ try {
   try { await store.initSchema(); } catch (e) { diagErr = e; }
   ok('MS12b 历史脏行升级失败可诊断（PG 23502 含列名提示）',
     diagErr !== null && /tenant_id|null/i.test(String(diagErr?.message ?? diagErr)), String(diagErr?.message ?? '').slice(0, 90));
+  // rc.10 v21 封印后 audit_event 禁 UPDATE/DELETE——测试清理走超管旁路（replica 模式
+  // 跳过触发器，仅限测试装置，生产无此路径）
+  await pool.query(`SET session_replication_role = replica`);
   await pool.query(`DELETE FROM mu.audit_event WHERE kind='hw_legacy_null_tenant'`);
+  await pool.query(`SET session_replication_role = origin`);
   ok('MS12c 清理脏行后重放自愈（部分失败幂等恢复）', (await store.initSchema()) === true
     && (await pool.query(`SELECT attnotnull FROM pg_attribute WHERE attrelid='mu.audit_event'::regclass AND attname='tenant_id'`)).rows[0].attnotnull === true);
 } catch (e) {
