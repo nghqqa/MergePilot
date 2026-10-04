@@ -24,12 +24,19 @@ async function get(path) {
   return body;
 }
 
+// rc.10 SEC-3：变更请求统一携带 CSRF 双提交头（mp_csrf cookie——mu/legacy 会话同名）。
+function csrfHeader() {
+  if (typeof document === 'undefined') return {};
+  const row = document.cookie.split(';').map((s) => s.trim()).find((s) => s.startsWith('mp_csrf='));
+  return row ? { 'x-csrf-token': decodeURIComponent(row.slice('mp_csrf='.length)) } : {};
+}
+
 async function post(path, body) {
   let res;
   try {
     res = await fetch(path, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', ...csrfHeader() },
       body: JSON.stringify(body ?? {}),
     });
   } catch (e) {

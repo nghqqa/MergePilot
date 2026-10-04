@@ -1306,6 +1306,27 @@ export const MU_MIGRATIONS = [
          ON mu.rag_model_install (tenant_id, state)`,
     ],
   },
+  {
+    // ── v21 审计事件不可变封印（rc.10 安全收敛 SEC-7）──
+    // mu.audit_event 是 append-only 审计面（store.audit 只 INSERT）——升级为 DB 级
+    // 硬封印：UPDATE/DELETE 一律 RAISE EXCEPTION（对齐 v19 留痕表封印纪律；v19 允许
+    // RUNNING 在途更新，audit_event 无状态机故全封）。纯 additive：回滚 =
+    // DROP TRIGGER mu_audit_event_no_update; DROP FUNCTION mu.mu_audit_event_seal();
+    // DELETE FROM mu.schema_migrations WHERE version=21; 既有数据零触碰。
+    version: 21,
+    name: 'mu_audit_event_seal',
+    sql: [
+      `CREATE OR REPLACE FUNCTION mu.mu_audit_event_seal() RETURNS trigger LANGUAGE plpgsql AS $fn21$
+       BEGIN
+         RAISE EXCEPTION 'audit_event_sealed: mu.audit_event is append-only (op % not permitted)', TG_OP;
+       END
+       $fn21$`,
+      `DROP TRIGGER IF EXISTS mu_audit_event_no_update ON mu.audit_event`,
+      `CREATE TRIGGER mu_audit_event_no_update
+         BEFORE UPDATE OR DELETE ON mu.audit_event
+         FOR EACH ROW EXECUTE FUNCTION mu.mu_audit_event_seal()`,
+    ],
+  },
 ];
 
 export const MU_SCHEMA_LATEST = MU_MIGRATIONS[MU_MIGRATIONS.length - 1].version;

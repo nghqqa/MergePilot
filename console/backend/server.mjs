@@ -25,6 +25,7 @@ import { cchainStatusObserved, verifyRunBindingAndAudit, rotateKeystore,
          cchainMetricsSnapshot, rememberStatusForMetrics } from './lib/cchain/wiring.mjs';
 import { ragTrialApi, ragTrialInternalQuery } from './lib/ragtrial/api.mjs';
 import { muApi, getMuStore, ensureMuReady, muSchemaReadyState } from './lib/multiuser/api.mjs';
+import { roleActions } from './lib/multiuser/authz.mjs';
 import { createMuConsoleApi } from './lib/mu-console-api.mjs';
 import { installQueryTraceOn, wrapSendJsonForAccessLog } from './lib/diag/trace.mjs';
 
@@ -502,6 +503,12 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
       const gate = await authGate(req);
       if (gate.denied) return sendJson(res, gate.denied, anonymousBody());
       if (gate.principal.authMode === 'multiuser') {
+        // rc.10 安全收敛（SEC-1）：overview 聚合 PR 阶段/运行/待办——read_pull_request 档
+        // （auditor 不放行，同 facade 区权威矩阵）。
+        const grantedOv = roleActions(gate.principal.roles?.[0]) ?? [];
+        if (!grantedOv.includes('read_pull_request')) {
+          return sendJson(res, 403, { error: { reason: 'action_not_granted' }, action: 'read_pull_request' });
+        }
         const api = await getMuConsoleApi();
         if (api) {
           const ov = await api.overview(gate.principal.tenantId);
@@ -551,6 +558,15 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
       const gate = await authGate(req);
       if (gate.denied) return sendJson(res, gate.denied, anonymousBody());
       if (gate.principal.authMode === 'multiuser') {
+        // rc.10 安全收敛（SEC-1）：facade 端点按权威 ROLE_ACTIONS 收敛——与 /api/mu
+        // guard 同一矩阵（lib/multiuser/authz.mjs，默认拒绝）。auditor 只有 read_audit；
+        // /api/audit 须 read_audit，其余（PR/待办/票据/证据快照）须 read_pull_request。
+        // 403 形状与 mu 面 guard 一致：{ error: { reason }, action }。
+        const facadeAction = p === '/api/audit' ? 'read_audit' : 'read_pull_request';
+        const granted = roleActions(gate.principal.roles?.[0]) ?? [];
+        if (!granted.includes(facadeAction)) {
+          return sendJson(res, 403, { error: { reason: 'action_not_granted' }, action: facadeAction });
+        }
         const muApi2 = await getMuConsoleApi();
         if (muApi2) {
           const tid = gate.principal.tenantId;
@@ -621,6 +637,12 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
     if (p === '/api/runs' && process.env.MU_MODE === 'multiuser') {
       const gate = await authGate(req);
       if (gate.denied) return sendJson(res, gate.denied, anonymousBody());
+      // rc.10 安全收敛（SEC-1）：run 级历史同属 PR 快照面，须 read_pull_request
+      // （auditor 不放行——与 facade 区同一权威矩阵）。
+      const grantedRuns = roleActions(gate.principal.roles?.[0]) ?? [];
+      if (!grantedRuns.includes('read_pull_request')) {
+        return sendJson(res, 403, { error: { reason: 'action_not_granted' }, action: 'read_pull_request' });
+      }
       const api = await getMuConsoleApi();
       const runs = api ? await api.runs(gate.principal.tenantId) : [];
       return sendJson(res, 200, { runs,

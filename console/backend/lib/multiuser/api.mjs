@@ -1156,8 +1156,10 @@ export async function muApi(req, res, ctx) {
       return sendJson(res, 200, { ok: true, tenant: { tenant_id: tenant.tenant_id, slug: tenant.slug } });
     }
 
-    // ── 成员（读=任意 active 成员；写=manage_membership） ──
+    // ── 成员（读=read_audit：审计需要成员-角色映射，contributor 不放行；写=manage_membership） ──
     if (p === '/api/mu/members' && req.method === 'GET') {
+      const g = await guard('read_audit');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
       const rows = await store.listMembers(mu.tenantId);
       return sendJson(res, 200, { members: rows });
     }
