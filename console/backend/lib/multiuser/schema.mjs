@@ -1307,7 +1307,7 @@ export const MU_MIGRATIONS = [
     ],
   },
   {
-    // ── v21 审计事件不可变封印（rc.10 安全收敛 SEC-7）──
+    // ── v21 审计事件不可变封印（rc.10 安全收敛 SEC-7；PR-B）──
     // mu.audit_event 是 append-only 审计面（store.audit 只 INSERT）——升级为 DB 级
     // 硬封印：UPDATE/DELETE 一律 RAISE EXCEPTION（对齐 v19 留痕表封印纪律；v19 允许
     // RUNNING 在途更新，audit_event 无状态机故全封）。纯 additive：回滚 =
@@ -1325,6 +1325,96 @@ export const MU_MIGRATIONS = [
       `CREATE TRIGGER mu_audit_event_no_update
          BEFORE UPDATE OR DELETE ON mu.audit_event
          FOR EACH ROW EXECUTE FUNCTION mu.mu_audit_event_seal()`,
+    ],
+  },
+  {
+    // ── v22 rc.10 PR-E 租户边界（外部租户准入前收窄；additive/幂等/预检 fail-visible）──
+    // 覆盖四块（v21 已由 PR-B mu_audit_event_seal 占用，本迁移顺延至 v22；
+    // 与 v21 相互独立、先合后合均可独立工作）：
+    //  ① ISO-2/SEC-4 ragtrial.query_log 收窄：新列 query_digest（64-hex sha256，CHECK
+    //     定形）+ tenant_id（UUID，可空）+ 租户索引。写入侧已改为"原文停写、只写
+    //     digest、MU 桥接会话带租户"（ragtrial/schema.mjs 有同款幂等语句——fresh DB
+    //     上 ragtrial 表在 mu v22 之后才建，两个入口任一先到都收敛；query_text 历史
+    //     行只读保留，不删列不迁移，语义变更在此登记）。
+    //  ② ISO-6 mu.skill_version 单列 FK 升级复合 (tenant_id, skill_id)：预检失配行
+    //     （tenant 与 skill 不同租户）>0 → RAISE 清晰错误（fail-visible，数据修复后
+    //     重放）；复合 FK 需被引用列 UNIQUE 索引（skill_id 是 PK，仍需显式
+    //     UNIQUE(tenant_id, skill_id)）。旧单列 FK 按 conkey 动态定位后 DROP（v17
+    //     内联无名约束）；ON DELETE CASCADE 语义保留。
+    //  ③ ISO-6 mu.code_egress_event.tenant_id 补归属约束：预检全部命中 mu.tenant →
+    //     加 FK；存在失配行 → 只加索引不加强约束（RAISE NOTICE 登记，数据修复后
+    //     重放可补 FK）——选与数据现状安全的方案。
+    //  ④ 幂等：全部语句可重放（to_regclass/pg_constraint/IF NOT EXISTS 守卫；fresh
+    //     DB 无 ragtrial schema 时该块整体跳过）。
+    // 回滚（向下兼容；forward-only 设计，物理回滚脚本在案但 Beta 不执行）：
+    //   DROP INDEX IF EXISTS ragtrial_query_log_tenant_idx;
+    //   ALTER TABLE ragtrial.query_log DROP CONSTRAINT IF EXISTS ragtrial_query_log_digest_shape;
+    //   ALTER TABLE ragtrial.query_log DROP COLUMN IF EXISTS tenant_id, DROP COLUMN IF EXISTS query_digest;
+    //   ALTER TABLE mu.skill_version DROP CONSTRAINT IF EXISTS mu_skill_version_tenant_skill_fk;
+    //   ALTER TABLE mu.skill_version ADD CONSTRAINT <旧名> FOREIGN KEY (skill_id)
+    //     REFERENCES mu.skill(skill_id) ON DELETE CASCADE;   -- 旧名为 v17 自动命名，需按目录回填
+    //   DROP INDEX IF EXISTS mu_skill_tenant_skill_uk;
+    //   ALTER TABLE mu.code_egress_event DROP CONSTRAINT IF EXISTS mu_code_egress_event_tenant_fk;
+    //   DROP INDEX IF EXISTS mu_code_egress_event_tenant_idx;
+    //   DELETE FROM mu.schema_migrations WHERE version = 22;
+    version: 22,
+    name: 'mu_tenant_boundary_pr_e',
+    sql: [
+      // ① ragtrial.query_log：digest-only + 租户归属（表未建则跳过——ragtrial init 补齐）
+      `DO $mv22ql$ BEGIN
+         IF to_regclass('ragtrial.query_log') IS NOT NULL THEN
+           ALTER TABLE ragtrial.query_log ADD COLUMN IF NOT EXISTS query_digest TEXT;
+           ALTER TABLE ragtrial.query_log ADD COLUMN IF NOT EXISTS tenant_id UUID;
+           IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ragtrial_query_log_digest_shape') THEN
+             ALTER TABLE ragtrial.query_log ADD CONSTRAINT ragtrial_query_log_digest_shape
+               CHECK (query_digest IS NULL OR query_digest ~ '^[0-9a-f]{64}$');
+           END IF;
+           CREATE INDEX IF NOT EXISTS ragtrial_query_log_tenant_idx
+             ON ragtrial.query_log (tenant_id, created_at DESC);
+         END IF;
+       END $mv22ql$`,
+      // ② skill_version 复合 FK（预检 fail-visible）
+      `DO $mv22sv$
+       DECLARE v_mismatch int; v_old_fk text;
+       BEGIN
+         SELECT count(*)::int INTO v_mismatch FROM mu.skill_version sv
+          WHERE NOT EXISTS (SELECT 1 FROM mu.skill s
+                             WHERE s.tenant_id = sv.tenant_id AND s.skill_id = sv.skill_id);
+         IF v_mismatch > 0 THEN
+           RAISE EXCEPTION 'v22_precheck_failed: mu.skill_version 有 % 行的 tenant_id 与所引 skill 不同租户（复合 FK 前置预检失败）——先修正 tenant_id 或清理失配行后重放迁移', v_mismatch;
+         END IF;
+         CREATE UNIQUE INDEX IF NOT EXISTS mu_skill_tenant_skill_uk ON mu.skill (tenant_id, skill_id);
+         -- 旧单列 FK（v17 内联无名）：按「引用 mu.skill 且 conkey 仅含 skill_id」动态定位
+         SELECT conname INTO v_old_fk FROM pg_constraint c
+          WHERE c.conrelid = 'mu.skill_version'::regclass AND c.contype = 'f'
+            AND c.confrelid = 'mu.skill'::regclass
+            AND c.conkey = ARRAY[(SELECT a.attnum::smallint FROM pg_attribute a
+              WHERE a.attrelid = 'mu.skill_version'::regclass AND a.attname = 'skill_id')]::smallint[];
+         IF v_old_fk IS NOT NULL THEN
+           EXECUTE format('ALTER TABLE mu.skill_version DROP CONSTRAINT %I', v_old_fk);
+         END IF;
+         IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'mu_skill_version_tenant_skill_fk') THEN
+           ALTER TABLE mu.skill_version ADD CONSTRAINT mu_skill_version_tenant_skill_fk
+             FOREIGN KEY (tenant_id, skill_id) REFERENCES mu.skill (tenant_id, skill_id) ON DELETE CASCADE;
+         END IF;
+       END $mv22sv$`,
+      // ③ code_egress_event 租户归属：零失配才加强约束（否则索引 + NOTICE 登记）
+      `DO $mv22eg$
+       DECLARE v_mismatch int;
+       BEGIN
+         SELECT count(*)::int INTO v_mismatch FROM mu.code_egress_event e
+          WHERE NOT EXISTS (SELECT 1 FROM mu.tenant t WHERE t.tenant_id = e.tenant_id);
+         IF v_mismatch = 0 THEN
+           IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'mu_code_egress_event_tenant_fk') THEN
+             ALTER TABLE mu.code_egress_event ADD CONSTRAINT mu_code_egress_event_tenant_fk
+               FOREIGN KEY (tenant_id) REFERENCES mu.tenant (tenant_id);
+           END IF;
+         ELSE
+           RAISE NOTICE 'v22: mu.code_egress_event 有 % 行 tenant_id 不在 mu.tenant——仅加索引不加强制 FK（登记：数据修复后删版本行重放可补约束）', v_mismatch;
+         END IF;
+       END $mv22eg$`,
+      `CREATE INDEX IF NOT EXISTS mu_code_egress_event_tenant_idx
+         ON mu.code_egress_event (tenant_id)`,
     ],
   },
 ];

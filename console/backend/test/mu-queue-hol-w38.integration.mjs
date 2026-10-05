@@ -4,6 +4,9 @@
 // review_run job 令正式 tick 永久 processed=[]，其后同租户+跨租户合法 event_sync
 // 永不被领取，重启不自愈。本套件把验收探针转为正式回归，并覆盖任务书十场景
 // 与状态不变量。全部经由正式 tick 端点（认证会话+CSRF），零手工改库修复。
+// rc.10 PR-E（ISO-3）语义更新：tick 按会话租户收窄领取/回收/清收——跨租户 event_sync
+// 由各租户自己的 tick 消费（S1b/S6b 断言改为「他租户 tick 不可见 + 本租户 tick 消费」）；
+// read_repository 会话的 processed[] 只含本租户 job 元数据。
 import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
@@ -71,6 +74,14 @@ const tick = async () => {
     body: '{}' });
   return { status: res.status, body: await res.json().catch(() => null) };
 };
+// rc.10 PR-E（ISO-3）租户收窄后的跨租户对照 tick（tenant2 专属会话）
+let SESSION_T2 = null;
+const tickT2 = async () => {
+  const res = await fetch(BASE + '/api/mu/jobs/tick', { method: 'POST',
+    headers: { cookie: SESSION_T2.cookie, 'content-type': 'application/json', 'x-csrf-token': SESSION_T2.csrf },
+    body: '{}' });
+  return { status: res.status, body: await res.json().catch(() => null) };
+};
 const jobState = async (del) => (await adminPool.query(
   `SELECT state, result::text result FROM mu.job WHERE payload->>'delivery_id'=$1`, [del])).rows[0] ?? null;
 const enqueueEventSync = async (tenantId, repoId, delivery, instId, gid, prNumber, headSha, action = 'opened', createdSql = 'now()') => {
@@ -114,23 +125,46 @@ try {
   }
   const R1 = repos[T1], R2 = repos[T2];
 
+  // tenant2 专属 tick 会话（rc.10 PR-E ISO-3：tick 按会话租户收窄领取——
+  // 跨租户 job 各由本租户消费，杜绝 read_repository 会话回显他租户 job 元数据）
+  const op2 = await store.ensureUser({ login: 'hol-op2', displayName: 'HOL T2 Op' });
+  await store.ensureIdentity({ userId: op2.user_id, provider: 'fixture', subject: 'fixture:hol-op2' });
+  await store.ensureMembership({ tenantId: T2, userId: op2.user_id, role: 'maintainer' });
+  {
+    const r = await fetch(BASE + '/api/mu/auth/login', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ provider: 'fixture', subject: 'fixture:hol-op2', tenant_slug: 'tenant2-hol' }) });
+    SESSION_T2 = { cookie: (r.headers.get('set-cookie') || '').split(';')[0],
+      csrf: (await r.json().catch(() => null))?.csrf ?? '' };
+    if (!SESSION_T2.cookie) throw new Error('tenant2 tick session setup failed');
+  }
+
   // ══ S1 HOL 核心：A=过期人工队首，B/C=两租户合法 event_sync ══
   await enqueueManual(T1, R1.repo_id, `now() - interval '25 hours'`);           // A：过期人工队首
   await enqueueEventSync(T1, R1.repo_id, 'hol-b-1', R1.iid, R1.gid, 11, 'a'.repeat(40));
   await enqueueEventSync(T2, R2.repo_id, 'hol-c-1', R2.iid, R2.gid, 22, 'b'.repeat(40));
+  const cJobId = String((await adminPool.query(
+    `SELECT job_id::text id FROM mu.job WHERE payload->>'delivery_id'='hol-c-1'`)).rows[0].id);
   const r1 = await tick();
   const B1 = await jobState('hol-b-1'), C1 = await jobState('hol-c-1'), A1 = (await adminPool.query(
     `SELECT state, result->>'reason' reason FROM mu.job WHERE kind='review_run' AND state='rejected'
        AND created_at < now() - interval '24 hours' LIMIT 1`)).rows[0];
   ok('S1a B(tenant1) event_sync 被消费（不再永久 queued）',
     ['done', 'rejected', 'failed'].includes(B1?.state) && B1?.state !== 'queued', B1);
-  ok('S1b C(tenant2) event_sync 被消费（跨租户不被阻塞）',
-    ['done', 'rejected', 'failed'].includes(C1?.state) && C1?.state !== 'queued', C1);
+  const r1t2 = await tickT2();
+  const C1after = await jobState('hol-c-1');
+  ok('S1b C(tenant2) event_sync：tenant1 tick 不可见（租户收窄），tenant2 tick 消费（各自租户独立推进）',
+    C1?.state === 'queued'
+      && !(r1.body?.processed ?? []).some((p) => String(p.job_id) === cJobId)
+      && ['done', 'rejected', 'failed'].includes(C1after?.state) && C1after?.state !== 'queued',
+    { before: C1, after: C1after });
   ok('S1c 过期人工 job 转 rejected 终态 + reason=manual_job_expired_unconsumable',
     A1?.state === 'rejected' && A1?.reason === 'manual_job_expired_unconsumable', A1);
   ok('S1d 过期人工 job 清收落审计（MU_JOB_REJECTED+reason）',
     (await auditCount('MU_JOB_REJECTED', 'manual_job_expired_unconsumable')) >= 1);
-  ok('S1e tick 响应非空（不再 processed=[]）', (r1.body?.processed ?? []).length >= 3, r1.body?.processed);
+  ok('S1e tick 响应非空（不再 processed=[]；T1 tick 只回显本租户行）',
+    (r1.body?.processed ?? []).length >= 2
+      && !(r1.body?.processed ?? []).some((p) => String(p.job_id) === cJobId), r1.body?.processed);
 
   // ══ S2 未过期人工 job 在队首：不阻塞后续 event_sync，自身保持 queued ══
   await enqueueManual(T1, R1.repo_id, `now()`);                                  // A2：新鲜人工队首
@@ -203,10 +237,14 @@ try {
   await enqueueEventSync(T2, R2.repo_id, 'hol-ok-t2', R2.iid, R2.gid, 32, '1'.repeat(40));
   await tick();
   const badT1 = await jobState('hol-bad-t1');
+  const okT2mid = await jobState('hol-ok-t2');
+  const r6t2 = await tickT2();
   const okT2 = await jobState('hol-ok-t2');
   ok('S6a 坏 installation job 被拒（fail-closed 终态，非 queued 滞留）',
     badT1?.state === 'rejected' && /installation/.test(badT1?.result ?? ''), badT1);
-  ok('S6b 同 tick 内 tenant2 合法 job 正常消费（跨租户零影响）', okT2?.state === 'done', okT2);
+  ok('S6b tenant2 合法 job 不被 tenant1 tick 消费（租户收窄），由 tenant2 tick 正常消费',
+    okT2mid?.state === 'queued' && okT2?.state === 'done'
+      && (r6t2.body?.processed ?? []).some((p) => p.kind === 'event_sync'), { mid: okT2mid, after: okT2 });
 
   // ══ S7 事件乱序：旧 opened 不能覆盖新 closed 状态 ══
   const head1 = '9'.repeat(40);

@@ -510,6 +510,9 @@ export async function muApi(req, res, ctx) {
       return sendJson(res, 200, { ok: true, ignored: 'installation_unknown' });
     }
     const tenantId = installation.tenant_id;
+    // rc.10 PR-E（ISO-5）：claim 先于 installation 解析落行（tenant NULL）——
+    // 解析完成后即时回填归属（只补 NULL 行）；未知 installation 的 rejected 行保持 NULL。
+    await store.backfillWebhookDeliveryTenant(deliveryId, tenantId).catch(() => {});
     try {
       if (event === 'installation') {
         const action = String(body.action ?? '');
@@ -1589,12 +1592,17 @@ const ragMatch = p.match(new RegExp("^/api/mu/repositories/([^/]+)/rag-search$")
       //  * tick 开端回收孤立 running（worker 崩溃遗留 lease）；
       //  * 无可领取 event_sync 时，有限清收过期人工 job → rejected 终态+审计
       //    （reason=manual_job_expired_unconsumable；未过期人工 job 留队等待专用消费者）。
+      // rc.10 PR-E（ISO-3）租户收窄：领取/回收/清收全部按会话租户过滤——
+      // read_repository 会话不再领取任意租户 job，processed[] 只回显本租户行。
+      // （跨租户 webhook 消费语义：event_sync 由各租户自己的 tick/worker 消费；
+      //   平台级无租户 worker 属后续部署形态，不在本轮。）
       const TICK_BUDGET = 25;
       const ORPHAN_MINUTES = 10;
       const MANUAL_EXPIRY_HOURS = 24;
       const processed = [];
       {
-        const orphans = await store.requeueOrphanedJobs({ staleMinutes: ORPHAN_MINUTES, limit: 10 }).catch(() => []);
+        const orphans = await store.requeueOrphanedJobs({ staleMinutes: ORPHAN_MINUTES, limit: 10,
+          tenantId: mu.tenantId }).catch(() => []);
         for (const o of orphans) {
           await store.audit('MU_JOB_REQUEUED_ORPHAN', { tenantId: o.tenant_id, actorUserId: null,
             detail: { job_id: o.job_id, kind: o.kind, reason: 'orphan_running_lease_recovered' } });
@@ -1604,10 +1612,13 @@ const ragMatch = p.match(new RegExp("^/api/mu/repositories/([^/]+)/rag-search$")
       let budget = TICK_BUDGET;
       for (;;) {
         if (budget <= 0) break; // 每 tick 有限预算：耗尽即停（余量留给下轮 tick）
-        const job = await store.claimNextJob(fixturesOn ? {} : { kinds: ['event_sync'] });
+        const job = await store.claimNextJob(fixturesOn
+          ? { tenantId: mu.tenantId }
+          : { kinds: ['event_sync'], tenantId: mu.tenantId });
         if (!job) {
           if (!fixturesOn) {
-            const reaped = await store.rejectStaleManualJobs({ expiryHours: MANUAL_EXPIRY_HOURS, limit: 10 }).catch(() => []);
+            const reaped = await store.rejectStaleManualJobs({ expiryHours: MANUAL_EXPIRY_HOURS, limit: 10,
+              tenantId: mu.tenantId }).catch(() => []);
             if (reaped.length) {
               for (const j of reaped) {
                 await store.audit('MU_JOB_REJECTED', { tenantId: j.tenant_id, actorUserId: null,
@@ -1699,19 +1710,27 @@ const ragMatch = p.match(new RegExp("^/api/mu/repositories/([^/]+)/rag-search$")
             out.workers_ready = four.filter((w) => w.phase === 'Running' && w.roomID && w.matrixUserID).length;
           }
         }
+        // rc.10 PR-E（ISO-4）租户收窄：dead_letter/job/agent_attempt 统计全部按
+        // 会话租户过滤——manage_instance 不再回显他租户 job/attempt 计数与死信原因。
+        // （dead_letter.tenant_id 可空——NULL 行属平台域死信，不归属任何租户，不回显。）
         const dlq = await muPoolQ(`SELECT reason, created_at FROM mu.dead_letter
-          WHERE kind IN ('mt_round_failed','at_round_failed','at_round_crashed') ORDER BY created_at DESC LIMIT 1`).catch(() => null);
+          WHERE tenant_id = $1 AND kind IN ('mt_round_failed','at_round_failed','at_round_crashed')
+          ORDER BY created_at DESC LIMIT 1`, [mu.tenantId]).catch(() => null);
         if (dlq?.rows?.length) out.last_stable_reason = String(dlq.rows[0].reason ?? '').slice(0, 60);
         const dlqN = await muPoolQ(`SELECT count(*) c FROM mu.dead_letter
-          WHERE kind IN ('mt_round_failed','at_round_failed','at_round_crashed') AND resolved_at IS NULL`).catch(() => null);
+          WHERE tenant_id = $1 AND kind IN ('mt_round_failed','at_round_failed','at_round_crashed')
+            AND resolved_at IS NULL`, [mu.tenantId]).catch(() => null);
         out.dead_letter_open = Number(dlqN?.rows?.[0]?.c ?? 0);
-        const pend = await muPoolQ(`SELECT count(*) c FROM mu.job WHERE state='queued'`).catch(() => null);
+        const pend = await muPoolQ(`SELECT count(*) c FROM mu.job WHERE state='queued' AND tenant_id=$1`,
+          [mu.tenantId]).catch(() => null);
         out.queue_backlog = Number(pend?.rows?.[0]?.c ?? 0);
         const tmo = await muPoolQ(`SELECT count(*) c FROM mu.agent_attempt
-          WHERE provider='agentteams' AND status='FAILED' AND created_at > now() - interval '24 hours'`).catch(() => null);
+          WHERE tenant_id=$1 AND provider='agentteams' AND status='FAILED' AND created_at > now() - interval '24 hours'`,
+          [mu.tenantId]).catch(() => null);
         out.agentteams_attempts_failed_24h = Number(tmo?.rows?.[0]?.c ?? 0);
         const okN = await muPoolQ(`SELECT count(*) c, max(created_at) latest FROM mu.agent_attempt
-          WHERE provider='agentteams' AND status='DONE'`).catch(() => null);
+          WHERE tenant_id=$1 AND provider='agentteams' AND status='DONE'`,
+          [mu.tenantId]).catch(() => null);
         out.agentteams_attempts_done = Number(okN?.rows?.[0]?.c ?? 0);
         out.last_success_at = okN?.rows?.[0]?.latest ?? null;
       }

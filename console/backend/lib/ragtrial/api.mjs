@@ -247,6 +247,7 @@ export async function ragTrialApi(req, res, ctx) {
         q, repo, branch, k: Number(body.k || 5),
         modelId: body.model_id ? String(body.model_id) : null,
         actor: `run-binding:${String(body.run_id).slice(0, 64)}`,
+        // 机器通道无用户租户上下文——query_log.tenant_id 保持 NULL（历史语义）
       });
       // 机器通道产出与人工通道同受 Review 边界约束：reference only
       const aux = (r.results ?? []).map((h) => toAuxEvidence(h, { runId: body.run_id }));
@@ -574,6 +575,8 @@ export async function ragTrialApi(req, res, ctx) {
         k: Number(body.k || 5),
         modelId: body.model_id ? String(body.model_id) : null,
         actor,
+        // rc.10 PR-E（ISO-2）：MU 桥接会话携带租户归属写入 query_log；legacy 会话 NULL
+        tenantId: auth?._mu?.tenantId ?? null,
       });
       return sendJson(res, 200, r);
     }
@@ -605,6 +608,7 @@ export async function ragTrialApi(req, res, ctx) {
       return sendJson(res, 200, await store.evalQa({
         qa, repo, branch, k: Number(body.k || 5),
         qaSet: String(body.qa_set || 'inline'), actor,
+        tenantId: auth?._mu?.tenantId ?? null, // rc.10 PR-E（ISO-2）同 query_log 归属
       }));
     }
 
@@ -648,7 +652,8 @@ export async function ragTrialApi(req, res, ctx) {
       const sdAux = await authorizeRepo(env, { store, auth, actor, repo: String(repo), branch: String(branch),
         source: req.socket?.remoteAddress ?? null, kind: 'session' });
       if (sdAux.status === 403) return sendJson(res, sdAux.status, sdAux.body);
-      const r = await store.search({ q, repo, branch, k: Number(body.k || 5), actor });
+      const r = await store.search({ q, repo, branch, k: Number(body.k || 5), actor,
+        tenantId: auth?._mu?.tenantId ?? null }); // rc.10 PR-E（ISO-2）同 query_log 归属
       const aux = (r.results ?? []).map((h) => toAuxEvidence(h, { runId: run_id ?? null }));
       const runView = attachToRun(
         { run_id: run_id ?? 'ad-hoc', findings: [], tickets: [], gates: [] }, aux);

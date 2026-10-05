@@ -142,6 +142,22 @@ export const RAGTRIAL_SCHEMA_SQL = [
      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
    )`,
   `CREATE INDEX IF NOT EXISTS ragtrial_audit_kind_idx ON ragtrial.audit_events (kind, seq)`,
+  // ── rc.10 PR-E（ISO-2/SEC-4）query_log 收窄（mu v22 迁移同款幂等语句——
+  //    两个初始化入口任一先到都可收敛）──
+  //  * query_digest：64-hex sha256——新写入一律只写 digest，query_text 原文停写
+  //    （历史行只读保留；列语义变更在此登记，不删列不迁移历史）；
+  //  * tenant_id：MU 桥接会话写入租户归属；legacy/机器/系统通道 NULL（历史语义）；
+  //  * documents/chunks 检索面的多租户重构不在本轮（后续登记）。
+  `ALTER TABLE ragtrial.query_log ADD COLUMN IF NOT EXISTS query_digest TEXT`,
+  `ALTER TABLE ragtrial.query_log ADD COLUMN IF NOT EXISTS tenant_id UUID`,
+  `DO $qld$ BEGIN
+     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ragtrial_query_log_digest_shape') THEN
+       ALTER TABLE ragtrial.query_log ADD CONSTRAINT ragtrial_query_log_digest_shape
+         CHECK (query_digest IS NULL OR query_digest ~ '^[0-9a-f]{64}$');
+     END IF;
+   END $qld$`,
+  `CREATE INDEX IF NOT EXISTS ragtrial_query_log_tenant_idx
+     ON ragtrial.query_log (tenant_id, created_at DESC)`,
   `CREATE TABLE IF NOT EXISTS ragtrial.eval_runs (
      eval_id    TEXT PRIMARY KEY,
      qa_set     TEXT NOT NULL,

@@ -388,13 +388,18 @@ export async function createMuStore({ pool, env = process.env, migrations = MU_M
   // 保并发唯一领取）+ locked_at lease 记录（孤立 running 可回收）。
   // 非 fixture 模式 tick 以 kinds=['event_sync'] 领取——人工 job 在 claim 层隔离，
   // 结构上不可能阻塞 webhook 消费（requeue+break 已废除）。
-  async function claimNextJob({ kinds = null } = {}) {
+  // rc.10 PR-E（ISO-3）：支持 tenantId 过滤——tick 会话只领取/回显本租户 job
+  //（mu.job 自 v1 起有 tenant_id 列；跨租户 job 对该 tick 不可见不可领取）。
+  async function claimNextJob({ kinds = null, tenantId = null } = {}) {
+    const params = [];
+    let where = `state='queued'`;
+    if (kinds) { params.push(kinds); where += ` AND kind = ANY($${params.length}::text[])`; }
+    if (tenantId) { params.push(tenantId); where += ` AND tenant_id = $${params.length}::uuid`; }
     const r = await q(
       `UPDATE mu.job SET state='running', locked_at=now(), updated_at=now()
-        WHERE job_id = (SELECT job_id FROM mu.job WHERE state='queued'
-          ${kinds ? 'AND kind = ANY($1::text[])' : ''}
+        WHERE job_id = (SELECT job_id FROM mu.job WHERE ${where}
           ORDER BY created_at LIMIT 1 FOR UPDATE SKIP LOCKED)
-       RETURNING *`, kinds ? [kinds] : []);
+       RETURNING *`, params);
     return r.rows[0] ?? null;
   }
   // Wave 2B.1：人工 job 原样回队（fixture 路径保留；locked_at 一并清空）
@@ -405,19 +410,27 @@ export async function createMuStore({ pool, env = process.env, migrations = MU_M
   }
   // Wave 3.8（HOL）：worker 崩溃遗留的孤立 running job（locked_at 超时）回收回队
   // ——重启后合法 job 继续被领取；有限批量，调用方负责审计。
-  async function requeueOrphanedJobs({ staleMinutes = 10, limit = 10 } = {}) {
+  // rc.10 PR-E（ISO-3）：tenantId 过滤——tick 的 processed[] 只回显本租户 job。
+  async function requeueOrphanedJobs({ staleMinutes = 10, limit = 10, tenantId = null } = {}) {
+    const params = [staleMinutes, limit];
+    let tenantClause = '';
+    if (tenantId) { params.push(tenantId); tenantClause = ` AND tenant_id = $${params.length}::uuid`; }
     const r = await q(
       `UPDATE mu.job SET state='queued', locked_at=NULL, updated_at=now()
         WHERE job_id IN (SELECT job_id FROM mu.job
           WHERE state='running' AND locked_at IS NOT NULL
-            AND locked_at < now() - make_interval(mins => $1::int)
+            AND locked_at < now() - make_interval(mins => $1::int)${tenantClause}
           ORDER BY locked_at LIMIT $2)
-       RETURNING job_id, tenant_id, kind`, [staleMinutes, limit]);
+       RETURNING job_id, tenant_id, kind`, params);
     return r.rows;
   }
   // Wave 3.8（HOL）：非 fixture 模式人工 job 无消费者——超过宽限期的孤立人工 job
   // 转终态 rejected（有限批量；reason 写入 result，审计由调用方落）。
-  async function rejectStaleManualJobs({ expiryHours = 24, limit = 10 } = {}) {
+  // rc.10 PR-E（ISO-3）：tenantId 过滤——清收回显同样只含本租户。
+  async function rejectStaleManualJobs({ expiryHours = 24, limit = 10, tenantId = null } = {}) {
+    const params = [expiryHours, limit];
+    let tenantClause = '';
+    if (tenantId) { params.push(tenantId); tenantClause = ` AND tenant_id = $${params.length}::uuid`; }
     const r = await q(
       `UPDATE mu.job SET state='rejected',
           result = jsonb_build_object('reason','manual_job_expired_unconsumable',
@@ -425,9 +438,9 @@ export async function createMuStore({ pool, env = process.env, migrations = MU_M
           updated_at=now()
         WHERE job_id IN (SELECT job_id FROM mu.job
           WHERE state='queued' AND kind <> 'event_sync'
-            AND created_at < now() - make_interval(hours => $1::int)
+            AND created_at < now() - make_interval(hours => $1::int)${tenantClause}
           ORDER BY created_at LIMIT $2)
-       RETURNING job_id, tenant_id, kind, created_at`, [expiryHours, limit]);
+       RETURNING job_id, tenant_id, kind, created_at`, params);
     return r.rows;
   }
 
@@ -622,6 +635,15 @@ export async function createMuStore({ pool, env = process.env, migrations = MU_M
       [deliveryId, tenantId, installationId, event]);
     return r.rows[0] ?? null;
   }
+  // rc.10 PR-E（ISO-5）：claim 发生在 installation→tenant 解析之前（tenant NULL 落行）——
+  // 解析完成后由 webhook 处理链回填归属（只补 NULL 行，绝不覆盖既有归属）。
+  async function backfillWebhookDeliveryTenant(deliveryId, tenantId) {
+    if (!deliveryId || !tenantId) return false;
+    const r = await q(
+      `UPDATE mu.webhook_delivery SET tenant_id=$2 WHERE delivery_id=$1 AND tenant_id IS NULL`,
+      [deliveryId, tenantId]);
+    return r.rowCount > 0;
+  }
   async function finishWebhookDelivery(deliveryId, state) {
     await q(`UPDATE mu.webhook_delivery SET state=$2, processed_at=now() WHERE delivery_id=$1`,
       [deliveryId, state]);
@@ -652,6 +674,6 @@ export async function createMuStore({ pool, env = process.env, migrations = MU_M
     createInvitation, listInvitations, getInvitation, findClaimableInvitation, claimInvitation,
     upsertInstallation, getInstallation, listInstallations, setInstallationState,
     upsertRepositoryBinding, getBindingByRepo, setBindingState, setBindingsStateForInstallation,
-    claimWebhookDelivery, finishWebhookDelivery, requeueJob,
+    claimWebhookDelivery, backfillWebhookDeliveryTenant, finishWebhookDelivery, requeueJob,
   };
 }
