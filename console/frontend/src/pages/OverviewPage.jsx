@@ -10,7 +10,7 @@ import { fmtTime } from '../format.js';
 import { RecoveryBox, StatCard } from '../ui.jsx';
 import {
   deriveAnomalies, protectionUnknownKind, groupRowsByPr, pendingReasonOf, bucketOf,
-  REVIEWING_STAGES, isRunChecking,
+  selectCurrentProtection, REVIEWING_STAGES,
 } from '../anomalies.js';
 import { ProtectionUnknownCard, ProtectionUnknownSummary } from '../components/ProtectionUnknownPanel.jsx';
 
@@ -66,28 +66,42 @@ const FOCUS_FILTERS = [
 const BUCKET_RANK = { attention: 0, blocked: 1, anomaly: 2, reviewing: 3, normal: 4 };
 
 // ── MU 域附加数据（风险列 + 保护未知汇总）：失败如实降级，不阻塞主数据 ──
+// 数据可信度加固：先按 PR 定当前 head，再读该 head 的保护状态，最后筛 unknown
+// （禁止「先筛 unknown 再取最新」——旧 head unknown 不得污染新 head known）；
+// 单仓库请求失败计入 repoFailures（部分数据显式呈现，不静默跳过）。
 async function loadMuExtras(source) {
-  const out = { tickets: [], protectionUnknown: [], ticketsErr: null, protectionErr: null };
+  const out = { tickets: [], protectionUnknown: [], repoFailures: [], ticketsErr: null, protectionErr: null };
   try {
     out.tickets = await source.listPending() ?? [];
   } catch (e) { out.ticketsErr = e; }
   try {
     const repos = (await source.listRepos() ?? []).filter((r) => r.binding_state === 'active' || r.binding_id);
-    // /api/mu/prs 每个 head 一行（upsert 键含 head_sha）——保护未知按 PR 去重（取最新 head），
-    // 否则同一 PR 重复计数、异常数虚高于真实 PR 数
+    // mu/prs 每 head 一行（upsert 键含 head_sha）→ 按 PR 分组取当前 head 行的保护状态
     const unknownByPr = new Map();
     for (const r of repos) {
-      const res = await fetch(`/api/mu/prs?repo_id=${encodeURIComponent(r.repo_id)}`, { credentials: 'same-origin' });
-      if (!res.ok) continue;
+      let res = null;
+      try {
+        res = await fetch(`/api/mu/prs?repo_id=${encodeURIComponent(r.repo_id)}`, { credentials: 'same-origin' });
+      } catch { /* 网络失败 → 按失败计 */ }
+      if (!res || !res.ok) {
+        out.repoFailures.push({ repo: r.repo, status: res ? res.status : null });
+        continue;
+      }
       const body = await res.json().catch(() => null);
-      for (const pr of body?.pull_requests ?? []) {
-        if (String(pr.branch_protection_status ?? 'unknown') !== 'unknown') continue;
-        const key = `${r.repo}#${pr.provider_pr_number}`;
-        const prev = unknownByPr.get(key);
-        if (!prev || String(pr.updated_at ?? '') > String(prev.updated_at ?? '')) {
-          unknownByPr.set(key, { repo: r.repo, owner: r.owner, name: r.name,
-            pr: pr.provider_pr_number, updated_at: pr.updated_at ?? null });
-        }
+      const prRows = body?.pull_requests ?? [];
+      const byPr = new Map();
+      for (const pr of prRows) {
+        const key = String(pr.provider_pr_number);
+        if (!byPr.has(key)) byPr.set(key, []);
+        byPr.get(key).push(pr);
+      }
+      for (const [num, rowsOfPr] of byPr) {
+        const { status, inReview } = selectCurrentProtection(rowsOfPr);
+        if (status !== 'unknown') continue; // 只计当前 head 的 unknown——known 的当前 head 不被旧 head 污染
+        const cur = rowsOfPr.find((x) => String(x.provider_pr_number) === num);
+        const key = `${r.repo}#${num}`;
+        unknownByPr.set(key, { repo: r.repo, owner: r.owner, name: r.name,
+          pr: Number(num), updated_at: cur?.updated_at ?? null, inReview });
       }
     }
     out.protectionUnknown = [...unknownByPr.values()];
@@ -112,20 +126,30 @@ export default function OverviewPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const focus = searchParams.get('focus') ?? 'all';
 
-  const load = useCallback(async () => {
-    setError(null);
-    try {
-      setData(await apiGet('/api/overview'));
-      setLastRefresh(new Date().toLocaleTimeString());
-    } catch (e) { setError(e); }
-  }, []);
-
+  // 刷新失败保留旧数据（数据可信度加固）：已有数据时刷新失败 → 保留旧集合 +
+  // refreshError 横幅（如实标注数据时点）；仅首载失败才进入整页错误态。
+  const [refreshError, setRefreshError] = useState(null);
+  const hasDataRef = useRef(false);
+  useEffect(() => { hasDataRef.current = data != null; }, [data]);
   useEffect(() => {
     if (auth.status !== 'authed') return;
-    load();
-    const t = setInterval(load, REFRESH_MS);
-    return () => clearInterval(t);
-  }, [auth.status, load, attempt]);
+    let dead = false;
+    const refreshOnce = async () => {
+      try {
+        const fresh = await apiGet('/api/overview');
+        if (dead) return;
+        setData(fresh); setRefreshError(null);
+        setLastRefresh(new Date().toLocaleTimeString());
+      } catch (e) {
+        if (dead) return;
+        if (hasDataRef.current) setRefreshError(e); // 保留旧数据（stale，时点见 lastRefresh）
+        else setError(e); // 首载失败 → 整页错误态（RecoveryBox）
+      }
+    };
+    refreshOnce();
+    const t = setInterval(refreshOnce, REFRESH_MS);
+    return () => { dead = true; clearInterval(t); };
+  }, [auth.status, attempt]);
 
   // MU 域附加数据（风险列/保护未知）：随主数据刷新；失败如实降级
   useEffect(() => {
@@ -158,9 +182,10 @@ export default function OverviewPage() {
     () => new Set((extras?.protectionUnknown ?? []).map((x) => `${x.repo}#${x.pr}`)),
     [extras]);
 
-  // PR 实体（按 PR 去重；current=最新 head，history=历史 head/run）。
+  // PR 实体（按 PR 去重；current head 由 selectCurrentHead 权威化选择，
+  // 后端无 is_current 标记 → headConfirmed=false → UI 显示「当前 head 未确认」）。
   // 保护未知但不在 overview 投影内的 PR（如超出 LIMIT 50）合成占位实体——
-  // 保证「异常 PR」计数与列表实体恒等（不丢计、不虚计）。
+  // 阶段显示「阶段未获取」（不伪造 PENDING），保证「异常 PR」计数与列表实体恒等。
   const entities = useMemo(() => {
     const base = groupRowsByPr(data?.prs ?? [], { isMu });
     const have = new Set(base.map((e) => e.key));
@@ -171,8 +196,8 @@ export default function OverviewPage() {
         const owner = x.owner ?? so ?? null;
         const name = x.name ?? sn ?? null;
         const row = { repo: x.repo, pr: x.pr, head_sha: null, run_id: null,
-          stage: 'PENDING', stage_source: 'protection-unknown (not in overview projection)',
-          updated_at: x.updated_at ?? null };
+          stage: null, stage_source: 'not_in_overview_projection',
+          updated_at: x.updated_at ?? null, placeholder: true };
         return {
           ...row,
           key: `${x.repo}#${x.pr}`,
@@ -185,6 +210,9 @@ export default function OverviewPage() {
               : `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/pr/${x.pr}`)
             : null,
           current: row,
+          headConfirmed: false,
+          headBasis: 'protection_only',
+          headTotal: 1,
           history: [],
           updated_at: x.updated_at ?? null,
           reason: pendingReasonOf(row),
@@ -194,7 +222,10 @@ export default function OverviewPage() {
     return [...base, ...synth];
   }, [data, isMu, extras]);
 
-  // 保护未知子态：摘要与详情共享同一推导（hasActiveRun = 当前 head 处于审查中/排队）
+  // 保护未知子态 + 注记：摘要与详情共享同一推导。
+  // 红线：审查 run 在途 ≠ 探测在途——无探测证据一律 undetermined；
+  // 当前 head 审查在途（overview 实体的阶段）仅作「审查进行中」注记
+  // （不宣称检查中/不承诺恢复时点）。mu/prs 投影行无 stage——注记取 overview 实体。
   const puStateByPr = useMemo(() => {
     const m = new Map();
     if (!extras) return m;
@@ -203,8 +234,10 @@ export default function OverviewPage() {
       const key = `${it.repo}#${it.pr}`;
       const e = entityByPr.get(key);
       const stage = String(e?.current?.stage ?? '').toUpperCase();
-      const hasActiveRun = stage === 'REVIEWING' || isRunChecking(stage);
-      m.set(key, protectionUnknownKind(e?.current, hasActiveRun));
+      m.set(key, {
+        stateKey: protectionUnknownKind(e?.current, null), // 无探测证据 → undetermined
+        note: REVIEWING_STAGES.includes(stage) ? '审查进行中' : null,
+      });
     }
     return m;
   }, [extras, entities]);
@@ -212,11 +245,13 @@ export default function OverviewPage() {
   // 异常 = 阶段维异常（head 过期/决策缺失/失败 run）∪ 保护未知 PR 集合
   const enriched = useMemo(() => entities.map((e) => {
     const isProtectionUnknown = protectionSet.has(e.key);
+    const pu = puStateByPr.get(e.key) ?? null;
     return {
       ...e,
       isProtectionUnknown,
       anomaly: e.bucket === 'anomaly' || isProtectionUnknown,
-      stateKey: puStateByPr.get(e.key) ?? null,
+      stateKey: pu?.stateKey ?? null,
+      puNote: pu?.note ?? null,
     };
   }), [entities, protectionSet, puStateByPr]);
 
@@ -255,6 +290,7 @@ export default function OverviewPage() {
   const ticketCount = isMu ? (extras?.tickets?.length ?? null) : (data?.pending_summary?.count ?? 0);
   const extrasLoaded = extras != null;
   const protectionCount = byFocus.anomaly.filter((e) => e.isProtectionUnknown).length;
+  const placeholderCount = entities.filter((e) => e.placeholder === true).length;
   const stalePrCount = entities.filter((e) => String(e.current?.stage ?? '').toUpperCase() === 'STALE').length;
   // 回执级计数（legacy 口径，无法逐 PR 映射——如实标注单位）
   const incidents = data?.incidents ?? {};
@@ -327,7 +363,14 @@ export default function OverviewPage() {
       return (
         <span className="wb-pr-cell">
           {e.detailTo ? <Link to={e.detailTo}>{label}</Link> : label}
-          {headShort ? <code className="mono wb-head-chip" title={`当前 head ${e.current?.head_sha}`}>{headShort}</code> : null}
+          {headShort ? (
+            <code className="mono wb-head-chip"
+              title={`当前 head 未确认：按最近事件排序（${e.headBasis}），后端无权威 is_current 标记`}>
+              {headShort}
+            </code>
+          ) : (
+            <span className="muted wb-head-chip" title="概览投影未包含该 PR 的 head——阶段未获取">无 head 记录</span>
+          )}
         </span>
       );
     } },
@@ -337,6 +380,9 @@ export default function OverviewPage() {
       return <span className="muted" title="无未决高危审批票（P0/P1 产生审批票；P2/P3 裁量入口在 PR 详情）">—</span>;
     } },
     { title: '阶段', width: 120, render: (_, e) => {
+      if (e.current?.stage == null) {
+        return <Tag title="概览投影未包含该 PR——不猜测阶段">阶段未获取</Tag>;
+      }
       const m = stageMap(e.current?.stage);
       return <Tag color={toneToColor(m.tone)} title={m.note}>{m.label}</Tag>;
     } },
@@ -366,10 +412,11 @@ export default function OverviewPage() {
     } },
   ];
 
-  const puItems = (extras?.protectionUnknown ?? []).map((it) => ({
-    ...it,
-    stateKey: puStateByPr.get(`${it.repo}#${it.pr}`),
-  }));
+  const puItems = (extras?.protectionUnknown ?? []).map((it) => {
+    const pu = puStateByPr.get(`${it.repo}#${it.pr}`) ?? {};
+    return { ...it, stateKey: pu.stateKey ?? 'undetermined', note: pu.note ?? null };
+  });
+  const repoFailures = extras?.repoFailures ?? [];
 
   return (
     <div>
@@ -388,6 +435,19 @@ export default function OverviewPage() {
           description={<>连接失败：<span className="mono">{data.error}</span>。
             <Button size="small" style={{ marginInlineStart: 8 }} onClick={refreshPageData}>重试</Button>
             {' '}或检查 <Link to="/datasources">数据源</Link>。</>} />
+      ) : null}
+
+      {/* 刷新失败保留旧数据：横幅如实标注数据时点，不静默冒充新鲜 */}
+      {refreshError ? (
+        <Alert type="warning" showIcon style={{ marginTop: 8 }} message="刷新失败——当前显示上次成功数据"
+          description={<>刷新失败（{String(refreshError.message ?? refreshError)}）：以下数据为 {lastRefresh || '上次成功'} 时点的快照，可能过期。
+            <Button size="small" style={{ marginInlineStart: 8 }} onClick={refreshPageData}>刷新状态</Button></>} />
+      ) : null}
+      {/* 投影覆盖范围：触顶时统计为下限（数据可信度加固——不静默漏计） */}
+      {data.prs_truncated ? (
+        <Alert type="info" showIcon style={{ marginTop: 8 }} message="概览投影达到上限——统计为下限"
+          description={<>概览投影最多返回 {data.prs_projection_limit ?? 50} 个 head 行，超出部分未计入本页统计与列表；
+            单个 PR 的完整 head/run 历史在其详情页查看。</>} />
       ) : null}
 
       {/* ── 首屏统计卡：单位标注 + 数字=点击后列表 PR 数（同源联动） ── */}
@@ -418,7 +478,8 @@ export default function OverviewPage() {
           <div>
             <Typography.Title level={3} style={{ marginBottom: 0 }}>PR 列表（{filterMeta.label}）</Typography.Title>
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              每个 PR 一行（当前/latest head）；历史 head 与 run 在「查看详情」抽屉展开。
+              每个 PR 一行（当前/latest head，按最近事件排序——当前 head 未确认，后端无权威标记）；
+              历史 head 与 run 在「查看详情」抽屉展开。
             </Typography.Text>
           </div>
           <div className="wb-filter-chips" role="group" aria-label="列表筛选">
@@ -469,17 +530,19 @@ export default function OverviewPage() {
         </div>
         {counts.anomaly === 0 && Number(incidents.failed_receipts ?? 0) === 0 && Number(incidents.integrity_conflicts ?? 0) === 0 ? (
           <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-            当前无异常（保护状态未知 {extrasLoaded ? protectionCount : '检查中'} · Head 过期 {stalePrCount} ·
+            当前无异常（保护状态未知 {extrasLoaded ? protectionCount : '获取中'} · Head 过期 {stalePrCount} ·
             失败回执 0 · 完整性冲突 0——诚实零值，不虚构）。
           </Typography.Paragraph>
         ) : (
           <>
             <ul className="anomaly-chips">
               <li className={`anomaly-chip anomaly-tone-warn${protectionCount > 0 ? ' is-nonzero' : ''}`}
-                title="GitHub 分支保护状态未能确认为受保护（探测未完成或不可达）——合并资格 fail-closed 恒为未知。">
+                title="GitHub 分支保护状态未能确认为受保护（按当前 head 判定；探测未完成或不可达）——合并资格 fail-closed 恒为未知，不承诺等待后一定恢复。">
                 <span className="anomaly-chip-label">保护状态未知</span>
                 <span className="anomaly-chip-unit">PR</span>
-                <span className="anomaly-chip-count">{extrasLoaded ? protectionCount : '…'}</span>
+                <span className="anomaly-chip-count">
+                  {extrasLoaded ? protectionCount : '…'}{repoFailures.length > 0 ? '+' : ''}
+                </span>
               </li>
               <li className={`anomaly-chip anomaly-tone-neutral${stalePrCount > 0 ? ' is-nonzero' : ''}`}
                 title="同一 PR 推进了更新的 head，既有审查运行仍绑定旧 head——旧结论不再代表当前代码。">
@@ -506,11 +569,17 @@ export default function OverviewPage() {
             ) : null}
           </>
         )}
-        {extras?.protectionErr ? (
+        {extras?.protectionErr || repoFailures.length > 0 ? (
           <Alert type="warning" showIcon style={{ marginTop: 8 }}
-            message="保护状态汇总不可得"
-            description={<>PR 保护状态读取失败（{String(extras.protectionErr.message ?? extras.protectionErr)}）——不猜测数量。
-              <Button size="small" style={{ marginInlineStart: 8 }} onClick={refreshPageData}>刷新状态</Button></>} />
+            message={repoFailures.length > 0 ? '保护状态为部分数据' : '保护状态汇总不可得'}
+            description={repoFailures.length > 0 ? (
+              <>{repoFailures.length} 个仓库的 PR 保护状态读取失败（{repoFailures.map((f) => f.repo).join('、')}）——
+                这些仓库的保护未知项未计入「保护状态未知」数量（当前计数为下限，不猜测）。
+                <Button size="small" style={{ marginInlineStart: 8 }} onClick={refreshPageData}>刷新状态</Button></>
+            ) : (
+              <>PR 保护状态读取失败（{String(extras.protectionErr.message ?? extras.protectionErr)}）——不猜测数量。
+                <Button size="small" style={{ marginInlineStart: 8 }} onClick={refreshPageData}>刷新状态</Button></>
+            )} />
         ) : null}
       </section>
 
@@ -527,20 +596,29 @@ export default function OverviewPage() {
             ) : null}
             <dl className="kv-grid">
               <div className="kv"><div className="kv-label">Head（当前）</div>
-                <div className="kv-value"><span className="sha mono" title={drawerEntity.current?.head_sha ?? ''}>{drawerEntity.current?.head_sha?.slice(0, 12) || '—'}</span></div></div>
+                <div className="kv-value">
+                  <span className="sha mono" title={drawerEntity.current?.head_sha ?? ''}>{drawerEntity.current?.head_sha?.slice(0, 12) || '—'}</span>
+                  {!drawerEntity.headConfirmed ? (
+                    <Tag className="wb-reason-tag" color="default"
+                      title="后端无权威 is_current 标记——当前 head 按最近事件排序推导（head_basis=event_order），未与 GitHub 实时对照。">当前 head 未确认</Tag>
+                  ) : null}
+                  <div className="muted" style={{ fontSize: 12 }}>同一 head 的更多 run 在 PR 详情页「审查管线」中。</div>
+                </div></div>
               <div className="kv"><div className="kv-label">Run（当前）</div>
                 <div className="kv-value"><span className="mono">{drawerEntity.current?.run_id || '—'}</span></div></div>
               <div className="kv"><div className="kv-label">阶段</div>
                 <div className="kv-value">
-                  {(() => { const m = stageMap(drawerEntity.current?.stage);
-                    return <Tag color={toneToColor(m.tone)}>{m.label}</Tag>; })()}
+                  {drawerEntity.current?.stage == null
+                    ? <Tag title="概览投影未包含该 PR——不猜测阶段">阶段未获取</Tag>
+                    : (() => { const m = stageMap(drawerEntity.current?.stage);
+                      return <Tag color={toneToColor(m.tone)}>{m.label}</Tag>; })()}
                 </div></div>
               <div className="kv"><div className="kv-label">阶段来源</div>
                 <div className="kv-value"><span className="mono" style={{ fontSize: 12 }}>{drawerEntity.current?.stage_source || '—'}</span></div></div>
               <div className="kv"><div className="kv-label">待处理原因</div>
                 <div className="kv-value">{drawerEntity.reason.text}
                   {drawerEntity.isProtectionUnknown ? <Tag className="wb-reason-tag" color="warning">保护状态未知</Tag> : null}
-                  <div className="muted" style={{ fontSize: 12 }}>{drawerEntity.current?.stage_source || drawerEntity.reason.detail}</div></div></div>
+                  <div className="muted" style={{ fontSize: 12 }}>{drawerEntity.reason.detail}</div></div></div>
               <div className="kv"><div className="kv-label">更新时间</div>
                 <div className="kv-value">{drawerEntity.updated_at ? new Date(drawerEntity.updated_at).toLocaleString() : '—'}</div></div>
             </dl>
@@ -569,7 +647,8 @@ export default function OverviewPage() {
               <div style={{ marginTop: 12 }}>
                 <Typography.Title level={5}>保护状态未知</Typography.Title>
                 <ProtectionUnknownCard
-                  stateKey={drawerEntity.stateKey ?? puStateByPr.get(drawerEntity.key) ?? 'undetermined'}
+                  stateKey={drawerEntity.stateKey ?? 'undetermined'}
+                  note={drawerEntity.puNote}
                   repo={drawerEntity.owner && drawerEntity.name ? { owner: drawerEntity.owner, name: drawerEntity.name } : null}
                   onRefresh={refreshPageData}
                   onOpenDetail={drawerEntity.detailTo
@@ -611,8 +690,7 @@ export default function OverviewPage() {
                   }}
                 />
                 <p className="ov-chart-summary">
-                  共 {entities.length} 个 PR（按最新 head 阶段计）：待处理 {counts.attention} · 已阻断 {counts.blocked} ·
-                  异常 {counts.anomaly} · 进行中 {counts.reviewing}。点击柱体可在上方列表过滤对应分类。
+                  {`共 ${entities.length} 个 PR（按最新 head 阶段计）：待处理 ${counts.attention} · 已阻断 ${counts.blocked} · 异常 ${counts.anomaly} · 进行中 ${counts.reviewing}${placeholderCount > 0 ? `；另有 ${placeholderCount} 个阶段未获取（保护未知占位，未计入阶段分布）` : ''}。点击柱体可在上方列表过滤对应分类。`}
                 </p>
               </>
             )}

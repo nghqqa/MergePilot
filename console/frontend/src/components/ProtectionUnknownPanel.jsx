@@ -82,17 +82,21 @@ function StateCard({ stateKey, extra, repo, onRefresh, onOpenDetail }) {
 
 /**
  * 单 PR 视图：使用调用方预计算的 stateKey（与摘要列表共享同一推导结果）。
- * @param stateKey  protectionUnknownKind(pr, hasActiveRun) 的结果（checking/undetermined）
+ * @param stateKey  protectionUnknownKind(pr, probeEvidence) 的结果（当前恒 undetermined，
+ *                  checking 需显式探测证据——审查在途不构成证据）
  * @param repo      {owner, name}（真实仓库设置地址用；可缺省）
+ * @param note      展示注记（如「审查进行中」——不宣称检查中/不承诺恢复时点；可缺省）
  * @param onRefresh 刷新页面数据（如实命名「刷新状态」；可缺省——缺省时不渲染按钮）
  * @param onOpenDetail 打开详情动作（可缺省）
  */
-export function ProtectionUnknownCard({ stateKey, repo, onRefresh, onOpenDetail }) {
+export function ProtectionUnknownCard({ stateKey, repo, note, onRefresh, onOpenDetail }) {
   const s = PROTECTION_UNKNOWN_STATES[stateKey];
   return (
     <div className="pu-wrap" role="note" aria-label="保护状态未知详情">
       <div className="pu-note">
-        保护状态未知 ≠ 未受保护——合并资格 fail-closed 恒为未知，本面板不猜测保护有无。
+        保护状态未知 ≠ 未受保护——合并资格 fail-closed 恒为未知，本面板不猜测保护有无，
+        也不承诺等待后一定恢复。
+        {note ? <strong> {note}</strong> : null}
         {stateKey === 'undetermined' && s?.candidates ? ' 当前部署未记录细分原因码，以下按可能原因逐项排查：' : ''}
       </div>
       <StateCard stateKey={stateKey} repo={repo} onRefresh={onRefresh} onOpenDetail={onOpenDetail} />
@@ -107,8 +111,8 @@ export function ProtectionUnknownCard({ stateKey, repo, onRefresh, onOpenDetail 
 }
 
 /**
- * 摘要视图：工作台异常区——保护未知的 PR 列表（按 PR 去重）。
- * @param items [{repo, pr, stateKey, owner, name}]（stateKey 由调用方统一推导）
+ * 摘要视图：工作台异常区——保护未知的 PR 列表（按 PR 去重，针对当前 head 判定）。
+ * @param items [{repo, pr, stateKey, note, owner, name}]（stateKey 由调用方统一推导）
  * @param onOpenPr 打开详情
  * @param limit 展示上限（默认 5——首屏收敛）
  */
@@ -124,8 +128,10 @@ export function ProtectionUnknownSummary({ items = [], onOpenPr, limit = 5 }) {
         return (
           <li key={prLabel} className="pu-list-item">
             <span className="mono">{prLabel}</span>
-            <span className={`badge badge-${s?.tone ?? 'warn'}`} title={s?.cause}>
-              <span className="badge-dot" aria-hidden />{s?.label ?? '原因未细分'}
+            <span className={`badge badge-${s?.tone ?? 'warn'}`}
+              title={`${s?.cause ?? ''}${it.note ? `（${it.note}）` : ''}`}>
+              <span className="badge-dot" aria-hidden />
+              {`保护状态未知${it.note ? `，${it.note}` : ''}`}
             </span>
             {onOpenPr ? (
               <Button size="small" type="link" aria-label={`打开详情：${prLabel}`}

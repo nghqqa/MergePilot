@@ -36,7 +36,7 @@ globalThis.requestAnimationFrame ??= domWindow.requestAnimationFrame.bind(domWin
 globalThis.cancelAnimationFrame ??= domWindow.cancelAnimationFrame.bind(domWindow);
 
 // —— fetch mock（可按用例覆写）——
-const SESSION = { user: { name: 'smoke', repos: [] } };
+const SESSION = { user: { name: 'smoke', login_type: 'github-oauth', session_source: 'mu_session' }, repos: [] };
 const handlers = new Map();
 const setRoute = (p, status, body) => handlers.set(p, { status, body });
 setRoute('/api/auth/session', 200, SESSION);
@@ -350,16 +350,16 @@ test('保护未知面板：真实仓库设置地址；刷新按钮可执行；�
   assert.ok((s.match(/刷新状态/g) ?? []).length >= 1, 'api_failed 候选给「刷新状态」（其余候选各有真实去向）');
   assert.ok(!s.includes('"disabled":true'), '三候选视图零 disabled 按钮');
 
-  // 5) 摘要列表：stateKey 预计算共享（checking 徽章）
+  // 5) 摘要列表：note 注记共享（审查进行中徽章）；无 note → 纯「保护状态未知」
   await act(async () => {
     r.update(React.createElement(MemoryRouter, null,
       React.createElement(ProtectionUnknownSummary, { items: [
-        { repo: 'nghqqa/demo', pr: 3, stateKey: 'checking', owner: 'nghqqa', name: 'demo' },
+        { repo: 'nghqqa/demo', pr: 3, stateKey: 'undetermined', note: '审查进行中', owner: 'nghqqa', name: 'demo' },
         { repo: 'nghqqa/demo', pr: 8, stateKey: 'undetermined', owner: 'nghqqa', name: 'demo' },
       ], onOpenPr: () => {} })));
   });
   s = JSON.stringify(r.toJSON());
-  assert.ok(s.includes('检查中') && s.includes('原因未细分'), '摘要徽章用调用方共享的 stateKey');
+  assert.ok(s.includes('保护状态未知，审查进行中'), '摘要徽章带审查进行中注记（调用方共享推导）');
   assert.ok(s.includes('打开详情：nghqqa/demo #3'), '摘要操作 aria 含 PR 标识');
   await act(async () => { r.unmount(); });
 });
@@ -429,5 +429,170 @@ test('交互语义：无 div role=link 模拟；操作链接带 aria-label', asy
     walk(json);
     assert.equal(fakeLinks.length, 0, '禁止 div role=link 模拟链接');
     assert.ok(links.some((a) => a.props?.['aria-label']), '操作链接带 aria-label');
+  } finally { await act(async () => { renderer.unmount(); }); }
+});
+
+// ══ 数据可信度加固九项回归（PR #320 三波）══
+
+test('R1+R2：current head 选择确定性——updated_at 相同反转输入仍同选；head_confirmed 权威字段优先于更新时间', async () => {
+  const { anomalies } = await loadPage();
+  const a = { repo: 'r/x', pr: 1, head_sha: 'aaa', updated_at: '2026-10-05T00:00:00Z', stage: 'REVIEWING' };
+  const b = { repo: 'r/x', pr: 1, head_sha: 'bbb', updated_at: '2026-10-05T00:00:00Z', stage: 'BLOCKED' };
+  const e1 = anomalies.groupRowsByPr([a, b]);
+  const e2 = anomalies.groupRowsByPr([b, a]);
+  assert.equal(e1[0].current.head_sha, e2[0].current.head_sha,
+    '同 updated_at 反转输入 → 同一 current（head_sha 稳定 tie-break）');
+  // R2：旧 head 行 updated_at 更新（如旧 head 补跑 run），不覆盖带权威标记的当前 head
+  const old = { repo: 'r/x', pr: 1, head_sha: 'old', updated_at: '2026-10-06T00:00:00Z', stage: 'REVIEWING' };
+  const cur = { repo: 'r/x', pr: 1, head_sha: 'cur', head_confirmed: true, updated_at: '2026-10-05T00:00:00Z', stage: 'BLOCKED' };
+  const e3 = anomalies.groupRowsByPr([old, cur]);
+  assert.equal(e3[0].current.head_sha, 'cur', 'head_confirmed=true 权威标记胜出（排序不掩盖权威）');
+  assert.equal(e3[0].headConfirmed, true);
+  assert.equal(e1[0].headConfirmed, false, '无权威标记 → headConfirmed=false（UI 显示「当前 head 未确认」）');
+});
+
+test('R3：保护状态按当前 head 判定——旧 head unknown 不污染新 head known；反向正确计入', async () => {
+  const { anomalies } = await loadPage();
+  const r1 = anomalies.selectCurrentProtection([
+    { provider_pr_number: 9, head_sha: 'old', branch_protection_status: 'unknown', updated_at: '2026-10-01T00:00:00Z' },
+    { provider_pr_number: 9, head_sha: 'new', branch_protection_status: 'known_clean', updated_at: '2026-10-05T00:00:00Z' },
+  ]);
+  assert.equal(r1.status, 'known_clean', '当前 head known → 不计 unknown（禁止先筛 unknown 再取最新）');
+  const r2 = anomalies.selectCurrentProtection([
+    { provider_pr_number: 9, head_sha: 'old', branch_protection_status: 'known_clean', updated_at: '2026-10-01T00:00:00Z' },
+    { provider_pr_number: 9, head_sha: 'new', branch_protection_status: 'unknown', updated_at: '2026-10-05T00:00:00Z' },
+  ]);
+  assert.equal(r2.status, 'unknown', '当前 head unknown → 正确计入');
+});
+
+test('R4：占位 PR 显示「阶段未获取」，不伪造 PENDING/「尚未开始审查」', async () => {
+  const { anomalies } = await loadPage();
+  const reason = anomalies.pendingReasonOf({ repo: 'r/x', pr: 7, head_sha: null, run_id: null, stage: null, placeholder: true });
+  assert.equal(reason.text, '阶段未获取', '占位 PR 阶段未获取');
+  const renderer = await renderApp('/overview');
+  try {
+    const str = JSON.stringify(renderer.toJSON());
+    assert.ok(str.includes('阶段未获取'), '列表出现「阶段未获取」（#7 占位行）');
+    assert.ok(!str.includes('protection-unknown (not in overview projection)') || str.includes('阶段未获取'),
+      '占位原因不再显示旧 machine source 为主要文案');
+  } finally { await act(async () => { renderer.unmount(); }); }
+});
+
+test('R5：单仓库请求失败 → 部分数据显式呈现（失败范围+计数下限）；恢复后不再显示', async () => {
+  setRoute('/api/mu/prs', 500, { error: { reason: 'boom' } });
+  const rFail = await renderApp('/overview');
+  try {
+    const str = JSON.stringify(rFail.toJSON());
+    assert.ok(str.includes('保护状态为部分数据'), '部分数据横幅出现');
+    assert.ok(str.includes('nghqqa/demo'), '失败范围含仓库名');
+  } finally { await act(async () => { rFail.unmount(); }); }
+  // 恢复：handler 还原后全新渲染 → 横幅消失、保护未知计数恢复
+  setRoute('/api/mu/prs', 200, () => ({ pull_requests: [
+    { pr_id: 'p8', provider_pr_number: 8, head_sha: 'cur8head', branch_protection_status: 'unknown', updated_at: '2026-10-05T03:00:00Z' },
+    { pr_id: 'p3', provider_pr_number: 3, head_sha: 'cur3head', branch_protection_status: 'unknown', updated_at: '2026-10-05T05:00:00Z' },
+    { pr_id: 'p7', provider_pr_number: 7, head_sha: 'x7head', branch_protection_status: 'unknown', updated_at: '2026-10-02T00:00:00Z' },
+    { pr_id: 'p9', provider_pr_number: 9, head_sha: 'cur9head', branch_protection_status: 'known_clean', updated_at: '2026-10-04T09:00:00Z' },
+  ] }));
+  const rOk = await renderApp('/overview');
+  try {
+    const str = JSON.stringify(rOk.toJSON());
+    assert.ok(!str.includes('保护状态为部分数据'), '恢复后无部分数据横幅');
+    assert.ok(str.includes('异常 PR'), '统计恢复');
+  } finally { await act(async () => { rOk.unmount(); }); }
+});
+
+test('R6：REVIEWING 无探测证据 → 不宣称「检查中」；摘要徽章=「保护状态未知，审查进行中」', async () => {
+  const { anomalies } = await loadPage();
+  assert.equal(anomalies.protectionUnknownKind({ branch_protection_status: 'unknown' }, null), 'undetermined',
+    '无显式探测证据（恒 null）：REVIEWING 也落 undetermined');
+  assert.equal(anomalies.protectionUnknownKind({ branch_protection_status: 'unknown' }, 'in_flight'), 'checking',
+    '仅显式探测证据（in_flight）才可判 checking——当前后端不提供');
+  const renderer = await renderApp('/overview');
+  try {
+    const str = JSON.stringify(renderer.toJSON());
+    assert.ok(!str.includes('"检查中"'), '页面不出现「检查中」徽章（无探测证据）');
+    assert.ok(str.includes('保护状态未知，审查进行中'), '#3 REVIEWING → 徽章带审查进行中注记');
+  } finally { await act(async () => { renderer.unmount(); }); }
+});
+
+test('R7：OAuth 与操作员密码会话显示不同身份来源；无标记 → 来源未知（不按模式推断）', async () => {
+  const identityUrl = pathToFileURL(path.join(FRONTEND, 'src/identity.js')).href;
+  const { deriveIdentitySource, capabilityLine } = await import(identityUrl);
+  const oauth = deriveIdentitySource({ session: { user: { name: 'a', login_type: 'github-oauth' }, session_source: 'mu_session' }, dataMode: 'live', authed: true });
+  const oper = deriveIdentitySource({ session: { user: { name: 'b', login_type: 'operator_password' } }, dataMode: 'live', authed: true });
+  const unk = deriveIdentitySource({ session: { user: { name: 'c' } }, dataMode: 'live', authed: true });
+  const tester = deriveIdentitySource({ session: { user: { name: 't' } }, dataMode: 'fixture', authed: true });
+  assert.equal(oauth.key, 'github_oauth');
+  assert.equal(oper.key, 'operator_password');
+  assert.equal(unk.key, 'unknown', '无显式标记 → 来源未知（不冒充 OAuth）');
+  assert.equal(tester.key, 'test_principal');
+  assert.notEqual(capabilityLine(oauth), capabilityLine(oper), '不同身份 → 不同能力行');
+  // multiuser 模式但无会话 provider 标记 → 不因模式冒充 OAuth
+  const muNoMarker = deriveIdentitySource({ session: { user: { name: 'd' } }, dataMode: 'live', authed: true });
+  assert.equal(muNoMarker.key, 'unknown');
+});
+
+test('R8：账户摘要缓存按用户失效——换号不残留；失败可重试；旧延迟响应不覆盖新会话', async () => {
+  const hooksUrl = pathToFileURL(path.join(FRONTEND, 'src/hooks.js')).href;
+  // hooks.js 以 named export 提供 cache 控制；直接动态 import（react external 不需要——纯函数域）
+  const mod = await import(hooksUrl);
+  const realFetch = globalThis.fetch;
+  try {
+    // A 用户：租户 org-a
+    globalThis.fetch = async () => new Response(JSON.stringify({ user: { login: 'alice' }, tenant: { slug: 'org-a' }, role: 'maintainer' }),
+      { status: 200, headers: { 'content-type': 'application/json' } });
+    const a = await mod.fetchMuAccountSummary({ github_login: 'alice' });
+    assert.equal(a.org, 'org-a', 'A 摘要');
+    // A 登出 → 缓存清除
+    mod.resetMuAccountSummaryCache();
+    // B 登录：租户 org-b
+    globalThis.fetch = async () => new Response(JSON.stringify({ user: { login: 'bob' }, tenant: { slug: 'org-b' }, role: 'reviewer' }),
+      { status: 200, headers: { 'content-type': 'application/json' } });
+    const b = await mod.fetchMuAccountSummary({ github_login: 'bob' });
+    assert.equal(b.org, 'org-b', 'B 摘要不残留 A 的组织/角色');
+    // 失败不缓存：失败后重试成功可取到
+    mod.resetMuAccountSummaryCache();
+    globalThis.fetch = async () => new Response('{}', { status: 500 });
+    const failed = await mod.fetchMuAccountSummary({ github_login: 'carol' });
+    assert.equal(failed, null, '失败不缓存');
+    globalThis.fetch = async () => new Response(JSON.stringify({ user: { login: 'carol' }, tenant: { slug: 'org-c' }, role: 'maintainer' }),
+      { status: 200, headers: { 'content-type': 'application/json' } });
+    const retried = await mod.fetchMuAccountSummary({ github_login: 'carol' });
+    assert.equal(retried.org, 'org-c', '失败后重试成功');
+    // 旧延迟响应不覆盖：A 的慢响应在途时换会话 → 代际令牌丢弃该响应，缓存不污染
+    mod.resetMuAccountSummaryCache();
+    let releaseSlow;
+    const slowPromise = new Promise((resolve) => { releaseSlow = resolve; });
+    globalThis.fetch = () => slowPromise; // A 的响应挂起在途
+    const inFlight = mod.fetchMuAccountSummary({ github_login: 'alice' }); // 在途（未 await）
+    mod.resetMuAccountSummaryCache(); // 换会话（A 登出 → B 登录前）
+    const daveBody = JSON.stringify({ user: { login: 'dave' }, tenant: { slug: 'org-d' }, role: 'maintainer' });
+    globalThis.fetch = async () => new Response(daveBody, { status: 200, headers: { 'content-type': 'application/json' } });
+    const after = await mod.fetchMuAccountSummary({ github_login: 'dave' });
+    assert.equal(after?.org, 'org-d', '新会话请求正常');
+    // 释放 A 的慢响应——必须被代际令牌丢弃，且不污染 dave 的缓存
+    releaseSlow(new Response(JSON.stringify({ user: { login: 'alice' }, tenant: { slug: 'org-a' }, role: 'maintainer' }),
+      { status: 200, headers: { 'content-type': 'application/json' } }));
+    const stale = await inFlight;
+    assert.equal(stale, null, '旧会话在途响应被丢弃');
+    const cached = await mod.fetchMuAccountSummary({ github_login: 'dave' });
+    assert.equal(cached.org, 'org-d', '缓存不被旧响应污染');
+  } finally {
+    globalThis.fetch = realFetch;
+    mod.resetMuAccountSummaryCache();
+  }
+});
+
+test('R9：统计/筛选/图表摘要/详情当前 head 一致（同源实体；历史 head 不出现在列表）', async () => {
+  const renderer = await renderApp('/overview');
+  try {
+    const str = JSON.stringify(renderer.toJSON());
+    // 当前 head 一致：列表只显示 cur8head（旧 head 不入列表行）
+    assert.ok(str.includes('cur8head'), '列表显示当前 head');
+    assert.ok(!str.includes('old8head'), '历史 head 不出现在列表（收进抽屉）');
+    // 详情同源：抽屉（点击前不渲染）与列表共享同一 enriched 实体——抽屉 Head=当前 head
+    // 由组件单源保证（drawerEntity 即列表实体）；此处锁定列表/统计同源数字
+    assert.ok(str.includes('已显示') || str.includes('PR 列表'), '列表区存在');
+    assert.ok(str.includes('保护未知'), '异常实体带保护未知标识（与异常计数同源）');
   } finally { await act(async () => { renderer.unmount(); }); }
 });

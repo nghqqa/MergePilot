@@ -12,7 +12,8 @@ import { api } from './api.js';
 import { readCsrfCookie } from './api-live.js';
 import { AuthProvider, useAuth } from './auth.jsx';
 import { BrandMark, ErrorBoundary } from './ui.jsx';
-import { useDataSource, useRuntimeConfig, useMuAccountSummary } from './hooks.js';
+import { deriveIdentitySource, capabilityLine } from './identity.js';
+import { useDataSource, useRuntimeConfig, useMuAccountSummary, resetMuAccountSummaryCache } from './hooks.js';
 import { resolveWorkspaceState, WorkspacePanel } from './components/WorkspaceStatusPanel.jsx';
 import RunsPage from './pages/RunsPage.jsx';
 import RunDetailPage from './pages/RunDetailPage.jsx';
@@ -179,6 +180,7 @@ function AuthChip({ compact = false, summary = null }) {
         ? '退出未生效（403：CSRF 校验失败或会话已变化）——以服务端会话为准，请重试或用"设置"页退出'
         : `退出未生效（${code ?? '未知'}）——以服务端会话为准，请重试`);
     }
+    resetMuAccountSummaryCache(); // 换号防护：A 登出后 B 登录不残留 A 的组织/角色
     auth.refresh();
   };
   // fixture 验收环境（可信配置声明 data_mode=fixture）：会话即合成用户，标识常驻可见
@@ -328,17 +330,15 @@ function AdvancedNavGroup({ pathname }) {
   );
 }
 
-// 侧栏能力边界一行（数据可信度修复 2026-10-05）：按会话与数据源如实声明——
-// 消灭与 MU 实时面（有审批决策/审查发起类 POST）矛盾的旧「只读 · 无写操作」全局文案。
-// 统一边界口径：操作经服务端授权；不写 GitHub、不自动合并；凭证不下发。
-function capabilityFooterLine(config, authStatus) {
-  if (config?.mode === 'multiuser' && authStatus === 'authed') {
-    return 'OAuth 会话 · 操作经服务端授权 · 不写 GitHub · 不自动合并';
-  }
-  if (config?.mode === 'console-pg') {
-    return '隔离联调 · 审批仅写 fixture 库 · 无凭证下发';
-  }
-  return '只读快照 · 无凭证下发';
+// 侧栏能力边界一行（身份/能力统一映射，见 identity.js——与工作区面板/设置/诊断共用口径）。
+// provider 只认会话显式标记，不按 multiuser 模式推断；footer 随会话如实变化。
+function capabilityFooterLine(config, auth) {
+  const identity = deriveIdentitySource({
+    session: { user: auth.user, session_source: auth.user?.session_source },
+    dataMode: config?.dataMode,
+    authed: auth.status === 'authed',
+  });
+  return capabilityLine(identity);
 }
 
 function Shell() {
@@ -363,8 +363,9 @@ function Shell() {
   }, []);
   useEffect(() => { setNavOpen(false); }, [loc.pathname]);
 
-  // 顶栏账户区组织/角色（MU 模式 + 已登录；会话内缓存，失败如实为空）
-  const muSummary = useMuAccountSummary(config?.mode === 'multiuser' && auth.status === 'authed');
+  // 顶栏账户区组织/角色（MU 模式 + 已登录）：缓存按会话身份键失效，
+  // 登出/换号时由 resetMuAccountSummaryCache 清除（见 AuthChip.doLogout）
+  const muSummary = useMuAccountSummary(config?.mode === 'multiuser' && auth.status === 'authed', auth.user);
 
   // 导航按数据源能力呈现：run 级全量历史仅 snapshot 取证视图提供
   const systemNav = SYSTEM_NAV.filter((n) => !(source.kind !== 'snapshot' && n.to === '/runs'));
@@ -405,7 +406,7 @@ function Shell() {
           <div className="sidebar-foot">
             <div className="foot-row" title="本服务仅监听 127.0.0.1 回环地址；不下发任何凭证。写操作仅限审批决策与审查发起类 POST（服务端 RBAC+CSRF）——不写 GitHub、不自动合并。能力口径与「设置 / 数据源」页一致。">
               <Activity size={12} strokeWidth={1.75} aria-hidden />
-              {capabilityFooterLine(config, auth.status)}
+              {capabilityFooterLine(config, auth)}
             </div>
           </div>
         </Layout.Sider>

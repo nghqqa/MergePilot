@@ -100,32 +100,54 @@ export function useSourceQuery(queryFn, deps, { enabled = true } = {}) {
 }
 
 // ---- 顶栏账户摘要（组织/角色）----
-// 会话内一次性获取（模块级缓存）：MU 模式顶栏展示 当前账号/组织/角色；
-// 非 MU 模式或不登录时返回 null（顶栏如实只显示控制台会话名）。
-// 401/网络失败 → null（顶栏不因此报错——会话权威已在 AuthProvider 探测）。
-let muSummaryPromise = null;
-export function fetchMuAccountSummaryOnce() {
-  if (!muSummaryPromise) {
-    muSummaryPromise = fetch('/api/mu/session', { credentials: 'same-origin' })
-      .then((r) => (r.ok ? r.json().catch(() => null) : null))
-      .then((b) => (b?.user && b?.tenant ? {
-        login: b.user.login ?? b.user.name ?? '',
-        org: b.tenant.slug ?? '',
-        role: b.role ?? '',
-      } : null))
-      .catch(() => null);
-  }
-  return muSummaryPromise;
-}
-export function resetMuAccountSummaryCache() { muSummaryPromise = null; }
+// 数据可信度加固（PR #320 三波）：
+//   · 缓存按会话身份键（login + org）失效——A 登出后 B 登录不残留 A 的组织/角色；
+//   · 失败不缓存——首次请求失败可恢复（下次 enabled 变化/登入重试）；
+//   · 请求代际令牌——旧会话的延迟响应不得覆盖新会话数据。
+let muSummaryCache = { key: null, data: null };
+let muSummaryToken = 0;
 
-export function useMuAccountSummary(enabled) {
+function accountCacheKey(sessionUser) {
+  // 身份键：优先后端 user id/login（跨用户必不同）；同用户重复登录共享缓存无害
+  return String(sessionUser?.github_login ?? sessionUser?.login ?? sessionUser?.name ?? '');
+}
+
+export function resetMuAccountSummaryCache() {
+  muSummaryCache = { key: null, data: null };
+  muSummaryToken += 1; // 使在途请求全部过期
+}
+
+export async function fetchMuAccountSummary(sessionUser) {
+  const key = accountCacheKey(sessionUser);
+  if (!key) return null;
+  if (muSummaryCache.key === key && muSummaryCache.data) return muSummaryCache.data;
+  const myToken = ++muSummaryToken;
+  try {
+    const r = await fetch('/api/mu/session', { credentials: 'same-origin' });
+    const b = r.ok ? await r.json().catch(() => null) : null;
+    const summary = (b?.user && b?.tenant) ? {
+      login: b.user.login ?? b.user.name ?? '',
+      org: b.tenant.slug ?? '',
+      role: b.role ?? '',
+    } : null;
+    // 代际+身份双校验：响应到达时若已换会话/换键，丢弃（防旧会话延迟响应覆盖）
+    if (myToken !== muSummaryToken || accountCacheKey(sessionUser) !== key) return null;
+    if (summary) muSummaryCache = { key, data: summary };
+    return summary;
+  } catch {
+    if (myToken !== muSummaryToken) return null;
+    return null; // 失败不缓存——下次重试
+  }
+}
+
+export function useMuAccountSummary(enabled, sessionUser) {
   const [summary, setSummary] = useState(null);
+  const userKey = accountCacheKey(sessionUser);
   useEffect(() => {
-    if (!enabled) { setSummary(null); return undefined; }
+    if (!enabled || !userKey) { setSummary(null); return undefined; }
     let alive = true;
-    fetchMuAccountSummaryOnce().then((s) => { if (alive) setSummary(s); });
+    fetchMuAccountSummary(sessionUser).then((s) => { if (alive) setSummary(s); });
     return () => { alive = false; };
-  }, [enabled]);
+  }, [enabled, userKey]); // eslint-disable-line react-hooks/exhaustive-deps
   return summary;
 }

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../auth.jsx';
 import { WIRE, wireMap } from '../status-map.js';
+import { deriveIdentitySource, capabilityLine, identityDetail } from '../identity.js';
 
 // Workspace Status：统一的工作区状态表达。
 // - 顶部 chip：一行人类可读状态（不出现工程术语）
@@ -100,14 +101,21 @@ function wiringRowsOf(mode, live, pgMode) {
   ];
 }
 
-// 完整状态面板（顶栏弹出与"数据源与联调"页面共用）
+// 完整状态面板（顶栏弹出与"数据源与联调"页面共用）。
+// 身份与能力行使用 identity.js 统一映射（与 footer/设置/诊断同源）——
+// provider 只认会话显式标记（login_type/session_source），不按模式推断。
 export function WorkspacePanel({ config, auth, onRetry }) {
   const state = resolveWorkspaceState(config, auth.status);
   const mode = config?.mode ?? 'snapshot';
   const health = config?.raw ?? {};
   const live = isLive(config);
-  const testAuth = auth.status === 'authed' && config?.dataMode === 'fixture';
   const pgMode = mode === 'console-pg';
+  const identity = deriveIdentitySource({
+    session: { user: auth.user, session_source: auth.user?.session_source },
+    dataMode: config?.dataMode,
+    authed: auth.status === 'authed',
+  });
+  const userName = auth.user?.name ?? auth.user?.display_name ?? auth.user?.github_login ?? '已登录';
 
   const wiring = wiringRowsOf(mode, live, pgMode);
 
@@ -140,14 +148,8 @@ export function WorkspacePanel({ config, auth, onRetry }) {
             ? <>审批决策、发起审查/受控修复（POST，CSRF 保护，按角色 RBAC 授权）——仅生成建议/留痕，不写 GitHub、不自动合并、不派发站外执行</>
             : <>无——控制台本体接口仅 GET{mode === 'contract' ? '；fixture 演练不触达后端' : ''}</>}
       </Row>
-      <Row label="GitHub 身份">
-        {auth.status === 'authed'
-          ? (config?.dataMode === 'fixture'
-              ? <>test-principal（隔离测试主体，非真实 GitHub 身份）</>
-              : (mode === 'multiuser'
-                  ? <>{auth.user?.name ?? auth.user?.display_name ?? auth.user?.github_login ?? '已登录'}（GitHub OAuth 会话；组织/角色见顶栏）</>
-                  : <>{auth.user?.name ?? auth.user?.display_name ?? auth.user?.github_login ?? '已登录'}（控制台会话；非 GitHub OAuth）</>))
-          : <>未认证——无真实 GitHub 身份</>}
+      <Row label="身份来源">
+        {identityDetail(identity, userName)}
       </Row>
       <Row label="生产后端">
         {live
@@ -157,6 +159,8 @@ export function WorkspacePanel({ config, auth, onRetry }) {
       <Row label="是否真实 GitHub 操作">
         <YesNo yes={false} yesText="有" noText="无——任何模式都不写 GitHub、不自动合并" />
       </Row>
+      <div className="ws-section">能力边界</div>
+      <div className="ws-row"><div className="ws-row-value">{capabilityLine(identity)}</div></div>
       <div className="ws-section">接线状态</div>
       <ul className="ws-wiring">
         {wiring.map((w) => {

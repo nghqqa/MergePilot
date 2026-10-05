@@ -78,10 +78,10 @@ export const PROTECTION_UNKNOWN_STATES = {
     key: 'checking',
     label: '检查中',
     tone: 'info',
-    cause: '该 PR 正在审查中——分支保护探测随审查一起进行，尚未返回结果。',
-    impact: '等待本次审查完成后自动更新；无需人工处理。',
+    cause: '分支保护探测正在进行（有显式探测状态证据）——尚未返回结果。',
+    impact: '等待探测返回后自动更新；无需人工处理。',
     next: { kind: 'refresh', label: '刷新状态',
-      hint: '探测随审查进行——稍后刷新页面即可看到结果。' },
+      hint: '探测完成后刷新页面即可看到结果。' },
   },
   not_configured: {
     key: 'not_configured',
@@ -108,7 +108,7 @@ export const PROTECTION_UNKNOWN_STATES = {
     cause: 'GitHub API 网络失败或限流——探测请求未得到有效响应。',
     impact: '状态暂时不可得；恢复后随下一次审查自动重探。',
     next: { kind: 'refresh', label: '刷新状态',
-      hint: '恢复后随下一次审查自动重探；持续失败时检查 GitHub 服务状态。' },
+      hint: '探测可随下一次审查重新取得（不承诺时点）；持续失败时检查 GitHub 服务状态。' },
   },
   undetermined: {
     key: 'undetermined',
@@ -124,15 +124,19 @@ export const PROTECTION_UNKNOWN_STATES = {
 };
 
 // 保护状态未知子态推导（纯函数）。
-// @param pr  MU PR 行（branch_protection_status / provider_pr_number）
-// @param hasActiveRun  该 PR 是否存在进行中的审查 run（REVIEWING/REVIEW_QUEUED/RECEIVED 等）
-export function protectionUnknownKind(pr, hasActiveRun = false) {
-  if (hasActiveRun) return 'checking';
+// 红线（数据可信度加固）：审查 run 在途 ≠ 探测在途——只有调用方拿到显式探测状态
+// 证据（probeEvidence，当前后端不提供）才可判 'checking'；否则一律 'undetermined'，
+// 审查在途由调用方以「审查进行中」注记呈现（不冒充检查完成路径）。
+// @param pr            当前 head 的 MU PR 行（branch_protection_status）
+// @param probeEvidence 显式探测状态证据；当前部署恒为 null/undefined
+export function protectionUnknownKind(pr, probeEvidence = null) {
+  if (probeEvidence === 'in_flight') return 'checking';
   void pr; // 当前无更多后端证据可用——落 undetermined（候选三态在 UI 展开）
   return 'undetermined';
 }
 
-// MU run 状态 → 是否"探测进行中"（保护子态 checking 依据）
+// MU run 状态 → 是否"探测进行中"（已废弃的推导依据：run 在途不证明探测在途。
+// 保留导出仅供展示注记判定——isRunChecking 的语义现=「审查进行中」，不用于 checking 子态）。
 const ACTIVE_RUN_STATUSES = new Set(['RECEIVED', 'REVIEW_QUEUED', 'REVIEWING']);
 export function isRunChecking(status) {
   return ACTIVE_RUN_STATUSES.has(String(status ?? '').toUpperCase());
@@ -154,9 +158,16 @@ export function deriveAnomalies(overview, protectionUnknownCount = 0) {
 // 工作台表格行的"待处理原因"人话化（纯函数）。
 // 输入行 = /api/overview prs 行（stage / stage_source / run_id）。
 // 返回 { text, detail }；detail 供抽屉/tooltip 展示技术来源。
+// 缺失与零值分开（数据可信度加固）：投影未包含的占位 PR 显示「阶段未获取」，
+// 绝不伪造 PENDING/「尚未开始审查」。
 export function pendingReasonOf(row) {
   const stage = String(row?.stage ?? '').toUpperCase();
   const src = String(row?.stage_source ?? '');
+  if (row?.placeholder === true || row?.stage == null) {
+    return { text: '阶段未获取', detail: row?.placeholder
+      ? '该 PR 不在概览投影内（因保护未知单独获取）——无阶段/运行记录可显示'
+      : src || '概览投影未返回该记录的阶段' };
+  }
   switch (stage) {
     case 'ACTION_REQUIRED':
       return { text: '等待人工审批/裁定', detail: src || '最新 run 存在待处理票据或需人工裁定' };
@@ -204,11 +215,47 @@ export function bucketOf(row) {
 // （PENDING=尚未开始审查——不是进行中；PASSED=终态。）
 export const REVIEWING_STAGES = ['REVIEWING', 'REMEDIATING', 'VERIFYING'];
 
+// ── current head 选择（数据可信度加固：确定性、可用权威字段覆盖排序）──
+// 优先级：head_confirmed===true（后端权威标记，出现即胜出）→ updated_at 事件序倒序
+// → head_sha 字典序（稳定 tie-break：updated_at 相同/输入顺序反转也选中同一行）。
+// 注意：当前后端无 is_current 权威字段（head_basis='event_order'，契约缺口已登记），
+// 因此调用方必须同时展示「当前 head 未确认」——选择结果只代表最近事件序。
+export function selectCurrentHead(rows) {
+  const list = [...(rows ?? [])].sort((a, b) => {
+    const ca = a?.head_confirmed === true ? 1 : 0;
+    const cb = b?.head_confirmed === true ? 1 : 0;
+    if (ca !== cb) return cb - ca;
+    const ta = String(a?.updated_at ?? '');
+    const tb = String(b?.updated_at ?? '');
+    if (ta !== tb) return tb.localeCompare(ta);
+    return String(a?.head_sha ?? '').localeCompare(String(b?.head_sha ?? ''));
+  });
+  return { current: list[0] ?? null, confirmed: list[0]?.head_confirmed === true, sorted: list };
+}
+
+// ── 保护状态按当前 head 判定（纯函数）──
+// 输入：同一 PR 的全部 head 行（mu /api/mu/prs 投影，每 head 一行，含
+// branch_protection_status）。先选当前 head，再读它的保护状态——
+// 严禁「先筛 unknown 再取最新」（旧 head unknown 不得污染新 head known）。
+// 返回 { status, confirmed, inReview }：
+//   status   = 当前 head 的 branch_protection_status（可能 'unknown'）
+//   inReview = 当前 head 是否有审查在途（仅作展示注记——审查在途 ≠ 探测在途，
+//              不得据此宣称「保护检查中」，见 protectionUnknownKind）
+export function selectCurrentProtection(prRows) {
+  const { current, confirmed } = selectCurrentHead(prRows);
+  return {
+    status: String(current?.branch_protection_status ?? 'unknown'),
+    confirmed,
+    inReview: REVIEWING_STAGES.includes(String(current?.stage ?? '').toUpperCase()),
+  };
+}
+
 // ── PR 实体分组：/api/overview 行（每 head/run 一行）→ 每 PR 一实体 ──
-// 后端（legacy 与 MU 投影均）按 head/run 出行：同一 PR 多个 head 各占一行。
-// 工作台口径统一为 PR：current = updated_at 最新的行（当前 head）；
-// history = 其余行（历史 head/run，按时间倒序，收进详情抽屉展开）。
-// 返回 [{ key, repo, n, owner, name, detailTo, current, history, bucket, reason, ... }]
+// current head 由 selectCurrentHead 决定（权威字段优先，其次事件序，稳定 tie-break）；
+// 后端无 is_current 标记时 headConfirmed=false——UI 必须显示「当前 head 未确认」，
+// 不用前端排序冒充权威（契约缺口：mu.pull_request 无 is_current/GitHub 对照，已登记）。
+// history = 其余 head 行（按时间倒序，收进详情抽屉展开；每 head 行携带其最新 run——
+// 同一 head 的更多 run 在 PR 详情的审查管线中，此处如实注明不重复建模）。
 export function groupRowsByPr(rows, { isMu = false } = {}) {
   const byPr = new Map();
   for (const r of rows ?? []) {
@@ -221,9 +268,7 @@ export function groupRowsByPr(rows, { isMu = false } = {}) {
   }
   const out = [];
   for (const [key, group] of byPr) {
-    const sorted = [...group].sort((a, b) =>
-      String(b.updated_at ?? '').localeCompare(String(a.updated_at ?? '')));
-    const current = sorted[0];
+    const { current, confirmed, sorted } = selectCurrentHead(group);
     const [owner, name] = String(current.repo).split('/');
     const n = current.pr_number ?? current.pr;
     const detailTo = (n != null && owner && name)
@@ -239,6 +284,10 @@ export function groupRowsByPr(rows, { isMu = false } = {}) {
       name,
       detailTo,
       current,
+      // head 权威口径：confirmed=false 时 UI 显示「当前 head 未确认」
+      headConfirmed: confirmed,
+      headBasis: String(current.head_basis ?? 'event_order'),
+      headTotal: Number(current.head_count ?? group.length) || group.length,
       history: sorted.slice(1).map((h) => ({
         head_sha: h.head_sha, run_id: h.run_id, stage: h.stage,
         stage_source: h.stage_source, updated_at: h.updated_at ?? null,

@@ -55,7 +55,7 @@ test('session user 为结构化对象（前端不再显示"未知用户"）', as
     const cookie = await loginCookie(base);
     const r = await call(base, '/api/auth/session', { headers: { cookie } });
     assert.strictEqual(r.status, 200);
-    assert.deepStrictEqual(r.body?.user, { name: 'pilot' });
+    assert.deepStrictEqual(r.body?.user, { name: 'pilot', login_type: 'operator_password' });
   } finally { server.close(); }
 });
 
