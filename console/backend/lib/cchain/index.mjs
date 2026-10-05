@@ -4,11 +4,24 @@
 
 // ── 1) model cache ──────────────────────────────────────────────
 // 缓存目录 + manifest（内容寻址）。verify 全量重哈希；缺失/损坏 fail-closed。
+// D-2（rc.12）：生产 bge-m3 pytorch_model.bin=2,271,145,830B（≈2.12GiB）超出 Node
+// Buffer 2GiB 硬上限——原 readFileSync 整读抛 "File size is greater than 2 GiB" →
+// /api/cchain/status HTTP 500 → model_cache 对生产真实模型结构性不可能 READY。
+// 现改为 fs.createReadStream 分块 pipe 进 sha256（流式，内存 O(1)）：摘要逐字节
+// 等价于整读（sha256 只看字节序，与分块无关），manifest 校验语义逐项保持。
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 
-export function modelCacheStatus(env = process.env) {
+// 流式 sha256：createReadStream 分块 update，任何读错误经 stream error 事件 reject
+// （EACCES/EPERM=权限拒绝；不把文件内容带进错误消息——只上抛 OS 错误码）。
+async function sha256FileStream(p) {
+  const hash = crypto.createHash('sha256');
+  for await (const chunk of fs.createReadStream(p)) hash.update(chunk);
+  return hash.digest('hex');
+}
+
+export async function modelCacheStatus(env = process.env) {
   const dir = env.MERGEPILOT_MODEL_CACHE_DIR;
   if (!dir) return { state: 'NOT_CONFIGURED', blocked_condition: 'MERGEPILOT_MODEL_CACHE_DIR 未设置' };
   const manifestPath = path.join(dir, 'manifest.json');
@@ -22,7 +35,16 @@ export function modelCacheStatus(env = process.env) {
   for (const f of manifest.files ?? []) {
     const p = path.join(dir, f.name);
     if (!fs.existsSync(p)) { problems.push(`${f.name}: missing`); continue; }
-    const h = crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
+    let h;
+    try {
+      h = await sha256FileStream(p);
+    } catch (e) {
+      // 权限拒绝不 crash：fail-closed 记 permission denied → CORRUPT（D-2 要求）。
+      // 其他读错误同样 fail-closed（绝不让 status 端点 500）。只报文件名+错误码。
+      if (e?.code === 'EACCES' || e?.code === 'EPERM') { problems.push(`${f.name}: permission denied`); continue; }
+      problems.push(`${f.name}: read error (${e?.code ?? 'unknown'})`);
+      continue;
+    }
     if (h !== f.sha256) problems.push(`${f.name}: digest mismatch`);
   }
   if (problems.length) return { state: 'CORRUPT', dir, problems, blocked_condition: '文件缺失或摘要不符（内容寻址校验失败）' };
@@ -135,7 +157,7 @@ export function createRunBindingAuth(env = process.env, { now = Date.now } = {})
 
 // ── 聚合状态 ────────────────────────────────────────────────────
 export async function cchainStatus(env = process.env) {
-  const cache = modelCacheStatus(env);
+  const cache = await modelCacheStatus(env); // D-2：modelCacheStatus 已改 async（流式 sha256）
   const attestCfg = providerAttestConfig(env);
   const attest = attestCfg.configured ? await fetchProviderAttestation(env) : { state: 'NOT_CONFIGURED', blocked_condition: attestCfg.blocked_condition };
   const binding = runBindingAuthStatus(env);
