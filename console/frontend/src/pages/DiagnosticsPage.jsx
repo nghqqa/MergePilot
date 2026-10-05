@@ -3,6 +3,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { useAppConfig } from '../App.jsx';
 import { useAuth } from '../auth.jsx';
+import { deriveIdentitySource, capabilityLine } from '../identity.js';
 import { resolveWorkspaceState } from '../components/WorkspaceStatusPanel.jsx';
 
 // 诊断：接线状态与健康摘要的集中呈现 + 审计记录入口。
@@ -13,6 +14,13 @@ import { resolveWorkspaceState } from '../components/WorkspaceStatusPanel.jsx';
 export default function DiagnosticsPage() {
   const config = useAppConfig();
   const auth = useAuth();
+  const diagIdentity = deriveIdentitySource({
+    session: { user: auth.user, session_source: auth.user?.session_source },
+    dataMode: config?.dataMode,
+    authed: auth.status === 'authed',
+  });
+  const identitySourceLabel = diagIdentity.label;
+  const capLine = capabilityLine(diagIdentity);
   const state = resolveWorkspaceState(config, auth.status);
   const health = config?.raw ?? {};
   const isMu = config?.mode === 'multiuser';
@@ -51,6 +59,9 @@ export default function DiagnosticsPage() {
         <div className={`state-box ${state.tone === 'bad' ? 'state-error' : state.tone === 'warn' ? 'state-warn' : 'state-ok'}`} role="status">
           {state.label}
           {auth.reason ? `（${auth.reason}）` : ''}
+        </div>
+        <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+          当前会话身份：{identitySourceLabel} · {capLine}
         </div>
       </section>
 

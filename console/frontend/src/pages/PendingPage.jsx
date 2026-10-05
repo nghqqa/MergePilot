@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, ArrowUpRight, Inbox, Search } from 'lucide-react';
-import { Alert, Button, Input, Select, Table, Tag, Typography } from 'antd';
+import { Alert, Input, Select, Table, Tag, Typography } from 'antd';
 import { useAppConfig } from '../App.jsx';
 import { fetchRunsSnapshotOnce, useDataSource, useSourceQuery } from '../hooks.js';
 import { groupRunsByPr } from '../pr-model.js';
@@ -207,8 +207,10 @@ export default function PendingPage() {
                 render: (v) => (v ? <span className="mono">{fmtTime(v)}</span> : '—') },
               { title: '', width: 90,
                 render: (_, it) => (
-                  <Link to={it.href} aria-label={`打开：${it.title ?? it.repo}`}>
-                    <Button size="small">打开 <ArrowRight size={12} strokeWidth={1.75} aria-hidden /></Button>
+                  // 交互语义：Link 自带按钮样式（真实 <a>，可中键/新开）——
+                  // 不允许 <Link><Button> 嵌套交互元素（双 tab 停留点 + 语义竞争）
+                  <Link className="btn btn-sm" to={it.href} aria-label={`打开：${it.title ?? it.repo}`}>
+                    打开 <ArrowRight size={12} strokeWidth={1.75} aria-hidden />
                   </Link>
                 ) },
             ]}

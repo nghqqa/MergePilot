@@ -2,6 +2,8 @@ import { Typography } from 'antd';
 import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth.jsx';
+import { useAppConfig } from '../App.jsx';
+import { deriveIdentitySource, identityDetail } from '../identity.js';
 import { api } from '../api.js';
 
 // 设置：数据模式、会话状态、运行边界 —— 一次讲清，不在各页面重复长篇工程说明。
@@ -25,6 +27,12 @@ const MU_DATA_MODE_COPY = '多用户实时数据——多用户正式数据面�
 
 export default function SettingsPage() {
   const auth = useAuth();
+  const config = useAppConfig();
+  const currentIdentity = deriveIdentitySource({
+    session: { user: auth.user, session_source: auth.user?.session_source },
+    dataMode: config?.dataMode,
+    authed: auth.status === 'authed',
+  });
   const navigate = useNavigate();
   const [health, setHealth] = useState(null);
   const [err, setErr] = useState(null);
@@ -122,6 +130,13 @@ export default function SettingsPage() {
                 : '具名操作员密码登录（已上线，服务端会话）。GitHub OAuth 登录等待后端交付。'
                   + '登录会话由服务端会话 Cookie 承载（技术详情见悬停提示）；浏览器不保存 App token / 私钥 / '
                   + '长期凭证；授权以后端为准。'}
+            </div>
+          </div>
+          <div className="kv">
+            <div className="kv-label">当前会话身份（实际 provider）</div>
+            <div className="kv-value" title="身份来源读取后端会话的显式 provider 标记（login_type/session_source），不按部署模式推断；与侧栏 footer / 工作区面板 / 诊断共用同一映射（identity.js）">
+              {identityDetail(currentIdentity, auth.user?.name ?? auth.user?.display_name)}
+              {currentIdentity.key === 'unknown' ? '——如与本页登录方案不符，请退出后重新登录（旧会话未携带 provider 标记）。' : ''}
             </div>
           </div>
         </div>

@@ -1,18 +1,19 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { Link, NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
-import { Activity, History, LogOut } from 'lucide-react';
-import { Layout, Menu as AntMenu, Drawer, Button } from 'antd';
+import { Activity, History, LogOut, UserRound } from 'lucide-react';
+import { Layout, Menu as AntMenu, Drawer, Button, Dropdown, Tag } from 'antd';
 import {
   InboxOutlined, FolderOpenOutlined, HistoryOutlined, AuditOutlined,
   DashboardOutlined, DatabaseOutlined, ApiOutlined, MedicineBoxOutlined,
   SettingOutlined, MenuOutlined, AppstoreOutlined, SafetyCertificateOutlined, FileSearchOutlined,
-  TeamOutlined, ToolOutlined,
+  TeamOutlined, ToolOutlined, ExperimentOutlined,
 } from '@ant-design/icons';
 import { api } from './api.js';
 import { readCsrfCookie } from './api-live.js';
 import { AuthProvider, useAuth } from './auth.jsx';
 import { BrandMark, ErrorBoundary } from './ui.jsx';
-import { useDataSource, useRuntimeConfig } from './hooks.js';
+import { deriveIdentitySource, capabilityLine } from './identity.js';
+import { useDataSource, useRuntimeConfig, useMuAccountSummary, resetMuAccountSummaryCache } from './hooks.js';
 import { resolveWorkspaceState, WorkspacePanel } from './components/WorkspaceStatusPanel.jsx';
 import RunsPage from './pages/RunsPage.jsx';
 import RunDetailPage from './pages/RunDetailPage.jsx';
@@ -59,28 +60,40 @@ function Configured() {
   );
 }
 
-// 审查工作台主导航：待处理（默认队列）→ 仓库 → 运行 → 审批
-// （命名契约：/approvals=审批（人工放行动作）；审计=skill_gate_audit 等记录留痕，见"诊断"与 /core 的 Gate 审计区）
+// 一级导航（审查工作台主流程，只保留四项——UX 收敛审查 2026-10-05）：
+// 总览（审查工作台首屏）→ 待处理（队列）→ 仓库 → 审批（人工放行动作）。
+//（命名契约：/approvals=审批（人工放行动作）；审计=skill_gate_audit 等记录留痕，见"诊断"与 /core 的 Gate 审计区）
 const NAV = [
-  { to: '/overview', label: '运营总览', icon: AppstoreOutlined, end: true },
+  { to: '/overview', label: '总览', icon: AppstoreOutlined, end: true },
   { to: '/pending', label: '待处理', icon: InboxOutlined, end: false },
   { to: '/repos', label: '仓库', icon: FolderOpenOutlined, end: true },
-  { to: '/runs', label: '运行记录', icon: HistoryOutlined, end: false },
   { to: '/approvals', label: '审批', icon: AuditOutlined, end: true },
 ];
-// 系统区（非首要工作流）：系统状态与接线 / 知识库 / 数据源 / 诊断 / 设置
+// 系统管理（部署/运营面，非主审查流程）：系统状态与接线 / 数据源 / 组织与接入 /
+// 运行记录（snapshot 取证视图，实时源下隐藏）/ 设置
 const SYSTEM_NAV = [
   { to: '/core', label: '系统状态', icon: DashboardOutlined, end: true },
+  { to: '/datasources', label: '数据源', icon: ApiOutlined, end: true },
+  { to: '/multiuser', label: '组织与接入', icon: TeamOutlined, end: true },
+  { to: '/runs', label: '运行记录', icon: HistoryOutlined, end: false },
+  { to: '/settings', label: '设置', icon: SettingOutlined, end: true },
+];
+// 高级工具（默认折叠——低频/专家向能力）：知识库 / 技能 / 签名验证 / 知识检索 / 诊断
+const ADVANCED_NAV = [
   { to: '/knowledge', label: '知识库', icon: DatabaseOutlined, end: true },
   // B 波补遗：#290 只接了 /skills 路由，漏了导航入口（验收时误判槽位已存在——实测用户看不到页面）
   { to: '/skills', label: '技能', icon: ToolOutlined, end: true },
-  { to: '/datasources', label: '数据源', icon: ApiOutlined, end: true },
   { to: '/cchain', label: '签名验证', icon: SafetyCertificateOutlined, end: true },
-  { to: '/rag-trial', label: '知识检索（试用）', icon: FileSearchOutlined, end: true },
-  { to: '/multiuser', label: '组织与接入', icon: TeamOutlined, end: true },
+  { to: '/rag-trial', label: '知识检索', icon: FileSearchOutlined, end: true },
   { to: '/diagnostics', label: '诊断', icon: MedicineBoxOutlined, end: true },
-  { to: '/settings', label: '设置', icon: SettingOutlined, end: true },
 ];
+const ALL_NAV = [...NAV, ...SYSTEM_NAV, ...ADVANCED_NAV];
+
+// MU 角色 → 中文标签（顶栏账户区；raw 值在 title 中保留）
+const ROLE_LABELS = {
+  platform_admin: '平台管理员', maintainer: '维护者', reviewer: '审查者',
+  contributor: '贡献者', auditor: '审计',
+};
 
 function TopbarContext() {
   const config = useAppConfig();
@@ -90,6 +103,7 @@ function TopbarContext() {
   const chipRef = useRef(null);
   const state = resolveWorkspaceState(config, auth.status);
   const toneCls = `ws-tone-${state.tone}`;
+  void toneCls;
   const snapshot = source.kind === 'snapshot';
 
   // Esc 关闭弹层并把焦点还给触发 chip（dialog 语义配套；弹层外点击仍由收起钮/再次点击 chip 关闭）
@@ -115,7 +129,7 @@ function TopbarContext() {
         aria-expanded={open}
         aria-haspopup="dialog"
         onClick={() => setOpen((v) => !v)}
-        title="工作区状态——点击展开数据来源、只读/写操作、身份与接线详情"
+        title={`${state.full}——点击展开数据来源、只读/写操作、身份与接线详情`}
       >
         <span className="mode-dot" aria-hidden />
         <strong>{state.label}</strong>
@@ -128,7 +142,7 @@ function TopbarContext() {
             onRetry={() => { auth.refresh(); }}
           />
           <div className="ws-pop-foot">
-            {snapshot ? <span className="ws-sub">运行级全量历史见"运行"页。</span> : (
+            {snapshot ? <span className="ws-sub">运行级全量历史见"运行记录"页。</span> : (
               <Link to="/runs" className="ws-sub">运行历史为 snapshot 取证视图（当前源不提供）。</Link>
             )}
             <button type="button" className="btn btn-sm" onClick={() => setOpen(false)}>收起</button>
@@ -139,7 +153,7 @@ function TopbarContext() {
   );
 }
 
-function AuthChip() {
+function AuthChip({ compact = false, summary = null }) {
   const auth = useAuth();
   const config = useAppConfig();
   const [logoutHint, setLogoutHint] = useState(null);
@@ -166,12 +180,42 @@ function AuthChip() {
         ? '退出未生效（403：CSRF 校验失败或会话已变化）——以服务端会话为准，请重试或用"设置"页退出'
         : `退出未生效（${code ?? '未知'}）——以服务端会话为准，请重试`);
     }
+    resetMuAccountSummaryCache(); // 换号防护：A 登出后 B 登录不残留 A 的组织/角色
     auth.refresh();
   };
   // fixture 验收环境（可信配置声明 data_mode=fixture）：会话即合成用户，标识常驻可见
   const fixtureSession = config?.dataMode === 'fixture' && auth.status === 'authed';
   // console-pg 联调环境：认证未实现（401）——页面必须显示未认证/fixture 状态
   const pgUnauthed = config?.mode === 'console-pg' && auth.status !== 'authed';
+
+  const userName = auth.user?.display_name ?? auth.user?.github_login ?? auth.user?.name ?? '已登录';
+  const roleLabel = summary?.role ? (ROLE_LABELS[summary.role] ?? summary.role) : null;
+
+  // 小屏账户菜单：账号/组织/角色/退出全部收进 Dropdown（≤768px 顶栏不拥挤、不换行错位）
+  if (compact && auth.status === 'authed') {
+    return (
+      <Dropdown
+        trigger={['click']}
+        menu={{
+          items: [
+            { key: 'who', label: <strong>{fixtureSession ? 'Fixture 验收会话（非真实）' : userName}</strong>, disabled: true },
+            ...(summary ? [
+              { key: 'org', label: <>组织：<span className="mono">{summary.org || '—'}</span></>, disabled: true },
+              { key: 'role', label: <>角色：{roleLabel ? <Tag>{roleLabel}</Tag> : '—'}</>, disabled: true },
+            ] : []),
+            { type: 'divider' },
+            { key: 'logout', icon: <LogOut size={13} aria-hidden />, label: '退出登录', onClick: doLogout },
+          ],
+        }}
+      >
+        <Button type="text" size="small" aria-label={`账户菜单：${fixtureSession ? 'Fixture 会话' : userName}，含组织、角色与退出登录`}
+          className="account-trigger">
+          <UserRound size={16} strokeWidth={1.75} aria-hidden />
+        </Button>
+      </Dropdown>
+    );
+  }
+
   if (auth.status === 'authed') {
     return (
       <span className="auth-chip">
@@ -180,7 +224,15 @@ function AuthChip() {
             Fixture 验收会话 · 非真实
           </span>
         ) : (
-          <span className="auth-user">{auth.user?.display_name ?? auth.user?.github_login ?? auth.user?.name ?? '已登录'}</span>
+          <>
+            <span className="auth-user" title={`当前账号：${userName}`}>{userName}</span>
+            {summary ? (
+              <span className="topbar-org" title={`组织 ${summary.org || '—'} · 角色 ${roleLabel ?? summary.role}`}>
+                <span className="muted">组织</span> <span className="mono">{summary.org || '—'}</span>
+                {roleLabel ? <Tag style={{ marginInlineStart: 4 }}>{roleLabel}</Tag> : null}
+              </span>
+            ) : null}
+          </>
         )}
         <button type="button" className="btn btn-ghost btn-sm" onClick={doLogout}
           title="结束服务端会话（POST /api/auth/logout，携带 CSRF）；退出后需重新登录">
@@ -229,41 +281,101 @@ function topbarCtx(pathname) {
     }
     return { crumb: [['仓库', '/repos']], current: repo };
   }
-  if (seg[0] === 'runs' && seg.length > 1) {
-    return { crumb: [['运行历史', '/runs']], current: '运行详情' };
+  if (seg[0] === 'mu' && seg[1] === 'repos' && seg.length >= 4) {
+    return { crumb: [['仓库', '/repos'], [`${seg[2]}/${seg[3]}`, `/repos/${seg[2]}/${seg[3]}`]], current: seg[5] ? `PR #${seg[5]}` : 'PR 详情' };
   }
-  const all = [...NAV, ...SYSTEM_NAV];
-  const hit = all.find((n) => pathname === n.to
+  if (seg[0] === 'runs' && seg.length > 1) {
+    return { crumb: [['运行记录', '/runs']], current: '运行详情' };
+  }
+  const hit = ALL_NAV.find((n) => pathname === n.to
     || (n.to !== '/' && pathname.startsWith(n.to + '/'))
     || (n.end === false && pathname.startsWith(n.to)));
-  return { crumb: null, current: hit?.label ?? '控制台' };
+  return { crumb: null, current: hit?.label ?? '审查工作台' };
+}
+
+// 高级工具折叠组（侧栏自定义实现）：
+// 默认折叠；子路由激活时自动展开。不使用 antd Submenu——rc-menu 的 CSSMotion/
+// PopupTrigger 在 react-test-renderer 冒烟环境崩溃（PR-5 既有坑），且折叠子项
+// 惰性渲染依赖 portal。真实 button（aria-expanded）+ NavLink（aria-current）。
+function AdvancedNavGroup({ pathname }) {
+  const activeChild = ADVANCED_NAV.some((n) => pathname === n.to
+    || (n.end === false && pathname.startsWith(n.to)));
+  const [open, setOpen] = useState(activeChild);
+  useEffect(() => {
+    if (activeChild) setOpen(true);
+  }, [activeChild]);
+  return (
+    <div className="nav-adv">
+      <button type="button" className={`nav-adv-toggle${activeChild ? ' nav-adv-toggle-active' : ''}`}
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}>
+        <ExperimentOutlined aria-hidden />
+        <span>高级工具</span>
+        <span className="nav-adv-caret" aria-hidden>{open ? '▾' : '▸'}</span>
+      </button>
+      {open ? (
+        <ul className="nav-adv-list">
+          {ADVANCED_NAV.map((n) => (
+            <li key={n.to}>
+              <NavLink to={n.to} end={n.end} className="nav-adv-link"
+                aria-label={n.label}>
+                <n.icon aria-hidden />
+                <span>{n.label}</span>
+              </NavLink>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
+// 侧栏能力边界一行（身份/能力统一映射，见 identity.js——与工作区面板/设置/诊断共用口径）。
+// provider 只认会话显式标记，不按 multiuser 模式推断；footer 随会话如实变化。
+function capabilityFooterLine(config, auth) {
+  const identity = deriveIdentitySource({
+    session: { user: auth.user, session_source: auth.user?.session_source },
+    dataMode: config?.dataMode,
+    authed: auth.status === 'authed',
+  });
+  return capabilityLine(identity);
 }
 
 function Shell() {
   const loc = useLocation();
   const config = useAppConfig();
+  const auth = useAuth();
   const { source } = useDataSource(config);
   const ctx = topbarCtx(loc.pathname);
   const [navOpen, setNavOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(
     typeof window !== 'undefined' && window.matchMedia('(max-width: 960px)').matches);
+  const [isCompact, setIsCompact] = useState(
+    typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches);
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 960px)');
     const on = (e) => setIsMobile(e.matches);
     mq.addEventListener('change', on);
-    return () => mq.removeEventListener('change', on);
+    const mqc = window.matchMedia('(max-width: 768px)');
+    const onC = (e) => setIsCompact(e.matches);
+    mqc.addEventListener('change', onC);
+    return () => { mq.removeEventListener('change', on); mqc.removeEventListener('change', onC); };
   }, []);
   useEffect(() => { setNavOpen(false); }, [loc.pathname]);
 
-  // 导航按数据源能力呈现：run 级全量历史仅 snapshot 取证视图提供
-  const nav = NAV.filter((n) => !(source.kind !== 'snapshot' && n.to === '/runs'));
+  // 顶栏账户区组织/角色（MU 模式 + 已登录）：缓存按会话身份键失效，
+  // 登出/换号时由 resetMuAccountSummaryCache 清除（见 AuthChip.doLogout）
+  const muSummary = useMuAccountSummary(config?.mode === 'multiuser' && auth.status === 'authed', auth.user);
 
+  // 导航按数据源能力呈现：run 级全量历史仅 snapshot 取证视图提供
+  const systemNav = SYSTEM_NAV.filter((n) => !(source.kind !== 'snapshot' && n.to === '/runs'));
+
+  const navMenuToItem = (n) => ({ key: n.to, icon: <n.icon />, label: <NavLink to={n.to}>{n.label}</NavLink> });
   const menuItems = [
-    ...nav.map((n) => ({ key: n.to, icon: <n.icon />, label: <NavLink to={n.to}>{n.label}</NavLink> })),
-    { type: 'group', label: '系统', children: SYSTEM_NAV.map((n) => ({
-      key: n.to, icon: <n.icon />, label: <NavLink to={n.to}>{n.label}</NavLink> })) },
+    ...NAV.map(navMenuToItem),
+    { type: 'group', label: '系统管理', children: systemNav.map(navMenuToItem) },
   ];
-  const selectedKey = [...nav, ...SYSTEM_NAV]
+  const selectedKey = ALL_NAV
     .filter((n) => loc.pathname === n.to || (n.end === false && loc.pathname.startsWith(n.to)))
     .map((n) => n.to);
 
@@ -287,11 +399,14 @@ function Shell() {
       {!isMobile ? (
         <Layout.Sider width={216} className="sidebar" breakpoint={false}>
           {brand}
-          <nav aria-label="主导航">{menu}</nav>
+          <nav aria-label="主导航">
+            {menu}
+            <AdvancedNavGroup pathname={loc.pathname} />
+          </nav>
           <div className="sidebar-foot">
-            <div className="foot-row" title="本服务仅监听 127.0.0.1 回环地址；不下发任何凭证">
+            <div className="foot-row" title="本服务仅监听 127.0.0.1 回环地址；不下发任何凭证。写操作仅限审批决策与审查发起类 POST（服务端 RBAC+CSRF）——不写 GitHub、不自动合并。能力口径与「设置 / 数据源」页一致。">
               <Activity size={12} strokeWidth={1.75} aria-hidden />
-              只读 · 无写操作 · 无凭证下发
+              {capabilityFooterLine(config, auth)}
             </div>
           </div>
         </Layout.Sider>
@@ -301,7 +416,10 @@ function Shell() {
           title={brand} styles={{ body: { padding: 0, background: '#0b0f19' } }}
           closeIcon={<MenuOutlined aria-label="关闭菜单" />}
         >
-          <nav aria-label="主导航">{menu}</nav>
+          <nav aria-label="主导航">
+            {menu}
+            <AdvancedNavGroup pathname={loc.pathname} />
+          </nav>
         </Drawer>
       )}
       <Layout>
@@ -328,7 +446,7 @@ function Shell() {
           </div>
           <div className="topbar-right">
             <TopbarContext />
-            <AuthChip />
+            <AuthChip compact={isCompact} summary={muSummary} />
           </div>
         </header>
         <main className="content" key={loc.pathname}>

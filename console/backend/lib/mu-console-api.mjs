@@ -46,7 +46,8 @@ export function createMuConsoleApi({ pool }) {
        WHERE r.tenant_id=$1 AND r.state='active'
        GROUP BY r.owner, r.name, r.created_at ORDER BY r.created_at DESC`, [tenantId]);
 
-    const prs = await q(
+    const PRS_PROJECTION_LIMIT = 50;
+    const prsRows = await q(
       `SELECT pr.pr_id, pr.provider_pr_number, pr.title, pr.state, pr.head_sha,
               pr.updated_at,
               r.owner, r.name AS repo_name,
@@ -61,7 +62,22 @@ export function createMuConsoleApi({ pool }) {
           ORDER BY created_at DESC LIMIT 1
        ) latest_rr ON true
        WHERE pr.tenant_id=$1
-       ORDER BY pr.updated_at DESC LIMIT 50`, [tenantId]);
+       ORDER BY pr.updated_at DESC LIMIT ${PRS_PROJECTION_LIMIT + 1}`, [tenantId]);
+    // 数据可信度加固（PR #320 三波）：截断显式声明——多取 1 行探测是否触顶，
+    // 触顶时 prs_truncated=true（前端把「全部 PR」标注为下限，不静默漏计）。
+    const prsTruncated = prsRows.length > PRS_PROJECTION_LIMIT;
+    const prs = prsRows.slice(0, PRS_PROJECTION_LIMIT);
+    // 每个 head 行附 head_basis：当前权威口径=webhook 事件序（upsert.updated_at），
+    // 无 GitHub 实时对照的 is_current 标记（契约缺口已登记——前端显示「当前 head
+    // 未确认」而非冒充权威）。head_count=该 PR 在投影内的 head 行数。
+    const headCountByPrId = new Map();
+    for (const row of prs) {
+      headCountByPrId.set(row.pr_id, (headCountByPrId.get(row.pr_id) ?? 0) + 1);
+    }
+    for (const row of prs) {
+      row.head_basis = 'event_order';
+      row.head_count = headCountByPrId.get(row.pr_id) ?? 1;
+    }
 
     // 14 天运行趋势（按日计数）：日轴在 JS 侧生成（纯展示逻辑），SQL 只查
     // mu.review_run 按日计数——不用 generate_series（Wave 3.7 净化门 P3 要求
@@ -148,6 +164,10 @@ export function createMuConsoleApi({ pool }) {
       source: 'MU_CANONICAL_LIVE',
       total_repos: repoCounts.length,
       total_prs: prs.length,
+      // 数据可信度加固（附加字段，向后兼容）：投影触顶标记 + head 权威口径声明
+      prs_truncated: prsTruncated,
+      prs_projection_limit: PRS_PROJECTION_LIMIT,
+      head_authority: 'event_order (no GitHub cross-check — frontend must label 当前 head 未确认)',
       total_findings: findings.length,
       total_blocked: blocked.length,
     };

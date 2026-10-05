@@ -168,7 +168,14 @@ export function createMuSession({ login: muLogin, userId, tenantId, role, provid
 export function sessionBody(auth) {
   // 契约 §1：200 带 user；401 JSON 不重定向。
   // R4（FB-06）：user 为结构化对象（前端不再显示"未知用户"）。
-  return { user: { name: auth.user }, expires_at: new Date(auth.expiresAt).toISOString(),
+  // 数据可信度加固（PR #320 三波）：显式认证 provider——
+  //   mu 载荷存在 → 会话由该 provider 签发（当前唯一值 'github-oauth'，oauth.mjs）；
+  //   无 mu 载荷   → legacy 会话，本服务唯一 legacy 登录路径是操作员账号密码
+  //   （/api/auth/login user+password）。前端按该显式标记取身份来源，不再按模式推断。
+  const loginType = auth.mu?.provider ?? 'operator_password';
+  return { user: { name: auth.user, login_type: loginType },
+           session_source: auth.mu ? 'mu_session' : 'legacy_session',
+           expires_at: new Date(auth.expiresAt).toISOString(),
            repos: auth.repos };
 }
 

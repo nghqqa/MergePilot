@@ -344,7 +344,10 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
             if (principal.authenticated) {
               return sendJson(res, 200, {
                 user: { name: principal.username, github_login: principal.username,
-                  display_name: principal.username },
+                  display_name: principal.username,
+                  // 显式认证 provider（数据可信度加固）：mu_session 仅由 GitHub OAuth
+                  // 回调签发（multiuser/oauth.mjs，subject='github-oauth:<id>'）
+                  login_type: 'github-oauth' },
                 repos: repoAllowlist(),
                 expires_at: principal.muSession?.expires_at ?? null,
                 session_source: 'mu_session', role: principal.roles?.[0] ?? null });
@@ -360,8 +363,8 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
       if (!r.ok) return sendJson(res, r.status, r.code === 'auth_unavailable'
         ? r.error : anonymousBody(r.error?.reason));
       applyCookies(res, r.setCookie);
-      return sendJson(res, 200, { user: { name: String(body.user ?? '') }, repos: repoAllowlist(),
-        expires_at: new Date(Date.now() + sessionTtlMs()).toISOString() });
+      return sendJson(res, 200, { user: { name: String(body.user ?? ''), login_type: 'operator_password' },
+        repos: repoAllowlist(), expires_at: new Date(Date.now() + sessionTtlMs()).toISOString() });
     }
     if (p === '/api/auth/logout' && req.method === 'POST') {
       const token = tokenFromCookieHeader(req.headers.cookie);
