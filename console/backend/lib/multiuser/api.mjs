@@ -440,6 +440,12 @@ export async function muApi(req, res, ctx) {
         await store.auditPlatform('OAUTH_FLOW_REJECTED', { detail: { reason: 'not_invited' } });
         return redirectLoginError('not_invited');
       }
+      // D-3 双保险：invitation claim 服务端拒绝 platform_admin 角色——即使 DB 层
+      // invitation_role_check 被 DBA 修改，claim 路径仍然拒绝。
+      if (claim.role === 'platform_admin') {
+        await store.auditPlatform('OAUTH_FLOW_REJECTED', { detail: { reason: 'platform_admin_invitation_claim_denied' } });
+        return redirectLoginError('not_invited');
+      }
       await store.ensureMembership({ tenantId: claim.tenant_id, userId: user.user_id, role: claim.role });
       await store.audit('MU_MEMBER_ONBOARDED', { tenantId: claim.tenant_id, actorUserId: user.user_id,
         detail: { via: 'invitation', invite_id: claim.invite_id, role: claim.role } });
@@ -801,6 +807,13 @@ export async function muApi(req, res, ctx) {
       const role = String(body.role || '');
       if (!MU_ROLES.includes(role)) {
         return sendJson(res, 400, { error: { reason: 'role(五角色词汇) required' } });
+      }
+      // D-3：invitation 不可授予 platform_admin——外部成员邀请必须使用
+      // 最小角色（maintainer/contributor/auditor）。platform_admin 仅限内部
+      // （DBA SQL 直接授权），invitation API 一律拒绝。
+      if (role === 'platform_admin') {
+        return sendJson(res, 403, { error: { reason: 'platform_admin_invitation_forbidden',
+          detail: '邀请不可授予 platform_admin——使用 maintainer/contributor/auditor' } });
       }
       // Wave 2A.1：生产邀请必须绑定 GitHub 数字 user id（handle 可夺注——login 句柄
       // 仅作展示/预筛选，不可作为授权条件）。存量 login-only 邀请 fail-closed 不可认领，
