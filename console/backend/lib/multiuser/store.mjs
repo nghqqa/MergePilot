@@ -551,6 +551,18 @@ export async function createMuStore({ pool, env = process.env, migrations = MU_M
         ORDER BY created_at LIMIT 1`, [subject]);
     return r.rows[0] ?? null;
   }
+  // rc.14（MT-ONB-1/2）：全部可认领邀请——与 findClaimableInvitation 同一过滤语义
+  // （claimed_at IS NULL / 未过期 / subject 精确匹配；表无 revoked/state 列），
+  // 不做 LIMIT：多条有效邀请必须由调用方显式消歧（invitation_ambiguous），
+  // 禁止隐式选最旧。
+  async function findClaimableInvitationsAll({ subject = null }) {
+    if (!subject) return [];
+    const r = await q(
+      `SELECT * FROM mu.invitation
+        WHERE claimed_at IS NULL AND expires_at > now() AND expected_subject = $1
+        ORDER BY created_at`, [subject]);
+    return r.rows;
+  }
   async function claimInvitation(inviteId, userId) {
     const r = await q(
       `UPDATE mu.invitation SET claimed_at=now(), claimed_by_user_id=$2
@@ -671,7 +683,7 @@ export async function createMuStore({ pool, env = process.env, migrations = MU_M
     listAudit, auditPlatform,
     insertOAuthFlow, consumeOAuthFlow,
     createSession, findSessionByToken, rotateSession, revokeSessionByToken, revokeAllSessionsForUser,
-    createInvitation, listInvitations, getInvitation, findClaimableInvitation, claimInvitation,
+    createInvitation, listInvitations, getInvitation, findClaimableInvitation, findClaimableInvitationsAll, claimInvitation,
     upsertInstallation, getInstallation, listInstallations, setInstallationState,
     upsertRepositoryBinding, getBindingByRepo, setBindingState, setBindingsStateForInstallation,
     claimWebhookDelivery, backfillWebhookDeliveryTenant, finishWebhookDelivery, requeueJob,

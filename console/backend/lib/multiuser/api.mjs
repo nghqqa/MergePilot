@@ -345,6 +345,7 @@ export async function muApi(req, res, ctx) {
   const LOGIN_ERROR_WHITELIST = new Set([
     'not_invited', 'no_active_membership', 'state_invalid', 'state_expired',
     'oauth_exchange_failed', 'oauth_identity_invalid', 'oauth_not_configured', 'user_disabled',
+    'invitation_ambiguous',
   ]);
   const redirectLoginError = (reason) => {
     const r = LOGIN_ERROR_WHITELIST.has(reason) ? reason : 'login_failed';
@@ -421,35 +422,68 @@ export async function muApi(req, res, ctx) {
     // 身份解析：既有用户（身份键=数字 id，login 改名不影响）或邀请认领（唯一注册通道）
     let user = await store.getUserByIdentity('github-oauth', identity.subject);
     let grantedTenantId = null; let grantedRole = null;
-    if (!user) {
+
+    // rc.14（MT-ONB-1/2）：邀请认领泛化——claim 分支不再仅属首次入驻。新用户与
+    // 既有用户统一按 subject 查找全部可认领邀请：唯一则自动认领并将会话绑定
+    // invitation.tenant_id；多条 invitation_ambiguous 显式拒绝（禁止静默 active[0]）；
+    // 零条保持既有兼容行为。D-3 守卫双路径共享。
+    const resolveClaimCandidates = async () => {
       const inv = flow.invite_id ? await store.getInvitation(flow.invite_id) : null;
       const usable = inv && !inv.claimed_at && inv.expires_at > new Date()
         && inv.expected_subject === identity.subject ? inv : null;
-      const claim = usable ?? await store.findClaimableInvitation({ subject: identity.subject });
-      if (!claim) {
+      if (usable) return [usable];
+      return await store.findClaimableInvitationsAll({ subject: identity.subject });
+    };
+    // D-3 双保险（双路径共享）：claim 服务端拒绝 platform_admin 角色——即使 DB 层
+    // invitation_role_check 被 DBA 修改，claim 路径仍然拒绝。先拒后认领（不烧邀请）。
+    const claimForUser = async (claim, uid) => {
+      if (claim.role === 'platform_admin') {
+        await store.auditPlatform('OAUTH_FLOW_REJECTED', { detail: { reason: 'platform_admin_invitation_claim_denied' } });
+        return null;
+      }
+      const claimed = await store.claimInvitation(claim.invite_id, uid);
+      if (!claimed) return null; // 并发认领竞态失败——按未邀请处理
+      await store.ensureMembership({ tenantId: claim.tenant_id, userId: uid, role: claim.role });
+      await store.audit('MU_MEMBER_ONBOARDED', { tenantId: claim.tenant_id, actorUserId: uid,
+        detail: { via: 'invitation', invite_id: claim.invite_id, role: claim.role } });
+      return claim;
+    };
+
+    if (!user) {
+      const candidates = await resolveClaimCandidates();
+      if (candidates.length === 0) {
         await store.auditPlatform('OAUTH_FLOW_REJECTED', { detail: { reason: 'not_invited' } });
         return redirectLoginError('not_invited'); // 无公共自动注册
+      }
+      if (candidates.length > 1) {
+        await store.auditPlatform('OAUTH_FLOW_REJECTED', { detail: { reason: 'invitation_ambiguous' } });
+        return redirectLoginError('invitation_ambiguous');
       }
       // 不按 login 合并：login 撞名时后缀化（身份绑定只认 subject）
       const existingByLogin = await store.getUserByLogin(identity.login);
       const newLogin = existingByLogin ? `${identity.login}#gh${identity.subject.split(':').pop()}` : identity.login;
       user = await store.ensureUser({ login: newLogin, displayName: identity.login });
       await store.ensureIdentity({ userId: user.user_id, provider: 'github-oauth', subject: identity.subject });
-      const claimed = await store.claimInvitation(claim.invite_id, user.user_id);
-      if (!claimed) { // 并发认领竞态失败——按未邀请处理
+      const claimed = await claimForUser(candidates[0], user.user_id);
+      if (!claimed) {
         await store.auditPlatform('OAUTH_FLOW_REJECTED', { detail: { reason: 'not_invited' } });
         return redirectLoginError('not_invited');
       }
-      // D-3 双保险：invitation claim 服务端拒绝 platform_admin 角色——即使 DB 层
-      // invitation_role_check 被 DBA 修改，claim 路径仍然拒绝。
-      if (claim.role === 'platform_admin') {
-        await store.auditPlatform('OAUTH_FLOW_REJECTED', { detail: { reason: 'platform_admin_invitation_claim_denied' } });
-        return redirectLoginError('not_invited');
+      grantedTenantId = claimed.tenant_id; grantedRole = claimed.role;
+    } else {
+      // rc.14：既有用户同样可经待认领邀请进入另一租户（原缺口：claim 仅 !user 路径，
+      // 既有用户登录永远 active[0]，MT-ONB-1）。candidate 竞态失败或 D-3 拒绝
+      // （claimForUser 返回 null）→ 保持既有行为回落原租户：不泄露邀请存在性，
+      // 也绝不产生 platform_admin membership（v23 CHECK + 此守卫双封）。
+      const candidates = await resolveClaimCandidates();
+      if (candidates.length > 1) {
+        await store.auditPlatform('OAUTH_FLOW_REJECTED', { detail: { reason: 'invitation_ambiguous' } });
+        return redirectLoginError('invitation_ambiguous');
       }
-      await store.ensureMembership({ tenantId: claim.tenant_id, userId: user.user_id, role: claim.role });
-      await store.audit('MU_MEMBER_ONBOARDED', { tenantId: claim.tenant_id, actorUserId: user.user_id,
-        detail: { via: 'invitation', invite_id: claim.invite_id, role: claim.role } });
-      grantedTenantId = claim.tenant_id; grantedRole = claim.role;
+      if (candidates.length === 1) {
+        const claimed = await claimForUser(candidates[0], user.user_id);
+        if (claimed) { grantedTenantId = claimed.tenant_id; grantedRole = claimed.role; }
+      }
     }
     const memberships = await store.listMembershipsOfUser(user.user_id);
     const active = memberships.filter((m) => m.state === 'active');
