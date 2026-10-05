@@ -235,7 +235,7 @@ export async function processClaimedEventSyncJob(store, muPoolQuery, job) {
     await store.audit('GHAPP_EVENT_SYNC_REJECTED', { tenantId: job.tenant_id, actorUserId: null,
       detail: { job_id: job.job_id, delivery_prefix: String(job.payload?.delivery_id ?? '').slice(0, 8),
         reason: sysCtx.reason, retryable } });
-    return { state: retryable ? 'requeued' : 'rejected', kind: 'event_sync' };
+    return { state: retryable ? 'requeued' : 'rejected', kind: 'event_sync', reason: sysCtx.reason };
   }
   const r = await executeEventSync(store, muPoolQuery, job, sysCtx);
   await store.finishJob(job.job_id, r.state, r.result);
@@ -1631,7 +1631,7 @@ const ragMatch = p.match(new RegExp("^/api/mu/repositories/([^/]+)/rag-search$")
           // 幂等消费：delivery_id+event+object id+head_sha 去重，重放不二次落库。
           const r = await processClaimedEventSyncJob(store, muPoolQ, job);
           processed.push({ job_id: job.job_id, state: r.state, kind: 'event_sync',
-            ...(r.state === 'requeued' || r.state === 'rejected' ? { reason: 'see_audit' } : {}) });
+            ...(r.reason ? { reason: r.reason } : {}) });
           continue;
         }
         // 执行前复查（授权快照不可信）：请求者成员关系 + 角色仍允许 + 修复需 Binding
