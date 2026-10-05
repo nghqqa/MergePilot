@@ -12,25 +12,25 @@ import { modelCacheStatus, providerAttestConfig, fetchProviderAttestation,
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'cchain-'));
 const sha256 = (b) => crypto.createHash('sha256').update(b).digest('hex');
 
-test('model cache: 未配置 → NOT_CONFIGURED + 阻塞条件', () => {
-  const s = modelCacheStatus({});
+test('model cache: 未配置 → NOT_CONFIGURED + 阻塞条件', async () => {
+  const s = await modelCacheStatus({});
   assert.equal(s.state, 'NOT_CONFIGURED');
   assert.match(s.blocked_condition, /MERGEPILOT_MODEL_CACHE_DIR/);
 });
 
-test('model cache: 真实文件+正确 manifest → READY；篡改 → CORRUPT；缺文件 → CORRUPT', () => {
+test('model cache: 真实文件+正确 manifest → READY；篡改 → CORRUPT；缺文件 → CORRUPT', async () => {
   const dir = tmp();
   const blob = Buffer.from('fake-model-weights');
   fs.writeFileSync(path.join(dir, 'model.bin'), blob);
   fs.writeFileSync(path.join(dir, 'manifest.json'), JSON.stringify(
     { model_id: 'test-embed-v1', files: [{ name: 'model.bin', sha256: sha256(blob) }] }));
-  assert.equal(modelCacheStatus({ MERGEPILOT_MODEL_CACHE_DIR: dir }).state, 'READY');
+  assert.equal((await modelCacheStatus({ MERGEPILOT_MODEL_CACHE_DIR: dir })).state, 'READY');
   fs.writeFileSync(path.join(dir, 'model.bin'), Buffer.from('tampered'));
-  const s2 = modelCacheStatus({ MERGEPILOT_MODEL_CACHE_DIR: dir });
+  const s2 = await modelCacheStatus({ MERGEPILOT_MODEL_CACHE_DIR: dir });
   assert.equal(s2.state, 'CORRUPT');
   assert.ok(s2.problems.some((p) => p.includes('digest mismatch')));
   fs.unlinkSync(path.join(dir, 'model.bin'));
-  assert.equal(modelCacheStatus({ MERGEPILOT_MODEL_CACHE_DIR: dir }).state, 'CORRUPT');
+  assert.equal((await modelCacheStatus({ MERGEPILOT_MODEL_CACHE_DIR: dir })).state, 'CORRUPT');
 });
 
 test('attestation: 未配置 → NOT_CONFIGURED；不可达（真实关闭端口）→ UNREACHABLE fail-closed', async () => {
