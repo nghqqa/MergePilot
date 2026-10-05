@@ -84,6 +84,11 @@ jobs:
       - name: C-chain PG audit integration
         run: node --test console/backend/test/cchain-wiring.integration.mjs
 
+      # D-1（rc.12 PR-B）：keystore rotate 端点 MU 会话操作面（manage_instance+CSRF；
+      # 自起一次性 postgres:16-alpine 容器，随机回环端口）
+      - name: C-chain keystore rotate MU session integration (D-1, self-boot postgres)
+        run: node console/backend/test/cchain-rotate-mu.integration.mjs
+
       - name: FXV e2e archive (15 scenarios, real git+PG+MinIO)
         run: node console/backend/test/fxv-e2e-archive.integration.mjs
 

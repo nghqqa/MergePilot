@@ -26,6 +26,7 @@ import { cchainStatusObserved, verifyRunBindingAndAudit, rotateKeystore,
 import { ragTrialApi, ragTrialInternalQuery } from './lib/ragtrial/api.mjs';
 import { muApi, getMuStore, ensureMuReady, muSchemaReadyState } from './lib/multiuser/api.mjs';
 import { roleActions } from './lib/multiuser/authz.mjs';
+import { muCsrfOk } from './lib/multiuser/session.mjs';
 import { createMuConsoleApi } from './lib/mu-console-api.mjs';
 import { installQueryTraceOn, wrapSendJsonForAccessLog } from './lib/diag/trace.mjs';
 
@@ -483,6 +484,28 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
     if (p === '/api/cchain/keystore/rotate' && req.method === 'POST') {
       const gate = await authGate(req);
       if (gate.denied) return sendJson(res, gate.denied, anonymousBody());
+      // D-1（rc.12 PR-B）：MU 生产模式轮换操作面——此前 rotate 仅支持 legacy admin
+      // 会话，MU_MODE=multiuser 下 legacy login 被 403 拒，keystore 轮换无操作面。
+      // MU 会话分支：授权=权威矩阵 manage_instance（仅 platform_admin——maintainer/
+      // contributor/reviewer/auditor 一律 403，与 /api/mu 面 guard 同形状默认拒绝；
+      // live membership 已由 authGate/resolvePrincipal 逐请求校验）；CSRF=MU 双提交
+      // （X-CSRF-Token 的 sha256 对 mu.session.csrf_hash，timing-safe）。secret 永不
+      // 回显/入审计（rotateKeystore 既有纪律保持）。legacy 分支零变化。
+      if (gate.principal.authMode === 'multiuser') {
+        const grantedRot = roleActions(gate.principal.roles?.[0]) ?? [];
+        if (!grantedRot.includes('manage_instance')) {
+          // 不区分"未授角色/未知角色"——同形 403 不泄露授权矩阵细节
+          return sendJson(res, 403, { error: { reason: 'action_not_granted' }, action: 'manage_instance' });
+        }
+        if (!muCsrfOk(gate.principal.muSession, req)) {
+          return sendJson(res, 403, { error: { reason: 'csrf_required' } });
+        }
+        const bodyMu = await readJsonBody(req);
+        const r = await rotateKeystore(process.env, process.env.CONSOLE_PG_DSN,
+          { operator: `mu:${gate.principal.username || gate.principal.userId}`,
+            grace_ms: Number(bodyMu?.grace_ms || 0) });
+        return sendJson(res, r.status, r.body);
+      }
       const auth = gate.principal.legacyAuth ?? gate.principal;
       // 契约 §0.1：副作用方法必须携带 X-CSRF-Token
       // L-2：与 logout 一致的 timing-safe 比较（长度不等直接拒绝）
