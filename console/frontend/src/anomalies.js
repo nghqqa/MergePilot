@@ -64,7 +64,15 @@ export const ANOMALIES = {
 export const ANOMALY_ORDER = ['stale', 'failed_receipt', 'integrity', 'protection_unknown'];
 
 // ── 保护状态未知 · 四分子态 ──
-// 每个子态：label / cause（原因）/ impact（影响）/ next（下一步，含去向类型）
+// 每个子态：label / cause（原因）/ impact（影响）/ next（下一步）。
+// 操作动词表（数据可信度修复 2026-10-05）：
+//   refresh       = 仅重新读取页面数据（如实命名「刷新状态」，绝不冒充"重探/重试检查"——
+//                   当前部署没有独立探测端点，探测随审查运行发生）
+//   repo_settings = 真实仓库设置地址 https://github.com/{owner}/{repo}/settings/branches
+//                   （owner/name 缺失时降级为「查看配置指南」文档外链）
+//   multiuser     = 组织与接入页核对 App 权限（站内路由）
+//   detail        = 打开 PR 详情（需调用方提供 onOpenDetail，否则只留 hint 文字——
+//                   不渲染看似可执行但实际 disabled 的按钮）
 export const PROTECTION_UNKNOWN_STATES = {
   checking: {
     key: 'checking',
@@ -72,7 +80,8 @@ export const PROTECTION_UNKNOWN_STATES = {
     tone: 'info',
     cause: '该 PR 正在审查中——分支保护探测随审查一起进行，尚未返回结果。',
     impact: '等待本次审查完成后自动更新；无需人工处理。',
-    next: { label: '查看审查进展', kind: 'detail', hint: '审查完成后保护状态自动确认为"受保护"或保持未知。' },
+    next: { kind: 'refresh', label: '刷新状态',
+      hint: '探测随审查进行——稍后刷新页面即可看到结果。' },
   },
   not_configured: {
     key: 'not_configured',
@@ -80,7 +89,7 @@ export const PROTECTION_UNKNOWN_STATES = {
     tone: 'warn',
     cause: 'base 分支可能没有启用分支保护（GitHub 探测 404 时的典型含义）。',
     impact: '没有保护规则的分支可被直接 push——建议为主分支启用保护。',
-    next: { label: '前往 GitHub 配置保护', kind: 'github_settings',
+    next: { kind: 'repo_settings', label: '打开仓库保护设置',
       hint: '仓库 Settings → Branches → Add branch protection rule。' },
   },
   permission: {
@@ -89,7 +98,7 @@ export const PROTECTION_UNKNOWN_STATES = {
     tone: 'warn',
     cause: 'GitHub App 可能未获得 administration:read 只读权限，探测被 GitHub 拒绝（403）。',
     impact: '工作台无法确认保护状态，合并资格保持未知（fail-closed）。',
-    next: { label: '检查 App 权限', kind: 'multiuser',
+    next: { kind: 'multiuser', label: '检查 App 权限',
       hint: '在"组织与接入"页确认 GitHub App 权限包含 administration:read（只读）。' },
   },
   api_failed: {
@@ -98,7 +107,8 @@ export const PROTECTION_UNKNOWN_STATES = {
     tone: 'bad',
     cause: 'GitHub API 网络失败或限流——探测请求未得到有效响应。',
     impact: '状态暂时不可得；恢复后随下一次审查自动重探。',
-    next: { label: '稍后重试检查', kind: 'retry', hint: '使用"检查 PR 同步/立即刷新"重探；持续失败时检查 GitHub 服务状态。' },
+    next: { kind: 'refresh', label: '刷新状态',
+      hint: '恢复后随下一次审查自动重探；持续失败时检查 GitHub 服务状态。' },
   },
   undetermined: {
     key: 'undetermined',
@@ -108,7 +118,8 @@ export const PROTECTION_UNKNOWN_STATES = {
     impact: '合并资格保持未知（fail-closed）；按以下三种可能原因逐项排查。',
     // 候选原因（各自可执行）：后端补 reason 码后本条自动收敛为三选一精确显示
     candidates: ['not_configured', 'permission', 'api_failed'],
-    next: { label: '打开 PR 详情逐项排查', kind: 'detail', hint: 'PR 详情页的保护状态面板列出每种原因的核对与处理路径。' },
+    next: { kind: 'detail', label: '逐项排查',
+      hint: 'PR 详情页的保护状态面板列出每种原因的核对与处理路径。' },
   },
 };
 
@@ -175,12 +186,67 @@ export function pendingReasonOf(row) {
   }
 }
 
-// 行 → 工作台筛选桶（纯函数）。'attention'=需要人处理；'blocked'=已阻断；'anomaly'=异常；
-// 其余归 'normal'（进行中/已通过）。
+// 行 → 阶段桶（纯函数，阶段维度）。
+// 'attention'=需要人处理；'blocked'=已阻断；'reviewing'=真实进行中（审查/修复/验证）；
+// 'anomaly'=阶段维异常（head 过期 / 决策缺失）；其余（PENDING/PASSED）归 'normal'。
+// 注意：保护未知不在此判定——它是 PR 级集合（protectionUnknownKeySet），
+// 由调用方并集进异常桶（见 OverviewPage），保证统计卡与列表同源。
 export function bucketOf(row) {
   const stage = String(row?.stage ?? '').toUpperCase();
   if (stage === 'ACTION_REQUIRED') return 'attention';
   if (stage === 'BLOCKED') return 'blocked';
+  if (REVIEWING_STAGES.includes(stage)) return 'reviewing';
   if (stage === 'STALE' || stage === 'UNKNOWN') return 'anomaly';
   return 'normal';
+}
+
+// 真实进行中的阶段（run 在途）：审查中 / 修复预演中 / 验证中。
+// （PENDING=尚未开始审查——不是进行中；PASSED=终态。）
+export const REVIEWING_STAGES = ['REVIEWING', 'REMEDIATING', 'VERIFYING'];
+
+// ── PR 实体分组：/api/overview 行（每 head/run 一行）→ 每 PR 一实体 ──
+// 后端（legacy 与 MU 投影均）按 head/run 出行：同一 PR 多个 head 各占一行。
+// 工作台口径统一为 PR：current = updated_at 最新的行（当前 head）；
+// history = 其余行（历史 head/run，按时间倒序，收进详情抽屉展开）。
+// 返回 [{ key, repo, n, owner, name, detailTo, current, history, bucket, reason, ... }]
+export function groupRowsByPr(rows, { isMu = false } = {}) {
+  const byPr = new Map();
+  for (const r of rows ?? []) {
+    const repo = String(r.repo ?? '');
+    if (!repo) continue;
+    const n = r.pr_number ?? r.pr;
+    const key = `${repo}#${n}`;
+    if (!byPr.has(key)) byPr.set(key, []);
+    byPr.get(key).push(r);
+  }
+  const out = [];
+  for (const [key, group] of byPr) {
+    const sorted = [...group].sort((a, b) =>
+      String(b.updated_at ?? '').localeCompare(String(a.updated_at ?? '')));
+    const current = sorted[0];
+    const [owner, name] = String(current.repo).split('/');
+    const n = current.pr_number ?? current.pr;
+    const detailTo = (n != null && owner && name)
+      ? (isMu
+        ? `/mu/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/pr/${n}`
+        : `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/pr/${n}`)
+      : null;
+    out.push({
+      ...current,
+      key,
+      n,
+      owner,
+      name,
+      detailTo,
+      current,
+      history: sorted.slice(1).map((h) => ({
+        head_sha: h.head_sha, run_id: h.run_id, stage: h.stage,
+        stage_source: h.stage_source, updated_at: h.updated_at ?? null,
+      })),
+      updated_at: current.updated_at ?? null,
+      reason: pendingReasonOf(current),
+      bucket: bucketOf(current),
+    });
+  }
+  return out;
 }

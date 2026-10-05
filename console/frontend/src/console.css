@@ -1195,3 +1195,63 @@ td.th-right { text-align: right; }
 .nav-adv-link:hover { color: #fff; background: rgba(255, 255, 255, 0.06); }
 .nav-adv-link:focus-visible { outline: 2px solid #5eead4; outline-offset: -2px; }
 .nav-adv-link.active { color: #fff; background: linear-gradient(90deg, rgba(94, 234, 212, 0.16), transparent); box-shadow: inset 3px 0 0 #5eead4; }
+
+/* ============================================================
+   数据可信度 + 操作语义修复（2026-10-05 第二波）
+   异常摘要收敛条 / 列表焦点反馈 / head chip / 历史 run 列表
+   ============================================================ */
+
+/* ---- 异常摘要收敛条：摘要+数量+一个主动作（原因/影响进 tooltip 与抽屉） ---- */
+.anomaly-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--sp-2); flex-wrap: wrap; margin-bottom: 6px;
+}
+.anomaly-chips {
+  list-style: none; margin: var(--sp-2) 0 0; padding: 0;
+  display: flex; flex-wrap: wrap; gap: var(--sp-2);
+}
+.anomaly-chip {
+  display: inline-flex; align-items: baseline; gap: 6px;
+  border: var(--border-w) solid var(--c-border); border-left-width: 3px;
+  border-radius: var(--r-md); padding: 5px 10px;
+  font-size: var(--fs-xs); color: var(--c-text-2); background: var(--c-panel);
+  min-width: 0; cursor: help;
+}
+.anomaly-chip-label { font-weight: var(--fw-semibold); }
+.anomaly-chip-unit { color: var(--c-text-3); }
+.anomaly-chip-count { font-variant-numeric: tabular-nums; font-weight: var(--fw-semibold); color: var(--c-text-3); }
+.anomaly-chip.is-nonzero.anomaly-tone-warn .anomaly-chip-count { color: var(--c-warn); }
+.anomaly-chip.is-nonzero.anomaly-tone-bad .anomaly-chip-count { color: var(--c-bad); }
+.anomaly-chip.is-nonzero.anomaly-tone-neutral .anomaly-chip-count { color: var(--c-text); }
+.anomaly-chip.is-nonzero { border-left-color: var(--c-warn-dot); }
+.anomaly-chip.is-nonzero.anomaly-tone-bad { border-left-color: var(--c-bad-dot); }
+
+/* ---- 列表焦点反馈：统计卡/筛选点击后焦点移入列表区域（可感知） ---- */
+.wb-list-section { border-radius: var(--r-md); }
+.wb-list-section:focus { outline: 2px solid var(--c-accent); outline-offset: 6px; }
+.wb-focus-status { margin: 4px 0 8px; font-size: var(--fs-xs); color: var(--c-text-3); }
+
+/* ---- PR 行：当前 head 短码 + 原因附注 ---- */
+.wb-pr-cell { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.wb-head-chip {
+  font-size: var(--fs-xs); background: var(--c-neutral-bg); color: var(--c-text-2);
+  padding: 1px 5px; border-radius: 4px;
+}
+.wb-reason { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
+.wb-reason-tag { margin-inline-end: 0; }
+.wb-hist-note { font-size: var(--fs-xs); }
+
+/* ---- 抽屉：历史 head/run 展开 ---- */
+.wb-history { margin-top: var(--sp-3); }
+.wb-history summary { cursor: pointer; font-size: var(--fs-sm); color: var(--c-text-2); }
+.wb-history-list { list-style: none; margin: var(--sp-2) 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.wb-history-item { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--fs-sm); min-width: 0; }
+.wb-hist-tag { margin-inline-end: 0; }
+.wb-hist-run { font-size: var(--fs-xs); color: var(--c-text-3); }
+
+/* ---- 防溢出：390/768 无横向溢出（表格滚动容器自持，其余收缩） ---- */
+@media (max-width: 768px) {
+  .anomaly-bar { flex-direction: column; align-items: flex-start; }
+  .anomaly-chips { flex-direction: column; }
+  .anomaly-chip { align-items: baseline; justify-content: space-between; width: 100%; }
+}

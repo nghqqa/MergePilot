@@ -328,6 +328,19 @@ function AdvancedNavGroup({ pathname }) {
   );
 }
 
+// 侧栏能力边界一行（数据可信度修复 2026-10-05）：按会话与数据源如实声明——
+// 消灭与 MU 实时面（有审批决策/审查发起类 POST）矛盾的旧「只读 · 无写操作」全局文案。
+// 统一边界口径：操作经服务端授权；不写 GitHub、不自动合并；凭证不下发。
+function capabilityFooterLine(config, authStatus) {
+  if (config?.mode === 'multiuser' && authStatus === 'authed') {
+    return 'OAuth 会话 · 操作经服务端授权 · 不写 GitHub · 不自动合并';
+  }
+  if (config?.mode === 'console-pg') {
+    return '隔离联调 · 审批仅写 fixture 库 · 无凭证下发';
+  }
+  return '只读快照 · 无凭证下发';
+}
+
 function Shell() {
   const loc = useLocation();
   const config = useAppConfig();
@@ -390,9 +403,9 @@ function Shell() {
             <AdvancedNavGroup pathname={loc.pathname} />
           </nav>
           <div className="sidebar-foot">
-            <div className="foot-row" title="本服务仅监听 127.0.0.1 回环地址；不下发任何凭证">
+            <div className="foot-row" title="本服务仅监听 127.0.0.1 回环地址；不下发任何凭证。写操作仅限审批决策与审查发起类 POST（服务端 RBAC+CSRF）——不写 GitHub、不自动合并。能力口径与「设置 / 数据源」页一致。">
               <Activity size={12} strokeWidth={1.75} aria-hidden />
-              只读 · 无写操作 · 无凭证下发
+              {capabilityFooterLine(config, auth.status)}
             </div>
           </div>
         </Layout.Sider>

@@ -127,18 +127,26 @@ export function WorkspacePanel({ config, auth, onRetry }) {
         ) : null}
       </Row>
       <Row label="是否只读">
-        {pgMode ? <>查询只读；审批决策仅写隔离 fixture 库（非真实系统）</> : <YesNo yes />}
+        {pgMode
+          ? <>查询只读；审批决策仅写隔离 fixture 库（非真实系统）</>
+          : mode === 'multiuser'
+            ? <>读取只读；另有服务端授权的操作类 POST（见下行）——任何模式都不写 GitHub、不自动合并</>
+            : <YesNo yes />}
       </Row>
       <Row label="允许写操作">
         {pgMode
           ? <>仅审批决策（POST → 隔离 fixture 库票据，X-Test-Principal 测试主体）</>
-          : <>无——控制台本体接口仅 GET{mode === 'contract' ? '；fixture 演练不触达后端' : ''}</>}
+          : mode === 'multiuser'
+            ? <>审批决策、发起审查/受控修复（POST，CSRF 保护，按角色 RBAC 授权）——仅生成建议/留痕，不写 GitHub、不自动合并、不派发站外执行</>
+            : <>无——控制台本体接口仅 GET{mode === 'contract' ? '；fixture 演练不触达后端' : ''}</>}
       </Row>
       <Row label="GitHub 身份">
         {auth.status === 'authed'
           ? (config?.dataMode === 'fixture'
               ? <>test-principal（隔离测试主体，非真实 GitHub 身份）</>
-              : <>{auth.user?.name ?? auth.user?.display_name ?? auth.user?.github_login ?? '已登录'}（控制台会话；非 GitHub OAuth）</>)
+              : (mode === 'multiuser'
+                  ? <>{auth.user?.name ?? auth.user?.display_name ?? auth.user?.github_login ?? '已登录'}（GitHub OAuth 会话；组织/角色见顶栏）</>
+                  : <>{auth.user?.name ?? auth.user?.display_name ?? auth.user?.github_login ?? '已登录'}（控制台会话；非 GitHub OAuth）</>))
           : <>未认证——无真实 GitHub 身份</>}
       </Row>
       <Row label="生产后端">
@@ -147,7 +155,7 @@ export function WorkspacePanel({ config, auth, onRetry }) {
           : <><span className="ws-no">未连接</span>——当前全部为快照 / 隔离 fixture；生产接线由后端交付后经配置切换</>}
       </Row>
       <Row label="是否真实 GitHub 操作">
-        <YesNo yes={false} yesText="有" noText="无——任何模式都不写 GitHub" />
+        <YesNo yes={false} yesText="有" noText="无——任何模式都不写 GitHub、不自动合并" />
       </Row>
       <div className="ws-section">接线状态</div>
       <ul className="ws-wiring">

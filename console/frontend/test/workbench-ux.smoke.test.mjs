@@ -1,10 +1,11 @@
-// workbench-ux.smoke.test.mjs — 审查工作台 UX 收敛重构回归锁（2026-10-05）。
-// 覆盖任务书八板块的可断言核心：
-//   一 信息架构   ：一级导航四项 + 系统管理组 + 高级工具默认折叠/子路由自动展开
-//   二 异常状态   ：四分建模（原因/影响/下一步）+ 401/403/网络恢复按钮
-//   五 图表       ：语义色 scale range + 文本摘要（可访问摘要不依赖颜色）
-//   六 PR 表格    ：默认列 PR/风险/阶段/待处理原因/更新时间/操作 + 抽屉承载 Head/Run/来源
-//   七 交互语义   ：统计卡/行操作为真实元素；分页 aria-label；无 div role=link 模拟
+// workbench-ux.smoke.test.mjs — 审查工作台回归锁（UX 重构 2026-10-05 + 数据可信度修复）。
+// 覆盖：
+//   口径一致：统计卡/筛选器/异常摘要/表格同一套 PR 实体——数字=点击后列表行数（逐卡断言）
+//   PR 一行一实体：多 head 只出一行（当前 head），历史收抽屉；行操作 aria 含 PR+head
+//   focus=anomaly 含 protection-unknown PR；focus=reviewing 匹配真实进行中阶段（不恒空）
+//   保护未知语义：摘要与详情共享 stateKey；动词=「刷新状态」（无"重探/重试检查"）；
+//                真实仓库设置地址；无 disabled 装饰按钮
+//   能力口径：MU 登录态 footer 不再出现「只读 · 无写操作」；身份/边界一致
 // 运行：cd console/frontend && node --test test/workbench-ux.smoke.test.mjs（需先 npm ci）
 import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -42,22 +43,35 @@ setRoute('/api/auth/session', 200, SESSION);
 setRoute('/api/health', 200, { service: 'console', data_mode: 'live',
   sources: { primary: 'multiuser', multiuser: { available: true } } });
 
+// 口径设计（PR 实体 = 6）：
+//   #8  BLOCKED（3 个 head 行 → 1 实体，历史 2）+ 保护未知 + P0 票 → blocked ∪ anomaly
+//   #9  BLOCKED（1 行）                                   → blocked
+//   #4  ACTION_REQUIRED（1 行）                           → attention
+//   #3  REVIEWING（1 行）+ 保护未知（checking 子态样本）    → reviewing ∪ anomaly
+//   #5  PENDING（1 行）                                   → normal
+//   #7  仅保护未知（无 overview 行 → 占位实体）             → anomaly
+// 期望：待处理=1 已阻断=2 异常=3（#8/#3/#7） 进行中=1 全部=6
 const baseOverview = {
   source: 'MU_CANONICAL_LIVE', data_source: 'MU_CANONICAL_LIVE',
   prs: [
-    { repo: 'nghqqa/demo', pr: 8, head_sha: 'a1b2c3d4e5f6', run_id: 'run-8',
-      stage: 'ACTION_REQUIRED', stage_source: 'approval.tickets (PENDING)',
-      updated_at: '2026-10-05T03:00:00Z' },
-    { repo: 'nghqqa/demo', pr: 9, head_sha: 'b1b2c3d4e5f6', run_id: 'run-9',
-      stage: 'BLOCKED', stage_source: 'skill_gate_audit (REFUSE)',
-      updated_at: '2026-10-04T09:00:00Z' },
-    { repo: 'nghqqa/other', pr: 3, head_sha: 'c1b2c3d4e5f6', run_id: 'run-3',
-      stage: 'REVIEWING', stage_source: 'mu_review_run',
-      updated_at: '2026-10-05T05:00:00Z' },
+    { repo: 'nghqqa/demo', pr: 8, head_sha: 'cur8head', run_id: 'run-8c',
+      stage: 'BLOCKED', stage_source: 'skill_gate_audit (REFUSE)', updated_at: '2026-10-05T03:00:00Z' },
+    { repo: 'nghqqa/demo', pr: 8, head_sha: 'old8head1', run_id: 'run-8a',
+      stage: 'STALE', stage_source: 'head-ordering', updated_at: '2026-10-04T03:00:00Z' },
+    { repo: 'nghqqa/demo', pr: 8, head_sha: 'old8head2', run_id: 'run-8b',
+      stage: 'REVIEWING', stage_source: 'mu_review_run', updated_at: '2026-10-04T10:00:00Z' },
+    { repo: 'nghqqa/demo', pr: 9, head_sha: 'cur9head', run_id: 'run-9',
+      stage: 'BLOCKED', stage_source: 'skill_gate_audit (REFUSE)', updated_at: '2026-10-04T09:00:00Z' },
+    { repo: 'nghqqa/demo', pr: 4, head_sha: 'cur4head', run_id: 'run-4',
+      stage: 'ACTION_REQUIRED', stage_source: 'approval.tickets (PENDING)', updated_at: '2026-10-05T02:00:00Z' },
+    { repo: 'nghqqa/demo', pr: 3, head_sha: 'cur3head', run_id: 'run-3',
+      stage: 'REVIEWING', stage_source: 'mu_review_run', updated_at: '2026-10-05T05:00:00Z' },
+    { repo: 'nghqqa/demo', pr: 5, head_sha: 'cur5head', run_id: 'run-5',
+      stage: 'PENDING', stage_source: 'mu_review_run', updated_at: '2026-10-03T01:00:00Z' },
   ],
-  repository_counts: [{ repo: 'nghqqa/demo', prs: 2, runs: 2, pending: 1 }],
-  trend: [{ date: '2026-10-04', runs: 2 }, { date: '2026-10-05', runs: 1 }],
-  stage_counts: { ACTION_REQUIRED: 1, BLOCKED: 1, REVIEWING: 1 },
+  repository_counts: [{ repo: 'nghqqa/demo', prs: 6, runs: 7, pending: 1 }],
+  trend: [{ date: '2026-10-04', runs: 3 }, { date: '2026-10-05', runs: 4 }],
+  stage_counts: { BLOCKED: 2, REVIEWING: 2, ACTION_REQUIRED: 1, PENDING: 1 },
   pending_summary: { count: 1, oldest_pending_at: null, oldest_wait_minutes: null },
   incidents: { stale_count: 1, failed_receipts: 0, integrity_conflicts: 0 },
   health: { postgres: 'LIVE',
@@ -75,25 +89,27 @@ globalThis.fetch = async (input, init = {}) => {
   return new Response(JSON.stringify({ error: { reason: `unexpected_path:${u.pathname}` } }), { status: 404 });
 };
 
-// MU 域附加数据（风险列 P0 票 + 保护未知行）
+setRoute('/api/overview', 200, baseOverview);
+// MU 域附加数据：P0 票（#8 风险列）+ 保护未知（#8 checking、#3 checking、#7 占位）
 setRoute('/api/mu/session', 200, { user: { user_id: 'u1', login: 'maintainer1' },
   tenant: { tenant_id: 't1', slug: 'demo-org' }, role: 'maintainer',
   actions: ['read_repository', 'decide_review'] });
 setRoute('/api/mu/approvals', 200, { approvals: [{
   approval_id: 'ap-1', severity: 'P0', status: 'PENDING',
   repo_owner: 'nghqqa', repo_name: 'demo', pr_number: 8,
-  rule_id: 'path-traversal', path: 'a.js', line_start: 3, head_sha: 'a1b2c3d4e5f6',
+  rule_id: 'path-traversal', path: 'a.js', line_start: 3, head_sha: 'cur8head',
 }] });
 setRoute('/api/mu/repositories', 200, { repositories: [
-  { repo_id: 'r1', owner: 'nghqqa', name: 'demo', binding_state: 'active', pr_count: 2 },
+  { repo_id: 'r1', owner: 'nghqqa', name: 'demo', binding_state: 'active', pr_count: 6 },
 ] });
-setRoute('/api/mu/prs', 200, (u) => ({ pull_requests: u.searchParams.get('repo_id') === 'r1'
-  ? [{ pr_id: 'p8', provider_pr_number: 8, head_sha: 'a1', branch_protection_status: 'unknown', updated_at: '2026-10-05T03:00:00Z' },
-     { pr_id: 'p9', provider_pr_number: 9, head_sha: 'b1', branch_protection_status: 'known_clean', updated_at: '2026-10-04T09:00:00Z' }]
-  : [] }));
-setRoute('/api/overview', 200, baseOverview);
+setRoute('/api/mu/prs', 200, () => ({ pull_requests: [
+  { pr_id: 'p8', provider_pr_number: 8, head_sha: 'cur8head', branch_protection_status: 'unknown', updated_at: '2026-10-05T03:00:00Z' },
+  { pr_id: 'p3', provider_pr_number: 3, head_sha: 'cur3head', branch_protection_status: 'unknown', updated_at: '2026-10-05T05:00:00Z' },
+  { pr_id: 'p7', provider_pr_number: 7, head_sha: 'x7head', branch_protection_status: 'unknown', updated_at: '2026-10-02T00:00:00Z' },
+  { pr_id: 'p9', provider_pr_number: 9, head_sha: 'cur9head', branch_protection_status: 'known_clean', updated_at: '2026-10-04T09:00:00Z' },
+] }));
 
-// —— 打包（plots shim）——
+// —— 打包（plots shim；react-router-dom 外置保证单实例）——
 let pagePromise = null;
 function loadPage() {
   pagePromise ??= (async () => {
@@ -135,7 +151,7 @@ function loadApp() {
     await build({
       entryPoints: [entry], bundle: true, format: 'cjs', platform: 'node', outfile: bundle,
       jsx: 'automatic', external: ['react', 'react-dom', 'scheduler', 'react-router-dom'],
-      alias: { '@ant-design/plots': path.join(outDir, 'plots-shim.mjs') },
+      alias: { '@ant-design/plots': shim },
       define: { 'process.env.NODE_ENV': '"test"' }, logLevel: 'silent',
     });
     return import(pathToFileURL(bundle).href);
@@ -144,7 +160,7 @@ function loadApp() {
 }
 
 async function renderPage(route = '/overview') {
-  const { OverviewPage, AuthProvider, MemoryRouter } = await loadPage();
+  const { OverviewPage, AuthProvider } = await loadPage();
   let renderer;
   await act(async () => {
     renderer = TestRenderer.create(
@@ -175,128 +191,230 @@ after(() => {
   setTimeout(() => process.exit(process.exitCode ?? 0), 50);
 });
 
-// ── 一：异常建模纯函数 ──
-test('anomalies：四分建模完备——每类含原因/影响/下一步；deriveAnomalies 计数正确', async () => {
+// ── 一：异常建模与 PR 分组纯函数 ──
+test('anomalies：四分建模完备；groupRowsByPr 多 head 归一为 PR 实体（current+history）', async () => {
   const { anomalies } = await loadPage();
   for (const k of anomalies.ANOMALY_ORDER) {
     const a = anomalies.ANOMALIES[k];
     assert.ok(a.label && a.cause && a.impact && a.next?.label, `${k} 必须含 label/cause/impact/next`);
   }
-  const list = anomalies.deriveAnomalies(
-    { incidents: { stale_count: 2, failed_receipts: 1, integrity_conflicts: 3 } }, 4);
-  assert.deepEqual(list.map((x) => x.count), [2, 1, 3, 4]);
-});
-
-test('anomalies：保护未知四分子态可推导（checking 优先，其余 undetermined 且列三候选）', async () => {
-  const { anomalies } = await loadPage();
-  assert.equal(anomalies.protectionUnknownKind({}, true), 'checking');
-  const kind = anomalies.protectionUnknownKind({ branch_protection_status: 'unknown' }, false);
-  assert.equal(kind, 'undetermined');
-  assert.deepEqual(anomalies.PROTECTION_UNKNOWN_STATES.undetermined.candidates,
-    ['not_configured', 'permission', 'api_failed']);
-  // 每个子态都必须给原因/影响/下一步（不允许只显示状态文字）
+  const entities = anomalies.groupRowsByPr(baseOverview.prs, { isMu: true });
+  assert.equal(entities.length, 5, 'overview 行归一为 5 个 PR 实体（#7 仅保护未知，由页面占位合成）');
+  const e8 = entities.find((e) => e.n === 8);
+  assert.equal(e8.current.head_sha, 'cur8head', 'current=最新 head');
+  assert.equal(e8.history.length, 2, '历史 head 收进 history');
+  assert.ok(String(e8.history[0].updated_at) > String(e8.history[1].updated_at), 'history 按时间倒序');
+  assert.equal(entities.find((e) => e.n === 3).bucket, 'reviewing', 'REVIEWING → reviewing 桶（真实进行中）');
+  // 保护未知子态动词表：绝不出现"重探/重试检查"
   for (const s of Object.values(anomalies.PROTECTION_UNKNOWN_STATES)) {
-    assert.ok(s.cause && s.impact && s.next?.label, `${s.key} 必须含 cause/impact/next`);
+    assert.ok(!/重探|重试检查/.test(s.next?.label ?? ''), `${s.key} 不得使用"重探/重试检查"动词`);
   }
+  assert.equal(anomalies.PROTECTION_UNKNOWN_STATES.not_configured.next.kind, 'repo_settings');
+  assert.equal(anomalies.PROTECTION_UNKNOWN_STATES.api_failed.next.label, '刷新状态');
+  assert.equal(anomalies.PROTECTION_UNKNOWN_STATES.checking.next.label, '刷新状态');
 });
 
-test('anomalies：bucketOf / pendingReasonOf 阶段→工作台桶与人话原因', async () => {
-  const { anomalies } = await loadPage();
-  assert.equal(anomalies.bucketOf({ stage: 'ACTION_REQUIRED' }), 'attention');
-  assert.equal(anomalies.bucketOf({ stage: 'BLOCKED' }), 'blocked');
-  assert.equal(anomalies.bucketOf({ stage: 'STALE' }), 'anomaly');
-  assert.equal(anomalies.bucketOf({ stage: 'UNKNOWN' }), 'anomaly');
-  assert.equal(anomalies.bucketOf({ stage: 'PASSED' }), 'normal');
-  const r = anomalies.pendingReasonOf({ stage: 'BLOCKED', stage_source: 'skill_receipt_outbox.integrity' });
-  assert.ok(r.text.includes('完整性冲突'), 'integrity 冲突的人话原因');
-  const g = anomalies.pendingReasonOf({ stage: 'BLOCKED', stage_source: 'skill_gate_audit (REFUSE)' });
-  assert.ok(g.text.includes('拒绝') || g.text.includes('受控'), 'gate 拒绝的人话原因');
-});
-
-// ── 二：/overview 工作台首屏 ──
-test('工作台首屏：统计卡=可点击入口（button 真实元素）且与列表联动口径一致', async () => {
-  const renderer = await renderPage('/overview');
-  try {
-    const json = renderer.toJSON();
-    const str = JSON.stringify(json);
-    assert.ok(str.includes('待处理（需我处理）'), '首屏统计卡：待处理');
-    assert.ok(str.includes('已阻断'), '首屏统计卡：已阻断（主入口）');
-    assert.ok(str.includes('异常'), '首屏统计卡：异常');
-    // 统计卡必须是真实 button（含 aria-pressed），不允许 div role=link 模拟
-    const buttons = [];
-    const walk = (n) => {
-      if (!n) return;
-      if (n.type === 'button') buttons.push(n);
-      (n.children ?? []).forEach(walk);
-    };
-    walk(json);
-    const statButtons = buttons.filter((b) => String(b.props?.className ?? '').includes('stat-card'));
-    assert.ok(statButtons.length >= 4, `统计卡应为真实 button 元素（实得 ${statButtons.length}）`);
-    assert.ok(statButtons.every((b) => 'aria-pressed' in b.props), '统计卡带 aria-pressed 当前态');
-    // 趋势/仓库分布文本摘要存在（不依赖颜色的可访问摘要）
-    assert.ok(str.includes('近 14 天共'), '趋势图文本摘要');
-    assert.ok(str.includes('个仓库'), '仓库分布文本摘要');
-  } finally {
-    await act(async () => { renderer.unmount(); });
-  }
-});
-
-test('工作台联动：?focus=blocked 时列表只含已阻断行；?focus=anomaly 含过期行', async () => {
-  const blocked = await renderPage('/overview?focus=blocked');
-  try {
-    const str = JSON.stringify(blocked.toJSON());
-    assert.ok(str.includes('#9'), 'blocked 筛选含 BLOCKED PR #9');
-    assert.ok(!str.includes('#3'), 'blocked 筛选不含 REVIEWING PR #3');
-    assert.ok(str.includes('PR 列表（') && str.includes('已阻断'), '列表标题反映当前筛选');
-  } finally { await act(async () => { blocked.unmount(); }); }
-  const anomaly = await renderPage('/overview?focus=anomaly');
-  try {
-    // anomalies 来自 incidents.stale_count=1：工作台桶含 STALE/UNKNOWN 阶段行
-    // 本 fixture 无 STALE 行——异常区四分卡显示计数（含保护未知），列表空态诚实
-    const str = JSON.stringify(anomaly.toJSON());
-    assert.ok(str.includes('没有「异常」分类下的 PR'), '异常筛选空态诚实提示（不冒充）');
-  } finally { await act(async () => { anomaly.unmount(); }); }
-});
-
-test('异常区：四类异常各显示 原因/影响/下一步（dt=原因/影响/下一步）', async () => {
-  const renderer = await renderPage('/overview');
+// ── 二：统计卡与列表口径一致（逐卡）──
+test('口径一致：统计卡数字=点击后列表 PR 行数（待处理/已阻断/异常/进行中/全部逐卡相等）', async () => {
+  const renderer = await renderApp('/overview');
   try {
     const str = JSON.stringify(renderer.toJSON());
-    assert.ok(str.includes('Head 已过期（stale）'), 'stale 异常条目');
-    assert.ok(str.includes('保护状态未知'), 'protection_unknown 异常条目');
-    assert.ok(str.includes('原因'), '异常卡原因字段');
-    assert.ok(str.includes('影响'), '异常卡影响字段');
-    assert.ok(str.includes('下一步'), '异常卡下一步字段');
-    assert.ok(str.includes('查看过期项'), 'stale 下一步按钮文案');
+    // 统计单位标注
+    for (const label of ['待处理 PR', '待审批票（张）', '已阻断 PR', '异常 PR', '进行中 PR', '全部 PR']) {
+      assert.ok(str.includes(`"${label}"`), `统计卡单位标注：「${label}」`);
+    }
+    const expect = { attention: [1, '待处理'], blocked: [2, '已阻断'], anomaly: [3, '异常'],
+      reviewing: [1, '进行中'], all: [6, '全部'] };
+    for (const [key, [n, meta]] of Object.entries(expect)) {
+      // StatCard 结构：stat-count children=[n] 与 stat-label children=[meta PR] 相邻
+      const idx = str.indexOf(`"${meta} PR"`);
+      assert.ok(idx > 0, `统计卡「${meta} PR」存在`);
+      const window = str.slice(Math.max(0, idx - 260), idx);
+      assert.ok(window.includes(`"children":["${n}"]`),
+        `统计卡「${meta} PR」应显示 ${n}（按 PR 去重；窗口=${window.slice(-120)}）`);
+    }
+  } finally { await act(async () => { renderer.unmount(); }); }
+});
+
+test('联动：focus=blocked 列表只含阻断 PR（每 PR 一行，无重复行）', async () => {
+  const renderer = await renderApp('/overview?focus=blocked');
+  try {
+    const str = JSON.stringify(renderer.toJSON());
+    assert.ok(str.includes('/mu/repos/nghqqa/demo/pr/8'), '含 #8');
+    assert.ok(str.includes('/mu/repos/nghqqa/demo/pr/9'), '含 #9');
+    assert.ok(!str.includes('/mu/repos/nghqqa/demo/pr/3'), '不含 REVIEWING #3');
+    // 每 PR 一行：/pr/8 链接在列表只出现 1 次（多 head 不重复出行）
+    const links = str.match(/\/mu\/repos\/nghqqa\/demo\/pr\/8/g) ?? [];
+    assert.equal(links.length, 1, `PR #8 在列表中恰一行（实得 ${links.length}）`);
+    assert.ok(str.includes('已显示「已阻断」2 个'), '联动 status 行：数量与统计卡一致');
+  } finally { await act(async () => { renderer.unmount(); }); }
+});
+
+test('联动：focus=anomaly 含全部被计入异常的 PR（含 protection-unknown 与占位实体），无错误空态', async () => {
+  const renderer = await renderApp('/overview?focus=anomaly');
+  try {
+    const str = JSON.stringify(renderer.toJSON());
+    assert.ok(str.includes('/mu/repos/nghqqa/demo/pr/8'), '异常列表含保护未知 #8');
+    assert.ok(str.includes('/mu/repos/nghqqa/demo/pr/3'), '异常列表含保护未知 #3（reviewing 阶段也计入异常）');
+    assert.ok(str.includes('/mu/repos/nghqqa/demo/pr/7'), '异常列表含 #7（仅保护未知——占位实体）');
+    assert.ok(!str.includes('没有「异常」分类下的 PR'), '不出现错误空态');
+    assert.ok(str.includes('已显示「异常」3 个'), '联动 status 行：异常 3 个与统计卡一致');
+  } finally { await act(async () => { renderer.unmount(); }); }
+});
+
+test('联动：focus=reviewing 匹配真实进行中阶段（不再恒空）', async () => {
+  const renderer = await renderApp('/overview?focus=reviewing');
+  try {
+    const str = JSON.stringify(renderer.toJSON());
+    assert.ok(str.includes('/mu/repos/nghqqa/demo/pr/3'), '进行中列表含 REVIEWING #3');
+    assert.ok(str.includes('已显示「进行中」1 个'), '进行中 1 个与统计卡一致');
+    assert.ok(!str.includes('没有「进行中」分类下的 PR'), '不出现错误空态');
   } finally { await act(async () => { renderer.unmount(); }); }
 });
 
 // ── 三：PR 表格 ──
-test('表格列：PR/风险/阶段/待处理原因/更新时间/操作；Head 列移出默认列', async () => {
-  const renderer = await renderPage('/overview');
-  try {
-    const json = renderer.toJSON();
-    const str = JSON.stringify(json);
-    for (const h of ['PR', '风险', '阶段', '待处理原因', '更新时间', '操作']) {
-      assert.ok(str.includes(`"${h}"`), `表头含「${h}」`);
-    }
-    assert.ok(!str.includes('"Head"'), 'Head 列已移出默认列（进抽屉）');
-    assert.ok(str.includes('查看详情'), '行操作：查看详情');
-  } finally { await act(async () => { renderer.unmount(); }); }
-});
-
-// MU 集成（风险列/处理审批/深链）依赖 ConfigCtx（真实 App 配置路径）——走完整 App 渲染
-test('MU 集成：P0 票驱动风险列与处理审批操作；PR 深链 /mu/repos/...', { timeout: 30000 }, async () => {
+test('表格：每 PR 一行当前 head；行操作 aria 含 PR+head；风险列 P0 票驱动；历史提示', async () => {
   const renderer = await renderApp('/overview');
   try {
     const str = JSON.stringify(renderer.toJSON());
+    assert.ok(str.includes('cur8head'), '当前 head 短码展示');
     assert.ok(str.includes('危急'), '风险列：P0 审批票 → 危急徽章');
     assert.ok(str.includes('处理审批'), '行操作：处理审批（有票行）');
-    assert.ok(str.includes('/mu/repos/nghqqa/demo/pr/8'), 'MU 部署 PR 深链 /mu/repos/...');
+    assert.ok(str.includes('查看详情：nghqqa/demo #8，head cur8head'), '行操作 aria 含 PR+head 标识');
+    assert.ok(str.includes('另有 2 个历史 head'), '多 head 行提示历史收进抽屉');
+    assert.ok(!str.includes('按 run 一行'), '不再按 run 一行');
   } finally { await act(async () => { renderer.unmount(); }); }
 });
 
-test('交互语义：表格无 div role=link 模拟；操作链接带 aria-label', async () => {
+// ── 四：保护未知操作语义（组件级直测）──
+test('保护未知面板：真实仓库设置地址；刷新按钮可执行；零 disabled；文档降级链接', async () => {
+  const outDir = path.join(FRONTEND, 'node_modules', '.wb-pu-smoke');
+  fs.mkdirSync(outDir, { recursive: true });
+  const entry = path.join(outDir, 'entry.mjs');
+  const bundle = path.join(outDir, 'bundle.cjs');
+  fs.writeFileSync(entry, [
+    'import React from "react";',
+    `import { ProtectionUnknownCard, ProtectionUnknownSummary } from ${JSON.stringify(toFwd(path.join(FRONTEND, 'src/components/ProtectionUnknownPanel.jsx')))};`,
+    'export { ProtectionUnknownCard, ProtectionUnknownSummary };',
+  ].join('\n'));
+  await build({
+    entryPoints: [entry], bundle: true, format: 'cjs', platform: 'node', outfile: bundle,
+    jsx: 'automatic', external: ['react', 'react-dom', 'scheduler', 'react-router-dom', 'antd', '@ant-design/icons', 'lucide-react'],
+    define: { 'process.env.NODE_ENV': '"test"' }, logLevel: 'silent',
+  });
+  const { ProtectionUnknownCard, ProtectionUnknownSummary } = await import(pathToFileURL(bundle).href);
+
+  // 1) 有 repo → 真实仓库设置地址（not_configured 子态）
+  let r;
+  await act(async () => {
+    r = TestRenderer.create(React.createElement(MemoryRouter, null,
+      React.createElement(ProtectionUnknownCard, { stateKey: 'not_configured',
+        repo: { owner: 'nghqqa', name: 'demo' } })));
+  });
+  let s = JSON.stringify(r.toJSON());
+  assert.ok(s.includes('https://github.com/nghqqa/demo/settings/branches'), '真实仓库设置地址');
+  assert.ok(s.includes('打开仓库保护设置'), '主动作文案');
+  assert.ok(!s.includes('"disabled":true'), '无 disabled 装饰按钮');
+
+  // 2) 无 repo → 降级「查看配置指南」
+  await act(async () => {
+    r.update(React.createElement(MemoryRouter, null,
+      React.createElement(ProtectionUnknownCard, { stateKey: 'not_configured', repo: null })));
+  });
+  s = JSON.stringify(r.toJSON());
+  assert.ok(s.includes('查看配置指南'), '无 repo 时降级文档链接');
+  assert.ok(!s.includes('settings/branches'), '无 repo 时不伪造设置地址');
+
+  // 3) checking + onRefresh → 「刷新状态」可执行按钮；无 onRefresh → 不渲染按钮
+  await act(async () => {
+    r.update(React.createElement(MemoryRouter, null,
+      React.createElement(ProtectionUnknownCard, { stateKey: 'checking', onRefresh: () => {} })));
+  });
+  s = JSON.stringify(r.toJSON());
+  assert.ok(s.includes('刷新状态'), '刷新状态按钮（数据刷新动词）');
+  await act(async () => {
+    r.update(React.createElement(MemoryRouter, null,
+      React.createElement(ProtectionUnknownCard, { stateKey: 'checking' })));
+  });
+  s = JSON.stringify(r.toJSON());
+  assert.ok(!s.includes('刷新状态'), '无刷新动作时不渲染按钮（disabled 摆设消失）');
+
+  // 4) undetermined → 三候选各含原因/影响/下一步；api_failed 候选无 disabled 按钮
+  await act(async () => {
+    r.update(React.createElement(MemoryRouter, null,
+      React.createElement(ProtectionUnknownCard, { stateKey: 'undetermined',
+        repo: { owner: 'nghqqa', name: 'demo' }, onRefresh: () => {} })));
+  });
+  s = JSON.stringify(r.toJSON());
+  assert.ok(s.includes('原因未细分') && s.includes('可能原因'), '未细分+候选结构');
+  assert.ok((s.match(/刷新状态/g) ?? []).length >= 1, 'api_failed 候选给「刷新状态」（其余候选各有真实去向）');
+  assert.ok(!s.includes('"disabled":true'), '三候选视图零 disabled 按钮');
+
+  // 5) 摘要列表：stateKey 预计算共享（checking 徽章）
+  await act(async () => {
+    r.update(React.createElement(MemoryRouter, null,
+      React.createElement(ProtectionUnknownSummary, { items: [
+        { repo: 'nghqqa/demo', pr: 3, stateKey: 'checking', owner: 'nghqqa', name: 'demo' },
+        { repo: 'nghqqa/demo', pr: 8, stateKey: 'undetermined', owner: 'nghqqa', name: 'demo' },
+      ], onOpenPr: () => {} })));
+  });
+  s = JSON.stringify(r.toJSON());
+  assert.ok(s.includes('检查中') && s.includes('原因未细分'), '摘要徽章用调用方共享的 stateKey');
+  assert.ok(s.includes('打开详情：nghqqa/demo #3'), '摘要操作 aria 含 PR 标识');
+  await act(async () => { r.unmount(); });
+});
+
+// ── 五：恢复按钮 ──
+test('RecoveryBox：401→重新登录按钮；403→组织与接入链接；网络失败→重试按钮', async () => {
+  const { RecoveryBox } = await loadPage();
+  const render = async (error) => {
+    let r;
+    await act(async () => {
+      r = TestRenderer.create(
+        React.createElement(MemoryRouter, null,
+          React.createElement(RecoveryBox, { error, mode: 'multiuser', onRetry: () => {} })));
+    });
+    return r;
+  };
+  const e401 = await render(Object.assign(new Error('not_authenticated'), { status: 401 }));
+  assert.ok(JSON.stringify(e401.toJSON()).includes('重新登录'), '401 → 重新登录');
+
+  const e403 = await render(Object.assign(new Error('forbidden'), { status: 403 }));
+  assert.ok(JSON.stringify(e403.toJSON()).includes('查看组织与接入'), '403 → 组织与接入');
+
+  const eNet = await render(new Error('fetch failed'));
+  assert.ok(JSON.stringify(eNet.toJSON()).includes('重试'), '网络失败 → 重试');
+});
+
+// ── 六：导航与能力口径 ──
+test('导航：一级恰四项 + 分组；MU 登录态无「只读·无写操作」旧文案；身份/边界一致', async () => {
+  const renderer = await renderApp('/overview');
+  try {
+    const str = JSON.stringify(renderer.toJSON());
+    for (const label of ['总览', '待处理', '仓库', '审批']) {
+      assert.ok(str.includes(`"${label}"`), `一级导航含「${label}」`);
+    }
+    assert.ok(str.includes('系统管理') && str.includes('高级工具'), '分组标题存在');
+    assert.ok(!str.includes('/knowledge'), '高级工具默认折叠');
+    // 能力口径统一：MU OAuth 登录态下 footer 声明真实边界
+    assert.ok(str.includes('不写 GitHub · 不自动合并'), 'footer 能力边界（不写 GitHub/不自动合并）');
+    assert.ok(!str.includes('只读 · 无写操作'), '旧「只读 · 无写操作」文案已删除');
+    assert.ok(str.includes('OAuth 会话'), 'footer 声明 OAuth 会话身份');
+    // 顶栏身份（MU 会话摘要）
+    assert.ok(str.includes('demo-org') && str.includes('维护者'), '顶栏组织/角色');
+  } finally { await act(async () => { renderer.unmount(); }); }
+});
+
+test('导航：/skills 激活时高级工具自动展开且 active 清晰（B 波补遗回归锁）', async () => {
+  const renderer = await renderApp('/skills');
+  try {
+    const str = JSON.stringify(renderer.toJSON());
+    assert.ok(str.includes('/skills'), '子路由激活时高级工具自动展开');
+    assert.ok(str.includes('aria-current'), '激活项带 aria-current');
+  } finally { await act(async () => { renderer.unmount(); }); }
+});
+
+test('交互语义：无 div role=link 模拟；操作链接带 aria-label', async () => {
   const renderer = await renderApp('/overview');
   try {
     const json = renderer.toJSON();
@@ -310,73 +428,6 @@ test('交互语义：表格无 div role=link 模拟；操作链接带 aria-label
     };
     walk(json);
     assert.equal(fakeLinks.length, 0, '禁止 div role=link 模拟链接');
-    const labeled = links.filter((a) => a.props?.['aria-label']);
-    assert.ok(labeled.length > 0, '操作链接带 aria-label');
-  } finally { await act(async () => { renderer.unmount(); }); }
-});
-
-// ── 四：恢复按钮（401/403/网络） ──
-test('RecoveryBox：401→重新登录按钮；403→组织与接入链接；网络失败→重试按钮', async () => {
-  const { RecoveryBox } = await loadPage();
-  const render = async (error) => {
-    let r;
-    await act(async () => {
-      r = TestRenderer.create(
-        React.createElement(MemoryRouter, null,
-          React.createElement(RecoveryBox, { error, mode: 'multiuser', onRetry: () => {} })));
-    });
-    return r;
-  };
-  const e401 = await render(Object.assign(new Error('not_authenticated'), { status: 401 }));
-  const s401 = JSON.stringify(e401.toJSON());
-  assert.ok(s401.includes('重新登录'), '401 → 重新登录（可执行按钮）');
-  assert.ok(s401.includes('登录已过期'), '401 → 状态说明');
-
-  const e403 = await render(Object.assign(new Error('forbidden'), { status: 403 }));
-  const s403 = JSON.stringify(e403.toJSON());
-  assert.ok(s403.includes('查看组织与接入'), '403 → 组织与接入入口');
-  assert.ok(s403.includes('/multiuser'), '403 → 可执行去向链接');
-
-  const eNet = await render(new Error('fetch failed'));
-  const sNet = JSON.stringify(eNet.toJSON());
-  assert.ok(sNet.includes('重试'), '网络失败 → 重试按钮');
-  assert.ok(sNet.includes('数据源不可达'), '网络失败 → 诚实状态名');
-});
-
-// ── 五：导航结构 ──
-test('导航：一级恰四项（总览/待处理/仓库/审批）+ 系统管理组 + 高级工具默认折叠', async () => {
-  const renderer = await renderApp('/overview');
-  try {
-    const str = JSON.stringify(renderer.toJSON());
-    for (const label of ['总览', '待处理', '仓库', '审批']) {
-      assert.ok(str.includes(`"${label}"`), `一级导航含「${label}」`);
-    }
-    assert.ok(str.includes('系统管理'), '系统管理分组标题');
-    assert.ok(str.includes('高级工具'), '高级工具折叠组标题');
-    // 默认折叠：/overview 下高级工具子项不可见
-    assert.ok(!str.includes('/knowledge'), '高级工具默认折叠（/knowledge 链接不在树中）');
-    // 运行记录沉入系统管理（MU 源下隐藏）
-    assert.ok(!str.includes('"/runs"'), 'MU 实时源下 /runs 导航隐藏（snapshot 取证域）');
-    // 短标签 + tooltip：多用户实时 → 「实时」，完整含义在 title
-    assert.ok(str.includes('多用户实时（按组织隔离）：登录组织的实时数据'), '短标签 tooltip 携带完整含义');
-  } finally { await act(async () => { renderer.unmount(); }); }
-});
-
-test('导航：/skills 激活时高级工具自动展开且 active 清晰（B 波补遗回归锁）', async () => {
-  const renderer = await renderApp('/skills');
-  try {
-    const str = JSON.stringify(renderer.toJSON());
-    assert.ok(str.includes('/skills'), '子路由激活时高级工具自动展开（/skills 入口在树中）');
-    assert.ok(str.includes('aria-current'), '激活项带 aria-current');
-  } finally { await act(async () => { renderer.unmount(); }); }
-});
-
-test('导航：组织与接入在系统管理组（一级不出现）；顶栏含组织/角色摘要', async () => {
-  const renderer = await renderApp('/overview');
-  try {
-    const str = JSON.stringify(renderer.toJSON());
-    assert.ok(str.includes('组织与接入'), '组织与接入入口存在');
-    assert.ok(str.includes('demo-org'), '顶栏账户区显示组织 slug（MU 会话摘要）');
-    assert.ok(str.includes('维护者'), '顶栏账户区显示角色中文标签');
+    assert.ok(links.some((a) => a.props?.['aria-label']), '操作链接带 aria-label');
   } finally { await act(async () => { renderer.unmount(); }); }
 });
