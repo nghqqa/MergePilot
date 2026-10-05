@@ -583,6 +583,17 @@ test('R8：账户摘要缓存按用户失效——换号不残留；失败可重
   }
 });
 
+test('R10：投影触顶（prs_truncated）→「统计为下限」横幅，不冒充完整总数', async () => {
+  setRoute('/api/overview', 200, { ...baseOverview, prs_truncated: true, prs_projection_limit: 50 });
+  const renderer = await renderApp('/overview');
+  try {
+    const str = JSON.stringify(renderer.toJSON());
+    assert.ok(str.includes('概览投影达到上限——统计为下限'), '触顶横幅出现');
+    assert.ok(str.includes('超出部分未计入本页统计与列表'), '横幅声明覆盖范围');
+  } finally { await act(async () => { renderer.unmount(); }); }
+  setRoute('/api/overview', 200, baseOverview); // 还原
+});
+
 test('R9：统计/筛选/图表摘要/详情当前 head 一致（同源实体；历史 head 不出现在列表）', async () => {
   const renderer = await renderApp('/overview');
   try {

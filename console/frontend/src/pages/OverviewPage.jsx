@@ -168,11 +168,10 @@ export default function OverviewPage() {
       return next;
     }, { replace: false });
     setPage(1);
-    // 键盘/读屏反馈：焦点移动到列表区域（可聚焦 region），滚动跟随
-    requestAnimationFrame(() => {
-      listRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      listRef.current?.focus({ preventScroll: true });
-    });
+    // 键盘/读屏反馈：焦点立即移入列表区域（可聚焦 region）；
+    // focus 同步执行（rAF 在后台标签页被冻结——同步 focus 不依赖可见性），滚动随后平滑跟随。
+    listRef.current?.focus({ preventScroll: true });
+    requestAnimationFrame(() => listRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   }, [setSearchParams]);
 
   // ── Hooks 纪律：全部派生计算在任何早返回之前（data=null 安全退化空集）──
@@ -461,7 +460,7 @@ export default function OverviewPage() {
         <StatCard label="已阻断 PR" count={counts.blocked} tone={counts.blocked ? 'bad' : 'neutral'}
           active={focus === 'blocked'} onClick={() => setFocus('blocked')}
           title="受控停止待人工裁定的 PR 数——点击在下方列表查看" />
-        <StatCard label="异常 PR" count={counts.anomaly} tone={counts.anomaly ? 'warn' : 'neutral'}
+        <StatCard label={repoFailures.length > 0 ? '异常 PR（部分：保护状态未取全）' : '异常 PR'} count={counts.anomaly} tone={counts.anomaly || repoFailures.length > 0 ? 'warn' : 'neutral'}
           active={focus === 'anomaly'} onClick={() => setFocus('anomaly')}
           title="Head 过期 / 决策缺失 / 失败运行 / 保护状态未知的 PR 数（并集去重）——点击在下方列表查看" />
         <StatCard label="进行中 PR" count={counts.reviewing} tone="info"

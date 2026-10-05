@@ -584,7 +584,8 @@ export async function muApi(req, res, ctx) {
   const muSession = await resolveMuSession(store, req);
   if (!muSession) return sendJson(res, 401, { error: { reason: 'unauthorized' } });
   const mu = { userId: muSession.user_id, tenantId: muSession.tenant_id,
-    login: muSession.login, sessionId: muSession.session_id };
+    login: muSession.login, sessionId: muSession.session_id,
+    provider: muSession.provider ?? null };
 
   // 会话快照的 tenant 可能已被撤销/变更——每次请求现查 live membership
   const liveMembership = await store.getMembership(mu.tenantId, mu.userId);
@@ -840,6 +841,12 @@ export async function muApi(req, res, ctx) {
         actions: roleActions(liveMembership.role) ?? [],
         memberships: memberships.map((m) => ({ tenant_id: m.tenant_id, tenant_slug: m.tenant_slug,
           role: m.role, state: m.state })),
+        // 数据可信度加固（PR #320 四波，附加字段向后兼容）：显式认证 provider——
+        // mu.session.provider 由登录路径写入（当前唯一值 'github-oauth'，oauth.mjs）；
+        // 前端身份展示按该显式标记取来源，不按部署模式推断。
+        login_type: String(mu.provider ?? 'github-oauth'),
+        session_source: 'mu_session',
+        provider: String(mu.provider ?? 'github-oauth'),
       });
     }
 
@@ -1321,6 +1328,18 @@ export async function muApi(req, res, ctx) {
       const rows = await store.findPullRequests(mu.tenantId, {
         repoId: q.repo_id ? String(q.repo_id) : null,
         number: q.number ? Number(q.number) : null });
+      // 数据可信度加固（PR #320 四波，附加字段向后兼容）：每 head 行附
+      // head_basis（权威口径=webhook 事件序，无 GitHub 对照——前端显示
+      // 「当前 head 未确认」）与 head_count（响应范围内该 PR 的 head 行数）。
+      const headCount = new Map();
+      for (const r of rows) {
+        const k = `${r.repo_id}|${r.provider_pr_number}`;
+        headCount.set(k, (headCount.get(k) ?? 0) + 1);
+      }
+      for (const r of rows) {
+        r.head_basis = 'event_order';
+        r.head_count = headCount.get(`${r.repo_id}|${r.provider_pr_number}`) ?? 1;
+      }
       return sendJson(res, 200, { pull_requests: rows });
     }
     const prMatch = p.match(/^\/api\/mu\/prs\/([^/]+)(?:\/(.*))?$/);
