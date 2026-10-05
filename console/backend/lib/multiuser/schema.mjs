@@ -1417,6 +1417,28 @@ export const MU_MIGRATIONS = [
          ON mu.code_egress_event (tenant_id)`,
     ],
   },
+  {
+    // ── v23 invitation_role_check 收紧（D-3：排除 platform_admin）──
+    // 纯 additive：DROP 旧 CHECK + ADD 新 CHECK（枚举排除 platform_admin）。
+    // 理由：invitation 是外部成员唯一准入路径——platform_admin 仅限内部
+    // （DBA SQL 直接授权），invitation 一律不授予（对齐 API 层 D-3 403 排除）。
+    // migration 前预检：若存量 role=platform_admin invitation 存在则 fail-closed
+    // 并 RAISE EXCEPTION（事务回滚，不删除、不修改数据）。
+    // 回滚：DROP 旧 CHECK + ADD 回全枚举 CHECK。
+    version: 23,
+    name: 'mu_invitation_role_tighten',
+    sql: [
+      // 预检：存量 platform_admin invitation 存在则 fail-closed
+      `DO $mv23chk$ BEGIN
+         IF EXISTS (SELECT 1 FROM mu.invitation WHERE role = 'platform_admin') THEN
+           RAISE EXCEPTION 'v23_precheck_failed: 存量 role=platform_admin invitation 存在——先清理后重放迁移';
+         END IF;
+       END $mv23chk$`,
+      `ALTER TABLE mu.invitation DROP CONSTRAINT IF EXISTS invitation_role_check`,
+      `ALTER TABLE mu.invitation ADD CONSTRAINT invitation_role_check
+         CHECK (role IN ('contributor','reviewer','maintainer','auditor'))`,
+    ],
+  },
 ];
 
 export const MU_SCHEMA_LATEST = MU_MIGRATIONS[MU_MIGRATIONS.length - 1].version;
