@@ -13,6 +13,13 @@ FROM node@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e40
 WORKDIR /app
 ENV NODE_ENV=production CONSOLE_HOST=0.0.0.0 CONSOLE_PORT=4730
 
+# rc.11：版本号构建期注入——/api/health version 的唯一构建期真源。
+# server.mjs 读 process.env.MERGEPILOT_VERSION（runtime 可覆盖）；
+# 此处默认值须与 server.mjs fallback 字符串保持一致（双处手动同步，
+# rc.12 候选：CI 构建脚本从 git tag 自动注入消除双处）。
+ARG MERGEPILOT_VERSION=0.2.0-beta.6-rc.11
+ENV MERGEPILOT_VERSION=${MERGEPILOT_VERSION}
+
 # `pg` is optional at runtime (NOT_WIRED without DSN) — install for live mode.
 # The console backend itself is zero-dependency; this manifest exists solely
 # to pin pg for the container (single formal runtime dep).

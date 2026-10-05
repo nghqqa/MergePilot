@@ -180,8 +180,9 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
     return {
       ok: true,
       service: 'mergepilot-console',
-      // rc.10：版本由部署环境注入（MERGEPILOT_VERSION）；默认值本轮准确
-      version: process.env.MERGEPILOT_VERSION || '0.2.0-beta.6-rc.10',
+      // rc.11：构建期注入（Dockerfile ARG MERGEPILOT_VERSION）为构建真源；
+      // 运行时 env 可覆盖；server fallback 与 Dockerfile ARG 默认值双处手动同步。
+      version: process.env.MERGEPILOT_VERSION || '0.2.0-beta.6-rc.11',
       data_mode: liveConfigured ? 'live' : 'snapshot',
       data_mode_note: liveConfigured
         ? 'PG 实时（live）·隔离 staging 库：overview/pending/仓库/PR 详情/审计按会话 allowlist 实时读取；run 证据详情页仍为锁定快照只读'
