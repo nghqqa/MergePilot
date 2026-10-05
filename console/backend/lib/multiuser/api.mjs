@@ -220,6 +220,32 @@ async function buildFixDeps(muPoolQuery, { job, sysCtx, githubRepoId }) {
   };
 }
 
+/**
+ * rc.11 PR-A：已领取的 event_sync job 的【唯一消费单元】——人工 tick 端点与平台级
+ * 自动 consumer（job-consumer.mjs）共用同一状态机（零复制）。
+ * 语义与既有 tick event_sync 分支逐字一致：installation/tenant fail-closed 校验
+ * （transient 类回 queued 可重试）→ executeEventSync → finishJob → 审计。
+ * 零敏感：审计 detail 只含 delivery 前缀/event/installation id/outcome。
+ */
+export async function processClaimedEventSyncJob(store, muPoolQuery, job) {
+  const sysCtx = await resolveEventSyncContext(store, job);
+  if (!sysCtx.ok) {
+    const retryable = sysCtx.reason === 'transient_read_failed';
+    await store.finishJob(job.job_id, retryable ? 'queued' : 'rejected', { reason: sysCtx.reason });
+    await store.audit('GHAPP_EVENT_SYNC_REJECTED', { tenantId: job.tenant_id, actorUserId: null,
+      detail: { job_id: job.job_id, delivery_prefix: String(job.payload?.delivery_id ?? '').slice(0, 8),
+        reason: sysCtx.reason, retryable } });
+    return { state: retryable ? 'requeued' : 'rejected', kind: 'event_sync' };
+  }
+  const r = await executeEventSync(store, muPoolQuery, job, sysCtx);
+  await store.finishJob(job.job_id, r.state, r.result);
+  await store.audit('GHAPP_EVENT_SYNC_DONE', { tenantId: job.tenant_id, actorUserId: null,
+    detail: { job_id: job.job_id, event: job.payload?.event,
+      delivery_prefix: String(job.payload?.delivery_id ?? '').slice(0, 8), repo_id: job.repo_id,
+      installation_id: sysCtx.installation_id, outcome: r.state } });
+  return { state: r.state, kind: 'event_sync' };
+}
+
 // v16 审批门：按 repo_id 装配修复轮 deps（approve 后内联启动用；
 // 与 buildFixDeps 同形状——仅键不同：绑定衈按 repo_id 查而非 github_repo_id+job）
 async function buildFixDepsForRepo(muPoolQuery, { tenantId, repoId, prNumber }) {
@@ -1525,6 +1551,23 @@ const ragMatch = p.match(new RegExp("^/api/mu/repositories/([^/]+)/rag-search$")
     }
 
     // ── 任务（列表=成员可见，tenant 收窄；tick=fixture 执行器） ──
+    // ── rc.11 PR-A：自动 job consumer 只读状态摘要（实例运维面，manage_instance）──
+    if (p === '/api/mu/jobs/consumer' && req.method === 'GET') {
+      const g = await guard('manage_instance');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const { consumerStatus } = await import('./job-consumer.mjs');
+      const queueCounts = await muPoolQ(
+        `SELECT state, count(*)::int AS c FROM mu.job GROUP BY state`).catch(() => null);
+      const byState = {};
+      for (const row of queueCounts?.rows ?? []) byState[row.state] = Number(row.c);
+      return sendJson(res, 200, { consumer: consumerStatus(),
+        queue_counts: {
+          queued: byState.queued ?? 0, processing: byState.running ?? 0,
+          done: byState.done ?? 0, failed: byState.failed ?? 0,
+          rejected: byState.rejected ?? 0,
+        },
+        note: '只读状态摘要；不包含任何 job payload/敏感字段' });
+    }
     if (p === '/api/mu/jobs' && req.method === 'GET') {
       const g = await guard('read_repository');
       if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
@@ -1582,27 +1625,13 @@ const ragMatch = p.match(new RegExp("^/api/mu/repositories/([^/]+)/rag-search$")
         // 用户 membership（不通过 getMembership(null) 冒充未登录拒绝，也不借
         // 任何真人身份放行）。人工 job（review_run/repair_push）维持原复查路径。
         if (job.kind === 'event_sync') {
-          const sysCtx = await resolveEventSyncContext(store, job);
-          if (!sysCtx.ok) {
-            // fail-closed：installation/binding/tenant/repo 任一失效即拒绝（可重试
-            // 语义区分：binding_invalid 类不重试，transient 类回 queued 由下轮重试）
-            const retryable = sysCtx.reason === 'transient_read_failed';
-            await store.finishJob(job.job_id, retryable ? 'queued' : 'rejected', { reason: sysCtx.reason });
-            await store.audit('GHAPP_EVENT_SYNC_REJECTED', { tenantId: job.tenant_id, actorUserId: null,
-              detail: { job_id: job.job_id, delivery_prefix: String(job.payload?.delivery_id ?? '').slice(0, 8),
-                reason: sysCtx.reason, retryable } });
-            processed.push({ job_id: job.job_id, state: retryable ? 'requeued' : 'rejected', reason: sysCtx.reason });
-            continue;
-          }
-          // 幂等消费：delivery_id+event+object id+head_sha 组成去重键——重复入队/
-          // 重试重放不再二次落库（PR 快照 upsert 天然幂等，这里补审计侧去重）
-          const r = await executeEventSync(store, muPoolQ, job, sysCtx);
-          await store.finishJob(job.job_id, r.state, r.result);
-          await store.audit('GHAPP_EVENT_SYNC_DONE', { tenantId: job.tenant_id, actorUserId: null,
-            detail: { job_id: job.job_id, event: job.payload?.event,
-              delivery_prefix: String(job.payload?.delivery_id ?? '').slice(0, 8), repo_id: job.repo_id,
-              installation_id: sysCtx.installation_id, outcome: r.state } });
-          processed.push({ job_id: job.job_id, state: r.state, kind: 'event_sync' });
+          // rc.11 PR-A：消费单元抽取为 processClaimedEventSyncJob（与平台级自动
+          // consumer 共用同一状态机）——此处仅保留语义注释：
+          // fail-closed installation/binding 校验（transient 回 queued 可重试）；
+          // 幂等消费：delivery_id+event+object id+head_sha 去重，重放不二次落库。
+          const r = await processClaimedEventSyncJob(store, muPoolQ, job);
+          processed.push({ job_id: job.job_id, state: r.state, kind: 'event_sync',
+            ...(r.state === 'requeued' || r.state === 'rejected' ? { reason: 'see_audit' } : {}) });
           continue;
         }
         // 执行前复查（授权快照不可信）：请求者成员关系 + 角色仍允许 + 修复需 Binding

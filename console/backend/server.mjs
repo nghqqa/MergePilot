@@ -809,6 +809,23 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
     ensureMuReady(process.env).catch((e) => {
       console.error('[mu] schema init failed:', String(e?.message ?? e).slice(0, 120));
     });
+
+    // rc.11 PR-A：平台级自动 job consumer——webhook 入队的 event_sync job 的常驻
+    // 消费循环（此前需人工 POST /api/mu/jobs/tick）。默认开启、间隔 45s，
+    // MU_JOB_CONSUMER_ENABLED=0/off 关闭、MU_JOB_CONSUMER_INTERVAL_MS 可调（15s–600s
+    // 钳制）。单赢家=每轮 advisory lock 采样；失败只进结构化状态不阻塞 HTTP；
+    // 状态摘要见 GET /api/mu/jobs/consumer（manage_instance）。人工 tick 保留为运维兜底。
+    if (!globalThis.__MU_JOB_CONSUMER_STARTED) {
+      globalThis.__MU_JOB_CONSUMER_STARTED = true;
+      import('./lib/multiuser/job-consumer.mjs').then(({ startJobConsumer }) => {
+        startJobConsumer({
+          env: process.env,
+          getMuStore: (e) => getMuStore(e),
+          processClaimedEventSyncJob: (...args) =>
+            import('./lib/multiuser/api.mjs').then((m) => m.processClaimedEventSyncJob(...args)),
+        });
+      }).catch((e) => console.error('[mu:consumer] start failed:', String(e?.message ?? e).slice(0, 120)));
+    }
   }
 
   // 验收期诊断（MU_QUERY_TRACE=<path> 启用）：全进程 pg 查询表名+调用点（无参数/无文本）。
