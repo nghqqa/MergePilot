@@ -2093,6 +2093,166 @@ const ragMatch = p.match(new RegExp("^/api/mu/repositories/([^/]+)/rag-search$")
         : { run: { run_id: runIdQ }, skill, rag });
     }
 
+    // ── rc.11 PR-B 最小用量统计面：三个只读聚合（租户内审查运营统计；read_pull_request）──
+    // 数据源：mu.skill_invocation_event / mu.rag_retrieval_event（v19 留痕表；只读，
+    // 零写入面）。语义红线：
+    //  * digest 零正文——聚合仅触达计数/latency/时间戳/result_count，不读任何 digest 列；
+    //  * v19 前历史 run 无留痕 = 不可用，绝不伪装成零用量（统计天然只覆盖有留痕的调用，
+    //    前端固定声明"统计仅覆盖 v2 管线运行"）；
+    //  * token 计量/价目表：本切片无任何 token 来源与价目表——token_metering/cost 恒
+    //    available:false（合同的一部分，前端据此显示"未提供 token 计量/未配置价目表"，
+    //    不显示金额、不估算）；
+    //  * tenant_id 恒取会话（mu.tenantId），请求参数只做过滤；repo_id 先经
+    //    resolveRepository 租户收窄（跨租户/不存在同形 404 repository_not_found）；
+    //  * SQL 全参数化；按日分桶 to_char(x::date) 与 mu-console-api trend 同口径
+    //    （会话时区 UTC）；无 generate_series（净化门 P3：MU 查询仅触达 mu.*）；
+    //    by-period 无数据日=真实缺失，不补零。
+    const usageMatch = p.match(/^\/api\/mu\/usage\/(summary|by-skill|by-period)$/);
+    if (usageMatch && req.method === 'GET') {
+      const view = usageMatch[1];
+      // repo_id 过滤：经 guard 租户收窄解析（跨租户/不存在/非 active → 404，不泄露存在性）
+      const g = await guard('read_pull_request',
+        q.repo_id ? { repoId: String(q.repo_id) } : {});
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      // 过滤参数白名单（服务端枚举校验——非法值 400 invalid_filter，不静默吞）
+      const recApi = await import('./invocation-recorder.mjs');
+      const badFields = [];
+      const win = String(q.window || '30d');
+      const winDays = { '7d': 7, '30d': 30, '90d': 90 }[win];
+      if (!winDays && !(win === 'all' && view !== 'by-period')) badFields.push('window');
+      const filters = { skill_key: null, agent_role: null, status: null, repo_id: null, pr_id: null };
+      if (q.skill_key) {
+        if (/^[a-z0-9][a-z0-9._-]{0,63}$/.test(String(q.skill_key))) filters.skill_key = String(q.skill_key);
+        else badFields.push('skill_key');
+      }
+      if (q.agent_role) {
+        if (recApi.AGENT_ROLES.includes(q.agent_role)) filters.agent_role = q.agent_role;
+        else badFields.push('agent_role');
+      }
+      if (q.status) {
+        if (recApi.INVOCATION_STATUSES.includes(q.status)) filters.status = q.status;
+        else badFields.push('status');
+      }
+      if (q.repo_id) filters.repo_id = g.repo.repo_id;
+      if (q.pr_id) {
+        if (/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(String(q.pr_id))) {
+          filters.pr_id = String(q.pr_id);
+        } else badFields.push('pr_id');
+      }
+      if (badFields.length) {
+        return sendJson(res, 400, { error: { reason: 'invalid_filter', fields: badFields } });
+      }
+      // 共享 WHERE（skill 事件与 rag 事件列名一致：tenant_id/started_at/agent_role/
+      // skill_key/status/repo_id/pr_id 全为两表实列）；window 走 make_interval 参数化。
+      const buildWhere = () => {
+        const where = ['tenant_id=$1']; const params = [mu.tenantId];
+        if (winDays) { params.push(winDays); where.push(`started_at >= now() - make_interval(days => $${params.length})`); }
+        for (const k of ['skill_key', 'agent_role', 'status', 'repo_id', 'pr_id']) {
+          if (filters[k]) { params.push(filters[k]); where.push(`${k}=$${params.length}`); }
+        }
+        return { where: where.join(' AND '), params };
+      };
+      // latency 聚合天然仅统计 latency_ms 非空行（percentile_cont 跳过 NULL）；
+      // RUNNING/INTERRUPTED 计入 total 但不进四态分桶（值域以 v19 CHECK 为准，
+      // SUCCEEDED/FAILED/CANCELLED/TIMEOUT 均为真实枚举——无虚构值）。
+      const skillAgg = () => `count(*)::int AS total,
+          count(*) FILTER (WHERE status='SUCCEEDED')::int AS succeeded,
+          count(*) FILTER (WHERE status='FAILED')::int AS failed,
+          count(*) FILTER (WHERE status='CANCELLED')::int AS cancelled,
+          count(*) FILTER (WHERE status='TIMEOUT')::int AS timeout,
+          percentile_cont(0.5) WITHIN GROUP (ORDER BY latency_ms) AS p50,
+          percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms) AS p95,
+          max(started_at) AS last_called_at`;
+      const ragAgg = `count(*)::int AS total,
+          count(*) FILTER (WHERE status='SUCCEEDED')::int AS succeeded,
+          count(*) FILTER (WHERE status='FAILED')::int AS failed,
+          COALESCE(sum(result_count), 0)::bigint AS result_count_sum,
+          percentile_cont(0.5) WITHIN GROUP (ORDER BY latency_ms) AS p50,
+          percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms) AS p95,
+          max(started_at) AS last_called_at`;
+      const numOrNull = (v) => (v == null ? null : Math.round(Number(v)));
+      const rate = (succ, total) => (Number(total) === 0 ? null : Math.round((Number(succ) / Number(total)) * 10000) / 10000);
+      const isoOrNull = (v) => (v == null ? null : new Date(v).toISOString());
+
+      if (view === 'summary') {
+        const sw = buildWhere();
+        const [sRow, rRow] = await Promise.all([
+          muPoolQ(`SELECT ${skillAgg()} FROM mu.skill_invocation_event WHERE ${sw.where}`, sw.params),
+          muPoolQ(`SELECT ${ragAgg} FROM mu.rag_retrieval_event WHERE ${sw.where}`, sw.params),
+        ]);
+        const s = sRow.rows[0]; const r = rRow.rows[0];
+        return sendJson(res, 200, {
+          window: win,
+          filters,
+          skill: { total: Number(s.total), succeeded: Number(s.succeeded), failed: Number(s.failed),
+            cancelled: Number(s.cancelled), timeout: Number(s.timeout),
+            success_rate: rate(s.succeeded, s.total),
+            latency_p50_ms: numOrNull(s.p50), latency_p95_ms: numOrNull(s.p95),
+            last_called_at: isoOrNull(s.last_called_at) },
+          rag: { total: Number(r.total), succeeded: Number(r.succeeded), failed: Number(r.failed),
+            result_count_sum: Number(r.result_count_sum),
+            latency_p50_ms: numOrNull(r.p50), latency_p95_ms: numOrNull(r.p95),
+            last_called_at: isoOrNull(r.last_called_at) },
+          token_metering: { available: false, reason: 'no_token_source' },
+          cost: { available: false, reason: 'no_price_table' },
+        });
+      }
+
+      if (view === 'by-skill') {
+        // 仅 Skill 调用域（mu.skill_invocation_event）——RAG 检索聚合在 summary/by-period
+        const sw = buildWhere();
+        const limit = Math.min(Math.max(Number(q.limit) || 20, 1), 200);
+        const offset = Math.max(Number(q.offset) || 0, 0);
+        const [grp, cnt] = await Promise.all([
+          muPoolQ(
+            `SELECT skill_key, ${skillAgg()}
+               FROM mu.skill_invocation_event WHERE ${sw.where}
+              GROUP BY skill_key ORDER BY total DESC, skill_key ASC
+              LIMIT ${limit} OFFSET ${offset}`, sw.params),
+          muPoolQ(
+            `SELECT count(DISTINCT skill_key)::int c FROM mu.skill_invocation_event WHERE ${sw.where}`,
+            sw.params),
+        ]);
+        return sendJson(res, 200, {
+          window: win, filters, total_groups: Number(cnt.rows[0].c),
+          limit, offset,
+          rows: grp.rows.map((r) => ({ skill_key: r.skill_key,
+            total: Number(r.total), succeeded: Number(r.succeeded), failed: Number(r.failed),
+            success_rate: rate(r.succeeded, r.total),
+            latency_p50_ms: numOrNull(r.p50), latency_p95_ms: numOrNull(r.p95),
+            last_called_at: isoOrNull(r.last_called_at) })),
+        });
+      }
+
+      // by-period：按日分桶（to_char(::date)，会话时区 UTC——与 mu-console-api trend 同口径）；
+      // window 限 7d/30d/90d（上面校验已拒 'all'）。无数据日=真实缺失不补零（两表
+      // GROUP BY 后 JS 侧按日合并——同日仅一侧有数据时另一侧计数为真实 0，不虚构日期行）。
+      const pw = buildWhere();
+      const [sDays, rDays] = await Promise.all([
+        muPoolQ(
+          `SELECT to_char(started_at::date, 'YYYY-MM-DD') AS day,
+                  count(*)::int AS skill_total,
+                  count(*) FILTER (WHERE status='SUCCEEDED')::int AS skill_succeeded
+             FROM mu.skill_invocation_event WHERE ${pw.where} GROUP BY 1`, pw.params),
+        muPoolQ(
+          `SELECT to_char(started_at::date, 'YYYY-MM-DD') AS day,
+                  count(*)::int AS rag_total
+             FROM mu.rag_retrieval_event WHERE ${pw.where} GROUP BY 1`, pw.params),
+      ]);
+      const byDay = new Map();
+      for (const r of sDays.rows) byDay.set(r.day, { day: r.day,
+        skill_total: Number(r.skill_total), skill_succeeded: Number(r.skill_succeeded), rag_total: 0 });
+      for (const r of rDays.rows) {
+        const row = byDay.get(r.day) ?? { day: r.day, skill_total: 0, skill_succeeded: 0, rag_total: 0 };
+        row.rag_total = Number(r.rag_total);
+        byDay.set(r.day, row);
+      }
+      return sendJson(res, 200, {
+        window: win,
+        rows: [...byDay.values()].sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0)),
+      });
+    }
+
     // ── 身份流程保留位（GitHub App 安装流程状态——会话内查询） ──
     if (p === '/api/mu/installations/github/status' && req.method === 'GET') {
       const g = await guard('read_repository');
