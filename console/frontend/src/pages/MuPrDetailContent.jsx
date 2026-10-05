@@ -5,6 +5,8 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Button, Popconfirm, Space, Table, Tag, Typography } from 'antd';
 import { PipelinePanel } from './MultiUserPage.jsx';
 import { ticketMap, SEVERITY, toneToColor, unknownEntry, protectionMap } from '../status-map.js';
+import { isRunChecking } from '../anomalies.js';
+import { ProtectionUnknownCard } from '../components/ProtectionUnknownPanel.jsx';
 
 // ── 动作安全化（PR-5）──
 // 超时上限：批准受控修复（approve）端点同步内联 fixVerifyRound（clone+test，可达分钟级）
@@ -248,6 +250,16 @@ export function MuPrDetailContent({ prRef, onChanged }) {
             模型未读取完整 patch；Verifier 的模型结论可能为 inconclusive，工具验证结果独立有效。
             四项独立判定互不冒充：protection 不明时合并资格恒为"未知"（fail-closed）。
           </Typography.Paragraph>
+        </div>
+      ) : null}
+
+      {/* 保护状态未知：四分子态（检查中/未配置/权限不足/接口失败），每态给原因/影响/下一步——
+          不允许只显示状态文字而没有操作路径（UX 收敛审查 2026-10-05） */}
+      {String(pr.branch_protection_status ?? 'unknown') === 'unknown' ? (
+        <div style={{ margin: '10px 0' }}>
+          <Typography.Title level={5}>保护状态未知（合并资格 fail-closed）</Typography.Title>
+          <ProtectionUnknownCard pr={pr} hasActiveRun={isRunChecking(lr?.status)}
+            onRetry={load} />
         </div>
       ) : null}
 

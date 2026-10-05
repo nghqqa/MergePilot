@@ -829,7 +829,9 @@ function OnboardingPanel({ ob, session, providers, prCount, boundCount, onLogin,
         );
       case 'review':
         return latestPr ? (
-          <Button type="primary" onClick={() => onOpenLatest(latestPr.pr_id)}>
+          // 修复：master-detail 选择键是 provider_pr_number（编号双寻址），此前传 pr_id
+          // （UUID）→ ?pr= 永远匹配不上任何行，详情打不开
+          <Button type="primary" onClick={() => onOpenLatest(Number(latestPr.provider_pr_number))}>
             打开最新 PR（#{latestPr.provider_pr_number}）
           </Button>
         ) : null;

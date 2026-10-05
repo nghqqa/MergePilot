@@ -26,37 +26,39 @@ function isLive(config) {
   return config?.dataMode === 'live' || config?.raw?.data_mode === 'live';
 }
 
+// 顶部 chip 用短标签（UX 收敛审查：768px 以下顶栏不拥挤），完整含义放 tooltip（full）
+// 与点击展开的状态面板。label ≤ 6 字；full 一句话讲清"这是什么、按什么隔离"。
 export function resolveWorkspaceState(config, authStatus) {
-  if (!config) return { key: 'loading', label: '正在获取状态…', tone: 'neutral' };
+  if (!config) return { key: 'loading', label: '获取中…', full: '正在读取服务配置（/api/health）', tone: 'neutral' };
   if (config.mode === 'snapshot' && !config.raw) {
-    return { key: 'unavailable', label: '后端不可用', tone: 'bad' };
+    return { key: 'unavailable', label: '后端不可用', full: '无法连接 console 后端——数据不可用，可点击展开并重试连接', tone: 'bad' };
   }
   if (authStatus === 'unavailable') {
-    return { key: 'unavailable', label: '后端不可用', tone: 'bad' };
+    return { key: 'unavailable', label: '后端不可用', full: '会话探测失败：console 后端不可达——可点击展开并重试连接', tone: 'bad' };
   }
   if (config.mode === 'console-pg') {
     return authStatus === 'authed'
-      ? { key: 'fixture-auth', label: '隔离联调（测试主体）', tone: 'warn' }
-      : { key: 'fixture', label: '隔离联调（未认证）', tone: 'warn' };
+      ? { key: 'fixture-auth', label: '隔离联调', full: '隔离联调环境（测试主体）：真实 HTTP → 隔离 fixture 库，非生产数据', tone: 'warn' }
+      : { key: 'fixture', label: '隔离联调', full: '隔离联调环境（未认证）：数据为隔离 fixture 测试记录', tone: 'warn' };
   }
   if (config.mode === 'contract') {
     if (isLive(config)) {
       return authStatus === 'authed'
-        ? { key: 'live-auth', label: 'PG 实时（live · 会话 allowlist）', tone: 'ok' }
-        : { key: 'live', label: 'PG 实时（未认证）', tone: 'warn' };
+        ? { key: 'live-auth', label: '实时数据', full: 'PG 实时数据（live）：按登录会话 allowlist 过滤的实时读取', tone: 'ok' }
+        : { key: 'live', label: '实时（未登录）', full: 'PG 实时数据源已连接，但当前未登录——登录后按会话 allowlist 读取', tone: 'warn' };
     }
-    return { key: 'contract', label: '契约数据（Fixture）', tone: 'warn' };
+    return { key: 'contract', label: '联调数据', full: '契约数据源（fixture 形状）：隔离联调数据，非生产实时', tone: 'warn' };
   }
   if (config.mode === 'multiuser') {
     return authStatus === 'authed'
-      ? { key: 'mu-auth', label: '多用户实时（按组织隔离）', tone: 'ok' }
-      : { key: 'mu', label: '多用户实时（未认证）', tone: 'warn' };
+      ? { key: 'mu-auth', label: '实时', full: '多用户实时（按组织隔离）：登录组织的实时数据，仅见本组织内容', tone: 'ok' }
+      : { key: 'mu', label: '实时（未登录）', full: '多用户实时数据源已连接，但当前未登录——登录后按组织隔离读取', tone: 'warn' };
   }
   // snapshot
   if (authStatus === 'forbidden' || authStatus === 'expired') {
-    return { key: 'degraded', label: '快照只读（会话受限）', tone: 'warn' };
+    return { key: 'degraded', label: '快照只读', full: '只读快照（会话受限）：本地脱敏历史证据包，锁定只读', tone: 'warn' };
   }
-  return { key: 'snapshot', label: '只读快照', tone: 'ok' };
+  return { key: 'snapshot', label: '快照只读', full: '只读快照：本地脱敏历史证据包（真实历史运行，锁定只读）', tone: 'ok' };
 }
 
 function Row({ label, children }) {

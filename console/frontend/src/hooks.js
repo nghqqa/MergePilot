@@ -98,3 +98,34 @@ export function useSourceQuery(queryFn, deps, { enabled = true } = {}) {
   }, deps);
   return state;
 }
+
+// ---- 顶栏账户摘要（组织/角色）----
+// 会话内一次性获取（模块级缓存）：MU 模式顶栏展示 当前账号/组织/角色；
+// 非 MU 模式或不登录时返回 null（顶栏如实只显示控制台会话名）。
+// 401/网络失败 → null（顶栏不因此报错——会话权威已在 AuthProvider 探测）。
+let muSummaryPromise = null;
+export function fetchMuAccountSummaryOnce() {
+  if (!muSummaryPromise) {
+    muSummaryPromise = fetch('/api/mu/session', { credentials: 'same-origin' })
+      .then((r) => (r.ok ? r.json().catch(() => null) : null))
+      .then((b) => (b?.user && b?.tenant ? {
+        login: b.user.login ?? b.user.name ?? '',
+        org: b.tenant.slug ?? '',
+        role: b.role ?? '',
+      } : null))
+      .catch(() => null);
+  }
+  return muSummaryPromise;
+}
+export function resetMuAccountSummaryCache() { muSummaryPromise = null; }
+
+export function useMuAccountSummary(enabled) {
+  const [summary, setSummary] = useState(null);
+  useEffect(() => {
+    if (!enabled) { setSummary(null); return undefined; }
+    let alive = true;
+    fetchMuAccountSummaryOnce().then((s) => { if (alive) setSummary(s); });
+    return () => { alive = false; };
+  }, [enabled]);
+  return summary;
+}
