@@ -217,9 +217,16 @@ MU_GITHUB_APP_PRIVATE_KEY="<your-private-key-content>  # .pem 文件全部内容
 
 ### 6.1 首次登录（Bootstrap 管理员）
 
-首次启动时系统自动创建迁移租户（`default`）和 Bootstrap 管理员（角色=PlatformAdmin）。
+首次启动时系统自动创建迁移租户（`default`）和一个 **fixture 引导操作员**（默认登录名
+`pilot-admin`，provider=`fixture`，仅下述方式 B 可登录；生产保持关闭）。
 
-**方式 A：GitHub OAuth 登录**（推荐，需配置 §5 OAuth）
+> **首个真实用户与首个平台管理员**：GitHub OAuth 登录只接受**事先创建的邀请**（无邀请即
+> `not_invited`，无公共自动注册），且邀请**永不授予 `platform_admin`**（API/claim/DB 三层拒绝）。
+> 因此生产部署的首个平台管理员由部署者**数据库直授**——完整的身份定位 / 最小授权 / 验证 / 回退
+> 步骤见 [`deploy/selfhost/README.md`「首个平台管理员初始化（生产）」](../deploy/selfhost/README.md#首个平台管理员初始化生产)。
+> 邀请仅用于其余成员与角色（见 §6.3）。
+
+**方式 A：GitHub OAuth 登录**（受邀成员；需配置 §5 OAuth）
 
 1. 访问 `http://<你的地址>/multiuser`
 2. 点击 **使用 GitHub 登录**
