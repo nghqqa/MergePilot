@@ -36,6 +36,12 @@ services:
     # RAG 检索嵌入 sidecar（可选：不接 RAG 可整段注释，console 对 NOT_WIRED 如实降级）
     image: ghcr.io/nghqqa/mergepilot-bge-sidecar@sha256:a41d6cad35cff7236f091af491aa5f17a7e69a8258a134c350b6a63de1c5f17f
     restart: unless-stopped
+    environment:
+      # 模型清单必须由安装流程生成于模型卷内（manifest.json），否则 sidecar
+      # 回退到镜像默认（bge-large-en）清单并校验失败——见 README 模型下载节
+      BGE_MODEL_DIR: /models
+      BGE_MANIFEST: /models/manifest.json
+      BGE_PORT: 8080
     volumes:
       - model-cache:/models:ro
     healthcheck:
