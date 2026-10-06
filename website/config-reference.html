@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>配置参考 · MergePilot</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<header class="site">
+  <span class="brand">MergePilot</span>
+  <a href="index.html">首页</a><a href="quickstart.html">快速开始</a><a href="selfhost-docker.html">Docker 自托管</a><a href="build-from-source.html">源码构建</a><a href="config-reference.html">配置参考</a><a href="multitenant-webhook.html">多租户与 webhook</a><a href="security.html">安全加固</a><a href="upgrade-rollback.html">升级与回滚</a><a href="downloads.html">下载与校验</a><a href="limitations.html">已知限制</a>
+</header>
+<main>
+<div class="crumbs"><a href="index.html">首页</a> / 配置参考</div>
+<h1>配置参考</h1>
+<p>全部变量放 <code>.env</code>（compose <code>--env-file</code> 注入）；
+生成命令以 <code>openssl</code> 为例。所有 secrets 权限 0600、不入 git、不入日志。</p>
+
+<h2>必填</h2>
+<table>
+<tr><th>变量</th><th>说明 / 生成</th></tr>
+<tr><td><code>POSTGRES_PASSWORD</code></td><td>数据库密码。<code>openssl rand -hex 16</code></td></tr>
+<tr><td><code>CONSOLE_SESSION_SECRET</code></td><td>会话签名密钥。<code>openssl rand -base64 32</code>；轮换会使全部会话失效</td></tr>
+<tr><td><code>MU_GITHUB_APP_ID</code> / <code>MU_GITHUB_APP_SLUG</code></td><td>GitHub App 的数字 id 与 URL slug</td></tr>
+<tr><td><code>MU_GITHUB_APP_PRIVATE_KEY</code></td><td>App 私钥 PEM 全文（含 BEGIN/END 行）</td></tr>
+<tr><td><code>MU_GITHUB_WEBHOOK_SECRET</code></td><td>webhook 签名密钥，须与 App 设置页一致。<code>openssl rand -hex 32</code></td></tr>
+<tr><td><code>MU_GITHUB_OAUTH_CLIENT_ID</code> / <code>..._SECRET</code></td><td>OAuth App（用户登录用；与 GitHub App 是两个东西）</td></tr>
+<tr><td><code>MU_GITHUB_OAUTH_CALLBACK_URL</code></td><td><code>https://你的域名/api/mu/auth/oauth/github/callback</code></td></tr>
+<tr><td><code>MU_GITHUB_APP_INSTALL_CALLBACK_URL</code></td><td><code>https://你的域名/multiuser</code></td></tr>
+<tr><td><code>MU_LLM_PROVIDER/BASE_URL/MODEL/API_KEY</code></td><td>openai_compatible 端点四件套；key 仅存 env</td></tr>
+</table>
+
+<h2>条件项</h2>
+<table>
+<tr><th>变量</th><th>说明</th></tr>
+<tr><td><code>MERGEPILOT_MODEL_CACHE_DIR</code></td><td>cchain：模型缓存目录（默认卷内 /app/rag-models）</td></tr>
+<tr><td><code>MERGEPILOT_PROVIDER_ATTEST_URL</code></td><td>cchain：供应商证明端点（自建静态 nginx 即可）</td></tr>
+<tr><td><code>MERGEPILOT_RUN_BINDING_KEYSTORE</code></td><td>cchain：keystore 目录（默认卷内 /app/keystore）</td></tr>
+<tr><td><code>RAGTRIAL_EMBED_MODEL_ID / _DIMS / _ENDPOINT / _EXPECTED_MANIFEST</code></td><td>RAG 嵌入（默认指向 compose 内 bge-m3 sidecar）</td></tr>
+<tr><td><code>RAGTRIAL_ALLOWED_SCOPES</code></td><td>RAG 允许的仓库范围白名单</td></tr>
+</table>
+
+<h2>可选</h2>
+<table>
+<tr><th>变量</th><th>说明</th></tr>
+<tr><td><code>CONSOLE_PORT</code> / <code>WEBHOOK_INGRESS_PORT</code></td><td>宿主端口（默认 48500 / 48590，均绑定 127.0.0.1）</td></tr>
+<tr><td><code>MU_EXECUTOR</code> + <code>MU_AGENTTEAMS_*</code></td><td>AgentTeams 执行器接入（不填则该面 NOT_WIRED 如实降级）</td></tr>
+</table>
+
+<h2>一次性管理员引导</h2>
+<p>空库首个管理员：在 <code>.env</code> 临时加入 <code>MU_ALLOW_FIXTURE_LOGIN=1</code>
+并设置 <code>CONSOLE_PILOT_USER</code>/<code>CONSOLE_PILOT_PASSWORD</code>，
+经 <code>/api/mu/auth/login</code> 完成初始化后<strong>立即删除该变量并重启</strong>
+（该登录面仅应存在于初始化窗口）。</p>
+
+<div class="warn">compose 模板对 <code>POSTGRES_PASSWORD</code> 使用 <code>:?</code> 必填守卫——
+缺失时 <code>docker compose config</code> 即失败，属预期防呆。</div>
+</main>
+<footer class="site">MergePilot 0.2.0-beta.6-rc.15 · Apache-2.0</footer>
+</body>
+</html>

@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>多租户与 webhook · MergePilot</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<header class="site">
+  <span class="brand">MergePilot</span>
+  <a href="index.html">首页</a><a href="quickstart.html">快速开始</a><a href="selfhost-docker.html">Docker 自托管</a><a href="build-from-source.html">源码构建</a><a href="config-reference.html">配置参考</a><a href="multitenant-webhook.html">多租户与 webhook</a><a href="security.html">安全加固</a><a href="upgrade-rollback.html">升级与回滚</a><a href="downloads.html">下载与校验</a><a href="limitations.html">已知限制</a>
+</header>
+<main>
+<div class="crumbs"><a href="index.html">首页</a> / 多租户与 webhook</div>
+<h1>多租户与 webhook</h1>
+
+<h2>GitHub App（webhook 来源）</h2>
+<ol>
+<li>GitHub → Settings → Developer settings → GitHub Apps → <strong>New GitHub App</strong>；</li>
+<li>权限最小集（全部只读）：Metadata、Contents、Pull requests、Checks、Statuses、Administration:read；
+   <strong>不申请任何 write 权限</strong>——系统无 merge 权限是设计原则；</li>
+<li>订阅事件五种：<code>installation</code>、<code>installation_repositories</code>、
+   <code>pull_request</code>、<code>check_run</code>、<code>status</code>；</li>
+<li>Webhook URL：<code>https://你的域名/api/mu/github/webhook</code>；
+   secret 填 <code>MU_GITHUB_WEBHOOK_SECRET</code> 的同值；</li>
+<li>把 App ID 与私钥填入 <code>.env</code> 的 <code>MU_GITHUB_APP_ID</code> /
+   <code>MU_GITHUB_APP_PRIVATE_KEY</code>。</li>
+</ol>
+
+<h2>OAuth App（用户登录）</h2>
+<p>另建一个 OAuth App（Settings → Developer settings → OAuth Apps），
+callback 填 <code>https://你的域名/api/mu/auth/oauth/github/callback</code>，
+凭据填 <code>MU_GITHUB_OAUTH_CLIENT_ID/SECRET</code>。</p>
+
+<h2>installation → 租户注册</h2>
+<p>用户安装 App 后跳转回控制台，系统把该 installation 注册到<strong>当前会话所属租户</strong>。
+事件租户随 installation 走：不同租户应使用不同 GitHub 账号/组织安装，
+同名仓库天然按租户隔离。</p>
+
+<h2>邀请与认领</h2>
+<ol>
+<li>管理员按目标用户的 <strong>GitHub 数字 user id</strong> 创建邀请
+   （<code>POST /api/mu/invitations</code>，role + TTL）；</li>
+<li>目标用户走 GitHub OAuth 登录，系统按 subject 自动认领唯一待认领邀请；</li>
+<li>同一 subject 多条待认领邀请时会显式拒绝（<code>invitation_ambiguous</code>），
+   不会静默选择；</li>
+<li><code>platform_admin</code> 不可经邀请授予——API 403、claim 拒绝、DB 约束三层拦截。</li>
+</ol>
+
+<h2>撤权语义</h2>
+<p>管理员撤销成员后，该用户所有会话<strong>下一请求立即 403</strong>
+（逐请求活成员校验）；其租户内数据保留不动。</p>
+
+<h2>事件→审查管线</h2>
+<pre><code>PR 事件 → webhook(HMAC 验签+投递去重) → 事件入队 → 自动 consumer
+→ 审查流水线 → check run 回写 PR → 结论与证据落租户</code></pre>
+<p>投递去重：同一 delivery 重复投递返回 <code>duplicate</code>，不重复处理；
+check run 回写为系统对 GitHub 的唯一"写"（内容只读原则不变）。</p>
+</main>
+<footer class="site">MergePilot 0.2.0-beta.6-rc.15 · Apache-2.0</footer>
+</body>
+</html>

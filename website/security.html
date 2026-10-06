@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>安全加固 · MergePilot</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<header class="site">
+  <span class="brand">MergePilot</span>
+  <a href="index.html">首页</a><a href="quickstart.html">快速开始</a><a href="selfhost-docker.html">Docker 自托管</a><a href="build-from-source.html">源码构建</a><a href="config-reference.html">配置参考</a><a href="multitenant-webhook.html">多租户与 webhook</a><a href="security.html">安全加固</a><a href="upgrade-rollback.html">升级与回滚</a><a href="downloads.html">下载与校验</a><a href="limitations.html">已知限制</a>
+</header>
+<main>
+<div class="crumbs"><a href="index.html">首页</a> / 安全加固</div>
+<h1>安全加固清单</h1>
+
+<h2>内建安全基线（默认已生效）</h2>
+<ul>
+<li>会话 Cookie：<code>HttpOnly + Secure + SameSite=Lax</code>——明文 HTTP 上不传输；</li>
+<li>管理面 CSRF 双提交校验；未认证一律 401/403，同形响应不泄露细节；</li>
+<li>webhook HMAC-SHA256 验签 + delivery 一次性去重（重复投递幂等）；</li>
+<li><code>platform_admin</code> 不可经邀请授予（API/claim/DB 三层拒绝）；</li>
+<li>secrets 仅存环境变量与 keystore，绝不入库、入日志、入审计；</li>
+<li>数据库/keystore/模型卷不发布端口（仅内部网络可达）。</li>
+</ul>
+
+<h2>部署侧必须项</h2>
+<ol>
+<li><strong>TLS 反向代理</strong>（强制）：Caddy 最小示例——
+<pre><code>your.domain {
+  reverse_proxy 127.0.0.1:48500
+}</code></pre>
+   nginx 等价：终止 TLS 后 <code>proxy_pass http://127.0.0.1:48500;</code>；
+   HTTP→HTTPS 301 跳转；禁止明文承载已认证会话。</li>
+<li><strong>入口限流</strong>：反代层对 <code>/api/*</code> 限 60 req/min/IP、
+   webhook 路径 120 req/min/IP（Caddy <code>rate_limit</code> 插件或 nginx
+   <code>limit_req</code>）；webhook 的 HMAC 验签不因限流关闭。</li>
+<li><strong>防火墙</strong>：仅放行反代端口；48500/48590 保持回环绑定；
+   数据库端口不对任何外部网络开放。</li>
+<li><strong>最小暴露面</strong>：webhook-ingress 只放行 webhook 与 health；
+   不要把管理面（/multiuser、其余 /api/*）直接暴露公网。</li>
+</ol>
+
+<h2>secrets 纪律</h2>
+<ul>
+<li><code>.env</code> 与 App 私钥权限 0600，不入 git（仓库 .gitignore 已覆盖 .env）；</li>
+<li>轮换：<code>CONSOLE_SESSION_SECRET</code>（全会话失效重登）、
+   keystore（rotate API，旧 key 即刻失效、新 key 即刻生效）；</li>
+<li>日志与审计设计上不含 secrets（webhook 审计仅记 delivery 前缀与 kind）。</li>
+</ul>
+
+<h2>审计与可观测</h2>
+<ul>
+<li>登录/邀请/成员变更/webhook 处理/事件消费全量审计落库；</li>
+<li>cchain 信任链状态变化（READY/BLOCKED）留痕；</li>
+<li><code>/api/health</code> 的 version 字段即运行版本真源。</li>
+</ul>
+
+<h2>升级安全</h2>
+<p>升级前 <code>pg_dump</code>；镜像按 digest 拉取（不用浮动 tag）；
+升级窗口内 consumer 停止期间的投递会在恢复后由 GitHub 重投（幂等）。</p>
+</main>
+<footer class="site">MergePilot 0.2.0-beta.6-rc.15 · Apache-2.0</footer>
+</body>
+</html>
