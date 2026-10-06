@@ -3,6 +3,21 @@
 本文件记录 MergePilot 用户可感知的变更。格式参照 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)；
 版本号遵循语义化前缀的 beta 通道（`0.2.0-beta.6-rc.N`）。
 
+## [0.2.0-beta.6-rc.15] — 2026-10-06
+
+### Fixed
+- **概览权威 head 元数据（PR #325）**：`mu-console-api` overview 响应携带权威 current head、
+  分支保护按当前头判定、缺失/失败/零值三类分离——消除首屏"数据可信度"缺口（陈旧 head 误显示）。
+
+### Added
+- 批 1 发布资产：`CHANGELOG.md`、`deploy/selfhost/` 自托管套件
+  （compose 模板 / .env.example / preflight 一键检查 / webhook-only ingress / 用户面 README）、
+  版本号一致性（构建期 ARG 与运行时 fallback 同步）。
+
+### Notes
+- 本版本由多租户四项 READY 的 rc.14 谱系 + #325 修复组成；
+  生产换容器部署与 GHCR 不可变 digest 发布另行批准（rc.15 晋级流程中）。
+
 ## [0.2.0-beta.6-rc.14] — 2026-10-06
 
 ### Added
