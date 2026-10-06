@@ -22,7 +22,7 @@ curl http://127.0.0.1:48500/api/health
 | 途径 | 命令 | 校验 |
 |---|---|---|
 | GHCR | `docker pull ghcr.io/nghqqa/mergepilot-console@sha256:b1c95275…fbb0a` | RepoDigest == 该 digest |
-| 离线 tar | `docker load -i mergepilot-console-rc16.tar` | tar SHA256 = `164b2713331319d7ab796a039a6c6b90f4eaa525c13dfccf136be6cc482b16b0`；load 后 image ID = `b1c95275…` |
+| 离线 tar | `docker load -i mergepilot-console-rc16.tar` | tar SHA256 = `164b2713331319d7ab796a039a6c6b90f4eaa525c13dfccf136be6cc482b16b0`；load 后 image ID = `c4edb692…443e`（`b1c95275…` 为 GHCR manifest digest，二者不互替） |
 | 源码构建 | 见下节 | image ID 应可复现（同 commit/同构建参数） |
 
 镜像内置 `MERGEPILOT_VERSION=0.2.0-beta.6-rc.16`（`/api/health` version 字段即真源）。
@@ -205,6 +205,69 @@ schtasks /Create /TN "MergePilot-Attest" /SC ONSTART /RU SYSTEM ^
    同一 subject 存在多条待认领邀请时会显式拒绝（`invitation_ambiguous`）。
 3. **隔离语义**：事件租户跟 installation 走；八张业务表按 tenant_id 强制收窄；
    撤权后同会话下一请求即 403；`platform_admin` 永不可经邀请授予（API/claim/DB 三层拒绝）。
+
+## 首个平台管理员初始化（生产）
+
+> 依据 rc.16 源码：`mu/store.mjs bootstrap()` 启动即创建 `default` 租户与 **fixture 引导操作员**
+> （默认登录名 `pilot-admin`，provider=`fixture`，仅 `MU_ALLOW_FIXTURE_LOGIN=1` 时可登录——生产保持关闭）；
+> OAuth 回调只接受**事先创建的邀请**（无邀请 → `not_invited`，无公共自动注册）；
+> 邀请永不授予 `platform_admin`（API 校验 / claim 守卫 / DB CHECK 三层拒绝）。
+> 因此**首个平台管理员由部署者在数据库直授**——这是设计行为，不是缺陷。
+
+**前提**：console 已启动（`docker compose ps` 全部 healthy）、schema 已初始化至 v23；
+已知自己的 GitHub 数字 user id（`https://api.github.com/users/<login>` 返回 JSON 的 `id` 字段）。
+
+**步骤（DBA 执行，一次事务；`<login>`/`<id>` 换成你的值）：**
+
+```bash
+docker exec -it mergepilot-postgres-1 psql -U postgres -d mu
+```
+
+```sql
+BEGIN;
+-- 1) 建用户（login 仅展示用；身份键 = 下方 subject）
+INSERT INTO mu.app_user (login, display_name)
+VALUES ('<login>', '<显示名>')
+ON CONFLICT (login) DO NOTHING;
+-- 2) 绑定 GitHub 身份（provider/subject 必须与 OAuth 签发格式一致）
+INSERT INTO mu.external_identity (user_id, provider, subject)
+SELECT u.user_id, 'github-oauth', 'github-oauth:<id>'
+FROM mu.app_user u WHERE u.login = '<login>'
+ON CONFLICT (provider, subject) DO NOTHING;
+-- 3) 校验：该 subject 必须恰好解析回一行且 login 正确——否则 ROLLBACK;
+SELECT u.login, i.subject FROM mu.app_user u
+JOIN mu.external_identity i ON i.user_id = u.user_id
+WHERE i.provider = 'github-oauth' AND i.subject = 'github-oauth:<id>';
+-- 4) 直授 default 租户 platform_admin（UNIQUE(tenant_id,user_id) + NOT EXISTS，幂等）
+INSERT INTO mu.membership (tenant_id, user_id, role)
+SELECT t.tenant_id, i.user_id, 'platform_admin'
+FROM mu.tenant t
+JOIN mu.external_identity i ON i.provider = 'github-oauth' AND i.subject = 'github-oauth:<id>'
+WHERE t.slug = 'default'
+  AND NOT EXISTS (SELECT 1 FROM mu.membership m
+                  WHERE m.tenant_id = t.tenant_id AND m.user_id = i.user_id);
+COMMIT;
+```
+
+**验证**：
+
+1. 库内：`SELECT u.login, m.role, m.state FROM mu.membership m JOIN mu.app_user u ON u.user_id = m.user_id WHERE m.role = 'platform_admin';` —— 应看到你的 login 且 `state=active`；
+2. 登录：浏览器 GitHub OAuth 登录后，右上角应显示「组织 default · 平台管理员」；`GET /api/mu/session` 的 `role` 为 `platform_admin`。
+
+**回退 / 收权**（后续成员一律走邀请，见「多租户与 webhook」与 BETA-GUIDE §6.3，勿再直授）：
+
+```sql
+-- 角色给错：降级为最小必要角色
+UPDATE mu.membership SET role = 'maintainer'
+WHERE tenant_id = (SELECT tenant_id FROM mu.tenant WHERE slug = 'default')
+  AND user_id = (SELECT user_id FROM mu.app_user WHERE login = '<login>');
+-- 彻底移除成员（可逆：重新直授或改走邀请）
+DELETE FROM mu.membership
+WHERE tenant_id = (SELECT tenant_id FROM mu.tenant WHERE slug = 'default')
+  AND user_id = (SELECT user_id FROM mu.app_user WHERE login = '<login>');
+```
+
+**注意**：直接 SQL 不产生应用审计事件（DBA 面操作），请在你的变更记录中自行留痕。
 
 ## 升级与回滚
 
