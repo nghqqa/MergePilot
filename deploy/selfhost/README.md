@@ -61,6 +61,17 @@ docker build -f docker/Dockerfile.canonical-console \
 - GitHub App + OAuth App：**两个都要建**（前者收 webhook，后者做用户登录）；
 - cchain 三键（`MERGEPILOT_MODEL_CACHE_DIR` / `MERGEPILOT_PROVIDER_ATTEST_URL` /
   `MERGEPILOT_RUN_BINDING_KEYSTORE`）：可选，三项不全时 cchain=BLOCKED（fail-closed 如实呈现）；
+- cchain 引导（首次转 READY 需三步，缺一会 BLOCKED）：
+  ① 模型目录放入 bge-m3 文件与安装流程生成的 `manifest.json`（sidecar 按 `BGE_MANIFEST` 校验）；
+  ② `fxv.audit_events` 表需初始化（cchain 审计真写的前提）——
+     `CREATE SCHEMA IF NOT EXISTS fxv; CREATE TABLE IF NOT EXISTS fxv.audit_events
+     (id bigserial PRIMARY KEY, attempt_id text, kind text NOT NULL, from_state text,
+      to_state text, actor text NOT NULL, reason text, meta jsonb,
+      created_at timestamptz NOT NULL DEFAULT now());`
+  ③ keystore 首把种子密钥（rotate 拒绝空 keystore——鸡生蛋由种子打破）：
+     生成 `{"key_id":"rk-bootstrap-1","secret":"<openssl rand -hex 32>","created_at":"<ISO>",
+     "expires_at":"<+90天 ISO>","revoked":false}` 写入 keystore 卷，**属主与权限须匹配容器
+     运行用户（uid 1000:1000，目录 770/文件 600）**；随后经 rotate API 轮换出正式在役密钥；
 - RAG 四键：可选，不填则 RAG=NOT_WIRED 如实降级。
 
 ## 多租户与 webhook
