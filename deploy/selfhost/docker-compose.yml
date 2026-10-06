@@ -53,7 +53,7 @@ services:
     networks: [internal]
 
   console:
-    # 官方镜像（GHCR 不可变 digest；与 v0.2.0-beta.6-rc.15 源码 tag 同源）
+    # 官方镜像（GHCR 不可变 digest；与 v0.2.0-beta.6-rc.16 源码 tag 同源）
     image: ghcr.io/nghqqa/mergepilot-console@sha256:b1c95275750b3b7f6c836235e09659bff6e575aa93d5f041350b9aebe4bfbb0a
     restart: unless-stopped
     ports:
