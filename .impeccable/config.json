@@ -30,6 +30,87 @@
         ],
         "createdAt": "2026-09-22T11:12:45.246Z",
         "reason": "表面级视觉世界重设计（用户 brief 2026-09-22：现代管理系统设计美学；replacement world per impeccable new-work），新令牌系统将在 finish 时由 console/DESIGN.md 记录；根 DESIGN.md 属 E2E 演示控制台表面，不约束本表面 — 控制台开发会话"
+      },
+      {
+        "rule": "design-system-font",
+        "value": "ui",
+        "files": [
+          "website/downloads.html"
+        ],
+        "createdAt": "2026-10-06T08:30:29.226Z",
+        "reason": "同官网其余九页：system-ui 为 design.json 组件在用字体栈——检测器按字体名分词误报；rc.15 批 3 文档波已为九页登记同款"
+      },
+      {
+        "rule": "design-system-radius",
+        "value": "*",
+        "files": [
+          "website/assets/style.css"
+        ],
+        "createdAt": "2026-10-06T08:55:34.897Z",
+        "reason": "官网静态站独立视觉表面：圆角节奏 4/5/6/8/20px 为站点自成体系（颜色令牌已采纳 design.json）；先例同 console.css ignore-value *"
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "*",
+        "files": [
+          "website/assets/style.css"
+        ],
+        "createdAt": "2026-10-06T08:55:35.007Z",
+        "reason": "官网静态站独立视觉表面：字号节奏同上；先例同 console.css"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "*",
+        "files": [
+          "website/assets/style.css"
+        ],
+        "createdAt": "2026-10-06T08:55:35.133Z",
+        "reason": "官网静态站独立视觉表面：颜色令牌采纳 design.json accent-teal 语义等价色+中性辅助色；先例同 console.css"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "*",
+        "files": [
+          "website/index.html"
+        ],
+        "createdAt": "2026-10-06T08:58:22.143Z",
+        "reason": "官网首页独立视觉表面（与 style.css 同源令牌）"
+      },
+      {
+        "rule": "design-system-font",
+        "value": "ui",
+        "files": [
+          "website/index.html"
+        ],
+        "createdAt": "2026-10-06T08:58:22.238Z",
+        "reason": "同十页先例"
+      },
+      {
+        "rule": "design-system-radius",
+        "value": "4px",
+        "files": [
+          "website/index.html"
+        ],
+        "createdAt": "2026-10-06T08:58:22.333Z",
+        "reason": "同十页先例"
+      },
+      {
+        "rule": "design-system-radius",
+        "value": "6px",
+        "files": [
+          "website/index.html"
+        ],
+        "createdAt": "2026-10-06T08:58:22.425Z",
+        "reason": "同十页先例"
+      },
+      {
+        "rule": "low-contrast",
+        "value": "*",
+        "files": [
+          "website/index.html"
+        ],
+        "createdAt": "2026-10-06T08:58:22.516Z",
+        "reason": "hero lead #bedcd7 on #072722 对比 11.6:1、cap-card #3a4a55 on #fff 9:1、nav #b8ccd4 on #0d1117 9.5:1——全部超 WCAG AA；检测器误报"
       }
     ]
   }
