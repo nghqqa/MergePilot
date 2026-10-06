@@ -1,6 +1,6 @@
-# MergePilot rc.15 自托管部署
+# MergePilot rc.16.1 自托管部署
 
-> 版本：`0.2.0-beta.6-rc.16` · 镜像 digest：`sha256:b1c95275750b3b7f6c836235e09659bff6e575aa93d5f041350b9aebe4bfbb0a`
+> 版本：`0.2.0-beta.6-rc.16.1` · 镜像 digest：`sha256:b1c95275750b3b7f6c836235e09659bff6e575aa93d5f041350b9aebe4bfbb0a`
 > 官方镜像已在 GHCR 发布（不可变 digest）。离线 tar 与源码构建为等效替代途径，校验方式见下。
 > 供应链档案：SBOM（CycloneDX，35 组件）、trivy 扫描（漏洞 0/秘密 0）、离线 tar SHA256 与源码 tag 见「镜像获取与校验」。
 
@@ -27,7 +27,7 @@ curl http://127.0.0.1:48500/api/health
 
 镜像内置 `MERGEPILOT_VERSION=0.2.0-beta.6-rc.16`（`/api/health` version 字段即真源）。
 
-**供应链档案（rc.15）**：
+**供应链档案（rc.16.1）**：
 
 - SBOM：CycloneDX 1.5，**35 组件**（`rc16-sbom.cdx.json`，随发行版发布）；
 - 漏洞/秘密扫描（trivy 0.74，ghcr.io 官方漏洞库）：**vulnerabilities=0、secrets=0**；
@@ -81,7 +81,7 @@ docker build -f docker/Dockerfile.canonical-console \
    check_run、status）+ webhook URL 指向你的 ingress（默认 `http://<host>:48590/api/mu/github/webhook`，
    对外部署请换成 https 域名）；**务必配置与 `MU_GITHUB_WEBHOOK_SECRET` 一致的签名密钥**。
 2. **installation 注册**：安装 App 后跳转回控制台即注册到当前会话所属租户；
-   租户成员的邀请认领（rc.14 起泛化、rc.15 持续）支持既有用户经邀请进入其他租户；
+   租户成员的邀请认领（rc.14 起泛化、rc.16 持续）支持既有用户经邀请进入其他租户；
    同一 subject 存在多条待认领邀请时会显式拒绝（`invitation_ambiguous`）。
 3. **隔离语义**：事件租户跟 installation 走；八张业务表按 tenant_id 强制收窄；
    撤权后同会话下一请求即 403；`platform_admin` 永不可经邀请授予（API/claim/DB 三层拒绝）。
@@ -96,7 +96,7 @@ docker compose --env-file .env pull console && docker compose --env-file .env up
 
 **schema 只前进不降级**：新版可能自动前移 `mu.schema_migrations`；回滚镜像后旧代码
 对新列/新表无感知（历史兼容已验证），但**不可跨过 schema 破坏性操作**——升级前
-`pg_dump` 一份（见下）。全部历史迁移为 additive（rc.5→rc.15 实证）。
+`pg_dump` 一份（见下）。全部历史迁移为 additive（rc.5→rc.16 实证）。
 
 ## 备份
 
@@ -128,7 +128,7 @@ docker cp mergepilot-postgres-1:/tmp/mu.backup ./mu-$(date +%F).backup
 | cchain=BLOCKED | 三键是否齐全；attestation 端点可达性；keystore 是否已 rotate 出在役 key |
 | 登录后 403 membership_inactive | 会话绑定租户的成员关系已被撤——重新登录会落到其余 active 租户 |
 
-## 已知限制（rc.15）
+## 已知限制（rc.16.1）
 
 - 无租户切换端点/UI（多租户用户以对应租户邀请重新登录）；
 - 私有 GitHub App 仅所有者账号可安装；多租户 webhook 需公开化 App 或每租户独立 App；
