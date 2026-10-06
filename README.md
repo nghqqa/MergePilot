@@ -50,12 +50,12 @@ MergePilot 是一台跑在你自己机器上的 PR 安全审查工作台：通�
 ### 路径 A：预构建发行包（2C2G）
 
 ```bash
-cd distribution/docker
-docker load -i mp-console-image.tar   # 导入离线镜像（约 60MB）
+cd deploy/selfhost
 cp .env.example .env
-# 编辑 .env 填入生成的密钥（参见 BETA-GUIDE）
-docker compose up -d
-# 访问 http://127.0.0.1:4730
+# 编辑 .env 填入生成的密钥（参见 docs/BETA-GUIDE.md 与 deploy/selfhost/README.md）
+node preflight.mjs                    # 一键只读检查
+docker compose --env-file .env up -d  # console 拉取 GHCR 官方 digest（rc.16 = b1c95275…）
+# 访问 http://127.0.0.1:48500
 ```
 
 ### 路径 B：源码自建 + GitHub App + 本地 RAG（4C8G）

@@ -21,8 +21,8 @@ curl http://127.0.0.1:48500/api/health
 
 | 途径 | 命令 | 校验 |
 |---|---|---|
-| GHCR（推送生效后） | `docker pull ghcr.io/nghqqa/mergepilot-console@sha256:f0b30fd1…3897` | RepoDigest == 该 digest |
-| 离线 tar | `docker load -i mergepilot-console-rc16.tar` | tar SHA256 = `6d1341f7f289318be986dc8aae16e90e122bcd41b897cf0ed312a2c60ecd6750`；load 后 image ID = `f0b30fd1…` |
+| GHCR | `docker pull ghcr.io/nghqqa/mergepilot-console@sha256:b1c95275…fbb0a` | RepoDigest == 该 digest |
+| 离线 tar | `docker load -i mergepilot-console-rc16.tar` | tar SHA256 = `164b2713331319d7ab796a039a6c6b90f4eaa525c13dfccf136be6cc482b16b0`；load 后 image ID = `b1c95275…` |
 | 源码构建 | 见下节 | image ID 应可复现（同 commit/同构建参数） |
 
 镜像内置 `MERGEPILOT_VERSION=0.2.0-beta.6-rc.16`（`/api/health` version 字段即真源）。
@@ -31,7 +31,8 @@ curl http://127.0.0.1:48500/api/health
 
 - SBOM：CycloneDX 1.5，**35 组件**（`rc16-sbom.cdx.json`，随发行版发布）；
 - 漏洞/秘密扫描（trivy 0.74，ghcr.io 官方漏洞库）：**vulnerabilities=0、secrets=0**；
-- 构建来源：源码 tag `v0.2.0-beta.6-rc.16` = commit `a68057f28b`（与镜像 digest `f0b30fd1…3897` 同源）；
+- 构建来源：源码 tag `v0.2.0-beta.6-rc.16` = commit `a68057f28b`（与镜像 digest `b1c95275…fbb0a` 同源）；
+  发行 tag `v0.2.0-beta.6-rc.16.1` = `31186131` 仅追加 CHANGELOG 与官网页，**运行时代码与镜像零差异**；
 - 基础镜像：`node@sha256:0a7108bf…`（Dockerfile 钉死）。
 
 > `48590` 端口与 `beta-webhook-proxy` 容器是 MergePilot 开发方内部测试环境的组件，
