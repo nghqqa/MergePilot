@@ -1,0 +1,115 @@
+# MergePilot rc.14 自托管模板（canonical 拓扑：console + postgres(pgvector) + bge-m3 sidecar + webhook ingress）
+#
+# 使用前提：cp .env.example .env 并按注释填写（至少必填段）。
+# 启动：docker compose --env-file .env up -d
+# 升级：改 CONSOLE_IMAGE 引用后 docker compose pull && docker compose up -d（数据卷不动；schema 只前进不降级）
+# 回滚：把 CONSOLE_IMAGE 改回旧 digest/版本引用再 up -d（见 README「升级与回滚」）
+#
+# 安全基线（保持，勿放宽）：
+#   - 仅 console 与 webhook-ingress 发布端口，且默认绑定 127.0.0.1（对外暴露请前置 TLS 反代，见 README 安全节）
+#   - postgres / bge-sidecar 不发布任何端口（仅 internal 网络可达）
+#   - 全部服务 restart: unless-stopped
+#   - 镜像引用：console 走 digest 占位（GHCR 推送后即可 pull）；pgvector 与 bge-sidecar 为已推送的不可变 digest
+#   - cchain 三键为可选：未满足时 cchain=BLOCKED（fail-closed 如实呈现，不影响其余功能）
+
+name: mergepilot
+
+services:
+  postgres:
+    # pgvector 扩展必需；digest 钉死（manifest），升级需显式改引用
+    image: pgvector/pgvector@sha256:a36250871de0833b8757561c72f2477ef1ddd1101afa4e617fb552e0de514c6b
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?请在 .env 设置 POSTGRES_PASSWORD}
+      POSTGRES_DB: mu
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d mu"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    networks: [internal]
+    # 安全基线：不发布端口（仅 internal 网络可达）
+
+  bge-m3:
+    # RAG 检索嵌入 sidecar（可选：不接 RAG 可整段注释，console 对 NOT_WIRED 如实降级）
+    image: ghcr.io/nghqqa/mergepilot-bge-sidecar@sha256:a41d6cad35cff7236f091af491aa5f17a7e69a8258a134c350b6a63de1c5f17f
+    restart: unless-stopped
+    volumes:
+      - model-cache:/models:ro
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://127.0.0.1:8080/health',timeout=3)\" || exit 1"]
+      interval: 20s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
+    networks: [internal]
+
+  console:
+    # ⚠ 待 GHCR 推送：下方 digest 引用在推送生效前无法 pull。
+    #   推送前请按 README「从源码构建」以同版本号自建，并用
+    #   docker tag <本地镜像> ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.14 替换引用。
+    image: ghcr.io/nghqqa/mergepilot-console@sha256:d6dd04cab60742964d35c41d7bee1045a8950dbeeb7bbfd976d0320ab170a0ad
+    restart: unless-stopped
+    ports:
+      # 安全基线：仅绑定回环。对外暴露必须前置 TLS 反代（README 安全节）。
+      - "127.0.0.1:${CONSOLE_PORT:-48500}:4730"
+    env_file:
+      - .env
+    environment:
+      # DSN 由 compose 拼接（密码不出现在 .env 之外的第二处）
+      CONSOLE_PG_DSN: postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/mu
+      CONSOLE_HOST: 0.0.0.0
+      CONSOLE_PORT: 4730
+      CONSOLE_EVIDENCE_ROOT: /app/evidence
+      NODE_ENV: production
+      MU_MODE: multiuser
+      MU_REVIEW_ARCH: v2
+      # cchain 三键（可选：全部留空则 cchain=BLOCKED，如实呈现）
+      MERGEPILOT_MODEL_CACHE_DIR: ${MERGEPILOT_MODEL_CACHE_DIR:-/app/rag-models}
+      MERGEPILOT_PROVIDER_ATTEST_URL: ${MERGEPILOT_PROVIDER_ATTEST_URL:-}
+      MERGEPILOT_RUN_BINDING_KEYSTORE: ${MERGEPILOT_RUN_BINDING_KEYSTORE:-/app/keystore}
+      # RAG 嵌入（sidecar 在 internal 网络内的固定地址）
+      RAGTRIAL_EMBED_MODEL_ID: ${RAGTRIAL_EMBED_MODEL_ID:-bge-m3}
+      RAGTRIAL_EMBED_DIMS: ${RAGTRIAL_EMBED_DIMS:-1024}
+      RAGTRIAL_EMBED_ENDPOINT: http://bge-m3:8080/embed
+      RAGTRIAL_EMBED_EXPECTED_MANIFEST: ${RAGTRIAL_EMBED_EXPECTED_MANIFEST:-}
+      RAGTRIAL_ALLOWED_SCOPES: ${RAGTRIAL_ALLOWED_SCOPES:-}
+    volumes:
+      - evidence:/app/evidence
+      - model-cache:/app/rag-models
+      - keystore:/app/keystore
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [internal]
+    # 健康检查已内置于镜像（GET /api/health，30s 节拍）
+
+  webhook-ingress:
+    # Wave 3.9 webhook-only ingress：仅放行 POST /api/mu/github/webhook 与 GET /api/health，
+    # 其余一律 404。公网入口请前置 TLS 反代并把其 upstream 指向本服务的 8080。
+    image: node:22-alpine
+    restart: unless-stopped
+    user: node
+    volumes:
+      - ./webhook-proxy.js:/proxy.js:ro
+    command: ["node", "/proxy.js"]
+    ports:
+      - "127.0.0.1:${WEBHOOK_INGRESS_PORT:-48590}:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      console:
+        condition: service_healthy
+    networks: [internal]
+
+volumes:
+  pgdata:
+  evidence:
+  model-cache:
+  keystore:
+
+networks:
+  internal:
+    driver: bridge
