@@ -3,102 +3,136 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>MergePilot — 多 Agent PR 审修闭环 · 自托管发行版</title>
+<meta name="description" content="MergePilot：自托管多 Agent PR 审修闭环。AI 复现、Skill 算事实、RAG 查规范——你的仓库、密钥与数据留在自己的服务器上。">
+<title>MergePilot — 多 Agent PR 审修闭环 · 自托管</title>
 <link rel="stylesheet" href="assets/style.css">
 </head>
 <body>
-<header class="topnav">
-  <a class="brand" href="index.html" aria-current="page">MergePilot</a>
-  <span class="grp-label">产品</span>
-  <span class="grp"><a href="index.html" aria-current="page">首页</a></span>
-  <span class="grp-label">部署</span>
-  <span class="grp"><a href="quickstart.html">快速开始</a><a href="selfhost-docker.html">Docker 自托管</a><a href="build-from-source.html">源码构建</a></span>
-  <span class="grp-label">文档</span>
-  <span class="grp"><a href="config-reference.html">配置参考</a><a href="multitenant-webhook.html">多租户与 webhook</a><a href="upgrade-rollback.html">升级与回滚</a><a href="limitations.html">已知限制</a></span>
-  <span class="grp-label">安全</span>
-  <span class="grp"><a href="security.html">安全加固</a></span>
-  <span class="grp-label">下载</span>
-  <span class="grp"><a href="downloads.html">下载与校验</a></span>
-</header>
-<main>
+<nav class="nav" aria-label="主导航">
+  <a class="nav-brand" href="index.html">MergePilot</a>
+  <span class="nav-sec">产品</span>
+  <a href="index.html" aria-current="page">首页</a>
+  <span class="nav-sec">部署</span>
+  <a href="quickstart.html">快速开始</a>
+  <a href="selfhost-docker.html">Docker</a>
+  <a href="build-from-source.html">源码</a>
+  <span class="nav-sec">文档</span>
+  <a href="config-reference.html">配置</a>
+  <a href="multitenant-webhook.html">多租户</a>
+  <a href="upgrade-rollback.html">升级</a>
+  <a href="limitations.html">限制</a>
+  <span class="nav-sec">安全</span>
+  <a href="security.html">安全</a>
+  <span class="nav-sec">发布</span>
+  <a href="downloads.html">下载</a>
+</nav>
+
 <section class="hero">
-  <div class="hero-inner">
-    <span class="ver-chip">v0.2.0-beta.6-rc.16.1 · Apache-2.0 · 自托管</span>
-    <h1>PR 一提交，审查自动完成——<br>合并权永远在你手里</h1>
-    <p class="lead">MergePilot 是一个自托管的多 Agent PR 审修闭环系统。AI 独立复现问题、确定性 Skill 算事实、RAG 查规范，结论以 check run 回写 PR——而你的仓库、密钥与数据始终留在你自己的服务器上。</p>
-    <div class="cta-row">
-      <a class="btn btn-primary" href="quickstart.html">三分钟快速开始</a>
-      <a class="btn btn-outline" href="downloads.html">下载发行版</a>
-      <a class="btn btn-outline" href="build-from-source.html">从源码构建</a>
+  <div class="hero-badge">v0.2.0-beta.6-rc.16.1 · Apache-2.0 · 开源自托管</div>
+  <h1>PR 一提交，审查自动完成。<br><em>合并权永远归维护者。</em></h1>
+  <p class="lead">MergePilot 是自托管的多 Agent PR 审修闭环。AI 独立复现、确定性 Skill 算事实、RAG 查规范——结论以 check run 回写。你的仓库、密钥与数据，始终在你自己的服务器上。</p>
+  <div class="cta">
+    <a class="btn btn-primary" href="quickstart.html">三分钟快速开始</a>
+    <a class="btn btn-outline" href="downloads.html">下载 rc.16.1</a>
+    <a class="btn btn-outline" href="build-from-source.html">源码构建</a>
+  </div>
+  <div style="margin-top:32px;max-width:680px;margin-inline:auto;">
+    <div class="btn-ghost" onclick="navigator.clipboard.writeText('docker pull ghcr.io/nghqqa/mergepilot-console@sha256:b1c95275750b3b7f6c836235e09659bff6e575aa93d5f041350b9aebe4bfbb0a')" role="button" tabindex="0" aria-label="复制镜像拉取命令">
+      <span>$ docker pull ghcr.io/nghqqa/mergepilot-console@sha256:b1c952…bb0a</span>
+      <span class="copy">点击复制</span>
     </div>
   </div>
 </section>
 
-<section style="max-width:880px;margin:0 auto;padding:0 24px;">
-  <h2 style="font-size:1.35rem;margin:2.6em 0 .8em;">真实审查管线</h2>
-  <p style="color:#3a4a55;max-width:72ch;">下图展示一条 PR 从提交到结论回写的完整生命周期。每个环节都在你的基础设施内运行。</p>
-  <div class="diagram">
-  <svg viewBox="0 0 720 260" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="webhook 到 consumer 审查管线流程图">
-    <defs>
-      <marker id="arr" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0 0L8 3L0 6Z" fill="#0e6b62"/></marker>
-    </defs>
-    <rect x="10" y="60" width="110" height="44" rx="6" fill="#e6f1ef" stroke="#0e6b62" stroke-width="1.5"/>
-    <text x="65" y="86" text-anchor="middle" font-size="13" fill="#072722" font-weight="600">GitHub PR</text>
-    <line x1="120" y1="82" x2="165" y2="82" stroke="#0e6b62" stroke-width="1.5" marker-end="url(#arr)"/>
-    <rect x="170" y="60" width="110" height="44" rx="6" fill="#e6f1ef" stroke="#0e6b62" stroke-width="1.5"/>
-    <text x="225" y="80" text-anchor="middle" font-size="12" fill="#072722">webhook</text>
-    <text x="225" y="95" text-anchor="middle" font-size="11" fill="#5aa39b">HMAC 验签+去重</text>
-    <line x1="280" y1="82" x2="325" y2="82" stroke="#0e6b62" stroke-width="1.5" marker-end="url(#arr)"/>
-    <rect x="330" y="60" width="110" height="44" rx="6" fill="#e6f1ef" stroke="#0e6b62" stroke-width="1.5"/>
-    <text x="385" y="80" text-anchor="middle" font-size="12" fill="#072722">事件入队</text>
-    <text x="385" y="95" text-anchor="middle" font-size="11" fill="#5aa39b">consumer 自动消费</text>
-    <line x1="440" y1="82" x2="485" y2="82" stroke="#0e6b62" stroke-width="1.5" marker-end="url(#arr)"/>
-    <rect x="490" y="60" width="110" height="44" rx="6" fill="#0e6b62" stroke="#0a524b" stroke-width="1.5"/>
-    <text x="545" y="80" text-anchor="middle" font-size="12" fill="#fff" font-weight="600">多 Agent 审查</text>
-    <text x="545" y="95" text-anchor="middle" font-size="11" fill="#bedcd7">AI+Skill+RAG</text>
-    <line x1="600" y1="82" x2="645" y2="82" stroke="#0e6b62" stroke-width="1.5" marker-end="url(#arr)"/>
-    <rect x="550" y="130" width="130" height="44" rx="6" fill="#fdf3dd" stroke="#8a5a00" stroke-width="1.5"/>
-    <text x="615" y="150" text-anchor="middle" font-size="12" fill="#8a5a00" font-weight="600">check run 回写</text>
-    <text x="615" y="165" text-anchor="middle" font-size="11" fill="#8a5a00">与 CI 并排显示</text>
-    <line x1="545" y1="104" x2="590" y2="128" stroke="#8a5a00" stroke-width="1.5" marker-end="url(#arr)"/>
-    <text x="10" y="215" font-size="12" fill="#4a616e">普通变更自动完成；高危变更停下等人工审批。系统无 merge 权限——合并永远归维护者。</text>
-  </svg>
+<div class="stats" role="table" aria-label="关键指标">
+  <div class="stat"><div class="val">3</div><div class="lbl">Agent 角色</div></div>
+  <div class="stat"><div class="val">v23</div><div class="lbl">Schema 版本</div></div>
+  <div class="stat"><div class="val">0</div><div class="lbl">GHCR 漏洞/秘密</div></div>
+  <div class="stat"><div class="val">8</div><div class="lbl">租户隔离表</div></div>
+  <div class="stat"><div class="val">100%</div><div class="lbl">自托管</div></div>
+</div>
+
+<section class="section">
+  <h2 class="section-title">审查管线</h2>
+  <p class="section-sub">从 PR 提交到 check run 回写——每一步都在你的基础设施内运行。</p>
+  <div class="flow">
+    <svg viewBox="0 0 760 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="webhook 到 consumer 审查管线流程图">
+      <defs><marker id="ar" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0 0L8 3L0 6Z" fill="#2dd4bf"/></marker></defs>
+      <rect x="8" y="42" width="118" height="52" rx="8" fill="#132029" stroke="#1a2e3d" stroke-width="1.5"/>
+      <text x="67" y="65" text-anchor="middle" font-size="13" fill="#e2e8f0" font-weight="600">GitHub PR</text>
+      <text x="67" y="82" text-anchor="middle" font-size="11" fill="#94a3b8">opened / synchronized</text>
+      <line x1="126" y1="68" x2="168" y2="68" stroke="#2dd4bf" stroke-width="1.5" marker-end="url(#ar)"/>
+      <rect x="172" y="42" width="118" height="52" rx="8" fill="#132029" stroke="#1a2e3d" stroke-width="1.5"/>
+      <text x="231" y="63" text-anchor="middle" font-size="13" fill="#e2e8f0" font-weight="600">webhook</text>
+      <text x="231" y="80" text-anchor="middle" font-size="11" fill="#94a3b8">HMAC + dedup</text>
+      <line x1="290" y1="68" x2="332" y2="68" stroke="#2dd4bf" stroke-width="1.5" marker-end="url(#ar)"/>
+      <rect x="336" y="42" width="118" height="52" rx="8" fill="#132029" stroke="#1a2e3d" stroke-width="1.5"/>
+      <text x="395" y="63" text-anchor="middle" font-size="13" fill="#e2e8f0" font-weight="600">consumer</text>
+      <text x="395" y="80" text-anchor="middle" font-size="11" fill="#94a3b8">45s tick · auto</text>
+      <line x1="454" y1="68" x2="496" y2="68" stroke="#2dd4bf" stroke-width="1.5" marker-end="url(#ar)"/>
+      <rect x="500" y="42" width="118" height="52" rx="8" fill="#0a3d3a" stroke="#2dd4bf" stroke-width="2"/>
+      <text x="559" y="63" text-anchor="middle" font-size="13" fill="#5eead4" font-weight="600">multi-Agent</text>
+      <text x="559" y="80" text-anchor="middle" font-size="11" fill="#94a3b8">AI · Skill · RAG</text>
+      <line x1="618" y1="68" x2="660" y2="68" stroke="#2dd4bf" stroke-width="1.5" marker-end="url(#ar)"/>
+      <rect x="640" y="110" width="110" height="52" rx="8" fill="#132029" stroke="#8a5a00" stroke-width="1.5"/>
+      <text x="695" y="131" text-anchor="middle" font-size="13" fill="#fbbf24" font-weight="600">check run</text>
+      <text x="695" y="148" text-anchor="middle" font-size="11" fill="#94a3b8">与 CI 并排显示</text>
+      <line x1="618" y1="94" x2="655" y2="108" stroke="#fbbf24" stroke-width="1.5" marker-end="url(#ar)"/>
+      <text x="8" y="165" font-size="12" fill="#64748b">普通变更自动完成 · 高危变更停下等人工审批 · 系统无 merge 权限</text>
+    </svg>
   </div>
 </section>
 
-<section style="max-width:880px;margin:0 auto;padding:0 24px;">
-  <h2 style="font-size:1.35rem;margin:2.6em 0 .8em;">三件事，定义我们的差异</h2>
-  <div class="cap-grid">
-    <div class="cap-card">
-      <span class="icon">⚡</span>
+<section class="section">
+  <h2 class="section-title">为什么是 MergePilot</h2>
+  <p class="section-sub">三个设计决策，定义我们与通用 CI 工具的差异。</p>
+  <div class="grid">
+    <div class="card">
+      <div class="icon">⚡</div>
       <h3>Webhook 自动审查</h3>
-      <p>GitHub App 安装即接入：PR 事件自动触发多 Agent 审查管线，AI 复现、Skill 算事实、结论以 check run 与 CI 并排回写。</p>
+      <p>GitHub App 安装即接入。PR 事件自动触发多 Agent 审查管线，AI 复现、Skill 算事实、结论以 check run 与 CI 并排回写。支持 openai_compatible 端点。</p>
     </div>
-    <div class="cap-card">
-      <span class="icon">🔒</span>
+    <div class="card">
+      <div class="icon">🔐</div>
       <h3>多租户隔离</h3>
-      <p>GitHub App installation 与租户一一绑定；八张业务表按 tenant 强制收窄；撤权后同会话下一请求即 403——生产实证。</p>
+      <p>八张业务表按 tenant 强制收窄；installation 与租户一一绑定；撤权后同会话下一请求即 403。生产实证通过完整隔离矩阵。</p>
     </div>
-    <div class="cap-card">
-      <span class="icon">📦</span>
-      <h3>可验证的自托管供应链</h3>
-      <p>GHCR 不可变 digest 镜像 + 离线 tar + CycloneDX SBOM + 漏洞/秘密扫描归零记录。每次发布附 SHA256SUMS 校验文件。</p>
+    <div class="card">
+      <div class="icon">📦</div>
+      <h3>可验证的供应链</h3>
+      <p>GHCR 不可变 digest 镜像 + 离线 tar + CycloneDX SBOM（35 组件）+ trivy 扫描（vulnerabilities=0 / secrets=0）。每次发布附 SHA256SUMS。</p>
+    </div>
+    <div class="card">
+      <div class="icon">🛡️</div>
+      <h3>无 merge 权限</h3>
+      <p>系统对 GitHub 仅只读仓库内容 + 回写 check run。合并永远归维护者。高危变更停下等人工审批票。</p>
+    </div>
+    <div class="card">
+      <div class="icon">🔍</div>
+      <h3>cchain 信任链</h3>
+      <p>模型缓存完整性、供应商证明、运行绑定密钥三层校验。任一缺失即 BLOCKED（fail-closed，如实呈现）。</p>
+    </div>
+    <div class="card">
+      <div class="icon">🔓</div>
+      <h3>Apache-2.0 开源</h3>
+      <p>源码 tag 与镜像 digest 一一同源。非 SaaS——部署、数据、密钥、审计完全自持。</p>
     </div>
   </div>
 </section>
 
-<section style="max-width:880px;margin:0 auto;padding:0 24px 48px;">
-  <h2 style="font-size:1.35rem;margin:2.6em 0 .8em;">快速开始</h2>
+<section class="section">
+  <h2 class="section-title">快速开始</h2>
+  <p class="section-sub">三行命令，完成部署。前置条件与 GitHub App 配置见 <a href="quickstart.html">快速开始</a>。</p>
   <pre><code>git clone https://github.com/nghqqa/MergePilot.git
 cd MergePilot &amp;&amp; git checkout v0.2.0-beta.6-rc.16.1
 cd deploy/selfhost
-cp .env.example .env        # 按注释填写（GitHub App 两件套必填）
-node preflight.mjs          # 一键只读检查
+cp .env.example .env        <span style="color:#5aa39b"># 填必填项（GitHub App 两件套 + LLM 端点）</span>
+node preflight.mjs          <span style="color:#5aa39b"># 一键只读检查，关键项失败即退出</span>
 docker compose --env-file .env up -d
 curl http://127.0.0.1:48500/api/health</code></pre>
-  <p style="margin-top:1em;">详细步骤与前置条件见 <a href="quickstart.html">快速开始</a>。</p>
+  <p style="margin-top:16px;"><a href="quickstart.html">完整快速开始 →</a>&nbsp;&nbsp;<a href="downloads.html">下载与校验 →</a></p>
 </section>
 </main>
-<footer class="site">MergePilot 0.2.0-beta.6-rc.16.1 · Apache-2.0 · 自托管发行版 · 本站为静态文档，不提供托管服务</footer>
+<footer class="footer">MergePilot 0.2.0-beta.6-rc.16.1 · Apache-2.0 · 自托管发行版 · 本站为静态文档，不提供托管服务</footer>
 </body>
 </html>
