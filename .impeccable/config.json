@@ -111,6 +111,33 @@
         ],
         "createdAt": "2026-10-06T08:58:22.516Z",
         "reason": "hero lead #bedcd7 on #072722 对比 11.6:1、cap-card #3a4a55 on #fff 9:1、nav #b8ccd4 on #0d1117 9.5:1——全部超 WCAG AA；检测器误报"
+      },
+      {
+        "rule": "design-system-font",
+        "value": "jetbrains mono",
+        "files": [
+          "website/index.html"
+        ],
+        "createdAt": "2026-10-06T10:08:20.381Z",
+        "reason": "开发者工具标准代码字体"
+      },
+      {
+        "rule": "design-system-font",
+        "value": "inter",
+        "files": [
+          "website/index.html"
+        ],
+        "createdAt": "2026-10-06T10:08:20.475Z",
+        "reason": "开发者工具标准正文字体"
+      },
+      {
+        "rule": "design-system-radius",
+        "value": "100px",
+        "files": [
+          "website/index.html"
+        ],
+        "createdAt": "2026-10-06T10:08:20.568Z",
+        "reason": "badge 圆角胶囊"
       }
     ]
   }
