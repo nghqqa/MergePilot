@@ -11,45 +11,58 @@
   <a class="nav-brand" href="index.html">MergePilot</a>
   <span class="nav-sec">产品</span><a href="index.html">首页</a>
   <span class="nav-sec">部署</span><a href="quickstart.html">快速开始</a><a href="selfhost-docker.html">Docker</a><a href="build-from-source.html">源码</a>
-  <span class="nav-sec">文档</span><a href="config-reference.html">配置</a><a href="multitenant-webhook.html">多租户</a><a href="upgrade-rollback.html">升级</a><a href="limitations.html">限制</a>
+  <span class="nav-sec">文档</span><a href="config-reference.html">配置</a><a href="multitenant-webhook.html">多租户</a><a href="upgrade-rollback.html">升级</a><a href="limitations.html" aria-current="page">限制</a>
   <span class="nav-sec">安全</span><a href="security.html">安全</a>
   <span class="nav-sec">发布</span><a href="downloads.html">下载</a>
 </nav>
-<main>
+<main class="doc">
 <div class="crumbs"><a href="index.html">首页</a> / 已知限制与支持矩阵</div>
-<h1>已知限制与支持矩阵（0.2.0-beta.6-rc.16）</h1>
+<h1>已知限制与支持矩阵</h1>
+<p>本页列出 MergePilot 0.2.0-beta.6 自托管 prerelease 的已知限制、支持范围与安全边界。
+Beta 通道接口与配置项可能随版本调整；生产使用建议钉住 digest 并在升级窗口验证。</p>
 
-<h2>已知限制</h2>
+<h2 id="known-limits">已知限制</h2>
+<div class="table-wrap">
 <table>
-<tr><th>项</th><th>现状</th><th>规避 / 计划</th></tr>
-<tr><td>无租户切换端点/UI</td><td>多租户成员需以对应租户的邀请分别登录</td><td>租户切换端点已立项（独立需求）</td></tr>
-<tr><td>私有 GitHub App 仅所有者账号可安装</td><td>多租户 webhook 接入需公开化 App 或每租户独立 App</td><td>安装页引导文案已具备；公开化属 App 所有者操作</td></tr>
-<tr><td>webhook-ingress 仅放行 webhook 与 health</td><td>管理面走 48500（回环）或自建反代</td><td>属安全设计而非缺陷</td></tr>
-<tr><td>schema 只前进不降级</td><td>回滚镜像不回滚 schema</td><td>升级前 pg_dump；破坏性变更前会有公告</td></tr>
-<tr><td>RAG 为可选组件</td><td>未接入时相关面如实显示 NOT_WIRED</td><td>按 .env 模板接入 bge-m3 即可</td></tr>
+<caption>表 1：当前已知限制及规避方案</caption>
+<thead><tr><th scope="col">限制</th><th scope="col">现状</th><th scope="col">状态</th><th scope="col">规避 / 计划</th></tr></thead>
+<tbody>
+<tr><td>无租户切换端点/UI</td><td>多租户成员需以对应租户的邀请分别登录</td><td><span class="tag tag-lim">当前限制</span></td><td>租户切换端点已立项（独立需求）</td></tr>
+<tr><td>私有 GitHub App 仅所有者账号可安装</td><td>多租户 webhook 接入需公开化 App 或每租户独立 App</td><td><span class="tag tag-lim">当前限制</span></td><td>安装页引导文案已具备；公开化属 App 所有者操作</td></tr>
+<tr><td>webhook-ingress 仅放行 webhook 与 health 路径</td><td>管理面仅绑定本机回环地址或由用户自建 HTTPS 反向代理暴露</td><td><span class="tag tag-sec">安全设计</span></td><td>属安全设计而非缺陷</td></tr>
+<tr><td>schema 只前进不降级</td><td>回滚镜像不回滚 schema</td><td><span class="tag tag-sec">安全设计</span></td><td>升级前 pg_dump；破坏性变更前会有公告</td></tr>
+<tr><td>RAG 为可选组件</td><td>未接入时相关面如实显示 NOT_WIRED</td><td><span class="tag tag-lim">当前限制</span></td><td>按 .env 模板接入 bge-m3 即可</td></tr>
+</tbody>
 </table>
+</div>
 
-<h2>支持矩阵</h2>
+<h2 id="support-matrix">支持矩阵</h2>
+<div class="table-wrap">
 <table>
-<tr><th>项</th><th>支持</th></tr>
+<caption>表 2：平台与依赖支持范围</caption>
+<thead><tr><th scope="col">项</th><th scope="col">支持范围</th></tr></thead>
+<tbody>
 <tr><td>平台</td><td>linux/amd64（镜像）；Windows/macOS 经 Docker Desktop 运行</td></tr>
 <tr><td>Docker</td><td>Docker Engine ≥ 24 / Docker Desktop（含 Compose v2）</td></tr>
 <tr><td>数据库</td><td>PostgreSQL 16 + pgvector（镜像钉死）</td></tr>
 <tr><td>LLM 端点</td><td>openai_compatible 协议（自选供应商）</td></tr>
 <tr><td>浏览器</td><td>现代 Chrome/Edge/Firefox（管理面）</td></tr>
 <tr><td>架构</td><td>仅 amd64（arm64 待支持）</td></tr>
+</tbody>
 </table>
+</div>
 
-<h2>安全边界声明</h2>
+<h2 id="security-boundary">安全边界</h2>
 <ul>
-<li>系统对 GitHub 仅<strong>只读</strong>仓库内容 + 回写 check run；<strong>无 merge 权限</strong>；</li>
-<li>LLM 供应商由使用者自选自配，key 只存使用者自己的环境；</li>
+<li>系统读取仓库内容，并仅回写 check run；不具备 merge 权限。</li>
+<li>LLM 供应商由使用者自选自配，key 只存使用者自己的环境。</li>
 <li>所有审查结论与证据落在使用者自己的数据库与证据卷中。</li>
+<li><code>platform_admin</code> 不可经邀请授予——API 403、claim 拒绝、DB 约束三层拦截。</li>
 </ul>
 
 <div class="note">Beta 通道说明：0.2.0-beta.6-rc.N 为快速迭代通道，接口与配置项可能随版本调整；
 生产使用建议钉住 digest 并在升级窗口验证（见升级与回滚）。</div>
 </main>
-<footer class="site">MergePilot 0.2.0-beta.6-rc.16.1 · Apache-2.0</footer>
+<footer class="footer">MergePilot 0.2.0-beta.6-rc.16.1 · Apache-2.0</footer>
 </body>
 </html>
