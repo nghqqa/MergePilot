@@ -13,7 +13,7 @@
   --border-light: #233a4a;
   --text: #e2e8f0;
   --text-2: #94a3b8;
-  --text-3: #64748b;
+  --text-3: #8b9cb0;
   --accent: #2dd4bf;
   --accent-dim: #14b8a6;
   --accent-deep: #0d9488;
@@ -248,3 +248,15 @@ tbody tr:hover { background: var(--surface); }
   .section { padding: 40px 16px; }
   table { display: block; overflow-x: auto; white-space: nowrap; }
 }
+
+/* ── rc.16.1 limitations 页新增 ── */
+.doc .tag {
+  display: inline-block; font-family: var(--sans); font-size: .78rem; font-weight: 600;
+  padding: 2px 10px; border-radius: 100px; white-space: nowrap;
+}
+.tag-lim  { background: rgba(251,191,36,.12); color: #fbbf24; border: 1px solid rgba(251,191,36,.3); }
+.tag-sec  { background: rgba(45,212,191,.08); color: #5eead4; border: 1px solid rgba(45,212,191,.25); }
+.table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.table-wrap table { min-width: 540px; }
+.doc ul, .doc ol { padding-inline-start: 1.4em; }
+.doc li { margin-bottom: .4em; }
