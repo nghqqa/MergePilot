@@ -87,13 +87,54 @@ export async function fetchProviderAttestation(env = process.env, fetchImpl = fe
 // ── 3) RUN_BINDING_AUTH key distribution ───────────────────────
 // key 记录（keystore 目录 JSON，权限受限）+ HMAC 验签（full-sha256 + nonce 防重放）。
 // 密钥分发未预置 → BLOCKED；接口与校验真实可测。
+// rc.16（不可读密钥误报 READY 缺陷）：状态与验签统一以「实际可加载密钥」为准——
+// 逐文件 try/catch（读失败/解析失败均跳过，绝不抛出）；仅存在但不可用者计入
+// unusable 计数并以稳定状态码呈现（不含路径/权限/内容细节）。
+function loadKeysDetailed(dir) {
+  const detail = { keys: [], total: 0, unreadable: 0, unparseable: 0, unusable: 0 };
+  if (!dir || !fs.existsSync(dir)) return detail;
+  const files = fs.readdirSync(dir).filter((f) => f.endsWith('.key.json'));
+  detail.total = files.length;
+  for (const f of files) {
+    let k;
+    try {
+      k = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
+    } catch {
+      detail.unparseable += 1; // 读失败（EACCES 等）与解析失败同归 unusable，区分仅计数
+      continue;
+    }
+    try {
+      if (k.revoked || new Date(k.expires_at) <= new Date()) { detail.unusable += 1; continue; }
+      detail.keys.push(k);
+    } catch {
+      detail.unparseable += 1;
+    }
+  }
+  return detail;
+}
+function loadKeys(dir) {
+  return loadKeysDetailed(dir).keys;
+}
 export function runBindingAuthStatus(env = process.env) {
   const dir = env.MERGEPILOT_RUN_BINDING_KEYSTORE;
   if (!dir) return { state: 'NOT_CONFIGURED', blocked_condition: 'MERGEPILOT_RUN_BINDING_KEYSTORE 未设置' };
   if (!fs.existsSync(dir)) return { state: 'MISSING', not_distributed: true, dir, blocked_condition: 'keystore 目录不存在（密钥分发未执行=NOT_DISTRIBUTED）' };
-  const keys = fs.readdirSync(dir).filter((f) => f.endsWith('.key.json'));
-  if (keys.length === 0) return { state: 'MISSING', not_distributed: true, dir, blocked_condition: 'keystore 无密钥记录（RUN_BINDING_AUTH 密钥分发未闭合=NOT_DISTRIBUTED）' };
-  return { state: 'READY', dir, key_count: keys.length };
+  const d = loadKeysDetailed(dir);
+  // 有效密钥=可读+可解析+未撤销+未过期。仅存在但不可用者不构成 READY——
+  // 状态面与验签面同源（loadKeysDetailed），杜绝「不可读密钥误报 READY」。
+  if (d.keys.length === 0) {
+    const reason = d.total === 0
+      ? 'keystore 无密钥记录（RUN_BINDING_AUTH 密钥分发未闭合=NOT_DISTRIBUTED）'
+      : `keystore 密钥均不可用（RUN_BINDING_KEYS_UNUSABLE：total=${d.total} unusable=${d.unusable + d.unparseable}）`;
+    return {
+      state: d.total === 0 ? 'MISSING' : 'BLOCKED',
+      not_distributed: d.total === 0 || undefined,
+      keys_unusable: d.total > 0 || undefined,
+      dir, key_count: 0,
+      blocked_condition: reason,
+    };
+  }
+  return { state: 'READY', dir, key_count: d.keys.length };
 }
 
 export function createRunBindingAuth(env = process.env, { now = Date.now } = {}) {
@@ -120,10 +161,18 @@ export function createRunBindingAuth(env = process.env, { now = Date.now } = {})
     seen.set(nonce, at + NONCE_TTL_MS);
   }
   function loadKeys() {
+    // rc.16（不可读密钥缺陷修复）：逐文件 try/catch——读失败（EACCES 等）或
+    // 解析失败均跳过而非抛出；verify 面由此获得干净的 RUN_BINDING_AUTH_BLOCKED
+    // 4xx 拒绝（原实现抛异常 → 路由 500），与状态面同源不误报。
     if (!dir || !fs.existsSync(dir)) return [];
-    return fs.readdirSync(dir).filter((f) => f.endsWith('.key.json'))
-      .map((f) => JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')))
-      .filter((k) => !k.revoked && new Date(k.expires_at) > new Date());
+    const keys = [];
+    for (const f of fs.readdirSync(dir).filter((f) => f.endsWith('.key.json'))) {
+      try {
+        const k = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
+        if (!k.revoked && new Date(k.expires_at) > new Date()) keys.push(k);
+      } catch { /* 读失败/解析失败：跳过该文件（fail-closed 计入无可用密钥） */ }
+    }
+    return keys;
   }
   return {
     verify({ run_id, nonce, timestamp, signature }) {
