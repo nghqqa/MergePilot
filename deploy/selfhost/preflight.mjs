@@ -106,7 +106,7 @@ if (LIVE) {
   const pg = run(['docker', 'exec', 'mergepilot-postgres-1', 'psql', '-U', 'postgres', '-d', 'mu', '-tAc',
     "SELECT 'schema=' || COALESCE(MAX(version),0) || ' 非终态run=' || (SELECT COUNT(*) FROM mu.review_run WHERE status NOT IN ('COMPLETED','FAILED','CANCELLED','BLOCKED','STALE','SUPERSEDED')) || ' 非终态job=' || (SELECT COUNT(*) FROM mu.job WHERE state IN ('queued','running','claimed','pending','processing')) || ' pa_inv=' || (SELECT COUNT(*) FROM mu.invitation WHERE role='platform_admin') FROM mu.schema_migrations"]).stdout.trim();
   ok('schema v23 + 非终态=0 + pa_inv=0', /schema=23 .* 非终态run=0 .* 非终态job=0 .* pa_inv=0/.test(pg), pg);
-  console.log('  HINT  cchain=BLOCKED 属如实呈现：补齐 attestation 端点与 keystore 轮换后转 READY（README cchain 节）');
+  console.log('  HINT  cchain=BLOCKED 属如实呈现：三步引导见 README cchain 节（模型+manifest / fxv.audit_events 建表 / keystore 种子密钥 uid 1000）');
   console.log('  HINT  webhook：GitHub App 安装/配置后，用 App 高级页 Redeliver 一条历史投递做端到端验证');
 } else {
   console.log('  HINT  加 --live 可在栈启动后探测 health/schema/queue（当前为静态检查）');
