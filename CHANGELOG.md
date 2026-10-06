@@ -1,3 +1,10 @@
+## [0.2.0-beta.6-rc.16] — 2026-10-06
+
+### Security / Fixed
+- **keystore 状态/验签统一以实际可加载密钥为准**：不可读/损坏密钥不再误报 READY；状态面转 BLOCKED（RUN_BINDING_KEYS_UNUSABLE，稳定原因+计数，零细节泄露）
+- verify 端点对不可读/无可用密钥 fail-closed 返回 4xx（原 500）；BAD_SIGNATURE/REPLAYED_NONCE/TIMESTAMP_SKEW 语义不变
+- README：cchain 三步引导（模型+manifest / fxv.audit_events 建表 / keystore 种子密钥+属主 uid 1000）
+
 # Changelog
 
 本文件记录 MergePilot 用户可感知的变更。格式参照 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)；
