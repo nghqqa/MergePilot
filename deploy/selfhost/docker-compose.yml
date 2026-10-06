@@ -54,7 +54,7 @@ services:
 
   console:
     # 官方镜像（GHCR 不可变 digest；与 v0.2.0-beta.6-rc.15 源码 tag 同源）
-    image: ghcr.io/nghqqa/mergepilot-console@sha256:f0b30fd1b0b366fc4d203848b657f6cc9012bef8e45459ba7c099fd1a13897b3
+    image: ghcr.io/nghqqa/mergepilot-console@sha256:b1c95275750b3b7f6c836235e09659bff6e575aa93d5f041350b9aebe4bfbb0a
     restart: unless-stopped
     ports:
       # 安全基线：仅绑定回环。对外暴露必须前置 TLS 反代（README 安全节）。
