@@ -91,7 +91,7 @@ curl http://127.0.0.1:48450/api/health  # 验证 200
 | GitHub App name | 你的 App 名称（如 `my-mergepilot`） |
 | Homepage URL | 你的 console 地址（如 `http://127.0.0.1:48450`） |
 | Callback URL | `http://<你的地址>/api/mu/github/install/callback` |
-| Webhook URL | `http://<你的地址>/api/mu/github/webhook` |
+| Webhook URL | `http://<你的地址>/api/mu/github/webhook`——对外部署时该地址**必须公网可达**（HTTPS 入口转发到本机 48590；Nginx/Caddy/Cloudflare Tunnel 等任意反向代理或隧道均可） |
 | Webhook secret | 自定义随机字符串（如 `openssl rand -hex 32`） |
 
 ### 4.2 权限（仅勾这 5 项，全部 Read-only）

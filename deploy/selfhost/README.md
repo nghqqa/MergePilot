@@ -76,6 +76,12 @@ docker build -f docker/Dockerfile.canonical-console \
 
 ## 多租户与 webhook
 
+> **公网入口要求**：GitHub Webhook 必须有**公网可达的 HTTPS 入口**，并转发到本机 webhook
+> 监听端口 `48590`（`webhook-ingress` 服务，仅放行 webhook 与 health 两个路径）。入口实现
+> 不限：Nginx、Caddy、Cloudflare Tunnel 或其他任意反向代理/隧道均可，仓库不绑定特定
+> ingress 实现。**没有任何公网入口时**，GitHub webhook 无法自动进入审查管线（本地管理
+> 界面与健康检查不受影响）。
+
 1. **GitHub App**：按最小权限创建（Metadata/Contents/Pull requests/Checks/Statuses 全只读；
    不申请任何 write）+ 订阅五种事件（installation、installation_repositories、pull_request、
    check_run、status）+ webhook URL 指向你的 ingress（默认 `http://<host>:48590/api/mu/github/webhook`，

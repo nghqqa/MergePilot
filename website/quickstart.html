@@ -47,6 +47,8 @@ curl http://127.0.0.1:48500/api/health</code></pre>
 <code>MU_ALLOW_FIXTURE_LOGIN</code> 说明——完成后必须关闭）。</p>
 
 <div class="warn">生产对外暴露：<strong>必须</strong>前置 TLS 反向代理并把回调地址改为 https 域名。
+生产 Webhook 地址必须<strong>公网 HTTPS 可达</strong>（转发到本机 48590，入口实现不限——
+见 <a href="multitenant-webhook.html">多租户与 webhook</a>）。
 明文 HTTP 不允许承载已认证会话（会话 Cookie 自带 Secure 属性）。详见
 <a href="security.html">安全加固</a>。</div>
 
