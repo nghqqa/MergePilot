@@ -1,6 +1,6 @@
 # MergePilot rc.15 自托管部署
 
-> 版本：`0.2.0-beta.6-rc.15` · 镜像 digest：`sha256:f0b30fd1b0b366fc4d203848b657f6cc9012bef8e45459ba7c099fd1a13897b3`
+> 版本：`0.2.0-beta.6-rc.16` · 镜像 digest：`sha256:b1c95275750b3b7f6c836235e09659bff6e575aa93d5f041350b9aebe4bfbb0a`
 > 官方镜像已在 GHCR 发布（不可变 digest）。离线 tar 与源码构建为等效替代途径，校验方式见下。
 > 供应链档案：SBOM（CycloneDX，35 组件）、trivy 扫描（漏洞 0/秘密 0）、离线 tar SHA256 与源码 tag 见「镜像获取与校验」。
 
@@ -22,16 +22,16 @@ curl http://127.0.0.1:48500/api/health
 | 途径 | 命令 | 校验 |
 |---|---|---|
 | GHCR（推送生效后） | `docker pull ghcr.io/nghqqa/mergepilot-console@sha256:f0b30fd1…3897` | RepoDigest == 该 digest |
-| 离线 tar | `docker load -i mergepilot-console-rc15.tar` | tar SHA256 = `6d1341f7f289318be986dc8aae16e90e122bcd41b897cf0ed312a2c60ecd6750`；load 后 image ID = `f0b30fd1…` |
+| 离线 tar | `docker load -i mergepilot-console-rc16.tar` | tar SHA256 = `6d1341f7f289318be986dc8aae16e90e122bcd41b897cf0ed312a2c60ecd6750`；load 后 image ID = `f0b30fd1…` |
 | 源码构建 | 见下节 | image ID 应可复现（同 commit/同构建参数） |
 
-镜像内置 `MERGEPILOT_VERSION=0.2.0-beta.6-rc.15`（`/api/health` version 字段即真源）。
+镜像内置 `MERGEPILOT_VERSION=0.2.0-beta.6-rc.16`（`/api/health` version 字段即真源）。
 
 **供应链档案（rc.15）**：
 
-- SBOM：CycloneDX 1.5，**35 组件**（`rc15-sbom.cdx.json`，随发行版发布）；
+- SBOM：CycloneDX 1.5，**35 组件**（`rc16-sbom.cdx.json`，随发行版发布）；
 - 漏洞/秘密扫描（trivy 0.74，ghcr.io 官方漏洞库）：**vulnerabilities=0、secrets=0**；
-- 构建来源：源码 tag `v0.2.0-beta.6-rc.15` = commit `e660a5aa9a`（与镜像 digest `f0b30fd1…3897` 同源）；
+- 构建来源：源码 tag `v0.2.0-beta.6-rc.16` = commit `a68057f28b`（与镜像 digest `f0b30fd1…3897` 同源）；
 - 基础镜像：`node@sha256:0a7108bf…`（Dockerfile 钉死）。
 
 > `48590` 端口与 `beta-webhook-proxy` 容器是 MergePilot 开发方内部测试环境的组件，
@@ -41,11 +41,11 @@ curl http://127.0.0.1:48500/api/health
 ## 从源码构建
 
 ```bash
-git checkout v0.2.0-beta.6-rc.15        # 源码 tag（与镜像同源）
+git checkout v0.2.0-beta.6-rc.16        # 源码 tag（与镜像同源）
 cd console/frontend && npm ci && npm run build && cd ../..
 docker build -f docker/Dockerfile.canonical-console \
-  --build-arg MERGEPILOT_VERSION=0.2.0-beta.6-rc.15 \
-  -t ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.15 .
+  --build-arg MERGEPILOT_VERSION=0.2.0-beta.6-rc.16 \
+  -t ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.16 .
 ```
 
 注意两点：① 构建前必须先产出 `console/frontend/dist`（Dockerfile 会 COPY 它）；
