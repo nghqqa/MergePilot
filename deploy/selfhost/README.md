@@ -234,10 +234,28 @@ INSERT INTO mu.external_identity (user_id, provider, subject)
 SELECT u.user_id, 'github-oauth', 'github-oauth:<id>'
 FROM mu.app_user u WHERE u.login = '<login>'
 ON CONFLICT (provider, subject) DO NOTHING;
--- 3) 校验：该 subject 必须恰好解析回一行且 login 正确——否则 ROLLBACK;
+-- 3) 硬校验：subject ↔ login 必须一一对应，且该 login 无其他 GitHub 身份——
+--    不符即 RAISE（随后 ROLLBACK），不产生任何授权
 SELECT u.login, i.subject FROM mu.app_user u
 JOIN mu.external_identity i ON i.user_id = u.user_id
 WHERE i.provider = 'github-oauth' AND i.subject = 'github-oauth:<id>';
+DO $$
+DECLARE matched int; other_ids int;
+BEGIN
+  SELECT count(*) INTO matched
+    FROM mu.app_user u
+    JOIN mu.external_identity i ON i.user_id = u.user_id
+   WHERE i.provider = 'github-oauth' AND i.subject = 'github-oauth:<id>'
+     AND u.login = '<login>';
+  SELECT count(*) INTO other_ids
+    FROM mu.external_identity x
+   WHERE x.provider = 'github-oauth'
+     AND x.subject <> 'github-oauth:<id>'
+     AND x.user_id = (SELECT user_id FROM mu.app_user WHERE login = '<login>');
+  IF matched <> 1 OR other_ids <> 0 THEN
+    RAISE EXCEPTION '身份校验失败：subject↔login 匹配 % 行（须为 1），该 login 另有 % 个 GitHub 身份（须为 0）——请 ROLLBACK 并核对数字 id', matched, other_ids;
+  END IF;
+END $$;
 -- 4) 直授 default 租户 platform_admin（UNIQUE(tenant_id,user_id) + NOT EXISTS，幂等）
 INSERT INTO mu.membership (tenant_id, user_id, role)
 SELECT t.tenant_id, i.user_id, 'platform_admin'
