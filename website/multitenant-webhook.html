@@ -19,6 +19,11 @@
 <div class="crumbs"><a href="index.html">首页</a> / 多租户与 webhook</div>
 <h1>多租户与 webhook</h1>
 
+<div class="warn">公网入口要求：GitHub Webhook 必须有<strong>公网可达的 HTTPS 入口</strong>，
+并转发到本机 webhook 监听端口 <code>48590</code>。入口实现不限——Nginx、Caddy、
+Cloudflare Tunnel 或其他任意反向代理/隧道均可，仓库不绑定特定实现。<strong>没有任何公网入口时</strong>，
+webhook 无法自动进入审查管线（本地管理与健康检查不受影响）。</div>
+
 <h2>GitHub App（webhook 来源）</h2>
 <ol>
 <li>GitHub → Settings → Developer settings → GitHub Apps → <strong>New GitHub App</strong>；</li>
