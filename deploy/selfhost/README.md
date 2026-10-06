@@ -61,7 +61,7 @@ docker build -f docker/Dockerfile.canonical-console \
 - GitHub App + OAuth App：**两个都要建**（前者收 webhook，后者做用户登录）；
 - cchain 三键（`MERGEPILOT_MODEL_CACHE_DIR` / `MERGEPILOT_PROVIDER_ATTEST_URL` /
   `MERGEPILOT_RUN_BINDING_KEYSTORE`）：可选，三项不全时 cchain=BLOCKED（fail-closed 如实呈现）；
-- cchain 引导（首次转 READY 需三步，缺一会 BLOCKED）：
+- cchain 引导（首次转 READY 需四步，缺一会 BLOCKED）：
   ① 模型目录放入 bge-m3 文件与安装流程生成的 `manifest.json`（sidecar 按 `BGE_MANIFEST` 校验）；
   ② `fxv.audit_events` 表需初始化（cchain 审计真写的前提）——
      `CREATE SCHEMA IF NOT EXISTS fxv; CREATE TABLE IF NOT EXISTS fxv.audit_events
@@ -72,7 +72,120 @@ docker build -f docker/Dockerfile.canonical-console \
      生成 `{"key_id":"rk-bootstrap-1","secret":"<openssl rand -hex 32>","created_at":"<ISO>",
      "expires_at":"<+90天 ISO>","revoked":false}` 写入 keystore 卷，**属主与权限须匹配容器
      运行用户（uid 1000:1000，目录 770/文件 600）**；随后经 rotate API 轮换出正式在役密钥；
+  ④ provider attestation 静态端点：托管一个你自己生成的 `attestation.json`，把
+     `MERGEPILOT_PROVIDER_ATTEST_URL` 指向 console 容器内可达的地址——完整内容、判定语义、
+     三平台启动示例与重启恢复见下节「provider attestation」。
 - RAG 四键：可选，不填则 RAG=NOT_WIRED 如实降级。
+
+## provider attestation（cchain 第三键）
+
+`MERGEPILOT_PROVIDER_ATTEST_URL` 指向一个**你自己托管的静态 JSON 端点**。它是 cchain
+三组件之一（模型缓存 / provider attestation / keystore 运行绑定）：三组件全部就绪时
+`/api/cchain/status` 报 `READY`；任一未就绪则整体 `BLOCKED`——**fail-closed，如实呈现，
+不影响审查主链**，恢复后自动回到 READY。
+
+### attestation.json 内容与来源
+
+须为 JSON 且**至少含三个非空字段**（形状校验；无密码学验证——它证明的是部署者对本次
+部署配置的自证，不是第三方签名）：
+
+```json
+{
+  "provider": "my-mergepilot-node",
+  "model": "bge-m3",
+  "attestation": { "algo": "static-file-v1", "note": "本次部署的模型与配置说明" },
+  "key_id": "optional-k1"
+}
+```
+
+来源：自行生成（描述本次部署），放入静态服务目录即可。可选字段 `key_id`：设置了
+`MERGEPILOT_PROVIDER_EXPECTED_KEY_ID` 时必须与其一致，否则判 INVALID。文件更新即时生效，
+无需重启静态服务。
+
+### 判定语义（与 console 运行时 `fetchProviderAttestation` 同口径）
+
+| 情形 | 组件状态 → cchain |
+|---|---|
+| URL 未设置 | NOT_CONFIGURED → BLOCKED |
+| 连接失败 / 超时（默认 5s，`MERGEPILOT_PROVIDER_TIMEOUT_MS` 可调） | UNREACHABLE → BLOCKED |
+| HTTP 非 200（404 = 文件缺失或路径错） | UNREACHABLE → BLOCKED |
+| 响应非 JSON / 缺 provider、model、attestation 任一字段 / attestation 为空 | INVALID → BLOCKED |
+| HTTP 200 + 形状通过（+ 可选 key_id 一致） | ATTESTED → 计入 READY |
+
+验证：`curl -fsS "$MERGEPILOT_PROVIDER_ATTEST_URL" >/dev/null && echo OK`；
+或 `node preflight.mjs --live`（对 .env 里的 URL 做同口径探测，支持与本地源文件比对）；
+最终以 console `/api/cchain/status` 为准。
+
+### 启动示例（三平台）
+
+监听一律绑回环或内网，**不要把 attest 端点暴露到公网**。
+
+**方式一（推荐）：并入 docker compose（console 同网络直接可达，重启自动恢复）**
+
+```yaml
+# 追加到 docker-compose.yml 的 services: 下（ networks 用既有 internal ）
+  attest:
+    image: nginx:alpine
+    restart: unless-stopped
+    volumes:
+      - ./attest:/usr/share/nginx/html:ro   # 目录内放 attestation.json
+    networks: [internal]
+```
+
+`.env`：`MERGEPILOT_PROVIDER_ATTEST_URL=http://attest/attestation.json`
+（服务名即内网主机名；主机/Docker 重启后随 `restart: unless-stopped` 自动恢复）。
+
+**方式二：Linux systemd（宿主级静态服务）**
+
+```ini
+# /etc/systemd/system/mergepilot-attest.service
+[Unit]
+Description=MergePilot provider attestation (static)
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/python3 -m http.server 19475 --bind 127.0.0.1 --directory /opt/mergepilot/attest
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+`systemctl enable --now mergepilot-attest`；`.env` 填
+`http://host.docker.internal:19475/attestation.json`，并给 compose 的 **console** 服务加：
+
+```yaml
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+```
+
+（Linux 宿主地址必须显式映射；Windows/macOS Docker Desktop 免配。`restart=always`
+保证开机自启与进程死亡自动拉起。）
+
+**方式三：Windows Task Scheduler（宿主级静态服务）**
+
+管理员命令行注册开机启动：
+
+```bat
+schtasks /Create /TN "MergePilot-Attest" /SC ONSTART /RU SYSTEM ^
+  /TR "cmd /c cd /d C:\mergepilot\attest && C:\path\to\python.exe -m http.server 19475 --bind 127.0.0.1"
+```
+
+`.env` 填 `http://host.docker.internal:19475/attestation.json`。
+⚠️ 裸 `http.server` 无进程自愈：进程退出后须重新执行该命令；需要自动拉起请自备看护
+脚本（属部署者本地运维选项，发行包不含）。
+
+### 重启恢复路径与验证
+
+| 托管方式 | 主机 / Docker 重启后 |
+|---|---|
+| compose attest 服务 | `restart: unless-stopped` 自动拉起；attestation.json 在 bind 目录，持久 |
+| systemd | `Restart=always` + 开机自启，自动拉起 |
+| Windows schtasks | ONSTART 开机启动；进程中途死亡无自愈，须手动重跑或自备看护 |
+
+恢复后验证：`curl -fsS "$MERGEPILOT_PROVIDER_ATTEST_URL" >/dev/null && echo OK`，
+再确认 `/api/cchain/status` 回到 `READY`。
 
 ## 多租户与 webhook
 
@@ -125,7 +238,7 @@ docker cp mergepilot-postgres-1:/tmp/mu.backup ./mu-$(date +%F).backup
 | schema 未就绪 | `docker compose logs postgres`；确认 pgdata 卷未被旧实例占用 |
 | webhook 无投递 | DNS/防火墙/反代链路；GitHub App 高级页看 Recent Deliveries 状态与 HMAC 结果 |
 | 登录报 not_invited | 该 GitHub 账号需先由管理员按其**数字 user id** 创建邀请 |
-| cchain=BLOCKED | 三键是否齐全；attestation 端点可达性；keystore 是否已 rotate 出在役 key |
+| cchain=BLOCKED | 三键是否齐全；attestation 端点可达性（`node preflight.mjs --live` 可探测，含内容一致性比对）；keystore 是否已 rotate 出在役 key |
 | 登录后 403 membership_inactive | 会话绑定租户的成员关系已被撤——重新登录会落到其余 active 租户 |
 
 ## 已知限制（rc.16.1）

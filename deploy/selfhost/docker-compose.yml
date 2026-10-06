@@ -84,6 +84,10 @@ services:
       - evidence:/app/evidence
       - model-cache:/app/rag-models
       - keystore:/app/keystore
+    # 若用宿主级 provider attestation 静态服务（Linux），取消以下两行注释以启用 host-gateway；
+    # 使用 compose 内 attest 服务或 Windows/macOS Docker Desktop 则不需要：
+    # extra_hosts:
+    #   - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy
