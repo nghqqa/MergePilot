@@ -135,6 +135,10 @@ export function createMuConsoleApi({ pool }) {
         updated_at: p.updated_at ?? null,
         stage: MU_TO_STAGE[p.stage] ?? p.stage,
         stage_source: p.stage_source,
+        // 数据可信度加固（发布收口修复）：行级 head 元数据与 /api/mu/prs 行级契约
+        // 同名同型——head_basis 恒字符串（当前唯一值 event_order）、head_count 恒正整数。
+        head_basis: p.head_basis,
+        head_count: p.head_count,
       })),
       tickets: [],
       evidence: findings.map(f => ({
