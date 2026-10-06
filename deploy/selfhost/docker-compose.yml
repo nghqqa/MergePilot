@@ -1,4 +1,4 @@
-# MergePilot rc.14 自托管模板（canonical 拓扑：console + postgres(pgvector) + bge-m3 sidecar + webhook ingress）
+# MergePilot 自托管模板（canonical 拓扑：console + postgres(pgvector) + bge-m3 sidecar + webhook ingress；基线 rc.16）
 #
 # 使用前提：cp .env.example .env 并按注释填写（至少必填段）。
 # 启动：docker compose --env-file .env up -d
