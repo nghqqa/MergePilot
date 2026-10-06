@@ -29,6 +29,8 @@ MergePilot 是一台跑在你自己机器上的 PR 安全审查工作台：通�
 | FXV 修复验证（dry-run 默认 + 真 git 隔离环境） | ⚙️ 受控 |
 | 本地 RAG 语料检索（reference-only，`local-hash-v1` 默认） | ⚙️ 试用 |
 | Docker 部署（离线镜像包 / 源码自建） | ✅ |
+| 多租户生产实证（租户隔离/撤权/独立外部用户） | ✅ rc.16 生产验收 |
+| cchain 信任链（模型缓存完整性/供应商证明/运行绑定 keystore 三层） | ✅ rc.16 生产验收 |
 
 ## 能力边界（诚实声明）
 
@@ -66,27 +68,28 @@ docker compose up -d --build
 # 访问 http://127.0.0.1:48450
 ```
 
+→ **下载 rc.16.1 发行版（离线 tar / deploy-kit / SBOM / 扫描报告）**：[GitHub Release](https://github.com/nghqqa/MergePilot/releases/tag/v0.2.0-beta.6-rc.16.1)
 → **完整安装指南（GitHub App 创建/权限/事件/凭据注入/首次登录/邀请/绑定）**：[BETA-GUIDE.md](docs/BETA-GUIDE.md)
 
 ## 架构
 
 ```
-GitHub ──(GitHub App read-only)──► Webhook (HMAC 验签) ──► Console (Node.js)
-                                                                   │
-                    ┌──────────────────────────────────────────────┤
-                    │                    │                         │
-                  PG (13+ 表)         MinIO (证据包)         React SPA
-               (mu schema 六版迁移)   (内容寻址)
-                    │
-                    ▼ （MU_EXECUTOR=agentteams，fail-closed）
-        AgentTeams Runtime（外部，Beta 受控）
-        ├─ mergepilot-leader（编排建议）
-        ├─ mergepilot-reviewer（审查建议）
-        ├─ mergepilot-fixer（dry-run 修复建议）
-        └─ mergepilot-verifier（独立验证意见）
-                    │ 全部输出仅建议 —— MergePilot Leader 终裁
-                    ▼
-        Controller API + Matrix 任务传输（见 deploy/agentteams-beta/RUNBOOK.md）
+GitHub ──(GitHub App read-only)──► Webhook (HMAC 验签+去重) ──► Console (Node.js)
+                                                                        │
+                     ┌──────────────────────────────┬───────────────────┤
+                     │                              │                   │
+                  PG (mu schema v23)          cchain 信任链         React SPA
+                 (八表 tenant 隔离)      (模型/证明/keystore 三层)
+                     │
+                     ▼ （MU_EXECUTOR=agentteams，fail-closed）
+         AgentTeams Runtime（外部，Beta 受控）
+         ├─ mergepilot-leader（编排建议）
+         ├─ mergepilot-reviewer（审查建议）
+         ├─ mergepilot-fixer（dry-run 修复建议）
+         └─ mergepilot-verifier（独立验证意见）
+                     │ 全部输出仅建议 —— MergePilot Leader 终裁
+                     ▼
+         Controller API + Matrix 任务传输（见 deploy/agentteams-beta/RUNBOOK.md）
 ```
 
 详见 [ARCHITECTURE.md](distribution/docs/ARCHITECTURE.md)
