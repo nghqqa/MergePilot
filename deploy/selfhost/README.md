@@ -1,8 +1,8 @@
-# MergePilot rc.14 自托管部署
+# MergePilot rc.15 自托管部署
 
-> 版本：`0.2.0-beta.6-rc.14` · 镜像 digest：`sha256:d6dd04cab60742964d35c41d7bee1045a8950dbeeb7bbfd976d0320ab170a0ad`
-> 当前镜像状态：**GHCR 推送待批**——推送生效前，镜像获取只能走「源码构建」或「离线 tar」（两者校验方式见下）。
-> 本目录一切引用已按此口径标注；GHCR 推送落地后，digest 拉取命令即刻生效。
+> 版本：`0.2.0-beta.6-rc.15` · 镜像 digest：`sha256:f0b30fd1b0b366fc4d203848b657f6cc9012bef8e45459ba7c099fd1a13897b3`
+> 官方镜像已在 GHCR 发布（不可变 digest）。离线 tar 与源码构建为等效替代途径，校验方式见下。
+> 供应链档案：SBOM（CycloneDX，35 组件）、trivy 扫描（漏洞 0/秘密 0）、离线 tar SHA256 与源码 tag 见「镜像获取与校验」。
 
 ## 快速开始
 
@@ -21,20 +21,31 @@ curl http://127.0.0.1:48500/api/health
 
 | 途径 | 命令 | 校验 |
 |---|---|---|
-| GHCR（推送生效后） | `docker pull ghcr.io/nghqqa/mergepilot-console@sha256:d6dd04ca…70ad` | RepoDigest == 该 digest |
-| 离线 tar | `docker load -i mergepilot-console-rc14.tar` | tar SHA256 = `732092b8807dcdb4a0349f3336e7aa82ccd234f292c8ad2001f1842fba07a88e`；load 后 image ID = `d6dd04ca…` |
+| GHCR（推送生效后） | `docker pull ghcr.io/nghqqa/mergepilot-console@sha256:f0b30fd1…3897` | RepoDigest == 该 digest |
+| 离线 tar | `docker load -i mergepilot-console-rc15.tar` | tar SHA256 = `6d1341f7f289318be986dc8aae16e90e122bcd41b897cf0ed312a2c60ecd6750`；load 后 image ID = `f0b30fd1…` |
 | 源码构建 | 见下节 | image ID 应可复现（同 commit/同构建参数） |
 
-镜像内置 `MERGEPILOT_VERSION=0.2.0-beta.6-rc.14`（`/api/health` version 字段即真源）。
+镜像内置 `MERGEPILOT_VERSION=0.2.0-beta.6-rc.15`（`/api/health` version 字段即真源）。
+
+**供应链档案（rc.15）**：
+
+- SBOM：CycloneDX 1.5，**35 组件**（`rc15-sbom.cdx.json`，随发行版发布）；
+- 漏洞/秘密扫描（trivy 0.74，ghcr.io 官方漏洞库）：**vulnerabilities=0、secrets=0**；
+- 构建来源：源码 tag `v0.2.0-beta.6-rc.15` = commit `e660a5aa9a`（与镜像 digest `f0b30fd1…3897` 同源）；
+- 基础镜像：`node@sha256:0a7108bf…`（Dockerfile 钉死）。
+
+> `48590` 端口与 `beta-webhook-proxy` 容器是 MergePilot 开发方内部测试环境的组件，
+> **不属于自托管发行版，也不是官方托管服务入口**。自托管部署的对外入口是
+> 你自己的 TLS 反向代理（见安全加固清单）。
 
 ## 从源码构建
 
 ```bash
-git checkout v0.2.0-beta.6-rc.14        # 源码 tag（与镜像同源）
+git checkout v0.2.0-beta.6-rc.15        # 源码 tag（与镜像同源）
 cd console/frontend && npm ci && npm run build && cd ../..
 docker build -f docker/Dockerfile.canonical-console \
-  --build-arg MERGEPILOT_VERSION=0.2.0-beta.6-rc.14 \
-  -t ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.14 .
+  --build-arg MERGEPILOT_VERSION=0.2.0-beta.6-rc.15 \
+  -t ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.15 .
 ```
 
 注意两点：① 构建前必须先产出 `console/frontend/dist`（Dockerfile 会 COPY 它）；
@@ -59,7 +70,7 @@ docker build -f docker/Dockerfile.canonical-console \
    check_run、status）+ webhook URL 指向你的 ingress（默认 `http://<host>:48590/api/mu/github/webhook`，
    对外部署请换成 https 域名）；**务必配置与 `MU_GITHUB_WEBHOOK_SECRET` 一致的签名密钥**。
 2. **installation 注册**：安装 App 后跳转回控制台即注册到当前会话所属租户；
-   租户成员的邀请认领（rc.14 起）支持既有用户经邀请进入其他租户；
+   租户成员的邀请认领（rc.14 起泛化、rc.15 持续）支持既有用户经邀请进入其他租户；
    同一 subject 存在多条待认领邀请时会显式拒绝（`invitation_ambiguous`）。
 3. **隔离语义**：事件租户跟 installation 走；八张业务表按 tenant_id 强制收窄；
    撤权后同会话下一请求即 403；`platform_admin` 永不可经邀请授予（API/claim/DB 三层拒绝）。
@@ -74,7 +85,7 @@ docker compose --env-file .env pull console && docker compose --env-file .env up
 
 **schema 只前进不降级**：新版可能自动前移 `mu.schema_migrations`；回滚镜像后旧代码
 对新列/新表无感知（历史兼容已验证），但**不可跨过 schema 破坏性操作**——升级前
-`pg_dump` 一份（见下）。全部历史迁移为 additive（rc.5→rc.14 实证）。
+`pg_dump` 一份（见下）。全部历史迁移为 additive（rc.5→rc.15 实证）。
 
 ## 备份
 
@@ -86,7 +97,7 @@ docker cp mergepilot-postgres-1:/tmp/mu.backup ./mu-$(date +%F).backup
 
 ## 安全加固清单
 
-- 对外暴露**必须**前置 TLS 反代（Caddy 示例：`reverse_proxy 127.0.0.1:48500`，自动证书）；
+- 对外暴露**必须**前置 TLS 反代——强制，非建议；明文 HTTP 不允许承载已认证会话。Caddy 示例：`reverse_proxy 127.0.0.1:48500`（自动证书）。
   保持 console/webhook-ingress 端口绑定 127.0.0.1；
 - 防火墙仅放行反代端口；数据库/keystore/模型卷不对外；
 - `.env` 与私钥文件权限 0600；secrets 不入 git、不入日志（日志层无 secrets 输出为设计合同）；
@@ -106,7 +117,7 @@ docker cp mergepilot-postgres-1:/tmp/mu.backup ./mu-$(date +%F).backup
 | cchain=BLOCKED | 三键是否齐全；attestation 端点可达性；keystore 是否已 rotate 出在役 key |
 | 登录后 403 membership_inactive | 会话绑定租户的成员关系已被撤——重新登录会落到其余 active 租户 |
 
-## 已知限制（rc.14）
+## 已知限制（rc.15）
 
 - 无租户切换端点/UI（多租户用户以对应租户邀请重新登录）；
 - 私有 GitHub App 仅所有者账号可安装；多租户 webhook 需公开化 App 或每租户独立 App；

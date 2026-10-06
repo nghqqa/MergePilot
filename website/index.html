@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MergePilot — 多 Agent PR 审修闭环 · 自托管发行版</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<header class="site">
+  <span class="brand">MergePilot</span>
+  <a href="quickstart.html">快速开始</a>
+  <a href="selfhost-docker.html">Docker 自托管</a>
+  <a href="build-from-source.html">源码构建</a>
+  <a href="config-reference.html">配置参考</a>
+  <a href="multitenant-webhook.html">多租户与 webhook</a>
+  <a href="security.html">安全加固</a>
+  <a href="upgrade-rollback.html">升级与回滚</a>
+  <a href="downloads.html">下载与校验</a>
+  <a href="limitations.html">已知限制</a>
+</header>
+<main>
+  <h1>MergePilot</h1>
+  <p><strong>多 Agent 代码与数据库变更安全闭环系统。</strong>
+  PR 一提交，webhook 自动触发审查：AI 独立复现、确定性 Skill 算事实、RAG 查组织规范、
+  结论以 check run 回写 PR（与 CI 并排）。普通变更自动完成；高危变更停下等人工；
+  <strong>系统无 merge 权限——合并永远归维护者</strong>。</p>
+
+  <div class="note">当前版本 <strong>0.2.0-beta.6-rc.15</strong>（Apache-2.0 开源自托管发行版）。
+  本站不提供托管服务——你把自己的仓库、密钥与数据完全留在自己的机器上。</div>
+
+  <h2>核心能力</h2>
+  <div class="grid">
+    <div class="card"><h2><a href="multitenant-webhook.html">webhook 自动审查</a></h2>
+      GitHub App 安装即接入：PR 事件自动触发多 Agent 审查管线，结论以 check run 回写。</div>
+    <div class="card"><h2><a href="multitenant-webhook.html">多租户隔离</a></h2>
+      installation 与租户一一绑定；八张业务表按 tenant 强制收窄；撤权后同会话下一请求即失效。</div>
+    <div class="card"><h2><a href="security.html">无 merge 权限设计</a></h2>
+      代码不出站：系统只读仓库内容，绝不代为合并；高危变更走审批票，由维护者决定。</div>
+    <div class="card"><h2><a href="downloads.html">可校验交付</a></h2>
+      GHCR 不可变 digest 镜像 + 离线 tar + CycloneDX SBOM + 漏洞/秘密扫描归零记录。</div>
+  </div>
+
+  <h2>三分钟上手</h2>
+  <pre><code>git clone https://github.com/nghqqa/MergePilot.git
+cd MergePilot &amp;&amp; git checkout v0.2.0-beta.6-rc.15
+cd deploy/selfhost
+cp .env.example .env        # 按注释填写（GitHub App 两件套必填）
+node preflight.mjs          # 一键只读检查
+docker compose --env-file .env up -d
+curl http://127.0.0.1:48500/api/health</code></pre>
+  <p>完整步骤见 <a href="quickstart.html">快速开始</a>。</p>
+
+  <h2>它适合谁</h2>
+  <p>维护着自己的代码仓库、希望引入 AI 代码审查、但<strong>不允许 AI 接触合并权限</strong>、
+  且要求审查过程可审计、可回滚、可自托管的团队与个人维护者。</p>
+</main>
+<footer class="site">MergePilot 0.2.0-beta.6-rc.15 · Apache-2.0 · 自托管发行版 · 本站为静态文档，不提供托管服务</footer>
+</body>
+</html>

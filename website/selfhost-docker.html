@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Docker 自托管 · MergePilot</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<header class="site">
+  <span class="brand">MergePilot</span>
+  <a href="index.html">首页</a><a href="quickstart.html">快速开始</a><a href="selfhost-docker.html">Docker 自托管</a><a href="build-from-source.html">源码构建</a><a href="config-reference.html">配置参考</a><a href="multitenant-webhook.html">多租户与 webhook</a><a href="security.html">安全加固</a><a href="upgrade-rollback.html">升级与回滚</a><a href="downloads.html">下载与校验</a><a href="limitations.html">已知限制</a>
+</header>
+<main>
+<div class="crumbs"><a href="index.html">首页</a> / Docker 自托管</div>
+<h1>Docker 自托管</h1>
+
+<h2>拓扑</h2>
+<table>
+<tr><th>服务</th><th>镜像</th><th>端口（宿主）</th><th>说明</th></tr>
+<tr><td>console</td><td>GHCR 不可变 digest（见 <a href="downloads.html">下载与校验</a>）</td><td>127.0.0.1:48500→4730</td><td>主控制台 + 多用户 API + cchain + RAG 编排</td></tr>
+<tr><td>postgres</td><td>pgvector/pgvector（manifest digest 钉死）</td><td>不发布</td><td>mu 库（pgvector 扩展），数据卷 <code>pgdata</code></td></tr>
+<tr><td>bge-m3</td><td>GHCR sidecar digest</td><td>不发布</td><td>RAG 嵌入服务（可选）</td></tr>
+<tr><td>webhook-ingress</td><td>node:22-alpine + webhook-proxy.js</td><td>127.0.0.1:48590→8080</td><td>webhook-only 入口：仅放行 webhook 与 health</td></tr>
+</table>
+<div class="note">compose 全部服务 <code>restart: unless-stopped</code>；仅 console 与 webhook-ingress 发布端口且默认绑定回环；
+postgres/sidecar 仅内部网络可达。</div>
+
+<h2>卷与数据</h2>
+<ul>
+<li><code>pgdata</code> — 数据库全部业务数据（唯一状态权威）</li>
+<li><code>evidence</code> — 审查证据包（只读回放）</li>
+<li><code>model-cache</code> — bge-m3 模型文件（可选）</li>
+<li><code>keystore</code> — cchain 运行绑定密钥（可选；权限 0600 语义由镜像内保证）</li>
+</ul>
+<p>备份/恢复 = 备份/恢复 <code>pgdata</code> 卷或定期 <code>pg_dump</code>（见
+<a href="upgrade-rollback.html">升级与回滚</a>）。</p>
+
+<h2>webhook 入口（对外）</h2>
+<p>GitHub App 的 webhook URL 应指向你的公网入口（TLS 反代）→ 转发到
+<code>127.0.0.1:48590</code>（webhook-ingress），路径
+<code>/api/mu/github/webhook</code>。该入口只放行 webhook 与 health 两个路径，
+其余一律 404——管理面（48500）不要直接暴露公网。</p>
+
+<h2>cchain 信任链（可选）</h2>
+<p>三项配置齐全后 cchain=READY，任一缺失即 BLOCKED（fail-closed，控制台如实显示）：</p>
+<ul>
+<li><code>MERGEPILOT_MODEL_CACHE_DIR</code> — 模型文件目录（挂载卷）</li>
+<li><code>MERGEPILOT_PROVIDER_ATTEST_URL</code> — 供应商证明静态端点（自建 nginx 即可）</li>
+<li><code>MERGEPILOT_RUN_BINDING_KEYSTORE</code> — 运行绑定密钥（经 rotate API 轮换）</li>
+</ul>
+
+<h2>健康与巡检</h2>
+<pre><code>docker compose --env-file .env ps
+curl -s http://127.0.0.1:48500/api/health | jq
+node preflight.mjs --live</code></pre>
+<p><code>/api/health</code> 的 <code>version</code> 字段是运行版本的唯一真源。</p>
+</main>
+<footer class="site">MergePilot 0.2.0-beta.6-rc.15 · Apache-2.0</footer>
+</body>
+</html>

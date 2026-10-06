@@ -47,10 +47,8 @@ services:
     networks: [internal]
 
   console:
-    # ⚠ 待 GHCR 推送：下方 digest 引用在推送生效前无法 pull。
-    #   推送前请按 README「从源码构建」以同版本号自建，并用
-    #   docker tag <本地镜像> ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.14 替换引用。
-    image: ghcr.io/nghqqa/mergepilot-console@sha256:d6dd04cab60742964d35c41d7bee1045a8950dbeeb7bbfd976d0320ab170a0ad
+    # 官方镜像（GHCR 不可变 digest；与 v0.2.0-beta.6-rc.15 源码 tag 同源）
+    image: ghcr.io/nghqqa/mergepilot-console@sha256:f0b30fd1b0b366fc4d203848b657f6cc9012bef8e45459ba7c099fd1a13897b3
     restart: unless-stopped
     ports:
       # 安全基线：仅绑定回环。对外暴露必须前置 TLS 反代（README 安全节）。

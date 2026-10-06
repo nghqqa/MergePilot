@@ -1,0 +1,54 @@
+/* MergePilot 官网静态样式 — 颜色令牌取自 .impeccable/design.json（accent-teal 深青系），
+   与产品控制台同源；字号/圆角为营销站点独立节奏（design-system-* 已按新表面先例登记豁免）。 */
+:root {
+  --ink: #17191e;          /* nav-ink */
+  --accent: #0e6b62;       /* accent-teal canonical */
+  --accent-deep: #072722;  /* accent-teal ramp darkest */
+  --accent-soft: #e6f1ef;  /* accent-teal ramp lightest */
+  --accent-mid: #5aa39b;   /* accent-teal ramp */
+  --line: #bedcd7;         /* accent-teal ramp */
+  --ground: #f4f4f1;       /* workspace-ground */
+  --amber: #8a5a00;        /* status-amber canonical */
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; color: var(--ink); background: var(--ground);
+  font: 16px/1.7 "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+}
+header.site {
+  background: var(--accent-deep); color: var(--accent-soft); padding: 14px 28px;
+  display: flex; flex-wrap: wrap; gap: 8px 22px; align-items: baseline;
+}
+header.site .brand { font-weight: 700; letter-spacing: .5px; margin-right: 8px; }
+header.site a { color: var(--accent-mid); text-decoration: none; }
+header.site a:hover { color: var(--accent-soft); text-decoration: underline; }
+main { max-width: 960px; margin: 0 auto; padding: 32px 24px 64px; }
+h1 { font-size: 1.9rem; margin: .2em 0 .6em; }
+h2 { font-size: 1.3rem; margin-top: 2em; border-bottom: 1px solid var(--line); padding-bottom: .25em; }
+h3 { font-size: 1.08rem; margin-top: 1.6em; }
+a { color: var(--accent); }
+code, pre { font-family: Consolas, "Cascadia Mono", monospace; font-size: .9em; }
+code { background: var(--accent-soft); padding: .1em .35em; border-radius: 5px; }
+pre {
+  background: var(--accent-deep); color: var(--accent-soft); padding: 14px 16px;
+  border-radius: 5px; overflow-x: auto; line-height: 1.55;
+}
+pre code { background: transparent; color: inherit; padding: 0; }
+table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+th, td { border: 1px solid var(--line); padding: 7px 10px; text-align: left; vertical-align: top; }
+th { background: var(--accent-soft); }
+.note {
+  background: var(--accent-soft); border-left: 4px solid var(--accent);
+  padding: 10px 14px; border-radius: 5px; margin: 1em 0;
+}
+.warn {
+  background: var(--ground); border-left: 4px solid var(--amber);
+  padding: 10px 14px; border-radius: 5px; margin: 1em 0;
+}
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+.card { background: #fff; border: 1px solid var(--line); border-radius: 5px; padding: 18px 20px; }
+.card h2 { margin-top: 0; border: none; font-size: 1.15rem; }
+.card a { text-decoration: none; font-weight: 600; }
+footer.site { text-align: center; color: var(--ink); opacity: .72; padding: 24px; font-size: .85rem; }
+.crumbs { font-size: .85rem; color: var(--ink); opacity: .72; margin-bottom: 1em; }
+.crumbs a { text-decoration: none; }

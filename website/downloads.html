@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>下载与校验 · MergePilot</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<header class="site">
+  <span class="brand">MergePilot</span>
+  <a href="index.html">首页</a><a href="quickstart.html">快速开始</a><a href="selfhost-docker.html">Docker 自托管</a><a href="build-from-source.html">源码构建</a><a href="config-reference.html">配置参考</a><a href="multitenant-webhook.html">多租户与 webhook</a><a href="security.html">安全加固</a><a href="upgrade-rollback.html">升级与回滚</a><a href="downloads.html">下载与校验</a><a href="limitations.html">已知限制</a>
+</header>
+<main>
+<div class="crumbs"><a href="index.html">首页</a> / 下载与校验</div>
+<h1>下载与校验（0.2.0-beta.6-rc.15）</h1>
+
+<h2>官方镜像（GHCR，不可变 digest）</h2>
+<pre><code>docker pull ghcr.io/nghqqa/mergepilot-console@sha256:f0b30fd1b0b366fc4d203848b657f6cc9012bef8e45459ba7c099fd1a13897b3</code></pre>
+<table>
+<tr><th>项</th><th>值</th></tr>
+<tr><td>digest</td><td><code>sha256:f0b30fd1b0b366fc4d203848b657f6cc9012bef8e45459ba7c099fd1a13897b3</code>（= image ID）</td></tr>
+<tr><td>tag</td><td><code>v0.2.0-beta.6-rc.15</code></td></tr>
+<tr><td>内置版本</td><td><code>0.2.0-beta.6-rc.15</code>（/api/health version 真源）</td></tr>
+<tr><td>源码 tag</td><td><code>v0.2.0-beta.6-rc.15</code> = commit <code>e660a5aa9a</code></td></tr>
+</table>
+
+<h2>离线 tar（无外网环境）</h2>
+<table>
+<tr><th>项</th><th>值</th></tr>
+<tr><td>文件</td><td><code>mergepilot-console-rc15.tar</code></td></tr>
+<tr><td>大小</td><td>62,562,816 bytes</td></tr>
+<tr><td>SHA256</td><td><code>6d1341f7f289318be986dc8aae16e90e122bcd41b897cf0ed312a2c60ecd6750</code></td></tr>
+<tr><td>加载</td><td><code>docker load -i mergepilot-console-rc15.tar</code> → image ID <code>f0b30fd1…</code></td></tr>
+</table>
+
+<h2>SBOM 与扫描</h2>
+<table>
+<tr><th>项</th><th>值</th></tr>
+<tr><td>SBOM</td><td>CycloneDX 1.5 · <strong>35 组件</strong>（<code>rc15-sbom.cdx.json</code>，随发行版发布）</td></tr>
+<tr><td>漏洞扫描</td><td>trivy 0.74 · <strong>vulnerabilities=0</strong>（含 CRITICAL/HIGH）</td></tr>
+<tr><td>秘密扫描</td><td><strong>secrets=0</strong></td></tr>
+</table>
+
+<h2>校验方法</h2>
+<pre><code># 镜像 ID 校验（加载/拉取后）
+docker inspect --format '{{.Id}}' &lt;镜像引用&gt;
+# 期望：sha256:f0b30fd1b0b366fc4d203848b657f6cc9012bef8e45459ba7c099fd1a13897b3
+
+# 运行版本校验
+curl -s http://127.0.0.1:48500/api/health | grep version
+# 期望：0.2.0-beta.6-rc.15
+
+# tar 校验
+sha256sum mergepilot-console-rc15.tar</code></pre>
+
+<div class="note">历史版本（rc.9～rc.14）的 digest 与 tag 同样以不可变形式保留在 GHCR；
+发布页随版本更新追加，不修改历史条目。</div>
+</main>
+<footer class="site">MergePilot 0.2.0-beta.6-rc.15 · Apache-2.0</footer>
+</body>
+</html>

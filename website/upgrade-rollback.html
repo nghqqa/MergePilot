@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>升级与回滚 · MergePilot</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<header class="site">
+  <span class="brand">MergePilot</span>
+  <a href="index.html">首页</a><a href="quickstart.html">快速开始</a><a href="selfhost-docker.html">Docker 自托管</a><a href="build-from-source.html">源码构建</a><a href="config-reference.html">配置参考</a><a href="multitenant-webhook.html">多租户与 webhook</a><a href="security.html">安全加固</a><a href="upgrade-rollback.html">升级与回滚</a><a href="downloads.html">下载与校验</a><a href="limitations.html">已知限制</a>
+</header>
+<main>
+<div class="crumbs"><a href="index.html">首页</a> / 升级与回滚</div>
+<h1>升级与回滚</h1>
+
+<h2>升级（换镜像即升级）</h2>
+<pre><code># ① 升级前备份
+docker exec mergepilot-postgres-1 pg_dump -U postgres -d mu -Fc -f /tmp/mu.backup
+docker cp mergepilot-postgres-1:/tmp/mu.backup ./mu-$(date +%F).backup
+
+# ② 改 compose 里 console 的 image digest 引用为新版本
+# ③ 拉取并滚动
+docker compose --env-file .env pull console
+docker compose --env-file .env up -d
+# ④ 验证
+curl -s http://127.0.0.1:48500/api/health | grep version</code></pre>
+<p>schema 迁移在启动时<strong>自动、幂等、只前进</strong>执行
+（历史全部为 additive 变更，rc.5→rc.15 实证零数据损失）。</p>
+
+<h2>回滚（换回旧镜像）</h2>
+<pre><code># 把 compose 的 console image 引用改回旧版本 digest 后
+docker compose --env-file .env up -d</code></pre>
+<p>要点：</p>
+<ul>
+<li><strong>schema 不自动降级</strong>——旧镜像对新列/新表无感知可正常运行；
+   若需彻底回到旧 schema，用升级前备份恢复（见下）；</li>
+<li>数据卷（pgdata/evidence/keystore）在回滚中一律不动；</li>
+<li>会话在新旧镜像间语义一致，回滚不强制重登。</li>
+</ul>
+
+<h2>灾备恢复（从备份重建）</h2>
+<pre><code># 以同版本 compose 启动全新栈后：
+docker exec -i mergepilot-postgres-1 pg_restore -U postgres -d mu --clean &lt; mu-2026-10-06.backup</code></pre>
+<p>evidence/model-cache/keystore 卷按原目录回填即可（keystore 丢失会令
+cchain=BLOCKED，重新 rotate 生成即可恢复 READY）。</p>
+
+<h2>版本策略</h2>
+<ul>
+<li>镜像以 <strong>不可变 digest</strong> 发布；compose 引用建议钉 digest 而非浮动 tag；</li>
+<li>每个版本的 digest/SHA256/SBOM 见 <a href="downloads.html">下载与校验</a>；</li>
+<li>源码 tag 与镜像 digest 一一同源（tag 页可溯构建 commit）。</li>
+</ul>
+</main>
+<footer class="site">MergePilot 0.2.0-beta.6-rc.15 · Apache-2.0</footer>
+</body>
+</html>
