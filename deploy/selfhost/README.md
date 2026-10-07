@@ -1,6 +1,6 @@
 # MergePilot rc.17 自托管部署
 
-> 版本：`0.2.0-beta.6-rc.17` · 镜像 digest：`sha256:112284f104001ac5c94b7d6c64ed2b6c854b52ec1c96dee275268bd7ee0e380a`
+> 版本：`0.2.0-beta.6-rc.17` · 镜像 pull digest（OCI index）：`sha256:112284f104001ac5c94b7d6c64ed2b6c854b52ec1c96dee275268bd7ee0e380a`
 > 官方镜像已在 GHCR 发布（不可变 digest）。离线 tar 与源码构建为等效替代途径，校验方式见下。
 > 供应链档案：SBOM（CycloneDX，35 组件）、trivy 扫描（漏洞 0/秘密 0）、离线 tar SHA256 与源码 tag 见「镜像获取与校验」。
 
@@ -22,7 +22,7 @@ curl http://127.0.0.1:48500/api/health
 | 途径 | 命令 | 校验 |
 |---|---|---|
 | GHCR | `docker pull ghcr.io/nghqqa/mergepilot-console@sha256:112284f104…e380a` | RepoDigest == 该 digest |
-| 离线 tar | `docker load -i mergepilot-console-rc17.tar` | tar SHA256 = `2a8ccce4b7fe607c532665581a50bf8e5a021f2ace2a75fbd87c63b913030b90`；load 后 image ID = `112284f104…e380a`（本版 config ID 与 GHCR manifest digest 观测同值） |
+| 离线 tar | `docker load -i mergepilot-console-rc17.tar` | tar SHA256 = `2a8ccce4b7fe607c532665581a50bf8e5a021f2ace2a75fbd87c63b913030b90`；load 后 image ID = `112284f104…e380a`（OCI **index** digest，内含 amd64 manifest `91f7690e…839b8`，其 config digest = `5a6b7544…3642`——三者为不同对象，勿混称；本版 containerd 推送/本地列表恰都显示 index digest） |
 | 源码构建 | 见下节 | image ID 应可复现（同 commit/同构建参数） |
 
 镜像内置 `MERGEPILOT_VERSION=0.2.0-beta.6-rc.17`（`/api/health` version 字段即真源）。
