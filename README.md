@@ -1,7 +1,7 @@
 # MergePilot — 自托管 PR 安全审查工作台
 
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Release](https://img.shields.io/badge/Release-v0.2.0--beta.6--rc.16.1-0e6b62)](https://github.com/nghqqa/MergePilot/releases/tag/v0.2.0-beta.6-rc.16.1)
+[![Release](https://img.shields.io/badge/Release-v0.2.0--beta.6--rc.17-0e6b62)](https://github.com/nghqqa/MergePilot/releases/tag/v0.2.0-beta.6-rc.17)
 ![Edition](https://img.shields.io/badge/Edition-Developer_Beta-orange)
 
 <p align="center">

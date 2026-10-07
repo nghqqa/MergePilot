@@ -20,9 +20,16 @@
 <h1>快速开始</h1>
 <p>前提：Docker 与 Docker Compose v2；一个 GitHub 账号；约 10 分钟。</p>
 
+<div class="warn">先读·这是什么形态：MergePilot 是<strong>用户自托管</strong>产品——
+Console、数据库、OAuth 配置与业务数据全部运行在<strong>部署者自己的环境</strong>中。
+本机/内网部署适合本地评估与受限使用；GitHub OAuth 回调（本机评估除外）、自动 Webhook、
+跨机器邀请认领需要部署者自己的<strong>公网 HTTPS Console 地址</strong>或其他可被 GitHub
+与受邀用户访问的安全入口。GHCR 镜像为 Public 仅表示可匿名拉取镜像，不表示提供托管
+Console 或公网入口。详见 <a href="multitenant-webhook.html">多租户与 webhook</a>。</div>
+
 <h2>1. 获取源码与模板</h2>
 <pre><code>git clone https://github.com/nghqqa/MergePilot.git
-cd MergePilot &amp;&amp; git checkout v0.2.0-beta.6-rc.16
+cd MergePilot &amp;&amp; git checkout v0.2.0-beta.6-rc.17
 cd deploy/selfhost</code></pre>
 
 <h2>2. 填写配置</h2>
