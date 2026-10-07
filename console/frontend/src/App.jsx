@@ -10,7 +10,7 @@ import {
 } from '@ant-design/icons';
 import { api } from './api.js';
 import { readCsrfCookie } from './api-live.js';
-import { AuthProvider, useAuth } from './auth.jsx';
+import { AuthProvider, useAuth, DEMO_BLOCKED } from './auth.jsx';
 import { BrandMark, ErrorBoundary } from './ui.jsx';
 import { deriveIdentitySource, capabilityLine } from './identity.js';
 import { useDataSource, useRuntimeConfig, useMuAccountSummary, resetMuAccountSummaryCache } from './hooks.js';
@@ -529,8 +529,17 @@ export default function App() {
 // 受邀继续 = 以受邀 GitHub 身份重新走 OAuth（后端按 subject/单次/过期校验）。
 function Guarded() {
   const auth = useAuth();
+  const config = useAppConfig();
   const location = useLocation();
   const isLoginEntry = location.pathname === '/login';
+  // 演示放行依据可信运行模式（双源交叉，防 capabilities 缺失时误判为 legacy）：
+  //   /api/health 声明 multiuser → 守卫层禁用演示（残留 sessionStorage 标记不放行）；
+  //   session capabilities.multiuser=true → 同样禁用；两源皆未声明 multiuser
+  //   （legacy/本地部署）才允许既有演示策略。健康检查不可达时 status=unavailable
+  //   本就被 DEMO_BLOCKED 拦截——模式未知绝不放行。
+  const multiuserMode = config?.mode === 'multiuser' || auth.capabilities?.multiuser === true;
+  const demoAdmitted = auth.demo && !DEMO_BLOCKED.has(auth.status) && !multiuserMode;
+  const admitted = auth.status === 'authed' || demoAdmitted;
   if (auth.status === 'checking') {
     return (
       <div className="login-wrap" role="status">
@@ -538,6 +547,6 @@ function Guarded() {
       </div>
     );
   }
-  if (!auth.admitted || isLoginEntry) return <LoginPage />;
+  if (!admitted || isLoginEntry) return <LoginPage />;
   return <Shell />;
 }

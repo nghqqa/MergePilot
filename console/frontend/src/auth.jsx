@@ -20,7 +20,7 @@ export function readDemoPreview() {
 const AuthCtx = createContext(null);
 
 // 演示预览的放行状态集：登录服务不可用（auth_unavailable/网络不可达）时按契约不开放产品，也不放行预览。
-const DEMO_BLOCKED = new Set(['checking', 'unavailable', 'auth_unavailable']);
+export const DEMO_BLOCKED = new Set(['checking', 'unavailable', 'auth_unavailable']);
 
 export function AuthProvider({ children }) {
   // status: checking | anonymous | authed | expired | forbidden | auth_unavailable | not_implemented | unavailable

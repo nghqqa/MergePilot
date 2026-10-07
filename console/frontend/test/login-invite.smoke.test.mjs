@@ -46,11 +46,15 @@ globalThis.fetch = async (input) => {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 };
 
+let LOAD_SEQ = 0;
 async function loadApp() {
   const outDir = path.join(FRONTEND, 'node_modules', '.login-invite-smoke');
   fs.mkdirSync(outDir, { recursive: true });
-  const entry = path.join(outDir, 'entry.mjs');
-  const bundle = path.join(outDir, 'bundle.cjs');
+  // 每次渲染用唯一 bundle 名：避免模块缓存把上一个用例的运行时配置
+  // （data/config.js 模块级 cached）带进下一个用例。
+  const seq = ++LOAD_SEQ;
+  const entry = path.join(outDir, `entry-${seq}.mjs`);
+  const bundle = path.join(outDir, `bundle-${seq}.cjs`);
   fs.writeFileSync(entry, `import App from ${JSON.stringify(toFwd(path.join(FRONTEND, 'src/App.jsx')))};\nexport { App };`);
   await build({
     entryPoints: [entry], bundle: true, format: 'cjs', platform: 'node', outfile: bundle,
@@ -140,6 +144,26 @@ test('3. multiuser 残留演示标记：守卫层阻断放行并清理标记', a
     assert.ok(text.includes('仅受邀成员可登录'), '邀请制提示上屏');
     assert.ok(!text.includes('只读演示预览'), '演示芯片不出现（守卫层阻断，非登录页清理）');
     assert.equal(globalThis.sessionStorage.getItem(DEMO_KEY), null, '残留标记已被登录页清理');
+  } finally { await act(async () => { renderer.unmount(); }); }
+  globalThis.sessionStorage.removeItem(DEMO_KEY);
+});
+
+test('3b. capabilities 缺失 + health=multiuser：仍不放行演示（模式未知不认定 legacy）', async () => {
+  domWindow.location.href = 'http://smoke.local/multiuser';
+  globalThis.sessionStorage.setItem(DEMO_KEY, '1'); // 残留标记
+  ROUTES = {
+    '/api/auth/session': () => [401, { error: { reason: 'not_authenticated' } }], // 无 capabilities 字段
+    '/api/health': HEALTH, // sources.primary=multiuser
+    '/api/mu/session': () => [401, { error: { reason: 'unauthorized' } }],
+    '/api/mu/auth/providers': () => [200, { github: { configured: true, callback_url: 'https://mp.example.com/cb' } }],
+  };
+  const { renderer, json } = await renderRoute('/multiuser');
+  try {
+    const text = json();
+    assert.ok(text.includes('使用 GitHub 登录'), 'caps 缺失时不误判 legacy（health=multiuser 仍阻断演示）');
+    assert.ok(text.includes('仅受邀成员可登录'), '邀请制提示上屏（health 模式判定）');
+    assert.ok(!text.includes('只读演示预览'), '演示芯片不出现');
+    assert.equal(globalThis.sessionStorage.getItem(DEMO_KEY), null, '登录页挂载清理标记（第二层）');
   } finally { await act(async () => { renderer.unmount(); }); }
   globalThis.sessionStorage.removeItem(DEMO_KEY);
 });
