@@ -1267,3 +1267,37 @@ td.th-right { text-align: right; }
   .anomaly-chips { flex-direction: column; }
   .anomaly-chip { align-items: baseline; justify-content: space-between; width: 100%; }
 }
+
+/* ── PR 详情信息精简（2026-10-07）：三层结构 ──
+   第一层摘要（状态/阻塞/计数/动作）→ 审批+发现 → 技术详情折叠。
+   正文 14px 起，辅助信息 ≥12px；保护未知/fail-closed 单入口。 */
+.mu-detail-body { font-size: 14px; }
+.mu-detail-prtitle { color: var(--c-text-2); font-weight: 400; margin-left: var(--sp-2); font-size: 14px; }
+.mu-detail-statusline {
+  display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap;
+  font-size: 14px; margin-top: var(--sp-1);
+}
+.mu-detail-count { color: var(--c-text-2); }
+.mu-detail-blocker {
+  margin-top: var(--sp-2);
+  border: 1px solid var(--c-border); border-left: 3px solid var(--c-warn);
+  border-radius: var(--r-sm); background: var(--c-inset);
+  padding: var(--sp-2) var(--sp-3); font-size: 14px;
+}
+.mu-detail-permhint { font-size: 12px; color: var(--c-text-2); margin-top: var(--sp-2); }
+.mu-tech-collapse { margin-top: var(--sp-3); }
+
+/* 发现/审批：≤760px 纵向列表（级别/位置/状态/操作不横向滚动），桌面保留表格 */
+.mu-mobile-only { display: none; }
+@media (max-width: 760px) {
+  .mu-desktop-only { display: none; }
+  .mu-mobile-only { display: block; }
+  .mu-finding-item, .mu-approval-item {
+    display: flex; flex-direction: column; gap: 4px;
+    padding: var(--sp-2) 0; border-bottom: 1px solid var(--c-border);
+    overflow-wrap: anywhere; min-width: 0;
+  }
+  .mu-finding-item:last-child, .mu-approval-item:last-child { border-bottom: 0; }
+  .mu-finding-line1 { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+  .mu-approval-line { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+}

@@ -182,7 +182,7 @@ test('审查架构面板：v1 只读态（arch_enabled=false）如实提示', as
   assert.ok(text.includes('架构 v2 未启用——只读'), 'v1 只读态如实标注');
 });
 
-test('PR 详情：四分立判定+出站计数上屏（互不冒充）', async () => {
+test('PR 详情：四域判定默认折叠（信息精简 2026-10-07——展开后内容由 mu-pr-detail-slim 锁覆盖）', async () => {
   ROUTES = {
     ...COMMON,
     '/api/mu/session': () => [200, {
@@ -209,15 +209,12 @@ test('PR 详情：四分立判定+出站计数上屏（互不冒充）', async (
   const { json } = await renderRoute('/mu/repos/acme/app/pr/4242');
   const text = json();
   try {
-    assert.ok(text.includes('审查结论'), '审查结论标签');
-    assert.ok(text.includes('要求修改'), 'review_verdict=changes_requested 值上屏');
-    assert.ok(text.includes('验证结论（模型域）') && text.includes('不确定'), 'verification_verdict=inconclusive 上屏（分显模型域）');
-    assert.ok(text.includes('测试证据（工具域）') && text.includes('通过'), 'tests_status=passed 上屏（分显工具域）');
-    assert.ok(text.includes('合并资格') && text.includes('不具备资格'), 'merge_eligibility=ineligible 上屏');
-    assert.ok(text.includes('模型判定（原始）') && text.includes('PASS') && text.includes('digest_only'), 'model_judgment 原始判定分显');
-    assert.ok(text.includes('工具证据：') && text.includes('static_check=ok'), 'test_evidence 工具证据分显');
-    assert.ok(text.includes('次调用（审计在案）'), '出站计数上屏');
-    assert.ok(text.includes('模型未读取完整 patch'), 'RC 语义措辞上屏（模型未读完整 patch/inconclusive/工具独立有效）');
+    // 信息精简：四域判定/证据/机制说明收进「技术详情与判定」折叠区（默认折叠不上屏）；
+    // 展开后内容锁（要求修改/不确定/通过/不具备资格/模型判定/工具证据/出站计数）
+    // 见 test/mu-pr-detail-slim.smoke.test.mjs「四域判定折叠区展开」用例。
+    assert.ok(text.includes('技术详情与判定'), '折叠区入口默认可见');
+    assert.ok(!text.includes('审查结论'), '四域判定默认不直接上屏（已收进折叠区）');
+    assert.ok(!text.includes('模型未读取完整 patch'), '机制长说明默认折叠不上屏');
   } catch (e) { console.log(text.slice(0, 3000)); throw e; }
 });
 
@@ -259,7 +256,7 @@ test('PR 详情：WAITING_FOR_HUMAN_APPROVAL → 审批面板（逐条票+DRY_RU
     assert.ok(text.includes('R-SECRET') && text.includes('a.js'), '发现摘要（rule/path）');
     assert.ok(text.includes('批准受控修复') && text.includes('拒绝修复'), '批准/拒绝按钮');
     assert.ok(text.includes('DRY_RUN 修复建议') && text.includes('不自动合并'), 'DRY_RUN/不合并声明');
-    assert.ok(text.includes('Fixer 被阻塞'), 'Fixer 阻塞提示');
+    assert.ok(text.includes('修复已暂停——等待全部 P0/P1 票人工批准'), '阻塞原因并入顶部摘要（信息精简 2026-10-07）');
     assert.ok(text.includes('已消费'), 'CONSUMED 状态上屏（短标签）');
     assert.ok(!text.includes('DRY_RUN 已启动'), 'CONSUMED 标签不携带超长后缀（溢出回归守卫）');
     assert.ok(text.includes('mu:very-long-maintainer-identifier') && text.includes('2026-10-02 14:43'), '决定人+时间分两行上屏');
