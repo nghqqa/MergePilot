@@ -163,8 +163,8 @@ MU_GITHUB_OAUTH_CALLBACK_URL=https://<console 公开地址>/api/mu/auth/oauth/gi
 git checkout v0.2.0-beta.6-rc.18        # 源码 tag（正式发布后存在；候选阶段用候选 commit）
 cd console/frontend && npm ci && npm run build && cd ../..
 docker build -f docker/Dockerfile.canonical-console \
-  --build-arg MERGEPILOT_VERSION=0.2.0-beta.6-rc.17 \
-  -t ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.17 .
+  --build-arg MERGEPILOT_VERSION=0.2.0-beta.6-rc.18 \
+  -t ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.18 .
 ```
 
 注意两点：① 构建前必须先产出 `console/frontend/dist`（Dockerfile 会 COPY 它）；
@@ -471,7 +471,7 @@ docker cp mergepilot-postgres-1:/tmp/mu.backup ./mu-$(date +%F).backup
 | cchain=BLOCKED | 三键是否齐全；attestation 端点可达性（`node preflight.mjs --live` 可探测，含内容一致性比对）；keystore 是否已 rotate 出在役 key |
 | 登录后 403 membership_inactive | 会话绑定租户的成员关系已被撤——重新登录会落到其余 active 租户 |
 
-## 已知限制（rc.17）
+## 已知限制
 
 - 无租户切换端点/UI（多租户用户以对应租户邀请重新登录）；
 - 私有 GitHub App 仅所有者账号可安装；多租户 webhook 需公开化 App 或每租户独立 App；
