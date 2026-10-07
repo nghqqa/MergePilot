@@ -144,6 +144,33 @@
         "value": "#999",
         "createdAt": "2026-10-07T00:13:37.002Z",
         "reason": "sanctioned pre-existing style: legacy operator divider color preserved verbatim from original LoginPage (pre-#346 baseline)"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "*",
+        "files": [
+          "website/docs.html"
+        ],
+        "createdAt": "2026-10-07T10:40:49.970Z",
+        "reason": "website 既有官网主题令牌（rc.15 官网波定稿，style.css 同文件已按先例整组忽略）；docs.html 仅链接同一 stylesheet，无新增颜色"
+      },
+      {
+        "rule": "design-system-font",
+        "value": "jetbrains mono",
+        "files": [
+          "website/docs.html"
+        ],
+        "createdAt": "2026-10-07T10:40:50.057Z",
+        "reason": "同上：官网既有字体体系，先例见 index.html 同值忽略"
+      },
+      {
+        "rule": "design-system-font",
+        "value": "inter",
+        "files": [
+          "website/docs.html"
+        ],
+        "createdAt": "2026-10-07T10:40:50.144Z",
+        "reason": "同上：官网既有字体体系，先例见 index.html 同值忽略"
       }
     ]
   }
