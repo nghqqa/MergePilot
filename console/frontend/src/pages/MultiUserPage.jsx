@@ -231,15 +231,15 @@ export function PipelinePanel({ prNumber, repoId }) {
                     {f.rule_id} · {f.path}{f.line_start ? `:${f.line_start}` : ''}
                   </code>
                 </div>
-                {f.summary_masked ? <div style={{ fontSize: 13, overflowWrap: 'anywhere' }}>{f.summary_masked}</div> : null}
-                {f.remediation ? <div className="muted" style={{ fontSize: 12, overflowWrap: 'anywhere' }}>建议：{f.remediation}</div> : null}
+                {f.summary_masked ? <div style={{ overflowWrap: 'anywhere' }}>{f.summary_masked}</div> : null}
+                {f.remediation ? <div style={{ overflowWrap: 'anywhere' }}>建议：{f.remediation}</div> : null}
               </div>
             ))}
           </div>
         </div>
-      ) : <Typography.Text type="secondary" style={{ fontSize: 12 }}>未发现风险项。</Typography.Text>}
+      ) : <Typography.Text type="secondary" style={{ fontSize: 13 }}>未发现风险项。</Typography.Text>}
       {(state.detail.fixes ?? []).length > 0 ? (
-        <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginTop: 8, marginBottom: 0 }}>
+        <Typography.Paragraph type="secondary" style={{ fontSize: 13, marginTop: 8, marginBottom: 0 }}>
           修复预演（dry-run，不写 GitHub）：{state.detail.fixes.map((f, i) => {
             const fm = muFixMap(f.status);
             return (
@@ -250,7 +250,7 @@ export function PipelinePanel({ prNumber, repoId }) {
           })}
         </Typography.Paragraph>) : null}
       {(state.detail.verifications ?? []).length > 0 ? (
-        <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginTop: 4, marginBottom: 0 }}>
+        <Typography.Paragraph type="secondary" style={{ fontSize: 13, marginTop: 4, marginBottom: 0 }}>
           独立验证：{state.detail.verifications.map((v, i) => {
             const vm = muVerifyMap(v.verdict);
             return (
@@ -261,7 +261,7 @@ export function PipelinePanel({ prNumber, repoId }) {
           })}
         </Typography.Paragraph>) : null}
       {decisions.length > 0 ? (
-        <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginTop: 4, marginBottom: 0 }}>
+        <Typography.Paragraph type="secondary" style={{ fontSize: 13, marginTop: 4, marginBottom: 0 }}>
           Leader 终裁：{decisions.map((d, i) => {
             const dm = leaderDecisionMap(d.decision);
             return (
@@ -272,7 +272,7 @@ export function PipelinePanel({ prNumber, repoId }) {
             );
           })}
         </Typography.Paragraph>) : null}
-      <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginTop: 8, marginBottom: 0 }}>
+      <Typography.Paragraph type="secondary" style={{ fontSize: 13, marginTop: 8, marginBottom: 0 }}>
         {attempts.some((a) => a.provider === 'agentteams')
           ? '执行器：外部 AgentTeams 四 Agent（正式路径）。'
           : attempts.length
@@ -409,7 +409,7 @@ function AgentPolicyPanel({ can, actions }) {
           </Popconfirm>
         ) : <Tag>只读（需平台管理员）</Tag>}
         {msg ? <Alert type={msg.type} showIcon message={msg.text} /> : null}
-        <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 0 }}>
+        <Typography.Paragraph style={{ marginBottom: 0 }}>
           API Key 与接入端点属于部署级机密，仅由服务器环境变量或 Secret Manager 管理——本页面不提供输入、查看或测试。
           LLM 输出仅为审查建议，不构成 GitHub required review，不触发任何仓库写操作。
         </Typography.Paragraph>
@@ -527,7 +527,7 @@ function ReviewPolicyPanel({ can, actions }) {
         ) : null}
         {!data.arch_enabled ? <Tag color="orange">架构 v2 未启用——只读（beta.5 兼容态）</Tag> : null}
       </Space>
-      <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>{mode.desc}</Typography.Paragraph>
+        <Typography.Paragraph type="secondary" style={{ fontSize: 13 }}>{mode.desc}</Typography.Paragraph>
       <Space direction="vertical" size="middle" style={{ width: '100%', maxWidth: 680 }} aria-label="审查架构策略设置">
         <div>
           <Typography.Text type="secondary">审查模式（三档——仅影响新建任务）</Typography.Text>
@@ -562,7 +562,7 @@ function ReviewPolicyPanel({ can, actions }) {
             {selectedProvider ? (
               <div className="mu-consent-disclosure" style={{ padding: '8px 12px', background: 'var(--bg-inset, #fafafa)', borderRadius: 4 }}>
                 <Typography.Text strong>Provider 披露</Typography.Text>
-                <ul style={{ margin: '4px 0 0', paddingLeft: 18, fontSize: 12 }}>
+                <ul style={{ margin: '4px 0 0', paddingLeft: 18, fontSize: 13 }}>
                   <li>数据保留：{selectedProvider.retention_summary ?? '—'}</li>
                   <li>训练用途：{selectedProvider.training_summary ?? '—'}</li>
                   <li>数据地域：{selectedProvider.region_summary ?? '—'}</li>
@@ -594,7 +594,7 @@ function ReviewPolicyPanel({ can, actions }) {
           </Popconfirm>
         ) : <Tag>{canManage ? '只读（架构 v2 未启用）' : '只读（需平台管理员）'}</Tag>}
         {msg ? <Alert type={msg.type} showIcon message={msg.text} /> : null}
-        <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 0 }}>
+        <Typography.Paragraph style={{ marginBottom: 0 }}>
           API Key 与端点属于部署级机密（服务器环境变量管理）——本页面不提供输入或查看。
           出站前每次调用均经实时授权（模式/Provider/同意三重校验——撤销即时生效）。
         </Typography.Paragraph>

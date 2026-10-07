@@ -40,7 +40,7 @@ async function apiGet(path) {
 function SourceDetail({ source, error, generatedAt }) {
   const hasGenerated = generatedAt != null && generatedAt !== '';
   return (
-    <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
+    <Typography.Paragraph type="secondary" style={{ fontSize: 13 }}>
       <details>
         <summary style={{ cursor: 'pointer' }}>数据来源详情</summary>
         source: <span className="mono">{source || '—'}</span>
@@ -345,8 +345,8 @@ export default function OverviewPage() {
 
   const baseCol = {
     height: 220,
-    xAxis: { label: { style: { fontSize: 11 } } },
-    yAxis: { label: { style: { fontSize: 11 } } },
+    xAxis: { label: { style: { fontSize: 12 } } },
+    yAxis: { label: { style: { fontSize: 12 } } },
   };
   const snapshotSource = source?.kind === 'snapshot';
 
@@ -476,7 +476,7 @@ export default function OverviewPage() {
         <div className="wb-table-head">
           <div>
             <Typography.Title level={3} style={{ marginBottom: 0 }}>PR 列表（{filterMeta.label}）</Typography.Title>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            <Typography.Text type="secondary" style={{ fontSize: 13 }}>
               每个 PR 一行（当前/latest head，按最近事件排序——当前 head 未确认，后端无权威标记）；
               历史 head 与 run 在「查看详情」抽屉展开。
             </Typography.Text>
@@ -601,7 +601,7 @@ export default function OverviewPage() {
                     <Tag className="wb-reason-tag" color="default"
                       title="后端无权威 is_current 标记——当前 head 按最近事件排序推导（head_basis=event_order），未与 GitHub 实时对照。">当前 head 未确认</Tag>
                   ) : null}
-                  <div className="muted" style={{ fontSize: 12 }}>同一 head 的更多 run 在 PR 详情页「审查管线」中。</div>
+                  <div className="muted" style={{ fontSize: 13 }}>同一 head 的更多 run 在 PR 详情页「审查管线」中。</div>
                 </div></div>
               <div className="kv"><div className="kv-label">Run（当前）</div>
                 <div className="kv-value"><span className="mono">{drawerEntity.current?.run_id || '—'}</span></div></div>
@@ -617,7 +617,7 @@ export default function OverviewPage() {
               <div className="kv"><div className="kv-label">待处理原因</div>
                 <div className="kv-value">{drawerEntity.reason.text}
                   {drawerEntity.isProtectionUnknown ? <Tag className="wb-reason-tag" color="warning">保护状态未知</Tag> : null}
-                  <div className="muted" style={{ fontSize: 12 }}>{drawerEntity.reason.detail}</div></div></div>
+                  <div style={{ fontSize: 14 }}>{drawerEntity.reason.detail}</div></div></div>
               <div className="kv"><div className="kv-label">更新时间</div>
                 <div className="kv-value">{drawerEntity.updated_at ? new Date(drawerEntity.updated_at).toLocaleString() : '—'}</div></div>
             </dl>
@@ -655,7 +655,7 @@ export default function OverviewPage() {
                     : undefined} />
               </div>
             ) : null}
-            <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginTop: 12 }}>
+            <Typography.Paragraph type="secondary" style={{ fontSize: 13, marginTop: 12 }}>
               gate 审计与票据明细见 <Link to="/core">系统状态</Link>。
             </Typography.Paragraph>
           </div>
@@ -762,7 +762,7 @@ export default function OverviewPage() {
         <Tag color={data.health.minio.state === 'AGENTTEAMS_MANAGED' ? 'success' : 'default'} title={data.health.minio.note}>MinIO {data.health.minio.state === 'AGENTTEAMS_MANAGED' ? 'AgentTeams 管理' : data.health.minio.state === 'NOT_WIRED' ? '未接线' : data.health.minio.state}</Tag>
         <Tag color="success">后端只读 OK</Tag>
       </Typography.Paragraph>
-      <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
+      <Typography.Paragraph type="secondary" style={{ fontSize: 13 }}>
         <details><summary style={{ cursor: 'pointer' }}>审计入口</summary>
           gate 审计与票据明细见 <Link to="/core">系统状态</Link>；
           审批票处理见 <Link to="/approvals">审批</Link>；队列视图见 <Link to="/pending">待处理</Link>。

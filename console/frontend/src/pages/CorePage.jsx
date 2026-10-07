@@ -39,7 +39,7 @@ function SourceTag({ source, error }) {
   return (
     <Tag color={meta.tone} title={`数据源内部标识：${source}`}>
       数据源：{meta.label}{meta.desc ? `（${meta.desc}）` : ''}
-      {error ? <Typography.Text type="danger" style={{ fontSize: 11, marginLeft: 6 }}>{error}</Typography.Text> : null}
+      {error ? <Typography.Text type="danger" style={{ fontSize: 12, marginLeft: 6 }}>{error}</Typography.Text> : null}
     </Tag>
   );
 }
@@ -176,7 +176,7 @@ export default function CorePage() {
                 { title: '类型', dataIndex: 'kind', width: 200, ellipsis: true,
                   render: (v) => <span className="mono">{v}</span> },
                 { title: '详情', ellipsis: true,
-                  render: (_, r) => <span className="mono" style={{ fontSize: 11 }}>
+                  render: (_, r) => <span className="mono" style={{ fontSize: 12 }}>
                     {r.detail ? JSON.stringify(r.detail).slice(0, 90) : '—'}
                   </span> },
                 { title: '时间', dataIndex: 'created_at', width: 170,
@@ -207,7 +207,7 @@ export default function CorePage() {
             <Alert type="warning" showIcon style={{ marginBottom: 12 }} message={`自动修复告警：${data.fxv.metrics.alerts.join('；')}`} />
           ) : null}
           {data.fxv?.metrics?.metrics ? (
-            <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
+            <Typography.Paragraph type="secondary" style={{ fontSize: 13 }}>
               成功率 {data.fxv.metrics.metrics.success_rate ?? '—'} · 失败 {data.fxv.metrics.metrics.failed ?? 0} · 超时 {data.fxv.metrics.metrics.timeouts ?? 0} · digest 漂移 {data.fxv.metrics.metrics.digest_drifts ?? 0} · 并发冲突 {data.fxv.metrics.metrics.concurrent_conflicts ?? 0} · 恢复 {data.fxv.metrics.metrics.recoveries ?? 0} · P50/P95 {data.fxv.metrics.metrics.duration_s?.p50 ?? '—'}/{data.fxv.metrics.metrics.duration_s?.p95 ?? '—'}s
             </Typography.Paragraph>
           ) : null}
