@@ -21,8 +21,7 @@
   <a href="multitenant-webhook.html">多租户</a>
   <a href="upgrade-rollback.html">升级</a>
   <a href="limitations.html">限制</a>
-  <span class="nav-sec">安全</span>
-  <a href="security.html">安全</a>
+  <a href="security.html" style="margin-inline-start:14px">安全</a>
   <span class="nav-sec">发布</span>
   <a href="downloads.html">下载</a>
 </nav>
@@ -30,15 +29,15 @@
 <section class="hero">
   <div class="hero-badge">v0.2.0-beta.6-rc.17 · Apache-2.0 · 开源自托管</div>
   <h1>PR 一提交，审查自动完成。<br><em>合并权永远归维护者。</em></h1>
-  <p class="lead">MergePilot 是自托管的多 Agent PR 审修闭环。AI 独立复现、确定性 Skill 算事实、RAG 查规范——结论以 check run 回写。你的仓库、密钥与数据，始终在你自己的服务器上。</p>
+  <p class="lead">MergePilot 是自托管的多 Agent PR 审修闭环。AI 独立复现、确定性 Skill 算事实、RAG 查规范——结论只落在你的 Console，对 GitHub 零写入。你的仓库、密钥与数据，始终在你自己的服务器上。</p>
   <div class="cta">
     <a class="btn btn-primary" href="quickstart.html">三分钟快速开始</a>
     <a class="btn btn-outline" href="downloads.html">下载 rc.17</a>
     <a class="btn btn-outline" href="build-from-source.html">源码构建</a>
   </div>
   <div style="margin-top:32px;max-width:680px;margin-inline:auto;">
-    <div class="btn-ghost" onclick="navigator.clipboard.writeText('docker pull ghcr.io/nghqqa/mergepilot-console@sha256:b1c95275750b3b7f6c836235e09659bff6e575aa93d5f041350b9aebe4bfbb0a')" role="button" tabindex="0" aria-label="复制镜像拉取命令">
-      <span>$ docker pull ghcr.io/nghqqa/mergepilot-console@sha256:b1c952…bb0a</span>
+    <div class="btn-ghost" onclick="navigator.clipboard.writeText('docker pull ghcr.io/nghqqa/mergepilot-console@sha256:112284f104001ac5c94b7d6c64ed2b6c854b52ec1c96dee275268bd7ee0e380a')" role="button" tabindex="0" aria-label="复制镜像拉取命令">
+      <span>$ docker pull ghcr.io/nghqqa/mergepilot-console@sha256:1122…e380a</span>
       <span class="copy">点击复制</span>
     </div>
   </div>
@@ -54,7 +53,7 @@
 
 <section class="section">
   <h2 class="section-title">审查管线</h2>
-  <p class="section-sub">从 PR 提交到 check run 回写——每一步都在你的基础设施内运行。</p>
+  <p class="section-sub">从 PR 提交到内部终裁——结论落在你的 Console；CI check run 只读并排；AI 审查按需调用你配置的 LLM 端点。</p>
   <div class="flow">
     <svg viewBox="0 0 760 180" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="webhook 到 consumer 审查管线流程图">
       <defs><marker id="ar" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><path d="M0 0L8 3L0 6Z" fill="#2dd4bf"/></marker></defs>
@@ -73,11 +72,9 @@
       <rect x="500" y="42" width="118" height="52" rx="8" fill="#0a3d3a" stroke="#2dd4bf" stroke-width="2"/>
       <text x="559" y="63" text-anchor="middle" font-size="13" fill="#5eead4" font-weight="600">multi-Agent</text>
       <text x="559" y="80" text-anchor="middle" font-size="11" fill="#94a3b8">AI · Skill · RAG</text>
-      <line x1="618" y1="68" x2="660" y2="68" stroke="#2dd4bf" stroke-width="1.5" marker-end="url(#ar)"/>
-      <rect x="640" y="110" width="110" height="52" rx="8" fill="#132029" stroke="#8a5a00" stroke-width="1.5"/>
+      <rect x="640" y="110" width="110" height="52" rx="8" fill="#132029" stroke="#8a5a00" stroke-width="1.5" stroke-dasharray="4 3"/>
       <text x="695" y="131" text-anchor="middle" font-size="13" fill="#fbbf24" font-weight="600">check run</text>
-      <text x="695" y="148" text-anchor="middle" font-size="11" fill="#94a3b8">与 CI 并排显示</text>
-      <line x1="618" y1="94" x2="655" y2="108" stroke="#fbbf24" stroke-width="1.5" marker-end="url(#ar)"/>
+      <text x="695" y="148" text-anchor="middle" font-size="11" fill="#94a3b8">CI 只读并排展示</text>
       <text x="8" y="165" font-size="12" fill="#64748b">普通变更自动完成 · 高危变更停下等人工审批 · 系统无 merge 权限</text>
     </svg>
   </div>
@@ -90,7 +87,7 @@
     <div class="card">
       <div class="icon">⚡</div>
       <h3>Webhook 自动审查</h3>
-      <p>GitHub App 安装即接入。PR 事件自动触发多 Agent 审查管线，AI 复现、Skill 算事实、结论以 check run 与 CI 并排回写。支持 openai_compatible 端点。</p>
+      <p>GitHub App 安装即接入。PR 事件自动触发多 Agent 审查管线，AI 复现、Skill 算事实——结论以 CI check run 只读并排展示于 Console，对 GitHub 零写入。支持 openai_compatible 端点。</p>
     </div>
     <div class="card">
       <div class="icon">🔐</div>
@@ -105,7 +102,7 @@
     <div class="card">
       <div class="icon">🛡️</div>
       <h3>无 merge 权限</h3>
-      <p>系统对 GitHub 仅只读仓库内容 + 回写 check run。合并永远归维护者。高危变更停下等人工审批票。</p>
+      <p>系统对 GitHub 完全只读——仓库内容与 CI check run 均只读、零写入。合并永远归维护者。高危变更停下等人工审批票。</p>
     </div>
     <div class="card">
       <div class="icon">🔍</div>
