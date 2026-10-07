@@ -1,6 +1,6 @@
-# MergePilot rc.16.1 自托管部署
+# MergePilot rc.17 自托管部署
 
-> 版本：`0.2.0-beta.6-rc.16.1` · 镜像 digest：`sha256:b1c95275750b3b7f6c836235e09659bff6e575aa93d5f041350b9aebe4bfbb0a`
+> 版本：`0.2.0-beta.6-rc.17` · 镜像 digest：`sha256:112284f104001ac5c94b7d6c64ed2b6c854b52ec1c96dee275268bd7ee0e380a`
 > 官方镜像已在 GHCR 发布（不可变 digest）。离线 tar 与源码构建为等效替代途径，校验方式见下。
 > 供应链档案：SBOM（CycloneDX，35 组件）、trivy 扫描（漏洞 0/秘密 0）、离线 tar SHA256 与源码 tag 见「镜像获取与校验」。
 
@@ -22,17 +22,17 @@ curl http://127.0.0.1:48500/api/health
 | 途径 | 命令 | 校验 |
 |---|---|---|
 | GHCR | `docker pull ghcr.io/nghqqa/mergepilot-console@sha256:b1c95275…fbb0a` | RepoDigest == 该 digest |
-| 离线 tar | `docker load -i mergepilot-console-rc16.tar` | tar SHA256 = `164b2713331319d7ab796a039a6c6b90f4eaa525c13dfccf136be6cc482b16b0`；load 后 image ID = `c4edb692…443e`（`b1c95275…` 为 GHCR manifest digest，二者不互替） |
+| 离线 tar | `docker load -i mergepilot-console-rc17.tar` | tar SHA256 = `2a8ccce4b7fe607c532665581a50bf8e5a021f2ace2a75fbd87c63b913030b90`；load 后 image ID = `112284f104…e380a`（本版 config ID 与 GHCR manifest digest 观测同值） |
 | 源码构建 | 见下节 | image ID 应可复现（同 commit/同构建参数） |
 
-镜像内置 `MERGEPILOT_VERSION=0.2.0-beta.6-rc.16`（`/api/health` version 字段即真源）。
+镜像内置 `MERGEPILOT_VERSION=0.2.0-beta.6-rc.17`（`/api/health` version 字段即真源）。
 
-**供应链档案（rc.16.1）**：
+**供应链档案（rc.17）**：
 
-- SBOM：CycloneDX 1.5，**35 组件**（`rc16-sbom.cdx.json`，随发行版发布）；
+- SBOM：CycloneDX 1.7，**35 组件**（`rc17-sbom.cdx.json`，随发行版发布）；
 - 漏洞/秘密扫描（trivy 0.74，ghcr.io 官方漏洞库）：**vulnerabilities=0、secrets=0**；
-- 构建来源：源码 tag `v0.2.0-beta.6-rc.16` = commit `a68057f28b`（与镜像 digest `b1c95275…fbb0a` 同源）；
-  发行 tag `v0.2.0-beta.6-rc.16.1` = `31186131` 仅追加 CHANGELOG 与官网页，**运行时代码与镜像零差异**；
+- 构建来源：源码 tag `v0.2.0-beta.6-rc.17` = main commit `31491a3`（与镜像 digest `112284f104…e380a` 同源）；
+  相对 rc.16 运行时差异：登录/邀请 UX（前端 6 文件）+ session 能力信号（session.mjs）+ start?invite= 非法格式 404（api.mjs）；**零 schema/迁移变更（恒 v23）**；
 - 基础镜像：`node@sha256:0a7108bf…`（Dockerfile 钉死）。
 
 > `48590` 端口与 `beta-webhook-proxy` 容器是 MergePilot 开发方内部测试环境的组件，
@@ -42,11 +42,11 @@ curl http://127.0.0.1:48500/api/health
 ## 从源码构建
 
 ```bash
-git checkout v0.2.0-beta.6-rc.16        # 源码 tag（与镜像同源）
+git checkout v0.2.0-beta.6-rc.17        # 源码 tag（与镜像同源）
 cd console/frontend && npm ci && npm run build && cd ../..
 docker build -f docker/Dockerfile.canonical-console \
-  --build-arg MERGEPILOT_VERSION=0.2.0-beta.6-rc.16 \
-  -t ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.16 .
+  --build-arg MERGEPILOT_VERSION=0.2.0-beta.6-rc.17 \
+  -t ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.17 .
 ```
 
 注意两点：① 构建前必须先产出 `console/frontend/dist`（Dockerfile 会 COPY 它）；
