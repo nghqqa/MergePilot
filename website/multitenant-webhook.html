@@ -12,7 +12,7 @@
   <span class="nav-sec">产品</span><a href="index.html">首页</a>
   <span class="nav-sec">部署</span><a href="quickstart.html">快速开始</a><a href="selfhost-docker.html">Docker</a><a href="build-from-source.html">源码</a>
   <span class="nav-sec">文档</span><a href="config-reference.html">配置</a><a href="multitenant-webhook.html">多租户</a><a href="upgrade-rollback.html">升级</a><a href="limitations.html">限制</a>
-  <span class="nav-sec">安全</span><a href="security.html">安全</a>
+  <a href="security.html" style="margin-inline-start:14px">安全</a>
   <span class="nav-sec">发布</span><a href="downloads.html">下载</a>
 </nav>
 <main>
@@ -63,9 +63,9 @@ callback 填 <code>https://你的域名/api/mu/auth/oauth/github/callback</code>
 
 <h2>事件→审查管线</h2>
 <pre><code>PR 事件 → webhook(HMAC 验签+投递去重) → 事件入队 → 自动 consumer
-→ 审查流水线 → check run 回写 PR → 结论与证据落租户</code></pre>
+→ 审查流水线 → 结论与证据落租户（对 GitHub 零写入）</code></pre>
 <p>投递去重：同一 delivery 重复投递返回 <code>duplicate</code>，不重复处理；
-check run 回写为系统对 GitHub 的唯一"写"（内容只读原则不变）。</p>
+系统对 GitHub 完全只读：CI check run 仅只读并排展示，零写入；结论只落在你的 Console。</p>
 </main>
 <footer class="site">MergePilot 0.2.0-beta.6-rc.17 · Apache-2.0</footer>
 </body>
