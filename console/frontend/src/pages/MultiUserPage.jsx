@@ -207,18 +207,35 @@ export function PipelinePanel({ prNumber, repoId }) {
         </div>
       ) : null}
       {(state.detail.findings ?? []).length > 0 ? (
-        <div className="table-scroll">
+        <div>
           <Typography.Title level={5} style={{ marginTop: 12, marginBottom: 4 }}>风险项（Reviewer 发现）</Typography.Title>
-          <Table rowKey={(f) => `${f.rule_id}-${f.path}-${f.line_start}`}
-            size="small" pagination={false} scroll={{ x: true }} dataSource={state.detail.findings}
-            columns={[
-              { title: '级别', dataIndex: 'severity', width: 60,
-                render: (v) => <Tag color={SEV_TONE[v] ?? 'default'}>{v}</Tag> },
-              { title: '规则', dataIndex: 'rule_id', render: (v) => <code>{v}</code> },
-              { title: '位置', render: (f) => <code>{f.path}{f.line_start ? `:${f.line_start}` : ''}</code> },
-              { title: '摘要', dataIndex: 'summary_masked', ellipsis: true },
-              { title: '建议', dataIndex: 'remediation', ellipsis: true },
-            ]} />
+          <div className="table-scroll mu-desktop-only">
+            <Table rowKey={(f) => `${f.rule_id}-${f.path}-${f.line_start}`}
+              size="small" pagination={false} scroll={{ x: true }} dataSource={state.detail.findings}
+              columns={[
+                { title: '级别', dataIndex: 'severity', width: 60,
+                  render: (v) => <Tag color={SEV_TONE[v] ?? 'default'}>{v}</Tag> },
+                { title: '规则', dataIndex: 'rule_id', render: (v) => <code>{v}</code> },
+                { title: '位置', render: (f) => <code>{f.path}{f.line_start ? `:${f.line_start}` : ''}</code> },
+                { title: '摘要', dataIndex: 'summary_masked', ellipsis: true },
+                { title: '建议', dataIndex: 'remediation', ellipsis: true },
+              ]} />
+          </div>
+          {/* 移动端纵向列表：级别/位置/摘要/建议全可见，不横向滚动（信息精简 2026-10-07） */}
+          <div className="mu-mobile-only">
+            {(state.detail.findings ?? []).map((f) => (
+              <div className="mu-finding-item" key={`${f.rule_id}-${f.path}-${f.line_start}`}>
+                <div className="mu-finding-line1">
+                  <Tag color={SEV_TONE[f.severity] ?? 'default'}>{f.severity}</Tag>
+                  <code style={{ fontSize: 12, overflowWrap: 'anywhere' }}>
+                    {f.rule_id} · {f.path}{f.line_start ? `:${f.line_start}` : ''}
+                  </code>
+                </div>
+                {f.summary_masked ? <div style={{ fontSize: 13, overflowWrap: 'anywhere' }}>{f.summary_masked}</div> : null}
+                {f.remediation ? <div className="muted" style={{ fontSize: 12, overflowWrap: 'anywhere' }}>建议：{f.remediation}</div> : null}
+              </div>
+            ))}
+          </div>
         </div>
       ) : <Typography.Text type="secondary" style={{ fontSize: 12 }}>未发现风险项。</Typography.Text>}
       {(state.detail.fixes ?? []).length > 0 ? (
