@@ -258,7 +258,12 @@ export function PipelinePanel({ prNumber, repoId }) {
       <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginTop: 8, marginBottom: 0 }}>
         {attempts.some((a) => a.provider === 'agentteams')
           ? '执行器：外部 AgentTeams 四 Agent（正式路径）。'
-          : attempts.length ? '执行器：internal 规则引擎（开发/测试路径，非生产）。' : ''}
+          : attempts.length
+            ? // 审查引擎=内置规则引擎（确定性审查）；档位只来自本 run 的策略快照字段
+              // （GET /api/mu/runs/:id 返回 review_run 行，r.* 含 llm_mode）——缺失/未知不猜测。
+              // 修复验证执行器语义见句尾 dry-run 说明，与审查引擎是两回事。
+              `执行器：内置规则引擎（确定性审查）${r?.llm_mode ? `，本 run 审查档位快照 ${r.llm_mode}` : ''}。`
+            : ''}
         修复为 dry-run（不写 GitHub）；AI 审查不构成 GitHub required review。
       </Typography.Paragraph>
       {/* C 波 C2：本 run 的 Skill/RAG 调用留痕（MU live 域 /api/mu/runs/:runId/*）。
@@ -1278,19 +1283,21 @@ export default function MultiUserPage() {
                 </div>
 
                 <div className="mu-pr-detail" aria-live="polite">
-                  <button type="button" className="mu-detail-close"
-                    aria-label="关闭 PR 详情"
-                    onClick={() => {
-                      const prevNum = document.querySelector('.mu-pr-row.is-selected')?.textContent.match(/#(\d+)/)?.[1];
-                      selectPr(null);
-                      requestAnimationFrame(() => requestAnimationFrame(() => {
-                        // 重渲染后再取 live 节点（清参后选中行已去高亮——按编号找回）
-                        const row = prevNum
-                          ? [...document.querySelectorAll('.mu-pr-row')].find(x => x.textContent.includes('#' + prevNum))
-                          : null;
-                        (row ?? document.querySelector('.mu-pr-list'))?.focus?.();
-                      }));
-                    }}>关闭详情</button>
+                  <div className="mu-detail-closebar">
+                    <button type="button" className="mu-detail-close"
+                      aria-label="关闭 PR 详情"
+                      onClick={() => {
+                        const prevNum = document.querySelector('.mu-pr-row.is-selected')?.textContent.match(/#(\d+)/)?.[1];
+                        selectPr(null);
+                        requestAnimationFrame(() => requestAnimationFrame(() => {
+                          // 重渲染后再取 live 节点（清参后选中行已去高亮——按编号找回）
+                          const row = prevNum
+                            ? [...document.querySelectorAll('.mu-pr-row')].find(x => x.textContent.includes('#' + prevNum))
+                            : null;
+                          (row ?? document.querySelector('.mu-pr-list'))?.focus?.();
+                        }));
+                      }}>关闭详情</button>
+                  </div>
                   {selectedPrRef
                     ? <MuPrDetailContent prRef={selectedPrRef} onChanged={refresh} />
                     : <div className="mu-detail-placeholder">
