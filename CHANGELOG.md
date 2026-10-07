@@ -1,3 +1,21 @@
+## [0.2.0-beta.6-rc.18] — 2026-10-07（候选）
+
+### Added / Improved（前端阅读体验）
+- **PR 详情信息精简**：三层结构（摘要→发现/审批→技术详情折叠）；保护未知/合并资格未知/fail-closed 三处合并为单一入口并修正操作路径卡片历史未渲染的传参错位；移动端发现/审批纵向列表（≤760px 无横向滚动）
+- **字号层级**：内容性文字 14px 正文色（发现摘要/修复建议/阻塞原因/权限提示/审批说明），简短辅助 13px，真元数据 12px；`--fs-xs` 11.5→12px，全站 11px 清零；正常文字对比度 ≥5:1（WCAG AA ≥4.5:1）
+- 阻塞原因/权限不足直接可见（不再仅 hover tooltip）；审批旁保留「批准仅启动 dry-run，不写 GitHub、不自动合并」一句说明
+
+### Fixed（自托管）
+- preflight 镜像版本探测对齐 compose 实际引用（宽松匹配误报修复）并导出 parseImageRef/pickLocalImage 可测纯函数
+- 首个平台管理员初始化文档：新增执行方式与授权生命周期说明（ON_ERROR_STOP 口径/退出码语义/重跑幂等边界/收权范围）
+
+## [0.2.0-beta.6-rc.17] — 2026-10-07
+
+### Added / Fixed
+- start?invite= 非法格式统一 404；演示放行 modeDeclared/modeKnownNonMu 补全
+- GHCR 包转 public（匿名可拉）；官网/文档全站 rc.17 对齐；OCI index/amd64 manifest/config digest 三标识分列
+- 自托管文档：部署后首次使用章节、常见错误速查表、公网入口与 callback 边界声明
+
 ## [0.2.0-beta.6-rc.16] — 2026-10-06
 
 ### Security / Fixed
