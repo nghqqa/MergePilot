@@ -153,7 +153,7 @@ export default function RagTrialPage() {
 
       <div className="panel" style={{ padding: 'var(--sp-4)', marginBottom: 16 }}>
         <Typography.Title level={3} style={{ fontSize: 16 }}>A 链 org-search × ragtrial（集成联调）</Typography.Title>
-        <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
+        <Typography.Paragraph type="secondary" style={{ fontSize: 13 }}>
           组织知识检索的内部接线——结果一律 <b>reference_only</b> 辅助引用，
           不构成 finding/gate/ticket/VERIFIED/fixer 输入；Verifier 只接受独立测试证据。
         </Typography.Paragraph>
@@ -180,7 +180,7 @@ export default function RagTrialPage() {
                   <li key={i}>
                     <Tag color="purple">reference_only</Tag>
                     <code>{r.citation.doc_path}</code> · L{r.citation.line_start}-{r.citation.line_end} · score {r.score?.toFixed(3)}
-                    <div className="muted" style={{ fontSize: 12 }}>{String(r.snippet ?? '').slice(0, 120)}…</div>
+                    <div className="muted" style={{ fontSize: 13 }}>{String(r.snippet ?? '').slice(0, 120)}…</div>
                   </li>
                 ))}
               </ul>
@@ -240,12 +240,12 @@ export default function RagTrialPage() {
           </div>
         </div>
         {mu.state === 'ok' ? (
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          <Typography.Text type="secondary" style={{ fontSize: 13 }}>
             当前组织：{mu.tenant?.slug ?? '未知'}
             {useRepoPicker ? ` · 已绑定 ${mu.repos.length} 个仓库（可从下拉选择）` : ' · 尚无已绑定仓库，可自由输入仓库与分支'}
           </Typography.Text>
         ) : mu.state === 'na' ? (
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          <Typography.Text type="secondary" style={{ fontSize: 13 }}>
             未获取到组织会话——自由输入模式；后端仍按 scope 门校验本仓库权限。
           </Typography.Text>
         ) : null}
@@ -293,7 +293,7 @@ export default function RagTrialPage() {
                     {
                       title: '绑定', width: 220,
                       render: (_, r) => (
-                        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                        <Typography.Text type="secondary" style={{ fontSize: 13 }}>
                           doc {r.citation.doc_sha256.slice(0, 8)}… chunk {r.citation.chunk_sha256.slice(0, 8)}…<br />
                           digest {r.citation.model_digest.slice(0, 8)}… iv{r.citation.index_version}
                         </Typography.Text>
@@ -381,7 +381,7 @@ export default function RagTrialPage() {
           <Space size="large" wrap>
             <span>语义 provider：<Tag color={status.production_readiness.semantic_provider?.state === 'ATTESTED' ? 'green' : 'orange'}>
               {status.production_readiness.semantic_provider?.state ?? 'UNKNOWN'}</Tag>
-              {status.production_readiness.semantic_provider?.blocked_condition ? <Typography.Text type="secondary" style={{ fontSize: 12 }}>{status.production_readiness.semantic_provider.blocked_condition}</Typography.Text> : null}
+              {status.production_readiness.semantic_provider?.blocked_condition ? <Typography.Text style={{ fontSize: 14 }}>{status.production_readiness.semantic_provider.blocked_condition}</Typography.Text> : null}
             </span>
             <span>RUN_BINDING_AUTH：<Tag color={status.production_readiness.run_binding_auth?.state === 'READY' ? 'green' : 'orange'}>
               {status.production_readiness.run_binding_auth?.state ?? 'UNKNOWN'}</Tag></span>
@@ -412,7 +412,7 @@ export default function RagTrialPage() {
                 ]} />
             </div>
           ) : null}
-          <Typography.Paragraph type="secondary" style={{ marginTop: 8, marginBottom: 0, fontSize: 12 }}>
+          <Typography.Paragraph type="secondary" style={{ marginTop: 8, marginBottom: 0, fontSize: 13 }}>
             error 态（PG 不可达）无法写 PG 日志，由进程内存计数补齐：{JSON.stringify(metrics.in_memory_error_states ?? {})}
           </Typography.Paragraph>
         </Card>

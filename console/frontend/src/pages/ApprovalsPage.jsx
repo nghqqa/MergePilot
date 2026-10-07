@@ -382,7 +382,7 @@ function MuApprovals() {
                   <td style={{ fontSize: 12 }}>
                     {t.decided_by ? `${t.decided_by} · ${String(t.decided_at ?? '').slice(0, 16).replace('T', ' ')}` : `过期 ${String(t.expires_at ?? '').slice(0, 16).replace('T', ' ')}`}
                   </td>
-                  <td className="mono" style={{ fontSize: 11 }}>{String(t.run_id ?? '').slice(0, 8)}</td>
+                  <td className="mono" style={{ fontSize: 12 }}>{String(t.run_id ?? '').slice(0, 8)}</td>
                   <td>
                     <Link className="btn btn-sm" to={`/mu/repos/${encodeURIComponent(t.repo_owner)}/${encodeURIComponent(t.repo_name)}/pr/${t.pr_number}`}>打开 PR</Link>
                   </td>

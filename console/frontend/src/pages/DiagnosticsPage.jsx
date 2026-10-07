@@ -60,7 +60,7 @@ export default function DiagnosticsPage() {
           {state.label}
           {auth.reason ? `（${auth.reason}）` : ''}
         </div>
-        <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+        <div className="muted" style={{ fontSize: 13, marginTop: 6 }}>
           当前会话身份：{identitySourceLabel} · {capLine}
         </div>
       </section>

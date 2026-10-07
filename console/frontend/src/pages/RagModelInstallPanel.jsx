@@ -102,7 +102,7 @@ export default function RagModelInstallPanel({ modelKey = 'bge-m3' }) {
             <span>当前 provider：<Tag color={install.active_provider === modelKey ? 'green' : 'default'}>{install.active_provider}</Tag></span>
             <span>local-hash 基线：<Tag color="green">始终可用</Tag></span>
             <span>{modelKey} 状态：<Tag color={stateCopy.tone}>{stateCopy.text}</Tag></span>
-            {install.last_error_code ? <span className="muted" style={{ fontSize: 12 }}>最近错误：{install.last_error_code}</span> : null}
+            {install.last_error_code ? <span className="muted" style={{ fontSize: 13 }}>最近错误：{install.last_error_code}</span> : null}
           </Space>
 
           {st === 'DOWNLOADING' || install.engine_busy ? (
@@ -121,12 +121,12 @@ export default function RagModelInstallPanel({ modelKey = 'bge-m3' }) {
                   { title: '大小', dataIndex: 'bytes', width: 110,
                     render: (v) => <span style={{ fontSize: 12 }}>{fmtBytes(Number(v))}</span> },
                   { title: '期望 sha256（官方钉死）', dataIndex: 'sha256', ellipsis: true,
-                    render: (v) => <code style={{ fontSize: 11 }}>{v}</code> },
+                    render: (v) => <code style={{ fontSize: 12 }}>{v}</code> },
                 ]} />
-              <p className="muted" style={{ fontSize: 12, margin: '6px 0 0' }}>
+              <p className="muted" style={{ fontSize: 13, margin: '6px 0 0' }}>
                 来源：{manifest.source?.official_channel} 官方 · revision <code>{manifest.source?.files_revision?.slice(0, 12)}</code> ·
                 许可证 {manifest.license} · 共 {manifest.files?.length} 个文件 / {fmtBytes(Number(manifest.total_bytes))}
-                —— <code style={{ fontSize: 11 }}>modelscope.cn</code> 域名白名单外拒绝下载。
+                —— <code style={{ fontSize: 12 }}>modelscope.cn</code> 域名白名单外拒绝下载。
               </p>
             </div>
           ) : null}

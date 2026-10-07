@@ -232,13 +232,13 @@ export default function SkillsPage() {
           </Form.Item>
           <Form.Item name="manifest_sha256" label="技能包完整性指纹（由构建工具生成，用于防篡改核对；非密钥）"
             rules={[{ required: true }, { pattern: /^[0-9a-f]{64}$/, message: '须为 64 位十六进制（sha256）' }]}
-            extra={<Typography.Text type="secondary" style={{ fontSize: 12 }}>64 位十六进制（sha256），一经发布不可变。</Typography.Text>}>
+            extra={<Typography.Text type="secondary" style={{ fontSize: 13 }}>64 位十六进制（sha256），一经发布不可变。</Typography.Text>}>
             <Input placeholder="9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08" />
           </Form.Item>
           <Form.Item name="artifact_ref" label="工件位置（引用，可选）">
             <Input placeholder="skills/rag-retrieve/1.0.1/" />
           </Form.Item>
-          <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 0 }}>
+          <Typography.Paragraph type="secondary" style={{ fontSize: 13, marginBottom: 0 }}>
             版本一经发布不可修改（同版本号不同指纹将被拒绝）；发布只登记版本——首版自动生效，其余需在「版本历史」中手动激活。
           </Typography.Paragraph>
         </Form>
@@ -261,7 +261,7 @@ export default function SkillsPage() {
                   { title: '发布者', dataIndex: 'published_by', width: 120,
                     render: (v) => <span style={{ fontSize: 12 }}>{v ?? '—'}</span> },
                   { title: '指纹', dataIndex: 'manifest_sha256', width: 110,
-                    render: (v) => <code style={{ fontSize: 11 }}>{String(v ?? '').slice(0, 12)}…</code> },
+                    render: (v) => <code style={{ fontSize: 12 }}>{String(v ?? '').slice(0, 12)}…</code> },
                   { title: '发布时间', dataIndex: 'created_at', width: 140,
                     render: (v) => <span style={{ fontSize: 12 }}>{String(v ?? '').slice(0, 19).replace('T', ' ')}</span> },
                   ...(canManage && histSkill ? [{ title: '操作', width: 110, render: (_, r) => (
@@ -275,7 +275,7 @@ export default function SkillsPage() {
                         </Popconfirm>) ) }] : []),
                 ]} />
             </div>
-            <Typography.Paragraph type="secondary" style={{ fontSize: 12, margin: '8px 0 0' }}>
+            <Typography.Paragraph type="secondary" style={{ fontSize: 13, margin: '8px 0 0' }}>
               「激活/回滚」只切换当前生效版本（版本历史永不改写）；「启用/停用」控制技能整体是否被审查执行栈调用，与版本无关。
             </Typography.Paragraph>
           </>

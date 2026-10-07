@@ -72,7 +72,7 @@ function StateCard({ stateKey, extra, repo, onRefresh, onOpenDetail }) {
         {s.next ? (
           <div><dt>下一步</dt><dd>
             <NextAction next={s.next} repo={repo} onRefresh={onRefresh} onOpenDetail={onOpenDetail} />
-            <div className="muted" style={{ fontSize: 12 }}>{s.next.hint}</div>
+            <div className="muted" style={{ fontSize: 13 }}>{s.next.hint}</div>
           </dd></div>
         ) : null}
       </dl>
@@ -141,7 +141,7 @@ export function ProtectionUnknownSummary({ items = [], onOpenPr, limit = 5 }) {
         );
       })}
       {rest > 0 ? (
-        <li className="pu-list-item muted" style={{ fontSize: 12 }}>
+        <li className="pu-list-item muted" style={{ fontSize: 13 }}>
           …另有 {rest} 个 PR 保护状态未知——点击「异常 PR」统计卡在下方列表查看全部。
         </li>
       ) : null}

@@ -52,7 +52,7 @@
   /* 字阶（5 档）与字重（3 档）：中文回退字体（Microsoft YaHei）只有 400/700 两轴，
      550/650 等中间字重会在中英混排时跳变，一律不用。
      字号适配中文长时间阅读：正文 14px、表格 13px（生产化轮上调） */
-  --fs-xs: 11.5px;
+  --fs-xs: 12px;
   --fs-sm: 13px;
   --fs-base: 14px;
   --fs-md: 16px;
@@ -959,8 +959,8 @@ td.th-right { text-align: right; }
 .mu-detail-actionmsg { margin-bottom: var(--sp-3); }
 .mu-detail-records { margin-bottom: var(--sp-3); }
 .mu-record-list { list-style: none; margin: var(--sp-2) 0 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
-.mu-record-list li { font-size: 12px; color: var(--c-text-2); padding: var(--sp-1) var(--sp-2); background: var(--c-inset); border-radius: var(--r-sm); overflow-wrap: anywhere; }
-.mu-empty-hint { font-size: 12px; color: var(--c-text-3); margin: 0 0 var(--sp-3); }
+.mu-record-list li { font-size: 13px; color: var(--c-text-2); padding: var(--sp-1) var(--sp-2); background: var(--c-inset); border-radius: var(--r-sm); overflow-wrap: anywhere; }
+.mu-empty-hint { font-size: 13px; color: var(--c-text-2); margin: 0 0 var(--sp-3); }
 .mu-action-msg { margin-top: var(--sp-3); }
 .mu-admin-drawer { margin-bottom: var(--sp-4); }
 .mu-visually-hidden {
@@ -1197,7 +1197,7 @@ td.th-right { text-align: right; }
 .nav-adv-toggle:hover { color: #fff; background: rgba(255, 255, 255, 0.06); }
 .nav-adv-toggle:focus-visible { outline: 2px solid #5eead4; outline-offset: -2px; }
 .nav-adv-toggle-active { color: #5eead4; }
-.nav-adv-caret { margin-left: auto; font-size: 11px; opacity: 0.75; }
+.nav-adv-caret { margin-left: auto; font-size: 12px; opacity: 0.75; }
 .nav-adv-list { list-style: none; margin: 0; padding: 0 0 4px; }
 .nav-adv-link {
   display: flex; align-items: center; gap: 10px;
@@ -1284,7 +1284,7 @@ td.th-right { text-align: right; }
   border-radius: var(--r-sm); background: var(--c-inset);
   padding: var(--sp-2) var(--sp-3); font-size: 14px;
 }
-.mu-detail-permhint { font-size: 12px; color: var(--c-text-2); margin-top: var(--sp-2); }
+.mu-detail-permhint { font-size: 14px; color: var(--c-text); margin-top: var(--sp-2); }
 .mu-tech-collapse { margin-top: var(--sp-3); }
 
 /* 发现/审批：≤760px 纵向列表（级别/位置/状态/操作不横向滚动），桌面保留表格 */

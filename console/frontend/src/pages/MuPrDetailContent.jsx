@@ -223,9 +223,11 @@ export function MuPrDetailContent({ prRef, onChanged }) {
             } },
           { title: '发现', ellipsis: true,
             render: (_, t) => (
-              <span className="mono" style={{ fontSize: 12 }}>
-                {t.rule_id} · {t.path}{t.line_start ? `:${t.line_start}` : ''}
-                {t.summary_masked ? <span className="muted">（{t.summary_masked}）</span> : null}
+              <span style={{ fontSize: 14 }}>
+                <span className="mono muted" style={{ fontSize: 12 }}>
+                  {t.rule_id} · {t.path}{t.line_start ? `:${t.line_start}` : ''}
+                </span>
+                {t.summary_masked ? <>（{t.summary_masked}）</> : null}
               </span>
             ) },
           { title: 'head', width: 110,
@@ -271,7 +273,7 @@ export function MuPrDetailContent({ prRef, onChanged }) {
               <code className="mono" style={{ fontSize: 12, overflowWrap: 'anywhere' }}>
                 {t.rule_id} · {t.path}{t.line_start ? `:${t.line_start}` : ''}
               </code>
-              {t.summary_masked ? <div className="muted" style={{ fontSize: 12, overflowWrap: 'anywhere' }}>（{t.summary_masked}）</div> : null}
+              {t.summary_masked ? <div style={{ overflowWrap: 'anywhere' }}>（{t.summary_masked}）</div> : null}
               {t.status === 'PENDING' ? approvalActions(t) : null}
             </div>
           );
@@ -333,7 +335,7 @@ export function MuPrDetailContent({ prRef, onChanged }) {
       {(fixApprovals.length > 0 || waiting) ? (
         <div className="mu-fix-approvals" style={{ margin: '10px 0' }}>
           <Typography.Title level={5}>高危修复审批（P0/P1 逐条）</Typography.Title>
-          <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 4 }}>
+          <Typography.Paragraph style={{ fontSize: 14, marginBottom: 4 }}>
             批准仅启动 dry-run 修复建议——不写入 GitHub、不自动合并；完整边界见下方「技术详情与判定」。
           </Typography.Paragraph>
           {approvalRows(true)}
@@ -404,7 +406,7 @@ export function MuPrDetailContent({ prRef, onChanged }) {
                   head：<code className="mono">{String(pr.head_sha ?? '').slice(0, 12)}</code>
                   （branch_protection_status={pr.branch_protection_status ?? 'unknown'}）
                 </div>
-                <Typography.Paragraph type="secondary" style={{ fontSize: 12, margin: 0 }}>
+                <Typography.Paragraph type="secondary" style={{ fontSize: 13, margin: 0 }}>
                   模型未读取完整 patch；Verifier 的模型结论可能为 inconclusive，工具验证结果独立有效。
                   四项独立判定互不冒充：protection 不明时合并资格恒为"未知"（fail-closed）。
                 </Typography.Paragraph>
