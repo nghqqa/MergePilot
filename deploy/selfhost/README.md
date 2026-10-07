@@ -21,7 +21,7 @@ curl http://127.0.0.1:48500/api/health
 
 | 途径 | 命令 | 校验 |
 |---|---|---|
-| GHCR | `docker pull ghcr.io/nghqqa/mergepilot-console@sha256:b1c95275…fbb0a` | RepoDigest == 该 digest |
+| GHCR | `docker pull ghcr.io/nghqqa/mergepilot-console@sha256:112284f104…e380a` | RepoDigest == 该 digest |
 | 离线 tar | `docker load -i mergepilot-console-rc17.tar` | tar SHA256 = `2a8ccce4b7fe607c532665581a50bf8e5a021f2ace2a75fbd87c63b913030b90`；load 后 image ID = `112284f104…e380a`（本版 config ID 与 GHCR manifest digest 观测同值） |
 | 源码构建 | 见下节 | image ID 应可复现（同 commit/同构建参数） |
 
@@ -334,7 +334,7 @@ docker cp mergepilot-postgres-1:/tmp/mu.backup ./mu-$(date +%F).backup
 | cchain=BLOCKED | 三键是否齐全；attestation 端点可达性（`node preflight.mjs --live` 可探测，含内容一致性比对）；keystore 是否已 rotate 出在役 key |
 | 登录后 403 membership_inactive | 会话绑定租户的成员关系已被撤——重新登录会落到其余 active 租户 |
 
-## 已知限制（rc.16.1）
+## 已知限制（rc.17）
 
 - 无租户切换端点/UI（多租户用户以对应租户邀请重新登录）；
 - 私有 GitHub App 仅所有者账号可安装；多租户 webhook 需公开化 App 或每租户独立 App；
