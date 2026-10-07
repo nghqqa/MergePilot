@@ -524,8 +524,13 @@ export default function App() {
 
 // 路由守卫：只改善交互（未认证先见登录页），不代替后端授权。
 // 服务不可用与未登录分开呈现（见 LoginPage），不无限跳转。
+// /login 是明确的登录入口（含 ?invite= 受邀流）：已登录也渲染登录页——否则
+// /login 会经 /pending 重定向吞掉 invite 参数，已登录用户无法发起受邀认领。
+// 受邀继续 = 以受邀 GitHub 身份重新走 OAuth（后端按 subject/单次/过期校验）。
 function Guarded() {
   const auth = useAuth();
+  const location = useLocation();
+  const isLoginEntry = location.pathname === '/login';
   if (auth.status === 'checking') {
     return (
       <div className="login-wrap" role="status">
@@ -533,6 +538,6 @@ function Guarded() {
       </div>
     );
   }
-  if (!auth.admitted) return <LoginPage />;
+  if (!auth.admitted || isLoginEntry) return <LoginPage />;
   return <Shell />;
 }

@@ -46,7 +46,11 @@ export default function LoginPage() {
   const [inviteId, setInviteId] = useState(() => new URLSearchParams(window.location.search).get('invite'));
   const [inviteError, setInviteError] = useState(null);
   const loginError = new URLSearchParams(window.location.search).get('mu_login_error');
-  const caps = auth.capabilities; // { legacy_login, multiuser } | null（后端能力未知时保持最保守渲染）
+  const caps = auth.capabilities; // { legacy_login } 旧密码表单能力（后端匿名会话下发）
+  // multiuser 形态判定来自 /api/health（服务声明，与会话状态无关）——已登录用户
+  // 打开 /login 时会话响应不含 capabilities，改用 health 判定邀请制提示/演示隐藏。
+  const appConfig = useAppConfig();
+  const multiuserMode = appConfig?.mode === 'multiuser';
 
   // 演示标记处理：登录页挂载即清（已有 sessionStorage 标记不跨登录态残留）。
   useEffect(() => {
@@ -141,6 +145,13 @@ export default function LoginPage() {
               <Alert type="warning" showIcon style={{ marginTop: 16 }}
                      message={LOGIN_ERROR_COPY[loginError] ?? '登录未完成——请重新发起登录'} />
             )}
+            {/* /login 对已登录用户也渲染（受邀认领需以受邀身份重走 OAuth）；行为如实告知 */}
+            {auth.status === 'authed' && (
+              <Alert type="info" showIcon style={{ marginTop: 16 }}
+                     message={inviteId
+                       ? '你当前已登录，继续将通过 GitHub 验证受邀身份'
+                       : '你当前已登录'} />
+            )}
             {inviteId && !inviteError && (
               <Alert type="info" showIcon style={{ marginTop: 16 }}
                      message="检测到受邀访问——请使用受邀的 GitHub 账号登录" />
@@ -151,17 +162,19 @@ export default function LoginPage() {
             )}
 
             {/* 日常登录主入口（品牌主色）。providers 加载中禁用；配置失败只重试，不放开备用登录。 */}
+            {/* 不用 antd loading 图标（CSSMotion 在测试环境脆弱）；禁用+省略号表达进行中 */}
             <Button type="primary" block size="large"
                     style={{ marginTop: 16, marginBottom: 8 }}
-                    loading={busy || prov.phase === 'loading'}
-                    disabled={prov.phase === 'loading'}
+                    disabled={busy || prov.phase === 'loading'}
                     onClick={startGithub}>
-              {inviteId ? '使用受邀的 GitHub 账号登录' : '使用 GitHub 登录'}
+              {(inviteId ? '使用受邀的 GitHub 账号登录' : '使用 GitHub 登录') + ((busy || prov.phase === 'loading') ? '…' : '')}
             </Button>
             {prov.phase === 'error' && (
-              <Alert type="error" showIcon style={{ marginTop: 8 }}
-                     message="登录配置获取失败——无法确认可用登录方式（不会回退到其他入口）"
-                     action={<Button size="small" onClick={loadProviders}>重试</Button>} />
+              <>
+                <Alert type="error" showIcon style={{ marginTop: 8 }}
+                       message="登录配置获取失败——无法确认可用登录方式（不会回退到其他入口）" />
+                <Button block style={{ marginTop: 8 }} onClick={loadProviders}>重试获取登录配置</Button>
+              </>
             )}
             {prov.phase === 'ready' && prov.data?.github?.configured === false && (
               <Alert type="warning" showIcon style={{ marginTop: 8 }}
@@ -169,7 +182,7 @@ export default function LoginPage() {
             )}
 
             {/* 邀请制提示（multiuser 生产形态） */}
-            {caps?.multiuser ? (
+            {multiuserMode ? (
               <div className="login-scope" role="note" style={{ marginTop: 12 }}>
                 <strong>邀请制</strong>
                 <span>仅受邀成员可登录，需要访问权限请联系管理员。</span>
@@ -204,12 +217,12 @@ export default function LoginPage() {
             {formError && <Alert type="error" message={formError} showIcon style={{ marginTop: 12 }} />}
 
             {/* 数据范围说明与演示入口：仅 legacy/本地形态（multiuser 生产登录页不显示） */}
-            {!caps?.multiuser && (
+            {!multiuserMode && (
               <>
                 <div className="login-scope" role="note">
                   <strong>当前数据范围</strong>
                   <span>登录后：授权仓库的 PR 审查、证据与审计（实时只读）。</span>
-                  <span>未登录或演示：仅本地历史快照，不含实时数据。</span>
+                  <span>未登录或演示：不加载实时数据（未认证请求会被接口拒绝）。</span>
                 </div>
                 <div className="login-demo">
                   <Button block onClick={auth.enterDemo}>以只读演示进入</Button>

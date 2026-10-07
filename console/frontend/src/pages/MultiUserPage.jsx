@@ -5,6 +5,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { MuPrDetailContent } from './MuPrDetailContent.jsx';
 import { RunTracePanel } from '../components/RunTracePanel.jsx';
 import { readCsrfCookie } from '../api-live.js';
+import { inviteLinkScope } from '../invite-link.js';
 
 // 多用户面（Developer Edition Beta onboarding）。
 // 渐进式工作流：按后端真实状态只突出当前一步（登录 → 成员资格 → 安装 GitHub App →
@@ -1329,7 +1330,7 @@ export default function MultiUserPage() {
 function InviteAdminPanel({ session }) {
   const canManage = Array.isArray(session?.actions) && session.actions.includes('manage_membership');
   const [invites, setInvites] = useState(null);
-  const [origin, setOrigin] = useState(window.location.origin);
+  const [callbackUrl, setCallbackUrl] = useState(null);
   const [subject, setSubject] = useState('');
   const [role, setRole] = useState('contributor');
   const [ttl, setTtl] = useState(1440);
@@ -1348,12 +1349,14 @@ function InviteAdminPanel({ session }) {
     if (!canManage) return;
     loadInvites();
     muGet('/api/mu/auth/providers').then((r) => {
-      const cb = r.body?.github?.callback_url;
-      if (cb) { try { setOrigin(new URL(cb).origin); } catch { /* 保底 window.location.origin */ } }
+      setCallbackUrl(r.body?.github?.callback_url ?? null);
     });
   }, [canManage, loadInvites]);
 
-  const linkOf = (id) => `${origin}/login?invite=${encodeURIComponent(id)}`;
+  // 邀请链接适用范围：由 OAuth callback 地址判定（缺失/回环/HTTP/HTTPS 分级提示；
+  // 缺失时不得静默回退 window.origin 冒充外部链接）。
+  const scope = inviteLinkScope(callbackUrl);
+  const linkOf = (id) => `${scope.origin ?? ''}/login?invite=${encodeURIComponent(id)}`;
   const copyLink = async (id) => {
     const text = linkOf(id);
     try { await navigator.clipboard.writeText(text); setCopiedId(id); setTimeout(() => setCopiedId(null), 1500); }
@@ -1390,11 +1393,20 @@ function InviteAdminPanel({ session }) {
           message={`邀请已创建（${created.role}，有效期至 ${String(created.expires_at ?? '').slice(0, 19).replace('T', ' ')}）`}
           description={(
             <Space direction="vertical" style={{ width: '100%' }}>
-              <Input readOnly focus value={linkOf(created.invite_id)} onFocus={(e) => e.target.select()} />
-              <Space>
-                <Button type="primary" size="small" onClick={() => copyLink(created.invite_id)}>复制邀请链接</Button>
-                <Typography.Text type="secondary">链接 = Console 公开地址 + /login?invite=；仅对绑定的 GitHub 账号有效</Typography.Text>
-              </Space>
+              {scope.origin ? (
+                <>
+                  <Input readOnly focus value={linkOf(created.invite_id)} onFocus={(e) => e.target.select()} />
+                  <Space>
+                    <Button size="small" onClick={() => copyLink(created.invite_id)}>
+                      {scope.shareable ? '复制邀请链接' : `复制链接（${scope.scope === 'loopback' ? '仅本机可用' : '内网/HTTP 适用'}）`}
+                    </Button>
+                    <Typography.Text type="secondary">邀请链接仅对绑定的 GitHub 账号有效（单次认领）</Typography.Text>
+                  </Space>
+                </>
+              ) : (
+                <Typography.Text type="secondary">invite_id：{created.invite_id}（{scope.note}）</Typography.Text>
+              )}
+              <Typography.Text type="secondary">{scope.note}</Typography.Text>
             </Space>
           )} />
       )}
@@ -1427,7 +1439,9 @@ function InviteAdminPanel({ session }) {
           { title: '有效期至', dataIndex: 'expires_at',
             render: (v) => String(v ?? '').slice(0, 19).replace('T', ' ') },
           { title: '操作', render: (_, r) => (r.state_label === '待领取'
-              ? <Button size="small" onClick={() => copyLink(r.invite_id)}>{copiedId === r.invite_id ? '已复制' : '复制邀请链接'}</Button>
+              ? (scope.origin
+                ? <Button size="small" onClick={() => copyLink(r.invite_id)}>{copiedId === r.invite_id ? '已复制' : '复制邀请链接'}</Button>
+                : <span style={{ color: '#999' }}>需配置 Callback</span>)
               : <span style={{ color: '#999' }}>—</span>) },
         ]} />
     </div>

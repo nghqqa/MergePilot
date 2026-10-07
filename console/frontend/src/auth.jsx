@@ -58,6 +58,10 @@ export function AuthProvider({ children }) {
   }, []);
 
   const status = session.state;
+  // multiuser 形态在守卫层禁用演示：残留 sessionStorage 标记不得放行（不能只依赖
+  // 登录页挂载时清理）；legacy/本地形态（capabilities 缺失或 multiuser=false）
+  // 保留既有演示策略。此标记不改变真实认证权限——授权仍由后端逐端点执行。
+  const multiuserMode = session.capabilities?.multiuser === true;
   const value = useMemo(() => ({
     status,
     user: session.user,
@@ -68,8 +72,11 @@ export function AuthProvider({ children }) {
     refresh,
     enterDemo,
     exitDemo,
-    // 放行浏览：后端已认证，或用户显式进入只读演示预览（服务不可用/登录服务不可用时一律不放行）
-    admitted: status === 'authed' || (demo && !DEMO_BLOCKED.has(status)),
+    // 放行浏览：后端已认证，或用户显式进入只读演示预览（服务不可用/登录服务不可用时一律不放行）。
+    // multiuser 形态在守卫层禁用演示：残留 sessionStorage 标记不得放行（不能只依赖
+    // 登录页挂载时清理）；legacy/本地形态（capabilities 缺失或 multiuser=false）
+    // 保留既有演示策略。此标记不改变真实认证权限——授权仍由后端逐端点执行。
+    admitted: status === 'authed' || (demo && !DEMO_BLOCKED.has(status) && !multiuserMode),
   }), [status, session.user, session.expiresAt, session.reason, session.capabilities, demo, refresh, enterDemo, exitDemo]);
 
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;
