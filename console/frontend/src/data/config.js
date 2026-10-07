@@ -26,6 +26,9 @@ export function normalizeConfig(healthBody) {
   if (primary === 'console-pg' && consolePg.available === true) mode = 'console-pg';
   return {
     mode,
+    // primary 是否被服务显式声明——演示放行依据之一：模式未声明（未知）时
+    // 残留演示标记不放行（不能假定未知=可演示的 legacy 环境）。
+    modeDeclared: sources?.primary != null,
     dataMode: healthBody?.data_mode ?? (mode === 'snapshot' ? 'snapshot' : 'fixture'),
     contractAvailable: contract.available === true,
     contractReason: contract.reason ?? null,

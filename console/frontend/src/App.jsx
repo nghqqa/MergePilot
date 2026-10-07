@@ -533,12 +533,14 @@ function Guarded() {
   const location = useLocation();
   const isLoginEntry = location.pathname === '/login';
   // 演示放行依据可信运行模式（双源交叉，防 capabilities 缺失时误判为 legacy）：
-  //   /api/health 声明 multiuser → 守卫层禁用演示（残留 sessionStorage 标记不放行）；
-  //   session capabilities.multiuser=true → 同样禁用；两源皆未声明 multiuser
-  //   （legacy/本地部署）才允许既有演示策略。健康检查不可达时 status=unavailable
-  //   本就被 DEMO_BLOCKED 拦截——模式未知绝不放行。
+  //   /api/health 声明 multiuser（或 capabilities.multiuser）→ 守卫层禁用演示；
+  //   health 可达但未声明 primary（模式未知）→ 同样不放行——不得假定未知=可演示 legacy；
+  //   放行须：非 multiuser 且（primary 已声明非 multiuser 后端 或 后端明示 legacy_login 可用）。
+  //   健康检查不可达时 status=unavailable 本就被 DEMO_BLOCKED 拦截——模式未知绝不放行。
   const multiuserMode = config?.mode === 'multiuser' || auth.capabilities?.multiuser === true;
-  const demoAdmitted = auth.demo && !DEMO_BLOCKED.has(auth.status) && !multiuserMode;
+  const modeKnownNonMu = (config?.modeDeclared === true && config?.mode !== 'multiuser')
+    || auth.capabilities?.legacy_login === true;
+  const demoAdmitted = auth.demo && !DEMO_BLOCKED.has(auth.status) && !multiuserMode && modeKnownNonMu;
   const admitted = auth.status === 'authed' || demoAdmitted;
   if (auth.status === 'checking') {
     return (
