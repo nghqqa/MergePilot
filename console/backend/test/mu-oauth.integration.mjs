@@ -120,8 +120,19 @@ try {
   ok('OG1 providers：github configured=true + callback/scope 披露且无 client_secret 回显',
     prov.status === 200 && prov.json?.github?.configured === true
       && prov.json.github.callback_url?.includes('/api/mu/auth/oauth/github/callback')
-      && prov.json.github.scope === 'read:user'
-      && !JSON.stringify(prov.json).includes('oauth-test-secret-value'), prov.json);
+      && prov.json.github.scope === 'read:user');
+
+  // ── OG1b start?invite= 非法格式/不存在 → 404 invitation_not_found（垃圾串不得 500） ──
+  const og1bBad = await fetch(BASE_ + '/api/mu/auth/oauth/github/start?invite=not-exist');
+  const og1bBadJ = await og1bBad.json().catch(() => null);
+  ok('OG1b 非法 invite 格式 → 404 invitation_not_found（不 500）',
+    og1bBad.status === 404 && og1bBadJ?.error?.reason === 'invitation_not_found');
+  const og1bMissing = await fetch(BASE_ + '/api/mu/auth/oauth/github/start?invite=11111111-1111-4111-8111-111111111111');
+  const og1bMissingJ = await og1bMissing.json().catch(() => null);
+  ok('OG1b2 合法格式但不存在的 invite → 404 invitation_not_found',
+    og1bMissing.status === 404 && og1bMissingJ?.error?.reason === 'invitation_not_found');
+  ok('OG1c providers 无秘密回显（不出现 oauth-test-secret-value）',
+    !JSON.stringify(prov.json).includes('oauth-test-secret-value'), prov.json);
 
   // ── OG-2 start：authorize_url 合同 + state 高熵 ──
   const st = await startFlow();

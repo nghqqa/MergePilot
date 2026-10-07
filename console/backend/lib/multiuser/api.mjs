@@ -372,7 +372,13 @@ export async function muApi(req, res, ctx) {
     }
     let inviteId = null;
     if (q.invite) {
-      const inv = await store.getInvitation(String(q.invite));
+      const invId = String(q.invite);
+      // 非法格式（含非 UUID 垃圾串）与不存在同义呈现 404——不得让 PG uuid 语法错
+      // 冒泡成 500（链接可被任意篡改，错误呈现属契约面）。
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(invId)) {
+        return sendJson(res, 404, { error: { reason: 'invitation_not_found' } });
+      }
+      const inv = await store.getInvitation(invId);
       if (!inv || inv.claimed_at || inv.expires_at <= new Date()) {
         return sendJson(res, 404, { error: { reason: 'invitation_not_found' } });
       }
