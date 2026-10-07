@@ -30,7 +30,7 @@ for (const p of pages) {
     const clean = ref.split('#')[0].split('?')[0];
     internalRefs.add(clean === '' ? '.' : clean);
   }
-  ok(p + ' 引用样式表', /assets\/style\.css/.test(html));
+  ok(p + ' 引用样式表（含哈希名）', /assets\/style(\.[0-9a-f]{8})?\.css/.test(html));
 
   // ── 导航一致性（与 nav.mjs 单一来源逐字节比对）──
   ok('顶栏与单一来源一致: ' + p, region(html, 'top') === renderTopNav(p));
@@ -52,7 +52,7 @@ for (const p of pages) {
 
   // ── a11y 接线：no-js 回退 + 菜单按钮 ──
   ok('html.no-js 初始类: ' + p, /<html lang="zh-CN" class="no-js">/.test(html));
-  ok('nav.js 引用(defer)且仅一次: ' + p, (html.match(/<script src="assets\/nav\.js" defer><\/script>/g) || []).length === 1);
+  ok('nav.js 引用(defer)且仅一次: ' + p, (html.match(/<script src="assets\/nav(\.[0-9a-f]{8})?\.js" defer><\/script>/g) || []).length === 1);
   ok('菜单按钮 aria-expanded/aria-controls: ' + p,
     /<button class="nav-toggle" type="button" aria-expanded="false" aria-controls="nav-menu">菜单<\/button>/.test(html));
   ok('菜单容器 id=nav-menu: ' + p, /id="nav-menu"/.test(html));
