@@ -394,6 +394,20 @@ COMMIT;
 1. 库内：`SELECT u.login, m.role, m.state FROM mu.membership m JOIN mu.app_user u ON u.user_id = m.user_id WHERE m.role = 'platform_admin';` —— 应看到你的 login 且 `state=active`；
 2. 登录：浏览器 GitHub OAuth 登录后，右上角应显示「组织 default · 平台管理员」；`GET /api/mu/session` 的 `role` 为 `platform_admin`。
 
+**执行方式与行为说明**（以下行为均经隔离环境整块验收，非推测）：
+
+- 脚本化/自动化执行：把上方 SQL 块原样存为 `init.sql` 后交由 psql 执行，并**同时检查退出码与提交后的数据状态**：
+
+  ```bash
+  docker cp init.sql mergepilot-postgres-1:/tmp/init.sql
+  docker exec mergepilot-postgres-1 psql -U postgres -d mu -v ON_ERROR_STOP=1 -f /tmp/init.sql
+  ```
+
+  成功判据 = 退出码 0 **且**上方「验证」查询能看到你的 login（`state=active`）。
+- **未启用 `ON_ERROR_STOP` 时，SQL 中途出错 psql 仍可能返回退出码 0**（此时事务已被服务端整体回滚，库内不存在任何部分授权）。退出码 0 不得单独作为初始化成功的依据——必须以「验证」查询的数据状态为准。
+- 不建议用 shell 双引号把含 `$$` 的整段 SQL 传给 `psql -c`：双引号内 `$$` 会被 shell 展开为当前 shell 的 PID，产生 `DO <pid> …` 之类语法错误。推荐 SQL 文件（`-f`）或交互式粘贴输入，避免该展开。
+- 初始化块可安全重跑：步骤 1/2/4 对已存在行均为 no-op（`ON CONFLICT DO NOTHING` / `NOT EXISTS`），**不覆盖任何已有数据**——包括此前手动做出的降级：角色改为 `maintainer` 后重跑本块，角色仍保持 `maintainer`，这是预期行为（防止已降权账号被旧脚本重新升权）。
+
 **回退 / 收权**（后续成员一律走邀请，见「多租户与 webhook」与 BETA-GUIDE §6.3，勿再直授）：
 
 ```sql
@@ -406,6 +420,11 @@ DELETE FROM mu.membership
 WHERE tenant_id = (SELECT tenant_id FROM mu.tenant WHERE slug = 'default')
   AND user_id = (SELECT user_id FROM mu.app_user WHERE login = '<login>');
 ```
+
+收权语义与 `platform_admin` 恢复边界：
+
+- 收权（`UPDATE` 降级 / `DELETE` 移除）**只作用于 `mu.membership` 行**，不删除 `mu.app_user` 用户记录与 `mu.external_identity` 身份绑定——账号本体保留，后续可改走邀请加入其他角色。
+- 邀请**永不能授予或恢复** `platform_admin`（API 校验 / claim 守卫 / DB CHECK 三层拒绝）。恢复平台管理员属于**部署者明确执行的 DBA 授权操作**（直接调整对应 membership 行的 role，或按需移除该行后重新直授）——不把「删除 membership 后重跑初始化块」作为默认建议路径。
 
 **注意**：直接 SQL 不产生应用审计事件（DBA 面操作），请在你的变更记录中自行留痕。
 
