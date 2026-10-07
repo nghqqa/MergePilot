@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="320" viewBox="0 0 1200 320" role="img" aria-labelledby="ht hd">
+<title id="ht">MergePilot：PR 提交后自动审查，高危变更停下等人工，合并权在人手里</title>
+<desc id="hd">审查管线四步：PR 事件自动触发；多 Agent 审查输出建议；人工闸门放行或拦截；人工合并并全程审计。</desc>
+<rect width="1200" height="320" rx="18" fill="#f7faf9"/>
+<rect x="0.5" y="0.5" width="1199" height="319" rx="17.5" fill="none" stroke="#d8e4e0"/>
+<g transform="translate(64 54)">
+<text x="0" y="0" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="17" letter-spacing="3" fill="#14b8a6">MERGEPILOT · PR 安全审查工作台</text>
+<text x="0" y="64" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="45" font-weight="700" fill="#131a26">PR 一提交，审查自动开始。</text>
+<text x="0" y="120" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="45" font-weight="700" fill="#0e6b62">合并权，永远在人手里。</text>
+<text x="0" y="162" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="20" fill="#5b6b7c">GitHub App 只读接入 · 多 Agent 审查给出可核查的建议</text>
+<text x="0" y="190" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="20" fill="#5b6b7c">高危变更停下等审批 · 数据与密钥不出你的服务器</text>
+<rect x="0" y="218" width="128" height="38" rx="19" fill="#e2efec"/>
+<circle cx="22" cy="237" r="4" fill="#14b8a6"/>
+<text x="36" y="244" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="19" fill="#0e6b62">只读接入</text>
+<rect x="144" y="218" width="128" height="38" rx="19" fill="#e2efec"/>
+<circle cx="166" cy="237" r="4" fill="#14b8a6"/>
+<text x="180" y="244" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="19" fill="#0e6b62">全程审计</text>
+<rect x="288" y="218" width="149" height="38" rx="19" fill="#e2efec"/>
+<circle cx="310" cy="237" r="4" fill="#14b8a6"/>
+<text x="324" y="244" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="19" fill="#0e6b62">自托管单机</text>
+</g>
+<g transform="translate(766 26)">
+<rect x="0" y="0" width="372" height="54" rx="10" fill="#ffffff" stroke="#d3e0db" stroke-width="1.4"/>
+<circle cx="29" cy="27.0" r="13" fill="none" stroke="#0e6b62" stroke-width="1.6"/>
+<text x="29" y="32.5" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="15" font-weight="600" fill="#0e6b62">1</text>
+<text x="56" y="24" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="20" font-weight="600" fill="#131a26">PR 事件</text>
+<text x="56" y="45" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="18" fill="#5b6b7c">webhook 自动触发</text>
+<path d="M 25 57 L 25 67" stroke="#7a8f95" stroke-width="1.6" fill="none"/>
+<path d="M 21.5 61 L 25 68 L 28.5 61 Z" fill="#7a8f95"/>
+<rect x="0" y="70" width="372" height="54" rx="10" fill="#ffffff" stroke="#d3e0db" stroke-width="1.4"/>
+<circle cx="29" cy="97.0" r="13" fill="none" stroke="#0e6b62" stroke-width="1.6"/>
+<text x="29" y="102.5" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="15" font-weight="600" fill="#0e6b62">2</text>
+<text x="56" y="94" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="20" font-weight="600" fill="#131a26">自动审查</text>
+<text x="56" y="115" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="18" fill="#5b6b7c">多 Agent · 输出为建议</text>
+<path d="M 25 127 L 25 137" stroke="#7a8f95" stroke-width="1.6" fill="none"/>
+<path d="M 21.5 131 L 25 138 L 28.5 131 Z" fill="#7a8f95"/>
+<rect x="0" y="140" width="372" height="54" rx="10" fill="#fdf1e7" stroke="#c2410c" stroke-width="1.4"/>
+<circle cx="29" cy="167.0" r="13" fill="none" stroke="#c2410c" stroke-width="1.6"/>
+<text x="29" y="172.5" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="15" font-weight="600" fill="#c2410c">3</text>
+<text x="56" y="164" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="20" font-weight="600" fill="#131a26">人工闸门</text>
+<text x="56" y="185" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="18" fill="#5b6b7c">高危停下等审批</text>
+<path d="M 25 197 L 25 207" stroke="#7a8f95" stroke-width="1.6" fill="none"/>
+<path d="M 21.5 201 L 25 208 L 28.5 201 Z" fill="#7a8f95"/>
+<rect x="0" y="210" width="372" height="54" rx="10" fill="#ffffff" stroke="#d3e0db" stroke-width="1.4"/>
+<circle cx="29" cy="237.0" r="13" fill="none" stroke="#0e6b62" stroke-width="1.6"/>
+<text x="29" y="242.5" text-anchor="middle" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="15" font-weight="600" fill="#0e6b62">4</text>
+<text x="56" y="234" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="20" font-weight="600" fill="#131a26">人工合并</text>
+<text x="56" y="255" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" font-size="18" fill="#5b6b7c">审计全程留痕</text>
+</g>
+</svg>
