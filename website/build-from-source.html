@@ -28,29 +28,29 @@
 
 <h2>构建 console 镜像</h2>
 <pre><code>git clone https://github.com/nghqqa/MergePilot.git
-cd MergePilot &amp;&amp; git checkout v0.2.0-beta.6-rc.16   # 与官方镜像同源的源码 tag
+cd MergePilot &amp;&amp; git checkout v0.2.0-beta.6-rc.17   # 与官方镜像同源的源码 tag
 
 # ① 先构建前端产物（Dockerfile 会 COPY console/frontend/dist）
 cd console/frontend &amp;&amp; npm ci &amp;&amp; npm run build &amp;&amp; cd ../..
 
 # ② 构建镜像（版本号决定 /api/health 的 version 字段）
 docker build -f docker/Dockerfile.canonical-console \
-  --build-arg MERGEPILOT_VERSION=0.2.0-beta.6-rc.16 \
-  -t mergepilot-console:v0.2.0-beta.6-rc.16 .</code></pre>
+  --build-arg MERGEPILOT_VERSION=0.2.0-beta.6-rc.17 \
+  -t mergepilot-console:v0.2.0-beta.6-rc.17 .</code></pre>
 
 <div class="warn">两个常见坑：① 忘记先构建 <code>console/frontend/dist</code>（COPY 会失败）；
 ② 忘记 <code>--build-arg MERGEPILOT_VERSION</code>（健康检查会报旧 fallback 版本号）。</div>
 
 <h2>可复现性</h2>
 <p>同 commit + 同构建参数下镜像内容一致。官方 digest
-<code>sha256:f0b30fd1…3897</code> 的构建源即 tag <code>v0.2.0-beta.6-rc.16</code>
-（commit <code>a68057f28b</code>）。自建镜像的 image ID 会因构建时间戳与官方不同，
+<code>sha256:112284f104…e380a</code> 的构建源即 tag <code>v0.2.0-beta.6-rc.17</code>
+（main commit <code>fd4c309</code>；console/ 运行时代码与已发布镜像一致）。自建镜像的 image ID 会因构建时间戳与官方不同，
 但<strong>功能等价</strong>；若需要与官方逐位一致，请直接使用官方 digest 拉取。</p>
 
 <h2>接入 compose</h2>
 <p>编辑 <code>deploy/selfhost/docker-compose.yml</code>，把 console 的
 <code>image:</code> 改为你的本地引用：</p>
-<pre><code>image: mergepilot-console:v0.2.0-beta.6-rc.16</code></pre>
+<pre><code>image: mergepilot-console:v0.2.0-beta.6-rc.17</code></pre>
 <p>其余配置不变。</p>
 
 <h2>离线 tar 途径</h2>
@@ -58,6 +58,6 @@ docker build -f docker/Dockerfile.canonical-console \
 <a href="downloads.html">下载与校验</a>）：<code>docker load -i mergepilot-console-rc16.tar</code>，
 加载后镜像 ID 与官方 digest 拉取完全一致。</p>
 </main>
-<footer class="site">MergePilot 0.2.0-beta.6-rc.16.1 · Apache-2.0</footer>
+<footer class="site">MergePilot 0.2.0-beta.6-rc.17 · Apache-2.0</footer>
 </body>
 </html>
