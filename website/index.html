@@ -1,30 +1,29 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" class="no-js">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="description" content="MergePilot：自托管多 Agent PR 审修闭环。AI 复现、Skill 算事实、RAG 查规范——你的仓库、密钥与数据留在自己的服务器上。">
 <title>MergePilot — 多 Agent PR 审修闭环 · 自托管</title>
 <link rel="stylesheet" href="assets/style.css">
+<script src="assets/nav.js" defer></script>
 </head>
 <body>
-<nav class="nav" aria-label="主导航">
-  <a class="nav-brand" href="index.html">MergePilot</a>
-  <span class="nav-sec">产品</span>
-  <a href="index.html" aria-current="page">首页</a>
-  <span class="nav-sec">部署</span>
-  <a href="quickstart.html">快速开始</a>
-  <a href="selfhost-docker.html">Docker</a>
-  <a href="build-from-source.html">源码</a>
-  <span class="nav-sec">文档</span>
-  <a href="config-reference.html">配置</a>
-  <a href="multitenant-webhook.html">多租户</a>
-  <a href="upgrade-rollback.html">升级</a>
-  <a href="limitations.html">限制</a>
-  <a href="security.html" style="margin-inline-start:14px">安全</a>
-  <span class="nav-sec">发布</span>
-  <a href="downloads.html">下载</a>
+<!-- nav:top -->
+<nav class="nav" aria-label="站点导航">
+  <div class="nav-inner">
+    <a class="nav-brand" href="index.html">MergePilot</a>
+    <div class="nav-links" id="nav-menu">
+      <a href="index.html" aria-current="page">首页</a>
+      <a href="quickstart.html">快速开始</a>
+      <a href="docs.html">文档</a>
+      <a href="downloads.html">下载</a>
+    </div>
+    <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="nav-menu">菜单</button>
+  </div>
 </nav>
+<!-- /nav:top -->
+<main>
 
 <section class="hero">
   <div class="hero-badge">v0.2.0-beta.6-rc.17 · Apache-2.0 · 开源自托管</div>

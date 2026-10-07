@@ -1,21 +1,62 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" class="no-js">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>源码构建 · MergePilot</title>
 <link rel="stylesheet" href="assets/style.css">
+<script src="assets/nav.js" defer></script>
 </head>
 <body>
-<nav class="nav" aria-label="主导航">
-  <a class="nav-brand" href="index.html">MergePilot</a>
-  <span class="nav-sec">产品</span><a href="index.html">首页</a>
-  <span class="nav-sec">部署</span><a href="quickstart.html">快速开始</a><a href="selfhost-docker.html">Docker</a><a href="build-from-source.html">源码</a>
-  <span class="nav-sec">文档</span><a href="config-reference.html">配置</a><a href="multitenant-webhook.html">多租户</a><a href="upgrade-rollback.html">升级</a><a href="limitations.html">限制</a>
-  <a href="security.html" style="margin-inline-start:14px">安全</a>
-  <span class="nav-sec">发布</span><a href="downloads.html">下载</a>
+<!-- nav:top -->
+<nav class="nav" aria-label="站点导航">
+  <div class="nav-inner">
+    <a class="nav-brand" href="index.html">MergePilot</a>
+    <div class="nav-links" id="nav-menu">
+      <a href="index.html">首页</a>
+      <a href="quickstart.html">快速开始</a>
+      <a href="docs.html" aria-current="true">文档</a>
+      <a href="downloads.html">下载</a>
+    </div>
+    <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="nav-menu">菜单</button>
+  </div>
 </nav>
-<main>
+<!-- /nav:top -->
+<main class="shell">
+<!-- nav:docs -->
+<aside class="doc-nav" aria-label="文档导航">
+      <section class="side-group is-current">
+        <h2 class="side-title">部署</h2>
+        <ul class="side-list">
+        <li><a href="quickstart.html">快速开始</a></li>
+        <li><a href="selfhost-docker.html">Docker 自托管</a></li>
+        <li><a href="build-from-source.html" aria-current="page">源码构建</a></li>
+        </ul>
+      </section>
+      <section class="side-group">
+        <h2 class="side-title">使用</h2>
+        <ul class="side-list">
+        <li><a href="config-reference.html">配置</a></li>
+        <li><a href="multitenant-webhook.html">多租户与邀请</a></li>
+        </ul>
+      </section>
+      <section class="side-group">
+        <h2 class="side-title">维护</h2>
+        <ul class="side-list">
+        <li><a href="upgrade-rollback.html">升级与回滚</a></li>
+        <li><a href="limitations.html">限制</a></li>
+        <li><a href="security.html">安全</a></li>
+        </ul>
+      </section>
+      <section class="side-group">
+        <h2 class="side-title">发布</h2>
+        <ul class="side-list">
+        <li><a href="downloads.html">下载与校验</a></li>
+        </ul>
+      </section>
+</aside>
+<!-- /nav:docs -->
+<article class="doc">
 <div class="crumbs"><a href="index.html">首页</a> / 源码构建</div>
 <h1>从源码构建</h1>
 <p>适用于：无法或不愿直接拉取 GHCR 镜像、需要审计构建过程、或希望自定义镜像的场景。</p>
@@ -57,7 +98,8 @@ docker build -f docker/Dockerfile.canonical-console \
 <p>无法访问 GHCR 时，可使用离线 tar（SHA256 见
 <a href="downloads.html">下载与校验</a>）：<code>docker load -i mergepilot-console-rc16.tar</code>，
 加载后镜像 ID 与官方 digest 拉取完全一致。</p>
+</article>
 </main>
-<footer class="site">MergePilot 0.2.0-beta.6-rc.17 · Apache-2.0</footer>
+<footer class="footer">MergePilot 0.2.0-beta.6-rc.17 · Apache-2.0</footer>
 </body>
 </html>
