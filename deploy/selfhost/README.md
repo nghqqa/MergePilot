@@ -17,6 +17,123 @@ curl http://127.0.0.1:48500/api/health
 首次启动自动完成 schema 初始化（至 v23）；随后访问 `http://127.0.0.1:48500/multiuser`
 完成 GitHub OAuth 登录（首个用户需先经邀请，见「多租户与 webhook」）。
 
+## 部署后首次使用
+
+### 这是什么形态的产品（先读）
+
+MergePilot 是**用户自托管**产品：Console、数据库、OAuth 配置和业务数据全部运行在
+**部署者自己的环境**中，MergePilot 项目方不托管任何用户的 Console 或数据。
+
+| 部署形态 | 能做什么 | 不能做什么 |
+|---|---|---|
+| **本机 / 内网**（127.0.0.1 / 局域网） | 本机 GitHub OAuth 登录、本地评估、受限使用 | 跨机器邀请、自动接收 GitHub Webhook |
+| **公网 HTTPS**（部署者自有域名 + 反代） | 上述全部 + GitHub Webhook 自动进入管线 + 跨机器邀请认领 | 需要部署者自己运营公网入口与 TLS |
+
+GHCR 镜像包为 **Public** 仅表示自托管用户可以匿名拉取镜像；**不代表 MergePilot
+提供托管版 Console，也不会自动为部署者提供公网入口**——公网入口永远由部署者
+自己的反代/隧道与域名构成。
+
+### Console 登录地址
+
+| 场景 | 地址 |
+|---|---|
+| 本机访问 | `http://127.0.0.1:48500/login`（或 `/multiuser`） |
+| 公网 | `https://<console 公开地址>/login`（经部署者自己的 HTTPS 反代） |
+
+登录方式：**GitHub OAuth**（仅受邀成员）。生产 multiuser 形态下不提供操作员密码
+表单，也不提供演示入口（见下「登录与演示的默认关闭项」）。
+
+### GitHub OAuth callback 格式
+
+在 GitHub OAuth App 中填写（**必须与实际访问地址同源**）：
+
+```text
+<Console 公开地址>/api/mu/auth/oauth/github/callback
+# 本机评估：http://127.0.0.1:48500/api/mu/auth/oauth/github/callback
+# 公网生产：https://<console 公开地址>/api/mu/auth/oauth/github/callback
+```
+
+### Webhook 对外地址要求
+
+GitHub App 的 Webhook URL 必须是 **公网可达的 HTTPS 地址**，转发到本机
+`48590`（webhook-ingress）。127.0.0.1/localhost **不可作为 GitHub Webhook 的
+对外地址**（GitHub 服务器无法访问你的回环地址）；没有公网入口时，本地管理
+界面可用，但 webhook 无法自动进入审查管线（详见「多租户与 webhook」）。
+
+### 管理员创建邀请（唯一准入通道）
+
+管理员登录后进入 **组织与接入 → 成员与邀请** 面板：
+
+1. 填写受邀人的 **GitHub 数字 user id**（必填；`https://api.github.com/users/<login>` 的 `id` 字段）、
+   角色（maintainer / reviewer / contributor / auditor）、有效期（默认 1440 分钟）；
+2. 点击 **创建邀请** → 面板给出 **一键复制邀请链接**：
+
+```text
+https://<console 公开地址>/login?invite=<invite_id>
+```
+
+3. 邀请语义：绑定 **GitHub 数字 id + 租户 + 角色 + 有效期 + 单次认领**；**邀请永不授予
+   `platform_admin`**（API/认领守卫/数据库 CHECK 三层拒绝）。链接只是入口，**不是
+   可转让的授权凭证**——认领时后端校验到访者 GitHub 身份与绑定 id 一致才生效。
+
+### callback 未配置或为回环地址时
+
+成员与邀请面板会按 OAuth callback 地址**自动标注链接适用范围**：回环（127.0.0.1/
+localhost）→ **「仅本机可用」**；HTTP 非回环 → 「不符合推荐的对外 HTTPS 配置（内网
+适用）」；HTTPS 非回环 → 可共享（仅证明格式符合要求，不探测公网可达性）。callback
+缺失时不生成链接，只提示先配置 `MU_GITHUB_OAUTH_CALLBACK_URL`。
+
+### 如何验证三条链路
+
+| 链路 | 验证方法 |
+|---|---|
+| 登录 | 打开 Console 登录地址 → 点击 GitHub 登录 → 落回工作台且右上角显示已登录身份 |
+| Webhook | GitHub App 高级页 **Recent Deliveries** 出现 2xx（可用 Redeliver 重放历史投递验证端到端；无公网入口时恒为空/失败——属预期） |
+| 邀请 | 管理员复制邀请链接 → 受邀人用自己的 GitHub 账号打开 → 登录后成员面板出现对应租户与角色 |
+
+### 常见错误速查
+
+| 页面/API 提示 | 含义与处理 |
+|---|---|
+| `not_invited` / 身份未被邀请 | 到访者 GitHub 数字 id 没有对应邀请——管理员按数字 id 创建邀请 |
+| `invitation_not_found` | 邀请 id 不存在、链接被篡改或已过期删除——向管理员索取新链接 |
+| `invitation_expired` | 邀请超过有效期——请管理员重建邀请 |
+| `invitation_already_claimed` | 邀请已被领取（单次认领）——如需再次加入请联系管理员 |
+| `invitation_ambiguous` | 同一 GitHub id 存在多条待认领邀请——管理员清理重复邀请后重试 |
+| OAuth 未配置 / `oauth_not_configured` | 管理员未配置 `MU_GITHUB_OAUTH_*` 三项——见 `.env.example` 注释 |
+| `fixture_login_disabled` | fixture 操作员登录未开启——生产保持关闭，属预期安全行为 |
+| `legacy_login_disabled_in_multiuser` | multiuser 形态禁用旧操作员密码登录——使用 GitHub OAuth |
+
+### 登录与演示的默认关闭项（按部署模式）
+
+| 开关 | 默认 | 说明 |
+|---|---|---|
+| `MU_ALLOW_FIXTURE_LOGIN` | 关 | fixture 操作员（`pilot-admin`）登录——仅开发/测试与首次建管使用，**不是正常生产登录方式** |
+| `MU_LEGACY_LOGIN` | 关（multiuser 下强制关） | 旧操作员密码登录（`/api/auth/login`）——multiuser 形态无显式 `=1` 一律拒绝 |
+| 演示入口 | multiuser 登录页不显示 | 未认证只读快照浏览，仅 legacy/本地形态保留 |
+
+### 两种形态的配置示例（占位符，勿填真实值）
+
+**本机 / 内网评估**（本机 OAuth 登录可用；无 webhook、无跨机器邀请）：
+
+```bash
+# .env（节选）
+MU_MODE=multiuser
+MU_GITHUB_OAUTH_CALLBACK_URL=http://127.0.0.1:48500/api/mu/auth/oauth/github/callback
+# MU_ALLOW_FIXTURE_LOGIN=1        # 仅首次建管临时开启，建完即关
+```
+
+**公网 HTTPS 生产**（自动 webhook + 跨机器邀请认领）：
+
+```bash
+# .env（节选）
+MU_GITHUB_OAUTH_CALLBACK_URL=https://<console 公开地址>/api/mu/auth/oauth/github/callback
+# 反代：https://<console 公开地址> → 127.0.0.1:48500
+#       https://<console 公开地址>/api/mu/github/webhook → 127.0.0.1:48590（GitHub App Webhook URL）
+```
+
+> 多租户、邀请与安装 GitHub App 的完整步骤见「多租户与 webhook」与 `docs/BETA-GUIDE.md`。
+
 ## 镜像获取与校验
 
 | 途径 | 命令 | 校验 |

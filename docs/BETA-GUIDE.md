@@ -469,6 +469,17 @@ GET /api/mu/github/app/status → {"configured": false, "reason": "github_app_no
 → 确认 `expected_subject` 使用的是 **GitHub 数字 user id**（不是 login 句柄）。
 获取方式：`https://api.github.com/users/<login>` 的 `id` 字段。
 
+### 登录/邀请常见错误速查
+
+| 提示 | 含义与处理 |
+|---|---|
+| `invitation_not_found` | 邀请 id 不存在、链接被篡改或已删除——向管理员索取新链接 |
+| `invitation_expired` | 邀请超过有效期——请管理员重建邀请 |
+| `invitation_already_claimed` | 邀请已被领取（单次认领）——如需再次加入请联系管理员 |
+| `invitation_ambiguous` | 同一 GitHub 数字 id 存在多条待认领邀请——管理员清理重复邀请后重试 |
+| `fixture_login_disabled` | fixture 操作员登录未开启——生产保持关闭，属预期安全行为 |
+| `legacy_login_disabled_in_multiuser` | multiuser 形态禁用旧操作员密码登录——使用 GitHub OAuth |
+
 ### 登录失败（`legacy_login_disabled_in_multiuser`）
 
 → 多用户模式下禁止共享操作员账号。使用 `/api/mu/auth/login`（OAuth 或 fixture）。
