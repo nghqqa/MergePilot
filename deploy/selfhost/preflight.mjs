@@ -56,6 +56,37 @@ export async function probeAttest(url, opts = {}) {
   return { outcome: 'pass', detail: 'HTTP 200 + 形状校验通过' + (file ? ' + 与本地源文件一致' : '') };
 }
 
+// ── 镜像引用解析与本地精确匹配（纯函数；node --test 可单测）──
+// parseImageRef：digest 引用 / 精确 tag 引用 / 缺失 / 不可解析 四分类。
+// 只做格式解析，不做任何猜测：repo-only（无 tag 无 digest）= ambiguous。
+export function parseImageRef(ref) {
+  const t = String(ref || '').trim();
+  if (!t) return { kind: 'none', repo: null, tag: null, digest: null };
+  const at = t.indexOf('@');
+  if (at >= 0) {
+    const digest = t.slice(at + 1);
+    if (!/^sha256:[0-9a-f]{64}$/.test(digest)) return { kind: 'invalid', repo: t, tag: null, digest: null };
+    return { kind: 'digest', repo: t.slice(0, at), tag: null, digest };
+  }
+  const tagMatch = t.match(/:([^:/]+)$/);
+  if (tagMatch) return { kind: 'tag', repo: t.slice(0, t.length - tagMatch[0].length), tag: tagMatch[1], digest: null };
+  return { kind: 'ambiguous', repo: t, tag: null, digest: null };
+}
+
+// pickLocalImage：在本地镜像行中精确匹配引用（repo 全等 + tag/digest 全等）。
+// 绝不按名称宽松匹配历史 tag——本机常见多版本共存，宽松匹配会把旧版本当运行版本。
+// rows 形如 { id, repo, tag, digest }（docker images --format '{{.ID}}|{{.Repository}}|{{.Tag}}|{{.Digest}}'）。
+export function pickLocalImage(rows, ref) {
+  const parsed = parseImageRef(ref);
+  if (!parsed || (parsed.kind !== 'digest' && parsed.kind !== 'tag')) return null;
+  for (const r of rows || []) {
+    if (!r || r.repo !== parsed.repo) continue;
+    if (parsed.kind === 'digest' && r.digest === parsed.digest) return r;
+    if (parsed.kind === 'tag' && r.tag === parsed.tag) return r;
+  }
+  return null;
+}
+
 let pass = 0, fail = 0, warn = 0;
 const ok = (n, c, d) => { c ? pass++ : fail++; console.log((c ? '  PASS  ' : '  FAIL  ') + n + (d ? '  ' + d : '')); };
 const warnk = (n, d) => { warn++; console.log('  WARN  ' + n + (d ? '  ' + d : '')); };
@@ -120,17 +151,33 @@ async function main() {
   // ── 3. compose 模板可解析 ──
   const cc = run(['docker', 'compose', '-f', COMPOSE_FILE, '--env-file', ENV_FILE, 'config', '--quiet']);
   ok('compose 模板解析通过', cc.status === 0, cc.stderr && cc.stderr.split('\n')[0]);
-
-  // ── 4. 镜像 digest / version ──
-  const ci = run(['docker', 'images', '--format', '{{.ID}} {{.Repository}}:{{.Tag}}']);
-  const hasConsoleLocal = ci.stdout.split('\n').some((l) => /mergepilot-console/.test(l));
-  ok('console 镜像已存在于本地镜像列表', hasConsoleLocal, hasConsoleLocal ? ci.stdout.split('\n').find((l) => /mergepilot-console/.test(l)) : '先 docker pull/load（离线 tar 或 GHCR digest）');
+  // compose 实际 pin 的 console 镜像引用（插值后的权威值；失败则下游按未知处理）
+  let consoleRef = null;
   {
-    const ver = run(['docker', 'run', '--rm', '--entrypoint', 'sh',
-      (ci.stdout.split('\n').find((l) => /mergepilot-console:v/.test(l)) || 'x').split(' ').pop(),
-      '-c', 'echo $MERGEPILOT_VERSION']);
-    if (ver.status === 0) ok('镜像内置 MERGEPILOT_VERSION=' + (ver.stdout || '(空)').trim(), (ver.stdout || '').trim().length > 0, '版本随镜像构建注入，不做硬编码断言');
-    else warnk('镜像 version 检查跳过（本地无 tag 形式镜像，属正常——官方分发按 digest 拉取）');
+    const ccj = run(['docker', 'compose', '-f', COMPOSE_FILE, '--env-file', ENV_FILE, 'config', '--format', 'json']);
+    if (ccj.status === 0) {
+      try { consoleRef = JSON.parse(ccj.stdout)?.services?.console?.image ?? null; } catch { /* 解析失败按未知处理 */ }
+    }
+  }
+
+  // ── 4. compose 镜像引用 / 本地缓存 / 内置版本 ──
+  // 版本探测只针对 compose 实际 pin 的引用（digest 或精确 tag）：
+  // 本机常见多版本共存，绝不按名称宽松匹配历史 tag 充当运行版本依据；
+  // 引用无法解析时按 UNKNOWN/WARN 呈现，不猜测版本。
+  {
+    const rows = run(['docker', 'images', '--format', '{{.ID}}|{{.Repository}}|{{.Tag}}|{{.Digest}}']).stdout
+      .split("\\n").filter(Boolean).map((l) => { const parts = l.split('|'); return { id: parts[0], repo: parts[1], tag: parts[2], digest: parts[3] }; });
+    const hit = consoleRef ? pickLocalImage(rows, consoleRef) : null;
+    if (!consoleRef) {
+      warnk('compose 未声明 console 镜像引用——跳过本地缓存与版本探测');
+    } else if (hit) {
+      ok('compose 镜像引用已在本地（' + hit.id.slice(0, 12) + ' ' + String(hit.repo + '@' + (hit.digest || ':' + hit.tag)).slice(0, 110) + '）', true, '版本探测仅针对该精确引用；本机其他历史 tag 不作为运行版本依据');
+      const ver = run(['docker', 'run', '--rm', '--entrypoint', 'sh', hit.id, '-c', 'echo $MERGEPILOT_VERSION']);
+      if (ver.status === 0) ok('镜像内置 MERGEPILOT_VERSION=' + (ver.stdout || '(空)').trim() + '（compose pin: ' + consoleRef.slice(0, 110) + '）', (ver.stdout || '').trim().length > 0, '版本随镜像构建注入；本机其他历史 tag 不作为运行版本依据');
+      else warnk('镜像 version 探测失败（' + (ver.stderr || '').slice(0, 80) + '）');
+    } else {
+      warnk('console 镜像未在本地——compose up 将按引用自动拉取（' + consoleRef.slice(0, 110) + '）；版本以启动后 /api/health 为准');
+    }
   }
 
   // ── 5. 端口冲突 ──
