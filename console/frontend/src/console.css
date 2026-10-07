@@ -987,17 +987,29 @@ td.th-right { text-align: right; }
   .mu-pr-filter { width: 100%; }
 }
 
-/* 移动端详情关闭入口（桌面隐藏） */
+/* 移动端详情关闭入口（桌面隐藏）。
+   吸顶条 = 全宽不透明横条（sticky top:0 + 面板底色 + 底部分隔线）：
+   章节标题从其下方滚过，不再与按钮视觉叠加。按钮自身退居条内普通按钮。 */
 .mu-detail-close { display: none; }
 @media (max-width: 960px) {
+  .mu-detail-closebar {
+    position: sticky; top: 0; z-index: 5;
+    display: flex; align-items: center;
+    margin: calc(-1 * var(--sp-4)) calc(-1 * var(--sp-4)) var(--sp-3);
+    padding: var(--sp-2) var(--sp-4);
+    background: var(--c-panel);          /* 不透明：滚动内容不透出 */
+    border-bottom: 1px solid var(--c-border);
+    border-radius: var(--r-md) var(--r-md) 0 0;
+  }
   .mu-detail-close {
     display: inline-flex; align-items: center;
-    position: sticky; top: 0; z-index: 5;
-    margin: calc(-1 * var(--sp-4)) calc(-1 * var(--sp-4)) var(--sp-3) 0;
-    padding: var(--sp-2) var(--sp-4);
-    background: var(--c-panel); border: 1px solid var(--c-border-strong);
-    border-radius: var(--r-sm); box-shadow: var(--shadow-xs);
+    padding: var(--sp-1) var(--sp-3);
+    background: var(--c-inset); border: 1px solid var(--c-border-strong);
+    border-radius: var(--r-sm);
   }
+}
+@media (max-width: 600px) {
+  .mu-detail-closebar { border-radius: 0; } /* 全宽抽屉顶角为 0，与面板一致 */
 }
 
 /* 移动端：未选中（占位态）不显示空抽屉——列表即页面，选中才出现详情层 */
