@@ -1,4 +1,4 @@
-# MergePilot 自托管模板（canonical 拓扑：console + postgres(pgvector) + bge-m3 sidecar + webhook ingress；基线 rc.16）
+# MergePilot 自托管模板（canonical 拓扑：console + postgres(pgvector) + bge-m3 sidecar + webhook ingress；基线 rc.17）
 #
 # 使用前提：cp .env.example .env 并按注释填写（至少必填段）。
 # 启动：docker compose --env-file .env up -d
@@ -53,8 +53,8 @@ services:
     networks: [internal]
 
   console:
-    # 官方镜像（GHCR 不可变 digest；与 v0.2.0-beta.6-rc.16 源码 tag 同源）
-    image: ghcr.io/nghqqa/mergepilot-console@sha256:b1c95275750b3b7f6c836235e09659bff6e575aa93d5f041350b9aebe4bfbb0a
+    # 官方镜像（GHCR 不可变 digest；与 v0.2.0-beta.6-rc.17 源码 tag 同源）
+    image: ghcr.io/nghqqa/mergepilot-console@sha256:112284f104001ac5c94b7d6c64ed2b6c854b52ec1c96dee275268bd7ee0e380a
     restart: unless-stopped
     ports:
       # 安全基线：仅绑定回环。对外暴露必须前置 TLS 反代（README 安全节）。
