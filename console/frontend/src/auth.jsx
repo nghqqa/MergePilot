@@ -20,11 +20,11 @@ export function readDemoPreview() {
 const AuthCtx = createContext(null);
 
 // 演示预览的放行状态集：登录服务不可用（auth_unavailable/网络不可达）时按契约不开放产品，也不放行预览。
-const DEMO_BLOCKED = new Set(['checking', 'unavailable', 'auth_unavailable']);
+export const DEMO_BLOCKED = new Set(['checking', 'unavailable', 'auth_unavailable']);
 
 export function AuthProvider({ children }) {
   // status: checking | anonymous | authed | expired | forbidden | auth_unavailable | not_implemented | unavailable
-  const [session, setSession] = useState({ state: 'checking', user: null, reason: null, expiresAt: null });
+  const [session, setSession] = useState({ state: 'checking', user: null, reason: null, expiresAt: null, capabilities: null });
   const [demo, setDemo] = useState(readDemoPreview);
 
   const refresh = useCallback(async () => {
@@ -35,6 +35,7 @@ export function AuthProvider({ children }) {
       user: r.user ?? null,
       reason: r.reason ?? null,
       expiresAt: r.expiresAt ?? null,
+      capabilities: r.capabilities ?? null,
     });
   }, []);
 
@@ -57,18 +58,26 @@ export function AuthProvider({ children }) {
   }, []);
 
   const status = session.state;
+  // multiuser 形态在守卫层禁用演示：残留 sessionStorage 标记不得放行（不能只依赖
+  // 登录页挂载时清理）；legacy/本地形态（capabilities 缺失或 multiuser=false）
+  // 保留既有演示策略。此标记不改变真实认证权限——授权仍由后端逐端点执行。
+  const multiuserMode = session.capabilities?.multiuser === true;
   const value = useMemo(() => ({
     status,
     user: session.user,
     expiresAt: session.expiresAt,
     reason: session.reason,
+    capabilities: session.capabilities ?? null,
     demo,
     refresh,
     enterDemo,
     exitDemo,
-    // 放行浏览：后端已认证，或用户显式进入只读演示预览（服务不可用/登录服务不可用时一律不放行）
-    admitted: status === 'authed' || (demo && !DEMO_BLOCKED.has(status)),
-  }), [status, session.user, session.expiresAt, session.reason, demo, refresh, enterDemo, exitDemo]);
+    // 放行浏览：后端已认证，或用户显式进入只读演示预览（服务不可用/登录服务不可用时一律不放行）。
+    // multiuser 形态在守卫层禁用演示：残留 sessionStorage 标记不得放行（不能只依赖
+    // 登录页挂载时清理）；legacy/本地形态（capabilities 缺失或 multiuser=false）
+    // 保留既有演示策略。此标记不改变真实认证权限——授权仍由后端逐端点执行。
+    admitted: status === 'authed' || (demo && !DEMO_BLOCKED.has(status) && !multiuserMode),
+  }), [status, session.user, session.expiresAt, session.reason, session.capabilities, demo, refresh, enterDemo, exitDemo]);
 
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;
 }

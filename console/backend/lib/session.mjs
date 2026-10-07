@@ -179,8 +179,15 @@ export function sessionBody(auth) {
            repos: auth.repos };
 }
 
-export function anonymousBody(reason = 'not_authenticated') {
-  return { error: { reason } };
+export function anonymousBody(reason = 'not_authenticated', env = process.env) {
+  // 登录页能力驱动渲染的唯一后端信号（无秘密；布尔 capability）：
+  //   legacy_login = 旧操作员账号密码（POST /api/auth/login）当前是否可用
+  //     —— multiuser 生产形态默认禁用（本文件 login() 门禁），MU_LEGACY_LOGIN=1 显式例外；
+  //   multiuser   = MU 多用户形态（决定登录页是否呈现邀请制提示/隐藏演示入口）。
+  // 注意：这与 /api/mu/auth/login（fixture 身份，MU_ALLOW_FIXTURE_LOGIN 门禁）是两个独立端点。
+  const multiuser = env.MU_MODE === 'multiuser';
+  const legacyLoginEnabled = !multiuser || env.MU_LEGACY_LOGIN === '1';
+  return { error: { reason }, capabilities: { legacy_login: legacyLoginEnabled, multiuser } };
 }
 
 export function tokenFromCookieHeader(header) {
