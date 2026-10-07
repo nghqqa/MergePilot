@@ -89,7 +89,9 @@ export function classifySession({ status, body } = {}) {
   if (status === 401) {
     return reason === 'session_expired'
       ? { state: 'expired', reason }
-      : { state: 'anonymous', reason: reason ?? 'not_authenticated' };
+      : { state: 'anonymous', reason: reason ?? 'not_authenticated',
+          // 登录页能力信号（后端匿名响应下发；无秘密）：{ legacy_login, multiuser }
+          capabilities: body?.capabilities ?? null };
   }
   if (status === 403) return { state: 'forbidden', reason: reason ?? 'not_a_member' };
   if (status === 503) return { state: 'auth_unavailable', reason: reason ?? 'auth_unavailable' };

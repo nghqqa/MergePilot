@@ -1194,7 +1194,7 @@ export default function MultiUserPage() {
 
           <section className="section">
             <details className="tech-details">
-              <summary>成员（{members?.length ?? 0}，只读）</summary>
+              <summary>成员与邀请（成员 {members?.length ?? 0}，列表只读）</summary>
               <div className="tech-body">
                 <Table rowKey="membership_id" size="small" pagination={false} dataSource={members ?? []} scroll={{ x: true }}
                   columns={[
@@ -1203,6 +1203,7 @@ export default function MultiUserPage() {
                     { title: '状态', dataIndex: 'state' },
                     { title: '加入时间', dataIndex: 'created_at', render: (v) => String(v ?? '').slice(0, 19).replace('T', ' ') },
                   ]} />
+                {can('manage_membership') && <InviteAdminPanel session={session} />}
               </div>
             </details>
           </section>
@@ -1316,6 +1317,119 @@ export default function MultiUserPage() {
       <div style={{ marginTop: 16 }}>
         <Button icon={<ReloadOutlined />} loading={loading} onClick={refresh}>立即刷新</Button>
       </div>
+    </div>
+  );
+}
+
+// 邀请管理面板（仅 manage_membership 能力可见；后端同样强制）。
+// 邀请绑定 GitHub 数字 id/租户/角色/有效期——链接（Console 公开地址 + /login?invite=）
+// 只是入口，不是可转让授权凭证：认领时后端校验 subject/单次/过期，且 invitation
+// 永不可授予 platform_admin（D-3）。链接 origin 取 OAuth callback 的公开地址
+// （providers.github.callback_url）——不误用官网或 Webhook 域名。
+function InviteAdminPanel({ session }) {
+  const canManage = Array.isArray(session?.actions) && session.actions.includes('manage_membership');
+  const [invites, setInvites] = useState(null);
+  const [origin, setOrigin] = useState(window.location.origin);
+  const [subject, setSubject] = useState('');
+  const [role, setRole] = useState('contributor');
+  const [ttl, setTtl] = useState(1440);
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [created, setCreated] = useState(null);
+  const [err, setErr] = useState(null);
+  const [copiedId, setCopiedId] = useState(null);
+
+  const loadInvites = useCallback(async () => {
+    const r = await muGet('/api/mu/invitations');
+    if (r.status === 200) { setInvites(r.body?.invitations ?? []); setErr(null); }
+    else setErr(`邀请列表读取失败（${r.status}）`);
+  }, []);
+  useEffect(() => {
+    if (!canManage) return;
+    loadInvites();
+    muGet('/api/mu/auth/providers').then((r) => {
+      const cb = r.body?.github?.callback_url;
+      if (cb) { try { setOrigin(new URL(cb).origin); } catch { /* 保底 window.location.origin */ } }
+    });
+  }, [canManage, loadInvites]);
+
+  const linkOf = (id) => `${origin}/login?invite=${encodeURIComponent(id)}`;
+  const copyLink = async (id) => {
+    const text = linkOf(id);
+    try { await navigator.clipboard.writeText(text); setCopiedId(id); setTimeout(() => setCopiedId(null), 1500); }
+    catch { window.prompt('复制邀请链接', text); }
+  };
+  const create = async () => {
+    const digits = String(subject).trim().replace(/^github-oauth:/, '');
+    if (!/^\d{1,20}$/.test(digits)) { setErr('GitHub 数字 user id 必填（纯数字）'); return; }
+    setBusy(true); setErr(null);
+    const r = await muPost('/api/mu/invitations', {
+      expected_subject: digits, role, ttl_minutes: Number(ttl) || 1440,
+      note: note ? String(note).slice(0, 200) : undefined,
+    });
+    setBusy(false);
+    if (r.status === 200 && r.body?.invitation) {
+      setCreated(r.body.invitation); setSubject(''); setNote(''); loadInvites();
+    } else {
+      setErr(r.body?.error?.reason ? `创建失败：${r.body.error.reason}` : `创建失败（${r.status}）`);
+    }
+  };
+  if (!canManage) return null;
+  const now = Date.now();
+  const rows = (invites ?? []).map((v) => ({
+    ...v,
+    state_label: v.claimed_at ? '已领取' : (new Date(v.expires_at) <= now ? '已过期' : '待领取'),
+  }));
+  return (
+    <div style={{ marginTop: 12 }}>
+      <Typography.Title level={5} style={{ marginTop: 0 }}>
+        邀请管理（绑定 GitHub 数字 id · 单次认领 · 不可授予 platform_admin）
+      </Typography.Title>
+      {created && (
+        <Alert type="success" showIcon style={{ marginBottom: 12 }}
+          message={`邀请已创建（${created.role}，有效期至 ${String(created.expires_at ?? '').slice(0, 19).replace('T', ' ')}）`}
+          description={(
+            <Space direction="vertical" style={{ width: '100%' }}>
+              <Input readOnly focus value={linkOf(created.invite_id)} onFocus={(e) => e.target.select()} />
+              <Space>
+                <Button type="primary" size="small" onClick={() => copyLink(created.invite_id)}>复制邀请链接</Button>
+                <Typography.Text type="secondary">链接 = Console 公开地址 + /login?invite=；仅对绑定的 GitHub 账号有效</Typography.Text>
+              </Space>
+            </Space>
+          )} />
+      )}
+      <Space wrap style={{ marginBottom: 8 }}>
+        <Input style={{ width: 190 }} placeholder="GitHub 数字 user id" value={subject}
+               onChange={(e) => setSubject(e.target.value)} />
+        <Select value={role} onChange={setRole} style={{ width: 140 }} options={[
+          { value: 'maintainer', label: 'maintainer' },
+          { value: 'contributor', label: 'contributor' },
+          { value: 'reviewer', label: 'reviewer' },
+          { value: 'auditor', label: 'auditor' },
+        ]} />
+        <InputNumber min={5} max={1440} value={ttl} onChange={(v) => setTtl(v ?? 1440)}
+                     addonAfter="分钟有效" style={{ width: 170 }} />
+        <Input style={{ width: 190 }} placeholder="备注（可选，≤200 字）" value={note}
+               maxLength={200} onChange={(e) => setNote(e.target.value)} />
+        <Button type="primary" loading={busy} onClick={create}>创建邀请</Button>
+        <Button icon={<ReloadOutlined />} onClick={loadInvites}>刷新</Button>
+      </Space>
+      {err && <Alert type="error" showIcon style={{ marginBottom: 8 }} message={err} />}
+      <Table rowKey="invite_id" size="small" pagination={false} dataSource={rows}
+        columns={[
+          { title: 'invite_id', dataIndex: 'invite_id',
+            render: (v) => <Typography.Text code style={{ fontSize: 12 }}>{String(v).slice(0, 8)}…</Typography.Text> },
+          { title: '角色', dataIndex: 'role', render: (v) => <Tag color={ROLE_TONE[v] ?? 'default'}>{v}</Tag> },
+          { title: '绑定 GitHub id', dataIndex: 'expected_subject',
+            render: (v) => String(v ?? '').replace('github-oauth:', '') },
+          { title: '状态', dataIndex: 'state_label',
+            render: (v) => <Tag color={v === '待领取' ? 'blue' : 'default'}>{v}</Tag> },
+          { title: '有效期至', dataIndex: 'expires_at',
+            render: (v) => String(v ?? '').slice(0, 19).replace('T', ' ') },
+          { title: '操作', render: (_, r) => (r.state_label === '待领取'
+              ? <Button size="small" onClick={() => copyLink(r.invite_id)}>{copiedId === r.invite_id ? '已复制' : '复制邀请链接'}</Button>
+              : <span style={{ color: '#999' }}>—</span>) },
+        ]} />
     </div>
   );
 }

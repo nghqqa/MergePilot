@@ -138,6 +138,12 @@
         ],
         "createdAt": "2026-10-06T10:08:20.568Z",
         "reason": "badge 圆角胶囊"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#999",
+        "createdAt": "2026-10-07T00:13:37.002Z",
+        "reason": "sanctioned pre-existing style: legacy operator divider color preserved verbatim from original LoginPage (pre-#346 baseline)"
       }
     ]
   }

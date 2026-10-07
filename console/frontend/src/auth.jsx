@@ -24,7 +24,7 @@ const DEMO_BLOCKED = new Set(['checking', 'unavailable', 'auth_unavailable']);
 
 export function AuthProvider({ children }) {
   // status: checking | anonymous | authed | expired | forbidden | auth_unavailable | not_implemented | unavailable
-  const [session, setSession] = useState({ state: 'checking', user: null, reason: null, expiresAt: null });
+  const [session, setSession] = useState({ state: 'checking', user: null, reason: null, expiresAt: null, capabilities: null });
   const [demo, setDemo] = useState(readDemoPreview);
 
   const refresh = useCallback(async () => {
@@ -35,6 +35,7 @@ export function AuthProvider({ children }) {
       user: r.user ?? null,
       reason: r.reason ?? null,
       expiresAt: r.expiresAt ?? null,
+      capabilities: r.capabilities ?? null,
     });
   }, []);
 
@@ -62,13 +63,14 @@ export function AuthProvider({ children }) {
     user: session.user,
     expiresAt: session.expiresAt,
     reason: session.reason,
+    capabilities: session.capabilities ?? null,
     demo,
     refresh,
     enterDemo,
     exitDemo,
     // 放行浏览：后端已认证，或用户显式进入只读演示预览（服务不可用/登录服务不可用时一律不放行）
     admitted: status === 'authed' || (demo && !DEMO_BLOCKED.has(status)),
-  }), [status, session.user, session.expiresAt, session.reason, demo, refresh, enterDemo, exitDemo]);
+  }), [status, session.user, session.expiresAt, session.reason, session.capabilities, demo, refresh, enterDemo, exitDemo]);
 
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;
 }

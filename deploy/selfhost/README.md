@@ -200,6 +200,11 @@ schtasks /Create /TN "MergePilot-Attest" /SC ONSTART /RU SYSTEM ^
    不申请任何 write）+ 订阅五种事件（installation、installation_repositories、pull_request、
    check_run、status）+ webhook URL 指向你的 ingress（默认 `http://<host>:48590/api/mu/github/webhook`，
    对外部署请换成 https 域名）；**务必配置与 `MU_GITHUB_WEBHOOK_SECRET` 一致的签名密钥**。
+   - 登录入口：`https://<console 公开地址>/login`（GitHub OAuth；仅受邀成员可登录）。
+     管理员在控制台「组织与接入 → 成员与邀请」面板创建邀请后可一键复制邀请链接：
+     `https://<console 公开地址>/login?invite=<invite_id>`（origin 取 OAuth callback 的
+     公开地址）。邀请绑定 GitHub 数字 id/租户/角色/有效期，单次认领，不可授予
+     platform_admin——链接只是入口，不是可转让授权凭证。
 2. **installation 注册**：安装 App 后跳转回控制台即注册到当前会话所属租户；
    租户成员的邀请认领（rc.14 起泛化、rc.16 持续）支持既有用户经邀请进入其他租户；
    同一 subject 存在多条待认领邀请时会显式拒绝（`invitation_ambiguous`）。
