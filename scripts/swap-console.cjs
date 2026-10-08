@@ -25,8 +25,11 @@
 //     inspect.json  `docker inspect <container> -f '{{json .}}'` 或 `docker inspect <container>`
 //                   的输出（数组或单对象均可）
 //     --name NAME   覆盖容器名（默认继承 inspect.Name，去前导 /）
-//     --dry-run     只打印将执行的 docker 命令，不调用 docker
+//     --dry-run     只打印安全摘要（容器/镜像/policy/网络/端口/挂载/env 键名与数量；
+//                   env 值与完整参数不回显），不调用 docker
 // 实际替换序列：docker rm -f <旧容器名>（尽力而为）→ docker run -d <继承参数> <新镜像>。
+// 安全红线：inspect 继承的 env 含生产秘密——任何路径（dry-run/执行/失败）都不得回显
+// 完整参数或 env 值；失败输出仅允许 docker 自身 stderr（daemon 侧消息，不含调用参数）。
 'use strict';
 
 const fs = require('node:fs');
@@ -114,6 +117,31 @@ function buildDockerRunArgs(inspect, image, options = {}) {
   return args;
 }
 
+// 安全摘要（白名单输出）：容器名/镜像/policy/网络/端口/挂载/env 键名与数量。
+// 完整 docker run 参数与 env 值永不回显——inspect 继承的 env 含生产秘密
+// （session 密钥/私钥/连接串/API key），rc.18 切换实录（2026-10-08）曾经
+// `+ docker run -d` + args.join 全量泄露到运维转录。纯函数，可直接断言。
+function safeSwapSummary(inspect, image, { name, dryRun } = {}) {
+  const containerName = name != null ? name
+    : (typeof inspect.Name === 'string' ? inspect.Name.replace(/^\//, '') : '');
+  const hc = inspect.HostConfig || {};
+  const policy = hc.RestartPolicy && hc.RestartPolicy.Name ? hc.RestartPolicy.Name
+    : FALLBACK_RESTART_POLICY;
+  const net = hc.NetworkMode && hc.NetworkMode !== 'default' ? hc.NetworkMode : 'default';
+  const ports = portSpecs(hc.PortBindings);
+  const mounts = (inspect.Mounts || []).map((m) => mountSpec(m)).filter(Boolean);
+  const envKeys = ((inspect.Config && inspect.Config.Env) || []).map(envKey).sort();
+  return [
+    `${dryRun ? '[DRY-RUN] ' : ''}docker run -d（完整参数不回显——继承 env 含生产秘密）`,
+    `  container=${containerName || '—'}`,
+    `  image=${image}`,
+    `  restart=${policy}  network=${net}`,
+    `  ports=${ports.length ? ports.join(' ') : '—'}`,
+    `  mounts=${mounts.length ? mounts.join(' ') : '—'}`,
+    `  env=${envKeys.length} 项（仅键名，值不回显）：${envKeys.length ? envKeys.join(', ') : '—'}`,
+  ].join('\n');
+}
+
 // ---- 主入口（实际 swap 执行）：真实路径 spawnSync('docker', …)，测试经 deps.exec mock 注入 ----
 
 function readInspect(file) {
@@ -158,7 +186,8 @@ function swapConsole(argv, deps = {}) {
   const args = buildDockerRunArgs(inspect, image, { name });
   const containerName = name != null ? name : (typeof inspect.Name === 'string' ? inspect.Name.replace(/^\//, '') : '');
 
-  log('+ docker run -d ' + args.join(' '));
+  // 安全输出：只打白名单摘要（env 仅键名+数量）——完整参数含生产秘密，永不回显
+  log(safeSwapSummary(inspect, image, { name, dryRun }));
   if (dryRun) return 0;
 
   if (containerName) {
@@ -168,14 +197,15 @@ function swapConsole(argv, deps = {}) {
   const run = exec(['run', '-d', ...args]);
   if (run.error) throw run.error;
   if (run.status !== 0) {
+    // 失败输出仅透传 docker 自身 stderr（daemon 侧消息）——不得拼接 args（含 -e 秘密值）
     log((run.stderr || 'docker run 失败').trim());
     return run.status || 1;
   }
-  log((run.stdout || '').trim());
+  log('container=' + (run.stdout || '').trim());
   return 0;
 }
 
-module.exports = { FALLBACK_RESTART_POLICY, resolveRestartPolicy, mountSpec, portSpecs, buildDockerRunArgs, swapConsole };
+module.exports = { FALLBACK_RESTART_POLICY, resolveRestartPolicy, mountSpec, portSpecs, buildDockerRunArgs, safeSwapSummary, swapConsole };
 
 if (require.main === module) {
   try { process.exit(swapConsole(process.argv.slice(2))); }
