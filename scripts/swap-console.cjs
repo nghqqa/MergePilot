@@ -131,10 +131,12 @@ function safeSwapSummary(inspect, image, { name, dryRun } = {}) {
   const ports = portSpecs(hc.PortBindings);
   const mounts = (inspect.Mounts || []).map((m) => mountSpec(m)).filter(Boolean);
   const envKeys = ((inspect.Config && inspect.Config.Env) || []).map(envKey).sort();
+  // 自由字符串脱敏：镜像引用剥离 userinfo（user:pass@registry 形态不得回显）
+  const safeImage = String(image).replace(/^[^/@]+@/, '');
   return [
     `${dryRun ? '[DRY-RUN] ' : ''}docker run -d（完整参数不回显——继承 env 含生产秘密）`,
     `  container=${containerName || '—'}`,
-    `  image=${image}`,
+    `  image=${safeImage}`,
     `  restart=${policy}  network=${net}`,
     `  ports=${ports.length ? ports.join(' ') : '—'}`,
     `  mounts=${mounts.length ? mounts.join(' ') : '—'}`,
@@ -195,10 +197,16 @@ function swapConsole(argv, deps = {}) {
     exec(['rm', '-f', containerName]);
   }
   const run = exec(['run', '-d', ...args]);
-  if (run.error) throw run.error;
+  if (run.error) {
+    // 异常对象不外抛（避免携带参数/env 的多行负载进入转录）——只留单行首句
+    const msg = String(run.error.message || 'spawn 失败').split('\n')[0];
+    throw new Error('docker run 无法启动：' + msg);
+  }
   if (run.status !== 0) {
-    // 失败输出仅透传 docker 自身 stderr（daemon 侧消息）——不得拼接 args（含 -e 秘密值）
-    log((run.stderr || 'docker run 失败').trim());
+    // 对抗性红线：docker stderr 内容不可信（本轮验收要求模拟 stderr 含秘密/
+    // 连接串/多行私钥的场景）——绝不透传 stderr 原文，只报退出码与诊断指引
+    log(`docker run 失败（exit=${run.status}）——本工具不回显错误详情以防凭据进入转录；` +
+        `可查看 docker daemon 日志或手动重跑同参数诊断`);
     return run.status || 1;
   }
   log('container=' + (run.stdout || '').trim());

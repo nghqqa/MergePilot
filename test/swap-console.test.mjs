@@ -381,26 +381,64 @@ test('泄露回归：正式执行成功路径——输出容器标记与安全�
   }
 });
 
-test('泄露回归：docker run 失败路径——仅透传 daemon stderr，零秘密值、零参数拼接', () => {
+test('泄露回归：失败路径——对抗性 stderr（含秘密/连接串/多行私钥）不透传，只报退出码', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'swap-leak-fail-'));
   const file = path.join(dir, 'inspect.json');
   fs.writeFileSync(file, JSON.stringify(SECRET_FIXTURE));
   try {
     const logs = [];
+    const hostileStderr = [
+      'docker: Error response from daemon: conflicting options.',
+      'context: postgres://pguser:dummy-pg-pass@pg:5432/mu',
+      '-----BEGIN RSA PRIVATE KEY----- dummy-fixture',
+      'DUMMYKEY123-dummy-body',
+      '-----END RSA PRIVATE KEY----- dummy-fixture',
+    ].join('\n');
     const code = swapConsole([file, 'ghcr.io/nghqqa/mergepilot-console@sha256:' + 'f'.repeat(64)], {
       exec: (args) => args[0] === 'rm'
         ? { status: 0, stdout: '', stderr: '' }
-        : { status: 125, stdout: '', stderr: 'docker: Error response from daemon: conflicting options.' },
+        : { status: 125, stdout: '', stderr: hostileStderr },
       log: (m) => logs.push(m),
     });
     assert.equal(code, 125);
     const out = logs.join('\n');
     assertNoSecrets(out);
-    assert.ok(out.includes('Error response from daemon'), 'daemon 错误消息透传');
+    assert.ok(out.includes('exit=125'), '退出码上屏（诊断入口）');
+    assert.ok(!out.includes('Error response from daemon'), '对抗性 stderr 原文不透传');
+    assert.ok(!out.includes('conflicting options'), 'daemon 消息正文也不透传');
+    assert.ok(!out.includes('dummy-pg-pass'), '连接串不泄露');
+    assert.ok(!out.includes('DUMMYKEY123'), '私钥体不泄露');
     assert.ok(!out.includes('MU_LLM_API_KEY='), '失败路径也不拼接 args');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test('泄露回归：spawn 异常对象单行化（不携带多行负载/秘密）', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'swap-leak-err-'));
+  const file = path.join(dir, 'inspect.json');
+  fs.writeFileSync(file, JSON.stringify(SECRET_FIXTURE));
+  try {
+    let caught = null;
+    swapConsole([file, 'img:tag'], {
+      exec: () => ({ error: Object.assign(new Error('spawn docker ENOENT\nsecret=dummy-session-secret-ABCDEF'), { errno: -4058 }) }),
+      log: () => {},
+    });
+    void caught;
+  } catch (e) {
+    assert.ok(!String(e.message).includes('\n'), '异常消息单行化');
+    assert.ok(!String(e.message).includes('dummy-session-secret-ABCDEF'), '异常消息不含秘密');
+    assert.ok(String(e.message).includes('docker run 无法启动'), '异常前缀可控');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('安全摘要：镜像 userinfo（user:pass@registry）脱敏', () => {
+  const { safeSwapSummary } = require('../scripts/swap-console.cjs');
+  const out = safeSwapSummary(SECRET_FIXTURE, 'opaque-token@ghcr.io/nghqqa/mergepilot-console:tag', { name: 'mp', dryRun: true });
+  assert.ok(!out.includes('opaque-token@'), 'userinfo 不回显');
+  assert.ok(out.includes('image=ghcr.io/nghqqa/mergepilot-console:tag'), 'host/path 保留');
 });
 
 test('泄露回归：safeSwapSummary 纯函数——键名排序在、值不在', () => {
