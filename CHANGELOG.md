@@ -1,3 +1,17 @@
+## [0.2.0-beta.6-rc.19] — 2026-10-08（候选）
+
+### Changed / Fixed（品牌与可读性）
+- **品牌区去 V0 标签**：左上角品牌区呈现 MergePilot / 审查工作台（与登录页口径一致）；删除装饰性阶段徽章及其同步引入的废弃样式，无替代徽章、不硬编码版本
+- **移动端导航抽屉品牌可读性**：antd Drawer 头部默认白底导致 "MergePilot"（#fff）白字白底不可见——头部/关闭钮改用侧栏同源主题令牌（--c-nav/--c-nav-text/--c-nav-line），body 背景去硬编码；对比度 #fff/#0b0f19≈17.9:1、副行 ≈4.7:1（AA 口径）
+
+### Added（运维交付，非运行时行为）
+- **AgentTeams 认证代理运维包**（deploy/agentteams-beta/auth-proxy/）：nginx 配置模板+部署器+ctrl 重建后注册表恢复工具（幂等，走 ensureFourAgents 生产契约）与运维说明；RUNBOOK 补「重建≠重启」语义（重建即撤销全部历史 Bearer token）与 agt rotate 未实测候选声明
+
+### Fixed（运维工具）
+- swap-console 输出安全化：dry-run/执行/失败路径不再回显完整 docker run 参数与 env 值（对抗性 stderr 夹具覆盖）
+
+**零 schema/迁移变更（恒 v23，与 rc.18 一致）。**
+
 ## [0.2.0-beta.6-rc.18] — 2026-10-07（候选）
 
 ### Added / Improved（前端阅读体验）
