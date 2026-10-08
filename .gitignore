@@ -50,3 +50,6 @@ deploy/rag-zh-gate/keystore-local/
 
 # 本地测试 junction（host 侧 server 模块解析 pg 用；勿提交）
 node_modules/
+
+# 认证代理渲染产物（含真实凭据，绝不提交）
+deploy/agentteams-beta/auth-proxy/rendered/

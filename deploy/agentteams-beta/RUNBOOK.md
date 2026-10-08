@@ -39,13 +39,15 @@ token 获取：`docker exec agentteams-beta-ctrl sh -c 'tr -d "\n\r" < /var/run/
 | MinIO 故障 | worker 反复 "Worker config not ready" | controller 日志 `/var/log/agentteams/minio*.log`；`docker restart agentteams-beta-ctrl` 后**必须 restart 四 worker**（共享 netns 断链）并重跑 provision |
 | LLM 故障 | `MT_REPLY_TIMEOUT` 死信 / preflight 401 | 核 key 有效性（`agt llm-preflight`）；换新一次性 key → 重跑 provision §3 |
 | controller 重启后 | worker 全部失联 | `for r in leader reviewer fixer verifier; do docker restart agentteams-beta-worker-mergepilot-$r; done && bash provision-workers.sh` |
+| controller **重建**（rm+run/compose 重建） | 旧 token 全 401 + 注册表清空（worker 循环 `config not ready`） | `node auth-proxy/recover-agentteams.mjs --container <console>` → 验收 4/4 Running（见 auth-proxy/README §6） |
 
 ## 4. 重启恢复
 - controller：`docker restart agentteams-beta-ctrl`（数据卷保留：K8s/Matrix/MinIO 状态）→ restart 四 worker → provision（reconcile 恢复 phase）
 - 单 worker：`docker restart agentteams-beta-worker-mergepilot-<role>`（sync 心跳自动恢复，已验证）
+- **重建≠重启**：重建（rm+run）使 cli-token 与 worker 注册表随容器 FS 一并失效/清空（二者均不在 /data 卷）——恢复用 `auth-proxy/recover-agentteams.mjs`（幂等，走 ensureFourAgents 契约），完成判定=4/4 Running 而非「token 换成功」；撤销语义与验收清单见 `auth-proxy/README.md` §6/§5
 
 ## 5. 凭据轮换
-1. 生成新值 → `docker compose -p agentteams-beta up -d`（重建 controller，卷保留）→ provision → MergePilot env 更新重启
+1. 生成新值 → `docker compose -p agentteams-beta up -d`（重建 controller，卷保留）→ provision → MergePilot env 更新重启。注意：up -d 重建即**撤销全部历史 Bearer token**（cli-token 在容器 FS，非卷）——这正是 2026-10-08 泄露 token 处置所用机制；生产入口现经认证代理（`auth-proxy/`），MergePilot 侧凭据为代理入口凭据。上游 `agt rotate` 为免重建候选路径，**未实测前不作标准流程**
 2. LLM key：重跑 provision §3（仅 openclaw.json 刷新）+ MergePilot 无需动（key 不经 MergePilot）
 
 ## 6. 备份/恢复
@@ -152,3 +154,7 @@ LLM 调用失败 → Matrix 轮次 MT_REPLY_TIMEOUT。
 
 - console 启动即执行迁移（不再等首个 /api/mu 请求）；`/api/health.mu_schema_ready`
   披露就绪态；业务面（muApi/facade）await 同一 promise——就绪前请求等待而非带病服务。
+
+## 12. 认证代理（2026-10-08 起）
+
+生产链路为 Console → at-auth-proxy:8091（入口凭据）→ ctrl:8090（当前 cli-token）；ctrl 宿主端口 28562/28563 已移除，代理为唯一受控入口。模板/部署器/重建恢复工具与健康验收清单见 [auth-proxy/README.md](auth-proxy/README.md)。
