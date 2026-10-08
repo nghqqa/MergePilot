@@ -384,7 +384,7 @@ function Shell() {
       <BrandMark />
       <div className="brand-text">
         <div className="brand-name">MergePilot</div>
-        <div className="brand-sub">审查工作台 <span className="brand-v0">V0</span></div>
+        <div className="brand-sub">审查工作台</div>
       </div>
     </div>
   );

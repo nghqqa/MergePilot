@@ -127,11 +127,7 @@ a:hover { text-decoration: underline; text-underline-offset: 2px; }
 }
 .brand-text { min-width: 0; }
 .brand-name { font-size: var(--fs-base); font-weight: var(--fw-semibold); color: #fff; letter-spacing: 0.2px; }
-.brand-sub { font-size: var(--fs-xs); color: var(--c-nav-dim); margin-top: 1px; display: flex; align-items: center; gap: 5px; }
-.brand-v0 {
-  font-size: var(--fs-xs); font-weight: var(--fw-semibold); padding: 0 4px; border-radius: 4px;
-  background: rgba(45, 212, 191, 0.12); color: #2dd4bf; letter-spacing: 0.5px;
-}
+.brand-sub { font-size: var(--fs-xs); color: var(--c-nav-dim); margin-top: 1px; }
 
 .sidebar nav { padding: 6px 0; flex: 1; overflow-y: auto; }
 .nav-section { margin-top: 10px; }
