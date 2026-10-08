@@ -54,9 +54,8 @@ services:
 
   console:
     # 官方镜像（GHCR 不可变 digest；与 v0.2.0-beta.6-rc.18 源码 tag 同源）。
-    # rc.18 候选阶段：尚未推送 registry，暂以 tag 引用——正式发布时替换为推送后的
-    # 不可变 digest（sha256:…），未推送前不存在合法 pull digest，不预编造。
-    image: ghcr.io/nghqqa/mergepilot-console:0.2.0-beta.6-rc.18
+    # digest=OCI index（内含 linux/amd64 manifest 3c134700917c… 与构建证明）。
+    image: ghcr.io/nghqqa/mergepilot-console@sha256:fe61270548c755e3dc8178de56447718faa68b834db223d41b089a25e7e11995
     restart: unless-stopped
     ports:
       # 安全基线：仅绑定回环。对外暴露必须前置 TLS 反代（README 安全节）。

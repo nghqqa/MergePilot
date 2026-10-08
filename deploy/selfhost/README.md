@@ -1,8 +1,8 @@
 # MergePilot rc.18 自托管部署（候选）
 
-> 版本：`0.2.0-beta.6-rc.18`（**候选——尚未正式发布**）。
-> **候选阶段无 registry pull digest**：镜像/kit 以本地构建产物与 SHA256 交付，compose 暂以 tag 引用；
-> 正式发布（推送 GHCR + 打 tag + Release）后本节回填不可变 digest。
+> 版本：`0.2.0-beta.6-rc.18` · 镜像 pull digest（OCI index）：`sha256:fe61270548c755e3dc8178de56447718faa68b834db223d41b089a25e7e11995`
+> index 内含 linux/amd64 manifest `sha256:3c134700917c24690db0f497ad26c26e5700d29ed69ff86a4954baf601c467ea`、config digest `sha256:cae436a0c82ea93c7f747d740de7441c4bd50388b246b6881d4727653f05b042`（三者不同对象，勿混称）。
+> 已正式发布 GHCR（不可变 digest）。离线 tar 与源码构建为等效替代途径，校验方式见下。
 > 供应链档案：SBOM（CycloneDX）、trivy 扫描、离线 tar SHA256 见「镜像获取与校验」（哈希随候选制品提供）。
 > 相对 rc.17：**零 schema/迁移变更（恒 v23）**，前端阅读体验（信息精简+字号层级）与文档/预检修正。
 
@@ -140,8 +140,8 @@ MU_GITHUB_OAUTH_CALLBACK_URL=https://<console 公开地址>/api/mu/auth/oauth/gi
 
 | 途径 | 命令 | 校验 |
 |---|---|---|
-| 本地候选镜像 | `docker load -i mergepilot-console-rc18-candidate.tar` | tar SHA256 见 `SHA256SUMS-rc18-candidate.txt`；load 后按 `docker images` 核对 image ID |
-| GHCR | 候选阶段不可用（未推送）；正式发布后此处回填不可变 digest | —— |
+| GHCR | `docker pull ghcr.io/nghqqa/mergepilot-console@fe61270548c7…` | RepoDigest == `sha256:fe61270548c755e3dc8178de56447718faa68b834db223d41b089a25e7e11995` |
+| 离线 tar | `docker load -i mergepilot-console-rc18.tar` | tar SHA256 见 `SHA256SUMS-rc18.txt`（发布附件） |
 | 源码构建 | 见下节 | image ID 应可复现（同 commit/同构建参数） |
 
 镜像内置 `MERGEPILOT_VERSION=0.2.0-beta.6-rc.18`（`/api/health` version 字段即真源）。
@@ -160,7 +160,7 @@ MU_GITHUB_OAUTH_CALLBACK_URL=https://<console 公开地址>/api/mu/auth/oauth/gi
 ## 从源码构建
 
 ```bash
-git checkout v0.2.0-beta.6-rc.18        # 源码 tag（正式发布后存在；候选阶段用候选 commit）
+git checkout v0.2.0-beta.6-rc.18        # 源码 tag（与镜像同源）
 cd console/frontend && npm ci && npm run build && cd ../..
 docker build -f docker/Dockerfile.canonical-console \
   --build-arg MERGEPILOT_VERSION=0.2.0-beta.6-rc.18 \
