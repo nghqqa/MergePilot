@@ -1,0 +1,34 @@
+# MergePilot AgentTeams 认证代理 — nginx 配置模板（deploy/agentteams-beta/auth-proxy/）
+#
+# 本文件只含占位符，绝不包含真实凭据。占位符由 deploy-auth-proxy.cjs 渲染注入：
+#   @AT_PROXY_ENTRY_CREDENTIAL@  入口凭据本体（Bearer 后段）——来源=受保护秘密文件或
+#                                AT_PROXY_ENTRY_CREDENTIAL 环境变量；不入库、不入镜像。
+#   @AT_PROXY_UPSTREAM_TOKEN@    ctrl 当前 cli-token——生产部署时经 docker exec 从
+#                                agentteams-beta-ctrl 容器现读；不入库、不落盘到仓库。
+#   @AT_CTRL_HOST@               ctrl 在 atnet 内的主机名（生产默认 agentteams-beta-ctrl）。
+#
+# 安全语义（2026-10-08 生产实证）：
+#   * 入口认证=精确匹配：仅持新入口凭据的请求放行；旧/泄露 token、无凭据、伪造一律 401；
+#   * 上游凭据替换：客户端 Authorization 绝不透传，转发前一律改写为 ctrl 当前 cli-token
+#     ——泄露旧 token 即使命中端口也无法借道代理抵达上游；
+#   * ctrl 自身不再发布宿主端口（28562/28563 已移除）：代理是唯一受控入口。
+
+server {
+    listen 8091;
+    server_name _;
+
+    set $expected_cred "Bearer @AT_PROXY_ENTRY_CREDENTIAL@";
+    set $upstream_token "Bearer @AT_PROXY_UPSTREAM_TOKEN@";
+
+    location / {
+        if ($http_authorization != $expected_cred) { return 401; }
+
+        proxy_pass http://@AT_CTRL_HOST@:8090;
+        proxy_set_header Authorization $upstream_token;
+        proxy_set_header Host $host;
+        proxy_connect_timeout 10s;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+        client_max_body_size 32m;
+    }
+}
