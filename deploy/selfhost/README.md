@@ -1,6 +1,8 @@
 # MergePilot rc.19 自托管部署（候选）
 
-> 版本：`0.2.0-beta.6-rc.19` · 镜像 digest：候选阶段以 tag 引用（GHCR 推送后回填不可变 OCI index/manifest/config——未推送前不编造）。
+> 版本：`0.2.0-beta.6-rc.19` · 镜像 pull digest（OCI index）：`sha256:0077382db28d454e7e03bbbd9ad3c2a1ddcd97cf84bc4cabe81c4d2b77610ad4`
+> index 内含 linux/amd64 manifest `sha256:413dbd34f43b148f6007be3fbdb3d7d4ccbd7f6fe7a2fe652cb7954704edd740`、config digest `sha256:441ec6892abf69d46cc169de8bce49a9a0c2b7b692aef7795e054257bf4bb20d`（三者不同对象，勿混称）。
+> 已正式发布 GHCR（不可变 digest）。离线 tar 与源码构建为等效替代途径，校验方式见下。
 > 离线 tar 与源码构建为等效替代途径，校验方式见下。
 > 供应链档案：SBOM（CycloneDX）、trivy 扫描、离线 tar SHA256 见「镜像获取与校验」（哈希随候选制品提供）。
 > 相对 rc.18：**零 schema/迁移变更（恒 v23）**，品牌区去 V0 标签、移动抽屉品牌可读性修复、运维工具输出安全化与 AgentTeams 认证代理运维交付。
@@ -139,7 +141,7 @@ MU_GITHUB_OAUTH_CALLBACK_URL=https://<console 公开地址>/api/mu/auth/oauth/gi
 
 | 途径 | 命令 | 校验 |
 |---|---|---|
-| GHCR | 候选阶段：`docker pull ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.19`（正式发布后回填 digest 行） | 以 `docker inspect` RepoDigest 对照发布附件为准 |
+| GHCR | `docker pull ghcr.io/nghqqa/mergepilot-console@0077382db28d…` | RepoDigest == `sha256:0077382db28d454e7e03bbbd9ad3c2a1ddcd97cf84bc4cabe81c4d2b77610ad4` |
 | 离线 tar | `docker load -i mergepilot-console-rc19.tar` | tar SHA256 见 `SHA256SUMS-rc19.txt`（发布附件） |
 | 源码构建 | 见下节 | image ID 应可复现（同 commit/同构建参数） |
 

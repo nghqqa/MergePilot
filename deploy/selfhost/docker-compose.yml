@@ -53,8 +53,9 @@ services:
     networks: [internal]
 
   console:
-    # 官方镜像（候选阶段以 tag 引用；GHCR 推送后回填不可变 digest——勿在未推送前编造）。
-    image: ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.19
+    # 官方镜像（GHCR 不可变 digest；与 v0.2.0-beta.6-rc.19 源码 tag 同源）。
+    # digest=OCI index（内含 linux/amd64 manifest 413dbd34… 与构建证明 attestation）。
+    image: ghcr.io/nghqqa/mergepilot-console@sha256:0077382db28d454e7e03bbbd9ad3c2a1ddcd97cf84bc4cabe81c4d2b77610ad4
     restart: unless-stopped
     ports:
       # 安全基线：仅绑定回环。对外暴露必须前置 TLS 反代（README 安全节）。
