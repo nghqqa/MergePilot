@@ -1,10 +1,9 @@
-# MergePilot rc.18 自托管部署（候选）
+# MergePilot rc.19 自托管部署（候选）
 
-> 版本：`0.2.0-beta.6-rc.18` · 镜像 pull digest（OCI index）：`sha256:fe61270548c755e3dc8178de56447718faa68b834db223d41b089a25e7e11995`
-> index 内含 linux/amd64 manifest `sha256:3c134700917c24690db0f497ad26c26e5700d29ed69ff86a4954baf601c467ea`、config digest `sha256:cae436a0c82ea93c7f747d740de7441c4bd50388b246b6881d4727653f05b042`（三者不同对象，勿混称）。
-> 已正式发布 GHCR（不可变 digest）。离线 tar 与源码构建为等效替代途径，校验方式见下。
+> 版本：`0.2.0-beta.6-rc.19` · 镜像 digest：候选阶段以 tag 引用（GHCR 推送后回填不可变 OCI index/manifest/config——未推送前不编造）。
+> 离线 tar 与源码构建为等效替代途径，校验方式见下。
 > 供应链档案：SBOM（CycloneDX）、trivy 扫描、离线 tar SHA256 见「镜像获取与校验」（哈希随候选制品提供）。
-> 相对 rc.17：**零 schema/迁移变更（恒 v23）**，前端阅读体验（信息精简+字号层级）与文档/预检修正。
+> 相对 rc.18：**零 schema/迁移变更（恒 v23）**，品牌区去 V0 标签、移动抽屉品牌可读性修复、运维工具输出安全化与 AgentTeams 认证代理运维交付。
 
 ## 快速开始
 
@@ -140,17 +139,17 @@ MU_GITHUB_OAUTH_CALLBACK_URL=https://<console 公开地址>/api/mu/auth/oauth/gi
 
 | 途径 | 命令 | 校验 |
 |---|---|---|
-| GHCR | `docker pull ghcr.io/nghqqa/mergepilot-console@fe61270548c7…` | RepoDigest == `sha256:fe61270548c755e3dc8178de56447718faa68b834db223d41b089a25e7e11995` |
-| 离线 tar | `docker load -i mergepilot-console-rc18.tar` | tar SHA256 见 `SHA256SUMS-rc18.txt`（发布附件） |
+| GHCR | 候选阶段：`docker pull ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.19`（正式发布后回填 digest 行） | 以 `docker inspect` RepoDigest 对照发布附件为准 |
+| 离线 tar | `docker load -i mergepilot-console-rc19.tar` | tar SHA256 见 `SHA256SUMS-rc19.txt`（发布附件） |
 | 源码构建 | 见下节 | image ID 应可复现（同 commit/同构建参数） |
 
-镜像内置 `MERGEPILOT_VERSION=0.2.0-beta.6-rc.18`（`/api/health` version 字段即真源）。
+镜像内置 `MERGEPILOT_VERSION=0.2.0-beta.6-rc.19`（`/api/health` version 字段即真源）。
 
-**供应链档案（rc.18 候选）**：
+**供应链档案（rc.19 候选）**：
 
-- SBOM：CycloneDX（`rc18-sbom.cdx.json`，随候选制品提供）；
-- 漏洞/秘密扫描：trivy（`rc18-scan.json`，随候选制品提供）；
-- 构建来源：候选 commit 见 `SHA256SUMS-rc18-candidate.txt` 同目录记录；**零 schema/迁移变更（恒 v23，与 rc.17 一致）**；
+- SBOM：CycloneDX（`rc19-sbom.cdx.json`，随候选制品提供）；
+- 漏洞/秘密扫描：trivy（`rc19-scan.json`，随候选制品提供）；
+- 构建来源：候选 commit 见 `SHA256SUMS-rc19-candidate.txt` 同目录记录；**零 schema/迁移变更（恒 v23，与 rc.17 一致）**；
 - 基础镜像：`node@sha256:0a7108bf…`（Dockerfile 钉死）。
 
 > `48590` 端口与 `beta-webhook-proxy` 容器是 MergePilot 开发方内部测试环境的组件，
@@ -160,11 +159,11 @@ MU_GITHUB_OAUTH_CALLBACK_URL=https://<console 公开地址>/api/mu/auth/oauth/gi
 ## 从源码构建
 
 ```bash
-git checkout v0.2.0-beta.6-rc.18        # 源码 tag（与镜像同源）
+git checkout v0.2.0-beta.6-rc.19        # 源码 tag（与镜像同源）
 cd console/frontend && npm ci && npm run build && cd ../..
 docker build -f docker/Dockerfile.canonical-console \
-  --build-arg MERGEPILOT_VERSION=0.2.0-beta.6-rc.18 \
-  -t ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.18 .
+  --build-arg MERGEPILOT_VERSION=0.2.0-beta.6-rc.19 \
+  -t ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.19 .
 ```
 
 注意两点：① 构建前必须先产出 `console/frontend/dist`（Dockerfile 会 COPY 它）；
