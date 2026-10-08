@@ -300,3 +300,151 @@ test('主入口：inspect 数组形态（docker inspect 默认输出）→ 取�
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// ── 泄露回归锁（2026-10-08）：inspect 继承 env 含生产秘密——任何输出路径不得回显 ──
+// 虚构凭据覆盖七类：session 密钥 / GitHub App 私钥 / LLM key / PG 连接串 /
+// webhook secret / OAuth client secret / AgentTeams token+Matrix 密码。
+// 全部为假名值；断言 log 捕获中零出现。
+const SECRET_FIXTURE = {
+  Name: '/mp-console',
+  HostConfig: {
+    RestartPolicy: { Name: 'unless-stopped' },
+    NetworkMode: 'agentteams-beta_atnet',
+    PortBindings: { '4730/tcp': [{ HostIp: '127.0.0.1', HostPort: '48500' }] },
+  },
+  Config: {
+    Env: [
+      'CONSOLE_SESSION_SECRET=dummy-session-secret-ABCDEF',
+      'MU_GITHUB_APP_PRIVATE_KEY=-----BEGIN RSA PRIVATE KEY-----DUMMYKEY123-----END RSA PRIVATE KEY-----',
+      'MU_LLM_API_KEY=dummy-llm-key-XYZ789',
+      'CONSOLE_PG_DSN=postgres://pguser:dummy-pg-pass@pg:5432/mu',
+      'MU_GITHUB_WEBHOOK_SECRET=dummy-webhook-secret-42',
+      'MU_GITHUB_OAUTH_CLIENT_SECRET=dummy-oauth-secret-77',
+      'MU_AGENTTEAMS_TOKEN=dummy-agentteams-jwt-token',
+      'MU_AGENTTEAMS_MATRIX_PASSWORD=dummy-matrix-pass-13',
+      'NODE_ENV=production',
+    ],
+  },
+  Mounts: [{ Type: 'bind', Source: 'D:/demo/prod-data', Destination: '/app/data', Mode: '' }],
+};
+const SECRET_VALUES = SECRET_FIXTURE.Config.Env.map((e) => e.split('=').slice(1).join('='));
+const assertNoSecrets = (out) => {
+  for (const v of SECRET_VALUES) {
+    if (v && v.length > 8) assert.ok(!out.includes(v), `秘密值不得出现在输出（前 8 位=${v.slice(0, 8)}…）`);
+  }
+  assert.ok(!out.includes('-e CONSOLE_SESSION_SECRET='), '完整参数（含 -e 键=值）不得回显');
+  assert.ok(!out.includes('docker run -d --name'), '完整 docker run 命令行不得回显');
+};
+
+test('泄露回归：dry-run 输出安全摘要（env 键名+数量），零秘密值、零完整参数', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'swap-leak-dry-'));
+  const file = path.join(dir, 'inspect.json');
+  fs.writeFileSync(file, JSON.stringify(SECRET_FIXTURE));
+  try {
+    const logs = [];
+    const code = swapConsole([file, 'ghcr.io/nghqqa/mergepilot-console@sha256:' + 'f'.repeat(64), '--dry-run'], {
+      exec: () => { throw new Error('dry-run 不得调用 docker'); },
+      log: (m) => logs.push(m),
+    });
+    assert.equal(code, 0);
+    const out = logs.join('\n');
+    assertNoSecrets(out);
+    assert.ok(out.includes('[DRY-RUN]'), 'dry-run 标记在');
+    assert.ok(out.includes('env=9 项（仅键名，值不回显）'), 'env 仅数量+键名');
+    assert.ok(out.includes('CONSOLE_SESSION_SECRET'), 'env 键名可回显（值不回显）');
+    assert.ok(out.includes('image=ghcr.io/nghqqa/mergepilot-console@sha256:'), '镜像引用在');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('泄露回归：正式执行成功路径——输出容器标记与安全摘要，零秘密值', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'swap-leak-run-'));
+  const file = path.join(dir, 'inspect.json');
+  fs.writeFileSync(file, JSON.stringify(SECRET_FIXTURE));
+  try {
+    let runArgs = null;
+    const logs = [];
+    const code = swapConsole([file, 'ghcr.io/nghqqa/mergepilot-console@sha256:' + 'f'.repeat(64)], {
+      exec: (args) => { if (args[0] === 'run') runArgs = args; return { status: 0, stdout: 'abc123\n', stderr: '' }; },
+      log: (m) => logs.push(m),
+    });
+    assert.equal(code, 0);
+    assert.ok(runArgs, 'docker run 已调用');
+    const out = logs.join('\n');
+    assertNoSecrets(out);
+    assert.ok(out.includes('container=abc123'), '容器 ID 标记输出');
+    // run 参数本身仍完整传给 docker（继承语义不变）：9 个 -e 秘密在 args 中而非输出中
+    assert.equal(valuesOf(runArgs, '-e').length, SECRET_FIXTURE.Config.Env.length, '-e 继承语义不变');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('泄露回归：失败路径——对抗性 stderr（含秘密/连接串/多行私钥）不透传，只报退出码', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'swap-leak-fail-'));
+  const file = path.join(dir, 'inspect.json');
+  fs.writeFileSync(file, JSON.stringify(SECRET_FIXTURE));
+  try {
+    const logs = [];
+    const hostileStderr = [
+      'docker: Error response from daemon: conflicting options.',
+      'context: postgres://pguser:dummy-pg-pass@pg:5432/mu',
+      '-----BEGIN RSA PRIVATE KEY----- dummy-fixture',
+      'DUMMYKEY123-dummy-body',
+      '-----END RSA PRIVATE KEY----- dummy-fixture',
+    ].join('\n');
+    const code = swapConsole([file, 'ghcr.io/nghqqa/mergepilot-console@sha256:' + 'f'.repeat(64)], {
+      exec: (args) => args[0] === 'rm'
+        ? { status: 0, stdout: '', stderr: '' }
+        : { status: 125, stdout: '', stderr: hostileStderr },
+      log: (m) => logs.push(m),
+    });
+    assert.equal(code, 125);
+    const out = logs.join('\n');
+    assertNoSecrets(out);
+    assert.ok(out.includes('exit=125'), '退出码上屏（诊断入口）');
+    assert.ok(!out.includes('Error response from daemon'), '对抗性 stderr 原文不透传');
+    assert.ok(!out.includes('conflicting options'), 'daemon 消息正文也不透传');
+    assert.ok(!out.includes('dummy-pg-pass'), '连接串不泄露');
+    assert.ok(!out.includes('DUMMYKEY123'), '私钥体不泄露');
+    assert.ok(!out.includes('MU_LLM_API_KEY='), '失败路径也不拼接 args');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('泄露回归：spawn 异常对象单行化（不携带多行负载/秘密）', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'swap-leak-err-'));
+  const file = path.join(dir, 'inspect.json');
+  fs.writeFileSync(file, JSON.stringify(SECRET_FIXTURE));
+  try {
+    let caught = null;
+    swapConsole([file, 'img:tag'], {
+      exec: () => ({ error: Object.assign(new Error('spawn docker ENOENT\nsecret=dummy-session-secret-ABCDEF'), { errno: -4058 }) }),
+      log: () => {},
+    });
+    void caught;
+  } catch (e) {
+    assert.ok(!String(e.message).includes('\n'), '异常消息单行化');
+    assert.ok(!String(e.message).includes('dummy-session-secret-ABCDEF'), '异常消息不含秘密');
+    assert.ok(String(e.message).includes('docker run 无法启动'), '异常前缀可控');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('安全摘要：镜像 userinfo（user:pass@registry）脱敏', () => {
+  const { safeSwapSummary } = require('../scripts/swap-console.cjs');
+  const out = safeSwapSummary(SECRET_FIXTURE, 'opaque-token@ghcr.io/nghqqa/mergepilot-console:tag', { name: 'mp', dryRun: true });
+  assert.ok(!out.includes('opaque-token@'), 'userinfo 不回显');
+  assert.ok(out.includes('image=ghcr.io/nghqqa/mergepilot-console:tag'), 'host/path 保留');
+});
+
+test('泄露回归：safeSwapSummary 纯函数——键名排序在、值不在', () => {
+  const { safeSwapSummary } = require('../scripts/swap-console.cjs');
+  const out = safeSwapSummary(SECRET_FIXTURE, 'img:tag', { name: 'mp-console', dryRun: true });
+  assertNoSecrets(out);
+  assert.ok(out.includes('MU_LLM_API_KEY'), '键名回显');
+  assert.ok(!out.includes('dummy-llm-key-XYZ789'), '值不回显');
+});
