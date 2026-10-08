@@ -26,16 +26,16 @@
 <main>
 
 <section class="hero">
-  <div class="hero-badge">v0.2.0-beta.6-rc.18 · Apache-2.0 · 开源自托管</div>
+  <div class="hero-badge">v0.2.0-beta.6-rc.19 · Apache-2.0 · 开源自托管</div>
   <h1>PR 一提交，审查自动完成。<br><em>合并权永远归维护者。</em></h1>
   <p class="lead">MergePilot 是自托管的多 Agent PR 审修闭环。AI 独立复现、确定性 Skill 算事实、RAG 查规范——结论只落在你的 Console，对 GitHub 零写入。你的仓库、密钥与数据，始终在你自己的服务器上。</p>
   <div class="cta">
     <a class="btn btn-primary" href="quickstart.html">三分钟快速开始</a>
-    <a class="btn btn-outline" href="downloads.html">下载 rc.18</a>
+    <a class="btn btn-outline" href="downloads.html">下载 rc.19</a>
     <a class="btn btn-outline" href="build-from-source.html">源码构建</a>
   </div>
   <div style="margin-top:32px;max-width:680px;margin-inline:auto;">
-    <div class="btn-ghost" onclick="navigator.clipboard.writeText('docker pull ghcr.io/nghqqa/mergepilot-console@sha256:fe61270548c755e3dc8178de56447718faa68b834db223d41b089a25e7e11995')" role="button" tabindex="0" aria-label="复制镜像拉取命令">
+    <div class="btn-ghost" onclick="navigator.clipboard.writeText('docker pull ghcr.io/nghqqa/mergepilot-console@sha256:0077382db28d454e7e03bbbd9ad3c2a1ddcd97cf84bc4cabe81c4d2b77610ad4')" role="button" tabindex="0" aria-label="复制镜像拉取命令">
       <span>$ docker pull ghcr.io/nghqqa/mergepilot-console@sha256:1122…e380a</span>
       <span class="copy">点击复制</span>
     </div>
@@ -120,7 +120,7 @@
   <h2 class="section-title">快速开始</h2>
   <p class="section-sub">三行命令，完成部署。前置条件与 GitHub App 配置见 <a href="quickstart.html">快速开始</a>。</p>
   <pre><code>git clone https://github.com/nghqqa/MergePilot.git
-cd MergePilot &amp;&amp; git checkout v0.2.0-beta.6-rc.18
+cd MergePilot &amp;&amp; git checkout v0.2.0-beta.6-rc.19
 cd deploy/selfhost
 cp .env.example .env        <span style="color:#5aa39b"># 填必填项（GitHub App 两件套 + LLM 端点）</span>
 node preflight.mjs          <span style="color:#5aa39b"># 一键只读检查，关键项失败即退出</span>
@@ -129,6 +129,6 @@ curl http://127.0.0.1:48500/api/health</code></pre>
   <p style="margin-top:16px;"><a href="quickstart.html">完整快速开始 →</a>&nbsp;&nbsp;<a href="downloads.html">下载与校验 →</a></p>
 </section>
 </main>
-<footer class="footer">MergePilot 0.2.0-beta.6-rc.18 · Apache-2.0 · 自托管发行版 · 本站为静态文档，不提供托管服务</footer>
+<footer class="footer">MergePilot 0.2.0-beta.6-rc.19 · Apache-2.0 · 自托管发行版 · 本站为静态文档，不提供托管服务</footer>
 </body>
 </html>

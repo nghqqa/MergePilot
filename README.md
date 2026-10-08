@@ -4,11 +4,11 @@
 
 [官网](https://docs.nghqqa.cn/) · [快速开始](https://docs.nghqqa.cn/quickstart.html) · [使用文档](https://docs.nghqqa.cn/docs.html) · [下载与校验](https://docs.nghqqa.cn/downloads.html)
 
-[![Release](https://img.shields.io/badge/Release-rc.17-0e6b62)](https://github.com/nghqqa/MergePilot/releases/tag/v0.2.0-beta.6-rc.17)
+[![Release](https://img.shields.io/badge/Release-rc.19-0e6b62)](https://github.com/nghqqa/MergePilot/releases/tag/v0.2.0-beta.6-rc.19)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
 MergePilot 通过 GitHub App 只读接入仓库，把 PR 事件、审查发现、修复建议与验证证据汇集到你自己的 Console。
-它不回写 GitHub Check Run，不自动合并或批准 PR；当前为 **Developer Beta（rc.17 预发布）**。
+它不回写 GitHub Check Run，不自动合并或批准 PR；当前为 **Developer Beta（rc.19 预发布）**。
 
 ## 界面
 
@@ -41,13 +41,13 @@ Agent 的建议与可执行验证证据应分开看待。
 Console、数据库和部署配置由你自行管理；官网是文档入口，**不是托管版 Console 或登录入口**。
 
 1. 阅读[快速开始](https://docs.nghqqa.cn/quickstart.html)，准备 Docker Compose、Node.js ≥ 20、GitHub App、OAuth App 和审查用的 LLM 端点。
-2. 选择 [rc.17 部署包](https://github.com/nghqqa/MergePilot/releases/tag/v0.2.0-beta.6-rc.17)，或使用下面的仓库部署方式。离线镜像、SHA256SUMS、SBOM 和扫描记录见[下载与校验](https://docs.nghqqa.cn/downloads.html)。
+2. 选择 [rc.19 部署包](https://github.com/nghqqa/MergePilot/releases/tag/v0.2.0-beta.6-rc.19)，或使用下面的仓库部署方式。离线镜像、SHA256SUMS、SBOM 和扫描记录见[下载与校验](https://docs.nghqqa.cn/downloads.html)。
 3. 按[部署指南](deploy/selfhost/README.md)完成配置和首管理员初始化，再登录你自己的 Console。
 
 ### 从仓库部署
 
-以下使用 `main` 的部署文件；当前 compose 固定引用 rc.17 镜像，包含发布后修正的 preflight。
-冻结的 rc.17 部署包不会随 `main` 自动更新。
+以下使用 `main` 的部署文件；当前 compose 固定引用 rc.19 镜像（GHCR 不可变 digest），包含发布后修正的 preflight。
+冻结的 rc.19 部署包不会随 `main` 自动更新。
 
 ```bash
 git clone https://github.com/nghqqa/MergePilot.git
@@ -97,7 +97,7 @@ AgentTeams 是独立执行器，不是所有角色统一走外部 LLM。可选 c
 | 部署修复验证执行器 | [AgentTeams RUNBOOK](deploy/agentteams-beta/RUNBOOK.md) |
 | 配置本地知识库 | [本地 RAG 指南](distribution/docs/LOCAL-RAG-GUIDE.md) |
 | 深入架构、API 与能力限制 | [技术文档目录](distribution/docs/) |
-| 查看发布与变更 | [rc.17 Release](https://github.com/nghqqa/MergePilot/releases/tag/v0.2.0-beta.6-rc.17) · [CHANGELOG](CHANGELOG.md) |
+| 查看发布与变更 | [rc.19 Release](https://github.com/nghqqa/MergePilot/releases/tag/v0.2.0-beta.6-rc.19) · [CHANGELOG](CHANGELOG.md) |
 | 报告问题或参与贡献 | [Issues](https://github.com/nghqqa/MergePilot/issues) · [CONTRIBUTING](CONTRIBUTING.md) |
 
 安全问题请勿在公开 Issue 披露漏洞细节或凭据；可仅留下联系方式，由维护者接洽。
