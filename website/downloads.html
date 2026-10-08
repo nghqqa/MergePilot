@@ -58,28 +58,28 @@
 <!-- /nav:docs -->
 <article class="doc">
 <div class="crumbs"><a href="index.html">首页</a> / 下载与校验</div>
-<h1>下载与校验（0.2.0-beta.6-rc.17）</h1>
+<h1>下载与校验（0.2.0-beta.6-rc.18）</h1>
 
 <h2>官方镜像（GHCR，不可变 digest）</h2>
-<pre><code>docker pull ghcr.io/nghqqa/mergepilot-console@sha256:112284f104001ac5c94b7d6c64ed2b6c854b52ec1c96dee275268bd7ee0e380a</code></pre>
+<pre><code>docker pull ghcr.io/nghqqa/mergepilot-console@sha256:fe61270548c755e3dc8178de56447718faa68b834db223d41b089a25e7e11995</code></pre>
 <table>
 <tr><th>项</th><th>值</th></tr>
-<tr><td>digest</td><td><code>sha256:112284f104001ac5c94b7d6c64ed2b6c854b52ec1c96dee275268bd7ee0e380a</code>（OCI index；amd64 manifest <code>91f7690e…</code>，config digest <code>5a6b7544…</code>——分列勿混）</td></tr>
-<tr><td>tag</td><td><code>v0.2.0-beta.6-rc.17</code></td></tr>
-<tr><td>内置版本</td><td><code>0.2.0-beta.6-rc.17</code>（/api/health version 真源）</td></tr>
-<tr><td>源码</td><td>main commit <code>fd4c309b6f2d</code>（#348/#349/#352 登录/邀请 UX 收口；零 schema/迁移变更）</td></tr>
+<tr><td>digest</td><td><code>sha256:fe61270548c755e3dc8178de56447718faa68b834db223d41b089a25e7e11995</code>（OCI index；amd64 manifest <code>3c134700…</code>，config digest <code>cae436a0…</code>——分列勿混）</td></tr>
+<tr><td>tag</td><td><code>v0.2.0-beta.6-rc.18</code></td></tr>
+<tr><td>内置版本</td><td><code>0.2.0-beta.6-rc.18</code>（/api/health version 真源）</td></tr>
+<tr><td>源码</td><td>tag commit <code>91e30e346c49</code>（发布材料合入后 main = <code>310051d95a36</code>；零 schema/迁移变更，恒 v23）</td></tr>
 </table>
 
 <h2>离线 tar（无外网环境）</h2>
 <table>
 <tr><th>项</th><th>值</th></tr>
-<tr><td>文件</td><td><code>mergepilot-console-rc17.tar</code></td></tr>
-<tr><td>大小</td><td>62,563,328 bytes</td></tr>
-<tr><td>SHA256</td><td><code>2a8ccce4b7fe607c532665581a50bf8e5a021f2ace2a75fbd87c63b913030b90</code></td></tr>
-<tr><td>加载</td><td><code>docker load -i mergepilot-console-rc17.tar</code> → image ID <code>112284f104…</code></td></tr>
-<tr><td>部署包（当前，rc.17）</td><td><code>mergepilot-selfhost-deploy-kit-rc17.tar.gz</code>（compose/.env.example/preflight/attest 自测/ingress/README，console pin = rc.17 digest）kit SHA256 = <code>0154a0a114ec02054f9ca758dfd944fd632c2ceb7edc2f5c2f10fa07165f598d</code>；校验文件 <code>SHA256SUMS-rc17.txt</code></td></tr>
-<tr><td>部署包（rc.16.1 r2，已过时）</td><td><code>mergepilot-selfhost-deploy-kit-rc16.1-r2.tar.gz</code>（SHA256 <code>2e07fa86…a7441</code>）与 rc.16.1 首发版 kit 仅作存档追溯——新安装请使用 rc.17 部署包</td></tr>
-<tr><td>部署包（rc.16.1 首发版，已过时）</td><td><code>mergepilot-selfhost-deploy-kit-rc16.tar.gz</code> 内 compose/README 为 rc.15 基线（console digest <code>f0b30fd1…</code>），仅作存档追溯——新安装请使用上方 r2 修订包</td></tr>
+<tr><td>文件</td><td><code>mergepilot-console-rc18.tar</code></td></tr>
+<tr><td>大小</td><td>62,570,496 bytes</td></tr>
+<tr><td>SHA256</td><td><code>ae8896ed26ea249f5f7f7f9070f4bd66a2a691e10d30cc26d37996371908188c</code></td></tr>
+<tr><td>加载</td><td><code>docker load -i mergepilot-console-rc18.tar</code> → 按 digest 核对（<code>fe612705…</code>）</td></tr>
+<tr><td>部署包（当前，rc.18）</td><td><code>mergepilot-selfhost-deploy-kit-rc18.tar.gz</code>（compose/.env.example/preflight/attest 自测/ingress/README，console pin = rc.18 digest）kit SHA256 = <code>6279e7a41b1666c9850a8f0d7195c9f708c17c21c393dccaaaa72b075af6c64b</code>；校验文件 <code>SHA256SUMS-rc18.txt</code></td></tr>
+<tr><td>部署包（rc.17，已过时）</td><td><code>mergepilot-selfhost-deploy-kit-rc17.tar.gz</code>（kit SHA256 <code>0154a0a1…598d</code>）与 <code>mergepilot-console-rc17.tar</code>（tar SHA256 <code>2a8ccce4…30b90</code>）仅作存档/回滚追溯——新安装请使用 rc.18 部署包</td></tr>
+<tr><td>部署包（rc.16.1 及更早，已过时）</td><td><code>mergepilot-selfhost-deploy-kit-rc16.1-r2.tar.gz</code>（SHA256 <code>2e07fa86…a7441</code>）与 rc.16.1 首发版 kit 仅作存档追溯</td></tr>
 </table>
 
 <p class="login-sub" style="margin:10px 0 0">GHCR 镜像包为 Public 仅表示自托管用户可匿名
@@ -97,19 +97,19 @@
 <h2>校验方法</h2>
 <pre><code># 镜像 ID 校验（加载/拉取后）
 docker inspect --format '{{.Id}}' &lt;镜像引用&gt;
-# 期望：sha256:112284f104001ac5c94b7d6c64ed2b6c854b52ec1c96dee275268bd7ee0e380a
+# 期望：sha256:fe61270548c755e3dc8178de56447718faa68b834db223d41b089a25e7e11995
 
 # 运行版本校验
 curl -s http://127.0.0.1:48500/api/health | grep version
-# 期望：0.2.0-beta.6-rc.17
+# 期望：0.2.0-beta.6-rc.18
 
 # tar 校验
-sha256sum mergepilot-console-rc17.tar</code></pre>
+sha256sum mergepilot-console-rc18.tar</code></pre>
 
 <div class="note">历史版本（rc.9～rc.14）的 digest 与 tag 同样以不可变形式保留在 GHCR；
 发布页随版本更新追加，不修改历史条目。</div>
 </article>
 </main>
-<footer class="footer">MergePilot 0.2.0-beta.6-rc.17 · Apache-2.0</footer>
+<footer class="footer">MergePilot 0.2.0-beta.6-rc.18 · Apache-2.0</footer>
 </body>
 </html>
