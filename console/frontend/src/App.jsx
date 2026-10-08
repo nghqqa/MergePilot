@@ -413,7 +413,7 @@ function Shell() {
       ) : (
         <Drawer
           placement="left" width={232} open={navOpen} onClose={() => setNavOpen(false)}
-          title={brand} styles={{ body: { padding: 0, background: '#0b0f19' } }}
+          title={brand} className="nav-drawer" styles={{ body: { padding: 0, background: 'var(--c-nav)' } }}
           closeIcon={<MenuOutlined aria-label="关闭菜单" />}
         >
           <nav aria-label="主导航">
