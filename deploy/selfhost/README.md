@@ -1,8 +1,10 @@
-# MergePilot rc.17 自托管部署
+# MergePilot rc.18 自托管部署（候选）
 
-> 版本：`0.2.0-beta.6-rc.17` · 镜像 pull digest（OCI index）：`sha256:112284f104001ac5c94b7d6c64ed2b6c854b52ec1c96dee275268bd7ee0e380a`
-> 官方镜像已在 GHCR 发布（不可变 digest）。离线 tar 与源码构建为等效替代途径，校验方式见下。
-> 供应链档案：SBOM（CycloneDX，35 组件）、trivy 扫描（漏洞 0/秘密 0）、离线 tar SHA256 与源码 tag 见「镜像获取与校验」。
+> 版本：`0.2.0-beta.6-rc.18` · 镜像 pull digest（OCI index）：`sha256:fe61270548c755e3dc8178de56447718faa68b834db223d41b089a25e7e11995`
+> index 内含 linux/amd64 manifest `sha256:3c134700917c24690db0f497ad26c26e5700d29ed69ff86a4954baf601c467ea`、config digest `sha256:cae436a0c82ea93c7f747d740de7441c4bd50388b246b6881d4727653f05b042`（三者不同对象，勿混称）。
+> 已正式发布 GHCR（不可变 digest）。离线 tar 与源码构建为等效替代途径，校验方式见下。
+> 供应链档案：SBOM（CycloneDX）、trivy 扫描、离线 tar SHA256 见「镜像获取与校验」（哈希随候选制品提供）。
+> 相对 rc.17：**零 schema/迁移变更（恒 v23）**，前端阅读体验（信息精简+字号层级）与文档/预检修正。
 
 ## 快速开始
 
@@ -138,18 +140,17 @@ MU_GITHUB_OAUTH_CALLBACK_URL=https://<console 公开地址>/api/mu/auth/oauth/gi
 
 | 途径 | 命令 | 校验 |
 |---|---|---|
-| GHCR | `docker pull ghcr.io/nghqqa/mergepilot-console@sha256:112284f104…e380a` | RepoDigest == 该 digest |
-| 离线 tar | `docker load -i mergepilot-console-rc17.tar` | tar SHA256 = `2a8ccce4b7fe607c532665581a50bf8e5a021f2ace2a75fbd87c63b913030b90`；load 后 image ID = `112284f104…e380a`（OCI **index** digest，内含 amd64 manifest `91f7690e…839b8`，其 config digest = `5a6b7544…3642`——三者为不同对象，勿混称；本版 containerd 推送/本地列表恰都显示 index digest） |
+| GHCR | `docker pull ghcr.io/nghqqa/mergepilot-console@fe61270548c7…` | RepoDigest == `sha256:fe61270548c755e3dc8178de56447718faa68b834db223d41b089a25e7e11995` |
+| 离线 tar | `docker load -i mergepilot-console-rc18.tar` | tar SHA256 见 `SHA256SUMS-rc18.txt`（发布附件） |
 | 源码构建 | 见下节 | image ID 应可复现（同 commit/同构建参数） |
 
-镜像内置 `MERGEPILOT_VERSION=0.2.0-beta.6-rc.17`（`/api/health` version 字段即真源）。
+镜像内置 `MERGEPILOT_VERSION=0.2.0-beta.6-rc.18`（`/api/health` version 字段即真源）。
 
-**供应链档案（rc.17）**：
+**供应链档案（rc.18 候选）**：
 
-- SBOM：CycloneDX 1.7，**35 组件**（`rc17-sbom.cdx.json`，随发行版发布）；
-- 漏洞/秘密扫描（trivy 0.74，ghcr.io 官方漏洞库）：**vulnerabilities=0、secrets=0**；
-- 构建来源：源码 tag `v0.2.0-beta.6-rc.17` = main commit `31491a3`（与镜像 digest `112284f104…e380a` 同源）；
-  相对 rc.16 运行时差异：登录/邀请 UX（前端 6 文件）+ session 能力信号（session.mjs）+ start?invite= 非法格式 404（api.mjs）；**零 schema/迁移变更（恒 v23）**；
+- SBOM：CycloneDX（`rc18-sbom.cdx.json`，随候选制品提供）；
+- 漏洞/秘密扫描：trivy（`rc18-scan.json`，随候选制品提供）；
+- 构建来源：候选 commit 见 `SHA256SUMS-rc18-candidate.txt` 同目录记录；**零 schema/迁移变更（恒 v23，与 rc.17 一致）**；
 - 基础镜像：`node@sha256:0a7108bf…`（Dockerfile 钉死）。
 
 > `48590` 端口与 `beta-webhook-proxy` 容器是 MergePilot 开发方内部测试环境的组件，
@@ -159,11 +160,11 @@ MU_GITHUB_OAUTH_CALLBACK_URL=https://<console 公开地址>/api/mu/auth/oauth/gi
 ## 从源码构建
 
 ```bash
-git checkout v0.2.0-beta.6-rc.17        # 源码 tag（与镜像同源）
+git checkout v0.2.0-beta.6-rc.18        # 源码 tag（与镜像同源）
 cd console/frontend && npm ci && npm run build && cd ../..
 docker build -f docker/Dockerfile.canonical-console \
-  --build-arg MERGEPILOT_VERSION=0.2.0-beta.6-rc.17 \
-  -t ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.17 .
+  --build-arg MERGEPILOT_VERSION=0.2.0-beta.6-rc.18 \
+  -t ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.18 .
 ```
 
 注意两点：① 构建前必须先产出 `console/frontend/dist`（Dockerfile 会 COPY 它）；
@@ -470,7 +471,7 @@ docker cp mergepilot-postgres-1:/tmp/mu.backup ./mu-$(date +%F).backup
 | cchain=BLOCKED | 三键是否齐全；attestation 端点可达性（`node preflight.mjs --live` 可探测，含内容一致性比对）；keystore 是否已 rotate 出在役 key |
 | 登录后 403 membership_inactive | 会话绑定租户的成员关系已被撤——重新登录会落到其余 active 租户 |
 
-## 已知限制（rc.17）
+## 已知限制
 
 - 无租户切换端点/UI（多租户用户以对应租户邀请重新登录）；
 - 私有 GitHub App 仅所有者账号可安装；多租户 webhook 需公开化 App 或每租户独立 App；
