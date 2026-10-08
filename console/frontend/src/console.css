@@ -128,6 +128,9 @@ a:hover { text-decoration: underline; text-underline-offset: 2px; }
 .brand-text { min-width: 0; }
 .brand-name { font-size: var(--fs-base); font-weight: var(--fw-semibold); color: #fff; letter-spacing: 0.2px; }
 .brand-sub { font-size: var(--fs-xs); color: var(--c-nav-dim); margin-top: 1px; }
+/* 移动端导航抽屉：头部与侧栏同源令牌——brand-name(#fff) 在 antd 默认白头上不可读的修复 */
+.nav-drawer .ant-drawer-header { background: var(--c-nav); border-bottom: 1px solid var(--c-nav-line); }
+.nav-drawer .ant-drawer-close { color: var(--c-nav-text); }
 
 .sidebar nav { padding: 6px 0; flex: 1; overflow-y: auto; }
 .nav-section { margin-top: 10px; }
