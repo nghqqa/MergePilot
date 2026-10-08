@@ -147,11 +147,11 @@ MU_GITHUB_OAUTH_CALLBACK_URL=https://<console 公开地址>/api/mu/auth/oauth/gi
 
 镜像内置 `MERGEPILOT_VERSION=0.2.0-beta.6-rc.19`（`/api/health` version 字段即真源）。
 
-**供应链档案（rc.19 候选）**：
+**供应链档案（rc.19）**：
 
 - SBOM：CycloneDX（`rc19-sbom.cdx.json`，随候选制品提供）；
 - 漏洞/秘密扫描：trivy（`rc19-scan.json`，随候选制品提供）；
-- 构建来源：候选 commit 见 `SHA256SUMS-rc19-candidate.txt` 同目录记录；**零 schema/迁移变更（恒 v23，与 rc.17 一致）**；
+- 构建来源：源码 tag `v0.2.0-beta.6-rc.19` = 92c9543（tag 与镜像同源）；**零 schema/迁移变更（恒 v23，与 rc.18 一致）**；
 - 基础镜像：`node@sha256:0a7108bf…`（Dockerfile 钉死）。
 
 > `48590` 端口与 `beta-webhook-proxy` 容器是 MergePilot 开发方内部测试环境的组件，

@@ -9,7 +9,7 @@
 #   - 仅 console 与 webhook-ingress 发布端口，且默认绑定 127.0.0.1（对外暴露请前置 TLS 反代，见 README 安全节）
 #   - postgres / bge-sidecar 不发布任何端口（仅 internal 网络可达）
 #   - 全部服务 restart: unless-stopped
-#   - 镜像引用：console 走 digest 占位（GHCR 推送后即可 pull）；pgvector 与 bge-sidecar 为已推送的不可变 digest
+#   - 镜像引用：全部为已推送的不可变 digest（console=GHCR OCI index 0077382d…，与 v0.2.0-beta.6-rc.19 源码 tag 同源）
 #   - cchain 三键为可选：未满足时 cchain=BLOCKED（fail-closed 如实呈现，不影响其余功能）
 
 name: mergepilot
