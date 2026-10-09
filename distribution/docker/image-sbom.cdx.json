@@ -2,10 +2,10 @@
   "$schema": "http://cyclonedx.org/schema/bom-1.7.schema.json",
   "bomFormat": "CycloneDX",
   "specVersion": "1.7",
-  "serialNumber": "urn:uuid:46c37ca4-8011-4eea-9fe6-bd8765f46db1",
+  "serialNumber": "urn:uuid:5c99cc94-8a00-4669-93d4-0a3cde71c0cf",
   "version": 1,
   "metadata": {
-    "timestamp": "2026-10-09T07:18:16+00:00",
+    "timestamp": "2026-10-09T09:48:55+00:00",
     "tools": {
       "components": [
         {
@@ -20,22 +20,26 @@
       ]
     },
     "component": {
-      "bom-ref": "pkg:oci/mergepilot-console@sha256:a2d54a0d97578d6e9889a47a571922cbb56d719a180516276e7b30d1d32dd2fe?arch=amd64&repository_url=ghcr.io%2Fnghqqa%2Fmergepilot-console",
+      "bom-ref": "pkg:oci/mergepilot-console@sha256:abc5048dda9b2f6baf4b551aa51b768c12bac6e2a92f6d57f7ac420700c068c0?arch=amd64&repository_url=ghcr.io%2Fnghqqa%2Fmergepilot-console",
       "type": "container",
-      "name": "ghcr.io/nghqqa/mergepilot-console@sha256:a2d54a0d97578d6e9889a47a571922cbb56d719a180516276e7b30d1d32dd2fe",
-      "purl": "pkg:oci/mergepilot-console@sha256:a2d54a0d97578d6e9889a47a571922cbb56d719a180516276e7b30d1d32dd2fe?arch=amd64&repository_url=ghcr.io%2Fnghqqa%2Fmergepilot-console",
+      "name": "ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.21",
+      "purl": "pkg:oci/mergepilot-console@sha256:abc5048dda9b2f6baf4b551aa51b768c12bac6e2a92f6d57f7ac420700c068c0?arch=amd64&repository_url=ghcr.io%2Fnghqqa%2Fmergepilot-console",
       "properties": [
         {
           "name": "aquasecurity:trivy:DiffID",
-          "value": "sha256:227a67c81f561123420889babf39d20344b7cd1fa64704bfd725dbf1f1068e1e"
+          "value": "sha256:05a9e8de4f8066ed07ab0099acfadcea933fb42c6ad7a24966d8655d02b535ad"
         },
         {
           "name": "aquasecurity:trivy:DiffID",
-          "value": "sha256:29147668c7b847cda3f9621061b7cb7b3782df4ee1cc9b5750287eb10f4329e4"
+          "value": "sha256:295f7c6a8f670139ac16abf4fed41345027b3c5cc17f773470c9a98bc893d8a8"
         },
         {
           "name": "aquasecurity:trivy:DiffID",
-          "value": "sha256:2df52352835df9904169cced898a15d86d9a89c8f091a72e9a3444f3a7a53ced"
+          "value": "sha256:32241736edab4cc1db251ee62364d43fdefb7d958bfa80b2aa48f14520deebe4"
+        },
+        {
+          "name": "aquasecurity:trivy:DiffID",
+          "value": "sha256:3bba131ea170bce70c97bb9c7718f758ad74a6a99d957ef50bf5e464d7af11f5"
         },
         {
           "name": "aquasecurity:trivy:DiffID",
@@ -43,7 +47,7 @@
         },
         {
           "name": "aquasecurity:trivy:DiffID",
-          "value": "sha256:6468e7f3bb1297edeb36046b88e5a9ea33e7e171d315552322ee51a1fb9380a6"
+          "value": "sha256:5bf41f33658b0e7620149125dad8ce3aa72a7d386ab20963196d8fa928a87132"
         },
         {
           "name": "aquasecurity:trivy:DiffID",
@@ -55,11 +59,7 @@
         },
         {
           "name": "aquasecurity:trivy:DiffID",
-          "value": "sha256:8def2b4d88e0b573bb7b4b513d0543eff5aebd31e35cff689507fa0b60f6bb00"
-        },
-        {
-          "name": "aquasecurity:trivy:DiffID",
-          "value": "sha256:a3535fbcb80a4881c1ee79080245e6ca39d4e21816f5ded6d5b91927058ae957"
+          "value": "sha256:81fce05bcdf82a9b3e0e38457ddca44e87d1a894991f68f63a13fd5b803129ff"
         },
         {
           "name": "aquasecurity:trivy:DiffID",
@@ -67,7 +67,7 @@
         },
         {
           "name": "aquasecurity:trivy:DiffID",
-          "value": "sha256:d23d3e0d81a9955a6a560ad80d0bd7d30a26d4f0e6911c01e4ed62b0d831dea7"
+          "value": "sha256:f83a72f57b79a52dc11c2855c40b9582e58af91267901591bb8624cafed648f6"
         },
         {
           "name": "aquasecurity:trivy:DiffID",
@@ -75,23 +75,19 @@
         },
         {
           "name": "aquasecurity:trivy:ImageID",
-          "value": "sha256:a2d54a0d97578d6e9889a47a571922cbb56d719a180516276e7b30d1d32dd2fe"
+          "value": "sha256:abc5048dda9b2f6baf4b551aa51b768c12bac6e2a92f6d57f7ac420700c068c0"
         },
         {
           "name": "aquasecurity:trivy:Reference",
-          "value": "ghcr.io/nghqqa/mergepilot-console@sha256:a2d54a0d97578d6e9889a47a571922cbb56d719a180516276e7b30d1d32dd2fe"
+          "value": "ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.21"
         },
         {
           "name": "aquasecurity:trivy:RepoDigest",
-          "value": "ghcr.io/nghqqa/mergepilot-console@sha256:a2d54a0d97578d6e9889a47a571922cbb56d719a180516276e7b30d1d32dd2fe"
+          "value": "ghcr.io/nghqqa/mergepilot-console@sha256:abc5048dda9b2f6baf4b551aa51b768c12bac6e2a92f6d57f7ac420700c068c0"
         },
         {
           "name": "aquasecurity:trivy:RepoTag",
-          "value": "ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.20"
-        },
-        {
-          "name": "aquasecurity:trivy:RepoTag",
-          "value": "ghcr.io/nghqqa/mergepilot-console@sha256:a2d54a0d97578d6e9889a47a571922cbb56d719a180516276e7b30d1d32dd2fe"
+          "value": "ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.21"
         },
         {
           "name": "aquasecurity:trivy:SchemaVersion",
@@ -99,14 +95,14 @@
         },
         {
           "name": "aquasecurity:trivy:Size",
-          "value": "176333824"
+          "value": "176336896"
         }
       ]
     }
   },
   "components": [
     {
-      "bom-ref": "b8ba63ef-33ce-4a85-8194-e0c3830174e1",
+      "bom-ref": "73c8d1f3-77d2-4cec-acdc-48a5e9ad5309",
       "type": "operating-system",
       "name": "alpine",
       "version": "3.24.2",
@@ -1047,11 +1043,11 @@
         },
         {
           "name": "aquasecurity:trivy:LayerDiffID",
-          "value": "sha256:29147668c7b847cda3f9621061b7cb7b3782df4ee1cc9b5750287eb10f4329e4"
+          "value": "sha256:295f7c6a8f670139ac16abf4fed41345027b3c5cc17f773470c9a98bc893d8a8"
         },
         {
           "name": "aquasecurity:trivy:LayerDigest",
-          "value": "sha256:b52cac0aab43f3485b4cdd31dd94782b669477a9b4fd58c0e0fec65a6518ff44"
+          "value": "sha256:43349bbb725af4ce82f38a19abed30797a7d51ad6d54f5642b5e861095e5b287"
         },
         {
           "name": "aquasecurity:trivy:PkgID",
@@ -1089,11 +1085,11 @@
         },
         {
           "name": "aquasecurity:trivy:LayerDiffID",
-          "value": "sha256:227a67c81f561123420889babf39d20344b7cd1fa64704bfd725dbf1f1068e1e"
+          "value": "sha256:05a9e8de4f8066ed07ab0099acfadcea933fb42c6ad7a24966d8655d02b535ad"
         },
         {
           "name": "aquasecurity:trivy:LayerDigest",
-          "value": "sha256:ff13776248d7665335eef319c7baad8df58479aa65b9feaee2649ee66e112691"
+          "value": "sha256:30590c2d8e281f6cd49df9ef9135c3d3be0a78a5a6756e0d10641aed9d865884"
         },
         {
           "name": "aquasecurity:trivy:PkgID",
@@ -1131,11 +1127,11 @@
         },
         {
           "name": "aquasecurity:trivy:LayerDiffID",
-          "value": "sha256:227a67c81f561123420889babf39d20344b7cd1fa64704bfd725dbf1f1068e1e"
+          "value": "sha256:05a9e8de4f8066ed07ab0099acfadcea933fb42c6ad7a24966d8655d02b535ad"
         },
         {
           "name": "aquasecurity:trivy:LayerDigest",
-          "value": "sha256:ff13776248d7665335eef319c7baad8df58479aa65b9feaee2649ee66e112691"
+          "value": "sha256:30590c2d8e281f6cd49df9ef9135c3d3be0a78a5a6756e0d10641aed9d865884"
         },
         {
           "name": "aquasecurity:trivy:PkgID",
@@ -1173,11 +1169,11 @@
         },
         {
           "name": "aquasecurity:trivy:LayerDiffID",
-          "value": "sha256:227a67c81f561123420889babf39d20344b7cd1fa64704bfd725dbf1f1068e1e"
+          "value": "sha256:05a9e8de4f8066ed07ab0099acfadcea933fb42c6ad7a24966d8655d02b535ad"
         },
         {
           "name": "aquasecurity:trivy:LayerDigest",
-          "value": "sha256:ff13776248d7665335eef319c7baad8df58479aa65b9feaee2649ee66e112691"
+          "value": "sha256:30590c2d8e281f6cd49df9ef9135c3d3be0a78a5a6756e0d10641aed9d865884"
         },
         {
           "name": "aquasecurity:trivy:PkgID",
@@ -1215,11 +1211,11 @@
         },
         {
           "name": "aquasecurity:trivy:LayerDiffID",
-          "value": "sha256:227a67c81f561123420889babf39d20344b7cd1fa64704bfd725dbf1f1068e1e"
+          "value": "sha256:05a9e8de4f8066ed07ab0099acfadcea933fb42c6ad7a24966d8655d02b535ad"
         },
         {
           "name": "aquasecurity:trivy:LayerDigest",
-          "value": "sha256:ff13776248d7665335eef319c7baad8df58479aa65b9feaee2649ee66e112691"
+          "value": "sha256:30590c2d8e281f6cd49df9ef9135c3d3be0a78a5a6756e0d10641aed9d865884"
         },
         {
           "name": "aquasecurity:trivy:PkgID",
@@ -1257,11 +1253,11 @@
         },
         {
           "name": "aquasecurity:trivy:LayerDiffID",
-          "value": "sha256:227a67c81f561123420889babf39d20344b7cd1fa64704bfd725dbf1f1068e1e"
+          "value": "sha256:05a9e8de4f8066ed07ab0099acfadcea933fb42c6ad7a24966d8655d02b535ad"
         },
         {
           "name": "aquasecurity:trivy:LayerDigest",
-          "value": "sha256:ff13776248d7665335eef319c7baad8df58479aa65b9feaee2649ee66e112691"
+          "value": "sha256:30590c2d8e281f6cd49df9ef9135c3d3be0a78a5a6756e0d10641aed9d865884"
         },
         {
           "name": "aquasecurity:trivy:PkgID",
@@ -1299,11 +1295,11 @@
         },
         {
           "name": "aquasecurity:trivy:LayerDiffID",
-          "value": "sha256:227a67c81f561123420889babf39d20344b7cd1fa64704bfd725dbf1f1068e1e"
+          "value": "sha256:05a9e8de4f8066ed07ab0099acfadcea933fb42c6ad7a24966d8655d02b535ad"
         },
         {
           "name": "aquasecurity:trivy:LayerDigest",
-          "value": "sha256:ff13776248d7665335eef319c7baad8df58479aa65b9feaee2649ee66e112691"
+          "value": "sha256:30590c2d8e281f6cd49df9ef9135c3d3be0a78a5a6756e0d10641aed9d865884"
         },
         {
           "name": "aquasecurity:trivy:PkgID",
@@ -1341,11 +1337,11 @@
         },
         {
           "name": "aquasecurity:trivy:LayerDiffID",
-          "value": "sha256:227a67c81f561123420889babf39d20344b7cd1fa64704bfd725dbf1f1068e1e"
+          "value": "sha256:05a9e8de4f8066ed07ab0099acfadcea933fb42c6ad7a24966d8655d02b535ad"
         },
         {
           "name": "aquasecurity:trivy:LayerDigest",
-          "value": "sha256:ff13776248d7665335eef319c7baad8df58479aa65b9feaee2649ee66e112691"
+          "value": "sha256:30590c2d8e281f6cd49df9ef9135c3d3be0a78a5a6756e0d10641aed9d865884"
         },
         {
           "name": "aquasecurity:trivy:PkgID",
@@ -1383,11 +1379,11 @@
         },
         {
           "name": "aquasecurity:trivy:LayerDiffID",
-          "value": "sha256:227a67c81f561123420889babf39d20344b7cd1fa64704bfd725dbf1f1068e1e"
+          "value": "sha256:05a9e8de4f8066ed07ab0099acfadcea933fb42c6ad7a24966d8655d02b535ad"
         },
         {
           "name": "aquasecurity:trivy:LayerDigest",
-          "value": "sha256:ff13776248d7665335eef319c7baad8df58479aa65b9feaee2649ee66e112691"
+          "value": "sha256:30590c2d8e281f6cd49df9ef9135c3d3be0a78a5a6756e0d10641aed9d865884"
         },
         {
           "name": "aquasecurity:trivy:PkgID",
@@ -1425,11 +1421,11 @@
         },
         {
           "name": "aquasecurity:trivy:LayerDiffID",
-          "value": "sha256:227a67c81f561123420889babf39d20344b7cd1fa64704bfd725dbf1f1068e1e"
+          "value": "sha256:05a9e8de4f8066ed07ab0099acfadcea933fb42c6ad7a24966d8655d02b535ad"
         },
         {
           "name": "aquasecurity:trivy:LayerDigest",
-          "value": "sha256:ff13776248d7665335eef319c7baad8df58479aa65b9feaee2649ee66e112691"
+          "value": "sha256:30590c2d8e281f6cd49df9ef9135c3d3be0a78a5a6756e0d10641aed9d865884"
         },
         {
           "name": "aquasecurity:trivy:PkgID",
@@ -1467,11 +1463,11 @@
         },
         {
           "name": "aquasecurity:trivy:LayerDiffID",
-          "value": "sha256:227a67c81f561123420889babf39d20344b7cd1fa64704bfd725dbf1f1068e1e"
+          "value": "sha256:05a9e8de4f8066ed07ab0099acfadcea933fb42c6ad7a24966d8655d02b535ad"
         },
         {
           "name": "aquasecurity:trivy:LayerDigest",
-          "value": "sha256:ff13776248d7665335eef319c7baad8df58479aa65b9feaee2649ee66e112691"
+          "value": "sha256:30590c2d8e281f6cd49df9ef9135c3d3be0a78a5a6756e0d10641aed9d865884"
         },
         {
           "name": "aquasecurity:trivy:PkgID",
@@ -1509,11 +1505,11 @@
         },
         {
           "name": "aquasecurity:trivy:LayerDiffID",
-          "value": "sha256:227a67c81f561123420889babf39d20344b7cd1fa64704bfd725dbf1f1068e1e"
+          "value": "sha256:05a9e8de4f8066ed07ab0099acfadcea933fb42c6ad7a24966d8655d02b535ad"
         },
         {
           "name": "aquasecurity:trivy:LayerDigest",
-          "value": "sha256:ff13776248d7665335eef319c7baad8df58479aa65b9feaee2649ee66e112691"
+          "value": "sha256:30590c2d8e281f6cd49df9ef9135c3d3be0a78a5a6756e0d10641aed9d865884"
         },
         {
           "name": "aquasecurity:trivy:PkgID",
@@ -1551,11 +1547,11 @@
         },
         {
           "name": "aquasecurity:trivy:LayerDiffID",
-          "value": "sha256:227a67c81f561123420889babf39d20344b7cd1fa64704bfd725dbf1f1068e1e"
+          "value": "sha256:05a9e8de4f8066ed07ab0099acfadcea933fb42c6ad7a24966d8655d02b535ad"
         },
         {
           "name": "aquasecurity:trivy:LayerDigest",
-          "value": "sha256:ff13776248d7665335eef319c7baad8df58479aa65b9feaee2649ee66e112691"
+          "value": "sha256:30590c2d8e281f6cd49df9ef9135c3d3be0a78a5a6756e0d10641aed9d865884"
         },
         {
           "name": "aquasecurity:trivy:PkgID",
@@ -1593,11 +1589,11 @@
         },
         {
           "name": "aquasecurity:trivy:LayerDiffID",
-          "value": "sha256:227a67c81f561123420889babf39d20344b7cd1fa64704bfd725dbf1f1068e1e"
+          "value": "sha256:05a9e8de4f8066ed07ab0099acfadcea933fb42c6ad7a24966d8655d02b535ad"
         },
         {
           "name": "aquasecurity:trivy:LayerDigest",
-          "value": "sha256:ff13776248d7665335eef319c7baad8df58479aa65b9feaee2649ee66e112691"
+          "value": "sha256:30590c2d8e281f6cd49df9ef9135c3d3be0a78a5a6756e0d10641aed9d865884"
         },
         {
           "name": "aquasecurity:trivy:PkgID",
@@ -1635,11 +1631,11 @@
         },
         {
           "name": "aquasecurity:trivy:LayerDiffID",
-          "value": "sha256:227a67c81f561123420889babf39d20344b7cd1fa64704bfd725dbf1f1068e1e"
+          "value": "sha256:05a9e8de4f8066ed07ab0099acfadcea933fb42c6ad7a24966d8655d02b535ad"
         },
         {
           "name": "aquasecurity:trivy:LayerDigest",
-          "value": "sha256:ff13776248d7665335eef319c7baad8df58479aa65b9feaee2649ee66e112691"
+          "value": "sha256:30590c2d8e281f6cd49df9ef9135c3d3be0a78a5a6756e0d10641aed9d865884"
         },
         {
           "name": "aquasecurity:trivy:PkgID",
@@ -1696,7 +1692,7 @@
   ],
   "dependencies": [
     {
-      "ref": "b8ba63ef-33ce-4a85-8194-e0c3830174e1",
+      "ref": "73c8d1f3-77d2-4cec-acdc-48a5e9ad5309",
       "dependsOn": [
         "pkg:apk/alpine/alpine-baselayout@3.7.2-r1?arch=x86_64&distro=3.24.2",
         "pkg:apk/alpine/alpine-release@3.24.2-r0?arch=x86_64&distro=3.24.2",
@@ -1884,9 +1880,9 @@
       "dependsOn": []
     },
     {
-      "ref": "pkg:oci/mergepilot-console@sha256:a2d54a0d97578d6e9889a47a571922cbb56d719a180516276e7b30d1d32dd2fe?arch=amd64&repository_url=ghcr.io%2Fnghqqa%2Fmergepilot-console",
+      "ref": "pkg:oci/mergepilot-console@sha256:abc5048dda9b2f6baf4b551aa51b768c12bac6e2a92f6d57f7ac420700c068c0?arch=amd64&repository_url=ghcr.io%2Fnghqqa%2Fmergepilot-console",
       "dependsOn": [
-        "b8ba63ef-33ce-4a85-8194-e0c3830174e1",
+        "73c8d1f3-77d2-4cec-acdc-48a5e9ad5309",
         "pkg:npm/mergepilot-console-runtime@1.0.0",
         "pkg:npm/pg-cloudflare@1.4.0",
         "pkg:npm/pg-connection-string@2.14.0",

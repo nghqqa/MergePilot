@@ -1,6 +1,6 @@
 # MergePilot rc.21 自托管部署（候选）
 
-> 版本：`0.2.0-beta.6-rc.20` · 镜像 pull digest（OCI index）：`sha256:a2d54a0d97578d6e9889a47a571922cbb56d719a180516276e7b30d1d32dd2fe`
+> 版本：`0.2.0-beta.6-rc.20` · 镜像 pull digest（OCI index）：`sha256:abc5048dda9b2f6baf4b551aa51b768c12bac6e2a92f6d57f7ac420700c068c0`
 > index 内含 linux/amd64 manifest `sha256:8c9022437d60869db050856abef275bddb03155b67a5b4152d02e37f30ff6a1f`、config digest `sha256:364d716314eda485b3468f353d3cabdb2955e097a0d6b6250057595387a1a523`（三者不同对象，勿混称）。
 > 已正式发布 GHCR（不可变 digest）。离线 tar 与源码构建为等效替代途径，校验方式见下。
 > 离线 tar 与源码构建为等效替代途径，校验方式见下。
