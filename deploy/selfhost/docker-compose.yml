@@ -1,4 +1,4 @@
-# MergePilot 自托管模板（canonical 拓扑：console + postgres(pgvector) + bge-m3 sidecar + webhook ingress；基线 rc.19）
+# MergePilot 自托管模板（canonical 拓扑：console + postgres(pgvector) + bge-m3 sidecar + webhook ingress；基线 rc.20）
 #
 # 使用前提：cp .env.example .env 并按注释填写（至少必填段）。
 # 启动：docker compose --env-file .env up -d
@@ -9,7 +9,7 @@
 #   - 仅 console 与 webhook-ingress 发布端口，且默认绑定 127.0.0.1（对外暴露请前置 TLS 反代，见 README 安全节）
 #   - postgres / bge-sidecar 不发布任何端口（仅 internal 网络可达）
 #   - 全部服务 restart: unless-stopped
-#   - 镜像引用：全部为已推送的不可变 digest（console=GHCR OCI index 0077382d…，与 v0.2.0-beta.6-rc.19 源码 tag 同源）
+#   - 镜像引用：console=候选 tag（GHCR 推送后回填不可变 digest）；pgvector 与 bge-sidecar 为已推送的不可变 digest
 #   - cchain 三键为可选：未满足时 cchain=BLOCKED（fail-closed 如实呈现，不影响其余功能）
 
 name: mergepilot
@@ -53,9 +53,8 @@ services:
     networks: [internal]
 
   console:
-    # 官方镜像（GHCR 不可变 digest；与 v0.2.0-beta.6-rc.19 源码 tag 同源）。
-    # digest=OCI index（内含 linux/amd64 manifest 413dbd34… 与构建证明 attestation）。
-    image: ghcr.io/nghqqa/mergepilot-console@sha256:0077382db28d454e7e03bbbd9ad3c2a1ddcd97cf84bc4cabe81c4d2b77610ad4
+    # 官方镜像（GHCR 不可变 digest；与 v0.2.0-beta.6-rc.20 源码 tag 同源）。
+    image: ghcr.io/nghqqa/mergepilot-console@sha256:a2d54a0d97578d6e9889a47a571922cbb56d719a180516276e7b30d1d32dd2fe
     restart: unless-stopped
     ports:
       # 安全基线：仅绑定回环。对外暴露必须前置 TLS 反代（README 安全节）。
