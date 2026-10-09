@@ -1,6 +1,8 @@
 # MergePilot rc.20 自托管部署（候选）
 
-> 版本：`0.2.0-beta.6-rc.20` · 镜像 digest：候选阶段以 tag 引用（GHCR 推送后回填不可变 OCI index/manifest/config——未推送前不编造）。
+> 版本：`0.2.0-beta.6-rc.20` · 镜像 pull digest（OCI index）：`sha256:a2d54a0d97578d6e9889a47a571922cbb56d719a180516276e7b30d1d32dd2fe`
+> index 内含 linux/amd64 manifest `sha256:8c9022437d60869db050856abef275bddb03155b67a5b4152d02e37f30ff6a1f`、config digest `sha256:364d716314eda485b3468f353d3cabdb2955e097a0d6b6250057595387a1a523`（三者不同对象，勿混称）。
+> 已正式发布 GHCR（不可变 digest）。离线 tar 与源码构建为等效替代途径，校验方式见下。
 > 离线 tar 与源码构建为等效替代途径，校验方式见下。
 > 离线 tar 与源码构建为等效替代途径，校验方式见下。
 > 供应链档案：SBOM（CycloneDX）、trivy 扫描、离线 tar SHA256 见「镜像获取与校验」（哈希随候选制品提供）。
@@ -140,7 +142,7 @@ MU_GITHUB_OAUTH_CALLBACK_URL=https://<console 公开地址>/api/mu/auth/oauth/gi
 
 | 途径 | 命令 | 校验 |
 |---|---|---|
-| GHCR | 候选阶段：`docker pull ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.20`（正式发布后回填 digest 行） | 以 `docker inspect` RepoDigest 对照发布附件为准 |
+| GHCR | `docker pull ghcr.io/nghqqa/mergepilot-console@a2d54a0d9757…` | RepoDigest == `sha256:a2d54a0d97578d6e9889a47a571922cbb56d719a180516276e7b30d1d32dd2fe` |
 | 离线 tar | `docker load -i mergepilot-console-rc20.tar` | tar SHA256 见 `SHA256SUMS-rc20.txt`（发布附件） |
 | 源码构建 | 见下节 | image ID 应可复现（同 commit/同构建参数） |
 
