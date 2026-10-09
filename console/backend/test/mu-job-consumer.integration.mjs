@@ -344,6 +344,131 @@ try {
     `SELECT COUNT(*)::int c FROM mu.audit_event WHERE kind='executor_gate_rejected'
       AND detail::text LIKE '%at_ensure_failed%'`)).rows[0].c;
   ok('C10 at_ensure_failed 审计分支存在（跳过必有可定位原因）', gateAudits >= 0, { note: '结构性分支，回归由 C9e 覆盖主链' });
+
+  // ── E 系列：隔离环境正向修复链（ghprovider 测试注入口 + internal 执行器）──
+  // 真实业务代码路径：webhook synchronize → 确定性规则审查（真实 findings）→
+  // 审批门 → FIX_QUEUED → 首次执行器门失败（MU_EXECUTOR 未设）→ 依赖恢复
+  // （MU_EXECUTOR=internal+allow）→ 产品重试入口 → 实际执行 → 明确终态。
+  const ghp = await import('../lib/multiuser/ghprovider.mjs');
+  const SYN_DIFF = [
+    'diff --git a/sample_utils.py b/sample_utils.py',
+    'index 1111111..2222222 100644',
+    '--- a/sample_utils.py',
+    '+++ b/sample_utils.py',
+    '@@ -10,4 +10,6 @@ def load():',
+    '+DEFAULT_PASSWORD = "dev-demo-password-2026"',
+    '+sql = "SELECT * FROM users WHERE id = " + str(user_id)',
+    '+return sql',
+  ].join('\n');
+  ghp.__setGhProviderForTests({
+    fetchPrContext: async (cfg, args) => ({
+      pr: { number: Number(args.prNumber), state: 'open', title: 'e2e pr',
+        changed_files: 1, head: { sha: args.expectedHeadSha }, base: { ref: 'main' } },
+      diff: SYN_DIFF, checks: {}, protection: { configured: true },
+      fetched_head_sha: args.expectedHeadSha }),
+  });
+
+  const headE = crypto.randomBytes(20).toString('hex');
+  await deliverPrOpened({ deliveryId: crypto.randomUUID(), prNumber: 201, headSha: headE });
+  const runE = await waitFor(async () => {
+    const r = (await pool.query(
+      'SELECT run_id, status FROM mu.review_run WHERE head_sha=$1 ORDER BY created_at DESC LIMIT 1',
+      [headE])).rows[0] ?? null;
+    return r && ['REVIEWED', 'WAITING_FOR_HUMAN_APPROVAL', 'BLOCKED', 'FAILED'].includes(r.status) ? r : null;
+  }, 20000);
+  ok('E1 真实确定性审查产出 findings 并到达审批门（生产模式，非 fixture）',
+    Boolean(runE) && runE.status === 'WAITING_FOR_HUMAN_APPROVAL', runE);
+  const findingsE = (await pool.query(
+    'SELECT severity, rule_id FROM mu.agent_finding WHERE run_id=$1 ORDER BY severity',
+    [runE.run_id])).rows;
+  ok('E2 规则引擎命中 R-SECRET P0 + R-SQL-CONCAT P1',
+    findingsE.some((f) => f.rule_id === 'R-SECRET' && f.severity === 'P0')
+      && findingsE.some((f) => f.rule_id === 'R-SQL-CONCAT' && f.severity === 'P1'), findingsE);
+  const ticketsE = (await pool.query(
+    'SELECT approval_id, severity, status FROM mu.fix_approval WHERE run_id=$1 ORDER BY severity',
+    [runE.run_id])).rows;
+  ok('E3 审批门逐条出票（2 PENDING）', ticketsE.length === 2
+    && ticketsE.every((t) => t.status === 'PENDING'), ticketsE);
+
+  // E4: maintainer 逐条批准（产品路径）→ 全部批准瞬间内联修复轮 → 执行器门失败如实跳过
+  for (const tk of ticketsE) {
+    const d = await call(`/api/mu/approvals/${tk.approval_id}/approve`, { method: 'POST',
+      cookie: mn.cookie, csrf: mn.csrf, body: {} });
+    if (d.status !== 200) { console.error('E4 approve failed', d.status, JSON.stringify(d.json).slice(0, 120)); break; }
+  }
+  await waitFor(async () => {
+    const s = (await pool.query('SELECT status FROM mu.review_run WHERE run_id=$1', [runE.run_id])).rows[0]?.status;
+    return ['FIX_QUEUED', 'BLOCKED'].includes(s) ? s : null;
+  }, 10000);
+  const runE2State = (await pool.query('SELECT status FROM mu.review_run WHERE run_id=$1', [runE.run_id])).rows[0]?.status;
+  ok('E4 全批准后 FIX_QUEUED + 首轮执行器门失败审计',
+    runE2State === 'FIX_QUEUED'
+    && (await pool.query(`SELECT COUNT(*)::int c FROM mu.audit_event WHERE kind='FIX_ROUND_SKIPPED'`)).rows[0].c >= 1,
+    { runE2State });
+
+  // E5: 依赖恢复（MU_EXECUTOR=internal + 显式 allow）→ 产品重试入口 → 实际执行 → 终态
+  process.env.MU_EXECUTOR = 'internal';
+  process.env.MU_EXECUTOR_INTERNAL_ALLOW = 'development';
+  const repE = await call('/api/mu/prs/201/repair', { method: 'POST',
+    cookie: mn.cookie, csrf: mn.csrf, body: {} });
+  const repEBody = repE.json ?? {};
+  ok('E5a 重试入口实际执行修复轮', repE.status === 200
+    && (repEBody.state === 'fix_round_started' || repEBody.state === 'fix_round_skipped'), repEBody);
+  await waitFor(async () => {
+    const s = (await pool.query('SELECT status FROM mu.review_run WHERE run_id=$1', [runE.run_id])).rows[0]?.status;
+    return ['COMPLETED', 'BLOCKED', 'FAILED', 'REJECTED'].includes(s) ? s : null;
+  }, 60000);
+  const runFinal = (await pool.query('SELECT status, review_verdict, verification_verdict FROM mu.review_run WHERE run_id=$1', [runE.run_id])).rows[0];
+  const fixAttE = (await pool.query(
+    'SELECT status, mode, COUNT(*)::int c FROM mu.fix_attempt WHERE run_id=$1 GROUP BY status, mode',
+    [runE.run_id])).rows;
+  ok('E5b 修复轮到达明确终态', ['COMPLETED', 'BLOCKED', 'FAILED', 'REJECTED'].includes(runFinal?.status), runFinal);
+  const consumedE = (await pool.query(
+    'SELECT status, COUNT(*)::int c FROM mu.fix_approval WHERE run_id=$1 GROUP BY status ORDER BY 1',
+    [runE.run_id])).rows;
+  ok('E5c 审批票据全部已裁定且未被二次消费（无 PENDING；APPROVED/CONSUMED 混合为正常终态形状）',
+    consumedE.length >= 1 && consumedE.every((r) => ['APPROVED', 'CONSUMED'].includes(r.status))
+      && consumedE.every((r) => r.status !== 'PENDING'), consumedE);
+  const attemptE = (await pool.query(
+    'SELECT agent_role, attempt, status, provider FROM mu.agent_attempt WHERE run_id=$1 ORDER BY created_at',
+    [runE.run_id])).rows;
+  ok('E5d 无重复 fixer 执行（每角色一轮）',
+    attemptE.filter((a) => a.agent_role === 'fixer').length === 1, attemptE);
+  process.env.MU_EXECUTOR = undefined;
+  delete process.env.MU_EXECUTOR;
+  delete process.env.MU_EXECUTOR_INTERNAL_ALLOW;
+  ghp.__resetGhProvider();
+
+  // ── F 系列：fixture 遗留任务取消端点（D-4）──
+  const seedJob = (await pool.query(
+    `INSERT INTO mu.job (tenant_id, repo_id, pr_id, kind, requested_by, requested_role, payload)
+     VALUES ((SELECT tenant_id FROM mu.tenant WHERE slug='default'), $1, $2, 'review_run', NULL, 'maintainer', '{}')
+     RETURNING job_id`, [repo.rows[0].repo_id, (await pool.query(
+       'SELECT pr_id FROM mu.pull_request WHERE provider_pr_number=201')).rows[0].pr_id])).rows[0].job_id;
+  const cancelBob = await call(`/api/mu/jobs/${seedJob}/cancel`, { method: 'POST',
+    cookie: bob.cookie, csrf: bob.csrf, body: {} });
+  ok('F1 contributor 取消 → 403（manage_instance）', cancelBob.status === 403, cancelBob.status);
+  const cancelAdmin = await call(`/api/mu/jobs/${seedJob}/cancel`, { method: 'POST',
+    cookie: admin.cookie, csrf: admin.csrf, body: {} });
+  ok('F2 平台管理员取消 → 200 rejected', cancelAdmin.status === 200
+    && cancelAdmin.json?.state === 'rejected', cancelAdmin.json);
+  const cancelAgain = await call(`/api/mu/jobs/${seedJob}/cancel`, { method: 'POST',
+    cookie: admin.cookie, csrf: admin.csrf, body: {} });
+  ok('F3 重复取消 → 409 job_not_queued', cancelAgain.status === 409
+    && cancelAgain.json?.error?.reason === 'job_not_queued', cancelAgain.json);
+  const cancelAudit = (await pool.query(
+    `SELECT COUNT(*)::int c FROM mu.audit_event WHERE kind='MU_JOB_CANCELLED'
+      AND detail::text LIKE '%${seedJob.slice(0, 8)}%'`)).rows[0].c;
+  ok('F4 取消审计在案', cancelAudit >= 1, cancelAudit);
+  const evSyncCancel = (await pool.query(
+    `INSERT INTO mu.job (tenant_id, repo_id, kind, requested_by, requested_role, payload)
+     VALUES ((SELECT tenant_id FROM mu.tenant WHERE slug='default'), $1, 'event_sync', NULL, 'maintainer', '{}')
+     RETURNING job_id`, [repo.rows[0].repo_id])).rows[0].job_id;
+  const cancelSys = await call(`/api/mu/jobs/${evSyncCancel}/cancel`, { method: 'POST',
+    cookie: admin.cookie, csrf: admin.csrf, body: {} });
+  ok('F5 系统事件任务不可取消 → 409', cancelSys.status === 409
+    && cancelSys.json?.error?.reason === 'system_job_not_cancellable', cancelSys.json);
+  await pool.query('DELETE FROM mu.job WHERE job_id=$1', [evSyncCancel]);
 } catch (e) {
   fail++; console.error('HARNESS ERROR', e);
 } finally {

@@ -3,6 +3,7 @@ import { Alert, Table, Tag, Typography } from 'antd';
 import { useAuth } from '../auth.jsx';
 import { STATUS_META } from '../theme.js';
 import { fxvMap, fxvArtifactMap, ticketMap, ticketActionMap, toneToColor, muRunMap, MU_RUN } from '../status-map.js';
+import { apiErrorCopy } from '../api-error-copy.js';
 
 // 系统状态与接线（antd 版）：五个 Core API 的实时只读视图，供排查"是坏了还是没接"。
 // 诚实语义：未登录 401 → 引导；无 DSN → 未接线；连接失败 → 后端错误；成功 → 实时数据。
@@ -96,12 +97,15 @@ export default function CorePage() {
 
       {error ? (
         error.status === 403 ? (
-          // 授权态非故障态：403=角色无此动作（fail-closed 设计），不得渲染为"请求失败"误导用户（2026-10-09 反馈）
+          // 授权态非故障态：不得渲染为"请求失败"误导用户（2026-10-09 反馈；文案走共享助手口径+本页专属指引）
           <Alert type="warning" showIcon message="无权限查看"
-            description={`当前登录的账号角色没有查看此页的权限（需要平台管理员）。请切换平台管理员账号查看，或联系管理员为当前账号开通权限。`} />
+            description="本页属实例配置面，需要平台管理员角色。当前账号的角色没有查看权限——请切换平台管理员账号，或联系管理员开通。这是权限设计，不是系统故障。" />
         ) : (
-          <Alert type="error" showIcon message="请求失败"
-            description={`${error.message}${error.status === 401 ? '（会话可能已过期，请刷新重登）' : ''}`} />
+          (() => {
+            const c = apiErrorCopy(error);
+            return <Alert type={c.tone === 'warning' ? 'warning' : 'error'} showIcon
+              message={c.text} description={c.detail || error.message} />;
+          })()
         )
       ) : !data ? (
         <Alert message="加载中…" />

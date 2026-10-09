@@ -28,6 +28,8 @@ const REASON_MAP = {
   unauthorized: '未登录或会话已过期——请重新登录',
   forbidden: '当前角色无权执行该操作（写操作需平台管理员）',
   not_a_member: '不是当前租户的有效成员',
+  action_not_granted: '当前账号的角色没有执行此操作的权限——请切换有相应权限的账号，或联系管理员',
+  binding_required: '仓库尚未绑定或绑定已失效——请先完成仓库绑定',
 };
 const reasonText = (r) => {
   const code = r?.body?.error?.reason;
