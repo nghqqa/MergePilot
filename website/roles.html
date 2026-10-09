@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="zh-CN" class="no-js">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>角色与权限 · MergePilot</title>
+<link rel="stylesheet" href="assets/style.7e62632a.css">
+<script src="assets/nav.e6cc8392.js" defer></script>
+</head>
+<body>
+<!-- nav:top -->
+<nav class="nav" aria-label="站点导航">
+  <div class="nav-inner">
+    <a class="nav-brand" href="index.html">MergePilot</a>
+    <div class="nav-links" id="nav-menu">
+      <a href="index.html">首页</a>
+      <a href="quickstart.html">快速开始</a>
+      <a href="docs.html" aria-current="true">文档</a>
+      <a href="downloads.html">下载</a>
+    </div>
+    <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="nav-menu">菜单</button>
+  </div>
+</nav>
+<!-- /nav:top -->
+<main class="shell">
+<!-- nav:docs -->
+<aside class="doc-nav" aria-label="文档导航">
+      <section class="side-group">
+        <h2 class="side-title">部署</h2>
+        <ul class="side-list">
+        <li><a href="quickstart.html">快速开始</a></li>
+        <li><a href="selfhost-docker.html">Docker 自托管</a></li>
+        <li><a href="build-from-source.html">源码构建</a></li>
+        </ul>
+      </section>
+      <section class="side-group is-current">
+        <h2 class="side-title">使用</h2>
+        <ul class="side-list">
+        <li><a href="config-reference.html">配置</a></li>
+        <li><a href="multitenant-webhook.html">多租户与邀请</a></li>
+        <li><a href="roles.html" aria-current="page">角色与权限</a></li>
+        </ul>
+      </section>
+      <section class="side-group">
+        <h2 class="side-title">维护</h2>
+        <ul class="side-list">
+        <li><a href="upgrade-rollback.html">升级与回滚</a></li>
+        <li><a href="limitations.html">限制</a></li>
+        <li><a href="security.html">安全</a></li>
+        </ul>
+      </section>
+      <section class="side-group">
+        <h2 class="side-title">发布</h2>
+        <ul class="side-list">
+        <li><a href="downloads.html">下载与校验</a></li>
+        </ul>
+      </section>
+</aside>
+<!-- /nav:docs -->
+<article class="doc">
+<div class="crumbs"><a href="index.html">首页</a> / 文档 / 角色与权限</div>
+<h1>角色与权限</h1>
+
+<p>系统有 5 种成员角色，按最小权限分配能力。本页说明每个角色能做什么、关键设计原则，以及遇到「无权限」提示时如何理解。</p>
+
+<h2>能力矩阵</h2>
+<p>能力从 contributor 向 platform_admin 递增（auditor 是独立的只读审计线，不在递增链上）：</p>
+
+<div class="table-wrap">
+<table>
+<tr><th>能力</th><th>contributor</th><th>reviewer</th><th>maintainer</th><th>auditor</th><th>platform_admin</th></tr>
+<tr><td>查看仓库 / PR / 代码</td><td>✓</td><td>✓</td><td>✓</td><td>—</td><td>✓</td></tr>
+<tr><td>RAG 检索</td><td>✓</td><td>✓</td><td>✓</td><td>—</td><td>✓</td></tr>
+<tr><td>触发只读审查</td><td>—</td><td>✓</td><td>✓</td><td>—</td><td>✓</td></tr>
+<tr><td><strong>审批 / 驳回修复</strong></td><td>—</td><td>—</td><td><strong>✓ 仅此角色</strong></td><td>—</td><td>—</td></tr>
+<tr><td>发起受控修复</td><td>—</td><td>—</td><td>✓</td><td>—</td><td>✓</td></tr>
+<tr><td>绑定 / 解绑仓库</td><td>—</td><td>—</td><td>✓</td><td>—</td><td>✓</td></tr>
+<tr><td>查看审计日志</td><td>—</td><td>—</td><td>—</td><td>✓</td><td>✓</td></tr>
+<tr><td>成员与角色管理</td><td>—</td><td>—</td><td>—</td><td>—</td><td>✓</td></tr>
+<tr><td>实例配置 / 建租户</td><td>—</td><td>—</td><td>—</td><td>—</td><td>✓</td></tr>
+</table>
+</div>
+
+<h2>设计原则</h2>
+<ul>
+<li><strong>平台与管理分离</strong>：<code>platform_admin</code> 管基础设施（成员、配置、审计），<code>maintainer</code> 管内容裁定（审批修复）。两者刻意不重叠——平台管理员也无法审批代码修复。</li>
+<li><strong>最小权限</strong>：每个角色只拿到完成其职责所需的能力；未授权访问一律 403 拒绝，拒绝原因在审计日志留痕。</li>
+<li><strong>auditor 独立</strong>：审计员只读审计元数据，无仓库、代码、RAG 访问——保证审计视角独立于业务操作者。</li>
+<li><strong>邀请上限</strong>：邀请永不授予 <code>platform_admin</code>（API 校验、认领守卫、数据库 CHECK 三层拒绝）。首任管理员由部署脚本或 SQL 直授。</li>
+</ul>
+
+<h2>为什么审批只有 maintainer 能做</h2>
+<p>审批意味着决定是否对代码发起修复——这是内容裁定权。把它与平台管理权分离，可以确保
+「运营平台的人」和「裁定代码的人」不会是同一批人，避免单点权力过大。
+这也是为什么 platform_admin 打开审批面板时，审批按钮同样不可用。</p>
+
+<h2>遇到「无权限」怎么理解</h2>
+<p>看到「无权限」提示时，说明当前账号的角色没有对应能力——这是权限设计行为，不是系统故障。
+处理方式：</p>
+<ul>
+<li>确认自己当前角色：登录后右上角显示「组织 · 角色」；或调 <code>GET /api/mu/session</code> 看 <code>role</code> 字段。</li>
+<li>需要提权：联系拥有「成员与角色管理」能力的管理员（platform_admin），在「组织与接入」面板调整角色。</li>
+<li>仓库级 403：可能是仓库未绑定或绑定失效——maintainer/platform_admin 在仓库页完成绑定。</li>
+<li>完整能力对照见上方矩阵或 deploy-kit 内 README「角色与权限速查」一节。</li>
+</ul>
+
+<h2>角色如何授予</h2>
+<ul>
+<li><strong>邀请</strong>：管理员在「组织与接入 → 成员与邀请」面板，按 GitHub 数字 id 创建邀请并选择角色；受邀人打开邀请链接登录即认领。单次认领、有时效，详见<a href="multitenant-webhook.html">多租户与邀请</a>。</li>
+<li><strong>调整</strong>：platform_admin 在成员面板可直接修改既有成员角色；撤权后同会话下一请求即 403。</li>
+<li><strong>首任 platform_admin</strong>：不由邀请产生——由部署流程中的初始化 SQL 直授（见 deploy-kit README「首个平台管理员初始化」）。</li>
+</ul>
+
+<p>权限的权威实现在仓库 <code>console/backend/lib/multiuser/authz.mjs</code>；本页与该实现保持同步。</p>
+
+</article>
+</main>
+<footer class="footer">MergePilot 0.2.0-beta.6-rc.21 · Apache-2.0</footer>
+</body>
+</html>

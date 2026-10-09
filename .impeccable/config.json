@@ -171,6 +171,18 @@
         ],
         "createdAt": "2026-10-07T10:40:50.144Z",
         "reason": "同上：官网既有字体体系，先例见 index.html 同值忽略"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "rgb(10, 15, 20)",
+        "createdAt": "2026-10-09T13:05:00.225Z",
+        "reason": "false-positive: value comes from tracked theme css assets/style.7e62632a.css (--c-nav); roles.html contains no color literals"
+      },
+      {
+        "rule": "design-system-font",
+        "value": "inter",
+        "createdAt": "2026-10-09T13:05:00.324Z",
+        "reason": "false-positive: page declares no font-family; theme css var(--sans) resolves to the tracked font stack"
       }
     ]
   }

@@ -31,6 +31,7 @@ const DOC_GROUPS = [
     items: [
       { label: '配置', href: 'config-reference.html', desc: '.env 全部必填与可选项的生成与说明。' },
       { label: '多租户与邀请', href: 'multitenant-webhook.html', desc: 'GitHub App、webhook 入口与成员邀请。' },
+      { label: '角色与权限', href: 'roles.html', desc: '5 种角色的能力矩阵与 fail-closed 设计。' },
     ],
   },
   {
