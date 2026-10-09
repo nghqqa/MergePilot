@@ -1,4 +1,4 @@
-# MergePilot rc.20 自托管部署（候选）
+# MergePilot rc.21 自托管部署（候选）
 
 > 版本：`0.2.0-beta.6-rc.20` · 镜像 pull digest（OCI index）：`sha256:a2d54a0d97578d6e9889a47a571922cbb56d719a180516276e7b30d1d32dd2fe`
 > index 内含 linux/amd64 manifest `sha256:8c9022437d60869db050856abef275bddb03155b67a5b4152d02e37f30ff6a1f`、config digest `sha256:364d716314eda485b3468f353d3cabdb2955e097a0d6b6250057595387a1a523`（三者不同对象，勿混称）。
@@ -143,15 +143,15 @@ MU_GITHUB_OAUTH_CALLBACK_URL=https://<console 公开地址>/api/mu/auth/oauth/gi
 | 途径 | 命令 | 校验 |
 |---|---|---|
 | GHCR | `docker pull ghcr.io/nghqqa/mergepilot-console@a2d54a0d9757…` | RepoDigest == `sha256:a2d54a0d97578d6e9889a47a571922cbb56d719a180516276e7b30d1d32dd2fe` |
-| 离线 tar | `docker load -i mergepilot-console-rc20.tar` | tar SHA256 见 `SHA256SUMS-rc20.txt`（发布附件） |
+| 离线 tar | `docker load -i mergepilot-console-rc21.tar` | tar SHA256 见 `SHA256SUMS-rc21.txt`（发布附件） |
 | 源码构建 | 见下节 | image ID 应可复现（同 commit/同构建参数） |
 
-镜像内置 `MERGEPILOT_VERSION=0.2.0-beta.6-rc.20`（`/api/health` version 字段即真源）。
+镜像内置 `MERGEPILOT_VERSION=0.2.0-beta.6-rc.21`（`/api/health` version 字段即真源）。
 
 **供应链档案（rc.20）**：
 
 - SBOM：CycloneDX（`rc19-sbom.cdx.json`，随候选制品提供）；
-- 漏洞/秘密扫描：trivy（`rc20-scan.json`，随发行版发布）；
+- 漏洞/秘密扫描：trivy（`rc21-scan.json`，随发行版发布）；
 - 构建来源：源码 tag `v0.2.0-beta.6-rc.20`（tag 与镜像同源，合入后打 tag）；**零 schema/迁移变更（恒 v23，与 rc.19 一致）**；
 - 基础镜像：`node@sha256:0a7108bf…`（Dockerfile 钉死）。
 
@@ -162,11 +162,11 @@ MU_GITHUB_OAUTH_CALLBACK_URL=https://<console 公开地址>/api/mu/auth/oauth/gi
 ## 从源码构建
 
 ```bash
-git checkout v0.2.0-beta.6-rc.20        # 源码 tag（与镜像同源）
+git checkout v0.2.0-beta.6-rc.21        # 源码 tag（与镜像同源）
 cd console/frontend && npm ci && npm run build && cd ../..
 docker build -f docker/Dockerfile.canonical-console \
-  --build-arg MERGEPILOT_VERSION=0.2.0-beta.6-rc.20 \
-  -t ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.20 .
+  --build-arg MERGEPILOT_VERSION=0.2.0-beta.6-rc.21 \
+  -t ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.21 .
 ```
 
 注意两点：① 构建前必须先产出 `console/frontend/dist`（Dockerfile 会 COPY 它）；
