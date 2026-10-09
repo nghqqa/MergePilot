@@ -1,11 +1,10 @@
-# MergePilot rc.19 自托管部署（候选）
+# MergePilot rc.20 自托管部署（候选）
 
-> 版本：`0.2.0-beta.6-rc.19` · 镜像 pull digest（OCI index）：`sha256:0077382db28d454e7e03bbbd9ad3c2a1ddcd97cf84bc4cabe81c4d2b77610ad4`
-> index 内含 linux/amd64 manifest `sha256:413dbd34f43b148f6007be3fbdb3d7d4ccbd7f6fe7a2fe652cb7954704edd740`、config digest `sha256:441ec6892abf69d46cc169de8bce49a9a0c2b7b692aef7795e054257bf4bb20d`（三者不同对象，勿混称）。
-> 已正式发布 GHCR（不可变 digest）。离线 tar 与源码构建为等效替代途径，校验方式见下。
+> 版本：`0.2.0-beta.6-rc.20` · 镜像 digest：候选阶段以 tag 引用（GHCR 推送后回填不可变 OCI index/manifest/config——未推送前不编造）。
+> 离线 tar 与源码构建为等效替代途径，校验方式见下。
 > 离线 tar 与源码构建为等效替代途径，校验方式见下。
 > 供应链档案：SBOM（CycloneDX）、trivy 扫描、离线 tar SHA256 见「镜像获取与校验」（哈希随候选制品提供）。
-> 相对 rc.18：**零 schema/迁移变更（恒 v23）**，品牌区去 V0 标签、移动抽屉品牌可读性修复、运维工具输出安全化与 AgentTeams 认证代理运维交付。
+> 相对 rc.19：**零 schema/迁移变更（恒 v23）**，手动审查/修复入口接入真实消费链、FIX_QUEUED 恢复入口、修复轮跳过审计与票面语义修正、403 授权态文案语义分离与直白化、fixture 遗留任务取消入口。
 
 ## 快速开始
 
@@ -141,17 +140,17 @@ MU_GITHUB_OAUTH_CALLBACK_URL=https://<console 公开地址>/api/mu/auth/oauth/gi
 
 | 途径 | 命令 | 校验 |
 |---|---|---|
-| GHCR | `docker pull ghcr.io/nghqqa/mergepilot-console@0077382db28d…` | RepoDigest == `sha256:0077382db28d454e7e03bbbd9ad3c2a1ddcd97cf84bc4cabe81c4d2b77610ad4` |
-| 离线 tar | `docker load -i mergepilot-console-rc19.tar` | tar SHA256 见 `SHA256SUMS-rc19.txt`（发布附件） |
+| GHCR | 候选阶段：`docker pull ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.20`（正式发布后回填 digest 行） | 以 `docker inspect` RepoDigest 对照发布附件为准 |
+| 离线 tar | `docker load -i mergepilot-console-rc20.tar` | tar SHA256 见 `SHA256SUMS-rc20.txt`（发布附件） |
 | 源码构建 | 见下节 | image ID 应可复现（同 commit/同构建参数） |
 
-镜像内置 `MERGEPILOT_VERSION=0.2.0-beta.6-rc.19`（`/api/health` version 字段即真源）。
+镜像内置 `MERGEPILOT_VERSION=0.2.0-beta.6-rc.20`（`/api/health` version 字段即真源）。
 
-**供应链档案（rc.19）**：
+**供应链档案（rc.20）**：
 
 - SBOM：CycloneDX（`rc19-sbom.cdx.json`，随候选制品提供）；
-- 漏洞/秘密扫描：trivy（`rc19-scan.json`，随候选制品提供）；
-- 构建来源：源码 tag `v0.2.0-beta.6-rc.19` = 92c9543（tag 与镜像同源）；**零 schema/迁移变更（恒 v23，与 rc.18 一致）**；
+- 漏洞/秘密扫描：trivy（`rc20-scan.json`，随发行版发布）；
+- 构建来源：源码 tag `v0.2.0-beta.6-rc.20`（tag 与镜像同源，合入后打 tag）；**零 schema/迁移变更（恒 v23，与 rc.19 一致）**；
 - 基础镜像：`node@sha256:0a7108bf…`（Dockerfile 钉死）。
 
 > `48590` 端口与 `beta-webhook-proxy` 容器是 MergePilot 开发方内部测试环境的组件，
@@ -161,11 +160,11 @@ MU_GITHUB_OAUTH_CALLBACK_URL=https://<console 公开地址>/api/mu/auth/oauth/gi
 ## 从源码构建
 
 ```bash
-git checkout v0.2.0-beta.6-rc.19        # 源码 tag（与镜像同源）
+git checkout v0.2.0-beta.6-rc.20        # 源码 tag（与镜像同源）
 cd console/frontend && npm ci && npm run build && cd ../..
 docker build -f docker/Dockerfile.canonical-console \
-  --build-arg MERGEPILOT_VERSION=0.2.0-beta.6-rc.19 \
-  -t ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.19 .
+  --build-arg MERGEPILOT_VERSION=0.2.0-beta.6-rc.20 \
+  -t ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.20 .
 ```
 
 注意两点：① 构建前必须先产出 `console/frontend/dist`（Dockerfile 会 COPY 它）；
