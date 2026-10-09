@@ -1551,9 +1551,11 @@ export async function muApi(req, res, ctx) {
       if (!pr) return sendJson(res, 404, { error: { reason: 'pull_request_not_found' } });
       const g = await guard('request_review', { repoId: pr.repo_id });
       if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
-      // 生产真实链（2026-10-09 D1）：人工触发与 webhook 同一消费单元——入队 event_sync
-      // （系统级 kind，always-on consumer 无条件消费真实管线），不再入队 fixture 门后的
-      // review_run（MU_FIXTURES 未设时永不消费、永久 queued 误导用户）。
+      // 双模式（2026-10-09 D1）：MU_FIXTURES=1 显式测试模式走 review_run/fixture 执行器
+      // （原契约不变）；生产（未设）走真实链——入队 event_sync（系统级 kind，与 webhook
+      // 同一消费单元，always-on consumer 无条件消费），不再产生永不消费的永久 queued。
+      const fixturesOn = env.MU_FIXTURES === '1';
+      if (!fixturesOn) {
       const instRow = (await muPoolQ(
         `SELECT installation_id FROM mu.repository_binding
           WHERE repo_id=$1 AND tenant_id=$2 AND binding_state='active' LIMIT 1`,
@@ -1570,6 +1572,14 @@ export async function muApi(req, res, ctx) {
       return sendJson(res, 200, { ok: true, job_id: job.job_id, state: job.state,
         mode: 'real_pipeline',
         note: '已进入真实审查管线（与 webhook 同一消费单元）——结果以「审查管线」面板为准' });
+      }
+      // fixture 测试模式：review_run job → tick 由 fixture 执行器消费（原契约）
+      const job = await store.enqueueJob({ tenantId: mu.tenantId, repoId: pr.repo_id,
+        prId: pr.pr_id, kind: 'review_run', requestedBy: mu.userId,
+        requestedRole: g.membership.role, payload: { head_sha: pr.head_sha } });
+      await store.audit('MU_REVIEW_REQUESTED', { tenantId: mu.tenantId, actorUserId: mu.userId,
+        detail: { pr_id: pr.pr_id, job_id: job.job_id, kind: 'review_run', mode: 'fixture' } });
+      return sendJson(res, 200, { ok: true, job_id: job.job_id, state: job.state, mode: 'fixture' });
     }
 
     // ── 人工审批（maintainer+；branch protection 未知 → 禁止可合并结论） ──
@@ -1608,7 +1618,18 @@ export async function muApi(req, res, ctx) {
       if (!pr) return sendJson(res, 404, { error: { reason: 'pull_request_not_found' } });
       const g = await guard('request_repair', { repoId: pr.repo_id, needBinding: true });
       if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
-      // 生产真实语义（2026-10-09 D2/D3）：受控修复的发起=审批门语义——
+      // 双模式（2026-10-09 D2/D3）：MU_FIXTURES=1 显式测试模式走 repair_push/fixture
+      // 执行器（原契约不变）；生产（未设）走审批门语义与真实修复轮（见下）。
+      const fixturesOn = env.MU_FIXTURES === '1';
+      if (fixturesOn) {
+        const job = await store.enqueueJob({ tenantId: mu.tenantId, repoId: pr.repo_id,
+          prId: pr.pr_id, kind: 'repair_push', requestedBy: mu.userId,
+          requestedRole: g.membership.role, payload: { head_sha: pr.head_sha } });
+        await store.audit('MU_REPAIR_REQUESTED', { tenantId: mu.tenantId, actorUserId: mu.userId,
+          detail: { pr_id: pr.pr_id, job_id: job.job_id, mode: 'fixture' } });
+        return sendJson(res, 200, { ok: true, job_id: job.job_id, state: job.state, mode: 'fixture' });
+      }
+      // 生产：受控修复的发起=审批门语义——
       // WAITING=逐条批准引导（不再入队 fixture 门后永不消费的 repair_push）；
       // FIX_QUEUED+票已消费=修复轮合法重试入口（authorizeFixExecution 对 CONSUMED
       // 幂等，审批不被二次消费；执行器门 fail-closed 如实返回）。
