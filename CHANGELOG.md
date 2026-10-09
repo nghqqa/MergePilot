@@ -1,3 +1,22 @@
+## [0.2.0-beta.6-rc.20] — 2026-10-09（候选）
+
+### Fixed（核心链阻断与误导语义）
+- **手动「触发只读审查」接入真实消费链**：此前入队 fixture 路径任务（review_run），生产（MU_FIXTURES 未设）永不消费、永久排队误导用户——现与 webhook 同一消费单元（event_sync 系统级入队→真实确定性审查），fixture 路径仅保留于显式测试模式
+- **手动「发起受控修复」遵循审批门语义**：等待审批时返回待批清单引导逐条批准（零入队）；不再产生永不消费的 repair_push
+- **FIX_QUEUED 恢复入口**：修复轮被跳过/门控失败的 run 可经修复端点合法重试（authorizeFixExecution 对 CONSUMED 幂等——审批不二次消费；执行器门 fail-closed 如实返回，run 保持可恢复态）
+- **修复轮静默跳过补审计**：at_ensure_failed / at_workers_detail_query_failed / at_submit_failed 三分支 + decide 流 FIX_ROUND_SKIPPED 审计——每个跳过均有可定位原因
+- **CONSUMED 票面语义修正**：「已消费（修复预演已启动）」过度承诺 → 「已批准并放行修复轮——是否实际执行以审查管线面板为准」
+
+### Changed（权限与文案）
+- **403 授权态与故障态语义分离**：系统状态页 action_not_granted 不再渲染为"请求失败"；共享错误文案助手（api-error-copy）区分会话/授权/依赖缺失/状态冲突/系统故障，直白文案不使用实现术语
+- SkillsPage 原因词表增补 action_not_granted/binding_required 直白文案
+
+### Added（运维）
+- **fixture 遗留任务取消端点**：POST /api/mu/jobs/:id/cancel（平台管理员）——仅 queued 的人工 job 可取消=rejected+审计；系统事件任务不可取消
+- recover-agentteams 完成判定对齐执行器门（浅层注册不得报成功，缺绑定引导完整置备）#377
+
+**零 schema/迁移变更（恒 v23，与 rc.19 一致）。**
+
 ## [0.2.0-beta.6-rc.19] — 2026-10-08（候选）
 
 ### Changed / Fixed（品牌与可读性）
