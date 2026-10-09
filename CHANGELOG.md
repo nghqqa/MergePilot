@@ -1,3 +1,16 @@
+## [0.2.0-beta.6-rc.22] — 2026-10-09（候选）
+
+### Fixed
+- **手动审查 event_sync payload 修复**：payload 缺少 pr_number/github_repo_id 导致消费时 event_payload_invalid → failed（生产实证）——补齐字段后手动「触发只读审查」可跑通完整真实管线（#389）
+- payload 契约回归锁：字段齐全断言 + 缺字段明确失败 event_payload_invalid（#391）
+
+### Changed（文档）
+- deploy/selfhost/README.md 补「角色与权限速查」5×9 矩阵表（#388）
+- distribution/docs/SECURITY.md 补角色与权限一节（#388）
+- CorePage 403 文案加文档指引（#388）
+
+**零 schema/迁移变更（恒 v23，与 rc.21 一致）。**
+
 ## [0.2.0-beta.6-rc.21] — 2026-10-09（候选）
 
 ### Added

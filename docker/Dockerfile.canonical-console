@@ -17,7 +17,7 @@ ENV NODE_ENV=production CONSOLE_HOST=0.0.0.0 CONSOLE_PORT=4730
 # server.mjs 读 process.env.MERGEPILOT_VERSION（runtime 可覆盖）；
 # 此处默认值须与 server.mjs fallback 字符串保持一致（双处手动同步，
 # rc.12 候选：CI 构建脚本从 git tag 自动注入消除双处）。
-ARG MERGEPILOT_VERSION=0.2.0-beta.6-rc.21
+ARG MERGEPILOT_VERSION=0.2.0-beta.6-rc.22
 ENV MERGEPILOT_VERSION=${MERGEPILOT_VERSION}
 
 # `pg` is optional at runtime (NOT_WIRED without DSN) — install for live mode.
