@@ -252,6 +252,38 @@ try {
     cookie: mn.cookie, csrf: mn.csrf, body: {} });
   ok('C8g 未知 PR → 404', trig404.status === 404, trig404.status);
 
+  // ── C8h~C8k：event_sync payload 契约（2026-10-09 生产缺陷 12:08:03 回归锁）──
+  // 缺 pr_number/github_repo_id → event_payload_invalid 明确失败（可定位）；
+  // 字段完整 → 消费 done。生产模式（MU_FIXTURES 未设）语义。
+  const payloadShape = (await pool.query(
+    `SELECT payload->>'pr_number' pn, payload->>'github_repo_id' gid,
+            payload->>'installation_id' inst, payload->>'head_sha' hs,
+            payload->>'action' act, payload->>'event' ev
+       FROM mu.job WHERE kind='event_sync' AND payload->>'delivery_id' LIKE 'manual-%'
+      ORDER BY created_at DESC LIMIT 1`)).rows[0];
+  ok('C8h payload 契约字段齐全（pr_number/github_repo_id/installation_id/head_sha/action/event）',
+    Boolean(payloadShape?.pn) && Boolean(payloadShape?.gid) && Boolean(payloadShape?.inst)
+      && Boolean(payloadShape?.hs) && payloadShape?.act === 'synchronize' && payloadShape?.ev === 'pull_request',
+    payloadShape);
+  // 缺字段入队 → 消费明确失败 event_payload_invalid（消费者真实路径，非 mock）
+  const badJob = (await pool.query(
+    `INSERT INTO mu.job (tenant_id, repo_id, pr_id, kind, requested_by, requested_role, payload)
+     VALUES ((SELECT tenant_id FROM mu.tenant WHERE slug='default'), $1,
+             (SELECT pr_id FROM mu.pull_request WHERE provider_pr_number=105),
+             'event_sync', NULL, 'maintainer',
+             JSON_BUILD_OBJECT('event','pull_request','action','synchronize',
+               'head_sha','x','installation_id',1,
+               'delivery_id','manual-badfield-' || gen_random_uuid()::text,
+               'trigger_source','manual'))
+     RETURNING job_id`, [repo.rows[0].repo_id])).rows[0].job_id;
+  const tickBad = await call('/api/mu/jobs/tick', { method: 'POST', cookie: admin.cookie, csrf: admin.csrf });
+  const badState = (await pool.query('SELECT state, result FROM mu.job WHERE job_id=$1', [badJob])).rows[0];
+  ok('C8i payload 缺 pr_number → 明确失败 event_payload_invalid（非 queued 挂死）',
+    badState?.state === 'failed'
+    && (String(badState?.result ?? '').includes('event_payload_invalid') || badState?.result?.reason === 'event_payload_invalid'), badState);
+  ok('C8j 缺字段消费被 tick 记录', Array.isArray(tickBad.json?.processed), null);
+  await pool.query('DELETE FROM mu.job WHERE job_id=$1', [badJob]);
+
   // ── C9：repair 端点门语义（D2/D3）——SQL 种子隔离构造，不经生产改动 ──
   const orch = await import('../lib/multiuser/agents/fix-orchestrator.mjs');
   const orchestration = await import('../lib/multiuser/orchestration.mjs');
