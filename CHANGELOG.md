@@ -1,3 +1,14 @@
+## [0.2.0-beta.6-rc.21] — 2026-10-09（候选）
+
+### Added
+- **共享错误文案助手**（api-error-copy.js）：按机器码/HTTP 状态区分会话/授权/依赖缺失/状态冲突/系统故障，直白文案不含实现术语；CorePage/SkillsPage 对齐
+- **fixture 遗留任务取消端点**：POST /api/mu/jobs/:id/cancel（平台管理员）——仅 queued 的人工 job 可取消=rejected+审计；系统事件任务不可取消
+
+### Fixed
+- SkillsPage 原因词表增补 action_not_granted/binding_required 直白文案
+
+**零 schema/迁移变更（恒 v23，与 rc.20 一致）。**
+
 ## [0.2.0-beta.6-rc.20] — 2026-10-09（候选）
 
 ### Fixed（核心链阻断与误导语义）
