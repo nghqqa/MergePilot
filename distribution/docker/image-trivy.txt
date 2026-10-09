@@ -3,174 +3,177 @@
   "Trivy": {
     "Version": "0.74.0"
   },
-  "ReportID": "01a11f87-0ce9-7c21-8df9-2fdf715f3f5a",
-  "CreatedAt": "2026-10-09T15:18:26.7937949+08:00",
-  "ArtifactID": "sha256:cec1d53d0c69376151225121d07f63da24720e593e9c37c014392722b628b8b3",
-  "ArtifactName": "ghcr.io/nghqqa/mergepilot-console@sha256:8c9022437d60869db050856abef275bddb03155b67a5b4152d02e37f30ff6a1f",
+  "ReportID": "01a12010-d9a1-77a6-b980-5c4d5f896095",
+  "CreatedAt": "2026-10-09T17:48:57.6335014+08:00",
+  "ArtifactID": "sha256:279b628fe376d44fa34e19898ae0d3780692c083e73cc3e001e6299261b40139",
+  "ArtifactName": "ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.21",
   "ArtifactType": "container_image",
   "Metadata": {
-    "Size": 176333824,
+    "Size": 176336896,
     "OS": {
       "Family": "alpine",
       "Name": "3.24.2"
     },
-    "ImageID": "sha256:364d716314eda485b3468f353d3cabdb2955e097a0d6b6250057595387a1a523",
+    "ImageID": "sha256:abc5048dda9b2f6baf4b551aa51b768c12bac6e2a92f6d57f7ac420700c068c0",
     "DiffIDs": [
       "sha256:74d97c428c51a828f9051a7a40a53ff1fc99e54fc30323ce36760701b0b7f711",
       "sha256:ba3263475f993ce3855e4edf69b59a64716f9b4f4b43c369113a33f0c6a1b114",
       "sha256:50a35fcbb91b0a6dd3821fb8ee87c3e44743f5f57c4337c1721280ff811f2d2a",
       "sha256:ff5db628aec4eaf74f091c36d7fc5f855481dfa4de3cb6c0b05b0684bfcea637",
       "sha256:6b635e1deb7c5536569b71ed632d2b6c9cf89e60c06735cf66f51ab3fb37f26a",
-      "sha256:29147668c7b847cda3f9621061b7cb7b3782df4ee1cc9b5750287eb10f4329e4",
-      "sha256:d23d3e0d81a9955a6a560ad80d0bd7d30a26d4f0e6911c01e4ed62b0d831dea7",
-      "sha256:227a67c81f561123420889babf39d20344b7cd1fa64704bfd725dbf1f1068e1e",
-      "sha256:8def2b4d88e0b573bb7b4b513d0543eff5aebd31e35cff689507fa0b60f6bb00",
-      "sha256:2df52352835df9904169cced898a15d86d9a89c8f091a72e9a3444f3a7a53ced",
-      "sha256:6468e7f3bb1297edeb36046b88e5a9ea33e7e171d315552322ee51a1fb9380a6",
-      "sha256:a3535fbcb80a4881c1ee79080245e6ca39d4e21816f5ded6d5b91927058ae957"
+      "sha256:295f7c6a8f670139ac16abf4fed41345027b3c5cc17f773470c9a98bc893d8a8",
+      "sha256:81fce05bcdf82a9b3e0e38457ddca44e87d1a894991f68f63a13fd5b803129ff",
+      "sha256:05a9e8de4f8066ed07ab0099acfadcea933fb42c6ad7a24966d8655d02b535ad",
+      "sha256:f83a72f57b79a52dc11c2855c40b9582e58af91267901591bb8624cafed648f6",
+      "sha256:32241736edab4cc1db251ee62364d43fdefb7d958bfa80b2aa48f14520deebe4",
+      "sha256:3bba131ea170bce70c97bb9c7718f758ad74a6a99d957ef50bf5e464d7af11f5",
+      "sha256:5bf41f33658b0e7620149125dad8ce3aa72a7d386ab20963196d8fa928a87132"
+    ],
+    "RepoTags": [
+      "ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.21"
     ],
     "RepoDigests": [
-      "ghcr.io/nghqqa/mergepilot-console@sha256:8c9022437d60869db050856abef275bddb03155b67a5b4152d02e37f30ff6a1f"
+      "ghcr.io/nghqqa/mergepilot-console@sha256:abc5048dda9b2f6baf4b551aa51b768c12bac6e2a92f6d57f7ac420700c068c0"
     ],
-    "Reference": "ghcr.io/nghqqa/mergepilot-console@sha256:8c9022437d60869db050856abef275bddb03155b67a5b4152d02e37f30ff6a1f",
+    "Reference": "ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.21",
     "ImageConfig": {
       "architecture": "amd64",
-      "created": "2026-10-09T07:13:11.601982788Z",
+      "created": "2026-10-09T09:43:38.496262925Z",
       "history": [
         {
-          "created": "2026-09-17T20:37:20.889221879Z",
+          "created": "2026-09-17T20:37:20Z",
           "created_by": "ADD alpine-minirootfs-3.24.2-x86_64.tar.gz / # buildkit",
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2026-09-17T20:37:20.889221879Z",
+          "created": "2026-09-17T20:37:20Z",
           "created_by": "CMD [\"/bin/sh\"]",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
         },
         {
-          "created": "2026-09-23T21:09:23.723814363Z",
+          "created": "2026-09-23T21:09:23Z",
           "created_by": "ENV NODE_VERSION=22.23.3",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
         },
         {
-          "created": "2026-09-23T21:09:23.723814363Z",
+          "created": "2026-09-23T21:09:23Z",
           "created_by": "RUN /bin/sh -c addgroup -g 1000 node     \u0026\u0026 adduser -u 1000 -G node -s /bin/sh -D node     \u0026\u0026 apk add --no-cache         libstdc++     \u0026\u0026 apk add --no-cache --virtual .build-deps         curl     \u0026\u0026 ARCH= OPENSSL_ARCH='linux*' \u0026\u0026 alpineArch=\"$(apk --print-arch)\"       \u0026\u0026 case \"${alpineArch##*-}\" in         x86_64) ARCH='x64' CHECKSUM=\"9b177f0c140a82a3d247e8f54586a65dbdf91e5e3a01f04708dabfdc9e0e01c4\" OPENSSL_ARCH=linux-x86_64;;         aarch64) OPENSSL_ARCH=linux-aarch64;;         arm*) OPENSSL_ARCH=linux-armv4;;         s390x) OPENSSL_ARCH=linux-s390x;;         *) echo \"unsupported architecture\"; exit 1 ;;       esac   \u0026\u0026 if [ -n \"${CHECKSUM}\" ]; then     set -eu;     curl -fsSLO --compressed \"https://unofficial-builds.nodejs.org/download/release/v$NODE_VERSION/node-v$NODE_VERSION-linux-$ARCH-musl.tar.xz\";     echo \"$CHECKSUM  node-v$NODE_VERSION-linux-$ARCH-musl.tar.xz\" | sha256sum -c -       \u0026\u0026 tar -xJf \"node-v$NODE_VERSION-linux-$ARCH-musl.tar.xz\" -C /usr/local --strip-components=1 --no-same-owner       \u0026\u0026 ln -s /usr/local/bin/node /usr/local/bin/nodejs;   else     echo \"Building from source\"     \u0026\u0026 apk add --no-cache --virtual .build-deps-full         binutils-gold         g++         gcc         gnupg         libgcc         linux-headers         make         python3         py-setuptools     \u0026\u0026 export GNUPGHOME=\"$(mktemp -d)\"     \u0026\u0026 for key in       5BE8A3F6C8A5C01D106C0AD820B1A390B168D356       DD792F5973C6DE52C432CBDAC77ABFA00DDBF2B7       CC68F5A3106FF448322E48ED27F5E38D5B0A215F       890C08DB8579162FEE0DF9DB8BEAB4DFCF555EF4       C82FA3AE1CBEDC6BE46B9360C43CEC45C17AB93C       108F52B48DB57BB0CC439B2997B01419BD92F80A       655F3B5C1FB3FA8D1A0CA6BDE4A7D232B936D2FD       A363A499291CBBC940DD62E41F10027AF002F8B0     ; do       { gpg --batch --keyserver hkps://keys.openpgp.org --recv-keys \"$key\" \u0026\u0026 gpg --batch --fingerprint \"$key\"; } ||       { gpg --batch --keyserver keyserver.ubuntu.com --recv-keys \"$key\" \u0026\u0026 gpg --batch --fingerprint \"$key\"; } ;     done     \u0026\u0026 curl -fsSLO --compressed \"https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION.tar.xz\"     \u0026\u0026 curl -fsSLO --compressed \"https://nodejs.org/dist/v$NODE_VERSION/SHASUMS256.txt.asc\"     \u0026\u0026 gpg --batch --decrypt --output SHASUMS256.txt SHASUMS256.txt.asc     \u0026\u0026 gpgconf --kill all     \u0026\u0026 rm -rf \"$GNUPGHOME\"     \u0026\u0026 grep \" node-v$NODE_VERSION.tar.xz\\$\" SHASUMS256.txt | sha256sum -c -     \u0026\u0026 tar -xf \"node-v$NODE_VERSION.tar.xz\"     \u0026\u0026 cd \"node-v$NODE_VERSION\"     \u0026\u0026 ./configure     \u0026\u0026 make -j$(getconf _NPROCESSORS_ONLN) V=     \u0026\u0026 make install     \u0026\u0026 apk del .build-deps-full     \u0026\u0026 cd ..     \u0026\u0026 rm -Rf \"node-v$NODE_VERSION\"     \u0026\u0026 rm \"node-v$NODE_VERSION.tar.xz\" SHASUMS256.txt.asc SHASUMS256.txt;   fi   \u0026\u0026 rm -f \"node-v$NODE_VERSION-linux-$ARCH-musl.tar.xz\"   \u0026\u0026 find /usr/local/include/node/openssl/archs -mindepth 1 -maxdepth 1 ! -name \"$OPENSSL_ARCH\" -exec rm -rf {} \\;   \u0026\u0026 apk del .build-deps   \u0026\u0026 node --version   \u0026\u0026 npm --version   \u0026\u0026 rm -rf /tmp/* # buildkit",
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2026-09-23T21:09:23.723814363Z",
+          "created": "2026-09-23T21:09:23Z",
           "created_by": "ENV YARN_VERSION=1.22.22",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
         },
         {
-          "created": "2026-09-23T21:09:27.744143084Z",
+          "created": "2026-09-23T21:09:27Z",
           "created_by": "RUN /bin/sh -c apk add --no-cache --virtual .build-deps-yarn curl gnupg tar   \u0026\u0026 export GNUPGHOME=\"$(mktemp -d)\"   \u0026\u0026 for key in     6A010C5166006599AA17F08146C2130DFD2497F5   ; do     { gpg --batch --keyserver hkps://keys.openpgp.org --recv-keys \"$key\" \u0026\u0026 gpg --batch --fingerprint \"$key\"; } ||     { gpg --batch --keyserver keyserver.ubuntu.com --recv-keys \"$key\" \u0026\u0026 gpg --batch --fingerprint \"$key\"; } ;   done   \u0026\u0026 curl -fsSLO --compressed \"https://yarnpkg.com/downloads/$YARN_VERSION/yarn-v$YARN_VERSION.tar.gz\"   \u0026\u0026 curl -fsSLO --compressed \"https://yarnpkg.com/downloads/$YARN_VERSION/yarn-v$YARN_VERSION.tar.gz.asc\"   \u0026\u0026 gpg --batch --verify yarn-v$YARN_VERSION.tar.gz.asc yarn-v$YARN_VERSION.tar.gz   \u0026\u0026 gpgconf --kill all   \u0026\u0026 rm -rf \"$GNUPGHOME\"   \u0026\u0026 mkdir -p /opt   \u0026\u0026 tar -xzf yarn-v$YARN_VERSION.tar.gz -C /opt/   \u0026\u0026 ln -s /opt/yarn-v$YARN_VERSION/bin/yarn /usr/local/bin/yarn   \u0026\u0026 ln -s /opt/yarn-v$YARN_VERSION/bin/yarnpkg /usr/local/bin/yarnpkg   \u0026\u0026 rm yarn-v$YARN_VERSION.tar.gz.asc yarn-v$YARN_VERSION.tar.gz   \u0026\u0026 apk del .build-deps-yarn   \u0026\u0026 yarn --version   \u0026\u0026 rm -rf /tmp/* # buildkit",
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2026-09-23T21:09:27.761584925Z",
+          "created": "2026-09-23T21:09:27Z",
           "created_by": "COPY docker-entrypoint.sh /usr/local/bin/ # buildkit",
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2026-09-23T21:09:27.761584925Z",
+          "created": "2026-09-23T21:09:27Z",
           "created_by": "ENTRYPOINT [\"docker-entrypoint.sh\"]",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
         },
         {
-          "created": "2026-09-23T21:09:27.761584925Z",
+          "created": "2026-09-23T21:09:27Z",
           "created_by": "CMD [\"node\"]",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
         },
         {
-          "created": "2026-10-05T01:18:46.538710741Z",
+          "created": "2026-10-05T01:18:46Z",
           "created_by": "WORKDIR /app",
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2026-10-05T11:59:17.037762903Z",
+          "created": "2026-10-09T09:43:36Z",
           "created_by": "ENV NODE_ENV=production CONSOLE_HOST=0.0.0.0 CONSOLE_PORT=4730",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
         },
         {
-          "created": "2026-10-05T11:59:17.037762903Z",
-          "created_by": "ARG MERGEPILOT_VERSION=0.2.0-beta.6-rc.20",
+          "created": "2026-10-09T09:43:36Z",
+          "created_by": "ARG MERGEPILOT_VERSION=0.2.0-beta.6-rc.21",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
         },
         {
-          "created": "2026-10-05T11:59:17.037762903Z",
-          "created_by": "ENV MERGEPILOT_VERSION=0.2.0-beta.6-rc.20",
+          "created": "2026-10-09T09:43:36Z",
+          "created_by": "ENV MERGEPILOT_VERSION=0.2.0-beta.6-rc.21",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
         },
         {
-          "created": "2026-10-05T11:59:17.037762903Z",
+          "created": "2026-10-09T09:43:36Z",
           "created_by": "COPY docker/console-runtime-package.json ./package.json # buildkit",
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2026-10-05T11:59:17.128837379Z",
+          "created": "2026-10-09T09:43:36Z",
           "created_by": "COPY docker/console-runtime-package-lock.json ./package-lock.json # buildkit",
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2026-10-09T07:13:11.064870938Z",
-          "created_by": "RUN |1 MERGEPILOT_VERSION=0.2.0-beta.6-rc.20 /bin/sh -c npm ci --omit=dev --no-audit --no-fund \u0026\u0026 npm cache clean --force  \u0026\u0026 rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack            /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack # buildkit",
+          "created": "2026-10-09T09:43:37Z",
+          "created_by": "RUN |1 MERGEPILOT_VERSION=0.2.0-beta.6-rc.21 /bin/sh -c npm ci --omit=dev --no-audit --no-fund \u0026\u0026 npm cache clean --force  \u0026\u0026 rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack            /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack # buildkit",
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2026-10-09T07:13:11.171389512Z",
+          "created": "2026-10-09T09:43:38Z",
           "created_by": "COPY console/backend ./backend # buildkit",
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2026-10-09T07:13:11.273417907Z",
+          "created": "2026-10-09T09:43:38Z",
           "created_by": "COPY console/frontend/dist ./frontend/dist # buildkit",
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2026-10-09T07:13:11.36839193Z",
+          "created": "2026-10-09T09:43:38Z",
           "created_by": "COPY deploy/rag-model-install ./deploy/rag-model-install # buildkit",
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2026-10-09T07:13:11.36839193Z",
+          "created": "2026-10-09T09:43:38Z",
           "created_by": "ENV CONSOLE_EVIDENCE_ROOT=/app/evidence",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
         },
         {
-          "created": "2026-10-09T07:13:11.601982788Z",
-          "created_by": "RUN |1 MERGEPILOT_VERSION=0.2.0-beta.6-rc.20 /bin/sh -c mkdir -p /app/evidence \u0026\u0026 chown node:node /app/evidence # buildkit",
+          "created": "2026-10-09T09:43:38Z",
+          "created_by": "RUN |1 MERGEPILOT_VERSION=0.2.0-beta.6-rc.21 /bin/sh -c mkdir -p /app/evidence \u0026\u0026 chown node:node /app/evidence # buildkit",
           "comment": "buildkit.dockerfile.v0"
         },
         {
-          "created": "2026-10-09T07:13:11.601982788Z",
+          "created": "2026-10-09T09:43:38Z",
           "created_by": "USER node",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
         },
         {
-          "created": "2026-10-09T07:13:11.601982788Z",
+          "created": "2026-10-09T09:43:38Z",
           "created_by": "EXPOSE [4730/tcp]",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
         },
         {
-          "created": "2026-10-09T07:13:11.601982788Z",
+          "created": "2026-10-09T09:43:38Z",
           "created_by": "HEALTHCHECK {Test:[CMD-SHELL node -e \"fetch('http://127.0.0.1:4730/api/health').then(r=\u003eprocess.exit(r.ok?0:1)).catch(()=\u003eprocess.exit(1))\"] Interval:30s Timeout:5s StartPeriod:10s StartInterval:0s Retries:3}",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
         },
         {
-          "created": "2026-10-09T07:13:11.601982788Z",
+          "created": "2026-10-09T09:43:38Z",
           "created_by": "CMD [\"node\" \"backend/server.mjs\"]",
           "comment": "buildkit.dockerfile.v0",
           "empty_layer": true
@@ -185,13 +188,13 @@
           "sha256:50a35fcbb91b0a6dd3821fb8ee87c3e44743f5f57c4337c1721280ff811f2d2a",
           "sha256:ff5db628aec4eaf74f091c36d7fc5f855481dfa4de3cb6c0b05b0684bfcea637",
           "sha256:6b635e1deb7c5536569b71ed632d2b6c9cf89e60c06735cf66f51ab3fb37f26a",
-          "sha256:29147668c7b847cda3f9621061b7cb7b3782df4ee1cc9b5750287eb10f4329e4",
-          "sha256:d23d3e0d81a9955a6a560ad80d0bd7d30a26d4f0e6911c01e4ed62b0d831dea7",
-          "sha256:227a67c81f561123420889babf39d20344b7cd1fa64704bfd725dbf1f1068e1e",
-          "sha256:8def2b4d88e0b573bb7b4b513d0543eff5aebd31e35cff689507fa0b60f6bb00",
-          "sha256:2df52352835df9904169cced898a15d86d9a89c8f091a72e9a3444f3a7a53ced",
-          "sha256:6468e7f3bb1297edeb36046b88e5a9ea33e7e171d315552322ee51a1fb9380a6",
-          "sha256:a3535fbcb80a4881c1ee79080245e6ca39d4e21816f5ded6d5b91927058ae957"
+          "sha256:295f7c6a8f670139ac16abf4fed41345027b3c5cc17f773470c9a98bc893d8a8",
+          "sha256:81fce05bcdf82a9b3e0e38457ddca44e87d1a894991f68f63a13fd5b803129ff",
+          "sha256:05a9e8de4f8066ed07ab0099acfadcea933fb42c6ad7a24966d8655d02b535ad",
+          "sha256:f83a72f57b79a52dc11c2855c40b9582e58af91267901591bb8624cafed648f6",
+          "sha256:32241736edab4cc1db251ee62364d43fdefb7d958bfa80b2aa48f14520deebe4",
+          "sha256:3bba131ea170bce70c97bb9c7718f758ad74a6a99d957ef50bf5e464d7af11f5",
+          "sha256:5bf41f33658b0e7620149125dad8ce3aa72a7d386ab20963196d8fa928a87132"
         ]
       },
       "config": {
@@ -219,7 +222,7 @@
           "NODE_ENV=production",
           "CONSOLE_HOST=0.0.0.0",
           "CONSOLE_PORT=4730",
-          "MERGEPILOT_VERSION=0.2.0-beta.6-rc.20",
+          "MERGEPILOT_VERSION=0.2.0-beta.6-rc.21",
           "CONSOLE_EVIDENCE_ROOT=/app/evidence"
         ],
         "User": "node",
@@ -258,44 +261,44 @@
       },
       {
         "Size": 2560,
-        "Digest": "sha256:b52cac0aab43f3485b4cdd31dd94782b669477a9b4fd58c0e0fec65a6518ff44",
-        "DiffID": "sha256:29147668c7b847cda3f9621061b7cb7b3782df4ee1cc9b5750287eb10f4329e4"
+        "Digest": "sha256:43349bbb725af4ce82f38a19abed30797a7d51ad6d54f5642b5e861095e5b287",
+        "DiffID": "sha256:295f7c6a8f670139ac16abf4fed41345027b3c5cc17f773470c9a98bc893d8a8"
       },
       {
         "Size": 8192,
-        "Digest": "sha256:207d8a230c95a7e5b7d1ae1dc08b2891a7b7703deb2663e2bbab14df986246b2",
-        "DiffID": "sha256:d23d3e0d81a9955a6a560ad80d0bd7d30a26d4f0e6911c01e4ed62b0d831dea7"
+        "Digest": "sha256:1f45d888e3c2309f3325ab3476d756052739503fe224ba28e8d21938bbeedac7",
+        "DiffID": "sha256:81fce05bcdf82a9b3e0e38457ddca44e87d1a894991f68f63a13fd5b803129ff"
       },
       {
-        "Size": 2362368,
-        "Digest": "sha256:ff13776248d7665335eef319c7baad8df58479aa65b9feaee2649ee66e112691",
-        "DiffID": "sha256:227a67c81f561123420889babf39d20344b7cd1fa64704bfd725dbf1f1068e1e"
+        "Size": 2361856,
+        "Digest": "sha256:30590c2d8e281f6cd49df9ef9135c3d3be0a78a5a6756e0d10641aed9d865884",
+        "DiffID": "sha256:05a9e8de4f8066ed07ab0099acfadcea933fb42c6ad7a24966d8655d02b535ad"
       },
       {
-        "Size": 975360,
-        "Digest": "sha256:c700511a21dedead0c071905f21c70c9d6668204f27cfbc59aa4dd967a3b2d93",
-        "DiffID": "sha256:8def2b4d88e0b573bb7b4b513d0543eff5aebd31e35cff689507fa0b60f6bb00"
+        "Size": 977408,
+        "Digest": "sha256:d28317e9a75c5c891554fe3d82cdfa34e2c8c643330be2524d1f7267d28de335",
+        "DiffID": "sha256:f83a72f57b79a52dc11c2855c40b9582e58af91267901591bb8624cafed648f6"
       },
       {
-        "Size": 3056640,
-        "Digest": "sha256:634a2b4aac69cfffc1c0f9a75811b6dff2ecb0e08a6f336aa38997803a93cfa4",
-        "DiffID": "sha256:2df52352835df9904169cced898a15d86d9a89c8f091a72e9a3444f3a7a53ced"
+        "Size": 3058176,
+        "Digest": "sha256:2b7ecea522b707f5a8e58080f888098d98cfbcc1710ee41b042c931bd2a12857",
+        "DiffID": "sha256:32241736edab4cc1db251ee62364d43fdefb7d958bfa80b2aa48f14520deebe4"
       },
       {
         "Size": 10240,
-        "Digest": "sha256:15d5b300ece6a7ee3947fe09b9d294a1b036f8b8e28ddd145908dffcae9f6ddc",
-        "DiffID": "sha256:6468e7f3bb1297edeb36046b88e5a9ea33e7e171d315552322ee51a1fb9380a6"
+        "Digest": "sha256:3f52044f2efb5898987d1bf162cae22c2fe8852b280d88266856cf06b703603d",
+        "DiffID": "sha256:3bba131ea170bce70c97bb9c7718f758ad74a6a99d957ef50bf5e464d7af11f5"
       },
       {
         "Size": 2048,
-        "Digest": "sha256:57b4cfdd29691bce49680332b8330fec9e4e658f9848530dd2cdd05b3fa57a08",
-        "DiffID": "sha256:a3535fbcb80a4881c1ee79080245e6ca39d4e21816f5ded6d5b91927058ae957"
+        "Digest": "sha256:a7250f45ef4342ab2dbacf4d8a42cb220201e8b0390077ed8e552d9f6c5ebd3d",
+        "DiffID": "sha256:5bf41f33658b0e7620149125dad8ce3aa72a7d386ab20963196d8fa928a87132"
       }
     ]
   },
   "Results": [
     {
-      "Target": "ghcr.io/nghqqa/mergepilot-console@sha256:8c9022437d60869db050856abef275bddb03155b67a5b4152d02e37f30ff6a1f (alpine 3.24.2)",
+      "Target": "ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.21 (alpine 3.24.2)",
       "Class": "os-pkgs",
       "Type": "alpine",
       "Packages": [
@@ -927,7 +930,7 @@
             "Name": "Alpine Secdb",
             "URL": "https://secdb.alpinelinux.org/"
           },
-          "Fingerprint": "sha256:0e4021e82e929f31add3df876912cfa385c8592a3a628c6a55d4acb2c578be3a",
+          "Fingerprint": "sha256:1db4c76845befd3f7c26077b2b0773f9962110b20409ca0b9c244ab6a852bd0b",
           "Title": "zlib versions 1.3.1.2 through 1.3.2 contain a heap buffer overflow vul ...",
           "Description": "zlib versions 1.3.1.2 through 1.3.2 contain a heap buffer overflow vulnerability in the gz_vacate() function when processing non-blocking gzwrite() operations with stale external buffer pointers. Attackers can trigger the overflow by calling gzprintf() or gzvprintf() after a write stall, causing an unchecked memmove() to write beyond the internal input buffer boundary.",
           "Severity": "MEDIUM",
@@ -963,8 +966,8 @@
           },
           "Version": "1.0.0",
           "Layer": {
-            "Digest": "sha256:b52cac0aab43f3485b4cdd31dd94782b669477a9b4fd58c0e0fec65a6518ff44",
-            "DiffID": "sha256:29147668c7b847cda3f9621061b7cb7b3782df4ee1cc9b5750287eb10f4329e4"
+            "Digest": "sha256:43349bbb725af4ce82f38a19abed30797a7d51ad6d54f5642b5e861095e5b287",
+            "DiffID": "sha256:295f7c6a8f670139ac16abf4fed41345027b3c5cc17f773470c9a98bc893d8a8"
           },
           "FilePath": "app/package.json",
           "AnalyzedBy": "node-pkg"
@@ -981,8 +984,8 @@
             "MIT"
           ],
           "Layer": {
-            "Digest": "sha256:ff13776248d7665335eef319c7baad8df58479aa65b9feaee2649ee66e112691",
-            "DiffID": "sha256:227a67c81f561123420889babf39d20344b7cd1fa64704bfd725dbf1f1068e1e"
+            "Digest": "sha256:30590c2d8e281f6cd49df9ef9135c3d3be0a78a5a6756e0d10641aed9d865884",
+            "DiffID": "sha256:05a9e8de4f8066ed07ab0099acfadcea933fb42c6ad7a24966d8655d02b535ad"
           },
           "FilePath": "app/node_modules/pg/package.json",
           "AnalyzedBy": "node-pkg"
@@ -999,8 +1002,8 @@
             "MIT"
           ],
           "Layer": {
-            "Digest": "sha256:ff13776248d7665335eef319c7baad8df58479aa65b9feaee2649ee66e112691",
-            "DiffID": "sha256:227a67c81f561123420889babf39d20344b7cd1fa64704bfd725dbf1f1068e1e"
+            "Digest": "sha256:30590c2d8e281f6cd49df9ef9135c3d3be0a78a5a6756e0d10641aed9d865884",
+            "DiffID": "sha256:05a9e8de4f8066ed07ab0099acfadcea933fb42c6ad7a24966d8655d02b535ad"
           },
           "FilePath": "app/node_modules/pg-cloudflare/package.json",
           "AnalyzedBy": "node-pkg"
@@ -1017,8 +1020,8 @@
             "MIT"
           ],
           "Layer": {
-            "Digest": "sha256:ff13776248d7665335eef319c7baad8df58479aa65b9feaee2649ee66e112691",
-            "DiffID": "sha256:227a67c81f561123420889babf39d20344b7cd1fa64704bfd725dbf1f1068e1e"
+            "Digest": "sha256:30590c2d8e281f6cd49df9ef9135c3d3be0a78a5a6756e0d10641aed9d865884",
+            "DiffID": "sha256:05a9e8de4f8066ed07ab0099acfadcea933fb42c6ad7a24966d8655d02b535ad"
           },
           "FilePath": "app/node_modules/pg-connection-string/package.json",
           "AnalyzedBy": "node-pkg"
@@ -1035,8 +1038,8 @@
             "ISC"
           ],
           "Layer": {
-            "Digest": "sha256:ff13776248d7665335eef319c7baad8df58479aa65b9feaee2649ee66e112691",
-            "DiffID": "sha256:227a67c81f561123420889babf39d20344b7cd1fa64704bfd725dbf1f1068e1e"
+            "Digest": "sha256:30590c2d8e281f6cd49df9ef9135c3d3be0a78a5a6756e0d10641aed9d865884",
+            "DiffID": "sha256:05a9e8de4f8066ed07ab0099acfadcea933fb42c6ad7a24966d8655d02b535ad"
           },
           "FilePath": "app/node_modules/pg-int8/package.json",
           "AnalyzedBy": "node-pkg"
@@ -1053,8 +1056,8 @@
             "MIT"
           ],
           "Layer": {
-            "Digest": "sha256:ff13776248d7665335eef319c7baad8df58479aa65b9feaee2649ee66e112691",
-            "DiffID": "sha256:227a67c81f561123420889babf39d20344b7cd1fa64704bfd725dbf1f1068e1e"
+            "Digest": "sha256:30590c2d8e281f6cd49df9ef9135c3d3be0a78a5a6756e0d10641aed9d865884",
+            "DiffID": "sha256:05a9e8de4f8066ed07ab0099acfadcea933fb42c6ad7a24966d8655d02b535ad"
           },
           "FilePath": "app/node_modules/pg-pool/package.json",
           "AnalyzedBy": "node-pkg"
@@ -1071,8 +1074,8 @@
             "MIT"
           ],
           "Layer": {
-            "Digest": "sha256:ff13776248d7665335eef319c7baad8df58479aa65b9feaee2649ee66e112691",
-            "DiffID": "sha256:227a67c81f561123420889babf39d20344b7cd1fa64704bfd725dbf1f1068e1e"
+            "Digest": "sha256:30590c2d8e281f6cd49df9ef9135c3d3be0a78a5a6756e0d10641aed9d865884",
+            "DiffID": "sha256:05a9e8de4f8066ed07ab0099acfadcea933fb42c6ad7a24966d8655d02b535ad"
           },
           "FilePath": "app/node_modules/pg-protocol/package.json",
           "AnalyzedBy": "node-pkg"
@@ -1089,8 +1092,8 @@
             "MIT"
           ],
           "Layer": {
-            "Digest": "sha256:ff13776248d7665335eef319c7baad8df58479aa65b9feaee2649ee66e112691",
-            "DiffID": "sha256:227a67c81f561123420889babf39d20344b7cd1fa64704bfd725dbf1f1068e1e"
+            "Digest": "sha256:30590c2d8e281f6cd49df9ef9135c3d3be0a78a5a6756e0d10641aed9d865884",
+            "DiffID": "sha256:05a9e8de4f8066ed07ab0099acfadcea933fb42c6ad7a24966d8655d02b535ad"
           },
           "FilePath": "app/node_modules/pg-types/package.json",
           "AnalyzedBy": "node-pkg"
@@ -1107,8 +1110,8 @@
             "MIT"
           ],
           "Layer": {
-            "Digest": "sha256:ff13776248d7665335eef319c7baad8df58479aa65b9feaee2649ee66e112691",
-            "DiffID": "sha256:227a67c81f561123420889babf39d20344b7cd1fa64704bfd725dbf1f1068e1e"
+            "Digest": "sha256:30590c2d8e281f6cd49df9ef9135c3d3be0a78a5a6756e0d10641aed9d865884",
+            "DiffID": "sha256:05a9e8de4f8066ed07ab0099acfadcea933fb42c6ad7a24966d8655d02b535ad"
           },
           "FilePath": "app/node_modules/pgpass/package.json",
           "AnalyzedBy": "node-pkg"
@@ -1125,8 +1128,8 @@
             "MIT"
           ],
           "Layer": {
-            "Digest": "sha256:ff13776248d7665335eef319c7baad8df58479aa65b9feaee2649ee66e112691",
-            "DiffID": "sha256:227a67c81f561123420889babf39d20344b7cd1fa64704bfd725dbf1f1068e1e"
+            "Digest": "sha256:30590c2d8e281f6cd49df9ef9135c3d3be0a78a5a6756e0d10641aed9d865884",
+            "DiffID": "sha256:05a9e8de4f8066ed07ab0099acfadcea933fb42c6ad7a24966d8655d02b535ad"
           },
           "FilePath": "app/node_modules/postgres-array/package.json",
           "AnalyzedBy": "node-pkg"
@@ -1143,8 +1146,8 @@
             "MIT"
           ],
           "Layer": {
-            "Digest": "sha256:ff13776248d7665335eef319c7baad8df58479aa65b9feaee2649ee66e112691",
-            "DiffID": "sha256:227a67c81f561123420889babf39d20344b7cd1fa64704bfd725dbf1f1068e1e"
+            "Digest": "sha256:30590c2d8e281f6cd49df9ef9135c3d3be0a78a5a6756e0d10641aed9d865884",
+            "DiffID": "sha256:05a9e8de4f8066ed07ab0099acfadcea933fb42c6ad7a24966d8655d02b535ad"
           },
           "FilePath": "app/node_modules/postgres-bytea/package.json",
           "AnalyzedBy": "node-pkg"
@@ -1161,8 +1164,8 @@
             "MIT"
           ],
           "Layer": {
-            "Digest": "sha256:ff13776248d7665335eef319c7baad8df58479aa65b9feaee2649ee66e112691",
-            "DiffID": "sha256:227a67c81f561123420889babf39d20344b7cd1fa64704bfd725dbf1f1068e1e"
+            "Digest": "sha256:30590c2d8e281f6cd49df9ef9135c3d3be0a78a5a6756e0d10641aed9d865884",
+            "DiffID": "sha256:05a9e8de4f8066ed07ab0099acfadcea933fb42c6ad7a24966d8655d02b535ad"
           },
           "FilePath": "app/node_modules/postgres-date/package.json",
           "AnalyzedBy": "node-pkg"
@@ -1179,8 +1182,8 @@
             "MIT"
           ],
           "Layer": {
-            "Digest": "sha256:ff13776248d7665335eef319c7baad8df58479aa65b9feaee2649ee66e112691",
-            "DiffID": "sha256:227a67c81f561123420889babf39d20344b7cd1fa64704bfd725dbf1f1068e1e"
+            "Digest": "sha256:30590c2d8e281f6cd49df9ef9135c3d3be0a78a5a6756e0d10641aed9d865884",
+            "DiffID": "sha256:05a9e8de4f8066ed07ab0099acfadcea933fb42c6ad7a24966d8655d02b535ad"
           },
           "FilePath": "app/node_modules/postgres-interval/package.json",
           "AnalyzedBy": "node-pkg"
@@ -1197,8 +1200,8 @@
             "ISC"
           ],
           "Layer": {
-            "Digest": "sha256:ff13776248d7665335eef319c7baad8df58479aa65b9feaee2649ee66e112691",
-            "DiffID": "sha256:227a67c81f561123420889babf39d20344b7cd1fa64704bfd725dbf1f1068e1e"
+            "Digest": "sha256:30590c2d8e281f6cd49df9ef9135c3d3be0a78a5a6756e0d10641aed9d865884",
+            "DiffID": "sha256:05a9e8de4f8066ed07ab0099acfadcea933fb42c6ad7a24966d8655d02b535ad"
           },
           "FilePath": "app/node_modules/split2/package.json",
           "AnalyzedBy": "node-pkg"
@@ -1215,8 +1218,8 @@
             "MIT"
           ],
           "Layer": {
-            "Digest": "sha256:ff13776248d7665335eef319c7baad8df58479aa65b9feaee2649ee66e112691",
-            "DiffID": "sha256:227a67c81f561123420889babf39d20344b7cd1fa64704bfd725dbf1f1068e1e"
+            "Digest": "sha256:30590c2d8e281f6cd49df9ef9135c3d3be0a78a5a6756e0d10641aed9d865884",
+            "DiffID": "sha256:05a9e8de4f8066ed07ab0099acfadcea933fb42c6ad7a24966d8655d02b535ad"
           },
           "FilePath": "app/node_modules/xtend/package.json",
           "AnalyzedBy": "node-pkg"
