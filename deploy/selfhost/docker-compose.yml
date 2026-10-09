@@ -53,8 +53,8 @@ services:
     networks: [internal]
 
   console:
-    # 官方镜像（候选阶段以 tag 引用；GHCR 推送后回填不可变 digest——未推送前不编造）。
-    image: ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.22
+    # 官方镜像（GHCR 不可变 digest；与 v0.2.0-beta.6-rc.22 源码 tag 同源）。
+    image: ghcr.io/nghqqa/mergepilot-console@sha256:35b453f37a902d1497f544ba0c2a9c0d493187fb40cb31d0387da6f21af2d0e5
     restart: unless-stopped
     ports:
       # 安全基线：仅绑定回环。对外暴露必须前置 TLS 反代（README 安全节）。
