@@ -1833,6 +1833,35 @@ const ragMatch = p.match(new RegExp("^/api/mu/repositories/([^/]+)/rag-search$")
       return sendJson(res, 200, { ok: true, processed });
     }
 
+    // ── fixture 遗留任务取消（2026-10-09 D-4）：仅 queued 的人工 job（review_run/
+    //    repair_push）可取消；系统事件 job（event_sync）必须走完终态不可取消。
+    //    权限=manage_instance（平台管理员）；取消=rejected+审计，consumer 只领
+    //    queued——取消后永不执行。窄范围可审计的历史积压处置入口。──
+    const jobCancel = p.match(/^\/api\/mu\/jobs\/([0-9a-fA-F-]{8,64})\/cancel$/);
+    if (jobCancel && req.method === 'POST') {
+      if (!csrfOk()) return sendJson(res, 403, { error: { reason: 'csrf_required' } });
+      const g = await guard('manage_instance');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const row = (await muPoolQ(
+        `SELECT job_id, kind, state FROM mu.job WHERE job_id=$1 AND tenant_id=$2`,
+        [jobCancel[1], mu.tenantId])).rows[0] ?? null;
+      if (!row) return sendJson(res, 404, { error: { reason: 'job_not_found' } });
+      if (row.kind === 'event_sync') {
+        return sendJson(res, 409, { error: { reason: 'system_job_not_cancellable',
+          message: '系统事件任务必须走完终态，不可取消' } });
+      }
+      if (row.state !== 'queued') {
+        return sendJson(res, 409, { error: { reason: 'job_not_queued',
+          message: `当前状态 ${row.state}，仅 queued 可取消` } });
+      }
+      await muPoolQ(
+        `UPDATE mu.job SET state='rejected', result=$2::jsonb, updated_at=now()
+          WHERE job_id=$1 AND state='queued'`, [jobCancel[1], JSON.stringify({ reason: 'cancelled_fixture_leftover' })]);
+      await store.audit('MU_JOB_CANCELLED', { tenantId: mu.tenantId, actorUserId: mu.userId,
+        detail: { job_id: jobCancel[1], kind: row.kind, reason: 'cancelled_fixture_leftover' } });
+      return sendJson(res, 200, { ok: true, job_id: jobCancel[1], state: 'rejected' });
+    }
+
     // ── Agent 运行策略（Wave 3.2；PlatformAdmin 读写；零凭据字段）──
     // ── AgentTeams 运行状态（Wave 3.4；只读探测；脱敏——无 token/prompt/正文）──
     if (p === '/api/mu/agentteams-status' && req.method === 'GET') {
