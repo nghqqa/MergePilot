@@ -42,7 +42,7 @@ test('词表：TICKET 全 7 键（含 STALE/CONSUMED）都有中文 label+note',
     assert.ok(['ok', 'info', 'warn', 'bad', 'neutral'].includes(e.tone), `TICKET.${k}.tone 合法`);
   }
   assert.equal(m.TICKET.STALE.label, '已失效（PR head 已更新）');
-  assert.equal(m.TICKET.CONSUMED.label, '已消费（修复预演已启动）');
+  assert.equal(m.TICKET.CONSUMED.label, '已批准并放行修复轮');
   assert.equal(m.ticketMap('STALE').label, m.TICKET.STALE.label, 'ticketMap(STALE) 走词表');
 });
 
@@ -366,7 +366,7 @@ test('MuApprovals 状态列/级别列中文：STALE/CONSUMED/P0 行走词表，r
   try {
     const visible = allText(renderer.toJSON());
     assert.ok(visible.includes('已失效（PR head 已更新）'), 'STALE→已失效（PR head 已更新）');
-    assert.ok(visible.includes('已消费（修复预演已启动）'), 'CONSUMED→已消费（修复预演已启动）');
+    assert.ok(visible.includes('已批准并放行修复轮'), 'CONSUMED→已批准并放行修复轮');
     assert.ok(visible.includes('危急') && visible.includes('高'), 'P0/P1→危急/高');
     assert.ok(!/\bSTALE\b/.test(visible) && !/\bCONSUMED\b/.test(visible) && !/\bPENDING\b/.test(visible),
       '可见文本无裸 STALE/CONSUMED/PENDING（P0/P1 属页脚量纲词汇，不在禁止列）');

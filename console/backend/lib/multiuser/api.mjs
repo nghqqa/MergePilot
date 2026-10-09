@@ -1531,6 +1531,10 @@ export async function muApi(req, res, ctx) {
           fixRound = { skipped: 'fix_round_error', reason: String(e?.message ?? e).slice(0, 120) };
         }
       }
+      if (fixRound && fixRound.skipped) {
+        await store.audit('FIX_ROUND_SKIPPED', { tenantId: mu.tenantId, actorUserId: mu.userId,
+          detail: { run_id: dec.ticket.run_id, stage: fixRound.skipped, reason: fixRound.reason ?? null } });
+      }
       return sendJson(res, 200, { ok: true, idempotent: Boolean(dec.idempotent),
         ticket: dec.ticket, run_state: dec.run_state ?? dec.ticket.run_status ?? null,
         run_ready: Boolean(dec.run_ready), run_blocked: Boolean(dec.run_blocked),
@@ -1547,12 +1551,25 @@ export async function muApi(req, res, ctx) {
       if (!pr) return sendJson(res, 404, { error: { reason: 'pull_request_not_found' } });
       const g = await guard('request_review', { repoId: pr.repo_id });
       if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      // 生产真实链（2026-10-09 D1）：人工触发与 webhook 同一消费单元——入队 event_sync
+      // （系统级 kind，always-on consumer 无条件消费真实管线），不再入队 fixture 门后的
+      // review_run（MU_FIXTURES 未设时永不消费、永久 queued 误导用户）。
+      const instRow = (await muPoolQ(
+        `SELECT installation_id FROM mu.repository_binding
+          WHERE repo_id=$1 AND tenant_id=$2 AND binding_state='active' LIMIT 1`,
+        [pr.repo_id, mu.tenantId])).rows[0] ?? null;
+      if (!instRow) return sendJson(res, 409, { error: { reason: 'binding_not_active',
+        message: '仓库无 active 绑定（含 installation）——无法进入真实审查链' } });
       const job = await store.enqueueJob({ tenantId: mu.tenantId, repoId: pr.repo_id,
-        prId: pr.pr_id, kind: 'review_run', requestedBy: mu.userId,
-        requestedRole: g.membership.role, payload: { head_sha: pr.head_sha } });
+        prId: pr.pr_id, kind: 'event_sync', requestedBy: null,
+        requestedRole: 'maintainer', payload: { event: 'pull_request', action: 'synchronize',
+          head_sha: pr.head_sha, installation_id: Number(instRow.installation_id),
+          delivery_id: `manual-${mu.userId}-${Date.now()}`, trigger_source: 'manual' } });
       await store.audit('MU_REVIEW_REQUESTED', { tenantId: mu.tenantId, actorUserId: mu.userId,
-        detail: { pr_id: pr.pr_id, job_id: job.job_id } });
-      return sendJson(res, 200, { ok: true, job_id: job.job_id, state: job.state });
+        detail: { pr_id: pr.pr_id, job_id: job.job_id, kind: 'event_sync' } });
+      return sendJson(res, 200, { ok: true, job_id: job.job_id, state: job.state,
+        mode: 'real_pipeline',
+        note: '已进入真实审查管线（与 webhook 同一消费单元）——结果以「审查管线」面板为准' });
     }
 
     // ── 人工审批（maintainer+；branch protection 未知 → 禁止可合并结论） ──
@@ -1591,12 +1608,48 @@ export async function muApi(req, res, ctx) {
       if (!pr) return sendJson(res, 404, { error: { reason: 'pull_request_not_found' } });
       const g = await guard('request_repair', { repoId: pr.repo_id, needBinding: true });
       if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
-      const job = await store.enqueueJob({ tenantId: mu.tenantId, repoId: pr.repo_id,
-        prId: pr.pr_id, kind: 'repair_push', requestedBy: mu.userId,
-        requestedRole: g.membership.role, payload: { head_sha: pr.head_sha } });
-      await store.audit('MU_REPAIR_REQUESTED', { tenantId: mu.tenantId, actorUserId: mu.userId,
-        detail: { pr_id: pr.pr_id, job_id: job.job_id } });
-      return sendJson(res, 200, { ok: true, job_id: job.job_id, state: job.state });
+      // 生产真实语义（2026-10-09 D2/D3）：受控修复的发起=审批门语义——
+      // WAITING=逐条批准引导（不再入队 fixture 门后永不消费的 repair_push）；
+      // FIX_QUEUED+票已消费=修复轮合法重试入口（authorizeFixExecution 对 CONSUMED
+      // 幂等，审批不被二次消费；执行器门 fail-closed 如实返回）。
+      const runRow = (await muPoolQ(
+        `SELECT run_id, status, head_sha FROM mu.review_run
+          WHERE tenant_id=$1 AND repo_id=$2 AND pr_id=$3
+         ORDER BY created_at DESC LIMIT 1`, [mu.tenantId, pr.repo_id, pr.pr_id])).rows[0] ?? null;
+      if (!runRow) return sendJson(res, 409, { error: { reason: 'no_review_run',
+        message: '该 PR 尚无审查记录——请先触发只读审查' } });
+      if (runRow.status === 'WAITING_FOR_HUMAN_APPROVAL') {
+        const pending = (await muPoolQ(
+          `SELECT fa.approval_id, fa.severity, f.rule_id FROM mu.fix_approval fa
+            LEFT JOIN mu.agent_finding f ON f.finding_id = fa.finding_id
+            WHERE fa.run_id=$1 AND fa.status='PENDING' ORDER BY fa.severity`, [runRow.run_id])).rows;
+        await store.audit('MU_REPAIR_AWAITING_APPROVAL', { tenantId: mu.tenantId, actorUserId: mu.userId,
+          detail: { pr_id: pr.pr_id, run_id: runRow.run_id, pending: pending.length } });
+        return sendJson(res, 200, { ok: true, state: 'awaiting_approval',
+          message: '受控修复待人工批准——请在本页逐条「批准受控修复」（全部 P0/P1 批准后修复轮自动放行）',
+          run_id: runRow.run_id, pending });
+      }
+      if (runRow.status === 'FIX_QUEUED') {
+        const dep = await buildFixDepsForRepo(muPoolQ, { tenantId: mu.tenantId, repoId: pr.repo_id,
+          prNumber: Number(pr.provider_pr_number) });
+        if (!dep) return sendJson(res, 409, { error: { reason: 'deps_unavailable',
+          message: '无法装配修复轮依赖（绑定/installation 缺失）——run 保持可恢复态' } });
+        const { fixVerifyRound } = await import('./agents/fix-orchestrator.mjs');
+        const fx = await fixVerifyRound({ query: muPoolQ }, { run: { run_id: runRow.run_id },
+          binding: { tenantId: mu.tenantId, repoId: pr.repo_id, prId: pr.pr_id, headSha: runRow.head_sha },
+          deps: dep });
+        await store.audit('MU_FIX_ROUND_RETRIED', { tenantId: mu.tenantId, actorUserId: mu.userId,
+          detail: { pr_id: pr.pr_id, run_id: runRow.run_id, ok: Boolean(fx.ok),
+            stage: fx.stage ?? null, reason: fx.reason ?? null } });
+        return sendJson(res, 200, fx.ok
+          ? { ok: true, state: 'fix_round_started', verdict: fx.verdict ?? null,
+              executor: fx.executor ?? 'internal', note: '修复轮已启动——进展以「审查管线」面板为准（DRY_RUN 不写 GitHub）' }
+          : { ok: false, state: 'fix_round_skipped', stage: fx.stage ?? 'fix_failed',
+              reason: fx.reason ?? null,
+              message: '修复轮未能启动（run 保持可恢复态，可重试本入口）——原因如实返回' });
+      }
+      return sendJson(res, 409, { error: { reason: 'no_repair_pending',
+        message: `当前审查状态 ${runRow.status}，无可发起的受控修复` } });
     }
 
     // ── RAG 检索面（rag_query；fixture 语料——Auditor/PlatformAdmin 默认无此动作） ──
