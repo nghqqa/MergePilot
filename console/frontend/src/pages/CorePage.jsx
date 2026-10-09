@@ -98,7 +98,7 @@ export default function CorePage() {
         error.status === 403 ? (
           // 授权态非故障态：403=角色无此动作（fail-closed 设计），不得渲染为"请求失败"误导用户（2026-10-09 反馈）
           <Alert type="warning" showIcon message="无权限查看"
-            description={`当前角色不含本页所需动作（${error.message}）——这是权限设计的 fail-closed 行为，不是系统故障。本页属实例配置面，需 platform_admin 角色；如需查看请切换平台管理员账号登录。`} />
+            description={`当前登录的账号角色没有查看此页的权限（需要平台管理员）。请切换平台管理员账号查看，或联系管理员为当前账号开通权限。`} />
         ) : (
           <Alert type="error" showIcon message="请求失败"
             description={`${error.message}${error.status === 401 ? '（会话可能已过期，请刷新重登）' : ''}`} />
