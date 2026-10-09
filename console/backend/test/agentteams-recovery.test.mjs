@@ -23,7 +23,7 @@ const ENV = {
 };
 
 /** 内存态 fake controller：复刻 223ddc2 真实契约（POST 创建/409 已存在、PUT update-only/404 不存在）。 */
-function fakeCtrl({ hideFromList = () => false } = {}) {
+function fakeCtrl({ hideFromList = () => false, shallow = false } = {}) {
   const workers = new Map();
   const calls = { post: 0, put: 0, healthy: 0 };
   const fetchImpl = async (url, opts = {}) => {
@@ -43,7 +43,11 @@ function fakeCtrl({ hideFromList = () => false } = {}) {
       calls.post++;
       const body = JSON.parse(opts.body);
       if (workers.has(body.name)) return { ok: false, status: 409, json: async () => ({}) };
-      workers.set(body.name, { phase: 'Running', roomID: '!fake:example', matrixUserID: '@fake:example' });
+      // shallow=true 模拟"浅层注册"：存在+Running spec，但 Matrix 绑定字段缺失
+      // （2026-10-09 生产实证：ctrl 重建后 ensureFourAgents 的自愈产物即此形态）
+      workers.set(body.name, shallow
+        ? { phase: 'Running' }
+        : { phase: 'Running', roomID: '!fake:example', matrixUserID: '@fake:example' });
       return { ok: true, status: 200, json: async () => ({}) };
     }
     const m = p.match(/^\/api\/v1\/workers\/(.+)$/);
@@ -72,7 +76,19 @@ test('恢复：空注册表首跑建 4，重复运行幂等（不产生重复注
   assert.equal(fake.workers.size, 4, 'registry size stays 4 — no duplicate registration');
   assert.equal(fake.calls.post, 4, 'POST count unchanged on second run');
   assert.ok(fake.calls.put >= 4, 'existing workers go through update-only PUT path');
-  assert.equal(r2.note, 'registry-restored-4/4');
+  assert.equal(r2.note, 'registry-restored-with-bindings-4/4');
+});
+
+test('恢复：浅层记录（Running 但绑定缺失）不得报成功——判 bindings 失败并引导完整置备', async () => {
+  const fake = fakeCtrl({ shallow: true });
+  const r = await recoverWorkerRegistry({ env: ENV, fetchImpl: fake.fetchImpl });
+  assert.equal(r.ok, false, 'shallow registry must NOT be reported as recovered');
+  assert.equal(r.stage, 'bindings');
+  assert.equal(r.reason, 'AT_WORKER_BINDINGS_INCOMPLETE');
+  assert.deepEqual([...r.incomplete].sort(), [...ROLES].sort(), 'all four workers lack bindings');
+  assert.match(r.hint, /provision-workers\.sh/, 'must guide to full provisioning');
+  // 且不得冒充完整恢复口径
+  assert.ok(!String(r.note ?? '').includes('registry-restored-with-bindings'));
 });
 
 test('恢复：认证失败 fail-closed——健康检查即止，零写操作', async () => {

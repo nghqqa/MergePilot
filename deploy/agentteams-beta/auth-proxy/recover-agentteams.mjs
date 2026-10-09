@@ -14,6 +14,10 @@
 // 本工具只做【注册表恢复】：复用 Console 自带的 ensureFourAgents（生产契约路径，
 // fix-orchestrator 每次 run 都会调用同一函数），不手写 API 注入、不旁路业务契约。
 // worker 容器本体由 controller 在 ensure 过程中经其自身逻辑接管/重建。
+// ⚠️ 浅层恢复边界（2026-10-09 生产实证）：ensureFourAgents 只重建"存在+Running spec"
+// 的浅层记录；Matrix 绑定（roomID/matrixUserID）须由完整置备流程下发。本工具完成
+// 判定已对齐执行器门同口径（Running+绑定齐全），浅层记录判 bindings 失败并引导走
+// provision-workers.sh——不得把浅层记录当完整恢复。
 //
 // 纪律：
 //  * 幂等——ensureFourAgents 为 GET 判存在→缺者 POST/在者 PUT（409/404 感知）→
@@ -60,12 +64,30 @@ export async function recoverWorkerRegistry({ env = process.env, fetchImpl = fet
   const detail = await mod.listWorkersDetail(cfg, { fetchImpl });
   if (!detail.ok) return { ok: false, stage: 'verify', reason: detail.reason ?? 'AT_WORKERS_LIST_HTTP' };
   const workers = [...detail.workers.keys()].sort();
+  // 完成判定对齐生产执行器门（runExternalRound 同口径）：phase=Running 且
+  // roomID/matrixUserID 齐全。ensureFourAgents 只恢复浅层注册（存在+Running spec），
+  // Matrix 绑定缺失时修复轮会在执行器门 fail-closed（AT_WORKERS_INCOMPLETE，
+  // 2026-10-09 生产实证）——此处不得把浅层记录误判为完整恢复。
+  const incomplete = workers.filter((n) => {
+    const w = detail.workers.get(n) ?? {};
+    return String(w.phase ?? '').toLowerCase() !== 'running' || !w.roomID || !w.matrixUserID;
+  });
+  if (incomplete.length) {
+    return {
+      ok: false,
+      stage: 'bindings',
+      reason: 'AT_WORKER_BINDINGS_INCOMPLETE',
+      workers,
+      incomplete,
+      hint: 'shallow-registry-only: 走完整置备（deploy/agentteams-beta/provision-workers.sh，需栈凭据）恢复 Matrix 绑定后重跑本工具',
+    };
+  }
   return {
     ok: true,
     created: ensure.created ?? [],
     workers,
     workerCount: workers.length,
-    note: workers.length === 4 ? 'registry-restored-4/4' : `unexpected-worker-count=${workers.length}`,
+    note: workers.length === 4 ? 'registry-restored-with-bindings-4/4' : `unexpected-worker-count=${workers.length}`,
   };
 }
 
