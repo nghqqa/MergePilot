@@ -325,6 +325,27 @@ schtasks /Create /TN "MergePilot-Attest" /SC ONSTART /RU SYSTEM ^
      `https://<console 公开地址>/login?invite=<invite_id>`（origin 取 OAuth callback 的
      公开地址）。邀请绑定 GitHub 数字 id/租户/角色/有效期，单次认领，不可授予
      platform_admin——链接只是入口，不是可转让授权凭证。
+
+### 角色与权限速查
+
+系统有 5 种角色，能力递增（auditor 独立）：
+
+| 能力 | contributor | reviewer | maintainer | auditor | platform_admin |
+|---|:---:|:---:|:---:|:---:|:---:|
+| 查看仓库 / PR / 代码 | ✓ | ✓ | ✓ | — | ✓ |
+| RAG 检索 | ✓ | ✓ | ✓ | — | ✓ |
+| 触发只读审查 | — | ✓ | ✓ | — | ✓ |
+| **审批 / 驳回修复** | — | — | **✓ 仅此角色** | — | — |
+| 发起受控修复 | — | — | ✓ | — | ✓ |
+| 绑定 / 解绑仓库 | — | — | ✓ | — | ✓ |
+| 查看审计日志 | — | — | — | ✓ | ✓ |
+| 成员与角色管理 | — | — | — | — | ✓ |
+| 实例配置 / 建租户 | — | — | — | — | ✓ |
+
+> **设计原则**：平台管理员管基础设施（成员/配置/审计），维护者管内容裁定（审批修复）。
+> 两者刻意不重叠——platform_admin 也无法审批修复。未授权访问一律 403 拒绝（fail-closed），
+> 拒绝原因在审计留痕。**邀请永不授予 platform_admin**——首任管理员由部署脚本或 SQL 直授。
+
 2. **installation 注册**：安装 App 后跳转回控制台即注册到当前会话所属租户；
    租户成员的邀请认领（rc.14 起泛化、rc.16 持续）支持既有用户经邀请进入其他租户；
    同一 subject 存在多条待认领邀请时会显式拒绝（`invitation_ambiguous`）。
