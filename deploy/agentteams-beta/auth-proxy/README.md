@@ -72,7 +72,7 @@ docker exec beta-mp-console node -e "const b=process.env.MU_AGENTTEAMS_BASE_URL,
 | 注册表 workers/teams/humans（在容器 FS） | 存活 | **清空**：worker 端 `agt get` 404，循环 `Worker config not ready` |
 | `/data` 卷（worker-creds、MinIO、Matrix 数据） | 保留 | 保留（**注册表不在卷里，卷救不了注册表**） |
 | 恢复工具 | `recover-runtime.sh`（RUNBOOK §3/§4） | **`recover-agentteams.mjs`（本目录）** |
-| 恢复完成判定 | 心跳/桥探针过 | **ctrl 列表 4/4 worker Running（§5 验收）**，不是"token 换成功" |
+| 恢复完成判定 | 心跳/桥探针过 | **4/4 worker Running 且 roomID/matrixUserID 齐全（§5 验收）**，不是"token 换成功" |
 
 > 撤销语义：**需要让历史 token 全部失效（含疑似泄露）时，重建 ctrl 即撤销**——这是
 > 2026-10-08 实证的机制（token 文件非卷 + 校验为容器 FS 内文件精确匹配）。重建后
@@ -89,10 +89,14 @@ node deploy/agentteams-beta/auth-proxy/recover-agentteams.mjs --container beta-m
 
 - 恢复路径=Console 自带 `ensureFourAgents`（`console/backend/lib/multiuser/agents/agentteams-executor.mjs`），
   与 fix-orchestrator 每次 run 的自愈调用同源——不旁路业务契约，不手写 POST。
+  **浅层边界（2026-10-09 生产实证）：ensureFourAgents 只恢复"存在+Running"的浅层记录，
+  Matrix 绑定（roomID/matrixUserID）须由完整置备（`../provision-workers.sh`）下发；
+  本工具完成判定已对齐执行器门（Running+绑定齐全），缺绑定即判失败并引导完整置备。**
 - 幂等由契约保证（GET 判存在→缺者 POST/在者 PUT，409/404 感知→完整性复查），
   测试锁定于 `console/backend/test/agentteams-recovery.test.mjs`。
 - 故障形态速查：`healthy` 阶段失败=代理链路/凭据问题（先查 §5 前两项）；
-  `ensure` 阶段失败=controller 侧（看 ctrl 日志）；`verify` 阶段失败=复查不到 4/4。
+  `ensure` 阶段失败=controller 侧（看 ctrl 日志）；`bindings` 阶段失败=浅层注册（走完整置备）；
+  `verify` 阶段失败=复查不到 4/4。
 - controller 重启（非重建）后的 netns/桥恢复仍走 `../recover-runtime.sh`。
 
 ## 8. 安全红线（恢复/重建方案的设计约束）

@@ -44,7 +44,7 @@ token 获取：`docker exec agentteams-beta-ctrl sh -c 'tr -d "\n\r" < /var/run/
 ## 4. 重启恢复
 - controller：`docker restart agentteams-beta-ctrl`（数据卷保留：K8s/Matrix/MinIO 状态）→ restart 四 worker → provision（reconcile 恢复 phase）
 - 单 worker：`docker restart agentteams-beta-worker-mergepilot-<role>`（sync 心跳自动恢复，已验证）
-- **重建≠重启**：重建（rm+run）使 cli-token 与 worker 注册表随容器 FS 一并失效/清空（二者均不在 /data 卷）——恢复用 `auth-proxy/recover-agentteams.mjs`（幂等，走 ensureFourAgents 契约），完成判定=4/4 Running 而非「token 换成功」；撤销语义与验收清单见 `auth-proxy/README.md` §6/§5
+- **重建≠重启**：重建（rm+run）使 cli-token 与 worker 注册表随容器 FS 一并失效/清空（二者均不在 /data 卷）——恢复分两层：`recover-agentteams.mjs` 只恢复浅层注册（存在+Running），**Matrix 绑定（roomID/matrixUserID）须完整置备**（`bash provision-workers.sh`，2026-10-09 实证：浅层记录下修复轮在执行器门 fail-closed AT_WORKERS_INCOMPLETE）。完成判定=4/4 Running 且绑定齐全，而非「token 换成功」；另注意 ctrl 内嵌组件的管理口令在 env（AGENTTEAMS_ADMIN_PASSWORD 等）——**凭据轮换后重建 ctrl 会忠实继承旧值**，须同步更新（supervisord environment 或维护窗口内重建）
 
 ## 5. 凭据轮换
 1. 生成新值 → `docker compose -p agentteams-beta up -d`（重建 controller，卷保留）→ provision → MergePilot env 更新重启。注意：up -d 重建即**撤销全部历史 Bearer token**（cli-token 在容器 FS，非卷）——这正是 2026-10-08 泄露 token 处置所用机制；生产入口现经认证代理（`auth-proxy/`），MergePilot 侧凭据为代理入口凭据。上游 `agt rotate` 为免重建候选路径，**未实测前不作标准流程**
