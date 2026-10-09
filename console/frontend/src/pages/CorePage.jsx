@@ -99,7 +99,7 @@ export default function CorePage() {
         error.status === 403 ? (
           // 授权态非故障态：不得渲染为"请求失败"误导用户（2026-10-09 反馈；文案走共享助手口径+本页专属指引）
           <Alert type="warning" showIcon message="无权限查看"
-            description="本页属实例配置面，需要平台管理员角色。当前账号的角色没有查看权限——请切换平台管理员账号，或联系管理员开通。这是权限设计，不是系统故障。" />
+            description="本页属实例配置面，需要平台管理员角色。当前账号的角色没有查看权限——请切换平台管理员账号，或联系管理员开通。这是权限设计，不是系统故障。角色与权限速查见部署文档。" />
         ) : (
           (() => {
             const c = apiErrorCopy(error);

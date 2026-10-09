@@ -93,3 +93,16 @@ Before publishing any release or tag:
 | ID | Description | Severity | Status |
 |---|---|---|---|
 | FG-FB-01 | Staging password in test scripts | P3 | RESOLVED 2026-09-26: password removed from scripts (env-var only), credential rotated, history remediation assessed (Plan A adopted: rotation + tree cleanup, no history rewrite) |
+
+## 角色与权限
+
+系统有 5 种角色（contributor / reviewer / maintainer / auditor / platform_admin），
+按最小权限分配能力。关键设计：
+
+- **platform_admin** 管基础设施（成员/配置/审计），**不能**审批修复或读代码内容
+- **maintainer** 审批高危修复、管理仓库绑定——内容裁定的唯一决策角色
+- **auditor** 只读审计元数据，无仓库/代码/RAG 访问
+- 邀请永不授予 platform_admin（API/认领守卫/数据库 CHECK 三层拒绝）
+- 未授权访问一律 403 + 审计留痕（fail-closed）
+
+完整角色×能力矩阵见源码 authz.mjs 或部署文档 deploy/selfhost/README.md「角色与权限速查」。
