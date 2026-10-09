@@ -1557,7 +1557,7 @@ export async function muApi(req, res, ctx) {
       const fixturesOn = env.MU_FIXTURES === '1';
       if (!fixturesOn) {
       const instRow = (await muPoolQ(
-        `SELECT installation_id FROM mu.repository_binding
+        `SELECT installation_id, github_repo_id FROM mu.repository_binding
           WHERE repo_id=$1 AND tenant_id=$2 AND binding_state='active' LIMIT 1`,
         [pr.repo_id, mu.tenantId])).rows[0] ?? null;
       if (!instRow) return sendJson(res, 409, { error: { reason: 'binding_not_active',
@@ -1565,7 +1565,9 @@ export async function muApi(req, res, ctx) {
       const job = await store.enqueueJob({ tenantId: mu.tenantId, repoId: pr.repo_id,
         prId: pr.pr_id, kind: 'event_sync', requestedBy: null,
         requestedRole: 'maintainer', payload: { event: 'pull_request', action: 'synchronize',
-          head_sha: pr.head_sha, installation_id: Number(instRow.installation_id),
+          head_sha: pr.head_sha, pr_number: Number(pr.provider_pr_number),
+          github_repo_id: Number(instRow.github_repo_id),
+          installation_id: Number(instRow.installation_id),
           delivery_id: `manual-${mu.userId}-${Date.now()}`, trigger_source: 'manual' } });
       await store.audit('MU_REVIEW_REQUESTED', { tenantId: mu.tenantId, actorUserId: mu.userId,
         detail: { pr_id: pr.pr_id, job_id: job.job_id, kind: 'event_sync' } });
