@@ -252,10 +252,16 @@ async function runExternalRound(pool, atMod, atCfg, { run, binding, deps }) {
 
   // 幂等确保四 Agent（controller 资源层）
   const ensured = await atMod.ensureFourAgents(atCfg, { fetchImpl });
-  if (!ensured.ok) return { ok: false, stage: 'at_ensure_failed', reason: ensured.reason };
+  if (!ensured.ok) {
+    await gateAudit('executor_gate_rejected', { reason: ensured.reason, executor_mode: 'at_ensure_failed' });
+    return { ok: false, stage: 'at_ensure_failed', reason: ensured.reason };
+  }
   // 四 worker 绑定源（roomID/matrixUserID——controller 登记）
   const detail = await atMod.listWorkersDetail(atCfg, { fetchImpl });
-  if (!detail.ok) return { ok: false, stage: 'at_workers_detail_failed', reason: detail.reason };
+  if (!detail.ok) {
+    await gateAudit('executor_gate_rejected', { reason: detail.reason, executor_mode: 'at_workers_detail_query_failed' });
+    return { ok: false, stage: 'at_workers_detail_failed', reason: detail.reason };
+  }
   const workers = atMod.AGENTTEAMS_WORKERS;
   const bindings = {};
   // Wave 3.13 runtime readiness：worker phase 非 Running（controller 重启/recreate
@@ -282,7 +288,10 @@ async function runExternalRound(pool, atMod, atCfg, { run, binding, deps }) {
       WHERE run_id=$1 AND severity IN ('P0','P1') ORDER BY severity, created_at LIMIT 20`, [runId]);
   const brief = atMod.sanitizeBrief(fRows.rows);
   const submitted = await atMod.submitExternalRound(atCfg, { runId, findings: fRows.rows, fetchImpl });
-  if (!submitted.ok) return { ok: false, stage: 'at_submit_failed', reason: submitted.reason };
+  if (!submitted.ok) {
+    await gateAudit('at_submit_failed', { reason: submitted.reason });
+    return { ok: false, stage: 'at_submit_failed', reason: submitted.reason };
+  }
   const proj = submitted.project_id;
 
   await transitionRun(pool, { runId, from: ['FIX_QUEUED'], to: 'FIXING' });

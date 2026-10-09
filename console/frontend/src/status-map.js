@@ -174,7 +174,7 @@ const TICKET = {
   USED: { tone: 'neutral', label: '已使用', note: '票据授权已被消费（approval.tickets: USED）' },
   EXPIRED: { tone: 'warn', label: '已过期', note: '票据 TTL 已过期（approval.tickets: EXPIRED）— 需后端重签' },
   STALE: { tone: 'warn', label: '已失效（PR head 已更新）', note: '票据已失效——PR 推进新 head 后，绑定旧 head 的票据作废（approval.tickets: STALE）— 需按新 head 重新审批，不代表修复被拒绝' },
-  CONSUMED: { tone: 'neutral', label: '已消费（修复预演已启动）', note: '票据已消费——P0/P1 票全部批准后进入 DRY_RUN 修复预演（approval.tickets: CONSUMED）— 预演不写 GitHub，不代表修复完成或已合并' },
+  CONSUMED: { tone: 'neutral', label: '已批准并放行修复轮', note: '票据已消费——修复轮已放行（approval.tickets: CONSUMED）— 是否实际执行以「审查管线」面板为准：有 Fixer 行=已执行；无 Fixer 行=轮次未能启动，可在修复入口重试。DRY_RUN 不写 GitHub' },
 };
 const TICKET_ACTION = {
   APPROVE_REMEDIATION: { tone: 'info', label: '批准修复授权', note: '人工批准修复流程（action: APPROVE_REMEDIATION）' },

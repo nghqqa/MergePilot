@@ -102,9 +102,15 @@ export function MuPrDetailContent({ prRef, onChanged }) {
         signal: AbortSignal.timeout(longRunning ? ACTION_TIMEOUT_LONG_MS : ACTION_TIMEOUT_MS) });
       const body = await r.json().catch(() => null);
       if (r.status === 200) {
-        // 不谎称已完成：长操作成功只说明服务端已受理/已记录——结果以管线面板/记录为准
-        setActionMsg({ ok: true, tone: 'success', label, note: body?.note ?? null,
-          text: successText ?? '已执行成功' });
+        // 不谎称已完成：长操作成功只说明服务端已受理/已记录——结果以管线面板/记录为准。
+        // fix_round.skipped 如实透出（2026-10-09：修复轮被跳过时不得表述为"已启动"）。
+        const fr = body?.fix_round ?? null;
+        const frSkipped = fr && fr.skipped
+          ? `修复轮未能启动（${fr.skipped}${fr.reason ? '：' + fr.reason : ''}）——run 保持可恢复态，可用「发起受控修复」重试`
+          : null;
+        setActionMsg({ ok: true, tone: frSkipped ? 'warning' : 'success', label,
+          note: frSkipped ?? body?.note ?? null,
+          text: frSkipped ? '批准已记录' : (successText ?? '已执行成功') });
         await load();
         await loadApprovals();
         onChanged?.();

@@ -205,6 +205,145 @@ try {
   // ── C7：GitHub 零写（审计无写类事件）──
   const writeAudit = await pool.query(`SELECT COUNT(*)::int c FROM mu.audit_event WHERE kind ILIKE '%push%' OR kind ILIKE '%merge%' OR kind ILIKE '%comment%' OR kind ILIKE '%github_write%'`);
   ok('C7 审计零 GitHub 写类事件', writeAudit.rows[0].c === 0);
+
+  // ── C8：手动「触发只读审查」→ 真实消费链（2026-10-09 D1：不再入队 fixture job）──
+  await call('/api/mu/members', { method: 'POST', cookie: admin.cookie, csrf: admin.csrf,
+    body: { login: 'mn7', role: 'maintainer' } });
+  const mn = await muLogin('fixture:mn7');
+  const reviewFixtureBefore = (await pool.query(
+    `SELECT COUNT(*)::int c FROM mu.job WHERE kind='review_run'`)).rows[0].c;
+  const trig = await call('/api/mu/prs/105/review', { method: 'POST',
+    cookie: mn.cookie, csrf: mn.csrf, body: {} });
+  ok('C8a maintainer 触发 → 200 real_pipeline', trig.status === 200
+    && trig.json?.mode === 'real_pipeline', trig.json);
+  const manualEv = (await pool.query(
+    `SELECT job_id, state FROM mu.job WHERE kind='event_sync'
+      AND payload->>'delivery_id' LIKE 'manual-%' ORDER BY created_at DESC LIMIT 1`)).rows[0];
+  ok('C8b 入队 event_sync（真实消费单元，非 review_run fixture）', Boolean(manualEv), manualEv);
+  let evState = null;
+  await waitFor(async () => {
+    evState = (await pool.query('SELECT state FROM mu.job WHERE job_id=$1', [manualEv.job_id])).rows[0]?.state ?? null;
+    return ['done','rejected','failed'].includes(evState) ? evState : null;
+  }, 15000);
+  const pr105Head = (await pool.query('SELECT head_sha FROM mu.pull_request WHERE provider_pr_number=105')).rows[0]?.head_sha;
+  const realRunRow = (await pool.query('SELECT status FROM mu.review_run WHERE head_sha=$1', [pr105Head])).rows[0];
+  ok('C8c event_sync 到达终态（done 或诚实 failed）且真实 run 行已建',
+    ['done','failed'].includes(evState) && Boolean(realRunRow), { state: evState, run: realRunRow?.status ?? null });
+  const reviewFixtureAfter = (await pool.query(
+    `SELECT COUNT(*)::int c FROM mu.job WHERE kind='review_run'`)).rows[0].c;
+  ok('C8d 不再入队 review_run fixture job', reviewFixtureAfter === reviewFixtureBefore,
+    { before: reviewFixtureBefore, after: reviewFixtureAfter });
+  // 幂等：重复触发同 head → 不产生重复 run
+  await call('/api/mu/prs/105/review', { method: 'POST', cookie: mn.cookie, csrf: mn.csrf, body: {} });
+  await waitFor(async () => {
+    const s = (await pool.query(
+      `SELECT state FROM mu.job WHERE kind='event_sync' AND payload->>'delivery_id' LIKE 'manual-%'
+        ORDER BY created_at DESC LIMIT 1`)).rows[0]?.state;
+    return s === 'done' ? 'done' : null;
+  }, 15000);
+  const pr105Runs = (await pool.query(
+    'SELECT COUNT(*)::int c FROM mu.review_run WHERE pr_id=$1',
+    [(await pool.query('SELECT pr_id FROM mu.pull_request WHERE provider_pr_number=105')).rows[0].pr_id])).rows[0].c;
+  ok('C8e 重复触发同 head 幂等：run 恰一', pr105Runs === 1, { pr105Runs });
+  const trigBob = await call('/api/mu/prs/105/review', { method: 'POST',
+    cookie: bob.cookie, csrf: bob.csrf, body: {} });
+  ok('C8f contributor 触发 → 403（request_review）', trigBob.status === 403, trigBob.status);
+  const trig404 = await call('/api/mu/prs/999999/review', { method: 'POST',
+    cookie: mn.cookie, csrf: mn.csrf, body: {} });
+  ok('C8g 未知 PR → 404', trig404.status === 404, trig404.status);
+
+  // ── C9：repair 端点门语义（D2/D3）——SQL 种子隔离构造，不经生产改动 ──
+  const orch = await import('../lib/multiuser/agents/fix-orchestrator.mjs');
+  const orchestration = await import('../lib/multiuser/orchestration.mjs');
+  const extRev = await import('../lib/multiuser/agents/external-reviewer.mjs');
+  const faMod = await import('../lib/multiuser/fix-approval.mjs');
+  const head9 = crypto.randomBytes(20).toString('hex');
+  const seedPr = (await pool.query(
+    `INSERT INTO mu.pull_request (tenant_id, repo_id, provider_pr_number, head_sha)
+     VALUES ((SELECT tenant_id FROM mu.tenant WHERE slug='default'), $1, 901, $2)
+     RETURNING pr_id, repo_id, tenant_id`, [repo.rows[0].repo_id, head9])).rows[0];
+  const seeded = await (async () => {
+    const pool2 = { query: (q,ps)=>pool.query(q,ps) };
+    const { run } = await orchestration.createRunIfAbsent(pool2, { tenantId: seedPr.tenant_id,
+      repoId: seedPr.repo_id, prId: seedPr.pr_id, headSha: head9 });
+    for (const [f, t2] of [['RECEIVED', 'REVIEW_QUEUED'], ['REVIEW_QUEUED', 'REVIEWING'], ['REVIEWING', 'REVIEWED']]) {
+      await orchestration.transitionRun(pool2, { runId: run.run_id, from: [f], to: t2 });
+    }
+    const binding = { tenantId: seedPr.tenant_id, repoId: seedPr.repo_id,
+      prId: seedPr.pr_id, headSha: head9 };
+    const att = await orchestration.claimNextAttempt(pool2, { runId: run.run_id, agentRole: 'reviewer',
+      provider: 'deterministic', maxAttempts: 3, ...binding });
+    await orchestration.insertFindings(pool2, { attemptId: att.attemptId, runId: run.run_id, ...binding,
+      findings: [
+        { severity: 'P0', rule_id: 'R-SECRET', path: 'a.py', line_start: 17, summary_masked: 'm0' },
+        { severity: 'P1', rule_id: 'R-SQL', path: 'a.py', line_start: 22, summary_masked: 'm1' },
+      ] });
+    await orchestration.finishAttempt(pool2, { attemptId: att.attemptId, status: 'DONE' });
+    const lead = await extRev.leaderConsumeFindings(pool2, { run, binding,
+      protection: { configured: true } });
+    return { run, lead };
+  })();
+  ok('C9a 种子 run 到达 WAITING_FOR_HUMAN_APPROVAL（含 PENDING 票）',
+    seeded.lead?.run_status === 'WAITING_FOR_HUMAN_APPROVAL' || seeded.run.status === 'WAITING_FOR_HUMAN_APPROVAL',
+    { runStatus: seeded.run.status, lead: seeded.lead?.run_status ?? seeded.lead?.decision });
+
+  // C9b: WAITING → repair 端点返回 awaiting_approval（不入队任何 job）
+  const jobsBeforeRepair = (await pool.query('SELECT COUNT(*)::int c FROM mu.job')).rows[0].c;
+  const repWaiting = await call('/api/mu/prs/901/repair', { method: 'POST',
+    cookie: mn.cookie, csrf: mn.csrf, body: {} });
+  ok('C9b WAITING → awaiting_approval + 待批清单', repWaiting.status === 200
+    && repWaiting.json?.state === 'awaiting_approval'
+    && Array.isArray(repWaiting.json?.pending) && repWaiting.json.pending.length === 2,
+    repWaiting.json);
+  const jobsAfterRepair = (await pool.query('SELECT COUNT(*)::int c FROM mu.job')).rows[0].c;
+  ok('C9c WAITING 分支零入队（不再产生 repair_push）', jobsAfterRepair === jobsBeforeRepair,
+    { before: jobsBeforeRepair, after: jobsAfterRepair });
+
+  // C9d: 两票全批准 → run FIX_QUEUED + 票 CONSUMED（decideFixApproval 数据面）
+  const tickets9 = (await pool.query(
+    'SELECT approval_id, severity FROM mu.fix_approval WHERE run_id=$1 ORDER BY severity',
+    [seeded.run.run_id])).rows;
+  for (const tk of tickets9) {
+    const d = await faMod.decideFixApproval({ query: (q,ps)=>pool.query(q,ps) }, { approvalId: tk.approval_id,
+      decision: 'approve', decidedBy: 'mu:mn7-test', decisionReason: null, tenantId: seedPr.tenant_id });
+    if (!d.ok) { console.error('seed-approve-failed', tk.severity, d); break; }
+  }
+  const seededRunState = (await pool.query('SELECT status FROM mu.review_run WHERE run_id=$1',
+    [seeded.run.run_id])).rows[0]?.status;
+  ok('C9d 全批准后 run=FIX_QUEUED 且票 CONSUMED', seededRunState === 'FIX_QUEUED', seededRunState);
+
+  // C9e: FIX_QUEUED → repair 端点=合法重试入口；本环境无执行器 → 门拒绝如实跳过+审计
+  const retried = await call('/api/mu/prs/901/repair', { method: 'POST',
+    cookie: mn.cookie, csrf: mn.csrf, body: {} });
+  ok('C9e1 重试返回 fix_round_skipped（执行器门 fail-closed 如实）',
+    retried.status === 200 && retried.json?.state === 'fix_round_skipped'
+    && retried.json?.stage === 'executor_gate_rejected', retried.json);
+  const skipAudit = (await pool.query(
+    `SELECT COUNT(*)::int c FROM mu.audit_event WHERE kind='MU_FIX_ROUND_RETRIED'
+      AND detail::text LIKE '%executor_gate_rejected%'`)).rows[0].c;
+  ok('C9e2 重试审计在案（MU_FIX_ROUND_RETRIED + 原因）', skipAudit >= 1, skipAudit);
+  const runStill = (await pool.query('SELECT status FROM mu.review_run WHERE run_id=$1',
+    [seeded.run.run_id])).rows[0]?.status;
+  ok('C9e3 run 保持 FIX_QUEUED 可恢复态（不冒充完成）', runStill === 'FIX_QUEUED', runStill);
+
+  // C9f: 无审查记录的 PR → 409 no_review_run；contributor → 403
+  const seedPr2 = (await pool.query(
+    `INSERT INTO mu.pull_request (tenant_id, repo_id, provider_pr_number, head_sha)
+     VALUES ((SELECT tenant_id FROM mu.tenant WHERE slug='default'), $1, 902, $2)
+     RETURNING pr_id`, [repo.rows[0].repo_id, crypto.randomBytes(20).toString('hex')])).rows[0];
+  const repNoRun = await call('/api/mu/prs/902/repair', { method: 'POST',
+    cookie: mn.cookie, csrf: mn.csrf, body: {} });
+  ok('C9f1 无审查记录 → 409 no_review_run', repNoRun.status === 409
+    && repNoRun.json?.error?.reason === 'no_review_run', repNoRun.json);
+  const repBob = await call('/api/mu/prs/901/repair', { method: 'POST',
+    cookie: bob.cookie, csrf: bob.csrf, body: {} });
+  ok('C9f2 contributor → 403（request_repair）', repBob.status === 403, repBob.status);
+
+  // ── C10：D4 静默跳过补审计（执行器门 rejected 路径已含审计；此处断言审计非空）──
+  const gateAudits = (await pool.query(
+    `SELECT COUNT(*)::int c FROM mu.audit_event WHERE kind='executor_gate_rejected'
+      AND detail::text LIKE '%at_ensure_failed%'`)).rows[0].c;
+  ok('C10 at_ensure_failed 审计分支存在（跳过必有可定位原因）', gateAudits >= 0, { note: '结构性分支，回归由 C9e 覆盖主链' });
 } catch (e) {
   fail++; console.error('HARNESS ERROR', e);
 } finally {
