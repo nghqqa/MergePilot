@@ -177,6 +177,14 @@ export async function createMuStore({ pool, env = process.env, migrations = MU_M
         WHERE i.provider=$1 AND i.subject=$2 AND u.state='active'`, [provider, subject]);
     return r.rows[0] ?? null;
   }
+  // 账号绑定面：列出用户全部外部身份（provider + subject——subject 即稳定标识，
+  // 无秘密；前端仅展示 provider 与尾号）。
+  async function listIdentitiesOfUser(userId) {
+    const r = await q(
+      `SELECT provider, subject, created_at FROM mu.external_identity
+        WHERE user_id=$1 ORDER BY created_at`, [userId]);
+    return r.rows;
+  }
 
   async function ensureMembership({ tenantId, userId, role, grantedBy = null }) {
     const r = await q(
@@ -454,11 +462,12 @@ export async function createMuStore({ pool, env = process.env, migrations = MU_M
   // ── Beta Identity Wave 2A：OAuth flow / 持久会话 / 邀请（全部摘要存储） ──
   const sha256Of = (v) => crypto.createHash('sha256').update(String(v)).digest('hex');
 
-  async function insertOAuthFlow({ stateHash, corrHash = null, inviteId = null, ttlMs = 10 * 60_000 }) {
+  async function insertOAuthFlow({ stateHash, corrHash = null, inviteId = null, ttlMs = 10 * 60_000,
+    provider = 'github-oauth', purpose = 'oauth_login', bindUserId = null }) {
     const r = await q(
-      `INSERT INTO mu.oauth_flow (state_hash, corr_hash, invite_id, expires_at)
-       VALUES ($1,$2,$3, now() + ($4 || ' milliseconds')::interval) RETURNING *`,
-      [stateHash, corrHash, inviteId, String(ttlMs)]);
+      `INSERT INTO mu.oauth_flow (state_hash, corr_hash, invite_id, expires_at, provider, purpose, bind_user_id)
+       VALUES ($1,$2,$3, now() + ($4 || ' milliseconds')::interval, $5, $6, $7) RETURNING *`,
+      [stateHash, corrHash, inviteId, String(ttlMs), provider, purpose, bindUserId]);
     return r.rows[0];
   }
   // 单次消费：consumed_at CAS——0 行=不存在/已消费/已过期
@@ -467,6 +476,12 @@ export async function createMuStore({ pool, env = process.env, migrations = MU_M
       `UPDATE mu.oauth_flow SET consumed_at = now()
         WHERE state_hash=$1 AND consumed_at IS NULL AND expires_at > now()
        RETURNING *`, [stateHash]);
+    return r.rows[0] ?? null;
+  }
+  // 只读窥探（不消费）——回调端按 flow.purpose 分流后再 CAS 消费（一次）。
+  // Gitee 回调共用入口同时承接登录流与绑定流；直接按用途消费会烧错 state。
+  async function peekOAuthFlow(stateHash) {
+    const r = await q(`SELECT * FROM mu.oauth_flow WHERE state_hash=$1`, [stateHash]);
     return r.rows[0] ?? null;
   }
 
@@ -799,7 +814,7 @@ export async function createMuStore({ pool, env = process.env, migrations = MU_M
     initSchema, bootstrap, audit,
     ensureTenant, getTenantBySlug, getTenant,
     ensureUser, getUser, getUserByLogin,
-    ensureIdentity, getUserByIdentity,
+    ensureIdentity, getUserByIdentity, listIdentitiesOfUser,
     ensureMembership, getMembership, revokeMembership, listMembers, listMembershipsOfUser,
     ensureRepository, resolveRepository, listRepositories,
     ensureBinding, getBindingForRepo, revokeBinding,
@@ -807,7 +822,7 @@ export async function createMuStore({ pool, env = process.env, migrations = MU_M
     insertReviewRecord, listReviewRecords,
     enqueueJob, listJobs, claimNextJob, finishJob, requeueOrphanedJobs, rejectStaleManualJobs,
     listAudit, auditPlatform,
-    insertOAuthFlow, consumeOAuthFlow,
+    insertOAuthFlow, consumeOAuthFlow, peekOAuthFlow,
     createSession, findSessionByToken, rotateSession, revokeSessionByToken, revokeAllSessionsForUser,
     createInvitation, listInvitations, getInvitation, findClaimableInvitation, findClaimableInvitationsAll, claimInvitation,
     upsertInstallation, getInstallation, listInstallations, setInstallationState,

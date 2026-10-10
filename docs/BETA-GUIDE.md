@@ -159,6 +159,25 @@ MU_GITHUB_OAUTH_CLIENT_SECRET=<OAuth App client_secret>
 MU_GITHUB_OAUTH_CALLBACK_URL=http://<你的地址>/api/mu/auth/oauth/github/callback
 ```
 
+### Gitee OAuth 登录（可选——Wave-Gitee）
+
+与 GitHub OAuth 同构的 authorization-code 流程（`gitee-oauth:<数字id>` 身份前缀，与
+GitHub 身份空间隔离不互认）。三项任一缺失 → `providers.gitee.configured:false`，
+登录页不渲染 Gitee 入口（fail-closed）：
+
+```bash
+MU_GITEE_OAUTH_CLIENT_ID=<Gitee OAuth 应用 Client ID>
+MU_GITEE_OAUTH_CLIENT_SECRET=<Gitee OAuth 应用 Client Secret>
+MU_GITEE_OAUTH_CALLBACK_URL=http://<你的地址>/api/mu/auth/oauth/gitee/callback
+```
+
+Gitee 应用创建：gitee.com → 设置 → 第三方应用 → 创建应用；授权回调地址填上面的
+`MU_GITEE_OAUTH_CALLBACK_URL`，scope 使用 `user_info`（仅读数字 id 与 login）。
+受邀成员若绑定 Gitee 身份，邀请的 `expected_subject` 须为 `gitee-oauth:<数字id>`
+（邀请管理面板提供 GitHub/Gitee 平台选择）；受邀者从登录页 Gitee 入口进入。
+已有账号绑定 Gitee 身份：设置页 → 账号绑定 → 绑定 Gitee 账号（完整 Gitee 授权；
+仅增一条登录路径，租户/成员关系/审批能力不变）。
+
 ### 会话与安全（可选覆盖）
 
 ```bash
