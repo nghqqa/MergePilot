@@ -1493,6 +1493,23 @@ export const MU_MIGRATIONS = [
     `UPDATE mu.repository SET forge_instance_id = 'github-com' WHERE forge_instance_id IS NULL`,
     ],
   },
+
+  // ── v25 审查上下文冻结列（Gitee 审查纠偏轮：completeness/来源/head 随 run 冻结）──
+  // 纯 additive 三列：审查完成时一次性写入（IS NULL 防幂等重放覆盖）；
+  //  * context_completeness：JSON 文本（三态+file_level+notes，ADR-003 §2.2 形状）
+  //  * context_source：'gitee' | 'github'（数据来源平台——审批票/详情如实呈现）
+  //  * context_head_frozen：审查实际使用的 head sha（与 run.head_sha 双记录，供核对）
+  // 票面与详情读取这三列做范围声明呈现——不写入即显示"未记录"（不伪造）。
+  // 回滚：ALTER TABLE mu.review_run DROP COLUMN IF EXISTS ...（三列均无旧依赖）
+  {
+    version: 25,
+    name: 'mu_review_run_context_freeze',
+    sql: [
+      `ALTER TABLE mu.review_run ADD COLUMN IF NOT EXISTS context_completeness TEXT`,
+      `ALTER TABLE mu.review_run ADD COLUMN IF NOT EXISTS context_source TEXT`,
+      `ALTER TABLE mu.review_run ADD COLUMN IF NOT EXISTS context_head_frozen TEXT`,
+    ],
+  },
 ];
 
 export const MU_SCHEMA_LATEST = MU_MIGRATIONS[MU_MIGRATIONS.length - 1].version;

@@ -207,16 +207,38 @@ export function createGiteeAdapter({ env = process.env, fetchImpl = fetch, crede
    * 返回形状与 review-service 现有 context 契约对齐（diff/checks/protection/limits 键），
    * 附加 completeness/files 键——规则链与管线零改动复用。
    */
-  async function fetchChangeContext({ providerRepoId, crKey, expectedHeadSha, declaredFileCount = null }) {
-    const cr = await getChangeRequest({ providerRepoId, crKey });
-    if (expectedHeadSha && cr.head_sha && cr.head_sha.toLowerCase() !== String(expectedHeadSha).toLowerCase()) {
-      throw new GiteeProviderError('gitee_head_moved', { endpoint: `/repos/${providerRepoId}/pulls/${crKey}` });
+  /**
+   * 上下文读取（审查与修复共用）。v2 纠偏：
+   *  * repoPath（owner/name，仅定位）与 nativeRepoId（DB 登记的稳定数字 id）分离——
+   *    先 GET /repos/{repoPath} 核验 id 归属，不一致 → gitee_repo_moved（仓库改名后
+   *    旧路径可能命中同名新仓库，禁止误读）；
+   *  * head 双读：取 files 前后各一次 getChangeRequest，分页期间推进 → gitee_head_moved；
+   *  * declared 自证：末页不满 per_page 且未触平台上限 → 平台全量已取得（declared=
+   *    returned）；满页/触上限 → 平台总数不可得 → partial('file_count_limit')——
+   *    **不依赖 webhook 声明才能定完整**（webhook declared 仅作交叉核验）；
+   *  * local_limit_hit 接真值（diff_bytes>1MiB / 单文件 patch>512KiB / files>300）；
+   *  * 含空白字符的路径不拼入 diff（parseDiff 的 diff --git 行按空白分列，无法安全
+   *    表达）——该文件 patch_status='unparsed_path'，completeness partial 如实标注。
+   * 缺失 patch（missing）≠ 无发现：partial 上下文照常审查，范围声明随 run 冻结呈现。
+   */
+  async function fetchChangeContext({ repoPath, nativeRepoId, crKey, expectedHeadSha, declaredFileCount = null }) {
+    // 0) 仓库归属核验（稳定 id ↔ 当前路径）
+    const repoProbe = await giteeGet(`/repos/${repoPath}`);
+    const probedId = repoProbe.body?.id;
+    if (nativeRepoId != null && probedId != null && String(probedId) !== String(nativeRepoId)) {
+      throw new GiteeProviderError('gitee_repo_moved', { endpoint: `/repos/${repoPath}` });
     }
-    // 分页拉全量 files（平台 300 条上限先于本地限额触发）
+    // 1) head 首读
+    const cr = await getChangeRequest({ providerRepoId: repoPath, crKey });
+    if (expectedHeadSha && cr.head_sha && cr.head_sha.toLowerCase() !== String(expectedHeadSha).toLowerCase()) {
+      throw new GiteeProviderError('gitee_head_moved', { endpoint: `/repos/${repoPath}/pulls/${crKey}` });
+    }
+    // 2) 分页拉全量 files（平台 300 条上限先于本地限额触发）
     const files = [];
     let platformFileLimitHit = false;
-    for (let page = 1; page <= 4; page++) { // 4×100=400>300：一页冗余兜底，防御平台上限放宽
-      const { body } = await giteeGet(`/repos/${providerRepoId}/pulls/${encodeURIComponent(crKey)}/files`,
+    let allFetched = false; // 末页不满 per_page 且未触上限 → 平台全量已取得
+    for (let page = 1; page <= 4; page++) { // 4×100=400>300：一页冗余兜底
+      const { body } = await giteeGet(`/repos/${repoPath}/pulls/${encodeURIComponent(crKey)}/files`,
         { searchParams: { page, per_page: PER_PAGE_MAX } });
       const batch = Array.isArray(body) ? body : [];
       for (const entry of batch) {
@@ -224,50 +246,67 @@ export function createGiteeAdapter({ env = process.env, fetchImpl = fetch, crede
         if (f.path) files.push(f);
       }
       if (files.length >= FILES_PLATFORM_LIMIT) { platformFileLimitHit = true; break; }
-      if (batch.length < PER_PAGE_MAX) break;
+      if (batch.length < PER_PAGE_MAX) { allFetched = true; break; }
+    }
+    // 3) head 复读（分页期间推进 → 明确失败，绝不把半程上下文当全量）
+    const cr2 = await getChangeRequest({ providerRepoId: repoPath, crKey });
+    if (cr2.head_sha !== cr.head_sha) {
+      throw new GiteeProviderError('gitee_head_moved', { endpoint: `/repos/${repoPath}/pulls/${crKey}` });
     }
     const returned = files.length;
-    const declared = Number.isInteger(declaredFileCount) && declaredFileCount >= 0 ? declaredFileCount : null;
+    const declaredFromWebhook = Number.isInteger(declaredFileCount) && declaredFileCount >= 0 ? declaredFileCount : null;
+    // declared：全量自证优先；webhook 声明仅交叉核验
+    const declared = allFetched ? returned : declaredFromWebhook;
+    // 空白路径防护（parseDiff 不安全）——拼接前剔除并标注
+    const unparsable = files.filter((f) => /\s/.test(f.path));
+    for (const f of unparsable) f.patch_status = 'unparsed_path';
     const missingPatch = files.filter((f) => f.patch_status !== 'present');
+    const diff = assembleUnifiedDiff(files);
+    const diffBytes = Buffer.byteLength(diff);
+    const localFileBytesHit = files.some((f) => Buffer.byteLength(f.patch ?? '') > 512 * 1024);
+    const localDiffBytesHit = diffBytes > 1024 * 1024; // 与 ghprovider GH_LIMITS.maxDiffBytes 同额
+    const localFileCountHit = files.length > FILES_PLATFORM_LIMIT;
+    const limits = { diff_bytes: diffBytes, over_diff_limit: localDiffBytesHit, over_file_limit: localFileCountHit };
+    // 4) completeness 三态判定（unknown 仅限 head 形状漂移这类无法核验的场景）
     let completeness;
-    if (declared == null || !cr.head_sha) {
+    const fileLevel = missingPatch.map((f) => ({ path: f.path, patch_status: f.patch_status }));
+    if (!cr.head_sha) {
       completeness = { status: 'unknown', declared_file_count: declared, returned_file_count: returned,
         platform_limit_hit: { file_count: platformFileLimitHit, commit_count: false },
-        local_limit_hit: { diff_bytes: false, file_bytes: false, file_count: false },
-        file_level: missingPatch.map((f) => ({ path: f.path, patch_status: f.patch_status })),
-        notes: declared == null ? 'declared_file_count_unavailable' : 'head_sha_unavailable' };
-    } else if (platformFileLimitHit || returned < declared || missingPatch.length > 0) {
+        local_limit_hit: { diff_bytes: localDiffBytesHit, file_bytes: localFileBytesHit, file_count: localFileCountHit },
+        file_level: fileLevel, notes: 'head_sha_unavailable' };
+    } else if (platformFileLimitHit || !allFetched || (declaredFromWebhook != null && returned < declaredFromWebhook)
+      || missingPatch.length > 0 || localDiffBytesHit || localFileCountHit) {
       completeness = { status: 'partial', declared_file_count: declared, returned_file_count: returned,
         platform_limit_hit: { file_count: platformFileLimitHit, commit_count: false },
-        local_limit_hit: { diff_bytes: false, file_bytes: false, file_count: false },
-        file_level: missingPatch.map((f) => ({ path: f.path, patch_status: f.patch_status })),
+        local_limit_hit: { diff_bytes: localDiffBytesHit, file_bytes: localFileBytesHit, file_count: localFileCountHit },
+        file_level: fileLevel,
         notes: platformFileLimitHit ? 'platform_file_count_limit'
-          : returned < declared ? 'returned_less_than_declared' : 'files_missing_patch' };
+          : !allFetched ? 'file_count_limit'
+          : declaredFromWebhook != null && returned < declaredFromWebhook ? 'returned_less_than_declared'
+          : missingPatch.length > 0 ? 'files_missing_patch'
+          : localDiffBytesHit || localFileCountHit ? 'local_limit' : null };
     } else {
-      // complete = 平台返回了其声明的全部文件且各文件携带 patch；**不构成单文件 patch
-      // 内部未被平台静默截断的证明**（Gitee 无逐文件完整性标注——文档缺位不得反推保证）。
+      // complete = 分页自证取得平台全量且各文件携带 patch；**不构成单文件 patch 内部
+      // 未被平台静默截断的证明**（Gitee 无逐文件完整性标注——文档缺位不得反推保证）。
       completeness = { status: 'complete', declared_file_count: declared, returned_file_count: returned,
         platform_limit_hit: { file_count: false, commit_count: false },
         local_limit_hit: { diff_bytes: false, file_bytes: false, file_count: false },
         file_level: [], notes: null };
     }
-    const diff = assembleUnifiedDiff(files);
-    const diffBytes = Buffer.byteLength(diff);
-    const overDiffLimit = diffBytes > 1024 * 1024; // 与 ghprovider GH_LIMITS.maxDiffBytes 同额
-    const overFileLimit = files.length > 300;
     return {
       stale_head: false,
       pr: { number: Number(cr.cr_key) || Number(crKey), state: cr.state, title: cr.title ?? '',
-        head: { sha: cr.head_sha, ref: null }, base: { sha: cr.base_sha, ref: null },
+        head: { sha: cr2.head_sha, ref: null }, base: { sha: cr2.base_sha, ref: null },
         changed_files: declared ?? returned },
       diff,
       checks: [], // 本接入未提供该平台检查读取（零调用；不伪装 check run）
       protection: { configured: false, provided: false, reason: 'not_provided_in_this_release' },
-      limits: { diff_bytes: diffBytes, over_diff_limit: overDiffLimit, over_file_limit: overFileLimit },
+      limits,
       completeness,
       files,
-      fetched_head_sha: cr.head_sha,
-      source_is_fork: cr.source_is_fork,
+      fetched_head_sha: cr2.head_sha,
+      source_is_fork: cr2.source_is_fork,
     };
   }
 
@@ -288,59 +327,78 @@ export function createGiteeAdapter({ env = process.env, fetchImpl = fetch, crede
 }
 
 // ── webhook 验真（独立于适配器实例：入口层用；连接显式单模式，禁止降级/择一）────
-// 依据：官方算法 HmacSHA256(timestamp + "\n" + secret) → Base64 → urlEncode（UTF-8），
-// 误差窗口 1 小时【官方✓】。⚠️ 官方对"携带方式"（X-Gitee-Token 头 vs payload 顶层
-// timestamp/sign 字段）存在文档内部不一致【官方✓ 的事实】——两分支都实现，但**只有
-// env 显式配置的模式被启用**；未配置 → 端点整体 503 not_configured（不猜测不降级）。
-//
-// 完整性边界（ADR-003 §2.5）：签名输入不含请求体——验真通过≠body 未被篡改。
-// 缓解=传输层 HTTPS + delivery_ref(含 body sha256) 幂等 + timestamp 窗口校验。
+// 官方算法（v2 修正）：待签字符串 = timestamp、LF（转义 \n）、密钥 三段拼接，
+// HmacSHA256(key=密钥) → Base64 → urlEncode（UTF-8），误差窗口 1 小时
+// 【官方✓ help.gitee.com/webhook/how-to-verify-webhook-keys】。
+// ⚠️ v1 实现缺陷（审查纠偏已修）：待签消息漏了 secret 段——独立向量（python hmac 独立
+// 计算）证实旧公式输出与官方算法不一致，已按官方原文修正并加防退化向量断言。
+// 来源与编码【显式配置，不自动回退/混合】：
+//   * signSource 'header'（默认）| 'body'——timestamp/sign 从配置声明的单一来源取；
+//     另一来源同时携带完整对且不一致 → 'sign_source_conflict' 拒绝（防混源错配）；
+//   * signEncoding 'url_b64'（默认，官方三步）| 'b64'——由试点实测收敛后固定。
+// 完整性边界（ADR-003 §2.5）：签名输入不含请求体——验真通过≠body 未被篡改；
+// 消费链以受保护 API 重新核验仓库/PR/head（G-3 纪律），缓解=HTTPS+delivery_ref 幂等+窗口。
 import { timingSafeEqual } from 'node:crypto';
 
 const SIGN_WINDOW_MS = 60 * 60 * 1000; // 官方：误差不超过 1 小时
 
-function b64UrlEncode(buf) {
-  // urlEncode(base64)：'+'→%2B、'/'→%2F、'='→%3D（钉钉系算法惯例；精确形态以试点实测回填）
-  return Buffer.from(buf).toString('base64')
-    .replace(/\+/g, '%2B').replace(/\//g, '%2F').replace(/=/g, '%3D');
+export const GITEE_SIGN_SOURCES = ['header', 'body'];
+export const GITEE_SIGN_ENCODINGS = ['url_b64', 'b64'];
+
+function urlEncodeB64(b64) {
+  // urlEncode(base64)：'+'→%2B、'/'→%2F、'='→%3D（钉钉系惯例；精确形态以试点实测回填）
+  return String(b64).replace(/\+/g, '%2B').replace(/\//g, '%2F').replace(/=/g, '%3D');
 }
 
 /**
  * 验真入口（有界解析在外层完成——本函数只接收已提取字段，不做 JSON.parse）。
- * @param {object} p { mode:'signature'|'password', secret, headers, rawBody, extracted }
- *   extracted = { tokenHeader, tsHeader, bodyTimestamp, bodySign } —— 外层以有界方式提取。
+ * @param {object} p { mode:'signature'|'password', secret, extracted, signSource, signEncoding, nowMs }
+ *   extracted = { tokenHeader, tsHeader, bodyTimestamp, bodySign }——外层以有界方式提取。
+ *   nowMs 仅测试注入（独立向量定窗）；生产缺省 Date.now()。
  * @returns {ok:true} | {ok:false, reason}
  */
-export function verifyGiteeWebhook({ mode, secret, headers, rawBody, extracted }) {
+export function verifyGiteeWebhook({ mode, secret, extracted, signSource = 'header', signEncoding = 'url_b64', nowMs = null }) {
   if (mode !== 'signature' && mode !== 'password') return { ok: false, reason: 'mode_invalid' };
-  const secretBuf = Buffer.from(String(secret ?? ''), 'utf8');
+  if (!GITEE_SIGN_SOURCES.includes(signSource)) return { ok: false, reason: 'sign_source_invalid' };
+  if (!GITEE_SIGN_ENCODINGS.includes(signEncoding)) return { ok: false, reason: 'sign_encoding_invalid' };
+  const secretStr = String(secret ?? '');
+  const secretBuf = Buffer.from(secretStr, 'utf8');
   if (!secretBuf.length) return { ok: false, reason: 'secret_missing' };
 
   if (mode === 'password') {
+    // X-Gitee-Token=密码——官方格式文档明确【官方✓】；常量时间比较
     const token = String(extracted?.tokenHeader ?? '');
     if (!token) return { ok: false, reason: 'token_missing' };
     const a = Buffer.from(token, 'utf8');
-    const b = Buffer.from(String(secret), 'utf8');
+    const b = Buffer.from(secretStr, 'utf8');
     return a.length === b.length && timingSafeEqual(a, b)
       ? { ok: true } : { ok: false, reason: 'password_mismatch' };
   }
 
-  // signature 模式：timestamp 来源优先 header，回退 body 顶层（试点定主导后收敛为单源）
-  const ts = String(extracted?.tsHeader ?? extracted?.bodyTimestamp ?? '');
-  const sign = String(extracted?.tokenHeader ?? extracted?.bodySign ?? '');
+  // signature：单源取值（配置声明，不回退）；另一来源完整对且不一致 → 冲突拒绝
+  const primary = signSource === 'header'
+    ? { ts: extracted?.tsHeader, sign: extracted?.tokenHeader,
+        otherTs: extracted?.bodyTimestamp, otherSign: extracted?.bodySign }
+    : { ts: extracted?.bodyTimestamp, sign: extracted?.bodySign,
+        otherTs: extracted?.tsHeader, otherSign: extracted?.tokenHeader };
+  const ts = String(primary.ts ?? '');
+  const sign = String(primary.sign ?? '');
   if (!ts || !sign) return { ok: false, reason: 'signature_fields_missing' };
+  const oTs = String(primary.otherTs ?? '');
+  const oSign = String(primary.otherSign ?? '');
+  if (oTs && oSign && (oTs !== ts || oSign !== sign)) return { ok: false, reason: 'sign_source_conflict' };
   const tsNum = Number(ts);
-  if (!Number.isFinite(tsNum)) return { ok: false, reason: 'timestamp_invalid' };
-  if (Math.abs(Date.now() - tsNum) > SIGN_WINDOW_MS) return { ok: false, reason: 'timestamp_out_of_window' };
-  const expected = crypto.createHmac('sha256', secretBuf)
-    .update(`${ts}\n`, 'utf8').digest('base64');
+  if (!Number.isFinite(tsNum) || tsNum <= 0) return { ok: false, reason: 'timestamp_invalid' };
+  const now = Number.isFinite(nowMs) ? nowMs : Date.now();
+  if (Math.abs(now - tsNum) > SIGN_WINDOW_MS) return { ok: false, reason: 'timestamp_out_of_window' };
+  // 官方三步：msg = timestamp、LF、secret 三段拼接（key=secret）→ Base64 →（按配置）urlEncode
+  const digestB64 = crypto.createHmac('sha256', secretBuf)
+    .update(ts + '\n' + secretStr, 'utf8').digest('base64');
+  const expected = signEncoding === 'url_b64' ? urlEncodeB64(digestB64) : digestB64;
   const a = Buffer.from(sign, 'utf8');
   const b = Buffer.from(expected, 'utf8');
-  const aUrl = Buffer.from(b64UrlEncode(expected), 'utf8');
-  // 接受 raw base64 与 urlEncode(base64) 两种形态（官方文档不一致的两侧；试点定主导后收敛）
-  const match = (a.length === b.length && timingSafeEqual(a, b))
-    || (a.length === aUrl.length && timingSafeEqual(a, aUrl));
-  return match ? { ok: true } : { ok: false, reason: 'signature_mismatch' };
+  return a.length === b.length && timingSafeEqual(a, b)
+    ? { ok: true } : { ok: false, reason: 'signature_mismatch' };
 }
 
 export const GITEE_LIMITS = { PER_PAGE_MAX, FILES_PLATFORM_LIMIT, COMMITS_PLATFORM_LIMIT };
