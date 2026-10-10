@@ -16,6 +16,8 @@ import { createRunIfAbsent, transitionRun, claimNextAttempt, finishAttempt,
   insertFindings, recordDecision, moveToDeadLetter, getRun, digestOf } from './orchestration.mjs';
 import { fetchPrContext } from './ghprovider.mjs';
 import { reviewDiff, RULES_VERSION } from './reviewer-rules.mjs';
+import { validateForgeEventV1 } from './forge/index.mjs';
+import { createGiteeAdapter } from './forge/gitee.mjs';
 
 export const REVIEW_SERVICE_VERSION = 'prb-v1';
 const MAX_REVIEW_ATTEMPTS = 2;
@@ -45,19 +47,72 @@ export async function resolveServiceContext(pool, { githubRepoId, tenantId = nul
 }
 
 /**
+ * Forge 服务链解析（v1 gitee）：provider_repo_id → active 连接 + 仓库行 + pr 行。
+ * 授权面完全来自 DB（连接状态=valid、租户/仓库归属）——payload 的 connection_id/
+ * tenant_id 不参与定位（消费者信任服务端解析，不信任事件自报身份）。
+ */
+export async function resolveForgeServiceContext(pool, { forgeKind, providerRepoId, prNumber,
+  instanceId = 'gitee-cloud' }) {
+  const b = await pool.query(
+    `SELECT fc.connection_id, fc.status, fc.revoked_at, fc.tenant_id,
+            rep.repo_id, rep.owner, rep.name
+       FROM mu.forge_connection fc
+       JOIN mu.repository rep ON rep.tenant_id = fc.tenant_id
+            AND rep.forge_instance_id = fc.instance_id AND rep.provider_repo_id = $2
+      WHERE fc.instance_id = $1 AND fc.status = 'valid' AND fc.revoked_at IS NULL
+        AND rep.provider = $3
+      LIMIT 1`,
+    [instanceId, String(providerRepoId), forgeKind]);
+  const row = b.rows[0];
+  if (!row) return { ok: false, reason: 'forge_binding_not_found' };
+  const pr = await pool.query(
+    `SELECT p.pr_id FROM mu.pull_request p
+      WHERE p.tenant_id = $1 AND p.repo_id = $2 AND p.provider_pr_number = $3
+      ORDER BY p.updated_at DESC LIMIT 1`,
+    [row.tenant_id, row.repo_id, Number(prNumber)]);
+  if (!pr.rows.length) return { ok: false, reason: 'pr_snapshot_missing' };
+  return { ok: true, tenantId: row.tenant_id, repoId: row.repo_id, prId: pr.rows[0].pr_id,
+    owner: row.owner, name: row.name, connectionId: row.connection_id, forgeKind };
+}
+
+/**
  * 核心：处理 pull_request 事件（opened/synchronize/reopened 等价；action 仅记档）。
- * 返回 {ok, run, attempt?, findings_count?, reason?}；所有失败路径零副作用残留
- * （run 可能已创建——重复触发幂等复用；BLOCKED 为终性半态，人工处理后可关）。
+ * 双读分发：payload.schema_version=1 → Forge v1（首版 gitee）；无 schema_version →
+ * legacy GitHub 原样（行为不变）。返回 {ok, run, attempt?, findings_count?, completeness?, reason?}；
+ * 所有失败路径零副作用残留（run 可能已创建——重复触发幂等复用；BLOCKED 为终性半态，
+ * 人工处理后可关）。
  */
 export async function handlePullRequestEvent(pool, cfg, { payload, servicePrincipal = 'system:webhook' }) {
-  const headSha = String(payload.head_sha ?? '');
-  const prNumber = Number(payload.pr_number ?? 0);
-  const githubRepoId = Number(payload.github_repo_id ?? 0);
-  const action = String(payload.action ?? '');
-  if (!headSha || !prNumber || !githubRepoId) return { ok: false, reason: 'payload_invalid' };
-
-  const ctx = await resolveServiceContext(pool, { githubRepoId, prNumber });
-  if (!ctx.ok) return { ok: false, reason: ctx.reason };
+  const isForgeV1 = Number(payload?.schema_version ?? 0) === 1;
+  let headSha, prNumber, ctx, fetchContext;
+  if (isForgeV1) {
+    // ── Forge v1（gitee）：消费前契约校验（与入队前同一校验器，#389 教训）──
+    const vv = validateForgeEventV1(payload);
+    if (!vv.ok) return { ok: false, reason: vv.reason, field: vv.field };
+    headSha = String(payload.head_sha);
+    prNumber = Number(payload.pr_number);
+    ctx = await resolveForgeServiceContext(pool, {
+      forgeKind: String(payload.forge_kind), providerRepoId: String(payload.provider_repo_id), prNumber });
+    if (!ctx.ok) return { ok: false, reason: ctx.reason };
+    // 上下文获取：ForgeAdapter（可注入 cfg.forgeAdapter；默认 env 装配 Gitee 适配器）。
+    // GiteeAdapter 返回形状对齐 legacy context 契约（diff/checks/protection/limits），
+    // 附加 completeness/files——管线零改动复用。
+    const adapter = cfg.forgeAdapter
+      ?? createGiteeAdapter({ env: cfg.llmEnv ?? process.env, credentialRef: 'env:MU_GITEE_PAT' });
+    fetchContext = async () => adapter.fetchChangeContext({
+      providerRepoId: `${ctx.owner}/${ctx.name}`, crKey: String(prNumber),
+      expectedHeadSha: headSha, declaredFileCount: payload.declared_file_count ?? null });
+  } else {
+    // ── legacy GitHub：字段提取与校验原样（契约不变）──
+    headSha = String(payload.head_sha ?? '');
+    prNumber = Number(payload.pr_number ?? 0);
+    const githubRepoId = Number(payload.github_repo_id ?? 0);
+    if (!headSha || !prNumber || !githubRepoId) return { ok: false, reason: 'payload_invalid' };
+    ctx = await resolveServiceContext(pool, { githubRepoId, prNumber });
+    if (!ctx.ok) return { ok: false, reason: ctx.reason };
+    fetchContext = () => fetchPrContext(cfg, { installationId: ctx.installationId,
+      owner: ctx.owner, repo: ctx.name, prNumber, expectedHeadSha: headSha });
+  }
 
   // ── Wave 3.2：策略解析（创建时一次，随后冻结为 run 快照；运行中不受策略更新影响）──
   const { getAgentPolicy, resolveEffectiveLlmPolicy } = await import('./agent-policy.mjs');
@@ -101,8 +156,7 @@ export async function handlePullRequestEvent(pool, cfg, { payload, servicePrinci
     const started = Date.now();
     let context;
     try {
-      context = await fetchPrContext(cfg, { installationId: ctx.installationId,
-        owner: ctx.owner, repo: ctx.name, prNumber, expectedHeadSha: headSha });
+      context = await fetchContext();
     } catch (e) {
       lastErr = `provider_${String(e?.message ?? e).slice(0, 60)}`;
       await finishAttempt(pool, { attemptId: claim.attemptId, status: 'FAILED',
@@ -254,7 +308,8 @@ export async function handlePullRequestEvent(pool, cfg, { payload, servicePrinci
       llm_code: llmCode ?? (effLlm.kind === 'disabled'
         && ['LLM_POLICY_ENV_MISMATCH', 'LLM_POLICY_MODEL_NOT_ALLOWED'].includes(effLlm.reason)
         ? effLlm.reason : null), // 策略想开但开不成：如实透出（不误报 LLM 已执行）
-      stale_head: false, protection: context.protection ?? null };
+      stale_head: false, protection: context.protection ?? null,
+      completeness: context.completeness ?? null };
   }
 
   // 重试耗尽 → 死信 + BLOCKED（fail-closed：无输入不放行）

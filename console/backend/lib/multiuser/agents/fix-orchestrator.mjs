@@ -129,10 +129,14 @@ export async function fixVerifyRound(pool, { run, binding, deps }) {
         finding ? 'forbidden_zone' : 'no_actionable_finding', `attempt:${fixClaim.attemptId}`]);
   } else {
     // 重新拉 diff（内存流：raw 行 → fixer stdin；不落库）
+    // 上下文获取可注入（Gitee 首版 G-3）：deps.fetchContextFn({prNumber, expectedHeadSha}) →
+    // context（形状对齐 ghprovider：stale_head/diff）。缺省=GitHub legacy 原样。
+    const fetchCtx = deps.fetchContextFn
+      ?? ((o) => fetchPrContext(deps.providerCfg, { installationId: deps.installationId,
+        owner: deps.owner, repo: deps.repoName, prNumber: deps.prNumber, ...o }));
     let rawLine = null;
     try {
-      const ctx = await fetchPrContext(deps.providerCfg, { installationId: deps.installationId,
-        owner: deps.owner, repo: deps.repoName, prNumber: deps.prNumber, expectedHeadSha: headSha });
+      const ctx = await fetchCtx({ prNumber: deps.prNumber, expectedHeadSha: headSha });
       if (ctx.stale_head) throw new Error('stale_head');
       const files = parseDiff(ctx.diff);
       const f = files.find((x) => x.path === finding.path && x.added.some((l) => l.line === finding.line_start));
@@ -187,9 +191,11 @@ export async function fixVerifyRound(pool, { run, binding, deps }) {
         WHERE run_id=$1 AND severity IN ('P0','P1') ORDER BY severity, created_at LIMIT 1`, [runId]);
     const fd = fRows2.rows[0];
     let rawLine2 = null;
-    const ctx2 = await fetchPrContext(deps.providerCfg, { installationId: deps.installationId,
-      owner: deps.owner, repo: deps.repoName, prNumber: deps.prNumber, expectedHeadSha: headSha })
-      .catch(() => null);
+    const ctx2 = await (deps.fetchContextFn
+      ? deps.fetchContextFn({ prNumber: deps.prNumber, expectedHeadSha: headSha }).catch(() => null)
+      : fetchPrContext(deps.providerCfg, { installationId: deps.installationId,
+        owner: deps.owner, repo: deps.repoName, prNumber: deps.prNumber, expectedHeadSha: headSha })
+        .catch(() => null));
     if (ctx2 && !ctx2.stale_head) {
       const files2 = parseDiff(ctx2.diff);
       rawLine2 = files2.find((x) => x.path === fd?.path)?.added
