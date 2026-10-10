@@ -322,8 +322,11 @@ function buildForgeFixDeps(muPoolQuery, { job, ctx, adapterEnv = process.env }) 
   const nativeRepoId = String(ctx.binding?.nativeRepoId ?? ctx.binding?.provider_repo_id ?? '');
   if (!owner || !name) return null;
   const repoPath = `${owner}/${name}`;
+  const giteePat2 = String(process.env.MU_GITEE_PAT ?? '');
+  const repoUrlInline = globalThis.__WAVE3_TEST_DEPS?.repoUrl
+    ?? (giteePat2 ? `https://oauth2:${giteePat2}@gitee.com/${repoPath}.git` : null);
   return {
-    repoUrl: global.__WAVE3_TEST_DEPS?.repoUrl ?? null, // 测试注入本地仓库；Gitee 路径不构造 GitHub URL
+    repoUrl: repoUrlInline,
     testCmd: global.__WAVE3_TEST_DEPS?.testCmd ?? (process.env.MU_FXV_TEST_CMD || 'node -e process.exit(0)'),
     fetchContextFn: ({ prNumber, expectedHeadSha }) => adapter.fetchChangeContext({
       repoPath, nativeRepoId: nativeRepoId || null, crKey: String(prNumber),
@@ -381,25 +384,39 @@ async function buildFixDepsForRepo(muPoolQuery, { tenantId, repoId, prNumber }) 
     const rm = repoMeta.rows[0];
     const instanceId = rm.forge_instance_id ?? 'gitee-cloud';
     const conn = await muPoolQuery(
-      `SELECT connection_id FROM mu.forge_connection
-        WHERE tenant_id=$1 AND instance_id=$2 AND status='valid' AND revoked_at IS NULL LIMIT 1`,
+      `SELECT fc.connection_id, fi.web_base FROM mu.forge_connection fc
+        JOIN mu.forge_instance fi ON fi.instance_id = fc.instance_id
+        WHERE fc.tenant_id=$1 AND fc.instance_id=$2 AND fc.status='valid' AND fc.revoked_at IS NULL LIMIT 1`,
       [tenantId, instanceId]).catch(() => null);
     if (!conn?.rows?.length) return null;
-    const declared = (await muPoolQuery(
-      `SELECT payload->>'declared_file_count' d FROM mu.job
-        WHERE tenant_id=$1 AND repo_id=$2 AND kind='event_sync' AND payload->>'forge_kind'='gitee'
-        ORDER BY created_at DESC LIMIT 1`, [tenantId, repoId]).catch(() => null))?.rows?.[0]?.d ?? null;
-    if (declared === null || declared === '' || Number(declared) < 0) return null; // unknown→拒绝 dry-run
+    // D5 门控（试点纠偏 v2）：读 run 冻结的 context_completeness（审查实际取得的完整性——
+    // 事实来源），而非事件 payload 的 declared 声明（手动入口恒 null 会误拒 complete 场景）。
+    // complete/partial→放行（partial 产物自带范围声明）；unknown/缺失→拒绝（fail-visible skip）。
+    const frozenRaw = (await muPoolQuery(
+      `SELECT r.context_completeness c FROM mu.review_run r
+        WHERE r.tenant_id=$1 AND r.repo_id=$2 AND r.context_source='gitee'
+        ORDER BY r.created_at DESC LIMIT 1`, [tenantId, repoId]).catch(() => null))?.rows?.[0]?.c ?? null;
+    let frozen = null;
+    try { frozen = JSON.parse(frozenRaw ?? 'null'); } catch { frozen = null; }
+    if (!frozen || frozen.status === 'unknown') return null; // unknown/未记录→拒绝 dry-run
+    const declared = Number.isInteger(frozen.declared_file_count) && frozen.declared_file_count >= 0
+      ? frozen.declared_file_count : null;
     const adapter = createGiteeAdapter({ env: process.env, credentialRef: 'env:MU_GITEE_PAT' });
     const repoPath = `${rm.owner}/${rm.name}`;
     const overrides = global.__WAVE3_TEST_DEPS; // 测试注入本地仓库/定制 testCmd（与 GitHub 分支同机制）
+    // 真实形态 repoUrl（试点缺陷修正：null→BAD_INPUT）：Gitee https clone URL。
+    // 私有仓库须凭据——oauth2:<token> 形式（Gitee 官方支持）；token 只存在于 worker
+    // 进程内存与 workspace 临时 remote，不落 DB（fix_attempt 不存 repoUrl）/日志/审计。
+    const giteePat = String(process.env.MU_GITEE_PAT ?? '');
+    const repoUrlReal = overrides?.repoUrl
+      ?? (giteePat ? `${conn.rows[0].web_base}/${rm.owner}/${rm.name}.git`.replace('https://', `https://oauth2:${giteePat}@`) : null);
     return {
-      repoUrl: overrides?.repoUrl ?? null, // Gitee 路径不构造 GitHub URL（fxv dry-run 本地工作区模式）
+      repoUrl: repoUrlReal,
       testCmd: overrides?.testCmd ?? (process.env.MU_FXV_TEST_CMD || 'node -e process.exit(0)'),
       fetchContextFn: ({ expectedHeadSha }) => adapter.fetchChangeContext({
         repoPath, nativeRepoId: String(rm.provider_repo_id ?? '') || null,
         crKey: String(prNumber ?? 0), expectedHeadSha,
-        declaredFileCount: Number(declared) }),
+        declaredFileCount: declared }),
       owner: rm.owner, repoName: rm.name, prNumber: Number(prNumber ?? 0),
       assertServiceChain: async () => {
         const chk = await muPoolQuery(
@@ -913,7 +930,16 @@ export async function muApi(req, res, ctx) {
         return { denied: { status: 404, body: { error: { reason: 'repository_not_found' } } } };
       }
     }
-    if (needBinding && repo) binding = await store.getBindingForRepo(mu.tenantId, repo.repo_id);
+    if (needBinding && repo) {
+      if (repo.provider === 'gitee') {
+        // Forge 绑定等价物（试点纠偏）：tenant 下 active 连接 + 仓库挂接（授权面=DB 行）
+        binding = await store.getActiveGiteeConnectionForRepo({ providerRepoId: repo.provider_repo_id })
+          .then((r) => (r.ok ? { forge_connection: r.connection.connection_id } : null))
+          .catch(() => null);
+      } else {
+        binding = await store.getBindingForRepo(mu.tenantId, repo.repo_id);
+      }
+    }
     const decision = authorize({ membership, action, binding });
     if (!decision.ok) {
       await store.audit('MU_AUTH_DENIED', { tenantId: mu.tenantId, actorUserId: mu.userId,
@@ -1711,7 +1737,8 @@ export async function muApi(req, res, ctx) {
           `SELECT fa.approval_id, fa.run_id, fa.finding_id, fa.severity, fa.status,
                   fa.head_sha, fa.created_at, fa.expires_at, fa.decided_by, fa.decided_at,
                   fa.decision_reason, fa.requested_action, fa.pr_number,
-                  f.rule_id, f.path, f.line_start, f.summary_masked, rr.status AS run_status
+                  f.rule_id, f.path, f.line_start, f.summary_masked, rr.status AS run_status,
+                  rr.context_completeness, rr.context_source
              FROM mu.fix_approval fa
              JOIN mu.agent_finding f ON f.finding_id = fa.finding_id
              JOIN mu.review_run rr ON rr.run_id = fa.run_id

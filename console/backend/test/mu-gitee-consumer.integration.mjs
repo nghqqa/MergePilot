@@ -72,6 +72,12 @@ globalThis.fetch = async (input, init) => {
       headers: { 'content-type': 'application/json' } });
     if (p === '/user') return res(200, { id: 42, login: 'pilot' });
     if (p === '/repos/gitee-pilot/pilot-repo') return res(200, { id: 777000, full_name: 'gitee-pilot/pilot-repo', default_branch: 'master', private: true });
+    if (p === `/repos/gitee-pilot/pilot-repo/pulls/21`) return res(200, {
+      number: 21, state: 'open', title: 'stub pr manual',
+      head: { sha: stubHeadSha, repo: { id: 777001 } },
+      base: { sha: 'b'.repeat(40), repo: { id: 777000 } },
+      html_url: 'https://gitee.com/gitee-pilot/pilot-repo/pulls/21' });
+    if (p === `/repos/gitee-pilot/pilot-repo/pulls/21/files`) return res(200, stubFiles);
     if (p === `/repos/gitee-pilot/pilot-repo/pulls/16`) return res(200, {
       number: 16, state: 'open', title: 'stub pr fixchain',
       head: { sha: stubHeadSha, repo: { id: 777001 } },
@@ -442,6 +448,51 @@ try {
   // （P0+WAITING 链的内联发生在审批后 buildFixDepsForRepo——declared 可得时放行，
   //   不可得时 return null→调用点 skip。单测已锁判定，集成锁 skip 语义由审批路径
   //   deps_unavailable 分支承担——此处断言撤销连接的 skip 路径。）
+  // ── T14m：手动入口（payload declared=null）P0→审批→修复轮放行（D5 门控读 run 冻结值——试点纠偏回归）──
+  {
+    // 真实 sha 对齐（fxv 需可 checkout）：fxRepo 新 commit 即 manualHead，文件内容与 stub diff 同源
+    fs.writeFileSync(path.join(fxRepo, 'src', 'leak.js'),
+      'const a=1;\nconst token = "ghp_abcdefABCDEF1234567890abcdefABCDEF9876";\n');
+    execSync('git add -A && git -c user.email=t@t -c user.name=t commit -qm manual-p0', { cwd: fxRepo });
+    const manualHead = execSync('git rev-parse HEAD', { cwd: fxRepo }).toString().trim();
+    stubHeadSha = manualHead;
+    stubFiles = [{ filename: 'src/leak.js', status: null, additions: '1', deletions: '0',
+      patch: { diff: '@@ -1 +1,2 @@\n const a=1;\n+const token = "ghp_abcdefABCDEF1234567890abcdefABCDEF9876";' } }];
+    // 手动链需要 PR 快照行；construct via upsert equivalent
+    const prM = (await pool.query(
+      `INSERT INTO mu.pull_request (tenant_id, repo_id, provider_pr_number, head_sha, state)
+       VALUES ($1,$2,21,$3,'open') RETURNING pr_id`, [tenantId, repoRow.repo_id, manualHead])).rows[0];
+    const tM = await call(`/api/mu/prs/${prM.pr_id}/review`, { method: 'POST', cookie: admin.cookie, csrf: admin.csrf, body: {} });
+    ok('T14m-a 手动触发（declared=null）入队 ok', tM.status === 200, tM.status);
+    while (await consumeOne()) { /* 消费 */ }
+    const runM = (await pool.query(
+      `SELECT run_id, status FROM mu.review_run WHERE repo_id=$1 AND head_sha=$2`, [repoRow.repo_id, manualHead])).rows[0];
+    ok('T14m-b P0→WAITING+冻结 complete（实际取得完整性）',
+      runM?.status === 'WAITING_FOR_HUMAN_APPROVAL'
+      && String((await pool.query(`SELECT context_completeness c FROM mu.review_run WHERE run_id=$1`, [runM.run_id])).rows[0]?.c ?? '').includes('"status":"complete"'),
+      { status: runM?.status });
+    const tk = (await pool.query(
+      `SELECT approval_id FROM mu.fix_approval WHERE run_id=$1 AND status='PENDING'`, [runM.run_id])).rows;
+    globalThis.__WAVE3_TEST_DEPS = { repoUrl: fxRepo, testCmd: 'node -e process.exit(0)' };
+    let approved = 0;
+    for (const x of tk) {
+      const r = await call(`/api/mu/approvals/${x.approval_id}/approve`, { method: 'POST', cookie: maintainer.cookie, csrf: maintainer.csrf, body: {} });
+      if (r.status === 200) approved += 1;
+    }
+    delete globalThis.__WAVE3_TEST_DEPS;
+    let runM2 = null;
+    for (let i = 0; i < 30; i++) {
+      runM2 = (await pool.query(`SELECT status FROM mu.review_run WHERE run_id=$1`, [runM.run_id])).rows[0];
+      if (['COMPLETED', 'REWORK_REQUIRED', 'BLOCKED'].includes(runM2?.status)) break;
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    const fixM = (await pool.query(`SELECT status, error_code FROM mu.fix_attempt WHERE run_id=$1`, [runM.run_id])).rows;
+    ok('T14m-c D5 门控放行（冻结 complete→修复轮真实执行，不再误拒 deps_unavailable）',
+      approved >= 1 && fixM.some((x) => x.status === 'DRY_RUN') && runM2?.status === 'COMPLETED',
+      { approved, fix: fixRows2M(), run: runM2?.status });
+    function fixRows2M() { return fixM; }
+  }
+
   // ── T15：连接撤销后审批路径 deps 不可用→修复不冒充（skip 留痕）──
   const connNow = (await pool.query(`SELECT connection_id FROM mu.forge_connection WHERE tenant_id=$1 AND revoked_at IS NULL LIMIT 1`, [tenantId])).rows[0];
   await call(`/api/mu/forge/connections/${connNow.connection_id}/revoke`, { method: 'POST', cookie: admin.cookie, csrf: admin.csrf });
