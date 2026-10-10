@@ -59,15 +59,15 @@
 <!-- /nav:docs -->
 <article class="doc">
 <div class="crumbs"><a href="index.html">首页</a> / 下载与校验</div>
-<h1>下载与校验（0.2.0-beta.6-rc.22）</h1>
+<h1>下载与校验（0.2.0-beta.6-rc.23）</h1>
 
 <h2>官方镜像（GHCR，不可变 digest）</h2>
 <pre><code>docker pull ghcr.io/nghqqa/mergepilot-console@sha256:0077382db28d454e7e03bbbd9ad3c2a1ddcd97cf84bc4cabe81c4d2b77610ad4</code></pre>
 <table>
 <tr><th>项</th><th>值</th></tr>
 <tr><td>digest</td><td><code>sha256:0077382db28d454e7e03bbbd9ad3c2a1ddcd97cf84bc4cabe81c4d2b77610ad4</code>（OCI index；amd64 manifest <code>413dbd34…740</code>，config digest <code>441ec689…20d</code>——分列勿混）</td></tr>
-<tr><td>tag</td><td><code>v0.2.0-beta.6-rc.22</code></td></tr>
-<tr><td>内置版本</td><td><code>0.2.0-beta.6-rc.22</code>（/api/health version 真源）</td></tr>
+<tr><td>tag</td><td><code>v0.2.0-beta.6-rc.23</code></td></tr>
+<tr><td>内置版本</td><td><code>0.2.0-beta.6-rc.23</code>（/api/health version 真源）</td></tr>
 <tr><td>源码</td><td>tag commit <code>87f292e</code>（发布材料合入后 main = <code>a5be7a4</code>；零 schema/迁移变更，恒 v23）</td></tr>
 </table>
 
@@ -78,9 +78,9 @@
 <tr><td>大小</td><td>62,570,496 bytes</td></tr>
 <tr><td>SHA256</td><td><code>a06cbe3ad061225da04c5a4b522b003b843cb125fc3d008ca9bf5e0cdf0edf55</code></td></tr>
 <tr><td>加载</td><td><code>docker load -i mergepilot-console-rc19.tar</code> → 按 digest 核对（<code>0077382db28d…ad4</code>）</td></tr>
-<tr><td>部署包（当前，rc.22）</td><td><code>mergepilot-selfhost-deploy-kit-rc22.tar.gz</code> kit SHA256 = <code>73a54bec8ae68d95f527653a91fed99819adba13bc328b8ef142b1993c57d36c</code>；校验文件 <code>SHA256SUMS-rc22.txt</code></td></tr>
+<tr><td>部署包（当前，rc.23）</td><td><code>mergepilot-selfhost-deploy-kit-rc23.tar.gz</code> kit SHA256 = <code>7179405c68ef0848d397c41a269430047259ee29996c0432ab114d5a4065e1b0</code>；校验文件 <code>SHA256SUMS-rc23.txt</code></td></tr>
 <tr><td>部署包（rc.20，已过时）</td><td>kit SHA256 <code>489c824d…87b3</code> 仅作存档——新安装请使用 rc.21</td></tr>
-<tr><td>部署包（rc.21，已过时）</td><td>kit SHA256 <code>c4dff466…9fe</code> 仅作存档——新安装请使用 rc.22</td></tr>
+<tr><td>部署包（rc.22，已过时）</td><td>kit SHA256 <code>c4dff466…9fe</code> 仅作存档——新安装请使用 rc.23</td></tr>
 <tr><td>部署包（rc.19，已过时）</td><td><code>mergepilot-selfhost-deploy-kit-rc19.tar.gz</code>（kit SHA256 <code>dc26e45d…cc0</code>）与 <code>mergepilot-console-rc19.tar</code>（tar SHA256 <code>72b7938b…689</code> 的 rc.19 版）仅作存档/回滚追溯——新安装请使用 rc.20 部署包</td></tr>
 <tr><td>部署包（rc.18，已过时）</td><td><code>mergepilot-selfhost-deploy-kit-rc18.tar.gz</code>（kit SHA256 <code>6279e7a4…64b</code>）仅作存档/回滚追溯</td></tr>
 <tr><td>部署包（rc.17，已过时）</td><td><code>mergepilot-selfhost-deploy-kit-rc17.tar.gz</code>（kit SHA256 <code>0154a0a1…598d</code>）与 <code>mergepilot-console-rc17.tar</code>（tar SHA256 <code>2a8ccce4…30b90</code>）仅作存档/回滚追溯</td></tr>
@@ -106,7 +106,7 @@ docker inspect --format '{{.Id}}' &lt;镜像引用&gt;
 
 # 运行版本校验
 curl -s http://127.0.0.1:48500/api/health | grep version
-# 期望：0.2.0-beta.6-rc.22
+# 期望：0.2.0-beta.6-rc.23
 
 # tar 校验
 sha256sum mergepilot-console-rc19.tar</code></pre>
