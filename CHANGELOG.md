@@ -1,3 +1,12 @@
+## [0.2.0-beta.6-rc.24] — 2026-10-10（候选）
+
+### 邀请认领角色覆盖缺陷修复（#401）
+- 事务化认领入驻：已有 active 成员保留实际角色；revoked 不被登录顺带激活；会话/审计用最终实际角色
+- OAuth 全路径回归 OC-11~14 + store 层 13 场景（生产事故语义锁）
+### AgentTeams 恢复工具链（#403）
+- deploy/agentteams/：recover-workers.sh（幂等收敛+fail-closed）+ MANIFEST 配置真源 + itest 隔离 drill
+- itest 定案：copaw 栈无 durable 模型配置路径（工具=临时收敛；QwenPaw 迁移独立评估）
+- 依赖：rc.23 Gitee 首版接入（基线）
 ## [0.2.0-beta.6-rc.23] — 2026-10-10（候选）
 
 ### Gitee 首版接入（forge/ 契约层；实验支持：云端私有仓库只读审查+dry-run）
