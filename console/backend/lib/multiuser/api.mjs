@@ -385,11 +385,18 @@ async function buildFixDepsForRepo(muPoolQuery, { tenantId, repoId, prNumber }) 
         WHERE tenant_id=$1 AND instance_id=$2 AND status='valid' AND revoked_at IS NULL LIMIT 1`,
       [tenantId, instanceId]).catch(() => null);
     if (!conn?.rows?.length) return null;
-    const declared = (await muPoolQuery(
-      `SELECT payload->>'declared_file_count' d FROM mu.job
-        WHERE tenant_id=$1 AND repo_id=$2 AND kind='event_sync' AND payload->>'forge_kind'='gitee'
-        ORDER BY created_at DESC LIMIT 1`, [tenantId, repoId]).catch(() => null))?.rows?.[0]?.d ?? null;
-    if (declared === null || declared === '' || Number(declared) < 0) return null; // unknown→拒绝 dry-run
+    // D5 门控（试点纠偏 v2）：读 run 冻结的 context_completeness（审查实际取得的完整性——
+    // 事实来源），而非事件 payload 的 declared 声明（手动入口恒 null 会误拒 complete 场景）。
+    // complete/partial→放行（partial 产物自带范围声明）；unknown/缺失→拒绝（fail-visible skip）。
+    const frozenRaw = (await muPoolQuery(
+      `SELECT r.context_completeness c FROM mu.review_run r
+        WHERE r.tenant_id=$1 AND r.repo_id=$2 AND r.context_source='gitee'
+        ORDER BY r.created_at DESC LIMIT 1`, [tenantId, repoId]).catch(() => null))?.rows?.[0]?.c ?? null;
+    let frozen = null;
+    try { frozen = JSON.parse(frozenRaw ?? 'null'); } catch { frozen = null; }
+    if (!frozen || frozen.status === 'unknown') return null; // unknown/未记录→拒绝 dry-run
+    const declared = Number.isInteger(frozen.declared_file_count) && frozen.declared_file_count >= 0
+      ? frozen.declared_file_count : null;
     const adapter = createGiteeAdapter({ env: process.env, credentialRef: 'env:MU_GITEE_PAT' });
     const repoPath = `${rm.owner}/${rm.name}`;
     const overrides = global.__WAVE3_TEST_DEPS; // 测试注入本地仓库/定制 testCmd（与 GitHub 分支同机制）
@@ -399,7 +406,7 @@ async function buildFixDepsForRepo(muPoolQuery, { tenantId, repoId, prNumber }) 
       fetchContextFn: ({ expectedHeadSha }) => adapter.fetchChangeContext({
         repoPath, nativeRepoId: String(rm.provider_repo_id ?? '') || null,
         crKey: String(prNumber ?? 0), expectedHeadSha,
-        declaredFileCount: Number(declared) }),
+        declaredFileCount: declared }),
       owner: rm.owner, repoName: rm.name, prNumber: Number(prNumber ?? 0),
       assertServiceChain: async () => {
         const chk = await muPoolQuery(
