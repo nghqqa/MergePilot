@@ -36,8 +36,18 @@
 5. 真实 PR 审查端到端（对照 rc.21 GitHub 验收口径：确定性链+幂等+审批门+dry-run 零写入）。
 6. 限流被动观察（禁压测）。
 
-## 四、恢复/降级语义（实测口径）
+## 四、恢复/降级语义（rc.22 生产镜像实测，scripts/dev/downgrade-drill-gitee.sh）
 
-- **应用降级（已验证）**：迁移纯 additive——回归套件（旧表全部读路径）在新 schema 上 259/0 全绿=v23 旧镜像行为不受影响（不读不写新表/列）。
-- **schema 恢复（条件分列）**：DROP 两新表+两列技术上可行（无旧依赖）；约束是**数据取舍**——Gitee 连接登记行可弃（可重建）；Gitee 事件/run/审计历史若需保留则不得 DROP。恢复=显式决策+范围留痕，不宣称无条件前滚。
+- **应用降级（rc.22 镜像实测=DOWNGRADE-VERIFIED）**：生产同源镜像（digest 35b453f3）连接 v25 隔离库：启动零 schema 兼容错误；GitHub legacy 数据（installation/binding/PR）完好可读；**旧 consumer 对 Gitee 任务的处理=明确拒绝**（`rejected|installation_id_missing`——按旧契约诚实失败，非误处理、非挂死、非崩溃）。降级窗口内 Gitee 功能不可用但无害；降级前建议先停用 Gitee 入队（任务停用/隔离=应用层决策，避免任务被旧 consumer 拒绝后需重投）。
+- **schema 恢复（条件分列）**：DROP 两新表+两列技术上可行（无旧镜像依赖，实测共存无损）；约束是**数据取舍**——Gitee 连接登记行可弃（可重建）；Gitee 事件/run/审计历史若需保留则不得 DROP。恢复=显式决策+范围留痕，不宣称无条件前滚。
 - **连接撤销恢复**：重登记（upsert 清 revoked_at）→probe→valid（T11-pre 实证）。
+
+## 五、审查纠偏轮修复记录（2026-10-10 第二轮）
+
+1. **验真算法修正（重要缺陷）**：v1 待签消息漏 secret 段（`HMAC(ts+LF)` vs 官方 `HMAC(ts+LF+secret, key=secret)`）——**独立向量**（python hmac/urllib 独立计算，非实现公式复刻）证实不一致后按官方原文修正；旧公式输出固化为防退化断言。
+2. **验真来源/编码显式配置**：signSource（header|body）/signEncoding（url_b64|b64）由部署 env 单选，不自动回退/混合；另一来源携带不一致完整对→sign_source_conflict 拒绝。官方携带方式未实测的形态保持未启用。
+3. **测试自洽暴露**：原集成测试的签名生成器同样沿用旧公式——被修正后的实现拒绝（signature_mismatch），防退化设计价值实证；测试侧签名生成器同步修正。
+4. **上下文 v2**：仓库 id 归属核验（改名后同名新仓库→gitee_repo_moved）；head 双读（分页期间推进→gitee_head_moved）；declared 分页自证（末页不满页=全量已取得，**手动入口不再依赖 webhook 声明**）；local_limit 接真值（diff>1MiB/files>300/单文件 patch>512KiB）；空白路径 unparsed_path 防护（parseDiff 安全）。
+5. **修复链端到端实证**：P0→审批门→维护者逐票真实批准（decide_review 门，不自动审批）→fxv 真子进程 Fixer dry-run（本地 fixture 与 stub head 同源）→Verifier PASS→run COMPLETED；全程远端零写调用、上下文读取全走 Gitee 适配器（fetchContextFn v2）。
+6. **CI 修复**：超时测试 stub 的 pending Promise 在 CI 时序下挂起 event loop（连锁 cancel 7 用例）——abort 同步兜底修复。
+7. **审批票面范围声明**：v25 冻结列（context_completeness/context_source）随审批列表 API 透出，详情页 partial/unknown 时展示范围声明（缺失=不显示，不伪造）。

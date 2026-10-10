@@ -347,6 +347,23 @@ export function MuPrDetailContent({ prRef, onChanged }) {
           <Typography.Paragraph style={{ fontSize: 14, marginBottom: 4 }}>
             批准仅启动 dry-run 修复建议——不写入 GitHub、不自动合并；完整边界见下方「技术详情与判定」。
           </Typography.Paragraph>
+          {(() => {
+            // 上下文范围声明（v25 冻结列随票如实呈现；缺失/complete 不显示——不伪造声明）。
+            // partial/unknown 时审批人应知晓本次 dry-run 所基于的上下文并非全量。
+            const raw = fixApprovals.find((x) => x.context_completeness)?.context_completeness;
+            if (!raw) return null;
+            let parsed = null; try { parsed = JSON.parse(raw); } catch { return null; }
+            if (!parsed || parsed.status === 'complete') return null;
+            const src = fixApprovals.find((x) => x.context_source)?.context_source ?? '未记录';
+            return (
+              <Typography.Paragraph type="warning" style={{ fontSize: 13, marginBottom: 6 }}>
+                上下文范围：{parsed.status === 'partial' ? '部分' : '未确认'}
+                （返回 {parsed.returned_file_count ?? '—'}/声明 {parsed.declared_file_count ?? '—'} 文件
+                {parsed.notes ? ` · ${parsed.notes}` : ''} · 来源 {src}）——
+                本次 dry-run 仅基于已取回内容，产物自带范围声明。
+              </Typography.Paragraph>
+            );
+          })()}
           {approvalRows(true)}
           {approvalRows(false)}
         </div>

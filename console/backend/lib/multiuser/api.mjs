@@ -1711,7 +1711,8 @@ export async function muApi(req, res, ctx) {
           `SELECT fa.approval_id, fa.run_id, fa.finding_id, fa.severity, fa.status,
                   fa.head_sha, fa.created_at, fa.expires_at, fa.decided_by, fa.decided_at,
                   fa.decision_reason, fa.requested_action, fa.pr_number,
-                  f.rule_id, f.path, f.line_start, f.summary_masked, rr.status AS run_status
+                  f.rule_id, f.path, f.line_start, f.summary_masked, rr.status AS run_status,
+                  rr.context_completeness, rr.context_source
              FROM mu.fix_approval fa
              JOIN mu.agent_finding f ON f.finding_id = fa.finding_id
              JOIN mu.review_run rr ON rr.run_id = fa.run_id
