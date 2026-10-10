@@ -328,6 +328,9 @@ export function MuPrDetailContent({ prRef, onChanged }) {
           <div className="mu-detail-blocker">
             <div style={{ marginBottom: 4 }}>
               合并资格：<strong>未知</strong>——分支保护状态未知，按 fail-closed 不作合并判定（未知 ≠ 未受保护）。
+              <div style={{ marginTop: 4, fontSize: 13 }}>
+                说明：接入平台未提供保护读取时（如 Gitee 首版接入），此处同样显示为未知——这是「本接入未提供该能力」，不是「平台无保护」。
+              </div>
             </div>
             {/* 修正历史传参错位：卡片契约是 stateKey/repo/onRefresh（旧调用传 pr/hasActiveRun/onRetry
                 导致原因/影响/下一步卡片从未渲染）。MU 无独立探测证据 → stateKey 恒 'undetermined'。 */}

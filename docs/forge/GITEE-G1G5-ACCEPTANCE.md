@@ -1,0 +1,43 @@
+# Gitee 接入 G-1~G-5 验收记录
+
+- 日期：2026-10-10
+- 分支：`gitee/forge-foundation` → `gitee/forge-consumer` → `gitee/forge-frontend`（栈式 PR，base=main=e7d5659）
+- 层级纪律：测试分三层标注——**真实服务代码**（隔离 PG+真实 HTTP server+真实消费者状态机）、**stub 外部 API**（globalThis.fetch 拦截 gitee.com，同进程消费者经默认 fetch 装配适配器）、**真实平台**（本轮无——见 §试点前置，不冒充）。
+
+## 一、测试证据
+
+| 套件 | 覆盖 | 结果 |
+|---|---|---|
+| `console/backend/test/mu-forge.test.mjs` | 事件 v1 校验器（缺字段逐项可定位/installation 伪装拒绝/kind 白名单）、delivery_ref 确定性（无时间戳）、验真 signature/password 双模式+错签/超窗/缺字段、适配器八方法（patch.diff 对象解包/字符串数字转换/分页/completeness 三态/head 漂移/错误分类 401-429-5xx/超时）、**错误消息不含 token/URL**、白名单与凭据缺失 fail-closed、readChecks/readProtection 恒 not_provided 零调用 | 25/25 ✅ |
+| `console/backend/test/mu-gitee-consumer.integration.mjs` | 隔离 PG+真实服务器：迁移 v24 幂等、连接 RBAC（maintainer 403/platform_admin ok）、probe 实测 valid、绑定、**手动审查→真实消费者→run/attempt→clean 完成（无发现也成功，不强造 finding）**、调用面全 GET 零写调用、同 head 幂等、重复投递 duplicate 零新 job、head 漂移→BLOCKED+gitee_head_moved、缺字段→event_payload_invalid 可定位、跨租户 job FK 拒绝、连接撤销→webhook ignored+存量 job rejected（重登记恢复验证）、P0→审批门 WAITING（不批不修）、错签名 401 零入队、token 不落路径、**GitHub legacy webhook+消费回归** | 28/28 ✅ |
+| `node --test console/backend/test/*.test.mjs`（CI 同款 glob） | 全量后端单测/合同（含 legacy 契约域） | 259 pass / 0 fail / 10 skipped ✅ |
+| `console/backend/test/mu-job-consumer.integration.mjs` | GitHub legacy 契约锁（C8h/C8i 原样）+取消端点等 | 51/51 ✅ |
+| `console/frontend/test/*.test.mjs` | 前端全量（GitHub 页面回归） | 152/152 ✅ |
+| `npx vite build` | 前端生产构建 | ✅（13.5s） |
+| `bash scripts/secret-scan.sh --path .` | 秘密扫描 | PASS 0 命中 ✅ |
+
+## 二、实现面（与实施设计的偏差记录）
+
+1. **completeness 三态落点**：GiteeAdapter 返回完整三态；run 消费链 D5 门控在两处 dry-run 入口（消费链内联+审批后 buildFixDepsForRepo——declared 不可得即拒绝装配）。
+2. **reviewDiff 零改动**：per-file patch 拼接为带 `diff --git` 文件头的 unified diff 全文——规则链复用；缺失 patch 文件不掺入 diff（completeness 单独表达）。
+3. **leader 保护门**：`protection.provided===false` 显式分支（本接入未提供→跳过保护门、裁定只看 findings、rationale 记 not_provided_in_this_release）；GitHub legacy `configured` 语义原样。
+4. **合并资格**：Gitee PR 快照 branch_protection_status='unknown'——按既有 fail-closed 呈现"未知（≠未受保护）"，详情页补「本接入未提供 ≠ 平台无保护」说明。
+5. **错误分类**：GiteeProviderError（401→gitee_auth_failed/403→gitee_forbidden/404→gitee_not_found/429+5xx/网络→transient）；attempt FAILED→诚实 BLOCKED，不永久 queued。
+6. **revoke 语义**：撤销不可逆（probe 不复活）——恢复=重新登记（upsert 清 revoked_at）+probe，集成测试实证。
+
+## 三、试点前置（真实平台验收清单——本轮未做，不冒充）
+
+以下为「代码就绪、待真实凭据」项；完成前 Gitee 不得宣称生产接入：
+
+1. 试点仓库+私人令牌（user_info+projects+pull_requests；不勾 hook）——`r3work/forge-m0/pilot-setup-guide.md`。
+2. 部署侧 env：MU_GITEE_PAT / MU_GITEE_WEBHOOK_SECRET / MU_GITEE_WEBHOOK_MODE。
+3. 真实 webhook 采集：签名实际携带方式（header vs payload 顶层）、action 全枚举（reopen 存在性）、delivery 隐藏标识——回填核验记录 §5/§9 后收敛验真单源。
+4. probeConnection 通过（授权已验证的唯一口径）+私有仓库真实读取。
+5. 真实 PR 审查端到端（对照 rc.21 GitHub 验收口径：确定性链+幂等+审批门+dry-run 零写入）。
+6. 限流被动观察（禁压测）。
+
+## 四、恢复/降级语义（实测口径）
+
+- **应用降级（已验证）**：迁移纯 additive——回归套件（旧表全部读路径）在新 schema 上 259/0 全绿=v23 旧镜像行为不受影响（不读不写新表/列）。
+- **schema 恢复（条件分列）**：DROP 两新表+两列技术上可行（无旧依赖）；约束是**数据取舍**——Gitee 连接登记行可弃（可重建）；Gitee 事件/run/审计历史若需保留则不得 DROP。恢复=显式决策+范围留痕，不宣称无条件前滚。
+- **连接撤销恢复**：重登记（upsert 清 revoked_at）→probe→valid（T11-pre 实证）。

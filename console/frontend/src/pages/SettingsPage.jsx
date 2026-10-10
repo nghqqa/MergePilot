@@ -1,5 +1,6 @@
 import { Typography } from 'antd';
 import React, { useCallback, useEffect, useState } from 'react';
+import ForgeConnectionsPanel from './ForgeConnectionsPanel.jsx';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth.jsx';
 import { useAppConfig } from '../App.jsx';
@@ -155,6 +156,8 @@ export default function SettingsPage() {
         </div>
         {err ? <p className="section-note">健康检查失败：{String(err.message ?? err)}</p> : null}
       </section>
+
+      <ForgeConnectionsPanel />
 
       <section className="section">
         <div className="section-head"><h3>运行边界</h3></div>
