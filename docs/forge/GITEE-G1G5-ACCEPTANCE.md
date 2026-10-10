@@ -69,3 +69,21 @@ rc.22 基线（git tag 87f292e 的 schema v1-v23）bootstrap → 旧数据种子
 1. 维护者按 pilot-setup-guide 完成仓库+令牌+env（凭据只入 `D:\goai\secrets\gitee-pilot.env`）。
 2. 部署隔离试点服务：rc.23 镜像+独立数据库+`MU_GITEE_PAT/_WEBHOOK_SECRET/_WEBHOOK_MODE=signature`（来源/编码 env 显式配置，不自动回退）；webhook 回调=试点服务的 `/api/mu/gitee/webhook`（HTTPS）。
 3. 试点验收序列（验收记录 §三 1-6 逐项）→ 全过后按发布序列合入/发布/生产。
+
+## 八、真实 Gitee 平台验收（2026-10-10 试点执行，生产同机隔离环境）
+
+**全部通过（零 stub）**：probe（header 认证定案）/私有读取+绑定（稳定 id）/手动链 PR-1 clean COMPLETED（completeness complete 自证）/P0 审批门（真实 diff R-SECRET:P0→WAITING）/**agentteams 外部修复链 PASS→COMPLETED**（真实私有仓库 clone，digest ae91a373…）/撤销→重登记/泄漏检查全零（容器日志/audit/job/fix_attempt）。
+
+**Webhook 真实投递（公网入口打通后）**：真实投递→验真→delivery_ref（body sha256 规则）→消费 done→新 run（v10）→P0 门→审批→agentteams 修复 DRY_RUN→PASS→COMPLETED。安全序列：错误签名→password_mismatch 401、缺签名→token_missing 401、未订阅事件→ignored 零入队。
+
+**实测定案（修正文档级认知）**：
+1. **验真语义**：当前 Gitee 实现 `X-Gitee-Token`=配置密钥明文（密码语义传输）；官方文档的 HMAC 签名算法在该配置下未使用（body sign 空字段）。配置收敛 `MU_GITEE_WEBHOOK_MODE=password`（显式配置，按实测收敛非降级）。文档级"签名不覆盖 body"论述保留（若未来启用真 HMAC 再评估）。
+2. **事件订阅字段名**：`merge_requests_events`（PATCH `pull_request_events` 被静默忽略——v5 API 字段名与 GitHub 惯例不同）。
+3. **事件行为**：源分支 push 与标题 PATCH **均触发** merge_request_hooks `action=update`（附 `action_desc:"source_branch_changed"` 等细分子类型）；创建 hook 时发一次 test 投递。
+4. **delivery 标识**：无独立投递 ID 头/字段（ADR §2.4 生成规则启用，实测工作）。
+5. **payload 红线实证**：投递 body 顶层含明文 `password` 字段——不持久化 body 的入口纪律为必需（现实现满足：delivery 行只存 delivery_ref/event）。
+6. token 经 `Authorization: Bearer` header 可用（不进 URL）。
+
+**公网入口（服务器变更留痕）**：frpc.toml 新增 `mergepilot-gitee-pilot` tcp 隧道（→本机 28600）；远程 nginx `mergepilot-webhook.conf` 加精确路径 `location = /api/mu/gitee/webhook` → 127.0.0.1:28600（备份 .bak-*；reload 零中断）；根路径与其余管理面不开放（实测 404）。**回滚**=删 location+reload（恢复原 conf.bak）+删 frpc 隧道段。
+
+**维护者操作与测试身份的区分**：登录/probe/绑定/审查触发/投递观测=测试身份（fixture，隔离试点库）；审批动作=pilot-maintainer（测试身份的 maintainer 角色，走真实 decide_review 端点）——生产启用后须由真实维护者账号执行首次审批。
