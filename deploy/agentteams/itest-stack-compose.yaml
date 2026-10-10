@@ -1,0 +1,81 @@
+# itest-stack-compose.yaml — AgentTeams 隔离恢复测试栈（recovery-drill 专用）
+#
+# 用法（凭据环境注入，零落盘）：
+#   export ATB_ADMIN_PASSWORD=itest-admin-pw ATB_MINIO_PASSWORD=itest-minio-pw \
+#          ATB_MANAGER_PASSWORD=itest-mgr-pw  ATB_REGISTRATION_TOKEN=itest-reg-tok \
+#          ATB_LLM_KEY=<现有 deepseek key>
+#   docker compose -f itest-stack-compose.yaml -p atitest up -d
+#   bash recover-workers.sh atitest atitest-ctrl
+#   node recovery-drill.mjs
+# 清理：docker compose -p atitest down -v（数据卷随测试栈丢弃）
+#
+# 与生产差异：独立网络/前缀/数据卷；worker 镜像=shim（recover-workers.sh 参数）；
+#             端口 28562(ctrl API)/29768(Matrix) 仅回环发布。
+name: atitest
+
+services:
+  at-controller:
+    image: agentteams/agentteams-embedded:223ddc2
+    container_name: atitest-ctrl
+    hostname: atitest-ctrl
+    restart: unless-stopped
+    networks:
+      atnet:
+        aliases: [atitest-controller, atitest-matrix]
+    ports:
+      - "127.0.0.1:28562:8090"
+      - "127.0.0.1:29768:6167"
+    volumes:
+      - at-data:/data
+      - /run/host-services/docker.proxy.sock:/var/run/docker.sock:ro
+    environment:
+      AGENTTEAMS_ADMIN_USER: atitest-admin
+      AGENTTEAMS_ADMIN_PASSWORD: ${ATB_ADMIN_PASSWORD}
+      AGENTTEAMS_MINIO_USER: atitest-minio
+      AGENTTEAMS_MINIO_PASSWORD: ${ATB_MINIO_PASSWORD}
+      AGENTTEAMS_MANAGER_PASSWORD: ${ATB_MANAGER_PASSWORD}
+      AGENTTEAMS_REGISTRATION_TOKEN: ${ATB_REGISTRATION_TOKEN}
+      AGENTTEAMS_LLM_PROVIDER: openai-compat
+      AGENTTEAMS_OPENAI_BASE_URL: https://api.deepseek.com
+      AGENTTEAMS_DEFAULT_MODEL: deepseek-chat
+      AGENTTEAMS_OPENAI_API_KEY: ${ATB_LLM_KEY}
+      AGENTTEAMS_MANAGER_IMAGE: agentteams/manager:223ddc2
+      AGENTTEAMS_COPAW_WORKER_IMAGE: ghcr.io/nghqqa/copaw-worker:223ddc2-v5fix-get-soul-shim
+      AGENTTEAMS_WORKER_IMAGE: agentteams/worker-agent:223ddc2
+      AGENTTEAMS_MANAGER_RUNTIME: openclaw
+      AGENTTEAMS_DEFAULT_WORKER_RUNTIME: copaw
+      AGENTTEAMS_RESOURCE_PREFIX: atitest-
+      AGENTTEAMS_MODEL_MAX_TOKENS: "8000"
+      AGENTTEAMS_MATRIX_DOMAIN: atitest-matrix:6167
+      AGENTTEAMS_MATRIX_URL: http://atitest-controller:6167
+      AGENTTEAMS_FS_ENDPOINT: http://atitest-controller:9000
+      AGENTTEAMS_MATRIX_E2EE: "0"
+      AGENTTEAMS_MATRIX_APPSERVICE_ENABLED: "false"
+      AGENTTEAMS_DOCKER_PROXY: "0"
+      AGENTTEAMS_WORKER_IDLE_TIMEOUT: "720"
+      AGENTTEAMS_DATA_DIR: atitest-data
+      AGENTTEAMS_WORKSPACE_DIR: /tmp/atb-ws
+      AGENTTEAMS_HOST_SHARE_DIR: /tmp/atb-host
+      AGENTTEAMS_DASHBOARD: "0"
+      AGENTTEAMS_FS_BUCKET: agentteams-storage
+      AGENTTEAMS_DOCKER_NETWORK: atitest_atnet
+      AGENTTEAMS_MC_MIRROR_SCOPE: controller
+      AGENTTEAMS_AI_GATEWAY_DOMAIN: atitest-controller
+    deploy:
+      resources:
+        limits: { cpus: "2.0", memory: 4g }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:8090/healthz >/dev/null 2>&1 || curl -sf http://127.0.0.1:8090/healthz >/dev/null"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 90s
+    stop_grace_period: 60s
+
+networks:
+  atnet:
+    name: atitest_atnet
+
+volumes:
+  at-data:
+    name: atitest-data
