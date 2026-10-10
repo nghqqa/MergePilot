@@ -36,6 +36,16 @@ export async function retryClaim(pool, args, { retries = 3, claimImpl = null } =
  *  4. clean → clean_complete。
  */
 export function decideAfterReview({ findings, protection }) {
+  // Forge 适配器"本接入未提供"保护读取（Gitee 首版 G-3）：跳过保护门——不 fail-closed
+  // （provider 未提供≠保护未知），也不假装已验证。裁定只基于 findings；rationale 经
+  // advanceAfterReview 的 recordDecision 记档（protection.reason='not_provided_in_this_release'）。
+  // GitHub legacy 形状（configured 语义）原样：未知/未配置仍 fail-closed BLOCKED。
+  if (protection?.provided === false) {
+    const sev0 = (findings ?? []).map((f) => f.severity);
+    if (sev0.some((s) => s === 'P0' || s === 'P1')) return { decision: 'fix_required', protectionSkipped: 'not_provided_in_this_release' };
+    if (sev0.length > 0) return { decision: 'needs_human', protectionSkipped: 'not_provided_in_this_release' };
+    return { decision: 'clean_complete', protectionSkipped: 'not_provided_in_this_release' };
+  }
   if (!protection || protection.configured !== true) {
     return { decision: 'blocked', reason: 'branch_protection_unknown' };
   }
