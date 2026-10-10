@@ -587,6 +587,87 @@ export async function createMuStore({ pool, env = process.env, migrations = MU_M
     const r = await q(`SELECT * FROM mu.github_app_installation WHERE installation_id=$1`, [installationId]);
     return r.rows[0] ?? null;
   }
+
+  // ── ForgeAdapter 连接模型（v24；Gitee 首版 G-1）──
+  async function ensureForgeInstance({ instanceId, forgeKind, apiBase, webBase, capability = {} }) {
+    await q(
+      `INSERT INTO mu.forge_instance (instance_id, forge_kind, api_base, web_base, capability)
+       VALUES ($1,$2,$3,$4,$5::jsonb) ON CONFLICT (instance_id) DO NOTHING`,
+      [instanceId, forgeKind, apiBase, webBase, JSON.stringify(capability)]);
+    const r = await q(`SELECT * FROM mu.forge_instance WHERE instance_id=$1`, [instanceId]);
+    return r.rows[0] ?? null;
+  }
+  async function createForgeConnection({ tenantId, instanceId, credentialRef, webhookMode, status = 'pending' }) {
+    const r = await q(
+      `INSERT INTO mu.forge_connection (tenant_id, instance_id, credential_ref, webhook_mode, status)
+       VALUES ($1,$2,$3,$4,$5)
+       ON CONFLICT (tenant_id, instance_id) DO UPDATE
+         SET credential_ref = EXCLUDED.credential_ref, webhook_mode = EXCLUDED.webhook_mode,
+             status = EXCLUDED.status, status_reason = NULL, revoked_at = NULL, updated_at = now()
+       RETURNING *`,
+      [tenantId, instanceId, credentialRef, webhookMode, status]);
+    return r.rows[0] ?? null;
+  }
+  async function listForgeConnections(tenantId) {
+    const r = await q(
+      `SELECT fc.connection_id, fc.tenant_id, fc.instance_id, fi.forge_kind, fi.api_base, fi.web_base,
+              fi.capability, fc.credential_ref, fc.webhook_mode, fc.status, fc.status_reason,
+              fc.verified_at, fc.revoked_at, fc.created_at, fc.updated_at
+         FROM mu.forge_connection fc JOIN mu.forge_instance fi ON fi.instance_id = fc.instance_id
+        WHERE fc.tenant_id = $1 ORDER BY fc.created_at`, [tenantId]);
+    return r.rows;
+  }
+  async function getForgeConnection(tenantId, connectionId) {
+    // tenant 维度收窄：跨租户连接 id 一律 not_found（不泄露存在性）
+    const r = await q(
+      `SELECT fc.*, fi.forge_kind, fi.api_base, fi.web_base, fi.capability
+         FROM mu.forge_connection fc JOIN mu.forge_instance fi ON fi.instance_id = fc.instance_id
+        WHERE fc.tenant_id = $1 AND fc.connection_id = $2`, [tenantId, connectionId]);
+    return r.rows[0] ?? null;
+  }
+  async function setForgeConnectionStatus(tenantId, connectionId, status, { reason = null, verified = false } = {}) {
+    const r = await q(
+      `UPDATE mu.forge_connection
+          SET status=$3, status_reason=$4,
+              verified_at = CASE WHEN $5 THEN now() ELSE verified_at END,
+              updated_at = now()
+        WHERE tenant_id=$1 AND connection_id=$2 RETURNING *`,
+      [tenantId, connectionId, status, reason, verified]);
+    return r.rows[0] ?? null;
+  }
+  async function revokeForgeConnection(tenantId, connectionId) {
+    const r = await q(
+      `UPDATE mu.forge_connection
+          SET status='revoked', revoked_at=now(), updated_at=now()
+        WHERE tenant_id=$1 AND connection_id=$2 RETURNING *`,
+      [tenantId, connectionId]);
+    return r.rows[0] ?? null;
+  }
+  /**
+   * 服务端归属解析（webhook/消费者共用）：按实例+原生仓库 id 反查 active 连接与仓库行。
+   * 授权面完全来自 DB 行（payload 的 connection_id/tenant_id 不参与定位）——
+   * 消费者信任的是服务端解析结果，不是事件自报身份（G-3 纪律）。
+   * 返回 {ok, connection, repo} | {ok:false, reason}。
+   */
+  async function getActiveGiteeConnectionForRepo({ instanceId = 'gitee-cloud', providerRepoId }) {
+    const r = await q(
+      `SELECT fc.*, fi.forge_kind, fi.api_base, fi.web_base,
+              rep.repo_id AS gitee_repo_id, rep.owner AS repo_owner, rep.name AS repo_name
+         FROM mu.forge_connection fc
+         JOIN mu.forge_instance fi ON fi.instance_id = fc.instance_id
+         JOIN mu.repository rep ON rep.tenant_id = fc.tenant_id
+              AND rep.forge_instance_id = fc.instance_id AND rep.provider_repo_id = $2
+        WHERE fc.instance_id = $1 AND fc.status = 'valid' AND fc.revoked_at IS NULL
+          AND rep.provider = 'gitee'
+        LIMIT 1`,
+      [instanceId, String(providerRepoId)]);
+    const row = r.rows[0];
+    if (!row) return { ok: false, reason: 'forge_binding_not_found' };
+    return { ok: true, connection: row,
+      repo: { repo_id: row.gitee_repo_id, tenant_id: row.tenant_id,
+        owner: row.repo_owner, name: row.repo_name } };
+  }
+
   async function listInstallations(tenantId) {
     // v18：fixture 域合成安装（account_type='fixture'，id 落保留区间）为内部脚手架，
     // 不属用户可见 installation——列表过滤（真实 GitHub installation id 远低于保留区间）。
@@ -687,5 +768,12 @@ export async function createMuStore({ pool, env = process.env, migrations = MU_M
     upsertInstallation, getInstallation, listInstallations, setInstallationState,
     upsertRepositoryBinding, getBindingByRepo, setBindingState, setBindingsStateForInstallation,
     claimWebhookDelivery, backfillWebhookDeliveryTenant, finishWebhookDelivery, requeueJob,
+
+    // ── ForgeAdapter 连接模型（v24；Gitee 首版 G-1）──
+    // 凭据红线：credential_ref 只存引用字符串（'env:MU_GITEE_PAT'），本层任何 API
+    // 不接受/不返回令牌值。全部读路径带 tenant 维度（跨租户天然拒绝）。
+    ensureForgeInstance, createForgeConnection, listForgeConnections, getForgeConnection,
+    setForgeConnectionStatus, revokeForgeConnection,
+    getActiveGiteeConnectionForRepo,
   };
 }
