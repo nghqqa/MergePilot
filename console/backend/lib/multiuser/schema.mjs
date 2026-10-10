@@ -1439,6 +1439,77 @@ export const MU_MIGRATIONS = [
          CHECK (role IN ('contributor','reviewer','maintainer','auditor'))`,
     ],
   },
+
+  // ── v24 ForgeAdapter 连接模型（Gitee 首版 G-1；ADR-003 §3.2 / 实施设计 §2.1）──
+  // 纯 additive：两枚新表 + repository 加两列（带默认值，旧读路径不引用）。
+  //  * forge_instance：托管实例登记（gitee-cloud/github-com 默认两行 seed，幂等）；
+  //  * forge_connection：租户↔实例授权。credential_ref 只存引用（'env:MU_GITEE_PAT'），
+  //    不存令牌值（凭据红线）；webhook_mode 显式单选（禁止降级/择一，ADR-003 §2.1）；
+  //    tenant_id 对齐 mu.tenant UUID 类型。
+  //  * mu.repository.forge_instance_id 默认 'github-com'：仅为后续 GitHub 迁入波铺路，
+  //    现有全部读路径不引用该列（行为不变）。
+  // 幂等：CREATE TABLE IF NOT EXISTS + ADD COLUMN IF NOT EXISTS + seed ON CONFLICT DO NOTHING。
+  // 应用降级：v23 旧镜像不感知本迁移（不读不写新表/新列），共存行为不变。
+  // schema 恢复（数据取舍决策后执行并留痕）：
+  //   DROP TABLE mu.forge_connection, mu.forge_instance;
+  //   ALTER TABLE mu.repository DROP COLUMN IF EXISTS connection_id, DROP COLUMN IF EXISTS forge_instance_id;
+  //   （Gitee 事件/run/审计历史若需保留则不得执行——会级联丢历史，见 ADR-003 §3.2.1 v1.1）
+  {
+    version: 24,
+    name: 'mu_forge_connection_model',
+  sql: [
+    `CREATE TABLE IF NOT EXISTS mu.forge_instance (
+       instance_id  TEXT PRIMARY KEY,
+       forge_kind   TEXT NOT NULL CHECK (forge_kind IN ('github','gitee')),
+       api_base     TEXT NOT NULL,
+       web_base     TEXT NOT NULL,
+       capability   JSONB NOT NULL DEFAULT '{}'::jsonb,
+       created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+     )`,
+    `CREATE TABLE IF NOT EXISTS mu.forge_connection (
+       connection_id  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+       tenant_id      UUID NOT NULL REFERENCES mu.tenant(tenant_id),
+       instance_id    TEXT NOT NULL REFERENCES mu.forge_instance(instance_id),
+       credential_ref TEXT NOT NULL,
+       webhook_mode   TEXT NOT NULL CHECK (webhook_mode IN ('signature','password')),
+       status         TEXT NOT NULL DEFAULT 'pending'
+         CHECK (status IN ('pending','valid','denied','expired_revoked','unreachable','revoked')),
+       status_reason  TEXT,
+       verified_at    TIMESTAMPTZ,
+       revoked_at     TIMESTAMPTZ,
+       created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+       updated_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+       UNIQUE (tenant_id, instance_id)
+     )`,
+    `ALTER TABLE mu.repository ADD COLUMN IF NOT EXISTS forge_instance_id TEXT`,
+    `ALTER TABLE mu.repository ADD COLUMN IF NOT EXISTS connection_id UUID`,
+    `INSERT INTO mu.forge_instance (instance_id, forge_kind, api_base, web_base, capability)
+     VALUES ('gitee-cloud','gitee','https://gitee.com/api/v5','https://gitee.com',
+             '{"checks":"not_provided","protection":"not_provided","diff_mode":"per_file"}'::jsonb),
+            ('github-com','github','https://api.github.com','https://github.com',
+             '{"checks":"native","protection":"native","diff_mode":"full"}'::jsonb)
+     ON CONFLICT (instance_id) DO NOTHING`,
+    // 存量仓库行回填默认实例（GitHub 现网数据；幂等：只补 NULL）
+    `UPDATE mu.repository SET forge_instance_id = 'github-com' WHERE forge_instance_id IS NULL`,
+    ],
+  },
+
+  // ── v25 审查上下文冻结列（Gitee 审查纠偏轮：completeness/来源/head 随 run 冻结）──
+  // 纯 additive 三列：审查完成时一次性写入（IS NULL 防幂等重放覆盖）；
+  //  * context_completeness：JSON 文本（三态+file_level+notes，ADR-003 §2.2 形状）
+  //  * context_source：'gitee' | 'github'（数据来源平台——审批票/详情如实呈现）
+  //  * context_head_frozen：审查实际使用的 head sha（与 run.head_sha 双记录，供核对）
+  // 票面与详情读取这三列做范围声明呈现——不写入即显示"未记录"（不伪造）。
+  // 回滚：ALTER TABLE mu.review_run DROP COLUMN IF EXISTS ...（三列均无旧依赖）
+  {
+    version: 25,
+    name: 'mu_review_run_context_freeze',
+    sql: [
+      `ALTER TABLE mu.review_run ADD COLUMN IF NOT EXISTS context_completeness TEXT`,
+      `ALTER TABLE mu.review_run ADD COLUMN IF NOT EXISTS context_source TEXT`,
+      `ALTER TABLE mu.review_run ADD COLUMN IF NOT EXISTS context_head_frozen TEXT`,
+    ],
+  },
 ];
 
 export const MU_SCHEMA_LATEST = MU_MIGRATIONS[MU_MIGRATIONS.length - 1].version;
