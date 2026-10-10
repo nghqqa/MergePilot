@@ -51,3 +51,21 @@
 5. **修复链端到端实证**：P0→审批门→维护者逐票真实批准（decide_review 门，不自动审批）→fxv 真子进程 Fixer dry-run（本地 fixture 与 stub head 同源）→Verifier PASS→run COMPLETED；全程远端零写调用、上下文读取全走 Gitee 适配器（fetchContextFn v2）。
 6. **CI 修复**：超时测试 stub 的 pending Promise 在 CI 时序下挂起 event loop（连锁 cancel 7 用例）——abort 同步兜底修复。
 7. **审批票面范围声明**：v25 冻结列（context_completeness/context_source）随审批列表 API 透出，详情页 partial/unknown 时展示范围声明（缺失=不显示，不伪造）。
+
+## 六、发布前迁移演练（2026-10-10 第三轮，scripts/dev/migration-drill-v23-v25.mjs）
+
+rc.22 基线（git tag 87f292e 的 schema v1-v23）bootstrap → 旧数据种子（GitHub 绑定/PR/历史 run/P0 finding/审批票/legacy 任务）→ 当前分支增量迁移（v24/v25）→ 12/12 PASS：
+
+- 增量迁移不重放 v1-v23（schema_migrations 恰 25 行）；重跑幂等
+- GitHub 绑定/PR 行/历史审批票/任务 payload 全部完好（外键级联无损）
+- 历史 run 的 v25 冻结列=NULL（"未记录"不伪造）
+- repository.forge_instance_id 回填 github-com（现读路径不引用）
+- 新代码 legacy GitHub 服务链解析照常（resolveServiceContext 实测）
+
+**生产切换前置门（第五节）迁移演练=通过。** 剩余前置=真实 Gitee 试点（凭据/仓库/webhook 授权——维护者人工动作，见 §三）。
+
+## 七、试点启动指引（凭据就位后执行序列）
+
+1. 维护者按 pilot-setup-guide 完成仓库+令牌+env（凭据只入 `D:\goai\secrets\gitee-pilot.env`）。
+2. 部署隔离试点服务：rc.23 镜像+独立数据库+`MU_GITEE_PAT/_WEBHOOK_SECRET/_WEBHOOK_MODE=signature`（来源/编码 env 显式配置，不自动回退）；webhook 回调=试点服务的 `/api/mu/gitee/webhook`（HTTPS）。
+3. 试点验收序列（验收记录 §三 1-6 逐项）→ 全过后按发布序列合入/发布/生产。
