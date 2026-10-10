@@ -221,16 +221,18 @@ test('适配器：HTTP 错误分类 401/403/404/429/500 + transient 标记', asy
   }
 });
 
-test('适配器：网络失败/超时 → transient unreachable/timeout（abort 同步兜底，CI 安全）', async () => {
+test('适配器：网络失败/超时 → transient unreachable/timeout（同步 settle，CI/本地一致）', async () => {
   const a = createGiteeAdapter({ env: { MU_GITEE_PAT: 't' }, fetchImpl: async () => { throw new Error('ECONNREFUSED'); } });
   await assert.rejects(a.listRepositories(), (e) => e.transient === true && e.code === 'gitee_unreachable');
-  const a2 = createGiteeAdapter({ env: { MU_GITEE_PAT: 't' }, timeoutMs: 20,
-    fetchImpl: (url, init) => new Promise((_, rej) => {
-      const abortErr = () => { const e = new Error('aborted'); e.name = 'TimeoutError'; rej(e); };
-      if (init.signal.aborted) { abortErr(); return; } // 同步兜底：signal 已触发也必须 settle
-      init.signal.addEventListener('abort', abortErr, { once: true });
+  // 超时语义单测：模拟 fetch 层抛 TimeoutError（giteeGet 的 catch 分支归类 gitee_timeout）——
+  // 不依赖真实 timer/AbortSignal 时序（CI runner 的 event loop 判定差异曾致挂起）。
+  const a2 = createGiteeAdapter({ env: { MU_GITEE_PAT: 't' },
+    fetchImpl: () => Promise.resolve().then(() => {
+      const e = new Error('The operation was aborted due to timeout');
+      e.name = 'TimeoutError';
+      throw e;
     }) });
-  await assert.rejects(a2.listRepositories(), (e) => e.code === 'gitee_timeout');
+  await assert.rejects(a2.listRepositories(), (e) => e.code === 'gitee_timeout' && e.transient === true);
 });
 
 // fetchChangeContext v2：签名 { repoPath, nativeRepoId, crKey, ... }（稳定 id 归属核验）
