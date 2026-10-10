@@ -625,12 +625,25 @@ export async function muApi(req, res, ctx) {
         await store.auditPlatform('OAUTH_FLOW_REJECTED', { detail: { reason: 'platform_admin_invitation_claim_denied' } });
         return null;
       }
-      const claimed = await store.claimInvitation(claim.invite_id, uid);
-      if (!claimed) return null; // 并发认领竞态失败——按未邀请处理
-      await store.ensureMembership({ tenantId: claim.tenant_id, userId: uid, role: claim.role });
-      await store.audit('MU_MEMBER_ONBOARDED', { tenantId: claim.tenant_id, actorUserId: uid,
-        detail: { via: 'invitation', invite_id: claim.invite_id, role: claim.role } });
-      return claim;
+      // 2026-10-10 角色覆盖事故修复：认领入驻事务化（store.claimInvitationOnboard）——
+      // 已有 active membership 保留实际角色（不因邀请降级）；revoked 不被顺带激活；
+      // 返回 finalRole=最终实际角色，会话/审计一律用它（不得宣称 invitation.role）。
+      // preserved 场景审计留痕（邀请已消耗但权限未变——如实记录，非授予）。
+      const r = await store.claimInvitationOnboard({ inviteId: claim.invite_id, userId: uid,
+        invitedRole: claim.role });
+      if (!r.ok) return null; // 并发认领竞态失败——按未邀请处理
+      if (r.outcome === 'onboarded') {
+        await store.audit('MU_MEMBER_ONBOARDED', { tenantId: r.tenantId, actorUserId: uid,
+          detail: { via: 'invitation', invite_id: claim.invite_id, role: r.role } });
+      } else {
+        await store.audit('MU_INVITATION_ACKNOWLEDGED_NO_CHANGE', { tenantId: r.tenantId,
+          actorUserId: uid,
+          detail: { invite_id: claim.invite_id, invited_role: claim.role,
+            actual_role: r.role, actual_state: r.outcome === 'preserved_revoked' ? 'revoked' : 'active',
+            note: '已有成员关系保留实际角色——邀请不改写权限（角色覆盖事故修复语义）' } });
+      }
+      if (r.outcome === 'preserved_revoked') return null; // revoked：不顺带激活，按未邀请回落原租户
+      return { ...claim, role: r.role, tenant_id: r.tenantId };
     };
 
     if (!user) {
