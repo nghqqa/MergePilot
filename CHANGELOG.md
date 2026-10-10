@@ -1,3 +1,13 @@
+## [0.2.0-beta.6-rc.23] — 2026-10-10（候选）
+
+### Gitee 首版接入（forge/ 契约层；实验支持：云端私有仓库只读审查+dry-run）
+- #395 ForgeAdapter 契约层与 Gitee 适配器（规范事件 v1/completeness 三态/验真显式单模式）
+- #396 Gitee 事件入口与真实消费链（webhook+手动入口/连接管理/审批与修复 dry-run 贯通）
+- #397 连接管理面板与支持矩阵（真实试点验收：手动链/修复链/webhook 投递全链）
+- schema v24（forge_instance/forge_connection）+ v25（review_run 上下文冻结列）
+- 试点纠偏：D5 门控读 run 冻结完整性；repair 按 provider 分流绑定检查；修复轮 repoUrl 构造
+- 依赖：#394 官网 rc.22 对齐（基线）
+
 ## [0.2.0-beta.6-rc.22] — 2026-10-09（候选）
 
 ### Fixed

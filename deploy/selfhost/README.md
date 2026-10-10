@@ -1,4 +1,4 @@
-# MergePilot rc.22 自托管部署（候选）
+# MergePilot rc.23 自托管部署（候选）
 
 > 版本：`0.2.0-beta.6-rc.20` · 镜像 pull digest（OCI index）：`sha256:abc5048dda9b2f6baf4b551aa51b768c12bac6e2a92f6d57f7ac420700c068c0`
 > index 内含 linux/amd64 manifest `sha256:8c9022437d60869db050856abef275bddb03155b67a5b4152d02e37f30ff6a1f`、config digest `sha256:364d716314eda485b3468f353d3cabdb2955e097a0d6b6250057595387a1a523`（三者不同对象，勿混称）。
@@ -146,7 +146,7 @@ MU_GITHUB_OAUTH_CALLBACK_URL=https://<console 公开地址>/api/mu/auth/oauth/gi
 | 离线 tar | `docker load -i mergepilot-console-rc22.tar` | tar SHA256 见 `SHA256SUMS-rc22.txt`（发布附件） |
 | 源码构建 | 见下节 | image ID 应可复现（同 commit/同构建参数） |
 
-镜像内置 `MERGEPILOT_VERSION=0.2.0-beta.6-rc.22`（`/api/health` version 字段即真源）。
+镜像内置 `MERGEPILOT_VERSION=0.2.0-beta.6-rc.23`（`/api/health` version 字段即真源）。
 
 **供应链档案（rc.20）**：
 
