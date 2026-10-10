@@ -571,6 +571,50 @@ export async function createMuStore({ pool, env = process.env, migrations = MU_M
     return r.rows[0] ?? null;
   }
 
+  // ── 邀请认领入驻（事务化；2026-10-10 生产角色覆盖事故修复）──
+  // 事故：claimInvitation+ensureMembership 两条独立语句，且 ensureMembership 对
+  // 已有 membership 无条件覆盖（role 降级 + revoked 复活）——生产实证：maintainer
+  // 被 contributor 邀请自动认领覆盖（audit MU_MEMBERSHIP_ROLE_RESTORED 可查）。
+  // 语义（单事务、CAS 认领、FOR UPDATE 锁定目标行——非先 SELECT 后写）：
+  //  * 无 membership → 正常入驻（role=邀请角色）；
+  //  * 已有 active membership → 保留实际角色，邀请记已处理不改写权限；
+  //  * revoked membership → 保留 revoked（普通登录不顺带激活；重新加入须管理员授权）；
+  //  * 返回 finalRole=最终实际角色——调用方（会话/审计）必须用它，不得用 invitation.role。
+  // 正常成员管理（管理员调整/降级/撤销）不经此路径，语义不变。
+  async function claimInvitationOnboard({ inviteId, userId, invitedRole }) {
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const inv = await client.query(
+        `UPDATE mu.invitation SET claimed_at=now(), claimed_by_user_id=$2
+          WHERE invite_id=$1 AND claimed_at IS NULL AND expires_at > now()
+         RETURNING tenant_id`, [inviteId, userId]);
+      if (!inv.rows.length) { await client.query('ROLLBACK'); return { ok: false, reason: 'not_claimable' }; }
+      const tenantId = inv.rows[0].tenant_id;
+      const existing = await client.query(
+        `SELECT role, state FROM mu.membership WHERE tenant_id=$1 AND user_id=$2 FOR UPDATE`,
+        [tenantId, userId]);
+      let finalRole; let outcome;
+      if (!existing.rows.length) {
+        const ins = await client.query(
+          `INSERT INTO mu.membership (tenant_id, user_id, role) VALUES ($1,$2,$3) RETURNING role`,
+          [tenantId, userId, invitedRole]);
+        finalRole = ins.rows[0].role; outcome = 'onboarded';
+      } else if (existing.rows[0].state === 'active') {
+        finalRole = existing.rows[0].role; outcome = 'preserved_active';
+      } else {
+        finalRole = existing.rows[0].role; outcome = 'preserved_revoked';
+      }
+      await client.query('COMMIT');
+      return { ok: true, tenantId, role: finalRole, outcome };
+    } catch (e) {
+      try { await client.query('ROLLBACK'); } catch { /* 连接已失效 */ }
+      throw e;
+    } finally {
+      client.release();
+    }
+  }
+
   // ── Wave 2B：GitHub App installation / repository binding / webhook delivery ──
   async function upsertInstallation({ installationId, tenantId, accountId, accountLogin, accountType = 'User', appId }) {
     const r = await q(
@@ -769,6 +813,7 @@ export async function createMuStore({ pool, env = process.env, migrations = MU_M
     upsertInstallation, getInstallation, listInstallations, setInstallationState,
     upsertRepositoryBinding, getBindingByRepo, setBindingState, setBindingsStateForInstallation,
     claimWebhookDelivery, backfillWebhookDeliveryTenant, finishWebhookDelivery, requeueJob,
+    claimInvitationOnboard,
 
     // ── ForgeAdapter 连接模型（v24；Gitee 首版 G-1）──
     // 凭据红线：credential_ref 只存引用字符串（'env:MU_GITEE_PAT'），本层任何 API

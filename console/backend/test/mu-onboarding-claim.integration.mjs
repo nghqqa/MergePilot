@@ -234,6 +234,82 @@ try {
     ok('OC10 新用户多邀请 → invitation_ambiguous', res.status === 302 && /mu_login_error=invitation_ambiguous/.test(res.headers.get('location') || ''), res.headers.get('location'));
     ok('OC10 无 dave 用户被创建（拒绝先于建户）', (await pool.query("SELECT COUNT(*)::int n FROM mu.app_user WHERE login='dave'")).rows[0].n === 0);
   }
+  // ── OC-11 事故语义锁（2026-10-10 生产事故）：maintainer + 同租户 contributor 邀请 ──
+  // 登录全路径后角色保持 maintainer；PR 详情 my_permissions.actions 含 decide_review。
+  {
+    const mallorySubject = 'github-oauth:9010';
+    await pool.query("INSERT INTO mu.app_user (login, display_name, state) VALUES ('mallory','Mallory','active')");
+    const mallory = (await pool.query("SELECT user_id FROM mu.app_user WHERE login='mallory'")).rows[0];
+    await pool.query("INSERT INTO mu.external_identity (user_id, provider, subject) VALUES ($1,'github-oauth',$2)", [mallory.user_id, mallorySubject]);
+    await pool.query("INSERT INTO mu.membership (tenant_id, user_id, role, state) VALUES ($1,$2,'maintainer','active')", [t1, mallory.user_id]);
+    await pool.query("INSERT INTO mu.invitation (tenant_id, role, expected_subject, expected_login, created_by, expires_at) VALUES ($1,'contributor',$2,'mallory',$3, now() + interval '30 minutes')", [t1, mallorySubject, mallory.user_id]);
+    const { res, muSession } = await oauthLogin({ id: '9010', login: 'mallory' });
+    ok('OC11 登录 302 成功', res.status === 302 && !/mu_login_error=/.test(res.headers.get('location') || ''), res.headers.get('location'));
+    const m = (await membershipsOf(mallory.user_id)).find(x => x.slug === 'default');
+    ok('OC11 角色仍 maintainer（事故回归锁——修复前被降级为 contributor）', m?.role === 'maintainer', m?.role);
+    const inv = (await invitationsOf(mallorySubject)).find(i => i.tenant_id === t1);
+    ok('OC11 邀请已消耗但角色未变（preserved 语义）', inv?.claimed_at !== null && m?.role === 'maintainer');
+    const who = await call('/api/mu/session', { cookie: `mu_session=${muSession}` });
+    ok('OC11 会话 role=maintainer（实际角色，非 invitation.role）', who.json?.role === 'maintainer', who.json?.role);
+    // PR 详情投影：种 repo+PR 行 → GET 详情 → my_permissions.actions 含 decide_review
+    await pool.query("INSERT INTO mu.repository (tenant_id, provider, provider_repo_id, owner, name) VALUES ($1,'github','91001','mallory-org','r') ON CONFLICT DO NOTHING", [t1]);
+    const repoRow = (await pool.query("SELECT repo_id FROM mu.repository WHERE tenant_id=$1 AND provider_repo_id='91001'", [t1])).rows[0];
+    const prRow = (await pool.query("INSERT INTO mu.pull_request (tenant_id, repo_id, provider_pr_number, head_sha, state) VALUES ($1,$2,777,'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','open') RETURNING pr_id", [t1, repoRow.repo_id])).rows[0];
+    const det = await call(`/api/mu/prs/${prRow.pr_id}?repo_id=${repoRow.repo_id}`, { cookie: `mu_session=${muSession}` });
+    const acts = det.json?.my_permissions?.actions ?? [];
+    ok('OC11 PR 详情 my_permissions 含 decide_review', det.status === 200 && acts.includes('decide_review'), { status: det.status, acts });
+  }
+
+  // ── OC-12 revoked 用户 + 同租户邀请 → 不激活、按未邀请回落 ──
+  {
+    const olgaSubject = 'github-oauth:9011';
+    await pool.query("INSERT INTO mu.app_user (login, display_name, state) VALUES ('olga','Olga','active')");
+    const olga = (await pool.query("SELECT user_id FROM mu.app_user WHERE login='olga'")).rows[0];
+    await pool.query("INSERT INTO mu.external_identity (user_id, provider, subject) VALUES ($1,'github-oauth',$2)", [olga.user_id, olgaSubject]);
+    await pool.query("INSERT INTO mu.membership (tenant_id, user_id, role, state) VALUES ($1,$2,'contributor','revoked')", [t1, olga.user_id]);
+    await pool.query("INSERT INTO mu.invitation (tenant_id, role, expected_subject, expected_login, created_by, expires_at) VALUES ($1,'contributor',$2,'olga',$3, now() + interval '30 minutes')", [t1, olgaSubject, olga.user_id]);
+    const { res } = await oauthLogin({ id: '9011', login: 'olga' });
+    const m = (await membershipsOf(olga.user_id)).find(x => x.slug === 'default');
+    ok('OC12 revoked 不被登录顺带激活', m?.state === 'revoked', m?.state);
+    ok('OC12 按未邀请回落 → no_active_membership', res.status === 302 && /mu_login_error=no_active_membership/.test(res.headers.get('location') || ''), res.headers.get('location'));
+  }
+
+  // ── OC-13 认领入驻原子性：store 层 membership 写入失败 → 邀请一并回滚 ──
+  {
+    // 直接调 store 层（绕过 api 层 D-3），invitedRole=platform_admin 触发 v23 CHECK
+    // 违反 → 事务回滚 → 邀请 claimed_at 保持 NULL（不出现"邀请已消耗但授权未完成"）。
+    const storeMod = await import('../lib/multiuser/store.mjs');
+    const store2 = await storeMod.createMuStore({ pool, env: process.env });
+    // 触发方式：userId 不存在 → membership insert FK 违反 → 事务回滚。
+    // （生产 membership CHECK 含 platform_admin——v1 遗留，非法角色不能在此确定性触发；
+    //   FK 违反是同等的确定性写入失败路径，验证同一原子性边界。）
+    const zed = crypto.randomUUID();
+    const iAtomic = (await pool.query("INSERT INTO mu.invitation (tenant_id, role, expected_subject, created_by, expires_at) VALUES ($1,'contributor','github-oauth:9012',$2, now() + interval '30 minutes') RETURNING invite_id", [t1, zed])).rows[0].invite_id;
+    let threw = false;
+    try {
+      await store2.claimInvitationOnboard({ inviteId: iAtomic, userId: zed, invitedRole: 'contributor' });
+    } catch { threw = true; }
+    ok('OC13 非法角色 → 写入抛错（事务回滚）', threw);
+    const inv = (await pool.query('SELECT claimed_at FROM mu.invitation WHERE invite_id=$1', [iAtomic])).rows[0];
+    ok('OC13 邀请未被消耗（claimed_at NULL——原子性）', inv?.claimed_at === null);
+    ok('OC13 零 membership 残留', (await pool.query('SELECT COUNT(*)::int n FROM mu.membership WHERE user_id=$1', [zed])).rows[0].n === 0);
+  }
+
+  // ── OC-14 认领与管理员变更并发：登录路径 preserved 时零写 membership ──
+  {
+    // preserved 语义下登录对 membership 零写入——与管理员并发变更天然无覆盖
+    // （并发 CAS 已在 mu-invitation-claim.integration.mjs S9 锁定）。此处锁写入零化：
+    const ninaSubject = 'github-oauth:9013';
+    await pool.query("INSERT INTO mu.app_user (login, display_name, state) VALUES ('nina','Nina','active')");
+    const nina = (await pool.query("SELECT user_id FROM mu.app_user WHERE login='nina'")).rows[0];
+    await pool.query("INSERT INTO mu.external_identity (user_id, provider, subject) VALUES ($1,'github-oauth',$2)", [nina.user_id, ninaSubject]);
+    await pool.query("INSERT INTO mu.membership (tenant_id, user_id, role, state, updated_at) VALUES ($1,$2,'maintainer','active', now())", [t1, nina.user_id]);
+    await pool.query("INSERT INTO mu.invitation (tenant_id, role, expected_subject, expected_login, created_by, expires_at) VALUES ($1,'contributor',$2,'nina',$3, now() + interval '30 minutes')", [t1, ninaSubject, nina.user_id]);
+    const { res } = await oauthLogin({ id: '9013', login: 'nina' });
+    ok('OC14 登录 302 成功', res.status === 302);
+    const m = (await membershipsOf(nina.user_id)).find(x => x.slug === 'default');
+    ok('OC14 登录后角色仍 maintainer（零写=并发管理员变更不被覆盖）', m?.role === 'maintainer', m?.role);
+  }
 } catch (e) {
   fail++;
   console.error('  FATAL ' + (e?.stack || e?.message || e));
