@@ -23,6 +23,11 @@ export function deriveIdentitySource({ session, dataMode, authed } = {}) {
   if (dataMode === 'fixture') {
     return { key: 'test_principal', label: '隔离测试主体', realGithubIdentity: false };
   }
+  // Gitee OAuth 会话（先于 github/mu_session 兜底判断——gitee 会话同带
+  // session_source='mu_session'，顺序错会把 Gitee 会话误标成 GitHub）
+  if (loginType === 'gitee-oauth') {
+    return { key: 'gitee_oauth', label: 'Gitee OAuth 会话', realGithubIdentity: true };
+  }
   if (loginType === 'github-oauth' || session?.session_source === 'mu_session') {
     return { key: 'github_oauth', label: 'GitHub OAuth 会话', realGithubIdentity: true };
   }
@@ -38,6 +43,8 @@ export function capabilityLine(identity) {
   switch (identity?.key) {
     case 'github_oauth':
       return `GitHub OAuth 会话 · ${CAPABILITY_LINE}`;
+    case 'gitee_oauth':
+      return `Gitee OAuth 会话 · ${CAPABILITY_LINE}`;
     case 'operator_password':
       return `操作员密码登录 · ${CAPABILITY_LINE}`;
     case 'test_principal':
@@ -54,6 +61,8 @@ export function identityDetail(identity, userName) {
   switch (identity?.key) {
     case 'github_oauth':
       return `${userName ?? '已登录'}（GitHub OAuth 会话，身份键=数字 user id）`;
+    case 'gitee_oauth':
+      return `${userName ?? '已登录'}（Gitee OAuth 会话，身份键=数字 user id）`;
     case 'operator_password':
       return `${userName ?? '已登录'}（操作员账号密码会话；非 GitHub 身份）`;
     case 'test_principal':
