@@ -55,7 +55,7 @@ export async function resolveForgeServiceContext(pool, { forgeKind, providerRepo
   instanceId = 'gitee-cloud' }) {
   const b = await pool.query(
     `SELECT fc.connection_id, fc.status, fc.revoked_at, fc.tenant_id,
-            rep.repo_id, rep.owner, rep.name
+            rep.repo_id, rep.provider_repo_id, rep.owner, rep.name
        FROM mu.forge_connection fc
        JOIN mu.repository rep ON rep.tenant_id = fc.tenant_id
             AND rep.forge_instance_id = fc.instance_id AND rep.provider_repo_id = $2
@@ -72,7 +72,8 @@ export async function resolveForgeServiceContext(pool, { forgeKind, providerRepo
     [row.tenant_id, row.repo_id, Number(prNumber)]);
   if (!pr.rows.length) return { ok: false, reason: 'pr_snapshot_missing' };
   return { ok: true, tenantId: row.tenant_id, repoId: row.repo_id, prId: pr.rows[0].pr_id,
-    owner: row.owner, name: row.name, connectionId: row.connection_id, forgeKind };
+    owner: row.owner, name: row.name, nativeRepoId: String(row.provider_repo_id),
+    connectionId: row.connection_id, forgeKind };
 }
 
 /**
@@ -95,13 +96,14 @@ export async function handlePullRequestEvent(pool, cfg, { payload, servicePrinci
       forgeKind: String(payload.forge_kind), providerRepoId: String(payload.provider_repo_id), prNumber });
     if (!ctx.ok) return { ok: false, reason: ctx.reason };
     // 上下文获取：ForgeAdapter（可注入 cfg.forgeAdapter；默认 env 装配 Gitee 适配器）。
-    // GiteeAdapter 返回形状对齐 legacy context 契约（diff/checks/protection/limits），
-    // 附加 completeness/files——管线零改动复用。
+    // v2 签名：repoPath（定位）+nativeRepoId（DB 登记稳定 id——适配器内核验路径归属）；
+    // declaredFileCount=webhook 声明的交叉核验值（手动入口为 null——适配器分页自证）。
     const adapter = cfg.forgeAdapter
       ?? createGiteeAdapter({ env: cfg.llmEnv ?? process.env, credentialRef: 'env:MU_GITEE_PAT' });
     fetchContext = async () => adapter.fetchChangeContext({
-      providerRepoId: `${ctx.owner}/${ctx.name}`, crKey: String(prNumber),
-      expectedHeadSha: headSha, declaredFileCount: payload.declared_file_count ?? null });
+      repoPath: `${ctx.owner}/${ctx.name}`, nativeRepoId: ctx.nativeRepoId,
+      crKey: String(prNumber), expectedHeadSha: headSha,
+      declaredFileCount: payload.declared_file_count ?? null });
   } else {
     // ── legacy GitHub：字段提取与校验原样（契约不变）──
     headSha = String(payload.head_sha ?? '');
@@ -186,6 +188,16 @@ export async function handlePullRequestEvent(pool, cfg, { payload, servicePrinci
     const inserted = await insertFindings(pool, { attemptId: claim.attemptId, runId: run.run_id,
       tenantId: ctx.tenantId, repoId: ctx.repoId, prId: ctx.prId, headSha, findings });
     await transitionRun(pool, { runId: run.run_id, from: ['REVIEWING'], to: 'REVIEWED' });
+    // v25 上下文冻结（审查完成时一次性写入；IS NULL 防幂等重放覆盖）——
+    // completeness/来源/实际 head 随 run 留痕，审批票与详情如实呈现（不写入=未记录，不伪造）。
+    await pool.query(
+      `UPDATE mu.review_run
+          SET context_completeness=$2, context_source=$3, context_head_frozen=$4
+        WHERE run_id=$1 AND context_completeness IS NULL`,
+      [run.run_id,
+        JSON.stringify(context.completeness ?? null),
+        isForgeV1 ? String(payload.forge_kind ?? 'gitee') : 'github',
+        String(context.fetched_head_sha ?? headSha)]).catch(() => {});
     await recordDecision(pool, { runId: run.run_id, tenantId: ctx.tenantId, repoId: ctx.repoId,
       prId: ctx.prId, headSha, stage: 'review_done',
       decision: inserted > 0 ? 'findings_present' : 'clean',

@@ -319,14 +319,15 @@ function buildForgeFixDeps(muPoolQuery, { job, ctx, adapterEnv = process.env }) 
   const adapter = createGiteeAdapter({ env: adapterEnv, credentialRef: 'env:MU_GITEE_PAT' });
   const owner = String(ctx.binding?.owner ?? job.payload?.forge_owner ?? '');
   const name = String(ctx.binding?.name ?? job.payload?.forge_name ?? '');
+  const nativeRepoId = String(ctx.binding?.nativeRepoId ?? ctx.binding?.provider_repo_id ?? '');
   if (!owner || !name) return null;
-  const providerRepoId = `${owner}/${name}`;
+  const repoPath = `${owner}/${name}`;
   return {
-    repoUrl: null, // fxv dry-run 本地工作区模式；Gitee 路径不构造 GitHub URL
-    testCmd: process.env.MU_FXV_TEST_CMD || 'node -e process.exit(0)',
+    repoUrl: global.__WAVE3_TEST_DEPS?.repoUrl ?? null, // 测试注入本地仓库；Gitee 路径不构造 GitHub URL
+    testCmd: global.__WAVE3_TEST_DEPS?.testCmd ?? (process.env.MU_FXV_TEST_CMD || 'node -e process.exit(0)'),
     fetchContextFn: ({ prNumber, expectedHeadSha }) => adapter.fetchChangeContext({
-      providerRepoId, crKey: String(prNumber), expectedHeadSha,
-      declaredFileCount: job.payload?.declared_file_count ?? null }),
+      repoPath, nativeRepoId: nativeRepoId || null, crKey: String(prNumber),
+      expectedHeadSha, declaredFileCount: job.payload?.declared_file_count ?? null }),
     owner, repoName: name, prNumber: Number(job.payload?.pr_number ?? 0),
     assertServiceChain: async () => {
       const chk = await muPoolQuery(
@@ -390,12 +391,14 @@ async function buildFixDepsForRepo(muPoolQuery, { tenantId, repoId, prNumber }) 
         ORDER BY created_at DESC LIMIT 1`, [tenantId, repoId]).catch(() => null))?.rows?.[0]?.d ?? null;
     if (declared === null || declared === '' || Number(declared) < 0) return null; // unknown→拒绝 dry-run
     const adapter = createGiteeAdapter({ env: process.env, credentialRef: 'env:MU_GITEE_PAT' });
-    const providerRepoId = `${rm.owner}/${rm.name}`;
+    const repoPath = `${rm.owner}/${rm.name}`;
+    const overrides = global.__WAVE3_TEST_DEPS; // 测试注入本地仓库/定制 testCmd（与 GitHub 分支同机制）
     return {
-      repoUrl: null, // Gitee 路径不构造 GitHub URL（fxv dry-run 本地工作区模式）
-      testCmd: process.env.MU_FXV_TEST_CMD || 'node -e process.exit(0)',
+      repoUrl: overrides?.repoUrl ?? null, // Gitee 路径不构造 GitHub URL（fxv dry-run 本地工作区模式）
+      testCmd: overrides?.testCmd ?? (process.env.MU_FXV_TEST_CMD || 'node -e process.exit(0)'),
       fetchContextFn: ({ expectedHeadSha }) => adapter.fetchChangeContext({
-        providerRepoId, crKey: String(prNumber ?? 0), expectedHeadSha,
+        repoPath, nativeRepoId: String(rm.provider_repo_id ?? '') || null,
+        crKey: String(prNumber ?? 0), expectedHeadSha,
         declaredFileCount: Number(declared) }),
       owner: rm.owner, repoName: rm.name, prNumber: Number(prNumber ?? 0),
       assertServiceChain: async () => {
@@ -809,7 +812,10 @@ export async function muApi(req, res, ctx) {
         ? String(body.timestamp).slice(0, 32) : null,
       bodySign: typeof body?.sign === 'string' ? String(body.sign).slice(0, 512) : null,
     };
-    const v = verifyGiteeWebhook({ mode, secret, headers: req.headers, rawBody: raw, extracted });
+    // 来源/编码显式配置单选（v2 纠偏：不自动回退/混合；未实测形态保持未启用）
+    const v = verifyGiteeWebhook({ mode, secret, extracted,
+      signSource: String(env.MU_GITEE_WEBHOOK_SIGN_SOURCE ?? 'header'),
+      signEncoding: String(env.MU_GITEE_WEBHOOK_SIGN_ENCODING ?? 'url_b64') });
     if (!v.ok) {
       // fail-closed：验真失败不持久化 payload、不入队、不触发业务（审计仅记 reason，零正文）
       await store.auditPlatform('OAUTH_FLOW_REJECTED', { detail: { reason: 'gitee_webhook_rejected', sig: v.reason } }).catch(() => {});

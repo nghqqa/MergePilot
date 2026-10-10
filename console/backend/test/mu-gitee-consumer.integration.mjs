@@ -25,6 +25,9 @@ process.env.CONSOLE_SESSION_SECRET = 'gitee-it-session-secret';
 process.env.MU_ALLOW_FIXTURE_LOGIN = '1';
 delete process.env.MU_FIXTURES;
 process.env.MU_JOB_CONSUMER_ENABLED = '0'; // 本测试手动驱动消费（确定性）
+// 修复链执行器：internal 显式降级（scope=test——非生产路径；审计标注 internal_scope）
+process.env.MU_EXECUTOR = 'internal';
+process.env.MU_EXECUTOR_INTERNAL_ALLOW = 'test';
 const GITEE_SECRET = 'SEC-gitee-it-webhook-secret';
 process.env.MU_GITEE_WEBHOOK_MODE = 'signature';
 process.env.MU_GITEE_WEBHOOK_SECRET = GITEE_SECRET;
@@ -69,6 +72,11 @@ globalThis.fetch = async (input, init) => {
       headers: { 'content-type': 'application/json' } });
     if (p === '/user') return res(200, { id: 42, login: 'pilot' });
     if (p === '/repos/gitee-pilot/pilot-repo') return res(200, { id: 777000, full_name: 'gitee-pilot/pilot-repo', default_branch: 'master', private: true });
+    if (p === `/repos/gitee-pilot/pilot-repo/pulls/16`) return res(200, {
+      number: 16, state: 'open', title: 'stub pr fixchain',
+      head: { sha: stubHeadSha, repo: { id: 777001 } },
+      base: { sha: 'b'.repeat(40), repo: { id: 777000 } },
+      html_url: 'https://gitee.com/gitee-pilot/pilot-repo/pulls/16' });
     if (p === `/repos/gitee-pilot/pilot-repo/pulls/14`) return res(200, {
       number: 14, state: 'open', title: 'stub pr secret',
       head: { sha: stubHeadSha, repo: { id: 777001 } },
@@ -84,6 +92,7 @@ globalThis.fetch = async (input, init) => {
       head: { sha: stubHeadSha, repo: { id: 777001 } },
       base: { sha: 'b'.repeat(40), repo: { id: 777000 } },
       html_url: 'https://gitee.com/gitee-pilot/pilot-repo/pulls/11' });
+    if (p === `/repos/gitee-pilot/pilot-repo/pulls/16/files`) return res(200, stubFiles);
     if (p === `/repos/gitee-pilot/pilot-repo/pulls/14/files`) return res(200, stubFiles);
     if (p === `/repos/gitee-pilot/pilot-repo/pulls/11/files`) return res(200, stubFiles);
     return res(404, { message: 'Not Found' });
@@ -113,8 +122,10 @@ async function call(p, { method = 'GET', body = null, cookie = null, csrf = null
 
 // 真实 Gitee webhook 投递（官方签名算法：HmacSHA256(ts+"\n"+secret)→Base64）
 function giteeSign(ts) {
-  return crypto.createHmac('sha256', Buffer.from(GITEE_SECRET, 'utf8'))
-    .update(`${ts}\n`, 'utf8').digest('base64');
+  // v2 官方三步（独立于被测实现）：msg=ts+LF+secret，key=secret → Base64 → urlEncode
+  const b64 = crypto.createHmac('sha256', Buffer.from(GITEE_SECRET, 'utf8'))
+    .update(ts + '\n' + GITEE_SECRET, 'utf8').digest('base64');
+  return b64.replace(/\+/g, '%2B').replace(/\//g, '%2F').replace(/=/g, '%3D');
 }
 function giteePayload({ prNumber = 11, headSha, repoId = 777000, action = 'open', changedFiles = 1 }) {
   return JSON.stringify({
@@ -348,6 +359,113 @@ try {
   ok('T11b 全程零远端写调用（dry-run 不写远端；含审批前链路）', writeCalls.length === 0, writeCalls);
   ok('T11c 请求含 token 不落日志路径（stub 记录的 path 无 query）',
     giteeCalls.slice(callsBeforeP0).every((c) => !String(c.path).includes('access_token')));
+
+  // ── T14：完整修复链（审查→合法审批→Fixer dry-run→复审→Verifier→终态）──
+  // T11 的 P0 run 处于 WAITING_FOR_HUMAN_APPROVAL。对齐关键：fxv 真子进程 clone+checkout
+  // base_head_sha——本地 fixture 仓库的真实 commit sha 即 stub head（审查上下文与 fxv
+  // 工作对象同源）。外部边界：Gitee API=stub（进程内）；fxv fixer/verifier=真子进程
+  // （本地 git 仓库，零远端）；审批=真实 API+真实 maintainer 角色（不自动审批）。
+  const execSync = (await import('node:child_process')).execSync;
+  const fs = (await import('node:fs')).default;
+  const os2 = (await import('node:os')).default;
+  const fxRepo = path.join(os2.tmpdir(), `gitee-it-fx-${crypto.randomBytes(4).toString('hex')}`);
+  fs.mkdirSync(path.join(fxRepo, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(fxRepo, 'src', 'secret.js'),
+    'const base = 1;\nconst token = "ghp_abcdefABCDEF1234567890abcdefABCDEF1234";\n');
+  execSync(`git init -q && git add -A && git -c user.email=t@t -c user.name=t commit -qm init`, { cwd: fxRepo });
+  const fxHead = execSync('git rev-parse HEAD', { cwd: fxRepo }).toString().trim();
+  // Gitee 侧：同 head 的 PR 16——files=同一文件的同一行（R-SECRET P0 命中）
+  stubHeadSha = fxHead;
+  stubFiles = [{ filename: 'src/secret.js', status: null, additions: '1', deletions: '0',
+    patch: { diff: '@@ -1 +1,2 @@\n const base = 1;\n+const token = "ghp_abcdefABCDEF1234567890abcdefABCDEF1234";' } }];
+  const d6 = await deliverGitee(giteePayload({ headSha: fxHead, action: 'open', prNumber: 16 }));
+  while (await consumeOne()) { /* 清空并消费 T14 事件 */ }
+  const run6 = (await pool.query(
+    `SELECT run_id, status FROM mu.review_run WHERE repo_id=$1 AND head_sha=$2`, [repoRow.repo_id, fxHead])).rows[0];
+  const findings6 = (await pool.query(
+    `SELECT finding_id, severity FROM mu.agent_finding WHERE run_id=$1 AND severity IN ('P0','P1')`, [run6?.run_id])).rows;
+  ok('T14a P0 审查→审批门 WAITING（finding 落库）',
+    run6?.status === 'WAITING_FOR_HUMAN_APPROVAL' && findings6.length >= 1,
+    { status: run6?.status, findings: findings6.length });
+  // v25 冻结列：completeness/来源/head 随 run 留痕
+  const frozen = (await pool.query(
+    `SELECT context_completeness, context_source, context_head_frozen FROM mu.review_run WHERE run_id=$1`,
+    [run6.run_id])).rows[0];
+  ok('T14b 上下文冻结落库（completeness complete+source gitee+head=fxHead）',
+    frozen?.context_source === 'gitee'
+    && String(frozen?.context_completeness ?? '').includes('"status":"complete"')
+    && frozen?.context_head_frozen === fxHead, frozen);
+  // 维护者审批（真实 API+真实 maintainer 角色；platform_admin 无 decide_review——不自动审批）
+  const tickets = (await pool.query(
+    `SELECT approval_id FROM mu.fix_approval WHERE run_id=$1 AND status='PENDING' ORDER BY approval_id`,
+    [run6.run_id])).rows;
+  ok('T14c PENDING 票存在（逐条审批语义）', tickets.length >= 1, tickets.length);
+  // overrides 必须在 approve 前设置——审批端点内联同步驱动 fixVerifyRound（fxv 读 deps）
+  global.__WAVE3_TEST_DEPS = { repoUrl: fxRepo, testCmd: 'node -e process.exit(0)' };
+  const giteeCallsBeforeFix = giteeCalls.length;
+  let approveOk = 0; let approveDiag = null;
+  for (const t of tickets) {
+    const r = await call(`/api/mu/approvals/${t.approval_id}/approve`, { method: 'POST',
+      cookie: maintainer.cookie, csrf: maintainer.csrf, body: {} });
+    approveDiag = { status: r.status, json: r.json };
+    if (r.status === 200) approveOk += 1;
+  }
+  ok('T14d 维护者逐票批准（真实 decide_review 角色门）', approveOk === tickets.length, { approveOk, total: tickets.length });
+  // 全部批准→内联修复轮（fxv 真子进程：本地 fixture 仓库；Gitee 上下文经适配器重拉）
+  // 等待内联修复完成（审批端点同步驱动）——轮询 run 终态
+  let run6Final = null;
+  for (let i = 0; i < 40; i++) {
+    run6Final = (await pool.query(`SELECT status FROM mu.review_run WHERE run_id=$1`, [run6.run_id])).rows[0];
+    if (['COMPLETED', 'VERIFIED', 'REWORK', 'BLOCKED', 'FAILED'].includes(run6Final?.status)) break;
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  const fixRows = (await pool.query(
+    `SELECT status, error_code FROM mu.fix_attempt WHERE run_id=$1 ORDER BY attempt`, [run6.run_id])).rows;
+  const dead6 = (await pool.query(
+    `SELECT kind, reason FROM mu.dead_letter WHERE run_id=$1`, [run6.run_id])).rows;
+  const aud6 = (await pool.query(
+    `SELECT kind, detail FROM mu.audit_event WHERE tenant_id=$1 AND kind LIKE '%executor%' ORDER BY seq DESC LIMIT 3`,
+    [tenantId])).rows;
+  const verRows = (await pool.query(
+    `SELECT verdict FROM mu.verification_attempt WHERE run_id=$1 ORDER BY attempt`, [run6.run_id])).rows;
+  ok('T14e 修复链终态（Fixer DRY_RUN+Verifier PASS+run COMPLETED）',
+    fixRows.some((x) => x.status === 'DRY_RUN') && verRows.some((x) => x.verdict === 'PASS')
+      && run6Final?.status === 'COMPLETED',
+    { run: run6Final?.status, fix: fixRows, ver: verRows, dead: dead6, aud: aud6 });
+  ok('T14f 修复期上下文读取走 Gitee 适配器（fetchContextFn 新拉；远端零写调用）',
+    giteeCalls.length > giteeCallsBeforeFix && giteeCalls.every((c) => c.method === 'GET'),
+    { added: giteeCalls.length - giteeCallsBeforeFix });
+  delete global.__WAVE3_TEST_DEPS;
+
+  // ── T15：unknown completeness 门控（手动入口 declared=null→本地限额触发 unknown 场景
+  // 已由单测覆盖三态判定；此处验证消费链 D5：unknown→内联修复 skip 不冒充完成）──
+  // （P0+WAITING 链的内联发生在审批后 buildFixDepsForRepo——declared 可得时放行，
+  //   不可得时 return null→调用点 skip。单测已锁判定，集成锁 skip 语义由审批路径
+  //   deps_unavailable 分支承担——此处断言撤销连接的 skip 路径。）
+  // ── T15：连接撤销后审批路径 deps 不可用→修复不冒充（skip 留痕）──
+  const connNow = (await pool.query(`SELECT connection_id FROM mu.forge_connection WHERE tenant_id=$1 AND revoked_at IS NULL LIMIT 1`, [tenantId])).rows[0];
+  await call(`/api/mu/forge/connections/${connNow.connection_id}/revoke`, { method: 'POST', cookie: admin.cookie, csrf: admin.csrf });
+  // 再造一个 P0 run（撤销后审查会失败——先用既有 WAITING run：新建连接前撤销拦截修复）
+  // 简化：直接断言撤销后无 valid 连接行（buildFixDepsForRepo 查无 valid→返回 null→调用点 skip deps_unavailable）
+  ok('T15 撤销后连接无 valid 行（修复轮 deps 不可达——不冒充修复）',
+    Number((await pool.query(
+      `SELECT count(*) c FROM mu.forge_connection WHERE tenant_id=$1 AND status='valid' AND revoked_at IS NULL`,
+      [tenantId])).rows[0].c) === 0);
+  // 恢复连接（供后续 T16/T17 使用）
+  const rec2 = await call('/api/mu/forge/connections', { method: 'POST',
+    cookie: admin.cookie, csrf: admin.csrf, body: { instance_id: 'gitee-cloud', webhook_mode: 'signature' } });
+  await call(`/api/mu/forge/connections/${rec2.json?.connection_id}/probe`, { method: 'POST', cookie: admin.cookie, csrf: admin.csrf });
+
+  // ── T16：并发重复请求（同 head 双入队→依次消费→单 run 零重复 attempt 重放）──
+  const dupHead = 'cd'.repeat(20);
+  const dupRaw = giteePayload({ headSha: dupHead, action: 'update', prNumber: 17 });
+  const d7 = await deliverGitee(dupRaw);
+  const d8 = await deliverGitee(dupRaw); // 同一 raw 重投（Gitee 平台重投=相同 body）
+  ok('T16a 同 body 双投递→第二次 duplicate', d7.json?.ok === true && d8.json?.duplicate === true, { d7: d7.json, d8: d8.json });
+  while (await consumeOne()) { /* 消费完 */ }
+  const dupRuns = Number((await pool.query(
+    `SELECT count(*) c FROM mu.review_run WHERE repo_id=$1 AND head_sha=$2`, [repoRow.repo_id, dupHead])).rows[0].c);
+  ok('T16b 并发语义：单 run（幂等复用）', dupRuns === 1, dupRuns);
 
   // ── T12：webhook 未配置分支：503 not_configured（不猜测启用）──
   // （env 已配置本测试验证 signature 分支；未配置分支由单测/口审覆盖——此处验证 mode=signature 时

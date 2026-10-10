@@ -652,7 +652,8 @@ export async function createMuStore({ pool, env = process.env, migrations = MU_M
   async function getActiveGiteeConnectionForRepo({ instanceId = 'gitee-cloud', providerRepoId }) {
     const r = await q(
       `SELECT fc.*, fi.forge_kind, fi.api_base, fi.web_base,
-              rep.repo_id AS gitee_repo_id, rep.owner AS repo_owner, rep.name AS repo_name
+              rep.repo_id AS gitee_repo_id, rep.provider_repo_id,
+              rep.owner AS repo_owner, rep.name AS repo_name
          FROM mu.forge_connection fc
          JOIN mu.forge_instance fi ON fi.instance_id = fc.instance_id
          JOIN mu.repository rep ON rep.tenant_id = fc.tenant_id
@@ -665,7 +666,7 @@ export async function createMuStore({ pool, env = process.env, migrations = MU_M
     if (!row) return { ok: false, reason: 'forge_binding_not_found' };
     return { ok: true, connection: row,
       repo: { repo_id: row.gitee_repo_id, tenant_id: row.tenant_id,
-        owner: row.repo_owner, name: row.repo_name } };
+        owner: row.repo_owner, name: row.repo_name, provider_repo_id: String(row.provider_repo_id) } };
   }
 
   async function listInstallations(tenantId) {
