@@ -23,6 +23,8 @@ import { issueMuSession, resolveMuSession, muCsrfOk, rotateMuSession,
          muCorrCookie, muCorrClear, muCorrFromCookieHeader, appendCorrClear } from './session.mjs';
 import { ghAppConfig, listInstallationRepositories } from './ghapp.mjs';
 import { verifyWebhookSignature, readRawBody } from './webhookVerify.mjs';
+import { validateForgeEventV1, deriveDeliveryRef } from './forge/index.mjs';
+import { verifyGiteeWebhook, createGiteeAdapter } from './forge/gitee.mjs';
 
 // pg 解析：容器/镜像内走标准 node_modules；CI/主机测试进程回退到 test/support
 // 安装的 dev-only pg（与 cchain/wiring.mjs loadPg 同一惯例——CI runner 无根 junction）。
@@ -83,6 +85,24 @@ export function getMuStore(env) {
 // 上下文解析：installation（active 未撤未停）→ repository_binding（active，
 // installation/tenant/repo 三方一致）→ 失效即 fail-closed（区分可重试瞬态）。
 async function resolveEventSyncContext(store, job) {
+  // Forge v1（gitee 首版 G-3）分流：连接校验路径（安装域不适用——payload 无 installation_id）。
+  // 消费前契约校验【前置】（与入队前同一校验器）——缺字段报 event_payload_invalid 可定位，
+  // 不被 forge_binding_not_found 掩盖（#389 教训：失败原因必须指向真因）。
+  // 授权面=DB 行（active 连接 + 仓库归属），不信任 payload 自报的 connection_id/tenant_id。
+  if (Number(job.payload?.schema_version ?? 0) === 1 && job.payload?.forge_kind === 'gitee') {
+    const vv = validateForgeEventV1(job.payload);
+    if (!vv.ok) return { ok: false, reason: vv.reason, field: vv.field };
+    const hit = await store.getActiveGiteeConnectionForRepo({ providerRepoId: String(job.payload?.provider_repo_id ?? '') })
+      .catch(() => ({ ok: false, reason: 'transient_read_failed' }));
+    if (!hit.ok) {
+      return hit.reason === 'transient_read_failed'
+        ? { ok: false, reason: 'transient_read_failed' }
+        : { ok: false, reason: hit.reason };
+    }
+    if (hit.connection.tenant_id !== job.tenant_id) return { ok: false, reason: 'forge_connection_mismatch' };
+    return { ok: true, forge: { kind: 'gitee', connection_id: hit.connection.connection_id,
+      instance_id: hit.connection.instance_id }, binding: hit.repo };
+  }
   const instId = Number(job.payload?.installation_id ?? 0);
   if (!instId) return { ok: false, reason: 'installation_id_missing' };
   let inst = null;
@@ -111,6 +131,77 @@ async function executeEventSync(store, muPoolQuery, job, sysCtx) {
   if (ev !== 'pull_request') {
     // 订阅但未实现处理器的事件类型：明确 dead-letter（不静默吞、不误入人工路径）
     return { state: 'failed', result: { reason: 'event_kind_unsupported', event: ev } };
+  }
+  const isForgeV1 = Number(job.payload?.schema_version ?? 0) === 1 && job.payload?.forge_kind === 'gitee';
+  if (isForgeV1) {
+    // ── Forge v1（gitee）：消费前契约校验（与入队前同一校验器——#389 教训：缺字段
+    //    明确失败可定位，绝不静默挂 queued）──
+    const vv = validateForgeEventV1(job.payload);
+    if (!vv.ok) return { state: 'failed', result: { reason: 'event_payload_invalid', field: vv.field } };
+    const prNumber = Number(job.payload.pr_number);
+    const headSha = String(job.payload.head_sha);
+    await store.upsertPullRequest({ tenantId: job.tenant_id, repoId: job.repo_id,
+      providerPrNumber: prNumber, headSha, branchProtectionStatus: 'unknown',
+      title: null }); // 本接入未提供保护读取→合并资格按 unknown fail-closed（不冒充任何结论）
+    await muPoolQuery('UPDATE mu.forge_connection SET updated_at = now() WHERE connection_id=$1',
+      [sysCtx.forge.connection_id]).catch(() => {});
+    // PR 生命周期收敛：gitee action=close（第三方口径〔试点〕；reopen 未见官方文档——
+    // 未知 action 已在入队前 rejected 留痕）
+    const prAction = String(job.payload?.action ?? '');
+    if (prAction === 'close') {
+      await muPoolQuery(
+        `UPDATE mu.pull_request SET state='closed', updated_at=now()
+          WHERE tenant_id=$1 AND repo_id=$2 AND provider_pr_number=$3`,
+        [job.tenant_id, job.repo_id, prNumber]).catch(() => {});
+      return { state: 'done', result: { pr_number: prNumber, head_sha_prefix: headSha.slice(0, 12),
+        pipeline: { skipped: 'pr_closed' } } };
+    }
+    // 完整审查管线（与 legacy 同一消费单元；payload v1 原样传入 handlePullRequestEvent）
+    const pipeline = { review: null, decision: null, fix: null };
+    try {
+      const { handlePullRequestEvent } = await import('./review-service.mjs');
+      const { advanceAfterReview } = await import('./agents/leader.mjs');
+      const cfg = ghAppConfig(process.env);
+      const pool = { query: muPoolQuery };
+      const rv = await handlePullRequestEvent(pool, cfg, { payload: job.payload });
+      pipeline.review = { ok: rv.ok, status: rv.run?.status ?? null,
+        findings: rv.findings_count ?? null, reason: rv.reason ?? null };
+      if (rv.ok && rv.run?.status === 'REVIEWED' && !rv.idempotent) {
+        const findings = (await muPoolQuery(
+          `SELECT rule_id, severity, path, line_start, summary_masked FROM mu.agent_finding
+            WHERE run_id=$1 ORDER BY severity`, [rv.run.run_id])).rows;
+        const dec = await advanceAfterReview(pool, { runId: rv.run.run_id,
+          tenantId: job.tenant_id, repoId: job.repo_id, prId: rv.run.pr_id, headSha,
+          findings, protection: rv.protection ?? { configured: false } });
+        pipeline.decision = dec.decision ?? dec.reason ?? null;
+        // v16 审批门语义不变（fix_required→WAITING 等人工批准；仅直通 FIX_QUEUED 才内联）。
+        // D5 门控（ADR-003 §2.2）：completeness=unknown 时 dry-run 默认拒绝——fail-visible
+        // skip 留痕，不静默降级；partial 允许（产物自带范围声明）。
+        if (dec.decision === 'fix_required' && dec.run_status === 'FIX_QUEUED') {
+          if (rv.completeness?.status === 'unknown') {
+            pipeline.fix = { skipped: 'completeness_unknown', reason: 'dry_run_gated_by_context_completeness' };
+          } else {
+            const { fixVerifyRound } = await import('./agents/fix-orchestrator.mjs');
+            const dep = buildForgeFixDeps(muPoolQuery, { job, ctx: sysCtx,
+              adapterEnv: process.env });
+            if (dep) {
+              const fx = await fixVerifyRound(pool, { run: rv.run,
+                binding: { tenantId: job.tenant_id, repoId: job.repo_id, prId: rv.run.pr_id, headSha },
+                deps: dep });
+              pipeline.fix = fx.ok
+                ? { verdict: fx.verdict ?? null, decision: fx.decision ?? null, executor: fx.executor ?? 'internal' }
+                : { skipped: fx.stage ?? 'fix_failed', reason: fx.reason ?? null };
+            } else {
+              pipeline.fix = { skipped: 'deps_unavailable' };
+            }
+          }
+        }
+      }
+    } catch (e) {
+      pipeline.review = pipeline.review ?? { ok: false, reason: `pipeline_error:${String(e?.message ?? e).slice(0, 80)}` };
+    }
+    return { state: 'done', result: { pr_number: prNumber, head_sha_prefix: headSha.slice(0, 12),
+      forge: { kind: 'gitee' }, completeness: pipeline.review?.completeness ?? null, pipeline } };
   }
   const prNumber = Number(job.payload?.pr_number ?? 0);
   const headSha = String(job.payload?.head_sha ?? '');
@@ -221,6 +312,34 @@ async function buildFixDeps(muPoolQuery, { job, sysCtx, githubRepoId }) {
 }
 
 /**
+ * Forge（gitee 首版）修复轮 deps：fetchContextFn 注入 GiteeAdapter——Fixer/Verifier
+ * 重拉 diff 走同一平台（Gitee 审查后不得退回 GitHub 端点）。服务链复查=连接 active 复查。
+ */
+function buildForgeFixDeps(muPoolQuery, { job, ctx, adapterEnv = process.env }) {
+  const adapter = createGiteeAdapter({ env: adapterEnv, credentialRef: 'env:MU_GITEE_PAT' });
+  const owner = String(ctx.binding?.owner ?? job.payload?.forge_owner ?? '');
+  const name = String(ctx.binding?.name ?? job.payload?.forge_name ?? '');
+  const nativeRepoId = String(ctx.binding?.nativeRepoId ?? ctx.binding?.provider_repo_id ?? '');
+  if (!owner || !name) return null;
+  const repoPath = `${owner}/${name}`;
+  return {
+    repoUrl: global.__WAVE3_TEST_DEPS?.repoUrl ?? null, // 测试注入本地仓库；Gitee 路径不构造 GitHub URL
+    testCmd: global.__WAVE3_TEST_DEPS?.testCmd ?? (process.env.MU_FXV_TEST_CMD || 'node -e process.exit(0)'),
+    fetchContextFn: ({ prNumber, expectedHeadSha }) => adapter.fetchChangeContext({
+      repoPath, nativeRepoId: nativeRepoId || null, crKey: String(prNumber),
+      expectedHeadSha, declaredFileCount: job.payload?.declared_file_count ?? null }),
+    owner, repoName: name, prNumber: Number(job.payload?.pr_number ?? 0),
+    assertServiceChain: async () => {
+      const chk = await muPoolQuery(
+        `SELECT 1 FROM mu.forge_connection fc
+          WHERE fc.instance_id=$1 AND fc.tenant_id=$2 AND fc.status='valid' AND fc.revoked_at IS NULL`,
+        [ctx.forge.instance_id, job.tenant_id]).catch(() => null);
+      return Boolean(chk?.rows?.length);
+    },
+  };
+}
+
+/**
  * rc.11 PR-A：已领取的 event_sync job 的【唯一消费单元】——人工 tick 端点与平台级
  * 自动 consumer（job-consumer.mjs）共用同一状态机（零复制）。
  * 语义与既有 tick event_sync 分支逐字一致：installation/tenant fail-closed 校验
@@ -229,11 +348,13 @@ async function buildFixDeps(muPoolQuery, { job, sysCtx, githubRepoId }) {
  */
 export async function processClaimedEventSyncJob(store, muPoolQuery, job) {
   const sysCtx = await resolveEventSyncContext(store, job);
+  const deliveryPrefix = String(job.payload?.delivery_id ?? job.payload?.delivery_ref ?? '').slice(0, 8);
   if (!sysCtx.ok) {
     const retryable = sysCtx.reason === 'transient_read_failed';
     await store.finishJob(job.job_id, retryable ? 'queued' : 'rejected', { reason: sysCtx.reason });
     await store.audit('GHAPP_EVENT_SYNC_REJECTED', { tenantId: job.tenant_id, actorUserId: null,
-      detail: { job_id: job.job_id, delivery_prefix: String(job.payload?.delivery_id ?? '').slice(0, 8),
+      detail: { job_id: job.job_id, delivery_prefix: deliveryPrefix,
+        forge_kind: job.payload?.forge_kind ?? null,
         reason: sysCtx.reason, retryable } });
     return { state: retryable ? 'requeued' : 'rejected', kind: 'event_sync', reason: sysCtx.reason };
   }
@@ -241,14 +362,54 @@ export async function processClaimedEventSyncJob(store, muPoolQuery, job) {
   await store.finishJob(job.job_id, r.state, r.result);
   await store.audit('GHAPP_EVENT_SYNC_DONE', { tenantId: job.tenant_id, actorUserId: null,
     detail: { job_id: job.job_id, event: job.payload?.event,
-      delivery_prefix: String(job.payload?.delivery_id ?? '').slice(0, 8), repo_id: job.repo_id,
-      installation_id: sysCtx.installation_id, outcome: r.state } });
+      delivery_prefix: deliveryPrefix, repo_id: job.repo_id,
+      forge_kind: job.payload?.forge_kind ?? null,
+      installation_id: sysCtx.installation_id ?? null, outcome: r.state } });
   return { state: r.state, kind: 'event_sync' };
 }
 
 // v16 审批门：按 repo_id 装配修复轮 deps（approve 后内联启动用；
 // 与 buildFixDeps 同形状——仅键不同：绑定衈按 repo_id 查而非 github_repo_id+job）
 async function buildFixDepsForRepo(muPoolQuery, { tenantId, repoId, prNumber }) {
+  // ── Forge 分流（Gitee 首版 G-3）：gitee 仓库修复轮走 GiteeAdapter——审批通过后的
+  // dry-run 不得退回 GitHub 端点。D5 门控：declared_file_count 不可得（手动入口/缺声明）
+  // → completeness=unknown → 拒绝装配（返回 null→调用点 skip，不冒充修复完成）。
+  const repoMeta = await muPoolQuery(
+    `SELECT provider, provider_repo_id, owner, name, forge_instance_id FROM mu.repository
+      WHERE repo_id=$1 AND tenant_id=$2`, [repoId, tenantId]).catch(() => null);
+  if (repoMeta?.rows?.[0]?.provider === 'gitee') {
+    const rm = repoMeta.rows[0];
+    const instanceId = rm.forge_instance_id ?? 'gitee-cloud';
+    const conn = await muPoolQuery(
+      `SELECT connection_id FROM mu.forge_connection
+        WHERE tenant_id=$1 AND instance_id=$2 AND status='valid' AND revoked_at IS NULL LIMIT 1`,
+      [tenantId, instanceId]).catch(() => null);
+    if (!conn?.rows?.length) return null;
+    const declared = (await muPoolQuery(
+      `SELECT payload->>'declared_file_count' d FROM mu.job
+        WHERE tenant_id=$1 AND repo_id=$2 AND kind='event_sync' AND payload->>'forge_kind'='gitee'
+        ORDER BY created_at DESC LIMIT 1`, [tenantId, repoId]).catch(() => null))?.rows?.[0]?.d ?? null;
+    if (declared === null || declared === '' || Number(declared) < 0) return null; // unknown→拒绝 dry-run
+    const adapter = createGiteeAdapter({ env: process.env, credentialRef: 'env:MU_GITEE_PAT' });
+    const repoPath = `${rm.owner}/${rm.name}`;
+    const overrides = global.__WAVE3_TEST_DEPS; // 测试注入本地仓库/定制 testCmd（与 GitHub 分支同机制）
+    return {
+      repoUrl: overrides?.repoUrl ?? null, // Gitee 路径不构造 GitHub URL（fxv dry-run 本地工作区模式）
+      testCmd: overrides?.testCmd ?? (process.env.MU_FXV_TEST_CMD || 'node -e process.exit(0)'),
+      fetchContextFn: ({ expectedHeadSha }) => adapter.fetchChangeContext({
+        repoPath, nativeRepoId: String(rm.provider_repo_id ?? '') || null,
+        crKey: String(prNumber ?? 0), expectedHeadSha,
+        declaredFileCount: Number(declared) }),
+      owner: rm.owner, repoName: rm.name, prNumber: Number(prNumber ?? 0),
+      assertServiceChain: async () => {
+        const chk = await muPoolQuery(
+          `SELECT 1 FROM mu.forge_connection
+            WHERE tenant_id=$1 AND instance_id=$2 AND status='valid' AND revoked_at IS NULL`,
+          [tenantId, instanceId]).catch(() => null);
+        return Boolean(chk?.rows?.length);
+      },
+    };
+  }
   const rb = await muPoolQuery(
     `SELECT owner, name, installation_id, github_repo_id FROM mu.repository_binding
       WHERE repo_id=$1 AND tenant_id=$2 AND binding_state='active' LIMIT 1`,
@@ -623,6 +784,104 @@ export async function muApi(req, res, ctx) {
       await store.finishWebhookDelivery(deliveryId, 'received'); // 可重试（幂等）
       return sendJson(res, 500, { error: { reason: 'webhook_processing_failed' } });
     }
+  }
+
+  // ── Gitee webhook（Gitee 首版 G-3）：平台级端点，仅签名验真认证，不接受浏览器会话 ──
+  // 验真模式由部署 env 显式配置（MU_GITEE_WEBHOOK_MODE='signature'|'password' +
+  // MU_GITEE_WEBHOOK_SECRET）——单模式，禁止自动降级/多模式择一通过（ADR-003 §2.1）。
+  // 未配置 → 503 not_configured：官方携带方式仍有文档不一致分支〔试点〕——未启用的
+  // 分支如实报未启用，不凭猜测标生产可用。
+  // 完整性边界：Gitee 签名不含请求体——验真通过≠body 未篡改；防线=HTTPS+delivery_ref
+  // （含 body sha256）幂等+timestamp 窗口（verifyGiteeWebhook 内）。
+  if (p === '/api/mu/gitee/webhook' && req.method === 'POST') {
+    const mode = String(env.MU_GITEE_WEBHOOK_MODE ?? '');
+    const secret = String(env.MU_GITEE_WEBHOOK_SECRET ?? '');
+    if ((mode !== 'signature' && mode !== 'password') || !secret) {
+      return sendJson(res, 503, { error: { reason: 'gitee_webhook_not_configured',
+        message: 'Gitee webhook 验真未启用（MU_GITEE_WEBHOOK_MODE/SECRET 未配置）' } });
+    }
+    const raw = await readRawBody(req).catch(() => null);
+    if (!raw) return sendJson(res, 400, { error: { reason: 'empty_body' } });
+    // 有界提取（验真所需字段；失败路径可解析但不持久化、不入队、不触发业务）
+    let body = null;
+    try { body = JSON.parse(raw); } catch { body = null; }
+    const extracted = {
+      tokenHeader: String(req.headers['x-gitee-token'] ?? '').slice(0, 512),
+      tsHeader: String(req.headers['x-gitee-timestamp'] ?? '').slice(0, 32),
+      bodyTimestamp: (typeof body?.timestamp === 'string' || typeof body?.timestamp === 'number')
+        ? String(body.timestamp).slice(0, 32) : null,
+      bodySign: typeof body?.sign === 'string' ? String(body.sign).slice(0, 512) : null,
+    };
+    // 来源/编码显式配置单选（v2 纠偏：不自动回退/混合；未实测形态保持未启用）
+    const v = verifyGiteeWebhook({ mode, secret, extracted,
+      signSource: String(env.MU_GITEE_WEBHOOK_SIGN_SOURCE ?? 'header'),
+      signEncoding: String(env.MU_GITEE_WEBHOOK_SIGN_ENCODING ?? 'url_b64') });
+    if (!v.ok) {
+      // fail-closed：验真失败不持久化 payload、不入队、不触发业务（审计仅记 reason，零正文）
+      await store.auditPlatform('OAUTH_FLOW_REJECTED', { detail: { reason: 'gitee_webhook_rejected', sig: v.reason } }).catch(() => {});
+      return sendJson(res, 401, { error: { reason: 'gitee_webhook_rejected', detail: v.reason } });
+    }
+    const giteeEvent = String(req.headers['x-gitee-event'] ?? '');
+    if (giteeEvent !== 'Merge Request Hook') {
+      return sendJson(res, 200, { ok: true, ignored: 'event_not_consumed' });
+    }
+    const providerRepoId = String(body?.repository?.id ?? '');
+    const prNumber = Number(body?.pull_request?.number ?? 0);
+    const headSha = String(body?.pull_request?.head?.sha ?? '');
+    const action = String(body?.action ?? '');
+    if (!providerRepoId || !/^[0-9]+$/.test(providerRepoId) || !prNumber
+      || !/^[0-9a-f]{6,64}$/i.test(headSha) || !action) {
+      // 形状不识别：不入队（无 delivery 落行——未构成可去重的目标事件投递）
+      return sendJson(res, 200, { ok: true, ignored: 'payload_shape_unrecognized' });
+    }
+    // 未知 action：fail-visible rejected 留痕（不静默丢弃；ADR-003 §2.3）
+    if (!['open', 'update', 'close', 'merge', 'reopen', 'reject'].includes(action)) {
+      const r0 = deriveDeliveryRef({ forgeKind: 'gitee', providerRepoId, changeRequestKey: String(prNumber), eventType: 'pull_request', rawBody: raw });
+      await store.claimWebhookDelivery(r0, { event: 'merge_request_hook' }).catch(() => {});
+      await store.finishWebhookDelivery(r0, 'rejected').catch(() => {});
+      await store.audit('GITEE_WEBHOOK_PROCESSED', { tenantId: null, actorUserId: null,
+        detail: { delivery_prefix: r0.slice(0, 8), rejected: 'unknown_action', action } }).catch(() => {});
+      return sendJson(res, 200, { ok: true, rejected: 'unknown_action' });
+    }
+    const deliveryRef = deriveDeliveryRef({ forgeKind: 'gitee', providerRepoId,
+      changeRequestKey: String(prNumber), eventType: 'pull_request', rawBody: raw });
+    const claim = await store.claimWebhookDelivery(deliveryRef, { event: 'merge_request_hook' });
+    if (!claim) {
+      await store.finishWebhookDelivery(deliveryRef, 'duplicate');
+      return sendJson(res, 200, { ok: true, duplicate: true });
+    }
+    // 服务端反查绑定（授权面=DB 行；不信任 body 自报租户/连接）
+    const binding = await store.getActiveGiteeConnectionForRepo({ providerRepoId })
+      .catch(() => ({ ok: false, reason: 'forge_lookup_failed' }));
+    if (!binding.ok) {
+      await store.finishWebhookDelivery(deliveryRef, 'rejected');
+      return sendJson(res, 200, { ok: true, ignored: binding.reason });
+    }
+    const tenantId = binding.connection.tenant_id;
+    await store.backfillWebhookDeliveryTenant(deliveryRef, tenantId).catch(() => {});
+    const declaredRaw = Number(body?.pull_request?.changed_files);
+    const payloadV1 = {
+      schema_version: 1, event: 'pull_request', forge_kind: 'gitee',
+      delivery_ref: deliveryRef, provider_repo_id: providerRepoId,
+      pr_number: prNumber, head_sha: headSha, action,
+      trigger_source: null, installation_id: null,
+      declared_file_count: Number.isFinite(declaredRaw) && declaredRaw >= 0 ? declaredRaw : null,
+      connection_id: binding.connection.connection_id,
+      forge_instance_id: binding.connection.instance_id,
+    };
+    const vv = validateForgeEventV1(payloadV1); // 入队前契约校验（与消费前同一校验器）
+    if (!vv.ok) {
+      await store.finishWebhookDelivery(deliveryRef, 'rejected');
+      await store.audit('GITEE_WEBHOOK_PROCESSED', { tenantId, actorUserId: null,
+        detail: { delivery_prefix: deliveryRef.slice(0, 8), rejected: vv.field } }).catch(() => {});
+      return sendJson(res, 200, { ok: true, rejected: vv.field });
+    }
+    await store.enqueueJob({ tenantId, repoId: binding.repo.repo_id, kind: 'event_sync',
+      requestedBy: null, requestedRole: 'maintainer', payload: payloadV1 });
+    await store.finishWebhookDelivery(deliveryRef, 'processed');
+    await store.audit('GITEE_WEBHOOK_PROCESSED', { tenantId, actorUserId: null,
+      detail: { delivery_prefix: deliveryRef.slice(0, 8), provider_repo_id: providerRepoId, pr_number: prNumber } });
+    return sendJson(res, 200, { ok: true });
   }
 
 
@@ -1480,6 +1739,103 @@ export async function muApi(req, res, ctx) {
         prId: q.pr_id ? String(q.pr_id) : null, limit: q.limit ?? 100 });
       return sendJson(res, 200, { approvals: rows, tenant_scope: 'self' });
     }
+    // ── Forge 连接管理（Gitee 首版 G-3；manage_instance=platform_admin——凭据为
+    //    部署级 env 注入（单一部署凭据，非每租户独立），登记属平台配置面）──
+    // 凭据红线：任何端点不接受/不回显令牌值；credential_ref 固定 'env:MU_GITEE_PAT'。
+    if (p === '/api/mu/forge/connections' && req.method === 'GET') {
+      const rows = await store.listForgeConnections(mu.tenantId);
+      return sendJson(res, 200, { connections: rows.map((c) => ({
+        connection_id: c.connection_id, instance_id: c.instance_id, forge_kind: c.forge_kind,
+        api_base: c.api_base, credential_ref: c.credential_ref, webhook_mode: c.webhook_mode,
+        status: c.status, status_reason: c.status_reason, verified_at: c.verified_at,
+        revoked_at: c.revoked_at, created_at: c.created_at,
+        // 部署级凭据限制如实呈现：ref 指向的 env 是否配置（布尔），不含值
+        credential_present: Boolean(String(env.MU_GITEE_PAT ?? '')),
+      })) });
+    }
+    if (p === '/api/mu/forge/connections' && req.method === 'POST') {
+      if (!csrfOk()) return sendJson(res, 403, { error: { reason: 'csrf_required' } });
+      const g = await guard('manage_instance');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const body = await json();
+      const instanceId = String(body.instance_id ?? 'gitee-cloud');
+      const seed = { 'gitee-cloud': { instanceId, forgeKind: 'gitee',
+          apiBase: 'https://gitee.com/api/v5', webBase: 'https://gitee.com' } }[instanceId];
+      if (!seed) return sendJson(res, 400, { error: { reason: 'instance_unsupported' } });
+      const inst = await store.ensureForgeInstance(seed);
+      if (!inst || inst.forge_kind !== 'gitee') return sendJson(res, 400, { error: { reason: 'instance_unsupported' } });
+      const webhookMode = String(body.webhook_mode ?? 'signature');
+      if (webhookMode !== 'signature' && webhookMode !== 'password') {
+        return sendJson(res, 400, { error: { reason: 'webhook_mode_invalid' } });
+      }
+      const conn = await store.createForgeConnection({ tenantId: mu.tenantId,
+        instanceId, credentialRef: 'env:MU_GITEE_PAT', webhookMode, status: 'pending' });
+      await store.audit('FORGE_CONNECTION_UPSERTED', { tenantId: mu.tenantId, actorUserId: mu.userId,
+        detail: { connection_id: conn.connection_id, instance_id: instanceId, webhook_mode: webhookMode } });
+      return sendJson(res, 200, { ok: true, connection_id: conn.connection_id, status: conn.status,
+        note: '连接已登记（pending）——用 probe 验证授权；令牌经部署 env 注入，本端点不接收凭据值' });
+    }
+    const forgeConnAct = p.match(/^\/api\/mu\/forge\/connections\/([0-9a-fA-F-]{8,64})\/(probe|revoke)$/);
+    if (forgeConnAct && req.method === 'POST') {
+      if (!csrfOk()) return sendJson(res, 403, { error: { reason: 'csrf_required' } });
+      const g = await guard('manage_instance');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const conn = await store.getForgeConnection(mu.tenantId, forgeConnAct[1]);
+      if (!conn) return sendJson(res, 404, { error: { reason: 'connection_not_found' } });
+      if (forgeConnAct[2] === 'revoke') {
+        const row = await store.revokeForgeConnection(mu.tenantId, conn.connection_id);
+        await store.audit('FORGE_CONNECTION_REVOKED', { tenantId: mu.tenantId, actorUserId: mu.userId,
+          detail: { connection_id: conn.connection_id } });
+        return sendJson(res, 200, { ok: true, status: row?.status ?? 'revoked' });
+      }
+      // probe：probeConnection 实测（授权已验证的唯一口径——凭据文件存在≠可用）
+      const adapter = createGiteeAdapter({ env, credentialRef: conn.credential_ref });
+      const probe = await adapter.probeConnection();
+      const status = probe.reachable && probe.auth_ok ? 'valid'
+        : probe.auth_ok === false ? 'denied' : 'unreachable';
+      await store.setForgeConnectionStatus(mu.tenantId, conn.connection_id, status,
+        { reason: probe.reason ?? null, verified: status === 'valid' });
+      await store.audit('FORGE_CONNECTION_PROBED', { tenantId: mu.tenantId, actorUserId: mu.userId,
+        detail: { connection_id: conn.connection_id, status, reason: probe.reason ?? null } });
+      return sendJson(res, 200, { ok: true, status, reachable: probe.reachable, auth_ok: probe.auth_ok,
+        reason: probe.reason ?? null });
+    }
+    // 仓库绑定：发现（适配器 list）→ 显式绑定（ensureRepository + 实例/连接关联）
+    if (p === '/api/mu/forge/bindings' && req.method === 'POST') {
+      if (!csrfOk()) return sendJson(res, 403, { error: { reason: 'csrf_required' } });
+      const g = await guard('manage_instance');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const body = await json();
+      const repoFullName = String(body.repo_full_name ?? '');
+      if (!/^[^/]+\/[^/]+$/.test(repoFullName)) return sendJson(res, 400, { error: { reason: 'repo_full_name_invalid' } });
+      const conn = await store.getForgeConnection(mu.tenantId, String(body.connection_id ?? ''));
+      if (!conn || conn.status !== 'valid') return sendJson(res, 409, { error: { reason: 'connection_not_valid',
+        message: '连接须先 probe 验证为 valid 才能绑定仓库（凭据存在≠授权可用）' } });
+      const adapter = createGiteeAdapter({ env, credentialRef: conn.credential_ref });
+      // 归属核验：适配器读目标仓库（服务端确认连接可访问该仓库；只读 GET）
+      const probe = await adapter.probeConnection({ repoFullName });
+      if (!probe.auth_ok) return sendJson(res, 409, { error: { reason: 'repo_access_denied_by_probe',
+        detail: probe.reason ?? null } });
+      const existing = (await muPoolQ(
+        `SELECT repo_id FROM mu.repository WHERE tenant_id=$1 AND provider='gitee' AND provider_repo_id IS NOT NULL
+           AND forge_instance_id=$2 ORDER BY created_at`, [mu.tenantId, conn.instance_id])).rows;
+      const listed = await adapter.listRepositories().catch(() => ({ repos: [] }));
+      const target = listed.repos.find((r) => r.path === repoFullName)
+        ?? { native_repo_id: null, path: repoFullName, default_branch: null, web_url: `https://gitee.com/${repoFullName}` };
+      const nativeId = String(body.provider_repo_id ?? target.native_repo_id ?? '');
+      if (!/^[0-9]+$/.test(nativeId)) return sendJson(res, 409, { error: { reason: 'provider_repo_id_unresolved',
+        message: '令牌仓库列表中未发现该仓库（私有仓库需令牌可见）——不绑定未核实仓库' } });
+      const [owner, name] = repoFullName.split('/');
+      const repoRow = await store.ensureRepository({ tenantId: mu.tenantId, provider: 'gitee',
+        providerRepoId: nativeId, owner, name, defaultBranch: target.default_branch ?? null });
+      await muPoolQ(
+        `UPDATE mu.repository SET forge_instance_id=$2, connection_id=$3 WHERE repo_id=$1 AND tenant_id=$4`,
+        [repoRow.repo_id, conn.instance_id, conn.connection_id, mu.tenantId]);
+      await store.audit('FORGE_REPO_BOUND', { tenantId: mu.tenantId, actorUserId: mu.userId,
+        detail: { repo_id: repoRow.repo_id, provider_repo_id: nativeId, connection_id: conn.connection_id } });
+      return sendJson(res, 200, { ok: true, repo_id: repoRow.repo_id, provider_repo_id: nativeId,
+        note: '仓库已绑定到连接——webhook/手动审查可进入真实消费链' });
+    }
     const apprMatch = p.match(/^\/api\/mu\/approvals\/([0-9a-fA-F-]{8,64})$/);
     if (apprMatch && req.method === 'GET') {
       const g = await guard('read_pull_request');
@@ -1556,6 +1912,42 @@ export async function muApi(req, res, ctx) {
       // 同一消费单元，always-on consumer 无条件消费），不再产生永不消费的永久 queued。
       const fixturesOn = env.MU_FIXTURES === '1';
       if (!fixturesOn) {
+      // Gitee 仓库（Gitee 首版 G-3）：查 active 连接（服务端）→ payload v1 手动入队。
+      // 与 webhook 共享消费者契约；审计保留真实触发用户（不伪造 webhook 来源）。
+      const repoMeta = (await muPoolQ(
+        `SELECT provider FROM mu.repository WHERE repo_id=$1 AND tenant_id=$2`,
+        [pr.repo_id, mu.tenantId])).rows[0] ?? null;
+      if (repoMeta?.provider === 'gitee') {
+        const conn = (await muPoolQ(
+          `SELECT fc.connection_id, fc.instance_id, rep.provider_repo_id
+             FROM mu.forge_connection fc
+             JOIN mu.repository rep ON rep.tenant_id = fc.tenant_id
+                  AND rep.forge_instance_id = fc.instance_id
+            WHERE fc.tenant_id=$1 AND fc.status='valid' AND fc.revoked_at IS NULL
+              AND rep.repo_id=$2 AND rep.provider='gitee' LIMIT 1`,
+          [mu.tenantId, pr.repo_id])).rows[0] ?? null;
+        if (!conn) return sendJson(res, 409, { error: { reason: 'forge_connection_not_active',
+          message: 'Gitee 仓库无 active 连接——无法进入真实审查链（先在连接管理建立并验证）' } });
+        const payloadV1 = {
+          schema_version: 1, event: 'pull_request', forge_kind: 'gitee',
+          delivery_ref: `manual-gitee-${mu.userId}-${Date.now()}`,
+          provider_repo_id: String(conn.provider_repo_id),
+          pr_number: Number(pr.provider_pr_number), head_sha: String(pr.head_sha),
+          action: 'update', trigger_source: 'manual', installation_id: null,
+          declared_file_count: null, // 手动入口无 webhook payload——completeness 由消费链如实标注
+          connection_id: conn.connection_id, forge_instance_id: conn.instance_id,
+        };
+        const vv = validateForgeEventV1(payloadV1);
+        if (!vv.ok) return sendJson(res, 500, { error: { reason: 'event_payload_invalid', field: vv.field } });
+        const job = await store.enqueueJob({ tenantId: mu.tenantId, repoId: pr.repo_id,
+          prId: pr.pr_id, kind: 'event_sync', requestedBy: null,
+          requestedRole: 'maintainer', payload: payloadV1 });
+        await store.audit('MU_REVIEW_REQUESTED', { tenantId: mu.tenantId, actorUserId: mu.userId,
+          detail: { pr_id: pr.pr_id, job_id: job.job_id, kind: 'event_sync', forge: 'gitee' } });
+        return sendJson(res, 200, { ok: true, job_id: job.job_id, state: job.state,
+          mode: 'real_pipeline', forge: 'gitee',
+          note: '已进入真实审查管线（Gitee 数据源，与 webhook 同一消费单元）——结果以「审查管线」面板为准' });
+      }
       const instRow = (await muPoolQ(
         `SELECT installation_id, github_repo_id FROM mu.repository_binding
           WHERE repo_id=$1 AND tenant_id=$2 AND binding_state='active' LIMIT 1`,
