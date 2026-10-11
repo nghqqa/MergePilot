@@ -166,21 +166,22 @@ test('QC-6 v1.2.4 PUT=收敛语义：期望 runtime 变更经 PUT 真实应用�
   // 漂移防线不被该语义误触发（读回=期望）
 });
 
-test('QC-7 cancel 幂等：v1.2.4 未委派任务（无 TaskMeta）404 → 视为已无可取消（ok+note）；其余非 2xx 仍失败', async () => {
+test('QC-7 cancel 幂等（按响应体区分业务情况）：task-meta-not-found→ok；裸 404/401/5xx→fail-closed', async () => {
   const { cancelExternalRound } = await import(pathToFileURL(executorPath).href);
-  const responses = [
-    { status: 404, body: { message: 'task meta not found' } },   // v1.2.4 未委派任务实测
-    { status: 409, body: {} },                                    // 已终态（既有语义）
-    { status: 401, body: {} },                                    // 其余非 2xx 仍 fail-closed
-    { status: 200, body: {} },                                    // 正常取消
+  const cases = [
+    { status: 404, body: { message: 'task meta not found' }, ok: true, note: 'cancel-404-no-task-meta' }, // v1.2.4 未委派任务实测
+    { status: 409, body: {}, ok: true },                          // 已终态（既有语义）
+    { status: 200, body: {}, ok: true },                          // 正常取消
+    { status: 404, body: { message: 'no such route' }, ok: false, reason: 'AT_CANCEL_HTTP_404_no such route' }, // 路由类 404 不得报成功
+    { status: 404, body: null, ok: false, reason: 'AT_CANCEL_HTTP_404_unknown' },                              // 无法确认状态
+    { status: 401, body: { message: 'unauthorized' }, ok: false, reason: 'AT_CANCEL_HTTP_401' },               // 鉴权
+    { status: 500, body: { message: 'boom' }, ok: false, reason: 'AT_CANCEL_HTTP_500' },
   ];
-  for (const [i, res] of responses.entries()) {
-    const fetchImpl = async () => ({ ok: res.status < 400, status: res.status, json: async () => res.body });
+  for (const [i, c] of cases.entries()) {
+    const fetchImpl = async () => ({ ok: c.status < 400, status: c.status, json: async () => c.body });
     const r = await cancelExternalRound(CFG, { projectId: 'p', taskId: 't', reason: 'qc', submissionId: 's', fetchImpl });
-    if (res.status === 401) assert.equal(r.ok, false, `case ${i}: 401 须失败`);
-    else {
-      assert.equal(r.ok, true, `case ${i}: ${res.status} 须 ok`);
-      if (res.status === 404) assert.equal(r.note, 'cancel-404-no-task-meta');
-    }
+    assert.equal(r.ok, c.ok, `case ${i} (${c.status} ${JSON.stringify(c.body)}): 期望 ${c.ok} 实得 ${JSON.stringify(r)}`);
+    if (c.note) assert.equal(r.note, c.note);
+    if (c.reason) assert.equal(r.reason, c.reason);
   }
 });

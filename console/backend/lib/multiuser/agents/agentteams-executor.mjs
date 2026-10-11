@@ -318,15 +318,22 @@ export async function fetchTaskSummary(cfg, { projectId, taskId, fetchImpl = fet
 }
 
 /** 幂等取消（submissionId 围栏）。
- * Wave-QwenPaw：v1.2.4 对"从未被委派"的任务（无 TaskMeta）cancel → 404 task meta not
- * found（2026-10-11 隔离实测）——按幂等取消契约视为"已无可取消"（成功），与 409（已终态）
- * 同归 ok；其余非 2xx 仍 fail-closed。 */
+ * Wave-QwenPaw：v1.2.4 对"从未被委派"的任务（无 TaskMeta）cancel → 404 + message
+ * "task meta not found"（2026-10-11 隔离实测）——按幂等取消契约视为"已无可取消"（成功），
+ * 与 409（已终态）同归 ok；**其余 404/非 2xx 一律 fail-closed**（路由不存在/鉴权/无法
+ * 确认的状态不得报告取消成功——按响应体区分业务情况，不按裸状态码）。 */
 export async function cancelExternalRound(cfg, { projectId, taskId, reason, submissionId, fetchImpl = fetch }) {
   try {
     const r = await atFetch(cfg, `/api/v1/projects/${projectId}/tasks/${taskId}/cancel`, { method: 'POST',
       body: JSON.stringify({ reason: String(reason ?? 'mergepilot-cancel').slice(0, 200), submissionId }) }, fetchImpl);
-    if (!r.ok && r.status !== 409 && r.status !== 404) return { ok: false, reason: `AT_CANCEL_HTTP_${r.status}` };
-    return { ok: true, ...(r.status === 404 ? { note: 'cancel-404-no-task-meta' } : {}) };
+    if (r.ok || r.status === 409) return { ok: true };
+    if (r.status === 404) {
+      const j = await r.json().catch(() => null);
+      const msg = String(j?.message ?? '');
+      if (msg.includes('task meta not found')) return { ok: true, note: 'cancel-404-no-task-meta' };
+      return { ok: false, reason: `AT_CANCEL_HTTP_404_${msg.slice(0, 40) || 'unknown'}` };
+    }
+    return { ok: false, reason: `AT_CANCEL_HTTP_${r.status}` };
   } catch { return { ok: false, reason: 'AT_CANCEL_UNREACHABLE' }; }
 }
 
