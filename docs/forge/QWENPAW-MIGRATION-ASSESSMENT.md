@@ -40,6 +40,19 @@
 
 ---
 
+## 4a. 证据归属勘误（2026-10-11 四角色切换波）
+
+§5 表中“重启/重建/重推后往返”三项及“模型配置持久性根因消除”的 B4/B5/B6 实测对象为 **CoPaw worker（v1.2.4 官方 copaw 镜像 sha256:25e10515…）**，非 QwenPaw worker；“CoPaw 端点变更需进程重载”结论**不得外推至 QwenPaw**（QwenPaw 端点类变更热重载行为未测，不声明）。此前“候选 QwenPaw 已全部验证”类表述修正为分项清单。
+
+## 5a. QwenPaw 四角色热切换实证（2026-10-11，qwp2 栈）
+
+- 前置快照：四 worker copaw 镜像 sha256:25e10515…（本地 495-514 文件/远端 435-442 对象/openclaw.json md5 分记，evidence/hotswitch/）；
+- 官方热切换：PUT runtime=qwenpaw ×4 → 全部 200，容器镜像=sha256:4f91b102…，API 读回 runtime=qwenpaw，**无删除 worker 资源**；
+- 迁移：四 worker `.qwenpaw/.copaw-migrated` marker 落位、`.copaw` 本地移除（远端旧态保留=回滚锚）；
+- **四角色真实契约往返 4/4**：reviewer{findings}/leader{recommendation,confidence}/fixer{suggestion,patch_hint 真实语义 dry-run 建议}/verifier{verdict,note}；
+- Q1 重启后往返 PASS；Q2 删容器保资源重建后往返 PASS（Matrix 身份/qwenpaw 状态经恢复）；
+- 回滚锚：远端前缀 435-442 对象 + PUT runtime=copaw 方向（CoPaw 线已实证）。
+
 ## 5. 隔离验证结果（2026-10-11 收尾波回填——§3 设计逐项）
 
 > 完整证据：r3work/qwenpaw-eval-20261010/（REPORT.md + b3/b5 探针 + 迁移/回滚记录）。
