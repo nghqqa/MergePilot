@@ -128,7 +128,8 @@ export async function ensureFourAgents(cfg, { model, fetchImpl = fetch } = {}) {
     const r = await atFetch(cfg, '/api/v1/workers', {}, fetchImpl);
     if (!r.ok) return { ok: false, reason: `AT_WORKERS_LIST_HTTP_${r.status}` };
     const j = await r.json().catch(() => null);
-    return { ok: true, names: new Set((j?.workers ?? []).map((w) => String(w?.name ?? ''))) };
+    const rows = new Map((j?.workers ?? []).map((w) => [String(w?.name ?? ''), w]));
+    return { ok: true, names: new Set(rows.keys()), rows };
   };
   let present;
   try { present = await listWorkers(); } catch { return { ok: false, reason: 'AT_WORKERS_LIST_UNREACHABLE' }; }
@@ -137,14 +138,21 @@ export async function ensureFourAgents(cfg, { model, fetchImpl = fetch } = {}) {
   for (const def of Object.values(AGENTTEAMS_WORKERS)) {
     const spec = { runtime, model: workerModel, identity: def.identity,
       state: 'Running', skills: [], mcpServers: [], expose: [] };
+    // Wave-QwenPaw（2026-10-11）双代契约 union body：
+    //  * v1.2.4+ 扁平契约（runtime/model/identity 顶层）——只发 spec 包装会被静默忽略、
+    //    按默认值建户且不报错（2026-10-10 v1.2.4 隔离实测，AT_WORKER_DRIFT 读回防线即为此设）；
+    //  * 223ddc2 线 spec 包装契约——扁平未知键被忽略（2026-10-11 隔离旧 ctrl 实证）。
+    //  union 同时携带两代字段，请求成功后读回实际值拒绝漂移（见完整性复查）。
+    const createBody = { name: def.name, runtime, model: workerModel, identity: def.identity,
+      state: 'Running', skills: [], mcpServers: [], expose: [], spec };
     try {
       if (present.names.has(def.name)) {
         const r = await atFetch(cfg, `/api/v1/workers/${def.name}`, { method: 'PUT',
-          body: JSON.stringify({ spec }) }, fetchImpl);
+          body: JSON.stringify(createBody) }, fetchImpl);
         if (r.status === 404) {
           // 真实 controller PUT 是 update-only：列表时在、更新时 404（半建/竞态）→ 转 POST 自愈
           const rc = await atFetch(cfg, '/api/v1/workers', { method: 'POST',
-            body: JSON.stringify({ name: def.name, spec }) }, fetchImpl);
+            body: JSON.stringify(createBody) }, fetchImpl);
           if (!rc.ok && rc.status !== 409) return { ok: false, reason: `AT_WORKER_HTTP_${rc.status}`, worker: def.name };
           created.push(def.name);
         } else if (!r.ok && r.status !== 409) {
@@ -152,7 +160,7 @@ export async function ensureFourAgents(cfg, { model, fetchImpl = fetch } = {}) {
         }
       } else {
         const r = await atFetch(cfg, '/api/v1/workers', { method: 'POST',
-          body: JSON.stringify({ name: def.name, spec }) }, fetchImpl);
+          body: JSON.stringify(createBody) }, fetchImpl);
         if (!r.ok && r.status !== 409) return { ok: false, reason: `AT_WORKER_HTTP_${r.status}`, worker: def.name };
         created.push(def.name);
       }
@@ -164,6 +172,20 @@ export async function ensureFourAgents(cfg, { model, fetchImpl = fetch } = {}) {
   if (!after.ok) return after;
   const missing = Object.values(AGENTTEAMS_WORKERS).map((d) => d.name).filter((n) => !after.names.has(n));
   if (missing.length) return { ok: false, reason: 'AT_WORKERS_INCOMPLETE', missing };
+  // 漂移防线（Wave-QwenPaw）：读回实际 runtime/model，与请求值不一致 → fail-closed。
+  // 旧 controller 列表不含 runtime/model 字段时跳过该项（unknown 不误伤）——
+  // 拒绝的是"请求成功但实际按默认值建户"的静默漂移，不是旧契约的字段缺失。
+  const drifted = [];
+  for (const def of Object.values(AGENTTEAMS_WORKERS)) {
+    const row = after.rows.get(def.name) ?? {};
+    if (row.runtime != null && String(row.runtime) !== runtime) {
+      drifted.push({ worker: def.name, field: 'runtime', expected: runtime, actual: String(row.runtime) });
+    }
+    if (row.model != null && String(row.model) !== workerModel) {
+      drifted.push({ worker: def.name, field: 'model', expected: workerModel, actual: String(row.model) });
+    }
+  }
+  if (drifted.length) return { ok: false, reason: 'AT_WORKER_DRIFT', drifted };
   return { ok: true, created };
 }
 
@@ -295,13 +317,23 @@ export async function fetchTaskSummary(cfg, { projectId, taskId, fetchImpl = fet
   } catch { return { ok: false, reason: 'AT_SUMMARY_UNREACHABLE' }; }
 }
 
-/** 幂等取消（submissionId 围栏）。 */
+/** 幂等取消（submissionId 围栏）。
+ * Wave-QwenPaw：v1.2.4 对"从未被委派"的任务（无 TaskMeta）cancel → 404 + message
+ * "task meta not found"（2026-10-11 隔离实测）——按幂等取消契约视为"已无可取消"（成功），
+ * 与 409（已终态）同归 ok；**其余 404/非 2xx 一律 fail-closed**（路由不存在/鉴权/无法
+ * 确认的状态不得报告取消成功——按响应体区分业务情况，不按裸状态码）。 */
 export async function cancelExternalRound(cfg, { projectId, taskId, reason, submissionId, fetchImpl = fetch }) {
   try {
     const r = await atFetch(cfg, `/api/v1/projects/${projectId}/tasks/${taskId}/cancel`, { method: 'POST',
       body: JSON.stringify({ reason: String(reason ?? 'mergepilot-cancel').slice(0, 200), submissionId }) }, fetchImpl);
-    if (!r.ok && r.status !== 409) return { ok: false, reason: `AT_CANCEL_HTTP_${r.status}` };
-    return { ok: true };
+    if (r.ok || r.status === 409) return { ok: true };
+    if (r.status === 404) {
+      const j = await r.json().catch(() => null);
+      const msg = String(j?.message ?? '');
+      if (msg.includes('task meta not found')) return { ok: true, note: 'cancel-404-no-task-meta' };
+      return { ok: false, reason: `AT_CANCEL_HTTP_404_${msg.slice(0, 40) || 'unknown'}` };
+    }
+    return { ok: false, reason: `AT_CANCEL_HTTP_${r.status}` };
   } catch { return { ok: false, reason: 'AT_CANCEL_UNREACHABLE' }; }
 }
 
