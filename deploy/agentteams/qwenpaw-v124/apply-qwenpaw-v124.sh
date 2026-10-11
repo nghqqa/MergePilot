@@ -35,6 +35,9 @@ IMG_WORKER_COPAW="$REG/agentteams-copaw-worker@sha256:25e10515a61ed7c877c1993e51
 IMG_WORKER_QP="$REG/agentteams-qwenpaw-worker@sha256:4f91b1026fe116f87c639f19e92f7e1f26f59fb408a90425691c32f700c3a5f5"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
+# docker exec/run 的 argv 含容器路径——MSYS 转换全程关闭；宿主侧 curl 的 /dev/null
+# 一律用 shell 级重定向（bash 自身处理，不受本变量影响）——2026-10-11 定案
+export MSYS_NO_PATHCONV=1
 log() { echo "[apply] $*"; }
 
 # ── 0. 栈凭据：秘密文件持久化（首轮生成，重建复用；显式 env 优先并回写） ──
@@ -63,16 +66,20 @@ put_secret QP_LLM_MODEL "$QP_LLM_MODEL"
 put_secret QP_LLM_API_KEY "$QP_LLM_API_KEY"
 log "栈凭据持久化于 $QP_SECRET_FILE（0700；重建复用同值）"
 
-# ── 1. 预检：端口占用区分本栈 vs 其他进程 ──
+# ── 1. 预检：端口占用区分本栈（同前缀容器）vs 其他进程 ──
 command -v docker >/dev/null || fail "docker 不可达"
 CTRL_CID=$(docker ps -a --format '{{.ID}}' --filter "name=^$QP_CTRL_NAME$" 2>/dev/null || true)
+STACK_PREFIX="${QP_CTRL_NAME%-controller}"   # qwp2-controller → qwp2（manager/worker 同前缀视为本栈）
 for p in "$QP_PORT_CTRL" "$QP_PORT_MATRIX" "$QP_PORT_MINIO" "$QP_PORT_MGR_CONSOLE"; do
   if netstat -ano 2>/dev/null | grep -q "127.0.0.1:$p "; then
-    if [ -n "$CTRL_CID" ] && docker ps --format '{{.Names}}' --filter "id=$CTRL_CID" | grep -qx "$QP_CTRL_NAME" \
-       && docker port "$QP_CTRL_NAME" 2>/dev/null | grep -q ":$p"; then
-      log "端口 $p 由本栈容器 $QP_CTRL_NAME 占用（复用场景，放行）"
+    HOLDER=$(docker ps --format '{{.Names}}' | while read -r n; do docker port "$n" 2>/dev/null | grep -q ":$p" && echo "$n" && break; done)
+    if [ -n "$HOLDER" ]; then
+      case "$HOLDER" in
+        "$STACK_PREFIX"*) log "端口 $p 由本栈容器 $HOLDER 占用（复用场景，放行）";;
+        *) fail "端口 127.0.0.1:$p 被 $HOLDER 占用（非本栈）——换 QP_PORT_* 或释放后重试（不猜、不覆盖）";;
+      esac
     else
-      fail "端口 127.0.0.1:$p 被其他进程占用——换 QP_PORT_* 或释放后重试（不猜、不覆盖）"
+      fail "端口 127.0.0.1:$p 被非 Docker 进程占用——换 QP_PORT_* 或释放后重试"
     fi
   fi
 done
@@ -84,7 +91,6 @@ docker volume create "$QP_VOLUME" >/dev/null
 log "网络/卷就绪：$QP_NETWORK / $QP_VOLUME"
 
 # ── 3. controller：已存在则核对（digest/卷/关键 env），不匹配即失败；不存在则创建 ──
-export MSYS_NO_PATHCONV=1
 if docker ps -a --format '{{.Names}}' | grep -qx "$QP_CTRL_NAME"; then
   [ -n "$CTRL_CID" ] || fail "容器 $QP_CTRL_NAME 存在但不可用（Exited？）——docker rm $QP_CTRL_NAME 后重跑"
   CUR_IMG=$(docker inspect "$QP_CTRL_NAME" --format '{{.Image}}')
@@ -100,7 +106,7 @@ if docker ps -a --format '{{.Names}}' | grep -qx "$QP_CTRL_NAME"; then
   docker start "$QP_CTRL_NAME" >/dev/null 2>&1 || true
   log "已存在 controller 核对通过（镜像/卷/凭据一致）——复用"
 else
-  docker run -d --name "$QP_CTRL_NAME" \
+  MSYS_NO_PATHCONV=1 docker run -d --name "$QP_CTRL_NAME" \
     --hostname "$QP_CTRL_NAME" --network "$QP_NETWORK" --restart no \
     -e AGENTTEAMS_CONTROLLER_URL="http://$QP_CTRL_NAME:8090" \
     -e AGENTTEAMS_DOCKER_NETWORK="$QP_NETWORK" \
@@ -144,7 +150,7 @@ fi
 # ── 4. 健康等待 + cli-token ──
 log "等待 controller 健康 + cli-token（最长 180s）..."
 DEADLINE=$(( $(date +%s) + 180 ))
-until curl -sf -o /dev/null "http://127.0.0.1:$QP_PORT_MATRIX/" && \
+until curl -sf "http://127.0.0.1:$QP_PORT_MATRIX/" >/dev/null && \
       docker exec "$QP_CTRL_NAME" sh -c 'test -s /var/run/agentteams/cli-token' 2>/dev/null; do
   [ "$(date +%s)" -lt "$DEADLINE" ] || fail "controller 健康等待超时（查 docker logs $QP_CTRL_NAME）"
   sleep 5
@@ -156,20 +162,34 @@ log "controller 健康（token 已落盘）"
 DOMAIN=$(printf '%s' "$QP_LLM_BASE_URL" | sed -E 's#^https?://##; s#[:/].*##')
 PORT=443; PROTO=https
 case "$QP_LLM_BASE_URL" in http:*) PORT=80; PROTO=http;; esac
-hgc() { docker exec "$QP_CTRL_NAME" sh -c 'curl -s -u "admin:$1" "$@"' _ "$QP_ADMIN_PASSWORD"; }
+# hgc：宿主侧转发全部参数进容器内 curl（"$@" 必须显式前移——2026-10-11 审阅纠偏：
+# 此前定义漏转发函数参数，URL 被丢弃、密码被当 URL，配合 set -e 静默退出）
+hgc() { docker exec "$QP_CTRL_NAME" sh -c 'u="$1"; shift; curl -s -u "admin:$u" "$@"' _ "$QP_ADMIN_PASSWORD" "$@"; }
 # 5a. service-sources：读实际 → 缺失才建；存在则核字段
-SS_CUR=$(hgc "http://127.0.0.1:8001/v1/service-sources/openai-compat" -o /tmp/ss-cur.json -w '%{http_code}' 2>/dev/null || echo 000)
-if [ "$SS_CUR" != "200" ]; then
-  JSON_SS=$(printf '{"type":"dns","name":"openai-compat","port":"%s","protocol":"%s","proxyName":"","domain":"%s"}' "$PORT" "$PROTO" "$DOMAIN")
-  CODE_SS=$(hgc -X POST "http://127.0.0.1:8001/v1/service-sources" -H 'content-type: application/json' --data-raw "$JSON_SS" -o /tmp/ss-put.json -w '%{http_code}')
-  case "$CODE_SS" in 200|201) log "service-sources 创建（$CODE_SS）";; *) fail "service-sources 创建失败（$CODE_SS）：$(head -c 150 /tmp/ss-put.json 2>/dev/null)";; esac
-else
-  grep -q "\"$DOMAIN\"" /tmp/ss-cur.json || fail "service-sources/openai-compat 已存在但域名不符（期望 $DOMAIN）——人工对账"
+# 读回码提取：取尾部 3 字符（curl -w 输出码；管道失败兜底不再拼串——纠偏 2026-10-11）
+read_code() { printf '%s' "$1" | tail -c 3; }
+SS_RAW=$(hgc "http://127.0.0.1:8001/v1/service-sources/openai-compat" -o /tmp/ss-cur.json -w '%{http_code}' 2>/dev/null || true)
+SS_CUR=$(read_code "$SS_RAW")
+if [ "$SS_CUR" = "200" ]; then
+  docker exec "$QP_CTRL_NAME" grep -q "\"$DOMAIN\"" /tmp/ss-cur.json 2>/dev/null || fail "service-sources/openai-compat 已存在但域名不符（期望 $DOMAIN）——人工对账"
   log "service-sources 已存在且域名一致——复用"
+else
+  JSON_SS=$(printf '{"type":"dns","name":"openai-compat","port":"%s","protocol":"%s","proxyName":"","domain":"%s"}' "$PORT" "$PROTO" "$DOMAIN")
+  CODE_SS_RAW=$(hgc -X POST "http://127.0.0.1:8001/v1/service-sources" -H 'content-type: application/json' --data-raw "$JSON_SS" -o /tmp/ss-put.json -w '%{http_code}' || true)
+  CODE_SS=$(read_code "$CODE_SS_RAW")
+  case "$CODE_SS" in
+    200|201) log "service-sources 创建（$CODE_SS）";;
+    409) # 已存在——重读核内容（收敛语义：409 不得静默当正确）
+      hgc "http://127.0.0.1:8001/v1/service-sources/openai-compat" -o /tmp/ss-cur.json -w '' >/dev/null 2>&1 || true
+      docker exec "$QP_CTRL_NAME" grep -q "\"$DOMAIN\"" /tmp/ss-cur.json 2>/dev/null || fail "service-sources 409 且重读不符（期望 $DOMAIN）：$(docker exec "$QP_CTRL_NAME" head -c 150 /tmp/ss-cur.json 2>/dev/null)"
+      log "service-sources 已存在（409）且域名核对一致——复用";;
+    *) fail "service-sources 创建失败（$CODE_SS）：$(head -c 150 /tmp/ss-put.json 2>/dev/null)";;
+  esac
 fi
 sleep 2
 # 5b. ai/providers：读实际 → 比对 baseUrl+token 形状 → PUT 收敛；写后回读验证（不吞 409/不猜）
-PROV_CUR=$(hgc "http://127.0.0.1:8001/v1/ai/providers/openai-compat" -o /tmp/prov-cur.json -w '%{http_code}' 2>/dev/null || echo 000)
+PROV_RAW=$(hgc "http://127.0.0.1:8001/v1/ai/providers/openai-compat" -o /tmp/prov-cur.json -w '%{http_code}' 2>/dev/null || true)
+PROV_CUR=$(read_code "$PROV_RAW")
 NEED_PROV=1
 if [ "$PROV_CUR" = "200" ]; then
   URL_OK=0; TOK_OK=0
