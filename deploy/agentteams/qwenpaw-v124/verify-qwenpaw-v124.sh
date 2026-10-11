@@ -79,7 +79,8 @@ case "$V2B" in TEAM_OK*) ok "V2b team 成员关系完整 + 每成员 Matrix 通�
 
 # V3 网关真实 LLM（fail-closed）——记录调用计数供 V4c 关联
 GW_CALLS_BEFORE=$(docker exec "$QP_CTRL_NAME" sh -c 'grep -c "chat/completions" /var/log/agentteams/higress-gateway.log 2>/dev/null || echo 0')
-c4=$(docker exec "$QP_CTRL_NAME" EXPECT_MODEL="$QP_EXPECT_MODEL" sh -c 'curl -s -o /tmp/vgw.json -w "%{http_code}" -X POST http://127.0.0.1:8080/v1/chat/completions -H "content-type: application/json" -H "Authorization: Bearer probe" -d "{\"model\":\"$EXPECT_MODEL\",\"messages\":[{\"role\":\"user\",\"content\":\"回答一个字：好\"}]}"' 2>/dev/null || echo 000)
+V3_BODY=$(printf '{"model":"%s","messages":[{"role":"user","content":"reply one char"}]}' "$QP_EXPECT_MODEL")
+c4=$(docker exec "$QP_CTRL_NAME" sh -c 'curl -s -o /tmp/vgw.json -w "%{http_code}" -X POST http://127.0.0.1:8080/v1/chat/completions -H "content-type: application/json" -H "Authorization: Bearer probe" --data-raw "$1"' _ "$V3_BODY" 2>/dev/null || echo 000)
 ok "V3 网关真实 LLM → 200（provider/route 持久生效）" "$([ "$c4" = 200 ] && echo 1 || echo 0)" "$c4"
 
 # V4（可选）mp_task 六重验证往返
