@@ -99,3 +99,62 @@ Windows 宿主注意：worker console 端口由 controller 随机分配 127.0.0.
    openclaw manager 工作区迁移未验证（生产 manager 已停用，风险有限但列入门槛）；
 4. Tuwunel 版本差异（生产 223ddc2 内嵌 vs v1.2.4 内嵌）未逐版本比对（协议面实测兼容）；
 5. 生产 Console↔v1.2.4 ctrl 的执行器全链（mp_task 真实审查轮）在隔离 Console 的复现验证。
+
+---
+
+## 3. CAS 原子修复候选（2026-10-11 深夜波，PR #414 本轮交付）
+
+### 3.1 补丁与版本归属
+
+| 文件 | 内容 | sha256 | 状态 |
+|---|---|---|---|
+| `patches/teamharness-cas-authoritative.patch` | server.py 最终 CAS 实现（对 pristine 8765d697 的 4 处锚定编辑） | `88f32a6340bcbd0bf94a93e57c676c8f23a01a8740b00347e74afe1621192b5c` | **现行** |
+| `patches/controller-canceltask-cas.patch` | Go CancelTask 条件写（PutObjectIfMatch+围栏重验+3 次冲突 409） | `b07619f0f30c3372b00bc3ce28b92f3bd3044844e5e59f09c7607f01aff688c1` | **现行** |
+| `patches/teamharness-cancel-submit-race.patch` | 旧 pull-fresh 缓解（48 行，d62bca6 入库版） | — | 历史保留（已被最终 CAS 取代） |
+
+**旧版归属声明**：d62bca6 的 pull-fresh 补丁只是收窄窗口的缓解，曾以 runtime 注入（docker cp）部署并实证"拒收文案触发"；本轮核实发现其 CAS 函数（_cas_write_task 等）在 runtime 中**从未被调用（死代码）**——全部状态写入仍走非原子 _write_task。最终 CAS 补丁以 `_write_task` 为唯一漏斗实施条件写，取代 pull-fresh。
+
+### 3.2 最终 CAS 实现要点（teamharness-cas-authoritative.patch）
+
+1. **`_write_task` 全链条件写**：所有任务状态写入者（delegate/ack/submit/cancel/progress/attention/projectflow accept）共用 `_cas_write_task`——权威读（boto3 直读 MinIO，带 ETag）→ 转换表对**权威状态**重验 → `If-Match` PUT（新建 `If-None-Match`）；PreconditionFailed 重读重试（5 次），其余存储失败/重试耗尽/权威拒绝一律 ValueError，**无任何无条件回退**。
+2. **权威票面围栏**：cancel_task 对权威 submission_id 校验（防 leader 本地陈旧副本绕过票面）；同态重写身份匹配（竞争 submit 按 submission_id 拒、异因 cancel 按 reason/replacement 拒）。
+3. **history 合并**：CAS 重试时并集远端 history（seq 归一），不丢并发审计痕迹。
+4. **filesync push 守卫**：`.../tasks/<id>/meta.json` 的 push 被拒（CAS 专用通道）；目录 push 自动排除 meta.json——mirror/残留推送无法覆盖权威。
+5. **清理复活守卫**：权威缺失时，仅"无决策性本地状态"（无 submission/cancelled_at/result_digest/单条以内 history）允许新建；否则拒绝（清理/替换后旧提交不能重建状态）。
+6. **键位推导**：与 `_filesync` 同源（TEAMHARNESS_RUNTIME_CONFIG storage.sharedPrefix），并剥离 AGENTTEAMS_STORAGE_PREFIX 的 mc alias/bucket 头——双环境断言（宿主=shared/...，容器=teams/mp/shared/...）。
+
+### 3.3 依赖钉版（构建资料，勿运行时 pip）
+
+- `boto3==1.35.99` + `botocore==1.35.99`（`patch-qwenpaw-dockerfile.py` 锚定注入 Dockerfile）。
+- **1.35.0 弃用实证**：其 S3 服务模型 PutObjectRequest **无 IfMatch/IfNoneMatch**（whl 内 service-2.json 解包核实），传参会 ParamValidationError。
+- 1.35.99 真机验证（embedded MinIO）：正确 ETag 写入成功 / 错误 ETag PreconditionFailed / If-None-Match 防并发创建 / 探针清理。
+- 凭据=worker 既有 per-worker 限定 MinIO 用户（controller 预置策略，仅自身前缀+shared/+teams/mp/），**未注入 root/admin**。
+
+### 3.4 构建与部署（可重复）
+
+- 构建：`build-candidate.sh`（锁定源 8765d697 + 两补丁 + 插件 zip 打包 + Dockerfile 依赖注入；任何 apply/构建失败即停；完成后源码树恢复 clean）。
+- 打包：`build-qwenpaw-plugin.py`（上游 ruby 脚本的 Python 等价复刻；asset 目录名=插件名）。
+- 部署：`deploy-candidate-qwp2.sh`（清诊断期 MinIO 陈旧插件副本 → 记录回滚锚 → embedded 重建 ctrl（env 同源+worker 镜像指向新 tag）→ 删四 worker + PUT 触发 reconcile → 读回验证）。
+
+### 3.5 候选镜像（2026-10-11 冻结）
+
+| 组件 | tag | image id |
+|---|---|---|
+| worker | `agentteams-qwenpaw-worker:1.2.4-cas` | `sha256:1719208fd17ce535fc2d222…`（含取消围栏终版） |
+| controller | `agentteams/agentteams-controller:1.2.4-cas` | `sha256:7a76b2e69f74ce17dc1f52b4…` |
+| embedded | `agentteams/agentteams-embedded:1.2.4-cas` | `sha256:da061581b8d8c81110f13fff…` |
+
+读回验证（部署后实测）：四 worker builtin+workspace server.py 均含 `_cas_write_task`；boto3/botocore=1.35.99（PutObject IfMatch=True）；陈旧插件副本已清（启动 restore 不覆盖镜像 builtin）；Matrix admin token 刷新=200。
+
+### 3.6 验收证据（qwp2 栈，2026-10-11）
+
+- **七项跨进程回归 15/15 PASS**（`r3work/qwenpaw-eval-20261010/cas-regression-qwp2.py`；证据 `evidence/race-fix/cas-regression/`）：in_progress 取消后迟到提交拒收且 cancelled 不翻转；submit 先到+票面取消契约通过；陈旧 ack 不复活；两提交竞争同一 ETag 仅一胜（submission_id 冲突拒）；同因幂等/异因 conflict/票面缺失+错票双拒；清理复活拒+push 守卫；正常提交+新轮次成功；**Controller HTTP 取消（MergePilot 生产形状：create+replan team_id=mp）assigned 态竞态 409 围栏+200 取消双形态 PASS**。
+- **四角色真实往返 4/4**（重启后复测再 4/4；`hotswitch-4role.sh`）。
+- **MergePilot 影响 3/3**（`cas-mp-impact-qwp2.py`；证据 `evidence/race-fix/mp-impact/`）：executor `cancelExternalRound` 真实代码路径经 ctrl CAS 端点取消→权威 cancelled；迟到提交拒收；迟到 Matrix 回复投递后 b7 console DB 快照零变化（不推进终态 attempt/不改 run 终态/不产建议与验证产物）。
+- **Matrix 401 定案**：非"重启失效"——四角色脚本读的 `qwp2-mx-token.txt` 在敏感文件清理中被删，脚本以空 token 发送=M_MISSING_TOKEN。worker/console token 全程有效；刷新助手 `qwp2-mx-refresh.sh`（ADMIN_PASSWORD→login→whoami 验证）纳入部署工具；重启（token=ctrl 注入 env， Same identity）与重建（reconcile 重注入）后身份自动恢复均实证。
+- Go 侧单测：`internal/server`+`internal/oss` 全绿（含三个新竞态测试：并发 submit 围栏保持、并发非终态写收敛 cancelled+history 保留、并发终态胜出 409 拒覆盖）。
+
+### 3.7 生产与边界（不变口径）
+
+- 生产=rc.25（beta-mp-console），本轮全程未动；DRY_RUN 仍为建议链；不合并、不切生产。
+- 生产迁移门保持 NO-GO→本轮证据补齐后由维护者依 3.6 判定；有界观察（2–4h）自候选冻结（2026-10-11 22:45 CST 部署完成）起算。

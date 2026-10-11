@@ -1,0 +1,458 @@
+diff --git a/agentteams-controller/internal/server/project_handler.go b/agentteams-controller/internal/server/project_handler.go
+index f361660..e8c4b7b 100644
+--- a/agentteams-controller/internal/server/project_handler.go
++++ b/agentteams-controller/internal/server/project_handler.go
+@@ -3199,7 +3199,7 @@ func (h *ProjectHandler) CancelTask(w http.ResponseWriter, r *http.Request) {
+ 
+ 	// Read the task's TaskMeta from the project's owning scope to preserve fields
+ 	// when writing back, then apply the submission fence and cancellation.
+-	taskData, err := readTaskMetaFirst(h, r.Context(), taskID, team)
++	taskData, taskEtag, taskKey, err := readTaskMetaFirstWithETag(h, r.Context(), taskID, team)
+ 	if err != nil {
+ 		writeError(w, http.StatusInternalServerError, "read task meta: "+err.Error())
+ 		return
+@@ -3260,66 +3260,74 @@ func (h *ProjectHandler) CancelTask(w http.ResponseWriter, r *http.Request) {
+ 		httputil.WriteJSON(w, http.StatusOK, h.buildWorkflow(meta, team, false))
+ 		return
+ 	}
+-	taskData["status"] = "cancelled"
+-	taskData["cancel_reason"] = reason
+-	cancelledAt := persistedCancelledAt
+-	if strings.TrimSpace(cancelledAt) == "" {
+-		if projectCancellation != nil {
++	decisionCancelledAt := persistedCancelledAt
++	applyCancelledMeta := func(data map[string]any, fromStatus string) ([]byte, error) {
++		data["status"] = "cancelled"
++		data["cancel_reason"] = reason
++		// cancelled_at preference: already-persisted value on THIS data
++		// (fresh on a CAS retry) > project decision > continuation
++		// resolved_at > now. Re-deriving per application keeps a retry
++		// from stamping a stale first-read timestamp over fresh state.
++		cancelledAt, _ := data["cancelled_at"].(string)
++		cancelledAt = strings.TrimSpace(cancelledAt)
++		if cancelledAt == "" && projectCancellation != nil {
+ 			cancelledAt = strings.TrimSpace(projectCancellation.CancelledAt)
+ 		}
+-		if hasContinuation {
+-			if cancelledAt == "" {
+-				resolvedAt, _ := continuation["resolved_at"].(string)
++		if cancelledAt == "" {
++			if cont, ok := data["continuation"].(map[string]any); ok {
++				resolvedAt, _ := cont["resolved_at"].(string)
+ 				cancelledAt = strings.TrimSpace(resolvedAt)
+ 			}
+ 		}
+ 		if cancelledAt == "" {
+ 			cancelledAt = utcTimestamp()
+ 		}
+-		taskData["cancelled_at"] = cancelledAt
+-	}
+-	// Transition audit trail: record the human cancellation in the same
+-	// read-modify-write batch (the meta is rewritten anyway — no extra
+-	// write amplification). Skipped on the retry-convergence path where
+-	// the task meta is already cancelled, so no no-op entry is recorded.
+-	if taskStatus != "cancelled" {
+-		history := make([]any, 0, 1)
+-		if existing, ok := taskData["history"].([]any); ok {
+-			history = append(history, existing...)
+-		}
+-		history = append(history, map[string]any{
+-			"ts":     cancelledAt,
+-			"from":   taskStatus,
+-			"to":     "cancelled",
+-			"action": "cancel_task",
+-			"actor":  authzActor(caller),
+-			"note":   reason,
+-		})
+-		taskData["history"] = history
+-	}
+-	if hasContinuation && len(continuation) > 0 {
+-		continuation["status"] = "resolved"
+-		continuation["resolution"] = "cancelled"
+-		if resolvedAt, _ := continuation["resolved_at"].(string); strings.TrimSpace(resolvedAt) == "" {
+-			continuation["resolved_at"] = cancelledAt
++		data["cancelled_at"] = cancelledAt
++		decisionCancelledAt = cancelledAt
++		// Transition audit trail: record the human cancellation in the same
++		// read-modify-write batch (the meta is rewritten anyway — no extra
++		// write amplification). Skipped on the retry-convergence path where
++		// the task meta is already cancelled, so no no-op entry is recorded.
++		if fromStatus != "cancelled" {
++			history := make([]any, 0, 1)
++			if existing, ok := data["history"].([]any); ok {
++				history = append(history, existing...)
++			}
++			history = append(history, map[string]any{
++				"ts":     cancelledAt,
++				"from":   fromStatus,
++				"to":     "cancelled",
++				"action": "cancel_task",
++				"actor":  authzActor(caller),
++				"note":   reason,
++			})
++			data["history"] = history
+ 		}
+-		taskData["continuation"] = continuation
+-	}
+-	if replacementTaskID != "" {
+-		taskData["replacement_task_id"] = replacementTaskID
+-	} else {
+-		delete(taskData, "replacement_task_id")
++		if cont, ok := data["continuation"].(map[string]any); ok && len(cont) > 0 {
++			cont["status"] = "resolved"
++			cont["resolution"] = "cancelled"
++			if resolvedAt, _ := cont["resolved_at"].(string); strings.TrimSpace(resolvedAt) == "" {
++				cont["resolved_at"] = cancelledAt
++			}
++			data["continuation"] = cont
++		}
++		if replacementTaskID != "" {
++			data["replacement_task_id"] = replacementTaskID
++		} else {
++			delete(data, "replacement_task_id")
++		}
++		return json.Marshal(data)
+ 	}
+ 	cancellationDecision := projectCancellation
++	taskJSON, err := applyCancelledMeta(taskData, taskStatus)
+ 	if cancellationDecision == nil {
+ 		cancellationDecision = &taskCancellationDecision{
+ 			SubmissionID:      requestedSubmissionID,
+ 			Reason:            reason,
+ 			ReplacementTaskID: replacementTaskID,
+-			CancelledAt:       cancelledAt,
++			CancelledAt:       decisionCancelledAt,
+ 		}
+ 	}
+-	taskJSON, err := json.Marshal(taskData)
+ 	if err != nil {
+ 		writeError(w, http.StatusInternalServerError, "marshal task meta: "+err.Error())
+ 		return
+@@ -3347,8 +3355,8 @@ func (h *ProjectHandler) CancelTask(w http.ResponseWriter, r *http.Request) {
+ 			return
+ 		}
+ 	}
+-	if err := h.oss.PutObject(r.Context(), taskMetaKeys(taskID, team)[0], taskJSON); err != nil {
+-		writeError(w, http.StatusInternalServerError, "write task meta: "+err.Error())
++	if !h.writeTaskMetaCancelledCAS(r.Context(), w, taskID, team, taskEtag, taskKey, taskJSON,
++		requestedSubmissionID, applyCancelledMeta) {
+ 		return
+ 	}
+ 	h.interventionNotify(r.Context(), meta, fmt.Sprintf("🚫 任务 %s 已取消（项目 %s）", taskID, meta.ProjectID))
+@@ -3370,21 +3378,95 @@ func isTerminalTaskStatus(status string) bool {
+ // and returns it as a mutable map. Returns nil when no readable TaskMeta
+ // exists in that scope.
+ func readTaskMetaFirst(h *ProjectHandler, ctx context.Context, taskID, team string) (map[string]any, error) {
++	raw, _, _, err := readTaskMetaFirstWithETag(h, ctx, taskID, team)
++	return raw, err
++}
++
++// readTaskMetaFirstWithETag additionally returns the content ETag of the
++// object that was read (MD5 of the exact bytes) and the key it was read
++// from, so a following PutObjectIfMatch is bound to precisely the version
++// this request saw.
++func readTaskMetaFirstWithETag(h *ProjectHandler, ctx context.Context, taskID, team string) (map[string]any, string, string, error) {
+ 	for _, key := range taskMetaKeys(taskID, team) {
+ 		data, err := h.oss.GetObject(ctx, key)
+ 		if err != nil {
+ 			if errors.Is(err, os.ErrNotExist) {
+ 				continue
+ 			}
+-			return nil, err
++			return nil, "", "", err
+ 		}
+ 		var raw map[string]any
+ 		if err := json.Unmarshal(data, &raw); err != nil {
+ 			continue
+ 		}
+-		return raw, nil
++		return raw, contentETag(data), key, nil
++	}
++	return nil, "", "", nil
++}
++
++// writeTaskMetaCancelledCAS persists the cancelled task meta with a
++// compare-and-swap. The unconditional PutObject it replaces could clobber a
++// concurrent worker transition (submit/ack) that landed after this request
++// read the meta: a late submission would then overwrite the cancelled state
++// and resurrect the task. The first attempt writes the exact bytes that were
++// validated against the read; on ETag conflict the meta is re-read and the
++// cancellation re-applied against the fresh state (submission fence and
++// terminal guard re-checked). Three conflicts surface as 409 for an
++// explicit client retry.
++func (h *ProjectHandler) writeTaskMetaCancelledCAS(
++	ctx context.Context,
++	w http.ResponseWriter,
++	taskID, team, etag, key string,
++	taskJSON []byte,
++	requestedSubmissionID string,
++	applyCancelledMeta func(data map[string]any, fromStatus string) ([]byte, error),
++) bool {
++	if etag == "" || key == "" {
++		// No authoritative copy existed at read time; CancelTask rejects a
++		// missing task meta earlier (404), so this is a concurrent
++		// disappearance — never create unconditionally from a cancel.
++		writeError(w, http.StatusConflict, "task meta is no longer available; retry")
++		return false
++	}
++	for attempt := 0; attempt < 3; attempt++ {
++		err := h.oss.PutObjectIfMatch(ctx, key, taskJSON, etag)
++		if err == nil {
++			return true
++		}
++		if !errors.Is(err, oss.ErrPreconditionFailed) {
++			writeError(w, http.StatusInternalServerError, "write task meta: "+err.Error())
++			return false
++		}
++		fresh, freshEtag, freshKey, rerr := readTaskMetaFirstWithETag(h, ctx, taskID, team)
++		if rerr != nil {
++			writeError(w, http.StatusInternalServerError, "re-read task meta: "+rerr.Error())
++			return false
++		}
++		if fresh == nil {
++			writeError(w, http.StatusConflict, "task meta disappeared concurrently; retry")
++			return false
++		}
++		freshStatus, _ := fresh["status"].(string)
++		freshStatus = strings.TrimSpace(freshStatus)
++		if isTerminalTaskStatus(freshStatus) && freshStatus != "cancelled" {
++			writeError(w, http.StatusConflict, "cannot cancel terminal task: "+freshStatus)
++			return false
++		}
++		freshSubmissionID, _ := fresh["submission_id"].(string)
++		freshSubmissionID = strings.TrimSpace(freshSubmissionID)
++		if freshSubmissionID != "" && requestedSubmissionID != freshSubmissionID {
++			writeError(w, http.StatusConflict, "submissionId does not match the current task submission")
++			return false
++		}
++		taskJSON, err = applyCancelledMeta(fresh, freshStatus)
++		if err != nil {
++			writeError(w, http.StatusInternalServerError, "marshal task meta: "+err.Error())
++			return false
++		}
++		etag, key = freshEtag, freshKey
+ 	}
+-	return nil, nil
++	writeError(w, http.StatusConflict, "task meta was modified concurrently; retry the cancel")
++	return false
+ }
+ 
+ // CreateProject creates a project by writing shared/projects/{id}/meta.json.
+diff --git a/agentteams-controller/internal/server/project_handler_test.go b/agentteams-controller/internal/server/project_handler_test.go
+index dd345c9..d4ddefd 100644
+--- a/agentteams-controller/internal/server/project_handler_test.go
++++ b/agentteams-controller/internal/server/project_handler_test.go
+@@ -4447,6 +4447,213 @@ func (f *failTaskPutOSS) PutObject(ctx context.Context, key string, data []byte)
+ 	return f.StorageClient.PutObject(ctx, key, data)
+ }
+ 
++// PutObjectIfMatch mirrors PutObject's injection: since the CAS change the
++// cancel path persists the task meta through the conditional write, and a
++// task-meta write failure must surface identically.
++func (f *failTaskPutOSS) PutObjectIfMatch(ctx context.Context, key string, data []byte, matchETag string) error {
++	if f.failures > 0 && strings.HasPrefix(key, f.failPrefix) {
++		f.failures--
++		return errors.New("injected task-meta write failure")
++	}
++	return f.StorageClient.PutObjectIfMatch(ctx, key, data, matchETag)
++}
++
++// taskRaceOSS wraps a Memory store and, on the Nth GetObject of the task
++// meta key, writes a concurrent worker version of the task meta — simulating
++// a worker submit_task landing between the cancel's read and its conditional
++// write. PutObjectIfMatch carries real ETag semantics, so the controller's
++// first write fails with ErrPreconditionFailed exactly like MinIO.
++type taskRaceOSS struct {
++	mcLike      *mcLikeOSS
++	taskKey     string
++	injectOnGet int
++	getCalls    int
++	injectBody  string
++}
++
++func (c *taskRaceOSS) ListObjects(ctx context.Context, prefix string) ([]string, error) {
++	return c.mcLike.ListObjects(ctx, prefix)
++}
++
++func (c *taskRaceOSS) ListObjectsDetailed(ctx context.Context, prefix string) ([]oss.ObjectInfo, error) {
++	return c.mcLike.ListObjectsDetailed(ctx, prefix)
++}
++
++func (c *taskRaceOSS) GetObject(ctx context.Context, key string) ([]byte, error) {
++	data, err := c.mcLike.GetObject(ctx, key)
++	if err == nil && key == c.taskKey {
++		c.getCalls++
++		if c.getCalls == c.injectOnGet && c.injectBody != "" {
++			_ = c.mcLike.PutObject(ctx, key, []byte(c.injectBody))
++		}
++	}
++	return data, err
++}
++
++func (c *taskRaceOSS) PutObject(ctx context.Context, key string, data []byte) error {
++	return c.mcLike.PutObject(ctx, key, data)
++}
++
++func (c *taskRaceOSS) PutObjectIfMatch(ctx context.Context, key string, data []byte, matchETag string) error {
++	cur, err := c.mcLike.StatMeta(ctx, key)
++	if err != nil {
++		return err
++	}
++	if cur.ETag != matchETag {
++		return oss.ErrPreconditionFailed
++	}
++	return c.mcLike.PutObject(ctx, key, data)
++}
++
++func (c *taskRaceOSS) Stat(ctx context.Context, key string) error {
++	return c.mcLike.Stat(ctx, key)
++}
++
++func (c *taskRaceOSS) StatMeta(ctx context.Context, key string) (oss.ObjectMeta, error) {
++	return c.mcLike.StatMeta(ctx, key)
++}
++
++func (c *taskRaceOSS) PutFile(ctx context.Context, localPath, key string) error {
++	return c.mcLike.PutFile(ctx, localPath, key)
++}
++
++func (c *taskRaceOSS) DeleteObject(ctx context.Context, key string) error {
++	return c.mcLike.DeleteObject(ctx, key)
++}
++
++func (c *taskRaceOSS) Mirror(ctx context.Context, src, dst string, opts oss.MirrorOptions) error {
++	return c.mcLike.Mirror(ctx, src, dst, opts)
++}
++
++func (c *taskRaceOSS) DeletePrefix(ctx context.Context, prefix string) error {
++	return c.mcLike.DeletePrefix(ctx, prefix)
++}
++
++// TestCancelTask_ConcurrentSubmitKeepsFenceAndFreshState: a worker
++// submission lands between the cancel's read and write. The conditional
++// write fails; the retry re-reads the fresh (submitted, non-terminal) state
++// and the submission fence applies exactly as it would on a fresh request —
++// the cancel without the raced submissionId is rejected 409 and the fresh
++// submitted state is NOT clobbered.
++func TestCancelTask_ConcurrentSubmitKeepsFenceAndFreshState(t *testing.T) {
++	store := ossfake.NewMemory()
++	putProject(store, "shared/projects/p1/meta.json", map[string]any{
++		"project_id": "p1", "title": "P1", "status": "active", "plan_type": "dag",
++		"tasks": []map[string]any{{"task_id": "t1", "title": "T1", "status": "in_progress", "depends_on": []string{}}},
++	})
++	putTask(store, "shared/tasks/t1/meta.json", map[string]any{
++		"task_id": "t1", "project_id": "p1", "status": "in_progress",
++	})
++	racer := &taskRaceOSS{mcLike: &mcLikeOSS{Memory: store}, taskKey: "shared/tasks/t1/meta.json", injectOnGet: 1,
++		injectBody: `{"task_id":"t1","project_id":"p1","status":"submitted","submission_id":"sub-race","history":[{"ts":"t","from":"in_progress","to":"submitted","action":"submit_task","actor":"worker:default","seq":1}]}`}
++	h := newProjectTestHandlerWithOSS(t, racer)
++
++	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects/p1/tasks/t1/cancel",
++		strings.NewReader(`{"reason":"obsolete"}`))
++	req.SetPathValue("id", "p1")
++	req.SetPathValue("taskId", "t1")
++	req = withCaller(req, &authpkg.CallerIdentity{Role: authpkg.RoleAdmin, Username: "admin"})
++	rec := httptest.NewRecorder()
++	h.CancelTask(rec, req)
++	if rec.Code != http.StatusConflict {
++		t.Fatalf("cancel status=%d body=%s, want 409 (submission fence applies to the raced state)", rec.Code, rec.Body.String())
++	}
++	if body := rec.Body.String(); !strings.Contains(body, "submissionId") {
++		t.Fatalf("body=%s, want submissionId fence error", body)
++	}
++	taskData, _ := store.GetObject(context.Background(), "shared/tasks/t1/meta.json")
++	var taskMeta map[string]any
++	_ = json.Unmarshal(taskData, &taskMeta)
++	if taskMeta["status"] != "submitted" {
++		t.Fatalf("authoritative task status=%v, want submitted (cancel must not clobber the raced state)", taskMeta["status"])
++	}
++}
++
++// TestCancelTask_ConcurrentNonTerminalWriteConvergesToCancelled: a
++// concurrent worker write that stays non-terminal and carries no
++// submission (a progress/history note) lands between the cancel's read and
++// write. The CAS retry re-reads it, re-applies the cancellation, and the
++// authoritative state converges to cancelled with the concurrent history
++// preserved.
++func TestCancelTask_ConcurrentNonTerminalWriteConvergesToCancelled(t *testing.T) {
++	store := ossfake.NewMemory()
++	putProject(store, "shared/projects/p1/meta.json", map[string]any{
++		"project_id": "p1", "title": "P1", "status": "active", "plan_type": "dag",
++		"tasks": []map[string]any{{"task_id": "t1", "title": "T1", "status": "in_progress", "depends_on": []string{}}},
++	})
++	putTask(store, "shared/tasks/t1/meta.json", map[string]any{
++		"task_id": "t1", "project_id": "p1", "status": "in_progress",
++	})
++	racer := &taskRaceOSS{mcLike: &mcLikeOSS{Memory: store}, taskKey: "shared/tasks/t1/meta.json", injectOnGet: 1,
++		injectBody: `{"task_id":"t1","project_id":"p1","status":"in_progress","history":[{"ts":"t","from":"in_progress","to":"in_progress","action":"progress","actor":"worker:default","seq":1,"note":"concurrent progress"}]}`}
++	h := newProjectTestHandlerWithOSS(t, racer)
++
++	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects/p1/tasks/t1/cancel",
++		strings.NewReader(`{"reason":"obsolete"}`))
++	req.SetPathValue("id", "p1")
++	req.SetPathValue("taskId", "t1")
++	req = withCaller(req, &authpkg.CallerIdentity{Role: authpkg.RoleAdmin, Username: "admin"})
++	rec := httptest.NewRecorder()
++	h.CancelTask(rec, req)
++	if rec.Code != http.StatusOK {
++		t.Fatalf("cancel status=%d body=%s, want 200 (CAS retry converges)", rec.Code, rec.Body.String())
++	}
++	taskData, _ := store.GetObject(context.Background(), "shared/tasks/t1/meta.json")
++	var taskMeta map[string]any
++	_ = json.Unmarshal(taskData, &taskMeta)
++	if taskMeta["status"] != "cancelled" {
++		t.Fatalf("authoritative task status=%v, want cancelled", taskMeta["status"])
++	}
++	if taskMeta["cancel_reason"] != "obsolete" {
++		t.Fatalf("cancel_reason=%v, want obsolete", taskMeta["cancel_reason"])
++	}
++	history, _ := taskMeta["history"].([]any)
++	foundProgress := false
++	for _, item := range history {
++		if m, ok := item.(map[string]any); ok && m["action"] == "progress" {
++			foundProgress = true
++		}
++	}
++	if !foundProgress {
++		t.Fatalf("concurrent progress history entry was dropped: %v", history)
++	}
++}
++
++// TestCancelTask_ConcurrentTerminalWinsRejectsCancel: the concurrent write
++// drives the task to a terminal decision other than cancelled (completed).
++// The CAS retry re-validates against the fresh state and rejects the cancel
++// with 409 instead of clobbering it.
++func TestCancelTask_ConcurrentTerminalWinsRejectsCancel(t *testing.T) {
++	store := ossfake.NewMemory()
++	putProject(store, "shared/projects/p1/meta.json", map[string]any{
++		"project_id": "p1", "title": "P1", "status": "active", "plan_type": "dag",
++		"tasks": []map[string]any{{"task_id": "t1", "title": "T1", "status": "in_progress", "depends_on": []string{}}},
++	})
++	putTask(store, "shared/tasks/t1/meta.json", map[string]any{
++		"task_id": "t1", "project_id": "p1", "status": "in_progress",
++	})
++	racer := &taskRaceOSS{mcLike: &mcLikeOSS{Memory: store}, taskKey: "shared/tasks/t1/meta.json", injectOnGet: 1,
++		injectBody: `{"task_id":"t1","project_id":"p1","status":"completed"}`}
++	h := newProjectTestHandlerWithOSS(t, racer)
++
++	req := httptest.NewRequest(http.MethodPost, "/api/v1/projects/p1/tasks/t1/cancel",
++		strings.NewReader(`{"reason":"obsolete"}`))
++	req.SetPathValue("id", "p1")
++	req.SetPathValue("taskId", "t1")
++	req = withCaller(req, &authpkg.CallerIdentity{Role: authpkg.RoleAdmin, Username: "admin"})
++	rec := httptest.NewRecorder()
++	h.CancelTask(rec, req)
++	if rec.Code != http.StatusConflict {
++		t.Fatalf("cancel status=%d body=%s, want 409 (fresh terminal state rejects cancel)", rec.Code, rec.Body.String())
++	}
++	taskData, _ := store.GetObject(context.Background(), "shared/tasks/t1/meta.json")
++	var taskMeta map[string]any
++	_ = json.Unmarshal(taskData, &taskMeta)
++	if taskMeta["status"] != "completed" {
++		t.Fatalf("authoritative task status=%v, want completed (cancel must not clobber)", taskMeta["status"])
++	}
++}
++
+ func TestCancelTask_RetryConvergesBothObjects(t *testing.T) {
+ 	store := ossfake.NewMemory()
+ 	putProject(store, "shared/projects/p1/meta.json", map[string]any{
