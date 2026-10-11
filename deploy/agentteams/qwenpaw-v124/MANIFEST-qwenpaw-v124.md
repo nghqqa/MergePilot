@@ -84,6 +84,12 @@ Windows 宿主注意：worker console 端口由 controller 随机分配 127.0.0.
   QwenPaw 期间新产生的 `.qwenpaw` 数据保留远端（CoPaw 不可见但不丢失）。Console 镜像与
   worker 栈独立回滚（同旧栈 MANIFEST §5 口径）。
 
+## 6b. 资源边界（2026-10-11 Docker 整机崩溃事故教训——硬性上限）
+
+- **单机 embedded 测试栈并发上限 = 1**。一套 embedded（Higress JVM×5+envoy+Tuwunel+MinIO+ctrl）+manager+workers 已是数 GB 常驻；本次 qwp+qwp2+oldp 三套并存叠加生产/AT 栈，Docker Desktop 于 12:40 整机退出（backend 0x40010004 终止，紧随代理注册表变更；无 OOM 实锤但负载背景成立），生产容器全部随引擎下线。
+- apply/verify 脚本内建前提：同一时间至多一套候选栈（QP_CTRL_NAME 唯一）；跑第二套前必须 `docker stop` 并确认上一套已释放。
+- 崩溃恢复后检查单：①生产容器自动回归（restart 策略）②我的栈 `--restart no` 应保持 down（无头 manager 若自行 Up 需手动 stop）③生产 T+1h 式观察（console/healthz、PG 可查、ctrl healthy、执行器端口在位）。
+
 ## 7. 未过门项（诚实清单）
 
 1. **≥24h 隔离 soak**：未完成——保持未过门，不以短时检查替代；
