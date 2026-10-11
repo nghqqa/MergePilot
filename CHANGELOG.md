@@ -1,3 +1,15 @@
+## [0.2.0-beta.6-rc.25] — 2026-10-12（候选）
+
+### Gitee OAuth 登录链 + 会话来源契约（#402/#410）
+- **Gitee OAuth 完整登录链 + 账号绑定**：登录页双入口（providers 驱动，未配置不渲染）、受邀邀请双平台、账号绑定（不转移已占用身份/不自动合并）；v26 additive 迁移（mu_oauth_flow + provider/bind_user_id，存量回填 github-oauth）
+- **会话来源契约修复**：/api/auth/session MU 桥不再硬编码 github-oauth；两 session 端点按白名单（github-oauth/gitee-oauth）下发实际会话 provider，未知/缺失不冒充；identity.js 删除 mu_session→GitHub 冒充兜底
+- **登录前端优化**：进行中按平台区分（重入守卫，连点不产生第二个 flow）、单色平台图标、文案去部署变量名/内部术语、触控目标 ≥44px、stale 错误清理保留邀请上下文
+- **409 invite_provider**：错配指引仅依赖可信后端字段
+### AgentTeams v1.2.4/QwenPaw 兼容（#407/#408/#409）
+- 执行器兼容适配 + 网关 URL env/预检/V3 探针二轮修正 + 部署真源与评估回填（docs）
+### 依赖基线
+- rc.24（#401 邀请认领修复 + #403 恢复工具链）
+
 ## [0.2.0-beta.6-rc.24] — 2026-10-10（候选）
 
 ### 邀请认领角色覆盖缺陷修复（#401）
