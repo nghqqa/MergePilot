@@ -26,6 +26,109 @@ const DATA_MODE_COPY = {
 // 多用户 canonical 面、按登录会话的租户收窄；不冒用 legacy live 的"隔离 staging 库"描述。
 const MU_DATA_MODE_COPY = '多用户实时数据——多用户正式数据面：仓库 / PR / 运行记录按登录会话的租户实时收窄（仅见本组织数据）；run 证据详情页仍为快照只读。';
 
+// 账号绑定区（Wave-Gitee）：已有登录会话追加 Gitee 身份。渲染由服务端能力驱动：
+//   GET /api/mu/auth/providers → gitee.configured（未配置不渲染入口）
+//   GET /api/mu/auth/identities → 本账号外部身份（provider + subject 尾号）
+// 绑定 = 完整 Gitee OAuth 授权（POST bind/gitee/start 换 authorize_url → Gitee 授权
+// → 回调校验会话与 flow 归属）；只增登录路径，不改租户/成员关系/审批能力。
+// 回调结果经 /settings?mu_bind=ok|mu_bind_error=<reason> 回显。
+const BIND_ERROR_COPY = {
+  state_invalid: '绑定状态校验未通过（过期/更换浏览器/会话变化）——请重新发起绑定',
+  oauth_exchange_failed: 'Gitee 授权交换失败——请稍后重试',
+  identity_already_bound: '该 Gitee 身份已绑定到某个账号（可能是你或其他账号）——不能重复绑定',
+  bind_failed: '绑定未完成——请重新发起',
+};
+
+function GiteeBindSection({ authed }) {
+  const [provReady, setProvReady] = useState(false); // gitee.configured
+  const [identities, setIdentities] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const bindResult = typeof window !== 'undefined'
+    ? new URLSearchParams(window.location.search).get('mu_bind') : null;
+  const bindError = typeof window !== 'undefined'
+    ? new URLSearchParams(window.location.search).get('mu_bind_error') : null;
+
+  const load = useCallback(async () => {
+    if (!authed) return;
+    try {
+      const pr = await fetch('/api/mu/auth/providers', { credentials: 'same-origin' });
+      const pb = await pr.json().catch(() => null);
+      setProvReady(pr.ok && pb?.gitee?.configured === true);
+      const ir = await fetch('/api/mu/auth/identities', { credentials: 'same-origin' });
+      const ib = await ir.json().catch(() => null);
+      setIdentities(ir.ok ? (ib?.identities ?? []) : null);
+    } catch { setErr('绑定状态读取失败'); }
+  }, [authed]);
+  useEffect(() => { load(); }, [load]);
+
+  const startBind = async () => {
+    setBusy(true); setErr(null);
+    try {
+      const r = await fetch('/api/mu/auth/bind/gitee/start', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'X-CSRF-Token': csrfFromCookie() },
+      });
+      const b = await r.json().catch(() => null);
+      if (r.ok && b?.authorize_url) { window.location.href = b.authorize_url; return; }
+      if (b?.error?.reason === 'identity_already_bound') setErr('当前账号已绑定 Gitee 身份——一个账号至多一条 Gitee 身份');
+      else if (b?.error?.reason === 'oauth_not_configured') setErr('Gitee OAuth 未配置——联系管理员设置 MU_GITEE_OAUTH_* 三项');
+      else if (b?.error?.reason === 'csrf_required') setErr('会话校验失败——请刷新页面后重试');
+      else setErr(`无法发起绑定（${r.status}）`);
+    } catch { setErr('网络错误 — 无法连接后端'); } finally { setBusy(false); }
+  };
+
+  if (!authed) return null;
+  const giteeIdentity = (identities ?? []).find((i) => i.provider === 'gitee-oauth');
+  return (
+    <section className="section">
+      <div className="section-head"><h3>账号绑定</h3></div>
+      <div className="kv-grid">
+        {bindResult === 'ok' && (
+          <div className="kv"><div className="kv-label">绑定结果</div>
+            <div className="kv-value">Gitee 身份绑定成功——现在可用 Gitee 账号登录本工作台（成员关系与权限不变）。</div></div>
+        )}
+        {bindError && (
+          <div className="kv"><div className="kv-label">绑定结果</div>
+            <div className="kv-value">{BIND_ERROR_COPY[bindError] ?? BIND_ERROR_COPY.bind_failed}</div></div>
+        )}
+        <div className="kv">
+          <div className="kv-label">已绑定身份</div>
+          <div className="kv-value">
+            {identities === null ? '读取中…' : (
+              <>
+                {identities.length === 0 ? '（无外部身份）' : identities.map((i) => (
+                  <div key={i.subject}>{i.provider === 'gitee-oauth' ? 'Gitee' : i.provider === 'github-oauth' ? 'GitHub' : i.provider}
+                    <span style={{ color: '#999' }}> · 身份尾号 …{i.subject_tail}</span></div>
+                ))}
+              </>
+            )}
+            <div className="section-note">身份键 = provider + 平台数字 user id；同名用户名/相同邮箱不会合并账号。</div>
+          </div>
+        </div>
+        <div className="kv">
+          <div className="kv-label">绑定 Gitee 账号</div>
+          <div className="kv-value">
+            {!provReady ? (
+              <span style={{ color: '#999' }}>Gitee 登录未在服务端配置——入口不开放（不伪装可用）</span>
+            ) : giteeIdentity ? (
+              <span style={{ color: '#999' }}>已绑定（尾号 …{giteeIdentity.subject_tail}）——如需更换请联系管理员解绑</span>
+            ) : (
+              <>
+                <button type="button" className="btn btn-sm" disabled={busy} onClick={startBind}>
+                  {busy ? '跳转中…' : '绑定 Gitee 账号'}
+                </button>
+                <div className="section-note">将跳转 Gitee 完成授权（需登录 Gitee 并确认授权给对应应用）；绑定仅增加一条登录路径，租户/成员关系/审批能力保持不变。</div>
+              </>
+            )}
+            {err ? <div className="section-note">{err}</div> : null}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export default function SettingsPage() {
   const auth = useAuth();
   const config = useAppConfig();
@@ -142,6 +245,8 @@ export default function SettingsPage() {
           </div>
         </div>
       </section>
+
+      <GiteeBindSection authed={auth.status === 'authed'} />
 
       <section className="section">
         <div className="section-head"><h3>数据与模式</h3></div>

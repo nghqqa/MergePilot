@@ -18,6 +18,7 @@ import { githubAppStatus,
   fixtureChangedExcerpt, fixtureRagSearch, fixtureReviewRun, fixtureRepairPush } from './provider.mjs';
 import { safeEqual } from '../session.mjs';
 import { oauthConfig, newState, buildAuthorizeUrl, exchangeForIdentity } from './oauth.mjs';
+import { giteeOAuthConfig, newGiteeState, buildGiteeAuthorizeUrl, exchangeForGiteeIdentity } from './giteeoauth.mjs';
 import { issueMuSession, resolveMuSession, muCsrfOk, rotateMuSession,
          muTokenFromCookieHeader, muClearCookies,
          muCorrCookie, muCorrClear, muCorrFromCookieHeader, appendCorrClear } from './session.mjs';
@@ -531,13 +532,24 @@ export async function muApi(req, res, ctx) {
       'Set-Cookie': muCorrClear() }); // 失败路径清理 correlation cookie（一次性语义）
     res.end();
   };
+  // 绑定流错误回设置页（会话保留——绑定失败不影响已登录状态）；
+  // 白名单独立于登录错误（mu_bind_error 参数名区分，前端不混淆两种提示）。
+  const BIND_ERROR_WHITELIST = new Set(['state_invalid', 'oauth_exchange_failed', 'identity_already_bound']);
+  const redirectBindError = (reason) => {
+    const r = BIND_ERROR_WHITELIST.has(reason) ? reason : 'bind_failed';
+    res.writeHead(302, { Location: `/settings?mu_bind_error=${r}`, 'Set-Cookie': muCorrClear() });
+    res.end();
+  };
 
   // 身份提供商状态（无秘密；配置缺失如实 configured:false）
   if (p === '/api/mu/auth/providers' && req.method === 'GET') {
     const cfg = oauthConfig(env);
+    const cfgGitee = giteeOAuthConfig(env);
     return sendJson(res, 200, {
       github: { configured: cfg.configured, ...(cfg.configured ? {} : { reason: cfg.reason }),
         callback_url: cfg.callbackUrl || null, scope: cfg.scope },
+      gitee: { configured: cfgGitee.configured, ...(cfgGitee.configured ? {} : { reason: cfgGitee.reason }),
+        callback_url: cfgGitee.callbackUrl || null, scope: cfgGitee.scope },
       fixture: { configured: env.MU_ALLOW_FIXTURE_LOGIN === '1' },
     });
   }
@@ -560,6 +572,13 @@ export async function muApi(req, res, ctx) {
       if (!inv || inv.claimed_at || inv.expires_at <= new Date()) {
         return sendJson(res, 404, { error: { reason: 'invitation_not_found' } });
       }
+      // provider 归属校验（Wave-Gitee）：邀请绑定的是哪个 provider 的身份，登录入口
+      // 必须一致——GitHub 入口拒绝 Gitee 邀请（反之亦然），防止用错平台身份认领
+      // （两平台数字 id 空间独立，绝不混用）。邀请不被消耗，可从正确入口重试。
+      if (inv.expected_subject && !String(inv.expected_subject).startsWith('github-oauth:')) {
+        return sendJson(res, 409, { error: { reason: 'invite_provider_mismatch',
+          detail: '该邀请绑定的不是 GitHub 身份（expected_subject 前缀非 github-oauth:）——请使用对应平台的登录入口' } });
+      }
       inviteId = inv.invite_id;
     }
     const state = newState();
@@ -570,41 +589,20 @@ export async function muApi(req, res, ctx) {
       corrHash: crypto.createHash('sha256').update(corr).digest('hex'),
       inviteId,
       ttlMs,
+      provider: 'github-oauth',
     });
     await store.auditPlatform('OAUTH_FLOW_STARTED', { detail: { invite_bound: Boolean(inviteId) } });
     res.setHeader('Set-Cookie', muCorrCookie(corr, ttlMs));
     return sendJson(res, 200, { authorize_url: buildAuthorizeUrl(cfg, state) });
   }
 
-  if (p === '/api/mu/auth/oauth/github/callback' && req.method === 'GET') {
-    const cfg = oauthConfig(env);
-    if (!cfg.configured) return redirectLoginError('oauth_not_configured');
-    const state = String(q.state ?? '');
-    const code = String(q.code ?? '');
-    const stateHash = state ? crypto.createHash('sha256').update(state).digest('hex') : '';
-    const flow = stateHash ? await store.consumeOAuthFlow(stateHash) : null;
-    // Wave 2A.1：correlation cookie 必须与 flow 内摘要匹配（缺失/错配/跨浏览器/
-    // 存量 2A 无摘要 flow → 统一 state_invalid，不泄露区分信息）
-    const corr = muCorrFromCookieHeader(req.headers.cookie);
-    // PR253 验收修复：登录回调只消费登录流——安装流(purpose=ghapp_install)的
-    // state+corr 不得被当登录 flow 使用（对称隔离；虽无提权面仍 fail-closed）
-    const corrOk = flow && flow.corr_hash && corr
-      && crypto.createHash('sha256').update(corr).digest('hex') === flow.corr_hash
-      && flow.purpose === 'oauth_login';
-    if (!flow || !corrOk) {
-      await store.auditPlatform('OAUTH_FLOW_REJECTED', { detail: { reason: 'state_invalid' } });
-      return redirectLoginError('state_invalid'); // 不存在/已消费(重放)/已过期/correlation 失配/跨用途 统一同因
-    }
-    let identity;
-    try {
-      if (!code) throw new Error('missing_code');
-      identity = await exchangeForIdentity(cfg, code); // token 即弃
-    } catch (e) {
-      await store.auditPlatform('OAUTH_FLOW_REJECTED', { detail: { reason: 'oauth_exchange_failed' } });
-      return redirectLoginError('oauth_exchange_failed');
-    }
+  // ── OAuth 登录完成（github/gitee 双 provider 共享；Wave-Gitee 抽取自 github 回调，
+  //    认领/会话/审计语义逐行保持）──
+  // 身份解析（provider+subject 精确匹配；provider 是调用方传入的代码内字面量，
+  // 请求面不存在"选择 provider"的输入）→ 邀请认领（#401 事务化语义）→ 会话签发 → 302。
+  const finishOAuthLogin = async ({ provider, identity, flow }) => {
     // 身份解析：既有用户（身份键=数字 id，login 改名不影响）或邀请认领（唯一注册通道）
-    let user = await store.getUserByIdentity('github-oauth', identity.subject);
+    let user = await store.getUserByIdentity(provider, identity.subject);
     let grantedTenantId = null; let grantedRole = null;
 
     // rc.14（MT-ONB-1/2）：邀请认领泛化——claim 分支不再仅属首次入驻。新用户与
@@ -622,7 +620,7 @@ export async function muApi(req, res, ctx) {
     // invitation_role_check 被 DBA 修改，claim 路径仍然拒绝。先拒后认领（不烧邀请）。
     const claimForUser = async (claim, uid) => {
       if (claim.role === 'platform_admin') {
-        await store.auditPlatform('OAUTH_FLOW_REJECTED', { detail: { reason: 'platform_admin_invitation_claim_denied' } });
+        await store.auditPlatform('OAUTH_FLOW_REJECTED', { detail: { reason: 'platform_admin_invitation_claim_denied', provider } });
         return null;
       }
       // 2026-10-10 角色覆盖事故修复：认领入驻事务化（store.claimInvitationOnboard）——
@@ -649,21 +647,24 @@ export async function muApi(req, res, ctx) {
     if (!user) {
       const candidates = await resolveClaimCandidates();
       if (candidates.length === 0) {
-        await store.auditPlatform('OAUTH_FLOW_REJECTED', { detail: { reason: 'not_invited' } });
+        await store.auditPlatform('OAUTH_FLOW_REJECTED', { detail: { reason: 'not_invited', provider } });
         return redirectLoginError('not_invited'); // 无公共自动注册
       }
       if (candidates.length > 1) {
-        await store.auditPlatform('OAUTH_FLOW_REJECTED', { detail: { reason: 'invitation_ambiguous' } });
+        await store.auditPlatform('OAUTH_FLOW_REJECTED', { detail: { reason: 'invitation_ambiguous', provider } });
         return redirectLoginError('invitation_ambiguous');
       }
-      // 不按 login 合并：login 撞名时后缀化（身份绑定只认 subject）
+      // 不按 login 合并：login 撞名时后缀化（身份绑定只认 subject）。后缀含 provider
+      // 缩写（GitHub `#gh<id>` / Gitee `#gte<id>`）——两平台 login 空间独立，
+      // 同名句柄/同号数字 id 都不会合并为同一用户。
+      const suffixTag = provider === 'gitee-oauth' ? 'gte' : 'gh';
       const existingByLogin = await store.getUserByLogin(identity.login);
-      const newLogin = existingByLogin ? `${identity.login}#gh${identity.subject.split(':').pop()}` : identity.login;
+      const newLogin = existingByLogin ? `${identity.login}#${suffixTag}${identity.subject.split(':').pop()}` : identity.login;
       user = await store.ensureUser({ login: newLogin, displayName: identity.login });
-      await store.ensureIdentity({ userId: user.user_id, provider: 'github-oauth', subject: identity.subject });
+      await store.ensureIdentity({ userId: user.user_id, provider, subject: identity.subject });
       const claimed = await claimForUser(candidates[0], user.user_id);
       if (!claimed) {
-        await store.auditPlatform('OAUTH_FLOW_REJECTED', { detail: { reason: 'not_invited' } });
+        await store.auditPlatform('OAUTH_FLOW_REJECTED', { detail: { reason: 'not_invited', provider } });
         return redirectLoginError('not_invited');
       }
       grantedTenantId = claimed.tenant_id; grantedRole = claimed.role;
@@ -674,7 +675,7 @@ export async function muApi(req, res, ctx) {
       // 也绝不产生 platform_admin membership（v23 CHECK + 此守卫双封）。
       const candidates = await resolveClaimCandidates();
       if (candidates.length > 1) {
-        await store.auditPlatform('OAUTH_FLOW_REJECTED', { detail: { reason: 'invitation_ambiguous' } });
+        await store.auditPlatform('OAUTH_FLOW_REJECTED', { detail: { reason: 'invitation_ambiguous', provider } });
         return redirectLoginError('invitation_ambiguous');
       }
       if (candidates.length === 1) {
@@ -688,19 +689,173 @@ export async function muApi(req, res, ctx) {
     if (!tenantId) tenantId = active[0]?.tenant_id ?? null;
     const membership = grantedTenantId ? { role: grantedRole } : active[0] ?? null;
     if (!tenantId || !membership) {
-      await store.auditPlatform('OAUTH_FLOW_REJECTED', { detail: { reason: 'no_active_membership' } });
+      await store.auditPlatform('OAUTH_FLOW_REJECTED', { detail: { reason: 'no_active_membership', provider } });
       return redirectLoginError('no_active_membership');
     }
     const sess = await issueMuSession(store, { userId: user.user_id, tenantId,
-      login: user.login, role: membership.role, provider: 'github-oauth' });
+      login: user.login, role: membership.role, provider });
     res.setHeader('Set-Cookie', sess.setCookie);
     await store.auditPlatform('OAUTH_FLOW_CONSUMED', { actorUserId: user.user_id,
-      detail: { flow_id: flow.flow_id } });
+      detail: { flow_id: flow.flow_id, provider } });
     await store.audit('MU_LOGIN', { tenantId, actorUserId: user.user_id,
-      detail: { provider: 'github-oauth', subject_prefix: identity.subject.split(':').pop().slice(0, 8) } });
+      detail: { provider, subject_prefix: identity.subject.split(':').pop().slice(0, 8) } });
     res.setHeader('Set-Cookie', appendCorrClear(sess.setCookie)); // 成功路径清理 correlation
     res.writeHead(302, { Location: '/multiuser' }); // 固定落地，不采纳任何请求参数
     return res.end();
+  };
+
+  // 回调公共前置：state 摘要 + correlation 摘要 + purpose + provider 四重校验。
+  // 不一致（缺失/重放/过期/跨浏览器/跨用途/跨 provider）一律返回 null（调用方统一
+  // 呈现 state_invalid，不泄露区分信息）；flow 行已被单次消费（CAS）。
+  const consumeLoginFlow = async ({ state, corr, purpose, provider }) => {
+    const stateHash = state ? crypto.createHash('sha256').update(state).digest('hex') : '';
+    const flow = stateHash ? await store.consumeOAuthFlow(stateHash) : null;
+    const corrOk = flow && flow.corr_hash && corr
+      && crypto.createHash('sha256').update(corr).digest('hex') === flow.corr_hash
+      && flow.purpose === purpose && flow.provider === provider;
+    return corrOk ? flow : null;
+  };
+
+  if (p === '/api/mu/auth/oauth/github/callback' && req.method === 'GET') {
+    const cfg = oauthConfig(env);
+    if (!cfg.configured) return redirectLoginError('oauth_not_configured');
+    const state = String(q.state ?? '');
+    const code = String(q.code ?? '');
+    // Wave 2A.1：correlation cookie 必须与 flow 内摘要匹配（缺失/错配/跨浏览器/
+    // 存量 2A 无摘要 flow → 统一 state_invalid，不泄露区分信息）。
+    // PR253 验收修复：登录回调只消费登录流——安装流(purpose=ghapp_install)的
+    // state+corr 不得被当登录 flow 使用（对称隔离；虽无提权面仍 fail-closed）。
+    // Wave-Gitee：provider 归属一并校验（GitHub state 不得被 Gitee 回调消费，反之亦然）。
+    const flow = await consumeLoginFlow({ state, corr: muCorrFromCookieHeader(req.headers.cookie),
+      purpose: 'oauth_login', provider: 'github-oauth' });
+    if (!flow) {
+      await store.auditPlatform('OAUTH_FLOW_REJECTED', { detail: { reason: 'state_invalid' } });
+      return redirectLoginError('state_invalid'); // 不存在/已消费(重放)/已过期/correlation 失配/跨用途/跨provider 统一同因
+    }
+    let identity;
+    try {
+      if (!code) throw new Error('missing_code');
+      identity = await exchangeForIdentity(cfg, code); // token 即弃
+    } catch (e) {
+      await store.auditPlatform('OAUTH_FLOW_REJECTED', { detail: { reason: 'oauth_exchange_failed' } });
+      return redirectLoginError('oauth_exchange_failed');
+    }
+    // 身份解析/邀请认领/会话签发——双 provider 共享实现
+    return finishOAuthLogin({ provider: 'github-oauth', identity, flow });
+  }
+
+  // ── Gitee OAuth（Wave-Gitee：与 GitHub 同构的 authorization-code 流程）──
+  if (p === '/api/mu/auth/oauth/gitee/start' && req.method === 'GET') {
+    const cfg = giteeOAuthConfig(env);
+    if (!cfg.configured) {
+      return sendJson(res, 503, { error: { reason: 'oauth_not_configured',
+        detail: '需 MU_GITEE_OAUTH_CLIENT_ID/_CLIENT_SECRET/_CALLBACK_URL 三项显式配置（fail-closed）' } });
+    }
+    let inviteId = null;
+    if (q.invite) {
+      const invId = String(q.invite);
+      // 非法格式（含非 UUID 垃圾串）与不存在同义呈现 404——不得让 PG uuid 语法错
+      // 冒泡成 500（链接可被任意篡改，错误呈现属契约面）。
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(invId)) {
+        return sendJson(res, 404, { error: { reason: 'invitation_not_found' } });
+      }
+      const inv = await store.getInvitation(invId);
+      if (!inv || inv.claimed_at || inv.expires_at <= new Date()) {
+        return sendJson(res, 404, { error: { reason: 'invitation_not_found' } });
+      }
+      // provider 归属校验：Gitee 入口只接受 gitee-oauth: 前缀邀请（与 GitHub 入口对称）
+      if (inv.expected_subject && !String(inv.expected_subject).startsWith('gitee-oauth:')) {
+        return sendJson(res, 409, { error: { reason: 'invite_provider_mismatch',
+          detail: '该邀请绑定的不是 Gitee 身份（expected_subject 前缀非 gitee-oauth:）——请使用对应平台的登录入口' } });
+      }
+      inviteId = inv.invite_id;
+    }
+    const state = newGiteeState();
+    const corr = crypto.randomBytes(32).toString('base64url'); // login-CSRF 防护：一次性 correlation
+    const ttlMs = Number(env.MU_OAUTH_FLOW_TTL_MS || 10 * 60_000);
+    await store.insertOAuthFlow({
+      stateHash: crypto.createHash('sha256').update(state).digest('hex'),
+      corrHash: crypto.createHash('sha256').update(corr).digest('hex'),
+      inviteId,
+      ttlMs,
+      provider: 'gitee-oauth',
+    });
+    await store.auditPlatform('OAUTH_FLOW_STARTED', { detail: { invite_bound: Boolean(inviteId), provider: 'gitee-oauth' } });
+    res.setHeader('Set-Cookie', muCorrCookie(corr, ttlMs));
+    return sendJson(res, 200, { authorize_url: buildGiteeAuthorizeUrl(cfg, state) });
+  }
+
+  if (p === '/api/mu/auth/oauth/gitee/callback' && req.method === 'GET') {
+    const cfg = giteeOAuthConfig(env);
+    if (!cfg.configured) return redirectLoginError('oauth_not_configured');
+    const state = String(q.state ?? '');
+    const code = String(q.code ?? '');
+    // 登录用途与绑定用途共用同一 gitee 回调——先只读窥探 flow.purpose 分流，
+    // 再按正确用途 CAS 消费一次（state 单次消费不双吃；窥探不改变任何状态）：
+    //  * bind_gitee：必须携带有效会话且 user_id 与 flow.bind_user_id 一致
+    //    （绑定只能由本人经已登录会话发起——回调时人必须还登录着）；
+    //  * oauth_login：无会话（登录即获会话）；
+    //  * 其他 purpose（如 ghapp_install）/跨 provider flow → 走 oauth_login 校验
+    //    必然失败 → state_invalid（fail-closed，与 GitHub 侧对称）。
+    const stateHash = state ? crypto.createHash('sha256').update(state).digest('hex') : '';
+    const peeked = stateHash ? await store.peekOAuthFlow(stateHash) : null;
+    const purpose = peeked?.purpose === 'bind_gitee' ? 'bind_gitee' : 'oauth_login';
+    let flow = await consumeLoginFlow({ state, corr: muCorrFromCookieHeader(req.headers.cookie),
+      purpose, provider: 'gitee-oauth' });
+    if (purpose === 'bind_gitee') {
+      if (!flow) {
+        await store.auditPlatform('OAUTH_FLOW_REJECTED', { detail: { reason: 'state_invalid', purpose: 'bind_gitee' } });
+        return redirectBindError('state_invalid');
+      }
+      const muSession = await resolveMuSession(store, req);
+      const bindOk = muSession && muSession.user_id === flow.bind_user_id;
+      let identity = null;
+      if (bindOk) {
+        try {
+          if (!code) throw new Error('missing_code');
+          identity = await exchangeForGiteeIdentity(cfg, code); // token 即弃
+        } catch (e) {
+          identity = null;
+        }
+      }
+      if (!bindOk) {
+        await store.auditPlatform('OAUTH_FLOW_REJECTED', { detail: { reason: 'bind_session_mismatch', purpose: 'bind_gitee' } });
+        return redirectBindError('state_invalid'); // 会话缺失/换人消费绑定流——统一 state_invalid（不泄露区分）
+      }
+      if (!identity) {
+        await store.auditPlatform('OAUTH_FLOW_REJECTED', { detail: { reason: 'oauth_exchange_failed', purpose: 'bind_gitee' } });
+        return redirectBindError('oauth_exchange_failed');
+      }
+      // 重复绑定防冲突：该 Gitee 身份已绑定到任何用户（含本人）→ 拒绝（不静默覆盖）
+      const existingOwner = await store.getUserByIdentity('gitee-oauth', identity.subject);
+      if (existingOwner) {
+        await store.auditPlatform('OAUTH_FLOW_REJECTED', { detail: { reason: 'identity_already_bound', purpose: 'bind_gitee' } });
+        return redirectBindError('identity_already_bound');
+      }
+      await store.ensureIdentity({ userId: muSession.user_id, provider: 'gitee-oauth', subject: identity.subject });
+      // 身份挂接不动 membership/会话——租户、成员关系、审批能力全部保持（权限
+      // 挂在 user_id 上，绑定只增加一条登录路径）。
+      await store.auditPlatform('OAUTH_FLOW_CONSUMED', { actorUserId: muSession.user_id,
+        detail: { flow_id: flow.flow_id, purpose: 'bind_gitee', provider: 'gitee-oauth' } });
+      await store.audit('MU_IDENTITY_BOUND', { tenantId: muSession.tenant_id, actorUserId: muSession.user_id,
+        detail: { provider: 'gitee-oauth', subject_prefix: identity.subject.split(':').pop().slice(0, 8) } });
+      res.writeHead(302, { Location: '/settings?mu_bind=ok', 'Set-Cookie': muCorrClear() });
+      return res.end();
+    }
+    if (!flow) {
+      await store.auditPlatform('OAUTH_FLOW_REJECTED', { detail: { reason: 'state_invalid' } });
+      return redirectLoginError('state_invalid'); // 不存在/已消费(重放)/已过期/correlation 失配/跨用途/跨provider 统一同因
+    }
+    let identity;
+    try {
+      if (!code) throw new Error('missing_code');
+      identity = await exchangeForGiteeIdentity(cfg, code); // token 即弃
+    } catch (e) {
+      await store.auditPlatform('OAUTH_FLOW_REJECTED', { detail: { reason: 'oauth_exchange_failed', provider: 'gitee-oauth' } });
+      return redirectLoginError('oauth_exchange_failed');
+    }
+    // 身份解析/邀请认领/会话签发——双 provider 共享实现
+    return finishOAuthLogin({ provider: 'gitee-oauth', identity, flow });
   }
 
   // mu 直查 pool（webhook 事件解析用；函数声明+let 置于使用前避免 TDZ）
@@ -931,6 +1086,49 @@ export async function muApi(req, res, ctx) {
 
   const csrfOk = () => muCsrfOk(muSession, req);
 
+  // ── 账号绑定（Wave-Gitee）：已有登录会话追加 Gitee 身份 ──
+  // 发起：POST（会话+CSRF 双门）——生成绑定流（purpose=bind_gitee + bind_user_id），
+  // 返回 authorize_url；回调见 /api/mu/auth/oauth/gitee/callback 的 bind_gitee 分支
+  // （回调要求会话仍在且 user_id 与 flow 一致——"完整授权确认身份"）。
+  // 语义：绑定只增一条登录路径，不动租户/成员关系/审批能力（权限挂在 user_id）。
+  if (p === '/api/mu/auth/bind/gitee/start' && req.method === 'POST') {
+    if (!csrfOk()) return sendJson(res, 403, { error: { reason: 'csrf_required' } });
+    const cfg = giteeOAuthConfig(env);
+    if (!cfg.configured) {
+      return sendJson(res, 503, { error: { reason: 'oauth_not_configured',
+        detail: '需 MU_GITEE_OAUTH_CLIENT_ID/_CLIENT_SECRET/_CALLBACK_URL 三项显式配置（fail-closed）' } });
+    }
+    // 已绑定过 Gitee 身份的用户不得重复发起（幂等拒绝，不静默二次绑定）
+    const mine = await store.listIdentitiesOfUser(mu.userId);
+    if (mine.some((i) => i.provider === 'gitee-oauth')) {
+      return sendJson(res, 409, { error: { reason: 'identity_already_bound',
+        detail: '当前账号已绑定 Gitee 身份——一个账号至多一条 Gitee 身份' } });
+    }
+    const state = newGiteeState();
+    const corr = crypto.randomBytes(32).toString('base64url');
+    const ttlMs = Number(env.MU_OAUTH_FLOW_TTL_MS || 10 * 60_000);
+    await store.insertOAuthFlow({
+      stateHash: crypto.createHash('sha256').update(state).digest('hex'),
+      corrHash: crypto.createHash('sha256').update(corr).digest('hex'),
+      inviteId: null, ttlMs,
+      provider: 'gitee-oauth', purpose: 'bind_gitee', bindUserId: mu.userId,
+    });
+    await store.auditPlatform('OAUTH_FLOW_STARTED', { actorUserId: mu.userId,
+      detail: { purpose: 'bind_gitee', provider: 'gitee-oauth' } });
+    res.setHeader('Set-Cookie', muCorrCookie(corr, ttlMs));
+    return sendJson(res, 200, { authorize_url: buildGiteeAuthorizeUrl(cfg, state) });
+  }
+
+  // 本账号外部身份列表（绑定面展示；subject 含稳定标识，无秘密）
+  if (p === '/api/mu/auth/identities' && req.method === 'GET') {
+    const rows = await store.listIdentitiesOfUser(mu.userId);
+    return sendJson(res, 200, { identities: rows.map((i) => ({
+      provider: i.provider, subject: i.subject,
+      subject_tail: String(i.subject).split(':').pop(),
+      created_at: i.created_at,
+    })) });
+  }
+
   // 统一授权 guard：动作判定 + tenant 收窄 repo 解析 + Binding 要求（默认拒绝）
   async function guard(action, { repoId = null, needBinding = false } = {}) {
     const membership = await store.getMembership(mu.tenantId, mu.userId);
@@ -1154,19 +1352,28 @@ export async function muApi(req, res, ctx) {
         return sendJson(res, 403, { error: { reason: 'platform_admin_invitation_forbidden',
           detail: '邀请不可授予 platform_admin——使用 maintainer/contributor/auditor' } });
       }
-      // Wave 2A.1：生产邀请必须绑定 GitHub 数字 user id（handle 可夺注——login 句柄
+      // Wave 2A.1：生产邀请必须绑定平台数字 user id（handle 可夺注——login 句柄
       // 仅作展示/预筛选，不可作为授权条件）。存量 login-only 邀请 fail-closed 不可认领，
       // 运营迁移=以数字 id 重建邀请（见 PR 迁移说明）。
+      // Wave-Gitee：provider 归属进 expected_subject 前缀——`github-oauth:<数字id>` 或
+      // `gitee-oauth:<数字id>`。裸数字保持既有 GitHub 语义（存量运营表单兼容）；
+      // 两平台数字 id 空间独立，前缀错用即建错邀请（认领时按 subject 精确匹配，
+      // 错前缀邀请永远不可被另一平台身份认领——结构性不混用）。
       let expectedSubject = null;
       if (body.expected_subject) {
-        const digits = String(body.expected_subject).replace(/^github-oauth:/, '');
-        if (!/^\d{1,20}$/.test(digits)) {
-          return sendJson(res, 400, { error: { reason: 'expected_subject 须为 GitHub 数字 id（或 github-oauth:<id>）' } });
+        const raw = String(body.expected_subject);
+        const m = /^(?:(github-oauth)|(gitee-oauth)):(\d{1,20})$/.exec(raw);
+        if (m) {
+          expectedSubject = `${m[1] ? 'github-oauth' : 'gitee-oauth'}:${m[3]}`;
+        } else if (/^\d{1,20}$/.test(raw)) {
+          expectedSubject = `github-oauth:${raw}`; // 裸数字=既有 GitHub 语义
+        } else {
+          return sendJson(res, 400, { error: { reason: 'expected_subject_invalid',
+            detail: 'expected_subject 须为 GitHub/Gitee 数字 user id（可带 github-oauth:/gitee-oauth: 前缀）' } });
         }
-        expectedSubject = `github-oauth:${digits}`;
       } else {
         return sendJson(res, 400, { error: { reason: 'expected_subject_required',
-          detail: '邀请必须绑定 GitHub 数字 user id（expected_subject）；login 句柄仅可选作展示（expected_login）' } });
+          detail: '邀请必须绑定平台数字 user id（expected_subject，可带 github-oauth:/gitee-oauth: 前缀）；login 句柄仅可选作展示（expected_login）' } });
       }
       const expectedLogin = body.expected_login ? String(body.expected_login) : null;
       const inv = await store.createInvitation({ tenantId: mu.tenantId, role,

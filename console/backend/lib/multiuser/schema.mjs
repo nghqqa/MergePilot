@@ -1510,6 +1510,25 @@ export const MU_MIGRATIONS = [
       `ALTER TABLE mu.review_run ADD COLUMN IF NOT EXISTS context_head_frozen TEXT`,
     ],
   },
+
+  // ── v26 Gitee OAuth 登录（oauth_flow provider 归属 + 账号绑定流）──
+  //  * provider：flow 的身份提供商（'github-oauth' | 'gitee-oauth'）——callback 端
+  //    必须校验 flow.provider 与本端一致：GitHub 签发的 state 不得被 Gitee 回调消费
+  //    （反之亦然），防 provider 混淆。DEFAULT 'github-oauth' 使存量行/ghapp_install
+  //    安装流（GitHub 侧）语义不变——安装流回调仅校验 purpose，不受影响。
+  //  * bind_user_id：账号绑定流（purpose='bind_gitee'）发起者——callback 时要求
+  //    会话 user_id 与之一致（绑定必须经已有登录会话，非登录态不得绑定）。
+  // 回滚：ALTER TABLE mu.oauth_flow DROP COLUMN IF EXISTS provider;
+  //       ALTER TABLE mu.oauth_flow DROP COLUMN IF EXISTS bind_user_id;
+  //      （两列均无旧读方；DROP 后 GitHub 登录链路行为不变）
+  {
+    version: 26,
+    name: 'mu_oauth_flow_provider_bind',
+    sql: [
+      `ALTER TABLE mu.oauth_flow ADD COLUMN IF NOT EXISTS provider TEXT NOT NULL DEFAULT 'github-oauth'`,
+      `ALTER TABLE mu.oauth_flow ADD COLUMN IF NOT EXISTS bind_user_id UUID`,
+    ],
+  },
 ];
 
 export const MU_SCHEMA_LATEST = MU_MIGRATIONS[MU_MIGRATIONS.length - 1].version;

@@ -30,11 +30,11 @@ const ACTION_LABELS = {
 };
 
 const LOGIN_ERROR_MAP = {
-  not_invited: '身份未被邀请（无公共自动注册）——请联系管理员以你的 GitHub 数字 user id 创建邀请',
+  not_invited: '身份未被邀请（无公共自动注册）——请联系管理员以你的平台数字 user id 创建邀请（GitHub 或 Gitee）',
   state_invalid: 'state 无效或已使用（请重新发起登录）',
   state_expired: '流程已过期（10 分钟）——请重新发起',
-  oauth_exchange_failed: 'GitHub 授权交换失败——请重试',
-  oauth_identity_invalid: 'GitHub 身份读取失败——请重试',
+  oauth_exchange_failed: '授权交换失败——请重试',
+  oauth_identity_invalid: '身份读取失败——请重试',
   oauth_not_configured: 'OAuth 未配置——请联系管理员启用 GitHub 登录',
   no_active_membership: '无有效成员关系——邀请可能已过期，请联系管理员',
   user_disabled: '账户已停用——请联系管理员',
@@ -1126,9 +1126,9 @@ export default function MultiUserPage() {
           message={`登录未完成：${LOGIN_ERROR_MAP[loginError] ?? LOGIN_ERROR_MAP.login_failed}`}
           description={LOGIN_NEEDS_ADMIN.has(loginError) ? (
             <Typography.Text>
-              下一步：请联系管理员创建邀请，并附上你的 GitHub 数字 user id
-              （获取方式：浏览器打开 <code>https://api.github.com/users/你的GitHub用户名</code>，
-              响应中的 <code>id</code> 字段即数字 user id）。
+              下一步：请联系管理员创建邀请，并附上你对应平台（GitHub/Gitee）的数字 user id
+              （GitHub 获取方式：浏览器打开 <code>https://api.github.com/users/你的GitHub用户名</code>，
+              响应中的 <code>id</code> 字段即数字 user id；Gitee 同理见其开放平台文档）。
             </Typography.Text>
           ) : undefined} />
       ) : null}
@@ -1356,6 +1356,7 @@ function InviteAdminPanel({ session }) {
   const [invites, setInvites] = useState(null);
   const [callbackUrl, setCallbackUrl] = useState(null);
   const [subject, setSubject] = useState('');
+  const [provider, setProvider] = useState('github'); // 邀请绑定的登录平台（GitHub/Gitee）
   const [role, setRole] = useState('contributor');
   const [ttl, setTtl] = useState(1440);
   const [note, setNote] = useState('');
@@ -1387,11 +1388,14 @@ function InviteAdminPanel({ session }) {
     catch { window.prompt('复制邀请链接', text); }
   };
   const create = async () => {
-    const digits = String(subject).trim().replace(/^github-oauth:/, '');
-    if (!/^\d{1,20}$/.test(digits)) { setErr('GitHub 数字 user id 必填（纯数字）'); return; }
+    const digits = String(subject).trim().replace(/^(github-oauth|gitee-oauth):/, '');
+    if (!/^\d{1,20}$/.test(digits)) { setErr('平台数字 user id 必填（纯数字）'); return; }
     setBusy(true); setErr(null);
+    // 显式携带 provider 前缀（github-oauth:/gitee-oauth:）——两平台数字 id 空间独立，
+    // 前缀即 provider 归属；后端按 subject 精确匹配认领，错平台身份永远认领不到。
     const r = await muPost('/api/mu/invitations', {
-      expected_subject: digits, role, ttl_minutes: Number(ttl) || 1440,
+      expected_subject: `${provider === 'gitee' ? 'gitee-oauth' : 'github-oauth'}:${digits}`,
+      role, ttl_minutes: Number(ttl) || 1440,
       note: note ? String(note).slice(0, 200) : undefined,
     });
     setBusy(false);
@@ -1410,7 +1414,7 @@ function InviteAdminPanel({ session }) {
   return (
     <div style={{ marginTop: 12 }}>
       <Typography.Title level={5} style={{ marginTop: 0 }}>
-        邀请管理（绑定 GitHub 数字 id · 单次认领 · 不可授予 platform_admin）
+        邀请管理（绑定平台数字 id · 单次认领 · 不可授予 platform_admin）
       </Typography.Title>
       {created && (
         <Alert type="success" showIcon style={{ marginBottom: 12 }}
@@ -1424,7 +1428,7 @@ function InviteAdminPanel({ session }) {
                     <Button size="small" onClick={() => copyLink(created.invite_id)}>
                       {scope.shareable ? '复制邀请链接' : `复制链接（${scope.scope === 'loopback' ? '仅本机可用' : '内网/HTTP 适用'}）`}
                     </Button>
-                    <Typography.Text type="secondary">邀请链接仅对绑定的 GitHub 账号有效（单次认领）</Typography.Text>
+                    <Typography.Text type="secondary">邀请链接仅对绑定的平台账号有效（受邀者从对应平台入口登录；单次认领）</Typography.Text>
                   </Space>
                 </>
               ) : (
@@ -1435,7 +1439,11 @@ function InviteAdminPanel({ session }) {
           )} />
       )}
       <Space wrap style={{ marginBottom: 8 }}>
-        <Input style={{ width: 190 }} placeholder="GitHub 数字 user id" value={subject}
+        <Select value={provider} onChange={setProvider} style={{ width: 110 }} options={[
+          { value: 'github', label: 'GitHub' },
+          { value: 'gitee', label: 'Gitee' },
+        ]} />
+        <Input style={{ width: 190 }} placeholder="平台数字 user id（纯数字）" value={subject}
                onChange={(e) => setSubject(e.target.value)} />
         <Select value={role} onChange={setRole} style={{ width: 140 }} options={[
           { value: 'maintainer', label: 'maintainer' },
@@ -1456,8 +1464,8 @@ function InviteAdminPanel({ session }) {
           { title: 'invite_id', dataIndex: 'invite_id',
             render: (v) => <Typography.Text code style={{ fontSize: 12 }}>{String(v).slice(0, 8)}…</Typography.Text> },
           { title: '角色', dataIndex: 'role', render: (v) => <Tag color={ROLE_TONE[v] ?? 'default'}>{v}</Tag> },
-          { title: '绑定 GitHub id', dataIndex: 'expected_subject',
-            render: (v) => String(v ?? '').replace('github-oauth:', '') },
+          { title: '绑定身份', dataIndex: 'expected_subject',
+            render: (v) => String(v ?? '') },
           { title: '状态', dataIndex: 'state_label',
             render: (v) => <Tag color={v === '待领取' ? 'blue' : 'default'}>{v}</Tag> },
           { title: '有效期至', dataIndex: 'expires_at',
