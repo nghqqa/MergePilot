@@ -23,13 +23,26 @@
 
 ## 2. 真实验收步骤（用户本人操作账号授权；不以 mock 冒充）
 
-按序执行并留证（截图/审计查询），任何一步失败即停止上线：
+按 A/B/C 三场景执行并留证（截图/审计查询），任何一步失败即停止上线。
+场景边界（2026-10-12 澄清）：**已绑定到某账号的 Gitee 身份不能被另一账号"转移"或
+"合并"**——绑定冲突即拒绝（C 场景）。B 场景要求目标 Gitee 身份处于未被认领状态。
 
-1. **邀请入驻**：邀请管理面板选 Gitee 平台、填受邀者 Gitee 数字 user id（`gitee-oauth:<id>`）→ 受邀者打开 `/login?invite=<id>` → 从「使用 Gitee 登录」进入 Gitee 授权 → 落地 /multiuser，角色=邀请角色。
-2. **再次登录**：退出后直接 Gitee 登录 → 同一用户（`external_identity` 单行），无重复建户。
-3. **账号绑定**：已有 GitHub 会话 → 设置页「绑定 Gitee 账号」→ Gitee 授权 → 回设置页显示两条身份；成员关系/角色不变。
-4. **绑定后登录**：退出，用 Gitee 入口登录 → 进入同一账号（GitHub 会话相同 user_id）。
-5. **角色保持**：上述全程 `/api/mu/session` 的 role 与登录前一致；审计含 `MU_IDENTITY_BOUND` / `MU_LOGIN(provider=gitee-oauth)`。
+**A. 独立 Gitee 邀请入驻及再次登录**（受邀 Gitee 身份独立入驻）
+
+1. 邀请管理面板选 Gitee 平台、填受邀者 Gitee 数字 user id（`gitee-oauth:<id>`）→ 受邀者打开 `/login?invite=<id>` → 从「使用 Gitee 登录」进入 Gitee 授权 → 落地 /multiuser，角色=邀请角色；审计 `MU_LOGIN(provider=gitee-oauth)` + flow `invite_bound:true`。
+2. 再次登录：退出后直接 Gitee 登录 → 同一用户（`external_identity` 单行），无重复建户。
+
+**B. GitHub 用户绑定未被认领的 Gitee 身份及绑定后登录**
+
+3. 已有 GitHub 会话 → 设置页「账号绑定」→「绑定 Gitee 账号」（目标 Gitee 身份未被任何账号绑定）→ Gitee 授权 → 回设置页显示两条身份（`MU_IDENTITY_BOUND`）；成员关系/角色不变。
+4. 绑定后登录：退出，用 Gitee 入口登录 → 进入同一账号（与 GitHub 会话相同 user_id）。
+5. 双来源标签：同一账号分别经 GitHub / Gitee 登录，设置页身份行与顶栏能力条随**本次认证来源**变化（`login_type` 两 session 端点一致，契约见 `lib/muLoginType.mjs`）。
+
+**C. 已占用身份绑定冲突拒绝**
+
+6. 对已绑定到账号 X 的 Gitee 身份，账号 Y 发起绑定 → 回跳 `mu_bind_error=identity_already_bound`（文案「该 Gitee 身份已绑定到某个账号……不能重复绑定」），X 的身份与成员关系不受影响（不抢绑）。
+
+**角色保持**（贯穿 A/B）：全程 `/api/mu/session` 的 role 与登录前一致；活跃成员认领低角色邀请 → 角色保持 + `MU_INVITATION_ACKNOWLEDGED_NO_CHANGE`（#401 语义）。
 
 ## 3. 降级边界（2026-10-11 隔离演练实证，10/10+10/10）
 
