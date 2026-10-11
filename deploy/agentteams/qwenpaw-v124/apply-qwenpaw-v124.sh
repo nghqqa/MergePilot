@@ -71,7 +71,7 @@ command -v docker >/dev/null || fail "docker 不可达"
 CTRL_CID=$(docker ps -a --format '{{.ID}}' --filter "name=^$QP_CTRL_NAME$" 2>/dev/null || true)
 STACK_PREFIX="${QP_CTRL_NAME%-controller}"   # qwp2-controller → qwp2（manager/worker 同前缀视为本栈）
 for p in "$QP_PORT_CTRL" "$QP_PORT_MATRIX" "$QP_PORT_MINIO" "$QP_PORT_MGR_CONSOLE"; do
-  if netstat -ano 2>/dev/null | grep -q "127.0.0.1:$p "; then
+  if netstat -ano 2>/dev/null | grep "127.0.0.1:$p " | grep -q LISTENING; then
     HOLDER=$(docker ps --format '{{.Names}}' | while read -r n; do docker port "$n" 2>/dev/null | grep -q ":$p" && echo "$n" && break; done)
     if [ -n "$HOLDER" ]; then
       case "$HOLDER" in
@@ -116,6 +116,8 @@ else
     -e AGENTTEAMS_HOST_SHARE_DIR=/tmp/qwp2-host \
     -e AGENTTEAMS_MATRIX_URL="http://$QP_CTRL_NAME:6167" \
     -e AGENTTEAMS_AI_GATEWAY_DOMAIN="$QP_CTRL_NAME" \
+    -e AGENTTEAMS_AI_GATEWAY_URL="http://$QP_CTRL_NAME:8080" \
+    -e AGENTTEAMS_AI_GATEWAY_ADMIN_URL="http://$QP_CTRL_NAME:8001" \
     -e AGENTTEAMS_WORKER_IDLE_TIMEOUT=720 \
     -e AGENTTEAMS_AUTH_TOKEN_FILE=/var/run/agentteams/cli-token \
     -e AGENTTEAMS_MATRIX_APPSERVICE_ENABLED=false \
