@@ -136,13 +136,17 @@ Windows 宿主注意：worker console 端口由 controller 随机分配 127.0.0.
 - 打包：`build-qwenpaw-plugin.py`（上游 ruby 脚本的 Python 等价复刻；asset 目录名=插件名）。
 - 部署：`deploy-candidate-qwp2.sh`（清诊断期 MinIO 陈旧插件副本 → 记录回滚锚 → embedded 重建 ctrl（env 同源+worker 镜像指向新 tag）→ 删四 worker + PUT 触发 reconcile → 读回验证）。
 
-### 3.5 候选镜像（2026-10-11 冻结）
+### 3.5 候选镜像（2026-10-11 冻结=22:45 CST；运行实体为准）
 
-| 组件 | tag | image id |
+| 组件 | 运行实体 image id（qwp2 实际运行+全部验收证据对应） | tag 现值 |
 |---|---|---|
-| worker | `agentteams-qwenpaw-worker:1.2.4-cas` | `sha256:1719208fd17ce535fc2d222…`（含取消围栏终版） |
-| controller | `agentteams/agentteams-controller:1.2.4-cas` | `sha256:7a76b2e69f74ce17dc1f52b4…` |
-| embedded | `agentteams/agentteams-embedded:1.2.4-cas` | `sha256:da061581b8d8c81110f13fff…` |
+| worker | `sha256:1719208fd17ce535fc2d222bfc66c9ab72aa90d21e3008c4f564341903703a24` | 同 tag（一致） |
+| embedded（ctrl 容器来源） | `sha256:fc18b533ff474698966513dc257e4180f450f33d38bf22df24810a8fe15a3b76` | tag 现指 `sha256:5f3037b35b2c508e65c5f117f0b793618fe0ae459067446e503632e17d7e9ecc` |
+
+**tag 重构建等价性证明**：标签 `1.2.4-cas` 在冻结后曾因重复构建移动（Go 补丁未变）；
+运行容器内 `agentteams-controller` 二进制 sha256=`e241c54c9c46…92634` 与 tag 重建内
+**逐字节一致**（同源同补丁的功能等价重构建，未经运行时验证）。候选判定以运行实体
+fc18b533 为准；恢复场景从运行镜像 docker commit 或按本脚本重构建均可（二进制等价）。
 
 读回验证（部署后实测）：四 worker builtin+workspace server.py 均含 `_cas_write_task`；boto3/botocore=1.35.99（PutObject IfMatch=True）；陈旧插件副本已清（启动 restore 不覆盖镜像 builtin）；Matrix admin token 刷新=200。
 
