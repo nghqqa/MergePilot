@@ -317,13 +317,16 @@ export async function fetchTaskSummary(cfg, { projectId, taskId, fetchImpl = fet
   } catch { return { ok: false, reason: 'AT_SUMMARY_UNREACHABLE' }; }
 }
 
-/** 幂等取消（submissionId 围栏）。 */
+/** 幂等取消（submissionId 围栏）。
+ * Wave-QwenPaw：v1.2.4 对"从未被委派"的任务（无 TaskMeta）cancel → 404 task meta not
+ * found（2026-10-11 隔离实测）——按幂等取消契约视为"已无可取消"（成功），与 409（已终态）
+ * 同归 ok；其余非 2xx 仍 fail-closed。 */
 export async function cancelExternalRound(cfg, { projectId, taskId, reason, submissionId, fetchImpl = fetch }) {
   try {
     const r = await atFetch(cfg, `/api/v1/projects/${projectId}/tasks/${taskId}/cancel`, { method: 'POST',
       body: JSON.stringify({ reason: String(reason ?? 'mergepilot-cancel').slice(0, 200), submissionId }) }, fetchImpl);
-    if (!r.ok && r.status !== 409) return { ok: false, reason: `AT_CANCEL_HTTP_${r.status}` };
-    return { ok: true };
+    if (!r.ok && r.status !== 409 && r.status !== 404) return { ok: false, reason: `AT_CANCEL_HTTP_${r.status}` };
+    return { ok: true, ...(r.status === 404 ? { note: 'cancel-404-no-task-meta' } : {}) };
   } catch { return { ok: false, reason: 'AT_CANCEL_UNREACHABLE' }; }
 }
 

@@ -149,3 +149,38 @@ test('QC-5 既有回归不回退：认证失败 fail-closed / 409 已存在不�
   const r2 = await ensureFourAgents(CFG, { fetchImpl: c2.fetchImpl });
   assert.equal(r2.ok, true);
 });
+
+test('QC-6 v1.2.4 PUT=收敛语义：期望 runtime 变更经 PUT 真实应用（读回一致，不误报 DRIFT）', async () => {
+  // 2026-10-11 v1.2.4 现役控制器实测：PUT merge-patch 会应用 runtime/model——
+  // ensureFourAgents 是收敛操作。改期望值后 PUT 应用 → 读回一致 → ok（无 DRIFT）。
+  const c = fakeCtrl({ shape: 'flat', drift: false });
+  await ensureFourAgents(CFG, { fetchImpl: c.fetchImpl }); // copaw 建户
+  const cfgQp = resolveAgentTeamsConfig({
+    MU_EXECUTOR: 'agentteams', MU_AGENTTEAMS_BASE_URL: 'http://ctrl.test',
+    MU_AGENTTEAMS_TOKEN: 'fake-ctrl-token-0123456789abcdef',
+    MU_AGENTTEAMS_RUNTIME: 'qwenpaw', MU_AGENTTEAMS_MODEL: 'deepseek-chat',
+  });
+  const r = await ensureFourAgents(cfgQp, { fetchImpl: c.fetchImpl });
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.ok([...c.workers.values()].every((w) => w.runtime === 'qwenpaw'), 'PUT 已应用 qwenpaw');
+  // 漂移防线不被该语义误触发（读回=期望）
+});
+
+test('QC-7 cancel 幂等：v1.2.4 未委派任务（无 TaskMeta）404 → 视为已无可取消（ok+note）；其余非 2xx 仍失败', async () => {
+  const { cancelExternalRound } = await import(pathToFileURL(executorPath).href);
+  const responses = [
+    { status: 404, body: { message: 'task meta not found' } },   // v1.2.4 未委派任务实测
+    { status: 409, body: {} },                                    // 已终态（既有语义）
+    { status: 401, body: {} },                                    // 其余非 2xx 仍 fail-closed
+    { status: 200, body: {} },                                    // 正常取消
+  ];
+  for (const [i, res] of responses.entries()) {
+    const fetchImpl = async () => ({ ok: res.status < 400, status: res.status, json: async () => res.body });
+    const r = await cancelExternalRound(CFG, { projectId: 'p', taskId: 't', reason: 'qc', submissionId: 's', fetchImpl });
+    if (res.status === 401) assert.equal(r.ok, false, `case ${i}: 401 须失败`);
+    else {
+      assert.equal(r.ok, true, `case ${i}: ${res.status} 须 ok`);
+      if (res.status === 404) assert.equal(r.note, 'cancel-404-no-task-meta');
+    }
+  }
+});
