@@ -72,7 +72,7 @@ function GiteeBindSection({ authed }) {
       const b = await r.json().catch(() => null);
       if (r.ok && b?.authorize_url) { window.location.href = b.authorize_url; return; }
       if (b?.error?.reason === 'identity_already_bound') setErr('当前账号已绑定 Gitee 身份——一个账号至多一条 Gitee 身份');
-      else if (b?.error?.reason === 'oauth_not_configured') setErr('Gitee OAuth 未配置——联系管理员设置 MU_GITEE_OAUTH_* 三项');
+      else if (b?.error?.reason === 'oauth_not_configured') setErr('Gitee 登录尚未开放——请联系管理员启用后重试');
       else if (b?.error?.reason === 'csrf_required') setErr('会话校验失败——请刷新页面后重试');
       else setErr(`无法发起绑定（${r.status}）`);
     } catch { setErr('网络错误 — 无法连接后端'); } finally { setBusy(false); }

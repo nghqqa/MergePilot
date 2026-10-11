@@ -21,7 +21,7 @@ import { BrandMark } from '../ui.jsx';
 
 const STATUS_COPY = {
   unavailable: { type: 'error', text: '服务不可达 — 无法连接控制台后端。', label: '重试连接' },
-  auth_unavailable: { type: 'error', text: '登录服务未配置（auth_unavailable）— 按契约不开放。', label: '重试' },
+  auth_unavailable: { type: 'error', text: '登录服务暂未开放——请稍后重试，或联系管理员。', label: '重试' },
   expired: { type: 'warning', text: '会话已过期 — 请重新登录。', label: '重新检查会话' },
   forbidden: { type: 'warning', text: '当前账号未获准入 — 由服务端判定；如需访问请联系管理员。', label: '重新检查' },
 };
@@ -29,21 +29,43 @@ const STATUS_COPY = {
 // OAuth 回调失败经 302 /multiuser?mu_login_error=<白名单 reason> 落回；未认证路由守卫
 // 渲染本页——错误提示必须在本页呈现，不能被守卫遮蔽。文案 provider 中性（同一原因
 // 在 GitHub/Gitee 入口语义一致；具体平台由页面上下文与按钮呈现）。
+// 面向用户措辞：不含部署环境变量名与内部实现术语（登录来源波），重试/联系管理员路径明确。
 const LOGIN_ERROR_COPY = {
-  not_invited: '身份未被邀请（无公共自动注册）——请联系管理员以你的平台数字 user id 创建邀请',
-  no_active_membership: '无有效成员关系——邀请可能已过期，请联系管理员',
-  user_disabled: '账号已被禁用——请联系管理员',
+  not_invited: '该账号暂未获邀——本站采用邀请制；如需访问请联系管理员，以你的平台数字 user id 创建邀请',
+  no_active_membership: '暂无有效成员关系——邀请可能已过期，请联系管理员重新邀请',
+  user_disabled: '账号已被停用——如需恢复请联系管理员',
   invitation_ambiguous: '存在多条待认领邀请——请联系管理员清理后重试',
-  state_invalid: '登录状态校验未通过（过期/重放/更换浏览器）——请重新发起登录',
-  oauth_exchange_failed: '授权交换失败——请稍后重试',
-  oauth_identity_invalid: '身份无效——请重试',
-  oauth_not_configured: 'OAuth 登录未配置——联系管理员设置对应提供商的 MU_*_OAUTH_* 三项',
+  state_invalid: '登录状态校验未通过（可能已过期或非同一浏览器发起）——请返回重试',
+  oauth_exchange_failed: '登录未完成——平台授权交换失败，请稍后重试',
+  oauth_identity_invalid: '登录未完成——平台返回的身份无效，请重试',
+  oauth_not_configured: '该登录方式尚未开放——请联系管理员启用后重试',
 };
+
+// 平台显示名（登录来源波）：仅用于按钮/提示文案，来自 providers/409 的可信字段，
+// 不据此推断会话来源（来源只认后端会话显式标记，见 identity.js）。
+const PLATFORM_NAME = { 'github-oauth': 'GitHub', 'gitee-oauth': 'Gitee' };
+
+// 尺寸一致的单色平台图标（currentColor 跟随按钮文字色；装饰性 aria-hidden）。
+const GitHubMark = () => (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"
+       focusable="false" style={{ flexShrink: 0 }}>
+    <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/>
+  </svg>
+);
+const GiteeMark = () => (
+  <svg width="16" height="16" viewBox="0 0 1024 1024" fill="currentColor" aria-hidden="true"
+       focusable="false" style={{ flexShrink: 0 }}>
+    <path d="M512 1024C229.222 1024 0 794.778 0 512S229.222 0 512 0s512 229.222 512 512-229.222 512-512 512z m259.149-568.883h-290.74a25.293 25.293 0 0 0-25.292 25.293l-0.026 63.206c0 13.952 11.315 25.293 25.267 25.293h177.024c12.678 0 22.906 10.544 22.906 23.22v12.855c0 58.062-47.105 105.216-105.167 105.216h-240.23a23.27 23.27 0 0 1-23.27-23.271v-240.23A105.216 105.216 0 0 1 411.75 316.617h357.356a25.293 25.293 0 0 0 25.267-25.293l0.077-63.207a25.293 25.293 0 0 0-25.268-25.293H411.75c-105.318 0-190.787 85.494-190.787 190.837v351.7A25.293 25.293 0 0 0 246.26 770.5h351.942c105.344 0 190.736-85.494 190.736-190.837v-103.25a25.293 25.293 0 0 0-25.293-25.293z"/>
+  </svg>
+);
 
 export default function LoginPage() {
   const auth = useAuth();
   const copy = STATUS_COPY[auth.status];
-  const [busy, setBusy] = useState(false);
+  // 登录来源波：进行中状态按平台区分——仅被点击的入口显示「正在前往 …」，
+  // 另一个禁用但保持原文；任何失败路径复位（可重试）。非 boolean 的原因：
+  // 全局 boolean 无法区分是哪个入口在跳转，也无法在双入口间给出差异化反馈。
+  const [pending, setPending] = useState(null); // 'github' | 'gitee' | null
   const [formError, setFormError] = useState(null);
   // 邀请参数（本次新增入口）：/login?invite=<invite_id>
   const [inviteId, setInviteId] = useState(() => new URLSearchParams(window.location.search).get('invite'));
@@ -62,7 +84,7 @@ export default function LoginPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // providers（无秘密端点）：GitHub 是否已配置 + callback 公开地址来源。失败仅重试，不回退备用登录。
+  // providers（无秘密端点）：各平台是否已配置 + callback 公开地址来源。失败仅重试，不回退备用登录。
   const [prov, setProv] = useState({ phase: 'loading', data: null });
   const loadProviders = useCallback(async () => {
     setProv({ phase: 'loading', data: null });
@@ -75,61 +97,57 @@ export default function LoginPage() {
   }, []);
   useEffect(() => { loadProviders(); }, [loadProviders]);
 
-  const startGithub = async () => {
-    setBusy(true); setFormError(null); setInviteError(null);
-    try {
-      const qs = inviteId ? `?invite=${encodeURIComponent(inviteId)}` : '';
-      const r = await fetch('/api/mu/auth/oauth/github/start' + qs, { credentials: 'same-origin' });
-      const body = await r.json().catch(() => null);
-      if (r.ok && body?.authorize_url) {
-        window.location.href = body.authorize_url;
-        return;
-      }
-      if (body?.error?.reason === 'invitation_not_found') {
-        setInviteError('邀请无效——可能已被领取或已过期。可返回普通登录，或联系管理员重发邀请');
-        return;
-      }
-      if (body?.error?.reason === 'invite_provider_mismatch') {
-        // 邀请绑定的是其他平台身份——指引到正确入口（邀请未被消耗，可从该入口重试）
-        setInviteError('该邀请绑定的是 Gitee 账号——请改用下方「使用 Gitee 登录」');
-        return;
-      }
-      if (body?.error?.reason === 'oauth_not_configured') {
-        setFormError('GitHub OAuth 未配置——联系管理员设置 MU_GITHUB_OAUTH_* 三项');
-        return;
-      }
-      setFormError('无法发起 GitHub 登录');
-    } catch { setFormError('网络错误 — 无法连接后端'); } finally { setBusy(false); }
+  // 提供商已配置（按钮渲染与 stale 错误清理的唯一依据；后端 fail-closed，前端不猜）
+  const githubReady = prov.phase === 'ready' && prov.data?.github?.configured === true;
+  const giteeReady = prov.phase === 'ready' && prov.data?.gitee?.configured === true;
+  // 过时的「未配置」错误：providers 现已就绪任一平台时不再复现（保留邀请上下文不清）。
+  const staleNotConfigured = loginError === 'oauth_not_configured' && (githubReady || giteeReady);
+
+  // 重入守卫（ref）：同 tick 内的连点也拦得住——进行中不接受第二次发起，
+  // 不产生第二个 OAuth flow（竞态矩阵回归项，见四）。
+  const pendingRef = React.useRef(null);
+
+  // 邀请平台错配提示：只依据 start 端点 409 的可信字段 invite_provider 渲染，
+  // 不在页面侧猜测邀请平台；字段缺失时退化为中性指引（不写死任何平台名）。
+  const mismatchCopy = (invProvider) => {
+    const name = invProvider ? PLATFORM_NAME[invProvider] : null;
+    return name
+      ? `该邀请绑定的是 ${name} 账号——请改用「使用 ${name} 登录」入口（邀请未被消耗，可从该入口重试）`
+      : '该邀请绑定的平台与所选入口不一致——请改用另一个平台入口登录（邀请未被消耗）';
   };
 
-  const startGitee = async () => {
-    setBusy(true); setFormError(null); setInviteError(null);
-    try {
-      const qs = inviteId ? `?invite=${encodeURIComponent(inviteId)}` : '';
-      const r = await fetch('/api/mu/auth/oauth/gitee/start' + qs, { credentials: 'same-origin' });
-      const body = await r.json().catch(() => null);
-      if (r.ok && body?.authorize_url) {
-        window.location.href = body.authorize_url;
-        return;
-      }
-      if (body?.error?.reason === 'invitation_not_found') {
-        setInviteError('邀请无效——可能已被领取或已过期。可返回普通登录，或联系管理员重发邀请');
-        return;
-      }
-      if (body?.error?.reason === 'invite_provider_mismatch') {
-        setInviteError('该邀请绑定的是 GitHub 账号——请改用上方「使用 GitHub 登录」');
-        return;
-      }
-      if (body?.error?.reason === 'oauth_not_configured') {
-        setFormError('Gitee OAuth 未配置——联系管理员设置 MU_GITEE_OAUTH_* 三项');
-        return;
-      }
-      setFormError('无法发起 Gitee 登录');
-    } catch { setFormError('网络错误 — 无法连接后端'); } finally { setBusy(false); }
+  const startOAuth = (platform) => {
+    if (pendingRef.current !== null || pending !== null) return; // 重入守卫：ref+state 双保险
+    pendingRef.current = platform;
+    setPending(platform); setFormError(null); setInviteError(null);
+    const finish = () => { pendingRef.current = null; setPending(null); };
+    (async () => {
+      try {
+        const qs = inviteId ? `?invite=${encodeURIComponent(inviteId)}` : '';
+        const r = await fetch(`/api/mu/auth/oauth/${platform}/start${qs}`, { credentials: 'same-origin' });
+        const body = await r.json().catch(() => null);
+        if (r.ok && body?.authorize_url) {
+          window.location.href = body.authorize_url; // 成功跳转：保持 pending（页面即将离开）
+          return;
+        }
+        if (body?.error?.reason === 'invitation_not_found') {
+          setInviteError('邀请无效——可能已被领取或已过期。可返回普通登录，或联系管理员重发邀请');
+        } else if (body?.error?.reason === 'invite_provider_mismatch') {
+          setInviteError(mismatchCopy(body?.error?.invite_provider));
+        } else if (body?.error?.reason === 'oauth_not_configured') {
+          setFormError('该登录方式尚未开放——请联系管理员启用后重试');
+        } else {
+          setFormError(`无法发起 ${PLATFORM_NAME[platform === 'github' ? 'github-oauth' : 'gitee-oauth'] ?? '登录'}，请稍后重试；持续失败请联系管理员`);
+        }
+      } catch { setFormError('网络错误 — 无法连接后端，请检查网络后重试'); }
+      finish();
+    })();
   };
+  const startGithub = () => startOAuth('github');
+  const startGitee = () => startOAuth('gitee');
 
   const submitLegacy = async ({ user, password }) => {
-    setBusy(true); setFormError(null);
+    setPending("legacy"); setFormError(null);
     try {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
@@ -138,16 +156,16 @@ export default function LoginPage() {
         body: JSON.stringify({ user, password }),
       });
       if (!res.ok) {
-        if (res.status === 403) setFormError('多用户模式已禁用操作员账号登录——请使用 GitHub 登录');
-        else if (res.status === 503) setFormError('登录服务未配置');
-        else setFormError('凭据无效');
+        if (res.status === 403) setFormError('操作员账号登录在此部署未开放——请使用平台账号入口登录');
+        else if (res.status === 503) setFormError('登录服务暂未开放——请稍后重试');
+        else setFormError('用户名或密码不正确');
         return;
       }
       auth.refresh();
     } catch {
       setFormError('网络错误 — 无法连接后端');
     } finally {
-      setBusy(false);
+      setPending(null);
     }
   };
 
@@ -158,7 +176,9 @@ export default function LoginPage() {
 
   return (
     <div className="login-wrap">
-      <Card className="login-card" variant="borderless" styles={{ body: { padding: 26 } }}>
+      {/* padding 单一来源：body padding 由 console.css 的 .login-card 规则统一
+          （此前内联 body padding 与卡片类 padding 叠加造成双重留白，登录来源波消除） */}
+      <Card className="login-card" variant="borderless">
         <div className="login-brand">
           <BrandMark />
           <div>
@@ -175,41 +195,58 @@ export default function LoginPage() {
           </>
         ) : (
           <>
-            {loginError && (
+            {loginError && !staleNotConfigured && (
               <Alert type="warning" showIcon style={{ marginTop: 16 }}
                      message={LOGIN_ERROR_COPY[loginError] ?? '登录未完成——请重新发起登录'} />
             )}
-            {/* /login 对已登录用户也渲染（受邀认领需以受邀身份重走 OAuth）；行为如实告知 */}
+            {/* /login 对已登录用户也渲染（受邀认领需以受邀身份重走 OAuth）；行为如实告知。
+                文案 provider 中性——受邀身份核验走的是用户实际点击的平台入口，不写死。 */}
             {auth.status === 'authed' && (
               <Alert type="info" showIcon style={{ marginTop: 16 }}
                      message={inviteId
-                       ? '你当前已登录，继续将通过 GitHub 验证受邀身份'
+                       ? '你当前已登录——继续操作将以你点击的平台入口核验受邀身份'
                        : '你当前已登录'} />
             )}
             {inviteId && !inviteError && (
               <Alert type="info" showIcon style={{ marginTop: 16 }}
-                     message="检测到受邀访问——请使用受邀账号对应的平台入口登录（GitHub 或 Gitee）" />
+                     message="检测到受邀访问——请使用邀请指定的平台入口登录；选错平台不会消耗邀请" />
             )}
             {inviteError && (
               <Alert type="warning" showIcon style={{ marginTop: 16 }} message={inviteError}
                      action={<Button size="small" onClick={clearInvite}>返回普通登录</Button>} />
             )}
 
-            {/* 日常登录主入口（品牌主色）。providers 加载中禁用；配置失败只重试，不放开备用登录。 */}
-            {/* 不用 antd loading 图标（CSSMotion 在测试环境脆弱）；禁用+省略号表达进行中 */}
-            <Button type="primary" block size="large"
-                    style={{ marginTop: 16, marginBottom: 8 }}
-                    disabled={busy || prov.phase === 'loading'}
-                    onClick={startGithub}>
-              {(inviteId ? '使用受邀的 GitHub 账号登录' : '使用 GitHub 登录') + ((busy || prov.phase === 'loading') ? '…' : '')}
-            </Button>
-            {/* Gitee 次入口：完全由服务端 providers 配置驱动（未配置不渲染——不伪装入口） */}
-            {prov.phase === 'ready' && prov.data?.gitee?.configured === true && (
-              <Button block size="large" style={{ marginBottom: 8 }}
-                      disabled={busy}
-                      onClick={startGitee}>
-                {(inviteId ? '使用受邀的 Gitee 账号登录' : '使用 Gitee 登录') + (busy ? '…' : '')}
+            {/* 日常登录主入口（品牌主色）。渲染与可用完全由 providers 驱动：
+                未配置的平台不展示入口（不伪装可用）；配置获取失败只重试，不放开备用登录。
+                触控目标 ≥44px（login-oauth-btn）。不用 antd loading 图标（CSSMotion 在测试环境
+                脆弱）——进行中用「正在前往 …」文案表达，另一入口禁用但保持原文。 */}
+            {githubReady ? (
+              <Button type="primary" block size="large" className="login-oauth-btn"
+                      style={{ marginTop: 16, marginBottom: 8 }}
+                      icon={<GitHubMark />}
+                      disabled={pending !== null}
+                      onClick={startGithub}>
+                {pending === 'github' ? '正在前往 GitHub…'
+                  : (inviteId ? '使用受邀的 GitHub 账号登录' : '使用 GitHub 登录')}
               </Button>
+            ) : prov.phase === 'ready' ? (
+              <Alert type="warning" showIcon style={{ marginTop: 16, marginBottom: 8 }}
+                     message="GitHub 登录暂未开放——请联系管理员启用后重试" />
+            ) : null}
+            {/* Gitee 次入口：与主入口同规则（服务端 providers 配置驱动，未配置不渲染） */}
+            {giteeReady && (
+              <Button block size="large" className="login-oauth-btn"
+                      style={{ marginBottom: 8 }}
+                      icon={<GiteeMark />}
+                      disabled={pending !== null}
+                      onClick={startGitee}>
+                {pending === 'gitee' ? '正在前往 Gitee…'
+                  : (inviteId ? '使用受邀的 Gitee 账号登录' : '使用 Gitee 登录')}
+              </Button>
+            )}
+            {prov.phase === 'loading' && (
+              <Button type="primary" block size="large" style={{ marginTop: 16, marginBottom: 8 }}
+                      disabled>正在获取登录方式…</Button>
             )}
             {prov.phase === 'error' && (
               <>
@@ -217,10 +254,6 @@ export default function LoginPage() {
                        message="登录配置获取失败——无法确认可用登录方式（不会回退到其他入口）" />
                 <Button block style={{ marginTop: 8 }} onClick={loadProviders}>重试获取登录配置</Button>
               </>
-            )}
-            {prov.phase === 'ready' && prov.data?.github?.configured === false && (
-              <Alert type="warning" showIcon style={{ marginTop: 8 }}
-                     message="GitHub OAuth 未配置——联系管理员设置 MU_GITHUB_OAUTH_CLIENT_ID/_CLIENT_SECRET/_CALLBACK_URL 三项" />
             )}
 
             {/* 邀请制提示（multiuser 生产形态） */}
@@ -236,7 +269,7 @@ export default function LoginPage() {
             {caps?.legacy_login ? (
               <>
                 <div style={{ textAlign: 'center', color: '#999', margin: '10px 0 0' }}>—— 或使用操作员账号 ——</div>
-                <Form layout="vertical" onFinish={submitLegacy} disabled={busy} style={{ marginTop: 16 }}>
+                <Form layout="vertical" onFinish={submitLegacy} disabled={pending !== null} style={{ marginTop: 16 }}>
                   {/* rc.10 可访问性：prefix 图标为装饰（字段已有 label）→ aria-hidden；
                       密码可见性切换图标经 iconRender 补有效可访问名 */}
                   <Form.Item label="操作员账号" name="user" rules={[{ required: true, message: '请输入用户名' }]}>
@@ -250,7 +283,7 @@ export default function LoginPage() {
                              ? <EyeOutlined aria-label="隐藏密码" />
                              : <EyeInvisibleOutlined aria-label="显示密码" />)} />
                   </Form.Item>
-                  <Button type="primary" htmlType="submit" block size="large" loading={busy}>
+                  <Button type="primary" htmlType="submit" block size="large" loading={pending !== null}>
                     登录
                   </Button>
                 </Form>
