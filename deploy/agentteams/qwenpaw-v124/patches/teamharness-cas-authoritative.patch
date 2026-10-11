@@ -1,0 +1,356 @@
+--- a/plugins/teamharness/mcp/server.py
++++ b/plugins/teamharness/mcp/server.py
+@@ -2527,6 +2527,21 @@
+     return action, normalized, local, remote, is_directory
+ 
+ 
++def _cas_managed_task_meta_path(normalized: str) -> bool:
++    """True for shared-storage paths whose task meta.json must only be
++    written through the CAS. Matches .../tasks/<task_id>/meta.json and the
++    enclosing task directory, under the team-scoped shared prefix or the
++    standalone shared/ root. Project meta (shared/projects/...) is NOT
++    matched - it is a separate write surface."""
++    parts = [p for p in normalized.strip("/").split("/") if p]
++    if "tasks" not in parts:
++        return False
++    rest = parts[parts.index("tasks") + 1:]
++    if not 1 <= len(rest) <= 2:
++        return False
++    return len(rest) == 1 or rest[1] == "meta.json"
++
++
+ def _filesync(arguments: dict[str, Any]) -> dict[str, Any]:
+     try:
+         action, normalized, local, remote, is_directory = _resolve_filesync(arguments)
+@@ -2535,6 +2550,23 @@
+         return {"ok": False, "tool": "filesync", "error": str(exc)}
+ 
+     kind = normalized.split("/", 1)[0]
++    if action == "push" and _cas_managed_task_meta_path(normalized):
++        # Task meta.json is CAS-managed: it reaches shared storage only via
++        # the conditional PutObject in _write_task. An mc push here would
++        # overwrite the authoritative object unconditionally - a stale local
++        # copy could resurrect a state a concurrent writer just replaced -
++        # so the file push is refused and directory pushes drop it.
++        if not is_directory:
++            return {
++                "ok": True,
++                "tool": "filesync",
++                "action": action,
++                "kind": kind,
++                "path": normalized,
++                "skipped": "task meta.json is CAS-managed (conditional write only)",
++            }
++        if "meta.json" not in exclude:
++            exclude = [*exclude, "meta.json"]
+     command: list[str]
+     if action == "list":
+         command = ["mc", "ls", "--recursive", remote]
+@@ -4204,8 +4236,294 @@
+         task.pop(key, None)
+ 
+ 
+-def _write_task(arguments: dict[str, Any], task: dict[str, Any]) -> None:
++CAS_WRITE_MAX_ATTEMPTS = 5
++
++
++def _cas_s3_client():
++    """boto3 S3 client bound to this runtime's own scoped FS credentials
++    (AGENTTEAMS_FS_*: the per-worker MinIO user provisioned by the
++    controller, never the root credential). Returns None when the storage
++    environment is not configured at all."""
++    import boto3
++    from botocore.config import Config
++
++    endpoint = os.environ.get("AGENTTEAMS_FS_ENDPOINT", "").strip().rstrip("/")
++    access_key = os.environ.get("AGENTTEAMS_FS_ACCESS_KEY", "").strip()
++    secret_key = os.environ.get("AGENTTEAMS_FS_SECRET_KEY", "").strip()
++    if not endpoint or not access_key or not secret_key:
++        return None
++    return boto3.client(
++        "s3",
++        endpoint_url=endpoint,
++        aws_access_key_id=access_key,
++        aws_secret_access_key=secret_key,
++        config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
++    )
++
++
++def _cas_bucket() -> str:
++    return (
++        os.environ.get("AGENTTEAMS_FS_BUCKET", "").strip()
++        or "agentteams-storage"
++    )
++
++
++def _cas_task_keys(task_id: str) -> list[str]:
++    """Object keys for a task meta in priority order. Mirrors the shared
++    prefix derivation used by _filesync, so the conditional write and the
++    mc transport always address the same object. _default_shared_prefix may
++    carry the mc transport head ("alias/bucket" from
++    AGENTTEAMS_STORAGE_PREFIX); the boto3 path addresses the bucket
++    directly, so the head is stripped to get the bare object key (the
++    controller's taskMetaKeys uses the same bare-key convention)."""
++    prefix = _default_shared_prefix().strip("/")
++    bucket = _cas_bucket()
++    for head in (f"{MC_ALIAS}/{bucket}", MC_ALIAS, bucket):
++        if prefix == head:
++            prefix = ""
++            break
++        if prefix.startswith(head + "/"):
++            prefix = prefix[len(head) + 1:]
++            break
++    keys: list[str] = []
++    if prefix and prefix != "shared":
++        keys.append(f"{prefix}/tasks/{task_id}/meta.json")
++    keys.append(f"shared/tasks/{task_id}/meta.json")
++    return keys
++
++
++def _cas_precondition_failed(exc: BaseException) -> bool:
++    code = ""
++    response = getattr(exc, "response", None)
++    if isinstance(response, dict):
++        code = str((response.get("Error") or {}).get("Code") or "")
++    return code in {"PreconditionFailed", "412", "PreconditionFailed "}
++
++
++def _cas_read_task(s3, task_id: str):
++    """Authoritative read of the task meta straight from shared storage.
++    Returns (data, etag, key); (None, None, None) when no copy exists.
++    Transport failures raise - callers must not guess at authority."""
++    from botocore.exceptions import ClientError
++
++    bucket = _cas_bucket()
++    for key in _cas_task_keys(task_id):
++        try:
++            resp = s3.get_object(Bucket=bucket, Key=key)
++        except ClientError as exc:
++            code = str((getattr(exc, "response", {}) or {}).get("Error", {}).get("Code") or "")
++            if code in {"NoSuchKey", "404"}:
++                continue
++            raise
++        etag = str(resp.get("ETag") or "").strip().strip('"')
++        data = json.loads(resp["Body"].read().decode("utf-8"))
++        return data, etag, key
++    return None, None, None
++
++
++def _cas_task_meta_bytes(task: dict[str, Any]) -> bytes:
++    # Byte-identical to _write_json so the local cache and the
++    # authoritative object never diverge in formatting.
++    return (json.dumps(task, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode("utf-8")
++
++
++def _cas_merge_remote_history(task: dict[str, Any], remote: dict[str, Any]) -> None:
++    """Union concurrent history entries so a CAS retry never drops another
++    writer's audit trail. Entries are identified by (seq, ts, action, from,
++    to); remote-only entries are appended in seq order."""
++    task_history = task.get("history")
++    if not isinstance(task_history, list):
++        task_history = []
++        task["history"] = task_history
++    remote_history = remote.get("history")
++    if not isinstance(remote_history, list):
++        return
++
++    def identity(entry: dict[str, Any]) -> tuple:
++        return (
++            entry.get("seq"),
++            entry.get("ts"),
++            entry.get("action"),
++            entry.get("from"),
++            entry.get("to"),
++        )
++
++    known = {identity(e) for e in task_history if isinstance(e, dict)}
++    missing = [e for e in remote_history if isinstance(e, dict) and identity(e) not in known]
++    if missing:
++        task_history.extend(missing)
++        task_history.sort(key=lambda e: e.get("seq") or 0)
++    try:
++        task["history_seq"] = max(
++            int(task.get("history_seq") or 0),
++            max((int(e.get("seq") or 0) for e in task_history if isinstance(e, dict)), default=0),
++        )
++    except (TypeError, ValueError):
++        pass
++
++
++def _cas_write_task(
++    arguments: dict[str, Any],
++    task: dict[str, Any],
++    action: str = "",
++) -> None:
++    """Authoritative compare-and-swap write of the task meta.
++
++    Every task-status writer (delegate/ack/submit/cancel/progress/
++    attention, plus the projectflow accept path) funnels through
++    _write_task, so enforcing the conditional write here protects the
++    whole chain: the local file is only a cache of the authoritative
++    object. Each attempt re-reads authority with its ETag, re-validates
++    the transition against the authoritative status (transition table
++    when the action is known, terminal guard otherwise), and PUTs with
++    If-Match (If-None-Match for a fresh create). PreconditionFailed
++    means a concurrent writer won: re-read and retry, bounded. Any other
++    storage error, an exhausted retry budget, or an authority whose
++    state forbids this write raises ValueError - there is deliberately
++    NO unconditional fallback.
++    """
++    from botocore.exceptions import ClientError
++
++    task_id = str(task["task_id"])
++    new_status = str(task.get("status") or "")
++    has_history = isinstance(task.get("history"), list) and bool(task["history"])
++    s3 = _cas_s3_client()
++    if s3 is None:
++        raise ValueError(
++            "task meta CAS unavailable: AGENTTEAMS_FS_* storage credentials "
++            "are not configured; refusing to fall back to a non-atomic local write"
++        )
++    bucket = _cas_bucket()
++    last_conflict = ""
++    for _attempt in range(CAS_WRITE_MAX_ATTEMPTS):
++        remote, etag, key = _cas_read_task(s3, task_id)
++        if remote is None:
++            # Authoritative object absent. A fresh delegate legitimately
++            # creates here (its history holds only the initial
++            # planned->prepared entry). But if the LOCAL cache carries
++            # decision-bearing state (a submission, a cancellation, a result
++            # digest, or more than the initial history entry), the authority
++            # existed and was cleaned up/replaced upstream: re-creating the
++            # object would resurrect that state, so the write is rejected.
++            local_existing = _read_json(_task_state_path(arguments, task_id))
++            local_history = local_existing.get("history") if isinstance(local_existing.get("history"), list) else []
++            decisional = bool(
++                local_existing.get("submission_id")
++                or local_existing.get("cancelled_at")
++                or local_existing.get("result_digest")
++                or len(local_history) > 1
++            )
++            if decisional:
++                raise ValueError(
++                    f"task {task_id} no longer exists in shared storage; "
++                    "write rejected (cleanup or replacement already committed)"
++                )
++            # Fresh delegate create: If-None-Match so we can never adopt a
++            # key another writer created between our read and this put.
++            key = key or _cas_task_keys(task_id)[0]
++            try:
++                s3.put_object(
++                    Bucket=bucket, Key=key,
++                    Body=_cas_task_meta_bytes(task), IfNoneMatch="*",
++                )
++            except ClientError as exc:
++                if _cas_precondition_failed(exc):
++                    last_conflict = "create race (If-None-Match)"
++                    continue
++                raise ValueError(f"task meta create failed: {exc}") from exc
++            return
++        remote_status = str(remote.get("status") or "")
++        if action:
++            try:
++                _assert_transition(remote_status, new_status, action)
++            except ValueError as exc:
++                _write_json(_task_state_path(arguments, task_id), remote)
++                raise ValueError(
++                    f"authoritative task status is '{remote_status}'; "
++                    f"{action} to '{new_status}' rejected: {exc}"
++                ) from exc
++            if remote_status == new_status and action in ("submit_task", "cancel_task"):
++                # Same-status rewrite of a decided state is NOT a table
++                # no-op: it is either this writer's own idempotent retry or a
++                # competing decision trying to replace the winner's payload.
++                # Identity must match the authoritative record - a second
++                # submit with a different submission_id, or a cancel with a
++                # different reason, is rejected.
++                if action == "submit_task":
++                    remote_ident = str(remote.get("submission_id") or "")
++                    local_ident = str(task.get("submission_id") or "")
++                    if remote_ident and remote_ident != local_ident:
++                        _write_json(_task_state_path(arguments, task_id), remote)
++                        raise ValueError(
++                            "submit_task conflicts with existing submission "
++                            f"(authoritative submission_id {remote_ident})"
++                        )
++                else:
++                    remote_reason = str(remote.get("cancel_reason") or "").strip()
++                    local_reason = str(task.get("cancel_reason") or "").strip()
++                    remote_repl = str(remote.get("replacement_task_id") or "").strip()
++                    local_repl = str(task.get("replacement_task_id") or "").strip()
++                    if remote_reason != local_reason or remote_repl != local_repl:
++                        _write_json(_task_state_path(arguments, task_id), remote)
++                        raise ValueError(
++                            f"cancel_task conflicts with existing cancellation "
++                            f"(reason '{remote_reason}')"
++                        )
++            if action == "cancel_task" and remote_status != "cancelled":
++                # Submission fence against AUTHORITY: a cancel of a task that
++                # carries a submission must present the exact ticket. The
++                # local mirror can be stale (a worker submitted after this
++                # caller last pulled); without this check a stale leader copy
++                # (no submission_id) would bypass the fence and cancel a
++                # fenced task. Mirrors the Controller Go handler's fence.
++                remote_sid = str(remote.get("submission_id") or "").strip()
++                local_sid = str(task.get("submission_id") or "").strip()
++                if remote_sid and local_sid != remote_sid:
++                    _write_json(_task_state_path(arguments, task_id), remote)
++                    raise ValueError(
++                        "submissionId is required for the current task submission"
++                    )
++        elif (
++            remote_status in TERMINAL_TASK_STATUSES
++            and remote_status != new_status
++        ):
++            # Action-agnostic guard for idempotent rewrite callers: a
++            # terminal authority never flips to a different status.
++            _write_json(_task_state_path(arguments, task_id), remote)
++            raise ValueError(
++                f"task {task_id} is '{remote_status}' in shared storage"
++                f" (cancelled_at={remote.get('cancelled_at') or 'n/a'});"
++                f" '{new_status or 'write'}' is rejected"
++            )
++        _cas_merge_remote_history(task, remote)
++        try:
++            s3.put_object(
++                Bucket=bucket, Key=key,
++                Body=_cas_task_meta_bytes(task), IfMatch=etag,
++            )
++        except ClientError as exc:
++            if _cas_precondition_failed(exc):
++                last_conflict = f"etag conflict (was {etag})"
++                continue
++            raise ValueError(f"task meta write failed: {exc}") from exc
++        return
++    raise ValueError(
++        f"task {task_id} meta write lost the compare-and-swap race "
++        f"{CAS_WRITE_MAX_ATTEMPTS} times ({last_conflict}); retry the taskflow action"
++    )
++
++
++def _write_task(
++    arguments: dict[str, Any],
++    task: dict[str, Any],
++    _cas_action: str = "",
++) -> None:
+     _ensure_console_task_meta(arguments, task)
++    # Authority first: the conditional write lands in shared storage before
++    # the local cache is updated, so a successful return always means the
++    # authoritative object persisted (cancel returns only after its
++    # cancelled state is durable).
++    _cas_write_task(arguments, task, action=_cas_action)
+     _write_json(_task_state_path(arguments, task["task_id"]), task)
+ 
+ 
+@@ -4584,7 +4902,10 @@
+         task.update(extra)
+     _append_transition_history(task, old_status, new_status, action, _transition_actor(arguments), note)
+     task["status"] = new_status
+-    _write_task(arguments, task)
++    # The action travels with the write so the CAS loop can re-validate the
++    # transition table against the AUTHORITATIVE status on every retry, not
++    # just the (possibly stale) local snapshot this call asserted against.
++    _write_task(arguments, task, _cas_action=action)
+     return old_status
+ 
+ 

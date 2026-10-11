@@ -1,0 +1,48 @@
+diff --git a/plugins/teamharness/mcp/server.py b/plugins/teamharness/mcp/server.py
+index 72340bb..463f14e 100644
+--- a/plugins/teamharness/mcp/server.py
++++ b/plugins/teamharness/mcp/server.py
+@@ -4080,6 +4080,27 @@ def _load_task(arguments: dict[str, Any], task_id: str) -> dict[str, Any]:
+     return task
+ 
+ 
++def _pull_fresh_task(arguments: dict[str, Any], task_id: str) -> dict[str, Any]:
++    """Re-read task meta after forcing a pull from shared storage.
++
++    Fixes the read-your-writes race between leader cancel and worker submit:
++    the leader writes cancelled to its local mirror, syncs to MinIO, then the
++    worker's mirror pulls — but the gap between leader-write and worker-pull
++    lets submit_task read a stale in_progress status and overwrite the cancel.
++
++    This helper forces a MinIO pull of meta.json before the caller reads the
++    local copy, closing the window for submit/ack transitions. It does NOT
++    gate non-mutating reads (check_task etc.).
++    """
++    sync_args = dict(arguments)
++    sync_args.update({"action": "pull", "path": f"shared/tasks/{task_id}/meta.json"})
++    try:
++        _filesync(sync_args)
++    except Exception:
++        pass  # pull failure is non-fatal; caller sees whatever the local copy has
++    return _load_task(arguments, task_id)
++
++
+ def _first_text(*values: Any) -> str:
+     for value in values:
+         text = str(value or "").strip()
+@@ -5469,6 +5490,15 @@ def _taskflow(arguments: dict[str, Any]) -> dict[str, Any]:
+                 raise ValueError("submit_task requires worker or remote-member role")
+             task_id = _safe_id(payload.get("taskId") or payload.get("task_id"), "taskId")
+             task = _load_task(arguments, task_id)
++            # CAS fix (2026-10-12): pull fresh from MinIO to close the async
++            # mirror gap; a cancel written by the leader must be visible here.
++            task = _pull_fresh_task(arguments, task_id)
++            if task.get("cancelled_at"):
++                raise ValueError(
++                    f"task {task_id} was cancelled at {task['cancelled_at']}"
++                    f" (reason: {task.get('cancel_reason', 'n/a')});"
++                    " late submission is rejected"
++                )
+             _require_task_mutable(arguments, task, task_id, action)
+             summary = str(payload.get("summary") or "")
+             status = _validate_task_result_status(payload.get("status"))
