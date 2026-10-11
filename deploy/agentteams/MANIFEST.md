@@ -20,7 +20,7 @@
 | 层 | 生成者 | 覆盖时机 | 加载者 | 内容 |
 |---|---|---|---|---|
 | **ctrl 模板** | controller（worker spec → openclaw.json 模板） | **每次 reconcile**（Sleeping→Running touch、worker 重建、spec 变更） | 写入 MinIO `agents/<name>/openclaw.json` | 默认 provider=agentteams-gateway（指向 ctrl :8080）；**不含 deepseek-direct** |
-| **MinIO 配置** | ① ctrl reconcile 写入 ② recover-workers.sh 步骤 3 追加 deepseek-direct（reconcile 之后） | ①会抹掉②的模型段（顺序契约的根本原因） | worker 启动 mirror（MinIO→本地全量）+ **运行时轮询**（"Config changed, re-bridging"，约 60s 周期，无需重启） | 最终期望态：`models.providers.deepseek-direct` + `agents.defaults.model.primary=deepseek-direct/deepseek-chat` |
+| **MinIO 配置** | ① ctrl reconcile 写入 ② recover-workers.sh 步骤 3 追加模型段（reconcile 之后） | ①会抹掉②的模型段（顺序契约的根本原因）+ ⚠️ ctrl 存在与 reconcile 无关的**周期性模板重推**（见下） | worker 启动 mirror（MinIO→本地全量）+ **运行时轮询**（"Config changed, re-bridging"，约 60s 周期，无需重启） | 实际可传播期望态=**重定向 `agentteams-gateway` provider 的 baseUrl/apiKey**（models 段随远端替换而传播）；~~`agents.defaults.model.primary`~~ **改 primary 不传播**（sync_loop 合并规则="models 从远端替换；agents 保留本地"——2026-10-10 itest S1/S2 实证；`deepseek-direct` 独立 provider 段可写入但若 primary 指向它则模型选择不生效，故唯一可靠形态是 gateway 重定向） |
 | **运行进程实际配置** | worker 本地 mirror/重桥写入 `/root/.copaw-worker/<name>/openclaw.json` | mirror（启动）+ re-bridge（运行时轮询到 MinIO 变化） | copaw agent 逐查询读取 | recover-workers.sh 步骤 4/5 验证的终态 |
 
 **铁律**：任何对 MinIO openclaw.json 的模型段修改，必须发生在**最后一次 reconcile 之后**；`recover-workers.sh` 是该顺序的唯一执行者——人工直接改 JSON 会被下一次 reconcile 抹掉（2026-10-10 生产事故实证）。
@@ -31,6 +31,8 @@
 - 但 ctrl 存在**周期性模板重推**（与 reconcile 无关的异步行为），最终把 MinIO 打回 gateway(8080)——工具收敛后往返 PASS（S1，5s 真实 LLM），重推落盘后往返 FAIL（S2，MODEL 422）；
 - worker spec 无 provider 覆盖位，模板硬编码 broken gateway。
 - **结论**：`recover-workers.sh` = 可重复的临时收敛（消灭手工 JSON、自带验证），**不是根因修复**；每次 ctrl 重推/重启后需重跑。根治路径 = QwenPaw 迁移（官方 v1.2.1+ 以插件系统替代了此配置桥接层）。
+
+**2026-10-11 勘误（本波 B4）**：§2 表中"最终期望态"原写 `agents.defaults.model.primary=deepseek-direct/deepseek-chat`，与本 ⚠️ 实测结论冲突（primary 不传播）——已按可传播形态（gateway 重定向）更正上表。持久性口径统一为：**旧栈（223ddc2）不存在 durable 模型配置路径**；`recover-workers.sh` 是收敛工具而非状态。QwenPaw/v1.2.4 栈的持久配置真源见 `deploy/agentteams/qwenpaw-v124/MANIFEST-qwenpaw-v124.md`（runtime.yaml desired state + Higress provider/route 持久化于 ctrl 数据卷，替代整个 JSON 桥接层）。
 
 ## 3. 模型路由（为何是 deepseek-direct）
 
