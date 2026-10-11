@@ -19,6 +19,7 @@ import { githubAppStatus,
 import { safeEqual } from '../session.mjs';
 import { oauthConfig, newState, buildAuthorizeUrl, exchangeForIdentity } from './oauth.mjs';
 import { giteeOAuthConfig, newGiteeState, buildGiteeAuthorizeUrl, exchangeForGiteeIdentity } from './giteeoauth.mjs';
+import { knownMuLoginType, invitePlatformOf } from '../muLoginType.mjs';
 import { issueMuSession, resolveMuSession, muCsrfOk, rotateMuSession,
          muTokenFromCookieHeader, muClearCookies,
          muCorrCookie, muCorrClear, muCorrFromCookieHeader, appendCorrClear } from './session.mjs';
@@ -575,8 +576,11 @@ export async function muApi(req, res, ctx) {
       // provider 归属校验（Wave-Gitee）：邀请绑定的是哪个 provider 的身份，登录入口
       // 必须一致——GitHub 入口拒绝 Gitee 邀请（反之亦然），防止用错平台身份认领
       // （两平台数字 id 空间独立，绝不混用）。邀请不被消耗，可从正确入口重试。
+      // 409 附带 invite_provider（可信后端信号）：前端据此渲染「应改用哪个入口」，
+      // 不在页面侧猜测平台（登录来源波）。
       if (inv.expected_subject && !String(inv.expected_subject).startsWith('github-oauth:')) {
         return sendJson(res, 409, { error: { reason: 'invite_provider_mismatch',
+          invite_provider: invitePlatformOf(inv.expected_subject),
           detail: '该邀请绑定的不是 GitHub 身份（expected_subject 前缀非 github-oauth:）——请使用对应平台的登录入口' } });
       }
       inviteId = inv.invite_id;
@@ -763,9 +767,11 @@ export async function muApi(req, res, ctx) {
       if (!inv || inv.claimed_at || inv.expires_at <= new Date()) {
         return sendJson(res, 404, { error: { reason: 'invitation_not_found' } });
       }
-      // provider 归属校验：Gitee 入口只接受 gitee-oauth: 前缀邀请（与 GitHub 入口对称）
+      // provider 归属校验：Gitee 入口只接受 gitee-oauth: 前缀邀请（与 GitHub 入口对称）；
+      // 409 附带 invite_provider（可信后端信号，前端据此渲染正确入口，不猜测）。
       if (inv.expected_subject && !String(inv.expected_subject).startsWith('gitee-oauth:')) {
         return sendJson(res, 409, { error: { reason: 'invite_provider_mismatch',
+          invite_provider: invitePlatformOf(inv.expected_subject),
           detail: '该邀请绑定的不是 Gitee 身份（expected_subject 前缀非 gitee-oauth:）——请使用对应平台的登录入口' } });
       }
       inviteId = inv.invite_id;
@@ -1391,6 +1397,12 @@ export async function muApi(req, res, ctx) {
     if (p === '/api/mu/session' && req.method === 'GET') {
       const tenant = await store.getTenant(mu.tenantId);
       const memberships = await store.listMembershipsOfUser(mu.userId);
+      // 登录来源契约（登录来源波）：login_type/provider 仅在 mu.session.provider 属
+      // 白名单（github-oauth/gitee-oauth）时下发，与 /api/auth/session MU 桥一致；
+      // 未知/缺失（fixture/未来 provider）省略字段——不回退 'github-oauth' 冒充。
+      // 旧会话兼容依据：provider 列 v1 建表即 NOT NULL，存量行即历史签发值（见
+      // lib/muLoginType.mjs）。
+      const loginType = knownMuLoginType(mu.provider);
       return sendJson(res, 200, {
         user: { user_id: mu.userId, login: mu.login },
         tenant: tenant ? { tenant_id: tenant.tenant_id, slug: tenant.slug, display_name: tenant.display_name,
@@ -1399,12 +1411,8 @@ export async function muApi(req, res, ctx) {
         actions: roleActions(liveMembership.role) ?? [],
         memberships: memberships.map((m) => ({ tenant_id: m.tenant_id, tenant_slug: m.tenant_slug,
           role: m.role, state: m.state })),
-        // 数据可信度加固（PR #320 四波，附加字段向后兼容）：显式认证 provider——
-        // mu.session.provider 由登录路径写入（当前唯一值 'github-oauth'，oauth.mjs）；
-        // 前端身份展示按该显式标记取来源，不按部署模式推断。
-        login_type: String(mu.provider ?? 'github-oauth'),
+        ...(loginType ? { login_type: loginType, provider: loginType } : {}),
         session_source: 'mu_session',
-        provider: String(mu.provider ?? 'github-oauth'),
       });
     }
 
