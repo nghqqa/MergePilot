@@ -14,6 +14,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { listRunPacks, safeResolve, listPackFiles, verifyPack, parseSha256Sums, looksTextual } from './lib/pack.mjs';
+import { knownMuLoginType } from './lib/muLoginType.mjs';
 import { buildRunRecord, buildRunDetail } from './lib/runs.mjs';
 import { login, logout, getSession, sessionBody, anonymousBody, tokenFromCookieHeader,
   repoAllowlist, sessionTtlMs, safeEqual } from './lib/session.mjs';
@@ -342,12 +343,17 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
             const { resolvePrincipal } = await import('./lib/principal.mjs');
             const principal = await resolvePrincipal(req, { muStore: store });
             if (principal.authenticated) {
+              // 会话来源 = 服务端实际已认证会话（mu.session.provider，v1 建表即 NOT NULL，
+              // 存量 GitHub 唯一签发时代行均为 'github-oauth'——旧会话显示不变）。
+              // 仅白名单内 provider 下发 login_type；未知/缺失（fixture/未来 provider）
+              // 不下发该字段，前端按「登录来源未知」诚实呈现——绝不回退 'github-oauth'
+              // 冒充，也不按身份绑定列表/用户名/前端缓存推断（登录来源波契约，
+              // 见 lib/muLoginType.mjs 与 test/mu-session-source.integration.mjs）。
+              const loginType = knownMuLoginType(principal.muSession?.provider);
               return sendJson(res, 200, {
                 user: { name: principal.username, github_login: principal.username,
                   display_name: principal.username,
-                  // 显式认证 provider（数据可信度加固）：mu_session 仅由 GitHub OAuth
-                  // 回调签发（multiuser/oauth.mjs，subject='github-oauth:<id>'）
-                  login_type: 'github-oauth' },
+                  ...(loginType ? { login_type: loginType } : {}) },
                 repos: repoAllowlist(),
                 expires_at: principal.muSession?.expires_at ?? null,
                 session_source: 'mu_session', role: principal.roles?.[0] ?? null });

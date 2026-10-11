@@ -1,13 +1,18 @@
-// identity.js — 身份与能力映射（数据可信度加固 2026-10-05 三波）。
+// identity.js — 身份与能力映射（数据可信度加固 2026-10-05 三波；登录来源波修订）。
 // 单一权威映射：footer / 工作区面板 / 设置 / 诊断 共用，不再各自文案。
 //
-// 认证 provider 只认后端会话的显式标记（不得按 multiuser 模式推断 OAuth）：
-//   user.login_type / user.mu.provider === 'github-oauth'  → GitHub OAuth 会话
-//     （mu_session 仅由 GitHub OAuth 回调签发，backend multiuser/oauth.mjs；
-//      /api/auth/session 的 MU 桥接与 legacy 桥接均显式下发 login_type）
-//   user.login_type === 'operator_password'                → 操作员账号密码登录
-//   fixture / console-pg 测试主体（dataMode 声明）           → 隔离测试主体
-//   已登录但无任何显式标记                                   → 来源未知（诚实，不猜）
+// 认证 provider 只认后端会话的显式标记（不得按 multiuser 模式推断 OAuth，
+// 也不按身份绑定列表/用户名/前端缓存推断）：
+//   user.login_type === 'github-oauth'  → GitHub OAuth 会话
+//   user.login_type === 'gitee-oauth'   → Gitee OAuth 会话
+//     （两个 session 端点按 lib/muLoginType.mjs 白名单契约显式下发；白名单外
+//      与缺失一律不下发——见 backend 契约与 mu-session-source.integration.mjs）
+//   user.login_type === 'operator_password' → 操作员账号密码登录
+//   fixture / console-pg 测试主体（dataMode 声明）          → 隔离测试主体
+//   已登录但无显式标记                                       → 来源未知（诚实，不猜）
+//   （旧版这里存在 session_source==='mu_session' → GitHub 的兜底——已删除：
+//    该兜底在 Gitee 会话上恰好构成「误标 GitHub」的冒充路径；旧会话兼容由
+//    mu.session.provider 列 v1 NOT NULL + 后端白名单下发保证，不需要前端猜测。）
 //
 // 能力边界（不随 provider 变化的恒定红线）：
 //   操作经服务端授权；不写 GitHub、不自动合并、不派发站外执行。
@@ -23,12 +28,10 @@ export function deriveIdentitySource({ session, dataMode, authed } = {}) {
   if (dataMode === 'fixture') {
     return { key: 'test_principal', label: '隔离测试主体', realGithubIdentity: false };
   }
-  // Gitee OAuth 会话（先于 github/mu_session 兜底判断——gitee 会话同带
-  // session_source='mu_session'，顺序错会把 Gitee 会话误标成 GitHub）
   if (loginType === 'gitee-oauth') {
     return { key: 'gitee_oauth', label: 'Gitee OAuth 会话', realGithubIdentity: true };
   }
-  if (loginType === 'github-oauth' || session?.session_source === 'mu_session') {
+  if (loginType === 'github-oauth') {
     return { key: 'github_oauth', label: 'GitHub OAuth 会话', realGithubIdentity: true };
   }
   if (loginType === 'operator_password') {

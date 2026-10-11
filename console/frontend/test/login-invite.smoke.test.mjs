@@ -99,7 +99,7 @@ test('1. 已登录打开 /login?invite=：不丢参、受邀按钮直传 invite'
     const text = json();
     assert.ok(!text.includes('"api/mu/runs'), '未跳转 /pending（参数未丢）');
     assert.ok(text.includes('使用受邀的 GitHub 账号登录'), '受邀按钮文案上屏');
-    assert.ok(text.includes('你当前已登录，继续将通过 GitHub 验证受邀身份'), '已登录提示上屏（不称“其他身份”）');
+    assert.ok(text.includes('你当前已登录——继续操作将以你点击的平台入口核验受邀身份'), '已登录提示上屏（provider 中性，不写死平台）');
     assert.ok(text.includes('仅受邀成员可登录'), '邀请制提示上屏');
     // 行为：点击受邀按钮 → start 携带原样 invite 参数
     const btn = renderer.root.find((n) => n.props?.onClick && n.props?.children === '使用受邀的 GitHub 账号登录');

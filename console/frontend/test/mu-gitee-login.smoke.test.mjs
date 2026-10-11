@@ -123,7 +123,7 @@ test('GL-S3 邀请 provider 错配：GitHub start 409 → 指引改用 Gitee 入
       gitee: { configured: true, callback_url: 'http://x/cb-gitee', scope: 'user_info' },
     }],
     '/api/mu/auth/oauth/github/start': () => [409, { error: { reason: 'invite_provider_mismatch',
-      detail: '该邀请绑定的不是 GitHub 身份' } }],
+      invite_provider: 'gitee-oauth', detail: '该邀请绑定的不是 GitHub 身份' } }],
   };
   const { renderer, json } = await renderRoute('/login?invite=11111111-1111-4111-8111-111111111111');
   try {

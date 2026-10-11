@@ -731,11 +731,18 @@ td.th-right { text-align: right; }
 .auth-logout-hint { font-size: var(--fs-xs); color: var(--c-bad, #b42318); max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: help; }
 
 .login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--c-bg); padding: 24px; }
-.login-card {
-  width: min(460px, 100%); background: var(--c-panel);
-  border: 1px solid var(--c-border); border-radius: var(--r-lg);
-  box-shadow: var(--shadow-sm); padding: 28px 30px;
+/* 登录来源波：卡片留白单一来源——旧版 .login-card 自身 padding 与 LoginPage 内联
+   body padding 叠加成双重留白，现统一为 Card body 一处（LoginPage 不再内联 padding）。 */
+.login-card { width: min(460px, 100%); background: var(--c-panel);
+  border: 1px solid var(--c-border); border-radius: var(--r-lg); box-shadow: var(--shadow-sm); }
+.login-card .ant-card-body { padding: 28px 30px; }
+@media (max-width: 480px) {
+  .login-wrap { padding: 16px; }
+  .login-card .ant-card-body { padding: 20px; }
 }
+/* OAuth 入口触控目标 ≥44px（尺寸一致的单色图标由组件内联 SVG 提供，currentColor 跟随文字） */
+.login-oauth-btn { min-height: 44px; }
+.login-oauth-btn .ant-btn-icon { display: inline-flex; align-items: center; }
 .login-brand { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
 .login-brand .brand-name { color: var(--c-text); font-size: var(--fs-md); font-weight: var(--fw-semibold); }
 .login-note { font-size: var(--fs-sm); color: var(--c-text-2); line-height: 1.7; margin: 0 0 14px; }
