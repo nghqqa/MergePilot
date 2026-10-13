@@ -2827,8 +2827,10 @@ const ragMatch = p.match(new RegExp("^/api/mu/repositories/([^/]+)/rag-search$")
       if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
       const runId = runArtMatch[1];
       const run = (await muPoolQ(
-        `SELECT run_id, status, head_sha, llm_mode, created_at FROM mu.review_run
-          WHERE run_id=$1 AND tenant_id=$2`, [runId, mu.tenantId])).rows[0] ?? null;
+        `SELECT r.run_id, r.status, r.head_sha, r.llm_mode, r.created_at, r.repo_id,
+                rep.provider, rep.owner, rep.name AS repo_name
+           FROM mu.review_run r JOIN mu.repository rep ON rep.repo_id = r.repo_id
+          WHERE r.run_id=$1 AND r.tenant_id=$2`, [runId, mu.tenantId])).rows[0] ?? null;
       if (!run) return sendJson(res, 404, { error: { reason: 'not_found' } });
       const findings = (await muPoolQ(
         `SELECT finding_id, rule_id, severity, path, line_start, line_end, title,
