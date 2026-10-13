@@ -111,12 +111,17 @@
 - 配套镜像补丁 `patches/qwenpaw-worker-coldstart-acl-preseed.patch`：app 启动【前】把
   期望 allowlist 预种进 workspace ACL 文件（channel sync 先于 apply_desired_state 消费事件
   ——不预种则唤醒后首条消息在窗口内被拒并丢失）。pending 审批保留；随后 reconcile 仍为权威。
-- LLM 重试容忍：CR `spec.env.QWENPAW_LLM_MAX_RETRIES=7`、`QWENPAW_LLM_BACKOFF_BASE=2`
-  （指数退避 cap 10s → 冷启动网关重载窗口 ~60s 覆盖）。
-  **必须配合镜像补丁 `apply_llm_retry_env`**：app 的持久化快照（`.qwenpaw/config.json`
-  `agents.running.llm_max_retries=3`）会覆盖 env 默认值且跨重启同步（实测 2026-10-13：
-  env 已注入但首次消息仍 4 次尝试耗尽）——补丁在 app 启动前把 env 声明固化进快照
-  （env 未设置则不触碰；env 为部署层声明，优先于陈旧快照）。
+- **冷启动首条消息失败的真根因（httpx 追踪铁证 2026-10-13）**：app 的 model 注册
+  （POST /api/models）原在 boot 后 ~60-90s 才执行；注册前 builder 对空注册表解析
+  active_model 回退到默认本地端点 `http://127.0.0.1:8080`（容器内无此服务）——冷启动
+  首条消息的所有 LLM 调用 ConnectError，与网络/凭据/ACL 无关（同容器独立探针 30/30 成功）。
+  **修复=补丁 `early_register_model`**：worker 在 `_wait_for_qwenpaw_api` 后立即注册
+  （实测 T+6s 完成），注册先于任何消息消费——首条消息即用正确客户端。
+- LLM 重试容忍（纵深防御）：CR `spec.env.QWENPAW_LLM_MAX_RETRIES=12`、
+  `QWENPAW_LLM_BACKOFF_BASE=3`（指数退避 cap 10s）。
+  **必须配合镜像补丁 `apply_llm_retry_env`**：app 的持久化快照（config.json + workspace
+  agent.json 两处 `running.*`）会覆盖 env 默认值且跨重启同步——补丁在 app 启动前把 env
+  声明固化进两处快照（env 未设置则不触碰；env 为部署层声明，优先于陈旧快照）。
 
 ### 7.2 specHash 限界与可重复重建路径
 - Worker CR `spec.env` 变更【不进入】specHash → 存量容器不会自动重建；env 仅在容器创建时生效。
@@ -149,7 +154,21 @@
   生产 run 委派 Sleeping worker 的唤醒在 rc.26 前依赖 worker 已暖（或人工 Matrix 提及）。
   **已登记为已知限界，随 rc.26 关闭。**
 
-### 7.6 冷启动限界（修复后残留）
+### 7.6 冷启动验收实测（2026-10-13 06:21-06:51 UTC，cas.4@sha256:7298e80a）
+| 角色 | 状态 | 发送→回复 | 业务时限(240s) |
+|---|---|---|---|
+| leader | Sleeping→单条消息→唤醒→回复 | **40s** | PASS |
+| reviewer | 同上 | **10s** | PASS |
+| verifier | 同上 | **10s** | PASS |
+| fixer（重复冷启动验证） | 同上，无积压 | **7s** | PASS |
+- 修复前同场景：全部 Internal error（首条消息丢失，补偿为触发式——需同会话新消息或重启才补答，
+  实测最长 75.5 分钟无人值守不补偿）。
+- **已知限界（有条件接受）**：会话内有失败积压时，新消息与积压补偿同窗口碰撞可能丢弃新消息
+  （acc-fixer 实证 06:22）。缓解：早注册修复后首条消息即成功，正常运行不再积累积压；
+  MergePilot 侧 attempt-2 语义+迟到回复过滤（marker+时间窗）保证终态不翻转。
+- 观测速记：唤醒<1s（mention→docker start）；early 注册 T+6s；boot→首条 chat 就绪 ~T+15-40s。
+
+### 7.7 冷启动限界（修复后残留）
 - 唤醒后 ~10-15s 启动窗内的首条消息：ACL 竞态已由预种关闭；LLM 网关瞬时不可达由
   重试 env 覆盖（实测网关重载 ~15-30s）。窗口远超重试覆盖时仍可能失败——此时消息丢失，
   需发送方重发（Console collectReply 超时语义不变，fail-closed）。
