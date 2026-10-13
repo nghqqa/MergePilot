@@ -178,6 +178,7 @@ export function buildMarkdownReport({ run, findings, attempts, outputs, patch, v
  */
 export function buildPublishComment({ run, findings, patch, verification,
   repoLabel, prNumber, headSha, detailUrl, reviewedAt }) {
+  const gen = new Date().toISOString();
   const lines = [];
   lines.push(publishMarker(run.run_id, headSha));
   lines.push('## MergePilot AI 审查（建议，未修改代码）');
