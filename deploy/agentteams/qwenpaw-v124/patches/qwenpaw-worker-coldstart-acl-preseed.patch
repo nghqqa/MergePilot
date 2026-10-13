@@ -1,8 +1,8 @@
 diff --git a/qwenpaw/src/qwenpaw_worker/update.py b/qwenpaw/src/qwenpaw_worker/update.py
-index 2b24758..23eecde 100644
+index 2b24758..122da15 100644
 --- a/qwenpaw/src/qwenpaw_worker/update.py
 +++ b/qwenpaw/src/qwenpaw_worker/update.py
-@@ -2293,6 +2293,123 @@ class RuntimeUpdater:
+@@ -2293,6 +2293,142 @@ class RuntimeUpdater:
          if self.api_client is None:
              raise RuntimeError("QwenPaw API client is required for Matrix ACL configuration")
          self.api_client.reconcile_acl("agentteams_matrix", whitelist, blacklist)
@@ -80,49 +80,68 @@ index 2b24758..23eecde 100644
 +        backoff_base = os.getenv("QWENPAW_LLM_BACKOFF_BASE", "").strip()
 +        if not max_retries and not backoff_base:
 +            return None
-+        path = self.config.qwenpaw_working_dir / "config.json"
-+        try:
-+            data = json.loads(path.read_text(encoding="utf-8"))
-+        except (OSError, ValueError):
++
++        def _desired_values() -> Dict[str, Any]:
++            wanted: Dict[str, Any] = {}
++            if max_retries:
++                try:
++                    wanted["llm_max_retries"] = max(1, int(max_retries))
++                except ValueError:
++                    pass
++            if backoff_base:
++                try:
++                    wanted["llm_backoff_base"] = max(0.1, float(backoff_base))
++                except ValueError:
++                    pass
++            return wanted
++
++        wanted = _desired_values()
++        if not wanted:
 +            return None
-+        if not isinstance(data, dict):
-+            return None
-+        agents = data.get("agents")
-+        if not isinstance(agents, dict):
-+            agents = {}
-+            data["agents"] = agents
-+        running = agents.get("running")
-+        if not isinstance(running, dict):
-+            running = {}
-+            agents["running"] = running
-+        changed: List[str] = []
-+        if max_retries:
++        # The retry budget lives in TWO persisted snapshots, both synced via
++        # storage and both overriding the env defaults once present:
++        #   * config.json  agents.running.*   (global app config)
++        #   * <workspace>/agent.json  running.*  (per-agent snapshot -- wins)
++        targets = [
++            self.config.qwenpaw_working_dir / "config.json",
++            self.config.default_workspace_dir / "agent.json",
++        ]
++        last_path: Optional[Path] = None
++        for path in targets:
 +            try:
-+                value = max(1, int(max_retries))
-+            except ValueError:
-+                value = None
-+            if value is not None and running.get("llm_max_retries") != value:
-+                running["llm_max_retries"] = value
-+                changed.append("llm_max_retries=%d" % value)
-+        if backoff_base:
-+            try:
-+                value = max(0.1, float(backoff_base))
-+            except ValueError:
-+                value = None
-+            if value is not None and running.get("llm_backoff_base") != value:
-+                running["llm_backoff_base"] = value
-+                changed.append("llm_backoff_base=%s" % value)
-+        if not changed:
-+            return path
-+        tmp = path.with_suffix(".json.retry-tmp")
-+        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-+        os.replace(tmp, path)
-+        logger.info(
-+            "llm retry env applied to config component=update worker=%s %s",
-+            self.config.worker_name,
-+            " ".join(changed),
-+        )
-+        return path
++                data = json.loads(path.read_text(encoding="utf-8"))
++            except (OSError, ValueError):
++                continue
++            if not isinstance(data, dict):
++                continue
++            section = data.get("agents") if path.name == "config.json" else data
++            if not isinstance(section, dict):
++                section = {}
++            if path.name == "config.json":
++                data["agents"] = section
++            running = section.get("running")
++            if not isinstance(running, dict):
++                running = {}
++                section["running"] = running
++            changed: List[str] = []
++            for key, value in wanted.items():
++                if running.get(key) != value:
++                    running[key] = value
++                    changed.append("%s=%s" % (key, value))
++            if not changed:
++                last_path = path
++                continue
++            tmp = path.with_suffix(".json.retry-tmp")
++            tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
++            os.replace(tmp, path)
++            logger.info(
++                "llm retry env applied to config component=update worker=%s file=%s %s",
++                self.config.worker_name,
++                path.name,
++                " ".join(changed),
++            )
++            last_path = path
++        return last_path
  
      def _dedupe(self, values: List[str]) -> List[str]:
          result = []
