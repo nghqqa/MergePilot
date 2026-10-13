@@ -2990,8 +2990,17 @@ const ragMatch = p.match(new RegExp("^/api/mu/repositories/([^/]+)/rag-search$")
         }
         const pub = await import('./publish.mjs');
         const detailBase = String(env.MU_CONSOLE_PUBLIC_URL ?? '').trim() || null;
-        const r = await pub.publishRun(muPoolQ, { env, runId, tenantId: mu.tenantId,
-          userId: mu.userId, detailBaseUrl: detailBase });
+        let r;
+        try {
+          r = await pub.publishRun(muPoolQ, { env, runId, tenantId: mu.tenantId,
+            userId: mu.userId, detailBaseUrl: detailBase });
+        } catch (e) {
+          // 未捕获异常也必须可诊断（2026-10-13：500 空原因不可排查——教训）
+          const reason = String(e?.message ?? e).slice(0, 160);
+          await store.audit('MU_REVIEW_PUBLISH_ERROR', { tenantId: mu.tenantId,
+            actorUserId: mu.userId, detail: { run_id: runId, reason } }).catch(() => {});
+          return sendJson(res, 500, { error: { reason: 'publish_internal_error', detail: { reason } } });
+        }
         if (!r.ok) {
           const statusMap = { stale_head: 409, not_verifiable: 409, provider_unsupported: 400,
             remote_unreachable: 502, publish_failed: 502 };
