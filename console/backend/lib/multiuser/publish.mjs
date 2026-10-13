@@ -35,21 +35,21 @@ async function giteeCommentApi(env, { method, path, body }) {
 
 async function giteeListComments(env, { owner, repo, prNumber }) {
   const r = await giteeCommentApi(env, { method: 'GET',
-    path: `/repos/${owner}/${repo}/issues/${encodeURIComponent(prNumber)}/comments?per_page=100&page=1` });
+    path: `/repos/${owner}/${repo}/pulls/${encodeURIComponent(prNumber)}/comments?per_page=100&page=1` });
   if (!r.ok) throw Object.assign(new Error(`gitee_comments_list_http_${r.status}`), { status: r.status });
   return Array.isArray(r.json) ? r.json : [];
 }
 
 async function giteeCreateComment(env, { owner, repo, prNumber, body }) {
   const r = await giteeCommentApi(env, { method: 'POST',
-    path: `/repos/${owner}/${repo}/issues/${encodeURIComponent(prNumber)}/comments`, body: { body } });
+    path: `/repos/${owner}/${repo}/pulls/${encodeURIComponent(prNumber)}/comments`, body: { body } });
   if (!r.ok) throw Object.assign(new Error(`gitee_comment_create_http_${r.status}`), { status: r.status });
   return { remoteCommentId: String(r.json?.id ?? ''), remoteUrl: r.json?.html_url ?? null };
 }
 
 async function giteeUpdateComment(env, { owner, repo, commentId, body }) {
-  const r = await giteeCommentApi(env, { method: 'PATCH',
-    path: `/repos/${owner}/${repo}/issues/comments/${encodeURIComponent(commentId)}`, body: { body } });
+  const r = await giteeCommentApi(env, { method: 'PUT',
+    path: `/repos/${owner}/${repo}/pulls/comments/${encodeURIComponent(commentId)}`, body: { body } });
   if (!r.ok) throw Object.assign(new Error(`gitee_comment_update_http_${r.status}`), { status: r.status });
   return { remoteCommentId: String(r.json?.id ?? commentId), remoteUrl: r.json?.html_url ?? null };
 }
