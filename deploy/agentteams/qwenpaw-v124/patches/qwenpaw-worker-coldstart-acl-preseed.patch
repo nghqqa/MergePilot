@@ -1,8 +1,54 @@
 diff --git a/qwenpaw/src/qwenpaw_worker/update.py b/qwenpaw/src/qwenpaw_worker/update.py
-index 2b24758..122da15 100644
+index 2b24758..2fbe1ae 100644
 --- a/qwenpaw/src/qwenpaw_worker/update.py
 +++ b/qwenpaw/src/qwenpaw_worker/update.py
-@@ -2293,6 +2293,142 @@ class RuntimeUpdater:
+@@ -1640,10 +1640,23 @@ class RuntimeUpdater:
+             os.environ["AGENTTEAMS_AGENT_ROLE"] = role
+             os.environ["AGENTTEAMS_WORKER_ROLE"] = role
+ 
+-    def _apply_model(self, config: MemberRuntimeConfig) -> None:
++    def early_register_model(self, config: MemberRuntimeConfig) -> Optional[Dict[str, Any]]:
++        """Register the runtime model with the qwenpaw app as the first
++        post-boot step.
++
++        Until the model is registered via the app API, an agent built for an
++        incoming message resolves the active provider against an empty
++        registry and falls back to the default local endpoint
++        (http://127.0.0.1:8080) -- every LLM call fails with connection
++        errors until the next rebuild trigger. The channel sync can deliver
++        the first message well before apply_desired_state reaches
++        _apply_model, so the registration runs immediately after the app
++        API becomes reachable. Idempotent: apply_desired_state re-runs the
++        same registration as a no-op.
++        """
+         desired = self._model_desired_state(config)
+         if desired is None:
+-            return
++            return None
+         if self.api_client is None:
+             raise RuntimeError("QwenPaw API client is required for model configuration")
+         self.api_client.configure_active_model(
+@@ -1658,6 +1671,19 @@ class RuntimeUpdater:
+             supports_multimodal=desired.get("supports_multimodal"),
+             probe_source=desired.get("probe_source"),
+         )
++        logger.info(
++            "model registered early component=update worker=%s provider=%s model=%s base_url=%s",
++            self.config.worker_name,
++            desired["provider_id"],
++            desired["model"],
++            desired["base_url"],
++        )
++        return desired
++
++    def _apply_model(self, config: MemberRuntimeConfig) -> None:
++        desired = self.early_register_model(config)
++        if desired is None:
++            return
+ 
+     def _model_desired_state(self, config: MemberRuntimeConfig) -> Optional[Dict[str, Any]]:
+         model = config.model
+@@ -2293,6 +2319,142 @@ class RuntimeUpdater:
          if self.api_client is None:
              raise RuntimeError("QwenPaw API client is required for Matrix ACL configuration")
          self.api_client.reconcile_acl("agentteams_matrix", whitelist, blacklist)
@@ -146,7 +192,7 @@ index 2b24758..122da15 100644
      def _dedupe(self, values: List[str]) -> List[str]:
          result = []
 diff --git a/qwenpaw/src/qwenpaw_worker/worker.py b/qwenpaw/src/qwenpaw_worker/worker.py
-index 11474b0..e24e99c 100644
+index 11474b0..9775e57 100644
 --- a/qwenpaw/src/qwenpaw_worker/worker.py
 +++ b/qwenpaw/src/qwenpaw_worker/worker.py
 @@ -192,6 +192,36 @@ class Worker:
@@ -186,3 +232,25 @@ index 11474b0..e24e99c 100644
          stage_started = self._log_worker_stage_begin("start_push_loop", interval_seconds=5)
          self._push_task = asyncio.create_task(
              push_loop(self.sync, check_interval=5),
+@@ -848,6 +878,21 @@ class Worker:
+         )
+         try:
+             await self._wait_for_qwenpaw_api()
++            # Early model registration: see early_register_model -- without
++            # it the first message after a cold start builds an agent whose
++            # LLM client points at the default local endpoint.
++            try:
++                await asyncio.to_thread(
++                    self.updater.early_register_model,
++                    self._initial_runtime_config or self.updater.load(),
++                )
++            except Exception as exc:
++                logger.warning(
++                    "early model registration failed (non-fatal; apply_desired_state "
++                    "will retry) component=worker worker=%s error_type=%s",
++                    self.config.worker_name,
++                    type(exc).__name__,
++                )
+             await asyncio.to_thread(
+                 self.api_client.configure_agent,
+                 DEFAULT_AGENT_ID,
