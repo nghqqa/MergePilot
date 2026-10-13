@@ -105,7 +105,9 @@ async function fetchRemoteHead(env, { provider, owner, repo, prNumber, installat
  */
 export async function publishRun(pool, { env = process.env, runId, tenantId, userId,
   detailBaseUrl = null }) {
-  const run = (await pool.query(
+  // pool 参数既可以是 Pool 实例也可以是注入的查询函数（muPoolQ）——统一成查询函数。
+  const q = (typeof pool === 'function') ? pool : (text, params) => pool.query(text, params);
+  const run = (await q(
     `SELECT r.run_id, r.status, r.head_sha, r.llm_mode, r.pr_id, r.repo_id,
             pr.provider_pr_number, rep.provider, rep.owner, rep.name AS repo_name,
             (SELECT rb.installation_id FROM mu.repository_binding rb
@@ -138,14 +140,14 @@ export async function publishRun(pool, { env = process.env, runId, tenantId, use
   }
 
   // 3) 产物装配（run 的 findings/outputs/patch）
-  const findings = (await pool.query(
+  const findings = (await q(
     `SELECT rule_id, severity, path, line_start, line_end, title, summary_masked, remediation
        FROM mu.agent_finding WHERE run_id=$1 ORDER BY severity, path`, [runId])).rows;
-  const outRows = (await pool.query(
+  const outRows = (await q(
     `SELECT agent_role, content FROM mu.review_output WHERE run_id=$1`, [runId])).rows;
   const outputs = {};
   for (const r of outRows) outputs[r.agent_role] = r.content;
-  const patchRow = (await pool.query(
+  const patchRow = (await q(
     `SELECT head_sha, files, applicability, rationale FROM mu.fix_patch
       WHERE run_id=$1 ORDER BY created_at DESC LIMIT 1`, [runId])).rows[0] ?? null;
   const verification = [
@@ -208,7 +210,7 @@ export async function publishRun(pool, { env = process.env, runId, tenantId, use
     // 远端超时/结果不明 → unconfirmed（先查验再行动，不盲目重发）
     const unconfirmed = /timeout|abort|ECONN|network|socket/i.test(msg);
     const status = unconfirmed ? 'unconfirmed' : 'failed';
-    await pool.query(
+    await q(
       `INSERT INTO mu.pr_publish (run_id, tenant_id, repo_id, pr_id, provider,
          provider_pr_number, head_sha, comment_body, status, published_by, summary)
        VALUES ($1,$2,$3,$4,$5,$6,$7,'(见记录)', $8, $9, $10)`,
@@ -221,18 +223,18 @@ export async function publishRun(pool, { env = process.env, runId, tenantId, use
 async function finishPublished(pool, { runId, tenantId, userId, provider, prNumber, headSha,
   body, remoteCommentId, remoteUrl }) {
   // 幂等记录：同 run 已有记录则更新（不重复建行）
-  const ex = (await pool.query(
+  const ex = (await q(
     `SELECT publish_id FROM mu.pr_publish WHERE run_id=$1 AND status='published' LIMIT 1`,
     [runId])).rows[0];
   if (ex) {
-    await pool.query(
+    await q(
       `UPDATE mu.pr_publish SET remote_comment_id=$2, remote_url=$3,
          comment_body=$4, updated_at=now() WHERE publish_id=$1`,
       [ex.publish_id, remoteCommentId, remoteUrl, body]);
     return { ok: true, status: 'published', publishId: ex.publish_id,
       remoteCommentId, remoteUrl, updated: true };
   }
-  const r = await pool.query(
+  const r = await q(
     `INSERT INTO mu.pr_publish (run_id, tenant_id, repo_id, pr_id, provider,
        provider_pr_number, head_sha, comment_body, remote_comment_id, remote_url,
        status, published_by, summary)
