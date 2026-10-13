@@ -2817,6 +2817,196 @@ const ragMatch = p.match(new RegExp("^/api/mu/repositories/([^/]+)/rag-search$")
         decisions: decisions.rows, dead_letters: dlq.rows });
     }
 
+    // ── 审查产物交付（2026-10-13 波）：产物汇总/下载/反馈/PR 发布 ──
+    // 权限矩阵：读产物=read_pull_request（与 runs/:id 同门）；下载（含 diff 正文）=
+    //   read_code_content（代码内容出站边界）；反馈=request_review；发布=decide_review
+    //   （对外写入与裁定同级——只读角色不可发布）。
+    const runArtMatch = p.match(/^\/api\/mu\/runs\/([0-9a-f-]{36})\/artifacts$/);
+    if (runArtMatch && req.method === 'GET') {
+      const g = await guard('read_pull_request');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const runId = runArtMatch[1];
+      const run = (await muPoolQ(
+        `SELECT run_id, status, head_sha, llm_mode, created_at FROM mu.review_run
+          WHERE run_id=$1 AND tenant_id=$2`, [runId, mu.tenantId])).rows[0] ?? null;
+      if (!run) return sendJson(res, 404, { error: { reason: 'not_found' } });
+      const findings = (await muPoolQ(
+        `SELECT finding_id, rule_id, severity, path, line_start, line_end, title,
+                summary_masked, remediation, evidence_ref FROM mu.agent_finding
+          WHERE run_id=$1 ORDER BY severity, path`, [runId])).rows;
+      const outputs = {};
+      for (const r of (await muPoolQ(
+        `SELECT agent_role, content, created_at FROM mu.review_output
+          WHERE run_id=$1 ORDER BY created_at`, [runId])).rows) outputs[r.agent_role] = r.content;
+      const patch = (await muPoolQ(
+        `SELECT patch_id, head_sha, files, applicability, rationale, created_at
+           FROM mu.fix_patch WHERE run_id=$1 ORDER BY created_at DESC LIMIT 1`, [runId])).rows[0] ?? null;
+      const feedback = (await muPoolQ(
+        `SELECT f.action, f.note, f.created_at, u.login
+           FROM mu.finding_feedback f JOIN mu.app_user u ON u.user_id=f.user_id
+          WHERE f.run_id=$1 ORDER BY f.created_at`, [runId])).rows;
+      const publish = (await muPoolQ(
+        `SELECT status, provider, provider_pr_number, head_sha, remote_url, summary,
+                to_char(updated_at,'YYYY-MM-DD HH24:MI') AS updated_at
+           FROM mu.pr_publish WHERE run_id=$1 ORDER BY updated_at DESC LIMIT 1`, [runId])).rows[0] ?? null;
+      const parseFailures = [];
+      for (const [role, o] of Object.entries(outputs)) {
+        if (o == null || typeof o !== 'object') parseFailures.push(role);
+      }
+      return sendJson(res, 200, { run, findings, outputs, patch, feedback, publish,
+        parse_state: { outputs_ok: Object.keys(outputs).length, parse_failures: parseFailures },
+        verification: [
+          { kind: 'static_rules', label: '静态规则检查（首轮 deterministic）', executed: true },
+          { kind: 'model_verifier', label: '模型独立评估（verifier）', executed: outputs.verifier != null,
+            note: '模型判断，非实际测试' },
+          { kind: 'real_tests', label: '实际测试执行（沙箱 testCmd）', executed: false,
+            note: 'DRY_RUN 建议链不含沙箱测试——登记为未验证项' },
+        ] });
+    }
+
+    // 下载：Markdown / JSON / patch.diff（read_code_content——代码内容出站门）
+    const dlMatch = p.match(/^\/api\/mu\/runs\/([0-9a-f-]{36})\/(report\.md|report\.json|patch\.diff)$/);
+    if (dlMatch && req.method === 'GET') {
+      const g = await guard('read_code_content');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const runId = dlMatch[1];
+      const run = (await muPoolQ(
+        `SELECT run_id, status, head_sha, llm_mode, created_at, repo_id FROM mu.review_run
+          WHERE run_id=$1 AND tenant_id=$2`, [runId, mu.tenantId])).rows[0] ?? null;
+      if (!run) return sendJson(res, 404, { error: { reason: 'not_found' } });
+      const repoRow = (await muPoolQ(
+        `SELECT owner, name FROM mu.repository WHERE repo_id=$1`, [run.repo_id])).rows[0] ?? {};
+      const findings = (await muPoolQ(
+        `SELECT rule_id, severity, path, line_start, line_end, title, summary_masked,
+                remediation FROM mu.agent_finding WHERE run_id=$1 ORDER BY severity, path`, [runId])).rows;
+      const outputs = {};
+      for (const r of (await muPoolQ(
+        `SELECT agent_role, content FROM mu.review_output WHERE run_id=$1`, [runId])).rows) outputs[r.agent_role] = r.content;
+      const patchRow = (await muPoolQ(
+        `SELECT head_sha, files, diff_text, applicability, rationale, created_at
+           FROM mu.fix_patch WHERE run_id=$1 ORDER BY created_at DESC LIMIT 1`, [runId])).rows[0] ?? null;
+      const { buildMarkdownReport } = await import('./artifacts.mjs');
+      const base = { run, findings, outputs,
+        patch: patchRow ?? null,
+        verification: [
+          '静态规则检查（首轮 deterministic）：已执行',
+          '模型独立评估（verifier）：已执行——为模型判断，非实际测试',
+          '实际测试执行：未执行（DRY_RUN 建议链不含沙箱测试）',
+        ], repoLabel: `${repoRow.owner ?? '?'}/${repoRow.name ?? '?'}`, headSha: run.head_sha };
+      if (dlMatch[2] === 'report.md') {
+        const body = buildMarkdownReport(base);
+        res.writeHead(200, { 'content-type': 'text/markdown; charset=utf-8',
+          'content-disposition': `attachment; filename="mergepilot-report-${runId.slice(0, 8)}.md"` });
+        return res.end(body);
+      }
+      if (dlMatch[2] === 'report.json') {
+        const body = JSON.stringify({ run: base.run, findings: base.findings,
+          outputs: base.outputs, patch: base.patch, verification: base.verification,
+          repo_label: base.repoLabel }, null, 1);
+        res.writeHead(200, { 'content-type': 'application/json; charset=utf-8',
+          'content-disposition': `attachment; filename="mergepilot-report-${runId.slice(0, 8)}.json"` });
+        return res.end(body);
+      }
+      // patch.diff：无补丁=404（带真实原因），不伪造空补丁
+      if (!patchRow) return sendJson(res, 404, { error: { reason: 'no_patch',
+        message: '本轮未产出结构化补丁（fixer 仅文字建议或无 patch 字段）' } });
+      res.writeHead(200, { 'content-type': 'text/x-diff; charset=utf-8',
+        'content-disposition': `attachment; filename="mergepilot-suggest-${runId.slice(0, 8)}.patch"` });
+      return res.end('# MergePilot 建议补丁（尚未应用）—— head ' + patchRow.head_sha
+        + '\n# 可应用性: ' + JSON.stringify(patchRow.applicability ?? {}) + '\n' + patchRow.diff_text);
+    }
+
+    // finding 反馈（确认/误报/暂不处理；保留原始审查结论——反馈不回写 finding 行）
+    const fbMatch = p.match(/^\/api\/mu\/findings\/([0-9a-f-]{36})\/feedback$/);
+    if (fbMatch && req.method === 'POST') {
+      if (!csrfOk()) return sendJson(res, 403, { error: { reason: 'csrf_required' } });
+      const g = await guard('request_review');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const body = await readJsonBody(req).catch(() => null);
+      const action = String(body?.action ?? '');
+      if (!['confirm', 'false_positive', 'wont_fix'].includes(action)) {
+        return sendJson(res, 400, { error: { reason: 'action_invalid' } });
+      }
+      const note = String(body?.note ?? '').slice(0, 500) || null;
+      const findingId = fbMatch[1];
+      const fr = (await muPoolQ(
+        `SELECT f.run_id, f.tenant_id FROM mu.agent_finding f
+          WHERE f.finding_id=$1 AND f.tenant_id=$2`, [findingId, mu.tenantId])).rows[0] ?? null;
+      if (!fr) return sendJson(res, 404, { error: { reason: 'not_found' } });
+      const ins = await muPoolQ(
+        `INSERT INTO mu.finding_feedback (finding_id, run_id, tenant_id, user_id, action, note)
+         VALUES ($1,$2,$3,$4,$5,$6) RETURNING feedback_id, created_at`,
+        [findingId, fr.run_id, fr.tenant_id, mu.userId, action, note]);
+      await store.audit('MU_FINDING_FEEDBACK', { tenantId: mu.tenantId,
+        actorUserId: mu.userId,
+        detail: { finding_id: findingId, run_id: fr.run_id, action, note_len: note ? note.length : 0 } });
+      return sendJson(res, 200, { ok: true, feedback_id: ins.rows[0].feedback_id });
+    }
+
+    // PR 发布：GET preview（构造不外发）/ POST confirm（真实发布，head 复核+幂等在模块内）
+    const pubMatch = p.match(/^\/api\/mu\/runs\/([0-9a-f-]{36})\/publish$/);
+    if (pubMatch) {
+      const g = await guard('decide_review');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const runId = pubMatch[1];
+      const run = (await muPoolQ(
+        `SELECT r.run_id, r.status, r.head_sha, r.tenant_id, r.repo_id, r.pr_id,
+                pr.provider_pr_number, rep.provider, rep.owner, rep.name AS repo_name
+           FROM mu.review_run r JOIN mu.pull_request pr ON pr.pr_id=r.pr_id
+           JOIN mu.repository rep ON rep.repo_id=r.repo_id
+          WHERE r.run_id=$1 AND r.tenant_id=$2`, [runId, mu.tenantId])).rows[0] ?? null;
+      if (!run) return sendJson(res, 404, { error: { reason: 'not_found' } });
+      const art = await import('./artifacts.mjs');
+      if (req.method === 'GET') {
+        const findings = (await muPoolQ(
+          `SELECT rule_id, severity, path, line_start, title, summary_masked FROM mu.agent_finding
+            WHERE run_id=$1 ORDER BY severity, path`, [runId])).rows;
+        const outputs = {};
+        for (const r of (await muPoolQ(
+          `SELECT agent_role, content FROM mu.review_output WHERE run_id=$1`, [runId])).rows) outputs[r.agent_role] = r.content;
+        const patchRow = (await muPoolQ(
+          `SELECT head_sha, files, applicability, rationale FROM mu.fix_patch
+            WHERE run_id=$1 ORDER BY created_at DESC LIMIT 1`, [runId])).rows[0] ?? null;
+        const body = art.buildPublishComment({ run, findings,
+          patch: patchRow ? { files: patchRow.files, applicability: patchRow.applicability,
+            head_sha: patchRow.head_sha } : null,
+          verification: ['静态规则检查：已执行', '模型独立评估：已执行（非实际测试）',
+            '实际测试执行：未执行（DRY_RUN）'],
+          repoLabel: run.owner + '/' + run.repo_name, prNumber: run.provider_pr_number,
+          headSha: run.head_sha, detailUrl: null, reviewedAt: null });
+        const existing = (await muPoolQ(
+          `SELECT status, remote_comment_id, remote_url, updated_at FROM mu.pr_publish
+            WHERE run_id=$1 AND status='published' LIMIT 1`, [runId])).rows[0] ?? null;
+        return sendJson(res, 200, { action: existing ? 'update' : 'create',
+          target: { provider: run.provider, repo: run.owner + '/' + run.repo_name,
+            pr_number: run.provider_pr_number, head: run.head_sha },
+          comment: body, marker: art.publishMarker(runId, run.head_sha), existing });
+      }
+      if (req.method === 'POST') {
+        if (!csrfOk()) return sendJson(res, 403, { error: { reason: 'csrf_required' } });
+        const body = await readJsonBody(req).catch(() => ({}));
+        if (body?.confirm !== true) {
+          return sendJson(res, 400, { error: { reason: 'confirm_required' } });
+        }
+        const pub = await import('./publish.mjs');
+        const detailBase = String(env.MU_CONSOLE_PUBLIC_URL ?? '').trim() || null;
+        const r = await pub.publishRun(muPoolQ, { env, runId, tenantId: mu.tenantId,
+          userId: mu.userId, detailBaseUrl: detailBase });
+        if (!r.ok) {
+          const statusMap = { stale_head: 409, not_verifiable: 409, provider_unsupported: 400,
+            remote_unreachable: 502, publish_failed: 502 };
+          return sendJson(res, statusMap[r.stage] ?? 500, { error: { reason: r.reason ?? r.stage,
+            stage: r.stage, status: r.status ?? null, detail: r.detail ?? null } });
+        }
+        await store.audit('MU_REVIEW_PUBLISHED', { tenantId: mu.tenantId, actorUserId: mu.userId,
+          detail: { run_id: runId, provider: run.provider, pr_number: run.provider_pr_number,
+            head_prefix: String(run.head_sha).slice(0, 12),
+            remote_comment_id: r.remoteCommentId, updated: Boolean(r.updated) } });
+        return sendJson(res, 200, { ok: true, status: r.status, publish_id: r.publishId,
+          remote_comment_id: r.remoteCommentId, remote_url: r.remoteUrl, updated: r.updated });
+      }
+    }
+
     // ── 审计（read_audit：metadata only——Auditor/PlatformAdmin） ──
     if (p === '/api/mu/audit' && req.method === 'GET') {
       const g = await guard('read_audit');

@@ -18,7 +18,7 @@
 
 export const MT_LIMITS = Object.freeze({
   replyPollMs: 5_000, defaultRoleTimeoutMs: 240_000, markerGuardMs: 2_000,
-  maxBodyChars: 4_000,
+  maxBodyChars: 20_000, // 审查产物波：fixer/reviewer 的 DATA 需携带 PR diff（上限 16KB+信封）
 });
 
 /** 部署级 Matrix 配置解析（fail-closed：缺任一 → rejected）。 */
@@ -93,7 +93,7 @@ export async function matrixLogin(cfg, fetchImpl0 = fetch) {
 const OUTPUT_HINT = {
   reviewer: '{"findings":[{"severity":"P0","path":"...","summary":"..."}]}',
   leader: '{"recommendation":"fix_required","confidence":0.8}',
-  fixer: '{"suggestion":"...","patch_hint":"..."}',
+  fixer: '{"suggestion":"...","patch_hint":"...","patch":"unified diff (--- a/f / +++ b/f @@) when the fix is code-level"}',
   verifier: '{"verdict":"PASS|FAIL|BLOCKED","note":"short"}',
 };
 export function buildTaskEnvelope({ workerMatrixId, taskId, correlationId, submissionId, role, brief }) {
