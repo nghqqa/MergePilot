@@ -48,8 +48,10 @@ async function giteeCreateComment(env, { owner, repo, prNumber, body }) {
 }
 
 async function giteeUpdateComment(env, { owner, repo, commentId, body }) {
-  const r = await giteeCommentApi(env, { method: 'PUT',
-    path: `/repos/${owner}/${repo}/pulls/comments/${encodeURIComponent(commentId)}`, body: { body } });
+  // Gitee 更新评论实测：PATCH /repos/{o}/{r}/issues/comments/{id}（评论 id 全局共享，
+  // PR 评论同样可用；PUT pulls/comments/{id} 405——2026-10-13 生产实测）。
+  const r = await giteeCommentApi(env, { method: 'PATCH',
+    path: `/repos/${owner}/${repo}/issues/comments/${encodeURIComponent(commentId)}`, body: { body } });
   if (!r.ok) throw Object.assign(new Error(`gitee_comment_update_http_${r.status}`), { status: r.status });
   return { remoteCommentId: String(r.json?.id ?? commentId), remoteUrl: r.json?.html_url ?? null };
 }
