@@ -63,7 +63,7 @@ fi
 WORKERS="leader reviewer fixer verifier"
 EV="${MIGRATE_EV:-./migration-evidence-$MODE}"; mkdir -p "$EV"
 CKPT="$EV/checkpoint.json"; [ -f "$CKPT" ] || echo '{}' > "$CKPT"
-STEPS="${STEPS_OVERRIDE:-precheck,backup,matrix-sync,higress-converge,cr-migrate,channel-fix,llm-seed,verify}"
+STEPS="${STEPS_OVERRIDE:-precheck,backup,matrix-sync,higress-converge,cr-migrate,coldstart-env,channel-fix,llm-seed,verify}"
 
 step() { echo "==> [$(date -u '+%F %T')] $*"; }
 die() { local s="$1"; shift; echo "FATAL[$s]: $*" >&2; printf '{"step":"%s","error":"%s","ts":"%s"}\n' "$s" "$*" "$(date -u +%FT%TZ)" >> "$EV/failures.jsonl"; exit 1; }
@@ -237,6 +237,19 @@ export AGENTTEAMS_AUTH_TOKEN=\$(cat /var/run/agentteams/cli-token 2>/dev/null | 
   done_step cr-migrate
 }
 
+s_coldstart_env() {
+  step "coldstart-env（Worker CR spec.env：AGENTTEAMS_ADMIN_USER + QWENPAW_LLM_MAX_RETRIES/BACKOFF_BASE；幂等 merge-patch）"
+  # 冷启动收口（2026-10-13）：worker 容器缺 AGENTTEAMS_ADMIN_USER → ACL 种子退回 "@admin"（错 ID）
+  # 且每次启动 reconcile 移除人工批准条目 → 唤醒后首条 admin 消息被拒。CR env 是根治位；
+  # QWENPAW_LLM_* 提升冷启动首条消息的 LLM 网关瞬时不可达容忍（指数退避 ~60-70s 覆盖）。
+  # 注意：spec.env 变更不触发存量容器重建（specHash 不含 env）——容器在唤醒或删除陈旧容器后
+  # 按新 CR 创建。 apiserver merge-patch 用 pki/token.csv static token（system:masters）。
+  docker exec "$CTRL" sh -c 'TOK=$(cut -d, -f1 /agentteams-beta-data/pki/token.csv 2>/dev/null || cut -d, -f1 /data/agentteams-beta-data/pki/token.csv); for w in mergepilot-leader mergepilot-reviewer mergepilot-fixer mergepilot-verifier; do R=$(curl -s -m 10 --cacert /agentteams-beta-data/pki/ca.crt -X PATCH -H "Authorization: Bearer $TOK" -H "Content-Type: application/merge-patch+json" --data "{"spec":{"env":{"AGENTTEAMS_ADMIN_USER":"${AGENTTEAMS_ADMIN_USER}","QWENPAW_LLM_MAX_RETRIES":"7","QWENPAW_LLM_BACKOFF_BASE":"2"}}}" https://127.0.0.1:6443/apis/agentteams.io/v1beta1/namespaces/default/workers/$w); echo "$w $(echo $R | grep -o ""generation":[0-9]*" | head -1)"; done' > "$EV/coldstart-env.log" || die coldstart-env "CR env patch 失败"
+  [ "$(grep -c 'generation' "$EV/coldstart-env.log" || true)" = "4" ] || die coldstart-env "4 worker CR env 未全部落位（现场 $EV/coldstart-env.log）"
+  echo "coldstart-env 完成（CR 已 patch；容器随下次唤醒/重建生效）"
+  done_step coldstart-env
+}
+
 s_channel_fix() {
   step "channel-fix（K3：config.json channels.matrix.enabled→False；FileSync 持久化）"
   for w in $WORKERS; do
@@ -357,6 +370,7 @@ for s in ${STEPS//,/ }; do
     matrix-sync) s_matrix_sync;;
     higress-converge) s_higress_converge;;
     cr-migrate) s_cr_migrate;;
+    coldstart-env) s_coldstart_env;;
     channel-fix) s_channel_fix;;
     llm-seed) s_llm_seed;;
     verify) s_verify;;

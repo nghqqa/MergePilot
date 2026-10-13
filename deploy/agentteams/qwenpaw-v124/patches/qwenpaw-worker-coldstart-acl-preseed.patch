@@ -1,0 +1,169 @@
+diff --git a/qwenpaw/src/qwenpaw_worker/update.py b/qwenpaw/src/qwenpaw_worker/update.py
+index 2b24758..23eecde 100644
+--- a/qwenpaw/src/qwenpaw_worker/update.py
++++ b/qwenpaw/src/qwenpaw_worker/update.py
+@@ -2293,6 +2293,123 @@ class RuntimeUpdater:
+         if self.api_client is None:
+             raise RuntimeError("QwenPaw API client is required for Matrix ACL configuration")
+         self.api_client.reconcile_acl("agentteams_matrix", whitelist, blacklist)
++    def preseed_matrix_acl_file(self, config: MemberRuntimeConfig) -> Optional[Path]:
++        """Seed the workspace ACL file with the desired Matrix allow-list
++        before the qwenpaw app launches.
++
++        The app's channel sync starts consuming room events as soon as the
++        app boots, while the authoritative ACL reconcile runs later in
++        apply_desired_state. An admin mention arriving inside that window is
++        otherwise denied ("access control blocked") and lost -- the worker is
++        woken precisely to handle that message. Writing the computed
++        allow-list into the workspace access_control.json before app start
++        closes the gap; the later reconcile stays authoritative and becomes
++        a no-op for these entries. Pending approval entries are preserved.
++        """
++        group_allow, dm_allow, group_deny, dm_deny = self._matrix_policy_ids(config)
++        self_allow = _string(config.member.get("matrixUserId"))
++        whitelist = self._dedupe(([self_allow] if self_allow else []) + group_allow + dm_allow)
++        blacklist = self._dedupe(group_deny + dm_deny)
++        deny_set = set(blacklist)
++        whitelist = [value for value in whitelist if value not in deny_set]
++        if not whitelist and not blacklist:
++            return None
++        path = self.config.default_workspace_dir / "access_control.json"
++        payload: Dict[str, Any] = {}
++        try:
++            if path.exists():
++                loaded = json.loads(path.read_text(encoding="utf-8"))
++                if isinstance(loaded, dict):
++                    payload = loaded
++        except (OSError, ValueError) as exc:
++            logger.warning(
++                "matrix ACL preseed: unreadable existing file replaced component=update "
++                "worker=%s path=%s error_type=%s",
++                self.config.worker_name,
++                path,
++                type(exc).__name__,
++            )
++        channel = payload.get("agentteams_matrix")
++        if not isinstance(channel, dict):
++            channel = {}
++        entries = [{"remark": "", "username": ""} for _ in whitelist]
++        channel["whitelist"] = dict(zip(whitelist, entries))
++        channel["blacklist"] = dict.fromkeys(blacklist, {"remark": "", "username": ""})
++        if not isinstance(channel.get("pending"), list):
++            channel["pending"] = []
++        payload["agentteams_matrix"] = channel
++        path.parent.mkdir(parents=True, exist_ok=True)
++        tmp = path.with_suffix(".json.preseed-tmp")
++        tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
++        os.replace(tmp, path)
++        logger.info(
++            "matrix ACL preseeded component=update worker=%s whitelist=%d blacklist=%d path=%s",
++            self.config.worker_name,
++            len(whitelist),
++            len(blacklist),
++            path,
++        )
++        return path
++
++    def apply_llm_retry_env(self) -> Optional[Path]:
++        """Persist env-declared LLM retry settings into the qwenpaw config
++        before the app launches.
++
++        The app's agent snapshot (config.json, agents.running.*) overrides
++        the QWENPAW_LLM_* env defaults once the file exists, and the snapshot
++        survives restarts via storage sync -- so container env alone cannot
++        raise the retry budget on an existing workspace. The deployment-level
++        env declaration wins over the stale snapshot; values are written
++        only when they differ. If the config file does not exist yet, the
++        app boots with env defaults directly and nothing is written.
++        """
++        max_retries = os.getenv("QWENPAW_LLM_MAX_RETRIES", "").strip()
++        backoff_base = os.getenv("QWENPAW_LLM_BACKOFF_BASE", "").strip()
++        if not max_retries and not backoff_base:
++            return None
++        path = self.config.qwenpaw_working_dir / "config.json"
++        try:
++            data = json.loads(path.read_text(encoding="utf-8"))
++        except (OSError, ValueError):
++            return None
++        if not isinstance(data, dict):
++            return None
++        agents = data.get("agents")
++        if not isinstance(agents, dict):
++            agents = {}
++            data["agents"] = agents
++        running = agents.get("running")
++        if not isinstance(running, dict):
++            running = {}
++            agents["running"] = running
++        changed: List[str] = []
++        if max_retries:
++            try:
++                value = max(1, int(max_retries))
++            except ValueError:
++                value = None
++            if value is not None and running.get("llm_max_retries") != value:
++                running["llm_max_retries"] = value
++                changed.append("llm_max_retries=%d" % value)
++        if backoff_base:
++            try:
++                value = max(0.1, float(backoff_base))
++            except ValueError:
++                value = None
++            if value is not None and running.get("llm_backoff_base") != value:
++                running["llm_backoff_base"] = value
++                changed.append("llm_backoff_base=%s" % value)
++        if not changed:
++            return path
++        tmp = path.with_suffix(".json.retry-tmp")
++        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
++        os.replace(tmp, path)
++        logger.info(
++            "llm retry env applied to config component=update worker=%s %s",
++            self.config.worker_name,
++            " ".join(changed),
++        )
++        return path
+ 
+     def _dedupe(self, values: List[str]) -> List[str]:
+         result = []
+diff --git a/qwenpaw/src/qwenpaw_worker/worker.py b/qwenpaw/src/qwenpaw_worker/worker.py
+index 11474b0..e24e99c 100644
+--- a/qwenpaw/src/qwenpaw_worker/worker.py
++++ b/qwenpaw/src/qwenpaw_worker/worker.py
+@@ -192,6 +192,36 @@ class Worker:
+             return False
+         self._log_worker_stage_complete("prepare_default_plugins", stage_started)
+ 
++        # Pre-seed the workspace ACL before the qwenpaw app launches: the
++        # app's channel sync consumes room events before apply_desired_state
++        # reconciles the ACL, so the first admin mention after a cold start
++        # would otherwise be denied and lost.
++        try:
++            stage_started = self._log_worker_stage_begin("preseed_matrix_acl")
++            self.updater.preseed_matrix_acl_file(runtime_config)
++        except Exception as exc:
++            self._log_worker_stage_failed("preseed_matrix_acl", stage_started, exc)
++            logger.warning(
++                "matrix ACL preseed failed (non-fatal; apply_desired_state reconcile "
++                "remains authoritative) component=worker worker=%s error_type=%s",
++                self.config.worker_name,
++                type(exc).__name__,
++            )
++        else:
++            self._log_worker_stage_complete("preseed_matrix_acl", stage_started)
++
++        # Env-declared LLM retry budget must beat the persisted agent
++        # snapshot (config.json), otherwise cold-start gateway blips exhaust
++        # the old default retries and the first message is lost.
++        try:
++            self.updater.apply_llm_retry_env()
++        except Exception as exc:
++            logger.warning(
++                "llm retry env apply failed (non-fatal) component=worker worker=%s error_type=%s",
++                self.config.worker_name,
++                type(exc).__name__,
++            )
++
+         stage_started = self._log_worker_stage_begin("start_push_loop", interval_seconds=5)
+         self._push_task = asyncio.create_task(
+             push_loop(self.sync, check_interval=5),

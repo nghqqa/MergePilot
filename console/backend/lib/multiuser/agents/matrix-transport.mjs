@@ -132,6 +132,11 @@ export function projectToRoleSchema(role, json) {
 /**
  * 派发一个任务（幂等：txnId=sha-like 稳定串由 submissionId 派生——同 submissionId
  * 重发得到同一 event id，Matrix PUT txn 语义天然幂等）。返回 {ok, eventId, ts}。
+ *
+ * m.mentions（2026-10-13）：事件携带结构化提及（m.mentions.user_ids=[workerMatrixId]）。
+ * AgentTeams controller 的唤醒路径（AppserviceHandler.handleMention）只识别结构化
+ * m.mentions 字段——Sleeping worker 依赖它被唤醒后才能消费本条委派；正文里的
+ * "@user" 纯文本不足以触发。提及与幂等无交互：同 txnId 重发仍收敛为同一 event。
  */
 export async function sendTaskDelegation(cfg, { room, workerMatrixId, taskId, correlationId,
   submissionId, role, brief, fetchImpl: fetchImpl0 = fetch, tsNow = Date.now }) {
@@ -143,13 +148,15 @@ export async function sendTaskDelegation(cfg, { room, workerMatrixId, taskId, co
     + '-' + String(taskId).replace(/[^A-Za-z0-9_-]/g, '');
   try {
     const r = await fetchImpl(`${cfg.baseUrl}/_matrix/client/v3/rooms/${encodeURIComponent(room)}/send/m.room.message/${txnId}?access_token=${lg.token}`,
-      { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ msgtype: 'm.text', body }) });
+      { method: 'PUT', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ msgtype: 'm.text', body, 'm.mentions': { user_ids: [workerMatrixId] } }) });
     if (r.status === 401) { // token 过期 → 重登一次
       cachedLogin = null;
       const lg2 = await matrixLogin(cfg, fetchImpl0); // 原始实现——内部自包 LOGIN 超时
       if (!lg2.ok) return lg2;
       const r2 = await fetchImpl(`${cfg.baseUrl}/_matrix/client/v3/rooms/${encodeURIComponent(room)}/send/m.room.message/${txnId}?access_token=${lg2.token}`,
-        { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ msgtype: 'm.text', body }) });
+        { method: 'PUT', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ msgtype: 'm.text', body, 'm.mentions': { user_ids: [workerMatrixId] } }) });
       if (!r2.ok) return { ok: false, reason: `MT_SEND_HTTP_${r2.status}` };
       const j2 = await r2.json().catch(() => null);
       return { ok: true, eventId: j2?.event_id ?? null, ts: tsNow() };

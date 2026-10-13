@@ -85,3 +85,71 @@
 2. 维护窗口批准与时间窗选定——**等待批准**（截至本方案无既有切换授权：历史 NO-GO 已由
    本波闭环解除，但生产执行从未被授权；以本方案获批为唯一开关）
 3. 窗口内活动任务收敛的最终核对（实时查询）
+
+
+## 7. 冷启动收口与部署持久化（2026-10-13 波新增——生产已实施）
+
+### 7.1 两项根治（均已生产实证）
+
+**① Sleeping worker 自动唤醒（Matrix AppService）**
+- 唤醒机制：worker 房间消息带 `m.mentions.user_ids` → tuwunel 投递 appservice 事务 →
+  控制器 `AppserviceHandler.handleMention` 将 worker `spec.state` patch 回 Running（容器启动）。
+- 纯正文 `@user` 文本【不】触发——发送方必须携带结构化 `m.mentions` 字段。
+- ctrl env 增量（update-ctrl-env.sh 固化，见 7.3）：
+  `AGENTTEAMS_MATRIX_APPSERVICE_ENABLED=true` + `…_ID/SENDER_LOCALPART/AS_TOKEN/HS_TOKEN/
+  CONTROLLER_URL/USER_NAMESPACE_REGEX(@mergepilot-.*)`（7 项）。
+  AS/HS token 首次生成后持久化 `<数据卷>/appservice-tokens.json`（600），重复重建复用。
+- 启动验收行：`Matrix AppService mode enabled` + `Matrix AppService registered and verified`；
+  唤醒验收行：`appservice transaction processed … mentionEvents=N`。
+
+**② worker ACL 白名单跨重启持久（spec.env 注入）**
+- 根因链：worker 容器无 `AGENTTEAMS_ADMIN_USER` → ACL 种子回退 `"admin"` 生成错误 MXC
+  `@admin:<domain>`（真实 admin 带资源前缀）→ 每次启动 `reconcile_acl` 按期望列表【移除】
+  人工批准条目 → "审批不持久"。runtime 读 workspace 级 `access_control.json`（启动重播种）。
+- 修复：Worker CR `spec.env.AGENTTEAMS_ADMIN_USER=<ctrl 同值>`（apiserver merge-patch，
+  pki/token.csv static token）；Manager 原生注入无需 patch。
+- 配套镜像补丁 `patches/qwenpaw-worker-coldstart-acl-preseed.patch`：app 启动【前】把
+  期望 allowlist 预种进 workspace ACL 文件（channel sync 先于 apply_desired_state 消费事件
+  ——不预种则唤醒后首条消息在窗口内被拒并丢失）。pending 审批保留；随后 reconcile 仍为权威。
+- LLM 重试容忍：CR `spec.env.QWENPAW_LLM_MAX_RETRIES=7`、`QWENPAW_LLM_BACKOFF_BASE=2`
+  （指数退避 cap 10s → 冷启动网关重载窗口 ~60s 覆盖）。
+  **必须配合镜像补丁 `apply_llm_retry_env`**：app 的持久化快照（`.qwenpaw/config.json`
+  `agents.running.llm_max_retries=3`）会覆盖 env 默认值且跨重启同步（实测 2026-10-13：
+  env 已注入但首次消息仍 4 次尝试耗尽）——补丁在 app 启动前把 env 声明固化进快照
+  （env 未设置则不触碰；env 为部署层声明，优先于陈旧快照）。
+
+### 7.2 specHash 限界与可重复重建路径
+- Worker CR `spec.env` 变更【不进入】specHash → 存量容器不会自动重建；env 仅在容器创建时生效。
+  可重复路径（按序）：
+  1. `migrate-agentteams.sh --steps coldstart-env`（幂等 merge-patch 四 worker CR）；
+  2. 让容器按新 CR 重建：删除陈旧容器（`docker rm <worker 容器>`——控制器在唤醒时按 CR 现值
+     重建；CR/账号/存储不动）或直接等唤醒路径；
+  3. worker 镜像 pin 变更走 `agt apply worker --runtime qwenpaw --image <digest 锚>`（spec.image
+     【在】specHash 内 → 触发控制器原生 spec-drift 重建）。
+- ctrl env 变更唯一生效路径=容器重建：用 `update-ctrl-env.sh`（7.3）。
+
+### 7.3 update-ctrl-env.sh（ctrl env 受控重建工具）
+- dry-run（默认，秘密打码）/`--apply`；从现容器捕获 image/端口/挂载/网络别名/restart 原样继承；
+- 增量：AppService 7 env（token 持久化复用）、`--llm-key-stdin`（写 env 前对 deepseek 验活，
+  401 拒绝）、`--worker-image REF`（更新 pin）；
+- 失败自动回滚（healthz 120s 不通 → 旧 env 重建旧容器名）；inspect 快照落 `$EV/ctrl-inspect-<ts>.json`。
+
+### 7.4 LLM key 受保护部署来源
+- **权威来源 = ctrl 数据卷 `/data/wasmplugins/ai-proxy.internal.yaml`（higress WasmPlugin，
+  k8s 资源持久化）** —— 现役 key2 播种处；同卷重建存活，网关上游不随 ctrl env 变化。
+- ctrl env `AGENTTEAMS_OPENAI_API_KEY` 仅供迁移脚本 llm-seed 播种用：
+  production 模式必须显式 `LLM_KEY`（脚本已强制）；copy 模式回退读 env —— 该 env 曾为已撤销
+  旧值（401），2026-10-13 起已由 update-ctrl-env.sh 对齐现役值；llm-seed 步骤自带
+  "401=已撤销→硬失败" 守卫。**禁止把已撤销 key 写回任何 env。**
+
+### 7.5 Console 正式执行器 m.mentions（随下一版本发布）
+- `matrix-transport.mjs sendTaskDelegation` 已补 `m.mentions.user_ids=[workerMatrixId]`
+  （含 401 重试路径）；测试 M4d 断言（mu-matrix-w34.integration 41/41 PASS）。
+- 本轮生产 Console 保持 rc.25（口径不变）——rc.25 执行器【不】发送结构化 mentions：
+  生产 run 委派 Sleeping worker 的唤醒在 rc.26 前依赖 worker 已暖（或人工 Matrix 提及）。
+  **已登记为已知限界，随 rc.26 关闭。**
+
+### 7.6 冷启动限界（修复后残留）
+- 唤醒后 ~10-15s 启动窗内的首条消息：ACL 竞态已由预种关闭；LLM 网关瞬时不可达由
+  重试 env 覆盖（实测网关重载 ~15-30s）。窗口远超重试覆盖时仍可能失败——此时消息丢失，
+  需发送方重发（Console collectReply 超时语义不变，fail-closed）。

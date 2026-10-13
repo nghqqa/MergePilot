@@ -67,10 +67,12 @@ function mkMatrixApi({ override = {}, swallowFirstN = 0, wrongSender = false, st
     if (url.includes('/send/m.room.message/')) {
       if (expireTokenOnce && tokenSeq === 1 && !api._expiredOnce) { api._expiredOnce = true; return { status: 401, ok: false }; }
       const txn = /m\.room\.message\/([^/?]+)/.exec(url)[1];
-      const b = JSON.parse(opts.body ?? '{}').body ?? '';
+      const content = JSON.parse(opts.body ?? '{}');
+      const b = content.body ?? '';
       const m = /\[mp:([^\]]+)\]/.exec(b);
       state.txns.push(txn);
-      state.sent.push({ marker: m?.[1] ?? null, taskId: m ? m[1].split(':')[1] : null });
+      state.sent.push({ marker: m?.[1] ?? null, taskId: m ? m[1].split(':')[1] : null,
+        mentions: content['m.mentions']?.user_ids ?? null });
       return { status: 200, ok: true, json: async () => ({ event_id: '$e' + state.sent.length }) };
     }
     if (url.includes('/messages?')) {
@@ -107,6 +109,9 @@ ok('M4b 幂等：同 submissionId → 同 txnId（Matrix PUT txn 语义）', goo
 const send3 = await mt.sendTaskDelegation(cfg, { room: ROOMS.fixer, workerMatrixId: SENDERS.fixer,
   taskId: 't-fix', correlationId: 'c1', submissionId: 'c1:t-fix:2', role: 'fixer', brief: 'b', fetchImpl: good });
 ok('M4c 重试轮（新 submissionId）→ 新 txnId', send3.ok === true && good.state.txns[2] !== good.state.txns[0]);
+ok('M4d 结构化 m.mentions（唤醒字段）随事件发送且指向 worker 自身',
+  good.state.sent[0]?.mentions?.length === 1 && good.state.sent[0].mentions[0] === SENDERS.fixer,
+  good.state.sent[0]);
 
 const got = await mt.collectReply(cfg, { room: ROOMS.fixer, expectedSender: SENDERS.fixer,
   marker: '[mp:c1:t-fix:1]', sinceTs: send1.ts - 2_000, timeoutMs: 3_000, fetchImpl: good, sleepImpl: async () => {} });
