@@ -105,7 +105,10 @@ function buildDockerRunArgs(inspect, image, options = {}) {
   }
   for (const extra of options.extraMounts || []) args.push('-v', extra); // 仅追加，不丢继承
 
-  const inheritedEnv = cfg.Env || [];
+  const inheritedEnv = (cfg.Env || []).filter((e) => !e.startsWith('MERGEPILOT_VERSION='));
+  // 版本烙印过滤（2026-10-13 rc.27 实证）：running 容器的 inspect env 含上一镜像烘焙的
+  // MERGEPILOT_VERSION（image ENV 会并进 running env）——不过滤会覆盖新镜像的版本值，
+  // 造成"代码 rc.27、标签 rc.26"。版本只随镜像走（构建期 ARG/ENV 唯一真源）。
   const inheritedKeys = new Set(inheritedEnv.map(envKey));
   for (const e of inheritedEnv) args.push('-e', e);
   for (const e of options.extraEnv || []) {
@@ -199,7 +202,7 @@ async function swapConsole(argv, deps = {}) {
   const hasMatrixEnv = inspectEnv.some((e) => e.startsWith('MU_AGENTTEAMS_MATRIX_USER='))
     && inspectEnv.some((e) => e.startsWith('MU_AGENTTEAMS_MATRIX_PASSWORD='));
   if (containerName && hasMatrixEnv && !deps.skipMatrixCheck) {
-    const loginScript = "fetch(process.env.MU_AGENTTEAMS_MATRIX_URL.replace(/\/+$/, '') + '/_matrix/client/v3/login',"
+    const loginScript = "const MU = process.env.MU_AGENTTEAMS_MATRIX_URL; const base = MU.endsWith('/') ? MU.slice(0, -1) : MU; fetch(base + '/_matrix/client/v3/login',"
       + "{method:'POST',headers:{'content-type':'application/json'},"
       + "body:JSON.stringify({type:'m.login.password',user:process.env.MU_AGENTTEAMS_MATRIX_USER,password:process.env.MU_AGENTTEAMS_MATRIX_PASSWORD})})"
       + ".then(r=>console.log('STATUS '+r.status)).catch(e=>console.log('STATUS ERR '+e.message))";
@@ -274,7 +277,7 @@ async function swapConsole(argv, deps = {}) {
 
   // ── 后置检查 2：新容器内 Matrix 实际登录（与前置同口径，防环境注入差异）──
   if (hasMatrixEnv && !deps.skipMatrixCheck) {
-    const loginScript2 = "fetch(process.env.MU_AGENTTEAMS_MATRIX_URL.replace(/\/+$/, '') + '/_matrix/client/v3/login',"
+    const loginScript2 = "const MU = process.env.MU_AGENTTEAMS_MATRIX_URL; const base = MU.endsWith('/') ? MU.slice(0, -1) : MU; fetch(base + '/_matrix/client/v3/login',"
       + "{method:'POST',headers:{'content-type':'application/json'},"
       + "body:JSON.stringify({type:'m.login.password',user:process.env.MU_AGENTTEAMS_MATRIX_USER,password:process.env.MU_AGENTTEAMS_MATRIX_PASSWORD})})"
       + ".then(r=>console.log('STATUS '+r.status)).catch(e=>console.log('STATUS ERR '+e.message))";

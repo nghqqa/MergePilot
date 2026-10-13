@@ -162,14 +162,17 @@ test('Env 38 条 → 38 个 -e 逐条在位', () => {
   assert.ok(pairIn(args, '-e', 'K37=v37'));
 });
 
-test('extraEnv 追加在位，且不覆盖继承键（继承值权威）', () => {
+test('extraEnv 追加在位；版本烙印过滤（版本只随镜像走）', () => {
   const inspect = baseInspect({ Config: { Env: ['MERGEPILOT_VERSION=rc.11', 'EXISTING=keep'] } });
   const args = buildDockerRunArgs(inspect, 'img', { extraEnv: ['MERGEPILOT_VERSION=rc.12', 'NEWKEY=new'] });
   const es = valuesOf(args, '-e');
-  assert.ok(es.includes('MERGEPILOT_VERSION=rc.11')); // 继承键不被覆盖
-  assert.ok(!es.includes('MERGEPILOT_VERSION=rc.12'));
+  assert.ok(!es.includes('MERGEPILOT_VERSION=rc.11'), 'running 烙印被过滤（否则覆盖新镜像版本）');
+  assert.ok(es.includes('MERGEPILOT_VERSION=rc.12'), 'extraEnv 显式版本合法');
   assert.ok(es.includes('NEWKEY=new')); // 新键追加
   assert.ok(es.includes('EXISTING=keep'));
+  // 无 extraEnv 版本 → 镜像烘焙值生效（env 中无该键）
+  const args2 = buildDockerRunArgs(inspect, 'img');
+  assert.ok(!valuesOf(args2, '-e').some((e) => e.startsWith('MERGEPILOT_VERSION=')));
 });
 
 // ---- 参数形态 ----
