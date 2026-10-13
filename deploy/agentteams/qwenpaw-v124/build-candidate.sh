@@ -5,6 +5,7 @@
 #   SRC_DIR   AgentTeams v1.2.4 源码树（git commit 8765d697，工作区必须 clean）
 #   补丁      patches/teamharness-cas-authoritative.patch   （server.py 最终 CAS）
 #             patches/controller-canceltask-cas.patch       （Go CancelTask CAS）
+#             patches/qwenpaw-worker-coldstart-acl-preseed.patch（冷启动 ACL 预种）
 #   依赖      boto3==1.35.99 / botocore==1.35.99（PutObject If-Match 服务模型
 #             自 1.35.49 起存在；1.35.0 无此参数，勿回退）
 #
@@ -42,8 +43,10 @@ done
 echo "==> [1/6] 校验并应用补丁（git apply --check 先行）"
 git -C "$SRC" apply --check "$PATCH_DIR/teamharness-cas-authoritative.patch"
 git -C "$SRC" apply --check "$PATCH_DIR/controller-canceltask-cas.patch"
+git -C "$SRC" apply --check "$PATCH_DIR/qwenpaw-worker-coldstart-acl-preseed.patch"
 git -C "$SRC" apply "$PATCH_DIR/teamharness-cas-authoritative.patch"
 git -C "$SRC" apply "$PATCH_DIR/controller-canceltask-cas.patch"
+git -C "$SRC" apply "$PATCH_DIR/qwenpaw-worker-coldstart-acl-preseed.patch"
 python -m py_compile "$SRC/plugins/teamharness/mcp/server.py"
 echo "    patches applied + py_compile OK"
 
