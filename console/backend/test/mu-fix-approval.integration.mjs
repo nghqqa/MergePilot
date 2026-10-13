@@ -341,8 +341,13 @@ try {
     const gate15 = (await pool.query(`SELECT count(*)::int c FROM mu.audit_event
       WHERE kind='FIX_STARTED_AFTER_APPROVAL' AND detail->>'run_id'=$1`, [s15.run.run_id])).rows[0].c;
     const tk15 = (await pool.query(`SELECT status FROM mu.fix_approval WHERE run_id=$1 LIMIT 1`, [s15.run.run_id])).rows[0];
-    ok('FA15d 门消费产生（CONSUMED+FIX_STARTED_AFTER_APPROVAL 审计）',
-      Number(gate15) >= 1 && tk15?.status === 'CONSUMED', { gate15, tk: tk15?.status });
+    // 2026-10-13 语义更新：票消耗后置到执行器就绪之后（基础设施失败不烧票）。
+    // 503 mock = 控制器不可达 → 消耗不发生：票保持 APPROVED、run 停留 FIX_QUEUED 可恢复；
+    // 消费成功路径由 mu-matrix-w34.integration P8b（CONSUMED+审计）覆盖。
+    const run15 = (await pool.query(`SELECT status FROM mu.review_run WHERE run_id=$1`, [s15.run.run_id])).rows[0];
+    ok('FA15d 执行器不可达 → 票不消耗（APPROVED 可恢复）+ run 可恢复',
+      tk15?.status === 'APPROVED' && run15?.status === 'FIX_QUEUED' && Number(gate15) === 0,
+      { gate15, tk: tk15?.status, run: run15?.status });
     process.env.MU_EXECUTOR = prevExecutor ?? '';
     process.env.MU_EXECUTOR_INTERNAL_ALLOW = prevAllow ?? 'test';
     await orch.transitionRun(pool, { runId: s15.run.run_id, from: ['FIX_QUEUED', 'FIXING'], to: 'BLOCKED' }).catch(() => {});
