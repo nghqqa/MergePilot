@@ -51,7 +51,11 @@ export async function fixVerifyRound(pool, { run, binding, deps }) {
   const gateFinding = gateRows.rows[0] ?? null;
   if (gateFinding) {
     const { authorizeFixExecution } = await import('../fix-approval.mjs');
-    const gate = await authorizeFixExecution(pool, { runId, findingId: gateFinding.finding_id });
+    // 预授权（consume=false）：完整校验 run 状态/finding/票绑定/digest，但【不消耗】票——
+    // 基础设施类失败（唤醒超时等）不得烧票（2026-10-13 AT_WORKER_NOT_READY 烧票实证）。
+    // 正式消耗在本函数后段（执行器门+唤醒+就绪等待全部通过后）以 consume=true 重入：
+    // 同一 CAS（APPROVED→CONSUMED 单赢家）+ 重新校验 run 终态/授权，一次授权至多一次执行。
+    const gate = await authorizeFixExecution(pool, { runId, findingId: gateFinding.finding_id, consume: false });
     if (!gate.ok) {
       await recordDecision(pool, { runId, tenantId, repoId, prId, headSha,
         stage: 'fix_gate', decision: 'blocked_no_approval', rationaleRef: gate.reason,
@@ -89,7 +93,7 @@ export async function fixVerifyRound(pool, { run, binding, deps }) {
     }
     let ext;
     try {
-      ext = await runExternalRound(pool, atMod, atCfg, { run, binding, deps });
+      ext = await runExternalRound(pool, atMod, atCfg, { run, binding, deps, gateFindingId: gateFinding?.finding_id ?? null });
     } catch (e) {
       // 意外异常同样 fail-closed（死信+BLOCKED）——绝不回退 internal
       await moveToDeadLetter(pool, { runId, tenantId, repoId, prId, headSha, agentRole: 'fixer',
@@ -234,7 +238,7 @@ export async function fixVerifyRound(pool, { run, binding, deps }) {
 // （worker room 消息）；上游 DAG 自动消费链在 223ddc2 断（见 PHASE1 审计 G1/G2）。
 // 四重绑定：固定 room + 精确 sender + 时间窗 + submissionId marker；角色输出过
 // schema；单角色失败重试一次（新 txnId）；仍失败 → 真实 cancel + 死信 + BLOCKED。
-async function runExternalRound(pool, atMod, atCfg, { run, binding, deps }) {
+async function runExternalRound(pool, atMod, atCfg, { run, binding, deps, gateFindingId = null }) {
   const { runId } = { runId: run.run_id };
   const { tenantId, repoId, prId, headSha } = binding;
   const fetchImpl = deps.atFetch ?? fetch;
@@ -263,29 +267,55 @@ async function runExternalRound(pool, atMod, atCfg, { run, binding, deps }) {
     return { ok: false, stage: 'at_ensure_failed', reason: ensured.reason };
   }
   // 四 worker 绑定源（roomID/matrixUserID——controller 登记）
-  const detail = await atMod.listWorkersDetail(atCfg, { fetchImpl });
-  if (!detail.ok) {
-    await gateAudit('executor_gate_rejected', { reason: detail.reason, executor_mode: 'at_workers_detail_query_failed' });
-    return { ok: false, stage: 'at_workers_detail_failed', reason: detail.reason };
-  }
   const workers = atMod.AGENTTEAMS_WORKERS;
   const bindings = {};
-  // Wave 3.13 runtime readiness：worker phase 非 Running（controller 重启/recreate
-  // 后桥接不可消费的权威信号）→ 不启动轮次，run 停留 FIX_QUEUED 可重试态+审计。
-  const notRunning = [];
-  for (const [role, def] of Object.entries(workers)) {
-    const w = detail.workers.get(def.name);
-    if (!w || !w.roomID || !w.matrixUserID) {
-      const reason = 'AT_WORKERS_INCOMPLETE';
-      await gateAudit('executor_gate_rejected', { reason, executor_mode: 'agentteams_worker_binding_missing', role });
-      return { ok: false, stage: 'at_workers_detail_failed', reason };
+  // Wave 3.13 runtime readiness（v2 2026-10-13）：worker phase 非 Running 不再立即拒绝——
+  // ensureFourAgents 的 state=Running PUT 就是唤醒触发器（controller reconcile 拉起容器），
+  // 但 phase 翻转是异步的。Sleeping 起步的修复轮在此做【有界就绪等待】：轮询读回直到全部
+  // Running 或显式超时（默认 90s，可经 AT_WAKE_WAIT_MS 调整；超时=runtime_not_ready 可重试，
+  // 票在此时【尚未消耗】——基础设施失败不烧票）。等待后仍由 consume=true 的重新授权消耗票。
+  const wakeWaitMs = Math.max(0, Number(deps.env?.AT_WAKE_WAIT_MS ?? 90_000) || 90_000);
+  const pollIntervalMs = 3_000;
+  const wakeDeadline = Date.now() + wakeWaitMs;
+  let notRunning = [];
+  let detail = null;
+  for (;;) {
+    detail = await atMod.listWorkersDetail(atCfg, { fetchImpl });
+    if (!detail.ok) {
+      await gateAudit('executor_gate_rejected', { reason: detail.reason, executor_mode: 'at_workers_detail_query_failed' });
+      return { ok: false, stage: 'at_workers_detail_failed', reason: detail.reason };
     }
-    if (String(w.phase ?? '').toLowerCase() !== 'running') notRunning.push(role);
-    bindings[role] = w;
+    notRunning = [];
+    for (const [role, def] of Object.entries(workers)) {
+      const w = detail.workers.get(def.name);
+      if (!w || !w.roomID || !w.matrixUserID) {
+        const reason = 'AT_WORKERS_INCOMPLETE';
+        await gateAudit('executor_gate_rejected', { reason, executor_mode: 'agentteams_worker_binding_missing', role });
+        return { ok: false, stage: 'at_workers_detail_failed', reason };
+      }
+      if (String(w.phase ?? '').toLowerCase() !== 'running') notRunning.push(role);
+      bindings[role] = w;
+    }
+    if (!notRunning.length) break;
+    if (Date.now() >= wakeDeadline) break;
+    await new Promise((r) => setTimeout(r, pollIntervalMs));
   }
   if (notRunning.length) {
-    await gateAudit('executor_gate_rejected', { reason: 'AT_WORKER_NOT_RUNNING', executor_mode: 'agentteams_runtime_not_ready', roles: notRunning.join(',') });
-    return { ok: false, stage: 'runtime_not_ready', reason: 'AT_WORKER_NOT_READY', retryable: true, workers: notRunning };
+    const waitedMs = wakeWaitMs;
+    await gateAudit('executor_gate_rejected', { reason: 'AT_WORKER_NOT_RUNNING', executor_mode: 'agentteams_runtime_not_ready', roles: notRunning.join(','), waited_ms: waitedMs });
+    return { ok: false, stage: 'runtime_not_ready', reason: 'AT_WORKER_NOT_READY', retryable: true, workers: notRunning, waited_ms: waitedMs };
+  }
+
+  // 正式消耗票（执行器门+唤醒+就绪等待全部通过之后）：重新校验 run 终态/授权/绑定
+  // （run 可能在等待期间进入终态），CAS APPROVED→CONSUMED 单赢家——一次授权至多一次执行。
+  if (gateFindingId) {
+    const { authorizeFixExecution } = await import('../fix-approval.mjs');
+    const consumeGate = await authorizeFixExecution(pool, { runId, findingId: gateFindingId });
+    if (!consumeGate.ok) {
+      await gateAudit('executor_gate_rejected', { reason: consumeGate.reason, executor_mode: 'at_consume_rejected' });
+      return { ok: false, stage: 'fix_blocked_no_approval', reason: consumeGate.reason,
+        detail: consumeGate.detail ?? null };
+    }
   }
 
   // 取 P0/P1 finding 摘要（脱敏出站——与 controller DAG 登记共用同一 brief）

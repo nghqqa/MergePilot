@@ -308,6 +308,61 @@ try {
   const r6 = await fxo.fixVerifyRound(pool, { run: s6.run, binding: s6.binding, deps: depsBase(mkMatrixApi({ wrongSender: true })) });
   ok('P6 伪造 sender 回复被拒 → MT_REPLY_TIMEOUT 死信', r6.ok === false && r6.reason === 'MT_REPLY_TIMEOUT', r6);
 
+  // ── P8/P9/P10 Sleeping 起步：有界唤醒等待 + 超时不烧票 + 超时后重试幂等（2026-10-13 冷启动收口）──
+  // 有状态 ctrl mock：唤醒 PUT（state=Running）到达后第 N 次 GET 才翻转 phase=Running。
+  const mkSleepyAtApi = ({ sleepsAfterWake = 2 } = {}) => {
+    const state = { puts: 0, getsAfterWake: 0 };
+    const api = async (url, opts = {}) => {
+      const auth = String(opts.headers?.authorization ?? '');
+      if (!auth.startsWith('Bearer ')) return { status: 401 };
+      if (url.endsWith('/api/v1/projects?limit=1')) return { status: 200, ok: true, json: async () => ({ projects: [] }) };
+      if (url.endsWith('/api/v1/workers') && (!opts.method || opts.method === 'GET')) {
+        const phase = (state.puts > 0 && state.getsAfterWake++ >= sleepsAfterWake) ? 'Running' : 'Sleeping';
+        return { status: 200, ok: true, json: async () => ({ workers: ['leader', 'reviewer', 'fixer', 'verifier'].map((r) => ({
+          name: 'mergepilot-' + r, roomID: ROOMS[r], matrixUserID: SENDERS[r], phase })) }) };
+      }
+      if (/\/workers\/[\w-]+$/.test(url) && opts.method === 'PUT') { state.puts += 1; return { status: 200, ok: true }; }
+      if (url.endsWith('/api/v1/workers') && opts.method === 'POST') return { status: 201, ok: true, json: async () => ({ name: 'x' }) };
+      if (url.endsWith('/api/v1/projects') && opts.method === 'POST') return { status: 201, ok: true, json: async () => ({ project_id: 'mp-x' }) };
+      if (/\/replan$/.test(url)) return { status: 200, ok: true };
+      if (/\/cancel$/.test(url)) return { status: 200, ok: true };
+      return { status: 404, ok: false };
+    };
+    api.state = state;
+    return api;
+  };
+  const sleepyEnv = (waitMs) => ({ ...AT_ENV, ...(waitMs != null ? { AT_WAKE_WAIT_MS: String(waitMs) } : {}) });
+
+  // P8 Sleeping 起步：唤醒 PUT → 有界等待（Sleeping→Running 翻转）→ 四角色链完成
+  mt.__resetMatrixLoginForTests();
+  const s8 = await mkScenario(38, 'c8');
+  const at8 = mkSleepyAtApi({ sleepsAfterWake: 2 });
+  const r8 = await fxo.fixVerifyRound(pool, { run: s8.run, binding: s8.binding,
+    deps: { ...depsBase(mkMatrixApi()), atFetch: at8, env: sleepyEnv(30_000) } });
+  const tick8 = (await pool.query(`SELECT status FROM mu.fix_approval WHERE run_id=$1`, [s8.run.run_id])).rows[0];
+  ok('P8a Sleeping 起步→唤醒 PUT→有界等待→四角色链完成（无 AT_WORKER_NOT_READY）',
+    r8.ok === true && r8.executor === 'agentteams' && at8.state.puts >= 4, r8);
+  ok('P8b 正常路径票已消耗（CONSUMED）', tick8?.status === 'CONSUMED', tick8);
+
+  // P9 唤醒超时：Sleeping 永不翻转 → runtime_not_ready（带 waited_ms）且【票不消耗】
+  mt.__resetMatrixLoginForTests();
+  const s9 = await mkScenario(39, 'd9');
+  const at9 = mkSleepyAtApi({ sleepsAfterWake: 1_000_000 });
+  const r9 = await fxo.fixVerifyRound(pool, { run: s9.run, binding: s9.binding,
+    deps: { ...depsBase(mkMatrixApi()), atFetch: at9, env: sleepyEnv(1_500) } });
+  const tick9 = (await pool.query(`SELECT status FROM mu.fix_approval WHERE run_id=$1`, [s9.run.run_id])).rows[0];
+  const run9 = await orch.getRun(pool, s9.run.run_id);
+  ok('P9a 唤醒超时 → runtime_not_ready（waited_ms 达上限）', r9.ok === false && r9.reason === 'AT_WORKER_NOT_READY' && (r9.waited_ms ?? 0) >= 1_500, r9);
+  ok('P9b 超时不烧票：票保持 APPROVED + run 停留 FIX_QUEUED', tick9?.status === 'APPROVED' && run9.status === 'FIX_QUEUED', { ticket: tick9?.status, run: run9.status });
+
+  // P10 超时后重试（worker 已 Running）→ 同一张票完成链（授权幂等，无需重新审批）
+  mt.__resetMatrixLoginForTests();
+  const at10 = mkSleepyAtApi({ sleepsAfterWake: 0 });
+  const r10 = await fxo.fixVerifyRound(pool, { run: s9.run, binding: s9.binding,
+    deps: { ...depsBase(mkMatrixApi()), atFetch: at10, env: sleepyEnv() } });
+  const run10 = await orch.getRun(pool, s9.run.run_id);
+  ok('P10 超时后重试→同一票完成链（COMPLETED，不重复审批）', r10.ok === true && run10.status === 'COMPLETED', r10);
+
   // P7 全链零泄漏（token/密码/marker 正文不入库）
   let leaks = [];
   for (const tb of ['agent_attempt', 'fix_attempt', 'verification_attempt', 'audit_event', 'review_run', 'dead_letter']) {

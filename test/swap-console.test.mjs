@@ -212,7 +212,86 @@ const writeInspect = (inspect) => {
   return { dir, file };
 };
 
-test('主入口：swap 序列 = rm -f 旧容器 → run -d + 继承参数（exec mock）', () => {
+// ---- rc.26 收口新增：网络继承 + Matrix 前置校验 + live 回滚（2026-10-13）----
+
+test('SW 前置：Matrix 凭据登录非 200 → 切换中止（exit 3），旧容器未被移除', async () => {
+  const { dir, file } = writeInspect({
+    Name: '/mp-console',
+    HostConfig: { RestartPolicy: { Name: 'unless-stopped' } },
+    Config: { Env: ['MU_AGENTTEAMS_MATRIX_URL=http://mx.test', 'MU_AGENTTEAMS_MATRIX_USER=u', 'MU_AGENTTEAMS_MATRIX_PASSWORD=p-stale'] },
+    Mounts: [],
+  });
+  try {
+    const calls = [];
+    const code = await swapConsole([file, 'img'], {
+      exec: (args) => {
+        calls.push(args);
+        if (args[0] === 'exec') return { status: 0, stdout: 'STATUS 403', stderr: '' };
+        return { status: 0, stdout: 'x', stderr: '' };
+      },
+      log: () => {},
+    });
+    assert.equal(code, 3);
+    assert.ok(calls.some((a) => a[0] === 'exec'), '前置登录校验已执行');
+    assert.ok(!calls.some((a) => a[0] === 'rm' && a[1] === '-f' && a[2] === 'mp-console'), '旧容器未被移除');
+    assert.ok(!calls.some((a) => a[0] === 'run'), '新容器未创建');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('SW 网络继承：inspect 的非默认网络在创建后逐个 connect', async () => {
+  const { dir, file } = writeInspect(baseInspect({
+    HostConfig: { RestartPolicy: { Name: 'unless-stopped' } },
+    Config: { Env: ['A=1'] },
+    NetworkSettings: { Networks: { bridge: {}, 'agentteams-beta_atnet': {} } },
+  }));
+  try {
+    const calls = [];
+    const code = await swapConsole([file, 'img'], {
+      exec: (args) => { calls.push(args); return { status: 0, stdout: 'HEALTH live v', stderr: '' }; },
+      log: () => {},
+    });
+    assert.equal(code, 0);
+    const conn = calls.find((a) => a[0] === 'network' && a[1] === 'connect');
+    assert.ok(conn, 'network connect 已调用');
+    assert.equal(conn[2], 'agentteams-beta_atnet');
+    assert.equal(conn[3], 'mp-console');
+    assert.ok(!calls.some((a) => a[0] === 'network' && a.includes('bridge')), 'bridge 不重复 connect');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('SW 后置：PG 部署 data_mode 未达 live → 回滚旧镜像（exit 1）', async () => {
+  const { dir, file } = writeInspect(baseInspect({
+    HostConfig: { RestartPolicy: { Name: 'unless-stopped' } },
+    Config: { Image: 'mp-console:rc25', Env: ['CONSOLE_PG_DSN=postgres://pg/mu'] },
+  }));
+  try {
+    const calls = [];
+    let runCount = 0;
+    const code = await swapConsole([file, 'mp-console:rc26'], {
+      exec: (args) => {
+        calls.push(args);
+        if (args[0] === 'run') { runCount += 1; return { status: 0, stdout: 'new-id\n', stderr: '' }; }
+        if (args[0] === 'exec') return { status: 0, stdout: 'HEALTH snapshot v0.2.0-beta.6-rc.26', stderr: '' };
+        return { status: 0, stdout: '', stderr: '' };
+      },
+      log: () => {},
+    });
+    assert.equal(code, 1);
+    assert.equal(runCount, 2, '旧镜像已按原配置重建（回滚）');
+    const rollbackRun = calls.filter((a) => a[0] === 'run')[1];
+    assert.ok(rollbackRun.includes('mp-console:rc25'), '回滚 run 使用旧镜像');
+    const rmNew = calls.find((a) => a[0] === 'rm' && a[1] === '-f');
+    assert.ok(rmNew, '新容器已清理');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('SW 前置：Matrix 凭据登录非 200 → 切换中止（exit 3），旧容器未被移除', async () => {
   const { dir, file } = writeInspect({
     Name: '/mp-console',
     HostConfig: { RestartPolicy: { Name: 'no' } },
@@ -222,7 +301,7 @@ test('主入口：swap 序列 = rm -f 旧容器 → run -d + 继承参数（exec
   try {
     const calls = [];
     const logs = [];
-    const code = swapConsole([file, 'mp-console:rc12'], {
+    const code = await swapConsole([file, 'mp-console:rc12'], {
       exec: (args) => { calls.push(args); return { status: 0, stdout: 'deadbeef\n', stderr: '' }; },
       log: (m) => logs.push(m),
     });
@@ -240,11 +319,11 @@ test('主入口：swap 序列 = rm -f 旧容器 → run -d + 继承参数（exec
   }
 });
 
-test('主入口：--dry-run 只打印命令，不调用 docker', () => {
+test('主入口：--dry-run 只打印命令，不调用 docker', async () => {
   const { dir, file } = writeInspect(baseInspect());
   try {
     let execCalls = 0;
-    const code = swapConsole([file, 'img', '--dry-run'], {
+    const code = await swapConsole([file, 'img', '--dry-run'], {
       exec: () => { execCalls++; return { status: 0, stdout: '', stderr: '' }; },
       log: () => {},
     });
@@ -255,10 +334,10 @@ test('主入口：--dry-run 只打印命令，不调用 docker', () => {
   }
 });
 
-test('主入口：docker run 非零退出 → 透传退出码与 stderr', () => {
+test('主入口：docker run 非零退出 → 透传退出码与 stderr', async () => {
   const { dir, file } = writeInspect(baseInspect());
   try {
-    const code = swapConsole([file, 'img'], {
+    const code = await swapConsole([file, 'img'], {
       exec: (args) => (args[0] === 'run' ? { status: 125, stdout: '', stderr: 'docker: conflict\n' } : { status: 0, stdout: '', stderr: '' }),
       log: () => {},
     });
@@ -268,29 +347,29 @@ test('主入口：docker run 非零退出 → 透传退出码与 stderr', () => 
   }
 });
 
-test('主入口：缺参 → 用法退出码 2；坏 JSON → 抛错不执行 docker', () => {
+test('主入口：缺参 → 用法退出码 2；坏 JSON → 抛错不执行 docker', async () => {
   let execCalls = 0;
   const deps = { exec: () => { execCalls++; return { status: 0, stdout: '', stderr: '' }; }, log: () => {} };
-  assert.equal(swapConsole([], deps), 2);
-  assert.equal(swapConsole(['only-inspect.json'], deps), 2);
+  assert.equal(await swapConsole([], deps), 2);
+  assert.equal(await swapConsole(['only-inspect.json'], deps), 2);
   assert.equal(execCalls, 0);
 
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'swap-console-test-'));
   const bad = path.join(dir, 'bad.json');
   fs.writeFileSync(bad, '{not json');
   try {
-    assert.throws(() => swapConsole([bad, 'img'], deps), /inspect JSON 解析失败/);
+    await assert.rejects(() => swapConsole([bad, 'img'], deps), /inspect JSON 解析失败/);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
   assert.equal(execCalls, 0);
 });
 
-test('主入口：inspect 数组形态（docker inspect 默认输出）→ 取首元素', () => {
+test('主入口：inspect 数组形态（docker inspect 默认输出）→ 取首元素', async () => {
   const { dir, file } = writeInspect([baseInspect({ HostConfig: { RestartPolicy: { Name: 'always' } } })]);
   try {
     let runArgs = null;
-    const code = swapConsole([file, 'img'], {
+    const code = await swapConsole([file, 'img'], {
       exec: (args) => { if (args[0] === 'run') runArgs = args; return { status: 0, stdout: 'id\n', stderr: '' }; },
       log: () => {},
     });
@@ -336,13 +415,13 @@ const assertNoSecrets = (out) => {
   assert.ok(!out.includes('docker run -d --name'), '完整 docker run 命令行不得回显');
 };
 
-test('泄露回归：dry-run 输出安全摘要（env 键名+数量），零秘密值、零完整参数', () => {
+test('泄露回归：dry-run 输出安全摘要（env 键名+数量），零秘密值、零完整参数', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'swap-leak-dry-'));
   const file = path.join(dir, 'inspect.json');
   fs.writeFileSync(file, JSON.stringify(SECRET_FIXTURE));
   try {
     const logs = [];
-    const code = swapConsole([file, 'ghcr.io/nghqqa/mergepilot-console@sha256:' + 'f'.repeat(64), '--dry-run'], {
+    const code = await swapConsole([file, 'ghcr.io/nghqqa/mergepilot-console@sha256:' + 'f'.repeat(64), '--dry-run'], {
       exec: () => { throw new Error('dry-run 不得调用 docker'); },
       log: (m) => logs.push(m),
     });
@@ -358,15 +437,19 @@ test('泄露回归：dry-run 输出安全摘要（env 键名+数量），零秘�
   }
 });
 
-test('泄露回归：正式执行成功路径——输出容器标记与安全摘要，零秘密值', () => {
+test('泄露回归：正式执行成功路径——输出容器标记与安全摘要，零秘密值', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'swap-leak-run-'));
   const file = path.join(dir, 'inspect.json');
   fs.writeFileSync(file, JSON.stringify(SECRET_FIXTURE));
   try {
     let runArgs = null;
     const logs = [];
-    const code = swapConsole([file, 'ghcr.io/nghqqa/mergepilot-console@sha256:' + 'f'.repeat(64)], {
-      exec: (args) => { if (args[0] === 'run') runArgs = args; return { status: 0, stdout: 'abc123\n', stderr: '' }; },
+    const code = await swapConsole([file, 'ghcr.io/nghqqa/mergepilot-console@sha256:' + 'f'.repeat(64)], {
+      exec: (args) => {
+        if (args[0] === 'run') runArgs = args;
+        if (args[0] === 'exec') return { status: 0, stdout: String(args.at(-1)).includes('health') ? 'HEALTH live v0.2.0-beta.6-rc.26' : 'STATUS 200', stderr: '' };
+        return { status: 0, stdout: 'abc123', stderr: '' };
+      },
       log: (m) => logs.push(m),
     });
     assert.equal(code, 0);
@@ -381,7 +464,7 @@ test('泄露回归：正式执行成功路径——输出容器标记与安全�
   }
 });
 
-test('泄露回归：失败路径——对抗性 stderr（含秘密/连接串/多行私钥）不透传，只报退出码', () => {
+test('泄露回归：失败路径——对抗性 stderr（含秘密/连接串/多行私钥）不透传，只报退出码', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'swap-leak-fail-'));
   const file = path.join(dir, 'inspect.json');
   fs.writeFileSync(file, JSON.stringify(SECRET_FIXTURE));
@@ -394,7 +477,7 @@ test('泄露回归：失败路径——对抗性 stderr（含秘密/连接串/�
       'DUMMYKEY123-dummy-body',
       '-----END RSA PRIVATE KEY----- dummy-fixture',
     ].join('\n');
-    const code = swapConsole([file, 'ghcr.io/nghqqa/mergepilot-console@sha256:' + 'f'.repeat(64)], {
+    const code = await swapConsole([file, 'ghcr.io/nghqqa/mergepilot-console@sha256:' + 'f'.repeat(64)], {
       exec: (args) => args[0] === 'rm'
         ? { status: 0, stdout: '', stderr: '' }
         : { status: 125, stdout: '', stderr: hostileStderr },
