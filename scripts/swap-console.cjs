@@ -175,7 +175,7 @@ function parseArgv(argv) {
 }
 
 // 返回进程退出码；deps.exec/deps.log 可注入（真实路径 = spawnSync + stdout）
-function swapConsole(argv, deps = {}) {
+async function swapConsole(argv, deps = {}) {
   const exec = deps.exec || ((args) => spawnSync('docker', args, { encoding: 'utf8' }));
   const log = deps.log || ((m) => process.stdout.write(m + '\n'));
   const { positional, name, dryRun } = parseArgv(argv);
@@ -191,6 +191,33 @@ function swapConsole(argv, deps = {}) {
   // 安全输出：只打白名单摘要（env 仅键名+数量）——完整参数含生产秘密，永不回显
   log(safeSwapSummary(inspect, image, { name, dryRun }));
   if (dryRun) return 0;
+
+  // ── 前置检查 1：Matrix 现役凭据校验（2026-10-13 rc.26 切换实证：继承 env 口令可能陈旧
+//    → 四角色 MT_LOGIN_HTTP_403 → run BLOCKED）。在【旧容器内】用将被继承的 env 实际登录一次：
+//    200=通过；非 200=切换中止（exit 3），不触碰旧容器，不回显凭据。无 Matrix env 的部署自动跳过。
+  const inspectEnv = inspect.Config.Env ?? [];
+  const hasMatrixEnv = inspectEnv.some((e) => e.startsWith('MU_AGENTTEAMS_MATRIX_USER='))
+    && inspectEnv.some((e) => e.startsWith('MU_AGENTTEAMS_MATRIX_PASSWORD='));
+  if (containerName && hasMatrixEnv && !deps.skipMatrixCheck) {
+    const loginScript = "fetch(process.env.MU_AGENTTEAMS_MATRIX_URL.replace(/\/+$/, '') + '/_matrix/client/v3/login',"
+      + "{method:'POST',headers:{'content-type':'application/json'},"
+      + "body:JSON.stringify({type:'m.login.password',user:process.env.MU_AGENTTEAMS_MATRIX_USER,password:process.env.MU_AGENTTEAMS_MATRIX_PASSWORD})})"
+      + ".then(r=>console.log('STATUS '+r.status)).catch(e=>console.log('STATUS ERR '+e.message))";
+    const pre = exec(['exec', containerName, 'node', '-e', loginScript]);
+    const preStatus = String((pre.stdout || '')).match(/STATUS (\d{3}|ERR \S+)/) ?? [];
+    const ok200 = /STATUS 200/.test(pre.stdout || '');
+    if (pre.error || !ok200) {
+      log('前置 Matrix 凭据校验未通过（继承 env 登录非 200）——切换中止（旧容器未受影响）。');
+      log('处置：将 MU_AGENTTEAMS_MATRIX_PASSWORD 收敛到现役值后重试本工具。');
+      return 3;
+    }
+    log('前置 Matrix 凭据校验通过（登录 200，凭据不回显）');
+  }
+
+  // ── 前置检查 2 记录：待连接的非默认网络（创建后 connect；bridge 除外）──
+  const extraNetworks = Object.keys(inspect.NetworkSettings?.Networks ?? {})
+    .filter((n) => n && n !== 'bridge');
+  if (extraNetworks.length) log('将继承非默认网络: ' + extraNetworks.join(', '));
 
   if (containerName) {
     // 尽力而为移除旧容器：不存在时 docker 报非零，忽略之；仍占用时 run 步骤会显式失败
@@ -210,12 +237,60 @@ function swapConsole(argv, deps = {}) {
     return run.status || 1;
   }
   log('container=' + (run.stdout || '').trim());
+
+  // ── 创建后：非默认网络逐个 connect（swap 只继承 NetworkMode——漏挂第二网络会失去
+//    自定义 DNS（beta-mp-pg 解析），rc.25/rc.26 两轮生产同款坑）──
+  for (const net of extraNetworks) {
+    const c = exec(['network', 'connect', net, containerName]);
+    log(`network connect ${net}: ${c.status === 0 ? 'ok' : 'exit=' + c.status + '（可能已连接，忽略）'}`);
+  }
+
+  // ── 后置检查 1：健康+依赖可达（data_mode=live 表示 PG 实时可读；snapshot=依赖断）──
+  const oldImage = inspect.Config.Image || image;
+  // data_mode=live 断言仅适用于 PG 部署（无 DSN 的部署 health 本就不含 live 语义）
+  const hasPgDsn = inspectEnv.some((e) => e.startsWith('CONSOLE_PG_DSN='));
+  const rollback = (why) => {
+    log('后置检查未通过（' + why + '）——回滚到旧镜像 ' + oldImage.slice(0, 40));
+    if (containerName) exec(['rm', '-f', containerName]);
+    const oldArgs = buildDockerRunArgs(inspect, oldImage, { name: containerName || undefined });
+    exec(['run', '-d', ...oldArgs]);
+    log('回滚完成（旧容器已按原配置重建）。退出码 1。');
+    return 1;
+  };
+  const healthScript = "fetch('http://127.0.0.1:' + (process.env.CONSOLE_PORT || 4730) + '/api/health')"
+    + ".then(r=>r.json()).then(j=>console.log('HEALTH ' + (j.data_mode ?? 'unknown') + ' ' + (j.version ?? '')))"
+    + ".catch(e=>console.log('HEALTH ERR ' + e.message))";
+  let live = !hasPgDsn; // 无 PG DSN：无需 live 断言（视为通过）
+  for (let i = 0; !live && i < 12; i++) {
+    if (containerName) {
+      const h = exec(['exec', containerName, 'node', '-e', healthScript]);
+      const out = String(h.stdout || '');
+      if (/HEALTH live/.test(out)) { live = true; log('健康检查通过（data_mode=live）: ' + out.replace('HEALTH ', '').trim()); break; }
+      if (/HEALTH /.test(out)) log('健康检查: ' + out.replace('HEALTH ', '').trim() + '（等待依赖就绪）');
+    }
+    await new Promise((r) => setTimeout(r, 5_000));
+  }
+  if (!live) return rollback('data_mode 未达 live（DB/依赖不可达或启动失败）');
+
+  // ── 后置检查 2：新容器内 Matrix 实际登录（与前置同口径，防环境注入差异）──
+  if (hasMatrixEnv && !deps.skipMatrixCheck) {
+    const loginScript2 = "fetch(process.env.MU_AGENTTEAMS_MATRIX_URL.replace(/\/+$/, '') + '/_matrix/client/v3/login',"
+      + "{method:'POST',headers:{'content-type':'application/json'},"
+      + "body:JSON.stringify({type:'m.login.password',user:process.env.MU_AGENTTEAMS_MATRIX_USER,password:process.env.MU_AGENTTEAMS_MATRIX_PASSWORD})})"
+      + ".then(r=>console.log('STATUS '+r.status)).catch(e=>console.log('STATUS ERR '+e.message))";
+    const post = exec(['exec', containerName, 'node', '-e', loginScript2]);
+    if (!/STATUS 200/.test(post.stdout || '')) {
+      return rollback('新容器 Matrix 登录非 200');
+    }
+    log('后置 Matrix 登录校验通过（200）');
+  }
+  log('SWAP OK');
   return 0;
 }
 
 module.exports = { FALLBACK_RESTART_POLICY, resolveRestartPolicy, mountSpec, portSpecs, buildDockerRunArgs, safeSwapSummary, swapConsole };
 
 if (require.main === module) {
-  try { process.exit(swapConsole(process.argv.slice(2))); }
+  try { swapConsole(process.argv.slice(2)).then((c) => process.exit(c)).catch((e) => { console.error('swap-console: ' + (e && e.message ? e.message : e)); process.exit(1); }); }
   catch (e) { console.error('swap-console: ' + (e && e.message ? e.message : e)); process.exit(1); }
 }
