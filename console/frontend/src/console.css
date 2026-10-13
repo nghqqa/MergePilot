@@ -604,6 +604,11 @@ td.th-right { text-align: right; }
 .drawer-body { flex: 1; overflow: auto; padding: 0; background: #fcfcfd; }
 .evidence-text-wrap { display: flex; flex-direction: column; height: 100%; }
 .truncated-note { padding: 7px 18px; background: var(--c-warn-bg); color: var(--c-warn); font-size: var(--fs-xs); }
+.mu-art-diff pre {
+  margin: 0; padding: 10px 12px; font-family: var(--font-mono); font-size: var(--fs-xs);
+  line-height: 1.55; white-space: pre; overflow: auto; color: var(--c-text);
+  background: var(--c-inset); border: 1px solid var(--c-border); border-radius: 6px;
+}
 .evidence-pre {
   margin: 0; padding: 14px 18px; font-family: var(--font-mono); font-size: var(--fs-sm);
   line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--c-text);

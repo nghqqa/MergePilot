@@ -1529,6 +1529,75 @@ export const MU_MIGRATIONS = [
       `ALTER TABLE mu.oauth_flow ADD COLUMN IF NOT EXISTS bind_user_id UUID`,
     ],
   },
+  // v27（2026-10-13 审查产物交付波）：四张新表——
+  //  * mu.review_output：四角色链原始输出全文（reviewer/leader/fixer/verifier），
+  //    供 run 详情展示"模型实际说了什么"；原文保留，解析失败不静默丢。
+  //  * mu.fix_patch：建议补丁（统一 diff + 文件清单 + 理由 + 可应用性检查），绑定 run+head。
+  //  * mu.finding_feedback：用户对 finding 的反馈（confirm/false_positive/wont_fix），
+  //    记录操作人；不覆盖原始审查结论。
+  //  * mu.pr_publish：PR 发布记录（幂等防刷屏：发布者/run/head/远端评论 id/状态/摘要）。
+  // 回滚：DROP TABLE mu.pr_publish, mu.finding_feedback, mu.fix_patch, mu.review_output
+  //      （四表均新增、无旧读方；DROP 后 run 详情页回退为仅摘要展示）。
+  {
+    version: 27,
+    name: 'mu_review_artifacts',
+    sql: [
+      `CREATE TABLE IF NOT EXISTS mu.review_output (
+         output_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+         run_id UUID NOT NULL,
+         tenant_id UUID NOT NULL,
+         agent_role TEXT NOT NULL,
+         attempt INT NOT NULL DEFAULT 1,
+         content JSONB NOT NULL,
+         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+         UNIQUE (run_id, agent_role, attempt)
+       )`,
+      `CREATE TABLE IF NOT EXISTS mu.fix_patch (
+         patch_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+         run_id UUID NOT NULL,
+         tenant_id UUID NOT NULL,
+         repo_id UUID NOT NULL,
+         head_sha TEXT NOT NULL,
+         finding_id UUID,
+         files JSONB NOT NULL DEFAULT '[]'::jsonb,
+         diff_text TEXT NOT NULL,
+         rationale TEXT,
+         applicability JSONB,
+         created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+       )`,
+      `CREATE INDEX IF NOT EXISTS fix_patch_run_idx ON mu.fix_patch (run_id)`,
+      `CREATE TABLE IF NOT EXISTS mu.finding_feedback (
+         feedback_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+         finding_id UUID NOT NULL,
+         run_id UUID NOT NULL,
+         tenant_id UUID NOT NULL,
+         user_id UUID NOT NULL,
+         action TEXT NOT NULL CHECK (action IN ('confirm','false_positive','wont_fix')),
+         note TEXT,
+         created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+       )`,
+      `CREATE INDEX IF NOT EXISTS finding_feedback_finding_idx ON mu.finding_feedback (finding_id)`,
+      `CREATE TABLE IF NOT EXISTS mu.pr_publish (
+         publish_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+         run_id UUID NOT NULL,
+         tenant_id UUID NOT NULL,
+         repo_id UUID NOT NULL,
+         pr_id UUID,
+         provider TEXT NOT NULL,
+         provider_pr_number INT NOT NULL,
+         head_sha TEXT NOT NULL,
+         comment_body TEXT NOT NULL,
+         remote_comment_id TEXT,
+         remote_url TEXT,
+         status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','published','failed','unconfirmed')),
+         published_by UUID,
+         summary TEXT,
+         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+         updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+       )`,
+      `CREATE INDEX IF NOT EXISTS pr_publish_run_idx ON mu.pr_publish (run_id)`,
+    ],
+  },
 ];
 
 export const MU_SCHEMA_LATEST = MU_MIGRATIONS[MU_MIGRATIONS.length - 1].version;

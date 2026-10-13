@@ -6,6 +6,7 @@ import { Alert, Button, Collapse, Popconfirm, Space, Table, Tag, Typography } fr
 import { PipelinePanel } from './MultiUserPage.jsx';
 import { ticketMap, SEVERITY, toneToColor, unknownEntry, muRunMap } from '../status-map.js';
 import { ProtectionUnknownCard } from '../components/ProtectionUnknownPanel.jsx';
+import { ReviewArtifactsPanel } from '../components/ReviewArtifactsPanel.jsx';
 
 // ── 动作安全化（PR-5）──
 // 超时上限：批准受控修复（approve）端点同步内联 fixVerifyRound（clone+test，可达分钟级）
@@ -402,6 +403,10 @@ export function MuPrDetailContent({ prRef, onChanged }) {
       ) : null}
 
       <PipelinePanel prNumber={Number(pr.provider_pr_number)} repoId={prRef.repoId} />
+
+      {/* ── 审查产物与交付（2026-10-13 产物波：概览/问题/补丁/验证/下载/发布）── */}
+      <ReviewArtifactsPanel repoId={prRef.repoId} prNumber={Number(pr.provider_pr_number)}
+        myActions={myActions} />
 
       {/* ── 第三层：技术详情与判定（默认折叠——四域/证据/机制说明/审查记录）── */}
       <Collapse className="mu-tech-collapse" ghost

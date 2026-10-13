@@ -226,9 +226,14 @@ export function validateAgentTeamsOutput(role, parsed) {
     return { ok: true };
   }
   if (role === 'fixer') {
-    for (const k of Object.keys(parsed)) if (!['suggestion', 'patch_hint'].includes(k)) return { ok: false, code: 'AT_SCHEMA_INVALID' };
+    for (const k of Object.keys(parsed)) if (!['suggestion', 'patch_hint', 'patch'].includes(k)) return { ok: false, code: 'AT_SCHEMA_INVALID' };
     if (parsed.suggestion && String(parsed.suggestion).length > 2000) return { ok: false, code: 'AT_SCHEMA_INVALID' };
     if (parsed.patch_hint && String(parsed.patch_hint).length > 4000) return { ok: false, code: 'AT_SCHEMA_INVALID' };
+    if (parsed.patch) {
+      const p = String(parsed.patch);
+      if (p.length > 16000) return { ok: false, code: 'AT_PATCH_TOO_LARGE' };
+      if (!p.includes('--- ') || !p.includes('+++ ')) return { ok: false, code: 'AT_PATCH_NOT_UNIFIED' };
+    }
     if (/git\s+push|rm\s+-rf\s+\//i.test(String(parsed.patch_hint ?? '') + String(parsed.suggestion ?? ''))) {
       return { ok: false, code: 'AT_FORBIDDEN_CONTENT' };
     }
@@ -266,7 +271,7 @@ export async function submitExternalRound(cfg, { runId, findings, fetchImpl = fe
         { taskId: 't-review', title: `review:${brief}`, assignedTo: AGENTTEAMS_WORKERS.reviewer.name, dependsOn: [] },
         { taskId: 't-leader', title: 'decide:给出裁定建议(JSON {recommendation,confidence})',
           assignedTo: AGENTTEAMS_WORKERS.leader.name, dependsOn: ['t-review'] },
-        { taskId: 't-fix', title: `fix:产出修复建议(JSON {suggestion,patch_hint})——仅 dry-run 文本，禁止执行`,
+        { taskId: 't-fix', title: `fix:产出修复建议(JSON {suggestion,patch_hint,patch?统一diff})——仅 dry-run，禁止执行`,
           assignedTo: AGENTTEAMS_WORKERS.fixer.name, dependsOn: ['t-leader'] },
         { taskId: 't-verify', title: 'verify:独立判断修复建议是否解决 finding(JSON {verdict:PASS|FAIL|BLOCKED,note})',
           assignedTo: AGENTTEAMS_WORKERS.verifier.name, dependsOn: ['t-fix'] },
