@@ -8,6 +8,10 @@ import {
   Select, Space, Table, Tag, Typography,
 } from 'antd';
 
+const csrfHeader = () => {
+  const row = document.cookie.split(';').map((s) => s.trim()).find((s) => s.startsWith('mp_csrf='));
+  return row ? { 'X-CSRF-Token': decodeURIComponent(row.slice('mp_csrf='.length)) } : {};
+};
 const apiFetch = (path, opts = {}) => fetch(path, { credentials: 'same-origin', ...opts });
 
 const SEV_COLOR = { P0: 'red', P1: 'orange', P2: 'gold', P3: 'default' };
@@ -90,7 +94,7 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [] }) {
     setFbBusy(findingId + action);
     try {
       const r = await apiFetch(`/api/mu/findings/${findingId}/feedback`, {
-        method: 'POST', headers: { 'content-type': 'application/json' },
+        method: 'POST', headers: { 'content-type': 'application/json', ...csrfHeader() },
         body: JSON.stringify({ action, note }),
       });
       const b = await r.json().catch(() => ({}));
@@ -120,7 +124,7 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [] }) {
     setPubBusy(true);
     try {
       const r = await apiFetch(`/api/mu/runs/${runId}/publish`, {
-        method: 'POST', headers: { 'content-type': 'application/json' },
+        method: 'POST', headers: { 'content-type': 'application/json', ...csrfHeader() },
         body: JSON.stringify({ confirm: true }),
       });
       const b = await r.json().catch(() => ({}));
