@@ -222,6 +222,8 @@ export async function publishRun(pool, { env = process.env, runId, tenantId, use
 
 async function finishPublished(pool, { runId, tenantId, userId, provider, prNumber, headSha,
   body, remoteCommentId, remoteUrl }) {
+  // 与 publishRun 相同的归一化：pool 参数可为 Pool 实例或注入的查询函数。
+  const q = (typeof pool === 'function') ? pool : (text, params) => pool.query(text, params);
   // 幂等记录：同 run 已有记录则更新（不重复建行）
   const ex = (await q(
     `SELECT publish_id FROM mu.pr_publish WHERE run_id=$1 AND status='published' LIMIT 1`,
