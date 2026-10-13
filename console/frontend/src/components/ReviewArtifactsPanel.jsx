@@ -153,7 +153,7 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [] }) {
 
   if (state === 'loading') return <Alert type="info" showIcon message="审查产物：加载中…" />;
   if (state === 'no-pr' || state === 'no-run') {
-    return <Alert type="default" showIcon message="审查产物：该 PR 尚无审查 run" description="发起审查后，产物（问题清单/建议补丁/验证记录/下载）会展示在这里。" />;
+    return <Alert type="info" showIcon message="审查产物：该 PR 尚无审查 run" description="发起审查后，产物（问题清单/建议补丁/验证记录/下载）会展示在这里。" />;
   }
   if (state === 'forbidden') return <Alert type="warning" showIcon message="审查产物：当前角色无权查看" />;
   if (state === 'error') return <Alert type="warning" showIcon message="审查产物：加载失败（网络或服务异常）" />;
@@ -174,7 +174,7 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [] }) {
           message={`部分角色输出解析失败：${parseState.parse_failures.join(', ')}——原始内容已保留，不影响其余产物`} />
       ) : null}
       {outputsMissing ? (
-        <Alert type="default" showIcon style={{ marginBottom: 6 }}
+        <Alert type="info" showIcon style={{ marginBottom: 6 }}
           message="历史产物缺失：该 run 早于产物持久化上线——如实展示既有摘要，不伪造补丁/正文" />
       ) : null}
 
