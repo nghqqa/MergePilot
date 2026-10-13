@@ -183,6 +183,7 @@ export function buildPublishComment({ run, findings, patch, verification,
   lines.push('## MergePilot AI 审查（建议，未修改代码）');
   lines.push('');
   lines.push(`被审查版本：\`${String(headSha).slice(0, 12)}\`${reviewedAt ? `（${reviewedAt} UTC 完成）` : ''} · 引擎：${run.llm_mode ?? 'n/a'} 首轮 + AgentTeams 四角色链`);
+  lines.push(`最近更新：${gen}（UTC）——同一评论原位更新，此行时间随每次发布变化`);
   lines.push('');
   lines.push('### 风险摘要');
   lines.push('');
