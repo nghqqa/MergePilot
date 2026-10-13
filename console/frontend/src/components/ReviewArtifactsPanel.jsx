@@ -129,7 +129,8 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [] }) {
       });
       const b = await r.json().catch(() => ({}));
       if (r.ok) {
-        setPubMsg({ tone: 'success', text: `已${b.updated ? '更新' : '发布'}到原 PR（评论 ${String(b.remote_comment_id ?? '').slice(0, 12)}）` });
+        setPubMsg({ tone: 'success', url: b.remote_url,
+          text: `已${b.updated ? '原位更新' : '发布'}到原 PR${b.remote_url ? '——点击右侧查看' : ''}（评论 ${String(b.remote_comment_id ?? '').slice(0, 12)}）` });
         setPubPreview(null);
         await load();
       } else {
@@ -292,10 +293,15 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [] }) {
           </Button>
           {publish?.status === 'published' ? (
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              已发布（{publish.provider} PR#{publish.provider_pr_number}，{publish.updated_at}）——再次发布将更新同一条评论。
+              已发布（{publish.provider} PR#{publish.provider_pr_number}，{publish.updated_at}）——再次发布将原位更新同一条评论（Gitee 页面显示的是首次创建时间）。
             </Typography.Text>
           ) : null}
         </Space>
+        {pubMsg ? (
+          <Alert style={{ marginTop: 6 }} type={pubMsg.tone} showIcon
+            message={pubMsg.text}
+            action={pubMsg.url ? <Button size="small" href={pubMsg.url} target="_blank" rel="noreferrer">查看评论</Button> : undefined} />
+        ) : null}
         {!canPublish ? (
           <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
             发布需要 decide_review 角色（对外写入与裁定同级）；后端为最终授权方。
