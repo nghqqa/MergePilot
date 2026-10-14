@@ -186,7 +186,8 @@ export async function handlePullRequestEvent(pool, cfg, { payload, servicePrinci
       outputDigest: outDigest, modelId: RULES_VERSION, promptVersion: RULES_VERSION,
       latencyMs: Date.now() - started, evidenceRef: `attempt:${claim.attemptId}` });
     const inserted = await insertFindings(pool, { attemptId: claim.attemptId, runId: run.run_id,
-      tenantId: ctx.tenantId, repoId: ctx.repoId, prId: ctx.prId, headSha, findings });
+      tenantId: ctx.tenantId, repoId: ctx.repoId, prId: ctx.prId, headSha, findings,
+      source: 'precheck' });
     await transitionRun(pool, { runId: run.run_id, from: ['REVIEWING'], to: 'REVIEWED' });
     // v25 上下文冻结（审查完成时一次性写入；IS NULL 防幂等重放覆盖）——
     // completeness/来源/实际 head 随 run 留痕，审批票与详情如实呈现（不写入=未记录，不伪造）。
@@ -300,7 +301,8 @@ export async function handlePullRequestEvent(pool, cfg, { payload, servicePrinci
             remediation: String(f.recommendation ?? '').slice(0, 1000),
             summary_masked: 'LLM 建议详见 remediation（输出已过 schema 校验）' }));
           llmCount = await insertFindings(pool, { attemptId: llmClaim.attemptId, runId: run.run_id,
-            tenantId: ctx.tenantId, repoId: ctx.repoId, prId: ctx.prId, headSha, findings: mapped });
+            tenantId: ctx.tenantId, repoId: ctx.repoId, prId: ctx.prId, headSha, findings: mapped,
+            source: 'reviewer' }); // 模型发现来源显式——不与静态规则混同
           await finishAttempt(pool, { attemptId: llmClaim.attemptId, status: 'DONE',
             outputDigest: r.outputDigest, modelId: r.model, promptVersion: r.promptVersion,
             latencyMs: r.latencyMs ?? Date.now() - t0, tokenCount: null,
