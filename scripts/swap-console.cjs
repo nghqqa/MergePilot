@@ -34,6 +34,7 @@
 
 const fs = require('node:fs');
 const { spawnSync } = require('node:child_process');
+const path = require('node:path');
 
 // 硬编码 no 的替代基线：daemon 重启自愈的最低要求（rc.11 缺陷回归锁）
 const FALLBACK_RESTART_POLICY = 'unless-stopped';
@@ -105,7 +106,7 @@ function buildDockerRunArgs(inspect, image, options = {}) {
   }
   for (const extra of options.extraMounts || []) args.push('-v', extra); // 仅追加，不丢继承
 
-  const inheritedEnv = (cfg.Env || []).filter((e) => !e.startsWith('MERGEPILOT_VERSION='));
+  const inheritedEnv = (cfg.Env || []).filter((e) => !e.startsWith('MERGEPILOT_VERSION=') && !e.startsWith('MERGEPILOT_GIT_COMMIT='));
   // 版本烙印过滤（2026-10-13 rc.27 实证）：running 容器的 inspect env 含上一镜像烘焙的
   // MERGEPILOT_VERSION（image ENV 会并进 running env）——不过滤会覆盖新镜像的版本值，
   // 造成"代码 rc.27、标签 rc.26"。版本只随镜像走（构建期 ARG/ENV 唯一真源）。
