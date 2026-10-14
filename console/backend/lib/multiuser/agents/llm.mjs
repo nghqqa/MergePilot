@@ -206,7 +206,7 @@ export async function callLlmReviewer(provider, { pr, findings, diff, apiKey },
   if (provider?.kind !== 'openai_compatible') {
     return { ok: false, code: provider?.reason ? provider.reason : 'LLM_DISABLED' };
   }
-  const { payload, inputDigest } = sanitizeContextForLlm({ pr, findings, diff });
+  const { payload, inputDigest, coverage } = sanitizeContextForLlm({ pr, findings, diff });
   const started = Date.now();
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), provider.timeout);
