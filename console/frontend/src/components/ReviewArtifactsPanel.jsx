@@ -355,7 +355,9 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [] }) {
   const headSha = run.head_sha ?? '';
   const p0 = findings.filter((f) => f.severity === 'P0').length;
   const p1 = findings.filter((f) => f.severity === 'P1').length;
-  const outputsMissing = !outputs.reviewer && !outputs.leader && !outputs.fixer && !outputs.verifier;
+  // LLM 二阶段 run 只有 findings（无四角色 review_output）——有 finding 不算历史缺失
+  const outputsMissing = !outputs.reviewer && !outputs.leader && !outputs.fixer && !outputs.verifier
+    && !(art?.findings ?? []).length;
   const sourceUrl = (f) => {
     if (!provider || !owner || !repoName) return null;
     const base = provider === 'gitee' ? 'https://gitee.com' : provider === 'github' ? 'https://github.com' : null;
