@@ -60,6 +60,32 @@ const report = art.buildMarkdownReport({ run: runFixture, findings, attempts: []
   prNumber: 2, headSha: HEAD });
 ok('C3 报告含 head/发现/未验证声明', report.includes(HEAD.slice(0, 8)) && report.includes('未验证'), null);
 
+// ── 权威口径（真实可应用性以 git_apply 为准——结构通过不得宣称可应用）──
+const failPatch = { files: [{ path: 'src/config.js' }], head_sha: HEAD, patch_version: 1,
+  patch_digest: 'a'.repeat(64),
+  applicability: { ok: true, issues: [], checks: ['format'],
+    git_apply: { verified: true, ok: false, method: 'git apply --check',
+      output: 'git apply --check 失败: error: corrupt patch at line 8' } } };
+const bodyFail = art.buildPublishComment({ run: runFixture, findings, patch: failPatch,
+  verification: [], repoLabel: 'o/r', prNumber: 2, headSha: HEAD, detailUrl: null, reviewedAt: null });
+ok('C4 结构通过+真实失败 → 评论明确"补丁不可应用"', bodyFail.includes('不可应用'), bodyFail.slice(0, 400));
+ok('C5 评论不再以结构 ok 宣称可应用', !/可应用性\s+"?true"?/.test(bodyFail), null);
+const reportFail = art.buildMarkdownReport({ run: runFixture, findings, attempts: [], outputs: {},
+  patch: failPatch, verification: [], repoLabel: 'o/r', prNumber: 2, headSha: HEAD });
+ok('C6 报告验证三分含真实失败+digest', reportFail.includes('失败——补丁不可应用')
+  && reportFail.includes('格式与路径检查') && reportFail.includes('实际修复测试'), null);
+const tvPass = { verified: true, ok: true, test_cmd: 'node tests/bug.test.js',
+  pre: { code: 1 }, post: { code: 0 } };
+const lv = art.patchVerificationLines({ files: [], applicability: { ok: true, issues: [] },
+  patch_digest: 'a'.repeat(64), test_verification: tvPass });
+ok('C7 实际测试通过行=修复前败→修复后过', lv.some((l) => l.includes('实际修复测试：通过') && l.includes('修复前失败→修复后通过')), lv);
+const tvPre = { verified: true, ok: false, reason: 'pre_test_passed', pre: { code: 0 }, post: null };
+ok('C8 修复前即通过=不能证明修复（如实）',
+  art.patchVerificationLines({ applicability: null, test_verification: tvPre })
+    .some((l) => l.includes('未通过')), null);
+ok('C9 未执行测试如实标注',
+  art.patchVerificationLines({ applicability: null }).some((l) => l.includes('未执行')), null);
+
 // ── 管线级（一次性 PG）──
 const CTR = `mu-art-${crypto.randomBytes(3).toString('hex')}`;
 const PORT = 17500 + Math.floor(Math.random() * 60);
@@ -87,6 +113,24 @@ try {
   ok('D3 非法补丁拒绝（not_unified_diff）', badPatch.ok === false && badPatch.reason === 'not_unified_diff', badPatch);
   ok('D4 入库内容与保存产物一致', patchRow?.diff_text === GOOD_DIFF, null);
 
+  // 版本化闭环：修正=新版本行（原文+诊断保留）；active 唯一；digest 绑定；correction 链
+  const v2diff = GOOD_DIFF + '\n';
+  const v2 = await art.persistFixPatch(pool, { runId: RUN, tenantId: T, repoId: REPO,
+    headSha: HEAD, diffText: v2diff, rationale: 'deterministic fix: add trailing newline',
+    changedFiles: [{ path: 'src/config.js' }], correctionOf: okPatch.patchId,
+    correctionKind: 'deterministic' });
+  const vers = (await pool.query(
+    `SELECT patch_id, patch_version, active, patch_digest, correction_of, correction_kind, diff_text
+       FROM mu.fix_patch WHERE run_id=$1 ORDER BY patch_version`, [RUN])).rows;
+  ok('D5 修正=新版本行（v2）且原始版本保留', v2.ok === true && vers.length === 2
+    && vers[0].patch_version === 1 && vers[1].patch_version === 2
+    && vers[0].diff_text === GOOD_DIFF, { len: vers.length, v2: v2.patchVersion });
+  ok('D6 active 唯一（仅 v2）', vers[0].active === false && vers[1].active === true, vers.map((r) => r.active));
+  ok('D7 digest 绑定各版本', vers[0].patch_digest === art.sha256Hex(GOOD_DIFF)
+    && vers[1].patch_digest === art.sha256Hex(v2diff), null);
+  ok('D8 correction 链（correction_of/kind）', vers[1].correction_of === okPatch.patchId
+    && vers[1].correction_kind === 'deterministic', vers[1]);
+
   // ── 发布流程（seed 仓库/PR/run + 全局 fetch mock）──
   await pool.query(
     `INSERT INTO mu.repository (repo_id, tenant_id, provider, provider_repo_id, owner, name)
@@ -108,23 +152,25 @@ try {
   const remoteBody = [];
 
   const realFetch = globalThis.fetch;
+  // 端点口径=#425 实测：Gitee PR 评论在 pulls 空间（list/POST=pulls/{n}/comments，PATCH=pulls/comments/{id}）
   globalThis.fetch = async (url, opts = {}) => {
     const u = String(url);
-    if (u.includes('/pulls/2?') || u.includes('/pulls/2')) {
-      return { ok: true, status: 200, json: async () => ({ head: { sha: HEAD } }) };
+    const m = opts.method || 'GET';
+    if (u.includes('/pulls/comments/') && m === 'PATCH') {
+      const b = JSON.parse(opts.body);
+      remoteBody[0] = { id: 777, body: b.body };
+      return { ok: true, status: 200, json: async () => ({ id: 777, html_url: 'https://gitee.com/x' }) };
     }
-    if (u.includes('/issues/2/comments?') && (!opts.method || opts.method === 'GET')) {
-      return { ok: true, status: 200, json: async () => remoteBody };
-    }
-    if (u.includes('/issues/2/comments') && opts.method === 'POST') {
+    if (u.includes('/pulls/2/comments') && m === 'POST') {
       const b = JSON.parse(opts.body);
       remoteBody.push({ id: 777, body: b.body });
       return { ok: true, status: 201, json: async () => ({ id: 777, html_url: 'https://gitee.com/x' }) };
     }
-    if (u.includes('/issues/comments/') && opts.method === 'PATCH') {
-      const b = JSON.parse(opts.body);
-      remoteBody[0] = { id: 777, body: b.body };
-      return { ok: true, status: 200, json: async () => ({ id: 777, html_url: 'https://gitee.com/x' }) };
+    if (u.includes('/pulls/2/comments') && m === 'GET') {
+      return { ok: true, status: 200, json: async () => remoteBody };
+    }
+    if (/\/pulls\/2(\?|$)/.test(u)) {
+      return { ok: true, status: 200, json: async () => ({ head: { sha: HEAD } }) };
     }
     return { ok: true, status: 200, json: async () => ({}) };
   };
@@ -141,11 +187,9 @@ try {
     && remoteBody.length === 1, { rr2, remote: remoteBody.length });
 
   // stale head：远端推进 → 拒绝发布且不触达评论
-  remoteBody.push = remoteBody.push; // keep
   globalThis.fetch = async (url, opts = {}) => {
     const u = String(url);
-    if (u.includes('/pulls/2?')) return { ok: true, status: 200, json: async () => ({ head: { sha: 'ddd' } }) };
-    if (u.includes('/issues/2/comments')) return { ok: true, status: 200, json: async () => remoteBody };
+    if (/\/pulls\/2(\?|$)/.test(u)) return { ok: true, status: 200, json: async () => ({ head: { sha: 'ddd' } }) };
     return { ok: true, status: 200, json: async () => ({}) };
   };
   const calls2 = [];
@@ -153,8 +197,7 @@ try {
   globalThis.fetch = async (url, opts = {}) => {
     const u = String(url);
     if (opts.method === 'POST' || opts.method === 'PATCH') calls2.push(u);
-    if (u.includes('/pulls/2?')) return { ok: true, status: 200, json: async () => ({ head: { sha: 'moved-on' } }) };
-    if (u.includes('/issues/2/comments')) return { ok: true, status: 200, json: async () => remoteBody };
+    if (/\/pulls\/2(\?|$)/.test(u)) return { ok: true, status: 200, json: async () => ({ head: { sha: 'moved-on' } }) };
     return { ok: true, status: 200, json: async () => ({}) };
   };
   const rr3 = await pub.publishRun(pool, { env, runId: RUN, tenantId: T, userId: null });
@@ -164,11 +207,14 @@ try {
   // 失败状态：创建 500 → failed（不静默成功）
   globalThis.fetch = async (url, opts = {}) => {
     const u = String(url);
-    if (u.includes('/pulls/2?')) return { ok: true, status: 200, json: async () => ({ head: { sha: HEAD } }) };
-    if (u.includes('/issues/2/comments') && (!opts.method || opts.method === 'GET')) {
+    if (/\/pulls\/2(\?|$)/.test(u)) return { ok: true, status: 200, json: async () => ({ head: { sha: HEAD } }) };
+    if (u.includes('/pulls/comments/') && opts.method === 'PATCH') {
+      return { ok: false, status: 500, json: async () => ({}) };
+    }
+    if (u.includes('/pulls/2/comments') && (!opts.method || opts.method === 'GET')) {
       return { ok: true, status: 200, json: async () => [] };
     }
-    if (u.includes('/issues/2/comments') && opts.method === 'POST') {
+    if (u.includes('/pulls/2/comments') && opts.method === 'POST') {
       return { ok: false, status: 500, json: async () => ({}) };
     }
     return { ok: true, status: 200, json: async () => ({}) };

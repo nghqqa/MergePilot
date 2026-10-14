@@ -148,17 +148,19 @@ export async function publishRun(pool, { env = process.env, runId, tenantId, use
   const outputs = {};
   for (const r of outRows) outputs[r.agent_role] = r.content;
   const patchRow = (await q(
-    `SELECT head_sha, files, applicability, rationale FROM mu.fix_patch
-      WHERE run_id=$1 ORDER BY created_at DESC LIMIT 1`, [runId])).rows[0] ?? null;
+    `SELECT head_sha, files, applicability, rationale, patch_version, patch_digest, test_verification
+       FROM mu.fix_patch WHERE run_id=$1 AND active
+      ORDER BY patch_version DESC LIMIT 1`, [runId])).rows[0] ?? null;
   const verification = [
     '静态规则检查（首轮 deterministic）：已执行',
     '模型独立评估（verifier）：已执行——为模型判断，非实际测试',
-    '实际测试执行：未执行（DRY_RUN 建议链不含沙箱测试）',
+    '实际修复测试：' + (patchRow?.test_verification?.verified
+      ? (patchRow.test_verification.ok ? '已执行并通过（隔离环境，预批准命令）' : '已执行但未通过（见验证三分）')
+      : '未执行（模型评估/可应用性通过 ≠ 行为正确）'),
   ];
 
-  const body = buildPublishComment({ run, findings, patch: patchRow ? {
-    files: patchRow.files, applicability: patchRow.applicability, head_sha: patchRow.head_sha,
-  } : null, verification, repoLabel: `${run.owner}/${run.repo_name}`,
+  const body = buildPublishComment({ run, findings, patch: patchRow, verification,
+    repoLabel: `${run.owner}/${run.repo_name}`,
     prNumber: run.provider_pr_number, headSha: run.head_sha,
     detailUrl: detailBaseUrl ? `${detailBaseUrl.replace(/\/+$/, '')}/runs/${runId}` : null,
     reviewedAt: '2026-10-13' });

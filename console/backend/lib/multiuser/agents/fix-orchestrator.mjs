@@ -244,6 +244,79 @@ function envGiteeHost() {
   return 'gitee.com';
 }
 
+// 预批准测试命令解析在 patch-test-cmd.mjs（单一入口；只信部署级配置，绝不信模型输出）。
+
+// 修正再生成：git apply --check 失败后的一次有界 fixer 委托（≤2 次发送尝试——与角色轮次
+// 既有预算同形；沿用 mtTimeout 不延长）。脱敏错误+原 diff 入 brief；意图不明时 fixer 可不
+// 返回 patch（如实结束，不猜测代码修改）。委托失败/超时不杀死整轮——补丁保持最新版本与
+// 不可应用证据（审计 at_patch_correction_unavailable）。
+async function delegatePatchCorrection(pool, ctx) {
+  const { atMod, atCfg, mt, mtCfg, bindings, rec, runId, tenantId, repoId, prId, headSha,
+    originalDiff, applyError, fixClaim, proj, fetchImpl, mtFetch, mtSleep, mtTimeout, gateAudit } = ctx;
+  const role = 'fixer';
+  const b = bindings[role];
+  if (!b?.roomID || !b?.matrixUserID) return null;
+  const claim = await retryClaim(pool, { runId, agentRole: role, provider: 'agentteams',
+    actorPrincipal: 'system:leader', inputDigest: digestOf(`${runId}|at-fix-corr`),
+    maxAttempts: MAX_FIX_ROUNDS * 2, tenantId, repoId, prId, headSha }).catch(() => ({ ok: false }));
+  if (!claim.ok) {
+    await gateAudit('at_patch_correction_claim_failed', {});
+    return null;
+  }
+  const taskId = 't-fix-corr';
+  const prevBounded = String(originalDiff ?? '').slice(0, 8_000);
+  const ask = 'PATCH CORRECTION (dry-run ONLY, no commands, no repo writes). '
+    + `Your previous unified diff failed "git apply --check" with: ${String(applyError).slice(0, 300)}. `
+    + `Previous diff:\nUNTRUSTED_PREVIOUS_PATCH (context, do not echo):\n${prevBounded}\n`
+    + 'Return the corrected minimal unified diff against the same head in "patch" '
+    + '(complete file headers, correct hunk counts, ends with newline). '
+    + 'If the change intent is unclear from the previous diff alone, omit "patch" and explain in suggestion.';
+  for (let attemptNo = 1; attemptNo <= 2; attemptNo++) {
+    const submissionId = `${runId}:${taskId}:${attemptNo}`;
+    let roundEvt = null;
+    roundEvt = await rec.recordSkillInvocationStart(pool, {
+      tenantId, repoId, prId, runId,
+      attemptId: claim.attemptId ?? null,
+      agentRole: role, skillKey: 'external_round', invocationKind: 'agentteams_round',
+      idempotencyKey: `atr:${runId}:${taskId}:${attemptNo}`,
+      inputDigest: atMod.atDigest(ask) });
+    if (!roundEvt.ok) { await gateAudit('at_patch_correction_gate_rejected', { reason: roundEvt.code }); break; }
+    const sent = await mt.sendTaskDelegation(mtCfg, { room: b.roomID,
+      workerMatrixId: b.matrixUserID, taskId, correlationId: runId,
+      submissionId, role, brief: ask, fetchImpl: mtFetch });
+    if (!sent.ok) {
+      await rec.recordInvocationFailure(pool, { eventId: roundEvt.eventId, status: 'FAILED',
+        errorCode: String(sent.reason ?? 'send_failed').slice(0, 120) }).catch(() => {});
+      continue;
+    }
+    const got = await mt.collectReply(mtCfg, { room: b.roomID,
+      expectedSender: b.matrixUserID, marker: `[mp:${submissionId}]`,
+      sinceTs: sent.ts - mt.MT_LIMITS.markerGuardMs, timeoutMs: mtTimeout,
+      fetchImpl: mtFetch, sleepImpl: mtSleep });
+    let candidate = got.ok ? got.json : null;
+    let v = candidate ? atMod.validateAgentTeamsOutput('fixer', candidate) : { ok: false };
+    if (!v.ok && candidate) {
+      const projected = mt.projectToRoleSchema('fixer', candidate);
+      if (projected && atMod.validateAgentTeamsOutput('fixer', projected).ok) candidate = projected;
+      v = atMod.validateAgentTeamsOutput('fixer', candidate);
+    }
+    if (got.ok && v.ok) {
+      await rec.recordSkillInvocationFinish(pool, { eventId: roundEvt.eventId,
+        status: 'SUCCEEDED', outputDigest: digestOf(JSON.stringify(candidate)) }).catch(() => {});
+      await finishAttemptOrSkip(pool, claim.attemptId, 'DONE', null);
+      return candidate;
+    }
+    await rec.recordInvocationFailure(pool, { eventId: roundEvt.eventId,
+      status: String(got.reason ?? '').includes('TIMEOUT') ? 'TIMEOUT' : 'FAILED',
+      errorCode: String(got.reason ?? v.code ?? 'correction_invalid').slice(0, 120) }).catch(() => {});
+  }
+  // 修正委托未产出：取消外部任务（只取消修正 taskId，不动主链），attempt 标 FAILED
+  await atMod.cancelExternalRound(atCfg, { projectId: proj, taskId,
+    reason: `mergepilot-patch-correction-failed`, submissionId: proj, fetchImpl }).catch(() => {});
+  await finishAttemptOrSkip(pool, claim.attemptId, 'FAILED', 'patch_correction_failed');
+  return null;
+}
+
 async function runExternalRound(pool, atMod, atCfg, { run, binding, deps, gateFindingId = null }) {
   const { runId } = { runId: run.run_id };
   const { tenantId, repoId, prId, headSha } = binding;
@@ -461,41 +534,122 @@ async function runExternalRound(pool, atMod, atCfg, { run, binding, deps, gateFi
     }
   }
 
-  // ── 链输出持久化（原文入 mu.review_output）+ 建议补丁（结构检查后入 mu.fix_patch）──
+  // ── 链输出持久化 + 可用补丁闭环（2026-10-14 波）──
+  // 生成→保存原始输出→结构检查→真实 git apply --check→（失败时）有界修正→版本化落库。
+  //  * 每个版本独立行：原文+诊断永久保留（correction_of 链）；active 行=页面/下载/发布唯一版本；
+  //  * 确定性修正仅限缺尾换行（artifacts.deterministicNormalize 唯一白名单）；
+  //    其余失败反馈 fixer 再生成（≤AT_PATCH_REGEN_MAX 次，默认 1；沿用既有超时预算）；
+  //  * 修正耗尽仍失败 → as-is 保留 + 审计 at_patch_not_applicable（页面明确"补丁不可应用"）。
   try {
-    const { persistChainOutputs, persistFixPatch } = await import('../artifacts.mjs');
+    const { persistChainOutputs, persistFixPatch, sha256Hex, deterministicNormalize } = await import('../artifacts.mjs');
     await persistChainOutputs(pool, { runId, tenantId, results });
     const fixerPatch = typeof results.fixer?.patch === 'string' ? results.fixer.patch : null;
     if (fixerPatch) {
-      const persisted = await persistFixPatch(pool, { runId, tenantId, repoId, headSha,
+      const { verifyPatchApplies } = await import('../patch-applicability.mjs');
+      const repoUrl = deps.repoUrl ?? `https://${envGiteeHost()}/${deps.owner ?? ''}/${deps.repoName ?? ''}.git`;
+      const checkMs = Number(env.AT_APPLY_CHECK_MS ?? 60_000) || 60_000;
+      const applyEvidence = async (patchId, diff) => {
+        const r = await verifyPatchApplies({ repoUrl, headSha, diffText: diff,
+          patchDigest: sha256Hex(diff), timeoutMs: checkMs });
+        await pool.query(
+          `UPDATE mu.fix_patch SET applicability = applicability || $2::jsonb WHERE patch_id=$1`,
+          [patchId, JSON.stringify({ git_apply: r })]).catch(() => {});
+        await gateAudit('at_patch_apply_check', { run_id: runId, patch_id: patchId,
+          verified: r.verified, ok: r.ok ?? null, waited_ms: r.duration_ms ?? null,
+          reason: r.reason ?? null, diagnosis: r.diagnosis ?? null });
+        return r;
+      };
+
+      // v1：原始 fixer 输出（原文与失败诊断永不覆盖）
+      const v1 = await persistFixPatch(pool, { runId, tenantId, repoId, headSha,
         diffText: fixerPatch,
         rationale: String(results.fixer?.suggestion ?? '').slice(0, 500),
         changedFiles: diffCtx?.files ?? [] });
-      if (persisted.ok) {
-        await gateAudit('at_fix_patch_persisted', { patch_id: persisted.patchId,
-          applicability: persisted.applicability });
-        // 真实可应用性验证：隔离工作副本检出准确 head + git apply --check（有界超时，
-        // 诊断脱敏）。失败/超时不回滚已存补丁——applicability.git_apply 如实记录结果。
-        try {
-          const { verifyPatchApplies } = await import('../patch-applicability.mjs');
-          const check = await verifyPatchApplies({
-            repoUrl: deps.repoUrl ?? `https://${envGiteeHost()}/${deps.owner ?? ''}/${deps.repoName ?? ''}.git`,
-            headSha, diffText: fixerPatch,
-            timeoutMs: Number(env.AT_APPLY_CHECK_MS ?? 60_000) || 60_000,
-          });
-          const merged = { ...(persisted.applicability ?? {}), git_apply: check };
-          await pool.query(
-            `UPDATE mu.fix_patch SET applicability = $2::jsonb WHERE run_id=$1`,
-            [runId, JSON.stringify(merged)]);
-          await gateAudit('at_patch_apply_check', { run_id: runId,
-            verified: check.verified, ok: check.ok ?? null,
-            waited_ms: check.duration_ms ?? null, reason: check.reason ?? null });
-        } catch (e) {
-          await gateAudit('at_patch_apply_check_error', { run_id: runId,
-            reason: String(e?.message ?? e).slice(0, 100) });
+      if (v1.ok) {
+        await gateAudit('at_fix_patch_persisted', { patch_id: v1.patchId,
+          patch_version: v1.patchVersion, patch_digest: v1.patchDigest });
+        let active = v1;
+        let check = await applyEvidence(v1.patchId, fixerPatch);
+
+        // 有界修正 ①：确定性（缺尾换行）→ 新版本产物并重检（修正内容=下载内容）
+        if (check.verified && check.ok === false) {
+          const nd = deterministicNormalize(fixerPatch);
+          if (nd) {
+            const v2 = await persistFixPatch(pool, { runId, tenantId, repoId, headSha,
+              diffText: nd.diff,
+              rationale: `${String(results.fixer?.suggestion ?? '').slice(0, 400)} [deterministic fix: ${nd.kind}]`,
+              changedFiles: diffCtx?.files ?? [],
+              correctionOf: v1.patchId, correctionKind: 'deterministic' });
+            if (v2.ok) {
+              active = v2;
+              await gateAudit('at_patch_correction', { run_id: runId, kind: 'deterministic',
+                from: v1.patchId, to: v2.patchId, patch_version: v2.patchVersion });
+              check = await applyEvidence(v2.patchId, nd.diff);
+            }
+          }
+          // 有界修正 ②：仍失败 → 反馈脱敏错误给 fixer 再生成（≤1 次，不延长超时）
+          const regenMax = Math.max(0, Number(env.AT_PATCH_REGEN_MAX ?? 1) || 0);
+          if (check.verified && check.ok === false && regenMax > 0) {
+            const corr = await delegatePatchCorrection(pool, { atMod, atCfg, mt, mtCfg,
+              bindings, rec, runId, tenantId, repoId, prId, headSha,
+              originalDiff: fixerPatch, applyError: check.output ?? 'git apply --check 失败',
+              fixClaim, proj, fetchImpl, mtFetch, mtSleep, mtTimeout, gateAudit });
+            if (corr && typeof corr.patch === 'string' && corr.patch.trim()
+              && corr.patch !== fixerPatch) {
+              const v3 = await persistFixPatch(pool, { runId, tenantId, repoId, headSha,
+                diffText: corr.patch,
+                rationale: `${String(corr.suggestion ?? results.fixer?.suggestion ?? '').slice(0, 400)} [regenerated after apply-check failure]`,
+                changedFiles: diffCtx?.files ?? [],
+                correctionOf: active.patchId, correctionKind: 'regenerated' });
+              if (v3.ok) {
+                active = v3;
+                await gateAudit('at_patch_correction', { run_id: runId, kind: 'regenerated',
+                  from: v1.patchId, to: v3.patchId, patch_version: v3.patchVersion });
+                check = await applyEvidence(v3.patchId, corr.patch);
+              }
+            } else {
+              await gateAudit('at_patch_correction_unavailable', { run_id: runId,
+                reason: corr ? 'no_new_patch' : 'delegation_failed' });
+            }
+          }
+        }
+        // 终局口径：仍失败 → 明确登记"补丁不可应用"（不宣称修复成功；run 链路照常走向验证）
+        if (check.verified && check.ok === false) {
+          await gateAudit('at_patch_not_applicable', { run_id: runId,
+            patch_id: active.patchId, patch_version: active.patchVersion,
+            output: String(check.output ?? '').slice(0, 200) });
         }
       } else {
-        await gateAudit('at_fix_patch_rejected', { reason: persisted.reason });
+        await gateAudit('at_fix_patch_rejected', { reason: v1.reason ?? 'invalid_diff' });
+      }
+
+      // 实际修复测试（第三分）：仅当本仓库配置了预批准测试命令（env JSON 映射，非模型提供）。
+      // 隔离临时副本：检出准确 head → 修复前跑测试（须失败）→ 应用补丁 → 修复后同测（须通过）。
+      try {
+        const activeRow = (await pool.query(
+          `SELECT patch_id, diff_text, patch_digest, applicability FROM mu.fix_patch
+            WHERE run_id=$1 AND active ORDER BY patch_version DESC LIMIT 1`, [runId])).rows[0];
+        const { resolvePreApprovedTestCmd } = await import('./patch-test-cmd.mjs');
+        const testCmd = resolvePreApprovedTestCmd(env, deps);
+        if (activeRow && testCmd) {
+          const applicable = activeRow.applicability?.git_apply;
+          if (applicable && applicable.verified && applicable.ok
+            && applicable.patch_digest === activeRow.patch_digest) {
+            const { verifyFixTest } = await import('../patch-test.mjs');
+            const tv = await verifyFixTest({ repoUrl, headSha, diffText: activeRow.diff_text,
+              testCmd, patchDigest: activeRow.patch_digest,
+              timeoutMs: Number(env.AT_FIX_TEST_MS ?? 120_000) || 120_000 });
+            await pool.query(
+              `UPDATE mu.fix_patch SET test_verification = $2::jsonb WHERE patch_id=$1`,
+              [activeRow.patch_id, JSON.stringify(tv)]).catch(() => {});
+            await gateAudit('at_fix_test', { run_id: runId, patch_id: activeRow.patch_id,
+              verified: tv.verified, ok: tv.ok ?? null, test_cmd: tv.test_cmd ?? null,
+              pre_code: tv.pre?.code ?? null, post_code: tv.post?.code ?? null,
+              reason: tv.reason ?? null });
+          }
+        }
+      } catch (e) {
+        await gateAudit('at_fix_test_error', { reason: String(e?.message ?? e).slice(0, 100) });
       }
     }
   } catch (e) {

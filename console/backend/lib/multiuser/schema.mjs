@@ -1598,6 +1598,30 @@ export const MU_MIGRATIONS = [
       `CREATE INDEX IF NOT EXISTS pr_publish_run_idx ON mu.pr_publish (run_id)`,
     ],
   },
+
+  // v28（2026-10-14 可用补丁闭环波）：mu.fix_patch 补丁版本化——
+  //  * patch_version：同 run 内递增（1=原始 fixer 输出；每次修正=新版本行，原行保留原文+诊断）
+  //  * patch_digest：sha256(diff_text)——检查证据按 digest 绑定，补丁更新后旧检查证据失效
+  //  * active：当前对外有效版本（页面/复制/下载/发布统一取 active 行，检查内容=下载内容）
+  //  * correction_of / correction_kind：修正来源与方式（deterministic|regenerated）
+  //  * test_verification：隔离环境实际修复测试证据（预批准命令/退出码/脱敏日志/head/digest）
+  // 回滚：ALTER TABLE mu.fix_patch DROP COLUMN 五列+删索引（均新增；旧读方按缺列回退摘要展示）。
+  {
+    version: 28,
+    name: 'mu_fix_patch_versioning',
+    sql: [
+      `ALTER TABLE mu.fix_patch ADD COLUMN IF NOT EXISTS patch_version INT NOT NULL DEFAULT 1`,
+      `ALTER TABLE mu.fix_patch ADD COLUMN IF NOT EXISTS patch_digest TEXT`,
+      `ALTER TABLE mu.fix_patch ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT true`,
+      `ALTER TABLE mu.fix_patch ADD COLUMN IF NOT EXISTS correction_of UUID`,
+      `ALTER TABLE mu.fix_patch ADD COLUMN IF NOT EXISTS correction_kind TEXT`,
+      `ALTER TABLE mu.fix_patch ADD COLUMN IF NOT EXISTS test_verification JSONB`,
+      `UPDATE mu.fix_patch SET patch_digest = encode(sha256(convert_to(diff_text,'UTF8')),'hex')
+         WHERE patch_digest IS NULL`,
+      `UPDATE mu.fix_patch SET correction_kind = 'original' WHERE correction_kind IS NULL`,
+      `CREATE INDEX IF NOT EXISTS fix_patch_run_active_idx ON mu.fix_patch (run_id, active)`,
+    ],
+  },
 ];
 
 export const MU_SCHEMA_LATEST = MU_MIGRATIONS[MU_MIGRATIONS.length - 1].version;

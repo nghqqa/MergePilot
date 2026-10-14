@@ -70,6 +70,54 @@ export function checkPatchApplicability(diffText, changedFiles) {
     checks: ['format', 'path_scope', 'relative_paths'] };
 }
 
+/** diff 文件 sha256（hex）——检查证据与展示按 digest 绑定：补丁更新→旧证据失效。 */
+export function sha256Hex(s) {
+  return crypto.createHash('sha256').update(String(s ?? ''), 'utf8').digest('hex');
+}
+
+/**
+ * 唯一的确定性格式修正：缺尾换行（git apply 对无尾换行的补丁报 corrupt patch——
+ * 2026-10-14 生产 f56e3137 实证成因）。仅在"文本像完整 diff 且确实缺尾换行"时返回修正；
+ * 其余一切格式问题（坏 hunk/上下文不匹配/编码等）返回 null——交回模型再生成，不猜测。
+ */
+export function deterministicNormalize(diffText) {
+  const t = String(diffText ?? '');
+  if (!t.trim() || t.endsWith('\n')) return null;
+  if (!/^--- |^diff --git /m.test(t) || !t.includes('@@')) return null;
+  return { diff: t + '\n', kind: 'add_trailing_newline' };
+}
+
+/**
+ * 真实可应用性权威判定（单一事实源——页面/报告/评论共用同一口径）：
+ * 结构检查通过 ≠ 可应用；git_apply 证据按 digest 绑定；证据缺失/环境不可用如实分列。
+ * 返回 { level: pass|fail|not_executed|env_unavailable|stale, structural, text }。
+ */
+export function applicabilityVerdict(applicability, currentDigest = null) {
+  const a = applicability ?? null;
+  const structural = { ok: a?.ok ?? null, issues: a?.issues ?? [], checks: a?.checks ?? [] };
+  const ga = a?.git_apply ?? null;
+  let level = null;
+  let text = '';
+  if (ga && currentDigest && ga.patch_digest && ga.patch_digest !== currentDigest) {
+    level = 'stale';
+    text = '检查证据已失效：补丁内容已更新（当前 digest 与检查时不一致），旧检查结果不再代表当前补丁';
+  } else if (!ga) {
+    level = 'not_executed';
+    text = '未执行 git apply --check（结构检查通过 ≠ 可应用——以本行如实口径为准）';
+  } else if (ga.verified === false) {
+    level = 'env_unavailable';
+    text = `未验证：环境不可用（${ga.reason ?? '未知原因'}）——不误报通过`;
+  } else if (ga.ok) {
+    level = 'pass';
+    const at = ga.checked_at ? `，${String(ga.checked_at).slice(0, 19).replace('T', ' ')} UTC` : '';
+    text = `通过（git apply --check 对准确 head${at}）`;
+  } else {
+    level = 'fail';
+    text = `失败——补丁不可应用（${ga.output ?? 'git apply --check 未通过'}）`;
+  }
+  return { level, text, structural, git_apply: ga };
+}
+
 /** 四角色链输出持久化（幂等：UNIQUE(run,role,attempt) 冲突即更新内容）。 */
 export async function persistChainOutputs(pool, { runId, tenantId, results, attempt = 1 }) {
   const roles = ['reviewer', 'leader', 'fixer', 'verifier'];
@@ -85,29 +133,77 @@ export async function persistChainOutputs(pool, { runId, tenantId, results, atte
   }
 }
 
-/** 建议补丁持久化（应用性检查通过或带 issues 均如实保存——checks 字段承载检查方式）。 */
+/**
+ * 建议补丁持久化（版本化）：每次调用=新版本行（原始 fixer 输出永远保留，修正不覆盖历史）。
+ *  * patch_version = 同 run 内 MAX+1；新行 active=true，旧行一并失活；
+ *  * patch_digest = sha256(diff_text)——检查证据/展示/下载按此绑定；
+ *  * correction_of / correction_kind 记录修正来源（deterministic|regenerated|null=原始）。
+ * 结构检查通过或带 issues 均如实保存（checks 字段承载检查方式；真实可应用性另存 git_apply）。
+ */
 export async function persistFixPatch(pool, { runId, tenantId, repoId, headSha,
-  findingId = null, diffText, rationale = null, changedFiles = [] }) {
+  findingId = null, diffText, rationale = null, changedFiles = [],
+  correctionOf = null, correctionKind = null }) {
   const applicability = checkPatchApplicability(diffText, changedFiles);
   if (!applicability.parsed) {
     return { ok: false, reason: applicability.issues?.[0] ?? 'invalid_diff' };
   }
+  const digest = sha256Hex(diffText);
+  const next = (await pool.query(
+    `SELECT COALESCE(MAX(patch_version),0)+1 AS v FROM mu.fix_patch WHERE run_id=$1`, [runId]
+  )).rows[0]?.v ?? 1;
   const r = await pool.query(
     `INSERT INTO mu.fix_patch (run_id, tenant_id, repo_id, head_sha, finding_id,
-       files, diff_text, rationale, applicability)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING patch_id, applicability`,
+       files, diff_text, rationale, applicability, patch_version, patch_digest,
+       active, correction_of, correction_kind)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,true,$12,$13) RETURNING patch_id, applicability`,
     [runId, tenantId, repoId, headSha, findingId,
      JSON.stringify(applicability.parsed.files), diffText, rationale,
-     JSON.stringify({ ok: applicability.ok, issues: applicability.issues, checks: applicability.checks })]);
-  return { ok: true, patchId: r.rows[0].patch_id, applicability: r.rows[0].applicability };
+     JSON.stringify({ ok: applicability.ok, issues: applicability.issues, checks: applicability.checks }),
+     next, digest, correctionOf, correctionKind]);
+  await pool.query(
+    `UPDATE mu.fix_patch SET active = false WHERE run_id=$1 AND patch_id<>$2 AND active`,
+    [runId, r.rows[0].patch_id]);
+  return { ok: true, patchId: r.rows[0].patch_id, applicability: r.rows[0].applicability,
+    patchVersion: next, patchDigest: digest };
 }
 
-/** 脱敏描述构造：敏感 finding 只给位置与规则，不携带原值（出站纪律）。 */
+/**
+ * finding 展示行（解释要素分列、只用真实数据）：
+ *  标题=title · 位置 · 规则 id+规则说明（静态）/模型实际摘要（模型）· 修复建议=remediation。
+ *  静态发现的"原因"=规则标题（规则说明口径）；模型发现的"原因"=模型实际输出摘要；
+ *  数据缺失的要素如实标（未提供），不编造。
+ */
 function findingLine(f) {
   const sev = String(f.severity ?? '?').toUpperCase();
   const loc = f.path ? `${f.path}${f.line_start ? ':' + f.line_start : ''}` : (f.path ?? '(未知位置)');
-  const summary = String(f.summary_masked ?? f.title ?? '').slice(0, 160);
-  return `- **${sev}** \`${loc}\` — ${summary}（规则 ${f.rule_id ?? '?'}）`;
+  const out = [`- **${sev}** \`${loc}\` — ${String(f.title ?? '').trim() || String(f.summary_masked ?? '').slice(0, 160) || '(无标题)'}（规则 ${f.rule_id ?? '?'}）`];
+  if (f.summary_masked && f.title) out.push(`  说明：${String(f.summary_masked).slice(0, 160)}`);
+  if (f.remediation) out.push(`  修复建议：${String(f.remediation).slice(0, 200)}`);
+  return out.join('\n');
+}
+
+/**
+ * 补丁验证三分的用户可读行（报告/评论/页面共用同一口径——applicabilityVerdict 单一事实源）：
+ *  1) 格式与路径（结构级）；2) 真实可应用性（git apply --check，digest 绑定）；
+ *  3) 实际修复测试（test_verification；未执行如实标注）。
+ */
+export function patchVerificationLines(patch) {
+  if (!patch) return [];
+  const v = applicabilityVerdict(patch.applicability, patch.patch_digest ?? null);
+  const lines = [];
+  lines.push(`- 格式与路径检查（结构级）：${v.structural.ok ? '通过' : `未通过（${(v.structural.issues ?? []).join('；') || '未知原因'}）`}`);
+  lines.push(`- 真实可应用性（对准确 head 的 git apply --check）：${v.text}`);
+  const tv = patch.test_verification ?? null;
+  if (tv && tv.verified && tv.ok) {
+    lines.push(`- 实际修复测试：通过（修复前失败→修复后通过；命令 \`${tv.test_cmd}\`，隔离环境，无生产凭据）`);
+  } else if (tv && tv.verified) {
+    lines.push(`- 实际修复测试：未通过（${tv.ok === false && tv.pre?.code === 0 ? '修复前测试即通过，不能证明修复有效性' : `pre exit=${tv.pre?.code ?? '?'}/post exit=${tv.post?.code ?? '?'}`}）`);
+  } else if (tv) {
+    lines.push(`- 实际修复测试：未验证（环境不可用：${tv.reason ?? '未知'}）`);
+  } else {
+    lines.push('- 实际修复测试：未执行（模型评估/可应用性通过 ≠ 行为正确）');
+  }
+  return lines;
 }
 
 /**
@@ -150,12 +246,16 @@ export function buildMarkdownReport({ run, findings, attempts, outputs, patch, v
   lines.push('## 建议补丁');
   lines.push('');
   if (patch) {
-    lines.push(`- 状态：**建议补丁，尚未应用**（head \`${patch.head_sha}\`）`);
+    lines.push(`- 状态：**建议补丁，尚未应用**（head \`${patch.head_sha}\`，版本 v${patch.patch_version ?? 1}${patch.patch_digest ? `，digest \`${String(patch.patch_digest).slice(0, 12)}\`` : ''}${patch.correction_kind && patch.correction_kind !== 'original' ? `，${patch.correction_kind === 'deterministic' ? '确定性格式修正' : '模型再生成'}产物` : ''}）`);
     lines.push(`- 触及文件：${(patch.files ?? []).map((f) => `\`${f.path}\``).join(', ') || '（无）'}`);
-    lines.push(`- 可应用性：${JSON.stringify(patch.applicability ?? {})}`);
+    lines.push('');
+    lines.push('### 验证三分');
+    lines.push('');
+    for (const l of patchVerificationLines(patch)) lines.push(l);
+    lines.push('');
     if (patch.rationale) { lines.push(`- 理由：${patch.rationale}`); }
     lines.push('');
-    lines.push('完整统一 diff 见随附 `.patch` 文件（与保存产物同源）。');
+    lines.push('完整统一 diff 见随附 `.patch` 文件（与保存产物同源——下载即检查所验证的同一版本）。');
   } else {
     lines.push('（本轮未产出可展示的补丁——fixer 仅给出文字建议或未输出结构化 diff。）');
   }
@@ -200,7 +300,11 @@ export function buildPublishComment({ run, findings, patch, verification,
   lines.push('### 建议修改与验证范围');
   lines.push('');
   if (patch) {
-    lines.push(`建议补丁已生成（**尚未应用**）：触及 ${(patch.files ?? []).map((f) => `\`${f.path}\``).join(', ')}；可应用性 ${JSON.stringify((patch.applicability ?? {}).ok)}。完整 diff 请经 Console 下载。`);
+    lines.push(`建议补丁已生成（**尚未应用**）：触及 ${(patch.files ?? []).map((f) => `\`${f.path}\``).join(', ')}。`);
+    lines.push('');
+    for (const l of patchVerificationLines(patch)) lines.push(l);
+    lines.push('');
+    lines.push('完整 diff 请经 Console 下载（与检查所验证的同一版本，digest 绑定）。');
   } else {
     lines.push('本轮以文字建议为主，未产出结构化补丁。');
   }
