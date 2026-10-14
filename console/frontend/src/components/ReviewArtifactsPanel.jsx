@@ -374,7 +374,10 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [] }) {
         const er = b?.error?.reason ?? '';
         const why = { stale_head: '远端 head 已变化——补丁基于旧版本，未写入任何内容（PR 更新后重新审查）',
           head_moved_since_preview: '预览后远端又推进了——已拒绝，请刷新预览重试',
+          patch_apply_failed: '补丁在当前 head 上真实试应用失败——未写入任何内容（远端零副作用）',
           materialize_failed: '补丁在当前 head 上物化失败——未写入任何内容（远端零副作用）',
+          branch_not_found: '远端源分支不存在或不可读',
+          push_failed: '远端推送未完成（网络或平台原因）——请稍后重试',
           operation_in_progress: '已有一次相同操作正在进行——请稍后刷新查看结果' }[er];
         setApplyMsg({ tone: 'warning', text: why ?? `应用未完成（HTTP ${r.status}）：${er}${b?.error?.uncertain ? '（结果不明——提交对象可能已创建但分支未推进，请先查验远端再重试）' : ''}` });
         if (!/stale_head|head_moved/.test(er)) setApplyPreview(null);

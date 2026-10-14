@@ -3121,9 +3121,10 @@ const ragMatch = p.match(new RegExp("^/api/mu/repositories/([^/]+)/rag-search$")
         if (!r.ok) {
           const statusMap = { confirm_required: 400, run_not_found: 404, provider_unsupported: 400,
             stale_head: 409, head_moved_since_preview: 409, operation_in_progress: 409,
-            materialize_failed: 409, no_active_patch: 409, remote_unreachable: 502,
-            branch_not_found: 409, blob_create_failed: 502, tree_create_failed: 502,
-            commit_create_failed: 502, ref_update_failed: 502 };
+            patch_apply_failed: 409, materialize_failed: 409, branch_not_found: 409,
+            no_active_patch: 409, remote_unreachable: 502, ls_remote_failed: 502,
+            fetch_head_failed: 502, checkout_head_failed: 502, push_failed: 502,
+            commit_failed: 502, operator_required: 403 };
           await store.audit('MU_FIX_APPLY_REJECTED', { tenantId: mu.tenantId, actorUserId: mu.userId,
             detail: { run_id: runId, reason: r.reason } }).catch(() => {});
           return sendJson(res, statusMap[r.reason] ?? 500,
