@@ -167,21 +167,24 @@ function parseArgv(argv) {
   const positional = [];
   let name;
   let dryRun = false;
+  let expectCommit = null;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--dry-run') { dryRun = true; continue; }
     if (a === '--name') { name = argv[++i]; continue; }
     if (a.startsWith('--name=')) { name = a.slice('--name='.length); continue; }
+    if (a === '--expect-commit') { expectCommit = argv[++i]; continue; }
+    if (a.startsWith('--expect-commit=')) { expectCommit = a.slice('--expect-commit='.length); continue; }
     positional.push(a);
   }
-  return { positional, name, dryRun };
+  return { positional, name, dryRun, expectCommit };
 }
 
 // 返回进程退出码；deps.exec/deps.log 可注入（真实路径 = spawnSync + stdout）
 async function swapConsole(argv, deps = {}) {
   const exec = deps.exec || ((args) => spawnSync('docker', args, { encoding: 'utf8' }));
   const log = deps.log || ((m) => process.stdout.write(m + '\n'));
-  const { positional, name, dryRun } = parseArgv(argv);
+  const { positional, name, dryRun, expectCommit } = parseArgv(argv);
   const [inspectFile, image] = positional;
   if (!inspectFile || !image) {
     log('用法: node scripts/swap-console.cjs <inspect.json> <new-image> [--name NAME] [--dry-run]');
@@ -261,7 +264,9 @@ async function swapConsole(argv, deps = {}) {
     return 1;
   };
   const healthScript = "fetch('http://127.0.0.1:' + (process.env.CONSOLE_PORT || 4730) + '/api/health')"
-    + ".then(r=>r.json()).then(j=>console.log('HEALTH ' + (j.data_mode ?? 'unknown') + ' ' + (j.version ?? '')))"
+    + ".then(r=>r.json()).then(j=>console.log('HEALTH ' + (j.data_mode ?? 'unknown') + ' ' + (j.version ?? '')"
+    + " 'commit=' + (j.git_commit ? String(j.git_commit).slice(0, 12) : 'n/a')"
+    + " 'bundle=' + (j.frontend_bundle ? j.frontend_bundle.file : 'n/a')))"
     + ".catch(e=>console.log('HEALTH ERR ' + e.message))";
   let live = !hasPgDsn; // 无 PG DSN：无需 live 断言（视为通过）
   for (let i = 0; !live && i < 12; i++) {
@@ -274,6 +279,20 @@ async function swapConsole(argv, deps = {}) {
     await new Promise((r) => setTimeout(r, 5_000));
   }
   if (!live) return rollback('data_mode 未达 live（DB/依赖不可达或启动失败）');
+
+  // ── 后置检查 1b：构建身份核对（发布产物一致性波）——期望 commit 不符=回滚 ──
+  if (expectCommit && containerName) {
+    const idScript = "fetch('http://127.0.0.1:' + (process.env.CONSOLE_PORT || 4730) + '/api/health')"
+      + ".then(r=>r.json()).then(j=>console.log('ID ' + (j.git_commit ?? 'null') + ' ' + (j.frontend_bundle ? j.frontend_bundle.file : 'null')))"
+      + ".catch(e=>console.log('ID ERR'))";
+    const idr = exec(['exec', containerName, 'node', '-e', idScript]);
+    const m = String(idr.stdout || '').match(/ID ([0-9a-f]{40}|null) (.+)/);
+    const got = m ? m[1] : null;
+    if (got !== expectCommit) {
+      return rollback(`构建身份不符：health.git_commit=${got ?? '读取失败'}，期望 ${expectCommit.slice(0, 12)}…——镜像与源码可能不一致`);
+    }
+    log('构建身份核对通过（git_commit=' + got.slice(0, 12) + '…）');
+  }
 
   // ── 后置检查 2：新容器内 Matrix 实际登录（与前置同口径，防环境注入差异）──
   if (hasMatrixEnv && !deps.skipMatrixCheck) {

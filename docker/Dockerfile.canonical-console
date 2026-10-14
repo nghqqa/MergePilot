@@ -5,9 +5,29 @@
 # evidence/audit) plus the console SPA (dist) and snapshot evidence browsing.
 # Build context: repository root of the console worktree.
 #
+# ── 发布产物一致性（2026-10-14 波）────────────────────────────────────────
+# 前端 dist 在【镜像构建阶段】由容器内 npm ci + vite build 产生（frontend-builder
+# 阶段）：源码变更必然触发重建；前端构建失败=镜像构建失败；工作区中任何
+# 历史 dist 目录都不会进入镜像（根因修复：此前 COPY console/frontend/dist
+# 会把陈旧产物打进镜像——rc.34 首切 7080fe9a 缺陷）。
+# 构建身份：--build-arg GIT_COMMIT=$(git rev-parse HEAD) 注入，/api/health
+# 暴露 git_commit 与前端 bundle 指纹（server.mjs 启动时计算），部署后核对。
+#
 # Base pinned by digest (node:22-alpine — same base as the verified
 # demo-platform candidate). npm CLI stripped after install (its bundled
 # toolchain deps carry HIGH CVEs; runtime needs only the node binary).
+
+# ── 阶段 1：前端构建（依赖按锁文件安装；构建失败则整个镜像构建失败）──
+FROM node@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402 AS frontend-builder
+WORKDIR /build
+COPY console/frontend/package.json console/frontend/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY console/frontend/index.html console/frontend/vite.config.js ./
+COPY console/frontend/src ./src
+COPY console/frontend/public ./public
+RUN npm run build
+
+# ── 阶段 2：运行时（后端零依赖 + pg + git；npm 构建工具链不进入运行时）──
 FROM node@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402
 
 WORKDIR /app
@@ -18,11 +38,14 @@ ENV NODE_ENV=production CONSOLE_HOST=0.0.0.0 CONSOLE_PORT=4730
 RUN apk add --no-cache git
 
 # rc.14：版本号构建期注入——/api/health version 的唯一构建期真源。
-# server.mjs 读 process.env.MERGEPILOT_VERSION（runtime 可覆盖）；
-# 此处默认值须与 server.mjs fallback 字符串保持一致（双处手动同步，
-# rc.12 候选：CI 构建脚本从 git tag 自动注入消除双处）。
-ARG MERGEPILOT_VERSION=0.2.0-beta.6-rc.31
+# server.mjs 读 process.env.MERGEPILOT_VERSION（runtime 可覆盖）。
+ARG MERGEPILOT_VERSION=0.2.0-beta.6-rc.34
 ENV MERGEPILOT_VERSION=${MERGEPILOT_VERSION}
+
+# 构建身份（发布产物一致性波）：源码 commit 由构建命令注入
+# （--build-arg GIT_COMMIT=$(git rev-parse HEAD)），/api/health 暴露。
+ARG GIT_COMMIT=
+ENV MERGEPILOT_GIT_COMMIT=${GIT_COMMIT}
 
 # `pg` is optional at runtime (NOT_WIRED without DSN) — install for live mode.
 # The console backend itself is zero-dependency; this manifest exists solely
@@ -34,7 +57,8 @@ RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force \
            /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 
 COPY console/backend ./backend
-COPY console/frontend/dist ./frontend/dist
+# 前端 dist 仅来自阶段 1 的容器内构建（工作区 dist 不被引用）
+COPY --from=frontend-builder /build/dist ./frontend/dist
 # RAG-model-install（v19）：仓库版本化模型 manifest 真源（loadModelManifest 按容器锚点读取）
 COPY deploy/rag-model-install ./deploy/rag-model-install
 

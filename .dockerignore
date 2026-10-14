@@ -8,7 +8,10 @@
 **/test/
 **/tests/
 verification/
+# fixtures：后端测试夹具排除；前端 src/fixtures 是运行时数据
+#（ApprovalsPage 引用 approvals.fixture.json——rc.35 一致性波实测）必须进入构建上下文
 **/fixtures/
+!console/frontend/src/fixtures/
 
 # 内部/发行文档与配置（镜像不含）
 distribution/
