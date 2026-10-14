@@ -6,7 +6,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert, Button, Collapse, Descriptions, Drawer, Input, Popconfirm,
-  Space, Table, Tag, Typography,
+  Select, Space, Table, Tag, Tooltip, Typography,
 } from 'antd';
 
 const csrfHeader = () => {
@@ -18,6 +18,9 @@ const apiFetch = (path, opts = {}) => fetch(path, { credentials: 'same-origin', 
 const NL = String.fromCharCode(10);
 const SEV_COLOR = { P0: 'red', P1: 'orange', P2: 'gold', P3: 'default' };
 const FEEDBACK_LABEL = { confirm: '确认问题', false_positive: '误报', wont_fix: '暂不处理' };
+const ROLE_LABEL = { maintainer: '维护者', platform_admin: '平台管理员', reviewer: '审查者', contributor: '贡献者', auditor: '审计员' };
+const LOGIN_LABEL = { 'github-oauth': 'GitHub OAuth', 'gitee-oauth': 'Gitee OAuth' };
+const PROVIDER_LABEL = { github: 'GitHub', gitee: 'Gitee' };
 
 /** 用户可见时间：明确标注 UTC（避免被当作北京时间）。 */
 const utc = (v) => (v ? `${String(v).slice(0, 19).replace('T', ' ')} UTC` : '—');
@@ -132,6 +135,11 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [] }) {
   const [art, setArt] = useState(null);
   const [runId, setRunId] = useState(null);
   const [runMeta, setRunMeta] = useState(null); // {owner, repo_name, provider}
+  // rc.34 权限与发布上下文可见化：会话身份 / 该 PR 全部 runs / 用户选中 run / 预览远端上下文
+  const [identity, setIdentity] = useState(null); // {login, provider, tenant, role, actions}
+  const [runsList, setRunsList] = useState([]);   // 该 PR 全部 run（新→旧）
+  const [selectedRunId, setSelectedRunId] = useState(null);
+  const [pubCtx, setPubCtx] = useState(null);     // {remote_head, head_match, robot_identity, remote_head_error}
   // 补丁正文加载态：none（无补丁）/ loading / loaded / forbidden / failed / corrupt
   const [patchState, setPatchState] = useState('idle');
   const [patchText, setPatchText] = useState(null);
@@ -146,41 +154,20 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [] }) {
   const loadCtlRef = useRef(null);
   const patchCtlRef = useRef(null);
 
-  const canPublish = myActions.includes('decide_review');
   const canFeedback = myActions.includes('request_review') || myActions.includes('decide_review');
-
-  const load = useCallback(async () => {
-    if (!repoId || !prNumber) { setState('no-pr'); return; }
-    if (loadCtlRef.current) loadCtlRef.current.abort();
-    const ctl = new AbortController();
-    loadCtlRef.current = ctl;
-    const myKey = `${repoId}|${prNumber}`;
-    setState('loading');
-    try {
-      const lr = await apiFetch(`/api/mu/runs?repo_id=${encodeURIComponent(repoId)}`, { signal: ctl.signal });
-      if (ctl.signal.aborted) return;
-      if (!lr.ok) { setState('error'); return; }
-      const ld = await lr.json().catch(() => null);
-      if (ctl.signal.aborted) return;
-      const mine = (ld?.runs ?? []).filter((r) => Number(r.provider_pr_number) === Number(prNumber));
-      const latest = mine.sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))[0];
-      if (!latest) { setState('no-run'); return; }
-      const ar = await apiFetch(`/api/mu/runs/${latest.run_id}/artifacts`, { signal: ctl.signal });
-      if (ctl.signal.aborted) return;
-      if (ar.status === 403) { setState('forbidden'); return; }
-      if (!ar.ok) { setState('error'); return; }
-      const ad = await ar.json().catch(() => null);
-      if (ctl.signal.aborted || !ad?.run) return;
-      setRunId(latest.run_id);
-      setRunMeta({ owner: ad.run.owner, repo_name: ad.run.repo_name, provider: ad.run.provider });
-      setArt(ad);
-      setState('ready');
-      // 有补丁 → 加载正文（read_code_content 门；与下载同源同权限）
-      if (ad.patch?.patch_id) loadPatch(latest.run_id, ctl.signal);
-    } catch (e) {
-      if (e?.name !== 'AbortError' && !ctl.signal.aborted) setState('error');
-    }
-  }, [repoId, prNumber]);
+  const isLatestRun = Boolean(runsList.length && selectedRunId
+    && selectedRunId === runsList[0].run_id);
+  // 发布按钮置灰原因（用户可理解文案；后端 RBAC 仍为最终授权方）
+  const effActions = identity?.actions ?? myActions;
+  const publishButtonBlockReason =
+    (!isLatestRun && runsList.length) ? '发布需要最新审查 run（当前显示为历史运行，仅查看）——点击「查看最新 run」切换'
+    : !effActions.includes('decide_review')
+      ? (identity?.role === 'platform_admin'
+        ? '当前角色为平台管理员，未授予 PR 评论发布权限（平台管理与审查裁定分离）——请用维护者账号发布'
+        : identity?.role === 'auditor'
+          ? '审计角色仅只读，不能发布 PR 评论'
+          : `当前角色（${ROLE_LABEL[identity?.role] ?? identity?.role ?? '未知'}）无发布权限——仅维护者（maintainer）可发布`)
+      : null;
 
   const loadPatch = useCallback(async (rid, signal) => {
     setPatchState('loading');
@@ -199,6 +186,56 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [] }) {
       if (e?.name !== 'AbortError' && !signal?.aborted) setPatchState('failed');
     }
   }, []);
+
+  // 拉取指定 run 的产物（run 选择语义：面板绑定用户明确选中的 run——切换时取消旧请求）
+  const loadArtifacts = useCallback(async (rid, signal) => {
+    if (!rid) return;
+    const ar = await apiFetch(`/api/mu/runs/${rid}/artifacts`, { signal });
+    if (signal?.aborted) return;
+    if (ar.status === 403) { setState('forbidden'); return; }
+    if (!ar.ok) { setState('error'); return; }
+    const ad = await ar.json().catch(() => null);
+    if (signal?.aborted || !ad?.run) return;
+    setRunId(rid);
+    setRunMeta({ owner: ad.run.owner, repo_name: ad.run.repo_name, provider: ad.run.provider,
+      head_sha: ad.run.head_sha, created_at: ad.run.created_at });
+    setArt(ad);
+    setPubCtx(null); setPubMsg(null); setPubPreview(null); // 切 run 后旧发布上下文/结果不残留
+    setState('ready');
+    if (ad.patch?.patch_id) loadPatch(rid, signal);
+  }, [loadPatch]);
+
+  const load = useCallback(async () => {
+    if (!repoId || !prNumber) { setState('no-pr'); return; }
+    if (loadCtlRef.current) loadCtlRef.current.abort();
+    const ctl = new AbortController();
+    loadCtlRef.current = ctl;
+    setState('loading');
+    try {
+      // 会话身份与权限（rc.34）：/api/mu/session 只读展示字段（无 token/内部键）
+      apiFetch('/api/mu/session', { signal: ctl.signal })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((s) => { if (!ctl.signal.aborted && s?.user) {
+          setIdentity({ login: s.user.login, provider: s.provider ?? null,
+            tenant: s.tenant?.display_name ?? s.tenant?.slug ?? null,
+            role: s.role ?? null, actions: s.actions ?? [] });
+        } }).catch(() => {});
+      const lr = await apiFetch(`/api/mu/runs?repo_id=${encodeURIComponent(repoId)}`, { signal: ctl.signal });
+      if (ctl.signal.aborted) return;
+      if (!lr.ok) { setState('error'); return; }
+      const ld = await lr.json().catch(() => null);
+      if (ctl.signal.aborted) return;
+      const mine = (ld?.runs ?? []).filter((r) => Number(r.provider_pr_number) === Number(prNumber))
+        .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+      setRunsList(mine);
+      const latest = mine[0];
+      if (!latest) { setState('no-run'); return; }
+      setSelectedRunId(latest.run_id);
+      await loadArtifacts(latest.run_id, ctl.signal);
+    } catch (e) {
+      if (e?.name !== 'AbortError' && !ctl.signal.aborted) setState('error');
+    }
+  }, [repoId, prNumber, loadArtifacts]);
 
   useEffect(() => { load(); return () => { loadCtlRef.current?.abort(); patchCtlRef.current?.abort(); }; }, [load]);
 
@@ -238,7 +275,12 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [] }) {
       const r = await apiFetch(`/api/mu/runs/${runId}/publish`);
       const b = await r.json().catch(() => ({}));
       if (!r.ok) setPubMsg({ tone: 'warning', text: `预览未完成（HTTP ${r.status}）：${b?.error?.reason ?? ''}` });
-      else setPubPreview(b);
+      else {
+        setPubPreview(b);
+        // rc.34：远端上下文可见化（远端当前 head / 一致性 / 机器人写入身份）
+        setPubCtx({ remote_head: b.remote_head ?? null, head_match: b.head_match ?? null,
+          robot_identity: b.robot_identity ?? null, remote_head_error: b.remote_head_error ?? null });
+      }
     } catch { setPubMsg({ tone: 'warning', text: '网络异常，预览未完成' }); }
     setPubBusy(false);
   };
@@ -257,9 +299,12 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [] }) {
         setPubPreview(null);
       } else {
         const stale = b?.error?.stage === 'stale_head';
+        const detail = String(b?.error?.detail?.reason ?? b?.error?.reason ?? '');
         setPubMsg({ tone: 'warning', text: stale
-          ? 'head 已变化：该结果基于旧版本，已停止发布——请重新审查后再发布'
-          : `发布未完成（HTTP ${r.status}）：${b?.error?.reason ?? ''}${b?.error?.status === 'unconfirmed' ? '（结果不明，请先查验远端再重试）' : ''}` });
+          ? 'head 已变化，拒绝发布：该结果基于旧版本——远端代码已推进，陈旧结论不再发出（PR 更新后重新审查即可获得新结果）'
+          : /403|token|permission/i.test(detail) && /ghp_|github/i.test(detail)
+            ? `目标平台远端写权限不足——检查 GitHub App 安装授权（${detail.slice(0, 60)}）`
+            : `发布未完成（HTTP ${r.status}）：${b?.error?.reason ?? ''}${b?.error?.status === 'unconfirmed' ? '（结果不明，请先查验远端再重试）' : ''}` });
         if (!stale) setPubPreview(null);
       }
     } catch { setPubMsg({ tone: 'warning', text: '网络异常，发布未完成' }); }
@@ -528,7 +573,7 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [] }) {
           ) },
         ]} />
 
-      {/* ⑤ 统一操作区：下载 + 预览并发布 */}
+      {/* ⑤ 统一操作区：身份与权限 → 审查对象 → 机器人身份 → 影响范围 → 按钮 → 结果 */}
       <div className="mu-art-actions" style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--c-border)' }}>
         <Typography.Title level={5} style={{ marginTop: 0, marginBottom: 8 }}>下载与发布</Typography.Title>
         <Space wrap style={{ marginBottom: 8 }}>
@@ -537,22 +582,110 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [] }) {
           <Button size="small" disabled={!patch} onClick={() => download('patch.diff', `mergepilot-suggest-${String(runId).slice(0, 8)}.patch`)}>下载 .patch</Button>
         </Space>
         {dlMsg ? <Alert style={{ marginBottom: 8 }} type={dlMsg.tone} showIcon message={dlMsg.text} /> : null}
+
+        {/* ① 当前身份与权限（页面 RBAC 展示；不展示 token/secret/内部权限键） */}
+        <Descriptions size="small" column={1} bordered style={{ marginBottom: 8 }}
+          title={<span style={{ fontSize: 13 }}>当前身份与权限</span>}>
+          <Descriptions.Item label="登录身份">
+            {identity
+              ? <>{identity.login} · {LOGIN_LABEL[identity.provider] ?? '已登录'}{identity.tenant ? ` · 租户 ${identity.tenant}` : ''}</>
+              : '读取中…'}
+          </Descriptions.Item>
+          <Descriptions.Item label="当前角色">
+            {identity
+              ? <Tag color={identity.role === 'maintainer' ? 'green' : identity.role === 'platform_admin' ? 'purple' : 'default'}>
+                  {ROLE_LABEL[identity.role] ?? identity.role ?? '—'}
+                </Tag>
+              : '—'}
+          </Descriptions.Item>
+          <Descriptions.Item label="能力">
+            {identity ? (
+              <Space wrap size={4}>
+                <Tag>{identity.actions?.includes('read_pull_request') ? '可查看审查产物' : '仅限基础查看'}</Tag>
+                {identity.actions?.includes('decide_review')
+                  ? <Tag color="green">可审批 / 可发布</Tag>
+                  : <Tag>不可审批 / 不可发布</Tag>}
+                {identity.actions?.includes('manage_membership') ? <Tag>可管理成员</Tag> : null}
+              </Space>
+            ) : '—'}
+          </Descriptions.Item>
+        </Descriptions>
+
+        {/* ② run 选择（面板绑定用户明确选中的 run——历史 run 仅查看，不静默替换） */}
+        {runsList.length > 1 ? (
+          <div style={{ marginBottom: 8 }}>
+            <Space wrap>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>产物面板默认显示该 PR 的最新运行结果；可切换查看：</Typography.Text>
+              <Select size="small" style={{ minWidth: 220 }} value={selectedRunId}
+                onChange={(v) => { setSelectedRunId(v); loadArtifacts(v, loadCtlRef.current?.signal); }}
+                options={runsList.map((r, i) => ({ value: r.run_id,
+                  label: `${i === 0 ? '（最新）' : ''}${String(r.head_sha ?? '').slice(0, 10)} · ${String(r.created_at ?? '').slice(0, 16).replace('T', ' ')} UTC` }))} />
+              {!isLatestRun ? (
+                <Button size="small" type="link" onClick={() => { setSelectedRunId(runsList[0].run_id); loadArtifacts(runsList[0].run_id, loadCtlRef.current?.signal); }}>
+                  查看最新 run
+                </Button>
+              ) : null}
+            </Space>
+            {!isLatestRun ? (
+              <div style={{ marginTop: 4 }}>
+                <Tag color="orange">历史运行，仅查看</Tag>
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>发布需要最新审查 run。</Typography.Text>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {/* ②b 审查对象与目标 PR（目标平台由 run 所属仓库决定，与登录渠道无关） */}
+        <Descriptions size="small" column={1} bordered style={{ marginBottom: 8 }}>
+          <Descriptions.Item label="审查对象">
+            {runMeta ? <>{PROVIDER_LABEL[runMeta.provider] ?? runMeta.provider} · {runMeta.owner}/{runMeta.repo_name} · PR#{prNumber}</> : '—'}
+          </Descriptions.Item>
+          <Descriptions.Item label="本次发布 run">
+            <code className="mono">{String(runId ?? '').slice(0, 8)}</code>
+            {runMeta?.head_sha ? <> · 审查 head <code className="mono" title={String(runMeta.head_sha)}>{String(runMeta.head_sha).slice(0, 12)}</code></> : null}
+          </Descriptions.Item>
+          <Descriptions.Item label="远端当前 head">
+            {pubCtx
+              ? (pubCtx.remote_head_error
+                ? <Typography.Text type="warning">无法读取（{pubCtx.remote_head_error}）——点「预览并发布」重试</Typography.Text>
+                : <> {pubCtx.head_match
+                    ? <Tag color="green">与审查 head 一致，可发布</Tag>
+                    : <Tag color="red">已变化——发布将被拒绝</Tag>}
+                  <code className="mono" title={String(pubCtx.remote_head ?? '')}>{String(pubCtx.remote_head ?? '').slice(0, 12)}</code>
+                </>)
+              : <Typography.Text type="secondary" style={{ fontSize: 12 }}>点击「预览并发布」后自动核对</Typography.Text>}
+          </Descriptions.Item>
+          {/* ③ 远端写入身份（系统机器人凭证；与登录账号无关） */}
+          <Descriptions.Item label="评论写入身份">
+            {pubCtx?.robot_identity
+              ? <>{pubCtx.robot_identity}（系统机器人凭证，非你的个人账号）</>
+              : <Typography.Text type="secondary" style={{ fontSize: 12 }}>预览后显示——系统机器人，不使用个人账号</Typography.Text>}
+          </Descriptions.Item>
+          {/* ④ 影响范围 */}
+          <Descriptions.Item label="影响范围">
+            仅发布一条审查评论到原 PR，不修改任何代码；同一 run 重复发布为原位更新。
+            {publish?.remote_url ? <> 评论直链：<a href={publish.remote_url} target="_blank" rel="noreferrer">查看已发布评论</a>。</> : null}
+          </Descriptions.Item>
+        </Descriptions>
+
+        {/* ⑤ 按钮 + 状态（置灰必有用户可理解的原因） */}
         <div style={{ marginBottom: 6 }}>
           <Space wrap>
-            <Button type="primary" disabled={!canPublish || pubBusy} loading={pubBusy} onClick={openPreview}>
-              预览并发布到 PR
-            </Button>
+            <Tooltip title={publishButtonBlockReason ?? undefined}>
+              <Button type="primary" disabled={Boolean(publishButtonBlockReason) || pubBusy}
+                loading={pubBusy} onClick={openPreview}>
+                预览并发布到 PR
+              </Button>
+            </Tooltip>
             {publishStatusNode}
           </Space>
-          <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
-            仅发布一条审查评论到原 PR，不修改任何代码；发布前会自动核对 head 是否变化。
-            {publish?.remote_url ? <> 评论直链：<a href={publish.remote_url} target="_blank" rel="noreferrer">查看已发布评论</a>。</> : null}
-          </div>
-          {!canPublish ? (
-            <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
-              发布需要 decide_review 角色；后端为最终授权方。
+          {publishButtonBlockReason ? (
+            <Alert style={{ marginTop: 6 }} type="info" showIcon message={publishButtonBlockReason} />
+          ) : (
+            <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+              发布前会自动核对 head 是否变化；服务端权限与远端状态为最终授权方。
             </div>
-          ) : null}
+          )}
           {pubMsg ? (
             <Alert style={{ marginTop: 6 }} type={pubMsg.tone} showIcon message={pubMsg.text}
               action={pubMsg.url ? <Button size="small" href={pubMsg.url} target="_blank" rel="noreferrer">查看评论</Button> : undefined} />
@@ -575,6 +708,10 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [] }) {
             <Descriptions size="small" column={1} bordered style={{ marginBottom: 10 }}>
               <Descriptions.Item label="目标">{pubPreview.target.provider} · {pubPreview.target.repo} · PR#{pubPreview.target.pr_number}</Descriptions.Item>
               <Descriptions.Item label="被审查 head"><code className="mono">{String(pubPreview.target.head).slice(0, 12)}</code></Descriptions.Item>
+              <Descriptions.Item label="远端当前 head">{pubCtx?.remote_head_error
+                ? <Typography.Text type="warning">无法读取（{pubCtx.remote_head_error}）</Typography.Text>
+                : <>{pubCtx?.head_match ? <Tag color="green">与审查 head 一致</Tag> : <Tag color="red">已变化——确认将被拒绝</Tag>}<code className="mono">{String(pubCtx?.remote_head ?? '').slice(0, 12)}</code></>}</Descriptions.Item>
+              <Descriptions.Item label="写入身份">{pubCtx?.robot_identity ?? '—'}（系统机器人，非个人账号）</Descriptions.Item>
               <Descriptions.Item label="动作">{pubPreview.action === 'update' ? '更新已有 MergePilot 评论（不覆盖人工评论）' : '创建新评论'}</Descriptions.Item>
             </Descriptions>
             <pre className="mu-diff-pre" style={{ whiteSpace: 'pre-wrap' }}>{pubPreview.comment}</pre>

@@ -2973,7 +2973,10 @@ const ragMatch = p.match(new RegExp("^/api/mu/repositories/([^/]+)/rag-search$")
       const runId = pubMatch[1];
       const run = (await muPoolQ(
         `SELECT r.run_id, r.status, r.head_sha, r.tenant_id, r.repo_id, r.pr_id,
-                pr.provider_pr_number, rep.provider, rep.owner, rep.name AS repo_name
+                pr.provider_pr_number, rep.provider, rep.owner, rep.name AS repo_name,
+                (SELECT rb.installation_id FROM mu.repository_binding rb
+                  WHERE rb.repo_id = r.repo_id AND rb.tenant_id = r.tenant_id
+                    AND rb.binding_state = 'active' LIMIT 1) AS installation_id
            FROM mu.review_run r JOIN mu.pull_request pr ON pr.pr_id=r.pr_id
            JOIN mu.repository rep ON rep.repo_id=r.repo_id
           WHERE r.run_id=$1 AND r.tenant_id=$2`, [runId, mu.tenantId])).rows[0] ?? null;
@@ -2999,7 +3002,21 @@ const ragMatch = p.match(new RegExp("^/api/mu/repositories/([^/]+)/rag-search$")
         const existing = (await muPoolQ(
           `SELECT status, remote_comment_id, remote_url, updated_at FROM mu.pr_publish
             WHERE run_id=$1 AND status='published' LIMIT 1`, [runId])).rows[0] ?? null;
+        // rc.34 发布上下文可见化：远端当前 head + head 一致性 + 机器人写入身份（GET 只读，
+        // 与 POST 发布同一 fetchRemoteHead 实现；读取失败如实返回不阻塞预览）。
+        let remote_head = null, head_match = null, remote_head_error = null;
+        try {
+          const pubMod = await import('./publish.mjs');
+          remote_head = await pubMod.fetchRemoteHead(env, { provider: run.provider,
+            owner: run.owner, repo: run.repo_name, prNumber: run.provider_pr_number,
+            installationId: run.installation_id });
+          head_match = String(remote_head) === String(run.head_sha);
+        } catch (e) {
+          remote_head_error = String(e?.message ?? e).slice(0, 80);
+        }
         return sendJson(res, 200, { action: existing ? 'update' : 'create',
+          robot_identity: run.provider === 'github' ? 'MergePilot GitHub App' : 'MergePilot Gitee Bot',
+          remote_head, head_match, ...(remote_head_error ? { remote_head_error } : {}),
           target: { provider: run.provider, repo: run.owner + '/' + run.repo_name,
             pr_number: run.provider_pr_number, head: run.head_sha },
           comment: body, marker: art.publishMarker(runId, run.head_sha), existing });
