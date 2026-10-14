@@ -17,6 +17,8 @@ export const MU_ACTIONS = [
   'request_review',         // 触发只读审查
   'decide_review',          // 人工审批（approve/reject）
   'request_repair',         // 发起受控修复（需 active Binding）
+  'apply_fix',              // 应用修复补丁到 PR 源分支（需 active Binding）
+  'merge_pr',               // 合并 PR（需 active Binding）
   'manage_repository_binding', // 绑定/解绑仓库
   'manage_membership',      // 成员与角色管理
   'read_audit',             // 审计元数据读取
@@ -27,13 +29,13 @@ const CONTRIBUTOR = ['read_repository', 'read_pull_request', 'read_code_content'
 const ROLE_ACTIONS = {
   contributor: [...CONTRIBUTOR],
   reviewer: [...CONTRIBUTOR, 'request_review'],
-  maintainer: [...CONTRIBUTOR, 'request_review', 'decide_review', 'request_repair', 'manage_repository_binding'],
+  maintainer: [...CONTRIBUTOR, 'request_review', 'decide_review', 'request_repair', 'apply_fix', 'merge_pr', 'manage_repository_binding'],
   auditor: ['read_audit'],
   platform_admin: ['read_repository', 'read_pull_request', 'rag_query', 'request_review', 'request_repair', 'manage_repository_binding', 'manage_membership', 'read_audit', 'manage_instance'],
 };
 
 // 需要 active Binding 才允许的动作（provider 侧连接存在性由调用方传入 binding 判定）
-export const MU_BINDING_REQUIRED = ['request_repair'];
+export const MU_BINDING_REQUIRED = ['request_repair', 'apply_fix', 'merge_pr'];
 
 export function roleActions(role) {
   return ROLE_ACTIONS[role] ?? null;

@@ -1622,6 +1622,53 @@ export const MU_MIGRATIONS = [
       `CREATE INDEX IF NOT EXISTS fix_patch_run_active_idx ON mu.fix_patch (run_id, active)`,
     ],
   },
+
+  // v29（2026-10-15 应用修复与合并波）：mu.fix_apply_operation——持久化远端写入操作记录。
+  //  * operation_type：'apply_fix' | 'merge_pr'
+  //  * status：'previewed' → 'confirmed' → 'executing' → 'committed'/'merged' → 'completed'
+  //           或 'failed' / 'result_uncertain'（超时/响应丢失——需读回对账）
+  //  * idempotency_key：run_id + operation_type + patch_digest 的确定性键——
+  //    重复点击/并发/重启不会产生重复远端写入（UNIQUE 约束+ON CONFLICT）
+  //  * expected_head / candidate_commit_sha：远端条件更新的旧 head 约束与候选提交 SHA
+  //  * robot_identity：实际写入远端的机器人身份（MergePilot GitHub App / Gitee Bot）
+  //  * error_code / error_detail：失败时的结构化原因（不含凭据/正文）
+  // 回滚：DROP TABLE（操作记录表无旧读方；远端已发生的提交/合并不因表删除而撤销）
+  {
+    version: 29,
+    name: 'mu_fix_apply_operation',
+    sql: [
+      `CREATE TABLE IF NOT EXISTS mu.fix_apply_operation (
+         operation_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+         operation_type TEXT NOT NULL CHECK (operation_type IN ('apply_fix','merge_pr')),
+         status TEXT NOT NULL DEFAULT 'previewed'
+           CHECK (status IN ('previewed','confirmed','executing','committed','merged','completed','failed','result_uncertain')),
+         tenant_id UUID NOT NULL,
+         repo_id UUID NOT NULL,
+         pr_id UUID NOT NULL,
+         run_id UUID NOT NULL,
+         patch_id UUID,
+         patch_digest TEXT,
+         provider TEXT NOT NULL,
+         provider_pr_number INT NOT NULL,
+         source_branch TEXT,
+         target_branch TEXT,
+         expected_head TEXT,
+         candidate_commit_sha TEXT,
+         remote_result_sha TEXT,
+         robot_identity TEXT,
+         idempotency_key TEXT NOT NULL,
+         operation_data JSONB DEFAULT '{}'::jsonb,
+         error_code TEXT,
+         error_detail TEXT,
+         operator_user_id UUID NOT NULL,
+         created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+         updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+         UNIQUE (idempotency_key)
+       )`,
+      `CREATE INDEX IF NOT EXISTS fix_apply_op_run_idx ON mu.fix_apply_operation (run_id)`,
+      `CREATE INDEX IF NOT EXISTS fix_apply_op_status_idx ON mu.fix_apply_operation (status)`,
+    ],
+  },
 ];
 
 export const MU_SCHEMA_LATEST = MU_MIGRATIONS[MU_MIGRATIONS.length - 1].version;
