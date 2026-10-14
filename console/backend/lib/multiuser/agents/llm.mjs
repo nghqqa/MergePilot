@@ -206,7 +206,7 @@ export async function callLlmReviewer(provider, { pr, findings, diff, apiKey },
   if (provider?.kind !== 'openai_compatible') {
     return { ok: false, code: provider?.reason ? provider.reason : 'LLM_DISABLED' };
   }
-  const { payload, inputDigest } = sanitizeContextForLlm({ pr, findings, diff });
+  const { payload, inputDigest, coverage } = sanitizeContextForLlm({ pr, findings, diff });
   const started = Date.now();
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), provider.timeout);
@@ -241,7 +241,8 @@ export async function callLlmReviewer(provider, { pr, findings, diff, apiKey },
   if (!v.ok) return { ok: false, code: v.code, inputDigest, latencyMs: Date.now() - started };
   return { ok: true, findings: v.findings, inputDigest,
     outputDigest: crypto.createHash('sha256').update(raw).digest('hex'),
-    model: provider.model, promptVersion: LLM_PROMPT_VERSION, latencyMs: Date.now() - started };
+    model: provider.model, promptVersion: LLM_PROMPT_VERSION, latencyMs: Date.now() - started,
+    coverage };
 }
 
 /** deterministic_mock（仅测试）：固定结构化输出，无网络。 */
