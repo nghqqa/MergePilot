@@ -238,6 +238,12 @@ export async function fixVerifyRound(pool, { run, binding, deps }) {
 // （worker room 消息）；上游 DAG 自动消费链在 223ddc2 断（见 PHASE1 审计 G1/G2）。
 // 四重绑定：固定 room + 精确 sender + 时间窗 + submissionId marker；角色输出过
 // schema；单角色失败重试一次（新 txnId）；仍失败 → 真实 cancel + 死信 + BLOCKED。
+function envGiteeHost() {
+  // 仓库 URL 缺失时的保守回退：标准 gitee.com 云端形态（私有仓库 clone 由
+  // verifyPatchApplies 内部按 env.MU_GITEE_PAT 追加凭据）。
+  return 'gitee.com';
+}
+
 async function runExternalRound(pool, atMod, atCfg, { run, binding, deps, gateFindingId = null }) {
   const { runId } = { runId: run.run_id };
   const { tenantId, repoId, prId, headSha } = binding;
@@ -468,6 +474,26 @@ async function runExternalRound(pool, atMod, atCfg, { run, binding, deps, gateFi
       if (persisted.ok) {
         await gateAudit('at_fix_patch_persisted', { patch_id: persisted.patchId,
           applicability: persisted.applicability });
+        // 真实可应用性验证：隔离工作副本检出准确 head + git apply --check（有界超时，
+        // 诊断脱敏）。失败/超时不回滚已存补丁——applicability.git_apply 如实记录结果。
+        try {
+          const { verifyPatchApplies } = await import('../patch-applicability.mjs');
+          const check = await verifyPatchApplies({
+            repoUrl: deps.repoUrl ?? `https://${envGiteeHost()}/${deps.owner ?? ''}/${deps.repoName ?? ''}.git`,
+            headSha, diffText: fixerPatch,
+            timeoutMs: Number(env.AT_APPLY_CHECK_MS ?? 60_000) || 60_000,
+          });
+          const merged = { ...(persisted.applicability ?? {}), git_apply: check };
+          await pool.query(
+            `UPDATE mu.fix_patch SET applicability = $2::jsonb WHERE run_id=$1`,
+            [runId, JSON.stringify(merged)]);
+          await gateAudit('at_patch_apply_check', { run_id: runId,
+            verified: check.verified, ok: check.ok ?? null,
+            waited_ms: check.duration_ms ?? null, reason: check.reason ?? null });
+        } catch (e) {
+          await gateAudit('at_patch_apply_check_error', { run_id: runId,
+            reason: String(e?.message ?? e).slice(0, 100) });
+        }
       } else {
         await gateAudit('at_fix_patch_rejected', { reason: persisted.reason });
       }

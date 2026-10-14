@@ -13,6 +13,10 @@ FROM node@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e40
 WORKDIR /app
 ENV NODE_ENV=production CONSOLE_HOST=0.0.0.0 CONSOLE_PORT=4730
 
+# 补丁可应用性检查（v27/2026-10-13 波）需要 git：隔离临时工作副本中
+# 对准确 head 执行 git apply --check（patch-applicability.mjs）。
+RUN apk add --no-cache git
+
 # rc.14：版本号构建期注入——/api/health version 的唯一构建期真源。
 # server.mjs 读 process.env.MERGEPILOT_VERSION（runtime 可覆盖）；
 # 此处默认值须与 server.mjs fallback 字符串保持一致（双处手动同步，
