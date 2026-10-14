@@ -241,7 +241,8 @@ export async function callLlmReviewer(provider, { pr, findings, diff, apiKey },
   if (!v.ok) return { ok: false, code: v.code, inputDigest, latencyMs: Date.now() - started };
   return { ok: true, findings: v.findings, inputDigest,
     outputDigest: crypto.createHash('sha256').update(raw).digest('hex'),
-    model: provider.model, promptVersion: LLM_PROMPT_VERSION, latencyMs: Date.now() - started };
+    model: provider.model, promptVersion: LLM_PROMPT_VERSION, latencyMs: Date.now() - started,
+    coverage };
 }
 
 /** deterministic_mock（仅测试）：固定结构化输出，无网络。 */

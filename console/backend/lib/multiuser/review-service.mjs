@@ -267,7 +267,8 @@ export async function handlePullRequestEvent(pool, cfg, { payload, servicePrinci
                 apiKey: (cfg.llmEnv ?? process.env).MU_LLM_API_KEY },
                 { fetchImpl: cfg.llmFetch ?? fetch });
           } catch (e) {
-            r = { ok: false, code: `LLM_UNEXPECTED:${String(e?.message ?? '').slice(0, 0) || 'error'}` }; // 无正文
+            // 诊断增强（rc.35.3 验收波）：错误类名入 code 定位 CI/本机差异——无正文不泄密
+            r = { ok: false, code: `LLM_UNEXPECTED:${String(e?.name ?? '').slice(0, 30) || 'error'}` };
           }
           if (egressCtx) {
             // 出站留痕（成败均记——manifest+digest 零正文；与 v2 external reviewer 同纪律）
@@ -289,15 +290,20 @@ export async function handlePullRequestEvent(pool, cfg, { payload, servicePrinci
               `INSERT INTO mu.audit_event (tenant_id, actor_user_id, kind, detail)
                VALUES ($1,$2,'REVIEW_LLM_EGRESS',$3)`,
               [ctx.tenantId, null, JSON.stringify({ run_id: run.run_id,
-                ok: Boolean(r?.ok), model: effLlm.model ?? null })]).catch(() => {});
+                ok: Boolean(r?.ok), model: effLlm.model ?? null,
+                ...(r?.coverage ? { coverage: r.coverage } : {}) })]).catch(() => {});
           }
         }
         if (r.ok) {
+          // 覆盖范围摘要（rc.35.3 验收波）：出站了哪些代码/行、是否截断——进 finding 依据位
+          const covSummary = r.coverage
+            ? `llm:coverage=blocks ${r.coverage.blocks_sent} lines ${r.coverage.lines_sent}${r.coverage.truncated ? ' TRUNCATED' : ''}`
+            : 'llm:citation-required';
           const mapped = (r.findings ?? []).map((f) => ({
             rule_id: `LLM-${f.category}`, severity: f.severity, confidence: Number(f.confidence ?? 0.5),
             path: String(f.location?.path ?? 'unknown').slice(0, 500),
             line_start: Number(f.location?.line ?? 0) || null, line_end: null,
-            title: String(f.summary ?? '').slice(0, 300), evidence_ref: 'llm:citation-required',
+            title: String(f.summary ?? '').slice(0, 300), evidence_ref: covSummary,
             remediation: String(f.recommendation ?? '').slice(0, 1000),
             summary_masked: 'LLM 建议详见 remediation（输出已过 schema 校验）' }));
           llmCount = await insertFindings(pool, { attemptId: llmClaim.attemptId, runId: run.run_id,
