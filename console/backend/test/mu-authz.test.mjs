@@ -28,7 +28,7 @@ test('矩阵完备性：每个声明的动作至少被一个角色持有；词�
   for (const r of MU_ROLES) {
     for (const a of roleActions(r)) assert.ok(MU_ACTIONS.includes(a), `${r} 持有未声明动作 ${a}`);
   }
-  assert.deepEqual(MU_BINDING_REQUIRED, ['request_repair']);
+  assert.deepEqual(MU_BINDING_REQUIRED, ['request_repair', 'apply_fix', 'merge_pr']);
 });
 
 test('authorize fail-closed 全路径', () => {
