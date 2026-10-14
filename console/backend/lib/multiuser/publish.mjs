@@ -84,7 +84,8 @@ async function ghCommentApi(env, { method, owner, repo, installationId, prNumber
 
 // ── 远端 head 复核（陈旧结果拒绝发布）──
 
-async function fetchRemoteHead(env, { provider, owner, repo, prNumber, installationId }) {
+// 导出给 preview（GET 只读）使用：发布前目标远端状态可见化（rc.34 权限与发布上下文可见化）。
+export async function fetchRemoteHead(env, { provider, owner, repo, prNumber, installationId }) {
   if (provider === 'gitee') {
     const r = await giteeCommentApi(env, { method: 'GET',
       path: `/repos/${owner}/${repo}/pulls/${encodeURIComponent(prNumber)}` });

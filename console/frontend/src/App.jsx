@@ -395,7 +395,7 @@ function Shell() {
   );
 
   return (
-    <Layout className="app" style={{ minHeight: '100vh' }}>
+    <Layout className="app">
       {!isMobile ? (
         <Layout.Sider width={216} className="sidebar" breakpoint={false}>
           {brand}
