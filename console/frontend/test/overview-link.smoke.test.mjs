@@ -68,7 +68,7 @@ function loadPages() {
     const outDir = path.join(FRONTEND, 'node_modules', '.ov-smoke');
     fs.mkdirSync(outDir, { recursive: true });
     const shim = path.join(outDir, 'plots-shim.mjs');
-    fs.writeFileSync(shim, 'export const Line = () => null;\nexport const Column = () => null;\n');
+    fs.writeFileSync(shim, 'export const Line = () => null;\nexport const Column = () => null;\nexport const Bar = () => null;\n');
     const entry = path.join(outDir, 'entry.mjs');
     const bundle = path.join(outDir, 'bundle.cjs');
     fs.writeFileSync(entry, [

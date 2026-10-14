@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Alert, Button, Drawer, Spin, Table, Tag, Typography } from 'antd';
-import { Column, Line } from '@ant-design/plots';
+import { Bar, Column, Line } from '@ant-design/plots';
 import { useAuth } from '../auth.jsx';
 import { useAppConfig } from '../App.jsx';
 import { useDataSource } from '../hooks.js';
@@ -727,11 +727,14 @@ export default function OverviewPage() {
               <div className="ov-chart-empty" role="status">没有仓库分布数据（{data.source}——不渲染空轴冒充）</div>
             ) : (
               <>
-                <Column
+                <Bar
                   {...baseCol}
-                  data={repoCounts}
-                  xField="repo" yField="runs" colorField="repo"
+                  data={[...repoCounts].sort((a, b) => (Number(a.runs) || 0) - (Number(b.runs) || 0))}
+                  xField="runs" yField="repo" colorField="repo"
                   legend={false}
+                  axis={{ x: { title: '运行次数（run）' }, y: { title: false, labelAutoSize: true } }}
+                  label={{ text: 'runs', position: 'right', style: { fontSize: 12, fontWeight: 600 } }}
+                  scale={{ x: { nice: true } }}
                   onEvent={(_, event) => {
                     if (event.type === 'element:click') {
                       const repo = event?.data?.data?.repo;
