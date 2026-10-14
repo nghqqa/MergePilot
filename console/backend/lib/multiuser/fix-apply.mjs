@@ -207,7 +207,8 @@ export async function confirmApplyFix(pool, { env = process.env, runId, tenantId
   }
 
   await q(`UPDATE mu.fix_apply_operation
-             SET status='committed', candidate_commit_sha=$2, remote_result_sha=$2, updated_at=now()
+             SET status='committed', candidate_commit_sha=$2, remote_result_sha=$2,
+                 error_code=NULL, error_detail=NULL, updated_at=now()
             WHERE operation_id=$1`, [opId, result.commitSha]);
   return {
     ok: true, operation_id: opId, status: 'committed',
@@ -328,15 +329,17 @@ export async function confirmMergePr(pool, { env = process.env, runId, tenantId,
   });
 
   if (!result.ok) {
-    await q(`UPDATE mu.fix_apply_operation SET status=$2, error_code=$3, error_detail=$4,
+    // 合并 API 响应均为确定性结果（平台拒绝/条件不符）——记 failed，不虚标 result_uncertain
+    // （真实平台实测 2026-10-15：保护门拒绝如实呈现"未通过设置的审查/测试"）
+    await q(`UPDATE mu.fix_apply_operation SET status='failed', error_code=$2, error_detail=$3,
                updated_at=now() WHERE operation_id=$1`,
-      [opId, result.reason === 'stale_head' ? 'failed' : 'result_uncertain',
-       result.reason, result.detail ?? null]);
+      [opId, result.reason, result.detail ?? null]);
     return { ok: false, reason: result.reason, detail: result.detail ?? null, operation_id: opId };
   }
 
   await q(`UPDATE mu.fix_apply_operation
-             SET status='merged', remote_result_sha=$2, updated_at=now() WHERE operation_id=$1`,
+             SET status='merged', remote_result_sha=$2,
+                 error_code=NULL, error_detail=NULL, updated_at=now() WHERE operation_id=$1`,
     [opId, result.mergeSha]);
   return { ok: true, operation_id: opId, status: 'merged',
     merge_sha: result.mergeSha, provider, pr_number: run.provider_pr_number };
