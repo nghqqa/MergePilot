@@ -65,12 +65,12 @@ export async function verifyFixTest({ repoUrl, headSha, diffText, testCmd,
     if ((await git(['init'], workdir, step(10_000))).code !== 0) {
       return { verified: false, skipped: true, reason: 'git_init_failed', checked_at: checkedAt };
     }
+    // 凭据注入纪律：URL 只进子进程参数——绝不 git remote add（PAT 不写 .git/config）。
     const pat = process.env.MU_GITEE_PAT ?? '';
     const url = (pat && repoUrl.includes('gitee.com') && !repoUrl.includes('@'))
       ? repoUrl.replace('https://', `https://oauth2:${pat}@`) : repoUrl;
-    await git(['remote', 'add', 'origin', url], workdir, step(5_000));
-    let fetch = await git(['fetch', '--depth', '5', 'origin', headSha], workdir, step(timeoutMs));
-    if (fetch.code !== 0) fetch = await git(['fetch', 'origin'], workdir, step(timeoutMs));
+    let fetch = await git(['fetch', '--depth', '5', url, headSha], workdir, step(timeoutMs));
+    if (fetch.code !== 0) fetch = await git(['fetch', url], workdir, step(timeoutMs));
     if (fetch.code !== 0) {
       return { verified: false, skipped: true, reason: 'fetch_head_failed',
         output: REDACT(fetch.stderr).slice(0, 200), checked_at: checkedAt };
