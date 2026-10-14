@@ -61,13 +61,14 @@ export async function verifyPatchApplies({ repoUrl, headSha, diffText, patchDige
     const init = await git(['init'], workdir, step(10_000));
     if (init.code !== 0) return { verified: false, skipped: true, reason: 'git_init_failed', output: REDACT(init.stderr), checked_at: checkedAt };
 
+    // 凭据注入纪律：URL 只进子进程参数（瞬时、不落盘）——绝不 git remote add
+    // （带 PAT 的 URL 会持久化进临时工作树的 .git/config）。
     const urlWithCred = appendCredential(repoUrl);
-    await git(['remote', 'add', 'origin', urlWithCred], workdir, step(5_000));
 
     // 浅取目标 head（服务端支持按 sha fetch；不支持时退化为全量取回后 checkout）
-    let fetch = await git(['fetch', '--depth', '5', 'origin', headSha], workdir, step(timeoutMs));
+    let fetch = await git(['fetch', '--depth', '5', urlWithCred, headSha], workdir, step(timeoutMs));
     if (fetch.code !== 0) {
-      fetch = await git(['fetch', 'origin'], workdir, step(timeoutMs));
+      fetch = await git(['fetch', urlWithCred], workdir, step(timeoutMs));
     }
     if (fetch.code !== 0) return { verified: false, skipped: true, reason: 'fetch_head_failed',
       output: REDACT(fetch.stderr), checked_at: checkedAt };
