@@ -26,7 +26,7 @@ import { parseAccessModel, authorize, denialAudit } from './lib/permissions.mjs'
 import { cchainStatusObserved, verifyRunBindingAndAudit, rotateKeystore,
          cchainMetricsSnapshot, rememberStatusForMetrics } from './lib/cchain/wiring.mjs';
 import { ragTrialApi, ragTrialInternalQuery } from './lib/ragtrial/api.mjs';
-import { muApi, getMuStore, ensureMuReady, muSchemaReadyState } from './lib/multiuser/api.mjs';
+import { muApi, getMuStore, ensureMuReady, ensureMuReadyWithRetry, muSchemaReadyState } from './lib/multiuser/api.mjs';
 import { roleActions } from './lib/multiuser/authz.mjs';
 import { muCsrfOk } from './lib/multiuser/session.mjs';
 import { createMuConsoleApi } from './lib/mu-console-api.mjs';
@@ -863,21 +863,13 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
     // schema init 有界重试（rc.35 生产切换实测）：docker run 与 network connect
     // （DNS 生效）存在竞速窗口——首次 ENOTFOUND 不应永久失败。6 次×5s 覆盖
     // swap 工具 60s 健康循环；耗尽后业务 API 保持 fail-closed（语义不变）。
-    (async () => {
-      const MAX = 6, WAIT = 5_000;
-      for (let i = 1; i <= MAX; i++) {
-        try {
-          await ensureMuReady(process.env);
-          if (i > 1) console.log('[mu] schema init ok (attempt ' + i + '/' + MAX + ')');
-          return;
-        } catch (e) {
-          console.error('[mu] schema init failed (attempt ' + i + '/' + MAX + '):',
-            String(e?.message ?? e).slice(0, 120));
-          if (i < MAX) await new Promise((r) => setTimeout(r, WAIT));
-        }
-      }
-      console.error('[mu] schema init exhausted——业务 API 保持 fail-closed，重启容器可重试');
-    })();
+    ensureMuReadyWithRetry(process.env, { onAttempt: (i, max, err) => {
+      if (err) console.error('[mu] schema init failed (attempt ' + i + '/' + max + '):',
+        String(err?.message ?? err).slice(0, 120));
+      else console.log('[mu] schema init ok (attempt ' + i + '/' + max + ')');
+    } }).then((ok) => {
+      if (!ok) console.error('[mu] schema init exhausted——业务 API 保持 fail-closed，重启容器可重试');
+    });
 
     // rc.11 PR-A：平台级自动 job consumer——webhook 入队的 event_sync job 的常驻
     // 消费循环（此前需人工 POST /api/mu/jobs/tick）。默认开启、间隔 45s，

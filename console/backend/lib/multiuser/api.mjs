@@ -62,6 +62,29 @@ export async function ensureMuReady(env) {
     throw e;
   }
 }
+/**
+ * schema init 有界重试（rc.35 生产切换实测抽出的可测形态）：
+ * docker run 与 network connect（DNS 生效）存在竞速窗口——首次 ENOTFOUND
+ * 不应永久失败。默认 6 次×5s（覆盖 swap 工具 60s 健康循环）；耗尽返回
+ * false，调用方保持 fail-closed。ensureFn/onAttempt 可注入（回归测试）。
+ */
+export async function ensureMuReadyWithRetry(env, opts = {}) {
+  const { max = 6, waitMs = 5_000,
+    sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
+    ensureFn = ensureMuReady, onAttempt = null } = opts;
+  for (let i = 1; i <= max; i++) {
+    try {
+      await ensureFn(env);
+      if (i > 1 && onAttempt) onAttempt(i, max, null);
+      return true;
+    } catch (e) {
+      if (onAttempt) onAttempt(i, max, e);
+      if (i < max) await sleep(waitMs);
+    }
+  }
+  return false;
+}
+
 export function getMuStore(env) {
   if (!env.CONSOLE_PG_DSN) return null;
   if (!muStorePromise) {
