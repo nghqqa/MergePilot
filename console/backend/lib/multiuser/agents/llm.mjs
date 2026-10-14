@@ -24,6 +24,7 @@ export const LLM_EGRESS_LIMITS = Object.freeze({
   maxDiffContextPerFinding: 3,
   maxFindings: 50,
   maxTitleLen: 200,
+  maxFallbackDiffLines: 400, // 零发现回退：有限全量 diff（脱敏+截断）
   defaultTimeoutMs: 30_000,
   maxTimeoutMs: 120_000,
   defaultMaxOutputTokens: 1024,
@@ -42,7 +43,10 @@ export function resolveLlmProvider(env = process.env) {
   const key = String(env.MU_LLM_API_KEY ?? '').trim();
   const model = String(env.MU_LLM_MODEL ?? '').trim();
   if (!base || !key || !model) return { kind: 'disabled', reason: 'LLM_MISCONFIGURED_MISSING_FIELDS' };
-  if (!/^https:\/\//.test(base)) return { kind: 'disabled', reason: 'LLM_MISCONFIGURED_NOT_HTTPS' };
+  // 本地/mock 部署可显式豁免 http（仅回环地址；生产不设此 env——强制 https 不变）
+  const allowInsecure = String(env.MU_LLM_ALLOW_INSECURE_BASE_URL ?? '') === '1'
+    && /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(base);
+  if (!/^https:\/\//.test(base) && !allowInsecure) return { kind: 'disabled', reason: 'LLM_MISCONFIGURED_NOT_HTTPS' };
   if (PLACEHOLDER_RE.test(key) || PLACEHOLDER_RE.test(base) || PLACEHOLDER_RE.test(model)) {
     return { kind: 'disabled', reason: 'LLM_MISCONFIGURED_PLACEHOLDER' };
   }
@@ -84,6 +88,17 @@ function selectHunks(diff, findings, limits) {
     } else if (!raw.startsWith('-') && !raw.startsWith('---')) line++;
   }
   if (cur?.keep?.length) sel.push(cur);
+  if (sel.length) return sel.map((s) => ({ path: s.path.slice(0, 200), lines: s.keep.slice(0, 20) }));
+  // 零发现回退（rc.35.3 解耦波）：deterministic findings 为空时按 findings 锚点选
+  // hunk 的机制产出空上下文——模型审查将只看到 PR 元数据而看不到任何代码，审查
+  // 必然空转。回退为有限全量 diff（逐行脱敏+行数截断；总量仍受 maxTotalPayloadBytes
+  // 兜底）——这是「静态零发现也执行模型审查」的核心价值场景（逻辑缺陷无静态锚点）。
+  const rawDiff = String(diff ?? '');
+  if (rawDiff.trim()) {
+    const fallback = rawDiff.split('\n').slice(0, limits.maxFallbackDiffLines ?? 400)
+      .map((l) => maskLine(l));
+    return [{ path: '(full_diff_truncated)', lines: fallback }];
+  }
   return sel.map((s) => ({ path: s.path.slice(0, 200), lines: s.keep.slice(0, 20) }));
 }
 
@@ -213,9 +228,13 @@ export async function callLlmReviewer(provider, { pr, findings, diff, apiKey },
 
 /** deterministic_mock（仅测试）：固定结构化输出，无网络。 */
 export async function mockLlmReviewer({ findings }) {
-  return { ok: true, findings: [{ severity: 'P3', category: 'maintainability',
-    location: { path: String(findings?.[0]?.path ?? 'unknown'), line: Number(findings?.[0]?.line_start ?? 0) },
-    summary: 'mock 语义建议（仅测试）', recommendation: '人工复核', confidence: 0.5 }],
+  // 诚实 mock：零发现输入→零 finding 输出（不伪造 path=unknown 的建议——
+  // 隔离验收用真实 fixture 触发；本 mock 只证明管线贯通）。
+  const fs = Array.isArray(findings) ? findings : [];
+  const out = fs.length ? [{ severity: 'P3', category: 'maintainability',
+    location: { path: String(fs[0]?.path ?? 'unknown'), line: Number(fs[0]?.line_start ?? 0) },
+    summary: 'mock 语义建议（仅测试）', recommendation: '人工复核', confidence: 0.5 }] : [];
+  return { ok: true, findings: out,
     inputDigest: '0'.repeat(64), outputDigest: '1'.repeat(64),
     model: 'deterministic_mock', promptVersion: LLM_PROMPT_VERSION, latencyMs: 0 };
 }
