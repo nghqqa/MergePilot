@@ -390,9 +390,16 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [] }) {
     // 口径：静态规则发现——"原因"=规则说明（title），命中行归"依据"；
     // 模型发现——"原因"=模型实际输出（summary）。绝不拿代码片段冒充原因。
     const isStatic = String(f.source ?? '') === 'precheck';
+    const sm = String(f.summary_masked ?? '');
+    // 历史占位文案兼容（rc.35.4）：占位（'LLM 建议详见 remediation…'）=summary_masked
+    // 丢失了真实原因——优先回退 title（已保存的真实模型问题描述）；无 title 显示
+    // "未提供问题原因"。不把修复建议冒充原因、不编造历史分析。
+    const HISTORICAL_PLACEHOLDER = 'LLM 建议详见 remediation';
     const cause = isStatic
       ? (f.title ? `静态规则命中：${f.title}` : '（未提供）')
-      : String(f.summary_masked ?? f.title ?? '（未提供）');
+      : (sm.includes(HISTORICAL_PLACEHOLDER)
+        ? (String(f.title ?? '').trim() || '未提供问题原因')
+        : (sm || String(f.title ?? '') || '（未提供）'));
     const evidenceLine = isStatic && f.summary_masked ? `命中行：${f.summary_masked}` : null;
     return (
       <div className="mu-finding-detail">
