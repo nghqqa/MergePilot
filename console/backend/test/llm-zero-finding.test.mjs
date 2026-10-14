@@ -70,3 +70,25 @@ test('Z6 mock reviewer：有输入→1 条建议（管线冒烟）', async () =>
   assert.equal(r.findings.length, 1);
   assert.equal(r.findings[0].location.path, 'a.js');
 });
+
+test('Z7 超预算：按块边界裁剪，代码不归零', () => {
+  // 300 块×每块多行——必然超 24KB；断言：至少保留 1 块且有行（非空 hunks）
+  const parts = ['diff --git a/src/x0.js b/src/x0.js', '--- a/src/x0.js', '+++ b/src/x0.js', '@@ -1,3 +1,3 @@'];
+  for (let b = 0; b < 300; b++) {
+    parts.push(`diff --git a/src/f${b}.js b/src/f${b}.js`, `--- a/src/f${b}.js`, `+++ b/src/f${b}.js`, `@@ -1,2 +1,2 @@`,
+      `+console.log('block ${b} line A');`, `+console.log('block ${b} line B');`);
+  }
+  const { payload, coverage } = llm.sanitizeContextForLlm({ pr: { number: 1, title: 't' }, findings: [], diff: parts.join('\n') });
+  const hunks = payload.untrusted_data.diff_hunks;
+  assert.ok(hunks.length >= 1, '至少保留一块（代码不归零）');
+  assert.ok(hunks[0].lines.length > 0, '保留块有行');
+  assert.ok(coverage.bytes <= 24 * 1024 + 64, '预算内（含 JSON 包装容差）');
+  assert.equal(typeof coverage.truncated, 'boolean');
+});
+
+test('Z8 coverage 结构：full_diff_fallback/lines_sent/truncated 可读', () => {
+  const { coverage } = llm.sanitizeContextForLlm({ pr: { number: 1, title: 't' }, findings: [], diff: DIFF });
+  assert.equal(coverage.full_diff_fallback, true);
+  assert.ok(coverage.lines_sent > 0 && coverage.bytes > 0);
+  assert.equal(coverage.truncated, false);
+});
