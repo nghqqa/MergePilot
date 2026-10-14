@@ -35,14 +35,18 @@ const git = (args, cwd, timeoutMs) => execFileP('git', args, {
 /**
  * 校验补丁能否应用到准确 head。
  * 参数：{ repoUrl(https 形式，无需内置凭据——私有仓库自动用 env.MU_GITEE_PAT),
- *        headSha, diffText, timeoutMs=60s, workRoot=/tmp }
+ *        headSha, diffText, patchDigest(可选——证据绑定 digest，补丁更新后旧证据失效),
+ *        timeoutMs=60s, workRoot=/tmp }
+ * 纪律：检查内容=调用方传入的原样文本（不做任何静默归一化——检查结论只对传入内容负责；
+ *       缺尾换行等可确定修复的格式问题由调用方产出新版本补丁并重新检查）。
  * 返回：
- *  { verified: true, ok: bool, method: 'git apply --check', head_sha, duration_ms,
- *    checked_at(ISO), output(脱敏,≤400 字符) }
+ *  { verified: true, ok: bool, method: 'git apply --check', head_sha, patch_digest?,
+ *    duration_ms, checked_at(ISO), output(脱敏,≤400 字符),
+ *    diagnosis?: 'missing_trailing_newline'（失败且文本缺尾换行——确定性修正的充分线索） }
  *  { verified: false, skipped: true, reason } —— 环境不可用（如无 git/克隆失败）；
  *    调用方如实显示"未验证：原因"，不误报通过。
  */
-export async function verifyPatchApplies({ repoUrl, headSha, diffText,
+export async function verifyPatchApplies({ repoUrl, headSha, diffText, patchDigest = null,
   timeoutMs = 60_000, workRoot = os.tmpdir() } = {}) {
   const checkedAt = new Date().toISOString();
   const t0 = Date.now();
@@ -77,24 +81,30 @@ export async function verifyPatchApplies({ repoUrl, headSha, diffText,
     await git(['checkout', '--', '.'], workdir, step(10_000));
 
     const diffFile = path.join(workdir, 'suggested.patch');
-    // git apply 要求补丁以换行结尾——LLM 生成的 diff 常缺末尾换行（corrupt patch）。
-    let diffNormalized = String(diffText);
-    if (!diffNormalized.endsWith('\n')) diffNormalized += '\n';
-    fs.writeFileSync(diffFile, diffNormalized, { encoding: 'utf8', mode: 0o600 });
+    fs.writeFileSync(diffFile, String(diffText), { encoding: 'utf8', mode: 0o600 });
 
     const apply = await git(['apply', '--check', '--whitespace=nowarn', path.basename(diffFile)],
       workdir, step(timeoutMs));
     const dur = Date.now() - t0;
-    return {
+    const failedText = String(apply.stderr || apply.stdout);
+    const evidence = {
       verified: true,
       ok: apply.code === 0,
       method: 'git apply --check',
       head_sha: headSha,
       duration_ms: dur,
       checked_at: checkedAt,
-      output: REDACT(apply.code === 0 ? 'git apply --check 通过（可干净应用）' :
-        `git apply --check 失败: ${String(apply.stderr || apply.stdout).trim().slice(0, 200)}`),
+      output: REDACT(apply.code === 0 ? 'git apply --check 通过（可干净应用）'
+        : `git apply --check 失败: ${failedText.trim().slice(0, 200)}`),
     };
+    if (patchDigest) evidence.patch_digest = patchDigest;
+    // 成因线索（仅诊断，不做修复——修复动作属调用方的版本化产物流程）：
+    // 缺尾换行时 git apply 报 corrupt patch，且该情形可无歧义确定性修正。
+    if (apply.code !== 0 && /corrupt patch/i.test(failedText)
+      && !String(diffText).endsWith('\n')) {
+      evidence.diagnosis = 'missing_trailing_newline';
+    }
+    return evidence;
   } catch (e) {
     return { verified: false, skipped: true, reason: 'environment_error',
       output: REDACT(String(e?.message ?? e)).slice(0, 200), checked_at: checkedAt };

@@ -2834,15 +2834,17 @@ const ragMatch = p.match(new RegExp("^/api/mu/repositories/([^/]+)/rag-search$")
       if (!run) return sendJson(res, 404, { error: { reason: 'not_found' } });
       const findings = (await muPoolQ(
         `SELECT finding_id, rule_id, severity, path, line_start, line_end, title,
-                summary_masked, remediation, evidence_ref FROM mu.agent_finding
+                summary_masked, remediation, evidence_ref, source FROM mu.agent_finding
           WHERE run_id=$1 ORDER BY severity, path`, [runId])).rows;
       const outputs = {};
       for (const r of (await muPoolQ(
         `SELECT agent_role, content, created_at FROM mu.review_output
           WHERE run_id=$1 ORDER BY created_at`, [runId])).rows) outputs[r.agent_role] = r.content;
       const patch = (await muPoolQ(
-        `SELECT patch_id, head_sha, files, applicability, rationale, created_at
-           FROM mu.fix_patch WHERE run_id=$1 ORDER BY created_at DESC LIMIT 1`, [runId])).rows[0] ?? null;
+        `SELECT patch_id, head_sha, files, applicability, rationale, created_at,
+                patch_version, patch_digest, correction_of, correction_kind, test_verification
+           FROM mu.fix_patch WHERE run_id=$1 AND active
+          ORDER BY patch_version DESC LIMIT 1`, [runId])).rows[0] ?? null;
       const feedback = (await muPoolQ(
         `SELECT f.action, f.note, f.created_at, u.login
            FROM mu.finding_feedback f JOIN mu.app_user u ON u.user_id=f.user_id
@@ -2855,15 +2857,22 @@ const ragMatch = p.match(new RegExp("^/api/mu/repositories/([^/]+)/rag-search$")
       for (const [role, o] of Object.entries(outputs)) {
         if (o == null || typeof o !== 'object') parseFailures.push(role);
       }
-      return sendJson(res, 200, { run, findings, outputs, patch, feedback, publish,
-        parse_state: { outputs_ok: Object.keys(outputs).length, parse_failures: parseFailures },
-        verification: [
+      const verification = [
           { kind: 'static_rules', label: '静态规则检查（首轮 deterministic）', executed: true },
           { kind: 'model_verifier', label: '模型独立评估（verifier）', executed: outputs.verifier != null,
             note: '模型判断，非实际测试' },
-          { kind: 'real_tests', label: '实际测试执行（沙箱 testCmd）', executed: false,
-            note: 'DRY_RUN 建议链不含沙箱测试——登记为未验证项' },
-        ] });
+        ];
+      {
+        // 第三分（实际修复测试）状态由 active 补丁的 test_verification 决定——未执行/未验证/通过/未通过如实
+        const tv = patch?.test_verification ?? null;
+        verification.push({ kind: 'real_tests', label: '实际修复测试（隔离环境+预批准命令）',
+          executed: Boolean(tv?.verified), ok: tv?.verified ? (tv.ok === true) : null,
+          note: tv?.verified ? (tv.ok ? '修复前失败→修复后通过' : '修复后测试未通过或修复前即通过')
+            : '未执行（模型评估/可应用性通过 ≠ 行为正确）' });
+      }
+      return sendJson(res, 200, { run, findings, outputs, patch, feedback, publish,
+        parse_state: { outputs_ok: Object.keys(outputs).length, parse_failures: parseFailures },
+        verification });
     }
 
     // 下载：Markdown / JSON / patch.diff（read_code_content——代码内容出站门）
@@ -2885,15 +2894,20 @@ const ragMatch = p.match(new RegExp("^/api/mu/repositories/([^/]+)/rag-search$")
       for (const r of (await muPoolQ(
         `SELECT agent_role, content FROM mu.review_output WHERE run_id=$1`, [runId])).rows) outputs[r.agent_role] = r.content;
       const patchRow = (await muPoolQ(
-        `SELECT head_sha, files, diff_text, applicability, rationale, created_at
-           FROM mu.fix_patch WHERE run_id=$1 ORDER BY created_at DESC LIMIT 1`, [runId])).rows[0] ?? null;
+        `SELECT head_sha, files, diff_text, applicability, rationale, created_at,
+                patch_version, patch_digest, correction_kind, test_verification
+           FROM mu.fix_patch WHERE run_id=$1 AND active
+          ORDER BY patch_version DESC LIMIT 1`, [runId])).rows[0] ?? null;
       const { buildMarkdownReport } = await import('./artifacts.mjs');
+      const tvRow = patchRow?.test_verification ?? null;
       const base = { run, findings, outputs,
         patch: patchRow ?? null,
         verification: [
           '静态规则检查（首轮 deterministic）：已执行',
-          '模型独立评估（verifier）：已执行——为模型判断，非实际测试',
-          '实际测试执行：未执行（DRY_RUN 建议链不含沙箱测试）',
+          '模型独立评估（verifier）：' + (outputs.verifier != null ? '已执行——为模型判断，非实际测试' : '未执行'),
+          '实际修复测试：' + (tvRow?.verified
+            ? (tvRow.ok ? `已执行并通过（命令 ${tvRow.test_cmd}；修复前失败→修复后通过）` : '已执行但未通过（见建议补丁节）')
+            : '未执行（模型评估/可应用性通过 ≠ 行为正确）'),
         ], repoLabel: `${repoRow.owner ?? '?'}/${repoRow.name ?? '?'}`, headSha: run.head_sha };
       if (dlMatch[2] === 'report.md') {
         const body = buildMarkdownReport(base);
@@ -2909,13 +2923,19 @@ const ragMatch = p.match(new RegExp("^/api/mu/repositories/([^/]+)/rag-search$")
           'content-disposition': `attachment; filename="mergepilot-report-${runId.slice(0, 8)}.json"` });
         return res.end(body);
       }
-      // patch.diff：无补丁=404（带真实原因），不伪造空补丁
+      // patch.diff：无补丁=404（带真实原因），不伪造空补丁。
+      // 头部口径=权威判定（applicabilityVerdict）+digest——下载内容即检查所验证内容。
       if (!patchRow) return sendJson(res, 404, { error: { reason: 'no_patch',
         message: '本轮未产出结构化补丁（fixer 仅文字建议或无 patch 字段）' } });
+      const { applicabilityVerdict } = await import('./artifacts.mjs');
+      const verdict = applicabilityVerdict(patchRow.applicability, patchRow.patch_digest ?? null);
       res.writeHead(200, { 'content-type': 'text/x-diff; charset=utf-8',
         'content-disposition': `attachment; filename="mergepilot-suggest-${runId.slice(0, 8)}.patch"` });
       return res.end('# MergePilot 建议补丁（尚未应用）—— head ' + patchRow.head_sha
-        + '\n# 可应用性: ' + JSON.stringify(patchRow.applicability ?? {}) + '\n' + patchRow.diff_text);
+        + ' · 版本 v' + (patchRow.patch_version ?? 1)
+        + '\n# 补丁 digest: ' + (patchRow.patch_digest ?? 'n/a')
+        + '\n# 真实可应用性: ' + verdict.text
+        + '\n' + patchRow.diff_text);
     }
 
     // finding 反馈（确认/误报/暂不处理；保留原始审查结论——反馈不回写 finding 行）
@@ -2967,13 +2987,13 @@ const ragMatch = p.match(new RegExp("^/api/mu/repositories/([^/]+)/rag-search$")
         for (const r of (await muPoolQ(
           `SELECT agent_role, content FROM mu.review_output WHERE run_id=$1`, [runId])).rows) outputs[r.agent_role] = r.content;
         const patchRow = (await muPoolQ(
-          `SELECT head_sha, files, applicability, rationale FROM mu.fix_patch
-            WHERE run_id=$1 ORDER BY created_at DESC LIMIT 1`, [runId])).rows[0] ?? null;
-        const body = art.buildPublishComment({ run, findings,
-          patch: patchRow ? { files: patchRow.files, applicability: patchRow.applicability,
-            head_sha: patchRow.head_sha } : null,
+          `SELECT head_sha, files, applicability, rationale, patch_version, patch_digest,
+                  test_verification FROM mu.fix_patch
+            WHERE run_id=$1 AND active ORDER BY patch_version DESC LIMIT 1`, [runId])).rows[0] ?? null;
+        const body = art.buildPublishComment({ run, findings, patch: patchRow,
           verification: ['静态规则检查：已执行', '模型独立评估：已执行（非实际测试）',
-            '实际测试执行：未执行（DRY_RUN）'],
+            '实际修复测试：' + (patchRow?.test_verification?.verified
+              ? (patchRow.test_verification.ok ? '已执行并通过' : '已执行但未通过') : '未执行（如实登记）')],
           repoLabel: run.owner + '/' + run.repo_name, prNumber: run.provider_pr_number,
           headSha: run.head_sha, detailUrl: null, reviewedAt: null });
         const existing = (await muPoolQ(

@@ -22,8 +22,14 @@ const FEEDBACK_LABEL = { confirm: '确认问题', false_positive: '误报', wont
 /** 用户可见时间：明确标注 UTC（避免被当作北京时间）。 */
 const utc = (v) => (v ? `${String(v).slice(0, 19).replace('T', ' ')} UTC` : '—');
 
-/** 可应用性 → 用户可读状态（不展示原始 JSON；如实区分结构检查与真实应用验证）。 */
-function applicabilityText(applicability) {
+/**
+ * 补丁验证三分的权威口径（与后端 artifacts.applicabilityVerdict 同一逻辑）：
+ *  1) 格式与路径（结构级）——结构通过 ≠ 可应用；
+ *  2) 真实可应用性 git apply --check——pass/fail/未执行/环境不可用/证据失效（digest 绑定）五态；
+ *  3) 实际修复测试——test_verification 缺失=未执行。
+ * 返回 { level, text, structuralText } 或 null（无补丁）。
+ */
+function patchVerdict(applicability, patchDigest) {
   const a = applicability ?? null;
   if (!a) return null;
   const ISSUE_MAP = {
@@ -31,9 +37,40 @@ function applicabilityText(applicability) {
     unsafe_path: '包含不安全路径',
     not_unified_diff: '不是统一 diff 格式',
   };
-  if (a.ok) return '补丁格式与路径检查通过；尚未验证能否应用到对应源码（未执行 git apply --check）';
   const msgs = (a.issues ?? []).map((i) => ISSUE_MAP[String(i).split(':')[0]] ?? i);
-  return `补丁检查未通过：${msgs.join('；') || '未知原因'}`;
+  const structuralText = a.ok
+    ? '格式与路径检查（结构级）：通过（这只是结构检查，不代表可应用）'
+    : `格式与路径检查（结构级）：未通过——${msgs.join('；') || '未知原因'}`;
+  const ga = a.git_apply ?? null;
+  let level = 'not_executed';
+  let text = '真实可应用性：未执行 git apply --check（结构检查通过 ≠ 可应用）';
+  if (ga && patchDigest && ga.patch_digest && ga.patch_digest !== patchDigest) {
+    level = 'stale';
+    text = '真实可应用性：检查证据已失效（补丁内容已更新，当前 digest 与检查时不一致）——旧结果不代表当前补丁';
+  } else if (!ga) {
+    level = 'not_executed';
+  } else if (ga.verified === false) {
+    level = 'env_unavailable';
+    text = `真实可应用性：未验证（环境不可用：${ga.reason ?? '未知原因'}）——不误报通过`;
+  } else if (ga.ok) {
+    level = 'pass';
+    text = `真实可应用性：通过（git apply --check 对准确 head${ga.checked_at ? `，${utc(ga.checked_at)}` : ''}）`;
+  } else {
+    level = 'fail';
+    text = `真实可应用性：失败——补丁不可应用（${ga.output ?? 'git apply --check 未通过'}）`;
+  }
+  return { level, text, structuralText };
+}
+
+/** 历史追溯记录（retro_* 键）——保留原始证据，只读展示不参与当前版本判定。 */
+function retroRecords(applicability) {
+  const keys = Object.keys(applicability ?? {}).filter((k) => k.startsWith('retro_'));
+  return keys.map((k) => {
+    const ev = applicability[k] ?? {};
+    const ga = ev.git_apply ?? {};
+    return { key: k, ok: ga.ok ?? null, checked_at: ga.checked_at ?? null,
+      note: ev.attribution ? String(ev.attribution).slice(0, 200) : null };
+  });
 }
 
 /** 统一 diff → 逐文件结构（供逐文件渲染；解析失败返回 null——调用方如实展示）。 */
@@ -288,23 +325,38 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [] }) {
       executed: Object.keys(outputs).length > 0,
       result: outputs.verifier?.verdict ? `verifier 结论：${outputs.verifier.verdict}` : (Object.keys(outputs).length ? '已执行' : '无输出'),
       note: '模型判断，非实际测试' },
-    { kind: 'real_tests', label: '实际测试执行（沙箱）', executed: false, result: '未执行',
-      note: 'DRY_RUN 建议链不含沙箱测试——登记为未验证项' },
+    { kind: 'real_tests', label: '实际修复测试（隔离环境+预批准命令）',
+      executed: Boolean(patch?.test_verification?.verified),
+      result: patch?.test_verification?.verified
+        ? (patch.test_verification.ok ? `通过（${patch.test_verification.test_cmd}）` : '未通过')
+        : '未执行',
+      note: patch?.test_verification?.verified
+        ? (patch.test_verification.ok ? '修复前失败→修复后通过' : '修复后未通过或修复前即通过——如实展示')
+        : '模型评估/可应用性通过 ≠ 行为正确——未执行如实标注' },
   ];
-  const applicability = applicabilityText(patch?.applicability);
+  const verdict = patchVerdict(patch?.applicability, patch?.patch_digest ?? null);
+  const retro = retroRecords(patch?.applicability);
   const diffFiles = patchState === 'loaded' ? splitDiffFiles(patchText) : null;
 
   const findingDetail = (f) => {
     const srcLink = sourceUrl(f);
+    // 口径：静态规则发现——"原因"=规则说明（title），命中行归"依据"；
+    // 模型发现——"原因"=模型实际输出（summary）。绝不拿代码片段冒充原因。
+    const isStatic = String(f.source ?? '') === 'precheck';
+    const cause = isStatic
+      ? (f.title ? `静态规则命中：${f.title}` : '（未提供）')
+      : String(f.summary_masked ?? f.title ?? '（未提供）');
+    const evidenceLine = isStatic && f.summary_masked ? `命中行：${f.summary_masked}` : null;
     return (
       <div className="mu-finding-detail">
         <dl>
           <dt>位置</dt>
           <dd><code className="mono">{f.path}{f.line_start ? ':' + f.line_start : ''}{f.line_end && f.line_end !== f.line_start ? `-${f.line_end}` : ''}</code></dd>
           <dt>原因</dt>
-          <dd>{String(f.summary_masked ?? f.title ?? '（未提供）')}</dd>
+          <dd>{cause}</dd>
           <dt>依据</dt>
-          <dd>{f.evidence_ref ? <code className="mono" style={{ fontSize: 11, wordBreak: 'break-all' }}>{String(f.evidence_ref).slice(0, 80)}</code> : '未提供'}</dd>
+          <dd>{evidenceLine ? <div style={{ marginBottom: 2 }}><code className="mono" style={{ fontSize: 11 }}>{evidenceLine}</code></div> : null}
+            {f.evidence_ref ? <code className="mono" style={{ fontSize: 11, wordBreak: 'break-all' }}>{String(f.evidence_ref).slice(0, 80)}</code> : (evidenceLine ? null : '未提供')}</dd>
           <dt>修复建议</dt>
           <dd>{f.remediation ?? '未提供'}</dd>
           <dt>源码（被审查 head）</dt>
@@ -352,7 +404,11 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [] }) {
         <Descriptions.Item label="建议补丁">{patch
           ? <Tag color="blue">已有（触及 {(patchFiles.length || (patch.files ?? []).length)} 文件，尚未应用）</Tag>
           : <Tag>无（仅文字建议或历史 run）</Tag>}</Descriptions.Item>
-        <Descriptions.Item label="实际测试"><Tag>未执行（DRY_RUN 建议链）</Tag></Descriptions.Item>
+        <Descriptions.Item label="实际修复测试">{patch?.test_verification?.verified
+          ? (patch.test_verification.ok
+            ? <Tag color="green">通过（修复前败→修复后过）</Tag>
+            : <Tag color="red">未通过</Tag>)
+          : <Tag>未执行（如实登记）</Tag>}</Descriptions.Item>
         <Descriptions.Item label="PR 发布">{publishStatusNode}</Descriptions.Item>
         <Descriptions.Item label="被审查 head"><code className="mono">{String(headSha).slice(0, 12)}</code></Descriptions.Item>
         <Descriptions.Item label="审查轮次">{`首轮规则引擎${Object.keys(outputs).length ? ' + AgentTeams 模型评估' : '（仅首轮）'}`}</Descriptions.Item>
@@ -376,7 +432,7 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [] }) {
                 columns={[
                   { title: '问题', render: (_, f) => (
                     <div style={{ minWidth: 0 }}>
-                      <div style={{ wordBreak: 'break-word' }}>{String(f.summary_masked ?? f.title ?? '（无摘要）')}</div>
+                      <div style={{ wordBreak: 'break-word' }}>{String(f.title ?? f.summary_masked ?? '（无标题）')}</div>
                       <div style={{ marginTop: 2 }}>
                         <Tag color={SEV_COLOR[f.severity] ?? 'default'}>{f.severity}</Tag>
                         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
@@ -398,10 +454,33 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [] }) {
           { key: 'patch', label: patch ? '建议怎么改（建议补丁，尚未应用）' : '建议怎么改（本轮无补丁）', children: (
             patch ? (
               <>
-                {applicability ? (
-                  <Typography.Paragraph style={{ fontSize: 13, marginBottom: 6 }}>
-                    {applicability}
-                  </Typography.Paragraph>
+                {verdict ? (
+                  <div style={{ marginBottom: 8 }}>
+                    <Typography.Paragraph style={{ fontSize: 13, marginBottom: 4 }}>
+                      <Tag color={verdict.level === 'pass' ? 'green' : verdict.level === 'fail' ? 'red'
+                        : verdict.level === 'env_unavailable' ? 'orange' : 'default'}>
+                        {verdict.level === 'pass' ? '可应用性：通过' : verdict.level === 'fail' ? '可应用性：失败'
+                          : verdict.level === 'env_unavailable' ? '可应用性：未验证' : verdict.level === 'stale' ? '可应用性：证据已失效' : '可应用性：未执行'}
+                      </Tag>
+                      {verdict.level === 'fail' ? <b>{verdict.text}</b> : verdict.text}
+                    </Typography.Paragraph>
+                    <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 4 }}>
+                      {verdict.structuralText}
+                    </Typography.Paragraph>
+                    {patch?.patch_digest ? (
+                      <Typography.Paragraph type="secondary" style={{ fontSize: 12, margin: 0 }}>
+                        补丁 digest：<code className="mono">{String(patch.patch_digest).slice(0, 16)}</code>
+                        {patch?.patch_version > 1 ? ` · 版本 v${patch.patch_version}（${patch?.correction_kind === 'deterministic' ? '确定性格式修正' : patch?.correction_kind === 'regenerated' ? '模型再生成' : '修正'}产物，原始失败版本已保留）` : ''}
+                        {' '}——页面/复制/下载/检查使用同一版本；补丁更新后旧检查证据自动失效
+                      </Typography.Paragraph>
+                    ) : null}
+                    {retro.length ? (
+                      <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 0 }}>
+                        历史追溯记录（保留原始证据，不参与当前版本判定）：
+                        {retro.map((r) => ` ${r.key} → ${r.ok === true ? '可应用' : r.ok === false ? '不可应用' : '未验证'}${r.checked_at ? ` @ ${utc(r.checked_at)}` : ''}`).join('；')}
+                      </Typography.Paragraph>
+                    ) : null}
+                  </div>
                 ) : null}
                 {patchState === 'loading' ? (
                   <Alert type="info" showIcon message="补丁正文加载中…" />
