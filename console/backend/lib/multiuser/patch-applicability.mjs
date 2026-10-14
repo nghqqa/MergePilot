@@ -116,9 +116,78 @@ export async function verifyPatchApplies({ repoUrl, headSha, diffText, patchDige
   }
 }
 
-function appendCredential(repoUrl) {
+function appendCredential(repoUrl, token = null) {
+  // Gitee：部署级 PAT（MU_GITEE_PAT）。其他平台（GitHub 私有仓）由调用方传
+  // installation token（credentialToken）——凭据只进子进程参数，不落盘不落日志。
+  if (token && !repoUrl.includes('@')) {
+    return repoUrl.replace('https://', `https://x-access-token:${token}@`);
+  }
   const pat = process.env.MU_GITEE_PAT ?? '';
   if (!pat || !repoUrl.includes('gitee.com')) return repoUrl;
   if (repoUrl.includes('@')) return repoUrl; // 已带凭据
   return repoUrl.replace('https://', `https://oauth2:${pat}@`);
+}
+
+/**
+ * 补丁物化（用户确认应用修复的执行前置）：在隔离临时工作副本中检出准确 head，
+ * 实际 `git apply` 补丁，读取每个变更文件的完整新内容——供 Git Data API 原子提交使用。
+ *
+ * 与 verifyPatchApplies 的关系：同一套隔离副本机械；这里是"执行面"（真 apply+物化），
+ * 那里是"证据面"（--check）。物化失败=补丁在此 head 上不可应用→调用方中止，零远端写。
+ *
+ * 返回：
+ *  { ok: true, files: [{path, content}], head_sha, digest }  —— content=null 表示补丁删除该文件
+ *  { ok: false, reason, output? }                            —— 物化失败（未产生任何远端副作用）
+ */
+export async function materializePatchedFiles({ repoUrl, headSha, diffText, digest = null,
+  credentialToken = null, timeoutMs = 60_000, workRoot = os.tmpdir() } = {}) {
+  if (!repoUrl || !headSha || !diffText) {
+    return { ok: false, reason: 'missing_repo_or_head_or_diff' };
+  }
+  let workdir = null;
+  try {
+    workdir = fs.mkdtempSync(path.join(workRoot, 'mp-applymat-'));
+    const step = (ms) => Math.max(5_000, ms);
+
+    const init = await git(['init'], workdir, step(10_000));
+    if (init.code !== 0) return { ok: false, reason: 'git_init_failed', output: REDACT(init.stderr) };
+
+    const urlWithCred = appendCredential(repoUrl, credentialToken);
+    let fetch = await git(['fetch', '--depth', '5', urlWithCred, headSha], workdir, step(timeoutMs));
+    if (fetch.code !== 0) fetch = await git(['fetch', urlWithCred], workdir, step(timeoutMs));
+    if (fetch.code !== 0) return { ok: false, reason: 'fetch_head_failed', output: REDACT(fetch.stderr) };
+
+    const co = await git(['checkout', '--detach', headSha], workdir, step(20_000));
+    if (co.code !== 0) return { ok: false, reason: 'checkout_head_failed', output: REDACT(co.stderr) };
+    await git(['config', 'core.autocrlf', 'false'], workdir, step(5_000));
+    await git(['checkout', '--', '.'], workdir, step(10_000));
+
+    const diffFile = path.join(workdir, 'suggested.patch');
+    fs.writeFileSync(diffFile, String(diffText), { encoding: 'utf8', mode: 0o600 });
+    const apply = await git(['apply', '--whitespace=nowarn', path.basename(diffFile)], workdir, step(timeoutMs));
+    if (apply.code !== 0) {
+      return { ok: false, reason: 'patch_apply_failed',
+        output: REDACT(String(apply.stderr || apply.stdout)).slice(0, 300) };
+    }
+
+    const changed = await git(['diff', '--name-only', 'HEAD'], workdir, step(10_000));
+    if (changed.code !== 0) return { ok: false, reason: 'diff_list_failed', output: REDACT(changed.stderr) };
+    const files = [];
+    for (const rel of String(changed.stdout).split('\n').map((s) => s.trim()).filter(Boolean)) {
+      const abs = path.join(workdir, rel);
+      if (!abs.startsWith(workdir)) return { ok: false, reason: 'path_escape_blocked' };
+      if (!fs.existsSync(abs)) { files.push({ path: rel, content: null }); continue; } // 补丁删除的文件
+      const st = fs.statSync(abs);
+      if (!st.isFile()) return { ok: false, reason: 'unsupported_change_type', output: rel };
+      files.push({ path: rel, content: fs.readFileSync(abs, 'utf8') });
+    }
+    if (!files.length) return { ok: false, reason: 'no_changes_after_apply' };
+    return { ok: true, files, head_sha: headSha, ...(digest ? { digest } : {}) };
+  } catch (e) {
+    return { ok: false, reason: 'environment_error', output: REDACT(String(e?.message ?? e)).slice(0, 200) };
+  } finally {
+    if (workdir) {
+      try { fs.rmSync(workdir, { recursive: true, force: true }); } catch { /* 尽力清理 */ }
+    }
+  }
 }

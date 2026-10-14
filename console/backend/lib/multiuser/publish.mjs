@@ -85,20 +85,34 @@ async function ghCommentApi(env, { method, owner, repo, installationId, prNumber
 // ── 远端 head 复核（陈旧结果拒绝发布）──
 
 // 导出给 preview（GET 只读）使用：发布前目标远端状态可见化（rc.34 权限与发布上下文可见化）。
-export async function fetchRemoteHead(env, { provider, owner, repo, prNumber, installationId }) {
+// 读取完整 PR 状态（state/head sha/源分支/目标分支/可合并性）——apply-fix 与 merge-pr
+// 的 preview 复用同一读取通道，凭据规则与发布链一致（部署级 PAT / installation token）。
+export async function fetchRemotePr(env, { provider, owner, repo, prNumber, installationId }) {
   if (provider === 'gitee') {
     const r = await giteeCommentApi(env, { method: 'GET',
       path: `/repos/${owner}/${repo}/pulls/${encodeURIComponent(prNumber)}` });
     if (!r.ok) throw Object.assign(new Error(`gitee_pr_http_${r.status}`), { status: r.status });
-    return String(r.json?.head?.sha ?? '');
+    return {
+      state: String(r.json?.state ?? ''), headSha: String(r.json?.head?.sha ?? ''),
+      sourceBranch: String(r.json?.head?.ref ?? ''), targetBranch: String(r.json?.base?.ref ?? ''),
+      mergeable: r.json?.mergeable !== false,
+    };
   }
   if (provider === 'github') {
     const r = await ghCommentApi(env, { method: 'GET', owner, repo, installationId,
       path: `/repos/${owner}/${repo}/pulls/${encodeURIComponent(prNumber)}` });
     if (!r.ok) throw Object.assign(new Error(`ghp_pr_http_${r.status}`), { status: r.status });
-    return String(r.json?.head?.sha ?? '');
+    return {
+      state: String(r.json?.state ?? ''), headSha: String(r.json?.head?.sha ?? ''),
+      sourceBranch: String(r.json?.head?.ref ?? ''), targetBranch: String(r.json?.base?.ref ?? ''),
+      mergeable: r.json?.mergeable !== false,
+    };
   }
   throw new Error('provider_unsupported');
+}
+
+export async function fetchRemoteHead(env, ctx) {
+  return (await fetchRemotePr(env, ctx)).headSha;
 }
 
 /**

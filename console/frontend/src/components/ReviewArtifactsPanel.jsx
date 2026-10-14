@@ -150,6 +150,14 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [] }) {
   const [pubPreview, setPubPreview] = useState(null);
   const [pubBusy, setPubBusy] = useState(false);
   const [pubMsg, setPubMsg] = useState(null);
+  // 应用修复 / 合并 PR（用户授权远端写入——每步 preview→confirm）
+  const [applyPreview, setApplyPreview] = useState(null);
+  const [applyBusy, setApplyBusy] = useState(false);
+  const [applyMsg, setApplyMsg] = useState(null);
+  const [mergePreview, setMergePreview] = useState(null);
+  const [mergeBusy, setMergeBusy] = useState(false);
+  const [mergeMsg, setMergeMsg] = useState(null);
+  const [mergeMethod, setMergeMethod] = useState('merge');
   const [dlMsg, setDlMsg] = useState(null);
   const loadCtlRef = useRef(null);
   const patchCtlRef = useRef(null);
@@ -168,6 +176,22 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [] }) {
           ? '审计角色仅只读，不能发布 PR 评论'
           : `当前角色（${ROLE_LABEL[identity?.role] ?? identity?.role ?? '未知'}）无发布权限——仅维护者（maintainer）可发布`)
       : null;
+
+  // 应用修复 / 合并 PR 按钮置灰原因（与发布同口径：最新 run + 角色能力；后端 RBAC 为最终授权方）
+  const roleBlockText = (action) => (identity?.role === 'platform_admin'
+    ? '当前角色为平台管理员，未授予该操作权限（平台管理与审查裁定分离）——请用维护者账号操作'
+    : identity?.role === 'auditor'
+      ? '审计角色仅只读，不能执行远端写操作'
+      : `当前角色（${ROLE_LABEL[identity?.role] ?? identity?.role ?? '未知'}）无该操作权限——仅维护者（maintainer）可执行`);
+  const applyBlockReason =
+    (!isLatestRun && runsList.length) ? '应用修复需要最新审查 run（当前显示为历史运行）——点击「查看最新 run」切换'
+    : !effActions.includes('apply_fix') ? roleBlockText('apply_fix')
+    : !art?.patch ? '本轮审查未产生建议补丁，无可应用内容'
+    : null;
+  const mergeBlockReason =
+    (!isLatestRun && runsList.length) ? '合并需要最新审查 run（当前显示为历史运行）——点击「查看最新 run」切换'
+    : !effActions.includes('merge_pr') ? roleBlockText('merge_pr')
+    : null;
 
   const loadPatch = useCallback(async (rid, signal) => {
     setPatchState('loading');
@@ -201,6 +225,7 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [] }) {
       head_sha: ad.run.head_sha, created_at: ad.run.created_at });
     setArt(ad);
     setPubCtx(null); setPubMsg(null); setPubPreview(null); // 切 run 后旧发布上下文/结果不残留
+    setApplyPreview(null); setApplyMsg(null); setMergePreview(null); setMergeMsg(null); // 同理：应用/合并上下文不残留
     setState('ready');
     if (ad.patch?.patch_id) loadPatch(rid, signal);
   }, [loadPatch]);
@@ -309,6 +334,95 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [] }) {
       }
     } catch { setPubMsg({ tone: 'warning', text: '网络异常，发布未完成' }); }
     setPubBusy(false);
+  };
+
+  // ── 应用修复 / 合并 PR（用户授权远端写；每步 preview→confirm）──
+
+  const openApplyPreview = async () => {
+    setApplyBusy(true); setApplyMsg(null);
+    try {
+      const r = await apiFetch(`/api/mu/runs/${runId}/apply-fix/preview`);
+      const b = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setApplyMsg({ tone: 'warning', text: `预览未完成（HTTP ${r.status}）：${b?.error?.reason ?? ''}` });
+      } else {
+        setApplyPreview(b);
+        if (!b.can_apply) {
+          const why = { remote_unreachable: '远端不可达', head_moved: '远端 head 已变化（补丁基于旧版本——PR 更新后重新审查即可）',
+            already_applied: '该补丁已成功应用过（重复确认被阻止）' }[b.blocked_reason] ?? b.blocked_reason;
+          setApplyMsg({ tone: why === 'already_applied' ? 'success' : 'warning', text: `当前不可应用：${why ?? '条件不满足'}` });
+        }
+      }
+    } catch { setApplyMsg({ tone: 'warning', text: '网络异常，预览未完成' }); }
+    setApplyBusy(false);
+  };
+
+  const confirmApply = async () => {
+    setApplyBusy(true);
+    try {
+      const r = await apiFetch(`/api/mu/runs/${runId}/apply-fix/confirm`, {
+        method: 'POST', headers: { 'content-type': 'application/json', ...csrfHeader() },
+        body: JSON.stringify({ confirm: true, expected_remote_head: applyPreview?.target?.remote_head ?? null }),
+      });
+      const b = await r.json().catch(() => ({}));
+      if (r.ok) {
+        setApplyMsg({ tone: 'success', text: b.idempotent
+          ? `该补丁此前已应用（幂等返回，未重复提交）——提交 ${String(b.commit_sha ?? '').slice(0, 12)}`
+          : `已提交到 PR 源分支——新提交 ${String(b.commit_sha ?? '').slice(0, 12)}（patch v${b.patch_version ?? '?'}）。请在代码平台触发重新审查/CI，通过后回到这里预览合并。` });
+        setApplyPreview(null);
+      } else {
+        const er = b?.error?.reason ?? '';
+        const why = { stale_head: '远端 head 已变化——补丁基于旧版本，未写入任何内容（PR 更新后重新审查）',
+          head_moved_since_preview: '预览后远端又推进了——已拒绝，请刷新预览重试',
+          materialize_failed: '补丁在当前 head 上物化失败——未写入任何内容（远端零副作用）',
+          operation_in_progress: '已有一次相同操作正在进行——请稍后刷新查看结果' }[er];
+        setApplyMsg({ tone: 'warning', text: why ?? `应用未完成（HTTP ${r.status}）：${er}${b?.error?.uncertain ? '（结果不明——提交对象可能已创建但分支未推进，请先查验远端再重试）' : ''}` });
+        if (!/stale_head|head_moved/.test(er)) setApplyPreview(null);
+      }
+    } catch { setApplyMsg({ tone: 'warning', text: '网络异常，应用未完成' }); }
+    setApplyBusy(false);
+  };
+
+  const openMergePreview = async () => {
+    setMergeBusy(true); setMergeMsg(null);
+    try {
+      const r = await apiFetch(`/api/mu/runs/${runId}/merge-pr/preview`);
+      const b = await r.json().catch(() => ({}));
+      if (!r.ok) setMergeMsg({ tone: 'warning', text: `预览未完成（HTTP ${r.status}）：${b?.error?.reason ?? ''}` });
+      else {
+        setMergePreview(b);
+        if (!b.can_merge) {
+          const why = { pr_not_open: 'PR 已关闭', pr_not_mergeable: 'PR 当前不可合并（存在冲突）', head_unknown: '无法读取 PR head' }[b.blocked_reason] ?? b.blocked_reason;
+          setMergeMsg({ tone: 'warning', text: `当前不可合并：${why ?? '条件不满足'}` });
+        }
+      }
+    } catch { setMergeMsg({ tone: 'warning', text: '网络异常，预览未完成' }); }
+    setMergeBusy(false);
+  };
+
+  const confirmMerge = async () => {
+    setMergeBusy(true);
+    try {
+      const r = await apiFetch(`/api/mu/runs/${runId}/merge-pr/confirm`, {
+        method: 'POST', headers: { 'content-type': 'application/json', ...csrfHeader() },
+        body: JSON.stringify({ confirm: true, expected_head: mergePreview?.target?.head ?? null, merge_method: mergeMethod }),
+      });
+      const b = await r.json().catch(() => ({}));
+      if (r.ok) {
+        setMergeMsg({ tone: 'success', text: b.idempotent
+          ? `该 PR 在此 head 上已合并过（幂等返回，未重复操作）`
+          : `已合并——合并提交 ${String(b.merge_sha ?? '').slice(0, 12)}。请在平台上确认目标分支状态。` });
+        setMergePreview(null);
+      } else {
+        const er = b?.error?.reason ?? '';
+        const why = { pr_not_open: 'PR 已关闭（预览后被他人关闭）', pr_not_mergeable: 'PR 存在冲突，平台拒绝合并',
+          head_moved_since_preview: '预览后 PR head 又推进了——已拒绝，请刷新预览重试',
+          merge_failed: '平台合并被拒（保护规则/冲突/权限——详见平台页面）' }[er];
+        setMergeMsg({ tone: 'warning', text: why ?? `合并未完成（HTTP ${r.status}）：${er}` });
+        if (!/head_moved/.test(er)) setMergePreview(null);
+      }
+    } catch { setMergeMsg({ tone: 'warning', text: '网络异常，合并未完成' }); }
+    setMergeBusy(false);
   };
 
   const download = async (kind, filename) => {
@@ -614,6 +728,8 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [] }) {
                 {identity.actions?.includes('decide_review')
                   ? <Tag color="green">可审批 / 可发布</Tag>
                   : <Tag>不可审批 / 不可发布</Tag>}
+                {identity.actions?.includes('apply_fix') ? <Tag color="green">可应用修复</Tag> : null}
+                {identity.actions?.includes('merge_pr') ? <Tag color="green">可合并 PR</Tag> : null}
                 {identity.actions?.includes('manage_membership') ? <Tag>可管理成员</Tag> : null}
               </Space>
             ) : '—'}
@@ -700,6 +816,53 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [] }) {
               action={pubMsg.url ? <Button size="small" href={pubMsg.url} target="_blank" rel="noreferrer">查看评论</Button> : undefined} />
           ) : null}
         </div>
+
+        {/* ⑥ 应用修复与合并（用户授权远端写——两步独立确认，任何一步都不自动执行） */}
+        <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px dashed var(--c-border)' }}>
+          <Typography.Title level={5} style={{ marginTop: 0, marginBottom: 8 }}>应用修复与合并</Typography.Title>
+          <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 8 }}>
+            两步手动确认流程：① 把建议补丁提交到 PR 源分支（新增一个提交，不合并）→
+            平台触发重新审查/CI → ② 重新确认后合并 PR。每一步都先预览、后确认；
+            远端已被他人推进时操作会被拒绝，不覆盖任何人的提交。
+          </Typography.Paragraph>
+          <Descriptions size="small" column={1} bordered style={{ marginBottom: 8 }}>
+            <Descriptions.Item label="远端写入身份">
+              {applyPreview?.robot_identity || mergePreview?.robot_identity
+                ? <>{applyPreview?.robot_identity ?? mergePreview?.robot_identity}（系统机器人，非你的个人账号）</>
+                : <Typography.Text type="secondary" style={{ fontSize: 12 }}>预览后显示——系统机器人，不使用个人账号</Typography.Text>}
+            </Descriptions.Item>
+            <Descriptions.Item label="影响范围">
+              ① 在 PR 源分支新增提交（包含补丁全部变更）；② 将 PR 合并进目标分支。
+              {publish?.remote_url ? null : null}
+              两步均为条件写入；合并后回退需在平台上手动 revert（服务回滚不撤销已发生的远端提交/合并）。
+            </Descriptions.Item>
+          </Descriptions>
+          <Space wrap>
+            <Tooltip title={applyBlockReason ?? undefined}>
+              <Button disabled={Boolean(applyBlockReason) || applyBusy} loading={applyBusy}
+                onClick={openApplyPreview}>
+                ① 预览并应用修复
+              </Button>
+            </Tooltip>
+            <Tooltip title={mergeBlockReason ?? undefined}>
+              <Button danger disabled={Boolean(mergeBlockReason) || mergeBusy} loading={mergeBusy}
+                onClick={openMergePreview}>
+                ② 预览并合并 PR
+              </Button>
+            </Tooltip>
+          </Space>
+          {applyBlockReason ? (
+            <Alert style={{ marginTop: 6 }} type="info" showIcon message={applyBlockReason} />
+          ) : mergeBlockReason ? (
+            <Alert style={{ marginTop: 6 }} type="info" showIcon message={mergeBlockReason} />
+          ) : (
+            <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+              应用前自动重核远端 head 并在隔离副本真实试应用补丁；服务端权限与远端状态为最终授权方。
+            </div>
+          )}
+          {applyMsg ? <Alert style={{ marginTop: 6 }} type={applyMsg.tone} showIcon message={applyMsg.text} /> : null}
+          {mergeMsg ? <Alert style={{ marginTop: 6 }} type={mergeMsg.tone} showIcon message={mergeMsg.text} /> : null}
+        </div>
       </div>
 
       <Drawer title="发布预览（确认后才会写出）" width={720} open={Boolean(pubPreview)}
@@ -727,6 +890,133 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [] }) {
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
               仅生成建议，未修改代码；默认不附原始源码/完整补丁/敏感原值。
             </Typography.Text>
+          </>
+        ) : null}
+      </Drawer>
+
+      {/* 应用修复预览（确认后才会向远端写入） */}
+      <Drawer title="应用修复预览（确认后才会写入远端）" width={640} open={Boolean(applyPreview)}
+        onClose={() => setApplyPreview(null)}
+        footer={
+          <Space>
+            <Button onClick={() => setApplyPreview(null)}>取消</Button>
+            <Button type="primary" danger={!applyPreview?.can_apply} disabled={!applyPreview?.can_apply}
+              loading={applyBusy} onClick={confirmApply}>
+              确认提交到 PR 源分支
+            </Button>
+          </Space>
+        }>
+        {applyPreview ? (
+          <>
+            <Descriptions size="small" column={1} bordered style={{ marginBottom: 10 }}>
+              <Descriptions.Item label="目标">
+                {applyPreview.target.provider} · {applyPreview.target.repo} · PR#{applyPreview.target.pr_number}
+                （源分支 <code className="mono">{applyPreview.target.source_branch ?? '—'}</code>）
+              </Descriptions.Item>
+              <Descriptions.Item label="补丁基于 head">
+                <code className="mono">{String(applyPreview.target.review_head ?? '').slice(0, 12)}</code>
+              </Descriptions.Item>
+              <Descriptions.Item label="远端当前 head">
+                {applyPreview.target.remote_head_error
+                  ? <Typography.Text type="warning">无法读取（{applyPreview.target.remote_head_error}）</Typography.Text>
+                  : <>{applyPreview.target.head_match
+                    ? <Tag color="green">与补丁 head 一致，可应用</Tag>
+                    : <Tag color="red">已变化——确认将被拒绝</Tag>}
+                    <code className="mono">{String(applyPreview.target.remote_head ?? '').slice(0, 12)}</code></>}
+              </Descriptions.Item>
+              <Descriptions.Item label="补丁验证">
+                <Space wrap size={4}>
+                  <span>可应用性：</span>
+                  {applyPreview.patch.applicability_state === 'pass' ? <Tag color="green">git apply --check 通过</Tag>
+                    : applyPreview.patch.applicability_state === 'fail' ? <Tag color="red">未通过</Tag>
+                    : <Tag>未执行</Tag>}
+                  <span>修复测试：</span>
+                  {applyPreview.patch.fix_test?.executed
+                    ? (applyPreview.patch.fix_test.ok ? <Tag color="green">已执行并通过</Tag> : <Tag color="red">已执行未通过</Tag>)
+                    : <Tag>未执行</Tag>}
+                </Space>
+              </Descriptions.Item>
+              <Descriptions.Item label="写入身份">
+                {applyPreview.robot_identity}（系统机器人，非个人账号）
+              </Descriptions.Item>
+              <Descriptions.Item label="动作">
+                在源分支新增一个提交（包含补丁全部变更）；不合并 PR。
+              </Descriptions.Item>
+              {applyPreview.previous_operations?.length ? (
+                <Descriptions.Item label="历史操作">
+                  {applyPreview.previous_operations.map((o, i) => (
+                    <div key={i} style={{ fontSize: 12 }}>
+                      <Tag color={o.status === 'committed' ? 'green' : o.status === 'failed' ? 'red' : 'default'}>{o.status}</Tag>
+                      {o.commit ? <code className="mono">{String(o.commit).slice(0, 12)}</code> : null}
+                      {o.error_code ? <Typography.Text type="secondary">（{o.error_code}）</Typography.Text> : null}
+                    </div>
+                  ))}
+                </Descriptions.Item>
+              ) : null}
+            </Descriptions>
+            {applyPreview.patch.fix_test?.executed && !applyPreview.patch.fix_test.ok ? (
+              <Alert type="warning" showIcon style={{ marginBottom: 8 }}
+                message="修复测试未通过——提交前请重读验证三分说明；是否应用由你判断。" />
+            ) : null}
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>{applyPreview.operation_note}</Typography.Text>
+            <div style={{ marginTop: 4 }}>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>{applyPreview.rollback_note}</Typography.Text>
+            </div>
+          </>
+        ) : null}
+      </Drawer>
+
+      {/* 合并 PR 预览（确认后才会合并） */}
+      <Drawer title="合并 PR 预览（确认后才会合并）" width={640} open={Boolean(mergePreview)}
+        onClose={() => setMergePreview(null)}
+        footer={
+          <Space>
+            <Button onClick={() => setMergePreview(null)}>取消</Button>
+            <Button type="primary" danger disabled={!mergePreview?.can_merge}
+              loading={mergeBusy} onClick={confirmMerge}>
+              确认合并 PR
+            </Button>
+          </Space>
+        }>
+        {mergePreview ? (
+          <>
+            <Descriptions size="small" column={1} bordered style={{ marginBottom: 10 }}>
+              <Descriptions.Item label="目标">
+                {mergePreview.target.provider} · {mergePreview.target.repo} · PR#{mergePreview.target.pr_number}
+              </Descriptions.Item>
+              <Descriptions.Item label="分支方向">
+                <code className="mono">{mergePreview.target.source_branch ?? '—'}</code> →
+                <code className="mono">{mergePreview.target.target_branch ?? '—'}</code>
+              </Descriptions.Item>
+              <Descriptions.Item label="当前 head">
+                <code className="mono">{String(mergePreview.target.head ?? '').slice(0, 12)}</code>
+                {mergePreview.applied_commit ? (
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    （含 MergePilot 应用提交 <code className="mono">{String(mergePreview.applied_commit).slice(0, 12)}</code>）
+                  </Typography.Text>
+                ) : null}
+              </Descriptions.Item>
+              <Descriptions.Item label="合并条件">
+                <Space wrap size={4}>
+                  {mergePreview.merge_conditions.pr_open ? <Tag color="green">PR 开放</Tag> : <Tag color="red">PR 已关闭</Tag>}
+                  {mergePreview.merge_conditions.mergeable ? <Tag color="green">无冲突</Tag> : <Tag color="red">有冲突</Tag>}
+                  <Tag>CI 状态：未接入（不作为合并依据）</Tag>
+                  <Tag>保护规则：平台照常生效，本服务不绕过</Tag>
+                </Space>
+              </Descriptions.Item>
+              <Descriptions.Item label="合并方式">
+                <Select size="small" value={mergeMethod} onChange={setMergeMethod} style={{ minWidth: 160 }}
+                  options={[{ value: 'merge', label: 'merge（保留完整历史）' },
+                    { value: 'squash', label: 'squash（压为一个提交）' },
+                    { value: 'rebase', label: 'rebase（线性追加）' }]} />
+              </Descriptions.Item>
+              <Descriptions.Item label="写入身份">
+                {mergePreview.robot_identity}（系统机器人，非个人账号）
+              </Descriptions.Item>
+            </Descriptions>
+            <Alert type="warning" showIcon style={{ marginBottom: 8 }}
+              message="合并后代码进入目标分支；本服务无法自动撤销已发生的合并，回退需在平台上手动 revert。" />
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>{mergePreview.operation_note}</Typography.Text>
           </>
         ) : null}
       </Drawer>
