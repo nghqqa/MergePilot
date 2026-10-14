@@ -1,0 +1,56 @@
+{
+  "profile_id": "mock-profile-trial",
+  "honesty_note": "【mock】本剧本为脚本化模拟发现，零网络、非模型输出——只用于流水线自证与单测。剧本取值镜像 trial 波实测定性结论（r3work/rc26-release/trial/QUALITY-REPORT.md）：Q4/Q5/Q6 命中且定级 P1/P1/P2；Q2/Q3 命中但定级 P3（复现 trial 观察到的严重度偏差）；Q1 trial 无合格证据，剧本按合理输出模拟 P2 命中。所有 findings 过 validateLlmOutput 校验（与真实输出同 schema）。",
+  "source": "r3work/rc26-release/trial/QUALITY-REPORT.md §二/§四/§六（2026-10-14）",
+  "runs": {
+    "CASE-01:defect": [
+      { "severity": "P2", "category": "logic_bug", "location": { "path": "src/q1.js", "line": 3 },
+        "summary": "倒序循环条件为 i > 0，index 0 的首元素永远不会参与拼接，结果缺少第一个元素",
+        "recommendation": "循环条件应为 i >= 0，确保首元素被包含", "confidence": 0.9 },
+      { "severity": "P3", "category": "maintainability", "location": { "path": "src/q1.js", "line": 1 },
+        "summary": "建议对 items 参数增加数组类型校验，非数组输入会抛异常",
+        "recommendation": "考虑在函数入口校验 Array.isArray(items)", "confidence": 0.6 }
+    ],
+    "CASE-01:fixed": [],
+    "CASE-02:defect": [
+      { "severity": "P3", "category": "logic_bug", "location": { "path": "src/q2.js", "line": 2 },
+        "summary": "name 为 null 时直接调用 trim 会抛 TypeError，缺少空值防护",
+        "recommendation": "入口处对 falsy 输入提前返回空字符串", "confidence": 0.85 }
+    ],
+    "CASE-02:fixed": [
+      { "severity": "P2", "category": "logic_bug", "location": { "path": "src/q2.js", "line": 2 },
+        "summary": "当 name 为非字符串对象时仍可能抛异常，防护不完整",
+        "recommendation": "应校验 typeof name === 'string'", "confidence": 0.5 }
+    ],
+    "CASE-03:defect": [
+      { "severity": "P3", "category": "logic_bug", "location": { "path": "src/q3.js", "line": 2 },
+        "summary": "total 为 0 时除法产生 NaN，Math.round(NaN) 仍为 NaN，污染下游统计",
+        "recommendation": "对 total 为 0 的情况提前返回 0", "confidence": 0.85 }
+    ],
+    "CASE-03:fixed": [],
+    "CASE-04:defect": [
+      { "severity": "P1", "category": "logic_bug", "location": { "path": "src/q4.js", "line": 2 },
+        "summary": "inRange 使用严格比较，min 与 max 边界值本身被排除在范围外，边界语义错误",
+        "recommendation": "改用 v >= min && v <= max 使范围包含边界", "confidence": 0.95 },
+      { "severity": "P2", "category": "other", "location": { "path": "tests/q4.test.js", "line": 5 },
+        "summary": "测试断言边界值应包含在范围内，与当前实现冲突，测试必然失败",
+        "recommendation": "确认边界语义后统一实现与测试", "confidence": 0.7 }
+    ],
+    "CASE-04:fixed": [],
+    "CASE-05:defect": [
+      { "severity": "P1", "category": "logic_bug", "location": { "path": "src/q5.js", "line": 5 },
+        "summary": "async 函数 double 缺少 return，await double(21) 恒为 undefined 而非 42",
+        "recommendation": "补上 return delayed(x * 2, 10)", "confidence": 0.95 },
+      { "severity": "P2", "category": "logic_bug", "location": { "path": "src/q5.js", "line": 4 },
+        "summary": "double 未返回内部 Promise，调用方拿到 undefined",
+        "recommendation": "返回 delayed 的调用结果", "confidence": 0.9 }
+    ],
+    "CASE-05:fixed": [],
+    "CASE-06:defect": [
+      { "severity": "P2", "category": "logic_bug", "location": { "path": "src/q6.js", "line": 2 },
+        "summary": "replace 传字符串参数只替换首个空格，多个空格时产出非法 slug",
+        "recommendation": "使用全局正则 replace(/ /g, '-') 替换所有空格", "confidence": 0.9 }
+    ],
+    "CASE-06:fixed": []
+  }
+}

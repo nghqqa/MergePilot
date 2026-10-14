@@ -1,0 +1,66 @@
+{
+  "schema_version": "rq-rules-v2",
+  "description": "finding 五类分类规则——文件化、可评审、可版本化。分类为确定性纯函数：按 rules 数组顺序逐条匹配，首个命中的规则生效；全部未命中则落入 default_category。匹配输入为 finding 的归一化字段（path/line_start/title/remediation/category）+ 样本规格（case.json 的 evaluation_rules）+ 同 run 已分类结果。",
+  "changelog": "v2：重复判定先于标记判定（同一缺陷的第二条报告即使也命中标记也视为重复）；缺陷断言词表补齐（异常/抛/不完整/防护缺失/恒为/会导致）；新增强缺陷断言与建议措辞区分（有建议措辞且无强缺陷断言 → 一般建议，对齐 trial 波 §六 先例）。",
+  "categories": {
+    "true_defect": "正确缺陷——finding 指向目标文件且命中该样本登记的缺陷标记（对登记缺陷的准确描述）",
+    "duplicate_report": "重复报告——与同 run 已判 true_defect 的 finding 同文件、同行邻近窗口内、同类别（先于标记判定）",
+    "false_positive": "误报——声称缺陷但既非登记缺陷的命中，也不属规格不明确；含：指向 diff 外文件的缺陷断言、正确版上断言登记缺陷",
+    "ambiguous_spec": "规格不明确——finding 表达对预期行为/规格的不确定（提问式：边界应含否、null 该返回什么等），未下缺陷断言",
+    "general_suggestion": "一般建议——不针对登记缺陷行为的可维护性/风格/测试改进建议"
+  },
+  "default_category": "general_suggestion",
+  "params": {
+    "duplicate_line_window": 3,
+    "ambiguity_patterns": [
+      "(是否|是否应该|unclear|ambiguous|uncertain|intended|spec|意图|预期行为不明确|需要确认|需要澄清|待确认)"
+    ],
+    "suggestion_patterns": [
+      "(建议|考虑|consider|可选|可考虑|maintainability|可维护性|风格|style|naming|命名|重构|refactor|document|注释)"
+    ],
+    "strong_defect_patterns": [
+      "(bug|缺陷|错误|error|crash|崩溃|vulnerab|漏洞|不完整|防护缺失|必然失败|恒为|会导致)"
+    ],
+    "defect_claim_patterns": [
+      "(bug|缺陷|错误|error|crash|崩溃|vulnerab|漏洞|安全|risk|风险|incorrect|wrong|漏|缺失|missing|undefined|NaN|null|exception|异常|抛|不完整|恒为|总是|会导致|必然失败)"
+    ]
+  },
+  "rules": [
+    {
+      "rule_id": "CLA-DUPLICATE",
+      "category": "duplicate_report",
+      "when": "与同 run 先前已判 true_defect 的 finding：path 相同 且 |line_start 差| <= duplicate_line_window 且 rule_id 相同（先于 CLA-TRUE-DEFECT 判定）",
+      "stop": true
+    },
+    {
+      "rule_id": "CLA-TRUE-DEFECT",
+      "category": "true_defect",
+      "when": "variant=defect 且 finding.path 匹配 case.evaluation_rules.target_path 且 (title+remediation) 命中 defect_marker_patterns 至少一条；variant=fixed 时同命中改判 CLA-FALSE-POSITIVE（断言已修复不存在的缺陷）",
+      "stop": true
+    },
+    {
+      "rule_id": "CLA-SUGGESTION",
+      "category": "general_suggestion",
+      "when": "(title+remediation) 命中 suggestion_patterns 且不命中 strong_defect_patterns（建议措辞优先于误报判定——避免把加固建议冤枉为误报，对齐 trial §六 maintainability→一般建议先例）",
+      "stop": true
+    },
+    {
+      "rule_id": "CLA-AMBIGUOUS",
+      "category": "ambiguous_spec",
+      "when": "(title+remediation) 命中 ambiguity_patterns 且未命中 defect_claim_patterns",
+      "stop": true
+    },
+    {
+      "rule_id": "CLA-FALSE-POSITIVE",
+      "category": "false_positive",
+      "when": "命中 defect_claim_patterns（下缺陷断言）但既非登记缺陷命中：目标文件上标记不符、或断言指向 diff 外/非目标文件、或 variant=fixed 上断言登记缺陷",
+      "stop": true
+    },
+    {
+      "rule_id": "CLA-GENERAL",
+      "category": "general_suggestion",
+      "when": "其余（无缺陷断言、无歧义表达、无建议措辞）",
+      "stop": true
+    }
+  ]
+}
