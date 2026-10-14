@@ -116,6 +116,7 @@ a:hover { text-decoration: underline; text-underline-offset: 2px; }
 /* 应用外壳锁定视口高度（rc.34 布局收口）：侧栏与顶栏常驻，唯一滚动区=主内容。
    弹性链条：.app(100vh) → 右列 Layout(min-height/width:0, column) → topbar(0 0 auto)
    + .content(flex:1, min-height:0, 独立滚动)；不用隐藏溢出掩盖——内容全部可达。 */
+html, body { height: 100%; overflow: hidden; }
 .app.ant-layout { display: flex; height: 100vh; overflow: hidden; }
 .app > .ant-layout { min-width: 0; min-height: 0; }
 .sidebar.ant-layout-sider {
