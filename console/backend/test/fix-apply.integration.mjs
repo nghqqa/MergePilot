@@ -76,67 +76,106 @@ const jsonResp = (obj, status = 200) => ({ ok: status >= 200 && status < 300, st
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
-// ── R 组：远端写入原语（fetch mock；条件语义）──
+// ── R 组：远端写入原语（本地裸仓=真 push 语义，零网络 mock）──
 {
   const env = { MU_GITEE_PAT: 'testpat' };
+  // 建源仓（含 feature/pilot-x 形态的斜杠分支）+ 裸仓作远端
+  const src = fs.mkdtempSync(path.join(os.tmpdir(), 'mp-push-src-'));
+  const bare = fs.mkdtempSync(path.join(os.tmpdir(), 'mp-push-bare-')) + '/remote.git';
+  const gp = (cwd, args) => execFileSync('git', ['-c', 'user.email=t@t', '-c', 'user.name=t', ...args],
+    { cwd, stdio: 'pipe' }).toString();
+  gp(src, ['init', '-q', '-b', 'master']);
+  execFileSync('git', ['config', 'core.autocrlf', 'false'], { cwd: src, stdio: 'pipe' });
+  fs.writeFileSync(path.join(src, 'src.txt'), 'line1\nline2\nline3\n');
+  gp(src, ['add', '.']); gp(src, ['commit', '-qm', 'v1']);
+  gp(src, ['remote', 'add', 'origin', bare]);
+  gp(bare.replace('/remote.git', ''), ['init', '-q', '--bare', 'remote.git']);
+  gp(src, ['push', '-q', 'origin', 'master:refs/heads/feature/pilot-x']);
+  const base = gp(src, ['rev-parse', 'master']).trim();
+
+  // R1: 推送式提交——happy path（斜杠分支 + patch 全内容变更）
+  const patchTxt = [
+    '--- a/src.txt', '+++ b/src.txt', '@@ -1,3 +1,3 @@',
+    ' line1', '-line2', '+line2-fixed', ' line3',
+  ].join('\n') + '\n';
+  const c1 = await rw.platformCreateCommit({ env, provider: 'gitee', owner: 'o', repo: 'r',
+    repoUrl: bare, branch: 'feature/pilot-x', expectedHead: base, diffText: patchTxt, message: 'fix: r1' });
+  ok('R1 推送式提交：真 push 到斜杠分支（fast-forward 成功）',
+    c1.ok === true && /^[0-9a-f]{40}$/.test(c1.commitSha) && c1.previousSha === base, c1);
+  // 远端实证：分支 tip=新提交；提交作者=MergePilot Bot
+  const tipOut = execFileSync('git', ['--git-dir', bare, 'rev-parse', 'refs/heads/feature/pilot-x']).toString().trim();
+  const authorOut = execFileSync('git', ['--git-dir', bare, 'log', '-1', '--format=%an %ae', 'refs/heads/feature/pilot-x']).toString().trim();
+  ok('R2 远端 tip=新提交 + 作者=MergePilot Bot', tipOut === c1.commitSha && authorOut === 'MergePilot Bot bot@mergepilot.local', { tipOut, authorOut });
+
+  // R3: 陈旧 head → 拒绝（ls-remote 前检；零 push）
+  const c2 = await rw.platformCreateCommit({ env, provider: 'gitee', owner: 'o', repo: 'r',
+    repoUrl: bare, branch: 'feature/pilot-x', expectedHead: base, diffText: patchTxt, message: 'fix: r3' });
+  ok('R3 前置 CAS：expectedHead 已过期 → stale_head 零写入',
+    c2.ok === false && c2.reason === 'stale_head', c2);
+
+  // R4: 服务端 CAS——基于旧 head 的 push 被拒（先制造并发推进）
+  const staleBase = base;
+  const patchOld = [
+    '--- a/src.txt', '+++ b/src.txt', '@@ -1,3 +1,3 @@',
+    ' line1', '-line2', '+line2-old', ' line3',
+  ].join('\n');
+  // 构造并发推进：另一副本基于当前 feature 分支 tip 推一个新提交，使 staleBase 过期
+  const forkDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mp-push-fork-'));
+  execFileSync('git', ['clone', '-q', bare, forkDir], { stdio: 'pipe' });
+  execFileSync('git', ['config', 'core.autocrlf', 'false'], { cwd: forkDir, stdio: 'pipe' });
+  execFileSync('git', ['checkout', '-q', '-B', 'feature/pilot-x', 'origin/feature/pilot-x'], { cwd: forkDir, stdio: 'pipe' });
+  fs.writeFileSync(path.join(forkDir, 'src.txt'), 'line1\nline2-fixed\nline3-concurrent\n');
+  gp(forkDir, ['add', '.']); gp(forkDir, ['commit', '-qm', 'concurrent']);
+  gp(forkDir, ['push', '-q', 'origin', 'HEAD:refs/heads/feature/pilot-x']);
+  const newTip = gp(forkDir, ['rev-parse', 'HEAD']).trim();
+  // 此时 staleBase 已过期——pushCommit 的 ls-remote 前检应拒绝（服务端 CAS 不必触达）
+  const c4 = await rw.platformCreateCommit({ env, provider: 'gitee', owner: 'o', repo: 'r',
+    repoUrl: bare, branch: 'feature/pilot-x', expectedHead: staleBase, diffText: patchOld, message: 'fix: r4' });
+  ok('R4 服务端推进后 → stale_head（条件更新防覆盖他人提交）',
+    c4.ok === false && c4.reason === 'stale_head', c4);
+
+  // R5: 分支不存在 → branch_not_found
+  const c5 = await rw.platformCreateCommit({ env, provider: 'gitee', owner: 'o', repo: 'r',
+    repoUrl: bare, branch: 'no/such-branch', expectedHead: newTip, diffText: patchTxt, message: 'fix: r5' });
+  ok('R5 分支不存在 → branch_not_found', c5.ok === false && c5.reason === 'branch_not_found', c5);
+
+  // R6: 补丁不适用 → patch_apply_failed（零写入）
+  const c6 = await rw.platformCreateCommit({ env, provider: 'gitee', owner: 'o', repo: 'r',
+    repoUrl: bare, branch: 'feature/pilot-x', expectedHead: newTip, diffText: GOOD_DIFF, message: 'fix: r6' });
+  ok('R6 补丁不适用 → patch_apply_failed 零写入',
+    c6.ok === false && c6.reason === 'patch_apply_failed', c6);
+
+  // R7/R8: 条件合并（fetch mock——Gitee PUT merge / GitHub merge API）
   const calls = [];
-  const files = [{ path: 'src/a.js', content: 'A\n' }, { path: 'src/gone.js', content: null }];
+  const realFetchR = globalThis.fetch;
   globalThis.fetch = async (url, opts = {}) => {
     const u = String(url).split('?')[0]; const m = opts.method || 'GET';
     calls.push(`${m} ${u}`);
-    if (/\/git\/refs\/heads\/fix$/.test(u) && m === 'GET') return jsonResp({ object: { sha: HEAD } });
-    if (/\/git\/blobs/.test(u)) return jsonResp({ sha: `blob-${calls.length}` }, 201);
-    if (/\/git\/commits\/[^/]+$/.test(u) && m === 'GET') return jsonResp({ tree: { sha: 'basetree' } });
-    if (/\/git\/trees$/.test(u)) {
-      const b = JSON.parse(opts.body);
-      return jsonResp({ sha: 'newtree', tree: b.tree }, 201);
-    }
-    if (/\/git\/commits$/.test(u) && m === 'POST') return jsonResp({ sha: 'newcommit' }, 201);
-    if (/\/git\/refs\/heads\/fix$/.test(u) && m === 'PATCH') {
-      const b = JSON.parse(opts.body);
-      if (b.sha === 'newcommit') return jsonResp({ object: { sha: 'newcommit' } });
-      return jsonResp({ message: 'not fast forward' }, 422);
-    }
     if (/\/pulls\/2$/.test(u) && m === 'GET') return jsonResp({ state: 'open', head: { sha: HEAD, ref: 'fix' } });
     if (/\/pulls\/2\/merge$/.test(u) && m === 'PUT') return jsonResp({ sha: 'mergesha' }, 200);
     return jsonResp({}, 404);
   };
-
-  const c1 = await rw.giteeCreateCommit({ env, owner: 'o', repo: 'r', branch: 'fix',
-    expectedHead: HEAD, files, message: 'm' });
-  ok('R1 Gitee 原子提交链（blob×1（删除文件零 blob）+tree+commit+ref）',
-    c1.ok === true && c1.commitSha === 'newcommit' && c1.previousSha === HEAD,
-    { c1, calls: calls.slice(0, 8) });
-  const blobCalls = calls.filter((c) => c.includes('/git/blobs')).length;
-  ok('R2 删除文件条目零 blob 调用', blobCalls === 1, { blobCalls, calls });
-
-  const treeBody = calls.find((c) => c.startsWith('POST') && c.includes('/git/trees'));
-  ok('R3 tree 请求含 base_tree（不整树重建）', Boolean(treeBody), calls);
-
-  const before = calls.length;
-  const c2 = await rw.giteeCreateCommit({ env, owner: 'o', repo: 'r', branch: 'fix',
-    expectedHead: HEAD2, files, message: 'm' });
-  ok('R4 expectedHead 不匹配 → stale_head 零写（拒绝先于任何 blob 调用）',
-    c2.ok === false && c2.reason === 'stale_head' && calls.length === before + 1, { c2, delta: calls.length - before });
-
-  const c3 = await rw.giteeMergePR({ env, owner: 'o', repo: 'r', prNumber: 2,
+  const c7 = await rw.giteeMergePR({ env, owner: 'o', repo: 'r', prNumber: 2,
     expectedHead: HEAD2, mergeMethod: 'merge' });
-  ok('R5 条件合并：head 不匹配 → stale_head', c3.ok === false && c3.reason === 'stale_head', c3);
-  const c4 = await rw.giteeMergePR({ env, owner: 'o', repo: 'r', prNumber: 2,
+  ok('R7 条件合并：head 不匹配 → stale_head', c7.ok === false && c7.reason === 'stale_head', c7);
+  const c8 = await rw.giteeMergePR({ env, owner: 'o', repo: 'r', prNumber: 2,
     expectedHead: HEAD, mergeMethod: 'merge', commitTitle: 'Merge PR #2' });
-  ok('R6 条件合并：head 匹配 → merged', c4.ok === true && c4.mergeSha === 'mergesha', c4);
-  const mergeBody = calls.filter((c) => c.startsWith('PUT') && c.includes('/merge')).length;
-  ok('R7 merge PUT 恰一次', mergeBody === 1, { mergeBody });
+  ok('R8 条件合并：head 匹配 → merged（PUT 恰一次）',
+    c8.ok === true && c8.mergeSha === 'mergesha'
+    && calls.filter((c) => c.startsWith('PUT') && c.includes('/merge')).length === 1, c8);
+  globalThis.fetch = realFetchR;
 
-  // GitHub 侧 require 修复回归：不得抛 ReferenceError（#454 后的 ESM 兼容）
+  // R9: GitHub JWT 无 require 残留（ESM 兼容回归）
   let ghErr = '';
   try {
     await rw.githubMergePR({ env: { MU_GITHUB_APP_ID: '1', MU_GITHUB_APP_PRIVATE_KEY: 'not-a-key' },
       installationId: '9', owner: 'o', repo: 'r', prNumber: 2, expectedHead: HEAD });
   } catch (e) { ghErr = String(e?.message ?? e); }
-  ok('R8 GitHub JWT 无 require 残留（ESM 兼容）', !/require is not defined/.test(ghErr), ghErr);
+  ok('R9 GitHub JWT 无 require 残留（ESM 兼容）', !/require is not defined/.test(ghErr), ghErr);
 
-  globalThis.fetch = globalThis.fetch; // 保持（后续 PG 组覆盖）
+  for (const d of [src, forkDir, bare.replace('/remote.git', '')]) {
+    try { fs.rmSync(d, { recursive: true, force: true }); } catch { /* 尽力 */ }
+  }
 }
 
 // ── PG 组：服务层门 + 操作记录 ──

@@ -20,7 +20,8 @@ const execFileP = promisify(execFile);
 const REDACT = (s) => String(s ?? '')
   .replace(/(ghp_|gho_|github_pat_|sk-)[A-Za-z0-9_]{6,}/g, '$1***')
   .replace(/access_token=[^&\s]+/g, 'access_token=***')
-  .replace(/oauth2:[^@/\s]+@/g, 'oauth2:***@');
+  .replace(/oauth2:[^@/\s]+@/g, 'oauth2:***@')
+  .replace(/x-access-token:[^@/\s]+@/g, 'x-access-token:***@');
 
 const git = (args, cwd, timeoutMs) => execFileP('git', args, {
   cwd, timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024,
@@ -183,6 +184,87 @@ export async function materializePatchedFiles({ repoUrl, headSha, diffText, dige
     }
     if (!files.length) return { ok: false, reason: 'no_changes_after_apply' };
     return { ok: true, files, head_sha: headSha, ...(digest ? { digest } : {}) };
+  } catch (e) {
+    return { ok: false, reason: 'environment_error', output: REDACT(String(e?.message ?? e)).slice(0, 200) };
+  } finally {
+    if (workdir) {
+      try { fs.rmSync(workdir, { recursive: true, force: true }); } catch { /* 尽力清理 */ }
+    }
+  }
+}
+
+/**
+ * 推送式远端提交（应用修复的执行面，2026-10-15 实测定案）：
+ * 在隔离临时工作副本中检出准确 head → 真实 apply 补丁 → 本地提交 → git push
+ * （无 --force——非快进更新被服务端拒绝，即真正的条件更新）。
+ *
+ * 为什么不用 Git Data API 链：Gitee v5 实测无 git/refs 端点（list/单查全 404），
+ * 无分支 ref 更新 API——API 链无法移动分支；git push 语义等价且更强
+ * （服务端 CAS：并发推进时 push 直接被拒，无预检/落 ref 两步间竞态窗）。
+ * GitHub installation token 同样可用于 HTTPS push（x-access-token）——双平台单实现。
+ *
+ * 凭据：与 appendCredential 同纪律——URL 只进子进程参数，不落盘、不落日志（stderr 经 REDACT）。
+ * 返回：
+ *  { ok: true, commitSha, previousSha }
+ *  { ok: false, reason: 'branch_not_found'|'stale_head'|'patch_apply_failed'|'push_failed'|..., output? }
+ */
+export async function pushCommit({ repoUrl, headSha, diffText, branch, message,
+  credentialToken = null, timeoutMs = 90_000, workRoot = os.tmpdir() } = {}) {
+  if (!repoUrl || !headSha || !diffText || !branch || !message) {
+    return { ok: false, reason: 'missing_args' };
+  }
+  let workdir = null;
+  try {
+    workdir = fs.mkdtempSync(path.join(workRoot, 'mp-push-'));
+    const step = (ms) => Math.max(5_000, ms);
+
+    const init = await git(['init'], workdir, step(10_000));
+    if (init.code !== 0) return { ok: false, reason: 'git_init_failed', output: REDACT(init.stderr) };
+
+    const urlWithCred = appendCredential(repoUrl, credentialToken);
+    let fetch = await git(['fetch', '--depth', '5', urlWithCred, headSha], workdir, step(timeoutMs));
+    if (fetch.code !== 0) fetch = await git(['fetch', urlWithCred], workdir, step(timeoutMs));
+    if (fetch.code !== 0) return { ok: false, reason: 'fetch_head_failed', output: REDACT(fetch.stderr) };
+
+    const co = await git(['checkout', '--detach', headSha], workdir, step(20_000));
+    if (co.code !== 0) return { ok: false, reason: 'checkout_head_failed', output: REDACT(co.stderr) };
+    await git(['config', 'core.autocrlf', 'false'], workdir, step(5_000));
+    await git(['checkout', '--', '.'], workdir, step(10_000));
+
+    // 前置 CAS 读取：远端分支当前 tip 必须仍是补丁目标 head
+    const ls = await git(['ls-remote', urlWithCred, `refs/heads/${branch}`], workdir, step(30_000));
+    if (ls.code !== 0) return { ok: false, reason: 'ls_remote_failed', output: REDACT(ls.stderr) };
+    const remoteTip = String(ls.stdout).trim().split(/\t/)[0];
+    if (!remoteTip) return { ok: false, reason: 'branch_not_found', detail: `refs/heads/${branch}` };
+    if (remoteTip.toLowerCase() !== String(headSha).toLowerCase()) {
+      return { ok: false, reason: 'stale_head',
+        detail: `expected=${String(headSha).slice(0, 12)} actual=${String(remoteTip).slice(0, 12)}` };
+    }
+
+    const diffFile = path.join(workdir, 'suggested.patch');
+    fs.writeFileSync(diffFile, String(diffText), { encoding: 'utf8', mode: 0o600 });
+    const apply = await git(['apply', '--whitespace=nowarn', path.basename(diffFile)], workdir, step(timeoutMs));
+    if (apply.code !== 0) {
+      return { ok: false, reason: 'patch_apply_failed',
+        output: REDACT(String(apply.stderr || apply.stdout)).slice(0, 300) };
+    }
+
+    await git(['add', '-A'], workdir, step(20_000));
+    const ci = await git(['-c', 'user.name=MergePilot Bot', '-c', 'user.email=bot@mergepilot.local',
+      'commit', '-m', message], workdir, step(30_000));
+    if (ci.code !== 0) return { ok: false, reason: 'commit_failed', output: REDACT(ci.stderr) };
+    const sha = (await git(['rev-parse', 'HEAD'], workdir, step(5_000))).stdout.trim();
+
+    // 无 --force：非快进（并发推进）被服务端拒绝——条件更新在远端强制生效
+    const push = await git(['push', urlWithCred, `HEAD:refs/heads/${branch}`], workdir, step(timeoutMs));
+    if (push.code !== 0) {
+      const t = String(push.stderr || push.stdout);
+      if (/non-fast-forward|rejected|fetch first|stale info|\[rejected\]/i.test(t)) {
+        return { ok: false, reason: 'stale_head', detail: `push rejected (non-fast-forward): ${REDACT(t).slice(0, 200)}` };
+      }
+      return { ok: false, reason: 'push_failed', output: REDACT(t).slice(0, 300) };
+    }
+    return { ok: true, commitSha: sha, previousSha: headSha };
   } catch (e) {
     return { ok: false, reason: 'environment_error', output: REDACT(String(e?.message ?? e)).slice(0, 200) };
   } finally {

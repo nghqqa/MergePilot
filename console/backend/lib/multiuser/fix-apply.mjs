@@ -13,8 +13,7 @@
 // 凭据纪律：Gitee PAT / GitHub installation token 只存在于本次调用的内存栈中；
 // 不进前端、不进日志、不进数据库记录、不写临时 Git 配置（物化用 URL 参数瞬时传递）。
 
-import { materializePatchedFiles } from './patch-applicability.mjs';
-import { platformCreateCommit, platformMergePR, githubInstallationToken } from './remote-write.mjs';
+import { platformCreateCommit, platformMergePR } from './remote-write.mjs';
 import { fetchRemotePr } from './publish.mjs';
 
 // pool 参数：传入查询函数（muPoolQ）或 Pool 实例均可——normQ 统一。
@@ -39,13 +38,6 @@ const ACTIVE_PATCH_SELECT = `
 
 function robotIdentity(provider) {
   return provider === 'github' ? 'MergePilot GitHub App' : 'MergePilot Gitee Bot';
-}
-
-function cloneUrl(provider, owner, repo, env = process.env) {
-  const host = provider === 'github' ? 'github.com'
-    : String(env.MU_GITEE_INSTANCE_WEB_BASE ?? 'https://gitee.com')
-      .replace(/^https?:\/\//, '').replace(/\/+$/, '');
-  return `https://${host}/${owner}/${repo}.git`;
 }
 
 /**
@@ -196,36 +188,22 @@ export async function confirmApplyFix(pool, { env = process.env, runId, tenantId
              SET status='executing', source_branch=$2, target_branch=$3, updated_at=now()
             WHERE operation_id=$1`, [opId, remote.sourceBranch, remote.targetBranch]);
 
-  // 物化补丁（隔离副本真 apply；失败=零远端副作用）
-  const mat = await materializePatchedFiles({
-    repoUrl: cloneUrl(provider, run.owner, run.repo_name, env),
-    headSha: patch.head_sha, diffText: patch.diff_text, digest: patch.patch_digest,
-    credentialToken: provider === 'github'
-      ? await githubInstallationToken(env, run.installation_id).catch(() => null)
-      : null,
-  });
-  if (!mat.ok) {
-    await q(`UPDATE mu.fix_apply_operation SET status='failed', error_code=$2, error_detail=$3,
-               updated_at=now() WHERE operation_id=$1`,
-      [opId, mat.reason, mat.output ?? null]);
-    return { ok: false, reason: 'materialize_failed', detail: mat.reason, output: mat.output ?? null };
-  }
-
-  // 远端原子提交（expected head 条件更新）
+  // 推送式远端提交（pushCommit）：隔离副本检出准确 head → 真 apply → 本地提交 →
+  // git push（无 --force）。物化失败/非快进均零远端副作用；条件更新在服务端强制生效。
   const commitMsg = `fix: apply MergePilot review patch (run ${String(runId).slice(0, 8)}, patch v${patch.patch_version})\n\nPatch digest: ${patch.patch_digest}\nReview run: ${runId}`;
   const result = await platformCreateCommit({
     env, provider, owner: run.owner, repo: run.repo_name, branch: remote.sourceBranch,
-    expectedHead: remote.headSha, files: mat.files, message: commitMsg,
+    expectedHead: remote.headSha, diffText: patch.diff_text, message: commitMsg,
     ...(provider === 'github' ? { installationId: run.installation_id } : {}),
   });
 
   if (!result.ok) {
-    // ref_update_failed=提交对象可能已建但分支未推进——结果不确定，先查验再重试
-    const uncertain = result.reason === 'ref_update_failed';
+    // push 失败的语义由 pushCommit 归类：stale_head=并发推进零写入；其余=失败（可重试）
     await q(`UPDATE mu.fix_apply_operation SET status=$2, error_code=$3, error_detail=$4,
                updated_at=now() WHERE operation_id=$1`,
-      [opId, uncertain ? 'result_uncertain' : 'failed', result.reason, result.detail ?? null]);
-    return { ok: false, reason: result.reason, uncertain, detail: result.detail ?? null, operation_id: opId };
+      [opId, 'failed', result.reason, result.detail ?? result.output ?? null]);
+    return { ok: false, reason: result.reason, uncertain: false,
+      detail: result.detail ?? null, output: result.output ?? null, operation_id: opId };
   }
 
   await q(`UPDATE mu.fix_apply_operation
