@@ -727,26 +727,27 @@ export default function OverviewPage() {
               <div className="ov-chart-empty" role="status">没有仓库分布数据（{data.source}——不渲染空轴冒充）</div>
             ) : (
               <>
-                <Bar
-                  {...baseCol}
-                  data={[...repoCounts].sort((a, b) => (Number(a.runs) || 0) - (Number(b.runs) || 0))
-                    .map((r) => ({ ...r, short: String(r.repo).includes('/')
-                      ? String(r.repo).split('/').slice(1).join('/') : String(r.repo) }))}
-                  xField="runs" yField="short" colorField="short"
-                  legend={false}
-                  axis={{ x: { title: '运行次数（run）' }, y: { title: false } }}
-                  label={{ text: 'runs', position: 'right', style: { fontSize: 12, fontWeight: 600 } }}
-                  scale={{ x: { nice: true } }}
-                  onEvent={(_, event) => {
-                    if (event.type === 'element:click') {
-                      const repo = event?.data?.data?.repo;
-                      if (repo && String(repo).includes('/')) {
-                        const [o, n] = String(repo).split('/');
-                        navigate(`/repos/${encodeURIComponent(o)}/${encodeURIComponent(n)}`);
-                      }
-                    }
-                  }}
-                />
+                {/* 纯 CSS 横向条形（G2 类别轴在窄容器对长标签的竖排/逐字换行
+                    行为根除——4~10 行数据不需要图表库；键盘可达、永不竖排） */}
+                <div className="ov-repo-bars" role="list">
+                  {[...repoCounts].sort((a, b) => (Number(b.runs) || 0) - (Number(a.runs) || 0)).map((r) => {
+                    const runs = Number(r.runs) || 0;
+                    const max = Math.max(...repoCounts.map((x) => Number(x.runs) || 0), 1);
+                    const o = String(r.repo).includes('/') ? String(r.repo).split('/')[0] : '';
+                    const n = String(r.repo).includes('/') ? String(r.repo).split('/').slice(1).join('/') : String(r.repo);
+                    return (
+                      <button key={String(r.repo)} role="listitem" className="ov-repo-bar-row"
+                        onClick={() => navigate(`/repos/${encodeURIComponent(o)}/${encodeURIComponent(n)}`)}
+                        title={`${r.repo}——${runs} 项运行，点击打开 PR 列表`}>
+                        <span className="ov-repo-bar-name">{n}<span className="ov-repo-bar-owner">{o}</span></span>
+                        <span className="ov-repo-bar-track" aria-hidden>
+                          <span className="ov-repo-bar-fill" style={{ width: `${Math.max(4, Math.round((runs / max) * 100))}%` }} />
+                        </span>
+                        <span className="ov-repo-bar-val">{runs}</span>
+                      </button>
+                    );
+                  })}
+                </div>
                 <p className="ov-chart-summary">
                   {repoCounts.length} 个仓库 · 共 {repoCounts.reduce((n, r) => n + (Number(r.runs) || 0), 0)} 项运行记录（单位：run）
                   {repoTop ? `，最多 ${repoTop.repo}（${repoTop.runs} 项）` : ''}。轴上显示仓库名（不含 owner 前缀）。

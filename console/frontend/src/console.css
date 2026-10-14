@@ -1341,3 +1341,20 @@ td.th-right { text-align: right; }
   .mu-finding-line1 { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
   .mu-approval-line { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
 }
+
+/* 各仓库分布：纯 CSS 横向条形（rc.35.3——G2 类别轴窄容器长标签竖排的根除） */
+.ov-repo-bars { display: flex; flex-direction: column; gap: 6px; padding: 8px 4px; }
+.ov-repo-bar-row { display: flex; align-items: center; gap: 10px; width: 100%;
+  background: none; border: 0; padding: 4px 6px; border-radius: var(--r-sm);
+  cursor: pointer; font: inherit; text-align: left; }
+.ov-repo-bar-row:hover { background: rgba(14, 124, 134, 0.06); }
+.ov-repo-bar-row:focus-visible { outline: 2px solid var(--c-accent); outline-offset: 1px; }
+.ov-repo-bar-name { flex: 0 0 130px; font-size: var(--fs-sm); color: var(--c-text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.ov-repo-bar-owner { display: block; font-size: var(--fs-xs); color: var(--c-text-3); }
+.ov-repo-bar-track { flex: 1 1 auto; min-width: 0; height: 14px;
+  background: rgba(14, 124, 134, 0.08); border-radius: 7px; overflow: hidden; }
+.ov-repo-bar-fill { display: block; height: 100%; border-radius: 7px;
+  background: linear-gradient(90deg, #0e7c86, #16a3ad); }
+.ov-repo-bar-val { flex: 0 0 36px; text-align: right; font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold); color: var(--c-text); font-variant-numeric: tabular-nums; }
