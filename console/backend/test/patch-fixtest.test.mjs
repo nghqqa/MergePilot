@@ -60,7 +60,7 @@ ok('T3 补丁应用失败 → apply_failed 如实', t3.verified === true && t3.o
 const t4 = await verifyFixTest({ repoUrl: dir, headSha, diffText: FIX_DIFF, testCmd: '' });
 ok('T4 缺 testCmd → skipped', t4.verified === false && t4.skipped === true, t4);
 
-// 预批准命令解析（不导出自 fix-orchestrator——独立实现契约校验：同形逻辑）
+// 预批准命令解析（部署 env 唯一权威——deps.testCmd 后门默认关闭）
 const envMap = JSON.stringify({ 'gitee:nghqqa/mergepilot-test': 'node check.js', 'x/y': 'node y.js' });
 const { resolvePreApprovedTestCmd } = await import('../lib/multiuser/agents/patch-test-cmd.mjs');
 ok('T5 provider 键命中', resolvePreApprovedTestCmd({ MU_FIX_TEST_CMDS: envMap },
@@ -70,7 +70,16 @@ ok('T6 owner/repo 键回退命中', resolvePreApprovedTestCmd({ MU_FIX_TEST_CMDS
 ok('T7 未命中 → null', resolvePreApprovedTestCmd({ MU_FIX_TEST_CMDS: envMap },
   { owner: 'a', repoName: 'b' }) === null, null);
 ok('T8 坏 JSON → null', resolvePreApprovedTestCmd({ MU_FIX_TEST_CMDS: '{bad' }, {}) === null, null);
-ok('T9 无 env → null', resolvePreApprovedTestCmd({}, { owner: 'x', repoName: 'y' }) === null, null);
+ok('T9 无 env → null（含 deps 平凡命令被忽略）',
+  resolvePreApprovedTestCmd({}, { owner: 'x', repoName: 'y', testCmd: 'node -e process.exit(0)' }) === null, null);
+ok('T10 deps.testCmd 不再遮蔽部署配置（b10e3f4f 实证缺陷回归锁）',
+  resolvePreApprovedTestCmd({ MU_FIX_TEST_CMDS: envMap },
+    { owner: 'nghqqa', repoName: 'mergepilot-test', testCmd: 'node -e process.exit(0)' }) === 'node check.js', null);
+ok('T11 deps 后门默认关闭', resolvePreApprovedTestCmd({},
+  { owner: 'x', repoName: 'y', testCmd: 'node real.js' }) === null, null);
+ok('T12 deps 后门显式开启（E2E 隔离）才采纳',
+  resolvePreApprovedTestCmd({ MU_FIX_TEST_ALLOW_DEPS_CMD: '1' },
+    { owner: 'x', repoName: 'y', testCmd: 'node real.js' }) === 'node real.js', null);
 
 fs.rmSync(dir, { recursive: true, force: true });
 console.log(`\n${pass} pass, ${fail} fail`);
