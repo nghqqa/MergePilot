@@ -860,9 +860,24 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
   // 显式执行——console 监听前即开始迁移；业务面经 ensureMuReady 门控（init 完成前
   // 请求等待就绪而非带病服务）；/api/health 披露 mu_schema_ready。
   if (process.env.MU_MODE === 'multiuser' && process.env.CONSOLE_PG_DSN) {
-    ensureMuReady(process.env).catch((e) => {
-      console.error('[mu] schema init failed:', String(e?.message ?? e).slice(0, 120));
-    });
+    // schema init 有界重试（rc.35 生产切换实测）：docker run 与 network connect
+    // （DNS 生效）存在竞速窗口——首次 ENOTFOUND 不应永久失败。6 次×5s 覆盖
+    // swap 工具 60s 健康循环；耗尽后业务 API 保持 fail-closed（语义不变）。
+    (async () => {
+      const MAX = 6, WAIT = 5_000;
+      for (let i = 1; i <= MAX; i++) {
+        try {
+          await ensureMuReady(process.env);
+          if (i > 1) console.log('[mu] schema init ok (attempt ' + i + '/' + MAX + ')');
+          return;
+        } catch (e) {
+          console.error('[mu] schema init failed (attempt ' + i + '/' + MAX + '):',
+            String(e?.message ?? e).slice(0, 120));
+          if (i < MAX) await new Promise((r) => setTimeout(r, WAIT));
+        }
+      }
+      console.error('[mu] schema init exhausted——业务 API 保持 fail-closed，重启容器可重试');
+    })();
 
     // rc.11 PR-A：平台级自动 job consumer——webhook 入队的 event_sync job 的常驻
     // 消费循环（此前需人工 POST /api/mu/jobs/tick）。默认开启、间隔 45s，
