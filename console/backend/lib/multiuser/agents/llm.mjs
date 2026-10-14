@@ -114,22 +114,40 @@ export function sanitizeContextForLlm({ pr, findings, diff }, limits = LLM_EGRES
     line_start: f.line_start ?? null, title: maskLine(f.title ?? ''),
     summary_masked: maskLine(f.summary_masked ?? ''),
   }));
+  let hunks = selectHunks(diff, findings, limits);
   const payload = { untrusted_data: {
     pr: { number: Number(pr?.number ?? 0), title: maskLine(pr?.title ?? '').slice(0, limits.maxTitleLen),
       changed_files: Number(pr?.changed_files ?? 0), head_prefix: String(pr?.head?.sha ?? '').slice(0, 12),
       base_ref: String(pr?.base?.ref ?? '').slice(0, 100) },
-    deterministic_findings: fs, diff_hunks: selectHunks(diff, findings, limits),
+    deterministic_findings: fs, diff_hunks: hunks,
   } };
+  // 超预算处理（rc.35.3 验收波）：不再清空全部代码（清空=模型审查空转）——
+  // 按块边界从尾部丢弃大块，保留至少第一块；仍超则该块行数减半（保留代码语义）。
   let text = JSON.stringify(payload);
-  if (Buffer.byteLength(text) > limits.maxTotalPayloadBytes) {
-    payload.untrusted_data.diff_hunks = []; // 先丢 hunks
+  const sized = () => JSON.stringify({ ...payload, untrusted_data: { ...payload.untrusted_data, diff_hunks: hunks } });
+  if (Buffer.byteLength(text) > limits.maxTotalPayloadBytes && hunks.length > 1) {
+    while (hunks.length > 1 && Buffer.byteLength(sized()) > limits.maxTotalPayloadBytes) {
+      hunks = hunks.slice(0, -1);
+    }
+    payload.untrusted_data.diff_hunks = hunks;
     text = JSON.stringify(payload);
-    if (Buffer.byteLength(text) > limits.maxTotalPayloadBytes) {
-      payload.untrusted_data.deterministic_findings = fs.slice(0, 10); // 再截 findings
+  }
+  let truncated = false;
+  if (Buffer.byteLength(text) > limits.maxTotalPayloadBytes && hunks.length === 1) {
+    while (hunks[0].lines.length > 10
+      && Buffer.byteLength(sized()) > limits.maxTotalPayloadBytes) {
+      hunks[0].lines = hunks[0].lines.slice(0, Math.ceil(hunks[0].lines.length / 2));
+      truncated = true;
+      payload.untrusted_data.diff_hunks = hunks;
       text = JSON.stringify(payload);
     }
   }
-  return { payload, inputDigest: crypto.createHash('sha256').update(text).digest('hex') };
+  const coverage = {
+    full_diff_fallback: hunks.some((h) => h.path === '(full_diff_truncated)'),
+    blocks_sent: hunks.length, lines_sent: hunks.reduce((n, h) => n + h.lines.length, 0),
+    truncated, bytes: Buffer.byteLength(text),
+  };
+  return { payload, inputDigest: crypto.createHash('sha256').update(text).digest('hex'), coverage };
 }
 
 // ── 输出 schema（严格 allowlist；禁止 command/权限/审批字段）────────────
