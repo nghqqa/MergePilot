@@ -10,6 +10,7 @@
 //           CONSOLE_EVIDENCE_ROOT（默认 <repo>/evidence）
 
 import http from 'node:http';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -172,6 +173,23 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
     return dir;
   };
 
+  // 构建身份（发布产物一致性波）：git commit + 前端 bundle 指纹（启动时计算一次）。
+  // 部署核查用：health.git_commit 应等于构建命令注入的源码 commit；
+  // health.frontend_bundle 应与镜像内 dist 文件一致（swap 后核对）。
+  const buildIdentity = (() => {
+    const out = { git_commit: process.env.MERGEPILOT_GIT_COMMIT || null, frontend_bundle: null };
+    try {
+      const assetsDir = path.join(__dirname, '..', 'frontend', 'dist', 'assets');
+      const js = fs.readdirSync(assetsDir).filter((f) => /^index-[A-Za-z0-9_-]+\.js$/.test(f));
+      if (js.length === 1) {
+        const buf = fs.readFileSync(path.join(assetsDir, js[0]));
+        out.frontend_bundle = { file: js[0],
+          sha256: crypto.createHash('sha256').update(buf).digest('hex').slice(0, 16) };
+      }
+    } catch { /* dist 缺失/不可读——health 如实保留 null，不虚构 */ }
+    return out;
+  })();
+
   const apiHealth = () => {
     const packs = listRunPacks(evidenceRoot);
     const withSums = packs.filter((p) => fs.existsSync(path.join(p.dir, 'SHA256SUMS'))).length;
@@ -185,6 +203,9 @@ export function createConsole({ evidenceRoot = DEFAULT_EVIDENCE_ROOT, distDir = 
       // rc.14：构建期注入（Dockerfile ARG MERGEPILOT_VERSION）为构建真源；
       // 运行时 env 可覆盖；server fallback 与 Dockerfile ARG 默认值双处手动同步。
       version: process.env.MERGEPILOT_VERSION || '0.2.0-beta.6-rc.15',
+      // 构建身份（部署核查与诊断；不含内部构建细节）
+      git_commit: buildIdentity.git_commit,
+      frontend_bundle: buildIdentity.frontend_bundle,
       data_mode: liveConfigured ? 'live' : 'snapshot',
       data_mode_note: liveConfigured
         ? 'PG 实时（live）·隔离 staging 库：overview/pending/仓库/PR 详情/审计按会话 allowlist 实时读取；run 证据详情页仍为锁定快照只读'
