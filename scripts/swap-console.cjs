@@ -34,6 +34,7 @@
 
 const fs = require('node:fs');
 const { spawnSync } = require('node:child_process');
+const path = require('node:path');
 
 // 硬编码 no 的替代基线：daemon 重启自愈的最低要求（rc.11 缺陷回归锁）
 const FALLBACK_RESTART_POLICY = 'unless-stopped';
@@ -105,7 +106,7 @@ function buildDockerRunArgs(inspect, image, options = {}) {
   }
   for (const extra of options.extraMounts || []) args.push('-v', extra); // 仅追加，不丢继承
 
-  const inheritedEnv = (cfg.Env || []).filter((e) => !e.startsWith('MERGEPILOT_VERSION='));
+  const inheritedEnv = (cfg.Env || []).filter((e) => !e.startsWith('MERGEPILOT_VERSION=') && !e.startsWith('MERGEPILOT_GIT_COMMIT='));
   // 版本烙印过滤（2026-10-13 rc.27 实证）：running 容器的 inspect env 含上一镜像烘焙的
   // MERGEPILOT_VERSION（image ENV 会并进 running env）——不过滤会覆盖新镜像的版本值，
   // 造成"代码 rc.27、标签 rc.26"。版本只随镜像走（构建期 ARG/ENV 唯一真源）。
@@ -269,16 +270,16 @@ async function swapConsole(argv, deps = {}) {
     log('回滚完成（旧容器已按原配置重建）。退出码 1。');
     return 1;
   };
-  const healthScript = "fetch('http://127.0.0.1:' + (process.env.CONSOLE_PORT || 4730) + '/api/health')"
-    + ".then(r=>r.json()).then(j=>console.log('HEALTH ' + (j.data_mode ?? 'unknown') + ' ' + (j.version ?? '')"
-    + " commit=' + (j.git_commit ? String(j.git_commit).slice(0, 12) : 'n/a')"
-    + " bundle=' + (j.frontend_bundle ? j.frontend_bundle.file : 'n/a')))"
-    + ".catch(e=>console.log('HEALTH ERR ' + e.message))";
+  // 健康探针源码=scripts/swap-health-probe.js（独立文件，fs 读入后经 exec 注入——
+  // 内联字符串经多层转义往返被写坏、且 node 运行时 SyntaxError 走 stderr 被静默
+  // 丢弃的教训见该文件头注释；rc.35.2 排障终局实录）。
+  const probeSrc = fs.readFileSync(path.join(__dirname, 'swap-health-probe.js'), 'utf8');
   let live = !hasPgDsn; // 无 PG DSN：无需 live 断言（视为通过）
   for (let i = 0; !live && i < 12; i++) {
     if (containerName) {
-      const h = exec(['exec', containerName, 'node', '-e', healthScript]);
-      const out = String(h.stdout || '');
+      const h = exec(['exec', containerName, 'node', '-e', probeSrc]);
+      const out = String(h.stdout || '') + (h.status !== 0 ? ' [exit=' + h.status + ' err=' + String(h.stderr || '').slice(0, 160) + ']' : '');
+      log('健康检查第 ' + (i + 1) + '/12 轮: ' + (out.trim() ? out.trim().slice(0, 170) : '（exec 无输出）'));
       if (/HEALTH live/.test(out)) { live = true; log('健康检查通过（data_mode=live）: ' + out.replace('HEALTH ', '').trim()); break; }
       if (/HEALTH /.test(out)) log('健康检查: ' + out.replace('HEALTH ', '').trim() + '（等待依赖就绪）');
     }
