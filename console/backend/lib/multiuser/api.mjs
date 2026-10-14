@@ -3078,6 +3078,129 @@ const ragMatch = p.match(new RegExp("^/api/mu/repositories/([^/]+)/rag-search$")
       }
     }
 
+    // 应用修复到 PR 源分支：GET preview（只读）/ POST confirm（用户授权远端写）。
+    // 权限=apply_fix（maintainer+active binding）；幂等/head 复核/物化在 fix-apply 模块内。
+    const applyMatch = p.match(/^\/api\/mu\/runs\/([0-9a-f-]{36})\/apply-fix\/(preview|confirm)$/);
+    if (applyMatch) {
+      const g = await guard('apply_fix');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const runId = applyMatch[1];
+      const phase = applyMatch[2];
+      const fa = await import('./fix-apply.mjs');
+      if (req.method === 'GET' && phase === 'preview') {
+        let r;
+        try {
+          r = await fa.previewApplyFix(muPoolQ, { env, runId, tenantId: mu.tenantId });
+        } catch (e) {
+          const reason = String(e?.message ?? e).slice(0, 160);
+          await store.audit('MU_FIX_APPLY_ERROR', { tenantId: mu.tenantId, actorUserId: mu.userId,
+            detail: { run_id: runId, phase: 'preview', reason } }).catch(() => {});
+          return sendJson(res, 500, { error: { reason: 'apply_preview_internal_error', detail: { reason } } });
+        }
+        if (!r.ok) return sendJson(res, r.reason === 'run_not_found' ? 404 : 409,
+          { error: { reason: r.reason, detail: r.detail ?? null } });
+        return sendJson(res, 200, r);
+      }
+      if (req.method === 'POST' && phase === 'confirm') {
+        if (!csrfOk()) return sendJson(res, 403, { error: { reason: 'csrf_required' } });
+        const body = await readJsonBody(req).catch(() => ({}));
+        if (body?.confirm !== true) {
+          return sendJson(res, 400, { error: { reason: 'confirm_required' } });
+        }
+        let r;
+        try {
+          r = await fa.confirmApplyFix(muPoolQ, { env, runId, tenantId: mu.tenantId,
+            userId: mu.userId, confirm: true,
+            expectedRemoteHead: typeof body?.expected_remote_head === 'string' ? body.expected_remote_head : null });
+        } catch (e) {
+          const reason = String(e?.message ?? e).slice(0, 160);
+          await store.audit('MU_FIX_APPLY_ERROR', { tenantId: mu.tenantId, actorUserId: mu.userId,
+            detail: { run_id: runId, phase: 'confirm', reason } }).catch(() => {});
+          return sendJson(res, 500, { error: { reason: 'apply_confirm_internal_error', detail: { reason } } });
+        }
+        if (!r.ok) {
+          const statusMap = { confirm_required: 400, run_not_found: 404, provider_unsupported: 400,
+            stale_head: 409, head_moved_since_preview: 409, operation_in_progress: 409,
+            materialize_failed: 409, no_active_patch: 409, remote_unreachable: 502,
+            branch_not_found: 409, blob_create_failed: 502, tree_create_failed: 502,
+            commit_create_failed: 502, ref_update_failed: 502 };
+          await store.audit('MU_FIX_APPLY_REJECTED', { tenantId: mu.tenantId, actorUserId: mu.userId,
+            detail: { run_id: runId, reason: r.reason } }).catch(() => {});
+          return sendJson(res, statusMap[r.reason] ?? 500,
+            { error: { reason: r.reason, detail: r.detail ?? null, output: r.output ?? null,
+              uncertain: r.uncertain ?? null, operation_id: r.operation_id ?? null } });
+        }
+        await store.audit('MU_FIX_APPLIED', { tenantId: mu.tenantId, actorUserId: mu.userId,
+          detail: { run_id: runId, operation_id: r.operation_id, idempotent: Boolean(r.idempotent),
+            commit_prefix: String(r.commit_sha ?? '').slice(0, 12),
+            patch_version: r.patch_version ?? null } }).catch(() => {});
+        return sendJson(res, 200, { ok: true, status: r.status, operation_id: r.operation_id,
+          commit_sha: r.commit_sha, previous_sha: r.previous_sha ?? null,
+          patch_version: r.patch_version ?? null, patch_digest: r.patch_digest ?? null,
+          idempotent: Boolean(r.idempotent), next_step: r.next_step ?? null });
+      }
+    }
+
+    // 合并 PR：GET preview（合并条件可见化）/ POST confirm（用户授权远端合并）。
+    // 权限=merge_pr（maintainer+active binding）；条件合并（sha 匹配）在 fix-apply 模块内。
+    const mergeMatch = p.match(/^\/api\/mu\/runs\/([0-9a-f-]{36})\/merge-pr\/(preview|confirm)$/);
+    if (mergeMatch) {
+      const g = await guard('merge_pr');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const runId = mergeMatch[1];
+      const phase = mergeMatch[2];
+      const fa = await import('./fix-apply.mjs');
+      if (req.method === 'GET' && phase === 'preview') {
+        let r;
+        try {
+          r = await fa.previewMergePr(muPoolQ, { env, runId, tenantId: mu.tenantId });
+        } catch (e) {
+          const reason = String(e?.message ?? e).slice(0, 160);
+          await store.audit('MU_PR_MERGE_ERROR', { tenantId: mu.tenantId, actorUserId: mu.userId,
+            detail: { run_id: runId, phase: 'preview', reason } }).catch(() => {});
+          return sendJson(res, 500, { error: { reason: 'merge_preview_internal_error', detail: { reason } } });
+        }
+        if (!r.ok) return sendJson(res, r.reason === 'run_not_found' ? 404 : 409,
+          { error: { reason: r.reason, detail: r.detail ?? null } });
+        return sendJson(res, 200, r);
+      }
+      if (req.method === 'POST' && phase === 'confirm') {
+        if (!csrfOk()) return sendJson(res, 403, { error: { reason: 'csrf_required' } });
+        const body = await readJsonBody(req).catch(() => ({}));
+        if (body?.confirm !== true) {
+          return sendJson(res, 400, { error: { reason: 'confirm_required' } });
+        }
+        const mergeMethod = ['merge', 'squash', 'rebase'].includes(body?.merge_method) ? body.merge_method : 'merge';
+        let r;
+        try {
+          r = await fa.confirmMergePr(muPoolQ, { env, runId, tenantId: mu.tenantId,
+            userId: mu.userId, confirm: true, mergeMethod,
+            expectedHead: typeof body?.expected_head === 'string' ? body.expected_head : null });
+        } catch (e) {
+          const reason = String(e?.message ?? e).slice(0, 160);
+          await store.audit('MU_PR_MERGE_ERROR', { tenantId: mu.tenantId, actorUserId: mu.userId,
+            detail: { run_id: runId, phase: 'confirm', reason } }).catch(() => {});
+          return sendJson(res, 500, { error: { reason: 'merge_confirm_internal_error', detail: { reason } } });
+        }
+        if (!r.ok) {
+          const statusMap = { confirm_required: 400, run_not_found: 404, provider_unsupported: 400,
+            pr_not_open: 409, pr_not_mergeable: 409, head_unknown: 409,
+            head_moved_since_preview: 409, operation_in_progress: 409,
+            stale_head: 409, pr_read_failed: 502, merge_failed: 502, remote_unreachable: 502 };
+          await store.audit('MU_PR_MERGE_REJECTED', { tenantId: mu.tenantId, actorUserId: mu.userId,
+            detail: { run_id: runId, reason: r.reason } }).catch(() => {});
+          return sendJson(res, statusMap[r.reason] ?? 500,
+            { error: { reason: r.reason, detail: r.detail ?? null, operation_id: r.operation_id ?? null } });
+        }
+        await store.audit('MU_PR_MERGED', { tenantId: mu.tenantId, actorUserId: mu.userId,
+          detail: { run_id: runId, operation_id: r.operation_id, idempotent: Boolean(r.idempotent),
+            merge_sha_prefix: String(r.merge_sha ?? '').slice(0, 12),
+            pr_number: r.pr_number ?? null, merge_method: mergeMethod } }).catch(() => {});
+        return sendJson(res, 200, { ok: true, status: r.status, operation_id: r.operation_id,
+          merge_sha: r.merge_sha, idempotent: Boolean(r.idempotent) });
+      }
+    }
+
     // ── 审计（read_audit：metadata only——Auditor/PlatformAdmin） ──
     if (p === '/api/mu/audit' && req.method === 'GET') {
       const g = await guard('read_audit');

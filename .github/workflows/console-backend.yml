@@ -190,6 +190,11 @@ jobs:
       - name: MU rag model wave closeout (7 scenarios)
         run: node console/backend/test/mu-rag-model-wave.integration.mjs
 
+      # 应用修复与合并 PR（用户授权远端写）：本地 git 物化+Gitee 原子链（fetch mock)+
+      # 服务层门（confirm/幂等/head 复核/已应用防重）+操作记录落库（自起一次性 pg 容器）
+      - name: MU fix apply + merge PR integration (25 scenarios)
+        run: node console/backend/test/fix-apply.integration.mjs
+
       - name: Frontend build
         run: |
           npm ci --no-audit --no-fund

@@ -16,9 +16,11 @@ import crypto from 'node:crypto';
 
 async function giteeApi(method, endpoint, { env, token = null, body = null }) {
   const pat = token || env.MU_GITEE_PAT || '';
-  const res = await fetch(`https://gitee.com/api/v5${endpoint}`, {
+  // Gitee v5 鉴权与现有只读链同源：access_token 走查询参数（publish.mjs 实证形态）。
+  const sep = endpoint.includes('?') ? '&' : '?';
+  const res = await fetch(`https://gitee.com/api/v5${endpoint}${sep}access_token=${encodeURIComponent(pat)}`, {
     method,
-    headers: { 'content-type': 'application/json', authorization: `Bearer ${pat}` },
+    headers: { 'content-type': 'application/json' },
     body: body ? JSON.stringify(body) : undefined,
   });
   const text = await res.text().catch(() => '');
@@ -41,9 +43,10 @@ export async function giteeCreateCommit({ env, owner, repo, branch, expectedHead
     return { ok: false, reason: 'stale_head', detail: `expected=${expectedHead?.slice(0, 12)} actual=${currentSha?.slice(0, 12)}` };
   }
 
-  // 2) 为每个变更文件创建 blob
+  // 2) 为每个变更文件创建 blob（content=null 表示删除该文件——tree 条目 sha 置空）
   const tree = [];
   for (const f of (files ?? [])) {
+    if (f.content === null) { tree.push({ path: f.path, mode: '100644', type: 'blob', sha: null }); continue; }
     const blob = await giteeApi('POST', `/repos/${owner}/${repo}/git/blobs`, {
       env, body: { content: Buffer.from(f.content).toString('base64'), encoding: 'base64' },
     });
@@ -105,9 +108,9 @@ async function ghInstallationToken(env, installationId) {
   if (!body.token) throw new Error('ghp_token_missing');
   return body.token;
 }
+export { ghInstallationToken as githubInstallationToken };
 
 function createAppJwt(env) {
-  const crypto = require('node:crypto');
   const appId = env.MU_GITHUB_APP_ID;
   let key = env.MU_GITHUB_APP_PRIVATE_KEY ?? '';
   if (key.includes('\\n')) key = key.replace(/\\n/g, '\n');
@@ -144,6 +147,7 @@ export async function githubCreateCommit({ env, installationId, owner, repo, bra
   const tree = [];
   let tok = null;
   for (const f of (files ?? [])) {
+    if (f.content === null) { tree.push({ path: f.path, mode: '100644', type: 'blob', sha: null }); continue; }
     const blob = await ghApi('POST', `/repos/${owner}/${repo}/git/blobs`,
       { env, installationId, body: { content: Buffer.from(f.content).toString('base64'), encoding: 'base64' } });
     if (!blob.ok) return { ok: false, reason: 'blob_create_failed' };
