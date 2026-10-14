@@ -284,7 +284,14 @@ async function swapConsole(argv, deps = {}) {
     }
     await new Promise((r) => setTimeout(r, 5_000));
   }
-  if (!live) return rollback('data_mode 未达 live（DB/依赖不可达或启动失败）');
+  if (!live) {
+    // 失败诊断（rc.35 首切实测）：抓新容器启动日志尾部辅助定位（启动日志无秘密；
+    // 对抗性红线仍由下方 rollback 不透传 docker run stderr 承担）
+    const dl = containerName ? exec(['logs', '--tail', '20', containerName]) : null;
+    const tail = String((dl && dl.stdout) || '').trim();
+    if (tail) log('失败容器日志（末 20 行）：' + tail.slice(-1200));
+    return rollback('data_mode 未达 live（DB/依赖不可达或启动失败）');
+  }
 
   // ── 后置检查 1b：构建身份核对（发布产物一致性波）——期望 commit 不符=回滚 ──
   if (expectCommit && containerName) {
