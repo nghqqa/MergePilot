@@ -271,8 +271,8 @@ async function swapConsole(argv, deps = {}) {
   };
   const healthScript = "fetch('http://127.0.0.1:' + (process.env.CONSOLE_PORT || 4730) + '/api/health')"
     + ".then(r=>r.json()).then(j=>console.log('HEALTH ' + (j.data_mode ?? 'unknown') + ' ' + (j.version ?? '')"
-    + " 'commit=' + (j.git_commit ? String(j.git_commit).slice(0, 12) : 'n/a')"
-    + " 'bundle=' + (j.frontend_bundle ? j.frontend_bundle.file : 'n/a')))"
+    + " commit=' + (j.git_commit ? String(j.git_commit).slice(0, 12) : 'n/a')"
+    + " bundle=' + (j.frontend_bundle ? j.frontend_bundle.file : 'n/a')))"
     + ".catch(e=>console.log('HEALTH ERR ' + e.message))";
   let live = !hasPgDsn; // 无 PG DSN：无需 live 断言（视为通过）
   for (let i = 0; !live && i < 12; i++) {
