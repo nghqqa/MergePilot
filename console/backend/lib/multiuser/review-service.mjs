@@ -305,7 +305,8 @@ export async function handlePullRequestEvent(pool, cfg, { payload, servicePrinci
             line_start: Number(f.location?.line ?? 0) || null, line_end: null,
             title: String(f.summary ?? '').slice(0, 300), evidence_ref: covSummary,
             remediation: String(f.recommendation ?? '').slice(0, 1000),
-            summary_masked: 'LLM 建议详见 remediation（输出已过 schema 校验）' }));
+            // 原因位放模型实际描述（输出已过 schema 校验；输入侧已脱敏）——不再用字段名占位
+            summary_masked: String(f.summary ?? '').slice(0, 120) }));
           llmCount = await insertFindings(pool, { attemptId: llmClaim.attemptId, runId: run.run_id,
             tenantId: ctx.tenantId, repoId: ctx.repoId, prId: ctx.prId, headSha, findings: mapped,
             source: 'reviewer' }); // 模型发现来源显式——不与静态规则混同
