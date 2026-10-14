@@ -729,10 +729,12 @@ export default function OverviewPage() {
               <>
                 <Bar
                   {...baseCol}
-                  data={[...repoCounts].sort((a, b) => (Number(a.runs) || 0) - (Number(b.runs) || 0))}
-                  xField="runs" yField="repo" colorField="repo"
+                  data={[...repoCounts].sort((a, b) => (Number(a.runs) || 0) - (Number(b.runs) || 0))
+                    .map((r) => ({ ...r, short: String(r.repo).includes('/')
+                      ? String(r.repo).split('/').slice(1).join('/') : String(r.repo) }))}
+                  xField="runs" yField="short" colorField="short"
                   legend={false}
-                  axis={{ x: { title: '运行次数（run）' }, y: { title: false, labelAutoSize: true } }}
+                  axis={{ x: { title: '运行次数（run）' }, y: { title: false } }}
                   label={{ text: 'runs', position: 'right', style: { fontSize: 12, fontWeight: 600 } }}
                   scale={{ x: { nice: true } }}
                   onEvent={(_, event) => {
@@ -747,8 +749,8 @@ export default function OverviewPage() {
                 />
                 <p className="ov-chart-summary">
                   {repoCounts.length} 个仓库 · 共 {repoCounts.reduce((n, r) => n + (Number(r.runs) || 0), 0)} 项运行记录（单位：run）
-                  {repoTop ? `，最多 ${repoTop.repo}（${repoTop.runs} 项）` : ''}。
-                  点击柱体打开对应仓库的 PR 列表。
+                  {repoTop ? `，最多 ${repoTop.repo}（${repoTop.runs} 项）` : ''}。轴上显示仓库名（不含 owner 前缀）。
+                  点击条形打开对应仓库的 PR 列表。
                 </p>
               </>
             )}

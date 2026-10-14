@@ -260,6 +260,12 @@ async function swapConsole(argv, deps = {}) {
     if (containerName) exec(['rm', '-f', containerName]);
     const oldArgs = buildDockerRunArgs(inspect, oldImage, { name: containerName || undefined });
     exec(['run', '-d', ...oldArgs]);
+    // 回滚容器同样补挂非默认网络（rc.35.1 切换实测缺陷：回滚只 run 不 connect
+    // → 旧容器失去自定义 DNS（beta-mp-pg/ctrl 解析）→ Matrix/DB 全挂）
+    for (const net of extraNetworks) {
+      const c = exec(['network', 'connect', net, containerName]);
+      log(`回滚容器 network connect ${net}: ${c.status === 0 ? 'ok' : 'exit=' + c.status}`);
+    }
     log('回滚完成（旧容器已按原配置重建）。退出码 1。');
     return 1;
   };
