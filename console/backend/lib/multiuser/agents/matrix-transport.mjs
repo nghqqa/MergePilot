@@ -93,7 +93,10 @@ export async function matrixLogin(cfg, fetchImpl0 = fetch) {
 const OUTPUT_HINT = {
   reviewer: '{"findings":[{"severity":"P0","path":"...","summary":"..."}]}',
   leader: '{"recommendation":"fix_required","confidence":0.8}',
-  fixer: '{"suggestion":"...","patch_hint":"...","patch":"unified diff (--- a/f / +++ b/f @@) when the fix is code-level"}',
+  // 2026-10-15 收紧：patch 曾是条件性措辞（"when the fix is code-level"）——worker LLM
+  // 据此跳过 patch 只给 hint，整轮 BLOCKED（PR#12 真实闭环两轮实证）。patch 对 code 级
+  // finding 是唯一可持久化产物，契约必须强制。
+  fixer: '{"suggestion":"...","patch_hint":"...","patch":"REQUIRED unified diff (must start with --- a/<file> and include +++ b/<file> and @@ hunks) — always provide it for code findings; never omit"}',
   verifier: '{"verdict":"PASS|FAIL|BLOCKED","note":"short"}',
 };
 export function buildTaskEnvelope({ workerMatrixId, taskId, correlationId, submissionId, role, brief }) {
