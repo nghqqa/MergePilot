@@ -64,19 +64,22 @@
 <p>系统有 5 种成员角色，按最小权限分配能力。本页说明每个角色能做什么、关键设计原则，以及遇到「无权限」提示时如何理解。</p>
 
 <h2>能力矩阵</h2>
-<p>能力从 contributor 向 platform_admin 递增（auditor 是独立的只读审计线，不在递增链上）：</p>
+<p>reviewer 在 contributor 上增加触发审查，maintainer 再增加裁定/审批/应用/合并与仓库绑定——
+这条递增链到 maintainer 为止。<strong>platform_admin 与 auditor 是两条独立线</strong>，
+不在递增链上：</p>
 
 <div class="table-wrap">
 <table>
 <tr><th>能力</th><th>contributor</th><th>reviewer</th><th>maintainer</th><th>auditor</th><th>platform_admin</th></tr>
-<tr><td>查看仓库 / PR / 代码</td><td>✓</td><td>✓</td><td>✓</td><td>—</td><td>✓</td></tr>
+<tr><td>查看仓库 / PR 元数据</td><td>✓</td><td>✓</td><td>✓</td><td>—</td><td>✓</td></tr>
+<tr><td>查看代码内容</td><td>✓</td><td>✓</td><td>✓</td><td>—</td><td><strong>—</strong></td></tr>
 <tr><td>RAG 检索</td><td>✓</td><td>✓</td><td>✓</td><td>—</td><td>✓</td></tr>
-<tr><td>触发只读审查</td><td>—</td><td>✓</td><td>✓</td><td>—</td><td>✓</td></tr>
+<tr><td>触发审查 / finding 反馈</td><td>—</td><td>✓</td><td>✓</td><td>—</td><td>✓</td></tr>
 <tr><td><strong>审批 / 驳回修复</strong></td><td>—</td><td>—</td><td><strong>✓ 仅此角色</strong></td><td>—</td><td>—</td></tr>
 <tr><td><strong>应用修复（机器人提交）/ 确认合并</strong></td><td>—</td><td>—</td><td><strong>✓ 仅此角色</strong>（另需仓库 active 绑定）</td><td>—</td><td>—</td></tr>
 <tr><td>发起受控修复</td><td>—</td><td>—</td><td>✓</td><td>—</td><td>✓</td></tr>
 <tr><td>绑定 / 解绑仓库</td><td>—</td><td>—</td><td>✓</td><td>—</td><td>✓</td></tr>
-<tr><td>查看审计日志</td><td>—</td><td>—</td><td>—</td><td>✓</td><td>✓</td></tr>
+<tr><td>查看审计日志</td><td>—</td><td>—</td><td>—</td><td>✓（仅此）</td><td>✓</td></tr>
 <tr><td>成员与角色管理</td><td>—</td><td>—</td><td>—</td><td>—</td><td>✓</td></tr>
 <tr><td>实例配置 / 建租户</td><td>—</td><td>—</td><td>—</td><td>—</td><td>✓</td></tr>
 </table>
@@ -84,7 +87,7 @@
 
 <h2>设计原则</h2>
 <ul>
-<li><strong>平台与管理分离</strong>：<code>platform_admin</code> 管基础设施（成员、配置、审计），<code>maintainer</code> 管内容裁定（审批修复、应用修复、确认合并）。两者刻意不重叠——平台管理员也无法审批、应用或合并。</li>
+<li><strong>平台与管理分离</strong>：<code>platform_admin</code> 管基础设施（成员、配置、审计元数据），<code>maintainer</code> 管内容裁定（审批修复、应用修复、确认合并）。两者刻意不重叠——平台管理员无法审批、应用或合并，也<strong>无代码内容读取</strong>（rc.35.5 起 <code>read_code_content</code> 刻意不授予 platform_admin）。</li>
 <li><strong>最小权限</strong>：每个角色只拿到完成其职责所需的能力；未授权访问一律 403 拒绝，拒绝原因在审计日志留痕。</li>
 <li><strong>auditor 独立</strong>：审计员只读审计元数据，无仓库、代码、RAG 访问——保证审计视角独立于业务操作者。</li>
 <li><strong>邀请上限</strong>：邀请永不授予 <code>platform_admin</code>（API 校验、认领守卫、数据库 CHECK 三层拒绝）。首任管理员由部署脚本或 SQL 直授。</li>

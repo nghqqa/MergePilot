@@ -37,16 +37,20 @@
 
 | 能力动作 | contributor | reviewer | maintainer | auditor | platform_admin |
 |---|:---:|:---:|:---:|:---:|:---:|
-| 查看仓库 / PR / 代码 / RAG 检索 | ✓ | ✓ | ✓ | — | ✓ |
-| 触发审查 / finding 反馈 | — | ✓ | ✓ | — | ✓ |
+| 查看仓库 / PR 元数据（`read_repository` / `read_pull_request`） | ✓ | ✓ | ✓ | — | ✓ |
+| 查看代码内容（`read_code_content`） | ✓ | ✓ | ✓ | — | **—** |
+| RAG 检索（`rag_query`） | ✓ | ✓ | ✓ | — | ✓ |
+| 触发审查 / finding 反馈（`request_review`） | — | ✓ | ✓ | — | ✓ |
 | **裁定与审批（`decide_review`：PR approve/reject、修复票、发布评论）** | — | — | **✓ 仅此角色** | — | — |
 | **应用修复（`apply_fix`：机器人提交修复 commit）/ 确认合并（`merge_pr`）** | — | — | **✓ 仅此角色**（另需 active Binding） | — | — |
 | 发起受控修复（`request_repair`，需 active Binding） | — | — | ✓ | — | ✓ |
 | 绑定 / 解绑仓库 | — | — | ✓ | — | ✓ |
-| 查看审计元数据 | — | — | — | ✓ | ✓ |
-| 成员/租户/实例配置、出站策略与同意（`manage_instance`） | — | — | — | — | ✓ |
+| 查看审计元数据（`read_audit`） | — | — | — | ✓（仅此） | ✓ |
+| 成员/租户/实例配置、出站策略与同意（`manage_membership` / `manage_instance`） | — | — | — | — | ✓ |
 
-设计原则：**平台管理与审查裁定刻意分离**——platform_admin 也无法审批/发布；
+设计原则：**角色不是单一递增链**——contributor→reviewer→maintainer 逐级递增；
+platform_admin 与 auditor 是独立线。**平台管理与审查裁定刻意分离**——platform_admin
+也无法审批/发布/应用/合并，且**刻意无 `read_code_content`**（不读代码内容）；
 默认拒绝 fail-closed，拒绝原因以稳定机器码留痕（`MU_BINDING_REQUIRED` / `action_not_granted` 等）。
 邀请永不授予 `platform_admin`（API/认领守卫/DB CHECK 三层拒绝）。
 

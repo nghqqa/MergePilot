@@ -21,7 +21,7 @@
 | A3 访问已绑定仓库 | 全部成员 | 左侧「**仓库**」 | maintainer 已完成 GitHub App 安装 + 仓库绑定（或 Gitee 连接绑定） | 仓库列表可见，绑定状态 `active` | 列表为空：仓库尚未绑定或你不在该租户——找维护者，见 [T-BINDING](TROUBLESHOOTING.md#t-binding--仓库绑定问题) |
 | A4 查看 PR 审查结果 | 全部成员 | 「**仓库**」→ PR 详情，或「**运行记录**」→ run 详情 | 该 PR 有审查 run（新开/更新 PR 自动触发；也可手动触发） | 发现列表、建议补丁、验证结果按来源分列可见 | 无 run：确认 PR 属于已绑定仓库、webhook 可达，见 [T-WEBHOOK](TROUBLESHOOTING.md#t-webhook--webhook-未到达--事件不进管线) |
 
-贡献者到此为止；触发审查需 reviewer 及以上；审批/发布/应用/合并仅维护者（见 §2）。
+贡献者到此为止；触发审查可用 reviewer / maintainer / platform_admin；审批/发布/应用/合并仅维护者（见 §1）。
 
 ### 路径 B：自托管管理员
 
@@ -34,7 +34,7 @@ Console、数据库、GitHub App、OAuth、LLM 端点都由你自己部署与运
 | B1 | 最小部署 | webhook→静态规则审查→发现落库→人工查看 | [DEPLOY-GUIDE 目标一](DEPLOY-GUIDE.md#目标一最小部署先能完成审查)（依赖准备 → `.env` → 启动验证 → **首个平台管理员 DB 直授** → 邀请成员与仓库接入） |
 | B2 | 模型审查（可选） | LLM 第二阶段审查 | [DEPLOY-GUIDE 目标二](DEPLOY-GUIDE.md#目标二启用-llm-第二阶段审查模型审查)（LLM env + 模型白名单 + 运行策略 + 出站策略与同意，四者缺一即如实"未执行"） |
 | B3 | 修复验证（可选） | 审批门→补丁→可应用性→修复测试 | [DEPLOY-GUIDE 目标三](DEPLOY-GUIDE.md#目标三启用修复验证审批门--补丁--可应用性--修复测试)（AgentTeams 执行器七项 env + `MU_FIX_TEST_CMDS` 预批准测试命令） |
-| B4 | 应用修复与合并 | 机器人提交 + 新 head 重审 + CI 资格 + 确认合并 | [DEPLOY-GUIDE 目标四](DEPLOY-GUIDE.md#目标四人工确认提交与合并--rc355-起可用)（GitHub App 写侧权限：Contents/ Pull requests 读写；CI 读侧：Commit statuses/ Checks 读） |
+| B4 | 应用修复与合并 | 机器人提交 + 新 head 重审 + CI 资格 + 确认合并 | [DEPLOY-GUIDE 目标四](DEPLOY-GUIDE.md#目标四人工确认提交与合并--rc355-起可用)（GitHub App 写侧权限：Contents/ Pull requests 读写；CI 读侧：Commit statuses/ Checks 读。**注意：仓库需有真实 CI——没有任何 CI 的仓库合并会被 `ci_not_configured` 恒阻塞**） |
 
 管理员身份要点：**首个平台管理员由部署者数据库直授**（邀请永不授予 platform_admin，
 见 [selfhost README「首个平台管理员初始化（生产）」](../../deploy/selfhost/README.md#首个平台管理员初始化生产)）；
@@ -54,17 +54,23 @@ Console、数据库、GitHub App、OAuth、LLM 端点都由你自己部署与运
 
 | 能做 | contributor | reviewer | maintainer | auditor | platform_admin |
 |---|:---:|:---:|:---:|:---:|:---:|
-| 查看仓库 / PR / 代码 / RAG 检索 | ✓ | ✓ | ✓ | — | ✓ |
-| 触发审查 / finding 反馈 | — | ✓ | ✓ | — | ✓ |
+| 查看仓库 / PR 元数据 | ✓ | ✓ | ✓ | — | ✓ |
+| 查看代码内容（`read_code_content`） | ✓ | ✓ | ✓ | — | **—** |
+| RAG 检索 | ✓ | ✓ | ✓ | — | ✓ |
+| 触发审查 / finding 反馈（`request_review`） | — | ✓ | ✓ | — | ✓ |
 | **裁定与审批**（`decide_review`：PR 裁定、修复票、发布评论） | — | — | **✓ 仅此角色** | — | — |
 | **应用修复**（`apply_fix`）/ **确认合并**（`merge_pr`） | — | — | **✓ 仅此角色**（另需 active 绑定） | — | — |
 | 发起受控修复（`request_repair`） | — | — | ✓ | — | ✓ |
 | 绑定 / 解绑仓库 | — | — | ✓ | — | ✓ |
-| 查看审计元数据 | — | — | — | ✓ | ✓ |
+| 查看审计元数据（`read_audit`） | — | — | — | ✓（仅此） | ✓ |
 | 成员/租户/实例配置、出站策略 | — | — | — | — | ✓ |
 
-**platform_admin ≠ 仓库维护者**：平台管理员管成员/配置/出站策略，刻意无审批、
-无裁定、无发布、无应用/合并权（平台管理与审查裁定分离）。需要审批/合并能力，
+**角色不是单一递增链**：contributor→reviewer→maintainer 逐级递增；**platform_admin
+与 auditor 是两条独立线**——platform_admin 管成员/配置/出站策略，**刻意无
+`read_code_content`**（不读代码内容）、无审批、无裁定、无发布、无应用/合并权
+（平台管理与审查裁定分离；rc.35.5 实例 `my_permissions` 实测投影与 authz.mjs 一致）；
+auditor 仅审计元数据。触发审查不要说"reviewer 及以上"——准确说法是
+**reviewer / maintainer / platform_admin 三角色可用**。需要审批/合并能力，
 必须用 maintainer 账号操作。
 
 ## 2. 仓库接入
@@ -80,7 +86,7 @@ Console、数据库、GitHub App、OAuth、LLM 端点都由你自己部署与运
 - **Gitee**：仓库页建立 Gitee 连接（部署级 `MU_GITEE_PAT`）→ 绑定仓库。Gitee 登录走
   Gitee OAuth（`MU_GITEE_OAUTH_*` 三项）。
 - 绑定后，PR 新开/更新（webhook）自动触发审查，无需手动点。手动重审：PR 详情页
-  「发起审查」（reviewer 及以上）。
+  「发起审查」（reviewer / maintainer / platform_admin）。
 - 一个 GitHub 仓库全局只能被一个租户绑定；App 被卸载 → installation 与全部绑定自动
   `revoked`（fail-closed），重装后重新绑定。
 
@@ -91,7 +97,7 @@ Console、数据库、GitHub App、OAuth、LLM 端点都由你自己部署与运
 
 ### 步骤 1：PR 事件接入（自动）
 
-- **谁能操作**：无需操作（webhook 自动）；reviewer 及以上可手动「发起审查」补触发。
+- **谁能操作**：无需操作（webhook 自动）；reviewer / maintainer / platform_admin 可手动「发起审查」补触发。
 - **页面入口**：触发后「运行记录」出现新 run；PR 详情页可从「仓库」进入。
 - **前提**：仓库绑定 `active`；GitHub App 安装且 webhook 公网可达（Gitee 走部署级
   PAT + 仓库 hook）。
@@ -279,4 +285,5 @@ Console、数据库、GitHub App、OAuth、LLM 端点都由你自己部署与运
 本指南暂不内嵌截图。所需截图清单（真实页面 + 脱敏后补入）：登录页（邀请入口）、
 顶栏身份区、PR 详情发现列表、「应用修复与合并」区块（含「读回对账」）、合并预览
 资格门。在取得并完成脱敏（隐去账号/组织/租户标识）前，以上位置以文字描述为准——
-不生成替代性示意图。
+不生成替代性示意图。真实页面原始素材（验收线实测留存，未脱敏、勿直接外发）见
+[rc35.5-first-use/evidence/](../acceptance/rc35.5-first-use/FIRST-USE-ACCEPTANCE.md)。

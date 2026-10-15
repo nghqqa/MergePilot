@@ -304,10 +304,10 @@ MU_ALLOW_FIXTURE_LOGIN=1
 
 | 角色 | 权限 | 典型使用者 |
 |---|---|---|
-| **Contributor** | 查看 PR/仓库元数据/证据；RAG 检索 | 开发者 |
+| **Contributor** | 查看 PR/仓库元数据/代码内容；RAG 检索 | 开发者 |
 | **Reviewer** | Contributor 全部 + 触发审查 + finding 反馈 | 安全审查员 |
-| **Maintainer** | Reviewer 全部 + **审批修复票/PR 裁定/发布评论**（decide_review 仅此角色）+ 绑定/解绑仓库 + 发起修复 | 团队负责人 |
-| **PlatformAdmin** | 管理成员/租户/实例配置/出站策略（**刻意无审批与发布权**——平台管理与裁定分离） | 运维管理员 |
+| **Maintainer** | Reviewer 全部 + **审批修复票/PR 裁定/发布评论/应用修复/确认合并**（decide_review/apply_fix/merge_pr 仅此角色）+ 绑定/解绑仓库 + 发起修复 | 团队负责人 |
+| **PlatformAdmin** | 管理成员/租户/实例配置/出站策略（**刻意无审批与发布权、无代码内容读取**——平台管理与裁定分离） | 运维管理员 |
 | **Auditor** | 仅审计元数据只读（不可读代码/RAG 内容） | 合规审计员 |
 
 > 完整矩阵见 [docs/delivery/CAPABILITY-MATRIX.md §2](delivery/CAPABILITY-MATRIX.md)。
@@ -372,7 +372,7 @@ curl -X POST http://<你的地址>/api/mu/repositories/<repo_id>/ghapp-binding \
 3. 若部署启用了 LLM 第二阶段（§5 LLM env + 控制台运行策略 + 出站策略/同意）：模型审查
    **无条件执行**（与静态结果解耦），模型发现以 `source=reviewer` 独立标注；失败 fail-closed
    回落静态结果并如实记档，绝不误报"模型已执行"
-4. Reviewer 及以上可触发审查 / 提交 finding 反馈；Maintainer 可审批或驳回（`decide_review`）
+4. Reviewer / Maintainer / PlatformAdmin 可触发审查 / 提交 finding 反馈（`request_review`）；仅 Maintainer 可审批或驳回（`decide_review`）
 5. P0/P1 发现自动生成具名审批票；run 内全部批准 → 修复轮（dry-run）→ 补丁版本化 + 验证三分
 6. Maintainer 可在产物面板「预览并发布到 PR」把审查结果发布为机器人评论
    （远端 head 复核 + 幂等原位更新；见 [USER-GUIDE](delivery/USER-GUIDE.md)）

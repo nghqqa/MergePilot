@@ -131,6 +131,12 @@ run 详情页三个验证区块齐备且状态与实际一致。
 
 ## 目标四：人工确认提交与合并 —— rc.35.5 起可用
 
+> ⚠️ **首用户前置警示（先读）**：合并资格门要求**当前 head 的真实 CI 通过**。目标仓库
+> 如果没有配置任何 CI（combined status 与 check runs 两面全空），合并会**恒被
+> `ci_not_configured` 阻塞**——这是有意设计（系统不冒充"CI 通过"），不是故障。
+> 接入仓库前先确认它有可用的 CI（如 GitHub Actions）；没有 CI 的仓库可以使用到
+> 「审批 → 补丁 → 预览并确认应用 → 自动重审」为止，合并需要先补 CI。
+
 - **确认应用**（`apply_fix`）与**确认合并**（`merge_pr`）已在 main 实现
   （PR #455-#457：preview/confirm 双端点 + 前端两步确认 + 推送式条件更新），
   随 rc.35.5 发布生效。依赖：`apply_fix`/`merge_pr` 权限（maintainer + active 仓库绑定）

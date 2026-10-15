@@ -3,7 +3,9 @@
 > 版本：`v0.2.0-beta.6-rc.35.5`（`/api/health` version 真源）· 源码 tag commit `af8b0022`
 > · 镜像 pull digest（OCI index）：`sha256:e30419990434c209de8d9de7fc11fc267d8c9e6fe0d99ff242eda69b7a61dd3a`
 > （tag `v0.2.0-beta.6-rc.35.5` 与该 index 同源；index 内 linux/amd64 manifest 与 config
-> digest 为另外两个不同对象，勿混称）。
+> digest 为另外两个不同对象，勿混称。本地 `docker image inspect` 的 `.Id` 取决于引擎
+> 存储模式——核验以 `RepoDigests`（在线）/ tar 文件 SHA256（离线）为准，不要拿 `.Id`
+> 直接对照 index digest；可执行核验命令见「镜像获取与校验」）。
 > 已正式发布 GHCR（不可变 digest）。离线 tar 与源码构建为等效替代途径，校验方式见下。
 > 供应链档案：SBOM（CycloneDX，47 组件）、trivy 扫描（1 MEDIUM / 0 HIGH/CRITICAL /
 > secrets=0）、离线 tar SHA256 见「镜像获取与校验」与 [Release 附件](https://github.com/nghqqa/MergePilot/releases/tag/v0.2.0-beta.6-rc.35.5)。
@@ -146,8 +148,8 @@ MU_GITHUB_OAUTH_CALLBACK_URL=https://<console 公开地址>/api/mu/auth/oauth/gi
 
 | 途径 | 命令 | 校验 |
 |---|---|---|
-| GHCR | `docker pull ghcr.io/nghqqa/mergepilot-console@sha256:e30419990434c209de8d9de7fc11fc267d8c9e6fe0d99ff242eda69b7a61dd3a` | RepoDigest == 上列 index digest（或 `docker buildx imagetools inspect <tag>` 核对 Digest 行） |
-| 离线 tar | `docker load -i mergepilot-console-v0.2.0-beta.6-rc.35.5-offline.tar.gz` | tar SHA256 = `692727ccc234a4e1ca32e1f67818614e59caeea007cc172cf86f7d873079293c`（见 Release 附件 `SHA256SUMS`） |
+| GHCR | `docker pull ghcr.io/nghqqa/mergepilot-console@sha256:e30419990434c209de8d9de7fc11fc267d8c9e6fe0d99ff242eda69b7a61dd3a` | `docker image inspect <引用> --format '{{range .RepoDigests}}{{println .}}{{end}}'` 输出含 `@sha256:e304…`（与引擎无关的权威核验；registry 侧可用 `docker buildx imagetools inspect <tag>` 的 Digest 行同值对照） |
+| 离线 tar | `sha256sum -c SHA256SUMS` 后 `docker load -i mergepilot-console-v0.2.0-beta.6-rc.35.5-offline.tar.gz` | tar SHA256 = `692727ccc234a4e1ca32e1f67818614e59caeea007cc172cf86f7d873079293c`（第一权威）；加载后 `.Id` 与**同引擎**在线拉取记录的 `.Id` 比对一致（`.Id` 口径随引擎存储模式而异，跨引擎不比 `.Id`） |
 | 源码构建 | 见下节 | image ID 应可复现（同 commit/同构建参数） |
 
 镜像内置 `MERGEPILOT_VERSION=v0.2.0-beta.6-rc.35.5`、`MERGEPILOT_GIT_COMMIT=af8b0022`
@@ -337,22 +339,26 @@ schtasks /Create /TN "MergePilot-Attest" /SC ONSTART /RU SYSTEM ^
 
 ### 角色与权限速查
 
-系统有 5 种角色，能力递增（auditor 独立）：
+系统有 5 种角色。contributor→reviewer→maintainer 逐级递增；**platform_admin 与 auditor
+是独立线**，不在递增链上：
 
 | 能力 | contributor | reviewer | maintainer | auditor | platform_admin |
 |---|:---:|:---:|:---:|:---:|:---:|
-| 查看仓库 / PR / 代码 | ✓ | ✓ | ✓ | — | ✓ |
+| 查看仓库 / PR 元数据 | ✓ | ✓ | ✓ | — | ✓ |
+| 查看代码内容 | ✓ | ✓ | ✓ | — | **—** |
 | RAG 检索 | ✓ | ✓ | ✓ | — | ✓ |
-| 触发只读审查 | — | ✓ | ✓ | — | ✓ |
+| 触发审查 / finding 反馈 | — | ✓ | ✓ | — | ✓ |
 | **审批 / 驳回修复** | — | — | **✓ 仅此角色** | — | — |
+| **应用修复 / 确认合并** | — | — | **✓ 仅此角色**（需 active 绑定） | — | — |
 | 发起受控修复 | — | — | ✓ | — | ✓ |
 | 绑定 / 解绑仓库 | — | — | ✓ | — | ✓ |
-| 查看审计日志 | — | — | — | ✓ | ✓ |
+| 查看审计日志 | — | — | — | ✓（仅此） | ✓ |
 | 成员与角色管理 | — | — | — | — | ✓ |
 | 实例配置 / 建租户 | — | — | — | — | ✓ |
 
-> **设计原则**：平台管理员管基础设施（成员/配置/审计），维护者管内容裁定（审批修复）。
-> 两者刻意不重叠——platform_admin 也无法审批修复。未授权访问一律 403 拒绝（fail-closed），
+> **设计原则**：平台管理员管基础设施（成员/配置/审计元数据），维护者管内容裁定
+> （审批修复、应用、合并）。两者刻意不重叠——platform_admin 无审批/应用/合并权，
+> 也**刻意无代码内容读取**。未授权访问一律 403 拒绝（fail-closed），
 > 拒绝原因在审计留痕。**邀请永不授予 platform_admin**——首任管理员由部署脚本或 SQL 直授。
 
 2. **installation 注册**：安装 App 后跳转回控制台即注册到当前会话所属租户；
