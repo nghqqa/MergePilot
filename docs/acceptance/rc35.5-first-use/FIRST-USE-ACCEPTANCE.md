@@ -116,6 +116,102 @@
 4. **D1 能力口径更新**：文档线 rc.35.5 语义入 BETA-GUIDE §1（在途，复核项）。
 5. **V1 真实新用户验证**：邀请一位未参与开发的用户按 USER-TASKS.md 走一遍并回收反馈表。
 
+## 6b. 复核补充（2026-10-15 晚，最终验收轮）
+
+### 基线更正
+
+- 上一版"文档线无在途 PR"**已过时**：文档线 PR **#468**（docs/rc355-firstuse，head
+  commit `4850388038c2d4c5874f1b58e305a8944c21fcef`，28 文件含 .env.example/docker-compose.yml
+  与官网 13 页）处于 OPEN。本节为对 head commit `4850388` 的只读精确复核；
+  文档分支后续变化只复核相关差异。
+
+### #468 五项优先复核结果（供文档负责人吸收；本会话未改其分支）
+
+| 项 | 判定 | 依据（commit 4850388 实测） |
+|---|---|---|
+| 1a auditor 不得列入仓库/PR 查看 | **已解决** | roles.html：auditor 列全"—"（仅审计日志 ✓），明示"无仓库、代码、RAG 访问" |
+| 1b platform_admin 无 read_code_content；仓库/PR/代码/RAG 分别表达 | **仍存在** | authz.mjs 实况：platform_admin 有 read_repository+read_pull_request+rag_query、**无 read_code_content**；roles.html "查看仓库 / PR / 代码"合并行给 platform_admin 标 ✓——合并行掩盖差异 |
+| 1c "递增链"措辞 | **仍存在** | "能力从 contributor 向 platform_admin 递增"对 platform_admin 不成立（缺 read_code_content，非超集；auditor 已注明链外，platform_admin 未注明） |
+| 2 镜像校验（index/manifest/Id 分列） | **已解决（本环境实测可执行）** | downloads.html 行 68 三对象分列正确；行 98-99 `docker inspect .Id` 期望=e304 实测成立（本机 containerd image store 下 Id=index digest）。建议补一句：经典 image store 下 .Id 与 index digest 不同，改用 `RepoDigests` 核对 |
+| 3 发布状态=T+1h 通过 | **仍存在（快照过时）** | #468 RELEASE 写于 T+1h 完成前（"观察中，由发布线填写"）；发布线终态=T+1h 通过、rc.35.5 发布交付 COMPLETE（本会话 STATE 有完整观察记录）——需文档线同步 |
+| 4 无 CI 合并阻塞前置 | **已解决** | USER-GUIDE 步骤 8（not_configured=仓库需先有真实 CI，系统不冒充；unsupported=Gitee 连接器）+ DEPLOY-GUIDE 目标四权限与门条件 |
+| 5 BETA-GUIDE rc.35.4 旧口径 | **已解决** | 口径已更新"rc.35.5 完整受控闭环" |
+
+### 隔离部署验证（按 #468 待验收文档，干净检出 4850388）
+
+| 步骤 | 结果 |
+|---|---|
+| 干净检出（fresh clone，head 4850388） | ✅ |
+| 测试 .env（无真实凭据；合成会话密钥/PG 密码/占位 LLM key；端口 18500/18590 隔离） | ✅ |
+| Compose 解析（config --quiet） | ✅ OK，4 服务（postgres/console/webhook-ingress/bge-m3） |
+| 启动 | ✅ console healthy（镜像 digest 逐位=发布 e304…）、postgres healthy、webhook-ingress up |
+| 已知偏差 | bge-m3 crash-loop（隔离环境无模型文件，BGE_MANIFEST 缺失——已知部署条件，如实记录） |
+| 新库 schema 迁移 | ✅ mu.schema_migrations max(version)=**29** |
+| health | ✅ live、schema_ready=true、版本/commit/bundle 与镜像一致 |
+| 首管理员初始化（按 deploy/selfhost/README 文档 SQL 块逐字执行，测试值 first-admin-test/99001） | ✅ INSERT user+identity+membership 全部成功；库内验证 first-admin-test=platform_admin/active（另见 bootstrap pilot-admin，符合预期） |
+| 分类说明 | ✅ **本地部署可用**；OAuth 登录/模型调用/完整业务=**未验证**（无真实外部配置——占位 key，不做真实模型调用） |
+| 清理 | ✅ compose down -v：卷/网络已删，容器 0 残留；仅清理本次创建资源 |
+
+### 两个产品卡点精确修复建议（只读追踪现行实现后）
+
+**A. BLOCKED / no_repair_pending 恢复指引**
+
+现行实现事实（PR#12 真实经历+代码追踪）：
+- `POST /api/mu/prs/:id/repair`（发起受控修复）只接受 WAITING_FOR_HUMAN_APPROVAL（引导批准）
+  与 FIX_QUEUED（合法重试，幂等消费）两种 run 状态；BLOCKED 命中 `no_repair_pending` 409。
+- BLOCKED 为半终态（RUN_TRANSITIONS 仅可去 COMPLETED/FAILED）；审批驳回/过期/STALE 与
+  修复轮产出缺陷（如 fixer 仅给 hint 无 diff）都会进入 BLOCKED，但两者恢复路径不同。
+- 同 head 重审：`createRunIfAbsent` 按 (tenant,repo,pr,head) 幂等——**同 head 不会新建 run**；
+  用户点「触发只读审查」实际复用 BLOCKED run（PR#12 实测：job 消费后 run 保持 BLOCKED）。
+  因此修复轮缺陷导致的 BLOCKED，**必须推新 commit 产生新 head 才能重走审查**
+  （本轮真实操作即此路径）；这不是"所有失败的通用解"——审批类 BLOCKED 的正路是批准/驳回。
+- 防线核验：推新 head 不绕过任何保护——新 run 重新过审查与审批门（PR#12 第 4 轮真实
+  再批准），审批/陈旧证据/执行权保护全部重新执行。
+
+精确建议（两段式，均不改审批语义）：
+1. **文案（即时）**：409 no_repair_pending 响应按 run.status 分支给出下一步——BLOCKED 且
+   原因为修复轮缺陷→"该 head 的修复轮已终止；请推送新 commit（或重开 PR）产生新 head，
+   系统将自动重新审查并生成新审批票"；审批类 BLOCKED→"请处理待审批票后重试"。
+2. **产品（短期）**：BLOCKED 原因细分落库（审批阻断 vs 修复轮产出缺陷），修复轮缺陷类
+   允许 `POST /repair` 将 run 迁回 FIX_QUEUED 重试（沿用 MAX_FIX_ROUNDS 上限与
+   authorizeFixExecution 幂等消费，不跳过审批门）；审批类维持现状。
+
+**B. 审批票上下文**
+
+现行实现事实：`mu.fix_approval` 已含 pr_number/severity/head_sha/diff_digest/finding_id/run_id；
+页面票行显示"级次+finding 摘要+head+状态"，**不显示平台与 owner/repo**——跨仓库场景用户
+曾拿错票（PR#12 真实经历：Gitee mergepilot-test 票与 GitHub test-repo 票混淆）。
+
+最小补充（无 schema 变更）：票行/join 已有 repo_id → join `mu.repository` 取
+`provider + owner + name`，票行首列显示 `github · nghqqa/test-repo · PR#12`；
+`provider_pr_number` 列已存在直接展示。数据齐全，纯展示层改动。
+
+### USER-TASKS 修订说明
+
+按本轮指令拆分"只读理解与导航"与"需维护者确认的写入"两组任务，并补注：
+耗时区间中阅读/等待/求助无法逐段归因的部分标"无法归因"；"自动段 <3 分钟"的依据=
+修复链(06:50:29 启动→补丁落库)+推送(07:39:13 落库)+合并(07:41:45→49)四个有审计
+时间戳的阶段，其余时长不再归入"自动"。
+"无负面反馈"修订为"未提出负面反馈——不直接推导为理解无障碍"。
+
+### 文档线对 6b 的回执（head 3f650d8，PR #468 第二轮）
+
+6b 五项复核针对文档线第一轮 head 4850388；其中三项"仍存在"已在该 PR 第二轮（head
+`3f650d8`，随本合并入库）解决，逐项对账：
+- **1b/1c（合并行掩盖差异/递增链措辞）**：✅ 已解决——五处文档（USER-GUIDE /
+  CAPABILITY-MATRIX / selfhost README / BETA-GUIDE / 官网 roles.html）拆为
+  仓库/PR 元数据、代码内容、RAG 三行（platform_admin 代码内容=—），"递增"改为
+  "到 maintainer 为止，platform_admin 与 auditor 独立线"；隔离实例 `my_permissions`
+  实测投影与 authz.mjs 一致（TEMPLATE-VERIFY §5-W3）。
+- **2（镜像校验建议补 RepoDigests）**：✅ 已采纳——downloads/selfhost 给出
+  RepoDigests（在线权威）+ tar SHA256（离线第一权威）+ `.Id` 随 image store 而异的
+  完整说明，命令全部实测。
+- **3（发布状态快照过时）**：✅ 已同步——RELEASE-rc.35.5.md 按发布线终检更新为
+  T+1h 通过、本轮发布 COMPLETE（观察数据保留）。
+6b 的隔离部署验证（干净检出 48500 端口系）与文档线 TEMPLATE-VERIFY（48610 端口系）
+为两次相互独立的实跑，结论一致（v29/health/SQL 可执行）；bge-m3 crash-loop 两处
+均如实登记为无模型文件环境下的已知条件。
+
 ## 7. 边界保留
 
 Gitee 连接器 CI 读取限制（恒阻塞）；低流量观察不代表负载验证；ctrl exit 255 根因未明；模型评测效度限制（复核前不宣传提升 70%）；200% 缩放/读屏器未验证；**应用/合并回滚不能撤销已发生的远端提交或合并**。
