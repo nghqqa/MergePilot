@@ -135,9 +135,19 @@ run 详情页三个验证区块齐备且状态与实际一致。
   + 机器人凭据（GitHub App installation token / Gitee PAT，部署级 env）。
 - 边界保持：每步 preview→confirm 两次确认；非快进推送被远端拒绝（不覆盖他人提交）；
   幂等键防重复写入；平台保护规则照常生效、不被绕过。
-- **当前如实缺口**（审阅线已登记，见 r3work/wave-abc-20261015/A-REVIEW.md）：
-  应用后重审需在平台手动触发（无自动新 head 关联）；CI 状态不进入合并资格判定
-  （合并预览如实标注 not_configured）；超时场景的 result_uncertain 标记与读回对账未实现。
+- **rc.35.5 收口后语义（#458+可靠性收口）**：
+  确认绑定 `expected_remote_head`+`expected_patch_digest`（缺字段/换版/存储篡改三类拒绝）；
+  数据库原子认领（并发败方零覆写）；候选 SHA 写前持久化；超时/断连→`result_uncertain`
+  →「读回对账」端点定案（`POST /api/mu/apply-operations/:id/reconcile`，幂等，恢复唯一入口）；
+  应用成功自动按新 head 入队重审（与 webhook 同消费单元、幂等去重、失败可恢复）；
+  合并资格门统一判定（PR 开放+head 一致+mergeable 已知+当前 head 审查完成无未处理 P0/P1
+  +当前 head 真实 CI 通过；**mergeable 未知/CI 未配置均不放行**）。
+- **GitHub App 权限要求（缺任一即对应能力 unsupported 并在界面报告）**：
+  Contents: **Read and write**（应用修复推送）；Pull requests: Read and write（合并）；
+  Commit statuses: Read 与 Checks: Read（合并资格门的 CI 双面判定）。
+  在 App 设置页 → Permissions 更新后，仓库安装会提示重新授权（Revoke & request）。
+- **能力边界**：Gitee v5 无 commit-status API（实测 404）→ Gitee 合并资格的 CI 部分
+  恒为 unsupported 阻塞；必需检查清单需 admin 读取——由平台在合并时强制，本服务不预判。
 
 ## 可选：RAG / cchain（信任链）
 
