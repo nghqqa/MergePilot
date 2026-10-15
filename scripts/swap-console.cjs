@@ -300,12 +300,17 @@ async function swapConsole(argv, deps = {}) {
       + ".then(r=>r.json()).then(j=>console.log('ID ' + (j.git_commit ?? 'null') + ' ' + (j.frontend_bundle ? j.frontend_bundle.file : 'null')))"
       + ".catch(e=>console.log('ID ERR'))";
     const idr = exec(['exec', containerName, 'node', '-e', idScript]);
-    const m = String(idr.stdout || '').match(/ID ([0-9a-f]{40}|null) (.+)/);
+    // health.git_commit 报短哈希（8 位，2026-10-15 生产切换实证）——接受为期望值的前缀；
+    // 全 40 位形态同样接受（互为前缀）。空/读取失败仍回滚。
+    const m = String(idr.stdout || '').match(/ID ([0-9a-f]+|null) (.+)/);
     const got = m ? m[1] : null;
-    if (got !== expectCommit) {
+    const expectNorm = String(expectCommit || '').toLowerCase();
+    const prefixOk = got && got !== 'null'
+      && (expectNorm.startsWith(got) || got.startsWith(expectNorm.slice(0, got.length)));
+    if (!prefixOk) {
       return rollback(`构建身份不符：health.git_commit=${got ?? '读取失败'}，期望 ${expectCommit.slice(0, 12)}…——镜像与源码可能不一致`);
     }
-    log('构建身份核对通过（git_commit=' + got.slice(0, 12) + '…）');
+    log('构建身份核对通过（git_commit=' + got + '…）');
   }
 
   // ── 后置检查 2：新容器内 Matrix 实际登录（与前置同口径，防环境注入差异）──
