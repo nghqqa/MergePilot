@@ -95,7 +95,8 @@ export async function fetchRemotePr(env, { provider, owner, repo, prNumber, inst
     return {
       state: String(r.json?.state ?? ''), headSha: String(r.json?.head?.sha ?? ''),
       sourceBranch: String(r.json?.head?.ref ?? ''), targetBranch: String(r.json?.base?.ref ?? ''),
-      mergeable: r.json?.mergeable !== false,
+      mergeable: r.json?.mergeable == null ? null : r.json?.mergeable !== false,
+      mergeCommitSha: r.json?.merge_commit_sha ?? r.json?.mergeable_sha ?? null,
     };
   }
   if (provider === 'github') {
@@ -103,9 +104,11 @@ export async function fetchRemotePr(env, { provider, owner, repo, prNumber, inst
       path: `/repos/${owner}/${repo}/pulls/${encodeURIComponent(prNumber)}` });
     if (!r.ok) throw Object.assign(new Error(`ghp_pr_http_${r.status}`), { status: r.status });
     return {
-      state: String(r.json?.state ?? ''), headSha: String(r.json?.head?.sha ?? ''),
+      state: String(r.json?.state === 'open' ? 'open' : (r.json?.merged ? 'merged' : 'closed')),
+      headSha: String(r.json?.head?.sha ?? ''),
       sourceBranch: String(r.json?.head?.ref ?? ''), targetBranch: String(r.json?.base?.ref ?? ''),
-      mergeable: r.json?.mergeable !== false,
+      mergeable: r.json?.mergeable == null ? null : r.json?.mergeable !== false,
+      mergeCommitSha: r.json?.merge_commit_sha ?? null,
     };
   }
   throw new Error('provider_unsupported');
