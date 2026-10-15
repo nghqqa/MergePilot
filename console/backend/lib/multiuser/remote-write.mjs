@@ -71,7 +71,8 @@ async function ghApi(method, endpoint, { env, installationId, body = null, token
   const text = await res.text().catch(() => '');
   let json = null;
   try { json = JSON.parse(text); } catch { /* */ }
-  return { status: res.status, ok: res.ok, json, text: text.slice(0, 500), token: tok };
+  // 安全纪律：token 只在本函数作用域用完即弃——结果对象绝不携带（审阅 P2 项落地）
+  return { status: res.status, ok: res.ok, json, text: text.slice(0, 500) };
 }
 
 /**
