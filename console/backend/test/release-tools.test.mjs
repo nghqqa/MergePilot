@@ -98,6 +98,37 @@ test('A 正常切换：身份核对通过+烙印过滤+网络补挂+后置 Matri
 // ── B. expect-commit 不符 → 拒绝交付+回滚（rm 新容器+run 旧镜像+connect 网络）──
 test('B expect-commit 不符：拒绝交付+回滚序列完整', async () => {
   const { exec, calls } = makeMockDocker({ idCommit: 'e'.repeat(40) }); // 与期望不符
+  // 前缀匹配回归（2026-10-15 生产切换实证：health 报 8 位短哈希，原 40 位正则恒失败）见 B2/B3。
+
+// ── B2. health 报 8 位短哈希、为期望值前缀 → 通过（生产切换实证形态）──
+test('B2 health 短哈希=期望前缀 → 构建身份核对通过', async () => {
+  const { exec, calls } = makeMockDocker({ idCommit: GOOD_COMMIT.slice(0, 8) });
+  const logs = [];
+  const code = await swapConsole([writeInspect(INSPECT), NEW_IMAGE, '--name', 'beta-mp-console',
+    '--expect-commit=' + GOOD_COMMIT], { exec, log: (m) => logs.push(m) });
+  assert.equal(code, 0, '短哈希前缀匹配应通过');
+  assert.ok(logs.some((m) => m.includes('构建身份核对通过')), '通过日志可见');
+});
+
+// ── B3. health 报全 40 位=期望值 → 仍通过（互为前缀）──
+test('B3 health 全 40 位哈希 → 通过', async () => {
+  const { exec } = makeMockDocker({ idCommit: 'f'.repeat(40) });
+  const logs = [];
+  const code = await swapConsole([writeInspect(INSPECT), NEW_IMAGE, '--name', 'beta-mp-console',
+    '--expect-commit=' + 'f'.repeat(40)], { exec, log: (m) => logs.push(m) });
+  assert.equal(code, 0, '全哈希匹配应通过');
+  assert.ok(logs.some((m) => m.includes('构建身份核对通过')), '通过日志可见');
+});
+
+// ── B4. health 读取失败（ERR）→ 仍回滚 ──
+test('B4 health 报 null → 回滚', async () => {
+  const { exec, calls } = makeMockDocker({ idCommit: null });
+  const logs = [];
+  const code = await swapConsole([writeInspect(INSPECT), NEW_IMAGE, '--name', 'beta-mp-console',
+    '--expect-commit=' + GOOD_COMMIT], { exec, log: (m) => logs.push(m) });
+  assert.equal(code, 1);
+  assert.ok(logs.some((m) => m.includes('构建身份不符')), '拒绝原因可见');
+});
   const logs = [];
   const code = await swapConsole([writeInspect(INSPECT), NEW_IMAGE, '--name', 'beta-mp-console',
     '--expect-commit=' + GOOD_COMMIT], { exec, log: (m) => logs.push(m) });
