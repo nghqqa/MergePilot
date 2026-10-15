@@ -273,7 +273,7 @@ export async function prepareCommit({ repoUrl, headSha, diffText, message,
  * 成败均清理工作目录（result_uncertain 不保留目录——恢复走 reconcile，不依赖本地残留）。
  */
 export async function pushPrepared({ dir, repoUrl, branch, expectedHead,
-  credentialToken = null, timeoutMs = 90_000 } = {}) {
+  credentialToken = null, timeoutMs = 90_000, createBranch = false } = {}) {
   if (!dir || !repoUrl || !branch || !expectedHead) {
     if (dir) await discard(dir, null);
     return { ok: false, reason: 'missing_args' };
@@ -283,17 +283,36 @@ export async function pushPrepared({ dir, repoUrl, branch, expectedHead,
     const ls = await git(['ls-remote', urlWithCred, `refs/heads/${branch}`], dir, 30_000);
     if (ls.code !== 0) return { ok: false, reason: 'ls_remote_failed', output: REDACT(ls.stderr) };
     const remoteTip = String(ls.stdout).trim().split(/	/)[0];
-    if (!remoteTip) return { ok: false, reason: 'branch_not_found', detail: `refs/heads/${branch}` };
+    if (!remoteTip) {
+      // 分支不存在：仅当调用方显式 createBranch:true 时以本提交创建之
+      // （apply 语义=PR 源分支必须已存在——默认 branch_not_found，不静默建分支）。
+      if (createBranch === true) {
+        const push0 = await git(['push', urlWithCred, `HEAD:refs/heads/${branch}`], dir, timeoutMs);
+        if (push0.code === 0) return { ok: true, created_branch: true };
+        const t0 = String(push0.stderr || push0.stdout);
+        if (/refusing to allow|permission|not allowed to/i.test(t0)) {
+          return { ok: false, reason: 'push_forbidden', detail: `远端拒绝（权限/保护）：${REDACT(t0).slice(0, 240)}` };
+        }
+        return { ok: false, reason: 'push_failed', output: REDACT(t0).slice(0, 300) };
+      }
+      return { ok: false, reason: 'branch_not_found', detail: `refs/heads/${branch}` };
+    }
     if (remoteTip.toLowerCase() !== String(expectedHead).toLowerCase()) {
       return { ok: false, reason: 'stale_head',
         detail: `expected=${String(expectedHead).slice(0, 12)} actual=${String(remoteTip).slice(0, 12)}` };
     }
 
-    // 无 --force：非快进（并发推进）被服务端拒绝——条件更新在远端强制生效
+    // 无 --force：非快进（并发推进）被服务端拒绝——条件更新在远端强制生效。
+    // 分类注意：[rejected] 不一定是非快进——权限类拒绝（如 App 无 workflows 权限推
+    // workflow 文件）同样报 rejected；误判成 stale_head 会诱导无意义重试（2026-10-15 实测）。
     const push = await git(['push', urlWithCred, `HEAD:refs/heads/${branch}`], dir, timeoutMs);
     if (push.code !== 0) {
       const t = String(push.stderr || push.stdout);
-      if (/non-fast-forward|rejected|fetch first|stale info|\[rejected\]/i.test(t)) {
+      if (/refusing to allow|permission|not allowed to/i.test(t)) {
+        return { ok: false, reason: 'push_forbidden',
+          detail: `远端拒绝（权限/保护）：${REDACT(t).slice(0, 240)}` };
+      }
+      if (/non-fast-forward|fetch first|stale info|\[rejected\]/i.test(t)) {
         return { ok: false, reason: 'stale_head', detail: `push rejected (non-fast-forward): ${REDACT(t).slice(0, 200)}` };
       }
       return { ok: false, reason: 'push_failed', output: REDACT(t).slice(0, 300) };
@@ -316,13 +335,14 @@ async function discard(dir, carry) {
 
 /** 单调用组合器（prepare+push）；需要"写前持久化候选 SHA"的调用方应直接用两阶段。 */
 export async function pushCommit({ repoUrl, headSha, diffText, branch, message,
-  credentialToken = null, timeoutMs = 90_000, workRoot = os.tmpdir() } = {}) {
+  credentialToken = null, timeoutMs = 90_000, workRoot = os.tmpdir(), createBranch = false } = {}) {
   const pre = await prepareCommit({ repoUrl, headSha, diffText, message,
     credentialToken, timeoutMs, workRoot });
   if (!pre.ok) return pre;
   const r = await pushPrepared({ dir: pre.dir, repoUrl, branch, expectedHead: headSha,
-    credentialToken, timeoutMs });
-  return r.ok ? { ok: true, commitSha: pre.commitSha, previousSha: pre.previousSha } : r;
+    credentialToken, timeoutMs, createBranch });
+  return r.ok ? { ok: true, commitSha: pre.commitSha, previousSha: pre.previousSha,
+    ...(r.created_branch ? { created_branch: true } : {}) } : r;
 }
 
 /**

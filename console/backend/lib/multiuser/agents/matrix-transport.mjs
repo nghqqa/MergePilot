@@ -121,7 +121,10 @@ export function projectToRoleSchema(role, json) {
     return { recommendation: json.recommendation, confidence: json.confidence };
   }
   if (role === 'fixer' && json.suggestion !== undefined) {
-    return { suggestion: json.suggestion, patch_hint: json.patch_hint };
+    // patch 必须透传（2026-10-15 实证）：orchestrator 消费 results.fixer.patch 持久化
+    // fix_patch——投影丢弃 patch 会导致 code 级修复永远 hint-only → verifier BLOCKED
+    // （PR#12 真实闭环验收暴露；此前所有 agentteams 修复轮系统性踩中）。
+    return { suggestion: json.suggestion, patch_hint: json.patch_hint, patch: json.patch };
   }
   if (role === 'verifier' && json.verdict !== undefined) {
     return { verdict: json.verdict, note: json.note };

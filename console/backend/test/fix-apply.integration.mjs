@@ -23,6 +23,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const fa = await import('../lib/multiuser/fix-apply.mjs');
 const rw = await import('../lib/multiuser/remote-write.mjs');
 const art = await import('../lib/multiuser/artifacts.mjs');
+const pa = await import('../lib/multiuser/patch-applicability.mjs');
 
 const USER = crypto.randomUUID();
 const HEAD = 'abbfe8a157172ef4f96a2437bf2114374b9fa378';
@@ -139,7 +140,14 @@ const jsonResp = (obj, status = 200) => ({ ok: status >= 200 && status < 300, st
     '--- /dev/null', '+++ b/probe.txt', '@@ -0,0 +1 @@', '+probe'].join('\n') + '\n';
   const c5 = await rw.platformCreateCommit({ env, provider: 'gitee', owner: 'o', repo: 'r',
     repoUrl: bare, branch: 'no/such-branch', expectedHead: newTip, diffText: newFilePatch, message: 'fix: r5' });
-  ok('R5 分支不存在 → branch_not_found', c5.ok === false && c5.reason === 'branch_not_found', c5);
+  ok('R5 分支不存在 → branch_not_found（默认不静默建分支）', c5.ok === false && c5.reason === 'branch_not_found', c5);
+  // R5b: 显式 createBranch → 允许以本提交创建新分支
+  const c5b = await pa.pushCommit({ repoUrl: bare, headSha: newTip, diffText: newFilePatch,
+    branch: 'created/probe-branch', message: 'fix: r5b', credentialToken: null, createBranch: true });
+  ok('R5b 显式 createBranch:true → 新分支创建成功',
+    c5b.ok === true && c5b.created_branch === true, c5b);
+  const createdTip = execFileSync('git', ['--git-dir', bare, 'rev-parse', 'refs/heads/created/probe-branch']).toString().trim();
+  ok('R5c 新分支 tip=本提交', createdTip === c5b.commitSha, { createdTip });
 
   // R6: 补丁不适用 → patch_apply_failed（零写入）
   const c6 = await rw.platformCreateCommit({ env, provider: 'gitee', owner: 'o', repo: 'r',
