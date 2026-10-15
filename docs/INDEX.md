@@ -12,7 +12,9 @@
 ## 部署与运行
 | 文档 | 内容 |
 |---|---|
-| [DEPLOY.md](../DEPLOY.md) | 隔离栈三种部署方式（离线镜像 / compose / GHCR） |
+| [docs/delivery/](delivery/README.md) | **交付文档（当前形态）**：能力矩阵 / 部署指南 / 用户指南 / 排障手册 / 验收清单 |
+| [deploy/selfhost/README.md](../deploy/selfhost/README.md) | 自托管 canonical 拓扑（镜像校验 / cchain / 首个平台管理员） |
+| [DEPLOY.md](../DEPLOY.md) | 历史演示形态四种方式（A–D，比赛期隔离栈/演示平台） |
 | [docs/deploy/](deploy/) | 部署手册（webhook 入口 / 全链恢复脚本） |
 | [CONTRIBUTING.md](../CONTRIBUTING.md) | 源码开发与本地测试 |
 | [docker/](../docker/) | 全部镜像配方 + 运行时 hooks |

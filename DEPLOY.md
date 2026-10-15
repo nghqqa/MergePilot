@@ -1,8 +1,16 @@
 # DEPLOY — 部署与使用指南
 
-四种使用方式按投入递增。所有方式共享同一组真实性边界：RAG 语料 SYNTHETIC/REDACTED、
-Database Branch 为 SIMULATED 隔离模拟、PolarDB NOT CONNECTED、PR Auto Merge DISABLED；
-本项目未声称生产部署验证。
+> **当前产品形态（rc.35.4）**：多用户自托管 Console（docker-compose：console + postgres(pgvector)
+> + bge-m3 sidecar + webhook ingress）。**正式部署入口**：
+> [`deploy/selfhost/`](deploy/selfhost/README.md)（canonical 拓扑与镜像校验）+
+> [docs/delivery/DEPLOY-GUIDE.md](docs/delivery/DEPLOY-GUIDE.md)（按目标分步：最小部署→
+> LLM 审查→修复验证，每步带验证命令）。只读诊断：`scripts/delivery/diagnose.mjs`。
+> 审查链为完整闭环（webhook→静态规则→LLM 第二阶段→发现→审批→补丁验证→人工确认发布评论）；
+> 应用修复/合并为开发中能力（见 [能力矩阵](docs/delivery/CAPABILITY-MATRIX.md)）。
+>
+> 以下 A–D 为**历史/演示形态**（比赛期隔离栈与演示平台），按投入递增保留。该四节共享的
+> 真实性边界（RAG 语料 SYNTHETIC/REDACTED、Database Branch SIMULATED、PolarDB NOT
+> CONNECTED、PR Auto Merge DISABLED）**只约束这些演示形态**，不描述上方正式形态。
 
 ---
 
@@ -121,5 +129,8 @@ GitHub 验证（M5-0C）；你的环境按同一 20 键合同配置，未预先�
 
 - 网关授权（consumer-token 隔离）、最小权限、fail-closed、secret env 文件机制、
   证据完整性设计不随部署方式改变
-- 默认启动不访问真实 GitHub API、不执行任何 GitHub 写操作；真实接入仅经 D 的
-  显式配置启用
+- 以下「默认不访问真实 GitHub」边界**仅适用于 A–C 演示形态**：默认启动不访问真实
+  GitHub API、不执行任何 GitHub 写操作；真实接入仅经 D 的显式配置启用。
+  正式形态（deploy/selfhost）的远端边界见
+  [docs/delivery/CAPABILITY-MATRIX.md](docs/delivery/CAPABILITY-MATRIX.md)——
+  唯一远端写为人工确认的 PR 评论发布。
