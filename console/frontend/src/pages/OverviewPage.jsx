@@ -394,8 +394,8 @@ export default function OverviewPage() {
           : null}
       </span>
     ) },
-    { title: '更新时间', width: 140, render: (_, e) => (e.updated_at
-      ? <span className="mono" title={new Date(e.updated_at).toLocaleString()}>{fmtTime(e.updated_at)}</span>
+    { title: '更新时间', width: 175, render: (_, e) => (e.updated_at
+      ? <span className="mono" style={{ whiteSpace: 'nowrap' }} title={new Date(e.updated_at).toLocaleString()}>{fmtTime(e.updated_at)}</span>
       : '—') },
     { title: '操作', width: 170, fixed: 'right', render: (_, e) => {
       const t = ticketByPr.get(`${e.repo}#${e.n}`);
@@ -759,14 +759,16 @@ export default function OverviewPage() {
         </section>
       </div>
 
-      {/* ── 健康与审计（次要信息，沉底） ── */}
+      {/* ── 健康与审计（次要信息，沉底）── */}
+      {/* UX-21（2026-10-15）：移除恒真「后端只读 OK」徽章——成功背书必须有真实数据
+          依据（PG/MinIO 状态各自有来源）；「数据是否可用」由页首数据源横幅与刷新
+          时间表达，不再叠加无来源的成功标签。 */}
       <Typography.Paragraph style={{ marginTop: 16 }}>
         健康：
         <Tag color={data.health.postgres === 'LIVE' ? 'success' : data.health.postgres === 'ERROR' ? 'error' : 'warning'}>
           {data.health.postgres === 'LIVE' ? 'PG 实时' : data.health.postgres === 'ERROR' ? 'PG 错误' : 'PG 未接线'}
         </Tag>
         <Tag color={data.health.minio.state === 'AGENTTEAMS_MANAGED' ? 'success' : 'default'} title={data.health.minio.note}>MinIO {data.health.minio.state === 'AGENTTEAMS_MANAGED' ? 'AgentTeams 管理' : data.health.minio.state === 'NOT_WIRED' ? '未接线' : data.health.minio.state}</Tag>
-        <Tag color="success">后端只读 OK</Tag>
       </Typography.Paragraph>
       <Typography.Paragraph type="secondary" style={{ fontSize: 13 }}>
         <details><summary style={{ cursor: 'pointer' }}>审计入口</summary>

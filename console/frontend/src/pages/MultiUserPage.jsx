@@ -114,7 +114,7 @@ const STEP_TITLES = {
 // rc.10：修复预演/独立验证/Leader 终裁的裸枚举收敛到 status-map.js 词表
 // （MU_FIX / MU_VERIFY / LEADER_DECISION——值域对齐 mu.fix_attempt、
 // mu.verification_attempt 与 leader.mjs decideAfterReview），raw 值仅留 title 技术详情。
-import { muRunMap, muAttemptMap, muFixMap, muVerifyMap, leaderDecisionMap, protectionMap } from '../status-map.js';
+import { muRunMap, muAttemptMap, muFixMap, muVerifyMap, leaderDecisionMap, reviewStageDecisionMap, protectionMap } from '../status-map.js';
 const SEV_TONE = { P0: 'red', P1: 'volcano', P2: 'orange', P3: 'gold' };
 // status-map 语义 tone → 本页 antd Tag 色（面板局部视觉映射；label 为主表达）
 const TONE_TAG_COLOR = { ok: 'green', info: 'blue', warn: 'orange', bad: 'red', neutral: 'default' };
@@ -132,7 +132,11 @@ export function PipelinePanel({ prNumber, repoId }) {
         if (lr.status === 403) { setState({ phase: 'denied' }); return; }
         if (!lr.ok) { setState({ phase: 'error', status: lr.status }); return; }
         const body = await lr.json().catch(() => null);
-        const run = (body?.runs ?? []).find((x) => Number(x.provider_pr_number) === Number(prNumber));
+        // UX-08（2026-10-15）：不依赖响应顺序——显式按 created_at 取最新 run
+        //（服务端 created_at DESC，但消费端不因契约顺序假设而取错）。
+        const run = (body?.runs ?? [])
+          .filter((x) => Number(x.provider_pr_number) === Number(prNumber))
+          .sort((a, b) => String(b.created_at ?? '').localeCompare(String(a.created_at ?? '')))[0];
         if (!run) { setState({ phase: 'empty' }); return; }
         const d = await fetch(`/api/mu/runs/${encodeURIComponent(run.run_id)}`, { credentials: 'same-origin' });
         if (dead) return;
@@ -197,8 +201,13 @@ export function PipelinePanel({ prNumber, repoId }) {
                   const m = muAttemptMap(v);
                   return <Tag color={ATT_TONE[m.tone] ?? 'default'} title={m.note}>{m.label}</Tag>;
                 } },
-              { title: '执行器', dataIndex: 'provider', width: 130,
-                render: (v) => v === 'agentteams' ? 'AgentTeams（外部）' : v === 'deterministic' ? '规则引擎' : v },
+              { title: '执行器', dataIndex: 'provider', width: 150,
+                render: (v) => (
+                  <span style={{ overflowWrap: 'anywhere' }}>
+                    {v === 'agentteams' ? 'AgentTeams（外部）' : v === 'deterministic' ? '规则引擎'
+                      : v === 'openai_compatible' ? 'LLM 通道（openai_compatible）' : v}
+                  </span>
+                ) },
               { title: '耗时', width: 80, render: (a) => a.latency_ms ? `${(Number(a.latency_ms) / 1000).toFixed(1)}s` : '—' },
               { title: '开始时间', width: 110, render: (a) => a.created_at ? new Date(a.created_at).toLocaleTimeString() : '—' },
               { title: '错误码', dataIndex: 'error_code', ellipsis: true,
@@ -262,15 +271,25 @@ export function PipelinePanel({ prNumber, repoId }) {
         </Typography.Paragraph>) : null}
       {decisions.length > 0 ? (
         <Typography.Paragraph type="secondary" style={{ fontSize: 13, marginTop: 4, marginBottom: 0 }}>
-          Leader 终裁：{decisions.map((d, i) => {
-            const dm = leaderDecisionMap(d.decision);
-            return (
-              <Tag key={i} color={TONE_TAG_COLOR[dm.tone] ?? 'default'}
-                title={`stage=${d.stage} · decision=${d.decision}｜${dm.note}`}>
-                {dm.label}
-              </Tag>
-            );
-          })}
+          {/* UX-08（2026-10-15）：决策按阶段上下文展示——review_done（发现登记）与
+              leader_decision_after_review（终裁）是两套值域，此前 clean 裸映射成
+              「未知状态」并与终裁并列造成自相矛盾的观感。最新记录在前。 */}
+          编排决策（按阶段，最新在前）：
+          {[...decisions]
+            .sort((a, b) => String(b.created_at ?? '').localeCompare(String(a.created_at ?? '')))
+            .map((d, i) => {
+              const isLeaderStage = d.stage === 'leader_decision_after_review';
+              const dm = isLeaderStage ? leaderDecisionMap(d.decision) : reviewStageDecisionMap(d.decision);
+              const stageLabel = isLeaderStage ? 'Leader 终裁'
+                : d.stage === 'review_done' ? '审查完成'
+                  : `阶段 ${d.stage ?? '未记录'}`;
+              return (
+                <Tag key={`${d.stage}-${d.decision}-${i}`} color={TONE_TAG_COLOR[dm.tone] ?? 'default'}
+                  title={`stage=${d.stage} · decision=${d.decision}｜${dm.note}`}>
+                  {stageLabel}：{dm.label}
+                </Tag>
+              );
+            })}
         </Typography.Paragraph>) : null}
       <Typography.Paragraph type="secondary" style={{ fontSize: 13, marginTop: 8, marginBottom: 0 }}>
         {attempts.some((a) => a.provider === 'agentteams')

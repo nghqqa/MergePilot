@@ -158,6 +158,12 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [] }) {
   const [mergeBusy, setMergeBusy] = useState(false);
   const [mergeMsg, setMergeMsg] = useState(null);
   const [mergeMethod, setMergeMethod] = useState('merge');
+  // UX-05（2026-10-15）：result_uncertain 的恢复入口——操作号与「读回对账」按钮必须
+  // 同屏可达（此前按钮只在预览 Drawer 内，而 Drawer 在结果不明时已被关闭，指引落空）。
+  // 对账只查询/定案（POST /reconcile），绝不重新发起 apply/merge。
+  const [applyUncertain, setApplyUncertain] = useState(null);  // {operationId} | {operationId:null}
+  const [mergeUncertain, setMergeUncertain] = useState(null);  // 同上
+  const [mergeReconBusy, setMergeReconBusy] = useState(false);
   const [dlMsg, setDlMsg] = useState(null);
   const loadCtlRef = useRef(null);
   const patchCtlRef = useRef(null);
@@ -211,8 +217,10 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [] }) {
     }
   }, []);
 
-  // 拉取指定 run 的产物（run 选择语义：面板绑定用户明确选中的 run——切换时取消旧请求）
-  const loadArtifacts = useCallback(async (rid, signal) => {
+  // 拉取指定 run 的产物（run 选择语义：面板绑定用户明确选中的 run——切换时取消旧请求）。
+  // opts.soft=true：同 run 的刷新（操作/对账后）——保留应用/合并的操作上下文与结果消息，
+  // 否则 confirm 的错误文案与「结果不明」入口会被刷新无条件清掉（UX-05 修复）。
+  const loadArtifacts = useCallback(async (rid, signal, opts = {}) => {
     if (!rid) return;
     const ar = await apiFetch(`/api/mu/runs/${rid}/artifacts`, { signal });
     if (signal?.aborted) return;
@@ -224,8 +232,11 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [] }) {
     setRunMeta({ owner: ad.run.owner, repo_name: ad.run.repo_name, provider: ad.run.provider,
       head_sha: ad.run.head_sha, created_at: ad.run.created_at });
     setArt(ad);
-    setPubCtx(null); setPubMsg(null); setPubPreview(null); // 切 run 后旧发布上下文/结果不残留
-    setApplyPreview(null); setApplyMsg(null); setMergePreview(null); setMergeMsg(null); // 同理：应用/合并上下文不残留
+    if (opts.soft !== true) {
+      setPubCtx(null); setPubMsg(null); setPubPreview(null); // 切 run 后旧发布上下文/结果不残留
+      setApplyPreview(null); setApplyMsg(null); setMergePreview(null); setMergeMsg(null); // 同理：应用/合并上下文不残留
+      setApplyUncertain(null); setMergeUncertain(null); // 切 run 后旧的结果不明上下文一并失效（操作号绑定旧 run）
+    }
     setState('ready');
     if (ad.patch?.patch_id) loadPatch(rid, signal);
   }, [loadPatch]);
@@ -375,8 +386,9 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [] }) {
         setApplyMsg({ tone: 'success', text: b.idempotent
           ? `该补丁此前已应用（幂等返回，未重复提交）——提交 ${String(b.commit_sha ?? '').slice(0, 12)}`
           : `已提交到 PR 源分支——新提交 ${String(b.commit_sha ?? '').slice(0, 12)}（patch v${b.patch_version ?? '?'}）。${b.next_step ?? '等待按新 head 的重新审查与 CI 通过后，再预览合并。'}` });
+        setApplyUncertain(null); // 本轮已定案——旧的结果不明入口撤下
         setApplyPreview(null);
-        loadArtifacts(runId, loadCtlRef.current?.signal); // 新 head run 入队后刷新产物列表
+        loadArtifacts(runId, loadCtlRef.current?.signal, { soft: true }); // 新 head run 入队后刷新产物列表
       } else {
         const er = b?.error?.reason ?? '';
         const why = { stale_head: '远端 head 已变化——补丁基于旧版本，未写入任何内容（PR 更新后重新审查）',
@@ -389,36 +401,54 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [] }) {
           branch_not_found: '远端源分支不存在或不可读',
           push_failed: '远端推送未完成（网络或平台原因）——请稍后重试',
           operation_in_progress: '已有一次相同操作正在进行——请稍后刷新查看结果' }[er];
-        setApplyMsg({ tone: er === 'result_uncertain' ? 'warning' : 'warning',
+        setApplyMsg({ tone: 'warning',
           text: er === 'result_uncertain'
-            ? `推送结果不明：候选提交已登记${b?.error?.operation_id ? '（操作 ' + String(b.error.operation_id).slice(0, 8) + '）' : ''}——请点下方「读回对账」确认远端实际状态，勿直接重试`
+            ? (() => {
+              const opId = b?.error?.operation_id ?? null;
+              setApplyUncertain({ operationId: opId });
+              return opId
+                ? `推送结果不明：候选提交已登记（操作 ${String(opId).slice(0, 8)}）——请点下方「读回对账」确认远端实际状态，勿直接重试`
+                : '推送结果不明：操作已登记但未取回操作号——请刷新页面后从「应用修复与合并」预览的历史操作中对账，勿直接重试';
+            })()
             : (why ?? `应用未完成（HTTP ${r.status}）：${er}`) });
         if (!/stale_head|head_moved/.test(er)) setApplyPreview(null);
-        if (er === 'result_uncertain') loadArtifacts(runId, loadCtlRef.current?.signal);
+        if (er === 'result_uncertain') loadArtifacts(runId, loadCtlRef.current?.signal, { soft: true });
       }
     } catch { setApplyMsg({ tone: 'warning', text: '网络异常，应用未完成' }); }
     setApplyBusy(false);
   };
 
-  const reconcileOp = async (opId) => {
-    setApplyBusy(true);
+  // 读回对账（apply+merge 通用端点 /api/mu/apply-operations/:id/reconcile）：
+  // 只查询远端事实并定案操作记录——绝不重新发起 apply/merge，不产生第二次远端写。
+  // definitive（reconciled 或已是确定态）→ 清除「结果不明」入口；仍不确定 → 保留可重试。
+  const reconcileOpInto = async (opId, setMsg, setBusy, onDefinite) => {
+    setBusy(true);
     try {
       const r = await apiFetch(`/api/mu/apply-operations/${opId}/reconcile`, {
         method: 'POST', headers: { ...csrfHeader() },
       });
       const b = await r.json().catch(() => ({}));
       if (r.ok && r.status !== 204) {
-        setApplyMsg({ tone: b.reconciled ? (b.status === 'failed' ? 'warning' : 'success') : 'info',
+        const definitive = Boolean(b.reconciled)
+          || ['committed', 'merged', 'completed', 'failed', 'previewed'].includes(b.status);
+        setMsg({ tone: b.reconciled ? (b.status === 'failed' ? 'warning' : 'success') : 'info',
           text: b.note ?? `对账完成：${b.status ?? '未定案'}` });
-        loadArtifacts(runId, loadCtlRef.current?.signal);
+        if (definitive) onDefinite?.(b);
+        loadArtifacts(runId, loadCtlRef.current?.signal, { soft: true }); // 对账后刷新资格与操作记录（软刷新——保留结果消息）
       } else if (r.status === 204 || r.ok) {
-        setApplyMsg({ tone: 'info', text: '对账已发起' });
+        setMsg({ tone: 'info', text: '对账已发起' });
         loadArtifacts(runId, loadCtlRef.current?.signal);
       } else {
-        setApplyMsg({ tone: 'warning', text: `对账未完成（HTTP ${r.status}）：${b?.error?.reason ?? ''}` });
+        setMsg({ tone: 'warning', text: `对账未完成（HTTP ${r.status}）：${b?.error?.reason ?? ''}——可稍后重试对账` });
       }
-    } catch { setApplyMsg({ tone: 'warning', text: '网络异常，对账未完成' }); }
-    setApplyBusy(false);
+    } catch { setMsg({ tone: 'warning', text: '网络异常，对账未完成——可稍后重试' }); }
+    setBusy(false);
+  };
+  const reconcileOp = (opId) => reconcileOpInto(opId, setApplyMsg, setApplyBusy, () => setApplyUncertain(null));
+  const reconcileMergeUncertain = () => {
+    const opId = mergeUncertain?.operationId;
+    if (!opId) return;
+    reconcileOpInto(opId, setMergeMsg, setMergeReconBusy, () => setMergeUncertain(null));
   };
 
   const openMergePreview = async () => {
@@ -451,6 +481,7 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [] }) {
         setMergeMsg({ tone: 'success', text: b.idempotent
           ? `该 PR 在此 head 上已合并过（幂等返回，未重复操作）`
           : `已合并——合并提交 ${String(b.merge_sha ?? '').slice(0, 12)}。请在平台上确认目标分支状态。` });
+        setMergeUncertain(null); // 本轮已定案——旧的结果不明入口撤下
         setMergePreview(null);
       } else {
         const er = b?.error?.reason ?? '';
@@ -458,11 +489,18 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [] }) {
           head_moved_since_preview: '预览后 PR head 又推进了——已拒绝，请刷新预览重试',
           merge_not_eligible: `合并资格未满足：${(b?.error?.blocked ?? []).map((x) => x.detail ?? x.code).join('；') || '条件不满足'}`,
           invalid_confirm_fields: '确认缺少必要的预览绑定字段——请从预览发起确认',
-          result_uncertain: '合并结果不明——请点「读回对账」按 PR 实际状态定案，勿盲目重试',
           merge_failed: '平台合并被拒（保护规则/冲突/权限——详见平台页面）' }[er];
-        setMergeMsg({ tone: 'warning', text: why ?? `合并未完成（HTTP ${r.status}）：${er}` });
+        if (er === 'result_uncertain') {
+          const opId = b?.error?.operation_id ?? null;
+          setMergeUncertain({ operationId: opId });
+          setMergeMsg({ tone: 'warning', text: opId
+            ? '合并结果不明：可能已合并也可能未合并——请点下方「读回对账」按 PR 实际状态定案，勿盲目重试'
+            : '合并结果不明：操作已登记但未取回操作号——请刷新页面后重新预览查看历史操作中对账，勿盲目重试' });
+        } else {
+          setMergeMsg({ tone: 'warning', text: why ?? `合并未完成（HTTP ${r.status}）：${er}` });
+        }
         if (!/head_moved/.test(er)) setMergePreview(null);
-        if (er === 'result_uncertain') loadArtifacts(runId, loadCtlRef.current?.signal);
+        if (er === 'result_uncertain') loadArtifacts(runId, loadCtlRef.current?.signal, { soft: true });
       }
     } catch { setMergeMsg({ tone: 'warning', text: '网络异常，合并未完成' }); }
     setMergeBusy(false);
@@ -904,7 +942,28 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [] }) {
             </div>
           )}
           {applyMsg ? <Alert style={{ marginTop: 6 }} type={applyMsg.tone} showIcon message={applyMsg.text} /> : null}
+          {/* UX-05：结果不明的恢复入口与文案同屏（对账按钮只调 reconcile，不重发写入） */}
+          {applyUncertain ? (
+            <Alert style={{ marginTop: 6 }} type="warning" showIcon
+              message={applyUncertain.operationId
+                ? `应用结果不明（操作 ${applyUncertain.operationId.slice(0, 8)}）——先对账定案，再决定下一步`
+                : '应用结果不明（未取回操作号）——请刷新页面后从预览的历史操作中对账'}
+              action={applyUncertain.operationId ? (
+                <Button size="small" disabled={applyBusy} loading={applyBusy}
+                  onClick={() => reconcileOp(applyUncertain.operationId)}>读回对账</Button>
+              ) : undefined} />
+          ) : null}
           {mergeMsg ? <Alert style={{ marginTop: 6 }} type={mergeMsg.tone} showIcon message={mergeMsg.text} /> : null}
+          {mergeUncertain ? (
+            <Alert style={{ marginTop: 6 }} type="warning" showIcon
+              message={mergeUncertain.operationId
+                ? `合并结果不明（操作 ${mergeUncertain.operationId.slice(0, 8)}）——先对账定案，再决定下一步`
+                : '合并结果不明（未取回操作号）——请刷新页面后重新预览查看历史操作'}
+              action={mergeUncertain.operationId ? (
+                <Button size="small" disabled={mergeReconBusy} loading={mergeReconBusy}
+                  onClick={reconcileMergeUncertain}>读回对账</Button>
+              ) : undefined} />
+          ) : null}
         </div>
       </div>
 

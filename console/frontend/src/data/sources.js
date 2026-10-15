@@ -14,6 +14,7 @@
 import { pullsUrl, pullUrl } from '../api-live.js';
 import { groupRunsByPr } from '../pr-model.js';
 import { prViewFromContract, prViewFromSnapshot } from './pr-view.js';
+import { mergeMuRepoPrs } from './mu-pr-merge.js';
 
 // ---- snapshot 源（现状默认） ----
 
@@ -115,15 +116,21 @@ function multiuserSource(fetchImpl) {
   };
   let repoCache = null; // 会话内仓库清单缓存（按会话域，无 tenant 键——数据本身即本租户）
   const repoKey = (repo) => (typeof repo === 'string' ? repo : `${repo.owner}/${repo.name}`);
+  // UX-01（2026-10-15）：仓库计数诚实化——pr_count 缺失=未取得（null）而非 0；
+  // run_count 服务端未提供（保持 null，不伪造 0）；created_at 是建仓时间≠最近活动
+  // （此前误标导致仓库列表时间与总览矛盾——未取得如实留空，聚合契约需求已登记）。
+  const repoView = (r) => ({
+    repo_id: r.repo_id, repo: `${r.owner}/${r.name}`, owner: r.owner, name: r.name,
+    prCount: r.pr_count == null ? null : (Number(r.pr_count) || 0),
+    runCount: null,
+    activityAt: null,
+    kind: 'multiuser', binding_state: r.binding_state ?? null,
+  });
   async function resolveRepoId(repo) {
     const key = repoKey(repo);
     if (!repoCache) {
       const body = await get('/api/mu/repositories');
-      repoCache = (body?.repositories ?? []).map((r) => ({
-        repo_id: r.repo_id, repo: `${r.owner}/${r.name}`, owner: r.owner, name: r.name,
-        prCount: Number(r.pr_count ?? 0) || null, runCount: null, activityAt: r.created_at ?? null,
-        kind: 'multiuser', binding_state: r.binding_state ?? null,
-      }));
+      repoCache = (body?.repositories ?? []).map(repoView);
     }
     const hit = repoCache.find((r) => r.repo === key);
     if (!hit) throw Object.assign(new Error(`repo_not_bound: ${key}`), { status: 404, reason: 'repo_not_bound' });
@@ -135,40 +142,39 @@ function multiuserSource(fetchImpl) {
     async listRepos() {
       if (!repoCache) {
         const body = await get('/api/mu/repositories');
-        repoCache = (body?.repositories ?? []).map((r) => ({
-          repo_id: r.repo_id, repo: `${r.owner}/${r.name}`, owner: r.owner, name: r.name,
-          prCount: Number(r.pr_count ?? 0) || null, runCount: null, activityAt: r.created_at ?? null,
-          kind: 'multiuser', binding_state: r.binding_state ?? null,
-        }));
+        repoCache = (body?.repositories ?? []).map(repoView);
       }
       return repoCache;
     },
+    // UX-01（2026-10-15）：按 (仓库, PR) 归并多 head 行——此前逐行直出导致同一 PR
+    // 拆成多行、且读取行内不存在的 run_status 使结论恒「未记录」。
+    // 现状：三个只读端点并行（PR head 行 / run 聚合（含 findings_count、top_severity）/
+    // 权威 PENDING 票），无逐行串行请求；归并规则见 mu-pr-merge.js（当前 head 按事件序
+    // 推定且恒标未确认；旧 head 的 run/票不冒充当前事实；REVIEWED/COMPLETED 不映射为
+    // 通过；服务端 LIMIT 窗口截断时以 listTruncated 如实标记「可能少计」）。
     async listPrs(repo) {
       const r = await resolveRepoId(repo);
-      const body = await get(`/api/mu/prs?repo_id=${encodeURIComponent(r.repo_id)}`);
-      return (body?.pull_requests ?? body?.prs ?? []).map((pr) => ({
-        kind: 'multiuser',
-        key: `${r.repo}#${pr.provider_pr_number}`,
+      const [prBody, runBody, pendBody] = await Promise.all([
+        get(`/api/mu/prs?repo_id=${encodeURIComponent(r.repo_id)}`),
+        get(`/api/mu/runs?repo_id=${encodeURIComponent(r.repo_id)}`),
+        // 待审批票为租户级端点：失败时降级为「未取得」而非让整个列表失败，
+        // 也绝不当作「无待办」（needsAttention 由 pendingUnavailable 如实标注）。
+        get('/api/mu/approvals?status=PENDING').then(
+          (b) => ({ ok: true, body: b }),
+          (e) => ({ ok: false, error: e })),
+      ]);
+      const ticketsOk = pendBody?.ok === true;
+      const { prs, meta } = mergeMuRepoPrs({
         repo: r.repo,
-        prNumber: pr.provider_pr_number,
-        title: pr.title ?? null,
-        currentHead: pr.head_sha ?? null,
-        state: pr.state ?? null,
-        latestResult: pr.run_status
-          ? { verdict: ['COMPLETED', 'VERIFIED'].includes(pr.run_status) ? 'PASS'
-            : ['BLOCKED', 'REWORK_REQUIRED', 'FAILED'].includes(pr.run_status) ? 'BLOCKED' : 'RUNNING',
-            severity: null, stale: false, runId: pr.run_id ?? null }
-          : null,
-        latestRun: pr.run_id ? { runId: pr.run_id, status: String(pr.run_status ?? 'RUNNING'), startedAt: null } : null,
-        runs: [], hasPendingTickets: false,
-        heads: pr.head_sha ? [{ head: pr.head_sha, runs: [] }] : [],
-        attention: pr.run_status && ['BLOCKED', 'REWORK_REQUIRED', 'FAILED'].includes(pr.run_status)
-          ? { flag: 'decision', label: '审查已阻断——需关注' } : { flag: null, label: '—' },
-        review: { basis: pr.run_status ? 'current-record' : 'no-result',
-          review: { verdict: pr.run_status ? (['COMPLETED', 'VERIFIED'].includes(pr.run_status) ? 'PASS'
-            : ['BLOCKED', 'REWORK_REQUIRED', 'FAILED'].includes(pr.run_status) ? 'BLOCKED' : 'RUNNING') : null,
-          severity: null }, stale: false },
-        hasPendingTickets: false,
+        prRows: prBody?.pull_requests ?? [],
+        runRows: runBody?.runs ?? [],
+        pendingTickets: ticketsOk ? (pendBody.body?.approvals ?? []) : [],
+      });
+      const truncated = meta.prRowsTruncated || meta.runsTruncated || meta.ticketsTruncated;
+      return prs.map((v) => ({
+        ...v,
+        pendingUnavailable: !ticketsOk,
+        listTruncated: truncated ? meta : null,
       }));
     },
     // v16 高危修复审批门：PENDING 审批票即待办（待处理页消费）
@@ -189,8 +195,10 @@ function multiuserSource(fetchImpl) {
       const r = await resolveRepoId(repo);
       const body = await get(`/api/mu/prs/${encodeURIComponent(String(prNumber))}`);
       const pull = body?.pull_request ?? null;
-      const records = Array.isArray(body?.review_records) ? body.review_records : [];
-      const lr = records[0] ?? null;
+      // UX-01 同口径：列表/详情不伪造审查结论——latest_run 只表达运行状态，
+      // verdict 恒 null（结论与逐条证据在 PR 详情/管线面板），REVIEWED/COMPLETED
+      // 不映射为 PASS；review_records 是人工操作留痕，不是审查结论来源。
+      const lrun = body?.latest_run ?? null;
       const view = {
         kind: 'multiuser',
         key: `${r.repo}#${prNumber}`,
@@ -198,13 +206,12 @@ function multiuserSource(fetchImpl) {
         prNumber,
         title: pull?.title ?? null,
         currentHead: pull?.head_sha ?? null,
+        currentHeadConfirmed: false,
         state: pull?.state ?? null,
-        latestResult: lr ? {
-          verdict: ['COMPLETED', 'VERIFIED'].includes(lr.status) ? 'PASS'
-            : ['BLOCKED', 'REWORK_REQUIRED', 'FAILED'].includes(lr.status) ? 'BLOCKED' : 'RUNNING',
-          severity: null, stale: false, runId: lr.run_id ?? null,
+        latestResult: lrun ? {
+          verdict: null, severity: null, stale: false, runId: lrun.run_id ?? null,
         } : null,
-        latestRun: lr ? { runId: lr.run_id, status: String(lr.status ?? 'RUNNING'), startedAt: null } : null,
+        latestRun: lrun ? { runId: lrun.run_id, status: String(lrun.status ?? ''), startedAt: null } : null,
         hasPendingTickets: false,
       };
       return { view, detail: body };

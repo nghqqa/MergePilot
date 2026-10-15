@@ -268,6 +268,25 @@ const LEADER_DECISION = {
 };
 function leaderDecisionMap(d) { return LEADER_DECISION[String(d ?? '').toLowerCase()] ?? unknownEntry(d); }
 
+// ── MU 审查完成阶段记录（独立键空间；权威定义 lib/multiuser/review-service.mjs
+// recordDecision stage='review_done'，decision = inserted>0 ? 'findings_present' : 'clean'）──
+// 语义红线：这是「审查完成时的发现登记」阶段记录，不是 Leader 终裁（终裁=
+// leader_decision_after_review，两套值域互不通用）；clean≠绝对无风险，
+// findings_present≠已处置。渲染时必须带阶段上下文，不得与终裁并列裸展示。
+const REVIEW_STAGE_DECISION = {
+  clean: {
+    tone: 'ok',
+    label: '审查完成 · 无发现记录',
+    note: '阶段记录（review_done）：本轮审查未登记 findings——不等于绝对无风险，也不代表 PR 无问题；Leader 终裁另见',
+  },
+  findings_present: {
+    tone: 'warn',
+    label: '审查完成 · 有发现记录',
+    note: '阶段记录（review_done）：本轮审查已登记 findings（逐条见风险项）——登记≠已处置；Leader 终裁另见',
+  },
+};
+function reviewStageDecisionMap(d) { return REVIEW_STAGE_DECISION[String(d ?? '')] ?? unknownEntry(d); }
+
 // ── MU branch protection 状态（独立键空间；权威白名单 multiuser/api.mjs
 // ['unknown','known_clean','blocked']，schema.mjs mu.pull_request.branch_protection_status
 // DEFAULT 'unknown'）──
@@ -468,9 +487,9 @@ export {
   executionMap, verdictMap, gateMap, publishMap, EXECUTION, GATE, VERDICT_SEVERITY_TONE,
   SEVERITY, SEVERITY_ORDER, FXV, FXV_ARTIFACT, CCHAIN, CCHAIN_OVERALL, RAG, TICKET, TICKET_ACTION,
   STAGE, STAGE_ORDER, OUTCOME, MU_RUN, MU_ATTEMPT, RUN_TRACE, RUN_TRACE_KIND,
-  LEADER_DECISION, PROTECTION, MU_FIX, MU_VERIFY, WIRE,
+  LEADER_DECISION, REVIEW_STAGE_DECISION, PROTECTION, MU_FIX, MU_VERIFY, WIRE,
   fxvMap, fxvArtifactMap, cchainMap, cchainOverallMap, ragMap, ticketMap, ticketActionMap,
   stageMap, outcomeMap, muRunMap, muAttemptMap, runTraceMap, runTraceKindMap,
-  leaderDecisionMap, protectionMap, muFixMap, muVerifyMap, wireMap,
+  leaderDecisionMap, reviewStageDecisionMap, protectionMap, muFixMap, muVerifyMap, wireMap,
   toneToColor, unknownEntry,
 };

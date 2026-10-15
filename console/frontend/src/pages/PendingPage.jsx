@@ -180,7 +180,12 @@ export default function PendingPage() {
 
           <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
             {filtered.length} 项待处理
-            {kind === 'console-pg' ? '（审批待办来自隔离联调库——非真实生产待办）' : '（依据最近一次运行记录，非当前 head 结论）'}
+            {/* UX-07（2026-10-15）：口径按数据源如实——MU 待办=服务端权威审批票，
+                不套用快照「最近一次运行记录」口径；票面绑定其产生时的 head，
+                PR 推进后过期/漂移票按服务端规则失效（STALE），以详情页为准。 */}
+            {kind === 'console-pg' ? '（审批待办来自隔离联调库——非真实生产待办）'
+              : kind === 'multiuser' ? '（以下为服务端当前待审批票——权威口径；票面绑定其产生时的 head，PR 推进后过期/漂移票按服务端规则失效，以 PR 详情页为准）'
+                : '（依据最近一次运行记录，非当前 head 结论）'}
           </Typography.Paragraph>
 
           <Table

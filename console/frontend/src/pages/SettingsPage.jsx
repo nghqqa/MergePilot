@@ -225,10 +225,12 @@ export default function SettingsPage() {
           <div className="kv">
             <div className="kv-label">登录方案</div>
             <div className="kv-value" title={isMuPrimary
-              ? '技术详情：会话 Cookie 名为 mp_session；GitHub OAuth（/api/mu/auth/oauth/github/*）已上线'
+              ? '技术详情：会话 Cookie 名为 mp_session；实际开放的平台登录方式由 GET /api/mu/auth/providers 声明（未配置的入口不展示）'
               : '技术详情：会话 Cookie 名为 mp_session；GitHub OAuth 方案（API-AUTH-MERGE-V0 v2）等待后端实现与部署配置'}>
               {isMuPrimary
-                ? 'GitHub OAuth 登录已上线（多用户生产会话，按邀请获得角色）；操作员账号密码登录同样可用。'
+                ? '平台账号 OAuth 登录（GitHub / Gitee——实际开放方式以服务端 providers 配置为准，'
+                  + '未配置的入口不展示；多用户会话按邀请获得角色）。操作员账号密码登录在多用户部署不开放，'
+                  + '附加登录路径可在下方「账号绑定」添加。'
                   + '登录会话由服务端会话 Cookie 承载（技术详情见悬停提示）；浏览器不保存 App token / 私钥 / '
                   + '长期凭证；授权以后端为准。'
                 : '具名操作员密码登录（已上线，服务端会话）。GitHub OAuth 登录等待后端交付。'
