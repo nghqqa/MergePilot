@@ -283,17 +283,37 @@ export async function pushPrepared({ dir, repoUrl, branch, expectedHead,
     const ls = await git(['ls-remote', urlWithCred, `refs/heads/${branch}`], dir, 30_000);
     if (ls.code !== 0) return { ok: false, reason: 'ls_remote_failed', output: REDACT(ls.stderr) };
     const remoteTip = String(ls.stdout).trim().split(/	/)[0];
-    if (!remoteTip) return { ok: false, reason: 'branch_not_found', detail: `refs/heads/${branch}` };
+    if (!remoteTip) {
+      // 分支不存在：若 expectedHead 在远端可达（如默认分支 tip），本提交即分支首个提交——
+      // 按非快进语义 push 创建之；不可达 → 维持 branch_not_found。
+      const have = await git(['cat-file', '-t', expectedHead], dir, 10_000);
+      if (have.code === 0) {
+        const push0 = await git(['push', urlWithCred, `HEAD:refs/heads/${branch}`], dir, timeoutMs);
+        if (push0.code === 0) return { ok: true, created_branch: true };
+        const t0 = String(push0.stderr || push0.stdout);
+        if (/refusing to allow|permission|not allowed to/i.test(t0)) {
+          return { ok: false, reason: 'push_forbidden', detail: `远端拒绝（权限/保护）：${REDACT(t0).slice(0, 240)}` };
+        }
+        return { ok: false, reason: 'push_failed', output: REDACT(t0).slice(0, 300) };
+      }
+      return { ok: false, reason: 'branch_not_found', detail: `refs/heads/${branch}` };
+    }
     if (remoteTip.toLowerCase() !== String(expectedHead).toLowerCase()) {
       return { ok: false, reason: 'stale_head',
         detail: `expected=${String(expectedHead).slice(0, 12)} actual=${String(remoteTip).slice(0, 12)}` };
     }
 
-    // 无 --force：非快进（并发推进）被服务端拒绝——条件更新在远端强制生效
+    // 无 --force：非快进（并发推进）被服务端拒绝——条件更新在远端强制生效。
+    // 分类注意：[rejected] 不一定是非快进——权限类拒绝（如 App 无 workflows 权限推
+    // workflow 文件）同样报 rejected；误判成 stale_head 会诱导无意义重试（2026-10-15 实测）。
     const push = await git(['push', urlWithCred, `HEAD:refs/heads/${branch}`], dir, timeoutMs);
     if (push.code !== 0) {
       const t = String(push.stderr || push.stdout);
-      if (/non-fast-forward|rejected|fetch first|stale info|\[rejected\]/i.test(t)) {
+      if (/refusing to allow|permission|not allowed to/i.test(t)) {
+        return { ok: false, reason: 'push_forbidden',
+          detail: `远端拒绝（权限/保护）：${REDACT(t).slice(0, 240)}` };
+      }
+      if (/non-fast-forward|fetch first|stale info|\[rejected\]/i.test(t)) {
         return { ok: false, reason: 'stale_head', detail: `push rejected (non-fast-forward): ${REDACT(t).slice(0, 200)}` };
       }
       return { ok: false, reason: 'push_failed', output: REDACT(t).slice(0, 300) };
