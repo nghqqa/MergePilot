@@ -1,0 +1,88 @@
+{
+  "run_meta": {
+    "run_id": "baseline-trial-rc26-20261014",
+    "timestamp": "2026-10-14T00:00:00Z",
+    "mode": "real",
+    "model": "deepseek-chat",
+    "prompt_version": "llm-w31-v1",
+    "entry": "trial 波生产栈（Gitee nghqqa/mergepilot-test webhook → llm_assist run，rc.35.3/35.4）——非本流水线实测，登记复用",
+    "manifest_digest": null,
+    "rules_version": "rq-rules-v2",
+    "mock": null,
+    "reused_as_baseline": true,
+    "source": "r3work/rc26-release/trial/QUALITY-REPORT.md（2026-10-14，第二轮质量评估）",
+    "limitations": [
+      "【登记复用声明】本记录的发现与定级均来自 trial 波生产栈实测（QUALITY-REPORT §二/§六），由 B 线按 rq-rules-v2 分类规则补做归类——未在本流水线重跑，未产生新模型调用。",
+      "trial 波样本分支基于 mergepilot-test 远端 master（含继承内容），与本基准的固定干净基线不同 head——本记录只作定性基线，不与本地 diff digest 交叉验证。",
+      "仅覆盖 CASE-04/05/06（trial Q4/Q5/Q6 有合格证据）；CASE-01/02/03 的 trial 证据因分支继承混杂不完整（QUALITY-REPORT §三）——不登记、不虚构。",
+      "trial 波无正确版（fixed）模型运行——正确版误报数分母为 0，该指标在本基线不可评（如实标注，不外推）。",
+      "finding 原文按 QUALITY-REPORT §六摘要登记；tests/q4.test.js 的『测试冲突观察』在 trial 报告中记为合理观察，本规则口径下归类 false_positive（diff 外缺陷断言）——两种读法均已注明。"
+    ]
+  },
+  "validation": {
+    "manifest_drift": [],
+    "all_ok": true,
+    "note": "trial 波样本独立验证：缺陷版测试失败/正确版通过（build-samples.py 内建校验，QUALITY-REPORT §七）；本流水线校验门不适用于登记记录（head/diff 不同源），如实标注"
+  },
+  "runs": [
+    {
+      "case_id": "CASE-04", "variant": "defect", "llm_mode": "real",
+      "trial_ref": { "run_id": "8883edfe", "pr": 6, "head": "cc5e565", "latency_ms": 3293, "status": "DONE" },
+      "call_ok": true, "call_code": null,
+      "findings_count": 3,
+      "findings": [
+        { "rule_id": "LLM-logic_bug", "severity": "P1", "path": "src/q4.js", "line_start": 2, "title": "inRange 边界不含（摘要，trial §六）", "remediation": "" },
+        { "rule_id": "LLM-logic_bug", "severity": "P2", "path": "tests/q4.test.js", "line_start": null, "title": "测试冲突观察（trial §六）", "remediation": "" },
+        { "rule_id": "LLM-maintainability", "severity": "P3", "path": "src/q4.js", "line_start": 1, "title": "min>max 未校验（trial §六）", "remediation": "" }
+      ],
+      "classifications": [
+        { "finding_index": 0, "category": "true_defect", "rule_id": "CLA-TRUE-DEFECT", "reason": "目标文件命中登记缺陷标记（边界不含）", "expected_severity": "P1", "rated_severity": "P1", "severity_deviation": 0, "severity_exact": true, "severity_within_tolerance": true },
+        { "finding_index": 1, "category": "false_positive", "rule_id": "CLA-FALSE-POSITIVE", "reason": "diff 外文件缺陷断言（rq-rules-v2 口径）；trial 报告记为『合理观察』——两读法并存，见 limitations" },
+        { "finding_index": 2, "category": "general_suggestion", "rule_id": "CLA-SUGGESTION", "reason": "加固建议（对齐 trial §六分类）" }
+      ],
+      "input_coverage": null,
+      "note": "coverage：trial 报告仅记 REVIEW_LLM_EGRESS ok=true/model=deepseek-chat，无 blocks/lines 明细——如实记 null"
+    },
+    {
+      "case_id": "CASE-05", "variant": "defect", "llm_mode": "real",
+      "trial_ref": { "run_id": "f56e249f", "pr": 5, "head": "ceed8cd", "latency_ms": 2465, "status": "DONE" },
+      "call_ok": true, "call_code": null,
+      "findings_count": 2,
+      "findings": [
+        { "rule_id": "LLM-logic_bug", "severity": "P1", "path": "src/q5.js", "line_start": 5, "title": "async 漏 return（trial §六：精确定位）", "remediation": "" },
+        { "rule_id": "LLM-maintainability", "severity": "P3", "path": "tests/q5.test.js", "line_start": null, "title": "测试框架建议（trial §六）", "remediation": "" }
+      ],
+      "classifications": [
+        { "finding_index": 0, "category": "true_defect", "rule_id": "CLA-TRUE-DEFECT", "reason": "目标文件命中登记缺陷标记（漏 return）", "expected_severity": "P1", "rated_severity": "P1", "severity_deviation": 0, "severity_exact": true, "severity_within_tolerance": true },
+        { "finding_index": 1, "category": "general_suggestion", "rule_id": "CLA-SUGGESTION", "reason": "测试建议（对齐 trial §六分类）" }
+      ],
+      "input_coverage": null
+    },
+    {
+      "case_id": "CASE-06", "variant": "defect", "llm_mode": "real",
+      "trial_ref": { "run_id": "1c7edcf2", "pr": 8, "head": "6825efc", "latency_ms": 2728, "status": "DONE" },
+      "call_ok": true, "call_code": null,
+      "findings_count": 1,
+      "findings": [
+        { "rule_id": "LLM-logic_bug", "severity": "P2", "path": "src/q6.js", "line_start": 2, "title": "slugify 只换首个（trial §六）", "remediation": "" }
+      ],
+      "classifications": [
+        { "finding_index": 0, "category": "true_defect", "rule_id": "CLA-TRUE-DEFECT", "reason": "目标文件命中登记缺陷标记（只换首个）", "expected_severity": "P2", "rated_severity": "P2", "severity_deviation": 0, "severity_exact": true, "severity_within_tolerance": true }
+      ],
+      "input_coverage": null
+    }
+  ],
+  "metrics": {
+    "by_mode": {
+      "real": {
+        "call_completion": { "numerator": 3, "denominator": 3, "failed": [] },
+        "target_hit_rate": { "numerator": 3, "denominator": 3, "hit_cases": ["CASE-04", "CASE-05", "CASE-06"], "misses": [], "excluded_call_failed": [] },
+        "clean_false_positives": { "numerator": 0, "denominator": 0, "per_case": [], "note": "trial 波无正确版运行——分母 0，指标不可评（不外推）" },
+        "precision": { "numerator": 3, "denominator": 4, "class_counts": { "true_defect": 3, "duplicate_report": 0, "false_positive": 1, "ambiguous_spec": 0, "general_suggestion": 2 } },
+        "severity_consistency": { "exact_numerator": 3, "tolerance_numerator": 3, "denominator": 3, "deviations": [] },
+        "coverage": { "numerator": 0, "denominator": 3, "truncated_runs": 0, "target_file_covered_runs": 0, "note": "coverage 明细 rc.35.3/35.4 run 未留 blocks/lines（#451 修复后口径）——不可评，如实记 0/3 不可解读为覆盖为零" }
+      }
+    },
+    "generated_at": "2026-10-15T00:00:00Z（B 线登记时按 rq-rules-v2 归类计算）"
+  }
+}

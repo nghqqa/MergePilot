@@ -1,0 +1,72 @@
+{
+  "schema_version": "rq-manifest-v1",
+  "description": "MergePilot review-quality 基准样本清单——全部样本文件钉 sha256。任何文件内容漂移都会在执行前校验阶段失败（bench 不跑在漂移的基线上）。",
+  "baseline": "samples/baseline/（固定干净基线：样本分支在其上新增文件，diff 天然只含目标文件——消除 trial 波 Q1-Q3 分支继承混杂问题）",
+  "provenance": "六组配对样本内容逐字复用 trial 波 build-samples.py（r3work/rc26-release/trial/），不新造缺陷；预期严重度按 QUALITY-REPORT 定性结论登记，provenance 见各 case.json。",
+  "baseline_files": {
+    "samples/baseline/README.md": "d3349befd19052c2dd68611ced8c328c93ff82be21285aae2a6f28cdd89d4d97",
+    "samples/baseline/package.json": "0aa6b92d8594e958283384cbad2a855f73deb6260137f26efe98c5107f5abd6d"
+  },
+  "cases": {
+    "CASE-01": {
+      "trial_origin": "q1-loop-reverse",
+      "variant_map": { "defect": "src/q1.defect.js -> src/q1.js", "fixed": "src/q1.fixed.js -> src/q1.js" },
+      "files": {
+        "samples/CASE-01/case.json": "cf682da29f149438033e230080a2f72dccc4927d530ecce1f363c8f2ad4a3182",
+        "samples/CASE-01/files/src/q1.defect.js": "f4566da3daab4bbf31b54749923f722e5e05b6d924dae0acbeaf4ad642a2e119",
+        "samples/CASE-01/files/src/q1.fixed.js": "e5ce704b39065b54289fe32d39c4411d1430f1713704c91a32025afcdfbb25c0",
+        "samples/CASE-01/files/tests/q1.test.js": "d2ad06ae69dc2eedcc93264bfb58d15459d3325d2a7780ee59f63dcf80c75797"
+      }
+    },
+    "CASE-02": {
+      "trial_origin": "q2-null-input",
+      "variant_map": { "defect": "src/q2.defect.js -> src/q2.js", "fixed": "src/q2.fixed.js -> src/q2.js" },
+      "files": {
+        "samples/CASE-02/case.json": "e0ff2913a42b898386faee5b0cbb6cba094ee772087d8954178804f1af71769b",
+        "samples/CASE-02/files/src/q2.defect.js": "2e6ab8ddf37f511e4451805d3844ba0bc7aef9f9c0e40072b803323f5455b981",
+        "samples/CASE-02/files/src/q2.fixed.js": "e5c9d4d5d46a16973f75d77986a24ae313c9c5437999fda87d8b7b027bdf8bfc",
+        "samples/CASE-02/files/tests/q2.test.js": "8fecfb2d67158304cd16cafa899e1170d34042e7db8b10df684332deb293e1c3"
+      }
+    },
+    "CASE-03": {
+      "trial_origin": "q3-zero-div",
+      "variant_map": { "defect": "src/q3.defect.js -> src/q3.js", "fixed": "src/q3.fixed.js -> src/q3.js" },
+      "files": {
+        "samples/CASE-03/case.json": "0d6ff418980e2ee58c99717184f56b122c8c14e722b6e567af118138ff148ad4",
+        "samples/CASE-03/files/src/q3.defect.js": "08e0bc4f101d2382cad9fa2965d7e82187e76112d5627902be45ed2f2d60dc43",
+        "samples/CASE-03/files/src/q3.fixed.js": "8e8abb777ad3f577b70c007bf6a40e97c418e6c54516d89b088617536c8693e4",
+        "samples/CASE-03/files/tests/q3.test.js": "67767149fad521ee2d24a742cfe1de6b1cacb10be826457a85fc0275e46e05a2"
+      }
+    },
+    "CASE-04": {
+      "trial_origin": "q4-range-excl",
+      "variant_map": { "defect": "src/q4.defect.js -> src/q4.js", "fixed": "src/q4.fixed.js -> src/q4.js" },
+      "files": {
+        "samples/CASE-04/case.json": "83bc214b3b7892fe7c5b12877a39baa43722e5cbc0a35f3424146dbc0b9406d8",
+        "samples/CASE-04/files/src/q4.defect.js": "85595f3e9bb6ac74a38ee8d8945558304c2e20cd9cbead7a6767d4829dba7b0f",
+        "samples/CASE-04/files/src/q4.fixed.js": "a12a989ca47271ab7d1dc813d6f25cc78d8fd62ce5de5892154ef8bcd16f80ea",
+        "samples/CASE-04/files/tests/q4.test.js": "e452a393610863deea89392a953dc9994f3511ec65113508fbaee023635af6f8"
+      }
+    },
+    "CASE-05": {
+      "trial_origin": "q5-missing-return",
+      "variant_map": { "defect": "src/q5.defect.js -> src/q5.js", "fixed": "src/q5.fixed.js -> src/q5.js" },
+      "files": {
+        "samples/CASE-05/case.json": "6de4a14c0a9d67a264db31c8496b6aa900be609cfd9159681549e430945627d3",
+        "samples/CASE-05/files/src/q5.defect.js": "38ee866bd89eee87d256771484dd916581e4ba5143351c6ff1f7a6ca0762bd3d",
+        "samples/CASE-05/files/src/q5.fixed.js": "fe42f0087d59d4f8faef31d38c543b2b708770877d3d4dbd457e060599b75cd1",
+        "samples/CASE-05/files/tests/q5.test.js": "2a6d977b40b9a169190a1dd0c0352be49647f731011471cefcaca2ddb7dc1b29"
+      }
+    },
+    "CASE-06": {
+      "trial_origin": "q6-replace-first",
+      "variant_map": { "defect": "src/q6.defect.js -> src/q6.js", "fixed": "src/q6.fixed.js -> src/q6.js" },
+      "files": {
+        "samples/CASE-06/case.json": "148cd48aad5ce0e1dc8fe59a33fdef7db319a6e6d72e3c54f29a75e480e3b7e3",
+        "samples/CASE-06/files/src/q6.defect.js": "76e453d3ee29490ddacb22d455336660f848459730576b528aabcd9035eb6b9f",
+        "samples/CASE-06/files/src/q6.fixed.js": "f86f64ca3f3b4d7e36a50623047e16d3bf43223f7d5046854abea6b31ccabb14",
+        "samples/CASE-06/files/tests/q6.test.js": "1de772c773d13c2c48d814ee924757529893b91477cac05035fcdd44da7881c1"
+      }
+    }
+  }
+}
