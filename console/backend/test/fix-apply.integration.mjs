@@ -324,6 +324,13 @@ try {
     i1.ok === true && i1.idempotent === true && i1.commit_sha === WIN_SHA
     && headForBranch() === tipBefore, i1);
 
+  // F8b: push 落地后远端 head 已推进（模拟 PR 对象同步）——重复确认仍须幂等返回
+  remoteState.prHead = WIN_SHA;
+  const i1b = await fa.confirmApplyFix(pool, { env, runId: RUN, tenantId: T, userId: USER,
+    confirm: true, ...binds, deps: mkDeps() });
+  ok('F8b head 已推进后的重复确认 → 仍幂等（幂等先于远端检查）',
+    i1b.ok === true && i1b.idempotent === true && i1b.commit_sha === WIN_SHA, i1b);
+
   const v2 = await fa.previewApplyFix(pool, { env, runId: RUN, tenantId: T });
   ok('F9 已应用后预览 → blocked already_applied', v2.can_apply === false
     && v2.blocked_reason === 'already_applied', v2.blocked_reason);

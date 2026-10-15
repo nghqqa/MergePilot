@@ -174,10 +174,10 @@ export async function previewApplyFix(pool, { env = process.env, runId, tenantId
     })),
     can_apply,
     blocked_reason: can_apply ? null
+      : alreadyApplied ? 'already_applied'   // 本地操作记录优先于远端 head 状态（应用成功后 head 必然已推进）
+      : inFlight ? 'operation_in_progress'
       : !remote ? 'remote_unreachable'
       : !headMatch ? 'head_moved'
-      : inFlight ? 'operation_in_progress'
-      : alreadyApplied ? 'already_applied'
       : null,
     confirm_binds: {
       expected_remote_head: remote?.headSha ?? null,
@@ -222,6 +222,17 @@ export async function confirmApplyFix(pool, { env = process.env, runId, tenantId
   }
 
   const idemKey = `${runId}:apply_fix:${patch.patch_digest}`;
+
+  // 幂等先于一切远端检查：已成功提交的同键操作直接返回既有结果
+  // （真实平台实证 2026-10-15：push 落地后 PR head 已推进，重复确认若先查远端会被
+  //   head 检查拒绝，永远到不了幂等返回——重复请求必须返回记录在案的结果）
+  const preExisting = (await q(
+    `SELECT operation_id, status, candidate_commit_sha FROM mu.fix_apply_operation
+      WHERE idempotency_key=$1`, [idemKey])).rows[0] ?? null;
+  if (preExisting && ['committed', 'merged', 'completed'].includes(preExisting.status)) {
+    return { ok: true, idempotent: true, operation_id: preExisting.operation_id,
+      status: preExisting.status, commit_sha: preExisting.candidate_commit_sha };
+  }
 
   // 远端 head 复核（用户确认的是"把这个补丁打到这个 head"）
   let remote = null;
