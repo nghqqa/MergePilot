@@ -45,7 +45,8 @@
 
 ## 5. 已知能力边界（如实交付）
 
-- Gitee v5 无 commit-status API（双形态 404 实测）→ 合并资格门 CI 部分恒 unsupported 阻塞。
+- Gitee：**当前连接器的 CI 状态读取不支持**（实测两个 status 端点均 404）→ 合并资格门
+  CI 部分恒 unsupported 阻塞。连接器能力结论，不断言 Gitee 平台整体不存在相关 API。
 - GitHub 写侧需 App **Contents: Read and write**；CI 双面判定需 **Commit statuses: read**
   与 **Checks: read**（缺任一即 unsupported 并报告所需权限，不用 PAT 绕过）。
 - 必需检查清单（branch protection required checks）需 admin 权限读取——本服务不预判，

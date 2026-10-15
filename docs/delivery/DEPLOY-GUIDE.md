@@ -146,8 +146,9 @@ run 详情页三个验证区块齐备且状态与实际一致。
   Contents: **Read and write**（应用修复推送）；Pull requests: Read and write（合并）；
   Commit statuses: Read 与 Checks: Read（合并资格门的 CI 双面判定）。
   在 App 设置页 → Permissions 更新后，仓库安装会提示重新授权（Revoke & request）。
-- **能力边界**：Gitee v5 无 commit-status API（实测 404）→ Gitee 合并资格的 CI 部分
-  恒为 unsupported 阻塞；必需检查清单需 admin 读取——由平台在合并时强制，本服务不预判。
+- **能力边界**：**当前 Gitee 连接器的 CI 读取不支持**（实测两个 status 形态端点均 404）
+  → Gitee 合并资格的 CI 部分恒为 unsupported 阻塞。此为连接器能力结论，不断言 Gitee
+  平台整体不存在相关 API；必需检查清单需 admin 读取——由平台在合并时强制，本服务不预判。
 
 ## 可选：RAG / cchain（信任链）
 
