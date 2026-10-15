@@ -1,6 +1,6 @@
 # MergePilot 能力矩阵（交付口径）
 
-> 版本基线：**rc.35.4**（源码 main@48f4b9a）。本文描述**当前已上线的实际能力**与各能力的真实依赖；
+> 版本基线：**rc.35.5**（源码 main@bbe58e7 + B/C 集成）。本文描述**当前已上线的实际能力**与各能力的真实依赖；
 > 开发中的能力单独标注「开发中」，不与已上线能力混同。
 > 依赖符号：env=部署环境变量；DB=数据库表（schema 自动迁移至 v28）；执行器=AgentTeams 运行面；
 > 凭据=GitHub/Gitee/模型 key；模型授权=出站策略与同意记录。
@@ -23,10 +23,10 @@
 | 10 | 实际修复测试（fix test） | ✅ 已上线（可选） | `MU_FIX_TEST_CMDS`（部署级预批准命令映射） | 隔离副本：修复前测试须失败 → 应用补丁 → 修复后须通过；命令**只**来自部署配置 |
 | 11 | 审查结果发布到 PR 评论 | ✅ 已上线 | maintainer 角色（`decide_review`）+ 机器人凭据（GitHub App 安装 / Gitee PAT） | 预览→确认两步；发布前远端 head 复核（陈旧拒绝）；幂等原位更新 |
 | 12 | 权限可见化（身份/渠道/租户/角色/能力） | ✅ 已上线 | 无额外依赖 | `my_permissions` 服务端投影；页面按能力渲染按钮并给原因 |
-| 13 | 应用修复（机器人向 PR 提交修复 commit） | ✅ **已实现（随 rc.35.5 发布）** | `apply_fix` 权限（maintainer+active binding）+机器人凭据（GitHub App installation / Gitee PAT） | main #455-#457：preview/confirm 双端点+两步确认；推送式条件更新（非快进远端拒绝）；幂等键防重复。**缺口**：预览后补丁版本变化未绑定 digest、超时无 result_uncertain 标记（审阅线已登记） |
-| 14 | 新 head 自动重审 | 🔧 **开发中** | 契约 apply_op→new run 身份链 | 应用提交后重审需在平台手动触发；应用→新 run 自动关联与 webhook 幂等去重未实现（审阅线已登记缺口） |
-| 15 | CI 资格消费（合并资格输入） | 🔧 **开发中** | 契约 merge_op.eligibility.ci | 已订阅 `check_run`/`status` 只读事件（权限五项内），但 CI 不进入任何资格判定（合并预览如实标 not_configured） |
-| 16 | 确认合并（merge_pr） | ✅ **已实现（随 rc.35.5 发布）** | `merge_pr` 权限；平台保护规则照常生效（不绕过） | main #455-#457：条件合并（Gitee PUT merge sha / GitHub merge sha 服务端 head 匹配）+审计留痕。**缺口**：无 head 域审查 run/CI 资格核验（审阅线已登记） |
+| 13 | 应用修复（机器人向 PR 提交修复 commit） | ✅ 已上线（#458 收口） | `apply_fix` 权限（maintainer+active binding）+机器人凭据（GitHub App installation / Gitee PAT） | #454~#458：preview/confirm 两步确认；确认绑定 `expected_remote_head`+`expected_patch_digest`（换版拒绝）；存储字节 digest 复核；数据库原子认领（并发败方零覆写）；两阶段写（候选 SHA 写前持久化）；超时/断连→result_uncertain+读回对账端点（恢复入口）；推送式条件更新（非快进远端拒绝）；幂等防重复 |
+| 14 | 新 head 自动重审 | ✅ 已上线（#458 收口） | event_sync 消费单元（与 webhook 同源）；Gitee 需 active forge 连接 / GitHub 需 active binding | apply 成功后自动按新提交入队重审（`trigger_source=apply_fix_reenqueue`）；同 (tenant,repo,pr,head) 已有 run 或待处理 job 即去重；入队失败可恢复（push 不回退，前端提示手动触发兜底） |
+| 15 | CI 资格消费（合并资格输入） | ✅ 已上线（#458 收口，严格语义） | CI 状态读取凭据（GitHub installation / Gitee PAT）；目标 head 实际有 CI 在运行 | 合并资格门读取当前 head 的平台提交状态：全 success=放行；pending/failed=阻塞；无任何状态=**not_configured 阻塞**（不冒充通过）；API 不可用=unsupported 阻塞。仓库没有 CI 时合并会被资格门如实拦下——这是有意设计，不是缺陷 |
+| 16 | 确认合并（merge_pr） | ✅ 已上线（#458 收口，统一资格门） | `merge_pr` 权限；平台保护规则照常生效（不绕过） | preview/confirm 同一资格判定（confirm 重读远端）：PR 开放+head 一致+mergeable 已知且可合并（null 不放行）+当前 head 审查完成且无未处理 P0/P1（旧 head 证据不可替代）+当前 head 真实 CI 通过；平台保护/审查门合并时由平台强制（Gitee 实测两次真实拒绝如实呈现）；响应丢失→result_uncertain+按 PR 实际状态读回定案；已合并后重复确认幂等返回 |
 | 17 | 本地 RAG 检索（可选） | ✅ 已上线 | bge-m3 sidecar + 模型卷 manifest + `RAGTRIAL_*` | 检索结果仅作 reference，不参与风险决策 |
 
 ## 2. 权限模型（authz.mjs 为权威，5 角色）

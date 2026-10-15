@@ -166,3 +166,30 @@
 处理：三缺口按 [DEPLOY-GUIDE「可选：RAG / cchain」](DEPLOY-GUIDE.md#可选rag--cchain信任链)引导：
 模型卷 manifest → `fxv.audit_events` 建表 SQL → keystore 种子密钥（uid 1000，目录 770/文件 600）
 → provider attestation 端点。三键不全时 BLOCKED 属**如实呈现**，不影响审查主链。
+
+## T-APPLYMERGE — 应用修复 / 合并 PR 问题（rc.35.5）
+
+**现象**：应用/合并按钮置灰；confirm 报 4xx/409/502 机器码；状态卡在 `result_uncertain`。
+
+处理：
+1. **按钮置灰**：鼠标悬停看原因——历史 run（切最新 run）/ 无 `apply_fix`/`merge_pr` 权限
+   （仅维护者+active binding）/ 本轮无补丁。置灰原因全部用户可读，属预期防护。
+2. `invalid_confirm_fields`：确认请求缺少预览绑定字段（expected_remote_head /
+   expected_patch_digest / expected_head）——**必须从预览发起确认**，不能直接调 confirm 端点。
+3. `patch_changed`：预览后补丁被修正闭环更新了新版本——服务端拒绝静默应用新版本；
+   重新预览后确认（确认的 digest=预览所示版本）。
+4. `stale_head` / `head_moved_since_preview`：远端 head 已推进或预览窗口内漂移——
+   零写入；PR 更新后重新审查即可。
+5. `operation_in_progress`：同 (run, patch) 已有操作在执行（数据库原子认领持有中）——
+   稍后刷新查看；不会重复远端写。
+6. **`result_uncertain`（重要）**：推送/合并超时或响应丢失——操作记录已含候选提交 SHA。
+   打开「应用修复与合并」区 → 历史操作中该操作带「读回对账」按钮 → 点击后系统读远端
+   实际状态定案（已落地→committed/merged；未落地→failed 可安全重试）。**切勿不经对账直接重试**
+   （可能产生重复提交）。重启/刷新不会清锁——对账是唯一出口，无超时自动解锁（防重复写）。
+7. 合并报 `merge_not_eligible`：资格门给出具体原因（CI 未配置/运行中/未通过、当前 head 无
+   审查 run、存在未处理 P0/P1、mergeable 未知、PR 已关闭）——按提示补齐后重试。
+   仓库没有 CI 时合并会被拦（`ci_not_configured`）——有意设计：不冒充"CI 通过"。
+8. 平台保护拒绝（Gitee「未通过设置的审查/测试」等）：平台侧门在合并时强制执行，
+   本服务不绕过——在平台满足门后重试合并。
+9. GitHub 侧 403 "Resource not accessible by integration"：GitHub App 缺 **Contents: Read
+   and write** 权限（应用修复需要 contents 写；合并需要 PR 写）——App 设置补权限后重试。
