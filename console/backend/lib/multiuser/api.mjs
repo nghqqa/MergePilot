@@ -3170,9 +3170,15 @@ const ragMatch = p.match(new RegExp("^/api/mu/repositories/([^/]+)/rag-search$")
     // 权限=apply_fix（maintainer+active binding）；幂等/head 复核/物化在 fix-apply 模块内。
     const applyMatch = p.match(/^\/api\/mu\/runs\/([0-9a-f-]{36})\/apply-fix\/(preview|confirm)$/);
     if (applyMatch) {
-      const g = await guard('apply_fix');
-      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
       const runId = applyMatch[1];
+      // 先解析 run→repo（同租户；跨租户/不存在同形 404），guard 携 repo+needBinding——
+      // apply_fix ∈ MU_BINDING_REQUIRED，裸调用会使 binding 恒 null（任何人都 403）。
+      const runRepo = (await muPoolQ(
+        `SELECT repo_id FROM mu.review_run WHERE run_id=$1 AND tenant_id=$2`,
+        [runId, mu.tenantId])).rows[0] ?? null;
+      if (!runRepo) return sendJson(res, 404, { error: { reason: 'not_found' } });
+      const g = await guard('apply_fix', { repoId: runRepo.repo_id, needBinding: true });
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
       const phase = applyMatch[2];
       const fa = await import('./fix-apply.mjs');
       if (req.method === 'GET' && phase === 'preview') {
@@ -3239,9 +3245,13 @@ const ragMatch = p.match(new RegExp("^/api/mu/repositories/([^/]+)/rag-search$")
     // 权限=merge_pr（maintainer+active binding）；条件合并（sha 匹配）在 fix-apply 模块内。
     const mergeMatch = p.match(/^\/api\/mu\/runs\/([0-9a-f-]{36})\/merge-pr\/(preview|confirm)$/);
     if (mergeMatch) {
-      const g = await guard('merge_pr');
-      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
       const runId = mergeMatch[1];
+      const runRepo2 = (await muPoolQ(
+        `SELECT repo_id FROM mu.review_run WHERE run_id=$1 AND tenant_id=$2`,
+        [runId, mu.tenantId])).rows[0] ?? null;
+      if (!runRepo2) return sendJson(res, 404, { error: { reason: 'not_found' } });
+      const g = await guard('merge_pr', { repoId: runRepo2.repo_id, needBinding: true });
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
       const phase = mergeMatch[2];
       const fa = await import('./fix-apply.mjs');
       if (req.method === 'GET' && phase === 'preview') {
@@ -3304,7 +3314,11 @@ const ragMatch = p.match(new RegExp("^/api/mu/repositories/([^/]+)/rag-search$")
     const reconMatch = p.match(/^\/api\/mu\/apply-operations\/([0-9a-f-]{36})\/reconcile$/);
     if (reconMatch && req.method === 'POST') {
       if (!csrfOk()) return sendJson(res, 403, { error: { reason: 'csrf_required' } });
-      const g = await guard('apply_fix');
+      const opRepo = (await muPoolQ(
+        `SELECT repo_id FROM mu.fix_apply_operation WHERE operation_id=$1 AND tenant_id=$2`,
+        [reconMatch[1], mu.tenantId])).rows[0] ?? null;
+      if (!opRepo) return sendJson(res, 404, { error: { reason: 'not_found' } });
+      const g = await guard('apply_fix', { repoId: opRepo.repo_id, needBinding: true });
       if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
       const fa = await import('./fix-apply.mjs');
       let r;
