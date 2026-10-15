@@ -4,11 +4,14 @@
 
 [官网](https://docs.nghqqa.cn/) · [快速开始](https://docs.nghqqa.cn/quickstart.html) · [使用文档](https://docs.nghqqa.cn/docs.html) · [下载与校验](https://docs.nghqqa.cn/downloads.html)
 
-[![Release](https://img.shields.io/badge/Release-rc.22-0e6b62)](https://github.com/nghqqa/MergePilot/releases/tag/v0.2.0-beta.6-rc.22)
+[![Release](https://img.shields.io/badge/Release-rc.35.4-0e6b62)](https://github.com/nghqqa/MergePilot/releases)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
-MergePilot 通过 GitHub App 只读接入仓库，把 PR 事件、审查发现、修复建议与验证证据汇集到你自己的 Console。
-它不回写 GitHub Check Run，不自动合并或批准 PR；当前为 **Developer Beta（rc.22 预发布）**。
+MergePilot 接入你的仓库（GitHub App 只读 + Gitee 连接），把 PR 事件、审查发现（静态规则 +
+LLM 第二阶段）、修复建议与验证证据汇集到你自己的 Console；维护者可人工确认后把审查结果
+发布为 PR 评论（机器人身份——这是唯一的远端写动作）。它不回写 GitHub Check Run，不自动
+合并或批准 PR；应用修复与合并能力开发中。当前为 **Developer Beta（rc.35.4 口径）**，
+能力边界见[能力矩阵](docs/delivery/CAPABILITY-MATRIX.md)。
 
 ## 界面
 
@@ -46,8 +49,9 @@ Console、数据库和部署配置由你自行管理；官网是文档入口，*
 
 ### 从仓库部署
 
-以下使用 `main` 的部署文件；当前 compose 固定引用 rc.22 镜像（GHCR 不可变 digest），包含发布后修正的 preflight。
-冻结的 rc.19 部署包不会随 `main` 自动更新。
+以下使用 `main` 的部署文件；`deploy/selfhost/docker-compose.yml` 默认 pin 的 console 镜像
+digest 可能落后于最新发行——**部署前按目标 Release 说明改到对应不可变 digest**（pgvector
+与 bge-sidecar digest 已钉死）。
 
 ```bash
 git clone https://github.com/nghqqa/MergePilot.git
@@ -93,11 +97,12 @@ AgentTeams 是独立执行器，不是所有角色统一走外部 LLM。可选 c
 | 要做什么 | 入口 |
 | --- | --- |
 | 浏览产品与文档 | [官网](https://docs.nghqqa.cn/) · [文档索引](https://docs.nghqqa.cn/docs.html) |
-| 安装、配置、登录与邀请 | [自托管部署指南](deploy/selfhost/README.md) · [BETA-GUIDE](docs/BETA-GUIDE.md) |
+| 安装、配置、登录与邀请 | [自托管部署指南](deploy/selfhost/README.md) · [分步部署指南](docs/delivery/DEPLOY-GUIDE.md) · [BETA-GUIDE](docs/BETA-GUIDE.md) |
+| 日常使用 / 排障 / 验收 | [用户指南](docs/delivery/USER-GUIDE.md) · [排障手册](docs/delivery/TROUBLESHOOTING.md) · [验收清单](docs/delivery/ACCEPTANCE-CHECKLIST.md) |
 | 部署修复验证执行器 | [AgentTeams RUNBOOK](deploy/agentteams-beta/RUNBOOK.md) |
 | 配置本地知识库 | [本地 RAG 指南](distribution/docs/LOCAL-RAG-GUIDE.md) |
 | 深入架构、API 与能力限制 | [技术文档目录](distribution/docs/) |
-| 查看发布与变更 | [rc.22 Release](https://github.com/nghqqa/MergePilot/releases/tag/v0.2.0-beta.6-rc.22) · [CHANGELOG](CHANGELOG.md) |
+| 查看发布与变更 | [Releases](https://github.com/nghqqa/MergePilot/releases) · [CHANGELOG](CHANGELOG.md) |
 | 报告问题或参与贡献 | [Issues](https://github.com/nghqqa/MergePilot/issues) · [CONTRIBUTING](CONTRIBUTING.md) |
 
 安全问题请勿在公开 Issue 披露漏洞细节或凭据；可仅留下联系方式，由维护者接洽。

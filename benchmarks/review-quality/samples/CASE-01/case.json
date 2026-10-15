@@ -1,0 +1,29 @@
+{
+  "case_id": "CASE-01",
+  "trial_origin": {
+    "sample_name": "q1-loop-reverse",
+    "source": "r3work/rc26-release/trial/build-samples.py（内容逐字复用，不新造缺陷）",
+    "trial_evidence_status": "不完整——trial 波 Q1-Q3 的 run 分支继承内容与目标缺陷混杂，未做不实归因（QUALITY-REPORT §三）"
+  },
+  "name": "倒序循环漏掉首元素",
+  "target_file": "src/q1.js",
+  "test_file": "tests/q1.test.js",
+  "defect_description": "reverseJoin 从 items.length-1 倒序循环但条件写 i > 0，首元素（index 0）永不参与拼接——输出缺首元素。",
+  "expected_behaviors": [
+    { "call": "reverseJoin(['a','b','c'], '|')", "want": "'c|b|a'" },
+    { "call": "reverseJoin(['only'], '|')", "want": "'only'" }
+  ],
+  "evaluation_rules": {
+    "target_path": "src/q1.js",
+    "defect_marker_patterns": [
+      "i\\s*>\\s*0",
+      "skip.{0,24}first",
+      "首.{0,8}(元素|个|项)",
+      "循环.{0,16}(边界|起点|漏|少)",
+      "(miss|omit|skip|exclude).{0,24}(index 0|first|element)",
+      "index.{0,6}0.{0,24}(skip|exclud|miss|漏)"
+    ],
+    "expected_severity": { "value": "P2", "provenance": "registered_by_analogy", "rationale": "功能输出错误（与 CASE-06 同类：结果错误但可控、不崩溃/不泄密）；trial 波无本样本的合格 LLM 定级证据，按缺陷影响登记，非 trial 实测定级" },
+    "severity_tolerance": 1
+  }
+}

@@ -1,9 +1,12 @@
-# MergePilot 管理控制台（Console V0）
+# MergePilot 管理控制台（Console）
 
-面向日常开发者工具的**只读**管理控制台：运行列表 → 运行详情 → 证据/版本信息的真实数据查询闭环。
+自托管多用户 PR 安全审查工作台的前后端。**multiuser 模式（`MU_MODE=multiuser`）为正式形态**：
+webhook 接入 → PR 快照 → 两阶段审查（静态规则 precheck + 可选 LLM 第二阶段）→ 发现落库 →
+裁定/修复审批门 → 补丁版本化与验证（可应用性五态 + 实际修复测试）→ 维护者人工确认发布
+审查评论到 PR。能力边界与依赖见 [docs/delivery/CAPABILITY-MATRIX.md](../docs/delivery/CAPABILITY-MATRIX.md)。
 
-**数据模式：snapshot** —— 全部数据来自仓库内锁定的真实历史运行证据包（`evidence/`，含 SHA256SUMS），
-只读、非实时。live 模式（服务器 PG / MinIO）未接入，页面顶栏有明确标注。
+历史快照（snapshot evidence pack）只读浏览仍保留为 legacy 形态（`evidence/` 证据包 +
+SHA256SUMS 校验），multiuser 下不再作为数据源——页面数据源标注 `MU_CANONICAL_LIVE`。
 
 ## 启动
 
@@ -15,43 +18,60 @@ node console/backend/server.mjs
 cd console/frontend && npm install && npm run dev   # Vite :5177，/api 代理到 :4730
 ```
 
-访问 <http://127.0.0.1:4730>。服务**只监听回环地址**，不提供任何写操作接口。
+访问 <http://127.0.0.1:4730/multiuser>。服务默认只监听回环地址；
+生产部署走 [`deploy/selfhost/`](../deploy/selfhost/README.md)（compose 拓扑 + TLS 反代）。
 
-环境变量：`CONSOLE_PORT`（默认 4730）、`CONSOLE_HOST`（默认 127.0.0.1）、
-`CONSOLE_EVIDENCE_ROOT`（默认 `<repo>/evidence`）。
+关键环境变量：`MU_MODE=multiuser`、`CONSOLE_PG_DSN`（mu 库；schema 启动自动迁移，
+当前 v28）、`CONSOLE_PORT`（默认 4730）、`CONSOLE_HOST`（默认 127.0.0.1）、
+`CONSOLE_EVIDENCE_ROOT`（legacy 证据根）。完整清单见
+`deploy/selfhost/.env.example` 与 [docs/delivery/DEPLOY-GUIDE.md](../docs/delivery/DEPLOY-GUIDE.md)。
+
+## 主要页面（multiuser）
+
+| 页面 | 内容 |
+|---|---|
+| 总览 / 待处理 / 仓库 / 审批 | 主审查流程：绑定仓库、运行记录、P0/P1 审批票 |
+| 运行记录 → run 详情 | 发现（来源分列 precheck/reviewer）、建议补丁（版本化）、验证三分、发布面板 |
+| 组织与接入 | 成员与邀请、GitHub App 安装与仓库绑定、Gitee 连接、运行策略、执行器状态 |
+| 设置 / 数据源 / 系统状态 / 诊断 | 实例配置（platform_admin）、出站策略与同意、RAG 模型管理 |
+
+权限即矩阵投影：`my_permissions` 服务端下发（authz.mjs 五角色），无权限按钮置灰并给原因；
+`decide_review`（裁定/审批/发布）仅 maintainer，platform_admin 刻意无裁定权。
 
 ## 测试
 
 ```bash
-node --test console/backend/test/pack.test.mjs console/backend/test/runs.test.mjs console/backend/test/api.test.mjs
+node --test console/backend/test/
 ```
 
-24 项：夹具单元测试（解析/路径穿越防护/完整性校验）+ 真实证据根回归（存在时执行）。
+99 个测试文件（node:test）：MU 授权矩阵、审查链与 LLM 解耦、审批门 CAS、补丁五态与
+fix test、发布幂等、cchain、FXV 执行、集成回归（`*.integration.mjs` 需 PG 等外部依赖，
+其余为零依赖单测）。
 
 ## 结构
 
 ```text
 console/
-├── backend/            # 零第三方依赖 Node 只读 API（沿用 demo-platform 后端模式）
-│   ├── server.mjs      # HTTP 路由 + 静态服务
-│   ├── lib/pack.mjs    # 证据包访问：安全路径解析、SHA256SUMS 懒校验、run 锚点发现
-│   ├── lib/runs.mjs    # 包 → 运行记录归一化（身份/三态/时间线/版本/RAG/用量）
-│   └── test/           # node:test（含 fixtures 微型包）
-└── frontend/           # React + Vite SPA（设计遵循仓库 DESIGN.md）
-    ├── src/pages/      # RunsPage / RunDetailPage（8 标签）/ 未接入 StubPage
-    └── dist/           # 预构建产物（已提交，改动后 npm run build 更新）
+├── backend/
+│   ├── server.mjs           # HTTP 路由 + 静态服务（health 暴露 version/git_commit/mu_schema_ready）
+│   ├── lib/
+│   │   ├── multiuser/       # MU 域：authz（五角色矩阵）/ schema（v28）/ review-service（两阶段审查）
+│   │   │                    #   fix-approval（审批门）/ publish（发布，双平台机器人）/ agents/（编排）
+│   │   ├── fxv/             # 修复/验证子进程执行底座（dry-run 默认）
+│   │   └── pack.mjs 等      # legacy snapshot 证据包访问
+│   └── test/                # node:test
+└── frontend/                # React + Vite SPA（设计遵循仓库 DESIGN.md）
+    ├── src/pages/           # 总览/仓库/审批/组织与接入/运行详情（MuPrDetail*）等
+    └── dist/                # 构建产物（canonical 镜像在构建阶段容器内重建，不用工作区 dist）
 ```
 
 ## 边界（如实声明）
 
-- **只有读**：无审批、无派发、无 GitHub 写入、无凭证下发；补丁/证据只可查看与下载。
-- **三态分离**：执行状态（投递台账/项目 meta）、审查结论（reviewer 结果）、发布状态（check-run）
-  是三个独立事实，各自带来源标注，永不合并为一个"成功"。
-- **证据按不可信输入处理**：内容一律转义后纯文本渲染（无 innerHTML / 无脚本执行），
-  下载路径经穿越防护必须落在包内。
-- **未接入页面**：仓库/RAG 总览/Skill 总览/审批/用量导航如实标注"未接入"并说明依赖，
-  不以演示数据填充；run 级的 Skill/RAG/用量信息在详情页展示包内真实记录。
-- run-manifest：历史证据包早于该机制（桥自 81e0045 起写入 MinIO），
-  版本清单页如实显示"未记录"，后续 run 可从 MinIO 清单接入。
-
-接口契约与跨会话需求见 `docs/productization/console/`（API-CONTRACT / INTEGRATION-REQUESTS / STATUS）。
+- **三态分离**：产物版本（patch_version/digest）、实际执行状态（run status）、验证结果
+  （五态/三分/测试证据）、合并资格是四个独立事实轴，永不合并成一个"成功"。
+- **远端写仅一处**：维护者人工确认的 PR 评论发布（GitHub App / Gitee 机器人身份，幂等原位更新，
+  head 复核防陈旧）。提交代码/合并代码路径本版本结构性不存在（开发中能力，见能力矩阵）。
+- **补丁是建议**：修复轮 dry-run 零远端写入；模型建议永不直接出站。
+- **凭据红线**：token/私钥仅进程内存瞬时使用；DB/审计/日志零凭据。
+- **证据按不可信输入处理**：内容转义纯文本渲染；下载路径穿越防护。
+- run-manifest：历史证据包早于该机制的如实显示"未记录"，不伪造。

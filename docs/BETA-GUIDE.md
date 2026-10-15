@@ -2,6 +2,14 @@
 
 本文档覆盖从零到完整使用的全部步骤，包括 GitHub App 创建、凭据注入、首次登录、邀请用户、仓库绑定和 PR 审查。
 
+> **能力口径（rc.35.4）**：当前产品为**完整审查链**——webhook→PR 快照→静态规则审查（precheck）→
+> LLM 第二阶段审查（模型审查，解耦执行）→发现落库→裁定与修复审批门→补丁版本化与验证
+> （真实可应用性五态 + 实际修复测试）→**维护者人工确认发布审查评论到 PR**。
+> 旧文档中「只读快照模式」的描述已过时。按目标分步的部署/使用/排障/验收见
+> **[docs/delivery/](delivery/README.md)**（能力矩阵、部署指南、用户指南、排障手册、验收清单），
+> 配套只读诊断工具 [`scripts/delivery/diagnose.mjs`](../scripts/delivery/diagnose.mjs)。
+> 「应用修复（机器人提交）/新 head 自动重审/CI 消费/合并」为**开发中能力**，本版本不可用。
+
 ---
 
 ## 目录
@@ -27,29 +35,42 @@
 
 MergePilot 是**自托管的 PR 安全审查工作台**：
 
-- 通过 GitHub App **只读**接入你的仓库
-- 自动同步 Pull Request（webhook 驱动）
-- 运行安全审查并产出结构化发现
-- 管理修复验证流程（dry-run 默认）
+- 接入你的仓库：GitHub 走 App（Metadata/Contents/Pull requests/Checks/Commit statuses 全部 read-only）；
+  Gitee 走部署级 PAT 连接（Wave-Gitee）
+- 自动同步 Pull Request（webhook 驱动，事件自动消费）
+- 运行两阶段审查：确定性静态规则（precheck）+ 可选 LLM 第二阶段（模型发现独立标注 `reviewer`）
+- 产出结构化发现与**版本化建议补丁**，并给出验证三分（格式检查 / 真实可应用性 / 实际修复测试）
+- 修复需维护者逐条审批（P0/P1 审批门），修复轮 dry-run 零远端写入
+- 审查结果可由维护者**人工确认后发布为 PR 评论**（机器人身份，预览→确认两步，幂等原位更新）
 - 全程带完整审计追踪（tenant 域 + platform 域分立）
 - 可选开启本地 RAG 增强（语料库检索为审查提供可引用的参考证据）
 
-**核心理念**：数据不出你的机器；GitHub App 权限最小化（仅 read-only）；不自动 merge、不自动 approve。
+**核心理念**：数据与部署在**你自己的机器**；GitHub App 权限最小化；补丁永远是建议；
+不自动改代码、不自动 merge、不自动 approve。**唯一的远端写动作**是经维护者逐次确认的
+PR 评论发布（机器人身份）。启用 LLM 第二阶段会把 PR 上下文出站到你配置的模型端点——
+需租户级 `external_api` 出站策略与显式同意记录（`evidence_only` 模式零出站）。
 
 ## 2. Developer Edition Beta 与 Enterprise 的边界
 
 | 能力 | Developer Beta（当前） | Enterprise（未实现） |
 |---|---|---|
-| 多用户 RBAC | ✅ 五角色应用层 | RLS 行级隔离 |
-| 身份 | GitHub OAuth + 邀请制 | SSO (SAML/OIDC) + SCIM |
-| 仓库接入 | GitHub App read-only | + 写权限（独立设计） |
+| 多用户 RBAC | ✅ 五角色应用层（decide_review 仅 maintainer） | RLS 行级隔离 |
+| 身份 | GitHub/Gitee OAuth + 邀请制 | SSO (SAML/OIDC) + SCIM |
+| 仓库接入 | GitHub App read-only + Gitee 连接 | 独立写权限设计 |
+| 审查深度 | 静态规则 + LLM 第二阶段（需显式出站授权） | — |
+| 远端写 | 仅人工确认的 PR 评论发布（机器人） | 受控提交/合并（开发中，见 delivery 文档） |
 | 会话 | DB 持久（单机） | HA + 集中密钥管理 |
 | 配额限流 | ❌ | ✅ |
-| 自动 approve/merge | ❌ 设计禁止 | 受控合并（独立设计） |
+| 自动 approve/merge | ❌ 本版本结构性不存在 | 受控合并（开发中） |
 
 **当前版本不是 Enterprise Production Ready。**
 
 ## 3. Docker Compose 快速启动
+
+> **canonical 部署入口**：[`deploy/selfhost/`](../deploy/selfhost/README.md)（console + postgres +
+> bge-m3 sidecar + webhook ingress 四服务拓扑，镜像 digest 校验与 preflight 一应俱全）。
+> 分步操作（最小部署→按需启用）见 [delivery/DEPLOY-GUIDE.md](delivery/DEPLOY-GUIDE.md)。
+> 以下两条为早期路径，保留可用。
 
 ### 前提
 
@@ -268,10 +289,12 @@ MU_ALLOW_FIXTURE_LOGIN=1
 | 角色 | 权限 | 典型使用者 |
 |---|---|---|
 | **Contributor** | 查看 PR/仓库元数据/证据；RAG 检索 | 开发者 |
-| **Reviewer** | Contributor 全部 + 触发只读审查 | 安全审查员 |
-| **Maintainer** | Reviewer 全部 + 审批 + 绑定/解绑仓库 + 发起修复 | 团队负责人 |
-| **PlatformAdmin** | 管理成员/租户/实例配置（不自动获得代码读取） | 运维管理员 |
+| **Reviewer** | Contributor 全部 + 触发审查 + finding 反馈 | 安全审查员 |
+| **Maintainer** | Reviewer 全部 + **审批修复票/PR 裁定/发布评论**（decide_review 仅此角色）+ 绑定/解绑仓库 + 发起修复 | 团队负责人 |
+| **PlatformAdmin** | 管理成员/租户/实例配置/出站策略（**刻意无审批与发布权**——平台管理与裁定分离） | 运维管理员 |
 | **Auditor** | 仅审计元数据只读（不可读代码/RAG 内容） | 合规审计员 |
+
+> 完整矩阵见 [docs/delivery/CAPABILITY-MATRIX.md §2](delivery/CAPABILITY-MATRIX.md)。
 
 ### 6.3 邀请用户
 
@@ -328,11 +351,15 @@ curl -X POST http://<你的地址>/api/mu/repositories/<repo_id>/ghapp-binding \
 
 ### 7.3 PR 审查流程
 
-1. 绑定仓库后，GitHub 自动发送 `pull_request` webhook
-2. Console 验签（HMAC-SHA256 + 常量时间比较）→ 去重（delivery_id）→ 入队
-3. Worker 消费 `event_sync` job → 写入 PR 快照（tenant/repo/head_sha）
-4. Reviewer 可触发只读审查（`POST /api/mu/prs/<id>/review`）
-5. Maintainer 可审批或驳回（`POST /api/mu/prs/<id>/decision`）
+1. 绑定仓库后，PR 事件（新开/更新）自动触发审查（webhook → 验签去重 → 入队 → 自动消费）
+2. Worker 写入 PR 快照（tenant/repo/head_sha）→ 静态规则审查（`source=precheck` 发现落库）
+3. 若部署启用了 LLM 第二阶段（§5 LLM env + 控制台运行策略 + 出站策略/同意）：模型审查
+   **无条件执行**（与静态结果解耦），模型发现以 `source=reviewer` 独立标注；失败 fail-closed
+   回落静态结果并如实记档，绝不误报"模型已执行"
+4. Reviewer 及以上可触发审查 / 提交 finding 反馈；Maintainer 可审批或驳回（`decide_review`）
+5. P0/P1 发现自动生成具名审批票；run 内全部批准 → 修复轮（dry-run）→ 补丁版本化 + 验证三分
+6. Maintainer 可在产物面板「预览并发布到 PR」把审查结果发布为机器人评论
+   （远端 head 复核 + 幂等原位更新；见 [USER-GUIDE §6](delivery/USER-GUIDE.md)）
 
 > **branch protection 状态未知时不可审批**（`422 cannot_conclude_mergeable`）。
 
@@ -416,6 +443,10 @@ curl -X DELETE http://<你的地址>/api/mu/repositories/<repo_id>/ghapp-binding
 > **注意**：以上真实 E2E 验证均使用测试 App 和测试仓库（非生产环境），不代表你的部署环境无需配置验证。生产部署请按 §4-§5 重新配置并验证。
 
 ## 9. FXV 修复验证
+
+> **位置说明**：multiuser 修复链的运行面由 `MU_EXECUTOR` 决定（生产=agentteams，见 §5 执行器与
+> [DEPLOY-GUIDE 目标三](delivery/DEPLOY-GUIDE.md)）；FXV 是修复/验证子进程执行底座
+> （fixer/verifier worker，隔离临时工作树）。远端写入门仅属 FXV 直连 GitHub 的历史路径。
 
 ### 默认行为
 

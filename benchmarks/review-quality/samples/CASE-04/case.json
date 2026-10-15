@@ -1,0 +1,33 @@
+{
+  "case_id": "CASE-04",
+  "trial_origin": {
+    "sample_name": "q4-range-excl",
+    "source": "r3work/rc26-release/trial/build-samples.py（内容逐字复用，不新造缺陷）",
+    "trial_evidence_status": "合格可直接复用——run 8883edfe（PR#6, head cc5e565）：LLM 命中 P1「inRange 边界不含」，DONE 3293ms，静态命中 0（QUALITY-REPORT §二/§六）"
+  },
+  "name": "范围边界排除了等于（不含边界）",
+  "target_file": "src/q4.js",
+  "test_file": "tests/q4.test.js",
+  "defect_description": "inRange 用 v > min && v < max，边界值 min/max 本身被判为不在范围内——范围语义应为闭区间。",
+  "expected_behaviors": [
+    { "call": "inRange(5, 1, 10)", "want": "true" },
+    { "call": "inRange(1, 1, 10)", "want": "true（边界 min 应含）" },
+    { "call": "inRange(10, 1, 10)", "want": "true（边界 max 应含）" }
+  ],
+  "evaluation_rules": {
+    "target_path": "src/q4.js",
+    "defect_marker_patterns": [
+      ">=",
+      "<=",
+      "inclusiv",
+      "包含",
+      "含边界",
+      "边界",
+      "boundar",
+      "(exclud|排除).{0,20}(equal|等于|边界)",
+      "strictly"
+    ],
+    "expected_severity": { "value": "P1", "provenance": "trial_measured", "rationale": "trial 实测：run 8883edfe LLM 定 P1 且审批门 P1→WAITING 行为正确（QUALITY-REPORT §四）" },
+    "severity_tolerance": 1
+  }
+}

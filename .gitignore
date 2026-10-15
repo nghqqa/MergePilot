@@ -53,3 +53,9 @@ node_modules/
 
 # 认证代理渲染产物（含真实凭据，绝不提交）
 deploy/agentteams-beta/auth-proxy/rendered/
+# B 线固定评测样本是仓内资产（manifest sha256 钉死）——显式豁免上面的全局
+# samples/、tests/、benchmark/ 忽略（files/tests/qN.test.js 是判别力测试，必须入库）。
+# 注意：豁免必须放在所有全局规则之后（gitignore 最后匹配规则胜出）。
+!benchmarks/review-quality/
+!benchmarks/review-quality/samples/
+!benchmarks/review-quality/samples/**

@@ -1,0 +1,32 @@
+{
+  "case_id": "CASE-02",
+  "trial_origin": {
+    "sample_name": "q2-null-input",
+    "source": "r3work/rc26-release/trial/build-samples.py（内容逐字复用，不新造缺陷）",
+    "trial_evidence_status": "定性可用、定级有偏差——trial 波测得 LLM 将此类缺陷评 P3，实际缺陷影响为 P2（severity 偏差先例，任务定性材料）；run 分支继承混杂，逐条 finding 不做归因"
+  },
+  "name": "null 输入未防护直接 TypeError",
+  "target_file": "src/q2.js",
+  "test_file": "tests/q2.test.js",
+  "defect_description": "initials 对 name 直接调用 .trim()，null/undefined 输入抛 TypeError——调用方传空值即崩溃。",
+  "expected_behaviors": [
+    { "call": "initials('John Doe')", "want": "'J.D'" },
+    { "call": "initials('')", "want": "''" },
+    { "call": "initials(null)", "want": "''" }
+  ],
+  "evaluation_rules": {
+    "target_path": "src/q2.js",
+    "defect_marker_patterns": [
+      "null",
+      "undefined",
+      "空值",
+      "未校验",
+      "no.{0,12}(check|guard|validation)",
+      "TypeError",
+      "\\.trim",
+      "crash"
+    ],
+    "expected_severity": { "value": "P2", "provenance": "trial_qualitative", "rationale": "trial 定性：真实缺陷、应为 P2（运行时崩溃），LLM 曾评 P3 属严重度偏差" },
+    "severity_tolerance": 1
+  }
+}

@@ -1,0 +1,1685 @@
+{
+  "run_meta": {
+    "run_id": "20261015T0451-real-deepseek-chat-llm-w31-v1",
+    "timestamp": "2026-10-15T04:51:32.399Z",
+    "mode": "real",
+    "model": "deepseek-chat",
+    "prompt_version": "llm-w31-v1",
+    "entry": "callLlmReviewer(production llm_assist path)",
+    "manifest_digest": "f784526ab64b8462",
+    "rules_version": "rq-rules-v2",
+    "mock": null,
+    "limitations": [
+      "本入口直连生产审查函数 callLlmReviewer（llm_assist 路径），未经完整栈（webhook/DB）；token 计数生产入口不返回，如实记 null。",
+      "分母仅含调用成功的 run；调用失败逐条列出（调用完成率），漏报按 covered_but_missed / target_not_covered 分档。"
+    ]
+  },
+  "validation": {
+    "manifest_drift": [],
+    "cases": [
+      {
+        "case_id": "CASE-01",
+        "ok": true,
+        "failure_class": null,
+        "detail": "defect 测试失败 / fixed 测试通过 / 目标文件在 diff 中 / 规格完备",
+        "spec": {
+          "case_id": "CASE-01",
+          "trial_origin": {
+            "sample_name": "q1-loop-reverse",
+            "source": "r3work/rc26-release/trial/build-samples.py（内容逐字复用，不新造缺陷）",
+            "trial_evidence_status": "不完整——trial 波 Q1-Q3 的 run 分支继承内容与目标缺陷混杂，未做不实归因（QUALITY-REPORT §三）"
+          },
+          "name": "倒序循环漏掉首元素",
+          "target_file": "src/q1.js",
+          "test_file": "tests/q1.test.js",
+          "defect_description": "reverseJoin 从 items.length-1 倒序循环但条件写 i > 0，首元素（index 0）永不参与拼接——输出缺首元素。",
+          "expected_behaviors": [
+            {
+              "call": "reverseJoin(['a','b','c'], '|')",
+              "want": "'c|b|a'"
+            },
+            {
+              "call": "reverseJoin(['only'], '|')",
+              "want": "'only'"
+            }
+          ],
+          "evaluation_rules": {
+            "target_path": "src/q1.js",
+            "defect_marker_patterns": [
+              "i\\s*>\\s*0",
+              "skip.{0,24}first",
+              "首.{0,8}(元素|个|项)",
+              "循环.{0,16}(边界|起点|漏|少)",
+              "(miss|omit|skip|exclude).{0,24}(index 0|first|element)",
+              "index.{0,6}0.{0,24}(skip|exclud|miss|漏)"
+            ],
+            "expected_severity": {
+              "value": "P2",
+              "provenance": "registered_by_analogy",
+              "rationale": "功能输出错误（与 CASE-06 同类：结果错误但可控、不崩溃/不泄密）；trial 波无本样本的合格 LLM 定级证据，按缺陷影响登记，非 trial 实测定级"
+            },
+            "severity_tolerance": 1
+          }
+        },
+        "target_file": "src/q1.js",
+        "test_file": "tests/q1.test.js",
+        "diffs": {
+          "defect": "diff --git a/src/q1.js b/src/q1.js\nnew file mode 100755\nindex 0000000..e55fcd8\n--- /dev/null\n+++ b/src/q1.js\n@@ -0,0 +1,8 @@\n+function reverseJoin(items, sep) {\n+  let out = '';\n+  for (let i = items.length - 1; i > 0; i--) {\n+    out += (out ? sep : '') + items[i];\n+  }\n+  return out;\n+}\n+module.exports = { reverseJoin };\ndiff --git a/tests/q1.test.js b/tests/q1.test.js\nnew file mode 100755\nindex 0000000..f5ae9e5\n--- /dev/null\n+++ b/tests/q1.test.js\n@@ -0,0 +1,5 @@\n+const { reverseJoin } = require('../src/q1.js');\n+const assert = require('node:assert');\n+assert.strictEqual(reverseJoin(['a', 'b', 'c'], '|'), 'c|b|a', 'all');\n+assert.strictEqual(reverseJoin(['only'], '|'), 'only', 'single');\n+console.log('q1 passed');\n",
+          "fixed": "diff --git a/src/q1.js b/src/q1.js\nnew file mode 100755\nindex 0000000..5e9503e\n--- /dev/null\n+++ b/src/q1.js\n@@ -0,0 +1,8 @@\n+function reverseJoin(items, sep) {\n+  let out = '';\n+  for (let i = items.length - 1; i >= 0; i--) {\n+    out += (out ? sep : '') + items[i];\n+  }\n+  return out;\n+}\n+module.exports = { reverseJoin };\ndiff --git a/tests/q1.test.js b/tests/q1.test.js\nnew file mode 100755\nindex 0000000..f5ae9e5\n--- /dev/null\n+++ b/tests/q1.test.js\n@@ -0,0 +1,5 @@\n+const { reverseJoin } = require('../src/q1.js');\n+const assert = require('node:assert');\n+assert.strictEqual(reverseJoin(['a', 'b', 'c'], '|'), 'c|b|a', 'all');\n+assert.strictEqual(reverseJoin(['only'], '|'), 'only', 'single');\n+console.log('q1 passed');\n"
+        },
+        "test_runs": {
+          "defect": {
+            "code": 1,
+            "output": "4:19)\n    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)\n    at node:internal/main/run_main_module:36:49 {\n  generatedMessage: false,\n  code: 'ERR_ASSERTION',\n  actual: 'c|b',\n  expected: 'c|b|a',\n  operator: 'strictEqual',\n  diff: 'simple'\n}\n\nNode.js v22.23.3\n"
+          },
+          "fixed": {
+            "code": 0,
+            "output": "q1 passed\n"
+          }
+        },
+        "base_commit": "7f29e0e421b3f979d300be15bbbc0383aa5aff14"
+      },
+      {
+        "case_id": "CASE-02",
+        "ok": true,
+        "failure_class": null,
+        "detail": "defect 测试失败 / fixed 测试通过 / 目标文件在 diff 中 / 规格完备",
+        "spec": {
+          "case_id": "CASE-02",
+          "trial_origin": {
+            "sample_name": "q2-null-input",
+            "source": "r3work/rc26-release/trial/build-samples.py（内容逐字复用，不新造缺陷）",
+            "trial_evidence_status": "定性可用、定级有偏差——trial 波测得 LLM 将此类缺陷评 P3，实际缺陷影响为 P2（severity 偏差先例，任务定性材料）；run 分支继承混杂，逐条 finding 不做归因"
+          },
+          "name": "null 输入未防护直接 TypeError",
+          "target_file": "src/q2.js",
+          "test_file": "tests/q2.test.js",
+          "defect_description": "initials 对 name 直接调用 .trim()，null/undefined 输入抛 TypeError——调用方传空值即崩溃。",
+          "expected_behaviors": [
+            {
+              "call": "initials('John Doe')",
+              "want": "'J.D'"
+            },
+            {
+              "call": "initials('')",
+              "want": "''"
+            },
+            {
+              "call": "initials(null)",
+              "want": "''"
+            }
+          ],
+          "evaluation_rules": {
+            "target_path": "src/q2.js",
+            "defect_marker_patterns": [
+              "null",
+              "undefined",
+              "空值",
+              "未校验",
+              "no.{0,12}(check|guard|validation)",
+              "TypeError",
+              "\\.trim",
+              "crash"
+            ],
+            "expected_severity": {
+              "value": "P2",
+              "provenance": "trial_qualitative",
+              "rationale": "trial 定性：真实缺陷、应为 P2（运行时崩溃），LLM 曾评 P3 属严重度偏差"
+            },
+            "severity_tolerance": 1
+          }
+        },
+        "target_file": "src/q2.js",
+        "test_file": "tests/q2.test.js",
+        "diffs": {
+          "defect": "diff --git a/src/q2.js b/src/q2.js\nnew file mode 100755\nindex 0000000..3b72973\n--- /dev/null\n+++ b/src/q2.js\n@@ -0,0 +1,4 @@\n+function initials(name) {\n+  return name.trim().split(/\\s+/).map(w => w[0].toUpperCase()).join('.');\n+}\n+module.exports = { initials };\ndiff --git a/tests/q2.test.js b/tests/q2.test.js\nnew file mode 100755\nindex 0000000..f972357\n--- /dev/null\n+++ b/tests/q2.test.js\n@@ -0,0 +1,6 @@\n+const { initials } = require('../src/q2.js');\n+const assert = require('node:assert');\n+assert.strictEqual(initials('John Doe'), 'J.D', 'normal');\n+assert.strictEqual(initials(''), '', 'empty');\n+assert.strictEqual(initials(null), '', 'null');\n+console.log('q2 passed');\n",
+          "fixed": "diff --git a/src/q2.js b/src/q2.js\nnew file mode 100755\nindex 0000000..7763e26\n--- /dev/null\n+++ b/src/q2.js\n@@ -0,0 +1,5 @@\n+function initials(name) {\n+  if (!name) return '';\n+  return name.trim().split(/\\s+/).map(w => w[0].toUpperCase()).join('.');\n+}\n+module.exports = { initials };\ndiff --git a/tests/q2.test.js b/tests/q2.test.js\nnew file mode 100755\nindex 0000000..f972357\n--- /dev/null\n+++ b/tests/q2.test.js\n@@ -0,0 +1,6 @@\n+const { initials } = require('../src/q2.js');\n+const assert = require('node:assert');\n+assert.strictEqual(initials('John Doe'), 'J.D', 'normal');\n+assert.strictEqual(initials(''), '', 'empty');\n+assert.strictEqual(initials(null), '', 'null');\n+console.log('q2 passed');\n"
+        },
+        "test_runs": {
+          "defect": {
+            "code": 1,
+            "output": "\n    at Module.load (node:internal/modules/cjs/loader:1505:32)\n    at Function._load (node:internal/modules/cjs/loader:1309:12)\n    at wrapModuleLoad (node:internal/modules/cjs/loader:254:19)\n    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)\n\nNode.js v22.23.3\n"
+          },
+          "fixed": {
+            "code": 0,
+            "output": "q2 passed\n"
+          }
+        },
+        "base_commit": "7f29e0e421b3f979d300be15bbbc0383aa5aff14"
+      },
+      {
+        "case_id": "CASE-03",
+        "ok": true,
+        "failure_class": null,
+        "detail": "defect 测试失败 / fixed 测试通过 / 目标文件在 diff 中 / 规格完备",
+        "spec": {
+          "case_id": "CASE-03",
+          "trial_origin": {
+            "sample_name": "q3-zero-div",
+            "source": "r3work/rc26-release/trial/build-samples.py（内容逐字复用，不新造缺陷）",
+            "trial_evidence_status": "定性可用、定级有偏差——trial 波测得 LLM 将此类缺陷评 P3，实际缺陷影响为 P2；另 trial 波 Q3 空commit重触发机制未被 coverage 覆盖（任务定性材料），本样本以固定干净基线消除该坑"
+          },
+          "name": "total 为 0 时除零得 NaN",
+          "target_file": "src/q3.js",
+          "test_file": "tests/q3.test.js",
+          "defect_description": "pct 在 total=0 时执行除零得 NaN，Math.round(NaN)=NaN——调用方拿到 NaN 污染下游统计。",
+          "expected_behaviors": [
+            {
+              "call": "pct(3, 9)",
+              "want": "33"
+            },
+            {
+              "call": "pct(3, 0)",
+              "want": "0"
+            }
+          ],
+          "evaluation_rules": {
+            "target_path": "src/q3.js",
+            "defect_marker_patterns": [
+              "divis",
+              "除(零|以零|法)",
+              "zero",
+              "零",
+              "NaN",
+              "total.{0,24}(0|zero|empty|falsy)",
+              "guard",
+              "防护"
+            ],
+            "expected_severity": {
+              "value": "P2",
+              "provenance": "trial_qualitative",
+              "rationale": "trial 定性：真实缺陷、应为 P2（数据正确性污染），LLM 曾评 P3 属严重度偏差"
+            },
+            "severity_tolerance": 1
+          }
+        },
+        "target_file": "src/q3.js",
+        "test_file": "tests/q3.test.js",
+        "diffs": {
+          "defect": "diff --git a/src/q3.js b/src/q3.js\nnew file mode 100755\nindex 0000000..eea3487\n--- /dev/null\n+++ b/src/q3.js\n@@ -0,0 +1,4 @@\n+function pct(part, total) {\n+  return Math.round((part / total) * 100);\n+}\n+module.exports = { pct };\ndiff --git a/tests/q3.test.js b/tests/q3.test.js\nnew file mode 100755\nindex 0000000..4b2e9c4\n--- /dev/null\n+++ b/tests/q3.test.js\n@@ -0,0 +1,5 @@\n+const { pct } = require('../src/q3.js');\n+const assert = require('node:assert');\n+assert.strictEqual(pct(3, 9), 33, 'normal');\n+assert.strictEqual(pct(3, 0), 0, 'zero total');\n+console.log('q3 passed');\n",
+          "fixed": "diff --git a/src/q3.js b/src/q3.js\nnew file mode 100755\nindex 0000000..b858da6\n--- /dev/null\n+++ b/src/q3.js\n@@ -0,0 +1,5 @@\n+function pct(part, total) {\n+  if (!total) return 0;\n+  return Math.round((part / total) * 100);\n+}\n+module.exports = { pct };\ndiff --git a/tests/q3.test.js b/tests/q3.test.js\nnew file mode 100755\nindex 0000000..4b2e9c4\n--- /dev/null\n+++ b/tests/q3.test.js\n@@ -0,0 +1,5 @@\n+const { pct } = require('../src/q3.js');\n+const assert = require('node:assert');\n+assert.strictEqual(pct(3, 9), 33, 'normal');\n+assert.strictEqual(pct(3, 0), 0, 'zero total');\n+console.log('q3 passed');\n"
+        },
+        "test_runs": {
+          "defect": {
+            "code": 1,
+            "output": ":254:19)\n    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)\n    at node:internal/main/run_main_module:36:49 {\n  generatedMessage: false,\n  code: 'ERR_ASSERTION',\n  actual: Infinity,\n  expected: 0,\n  operator: 'strictEqual',\n  diff: 'simple'\n}\n\nNode.js v22.23.3\n"
+          },
+          "fixed": {
+            "code": 0,
+            "output": "q3 passed\n"
+          }
+        },
+        "base_commit": "7f29e0e421b3f979d300be15bbbc0383aa5aff14"
+      },
+      {
+        "case_id": "CASE-04",
+        "ok": true,
+        "failure_class": null,
+        "detail": "defect 测试失败 / fixed 测试通过 / 目标文件在 diff 中 / 规格完备",
+        "spec": {
+          "case_id": "CASE-04",
+          "trial_origin": {
+            "sample_name": "q4-range-excl",
+            "source": "r3work/rc26-release/trial/build-samples.py（内容逐字复用，不新造缺陷）",
+            "trial_evidence_status": "合格可直接复用——run 8883edfe（PR#6, head cc5e565）：LLM 命中 P1「inRange 边界不含」，DONE 3293ms，静态命中 0（QUALITY-REPORT §二/§六）"
+          },
+          "name": "范围边界排除了等于（不含边界）",
+          "target_file": "src/q4.js",
+          "test_file": "tests/q4.test.js",
+          "defect_description": "inRange 用 v > min && v < max，边界值 min/max 本身被判为不在范围内——范围语义应为闭区间。",
+          "expected_behaviors": [
+            {
+              "call": "inRange(5, 1, 10)",
+              "want": "true"
+            },
+            {
+              "call": "inRange(1, 1, 10)",
+              "want": "true（边界 min 应含）"
+            },
+            {
+              "call": "inRange(10, 1, 10)",
+              "want": "true（边界 max 应含）"
+            }
+          ],
+          "evaluation_rules": {
+            "target_path": "src/q4.js",
+            "defect_marker_patterns": [
+              ">=",
+              "<=",
+              "inclusiv",
+              "包含",
+              "含边界",
+              "边界",
+              "boundar",
+              "(exclud|排除).{0,20}(equal|等于|边界)",
+              "strictly"
+            ],
+            "expected_severity": {
+              "value": "P1",
+              "provenance": "trial_measured",
+              "rationale": "trial 实测：run 8883edfe LLM 定 P1 且审批门 P1→WAITING 行为正确（QUALITY-REPORT §四）"
+            },
+            "severity_tolerance": 1
+          }
+        },
+        "target_file": "src/q4.js",
+        "test_file": "tests/q4.test.js",
+        "diffs": {
+          "defect": "diff --git a/src/q4.js b/src/q4.js\nnew file mode 100755\nindex 0000000..e571bd5\n--- /dev/null\n+++ b/src/q4.js\n@@ -0,0 +1,4 @@\n+function inRange(v, min, max) {\n+  return v > min && v < max;\n+}\n+module.exports = { inRange };\ndiff --git a/tests/q4.test.js b/tests/q4.test.js\nnew file mode 100755\nindex 0000000..8096ee2\n--- /dev/null\n+++ b/tests/q4.test.js\n@@ -0,0 +1,6 @@\n+const { inRange } = require('../src/q4.js');\n+const assert = require('node:assert');\n+assert.strictEqual(inRange(5, 1, 10), true, 'mid');\n+assert.strictEqual(inRange(1, 1, 10), true, 'min');\n+assert.strictEqual(inRange(10, 1, 10), true, 'max');\n+console.log('q4 passed');\n",
+          "fixed": "diff --git a/src/q4.js b/src/q4.js\nnew file mode 100755\nindex 0000000..9aa355a\n--- /dev/null\n+++ b/src/q4.js\n@@ -0,0 +1,4 @@\n+function inRange(v, min, max) {\n+  return v >= min && v <= max;\n+}\n+module.exports = { inRange };\ndiff --git a/tests/q4.test.js b/tests/q4.test.js\nnew file mode 100755\nindex 0000000..8096ee2\n--- /dev/null\n+++ b/tests/q4.test.js\n@@ -0,0 +1,6 @@\n+const { inRange } = require('../src/q4.js');\n+const assert = require('node:assert');\n+assert.strictEqual(inRange(5, 1, 10), true, 'mid');\n+assert.strictEqual(inRange(1, 1, 10), true, 'min');\n+assert.strictEqual(inRange(10, 1, 10), true, 'max');\n+console.log('q4 passed');\n"
+        },
+        "test_runs": {
+          "defect": {
+            "code": 1,
+            "output": ":254:19)\n    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)\n    at node:internal/main/run_main_module:36:49 {\n  generatedMessage: false,\n  code: 'ERR_ASSERTION',\n  actual: false,\n  expected: true,\n  operator: 'strictEqual',\n  diff: 'simple'\n}\n\nNode.js v22.23.3\n"
+          },
+          "fixed": {
+            "code": 0,
+            "output": "q4 passed\n"
+          }
+        },
+        "base_commit": "d2b249098ea55029f35cdefd9939eb26b0d88f04"
+      },
+      {
+        "case_id": "CASE-05",
+        "ok": true,
+        "failure_class": null,
+        "detail": "defect 测试失败 / fixed 测试通过 / 目标文件在 diff 中 / 规格完备",
+        "spec": {
+          "case_id": "CASE-05",
+          "trial_origin": {
+            "sample_name": "q5-missing-return",
+            "source": "r3work/rc26-release/trial/build-samples.py（内容逐字复用，不新造缺陷）",
+            "trial_evidence_status": "合格可直接复用——run f56e249f（PR#5, head ceed8cd）：纯逻辑缺陷零静态命中，LLM 命中 P1「async 漏 return」，DONE 2465ms（QUALITY-REPORT §二/§六）"
+          },
+          "name": "async 函数漏 return（恒 undefined）",
+          "target_file": "src/q5.js",
+          "test_file": "tests/q5.test.js",
+          "defect_description": "double 为 async 但未 return delayed(...)，调用方 await double(21) 得 undefined 而非 42。",
+          "expected_behaviors": [
+            {
+              "call": "await double(21)",
+              "want": "42"
+            }
+          ],
+          "evaluation_rules": {
+            "target_path": "src/q5.js",
+            "defect_marker_patterns": [
+              "return",
+              "漏(返回|return)",
+              "missing.{0,16}return",
+              "undefined",
+              "await",
+              "promise",
+              "Promise"
+            ],
+            "expected_severity": {
+              "value": "P1",
+              "provenance": "trial_measured",
+              "rationale": "trial 实测：run f56e249f LLM 定 P1（QUALITY-REPORT §四）"
+            },
+            "severity_tolerance": 1
+          }
+        },
+        "target_file": "src/q5.js",
+        "test_file": "tests/q5.test.js",
+        "diffs": {
+          "defect": "diff --git a/src/q5.js b/src/q5.js\nnew file mode 100755\nindex 0000000..72eaeda\n--- /dev/null\n+++ b/src/q5.js\n@@ -0,0 +1,7 @@\n+function delayed(v, ms) {\n+  return new Promise(r => setTimeout(() => r(v), ms));\n+}\n+async function double(x) {\n+  delayed(x * 2, 10);\n+}\n+module.exports = { double };\ndiff --git a/tests/q5.test.js b/tests/q5.test.js\nnew file mode 100755\nindex 0000000..969e261\n--- /dev/null\n+++ b/tests/q5.test.js\n@@ -0,0 +1,6 @@\n+const { double } = require('../src/q5.js');\n+const assert = require('node:assert');\n+(async () => {\n+  assert.strictEqual(await double(21), 42, 'double');\n+  console.log('q5 passed');\n+})().catch(e => { console.error(e.message); process.exit(1); });\n",
+          "fixed": "diff --git a/src/q5.js b/src/q5.js\nnew file mode 100755\nindex 0000000..c2db31a\n--- /dev/null\n+++ b/src/q5.js\n@@ -0,0 +1,7 @@\n+function delayed(v, ms) {\n+  return new Promise(r => setTimeout(() => r(v), ms));\n+}\n+async function double(x) {\n+  return delayed(x * 2, 10);\n+}\n+module.exports = { double };\ndiff --git a/tests/q5.test.js b/tests/q5.test.js\nnew file mode 100755\nindex 0000000..969e261\n--- /dev/null\n+++ b/tests/q5.test.js\n@@ -0,0 +1,6 @@\n+const { double } = require('../src/q5.js');\n+const assert = require('node:assert');\n+(async () => {\n+  assert.strictEqual(await double(21), 42, 'double');\n+  console.log('q5 passed');\n+})().catch(e => { console.error(e.message); process.exit(1); });\n"
+        },
+        "test_runs": {
+          "defect": {
+            "code": 1,
+            "output": "double\n\nundefined !== 42\n\n"
+          },
+          "fixed": {
+            "code": 0,
+            "output": "q5 passed\n"
+          }
+        },
+        "base_commit": "d2b249098ea55029f35cdefd9939eb26b0d88f04"
+      },
+      {
+        "case_id": "CASE-06",
+        "ok": true,
+        "failure_class": null,
+        "detail": "defect 测试失败 / fixed 测试通过 / 目标文件在 diff 中 / 规格完备",
+        "spec": {
+          "case_id": "CASE-06",
+          "trial_origin": {
+            "sample_name": "q6-replace-first",
+            "source": "r3work/rc26-release/trial/build-samples.py（内容逐字复用，不新造缺陷）",
+            "trial_evidence_status": "合格可直接复用——run 1c7edcf2（PR#8, head 6825efc）：LLM 命中 P2「slugify 只换首个」，DONE 2728ms，静态命中 0（QUALITY-REPORT §二/§六）"
+          },
+          "name": "replace 只替换首个匹配",
+          "target_file": "src/q6.js",
+          "test_file": "tests/q6.test.js",
+          "defect_description": "slugify 用字符串参数 s.replace(' ', '-')，JS 语义只替换第一处空格——多空格输入产出非法 slug。",
+          "expected_behaviors": [
+            {
+              "call": "slugify('a b c')",
+              "want": "'a-b-c'"
+            }
+          ],
+          "evaluation_rules": {
+            "target_path": "src/q6.js",
+            "defect_marker_patterns": [
+              "replace",
+              "只(替换|换|处理).{0,10}(第一|首个|一次|一个)",
+              "first.{0,16}(occurrence|only|match)",
+              "global",
+              "/\\s*/g|/ /g",
+              "所有.{0,6}(空格|匹配)",
+              "all.{0,12}(space|match|occurrence)"
+            ],
+            "expected_severity": {
+              "value": "P2",
+              "provenance": "trial_measured",
+              "rationale": "trial 实测：run 1c7edcf2 LLM 定 P2 且审批门 P2→REVIEWED 行为正确（QUALITY-REPORT §四）"
+            },
+            "severity_tolerance": 1
+          }
+        },
+        "target_file": "src/q6.js",
+        "test_file": "tests/q6.test.js",
+        "diffs": {
+          "defect": "diff --git a/src/q6.js b/src/q6.js\nnew file mode 100755\nindex 0000000..bdbdc93\n--- /dev/null\n+++ b/src/q6.js\n@@ -0,0 +1,4 @@\n+function slugify(s) {\n+  return s.replace(' ', '-').toLowerCase();\n+}\n+module.exports = { slugify };\ndiff --git a/tests/q6.test.js b/tests/q6.test.js\nnew file mode 100755\nindex 0000000..c305b06\n--- /dev/null\n+++ b/tests/q6.test.js\n@@ -0,0 +1,4 @@\n+const { slugify } = require('../src/q6.js');\n+const assert = require('node:assert');\n+assert.strictEqual(slugify('a b c'), 'a-b-c', 'three');\n+console.log('q6 passed');\n",
+          "fixed": "diff --git a/src/q6.js b/src/q6.js\nnew file mode 100755\nindex 0000000..ee39d79\n--- /dev/null\n+++ b/src/q6.js\n@@ -0,0 +1,4 @@\n+function slugify(s) {\n+  return s.replace(/ /g, '-').toLowerCase();\n+}\n+module.exports = { slugify };\ndiff --git a/tests/q6.test.js b/tests/q6.test.js\nnew file mode 100755\nindex 0000000..c305b06\n--- /dev/null\n+++ b/tests/q6.test.js\n@@ -0,0 +1,4 @@\n+const { slugify } = require('../src/q6.js');\n+const assert = require('node:assert');\n+assert.strictEqual(slugify('a b c'), 'a-b-c', 'three');\n+console.log('q6 passed');\n"
+        },
+        "test_runs": {
+          "defect": {
+            "code": 1,
+            "output": "19)\n    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)\n    at node:internal/main/run_main_module:36:49 {\n  generatedMessage: false,\n  code: 'ERR_ASSERTION',\n  actual: 'a-b c',\n  expected: 'a-b-c',\n  operator: 'strictEqual',\n  diff: 'simple'\n}\n\nNode.js v22.23.3\n"
+          },
+          "fixed": {
+            "code": 0,
+            "output": "q6 passed\n"
+          }
+        },
+        "base_commit": "d2b249098ea55029f35cdefd9939eb26b0d88f04"
+      }
+    ],
+    "all_ok": true
+  },
+  "runs": [
+    {
+      "case_id": "CASE-01",
+      "variant": "defect",
+      "spec_ref": {
+        "name": "倒序循环漏掉首元素",
+        "target_file": "src/q1.js",
+        "expected_severity": "P2",
+        "expected_severity_provenance": "registered_by_analogy"
+      },
+      "llm_mode": "real",
+      "entry": "callLlmReviewer(production llm_assist path)",
+      "call_ok": true,
+      "call_code": null,
+      "diff_summary": {
+        "variant": "defect",
+        "bytes": 727,
+        "sha256": "e86d0541df877e8adc16397568eb2ac52713321c9e377d4853bd93764c8cf99a"
+      },
+      "input_coverage": {
+        "input_digest": "06302c01fac2428ed05849bc827523a43f0b9a0eb8fa40b872b2d5afa6ea17da",
+        "coverage": {
+          "full_diff_fallback": true,
+          "blocks_sent": 1,
+          "lines_sent": 26,
+          "truncated": false,
+          "bytes": 1031
+        },
+        "target_file_covered": true,
+        "target_added_lines_total": 8,
+        "target_added_lines_in_payload": 8
+      },
+      "findings_count": 2,
+      "findings": [
+        {
+          "rule_id": "LLM-logic_bug",
+          "severity": "P1",
+          "confidence": 0.95,
+          "path": "src/q1.js",
+          "line_start": 3,
+          "line_end": null,
+          "title": "倒序循环条件 `i > 0` 会在 i 等于 0 时提前终止，导致索引 0 的首元素永远不会被拼接进结果。例如 reverseJoin(['a','b','c'],'|') 实际返回 'c|b'，而测试期望 'c|b|a'；单元素数组 ['only'] 会返回空字符串。该缺陷使函数在几乎所有非空输入下都产生错误结果。",
+          "evidence_ref": "",
+          "remediation": "将循环条件改为 `i >= 0`，确保索引 0 被处理；或改用 `for (const item of [...items].reverse())` 等更不易出错的写法。同时建议补充边界用例：空数组应返回空字符串、单元素数组应返回该元素本身，并让测试覆盖这些场景以防回归。",
+          "summary_masked": "倒序循环条件 `i > 0` 会在 i 等于 0 时提前终止，导致索引 0 的首元素永远不会被拼接进结果。例如 reverseJoin(['a','b','c'],'|') 实际返回 'c|b'，而测试期望 'c|b|a'；单元素数组 ['"
+        },
+        {
+          "rule_id": "LLM-maintainability",
+          "severity": "P2",
+          "confidence": 0.7,
+          "path": "tests/q1.test.js",
+          "line_start": 3,
+          "line_end": null,
+          "title": "测试文件使用顶层 assert 断言并在末尾 console.log，未使用测试框架（如 node:test / mocha）。断言失败会抛出异常导致进程非零退出，但缺少用例名称与聚合报告，失败时难以定位是哪个用例；且测试文件被标记为可执行（100755），与常规测试文件权限不符。",
+          "evidence_ref": "",
+          "remediation": "建议改用 node:test 的 test()/describe() 组织用例，或引入项目既有测试框架，使每个断言有独立名称与清晰失败信息；移除调试用 console.log。另建议将源码与测试文件权限从 100755 调整为 100644，避免不必要的可执行位。",
+          "summary_masked": "测试文件使用顶层 assert 断言并在末尾 console.log，未使用测试框架（如 node:test / mocha）。断言失败会抛出异常导致进程非零退出，但缺少用例名称与聚合报告，失败时难以定位是哪个用例；且测试文件被标记为可执行"
+        }
+      ],
+      "classifications": [
+        {
+          "finding_index": 0,
+          "category": "true_defect",
+          "rule_id": "CLA-TRUE-DEFECT",
+          "reason": "目标文件 src/q1.js 上命中登记缺陷标记",
+          "expected_severity": "P2",
+          "rated_severity": "P1",
+          "severity_deviation": -1,
+          "severity_exact": false,
+          "severity_within_tolerance": true
+        },
+        {
+          "finding_index": 1,
+          "category": "general_suggestion",
+          "rule_id": "CLA-SUGGESTION",
+          "reason": "建议措辞且无强缺陷断言——加固/改进建议（对齐 trial §六先例）"
+        }
+      ],
+      "review": {
+        "latency_ms": 2798,
+        "model": "deepseek-chat",
+        "prompt_version": "llm-w31-v1",
+        "input_digest": "06302c01fac2428ed05849bc827523a43f0b9a0eb8fa40b872b2d5afa6ea17da",
+        "output_digest": "106cf16bd165a97c315ebfffcc724829c37907d1071458cf5352504cc1c8cfee",
+        "tokens": null,
+        "coverage": {
+          "full_diff_fallback": true,
+          "blocks_sent": 1,
+          "lines_sent": 26,
+          "truncated": false,
+          "bytes": 1031
+        }
+      }
+    },
+    {
+      "case_id": "CASE-01",
+      "variant": "fixed",
+      "spec_ref": {
+        "name": "倒序循环漏掉首元素",
+        "target_file": "src/q1.js",
+        "expected_severity": "P2",
+        "expected_severity_provenance": "registered_by_analogy"
+      },
+      "llm_mode": "real",
+      "entry": "callLlmReviewer(production llm_assist path)",
+      "call_ok": true,
+      "call_code": null,
+      "diff_summary": {
+        "variant": "fixed",
+        "bytes": 728,
+        "sha256": "50ac31cb8385f3c4af1d8a90941b8a9c8fb7b0ccb94c4e8b597bb1ae5c22c296"
+      },
+      "input_coverage": {
+        "input_digest": "84739f9a8d8be5f0dc4bc5850b0f4c41a5ee12588a6eeb62bb6ad6126b5bd9d1",
+        "coverage": {
+          "full_diff_fallback": true,
+          "blocks_sent": 1,
+          "lines_sent": 26,
+          "truncated": false,
+          "bytes": 1031
+        },
+        "target_file_covered": true,
+        "target_added_lines_total": 8,
+        "target_added_lines_in_payload": 8
+      },
+      "findings_count": 4,
+      "findings": [
+        {
+          "rule_id": "LLM-logic_bug",
+          "severity": "P3",
+          "confidence": 0.6,
+          "path": "src/q1.js",
+          "line_start": 3,
+          "line_end": null,
+          "title": "倒序循环 `for (let i = items.length - 1; i >= 0; i--)` 在 items 为空数组时 length-1 为 -1，条件 -1 >= 0 为假，循环不执行，返回空字符串，行为正确。但若 items 为 null/undefined 会抛 TypeError，缺少入参校验。",
+          "evidence_ref": "",
+          "remediation": "建议在函数入口增加对 items 的类型/空值校验，例如 `if (!Array.isArray(items)) throw new TypeError('items must be an array')`，避免调用方传入非数组时产生难以定位的运行时错误。当前测试仅覆盖非空数组，建议补充空数组与非法入参的用例。",
+          "summary_masked": "倒序循环 `for (let i = items.length - 1; i >= 0; i--)` 在 items 为空数组时 length-1 为 -1，条件 -1 >= 0 为假，循环不执行，返回空字符串，行为正确。但若 items "
+        },
+        {
+          "rule_id": "LLM-maintainability",
+          "severity": "P3",
+          "confidence": 0.55,
+          "path": "src/q1.js",
+          "line_start": 4,
+          "line_end": null,
+          "title": "使用 `out ? sep : ''` 判断是否添加分隔符，依赖 out 的字符串真值。当 items 首元素（倒序后首个拼接项）为空字符串 '' 时，out 仍为 ''，后续元素会错误地不添加分隔符，导致结果缺少分隔符。",
+          "evidence_ref": "",
+          "remediation": "建议改用索引判断而非字符串真值，例如 `out += (i === items.length - 1 ? '' : sep) + items[i]`，或先收集再 join。这样可正确处理元素为空字符串的情况，语义更明确。建议补充包含空字符串元素的测试用例。",
+          "summary_masked": "使用 `out ? sep : ''` 判断是否添加分隔符，依赖 out 的字符串真值。当 items 首元素（倒序后首个拼接项）为空字符串 '' 时，out 仍为 ''，后续元素会错误地不添加分隔符，导致结果缺少分隔符。"
+        },
+        {
+          "rule_id": "LLM-data_handling",
+          "severity": "P3",
+          "confidence": 0.5,
+          "path": "src/q1.js",
+          "line_start": 5,
+          "line_end": null,
+          "title": "`items[i]` 直接参与字符串拼接，若元素为对象、null、undefined 等非字符串类型，会隐式调用 toString 产生 '[object Object]' 或 'null'/'undefined' 等非预期输出，缺少类型归一化。",
+          "evidence_ref": "",
+          "remediation": "建议在拼接前显式转换，如 `String(items[i])`，或在文档/类型声明中明确约定 items 元素必须为字符串。若需支持任意类型，应明确转换规则并补充相应测试。",
+          "summary_masked": "`items[i]` 直接参与字符串拼接，若元素为对象、null、undefined 等非字符串类型，会隐式调用 toString 产生 '[object Object]' 或 'null'/'undefined' 等非预期输出，缺少类型归"
+        },
+        {
+          "rule_id": "LLM-config_risk",
+          "severity": "P3",
+          "confidence": 0.45,
+          "path": "src/q1.js",
+          "line_start": 1,
+          "line_end": null,
+          "title": "新增文件权限为 100755（可执行位），但 src/q1.js 是模块文件而非可执行脚本，tests/q1.test.js 同样为 100755。多余的可执行位可能带来不必要的权限暴露，且与常规源码文件权限约定不一致。",
+          "evidence_ref": "",
+          "remediation": "建议将源码与测试文件权限改为 644（非可执行），仅对确实需要直接执行的脚本保留可执行位。可在仓库中统一文件权限约定，避免后续提交引入不一致。",
+          "summary_masked": "新增文件权限为 100755（可执行位），但 src/q1.js 是模块文件而非可执行脚本，tests/q1.test.js 同样为 100755。多余的可执行位可能带来不必要的权限暴露，且与常规源码文件权限约定不一致。"
+        }
+      ],
+      "classifications": [
+        {
+          "finding_index": 0,
+          "category": "false_positive",
+          "rule_id": "CLA-FALSE-POSITIVE",
+          "reason": "目标文件上的缺陷断言但与登记缺陷标记不符"
+        },
+        {
+          "finding_index": 1,
+          "category": "false_positive",
+          "rule_id": "CLA-FALSE-POSITIVE",
+          "reason": "正确版上断言登记缺陷（缺陷已不存在）——按误报计"
+        },
+        {
+          "finding_index": 2,
+          "category": "general_suggestion",
+          "rule_id": "CLA-SUGGESTION",
+          "reason": "建议措辞且无强缺陷断言——加固/改进建议（对齐 trial §六先例）"
+        },
+        {
+          "finding_index": 3,
+          "category": "general_suggestion",
+          "rule_id": "CLA-SUGGESTION",
+          "reason": "建议措辞且无强缺陷断言——加固/改进建议（对齐 trial §六先例）"
+        }
+      ],
+      "review": {
+        "latency_ms": 3658,
+        "model": "deepseek-chat",
+        "prompt_version": "llm-w31-v1",
+        "input_digest": "84739f9a8d8be5f0dc4bc5850b0f4c41a5ee12588a6eeb62bb6ad6126b5bd9d1",
+        "output_digest": "1544245e317aa8d16ad981f134405a9c4f034ed24a8508fdd8d121bbfc85085c",
+        "tokens": null,
+        "coverage": {
+          "full_diff_fallback": true,
+          "blocks_sent": 1,
+          "lines_sent": 26,
+          "truncated": false,
+          "bytes": 1031
+        }
+      }
+    },
+    {
+      "case_id": "CASE-02",
+      "variant": "defect",
+      "spec_ref": {
+        "name": "null 输入未防护直接 TypeError",
+        "target_file": "src/q2.js",
+        "expected_severity": "P2",
+        "expected_severity_provenance": "trial_qualitative"
+      },
+      "llm_mode": "real",
+      "entry": "callLlmReviewer(production llm_assist path)",
+      "call_ok": true,
+      "call_code": null,
+      "diff_summary": {
+        "variant": "defect",
+        "bytes": 679,
+        "sha256": "dce742baaa6a4abd5c03d2918e09e6c788ff823037ce201089f66f9662a88a24"
+      },
+      "input_coverage": {
+        "input_digest": "8c0631991c5478144a130d115fca8124643e9603230a066fd8d71dcf50cf8e9c",
+        "coverage": {
+          "full_diff_fallback": true,
+          "blocks_sent": 1,
+          "lines_sent": 23,
+          "truncated": false,
+          "bytes": 987
+        },
+        "target_file_covered": true,
+        "target_added_lines_total": 4,
+        "target_added_lines_in_payload": 4
+      },
+      "findings_count": 3,
+      "findings": [
+        {
+          "rule_id": "LLM-logic_bug",
+          "severity": "P1",
+          "confidence": 0.95,
+          "path": "src/q2.js",
+          "line_start": 2,
+          "line_end": null,
+          "title": "initials(name) 直接调用 name.trim()，未对 null/undefined 做防护。测试用例 initials(null) 期望返回 ''，但实际会抛出 TypeError: Cannot read properties of null (reading 'trim')，测试必然失败。",
+          "evidence_ref": "",
+          "remediation": "在函数入口增加空值防护，例如：if (name == null) return ''; 或使用可选链与空值合并：return (name ?? '').trim()...。同时建议明确非字符串输入的契约（抛错还是返回空串），并补充 undefined、非字符串类型的测试用例。",
+          "summary_masked": "initials(name) 直接调用 name.trim()，未对 null/undefined 做防护。测试用例 initials(null) 期望返回 ''，但实际会抛出 TypeError: Cannot read properti"
+        },
+        {
+          "rule_id": "LLM-maintainability",
+          "severity": "P3",
+          "confidence": 0.9,
+          "path": "src/q2.js",
+          "line_start": 2,
+          "line_end": null,
+          "title": "对空字符串或纯空白输入，split(/\\s+/) 会产生 ['']，w[0] 为 undefined，toUpperCase() 会抛 TypeError。测试中 initials('') 期望 ''，当前实现同样无法通过。",
+          "evidence_ref": "",
+          "remediation": "先 trim 再判断是否为空，或过滤空片段：const parts = name.trim().split(/\\s+/).filter(Boolean); 然后 map。这样可同时覆盖空串与纯空白输入。",
+          "summary_masked": "对空字符串或纯空白输入，split(/\\s+/) 会产生 ['']，w[0] 为 undefined，toUpperCase() 会抛 TypeError。测试中 initials('') 期望 ''，当前实现同样无法通过。"
+        },
+        {
+          "rule_id": "LLM-data_handling",
+          "severity": "P3",
+          "confidence": 0.5,
+          "path": "src/q2.js",
+          "line_start": 2,
+          "line_end": null,
+          "title": "使用 w[0] 取首字符，对包含代理对（如 emoji、部分 CJK 扩展字符）的姓名会截断为半个码元，产生乱码。",
+          "evidence_ref": "",
+          "remediation": "如需正确处理 Unicode，可使用 Array.from(w)[0] 或 Intl.Segmenter 按字素簇取首字符。若仅面向 ASCII 姓名，建议在文档中注明输入约束。",
+          "summary_masked": "使用 w[0] 取首字符，对包含代理对（如 emoji、部分 CJK 扩展字符）的姓名会截断为半个码元，产生乱码。"
+        }
+      ],
+      "classifications": [
+        {
+          "finding_index": 0,
+          "category": "true_defect",
+          "rule_id": "CLA-TRUE-DEFECT",
+          "reason": "目标文件 src/q2.js 上命中登记缺陷标记",
+          "expected_severity": "P2",
+          "rated_severity": "P1",
+          "severity_deviation": -1,
+          "severity_exact": false,
+          "severity_within_tolerance": true
+        },
+        {
+          "finding_index": 1,
+          "category": "true_defect",
+          "rule_id": "CLA-TRUE-DEFECT",
+          "reason": "目标文件 src/q2.js 上命中登记缺陷标记",
+          "expected_severity": "P2",
+          "rated_severity": "P3",
+          "severity_deviation": 1,
+          "severity_exact": false,
+          "severity_within_tolerance": true
+        },
+        {
+          "finding_index": 2,
+          "category": "general_suggestion",
+          "rule_id": "CLA-SUGGESTION",
+          "reason": "建议措辞且无强缺陷断言——加固/改进建议（对齐 trial §六先例）"
+        }
+      ],
+      "review": {
+        "latency_ms": 2744,
+        "model": "deepseek-chat",
+        "prompt_version": "llm-w31-v1",
+        "input_digest": "8c0631991c5478144a130d115fca8124643e9603230a066fd8d71dcf50cf8e9c",
+        "output_digest": "f873b3777b130c15418cd4813879e02768389848e37b3caed104a94a92c9e5f7",
+        "tokens": null,
+        "coverage": {
+          "full_diff_fallback": true,
+          "blocks_sent": 1,
+          "lines_sent": 23,
+          "truncated": false,
+          "bytes": 987
+        }
+      }
+    },
+    {
+      "case_id": "CASE-02",
+      "variant": "fixed",
+      "spec_ref": {
+        "name": "null 输入未防护直接 TypeError",
+        "target_file": "src/q2.js",
+        "expected_severity": "P2",
+        "expected_severity_provenance": "trial_qualitative"
+      },
+      "llm_mode": "real",
+      "entry": "callLlmReviewer(production llm_assist path)",
+      "call_ok": true,
+      "call_code": null,
+      "diff_summary": {
+        "variant": "fixed",
+        "bytes": 704,
+        "sha256": "69450a2096bd51bfc1b774566830a295142e14a70bd6ce2014de9875f0152234"
+      },
+      "input_coverage": {
+        "input_digest": "628e241d4038e605406291f7c12158d023851ae07ac9a23ac6ecf8507f874803",
+        "coverage": {
+          "full_diff_fallback": true,
+          "blocks_sent": 1,
+          "lines_sent": 24,
+          "truncated": false,
+          "bytes": 1013
+        },
+        "target_file_covered": true,
+        "target_added_lines_total": 5,
+        "target_added_lines_in_payload": 5
+      },
+      "findings_count": 2,
+      "findings": [
+        {
+          "rule_id": "LLM-logic_bug",
+          "severity": "P3",
+          "confidence": 0.6,
+          "path": "src/q2.js",
+          "line_start": 3,
+          "line_end": null,
+          "title": "initials 对非字符串真值（如数字、对象、数组）会调用 .trim() 抛出 TypeError；对仅含空白的字符串（如 '   '）会 split 出空数组并返回 ''，行为尚可但未显式处理。null/undefined/'' 已被 !name 覆盖。",
+          "evidence_ref": "",
+          "remediation": "建议将输入校验改为 typeof name !== 'string' 时返回 ''，或对 name 做 String 转换后再处理，以避免非字符串输入导致运行时异常；同时可补充对纯空白字符串的测试用例。",
+          "summary_masked": "initials 对非字符串真值（如数字、对象、数组）会调用 .trim() 抛出 TypeError；对仅含空白的字符串（如 '   '）会 split 出空数组并返回 ''，行为尚可但未显式处理。null/undefined/'' 已被"
+        },
+        {
+          "rule_id": "LLM-maintainability",
+          "severity": "P3",
+          "confidence": 0.5,
+          "path": "tests/q2.test.js",
+          "line_start": 1,
+          "line_end": null,
+          "title": "测试文件使用顶层 assert 与 console.log，无测试框架，断言失败会直接抛错但缺少结构化报告；且未覆盖 undefined、纯空白、非字符串等边界。",
+          "evidence_ref": "",
+          "remediation": "建议引入标准测试框架（如 node:test）组织用例，并补充 undefined、'   '、数字等边界输入测试，提升可维护性与回归保护。",
+          "summary_masked": "测试文件使用顶层 assert 与 console.log，无测试框架，断言失败会直接抛错但缺少结构化报告；且未覆盖 undefined、纯空白、非字符串等边界。"
+        }
+      ],
+      "classifications": [
+        {
+          "finding_index": 0,
+          "category": "false_positive",
+          "rule_id": "CLA-FALSE-POSITIVE",
+          "reason": "正确版上断言登记缺陷（缺陷已不存在）——按误报计"
+        },
+        {
+          "finding_index": 1,
+          "category": "general_suggestion",
+          "rule_id": "CLA-SUGGESTION",
+          "reason": "建议措辞且无强缺陷断言——加固/改进建议（对齐 trial §六先例）"
+        }
+      ],
+      "review": {
+        "latency_ms": 2002,
+        "model": "deepseek-chat",
+        "prompt_version": "llm-w31-v1",
+        "input_digest": "628e241d4038e605406291f7c12158d023851ae07ac9a23ac6ecf8507f874803",
+        "output_digest": "5783f6df7e58a25300b358341e876764c51da6345ab0b86958c10016fad1e892",
+        "tokens": null,
+        "coverage": {
+          "full_diff_fallback": true,
+          "blocks_sent": 1,
+          "lines_sent": 24,
+          "truncated": false,
+          "bytes": 1013
+        }
+      }
+    },
+    {
+      "case_id": "CASE-03",
+      "variant": "defect",
+      "spec_ref": {
+        "name": "total 为 0 时除零得 NaN",
+        "target_file": "src/q3.js",
+        "expected_severity": "P2",
+        "expected_severity_provenance": "trial_qualitative"
+      },
+      "llm_mode": "real",
+      "entry": "callLlmReviewer(production llm_assist path)",
+      "call_ok": true,
+      "call_code": null,
+      "diff_summary": {
+        "variant": "defect",
+        "bytes": 578,
+        "sha256": "c3b1a72d8179d012f3e0b5f08b9621605560760b978b99a058428c1e0299dcdb"
+      },
+      "input_coverage": {
+        "input_digest": "2f01a8cdb1c93e3aef4d6d7c8b4c9aea7c67afd2c7d827c62a055c7ebcc2f369",
+        "coverage": {
+          "full_diff_fallback": true,
+          "blocks_sent": 1,
+          "lines_sent": 22,
+          "truncated": false,
+          "bytes": 875
+        },
+        "target_file_covered": true,
+        "target_added_lines_total": 4,
+        "target_added_lines_in_payload": 4
+      },
+      "findings_count": 2,
+      "findings": [
+        {
+          "rule_id": "LLM-logic_bug",
+          "severity": "P2",
+          "confidence": 0.95,
+          "path": "src/q3.js",
+          "line_start": 2,
+          "line_end": null,
+          "title": "pct(part, total) 在 total 为 0 时执行 part/0，得到 Infinity 或 NaN（0/0），Math.round 后仍为 Infinity/NaN，不会返回 0。测试用例 pct(3, 0) 期望 0，与实际行为不符，测试将失败或掩盖缺陷。",
+          "evidence_ref": "",
+          "remediation": "在计算前对 total 做零值/非有限值防护，例如 total === 0 时返回 0（或按业务约定返回 null/抛错），并明确 part、total 的合法取值范围。同时补充 total 为 0、负数、非数字等边界用例，确保测试断言与实现一致。",
+          "summary_masked": "pct(part, total) 在 total 为 0 时执行 part/0，得到 Infinity 或 NaN（0/0），Math.round 后仍为 Infinity/NaN，不会返回 0。测试用例 pct(3, 0) 期望 0，与实"
+        },
+        {
+          "rule_id": "LLM-maintainability",
+          "severity": "P3",
+          "confidence": 0.6,
+          "path": "src/q3.js",
+          "line_start": 1,
+          "line_end": null,
+          "title": "pct 未对入参做类型或范围校验，非数字入参会静默产生 NaN，调用方难以定位问题。",
+          "evidence_ref": "",
+          "remediation": "可考虑在函数入口校验入参为有限数字，非法时抛出明确错误或返回约定值，提升可调试性。",
+          "summary_masked": "pct 未对入参做类型或范围校验，非数字入参会静默产生 NaN，调用方难以定位问题。"
+        }
+      ],
+      "classifications": [
+        {
+          "finding_index": 0,
+          "category": "true_defect",
+          "rule_id": "CLA-TRUE-DEFECT",
+          "reason": "目标文件 src/q3.js 上命中登记缺陷标记",
+          "expected_severity": "P2",
+          "rated_severity": "P2",
+          "severity_deviation": 0,
+          "severity_exact": true,
+          "severity_within_tolerance": true
+        },
+        {
+          "finding_index": 1,
+          "category": "true_defect",
+          "rule_id": "CLA-TRUE-DEFECT",
+          "reason": "目标文件 src/q3.js 上命中登记缺陷标记",
+          "expected_severity": "P2",
+          "rated_severity": "P3",
+          "severity_deviation": 1,
+          "severity_exact": false,
+          "severity_within_tolerance": true
+        }
+      ],
+      "review": {
+        "latency_ms": 2006,
+        "model": "deepseek-chat",
+        "prompt_version": "llm-w31-v1",
+        "input_digest": "2f01a8cdb1c93e3aef4d6d7c8b4c9aea7c67afd2c7d827c62a055c7ebcc2f369",
+        "output_digest": "e2772693f9a64b6f22544b636da6072dd1b45db20598b5390cd60dca93b37fdf",
+        "tokens": null,
+        "coverage": {
+          "full_diff_fallback": true,
+          "blocks_sent": 1,
+          "lines_sent": 22,
+          "truncated": false,
+          "bytes": 875
+        }
+      }
+    },
+    {
+      "case_id": "CASE-03",
+      "variant": "fixed",
+      "spec_ref": {
+        "name": "total 为 0 时除零得 NaN",
+        "target_file": "src/q3.js",
+        "expected_severity": "P2",
+        "expected_severity_provenance": "trial_qualitative"
+      },
+      "llm_mode": "real",
+      "entry": "callLlmReviewer(production llm_assist path)",
+      "call_ok": true,
+      "call_code": null,
+      "diff_summary": {
+        "variant": "fixed",
+        "bytes": 603,
+        "sha256": "fe33d9e54f25acebfbb5231fac947e99e71aabadf47d1c00bca30f863ad612cd"
+      },
+      "input_coverage": {
+        "input_digest": "510e403ea15ea9336383b9c138cb1d3fcd72ef548cfb6977ff0253dfd5e34dc5",
+        "coverage": {
+          "full_diff_fallback": true,
+          "blocks_sent": 1,
+          "lines_sent": 23,
+          "truncated": false,
+          "bytes": 901
+        },
+        "target_file_covered": true,
+        "target_added_lines_total": 5,
+        "target_added_lines_in_payload": 5
+      },
+      "findings_count": 3,
+      "findings": [
+        {
+          "rule_id": "LLM-logic_bug",
+          "severity": "P3",
+          "confidence": 0.6,
+          "path": "src/q3.js",
+          "line_start": 2,
+          "line_end": null,
+          "title": "`if (!total) return 0;` 使用 falsy 判断，会把 total 为 NaN、undefined、null、'' 等非数值输入也当作 0 处理并返回 0，掩盖了调用方传入非法参数的问题；同时 total 为负数时不会触发该分支，会返回负百分比。",
+          "evidence_ref": "",
+          "remediation": "建议显式判断 `total === 0`（或 `Number.isFinite(total) && total !== 0`），对非有限数值或负数 total 抛出 TypeError/RangeError，让非法输入尽早暴露，而不是静默返回 0。若业务上确实需要把非法输入归零，应在文档和测试中明确该契约。",
+          "summary_masked": "`if (!total) return 0;` 使用 falsy 判断，会把 total 为 NaN、undefined、null、'' 等非数值输入也当作 0 处理并返回 0，掩盖了调用方传入非法参数的问题；同时 total 为负数时不会"
+        },
+        {
+          "rule_id": "LLM-data_handling",
+          "severity": "P3",
+          "confidence": 0.5,
+          "path": "src/q3.js",
+          "line_start": 3,
+          "line_end": null,
+          "title": "`Math.round((part / total) * 100)` 未校验 part 类型；part 为字符串时会发生隐式数值转换，part 为 undefined/NaN 时结果为 NaN 并向上传播，调用方难以定位。",
+          "evidence_ref": "",
+          "remediation": "在函数入口对 part、total 做类型与有限性校验（如 `Number.isFinite`），非法时抛出明确错误；或在 JSDoc 中声明参数类型并补充边界测试（part 为 0、负数、超过 total、非数值）。",
+          "summary_masked": "`Math.round((part / total) * 100)` 未校验 part 类型；part 为字符串时会发生隐式数值转换，part 为 undefined/NaN 时结果为 NaN 并向上传播，调用方难以定位。"
+        },
+        {
+          "rule_id": "LLM-maintainability",
+          "severity": "P3",
+          "confidence": 0.4,
+          "path": "tests/q3.test.js",
+          "line_start": 1,
+          "line_end": null,
+          "title": "测试文件使用顶层 assert 与 console.log，未使用测试框架；一旦某个断言失败，后续断言不会执行，且退出码依赖 assert 抛错行为，CI 中失败信息不够结构化。",
+          "evidence_ref": "",
+          "remediation": "建议改用项目既有测试框架（如 node:test、jest、mocha）组织用例，覆盖 total 为 0、负数、NaN、undefined 以及 part 为 0/负数/非数值等边界，避免仅靠顶层断言。",
+          "summary_masked": "测试文件使用顶层 assert 与 console.log，未使用测试框架；一旦某个断言失败，后续断言不会执行，且退出码依赖 assert 抛错行为，CI 中失败信息不够结构化。"
+        }
+      ],
+      "classifications": [
+        {
+          "finding_index": 0,
+          "category": "false_positive",
+          "rule_id": "CLA-FALSE-POSITIVE",
+          "reason": "正确版上断言登记缺陷（缺陷已不存在）——按误报计"
+        },
+        {
+          "finding_index": 1,
+          "category": "false_positive",
+          "rule_id": "CLA-FALSE-POSITIVE",
+          "reason": "正确版上断言登记缺陷（缺陷已不存在）——按误报计"
+        },
+        {
+          "finding_index": 2,
+          "category": "general_suggestion",
+          "rule_id": "CLA-SUGGESTION",
+          "reason": "建议措辞且无强缺陷断言——加固/改进建议（对齐 trial §六先例）"
+        }
+      ],
+      "review": {
+        "latency_ms": 3116,
+        "model": "deepseek-chat",
+        "prompt_version": "llm-w31-v1",
+        "input_digest": "510e403ea15ea9336383b9c138cb1d3fcd72ef548cfb6977ff0253dfd5e34dc5",
+        "output_digest": "c2edb55e6ddaf47f53d7d39e09debbd4f2f277b171fea2986ed61d84962c5d8c",
+        "tokens": null,
+        "coverage": {
+          "full_diff_fallback": true,
+          "blocks_sent": 1,
+          "lines_sent": 23,
+          "truncated": false,
+          "bytes": 901
+        }
+      }
+    },
+    {
+      "case_id": "CASE-04",
+      "variant": "defect",
+      "spec_ref": {
+        "name": "范围边界排除了等于（不含边界）",
+        "target_file": "src/q4.js",
+        "expected_severity": "P1",
+        "expected_severity_provenance": "trial_measured"
+      },
+      "llm_mode": "real",
+      "entry": "callLlmReviewer(production llm_assist path)",
+      "call_ok": true,
+      "call_code": null,
+      "diff_summary": {
+        "variant": "defect",
+        "bytes": 641,
+        "sha256": "641af26854f54474c7ac1be6e1cc009b5be51e32cad0a28e59ecf3e0f52b9888"
+      },
+      "input_coverage": {
+        "input_digest": "8fd4299b5d659384698ceb7f9aadf5e63964ba5d9c22e2e0b68310dc1a0c1ba6",
+        "coverage": {
+          "full_diff_fallback": true,
+          "blocks_sent": 1,
+          "lines_sent": 23,
+          "truncated": false,
+          "bytes": 957
+        },
+        "target_file_covered": true,
+        "target_added_lines_total": 4,
+        "target_added_lines_in_payload": 4
+      },
+      "findings_count": 1,
+      "findings": [
+        {
+          "rule_id": "LLM-logic_bug",
+          "severity": "P1",
+          "confidence": 0.95,
+          "path": "src/q4.js",
+          "line_start": 2,
+          "line_end": null,
+          "title": "inRange 使用严格不等号 v > min && v < max，排除了等于边界的情况。测试用例却断言 inRange(1,1,10) 和 inRange(10,1,10) 应为 true，与实现矛盾，测试必然失败。",
+          "evidence_ref": "",
+          "remediation": "根据需求确认边界语义：若应包含边界，改为 v >= min && v <= max；若应排除边界，则修正测试断言为 false。当前实现与测试不一致，需统一。",
+          "summary_masked": "inRange 使用严格不等号 v > min && v < max，排除了等于边界的情况。测试用例却断言 inRange(1,1,10) 和 inRange(10,1,10) 应为 true，与实现矛盾，测试必然失败。"
+        }
+      ],
+      "classifications": [
+        {
+          "finding_index": 0,
+          "category": "true_defect",
+          "rule_id": "CLA-TRUE-DEFECT",
+          "reason": "目标文件 src/q4.js 上命中登记缺陷标记",
+          "expected_severity": "P1",
+          "rated_severity": "P1",
+          "severity_deviation": 0,
+          "severity_exact": true,
+          "severity_within_tolerance": true
+        }
+      ],
+      "review": {
+        "latency_ms": 1249,
+        "model": "deepseek-chat",
+        "prompt_version": "llm-w31-v1",
+        "input_digest": "8fd4299b5d659384698ceb7f9aadf5e63964ba5d9c22e2e0b68310dc1a0c1ba6",
+        "output_digest": "f5657c1b2ed2ba810f55a9237b56c9793ebbc5c022fa27de192abde1a55ee3e9",
+        "tokens": null,
+        "coverage": {
+          "full_diff_fallback": true,
+          "blocks_sent": 1,
+          "lines_sent": 23,
+          "truncated": false,
+          "bytes": 957
+        }
+      }
+    },
+    {
+      "case_id": "CASE-04",
+      "variant": "fixed",
+      "spec_ref": {
+        "name": "范围边界排除了等于（不含边界）",
+        "target_file": "src/q4.js",
+        "expected_severity": "P1",
+        "expected_severity_provenance": "trial_measured"
+      },
+      "llm_mode": "real",
+      "entry": "callLlmReviewer(production llm_assist path)",
+      "call_ok": true,
+      "call_code": null,
+      "diff_summary": {
+        "variant": "fixed",
+        "bytes": 643,
+        "sha256": "8a442e5002277df2abb4014cacdb000dcb654adf14befaffd85f325e5d0b4eb7"
+      },
+      "input_coverage": {
+        "input_digest": "6a09e7eea126f5a88edf3e1e0fac851036afa734413294d7e285940be33ae568",
+        "coverage": {
+          "full_diff_fallback": true,
+          "blocks_sent": 1,
+          "lines_sent": 23,
+          "truncated": false,
+          "bytes": 958
+        },
+        "target_file_covered": true,
+        "target_added_lines_total": 4,
+        "target_added_lines_in_payload": 4
+      },
+      "findings_count": 3,
+      "findings": [
+        {
+          "rule_id": "LLM-logic_bug",
+          "severity": "P2",
+          "confidence": 0.5,
+          "path": "src/q4.js",
+          "line_start": 2,
+          "line_end": null,
+          "title": "PR 标题声称『范围边界排除了等于（不含边界）』，但实现使用 v >= min && v <= max，为闭区间（包含边界）。测试也断言 min=1 与 max=10 返回 true，与标题描述语义相反，存在需求与实现不一致的逻辑缺陷。",
+          "evidence_ref": "",
+          "remediation": "确认需求语义：若应为开区间（不含边界），改为 v > min && v < max，并相应调整测试断言（inRange(1,1,10) 与 inRange(10,1,10) 应为 false）；若确为闭区间，则修正 PR 标题/描述以避免误导。建议补充边界用例覆盖 min-1、max+1 及 min==max 等情形。",
+          "summary_masked": "PR 标题声称『范围边界排除了等于（不含边界）』，但实现使用 v >= min && v <= max，为闭区间（包含边界）。测试也断言 min=1 与 max=10 返回 true，与标题描述语义相反，存在需求与实现不一致的逻辑缺陷。"
+        },
+        {
+          "rule_id": "LLM-maintainability",
+          "severity": "P3",
+          "confidence": 0.5,
+          "path": "src/q4.js",
+          "line_start": 1,
+          "line_end": null,
+          "title": "inRange 未对 min > max 的非法区间做处理，也未校验参数类型；当 min > max 时函数恒返回 false，调用方可能难以排查。",
+          "evidence_ref": "",
+          "remediation": "可选：在函数入口对 min > max 抛出 RangeError 或返回明确结果，并在文档/注释中说明区间语义（开/闭）。",
+          "summary_masked": "inRange 未对 min > max 的非法区间做处理，也未校验参数类型；当 min > max 时函数恒返回 false，调用方可能难以排查。"
+        },
+        {
+          "rule_id": "LLM-config_risk",
+          "severity": "P3",
+          "confidence": 0.5,
+          "path": "src/q4.js",
+          "line_start": 1,
+          "line_end": null,
+          "title": "新增源文件与测试文件权限为 100755（可执行位），对纯 JS 模块与测试文件而言通常不必要，可能带来不必要的执行权限。",
+          "evidence_ref": "",
+          "remediation": "将文件模式改为 100644，去除可执行位。",
+          "summary_masked": "新增源文件与测试文件权限为 100755（可执行位），对纯 JS 模块与测试文件而言通常不必要，可能带来不必要的执行权限。"
+        }
+      ],
+      "classifications": [
+        {
+          "finding_index": 0,
+          "category": "false_positive",
+          "rule_id": "CLA-FALSE-POSITIVE",
+          "reason": "正确版上断言登记缺陷（缺陷已不存在）——按误报计"
+        },
+        {
+          "finding_index": 1,
+          "category": "false_positive",
+          "rule_id": "CLA-FALSE-POSITIVE",
+          "reason": "目标文件上的缺陷断言但与登记缺陷标记不符"
+        },
+        {
+          "finding_index": 2,
+          "category": "general_suggestion",
+          "rule_id": "CLA-GENERAL",
+          "reason": "无缺陷断言、无歧义表达、无建议措辞（兜底）"
+        }
+      ],
+      "review": {
+        "latency_ms": 2659,
+        "model": "deepseek-chat",
+        "prompt_version": "llm-w31-v1",
+        "input_digest": "6a09e7eea126f5a88edf3e1e0fac851036afa734413294d7e285940be33ae568",
+        "output_digest": "671736730b6183a8de8240d74bd4452e67f48e180d0fcb58c0cba8a941d59135",
+        "tokens": null,
+        "coverage": {
+          "full_diff_fallback": true,
+          "blocks_sent": 1,
+          "lines_sent": 23,
+          "truncated": false,
+          "bytes": 958
+        }
+      }
+    },
+    {
+      "case_id": "CASE-05",
+      "variant": "defect",
+      "spec_ref": {
+        "name": "async 函数漏 return（恒 undefined）",
+        "target_file": "src/q5.js",
+        "expected_severity": "P1",
+        "expected_severity_provenance": "trial_measured"
+      },
+      "llm_mode": "real",
+      "entry": "callLlmReviewer(production llm_assist path)",
+      "call_ok": true,
+      "call_code": null,
+      "diff_summary": {
+        "variant": "defect",
+        "bytes": 692,
+        "sha256": "bd4a0b8691023ced82fd39907de02cdfc5d3bd059ce7f41fccf95845e1545e4e"
+      },
+      "input_coverage": {
+        "input_digest": "a30ab3dad420e37468616de30828943637bafb37d6de13a084e2f64d4ecc0d2d",
+        "coverage": {
+          "full_diff_fallback": true,
+          "blocks_sent": 1,
+          "lines_sent": 26,
+          "truncated": false,
+          "bytes": 1010
+        },
+        "target_file_covered": true,
+        "target_added_lines_total": 7,
+        "target_added_lines_in_payload": 7
+      },
+      "findings_count": 1,
+      "findings": [
+        {
+          "rule_id": "LLM-logic_bug",
+          "severity": "P1",
+          "confidence": 0.95,
+          "path": "src/q5.js",
+          "line_start": 5,
+          "line_end": null,
+          "title": "async 函数 double 内部调用 delayed(x * 2, 10) 但未 return 也未 await，导致函数立即以 undefined resolve，返回值恒为 undefined。测试断言 await double(21) === 42 将失败。",
+          "evidence_ref": "",
+          "remediation": "在 delayed 调用前加 return（或 await 后再 return），例如 `return delayed(x * 2, 10);`，使 async 函数返回该 Promise 的解析值。同时建议在测试中补充对返回类型的断言以覆盖此类漏 return 缺陷。",
+          "summary_masked": "async 函数 double 内部调用 delayed(x * 2, 10) 但未 return 也未 await，导致函数立即以 undefined resolve，返回值恒为 undefined。测试断言 await double(2"
+        }
+      ],
+      "classifications": [
+        {
+          "finding_index": 0,
+          "category": "true_defect",
+          "rule_id": "CLA-TRUE-DEFECT",
+          "reason": "目标文件 src/q5.js 上命中登记缺陷标记",
+          "expected_severity": "P1",
+          "rated_severity": "P1",
+          "severity_deviation": 0,
+          "severity_exact": true,
+          "severity_within_tolerance": true
+        }
+      ],
+      "review": {
+        "latency_ms": 1343,
+        "model": "deepseek-chat",
+        "prompt_version": "llm-w31-v1",
+        "input_digest": "a30ab3dad420e37468616de30828943637bafb37d6de13a084e2f64d4ecc0d2d",
+        "output_digest": "a9c28dcc67c0698ec9ba9519700a02e1eb704190419e721a1d55b8ec1e890750",
+        "tokens": null,
+        "coverage": {
+          "full_diff_fallback": true,
+          "blocks_sent": 1,
+          "lines_sent": 26,
+          "truncated": false,
+          "bytes": 1010
+        }
+      }
+    },
+    {
+      "case_id": "CASE-05",
+      "variant": "fixed",
+      "spec_ref": {
+        "name": "async 函数漏 return（恒 undefined）",
+        "target_file": "src/q5.js",
+        "expected_severity": "P1",
+        "expected_severity_provenance": "trial_measured"
+      },
+      "llm_mode": "real",
+      "entry": "callLlmReviewer(production llm_assist path)",
+      "call_ok": true,
+      "call_code": null,
+      "diff_summary": {
+        "variant": "fixed",
+        "bytes": 699,
+        "sha256": "76569c0f55e52a59ec6310d6fbd6578c0063b20414950b6b5fd48fea4cdf9526"
+      },
+      "input_coverage": {
+        "input_digest": "b5ca3517d55cdc083ab4257ec4cc91b6bad8f4b98eb2523bd67395efa43f8cb8",
+        "coverage": {
+          "full_diff_fallback": true,
+          "blocks_sent": 1,
+          "lines_sent": 26,
+          "truncated": false,
+          "bytes": 1016
+        },
+        "target_file_covered": true,
+        "target_added_lines_total": 7,
+        "target_added_lines_in_payload": 7
+      },
+      "findings_count": 2,
+      "findings": [
+        {
+          "rule_id": "LLM-logic_bug",
+          "severity": "P3",
+          "confidence": 0.6,
+          "path": "src/q5.js",
+          "line_start": 4,
+          "line_end": null,
+          "title": "PR 标题声称修复“async 函数漏 return（恒 undefined）”，但当前 diff 中 double 已正确 return delayed(...)，await 后得到 42，测试断言也通过。未发现残留的漏 return 缺陷；仅提示标题与最终代码状态需保持一致，避免误导审查。",
+          "evidence_ref": "",
+          "remediation": "确认该 PR 的最终提交确实包含 return 修复（当前 diff 已包含）。若历史提交中曾存在漏 return，建议在 PR 描述中说明修复点，便于回溯。无需代码改动。",
+          "summary_masked": "PR 标题声称修复“async 函数漏 return（恒 undefined）”，但当前 diff 中 double 已正确 return delayed(...)，await 后得到 42，测试断言也通过。未发现残留的漏 return 缺"
+        },
+        {
+          "rule_id": "LLM-maintainability",
+          "severity": "P3",
+          "confidence": 0.4,
+          "path": "tests/q5.test.js",
+          "line_start": 3,
+          "line_end": null,
+          "title": "测试使用顶层 IIFE 并在 catch 中 process.exit(1)，属于可接受的简单脚本式测试。但缺少对 double 返回 Promise 类型/异步行为的显式断言，仅验证最终值，覆盖度有限。",
+          "evidence_ref": "",
+          "remediation": "可补充断言 double(21) 返回 Promise（如 assert.ok(double(21) instanceof Promise)），并考虑使用 node:test 或测试框架统一管理异步用例与退出码，提升可维护性。",
+          "summary_masked": "测试使用顶层 IIFE 并在 catch 中 process.exit(1)，属于可接受的简单脚本式测试。但缺少对 double 返回 Promise 类型/异步行为的显式断言，仅验证最终值，覆盖度有限。"
+        }
+      ],
+      "classifications": [
+        {
+          "finding_index": 0,
+          "category": "false_positive",
+          "rule_id": "CLA-FALSE-POSITIVE",
+          "reason": "正确版上断言登记缺陷（缺陷已不存在）——按误报计"
+        },
+        {
+          "finding_index": 1,
+          "category": "general_suggestion",
+          "rule_id": "CLA-SUGGESTION",
+          "reason": "建议措辞且无强缺陷断言——加固/改进建议（对齐 trial §六先例）"
+        }
+      ],
+      "review": {
+        "latency_ms": 2149,
+        "model": "deepseek-chat",
+        "prompt_version": "llm-w31-v1",
+        "input_digest": "b5ca3517d55cdc083ab4257ec4cc91b6bad8f4b98eb2523bd67395efa43f8cb8",
+        "output_digest": "43e05dcbf6c90f5dd77466cfa1e570472bcb167dd77241fcc93bbf63437dc526",
+        "tokens": null,
+        "coverage": {
+          "full_diff_fallback": true,
+          "blocks_sent": 1,
+          "lines_sent": 26,
+          "truncated": false,
+          "bytes": 1016
+        }
+      }
+    },
+    {
+      "case_id": "CASE-06",
+      "variant": "defect",
+      "spec_ref": {
+        "name": "replace 只替换首个匹配",
+        "target_file": "src/q6.js",
+        "expected_severity": "P2",
+        "expected_severity_provenance": "trial_measured"
+      },
+      "llm_mode": "real",
+      "entry": "callLlmReviewer(production llm_assist path)",
+      "call_ok": true,
+      "call_code": null,
+      "diff_summary": {
+        "variant": "defect",
+        "bytes": 543,
+        "sha256": "d0bfab2d75957249d815fd29876237038fd1ac0742e08a68e5a40c792abc5a97"
+      },
+      "input_coverage": {
+        "input_digest": "09fbfd5e01b076a341bf79e90c63eede2a4309f67046f0b652b8b393f779ad48",
+        "coverage": {
+          "full_diff_fallback": true,
+          "blocks_sent": 1,
+          "lines_sent": 21,
+          "truncated": false,
+          "bytes": 839
+        },
+        "target_file_covered": true,
+        "target_added_lines_total": 4,
+        "target_added_lines_in_payload": 4
+      },
+      "findings_count": 1,
+      "findings": [
+        {
+          "rule_id": "LLM-logic_bug",
+          "severity": "P2",
+          "confidence": 0.95,
+          "path": "src/q6.js",
+          "line_start": 2,
+          "line_end": null,
+          "title": "slugify 使用 String.prototype.replace(' ', '-') 仅替换第一个空格，输入含多个空格时（如 'a b c'）结果为 'a-b c'，与测试期望 'a-b-c' 不符，测试将失败。",
+          "evidence_ref": "",
+          "remediation": "改用全局替换：s.replace(/ /g, '-') 或 s.replaceAll(' ', '-')（注意 replaceAll 需 Node 15+）。若需处理连续空白，可考虑 /\\s+/g。同时建议补充多空格、首尾空格等边界用例。",
+          "summary_masked": "slugify 使用 String.prototype.replace(' ', '-') 仅替换第一个空格，输入含多个空格时（如 'a b c'）结果为 'a-b c'，与测试期望 'a-b-c' 不符，测试将失败。"
+        }
+      ],
+      "classifications": [
+        {
+          "finding_index": 0,
+          "category": "true_defect",
+          "rule_id": "CLA-TRUE-DEFECT",
+          "reason": "目标文件 src/q6.js 上命中登记缺陷标记",
+          "expected_severity": "P2",
+          "rated_severity": "P2",
+          "severity_deviation": 0,
+          "severity_exact": true,
+          "severity_within_tolerance": true
+        }
+      ],
+      "review": {
+        "latency_ms": 1334,
+        "model": "deepseek-chat",
+        "prompt_version": "llm-w31-v1",
+        "input_digest": "09fbfd5e01b076a341bf79e90c63eede2a4309f67046f0b652b8b393f779ad48",
+        "output_digest": "6eff62a406448c329cda603cef2f1bc806e6a3e3b12b7bbe36b4c0ee9025ec3f",
+        "tokens": null,
+        "coverage": {
+          "full_diff_fallback": true,
+          "blocks_sent": 1,
+          "lines_sent": 21,
+          "truncated": false,
+          "bytes": 839
+        }
+      }
+    },
+    {
+      "case_id": "CASE-06",
+      "variant": "fixed",
+      "spec_ref": {
+        "name": "replace 只替换首个匹配",
+        "target_file": "src/q6.js",
+        "expected_severity": "P2",
+        "expected_severity_provenance": "trial_measured"
+      },
+      "llm_mode": "real",
+      "entry": "callLlmReviewer(production llm_assist path)",
+      "call_ok": true,
+      "call_code": null,
+      "diff_summary": {
+        "variant": "fixed",
+        "bytes": 544,
+        "sha256": "93bd9129a818267a5b21f6095e325753d1ae4f630eff185788ef7db42cd803c1"
+      },
+      "input_coverage": {
+        "input_digest": "0161e6e2ba0f58ffaa0b86d6ebeffaa5e1401825d2346a04a22da772c8118783",
+        "coverage": {
+          "full_diff_fallback": true,
+          "blocks_sent": 1,
+          "lines_sent": 21,
+          "truncated": false,
+          "bytes": 839
+        },
+        "target_file_covered": true,
+        "target_added_lines_total": 4,
+        "target_added_lines_in_payload": 4
+      },
+      "findings_count": 2,
+      "findings": [
+        {
+          "rule_id": "LLM-logic_bug",
+          "severity": "P3",
+          "confidence": 0.6,
+          "path": "src/q6.js",
+          "line_start": 2,
+          "line_end": null,
+          "title": "slugify 仅将空格替换为连字符，未处理连续空格、首尾空格、其他空白字符（制表符/换行）及非字母数字字符，可能产生 '--'、前导/尾随 '-' 等非预期 slug。PR 标题声称修复“只替换首个匹配”，但当前实现已使用 /g 全局替换，标题与代码意图可能不一致。",
+          "evidence_ref": "",
+          "remediation": "明确 slug 规范：建议先 trim、将连续空白折叠为单个连字符、移除非字母数字字符，例如 s.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')。同时补充边界用例测试（连续空格、首尾空格、制表符、空字符串、非 ASCII 字符），并核对 PR 标题与实际改动是否一致。",
+          "summary_masked": "slugify 仅将空格替换为连字符，未处理连续空格、首尾空格、其他空白字符（制表符/换行）及非字母数字字符，可能产生 '--'、前导/尾随 '-' 等非预期 slug。PR 标题声称修复“只替换首个匹配”，但当前实现已使用 /g 全局替换"
+        },
+        {
+          "rule_id": "LLM-maintainability",
+          "severity": "P3",
+          "confidence": 0.5,
+          "path": "tests/q6.test.js",
+          "line_start": 3,
+          "line_end": null,
+          "title": "测试文件在模块顶层直接执行断言并 console.log，未使用测试框架，断言失败会抛出未捕获异常；仅覆盖单一正常路径，缺少边界与异常输入用例。",
+          "evidence_ref": "",
+          "remediation": "改用项目统一的测试框架（如 node:test、jest、mocha）组织用例，覆盖空字符串、连续空格、首尾空格、特殊字符等边界场景，避免依赖顶层副作用式断言。",
+          "summary_masked": "测试文件在模块顶层直接执行断言并 console.log，未使用测试框架，断言失败会抛出未捕获异常；仅覆盖单一正常路径，缺少边界与异常输入用例。"
+        }
+      ],
+      "classifications": [
+        {
+          "finding_index": 0,
+          "category": "false_positive",
+          "rule_id": "CLA-FALSE-POSITIVE",
+          "reason": "正确版上断言登记缺陷（缺陷已不存在）——按误报计"
+        },
+        {
+          "finding_index": 1,
+          "category": "false_positive",
+          "rule_id": "CLA-FALSE-POSITIVE",
+          "reason": "缺陷断言指向 diff 外/非目标文件（tests/q6.test.js）"
+        }
+      ],
+      "review": {
+        "latency_ms": 3058,
+        "model": "deepseek-chat",
+        "prompt_version": "llm-w31-v1",
+        "input_digest": "0161e6e2ba0f58ffaa0b86d6ebeffaa5e1401825d2346a04a22da772c8118783",
+        "output_digest": "d91a7dc59b45a0e1d8921cf29299986a7fecd331995280fd816349e37fed5928",
+        "tokens": null,
+        "coverage": {
+          "full_diff_fallback": true,
+          "blocks_sent": 1,
+          "lines_sent": 21,
+          "truncated": false,
+          "bytes": 839
+        }
+      }
+    }
+  ],
+  "metrics": {
+    "by_mode": {
+      "real": {
+        "llm_mode": "real",
+        "call_completion": {
+          "numerator": 12,
+          "denominator": 12,
+          "failed": []
+        },
+        "target_hit_rate": {
+          "numerator": 6,
+          "denominator": 6,
+          "hit_cases": [
+            "CASE-01",
+            "CASE-02",
+            "CASE-03",
+            "CASE-04",
+            "CASE-05",
+            "CASE-06"
+          ],
+          "misses": [],
+          "excluded_call_failed": []
+        },
+        "clean_false_positives": {
+          "numerator": 10,
+          "denominator": 6,
+          "per_case": [
+            {
+              "case_id": "CASE-01",
+              "false_positives": 2
+            },
+            {
+              "case_id": "CASE-02",
+              "false_positives": 1
+            },
+            {
+              "case_id": "CASE-03",
+              "false_positives": 2
+            },
+            {
+              "case_id": "CASE-04",
+              "false_positives": 2
+            },
+            {
+              "case_id": "CASE-05",
+              "false_positives": 1
+            },
+            {
+              "case_id": "CASE-06",
+              "false_positives": 2
+            }
+          ]
+        },
+        "precision": {
+          "numerator": 8,
+          "denominator": 18,
+          "class_counts": {
+            "true_defect": 8,
+            "duplicate_report": 0,
+            "false_positive": 10,
+            "ambiguous_spec": 0,
+            "general_suggestion": 8
+          }
+        },
+        "severity_consistency": {
+          "exact_numerator": 4,
+          "tolerance_numerator": 8,
+          "denominator": 8,
+          "deviations": [],
+          "detail": [
+            {
+              "case_id": "CASE-01",
+              "expected": "P2",
+              "rated": "P1",
+              "deviation": -1,
+              "exact": false,
+              "within_tolerance": true
+            },
+            {
+              "case_id": "CASE-02",
+              "expected": "P2",
+              "rated": "P1",
+              "deviation": -1,
+              "exact": false,
+              "within_tolerance": true
+            },
+            {
+              "case_id": "CASE-02",
+              "expected": "P2",
+              "rated": "P3",
+              "deviation": 1,
+              "exact": false,
+              "within_tolerance": true
+            },
+            {
+              "case_id": "CASE-03",
+              "expected": "P2",
+              "rated": "P2",
+              "deviation": 0,
+              "exact": true,
+              "within_tolerance": true
+            },
+            {
+              "case_id": "CASE-03",
+              "expected": "P2",
+              "rated": "P3",
+              "deviation": 1,
+              "exact": false,
+              "within_tolerance": true
+            },
+            {
+              "case_id": "CASE-04",
+              "expected": "P1",
+              "rated": "P1",
+              "deviation": 0,
+              "exact": true,
+              "within_tolerance": true
+            },
+            {
+              "case_id": "CASE-05",
+              "expected": "P1",
+              "rated": "P1",
+              "deviation": 0,
+              "exact": true,
+              "within_tolerance": true
+            },
+            {
+              "case_id": "CASE-06",
+              "expected": "P2",
+              "rated": "P2",
+              "deviation": 0,
+              "exact": true,
+              "within_tolerance": true
+            }
+          ]
+        },
+        "coverage": {
+          "numerator": 12,
+          "denominator": 12,
+          "truncated_runs": 0,
+          "target_file_covered_runs": 12
+        }
+      }
+    },
+    "generated_at": "2026-10-15T04:51:32.398Z"
+  },
+  "report_md": "# review-quality 评测报告 — 20261015T0451-real-deepseek-chat-llm-w31-v1\n\n- 时间：2026-10-15T04:51:32.399Z\n- 模式：real（生产基线入口 callLlmReviewer，llm_assist 路径）；模型：deepseek-chat；提示词版本：llm-w31-v1\n- 执行入口：callLlmReviewer(production llm_assist path)\n- 样本清单版本：f784526ab64b8462；分类规则版本：rq-rules-v2\n\n## 一、执行前样本校验\n\n| 样本 | 校验 | 失败类别 | 明细 |\n|---|---|---|---|\n| CASE-01 | 通过 | — | defect 测试失败 / fixed 测试通过 / 目标文件在 diff 中 / 规格完备 |\n| CASE-02 | 通过 | — | defect 测试失败 / fixed 测试通过 / 目标文件在 diff 中 / 规格完备 |\n| CASE-03 | 通过 | — | defect 测试失败 / fixed 测试通过 / 目标文件在 diff 中 / 规格完备 |\n| CASE-04 | 通过 | — | defect 测试失败 / fixed 测试通过 / 目标文件在 diff 中 / 规格完备 |\n| CASE-05 | 通过 | — | defect 测试失败 / fixed 测试通过 / 目标文件在 diff 中 / 规格完备 |\n| CASE-06 | 通过 | — | defect 测试失败 / fixed 测试通过 / 目标文件在 diff 中 / 规格完备 |\n\n## 二、逐样本运行明细\n\n| 样本 | 变体 | 调用 | 发现数 | 分类结果 | 输入覆盖 | 耗时ms |\n|---|---|---|---|---|---|---|\n| CASE-01 | defect | ok | 2 | #1 true_defect(期望P2/评P1)<br>#2 general_suggestion | 目标已入载荷(blocks 1/lines 26) | 2798 |\n| CASE-01 | fixed | ok | 4 | #1 false_positive<br>#2 false_positive<br>#3 general_suggestion<br>#4 general_suggestion | 目标已入载荷(blocks 1/lines 26) | 3658 |\n| CASE-02 | defect | ok | 3 | #1 true_defect(期望P2/评P1)<br>#2 true_defect(期望P2/评P3)<br>#3 general_suggestion | 目标已入载荷(blocks 1/lines 23) | 2744 |\n| CASE-02 | fixed | ok | 2 | #1 false_positive<br>#2 general_suggestion | 目标已入载荷(blocks 1/lines 24) | 2002 |\n| CASE-03 | defect | ok | 2 | #1 true_defect(期望P2/评P2)<br>#2 true_defect(期望P2/评P3) | 目标已入载荷(blocks 1/lines 22) | 2006 |\n| CASE-03 | fixed | ok | 3 | #1 false_positive<br>#2 false_positive<br>#3 general_suggestion | 目标已入载荷(blocks 1/lines 23) | 3116 |\n| CASE-04 | defect | ok | 1 | #1 true_defect(期望P1/评P1) | 目标已入载荷(blocks 1/lines 23) | 1249 |\n| CASE-04 | fixed | ok | 3 | #1 false_positive<br>#2 false_positive<br>#3 general_suggestion | 目标已入载荷(blocks 1/lines 23) | 2659 |\n| CASE-05 | defect | ok | 1 | #1 true_defect(期望P1/评P1) | 目标已入载荷(blocks 1/lines 26) | 1343 |\n| CASE-05 | fixed | ok | 2 | #1 false_positive<br>#2 general_suggestion | 目标已入载荷(blocks 1/lines 26) | 2149 |\n| CASE-06 | defect | ok | 1 | #1 true_defect(期望P2/评P2) | 目标已入载荷(blocks 1/lines 21) | 1334 |\n| CASE-06 | fixed | ok | 2 | #1 false_positive<br>#2 false_positive | 目标已入载荷(blocks 1/lines 21) | 3058 |\n\n## 三、发现逐条评价（五类）\n\n**CASE-01 / defect**（real）\n\n| # | 位置 | 严重度 | 摘要 | 分类 | 规则 | 说明 |\n|---|---|---|---|---|---|---|\n| 1 | src/q1.js:3 | P1 | 倒序循环条件 `i > 0` 会在 i 等于 0 时提前终止，导致索引 0 的首元素永远不会被拼接进结果。例如 reve | true_defect | CLA-TRUE-DEFECT | 目标文件 src/q1.js 上命中登记缺陷标记；严重度期望P2/评P1 |\n| 2 | tests/q1.test.js:3 | P2 | 测试文件使用顶层 assert 断言并在末尾 console.log，未使用测试框架（如 node:test / moc | general_suggestion | CLA-SUGGESTION | 建议措辞且无强缺陷断言——加固/改进建议（对齐 trial §六先例） |\n\n**CASE-01 / fixed**（real）\n\n| # | 位置 | 严重度 | 摘要 | 分类 | 规则 | 说明 |\n|---|---|---|---|---|---|---|\n| 1 | src/q1.js:3 | P3 | 倒序循环 `for (let i = items.length - 1; i >= 0; i--)` 在 items 为 | false_positive | CLA-FALSE-POSITIVE | 目标文件上的缺陷断言但与登记缺陷标记不符 |\n| 2 | src/q1.js:4 | P3 | 使用 `out ? sep : ''` 判断是否添加分隔符，依赖 out 的字符串真值。当 items 首元素（倒序后首 | false_positive | CLA-FALSE-POSITIVE | 正确版上断言登记缺陷（缺陷已不存在）——按误报计 |\n| 3 | src/q1.js:5 | P3 | `items[i]` 直接参与字符串拼接，若元素为对象、null、undefined 等非字符串类型，会隐式调用 toS | general_suggestion | CLA-SUGGESTION | 建议措辞且无强缺陷断言——加固/改进建议（对齐 trial §六先例） |\n| 4 | src/q1.js:1 | P3 | 新增文件权限为 100755（可执行位），但 src/q1.js 是模块文件而非可执行脚本，tests/q1.test. | general_suggestion | CLA-SUGGESTION | 建议措辞且无强缺陷断言——加固/改进建议（对齐 trial §六先例） |\n\n**CASE-02 / defect**（real）\n\n| # | 位置 | 严重度 | 摘要 | 分类 | 规则 | 说明 |\n|---|---|---|---|---|---|---|\n| 1 | src/q2.js:2 | P1 | initials(name) 直接调用 name.trim()，未对 null/undefined 做防护。测试用例 i | true_defect | CLA-TRUE-DEFECT | 目标文件 src/q2.js 上命中登记缺陷标记；严重度期望P2/评P1 |\n| 2 | src/q2.js:2 | P3 | 对空字符串或纯空白输入，split(/\\s+/) 会产生 ['']，w[0] 为 undefined，toUpperCa | true_defect | CLA-TRUE-DEFECT | 目标文件 src/q2.js 上命中登记缺陷标记；严重度期望P2/评P3 |\n| 3 | src/q2.js:2 | P3 | 使用 w[0] 取首字符，对包含代理对（如 emoji、部分 CJK 扩展字符）的姓名会截断为半个码元，产生乱码。 | general_suggestion | CLA-SUGGESTION | 建议措辞且无强缺陷断言——加固/改进建议（对齐 trial §六先例） |\n\n**CASE-02 / fixed**（real）\n\n| # | 位置 | 严重度 | 摘要 | 分类 | 规则 | 说明 |\n|---|---|---|---|---|---|---|\n| 1 | src/q2.js:3 | P3 | initials 对非字符串真值（如数字、对象、数组）会调用 .trim() 抛出 TypeError；对仅含空白的字符 | false_positive | CLA-FALSE-POSITIVE | 正确版上断言登记缺陷（缺陷已不存在）——按误报计 |\n| 2 | tests/q2.test.js:1 | P3 | 测试文件使用顶层 assert 与 console.log，无测试框架，断言失败会直接抛错但缺少结构化报告；且未覆盖 u | general_suggestion | CLA-SUGGESTION | 建议措辞且无强缺陷断言——加固/改进建议（对齐 trial §六先例） |\n\n**CASE-03 / defect**（real）\n\n| # | 位置 | 严重度 | 摘要 | 分类 | 规则 | 说明 |\n|---|---|---|---|---|---|---|\n| 1 | src/q3.js:2 | P2 | pct(part, total) 在 total 为 0 时执行 part/0，得到 Infinity 或 NaN（0/ | true_defect | CLA-TRUE-DEFECT | 目标文件 src/q3.js 上命中登记缺陷标记；严重度期望P2/评P2 |\n| 2 | src/q3.js:1 | P3 | pct 未对入参做类型或范围校验，非数字入参会静默产生 NaN，调用方难以定位问题。 | true_defect | CLA-TRUE-DEFECT | 目标文件 src/q3.js 上命中登记缺陷标记；严重度期望P2/评P3 |\n\n**CASE-03 / fixed**（real）\n\n| # | 位置 | 严重度 | 摘要 | 分类 | 规则 | 说明 |\n|---|---|---|---|---|---|---|\n| 1 | src/q3.js:2 | P3 | `if (!total) return 0;` 使用 falsy 判断，会把 total 为 NaN、undefined | false_positive | CLA-FALSE-POSITIVE | 正确版上断言登记缺陷（缺陷已不存在）——按误报计 |\n| 2 | src/q3.js:3 | P3 | `Math.round((part / total) * 100)` 未校验 part 类型；part 为字符串时会发生 | false_positive | CLA-FALSE-POSITIVE | 正确版上断言登记缺陷（缺陷已不存在）——按误报计 |\n| 3 | tests/q3.test.js:1 | P3 | 测试文件使用顶层 assert 与 console.log，未使用测试框架；一旦某个断言失败，后续断言不会执行，且退出码 | general_suggestion | CLA-SUGGESTION | 建议措辞且无强缺陷断言——加固/改进建议（对齐 trial §六先例） |\n\n**CASE-04 / defect**（real）\n\n| # | 位置 | 严重度 | 摘要 | 分类 | 规则 | 说明 |\n|---|---|---|---|---|---|---|\n| 1 | src/q4.js:2 | P1 | inRange 使用严格不等号 v > min && v < max，排除了等于边界的情况。测试用例却断言 inRang | true_defect | CLA-TRUE-DEFECT | 目标文件 src/q4.js 上命中登记缺陷标记；严重度期望P1/评P1 |\n\n**CASE-04 / fixed**（real）\n\n| # | 位置 | 严重度 | 摘要 | 分类 | 规则 | 说明 |\n|---|---|---|---|---|---|---|\n| 1 | src/q4.js:2 | P2 | PR 标题声称『范围边界排除了等于（不含边界）』，但实现使用 v >= min && v <= max，为闭区间（包含边 | false_positive | CLA-FALSE-POSITIVE | 正确版上断言登记缺陷（缺陷已不存在）——按误报计 |\n| 2 | src/q4.js:1 | P3 | inRange 未对 min > max 的非法区间做处理，也未校验参数类型；当 min > max 时函数恒返回 fa | false_positive | CLA-FALSE-POSITIVE | 目标文件上的缺陷断言但与登记缺陷标记不符 |\n| 3 | src/q4.js:1 | P3 | 新增源文件与测试文件权限为 100755（可执行位），对纯 JS 模块与测试文件而言通常不必要，可能带来不必要的执行权限 | general_suggestion | CLA-GENERAL | 无缺陷断言、无歧义表达、无建议措辞（兜底） |\n\n**CASE-05 / defect**（real）\n\n| # | 位置 | 严重度 | 摘要 | 分类 | 规则 | 说明 |\n|---|---|---|---|---|---|---|\n| 1 | src/q5.js:5 | P1 | async 函数 double 内部调用 delayed(x * 2, 10) 但未 return 也未 await，导 | true_defect | CLA-TRUE-DEFECT | 目标文件 src/q5.js 上命中登记缺陷标记；严重度期望P1/评P1 |\n\n**CASE-05 / fixed**（real）\n\n| # | 位置 | 严重度 | 摘要 | 分类 | 规则 | 说明 |\n|---|---|---|---|---|---|---|\n| 1 | src/q5.js:4 | P3 | PR 标题声称修复“async 函数漏 return（恒 undefined）”，但当前 diff 中 double 已 | false_positive | CLA-FALSE-POSITIVE | 正确版上断言登记缺陷（缺陷已不存在）——按误报计 |\n| 2 | tests/q5.test.js:3 | P3 | 测试使用顶层 IIFE 并在 catch 中 process.exit(1)，属于可接受的简单脚本式测试。但缺少对 do | general_suggestion | CLA-SUGGESTION | 建议措辞且无强缺陷断言——加固/改进建议（对齐 trial §六先例） |\n\n**CASE-06 / defect**（real）\n\n| # | 位置 | 严重度 | 摘要 | 分类 | 规则 | 说明 |\n|---|---|---|---|---|---|---|\n| 1 | src/q6.js:2 | P2 | slugify 使用 String.prototype.replace(' ', '-') 仅替换第一个空格，输入含多个 | true_defect | CLA-TRUE-DEFECT | 目标文件 src/q6.js 上命中登记缺陷标记；严重度期望P2/评P2 |\n\n**CASE-06 / fixed**（real）\n\n| # | 位置 | 严重度 | 摘要 | 分类 | 规则 | 说明 |\n|---|---|---|---|---|---|---|\n| 1 | src/q6.js:2 | P3 | slugify 仅将空格替换为连字符，未处理连续空格、首尾空格、其他空白字符（制表符/换行）及非字母数字字符，可能产生  | false_positive | CLA-FALSE-POSITIVE | 正确版上断言登记缺陷（缺陷已不存在）——按误报计 |\n| 2 | tests/q6.test.js:3 | P3 | 测试文件在模块顶层直接执行断言并 console.log，未使用测试框架，断言失败会抛出未捕获异常；仅覆盖单一正常路径， | false_positive | CLA-FALSE-POSITIVE | 缺陷断言指向 diff 外/非目标文件（tests/q6.test.js） |\n\n## 四、指标（显式分子/分母，mock 与真实分列）\n\n### real：real（生产基线入口 callLlmReviewer，llm_assist 路径）\n\n| 指标 | 分子/分母 | 明细 |\n|---|---|---|\n| 调用完成率 | **12/12** | 无失败 |\n| 目标缺陷命中率（缺陷版） | **6/6** | 命中: CASE-01, CASE-02, CASE-03, CASE-04, CASE-05, CASE-06；漏报: — |\n| 正确版误报数 | **10/6**（误报条数/正确版run数） | CASE-01: 2; CASE-02: 1; CASE-03: 2; CASE-04: 2; CASE-05: 1; CASE-06: 2 |\n| 发现准确性（precision） | **8/18** = true_defect/(true_defect+false_positive) | 五类计数: true_defect=8, duplicate_report=0, false_positive=10, ambiguous_spec=0, general_suggestion=8 |\n| 严重度一致性 | 精确 4/8；容差±1内 8/8 | 无超容差偏差 |\n| 输入覆盖核对 | **12/12**（有coverage记录/ok run） | 目标文件入载荷: 12/12；截断 run: 0 |\n\n## 五、边界与限制\n\n- 本入口直连生产审查函数 callLlmReviewer（llm_assist 路径），未经完整栈（webhook/DB）；token 计数生产入口不返回，如实记 null。\n- 分母仅含调用成功的 run；调用失败逐条列出（调用完成率），漏报按 covered_but_missed / target_not_covered 分档。\n\n---\n生成：benchmarks/review-quality（结果全量保留于 results/20261015T0451-real-deepseek-chat-llm-w31-v1/；禁止反复运行直到命中）\n"
+}
