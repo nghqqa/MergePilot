@@ -85,6 +85,8 @@
 <tr><td><code>MERGEPILOT_RUN_BINDING_KEYSTORE</code></td><td>cchain：keystore 目录（默认卷内 /app/keystore）</td></tr>
 <tr><td><code>RAGTRIAL_EMBED_MODEL_ID / _DIMS / _ENDPOINT / _EXPECTED_MANIFEST</code></td><td>RAG 嵌入（默认指向 compose 内 bge-m3 sidecar）</td></tr>
 <tr><td><code>RAGTRIAL_ALLOWED_SCOPES</code></td><td>RAG 允许的仓库范围白名单</td></tr>
+<tr><td><code>MU_GITEE_OAUTH_CLIENT_ID / _CLIENT_SECRET / _CALLBACK_URL</code></td><td>Gitee OAuth 登录（三项任一缺失则登录页不渲染 Gitee 入口）</td></tr>
+<tr><td><code>MU_GITEE_PAT</code></td><td>Gitee 连接 PAT（仓库连接/评论/应用与合并的 Gitee 侧凭据）</td></tr>
 </table>
 
 <h2>可选</h2>
@@ -92,18 +94,21 @@
 <tr><th>变量</th><th>说明</th></tr>
 <tr><td><code>CONSOLE_PORT</code> / <code>WEBHOOK_INGRESS_PORT</code></td><td>宿主端口（默认 48500 / 48590，均绑定 127.0.0.1）</td></tr>
 <tr><td><code>MU_EXECUTOR</code> + <code>MU_AGENTTEAMS_*</code></td><td>AgentTeams 执行器接入（不填则该面 NOT_WIRED 如实降级）</td></tr>
+<tr><td><code>MU_FIX_TEST_CMDS</code></td><td>实际修复测试的预批准命令 JSON 映射（key=<code>provider:owner/repo</code>）；唯一命令来源，未配置=如实「未执行」</td></tr>
+<tr><td><code>MU_JOB_CONSUMER_ENABLED</code> / <code>MU_JOB_CONSUMER_INTERVAL_MS</code></td><td>事件自动消费循环（默认开 / 45000ms；关闭后事件需人工 tick）</td></tr>
+<tr><td><code>MU_LLM_ALLOWED_MODELS</code></td><td>模型白名单（逗号分隔；默认 deepseek-flash,deepseek-chat）</td></tr>
 </table>
 
-<h2>一次性管理员引导</h2>
-<p>空库首个管理员：在 <code>.env</code> 临时加入 <code>MU_ALLOW_FIXTURE_LOGIN=1</code>
-并设置 <code>CONSOLE_PILOT_USER</code>/<code>CONSOLE_PILOT_PASSWORD</code>，
-经 <code>/api/mu/auth/login</code> 完成初始化后<strong>立即删除该变量并重启</strong>
-（该登录面仅应存在于初始化窗口）。</p>
+<h2>首个平台管理员</h2>
+<p>生产空库的<strong>首个 platform_admin 由部署者在数据库直授</strong>——邀请永不授予
+<code>platform_admin</code>（API 校验 / 认领守卫 / 数据库 CHECK 三层拒绝）。完整 SQL、
+硬校验与回退见仓库 <code>deploy/selfhost/README.md</code>「首个平台管理员初始化（生产）」。
+<code>MU_ALLOW_FIXTURE_LOGIN=1</code> 仅限本机开发/测试临时使用，生产保持关闭（诊断会 WARN）。</p>
 
 <div class="warn">compose 模板对 <code>POSTGRES_PASSWORD</code> 使用 <code>:?</code> 必填守卫——
 缺失时 <code>docker compose config</code> 即失败，属预期防呆。</div>
 </article>
 </main>
-<footer class="footer">MergePilot 0.2.0-beta.6-rc.22 · Apache-2.0</footer>
+<footer class="footer">MergePilot 0.2.0-beta.6-rc.35.5 · Apache-2.0</footer>
 </body>
 </html>

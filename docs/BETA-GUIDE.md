@@ -2,13 +2,14 @@
 
 本文档覆盖从零到完整使用的全部步骤，包括 GitHub App 创建、凭据注入、首次登录、邀请用户、仓库绑定和 PR 审查。
 
-> **能力口径（rc.35.4）**：当前产品为**完整审查链**——webhook→PR 快照→静态规则审查（precheck）→
+> **能力口径（rc.35.5）**：当前产品为**完整受控闭环**——webhook→PR 快照→静态规则审查（precheck）→
 > LLM 第二阶段审查（模型审查，解耦执行）→发现落库→裁定与修复审批门→补丁版本化与验证
-> （真实可应用性五态 + 实际修复测试）→**维护者人工确认发布审查评论到 PR**。
-> 旧文档中「只读快照模式」的描述已过时。按目标分步的部署/使用/排障/验收见
-> **[docs/delivery/](delivery/README.md)**（能力矩阵、部署指南、用户指南、排障手册、验收清单），
+> （真实可应用性五态 + 实际修复测试）→维护者逐次「预览 → 确认」完成远端写：
+> **发布审查评论 / 应用修复（机器人提交，新 head 自动重审 + CI 资格判定）/ 确认合并
+> （统一资格门）**。
+> 旧文档中「只读快照模式」「应用与合并开发中」的描述已过时。按目标分步的部署/使用/排障/验收见
+> **[docs/delivery/](delivery/README.md)**（能力矩阵、部署指南、用户指南、排障手册、验收清单、演示脚本），
 > 配套只读诊断工具 [`scripts/delivery/diagnose.mjs`](../scripts/delivery/diagnose.mjs)。
-> 「应用修复（机器人提交）/新 head 自动重审/CI 消费/合并」为**开发中能力**，本版本不可用。
 
 ---
 
@@ -35,19 +36,21 @@
 
 MergePilot 是**自托管的 PR 安全审查工作台**：
 
-- 接入你的仓库：GitHub 走 App（Metadata/Contents/Pull requests/Checks/Commit statuses 全部 read-only）；
-  Gitee 走部署级 PAT 连接（Wave-Gitee）
+- 接入你的仓库：GitHub 走 App（审查只需一组只读权限；启用应用修复/合并才需 Contents 与
+  Pull requests 的读写权限，见 §4.2）；Gitee 走部署级 PAT 连接（Wave-Gitee）
 - 自动同步 Pull Request（webhook 驱动，事件自动消费）
 - 运行两阶段审查：确定性静态规则（precheck）+ 可选 LLM 第二阶段（模型发现独立标注 `reviewer`）
 - 产出结构化发现与**版本化建议补丁**，并给出验证三分（格式检查 / 真实可应用性 / 实际修复测试）
 - 修复需维护者逐条审批（P0/P1 审批门），修复轮 dry-run 零远端写入
-- 审查结果可由维护者**人工确认后发布为 PR 评论**（机器人身份，预览→确认两步，幂等原位更新）
+- 维护者逐次「预览 → 确认」完成三类受控远端写：**发布审查评论 / 应用修复（机器人以自己的
+  身份提交修复 commit → 新 head 自动重审）/ 确认合并（资格门：当前 head 审查完成 + 真实 CI
+  通过 + mergeable 已知）**（机器人身份，幂等与防重复写设计）
 - 全程带完整审计追踪（tenant 域 + platform 域分立）
 - 可选开启本地 RAG 增强（语料库检索为审查提供可引用的参考证据）
 
 **核心理念**：数据与部署在**你自己的机器**；GitHub App 权限最小化；补丁永远是建议；
-不自动改代码、不自动 merge、不自动 approve。**唯一的远端写动作**是经维护者逐次确认的
-PR 评论发布（机器人身份）。启用 LLM 第二阶段会把 PR 上下文出站到你配置的模型端点——
+不自动改代码、不自动 merge、不自动 approve。**远端写共三类，全部经维护者逐次确认**
+（机器人身份执行）。启用 LLM 第二阶段会把 PR 上下文出站到你配置的模型端点——
 需租户级 `external_api` 出站策略与显式同意记录（`evidence_only` 模式零出站）。
 
 ## 2. Developer Edition Beta 与 Enterprise 的边界
@@ -56,12 +59,12 @@ PR 评论发布（机器人身份）。启用 LLM 第二阶段会把 PR 上下�
 |---|---|---|
 | 多用户 RBAC | ✅ 五角色应用层（decide_review 仅 maintainer） | RLS 行级隔离 |
 | 身份 | GitHub/Gitee OAuth + 邀请制 | SSO (SAML/OIDC) + SCIM |
-| 仓库接入 | GitHub App read-only + Gitee 连接 | 独立写权限设计 |
+| 仓库接入 | GitHub App（审查只读权限；应用/合并另需 Contents/PR 读写）+ Gitee 连接 | 独立写权限设计 |
 | 审查深度 | 静态规则 + LLM 第二阶段（需显式出站授权） | — |
-| 远端写 | 仅人工确认的 PR 评论发布（机器人） | 受控提交/合并（开发中，见 delivery 文档） |
+| 远端写 | 三类受控写：评论 / 机器人提交修复 / 合并 PR（均逐次人工确认） | 策略化/批量授权流 |
 | 会话 | DB 持久（单机） | HA + 集中密钥管理 |
 | 配额限流 | ❌ | ✅ |
-| 自动 approve/merge | ❌ 本版本结构性不存在 | 受控合并（开发中） |
+| 自动 approve/merge | ❌ 不存在自动批准/自动合并路径（合并=人工逐次确认） | 预约/策略化合并 |
 
 **当前版本不是 Enterprise Production Ready。**
 
@@ -116,17 +119,30 @@ curl http://127.0.0.1:48450/api/health  # 验证 200
 | 受邀成员登录 | `https://<console 公开地址>/login`（或带邀请参数 `/login?invite=<invite_id>`，管理员在控制台「成员与邀请」面板创建邀请后一键复制；须为 **https 公网** 地址，与 OAuth Callback 同域） |
 | Webhook secret | 自定义随机字符串（如 `openssl rand -hex 32`） |
 
-### 4.2 权限（仅勾这 5 项，全部 Read-only）
+### 4.2 权限（按能力分两档，只开你需要的）
 
-| 权限 | 级别 |
-|---|---|
-| Metadata | **Read-only** |
-| Contents | **Read-only** |
-| Pull requests | **Read-only** |
-| Checks | **Read-only** |
-| Commit statuses | **Read-only** |
+**只读档（审查主链必需）**：
 
-> ⚠️ **不勾任何 Write / Administration / Members / Actions 权限。**
+| 权限 | 级别 | 用途 |
+|---|---|---|
+| Metadata | **Read-only** | 安装仓库列表 |
+| Contents | **Read-only** | 读 diff 与文件内容 |
+| Pull requests | **Read-only** | 读 PR 上下文 |
+| Checks | **Read-only** | 读 check runs（合并资格的 CI 判定面之一） |
+| Commit statuses | **Read-only** | 读 commit status（CI 判定另一面） |
+| Administration | **Read-only** | 分支保护只读探测 |
+
+**写侧档（仅当你要用「应用修复 / 确认合并」时勾选；缺任一项对应能力在界面报告
+unsupported，不影响审查）**：
+
+| 权限 | 级别 | 用途 |
+|---|---|---|
+| Contents | **Read and write** | 机器人向 PR 分支推送修复 commit |
+| Pull requests | **Read and write** | 合并 PR |
+
+> 在 App 设置页更新权限后，仓库安装会提示重新授权（Revoke & request），接受后生效。
+> ⚠️ **仍然不勾 Administration:write / Members / Actions 等任何其他权限**；
+> 系统不会用个人 PAT 绕过缺失的 App 权限——缺什么在界面如实报告什么。
 
 ### 4.3 事件订阅（仅勾这 5 个）
 
@@ -288,10 +304,10 @@ MU_ALLOW_FIXTURE_LOGIN=1
 
 | 角色 | 权限 | 典型使用者 |
 |---|---|---|
-| **Contributor** | 查看 PR/仓库元数据/证据；RAG 检索 | 开发者 |
+| **Contributor** | 查看 PR/仓库元数据/代码内容；RAG 检索 | 开发者 |
 | **Reviewer** | Contributor 全部 + 触发审查 + finding 反馈 | 安全审查员 |
-| **Maintainer** | Reviewer 全部 + **审批修复票/PR 裁定/发布评论**（decide_review 仅此角色）+ 绑定/解绑仓库 + 发起修复 | 团队负责人 |
-| **PlatformAdmin** | 管理成员/租户/实例配置/出站策略（**刻意无审批与发布权**——平台管理与裁定分离） | 运维管理员 |
+| **Maintainer** | Reviewer 全部 + **审批修复票/PR 裁定/发布评论/应用修复/确认合并**（decide_review/apply_fix/merge_pr 仅此角色）+ 绑定/解绑仓库 + 发起修复 | 团队负责人 |
+| **PlatformAdmin** | 管理成员/租户/实例配置/出站策略（**刻意无审批与发布权、无代码内容读取**——平台管理与裁定分离） | 运维管理员 |
 | **Auditor** | 仅审计元数据只读（不可读代码/RAG 内容） | 合规审计员 |
 
 > 完整矩阵见 [docs/delivery/CAPABILITY-MATRIX.md §2](delivery/CAPABILITY-MATRIX.md)。
@@ -356,10 +372,15 @@ curl -X POST http://<你的地址>/api/mu/repositories/<repo_id>/ghapp-binding \
 3. 若部署启用了 LLM 第二阶段（§5 LLM env + 控制台运行策略 + 出站策略/同意）：模型审查
    **无条件执行**（与静态结果解耦），模型发现以 `source=reviewer` 独立标注；失败 fail-closed
    回落静态结果并如实记档，绝不误报"模型已执行"
-4. Reviewer 及以上可触发审查 / 提交 finding 反馈；Maintainer 可审批或驳回（`decide_review`）
+4. Reviewer / Maintainer / PlatformAdmin 可触发审查 / 提交 finding 反馈（`request_review`）；仅 Maintainer 可审批或驳回（`decide_review`）
 5. P0/P1 发现自动生成具名审批票；run 内全部批准 → 修复轮（dry-run）→ 补丁版本化 + 验证三分
 6. Maintainer 可在产物面板「预览并发布到 PR」把审查结果发布为机器人评论
-   （远端 head 复核 + 幂等原位更新；见 [USER-GUIDE §6](delivery/USER-GUIDE.md)）
+   （远端 head 复核 + 幂等原位更新；见 [USER-GUIDE](delivery/USER-GUIDE.md)）
+7. Maintainer 还可逐次确认**应用修复**（机器人向 PR 分支提交修复 commit → 新 head 自动
+   重审 → 该 head 真实 CI 判定）与**确认合并**（统一资格门：head 一致 + mergeable 已知 +
+   当前 head 审查完成无未处理 P0/P1 + 当前 head CI 通过）；确认必须从预览发起，
+   绑定远端 head 与补丁 digest；结果不明（`result_uncertain`）时以「读回对账」定案，
+   禁止盲目重试。完整步骤与阻塞处理见 [USER-GUIDE §3](delivery/USER-GUIDE.md)
 
 > **branch protection 状态未知时不可审批**（`422 cannot_conclude_mergeable`）。
 
@@ -550,8 +571,9 @@ GET /api/mu/github/app/status → {"configured": false, "reason": "github_app_no
 | **无 SSO/SCIM** | 仅 GitHub OAuth + 邀请制 |
 | **无 HA** | Docker Compose 单机部署 |
 | **无配额限流** | 不限制用户请求数 |
-| **无自动 approve/merge** | 设计禁止，结构性不存在代码路径 |
-| **无仓库写入** | GitHub App 仅 read-only |
+| **无自动 approve/merge** | 合并=人工逐次确认（`merge_pr` 资格门）；不存在任何自动批准/自动合并路径 |
+| **仓库写入仅限受控两类** | 机器人提交修复（`apply_fix`）与合并（`merge_pr`）均需维护者逐次「预览 → 确认」+ 对应 App 写权限；缺权限时界面如实报告 unsupported，不用 PAT 绕过 |
+| **Gitee CI 读取不支持** | 当前 Gitee 连接器读不到 CI 状态（连接器能力边界）→ Gitee 仓库的合并被资格门恒阻塞 |
 | **会话清扫** | 过期会话行无定时清理（行量低时可忽略） |
 | **单 webhook secret** | 全局一个（GitHub App 标准做法） |
 
@@ -562,7 +584,7 @@ GET /api/mu/github/app/status → {"configured": false, "reason": "github_app_no
 - **Cookie 安全**：HttpOnly + SameSite=Lax + Path=/，生产模式（`NODE_ENV=production`）强制 Secure
 - **CSRF 防护**：双提交（可读 cookie + 请求头 timing-safe 比较）
 - **审计完整性**：白名单制（未知 kind 一律拒绝）、tenant/platform 域分立、脱敏（不含查询正文/凭据/allowlist 原值）
-- **最小权限**：GitHub App 仅 5 项 read-only 权限，零 write/administration/actions
+- **最小权限**：审查只需 6 项只读权限；仅启用应用/合并才追加 Contents/Pull requests 读写；零 Administration:write / Members / Actions，缺权限如实报告而非用 PAT 绕过
 - **邀请制**：无公共自动注册，无首访即管理员
 
 ## 14. 反馈方式

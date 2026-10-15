@@ -69,8 +69,11 @@ webhook 无法自动进入审查管线（本地管理与健康检查不受影响
 <h2>GitHub App（webhook 来源）</h2>
 <ol>
 <li>GitHub → Settings → Developer settings → GitHub Apps → <strong>New GitHub App</strong>；</li>
-<li>权限最小集（全部只读）：Metadata、Contents、Pull requests、Checks、Statuses、Administration:read；
-   <strong>不申请任何 write 权限</strong>——系统无 merge 权限是设计原则；</li>
+<li>权限按能力分档：<strong>审查只读档</strong> Metadata、Contents、Pull requests、Checks、Statuses、
+   Administration:read；<strong>仅当启用应用修复与合并</strong>时另勾 Contents:read+write
+   （机器人推送修复提交）与 Pull requests:read+write（合并）。缺权限时对应能力在界面报告
+   unsupported，不影响审查；系统不用个人 PAT 绕过， Administration:write / Members /
+   Actions 一律不申请；</li>
 <li>订阅事件五种：<code>installation</code>、<code>installation_repositories</code>、
    <code>pull_request</code>、<code>check_run</code>、<code>status</code>；</li>
 <li>Webhook URL：<code>https://你的域名/api/mu/github/webhook</code>；
@@ -105,11 +108,12 @@ callback 填 <code>https://你的域名/api/mu/auth/oauth/github/callback</code>
 
 <h2>事件→审查管线</h2>
 <pre><code>PR 事件 → webhook(HMAC 验签+投递去重) → 事件入队 → 自动 consumer
-→ 审查流水线 → 结论与证据落租户（对 GitHub 零写入）</code></pre>
+→ 审查流水线 → 结论与证据落租户 → 维护者逐次确认远端写（评论/应用/合并）</code></pre>
 <p>投递去重：同一 delivery 重复投递返回 <code>duplicate</code>，不重复处理；
-系统对 GitHub 完全只读：CI check run 仅只读并排展示，零写入；结论只落在你的 Console。</p>
+远端写共三类（发布评论、机器人提交修复、合并 PR），均需维护者逐次「预览 → 确认」，
+写入身份固定为机器人；CI 状态只读读取、作为合并资格输入；结论与审计落在你的 Console。</p>
 </article>
 </main>
-<footer class="footer">MergePilot 0.2.0-beta.6-rc.22 · Apache-2.0</footer>
+<footer class="footer">MergePilot 0.2.0-beta.6-rc.35.5 · Apache-2.0</footer>
 </body>
 </html>

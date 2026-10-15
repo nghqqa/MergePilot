@@ -1,12 +1,13 @@
 # DEPLOY — 部署与使用指南
 
-> **当前产品形态（rc.35.4）**：多用户自托管 Console（docker-compose：console + postgres(pgvector)
+> **当前产品形态（rc.35.5）**：多用户自托管 Console（docker-compose：console + postgres(pgvector)
 > + bge-m3 sidecar + webhook ingress）。**正式部署入口**：
 > [`deploy/selfhost/`](deploy/selfhost/README.md)（canonical 拓扑与镜像校验）+
 > [docs/delivery/DEPLOY-GUIDE.md](docs/delivery/DEPLOY-GUIDE.md)（按目标分步：最小部署→
-> LLM 审查→修复验证，每步带验证命令）。只读诊断：`scripts/delivery/diagnose.mjs`。
-> 审查链为完整闭环（webhook→静态规则→LLM 第二阶段→发现→审批→补丁验证→人工确认发布评论）；
-> 应用修复/合并为开发中能力（见 [能力矩阵](docs/delivery/CAPABILITY-MATRIX.md)）。
+> LLM 审查→修复验证→应用与合并，每步带验证命令）。只读诊断：`scripts/delivery/diagnose.mjs`。
+> 审查链为完整受控闭环（webhook→静态规则→LLM 第二阶段→发现→审批→补丁验证→人工确认
+> 发布评论 / 应用修复 / 合并 PR，逐次确认+审计）；能力边界见
+> [能力矩阵](docs/delivery/CAPABILITY-MATRIX.md)。
 >
 > 以下 A–D 为**历史/演示形态**（比赛期隔离栈与演示平台），按投入递增保留。该四节共享的
 > 真实性边界（RAG 语料 SYNTHETIC/REDACTED、Database Branch SIMULATED、PolarDB NOT
@@ -133,4 +134,4 @@ GitHub 验证（M5-0C）；你的环境按同一 20 键合同配置，未预先�
   GitHub API、不执行任何 GitHub 写操作；真实接入仅经 D 的显式配置启用。
   正式形态（deploy/selfhost）的远端边界见
   [docs/delivery/CAPABILITY-MATRIX.md](docs/delivery/CAPABILITY-MATRIX.md)——
-  唯一远端写为人工确认的 PR 评论发布。
+  远端写共三类（PR 评论 / 机器人提交修复 / 合并 PR），均为维护者逐次确认的受控写。

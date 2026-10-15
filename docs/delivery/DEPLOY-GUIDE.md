@@ -1,4 +1,4 @@
-# MergePilot 部署指南（按目标分步，rc.35.4 交付口径）
+# MergePilot 部署指南（按目标分步，rc.35.5 交付口径）
 
 > 本文按**你要达成什么**组织，每步末尾给验证命令。能力边界见
 > [CAPABILITY-MATRIX.md](CAPABILITY-MATRIX.md)；失败处理见
@@ -30,8 +30,9 @@ cp .env.example .env          # 权限建议 chmod 600
 | GitHub OAuth | `MU_GITHUB_OAUTH_CLIENT_ID/_SECRET/_CALLBACK_URL` | 用户登录。**注意 GitHub App 与 OAuth App 是两个应用，都要建** |
 | LLM | `MU_LLM_PROVIDER`（=openai_compatible）`_BASE_URL` `_MODEL` `_API_KEY`，可选 `MU_LLM_ALLOWED_MODELS` | 第二阶段模型审查的出站配置（不填则仅静态规则审查） |
 
-**镜像引用**：`docker-compose.yml` 中的 console `image:` 默认 pin 在旧候选 digest——
-部署前改成**本次发行说明（Release）提供的 rc.35.4 镜像 digest**（digest 不可变，勿用浮动 tag）。
+**镜像引用**：`docker-compose.yml` 中的 console `image:` 已 pin 到 rc.35.5 官方 digest
+（`sha256:e3041999…61dd3a`，见 [RELEASE-rc.35.5.md](RELEASE-rc.35.5.md)）——如需其他版本，
+部署前改成**对应 Release 提供的镜像 digest**（digest 不可变，勿用浮动 tag）。
 pgvector 与 bge-sidecar 的 digest 已钉死。
 
 ### 2. 启动与验证
@@ -39,10 +40,11 @@ pgvector 与 bge-sidecar 的 digest 已钉死。
 ```bash
 docker compose --env-file .env up -d
 curl -fsS http://127.0.0.1:${CONSOLE_PORT:-48500}/api/health
-# 期望：{"ok":true,"version":"0.2.0-beta.6-rc.35.4","mu_schema_ready":true,...}
+# 期望：{"ok":true,"version":"v0.2.0-beta.6-rc.35.5","mu_schema_ready":true,...}
+# （version/git_commit 应与 Release 冻结身份一致：rc.35.5 / af8b0022）
 ```
 
-- 首次启动 console 自动执行 mu schema 迁移（幂等、只前进，当前至 **v28**）。
+- 首次启动 console 自动执行 mu schema 迁移（幂等、只前进，当前至 **v29**）。
 - 全量核查（推荐，脚本化验收退出码 0=通过）：
 
 ```bash
@@ -87,7 +89,7 @@ OAuth 登录只接受**事先创建的邀请**，且邀请永不授予 `platform
 
 验证：新开/更新一个测试 PR → run 详情出现 `source=reviewer` 的模型发现（或明确的模型调用留痕）；
 若模型审查未执行，失败码（如 `LLM_POLICY_ENV_MISMATCH` / `EGRESS_DENIED:*`）会如实透出——按
-[TROUBLESHOOTING「T-MODEL」](TROUBLESHOOTING.md#t-model)处理。
+[TROUBLESHOOTING「T-MODEL」](TROUBLESHOOTING.md#t-model--llm-第二阶段未执行--模型授权问题)处理。
 
 > 语义注意：模型发现是**模型判断，非实际测试**；「零发现」也会执行第二阶段（两阶段解耦，
 > 不以静态结果短路模型审查）。
@@ -128,6 +130,12 @@ MU_FIX_TEST_CMDS={"gitee:acme/widget":"npm test","github:acme/widget":"cargo tes
 run 详情页三个验证区块齐备且状态与实际一致。
 
 ## 目标四：人工确认提交与合并 —— rc.35.5 起可用
+
+> ⚠️ **首用户前置警示（先读）**：合并资格门要求**当前 head 的真实 CI 通过**。目标仓库
+> 如果没有配置任何 CI（combined status 与 check runs 两面全空），合并会**恒被
+> `ci_not_configured` 阻塞**——这是有意设计（系统不冒充"CI 通过"），不是故障。
+> 接入仓库前先确认它有可用的 CI（如 GitHub Actions）；没有 CI 的仓库可以使用到
+> 「审批 → 补丁 → 预览并确认应用 → 自动重审」为止，合并需要先补 CI。
 
 - **确认应用**（`apply_fix`）与**确认合并**（`merge_pr`）已在 main 实现
   （PR #455-#457：preview/confirm 双端点 + 前端两步确认 + 推送式条件更新），
@@ -170,3 +178,7 @@ docker compose --env-file .env pull console && docker compose --env-file .env up
 ```
 
 升级后核查：`curl /api/health` 的 `version`/`git_commit` 与发行说明一致；再跑一次诊断工具。
+
+**远端事实不受容器回滚影响**：rc.35.5 起机器人会向你的仓库提交修复 commit、合并 PR——
+这些远端提交/合并**不会**因把容器回滚到旧镜像而撤销；远端回退只能在 GitHub/Gitee
+手动 revert（见 [RELEASE-rc.35.5.md](RELEASE-rc.35.5.md)）。
