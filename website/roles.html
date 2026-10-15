@@ -73,6 +73,7 @@
 <tr><td>RAG 检索</td><td>✓</td><td>✓</td><td>✓</td><td>—</td><td>✓</td></tr>
 <tr><td>触发只读审查</td><td>—</td><td>✓</td><td>✓</td><td>—</td><td>✓</td></tr>
 <tr><td><strong>审批 / 驳回修复</strong></td><td>—</td><td>—</td><td><strong>✓ 仅此角色</strong></td><td>—</td><td>—</td></tr>
+<tr><td><strong>应用修复（机器人提交）/ 确认合并</strong></td><td>—</td><td>—</td><td><strong>✓ 仅此角色</strong>（另需仓库 active 绑定）</td><td>—</td><td>—</td></tr>
 <tr><td>发起受控修复</td><td>—</td><td>—</td><td>✓</td><td>—</td><td>✓</td></tr>
 <tr><td>绑定 / 解绑仓库</td><td>—</td><td>—</td><td>✓</td><td>—</td><td>✓</td></tr>
 <tr><td>查看审计日志</td><td>—</td><td>—</td><td>—</td><td>✓</td><td>✓</td></tr>
@@ -83,7 +84,7 @@
 
 <h2>设计原则</h2>
 <ul>
-<li><strong>平台与管理分离</strong>：<code>platform_admin</code> 管基础设施（成员、配置、审计），<code>maintainer</code> 管内容裁定（审批修复）。两者刻意不重叠——平台管理员也无法审批代码修复。</li>
+<li><strong>平台与管理分离</strong>：<code>platform_admin</code> 管基础设施（成员、配置、审计），<code>maintainer</code> 管内容裁定（审批修复、应用修复、确认合并）。两者刻意不重叠——平台管理员也无法审批、应用或合并。</li>
 <li><strong>最小权限</strong>：每个角色只拿到完成其职责所需的能力；未授权访问一律 403 拒绝，拒绝原因在审计日志留痕。</li>
 <li><strong>auditor 独立</strong>：审计员只读审计元数据，无仓库、代码、RAG 访问——保证审计视角独立于业务操作者。</li>
 <li><strong>邀请上限</strong>：邀请永不授予 <code>platform_admin</code>（API 校验、认领守卫、数据库 CHECK 三层拒绝）。首任管理员由部署脚本或 SQL 直授。</li>
@@ -115,6 +116,6 @@
 
 </article>
 </main>
-<footer class="footer">MergePilot 0.2.0-beta.6-rc.22 · Apache-2.0</footer>
+<footer class="footer">MergePilot 0.2.0-beta.6-rc.35.5 · Apache-2.0</footer>
 </body>
 </html>

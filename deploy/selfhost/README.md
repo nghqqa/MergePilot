@@ -1,12 +1,16 @@
-# MergePilot rc.25 自托管部署（候选）
+# MergePilot 自托管部署（rc.35.5）
 
-> 版本：`0.2.0-beta.6-rc.20` · 镜像 pull digest（OCI index）：`sha256:abc5048dda9b2f6baf4b551aa51b768c12bac6e2a92f6d57f7ac420700c068c0`
-> index 内含 linux/amd64 manifest `sha256:8c9022437d60869db050856abef275bddb03155b67a5b4152d02e37f30ff6a1f`、config digest `sha256:364d716314eda485b3468f353d3cabdb2955e097a0d6b6250057595387a1a523`（三者不同对象，勿混称）。
+> 版本：`v0.2.0-beta.6-rc.35.5`（`/api/health` version 真源）· 源码 tag commit `af8b0022`
+> · 镜像 pull digest（OCI index）：`sha256:e30419990434c209de8d9de7fc11fc267d8c9e6fe0d99ff242eda69b7a61dd3a`
+> （tag `v0.2.0-beta.6-rc.35.5` 与该 index 同源；index 内 linux/amd64 manifest 与 config
+> digest 为另外两个不同对象，勿混称）。
 > 已正式发布 GHCR（不可变 digest）。离线 tar 与源码构建为等效替代途径，校验方式见下。
-> 离线 tar 与源码构建为等效替代途径，校验方式见下。
-> 离线 tar 与源码构建为等效替代途径，校验方式见下。
-> 供应链档案：SBOM（CycloneDX）、trivy 扫描、离线 tar SHA256 见「镜像获取与校验」（哈希随候选制品提供）。
-> 相对 rc.19：**零 schema/迁移变更（恒 v23）**，手动审查/修复入口接入真实消费链、FIX_QUEUED 恢复入口、修复轮跳过审计与票面语义修正、403 授权态文案语义分离与直白化、fixture 遗留任务取消入口。
+> 供应链档案：SBOM（CycloneDX，47 组件）、trivy 扫描（1 MEDIUM / 0 HIGH/CRITICAL /
+> secrets=0）、离线 tar SHA256 见「镜像获取与校验」与 [Release 附件](https://github.com/nghqqa/MergePilot/releases/tag/v0.2.0-beta.6-rc.35.5)。
+> 相对 rc.35.4：schema **v29（纯新增表 `mu.fix_apply_operation`，无破坏性迁移）**；
+> 新增应用修复闭环（预览—确认绑定/原子认领/两阶段写/result_uncertain 读回对账/重审自动入队）
+> 与统一合并资格门（含 CI 双面判定）。能力口径见
+> [docs/delivery/CAPABILITY-MATRIX.md](../../docs/delivery/CAPABILITY-MATRIX.md)。
 
 ## 快速开始
 
@@ -18,7 +22,7 @@ node preflight.mjs --live     # 启动后活体探测（health/schema/queue）
 curl http://127.0.0.1:48500/api/health
 ```
 
-首次启动自动完成 schema 初始化（至 v23）；随后访问 `http://127.0.0.1:48500/multiuser`
+首次启动自动完成 schema 初始化（至 v29）；随后访问 `http://127.0.0.1:48500/multiuser`
 完成 GitHub OAuth 登录（首个用户需先经邀请，见「多租户与 webhook」）。
 
 ## 部署后首次使用
@@ -142,18 +146,20 @@ MU_GITHUB_OAUTH_CALLBACK_URL=https://<console 公开地址>/api/mu/auth/oauth/gi
 
 | 途径 | 命令 | 校验 |
 |---|---|---|
-| GHCR | `docker pull ghcr.io/nghqqa/mergepilot-console@a2d54a0d9757…` | RepoDigest == `sha256:a2d54a0d97578d6e9889a47a571922cbb56d719a180516276e7b30d1d32dd2fe` |
-| 离线 tar | `docker load -i mergepilot-console-rc22.tar` | tar SHA256 见 `SHA256SUMS-rc22.txt`（发布附件） |
+| GHCR | `docker pull ghcr.io/nghqqa/mergepilot-console@sha256:e30419990434c209de8d9de7fc11fc267d8c9e6fe0d99ff242eda69b7a61dd3a` | RepoDigest == 上列 index digest（或 `docker buildx imagetools inspect <tag>` 核对 Digest 行） |
+| 离线 tar | `docker load -i mergepilot-console-v0.2.0-beta.6-rc.35.5-offline.tar.gz` | tar SHA256 = `692727ccc234a4e1ca32e1f67818614e59caeea007cc172cf86f7d873079293c`（见 Release 附件 `SHA256SUMS`） |
 | 源码构建 | 见下节 | image ID 应可复现（同 commit/同构建参数） |
 
-镜像内置 `MERGEPILOT_VERSION=0.2.0-beta.6-rc.25`（`/api/health` version 字段即真源）。
+镜像内置 `MERGEPILOT_VERSION=v0.2.0-beta.6-rc.35.5`、`MERGEPILOT_GIT_COMMIT=af8b0022`
+（`/api/health` 的 `version`/`git_commit` 字段即真源）。
 
-**供应链档案（rc.20）**：
+**供应链档案（rc.35.5）**：
 
-- SBOM：CycloneDX（`rc19-sbom.cdx.json`，随候选制品提供）；
-- 漏洞/秘密扫描：trivy（`rc22-scan.json`，随发行版发布）；
-- 构建来源：源码 tag `v0.2.0-beta.6-rc.20`（tag 与镜像同源，合入后打 tag）；**零 schema/迁移变更（恒 v23，与 rc.19 一致）**；
-- 基础镜像：`node@sha256:0a7108bf…`（Dockerfile 钉死）。
+- SBOM：CycloneDX · **47 组件**（`sbom-rc355-cyclonedx.json`，随 Release 发布）；
+- 漏洞/秘密扫描：trivy（`trivy-rc355-scan.json`）：**0 HIGH/CRITICAL，1 MEDIUM，secrets=0**；
+- 构建来源：源码 tag `v0.2.0-beta.6-rc.35.5`（commit `af8b0022`，tag 与镜像同源）；
+  schema v29（纯新增表，无破坏性迁移）；
+- 历史版本（rc.34 及更早）的 digest/附件以各自 Release 页为准，本文件只维护当前版本。
 
 > `48590` 端口与 `beta-webhook-proxy` 容器是 MergePilot 开发方内部测试环境的组件，
 > **不属于自托管发行版，也不是官方托管服务入口**。自托管部署的对外入口是
@@ -162,11 +168,12 @@ MU_GITHUB_OAUTH_CALLBACK_URL=https://<console 公开地址>/api/mu/auth/oauth/gi
 ## 从源码构建
 
 ```bash
-git checkout v0.2.0-beta.6-rc.22        # 源码 tag（与镜像同源）
+git checkout v0.2.0-beta.6-rc.35.5      # 源码 tag（与镜像同源）
 cd console/frontend && npm ci && npm run build && cd ../..
 docker build -f docker/Dockerfile.canonical-console \
-  --build-arg MERGEPILOT_VERSION=0.2.0-beta.6-rc.22 \
-  -t ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.22 .
+  --build-arg MERGEPILOT_VERSION=v0.2.0-beta.6-rc.35.5 \
+  --build-arg GIT_COMMIT=af8b0022 \
+  -t ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.35.5 .
 ```
 
 注意两点：① 构建前必须先产出 `console/frontend/dist`（Dockerfile 会 COPY 它）；
@@ -316,9 +323,11 @@ schtasks /Create /TN "MergePilot-Attest" /SC ONSTART /RU SYSTEM ^
 > ingress 实现。**没有任何公网入口时**，GitHub webhook 无法自动进入审查管线（本地管理
 > 界面与健康检查不受影响）。
 
-1. **GitHub App**：按最小权限创建（Metadata/Contents/Pull requests/Checks/Statuses 全只读；
-   不申请任何 write）+ 订阅五种事件（installation、installation_repositories、pull_request、
-   check_run、status）+ webhook URL 指向你的 ingress（默认 `http://<host>:48590/api/mu/github/webhook`，
+1. **GitHub App**：按能力分档授权（审查只读档：Metadata/Contents/Pull requests/Checks/
+   Commit statuses/Administration 全只读；仅当启用应用修复与合并时另勾 Contents 与
+   Pull requests 读写——缺权限时对应能力在界面报告 unsupported，不影响审查）+ 订阅五种事件
+   （installation、installation_repositories、pull_request、check_run、status）+
+   webhook URL 指向你的 ingress（默认 `http://<host>:48590/api/mu/github/webhook`，
    对外部署请换成 https 域名）；**务必配置与 `MU_GITHUB_WEBHOOK_SECRET` 一致的签名密钥**。
    - 登录入口：`https://<console 公开地址>/login`（GitHub OAuth；仅受邀成员可登录）。
      管理员在控制台「组织与接入 → 成员与邀请」面板创建邀请后可一键复制邀请链接：
@@ -360,7 +369,7 @@ schtasks /Create /TN "MergePilot-Attest" /SC ONSTART /RU SYSTEM ^
 > 邀请永不授予 `platform_admin`（API 校验 / claim 守卫 / DB CHECK 三层拒绝）。
 > 因此**首个平台管理员由部署者在数据库直授**——这是设计行为，不是缺陷。
 
-**前提**：console 已启动（`docker compose ps` 全部 healthy）、schema 已初始化至 v23；
+**前提**：console 已启动（`docker compose ps` 全部 healthy）、schema 已初始化至 v29；
 已知自己的 GitHub 数字 user id（`https://api.github.com/users/<login>` 返回 JSON 的 `id` 字段）。
 
 **步骤（DBA 执行，一次事务；`<login>`/`<id>` 换成你的值）：**
@@ -460,9 +469,10 @@ docker compose --env-file .env pull console && docker compose --env-file .env up
 # 回滚：把引用改回旧 digest 再 up -d。数据卷不动。
 ```
 
-**schema 只前进不降级**：新版可能自动前移 `mu.schema_migrations`；回滚镜像后旧代码
-对新列/新表无感知（历史兼容已验证），但**不可跨过 schema 破坏性操作**——升级前
-`pg_dump` 一份（见下）。全部历史迁移为 additive（rc.5→rc.16 实证）。
+**schema 只前进不降级**：新版可能自动前移 `mu.schema_migrations`（当前 v29，历史迁移均为
+additive；v28/v29 纯新增、rc.35.4 代码前向兼容已实证）；回滚镜像后旧代码
+对新列/新表无感知，但**不可跨过 schema 破坏性操作**——升级前
+`pg_dump` 一份（见下）。
 
 ## 备份
 

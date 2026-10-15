@@ -59,32 +59,26 @@
 <!-- /nav:docs -->
 <article class="doc">
 <div class="crumbs"><a href="index.html">首页</a> / 下载与校验</div>
-<h1>下载与校验（0.2.0-beta.6-rc.25）</h1>
+<h1>下载与校验（0.2.0-beta.6-rc.35.5）</h1>
 
 <h2>官方镜像（GHCR，不可变 digest）</h2>
-<pre><code>docker pull ghcr.io/nghqqa/mergepilot-console@sha256:4e2baaf8dd19b61d14275c41057b04ccea14db527da1f06c4a04112d54f8725f</code></pre>
+<pre><code>docker pull ghcr.io/nghqqa/mergepilot-console@sha256:e30419990434c209de8d9de7fc11fc267d8c9e6fe0d99ff242eda69b7a61dd3a</code></pre>
 <table>
 <tr><th>项</th><th>值</th></tr>
-<tr><td>digest</td><td><code>sha256:4e2baaf8dd19b61d14275c41057b04ccea14db527da1f06c4a04112d54f8725f</code>（OCI index；amd64 manifest <code>76f1bf56…490e</code>，config digest <code>a0d0df4c…9a5b</code>——分列勿混）</td></tr>
-<tr><td>tag</td><td><code>v0.2.0-beta.6-rc.25</code></td></tr>
-<tr><td>内置版本</td><td><code>0.2.0-beta.6-rc.25</code>（/api/health version 真源）</td></tr>
-<tr><td>源码</td><td>tag commit <code>e9f947a8</code>（main = tag 同提交；schema v26 additive：mu_oauth_flow + provider/bind_user_id，rc.24 应用透明）</td></tr>
+<tr><td>digest</td><td><code>sha256:e30419990434c209de8d9de7fc11fc267d8c9e6fe0d99ff242eda69b7a61dd3a</code>（OCI index；amd64 manifest <code>efba4a6c…26fe</code> 与 config digest 为另两个不同对象——分列勿混）</td></tr>
+<tr><td>tag</td><td><code>v0.2.0-beta.6-rc.35.5</code>（与该 index digest 同源，已核验）</td></tr>
+<tr><td>内置版本</td><td><code>v0.2.0-beta.6-rc.35.5</code>（/api/health version 真源；git_commit=<code>af8b0022</code>）</td></tr>
+<tr><td>源码</td><td>tag commit <code>af8b0022</code>（schema v29 additive：mu.fix_apply_operation，纯新增表，rc.35.4 代码前向兼容已实证）</td></tr>
 </table>
 
-<h2>离线 tar（无外网环境）</h2>
+<h2>Release 附件（<a href="https://github.com/nghqqa/MergePilot/releases/tag/v0.2.0-beta.6-rc.35.5">GitHub Releases</a>）</h2>
 <table>
 <tr><th>项</th><th>值</th></tr>
-<tr><td>文件</td><td><code>mergepilot-console-rc25.tar</code></td></tr>
-<tr><td>大小</td><td>62,607,360 bytes</td></tr>
-<tr><td>SHA256</td><td><code>4c18128f5ee3503b7e67a63baad0d350ca8171700561598a15789782b4d52c1b</code></td></tr>
-<tr><td>加载</td><td><code>docker load -i mergepilot-console-rc25.tar</code> → 按 digest 核对（<code>4e2baaf8…725f</code>）</td></tr>
-<tr><td>部署包（当前，rc.25）</td><td><code>mergepilot-selfhost-deploy-kit-rc25.tar.gz</code> kit SHA256 = <code>d8e3cc8413dd9a6f9238e444c33f4ab32b2832c411705d1cfba32427cb267677</code>；校验文件 <code>SHA256SUMS-rc25.txt</code>（镜像 tar/SBOM/扫描同 sums）</td></tr>
-<tr><td>部署包（rc.20，已过时）</td><td>kit SHA256 <code>489c824d…87b3</code> 仅作存档——新安装请使用 rc.21</td></tr>
-<tr><td>部署包（rc.23/rc.24，已过时）</td><td>kit SHA256 <code>73a54bec…d36c（rc.23）</code> / <code>7179405c…e1b0（rc.24）</code> 仅作存档——新安装请使用 rc.25</td></tr>
-<tr><td>部署包（rc.19，已过时）</td><td><code>mergepilot-selfhost-deploy-kit-rc19.tar.gz</code>（kit SHA256 <code>dc26e45d…cc0</code>）与 <code>mergepilot-console-rc19.tar</code>（tar SHA256 <code>72b7938b…689</code> 的 rc.19 版）仅作存档/回滚追溯——新安装请使用 rc.20 部署包</td></tr>
-<tr><td>部署包（rc.18，已过时）</td><td><code>mergepilot-selfhost-deploy-kit-rc18.tar.gz</code>（kit SHA256 <code>6279e7a4…64b</code>）仅作存档/回滚追溯</td></tr>
-<tr><td>部署包（rc.17，已过时）</td><td><code>mergepilot-selfhost-deploy-kit-rc17.tar.gz</code>（kit SHA256 <code>0154a0a1…598d</code>）与 <code>mergepilot-console-rc17.tar</code>（tar SHA256 <code>2a8ccce4…30b90</code>）仅作存档/回滚追溯</td></tr>
-<tr><td>部署包（rc.16.1 及更早，已过时）</td><td><code>mergepilot-selfhost-deploy-kit-rc16.1-r2.tar.gz</code>（SHA256 <code>2e07fa86…a7441</code>）与 rc.16.1 首发版 kit 仅作存档追溯</td></tr>
+<tr><td>离线 tar</td><td><code>mergepilot-console-v0.2.0-beta.6-rc.35.5-offline.tar.gz</code></td></tr>
+<tr><td>大小</td><td>68,744,422 bytes</td></tr>
+<tr><td>SHA256</td><td><code>692727ccc234a4e1ca32e1f67818614e59caeea007cc172cf86f7d873079293c</code>（见附件 <code>SHA256SUMS</code>，含 SBOM/扫描校验和）</td></tr>
+<tr><td>加载</td><td><code>docker load -i mergepilot-console-v0.2.0-beta.6-rc.35.5-offline.tar.gz</code> → 按 digest 核对（<code>e3041999…3a</code>）</td></tr>
+<tr><td>历史版本</td><td>rc.34 及更早的镜像 digest / 部署包 / 校验和以各自 Release 页为准（不可变保留）；本页只维护当前版本</td></tr>
 </table>
 
 <p class="login-sub" style="margin:10px 0 0">GHCR 镜像包为 Public 仅表示自托管用户可匿名
@@ -94,27 +88,27 @@
 <h2>SBOM 与扫描</h2>
 <table>
 <tr><th>项</th><th>值</th></tr>
-<tr><td>SBOM</td><td>CycloneDX · <strong>35 组件</strong>（<code>rc25-sbom.cdx.json</code>，随发行版发布）</td></tr>
-<tr><td>漏洞扫描</td><td>trivy · <strong>0 HIGH/CRITICAL，1 MEDIUM，0 LOW</strong>（rc25-scan.json）</td></tr>
+<tr><td>SBOM</td><td>CycloneDX · <strong>47 组件</strong>（<code>sbom-rc355-cyclonedx.json</code>，随 Release 发布）</td></tr>
+<tr><td>漏洞扫描</td><td>trivy · <strong>0 HIGH/CRITICAL，1 MEDIUM</strong>（trivy-rc355-scan.json）</td></tr>
 <tr><td>秘密扫描</td><td><strong>secrets=0</strong></td></tr>
 </table>
 
 <h2>校验方法</h2>
 <pre><code># 镜像 ID 校验（加载/拉取后）
 docker inspect --format '{{.Id}}' &lt;镜像引用&gt;
-# 期望：sha256:4e2baaf8dd19b61d14275c41057b04ccea14db527da1f06c4a04112d54f8725f
+# 期望：sha256:e30419990434c209de8d9de7fc11fc267d8c9e6fe0d99ff242eda69b7a61dd3a
 
 # 运行版本校验
 curl -s http://127.0.0.1:48500/api/health | grep version
-# 期望：0.2.0-beta.6-rc.25
+# 期望：v0.2.0-beta.6-rc.35.5
 
-# tar 校验
-sha256sum mergepilot-console-rc25.tar</code></pre>
+# 附件校验
+sha256sum -c SHA256SUMS</code></pre>
 
-<div class="note">历史版本（rc.9～rc.14）的 digest 与 tag 同样以不可变形式保留在 GHCR；
+<div class="note">历史版本（rc.9 起）的 digest 与 tag 同样以不可变形式保留在 GHCR；
 发布页随版本更新追加，不修改历史条目。</div>
 </article>
 </main>
-<footer class="footer">MergePilot 0.2.0-beta.6-rc.19 · Apache-2.0</footer>
+<footer class="footer">MergePilot 0.2.0-beta.6-rc.35.5 · Apache-2.0</footer>
 </body>
 </html>

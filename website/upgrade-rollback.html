@@ -73,7 +73,7 @@ docker compose --env-file .env up -d
 # ④ 验证
 curl -s http://127.0.0.1:48500/api/health | grep version</code></pre>
 <p>schema 迁移在启动时<strong>自动、幂等、只前进</strong>执行
-（历史全部为 additive 变更，rc.5→rc.15 实证零数据损失）。</p>
+（历史迁移均为 additive；当前 v29 的 <code>mu.fix_apply_operation</code> 为纯新增表，旧代码前向兼容已实证）。</p>
 
 <h2>回滚（换回旧镜像）</h2>
 <pre><code># 把 compose 的 console image 引用改回旧版本 digest 后
@@ -83,7 +83,9 @@ docker compose --env-file .env up -d</code></pre>
 <li><strong>schema 不自动降级</strong>——旧镜像对新列/新表无感知可正常运行；
    若需彻底回到旧 schema，用升级前备份恢复（见下）；</li>
 <li>数据卷（pgdata/evidence/keystore）在回滚中一律不动；</li>
-<li>会话在新旧镜像间语义一致，回滚不强制重登。</li>
+<li>会话在新旧镜像间语义一致，回滚不强制重登；</li>
+<li><strong>远端事实不随回滚消失</strong>：机器人已推送的修复提交与已发生的合并不受
+   容器回滚影响——远端回退只能在 GitHub/Gitee 手动 revert。</li>
 </ul>
 
 <h2>灾备恢复（从备份重建）</h2>
@@ -100,6 +102,6 @@ cchain=BLOCKED，重新 rotate 生成即可恢复 READY）。</p>
 </ul>
 </article>
 </main>
-<footer class="footer">MergePilot 0.2.0-beta.6-rc.22 · Apache-2.0</footer>
+<footer class="footer">MergePilot 0.2.0-beta.6-rc.35.5 · Apache-2.0</footer>
 </body>
 </html>

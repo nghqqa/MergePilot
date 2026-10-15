@@ -74,6 +74,8 @@ Beta 通道接口与配置项可能随版本调整；生产使用建议钉住 di
 <tr><td>webhook-ingress 仅放行 webhook 与 health 路径</td><td>管理面仅绑定本机回环地址或由用户自建 HTTPS 反向代理暴露</td><td><span class="tag tag-sec">安全设计</span></td><td>属安全设计而非缺陷</td></tr>
 <tr><td>schema 只前进不降级</td><td>回滚镜像不回滚 schema</td><td><span class="tag tag-sec">安全设计</span></td><td>升级前 pg_dump；破坏性变更前会有公告</td></tr>
 <tr><td>RAG 为可选组件</td><td>未接入时相关面如实显示 NOT_WIRED</td><td><span class="tag tag-lim">当前限制</span></td><td>按 .env 模板接入 bge-m3 即可</td></tr>
+<tr><td>Gitee 连接器不支持读取 CI 状态</td><td>实测当前连接器访问 status 端点返回 404 → Gitee 仓库的合并被资格门恒阻塞（连接器能力结论，不判断 Gitee 平台整体）</td><td><span class="tag tag-lim">当前限制</span></td><td>Gitee 仓库可用审查/评论/应用修复；合并需等连接器补 CI 读取</td></tr>
+<tr><td>机器人远端写入不可由容器回滚撤销</td><td>机器人已推送的修复提交与已发生的合并不随镜像回滚消失</td><td><span class="tag tag-sec">如实边界</span></td><td>远端回退只能在 GitHub/Gitee 手动 revert</td></tr>
 </tbody>
 </table>
 </div>
@@ -96,16 +98,17 @@ Beta 通道接口与配置项可能随版本调整；生产使用建议钉住 di
 
 <h2 id="security-boundary">安全边界</h2>
 <ul>
-<li>系统对 GitHub 完全只读（CI check run 亦只读并排）；不具备 merge / 任何写回权限。</li>
+<li>写入全部受控：机器人提交修复与合并 PR 都需维护者逐次「预览 → 确认」；不存在自动批准、自动合并或 required check 设置。</li>
+<li>CI 状态为只读读取，作为合并资格输入；CI 未配置、未通过、读取不完整时合并一律不放行。</li>
 <li>LLM 供应商由使用者自选自配，key 只存使用者自己的环境。</li>
 <li>所有审查结论与证据落在使用者自己的数据库与证据卷中。</li>
-<li><code>platform_admin</code> 不可经邀请授予——API 403、claim 拒绝、DB 约束三层拦截。</li>
+<li><code>platform_admin</code> 不可经邀请授予——API 403、claim 拒绝、DB 约束三层拦截；平台管理员同样无审批/应用/合并权（平台管理与审查裁定分离）。</li>
 </ul>
 
 <div class="note">Beta 通道说明：0.2.0-beta.6-rc.N 为快速迭代通道，接口与配置项可能随版本调整；
 生产使用建议钉住 digest 并在升级窗口验证（见升级与回滚）。</div>
 </article>
 </main>
-<footer class="footer">MergePilot 0.2.0-beta.6-rc.22 · Apache-2.0</footer>
+<footer class="footer">MergePilot 0.2.0-beta.6-rc.35.5 · Apache-2.0</footer>
 </body>
 </html>
