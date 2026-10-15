@@ -3282,7 +3282,9 @@ const ragMatch = p.match(new RegExp("^/api/mu/repositories/([^/]+)/rag-search$")
       let r;
       try {
         r = await fa.reconcileOperation(muPoolQ, { env, operationId: reconMatch[1],
-          tenantId: mu.tenantId });
+          tenantId: mu.tenantId,
+          deps: { enqueueEventSync: (p) => enqueueEventSyncForHead({ env, store, q: muPoolQ,
+            tenantId: mu.tenantId, headSha: p.headSha, run: p.run, userId: mu.userId }) } });
       } catch (e) {
         const reason = String(e?.message ?? e).slice(0, 160);
         await store.audit('MU_OP_RECONCILE_ERROR', { tenantId: mu.tenantId, actorUserId: mu.userId,

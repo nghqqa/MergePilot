@@ -334,20 +334,29 @@ export async function pushCommit({ repoUrl, headSha, diffText, branch, message,
  *   unknown   = 网络/环境原因无法判定（保持 uncertain，不得臆断）
  */
 export async function checkCommitOnBranch({ repoUrl, branch, candidateSha, credentialToken = null,
-  timeoutMs = 60_000, workRoot = os.tmpdir() } = {}) {
+  timeoutMs = 90_000, workRoot = os.tmpdir() } = {}) {
   let workdir = null;
   try {
     workdir = fs.mkdtempSync(path.join(workRoot, 'mp-recon-'));
+    // 对账临时目录必须先初始化 Git 仓库——fetch/merge-base 均要求 repo 语境
+    const init = await git(['init', '-q'], workdir, 10_000);
+    if (init.code !== 0) return { relation: 'unknown', reason: 'git_init_failed' };
     const urlWithCred = appendCredential(repoUrl, credentialToken);
     const ls = await git(['ls-remote', urlWithCred, `refs/heads/${branch}`], workdir, 30_000);
     if (ls.code !== 0) return { relation: 'unknown', reason: 'ls_remote_failed' };
     const tip = String(ls.stdout).trim().split(/	/)[0];
     if (!tip) return { relation: 'unknown', reason: 'branch_not_found' };
     if (tip.toLowerCase() === String(candidateSha).toLowerCase()) return { relation: 'tip', tip };
-    // 浅取 tip 与候选，判祖先
-    const f1 = await git(['fetch', '--depth', '50', urlWithCred, tip, candidateSha], workdir, timeoutMs);
+
+    // 全量取目标分支历史（权威祖先判定）——浅取判 is-ancestor 会把"历史不足"误判为
+    // "候选不存在"（浅边界之外的假阴性）；对账是一次性人工恢复路径，全量取单个分支可接受。
+    const f1 = await git(['fetch', urlWithCred, `refs/heads/${branch}:refs/heads/recon-branch`],
+      workdir, timeoutMs);
     if (f1.code !== 0) return { relation: 'unknown', reason: 'fetch_failed', tip };
-    const anc = await git(['merge-base', '--is-ancestor', candidateSha, tip], workdir, 10_000);
+    const have = await git(['cat-file', '-t', candidateSha], workdir, 10_000);
+    if (have.code !== 0) return { relation: 'absent', tip }; // 分支全历史已本地、对象仍缺=确不在该分支
+    const anc = await git(['merge-base', '--is-ancestor', candidateSha, 'refs/heads/recon-branch'],
+      workdir, 15_000);
     if (anc.code === 0) return { relation: 'ancestor', tip };
     if (anc.code === 1) return { relation: 'absent', tip };
     return { relation: 'unknown', reason: 'merge_base_failed', tip };

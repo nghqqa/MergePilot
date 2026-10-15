@@ -68,7 +68,9 @@ async function main() {
     console.error('candidate 模式必须 --prompt <候选id>（见 prompts/candidates/）');
     return 2;
   }
-  if (args.mode !== 'mock' && args.prompt !== 'baseline') {
+  // D2 修复（收口波）：原条件写反——candidate 模式带 --prompt <候选id> 会被本分支误拒
+  // （文档命令永远进不了候选提示词路径）。本意=real 模式只走生产基线提示词。
+  if (args.mode === 'real' && args.prompt !== 'baseline') {
     console.error('提示词对照只在 candidate 模式（real 模式固定走生产基线提示词）');
     return 2;
   }

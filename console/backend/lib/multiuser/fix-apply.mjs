@@ -66,7 +66,9 @@ const UNCERTAIN_CLASS = /timeout|abort|econn|network|socket|fetch failed|etimedo
  *   { claimed: true,  operationId }                      —— 本调用持有执行权
  *   { claimed: false, state, operationId?, commitSha? }  —— state: idempotent|in_progress
  * 纯 SQL 认领：INSERT..ON CONFLICT DO NOTHING（新建即 executing）；
- * 已存在行按状态分流，重试认领用受保护 UPDATE（仅 failed/result_uncertain 可重新认领）。
+ * 已存在行按状态分流，重试认领用受保护 UPDATE（仅 failed/previewed 可重新认领；
+ * result_uncertain 一律先读回对账——对账定案为 failed（确认未写入）后才可重试，
+ * 禁止从 uncertain 直接重认领造成重复远端写）。
  */
 async function claimOperation(q, { insertSql, insertParams, idemKey }) {
   const ins = await q(
@@ -84,11 +86,16 @@ async function claimOperation(q, { insertSql, insertParams, idemKey }) {
   if (['executing', 'confirmed'].includes(ex.status)) {
     return { claimed: false, state: 'in_progress', operationId: ex.operation_id };
   }
-  // failed / result_uncertain / previewed → 尝试原子重认领（败方拿不到）
+  // result_uncertain 一律拒绝并指向对账：证据不足禁止重新准备/推送；
+  // 只有对账定案为 failed（确认未写入）后才会落到下面的 failed 分支允许重试。
+  if (ex.status === 'result_uncertain') {
+    return { claimed: false, state: 'requires_reconcile', operationId: ex.operation_id };
+  }
+  // failed / previewed → 尝试原子重认领（败方拿不到）。
   const re = await q(
     `UPDATE mu.fix_apply_operation SET status='executing', error_code=NULL, error_detail=NULL,
        updated_at=now()
-      WHERE idempotency_key=$1 AND status IN ('failed','result_uncertain','previewed')
+      WHERE idempotency_key=$1 AND status IN ('failed','previewed')
       RETURNING operation_id`, [idemKey]);
   if (re.rows.length) return { claimed: true, operationId: re.rows[0].operation_id };
   return { claimed: false, state: 'in_progress', operationId: ex.operation_id };
@@ -252,7 +259,7 @@ export async function confirmApplyFix(pool, { env = process.env, runId, tenantId
       detail: `预览时 ${String(expectedRemoteHead).slice(0, 12)}，当前 ${String(remote.headSha).slice(0, 12)}——请刷新预览后重试` };
   }
 
-  // 原子认领（新建即 executing；failed/result_uncertain 可重认领；并发败方拿不到执行权）
+  // 原子认领（新建即 executing；failed/previewed 可重认领；result_uncertain 先对账）
   const claim = await claimOperation(q, {
     idemKey,
     insertSql: `INSERT INTO mu.fix_apply_operation
@@ -269,13 +276,20 @@ export async function confirmApplyFix(pool, { env = process.env, runId, tenantId
       return { ok: true, idempotent: true, operation_id: claim.operationId,
         status: 'committed', commit_sha: claim.commitSha };
     }
+    if (claim.state === 'requires_reconcile') {
+      return { ok: false, reason: 'result_uncertain_requires_reconcile',
+        detail: '上次推送结果不明——请先执行「读回对账」定案（证据不足保持 uncertain，不会自动重试）',
+        operation_id: claim.operationId ?? null };
+    }
     return { ok: false, reason: 'operation_in_progress', operation_id: claim.operationId ?? null };
   }
   const opId = claim.operationId;
+  const LOST = { ok: false, reason: 'lost_execution_right',
+    detail: '执行权已被接管（对账/其他请求）——本次调用停止；远端状态以读回对账为准' };
   const failTo = async (status, errorCode, detail = null) => {
     const kept = await guardedUpdate(q, opId, ['executing'],
       `status='${status}', error_code=$1, error_detail=$2, updated_at=now()`, [errorCode, detail]);
-    return kept; // false=执行权已易主（零覆写）
+    return kept; // false=执行权已易主（零覆写）——调用方必须停止
   };
 
   // 阶段一：准备候选提交（本地）。失败=零远端副作用，且此时未持久化候选——直接 failed。
@@ -293,23 +307,30 @@ export async function confirmApplyFix(pool, { env = process.env, runId, tenantId
         : null,
     });
   } catch (e) {
-    await failTo('failed', 'prepare_exception', String(e?.message ?? e).slice(0, 160));
+    const kept = await failTo('failed', 'prepare_exception', String(e?.message ?? e).slice(0, 160));
+    if (!kept) return { ...LOST, operation_id: opId };
     return { ok: false, reason: 'prepare_exception', detail: String(e?.message ?? e).slice(0, 120), operation_id: opId };
   }
   if (!prepared.ok) {
-    await failTo('failed', prepared.reason, prepared.detail ?? prepared.output ?? null);
+    const kept = await failTo('failed', prepared.reason, prepared.detail ?? prepared.output ?? null);
+    if (!kept) return { ...LOST, operation_id: opId };
     return { ok: false, reason: prepared.reason, detail: prepared.detail ?? null,
       output: prepared.output ?? null, operation_id: opId };
   }
 
-  // 写前持久化：候选 SHA + 操作意图 + 绑定信息（进程在此刻退出也能凭记录对账恢复）
-  await guardedUpdate(q, opId, ['executing'],
+  // 写前持久化：候选 SHA + 操作意图 + 绑定信息（进程在此刻退出也能凭记录对账恢复）。
+  // 持久化失败=失去执行权——必须停止，不得进入推送阶段。
+  const persisted = await guardedUpdate(q, opId, ['executing'],
     `candidate_commit_sha=$1, operation_data=$2::jsonb, updated_at=now()`,
     [prepared.commitSha, JSON.stringify({
       intent: 'push', branch: remote.sourceBranch, expected_head: remote.headSha,
       previous_head: remote.headSha, patch_digest: patch.patch_digest,
       patch_version: patch.patch_version, provider, prepared_at: new Date().toISOString(),
     })]);
+  if (!persisted) {
+    await import('./patch-applicability.mjs').then((m) => m.discardPrepared(prepared.dir));
+    return LOST;
+  }
 
   // 阶段二：推送（真远端写）。可注入 deps.pushPrepared 供并发/故障测试用同步点控制。
   const doPush = deps.pushPrepared ?? pushPrepared;
@@ -334,7 +355,7 @@ export async function confirmApplyFix(pool, { env = process.env, runId, tenantId
       `status='committed', remote_result_sha=$1, error_code=NULL, error_detail=NULL,
          operation_data = operation_data || $2::jsonb, updated_at=now()`,
       [candidateSha, JSON.stringify({ committed_at: new Date().toISOString() })]);
-    if (!kept) return { ok: false, reason: 'operation_in_progress', operation_id: opId };
+    if (!kept) return { ...LOST, operation_id: opId };
 
     // 重审入队（可恢复，best-effort）：成功 push 绝不因入队失败回退或重推。
     const enq = await enqueueReReview(q, { env, run, headSha: candidateSha, userId, deps });
@@ -354,10 +375,12 @@ export async function confirmApplyFix(pool, { env = process.env, runId, tenantId
   if (pushResult && !pushResult.ok
       && ['stale_head', 'branch_not_found', 'ls_remote_failed'].includes(pushResult.reason)) {
     if (pushResult.reason === 'stale_head') {
-      await failTo('failed', 'stale_head', pushResult.detail ?? null);
+      const kept = await failTo('failed', 'stale_head', pushResult.detail ?? null);
+      if (!kept) return { ...LOST, operation_id: opId };
       return { ok: false, reason: 'stale_head', detail: pushResult.detail ?? null, operation_id: opId };
     }
-    await failTo('failed', pushResult.reason, pushResult.detail ?? pushResult.output ?? null);
+    const kept2 = await failTo('failed', pushResult.reason, pushResult.detail ?? pushResult.output ?? null);
+    if (!kept2) return { ...LOST, operation_id: opId };
     return { ok: false, reason: pushResult.reason, detail: pushResult.detail ?? null,
       output: pushResult.output ?? null, operation_id: opId };
   }
@@ -366,7 +389,8 @@ export async function confirmApplyFix(pool, { env = process.env, runId, tenantId
   // 先读回对账（reconcile）再行动；禁止判失败后盲目重推（可能产生重复提交）。
   const errDetail = pushThrew ?? pushResult?.detail ?? pushResult?.output ?? null;
   const errCode = pushThrew ? 'push_exception' : (pushResult?.reason ?? 'push_failed');
-  await failTo('result_uncertain', errCode, errDetail);
+  const keptU = await failTo('result_uncertain', errCode, errDetail);
+  if (!keptU) return { ...LOST, operation_id: opId };
   return {
     ok: false, reason: 'result_uncertain', uncertain: true,
     detail: `推送结果不明（${errCode}）：候选提交 ${String(candidateSha).slice(0, 12)} 已登记——请执行「读回对账」确认远端实际状态，勿直接重试`,
@@ -388,10 +412,34 @@ export async function reconcileOperation(pool, { env = process.env, operationId,
     [operationId, tenantId])).rows[0] ?? null;
   if (!op) return { ok: false, reason: 'operation_not_found' };
   if (['committed', 'merged', 'completed', 'failed', 'previewed'].includes(op.status)) {
+    // 恢复入口：应用已 committed 但重审关联未完成 → 幂等补入队（不重复应用补丁）
+    if (op.status === 'committed' && op.operation_type === 'apply_fix'
+        && op.operation_data?.review_reenqueue?.ok !== true && deps.enqueueEventSync) {
+      const runRow = (await q(`SELECT * FROM mu.review_run WHERE run_id=$1`, [op.run_id])).rows[0] ?? null;
+      if (runRow) {
+        const enq = await enqueueReReview(q, { env, run: runRow,
+          headSha: op.candidate_commit_sha, userId: op.operator_user_id, deps });
+        await q(`UPDATE mu.fix_apply_operation
+                   SET operation_data = operation_data || $2::jsonb, updated_at=now()
+                  WHERE operation_id=$1 AND status='committed'`,
+          [operationId, JSON.stringify({ review_reenqueue: enq })]);
+        return { ok: true, reconciled: false, status: 'committed', review_reenqueue: enq,
+          note: enq.ok ? '重审关联已补齐' : `重审入队仍失败（${enq.reason}）——可再次调用本端点重试` };
+      }
+    }
     return { ok: true, reconciled: false, status: op.status,
       note: '该操作已是确定态（或无远端写入意图），无需对账' };
   }
-  // executing（含写前进程退出）与 result_uncertain 才需要对账
+  // executing（含写前进程退出）与 result_uncertain 才需要对账。
+  // 竞态防护：executing 且 10 分钟内活跃 → 可能仍是活执行者（push 在途），
+  // 此刻对账可能把操作释放后原执行者继续写入——拒绝并提示等待；
+  // result_uncertain 表示执行者的写入尝试已结束（响应不明），随时可安全对账。
+  // （即便发生窗口内的极端竞态，推送阶段的服务端 CAS 也会拒绝第二次写入——不会重复提交。）
+  if (op.status === 'executing'
+      && (Date.now() - new Date(op.updated_at).getTime()) < 10 * 60 * 1000) {
+    return { ok: true, reconciled: false, status: op.status,
+      note: '该操作仍在执行窗口内（近 10 分钟有活动）——请稍后再对账；若确认进程已死可等窗口过后重试' };
+  }
   const provider = op.provider;
   const ownerRepo = (await q(
     `SELECT rep.owner, rep.name AS repo_name,
@@ -434,12 +482,27 @@ export async function reconcileOperation(pool, { env = process.env, operationId,
       credentialToken: await credFor(provider, env, ownerRepo.installation_id) });
     evidence.remote_tip = rel.tip ?? null;
     if (rel.relation === 'tip' || rel.relation === 'ancestor') {
-      await guardedUpdate(q, operationId, ['executing', 'result_uncertain', 'confirmed'],
+      const kept = await guardedUpdate(q, operationId, ['executing', 'result_uncertain', 'confirmed'],
         `status='committed', remote_result_sha=$1, error_code=NULL, error_detail=NULL,
            operation_data = operation_data || $2::jsonb, updated_at=now()`,
         [candidateSha, JSON.stringify({ evidence, reconciled: true })]);
+      if (!kept) return { ok: false, reason: 'lost_execution_right',
+        detail: '对账定案期间执行权被接管——请刷新后重试对账' };
+      // 对账确认应用成功 → 补齐新 head 重审关联（失败持久化，可经本端点幂等重试）
+      let enq = { ok: false, reason: 'enqueue_unavailable' };
+      const runRow = (await q(`SELECT * FROM mu.review_run WHERE run_id=$1`, [op.run_id])).rows[0] ?? null;
+      if (runRow) {
+        enq = await enqueueReReview(q, { env, run: runRow, headSha: candidateSha,
+          userId: op.operator_user_id, deps });
+        await q(`UPDATE mu.fix_apply_operation
+                   SET operation_data = operation_data || $2::jsonb, updated_at=now()
+                  WHERE operation_id=$1 AND status='committed'`,
+          [operationId, JSON.stringify({ review_reenqueue: enq })]);
+      }
       return { ok: true, reconciled: true, status: 'committed', commit_sha: candidateSha,
-        note: '读回确认：候选提交已在远端分支上（提交成功，仅响应丢失）' };
+        review_reenqueue: enq,
+        note: '读回确认：候选提交已在远端分支上（提交成功，仅响应丢失）'
+          + (enq.ok ? '；重审关联已补齐' : `；重审入队失败（${enq.reason}）——可再次调用本端点幂等重试`) };
     }
     if (rel.relation === 'absent') {
       const untouched = rel.tip && expectedHead && rel.tip.toLowerCase() === String(expectedHead).toLowerCase();
@@ -581,7 +644,17 @@ export async function evaluateMergeEligibility(q, { env = process.env, run, prov
     conditions.review = 'missing';
     blocked.push({ code: 'review_missing_for_head',
       detail: `当前 head ${String(remote.headSha ?? '').slice(0, 12)} 无审查 run——旧 head 的审查与测试结果不能替代新 head 证据；请先完成重审` });
-  } else if (!['COMPLETED', 'VERIFIED'].includes(headRun.status)) {
+  } else if (headRun.status === 'BLOCKED') {
+    conditions.review = 'blocked_run';
+    blocked.push({ code: 'review_run_blocked',
+      detail: `当前 head 的审查 run ${String(headRun.run_id).slice(0, 8)} 已被阻塞（${headRun.status}）——按既有流程处理后重新审查` });
+  } else if (headRun.status === 'FAILED') {
+    conditions.review = 'failed_run';
+    blocked.push({ code: 'review_run_failed',
+      detail: `当前 head 的审查 run ${String(headRun.run_id).slice(0, 8)} 已失败——请重新发起审查` });
+  } else if (!['REVIEWED', 'COMPLETED', 'VERIFIED'].includes(headRun.status)) {
+    // REVIEWED=审查完成（干净 PR 的合法终态，可与 COMPLETED/VERIFIED 同列——修复 #458 资格门
+    // 把干净 PR 永久判 pending 的缺陷）；其余状态（审查中/等审批/修复轮/验证轮）=进行中。
     conditions.review = 'pending';
     blocked.push({ code: 'review_pending',
       detail: `当前 head 的审查 run ${String(headRun.run_id).slice(0, 8)} 尚未完成（${headRun.status}）` });
@@ -617,8 +690,14 @@ export async function evaluateMergeEligibility(q, { env = process.env, run, prov
 
 /**
  * head 域 CI 读取。双平台：
- *   GitHub — GET /repos/{o}/{r}/commits/{sha}/status（combined status；空 statuses=无 CI 配置）
- *   Gitee  — GET /repos/{o}/{r}/commits/{sha}/status（构建状态；接口不可用=unsupported）
+ *   GitHub — 双面判定：combined status（status API）+ check runs（GitHub Actions 只产
+ *            check runs 不产 status）。两个面都读；任一面失败态=失败，任一面进行中=pending；
+ *            两面全空=not_configured；权限不足=unsupported 并报告所需权限（不用 PAT 绕过）；
+ *            重跑取最新态（API 语义即最新）；旧 head 结果与本判定无关（按精确 head 读取）。
+ *            必需检查清单（branch protection required checks）需 admin 权限才能读——本服务
+ *            不预判必需清单，保护规则的强制由平台在合并时执行（delegated_to_platform）。
+ *   Gitee  — GET /repos/{o}/{r}/commits/{sha}/status（实测 gitee.com 双形态 404 →
+ *            unsupported=能力限制，如实阻塞）。
  * 状态映射：全 success=pass；任一 pending=阻塞；任一 failure/error=阻塞；
  *           无任何状态=not_configured（阻塞）；API 不支持/无权限=unsupported（阻塞）；
  *           网络失败=unknown（阻塞）。
@@ -627,20 +706,33 @@ export async function readHeadCi(env, { provider, owner, repoName, headSha, inst
   if (!headSha) return { state: 'unknown', reason: 'head 不可读' };
   try {
     if (provider === 'github') {
-      const r = await ghGet(env, installationId,
+      // 面 1：combined status（commit statuses）
+      const rs = await ghGet(env, installationId,
         `/repos/${owner}/${repoName}/commits/${headSha}/status`);
-      if (!r.ok) return { state: 'unsupported', reason: `GitHub status API HTTP ${r.status}` };
-      const statuses = Array.isArray(r.json?.statuses) ? r.json.statuses : [];
-      if (!statuses.length) return { state: 'not_configured',
-        reason: '该 head 无任何提交状态——仓库未配置 CI 或 CI 未运行' };
-      const state = String(r.json?.state ?? '');
-      if (state === 'success') return { state: 'pass' };
-      if (state === 'pending') return { state: 'pending', reason: 'CI 运行中' };
-      return { state: 'failed', reason: `CI 状态 ${state}` };
+      if (rs.status === 403) {
+        // 403=无权限（报告所需权限，不绕过）
+        return { state: 'unsupported',
+          reason: 'GitHub App 缺 Commit statuses (read) 权限——请在 App 设置为该安装授予后重试' };
+      }
+      if (!rs.ok) return { state: 'unknown', reason: `GitHub status API HTTP ${rs.status}` };
+      // 面 2：check runs（Actions/第三方 checks）
+      const rc = await ghGet(env, installationId,
+        `/repos/${owner}/${repoName}/commits/${headSha}/check-runs`);
+      if (rc.status === 403) {
+        return { state: 'unsupported',
+          reason: 'GitHub App 缺 Checks (read) 权限——请在 App 设置为该安装授予后重试' };
+      }
+      if (!rc.ok && rs.ok) {
+        // check-runs 读不到但 status 可读——退化为仅 status 判定（如实标注部分面）
+        const only = judgeGithubStatusSurface(rs.json);
+        return { ...only, partial: 'check_runs_unreadable' };
+      }
+      if (!rc.ok) return { state: 'unknown', reason: `GitHub check-runs HTTP ${rc.status}` };
+      return judgeGithubBothSurfaces(rs.json, rc.json);
     }
     if (provider === 'gitee') {
       const r = await giteeGet(env, `/repos/${owner}/${repoName}/commits/${headSha}/status`);
-      if (!r.ok) return { state: 'unsupported', reason: `Gitee status API HTTP ${r.status}` };
+      if (!r.ok) return { state: 'unsupported', reason: `Gitee status API HTTP ${r.status}（当前连接器能力边界）` };
       const statuses = Array.isArray(r.json?.statuses) ? r.json.statuses : [];
       if (!statuses.length) return { state: 'not_configured',
         reason: '该 head 无任何构建状态——仓库未配置 CI 或 CI 未运行' };
@@ -653,6 +745,47 @@ export async function readHeadCi(env, { provider, owner, repoName, headSha, inst
   } catch (e) {
     return { state: 'unknown', reason: String(e?.message ?? e).slice(0, 80) };
   }
+}
+
+function judgeGithubStatusSurface(statusJson) {
+  const statuses = Array.isArray(statusJson?.statuses) ? statusJson.statuses : [];
+  if (!statuses.length) return { state: 'not_configured',
+    reason: '该 head 无任何提交状态——仓库未配置 CI 或 CI 未运行' };
+  const state = String(statusJson?.state ?? '');
+  if (state === 'success') return { state: 'pass' };
+  if (state === 'pending') return { state: 'pending', reason: 'CI 运行中' };
+  return { state: 'failed', reason: `CI 状态 ${state}` };
+}
+
+// 双面合并判定：任一失败=failed；任一进行中=pending；两面全空=not_configured；否则 pass。
+// conclusion 映射：success/neutral/skipped=通过（skipped=不适用）；其余结论=失败。
+function judgeGithubBothSurfaces(statusJson, checkRunsJson) {
+  const checks = Array.isArray(checkRunsJson?.check_runs) ? checkRunsJson.check_runs : [];
+  const statuses = Array.isArray(statusJson?.statuses) ? statusJson.statuses : [];
+  if (!checks.length && !statuses.length) {
+    return { state: 'not_configured',
+      reason: '该 head 无任何 check run 或提交状态——仓库未配置 CI 或 CI 未运行' };
+  }
+  const PENDING = new Set(['queued', 'in_progress', 'waiting', 'pending']);
+  const BAD = new Set(['failure', 'error', 'timed_out', 'action_required', 'cancelled', 'startup_failure', 'error', 'failure']);
+  let hasBad = false, badLabel = '';
+  let hasPending = false, pendingLabel = '';
+  for (const c of checks) {
+    const st = String(c?.status ?? '');
+    if (PENDING.has(st)) { hasPending = true; pendingLabel = pendingLabel || `${c.name ?? 'check'} ${st}`; continue; }
+    const cc = String(c?.conclusion ?? '');
+    if (st === 'completed' && cc && !['success', 'neutral', 'skipped'].includes(cc)) {
+      hasBad = true; badLabel = badLabel || `${c.name ?? 'check'} ${cc}`;
+    }
+  }
+  for (const st2 of statuses) {
+    const s2 = String(st2?.state ?? '');
+    if (s2 === 'pending') { hasPending = true; pendingLabel = pendingLabel || `${st2.context ?? 'status'} pending`; continue; }
+    if (s2 !== 'success') { hasBad = true; badLabel = badLabel || `${st2.context ?? 'status'} ${s2}`; }
+  }
+  if (hasBad) return { state: 'failed', reason: `CI 未通过：${badLabel}` };
+  if (hasPending) return { state: 'pending', reason: `CI 运行中：${pendingLabel}` };
+  return { state: 'pass' };
 }
 
 async function ghGet(env, installationId, endpoint) {
@@ -788,6 +921,11 @@ export async function confirmMergePr(pool, { env = process.env, runId, tenantId,
     if (claim.state === 'idempotent') {
       return { ok: true, idempotent: true, operation_id: claim.operationId,
         status: 'merged', merge_sha: claim.commitSha };
+    }
+    if (claim.state === 'requires_reconcile') {
+      return { ok: false, reason: 'result_uncertain_requires_reconcile',
+        detail: '上次合并结果不明——请先执行「读回对账」按 PR 实际状态定案',
+        operation_id: claim.operationId ?? null };
     }
     return { ok: false, reason: 'operation_in_progress', operation_id: claim.operationId ?? null };
   }

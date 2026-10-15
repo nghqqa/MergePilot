@@ -402,6 +402,63 @@ try {
   ok('F13b 对账幂等：已终态 no-op', rc1b.ok === true && rc1b.reconciled === false
     && rc1b.status === 'committed', rc1b);
 
+  // F13c: 对账竞态门——仍在执行窗口内（10 分钟活跃）的 executing 拒绝对账
+  {
+    const tipLive = headForBranch();
+    const insLive = await pool.query(
+      `INSERT INTO mu.fix_apply_operation
+         (operation_type, status, tenant_id, repo_id, pr_id, run_id, patch_id, patch_digest,
+          provider, provider_pr_number, source_branch, target_branch, expected_head,
+          robot_identity, idempotency_key, operator_user_id)
+       VALUES ('apply_fix','executing',$1,$2,$3,$4,$5,$6,'gitee',2,'fix-branch','master',$7,
+         'MergePilot Gitee Bot',$8,$9) RETURNING operation_id`,
+      [T, REPO, PRID, RUNC, pC.patchId ?? null, DIGC, tipLive,
+       `${RUNC}:apply_fix:live`, USER]);
+    const rcLive = await fa.reconcileOperation(pool, { env, operationId: insLive.rows[0].operation_id,
+      tenantId: T, deps: { repoUrlFor: () => bareDir } });
+    ok('F13c 对账竞态门：executing 且 10 分钟内活跃 → 拒绝对账（不释放活执行者）',
+      rcLive.ok === true && rcLive.reconciled === false
+      && /执行窗口/.test(rcLive.note ?? ''), rcLive);
+  }
+
+  // ── U 组：uncertain 禁止直接重认领 → 对账定案 committed → 重审关联补齐（R1/R2/R4）──
+  {
+    const tipU = headForBranch();
+    const RUNU = crypto.randomUUID();
+    await pool.query(
+      `INSERT INTO mu.review_run (run_id, tenant_id, repo_id, pr_id, head_sha, trigger_source, status, llm_mode)
+       VALUES ($1,$2,$3,$4,$5,'manual','COMPLETED','deterministic_only')`, [RUNU, T, REPO, PRID, tipU]);
+    const diffU = ['--- a/src/config.js', '+++ b/src/config.js', '@@ -1,6 +1,7 @@',
+      ' const x = 1;', ' const token = process.env.TOKEN;', ' const y = 2;',
+      ' const audit = true;', ' const flagged = 1;', ' const gated = 1;', '+const probed = 1;'].join('\n') + '\n';
+    await art.persistFixPatch(pool, { runId: RUNU, tenantId: T, repoId: REPO,
+      headSha: tipU, diffText: diffU, rationale: 'ru', changedFiles: [{ path: 'src/config.js' }] });
+    const DIGU = (await pool.query(`SELECT patch_digest FROM mu.fix_patch WHERE run_id=$1 AND active`, [RUNU])).rows[0].patch_digest;
+    // 第一次确认：真 push 后响应丢失 → uncertain（R12 同型，但独立 run）
+    const u1 = await fa.confirmApplyFix(pool, { env, runId: RUNU, tenantId: T, userId: USER,
+      confirm: true, expectedRemoteHead: tipU, expectedPatchDigest: DIGU,
+      deps: mkDeps({ pushPrepared: lostPush }) });
+    ok('U1 响应丢失 → result_uncertain', u1.ok === false && u1.reason === 'result_uncertain', u1.reason);
+    // 第二次确认（直接重认领）→ 必须被拒并指向对账
+    const u2 = await fa.confirmApplyFix(pool, { env, runId: RUNU, tenantId: T, userId: USER,
+      confirm: true, expectedRemoteHead: tipU, expectedPatchDigest: DIGU });
+    ok('U2 uncertain 直接重确认 → result_uncertain_requires_reconcile（R1）',
+      u2.ok === false && u2.reason === 'result_uncertain_requires_reconcile', u2);
+    // 对账（候选已成 tip 或祖先——R2 全量取历史判定）+ 重审关联补齐（R4）
+    const opU = (await pool.query(
+      `SELECT operation_id FROM mu.fix_apply_operation WHERE run_id=$1 AND operation_type='apply_fix'`, [RUNU])).rows[0];
+    const u3 = await fa.reconcileOperation(pool, { env, operationId: opU.operation_id, tenantId: T,
+      deps: { repoUrlFor: () => bareDir, enqueueEventSync: async (p) => ({ job_id: crypto.randomUUID(), head: p.headSha }) } });
+    ok('U3 对账定案 committed + 重审关联补齐（R2 全量历史祖先判定 + R4）',
+      u3.ok === true && u3.reconciled === true && u3.status === 'committed'
+      && u3.review_reenqueue?.ok === true, u3);
+    // 对账后重复确认 → 幂等（不重复应用补丁）
+    const u4 = await fa.confirmApplyFix(pool, { env, runId: RUNU, tenantId: T, userId: USER,
+      confirm: true, expectedRemoteHead: tipU, expectedPatchDigest: DIGU });
+    ok('U4 对账收口后重复确认 → 幂等返回（R4 禁止重复应用）',
+      u4.ok === true && u4.idempotent === true && u4.commit_sha === u1.candidate_commit_sha, u4);
+  }
+
   // ── 写前进程退出（无候选）→ 对账 failed no_write_happened（可安全重试）──
   const tipNow = headForBranch();
   const opD = crypto.randomUUID();
@@ -409,9 +466,9 @@ try {
     `INSERT INTO mu.fix_apply_operation
        (operation_type, status, tenant_id, repo_id, pr_id, run_id, patch_id, patch_digest,
         provider, provider_pr_number, source_branch, target_branch, expected_head,
-        robot_identity, idempotency_key, operator_user_id)
+        robot_identity, idempotency_key, operator_user_id, updated_at)
      VALUES ('apply_fix','executing',$1,$2,$3,$4,$5,$6,'gitee',2,'fix-branch','master',$7,
-       'MergePilot Gitee Bot',$8,$9) RETURNING operation_id`,
+       'MergePilot Gitee Bot',$8,$9, now() - interval '11 minutes') RETURNING operation_id`,
     [T, REPO, PRID, RUNC, pC.patchId ?? null, DIGC, tipNow,
      `${RUNC}:apply_fix:deadbeef`, USER]);
   const opDReal = (await pool.query(
@@ -425,6 +482,7 @@ try {
     rc2);
 
   // ── 合并资格门 ──
+  remoteState.prHead = headForBranch(); // U 组推进后 mock 远端与本地分支对齐
   const HEAD_M = headForBranch();
   const RUNM = crypto.randomUUID();
   await pool.query(
