@@ -2312,7 +2312,8 @@ export async function muApi(req, res, ctx) {
           detail: { pr_id: pr.pr_id, job_id: job.job_id, kind: 'event_sync', forge: 'gitee' } });
         return sendJson(res, 200, { ok: true, job_id: job.job_id, state: job.state,
           mode: 'real_pipeline', forge: 'gitee',
-          note: '已进入真实审查管线（Gitee 数据源，与 webhook 同一消费单元）——结果以「审查管线」面板为准' });
+          note: '已进入真实审查管线（Gitee 数据源，与 webhook 同一消费单元）——结果以「审查管线」面板为准。'
+            + '同 head 已有 run 时不会新建（幂等去重）；若上一轮已 BLOCKED/终止，请推送新 commit 产生新 head 后再触发——旧 head 的审批与证据不会自动重放。' });
       }
       const instRow = (await muPoolQ(
         `SELECT installation_id, github_repo_id FROM mu.repository_binding
@@ -2331,7 +2332,8 @@ export async function muApi(req, res, ctx) {
         detail: { pr_id: pr.pr_id, job_id: job.job_id, kind: 'event_sync' } });
       return sendJson(res, 200, { ok: true, job_id: job.job_id, state: job.state,
         mode: 'real_pipeline',
-        note: '已进入真实审查管线（与 webhook 同一消费单元）——结果以「审查管线」面板为准' });
+        note: '已进入真实审查管线（与 webhook 同一消费单元）——结果以「审查管线」面板为准。'
+          + '同 head 已有 run 时不会新建（幂等去重）；若上一轮已 BLOCKED/终止，请推送新 commit 产生新 head 后再触发——旧 head 的审批与证据不会自动重放。' });
       }
       // fixture 测试模式：review_run job → tick 由 fixture 执行器消费（原契约）
       const job = await store.enqueueJob({ tenantId: mu.tenantId, repoId: pr.repo_id,
@@ -2429,8 +2431,22 @@ export async function muApi(req, res, ctx) {
               reason: fx.reason ?? null,
               message: '修复轮未能启动（run 保持可恢复态，可重试本入口）——原因如实返回' });
       }
+      // 恢复指引（2026-10-15 首次使用验收 P1 卡点）：409 必须按真实状态给出下一步，
+      // 不把任何单一手段（如推空 commit）表述为通用恢复办法；不改变状态机与审批语义。
+      const HINTS = {
+        BLOCKED: 'run 已进入 BLOCKED（半终态，不可直接重入修复轮）。常见原因：审批驳回/过期，'
+          + '或修复轮产出缺陷（如仅建议无补丁）。恢复路径：推送新 commit 产生新 head——系统将'
+          + '自动重新审查并生成新审批票（审批门会重新执行，旧 head 的批准与证据不会自动重放）；'
+          + '对当前 head 重复点「触发只读审查」不会新建 run（同 head 幂等去重）。',
+        COMPLETED: '审查已完成且无待修复项——无可发起的受控修复。',
+        FAILED: '审查 run 已失败——请通过「触发只读审查」在新 head 上重新发起审查。',
+        REVIEWED: '审查已完成（REVIEWED）。如需修复，请在产生新 head 后重新审查。',
+      };
+      const repairHint = HINTS[runRow.status]
+        ?? '当前状态不支持发起受控修复——请以「审查管线」面板的 run 状态为准。';
       return sendJson(res, 409, { error: { reason: 'no_repair_pending',
-        message: `当前审查状态 ${runRow.status}，无可发起的受控修复` } });
+        message: `当前审查状态 ${runRow.status}，无可发起的受控修复`,
+        run_status: runRow.status, hint: repairHint } });
     }
 
     // ── RAG 检索面（rag_query；fixture 语料——Auditor/PlatformAdmin 默认无此动作） ──

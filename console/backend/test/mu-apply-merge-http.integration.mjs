@@ -38,8 +38,7 @@ try {
   process.env.MU_MODE = 'multiuser';
   process.env.CONSOLE_PG_DSN = dsn;
   process.env.CONSOLE_SESSION_SECRET = 'mu-apply-http-secret';
-  process.env.MU_ALLOW_FIXTURE_LOGIN = '1';
-  process.env.MU_FIXTURES = '1';
+  process.env.MU_ALLOW_FIXTURE_LOGIN = '1'; // 登录用；MU_FIXTURES 不设——repair/review 走真实分支
   process.env.CONSOLE_PILOT_USER = 'dev-pilot';
   process.env.CONSOLE_PILOT_PASSWORD = 'legacy-test-password';
   process.env.MU_GITHUB_APP_ID = '1';
@@ -189,6 +188,53 @@ try {
   ok('H7 无 CSRF → 403 csrf_required', h7.status === 403
     && h7.json?.error?.reason === 'csrf_required', h7);
 
+  // ── H7b: BLOCKED run 上发起受控修复 → 409 no_repair_pending + run_status + 分状态 hint ──
+  {
+    const RUNB = crypto.randomUUID();
+    const HEAD_B = 'b'.repeat(40);
+    await pool.query(
+      `INSERT INTO mu.review_run (run_id, tenant_id, repo_id, pr_id, head_sha, trigger_source, status, llm_mode)
+       VALUES ($1,$2,$3,$4,$5,'webhook','BLOCKED','deterministic_only')`, [RUNB, T, REPO, PRID, HEAD_B]);
+    // 消费过的票（修复轮已执行过→BLOCKED 的真实形态）
+    const tU = (await pool.query(`SELECT user_id FROM mu.app_user LIMIT 1`)).rows[0].user_id;
+    await pool.query(
+      `INSERT INTO mu.fix_approval (approval_id, tenant_id, repo_id, pr_id, pr_number, run_id,
+         finding_id, severity, head_sha, diff_digest, status, expires_at, decided_by, decided_at, consumed_at)
+       VALUES ($1,$2,$3,$4,'12',$5,gen_random_uuid(),'P1',$6,'dd','CONSUMED', now() + interval '7 days', $7, now(), now())`,
+      [crypto.randomUUID(), T, REPO, PRID, RUNB, HEAD_B, tU]);
+    const h7b = await call(`/api/mu/prs/${PRID}/repair`, { cookie: MT.cookie, csrf: MT.csrf });
+    ok('H7b BLOCKED run 发起修复 → 409 + run_status=BLOCKED + hint 含新 head 指引（不引导重复写入）',
+      h7b.status === 409 && h7b.json?.error?.run_status === 'BLOCKED'
+      && /新 commit|新 head/.test(h7b.json?.error?.hint ?? '')
+      && !/重新批准旧票|直接重试修复/.test(h7b.json?.error?.hint ?? ''), h7b.json?.error);
+    // 同 head 幂等如实：hint 必须说明同 head 不会新建 run
+    const hintTxt = h7b.json?.error?.hint ?? '';
+    ok('H7b-2 hint 说明同 head 幂等（不冒充会新建 run）',
+      hintTxt.includes('不会新建') && hintTxt.includes('同 head'), { hintTxt });
+  }
+
+  // ── H7c: PENDING 票的 run → 引导先处理审批票（不推新 head）──
+  {
+    const RUNC = crypto.randomUUID();
+    const HEAD_C = 'c'.repeat(40);
+    await pool.query(
+      `INSERT INTO mu.review_run (run_id, tenant_id, repo_id, pr_id, head_sha, trigger_source, status, llm_mode)
+       VALUES ($1,$2,$3,$4,$5,'webhook','WAITING_FOR_HUMAN_APPROVAL','deterministic_only')`,
+      [RUNC, T, REPO, PRID, HEAD_C]);
+    await pool.query(
+      `INSERT INTO mu.fix_approval (approval_id, tenant_id, repo_id, pr_id, pr_number, run_id,
+         finding_id, severity, head_sha, diff_digest, status, expires_at)
+       VALUES ($1,$2,$3,$4,'12',$5,gen_random_uuid(),'P1',$6,'cc','PENDING', now() + interval '7 days')`,
+      [crypto.randomUUID(), T, REPO, PRID, RUNC, HEAD_C]);
+    const h7c = await call(`/api/mu/prs/${PRID}/repair`, { cookie: MT.cookie, csrf: MT.csrf });
+    ok('H7c WAITING+PENDING 票 → 200 awaiting_approval（引导批准，不引导推新 head）',
+      h7c.status === 200 && h7c.json?.state === 'awaiting_approval'
+      && Array.isArray(h7c.json?.pending) && h7c.json.pending.length >= 1, h7c.json?.state);
+    // 清理，避免影响后续场景
+    await pool.query(`DELETE FROM mu.fix_approval WHERE run_id=$1`, [RUNC]);
+    await pool.query(`DELETE FROM mu.review_run WHERE run_id=$1`, [RUNC]);
+  }
+
   // ── H8: reconcile 跨租户 → 404 同形 ──
   await pool.query(
     `INSERT INTO mu.fix_apply_operation
@@ -210,7 +256,8 @@ try {
   process.exit(fail ? 1 : 0);
 } catch (e) {
   console.error('HARNESS ERROR', e);
-  process.exitCode = 1;
+  try { execFileSync('docker', ['rm', '-f', CTR], { stdio: 'pipe' }); } catch { /* 尽力 */ }
+  process.exit(1); // 打开句柄（pool/server）会挂住进程——失败也要立即退出
 } finally {
   try { execFileSync('docker', ['rm', '-f', CTR], { stdio: 'pipe' }); } catch { /* 尽力 */ }
 }

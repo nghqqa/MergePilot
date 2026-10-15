@@ -932,6 +932,10 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [] }) {
               </Button>
             </Tooltip>
           </Space>
+          <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+            三个动作相互独立、各自单独确认：批准修复票（审批区）≠ 应用补丁（①）≠ 合并 PR（②）；
+            前一步完成不会自动执行下一步。
+          </div>
           {applyBlockReason ? (
             <Alert style={{ marginTop: 6 }} type="info" showIcon message={applyBlockReason} />
           ) : mergeBlockReason ? (
