@@ -17,6 +17,11 @@ export default function ReposPage() {
   const reposQ = useSourceQuery(() => source.listRepos(), [source, attempt]);
   const repos = reposQ.status === 'done' ? reposQ.data : [];
   const contract = source.kind === 'contract';
+  // UX-01/UX-29（2026-10-15）：缺失计数=未取得——只在确实有数据的维度上汇总，
+  // 不再把 null 求和成假 0（此前 multiuser 源恒显示「0 次运行记录」）。
+  const hasPrCounts = repos.some((r) => r.prCount != null);
+  const hasRunCounts = repos.some((r) => r.runCount != null);
+  const hasActivity = repos.some((r) => r.activityAt);
   const totalPrs = repos.reduce((n, r) => n + (r.prCount ?? 0), 0);
   const totalRuns = repos.reduce((n, r) => n + (r.runCount ?? 0), 0);
   const latestActivity = repos.reduce((a, r) => (r.activityAt && (!a || r.activityAt > a) ? r.activityAt : a), null);
@@ -44,7 +49,7 @@ export default function ReposPage() {
           <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
             {repos.length} 个仓库
             {contract ? '（由服务配置声明）'
-              : ` · ${totalPrs} 个 PR · ${totalRuns} 次运行记录${latestActivity ? ` · 数据截至最近记录 ${fmtTime(latestActivity)}` : ''}`}
+              : ` · ${hasPrCounts ? `${totalPrs} 个 PR` : 'PR 数未取得'}${hasRunCounts ? ` · ${totalRuns} 次运行记录` : ''}${hasActivity ? ` · 数据截至最近记录 ${fmtTime(latestActivity)}` : ''}`}
           </Typography.Paragraph>
           <Table
             size="small" rowKey="repo" dataSource={repos}
@@ -67,8 +72,10 @@ export default function ReposPage() {
                     {contract && config?.dataMode === 'fixture' ? <Tag>Fixture 数据</Tag> : null}
                   </>
                 ) },
-              { title: 'PR', dataIndex: 'prCount', width: 90 },
-              { title: '运行记录', dataIndex: 'runCount', width: 100 },
+              { title: 'PR', dataIndex: 'prCount', width: 90,
+                render: (v) => (v == null ? <span className="muted" title="服务端未提供该计数">未取得</span> : v) },
+              { title: '运行记录', dataIndex: 'runCount', width: 100,
+                render: (v) => (v == null ? <span className="muted" title="服务端未提供该计数">未取得</span> : v) },
               { title: '最近活动', dataIndex: 'activityAt', width: 170,
                 render: (v) => (v ? <span className="mono">{fmtTime(v)}</span> : '—') },
               { title: '', width: 130,

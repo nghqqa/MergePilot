@@ -6,6 +6,7 @@ import { useAppConfig } from '../App.jsx';
 import { useDataSource, useScrollRestore, useSourceQuery } from '../hooks.js';
 import { paginate } from '../pr-model.js';
 import { VerdictBadge } from '../status.jsx';
+import { toneToColor } from '../status-map.js';
 import { fmtTime } from '../format.js';
 import { Empty, ErrorBox, SkeletonRows } from '../ui.jsx';
 
@@ -53,10 +54,14 @@ export default function RepoPrsPage() {
   };
 
   const contract = source.kind === 'contract';
+  const mu = source.kind === 'multiuser';
   const prsQ = useSourceQuery(() => source.listPrs(repo), [source, repo, attempt]);
   const allViews = prsQ.status === 'done' ? prsQ.data : null;
   const prs = useMemoFilter(allViews, q, attentionOnly);
   const view = paginate(prs, page, PER_PAGE);
+  // UX-01：服务端三端点均为窗口截断（LIMIT）——到帽时如实标注「可能少计」，不声称全量
+  const listTruncated = Boolean(allViews?.[0]?.listTruncated);
+  const pendingUnavailable = Boolean(allViews?.[0]?.pendingUnavailable);
 
   const copyHead = async (sha) => {
     try {
@@ -111,7 +116,8 @@ export default function RepoPrsPage() {
           </div>
 
           <div className="table-meta">
-            共 {view.total} 个 PR（按 PR 统计{contract ? '' : ` · 背后 ${prs.reduce((n, p) => n + p.runs.length, 0)} 次运行记录`}{contract ? ' · 当前 head 为 GitHub 权威' : ''}）
+            共 {view.total} 个 PR（按 PR 统计{!contract && !mu ? ` · 背后 ${prs.reduce((n, p) => n + p.runs.length, 0)} 次运行记录` : ''}{contract ? ' · 当前 head 为 GitHub 权威' : ''}）
+            {mu && listTruncated ? ' · 服务端按最近记录窗口返回（可能少计历史）' : ''}
             {view.pages > 1 ? <> · 第 {view.page} / {view.pages} 页</> : null}
           </div>
 
@@ -123,9 +129,9 @@ export default function RepoPrsPage() {
                 <thead>
                   <tr>
                     <th scope="col">PR</th>
-                    <th scope="col">{contract ? '当前 head（GitHub 权威）' : source.kind === 'console-pg' ? '执行记录' : '上下文'}</th>
-                    <th scope="col" title={contract ? '来自 latest_result：stale=true 表示属旧 head，非当前结论' : source.kind === 'console-pg' ? 'PG 读模型未提供独立结论字段——不伪造' : '基于该 PR 最近一次运行记录，非当前 head 结论'}>
-                      {contract ? '最新完成结果' : source.kind === 'console-pg' ? '结论（读模型）' : '最近审查（最近记录）'}
+                    <th scope="col">{contract ? '当前 head（GitHub 权威）' : mu ? '当前 head（未确认）' : source.kind === 'console-pg' ? '执行记录' : '上下文'}</th>
+                    <th scope="col" title={contract ? '来自 latest_result：stale=true 表示属旧 head，非当前结论' : mu ? '展示当前 head 最新 run 的执行状态与发现计数——审查结论与逐条证据在 PR 详情；旧 head 的 run 不代表当前 head' : source.kind === 'console-pg' ? 'PG 读模型未提供独立结论字段——不伪造' : '基于该 PR 最近一次运行记录，非当前 head 结论'}>
+                      {contract ? '最新完成结果' : mu ? '最近运行（当前 head）' : source.kind === 'console-pg' ? '结论（读模型）' : '最近审查（最近记录）'}
                     </th>
                     <th scope="col">需要处理</th>
                     <th scope="col">最近活动</th>
@@ -169,6 +175,23 @@ export default function RepoPrsPage() {
                               <span className="head-chip mono" title="GitHub 当前 head（权威）">{(pr.currentHead ?? '').slice(0, 8) || '未记录'}</span>
                               {pr.review.stale ? <span className="cell-sub"><span className="muted">结论属旧 head</span></span> : null}
                             </>
+                          ) : mu ? (
+                            <>
+                              {pr.currentHead ? (
+                                <button type="button" className="head-chip mono"
+                                  onClick={() => copyHead(pr.currentHead)}
+                                  title={`当前 head（按 webhook 事件序推定，未确认；无 GitHub 权威对照）——点击复制完整 SHA：${pr.currentHead}`}>
+                                  {pr.currentHead.slice(0, 8)}
+                                </button>
+                              ) : (
+                                <span className="head-chip mono" title="该 PR 在当前数据窗口内没有 head 行——未取得">head 未取得</span>
+                              )}
+                              {pr.heads.length > 1 ? (
+                                <div className="cell-sub muted" title={pr.heads.map((h) => h.head).filter(Boolean).join('\n')}>
+                                  另有 {pr.heads.length - 1} 个历史 head（明细见详情）
+                                </div>
+                              ) : null}
+                            </>
                           ) : source.kind === 'console-pg' ? (
                             <>
                               <span className="chip" title="该 PR 的 run 记录数（PG 读模型）">{pr.runCount} 次运行</span>
@@ -199,11 +222,37 @@ export default function RepoPrsPage() {
                           )}
                         </td>
                         <td data-label="最近审查">
-                          <VerdictBadge review={pr.review.review} />
+                          {mu ? (
+                            <>
+                              {pr.latestRun ? (
+                                <span className={`tag tag-${toneToColor(pr.runState?.tone ?? 'neutral')}`}
+                                  title={pr.runState?.note ?? ''}>{pr.runState?.label ?? pr.latestRun.status}</span>
+                              ) : pr.staleRunHint ? (
+                                <span className="tag tag-warning" title="当前 head 没有审查运行；该记录属旧 head，不代表当前 head 的状态或结论">仅旧 head 有运行</span>
+                              ) : (
+                                <span className="muted" title="当前 head 没有任何审查运行记录（未取得）">未审查</span>
+                              )}
+                              {pr.findingsCount != null && pr.findingsCount > 0 ? (
+                                <div className="cell-sub">
+                                  {pr.findingsCount} 项发现{pr.severityLabel ? `（最重 ${pr.severityLabel}）` : ''}
+                                  <span className="muted">——结论见详情</span>
+                                </div>
+                              ) : pr.latestRun ? (
+                                <div className="cell-sub muted" title="本轮 run 未登记 findings——不等于绝对无风险；审查结论与逐条证据见 PR 详情">
+                                  本轮无发现记录——结论见详情
+                                </div>
+                              ) : null}
+                              {pr.staleRunHint ? <div className="cell-sub muted">当前 head 未审查</div> : null}
+                            </>
+                          ) : (
+                            <VerdictBadge review={pr.review.review} />
+                          )}
                           {pr.review.stale ? <div className="cell-sub muted">旧 head 结论</div> : null}
                         </td>
                         <td className="cell-attention" data-label="需要处理">
-                          {needsAttention(pr) ? (
+                          {pendingUnavailable ? (
+                            <span className="muted" title="待审批票读取未成功——待办状态未知，不代表没有待办">待审批票未取得</span>
+                          ) : needsAttention(pr) ? (
                             <span className="attention-flag"><span className="attention-dot" aria-hidden />{pr.attention.label}</span>
                           ) : (
                             <span className="muted">{pr.attention.label}</span>

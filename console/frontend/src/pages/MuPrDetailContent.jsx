@@ -23,6 +23,41 @@ function actionFailure(status, body) {
     text: detail ? `操作未完成（HTTP ${status}）：${detail}` : `操作未完成（HTTP ${status}）` };
 }
 
+// UX-06（2026-10-15）：审批票摘要全文可达——摘要正文用正文字体，默认 2 行截断，
+// 「展开全文/收起」为真实 button（键盘可达，aria-expanded/aria-controls 关联）。
+// 批准前必须能读全票面摘要；规则/路径等短技术字段仍用等宽字体。
+function TicketSummary({ t }) {
+  const [open, setOpen] = useState(false);
+  const summary = String(t.summary_masked ?? '');
+  const detailId = `ticket-summary-${t.approval_id}`;
+  return (
+    <span style={{ fontSize: 14 }}>
+      <span className="mono muted" style={{ fontSize: 12 }}>
+        {t.rule_id} · {t.path}{t.line_start ? `:${t.line_start}` : ''}
+      </span>
+      {summary ? (
+        <>
+          <div id={detailId}
+            style={{
+              marginTop: 2, overflowWrap: 'anywhere',
+              ...(open ? {} : {
+                display: '-webkit-box', WebkitLineClamp: 2,
+                WebkitBoxOrient: 'vertical', overflow: 'hidden',
+              }),
+            }}>
+            {summary}
+          </div>
+          <button type="button" className="btn btn-sm" style={{ marginTop: 2 }}
+            aria-expanded={open} aria-controls={detailId}
+            onClick={() => setOpen((v) => !v)}>
+            {open ? '收起' : '展开全文'}
+          </button>
+        </>
+      ) : null}
+    </span>
+  );
+}
+
 /**
  * 详情内容块。props:
  *  - prRef: { repoId, owner, name, prNumber }——由调用方解析（URL/列表行）
@@ -228,15 +263,7 @@ export function MuPrDetailContent({ prRef, onChanged }) {
               const m = SEVERITY[String(v ?? '').toUpperCase()] ?? unknownEntry(v);
               return <Tag color={toneToColor(m.tone)} title={m.note}>{m.label}</Tag>;
             } },
-          { title: '发现', ellipsis: true,
-            render: (_, t) => (
-              <span style={{ fontSize: 14 }}>
-                <span className="mono muted" style={{ fontSize: 12 }}>
-                  {t.rule_id} · {t.path}{t.line_start ? `:${t.line_start}` : ''}
-                </span>
-                {t.summary_masked ? <>（{t.summary_masked}）</> : null}
-              </span>
-            ) },
+          { title: '发现', render: (_, t) => <TicketSummary t={t} /> },
           { title: 'head', width: 110,
             render: (_, t) => <code className="mono">{String(t.head_sha ?? '').slice(0, 10)}</code> },
           { title: '状态', dataIndex: 'status', width: 110,

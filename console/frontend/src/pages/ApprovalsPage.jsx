@@ -396,11 +396,19 @@ function MuApprovals() {
   );
 }
 
+// UX-16（2026-10-15）：组件分流——入口组件只保留无条件调用的 Hooks，随后立即分流到
+// 子组件。此前 `resolved === 'mu'` 在 useState/useMemo/useAuth 之前提前 return，一旦
+// 数据源在同一挂载实例内变化（如配置异步到位），Hook 数量变化将触发 React
+// "Rendered fewer hooks than expected" 崩溃。分流后每条路径的 Hooks 数量恒定。
 export default function ApprovalsPage({ mode = 'auto' }) {
   const config = useAppConfig();
   const { source } = useDataSource(config);
   const resolved = mode === 'auto' ? (source.kind === 'console-pg' ? 'pg' : (source.kind === 'multiuser' ? 'mu' : 'legacy')) : mode;
   if (resolved === 'mu') return <MuApprovals />;
+  return <NonMuApprovals resolved={resolved} source={source} />;
+}
+
+function NonMuApprovals({ resolved, source }) {
   const [fixtureMode, setFixtureMode] = useState(false);
   const tickets = useMemo(() => fixture.tickets ?? [], []);
   const auth = useAuth();
