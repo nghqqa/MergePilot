@@ -195,6 +195,10 @@ jobs:
       - name: MU fix apply + merge PR integration (25 scenarios)
         run: node console/backend/test/fix-apply.integration.mjs
 
+      # 应用/合并端点层回归（#463 教训锁）：真 server+fixture 会话+CSRF+repo/binding guard
+      - name: MU apply/merge HTTP endpoint guard regression (11 scenarios)
+        run: node console/backend/test/mu-apply-merge-http.integration.mjs
+
       - name: Frontend build
         run: |
           npm ci --no-audit --no-fund

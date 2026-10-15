@@ -702,36 +702,45 @@ export async function evaluateMergeEligibility(q, { env = process.env, run, prov
  *           无任何状态=not_configured（阻塞）；API 不支持/无权限=unsupported（阻塞）；
  *           网络失败=unknown（阻塞）。
  */
-export async function readHeadCi(env, { provider, owner, repoName, headSha, installationId }) {
+export async function readHeadCi(env, { provider, owner, repoName, headSha, installationId,
+  fetchImpl = fetch }) {
   if (!headSha) return { state: 'unknown', reason: 'head 不可读' };
   try {
     if (provider === 'github') {
       // 面 1：combined status（commit statuses）
       const rs = await ghGet(env, installationId,
-        `/repos/${owner}/${repoName}/commits/${headSha}/status`);
+        `/repos/${owner}/${repoName}/commits/${headSha}/status`, fetchImpl);
       if (rs.status === 403) {
         // 403=无权限（报告所需权限，不绕过）
         return { state: 'unsupported',
           reason: 'GitHub App 缺 Commit statuses (read) 权限——请在 App 设置为该安装授予后重试' };
       }
       if (!rs.ok) return { state: 'unknown', reason: `GitHub status API HTTP ${rs.status}` };
-      // 面 2：check runs（Actions/第三方 checks）
-      const rc = await ghGet(env, installationId,
-        `/repos/${owner}/${repoName}/commits/${headSha}/check-runs`);
-      if (rc.status === 403) {
-        return { state: 'unsupported',
-          reason: 'GitHub App 缺 Checks (read) 权限——请在 App 设置为该安装授予后重试' };
+      // 面 2：check runs（Actions/第三方 checks）——完整分页读取。
+      // 任何一页读取失败（含 5xx）→ 判定面不完整 → unknown 阻塞，绝不退化为仅 status
+      // 判定（status 绿 + check-runs 里藏着失败 = 错误放行，2026-10-15 收口指令点名）。
+      const checks = [];
+      for (let page = 1; page <= 10; page++) {
+        const rc = await ghGet(env, installationId,
+          `/repos/${owner}/${repoName}/commits/${headSha}/check-runs?per_page=100&page=${page}`,
+          fetchImpl);
+        if (rc.status === 403) {
+          return { state: 'unsupported',
+            reason: 'GitHub App 缺 Checks (read) 权限——请在 App 设置为该安装授予后重试' };
+        }
+        if (!rc.ok) {
+          return { state: 'unknown',
+            reason: `GitHub check-runs HTTP ${rc.status}（第 ${page} 页）——判定面不完整，不予放行` };
+        }
+        const batch = Array.isArray(rc.json?.check_runs) ? rc.json.check_runs : [];
+        checks.push(...batch);
+        const total = Number(rc.json?.total_count ?? 0);
+        if (checks.length >= total || batch.length === 0) break;
       }
-      if (!rc.ok && rs.ok) {
-        // check-runs 读不到但 status 可读——退化为仅 status 判定（如实标注部分面）
-        const only = judgeGithubStatusSurface(rs.json);
-        return { ...only, partial: 'check_runs_unreadable' };
-      }
-      if (!rc.ok) return { state: 'unknown', reason: `GitHub check-runs HTTP ${rc.status}` };
-      return judgeGithubBothSurfaces(rs.json, rc.json);
+      return judgeGithubBothSurfaces(rs.json, checks);
     }
     if (provider === 'gitee') {
-      const r = await giteeGet(env, `/repos/${owner}/${repoName}/commits/${headSha}/status`);
+      const r = await giteeGet(env, `/repos/${owner}/${repoName}/commits/${headSha}/status`, fetchImpl);
       if (!r.ok) return { state: 'unsupported', reason: `Gitee status API HTTP ${r.status}（当前连接器能力边界）` };
       const statuses = Array.isArray(r.json?.statuses) ? r.json.statuses : [];
       if (!statuses.length) return { state: 'not_configured',
@@ -747,60 +756,64 @@ export async function readHeadCi(env, { provider, owner, repoName, headSha, inst
   }
 }
 
-function judgeGithubStatusSurface(statusJson) {
+// 双面合并判定（checks=调用方完整分页后的数组）：任一失败=failed；任一进行中=pending；
+// 任一未知（completed 且无结论——重跑占位/平台异常态）=unknown 阻塞；两面全空=not_configured；
+// 否则 pass。conclusion 映射：success/neutral/skipped=通过（skipped=不适用）；其余=失败。
+// 重跑语义：check-runs 端点默认 filter=latest——同 name 重跑只返回最新一次，直接采用。
+function judgeGithubBothSurfaces(statusJson, checks) {
+  const runList = Array.isArray(checks) ? checks : [];
   const statuses = Array.isArray(statusJson?.statuses) ? statusJson.statuses : [];
-  if (!statuses.length) return { state: 'not_configured',
-    reason: '该 head 无任何提交状态——仓库未配置 CI 或 CI 未运行' };
-  const state = String(statusJson?.state ?? '');
-  if (state === 'success') return { state: 'pass' };
-  if (state === 'pending') return { state: 'pending', reason: 'CI 运行中' };
-  return { state: 'failed', reason: `CI 状态 ${state}` };
-}
-
-// 双面合并判定：任一失败=failed；任一进行中=pending；两面全空=not_configured；否则 pass。
-// conclusion 映射：success/neutral/skipped=通过（skipped=不适用）；其余结论=失败。
-function judgeGithubBothSurfaces(statusJson, checkRunsJson) {
-  const checks = Array.isArray(checkRunsJson?.check_runs) ? checkRunsJson.check_runs : [];
-  const statuses = Array.isArray(statusJson?.statuses) ? statusJson.statuses : [];
-  if (!checks.length && !statuses.length) {
+  if (!runList.length && !statuses.length) {
     return { state: 'not_configured',
       reason: '该 head 无任何 check run 或提交状态——仓库未配置 CI 或 CI 未运行' };
   }
   const PENDING = new Set(['queued', 'in_progress', 'waiting', 'pending']);
-  const BAD = new Set(['failure', 'error', 'timed_out', 'action_required', 'cancelled', 'startup_failure', 'error', 'failure']);
+  const BAD = new Set(['failure', 'error', 'timed_out', 'action_required', 'cancelled', 'startup_failure']);
+  const OK = new Set(['success', 'neutral', 'skipped']);
   let hasBad = false, badLabel = '';
   let hasPending = false, pendingLabel = '';
-  for (const c of checks) {
+  let hasUnknown = false, unknownLabel = '';
+  for (const c of runList) {
     const st = String(c?.status ?? '');
-    if (PENDING.has(st)) { hasPending = true; pendingLabel = pendingLabel || `${c.name ?? 'check'} ${st}`; continue; }
-    const cc = String(c?.conclusion ?? '');
-    if (st === 'completed' && cc && !['success', 'neutral', 'skipped'].includes(cc)) {
-      hasBad = true; badLabel = badLabel || `${c.name ?? 'check'} ${cc}`;
+    const nm = String(c?.name ?? 'check');
+    if (PENDING.has(st)) { hasPending = true; pendingLabel = pendingLabel || `${nm} ${st}`; continue; }
+    const cc = c?.conclusion == null ? '' : String(c.conclusion);
+    if (st === 'completed' && !cc) {
+      // completed 且无结论=未知终态——不得当 pass（收口指令点名场景）
+      hasUnknown = true; unknownLabel = unknownLabel || `${nm} completed/conclusion=null`;
+      continue;
     }
+    if (OK.has(cc)) continue;
+    if (BAD.has(cc)) { hasBad = true; badLabel = badLabel || `${nm} ${cc}`; continue; }
+    // 其余非空结论（未来新增枚举）→ 未知阻塞，不放行
+    hasUnknown = true; unknownLabel = unknownLabel || `${nm} conclusion=${cc || '(空)'}`;
   }
   for (const st2 of statuses) {
     const s2 = String(st2?.state ?? '');
-    if (s2 === 'pending') { hasPending = true; pendingLabel = pendingLabel || `${st2.context ?? 'status'} pending`; continue; }
-    if (s2 !== 'success') { hasBad = true; badLabel = badLabel || `${st2.context ?? 'status'} ${s2}`; }
+    const ctx2 = String(st2?.context ?? 'status');
+    if (s2 === 'pending') { hasPending = true; pendingLabel = pendingLabel || `${ctx2} pending`; continue; }
+    if (s2 === 'success') continue;
+    hasBad = true; badLabel = badLabel || `${ctx2} ${s2}`;
   }
   if (hasBad) return { state: 'failed', reason: `CI 未通过：${badLabel}` };
   if (hasPending) return { state: 'pending', reason: `CI 运行中：${pendingLabel}` };
+  if (hasUnknown) return { state: 'unknown', reason: `存在未知结论的检查（${unknownLabel}）——按阻塞处理` };
   return { state: 'pass' };
 }
 
-async function ghGet(env, installationId, endpoint) {
+async function ghGet(env, installationId, endpoint, fetchImpl = fetch) {
   const m = await import('./remote-write.mjs');
   const tok = await m.githubInstallationToken(env, installationId);
-  const res = await fetch(`https://api.github.com${endpoint}`, {
+  const res = await fetchImpl(`https://api.github.com${endpoint}`, {
     headers: { authorization: `Bearer ${tok}`, accept: 'application/vnd.github+json' },
   });
   const json = await res.json().catch(() => null);
   return { ok: res.ok, status: res.status, json };
 }
 
-async function giteeGet(env, endpoint) {
+async function giteeGet(env, endpoint, fetchImpl = fetch) {
   const pat = String(env.MU_GITEE_PAT ?? '');
-  const res = await fetch(`https://gitee.com/api/v5${endpoint}${endpoint.includes('?') ? '&' : '?'}access_token=${encodeURIComponent(pat)}`);
+  const res = await fetchImpl(`https://gitee.com/api/v5${endpoint}${endpoint.includes('?') ? '&' : '?'}access_token=${encodeURIComponent(pat)}`);
   const json = await res.json().catch(() => null);
   return { ok: res.ok, status: res.status, json };
 }
