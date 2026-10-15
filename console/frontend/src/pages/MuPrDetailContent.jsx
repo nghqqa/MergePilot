@@ -151,7 +151,12 @@ export function MuPrDetailContent({ prRef, onChanged }) {
         await loadApprovals();
         onChanged?.();
       } else {
-        setActionMsg({ ok: false, label, ...actionFailure(r.status, body) });
+        // 结构化恢复指引（2026-10-15 首次使用验收 P1 卡点）：服务端 hint 按真实 run 状态
+        // 给出下一步（如 BLOCKED→新 head 重触发），在动作旁同屏展示，不只报 409 裸码。
+        const hint = body?.error?.hint ?? null;
+        const fail = actionFailure(r.status, body);
+        setActionMsg({ ok: false, label, tone: hint ? 'warning' : fail.tone,
+          text: fail.text, note: hint ?? fail.note ?? null });
       }
     } catch (e) {
       const timedOut = e && (e.name === 'TimeoutError' || e.name === 'AbortError');
@@ -303,6 +308,14 @@ export function MuPrDetailContent({ prRef, onChanged }) {
                 {t.status === 'PENDING' && t.expires_at
                   ? <span className="muted" style={{ fontSize: 12 }}>过期 {String(t.expires_at).slice(0, 16).replace('T', ' ')}</span>
                   : null}
+              </div>
+              <div className="mu-approval-line" style={{ fontSize: 12 }}>
+                <span className="mono muted">
+                  {pr.provider ?? '—'} · {prRef.owner}/{prRef.name} · PR#{pr.provider_pr_number ?? '—'}
+                  {' · head '}{String(t.head_sha ?? '').slice(0, 8)}
+                  {' · run '}{String(t.run_id ?? '').slice(0, 8)}
+                  {t.run_status ? `（${t.run_status}）` : ''}
+                </span>
               </div>
               <code className="mono" style={{ fontSize: 12, overflowWrap: 'anywhere' }}>
                 {t.rule_id} · {t.path}{t.line_start ? `:${t.line_start}` : ''}
