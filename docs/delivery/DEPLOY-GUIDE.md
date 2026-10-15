@@ -127,14 +127,17 @@ MU_FIX_TEST_CMDS={"gitee:acme/widget":"npm test","github:acme/widget":"cargo tes
 验证：`docker exec <console容器> env | grep -c MU_AGENTTEAMS`（配置已注入）；
 run 详情页三个验证区块齐备且状态与实际一致。
 
-## 目标四（预告）：人工确认提交与合并 —— 开发中，本版本不可用
+## 目标四：人工确认提交与合并 —— rc.35.5 起可用
 
-- **应用修复**（机器人向 PR 提交修复 commit，`apply_fix`）、**新 head 自动重审**、
-  **CI 资格消费**、**确认合并**（`merge_pr`）均为**开发中能力**（交付波 A 线实现中）。
-- 本版本的边界保持不变：补丁永远是建议；对远端零代码写入；不设 required check；
-  不存在任何合并写代码路径。
-- 上线后将以独立版本与迁移公告说明，届时在本文补充步骤——当前任何文档若声称
-  "可一键应用/合并"均与 rc.35.4 不符。
+- **确认应用**（`apply_fix`）与**确认合并**（`merge_pr`）已在 main 实现
+  （PR #455-#457：preview/confirm 双端点 + 前端两步确认 + 推送式条件更新），
+  随 rc.35.5 发布生效。依赖：`apply_fix`/`merge_pr` 权限（maintainer + active 仓库绑定）
+  + 机器人凭据（GitHub App installation token / Gitee PAT，部署级 env）。
+- 边界保持：每步 preview→confirm 两次确认；非快进推送被远端拒绝（不覆盖他人提交）；
+  幂等键防重复写入；平台保护规则照常生效、不被绕过。
+- **当前如实缺口**（审阅线已登记，见 r3work/wave-abc-20261015/A-REVIEW.md）：
+  应用后重审需在平台手动触发（无自动新 head 关联）；CI 状态不进入合并资格判定
+  （合并预览如实标注 not_configured）；超时场景的 result_uncertain 标记与读回对账未实现。
 
 ## 可选：RAG / cchain（信任链）
 

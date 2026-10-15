@@ -23,10 +23,10 @@
 | 10 | 实际修复测试（fix test） | ✅ 已上线（可选） | `MU_FIX_TEST_CMDS`（部署级预批准命令映射） | 隔离副本：修复前测试须失败 → 应用补丁 → 修复后须通过；命令**只**来自部署配置 |
 | 11 | 审查结果发布到 PR 评论 | ✅ 已上线 | maintainer 角色（`decide_review`）+ 机器人凭据（GitHub App 安装 / Gitee PAT） | 预览→确认两步；发布前远端 head 复核（陈旧拒绝）；幂等原位更新 |
 | 12 | 权限可见化（身份/渠道/租户/角色/能力） | ✅ 已上线 | 无额外依赖 | `my_permissions` 服务端投影；页面按能力渲染按钮并给原因 |
-| 13 | 应用修复（机器人向 PR 提交修复 commit） | 🔧 **开发中** | 需机器人写权限（`apply_fix`，契约 §4） | 本版本不存在该代码路径；补丁永远是**建议** |
-| 14 | 新 head 自动重审 | 🔧 **开发中** | 契约 apply_op→new run 身份链 | 本版本 head 推进后旧 run 陈旧，需重新触发审查 |
-| 15 | CI 资格消费（合并资格输入） | 🔧 **开发中** | 契约 merge_op.eligibility.ci | 本版本已订阅 `check_run`/`status` 只读事件（权限五项内），但 CI 不进入任何资格判定 |
-| 16 | 确认合并（merge_pr） | 🔧 **开发中** | 契约 §4（与 `decide_review` 正交） | 本版本**结构性不存在**合并写路径 |
+| 13 | 应用修复（机器人向 PR 提交修复 commit） | ✅ **已实现（随 rc.35.5 发布）** | `apply_fix` 权限（maintainer+active binding）+机器人凭据（GitHub App installation / Gitee PAT） | main #455-#457：preview/confirm 双端点+两步确认；推送式条件更新（非快进远端拒绝）；幂等键防重复。**缺口**：预览后补丁版本变化未绑定 digest、超时无 result_uncertain 标记（审阅线已登记） |
+| 14 | 新 head 自动重审 | 🔧 **开发中** | 契约 apply_op→new run 身份链 | 应用提交后重审需在平台手动触发；应用→新 run 自动关联与 webhook 幂等去重未实现（审阅线已登记缺口） |
+| 15 | CI 资格消费（合并资格输入） | 🔧 **开发中** | 契约 merge_op.eligibility.ci | 已订阅 `check_run`/`status` 只读事件（权限五项内），但 CI 不进入任何资格判定（合并预览如实标 not_configured） |
+| 16 | 确认合并（merge_pr） | ✅ **已实现（随 rc.35.5 发布）** | `merge_pr` 权限；平台保护规则照常生效（不绕过） | main #455-#457：条件合并（Gitee PUT merge sha / GitHub merge sha 服务端 head 匹配）+审计留痕。**缺口**：无 head 域审查 run/CI 资格核验（审阅线已登记） |
 | 17 | 本地 RAG 检索（可选） | ✅ 已上线 | bge-m3 sidecar + 模型卷 manifest + `RAGTRIAL_*` | 检索结果仅作 reference，不参与风险决策 |
 
 ## 2. 权限模型（authz.mjs 为权威，5 角色）
