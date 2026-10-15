@@ -1,0 +1,6 @@
+{
+  "name": "bench-samples",
+  "version": "1.0.0",
+  "private": true,
+  "description": "MergePilot review-quality benchmark 固定干净基线（内容钉 sha256，不得改动）"
+}

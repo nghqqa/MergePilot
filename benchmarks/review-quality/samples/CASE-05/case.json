@@ -1,0 +1,29 @@
+{
+  "case_id": "CASE-05",
+  "trial_origin": {
+    "sample_name": "q5-missing-return",
+    "source": "r3work/rc26-release/trial/build-samples.py（内容逐字复用，不新造缺陷）",
+    "trial_evidence_status": "合格可直接复用——run f56e249f（PR#5, head ceed8cd）：纯逻辑缺陷零静态命中，LLM 命中 P1「async 漏 return」，DONE 2465ms（QUALITY-REPORT §二/§六）"
+  },
+  "name": "async 函数漏 return（恒 undefined）",
+  "target_file": "src/q5.js",
+  "test_file": "tests/q5.test.js",
+  "defect_description": "double 为 async 但未 return delayed(...)，调用方 await double(21) 得 undefined 而非 42。",
+  "expected_behaviors": [
+    { "call": "await double(21)", "want": "42" }
+  ],
+  "evaluation_rules": {
+    "target_path": "src/q5.js",
+    "defect_marker_patterns": [
+      "return",
+      "漏(返回|return)",
+      "missing.{0,16}return",
+      "undefined",
+      "await",
+      "promise",
+      "Promise"
+    ],
+    "expected_severity": { "value": "P1", "provenance": "trial_measured", "rationale": "trial 实测：run f56e249f LLM 定 P1（QUALITY-REPORT §四）" },
+    "severity_tolerance": 1
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "case_id": "CASE-06",
+  "trial_origin": {
+    "sample_name": "q6-replace-first",
+    "source": "r3work/rc26-release/trial/build-samples.py（内容逐字复用，不新造缺陷）",
+    "trial_evidence_status": "合格可直接复用——run 1c7edcf2（PR#8, head 6825efc）：LLM 命中 P2「slugify 只换首个」，DONE 2728ms，静态命中 0（QUALITY-REPORT §二/§六）"
+  },
+  "name": "replace 只替换首个匹配",
+  "target_file": "src/q6.js",
+  "test_file": "tests/q6.test.js",
+  "defect_description": "slugify 用字符串参数 s.replace(' ', '-')，JS 语义只替换第一处空格——多空格输入产出非法 slug。",
+  "expected_behaviors": [
+    { "call": "slugify('a b c')", "want": "'a-b-c'" }
+  ],
+  "evaluation_rules": {
+    "target_path": "src/q6.js",
+    "defect_marker_patterns": [
+      "replace",
+      "只(替换|换|处理).{0,10}(第一|首个|一次|一个)",
+      "first.{0,16}(occurrence|only|match)",
+      "global",
+      "/\\s*/g|/ /g",
+      "所有.{0,6}(空格|匹配)",
+      "all.{0,12}(space|match|occurrence)"
+    ],
+    "expected_severity": { "value": "P2", "provenance": "trial_measured", "rationale": "trial 实测：run 1c7edcf2 LLM 定 P2 且审批门 P2→REVIEWED 行为正确（QUALITY-REPORT §四）" },
+    "severity_tolerance": 1
+  }
+}

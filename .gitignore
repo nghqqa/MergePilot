@@ -37,6 +37,9 @@ pilot/
 release/
 benchmark/
 samples/
+# B 线固定评测样本是仓内资产（manifest sha256 钉死）——显式豁免上面的全局忽略
+!benchmarks/review-quality/samples/
+!benchmarks/review-quality/samples/**
 skills/
 tools/
 tests/

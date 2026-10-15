@@ -1,0 +1,31 @@
+{
+  "case_id": "CASE-03",
+  "trial_origin": {
+    "sample_name": "q3-zero-div",
+    "source": "r3work/rc26-release/trial/build-samples.py（内容逐字复用，不新造缺陷）",
+    "trial_evidence_status": "定性可用、定级有偏差——trial 波测得 LLM 将此类缺陷评 P3，实际缺陷影响为 P2；另 trial 波 Q3 空commit重触发机制未被 coverage 覆盖（任务定性材料），本样本以固定干净基线消除该坑"
+  },
+  "name": "total 为 0 时除零得 NaN",
+  "target_file": "src/q3.js",
+  "test_file": "tests/q3.test.js",
+  "defect_description": "pct 在 total=0 时执行除零得 NaN，Math.round(NaN)=NaN——调用方拿到 NaN 污染下游统计。",
+  "expected_behaviors": [
+    { "call": "pct(3, 9)", "want": "33" },
+    { "call": "pct(3, 0)", "want": "0" }
+  ],
+  "evaluation_rules": {
+    "target_path": "src/q3.js",
+    "defect_marker_patterns": [
+      "divis",
+      "除(零|以零|法)",
+      "zero",
+      "零",
+      "NaN",
+      "total.{0,24}(0|zero|empty|falsy)",
+      "guard",
+      "防护"
+    ],
+    "expected_severity": { "value": "P2", "provenance": "trial_qualitative", "rationale": "trial 定性：真实缺陷、应为 P2（数据正确性污染），LLM 曾评 P3 属严重度偏差" },
+    "severity_tolerance": 1
+  }
+}
