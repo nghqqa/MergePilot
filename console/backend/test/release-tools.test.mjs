@@ -96,13 +96,24 @@ test('A 正常切换：身份核对通过+烙印过滤+网络补挂+后置 Matri
 });
 
 // ── B. expect-commit 不符 → 拒绝交付+回滚（rm 新容器+run 旧镜像+connect 网络）──
+// （2026-10-15 生产切换实证：health 报 8 位短哈希，原 40 位正则恒失败→自动回滚；
+//   回滚流程本身按设计工作。前缀匹配修复见 B2/B3/B4。）
 test('B expect-commit 不符：拒绝交付+回滚序列完整', async () => {
   const { exec, calls } = makeMockDocker({ idCommit: 'e'.repeat(40) }); // 与期望不符
-  // 前缀匹配回归（2026-10-15 生产切换实证：health 报 8 位短哈希，原 40 位正则恒失败）见 B2/B3。
+  const logs = [];
+  const code = await swapConsole([writeInspect(INSPECT), NEW_IMAGE, '--name', 'beta-mp-console',
+    '--expect-commit=' + GOOD_COMMIT], { exec, log: (m) => logs.push(m) });
+  assert.equal(code, 1, 'exit 1（拒绝交付）');
+  assert.equal(rmCalls(calls).filter((c) => c[2] === 'beta-mp-console').length >= 1, true, 'rm new');
+  const rollbackRun = runCalls(calls).find((c) => c.includes(INSPECT.Config.Image));
+  assert.ok(rollbackRun, 'rollback run uses old image');
+  assert.ok(connectCalls(calls).some((c) => c[2] === 'agentteams_beta_atnet'), 'rollback network connect');
+  assert.ok(logs.some((m) => m.includes('构建身份不符')), '拒绝原因可见');
+});
 
 // ── B2. health 报 8 位短哈希、为期望值前缀 → 通过（生产切换实证形态）──
 test('B2 health 短哈希=期望前缀 → 构建身份核对通过', async () => {
-  const { exec, calls } = makeMockDocker({ idCommit: GOOD_COMMIT.slice(0, 8) });
+  const { exec } = makeMockDocker({ idCommit: GOOD_COMMIT.slice(0, 8) });
   const logs = [];
   const code = await swapConsole([writeInspect(INSPECT), NEW_IMAGE, '--name', 'beta-mp-console',
     '--expect-commit=' + GOOD_COMMIT], { exec, log: (m) => logs.push(m) });
@@ -120,24 +131,13 @@ test('B3 health 全 40 位哈希 → 通过', async () => {
   assert.ok(logs.some((m) => m.includes('构建身份核对通过')), '通过日志可见');
 });
 
-// ── B4. health 读取失败（ERR）→ 仍回滚 ──
+// ── B4. health 报 null → 回滚 ──
 test('B4 health 报 null → 回滚', async () => {
   const { exec, calls } = makeMockDocker({ idCommit: null });
   const logs = [];
   const code = await swapConsole([writeInspect(INSPECT), NEW_IMAGE, '--name', 'beta-mp-console',
     '--expect-commit=' + GOOD_COMMIT], { exec, log: (m) => logs.push(m) });
   assert.equal(code, 1);
-  assert.ok(logs.some((m) => m.includes('构建身份不符')), '拒绝原因可见');
-});
-  const logs = [];
-  const code = await swapConsole([writeInspect(INSPECT), NEW_IMAGE, '--name', 'beta-mp-console',
-    '--expect-commit=' + GOOD_COMMIT], { exec, log: (m) => logs.push(m) });
-  assert.equal(code, 1, 'exit 1（拒绝交付）');
-  // 回滚序列：rm 新容器 → run 旧镜像 → network connect
-  assert.equal(rmCalls(calls).filter((c) => c[2] === 'beta-mp-console').length >= 1, true, 'rm new');
-  const rollbackRun = runCalls(calls).find((c) => c.includes(INSPECT.Config.Image));
-  assert.ok(rollbackRun, 'rollback run uses old image');
-  assert.ok(connectCalls(calls).some((c) => c[2] === 'agentteams_beta_atnet'), 'rollback network connect');
   assert.ok(logs.some((m) => m.includes('构建身份不符')), '拒绝原因可见');
 });
 
