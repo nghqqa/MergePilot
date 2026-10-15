@@ -54,16 +54,21 @@
 - [ ] 同 run 再次发布 → 原位更新同一评论（不刷屏）。
 - [ ] PR 推进新 head 后对旧 run 发布 → 被拒（409 `head_moved`）。
 
-## 8. 应用修复 → 新审查与 CI 【rc.35.5 起可用】
+## 8. 应用修复 → 新审查与 CI 【rc.35.5 收口语义（#458+可靠性收口）】
 
-- [ ] 预览应用（GET preview）→ 确认应用（POST confirm，携带 expected_remote_head）→ 机器人向 PR 源分支新增修复 commit，产生幂等操作记录（mu.fix_apply_operation）。
-- [ ] 重复确认 → 幂等返回既有结果（不重复远端写）；远端 head 已推进 → 409 stale_head/head_moved_since_preview。
-- [ ] 应用后新审查：当前需在平台手动触发（自动关联与 webhook 幂等去重未实现——如实登记）；旧 head 的批准/验证结果不替代新 head 证据。
+- [ ] 预览应用（GET preview）→ 确认应用（POST confirm，**必带** `expected_remote_head` + `expected_patch_digest`；缺任一字段 400 `invalid_confirm_fields`）→ 机器人向 PR 源分支新增修复 commit（推送式，非快进被服务端拒绝），操作记录（mu.fix_apply_operation）先落 confirmed/executing 并在推送前持久化候选 commit SHA。
+- [ ] 预览后补丁被修正闭环换版 → 确认被拒（409 `patch_changed`——禁止静默应用新版本）；存储补丁字节与登记 digest 不符 → `digest_mismatch` 拒绝。
+- [ ] 并发双确认 → 数据库原子认领单赢家；败方 409 `operation_in_progress` 且零覆写胜方记录。
+- [ ] 推送超时/断连/响应丢失 → `result_uncertain`（候选 SHA 已登记），前端出现「读回对账」入口；**直接重试确认被拒**（`result_uncertain_requires_reconcile`）；对账按远端实际定案（已落地→committed 并自动补齐重审入队；未落地→failed 可安全重试；证据不足保持 uncertain）。
+- [ ] 重复确认 → 幂等返回既有结果（幂等查询先于远端检查——push 落地后 head 已推进仍成立）；已应用后预览报 `already_applied`。
+- [ ] 应用成功 → 自动按新 commit SHA 入队重审（与 webhook 同一 event_sync 消费单元；同 head 已有 run/job 即去重；入队失败可恢复且 push 不回退）。旧 head 的批准/验证结果不替代新 head 证据。
 
-## 9. 确认合并 【rc.35.5 起可用】
+## 9. 确认合并 【rc.35.5 收口语义（统一资格门）】
 
-- [ ] 合并预览（pr_open/mergeable/head 可见；CI 如实标注 not_configured）→ maintainer 确认合并（expected_head 双确认）→ 条件合并（sha 匹配）→ merge commit 留痕（审计 MU_PR_MERGED）。
-- [ ] 平台保护规则不足时合并被远端拒绝（如 GitHub 保护门），系统如实呈现拒绝原因、不绕过。
+- [ ] 合并预览与确认使用同一资格判定（confirm 时重读远端）：PR 开放 + head 与预览一致（confirm 必带 `expected_head`）+ mergeable 已知且可合并（**null 不放行**）+ **当前 head 存在审查 run 且状态为 REVIEWED/COMPLETED/VERIFIED**（REVIEWED=干净 PR 合法终态；旧 head 证据不可替代）+ 当前 head 无未处理 P0/P1 + **当前 head 真实 CI 通过**。
+- [ ] CI 判定：GitHub 读 combined status **与** check runs 双面（Actions 仓库只有 check runs 也覆盖）；任一失败=阻塞、任一进行中=阻塞、两面全空=**not_configured 阻塞**（不冒充通过）；403=unsupported 并报告所需权限（不用 PAT 绕过）。Gitee 现连接器无 CI 状态 API（双形态 404）→ 恒 unsupported 阻塞（能力边界，如实）。
+- [ ] 条件合并（sha 匹配）→ merge commit 留痕（审计 MU_PR_MERGED）；平台保护/审查门在合并时由平台强制（Gitee 实测"未通过设置的审查/测试"两次真实拒绝如实呈现，不绕过）。
+- [ ] 合并响应丢失 → result_uncertain → 对账按 PR 实际 state 定案（merged→记录 merge commit）；已合并后重复确认 → 幂等返回（不被 pr_open 提前拒绝）。
 
 ## 收尾记录
 
