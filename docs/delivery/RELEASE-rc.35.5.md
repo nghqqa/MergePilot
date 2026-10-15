@@ -5,16 +5,18 @@
 > 用户仓库——**容器回滚（swap 回旧镜像）不会撤销已经发生的远端提交或合并**；
 > 远端回退只能在代码平台手动 revert。交付说明与验收沟通必须如实表达这一点。
 
-## 1. 最终候选身份（切换前回填核验）
+## 1. 最终候选身份（2026-10-15 冻结实值，无占位）
 
 | 项 | 值 |
 |---|---|
-| 源码 | main（PR 归并后最终 commit，切换前以 `git rev-parse HEAD` 为准） |
+| 源码 | main @ **af8b002285809f545a7fb5617dc47ce9be0dc71f**（af8b0022；含 #459~#465 全部收口与前端可信度修复包） |
 | 版本 | v0.2.0-beta.6-rc.35.5（构建期 ARG/ENV 唯一真源） |
 | 镜像 | ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.35.5 |
-| 镜像 digest | 构建后回填（`docker images --digests`） |
-| 前端 bundle | /api/health 的 frontend_bundle.file+sha256 与构建产物一致 |
+| 镜像 digest | sha256:**e30419990434c209de8d9de7fc11fc267d8c9e6fe0d99ff242eda69b7a61dd3a** |
+| 前端 bundle（实际 HTTP） | **index-3axh5LUz.js**，/api/health 报 sha256 **9fe8d4f5c8db619f**（已 curl / 与 /api/health 双核对一致） |
 | schema | v29（mu.fix_apply_operation；v28/v29 均纯新增，rc.35.4 代码前向兼容已实证） |
+| 候选部署 | 28610 槽位（rc354-test 容器名），live healthy，Matrix 后检 200 |
+| 冻结门禁 | 单测 318（308 过+10 env-skip）、fix-apply 47/47、HTTP 端点 11/11、B 评测 44/44、C 诊断 12/12、前端 build+冒烟——全部在 af8b002 上复跑 |
 
 ## 2. 变更清单（相对生产 rc.35.4）
 
@@ -28,17 +30,21 @@
 
 ## 3. 发布步骤（生产切换确认后执行）
 
-1. `git tag v0.2.0-beta.6-rc.35.5 <最终 commit>` 并推送 tag。
-2. 推送镜像到 GHCR（`docker push ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.35.5`）。
-3. Release（prerelease）+ 附件（SBOM/trivy/离线 tar/SHA256SUMS，按既有 rc 流程）。
-4. swap 生产容器（`swap-console.cjs <inspect.json> <镜像> --expect-commit <commit>`），
-   T+1h 观察（health/重启/异常/代理/官网一致性）。
+1. `git tag v0.2.0-beta.6-rc.35.5 af8b0022` 并推送 tag。
+2. 推送镜像到 GHCR（`docker push ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.35.5`——本地 digest e304…，远端逐层一致）。
+3. Release（prerelease）+ 附件：离线包已生成——
+   `mergepilot-console-v0.2.0-beta.6-rc.35.5-offline.tar.gz`
+   SHA256=`692727ccc234a4e1ca32e1f67818614e59caeea007cc172cf86f7d873079293c`
+   （68,744,422B，r3work/rc355-release/attachments/）；SBOM/trivy 报告随 Release 发布步骤生成后补齐校验和。
+4. swap 生产容器（`swap-console.cjs <inspect.json> <镜像> --expect-commit af8b0022`），
+   T+1h 观察（health/重启/异常/代理/官网一致性）。**注意：expect-commit=af8b0022
+   （冻结提交），不使用任何更早的候选提交值。**
 
 ## 4. 回滚方案
 
 | 场景 | 动作 | 说明 |
 |---|---|---|
-| 容器/应用缺陷 | swap 回 rc.35.4 镜像（digest 2c03c04d…，源码 d80e7e6） | inspect 继承 env/挂载/网络；**滤版本烙印**；回滚镜像与 v29 库前向兼容（已实证 health ok） |
+| 容器/应用缺陷 | swap 回 rc.35.4 镜像（**sha256:2c03c04da02c365b6895a41f309d4a488b120f742006ecc50c72f481db27556f**，源码 d80e7e6，现生产容器实测 Image 字段） | inspect 继承 env/挂载/网络；**滤版本烙印**；回滚镜像与 v29 库前向兼容（已实证 health ok） |
 | schema 疑虑 | 不回滚迁移（v29 纯新增表，旧代码忽略） | 禁止手工 DROP；如需彻底移除属新迁移决策 |
 | 远端已发生的提交/合并 | **容器回滚无效**——平台手动 revert | 应用与合并均为快进/条件写，revert 提交即可恢复内容 |
 | Matrix/执行器 | ctrl 容器 `docker start`（restart 存活 cli-token） | 2026-10-15 实录：ctrl exit 255（原因未查明——不能写已根治），重启后 Matrix 200 |
