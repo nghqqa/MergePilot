@@ -362,27 +362,62 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [] }) {
     try {
       const r = await apiFetch(`/api/mu/runs/${runId}/apply-fix/confirm`, {
         method: 'POST', headers: { 'content-type': 'application/json', ...csrfHeader() },
-        body: JSON.stringify({ confirm: true, expected_remote_head: applyPreview?.target?.remote_head ?? null }),
+        body: JSON.stringify({
+          confirm: true,
+          expected_remote_head: applyPreview?.confirm_binds?.expected_remote_head
+            ?? applyPreview?.target?.remote_head ?? null,
+          expected_patch_digest: applyPreview?.confirm_binds?.expected_patch_digest
+            ?? applyPreview?.patch?.digest ?? null,
+        }),
       });
       const b = await r.json().catch(() => ({}));
       if (r.ok) {
         setApplyMsg({ tone: 'success', text: b.idempotent
           ? `该补丁此前已应用（幂等返回，未重复提交）——提交 ${String(b.commit_sha ?? '').slice(0, 12)}`
-          : `已提交到 PR 源分支——新提交 ${String(b.commit_sha ?? '').slice(0, 12)}（patch v${b.patch_version ?? '?'}）。请在代码平台触发重新审查/CI，通过后回到这里预览合并。` });
+          : `已提交到 PR 源分支——新提交 ${String(b.commit_sha ?? '').slice(0, 12)}（patch v${b.patch_version ?? '?'}）。${b.next_step ?? '等待按新 head 的重新审查与 CI 通过后，再预览合并。'}` });
         setApplyPreview(null);
+        loadArtifacts(runId, loadCtlRef.current?.signal); // 新 head run 入队后刷新产物列表
       } else {
         const er = b?.error?.reason ?? '';
         const why = { stale_head: '远端 head 已变化——补丁基于旧版本，未写入任何内容（PR 更新后重新审查）',
           head_moved_since_preview: '预览后远端又推进了——已拒绝，请刷新预览重试',
+          patch_changed: '预览后补丁已更新（修正闭环产出了新版本）——已拒绝静默应用新版本，请重新预览',
+          digest_mismatch: '存储补丁内容与登记摘要不一致——已拒绝执行，请重新生成补丁',
+          invalid_confirm_fields: '确认缺少必要的预览绑定字段——请从预览发起确认',
           patch_apply_failed: '补丁在当前 head 上真实试应用失败——未写入任何内容（远端零副作用）',
           materialize_failed: '补丁在当前 head 上物化失败——未写入任何内容（远端零副作用）',
           branch_not_found: '远端源分支不存在或不可读',
           push_failed: '远端推送未完成（网络或平台原因）——请稍后重试',
           operation_in_progress: '已有一次相同操作正在进行——请稍后刷新查看结果' }[er];
-        setApplyMsg({ tone: 'warning', text: why ?? `应用未完成（HTTP ${r.status}）：${er}${b?.error?.uncertain ? '（结果不明——提交对象可能已创建但分支未推进，请先查验远端再重试）' : ''}` });
+        setApplyMsg({ tone: er === 'result_uncertain' ? 'warning' : 'warning',
+          text: er === 'result_uncertain'
+            ? `推送结果不明：候选提交已登记${b?.error?.operation_id ? '（操作 ' + String(b.error.operation_id).slice(0, 8) + '）' : ''}——请点下方「读回对账」确认远端实际状态，勿直接重试`
+            : (why ?? `应用未完成（HTTP ${r.status}）：${er}`) });
         if (!/stale_head|head_moved/.test(er)) setApplyPreview(null);
+        if (er === 'result_uncertain') loadArtifacts(runId, loadCtlRef.current?.signal);
       }
     } catch { setApplyMsg({ tone: 'warning', text: '网络异常，应用未完成' }); }
+    setApplyBusy(false);
+  };
+
+  const reconcileOp = async (opId) => {
+    setApplyBusy(true);
+    try {
+      const r = await apiFetch(`/api/mu/apply-operations/${opId}/reconcile`, {
+        method: 'POST', headers: { ...csrfHeader() },
+      });
+      const b = await r.json().catch(() => ({}));
+      if (r.ok && r.status !== 204) {
+        setApplyMsg({ tone: b.reconciled ? (b.status === 'failed' ? 'warning' : 'success') : 'info',
+          text: b.note ?? `对账完成：${b.status ?? '未定案'}` });
+        loadArtifacts(runId, loadCtlRef.current?.signal);
+      } else if (r.status === 204 || r.ok) {
+        setApplyMsg({ tone: 'info', text: '对账已发起' });
+        loadArtifacts(runId, loadCtlRef.current?.signal);
+      } else {
+        setApplyMsg({ tone: 'warning', text: `对账未完成（HTTP ${r.status}）：${b?.error?.reason ?? ''}` });
+      }
+    } catch { setApplyMsg({ tone: 'warning', text: '网络异常，对账未完成' }); }
     setApplyBusy(false);
   };
 
@@ -408,7 +443,8 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [] }) {
     try {
       const r = await apiFetch(`/api/mu/runs/${runId}/merge-pr/confirm`, {
         method: 'POST', headers: { 'content-type': 'application/json', ...csrfHeader() },
-        body: JSON.stringify({ confirm: true, expected_head: mergePreview?.target?.head ?? null, merge_method: mergeMethod }),
+        body: JSON.stringify({ confirm: true, expected_head: mergePreview?.confirm_binds?.expected_head
+          ?? mergePreview?.target?.head ?? null, merge_method: mergeMethod }),
       });
       const b = await r.json().catch(() => ({}));
       if (r.ok) {
@@ -420,9 +456,13 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [] }) {
         const er = b?.error?.reason ?? '';
         const why = { pr_not_open: 'PR 已关闭（预览后被他人关闭）', pr_not_mergeable: 'PR 存在冲突，平台拒绝合并',
           head_moved_since_preview: '预览后 PR head 又推进了——已拒绝，请刷新预览重试',
+          merge_not_eligible: `合并资格未满足：${(b?.error?.blocked ?? []).map((x) => x.detail ?? x.code).join('；') || '条件不满足'}`,
+          invalid_confirm_fields: '确认缺少必要的预览绑定字段——请从预览发起确认',
+          result_uncertain: '合并结果不明——请点「读回对账」按 PR 实际状态定案，勿盲目重试',
           merge_failed: '平台合并被拒（保护规则/冲突/权限——详见平台页面）' }[er];
         setMergeMsg({ tone: 'warning', text: why ?? `合并未完成（HTTP ${r.status}）：${er}` });
         if (!/head_moved/.test(er)) setMergePreview(null);
+        if (er === 'result_uncertain') loadArtifacts(runId, loadCtlRef.current?.signal);
       }
     } catch { setMergeMsg({ tone: 'warning', text: '网络异常，合并未完成' }); }
     setMergeBusy(false);
@@ -949,9 +989,17 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [] }) {
                 <Descriptions.Item label="历史操作">
                   {applyPreview.previous_operations.map((o, i) => (
                     <div key={i} style={{ fontSize: 12 }}>
-                      <Tag color={o.status === 'committed' ? 'green' : o.status === 'failed' ? 'red' : 'default'}>{o.status}</Tag>
+                      <Tag color={o.status === 'committed' ? 'green' : o.status === 'failed' ? 'red'
+                        : o.status === 'result_uncertain' ? 'orange' : 'default'}>{o.status}</Tag>
                       {o.commit ? <code className="mono">{String(o.commit).slice(0, 12)}</code> : null}
                       {o.error_code ? <Typography.Text type="secondary">（{o.error_code}）</Typography.Text> : null}
+                      {o.stale_lock ? <Tag color="orange">卡锁超 10 分钟</Tag> : null}
+                      {o.reconcilable ? (
+                        <Button size="small" type="link" style={{ padding: 0, marginLeft: 6 }}
+                          loading={applyBusy} onClick={() => reconcileOp(o.operation_id)}>
+                          读回对账
+                        </Button>
+                      ) : null}
                     </div>
                   ))}
                 </Descriptions.Item>
@@ -999,13 +1047,43 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [] }) {
                   </Typography.Text>
                 ) : null}
               </Descriptions.Item>
-              <Descriptions.Item label="合并条件">
+              <Descriptions.Item label="合并资格（服务端统一门，确认时重核）">
                 <Space wrap size={4}>
                   {mergePreview.merge_conditions.pr_open ? <Tag color="green">PR 开放</Tag> : <Tag color="red">PR 已关闭</Tag>}
-                  {mergePreview.merge_conditions.mergeable ? <Tag color="green">无冲突</Tag> : <Tag color="red">有冲突</Tag>}
-                  <Tag>CI 状态：未接入（不作为合并依据）</Tag>
-                  <Tag>保护规则：平台照常生效，本服务不绕过</Tag>
+                  {mergePreview.merge_conditions.mergeable === true ? <Tag color="green">无冲突</Tag>
+                    : mergePreview.merge_conditions.mergeable === false ? <Tag color="red">有冲突</Tag>
+                    : <Tag color="orange">可合并性未知（不予放行）</Tag>}
+                  {(() => {
+                    const rv = mergePreview.merge_conditions.review;
+                    const rvMap = { pass: ['green', '当前 head 审查完成（无未处理 P0/P1）'],
+                      missing: ['red', '当前 head 无审查 run（旧 head 审查不可替代）'],
+                      pending: ['orange', '当前 head 审查未完成'],
+                      blocked_findings: ['red', '当前 head 有未处理 P0/P1 发现'] };
+                    const [c, t] = rvMap[rv] ?? ['orange', `审查证据：${rv ?? '未知'}`];
+                    return <Tag color={c}>{t}</Tag>;
+                  })()}
+                  {(() => {
+                    const ci = mergePreview.merge_conditions.ci ?? {};
+                    const ciMap = { pass: ['green', '真实 CI 通过'],
+                      pending: ['orange', 'CI 运行中'],
+                      failed: ['red', 'CI 未通过'],
+                      not_configured: ['red', '该 head 无 CI 状态（未配置或未运行）'],
+                      unsupported: ['orange', '平台 CI 状态不可读'],
+                      unknown: ['orange', 'CI 状态读取失败'] };
+                    const [c, t] = ciMap[ci.state] ?? ['orange', `CI：${ci.state ?? '未知'}`];
+                    return <Tag color={c}>{t}{ci.reason ? `——${ci.reason}` : ''}</Tag>;
+                  })()}
+                  <Tag>保护规则：平台照常强制执行，本服务不绕过</Tag>
                 </Space>
+                {Array.isArray(mergePreview.blocked) && mergePreview.blocked.length ? (
+                  <div style={{ marginTop: 6 }}>
+                    {mergePreview.blocked.map((x, i) => (
+                      <div key={i} style={{ fontSize: 12 }}>
+                        <Typography.Text type="warning">· {x.detail ?? x.code}</Typography.Text>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
               </Descriptions.Item>
               <Descriptions.Item label="合并方式">
                 <Select size="small" value={mergeMethod} onChange={setMergeMethod} style={{ minWidth: 160 }}

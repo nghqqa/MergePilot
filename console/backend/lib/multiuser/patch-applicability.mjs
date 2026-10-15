@@ -158,7 +158,12 @@ export async function materializePatchedFiles({ repoUrl, headSha, diffText, dige
     if (fetch.code !== 0) fetch = await git(['fetch', urlWithCred], workdir, step(timeoutMs));
     if (fetch.code !== 0) return { ok: false, reason: 'fetch_head_failed', output: REDACT(fetch.stderr) };
 
-    const co = await git(['checkout', '--detach', headSha], workdir, step(20_000));
+    let co = await git(['checkout', '--detach', headSha], workdir, step(20_000));
+    if (co.code !== 0) {
+      // 浅取可能缺 tree 对象（本地 bare/部分服务端常见）——全量补齐后重试
+      await git(['fetch', urlWithCred], workdir, step(timeoutMs));
+      co = await git(['checkout', '--detach', headSha], workdir, step(20_000));
+    }
     if (co.code !== 0) return { ok: false, reason: 'checkout_head_failed', output: REDACT(co.stderr) };
     await git(['config', 'core.autocrlf', 'false'], workdir, step(5_000));
     await git(['checkout', '--', '.'], workdir, step(10_000));
@@ -194,9 +199,13 @@ export async function materializePatchedFiles({ repoUrl, headSha, diffText, dige
 }
 
 /**
- * 推送式远端提交（应用修复的执行面，2026-10-15 实测定案）：
- * 在隔离临时工作副本中检出准确 head → 真实 apply 补丁 → 本地提交 → git push
- * （无 --force——非快进更新被服务端拒绝，即真正的条件更新）。
+ * 推送式远端提交（应用修复的执行面，2026-10-15 定案；两阶段版 2026-10-15 收口波）：
+ *   prepareCommit —— 隔离副本检出准确 head → CAS 前检 → 真实 apply → 本地提交，
+ *                    返回候选 commitSha 并保留工作目录（供推送阶段使用）；
+ *   pushPrepared  —— 从该目录 git push（无 --force——非快进被服务端拒绝，即真条件更新），
+ *                    结束后清理目录。
+ * 两阶段拆分的目的：候选 SHA 在【远端写入前】持久化到 mu.fix_apply_operation——
+ * push 阶段超时/断连/进程退出时，读回对账（reconcile）可凭候选 SHA 判定远端实际状态。
  *
  * 为什么不用 Git Data API 链：Gitee v5 实测无 git/refs 端点（list/单查全 404），
  * 无分支 ref 更新 API——API 链无法移动分支；git push 语义等价且更强
@@ -204,18 +213,18 @@ export async function materializePatchedFiles({ repoUrl, headSha, diffText, dige
  * GitHub installation token 同样可用于 HTTPS push（x-access-token）——双平台单实现。
  *
  * 凭据：与 appendCredential 同纪律——URL 只进子进程参数，不落盘、不落日志（stderr 经 REDACT）。
- * 返回：
- *  { ok: true, commitSha, previousSha }
- *  { ok: false, reason: 'branch_not_found'|'stale_head'|'patch_apply_failed'|'push_failed'|..., output? }
  */
-export async function pushCommit({ repoUrl, headSha, diffText, branch, message,
+
+const BOT_IDENTITY = ['-c', 'user.name=MergePilot Bot', '-c', 'user.email=bot@mergepilot.local'];
+
+export async function prepareCommit({ repoUrl, headSha, diffText, message,
   credentialToken = null, timeoutMs = 90_000, workRoot = os.tmpdir() } = {}) {
-  if (!repoUrl || !headSha || !diffText || !branch || !message) {
+  if (!repoUrl || !headSha || !diffText || !message) {
     return { ok: false, reason: 'missing_args' };
   }
   let workdir = null;
   try {
-    workdir = fs.mkdtempSync(path.join(workRoot, 'mp-push-'));
+    workdir = fs.mkdtempSync(path.join(workRoot, 'mp-prepare-'));
     const step = (ms) => Math.max(5_000, ms);
 
     const init = await git(['init'], workdir, step(10_000));
@@ -226,37 +235,62 @@ export async function pushCommit({ repoUrl, headSha, diffText, branch, message,
     if (fetch.code !== 0) fetch = await git(['fetch', urlWithCred], workdir, step(timeoutMs));
     if (fetch.code !== 0) return { ok: false, reason: 'fetch_head_failed', output: REDACT(fetch.stderr) };
 
-    const co = await git(['checkout', '--detach', headSha], workdir, step(20_000));
+    let co = await git(['checkout', '--detach', headSha], workdir, step(20_000));
+    if (co.code !== 0) {
+      // 浅取可能缺 tree 对象（本地 bare/部分服务端常见）——全量补齐后重试
+      await git(['fetch', urlWithCred], workdir, step(timeoutMs));
+      co = await git(['checkout', '--detach', headSha], workdir, step(20_000));
+    }
     if (co.code !== 0) return { ok: false, reason: 'checkout_head_failed', output: REDACT(co.stderr) };
     await git(['config', 'core.autocrlf', 'false'], workdir, step(5_000));
     await git(['checkout', '--', '.'], workdir, step(10_000));
 
-    // 前置 CAS 读取：远端分支当前 tip 必须仍是补丁目标 head
-    const ls = await git(['ls-remote', urlWithCred, `refs/heads/${branch}`], workdir, step(30_000));
-    if (ls.code !== 0) return { ok: false, reason: 'ls_remote_failed', output: REDACT(ls.stderr) };
-    const remoteTip = String(ls.stdout).trim().split(/\t/)[0];
-    if (!remoteTip) return { ok: false, reason: 'branch_not_found', detail: `refs/heads/${branch}` };
-    if (remoteTip.toLowerCase() !== String(headSha).toLowerCase()) {
-      return { ok: false, reason: 'stale_head',
-        detail: `expected=${String(headSha).slice(0, 12)} actual=${String(remoteTip).slice(0, 12)}` };
-    }
-
+    // 前置 CAS 读取：远端分支 tip 校验留待推送阶段（prepare 不绑分支，绑定关系在调用方）
     const diffFile = path.join(workdir, 'suggested.patch');
     fs.writeFileSync(diffFile, String(diffText), { encoding: 'utf8', mode: 0o600 });
     const apply = await git(['apply', '--whitespace=nowarn', path.basename(diffFile)], workdir, step(timeoutMs));
     if (apply.code !== 0) {
-      return { ok: false, reason: 'patch_apply_failed',
-        output: REDACT(String(apply.stderr || apply.stdout)).slice(0, 300) };
+      return await discard(workdir, { ok: false, reason: 'patch_apply_failed',
+        output: REDACT(String(apply.stderr || apply.stdout)).slice(0, 300) });
     }
 
     await git(['add', '-A'], workdir, step(20_000));
-    const ci = await git(['-c', 'user.name=MergePilot Bot', '-c', 'user.email=bot@mergepilot.local',
-      'commit', '-m', message], workdir, step(30_000));
-    if (ci.code !== 0) return { ok: false, reason: 'commit_failed', output: REDACT(ci.stderr) };
+    const ci = await git([...BOT_IDENTITY, 'commit', '-m', message], workdir, step(30_000));
+    if (ci.code !== 0) {
+      return await discard(workdir, { ok: false, reason: 'commit_failed', output: REDACT(ci.stderr) });
+    }
     const sha = (await git(['rev-parse', 'HEAD'], workdir, step(5_000))).stdout.trim();
+    return { ok: true, commitSha: sha, previousSha: headSha, dir: workdir };
+  } catch (e) {
+    if (workdir) await discard(workdir, null);
+    return { ok: false, reason: 'environment_error', output: REDACT(String(e?.message ?? e)).slice(0, 200) };
+  }
+}
+
+/**
+ * 推送已准备的候选提交。前置 CAS：远端分支 tip 必须仍等于 expectedHead；
+ * push 无 --force：即便通过前检，并发推进仍会被服务端拒绝（条件更新的最终保证在远端）。
+ * 成败均清理工作目录（result_uncertain 不保留目录——恢复走 reconcile，不依赖本地残留）。
+ */
+export async function pushPrepared({ dir, repoUrl, branch, expectedHead,
+  credentialToken = null, timeoutMs = 90_000 } = {}) {
+  if (!dir || !repoUrl || !branch || !expectedHead) {
+    if (dir) await discard(dir, null);
+    return { ok: false, reason: 'missing_args' };
+  }
+  try {
+    const urlWithCred = appendCredential(repoUrl, credentialToken);
+    const ls = await git(['ls-remote', urlWithCred, `refs/heads/${branch}`], dir, 30_000);
+    if (ls.code !== 0) return { ok: false, reason: 'ls_remote_failed', output: REDACT(ls.stderr) };
+    const remoteTip = String(ls.stdout).trim().split(/	/)[0];
+    if (!remoteTip) return { ok: false, reason: 'branch_not_found', detail: `refs/heads/${branch}` };
+    if (remoteTip.toLowerCase() !== String(expectedHead).toLowerCase()) {
+      return { ok: false, reason: 'stale_head',
+        detail: `expected=${String(expectedHead).slice(0, 12)} actual=${String(remoteTip).slice(0, 12)}` };
+    }
 
     // 无 --force：非快进（并发推进）被服务端拒绝——条件更新在远端强制生效
-    const push = await git(['push', urlWithCred, `HEAD:refs/heads/${branch}`], workdir, step(timeoutMs));
+    const push = await git(['push', urlWithCred, `HEAD:refs/heads/${branch}`], dir, timeoutMs);
     if (push.code !== 0) {
       const t = String(push.stderr || push.stdout);
       if (/non-fast-forward|rejected|fetch first|stale info|\[rejected\]/i.test(t)) {
@@ -264,12 +298,62 @@ export async function pushCommit({ repoUrl, headSha, diffText, branch, message,
       }
       return { ok: false, reason: 'push_failed', output: REDACT(t).slice(0, 300) };
     }
-    return { ok: true, commitSha: sha, previousSha: headSha };
-  } catch (e) {
-    return { ok: false, reason: 'environment_error', output: REDACT(String(e?.message ?? e)).slice(0, 200) };
+    return { ok: true };
   } finally {
-    if (workdir) {
-      try { fs.rmSync(workdir, { recursive: true, force: true }); } catch { /* 尽力清理 */ }
-    }
+    await discard(dir, null);
+  }
+}
+
+/** 丢弃已准备的候选目录（候选 SHA 已持久化时，恢复走 reconcile 不依赖目录）。 */
+export async function discardPrepared(dir) {
+  await discard(dir, null);
+}
+
+async function discard(dir, carry) {
+  try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* 尽力清理 */ }
+  return carry;
+}
+
+/** 单调用组合器（prepare+push）；需要"写前持久化候选 SHA"的调用方应直接用两阶段。 */
+export async function pushCommit({ repoUrl, headSha, diffText, branch, message,
+  credentialToken = null, timeoutMs = 90_000, workRoot = os.tmpdir() } = {}) {
+  const pre = await prepareCommit({ repoUrl, headSha, diffText, message,
+    credentialToken, timeoutMs, workRoot });
+  if (!pre.ok) return pre;
+  const r = await pushPrepared({ dir: pre.dir, repoUrl, branch, expectedHead: headSha,
+    credentialToken, timeoutMs });
+  return r.ok ? { ok: true, commitSha: pre.commitSha, previousSha: pre.previousSha } : r;
+}
+
+/**
+ * 读回对账原语：远端分支 tip 与候选提交的祖先关系判定（恢复任务用）。
+ * 返回 { tip, isCandidate: 'tip'|'ancestor'|'absent'|'unknown' }：
+ *   tip       = 分支 tip 就是候选提交（push 成功且其后无新提交）
+ *   ancestor  = 候选是 tip 的祖先（push 成功，其后他人又推进——快进语义下只有这种"已落地"形态）
+ *   absent    = 候选不在 tip 祖先链上（push 未落地）
+ *   unknown   = 网络/环境原因无法判定（保持 uncertain，不得臆断）
+ */
+export async function checkCommitOnBranch({ repoUrl, branch, candidateSha, credentialToken = null,
+  timeoutMs = 60_000, workRoot = os.tmpdir() } = {}) {
+  let workdir = null;
+  try {
+    workdir = fs.mkdtempSync(path.join(workRoot, 'mp-recon-'));
+    const urlWithCred = appendCredential(repoUrl, credentialToken);
+    const ls = await git(['ls-remote', urlWithCred, `refs/heads/${branch}`], workdir, 30_000);
+    if (ls.code !== 0) return { relation: 'unknown', reason: 'ls_remote_failed' };
+    const tip = String(ls.stdout).trim().split(/	/)[0];
+    if (!tip) return { relation: 'unknown', reason: 'branch_not_found' };
+    if (tip.toLowerCase() === String(candidateSha).toLowerCase()) return { relation: 'tip', tip };
+    // 浅取 tip 与候选，判祖先
+    const f1 = await git(['fetch', '--depth', '50', urlWithCred, tip, candidateSha], workdir, timeoutMs);
+    if (f1.code !== 0) return { relation: 'unknown', reason: 'fetch_failed', tip };
+    const anc = await git(['merge-base', '--is-ancestor', candidateSha, tip], workdir, 10_000);
+    if (anc.code === 0) return { relation: 'ancestor', tip };
+    if (anc.code === 1) return { relation: 'absent', tip };
+    return { relation: 'unknown', reason: 'merge_base_failed', tip };
+  } catch (e) {
+    return { relation: 'unknown', reason: 'environment_error', detail: String(e?.message ?? e).slice(0, 120) };
+  } finally {
+    if (workdir) { try { fs.rmSync(workdir, { recursive: true, force: true }); } catch { /* */ } }
   }
 }

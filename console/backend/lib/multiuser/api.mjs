@@ -31,6 +31,66 @@ import { verifyGiteeWebhook, createGiteeAdapter } from './forge/gitee.mjs';
 // pg 解析：容器/镜像内走标准 node_modules；CI/主机测试进程回退到 test/support
 // 安装的 dev-only pg（与 cchain/wiring.mjs loadPg 同一惯例——CI runner 无根 junction）。
 let muPgMod = undefined;
+/**
+ * 应用修复成功后的重审入队（与手动入口/webhook 同一 event_sync 消费单元）。
+ * payload 按仓库 provider 构造（与 POST /prs/:id/review 手动入口同形）；
+ * head_sha = 应用产生的新提交（run 幂等键=tenant+repo+pr+head，见 createRunIfAbsent）。
+ * 返回 { ok, job_id?, state?, reason?, detail? }。
+ */
+async function enqueueEventSyncForHead({ env, store, q, tenantId, headSha, run, userId }) {
+  const repoMeta = (await q(
+    `SELECT provider FROM mu.repository WHERE repo_id=$1 AND tenant_id=$2`,
+    [run.repo_id, tenantId])).rows[0] ?? null;
+  const provider = String(repoMeta?.provider ?? '');
+  if (provider === 'gitee') {
+    const conn = (await q(
+      `SELECT fc.connection_id, fc.instance_id, rep.provider_repo_id
+         FROM mu.forge_connection fc
+         JOIN mu.repository rep ON rep.tenant_id = fc.tenant_id
+              AND rep.forge_instance_id = fc.instance_id
+        WHERE fc.tenant_id=$1 AND fc.status='valid' AND fc.revoked_at IS NULL
+          AND rep.repo_id=$2 AND rep.provider='gitee' LIMIT 1`,
+      [tenantId, run.repo_id])).rows[0] ?? null;
+    if (!conn) return { ok: false, reason: 'forge_connection_not_active' };
+    const payloadV1 = {
+      schema_version: 1, event: 'pull_request', forge_kind: 'gitee',
+      delivery_ref: `apply-fix-${run.run_id.slice(0, 8)}-${String(headSha).slice(0, 8)}-${Date.now()}`,
+      provider_repo_id: String(conn.provider_repo_id),
+      pr_number: Number(run.provider_pr_number), head_sha: String(headSha),
+      action: 'update', trigger_source: 'apply_fix_reenqueue', installation_id: null,
+      declared_file_count: null,
+      connection_id: conn.connection_id, forge_instance_id: conn.instance_id,
+    };
+    const vv = validateForgeEventV1(payloadV1);
+    if (!vv.ok) return { ok: false, reason: 'event_payload_invalid', detail: vv.field };
+    const job = await store.enqueueJob({ tenantId, repoId: run.repo_id, prId: run.pr_id,
+      kind: 'event_sync', requestedBy: userId ?? null, requestedRole: 'maintainer',
+      payload: payloadV1 });
+    await store.audit('MU_REVIEW_REENQUEUED_AFTER_APPLY', { tenantId, actorUserId: userId,
+      detail: { run_id: run.run_id, head_prefix: String(headSha).slice(0, 12),
+        job_id: job.job_id } }).catch(() => {});
+    return { ok: true, job_id: job.job_id, state: job.state };
+  }
+  // github
+  const instRow = (await q(
+    `SELECT installation_id, github_repo_id FROM mu.repository_binding
+      WHERE repo_id=$1 AND tenant_id=$2 AND binding_state='active' LIMIT 1`,
+    [run.repo_id, tenantId])).rows[0] ?? null;
+  if (!instRow) return { ok: false, reason: 'binding_not_active' };
+  const job = await store.enqueueJob({ tenantId, repoId: run.repo_id, prId: run.pr_id,
+    kind: 'event_sync', requestedBy: userId ?? null, requestedRole: 'maintainer',
+    payload: { event: 'pull_request', action: 'synchronize',
+      head_sha: String(headSha), pr_number: Number(run.provider_pr_number),
+      github_repo_id: Number(instRow.github_repo_id),
+      installation_id: Number(instRow.installation_id),
+      delivery_id: `apply-fix-${run.run_id.slice(0, 8)}-${String(headSha).slice(0, 8)}-${Date.now()}`,
+      trigger_source: 'apply_fix_reenqueue' } });
+  await store.audit('MU_REVIEW_REENQUEUED_AFTER_APPLY', { tenantId, actorUserId: userId,
+    detail: { run_id: run.run_id, head_prefix: String(headSha).slice(0, 12),
+      job_id: job.job_id } }).catch(() => {});
+  return { ok: true, job_id: job.job_id, state: job.state };
+}
+
 async function loadPg() {
   if (muPgMod !== undefined) return muPgMod;
   try { muPgMod = await import('pg'); return muPgMod; } catch { /* fall through */ }
@@ -3111,7 +3171,10 @@ const ragMatch = p.match(new RegExp("^/api/mu/repositories/([^/]+)/rag-search$")
         try {
           r = await fa.confirmApplyFix(muPoolQ, { env, runId, tenantId: mu.tenantId,
             userId: mu.userId, confirm: true,
-            expectedRemoteHead: typeof body?.expected_remote_head === 'string' ? body.expected_remote_head : null });
+            expectedRemoteHead: typeof body?.expected_remote_head === 'string' ? body.expected_remote_head : null,
+            expectedPatchDigest: typeof body?.expected_patch_digest === 'string' ? body.expected_patch_digest : null,
+            deps: { enqueueEventSync: (p) => enqueueEventSyncForHead({ env, store, q: muPoolQ,
+              tenantId: mu.tenantId, headSha: p.headSha, run: p.run, userId: mu.userId }) } });
         } catch (e) {
           const reason = String(e?.message ?? e).slice(0, 160);
           await store.audit('MU_FIX_APPLY_ERROR', { tenantId: mu.tenantId, actorUserId: mu.userId,
@@ -3120,11 +3183,13 @@ const ragMatch = p.match(new RegExp("^/api/mu/repositories/([^/]+)/rag-search$")
         }
         if (!r.ok) {
           const statusMap = { confirm_required: 400, run_not_found: 404, provider_unsupported: 400,
+            invalid_confirm_fields: 400, operator_required: 403,
             stale_head: 409, head_moved_since_preview: 409, operation_in_progress: 409,
+            patch_changed: 409, digest_mismatch: 409,
             patch_apply_failed: 409, materialize_failed: 409, branch_not_found: 409,
             no_active_patch: 409, remote_unreachable: 502, ls_remote_failed: 502,
             fetch_head_failed: 502, checkout_head_failed: 502, push_failed: 502,
-            commit_failed: 502, operator_required: 403 };
+            prepare_exception: 500, commit_failed: 502 };
           await store.audit('MU_FIX_APPLY_REJECTED', { tenantId: mu.tenantId, actorUserId: mu.userId,
             detail: { run_id: runId, reason: r.reason } }).catch(() => {});
           return sendJson(res, statusMap[r.reason] ?? 500,
@@ -3185,13 +3250,17 @@ const ragMatch = p.match(new RegExp("^/api/mu/repositories/([^/]+)/rag-search$")
         }
         if (!r.ok) {
           const statusMap = { confirm_required: 400, run_not_found: 404, provider_unsupported: 400,
+            invalid_confirm_fields: 400, operator_required: 403,
             pr_not_open: 409, pr_not_mergeable: 409, head_unknown: 409,
+            mergeable_unknown: 409, merge_not_eligible: 409,
             head_moved_since_preview: 409, operation_in_progress: 409,
             stale_head: 409, pr_read_failed: 502, merge_failed: 502, remote_unreachable: 502 };
           await store.audit('MU_PR_MERGE_REJECTED', { tenantId: mu.tenantId, actorUserId: mu.userId,
-            detail: { run_id: runId, reason: r.reason } }).catch(() => {});
+            detail: { run_id: runId, reason: r.reason,
+              blocked: Array.isArray(r.blocked) ? r.blocked.map((b) => b.code) : null } }).catch(() => {});
           return sendJson(res, statusMap[r.reason] ?? 500,
-            { error: { reason: r.reason, detail: r.detail ?? null, operation_id: r.operation_id ?? null } });
+            { error: { reason: r.reason, detail: r.detail ?? null, blocked: r.blocked ?? null,
+              operation_id: r.operation_id ?? null } });
         }
         await store.audit('MU_PR_MERGED', { tenantId: mu.tenantId, actorUserId: mu.userId,
           detail: { run_id: runId, operation_id: r.operation_id, idempotent: Boolean(r.idempotent),
@@ -3200,6 +3269,32 @@ const ragMatch = p.match(new RegExp("^/api/mu/repositories/([^/]+)/rag-search$")
         return sendJson(res, 200, { ok: true, status: r.status, operation_id: r.operation_id,
           merge_sha: r.merge_sha, idempotent: Boolean(r.idempotent) });
       }
+    }
+
+    // 读回对账：result_uncertain / executing 卡死操作的唯一恢复入口（apply+merge 通用）。
+    // 权限=apply_fix；跨租户/不存在同形 404；幂等（终态 no-op）。
+    const reconMatch = p.match(/^\/api\/mu\/apply-operations\/([0-9a-f-]{36})\/reconcile$/);
+    if (reconMatch && req.method === 'POST') {
+      if (!csrfOk()) return sendJson(res, 403, { error: { reason: 'csrf_required' } });
+      const g = await guard('apply_fix');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const fa = await import('./fix-apply.mjs');
+      let r;
+      try {
+        r = await fa.reconcileOperation(muPoolQ, { env, operationId: reconMatch[1],
+          tenantId: mu.tenantId });
+      } catch (e) {
+        const reason = String(e?.message ?? e).slice(0, 160);
+        await store.audit('MU_OP_RECONCILE_ERROR', { tenantId: mu.tenantId, actorUserId: mu.userId,
+          detail: { operation_id: reconMatch[1], reason } }).catch(() => {});
+        return sendJson(res, 500, { error: { reason: 'reconcile_internal_error', detail: { reason } } });
+      }
+      if (!r.ok) return sendJson(res, r.reason === 'operation_not_found' ? 404 : 409,
+        { error: { reason: r.reason, detail: r.detail ?? null } });
+      await store.audit(r.reconciled ? 'MU_OP_RECONCILED' : 'MU_OP_RECONCILE_INCONCLUSIVE',
+        { tenantId: mu.tenantId, actorUserId: mu.userId,
+          detail: { operation_id: reconMatch[1], status: r.status, note: r.note ?? null } }).catch(() => {});
+      return sendJson(res, 200, r);
     }
 
     // ── 审计（read_audit：metadata only——Auditor/PlatformAdmin） ──
