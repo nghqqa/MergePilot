@@ -519,12 +519,40 @@ async function buildFixDepsForRepo(muPoolQuery, { tenantId, repoId, prNumber }) 
   if (!rb?.rows?.length) return null;
   const row = rb.rows[0];
   const overrides = global.__WAVE3_TEST_DEPS;
+  const ghPrNumber = Number(prNumber ?? 0);
   return {
     repoUrl: overrides?.repoUrl ?? `https://github.com/${row.owner}/${row.name}.git`,
     testCmd: overrides?.testCmd ?? (process.env.MU_FXV_TEST_CMD || 'node -e process.exit(0)'),
     providerCfg: ghAppConfig(process.env),
     installationId: String(row.installation_id),
-    owner: row.owner, repoName: row.name, prNumber: Number(prNumber ?? 0),
+    // fetchContextFn（2026-10-15 补齐，Gitee 分支对齐）：GitHub 分支此前缺失——外部
+    // agentteams 修复任务的 brief 只有脱敏 findings，fixer 看不到真实代码只能幻觉拼
+    // diff → git apply 必败（PR#12 闭环实证）。经 installation token 拉 PR files 组装
+    // 统一 diff（与审查 LLM 同一出站边界：同 diff、同授权模型链路、凭据不落盘）。
+    fetchContextFn: async ({ expectedHeadSha }) => {
+      const m = await import('./remote-write.mjs');
+      const tok = await m.githubInstallationToken(process.env, String(row.installation_id));
+      const res = await fetch(
+        `https://api.github.com/repos/${row.owner}/${row.name}/pulls/${ghPrNumber}/files?per_page=100`,
+        { headers: { authorization: `Bearer ${tok}`, accept: 'application/vnd.github+json' } });
+      if (!res.ok) throw new Error(`ghp_files_http_${res.status}`);
+      const list = await res.json();
+      let diff = '';
+      const changed = [];
+      for (const f of (Array.isArray(list) ? list : [])) {
+        if (typeof f.patch !== 'string' || !f.patch) continue; // 二进制等无 patch 文件
+        const body = f.patch.startsWith('@@') ? f.patch
+          : f.patch.replace(/^diff --git[\s\S]*?(?=--- a\/)/, '');
+        diff += `diff --git a/${f.filename} b/${f.filename}\n`
+          + `${f.status === 'added' ? 'new file mode 100644\n' : ''}`
+          + `--- a/${f.previous_filename ?? f.filename}\n+++ b/${f.filename}\n${body}\n`;
+        changed.push({ path: f.filename });
+      }
+      if (!changed.length) throw new Error('ghp_files_no_patch');
+      return { diff, files: changed, head_sha: expectedHeadSha ?? null,
+        completeness: { status: 'complete', declared_file_count: changed.length } };
+    },
+    owner: row.owner, repoName: row.name, prNumber: ghPrNumber,
     assertServiceChain: async () => {
       const chk = await muPoolQuery(
         `SELECT 1 FROM mu.repository_binding rb
