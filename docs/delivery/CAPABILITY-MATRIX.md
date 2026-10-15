@@ -25,7 +25,7 @@
 | 12 | 权限可见化（身份/渠道/租户/角色/能力） | ✅ 已上线 | 无额外依赖 | `my_permissions` 服务端投影；页面按能力渲染按钮并给原因 |
 | 13 | 应用修复（机器人向 PR 提交修复 commit） | ✅ 已上线（#458 收口） | `apply_fix` 权限（maintainer+active binding）+机器人凭据（GitHub App installation / Gitee PAT） | #454~#458：preview/confirm 两步确认；确认绑定 `expected_remote_head`+`expected_patch_digest`（换版拒绝）；存储字节 digest 复核；数据库原子认领（并发败方零覆写）；两阶段写（候选 SHA 写前持久化）；超时/断连→result_uncertain+读回对账端点（恢复入口）；推送式条件更新（非快进远端拒绝）；幂等防重复 |
 | 14 | 新 head 自动重审 | ✅ 已上线（#458 收口） | event_sync 消费单元（与 webhook 同源）；Gitee 需 active forge 连接 / GitHub 需 active binding | apply 成功后自动按新提交入队重审（`trigger_source=apply_fix_reenqueue`）；同 (tenant,repo,pr,head) 已有 run 或待处理 job 即去重；入队失败可恢复（push 不回退，前端提示手动触发兜底） |
-| 15 | CI 资格消费（合并资格输入） | ✅ 已上线（#458 收口，严格语义） | CI 状态读取凭据（GitHub installation / Gitee PAT）；目标 head 实际有 CI 在运行 | 合并资格门读取当前 head 的平台提交状态：全 success=放行；pending/failed=阻塞；无任何状态=**not_configured 阻塞**（不冒充通过）；API 不可用=unsupported 阻塞。仓库没有 CI 时合并会被资格门如实拦下——这是有意设计，不是缺陷 |
+| 15 | CI 资格消费（合并资格输入） | ✅ 已上线（#458 收口+#464 双面判定） | CI 状态读取凭据（GitHub installation / Gitee PAT）；目标 head 实际有 CI 在运行 | GitHub 读 combined status **与** check runs 双面（Actions-only 仓库覆盖；完整分页；未知结论阻塞；双面读取任一失败=unknown 阻塞不退化）；Gitee 当前连接器 status 读取不支持（实测 404）=unsupported 阻塞。仓库没有 CI 时合并被资格门如实拦下——有意设计，不是缺陷 |
 | 16 | 确认合并（merge_pr） | ✅ 已上线（#458 收口，统一资格门） | `merge_pr` 权限；平台保护规则照常生效（不绕过） | preview/confirm 同一资格判定（confirm 重读远端）：PR 开放+head 一致+mergeable 已知且可合并（null 不放行）+当前 head 审查完成且无未处理 P0/P1（旧 head 证据不可替代）+当前 head 真实 CI 通过；平台保护/审查门合并时由平台强制（Gitee 实测两次真实拒绝如实呈现）；响应丢失→result_uncertain+按 PR 实际状态读回定案；已合并后重复确认幂等返回 |
 | 17 | 本地 RAG 检索（可选） | ✅ 已上线 | bge-m3 sidecar + 模型卷 manifest + `RAGTRIAL_*` | 检索结果仅作 reference，不参与风险决策 |
 
