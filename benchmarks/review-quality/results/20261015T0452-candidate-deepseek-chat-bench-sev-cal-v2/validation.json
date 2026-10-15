@@ -1,0 +1,387 @@
+{
+  "manifest_drift": [],
+  "cases": [
+    {
+      "case_id": "CASE-01",
+      "ok": true,
+      "failure_class": null,
+      "detail": "defect 测试失败 / fixed 测试通过 / 目标文件在 diff 中 / 规格完备",
+      "spec": {
+        "case_id": "CASE-01",
+        "trial_origin": {
+          "sample_name": "q1-loop-reverse",
+          "source": "r3work/rc26-release/trial/build-samples.py（内容逐字复用，不新造缺陷）",
+          "trial_evidence_status": "不完整——trial 波 Q1-Q3 的 run 分支继承内容与目标缺陷混杂，未做不实归因（QUALITY-REPORT §三）"
+        },
+        "name": "倒序循环漏掉首元素",
+        "target_file": "src/q1.js",
+        "test_file": "tests/q1.test.js",
+        "defect_description": "reverseJoin 从 items.length-1 倒序循环但条件写 i > 0，首元素（index 0）永不参与拼接——输出缺首元素。",
+        "expected_behaviors": [
+          {
+            "call": "reverseJoin(['a','b','c'], '|')",
+            "want": "'c|b|a'"
+          },
+          {
+            "call": "reverseJoin(['only'], '|')",
+            "want": "'only'"
+          }
+        ],
+        "evaluation_rules": {
+          "target_path": "src/q1.js",
+          "defect_marker_patterns": [
+            "i\\s*>\\s*0",
+            "skip.{0,24}first",
+            "首.{0,8}(元素|个|项)",
+            "循环.{0,16}(边界|起点|漏|少)",
+            "(miss|omit|skip|exclude).{0,24}(index 0|first|element)",
+            "index.{0,6}0.{0,24}(skip|exclud|miss|漏)"
+          ],
+          "expected_severity": {
+            "value": "P2",
+            "provenance": "registered_by_analogy",
+            "rationale": "功能输出错误（与 CASE-06 同类：结果错误但可控、不崩溃/不泄密）；trial 波无本样本的合格 LLM 定级证据，按缺陷影响登记，非 trial 实测定级"
+          },
+          "severity_tolerance": 1
+        }
+      },
+      "target_file": "src/q1.js",
+      "test_file": "tests/q1.test.js",
+      "diffs": {
+        "defect": "diff --git a/src/q1.js b/src/q1.js\nnew file mode 100755\nindex 0000000..e55fcd8\n--- /dev/null\n+++ b/src/q1.js\n@@ -0,0 +1,8 @@\n+function reverseJoin(items, sep) {\n+  let out = '';\n+  for (let i = items.length - 1; i > 0; i--) {\n+    out += (out ? sep : '') + items[i];\n+  }\n+  return out;\n+}\n+module.exports = { reverseJoin };\ndiff --git a/tests/q1.test.js b/tests/q1.test.js\nnew file mode 100755\nindex 0000000..f5ae9e5\n--- /dev/null\n+++ b/tests/q1.test.js\n@@ -0,0 +1,5 @@\n+const { reverseJoin } = require('../src/q1.js');\n+const assert = require('node:assert');\n+assert.strictEqual(reverseJoin(['a', 'b', 'c'], '|'), 'c|b|a', 'all');\n+assert.strictEqual(reverseJoin(['only'], '|'), 'only', 'single');\n+console.log('q1 passed');\n",
+        "fixed": "diff --git a/src/q1.js b/src/q1.js\nnew file mode 100755\nindex 0000000..5e9503e\n--- /dev/null\n+++ b/src/q1.js\n@@ -0,0 +1,8 @@\n+function reverseJoin(items, sep) {\n+  let out = '';\n+  for (let i = items.length - 1; i >= 0; i--) {\n+    out += (out ? sep : '') + items[i];\n+  }\n+  return out;\n+}\n+module.exports = { reverseJoin };\ndiff --git a/tests/q1.test.js b/tests/q1.test.js\nnew file mode 100755\nindex 0000000..f5ae9e5\n--- /dev/null\n+++ b/tests/q1.test.js\n@@ -0,0 +1,5 @@\n+const { reverseJoin } = require('../src/q1.js');\n+const assert = require('node:assert');\n+assert.strictEqual(reverseJoin(['a', 'b', 'c'], '|'), 'c|b|a', 'all');\n+assert.strictEqual(reverseJoin(['only'], '|'), 'only', 'single');\n+console.log('q1 passed');\n"
+      },
+      "test_runs": {
+        "defect": {
+          "code": 1,
+          "output": "4:19)\n    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)\n    at node:internal/main/run_main_module:36:49 {\n  generatedMessage: false,\n  code: 'ERR_ASSERTION',\n  actual: 'c|b',\n  expected: 'c|b|a',\n  operator: 'strictEqual',\n  diff: 'simple'\n}\n\nNode.js v22.23.3\n"
+        },
+        "fixed": {
+          "code": 0,
+          "output": "q1 passed\n"
+        }
+      },
+      "base_commit": "b16eb8474bdd3f7082f6c5e169653ad49a606569"
+    },
+    {
+      "case_id": "CASE-02",
+      "ok": true,
+      "failure_class": null,
+      "detail": "defect 测试失败 / fixed 测试通过 / 目标文件在 diff 中 / 规格完备",
+      "spec": {
+        "case_id": "CASE-02",
+        "trial_origin": {
+          "sample_name": "q2-null-input",
+          "source": "r3work/rc26-release/trial/build-samples.py（内容逐字复用，不新造缺陷）",
+          "trial_evidence_status": "定性可用、定级有偏差——trial 波测得 LLM 将此类缺陷评 P3，实际缺陷影响为 P2（severity 偏差先例，任务定性材料）；run 分支继承混杂，逐条 finding 不做归因"
+        },
+        "name": "null 输入未防护直接 TypeError",
+        "target_file": "src/q2.js",
+        "test_file": "tests/q2.test.js",
+        "defect_description": "initials 对 name 直接调用 .trim()，null/undefined 输入抛 TypeError——调用方传空值即崩溃。",
+        "expected_behaviors": [
+          {
+            "call": "initials('John Doe')",
+            "want": "'J.D'"
+          },
+          {
+            "call": "initials('')",
+            "want": "''"
+          },
+          {
+            "call": "initials(null)",
+            "want": "''"
+          }
+        ],
+        "evaluation_rules": {
+          "target_path": "src/q2.js",
+          "defect_marker_patterns": [
+            "null",
+            "undefined",
+            "空值",
+            "未校验",
+            "no.{0,12}(check|guard|validation)",
+            "TypeError",
+            "\\.trim",
+            "crash"
+          ],
+          "expected_severity": {
+            "value": "P2",
+            "provenance": "trial_qualitative",
+            "rationale": "trial 定性：真实缺陷、应为 P2（运行时崩溃），LLM 曾评 P3 属严重度偏差"
+          },
+          "severity_tolerance": 1
+        }
+      },
+      "target_file": "src/q2.js",
+      "test_file": "tests/q2.test.js",
+      "diffs": {
+        "defect": "diff --git a/src/q2.js b/src/q2.js\nnew file mode 100755\nindex 0000000..3b72973\n--- /dev/null\n+++ b/src/q2.js\n@@ -0,0 +1,4 @@\n+function initials(name) {\n+  return name.trim().split(/\\s+/).map(w => w[0].toUpperCase()).join('.');\n+}\n+module.exports = { initials };\ndiff --git a/tests/q2.test.js b/tests/q2.test.js\nnew file mode 100755\nindex 0000000..f972357\n--- /dev/null\n+++ b/tests/q2.test.js\n@@ -0,0 +1,6 @@\n+const { initials } = require('../src/q2.js');\n+const assert = require('node:assert');\n+assert.strictEqual(initials('John Doe'), 'J.D', 'normal');\n+assert.strictEqual(initials(''), '', 'empty');\n+assert.strictEqual(initials(null), '', 'null');\n+console.log('q2 passed');\n",
+        "fixed": "diff --git a/src/q2.js b/src/q2.js\nnew file mode 100755\nindex 0000000..7763e26\n--- /dev/null\n+++ b/src/q2.js\n@@ -0,0 +1,5 @@\n+function initials(name) {\n+  if (!name) return '';\n+  return name.trim().split(/\\s+/).map(w => w[0].toUpperCase()).join('.');\n+}\n+module.exports = { initials };\ndiff --git a/tests/q2.test.js b/tests/q2.test.js\nnew file mode 100755\nindex 0000000..f972357\n--- /dev/null\n+++ b/tests/q2.test.js\n@@ -0,0 +1,6 @@\n+const { initials } = require('../src/q2.js');\n+const assert = require('node:assert');\n+assert.strictEqual(initials('John Doe'), 'J.D', 'normal');\n+assert.strictEqual(initials(''), '', 'empty');\n+assert.strictEqual(initials(null), '', 'null');\n+console.log('q2 passed');\n"
+      },
+      "test_runs": {
+        "defect": {
+          "code": 1,
+          "output": "\n    at Module.load (node:internal/modules/cjs/loader:1505:32)\n    at Function._load (node:internal/modules/cjs/loader:1309:12)\n    at wrapModuleLoad (node:internal/modules/cjs/loader:254:19)\n    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)\n\nNode.js v22.23.3\n"
+        },
+        "fixed": {
+          "code": 0,
+          "output": "q2 passed\n"
+        }
+      },
+      "base_commit": "b16eb8474bdd3f7082f6c5e169653ad49a606569"
+    },
+    {
+      "case_id": "CASE-03",
+      "ok": true,
+      "failure_class": null,
+      "detail": "defect 测试失败 / fixed 测试通过 / 目标文件在 diff 中 / 规格完备",
+      "spec": {
+        "case_id": "CASE-03",
+        "trial_origin": {
+          "sample_name": "q3-zero-div",
+          "source": "r3work/rc26-release/trial/build-samples.py（内容逐字复用，不新造缺陷）",
+          "trial_evidence_status": "定性可用、定级有偏差——trial 波测得 LLM 将此类缺陷评 P3，实际缺陷影响为 P2；另 trial 波 Q3 空commit重触发机制未被 coverage 覆盖（任务定性材料），本样本以固定干净基线消除该坑"
+        },
+        "name": "total 为 0 时除零得 NaN",
+        "target_file": "src/q3.js",
+        "test_file": "tests/q3.test.js",
+        "defect_description": "pct 在 total=0 时执行除零得 NaN，Math.round(NaN)=NaN——调用方拿到 NaN 污染下游统计。",
+        "expected_behaviors": [
+          {
+            "call": "pct(3, 9)",
+            "want": "33"
+          },
+          {
+            "call": "pct(3, 0)",
+            "want": "0"
+          }
+        ],
+        "evaluation_rules": {
+          "target_path": "src/q3.js",
+          "defect_marker_patterns": [
+            "divis",
+            "除(零|以零|法)",
+            "zero",
+            "零",
+            "NaN",
+            "total.{0,24}(0|zero|empty|falsy)",
+            "guard",
+            "防护"
+          ],
+          "expected_severity": {
+            "value": "P2",
+            "provenance": "trial_qualitative",
+            "rationale": "trial 定性：真实缺陷、应为 P2（数据正确性污染），LLM 曾评 P3 属严重度偏差"
+          },
+          "severity_tolerance": 1
+        }
+      },
+      "target_file": "src/q3.js",
+      "test_file": "tests/q3.test.js",
+      "diffs": {
+        "defect": "diff --git a/src/q3.js b/src/q3.js\nnew file mode 100755\nindex 0000000..eea3487\n--- /dev/null\n+++ b/src/q3.js\n@@ -0,0 +1,4 @@\n+function pct(part, total) {\n+  return Math.round((part / total) * 100);\n+}\n+module.exports = { pct };\ndiff --git a/tests/q3.test.js b/tests/q3.test.js\nnew file mode 100755\nindex 0000000..4b2e9c4\n--- /dev/null\n+++ b/tests/q3.test.js\n@@ -0,0 +1,5 @@\n+const { pct } = require('../src/q3.js');\n+const assert = require('node:assert');\n+assert.strictEqual(pct(3, 9), 33, 'normal');\n+assert.strictEqual(pct(3, 0), 0, 'zero total');\n+console.log('q3 passed');\n",
+        "fixed": "diff --git a/src/q3.js b/src/q3.js\nnew file mode 100755\nindex 0000000..b858da6\n--- /dev/null\n+++ b/src/q3.js\n@@ -0,0 +1,5 @@\n+function pct(part, total) {\n+  if (!total) return 0;\n+  return Math.round((part / total) * 100);\n+}\n+module.exports = { pct };\ndiff --git a/tests/q3.test.js b/tests/q3.test.js\nnew file mode 100755\nindex 0000000..4b2e9c4\n--- /dev/null\n+++ b/tests/q3.test.js\n@@ -0,0 +1,5 @@\n+const { pct } = require('../src/q3.js');\n+const assert = require('node:assert');\n+assert.strictEqual(pct(3, 9), 33, 'normal');\n+assert.strictEqual(pct(3, 0), 0, 'zero total');\n+console.log('q3 passed');\n"
+      },
+      "test_runs": {
+        "defect": {
+          "code": 1,
+          "output": ":254:19)\n    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)\n    at node:internal/main/run_main_module:36:49 {\n  generatedMessage: false,\n  code: 'ERR_ASSERTION',\n  actual: Infinity,\n  expected: 0,\n  operator: 'strictEqual',\n  diff: 'simple'\n}\n\nNode.js v22.23.3\n"
+        },
+        "fixed": {
+          "code": 0,
+          "output": "q3 passed\n"
+        }
+      },
+      "base_commit": "b16eb8474bdd3f7082f6c5e169653ad49a606569"
+    },
+    {
+      "case_id": "CASE-04",
+      "ok": true,
+      "failure_class": null,
+      "detail": "defect 测试失败 / fixed 测试通过 / 目标文件在 diff 中 / 规格完备",
+      "spec": {
+        "case_id": "CASE-04",
+        "trial_origin": {
+          "sample_name": "q4-range-excl",
+          "source": "r3work/rc26-release/trial/build-samples.py（内容逐字复用，不新造缺陷）",
+          "trial_evidence_status": "合格可直接复用——run 8883edfe（PR#6, head cc5e565）：LLM 命中 P1「inRange 边界不含」，DONE 3293ms，静态命中 0（QUALITY-REPORT §二/§六）"
+        },
+        "name": "范围边界排除了等于（不含边界）",
+        "target_file": "src/q4.js",
+        "test_file": "tests/q4.test.js",
+        "defect_description": "inRange 用 v > min && v < max，边界值 min/max 本身被判为不在范围内——范围语义应为闭区间。",
+        "expected_behaviors": [
+          {
+            "call": "inRange(5, 1, 10)",
+            "want": "true"
+          },
+          {
+            "call": "inRange(1, 1, 10)",
+            "want": "true（边界 min 应含）"
+          },
+          {
+            "call": "inRange(10, 1, 10)",
+            "want": "true（边界 max 应含）"
+          }
+        ],
+        "evaluation_rules": {
+          "target_path": "src/q4.js",
+          "defect_marker_patterns": [
+            ">=",
+            "<=",
+            "inclusiv",
+            "包含",
+            "含边界",
+            "边界",
+            "boundar",
+            "(exclud|排除).{0,20}(equal|等于|边界)",
+            "strictly"
+          ],
+          "expected_severity": {
+            "value": "P1",
+            "provenance": "trial_measured",
+            "rationale": "trial 实测：run 8883edfe LLM 定 P1 且审批门 P1→WAITING 行为正确（QUALITY-REPORT §四）"
+          },
+          "severity_tolerance": 1
+        }
+      },
+      "target_file": "src/q4.js",
+      "test_file": "tests/q4.test.js",
+      "diffs": {
+        "defect": "diff --git a/src/q4.js b/src/q4.js\nnew file mode 100755\nindex 0000000..e571bd5\n--- /dev/null\n+++ b/src/q4.js\n@@ -0,0 +1,4 @@\n+function inRange(v, min, max) {\n+  return v > min && v < max;\n+}\n+module.exports = { inRange };\ndiff --git a/tests/q4.test.js b/tests/q4.test.js\nnew file mode 100755\nindex 0000000..8096ee2\n--- /dev/null\n+++ b/tests/q4.test.js\n@@ -0,0 +1,6 @@\n+const { inRange } = require('../src/q4.js');\n+const assert = require('node:assert');\n+assert.strictEqual(inRange(5, 1, 10), true, 'mid');\n+assert.strictEqual(inRange(1, 1, 10), true, 'min');\n+assert.strictEqual(inRange(10, 1, 10), true, 'max');\n+console.log('q4 passed');\n",
+        "fixed": "diff --git a/src/q4.js b/src/q4.js\nnew file mode 100755\nindex 0000000..9aa355a\n--- /dev/null\n+++ b/src/q4.js\n@@ -0,0 +1,4 @@\n+function inRange(v, min, max) {\n+  return v >= min && v <= max;\n+}\n+module.exports = { inRange };\ndiff --git a/tests/q4.test.js b/tests/q4.test.js\nnew file mode 100755\nindex 0000000..8096ee2\n--- /dev/null\n+++ b/tests/q4.test.js\n@@ -0,0 +1,6 @@\n+const { inRange } = require('../src/q4.js');\n+const assert = require('node:assert');\n+assert.strictEqual(inRange(5, 1, 10), true, 'mid');\n+assert.strictEqual(inRange(1, 1, 10), true, 'min');\n+assert.strictEqual(inRange(10, 1, 10), true, 'max');\n+console.log('q4 passed');\n"
+      },
+      "test_runs": {
+        "defect": {
+          "code": 1,
+          "output": ":254:19)\n    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)\n    at node:internal/main/run_main_module:36:49 {\n  generatedMessage: false,\n  code: 'ERR_ASSERTION',\n  actual: false,\n  expected: true,\n  operator: 'strictEqual',\n  diff: 'simple'\n}\n\nNode.js v22.23.3\n"
+        },
+        "fixed": {
+          "code": 0,
+          "output": "q4 passed\n"
+        }
+      },
+      "base_commit": "b16eb8474bdd3f7082f6c5e169653ad49a606569"
+    },
+    {
+      "case_id": "CASE-05",
+      "ok": true,
+      "failure_class": null,
+      "detail": "defect 测试失败 / fixed 测试通过 / 目标文件在 diff 中 / 规格完备",
+      "spec": {
+        "case_id": "CASE-05",
+        "trial_origin": {
+          "sample_name": "q5-missing-return",
+          "source": "r3work/rc26-release/trial/build-samples.py（内容逐字复用，不新造缺陷）",
+          "trial_evidence_status": "合格可直接复用——run f56e249f（PR#5, head ceed8cd）：纯逻辑缺陷零静态命中，LLM 命中 P1「async 漏 return」，DONE 2465ms（QUALITY-REPORT §二/§六）"
+        },
+        "name": "async 函数漏 return（恒 undefined）",
+        "target_file": "src/q5.js",
+        "test_file": "tests/q5.test.js",
+        "defect_description": "double 为 async 但未 return delayed(...)，调用方 await double(21) 得 undefined 而非 42。",
+        "expected_behaviors": [
+          {
+            "call": "await double(21)",
+            "want": "42"
+          }
+        ],
+        "evaluation_rules": {
+          "target_path": "src/q5.js",
+          "defect_marker_patterns": [
+            "return",
+            "漏(返回|return)",
+            "missing.{0,16}return",
+            "undefined",
+            "await",
+            "promise",
+            "Promise"
+          ],
+          "expected_severity": {
+            "value": "P1",
+            "provenance": "trial_measured",
+            "rationale": "trial 实测：run f56e249f LLM 定 P1（QUALITY-REPORT §四）"
+          },
+          "severity_tolerance": 1
+        }
+      },
+      "target_file": "src/q5.js",
+      "test_file": "tests/q5.test.js",
+      "diffs": {
+        "defect": "diff --git a/src/q5.js b/src/q5.js\nnew file mode 100755\nindex 0000000..72eaeda\n--- /dev/null\n+++ b/src/q5.js\n@@ -0,0 +1,7 @@\n+function delayed(v, ms) {\n+  return new Promise(r => setTimeout(() => r(v), ms));\n+}\n+async function double(x) {\n+  delayed(x * 2, 10);\n+}\n+module.exports = { double };\ndiff --git a/tests/q5.test.js b/tests/q5.test.js\nnew file mode 100755\nindex 0000000..969e261\n--- /dev/null\n+++ b/tests/q5.test.js\n@@ -0,0 +1,6 @@\n+const { double } = require('../src/q5.js');\n+const assert = require('node:assert');\n+(async () => {\n+  assert.strictEqual(await double(21), 42, 'double');\n+  console.log('q5 passed');\n+})().catch(e => { console.error(e.message); process.exit(1); });\n",
+        "fixed": "diff --git a/src/q5.js b/src/q5.js\nnew file mode 100755\nindex 0000000..c2db31a\n--- /dev/null\n+++ b/src/q5.js\n@@ -0,0 +1,7 @@\n+function delayed(v, ms) {\n+  return new Promise(r => setTimeout(() => r(v), ms));\n+}\n+async function double(x) {\n+  return delayed(x * 2, 10);\n+}\n+module.exports = { double };\ndiff --git a/tests/q5.test.js b/tests/q5.test.js\nnew file mode 100755\nindex 0000000..969e261\n--- /dev/null\n+++ b/tests/q5.test.js\n@@ -0,0 +1,6 @@\n+const { double } = require('../src/q5.js');\n+const assert = require('node:assert');\n+(async () => {\n+  assert.strictEqual(await double(21), 42, 'double');\n+  console.log('q5 passed');\n+})().catch(e => { console.error(e.message); process.exit(1); });\n"
+      },
+      "test_runs": {
+        "defect": {
+          "code": 1,
+          "output": "double\n\nundefined !== 42\n\n"
+        },
+        "fixed": {
+          "code": 0,
+          "output": "q5 passed\n"
+        }
+      },
+      "base_commit": "b16eb8474bdd3f7082f6c5e169653ad49a606569"
+    },
+    {
+      "case_id": "CASE-06",
+      "ok": true,
+      "failure_class": null,
+      "detail": "defect 测试失败 / fixed 测试通过 / 目标文件在 diff 中 / 规格完备",
+      "spec": {
+        "case_id": "CASE-06",
+        "trial_origin": {
+          "sample_name": "q6-replace-first",
+          "source": "r3work/rc26-release/trial/build-samples.py（内容逐字复用，不新造缺陷）",
+          "trial_evidence_status": "合格可直接复用——run 1c7edcf2（PR#8, head 6825efc）：LLM 命中 P2「slugify 只换首个」，DONE 2728ms，静态命中 0（QUALITY-REPORT §二/§六）"
+        },
+        "name": "replace 只替换首个匹配",
+        "target_file": "src/q6.js",
+        "test_file": "tests/q6.test.js",
+        "defect_description": "slugify 用字符串参数 s.replace(' ', '-')，JS 语义只替换第一处空格——多空格输入产出非法 slug。",
+        "expected_behaviors": [
+          {
+            "call": "slugify('a b c')",
+            "want": "'a-b-c'"
+          }
+        ],
+        "evaluation_rules": {
+          "target_path": "src/q6.js",
+          "defect_marker_patterns": [
+            "replace",
+            "只(替换|换|处理).{0,10}(第一|首个|一次|一个)",
+            "first.{0,16}(occurrence|only|match)",
+            "global",
+            "/\\s*/g|/ /g",
+            "所有.{0,6}(空格|匹配)",
+            "all.{0,12}(space|match|occurrence)"
+          ],
+          "expected_severity": {
+            "value": "P2",
+            "provenance": "trial_measured",
+            "rationale": "trial 实测：run 1c7edcf2 LLM 定 P2 且审批门 P2→REVIEWED 行为正确（QUALITY-REPORT §四）"
+          },
+          "severity_tolerance": 1
+        }
+      },
+      "target_file": "src/q6.js",
+      "test_file": "tests/q6.test.js",
+      "diffs": {
+        "defect": "diff --git a/src/q6.js b/src/q6.js\nnew file mode 100755\nindex 0000000..bdbdc93\n--- /dev/null\n+++ b/src/q6.js\n@@ -0,0 +1,4 @@\n+function slugify(s) {\n+  return s.replace(' ', '-').toLowerCase();\n+}\n+module.exports = { slugify };\ndiff --git a/tests/q6.test.js b/tests/q6.test.js\nnew file mode 100755\nindex 0000000..c305b06\n--- /dev/null\n+++ b/tests/q6.test.js\n@@ -0,0 +1,4 @@\n+const { slugify } = require('../src/q6.js');\n+const assert = require('node:assert');\n+assert.strictEqual(slugify('a b c'), 'a-b-c', 'three');\n+console.log('q6 passed');\n",
+        "fixed": "diff --git a/src/q6.js b/src/q6.js\nnew file mode 100755\nindex 0000000..ee39d79\n--- /dev/null\n+++ b/src/q6.js\n@@ -0,0 +1,4 @@\n+function slugify(s) {\n+  return s.replace(/ /g, '-').toLowerCase();\n+}\n+module.exports = { slugify };\ndiff --git a/tests/q6.test.js b/tests/q6.test.js\nnew file mode 100755\nindex 0000000..c305b06\n--- /dev/null\n+++ b/tests/q6.test.js\n@@ -0,0 +1,4 @@\n+const { slugify } = require('../src/q6.js');\n+const assert = require('node:assert');\n+assert.strictEqual(slugify('a b c'), 'a-b-c', 'three');\n+console.log('q6 passed');\n"
+      },
+      "test_runs": {
+        "defect": {
+          "code": 1,
+          "output": "19)\n    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)\n    at node:internal/main/run_main_module:36:49 {\n  generatedMessage: false,\n  code: 'ERR_ASSERTION',\n  actual: 'a-b c',\n  expected: 'a-b-c',\n  operator: 'strictEqual',\n  diff: 'simple'\n}\n\nNode.js v22.23.3\n"
+        },
+        "fixed": {
+          "code": 0,
+          "output": "q6 passed\n"
+        }
+      },
+      "base_commit": "b16eb8474bdd3f7082f6c5e169653ad49a606569"
+    }
+  ],
+  "all_ok": true
+}

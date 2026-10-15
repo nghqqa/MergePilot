@@ -1,0 +1,146 @@
+{
+  "by_mode": {
+    "real": {
+      "llm_mode": "real",
+      "call_completion": {
+        "numerator": 12,
+        "denominator": 12,
+        "failed": []
+      },
+      "target_hit_rate": {
+        "numerator": 6,
+        "denominator": 6,
+        "hit_cases": [
+          "CASE-01",
+          "CASE-02",
+          "CASE-03",
+          "CASE-04",
+          "CASE-05",
+          "CASE-06"
+        ],
+        "misses": [],
+        "excluded_call_failed": []
+      },
+      "clean_false_positives": {
+        "numerator": 10,
+        "denominator": 6,
+        "per_case": [
+          {
+            "case_id": "CASE-01",
+            "false_positives": 2
+          },
+          {
+            "case_id": "CASE-02",
+            "false_positives": 1
+          },
+          {
+            "case_id": "CASE-03",
+            "false_positives": 2
+          },
+          {
+            "case_id": "CASE-04",
+            "false_positives": 2
+          },
+          {
+            "case_id": "CASE-05",
+            "false_positives": 1
+          },
+          {
+            "case_id": "CASE-06",
+            "false_positives": 2
+          }
+        ]
+      },
+      "precision": {
+        "numerator": 8,
+        "denominator": 18,
+        "class_counts": {
+          "true_defect": 8,
+          "duplicate_report": 0,
+          "false_positive": 10,
+          "ambiguous_spec": 0,
+          "general_suggestion": 8
+        }
+      },
+      "severity_consistency": {
+        "exact_numerator": 4,
+        "tolerance_numerator": 8,
+        "denominator": 8,
+        "deviations": [],
+        "detail": [
+          {
+            "case_id": "CASE-01",
+            "expected": "P2",
+            "rated": "P1",
+            "deviation": -1,
+            "exact": false,
+            "within_tolerance": true
+          },
+          {
+            "case_id": "CASE-02",
+            "expected": "P2",
+            "rated": "P1",
+            "deviation": -1,
+            "exact": false,
+            "within_tolerance": true
+          },
+          {
+            "case_id": "CASE-02",
+            "expected": "P2",
+            "rated": "P3",
+            "deviation": 1,
+            "exact": false,
+            "within_tolerance": true
+          },
+          {
+            "case_id": "CASE-03",
+            "expected": "P2",
+            "rated": "P2",
+            "deviation": 0,
+            "exact": true,
+            "within_tolerance": true
+          },
+          {
+            "case_id": "CASE-03",
+            "expected": "P2",
+            "rated": "P3",
+            "deviation": 1,
+            "exact": false,
+            "within_tolerance": true
+          },
+          {
+            "case_id": "CASE-04",
+            "expected": "P1",
+            "rated": "P1",
+            "deviation": 0,
+            "exact": true,
+            "within_tolerance": true
+          },
+          {
+            "case_id": "CASE-05",
+            "expected": "P1",
+            "rated": "P1",
+            "deviation": 0,
+            "exact": true,
+            "within_tolerance": true
+          },
+          {
+            "case_id": "CASE-06",
+            "expected": "P2",
+            "rated": "P2",
+            "deviation": 0,
+            "exact": true,
+            "within_tolerance": true
+          }
+        ]
+      },
+      "coverage": {
+        "numerator": 12,
+        "denominator": 12,
+        "truncated_runs": 0,
+        "target_file_covered_runs": 12
+      }
+    }
+  },
+  "generated_at": "2026-10-15T04:51:32.398Z"
+}
