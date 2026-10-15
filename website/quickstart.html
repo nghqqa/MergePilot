@@ -71,7 +71,7 @@ Console 或公网入口。详见 <a href="multitenant-webhook.html">多租户与
 
 <h2>1. 获取源码与模板</h2>
 <pre><code>git clone https://github.com/nghqqa/MergePilot.git
-cd MergePilot &amp;&amp; git checkout v0.2.0-beta.6-rc.19
+cd MergePilot &amp;&amp; git checkout v0.2.0-beta.6-rc.35.5
 cd deploy/selfhost</code></pre>
 
 <h2>2. 填写配置</h2>
@@ -86,14 +86,16 @@ App 的创建步骤见 <a href="multitenant-webhook.html">多租户与 webhook</
 docker compose --env-file .env up -d
 node preflight.mjs --live             # 启动后活体探测
 curl http://127.0.0.1:48500/api/health</code></pre>
-<p>首次启动自动完成数据库 schema 初始化（至 v23），无需手工建表。</p>
+<p>首次启动自动完成数据库 schema 初始化（至 v29），无需手工建表。</p>
 
 <h2>4. 创建管理员</h2>
 <p>打开 <code>http://127.0.0.1:48500/multiuser</code>，用 GitHub 登录。
 首个用户需要先经邀请：由既有管理员按你的 GitHub <strong>数字 user id</strong>
 创建邀请后重新登录即自动认领（见 <a href="multitenant-webhook.html">多租户与 webhook</a>）。
-空库的首个管理员可经一次性初始化命令创建（见 <a href="config-reference.html">配置参考</a> 的
-<code>MU_ALLOW_FIXTURE_LOGIN</code> 说明——完成后必须关闭）。</p>
+空库的<strong>首个平台管理员</strong>由部署者在数据库直授——邀请永不授予
+<code>platform_admin</code>（三层拒绝）。完整 SQL、硬校验与回退见仓库
+<code>deploy/selfhost/README.md</code>「首个平台管理员初始化（生产）」；
+<code>MU_ALLOW_FIXTURE_LOGIN</code> 仅限本机开发/首次建管临时使用，建完必须关闭。</p>
 
 <div class="warn">生产对外暴露：<strong>必须</strong>前置 TLS 反向代理并把回调地址改为 https 域名。
 生产 Webhook 地址必须<strong>公网 HTTPS 可达</strong>（转发到本机 48590，入口实现不限——
@@ -104,6 +106,6 @@ curl http://127.0.0.1:48500/api/health</code></pre>
 <p>下一步：<a href="selfhost-docker.html">Docker 自托管细节</a>。</p>
 </article>
 </main>
-<footer class="footer">MergePilot 0.2.0-beta.6-rc.22 · Apache-2.0</footer>
+<footer class="footer">MergePilot 0.2.0-beta.6-rc.35.5 · Apache-2.0</footer>
 </body>
 </html>

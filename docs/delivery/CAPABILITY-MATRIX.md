@@ -1,11 +1,15 @@
 # MergePilot 能力矩阵（交付口径）
 
-> 版本基线：**rc.35.5**（源码 main@bbe58e7 + B/C 集成）。本文描述**当前已上线的实际能力**与各能力的真实依赖；
+> 版本基线：**rc.35.5**（源码 main@af8b0022，生产镜像
+> `sha256:e30419990434c209de8d9de7fc11fc267d8c9e6fe0d99ff242eda69b7a61dd3a`；
+> 见 [RELEASE-rc.35.5.md](RELEASE-rc.35.5.md)）。本文描述**当前已上线的实际能力**与各能力的真实依赖；
 > 开发中的能力单独标注「开发中」，不与已上线能力混同。
-> 依赖符号：env=部署环境变量；DB=数据库表（schema 自动迁移至 v28）；执行器=AgentTeams 运行面；
+> 依赖符号：env=部署环境变量；DB=数据库表（schema 自动迁移至 v29）；执行器=AgentTeams 运行面；
 > 凭据=GitHub/Gitee/模型 key；模型授权=出站策略与同意记录。
 > 诊断：各项就绪状态可用 [`scripts/delivery/diagnose.mjs`](../../scripts/delivery/diagnose.mjs) 核查
 > （失败项会指向 [TROUBLESHOOTING.md](TROUBLESHOOTING.md) 对应条目）。
+> 首次使用路径与全流程步骤见 [USER-GUIDE.md](USER-GUIDE.md)；端到端演示材料见
+> [DEMO-PR12.md](DEMO-PR12.md)。
 
 ## 1. 主链能力一览
 
@@ -19,7 +23,7 @@
 | 6 | 修复审批门（P0/P1 票） | ✅ 已上线 | maintainer 角色 + DB `mu.fix_approval` | 逐 finding 具名票；**run 级全批准**才放行修复轮；拒绝/过期/陈旧 → run BLOCKED |
 | 7 | 修复轮（建议补丁生成，dry-run） | ✅ 已上线 | 执行器（`MU_EXECUTOR=agentteams` 七项）+ Matrix 三项 | 零远端写入；模型建议永不直接出站 |
 | 8 | 补丁版本化 | ✅ 已上线 | DB `mu.fix_patch`（schema v28） | `patch_version`/`patch_digest`/`active`；原始版本永不覆盖，修正链 `correction_of/kind` 留痕 |
-| 9 | 真实可应用性检查（五态） | ✅ 已上线 | 容器内 git + 仓库读取凭据（Gitee PAT） | `git apply --check` 对准确 head 实测；证据按 digest 绑定 |
+| 9 | 真实可应用性检查（五态） | ✅ 已上线 | 容器内 git + 仓库读取凭据（GitHub installation token / Gitee PAT） | `git apply --check` 对准确 head 实测；证据按 digest 绑定 |
 | 10 | 实际修复测试（fix test） | ✅ 已上线（可选） | `MU_FIX_TEST_CMDS`（部署级预批准命令映射） | 隔离副本：修复前测试须失败 → 应用补丁 → 修复后须通过；命令**只**来自部署配置 |
 | 11 | 审查结果发布到 PR 评论 | ✅ 已上线 | maintainer 角色（`decide_review`）+ 机器人凭据（GitHub App 安装 / Gitee PAT） | 预览→确认两步；发布前远端 head 复核（陈旧拒绝）；幂等原位更新 |
 | 12 | 权限可见化（身份/渠道/租户/角色/能力） | ✅ 已上线 | 无额外依赖 | `my_permissions` 服务端投影；页面按能力渲染按钮并给原因 |
@@ -33,15 +37,20 @@
 
 | 能力动作 | contributor | reviewer | maintainer | auditor | platform_admin |
 |---|:---:|:---:|:---:|:---:|:---:|
-| 查看仓库 / PR / 代码 / RAG 检索 | ✓ | ✓ | ✓ | — | ✓ |
-| 触发审查 / finding 反馈 | — | ✓ | ✓ | — | ✓ |
+| 查看仓库 / PR 元数据（`read_repository` / `read_pull_request`） | ✓ | ✓ | ✓ | — | ✓ |
+| 查看代码内容（`read_code_content`） | ✓ | ✓ | ✓ | — | **—** |
+| RAG 检索（`rag_query`） | ✓ | ✓ | ✓ | — | ✓ |
+| 触发审查 / finding 反馈（`request_review`） | — | ✓ | ✓ | — | ✓ |
 | **裁定与审批（`decide_review`：PR approve/reject、修复票、发布评论）** | — | — | **✓ 仅此角色** | — | — |
+| **应用修复（`apply_fix`：机器人提交修复 commit）/ 确认合并（`merge_pr`）** | — | — | **✓ 仅此角色**（另需 active Binding） | — | — |
 | 发起受控修复（`request_repair`，需 active Binding） | — | — | ✓ | — | ✓ |
 | 绑定 / 解绑仓库 | — | — | ✓ | — | ✓ |
-| 查看审计元数据 | — | — | — | ✓ | ✓ |
-| 成员/租户/实例配置、出站策略与同意（`manage_instance`） | — | — | — | — | ✓ |
+| 查看审计元数据（`read_audit`） | — | — | — | ✓（仅此） | ✓ |
+| 成员/租户/实例配置、出站策略与同意（`manage_membership` / `manage_instance`） | — | — | — | — | ✓ |
 
-设计原则：**平台管理与审查裁定刻意分离**——platform_admin 也无法审批/发布；
+设计原则：**角色不是单一递增链**——contributor→reviewer→maintainer 逐级递增；
+platform_admin 与 auditor 是独立线。**平台管理与审查裁定刻意分离**——platform_admin
+也无法审批/发布/应用/合并，且**刻意无 `read_code_content`**（不读代码内容）；
 默认拒绝 fail-closed，拒绝原因以稳定机器码留痕（`MU_BINDING_REQUIRED` / `action_not_granted` 等）。
 邀请永不授予 `platform_admin`（API/认领守卫/DB CHECK 三层拒绝）。
 
@@ -49,18 +58,20 @@
 
 | 依赖类别 | 具体项 | 影响的能力 |
 |---|---|---|
-| DB schema | v27（review_output/fix_patch/finding_feedback/pr_publish）、v28（补丁版本化列）；启动自动迁移 | #4–#12 |
+| DB schema | v27（review_output/fix_patch/finding_feedback/pr_publish）、v28（补丁版本化列）、v29（`mu.fix_apply_operation`：应用修复与合并的操作记录/幂等键/候选 SHA/result_uncertain）；启动自动迁移 | #4–#16 |
 | env | `POSTGRES_PASSWORD`、`CONSOLE_SESSION_SECRET` | 全部 |
 | env | `MU_GITHUB_APP_ID/_APP_SLUG/_PRIVATE_KEY/_WEBHOOK_SECRET/_APP_INSTALL_CALLBACK_URL` | #1 #11（GitHub） |
 | env | `MU_GITHUB_OAUTH_CLIENT_ID/_SECRET/_CALLBACK_URL` | 登录（GitHub） |
-| env | `MU_GITEE_PAT` | Gitee 仓库连接 / 可应用性检查凭据 / #11（Gitee） |
+| env | `MU_GITEE_PAT` | Gitee 仓库连接 / 可应用性检查凭据 / #11 #13 #16（Gitee） |
+| env | `MU_GITEE_OAUTH_CLIENT_ID/_CLIENT_SECRET/_CALLBACK_URL` | 登录（Gitee，可选；缺任一项登录页不渲染 Gitee 入口） |
 | env | `MU_GITEE_OAUTH_CLIENT_ID/_SECRET/_CALLBACK_URL` | 登录（Gitee） |
 | env | `MU_LLM_PROVIDER/BASE_URL/MODEL/API_KEY`、`MU_LLM_ALLOWED_MODELS` | #3 |
 | env | `MU_EXECUTOR` + AgentTeams 七项（base_url/token/runtime/model + Matrix url/user/password） | #7 |
 | env | `MU_FIX_TEST_CMDS`（JSON 映射 `provider:owner/repo → 命令`） | #10 |
 | env | `MU_JOB_CONSUMER_ENABLED`（默认开）/ `MU_JOB_CONSUMER_INTERVAL_MS`（默认 45000） | #1 自动消费 |
 | 控制台策略 | 「运行策略」= llm_assist + 模型 ∈ 白名单；「出站策略」= external_api + 同意 | #3 |
-| 凭据 | GitHub App 安装（installation active + binding active） | #1 #11 |
+| 凭据 | GitHub App 安装（installation active + binding active） | #1 #9 #11 #13 #15 #16 |
+| GitHub App 权限 | 审查只读面：Metadata/Contents/Pull requests/Checks/Commit statuses/Administration 读；写侧（缺任一即对应能力 unsupported 并在界面报告）：Contents **Read and write**（#13 推送）、Pull requests **Read and write**（#16 合并）；CI 读面：Commit statuses 读 + Checks 读（#15 双面判定） | #1 #9 #11 #13 #15 #16 |
 | 执行器 | AgentTeams controller + Matrix worker room | #7 |
 
 ## 4. 事实源文件（本文各条目的代码出处）
@@ -74,5 +85,6 @@
 | 审批门（票/CAS/消费/STALE） | `console/backend/lib/multiuser/fix-approval.mjs` |
 | 补丁五态 / fix test / 预批准命令来源 | `patch-applicability.mjs`、`patch-test.mjs`、`agents/patch-test-cmd.mjs` |
 | 发布（head 复核/幂等/双平台） | `console/backend/lib/multiuser/publish.mjs`、`artifacts.mjs` |
-| schema v28 | `console/backend/lib/multiuser/schema.mjs` |
+| 应用修复/合并/读回对账（preview-confirm 绑定、原子认领、两阶段写、统一资格门、CI 双面判定） | `console/backend/lib/multiuser/fix-apply.mjs`、`remote-write.mjs`（端点在 `api.mjs`） |
+| schema v29 | `console/backend/lib/multiuser/schema.mjs` |
 | webhook 自动消费 | `console/backend/lib/multiuser/job-consumer.mjs` |

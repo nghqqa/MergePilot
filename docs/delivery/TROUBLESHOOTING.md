@@ -1,4 +1,4 @@
-# MergePilot 交付排障手册（rc.35.4 口径）
+# MergePilot 交付排障手册（rc.35.5 口径）
 
 > 按症状组织。每条：现象 → 原因 → 具体处理步骤。
 > 先跑只读诊断工具定位失败面（退出码 0=通过 / 1=有失败项）：
@@ -26,10 +26,10 @@
 处理：
 1. `docker compose ps` 确认 postgres healthy；`docker compose logs postgres` 看初始化错误。
 2. 确认 pgdata 卷未被旧实例占用（换过 `name:`/卷名会出现"两套数据"）。
-3. schema 由 console 启动时**自动迁移**（幂等、只前进，当前至 v28）。手动核对版本：
+3. schema 由 console 启动时**自动迁移**（幂等、只前进，当前至 v29）。手动核对版本：
    ```bash
    docker exec mergepilot-postgres-1 psql -U postgres -d mu -tAc \
-     "SELECT COALESCE(MAX(version),0) FROM mu.schema_migrations"   # 期望 >= 28
+     "SELECT COALESCE(MAX(version),0) FROM mu.schema_migrations"   # 期望 >= 29
    ```
 4. 不要手工改 mu schema；升级只换镜像 digest 后重启。schema 未就绪时审查接口如实拒绝（不降级带病服务）。
 
@@ -144,10 +144,11 @@
 
 处理：
 1. 写入身份固定为 **MergePilot GitHub App**（installation token）或 **MergePilot Gitee 机器人**
-   （部署 PAT）——发布预览页会明确显示，不会用个人账号发。
+   （部署 PAT）——发布/应用/合并预览页会明确显示，不会用个人账号发。
 2. GitHub App 需安装在目标仓库所在账号/组织；installation 被吊销/暂停后一切远端动作 fail-closed。
-3. 本版本机器人的**唯一**远端写动作是发布 PR 评论；不存在提交代码/合并路径（开发中能力见
-   [CAPABILITY-MATRIX](CAPABILITY-MATRIX.md)）。
+3. 机器人的远端写共**三类**，均为维护者逐次「预览 → 确认」：发布 PR 评论（`decide_review`）、
+   应用修复=机器人提交修复 commit（`apply_fix`）、合并 PR（`merge_pr`）。不存在任何
+   未经确认的自动写路径（能力与依赖见 [CAPABILITY-MATRIX](CAPABILITY-MATRIX.md)）。
 
 ## T-HTTP — 服务不可达 / health 异常
 
@@ -169,27 +170,49 @@
 
 ## T-APPLYMERGE — 应用修复 / 合并 PR 问题（rc.35.5）
 
-**现象**：应用/合并按钮置灰；confirm 报 4xx/409/502 机器码；状态卡在 `result_uncertain`。
+**现象**：应用/合并按钮置灰；confirm 报 4xx/409/502 机器码；CI 状态显示 pending/
+failed/unknown/not_configured/unsupported；状态卡在 `result_uncertain`。
 
 处理：
-1. **按钮置灰**：鼠标悬停看原因——历史 run（切最新 run）/ 无 `apply_fix`/`merge_pr` 权限
-   （仅维护者+active binding）/ 本轮无补丁。置灰原因全部用户可读，属预期防护。
-2. `invalid_confirm_fields`：确认请求缺少预览绑定字段（expected_remote_head /
+1. **按钮置灰**：鼠标悬停看原因——历史 run（切最新 run）/ 当前角色无 `apply_fix`/
+   `merge_pr` 权限（仅维护者）/ 本轮无补丁。置灰原因全部用户可读，属预期防护。
+2. **服务端拒绝 `action_not_granted` / `binding_required`**（无权限/未绑定）：
+   `apply_fix`/`merge_pr` 仅 maintainer 且要求**该仓库 active 绑定**。用维护者账号；
+   仓库未绑定或绑定被吊销 → maintainer 在「组织与接入」重新绑定（见 T-BINDING）。
+   platform_admin 也无此两权（平台管理与写操作分离，属设计）。
+3. `invalid_confirm_fields`：确认请求缺少预览绑定字段（expected_remote_head /
    expected_patch_digest / expected_head）——**必须从预览发起确认**，不能直接调 confirm 端点。
-3. `patch_changed`：预览后补丁被修正闭环更新了新版本——服务端拒绝静默应用新版本；
+4. `patch_changed`：预览后补丁被修正闭环更新了新版本——服务端拒绝静默应用新版本；
    重新预览后确认（确认的 digest=预览所示版本）。
-4. `stale_head` / `head_moved_since_preview`：远端 head 已推进或预览窗口内漂移——
+5. `stale_head` / `head_moved_since_preview`：远端 head 已推进或预览窗口内漂移——
    零写入；PR 更新后重新审查即可。
-5. `operation_in_progress`：同 (run, patch) 已有操作在执行（数据库原子认领持有中）——
+6. `operation_in_progress`：同 (run, patch) 已有操作在执行（数据库原子认领持有中）——
    稍后刷新查看；不会重复远端写。
-6. **`result_uncertain`（重要）**：推送/合并超时或响应丢失——操作记录已含候选提交 SHA。
+7. **`result_uncertain`（重要）**：推送/合并超时或响应丢失——操作记录已含候选提交 SHA。
    打开「应用修复与合并」区 → 历史操作中该操作带「读回对账」按钮 → 点击后系统读远端
    实际状态定案（已落地→committed/merged；未落地→failed 可安全重试）。**切勿不经对账直接重试**
-   （可能产生重复提交）。重启/刷新不会清锁——对账是唯一出口，无超时自动解锁（防重复写）。
-7. 合并报 `merge_not_eligible`：资格门给出具体原因（CI 未配置/运行中/未通过、当前 head 无
-   审查 run、存在未处理 P0/P1、mergeable 未知、PR 已关闭）——按提示补齐后重试。
-   仓库没有 CI 时合并会被拦（`ci_not_configured`）——有意设计：不冒充"CI 通过"。
-8. 平台保护拒绝（Gitee「未通过设置的审查/测试」等）：平台侧门在合并时强制执行，
-   本服务不绕过——在平台满足门后重试合并。
-9. GitHub 侧 403 "Resource not accessible by integration"：GitHub App 缺 **Contents: Read
-   and write** 权限（应用修复需要 contents 写；合并需要 PR 写）——App 设置补权限后重试。
+   （可能产生重复提交）。重启/刷新不会清锁——对账是唯一恢复入口，无超时自动解锁（防重复写）。
+8. **合并 CI 状态阻塞**（资格门条件 `ci_<state>`，每种状态都有原因）：
+   - `ci_pending`：目标 head 有 CI 正在运行——等待跑完再试；
+   - `ci_failed`：CI 失败——修好代码重跑，**不能跳过**（系统不冒充"CI 通过"）；
+   - `ci_unknown`：读取不完整（网络失败或双面读取任一面失败）——稍后重试；系统对
+     判定面不完整**不予放行**，不退化降级；
+   - `ci_not_configured`：该 head 没有任何 CI（combined status 与 check runs 两面全空）
+     ——仓库需要先配置真实 CI；这是**有意设计**：没有 CI 的仓库不允许合并；
+   - `ci_unsupported`：无 CI 读取权限或平台不支持——GitHub：App 设置补
+     **Commit statuses: read** 与 **Checks: read** 后重试（不用 PAT 绕过）；Gitee：当前
+     连接器 CI 状态读取不支持（实测两个 status 形态端点均 404）→ **Gitee 仓库合并恒被
+     阻塞**，此为连接器能力边界（不断言 Gitee 平台整体不存在相关 API），事实源见
+     [CAPABILITY-MATRIX](CAPABILITY-MATRIX.md)。
+9. 合并报 `merge_not_eligible`（CI 之外的资格条件）：当前 head 无审查 run
+   （`review_missing_for_head`）/ 审查 run 被阻塞或失败 / 存在未处理 P0/P1
+   （`blocking_findings_open`）/ mergeable 未知（`mergeable_unknown`，null 不放行）/
+   PR 已关闭——按提示补齐后重试。**旧 head 的审查/CI 证据不可替代当前 head**。
+10. 平台保护拒绝（Gitee「未通过设置的审查/测试」等）：平台侧门在合并时强制执行，
+    本服务不绕过——在平台满足门后重试合并。
+11. GitHub 侧 403 "Resource not accessible by integration"：GitHub App 缺 **Contents: Read
+    and write** 权限（应用修复需要 contents 写；合并需要 PR 写）——App 设置补权限后
+    重新授权安装，再重试。
+12. **重审入队失败**（应用成功后未出现新 head 的 run）：推送已成功、仅自动重审入队
+    失败——**不要重复应用**。PR 详情会提示用「发起审查」手动触发新 head 审查；
+    也可对该操作执行「读回对账」，系统会幂等补齐重审入队。

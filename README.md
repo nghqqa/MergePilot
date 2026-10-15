@@ -4,13 +4,15 @@
 
 [官网](https://docs.nghqqa.cn/) · [快速开始](https://docs.nghqqa.cn/quickstart.html) · [使用文档](https://docs.nghqqa.cn/docs.html) · [下载与校验](https://docs.nghqqa.cn/downloads.html)
 
-[![Release](https://img.shields.io/badge/Release-rc.35.4-0e6b62)](https://github.com/nghqqa/MergePilot/releases)
+[![Release](https://img.shields.io/badge/Release-rc.35.5-0e6b62)](https://github.com/nghqqa/MergePilot/releases)
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
-MergePilot 接入你的仓库（GitHub App 只读 + Gitee 连接），把 PR 事件、审查发现（静态规则 +
-LLM 第二阶段）、修复建议与验证证据汇集到你自己的 Console；维护者可人工确认后把审查结果
-发布为 PR 评论（机器人身份——这是唯一的远端写动作）。它不回写 GitHub Check Run，不自动
-合并或批准 PR；应用修复与合并能力开发中。当前为 **Developer Beta（rc.35.4 口径）**，
+MergePilot 接入你的仓库（GitHub App + Gitee 连接），把 PR 事件、审查发现（静态规则 +
+LLM 第二阶段）、修复建议与验证证据汇集到你自己的 Console。维护者可在 Console 内逐次
+「预览 → 确认」完成三类受控远端写：发布审查评论、**应用修复（机器人以自己的身份向 PR
+分支提交修复 commit，新 head 自动重审）**、**确认合并（统一资格门：当前 head 审查完成
++ 真实 CI 通过 + mergeable 已知，缺一不放行）**。系统不自动改代码、不自动合并、不设
+required check、不绕过平台保护。当前为 **Developer Beta（rc.35.5 口径）**，
 能力边界见[能力矩阵](docs/delivery/CAPABILITY-MATRIX.md)。
 
 ## 界面
@@ -28,12 +30,12 @@ PR 事件接入 → 审查发现 → 按策略进入修复与验证 → Console 
 | 角色 | 职责 |
 | --- | --- |
 | Reviewer | 审查代码，产出发现与建议 |
-| Fixer | 生成修复建议，默认 dry-run |
+| Fixer | 生成修复建议与验证证据（此阶段零远端写入） |
 | Verifier | 独立验证，记录判定与证据 |
 | Leader | 编排与裁决；内部确定性策略保留管线终裁权 |
 
-内部 Leader 决定的是管线状态，**维护者决定的是是否合并**。高危 finding 的修复需人工审批；
-Agent 的建议与可执行验证证据应分开看待。
+内部 Leader 决定的是管线状态，**维护者决定的是是否应用与合并**。高危 finding 的修复需人工审批；
+机器人提交与合并各自独立确认；Agent 的建议与可执行验证证据应分开看待。
 
 - **团队协作**：GitHub OAuth + 邀请制登录、五角色 RBAC、应用层多租户隔离与审计。
 - **修复验证**：AgentTeams 执行器独立部署；未配置或不就绪时，该环节 fail-closed。
@@ -44,8 +46,9 @@ Agent 的建议与可执行验证证据应分开看待。
 Console、数据库和部署配置由你自行管理；官网是文档入口，**不是托管版 Console 或登录入口**。
 
 1. 阅读[快速开始](https://docs.nghqqa.cn/quickstart.html)，准备 Docker Compose、Node.js ≥ 20、GitHub App、OAuth App 和审查用的 LLM 端点。
-2. 选择 [rc.22 部署包](https://github.com/nghqqa/MergePilot/releases/tag/v0.2.0-beta.6-rc.22)，或使用下面的仓库部署方式。离线镜像、SHA256SUMS、SBOM 和扫描记录见[下载与校验](https://docs.nghqqa.cn/downloads.html)。
+2. 选择 [rc.35.5 部署包](https://github.com/nghqqa/MergePilot/releases/tag/v0.2.0-beta.6-rc.35.5)，或使用下面的仓库部署方式。离线镜像、SHA256SUMS、SBOM 和扫描记录见[下载与校验](https://docs.nghqqa.cn/downloads.html)。
 3. 按[部署指南](deploy/selfhost/README.md)完成配置和首管理员初始化，再登录你自己的 Console。
+4. 日常使用与验收：[用户指南](docs/delivery/USER-GUIDE.md)（含受邀用户/自托管管理员两条首次使用路径）、[验收清单](docs/delivery/ACCEPTANCE-CHECKLIST.md)。
 
 ### 从仓库部署
 
@@ -73,7 +76,8 @@ Webhook 接收、LLM 调用，以及可选的修复验证执行器。
 ## 使用前的边界
 
 - **自托管不等于零出站**：配置外部 LLM 后，脱敏 PR 元数据、finding 摘要与相关 diff 片段会发送到你配置的端点。详见[数据出站说明](#数据出站说明)。
-- **不是自动合并工具**：MergePilot 本体对 GitHub 只读，结论呈现在 Console；外部执行器应独立审查其权限和配置。
+- **写操作全部受控**：机器人提交与合并都需维护者逐次「预览 → 确认」；平台分支保护照常生效、不被绕过；**容器/镜像回滚不能撤销已发生的远端提交或合并**（远端回退只能在平台上 revert）。外部执行器应独立审查其权限和配置。
+- **能力边界如实标注**：Gitee 当前连接器不支持读取 CI 状态（Gitee 仓库的合并会被资格门阻塞）；审查完成 ≠ CI 通过；可应用 ≠ 修复正确；旧 head 的审查与验证不能证明新 head 合格。详见[能力矩阵](docs/delivery/CAPABILITY-MATRIX.md)。
 - **Beta 不含企业能力**：无 PostgreSQL RLS、SSO/SCIM、HA 或配额限流；当前多租户隔离在应用层实施。
 - **扫描结果有时效**：Release 中的 SBOM 与安全扫描是该制品的发布时点记录，不构成永久无漏洞保证。
 
