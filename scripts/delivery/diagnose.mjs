@@ -24,7 +24,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export const DIAGNOSE_VERSION = '1.0.0';
-export const EXPECTED_SCHEMA_VERSION = 28; // 与 console/backend/lib/multiuser/schema.mjs MU_SCHEMA_LATEST 对齐（升级时同步改）
+export const EXPECTED_SCHEMA_VERSION = 29; // 与 console/backend/lib/multiuser/schema.mjs MU_SCHEMA_LATEST 对齐（升级时同步改；v29=fix_apply_operation 应用/合并操作记录）
 
 // ── 键分类：secret 类键任何情况下不回显值 ──
 const SECRET_KEY_RE = /PASSWORD|SECRET|API_KEY|TOKEN|PAT\b|PRIVATE_KEY|_PASSWORD$/i;

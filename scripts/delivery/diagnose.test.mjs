@@ -70,7 +70,7 @@ test('callbackScope：https=pass / 回环=warn / http 非回环=warn / 缺失或
   assert.equal(callbackScope('not-a-url').level, 'fail');
 });
 
-test('runChecks：配置齐全 + HTTP 全 200 + schema v28 → 无 fail、无 secret 泄露', async () => {
+test('runChecks：配置齐全 + HTTP 全 200 + schema v29 → 无 fail、无 secret 泄露', async () => {
   const fakeFetch = async (url) => {
     if (String(url).endsWith('/api/health')) {
       return { status: 200, text: async () => JSON.stringify({ ok: true, version: '0.2.0-beta.6-rc.35.4', mu_schema_ready: true, git_commit: 'a'.repeat(40) }) };
@@ -80,7 +80,7 @@ test('runChecks：配置齐全 + HTTP 全 200 + schema v28 → 无 fail、无 se
     }
     return { status: 404, text: async () => '' };
   };
-  const fakeDockerExec = () => ({ status: 0, stdout: '28\n', stderr: '' });
+  const fakeDockerExec = () => ({ status: 0, stdout: '29\n', stderr: '' });
   const checks = await runChecks({ env: { ...FULL_ENV }, envFile: '/fake/.env', fetchImpl: fakeFetch, dockerExec: fakeDockerExec, pgContainer: 'pg-test', baseUrl: 'http://127.0.0.1:48500' });
   assertNoSecrets(checks);
   const fails = checks.filter((c) => c.status === 'fail');
