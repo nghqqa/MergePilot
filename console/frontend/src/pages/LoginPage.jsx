@@ -10,7 +10,8 @@ import { BrandMark } from '../ui.jsx';
 //   GET /api/mu/auth/providers  → { github: {configured,callback_url}, gitee: {…}, fixture: {…} }
 // 两个密码端点严格区分，禁止混用门禁：
 //   POST /api/auth/login    = 旧操作员账号密码（MU_MODE / MU_LEGACY_LOGIN 门禁；本页 legacy 形态使用）
-//   POST /api/mu/auth/login = fixture 身份登录（MU_ALLOW_FIXTURE_LOGIN 门禁；本页不使用）
+//   POST /api/mu/auth/login = fixture 身份登录（MU_ALLOW_FIXTURE_LOGIN 门禁；仅当
+//   providers 披露 fixture 开放时本页渲染「试用身份」区块——隔离试用/开发部署自助登录）
 // multiuser 生产形态：主按钮「使用 GitHub 登录」+（gitee.configured 时）「使用 Gitee 登录」
 // 次按钮 + 邀请制提示；操作员表单与演示入口不显示。
 // 邀请链接 /login?invite=<invite_id>：按钮经对应 provider 的 start?invite=… 端点换取
@@ -100,6 +101,11 @@ export default function LoginPage() {
   // 提供商已配置（按钮渲染与 stale 错误清理的唯一依据；后端 fail-closed，前端不猜）
   const githubReady = prov.phase === 'ready' && prov.data?.github?.configured === true;
   const giteeReady = prov.phase === 'ready' && prov.data?.gitee?.configured === true;
+  // fixture 自助登录（2026-10-16）：仅当服务端 providers 披露 fixture 已开放（=部署显式
+  // MU_ALLOW_FIXTURE_LOGIN=1）时渲染——沿用「未配置不伪装可用」同一门禁来源，页面不猜。
+  // 面向隔离试用栈/开发部署：真实用户从 UI 独立完成登录（此前只能维护者 curl 代登录，
+  // 违反试用「不得代操作」边界）。生产多用户部署未开放时本区块不渲染。
+  const fixtureReady = prov.phase === 'ready' && prov.data?.fixture?.configured === true;
   // 过时的「未配置」错误：providers 现已就绪任一平台时不再复现（保留邀请上下文不清）。
   const staleNotConfigured = loginError === 'oauth_not_configured' && (githubReady || giteeReady);
 
@@ -172,6 +178,33 @@ export default function LoginPage() {
   const clearInvite = () => {
     setInviteId(null); setInviteError(null);
     try { window.history.replaceState(null, '', window.location.pathname); } catch { /* ignore */ }
+  };
+
+  // fixture 自助登录提交：身份名 → subject=fixture:<名称>（与管理员预置身份同一命名）。
+  // 后端门禁（MU_ALLOW_FIXTURE_LOGIN）为最终授权方：已关闭/身份未预置/无有效成员关系
+  // 均如实报错，不猜测原因。
+  const submitFixture = async ({ name }) => {
+    setPending('fixture'); setFormError(null);
+    try {
+      const res = await fetch('/api/mu/auth/login', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ provider: 'fixture', subject: `fixture:${String(name).trim()}` }),
+      });
+      const body = await res.json().catch(() => null);
+      if (!res.ok) {
+        const why = { fixture_login_disabled: '此部署未开放身份登录',
+          identity_unknown: '该身份未由管理员预置——请核对名称或联系管理员',
+          no_active_membership: '该身份暂无有效成员关系——请联系管理员' };
+        setFormError(why[body?.error?.reason] ?? '身份登录未完成——请稍后重试或联系管理员');
+        return;
+      }
+      auth.refresh();
+    } catch {
+      setFormError('网络错误 — 无法连接后端');
+    } finally {
+      setPending(null);
+    }
   };
 
   return (
@@ -255,6 +288,29 @@ export default function LoginPage() {
                 <Button block style={{ marginTop: 8 }} onClick={loadProviders}>重试获取登录配置</Button>
               </>
             )}
+
+            {/* fixture 自助登录（仅服务端披露已开放的部署渲染；隔离试用/开发身份，非平台 OAuth）。
+                与 legacy 表单同形：字段 label 明确、触控目标 ≥44px、进行中禁用。 */}
+            {fixtureReady && multiuserMode ? (
+              <div style={{ marginTop: 16 }}>
+                <div style={{ textAlign: 'center', color: '#999', margin: '10px 0 0' }}>—— 或使用试用身份 ——</div>
+                <Form layout="vertical" onFinish={submitFixture} disabled={pending !== null} style={{ marginTop: 12 }}>
+                  <Form.Item label="试用身份名" name="name"
+                             rules={[{ required: true, message: '请输入管理员预置的身份名（如 trial-maintainer）' }]}
+                             style={{ marginBottom: 10 }}>
+                    <Input id="login-fixture-name" prefix={<UserOutlined aria-hidden="true" />}
+                           placeholder="例如 trial-maintainer" autoComplete="username" size="large" />
+                  </Form.Item>
+                  <Button type="default" htmlType="submit" block size="large" className="login-oauth-btn"
+                          disabled={pending !== null}>
+                    {pending === 'fixture' ? '正在登录…' : '以试用身份登录'}
+                  </Button>
+                </Form>
+                <div className="login-scope" role="note" style={{ marginTop: 8 }}>
+                  <span>隔离试用/开发身份（非平台账号登录）；可用身份由管理员预置。</span>
+                </div>
+              </div>
+            ) : null}
 
             {/* 邀请制提示（multiuser 生产形态） */}
             {multiuserMode ? (

@@ -235,6 +235,12 @@ jobs:
         run: node --test test/mu-oauth-page.smoke.test.mjs
         working-directory: console/frontend
 
+      # fixture 自助登录入口冒烟（2026-10-16 隔离试用阻断修复）：providers 驱动渲染
+      # （未披露不渲染）/提交契约 subject=fixture:<名>/失败如实——生产形态零变化
+      - name: Frontend fixture login entry smoke (4 scenarios)
+        run: node --test test/login-fixture-entry.smoke.test.mjs
+        working-directory: console/frontend
+
       # ADR-002 PR F 前端冒烟：审查架构面板（三档/consent 门/出站披露）+
       # PR 详情四分立判定上屏（互不冒充）
       - name: Frontend review-arch smoke (PR F, 3 scenarios)
