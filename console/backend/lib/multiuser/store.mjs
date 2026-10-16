@@ -97,14 +97,19 @@ export async function createMuStore({ pool, env = process.env, migrations = MU_M
     }
   }
 
-  // ── bootstrap（幂等）：迁移 tenant + pilot 操作员 → PlatformAdmin 映射 ──
+  // ── bootstrap（幂等，仅缺失时创建）：迁移 tenant + pilot 操作员 → PlatformAdmin 映射 ──
+  // 授权边界（2026-10-16）：bootstrap 只补「缺失的初始管理员」，绝不改写已存在的
+  // 成员关系——角色保持（maintainer/reviewer/... 不被启动覆盖）、revoked 不因启动
+  // 复活（重新启用走显式管理员授权，如 POST /api/mu/members）。重复/并发启动安全：
+  // ON CONFLICT DO NOTHING 原子，胜者插入、败者读回既有行。
   async function bootstrap() {
     const adminLogin = String(env.MU_BOOTSTRAP_ADMIN_LOGIN || env.CONSOLE_PILOT_USER || 'pilot-admin');
     const adminSubject = String(env.MU_BOOTSTRAP_ADMIN_SUBJECT || `fixture:${adminLogin}`);
     const tenant = await ensureTenant({ slug: 'default', displayName: 'Migration Default Tenant', isMigrationTenant: true });
     const user = await ensureUser({ login: adminLogin, displayName: 'Pilot Admin (migrated)' });
     await ensureIdentity({ userId: user.user_id, provider: 'fixture', subject: adminSubject });
-    const membership = await ensureMembership({ tenantId: tenant.tenant_id, userId: user.user_id, role: 'platform_admin' });
+    const membership = await ensureMembership({ tenantId: tenant.tenant_id, userId: user.user_id,
+      role: 'platform_admin', onlyIfMissing: true });
     return { tenant, user, membership };
   }
 
@@ -186,13 +191,27 @@ export async function createMuStore({ pool, env = process.env, migrations = MU_M
     return r.rows;
   }
 
-  async function ensureMembership({ tenantId, userId, role, grantedBy = null }) {
-    const r = await q(
+  // 显式授权（管理员加成员/调整角色/建租户自任 admin）：维持「存在即改写为期望态」
+  // 原语义（含降级与 revoked→active 复活——这是授权操作的明确意图，审计在调用方）。
+  // onlyIfMissing: true 为 bootstrap 专用「仅缺失时创建」——绝不覆盖已有 role/state，
+  // 并发安全（DO NOTHING 原子）；普通登录/邀请认领不经本函数（claimInvitationOnboard）。
+  async function ensureMembership({ tenantId, userId, role, grantedBy = null, onlyIfMissing = false }) {
+    if (!onlyIfMissing) {
+      const r = await q(
+        `INSERT INTO mu.membership (tenant_id, user_id, role, granted_by)
+         VALUES ($1,$2,$3,$4) ON CONFLICT (tenant_id, user_id)
+         DO UPDATE SET role = EXCLUDED.role, state = 'active', updated_at = now()
+         RETURNING *`, [tenantId, userId, role, grantedBy]);
+      return r.rows[0];
+    }
+    const ins = await q(
       `INSERT INTO mu.membership (tenant_id, user_id, role, granted_by)
-       VALUES ($1,$2,$3,$4) ON CONFLICT (tenant_id, user_id)
-       DO UPDATE SET role = EXCLUDED.role, state = 'active', updated_at = now()
+       VALUES ($1,$2,$3,$4) ON CONFLICT (tenant_id, user_id) DO NOTHING
        RETURNING *`, [tenantId, userId, role, grantedBy]);
-    return r.rows[0];
+    if (ins.rows[0]) return ins.rows[0];
+    const cur = await q(
+      `SELECT * FROM mu.membership WHERE tenant_id=$1 AND user_id=$2`, [tenantId, userId]);
+    return cur.rows[0] ?? null;
   }
   async function getMembership(tenantId, userId) {
     const r = await q(
