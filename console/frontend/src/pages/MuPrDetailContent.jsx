@@ -261,7 +261,9 @@ export function MuPrDetailContent({ prRef, onChanged }) {
   // 明确 platform/owner/repo/PR# 与当前 head；票据 head 在行/列内单独呈现，
   // 两者不混淆（当前 head=PR 最新；行内 head=该票批准时绑定的历史 head）。
   const currentHead = String(pr.head_sha ?? '');
-  const approvalTarget = `${pr.provider ?? '—'} · ${prRef.owner}/${prRef.name} · PR#${pr.provider_pr_number ?? '—'}`;
+  // PR 详情投影的 provider 列名为 repo_provider（resolvePullRequest JOIN 别名）——
+  // pr.provider 恒 undefined 致平台名恒显示"—"；兼容读 repo_provider。
+  const approvalTarget = `${pr.provider ?? pr.repo_provider ?? '—'} · ${prRef.owner}/${prRef.name} · PR#${pr.provider_pr_number ?? '—'}`;
   const approvalContext = (
     <div className="mu-approval-ctx" style={{ fontSize: 12, marginBottom: 6 }}>
       <span className="mono">审批对象：{approvalTarget}</span>
