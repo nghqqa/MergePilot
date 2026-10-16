@@ -14,10 +14,12 @@
 //    该兜底在 Gitee 会话上恰好构成「误标 GitHub」的冒充路径；旧会话兼容由
 //    mu.session.provider 列 v1 NOT NULL + 后端白名单下发保证，不需要前端猜测。）
 //
-// 能力边界（不随 provider 变化的恒定红线）：
-//   操作经服务端授权；不写 GitHub、不自动合并、不派发站外执行。
+// 能力边界（不随 provider 变化的恒定红线；2026-10-16 事实校正——
+// 应用补丁/合并 PR 已交付：均为独立预览+确认后由系统机器人执行远端写入；
+// 旧「不写 GitHub」宣称与实现冲突，已废除。「不自动合并」仍为真实约束）：
+//   操作经服务端授权；远端写入逐项预览确认；不自动合并。
 
-const CAPABILITY_LINE = '操作经服务端授权 · 不写 GitHub · 不自动合并';
+const CAPABILITY_LINE = '操作经服务端授权 · 远端写入逐项预览确认 · 不自动合并';
 
 // 会话证据 → 身份来源（纯函数）。@param session 形如 /api/auth/session 200 body。
 export function deriveIdentitySource({ session, dataMode, authed } = {}) {

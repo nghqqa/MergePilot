@@ -52,7 +52,7 @@ export function resolveWorkspaceState(config, authStatus) {
   }
   if (config.mode === 'multiuser') {
     return authStatus === 'authed'
-      ? { key: 'mu-auth', label: '实时', full: '多用户实时（按组织隔离）：登录组织的实时数据，仅见本组织内容', tone: 'ok' }
+      ? { key: 'mu-auth', label: '实时', full: '多用户实时（按组织隔离）：登录组织的实时数据，仅见本组织内容；「实时」指数据来源与刷新，不代表远端仓库状态已核实', tone: 'ok' }
       : { key: 'mu', label: '实时（未登录）', full: '多用户实时数据源已连接，但当前未登录——登录后按组织隔离读取', tone: 'warn' };
   }
   // snapshot
@@ -79,6 +79,8 @@ function YesNo({ yes, yesText = '是', noText = '否' }) {
 // 可见文本 = 词表 label + detail（detail 保留各数据源口径的既有事实描述）；
 // 词表 note（"这是什么、不是什么"）挂在行状态 title 上——颜色/圆点不单独承载状态。
 // rc.10：MU 实时源下接线清单按真实能力渲染（OAuth/审批决策已上线），不再复用 legacy 未交付口径。
+// 2026-10-16 事实校正：应用补丁/合并 PR 已交付（独立预览+确认，系统机器人执行）——
+// 旧「站内合并 关闭/仅外链」为过时宣称。
 function wiringRowsOf(mode, live, pgMode) {
   if (mode === 'multiuser') {
     return [
@@ -86,7 +88,8 @@ function wiringRowsOf(mode, live, pgMode) {
       { name: '审批只读 + 决策', wire: WIRE.wired, detail: '——/api/mu/approvals 只读与决策端点已接线（高危修复审批门；批准仅生成 DRY_RUN 建议，需 maintainer）' },
       { name: '数据面', wire: WIRE.wired, detail: '——多用户实时数据，按登录会话的租户隔离（仅见本组织数据）' },
       { name: 'PR 审查', wire: WIRE.wired, detail: '——GitHub App 只读接入，PR 创建后自动同步审查' },
-      { name: '站内合并', wire: WIRE.closed, detail: '——不自动合并、不绕过 branch protection（仅 GitHub 外链）' },
+      { name: '应用补丁', wire: WIRE.wired, detail: '——独立预览+确认后由系统机器人提交 PR 源分支（远端是否可执行以预览时核验为准）' },
+      { name: '合并 PR', wire: WIRE.wired, detail: '——独立预览+资格核验+人工确认后由系统机器人执行；不自动合并、不绕过 branch protection' },
       { name: '知识库 / 用量', wire: WIRE.not_wired, detail: '（数据源待交付）' },
     ];
   }
@@ -138,14 +141,14 @@ export function WorkspacePanel({ config, auth, onRetry }) {
         {pgMode
           ? <>查询只读；审批决策仅写隔离 fixture 库（非真实系统）</>
           : mode === 'multiuser'
-            ? <>读取只读；另有服务端授权的操作类 POST（见下行）——任何模式都不写 GitHub、不自动合并</>
+            ? <>读取只读；另有服务端授权的操作类 POST（见下行）——远端写入逐项预览确认，不自动合并</>
             : <YesNo yes />}
       </Row>
       <Row label="允许写操作">
         {pgMode
           ? <>仅审批决策（POST → 隔离 fixture 库票据，X-Test-Principal 测试主体）</>
           : mode === 'multiuser'
-            ? <>审批决策、发起审查/受控修复（POST，CSRF 保护，按角色 RBAC 授权）——仅生成建议/留痕，不写 GitHub、不自动合并、不派发站外执行</>
+            ? <>审批决策、发起审查/受控修复、应用补丁、合并 PR（POST，按角色 RBAC+CSRF 授权）。批准修复票仅授权生成修复建议；应用补丁/合并 PR 为独立预览+确认后由系统机器人执行远端写入；不自动合并</>
             : <>无——控制台本体接口仅 GET{mode === 'contract' ? '；fixture 演练不触达后端' : ''}</>}
       </Row>
       <Row label="身份来源">
@@ -157,7 +160,9 @@ export function WorkspacePanel({ config, auth, onRetry }) {
           : <><span className="ws-no">未连接</span>——当前全部为快照 / 隔离 fixture；生产接线由后端交付后经配置切换</>}
       </Row>
       <Row label="是否真实 GitHub 操作">
-        <YesNo yes={false} yesText="有" noText="无——任何模式都不写 GitHub、不自动合并" />
+        {mode === 'multiuser'
+          ? <>视操作而定：应用补丁/合并 PR 经独立确认后由系统机器人写远端分支/合并（不自动合并）；远端是否可达在每次操作预览时如实核验，本面板不预设已配置</>
+          : <YesNo yes={false} yesText="有" noText="无——本数据源为快照/隔离数据，不触达远端仓库" />}
       </Row>
       <div className="ws-section">能力边界</div>
       <div className="ws-row"><div className="ws-row-value">{capabilityLine(identity)}</div></div>

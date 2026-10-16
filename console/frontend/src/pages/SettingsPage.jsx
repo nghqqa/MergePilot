@@ -271,12 +271,12 @@ export default function SettingsPage() {
         <ul className="compact-list">
           <li>服务仅监听 127.0.0.1 回环；不下发凭证。</li>
           <li>{isMuPrimary
-            ? '站内写操作仅限审批决策与审查发起（POST，需对应角色，服务端授权校验）；不写 GitHub、不派发 Fixer/Verifier。'
-            : '全站只读：控制台本体接口仅 GET；不写 GitHub、不派发 Fixer/Verifier。'}</li>
+            ? '站内写操作（审批决策、发起审查/修复、应用补丁、合并 PR）需对应角色，经服务端授权校验（RBAC+CSRF）；远端写入逐项预览确认、不自动合并，Fixer/Verifier 派发由部署配置决定。'
+            : '全站只读：控制台本体接口仅 GET；不派发 Fixer/Verifier。'}</li>
           <li>console-pg 联调模式（test-auth）：审批决策请求仅写隔离 fixture 库（X-Test-Principal 测试主体），不触达任何真实系统或 GitHub。</li>
           <li>快照数据显示真实历史结果，但不提供针对历史数据的真实审批或合并操作。</li>
           <li>{isMuPrimary
-            ? '站内审批：审批票只读与决策已接线（/api/mu/approvals，需 maintainer 角色）——批准仅生成 DRY_RUN 修复建议，不写 GitHub、不自动合并。站内合并：关闭，仅提供 GitHub 外链；不绕过 branch protection。'
+            ? '站内审批：审批票只读与决策已接线（/api/mu/approvals，需 maintainer 角色）——批准仅生成 DRY_RUN 修复建议。应用补丁/合并 PR：独立预览+确认后由系统机器人执行远端写入；不自动合并、不绕过 branch protection。'
             : '站内审批：待后端决策接口与生产主体的授权策略（须经认证与授权校验）。站内合并：当前关闭，仅提供 GitHub 外链；启用条件由后端证明。'}</li>
           <li>GitHub App 安装授权与用户登录是两条流程，控制台不混用、不代持凭证。</li>
         </ul>

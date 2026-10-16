@@ -31,7 +31,8 @@ export default function DiagnosticsPage() {
     ['审批只读 + 决策', '已接入——/api/mu/approvals 只读与决策端点已接线（高危修复审批门；批准仅生成 DRY_RUN 建议）', true],
     ['数据面', '已接入——多用户实时数据，按登录会话的租户隔离（仅见本组织数据）', true],
     ['PR 审查', '已接入——GitHub App 只读接入，PR 创建后自动同步审查', true],
-    ['站内合并', '关闭——不自动合并、不绕过 branch protection', false],
+    ['应用补丁', '已接入——独立预览+确认后由系统机器人提交 PR 源分支（远端可达性以预览时核验为准）', true],
+    ['合并 PR', '已接入——独立预览+资格核验+人工确认后由系统机器人执行；不自动合并、不绕过 branch protection', true],
   ];
 
   // legacy 快照/隔离联调源的接线清单（历史口径——该源下确实如此）
