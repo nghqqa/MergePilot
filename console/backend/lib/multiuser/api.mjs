@@ -2431,14 +2431,38 @@ export async function muApi(req, res, ctx) {
               reason: fx.reason ?? null,
               message: '修复轮未能启动（run 保持可恢复态，可重试本入口）——原因如实返回' });
       }
-      // 恢复指引（2026-10-15 首次使用验收 P1 卡点）：409 必须按真实状态给出下一步，
-      // 不把任何单一手段（如推空 commit）表述为通用恢复办法；不改变状态机与审批语义。
+      // 恢复指引（2026-10-15 首次使用验收 P1 卡点；同日增量收口按实际原因细分）：
+      // 409 按真实状态给出下一步；有明确记录时展示实际原因，仅状态可查时如实说
+      // "请查看审批票或执行记录"——不把常见原因写成该 run 的确定原因。
+      // 不改状态机与审批语义；同 head 幂等行为如实说明。
+      const ticketRows = (await muPoolQ(
+        `SELECT status, count(*)::int n FROM mu.fix_approval
+          WHERE run_id=$1 GROUP BY status ORDER BY n DESC`, [runRow.run_id])).rows;
+      const fixAttempts = (await muPoolQ(
+        `SELECT status, count(*)::int n FROM mu.agent_attempt
+          WHERE run_id=$1 AND agent_role='fixer' GROUP BY status`, [runRow.run_id])).rows;
+      const ticketByStatus = Object.fromEntries(ticketRows.map((t) => [t.status, t.n]));
+      const fixerFailed = (fixAttempts.find((a) => a.status === 'FAILED') ?? { n: 0 }).n > 0;
+      const fixerDone = (fixAttempts.find((a) => a.status === 'DONE') ?? { n: 0 }).n > 0;
+      const ticketSummary = ticketRows.map((t) => `${t.status}×${t.n}`).join('、') || '无';
+      let cause;
+      if ((ticketByStatus.REJECTED ?? 0) + (ticketByStatus.EXPIRED ?? 0) + (ticketByStatus.STALE ?? 0) > 0) {
+        cause = `存在已拒绝/过期/失效的审批票（${ticketSummary}）——旧票不可重新批准，批准门不会放行该 head 的修复轮。`;
+      } else if (fixerFailed) {
+        cause = '修复轮执行失败（fixer attempt FAILED，详见执行记录）。';
+      } else if (fixerDone) {
+        cause = '修复轮已执行但未产出可用补丁（详见 verifier 记录）。';
+      } else {
+        cause = '具体原因请查看审批票或执行记录（当前无法从单一状态确定）。';
+      }
       const HINTS = {
-        BLOCKED: 'run 已进入 BLOCKED（半终态，不可直接重入修复轮）。常见原因：审批驳回/过期，'
-          + '或修复轮产出缺陷（如仅建议无补丁）。恢复路径：推送新 commit 产生新 head——系统将'
-          + '自动重新审查并生成新审批票（审批门会重新执行，旧 head 的批准与证据不会自动重放）；'
-          + '对当前 head 重复点「触发只读审查」不会新建 run（同 head 幂等去重）。',
-        COMPLETED: '审查已完成且无待修复项——无可发起的受控修复。',
+        BLOCKED: `run 已进入 BLOCKED（半终态，不可直接重入修复轮）。${cause}`
+          + '恢复路径：推送新 commit 产生新 head——系统将自动重新审查；'
+          + '仅当新 head 审查再次产生 P0/P1 发现时才会生成新审批票（审批门会重新执行，'
+          + '旧 head 的批准与证据不会自动重放）。'
+          + '对当前 head 重复点「触发只读审查」不会新建 run（同 head 幂等去重，会复用本 BLOCKED run）。',
+        COMPLETED: '审查流程已完成（COMPLETED 仅表示流程状态——不代表零发现、补丁已应用、'
+          + '远端 CI 通过或 PR 已合并；这些以各域判定与远端实际为准）。无可发起的受控修复。',
         FAILED: '审查 run 已失败——请通过「触发只读审查」在新 head 上重新发起审查。',
         REVIEWED: '审查已完成（REVIEWED）。如需修复，请在产生新 head 后重新审查。',
       };

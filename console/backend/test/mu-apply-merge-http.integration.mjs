@@ -195,8 +195,13 @@ try {
     await pool.query(
       `INSERT INTO mu.review_run (run_id, tenant_id, repo_id, pr_id, head_sha, trigger_source, status, llm_mode)
        VALUES ($1,$2,$3,$4,$5,'webhook','BLOCKED','deterministic_only')`, [RUNB, T, REPO, PRID, HEAD_B]);
-    // 消费过的票（修复轮已执行过→BLOCKED 的真实形态）
+    // 消费过的票（修复轮已执行过→BLOCKED 的真实形态）；fixer attempt=DONE（产出不可用）
     const tU = (await pool.query(`SELECT user_id FROM mu.app_user LIMIT 1`)).rows[0].user_id;
+    await pool.query(
+      `INSERT INTO mu.agent_attempt (attempt_id, run_id, tenant_id, repo_id, pr_id, head_sha,
+         agent_role, attempt, status, provider)
+       VALUES (gen_random_uuid(),$1,$2,$3,$4,$5,'fixer',1,'DONE','agentteams')`,
+      [RUNB, T, REPO, PRID, HEAD_B]);
     await pool.query(
       `INSERT INTO mu.fix_approval (approval_id, tenant_id, repo_id, pr_id, pr_number, run_id,
          finding_id, severity, head_sha, diff_digest, status, expires_at, decided_by, decided_at, consumed_at)
@@ -211,6 +216,10 @@ try {
     const hintTxt = h7b.json?.error?.hint ?? '';
     ok('H7b-2 hint 说明同 head 幂等（不冒充会新建 run）',
       hintTxt.includes('不会新建') && hintTxt.includes('同 head'), { hintTxt });
+    // 实际原因细分：CONSUMED 票+fixer DONE（未产出可用补丁）→ 实际原因而非"常见原因"
+    ok('H7b-3 hint 展示实际原因（修复轮已执行但未产出可用补丁）',
+      hintTxt.includes('修复轮已执行但未产出可用补丁'), { hintTxt });
+    ok('H7b-4 有明确记录时不用兜底话术', !hintTxt.includes('请查看审批票或执行记录'), { hintTxt });
   }
 
   // ── H7c: PENDING 票的 run → 引导先处理审批票（不推新 head）──
@@ -233,6 +242,27 @@ try {
     // 清理，避免影响后续场景
     await pool.query(`DELETE FROM mu.fix_approval WHERE run_id=$1`, [RUNC]);
     await pool.query(`DELETE FROM mu.review_run WHERE run_id=$1`, [RUNC]);
+  }
+
+  // ── H7d: REJECTED 票 → hint 展示实际原因（审批驳回，不兜底）──
+  {
+    const RUND = crypto.randomUUID();
+    const HEAD_D = 'd'.repeat(40);
+    await pool.query(
+      `INSERT INTO mu.review_run (run_id, tenant_id, repo_id, pr_id, head_sha, trigger_source, status, llm_mode)
+       VALUES ($1,$2,$3,$4,$5,'webhook','BLOCKED','deterministic_only')`, [RUND, T, REPO, PRID, HEAD_D]);
+    await pool.query(
+      `INSERT INTO mu.fix_approval (approval_id, tenant_id, repo_id, pr_id, pr_number, run_id,
+         finding_id, severity, head_sha, diff_digest, status, expires_at, decided_by, decided_at, decision_reason)
+       VALUES ($1,$2,$3,$4,'12',$5,gen_random_uuid(),'P1',$6,'dd','REJECTED', now() + interval '7 days',$7, now(), '误报驳回')`,
+      [crypto.randomUUID(), T, REPO, PRID, RUND, HEAD_D,
+       (await pool.query(`SELECT user_id FROM mu.app_user LIMIT 1`)).rows[0].user_id]);
+    const h7d = await call(`/api/mu/prs/${PRID}/repair`, { cookie: MT.cookie, csrf: MT.csrf });
+    ok('H7d REJECTED 票 → hint 展示实际原因（审批驳回，不兜底）',
+      h7d.status === 409 && /已拒绝\/过期\/失效/.test(h7d.json?.error?.hint ?? '')
+      && !/请查看审批票或执行记录/.test(h7d.json?.error?.hint ?? ''), h7d.json?.error);
+    await pool.query(`DELETE FROM mu.fix_approval WHERE run_id=$1`, [RUND]);
+    await pool.query(`DELETE FROM mu.review_run WHERE run_id=$1`, [RUND]);
   }
 
   // ── H8: reconcile 跨租户 → 404 同形 ──
