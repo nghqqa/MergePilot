@@ -257,8 +257,22 @@ export function MuPrDetailContent({ prRef, onChanged }) {
   const protectionUnknown = String(pr.branch_protection_status ?? 'unknown') === 'unknown';
   const runStatus = lr ? muRunMap(lr.status) : null;
   const missingActions = ACTION_DEFS.filter((a) => !myActions.includes(a.need));
+  // 审批对象上下文（2026-10-15 增量收口）：桌面/窄屏共用——
+  // 明确 platform/owner/repo/PR# 与当前 head；票据 head 在行/列内单独呈现，
+  // 两者不混淆（当前 head=PR 最新；行内 head=该票批准时绑定的历史 head）。
+  const currentHead = String(pr.head_sha ?? '');
+  const approvalTarget = `${pr.provider ?? '—'} · ${prRef.owner}/${prRef.name} · PR#${pr.provider_pr_number ?? '—'}`;
+  const approvalContext = (
+    <div className="mu-approval-ctx" style={{ fontSize: 12, marginBottom: 6 }}>
+      <span className="mono">审批对象：{approvalTarget}</span>
+      {currentHead
+        ? <span className="mono muted"> · 当前 head：<span title={currentHead}>{currentHead.slice(0, 10)}</span>（各行/列内 head=票据绑定 head，历史）</span>
+        : <span className="muted"> · 当前 head 未取得（如实显示）</span>}
+    </div>
+  );
   const approvalRows = (isDesktop) => isDesktop ? (
     <div className="table-scroll mu-desktop-only">
+      {approvalContext}
       <Table size="small" rowKey="approval_id" pagination={false}
         dataSource={fixApprovals}
         locale={{ emptyText: '审批票加载中/暂不可得——刷新重试' }}
@@ -295,6 +309,7 @@ export function MuPrDetailContent({ prRef, onChanged }) {
     </div>
   ) : (
     <div className="mu-mobile-only">
+      {approvalContext}
       {fixApprovals.length === 0
         ? <Typography.Text type="secondary" style={{ fontSize: 12 }}>审批票加载中/暂不可得——刷新重试</Typography.Text>
         : fixApprovals.map((t) => {
@@ -311,10 +326,10 @@ export function MuPrDetailContent({ prRef, onChanged }) {
               </div>
               <div className="mu-approval-line" style={{ fontSize: 12 }}>
                 <span className="mono muted">
-                  {pr.provider ?? '—'} · {prRef.owner}/{prRef.name} · PR#{pr.provider_pr_number ?? '—'}
-                  {' · head '}{String(t.head_sha ?? '').slice(0, 8)}
+                  {'票据绑定 head '}{String(t.head_sha ?? '').slice(0, 8)}
                   {' · run '}{String(t.run_id ?? '').slice(0, 8)}
                   {t.run_status ? `（${t.run_status}）` : ''}
+                  {'（绑定于批准时，非当前 head）'}
                 </span>
               </div>
               <code className="mono" style={{ fontSize: 12, overflowWrap: 'anywhere' }}>
