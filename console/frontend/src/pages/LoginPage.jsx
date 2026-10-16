@@ -199,7 +199,10 @@ export default function LoginPage() {
         setFormError(why[body?.error?.reason] ?? '身份登录未完成——请稍后重试或联系管理员');
         return;
       }
+      // 登录成功直接进入系统：会话已建立（cookie 已设），停留在 /login 只会看到
+      // 「已登录」提示而无可去之处（2026-10-16 用户实测死端）。
       auth.refresh();
+      window.location.assign('/');
     } catch {
       setFormError('网络错误 — 无法连接后端');
     } finally {
@@ -233,12 +236,18 @@ export default function LoginPage() {
                      message={LOGIN_ERROR_COPY[loginError] ?? '登录未完成——请重新发起登录'} />
             )}
             {/* /login 对已登录用户也渲染（受邀认领需以受邀身份重走 OAuth）；行为如实告知。
-                文案 provider 中性——受邀身份核验走的是用户实际点击的平台入口，不写死。 */}
+                文案 provider 中性——受邀身份核验走的是用户实际点击的平台入口，不写死。
+                非受邀上下文的已登录用户给出「进入系统」入口——/login 不自动跳转是受邀
+                场景的设计，但已登录用户停留本页不应形成死端（2026-10-16 用户实测卡点）。 */}
             {auth.status === 'authed' && (
-              <Alert type="info" showIcon style={{ marginTop: 16 }}
-                     message={inviteId
-                       ? '你当前已登录——继续操作将以你点击的平台入口核验受邀身份'
-                       : '你当前已登录'} />
+              inviteId ? (
+                <Alert type="info" showIcon style={{ marginTop: 16 }}
+                       message="你当前已登录——继续操作将以你点击的平台入口核验受邀身份" />
+              ) : (
+                <Alert type="info" showIcon style={{ marginTop: 16 }} message="你当前已登录"
+                       action={<Button type="primary" size="small"
+                                 onClick={() => window.location.assign('/')}>进入系统</Button>} />
+              )
             )}
             {inviteId && !inviteError && (
               <Alert type="info" showIcon style={{ marginTop: 16 }}

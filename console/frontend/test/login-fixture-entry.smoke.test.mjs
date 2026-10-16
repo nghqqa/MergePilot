@@ -38,6 +38,12 @@ globalThis.cancelAnimationFrame ??= domWindow.cancelAnimationFrame.bind(domWindo
 let ROUTES = {};
 let calls = [];
 let bodies = [];
+const assigns = []; // location.assign 记录（登录成功/进入系统入口的导航断言）
+try {
+  domWindow.location.assign = (u) => { assigns.push(String(u)); };
+} catch {
+  Object.defineProperty(domWindow.location, 'assign', { value: (u) => { assigns.push(String(u)); }, configurable: true });
+}
 globalThis.fetch = async (input, init = {}) => {
   const u = new URL(typeof input === 'string' ? input : input.url, 'http://smoke.local');
   calls.push(u.pathname + u.search);
@@ -138,7 +144,7 @@ test('LFE-3 提交契约：身份名 → POST /api/mu/auth/login subject=fixture
     '/api/mu/auth/login': () => [200, { ok: true, csrf: 'c1', role: 'maintainer',
       user: { user_id: 'u1', login: 'trial-maintainer' } }],
   };
-  calls = []; bodies = [];
+  calls = []; bodies = []; assigns.length = 0;
   const { renderer } = await renderRoute('/login');
   await fillAndSubmit(renderer, 'trial-maintainer');
   const hit = bodies.find((b) => b.path === '/api/mu/auth/login');
@@ -146,6 +152,7 @@ test('LFE-3 提交契约：身份名 → POST /api/mu/auth/login subject=fixture
   const parsed = JSON.parse(hit.body);
   assert.equal(parsed.provider, 'fixture');
   assert.equal(parsed.subject, 'fixture:trial-maintainer');
+  assert.ok(assigns.includes('/'), '登录成功应直接进入系统（location.assign(\'/\')）');
   const s2 = renderer.toJSON();
   const text = JSON.stringify(s2);
   assert.ok(!text.includes('身份登录未完成'), '成功路径不显示失败文案');
@@ -157,10 +164,28 @@ test('LFE-4 失败如实：identity_unknown → 「该身份未由管理员预�
     '/api/auth/session': ANON, '/api/health': HEALTH, '/api/mu/auth/providers': TRIAL_PROVIDERS,
     '/api/mu/auth/login': () => [401, { error: { reason: 'identity_unknown' } }],
   };
-  calls = []; bodies = [];
+  calls = []; bodies = []; assigns.length = 0;
   const { renderer } = await renderRoute('/login');
   await fillAndSubmit(renderer, 'nobody');
   const s = json0(renderer);
   assert.ok(s.includes('该身份未由管理员预置'), '未知身份文案应上屏');
+  assert.equal(assigns.length, 0, '失败路径不导航');
 });
+
+test('LFE-5 已登录用户访问 /login（非受邀）→ 提供 「进入系统」 入口，不形成死端', async () => {
+  domWindow.location.href = 'http://smoke.local/login';
+  const AUTHED = () => [200, { user: { login: 'trial-maintainer', login_type: 'fixture' },
+    expires_at: null, capabilities: { legacy_login: false, multiuser: true } }];
+  ROUTES = { '/api/auth/session': AUTHED, '/api/health': HEALTH, '/api/mu/auth/providers': TRIAL_PROVIDERS };
+  calls = []; assigns.length = 0;
+  const { renderer } = await renderRoute('/login');
+  const s = json0(renderer);
+  assert.ok(s.includes('你当前已登录'), '已登录提示应上屏');
+  assert.ok(s.includes('进入系统'), '应提供进入系统入口');
+  const btn = renderer.root.find((n) => typeof n.props?.onClick === 'function'
+    && label0(n).includes('进入系统'));
+  await act(async () => { btn.props.onClick(); });
+  assert.ok(assigns.includes('/'), '点击进入系统应导航到 /');
+});
+function label0(n) { return String(Array.isArray(n.props?.children) ? n.props.children.join('') : (n.props?.children ?? '')); }
 function json0(renderer) { return JSON.stringify(renderer.toJSON()); }
