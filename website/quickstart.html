@@ -36,6 +36,7 @@
       <section class="side-group">
         <h2 class="side-title">使用</h2>
         <ul class="side-list">
+        <li><a href="user-guide.html">首次使用</a></li>
         <li><a href="config-reference.html">配置</a></li>
         <li><a href="multitenant-webhook.html">多租户与邀请</a></li>
         <li><a href="roles.html">角色与权限</a></li>
@@ -60,7 +61,11 @@
 <article class="doc">
 <div class="crumbs"><a href="index.html">首页</a> / 快速开始</div>
 <h1>快速开始</h1>
-<p>前提：Docker 与 Docker Compose v2；一个 GitHub 账号；约 10 分钟。</p>
+<p>本页面向部署者。需要 Docker 与 Docker Compose v2、Git、Node.js ≥ 20（运行预检脚本），
+以及 GitHub App、OAuth App 和对应配置。耗时取决于凭据与网络入口准备情况。
+已有实例的受邀成员请读<a href="user-guide.html">首次使用</a>。</p>
+<p>以下命令固定到已发布 rc.35.5；main 上的后续修正不会自动进入该镜像，见
+<a href="downloads.html#release-scope">发布与源码范围</a>。</p>
 
 <div class="warn">先读·这是什么形态：MergePilot 是<strong>用户自托管</strong>产品——
 Console、数据库、OAuth 配置与业务数据全部运行在<strong>部署者自己的环境</strong>中。
@@ -88,14 +93,20 @@ node preflight.mjs --live             # 启动后活体探测
 curl http://127.0.0.1:48500/api/health</code></pre>
 <p>首次启动自动完成数据库 schema 初始化（至 v29），无需手工建表。</p>
 
-<h2>4. 创建管理员</h2>
-<p>打开 <code>http://127.0.0.1:48500/multiuser</code>，用 GitHub 登录。
-首个用户需要先经邀请：由既有管理员按你的 GitHub <strong>数字 user id</strong>
-创建邀请后重新登录即自动认领（见 <a href="multitenant-webhook.html">多租户与 webhook</a>）。
-空库的<strong>首个平台管理员</strong>由部署者在数据库直授——邀请永不授予
-<code>platform_admin</code>（三层拒绝）。完整 SQL、硬校验与回退见仓库
-<code>deploy/selfhost/README.md</code>「首个平台管理员初始化（生产）」；
-<code>MU_ALLOW_FIXTURE_LOGIN</code> 仅限本机开发/首次建管临时使用，建完必须关闭。</p>
+<h2>4. 初始化首任管理员，再邀请成员</h2>
+<ol>
+<li><strong>空库先建管：</strong>部署者按仓库
+<a href="https://github.com/nghqqa/MergePilot/blob/main/deploy/selfhost/README.md#首个平台管理员初始化生产">首个平台管理员初始化（生产）</a>
+执行 SQL、身份硬校验与读回检查。生产保持 <code>MU_ALLOW_FIXTURE_LOGIN=0</code>；
+邀请永不授予 <code>platform_admin</code>，不能靠邀请或首次 OAuth 登录自动创建管理员。</li>
+<li><strong>管理员登录：</strong>初始化后，使用与 SQL 绑定身份一致的 GitHub 账号登录你自己的 Console，
+在「组织与接入」管理成员与邀请。</li>
+<li><strong>邀请业务成员：</strong>按平台数字 user id 创建邀请；受邀者用对应 OAuth 账号登录认领。
+审批、应用修复与合并需 <code>maintainer</code>，platform_admin 无这些权限，见
+<a href="roles.html">角色矩阵</a>。</li>
+</ol>
+<p>本机登录入口为 <code>http://127.0.0.1:48500/login</code>；受邀成员的日常操作见
+<a href="user-guide.html">首次使用</a>。健康检查成功只说明容器就绪，还需验证仓库绑定、webhook 与审查链路。</p>
 
 <div class="warn">生产对外暴露：<strong>必须</strong>前置 TLS 反向代理并把回调地址改为 https 域名。
 生产 Webhook 地址必须<strong>公网 HTTPS 可达</strong>（转发到本机 48590，入口实现不限——

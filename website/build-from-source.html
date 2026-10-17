@@ -36,6 +36,7 @@
       <section class="side-group">
         <h2 class="side-title">使用</h2>
         <ul class="side-list">
+        <li><a href="user-guide.html">首次使用</a></li>
         <li><a href="config-reference.html">配置</a></li>
         <li><a href="multitenant-webhook.html">多租户与邀请</a></li>
         <li><a href="roles.html">角色与权限</a></li>
@@ -64,31 +65,32 @@
 
 <h2>前提</h2>
 <ul>
-<li>Node.js ≥ 20（前端构建）、Docker（镜像构建）</li>
-<li>能访问 npm registry（前端依赖）</li>
+<li>Git、Docker（镜像构建）；Dockerfile 内部使用 Node 构建前端，宿主机无需先生成 dist</li>
+<li>构建环境能访问镜像 registry、npm registry 与 Alpine 软件包源</li>
 </ul>
 
 <h2>构建 console 镜像</h2>
 <pre><code>git clone https://github.com/nghqqa/MergePilot.git
 cd MergePilot &amp;&amp; git checkout v0.2.0-beta.6-rc.35.5   # 与官方镜像同源的源码 tag
 
-# ① 先构建前端产物（Dockerfile 会 COPY console/frontend/dist）
-cd console/frontend &amp;&amp; npm ci &amp;&amp; npm run build &amp;&amp; cd ../..
-
-# ② 构建镜像（版本号与提交号决定 /api/health 的 version/git_commit 字段）
+# Dockerfile 在构建阶段执行 npm ci + vite build；本机历史 dist 不会进入镜像
+# 版本号与提交号决定 /api/health 的 version/git_commit 字段
 docker build -f docker/Dockerfile.canonical-console \
   --build-arg MERGEPILOT_VERSION=v0.2.0-beta.6-rc.35.5 \
   --build-arg GIT_COMMIT=af8b0022 \
   -t mergepilot-console:v0.2.0-beta.6-rc.35.5 .</code></pre>
 
-<div class="warn">两个常见坑：① 忘记先构建 <code>console/frontend/dist</code>（COPY 会失败）；
-② 忘记 <code>--build-arg MERGEPILOT_VERSION</code>（健康检查会报旧 fallback 版本号）。</div>
+<div class="warn">必须填写与实际源码相符的 <code>MERGEPILOT_VERSION</code> 与
+<code>GIT_COMMIT</code>，否则 health 的身份信息不能用于核对。
+若构建 main 或其他 commit 的发布后修正，请使用独立版本后缀和本地镜像标签，
+不要标为官方 rc.35.5；范围见<a href="downloads.html#release-scope">发布与源码范围</a>。</div>
 
 <h2>可复现性</h2>
-<p>同 commit + 同构建参数下镜像内容一致。官方 digest
+<p>官方 digest
 <code>e3041999…3a</code> 的构建源即 tag <code>v0.2.0-beta.6-rc.35.5</code>
-（commit <code>af8b0022</code>；console/ 运行时代码与已发布镜像一致）。自建镜像的 image ID 会因构建时间戳与官方不同，
-但<strong>功能等价</strong>；若需要与官方逐位一致，请直接使用官方 digest 拉取。</p>
+（commit <code>af8b0022</code>）。源码同源不保证构建字节或行为验证结果完全相同；
+构建时间、软件包源与构建参数都可能改变产物。自建后仍需核对 health、前端 bundle 并验证所用能力；
+需要官方原制品时，直接按官方 digest 拉取。</p>
 
 <h2>接入 compose</h2>
 <p>编辑 <code>deploy/selfhost/docker-compose.yml</code>，把 console 的
@@ -99,7 +101,8 @@ docker build -f docker/Dockerfile.canonical-console \
 <h2>离线 tar 途径</h2>
 <p>无法访问 GHCR 时，可使用离线 tar（SHA256 见
 <a href="downloads.html">下载与校验</a>）：<code>docker load -i mergepilot-console-v0.2.0-beta.6-rc.35.5-offline.tar.gz</code>，
-加载后镜像 ID 与官方 digest 拉取完全一致。</p>
+先校验 tar 的 SHA256；加载后以同引擎的在线拉取记录比对，跨引擎不直接比较 image ID，
+详见<a href="downloads.html">下载与校验</a>。</p>
 </article>
 </main>
 <footer class="footer">MergePilot 0.2.0-beta.6-rc.35.5 · Apache-2.0</footer>

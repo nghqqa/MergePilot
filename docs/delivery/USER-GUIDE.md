@@ -4,6 +4,12 @@
 > 出错先查 [TROUBLESHOOTING.md](TROUBLESHOOTING.md)；能力事实锚点见
 > [CAPABILITY-MATRIX.md](CAPABILITY-MATRIX.md)。
 >
+> 版本范围（2026-10-17）：已发布 rc.35.5 镜像仍为 `af8b0022`；后续 main
+> `4c61ef1` 已含恢复提示、审批上下文、bootstrap 角色保持、总览与远端 head 未知态修正，
+> 尚未进入该官方镜像。下文流程能力以 rc.35.5 为基线，发布后修正见 §6；
+> 官网配套入口为 [首次使用](../../website/user-guide.html)，制品区别见
+> [下载与发布范围](../../website/downloads.html#release-scope)。
+>
 > 边界一句话：**系统不自动改代码、不自动合并、不设 required check。远端写共三类——
 > 发布审查评论、应用修复（机器人提交）、合并 PR——每类都由维护者逐次「预览 → 确认」
 > 才会执行，写入身份固定为机器人（不是你的个人账号），全程审计留痕。**
@@ -184,7 +190,7 @@ auditor 仅审计元数据。触发审查不要说"reviewer 及以上"——准�
 - **谁能操作**：CI 由你的平台跑（GitHub Actions 等）；MergePilot 只读取结果。
 - **页面入口**：合并预览的资格条件区显示 CI 状态。
 - **预期结果**：GitHub 侧读取 combined status **与** check runs 双面（Actions-only
-  仓库也覆盖）；五态语义：`pass` 通过 / `pending` 运行中 / `failed` 失败 /
+  仓库也覆盖）；状态语义：`pass` 通过 / `pending` 运行中 / `failed` 失败 /
   `not_configured` 该 head 没有任何 CI / `unsupported` 无读取权限（如 Gitee 当前
   连接器） / `unknown` 读取不完整（网络失败等）。**除 pass 外一律阻塞合并并给出原因**。
 - **阻塞原因与下一步**：CI 未配 → 仓库需要先有真实 CI（系统不冒充"CI 通过"）；
@@ -252,6 +258,17 @@ auditor 仅审计元数据。触发审查不要说"reviewer 及以上"——准�
    （同 run 重发幂等）。
 
 ## 6. 常见状态速查
+
+发布后修正（已合入 main `4c61ef1`，**不在 rc.35.5 官方镜像中**）：
+
+- `BLOCKED/no_repair_pending` 按真实 run 状态及票据/执行记录解释原因。同 head 重复触发
+  复用原 run；需要恢复时修正代码、推送新 commit 后重新审查。仅当新 head 再现 P0/P1
+  才生成新审批票，旧票不重批。
+- 远端 head 区分匹配、已变化、无法核实；`remote_unreachable` 是读取失败，不能解释为
+  冲突、CI 失败或 head 已变化。检查机器人凭据/权限/连接后重新预览，错误码用于排查。
+- 审批区补平台/仓库/PR 上下文，区分当前与票据绑定 head；终态票无重批入口。
+- MU 数据源的「待审批票」只含 PENDING，失败/卡住的 run 仍需在总览查看；
+  「最近记录的 head」未必是远端最新版本。
 
 | 状态 | 含义 | 处理 |
 |---|---|---|

@@ -171,15 +171,18 @@ MU_GITHUB_OAUTH_CALLBACK_URL=https://<console 公开地址>/api/mu/auth/oauth/gi
 
 ```bash
 git checkout v0.2.0-beta.6-rc.35.5      # 源码 tag（与镜像同源）
-cd console/frontend && npm ci && npm run build && cd ../..
 docker build -f docker/Dockerfile.canonical-console \
   --build-arg MERGEPILOT_VERSION=v0.2.0-beta.6-rc.35.5 \
   --build-arg GIT_COMMIT=af8b0022 \
   -t ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.35.5 .
 ```
 
-注意两点：① 构建前必须先产出 `console/frontend/dist`（Dockerfile 会 COPY 它）；
-② `--build-arg MERGEPILOT_VERSION` 决定 `/api/health` 的 version 字段。
+说明两点：① 前端 dist 由 Dockerfile 的 `frontend-builder` 阶段在**镜像构建内**执行
+`npm ci + vite build` 产生——宿主机无需（也不应）先构建 dist，工作区历史 dist 不会进入镜像；
+② `--build-arg MERGEPILOT_VERSION`/`GIT_COMMIT` 决定 `/api/health` 的 version/git_commit
+字段，必须与实际源码相符，否则 health 不能用于制品核对。构建环境需可访问 npm registry
+与 Alpine 软件包源；自建产物的 image ID 与官方不同（构建时间戳所致），需要与发布逐位
+一致时按官方 digest 拉取。
 
 ## 配置参考
 

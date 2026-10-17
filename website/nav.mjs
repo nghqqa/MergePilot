@@ -29,6 +29,7 @@ const DOC_GROUPS = [
   {
     title: '使用',
     items: [
+      { label: '首次使用', href: 'user-guide.html', desc: '受邀登录、理解审查结果与受控操作的完整路径。' },
       { label: '配置', href: 'config-reference.html', desc: '.env 全部必填与可选项的生成与说明。' },
       { label: '多租户与邀请', href: 'multitenant-webhook.html', desc: 'GitHub App、webhook 入口与成员邀请。' },
       { label: '角色与权限', href: 'roles.html', desc: '5 种角色的能力矩阵与 fail-closed 设计。' },

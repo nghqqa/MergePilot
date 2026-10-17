@@ -36,6 +36,7 @@
       <section class="side-group">
         <h2 class="side-title">使用</h2>
         <ul class="side-list">
+        <li><a href="user-guide.html">首次使用</a></li>
         <li><a href="config-reference.html">配置</a></li>
         <li><a href="multitenant-webhook.html">多租户与邀请</a></li>
         <li><a href="roles.html">角色与权限</a></li>
@@ -60,6 +61,31 @@
 <article class="doc">
 <div class="crumbs"><a href="index.html">首页</a> / 下载与校验</div>
 <h1>下载与校验（0.2.0-beta.6-rc.35.5）</h1>
+
+<h2 id="release-scope">发布与源码范围</h2>
+<p>截至 2026-10-17，本页官方制品仍对应 rc.35.5 / <code>af8b0022</code>。
+合入 main、隔离试用通过、发布到官方镜像是三个不同状态。</p>
+<div class="table-wrap">
+<table>
+<caption>选择版本时应区分的三种对象</caption>
+<thead><tr><th scope="col">对象</th><th scope="col">范围</th><th scope="col">获取与验证</th></tr></thead>
+<tbody>
+<tr><td>已发布 rc.35.5</td><td>源码 <code>af8b0022</code>；受控应用修复与合并闭环</td><td>使用下方官方 digest、Release 附件和 SHA256SUMS；核对 health 的 version/git_commit</td></tr>
+<tr><td>发布后源码修正</td><td>本次文档核对基线 <a href="https://github.com/nghqqa/MergePilot/commit/4c61ef185cfb54f971cd84954ceab492cf57e2ac"><code>4c61ef1</code></a>；包含恢复提示、审批上下文、bootstrap 幂等、总览可读性及远端 head 未知态修正</td><td>已合入 main，尚未包含在上述官方镜像；需按所选 commit 自建并验证，见<a href="build-from-source.html">源码构建</a></td></tr>
+<tr><td>隔离试用候选</td><td>用于浏览器与试用验证的本地构建</td><td>不作为公开发行镜像，不复用官方 tag/digest；独立新用户试用仍待验</td></tr>
+</tbody>
+</table>
+</div>
+<p>发布后变更的审阅记录：
+<a href="https://github.com/nghqqa/MergePilot/pull/471">#471</a>、
+<a href="https://github.com/nghqqa/MergePilot/pull/472">#472</a>（恢复提示与审批对象）、
+<a href="https://github.com/nghqqa/MergePilot/pull/473">#473</a>（平台标识）、
+<a href="https://github.com/nghqqa/MergePilot/pull/474">#474</a>（启动不覆盖既有角色/撤权状态）、
+<a href="https://github.com/nghqqa/MergePilot/pull/477">#477</a>、
+<a href="https://github.com/nghqqa/MergePilot/pull/478">#478</a>、
+<a href="https://github.com/nghqqa/MergePilot/pull/479">#479</a>（总览与回归门禁）、
+<a href="https://github.com/nghqqa/MergePilot/pull/480">#480</a>（远端未知态与预览失败提示）。
+这些记录不代表完成了新的正式发布。</p>
 
 <h2>官方镜像（GHCR，不可变 digest）</h2>
 <pre><code>docker pull ghcr.io/nghqqa/mergepilot-console@sha256:e30419990434c209de8d9de7fc11fc267d8c9e6fe0d99ff242eda69b7a61dd3a</code></pre>

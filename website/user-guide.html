@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="zh-CN" class="no-js">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="MergePilot 首次使用指南：受邀登录、确认角色、阅读发现与验证证据、区分历史 head，以及维护者逐次确认的修复与合并流程。">
+<title>首次使用 · MergePilot</title>
+<link rel="stylesheet" href="assets/style.7e62632a.css">
+<script src="assets/nav.e6cc8392.js" defer></script>
+</head>
+<body>
+<!-- nav:top -->
+<nav class="nav" aria-label="站点导航">
+  <div class="nav-inner">
+    <a class="nav-brand" href="index.html">MergePilot</a>
+    <div class="nav-links" id="nav-menu">
+      <a href="index.html">首页</a>
+      <a href="quickstart.html">快速开始</a>
+      <a href="docs.html" aria-current="true">文档</a>
+      <a href="downloads.html">下载</a>
+    </div>
+    <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="nav-menu">菜单</button>
+  </div>
+</nav>
+<!-- /nav:top -->
+<main class="shell">
+<!-- nav:docs -->
+<aside class="doc-nav" aria-label="文档导航">
+      <section class="side-group">
+        <h2 class="side-title">部署</h2>
+        <ul class="side-list">
+        <li><a href="quickstart.html">快速开始</a></li>
+        <li><a href="selfhost-docker.html">Docker 自托管</a></li>
+        <li><a href="build-from-source.html">源码构建</a></li>
+        </ul>
+      </section>
+      <section class="side-group is-current">
+        <h2 class="side-title">使用</h2>
+        <ul class="side-list">
+        <li><a href="user-guide.html" aria-current="page">首次使用</a></li>
+        <li><a href="config-reference.html">配置</a></li>
+        <li><a href="multitenant-webhook.html">多租户与邀请</a></li>
+        <li><a href="roles.html">角色与权限</a></li>
+        </ul>
+      </section>
+      <section class="side-group">
+        <h2 class="side-title">维护</h2>
+        <ul class="side-list">
+        <li><a href="upgrade-rollback.html">升级与回滚</a></li>
+        <li><a href="limitations.html">限制</a></li>
+        <li><a href="security.html">安全</a></li>
+        </ul>
+      </section>
+      <section class="side-group">
+        <h2 class="side-title">发布</h2>
+        <ul class="side-list">
+        <li><a href="downloads.html">下载与校验</a></li>
+        </ul>
+      </section>
+</aside>
+<!-- /nav:docs -->
+<article class="doc">
+<div class="crumbs"><a href="index.html">首页</a> / 文档 / 首次使用</div>
+<h1>首次使用</h1>
+<p>管理员已部署实例并邀请你？从下面的登录步骤开始。要搭建自己的实例，先读
+<a href="quickstart.html">部署快速开始</a>。官网是静态文档站；实际登录和操作都在管理员提供的 Console 地址完成。</p>
+<div class="note">版本范围：以下说明 rc.35.5 的受控审修流程，并注明发布后的界面修正。
+官方镜像仍为 <code>af8b0022</code>；main 与隔离试用候选中的修正尚未随官方镜像发布，见
+<a href="downloads.html#release-scope">发布与源码范围</a>。页面措辞请结合实例版本核对。</div>
+
+<h2 id="login">1. 登录，确认身份与仓库</h2>
+<ol>
+<li>打开管理员提供的邀请链接，在该实例的登录页选择与邀请一致的 GitHub 或 Gitee 身份。
+邀请按平台数字用户 id、租户、角色与有效期绑定；没有公共注册。出现
+<code>not_invited</code>、过期或账号不符时，请管理员核对邀请。</li>
+<li>查看顶栏身份、组织与角色。审批修复、发布评论、应用补丁和合并 PR 需要
+<code>maintainer</code>。<code>platform_admin</code> 管成员与配置，无法代替维护者审批或合并。
+完整能力见<a href="roles.html">角色与权限</a>。</li>
+<li>从「仓库」选择目标仓库与 PR。仓库为空时，先请维护者确认该租户的仓库绑定为
+<code>active</code>；OAuth 登录、App 安装、仓库绑定是三个独立步骤，见
+<a href="multitenant-webhook.html">多租户与邀请</a>。</li>
+</ol>
+<p>本机地址只能由运行实例的那台机器访问。异地成员应使用管理员提供的受控访问地址。
+试用身份登录只适用于明确标注的隔离演示环境，不能替代真实 OAuth 接入验收。</p>
+
+<h2 id="read-results">2. 先阅读结果，再决定是否操作</h2>
+<ol>
+<li><strong>确认对象：</strong>核对平台、仓库、PR 编号与 head。审批票绑定的是批准时的 head，
+不一定是 PR 现在的版本；终态票不能重新批准。</li>
+<li><strong>阅读发现：</strong>在 PR 详情查看来源、规则、文件位置、严重度、摘要与修复建议。
+静态规则发现和模型发现分开看；建议缺失或模型未执行都不表示「没有问题」。
+演示数据与预置证据只能用于练习，不能当作真实模型产出。</li>
+<li><strong>核对证据：</strong>结构检查、可应用性、实际修复测试和模型判断分别回答不同问题，
+见下表。未执行、环境不可用与通过应分别记录。</li>
+<li><strong>查看资格：</strong>维护者可打开合并预览阅读阻塞原因。
+远端读取失败时可能无法展示完整资格条件；此时只能记录「未验证」，不能推断其余条件通过。
+打开预览不会执行远端提交或合并。</li>
+<li><strong>区分历史：</strong>在 PR 的「运行历史」切换不同 run，核对各自 head。
+总览或详情最近记录的 head 不能证明远端最新版本；旧 head 的审查、批准与验证不能替代新 head 的证据。</li>
+</ol>
+<div class="table-wrap">
+<table>
+<caption>验证证据分别能说明什么</caption>
+<thead><tr><th scope="col">证据</th><th scope="col">能说明什么</th><th scope="col">不能据此推断</th></tr></thead>
+<tbody>
+<tr><td>格式与路径检查</td><td>diff 格式与涉及路径符合结构要求</td><td>补丁能应用、修复正确</td></tr>
+<tr><td>可应用性检查</td><td>对准确 head 的 <code>git apply --check</code> 结果</td><td>行为正确、实际测试通过</td></tr>
+<tr><td>实际修复测试</td><td>已配置命令在隔离环境中的执行与前后对比结果</td><td>未执行时也算通过、远端 CI 已通过</td></tr>
+<tr><td>模型判断</td><td>模型对问题与修复的评估</td><td>替代可执行测试或远端 CI</td></tr>
+<tr><td>远端 CI</td><td>平台上对应 head 的真实检查结果</td><td>其他 head 或历史运行同样合格</td></tr>
+</tbody>
+</table>
+</div>
+<p>只读试用可以到此结束。可复用<a href="https://github.com/nghqqa/MergePilot/blob/main/docs/acceptance/rc35.5-first-use/USER-TASKS.md">首次使用任务卡的 R1–R6</a>
+记录独立完成、卡点与求助；其中的维护者历史执行记录不是新用户的完成结果。</p>
+
+<h2 id="controlled-actions">3. 维护者逐项确认受控操作</h2>
+<p><strong>批准修复票、应用补丁、合并 PR 是独立动作。</strong>批准修复仅授权生成建议与验证，
+不会把补丁自动提交到远端。评论、应用、合并三类远端写各需一次「预览 → 确认」，由配置的机器人身份执行。</p>
+<ol>
+<li><strong>批准修复：</strong>核对 P0/P1 发现与票据绑定 head，逐票决定批准或拒绝。
+run 级所需票全部批准后才放行修复轮；生成补丁与验证仍取决于执行器及测试配置。</li>
+<li><strong>查看补丁：</strong>检查改动与各项验证的实际状态。需要发布审查评论时，单独预览目标 PR、
+head、机器人身份与评论全文，再确认发布。</li>
+<li><strong>应用修复：</strong>在「应用修复与合并」区打开应用预览，核对远端 head 与补丁版本，
+再确认由机器人向 PR 分支新增修复提交。预览后 head 或补丁发生变化时需重新预览。</li>
+<li><strong>等待新 head 重审与 CI：</strong>应用后会入队重审；若提示入队失败，按提示发起新 head 审查，
+不要重复应用。CI 由仓库平台执行，MergePilot 读取结果。</li>
+<li><strong>确认合并：</strong>当前 head 审查合格、无未处理 P0/P1、真实 CI 通过、PR 开放且可合并时，
+才可预览并确认合并。确认时服务端重新检查；平台分支保护照常生效。</li>
+<li><strong>核对结果：</strong>到远端 PR 核对机器人提交或合并结果；审计元数据由 auditor 或
+platform_admin 查询。本地操作记录不能单独证明远端已写入。</li>
+</ol>
+<div class="warn">没有真实 CI 的仓库会被 <code>ci_not_configured</code> 阻塞合并。
+CI 待完成、失败、未知或读取不支持时也不放行。Gitee 当前连接器不支持读取 CI 状态，
+因此其合并资格被阻塞；这不是对 Gitee 平台整体能力的判断。</div>
+
+<h2 id="recovery">4. 被阻塞时，按实际状态恢复</h2>
+<dl>
+<dt><strong>远端 head 读取失败或无法核实</strong></dt>
+<dd>不能据此认定 head 已变化或一致。请管理员检查机器人凭据、安装权限与连接状态后重新预览。
+main 的发布后修正已区分「匹配 / 已变化 / 无法核实」；旧版界面若误显示「已变化」，应结合预览错误原因核对。</dd>
+<dt><strong><code>BLOCKED</code> 且 <code>no_repair_pending</code></strong></dt>
+<dd>先看审批票和执行记录的实际原因；已拒绝、过期或失效的票不能重批。
+需要重新进入修复流程时，修正代码并推送新 commit，产生新 head 后重新审查。
+同 head 重复触发会复用既有 run；新 head 也只有再次产生 P0/P1 时才会生成相应审批票。
+main 已补充按状态与实际记录区分的恢复提示。</dd>
+<dt><strong>「待审批票」为空，但总览仍有已阻断 PR</strong></dt>
+<dd>待审批票只统计 PENDING 票，不能覆盖所有失败或卡住的执行；到总览查看已阻断记录。
+main 已统一相关计数与空态口径；旧版可能仍使用「待处理」措辞。</dd>
+<dt><strong><code>result_uncertain</code>：远端写入结果不明</strong></dt>
+<dd>在历史操作中先点「读回对账」。有证据时才定案；证据不足会保持不确定。
+不要盲目重复提交或合并，刷新、重启也不会代替对账。
+容器回滚不能撤销已发生的远端提交或合并。</dd>
+<dt><strong>无权限或仓库绑定失效</strong></dt>
+<dd>核对角色与 active 绑定，请管理员或维护者处理。按钮置灰不代表服务异常；
+后端仍对每次动作校验权限。</dd>
+</dl>
+<p>完整步骤与机器码排查见仓库<a href="https://github.com/nghqqa/MergePilot/blob/main/docs/delivery/USER-GUIDE.md">用户指南</a>、
+<a href="https://github.com/nghqqa/MergePilot/blob/main/docs/delivery/TROUBLESHOOTING.md">排障手册</a>。
+部署与版本选择见<a href="quickstart.html">快速开始</a>和<a href="downloads.html#release-scope">发布范围</a>。</p>
+</article>
+</main>
+<footer class="footer">MergePilot 0.2.0-beta.6-rc.35.5 · Apache-2.0</footer>
+</body>
+</html>
