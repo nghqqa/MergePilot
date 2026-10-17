@@ -254,6 +254,7 @@ try {
   globalThis.fetch = async (url, opts = {}) => {
     const u = String(url).split('?')[0]; const m = opts.method || 'GET';
     if (/\/pulls\/2$/.test(u) && m === 'GET') {
+      if (remoteState.prFail) throw new Error('net_down: 模拟远端不可达');
       return jsonResp({ state: remoteState.prState, head: { sha: remoteState.prHead, ref: 'fix-branch' },
         base: { ref: 'master' }, mergeable: remoteState.mergeable,
         merge_commit_sha: remoteState.mergeSha });
@@ -342,6 +343,16 @@ try {
   const v2 = await fa.previewApplyFix(pool, { env, runId: RUN, tenantId: T });
   ok('F9 已应用后预览 → blocked already_applied', v2.can_apply === false
     && v2.blocked_reason === 'already_applied', v2.blocked_reason);
+
+  // F9c（2026-10-17）：远端不可达 → target 携带 remote_head_error 规范键（键名错位回归锁：
+  // 此前只有 remote_error 键，前端读 remote_head_error 恒空 → 误标「head 已变化」）。
+  remoteState.prFail = true;
+  const v2f = await fa.previewApplyFix(pool, { env, runId: RUN, tenantId: T });
+  ok('F9c 远端不可达 → target.remote_head_error 规范键 + head_match=false + 无远端 head',
+    v2f.ok === true && Boolean(v2f.target?.remote_head_error)
+    && v2f.target?.head_match === false && v2f.target?.remote_head == null,
+    { t: v2f.target, blocked: v2f.blocked_reason });
+  remoteState.prFail = false;
 
   remoteState.prHead = WIN_SHA; // push 生效：mock 远端 head 推进
   // ── 重审入队失败可恢复（push 已落地，不回退不重推）──
