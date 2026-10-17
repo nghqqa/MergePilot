@@ -241,6 +241,13 @@ jobs:
         run: node --test test/login-fixture-entry.smoke.test.mjs
         working-directory: console/frontend
 
+      # 受控修复指引冒烟（2026-10-16 复核修正后纳入门禁）：409 hint 同屏/终态票无重批/
+      # 审批上下文共用块/无权限 disabled/uncertain 读回对账——此前未注册 CI，
+      # main 上的选择器过时（G3）与泄漏渲染污染（G4）长期不受门禁保护
+      - name: Frontend mu repair guidance smoke (5 scenarios)
+        run: node --test test/mu-repair-guidance.smoke.test.mjs
+        working-directory: console/frontend
+
       # ADR-002 PR F 前端冒烟：审查架构面板（三档/consent 门/出站披露）+
       # PR 详情四分立判定上屏（互不冒充）
       - name: Frontend review-arch smoke (PR F, 3 scenarios)
