@@ -188,7 +188,10 @@ test('G3 审批票上下文（platform/owner/repo/PR#/run 状态）双分支可�
     const ctxNodes = [...ui.container.querySelectorAll('.mu-approval-ctx')]
       .filter((n) => (n.textContent ?? '').includes('acme/app'));
     assert.ok(ctxNodes.length >= 1, '共用上下文节点存在（桌面+窄屏双分支）');
+    // 2026-10-17 陪测卡点#1 回归锁：当前 head 必须带「尚未核实远端」限定——
+    // 否则用户默认其为远端最新（R6 实录误解）
     for (const n of ctxNodes) {
+      assert.match(n.textContent ?? '', /尚未核实远端/, '当前 head 标注「尚未核实远端」');
       assert.notEqual(n.getAttribute('style') ?? '', 'display:none', '上下文不以内联 display:none 隐藏');
     }
     // 票行内仍保留票据绑定 head 语义（与当前 head 区分——#472 保护的行为不回退）
