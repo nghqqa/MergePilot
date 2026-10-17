@@ -248,6 +248,12 @@ jobs:
         run: node --test test/mu-repair-guidance.smoke.test.mjs
         working-directory: console/frontend
 
+      # 应用/合并预览组件行为回归（2026-10-17 模拟卡点收口）：trial1 真实响应形态不误标
+      # 已变化/可信一致与不同/预览失败中文契约/remediation 空串未提供
+      - name: Frontend apply-merge preview behavior smoke (5 scenarios)
+        run: node --test test/apply-merge-preview.smoke.test.mjs
+        working-directory: console/frontend
+
       # ADR-002 PR F 前端冒烟：审查架构面板（三档/consent 门/出站披露）+
       # PR 详情四分立判定上屏（互不冒充）
       - name: Frontend review-arch smoke (PR F, 3 scenarios)
