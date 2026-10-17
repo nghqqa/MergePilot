@@ -166,7 +166,9 @@ export async function previewApplyFix(pool, { env = process.env, runId, tenantId
       source_branch: remote?.sourceBranch ?? null, target_branch: remote?.targetBranch ?? null,
       pr_state: remote?.state ?? null,
       review_head: patch.head_sha, remote_head: remote?.headSha ?? null, head_match: headMatch,
-      ...(remote_error ? { remote_error } : {}),
+      // remote_head_error 为前端读取的规范键（2026-10-17 定案：键名错位使错误信息恒丢失，
+      // head_match=false+无 head 被误标「已变化」）；remote_error 保留向后兼容。
+      ...(remote_error ? { remote_error, remote_head_error: remote_error } : {}),
     },
     patch: patchInfo,
     robot_identity: robotIdentity(provider),

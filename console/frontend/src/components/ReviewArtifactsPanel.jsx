@@ -18,6 +18,47 @@ const apiFetch = (path, opts = {}) => fetch(path, { credentials: 'same-origin', 
 const NL = String.fromCharCode(10);
 const SEV_COLOR = { P0: 'red', P1: 'orange', P2: 'gold', P3: 'default' };
 const FEEDBACK_LABEL = { confirm: '确认问题', false_positive: '误报', wont_fix: '暂不处理' };
+import { remoteHeadState } from '../remoteHeadState.js';
+import { previewFailureCopy } from '../previewFailureCopy.js';
+
+// 远端当前 head 三态渲染（2026-10-17 事实性修复）：只有取得可信远端 head 才能说
+// 「一致/已变化」；读取失败或缺远端 head 一律「无法核实」——远端不可达 ≠ head 已变化。
+function renderRemoteHead(ctx, matchLabel, opts = {}) {
+  const s = remoteHeadState(ctx);
+  if (s.key === 'match') {
+    return (<>
+      <Tag color="green">{matchLabel}（版本匹配）</Tag>
+      <code className="mono" title={s.head}>{s.head.slice(0, 12)}</code>
+    </>);
+  }
+  if (s.key === 'changed') {
+    return (<>
+      <Tag color="red">已变化——确认将被拒绝</Tag>
+      <code className="mono" title={s.head}>{s.head.slice(0, 12)}</code>
+    </>);
+  }
+  if (s.key === 'unreadable') {
+    return (<Typography.Text type="warning">无法读取（{s.reason}）{opts.retryHint ?? ''}</Typography.Text>);
+  }
+  return (<span>
+    <Tag color="default">无法核实远端 head</Tag>
+    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+      {s.reason}——不能判定一致或已变化；确认保持阻塞，最终可执行性以服务端资格结果为准。
+    </Typography.Text>
+  </span>);
+}
+
+// 预览失败消息（统一契约）：中文原因 + 下一步 + 技术详情（原始错误码不丢）。
+function previewFailMsg(r, b, what) {
+  const copy = previewFailureCopy({ status: r.status, reason: b?.error?.reason, detail: b?.error?.detail, what });
+  return { tone: 'warning', text: (<span>
+    {copy.lead}{copy.next}
+    <details className="tech-details" style={{ marginTop: 4 }}>
+      <summary>技术详情</summary>
+      <span className="mono" style={{ fontSize: 12 }}>{copy.tech}</span>
+    </details>
+  </span>) };
+}
 const ROLE_LABEL = { maintainer: '维护者', platform_admin: '平台管理员', reviewer: '审查者', contributor: '贡献者', auditor: '审计员' };
 const LOGIN_LABEL = { 'github-oauth': 'GitHub OAuth', 'gitee-oauth': 'Gitee OAuth' };
 const PROVIDER_LABEL = { github: 'GitHub', gitee: 'Gitee' };
@@ -310,7 +351,10 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [] }) {
     try {
       const r = await apiFetch(`/api/mu/runs/${runId}/publish`);
       const b = await r.json().catch(() => ({}));
-      if (!r.ok) setPubMsg({ tone: 'warning', text: `预览未完成（HTTP ${r.status}）：${b?.error?.reason ?? ''}` });
+      if (!r.ok) {
+        if (b?.error?.reason === 'remote_unreachable') setPubMsg(previewFailMsg(r, b, '发布预览'));
+        else setPubMsg({ tone: 'warning', text: `预览未完成（HTTP ${r.status}）：${b?.error?.reason ?? ''}` });
+      }
       else {
         setPubPreview(b);
         // rc.34：远端上下文可见化（远端当前 head / 一致性 / 机器人写入身份）
@@ -355,11 +399,12 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [] }) {
       const r = await apiFetch(`/api/mu/runs/${runId}/apply-fix/preview`);
       const b = await r.json().catch(() => ({}));
       if (!r.ok) {
-        setApplyMsg({ tone: 'warning', text: `预览未完成（HTTP ${r.status}）：${b?.error?.reason ?? ''}` });
+        if (b?.error?.reason === 'remote_unreachable') setApplyMsg(previewFailMsg(r, b, '应用修复'));
+        else setApplyMsg({ tone: 'warning', text: `预览未完成（HTTP ${r.status}）：${b?.error?.reason ?? ''}` });
       } else {
         setApplyPreview(b);
         if (!b.can_apply) {
-          const why = { remote_unreachable: '远端不可达', head_moved: '远端 head 已变化（补丁基于旧版本——PR 更新后重新审查即可）',
+          const why = { remote_unreachable: '远端不可达（无法核实远端 head——非「已变化」）', head_moved: '远端 head 已变化（补丁基于旧版本——PR 更新后重新审查即可）',
             already_applied: '该补丁已成功应用过（重复确认被阻止）' }[b.blocked_reason] ?? b.blocked_reason;
           setApplyMsg({ tone: why === 'already_applied' ? 'success' : 'warning', text: `当前不可应用：${why ?? '条件不满足'}` });
         }
@@ -456,7 +501,7 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [] }) {
     try {
       const r = await apiFetch(`/api/mu/runs/${runId}/merge-pr/preview`);
       const b = await r.json().catch(() => ({}));
-      if (!r.ok) setMergeMsg({ tone: 'warning', text: `预览未完成（HTTP ${r.status}）：${b?.error?.reason ?? ''}` });
+      if (!r.ok) setMergeMsg(previewFailMsg(r, b, '合并预览'));
       else {
         setMergePreview(b);
         if (!b.can_merge) {
@@ -607,7 +652,8 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [] }) {
           <dd>{evidenceLine ? <div style={{ marginBottom: 2 }}><code className="mono" style={{ fontSize: 11 }}>{evidenceLine}</code></div> : null}
             {f.evidence_ref ? <code className="mono" style={{ fontSize: 11, wordBreak: 'break-all' }}>{String(f.evidence_ref).slice(0, 80)}</code> : (evidenceLine ? null : '未提供')}</dd>
           <dt>修复建议</dt>
-          <dd>{f.remediation ?? '未提供'}</dd>
+          {/* 空串与 null 同属未提供（2026-10-17：夹具 remediation='' 曾渲染为空白） */}
+          <dd>{(f.remediation && String(f.remediation).trim()) ? f.remediation : '未提供'}</dd>
           <dt>源码（被审查 head）</dt>
           <dd>{srcLink
             ? <a href={srcLink} target="_blank" rel="noreferrer">{f.path}:{f.line_start ?? 1} @ {String(headSha).slice(0, 10)}</a>
@@ -852,13 +898,7 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [] }) {
           </Descriptions.Item>
           <Descriptions.Item label="远端当前 head">
             {pubCtx
-              ? (pubCtx.remote_head_error
-                ? <Typography.Text type="warning">无法读取（{pubCtx.remote_head_error}）——点「预览并发布」重试</Typography.Text>
-                : <> {pubCtx.head_match
-                    ? <Tag color="green">与审查 head 一致，可发布</Tag>
-                    : <Tag color="red">已变化——发布将被拒绝</Tag>}
-                  <code className="mono" title={String(pubCtx.remote_head ?? '')}>{String(pubCtx.remote_head ?? '').slice(0, 12)}</code>
-                </>)
+              ? renderRemoteHead(pubCtx, '与审查 head 一致', { retryHint: '——点「预览并发布」重试' })
               : <Typography.Text type="secondary" style={{ fontSize: 12 }}>点击「预览并发布」后自动核对</Typography.Text>}
           </Descriptions.Item>
           {/* ③ 远端写入身份（系统机器人凭证；与登录账号无关） */}
@@ -986,9 +1026,7 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [] }) {
             <Descriptions size="small" column={1} bordered style={{ marginBottom: 10 }}>
               <Descriptions.Item label="目标">{pubPreview.target.provider} · {pubPreview.target.repo} · PR#{pubPreview.target.pr_number}</Descriptions.Item>
               <Descriptions.Item label="被审查 head"><code className="mono">{String(pubPreview.target.head).slice(0, 12)}</code></Descriptions.Item>
-              <Descriptions.Item label="远端当前 head">{pubCtx?.remote_head_error
-                ? <Typography.Text type="warning">无法读取（{pubCtx.remote_head_error}）</Typography.Text>
-                : <>{pubCtx?.head_match ? <Tag color="green">与审查 head 一致</Tag> : <Tag color="red">已变化——确认将被拒绝</Tag>}<code className="mono">{String(pubCtx?.remote_head ?? '').slice(0, 12)}</code></>}</Descriptions.Item>
+              <Descriptions.Item label="远端当前 head">{renderRemoteHead(pubCtx ?? {}, '与审查 head 一致')}</Descriptions.Item>
               <Descriptions.Item label="写入身份">{pubCtx?.robot_identity ?? '—'}（系统机器人，非个人账号）</Descriptions.Item>
               <Descriptions.Item label="动作">{pubPreview.action === 'update' ? '更新已有 MergePilot 评论（不覆盖人工评论）' : '创建新评论'}</Descriptions.Item>
             </Descriptions>
@@ -1023,12 +1061,7 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [] }) {
                 <code className="mono">{String(applyPreview.target.review_head ?? '').slice(0, 12)}</code>
               </Descriptions.Item>
               <Descriptions.Item label="远端当前 head">
-                {applyPreview.target.remote_head_error
-                  ? <Typography.Text type="warning">无法读取（{applyPreview.target.remote_head_error}）</Typography.Text>
-                  : <>{applyPreview.target.head_match
-                    ? <Tag color="green">与补丁 head 一致，可应用</Tag>
-                    : <Tag color="red">已变化——确认将被拒绝</Tag>}
-                    <code className="mono">{String(applyPreview.target.remote_head ?? '').slice(0, 12)}</code></>}
+                {renderRemoteHead(applyPreview.target, '与补丁 head 一致')}
               </Descriptions.Item>
               <Descriptions.Item label="补丁验证">
                 <Space wrap size={4}>
