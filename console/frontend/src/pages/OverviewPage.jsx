@@ -7,6 +7,7 @@ import { useAppConfig } from '../App.jsx';
 import { useDataSource } from '../hooks.js';
 import { STAGE_ORDER, stageMap, toneToColor, SEVERITY, unknownEntry } from '../status-map.js';
 import { fmtTime } from '../format.js';
+import { intTickMethod } from '../chartTicks.js';
 import { RecoveryBox, StatCard } from '../ui.jsx';
 import {
   deriveAnomalies, protectionUnknownKind, groupRowsByPr, pendingReasonOf, bucketOf,
@@ -347,16 +348,8 @@ export default function OverviewPage() {
   const repoTop = [...repoCounts].sort((a, b) => (Number(b.runs) || 0) - (Number(a.runs) || 0))[0] ?? null;
 
   const baseCol = { height: 220 };
-  // 离散计数（PR/run 个数）用整数刻度（2026-10-16）：小样本下默认出现 0.2/0.4 小数刻度。
-  // @ant-design/plots 2.x = G2 v5 API：tickInterval 不被线性刻度采纳（实测）——
-  // 用自定义 tickMethod 生成整数刻度；标签再取整兜底；日期标签 MM-DD + 自动抽稀。
-  const intTickMethod = (min, max, count = 4) => {
-    const span = Math.max(1, Math.ceil(max - min));
-    const step = span <= (count || 4) ? 1 : Math.ceil(span / (count || 4));
-    const ticks = [];
-    for (let v = Math.max(0, Math.floor(min)); v <= max + 1e-6; v += step) ticks.push(v);
-    return ticks.length ? ticks : [min, max];
-  };
+  // 图表刻度：countScale/intYAxis/dateXAxis 使用模块级 intTickMethod（见文件头导出）；
+  // 标签取整兜底；日期标签 MM-DD + 自动抽稀。
   const countScale = { y: { tickMethod: intTickMethod, tickCount: 4 } };
   const intYAxis = { y: { labelFormatter: (v) => `${Math.round(Number(v))}` } };
   const dateXAxis = { x: { labelFormatter: (d) => String(d ?? '').slice(5) } };
