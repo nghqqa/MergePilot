@@ -183,6 +183,276 @@
         "value": "inter",
         "createdAt": "2026-10-09T13:05:00.324Z",
         "reason": "false-positive: page declares no font-family; theme css var(--sans) resolves to the tracked font stack"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "*",
+        "files": [
+          "website/downloads.html"
+        ],
+        "createdAt": "2026-10-17T13:18:28.651Z",
+        "reason": "theme css tokens, not introduced by docs-text edit; same class as existing per-file exemptions for website pages"
+      },
+      {
+        "rule": "design-system-font",
+        "value": "jetbrains mono",
+        "files": [
+          "website/downloads.html"
+        ],
+        "createdAt": "2026-10-17T13:18:28.773Z",
+        "reason": "theme css font, pre-existing; rc.21 precedent"
+      },
+      {
+        "rule": "design-system-font",
+        "value": "inter",
+        "files": [
+          "website/downloads.html"
+        ],
+        "createdAt": "2026-10-17T13:18:28.866Z",
+        "reason": "theme css font, pre-existing; rc.21 precedent"
+      },
+      {
+        "rule": "design-system-radius",
+        "value": "8px",
+        "files": [
+          "website/downloads.html"
+        ],
+        "createdAt": "2026-10-17T13:19:22.068Z",
+        "reason": "theme css radius token, pre-existing; same class as existing per-file exemptions"
+      },
+      {
+        "rule": "design-system-radius",
+        "value": "4px",
+        "files": [
+          "website/downloads.html"
+        ],
+        "createdAt": "2026-10-17T13:19:22.165Z",
+        "reason": "theme css radius token, pre-existing; same class as existing per-file exemptions"
+      },
+      {
+        "rule": "design-system-radius",
+        "value": "8px",
+        "files": [
+          "website/index.html"
+        ],
+        "createdAt": "2026-10-17T13:20:15.945Z",
+        "reason": "pre-existing SVG flow diagram rx=8 theme value; same class as existing index.html exemptions"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "*",
+        "files": [
+          "website/build-from-source.html"
+        ],
+        "createdAt": "2026-10-17T13:20:56.912Z",
+        "reason": "theme css tokens, pre-existing docs page; same class as existing per-file exemptions"
+      },
+      {
+        "rule": "design-system-font",
+        "value": "jetbrains mono",
+        "files": [
+          "website/build-from-source.html"
+        ],
+        "createdAt": "2026-10-17T13:20:57.067Z",
+        "reason": "theme css tokens, pre-existing docs page; same class as existing per-file exemptions"
+      },
+      {
+        "rule": "design-system-font",
+        "value": "inter",
+        "files": [
+          "website/build-from-source.html"
+        ],
+        "createdAt": "2026-10-17T13:20:57.200Z",
+        "reason": "theme css tokens, pre-existing docs page; same class as existing per-file exemptions"
+      },
+      {
+        "rule": "design-system-radius",
+        "value": "8px",
+        "files": [
+          "website/build-from-source.html"
+        ],
+        "createdAt": "2026-10-17T13:20:57.361Z",
+        "reason": "theme css tokens, pre-existing docs page; same class as existing per-file exemptions"
+      },
+      {
+        "rule": "design-system-radius",
+        "value": "4px",
+        "files": [
+          "website/build-from-source.html"
+        ],
+        "createdAt": "2026-10-17T13:20:57.530Z",
+        "reason": "theme css tokens, pre-existing docs page; same class as existing per-file exemptions"
+      },
+      {
+        "rule": "design-system-radius",
+        "value": "100px",
+        "files": [
+          "website/build-from-source.html"
+        ],
+        "createdAt": "2026-10-17T13:20:57.673Z",
+        "reason": "theme css tokens, pre-existing docs page; same class as existing per-file exemptions"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "*",
+        "files": [
+          "website/quickstart.html"
+        ],
+        "createdAt": "2026-10-17T13:21:41.039Z",
+        "reason": "theme css tokens, pre-existing docs page; same class as existing per-file exemptions"
+      },
+      {
+        "rule": "design-system-font",
+        "value": "jetbrains mono",
+        "files": [
+          "website/quickstart.html"
+        ],
+        "createdAt": "2026-10-17T13:21:41.130Z",
+        "reason": "theme css tokens, pre-existing docs page; same class as existing per-file exemptions"
+      },
+      {
+        "rule": "design-system-font",
+        "value": "inter",
+        "files": [
+          "website/quickstart.html"
+        ],
+        "createdAt": "2026-10-17T13:21:41.217Z",
+        "reason": "theme css tokens, pre-existing docs page; same class as existing per-file exemptions"
+      },
+      {
+        "rule": "design-system-radius",
+        "value": "8px",
+        "files": [
+          "website/quickstart.html"
+        ],
+        "createdAt": "2026-10-17T13:21:41.305Z",
+        "reason": "theme css tokens, pre-existing docs page; same class as existing per-file exemptions"
+      },
+      {
+        "rule": "design-system-radius",
+        "value": "4px",
+        "files": [
+          "website/quickstart.html"
+        ],
+        "createdAt": "2026-10-17T13:21:41.395Z",
+        "reason": "theme css tokens, pre-existing docs page; same class as existing per-file exemptions"
+      },
+      {
+        "rule": "design-system-radius",
+        "value": "100px",
+        "files": [
+          "website/quickstart.html"
+        ],
+        "createdAt": "2026-10-17T13:21:41.487Z",
+        "reason": "theme css tokens, pre-existing docs page; same class as existing per-file exemptions"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "*",
+        "files": [
+          "website/limitations.html"
+        ],
+        "createdAt": "2026-10-17T13:21:41.584Z",
+        "reason": "theme css tokens, pre-existing docs page; same class as existing per-file exemptions"
+      },
+      {
+        "rule": "design-system-font",
+        "value": "jetbrains mono",
+        "files": [
+          "website/limitations.html"
+        ],
+        "createdAt": "2026-10-17T13:21:41.676Z",
+        "reason": "theme css tokens, pre-existing docs page; same class as existing per-file exemptions"
+      },
+      {
+        "rule": "design-system-font",
+        "value": "inter",
+        "files": [
+          "website/limitations.html"
+        ],
+        "createdAt": "2026-10-17T13:21:41.769Z",
+        "reason": "theme css tokens, pre-existing docs page; same class as existing per-file exemptions"
+      },
+      {
+        "rule": "design-system-radius",
+        "value": "8px",
+        "files": [
+          "website/limitations.html"
+        ],
+        "createdAt": "2026-10-17T13:21:41.862Z",
+        "reason": "theme css tokens, pre-existing docs page; same class as existing per-file exemptions"
+      },
+      {
+        "rule": "design-system-radius",
+        "value": "4px",
+        "files": [
+          "website/limitations.html"
+        ],
+        "createdAt": "2026-10-17T13:21:41.968Z",
+        "reason": "theme css tokens, pre-existing docs page; same class as existing per-file exemptions"
+      },
+      {
+        "rule": "design-system-radius",
+        "value": "100px",
+        "files": [
+          "website/limitations.html"
+        ],
+        "createdAt": "2026-10-17T13:21:42.068Z",
+        "reason": "theme css tokens, pre-existing docs page; same class as existing per-file exemptions"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "*",
+        "files": [
+          "website/user-guide.html"
+        ],
+        "createdAt": "2026-10-17T13:21:42.161Z",
+        "reason": "theme css tokens, pre-existing docs page; same class as existing per-file exemptions"
+      },
+      {
+        "rule": "design-system-font",
+        "value": "jetbrains mono",
+        "files": [
+          "website/user-guide.html"
+        ],
+        "createdAt": "2026-10-17T13:21:42.257Z",
+        "reason": "theme css tokens, pre-existing docs page; same class as existing per-file exemptions"
+      },
+      {
+        "rule": "design-system-font",
+        "value": "inter",
+        "files": [
+          "website/user-guide.html"
+        ],
+        "createdAt": "2026-10-17T13:21:42.355Z",
+        "reason": "theme css tokens, pre-existing docs page; same class as existing per-file exemptions"
+      },
+      {
+        "rule": "design-system-radius",
+        "value": "8px",
+        "files": [
+          "website/user-guide.html"
+        ],
+        "createdAt": "2026-10-17T13:21:42.446Z",
+        "reason": "theme css tokens, pre-existing docs page; same class as existing per-file exemptions"
+      },
+      {
+        "rule": "design-system-radius",
+        "value": "4px",
+        "files": [
+          "website/user-guide.html"
+        ],
+        "createdAt": "2026-10-17T13:21:42.539Z",
+        "reason": "theme css tokens, pre-existing docs page; same class as existing per-file exemptions"
+      },
+      {
+        "rule": "design-system-radius",
+        "value": "100px",
+        "files": [
+          "website/user-guide.html"
+        ],
+        "createdAt": "2026-10-17T13:21:42.634Z",
+        "reason": "theme css tokens, pre-existing docs page; same class as existing per-file exemptions"
       }
     ]
   }
