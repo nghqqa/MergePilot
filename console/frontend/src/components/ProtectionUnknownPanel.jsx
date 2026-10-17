@@ -100,12 +100,17 @@ export function ProtectionUnknownCard({ stateKey, repo, note, onRefresh, onOpenD
         {stateKey === 'undetermined' && s?.candidates ? ' 当前部署未记录细分原因码，以下按可能原因逐项排查：' : ''}
       </div>
       <StateCard stateKey={stateKey} repo={repo} onRefresh={onRefresh} onOpenDetail={onOpenDetail} />
-      {stateKey === 'undetermined' && s?.candidates
-        ? s.candidates.map((c) => (
-          <StateCard key={c} stateKey={c} repo={repo} onRefresh={onRefresh}
-            extra={<span className="muted" style={{ fontSize: 12 }}>可能原因</span>} />
-        ))
-        : null}
+      {stateKey === 'undetermined' && s?.candidates ? (
+        // 可能原因（3 套假设诊断）默认折叠——实际原因（未记录细分原因码）保持首位可见，
+        // 排查路径按需展开（2026-10-16 概览信息收敛；不隐藏未知本身）。
+        <details className="tech-details pu-candidates">
+          <summary>可能原因排查（{s.candidates.length} 项）</summary>
+          {s.candidates.map((c) => (
+            <StateCard key={c} stateKey={c} repo={repo} onRefresh={onRefresh}
+              extra={<span className="muted" style={{ fontSize: 12 }}>可能原因</span>} />
+          ))}
+        </details>
+      ) : null}
     </div>
   );
 }

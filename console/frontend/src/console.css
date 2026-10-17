@@ -1283,8 +1283,14 @@ td.th-right { text-align: right; }
 .wb-list-section:focus { outline: 2px solid var(--c-accent); outline-offset: 6px; }
 .wb-focus-status { margin: 4px 0 8px; font-size: var(--fs-xs); color: var(--c-text-3); }
 
-/* ---- PR 行：当前 head 短码 + 原因附注 ---- */
-.wb-pr-cell { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+/* ---- PR 行：名称两行换行（2026-10-16 长名扫描修复）+ head 短码第二行辅助 ---- */
+.wb-pr-cell { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-width: 0; }
+.wb-pr-name {
+  min-width: 0; max-width: 100%;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; overflow-wrap: anywhere; line-height: 1.45;
+  word-break: break-all;
+}
 .wb-head-chip {
   font-size: var(--fs-xs); background: var(--c-neutral-bg); color: var(--c-text-2);
   padding: 1px 5px; border-radius: 4px;
@@ -1292,6 +1298,39 @@ td.th-right { text-align: right; }
 .wb-reason { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
 .wb-reason-tag { margin-inline-end: 0; }
 .wb-hist-note { font-size: var(--fs-xs); }
+
+/* ---- 工作列表桌面/窄屏切换与窄屏纵向条目（≤768px）----
+   桌面表格与窄屏卡片共用同一数据与动作（不复制业务判定逻辑）；
+   窄屏每项直接可见：仓库/PR → 阶段/风险 → 原因 → 详情入口，零横向滚动。 */
+.wb-mobile-only { display: none; }
+@media (max-width: 768px) {
+  .wb-desktop-only { display: none; }
+  .wb-mobile-only { display: block; }
+}
+.wb-cards { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+/* .wb-cards 的 display:flex 同特异性且声明在后——基础态用更高特异性压回隐藏，
+   窄屏媒体查询内再以同特异性放开为 flex（仅靠 .wb-mobile-only 会被 .wb-cards 覆盖） */
+.wb-cards.wb-mobile-only { display: none; }
+@media (max-width: 768px) {
+  .wb-cards.wb-mobile-only { display: flex; }
+}
+.wb-card {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: var(--sp-3) 0; border-bottom: 1px solid var(--c-border);
+  min-width: 0;
+}
+.wb-card:last-child { border-bottom: 0; }
+.wb-card-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
+.wb-card-name {
+  font-weight: var(--fw-semibold); color: var(--c-text);
+  overflow-wrap: anywhere; word-break: break-all; min-width: 0;
+}
+.wb-card-reason { color: var(--c-text-2); font-size: var(--fs-sm); }
+.wb-card-meta { color: var(--c-text-3); font-size: var(--fs-xs); }
+.wb-card-actions { margin-top: 2px; }
+.wb-card-empty { color: var(--c-text-3); padding: var(--sp-4) 0; justify-content: center; }
+/* 抽屉内可能原因排查折叠：与既有 tech-details 缩进一致 */
+.pu-candidates { margin-top: var(--sp-2); }
 
 /* ---- 抽屉：历史 head/run 展开 ---- */
 .wb-history { margin-top: var(--sp-3); }

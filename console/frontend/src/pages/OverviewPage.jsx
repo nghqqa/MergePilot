@@ -138,6 +138,9 @@ export default function OverviewPage() {
       try {
         const fresh = await apiGet('/api/overview');
         if (dead) return;
+        // 首载失败后成功重试必须退出错误态（2026-10-16 修复：此前只清 refreshError，
+        // error 残留导致 RecoveryBox 常驻——拿到数据也回不到列表）。
+        setError(null);
         setData(fresh); setRefreshError(null);
         setLastRefresh(new Date().toLocaleTimeString());
       } catch (e) {
@@ -343,11 +346,20 @@ export default function OverviewPage() {
   const repoCounts = data.repository_counts ?? [];
   const repoTop = [...repoCounts].sort((a, b) => (Number(b.runs) || 0) - (Number(a.runs) || 0))[0] ?? null;
 
-  const baseCol = {
-    height: 220,
-    xAxis: { label: { style: { fontSize: 12 } } },
-    yAxis: { label: { style: { fontSize: 12 } } },
+  const baseCol = { height: 220 };
+  // 离散计数（PR/run 个数）用整数刻度（2026-10-16）：小样本下默认出现 0.2/0.4 小数刻度。
+  // @ant-design/plots 2.x = G2 v5 API：tickInterval 不被线性刻度采纳（实测）——
+  // 用自定义 tickMethod 生成整数刻度；标签再取整兜底；日期标签 MM-DD + 自动抽稀。
+  const intTickMethod = (min, max, count = 4) => {
+    const span = Math.max(1, Math.ceil(max - min));
+    const step = span <= (count || 4) ? 1 : Math.ceil(span / (count || 4));
+    const ticks = [];
+    for (let v = Math.max(0, Math.floor(min)); v <= max + 1e-6; v += step) ticks.push(v);
+    return ticks.length ? ticks : [min, max];
   };
+  const countScale = { y: { tickMethod: intTickMethod, tickCount: 4 } };
+  const intYAxis = { y: { labelFormatter: (v) => `${Math.round(Number(v))}` } };
+  const dateXAxis = { x: { labelFormatter: (d) => String(d ?? '').slice(5) } };
   const snapshotSource = source?.kind === 'snapshot';
 
   const sevBadge = (severity) => {
@@ -356,15 +368,19 @@ export default function OverviewPage() {
   };
 
   const columns = [
-    { title: 'PR', ellipsis: true, render: (_, e) => {
+    // 长仓库名不再把状态挤出屏外（2026-10-16）：限定列宽+名称两行换行（完整名称
+    // 经 link 文本/ title 对键盘与读屏可达，不依赖 hover）；head 短码降为第二行辅助信息。
+    { title: 'PR', width: 280, render: (_, e) => {
       const label = e.n != null ? `${e.repo} #${e.n}` : `${e.repo}（PR 号缺失）`;
       const headShort = String(e.current?.head_sha ?? '').slice(0, 8);
       return (
         <span className="wb-pr-cell">
-          {e.detailTo ? <Link to={e.detailTo}>{label}</Link> : label}
+          <span className="wb-pr-name">
+            {e.detailTo ? <Link to={e.detailTo} title={label}>{label}</Link> : label}
+          </span>
           {headShort ? (
             <code className="mono wb-head-chip"
-              title={`当前 head 未确认：按最近事件排序（${e.headBasis}），后端无权威 is_current 标记`}>
+              title={`最近记录的 head：按最近事件排序（${e.headBasis}），尚未核实远端最新版本`}>
               {headShort}
             </code>
           ) : (
@@ -373,17 +389,17 @@ export default function OverviewPage() {
         </span>
       );
     } },
-    { title: '风险', width: 100, render: (_, e) => {
-      const t = ticketByPr.get(`${e.repo}#${e.n}`);
-      if (t) return sevBadge(t.severity);
-      return <span className="muted" title="无未决高危审批票（P0/P1 产生审批票；P2/P3 裁量入口在 PR 详情）">—</span>;
-    } },
     { title: '阶段', width: 120, render: (_, e) => {
       if (e.current?.stage == null) {
         return <Tag title="概览投影未包含该 PR——不猜测阶段">阶段未获取</Tag>;
       }
       const m = stageMap(e.current?.stage);
       return <Tag color={toneToColor(m.tone)} title={m.note}>{m.label}</Tag>;
+    } },
+    { title: '风险', width: 100, render: (_, e) => {
+      const t = ticketByPr.get(`${e.repo}#${e.n}`);
+      if (t) return sevBadge(t.severity);
+      return <span className="muted" title="无未决高危审批票（P0/P1 产生审批票；P2/P3 裁量入口在 PR 详情）">—</span>;
     } },
     { title: '待处理原因', ellipsis: true, render: (_, e) => (
       <span className="wb-reason" title={e.current?.stage_source || e.reason.detail}>
@@ -394,10 +410,10 @@ export default function OverviewPage() {
           : null}
       </span>
     ) },
-    { title: '更新时间', width: 175, render: (_, e) => (e.updated_at
+    { title: '更新时间', width: 165, render: (_, e) => (e.updated_at
       ? <span className="mono" style={{ whiteSpace: 'nowrap' }} title={new Date(e.updated_at).toLocaleString()}>{fmtTime(e.updated_at)}</span>
       : '—') },
-    { title: '操作', width: 170, fixed: 'right', render: (_, e) => {
+    { title: '操作', width: 165, fixed: 'right', render: (_, e) => {
       const t = ticketByPr.get(`${e.repo}#${e.n}`);
       const prLabel = `${e.repo}${e.n != null ? ` #${e.n}` : ''}`;
       return (
@@ -411,6 +427,43 @@ export default function OverviewPage() {
     } },
   ];
 
+  // 窄屏纵向条目（≤768px）与桌面表格共用同一 filtered 数据与动作——
+  // 不复制业务判定逻辑；每项直接可见：仓库/PR → 阶段/风险 → 原因 → 详情入口。
+  const workCards = filtered.map((e) => {
+    const t = ticketByPr.get(`${e.repo}#${e.n}`);
+    const stageM = e.current?.stage == null ? null : stageMap(e.current?.stage);
+    const prLabel = `${e.repo}${e.n != null ? ` #${e.n}` : ''}`;
+    return (
+      <li key={e.key} className="wb-card">
+        <div className="wb-card-line">
+          {e.detailTo
+            ? <Link className="wb-card-name" to={e.detailTo} title={prLabel}>{prLabel}</Link>
+            : <span className="wb-card-name">{prLabel}（PR 号缺失）</span>}
+          {stageM
+            ? <Tag className="wb-card-tag" color={toneToColor(stageM.tone)} title={stageM.note}>{stageM.label}</Tag>
+            : <Tag className="wb-card-tag" title="概览投影未包含该 PR——不猜测阶段">阶段未获取</Tag>}
+          {t ? sevBadge(t.severity) : null}
+        </div>
+        <div className="wb-card-line wb-card-reason">
+          {e.reason.text}
+          {e.isProtectionUnknown ? <Tag className="wb-reason-tag" color="warning">保护未知</Tag> : null}
+        </div>
+        <div className="wb-card-line wb-card-meta">
+          {String(e.current?.head_sha ?? '').slice(0, 8)
+            ? <code className="mono wb-head-chip" title="最近记录的 head——尚未核实远端最新版本">{String(e.current.head_sha).slice(0, 8)}</code>
+            : null}
+          {e.updated_at ? <span>{fmtTime(e.updated_at)}</span> : null}
+        </div>
+        <div className="wb-card-line wb-card-actions">
+          <Button size="small" onClick={() => setDrawerEntity(e)}
+            aria-label={`查看详情：${prLabel}，head ${String(e.current?.head_sha ?? '').slice(0, 8) || '未知'}`}>查看详情</Button>
+          {t ? <Link className="btn btn-sm" to="/approvals"
+            aria-label={`处理审批：${prLabel} 有待批准的高危修复票`}>处理审批</Link> : null}
+        </div>
+      </li>
+    );
+  });
+
   const puItems = (extras?.protectionUnknown ?? []).map((it) => {
     const pu = puStateByPr.get(`${it.repo}#${it.pr}`) ?? {};
     return { ...it, stateKey: pu.stateKey ?? 'undetermined', note: pu.note ?? null };
@@ -421,14 +474,14 @@ export default function OverviewPage() {
     <div>
       <Typography.Title level={1} style={{ fontSize: 24, marginBottom: 4 }}>审查工作台</Typography.Title>
       <Typography.Paragraph type="secondary">
-        需要我处理的 PR、阻断与异常——统计卡即入口，点击直接过滤下方列表（数字=列表行数，按 PR 去重）。
+        需要我处理的 PR、阻断与异常——点击统计卡或筛选直接过滤下方列表。
         {lastRefresh ? `刷新于 ${lastRefresh} · 每 ${REFRESH_MS / 1000}s` : ''}
       </Typography.Paragraph>
       <SourceDetail source={data.source} error={data.error} generatedAt={data.generated_at} />
 
       {notWired ? (
         <Alert type="warning" showIcon message="后端未接线"
-          description={<>CONSOLE_PG_DSN 未配置——以下为诚实零值，不是真实数据。配置见 <Link to="/core">系统状态</Link>。</>} />
+          description={<>CONSOLE_PG_DSN 未配置——以下显示为零值，不是真实数据。配置见 <Link to="/core">系统状态</Link>。</>} />
       ) : isErr ? (
         <Alert type="error" showIcon message="后端错误"
           description={<>连接失败：<span className="mono">{data.error}</span>。
@@ -468,7 +521,7 @@ export default function OverviewPage() {
           title="审查/修复预演/验证进行中的 PR 数——点击在下方列表查看" />
         <StatCard label="全部 PR" count={counts.all} tone="neutral"
           active={focus === 'all'} onClick={() => setFocus('all')}
-          title="当前 allowlist 内全部 PR 数（按 PR 去重，每个 PR 显示最新 head）" />
+          title="当前 allowlist 内全部 PR 数（按 PR 去重，每个 PR 显示最近记录的 head）" />
       </div>
 
       {/* ── PR 工作列表（前置；每 PR 一行当前/latest head，历史收进抽屉） ── */}
@@ -477,7 +530,7 @@ export default function OverviewPage() {
           <div>
             <Typography.Title level={3} style={{ marginBottom: 0 }}>PR 列表（{filterMeta.label}）</Typography.Title>
             <Typography.Text type="secondary" style={{ fontSize: 13 }}>
-              每个 PR 一行（当前/latest head，按最近事件排序——当前 head 未确认，后端无权威标记）；
+              每个 PR 一行（最近记录的 head，按最近事件排序——尚未核实远端最新版本）；
               历史 head 与 run 在「查看详情」抽屉展开。
             </Typography.Text>
           </div>
@@ -490,30 +543,43 @@ export default function OverviewPage() {
             ))}
           </div>
         </div>
-        {/* 联动反馈：数字与统计卡同源，读屏与键盘 focus 均可感知（单文本节点，插值完整） */}
+        {/* 联动反馈（读屏/键盘可感知），不再复述「与统计卡一致」计数自证 */}
         <p className="wb-focus-status" role="status">
-          {`已显示「${filterMeta.label}」${filtered.length} 个${focus === 'all' ? 'PR' : ''}——与「${filterMeta.label}」统计卡数字一致。`}
+          {`已显示「${filterMeta.label}」${filtered.length} 个${focus === 'all' ? 'PR' : ''}。`}
         </p>
-        <Table
-          size="small" rowKey={(e) => e.key}
-          pagination={{
-            current: page, pageSize: 10, onChange: (p) => setPage(p), hideOnSinglePage: false,
-            showTotal: (total, range) => `第 ${range[0]}-${range[1]} 项，共 ${total} 项`,
-            itemRender: (pg, type, originalElement) => {
-              const label = type === 'page' ? `第 ${pg} 页${pg === page ? '（当前页）' : ''}`
-                : type === 'prev' ? '上一页' : type === 'next' ? '下一页'
-                  : type === 'prev5' ? '向前 5 页' : type === 'next5' ? '向后 5 页' : undefined;
-              if (label && React.isValidElement(originalElement)) {
-                return React.cloneElement(originalElement, { 'aria-label': label, 'aria-current': type === 'page' && pg === page ? 'page' : undefined });
-              }
-              return originalElement;
-            },
-          }}
-          scroll={{ x: 'max-content' }}
-          dataSource={filtered}
-          locale={{ emptyText: focus === 'all' ? '没有 PR 记录（诚实零值）' : `没有「${filterMeta.label}」分类下的 PR——可切回"全部"查看` }}
-          columns={columns}
-        />
+        {/* 桌面表格（>768px） */}
+        <div className="wb-desktop-only">
+          <Table
+            size="small" rowKey={(e) => e.key}
+            pagination={{
+              current: page, pageSize: 10, onChange: (p) => setPage(p), hideOnSinglePage: false,
+              showTotal: (total, range) => `第 ${range[0]}-${range[1]} 项，共 ${total} 项`,
+              itemRender: (pg, type, originalElement) => {
+                const label = type === 'page' ? `第 ${pg} 页${pg === page ? '（当前页）' : ''}`
+                  : type === 'prev' ? '上一页' : type === 'next' ? '下一页'
+                    : type === 'prev5' ? '向前 5 页' : type === 'next5' ? '向后 5 页' : undefined;
+                if (label && React.isValidElement(originalElement)) {
+                  return React.cloneElement(originalElement, { 'aria-label': label, 'aria-current': type === 'page' && pg === page ? 'page' : undefined });
+                }
+                return originalElement;
+              },
+            }}
+            scroll={{ x: 'max-content' }}
+            dataSource={filtered}
+            locale={{ emptyText: focus === 'all' ? '暂无 PR 记录' : `没有「${filterMeta.label}」分类下的 PR——可切回"全部"查看` }}
+            columns={columns}
+          />
+        </div>
+        {/* 窄屏纵向条目（≤768px）：仓库/PR、阶段、风险、原因、详情入口直接可见，
+            不要求横向滚动；head/时间为辅助信息（可见文本，不靠 hover）。
+            窄屏不分组页（数据集=筛选全集，与「已显示 N 个」计数一致）。 */}
+        <ul className="wb-cards wb-mobile-only" aria-label="PR 工作列表（窄屏）">
+          {workCards.length === 0 ? (
+            <li className="wb-card wb-card-empty" role="status">
+              {focus === 'all' ? '暂无 PR 记录' : `没有「${filterMeta.label}」分类下的 PR——可切回"全部"查看`}
+            </li>
+          ) : workCards}
+        </ul>
       </section>
 
       {/* ── 异常摘要（收敛：摘要+数量+一个主动作；原因/影响在 tooltip 与抽屉详情） ── */}
@@ -529,8 +595,8 @@ export default function OverviewPage() {
         </div>
         {counts.anomaly === 0 && Number(incidents.failed_receipts ?? 0) === 0 && Number(incidents.integrity_conflicts ?? 0) === 0 ? (
           <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>
-            当前无异常（保护状态未知 {extrasLoaded ? protectionCount : '获取中'} · Head 过期 {stalePrCount} ·
-            失败回执 0 · 完整性冲突 0——诚实零值，不虚构）。
+            当前无异常——保护状态未知 {extrasLoaded ? protectionCount : '获取中'} · Head 过期 {stalePrCount} ·
+            失败回执 0 · 完整性冲突 0。
           </Typography.Paragraph>
         ) : (
           <>
@@ -594,12 +660,12 @@ export default function OverviewPage() {
               </Typography.Paragraph>
             ) : null}
             <dl className="kv-grid">
-              <div className="kv"><div className="kv-label">Head（当前）</div>
+              <div className="kv"><div className="kv-label">最近记录的 head</div>
                 <div className="kv-value">
                   <span className="sha mono" title={drawerEntity.current?.head_sha ?? ''}>{drawerEntity.current?.head_sha?.slice(0, 12) || '—'}</span>
                   {!drawerEntity.headConfirmed ? (
                     <Tag className="wb-reason-tag" color="default"
-                      title="后端无权威 is_current 标记——当前 head 按最近事件排序推导（head_basis=event_order），未与 GitHub 实时对照。">当前 head 未确认</Tag>
+                      title="后端无权威 is_current 标记——按最近事件排序推导（head_basis=event_order），尚未核实远端最新版本。">尚未核实远端</Tag>
                   ) : null}
                   <div className="muted" style={{ fontSize: 13 }}>同一 head 的更多 run 在 PR 详情页「审查管线」中。</div>
                 </div></div>
@@ -613,7 +679,13 @@ export default function OverviewPage() {
                       return <Tag color={toneToColor(m.tone)}>{m.label}</Tag>; })()}
                 </div></div>
               <div className="kv"><div className="kv-label">阶段来源</div>
-                <div className="kv-value"><span className="mono" style={{ fontSize: 12 }}>{drawerEntity.current?.stage_source || '—'}</span></div></div>
+                <div className="kv-value">
+                  {/* 原始字段/来源表折叠到技术详情（2026-10-16 信息收敛） */}
+                  <details className="tech-details">
+                    <summary>技术详情</summary>
+                    <span className="mono" style={{ fontSize: 12 }}>{drawerEntity.current?.stage_source || '—'}</span>
+                  </details>
+                </div></div>
               <div className="kv"><div className="kv-label">待处理原因</div>
                 <div className="kv-value">{drawerEntity.reason.text}
                   {drawerEntity.isProtectionUnknown ? <Tag className="wb-reason-tag" color="warning">保护状态未知</Tag> : null}
@@ -675,7 +747,8 @@ export default function OverviewPage() {
                   {...baseCol}
                   data={stageData}
                   xField="stage" yField="count" colorField="key"
-                  scale={{ color: { range: stageRange } }}
+                  scale={{ color: { range: stageRange }, ...countScale }}
+                  axis={intYAxis}
                   legend={false}
                   onEvent={(_, event) => {
                     if (event.type === 'element:click') {
@@ -689,7 +762,7 @@ export default function OverviewPage() {
                   }}
                 />
                 <p className="ov-chart-summary">
-                  {`共 ${entities.length} 个 PR（按最新 head 阶段计）：待处理 ${counts.attention} · 已阻断 ${counts.blocked} · 异常 ${counts.anomaly} · 进行中 ${counts.reviewing}${placeholderCount > 0 ? `；另有 ${placeholderCount} 个阶段未获取（保护未知占位，未计入阶段分布）` : ''}。点击柱体可在上方列表过滤对应分类。`}
+                  {`共 ${entities.length} 个 PR（按最近记录的 head 阶段计）：待处理 ${counts.attention} · 已阻断 ${counts.blocked} · 异常 ${counts.anomaly} · 进行中 ${counts.reviewing}${placeholderCount > 0 ? `；另有 ${placeholderCount} 个阶段未获取（保护未知占位，未计入阶段分布）` : ''}。点击柱体可在上方列表过滤对应分类。`}
                 </p>
               </>
             )}
@@ -705,6 +778,8 @@ export default function OverviewPage() {
                 <Line
                   {...baseCol}
                   data={trend} xField="date" yField="runs"
+                  axis={{ ...dateXAxis, ...intYAxis }}
+                  scale={countScale}
                   point={{ size: 3 }}
                   onEvent={snapshotSource ? (_, event) => {
                     if (event.type === 'element:click') navigate('/runs');
@@ -712,9 +787,9 @@ export default function OverviewPage() {
                   style={{ cursor: snapshotSource ? 'pointer' : 'default' }}
                 />
                 <p className="ov-chart-summary">
-                  近 14 天共 {trendTotal} 次运行{trendPeak && (Number(trendPeak.runs) || 0) > 0
-                    ? `，峰值 ${trendPeak.date}（${trendPeak.runs} 次）` : ''}（单位：run）。
-                  {snapshotSource ? '点击数据点打开运行记录。' : '当前数据源不提供 run 级全量历史——运行记录见各 PR 详情。'}
+                  {snapshotSource
+                    ? `近 14 天共 ${trendTotal} 次运行${trendPeak && (Number(trendPeak.runs) || 0) > 0 ? `，峰值 ${trendPeak.date}（${trendPeak.runs} 次）` : ''}（单位：run）。点击数据点打开运行记录。`
+                    : `已加载记录中近 14 天共 ${trendTotal} 次运行（非权威全量统计${trendPeak && (Number(trendPeak.runs) || 0) > 0 ? `，峰值 ${trendPeak.date}` : ''}，单位：run）——run 级历史见各 PR 详情。`}
                 </p>
               </>
             )}
@@ -773,7 +848,9 @@ export default function OverviewPage() {
       <Typography.Paragraph type="secondary" style={{ fontSize: 13 }}>
         <details><summary style={{ cursor: 'pointer' }}>审计入口</summary>
           gate 审计与票据明细见 <Link to="/core">系统状态</Link>；
-          审批票处理见 <Link to="/approvals">审批</Link>；队列视图见 <Link to="/pending">待处理</Link>。
+          审批票处理见 <Link to="/approvals">审批</Link>；
+          {isMu ? <>待审批票清单见 <Link to="/pending">待处理</Link>（该页=待审批票，不含失败/卡住的执行）。</>
+            : <>队列视图见 <Link to="/pending">待处理</Link>。</>}
           REMEDIATING / VERIFYING 需要 Fixer/Verifier（本部署禁用）——计数恒 0，不虚构。
         </details>
       </Typography.Paragraph>

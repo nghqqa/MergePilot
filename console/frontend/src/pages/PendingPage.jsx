@@ -139,13 +139,28 @@ export default function PendingPage() {
 
   const setFResetPage = (k, v) => setF(k, v);
 
+  // 口径如实（2026-10-16）：MU 数据源只含 PENDING 高危修复审批票——
+  // 标题/导语/计数/空态按「待审批票」表达，不宣称包含失败或卡住的执行
+  //（那些在工作台「已阻断/异常」）。其他数据源保留各自真实语义。
+  const isMuQueue = kind === 'multiuser';
+  const pageTitle = isMuQueue ? '待审批票' : '待处理';
+  const unitWord = isMuQueue ? '张待审批票' : '项待处理';
+
   return (
     <div>
-      <Typography.Title level={1} style={{ fontSize: 24, marginBottom: 4 }}>待处理</Typography.Title>
-      <Typography.Paragraph type="secondary">
-        需要人工处理的事项：等待决策的审查发现、失败或卡住的执行、等待审批的票据。
-        历史记录里的旧结论不会出现在这里。
-      </Typography.Paragraph>
+      <Typography.Title level={1} style={{ fontSize: 24, marginBottom: 4 }}>{pageTitle}</Typography.Title>
+      {isMuQueue ? (
+        <Typography.Paragraph type="secondary">
+          当前待人工批准的高危修复审批票（P0/P1 逐条开票，服务端权威；票面绑定其产生时的 head，
+          PR 推进后过期/漂移票按服务端规则失效）。本页只含待审批票——失败或卡住的执行不在本页，
+          见工作台「已阻断 / 异常」。逐条处理入口也可在「审批」页操作。
+        </Typography.Paragraph>
+      ) : (
+        <Typography.Paragraph type="secondary">
+          需要人工处理的事项：等待决策的审查发现、失败或卡住的执行、等待审批的票据。
+          历史记录里的旧结论不会出现在这里。
+        </Typography.Paragraph>
+      )}
 
       {q.status === 'error' ? (
         kind !== 'snapshot' && q.error?.status === 404 ? (
@@ -158,10 +173,10 @@ export default function PendingPage() {
         <SkeletonRows rows={5} cols={5} />
       ) : (
         <>
-          <div className="filter-bar" role="search" aria-label="待处理事项筛选" style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
-            <Input allowClear placeholder="仓库 / PR / 状态" prefix={<Search size={14} aria-hidden />}
+          <div className="filter-bar" role="search" aria-label={isMuQueue ? '待审批票筛选' : '待处理事项筛选'} style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+            <Input allowClear placeholder={isMuQueue ? '仓库 / PR / 状态（待审批票）' : '仓库 / PR / 状态'} prefix={<Search size={14} aria-hidden />}
                    value={filters.q} onChange={(e) => setFResetPage('q', e.target.value)}
-                   aria-label="搜索待处理事项" style={{ maxWidth: 280 }} />
+                   aria-label={isMuQueue ? '搜索待审批票' : '搜索待处理事项'} style={{ maxWidth: 280 }} />
             {repoOptions.length > 1 ? (
               <Select allowClear placeholder="全部仓库" value={filters.repo || undefined}
                       onChange={(v) => setFResetPage('repo', v ?? '')} aria-label="按仓库筛选"
@@ -179,12 +194,12 @@ export default function PendingPage() {
           </div>
 
           <Typography.Paragraph type="secondary" style={{ marginBottom: 8 }}>
-            {filtered.length} 项待处理
+            {filtered.length} {unitWord}
             {/* UX-07（2026-10-15）：口径按数据源如实——MU 待办=服务端权威审批票，
                 不套用快照「最近一次运行记录」口径；票面绑定其产生时的 head，
                 PR 推进后过期/漂移票按服务端规则失效（STALE），以详情页为准。 */}
             {kind === 'console-pg' ? '（审批待办来自隔离联调库——非真实生产待办）'
-              : kind === 'multiuser' ? '（以下为服务端当前待审批票——权威口径；票面绑定其产生时的 head，PR 推进后过期/漂移票按服务端规则失效，以 PR 详情页为准）'
+              : kind === 'multiuser' ? '（服务端当前 PENDING 审批票；空集=当前没有待批准的高危修复票，不代表没有已阻断或异常的 PR）'
                 : '（依据最近一次运行记录，非当前 head 结论）'}
           </Typography.Paragraph>
 
@@ -192,7 +207,13 @@ export default function PendingPage() {
             size="small" rowKey={(it) => it.id + (it.kind ?? '')}
             pagination={{ pageSize: 20, hideOnSinglePage: true }}
             dataSource={filtered}
-            locale={{ emptyText: '没有需要处理的事项' }}
+            locale={{ emptyText: isMuQueue ? (
+              <span>
+                暂无待审批票——当前没有待批准的高危修复票。已阻断/受控停止的 PR 见
+                <Link to="/overview?focus=blocked" style={{ marginInlineStart: 4 }}>工作台「已阻断」</Link>
+                （与「审批」页的已批准/已驳回历史记录互不混同）。
+              </span>
+            ) : '没有需要处理的事项' }}
             columns={[
               { title: '类型', dataIndex: 'kindLabel', width: 100,
                 render: (v, it) => <Tag color={it.kind === 'approval' ? 'processing' : 'warning'}>{v}</Tag> },

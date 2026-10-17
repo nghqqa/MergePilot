@@ -243,9 +243,21 @@ test('联动：focus=blocked 列表只含阻断 PR（每 PR 一行，无重复�
     assert.ok(str.includes('/mu/repos/nghqqa/demo/pr/8'), '含 #8');
     assert.ok(str.includes('/mu/repos/nghqqa/demo/pr/9'), '含 #9');
     assert.ok(!str.includes('/mu/repos/nghqqa/demo/pr/3'), '不含 REVIEWING #3');
-    // 每 PR 一行：/pr/8 链接在列表只出现 1 次（多 head 不重复出行）
-    const links = str.match(/\/mu\/repos\/nghqqa\/demo\/pr\/8/g) ?? [];
-    assert.equal(links.length, 1, `PR #8 在列表中恰一行（实得 ${links.length}）`);
+    // 每 PR 一行：/pr/8 链接在桌面表格内只出现 1 次（多 head 不重复出行）。
+    // 2026-10-16 起页面同时渲染窄屏纵向条目（wb-mobile-only，CSS 隐藏）——
+    // 计数须限定在桌面表格（type==='table'）子树内，不把窄屏卡片算重复。
+    const json = renderer.toJSON();
+    let tableJson = null;
+    const walk = (n) => {
+      if (!n || tableJson) return;
+      if (n.type === 'table') { tableJson = n; return; }
+      (n.children ?? []).forEach(walk);
+    };
+    walk(json);
+    assert.ok(tableJson, '桌面表格应渲染');
+    const tableStr = JSON.stringify(tableJson);
+    const links = tableStr.match(/\/mu\/repos\/nghqqa\/demo\/pr\/8/g) ?? [];
+    assert.equal(links.length, 1, `PR #8 在桌面表格中恰一行（实得 ${links.length}）`);
     assert.ok(str.includes('已显示「已阻断」2 个'), '联动 status 行：数量与统计卡一致');
   } finally { await act(async () => { renderer.unmount(); }); }
 });
@@ -396,8 +408,10 @@ test('导航：一级恰四项 + 分组；MU 登录态无「只读·无写操作
     }
     assert.ok(str.includes('系统管理') && str.includes('高级工具'), '分组标题存在');
     assert.ok(!str.includes('/knowledge'), '高级工具默认折叠');
-    // 能力口径统一：MU OAuth 登录态下 footer 声明真实边界
-    assert.ok(str.includes('不写 GitHub · 不自动合并'), 'footer 能力边界（不写 GitHub/不自动合并）');
+    // 能力口径统一：MU OAuth 登录态下 footer 声明真实边界（2026-10-16 事实校正——
+    // 应用补丁/合并 PR 已交付，旧「不写 GitHub」宣称废除；「不自动合并」保留）
+    assert.ok(str.includes('远端写入逐项预览确认 · 不自动合并'), 'footer 能力边界（远端写入逐项预览确认/不自动合并）');
+    assert.ok(!str.includes('不写 GitHub · 不自动合并'), '旧「不写 GitHub」过时宣称已删除');
     assert.ok(!str.includes('只读 · 无写操作'), '旧「只读 · 无写操作」文案已删除');
     assert.ok(str.includes('OAuth 会话'), 'footer 声明 OAuth 会话身份');
     // 顶栏身份（MU 会话摘要）

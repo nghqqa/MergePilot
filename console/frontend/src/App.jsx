@@ -404,7 +404,7 @@ function Shell() {
             <AdvancedNavGroup pathname={loc.pathname} />
           </nav>
           <div className="sidebar-foot">
-            <div className="foot-row" title="本服务仅监听 127.0.0.1 回环地址；不下发任何凭证。写操作仅限审批决策与审查发起类 POST（服务端 RBAC+CSRF）——不写 GitHub、不自动合并。能力口径与「设置 / 数据源」页一致。">
+            <div className="foot-row" title="本服务仅监听 127.0.0.1 回环地址；不下发任何凭证。写操作（审批决策、发起审查/修复、应用补丁、合并 PR）均经服务端授权（RBAC+CSRF）逐项预览确认；批准修复票仅授权生成建议——不自动合并。能力口径与「设置 / 数据源」页一致。">
               <Activity size={12} strokeWidth={1.75} aria-hidden />
               {capabilityFooterLine(config, auth)}
             </div>
