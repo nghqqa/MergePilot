@@ -268,7 +268,7 @@ export function MuPrDetailContent({ prRef, onChanged }) {
     <div className="mu-approval-ctx" style={{ fontSize: 12, marginBottom: 6 }}>
       <span className="mono">审批对象：{approvalTarget}</span>
       {currentHead
-        ? <span className="mono muted"> · 当前 head：<span title={currentHead}>{currentHead.slice(0, 10)}</span>（各行/列内 head=票据绑定 head，历史）</span>
+        ? <span className="mono muted"> · 当前 head（最近记录，尚未核实远端）：<span title={currentHead}>{currentHead.slice(0, 10)}</span>（各行/列内 head=票据绑定 head，历史）</span>
         : <span className="muted"> · 当前 head 未取得（如实显示）</span>}
     </div>
   );
