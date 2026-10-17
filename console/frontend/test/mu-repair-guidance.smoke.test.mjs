@@ -128,12 +128,15 @@ async function renderRoute(route) {
   });
   for (let i = 0; i < 30; i++) await act(async () => { await Promise.resolve(); });
   return {
+    container,
     text: () => container.textContent ?? '',
     html: () => container.innerHTML ?? '',
     cleanup: async () => { if (root) await act(async () => root.unmount()); container.remove(); },
   };
 }
 const flush = async () => { for (let i = 0; i < 30; i++) await act(async () => { await Promise.resolve(); }); };
+// 按钮查询必须限定在本次渲染的 container 内——document 全局查询会把
+// 其他用例泄漏渲染（断言失败跳过 cleanup 时）的残留按钮一并抓进来（G4 教训 2026-10-16）
 function findButtons(container, label) {
   const needle = label.replace(/\s+/g, '');
   return [...container.querySelectorAll('button')]
@@ -147,42 +150,53 @@ after(() => { try { domWindow.close(); } catch { /* ignore */ } setTimeout(() =>
 test('G1 BLOCKED run 发起受控修复 → 409 hint 同屏渲染（新 head 路径+同 head 幂等如实）', async () => {
   ROUTES = ROUTES_FOR();
   const ui = await renderRoute(ROUTE);
-  await flush();
-  const repairBtn = findButtons(ui.html ? domWindow.document : domWindow.document, '发起受控修复')[0];
-  assert.ok(repairBtn, '发起受控修复按钮存在');
-  await act(async () => { repairBtn.click(); });
-  await flush();
-  const txt = ui.text();
-  assert.match(txt, /BLOCKED/, '409 文本可见');
-  assert.match(txt, /推送新 commit 产生新 head/, '恢复路径（新 head）同屏');
-  assert.match(txt, /不会新建 run/, '同 head 幂等如实（不冒充会新建）');
-  assert.match(txt, /审批门会重新执行/, '审批门重执行说明可见');
-  await ui.cleanup();
+  try {
+    await flush();
+    const repairBtn = findButtons(ui.container, '发起受控修复')[0];
+    assert.ok(repairBtn, '发起受控修复按钮存在');
+    await act(async () => { repairBtn.click(); });
+    await flush();
+    const txt = ui.text();
+    assert.match(txt, /BLOCKED/, '409 文本可见');
+    assert.match(txt, /推送新 commit 产生新 head/, '恢复路径（新 head）同屏');
+    assert.match(txt, /不会新建 run/, '同 head 幂等如实（不冒充会新建）');
+    assert.match(txt, /审批门会重新执行/, '审批门重执行说明可见');
+  } finally { await ui.cleanup(); }
 });
 
 test('G2 终态票（CONSUMED）不出现可重新批准的按钮', async () => {
   ROUTES = ROUTES_FOR();
   const ui = await renderRoute(ROUTE);
-  await flush();
-  const approveBtns = findButtons(domWindow.document, '批准受控修复')
-    .filter((b) => !b.disabled);
-  assert.equal(approveBtns.length, 0, 'CONSUMED 票无可用批准按钮');
-  await ui.cleanup();
+  try {
+    await flush();
+    const approveBtns = findButtons(ui.container, '批准受控修复')
+      .filter((b) => !b.disabled);
+    assert.equal(approveBtns.length, 0, 'CONSUMED 票无可用批准按钮');
+  } finally { await ui.cleanup(); }
 });
 
-test('G3 审批票上下文（platform/owner/repo/PR#/run 状态）在票行可见——桌面与窄屏同一节点', async () => {
+test('G3 审批票上下文（platform/owner/repo/PR#/run 状态）双分支可见+票据绑定 head 区分', async () => {
   ROUTES = ROUTES_FOR();
   const ui = await renderRoute(ROUTE);
-  await flush();
-  const txt = ui.text();
-  assert.match(txt, /github · acme\/app · PR#12/, '票行仓库上下文可见');
-  assert.match(txt, /BLOCKED/, 'run 状态可见');
-  // 窄屏：同一 DOM 节点承载信息——happy-dom 无真实布局，断言节点存在且非 display:none 内联
-  const ctxNode = [...domWindow.document.querySelectorAll('.mu-approval-line')]
-    .find((n) => (n.textContent ?? '').includes('acme/app'));
-  assert.ok(ctxNode, '上下文节点存在');
-  assert.notEqual(ctxNode.getAttribute('style') ?? '', 'display:none', '窄屏不隐藏上下文');
-  await ui.cleanup();
+  try {
+    await flush();
+    const txt = ui.text();
+    assert.match(txt, /github · acme\/app · PR#12/, '票行仓库上下文可见');
+    assert.match(txt, /BLOCKED/, 'run 状态可见');
+    // 上下文定位用 #472 引入的桌面/窄屏共用块 mu-approval-ctx（原 .mu-approval-line
+    // 在 #472 重构后只承载票据绑定 head，不再含仓库名——2026-10-16 复核定案）。
+    const ctxNodes = [...ui.container.querySelectorAll('.mu-approval-ctx')]
+      .filter((n) => (n.textContent ?? '').includes('acme/app'));
+    assert.ok(ctxNodes.length >= 1, '共用上下文节点存在（桌面+窄屏双分支）');
+    for (const n of ctxNodes) {
+      assert.notEqual(n.getAttribute('style') ?? '', 'display:none', '上下文不以内联 display:none 隐藏');
+    }
+    // 票行内仍保留票据绑定 head 语义（与当前 head 区分——#472 保护的行为不回退）
+    const lineNode = [...ui.container.querySelectorAll('.mu-approval-line')]
+      .find((n) => (n.textContent ?? '').includes('票据绑定 head'));
+    assert.ok(lineNode, '票据绑定 head 行存在（绑定于批准时，非当前 head）');
+    assert.match(lineNode.textContent ?? '', /BLOCKED/, 'run 状态随票据绑定 head 行可见');
+  } finally { await ui.cleanup(); }
 });
 
 test('G4 无权限角色：发起受控修复 disabled+服务端拒绝形态保持', async () => {
@@ -196,11 +210,14 @@ test('G4 无权限角色：发起受控修复 disabled+服务端拒绝形态保�
     '/api/mu/prs/12': () => DETAIL(REVIEWER_ACTIONS),
   };
   const ui = await renderRoute(ROUTE);
-  await flush();
-  const btns = findButtons(domWindow.document, '发起受控修复');
-  assert.ok(btns.length >= 1, '按钮存在（禁用态）');
-  assert.ok(btns.every((b) => b.disabled), '无权限角色按钮 disabled');
-  await ui.cleanup();
+  try {
+    await flush();
+    // 查询限定本次渲染 container（2026-10-16 复核：泄漏渲染曾污染 document 全局查询）
+    const btns = findButtons(ui.container, '发起受控修复');
+    assert.ok(btns.length >= 1, '按钮存在（禁用态）');
+    assert.ok(btns.every((b) => b.disabled), '无权限角色按钮 disabled');
+    assert.match(ui.text(), /部分动作需更高角色/, '无权限提示可见（后端仍为最终授权方）');
+  } finally { await ui.cleanup(); }
 });
 
 test('G5 result_uncertain 指引优先读回对账（apply 预览文案引用，不重放写入）', async () => {
@@ -211,7 +228,8 @@ test('G5 result_uncertain 指引优先读回对账（apply 预览文案引用，
   assert.doesNotMatch(src, /result_uncertain[^`]*直接重试/, '不引导重复写入');
   ROUTES = ROUTES_FOR();
   const ui = await renderRoute(ROUTE);
-  await flush();
-  assert.ok(ui.text().length > 0, '页面正常渲染');
-  await ui.cleanup();
+  try {
+    await flush();
+    assert.ok(ui.text().length > 0, '页面正常渲染');
+  } finally { await ui.cleanup(); }
 });
