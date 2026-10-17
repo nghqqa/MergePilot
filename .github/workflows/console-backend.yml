@@ -241,6 +241,11 @@ jobs:
         run: node --test test/login-fixture-entry.smoke.test.mjs
         working-directory: console/frontend
 
+      # 概览图表整数刻度纯计算（#479 抽取进纯模块）：0/1/小域/大域/非零下界
+      - name: Frontend overview chart ticks smoke (5 scenarios)
+        run: node --test test/overview-chart-ticks.smoke.test.mjs
+        working-directory: console/frontend
+
       # 受控修复指引冒烟（2026-10-16 复核修正后纳入门禁）：409 hint 同屏/终态票无重批/
       # 审批上下文共用块/无权限 disabled/uncertain 读回对账——此前未注册 CI，
       # main 上的选择器过时（G3）与泄漏渲染污染（G4）长期不受门禁保护
