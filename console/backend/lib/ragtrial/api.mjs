@@ -106,6 +106,14 @@ function readCorpusDir(dir, { base }) {
   return out;
 }
 
+// 请求模型解析（纯函数；2026-10-18 试点验证缺口修复）：显式 model_id 优先；
+// 缺省用 env 配置的语义嵌入模型（RAGTRIAL_EMBED_MODEL_ID）——不能落到首注册的
+// local-hash-v1（词法模型），否则语义索引查询被静默路由到词法通道。
+export function resolveRequestModelId(env, bodyModelId) {
+  return bodyModelId ? String(bodyModelId)
+    : (String(env?.RAGTRIAL_EMBED_MODEL_ID ?? '').trim() || null);
+}
+
 // ── RAG scope allowlist（CANONICAL_A：自 B 波选择性吸收并加固）────────────
 // 合同：默认拒绝——RAGTRIAL_ALLOWED_SCOPES 未设置/为空 → 一律 403
 // （缺配置不得扩大范围）；撤销 env 即时生效（每次请求现读 env）；
@@ -245,7 +253,7 @@ export async function ragTrialApi(req, res, ctx) {
     try {
       const r = await mstore.search({
         q, repo, branch, k: Number(body.k || 5),
-        modelId: body.model_id ? String(body.model_id) : null,
+        modelId: resolveRequestModelId(env, body.model_id),
         actor: `run-binding:${String(body.run_id).slice(0, 64)}`,
         // 机器通道无用户租户上下文——query_log.tenant_id 保持 NULL（历史语义）
       });
@@ -652,7 +660,11 @@ export async function ragTrialApi(req, res, ctx) {
       const sdAux = await authorizeRepo(env, { store, auth, actor, repo: String(repo), branch: String(branch),
         source: req.socket?.remoteAddress ?? null, kind: 'session' });
       if (sdAux.status === 403) return sendJson(res, sdAux.status, sdAux.body);
+      // 默认模型=env 配置的语义嵌入模型（RAGTRIAL_EMBED_MODEL_ID）——此前缺省解析到
+      // 首注册的 local-hash-v1，语义索引查询被路由到词法模型（2026-10-18 试点验证发现）
+      const modelId = resolveRequestModelId(env, body.model_id);
       const r = await store.search({ q, repo, branch, k: Number(body.k || 5), actor,
+        modelId,
         tenantId: auth?._mu?.tenantId ?? null }); // rc.10 PR-E（ISO-2）同 query_log 归属
       const aux = (r.results ?? []).map((h) => toAuxEvidence(h, { runId: run_id ?? null }));
       const runView = attachToRun(
