@@ -35,7 +35,9 @@ ENV NODE_ENV=production CONSOLE_HOST=0.0.0.0 CONSOLE_PORT=4730
 
 # 补丁可应用性检查（v27/2026-10-13 波）需要 git：隔离临时工作副本中
 # 对准确 head 执行 git apply --check（patch-applicability.mjs）。
-RUN apk add --no-cache git
+# CVE-2026-85091（issue #483）：基础镜像 node:22-alpine 尚未随 alpine 仓库重建带入
+# zlib 1.3.2-r1——构建期显式升级闭合；基础镜像跟上后此行无害（幂等）。
+RUN apk --no-cache add git && apk --no-cache upgrade zlib
 
 # rc.14：版本号构建期注入——/api/health version 的唯一构建期真源。
 # server.mjs 读 process.env.MERGEPILOT_VERSION（runtime 可覆盖）。

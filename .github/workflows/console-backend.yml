@@ -259,6 +259,19 @@ jobs:
         run: node --test test/apply-merge-preview.smoke.test.mjs
         working-directory: console/frontend
 
+      # 发布评论确认门纯函数（2026-10-18 契约收口）：match 唯一放行；
+      # unreadable/unknown/changed 禁用；空上下文 fail-closed 默认
+      - name: Frontend publish confirm state smoke (5 scenarios)
+        run: node --test test/publish-confirm-state.smoke.test.mjs
+        working-directory: console/frontend
+
+      # 发布抽屉组件行为回归（2026-10-18 独立审阅补强）：真实渲染 App+受控 fetch——
+      # 失败态禁用+原因可见；恢复后重新预览启用且点击恰好一次 POST；不一致态禁用。
+      # 纯函数与相邻冒烟不能替代本项（审阅点：组件级回归必须存在）
+      - name: Frontend publish drawer behavior smoke (3 scenarios)
+        run: node --test test/publish-drawer-behavior.smoke.test.mjs
+        working-directory: console/frontend
+
       # ADR-002 PR F 前端冒烟：审查架构面板（三档/consent 门/出站披露）+
       # PR 详情四分立判定上屏（互不冒充）
       - name: Frontend review-arch smoke (PR F, 3 scenarios)
