@@ -77,7 +77,7 @@ Beta 通道接口与配置项可能随版本调整；生产使用建议钉住 di
 <tr><td>RAG 为可选组件</td><td>未接入时相关面如实显示 NOT_WIRED</td><td><span class="tag tag-lim">当前限制</span></td><td>按 .env 模板接入 bge-m3 即可</td></tr>
 <tr><td>Gitee 连接器不支持读取 CI 状态</td><td>实测当前连接器访问 status 端点返回 404 → Gitee 仓库的合并被资格门恒阻塞（连接器能力结论，不判断 Gitee 平台整体）</td><td><span class="tag tag-lim">当前限制</span></td><td>Gitee 仓库可用审查/评论/应用修复；合并需等连接器补 CI 读取</td></tr>
 <tr><td>机器人远端写入不可由容器回滚撤销</td><td>机器人已推送的修复提交与已发生的合并不随镜像回滚消失</td><td><span class="tag tag-sec">如实边界</span></td><td>远端回退只能在 GitHub/Gitee 手动 revert</td></tr>
-<tr><td>已发布镜像不含后续源码修正</td><td>官方预发布 rc.35.6-rc1 制品对应 <code>1d875ad</code>；其发布之后合入 main 的源码修正不含在该镜像</td><td><span class="tag tag-lim">版本范围</span></td><td>按<a href="downloads.html#release-scope">发布范围</a>选择制品；不要把候选验证视作已正式发布</td></tr>
+<tr><td>已发布镜像不含后续源码修正</td><td>官方预发布 rc.35.6-rc2 制品对应 <code>ea72400a</code>；其发布之后合入 main 的源码修正不含在该镜像</td><td><span class="tag tag-lim">版本范围</span></td><td>按<a href="downloads.html#release-scope">发布范围</a>选择制品；不要把候选验证视作已正式发布</td></tr>
 </tbody>
 </table>
 </div>
@@ -99,7 +99,7 @@ Beta 通道接口与配置项可能随版本调整；生产使用建议钉住 di
 </div>
 
 <h2 id="validation-status">验证范围</h2>
-<p>截至 2026-10-17，rc.35.6-rc1 已作为官方预发布发布，并运行于维护者生产实例
+<p>截至 2026-10-18，rc.35.6-rc2 已作为官方预发布发布，并运行于维护者生产实例
 （T+1h 观察通过）；<strong>首位未参与开发的真实用户试用仍待验</strong>。演示夹具登录不等于
 OAuth 接入验收，预置发现与补丁证据不等于真实模型产出或测试执行结果。</p>
 <p>真实手机、200% 真缩放与读屏器尚未验证；候选环境中远端读取失败时，完整合并资格展示仍受限。
@@ -119,6 +119,6 @@ OAuth 接入验收，预置发现与补丁证据不等于真实模型产出或�
 生产使用建议钉住 digest 并在升级窗口验证（见升级与回滚）。</div>
 </article>
 </main>
-<footer class="footer">MergePilot 0.2.0-beta.6-rc.35.6-rc1（预发布） · Apache-2.0</footer>
+<footer class="footer">MergePilot 0.2.0-beta.6-rc.35.6-rc2（预发布） · Apache-2.0</footer>
 </body>
 </html>

@@ -1,12 +1,13 @@
-# MergePilot 用户指南（rc.35.6-rc1 口径）
+# MergePilot 用户指南（rc.35.6-rc2 口径）
 
 > 面向受邀成员与维护者的日常使用。部署与配置见 [DEPLOY-GUIDE.md](DEPLOY-GUIDE.md)；
 > 出错先查 [TROUBLESHOOTING.md](TROUBLESHOOTING.md)；能力事实锚点见
 > [CAPABILITY-MATRIX.md](CAPABILITY-MATRIX.md)。
 >
-> 版本范围（2026-10-17）：官方**预发布** rc.35.6-rc1 镜像对应源码 `1d875ad`，已包含恢复提示、
-> 审批上下文、bootstrap 角色保持、总览与远端 head 未知态等 rc.35.5 后修正；其发布之后合入
-> main 的修正尚未进入官方镜像。下文流程能力以 rc.35.6-rc1 为基线，其后修正见 §6；
+> 版本范围（2026-10-18）：官方**预发布** rc.35.6-rc2 镜像对应源码 `ea72400af462b9f6dbf05318b1ef0ebb3bcc81d1`，
+> 已包含恢复提示、审批上下文、bootstrap 角色保持、总览与远端 head 未知态等修正，以及发布确认门
+> 与 CVE-2026-85091（zlib）闭合；其发布之后合入 main 的修正尚未进入官方镜像。
+> 下文流程能力以 rc.35.6-rc2 为基线，其后修正见 §6；
 > 官网配套入口为 [首次使用](../../website/user-guide.html)，制品区别见
 > [下载与发布范围](../../website/downloads.html#release-scope)。
 >
@@ -259,7 +260,7 @@ auditor 仅审计元数据。触发审查不要说"reviewer 及以上"——准�
 
 ## 6. 常见状态速查
 
-rc.35.5 之后加入的修正（**已包含于 rc.35.6-rc1 官方预发布镜像**；其后合入 main 的修正按同口径核对）：
+rc.35.5 之后加入的修正（**已包含于 rc.35.6-rc2 官方预发布镜像**；其后合入 main 的修正按同口径核对）：
 
 - `BLOCKED/no_repair_pending` 按真实 run 状态及票据/执行记录解释原因。同 head 重复触发
   复用原 run；需要恢复时修正代码、推送新 commit 后重新审查。仅当新 head 再现 P0/P1
