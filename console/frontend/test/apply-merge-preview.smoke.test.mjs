@@ -37,6 +37,7 @@ globalThis.requestAnimationFrame ??= domWindow.requestAnimationFrame.bind(domWin
 globalThis.cancelAnimationFrame ??= domWindow.cancelAnimationFrame.bind(domWindow);
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
+
 const SESSION = { user: { name: 'smoke' }, repos: [] };
 const MAINTAINER_ACTIONS = ['read_repository', 'read_pull_request', 'read_code_content',
   'rag_query', 'request_review', 'decide_review', 'request_repair', 'apply_fix', 'merge_pr',

@@ -197,8 +197,10 @@ export function RunKnowledgeReferences({ runId, repoFull, branch, findings }) {
         if (dead) return;
         if (r.status === 403 || r.status === 401 || b?.service_state === 'backend_not_wired') { setAux(null); return; }
         if (!r.ok || b?.service_state === 'error') {
+          // note 可能是结构化错误对象（如 {reason}）——字符串化后再渲染，避免对象作为 React child 崩树
+          const errRaw = b?.note || b?.error || `HTTP ${r.status}`;
           setAux({ service_state: b?.service_state === 'provider_unavailable' ? 'provider_unavailable' : 'error',
-            note: b?.note || b?.error || `HTTP ${r.status}` });
+            note: typeof errRaw === 'string' ? errRaw : JSON.stringify(errRaw) });
           return;
         }
         const auxList = b?.run_view?.review_context?.rag_auxiliary ?? [];
