@@ -117,7 +117,7 @@ function baseRoutes({ reviewAux }) {
       { repo_id: 'r-1', owner: 'acme', name: 'app', provider: 'github', provider_repo_id: 'R_1' }] }],
     '/api/mu/prs/12': () => [200, {
       pull_request: { pr_id: 'pr-1', repo_id: 'r-1', provider: 'github', provider_pr_number: 12,
-        head_sha: HEAD, head_ref: 'feature/x', branch_protection_status: 'unknown', title: 'fix' },
+        head_sha: HEAD, head_ref: 'feature/docs', base_ref: 'main', branch_protection_status: 'unknown', title: 'fix' },
       review_records: [],
       latest_run: { run_id: RUN, status: 'COMPLETED', architecture_version: 'v2',
         review_mode: 'evidence_only', review_verdict: 'changes_requested',
@@ -178,7 +178,11 @@ test('R1（App 级集成锚）命中：run 页出现「知识库参考」，引�
   reviewAuxResponse = () => [200, hitBody()];
   const ui = await renderRoute(ROUTE);
   try {
-    assert.ok(await waitFor(() => ui.text().includes('知识库参考')), '知识库参考区块出现（等待 artifacts 链式加载）');
+    const ok1 = await waitFor(() => ui.text().includes('DEMO-NULL-BUG'));
+    console.log('[dbg-R1] findings loaded:', ok1, '| TEXT:', JSON.stringify(ui.text().slice(0, 600)));
+    const ok2 = await waitFor(() => ui.text().includes('知识库参考'), 6000);
+    console.log('[dbg-R1] section:', ok2, '| TEXT tail:', JSON.stringify(ui.text().slice(-300)));
+    assert.ok(ok2, '知识库参考区块出现');
     const t = ui.text();
     assert.ok(t.includes('review-policy.md'), '引用 doc_path 可见');
     assert.ok(t.includes('L15-28'), '行号可见（可追溯）');
@@ -196,7 +200,7 @@ async function renderComp() {
   await act(async () => {
     root = createRoot(container);
     root.render(React.createElement(loaded.RunKnowledgeReferences, {
-      runId: RUN, repoFull: 'nghqqa/ragdemo', branch: 'main', findings,
+      runId: RUN, repoFull: 'nghqqa/ragdemo', baseBranch: 'main', findings,
     }));
   });
   return {
