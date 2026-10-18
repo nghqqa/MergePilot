@@ -534,3 +534,73 @@ test('泄露回归：safeSwapSummary 纯函数——键名排序在、值不在'
   assert.ok(out.includes('MU_LLM_API_KEY'), '键名回显');
   assert.ok(!out.includes('dummy-llm-key-XYZ789'), '值不回显');
 });
+
+// ── rc3 换版事故回归锁（2026-10-18）────────────────────────────────────────
+const {
+  validateForDeploy,
+  envValueLooksRedacted,
+  matrixLoginBody,
+  pickRollbackImage,
+} = require('../scripts/swap-console.cjs');
+
+test('事故回归：掩码 DSN（***）→ validateForDeploy 拒绝，原因点名键位', () => {
+  const r = validateForDeploy({ Config: { Env: [
+    'MU_MODE=multiuser',
+    'CONSOLE_PG_DSN=postgres://postgres:***@beta-mp-pg:5432/mu',
+    'CONSOLE_SESSION_SECRET=fake-s-secret-123',
+  ] } });
+  assert.equal(r.ok, false);
+  assert.ok(r.reasons.some((x) => x.includes('CONSOLE_PG_DSN')), '点名 DSN');
+  assert.ok(r.reasons.some((x) => x.includes('脱敏')), '点名脱敏副本');
+});
+
+test('事故回归：REDACTED/空值秘密键同样拒绝', () => {
+  const r = validateForDeploy({ Config: { Env: [
+    'CONSOLE_PG_DSN=postgres://postgres:fake-redacted-pw@db:5432/mu',
+    'MU_LLM_API_KEY=REDACTED',
+    'MU_GITEE_PAT=',
+  ] } });
+  assert.equal(r.ok, false);
+  assert.ok(r.reasons.some((x) => x.includes('MU_LLM_API_KEY')));
+  assert.ok(r.reasons.some((x) => x.includes('MU_GITEE_PAT')));
+});
+
+test('正常配置（秘密齐备非脱敏）→ 通过；无秘密键的值不受误伤', () => {
+  const ok = validateForDeploy({ Config: { Env: [
+    'MU_MODE=multiuser',
+    'CONSOLE_PG_DSN=postgres://postgres:fake-pw-16chars@db:5432/mu',
+    'CONSOLE_SESSION_SECRET=fake-s-secret-123',
+    'NODE_ENV=production',
+    'PATH=/usr/bin:/bin',
+  ] } });
+  assert.equal(ok.ok, true, ok.reasons.join('; '));
+});
+
+test('MU_MODE=multiuser 缺 CONSOLE_PG_DSN → 拒绝；非 multiuser 不要求', () => {
+  const r = validateForDeploy({ Config: { Env: ['MU_MODE=multiuser', 'NODE_ENV=production'] } });
+  assert.equal(r.ok, false);
+  assert.ok(r.reasons.some((x) => x.includes('CONSOLE_PG_DSN')));
+  const ok2 = validateForDeploy({ Config: { Env: ['NODE_ENV=production'] } });
+  assert.equal(ok2.ok, true, ok2.reasons.join('; '));
+});
+
+test('非秘密键含星号/空值不误伤（如 PATH/提示文案）', () => {
+  assert.equal(envValueLooksRedacted('PATH', '/usr/**/bin'), false);
+  assert.equal(envValueLooksRedacted('MU_NOTE', ''), false);
+});
+
+test('Matrix 登录体：identifier 格式（Tuwunel 旧式顶层 user 字段 403 实证回归锁）', () => {
+  const body = JSON.parse(matrixLoginBody('agentteams-beta-admin', 'fake-pw'));
+  assert.equal(body.type, 'm.login.password');
+  assert.equal(body.identifier.type, 'm.id.user');
+  assert.equal(body.identifier.user, 'agentteams-beta-admin');
+  assert.equal(body.password, 'fake-pw');
+  assert.equal(body.user, undefined, '顶层 user 字段必须移除');
+});
+
+test('回滚镜像：优先不可变 Image ID（Config.Image 旧 tag 兜底）', () => {
+  const inspect = { Image: 'sha256:' + 'a'.repeat(64), Config: { Image: 'ghcr.io/nghqqa/mergepilot-console:v0.2.0-OLD-TAG' } };
+  assert.equal(pickRollbackImage(inspect, 'img:fallback'), 'sha256:' + 'a'.repeat(64));
+  assert.equal(pickRollbackImage({ Config: { Image: 'img:tag' } }, 'img:fallback'), 'img:tag');
+  assert.equal(pickRollbackImage(null, 'img:fallback'), 'img:fallback');
+});

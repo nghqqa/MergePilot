@@ -36,6 +36,55 @@ const fs = require('node:fs');
 const { spawnSync } = require('node:child_process');
 const path = require('node:path');
 
+// ── 部署前 inspect 完整性校验（2026-10-18 rc3 换版事故回归锁）──────────────
+// 事故：运维侧把【掩码后的展示副本】当作部署输入（DSN 密码='***'），swap 照常
+// 执行 → 新容器 PG 断连。修复：部署前拒绝疑似脱敏/缺项的 inspect——在停止旧容器
+// 之前失败（fail-fast），旧容器零影响。脱敏记录只允许用于展示/归档，不得进入部署。
+const REDACT_MARKERS = ['***', 'redacted', '<masked>'];
+const SECRET_KEY_RE = /(PASSWORD|PASSWD|SECRET|TOKEN|APIKEY|API_KEY|PRIVATE_KEY|_KEY|KEY_|PAT|DSN)/i;
+function envValueLooksRedacted(key, value) {
+  if (!SECRET_KEY_RE.test(key)) return false;
+  const v = String(value ?? '');
+  if (!v) return true; // 秘密类键空值=缺项（原值丢失），部署拒绝
+  return REDACT_MARKERS.some((m) => v.toLowerCase().includes(m));
+}
+function validateForDeploy(inspect) {
+  const reasons = [];
+  const env = (inspect && inspect.Config && Array.isArray(inspect.Config.Env)) ? inspect.Config.Env : [];
+  for (const e of env) {
+    const eq = e.indexOf('=');
+    if (eq <= 0) continue;
+    if (envValueLooksRedacted(e.slice(0, eq), e.slice(eq + 1))) {
+      reasons.push(e.slice(0, eq) + ' 值疑似脱敏占位或为空——这是展示副本，不是可部署配置');
+    }
+  }
+  const isMultiuser = env.some((e) => e === 'MU_MODE=multiuser');
+  if (isMultiuser && !env.some((e) => e.startsWith('CONSOLE_PG_DSN='))) {
+    reasons.push('MU_MODE=multiuser 但缺少 CONSOLE_PG_DSN——多用户部署必需');
+  }
+  return { ok: reasons.length === 0, reasons };
+}
+
+// ── Matrix 登录体（纯函数）：identifier 格式──────────────────────────────
+// 2026-10-18 rc3 换版实证：当前 Tuwunel 对旧式顶层 user 字段返回 403（同凭据
+// identifier 格式 200）——统一 identifier:{type:'m.id.user',user}。
+// 注意：实际登录脚本在【容器内】以 env 构造（见 swapConsole 内 loginScript），
+// 本函数为格式契约+单测锚——两处实现必须同步修改。
+function matrixLoginBody(user, password) {
+  return JSON.stringify({ type: 'm.login.password',
+    identifier: { type: 'm.id.user', user: String(user ?? '') },
+    password: String(password ?? '') });
+}
+
+// ── 回滚镜像选择（纯函数）：优先不可变 Image ID────────────────────────────
+// 事故：回滚用 inspect.Config.Image（可变 tag，且可能来自陈旧 inspect）——rc3 换版
+// 回滚复活了 rc.35.5 旧 tag。修复：回滚目标=切换前旧容器的实际不可变镜像 ID
+// （inspect.Image=sha256:…）；Config.Image 仅作兜底。
+function pickRollbackImage(inspect, fallbackImage) {
+  return (inspect && inspect.Image) ? inspect.Image
+    : ((inspect && inspect.Config && inspect.Config.Image) || fallbackImage);
+}
+
 // 硬编码 no 的替代基线：daemon 重启自愈的最低要求（rc.11 缺陷回归锁）
 const FALLBACK_RESTART_POLICY = 'unless-stopped';
 
@@ -192,6 +241,14 @@ async function swapConsole(argv, deps = {}) {
     return 2;
   }
   const inspect = readInspect(inspectFile);
+  // ── 前置检查 0：部署完整性（掩码/缺项拒绝）——先于一切破坏性动作 ──
+  const deployCheck = validateForDeploy(inspect);
+  if (!deployCheck.ok) {
+    log('部署前校验未通过——inspect 疑似脱敏/缺项，拒绝执行（旧容器未受影响）：');
+    for (const r of deployCheck.reasons) log('  - ' + r);
+    log('处置：改用未脱敏的恢复配置（docker inspect 原始输出）；脱敏副本仅用于展示/归档。');
+    return 4;
+  }
   const args = buildDockerRunArgs(inspect, image, { name });
   const containerName = name != null ? name : (typeof inspect.Name === 'string' ? inspect.Name.replace(/^\//, '') : '');
 
@@ -208,7 +265,7 @@ async function swapConsole(argv, deps = {}) {
   if (containerName && hasMatrixEnv && !deps.skipMatrixCheck) {
     const loginScript = "const MU = process.env.MU_AGENTTEAMS_MATRIX_URL; const base = MU.endsWith('/') ? MU.slice(0, -1) : MU; fetch(base + '/_matrix/client/v3/login',"
       + "{method:'POST',headers:{'content-type':'application/json'},"
-      + "body:JSON.stringify({type:'m.login.password',user:process.env.MU_AGENTTEAMS_MATRIX_USER,password:process.env.MU_AGENTTEAMS_MATRIX_PASSWORD})})"
+      + "body:JSON.stringify({type:'m.login.password',identifier:{type:'m.id.user',user:process.env.MU_AGENTTEAMS_MATRIX_USER},password:process.env.MU_AGENTTEAMS_MATRIX_PASSWORD})})"
       + ".then(r=>console.log('STATUS '+r.status)).catch(e=>console.log('STATUS ERR '+e.message))";
     const pre = exec(['exec', containerName, 'node', '-e', loginScript]);
     const preStatus = String((pre.stdout || '')).match(/STATUS (\d{3}|ERR \S+)/) ?? [];
@@ -253,14 +310,32 @@ async function swapConsole(argv, deps = {}) {
   }
 
   // ── 后置检查 1：健康+依赖可达（data_mode=live 表示 PG 实时可读；snapshot=依赖断）──
-  const oldImage = inspect.Config.Image || image;
+  // 回滚目标=切换前旧容器的实际不可变镜像 ID（rc3 事故回归锁：Config.Image 可能是
+  // 陈旧 inspect 里的可变 tag——回滚曾复活 rc.35.5 旧镜像）
+  const oldImage = pickRollbackImage(inspect, image);
   // data_mode=live 断言仅适用于 PG 部署（无 DSN 的部署 health 本就不含 live 语义）
   const hasPgDsn = inspectEnv.some((e) => e.startsWith('CONSOLE_PG_DSN='));
   const rollback = (why) => {
     log('后置检查未通过（' + why + '）——回滚到旧镜像 ' + oldImage.slice(0, 40));
     if (containerName) exec(['rm', '-f', containerName]);
-    const oldArgs = buildDockerRunArgs(inspect, oldImage, { name: containerName || undefined });
-    exec(['run', '-d', ...oldArgs]);
+    const startRollbackImage = (imgRef, warn) => {
+      if (warn) log('⚠️ ' + warn);
+      const oldArgs = buildDockerRunArgs(inspect, imgRef, { name: containerName || undefined });
+      exec(['run', '-d', ...oldArgs]);
+      const chk = exec(['inspect', '--format', '{{.State.Running}}', containerName]);
+      const running = String(chk.stdout || '').trim() === 'true';
+      if (!running) {
+        log('🛑 回滚启动失败（镜像可能已不存在且无兜底）——当前服务处于下线状态，需要运维立即介入：');
+        log('   docker pull/retag 旧镜像后手动 docker run（参数见 inspect JSON），或切到任一可用版本。');
+      }
+      return running;
+    };
+    // 首选：切换前旧容器的不可变镜像 ID（精确）；
+    // ID 失败（镜像被清理等）→ LOUD 提醒后以 Config.Image 兜底（可能陈旧——风险已明示）。
+    if (!startRollbackImage(oldImage, null) && oldImage !== (inspect.Config.Image || image)) {
+      startRollbackImage(inspect.Config.Image || image,
+        '不可变镜像 ID 不可用（镜像可能已被清理）——尝试 Config.Image 兜底：' + String(inspect.Config.Image || image).slice(0, 40) + '（可能非切换前实际版本，恢复后请核对 /api/health 身份）');
+    }
     // 回滚容器同样补挂非默认网络（rc.35.1 切换实测缺陷：回滚只 run 不 connect
     // → 旧容器失去自定义 DNS（beta-mp-pg/ctrl 解析）→ Matrix/DB 全挂）
     for (const net of extraNetworks) {
@@ -280,7 +355,18 @@ async function swapConsole(argv, deps = {}) {
       const h = exec(['exec', containerName, 'node', '-e', probeSrc]);
       const out = String(h.stdout || '') + (h.status !== 0 ? ' [exit=' + h.status + ' err=' + String(h.stderr || '').slice(0, 160) + ']' : '');
       log('健康检查第 ' + (i + 1) + '/12 轮: ' + (out.trim() ? out.trim().slice(0, 170) : '（exec 无输出）'));
-      if (/HEALTH live/.test(out)) { live = true; log('健康检查通过（data_mode=live）: ' + out.replace('HEALTH ', '').trim()); break; }
+      if (/HEALTH live/.test(out)) {
+        // rc3 事故回归锁：data_mode=live 之外，multiuser 部署还要求 mu_schema_ready=true
+        // （掩码 DSN 事故实证：live 探针曾误绿——DSN 坏时 health 仍可返回部分字段）
+        const isMultiuser = inspectEnv.some((e) => e === 'MU_MODE=multiuser');
+        const muReady = /mu_ready=true/.test(out);
+        const muAbsent = /mu_ready=n\/a/.test(out);
+        if (isMultiuser && !muReady && !muAbsent) {
+          log('健康检查: ' + out.replace('HEALTH ', '').trim() + '（live 但 mu_schema_ready 未就绪，等待）');
+          continue;
+        }
+        live = true; log('健康检查通过（data_mode=live）: ' + out.replace('HEALTH ', '').trim()); break;
+      }
       if (/HEALTH /.test(out)) log('健康检查: ' + out.replace('HEALTH ', '').trim() + '（等待依赖就绪）');
     }
     await new Promise((r) => setTimeout(r, 5_000));
@@ -317,7 +403,7 @@ async function swapConsole(argv, deps = {}) {
   if (hasMatrixEnv && !deps.skipMatrixCheck) {
     const loginScript2 = "const MU = process.env.MU_AGENTTEAMS_MATRIX_URL; const base = MU.endsWith('/') ? MU.slice(0, -1) : MU; fetch(base + '/_matrix/client/v3/login',"
       + "{method:'POST',headers:{'content-type':'application/json'},"
-      + "body:JSON.stringify({type:'m.login.password',user:process.env.MU_AGENTTEAMS_MATRIX_USER,password:process.env.MU_AGENTTEAMS_MATRIX_PASSWORD})})"
+      + "body:JSON.stringify({type:'m.login.password',identifier:{type:'m.id.user',user:process.env.MU_AGENTTEAMS_MATRIX_USER},password:process.env.MU_AGENTTEAMS_MATRIX_PASSWORD})})"
       + ".then(r=>console.log('STATUS '+r.status)).catch(e=>console.log('STATUS ERR '+e.message))";
     const post = exec(['exec', containerName, 'node', '-e', loginScript2]);
     if (!/STATUS 200/.test(post.stdout || '')) {
@@ -329,7 +415,7 @@ async function swapConsole(argv, deps = {}) {
   return 0;
 }
 
-module.exports = { FALLBACK_RESTART_POLICY, resolveRestartPolicy, mountSpec, portSpecs, buildDockerRunArgs, safeSwapSummary, swapConsole };
+module.exports = { FALLBACK_RESTART_POLICY, resolveRestartPolicy, mountSpec, portSpecs, buildDockerRunArgs, safeSwapSummary, swapConsole, validateForDeploy, envValueLooksRedacted, matrixLoginBody, pickRollbackImage };
 
 if (require.main === module) {
   try { swapConsole(process.argv.slice(2)).then((c) => process.exit(c)).catch((e) => { console.error('swap-console: ' + (e && e.message ? e.message : e)); process.exit(1); }); }
