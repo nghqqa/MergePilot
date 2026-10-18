@@ -1,4 +1,4 @@
-# MergePilot 部署指南（按目标分步，rc.35.5 交付口径）
+# MergePilot 部署指南（按目标分步，rc.35.6-rc2 交付口径）
 
 > 本文按**你要达成什么**组织，每步末尾给验证命令。能力边界见
 > [CAPABILITY-MATRIX.md](CAPABILITY-MATRIX.md)；失败处理见
@@ -30,8 +30,8 @@ cp .env.example .env          # 权限建议 chmod 600
 | GitHub OAuth | `MU_GITHUB_OAUTH_CLIENT_ID/_SECRET/_CALLBACK_URL` | 用户登录。**注意 GitHub App 与 OAuth App 是两个应用，都要建** |
 | LLM | `MU_LLM_PROVIDER`（=openai_compatible）`_BASE_URL` `_MODEL` `_API_KEY`，可选 `MU_LLM_ALLOWED_MODELS` | 第二阶段模型审查的出站配置（不填则仅静态规则审查） |
 
-**镜像引用**：`docker-compose.yml` 中的 console `image:` 已 pin 到 rc.35.5 官方 digest
-（`sha256:e3041999…61dd3a`，见 [RELEASE-rc.35.5.md](RELEASE-rc.35.5.md)）——如需其他版本，
+**镜像引用**：`docker-compose.yml` 中的 console `image:` 已 pin 到 rc.35.6-rc2 官方 digest
+（`sha256:6d25fd1e…b4cb`；见 Release `v0.2.0-beta.6-rc.35.6-rc2` 与官网下载页身份链）——如需其他版本，
 部署前改成**对应 Release 提供的镜像 digest**（digest 不可变，勿用浮动 tag）。
 pgvector 与 bge-sidecar 的 digest 已钉死。
 
@@ -40,8 +40,8 @@ pgvector 与 bge-sidecar 的 digest 已钉死。
 ```bash
 docker compose --env-file .env up -d
 curl -fsS http://127.0.0.1:${CONSOLE_PORT:-48500}/api/health
-# 期望：{"ok":true,"version":"v0.2.0-beta.6-rc.35.5","mu_schema_ready":true,...}
-# （version/git_commit 应与 Release 冻结身份一致：rc.35.5 / af8b0022）
+# 期望：{"ok":true,"version":"v0.2.0-beta.6-rc.35.6-rc2","mu_schema_ready":true,...}
+# （version/git_commit 应与 Release 冻结身份一致：rc.35.6-rc2 / ea72400af462b9f6dbf05318b1ef0ebb3bcc81d1）
 ```
 
 - 首次启动 console 自动执行 mu schema 迁移（幂等、只前进，当前至 **v29**）。
@@ -168,6 +168,12 @@ run 详情页三个验证区块齐备且状态与实际一致。
   2. keystore 首把种子密钥需按 **uid 1000** 属主/权限（目录 770 / 文件 600）预置；
   3. provider attestation 静态端点需自托管 `attestation.json`。
   三键不全 → cchain=BLOCKED（fail-closed 如实呈现，**不影响审查主链**）。
+
+## 运维护护入口
+
+- **日志**：`docker logs -f <console 容器名>`（健康/错误审计亦见 `/api/health` 与 `mu.audit_event`）；
+- **问题登记**：仓库 GitHub Issues（附 health 输出、镜像 digest、时间窗）；
+- **版本身份**：`/api/health` 的 `version`/`git_commit` 对照对应 Release 的冻结身份。
 
 ## 升级与回滚（要点）
 
