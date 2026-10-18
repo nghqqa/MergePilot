@@ -359,9 +359,9 @@ async function swapConsole(argv, deps = {}) {
         // rc3 事故回归锁：data_mode=live 之外，multiuser 部署还要求 mu_schema_ready=true
         // （掩码 DSN 事故实证：live 探针曾误绿——DSN 坏时 health 仍可返回部分字段）
         const isMultiuser = inspectEnv.some((e) => e === 'MU_MODE=multiuser');
-        const muReady = /mu_ready=true/.test(out);
-        const muAbsent = /mu_ready=n\/a/.test(out);
-        if (isMultiuser && !muReady && !muAbsent) {
+        // 兼容旧版本 health（无 mu_ready 字段=放行）；显式 false 才等待——
+        // rc3+ 探针必输出该字段，掩码 DSN 场景会恒 false→超时回滚（事故防护不放宽）
+        if (isMultiuser && /mu_ready=false/.test(out)) {
           log('健康检查: ' + out.replace('HEALTH ', '').trim() + '（live 但 mu_schema_ready 未就绪，等待）');
           continue;
         }
