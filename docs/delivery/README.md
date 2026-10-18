@@ -15,6 +15,7 @@ webhook→静态/模型审查→发现→审批→补丁与验证证据→**预�
 | [ACCEPTANCE-CHECKLIST.md](ACCEPTANCE-CHECKLIST.md) | 新用户逐项验收清单（可打勾） |
 | [DEMO-PR12.md](DEMO-PR12.md) | 15 分钟端到端演示脚本（复用真实仓库 PR#12 已有证据，演示过程零新写入） |
 | [RELEASE-rc.35.5.md](RELEASE-rc.35.5.md) | 本版本发布材料与回滚方案（冻结身份/镜像 digest/能力边界） |
+| [RELEASE-CHECKLIST.md](RELEASE-CHECKLIST.md) | 每次发布必须逐项执行的检查清单（构建身份/health 核对/扫描/匿名校验/T+1h） |
 
 配套只读诊断工具：[`scripts/delivery/diagnose.mjs`](../../scripts/delivery/diagnose.mjs)
 （人可读 + `--json` 双输出；退出码 0=全绿/1=有失败项/2=用法错误；凭据零输出、不自动改配置）。
