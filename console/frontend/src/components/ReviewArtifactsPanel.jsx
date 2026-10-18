@@ -19,6 +19,7 @@ const NL = String.fromCharCode(10);
 const SEV_COLOR = { P0: 'red', P1: 'orange', P2: 'gold', P3: 'default' };
 const FEEDBACK_LABEL = { confirm: '确认问题', false_positive: '误报', wont_fix: '暂不处理' };
 import { remoteHeadState } from '../remoteHeadState.js';
+import { publishConfirmState } from '../publishConfirmState.js';
 import { previewFailureCopy } from '../previewFailureCopy.js';
 
 // 远端当前 head 三态渲染（2026-10-17 事实性修复）：只有取得可信远端 head 才能说
@@ -1016,9 +1017,13 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [] }) {
         footer={
           <Space>
             <Button onClick={() => setPubPreview(null)}>取消</Button>
-            <Button type="primary" loading={pubBusy} onClick={confirmPublish}>
-              {pubPreview?.action === 'update' ? '更新已有评论' : '确认发布到原 PR'}
-            </Button>
+            {/* 发布确认门（2026-10-18 契约收口）：远端 head 不可读/未核实/已变化时禁用——
+                与抽屉文案「确认保持阻塞」一致，避免必败请求；服务端拒写逻辑不变，重新预览路径不变 */}
+            <Tooltip title={publishConfirmState(pubCtx).blocked ? publishConfirmState(pubCtx).reason : undefined}>
+              <Button type="primary" loading={pubBusy} disabled={publishConfirmState(pubCtx).blocked} onClick={confirmPublish}>
+                {pubPreview?.action === 'update' ? '更新已有评论' : '确认发布到原 PR'}
+              </Button>
+            </Tooltip>
           </Space>
         }>
         {pubPreview ? (
