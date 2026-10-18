@@ -1,17 +1,17 @@
-# MergePilot 自托管部署（rc.35.6-rc2 预发布）
+# MergePilot 自托管部署（rc.35.6-rc3 预发布）
 
-> 版本：`v0.2.0-beta.6-rc.35.6-rc2`（`/api/health` version 真源）· 源码 tag commit `ea72400af462b9f6dbf05318b1ef0ebb3bcc81d1`
-> · 镜像 pull digest（OCI index）：`sha256:6d25fd1ee97a0744cf9117c90dcf4067dcb0a23ffb843791715a3514fd79b4cb`
-> （tag `v0.2.0-beta.6-rc.35.6-rc2` 与该 index 同源；index 内 linux/amd64 manifest 与 config
+> 版本：`v0.2.0-beta.6-rc.35.6-rc3`（`/api/health` version 真源）· 源码 tag commit `8f8cfb1f3b81463a33c88e49202030e7abaeb43d`
+> · 镜像 pull digest（OCI index）：`sha256:aec584ead1314760ab72d021a820ed5cf3ae4f8973df580dd7df252f8dcc5ae3`
+> （tag `v0.2.0-beta.6-rc.35.6-rc3` 与该 index 同源；index 内 linux/amd64 manifest 与 config
 > digest 为另外两个不同对象，勿混称。本地 `docker image inspect` 的 `.Id` 取决于引擎
 > 存储模式——核验以 `RepoDigests`（在线）/ tar 文件 SHA256（离线）为准，不要拿 `.Id`
 > 直接对照 index digest；可执行核验命令见「镜像获取与校验」）。
 > 已发布 GHCR（不可变 digest，**预发布候选**——保持候选身份，非最终 rc.35.6）。离线 tar
 > 与源码构建为等效替代途径，校验方式见下。
 > 供应链档案：SBOM（CycloneDX，47 组件）、trivy 扫描（1 MEDIUM / 0 HIGH/CRITICAL /
-> secrets=0）、离线 tar SHA256 见「镜像获取与校验」与 [Release 附件](https://github.com/nghqqa/MergePilot/releases/tag/v0.2.0-beta.6-rc.35.6-rc2)。
-> 相对 rc.35.6-rc1：schema **v29 不变（零迁移）**；新增发布评论确认门（远端 head 不可读/
-> 未核实/不一致时禁用确认）、CVE-2026-85091（zlib）闭合、构建注入完整 GIT_COMMIT（#484）。
+> secrets=0）、离线 tar SHA256 见「镜像获取与校验」与 [Release 附件](https://github.com/nghqqa/MergePilot/releases/tag/v0.2.0-beta.6-rc.35.6-rc3)。
+> 相对 rc.35.6-rc2：schema **v29 不变（零迁移）**；新增 run 页知识库参考（RAG V1，
+> reference only——按需检索、可追溯引用）与 review-aux 缺省语义模型修复（#487/#488）。
 > 能力口径见 [docs/delivery/CAPABILITY-MATRIX.md](../../docs/delivery/CAPABILITY-MATRIX.md)。
 
 ## 快速开始
@@ -148,18 +148,19 @@ MU_GITHUB_OAUTH_CALLBACK_URL=https://<console 公开地址>/api/mu/auth/oauth/gi
 
 | 途径 | 命令 | 校验 |
 |---|---|---|
-| GHCR | `docker pull ghcr.io/nghqqa/mergepilot-console@sha256:6d25fd1ee97a0744cf9117c90dcf4067dcb0a23ffb843791715a3514fd79b4cb` | `docker image inspect <引用> --format '{{range .RepoDigests}}{{println .}}{{end}}'` 输出含 `@sha256:6d25…`（与引擎无关的权威核验；registry 侧可用 `docker buildx imagetools inspect <tag>` 的 Digest 行同值对照） |
-| 离线 tar | `sha256sum -c SHA256SUMS` 后 `docker load -i mergepilot-console-v0.2.0-beta.6-rc.35.6-rc2-offline.tar.gz` | tar SHA256 = `15fb567375beaa600e5f547677fe5efe1637fa4a6509338ef71e20fc9cb34581`（第一权威）；加载后 `.Id` 与**同引擎**在线拉取记录的 `.Id` 比对一致（`.Id` 口径随引擎存储模式而异，跨引擎不比 `.Id`） |
+| GHCR | `docker pull ghcr.io/nghqqa/mergepilot-console@sha256:aec584ead1314760ab72d021a820ed5cf3ae4f8973df580dd7df252f8dcc5ae3` | `docker image inspect <引用> --format '{{range .RepoDigests}}{{println .}}{{end}}'` 输出含 `@sha256:aec5…`（与引擎无关的权威核验；registry 侧可用 `docker buildx imagetools inspect <tag>` 的 Digest 行同值对照） |
+| 离线 tar | `sha256sum -c SHA256SUMS` 后 `docker load -i mergepilot-console-v0.2.0-beta.6-rc.35.6-rc3-offline.tar.gz` | tar SHA256 = `11cad0e9b6a36097e2e3e3a1f4c93b3212c50abf90ff6f58716072513e393b22`（第一权威）；加载后 `.Id` 与**同引擎**在线拉取记录的 `.Id` 比对一致（`.Id` 口径随引擎存储模式而异，跨引擎不比 `.Id`） |
 | 源码构建 | 见下节 | image ID 应可复现（同 commit/同构建参数） |
 
-镜像内置 `MERGEPILOT_VERSION=v0.2.0-beta.6-rc.35.6-rc2`、`MERGEPILOT_GIT_COMMIT=ea72400af462b9f6dbf05318b1ef0ebb3bcc81d1`
+镜像内置 `MERGEPILOT_VERSION=v0.2.0-beta.6-rc.35.6-rc3`、`MERGEPILOT_GIT_COMMIT=8f8cfb1f3b81463a33c88e49202030e7abaeb43d`
 （`/api/health` 的 `version`/`git_commit` 即真源，git_commit 与源码 tag commit 一致）。
 
-**供应链档案（rc.35.6-rc2）**：
+**供应链档案（rc.35.6-rc3）**：
 
-- SBOM：CycloneDX · **47 组件**（`sbom-rc356rc2-cyclonedx.json`，随 Release 发布）；
-- 漏洞/秘密扫描：trivy（`trivy-rc356rc2-scan.json`）：**0 HIGH/CRITICAL，0 MEDIUM，secrets=0**（对照 rc.35.6-rc1：CVE-2026-85091 已闭合，无新增）；
-- 构建来源：源码 tag `v0.2.0-beta.6-rc.35.6-rc2`（commit `ea72400af462b9f6dbf05318b1ef0ebb3bcc81d1`，tag 与镜像同源，GIT_COMMIT 构建期注入）；
+- SBOM：CycloneDX · **47 组件**（`sbom-rc356rc3-cyclonedx.json`，随 Release 发布）；
+- 漏洞/秘密扫描：trivy（`trivy-rc356rc3-scan.json`）：**0 HIGH/CRITICAL，0 MEDIUM，secrets=0**（对照 rc.35.6-rc1：CVE-2026-85091 已闭合，无新增）；
+- 构建来源：源码 tag `v0.2.0-beta.6-rc.35.6-rc3`（commit `8f8cfb1f3b81463a33c88e49202030e7abaeb43d`，tag 与镜像同源，GIT_COMMIT 构建期注入）；
+- RAG（可选）：run 页知识库引用需配置 RAGTRIAL_* env 并导入语料（见 RELEASE-CHECKLIST 与官网下载页）；
   schema v29 不变（零迁移，数据库双向兼容）；
 - 历史版本（rc.35.6-rc1 及更早）的 digest/附件以各自 Release 页为准，本文件只维护当前版本。
 
@@ -170,11 +171,11 @@ MU_GITHUB_OAUTH_CALLBACK_URL=https://<console 公开地址>/api/mu/auth/oauth/gi
 ## 从源码构建
 
 ```bash
-git checkout v0.2.0-beta.6-rc.35.6-rc2      # 源码 tag（与镜像同源）
+git checkout v0.2.0-beta.6-rc.35.6-rc3      # 源码 tag（与镜像同源）
 docker build -f docker/Dockerfile.canonical-console \
-  --build-arg MERGEPILOT_VERSION=v0.2.0-beta.6-rc.35.6-rc2 \
+  --build-arg MERGEPILOT_VERSION=v0.2.0-beta.6-rc.35.6-rc3 \
   --build-arg GIT_COMMIT="$(git rev-parse HEAD)" \
-  -t ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.35.6-rc2 .
+  -t ghcr.io/nghqqa/mergepilot-console:v0.2.0-beta.6-rc.35.6-rc3 .
 ```
 
 说明两点：① 前端 dist 由 Dockerfile 的 `frontend-builder` 阶段在**镜像构建内**执行
