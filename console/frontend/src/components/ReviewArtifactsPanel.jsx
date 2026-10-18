@@ -172,7 +172,83 @@ function DiffFile({ file }) {
   );
 }
 
-export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [] }) {
+// RunKnowledgeReferences — 知识库参考（RAG · reference only；2026-10-18 审查引用接线）。
+// 以 run 上下文（发现标题 + 仓库/分支）调用 /api/rag-trial/review-aux（组合授权门：
+// scope→会话 repo），返回 run_view.review_context.rag_auxiliary 辅助引用并展示。
+// 合同（ragtrial/review.mjs，契约测试锁死）：仅供人工参考追溯（路径/行号/digest/索引版本），
+// 不构成 finding/审批/门禁/VERIFIED 输入，Fixer/Verifier 亦不可用。
+// 403（scope 未含该仓库）与未接线（backend_not_wired）时安静隐藏——功能不适用而非异常。
+export function RunKnowledgeReferences({ runId, repoFull, branch, findings }) {
+  const [aux, setAux] = useState(null); // null=加载中/不适用；否则 {service_state, auxList, policy, note}
+  const titlesKey = (findings ?? []).map((f) => f?.title ?? '').filter(Boolean).join('|');
+  useEffect(() => {
+    if (!runId || !repoFull) { setAux(null); return undefined; }
+    const titles = (findings ?? []).map((f) => f?.title ?? '').filter(Boolean).join('；').slice(0, 400);
+    if (!titles) { setAux({ service_state: 'no_query_context' }); return undefined; }
+    let dead = false;
+    setAux(null);
+    (async () => {
+      try {
+        const r = await apiFetch('/api/rag-trial/review-aux', {
+          method: 'POST', headers: { 'content-type': 'application/json', ...csrfHeader() },
+          body: JSON.stringify({ q: titles, repo: repoFull, branch: branch || 'main', run_id: runId, k: 5 }),
+        });
+        const b = await r.json().catch(() => ({}));
+        if (dead) return;
+        if (r.status === 403 || r.status === 401 || b?.service_state === 'backend_not_wired') { setAux(null); return; }
+        if (!r.ok || b?.service_state === 'error') {
+          setAux({ service_state: b?.service_state === 'provider_unavailable' ? 'provider_unavailable' : 'error',
+            note: b?.note || b?.error || `HTTP ${r.status}` });
+          return;
+        }
+        const auxList = b?.run_view?.review_context?.rag_auxiliary ?? [];
+        setAux({ service_state: b?.service_state ?? 'empty', auxList,
+          policy: b?.policy ?? null, ragPolicyNote: b?.run_view?.review_context?.rag_policy_note ?? null });
+      } catch { if (!dead) setAux({ service_state: 'error', note: '网络异常' }); }
+    })();
+    return () => { dead = true; };
+  }, [runId, repoFull, branch, titlesKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!aux) return null;
+  return (
+    <div style={{ marginTop: 8, borderTop: '1px dashed #24384a', paddingTop: 8 }}>
+      <div style={{ fontWeight: 600, marginBottom: 4 }}>
+        知识库参考（RAG · 仅供参考——不构成 finding/审批/门禁/VERIFIED，Fixer/Verifier 不可用）
+      </div>
+      {aux.service_state === 'hit' ? (
+        <ul style={{ margin: '4px 0', paddingLeft: 18 }}>
+          {(aux.auxList ?? []).map((a, i) => {
+            const c = a.citation ?? {};
+            return (
+              <li key={i} style={{ marginBottom: 6 }}>
+                <code>{c.doc_path}</code> · L{c.line_start}-{c.line_end} · score {Number(a.score).toFixed(3)}
+                <div className="muted" style={{ fontSize: 12 }} title={`doc ${c.doc_sha256 ?? ''} chunk ${c.chunk_sha256 ?? ''}`}>
+                  可追溯：doc sha {(c.doc_sha256 ?? '').slice(0, 8)}… · chunk sha {(c.chunk_sha256 ?? '').slice(0, 8)}… ·
+                  {' '}{c.model_id} @iv{c.index_version} · trusted=false
+                </div>
+                <div style={{ fontSize: 12 }}>{String(a.snippet ?? '').slice(0, 240)}</div>
+              </li>
+            );
+          })}
+        </ul>
+      ) : aux.service_state === 'empty' ? (
+        <div className="muted" style={{ fontSize: 12 }}>知识库无相关内容（如实返回，不伪装命中）。</div>
+      ) : aux.service_state === 'no_query_context' ? (
+        <div className="muted" style={{ fontSize: 12 }}>本 run 无发现上下文——未执行知识库检索（如实）。</div>
+      ) : aux.service_state === 'provider_unavailable' ? (
+        <div className="muted" style={{ fontSize: 12 }}>嵌入检索服务不可达——显式失败，不伪装为空结果。</div>
+      ) : (
+        <div className="muted" style={{ fontSize: 12 }}>知识库检索失败：{aux.note ?? '未知原因'}（显式失败）。</div>
+      )}
+      {aux.service_state === 'hit' && (
+        <div className="muted" style={{ fontSize: 12 }}>
+          以上为知识库辅助引用，仅供追溯与理解；不进入 finding/审批/门禁/VERIFIED，也不会被 Fixer/Verifier 使用。
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [], branch = 'main' }) {
   const [state, setState] = useState('loading'); // loading|no-pr|no-run|forbidden|error|ready
   const [art, setArt] = useState(null);
   const [runId, setRunId] = useState(null);
@@ -977,6 +1053,8 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [] }) {
             三个动作相互独立、各自单独确认：批准修复票（审批区）≠ 应用补丁（①）≠ 合并 PR（②）；
             前一步完成不会自动执行下一步。
           </div>
+          <RunKnowledgeReferences runId={runId} repoFull={owner && repoName ? `${owner}/${repoName}` : null}
+            branch={branch} findings={findings} />
           {applyBlockReason ? (
             <Alert style={{ marginTop: 6 }} type="info" showIcon message={applyBlockReason} />
           ) : mergeBlockReason ? (

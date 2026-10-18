@@ -463,7 +463,7 @@ export function MuPrDetailContent({ prRef, onChanged }) {
 
       {/* ── 审查产物与交付（2026-10-13 产物波：概览/问题/补丁/验证/下载/发布）── */}
       <ReviewArtifactsPanel repoId={prRef.repoId} prNumber={Number(pr.provider_pr_number)}
-        myActions={myActions} />
+        myActions={myActions} branch={pr.head_ref || pr.default_branch || 'main'} />
 
       {/* ── 第三层：技术详情与判定（默认折叠——四域/证据/机制说明/审查记录）── */}
       <Collapse className="mu-tech-collapse" ghost
