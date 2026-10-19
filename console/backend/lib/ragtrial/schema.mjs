@@ -200,7 +200,10 @@ export const RAGTRIAL_SCHEMA_SQL = [
   `CREATE INDEX IF NOT EXISTS ragtrial_jobs_state_idx
      ON ragtrial.jobs (state, next_run_at)`,
   `ALTER TABLE ragtrial.jobs ADD COLUMN IF NOT EXISTS result JSONB`,
-  // ── run 页知识库引用快照（RAG V2：审查时获取并持久化，后续查询不改写历史）──
+  // ── run 页知识库引用快照（RAG V2：唯一写入方=审查 worker 执行期获取，见
+  //    worker-rag.mjs；页面 review-aux 实时查询不写本表）──
+  // 幂等契约：UNIQUE (run_id, corpus_branch)——同一次任务重试首写即定，不覆盖
+  // 已保存结果；语料更新/重索引不改写历史 citations（快照语义）。
   `CREATE TABLE IF NOT EXISTS ragtrial.run_rag_snapshots (
      snapshot_id   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
      run_id        TEXT NOT NULL,
@@ -208,16 +211,17 @@ export const RAGTRIAL_SCHEMA_SQL = [
      repo          TEXT NOT NULL,
      branch        TEXT NOT NULL,
      review_head   TEXT NOT NULL,
+     base_ref      TEXT,
      corpus_branch TEXT NOT NULL,
      model_id      TEXT NOT NULL,
      model_digest  TEXT NOT NULL,
      index_version INT NOT NULL,
      query_text    TEXT,
-     query_strategy TEXT NOT NULL DEFAULT 'finding_titles_v1',
+     query_strategy TEXT NOT NULL DEFAULT 'pr_context_v1',
      citations     JSONB NOT NULL DEFAULT '[]'::jsonb,
      service_state TEXT NOT NULL,
      snapshot_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-     UNIQUE (run_id, corpus_branch, model_id, index_version)
+     UNIQUE (run_id, corpus_branch)
    )`,
   `CREATE INDEX IF NOT EXISTS ragtrial_snapshots_run_idx
      ON ragtrial.run_rag_snapshots (run_id, corpus_branch)`,

@@ -64,6 +64,14 @@ async function getStore(env) {
   }
   return storePromise;
 }
+// 快照读取专用池（模块级缓存；getPool 每次新建，直调会随请求泄漏连接——
+// #491 复核修正：GET /snapshot 与 worker-rag 是唯二需要裸 .query 的读路径）
+let snapPoolPromise = null;
+function getSnapshotQueryPool(env) {
+  if (!env.CONSOLE_PG_DSN) return null;
+  snapPoolPromise ??= getPool(env).catch((e) => { snapPoolPromise = null; throw e; });
+  return snapPoolPromise;
+}
 async function getQueue(env) {
   if (!env.CONSOLE_PG_DSN) return null;
   if (!queuePromise) {
@@ -669,29 +677,16 @@ export async function ragTrialApi(req, res, ctx) {
       const aux = (r.results ?? []).map((h) => toAuxEvidence(h, { runId: run_id ?? null }));
       const runView = attachToRun(
         { run_id: run_id ?? 'ad-hoc', findings: [], tickets: [], gates: [] }, aux);
-      // ── RAG V2：审查时引用快照持久化（幂等 upsert）──
-      // 审查时获取并保存（run_id 绑定）；后续知识库变化不改写已保存历史引用。
-      if (run_id) {
-        try {
-          const { saveRunRagSnapshot } = await import('./rag-snapshot.mjs');
-          await saveRunRagSnapshot({ query: (t, p2) => pool.query(t, p2) }, {
-            runId: run_id, tenantId: auth?._mu?.tenantId ?? 'unknown',
-            repo: String(repo), branch: String(body.branch || ''),
-            reviewHead: body.review_head ?? '', corpusBranch: String(body.corpus_branch || body.branch || ''),
-            tenantId: auth?._mu?.tenantId ?? 'unknown',
-            modelId: (r.model_id ?? modelId ?? 'unknown'),
-            modelDigest: (r.model_digest ?? ''),
-            indexVersion: (r.index_version ?? 1),
-            queryText: q, queryStrategy: 'finding_titles_v1',
-            citations: aux, serviceState: r.service_state ?? 'hit' });
-        } catch { /* 快照保存失败不影响检索返回（如实降级） */ }
-      }
+      // ── #491 复核修正：本端点=页面实时查询，【不写】执行期快照表——动态查询
+      //    不得创建或覆盖「审查执行时快照」；快照唯一写入方=审查 worker
+      //    （worker-rag.mjs，经 review-service 真实审查链）。请求自带 run_id
+      //    不作为绑定证明，此处仅作展示关联。 ──
       return sendJson(res, 200, {
         service_state: r.service_state,
         run_view: runView,
-        snapshot_at: new Date().toISOString(),
+        queried_at: new Date().toISOString(),
         policy: canAutoPromote(aux),
-        note: 'RAG 命中仅作 Review 辅助引用；findings/tickets/gates 未被触碰',
+        note: 'RAG 命中仅作 Review 辅助引用；findings/tickets/gates 未被触碰；本查询为实时对照，不落执行期快照',
       });
     }
     // ── 快照读取（只读，不重新检索；页面双源中的「审查时获取的参考资料」入口）──
@@ -699,20 +694,32 @@ export async function ragTrialApi(req, res, ctx) {
     if (snapMatch && req.method === 'GET') {
       const runId = snapMatch[1];
       const corpusBranch = String(q.corpus_branch || 'main');
-      const { loadRunRagSnapshot } = await import('./rag-snapshot.mjs');
-      const snap = await loadRunRagSnapshot(store, { runId, corpusBranch });
+      const { loadRunRagSnapshot, authorizeSnapshotRead } = await import('./rag-snapshot.mjs');
+      // 裸 .query 读路径（store 对象无 .query——#491 复核修正此前误传 store 的运行时缺陷）
+      const spool = await getSnapshotQueryPool(env);
+      const snap = await loadRunRagSnapshot(
+        { query: (t, p2) => spool.query(t, p2) }, { runId, corpusBranch });
       if (!snap) {
         return sendJson(res, 200, { service_state: 'no_snapshot',
-          note: '旧 run 无知识库引用快照——如实返回（不用当前查询补造历史）', run_id: runId });
+          note: '旧 run 无执行期知识库引用快照（worker 获取关闭/未接线/保存未成功均如实显示为未记录）——不用当前查询补造历史',
+          run_id: runId });
+      }
+      // 授权（#491 复核补齐）：会话租户必须与快照 tenant 一致 + 会话授权仓库面
+      // 含快照 repo——两层缺一不可；403 有界披露（reason 不含 tenant/repo 值）。
+      const az = authorizeSnapshotRead(auth, snap);
+      if (!az.ok) {
+        return sendJson(res, 403, { error: { reason: az.reason,
+          detail: '无权读取该 run 的执行期快照（租户/仓库授权面校验未通过）' } });
       }
       return sendJson(res, 200, {
         service_state: 'snapshot',
+        retrieval_state: snap.service_state,
         run_id: snap.run_id, corpus_branch: snap.corpus_branch,
-        review_head: snap.review_head, model_id: snap.model_id,
-        model_digest: snap.model_digest, index_version: snap.index_version,
-        query_strategy: snap.query_strategy, snapshot_at: snap.snapshot_at,
-        citations: snap.citations,
-        note: '审查时获取的知识库引用快照——反映查询时的知识库状态，不代表当前知识库',
+        review_head: snap.review_head, base_ref: snap.base_ref,
+        model_id: snap.model_id, model_digest: snap.model_digest,
+        index_version: snap.index_version, query_strategy: snap.query_strategy,
+        snapshot_at: snap.snapshot_at, citations: snap.citations,
+        note: '审查执行期获取的知识库引用快照——反映当时知识库状态，不代表当前知识库；重试与语料更新不改写本快照',
       });
     }
 

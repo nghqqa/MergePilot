@@ -105,6 +105,18 @@ jobs:
       - name: RAG canonical integration (Phase 0a, 34 scenarios; self-boot pgvector)
         run: node console/backend/test/ragtrial-canonical.integration.mjs
 
+      # RAG V2 快照存储 PG 级回归（#491）：自起一次性 pgvector——首写即定/重试不覆盖/
+      # 任务身份绑定/保存失败=未留存。显式执行 .integration.mjs（不在 *.test.mjs glob，
+      # 也不以 skip 代替验证——无外部 DSN 时自起容器，断言必真跑）
+      - name: RAG snapshot store integration (#491, self-boot pgvector)
+        run: node console/backend/test/rag-snapshot-pool.integration.mjs
+
+      # RAG V2 worker 执行期 E2E（#491）：真实 handlePullRequestEvent → worker 检索 →
+      # 快照落库 → 读取追溯；重试幂等/语料更新不变/读取越权 403/模型不可用/保存失败/
+      # 获取关闭。mock provider 零真实网络零凭据，合成语料非生产数据
+      - name: RAG worker snapshot E2E (#491, self-boot pgvector)
+        run: node console/backend/test/rag-worker-snapshot.integration.mjs
+
       # Beta Identity Wave 2A：OAuth 登录/持久会话/邀请（GitHub 全部走本地 mock adapter）
       - name: MU OAuth + persistent session integration (Wave 2A, 29 scenarios)
         run: node console/backend/test/mu-oauth.integration.mjs

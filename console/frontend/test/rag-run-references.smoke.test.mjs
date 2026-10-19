@@ -1,9 +1,11 @@
-// rag-run-references.smoke.test.mjs — 知识库参考（RAG · reference only）行为回归
-// （2026-10-18 审查引用接线；独立审阅要求组件级回归）。
-//  R1（App 级集成锚）：真实渲染 PR 详情页——命中态「知识库参考」区块出现，
-//     引用可追溯（doc_path/行号/chunk+doc sha/index_version）并明确仅供参考；
-//  R2/R3/R4（组件级直渲染 RunKnowledgeReferences，确定性）：
-//     403 越权→隐藏；empty→如实「知识库无相关内容」；backend_not_wired→隐藏。
+// rag-run-references.smoke.test.mjs — 知识库参考（RAG · reference only）双源行为回归
+// （#491 复核定案：源 A=审查执行期快照（历史权威）；源 B=当前知识库检索（实时不落库））。
+//  R1（App 级集成锚）：双源区块同时上屏，快照带元数据（时间/分支/策略），引用可追溯；
+//  R2（组件级 403 双源均越权）→ 不渲染；
+//  R3（组件级 未记录 + 实时 empty）→ 「未记录」如实上屏（不补造历史）+ 实时如实 empty；
+//  R4（组件级 实时未接线）→ 实时区隐藏、快照区仍如实「未记录」；
+//  R5（组件级 快照 provider_unavailable）→ 「曾尝试但服务不可用」如实记录；
+//  R6（防伪造）→ 页面不出现「快照已保存」类谎报（实时查询不落库语义上屏）。
 // 运行：cd console/frontend && node --test test/rag-run-references.smoke.test.mjs（需先 npm ci）
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -105,7 +107,7 @@ const waitFor = async (cond, deadlineMs = 4000) => {
   }
 };
 
-function baseRoutes({ reviewAux }) {
+function baseRoutes() {
   return {
     '/api/auth/session': () => [200, SESSION],
     '/api/health': () => [200, { service: 'console', data_mode: 'multiuser',
@@ -149,48 +151,59 @@ function baseRoutes({ reviewAux }) {
       }
       return reviewAuxResponse();
     },
+    '/api/rag-trial/snapshot/run-rag': () => snapshotResponse(),
   };
 }
 
 const ROUTE = '/mu/repos/acme/app/pr/12';
 after(() => { try { domWindow.close(); } catch { /* */ } setTimeout(() => process.exit(0), 300); });
 
+const CITE = [{ kind: 'rag_auxiliary', run_id: RUN, usage: 'reference_only', trusted: false,
+  citation: { repo: 'nghqqa/ragdemo', branch: 'main', doc_path: 'review-policy.md',
+    line_start: 15, line_end: 28, para_index: 2, chunk_index: 3,
+    doc_sha256: 'd'.repeat(64), chunk_sha256: 'c'.repeat(64),
+    model_id: 'bge-m3', model_digest: 'm'.repeat(64), index_version: 1, corpus_branch: 'main' },
+  score: 0.37, snippet: '维护者逐次「预览 → 确认」……（节选）',
+  policy: { may_auto_promote: false, excluded_from: ['finding', 'ticket', 'gate', 'VERIFIED'] } }];
+
+const snapshotHit = () => [200, {
+  service_state: 'snapshot', run_id: RUN, corpus_branch: 'main', base_ref: 'main',
+  review_head: HEAD, model_id: 'bge-m3', model_digest: 'm'.repeat(64), index_version: 1,
+  query_strategy: 'pr_context_v1', snapshot_at: '2026-10-19T01:02:03.000Z', citations: CITE,
+  note: '审查执行期获取的知识库引用快照',
+}];
 const hitBody = () => ({
   service_state: 'hit',
   run_view: { run_id: RUN,
-    review_context: {
-      rag_auxiliary: [{ kind: 'rag_auxiliary', run_id: RUN, usage: 'reference_only', trusted: false,
-        citation: { repo: 'nghqqa/ragdemo', branch: 'main', doc_path: 'review-policy.md',
-          line_start: 15, line_end: 28, para_index: 2, chunk_index: 3,
-          doc_sha256: 'd'.repeat(64), chunk_sha256: 'c'.repeat(64),
-          model_id: 'bge-m3', model_digest: 'm'.repeat(64), index_version: 1 },
-        score: 0.37, snippet: '维护者逐次「预览 → 确认」……（节选）',
-        policy: { may_auto_promote: false, excluded_from: ['finding', 'ticket', 'gate', 'VERIFIED'] } }],
+    review_context: { rag_auxiliary: CITE,
       rag_policy_note: 'reference only — 不构成 finding/ticket/gate/VERIFIED 输入' } },
   policy: { may_auto_promote: false },
-  note: 'RAG 命中仅作 Review 辅助引用',
+  queried_at: '2026-10-19T09:00:00.000Z',
+  note: 'RAG 命中仅作 Review 辅助引用；本查询为实时对照，不落执行期快照',
 });
 
 let reviewAuxResponse = () => [200, hitBody()]; // 各用例覆写（模块级可变闭包）
+let snapshotResponse = () => snapshotHit();
 
-test('R1（App 级集成锚）命中：run 页出现「知识库参考」，引用可追溯并明确仅供参考', async () => {
-  ROUTES = baseRoutes(() => [200, hitBody()]);
+test('R1（App 级集成锚）双源：快照区+实时区同时上屏，快照带时间/分支/策略且引用可追溯', async () => {
+  ROUTES = baseRoutes();
   reviewAuxResponse = () => [200, hitBody()];
+  snapshotResponse = () => snapshotHit();
   const ui = await renderRoute(ROUTE);
   try {
-    const ok1 = await waitFor(() => ui.text().includes('DEMO-NULL-BUG'));
-    console.log('[dbg-R1] findings loaded:', ok1, '| TEXT:', JSON.stringify(ui.text().slice(0, 600)));
-    const ok2 = await waitFor(() => ui.text().includes('知识库参考'), 6000);
-    console.log('[dbg-R1] section:', ok2, '| TEXT tail:', JSON.stringify(ui.text().slice(-300)));
-    assert.ok(ok2, '知识库参考区块出现');
+    const ok1 = await waitFor(() => ui.text().includes('审查时获取的参考资料'), 6000);
     const t = ui.text();
-    assert.ok(t.includes('review-policy.md'), '引用 doc_path 可见');
-    assert.ok(t.includes('L15-28'), '行号可见（可追溯）');
-    assert.ok(t.includes('仅供参考') && t.includes('不构成'), 'reference-only 定性上屏');
+    assert.ok(ok1, '源 A 快照区上屏');
+    assert.ok(t.includes('当前知识库检索'), '源 B 实时区上屏');
+    assert.ok(t.includes('执行期快照') && t.includes('实时对照'), '双源定性区分上屏');
+    assert.ok(t.includes('2026-10-19 01:02:03'), '快照时间可见');
+    assert.ok(t.includes('语料分支 main') && t.includes('pr_context_v1'), '快照分支/策略可见');
+    assert.ok(t.includes('review-policy.md') && t.includes('L15-28'), '引用可追溯（doc_path+行号）');
+    assert.ok(!t.includes('快照已保存'), '不谎报「已保存」（实时查询不落库）');
   } finally { await ui.cleanup(); }
 });
 
-// ── 组件级直渲染（确定性）：RunKnowledgeReferences 三态 ──
+// ── 组件级直渲染（确定性） ──
 async function renderComp() {
   const loaded = await loadModule();
   const container = domWindow.document.createElement('div');
@@ -209,8 +222,9 @@ async function renderComp() {
   };
 }
 
-test('R2 组件级 403：不渲染（scope 未含该仓库——功能不适用）', async () => {
+test('R2 组件级双源均 403：不渲染（功能不适用而非异常）', async () => {
   reviewAuxResponse = () => [403, { error: { reason: 'scope_not_allowed' } }];
+  snapshotResponse = () => [403, { error: { reason: 'run_tenant_mismatch' } }];
   const ui = await renderComp();
   try {
     await flush();
@@ -218,20 +232,54 @@ test('R2 组件级 403：不渲染（scope 未含该仓库——功能不适用�
   } finally { await ui.cleanup(); }
 });
 
-test('R3 组件级 empty：如实显示「知识库无相关内容」', async () => {
+test('R3 组件级 未记录 + 实时 empty：未记录如实上屏（不补造历史），实时区如实 empty', async () => {
   reviewAuxResponse = () => [200, { service_state: 'empty', results: [] }];
+  snapshotResponse = () => [200, { service_state: 'no_snapshot', note: '未记录', run_id: RUN }];
   const ui = await renderComp();
   try {
-    await flush();
-    assert.ok(ui.text().includes('知识库无相关内容'), 'empty 如实上屏');
+    const ok1 = await waitFor(() => ui.text().includes('未记录'));
+    assert.ok(ok1, '「未记录」上屏');
+    const t = ui.text();
+    assert.ok(t.includes('不使用当前检索补造历史'), '不补造历史语义上屏');
+    assert.ok(t.includes('当前知识库无相关内容'), '实时区如实 empty');
+    assert.ok(!t.includes('review-policy.md'), '快照未记录时无引用内容');
   } finally { await ui.cleanup(); }
 });
 
-test('R4 组件级未接线：backend_not_wired → 不渲染', async () => {
+test('R4 组件级 实时未接线：实时区隐藏、快照区仍如实「未记录」', async () => {
   reviewAuxResponse = () => [200, { service_state: 'backend_not_wired', note: '如实返回' }];
+  snapshotResponse = () => [200, { service_state: 'no_snapshot', run_id: RUN }];
   const ui = await renderComp();
   try {
-    await flush();
-    assert.ok(!ui.text().includes('知识库参考'), '未接线时不渲染');
+    const ok1 = await waitFor(() => ui.text().includes('未记录'));
+    assert.ok(ok1, '快照区未记录如实可见');
+    assert.ok(!ui.text().includes('实时对照'), '未接线时实时区隐藏');
+  } finally { await ui.cleanup(); }
+});
+
+test('R5 组件级 快照 retrieval_state=provider_unavailable：曾尝试但不可用（如实，不伪装命中）', async () => {
+  reviewAuxResponse = () => [403, { error: { reason: 'scope_not_allowed' } }];
+  snapshotResponse = () => [200, { service_state: 'snapshot', retrieval_state: 'provider_unavailable',
+    corpus_branch: 'main', model_id: 'bge-m3', index_version: 1, query_strategy: 'pr_context_v1',
+    snapshot_at: '2026-10-19T01:02:03.000Z', review_head: HEAD, base_ref: null, citations: [] }];
+  const ui = await renderComp();
+  try {
+    const ok1 = await waitFor(() => ui.text().includes('曾尝试获取'));
+    assert.ok(ok1, '「曾尝试但不可用」如实上屏');
+    const t = ui.text();
+    assert.ok(!t.includes('review-policy.md'), '不可用态不渲染引用列表');
+    assert.ok(!t.includes('当前知识库检索'), '403 实时区隐藏');
+  } finally { await ui.cleanup(); }
+});
+
+test('R6 防伪造：任何状态下页面不出现「快照已保存」谎报（实时查询不落执行期快照）', async () => {
+  reviewAuxResponse = () => [200, hitBody()];
+  snapshotResponse = () => [200, { service_state: 'no_snapshot', run_id: RUN }];
+  const ui = await renderComp();
+  try {
+    await waitFor(() => ui.text().includes('未记录'));
+    const t = ui.text();
+    assert.ok(!t.includes('快照已保存'), '无「已保存」谎报');
+    assert.ok(t.includes('不落执行期快照') || t.includes('不使用当前检索补造历史'), '不落库语义上屏');
   } finally { await ui.cleanup(); }
 });
