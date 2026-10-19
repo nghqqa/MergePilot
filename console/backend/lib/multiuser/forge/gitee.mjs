@@ -23,7 +23,7 @@
 //    零网络调用——404 探针只证明所测请求失败，不证明平台无能力（G-1 纠偏口径）。
 import crypto from 'node:crypto';
 
-const GITEE_API_BASE = 'https://gitee.com/api/v5';
+export const GITEE_API_BASE = 'https://gitee.com/api/v5';
 const PER_PAGE_MAX = 100;
 const FILES_PLATFORM_LIMIT = 300;   // Gitee 服务端：最多 300 条 diff【官方 SDK】
 const COMMITS_PLATFORM_LIMIT = 250; // 最多 250 条 commit【官方 SDK】

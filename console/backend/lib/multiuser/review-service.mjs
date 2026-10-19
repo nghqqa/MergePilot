@@ -17,7 +17,7 @@ import { createRunIfAbsent, transitionRun, claimNextAttempt, finishAttempt,
 import { fetchPrContext } from './ghprovider.mjs';
 import { reviewDiff, RULES_VERSION } from './reviewer-rules.mjs';
 import { validateForgeEventV1 } from './forge/index.mjs';
-import { createGiteeAdapter } from './forge/gitee.mjs';
+import { createGiteeAdapter, GITEE_API_BASE } from './forge/gitee.mjs';
 
 export const REVIEW_SERVICE_VERSION = 'prb-v1';
 const MAX_REVIEW_ATTEMPTS = 2;
@@ -98,8 +98,12 @@ export async function handlePullRequestEvent(pool, cfg, { payload, servicePrinci
     // 上下文获取：ForgeAdapter（可注入 cfg.forgeAdapter；默认 env 装配 Gitee 适配器）。
     // v2 签名：repoPath（定位）+nativeRepoId（DB 登记稳定 id——适配器内核验路径归属）；
     // declaredFileCount=webhook 声明的交叉核验值（手动入口为 null——适配器分页自证）。
+    // MU_GITEE_API_BASE：自托管/隔离验证的 provider 指向（明确标注的测试适配）——
+    // 未设置时保持 gitee.com 官方 API 不变（生产行为零变化）。
     const adapter = cfg.forgeAdapter
-      ?? createGiteeAdapter({ env: cfg.llmEnv ?? process.env, credentialRef: 'env:MU_GITEE_PAT' });
+      ?? createGiteeAdapter({ env: cfg.llmEnv ?? process.env, credentialRef: 'env:MU_GITEE_PAT',
+        apiBase: String((cfg.llmEnv ?? process.env).MU_GITEE_API_BASE ?? '').trim()
+          || GITEE_API_BASE });
     fetchContext = async () => adapter.fetchChangeContext({
       repoPath: `${ctx.owner}/${ctx.name}`, nativeRepoId: ctx.nativeRepoId,
       crKey: String(prNumber), expectedHeadSha: headSha,
