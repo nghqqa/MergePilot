@@ -67,6 +67,8 @@ function makeMockDocker({ healthOut = 'HEALTH live v1 commit=' + GOOD_COMMIT.sli
       return out('');
     }
     if (args[0] === 'logs') return out('LOG-line-1\nLOG-listening');
+    if (args[0] === 'inspect' && args[1] !== '--format') return out(JSON.stringify(INSPECT));
+    if (args[0] === 'image' && args[1] === 'inspect') return out(INSPECT.Config.Image);
     return { status: 0, stdout: args[0] === 'run' ? 'container-id' : '', stderr: '' };
   };
   return { exec, calls };

@@ -43,6 +43,28 @@
 - [ ] 换版前保全：旧容器 inspect（本机非公开目录）、DB pg_dump、旧镜像引用（回滚锚）；
 - [ ] `scripts/swap-console.cjs <inspect.json> <digest 引用>`（**用 digest pin**；脚本已过滤
       版本烙印 env——新镜像烙印即 health 真源）；先 `--dry-run` 看摘要；
+- [ ] **inspect 输入必须是原始 `docker inspect` 输出**（脚本会自动拒绝掩码/缺项/陈旧输入）；
+      脱敏副本仅用于展示/归档，不得作为部署输入；
+- [ ] 换版后只读核查：version/git_commit/bundle/schema/成员角色/错误日志；
+- [ ] **T+1h 观察满窗并记录采样后才可宣称通过**；触发回滚条件即切回旧 digest 并留证据。
+
+### swap 工具安全门（rc3 事故回归锁）
+
+工具在停止旧容器前依次执行以下校验，任一失败即安全中止（旧容器不受影响）：
+
+| 门 | 校验内容 | 退出码 |
+|---|---|---|
+| 部署完整性 | 掩码标记（`***`/REDACTED）与 multiuser 必填项 | 4 |
+| Matrix 凭据 | live 容器内实际登录（identifier 格式） | 3 |
+| live 比对 | 部署输入 vs 运行容器的镜像身份 + env 键集 | 5 |
+| 回滚可用性 | 回滚镜像本地可解析且身份与切换前一致 | 6 |
+
+回滚路径：不可变镜像 ID 优先；回滚后校验镜像身份+健康+DB 就绪。
+Config.Image 兜底仅在解析身份与原镜像一致时允许（漂移 tag 拒绝）。
+
+- [ ] 换版前保全：旧容器 inspect（本机非公开目录）、DB pg_dump、旧镜像引用（回滚锚）；
+- [ ] `scripts/swap-console.cjs <inspect.json> <digest 引用>`（**用 digest pin**；脚本已过滤
+      版本烙印 env——新镜像烙印即 health 真源）；先 `--dry-run` 看摘要；
 - [ ] 换版后只读核查：version/git_commit/bundle/schema/成员角色/错误日志；
 - [ ] **T+1h 观察满窗并记录采样后才可宣称通过**；触发回滚条件即切回旧 digest 并留证据。
 
