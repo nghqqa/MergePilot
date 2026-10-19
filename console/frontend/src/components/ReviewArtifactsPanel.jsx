@@ -172,15 +172,38 @@ function DiffFile({ file }) {
   );
 }
 
-// RunKnowledgeReferences — 知识库参考（RAG · reference only；2026-10-18 审查引用接线）。
-// 以 run 上下文（发现标题 + 仓库/分支）调用 /api/rag-trial/review-aux（组合授权门：
-// scope→会话 repo），返回 run_view.review_context.rag_auxiliary 辅助引用并展示。
-// 合同（ragtrial/review.mjs，契约测试锁死）：仅供人工参考追溯（路径/行号/digest/索引版本），
-// 不构成 finding/审批/门禁/VERIFIED 输入，Fixer/Verifier 亦不可用。
+// RunKnowledgeReferences — 知识库参考（RAG · reference only）双源展示（#491 复核定案）。
+// 源 A「审查时获取的参考资料」：GET /api/rag-trial/snapshot/:run_id——审查 worker
+//   执行期获取并持久化的快照（唯一权威历史；旧 run 无快照如实显示「未记录」，
+//   不以页面检索补造历史；获取关闭/未接线/保存未成功均如实显示为未记录）。
+// 源 B「当前知识库检索」：POST /api/rag-trial/review-aux（组合授权门 scope→会话
+//   repo）——实时对照，服务端不落执行期快照（queried_at 仅为本查询时刻）。
+// 两源分立展示、各标时间/分支/索引来源，互不冒充。
+// 合同（ragtrial/review.mjs，契约测试锁死）：仅供人工参考追溯（路径/行号/digest/
+// 索引版本），不构成 finding/审批/门禁/VERIFIED 输入，Fixer/Verifier 亦不可用。
 // 403（scope 未含该仓库）与未接线（backend_not_wired）时安静隐藏——功能不适用而非异常。
 export function RunKnowledgeReferences({ runId, repoFull, baseBranch, findings }) {
-  const [aux, setAux] = useState(null); // null=加载中/不适用；否则 {service_state, auxList, policy, note}
+  const [snap, setSnap] = useState(undefined); // undefined=加载中；null=无快照（未记录）
+  const [snapHidden, setSnapHidden] = useState(false); // 403/401 → 安静隐藏
+  const [aux, setAux] = useState(null); // null=加载中/不适用；否则 {service_state, auxList, policy, note, queriedAt}
   const titlesKey = (findings ?? []).map((f) => f?.title ?? '').filter(Boolean).join('|');
+  // 源 A：执行期快照（GET，只读）
+  useEffect(() => {
+    if (!runId) { setSnap(null); return undefined; }
+    let dead = false;
+    setSnap(undefined);
+    (async () => {
+      try {
+        const r = await apiFetch(`/api/rag-trial/snapshot/${encodeURIComponent(runId)}?corpus_branch=${encodeURIComponent(baseBranch || 'main')}`);
+        const b = await r.json().catch(() => ({}));
+        if (dead) return;
+        if (r.status === 403 || r.status === 401) { setSnapHidden(true); setSnap(null); return; }
+        setSnap(r.ok && b?.service_state === 'snapshot' ? b : null);
+      } catch { if (!dead) setSnap(null); }
+    })();
+    return () => { dead = true; };
+  }, [runId, baseBranch]); // eslint-disable-line react-hooks/exhaustive-deps
+  // 源 B：当前知识库检索（实时，服务端不落快照）
   useEffect(() => {
     if (!runId || !repoFull) { setAux(null); return undefined; }
     const titles = (findings ?? []).map((f) => f?.title ?? '').filter(Boolean).join('；').slice(0, 400);
@@ -191,7 +214,7 @@ export function RunKnowledgeReferences({ runId, repoFull, baseBranch, findings }
       try {
         const r = await apiFetch('/api/rag-trial/review-aux', {
           method: 'POST', headers: { 'content-type': 'application/json', ...csrfHeader() },
-          body: JSON.stringify({ q: titles, repo: repoFull, branch: baseBranch || 'main', run_id: runId, k: 5 }),
+          body: JSON.stringify({ q: titles, repo: repoFull, branch: baseBranch || 'main', run_id: runId, k: 5, corpus_branch: baseBranch || 'main' }),
         });
         const b = await r.json().catch(() => ({}));
         if (dead) return;
@@ -205,50 +228,90 @@ export function RunKnowledgeReferences({ runId, repoFull, baseBranch, findings }
         }
         const auxList = b?.run_view?.review_context?.rag_auxiliary ?? [];
         setAux({ service_state: b?.service_state ?? 'empty', auxList,
-          policy: b?.policy ?? null, ragPolicyNote: b?.run_view?.review_context?.rag_policy_note ?? null });
+          policy: b?.policy ?? null, ragPolicyNote: b?.run_view?.review_context?.rag_policy_note ?? null,
+          queriedAt: b?.queried_at ?? null });
       } catch { if (!dead) setAux({ service_state: 'error', note: '网络异常' }); }
     })();
     return () => { dead = true; };
   }, [runId, repoFull, baseBranch, titlesKey]); // eslint-disable-line react-hooks/exhaustive-deps
-  if (!aux) return null;
+  if (snapHidden && !aux) return null;
+  if (snap === undefined && !aux) return null;
+  const renderCitations = (list) => (
+    <ul style={{ margin: '4px 0', paddingLeft: 18 }}>
+      {(list ?? []).map((a, i) => {
+        const c = a.citation ?? {};
+        return (
+          <li key={i} style={{ marginBottom: 6 }}>
+            <code>{c.doc_path}</code> · L{c.line_start}-{c.line_end} · score {Number(a.score).toFixed(3)}
+            <div className="muted" style={{ fontSize: 12 }} title={`doc ${c.doc_sha256 ?? ''} chunk ${c.chunk_sha256 ?? ''}`}>
+              可追溯：doc sha {(c.doc_sha256 ?? '').slice(0, 8)}… · chunk sha {(c.chunk_sha256 ?? '').slice(0, 8)}… ·
+              {' '}{c.model_id} @iv{c.index_version} · trusted=false
+            </div>
+            <div style={{ fontSize: 12 }}>{String(a.snippet ?? '').slice(0, 240)}</div>
+          </li>
+        );
+      })}
+    </ul>
+  );
   return (
     <div style={{ marginTop: 8, borderTop: '1px dashed #24384a', paddingTop: 8 }}>
       <div style={{ fontWeight: 600, marginBottom: 4 }}>
         知识库参考（RAG · 仅供参考——不构成 finding/审批/门禁/VERIFIED，Fixer/Verifier 不可用）
       </div>
-      {aux.service_state === 'hit' ? (
-        <div>
-        <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>
-          语料分支: {baseBranch || 'main'}（索引绑定该分支——非 PR head_ref）
+      {/* ── 源 A：审查时获取的参考资料（执行期快照，历史权威） ── */}
+      {!snapHidden && (
+        <div style={{ marginBottom: 8 }}>
+          <div style={{ fontSize: 12, fontWeight: 600 }}>📎 审查时获取的参考资料（执行期快照）</div>
+          {snap === undefined ? (
+            <div className="muted" style={{ fontSize: 12 }}>加载中…</div>
+          ) : snap === null ? (
+            <div className="muted" style={{ fontSize: 12 }}>
+              未记录——本 run 审查执行期未获取知识库参考（获取关闭/未接线/保存未成功均如实显示为未记录）；不使用当前检索补造历史。
+            </div>
+          ) : snap.retrieval_state === 'provider_unavailable' || snap.retrieval_state === 'model_missing' ? (
+            <div className="muted" style={{ fontSize: 12 }}>审查执行期曾尝试获取，但知识库/模型当时不可用（如实记录，未伪装命中）。</div>
+          ) : snap.retrieval_state === 'empty' ? (
+            <div className="muted" style={{ fontSize: 12 }}>审查执行期检索无命中（如实记录）。</div>
+          ) : (
+            <div>
+              <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>
+                快照时间 {String(snap.snapshot_at ?? '').slice(0, 19).replace('T', ' ')} UTC ·
+                {' '}语料分支 {snap.corpus_branch} · 模型 {snap.model_id} @iv{snap.index_version} ·
+                {' '}查询策略 {snap.query_strategy} · 审查 head {(snap.review_head ?? '').slice(0, 8)}…
+                {snap.base_ref ? ` · base_ref ${snap.base_ref}` : ''}
+              </div>
+              {renderCitations(snap.citations)}
+              <div className="muted" style={{ fontSize: 12 }}>
+                以上为审查执行期留存的引用——后续知识库变化不改写本快照；仅供追溯与理解，不进入 finding/审批/门禁/VERIFIED。
+              </div>
+            </div>
+          )}
         </div>
-        <ul style={{ margin: '4px 0', paddingLeft: 18 }}>
-          {(aux.auxList ?? []).map((a, i) => {
-            const c = a.citation ?? {};
-            return (
-              <li key={i} style={{ marginBottom: 6 }}>
-                <code>{c.doc_path}</code> · L{c.line_start}-{c.line_end} · score {Number(a.score).toFixed(3)}
-                <div className="muted" style={{ fontSize: 12 }} title={`doc ${c.doc_sha256 ?? ''} chunk ${c.chunk_sha256 ?? ''}`}>
-                  可追溯：doc sha {(c.doc_sha256 ?? '').slice(0, 8)}… · chunk sha {(c.chunk_sha256 ?? '').slice(0, 8)}… ·
-                  {' '}{c.model_id} @iv{c.index_version} · trusted=false
-                </div>
-                <div style={{ fontSize: 12 }}>{String(a.snippet ?? '').slice(0, 240)}</div>
-              </li>
-            );
-          })}
-        </ul>
-        </div>
-      ) : aux.service_state === 'empty' ? (
-        <div className="muted" style={{ fontSize: 12 }}>知识库无相关内容（如实返回，不伪装命中）。</div>
-      ) : aux.service_state === 'no_query_context' ? (
-        <div className="muted" style={{ fontSize: 12 }}>本 run 无发现上下文——未执行知识库检索（如实）。</div>
-      ) : aux.service_state === 'provider_unavailable' ? (
-        <div className="muted" style={{ fontSize: 12 }}>嵌入检索服务不可达——显式失败，不伪装为空结果。</div>
-      ) : (
-        <div className="muted" style={{ fontSize: 12 }}>知识库检索失败：{aux.note ?? '未知原因'}（显式失败）。</div>
       )}
-      {aux.service_state === 'hit' && (
-        <div className="muted" style={{ fontSize: 12 }}>
-          以上为知识库辅助引用，仅供追溯与理解；不进入 finding/审批/门禁/VERIFIED，也不会被 Fixer/Verifier 使用。
+      {/* ── 源 B：当前知识库检索（实时对照，不落库） ── */}
+      {aux && (
+        <div>
+          <div style={{ fontSize: 12, fontWeight: 600 }}>🔎 当前知识库检索（实时对照——不落执行期快照）</div>
+          {aux.service_state === 'hit' ? (
+            <div>
+              <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>
+                查询时刻 {aux.queriedAt ? String(aux.queriedAt).slice(0, 19).replace('T', ' ') + ' UTC · ' : ''}
+                语料分支: {baseBranch || 'main'}（索引绑定该分支——非 PR head_ref）
+              </div>
+              {renderCitations(aux.auxList)}
+              <div className="muted" style={{ fontSize: 12 }}>
+                以上为本次页面查询的实时结果，仅供追溯与理解；不进入 finding/审批/门禁/VERIFIED，也不会被 Fixer/Verifier 使用，不落执行期快照。
+              </div>
+            </div>
+          ) : aux.service_state === 'empty' ? (
+            <div className="muted" style={{ fontSize: 12 }}>当前知识库无相关内容（如实返回，不伪装命中）。</div>
+          ) : aux.service_state === 'no_query_context' ? (
+            <div className="muted" style={{ fontSize: 12 }}>本 run 无发现上下文——未执行知识库检索（如实）。</div>
+          ) : aux.service_state === 'provider_unavailable' ? (
+            <div className="muted" style={{ fontSize: 12 }}>嵌入检索服务不可达——显式失败，不伪装为空结果。</div>
+          ) : (
+            <div className="muted" style={{ fontSize: 12 }}>知识库检索失败：{aux.note ?? '未知原因'}（显式失败）。</div>
+          )}
         </div>
       )}
     </div>

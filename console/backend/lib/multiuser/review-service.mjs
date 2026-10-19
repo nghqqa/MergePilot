@@ -204,6 +204,28 @@ export async function handlePullRequestEvent(pool, cfg, { payload, servicePrinci
       decision: inserted > 0 ? 'findings_present' : 'clean',
       rationaleRef: `attempt:${claim.attemptId}`, actorPrincipal: servicePrincipal });
 
+    // ── RAG V2：审查执行期知识库参考获取（快照唯一写入方；reference-only，
+    //    任何失败降级不阻断审查主链）。任务身份全部服务端同源：run/tenant 来自
+    //    本进程解析，repo=owner/name 来自 binding 行，base_ref 来自 provider
+    //    上下文——绝不采用客户端自报值。 ──
+    try {
+      const { maybeSnapshotRunReferences } = await import('../ragtrial/worker-rag.mjs');
+      const rag = await maybeSnapshotRunReferences(pool, cfg.llmEnv ?? process.env, {
+        runId: run.run_id, tenantId: ctx.tenantId, repo: `${ctx.owner}/${ctx.name}`,
+        baseRef: context.pr?.base?.ref ?? null, reviewHead: headSha,
+        prTitle: context.pr?.title ?? '',
+        findingTitles: (findings ?? []).map((f) => f?.title).filter(Boolean) });
+      if (rag.attempted) {
+        const ragDecision = rag.saved === true ? 'saved'
+          : (rag.snapshot ? 'already_saved'
+            : `not_saved:${String(rag.service_state ?? rag.reason ?? 'error').slice(0, 40)}`);
+        await recordDecision(pool, { runId: run.run_id, tenantId: ctx.tenantId,
+          repoId: ctx.repoId, prId: ctx.prId, headSha, stage: 'rag_worker_reference',
+          decision: ragDecision, rationaleRef: rag.snapshot?.snapshot_id ?? null,
+          actorPrincipal: servicePrincipal }).catch(() => {});
+      }
+    } catch { /* RAG 参考获取绝不影响审查主链 */ }
+
     // ── Wave 3.1/3.2：可选 LLM 第二阶段审查（使用创建时冻结的有效策略快照 effLlm；
     //    默认 disabled 零网络；失败 fail-closed 回落 deterministic——LLM 建议永不阻断
     //    也永不充当"通过"）──
