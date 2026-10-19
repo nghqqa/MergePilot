@@ -191,7 +191,7 @@ export function RunKnowledgeReferences({ runId, repoFull, baseBranch, findings }
       try {
         const r = await apiFetch('/api/rag-trial/review-aux', {
           method: 'POST', headers: { 'content-type': 'application/json', ...csrfHeader() },
-          body: JSON.stringify({ q: titles, repo: repoFull, branch: baseBranch || 'main', run_id: runId, k: 5 }),
+          body: JSON.stringify({ q: titles, repo: repoFull, branch: baseBranch || 'main', run_id: runId, k: 5, corpus_branch: baseBranch || 'main' }),
         });
         const b = await r.json().catch(() => ({}));
         if (dead) return;
@@ -249,6 +249,11 @@ export function RunKnowledgeReferences({ runId, repoFull, baseBranch, findings }
       {aux.service_state === 'hit' && (
         <div className="muted" style={{ fontSize: 12 }}>
           以上为知识库辅助引用，仅供追溯与理解；不进入 finding/审批/门禁/VERIFIED，也不会被 Fixer/Verifier 使用。
+        </div>
+      )}
+      {aux.service_state === 'hit' && aux.snapshotAt && (
+        <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>
+          📎 审查时引用快照已保存（{aux.snapshotAt.slice(0, 19).replace('T', ' ')} UTC）——后续知识库变化不改写已保存引用。
         </div>
       )}
     </div>

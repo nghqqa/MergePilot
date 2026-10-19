@@ -69,6 +69,8 @@ export const api = {
   ragTrialIngest: (body) => post('/api/rag-trial/ingest', body),
   ragTrialEval: (body) => post('/api/rag-trial/eval', body),
   ragTrialReviewAux: (body) => post('/api/rag-trial/review-aux', body),
+  ragRunSnapshot: (runId, corpusBranch) => get('/api/rag-trial/snapshot/' + runId + '?corpus_branch=' + encodeURIComponent(corpusBranch)),
+  ragRunSnapshot: (runId, corpusBranch) => get(`/api/rag-trial/snapshot/${runId}?corpus_branch=${encodeURIComponent(corpusBranch)}`),
   // A 链 org-search × ragtrial 内部接线（feat/rag-integration；reference_only 辅助引用）
   ragOrgSearch: (q, k = 5) => get(`/api/rag/org-search?q=${encodeURIComponent(q)}&k=${k}`),
   // 会话：正式契约端点 GET /api/auth/session（未登录 401 JSON，不重定向；7ccecb9）。

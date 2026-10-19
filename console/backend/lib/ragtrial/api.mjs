@@ -669,13 +669,53 @@ export async function ragTrialApi(req, res, ctx) {
       const aux = (r.results ?? []).map((h) => toAuxEvidence(h, { runId: run_id ?? null }));
       const runView = attachToRun(
         { run_id: run_id ?? 'ad-hoc', findings: [], tickets: [], gates: [] }, aux);
+      // ── RAG V2：审查时引用快照持久化（幂等 upsert）──
+      // 审查时获取并保存（run_id 绑定）；后续知识库变化不改写已保存历史引用。
+      if (run_id) {
+        try {
+          const { saveRunRagSnapshot } = await import('./rag-snapshot.mjs');
+          await saveRunRagSnapshot({ query: (t, p2) => pool.query(t, p2) }, {
+            runId: run_id, tenantId: auth?._mu?.tenantId ?? 'unknown',
+            repo: String(repo), branch: String(body.branch || ''),
+            reviewHead: body.review_head ?? '', corpusBranch: String(body.corpus_branch || body.branch || ''),
+            tenantId: auth?._mu?.tenantId ?? 'unknown',
+            modelId: (r.model_id ?? modelId ?? 'unknown'),
+            modelDigest: (r.model_digest ?? ''),
+            indexVersion: (r.index_version ?? 1),
+            queryText: q, queryStrategy: 'finding_titles_v1',
+            citations: aux, serviceState: r.service_state ?? 'hit' });
+        } catch { /* 快照保存失败不影响检索返回（如实降级） */ }
+      }
       return sendJson(res, 200, {
         service_state: r.service_state,
         run_view: runView,
+        snapshot_at: new Date().toISOString(),
         policy: canAutoPromote(aux),
         note: 'RAG 命中仅作 Review 辅助引用；findings/tickets/gates 未被触碰',
       });
     }
+    // ── 快照读取（只读，不重新检索；页面双源中的「审查时获取的参考资料」入口）──
+    const snapMatch = p.match(/^\/api\/rag-trial\/snapshot\/([0-9a-f-]{36})$/);
+    if (snapMatch && req.method === 'GET') {
+      const runId = snapMatch[1];
+      const corpusBranch = String(q.corpus_branch || 'main');
+      const { loadRunRagSnapshot } = await import('./rag-snapshot.mjs');
+      const snap = await loadRunRagSnapshot(store, { runId, corpusBranch });
+      if (!snap) {
+        return sendJson(res, 200, { service_state: 'no_snapshot',
+          note: '旧 run 无知识库引用快照——如实返回（不用当前查询补造历史）', run_id: runId });
+      }
+      return sendJson(res, 200, {
+        service_state: 'snapshot',
+        run_id: snap.run_id, corpus_branch: snap.corpus_branch,
+        review_head: snap.review_head, model_id: snap.model_id,
+        model_digest: snap.model_digest, index_version: snap.index_version,
+        query_strategy: snap.query_strategy, snapshot_at: snap.snapshot_at,
+        citations: snap.citations,
+        note: '审查时获取的知识库引用快照——反映查询时的知识库状态，不代表当前知识库',
+      });
+    }
+
     if (p === '/api/rag-trial/policy-check' && req.method === 'POST') {
       const body = await json() ?? {};
       const evidence = body.evidence ?? [];

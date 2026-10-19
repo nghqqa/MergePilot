@@ -200,6 +200,27 @@ export const RAGTRIAL_SCHEMA_SQL = [
   `CREATE INDEX IF NOT EXISTS ragtrial_jobs_state_idx
      ON ragtrial.jobs (state, next_run_at)`,
   `ALTER TABLE ragtrial.jobs ADD COLUMN IF NOT EXISTS result JSONB`,
+  // ── run 页知识库引用快照（RAG V2：审查时获取并持久化，后续查询不改写历史）──
+  `CREATE TABLE IF NOT EXISTS ragtrial.run_rag_snapshots (
+     snapshot_id   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+     run_id        TEXT NOT NULL,
+     tenant_id     TEXT NOT NULL,
+     repo          TEXT NOT NULL,
+     branch        TEXT NOT NULL,
+     review_head   TEXT NOT NULL,
+     corpus_branch TEXT NOT NULL,
+     model_id      TEXT NOT NULL,
+     model_digest  TEXT NOT NULL,
+     index_version INT NOT NULL,
+     query_text    TEXT,
+     query_strategy TEXT NOT NULL DEFAULT 'finding_titles_v1',
+     citations     JSONB NOT NULL DEFAULT '[]'::jsonb,
+     service_state TEXT NOT NULL,
+     snapshot_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+     UNIQUE (run_id, corpus_branch, model_id, index_version)
+   )`,
+  `CREATE INDEX IF NOT EXISTS ragtrial_snapshots_run_idx
+     ON ragtrial.run_rag_snapshots (run_id, corpus_branch)`,
 ];
 
 export const RETAINED_INDEX_VERSIONS = 2;
