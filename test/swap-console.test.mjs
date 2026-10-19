@@ -279,6 +279,8 @@ test('SW 后置：PG 部署 data_mode 未达 live → 回滚旧镜像（exit 1�
         calls.push(args);
         if (args[0] === 'run') { runCount += 1; return { status: 0, stdout: 'new-id\n', stderr: '' }; }
         if (args[0] === 'exec') return { status: 0, stdout: 'HEALTH snapshot v0.2.0-beta.6-rc.26', stderr: '' };
+        if (args[0] === 'image' && args[1] === 'inspect') return { status: 0, stdout: 'sha256:deadbeef\n', stderr: '' };
+        if (args[0] === 'inspect' && args[1] === '--format') return { status: 1, stdout: '', stderr: 'no such container' };
         return { status: 0, stdout: '', stderr: '' };
       },
       log: () => {},
@@ -289,6 +291,7 @@ test('SW 后置：PG 部署 data_mode 未达 live → 回滚旧镜像（exit 1�
     assert.ok(rollbackRun.includes('mp-console:rc25'), '回滚 run 使用旧镜像');
     const rmNew = calls.find((a) => a[0] === 'rm' && a[1] === '-f');
     assert.ok(rmNew, '新容器已清理');
+    assert.ok(calls.some((a) => a[0] === 'image' && a[1] === 'inspect'), '回滚镜像可用性已预检');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -304,19 +307,31 @@ test('SW 前置：Matrix 凭据登录非 200 → 切换中止（exit 3），旧�
   try {
     const calls = [];
     const logs = [];
+    const fileInspectRaw = JSON.stringify({ Name: '/mp-console',
+      HostConfig: { RestartPolicy: { Name: 'no' } },
+      Config: { Env: ['A=1'] },
+      Mounts: [{ Type: 'bind', Source: '/srv/mp/rag-models', Destination: '/models', Mode: 'ro', RW: false }] });
     const code = await swapConsole([file, 'mp-console:rc12'], {
-      exec: (args) => { calls.push(args); return { status: 0, stdout: 'deadbeef\n', stderr: '' }; },
+      exec: (args) => {
+        calls.push(args);
+        if (args[0] === 'inspect' && args[1] === 'mp-console') return { status: 0, stdout: fileInspectRaw, stderr: '' };
+        if (args[0] === 'image' && args[1] === 'inspect') return { status: 0, stdout: 'deadbeef\n', stderr: '' };
+        return { status: 0, stdout: 'deadbeef\n', stderr: '' };
+      },
       log: (m) => logs.push(m),
     });
     assert.equal(code, 0);
-    assert.equal(calls.length, 2);
-    assert.deepEqual(calls[0], ['rm', '-f', 'mp-console']);
-    assert.equal(calls[1][0], 'run');
-    assert.equal(calls[1][1], '-d');
-    assert.ok(calls[1].includes('mp-console:rc12'));
-    assert.equal(flagValue(calls[1], '--restart'), 'unless-stopped');
-    assert.ok(pairIn(calls[1], '-v', '/srv/mp/rag-models:/models:ro'));
+    const rmCall = calls.find((a) => a[0] === 'rm' && a[1] === '-f');
+    const runCall = calls.find((a) => a[0] === 'run');
+    assert.ok(rmCall, '旧容器被移除');
+    assert.ok(runCall, '新容器被创建');
+    assert.equal(runCall[1], '-d');
+    assert.ok(runCall.includes('mp-console:rc12'));
+    assert.equal(flagValue(runCall, '--restart'), 'unless-stopped');
+    assert.ok(pairIn(runCall, '-v', '/srv/mp/rag-models:/models:ro'));
     assert.ok(logs.some((m) => m.includes('docker run -d')));
+    assert.ok(logs.some((m) => m.includes('比对通过')), 'live 比对通过上屏');
+    assert.ok(logs.some((m) => m.includes('回滚镜像可用')), '回滚镜像可用性预检上屏');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -340,11 +355,20 @@ test('主入口：--dry-run 只打印命令，不调用 docker', async () => {
 test('主入口：docker run 非零退出 → 透传退出码与 stderr', async () => {
   const { dir, file } = writeInspect(baseInspect());
   try {
+    let runCount = 0;
+    const logs = [];
     const code = await swapConsole([file, 'img'], {
-      exec: (args) => (args[0] === 'run' ? { status: 125, stdout: '', stderr: 'docker: conflict\n' } : { status: 0, stdout: '', stderr: '' }),
-      log: () => {},
+      exec: (args) => {
+        if (args[0] === 'run') { runCount += 1; return { status: 125, stdout: '', stderr: 'docker: conflict\n' }; }
+        if (args[0] === 'image' && args[1] === 'inspect') return { status: 0, stdout: 'deadbeef\n', stderr: '' };
+        if (args[0] === 'inspect' && args[1] === '--format') return { status: 1, stdout: '', stderr: 'no such container' };
+        return { status: 0, stdout: '', stderr: '' };
+      },
+      log: (m) => logs.push(m),
     });
-    assert.equal(code, 125);
+    assert.equal(code, 1, 'run 失败后已尝试回滚；回滚亦失败→🛑 指引退出码 1');
+    assert.equal(runCount, 2, 'docker run 恰两次（新容器+回滚容器）');
+    assert.ok(logs.some((m) => m.includes('🛑')), '回滚失败 LOUD 指引上屏');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -480,16 +504,21 @@ test('泄露回归：失败路径——对抗性 stderr（含秘密/连接串/�
       'DUMMYKEY123-dummy-body',
       '-----END RSA PRIVATE KEY----- dummy-fixture',
     ].join('\n');
+    let hostileSeen = 0;
     const code = await swapConsole([file, 'ghcr.io/nghqqa/mergepilot-console@sha256:' + 'f'.repeat(64)], {
-      exec: (args) => args[0] === 'rm'
-        ? { status: 0, stdout: '', stderr: '' }
-        : { status: 125, stdout: '', stderr: hostileStderr },
+      exec: (args) => {
+        if (args[0] === 'rm') return { status: 0, stdout: '', stderr: '' };
+        if (args[0] === 'image' && args[1] === 'inspect') return { status: 0, stdout: 'deadbeef\n', stderr: '' };
+        if (args[0] === 'inspect' && args[1] === '--format') return { status: 1, stdout: '', stderr: 'no such container' };
+        if (args[0] === 'run') { hostileSeen += 1; return { status: 125, stdout: '', stderr: hostileStderr }; }
+        return { status: 0, stdout: '', stderr: '' };
+      },
       log: (m) => logs.push(m),
     });
-    assert.equal(code, 125);
+    assert.equal(code, 1, '新容器与回滚容器 run 均失败→🛑 指引退出码 1');
+    assert.equal(hostileSeen, 2, '恰好两次 run（新容器+回滚兜底）');
     const out = logs.join('\n');
     assertNoSecrets(out);
-    assert.ok(out.includes('exit=125'), '退出码上屏（诊断入口）');
     assert.ok(!out.includes('Error response from daemon'), '对抗性 stderr 原文不透传');
     assert.ok(!out.includes('conflicting options'), 'daemon 消息正文也不透传');
     assert.ok(!out.includes('dummy-pg-pass'), '连接串不泄露');
@@ -554,15 +583,16 @@ test('事故回归：掩码 DSN（***）→ validateForDeploy 拒绝，原因点
   assert.ok(r.reasons.some((x) => x.includes('脱敏')), '点名脱敏副本');
 });
 
-test('事故回归：REDACTED/空值秘密键同样拒绝', () => {
+test('事故回归：REDACTED 拒绝；空值秘密键降为警告（合法留空不误伤）', () => {
   const r = validateForDeploy({ Config: { Env: [
     'CONSOLE_PG_DSN=postgres://postgres:fake-redacted-pw@db:5432/mu',
     'MU_LLM_API_KEY=REDACTED',
     'MU_GITEE_PAT=',
   ] } });
-  assert.equal(r.ok, false);
+  assert.equal(r.ok, false, 'REDACTED=展示副本特征，仍拒绝');
   assert.ok(r.reasons.some((x) => x.includes('MU_LLM_API_KEY')));
-  assert.ok(r.reasons.some((x) => x.includes('MU_GITEE_PAT')));
+  assert.ok(!r.reasons.some((x) => x.includes('MU_GITEE_PAT')), '空值不在拒绝理由');
+  assert.ok((r.warnings ?? []).some((x) => x.includes('MU_GITEE_PAT')), '空值进警告');
 });
 
 test('正常配置（秘密齐备非脱敏）→ 通过；无秘密键的值不受误伤', () => {
@@ -603,4 +633,126 @@ test('回滚镜像：优先不可变 Image ID（Config.Image 旧 tag 兜底）',
   assert.equal(pickRollbackImage(inspect, 'img:fallback'), 'sha256:' + 'a'.repeat(64));
   assert.equal(pickRollbackImage({ Config: { Image: 'img:tag' } }, 'img:fallback'), 'img:tag');
   assert.equal(pickRollbackImage(null, 'img:fallback'), 'img:fallback');
+});
+
+
+test('事故回归：陈旧 inspect（镜像身份与 live 不一致）→ 停止旧容器前拒绝', async () => {
+  const liveRaw = JSON.stringify({ Name: '/mp-console',
+    Image: 'sha256:' + 'a'.repeat(64),
+    HostConfig: { RestartPolicy: { Name: 'unless-stopped' } },
+    Config: { Image: 'mp-console:rc25', Env: ['CONSOLE_PG_DSN=postgres://pg/mu', 'MU_MODE=multiuser'] },
+    Mounts: [], NetworkSettings: { Networks: {} } });
+  const { dir, file } = writeInspect({ Name: '/mp-console',
+    Image: 'sha256:' + 'b'.repeat(64),
+    HostConfig: { RestartPolicy: { Name: 'unless-stopped' } },
+    Config: { Image: 'mp-console:rc-OLD', Env: ['CONSOLE_PG_DSN=postgres://pg/mu', 'MU_MODE=multiuser'] },
+    Mounts: [], NetworkSettings: { Networks: {} } });
+  try {
+    const calls = [];
+    const logs = [];
+    const code = await swapConsole([file, 'mp-console:rc26'], {
+      exec: (args) => { calls.push(args); return { status: 0, stdout: liveRaw, stderr: '' }; },
+      log: (m) => logs.push(m),
+    });
+    assert.equal(code, 5, '陈旧 inspect → exit 5');
+    assert.ok(logs.some((m) => m.includes('镜像身份不一致')), '身份不一致原因上屏');
+    assert.ok(!calls.some((a) => a[0] === 'rm'), '旧容器未被移除');
+    assert.ok(!calls.some((a) => a[0] === 'run'), '新容器未被创建');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('事故回归：env 键集缺失（陈旧部分丢失）→ 拒绝并点名数量', async () => {
+  const liveRaw = JSON.stringify({ Name: '/mp-console',
+    Image: 'sha256:' + 'a'.repeat(64),
+    HostConfig: { RestartPolicy: { Name: 'unless-stopped' } },
+    Config: { Image: 'mp-console:rc25', Env: ['CONSOLE_PG_DSN=postgres://pg/mu', 'MU_MODE=multiuser', 'MU_LLM_API_KEY=k', 'MU_GITHUB_APP_ID=1'] },
+    Mounts: [], NetworkSettings: { Networks: {} } });
+  const { dir, file } = writeInspect({ Name: '/mp-console',
+    Image: 'sha256:' + 'a'.repeat(64),
+    HostConfig: { RestartPolicy: { Name: 'unless-stopped' } },
+    Config: { Image: 'mp-console:rc25', Env: ['CONSOLE_PG_DSN=postgres://pg/mu', 'MU_MODE=multiuser'] },
+    Mounts: [], NetworkSettings: { Networks: {} } });
+  try {
+    const logs = [];
+    const calls = [];
+    const code = await swapConsole([file, 'mp-console:rc26'], {
+      exec: (args) => { calls.push(args); return { status: 0, stdout: liveRaw, stderr: '' }; },
+      log: (m) => logs.push(m),
+    });
+    assert.equal(code, 5);
+    assert.ok(logs.some((m) => m.includes('env 键集缺失 2 项')), '缺失数量上屏');
+    assert.ok(!calls.some((a) => a[0] === 'rm'), '旧容器未被移除');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('事故回归：file 新增键/改值（如试点 scope）→ 合法放行', async () => {
+  const liveRaw = JSON.stringify({ Name: '/mp-console',
+    Image: 'sha256:' + 'a'.repeat(64),
+    HostConfig: { RestartPolicy: { Name: 'unless-stopped' } },
+    Config: { Image: 'mp-console:rc25', Env: ['CONSOLE_PG_DSN=postgres://pg/mu', 'MU_MODE=multiuser', 'RAGTRIAL_ALLOWED_SCOPES=old@b'] },
+    Mounts: [], NetworkSettings: { Networks: {} } });
+  const { dir, file } = writeInspect({ Name: '/mp-console',
+    Image: 'sha256:' + 'a'.repeat(64),
+    HostConfig: { RestartPolicy: { Name: 'unless-stopped' } },
+    Config: { Image: 'mp-console:rc25', Env: ['CONSOLE_PG_DSN=postgres://pg/mu', 'MU_MODE=multiuser', 'RAGTRIAL_ALLOWED_SCOPES=new@main'] },
+    Mounts: [], NetworkSettings: { Networks: {} } });
+  try {
+    const logs = [];
+    const calls = [];
+    const code = await swapConsole([file, 'mp-console:rc26'], {
+      exec: (args) => {
+        calls.push(args);
+        if (args[0] === 'inspect' && args[1] === 'mp-console') return { status: 0, stdout: liveRaw, stderr: '' };
+        if (args[0] === 'image' && args[1] === 'inspect') return { status: 0, stdout: 'sha256:' + 'a'.repeat(64) + '\n', stderr: '' };
+        if (args[0] === 'inspect' && args[1] === '--format') return { status: 0, stdout: 'sha256:' + 'a'.repeat(64) + '|true', stderr: '' };
+        if (args[0] === 'exec') return { status: 0, stdout: 'HEALTH live v1 mu_ready=true', stderr: '' };
+        return { status: 0, stdout: 'id\n', stderr: '' };
+      },
+      log: (m) => logs.push(m),
+    });
+    if (code !== 0) console.log('[dbg38]', JSON.stringify(logs));
+    assert.equal(code, 0, '值差异与新增键放行：' + logs.join('|').slice(0, 200));
+    assert.ok(logs.some((m) => m.includes('比对通过')));
+    assert.ok(calls.some((a) => a[0] === 'rm'), '正常进入换版');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('事故回归：Config.Image 兜底身份门——解析身份与原镜像不一致时拒绝兜底', async () => {
+  // live Image=AAA（真实运行身份）；Config.Image 指向会解析为 BBB 的漂移 tag
+  const liveRaw = JSON.stringify({ Name: '/mp-console',
+    Image: 'sha256:' + 'a'.repeat(64),
+    HostConfig: { RestartPolicy: { Name: 'unless-stopped' } },
+    Config: { Image: 'mp-console:drifted-tag', Env: ['CONSOLE_PG_DSN=postgres://pg/mu', 'MU_MODE=multiuser'] },
+    Mounts: [], NetworkSettings: { Networks: {} } });
+  const { dir, file } = writeInspect({ Name: '/mp-console',
+    Image: 'sha256:' + 'a'.repeat(64),
+    HostConfig: { RestartPolicy: { Name: 'unless-stopped' } },
+    Config: { Image: 'mp-console:drifted-tag', Env: ['CONSOLE_PG_DSN=postgres://pg/mu', 'MU_MODE=multiuser'] },
+    Mounts: [], NetworkSettings: { Networks: {} } });
+  try {
+    const calls = [];
+    const logs = [];
+    const code = await swapConsole([file, 'mp-console:rc26'], {
+      exec: (args) => {
+        calls.push(args);
+        if (args[0] === 'inspect' && args[1] === 'mp-console') return { status: 0, stdout: liveRaw, stderr: '' };
+        if (args[0] === 'inspect' && args[1] === '--format') return { status: 0, stdout: 'sha256:' + 'a'.repeat(64) + '|false', stderr: '' };
+        if (args[0] === 'image' && args[1] === 'inspect') {
+          // 漂移 tag 解析为 BBB ≠ AAA
+          const ref = args.slice(2).find((x) => !String(x).startsWith('--')) || '';
+          return { status: 0, stdout: (ref.includes('sha256:' + 'a'.repeat(64)) ? 'sha256:' + 'a'.repeat(64) : 'sha256:' + 'b'.repeat(64)) + '\n', stderr: '' };
+        }
+        if (args[0] === 'run') return { status: 0, stdout: 'id\n', stderr: '' };
+        if (args[0] === 'exec') return { status: 0, stdout: 'HEALTH live v1 mu_ready=false', stderr: '' };
+        return { status: 0, stdout: '', stderr: '' };
+      },
+      log: (m) => logs.push(m),
+    });
+    // 场景：新容器 mu_ready=false 持续→主健康门 12 轮超时→回滚；回滚首选 ID=AAA
+    // 但回滚探针同样 mu_ready=false→回滚失败；兜底 tag 解析身份=BBB≠AAA→身份门
+    // 拒绝兜底（漂移 tag 不得恢复）→🛑 指引。断言：code 1 + 兜底拒绝上屏。
+    assert.equal(code, 1);
+    assert.ok(logs.some((m) => m.includes('Config.Image 兜底被拒绝')), '漂移 tag 兜底被身份门拒绝（上屏）');
+    assert.ok(logs.some((m) => m.includes('mu_schema_ready 未就绪')), 'mu 门等待/失败可见');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });

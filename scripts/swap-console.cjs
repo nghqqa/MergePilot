@@ -45,24 +45,32 @@ const SECRET_KEY_RE = /(PASSWORD|PASSWD|SECRET|TOKEN|APIKEY|API_KEY|PRIVATE_KEY|
 function envValueLooksRedacted(key, value) {
   if (!SECRET_KEY_RE.test(key)) return false;
   const v = String(value ?? '');
-  if (!v) return true; // 秘密类键空值=缺项（原值丢失），部署拒绝
+  if (!v) return false; // 空值≠脱敏：可能是合法留空的可选配置（调用方降级为警告）
   return REDACT_MARKERS.some((m) => v.toLowerCase().includes(m));
 }
 function validateForDeploy(inspect) {
   const reasons = [];
+  const warnings = [];
   const env = (inspect && inspect.Config && Array.isArray(inspect.Config.Env)) ? inspect.Config.Env : [];
   for (const e of env) {
     const eq = e.indexOf('=');
     if (eq <= 0) continue;
-    if (envValueLooksRedacted(e.slice(0, eq), e.slice(eq + 1))) {
-      reasons.push(e.slice(0, eq) + ' 值疑似脱敏占位或为空——这是展示副本，不是可部署配置');
+    const key = e.slice(0, eq), value = e.slice(eq + 1);
+    if (!SECRET_KEY_RE.test(key)) continue;
+    const v = String(value ?? '');
+    if (v && REDACT_MARKERS.some((m) => v.toLowerCase().includes(m))) {
+      // 掩码标记=展示副本特征，部署拒绝（rc3 事故主因）
+      reasons.push(key + ' 值疑似脱敏占位——这是展示副本，不是可部署配置');
+    } else if (!v) {
+      // 空值=可能是合法留空的可选配置（如未启用 Gitee 时的 PAT）——仅警告不拒
+      warnings.push(key + ' 为空——若该功能启用中，部署后对应能力不可用（如实提示，不阻断）');
     }
   }
   const isMultiuser = env.some((e) => e === 'MU_MODE=multiuser');
   if (isMultiuser && !env.some((e) => e.startsWith('CONSOLE_PG_DSN='))) {
     reasons.push('MU_MODE=multiuser 但缺少 CONSOLE_PG_DSN——多用户部署必需');
   }
-  return { ok: reasons.length === 0, reasons };
+  return { ok: reasons.length === 0, reasons, warnings };
 }
 
 // ── Matrix 登录体（纯函数）：identifier 格式──────────────────────────────
@@ -74,6 +82,28 @@ function matrixLoginBody(user, password) {
   return JSON.stringify({ type: 'm.login.password',
     identifier: { type: 'm.id.user', user: String(user ?? '') },
     password: String(password ?? '') });
+}
+
+// ── 部署输入 vs 实际运行容器比对（纯函数；rc3 事故回归锁）────────────────
+// 事故：pre-rc1 陈旧 inspect（Image=rc.35.5 时代 tag、env 键集旧）被当作部署输入。
+// 修复：与 live 容器实际 inspect 比对——镜像身份不一致或 env 键集缺失=陈旧/部分
+// 丢失，在停止旧容器【之前】拒绝。file 侧新增键或修改值（如试点 scope 变更）合法放行。
+function compareWithLive(fileInspect, liveInspect) {
+  if (!liveInspect) return { ok: true, reasons: [] }; // 无同名词容器=非替换场景，跳过
+  const reasons = [];
+  const fileImage = pickRollbackImage(fileInspect, null);
+  const liveImage = pickRollbackImage(liveInspect, null);
+  if (fileImage && liveImage && fileImage !== liveImage) {
+    reasons.push('镜像身份不一致——inspect 已陈旧（file=' + String(fileImage).slice(0, 20)
+      + '… live=' + String(liveImage).slice(0, 20) + '…）。请重新 docker inspect 现容器生成部署输入');
+  }
+  const fileKeys = new Set((fileInspect?.Config?.Env ?? []).map((e) => e.split('=', 1)[0]));
+  const liveKeys = (liveInspect?.Config?.Env ?? []).map((e) => e.split('=', 1)[0]);
+  const missing = liveKeys.filter((k) => !fileKeys.has(k));
+  if (missing.length) {
+    reasons.push('env 键集缺失 ' + missing.length + ' 项（如 ' + missing.slice(0, 3).join(',') + '…）——inspect 可能来自旧版本容器');
+  }
+  return { ok: reasons.length === 0, reasons };
 }
 
 // ── 回滚镜像选择（纯函数）：优先不可变 Image ID────────────────────────────
@@ -246,9 +276,11 @@ async function swapConsole(argv, deps = {}) {
   if (!deployCheck.ok) {
     log('部署前校验未通过——inspect 疑似脱敏/缺项，拒绝执行（旧容器未受影响）：');
     for (const r of deployCheck.reasons) log('  - ' + r);
+    for (const w of (deployCheck.warnings ?? [])) log('  ⚠ ' + w);
     log('处置：改用未脱敏的恢复配置（docker inspect 原始输出）；脱敏副本仅用于展示/归档。');
     return 4;
   }
+  for (const w of (deployCheck.warnings ?? [])) log('  ⚠ ' + w);
   const args = buildDockerRunArgs(inspect, image, { name });
   const containerName = name != null ? name : (typeof inspect.Name === 'string' ? inspect.Name.replace(/^\//, '') : '');
 
@@ -278,6 +310,43 @@ async function swapConsole(argv, deps = {}) {
     log('前置 Matrix 凭据校验通过（登录 200，凭据不回显）');
   }
 
+  // ── 前置检查 1.5：部署输入 vs 实际运行容器比对（rc3 事故回归锁）────────
+  // 陈旧 inspect（镜像身份/env 键集不匹配）在停止旧容器【之前】拒绝。
+  // 回滚锚以【live 实际 inspect】为准——文件仅作配置变更载体。
+  let liveInspect = null;
+  if (containerName) {
+    const li = exec(['inspect', containerName]);
+    try {
+      const parsed = JSON.parse(String(li.stdout || 'null'));
+      liveInspect = Array.isArray(parsed) ? (parsed[0] ?? null) : parsed;
+    } catch { liveInspect = null; }
+    const cmp = compareWithLive(inspect, liveInspect);
+    if (!cmp.ok) {
+      log('部署输入与运行容器不一致——疑似陈旧/部分丢失的 inspect，拒绝执行（旧容器未受影响）：');
+      for (const r of cmp.reasons) log('  - ' + r);
+      log('处置：docker inspect ' + containerName + ' 重新生成部署输入；如需变更 env 请在【新】输入上修改。');
+      return 5;
+    }
+    log('部署输入与运行容器比对通过（镜像身份一致' + (liveInspect ? '；回滚锚=' + String(pickRollbackImage(liveInspect, image)).slice(0, 20) + '…' : '') + '）');
+  }
+
+  // ── 前置检查 1.6：回滚镜像可用性预检（rc3 隔离测试 C 二层缺陷回归锁）────
+  // 事故：回滚时才发现本地无此镜像（untagged 被清理）→ run 静默失败 → 服务下线。
+  // 修复：在停止旧容器之前确认回滚镜像在本地可解析；解析结果与原镜像身份一致性
+  // 决定 Config.Image 兜底是否被允许（漂移 tag 不得恢复）。
+  const originalImageId = liveInspect ? pickRollbackImage(liveInspect, image) : pickRollbackImage(inspect, image);
+  const rbResolve = exec(['image', 'inspect', '--format', '{{.Id}}', originalImageId]);
+  const rollbackResolvedId = String(rbResolve.stdout || '').trim();
+  if (rbResolve.status !== 0 || !rollbackResolvedId) {
+    log('回滚镜像不可用（本地无法解析 ' + originalImageId.slice(0, 20) + '…）——拒绝执行（旧容器未受影响）。');
+    log('处置：docker pull/retag 恢复该镜像，或改用任一已验证可用版本作为回滚目标后重试。');
+    return 6;
+  }
+  log('回滚镜像可用（' + rollbackResolvedId.slice(0, 20) + '…）');
+  // 派生声明（run 之前就位——run 失败路径的 rollbackFn 需要，避免 TDZ）
+  const hasPgDsn = inspectEnv.some((e) => e.startsWith('CONSOLE_PG_DSN='));
+  const isMultiuserEnv = inspectEnv.some((e) => e === 'MU_MODE=multiuser');
+
   // ── 前置检查 2 记录：待连接的非默认网络（创建后 connect；bridge 除外）──
   const extraNetworks = Object.keys(inspect.NetworkSettings?.Networks ?? {})
     .filter((n) => n && n !== 'bridge');
@@ -298,7 +367,9 @@ async function swapConsole(argv, deps = {}) {
     // 连接串/多行私钥的场景）——绝不透传 stderr 原文，只报退出码与诊断指引
     log(`docker run 失败（exit=${run.status}）——本工具不回显错误详情以防凭据进入转录；` +
         `可查看 docker daemon 日志或手动重跑同参数诊断`);
-    return run.status || 1;
+    // rc3 事故回归锁：旧容器已被移除，run 失败不得裸退——尝试回滚到切换前
+    // 身份（内部含回滚后就绪校验；再失败给出 🛑 运维指引），退出码归一为 1。
+    return await rollbackFn('新容器启动失败（docker run exit=' + run.status + '）');
   }
   log('container=' + (run.stdout || '').trim());
 
@@ -312,39 +383,66 @@ async function swapConsole(argv, deps = {}) {
   // ── 后置检查 1：健康+依赖可达（data_mode=live 表示 PG 实时可读；snapshot=依赖断）──
   // 回滚目标=切换前旧容器的实际不可变镜像 ID（rc3 事故回归锁：Config.Image 可能是
   // 陈旧 inspect 里的可变 tag——回滚曾复活 rc.35.5 旧镜像）
-  const oldImage = pickRollbackImage(inspect, image);
   // data_mode=live 断言仅适用于 PG 部署（无 DSN 的部署 health 本就不含 live 语义）
-  const hasPgDsn = inspectEnv.some((e) => e.startsWith('CONSOLE_PG_DSN='));
-  const rollback = (why) => {
+  async function rollbackFn(why) {
+    const oldImage = originalImageId;
     log('后置检查未通过（' + why + '）——回滚到旧镜像 ' + oldImage.slice(0, 40));
     if (containerName) exec(['rm', '-f', containerName]);
-    const startRollbackImage = (imgRef, warn) => {
-      if (warn) log('⚠️ ' + warn);
+    // Config.Image 兜底身份门（rc3 事故回归锁）：仅当其解析出的镜像 ID 与切换前
+    // 实际运行身份一致时才允许——漂移的旧 tag（如 rc.35.5 复活）一律拒绝。
+    const fallbackRef = (inspect.Config.Image && inspect.Config.Image !== oldImage) ? inspect.Config.Image : null;
+    let fallbackAllowed = false;
+    if (fallbackRef) {
+      const fr = exec(['image', 'inspect', '--format', '{{.Id}}', fallbackRef]);
+      const fallbackId = String(fr.stdout || '').trim();
+      fallbackAllowed = fr.status === 0 && !!fallbackId && fallbackId === oldImage;
+    }
+    const startRollbackImage = async (imgRef) => {
       const oldArgs = buildDockerRunArgs(inspect, imgRef, { name: containerName || undefined });
       exec(['run', '-d', ...oldArgs]);
-      const chk = exec(['inspect', '--format', '{{.State.Running}}', containerName]);
-      const running = String(chk.stdout || '').trim() === 'true';
-      if (!running) {
-        log('🛑 回滚启动失败（镜像可能已不存在且无兜底）——当前服务处于下线状态，需要运维立即介入：');
-        log('   docker pull/retag 旧镜像后手动 docker run（参数见 inspect JSON），或切到任一可用版本。');
+      for (const net of extraNetworks) {
+        const c = exec(['network', 'connect', net, containerName]);
+        log(`回滚容器 network connect ${net}: ${c.status === 0 ? 'ok' : 'exit=' + c.status}`);
       }
-      return running;
+      // 回滚成功判定（rc3 事故回归锁）：镜像身份一致 + 容器 Running + 应用健康
+      // （live/mu 门同口径）——不能只验容器存在。
+      const imgChk = exec(['inspect', '--format', '{{.Image}}|{{.State.Running}}', containerName]);
+      const [runImg, runState] = String(imgChk.stdout || '').trim().split('|');
+      if (runState !== 'true' || (runImg && runImg !== imgRef && !imgRef.startsWith('sha256:'))) {
+        log('🛑 回滚启动异常（容器未运行或镜像身份不符）——服务可能处于下线状态，需运维立即介入。');
+        return false;
+      }
+      if (hasPgDsn) {
+        const probeSrc2 = fs.readFileSync(path.join(__dirname, 'swap-health-probe.js'), 'utf8');
+        let rbLive = !hasPgDsn;
+        for (let i = 0; !rbLive && i < 6; i++) {
+          const h = exec(['exec', containerName, 'node', '-e', probeSrc2]);
+          const out = String(h.stdout || '');
+          log('回滚健康检查 ' + (i + 1) + '/6: ' + (out.trim() || '（exec 无输出）').slice(0, 150));
+          if (/HEALTH live/.test(out) && !(isMultiuserEnv && /mu_ready=false/.test(out))) { rbLive = true; break; }
+          if (i < 5) await new Promise((r) => setTimeout(r, 1000));
+        }
+        if (!rbLive) {
+          log('🛑 回滚容器健康未达 live/mu_ready（数据库或依赖未就绪）——需运维立即介入核查。');
+          return false;
+        }
+      }
+      log('回滚完成（镜像身份 ' + String(runImg || imgRef).slice(0, 20) + '… 与切换前一致，健康检查通过）。');
+      return true;
     };
-    // 首选：切换前旧容器的不可变镜像 ID（精确）；
-    // ID 失败（镜像被清理等）→ LOUD 提醒后以 Config.Image 兜底（可能陈旧——风险已明示）。
-    if (!startRollbackImage(oldImage, null) && oldImage !== (inspect.Config.Image || image)) {
-      startRollbackImage(inspect.Config.Image || image,
-        '不可变镜像 ID 不可用（镜像可能已被清理）——尝试 Config.Image 兜底：' + String(inspect.Config.Image || image).slice(0, 40) + '（可能非切换前实际版本，恢复后请核对 /api/health 身份）');
+    // 首选：切换前实际运行的不可变镜像 ID（精确）。
+    if (await startRollbackImage(oldImage)) return 1;
+    // ID 失败 → Config.Image 兜底【仅当其解析身份与原镜像一致】——漂移 tag 拒绝。
+    if (fallbackRef && fallbackAllowed) {
+      log('⚠️ 不可变镜像 ID 启动失败——尝试 Config.Image 兜底（解析身份已核对与原镜像一致）：' + fallbackRef.slice(0, 40));
+      if (await startRollbackImage(fallbackRef)) return 1;
+    } else if (fallbackRef) {
+      log('🛑 Config.Image 兜底被拒绝（' + fallbackRef.slice(0, 40) + ' 解析身份与切换前实际运行镜像不一致——不得恢复可能漂移的旧 tag）。');
     }
-    // 回滚容器同样补挂非默认网络（rc.35.1 切换实测缺陷：回滚只 run 不 connect
-    // → 旧容器失去自定义 DNS（beta-mp-pg/ctrl 解析）→ Matrix/DB 全挂）
-    for (const net of extraNetworks) {
-      const c = exec(['network', 'connect', net, containerName]);
-      log(`回滚容器 network connect ${net}: ${c.status === 0 ? 'ok' : 'exit=' + c.status}`);
-    }
-    log('回滚完成（旧容器已按原配置重建）。退出码 1。');
+    log('🛑 回滚未成功——当前服务处于下线状态，需要运维立即介入：');
+    log('   docker pull/retag 恢复镜像后手动 docker run（参数见 inspect JSON），或切到任一已验证可用版本。');
     return 1;
-  };
+  }
   // 健康探针源码=scripts/swap-health-probe.js（独立文件，fs 读入后经 exec 注入——
   // 内联字符串经多层转义往返被写坏、且 node 运行时 SyntaxError 走 stderr 被静默
   // 丢弃的教训见该文件头注释；rc.35.2 排障终局实录）。
@@ -377,7 +475,7 @@ async function swapConsole(argv, deps = {}) {
     const dl = containerName ? exec(['logs', '--tail', '20', containerName]) : null;
     const tail = String((dl && dl.stdout) || '').trim();
     if (tail) log('失败容器日志（末 20 行）：' + tail.slice(-1200));
-    return rollback('data_mode 未达 live（DB/依赖不可达或启动失败）');
+    return rollbackFn('data_mode 未达 live（DB/依赖不可达或启动失败）');
   }
 
   // ── 后置检查 1b：构建身份核对（发布产物一致性波）——期望 commit 不符=回滚 ──
@@ -394,7 +492,7 @@ async function swapConsole(argv, deps = {}) {
     const prefixOk = got && got !== 'null'
       && (expectNorm.startsWith(got) || got.startsWith(expectNorm.slice(0, got.length)));
     if (!prefixOk) {
-      return rollback(`构建身份不符：health.git_commit=${got ?? '读取失败'}，期望 ${expectCommit.slice(0, 12)}…——镜像与源码可能不一致`);
+      return rollbackFn(`构建身份不符：health.git_commit=${got ?? '读取失败'}，期望 ${expectCommit.slice(0, 12)}…——镜像与源码可能不一致`);
     }
     log('构建身份核对通过（git_commit=' + got + '…）');
   }
@@ -407,7 +505,7 @@ async function swapConsole(argv, deps = {}) {
       + ".then(r=>console.log('STATUS '+r.status)).catch(e=>console.log('STATUS ERR '+e.message))";
     const post = exec(['exec', containerName, 'node', '-e', loginScript2]);
     if (!/STATUS 200/.test(post.stdout || '')) {
-      return rollback('新容器 Matrix 登录非 200');
+      return rollbackFn('新容器 Matrix 登录非 200');
     }
     log('后置 Matrix 登录校验通过（200）');
   }
@@ -415,7 +513,7 @@ async function swapConsole(argv, deps = {}) {
   return 0;
 }
 
-module.exports = { FALLBACK_RESTART_POLICY, resolveRestartPolicy, mountSpec, portSpecs, buildDockerRunArgs, safeSwapSummary, swapConsole, validateForDeploy, envValueLooksRedacted, matrixLoginBody, pickRollbackImage };
+module.exports = { FALLBACK_RESTART_POLICY, resolveRestartPolicy, mountSpec, portSpecs, buildDockerRunArgs, safeSwapSummary, swapConsole, validateForDeploy, envValueLooksRedacted, matrixLoginBody, pickRollbackImage, compareWithLive };
 
 if (require.main === module) {
   try { swapConsole(process.argv.slice(2)).then((c) => process.exit(c)).catch((e) => { console.error('swap-console: ' + (e && e.message ? e.message : e)); process.exit(1); }); }
