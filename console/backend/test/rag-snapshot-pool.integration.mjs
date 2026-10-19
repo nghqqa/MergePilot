@@ -1,6 +1,6 @@
-// rag-snapshot-pool.test.mjs — run 页知识库引用快照存储行为回归（PG 集成）。
+// rag-snapshot-pool.integration.mjs — run 页知识库引用快照存储行为回归（PG 集成，不进 CI glob）。
 // 锁定：幂等 upsert / 不可变性 / 无快照如实 / 快照读取字段完整。
-// 运行：cd console/backend && node --test test/rag-snapshot-pool.test.mjs（需 PG）
+// 运行：cd console/backend && node --test test/rag-snapshot-pool.integration.mjs（需 PG；CI glob *.test.mjs 不含本文件——pg 顶层导入在 CI 不可达）
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import pg from 'pg';
