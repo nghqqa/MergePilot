@@ -191,6 +191,21 @@ test('适配器：endpoint 白名单——path 带 query 串拒绝', async () =>
   await assert.rejects(a.getChangeRequest({ providerRepoId: 'o/r?x=1', crKey: '1' }), /endpoint_invalid|not_allowlisted/);
 });
 
+test('适配器：MU_GITEE_API_BASE 覆盖 apiBase（隔离验证的测试适配指向）；缺省=官方 API 不变', async () => {
+  // 生产装配（review-service）将 env MU_GITEE_API_BASE 透传给工厂 apiBase 参数；
+  // 未设置时默认 gitee.com/api/v5——生产行为零变化。
+  const seen = [];
+  const cap = async (url) => { seen.push(String(url)); return { ok: true, status: 200, json: async () => ({ login: 'x' }) }; };
+  const a1 = createGiteeAdapter({ env: { MU_GITEE_PAT: 't' }, fetchImpl: cap,
+    apiBase: 'http://mock-gitee:9992/api/v5' });
+  await a1.probeConnection?.() ?? a1.listRepositories();
+  assert.ok(seen[0].startsWith('http://mock-gitee:9992/api/v5/'), seen[0]);
+  const a2 = createGiteeAdapter({ env: { MU_GITEE_PAT: 't' }, fetchImpl: cap });
+  seen.length = 0;
+  await a2.probeConnection?.() ?? a2.listRepositories();
+  assert.ok(seen[0].startsWith('https://gitee.com/api/v5/'), seen[0]);
+});
+
 test('适配器：凭据缺失 → gitee_credentials_missing（不发起请求）', async () => {
   const f = stubFetch([]);
   const a = createGiteeAdapter({ env: {}, fetchImpl: f });
