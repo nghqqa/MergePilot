@@ -4,7 +4,14 @@
 // 任务身份全部服务端同源：runId/tenantId 来自本进程 DB 解析的 run 行，repo 来自
 // binding 行（owner/name），base_ref 来自 provider 上下文——绝不采用客户端自报值。
 //
-// 语义（#491 独立复核定案）：
+// 语义（#491 独立复核定案；2026-10-19 独立审阅补强）：
+//  * 定位=执行期参考资料采集：检索发生在 deterministic findings 落库之后、LLM
+//    第二阶段之前——引用仅作页面留痕与追溯，【不进入任何模型提示词】，
+//    不宣称模型已使用引用生成结论（llm.mjs 输入=pr+diff+findings，零 RAG 接触）；
+//  * 部署 scope 边界与人工/机器通道同权：RAGTRIAL_ALLOWED_SCOPES 默认拒绝，
+//    内部调用不绕过（checkScope 同一契约；拒绝=跳过+有界审计，不检索不落行）；
+//  * cfg.llmEnv 现行装配（ghAppConfig）不含该字段——env 实际来自 process.env
+//    回退（与 effLlm/Gitee 适配器同一模式）；显式 llmEnv 仅供测试密封；
 //  * 手工调用 machine/query 或页面 review-aux 不产生本模块产出——只有真实审查
 //    任务执行到这里才算 worker 证据；
 //  * 检索成功 ≠ 保存成功：保存失败不写行（页面如实「未记录」），另写
@@ -15,7 +22,7 @@
 //  * 本模块绝不抛出——任何失败都降级为结构化返回，绝不阻断审查主链；
 //  * reference only：产出不进入 finding/审批/门禁/VERIFIED/fixer/verifier。
 import { createRagTrialStore } from './store.mjs';
-import { resolveRequestModelId } from './api.mjs';
+import { resolveRequestModelId, checkScope } from './api.mjs';
 import { saveRunRagSnapshot, loadRunRagSnapshot, toSnapshotCitations } from './rag-snapshot.mjs';
 
 export const WORKER_QUERY_STRATEGY = 'pr_context_v1';
@@ -47,21 +54,43 @@ export async function maybeSnapshotRunReferences(pool, env, task) {
     if (String(env.RAGTRIAL_WORKER_RAG ?? '').trim().toLowerCase() === 'off') {
       return { attempted: false, reason: 'disabled' };
     }
-    let store;
-    try {
+    // 部署 scope 门（F1）：与人工/机器通道同一 checkScope 契约——默认拒绝，
+    // 内部调用不绕过。拒绝=有界审计+跳过（不检索不落行，attempted=false）。
+    let store = null;
+    const ensureStore = async () => {
+      if (store) return store;
       const cached = storeCache.get(pool);
-      store = (cached && cached.env === env) ? cached.store
+      const st = (cached && cached.env === env) ? cached.store
         : await createRagTrialStore({ pool, env });
-      storeCache.set(pool, { env, store });
-    } catch (e) {
-      return { attempted: false, reason: 'unwired', error: err1line(e) };
+      if (!cached || cached.env !== env) {
+        // F3：首建时确保 schema（幂等 DDL，吞错）——全新部署不必等首次 RAG
+        // 页面访问才有快照表；pgvector 缺失等失败在后续 search 路径如实暴露。
+        await st.initSchema().catch(() => {});
+        storeCache.set(pool, { env, store: st });
+      }
+      store = st;
+      return store;
+    };
+    const auditSkip = async (reason, note) => {
+      try {
+        const st = await ensureStore();
+        await st.audit('RAG_WORKER_SKIP', actor, { detail: { reason, ...(note ? { note } : {}) } });
+      } catch { /* 审计尽力而为——跳过语义不受影响 */ }
+    };
+    const scope = checkScope(env, String(task.repo), String(task.baseRef || task.corpusBranch || 'main'));
+    if (!scope.ok) {
+      await auditSkip(scope.reason, `RAGTRIAL_ALLOWED_SCOPES 未含该 repo@branch——worker 执行期获取跳过`);
+      return { attempted: false, reason: scope.reason };
     }
     const modelId = resolveRequestModelId(env, null);
     if (!modelId) {
-      await store.audit('RAG_WORKER_SKIP', actor, {
-        detail: { reason: 'model_unresolved', note: 'RAGTRIAL_EMBED_MODEL_ID 未配置——执行期参考获取关闭（如实不落快照）' },
-      }).catch(() => {});
+      await auditSkip('model_unresolved', 'RAGTRIAL_EMBED_MODEL_ID 未配置——执行期参考获取关闭（如实不落快照）');
       return { attempted: false, reason: 'model_unresolved' };
+    }
+    try {
+      store = await ensureStore();
+    } catch (e) {
+      return { attempted: false, reason: 'unwired', error: err1line(e) };
     }
     const q = buildWorkerRagQuery(task);
     const corpusBranch = String(task.baseRef || task.corpusBranch || 'main');

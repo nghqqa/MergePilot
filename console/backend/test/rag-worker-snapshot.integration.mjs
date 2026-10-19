@@ -26,7 +26,6 @@ const svc = await import('../lib/multiuser/review-service.mjs');
 const { __setGhProviderForTests, __resetGhProvider } = await import('../lib/multiuser/ghprovider.mjs');
 const { createRagTrialStore } = await import('../lib/ragtrial/store.mjs');
 const { maybeSnapshotRunReferences } = await import('../lib/ragtrial/worker-rag.mjs');
-const { RAGTRIAL_SCHEMA_SQL } = await import('../lib/ragtrial/schema.mjs');
 const { ragTrialApi } = await import('../lib/ragtrial/api.mjs');
 
 let pass = 0, fail = 0;
@@ -84,7 +83,7 @@ try {
     [T, repo.repo_id, GHR, INS]);
 
   // ── ragtrial 侧：initSchema（默认注册 local-hash-v1）+ 合成语料（repo@main） ──
-  const ragEnv = { RAGTRIAL_EMBED_MODEL_ID: 'local-hash-v1' };
+  const ragEnv = { RAGTRIAL_EMBED_MODEL_ID: 'local-hash-v1', RAGTRIAL_ALLOWED_SCOPES: 'wkr/repo@main' };
   const ragStore = await createRagTrialStore({ pool, env: ragEnv });
   await ragStore.initSchema();
   const ing1 = await ragStore.ingestDocuments({ repo: 'wkr/repo', branch: 'main', docs: [
@@ -210,7 +209,7 @@ try {
 
   // ── W7：模型不可用 → 快照如实记录 model_missing（审查不受阻） ──
   const r4 = await svc.handlePullRequestEvent(pool, { configured: true,
-    llmEnv: { RAGTRIAL_EMBED_MODEL_ID: 'no-such-model' } }, {
+    llmEnv: { RAGTRIAL_EMBED_MODEL_ID: 'no-such-model', RAGTRIAL_ALLOWED_SCOPES: 'wkr/repo@main' } }, {
     payload: { action: 'synchronize', github_repo_id: GHR, pr_number: PRN, head_sha: H4 } });
   const snap4 = (await pool.query(
     `SELECT * FROM ragtrial.run_rag_snapshots WHERE run_id=$1`, [r4.run.run_id])).rows[0];
@@ -218,10 +217,17 @@ try {
     r4.ok === true && r4.run.status === 'REVIEWED'
     && snap4?.service_state === 'model_missing' && (snap4?.citations ?? []).length === 0, snap4?.service_state);
 
-  // ── W8：保存失败 → 审查不受阻、无快照行、query_log 审计、决策 not_saved ──
-  await pool.query(`DROP TABLE ragtrial.run_rag_snapshots`);
+  // ── W8：保存失败 → 审查不受阻、无快照行、审计留痕、决策 not_saved ──
+  // 破坏手法=BEFORE INSERT 触发器抛错（F3 自愈后 DROP TABLE 会被 worker 首建
+  // initSchema 重建——触发器不可自愈，仍能命中保存失败路径）。
+  await pool.query(`CREATE FUNCTION rag_wkr_kill() RETURNS trigger AS $$
+    BEGIN RAISE EXCEPTION 'snapshot save sabotaged for W8'; END $$ LANGUAGE plpgsql`);
+  await pool.query(`CREATE TRIGGER rag_wkr_kill_ins BEFORE INSERT ON ragtrial.run_rag_snapshots
+    FOR EACH ROW EXECUTE FUNCTION rag_wkr_kill()`);
   const r5 = await svc.handlePullRequestEvent(pool, CFG, {
     payload: { action: 'synchronize', github_repo_id: GHR, pr_number: PRN, head_sha: H5 } });
+  await pool.query(`DROP TRIGGER rag_wkr_kill_ins ON ragtrial.run_rag_snapshots`);
+  await pool.query(`DROP FUNCTION rag_wkr_kill()`);
   const saveFailLog = (await pool.query(
     `SELECT seq FROM ragtrial.audit_events WHERE kind='RAG_WORKER_SAVE_FAILED' ORDER BY seq DESC LIMIT 1`)).rows;
   const dec5 = (await pool.query(
@@ -231,10 +237,9 @@ try {
     r5.ok === true && r5.run.status === 'REVIEWED' && saveFailLog.length === 1
     && dec5.length === 1 && String(dec5[0].decision).startsWith('not_saved:'),
     { reviewed: r5.run?.status, logs: saveFailLog.length, dec: dec5[0]?.decision });
-  for (const sql of RAGTRIAL_SCHEMA_SQL) await pool.query(sql); // 重建快照表（W9/W10 断言用）
   const h5rows = (await pool.query(
     `SELECT count(*)::int c FROM ragtrial.run_rag_snapshots WHERE run_id=$1`, [r5.run.run_id])).rows[0].c;
-  ok('W8b 表重建后 H5 无任何快照行（保存失败=未留存，非延迟写入）', h5rows === 0);
+  ok('W8b H5 无任何快照行（保存失败=未留存，非延迟写入）', h5rows === 0);
 
   // ── W9：获取关闭（RAGTRIAL_WORKER_RAG=off）→ 不落任何行、无决策 ──
   const r6 = await svc.handlePullRequestEvent(pool, { configured: true,
@@ -249,7 +254,8 @@ try {
     r6.ok === true && r6.run.status === 'REVIEWED' && offRows === 0 && offDec === 0);
 
   // ── W10：模型未配置 → 不检索不落行，query_log 有 RAG_WORKER_SKIP ──
-  const r7 = await svc.handlePullRequestEvent(pool, { configured: true, llmEnv: {} }, {
+  const r7 = await svc.handlePullRequestEvent(pool, { configured: true,
+    llmEnv: { RAGTRIAL_ALLOWED_SCOPES: 'wkr/repo@main' } }, {
     payload: { action: 'synchronize', github_repo_id: GHR, pr_number: PRN, head_sha: H7 } });
   const skipLog = (await pool.query(
     `SELECT detail FROM ragtrial.audit_events WHERE kind='RAG_WORKER_SKIP' ORDER BY seq DESC LIMIT 1`)).rows;
@@ -259,6 +265,30 @@ try {
     r7.ok === true && r7.run.status === 'REVIEWED' && skipRows === 0
     && skipLog.length === 1 && skipLog[0].detail?.reason === 'model_unresolved',
     skipLog[0]);
+
+  // ── W11（独立审阅 F1 修正回归）：scope 边界——内部调用不绕过部署 scope 门 ──
+  const H8 = 'a8'.repeat(20);
+  await muStore.upsertPullRequest({ tenantId: T, repoId: repo.repo_id, providerPrNumber: PRN, headSha: H8 });
+  const r8 = await svc.handlePullRequestEvent(pool, { configured: true,
+    llmEnv: { ...ragEnv, RAGTRIAL_ALLOWED_SCOPES: 'other/repo@main' } }, {
+    payload: { action: 'synchronize', github_repo_id: GHR, pr_number: PRN, head_sha: H8 } });
+  const h8rows = (await pool.query(
+    `SELECT count(*)::int c FROM ragtrial.run_rag_snapshots WHERE run_id=$1`, [r8.run.run_id])).rows[0].c;
+  const h8dec = (await pool.query(
+    `SELECT count(*)::int c FROM mu.orchestration_decision WHERE run_id=$1 AND stage='rag_worker_reference'`,
+    [r8.run.run_id])).rows[0].c;
+  ok('W11a scope 不含 repo：审查完成且零快照零决策（内部调用不绕过 scope 门）',
+    r8.ok === true && r8.run.status === 'REVIEWED' && h8rows === 0 && h8dec === 0,
+    { reviewed: r8.run?.status, rows: h8rows, dec: h8dec });
+  const scopeAudit = (await pool.query(
+    `SELECT detail FROM ragtrial.audit_events WHERE kind='RAG_WORKER_SKIP' ORDER BY seq DESC LIMIT 1`)).rows;
+  ok('W11b scope 拒绝有界审计（reason=scope_not_allowed）',
+    scopeAudit.length === 1 && scopeAudit[0].detail?.reason === 'scope_not_allowed', scopeAudit[0]);
+  const r8b = await maybeSnapshotRunReferences(pool, { RAGTRIAL_EMBED_MODEL_ID: 'local-hash-v1' }, {
+    runId: r8.run.run_id, tenantId: T, repo: 'wkr/repo', baseRef: 'main',
+    reviewHead: H8, prTitle: 'x', findingTitles: [] });
+  ok('W11c scope 未配置 → 默认拒绝跳过（attempted=false, scope_not_configured）',
+    r8b.attempted === false && r8b.reason === 'scope_not_configured', r8b);
 
   console.log(`\nrag-worker-snapshot.integration: ${pass} passed, ${fail} failed`);
   process.exitCode = fail ? 1 : 0;

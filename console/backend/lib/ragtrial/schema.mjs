@@ -223,8 +223,7 @@ export const RAGTRIAL_SCHEMA_SQL = [
      snapshot_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
      UNIQUE (run_id, corpus_branch)
    )`,
-  `CREATE INDEX IF NOT EXISTS ragtrial_snapshots_run_idx
-     ON ragtrial.run_rag_snapshots (run_id, corpus_branch)`,
+  // 读取索引由 UNIQUE (run_id, corpus_branch) 约束自带（独立审阅 F4：不再重复建索引）
 ];
 
 export const RETAINED_INDEX_VERSIONS = 2;

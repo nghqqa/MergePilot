@@ -284,9 +284,9 @@ jobs:
         run: node --test test/publish-drawer-behavior.smoke.test.mjs
         working-directory: console/frontend
 
-      # 知识库参考（RAG · reference only）行为回归（2026-10-18 审查引用接线）：
-      # App 级命中态引用可追溯 + 组件级 403/empty/未接线三态
-      - name: Frontend rag run references smoke (4 scenarios)
+      # 知识库参考（RAG · reference only）双源行为回归（#491 复核定案）：
+      # App 级双源集成锚 + 组件级 403/未记录/未接线/不可用/防谎报五态
+      - name: Frontend rag run references smoke (6 scenarios)
         run: node --test test/rag-run-references.smoke.test.mjs
         working-directory: console/frontend
 
