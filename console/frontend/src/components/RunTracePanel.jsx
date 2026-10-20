@@ -280,45 +280,55 @@ function TraceBody({ data }) {
         </div>
       ) : null}
 
-      <div className="kv-grid trace-summary">
-        <div className="kv" title="本次运行的 Skill 调用留痕总条数（服务端 total 口径）">
-          <div className="kv-label">Skill 调用次数</div>
-          <div className="kv-value num">{skillTotal}</div>
+      {/* 零调用收敛（2026-10-20 可读性轮）：无记录时不再渲染 6 张零值统计卡与空明细标题——
+          一行如实空集说明承载同一语义（真实空集、非降级）；有调用时保持完整统计与明细。 */}
+      {skillTotal === 0 && ragTotal === 0 ? (
+        <div className="state-box state-empty" role="status">
+          本次运行无 Skill / RAG 调用记录（真实空集，非降级）——调用留痕仅在执行器实际调用 Skill 或触发知识库检索时产生。
         </div>
-        <div className="kv" title="本次运行的 RAG 检索留痕总条数（服务端 total 口径）">
-          <div className="kv-label">RAG 检索次数</div>
-          <div className="kv-value num">{ragTotal}</div>
-        </div>
-        <div className="kv" title="Skill 调用按状态计数（成功/失败等；未知状态原值显示）">
-          <div className="kv-label">Skill 状态计数</div>
-          <div className="kv-value"><StatusCounts byStatus={skillByStatus} /></div>
-        </div>
-        <div className="kv" title="RAG 检索按状态计数">
-          <div className="kv-label">RAG 状态计数</div>
-          <div className="kv-value"><StatusCounts byStatus={ragByStatus} /></div>
-        </div>
-        <div className="kv" title="按 Agent 角色分组的 Skill 调用计数（reviewer/leader/fixer/verifier；未知角色原值）">
-          <div className="kv-label">按 Agent 角色分组</div>
-          <div className="kv-value"><RoleCounts byRole={byRole} /></div>
-        </div>
-        <div className="kv" title="本 run 调用记录中出现的 Skill version（原样显示，不代表 worker 当前安装版本）">
-          <div className="kv-label">Skill version</div>
-          <div className="kv-value mono">{versions.length ? versions.join(', ') : '未记录'}</div>
-        </div>
-      </div>
-
-      <h4 className="trace-subtitle">Skill 调用明细</h4>
-      {skill.length === 0 ? (
-        <div className="state-box state-empty" role="status">本次运行没有 Skill 调用记录（真实空集，非降级）。</div>
       ) : (
-        <SkillTable items={skill} total={skillTotal} />
-      )}
+        <>
+          <div className="kv-grid trace-summary">
+            <div className="kv" title="本次运行的 Skill 调用留痕总条数（服务端 total 口径）">
+              <div className="kv-label">Skill 调用次数</div>
+              <div className="kv-value num">{skillTotal}</div>
+            </div>
+            <div className="kv" title="本次运行的 RAG 检索留痕总条数（服务端 total 口径）">
+              <div className="kv-label">RAG 检索次数</div>
+              <div className="kv-value num">{ragTotal}</div>
+            </div>
+            <div className="kv" title="Skill 调用按状态计数（成功/失败等；未知状态原值显示）">
+              <div className="kv-label">Skill 状态计数</div>
+              <div className="kv-value"><StatusCounts byStatus={skillByStatus} /></div>
+            </div>
+            <div className="kv" title="RAG 检索按状态计数">
+              <div className="kv-label">RAG 状态计数</div>
+              <div className="kv-value"><StatusCounts byStatus={ragByStatus} /></div>
+            </div>
+            <div className="kv" title="按 Agent 角色分组的 Skill 调用计数（reviewer/leader/fixer/verifier；未知角色原值）">
+              <div className="kv-label">按 Agent 角色分组</div>
+              <div className="kv-value"><RoleCounts byRole={byRole} /></div>
+            </div>
+            <div className="kv" title="本 run 调用记录中出现的 Skill version（原样显示，不代表 worker 当前安装版本）">
+              <div className="kv-label">Skill version</div>
+              <div className="kv-value mono">{versions.length ? versions.join(', ') : '未记录'}</div>
+            </div>
+          </div>
 
-      <h4 className="trace-subtitle">RAG 检索明细</h4>
-      {rag.length === 0 ? (
-        <div className="state-box state-empty" role="status">本次运行没有 RAG 检索记录（真实空集，非降级）。</div>
-      ) : (
-        <RagTable items={rag} total={ragTotal} />
+          <h4 className="trace-subtitle">Skill 调用明细</h4>
+          {skill.length === 0 ? (
+            <div className="state-box state-empty" role="status">本次运行没有 Skill 调用记录（真实空集，非降级）。</div>
+          ) : (
+            <SkillTable items={skill} total={skillTotal} />
+          )}
+
+          <h4 className="trace-subtitle">RAG 检索明细</h4>
+          {rag.length === 0 ? (
+            <div className="state-box state-empty" role="status">本次运行没有 RAG 检索记录（真实空集，非降级）。</div>
+          ) : (
+            <RagTable items={rag} total={ragTotal} />
+          )}
+        </>
       )}
     </div>
   );
