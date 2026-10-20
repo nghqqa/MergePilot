@@ -54,7 +54,7 @@ function writeInspect(obj) {
 
 /** mock docker exec/run——按子命令与脚本特征响应，记录全部调用 */
 function makeMockDocker({ healthOut = 'HEALTH live v1 commit=' + GOOD_COMMIT.slice(0, 12) + ' bundle=index-x.js',
-  idCommit = GOOD_COMMIT, matrixStatus = 200, precheckOut = null } = {}) {
+  idCommit = GOOD_COMMIT, matrixStatus = 200, precheckOut = null, liveInspect = null } = {}) {
   const calls = [];
   const exec = (args) => {
     calls.push(args);
@@ -68,7 +68,7 @@ function makeMockDocker({ healthOut = 'HEALTH live v1 commit=' + GOOD_COMMIT.sli
       return out('');
     }
     if (args[0] === 'logs') return out('LOG-line-1\nLOG-listening');
-    if (args[0] === 'inspect' && args[1] !== '--format') return out(JSON.stringify(INSPECT));
+    if (args[0] === 'inspect' && args[1] !== '--format') return out(JSON.stringify(liveInspect ?? INSPECT));
     if (args[0] === 'image' && args[1] === 'inspect') return out(INSPECT.Config.Image);
     return { status: 0, stdout: args[0] === 'run' ? 'container-id' : '', stderr: '' };
   };
@@ -157,7 +157,7 @@ test('A2a TOKEN 形状（口令为空+TOKEN+BASE_URL）→ Bearer /api/v1/worker
   assert.equal(code, 0);
   assert.ok(calls.some((c) => c[0] === 'exec' && c.slice(4).join(' ').includes('api/v1/workers')), '探针用 Bearer workers 端点');
   const precheckCalls = calls.filter((c) => c[0] === 'exec' && c.slice(4).join(' ').includes('PRECHECK'));
-  assert.equal(precheckCalls.length, 1, '恰好一次预检查探针（形状分派在脚本内完成，不连发两次登录）');
+  assert.equal(precheckCalls.length, 2, '前置+后置各一次同款形状分派探针（不连发两次登录）');
 });
 
 test('A2b TOKEN 401 → AUTH 阻断 exit 3（与网络失败区分）', async () => {
@@ -182,6 +182,56 @@ test('A2e executor=agentteams 双凭证不可用 → EXECUTOR_MISMATCH 阻断', 
   const f = makeInspectEnv([...UNCONFIG_ENV, 'MU_EXECUTOR=agentteams']);
   const { exec } = makeMockDocker({ precheckOut: 'PRECHECK EXECUTOR_MISMATCH executor' });
   assert.equal(await swapConsole([f, NEW_IMAGE], { exec }), 3);
+});
+
+test('A2g CLI 旗标单独生效（不经 deps）——解析值必须接线到门', async () => {
+  const f = makeInspectEnv(TOKEN_SHAPE_ENV);
+  const { exec, calls } = makeMockDocker({ precheckOut: 'PRECHECK AUTH token-workers 401' });
+  const logs = [];
+  // 只传 argv 旗标，不传 deps.skipMatrixCheck——回归锁：parseArgv 值必须真正生效
+  const code = await swapConsole([f, NEW_IMAGE, '--skip-matrix-check'], { exec, log: (m) => logs.push(m) });
+  assert.equal(code, 0, '旗标未接线会被 AUTH 401 阻断（本断言防回归）');
+  assert.ok(!calls.some((c) => c[0] === 'exec' && c.slice(4).join(' ').includes('PRECHECK')), '不发探针');
+  assert.ok(logs.some((m) => m.includes('显式跳过')), '响亮记录');
+});
+
+test('A2h 纯 TOKEN 部署（无 MATRIX_* 键）→ 预检查照常运行并按 TOKEN 形状通过', async () => {
+  const rows = ['MERGEPILOT_VERSION=v0.2.0-beta.6-rc.34',
+    'MERGEPILOT_GIT_COMMIT=' + 'b'.repeat(40), 'CONSOLE_PG_DSN=postgres://x@pg/mu', 'MU_MODE=multiuser',
+    'MU_AGENTTEAMS_BASE_URL=http://ctrl:8090', 'MU_AGENTTEAMS_TOKEN=tok-xyz', 'CONSOLE_PORT=4730'];
+  const f = makeInspectEnv(rows);
+  const live = JSON.parse(JSON.stringify(INSPECT));
+  live.Config.Env = rows; // live 容器同为纯 TOKEN env（真实场景文件/live 一致）
+  const { exec, calls } = makeMockDocker({ precheckOut: 'PRECHECK OK token-workers 200', liveInspect: live });
+  const code = await swapConsole([f, NEW_IMAGE], { exec });
+  assert.equal(code, 0, '任一认证 env 存在即触发预检查（不得因无 MATRIX 键而静默跳过）');
+  assert.ok(calls.some((c) => c[0] === 'exec' && c.slice(4).join(' ').includes('api/v1/workers')), 'TOKEN 形状探针已发');
+});
+
+test('A2i 后置探针同口径：TOKEN 形状新容器校验失败 → 回滚（B4 同口径 exit 1）', async () => {
+  const f = makeInspectEnv(TOKEN_SHAPE_ENV);
+  const base = makeMockDocker({ precheckOut: 'PRECHECK OK token-workers 200' });
+  let ran = false;
+  const exec = (args) => {
+    base.calls.push(args);
+    if (args[0] === 'run') ran = true;
+    if (ran && args[0] === 'exec' && args.slice(4).join(' ').includes('PRECHECK')) {
+      return { status: 0, stdout: 'PRECHECK AUTH token-workers 401', stderr: '' };
+    }
+    if (ran && args[0] === 'inspect' && args[1] === '--format') {
+      // 回滚后核验：旧镜像身份 + 运行中（makeMockDocker 未带该路由；fixture 顶层无
+      // .Image——回滚身份取 Config.Image，与 base image-inspect 路由同源）
+      return { status: 0, stdout: INSPECT.Config.Image + '|true', stderr: '' };
+    }
+    return base.exec(args);
+  };
+  const logs = [];
+  const code = await swapConsole([f, NEW_IMAGE], { exec, log: (m) => logs.push(m) });
+  assert.equal(code, 1, '回滚成功=exit 1（切换未达成；B4 同口径）');
+  assert.ok(logs.some((m) => m.includes('回滚完成')), '回滚健康核验通过');
+  assert.ok(rmCalls(base.calls).length > 0, '旧容器已被 rm（回滚流程发生）');
+  const probes = base.calls.filter((c) => c[0] === 'exec' && c.slice(4).join(' ').includes('PRECHECK'));
+  assert.ok(probes.length >= 2, '前置+后置探针均发出（同口径）');
 });
 
 test('A2f --skip-matrix-check 显式跳过：不发起探针+响亮记录', async () => {
