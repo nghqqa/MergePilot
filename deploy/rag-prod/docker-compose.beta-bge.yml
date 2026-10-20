@@ -1,0 +1,66 @@
+# 生产 bge-m3 嵌入 sidecar 托管化（beta-bge-sidecar）。
+#
+# 背景（2026-10-19 分诊）：该容器此前为手工 docker run——不属任何 compose 项目，
+# 删除后无自动重建路径，14 天内两次缺失（2026-10-05 误删、2026-10-19 发现缺失）。
+# 本文件把与现运行实例逐项一致的配置纳入版本控制；console 以主机名
+# beta-bge-sidecar 引用（RAGTRIAL_EMBED_ENDPOINT）。
+#
+# ⚠ compose up 不能接管既有手工容器：container_name 同名冲突会直接失败——
+#   首次切换到本文件托管必须走下面的「接管步骤」（择窗秒级空窗），不是就地 up。
+# 本文件不提供自动重建守护：容器被删除后仍需人工按接管步骤执行——
+# 它解决的是「配置未托管/口口相传」，不是「自动拉起」。
+#
+# 分诊结论（证据见 DELIVERY）：删除（非进程退出——重建前同名容器任何状态均不存在）
+# 实证成立；删除者与时点无审计痕迹（docker rm 无持久事件），根因保留未知。
+#
+# 模型身份：manifest.json sha256=24676d89b685025f77a948750d0e1da248ea048573119c7083fc8bc7a668bed0
+# （与 console env RAGTRIAL_EMBED_EXPECTED_MANIFEST 一致——挂错目录/换模型时
+#  console 侧 fail-closed，sidecar 启动亦按清单校验）。
+#
+# ── 接管步骤（首次采用本文件时；择窗执行）──
+# 1) BGE_MODEL_DIR_HOST=<宿主模型目录> docker compose -f docker-compose.beta-bge.yml config  # 核对渲染
+# 2) docker rm -f beta-bge-sidecar   # 移除手工容器（秒级空窗：期间 worker 检索按
+#    #  NETWORK/SKIP 如实降级、审查主链不受阻；在途 run 快照保存可能 not_saved 如实记录）
+# 3) BGE_MODEL_DIR_HOST=<宿主模型目录> docker compose -f docker-compose.beta-bge.yml up -d
+# 4) docker inspect --format "{{.State.Health.Status}}" beta-bge-sidecar   # 期待 healthy
+#    + console 容器内 wget -qO- http://beta-bge-sidecar:8080/health   # 期待 {"ok":true,...}
+#
+# ── 回滚（退回手工 run 形态）──
+# 1) docker compose -f docker-compose.beta-bge.yml down   # 不删模型目录/外部网络
+# 2) docker run -d --name beta-bge-sidecar --network agentteams-beta_atnet \
+#      -v "<宿主模型目录>:/app/model:ro" \
+#      -e BGE_MODEL_DIR=/app/model -e BGE_MANIFEST=/app/model/manifest.json -e BGE_PORT=8080 \
+#      --restart unless-stopped \
+#      ghcr.io/nghqqa/mergepilot-bge-sidecar@sha256:a41d6cad35cff7236f091af491aa5f17a7e69a8258a134c350b6a63de1c5f17f
+# 3) 同接管步骤 4) 验证。
+name: beta-bge
+
+services:
+  beta-bge-sidecar:
+    # 官方 sidecar（digest pin=rc.35.6-rc4 验收同款；升级按对应 Release 说明改此处）
+    image: ghcr.io/nghqqa/mergepilot-bge-sidecar@sha256:a41d6cad35cff7236f091af491aa5f17a7e69a8258a134c350b6a63de1c5f17f
+    restart: unless-stopped
+    container_name: beta-bge-sidecar
+    environment:
+      # manifest 必须在模型目录内（安装流程生成）；缺失/不符 = 启动即 fail-closed
+      BGE_MODEL_DIR: /app/model
+      BGE_MANIFEST: /app/model/manifest.json
+      BGE_PORT: 8080
+    volumes:
+      - type: bind
+        read_only: true
+        source: ${BGE_MODEL_DIR_HOST:-D:/goai/prod-data/rag-models/bge-m3}
+        target: /app/model
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://127.0.0.1:8080/health',timeout=3)\" || exit 1"]
+      interval: 20s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
+    networks: [atnet]
+
+networks:
+  atnet:
+    # 生产 console（beta-mp-console）既有网络——外部接入，不由本 compose 生命周期管理
+    name: agentteams-beta_atnet
+    external: true
