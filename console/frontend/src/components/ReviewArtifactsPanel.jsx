@@ -172,13 +172,71 @@ function DiffFile({ file }) {
   );
 }
 
-// RunKnowledgeReferences — 知识库参考（RAG · reference only）双源展示（#491 复核定案）。
-// 源 A「审查时获取的参考资料」：GET /api/rag-trial/snapshot/:run_id——审查 worker
+// RagCitationCard — 单条知识库引用卡片（紧凑可扫描布局）。
+// 主信息=文档名/行号/相关度；正文预览限宽自然换行、超长默认收起（可展开）；
+// 追溯字段（doc/chunk sha、模型、索引版本、语料分支）收进次级信息行，不与正文重复铺开。
+// 纯文本渲染（不解析 Markdown/HTML——snippet 为不可信文本，绝不注入元素）。
+function RagCitationCard({ a }) {
+  const [expanded, setExpanded] = useState(false);
+  const c = a.citation ?? {};
+  const snippet = String(a.snippet ?? '').trim();
+  const isLong = snippet.length > 160;
+  const sha8 = (v) => String(v ?? '').slice(0, 8);
+  return (
+    <li style={{ marginBottom: 10, minWidth: 0, listStyle: 'none' }}>
+      {/* 主信息行：文档名 · 行号 · 相关度 */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: 6, minWidth: 0 }}>
+        <code style={{ fontWeight: 600, overflowWrap: 'anywhere', wordBreak: 'break-all' }}>{c.doc_path}</code>
+        <span className="muted" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
+          L{c.line_start}-{c.line_end}
+        </span>
+        <span style={{
+          fontSize: 11, padding: '0 6px', borderRadius: 8,
+          background: 'var(--c-inset)', border: '1px solid var(--c-border)', whiteSpace: 'nowrap',
+        }}>
+          相关度 {Number(a.score).toFixed(3)}
+        </span>
+      </div>
+      {/* 正文预览：纯文本、限宽自然换行；超长默认 3 行截断（展开/收起） */}
+      <div data-rag-preview="" style={{
+        fontSize: 12, marginTop: 3, whiteSpace: 'pre-wrap', maxWidth: '100%', minWidth: 0,
+        overflowWrap: 'anywhere',
+        ...(isLong && !expanded
+          ? { display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden', maxHeight: '3.9em' }
+          : {}),
+      }}>
+        {snippet}
+      </div>
+      {/* 次级追溯信息行（单行静默；完整值在 title 悬浮） */}
+      <div className="muted" style={{
+        fontSize: 11, marginTop: 2, overflowWrap: 'anywhere',
+        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%',
+      }} title={`doc ${c.doc_sha256 ?? ''} · chunk ${c.chunk_sha256 ?? ''} · ${c.model_id ?? ''} @iv${c.index_version ?? ''} · 语料分支 ${c.corpus_branch ?? c.branch ?? ''}`}>
+        doc {sha8(c.doc_sha256)}… · chunk {sha8(c.chunk_sha256)}… · {c.model_id} @iv{c.index_version}
+        {(c.corpus_branch || c.branch) ? ` · 语料分支 ${c.corpus_branch ?? c.branch}` : ''} · trusted=false
+      </div>
+      {isLong && (
+        <button type="button" data-testid="rag-ref-toggle" aria-expanded={expanded}
+          onClick={() => setExpanded(!expanded)}
+          style={{
+            fontSize: 11, background: 'none', border: 'none', padding: 0, marginTop: 2,
+            color: '#1d5da4', cursor: 'pointer',
+          }}>
+          {expanded ? '收起' : '展开全文'}
+        </button>
+      )}
+    </li>
+  );
+}
+
+// RunKnowledgeReferences — 知识库参考（RAG · reference only）双源展示（#491 复核定案；
+// 2026-10-20 信息层级/排版可读性改进：双区标题与副标题明确「历史执行证据 vs 当前页面查询」，
+// 引用卡片化+受限预览+展开收起，安全边界声明收敛为区块级单次）。
+// 源 A「审查时保存的引用快照」：GET /api/rag-trial/snapshot/:run_id——审查 worker
 //   执行期获取并持久化的快照（唯一权威历史；旧 run 无快照如实显示「未记录」，
 //   不以页面检索补造历史；获取关闭/未接线/保存未成功均如实显示为未记录）。
 // 源 B「当前知识库检索」：POST /api/rag-trial/review-aux（组合授权门 scope→会话
 //   repo）——实时对照，服务端不落执行期快照（queried_at 仅为本查询时刻）。
-// 两源分立展示、各标时间/分支/索引来源，互不冒充。
 // 合同（ragtrial/review.mjs，契约测试锁死）：仅供人工参考追溯（路径/行号/digest/
 // 索引版本），不构成 finding/审批/门禁/VERIFIED 输入，Fixer/Verifier 亦不可用。
 // 403（scope 未含该仓库）与未接线（backend_not_wired）时安静隐藏——功能不适用而非异常。
@@ -237,31 +295,27 @@ export function RunKnowledgeReferences({ runId, repoFull, baseBranch, findings }
   if (snapHidden && !aux) return null;
   if (snap === undefined && !aux) return null;
   const renderCitations = (list) => (
-    <ul style={{ margin: '4px 0', paddingLeft: 18 }}>
-      {(list ?? []).map((a, i) => {
-        const c = a.citation ?? {};
-        return (
-          <li key={i} style={{ marginBottom: 6 }}>
-            <code>{c.doc_path}</code> · L{c.line_start}-{c.line_end} · score {Number(a.score).toFixed(3)}
-            <div className="muted" style={{ fontSize: 12 }} title={`doc ${c.doc_sha256 ?? ''} chunk ${c.chunk_sha256 ?? ''}`}>
-              可追溯：doc sha {(c.doc_sha256 ?? '').slice(0, 8)}… · chunk sha {(c.chunk_sha256 ?? '').slice(0, 8)}… ·
-              {' '}{c.model_id} @iv{c.index_version} · trusted=false
-            </div>
-            <div style={{ fontSize: 12 }}>{String(a.snippet ?? '').slice(0, 240)}</div>
-          </li>
-        );
-      })}
+    <ul style={{ margin: '4px 0', paddingLeft: 0, minWidth: 0 }}>
+      {(list ?? []).map((a, i) => <RagCitationCard key={i} a={a} />)}
     </ul>
   );
   return (
-    <div style={{ marginTop: 8, borderTop: '1px dashed #24384a', paddingTop: 8 }}>
-      <div style={{ fontWeight: 600, marginBottom: 4 }}>
-        知识库参考（RAG · 仅供参考——不构成 finding/审批/门禁/VERIFIED，Fixer/Verifier 不可用）
+    <div style={{ marginTop: 8, borderTop: '1px dashed var(--c-border-strong)', paddingTop: 8, minWidth: 0, maxWidth: '100%' }}>
+      {/* 安全边界声明：区块级单次（不移除、不弱化、不在各分节重复） */}
+      <div style={{ fontWeight: 600, marginBottom: 2 }}>
+        知识库参考（RAG · 仅供参考）
       </div>
-      {/* ── 源 A：审查时获取的参考资料（执行期快照，历史权威） ── */}
+      <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+        以下引用仅供人工追溯与理解：不构成 finding，不进入审批/门禁/VERIFIED，也不供 Fixer/Verifier 使用。
+      </div>
+
+      {/* ── 源 A：审查时保存的引用快照（历史执行证据） ── */}
       {!snapHidden && (
-        <div style={{ marginBottom: 8 }}>
-          <div style={{ fontSize: 12, fontWeight: 600 }}>📎 审查时获取的参考资料（执行期快照）</div>
+        <div style={{ marginBottom: 12, paddingLeft: 8, borderLeft: '2px solid var(--c-border-strong)', minWidth: 0 }}>
+          <div style={{ fontSize: 12, fontWeight: 600 }}>📎 审查时保存的引用快照（历史执行证据）</div>
+          <div className="muted" style={{ fontSize: 11, marginBottom: 4 }}>
+            审查 worker 执行期检索并留存；反映当时知识库状态——后续语料更新不改写本快照。
+          </div>
           {snap === undefined ? (
             <div className="muted" style={{ fontSize: 12 }}>加载中…</div>
           ) : snap === null ? (
@@ -273,35 +327,33 @@ export function RunKnowledgeReferences({ runId, repoFull, baseBranch, findings }
           ) : snap.retrieval_state === 'empty' ? (
             <div className="muted" style={{ fontSize: 12 }}>审查执行期检索无命中（如实记录）。</div>
           ) : (
-            <div>
-              <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>
+            <div style={{ minWidth: 0 }}>
+              <div className="muted" style={{ fontSize: 11, marginBottom: 4, overflowWrap: 'anywhere' }}>
                 快照时间 {String(snap.snapshot_at ?? '').slice(0, 19).replace('T', ' ')} UTC ·
                 {' '}语料分支 {snap.corpus_branch} · 模型 {snap.model_id} @iv{snap.index_version} ·
                 {' '}查询策略 {snap.query_strategy} · 审查 head {(snap.review_head ?? '').slice(0, 8)}…
                 {snap.base_ref ? ` · base_ref ${snap.base_ref}` : ''}
               </div>
               {renderCitations(snap.citations)}
-              <div className="muted" style={{ fontSize: 12 }}>
-                以上为审查执行期留存的引用——后续知识库变化不改写本快照；仅供追溯与理解，不进入 finding/审批/门禁/VERIFIED。
-              </div>
             </div>
           )}
         </div>
       )}
+
       {/* ── 源 B：当前知识库检索（实时对照，不落库） ── */}
       {aux && (
-        <div>
-          <div style={{ fontSize: 12, fontWeight: 600 }}>🔎 当前知识库检索（实时对照——不落执行期快照）</div>
+        <div style={{ paddingLeft: 8, borderLeft: '2px solid var(--c-border)', minWidth: 0 }}>
+          <div style={{ fontSize: 12, fontWeight: 600 }}>🔎 当前知识库检索（实时对照）</div>
+          <div className="muted" style={{ fontSize: 11, marginBottom: 4 }}>
+            你打开页面时的查询结果——不写入执行期快照，不代表审查执行时看到的内容。
+          </div>
           {aux.service_state === 'hit' ? (
-            <div>
-              <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>
+            <div style={{ minWidth: 0 }}>
+              <div className="muted" style={{ fontSize: 11, marginBottom: 4 }}>
                 查询时刻 {aux.queriedAt ? String(aux.queriedAt).slice(0, 19).replace('T', ' ') + ' UTC · ' : ''}
                 语料分支: {baseBranch || 'main'}（索引绑定该分支——非 PR head_ref）
               </div>
               {renderCitations(aux.auxList)}
-              <div className="muted" style={{ fontSize: 12 }}>
-                以上为本次页面查询的实时结果，仅供追溯与理解；不进入 finding/审批/门禁/VERIFIED，也不会被 Fixer/Verifier 使用，不落执行期快照。
-              </div>
             </div>
           ) : aux.service_state === 'empty' ? (
             <div className="muted" style={{ fontSize: 12 }}>当前知识库无相关内容（如实返回，不伪装命中）。</div>
