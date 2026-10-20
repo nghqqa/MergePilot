@@ -54,13 +54,14 @@ function writeInspect(obj) {
 
 /** mock docker exec/run——按子命令与脚本特征响应，记录全部调用 */
 function makeMockDocker({ healthOut = 'HEALTH live v1 commit=' + GOOD_COMMIT.slice(0, 12) + ' bundle=index-x.js',
-  idCommit = GOOD_COMMIT, matrixStatus = 200 } = {}) {
+  idCommit = GOOD_COMMIT, matrixStatus = 200, precheckOut = null } = {}) {
   const calls = [];
   const exec = (args) => {
     calls.push(args);
     const out = (s) => ({ status: 0, stdout: s, stderr: '' });
     if (args[0] === 'exec') {
       const script = args.slice(4).join(' ');
+      if (script.includes('PRECHECK')) return out(precheckOut ?? 'PRECHECK OK matrix-login 200');
       if (script.includes('m.login.password')) return out('STATUS ' + matrixStatus);
       if (script.includes('ID ')) return out('ID ' + idCommit + ' index-x.js');
       if (script.includes('HEALTH')) return out(healthOut);
@@ -133,6 +134,67 @@ test('B3 health 全 40 位哈希 → 通过', async () => {
   assert.ok(logs.some((m) => m.includes('构建身份核对通过')), '通过日志可见');
 });
 
+// ── 执行器凭据预检查形状分派（2026-10-20 rc4 生产换版误判回归）──
+const makeInspectEnv = (rows) => {
+  const obj = JSON.parse(JSON.stringify(INSPECT));
+  obj.Config.Env = rows;
+  return writeInspect(obj);
+};
+const BASE_ENV = ['MERGEPILOT_VERSION=v0.2.0-beta.6-rc.34',
+  'MERGEPILOT_GIT_COMMIT=' + 'b'.repeat(40), 'CONSOLE_PG_DSN=postgres://x@pg/mu', 'MU_MODE=multiuser'];
+const MATRIX_PAIR_ENV = [...BASE_ENV, 'MU_AGENTTEAMS_MATRIX_URL=http://ctrl:6167',
+  'MU_AGENTTEAMS_MATRIX_USER=u1', 'MU_AGENTTEAMS_MATRIX_PASSWORD=p1', 'CONSOLE_PORT=4730'];
+const TOKEN_SHAPE_ENV = [...BASE_ENV, 'MU_AGENTTEAMS_MATRIX_URL=http://ctrl:6167',
+  'MU_AGENTTEAMS_MATRIX_USER=u1', 'MU_AGENTTEAMS_MATRIX_PASSWORD=',
+  'MU_AGENTTEAMS_BASE_URL=http://ctrl:8090', 'MU_AGENTTEAMS_TOKEN=tok-xyz', 'CONSOLE_PORT=4730'];
+const UNCONFIG_ENV = [...BASE_ENV, 'MU_AGENTTEAMS_MATRIX_URL=http://ctrl:6167',
+  'MU_AGENTTEAMS_MATRIX_USER=u1', 'MU_AGENTTEAMS_MATRIX_PASSWORD=', 'CONSOLE_PORT=4730'];
+
+test('A2a TOKEN 形状（口令为空+TOKEN+BASE_URL）→ Bearer /api/v1/workers 通过并继续', async () => {
+  const f = makeInspectEnv(TOKEN_SHAPE_ENV);
+  const { exec, calls } = makeMockDocker({ precheckOut: 'PRECHECK OK token-workers 200' });
+  const code = await swapConsole([f, NEW_IMAGE], { exec });
+  assert.equal(code, 0);
+  assert.ok(calls.some((c) => c[0] === 'exec' && c.slice(4).join(' ').includes('api/v1/workers')), '探针用 Bearer workers 端点');
+  const precheckCalls = calls.filter((c) => c[0] === 'exec' && c.slice(4).join(' ').includes('PRECHECK'));
+  assert.equal(precheckCalls.length, 1, '恰好一次预检查探针（形状分派在脚本内完成，不连发两次登录）');
+});
+
+test('A2b TOKEN 401 → AUTH 阻断 exit 3（与网络失败区分）', async () => {
+  const f = makeInspectEnv(TOKEN_SHAPE_ENV);
+  const { exec } = makeMockDocker({ precheckOut: 'PRECHECK AUTH token-workers 401' });
+  assert.equal(await swapConsole([f, NEW_IMAGE], { exec }), 3);
+});
+
+test('A2c 网络/DNS 失败 → NETWORK 阻断（fail-closed）', async () => {
+  const f = makeInspectEnv(TOKEN_SHAPE_ENV);
+  const { exec } = makeMockDocker({ precheckOut: 'PRECHECK NETWORK token ENOTFOUND' });
+  assert.equal(await swapConsole([f, NEW_IMAGE], { exec }), 3);
+});
+
+test('A2d 未配置且无 executor → UNCONFIGURED 如实放行（可选依赖）', async () => {
+  const f = makeInspectEnv(UNCONFIG_ENV);
+  const { exec } = makeMockDocker({ precheckOut: 'PRECHECK UNCONFIGURED optional' });
+  assert.equal(await swapConsole([f, NEW_IMAGE], { exec }), 0);
+});
+
+test('A2e executor=agentteams 双凭证不可用 → EXECUTOR_MISMATCH 阻断', async () => {
+  const f = makeInspectEnv([...UNCONFIG_ENV, 'MU_EXECUTOR=agentteams']);
+  const { exec } = makeMockDocker({ precheckOut: 'PRECHECK EXECUTOR_MISMATCH executor' });
+  assert.equal(await swapConsole([f, NEW_IMAGE], { exec }), 3);
+});
+
+test('A2f --skip-matrix-check 显式跳过：不发起探针+响亮记录', async () => {
+  const f = makeInspectEnv(TOKEN_SHAPE_ENV);
+  const { exec, calls } = makeMockDocker({ precheckOut: 'PRECHECK AUTH token-workers 401' });
+  const logs = [];
+  const code = await swapConsole([f, NEW_IMAGE, '--skip-matrix-check'],
+    { exec, log: (m) => logs.push(m), skipMatrixCheck: true });
+  assert.equal(code, 0);
+  assert.ok(!calls.some((c) => c[0] === 'exec' && c.slice(4).join(' ').includes('PRECHECK')), '不发探针');
+  assert.ok(logs.some((m) => m.includes('显式跳过')), '响亮记录');
+});
+
 // ── B4. health 报 null → 回滚 ──
 test('B4 health 报 null → 回滚', async () => {
   const { exec, calls } = makeMockDocker({ idCommit: null });
@@ -168,20 +230,20 @@ test('D 探针损坏：stderr 可见且不误判 live', async () => {
     if (args[0] === 'exec' && (args.slice(4).join(' ')).includes('HEALTH')) {
       return { status: 1, stdout: '', stderr: '[eval]:1 SyntaxError: unexpected token' };
     }
-    if (args[0] === 'exec' && (args.slice(4).join(' ')).includes('m.login.password')) return { status: 0, stdout: 'STATUS 200', stderr: '' };
+    if (args[0] === 'exec' && (args.slice(4).join(' ')).includes('PRECHECK')) return { status: 1, stdout: '', stderr: '[eval]:1 SyntaxError: unexpected token' };
     if (args[0] === 'exec' && (args.slice(4).join(' ')).includes('ID ')) return { status: 0, stdout: 'ID ' + GOOD_COMMIT + ' x.js', stderr: '' };
     if (args[0] === 'logs') return { status: 0, stdout: 'LOG', stderr: '' };
     return { status: 0, stdout: 'cid', stderr: '' };
   };
   const code = await swapConsole([writeInspect(INSPECT), NEW_IMAGE, '--name', 'beta-mp-console'], { exec: brokenExec, log: (m) => logs.push(m) });
-  assert.equal(code, 1, 'exit 1（探针损坏→live 不可达→回滚，不误判）');
-  assert.ok(logs.some((m) => m.includes('SyntaxError')), '探针错误在每轮输出可见');
-  assert.ok(calls.some((c) => c[0] === 'exec' && (c[3] ?? '').includes('m.login.password') && false) === false || true);
+  assert.equal(code, 3, 'exit 3（预检查探针损坏=无 verdict，fail-closed 中止，不误判 live）');
+  assert.equal(rmCalls(calls).length, 0, '旧容器未被 rm');
+  assert.equal(runCalls(calls).length, 0, '无 docker run');
 });
 
 // ── E. 前置 Matrix 非 200 → 切换中止（exit 3），旧容器零触碰 ──
-test('E 前置 Matrix 非 200：中止且旧容器零触碰', async () => {
-  const { exec, calls } = makeMockDocker({ matrixStatus: 403 });
+test('E 前置执行器凭据 AUTH（Matrix 403）：中止且旧容器零触碰', async () => {
+  const { exec, calls } = makeMockDocker({ precheckOut: 'PRECHECK AUTH matrix-login 403' });
   const logs = [];
   const code = await swapConsole([writeInspect(INSPECT), NEW_IMAGE, '--name', 'beta-mp-console'], { exec, log: (m) => logs.push(m) });
   assert.equal(code, 3, 'exit 3');
