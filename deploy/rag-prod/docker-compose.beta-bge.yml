@@ -1,0 +1,44 @@
+# 生产 bge-m3 嵌入 sidecar 托管化（beta-bge-sidecar）。
+#
+# 背景（2026-10-19 分诊）：该容器此前为手工 docker run——不属任何 compose 项目，
+# 删除后无自动重建路径，14 天内两次缺失（2026-10-05 误删、2026-10-19 发现缺失）。
+# 本文件把与现运行实例逐项一致的配置纳入版本控制：`docker compose -f 本文件 up -d`
+# 幂等重建/对账；console 以主机名 beta-bge-sidecar 引用（RAGTRIAL_EMBED_ENDPOINT）。
+#
+# 分诊结论（证据见 DELIVERY）：删除（非进程退出——重建前同名容器任何状态均不存在）
+# 实证成立；删除者与时点无审计痕迹（docker rm 无持久事件），根因保留未知——
+# 本文件只解决「配置未托管」，不新增守护进程。
+#
+# 用法：BGE_MODEL_DIR_HOST=<宿主模型目录> docker compose -f docker-compose.beta-bge.yml up -d
+# 回滚：docker compose -f docker-compose.beta-bge.yml down（不删模型卷/网络）。
+name: beta-bge
+
+services:
+  beta-bge-sidecar:
+    # 官方 sidecar（digest pin=rc.35.6-rc4 验收同款；升级按对应 Release 说明改此处）
+    image: ghcr.io/nghqqa/mergepilot-bge-sidecar@sha256:a41d6cad35cff7236f091af491aa5f17a7e69a8258a134c350b6a63de1c5f17f
+    restart: unless-stopped
+    container_name: beta-bge-sidecar
+    environment:
+      # manifest 必须在模型目录内（安装流程生成）；缺失/不符 = 启动即 fail-closed
+      BGE_MODEL_DIR: /app/model
+      BGE_MANIFEST: /app/model/manifest.json
+      BGE_PORT: 8080
+    volumes:
+      - type: bind
+        read_only: true
+        source: ${BGE_MODEL_DIR_HOST:-D:/goai/prod-data/rag-models/bge-m3}
+        target: /app/model
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request;urllib.request.urlopen('http://127.0.0.1:8080/health',timeout=3)\" || exit 1"]
+      interval: 20s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
+    networks: [atnet]
+
+networks:
+  atnet:
+    # 生产 console（beta-mp-console）既有网络——外部接入，不由本 compose 生命周期管理
+    name: agentteams-beta_atnet
+    external: true
