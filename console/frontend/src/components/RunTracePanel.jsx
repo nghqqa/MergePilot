@@ -89,12 +89,16 @@ function KindText({ kind }) {
 
 // 三段语义边界文案（逐字，渲染于留痕区域所有有内容状态）。
 function TraceDisclosures() {
+  // 2026-10-20 可读性：三条边界说明默认收起（文本保留在 DOM——语义与测试契约不变）
   return (
-    <ul className="trace-notes">
-      <li>仅显示调用元数据与摘要，不包含 prompt、响应、代码正文或 RAG 文档正文。</li>
-      <li>调用记录不等于审查通过、测试通过或合并资格。</li>
-      <li>Skill 已激活不代表本次运行一定调用了该 Skill。</li>
-    </ul>
+    <details className="trace-notes-details">
+      <summary>边界说明</summary>
+      <ul className="trace-notes">
+        <li>仅显示调用元数据与摘要，不包含 prompt、响应、代码正文或 RAG 文档正文。</li>
+        <li>调用记录不等于审查通过、测试通过或合并资格。</li>
+        <li>Skill 已激活不代表本次运行一定调用了该 Skill。</li>
+      </ul>
+    </details>
   );
 }
 

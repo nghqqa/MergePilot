@@ -43,7 +43,7 @@ function renderRemoteHead(ctx, matchLabel, opts = {}) {
   }
   return (<span>
     <Tag color="default">无法核实远端 head</Tag>
-    <Typography.Text type="secondary" style={{ fontSize: 13 }}>
+    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
       {s.reason}——不能判定一致或已变化；确认保持阻塞，最终可执行性以服务端资格结果为准。
     </Typography.Text>
   </span>);
@@ -56,7 +56,7 @@ function previewFailMsg(r, b, what) {
     {copy.lead}{copy.next}
     <details className="tech-details" style={{ marginTop: 4 }}>
       <summary>技术详情</summary>
-      <span className="mono" style={{ fontSize: 13 }}>{copy.tech}</span>
+      <span className="mono" style={{ fontSize: 12 }}>{copy.tech}</span>
     </details>
   </span>) };
 }
@@ -187,11 +187,11 @@ function RagCitationCard({ a }) {
       {/* 主信息行：文档名 · 行号 · 相关度 */}
       <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', gap: 6, minWidth: 0 }}>
         <code style={{ fontWeight: 600, overflowWrap: 'anywhere', wordBreak: 'break-all' }}>{c.doc_path}</code>
-        <span className="muted" style={{ fontSize: 13, whiteSpace: 'nowrap' }}>
+        <span className="muted" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
           L{c.line_start}-{c.line_end}
         </span>
         <span style={{
-          fontSize: 13, padding: '0 6px', borderRadius: 8,
+          fontSize: 11, padding: '0 6px', borderRadius: 8,
           background: 'var(--c-inset)', border: '1px solid var(--c-border)', whiteSpace: 'nowrap',
         }}>
           相关度 {Number(a.score).toFixed(3)}
@@ -199,7 +199,7 @@ function RagCitationCard({ a }) {
       </div>
       {/* 正文预览：纯文本、限宽自然换行；超长默认 3 行截断（展开/收起） */}
       <div data-rag-preview="" style={{
-        fontSize: 13, marginTop: 3, whiteSpace: 'pre-wrap', maxWidth: '100%', minWidth: 0,
+        fontSize: 12, marginTop: 3, whiteSpace: 'pre-wrap', maxWidth: '100%', minWidth: 0,
         overflowWrap: 'anywhere',
         ...(isLong && !expanded
           ? { display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden', maxHeight: '3.9em' }
@@ -209,7 +209,7 @@ function RagCitationCard({ a }) {
       </div>
       {/* 次级追溯信息行（单行静默；完整值在 title 悬浮） */}
       <div className="muted" style={{
-        fontSize: 13, marginTop: 2, overflowWrap: 'anywhere',
+        fontSize: 11, marginTop: 2, overflowWrap: 'anywhere',
         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%',
       }} title={`doc ${c.doc_sha256 ?? ''} · chunk ${c.chunk_sha256 ?? ''} · ${c.model_id ?? ''} @iv${c.index_version ?? ''} · 语料分支 ${c.corpus_branch ?? c.branch ?? ''}`}>
         doc {sha8(c.doc_sha256)}… · chunk {sha8(c.chunk_sha256)}… · {c.model_id} @iv{c.index_version}
@@ -219,7 +219,7 @@ function RagCitationCard({ a }) {
         <button type="button" data-testid="rag-ref-toggle" aria-expanded={expanded}
           onClick={() => setExpanded(!expanded)}
           style={{
-            fontSize: 13, background: 'none', border: 'none', padding: 0, marginTop: 2,
+            fontSize: 11, background: 'none', border: 'none', padding: 0, marginTop: 2,
             color: '#1d5da4', cursor: 'pointer',
           }}>
           {expanded ? '收起' : '展开全文'}
@@ -305,30 +305,30 @@ export function RunKnowledgeReferences({ runId, repoFull, baseBranch, findings }
       <div style={{ fontWeight: 600, marginBottom: 2 }}>
         知识库参考（RAG · 仅供参考）
       </div>
-      <div className="muted" style={{ fontSize: 13, marginBottom: 8 }}>
+      <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
         以下引用仅供人工追溯与理解：不构成 finding，不进入审批/门禁/VERIFIED，也不供 Fixer/Verifier 使用。
       </div>
 
       {/* ── 源 A：审查时保存的引用快照（历史执行证据） ── */}
       {!snapHidden && (
         <div style={{ marginBottom: 12, paddingLeft: 8, borderLeft: '2px solid var(--c-border-strong)', minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 600 }}>📎 审查时保存的引用快照（历史执行证据）</div>
-          <div className="muted" style={{ fontSize: 13, marginBottom: 4 }}>
+          <div style={{ fontSize: 12, fontWeight: 600 }}>📎 审查时保存的引用快照（历史执行证据）</div>
+          <div className="muted" style={{ fontSize: 11, marginBottom: 4 }}>
             审查 worker 执行期检索并留存；反映当时知识库状态——后续语料更新不改写本快照。
           </div>
           {snap === undefined ? (
-            <div className="muted" style={{ fontSize: 13 }}>加载中…</div>
+            <div className="muted" style={{ fontSize: 12 }}>加载中…</div>
           ) : snap === null ? (
-            <div className="muted" style={{ fontSize: 13 }}>
+            <div className="muted" style={{ fontSize: 12 }}>
               未记录——本 run 审查执行期未获取知识库参考（获取关闭/未接线/保存未成功均如实显示为未记录）；不使用当前检索补造历史。
             </div>
           ) : snap.retrieval_state === 'provider_unavailable' || snap.retrieval_state === 'model_missing' ? (
-            <div className="muted" style={{ fontSize: 13 }}>审查执行期曾尝试获取，但知识库/模型当时不可用（如实记录，未伪装命中）。</div>
+            <div className="muted" style={{ fontSize: 12 }}>审查执行期曾尝试获取，但知识库/模型当时不可用（如实记录，未伪装命中）。</div>
           ) : snap.retrieval_state === 'empty' ? (
-            <div className="muted" style={{ fontSize: 13 }}>审查执行期检索无命中（如实记录）。</div>
+            <div className="muted" style={{ fontSize: 12 }}>审查执行期检索无命中（如实记录）。</div>
           ) : (
             <div style={{ minWidth: 0 }}>
-              <div className="muted" style={{ fontSize: 13, marginBottom: 4, overflowWrap: 'anywhere' }}>
+              <div className="muted" style={{ fontSize: 11, marginBottom: 4, overflowWrap: 'anywhere' }}>
                 快照时间 {String(snap.snapshot_at ?? '').slice(0, 19).replace('T', ' ')} UTC ·
                 {' '}语料分支 {snap.corpus_branch} · 模型 {snap.model_id} @iv{snap.index_version} ·
                 {' '}查询策略 {snap.query_strategy} · 审查 head {(snap.review_head ?? '').slice(0, 8)}…
@@ -343,26 +343,26 @@ export function RunKnowledgeReferences({ runId, repoFull, baseBranch, findings }
       {/* ── 源 B：当前知识库检索（实时对照，不落库） ── */}
       {aux && (
         <div style={{ paddingLeft: 8, borderLeft: '2px solid var(--c-border)', minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 600 }}>🔎 当前知识库检索（实时对照）</div>
-          <div className="muted" style={{ fontSize: 13, marginBottom: 4 }}>
+          <div style={{ fontSize: 12, fontWeight: 600 }}>🔎 当前知识库检索（实时对照）</div>
+          <div className="muted" style={{ fontSize: 11, marginBottom: 4 }}>
             你打开页面时的查询结果——不写入执行期快照，不代表审查执行时看到的内容。
           </div>
           {aux.service_state === 'hit' ? (
             <div style={{ minWidth: 0 }}>
-              <div className="muted" style={{ fontSize: 13, marginBottom: 4 }}>
+              <div className="muted" style={{ fontSize: 11, marginBottom: 4 }}>
                 查询时刻 {aux.queriedAt ? String(aux.queriedAt).slice(0, 19).replace('T', ' ') + ' UTC · ' : ''}
                 语料分支: {baseBranch || 'main'}（索引绑定该分支——非 PR head_ref）
               </div>
               {renderCitations(aux.auxList)}
             </div>
           ) : aux.service_state === 'empty' ? (
-            <div className="muted" style={{ fontSize: 13 }}>当前知识库无相关内容（如实返回，不伪装命中）。</div>
+            <div className="muted" style={{ fontSize: 12 }}>当前知识库无相关内容（如实返回，不伪装命中）。</div>
           ) : aux.service_state === 'no_query_context' ? (
-            <div className="muted" style={{ fontSize: 13 }}>本 run 无发现上下文——未执行知识库检索（如实）。</div>
+            <div className="muted" style={{ fontSize: 12 }}>本 run 无发现上下文——未执行知识库检索（如实）。</div>
           ) : aux.service_state === 'provider_unavailable' ? (
-            <div className="muted" style={{ fontSize: 13 }}>嵌入检索服务不可达——显式失败，不伪装为空结果。</div>
+            <div className="muted" style={{ fontSize: 12 }}>嵌入检索服务不可达——显式失败，不伪装为空结果。</div>
           ) : (
-            <div className="muted" style={{ fontSize: 13 }}>知识库检索失败：{aux.note ?? '未知原因'}（显式失败）。</div>
+            <div className="muted" style={{ fontSize: 12 }}>知识库检索失败：{aux.note ?? '未知原因'}（显式失败）。</div>
           )}
         </div>
       )}
@@ -848,8 +848,8 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [], baseBra
           <dt>原因</dt>
           <dd>{cause}</dd>
           <dt>依据</dt>
-          <dd>{evidenceLine ? <div style={{ marginBottom: 2 }}><code className="mono" style={{ fontSize: 13 }}>{evidenceLine}</code></div> : null}
-            {f.evidence_ref ? <code className="mono" style={{ fontSize: 13, wordBreak: 'break-all' }}>{String(f.evidence_ref).slice(0, 80)}</code> : (evidenceLine ? null : '未提供')}</dd>
+          <dd>{evidenceLine ? <div style={{ marginBottom: 2 }}><code className="mono" style={{ fontSize: 11 }}>{evidenceLine}</code></div> : null}
+            {f.evidence_ref ? <code className="mono" style={{ fontSize: 11, wordBreak: 'break-all' }}>{String(f.evidence_ref).slice(0, 80)}</code> : (evidenceLine ? null : '未提供')}</dd>
           <dt>修复建议</dt>
           {/* 空串与 null 同属未提供（2026-10-17：夹具 remediation='' 曾渲染为空白） */}
           <dd>{(f.remediation && String(f.remediation).trim()) ? f.remediation : '未提供'}</dd>
@@ -871,7 +871,7 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [], baseBra
               onChange={(e) => setFbNote((n) => ({ ...n, [f.finding_id]: e.target.value }))} />
           </Space>
         ) : (
-          <div className="muted" style={{ fontSize: 13, marginTop: 6 }}>反馈需 reviewer 及以上角色。</div>
+          <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>反馈需 reviewer 及以上角色。</div>
         )}
         {fbMsg[f.finding_id] ? (
           <Alert size="small" style={{ marginTop: 6 }} type={fbMsg[f.finding_id].tone} showIcon message={fbMsg[f.finding_id].text} />
@@ -929,7 +929,7 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [], baseBra
                       <div style={{ wordBreak: 'break-word' }}>{String(f.title ?? f.summary_masked ?? '（无标题）')}</div>
                       <div style={{ marginTop: 2 }}>
                         <Tag color={SEV_COLOR[f.severity] ?? 'default'}>{f.severity}</Tag>
-                        <Typography.Text type="secondary" style={{ fontSize: 13 }}>
+                        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                           {f.path}{f.line_start ? ':' + f.line_start : ''} · 规则 {f.rule_id}
                         </Typography.Text>
                       </div>
@@ -958,18 +958,18 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [], baseBra
                       </Tag>
                       {verdict.level === 'fail' ? <b>{verdict.text}</b> : verdict.text}
                     </Typography.Paragraph>
-                    <Typography.Paragraph type="secondary" style={{ fontSize: 13, marginBottom: 4 }}>
+                    <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 4 }}>
                       {verdict.structuralText}
                     </Typography.Paragraph>
                     {patch?.patch_digest ? (
-                      <Typography.Paragraph type="secondary" style={{ fontSize: 13, margin: 0 }}>
+                      <Typography.Paragraph type="secondary" style={{ fontSize: 12, margin: 0 }}>
                         补丁 digest：<code className="mono">{String(patch.patch_digest).slice(0, 16)}</code>
                         {patch?.patch_version > 1 ? ` · 版本 v${patch.patch_version}（${patch?.correction_kind === 'deterministic' ? '确定性格式修正' : patch?.correction_kind === 'regenerated' ? '模型再生成' : '修正'}产物，原始失败版本已保留）` : ''}
                         {' '}——页面/复制/下载/检查使用同一版本；补丁更新后旧检查证据自动失效
                       </Typography.Paragraph>
                     ) : null}
                     {retro.length ? (
-                      <Typography.Paragraph type="secondary" style={{ fontSize: 13, marginBottom: 0 }}>
+                      <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 0 }}>
                         历史追溯记录（保留原始证据，不参与当前版本判定）：
                         {retro.map((r) => ` ${r.key} → ${r.ok === true ? '可应用' : r.ok === false ? '不可应用' : '未验证'}${r.checked_at ? ` @ ${utc(r.checked_at)}` : ''}`).join('；')}
                       </Typography.Paragraph>
@@ -996,12 +996,12 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [], baseBra
                         <Button size="small" onClick={() => download('patch.diff', `mergepilot-suggest-${String(runId).slice(0, 8)}.patch`)}>下载 .patch</Button>
                       </Space>
                       {copied === 'diff:fail' ? (
-                        <Typography.Text type="warning" style={{ fontSize: 13, marginLeft: 8 }}>复制失败（浏览器未授权剪贴板）——可用下载代替</Typography.Text>
+                        <Typography.Text type="warning" style={{ fontSize: 12, marginLeft: 8 }}>复制失败（浏览器未授权剪贴板）——可用下载代替</Typography.Text>
                       ) : null}
                     </>
                     : <Alert type="warning" showIcon message="补丁正文格式异常（无法按文件解析）——原始内容已保留，可尝试下载查看" />
                 ) : null}
-                <Typography.Text type="secondary" style={{ fontSize: 13, display: 'block', marginTop: 6 }}>
+                <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 6 }}>
                   对应 head：{String(patch.head_sha ?? headSha).slice(0, 12)} · 页面展示与下载的 .patch 为同一份内容。
                 </Typography.Text>
               </>
@@ -1066,7 +1066,7 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [], baseBra
         {runsList.length > 1 ? (
           <div style={{ marginBottom: 8 }}>
             <Space wrap>
-              <Typography.Text type="secondary" style={{ fontSize: 13 }}>产物面板默认显示该 PR 的最新运行结果；可切换查看：</Typography.Text>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>产物面板默认显示该 PR 的最新运行结果；可切换查看：</Typography.Text>
               <Select size="small" style={{ minWidth: 220 }} value={selectedRunId}
                 onChange={(v) => { setSelectedRunId(v); loadArtifacts(v, loadCtlRef.current?.signal); }}
                 options={runsList.map((r, i) => ({ value: r.run_id,
@@ -1080,7 +1080,7 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [], baseBra
             {!isLatestRun ? (
               <div style={{ marginTop: 4 }}>
                 <Tag color="orange">历史运行，仅查看</Tag>
-                <Typography.Text type="secondary" style={{ fontSize: 13 }}>发布需要最新审查 run。</Typography.Text>
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>发布需要最新审查 run。</Typography.Text>
               </div>
             ) : null}
           </div>
@@ -1098,13 +1098,13 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [], baseBra
           <Descriptions.Item label="远端当前 head">
             {pubCtx
               ? renderRemoteHead(pubCtx, '与审查 head 一致', { retryHint: '——点「预览并发布」重试' })
-              : <Typography.Text type="secondary" style={{ fontSize: 13 }}>点击「预览并发布」后自动核对</Typography.Text>}
+              : <Typography.Text type="secondary" style={{ fontSize: 12 }}>点击「预览并发布」后自动核对</Typography.Text>}
           </Descriptions.Item>
           {/* ③ 远端写入身份（系统机器人凭证；与登录账号无关） */}
           <Descriptions.Item label="评论写入身份">
             {pubCtx?.robot_identity
               ? <>{pubCtx.robot_identity}（系统机器人凭证，非你的个人账号）</>
-              : <Typography.Text type="secondary" style={{ fontSize: 13 }}>预览后显示——系统机器人，不使用个人账号</Typography.Text>}
+              : <Typography.Text type="secondary" style={{ fontSize: 12 }}>预览后显示——系统机器人，不使用个人账号</Typography.Text>}
           </Descriptions.Item>
           {/* ④ 影响范围 */}
           <Descriptions.Item label="影响范围">
@@ -1126,11 +1126,7 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [], baseBra
           </Space>
           {publishButtonBlockReason ? (
             <Alert style={{ marginTop: 6 }} type="info" showIcon message={publishButtonBlockReason} />
-          ) : (
-            <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>
-              发布前会自动核对 head 是否变化；服务端权限与远端状态为最终授权方。
-            </div>
-          )}
+          ) : null}
           {pubMsg ? (
             <Alert style={{ marginTop: 6 }} type={pubMsg.tone} showIcon message={pubMsg.text}
               action={pubMsg.url ? <Button size="small" href={pubMsg.url} target="_blank" rel="noreferrer">查看评论</Button> : undefined} />
@@ -1140,7 +1136,7 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [], baseBra
         {/* ⑥ 应用修复与合并（用户授权远端写——两步独立确认，任何一步都不自动执行） */}
         <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px dashed var(--c-border)' }}>
           <Typography.Title level={5} style={{ marginTop: 0, marginBottom: 8 }}>应用修复与合并</Typography.Title>
-          <Typography.Paragraph type="secondary" style={{ fontSize: 13, marginBottom: 8 }}>
+          <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 8 }}>
             两步手动确认流程：① 把建议补丁提交到 PR 源分支（新增一个提交，不合并）→
             平台触发重新审查/CI → ② 重新确认后合并 PR。每一步都先预览、后确认；
             远端已被他人推进时操作会被拒绝，不覆盖任何人的提交。
@@ -1149,7 +1145,7 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [], baseBra
             <Descriptions.Item label="远端写入身份">
               {applyPreview?.robot_identity || mergePreview?.robot_identity
                 ? <>{applyPreview?.robot_identity ?? mergePreview?.robot_identity}（系统机器人，非你的个人账号）</>
-                : <Typography.Text type="secondary" style={{ fontSize: 13 }}>预览后显示——系统机器人，不使用个人账号</Typography.Text>}
+                : <Typography.Text type="secondary" style={{ fontSize: 12 }}>预览后显示——系统机器人，不使用个人账号</Typography.Text>}
             </Descriptions.Item>
             <Descriptions.Item label="影响范围">
               ① 在 PR 源分支新增提交（包含补丁全部变更）；② 将 PR 合并进目标分支。
@@ -1171,21 +1167,13 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [], baseBra
               </Button>
             </Tooltip>
           </Space>
-          <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>
-            三个动作相互独立、各自单独确认：批准修复票（审批区）≠ 应用补丁（①）≠ 合并 PR（②）；
-            前一步完成不会自动执行下一步。
-          </div>
           <RunKnowledgeReferences runId={runId} repoFull={owner && repoName ? `${owner}/${repoName}` : null}
             baseBranch={baseBranch} findings={findings} />
           {applyBlockReason ? (
             <Alert style={{ marginTop: 6 }} type="info" showIcon message={applyBlockReason} />
           ) : mergeBlockReason ? (
             <Alert style={{ marginTop: 6 }} type="info" showIcon message={mergeBlockReason} />
-          ) : (
-            <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>
-              应用前自动重核远端 head 并在隔离副本真实试应用补丁；服务端权限与远端状态为最终授权方。
-            </div>
-          )}
+          ) : null}
           {applyMsg ? <Alert style={{ marginTop: 6 }} type={applyMsg.tone} showIcon message={applyMsg.text} /> : null}
           {/* UX-05：结果不明的恢复入口与文案同屏（对账按钮只调 reconcile，不重发写入） */}
           {applyUncertain ? (
@@ -1236,7 +1224,7 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [], baseBra
               <Descriptions.Item label="动作">{pubPreview.action === 'update' ? '更新已有 MergePilot 评论（不覆盖人工评论）' : '创建新评论'}</Descriptions.Item>
             </Descriptions>
             <pre className="mu-diff-pre" style={{ whiteSpace: 'pre-wrap' }}>{pubPreview.comment}</pre>
-            <Typography.Text type="secondary" style={{ fontSize: 13 }}>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
               仅生成建议，未修改代码；默认不附原始源码/完整补丁/敏感原值。
             </Typography.Text>
           </>
@@ -1289,7 +1277,7 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [], baseBra
               {applyPreview.previous_operations?.length ? (
                 <Descriptions.Item label="历史操作">
                   {applyPreview.previous_operations.map((o, i) => (
-                    <div key={i} style={{ fontSize: 13 }}>
+                    <div key={i} style={{ fontSize: 12 }}>
                       <Tag color={o.status === 'committed' ? 'green' : o.status === 'failed' ? 'red'
                         : o.status === 'result_uncertain' ? 'orange' : 'default'}>{o.status}</Tag>
                       {o.commit ? <code className="mono">{String(o.commit).slice(0, 12)}</code> : null}
@@ -1310,9 +1298,9 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [], baseBra
               <Alert type="warning" showIcon style={{ marginBottom: 8 }}
                 message="修复测试未通过——提交前请重读验证三分说明；是否应用由你判断。" />
             ) : null}
-            <Typography.Text type="secondary" style={{ fontSize: 13 }}>{applyPreview.operation_note}</Typography.Text>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>{applyPreview.operation_note}</Typography.Text>
             <div style={{ marginTop: 4 }}>
-              <Typography.Text type="secondary" style={{ fontSize: 13 }}>{applyPreview.rollback_note}</Typography.Text>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>{applyPreview.rollback_note}</Typography.Text>
             </div>
           </>
         ) : null}
@@ -1343,7 +1331,7 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [], baseBra
               <Descriptions.Item label="当前 head">
                 <code className="mono">{String(mergePreview.target.head ?? '').slice(0, 12)}</code>
                 {mergePreview.applied_commit ? (
-                  <Typography.Text type="secondary" style={{ fontSize: 13 }}>
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
                     （含 MergePilot 应用提交 <code className="mono">{String(mergePreview.applied_commit).slice(0, 12)}</code>）
                   </Typography.Text>
                 ) : null}
@@ -1379,7 +1367,7 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [], baseBra
                 {Array.isArray(mergePreview.blocked) && mergePreview.blocked.length ? (
                   <div style={{ marginTop: 6 }}>
                     {mergePreview.blocked.map((x, i) => (
-                      <div key={i} style={{ fontSize: 13 }}>
+                      <div key={i} style={{ fontSize: 12 }}>
                         <Typography.Text type="warning">· {x.detail ?? x.code}</Typography.Text>
                       </div>
                     ))}
@@ -1398,7 +1386,7 @@ export function ReviewArtifactsPanel({ repoId, prNumber, myActions = [], baseBra
             </Descriptions>
             <Alert type="warning" showIcon style={{ marginBottom: 8 }}
               message="合并后代码进入目标分支；本服务无法自动撤销已发生的合并，回退需在平台上手动 revert。" />
-            <Typography.Text type="secondary" style={{ fontSize: 13 }}>{mergePreview.operation_note}</Typography.Text>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>{mergePreview.operation_note}</Typography.Text>
           </>
         ) : null}
       </Drawer>
