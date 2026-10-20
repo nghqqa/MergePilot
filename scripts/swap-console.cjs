@@ -248,6 +248,7 @@ function parseArgv(argv) {
   let name;
   let dryRun = false;
   let expectCommit = null;
+  let skipMatrixCheck = false;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--dry-run') { dryRun = true; continue; }
@@ -255,16 +256,17 @@ function parseArgv(argv) {
     if (a.startsWith('--name=')) { name = a.slice('--name='.length); continue; }
     if (a === '--expect-commit') { expectCommit = argv[++i]; continue; }
     if (a.startsWith('--expect-commit=')) { expectCommit = a.slice('--expect-commit='.length); continue; }
+    if (a === '--skip-matrix-check') { skipMatrixCheck = true; continue; }
     positional.push(a);
   }
-  return { positional, name, dryRun, expectCommit };
+  return { positional, name, dryRun, expectCommit, skipMatrixCheck };
 }
 
 // 返回进程退出码；deps.exec/deps.log 可注入（真实路径 = spawnSync + stdout）
 async function swapConsole(argv, deps = {}) {
   const exec = deps.exec || ((args) => spawnSync('docker', args, { encoding: 'utf8' }));
   const log = deps.log || ((m) => process.stdout.write(m + '\n'));
-  const { positional, name, dryRun, expectCommit } = parseArgv(argv);
+  const { positional, name, dryRun, expectCommit, skipMatrixCheck } = parseArgv(argv);
   const [inspectFile, image] = positional;
   if (!inspectFile || !image) {
     log('用法: node scripts/swap-console.cjs <inspect.json> <new-image> [--name NAME] [--dry-run]');
@@ -288,26 +290,70 @@ async function swapConsole(argv, deps = {}) {
   log(safeSwapSummary(inspect, image, { name, dryRun }));
   if (dryRun) return 0;
 
-  // ── 前置检查 1：Matrix 现役凭据校验（2026-10-13 rc.26 切换实证：继承 env 口令可能陈旧
-//    → 四角色 MT_LOGIN_HTTP_403 → run BLOCKED）。在【旧容器内】用将被继承的 env 实际登录一次：
-//    200=通过；非 200=切换中止（exit 3），不触碰旧容器，不回显凭据。无 Matrix env 的部署自动跳过。
+  // ── 前置检查 1：执行器现役凭据校验（rc.26 切换实证：继承 env 口令可能陈旧 → run BLOCKED）。
+//    在【旧容器内】用将被继承的 env 按实际认证形状校验（2026-10-20 形状分派修复）：
+//    A. Matrix 口令（USER+PASSWORD 均非空）→ /_matrix/client/v3/login（identifier 格式）；
+//    B. TOKEN（口令缺失/为空 + MU_AGENTTEAMS_TOKEN + BASE_URL）→ GET /api/v1/workers
+//       （Bearer——与 agentteams-executor/runtime-readiness 同一只读身份校验端点）；
+//    C. 均未配置 → MU_EXECUTOR=agentteams 时 EXECUTOR_MISMATCH（阻断）；否则
+//       UNCONFIGURED（可选依赖未配置——如实放行并注明，不冒充认证通过）。
+//    结果四类：OK / AUTH（401/403）/ NETWORK（DNS/连接失败）/ SERVICE（其余非 2xx）；
+//    AUTH/NETWORK/SERVICE 均阻断（exit 3），消息区分类别；凭据不回显。
+//    deps.skipMatrixCheck 或 --skip-matrix-check = 显式跳过（响亮记录，不构成认证通过证据）。
   const inspectEnv = inspect.Config.Env ?? [];
-  const hasMatrixEnv = inspectEnv.some((e) => e.startsWith('MU_AGENTTEAMS_MATRIX_USER='))
-    && inspectEnv.some((e) => e.startsWith('MU_AGENTTEAMS_MATRIX_PASSWORD='));
-  if (containerName && hasMatrixEnv && !deps.skipMatrixCheck) {
-    const loginScript = "const MU = process.env.MU_AGENTTEAMS_MATRIX_URL; const base = MU.endsWith('/') ? MU.slice(0, -1) : MU; fetch(base + '/_matrix/client/v3/login',"
-      + "{method:'POST',headers:{'content-type':'application/json'},"
-      + "body:JSON.stringify({type:'m.login.password',identifier:{type:'m.id.user',user:process.env.MU_AGENTTEAMS_MATRIX_USER},password:process.env.MU_AGENTTEAMS_MATRIX_PASSWORD})})"
-      + ".then(r=>console.log('STATUS '+r.status)).catch(e=>console.log('STATUS ERR '+e.message))";
-    const pre = exec(['exec', containerName, 'node', '-e', loginScript]);
-    const preStatus = String((pre.stdout || '')).match(/STATUS (\d{3}|ERR \S+)/) ?? [];
-    const ok200 = /STATUS 200/.test(pre.stdout || '');
-    if (pre.error || !ok200) {
-      log('前置 Matrix 凭据校验未通过（继承 env 登录非 200）——切换中止（旧容器未受影响）。');
-      log('处置：将 MU_AGENTTEAMS_MATRIX_PASSWORD 收敛到现役值后重试本工具。');
+  const envOf = (k) => { const row = inspectEnv.find((e) => e.startsWith(k + '=')); return row == null ? null : row.slice(k.length + 1); };
+  const hasAuthEnv = ['MU_AGENTTEAMS_MATRIX_USER', 'MU_AGENTTEAMS_MATRIX_PASSWORD',
+    'MU_AGENTTEAMS_TOKEN', 'MU_AGENTTEAMS_BASE_URL'].some((k) => envOf(k) != null);
+  const skipMatrix = deps.skipMatrixCheck === true || skipMatrixCheck;
+  // 形状分派探针（前置=旧容器/后置=新容器共用；按将被继承的 env 实际认证形状校验）。
+  const runAuthProbe = (targetContainer) => {
+    const precheckScript = [
+      "const e=process.env;const mu=(e.MU_AGENTTEAMS_MATRIX_USER??'').trim();const mp=(e.MU_AGENTTEAMS_MATRIX_PASSWORD??'').trim();",
+      "const tok=(e.MU_AGENTTEAMS_TOKEN??'').trim();const bu=(e.MU_AGENTTEAMS_BASE_URL??'').trim().replace(/\\/+$/,'');",
+      "const cls=(x,d)=>console.log('PRECHECK '+x+' '+d);",
+      "(async()=>{",
+      " if(mu&&mp){try{const r=await fetch((e.MU_AGENTTEAMS_MATRIX_URL??'').replace(/\\/+$/,'')+'/_matrix/client/v3/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({type:'m.login.password',identifier:{type:'m.id.user',user:mu},password:mp})});",
+      "  cls(r.status===200?'OK':(r.status===401||r.status===403?'AUTH':'SERVICE'),'matrix-login '+r.status);}catch(err){cls('NETWORK','matrix '+(err&&err.cause&&err.cause.code?err.cause.code:err.message).slice(0,60));}return;}",
+      " if(tok&&bu){try{const r=await fetch(bu+'/api/v1/workers',{headers:{Authorization:'Bearer '+tok}});",
+      "  cls(r.status===200?'OK':(r.status===401||r.status===403?'AUTH':'SERVICE'),'token-workers '+r.status);}catch(err){cls('NETWORK','token '+(err&&err.cause&&err.cause.code?err.cause.code:err.message).slice(0,60));}return;}",
+      " if((e.MU_EXECUTOR??'')==='agentteams'){cls('EXECUTOR_MISMATCH','executor=agentteams 但 Matrix 口令与 TOKEN 均不可用');return;}",
+      " cls('UNCONFIGURED','agentteams 认证未配置（executor 非强制）——可选依赖，如实放行');",
+      "})().catch(err=>cls('NETWORK','probe '+err.message));",
+    ].join('');
+    const pre = exec(['exec', targetContainer, 'node', '-e', precheckScript]);
+    const m = String(pre.stdout || '').match(/PRECHECK (OK|AUTH|NETWORK|SERVICE|EXECUTOR_MISMATCH|UNCONFIGURED) ?(.*)/) ?? [];
+    return { verdict: m[1] || null, detail: (m[2] || '').slice(0, 80), probeError: pre.error || null };
+  };
+  const authFailMsg = (verdict, detail) => {
+    if (verdict === 'AUTH') {
+      log('执行器凭据校验：认证失败（' + detail + '）。处置：将 MU_AGENTTEAMS_MATRIX_PASSWORD 或 MU_AGENTTEAMS_TOKEN 收敛到现役值后重试。');
+    } else if (verdict === 'NETWORK') {
+      log('执行器凭据校验：网络/DNS 失败（' + detail + '）。处置：确认目标服务可达（Matrix URL / MU_AGENTTEAMS_BASE_URL）后重试。');
+    } else if (verdict === 'SERVICE') {
+      log('执行器凭据校验：服务端异常（' + detail + '）。处置：确认执行器服务健康后重试。');
+    } else {
+      log('执行器凭据校验：配置与执行器不匹配（' + detail + '）。处置：为 agentteams 执行器提供可用认证（Matrix 口令或 MU_AGENTTEAMS_TOKEN）。');
+    }
+  };
+  if (containerName && hasAuthEnv && !skipMatrix) {
+    const { verdict, detail, probeError } = runAuthProbe(containerName);
+    if (probeError || !verdict) {
+      log('前置执行器凭据校验无结果（探针未返回）——切换中止（旧容器未受影响）。');
+      if (probeError) log('  探针执行错误：' + String(probeError.message ?? probeError).slice(0, 120));
       return 3;
     }
-    log('前置 Matrix 凭据校验通过（登录 200，凭据不回显）');
+    if (verdict === 'OK') {
+      log('前置执行器凭据校验通过（' + detail + '，凭据不回显）');
+    } else if (verdict === 'UNCONFIGURED') {
+      log('前置执行器凭据校验：可选依赖未配置（' + detail + '）——不构成认证通过证据。');
+    } else {
+      log('前置校验中止（旧容器未受影响）。');
+      authFailMsg(verdict, detail);
+      return 3;
+    }
+  }
+  if (containerName && hasAuthEnv && skipMatrix) {
+    log('⚠ 执行器凭据校验已被显式跳过（--skip-matrix-check/deps）——本次部署不构成认证通过证据，切换后请另行核验执行器认证。');
   }
 
   // ── 前置检查 1.5：部署输入 vs 实际运行容器比对（rc3 事故回归锁）────────
@@ -497,17 +543,17 @@ async function swapConsole(argv, deps = {}) {
     log('构建身份核对通过（git_commit=' + got + '…）');
   }
 
-  // ── 后置检查 2：新容器内 Matrix 实际登录（与前置同口径，防环境注入差异）──
-  if (hasMatrixEnv && !deps.skipMatrixCheck) {
-    const loginScript2 = "const MU = process.env.MU_AGENTTEAMS_MATRIX_URL; const base = MU.endsWith('/') ? MU.slice(0, -1) : MU; fetch(base + '/_matrix/client/v3/login',"
-      + "{method:'POST',headers:{'content-type':'application/json'},"
-      + "body:JSON.stringify({type:'m.login.password',identifier:{type:'m.id.user',user:process.env.MU_AGENTTEAMS_MATRIX_USER},password:process.env.MU_AGENTTEAMS_MATRIX_PASSWORD})})"
-      + ".then(r=>console.log('STATUS '+r.status)).catch(e=>console.log('STATUS ERR '+e.message))";
-    const post = exec(['exec', containerName, 'node', '-e', loginScript2]);
-    if (!/STATUS 200/.test(post.stdout || '')) {
-      return rollbackFn('新容器 Matrix 登录非 200');
+  // ── 后置检查 2：新容器内执行器凭据校验（与前置同款形状分派探针，防环境注入差异；
+  //    失败→回滚到旧镜像。UNCONFIGURED=可选依赖未配置，如实放行不触发回滚）──
+  if (containerName && hasAuthEnv && !skipMatrix) {
+    const { verdict, detail, probeError } = runAuthProbe(containerName);
+    if (probeError || !verdict) {
+      return rollbackFn('后置执行器凭据探针未返回（' + (probeError ? String(probeError.message ?? probeError).slice(0, 80) : '无输出') + '）——回滚');
     }
-    log('后置 Matrix 登录校验通过（200）');
+    if (verdict === 'AUTH' || verdict === 'NETWORK' || verdict === 'SERVICE' || verdict === 'EXECUTOR_MISMATCH') {
+      return rollbackFn('后置执行器凭据校验失败（' + verdict + ' ' + detail + '）——回滚');
+    }
+    log('后置执行器凭据校验通过（' + (verdict === 'UNCONFIGURED' ? '未配置如实放行' : detail) + '）');
   }
   log('SWAP OK');
   return 0;
