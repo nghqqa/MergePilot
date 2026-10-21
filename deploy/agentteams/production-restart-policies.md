@@ -75,6 +75,19 @@ console 的 `MU_AGENTTEAMS_MATRIX_PASSWORD` 等认证 env 一旦缺失，执行�
 （health + Tuwunel 登录探针，只输出状态码不输出值））。锚点与秘密文件只放
 `D:/goai/secrets/`（不入版本库）；输出/日志/报告中永远不出现明文凭据。
 
+## Worker CR env 注入（ACL 真源）——**人工步骤，如实限制**
+
+`deploy/agentteams-beta/patch-worker-cr-env.sh`（支持 `--check` 与任意 worker 名）。
+
+- **性质与限制（如实）**：这是**人工配置步骤**，未被任何自动创建路径调用——REST
+  `POST /api/v1/workers` 不认 spec.env（上游控制器限制，2026-10-21 实测），且
+  6443 k8s API 的 pki 凭据仅 ctrl 容器内可达，console 自动补建路径
+  （ensureFourAgents）无法安全调用本工具。**新建 worker 后必须人工补跑一次**；
+  已有四 worker 的 CR 自带该 env（2026-10-13 迁移补丁随数据卷持久化），那是
+  迁移步骤的产物，**不构成自动创建路径的证据**。
+- 验收基线：REST 新建→注入→容器重建/唤醒两轮，授权消息往返零 ACL 手工修改
+  （2026-10-21 ITEST3_ACL_OK / ITEST3_REBUILD_OK，一次性测试身份，已清理）。
+
 ## 边界
 
 - unless-stopped 不等同于进程级守护：容器内进程崩溃仍由引擎按重启策略拉起，
