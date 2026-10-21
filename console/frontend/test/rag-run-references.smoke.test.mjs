@@ -191,15 +191,20 @@ test('R1（App 级集成锚）双源：快照区+实时区同时上屏，快照�
   snapshotResponse = () => snapshotHit();
   const ui = await renderRoute(ROUTE);
   try {
-    const ok1 = await waitFor(() => ui.text().includes('审查时获取的参考资料'), 6000);
+    const ok1 = await waitFor(() => ui.text().includes('审查时保存的引用快照'), 6000);
     const t = ui.text();
     assert.ok(ok1, '源 A 快照区上屏');
     assert.ok(t.includes('当前知识库检索'), '源 B 实时区上屏');
-    assert.ok(t.includes('执行期快照') && t.includes('实时对照'), '双源定性区分上屏');
+    assert.ok(t.includes('历史执行证据') && t.includes('实时对照'), '双源定性区分上屏');
     assert.ok(t.includes('2026-10-19 01:02:03'), '快照时间可见');
     assert.ok(t.includes('语料分支 main') && t.includes('pr_context_v1'), '快照分支/策略可见');
     assert.ok(t.includes('review-policy.md') && t.includes('L15-28'), '引用可追溯（doc_path+行号）');
     assert.ok(!t.includes('快照已保存'), '不谎报「已保存」（实时查询不落库）');
+    // 安全边界声明收敛为区块级一次（两个分节不再各自重复）
+    const refIdx = t.indexOf('知识库参考（RAG');
+    const block = t.slice(refIdx, refIdx + 1600);
+    assert.equal((block.match(/不构成 finding/g) || []).length, 1, 'reference-only 声明区块级恰好一次');
+    assert.ok(block.includes('不供 Fixer/Verifier 使用'), 'Fixer/Verifier 边界保留');
   } finally { await ui.cleanup(); }
 });
 
@@ -217,6 +222,7 @@ async function renderComp() {
     }));
   });
   return {
+    container,
     text: () => container.textContent ?? '',
     cleanup: async () => { if (root) await act(async () => root.unmount()); container.remove(); },
   };
@@ -281,5 +287,65 @@ test('R6 防伪造：任何状态下页面不出现「快照已保存」谎报�
     const t = ui.text();
     assert.ok(!t.includes('快照已保存'), '无「已保存」谎报');
     assert.ok(t.includes('不落执行期快照') || t.includes('不使用当前检索补造历史'), '不落库语义上屏');
+  } finally { await ui.cleanup(); }
+});
+
+test('R7 长预览默认收起（3 行截断）→ 展开全文 → 收起', async () => {
+  ROUTES = baseRoutes();
+  reviewAuxResponse = () => [200, { service_state: 'empty', results: [] }];
+  const longSnippet = '长文本预览。'.repeat(60); // >160 触发展开控件
+  snapshotResponse = () => [200, { service_state: 'snapshot', retrieval_state: 'hit',
+    corpus_branch: 'main', model_id: 'bge-m3', index_version: 1, query_strategy: 'pr_context_v1',
+    snapshot_at: '2026-10-20T00:00:00.000Z', review_head: HEAD, base_ref: 'main',
+    citations: [{ kind: 'rag_auxiliary', usage: 'reference_only', trusted: false,
+      citation: { repo: 'nghqqa/ragdemo', branch: 'main', doc_path: 'long-doc.md',
+        line_start: 1, line_end: 40, doc_sha256: 'e'.repeat(64), chunk_sha256: 'f'.repeat(64),
+        model_id: 'bge-m3', index_version: 1, corpus_branch: 'main' },
+      score: 0.42, snippet: longSnippet }] }];
+  const ui = await renderComp();
+  try {
+    const ok1 = await waitFor(() => ui.text().includes('long-doc.md'));
+    assert.ok(ok1, '长引用上屏');
+    const preview = ui.container.querySelector('[data-rag-preview]');
+    assert.ok(preview, '预览容器存在');
+    // happy-dom 的 style 对象对 vendor 前缀回读不稳定——断言原始 style 属性串
+    const clamped = () => (preview.getAttribute('style') || '').includes('max-height');
+    assert.ok(clamped(), '默认收起（max-height 内联生效；line-clamp 为浏览器渐进增强）');
+    const btn = ui.container.querySelector('[data-testid="rag-ref-toggle"]');
+    assert.ok(btn && btn.textContent.includes('展开全文'), '展开控件存在');
+    btn.click();
+    await flush();
+    const preview2 = ui.container.querySelector('[data-rag-preview]');
+    assert.ok(!((preview2.getAttribute('style') || '').includes('max-height')), '展开后无截断');
+    assert.ok(ui.container.querySelector('[data-testid="rag-ref-toggle"]').textContent.includes('收起'), '按钮变收起');
+    ui.container.querySelector('[data-testid="rag-ref-toggle"]').click();
+    await flush();
+    assert.ok((ui.container.querySelector('[data-rag-preview]').getAttribute('style') || '').includes('max-height'), '再点恢复截断');
+  } finally { await ui.cleanup(); }
+});
+
+test('R8 追溯元数据收进次级信息行（不与正文重复铺开）+ XSS 纯文本安全', async () => {
+  ROUTES = baseRoutes();
+  reviewAuxResponse = () => [403, { error: { reason: 'x' } }];
+  const xss = '<img src=x onerror=window.__pwned=1>';
+  snapshotResponse = () => [200, { service_state: 'snapshot', retrieval_state: 'hit',
+    corpus_branch: 'main', model_id: 'bge-m3', index_version: 7, query_strategy: 'pr_context_v1',
+    snapshot_at: '2026-10-20T00:00:00.000Z', review_head: HEAD, base_ref: 'main',
+    citations: [{ kind: 'rag_auxiliary', usage: 'reference_only', trusted: false,
+      citation: { repo: 'nghqqa/ragdemo', branch: 'main', doc_path: 'meta-doc.md',
+        line_start: 3, line_end: 9, doc_sha256: 'a'.repeat(64), chunk_sha256: 'b'.repeat(64),
+        model_id: 'bge-m3', index_version: 7, corpus_branch: 'main' },
+      score: 0.5, snippet: xss }] }];
+  const ui = await renderComp();
+  try {
+    await waitFor(() => ui.text().includes('meta-doc.md'));
+    const t = ui.text();
+    assert.ok(t.includes('doc aaaaaaaa…') && t.includes('chunk bbbbbbbb…'), 'doc/chunk sha 次级行可见');
+    assert.ok(t.includes('bge-m3 @iv7'), '模型@索引版本可见');
+    assert.ok(t.includes('语料分支 main'), '语料分支可见');
+    assert.ok(t.includes(xss), 'snippet 按纯文本渲染（字面呈现）');
+    assert.equal(ui.container.querySelector('img'), null, 'HTML 未被解析为元素（无注入）');
+    const prev = ui.container.querySelector('[data-rag-preview]');
+    assert.equal(prev.style.overflowWrap, 'anywhere', '长 token 自然换行约束在元素样式上');
   } finally { await ui.cleanup(); }
 });

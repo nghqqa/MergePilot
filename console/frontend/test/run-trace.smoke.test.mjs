@@ -243,10 +243,36 @@ test('真实空集：Skill/RAG 各自诚实空文案，计数为 0，不冒充�
   const page = await renderPanel();
   try {
     const t = page.text();
-    assert.ok(t.includes('本次运行没有 Skill 调用记录（真实空集，非降级）'), 'Skill 真实空集文案');
-    assert.ok(t.includes('本次运行没有 RAG 检索记录（真实空集，非降级）'), 'RAG 真实空集文案');
+    // 2026-10-20 可读性收敛：零调用不再渲染 6 张零值卡与空明细标题——一行合并空集说明承载同一语义
+    assert.ok(t.includes('本次运行无 Skill / RAG 调用记录（真实空集，非降级）'), '合并空集文案（真实空集语义保留）');
+    assert.ok(!t.includes('Skill 调用次数'), '零调用不渲染零值统计卡');
     assert.ok(!t.includes('org.sec-review'), '空集不渲染任何行数据');
     for (const d of DISCLOSURES) assert.ok(t.includes(d), '空集同样携带语义边界文案');
+  } finally { await page.cleanup(); }
+});
+
+// ── 2b. 边界说明键盘可达性（#496 终审）：原生 details/summary——Enter 可展开/收起，
+// 不以『文本仍在 DOM』作为可交互验收 ──
+test('边界说明：原生 details/summary，默认收起，Enter 键盘可展开再收起', async () => {
+  ROUTES = traceRoutes({
+    skill: okRun([], 0), rag: okRun([], 0),
+    summary: [200, { skill: { total: 0, by_status: {}, by_role: {} }, rag: { total: 0, by_status: {} } }],
+  });
+  const page = await renderPanel();
+  try {
+    const det = page.el.querySelector('details.tech-details');
+    assert.ok(det, '边界说明为原生 details 元素');
+    const sum = det.querySelector('summary');
+    assert.ok(sum, '原生 summary（浏览器原生键盘焦点与 aria 语义）');
+    assert.equal(det.open, false, '默认收起');
+    // 浏览器键盘语义：summary 上 Enter 映射为 click 激活（happy-dom 不实现该默认动作——
+    // 显式模拟以锁定「原生元素可经键盘路径激活」的组件契约；真实浏览器原生支持）
+    sum.dispatchEvent(new domWindow.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    sum.click();
+    assert.equal(det.open, true, '激活后展开（键盘路径=click）');
+    sum.click();
+    assert.equal(det.open, false, '再激活收起');
+    for (const d of DISCLOSURES) assert.ok(det.textContent.includes(d), '展开内容承载边界文案');
   } finally { await page.cleanup(); }
 });
 
