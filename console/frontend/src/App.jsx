@@ -69,12 +69,12 @@ const NAV = [
   { to: '/repos', label: '仓库', icon: FolderOpenOutlined, end: true },
   { to: '/approvals', label: '审批', icon: AuditOutlined, end: true },
 ];
-// 系统管理（部署/运营面，非主审查流程）：系统状态与接线 / 数据源 / 组织与接入 /
+// 系统管理（部署/运营面，非主审查流程）：系统状态与接线 / 数据源 / 组织与成员权限 /
 // 运行记录（snapshot 取证视图，实时源下隐藏）/ 设置
 const SYSTEM_NAV = [
   { to: '/core', label: '系统状态', icon: DashboardOutlined, end: true },
   { to: '/datasources', label: '数据源', icon: ApiOutlined, end: true },
-  { to: '/multiuser', label: '组织与接入', icon: TeamOutlined, end: true },
+  { to: '/multiuser', label: '组织与成员权限', icon: TeamOutlined, end: true },
   { to: '/runs', label: '运行记录', icon: HistoryOutlined, end: false },
   { to: '/settings', label: '设置', icon: SettingOutlined, end: true },
 ];
