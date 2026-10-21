@@ -27,7 +27,13 @@ services:
     restart: unless-stopped
     networks:
       atnet:
-        aliases: [agentteams-beta-controller, agentteams-beta-matrix]
+        # 三别名缺一不可（2026-10-21 事故固化）：
+        #  * agentteams-beta-controller——worker/console 对 ctrl 三服务（8090/9000/6167）的统一寻址；
+        #  * agentteams-beta-matrix——AGENTTEAMS_MATRIX_DOMAIN（worker 侧 Matrix 消息域）；
+        #  * aigw-local.agentteams.io——controller 镜像 generate-worker-config.sh 的固定 AI 网关
+        #    回退域名（本地部署契约：worker 经 atnet 直达 Higress :8080）。缺它=worker LLM 全部
+        #    Connection error（2026-10-21 MT_REPLY_TIMEOUT 事故根因三）。
+        aliases: [agentteams-beta-controller, agentteams-beta-matrix, aigw-local.agentteams.io]
     ports:
       # 仅 controller API 对 MergePilot 网络开放；host 发布仅限回环（Beta 单机形态）
       - "127.0.0.1:${ATB_API_PORT:-28462}:8090"

@@ -24,31 +24,35 @@
 
 ## 网络别名（2026-10-21 事故固化：重建必带）
 
-agentteams-beta-ctrl 在 agentteams-beta_atnet 上必须携带**两个**网络别名
+agentteams-beta-ctrl 在 agentteams-beta_atnet 上必须携带**三个**网络别名
 （与 deploy/agentteams-beta/docker-compose.yml 的权威声明一致）：
 
 | 别名 | 消费方 |
 |---|---|
 | `agentteams-beta-controller` | 容器内三服务统一寻址：AGENTTEAMS_CONTROLLER_URL(:8090)、AGENTTEAMS_FS_ENDPOINT(:9000，内嵌 MinIO)、AGENTTEAMS_MATRIX_URL(:6167) |
 | `agentteams-beta-matrix` | AGENTTEAMS_MATRIX_DOMAIN——worker 侧 Matrix 消息寻址域（@…:agentteams-beta-matrix:6167） |
+| `aigw-local.agentteams.io` | controller 镜像 generate-worker-config.sh 的固定 AI 网关回退域名——worker 的 LLM provider base_url（:8080 Higress）。**缺它=新投影 worker 的 LLM 全部 Connection error**（2026-10-21 MT_REPLY_TIMEOUT 事故根因三；恢复走逐 worker 热改是临时态，别名补齐后已全部回退上游原生配置） |
 
 **事故实证（2026-10-21）**：今晨主机重启恢复中 ctrl 以手工 `docker run` 重建
 （Created=Started 同秒），网络接入与 IP 正确但别名漏带 → 容器内解析
 `agentteams-beta-controller` 失败 → projects 接口因 DNS 返回 500（MinIO 本体健康）。
 代理链（console→at-auth-proxy→nginx→`agentteams-beta-ctrl:8090` 容器名）不受影响，
-仅别名消费方受损。
+仅别名消费方受损。同日第三别名 `aigw-local` 缺漏造成 worker LLM 不可达——
+该域名是**上游本地部署契约**（脚本注释：workers on agentteams-net reach Higress），
+我们的创建配方从未配置它；修复=补别名，worker 配置回退原样，不需要改镜像。
 
 重建命令必带（IP 按当时实值，当前=192.168.96.6）：
 
     docker run -d --name agentteams-beta-ctrl --restart unless-stopped \
       --network agentteams-beta_atnet --ip 192.168.96.6 \
       --network-alias agentteams-beta-controller --network-alias agentteams-beta-matrix \
+      --network-alias aigw-local.agentteams.io \
       …（其余参数以 inspect 保全件为准，不凭记忆重造）
 
 重启/重建后 60 秒核查（巡检项）：
 
     docker inspect agentteams-beta-ctrl --format '{{(index .NetworkSettings.Networks "agentteams-beta_atnet").Aliases}}'
-    docker exec agentteams-beta-ctrl getent hosts agentteams-beta-controller agentteams-beta-matrix
+    docker exec agentteams-beta-ctrl getent hosts agentteams-beta-controller agentteams-beta-matrix aigw-local.agentteams.io
 
 别名丢失的最小修复（不重启容器、不断其他网络；已连接端点不可重复 network connect，
 须 disconnect 后带原 IP+全量别名重连；失败立即不带别名重连还原）：
@@ -56,10 +60,20 @@ agentteams-beta-ctrl 在 agentteams-beta_atnet 上必须携带**两个**网络�
     docker network disconnect agentteams-beta_atnet agentteams-beta-ctrl
     docker network connect --ip 192.168.96.6 \
       --alias agentteams-beta-controller --alias agentteams-beta-matrix \
+      --alias aigw-local.agentteams.io \
       agentteams-beta_atnet agentteams-beta-ctrl
 
 注意：nginx upstream 按容器名解析且启动时缓存——修复保持原 IP 时 proxy 无需 reload；
 若 IP 变更须 `docker exec at-auth-proxy nginx -s reload`。
+
+## console 重建（2026-10-21 matrixpw 事故固化：受控秘密源 + 形状检查）
+
+console 的 `MU_AGENTTEAMS_MATRIX_PASSWORD` 等认证 env 一旦缺失，执行器门会如实
+拒绝（MT_NOT_CONFIGURED）——**恢复路径是"从受控秘密源的保全件重建"，不是找回密码**。
+规范重建入口 = `deploy/agentteams-beta/recreate-console-verified.mjs`（读 inspect
+锚点→**变更前形状断言**（必需 env 全非空才放行）→同镜像同参重建→变更后身份验证
+（health + Tuwunel 登录探针，只输出状态码不输出值））。锚点与秘密文件只放
+`D:/goai/secrets/`（不入版本库）；输出/日志/报告中永远不出现明文凭据。
 
 ## 边界
 
