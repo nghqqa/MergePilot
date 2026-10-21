@@ -121,6 +121,38 @@ test('多用户页：用户/tenant/角色/动作面/成员/绑定上屏（后端
   }
 });
 
+test('多用户页：platform_admin 成员管理上屏（操作列/权限矩阵/自己行无控件）', async () => {
+  ROUTES = {
+    ...COMMON,
+    '/api/mu/session': () => [200, {
+      user: { user_id: 'u-9', login: 'rooty' },
+      tenant: { tenant_id: 't-1', slug: 'default', display_name: 'Migration Default Tenant', is_migration_tenant: true },
+      role: 'platform_admin',
+      actions: ['read_repository', 'read_pull_request', 'rag_query', 'request_review', 'request_repair',
+        'manage_repository_binding', 'manage_membership', 'read_audit', 'manage_instance'],
+      memberships: [],
+    }],
+    '/api/mu/members': () => [200, { members: [
+      { membership_id: 'm-1', login: 'rooty', role: 'platform_admin', state: 'active', created_at: '2026-09-27T10:00:00Z' },
+      { membership_id: 'm-2', login: 'gus', role: 'contributor', state: 'active', created_at: '2026-09-27T10:05:00Z' },
+    ] }],
+    '/api/mu/repositories': () => [200, { repositories: [] }],
+  };
+  calls = [];
+  const { renderer, json } = await renderRoute('/multiuser');
+  try {
+    const text = json();
+    assert.ok(text.includes('权限矩阵'), '权限矩阵面板上屏（静态展示面）');
+    assert.ok(text.includes('成员与角色管理'), 'manage_membership 中文标签上屏（矩阵与后端契约锁定）');
+    assert.ok(text.includes('调整 gus 的角色'), '成员行角色下拉上屏（操作列，仅 manage_membership）');
+    assert.ok(text.includes('（自己）'), '自己行不出操作控件（与后端 cannot_*_self 双封同语义）');
+    assert.ok(text.includes('邀请管理'), '邀请管理面板照常上屏');
+    assert.ok(!text.includes('请求失败') && !text.includes('is not defined'), '不得进入错误态/裸 JS 错误');
+  } finally {
+    await act(async () => { renderer.unmount(); });
+  }
+});
+
 test('多用户页：MU_MODE=legacy 时诚实提示未启用（零推断数据）', async () => {
   ROUTES = {
     ...COMMON,

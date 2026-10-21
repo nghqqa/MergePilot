@@ -257,6 +257,57 @@ try {
           WHERE u.login='carol' AND m.tenant_id=$1`, [tenantBId])).rows[0].state === 'active',
     { unknown: oraUnknown.json, cross: oraCross.json, again: oraAgain.json });
 
+  // ── MU-D5~D13：角色调整端点（干净路径——不建用户/不绑 identity/不复活 revoked） ──
+  const addGus = await call('/api/mu/members', { method: 'POST', cookie: admin.cookie, csrf: admin.csrf,
+    body: { login: 'gus', role: 'contributor' } });
+  if (addGus.status !== 200) throw new Error(`gus setup failed: ${JSON.stringify(addGus.json)}`);
+  const gus = await muLogin('fixture:gus');
+  const roleNoCsrf = await call('/api/mu/members/gus/role', { method: 'POST', body: { role: 'reviewer' }, cookie: admin.cookie });
+  ok('MU-D5 角色调整缺 X-CSRF-Token → 403 csrf_required',
+    roleNoCsrf.status === 403 && roleNoCsrf.json?.error?.reason === 'csrf_required');
+  const roleByGus = await call('/api/mu/members/gus/role', { method: 'POST', cookie: gus.cookie, csrf: gus.csrf,
+    body: { role: 'maintainer' } });
+  ok('MU-D6 Contributor 调整角色 → 403 action_not_granted（写门仅 platform_admin）',
+    roleByGus.status === 403 && roleByGus.json?.error?.reason === 'action_not_granted');
+  const roleSet = await call('/api/mu/members/gus/role', { method: 'POST', cookie: admin.cookie, csrf: admin.csrf,
+    body: { role: 'reviewer' } });
+  ok('MU-D7 platform_admin 调整角色 contributor→reviewer → 200 changed:true（零新 identity 绑定）',
+    roleSet.status === 200 && roleSet.json?.changed === true
+      && roleSet.json?.membership?.role === 'reviewer' && roleSet.json?.membership?.state === 'active'
+      && (await pool.query(`SELECT count(*)::int n FROM mu.external_identity i JOIN mu.app_user u ON u.user_id=i.user_id
+          WHERE u.login='gus'`)).rows[0].n === 1, roleSet.json);
+  const roleAudit1 = (await pool.query(`SELECT detail FROM mu.audit_event WHERE kind='MU_MEMBER_ROLE_SET'
+      AND detail->>'target_login'='gus' ORDER BY seq DESC LIMIT 1`)).rows[0];
+  ok('MU-D8 角色调整审计在库（from_role/to_role/target_login）',
+    roleAudit1?.detail?.from_role === 'contributor' && roleAudit1?.detail?.to_role === 'reviewer', roleAudit1);
+  const auditCountBefore = (await pool.query(
+    `SELECT count(*)::int n FROM mu.audit_event WHERE kind='MU_MEMBER_ROLE_SET'`)).rows[0].n;
+  const roleSame = await call('/api/mu/members/gus/role', { method: 'POST', cookie: admin.cookie, csrf: admin.csrf,
+    body: { role: 'reviewer' } });
+  const auditCountAfter = (await pool.query(
+    `SELECT count(*)::int n FROM mu.audit_event WHERE kind='MU_MEMBER_ROLE_SET'`)).rows[0].n;
+  ok('MU-D9 同角色幂等 → 200 changed:false 且零新增审计',
+    roleSame.status === 200 && roleSame.json?.changed === false && auditCountAfter === auditCountBefore);
+  ok('MU-D10 非法角色词汇 → 400；platform_admin 目标 → 400 platform_admin_not_assignable（D-3：仅 DBA 直授）',
+    (await call('/api/mu/members/gus/role', { method: 'POST', cookie: admin.cookie, csrf: admin.csrf,
+      body: { role: 'superadmin' } })).status === 400
+      && (await call('/api/mu/members/gus/role', { method: 'POST', cookie: admin.cookie, csrf: admin.csrf,
+        body: { role: 'platform_admin' } })).json?.error?.reason === 'platform_admin_not_assignable');
+  const roleSelf = await call('/api/mu/members/dev-pilot/role', { method: 'POST', cookie: admin.cookie, csrf: admin.csrf,
+    body: { role: 'maintainer' } });
+  ok('MU-D11 禁止自改角色（防最后一名管理员自锁）→ 400 cannot_change_self_role',
+    roleSelf.status === 400 && roleSelf.json?.error?.reason === 'cannot_change_self_role');
+  const roleGhost = await call('/api/mu/members/ghost-user/role', { method: 'POST', cookie: admin.cookie, csrf: admin.csrf,
+    body: { role: 'reviewer' } });
+  ok('MU-D12 未知 login → 404 member_not_found', roleGhost.status === 404);
+  await call('/api/mu/members/gus/revoke', { method: 'POST', cookie: admin.cookie, csrf: admin.csrf });
+  const roleRevoked = await call('/api/mu/members/gus/role', { method: 'POST', cookie: admin.cookie, csrf: admin.csrf,
+    body: { role: 'maintainer' } });
+  ok('MU-D13 revoked 成员改角色：role 更新但 state 保持 revoked（不复活，会话仍 403）',
+    roleRevoked.status === 200 && roleRevoked.json?.changed === true
+      && roleRevoked.json?.membership?.role === 'maintainer' && roleRevoked.json?.membership?.state === 'revoked'
+      && (await call('/api/mu/session', { cookie: gus.cookie })).status === 403, roleRevoked.json);
+
   // ── MU-E*：审计（metadata only） ──
   const auditRows = (await pool.query(
     `SELECT kind, detail FROM mu.audit_event WHERE kind='MU_AUTH_DENIED'`)).rows;

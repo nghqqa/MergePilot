@@ -224,6 +224,14 @@ export async function createMuStore({ pool, env = process.env, migrations = MU_M
         WHERE tenant_id=$1 AND user_id=$2 AND state='active' RETURNING *`, [tenantId, userId]);
     return r.rows[0] ?? null;
   }
+  // 管理员调整既有成员角色（干净路径：不建用户、不绑 identity、不改 state——
+  // revoked 成员改角色保持 revoked，复活是独立显式动作）。仅更新已存在的 membership 行。
+  async function setMembershipRole({ tenantId, userId, role }) {
+    const r = await q(
+      `UPDATE mu.membership SET role=$3, updated_at=now()
+        WHERE tenant_id=$1 AND user_id=$2 RETURNING *`, [tenantId, userId, role]);
+    return r.rows[0] ?? null;
+  }
   async function listMembers(tenantId) {
     const r = await q(
       `SELECT m.membership_id, m.user_id, m.role, m.state, m.created_at, u.login, u.display_name
@@ -834,7 +842,7 @@ export async function createMuStore({ pool, env = process.env, migrations = MU_M
     ensureTenant, getTenantBySlug, getTenant,
     ensureUser, getUser, getUserByLogin,
     ensureIdentity, getUserByIdentity, listIdentitiesOfUser,
-    ensureMembership, getMembership, revokeMembership, listMembers, listMembershipsOfUser,
+    ensureMembership, getMembership, revokeMembership, setMembershipRole, listMembers, listMembershipsOfUser,
     ensureRepository, resolveRepository, listRepositories,
     ensureBinding, getBindingForRepo, revokeBinding,
     upsertPullRequest, resolvePullRequest, findPullRequests,
