@@ -1018,12 +1018,16 @@ export default function MultiUserPage() {
     if (row.login === session?.user?.login) {
       return <Typography.Text type="secondary">（自己）</Typography.Text>;
     }
+    // 窄屏渲染修复（2026-10-21 路径 B 复现）：下拉默认挂 body portal——桌面打开后视口切窄，
+    // 浮层留在旧坐标（l=884）引发页面级横滚（scrollWidth 1012）。收进表格容器
+    // （.ant-table-content overflow-x:auto 内）后随容器裁剪，页面零横滚。
     return (
       <Space size={4}>
         <Select size="small" value={row.role} style={{ width: 128 }}
           aria-label={`调整 ${row.login} 的角色`}
           disabled={memberBusyLogin === row.login}
           onChange={(v) => changeMemberRole(row.login, v)}
+          getPopupContainer={(node) => node.closest(".ant-table-content") ?? node.parentNode}
           options={ASSIGNABLE_ROLES.map((r) => ({ value: r, label: r }))} />
         <Popconfirm title={`撤销 ${row.login} 的成员资格？`}
           description="撤销后其既有会话立即失效；如需恢复请重新邀请或联系 DBA。"
