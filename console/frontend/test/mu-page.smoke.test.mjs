@@ -146,6 +146,14 @@ test('多用户页：platform_admin 成员管理上屏（操作列/权限矩阵/
     assert.ok(text.includes('成员与角色管理'), 'manage_membership 中文标签上屏（矩阵与后端契约锁定）');
     assert.ok(text.includes('调整 gus 的角色'), '成员行角色下拉上屏（操作列，仅 manage_membership）');
     assert.ok(text.includes('（自己）'), '自己行不出操作控件（与后端 cannot_*_self 双封同语义）');
+    // 窄屏渲染修复回归（路径 B 实证）：成员角色下拉 getPopupContainer 收进表格容器，
+    // 防桌面开下拉→切窄视口时 body portal 残留旧坐标引发页面级横滚。
+    let popupContainerFn = null;
+    renderer.root.findAll((n) => {
+      if (n.props?.['aria-label'] && String(n.props['aria-label']).startsWith('调整 ') && n.props.getPopupContainer) popupContainerFn = n.props.getPopupContainer;
+      return false;
+    });
+    assert.ok(typeof popupContainerFn === 'function', '成员角色下拉挂载 getPopupContainer（窄屏 portal 收敛）');
     assert.ok(text.includes('邀请管理'), '邀请管理面板照常上屏');
     assert.ok(!text.includes('请求失败') && !text.includes('is not defined'), '不得进入错误态/裸 JS 错误');
   } finally {
