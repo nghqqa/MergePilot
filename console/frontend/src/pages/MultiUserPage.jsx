@@ -1289,8 +1289,11 @@ export default function MultiUserPage() {
               </section>
             )
           ) : null}
+            </div>
+          </details>
 
-          {/* 成员与权限（入口提升 2026-10-21）：一等区块——不再嵌套于「接入管理」双层折叠；
+          {/* 成员与权限（入口提升 2026-10-21 + 终验收修正）：一等区块——真正移出「接入管理」
+              抽屉（此前仅加条件包裹、DOM 仍嵌套于折叠 details 内，窄屏滚动不可达）；
               持 read_audit（名单可见）或 manage_membership（管理）能力的会话默认展开 */}
           {ob.stage !== 'login' ? (
           <section className="section" id="mu-members">
@@ -1315,8 +1318,6 @@ export default function MultiUserPage() {
             </details>
           </section>
           ) : null}
-            </div>
-          </details>
 
 
           {ob.done.bind ? (
