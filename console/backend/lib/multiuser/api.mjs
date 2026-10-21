@@ -1884,12 +1884,6 @@ export async function muApi(req, res, ctx) {
       if (!csrfOk()) return sendJson(res, 403, { error: { reason: 'csrf_required' } });
       const g = await guard('manage_membership');
       if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
-      // 本端点是 fixture 演示面（直接建用户+绑 fixture: 身份）——与 PR 快照播种同一
-      // 数据面纪律：仅 MU_FIXTURES=1 可用。生产（fixture 关闭）拒绝且零成员/身份变更；
-      // 真实成员准入走邀请（/api/mu/invitations），角色调整走 /role（干净路径，不绑身份）。
-      if (env.MU_FIXTURES !== '1') {
-        return sendJson(res, 403, { error: { reason: 'fixtures_disabled' } });
-      }
       const body = await json();
       const login = String(body.login || '').trim();
       const role = String(body.role || '');

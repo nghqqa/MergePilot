@@ -166,23 +166,21 @@ try {
     body: { provider_repo_id: 'R_1', owner: 'acme', name: 'app' } });
   ok('MU-B7 Contributor 不可绑定仓库 → 403', bobRepo.status === 403 && bobRepo.json?.error?.reason === 'action_not_granted');
 
-  // MU-B8（2026-10-21 成员管理发布条件固化）：fixture 关闭时旧成员演示写入口拒绝且零变更——
-  // 本端点直接建用户+绑 fixture: 身份，生产（MU_FIXTURES 未开）必须 403 且 app_user/
-  // external_identity 零行变化；真实成员准入走邀请，角色调整走 /role（不绑身份）。
+  // MU-B8（2026-10-21 发布条件核查修正）：fixture 关闭（生产形态）下管理员显式授权契约锁定——
+  // #474/eager-init B7/B7c 契约：members POST 是管理员显式授权路径（平台管理员可预置
+  // 成员关系，绑定 fixture 身份；该身份在生产不可登录——MU_ALLOW_FIXTURE_LOGIN 默认关），
+  // 必须保持 200+审计，不得视为演示面关闭。生产侧真实安全保障=manage_membership 唯一授权
+  // （MU-B6）+CSRF（MU-B1）+审计（本条）+fixture 登录默认关（MU-A7）。
   {
     const savedFx = process.env.MU_FIXTURES;
     delete process.env.MU_FIXTURES;
-    const usersBefore = (await pool.query(`SELECT count(*)::int n FROM mu.app_user`)).rows[0].n;
-    const idsBefore = (await pool.query(`SELECT count(*)::int n FROM mu.external_identity`)).rows[0].n;
     const r = await call('/api/mu/members', { method: 'POST', cookie: admin.cookie, csrf: admin.csrf,
-      body: { login: 'no-fixture-user', role: 'contributor' } });
-    const usersAfter = (await pool.query(`SELECT count(*)::int n FROM mu.app_user`)).rows[0].n;
-    const idsAfter = (await pool.query(`SELECT count(*)::int n FROM mu.external_identity`)).rows[0].n;
+      body: { login: 'explicit-grant-user', role: 'maintainer' } });
+    const audit = (await pool.query(`SELECT count(*)::int n FROM mu.audit_event
+        WHERE kind='MU_MEMBER_ADDED' AND detail->>'target_login'='explicit-grant-user'`)).rows[0].n;
     process.env.MU_FIXTURES = savedFx;
-    ok('MU-B8 fixture 关闭时成员演示写入口 → 403 fixtures_disabled（用户/身份零变更）',
-      r.status === 403 && r.json?.error?.reason === 'fixtures_disabled'
-        && usersBefore === usersAfter && idsBefore === idsAfter,
-      { status: r.status, users: `${usersBefore}->${usersAfter}`, ids: `${idsBefore}->${idsAfter}` });
+    ok('MU-B8 fixture 关闭（生产形态）下管理员显式授权保持 200+审计（#474 契约锁定）',
+      r.status === 200 && r.json?.membership?.role === 'maintainer' && audit >= 1, r.json);
   }
 
   // ── MU-C*：仓库绑定 + 双 tenant 隔离 + 篡改 ──
