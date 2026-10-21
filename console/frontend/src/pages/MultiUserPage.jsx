@@ -981,6 +981,15 @@ export default function MultiUserPage() {
 
   const can = (action) => Boolean(session?.actions?.includes(action));
 
+  // 成员区默认展开（入口提升）：持 read_audit（名单可见）或 manage_membership（管理）能力的会话
+  // 挂载后自动展开——其余角色保持折叠（能看到入口但内容按权限如实为空/403，不隐藏入口本身）
+  const memberDetailsRef = React.useRef(null);
+  React.useEffect(() => {
+    if (session && (can('read_audit') || can('manage_membership'))) {
+      memberDetailsRef.current?.setAttribute('open', '');
+    }
+  }, [session]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── 成员管理操作（仅 manage_membership 能力渲染；授权一律由后端强制） ──
   const [memberBusyLogin, setMemberBusyLogin] = useState(null);
   const [memberActionErr, setMemberActionErr] = useState(null);
@@ -1247,7 +1256,7 @@ export default function MultiUserPage() {
           </div>
 
           <details className="tech-details mu-admin-drawer">
-            <summary>接入管理（GitHub App · 成员 · Agent 策略 · 审查架构）——默认折叠，PR 审查为主工作区</summary>
+            <summary>接入管理（GitHub App · Agent 策略 · 审查架构）——默认折叠，PR 审查为主工作区；成员与权限已上移为独立区块</summary>
             <div className="tech-body">
           {ob.stage !== 'login' ? (
             ob.done.review ? (
@@ -1277,8 +1286,11 @@ export default function MultiUserPage() {
             )
           ) : null}
 
-          <section className="section">
-            <details className="tech-details">
+          {/* 成员与权限（入口提升 2026-10-21）：一等区块——不再嵌套于「接入管理」双层折叠；
+              持 read_audit（名单可见）或 manage_membership（管理）能力的会话默认展开 */}
+          {ob.stage !== 'login' ? (
+          <section className="section" id="mu-members">
+            <details className="tech-details" ref={memberDetailsRef} id="member-details">
               <summary>成员与邀请（成员 {members?.length ?? 0} · 权限矩阵 · 角色管理）</summary>
               <div className="tech-body">
                 <RoleMatrixPanel />
@@ -1298,6 +1310,7 @@ export default function MultiUserPage() {
               </div>
             </details>
           </section>
+          ) : null}
             </div>
           </details>
 
