@@ -71,40 +71,40 @@
 
 <h2>构建 console 镜像</h2>
 <pre><code>git clone https://github.com/nghqqa/MergePilot.git
-cd MergePilot &amp;&amp; git checkout v0.2.0-beta.6-rc.35.6-rc5   # 与官方镜像同源的源码 tag
+cd MergePilot &amp;&amp; git checkout v0.2.0-beta.6-rc.35.6-rc6   # 与官方镜像同源的源码 tag
 
 # Dockerfile 在构建阶段执行 npm ci + vite build；本机历史 dist 不会进入镜像
 # 版本号与提交号决定 /api/health 的 version/git_commit 字段
 docker build -f docker/Dockerfile.canonical-console \
-  --build-arg MERGEPILOT_VERSION=v0.2.0-beta.6-rc.35.6-rc5 \
-  --build-arg GIT_COMMIT=1a769db7357e743d18ea5f266bf2d9911a3b2f19 \
-  -t mergepilot-console:v0.2.0-beta.6-rc.35.6-rc5 .</code></pre>
+  --build-arg MERGEPILOT_VERSION=v0.2.0-beta.6-rc.35.6-rc6 \
+  --build-arg GIT_COMMIT=c094ad1cf8a1f1d18fecc9f48c13e8cd68553bef \
+  -t mergepilot-console:v0.2.0-beta.6-rc.35.6-rc6 .</code></pre>
 
 <div class="warn">必须填写与实际源码相符的 <code>MERGEPILOT_VERSION</code> 与
 <code>GIT_COMMIT</code>，否则 health 的身份信息不能用于核对。
 若构建 main 或其他 commit 的发布后修正，请使用独立版本后缀和本地镜像标签，
-不要标为官方 rc.35.6-rc5；范围见<a href="downloads.html#release-scope">发布与源码范围</a>。</div>
+不要标为官方 rc.35.6-rc6；范围见<a href="downloads.html#release-scope">发布与源码范围</a>。</div>
 
 <h2>可复现性</h2>
 <p>官方 digest
-<code>29eba715…4c8e</code> 的构建源即 tag <code>v0.2.0-beta.6-rc.35.6-rc5</code>
-（commit <code>1a769db7357e743d18ea5f266bf2d9911a3b2f19</code>，构建注入的 GIT_COMMIT 与之一致）。源码同源不保证构建字节或行为验证结果完全相同；
+<code>29eba715…4c8e</code> 的构建源即 tag <code>v0.2.0-beta.6-rc.35.6-rc6</code>
+（commit <code>c094ad1cf8a1f1d18fecc9f48c13e8cd68553bef</code>，构建注入的 GIT_COMMIT 与之一致）。源码同源不保证构建字节或行为验证结果完全相同；
 构建时间、软件包源与构建参数都可能改变产物。自建后仍需核对 health、前端 bundle 并验证所用能力；
 需要官方原制品时，直接按官方 digest 拉取。</p>
 
 <h2>接入 compose</h2>
 <p>编辑 <code>deploy/selfhost/docker-compose.yml</code>，把 console 的
 <code>image:</code> 改为你的本地引用：</p>
-<pre><code>image: mergepilot-console:v0.2.0-beta.6-rc.35.6-rc5</code></pre>
+<pre><code>image: mergepilot-console:v0.2.0-beta.6-rc.35.6-rc6</code></pre>
 <p>其余配置不变。</p>
 
 <h2>离线 tar 途径</h2>
 <p>无法访问 GHCR 时，可使用离线 tar（SHA256 见
-<a href="downloads.html">下载与校验</a>）：<code>docker load -i mergepilot-console-v0.2.0-beta.6-rc.35.6-rc5-offline.tar.gz</code>，
+<a href="downloads.html">下载与校验</a>）：<code>docker load -i mergepilot-console-v0.2.0-beta.6-rc.35.6-rc6-offline.tar.gz</code>，
 先校验 tar 的 SHA256；加载后以同引擎的在线拉取记录比对，跨引擎不直接比较 image ID，
 详见<a href="downloads.html">下载与校验</a>。</p>
 </article>
 </main>
-<footer class="footer">MergePilot 0.2.0-beta.6-rc.35.6-rc5（预发布） · Apache-2.0</footer>
+<footer class="footer">MergePilot 0.2.0-beta.6-rc.35.6-rc6（预发布） · Apache-2.0</footer>
 </body>
 </html>
