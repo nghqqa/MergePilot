@@ -166,6 +166,25 @@ try {
     body: { provider_repo_id: 'R_1', owner: 'acme', name: 'app' } });
   ok('MU-B7 Contributor 不可绑定仓库 → 403', bobRepo.status === 403 && bobRepo.json?.error?.reason === 'action_not_granted');
 
+  // MU-B8（2026-10-21 成员管理发布条件固化）：fixture 关闭时旧成员演示写入口拒绝且零变更——
+  // 本端点直接建用户+绑 fixture: 身份，生产（MU_FIXTURES 未开）必须 403 且 app_user/
+  // external_identity 零行变化；真实成员准入走邀请，角色调整走 /role（不绑身份）。
+  {
+    const savedFx = process.env.MU_FIXTURES;
+    delete process.env.MU_FIXTURES;
+    const usersBefore = (await pool.query(`SELECT count(*)::int n FROM mu.app_user`)).rows[0].n;
+    const idsBefore = (await pool.query(`SELECT count(*)::int n FROM mu.external_identity`)).rows[0].n;
+    const r = await call('/api/mu/members', { method: 'POST', cookie: admin.cookie, csrf: admin.csrf,
+      body: { login: 'no-fixture-user', role: 'contributor' } });
+    const usersAfter = (await pool.query(`SELECT count(*)::int n FROM mu.app_user`)).rows[0].n;
+    const idsAfter = (await pool.query(`SELECT count(*)::int n FROM mu.external_identity`)).rows[0].n;
+    process.env.MU_FIXTURES = savedFx;
+    ok('MU-B8 fixture 关闭时成员演示写入口 → 403 fixtures_disabled（用户/身份零变更）',
+      r.status === 403 && r.json?.error?.reason === 'fixtures_disabled'
+        && usersBefore === usersAfter && idsBefore === idsAfter,
+      { status: r.status, users: `${usersBefore}->${usersAfter}`, ids: `${idsBefore}->${idsAfter}` });
+  }
+
   // ── MU-C*：仓库绑定 + 双 tenant 隔离 + 篡改 ──
   // platform_admin 无 manage_repository_binding（矩阵语义）——绑定由 maintainer 执行
   const adminBind = await call('/api/mu/repositories', { method: 'POST', cookie: admin.cookie, csrf: admin.csrf,
@@ -288,6 +307,16 @@ try {
     `SELECT count(*)::int n FROM mu.audit_event WHERE kind='MU_MEMBER_ROLE_SET'`)).rows[0].n;
   ok('MU-D9 同角色幂等 → 200 changed:false 且零新增审计',
     roleSame.status === 200 && roleSame.json?.changed === false && auditCountAfter === auditCountBefore);
+  // MU-D9b（2026-10-21 成员管理发布条件固化）：降权对既有会话实时生效——guard 每请求
+  // 现查 live membership，降权零重登即收窄动作面（撤销路径由 MU-D2 覆盖，本条补降权向）。
+  const demoteGus = await call('/api/mu/members/gus/role', { method: 'POST', cookie: admin.cookie, csrf: admin.csrf,
+    body: { role: 'contributor' } });
+  const gusSessionAfterDemote = await call('/api/mu/session', { cookie: gus.cookie });
+  ok('MU-D9b 降权实时生效：reviewer→contributor 后既有会话角色/动作面立即收窄（零重登）',
+    demoteGus.status === 200 && demoteGus.json?.changed === true
+      && gusSessionAfterDemote.status === 200 && gusSessionAfterDemote.json?.role === 'contributor'
+      && gusSessionAfterDemote.json?.actions?.includes('request_review') === false,
+    { role: gusSessionAfterDemote.json?.role });
   ok('MU-D10 非法角色词汇 → 400；platform_admin 目标 → 400 platform_admin_not_assignable（D-3：仅 DBA 直授）',
     (await call('/api/mu/members/gus/role', { method: 'POST', cookie: admin.cookie, csrf: admin.csrf,
       body: { role: 'superadmin' } })).status === 400
