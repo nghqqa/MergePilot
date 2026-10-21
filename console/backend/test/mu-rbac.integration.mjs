@@ -182,6 +182,29 @@ try {
     ok('MU-B8 fixture 关闭（生产形态）下管理员显式授权保持 200+审计（#474 契约锁定）',
       r.status === 200 && r.json?.membership?.role === 'maintainer' && audit >= 1, r.json);
   }
+  // MU-B8b/B8c（2026-10-21 权限契约审查）：members POST 与 /role 双入口守卫同强——
+  // 禁自改（cannot_change_self_role）与禁授 platform_admin（D-3 platform_admin_not_assignable）
+  // 在旧入口同样成立（审查前两者均可被旧入口绕过）。
+  ok('MU-B8b 旧入口禁自改：管理员对自己 login 显式授权 → 400 cannot_change_self_role（与 /role 同强）',
+    (await call('/api/mu/members', { method: 'POST', cookie: admin.cookie, csrf: admin.csrf,
+      body: { login: 'dev-pilot', role: 'maintainer' } })).json?.error?.reason === 'cannot_change_self_role');
+  ok('MU-B8c 旧入口禁授 platform_admin：D-3 在 members POST 同样成立 → 400 platform_admin_not_assignable',
+    (await call('/api/mu/members', { method: 'POST', cookie: admin.cookie, csrf: admin.csrf,
+      body: { login: 'someuser', role: 'platform_admin' } })).json?.error?.reason === 'platform_admin_not_assignable');
+  // MU-B8d（决策点实证）：对 revoked 成员显式授权=复活（store 既有语义，刻意保留——
+  // 这是唯一的管理员恢复通道），审计必须带 from_role/prev_state 供追溯。
+  {
+    await call('/api/mu/members', { method: 'POST', cookie: admin.cookie, csrf: admin.csrf,
+      body: { login: 'gale', role: 'contributor' } });
+    await call('/api/mu/members/gale/revoke', { method: 'POST', cookie: admin.cookie, csrf: admin.csrf });
+    const revive = await call('/api/mu/members', { method: 'POST', cookie: admin.cookie, csrf: admin.csrf,
+      body: { login: 'gale', role: 'contributor' } });
+    const audit = (await pool.query(`SELECT detail FROM mu.audit_event WHERE kind='MU_MEMBER_ADDED'
+        AND detail->>'target_login'='gale' ORDER BY seq DESC LIMIT 1`)).rows[0]?.detail;
+    ok('MU-B8d 对 revoked 成员显式授权=复活（保留的管理员恢复通道）且审计带 from_role/prev_state',
+      revive.status === 200 && revive.json?.membership?.role === 'contributor'
+        && audit?.from_role === 'contributor' && audit?.prev_state === 'revoked', audit);
+  }
 
   // ── MU-C*：仓库绑定 + 双 tenant 隔离 + 篡改 ──
   // platform_admin 无 manage_repository_binding（矩阵语义）——绑定由 maintainer 执行
