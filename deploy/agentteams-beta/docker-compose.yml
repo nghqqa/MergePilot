@@ -21,7 +21,10 @@ name: agentteams-beta
 
 services:
   at-controller:
-    image: agentteams/agentteams-embedded:223ddc2
+    # 2026-10-21 校准：与生产实跑身份对齐（恢复配方=本文件，不再是历史模板）。
+    # 验证过的镜像 ID=sha256:5f3037b35b2c508e65c5f117f0b793618fe0ae459067446e503632e17d7e9ecc
+    # （tag 1.2.4-cas；223ddc2 为旧代控制器，worker CR spec.env/REST 行为均不同——勿回退）。
+    image: agentteams/agentteams-embedded:1.2.4-cas
     container_name: agentteams-beta-ctrl
     hostname: agentteams-beta-ctrl
     restart: unless-stopped
@@ -35,11 +38,13 @@ services:
         #    Connection error（2026-10-21 MT_REPLY_TIMEOUT 事故根因三）。
         aliases: [agentteams-beta-controller, agentteams-beta-matrix, aigw-local.agentteams.io]
     ports:
-      # 仅 controller API 对 MergePilot 网络开放；host 发布仅限回环（Beta 单机形态）
-      - "127.0.0.1:${ATB_API_PORT:-28462}:8090"
+      # 生产实形态：三端口仅回环发布（2026-10-21 与 live inspect 校准）
+      - "127.0.0.1:${ATB_MATRIX_PORT:-18186}:6167"
+      - "127.0.0.1:${ATB_API_PORT:-18190}:8090"
+      - "127.0.0.1:${ATB_MINIO_PORT:-19100}:9000"
     volumes:
       - at-data:/data
-      - /run/host-services/docker.proxy.sock:/var/run/docker.sock:ro
+      - /run/host-services/docker.proxy.sock:/var/run/docker.sock
     environment:
       AGENTTEAMS_ADMIN_USER: agentteams-beta-admin
       AGENTTEAMS_ADMIN_PASSWORD: ${ATB_ADMIN_PASSWORD}
@@ -52,10 +57,12 @@ services:
       AGENTTEAMS_DEFAULT_MODEL: deepseek-chat
       AGENTTEAMS_OPENAI_API_KEY: ${ATB_LLM_KEY}
       AGENTTEAMS_MANAGER_IMAGE: agentteams/manager:223ddc2
-      AGENTTEAMS_COPAW_WORKER_IMAGE: agentteams/copaw-worker:223ddc2-agentloop-v5fix
+      # 2026-10-21 校准：copaw 已退役，qwenpaw 为现役 worker 运行时（digest 钉住与生产逐字节一致）
+      AGENTTEAMS_COPAW_WORKER_IMAGE: agentteams-qwenpaw-worker@sha256:7298e80a695f67e9f900dac2275822e81f75b4fad5314e662d45f14ea2210933
+      AGENTTEAMS_QWENPAW_WORKER_IMAGE: agentteams-qwenpaw-worker@sha256:7298e80a695f67e9f900dac2275822e81f75b4fad5314e662d45f14ea2210933
       AGENTTEAMS_WORKER_IMAGE: agentteams/worker-agent:223ddc2
       AGENTTEAMS_MANAGER_RUNTIME: openclaw
-      AGENTTEAMS_DEFAULT_WORKER_RUNTIME: copaw
+      AGENTTEAMS_DEFAULT_WORKER_RUNTIME: qwenpaw
       AGENTTEAMS_RESOURCE_PREFIX: agentteams-beta-
       AGENTTEAMS_MODEL_MAX_TOKENS: "8000"
       AGENTTEAMS_MATRIX_DOMAIN: agentteams-beta-matrix:6167
