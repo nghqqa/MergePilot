@@ -5,7 +5,10 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { MuPrDetailContent } from './MuPrDetailContent.jsx';
 import { RunTracePanel } from '../components/RunTracePanel.jsx';
 import { readCsrfCookie } from '../api-live.js';
+import { apiErrorCopy } from '../api-error-copy.js';
 import { inviteLinkScope } from '../invite-link.js';
+import { RoleMatrixPanel } from '../components/RoleMatrixPanel.jsx';
+import { RBAC_ACTIONS } from '../rbac-matrix.js';
 
 // 多用户面（Developer Edition Beta onboarding）。
 // 渐进式工作流：按后端真实状态只突出当前一步（登录 → 成员资格 → 安装 GitHub App →
@@ -17,17 +20,11 @@ const ROLE_TONE = {
   platform_admin: 'purple', auditor: 'orange',
 };
 
-// 权限动作的人话标签；raw action id 只出现在"技术详情"中
-const ACTION_LABELS = {
-  read_repository: '查看仓库',
-  read_pull_request: '查看 PR',
-  read_code_content: '读取代码内容',
-  rag_query: 'RAG 检索',
-  request_review: '发起只读审查',
-  decide_review: '审批决定（通过/驳回）',
-  request_repair: '发起受控修复',
-  manage_repository_binding: '管理仓库绑定',
-};
+// 权限动作的人话标签——单一来源 rbac-matrix.js（与后端契约测试锁定）；raw action id 只出现在"技术详情"中
+const ACTION_LABELS = Object.fromEntries(RBAC_ACTIONS.map((a) => [a.id, a.label]));
+
+// 角色下拉可授予的角色——与后端 /role 端点一致：platform_admin 不可经页面授予（D-3，仅 DBA 直授）
+const ASSIGNABLE_ROLES = ['contributor', 'reviewer', 'maintainer', 'auditor'];
 
 const LOGIN_ERROR_MAP = {
   not_invited: '身份未被邀请（无公共自动注册）——请联系管理员以你的平台数字 user id 创建邀请（GitHub 或 Gitee）',
@@ -984,6 +981,52 @@ export default function MultiUserPage() {
 
   const can = (action) => Boolean(session?.actions?.includes(action));
 
+  // ── 成员管理操作（仅 manage_membership 能力渲染；授权一律由后端强制） ──
+  const [memberBusyLogin, setMemberBusyLogin] = useState(null);
+  const [memberActionErr, setMemberActionErr] = useState(null);
+  const reloadMembers = useCallback(async () => {
+    const m = await muGet('/api/mu/members');
+    if (m.status === 200) setMembers(m.body?.members ?? []);
+  }, []);
+  const changeMemberRole = useCallback(async (login, role) => {
+    setMemberBusyLogin(login); setMemberActionErr(null);
+    try {
+      const r = await muPost(`/api/mu/members/${encodeURIComponent(login)}/role`, { role });
+      if (r.status === 200 && r.body?.ok) await reloadMembers();
+      else setMemberActionErr(apiErrorCopy({ status: r.status, message: r.body?.error?.reason }));
+    } finally { setMemberBusyLogin(null); }
+  }, [reloadMembers]);
+  const revokeMember = useCallback(async (login) => {
+    setMemberBusyLogin(login); setMemberActionErr(null);
+    try {
+      const r = await muPost(`/api/mu/members/${encodeURIComponent(login)}/revoke`);
+      if (r.status === 200 && r.body?.ok) await reloadMembers();
+      else setMemberActionErr(apiErrorCopy({ status: r.status, message: r.body?.error?.reason }));
+    } finally { setMemberBusyLogin(null); }
+  }, [reloadMembers]);
+  // 自己的行不出操作控件（后端同语义双封：cannot_change_self_role / cannot_revoke_self）
+  const memberOpCell = (row) => {
+    if (row.login === session?.user?.login) {
+      return <Typography.Text type="secondary">（自己）</Typography.Text>;
+    }
+    return (
+      <Space size={4}>
+        <Select size="small" value={row.role} style={{ width: 128 }}
+          aria-label={`调整 ${row.login} 的角色`}
+          disabled={memberBusyLogin === row.login}
+          onChange={(v) => changeMemberRole(row.login, v)}
+          options={ASSIGNABLE_ROLES.map((r) => ({ value: r, label: r }))} />
+        <Popconfirm title={`撤销 ${row.login} 的成员资格？`}
+          description="撤销后其既有会话立即失效；如需恢复请重新邀请或联系 DBA。"
+          okText="撤销" cancelText="取消"
+          onConfirm={() => revokeMember(row.login)}>
+          <Button size="small" danger disabled={memberBusyLogin === row.login}>撤销</Button>
+        </Popconfirm>
+      </Space>
+    );
+  };
+
+
   const activeBindings = useMemo(
     () => (repos ?? []).filter((r) => r.binding_id && r.installation_state === 'active'),
     [repos]);
@@ -1236,14 +1279,20 @@ export default function MultiUserPage() {
 
           <section className="section">
             <details className="tech-details">
-              <summary>成员与邀请（成员 {members?.length ?? 0}，列表只读）</summary>
+              <summary>成员与邀请（成员 {members?.length ?? 0} · 权限矩阵 · 角色管理）</summary>
               <div className="tech-body">
+                <RoleMatrixPanel />
+                {memberActionErr && (
+                  <Alert type={memberActionErr.tone === 'error' ? 'error' : 'warning'} showIcon style={{ marginBottom: 8 }}
+                    message={memberActionErr.text} description={memberActionErr.detail || undefined} />
+                )}
                 <Table rowKey="membership_id" size="small" pagination={false} dataSource={members ?? []} scroll={{ x: true }}
                   columns={[
                     { title: '成员', dataIndex: 'login' },
                     { title: '角色', dataIndex: 'role', render: (v) => <Tag color={ROLE_TONE[v] ?? 'default'}>{v}</Tag> },
                     { title: '状态', dataIndex: 'state' },
                     { title: '加入时间', dataIndex: 'created_at', render: (v) => String(v ?? '').slice(0, 19).replace('T', ' ') },
+                    ...(can('manage_membership') ? [{ title: '操作', render: memberOpCell }] : []),
                   ]} />
                 {can('manage_membership') && <InviteAdminPanel session={session} />}
               </div>
