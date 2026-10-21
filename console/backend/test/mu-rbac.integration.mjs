@@ -166,6 +166,46 @@ try {
     body: { provider_repo_id: 'R_1', owner: 'acme', name: 'app' } });
   ok('MU-B7 Contributor 不可绑定仓库 → 403', bobRepo.status === 403 && bobRepo.json?.error?.reason === 'action_not_granted');
 
+  // MU-B8（2026-10-21 发布条件核查修正）：fixture 关闭（生产形态）下管理员显式授权契约锁定——
+  // #474/eager-init B7/B7c 契约：members POST 是管理员显式授权路径（平台管理员可预置
+  // 成员关系，绑定 fixture 身份；该身份在生产不可登录——MU_ALLOW_FIXTURE_LOGIN 默认关），
+  // 必须保持 200+审计，不得视为演示面关闭。生产侧真实安全保障=manage_membership 唯一授权
+  // （MU-B6）+CSRF（MU-B1）+审计（本条）+fixture 登录默认关（MU-A7）。
+  {
+    const savedFx = process.env.MU_FIXTURES;
+    delete process.env.MU_FIXTURES;
+    const r = await call('/api/mu/members', { method: 'POST', cookie: admin.cookie, csrf: admin.csrf,
+      body: { login: 'explicit-grant-user', role: 'maintainer' } });
+    const audit = (await pool.query(`SELECT count(*)::int n FROM mu.audit_event
+        WHERE kind='MU_MEMBER_ADDED' AND detail->>'target_login'='explicit-grant-user'`)).rows[0].n;
+    process.env.MU_FIXTURES = savedFx;
+    ok('MU-B8 fixture 关闭（生产形态）下管理员显式授权保持 200+审计（#474 契约锁定）',
+      r.status === 200 && r.json?.membership?.role === 'maintainer' && audit >= 1, r.json);
+  }
+  // MU-B8b/B8c（2026-10-21 权限契约审查）：members POST 与 /role 双入口守卫同强——
+  // 禁自改（cannot_change_self_role）与禁授 platform_admin（D-3 platform_admin_not_assignable）
+  // 在旧入口同样成立（审查前两者均可被旧入口绕过）。
+  ok('MU-B8b 旧入口禁自改：管理员对自己 login 显式授权 → 400 cannot_change_self_role（与 /role 同强）',
+    (await call('/api/mu/members', { method: 'POST', cookie: admin.cookie, csrf: admin.csrf,
+      body: { login: 'dev-pilot', role: 'maintainer' } })).json?.error?.reason === 'cannot_change_self_role');
+  ok('MU-B8c 旧入口禁授 platform_admin：D-3 在 members POST 同样成立 → 400 platform_admin_not_assignable',
+    (await call('/api/mu/members', { method: 'POST', cookie: admin.cookie, csrf: admin.csrf,
+      body: { login: 'someuser', role: 'platform_admin' } })).json?.error?.reason === 'platform_admin_not_assignable');
+  // MU-B8d（决策点实证）：对 revoked 成员显式授权=复活（store 既有语义，刻意保留——
+  // 这是唯一的管理员恢复通道），审计必须带 from_role/prev_state 供追溯。
+  {
+    await call('/api/mu/members', { method: 'POST', cookie: admin.cookie, csrf: admin.csrf,
+      body: { login: 'gale', role: 'contributor' } });
+    await call('/api/mu/members/gale/revoke', { method: 'POST', cookie: admin.cookie, csrf: admin.csrf });
+    const revive = await call('/api/mu/members', { method: 'POST', cookie: admin.cookie, csrf: admin.csrf,
+      body: { login: 'gale', role: 'contributor' } });
+    const audit = (await pool.query(`SELECT detail FROM mu.audit_event WHERE kind='MU_MEMBER_ADDED'
+        AND detail->>'target_login'='gale' ORDER BY seq DESC LIMIT 1`)).rows[0]?.detail;
+    ok('MU-B8d 对 revoked 成员显式授权=复活（保留的管理员恢复通道）且审计带 from_role/prev_state',
+      revive.status === 200 && revive.json?.membership?.role === 'contributor'
+        && audit?.from_role === 'contributor' && audit?.prev_state === 'revoked', audit);
+  }
+
   // ── MU-C*：仓库绑定 + 双 tenant 隔离 + 篡改 ──
   // platform_admin 无 manage_repository_binding（矩阵语义）——绑定由 maintainer 执行
   const adminBind = await call('/api/mu/repositories', { method: 'POST', cookie: admin.cookie, csrf: admin.csrf,
@@ -288,6 +328,16 @@ try {
     `SELECT count(*)::int n FROM mu.audit_event WHERE kind='MU_MEMBER_ROLE_SET'`)).rows[0].n;
   ok('MU-D9 同角色幂等 → 200 changed:false 且零新增审计',
     roleSame.status === 200 && roleSame.json?.changed === false && auditCountAfter === auditCountBefore);
+  // MU-D9b（2026-10-21 成员管理发布条件固化）：降权对既有会话实时生效——guard 每请求
+  // 现查 live membership，降权零重登即收窄动作面（撤销路径由 MU-D2 覆盖，本条补降权向）。
+  const demoteGus = await call('/api/mu/members/gus/role', { method: 'POST', cookie: admin.cookie, csrf: admin.csrf,
+    body: { role: 'contributor' } });
+  const gusSessionAfterDemote = await call('/api/mu/session', { cookie: gus.cookie });
+  ok('MU-D9b 降权实时生效：reviewer→contributor 后既有会话角色/动作面立即收窄（零重登）',
+    demoteGus.status === 200 && demoteGus.json?.changed === true
+      && gusSessionAfterDemote.status === 200 && gusSessionAfterDemote.json?.role === 'contributor'
+      && gusSessionAfterDemote.json?.actions?.includes('request_review') === false,
+    { role: gusSessionAfterDemote.json?.role });
   ok('MU-D10 非法角色词汇 → 400；platform_admin 目标 → 400 platform_admin_not_assignable（D-3：仅 DBA 直授）',
     (await call('/api/mu/members/gus/role', { method: 'POST', cookie: admin.cookie, csrf: admin.csrf,
       body: { role: 'superadmin' } })).status === 400

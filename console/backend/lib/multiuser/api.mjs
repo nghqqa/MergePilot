@@ -1891,17 +1891,31 @@ export async function muApi(req, res, ctx) {
         return sendJson(res, 400, { error: { reason: 'login + role(五角色词汇) required' } });
       }
       const subject = String(body.fixture_subject || `fixture:${login}`);
+      // 双入口守卫对齐（2026-10-21 权限契约审查）：members POST 与 /role 是同权
+      // manage_membership 的两个入口，守卫必须同强——
+      //  * 禁自改（防最后一名管理员自锁，与 cannot_revoke_self/cannot_change_self_role 同理）；
+      //  * 禁授 platform_admin（D-3：仅 DBA SQL 直授；邀请 v23 CHECK 同界）。
+      // 撤销成员经本端点显式授权=复活（store 既有语义：授权操作的明确意图）——
+      // 保留，但审计必须带 prev_state 供追溯。
       const existingByIdentity = await store.getUserByIdentity('fixture', subject);
       let target = await store.getUserByLogin(login);
       if (existingByIdentity && (!target || existingByIdentity.user_id !== target.user_id)) {
         return sendJson(res, 409, { error: { reason: 'identity_already_bound' } });
       }
+      if (target && target.user_id === mu.userId) {
+        return sendJson(res, 400, { error: { reason: 'cannot_change_self_role' } });
+      }
+      if (role === 'platform_admin') {
+        return sendJson(res, 400, { error: { reason: 'platform_admin_not_assignable' } });
+      }
       if (!target) target = await store.ensureUser({ login, displayName: String(body.display_name || login) });
       await store.ensureIdentity({ userId: target.user_id, provider: 'fixture', subject });
+      const prev = await store.getMembership(mu.tenantId, target.user_id);
       const membership = await store.ensureMembership({ tenantId: mu.tenantId,
         userId: target.user_id, role, grantedBy: mu.userId });
       await store.audit('MU_MEMBER_ADDED', { tenantId: mu.tenantId, actorUserId: mu.userId,
-        detail: { target_login: login, role } });
+        detail: { target_login: login, role,
+          ...(prev ? { from_role: prev.role, prev_state: prev.state } : {}) } });
       return sendJson(res, 200, { ok: true, membership: { user_id: target.user_id, login, role: membership.role } });
     }
     const revokeMatch = p.match(/^\/api\/mu\/members\/([^/]+)\/revoke$/);
