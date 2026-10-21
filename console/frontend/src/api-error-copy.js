@@ -18,6 +18,17 @@ export function apiErrorCopy({ status, message } = {}) {
   if (status === 404) {
     return { tone: 'warning', text: '不存在或无权访问', detail: '请确认编号是否正确；如应存在而看不到，请联系管理员确认权限。' };
   }
+  if (status === 400) {
+    if (code === 'cannot_change_self_role') {
+      return { tone: 'warning', text: '不能修改自己的角色', detail: '为防误操作锁死管理入口，页面上不能调整自己的角色；如需变更请联系其他平台管理员或 DBA。' };
+    }
+    if (code === 'cannot_revoke_self') {
+      return { tone: 'warning', text: '不能撤销自己的成员资格', detail: '为防误操作锁死管理入口，页面上不能撤销自己；如需变更请联系其他平台管理员或 DBA。' };
+    }
+    if (code === 'platform_admin_not_assignable') {
+      return { tone: 'warning', text: '不能授予 platform_admin', detail: 'platform_admin 仅限 DBA 直接授权——页面上的角色选项不含它（与邀请同一条边界）。' };
+    }
+  }
   if (status === 409) {
     return { tone: 'warning', text: '当前状态不允许此操作', detail: '请刷新页面按最新状态重试。' };
   }

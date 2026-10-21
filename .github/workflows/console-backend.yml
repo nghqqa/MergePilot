@@ -240,6 +240,12 @@ jobs:
         run: node --test test/mu-page.smoke.test.mjs
         working-directory: console/frontend
 
+      # 前端权限矩阵契约（成员管理波）：src/rbac-matrix.js 与后端 authz.mjs 逐项锁定
+      # （角色/动作/五角色授权面/需绑定标记）——漂移即红，防"页面矩阵说谎"
+      - name: Frontend rbac matrix contract (4 scenarios)
+        run: node --test test/rbac-matrix.test.mjs
+        working-directory: console/frontend
+
       # 多用户 OAuth 登录盒冒烟（Wave 2A）：无会话态 mu_login_error 人话映射 +
       # 联系管理员/数字 user id 指引上屏（审计 G-1：not_invited 提示此前不可达，
       # 2026-10-03 修复后纳入显式门禁防回归）

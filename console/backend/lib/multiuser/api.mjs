@@ -1925,6 +1925,40 @@ export async function muApi(req, res, ctx) {
         detail: { target_login: target.login } });
       return sendJson(res, 200, { ok: true, revoked: true });
     }
+    // 角色调整（干净路径：只改既有 membership 行——不建用户、不绑 fixture identity、
+    // 不复活 revoked）。与 D-3 对齐：platform_admin 不可经 API 授予（仅 DBA SQL 直授）。
+    const roleMatch = p.match(/^\/api\/mu\/members\/([^/]+)\/role$/);
+    if (roleMatch && req.method === 'POST') {
+      if (!csrfOk()) return sendJson(res, 403, { error: { reason: 'csrf_required' } });
+      const g = await guard('manage_membership');
+      if (g.denied) return sendJson(res, g.denied.status, g.denied.body);
+      const body = await json();
+      const role = String(body.role || '');
+      if (!MU_ROLES.includes(role)) {
+        return sendJson(res, 400, { error: { reason: 'role(五角色词汇) required' } });
+      }
+      if (role === 'platform_admin') {
+        return sendJson(res, 400, { error: { reason: 'platform_admin_not_assignable' } });
+      }
+      const target = await store.getUserByLogin(decodeURIComponent(roleMatch[1]));
+      if (!target) return sendJson(res, 404, { error: { reason: 'member_not_found' } });
+      if (target.user_id === mu.userId) {
+        // 与 cannot_revoke_self 同理：禁止自改角色（防最后一名管理员自锁）
+        return sendJson(res, 400, { error: { reason: 'cannot_change_self_role' } });
+      }
+      const current = await store.getMembership(mu.tenantId, target.user_id);
+      if (!current) return sendJson(res, 404, { error: { reason: 'member_not_found' } });
+      if (current.role === role) {
+        // 幂等：同角色不改写、不审计（无状态变化）
+        return sendJson(res, 200, { ok: true, changed: false,
+          membership: { user_id: target.user_id, login: target.login, role: current.role, state: current.state } });
+      }
+      const updated = await store.setMembershipRole({ tenantId: mu.tenantId, userId: target.user_id, role });
+      await store.audit('MU_MEMBER_ROLE_SET', { tenantId: mu.tenantId, actorUserId: mu.userId,
+        detail: { target_login: target.login, from_role: current.role, to_role: role } });
+      return sendJson(res, 200, { ok: true, changed: true,
+        membership: { user_id: target.user_id, login: target.login, role: updated.role, state: updated.state } });
+    }
 
     // ── 仓库与绑定 ──
     if (p === '/api/mu/repositories' && req.method === 'GET') {
