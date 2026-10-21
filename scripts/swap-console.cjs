@@ -461,12 +461,12 @@ async function swapConsole(argv, deps = {}) {
       if (hasPgDsn) {
         const probeSrc2 = fs.readFileSync(path.join(__dirname, 'swap-health-probe.js'), 'utf8');
         let rbLive = !hasPgDsn;
-        for (let i = 0; !rbLive && i < 6; i++) {
+        for (let i = 0; !rbLive && i < 36; i++) {
           const h = exec(['exec', containerName, 'node', '-e', probeSrc2]);
           const out = String(h.stdout || '');
-          log('回滚健康检查 ' + (i + 1) + '/6: ' + (out.trim() || '（exec 无输出）').slice(0, 150));
+          log('回滚健康检查 ' + (i + 1) + '/36: ' + (out.trim() || '（exec 无输出）').slice(0, 150));
           if (/HEALTH live/.test(out) && !(isMultiuserEnv && /mu_ready=false/.test(out))) { rbLive = true; break; }
-          if (i < 5) await new Promise((r) => setTimeout(r, 1000));
+          if (i < 35) await new Promise((r) => setTimeout(r, 2000));
         }
         if (!rbLive) {
           log('🛑 回滚容器健康未达 live/mu_ready（数据库或依赖未就绪）——需运维立即介入核查。');
@@ -494,11 +494,11 @@ async function swapConsole(argv, deps = {}) {
   // 丢弃的教训见该文件头注释；rc.35.2 排障终局实录）。
   const probeSrc = fs.readFileSync(path.join(__dirname, 'swap-health-probe.js'), 'utf8');
   let live = !hasPgDsn; // 无 PG DSN：无需 live 断言（视为通过）
-  for (let i = 0; !live && i < 12; i++) {
+  for (let i = 0; !live && i < 48; i++) {
     if (containerName) {
       const h = exec(['exec', containerName, 'node', '-e', probeSrc]);
       const out = String(h.stdout || '') + (h.status !== 0 ? ' [exit=' + h.status + ' err=' + String(h.stderr || '').slice(0, 160) + ']' : '');
-      log('健康检查第 ' + (i + 1) + '/12 轮: ' + (out.trim() ? out.trim().slice(0, 170) : '（exec 无输出）'));
+      log('健康检查第 ' + (i + 1) + '/48 轮: ' + (out.trim() ? out.trim().slice(0, 170) : '（exec 无输出）'));
       if (/HEALTH live/.test(out)) {
         // rc3 事故回归锁：data_mode=live 之外，multiuser 部署还要求 mu_schema_ready=true
         // （掩码 DSN 事故实证：live 探针曾误绿——DSN 坏时 health 仍可返回部分字段）
