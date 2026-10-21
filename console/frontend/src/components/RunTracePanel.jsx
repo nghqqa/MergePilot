@@ -91,7 +91,7 @@ function KindText({ kind }) {
 function TraceDisclosures() {
   // 2026-10-20 可读性：三条边界说明默认收起（文本保留在 DOM——语义与测试契约不变）
   return (
-    <details className="trace-notes-details">
+    <details className="tech-details">
       <summary>边界说明</summary>
       <ul className="trace-notes">
         <li>仅显示调用元数据与摘要，不包含 prompt、响应、代码正文或 RAG 文档正文。</li>

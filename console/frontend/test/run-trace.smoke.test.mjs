@@ -251,6 +251,31 @@ test('真实空集：Skill/RAG 各自诚实空文案，计数为 0，不冒充�
   } finally { await page.cleanup(); }
 });
 
+// ── 2b. 边界说明键盘可达性（#496 终审）：原生 details/summary——Enter 可展开/收起，
+// 不以『文本仍在 DOM』作为可交互验收 ──
+test('边界说明：原生 details/summary，默认收起，Enter 键盘可展开再收起', async () => {
+  ROUTES = traceRoutes({
+    skill: okRun([], 0), rag: okRun([], 0),
+    summary: [200, { skill: { total: 0, by_status: {}, by_role: {} }, rag: { total: 0, by_status: {} } }],
+  });
+  const page = await renderPanel();
+  try {
+    const det = page.el.querySelector('details.tech-details');
+    assert.ok(det, '边界说明为原生 details 元素');
+    const sum = det.querySelector('summary');
+    assert.ok(sum, '原生 summary（浏览器原生键盘焦点与 aria 语义）');
+    assert.equal(det.open, false, '默认收起');
+    // 浏览器键盘语义：summary 上 Enter 映射为 click 激活（happy-dom 不实现该默认动作——
+    // 显式模拟以锁定「原生元素可经键盘路径激活」的组件契约；真实浏览器原生支持）
+    sum.dispatchEvent(new domWindow.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    sum.click();
+    assert.equal(det.open, true, '激活后展开（键盘路径=click）');
+    sum.click();
+    assert.equal(det.open, false, '再激活收起');
+    for (const d of DISCLOSURES) assert.ok(det.textContent.includes(d), '展开内容承载边界文案');
+  } finally { await page.cleanup(); }
+});
+
 // ── 3. legacy not_available ──
 test('legacy 运行：not_available=true → 明确"v2 之前不可用"文案，不伪造 v2 数据', async () => {
   ROUTES = traceRoutes({ skill: [200, LEGACY_BODY], rag: [200, LEGACY_BODY] });
