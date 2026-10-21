@@ -26,13 +26,13 @@
 <main>
 
 <section class="hero">
-  <div class="hero-badge">v0.2.0-beta.6-rc.35.6-rc5（预发布） · Apache-2.0 · 开源自托管</div>
+  <div class="hero-badge">v0.2.0-beta.6-rc.35.6-rc6（预发布） · Apache-2.0 · 开源自托管</div>
   <h1>PR 事件接入，自动发起审查。<br><em>每一步写入都归维护者确认。</em></h1>
   <p class="lead">MergePilot 是自托管的多 Agent PR 审修闭环。静态规则与模型审查汇集发现，可选 RAG 提供规范参考——结论落在你的 Console；维护者逐次「预览 → 确认」完成评论、机器人提交修复与合并，全程审计留痕。模型与修复验证按部署配置启用，未执行会如实标注。</p>
   <div class="cta">
     <a class="btn btn-primary" href="user-guide.html">开始使用</a>
     <a class="btn btn-outline" href="quickstart.html">部署自己的实例</a>
-    <a class="btn btn-outline" href="downloads.html">下载 rc.35.6-rc5（预发布）</a>
+    <a class="btn btn-outline" href="downloads.html">下载 rc.35.6-rc6（预发布）</a>
     <a class="btn btn-outline" href="build-from-source.html">源码构建</a>
   </div>
   <div style="margin-top:32px;max-width:680px;margin-inline:auto;">
@@ -46,7 +46,7 @@
 <div class="stats" role="table" aria-label="关键指标">
   <div class="stat"><div class="val">4</div><div class="lbl">Agent 角色</div><div class="stat-sub">Leader / Reviewer / Fixer / Verifier</div></div>
   <div class="stat"><div class="val">v29</div><div class="lbl">Schema 版本</div></div>
-  <div class="stat"><div class="val">0</div><div class="lbl">rc.35.6-rc5 发布时 HIGH / CRITICAL</div><div class="stat-sub">另有 0 MEDIUM · secrets=0 · <a href="downloads.html">扫描记录</a></div></div>
+  <div class="stat"><div class="val">0</div><div class="lbl">rc.35.6-rc6 发布时 HIGH / CRITICAL</div><div class="stat-sub">另有 0 MEDIUM · secrets=0 · <a href="downloads.html">扫描记录</a></div></div>
   <div class="stat"><div class="val">8</div><div class="lbl">租户隔离表</div></div>
   <div class="stat"><div class="val">100%</div><div class="lbl">自托管</div></div>
 </div>
@@ -97,7 +97,7 @@
     <div class="card">
       <div class="icon">📦</div>
       <h3>可验证的供应链</h3>
-      <p>GHCR 不可变 digest 镜像 + 离线 tar + CycloneDX SBOM（rc.35.6-rc5：47 组件）。该制品发布时 trivy 扫描为 0 HIGH/CRITICAL、0 MEDIUM、secrets=0；记录与 SHA256SUMS 见<a href="downloads.html">下载与校验</a>，不构成永久无漏洞保证。</p>
+      <p>GHCR 不可变 digest 镜像 + 离线 tar + CycloneDX SBOM（rc.35.6-rc6：47 组件）。该制品发布时 trivy 扫描为 0 HIGH/CRITICAL、0 MEDIUM、secrets=0；记录与 SHA256SUMS 见<a href="downloads.html">下载与校验</a>，不构成永久无漏洞保证。</p>
     </div>
     <div class="card">
       <div class="icon">🛡️</div>
@@ -121,7 +121,7 @@
   <h2 class="section-title">快速开始</h2>
   <p class="section-sub">以下为部署命令；还需完成配置、首管理员初始化与仓库接入。前置条件见 <a href="quickstart.html">快速开始</a>；受邀成员直接读<a href="user-guide.html">首次使用</a>。</p>
   <pre><code>git clone https://github.com/nghqqa/MergePilot.git
-	cd MergePilot &amp;&amp; git checkout v0.2.0-beta.6-rc.35.6-rc5
+	cd MergePilot &amp;&amp; git checkout v0.2.0-beta.6-rc.35.6-rc6
 cd deploy/selfhost
 cp .env.example .env        <span style="color:#5aa39b"># 填必填项（GitHub App 两件套 + LLM 端点）</span>
 node preflight.mjs          <span style="color:#5aa39b"># 一键只读检查，关键项失败即退出</span>
@@ -130,6 +130,6 @@ curl http://127.0.0.1:48500/api/health</code></pre>
   <p style="margin-top:16px;"><a href="quickstart.html">完整快速开始 →</a>&nbsp;&nbsp;<a href="downloads.html#release-scope">下载与发布范围 →</a></p>
 </section>
 </main>
-<footer class="footer">MergePilot 0.2.0-beta.6-rc.35.6-rc5（预发布） · Apache-2.0 · 自托管发行版 · 本站为静态文档，不提供托管服务</footer>
+<footer class="footer">MergePilot 0.2.0-beta.6-rc.35.6-rc6（预发布） · Apache-2.0 · 自托管发行版 · 本站为静态文档，不提供托管服务</footer>
 </body>
 </html>
