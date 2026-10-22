@@ -144,9 +144,9 @@ export async function startMergepilot(argv, deps = {}) {
     // ── 生产前置（缺失即报错，不宣称自动重建） ──
     const missing = precheckFailures({
       secretFiles: [
-        path.join(deps.secretDir ?? defaultSecretDir(), 'beta-mp-console.env'),
-        path.join(deps.secretDir ?? defaultSecretDir(), 'beta-mp-pg.env'),
-        path.join(deps.secretDir ?? defaultSecretDir(), 'github-app-key.pem'),
+        path.join(envGet('SECRET_DIR') ?? deps.secretDir ?? defaultSecretDir(), 'beta-mp-console.env'),
+        path.join(envGet('SECRET_DIR') ?? deps.secretDir ?? defaultSecretDir(), 'beta-mp-pg.env'),
+        path.join(envGet('SECRET_DIR') ?? deps.secretDir ?? defaultSecretDir(), 'github-app-key.pem'),
       ],
       modelManifest: 'D:/goai/prod-data/rag-models/bge-m3/manifest.json',
       volumes: ['f2c57d69cc0e9b83a2440030b86abfb1f07ced641ce0c68ecdaa3c26efae1365', 'prod-keystore-vol'],
@@ -172,7 +172,7 @@ export async function startMergepilot(argv, deps = {}) {
 
   // ── 私钥注入（多行 PEM；零回显；结束/失败路径均从进程 env 移除） ──
   if (isProduction) {
-    const pemPath = path.join(secretDir, 'github-app-key.pem');
+    const pemPath = path.join(envGet('SECRET_DIR') ?? secretDir, 'github-app-key.pem');
     envSet('MU_GITHUB_APP_PRIVATE_KEY', fs.readFileSync(pemPath, 'utf8'));
   }
   const cleanupEnv = () => { envDel('MU_GITHUB_APP_PRIVATE_KEY'); };
@@ -203,7 +203,10 @@ export async function startMergepilot(argv, deps = {}) {
         log(`健康检查 ${i + 1}/48: ${g.why}（等待）`);
       }
       if (!ok) return await failWith(cleanupEnv, '健康门 4 分钟未过：' + lastWhy);
-      // 执行器双探针
+      // 执行器双探针（iso 预览跳过——隔离环境不接 atnet，不探生产容器）
+      if (parsed.isoPreview) {
+        log('iso 预览：执行器/bge 检查跳过（隔离环境不接 atnet，属预期边界）');
+      }
       const probes = [];
       for (const p of ['workers', 'projects?limit=1']) {
         const r = exec(['exec', 'beta-mp-console', 'node', '-e',
@@ -211,14 +214,18 @@ export async function startMergepilot(argv, deps = {}) {
         probes.push({ probe: p, status: Number(String(r.stdout || '').trim()) });
       }
       const eg = executorGateOk(probes);
-      if (!eg.ok) return await failWith(cleanupEnv, '执行器探针失败: ' + JSON.stringify(eg.bad));
-      log('执行器双探针 200 ✓');
-      // bge 健康与模型身份（模型清单在位 + 容器 healthy）
-      const bgeHealth = exec(['inspect', '--format', '{{.State.Health.Status}}', 'beta-bge-sidecar']);
-      if (String(bgeHealth.stdout || '').trim() !== 'healthy') {
-        return await failWith(cleanupEnv, 'bge-sidecar 未 healthy');
+      if (!eg.ok && !parsed.isoPreview) {
+        return await failWith(cleanupEnv, '执行器探针失败: ' + JSON.stringify(eg.bad));
       }
-      log('bge-sidecar healthy ✓');
+      if (!parsed.isoPreview) {
+        log('执行器双探针 200 ✓');
+        // bge 健康与模型身份（模型清单在位 + 容器 healthy）
+        const bgeHealth = exec(['inspect', '--format', '{{.State.Health.Status}}', 'beta-bge-sidecar']);
+        if (String(bgeHealth.stdout || '').trim() !== 'healthy') {
+          return await failWith(cleanupEnv, 'bge-sidecar 未 healthy');
+        }
+        log('bge-sidecar healthy ✓');
+      }
     }
 
     if (parsed.environment === 'trial') {

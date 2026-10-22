@@ -22,6 +22,7 @@ if ($LASTEXITCODE -ne 0) {
   exit 1
 }
 
+$env:SECRET_DIR = 'D:/goai/secrets'
 $forward = @($entry, '--environment', $Environment)
 if ($IsoPreview) { $forward += '--iso-preview' }
 if ($DryRun) { $forward += '--dry-run' }
