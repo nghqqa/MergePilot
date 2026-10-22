@@ -67,6 +67,8 @@ function makeMockDocker({ healthOut = 'HEALTH live v1 commit=' + GOOD_COMMIT.sli
       if (script.includes('HEALTH')) return out(healthOut);
       return out('');
     }
+    if (args[0] === 'create') return out('container-id');
+    if (args[0] === 'start') return out('');
     if (args[0] === 'logs') return out('LOG-line-1\nLOG-listening');
     if (args[0] === 'inspect' && args[1] !== '--format') return out(JSON.stringify(liveInspect ?? INSPECT));
     if (args[0] === 'image' && args[1] === 'inspect') return out(INSPECT.Config.Image);
@@ -75,6 +77,7 @@ function makeMockDocker({ healthOut = 'HEALTH live v1 commit=' + GOOD_COMMIT.sli
   return { exec, calls };
 }
 const runCalls = (calls) => calls.filter((c) => c[0] === 'run');
+const createCalls = (calls) => calls.filter((c) => c[0] === 'create');
 const rmCalls = (calls) => calls.filter((c) => c[0] === 'rm');
 const connectCalls = (calls) => calls.filter((c) => c[0] === 'network' && c[1] === 'connect');
 
@@ -85,11 +88,11 @@ test('A 正常切换：身份核对通过+烙印过滤+网络补挂+后置 Matri
   const code = await swapConsole([writeInspect(INSPECT), NEW_IMAGE, '--name', 'beta-mp-console',
     '--expect-commit=' + GOOD_COMMIT], { exec, log: (m) => logs.push(m) });
   assert.equal(code, 0, 'exit 0, logs=' + logs.join('|').slice(0, 300));
-  const run = runCalls(calls)[0];
-  assert.ok(run, 'docker run called');
+  const create = createCalls(calls)[0];
+  assert.ok(create, 'docker create called');
   // 烙印过滤：旧容器的 VERSION/GIT_COMMIT 不出现在新容器 env
-  assert.equal(run.filter((a) => a === 'MERGEPILOT_VERSION=v0.2.0-beta.6-rc.34').length, 0, '旧 VERSION 被过滤');
-  assert.equal(run.filter((a) => a.startsWith('MERGEPILOT_GIT_COMMIT=')).length, 0, '旧 GIT_COMMIT 被过滤');
+  assert.equal(create.filter((a) => a === 'MERGEPILOT_VERSION=v0.2.0-beta.6-rc.34').length, 0, '旧 VERSION 被过滤');
+  assert.equal(create.filter((a) => a.startsWith('MERGEPILOT_GIT_COMMIT=')).length, 0, '旧 GIT_COMMIT 被过滤');
   // 网络补挂（非默认网络）
   assert.ok(connectCalls(calls).some((c) => c[2] === 'agentteams_beta_atnet'), 'atnet connect');
   // 后置 Matrix 登录发生（exec 第二类脚本）
@@ -108,8 +111,8 @@ test('B expect-commit 不符：拒绝交付+回滚序列完整', async () => {
     '--expect-commit=' + GOOD_COMMIT], { exec, log: (m) => logs.push(m) });
   assert.equal(code, 1, 'exit 1（拒绝交付）');
   assert.equal(rmCalls(calls).filter((c) => c[2] === 'beta-mp-console').length >= 1, true, 'rm new');
-  const rollbackRun = runCalls(calls).find((c) => c.includes(INSPECT.Config.Image));
-  assert.ok(rollbackRun, 'rollback run uses old image');
+  const rollbackCreate = createCalls(calls).find((c) => c.includes(INSPECT.Config.Image));
+  assert.ok(rollbackCreate, 'rollback create uses old image');
   assert.ok(connectCalls(calls).some((c) => c[2] === 'agentteams_beta_atnet'), 'rollback network connect');
   assert.ok(logs.some((m) => m.includes('构建身份不符')), '拒绝原因可见');
 });
@@ -214,7 +217,7 @@ test('A2i 后置探针同口径：TOKEN 形状新容器校验失败 → 回滚�
   let ran = false;
   const exec = (args) => {
     base.calls.push(args);
-    if (args[0] === 'run') ran = true;
+    if (args[0] === 'create') ran = true;
     if (ran && args[0] === 'exec' && args.slice(4).join(' ').includes('PRECHECK')) {
       return { status: 0, stdout: 'PRECHECK AUTH token-workers 401', stderr: '' };
     }
@@ -259,13 +262,13 @@ test('B4 health 报 null → 回滚', async () => {
 test('C live 门失败：失败容器日志诊断被调用+回滚', async () => {
   const { exec, calls } = makeMockDocker({ healthOut: 'HEALTH ERR fetch failed [exit=1 err=SyntaxError]' });
   const logs = [];
-  const code = await swapConsole([writeInspect(INSPECT), NEW_IMAGE, '--name', 'beta-mp-console'], { exec, log: (m) => logs.push(m) });
+  const code = await swapConsole([writeInspect(INSPECT), NEW_IMAGE, '--name', 'beta-mp-console'], { exec, log: (m) => logs.push(m), sleep: async () => {} });
   assert.equal(code, 1, 'exit 1');
   assert.ok(calls.some((c) => c[0] === 'logs'), '失败日志诊断被调用');
-  const rollbackRun = runCalls(calls).find((c) => c.includes(INSPECT.Config.Image));
-  assert.ok(rollbackRun, 'rollback executed');
+  const rollbackCreate = createCalls(calls).find((c) => c.includes(INSPECT.Config.Image));
+  assert.ok(rollbackCreate, 'rollback executed');
   // 挂载继承（回滚 run 含 inspect Mounts）
-  assert.ok(rollbackRun.some((a) => String(a).includes('/app/rag-models')), 'mounts restored');
+  assert.ok(rollbackCreate.some((a) => String(a).includes('/app/rag-models')), 'mounts restored');
   assert.ok(connectCalls(calls).some((c) => c[2] === 'agentteams_beta_atnet'), 'rollback network restored');
   assert.ok(logs.some((m) => m.includes('data_mode 未达 live')), '失败原因可见');
 });
