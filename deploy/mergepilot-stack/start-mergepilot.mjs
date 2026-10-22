@@ -131,7 +131,7 @@ export async function startMergepilot(argv, deps = {}) {
     const missing = precheckFailures({
       secretFiles: [path.join(trialDir, '.env')],
       containers: ['mp-trial-console', 'trial-bge'],
-    });
+    }, exec);
     if (missing.length) {
       log('试用前置条件失败——未执行任何变更：');
       for (const m of missing) log('  - ' + m);
