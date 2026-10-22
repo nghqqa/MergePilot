@@ -175,7 +175,16 @@ function buildDockerRunArgs(inspect, image, options = {}) {
   const policy = options.restartPolicy != null ? options.restartPolicy : resolveRestartPolicy(inspect);
   if (policy) args.push('--restart', policy);
 
-  if (hc.NetworkMode && hc.NetworkMode !== 'default') args.push('--network', hc.NetworkMode);
+  if (hc.NetworkMode && hc.NetworkMode !== 'default') {
+    args.push('--network', hc.NetworkMode);
+    // 主网络固定 IP/别名随 create 携带（rc7 固化：rm 旧后 create，IP 已释放无冲突；
+    // 静态预留的固定 IP 不因换版漂移）。次网络由 create 后的 connect 携带 --ip/--alias。
+    const pn = inspect.NetworkSettings?.Networks?.[hc.NetworkMode];
+    if (pn?.IPAddress) args.push('--ip', pn.IPAddress);
+    for (const a of pn?.Aliases ?? []) {
+      if (a && !a.startsWith('/')) args.push('--network-alias', a);
+    }
+  }
 
   for (const p of portSpecs(hc.PortBindings)) args.push('-p', p);
 
@@ -266,6 +275,7 @@ function parseArgv(argv) {
 async function swapConsole(argv, deps = {}) {
   const exec = deps.exec || ((args) => spawnSync('docker', args, { encoding: 'utf8' }));
   const log = deps.log || ((m) => process.stdout.write(m + '\n'));
+  const sleep = deps.sleep || ((ms) => new Promise((r) => setTimeout(r, ms))); // 测试可注入 0ms
   const { positional, name, dryRun, expectCommit, skipMatrixCheck } = parseArgv(argv);
   const [inspectFile, image] = positional;
   if (!inspectFile || !image) {
@@ -398,32 +408,58 @@ async function swapConsole(argv, deps = {}) {
     .filter((n) => n && n !== 'bridge');
   if (extraNetworks.length) log('将继承非默认网络: ' + extraNetworks.join(', '));
 
-  if (containerName) {
-    // 尽力而为移除旧容器：不存在时 docker 报非零，忽略之；仍占用时 run 步骤会显式失败
-    exec(['rm', '-f', containerName]);
+  // ── 部署序列（rc7 生产事故固化 2026-10-22）：rm 旧 → create → 逐网络 connect → start ──
+  // 事故路径（rc7 生产换版实录）：旧序列 rm 旧 → run -d 新（仅 bridge）→ 启动后才
+  // connect atnet——服务进程首启时 atnet 未挂载，mu_schema_init 打不到 PG
+  // （beta-mp-pg 仅 atnet DNS 可解析）→ 永久回退 snapshot → mu_ready 恒 false →
+  // 48 轮健康等待耗尽 → 自动回滚。18700（单网络：atnet 即 NetworkMode，run 时
+  // 挂载）不受影响——多网络容器必须在服务首启【前】挂齐全网络。
+  //
+  // 时序与冲突：rm 旧释放名字/宿主端口/固定 IP/别名 → create（不绑端口/网络，
+  // 无冲突窗口）→ 逐网络 connect（按旧 inspect 尽力携带 --ip/--alias，此时已无
+  // 占用者）→ start（服务首启，端口与全网络就位）。
+  // 逐阶段失败恢复（rm 旧之后旧容器已删——统一走 rollbackFn：按内存中 inspect
+  // 重建旧容器 + 逐网络 connect（同序列）+ live/mu_ready 健康门）：
+  //   * rm 旧失败：旧容器原样在跑，中止（exit 1）；
+  //   * create/connect 失败：rollbackFn 重建旧容器；
+  //   * start 失败：rollbackFn 重建旧容器；
+  //   * 健康超时：rollbackFn 重建旧容器。
+  const netConnectSpecs = extraNetworks.map((net) => {
+    const cfg = inspect.NetworkSettings?.Networks?.[net] ?? {};
+    const ip = cfg.IPAddress ? ['--ip', cfg.IPAddress] : [];
+    const aliases = (cfg.Aliases ?? []).filter(Boolean).flatMap((a) => ['--alias', a]);
+    return { net, extra: [...ip, ...aliases] };
+  });
+  const rmOld = containerName ? exec(['rm', '-f', containerName]) : null;
+  if (rmOld && rmOld.status !== 0) {
+    log('移除旧容器失败——旧容器原样在跑，中止（exit 1，不回显错误详情）。');
+    return 1;
   }
-  const run = exec(['run', '-d', ...args]);
-  if (run.error) {
-    // 异常对象不外抛（避免携带参数/env 的多行负载进入转录）——只留单行首句
-    const msg = String(run.error.message || 'spawn 失败').split('\n')[0];
-    throw new Error('docker run 无法启动：' + msg);
+  const create = exec(['create', ...args]);
+  if (create.error) {
+    const msg = String(create.error.message || 'spawn failed').split(String.fromCharCode(10))[0];
+    throw new Error('docker create 无法执行：' + msg);
   }
-  if (run.status !== 0) {
-    // 对抗性红线：docker stderr 内容不可信（本轮验收要求模拟 stderr 含秘密/
-    // 连接串/多行私钥的场景）——绝不透传 stderr 原文，只报退出码与诊断指引
-    log(`docker run 失败（exit=${run.status}）——本工具不回显错误详情以防凭据进入转录；` +
-        `可查看 docker daemon 日志或手动重跑同参数诊断`);
-    // rc3 事故回归锁：旧容器已被移除，run 失败不得裸退——尝试回滚到切换前
-    // 身份（内部含回滚后就绪校验；再失败给出 🛑 运维指引），退出码归一为 1。
-    return await rollbackFn('新容器启动失败（docker run exit=' + run.status + '）');
+  if (create.status !== 0) {
+    log('docker create 失败（exit=' + create.status + '）——走回滚（重建旧容器）。');
+    return await rollbackFn('新容器 create 失败（exit=' + create.status + '）');
   }
-  log('container=' + (run.stdout || '').trim());
-
-  // ── 创建后：非默认网络逐个 connect（swap 只继承 NetworkMode——漏挂第二网络会失去
-//    自定义 DNS（beta-mp-pg 解析），rc.25/rc.26 两轮生产同款坑）──
-  for (const net of extraNetworks) {
-    const c = exec(['network', 'connect', net, containerName]);
-    log(`network connect ${net}: ${c.status === 0 ? 'ok' : 'exit=' + c.status + '（可能已连接，忽略）'}`);
+  log('created=' + (create.stdout || '').trim().slice(0, 12));
+  for (const { net, extra } of netConnectSpecs) {
+    const c = exec(['network', 'connect', ...extra, net, containerName]);
+    if (c.status !== 0) {
+      log(`network connect ${net} 失败（exit=${c.status}）——走回滚。`);
+      return await rollbackFn(`网络 connect ${net} 失败`);
+    }
+    log(`network connect ${net}: ok`);
+  }
+  const start = exec(['start', containerName]);
+  if (start.error) {
+    const msg = String(start.error.message || 'spawn failed').split(String.fromCharCode(10))[0];
+    throw new Error('docker start 无法执行：' + msg);
+  }
+  if (start.status !== 0) {
+    return await rollbackFn('新容器启动失败（docker start exit=' + start.status + '）');
   }
 
   // ── 后置检查 1：健康+依赖可达（data_mode=live 表示 PG 实时可读；snapshot=依赖断）──
@@ -445,11 +481,18 @@ async function swapConsole(argv, deps = {}) {
     }
     const startRollbackImage = async (imgRef) => {
       const oldArgs = buildDockerRunArgs(inspect, imgRef, { name: containerName || undefined });
-      exec(['run', '-d', ...oldArgs]);
-      for (const net of extraNetworks) {
-        const c = exec(['network', 'connect', net, containerName]);
+      // 回滚网络恢复（rc7 事故同款时序）：create → 逐网络 connect（含原 IP/别名）→ start——
+      // 回滚容器首启即见全网络，避免回滚自身踩同款 snapshot 回退。
+      const cr = exec(['create', ...oldArgs]);
+      if (cr.status !== 0) {
+        log('回滚容器 create 失败（exit=' + cr.status + '）——需运维立即介入。');
+        return false;
+      }
+      for (const { net, extra } of netConnectSpecs) {
+        const c = exec(['network', 'connect', ...extra, net, containerName]);
         log(`回滚容器 network connect ${net}: ${c.status === 0 ? 'ok' : 'exit=' + c.status}`);
       }
+      exec(['start', containerName]);
       // 回滚成功判定（rc3 事故回归锁）：镜像身份一致 + 容器 Running + 应用健康
       // （live/mu 门同口径）——不能只验容器存在。
       const imgChk = exec(['inspect', '--format', '{{.Image}}|{{.State.Running}}', containerName]);
@@ -513,7 +556,7 @@ async function swapConsole(argv, deps = {}) {
       }
       if (/HEALTH /.test(out)) log('健康检查: ' + out.replace('HEALTH ', '').trim() + '（等待依赖就绪）');
     }
-    await new Promise((r) => setTimeout(r, 5_000));
+    await sleep(5_000);
   }
   if (!live) {
     // 失败诊断（rc.35 首切实测）：抓新容器启动日志尾部辅助定位（启动日志无秘密；
