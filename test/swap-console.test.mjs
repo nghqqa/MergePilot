@@ -217,7 +217,7 @@ const writeInspect = (inspect) => {
 
 // ---- rc.26 收口新增：网络继承 + Matrix 前置校验 + live 回滚（2026-10-13）----
 
-test('SW 前置：Matrix 凭据登录非 200 → 切换中止（exit 3），旧容器未被移除', async () => {
+test('主入口：成功路径——create→connect→rm 旧→start+健康过（rc7 序列固化回归）', async () => {
   const { dir, file } = writeInspect({
     Name: '/mp-console',
     HostConfig: { RestartPolicy: { Name: 'unless-stopped' } },
@@ -273,31 +273,35 @@ test('SW 后置：PG 部署 data_mode 未达 live → 回滚旧镜像（exit 1�
   }));
   try {
     const calls = [];
-    let runCount = 0;
+    let createCount = 0;
+    let startCount = 0;
     const code = await swapConsole([file, 'mp-console:rc26'], {
       exec: (args) => {
         calls.push(args);
-        if (args[0] === 'run') { runCount += 1; return { status: 0, stdout: 'new-id\n', stderr: '' }; }
-        if (args[0] === 'exec') return { status: 0, stdout: 'HEALTH snapshot v0.2.0-beta.6-rc.26', stderr: '' };
+        if (args[0] === 'create') { createCount += 1; return { status: 0, stdout: 'new-id\n', stderr: '' }; }
+        if (args[0] === 'start') { startCount += 1; return { status: 0, stdout: '', stderr: '' }; }
+        if (args[0] === 'exec') return { status: 0, stdout: 'HEALTH snapshot v0.2.0-beta.6-rc.26 mu_ready=false', stderr: '' };
         if (args[0] === 'image' && args[1] === 'inspect') return { status: 0, stdout: 'sha256:deadbeef\n', stderr: '' };
         if (args[0] === 'inspect' && args[1] === '--format') return { status: 1, stdout: '', stderr: 'no such container' };
         return { status: 0, stdout: '', stderr: '' };
       },
       log: () => {},
+      sleep: async () => {},
     });
     assert.equal(code, 1);
-    assert.equal(runCount, 2, '旧镜像已按原配置重建（回滚）');
-    const rollbackRun = calls.filter((a) => a[0] === 'run')[1];
-    assert.ok(rollbackRun.includes('mp-console:rc25'), '回滚 run 使用旧镜像');
+    assert.equal(createCount, 2, '旧镜像已按原配置重建（回滚 create）');
+    assert.equal(startCount, 2, '回滚容器已 start');
+    const rollbackCreate = calls.filter((a) => a[0] === 'create')[1];
+    assert.ok(rollbackCreate.includes('mp-console:rc25'), '回滚 create 使用旧镜像');
     const rmNew = calls.find((a) => a[0] === 'rm' && a[1] === '-f');
-    assert.ok(rmNew, '新容器已清理');
+    assert.ok(rmNew, '失败的新容器已清理');
     assert.ok(calls.some((a) => a[0] === 'image' && a[1] === 'inspect'), '回滚镜像可用性已预检');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test('SW 前置：Matrix 凭据登录非 200 → 切换中止（exit 3），旧容器未被移除', async () => {
+test('主入口：成功路径——create→connect→rm 旧→start+健康过（rc7 序列固化回归）', async () => {
   const { dir, file } = writeInspect({
     Name: '/mp-console',
     HostConfig: { RestartPolicy: { Name: 'no' } },
@@ -322,14 +326,13 @@ test('SW 前置：Matrix 凭据登录非 200 → 切换中止（exit 3），旧�
     });
     assert.equal(code, 0);
     const rmCall = calls.find((a) => a[0] === 'rm' && a[1] === '-f');
-    const runCall = calls.find((a) => a[0] === 'run');
+    const createCall = calls.find((a) => a[0] === 'create');
     assert.ok(rmCall, '旧容器被移除');
-    assert.ok(runCall, '新容器被创建');
-    assert.equal(runCall[1], '-d');
-    assert.ok(runCall.includes('mp-console:rc12'));
-    assert.equal(flagValue(runCall, '--restart'), 'unless-stopped');
-    assert.ok(pairIn(runCall, '-v', '/srv/mp/rag-models:/models:ro'));
-    assert.ok(logs.some((m) => m.includes('docker run -d')));
+    assert.ok(createCall, '新容器被创建（create，不再 run -d）');
+    assert.ok(createCall.includes('mp-console:rc12'));
+    assert.equal(flagValue(createCall, '--restart'), 'unless-stopped');
+    assert.ok(pairIn(createCall, '-v', '/srv/mp/rag-models:/models:ro'));
+    assert.ok(logs.some((m) => m.includes('created=')), 'created 标记上屏');
     assert.ok(logs.some((m) => m.includes('比对通过')), 'live 比对通过上屏');
     assert.ok(logs.some((m) => m.includes('回滚镜像可用')), '回滚镜像可用性预检上屏');
   } finally {
@@ -355,20 +358,29 @@ test('主入口：--dry-run 只打印命令，不调用 docker', async () => {
 test('主入口：docker run 非零退出 → 透传退出码与 stderr', async () => {
   const { dir, file } = writeInspect(baseInspect());
   try {
-    let runCount = 0;
+    let createCount = 0;
     const logs = [];
     const code = await swapConsole([file, 'img'], {
       exec: (args) => {
-        if (args[0] === 'run') { runCount += 1; return { status: 125, stdout: '', stderr: 'docker: conflict\n' }; }
+        if (args[0] === 'create') {
+          createCount += 1;
+          // 第一次（部署）对抗性失败；第二次（回滚重建旧容器）成功——覆盖恢复路径
+          return createCount === 1
+            ? { status: 125, stdout: '', stderr: 'docker: conflict\n' }
+            : { status: 0, stdout: 'restored-id\n', stderr: '' };
+        }
         if (args[0] === 'image' && args[1] === 'inspect') return { status: 0, stdout: 'deadbeef\n', stderr: '' };
+        if (args[0] === 'inspect' && args[2] === '{{.Image}}|{{.State.Running}}') return { status: 0, stdout: 'img|true', stderr: '' };
         if (args[0] === 'inspect' && args[1] === '--format') return { status: 1, stdout: '', stderr: 'no such container' };
         return { status: 0, stdout: '', stderr: '' };
       },
       log: (m) => logs.push(m),
     });
-    assert.equal(code, 1, 'run 失败后已尝试回滚；回滚亦失败→🛑 指引退出码 1');
-    assert.equal(runCount, 2, 'docker run 恰两次（新容器+回滚容器）');
-    assert.ok(logs.some((m) => m.includes('🛑')), '回滚失败 LOUD 指引上屏');
+    assert.equal(code, 1, '部署 create 失败→回滚重建旧容器成功→exit 1（换版未发生）');
+    assert.equal(createCount, 2, '恰好两次 create（部署+回滚重建）');
+    assert.ok(logs.some((m) => m.includes('docker create 失败')), '部署失败上屏（不透传 stderr）');
+    assert.ok(logs.some((m) => m.includes('回滚完成')), '回滚重建成功上屏');
+    assert.ok(!logs.some((m) => m.includes('conflict')), '对抗性 stderr 原文不透传');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -395,13 +407,13 @@ test('主入口：缺参 → 用法退出码 2；坏 JSON → 抛错不执行 do
 test('主入口：inspect 数组形态（docker inspect 默认输出）→ 取首元素', async () => {
   const { dir, file } = writeInspect([baseInspect({ HostConfig: { RestartPolicy: { Name: 'always' } } })]);
   try {
-    let runArgs = null;
+    let createArgs = null;
     const code = await swapConsole([file, 'img'], {
-      exec: (args) => { if (args[0] === 'run') runArgs = args; return { status: 0, stdout: 'id\n', stderr: '' }; },
+      exec: (args) => { if (args[0] === 'create') createArgs = args; return { status: 0, stdout: 'id\n', stderr: '' }; },
       log: () => {},
     });
     assert.equal(code, 0);
-    assert.equal(flagValue(runArgs, '--restart'), 'always');
+    assert.equal(flagValue(createArgs, '--restart'), 'always');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -469,23 +481,26 @@ test('泄露回归：正式执行成功路径——输出容器标记与安全�
   const file = path.join(dir, 'inspect.json');
   fs.writeFileSync(file, JSON.stringify(SECRET_FIXTURE));
   try {
-    let runArgs = null;
+    let createArgs = null;
     const logs = [];
     const code = await swapConsole([file, 'ghcr.io/nghqqa/mergepilot-console@sha256:' + 'f'.repeat(64)], {
       exec: (args) => {
-        if (args[0] === 'run') runArgs = args;
-        if (args[0] === 'exec') return { status: 0, stdout: String(args.at(-1)).includes('health') ? 'HEALTH live v0.2.0-beta.6-rc.26' : 'STATUS 200', stderr: '' };
+        if (args[0] === 'create') createArgs = args;
+        const script = String(args.at(-1) ?? '');
+        if (args[0] === 'exec' && script.includes('_matrix/client/v3/login')) return { status: 0, stdout: 'PRECHECK OK matrix-login 200', stderr: '' };
+        if (args[0] === 'exec' && script.includes('/api/v1/workers')) return { status: 0, stdout: 'PRECHECK OK token-workers 200', stderr: '' };
+        if (args[0] === 'exec' && script.includes('/api/health')) return { status: 0, stdout: 'HEALTH live v0.2.0-beta.6-rc.35.6-rc7 mu_ready=true', stderr: '' };
         return { status: 0, stdout: 'abc123', stderr: '' };
       },
       log: (m) => logs.push(m),
     });
     assert.equal(code, 0);
-    assert.ok(runArgs, 'docker run 已调用');
+    assert.ok(createArgs, 'docker create 已调用');
     const out = logs.join('\n');
     assertNoSecrets(out);
-    assert.ok(out.includes('container=abc123'), '容器 ID 标记输出');
-    // run 参数本身仍完整传给 docker（继承语义不变）：9 个 -e 秘密在 args 中而非输出中
-    assert.equal(valuesOf(runArgs, '-e').length, SECRET_FIXTURE.Config.Env.length, '-e 继承语义不变');
+    assert.ok(out.includes('created=abc123'), 'created 容器 ID 标记输出');
+    // create 参数本身仍完整传给 docker（继承语义不变）：9 个 -e 秘密在 args 中而非输出中
+    assert.equal(valuesOf(createArgs, '-e').length, SECRET_FIXTURE.Config.Env.length, '-e 继承语义不变');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -505,18 +520,29 @@ test('泄露回归：失败路径——对抗性 stderr（含秘密/连接串/�
       '-----END RSA PRIVATE KEY----- dummy-fixture',
     ].join('\n');
     let hostileSeen = 0;
+    let startOk = false;
     const code = await swapConsole([file, 'ghcr.io/nghqqa/mergepilot-console@sha256:' + 'f'.repeat(64)], {
       exec: (args) => {
         if (args[0] === 'rm') return { status: 0, stdout: '', stderr: '' };
-        if (args[0] === 'image' && args[1] === 'inspect') return { status: 0, stdout: 'deadbeef\n', stderr: '' };
+        if (args[0] === 'image' && args[1] === 'inspect') return { status: 0, stdout: 'sha256:deadbeef\n', stderr: '' };
         if (args[0] === 'inspect' && args[1] === '--format') return { status: 1, stdout: '', stderr: 'no such container' };
-        if (args[0] === 'run') { hostileSeen += 1; return { status: 125, stdout: '', stderr: hostileStderr }; }
+        const script = String(args.at(-1) ?? '');
+        if (args[0] === 'exec' && script.includes('_matrix/client/v3/login')) return { status: 0, stdout: 'PRECHECK OK matrix-login 200', stderr: '' };
+        if (args[0] === 'exec' && script.includes('/api/health')) return { status: 0, stdout: 'HEALTH snapshot v0.2.0-beta.6-rc.35.6-rc7 mu_ready=false', stderr: '' };
+        if (args[0] === 'create') {
+          hostileSeen += 1;
+          if (hostileSeen === 1) return { status: 0, stdout: 'new-id\n', stderr: '' };
+          return { status: 125, stdout: '', stderr: hostileStderr }; // 第二次（回滚重建）才对抗性失败
+        }
+        if (args[0] === 'start') { startOk = true; return { status: 0, stdout: '', stderr: '' }; }
         return { status: 0, stdout: '', stderr: '' };
       },
       log: (m) => logs.push(m),
+      sleep: async () => {},
     });
-    assert.equal(code, 1, '新容器与回滚容器 run 均失败→🛑 指引退出码 1');
-    assert.equal(hostileSeen, 2, '恰好两次 run（新容器+回滚兜底）');
+    assert.equal(code, 1, 'create 与回滚重建 create 均失败→🛑 指引退出码 1');
+    assert.equal(hostileSeen, 2, '恰好两次 create（新容器+回滚兜底）');
+    assert.equal(startOk, true, 'start 发生两次（新容器启动成功后健康失败；回滚容器 start）');
     const out = logs.join('\n');
     assertNoSecrets(out);
     assert.ok(!out.includes('Error response from daemon'), '对抗性 stderr 原文不透传');
