@@ -1,0 +1,60 @@
+# docker-compose.trial.yml — 试用栈（18700）基础设施真源（2026-10-22 rc7 化）。
+#
+# 取代 r3work/accept-deploy-468/deploy/selfhost 旧 compose 的启动职能：
+#   * 旧文件 console 钉 rc4 时代 digest e304…（已随 #510 清理删除）；
+#   * 旧文件含已废弃 bge-m3 服务（crash-loop，被 trial-bge 取代）——本文件不含，
+#     重复执行不会复活它们（#510 收口实录：compose up 曾复活二者）。
+#
+# 服务边界（如实）：
+#   * 本文件管理：postgres（数据，外部卷 mp-trial-rc355_pgdata）+ webhook-ingress；
+#   * start-only 手工容器（本工具只 docker start，不从零重建）：
+#       mp-trial-console（rc7 手工容器，实际对外服务的试用 console）与
+#       trial-bge（嵌入 sidecar）——由 start-mergepilot.ps1 -Environment trial 拉起。
+#
+# 已知时序（2026-10-22 实录）：postgres 重建后必须重启 mp-trial-console
+# （连接池缓存旧端点 → mu_schema_ready=false；重启即恢复，数据在卷中无损）。
+name: mp-trial-rc355
+
+networks:
+  internal:
+    name: mp-trial-rc355_internal
+    external: true
+
+volumes:
+  pgdata:
+    name: mp-trial-rc355_pgdata
+    external: true
+
+services:
+  postgres:
+    image: pgvector/pgvector@sha256:a36250871de0833b8757561c72f2477ef1ddd1101afa4e617fb552e0de514c6b
+    container_name: mp-trial-rc355-postgres-1
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: mu
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d mu"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    networks: [internal]
+
+  webhook-ingress:
+    image: node:22-alpine
+    container_name: mp-trial-rc355-webhook-ingress-1
+    restart: unless-stopped
+    user: node
+    volumes:
+      - D:/goai/r3work/accept-deploy-468/deploy/selfhost/webhook-proxy.js:/proxy.js:ro
+    command: ["node", "/proxy.js"]
+    ports:
+      - "127.0.0.1:${WEBHOOK_INGRESS_PORT:-18590}:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [internal]

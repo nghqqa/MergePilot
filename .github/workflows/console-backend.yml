@@ -78,6 +78,11 @@ jobs:
       - name: Swap tool unit tests (multi-network start order + failure rollback)
         run: node --test test/swap-console.test.mjs
 
+      # 一键启动入口单测（#510 缺口修正波）：参数组合校验（trial+iso 拒绝先于变更）/
+      # 健康门（version+完整 commit+live+mu_ready）/执行器双探针/start-only 前提报告
+      - name: One-click start entry unit tests (combo validation + health gates)
+        run: node --test test/start-mergepilot.test.mjs
+
       # 生产依赖就绪 fail-closed（HARDENING 波接入）：17 场景（SM-1~9 keystore + EA-1~8 attestation）
       # 全部合成 fixture——零真实凭据、零真实端点、NOT_CONFIGURED/BLOCKED 不得 skip 隐藏。
       - name: "Dependency readiness fail-closed (17 scenarios: SM-1~9 + EA-1~8)"

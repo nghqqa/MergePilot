@@ -39,20 +39,25 @@ services:
   beta-mp-console:
     ports: !override
       - "127.0.0.1:14730:4730"
+    env_file: !override
+      # 隔离专用 env（随仓提交，零真实凭据）——不继承生产 env_file
+      - iso.env
     volumes: !override
       - pg-data-iso:/var/lib/postgresql/data
-      - prod-keystore-vol:/app/keystore
-      - D:/goai/prod-data/rag-corpus:/app/rag-corpus
-      - D:/goai/prod-data/rag-models:/app/rag-models
+      - iso-keystore:/app/keystore
+      # 共享模型/语料：只读挂载（隔离环境只消费不写入）
+      - D:/goai/prod-data/rag-corpus:/app/rag-corpus:ro
+      - D:/goai/prod-data/rag-models:/app/rag-models:ro
     networks: !override
       - default
     environment:
-      # 隔离预览专用：允许 fixture 测试身份登录（生产 env_file 中此开关关闭）
       MU_ALLOW_FIXTURE_LOGIN: "1"
-      # 首次初始化引导凭据（仅隔离；生产首管按自托管文档 DBA 初始化）
       CONSOLE_PILOT_USER: dev-pilot
       CONSOLE_PILOT_PASSWORD: iso-pw
+      # 生产 GitHub App 私钥不进隔离环境（显式空值覆盖 base 的 ${} 注入）
+      MU_GITHUB_APP_PRIVATE_KEY: ""
     container_name: mergepilot-iso-console
 
 volumes:
   pg-data-iso: {}
+  iso-keystore: {}
