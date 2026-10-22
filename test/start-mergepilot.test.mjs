@@ -85,6 +85,8 @@ test('trial 一键：基础设施 compose + start-only 容器 + 健康门（无 
   const code = await startMergepilot(['--environment', 'trial'], {
     exec: (args) => {
       calls.push(args);
+      if (args[0] === 'volume' && args[1] === 'inspect') return { status: 0, stdout: 'vol', stderr: '' };
+      if (args[0] === 'container' && args[2] === '--format') return { status: 0, stdout: 'true', stderr: '' };
       if (args[0] === 'exec') return { status: 0,
         stdout: JSON.stringify({ ok: true, version: 'v0.2.0-beta.6-rc.35.6-rc7',
           git_commit: GOOD_COMMIT, data_mode: 'live', mu_schema_ready: true }), stderr: '' };

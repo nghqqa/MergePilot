@@ -151,7 +151,7 @@ export async function startMergepilot(argv, deps = {}) {
       modelManifest: 'D:/goai/prod-data/rag-models/bge-m3/manifest.json',
       volumes: ['f2c57d69cc0e9b83a2440030b86abfb1f07ced641ce0c68ecdaa3c26efae1365', 'prod-keystore-vol'],
       containers: ['agentteams-beta-ctrl', 'agentteams-beta-manager'],
-    });
+    }, exec);
     if (missing.length) {
       log('前置条件失败——未执行任何变更：');
       for (const m of missing) log('  - ' + m);
