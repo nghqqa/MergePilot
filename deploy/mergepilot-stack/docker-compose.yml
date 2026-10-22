@@ -1,0 +1,115 @@
+# MergePilot 生产栈 compose（一键启动真源 · 2026-10-22）
+#
+# 由生产实跑容器的完整 inspect 固化（rc7/b7a0fca 形态）——镜像/卷/网络/端口与
+# 生产逐一对应；接管后以本文件为生产启动真源。
+#
+# 职责边界：
+#   * 本文件：日常启动/停止/重启（同一镜像版本内的生命周期管理）；
+#   * #509 swap 工具（scripts/swap-console.cjs）：跨版本镜像升级（含健康门与回滚）。
+#     swap 换版后须同步更新本文件的 console image 引用，避免下次 up 回退旧版本。
+#
+# 秘密纪律：
+#   * console 私钥（github-app-key.pem）与 PG 口令（beta-mp-pg.env）从受控秘密目录
+#     注入，不入仓、不回显；
+#   * MERGEPILOT_VERSION/GIT_COMMIT 版本烙印只随镜像走（env 不继承、不覆盖）。
+#
+# 数据卷（外部，接管自原匿名卷，删除本文件不会动数据）：
+#   * pg-data  = 匿名卷 f2c57d69cc0e…1365（beta-mp-pg 全部业务数据）
+#   * prod-keystore-vol = 运行签名 keystore（console）
+
+name: mergepilot
+
+networks:
+  atnet:
+    name: agentteams-beta_atnet
+    external: true
+
+volumes:
+  pg-data:
+    name: f2c57d69cc0e9b83a2440030b86abfb1f07ced641ce0c68ecdaa3c26efae1365
+    external: true
+  prod-keystore-vol:
+    external: true
+    name: prod-keystore-vol
+
+services:
+  beta-mp-pg:
+    image: pgvector/pgvector:pg16
+    container_name: beta-mp-pg
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d mu"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 30s
+    ports:
+      - "127.0.0.1:28564:5432"
+    env_file:
+      - ${SECRET_DIR}/beta-mp-pg.env
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    networks:
+      atnet:
+        ipv4_address: 192.168.96.4
+
+  beta-bge-sidecar:
+    image: ghcr.io/nghqqa/mergepilot-bge-sidecar@sha256:a41d6cad35cff7236f091af491aa5f17a7e69a8258a134c350b6a63de1c5f17f
+    container_name: beta-bge-sidecar
+    restart: unless-stopped
+    environment:
+      BGE_MANIFEST: /app/model/manifest.json
+      BGE_PORT: "8080"
+      BGE_MODEL_DIR: /app/model
+    volumes:
+      - D:/goai/prod-data/rag-models/bge-m3:/app/model
+    networks:
+      atnet:
+        ipv4_address: 192.168.96.7
+
+  at-auth-proxy:
+    image: nginx:alpine
+    container_name: at-auth-proxy
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:28565:8091"
+    volumes:
+      - D:/goai/prod-data/secrets/agentteams-auth-proxy:/etc/nginx/conf.d
+    networks:
+      atnet:
+        ipv4_address: 192.168.96.8
+    depends_on: []
+
+  beta-webhook-proxy:
+    image: node:22-alpine
+    container_name: beta-webhook-proxy
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:48590:8080"
+    volumes:
+      - D:/goai/r3work/beta-local-deploy/webhook-proxy.js:/proxy.js:ro
+    command: ["node", "/proxy.js"]
+    networks:
+      - default
+
+  beta-mp-console:
+    image: ${CONSOLE_IMAGE}
+    container_name: beta-mp-console
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:28600:4730"
+      - "127.0.0.1:48500:4730"
+    env_file:
+      - ${SECRET_DIR}/beta-mp-console.env
+    environment:
+      MU_GITHUB_APP_PRIVATE_KEY: ${MU_GITHUB_APP_PRIVATE_KEY}
+    volumes:
+      - prod-keystore-vol:/app/keystore
+      - D:/goai/prod-data/rag-corpus:/app/rag-corpus
+      - D:/goai/prod-data/rag-models:/app/rag-models
+    networks:
+      atnet:
+        ipv4_address: 192.168.96.5
+    depends_on:
+      beta-mp-pg:
+        condition: service_healthy
