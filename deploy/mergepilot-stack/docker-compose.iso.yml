@@ -1,0 +1,58 @@
+# docker-compose.iso.yml — 隔离预览覆盖（一键启动验收用，不触生产）。
+# 与 docker-compose.yml 叠加使用（start-mergepilot.ps1 -IsoPreview）。
+#
+# !override 语义（compose v2.24+，本宿主 v5.4.0 实证）：列表/映射整体替换而非
+# 追加合并——端口清空、数据卷换 iso 全新卷、网络换 default（不接 atnet）。
+# 独立项目名 mergepilot-iso / 容器名 iso 前缀（避免与生产同名冲突）。
+# 隔离预览专用：允许 fixture 测试身份登录（生产 env_file 中此开关关闭）。
+services:
+  beta-mp-pg:
+    ports: !override []
+    volumes: !override
+      - pg-data-iso:/var/lib/postgresql/data
+    environment:
+      # 隔离一次性 PG：trust 认证——生产 DSN 口令与全新实例口令必然不同，
+      # trust 让 DSN 无需知晓 iso 口令即可连通（仅限本隔离网，生产不受影响）
+      POSTGRES_HOST_AUTH_METHOD: trust
+    networks: !override
+      - default
+    container_name: mergepilot-iso-pg
+
+  beta-bge-sidecar:
+    networks: !override
+      - default
+    container_name: mergepilot-iso-bge
+
+  at-auth-proxy:
+    ports: !override []
+    networks: !override
+      - default
+    container_name: mergepilot-iso-auth-proxy
+
+  beta-webhook-proxy:
+    ports: !override
+      - "127.0.0.1:14859:8080"
+    networks: !override
+      - default
+    container_name: mergepilot-iso-webhook
+
+  beta-mp-console:
+    ports: !override
+      - "127.0.0.1:14730:4730"
+    volumes: !override
+      - pg-data-iso:/var/lib/postgresql/data
+      - prod-keystore-vol:/app/keystore
+      - D:/goai/prod-data/rag-corpus:/app/rag-corpus
+      - D:/goai/prod-data/rag-models:/app/rag-models
+    networks: !override
+      - default
+    environment:
+      # 隔离预览专用：允许 fixture 测试身份登录（生产 env_file 中此开关关闭）
+      MU_ALLOW_FIXTURE_LOGIN: "1"
+      # 首次初始化引导凭据（仅隔离；生产首管按自托管文档 DBA 初始化）
+      CONSOLE_PILOT_USER: dev-pilot
+      CONSOLE_PILOT_PASSWORD: iso-pw
+    container_name: mergepilot-iso-console
+
+volumes:
+  pg-data-iso: {}
