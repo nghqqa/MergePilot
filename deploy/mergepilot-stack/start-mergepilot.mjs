@@ -15,8 +15,11 @@
 // 已知边界（如实）：ctrl/manager 从零重建、worker CR env 人工配置 = 前提，不在本工具能力内。
 import fs from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
+
+// compose 真源与本脚本同目录（不依赖调用方 CWD）
+const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 // 本入口固化的发布身份（随每次发布更新；swap 换版后由 swap 流程同步）
 export const RELEASE = Object.freeze({
@@ -63,13 +66,19 @@ export function validateArgs(parsed) {
 
 // 前置条件检查（exec 可注入——单测零 Docker）。
 // 返回 { missing, stopped }：missing=明确报错项（不存在）；stopped=存在但停止（由流程拉起）。
-export function precheckFailures({ containers = [], volumes = [] } = {}, exec) {
+export function precheckFailures({ secretFiles = [], modelManifest = null, containers = [], volumes = [] } = {}, exec) {
   const missing = [];
   const stopped = [];
+  for (const f of secretFiles ?? []) {
+    if (!fs.existsSync(f)) missing.push('秘密文件缺失: ' + f);
+  }
+  if (modelManifest && !fs.existsSync(modelManifest)) missing.push('模型清单缺失: ' + modelManifest);
   for (const c of containers ?? []) {
     const r = exec(['container', 'inspect', '--format', '{{.State.Status}}|{{.State.Running}}', c]);
     const [status, running] = String(r.stdout || '').trim().split('|');
-    if (r.status !== 0 || status === '') { missing.push('容器不存在: ' + c); continue; }
+    if (r.status !== 0 || status === '') {
+      missing.push('start-only 前提缺失（容器不存在，本工具不从零重建）: ' + c); continue;
+    }
     if (running !== 'true') stopped.push(c);
   }
   for (const v of volumes ?? []) {
@@ -148,7 +157,7 @@ export async function startMergepilot(argv, deps = {}) {
     const pemPath = path.join(secretDir, 'github-app-key.pem');
     envSet('MU_GITHUB_APP_PRIVATE_KEY', fs.readFileSync(pemPath, 'utf8'));
   }
-  const cleanupEnv = () => { envDel('MU_GITHUB_APP_PRIVATE_KEY'); };
+  const cleanupEnv = () => { envDel('MU_GITHUB_APP_PRIVATE_KEY'); envDel('POSTGRES_PASSWORD'); };
 
   try {
     if (isProduction) {

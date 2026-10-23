@@ -68,12 +68,18 @@ test('precheck：ctrl/manager 容器缺失=明确报错（不宣称从零重建�
     if (args[0] === 'volume' && args[1] === 'inspect') return { status: 0, stdout: 'vol', stderr: '' };
     return { status: 0, stdout: '', stderr: '' };
   };
-  const missing = precheckFailures({
+  const { missing, stopped } = precheckFailures({
     secretFiles: [], modelManifest: null, volumes: [],
     containers: ['agentteams-beta-ctrl', 'agentteams-beta-manager'],
   }, fakeExec);
   assert.equal(missing.length, 2, '两个前置容器均报缺失');
+  assert.equal(stopped.length, 0, '不存在的容器不进 stopped 列表');
   assert.ok(missing.every((m) => m.includes('start-only 前提')), '消息包含 start-only 前提声明');
+
+  const stoppedCase = precheckFailures({ containers: ['agentteams-beta-ctrl'] }, (args) =>
+    args[0] === 'container' ? { status: 0, stdout: 'exited|false', stderr: '' } : { status: 0, stdout: '', stderr: '' });
+  assert.equal(stoppedCase.missing.length, 0, '存在但停止不报缺失');
+  assert.deepEqual(stoppedCase.stopped, ['agentteams-beta-ctrl'], '停止容器进 stopped 由流程拉起');
 });
 
 // ── trial 一键：compose up 基础设施 + start 服务容器 + 健康门，零废弃服务复活 ──
@@ -86,7 +92,7 @@ test('trial 一键：基础设施 compose + start-only 容器 + 健康门（无 
     exec: (args) => {
       calls.push(args);
       if (args[0] === 'volume' && args[1] === 'inspect') return { status: 0, stdout: 'vol', stderr: '' };
-      if (args[0] === 'container' && args[2] === '--format') return { status: 0, stdout: 'true', stderr: '' };
+      if (args[0] === 'container' && args[2] === '--format') return { status: 0, stdout: 'false', stderr: '' };
       if (args[0] === 'exec') return { status: 0,
         stdout: JSON.stringify({ ok: true, version: 'v0.2.0-beta.6-rc.35.6-rc7',
           git_commit: GOOD_COMMIT, data_mode: 'live', mu_schema_ready: true }), stderr: '' };
