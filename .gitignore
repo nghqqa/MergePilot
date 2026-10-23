@@ -3,6 +3,9 @@ __pycache__/
 *.pyo
 .env
 *.env
+# 随仓隔离预览配置豁免（零真实凭据的测试值；其余 *.env 仍不入仓）
+!deploy/mergepilot-stack/iso.env
+!deploy/mergepilot-stack/iso-secrets/*.env
 .DS_Store
 *.tmp
 .tmp-*
