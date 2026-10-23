@@ -25,7 +25,10 @@ services:
       # trust 让 DSN 无需知晓 iso 口令即可连通（仅限本隔离网，生产不受影响）
       POSTGRES_HOST_AUTH_METHOD: trust
     networks: !override
-      - default
+      default:
+        # DSN 主机名=pg（与生产 atnet 别名同形）——iso default 网络上补同名别名，
+        # 否则 console 解析不到（EAI_AGAIN，schema init fail-closed）
+        aliases: [pg]
     container_name: mergepilot-iso-pg
 
   beta-bge-sidecar:
