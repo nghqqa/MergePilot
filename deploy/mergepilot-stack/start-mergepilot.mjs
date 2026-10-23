@@ -1,16 +1,19 @@
 #!/usr/bin/env node
-// start-mergepilot.mjs — MergePilot 一键启动入口 v2（2026-10-22 行为修正版）。
+// start-mergepilot.mjs — MergePilot 一键启动入口 v3（2026-10-23 行为闭环版）。
 //
-// v2 修正（#511 缺口收口）：
-//   * 停止/缺失区分：start-only 容器（生产 ctrl/manager、试用 console/bge）
-//     「存在但停止」→ 按依赖序 docker start 并等 Running；「不存在」→ 明确报错
+// v3 修正（#512 行为闭环）：
+//   * 隔离模式独立分派：--environment production --iso-preview 在任何生产前置检查
+//     之前进入 iso 流程——零生产秘密/容器/卷触达，compose = 基座+iso 覆盖双 -f，
+//     项目名 mergepilot-iso，console=127.0.0.1:14730；
+//   * compose 显式供参：${CONSOLE_IMAGE}=RELEASE.image、${SECRET_DIR}=脚本内
+//     iso-secrets 假目录（iso）/受控秘密目录（生产）、${MU_GITHUB_APP_PRIVATE_KEY}
+//     显式空值（iso）——不依赖调用者残留变量；
+//   * 进程 env 带快照恢复：成功与失败路径均还原调用前的值（残留值回填、未设值清除）。
+// v2 修正（#511）保留：
+//   * 停止/缺失区分：start-only 容器「存在但停止」→ docker start；「不存在」→ 明确报错
 //     （start-only 前提缺失，本工具不从零重建）；
-//   * 隔离模式零生产触达：--iso-preview 不读生产秘密文件/不探生产容器/
-//     不用生产 compose 项目（-p mergepilot-iso）；隔离 PG trust 认证；
-//   * 配置显式化：秘密目录/试用目录显式解析（env → CLI → 宿主常量），
-//     不依赖当前工作目录；生产 env 文件排除版本烙印（版本只随镜像走）；
-//   * 私钥多行 PEM：读入进程 env 注入 compose，零回显，成功/失败路径均清理；
-//   * 每条关键 docker 命令检查退出码，逐阶段失败指明环节。
+//   * 配置显式化（env → CLI → 宿主常量，不依赖 CWD）；版本烙印不随 env 走；
+//   * 私钥多行 PEM 零回显；每条关键 docker 命令检查退出码。
 //
 // 已知边界（如实）：ctrl/manager 从零重建、worker CR env 人工配置 = 前提，不在本工具能力内。
 import fs from 'node:fs';
@@ -119,6 +122,13 @@ export async function startMergepilot(argv, deps = {}) {
   const envSet = deps.envSet || ((k, v) => { process.env[k] = v; });
   const envDel = deps.envDel || ((k) => { delete process.env[k]; });
 
+  // 进程 env 变更带快照：成功/失败路径均恢复调用前的值（残留值回填、未设值清除）
+  const priorEnv = new Map();
+  const setTracked = (k, v) => { if (!priorEnv.has(k)) priorEnv.set(k, envGet(k)); envSet(k, v); };
+  const cleanupEnv = () => {
+    for (const [k, prior] of priorEnv) { if (prior === null || prior === undefined) envDel(k); else envSet(k, prior); }
+  };
+
   const parsed = parseArgv(argv);
   const v = validateArgs(parsed);
   if (!v.ok) {
@@ -129,7 +139,54 @@ export async function startMergepilot(argv, deps = {}) {
   if (parsed.dryRun) { log('dry-run：校验通过（未执行变更）'); return 0; }
 
   const isProduction = parsed.environment === 'production';
+  const isIso = parsed.isoPreview === true; // validateArgs 已保证 trial+iso 不可能到达这里
   const secretDir = parsed.secretDir ?? deps.secretDir ?? HOST.secretDir;
+
+  // ── 隔离预览：独立分派，先于一切生产前置（零生产秘密/容器/卷触达）──
+  if (isProduction && isIso) {
+    const isoFiles = [
+      path.join(HERE, 'iso.env'),
+      path.join(HERE, 'docker-compose.yml'),
+      path.join(HERE, 'docker-compose.iso.yml'),
+      path.join(HERE, 'iso-secrets', 'beta-mp-pg.env'),
+      path.join(HERE, 'iso-secrets', 'beta-mp-console.env'),
+    ];
+    const missingFiles = isoFiles.filter((f) => !fs.existsSync(f));
+    if (missingFiles.length) {
+      log('隔离配置预检失败——未执行任何变更：');
+      for (const m of missingFiles) log('  - 缺失: ' + m);
+      return 3;
+    }
+    // 显式提供 compose 所需镜像与环境（不依赖调用者残留变量）：
+    //  * 基座 compose 的 env_file 路径含 ${SECRET_DIR}——解析期读取 iso-secrets 假文件，
+    //    合并配置中被 iso 覆盖丢弃（pg env_file 清空/console 换 iso.env）——生产秘密不入隔离；
+    //  * ${CONSOLE_IMAGE} 显式取 RELEASE.image；${MU_GITHUB_APP_PRIVATE_KEY} 显式空值。
+    setTracked('SECRET_DIR', path.join(HERE, 'iso-secrets'));
+    setTracked('CONSOLE_IMAGE', RELEASE.image);
+    setTracked('MU_GITHUB_APP_PRIVATE_KEY', '');
+    try {
+      const up = exec(['compose', '-p', 'mergepilot-iso', '-f', path.join(HERE, 'docker-compose.yml'),
+        '-f', path.join(HERE, 'docker-compose.iso.yml'), 'up', '-d']);
+      if (up.status !== 0) { log(`FAILED: 隔离栈 compose up（exit=${up.status}）`); return await failAll('隔离栈 compose up 失败'); }
+      log('隔离栈已拉起（项目 mergepilot-iso，console=127.0.0.1:14730）');
+      let ok = false, lastWhy = '';
+      for (let i = 0; i < 48; i++) {
+        await sleep(5000);
+        const probe = exec(['exec', 'mergepilot-iso-console', 'node', '-e', HEALTH_SCRIPT]);
+        let h = null;
+        try { h = JSON.parse(String(probe.stdout || '')); } catch { }
+        const g = healthGateOk(h, { expectVersion: RELEASE.version, expectCommit: RELEASE.commit });
+        if (g.ok) { ok = true; log(`隔离健康门通过（第 ${i + 1} 轮）`); break; }
+        lastWhy = g.why;
+        log(`隔离健康检查 ${i + 1}/48: ${g.why}（等待）`);
+      }
+      if (!ok) { log('FAILED: 隔离健康门 4 分钟未过：' + lastWhy); return await failAll('隔离健康门 4 分钟未过'); }
+    } finally {
+      cleanupEnv();
+    }
+    log('START OK (env=production+iso-preview)');
+    return 0;
+  }
 
   if (isProduction) {
     // ── 生产前置：秘密/模型/卷存在 + ctrl/manager 存在（start-only 前提）──
@@ -152,12 +209,13 @@ export async function startMergepilot(argv, deps = {}) {
     log('precheck: 通过（生产秘密/模型/卷/ctrl-manager 前提）');
   }
 
-  // ── 私钥注入（仅生产；多行 PEM 读入进程 env，零回显；finally 清理）──
+  // ── 私钥注入（仅生产；多行 PEM 读入进程 env，零回显；finally 恢复调用前环境）──
   if (isProduction) {
     const pemPath = path.join(secretDir, 'github-app-key.pem');
-    envSet('MU_GITHUB_APP_PRIVATE_KEY', fs.readFileSync(pemPath, 'utf8'));
+    setTracked('SECRET_DIR', secretDir);
+    setTracked('CONSOLE_IMAGE', RELEASE.image); // compose ${CONSOLE_IMAGE} 显式取发布身份，不依赖调用者残留
+    setTracked('MU_GITHUB_APP_PRIVATE_KEY', fs.readFileSync(pemPath, 'utf8'));
   }
-  const cleanupEnv = () => { envDel('MU_GITHUB_APP_PRIVATE_KEY'); envDel('POSTGRES_PASSWORD'); };
 
   try {
     if (isProduction) {
@@ -218,7 +276,8 @@ export async function startMergepilot(argv, deps = {}) {
       // ── 试用基础设施 compose up（postgres 数据卷=外部既有卷；webhook-ingress）──
       const composeFile = path.join(HERE, 'docker-compose.trial.yml');
       const pw = parseTrialPassword(path.join(deps.trialDir ?? HOST.trialDir, '.env'));
-      envSet('POSTGRES_PASSWORD', pw);
+      setTracked('POSTGRES_PASSWORD', pw);
+      setTracked('WEBHOOK_INGRESS_PORT', '18590'); // compose ${WEBHOOK_INGRESS_PORT:-18590} 显式定值，不依赖调用者残留
       const up = exec(['compose', '-p', 'mp-trial-rc355', '-f', composeFile, 'up', '-d']);
       if (up.status !== 0) { log(`FAILED: 试用基础设施 compose up（exit=${up.status}）`); return await failAll('试用基础设施 compose up 失败'); }
       // ── 服务容器：存在但停止 → start；运行中 → 幂等跳过 ──
