@@ -24,6 +24,9 @@ services:
       # 隔离一次性 PG：trust 认证——生产 DSN 口令与全新实例口令必然不同，
       # trust 让 DSN 无需知晓 iso 口令即可连通（仅限本隔离网，生产不受影响）
       POSTGRES_HOST_AUTH_METHOD: trust
+      # 首初始化建库：console schema init 只建表不建库；生产/试用的 mu 库均由
+      # 历史数据卷带入，全新 iso 卷必须由 PG 镜像在 initdb 时创建
+      POSTGRES_DB: mu
     networks: !override
       default:
         # DSN 主机名=pg（与生产 atnet 别名同形）——iso default 网络上补同名别名，
