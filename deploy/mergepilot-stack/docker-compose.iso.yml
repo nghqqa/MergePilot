@@ -1,13 +1,23 @@
 # docker-compose.iso.yml — 隔离预览覆盖（一键启动验收用，不触生产）。
-# 与 docker-compose.yml 叠加使用（start-mergepilot.ps1 -IsoPreview）。
+# 由 start-mergepilot.mjs --environment production --iso-preview 调用
+# （compose -p mergepilot-iso -f docker-compose.yml -f docker-compose.iso.yml）。
 #
 # !override 语义（compose v2.24+，本宿主 v5.4.0 实证）：列表/映射整体替换而非
 # 追加合并——端口清空、数据卷换 iso 全新卷、网络换 default（不接 atnet）。
 # 独立项目名 mergepilot-iso / 容器名 iso 前缀（避免与生产同名冲突）。
 # 隔离预览专用：允许 fixture 测试身份登录（生产 env_file 中此开关关闭）。
+#
+# 边界（合并配置审计基线，#512 行为闭环）：
+#   * 不继承生产秘密：pg env_file 清空（trust 认证）；console env_file 换 iso.env；
+#     at-auth-proxy 不挂生产 nginx 配置（内含真实 upstream token）——用镜像默认配置；
+#   * 不继承生产 keystore（iso-keystore 独立卷）；console 不挂 PG 数据目录；
+#   * 共享模型/语料一律只读（console 与 bge 侧车均 :ro）。
 services:
   beta-mp-pg:
     ports: !override []
+    env_file: !override []
+    # ↑ 基座 ${SECRET_DIR}/beta-mp-pg.env 仅在解析期被读取（入口指向 iso-secrets 假目录），
+    #   合并后丢弃——iso PG 不携带生产口令
     volumes: !override
       - pg-data-iso:/var/lib/postgresql/data
     environment:
@@ -19,12 +29,18 @@ services:
     container_name: mergepilot-iso-pg
 
   beta-bge-sidecar:
+    volumes: !override
+      # 共享模型只读（隔离环境只消费不写入；基座为 rw 挂载，此处收紧）
+      - D:/goai/prod-data/rag-models/bge-m3:/app/model:ro
     networks: !override
       - default
     container_name: mergepilot-iso-bge
 
   at-auth-proxy:
     ports: !override []
+    volumes: !override []
+    # ↑ 生产 nginx 配置含 agentteams upstream token——隔离环境不挂载，
+    #   用镜像默认配置（空代理，仅保持服务拓扑完整）
     networks: !override
       - default
     container_name: mergepilot-iso-auth-proxy
@@ -43,11 +59,11 @@ services:
       # 隔离专用 env（随仓提交，零真实凭据）——不继承生产 env_file
       - iso.env
     volumes: !override
-      - pg-data-iso:/var/lib/postgresql/data
       - iso-keystore:/app/keystore
       # 共享模型/语料：只读挂载（隔离环境只消费不写入）
       - D:/goai/prod-data/rag-corpus:/app/rag-corpus:ro
       - D:/goai/prod-data/rag-models:/app/rag-models:ro
+    # ↑ 不挂 PG 数据目录（基座 console 本无此挂载；此前误加的 pg-data-iso 行已删）
     networks: !override
       - default
     environment:
